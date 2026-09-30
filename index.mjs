@@ -701,11 +701,13 @@ document.getElementById('suggest').addEventListener('click',function(){var o=doc
 if(d.type==='lang'||d.type==='tool'){var lis=(d.repos||[]).map(function(r){return "<li>"+esc(r)+"</li>";}).join("");el.innerHTML="<h3>"+esc(d.label)+"</h3><div class='k'>Used in "+((d.repos||[]).length)+" repos</div><ul>"+lis+"</ul>";return;}
 if(d.type==='person'){var st=d.stats||{};el.innerHTML="<h3>"+esc(d.label)+"</h3><div class='k'>"+st.repos+" repos &middot; "+st.commits+" commits &middot; "+st.languages+" languages &middot; "+st.tools+" tools</div>";return;}}
 function selectNode(id){sel=id;render();api('/api/node?id='+encodeURIComponent(id)).then(showDetail);}
-function initGraphEvents(){var el=document.getElementById('graph');var drag=false,moved=0,sx=0,sy=0,ox=0,oy=0;
+function initGraphEvents(){var el=document.getElementById('graph');var drag=false,moved=0,sx=0,sy=0,ox=0,oy=0,downId=null;
+function nodeAt(ev){var t=ev.target;var g=t&&t.closest?t.closest('.node'):null;return g?g.getAttribute('data-id'):null;}
 el.addEventListener('wheel',function(ev){ev.preventDefault();if(!GRAPH)return;var rc=el.getBoundingClientRect();var mx=(ev.clientX-rc.left)/rc.width*GW;var my=(ev.clientY-rc.top)/rc.height*GH;var nk=Math.max(0.3,Math.min(4,view.k*(ev.deltaY<0?1.12:0.89)));view.x=mx-(mx-view.x)*(nk/view.k);view.y=my-(my-view.y)*(nk/view.k);view.k=nk;render();},{passive:false});
-el.addEventListener('pointerdown',function(ev){drag=true;moved=0;sx=ev.clientX;sy=ev.clientY;ox=view.x;oy=view.y;try{el.setPointerCapture(ev.pointerId);}catch(e){}});
-el.addEventListener('pointermove',function(ev){if(!drag)return;var dx=ev.clientX-sx,dy=ev.clientY-sy;moved+=Math.abs(dx)+Math.abs(dy);var rc=el.getBoundingClientRect();view.x=ox+dx/rc.width*GW;view.y=oy+dy/rc.height*GH;render();});
-el.addEventListener('pointerup',function(ev){drag=false;if(moved<6){var g=ev.target.closest?ev.target.closest('.node'):null;if(g){selectNode(g.getAttribute('data-id'));}else{sel=null;hideDetail();render();}}});}
+el.addEventListener('pointerdown',function(ev){drag=true;moved=0;sx=ev.clientX;sy=ev.clientY;ox=view.x;oy=view.y;downId=nodeAt(ev);try{el.setPointerCapture(ev.pointerId);}catch(e){}});
+el.addEventListener('pointermove',function(ev){if(!drag)return;var dx=ev.clientX-sx,dy=ev.clientY-sy;moved+=Math.abs(dx)+Math.abs(dy);if(moved<4)return;var rc=el.getBoundingClientRect();view.x=ox+dx/rc.width*GW;view.y=oy+dy/rc.height*GH;render();});
+el.addEventListener('pointerup',function(ev){drag=false;if(moved<6){if(downId){selectNode(downId);}else{sel=null;hideDetail();render();}}downId=null;});
+el.addEventListener('click',function(ev){var id=nodeAt(ev);if(id)selectNode(id);}); }
 function loadMap(){var p=document.getElementById("profile");p.textContent="Mapping your work...";document.getElementById("graph").innerHTML="";sel=null;hideDetail();api("/api/map").then(function(g){mapLoaded=true;if(!g.nodes||!g.nodes.length){p.textContent="No git repositories found under your home folder.";return;}GRAPH=g;layout(g.nodes,g.edges);view={k:1,x:0,y:0};p.innerHTML=profileLine(g);render();});}
 document.getElementById('remap').addEventListener('click',loadMap);
 initGraphEvents();syncP();refresh();loadMap();
