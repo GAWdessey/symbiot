@@ -11,6 +11,8 @@ bring yourself.
 symbiot            your last 7 days, written up   (same as: symbiot week)
 symbiot standup    yesterday + today, for standup
 symbiot todo       what's still on your plate
+symbiot login      connect it to Claude (once)
+symbiot whoami     show how it's connected
 symbiot help
 ```
 
@@ -20,11 +22,18 @@ symbiot help
 npm install -g symbiot        # or run without installing:  npx symbiot week
 ```
 
-Then give it an AI key (this is the only credential it needs):
+## Connect it (once)
+
+Symbiot writes with **Claude**, so it needs an Anthropic API key. The easiest way:
 
 ```bash
-export ANTHROPIC_API_KEY=sk-ant-...     # or:  ant auth login
+symbiot login     # paste a key once — saved locally to ~/.config/symbiot
 ```
+
+Get a key at <https://console.anthropic.com/settings/keys>. Prefer an env var? Set
+`ANTHROPIC_API_KEY=sk-ant-...` instead and skip `login`. If you already use the
+Anthropic CLI, `ant auth login` works too — Symbiot picks up any of these
+automatically, and `symbiot whoami` shows which one it's using.
 
 ## Use
 
@@ -52,8 +61,11 @@ Point it somewhere specific with `--dir ~/work`.
 
 ## Config
 
-- `SYMBIOT_MODEL` — the model to use (default `claude-opus-5`).
-- `ANTHROPIC_API_KEY` — your key, or sign in once with `ant auth login`.
+- `SYMBIOT_MODEL` — the model to use (default `claude-opus-5-5`; `claude-haiku-4-5`
+  is a cheaper option for this kind of summary).
+- `ANTHROPIC_API_KEY` — your key. Or run `symbiot login` once, or use an
+  `ant auth login` profile. `symbiot whoami` shows which credential is active;
+  `symbiot logout` forgets a saved key.
 
 ---
 
