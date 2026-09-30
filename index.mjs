@@ -144,19 +144,24 @@ function ask(question, { secret = false } = {}) {
 
 // ---- git ------------------------------------------------------------------
 function sh(cmd) {
-  try { return execSync(cmd, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], maxBuffer: 32 * 1024 * 1024 }); }
-  catch { return ""; }
+  try { return execSync(cmd, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], maxBuffer: 32 * 1024 * 1024, timeout: 6000, killSignal: "SIGKILL" }); }
+  catch { return ""; } // timeout or error -> empty, never hang the scan
+}
+// find .git dirs quickly by PRUNING heavy trees (node_modules etc.) instead of
+// crawling into them — this is the big speedup for the map scan.
+function findGitDirs(base, limit) {
+  return sh(
+    `find ${JSON.stringify(base)} -maxdepth 6 ` +
+    `\\( -name node_modules -o -name .cache -o -name .local -o -name .npm -o -name venv -o -name .venv -o -name .git-crypt \\) -prune ` +
+    `-o -name .git -print 2>/dev/null | head -${limit}`,
+  ).split("\n").filter(Boolean);
 }
 function me() {
   return { email: sh("git config --global user.email").trim(), name: sh("git config --global user.name").trim() };
 }
 function findRepos(base, sinceDays) {
-  const out = sh(
-    `find ${JSON.stringify(base)} -maxdepth 5 -name .git \\( -type d -o -type f \\) 2>/dev/null ` +
-    `| grep -vE 'node_modules|/\\.cache/|/\\.local/|/venvs?/|/\\.npm' | head -400`,
-  );
   const repos = [];
-  for (const g of out.split("\n").filter(Boolean)) {
+  for (const g of findGitDirs(base, 200)) {
     const repo = g.replace(/\/\.git$/, "");
     const n = Number(sh(`git -C ${JSON.stringify(repo)} log --since="${sinceDays} days ago" --oneline 2>/dev/null | wc -l`).trim());
     const last = Number(sh(`git -C ${JSON.stringify(repo)} log -1 --format=%ct 2>/dev/null`).trim()) || 0;
@@ -373,20 +378,16 @@ const MANIFEST_TOOL = {
   "terraform.tf": "Terraform", "kubernetes.yml": "Kubernetes", ".github": "GitHub Actions",
 };
 function findAllRepos(base) {
-  const out = sh(
-    `find ${JSON.stringify(base)} -maxdepth 5 -name .git \\( -type d -o -type f \\) 2>/dev/null ` +
-    `| grep -vE 'node_modules|/\\.cache/|/\\.local/|/venvs?/|/\\.npm' | head -300`,
-  );
   const repos = [];
-  for (const g of out.split("\n").filter(Boolean)) {
+  for (const g of findGitDirs(base, 120)) {
     const repo = g.replace(/\/\.git$/, "");
     const last = Number(sh(`git -C ${JSON.stringify(repo)} log -1 --format=%ct 2>/dev/null`).trim()) || 0;
     if (last) repos.push({ path: repo, name: repo.split("/").pop(), recency: last });
   }
-  return repos.sort((a, b) => b.recency - a.recency).slice(0, 36);
+  return repos.sort((a, b) => b.recency - a.recency).slice(0, 30);
 }
 function detectRepo(r) {
-  const files = sh(`git -C ${JSON.stringify(r.path)} ls-files 2>/dev/null | head -5000`).split("\n").filter(Boolean);
+  const files = sh(`git -C ${JSON.stringify(r.path)} ls-files 2>/dev/null | head -3000`).split("\n").filter(Boolean);
   const count = {}; const tools = new Set();
   for (const f of files) {
     const base = f.split("/").pop();
