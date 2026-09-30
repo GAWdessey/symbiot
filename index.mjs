@@ -338,7 +338,9 @@ function detectRepo(r) {
   const langs = Object.entries(count).sort((a, b) => b[1] - a[1]).map((x) => x[0]);
   const email = sh(`git -C ${JSON.stringify(r.path)} config user.email`).trim();
   const mine = Number(sh(`git -C ${JSON.stringify(r.path)} log ${email ? `--author=${JSON.stringify(email)}` : ""} --oneline 2>/dev/null | wc -l`).trim()) || 0;
-  return { ...r, langs, tools: [...tools], mine };
+  const branch = sh(`git -C ${JSON.stringify(r.path)} rev-parse --abbrev-ref HEAD 2>/dev/null`).trim();
+  const last = sh(`git -C ${JSON.stringify(r.path)} log -1 --format=%cd --date=short 2>/dev/null`).trim();
+  return { ...r, langs, tools: [...tools], mine, files: files.length, branch, last };
 }
 function buildMap() {
   const who = me();
@@ -349,7 +351,7 @@ function buildMap() {
   for (const r of repos) {
     const rid = "repo:" + r.path;
     add({ id: rid, type: "repo", label: r.name, weight: Math.min(9 + Math.log2(1 + r.mine) * 3, 26),
-      meta: { commits: r.mine, langs: r.langs.slice(0, 3), tools: r.tools } });
+      meta: { commits: r.mine, langs: r.langs.slice(0, 3), tools: r.tools, files: r.files, branch: r.branch, last: r.last, path: r.path } });
     edges.push({ source: "me", target: rid });
     for (const L of r.langs.slice(0, 3)) { const id = "lang:" + L; add({ id, type: "lang", label: L, weight: 15 }); edges.push({ source: rid, target: id }); }
     for (const T of r.tools) { const id = "tool:" + T; add({ id, type: "tool", label: T, weight: 12 }); edges.push({ source: rid, target: id }); }
@@ -359,6 +361,8 @@ function buildMap() {
     languages: nodes.filter((n) => n.type === "lang").length,
     tools: nodes.filter((n) => n.type === "tool").length,
     commits: repos.reduce((s, r) => s + r.mine, 0),
+    files: repos.reduce((s, r) => s + (r.files || 0), 0),
+    base: BASE,
   } };
   LAST_MAP = out;
   return out;
@@ -592,6 +596,8 @@ footer{padding:10px 18px;border-top:1px solid var(--line);display:flex}
 .detail ul{margin:6px 0 0;padding-left:18px}.detail li{margin:2px 0}
 .detail .chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
 .tag{display:inline-flex;font-size:11px;padding:4px 9px;border-radius:999px;background:var(--green-dim);border:1px solid #2a6b52;color:var(--green)}
+.mapbar{margin-top:8px;font-size:12.5px;color:var(--text);background:var(--ink3);border:1px solid var(--line);border-radius:9px;padding:9px 12px;min-height:18px;font-family:ui-monospace,Menlo,Consolas,monospace}
+.mapbar b{color:var(--bone)}
 .out2{white-space:pre-wrap;background:var(--ink);border:1px solid var(--line);border-radius:9px;padding:10px;margin-top:10px;font-size:13px;line-height:1.55;color:var(--bone)}
 .legend{display:flex;gap:14px;align-items:center;margin-top:10px;font-size:12px;color:var(--faint);flex-wrap:wrap}
 .lg{display:inline-flex;gap:6px;align-items:center}
@@ -613,6 +619,7 @@ footer{padding:10px 18px;border-top:1px solid var(--line);display:flex}
 <svg id="graph" viewBox="0 0 960 620" preserveAspectRatio="xMidYMid meet"></svg>
 <aside id="detail" class="detail hidden"></aside>
 </div>
+<div id="mapbar" class="mapbar">Hover a node for a summary &middot; click for details &middot; drag to move</div>
 <div class="legend">
 <span class="lg"><i style="background:var(--green)"></i>you</span>
 <span class="lg"><i style="background:var(--bone)"></i>repos</span>
@@ -691,7 +698,10 @@ GRAPH.nodes.forEach(function(n){var r=Math.max(5,Math.sqrt(n.weight)*2);var col=
 s+="<g class='node' data-id='"+esc(n.id)+"' opacity='"+op+"'><circle cx='"+n.x.toFixed(1)+"' cy='"+n.y.toFixed(1)+"' r='"+r.toFixed(1)+"' fill='"+col+"'"+st+"><title>"+title+"</title></circle>";
 var cls=n.type==="person"?"lbl-me":"";s+="<text x='"+n.x.toFixed(1)+"' y='"+(n.y+r+12).toFixed(1)+"' text-anchor='middle' class='"+cls+"'>"+esc(n.label)+"</text></g>";});
 document.getElementById("graph").innerHTML=s+"</g>";}
-function profileLine(g){var repos=g.nodes.filter(function(n){return n.type==="repo";});if(!repos.length)return "No git repositories found under your home folder yet.";var langs=g.nodes.filter(function(n){return n.type==="lang";}).map(function(n){return n.label;});var top=repos.slice().sort(function(a,b){return (b.meta.commits||0)-(a.meta.commits||0);})[0];var s="<b>"+g.stats.repos+"</b> repos &middot; <b>"+g.stats.commits+"</b> of your commits &middot; ";s+=langs.length?("mostly <b>"+esc(langs.slice(0,3).join(", "))+"</b>"):"no languages detected";if(top)s+=" &middot; most active: <b>"+esc(top.label)+"</b>";return s;}
+function profileLine(g){var repos=g.nodes.filter(function(n){return n.type==="repo";});var base=g.stats.base||"your home folder";if(!repos.length)return "No git repositories found under "+esc(base)+" yet.";var langs=g.nodes.filter(function(n){return n.type==="lang";}).map(function(n){return n.label;});var top=repos.slice().sort(function(a,b){return (b.meta.commits||0)-(a.meta.commits||0);})[0];var s="Scanned <b>"+esc(base)+"</b> &middot; <b>"+g.stats.repos+"</b> repos &middot; <b>"+g.stats.commits+"</b> of your commits &middot; <b>"+(g.stats.files||0)+"</b> files &middot; ";s+=langs.length?("mostly <b>"+esc(langs.slice(0,3).join(", "))+"</b>"):"no languages detected";if(top)s+=" &middot; most active: <b>"+esc(top.label)+"</b>";return s;}
+function nodeById(id){for(var i=0;i<GRAPH.nodes.length;i++)if(GRAPH.nodes[i].id===id)return GRAPH.nodes[i];return null;}
+function summarize(n){if(!n)return "";if(n.type==='repo'){var m=n.meta||{};var bits=[m.commits+' commits'];if(m.branch)bits.push('branch '+m.branch);if(m.last)bits.push('last '+m.last);if(typeof m.files==='number')bits.push(m.files+' files');if(m.langs&&m.langs.length)bits.push(m.langs.join(', '));if(m.tools&&m.tools.length)bits.push(m.tools.join(', '));return "<b>"+esc(n.label)+"</b>  "+esc(m.path||'')+"  —  "+esc(bits.join('  ·  '));}if(n.type==='lang')return "<b>"+esc(n.label)+"</b>  —  language (click to see repos)";if(n.type==='tool')return "<b>"+esc(n.label)+"</b>  —  tool (click to see repos)";if(n.type==='person')return "<b>"+esc(n.label)+"</b>  —  you";return "<b>"+esc(n.label)+"</b>";}
+function updateBar(id){var bar=document.getElementById('mapbar');if(!bar)return;var n=id?nodeById(id):(sel?nodeById(sel):null);bar.innerHTML=n?summarize(n):"Hover a node for a summary &middot; click for details &middot; drag to move";}
 function hideDetail(){document.getElementById('detail').classList.add('hidden');}
 function showDetail(d){var el=document.getElementById('detail');el.classList.remove('hidden');
 if(d.error){el.innerHTML="<h3>&mdash;</h3><div class='k'>"+esc(d.error)+"</div>";return;}
@@ -701,13 +711,19 @@ document.getElementById('suggest').addEventListener('click',function(){var o=doc
 if(d.type==='lang'||d.type==='tool'){var lis=(d.repos||[]).map(function(r){return "<li>"+esc(r)+"</li>";}).join("");el.innerHTML="<h3>"+esc(d.label)+"</h3><div class='k'>Used in "+((d.repos||[]).length)+" repos</div><ul>"+lis+"</ul>";return;}
 if(d.type==='person'){var st=d.stats||{};el.innerHTML="<h3>"+esc(d.label)+"</h3><div class='k'>"+st.repos+" repos &middot; "+st.commits+" commits &middot; "+st.languages+" languages &middot; "+st.tools+" tools</div>";return;}}
 function selectNode(id){sel=id;render();api('/api/node?id='+encodeURIComponent(id)).then(showDetail);}
-function initGraphEvents(){var el=document.getElementById('graph');var drag=false,moved=0,sx=0,sy=0,ox=0,oy=0,downId=null;
+function screenToGraph(el,ev){var rc=el.getBoundingClientRect();var mx=(ev.clientX-rc.left)/rc.width*GW;var my=(ev.clientY-rc.top)/rc.height*GH;return {x:(mx-view.x)/view.k,y:(my-view.y)/view.k};}
+function initGraphEvents(){var el=document.getElementById('graph');var mode=null,moved=0,sx=0,sy=0,ox=0,oy=0,downId=null,dnode=null;
 function nodeAt(ev){var t=ev.target;var g=t&&t.closest?t.closest('.node'):null;return g?g.getAttribute('data-id'):null;}
 el.addEventListener('wheel',function(ev){ev.preventDefault();if(!GRAPH)return;var rc=el.getBoundingClientRect();var mx=(ev.clientX-rc.left)/rc.width*GW;var my=(ev.clientY-rc.top)/rc.height*GH;var nk=Math.max(0.3,Math.min(4,view.k*(ev.deltaY<0?1.12:0.89)));view.x=mx-(mx-view.x)*(nk/view.k);view.y=my-(my-view.y)*(nk/view.k);view.k=nk;render();},{passive:false});
-el.addEventListener('pointerdown',function(ev){drag=true;moved=0;sx=ev.clientX;sy=ev.clientY;ox=view.x;oy=view.y;downId=nodeAt(ev);try{el.setPointerCapture(ev.pointerId);}catch(e){}});
-el.addEventListener('pointermove',function(ev){if(!drag)return;var dx=ev.clientX-sx,dy=ev.clientY-sy;moved+=Math.abs(dx)+Math.abs(dy);if(moved<4)return;var rc=el.getBoundingClientRect();view.x=ox+dx/rc.width*GW;view.y=oy+dy/rc.height*GH;render();});
-el.addEventListener('pointerup',function(ev){drag=false;if(moved<6){if(downId){selectNode(downId);}else{sel=null;hideDetail();render();}}downId=null;});
-el.addEventListener('click',function(ev){var id=nodeAt(ev);if(id)selectNode(id);}); }
+el.addEventListener('pointerdown',function(ev){if(!GRAPH)return;moved=0;sx=ev.clientX;sy=ev.clientY;ox=view.x;oy=view.y;downId=nodeAt(ev);if(downId){mode='node';dnode=nodeById(downId);}else{mode='pan';}try{el.setPointerCapture(ev.pointerId);}catch(e){}});
+el.addEventListener('pointermove',function(ev){
+if(!mode){updateBar(nodeAt(ev));return;}
+var dx=ev.clientX-sx,dy=ev.clientY-sy;moved+=Math.abs(dx)+Math.abs(dy);if(moved<4)return;
+if(mode==='node'&&dnode){var p=screenToGraph(el,ev);dnode.x=p.x;dnode.y=p.y;render();}
+else if(mode==='pan'){var rc=el.getBoundingClientRect();view.x=ox+dx/rc.width*GW;view.y=oy+dy/rc.height*GH;render();}});
+el.addEventListener('pointerup',function(ev){var id=downId,wasClick=moved<6;mode=null;dnode=null;downId=null;
+if(id){selectNode(id);}else if(wasClick){sel=null;hideDetail();render();updateBar(null);}});
+el.addEventListener('mouseleave',function(){if(!mode)updateBar(null);}); }
 function loadMap(){var p=document.getElementById("profile");p.textContent="Mapping your work...";document.getElementById("graph").innerHTML="";sel=null;hideDetail();api("/api/map").then(function(g){mapLoaded=true;if(!g.nodes||!g.nodes.length){p.textContent="No git repositories found under your home folder.";return;}GRAPH=g;layout(g.nodes,g.edges);view={k:1,x:0,y:0};p.innerHTML=profileLine(g);render();});}
 document.getElementById('remap').addEventListener('click',loadMap);
 initGraphEvents();syncP();refresh();loadMap();
