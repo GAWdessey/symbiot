@@ -766,25 +766,41 @@ async function repoReview(path) {
   const commits = sh(`git -C ${JSON.stringify(path)} log ${authorArgs(auth.emails)} --format='%ad %s' --date=short -50 2>/dev/null`).trim()
     || sh(`git -C ${JSON.stringify(path)} log --format='%ad %s' --date=short -50 2>/dev/null`).trim();
   const footer = reportFooter(path, auth, state, rd);
+  // Cheap maturity gauge, so the model can be told to show restraint instead of
+  // always inventing new features (over-engineering is a failure, not a win).
+  const testFiles = Number(sh(`git -C ${JSON.stringify(path)} ls-files 2>/dev/null | grep -icE '(^|/)(tests?|spec|__tests__)/|\\.(test|spec)\\.'`).trim()) || 0;
+  const churn = Number(sh(`git -C ${JSON.stringify(path)} log --since='14 days ago' --oneline 2>/dev/null | wc -l`).trim()) || 0;
+  const posture = state.stale ? "the checkout is a stale snapshot — the priority is getting current, not new work"
+    : (testFiles === 0 && shape.total > 40) ? "a real codebase with NO test files — favour tests/stabilising over new features"
+    : (churn >= 25) ? "very rapid churn lately — likely over-iterating; be conservative, prefer consolidation/finishing over new features"
+    : (state.dirty > 20) ? "a lot of unfinished/uncommitted work — finish what's open before starting new things"
+    : "no red flags — but still only propose what clearly pays off";
   const system =
-    `You are reviewing one software project for its owner. Respond with ONLY a JSON object (no fences, no prose outside it): {"review": string, "ideas": string[]}. ` +
-    `"review": 3-6 sentences on what it does and who it's for. "ideas": 3-6 short, concrete upgrade items, each a single actionable phrase. ` +
-    `Ground every claim in the evidence below and tie it to real files/commits. Recent commits are MORE current than the README — when they disagree, trust the commits. ` +
-    `Never propose building something that already appears in the structure. Never advise against anything the conventions call intentional. ` +
-    (state.stale ? `CRITICAL: the working tree is a STALE/old checkout, not new work — never suggest committing it (it would revert history). ` : ``);
+    `You are a pragmatic, restraint-minded reviewer of ONE software project. Respond with ONLY a JSON object (no fences): {"review": string, "verdict": string, "ideas": string[]}. ` +
+    `"review": 3-6 sentences on what it does and who it's for. ` +
+    `"verdict": ONE honest sentence on whether this project needs new work now, and of what KIND. Over-engineering is a failure: if it's already capable, or shows churn / missing tests / unfinished work, say so and steer toward STABILISING (tests, docs, finishing, removing) or simply SHIPPING — not more features. ` +
+    `"ideas": AT MOST 5, ranked by value, ONLY items that clearly pay off. Do NOT pad the list — returning 0–2 ideas with a "stabilise, don't add" verdict is a good, correct answer. Prefer fixes / tests / simplification / finishing over new features unless a feature is clearly warranted by the evidence. ` +
+    `Ground every claim in the evidence; recent commits beat the README; never propose building something already in the structure; never advise against the stated conventions. ` +
+    (state.stale ? `CRITICAL: the working tree is a STALE checkout — never suggest committing it. ` : ``);
   const prompt =
-    `Project: ${name}\nBranch ${state.branch} · ${auth.total} commits total (${auth.mineCount} yours${auth.filterDropped ? ", filter dropped so counting everyone" : ""})\n\n` +
+    `Project: ${name}\nBranch ${state.branch} · ${auth.total} commits total (${auth.mineCount} yours${auth.filterDropped ? ", filter dropped so counting everyone" : ""})\n` +
+    `Maturity signal: ${posture}. (${testFiles} test files, ${churn} commits in the last 14 days.)\n\n` +
     (rd.file ? `README (last changed ${rd.lastDate || "?"}, ${rd.commitsAgo} commits ago — may be out of date):\n${rd.excerpt}\n\n` : "(no README)\n\n") +
     `Structure (top folders · file counts): ${shape.dirs.join(", ")}\nManifests: ${shape.manifests.join(", ") || "none"}\nDocs present: ${shape.docs.join(", ") || "none"}\n\n` +
     `Recent commits (newest first):\n${commits || "(none)"}\n\n` +
     (rules ? `Conventions this team has chosen — do NOT advise against these:\n${rules}\n\n` : "") +
     (state.stale ? `Working tree: STALE (≈ ${state.staleBy ? "HEAD~" + state.staleBy : "older"}); its "changes" are the gap to an old snapshot, not new work.\n\n` : "") +
-    `Return the JSON.`;
+    `Return the JSON. Remember: fewer, higher-value ideas beat a long list; a "don't add — stabilise" verdict with 0–2 ideas is a valid answer.`;
   const raw = await write(system, prompt);
-  if (!raw) return { text: "(couldn't reach the model)", ideas: [], footer };
+  if (!raw) return { text: "(couldn't reach the model)", ideas: [], verdict: "", footer };
   const j = extractJson(raw);
-  if (j && (j.review || j.ideas)) return { text: String(j.review || "").trim() || raw, ideas: Array.isArray(j.ideas) ? j.ideas.map((x) => String(x).trim()).filter(Boolean).slice(0, 8) : [], footer };
-  return { text: raw, ideas: [], footer };
+  if (j && (j.review || j.ideas || j.verdict)) return {
+    text: String(j.review || "").trim() || raw,
+    verdict: String(j.verdict || "").trim(),
+    ideas: Array.isArray(j.ideas) ? j.ideas.map((x) => String(x).trim()).filter(Boolean).slice(0, 5) : [],
+    footer,
+  };
+  return { text: raw, ideas: [], verdict: "", footer };
 }
 function extractJson(s) {
   if (!s) return null;
@@ -1015,6 +1031,7 @@ footer{padding:10px 18px;border-top:1px solid var(--line);display:flex}
 .review .body{color:var(--text);line-height:1.65;font-size:14px;white-space:pre-wrap}
 .review .rname{color:var(--bone);font-weight:600}
 .rfoot{margin-top:12px;font-size:11px;color:var(--faint);font-family:ui-monospace,Menlo,Consolas,monospace;border-top:1px solid var(--line);padding-top:8px;line-height:1.5}
+.verdict{margin-top:12px;padding:10px 12px;border-left:3px solid var(--amber);background:var(--ink3);border-radius:0 8px 8px 0;color:var(--bone);font-size:13.5px;line-height:1.5}
 .ideas{margin-top:14px}
 .ideas h4{margin:0 0 6px;color:var(--amber);font-size:11px;letter-spacing:.14em;text-transform:uppercase;font-weight:700}
 .idea{display:flex;align-items:flex-start;gap:9px;padding:5px 0;font-size:13.5px;color:var(--text)}
@@ -1173,12 +1190,14 @@ if(d.type==='lang'||d.type==='tool'){var lis=(d.repos||[]).map(function(r){retur
 if(d.type==='person'){var st=d.stats||{};el.innerHTML="<h3>"+esc(d.label)+"</h3><div class='k'>"+st.repos+" repos &middot; "+st.commits+" commits &middot; "+st.languages+" languages &middot; "+st.tools+" tools</div>";return;}}
 var reviewCache={};var IDEAS=[];var IREPO="";
 function hideReview(){var el=document.getElementById('review');el.classList.add('hidden');el.innerHTML='';}
-function reviewHtml(name,body,ideas,tasks,footer){IDEAS=ideas||[];IREPO=name;
+function reviewHtml(name,body,verdict,ideas,tasks,footer){IDEAS=ideas||[];IREPO=name;
 var h="<h4>AI review &middot; <span class='rname'>"+esc(name)+"</span></h4><div class='body'>"+esc(body)+"</div>";
-if(ideas&&ideas.length){h+="<div class='ideas'><h4>Upgrade ideas &middot; tick to add to Tasks</h4>";
+if(verdict)h+="<div class='verdict'>&#9878;&#65039; "+esc(verdict)+"</div>";
+if(ideas&&ideas.length){h+="<div class='ideas'><h4>Ideas worth doing &middot; tick to add to Tasks</h4>";
 ideas.forEach(function(idea,i){var t=(tasks||[]).filter(function(x){return x.text===idea&&x.repo===name;})[0];var tid=t?t.id:"";
 h+="<label class='idea'><input type='checkbox' class='ideachk' data-idx='"+i+"' data-tid='"+esc(tid)+"'"+(t?" checked":"")+"><span>"+esc(idea)+"</span></label>";});
 h+="</div>";}
+else h+="<div class='muted' style='margin-top:10px'>No new features suggested &mdash; the verdict above is the call.</div>";
 if(footer)h+="<div class='rfoot'>"+esc(footer)+"</div>";
 return h;}
 function wireIdeas(){document.querySelectorAll('.ideachk').forEach(function(cb){cb.addEventListener('change',function(){
@@ -1186,11 +1205,11 @@ var idea=IDEAS[+cb.getAttribute('data-idx')];if(idea==null)return;
 if(cb.checked){api('/api/tasks/add',{text:idea,repo:IREPO}).then(function(it){if(it&&it.id)cb.setAttribute('data-tid',it.id);});}
 else{var id=cb.getAttribute('data-tid');if(id){api('/api/tasks/remove',{id:id}).then(function(){cb.setAttribute('data-tid','');});}}});});}
 function loadReview(name,path){var el=document.getElementById('review');el.classList.remove('hidden');
-if(reviewCache[path]){var c=reviewCache[path];api('/api/tasks').then(function(tasks){el.innerHTML=reviewHtml(name,c.text,c.ideas,tasks,c.footer);wireIdeas();});return;}
+if(reviewCache[path]){var c=reviewCache[path];api('/api/tasks').then(function(tasks){el.innerHTML=reviewHtml(name,c.text,c.verdict,c.ideas,tasks,c.footer);wireIdeas();});return;}
 el.innerHTML="<h4>AI review &middot; <span class='rname'>"+esc(name)+"</span></h4><div class='body'>Reading the project&hellip;</div>";
 Promise.all([api('/api/review',{path:path}),api('/api/tasks')]).then(function(res){var r=res[0]||{},tasks=res[1]||[];
 if(r.error==='not-connected'){el.innerHTML="<h4>AI review &middot; <span class='rname'>"+esc(name)+"</span></h4><div class='body'>Connect a model in Settings to get a review - Ollama is free and runs locally.</div>"+(r.footer?"<div class='rfoot'>"+esc(r.footer)+"</div>":"");return;}
-var body=r.text||'(no output)';reviewCache[path]={text:body,ideas:r.ideas||[],footer:r.footer};el.innerHTML=reviewHtml(name,body,r.ideas||[],tasks,r.footer);wireIdeas();});}
+var body=r.text||'(no output)';reviewCache[path]={text:body,verdict:r.verdict||"",ideas:r.ideas||[],footer:r.footer};el.innerHTML=reviewHtml(name,body,r.verdict||"",r.ideas||[],tasks,r.footer);wireIdeas();});}
 function renderTasks(list){var el=document.getElementById('tasklist');if(!list||!list.length){el.innerHTML="<div class='muted' style='margin-top:12px'>No tasks yet. Tick an idea in a repo's review, or add one above.</div>";return;}
 var h="";list.forEach(function(t){h+="<div class='task"+(t.done?" done":"")+"' data-id='"+esc(t.id)+"'><input type='checkbox' class='taskchk'"+(t.done?" checked":"")+"><span class='t'>"+esc(t.text)+"</span>"+(t.repo?"<span class='rp'>"+esc(t.repo)+"</span>":"")+"<button class='rm' title='remove'>&times;</button></div>";});
 el.innerHTML=h;
