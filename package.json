@@ -1,6 +1,6 @@
 {
   "name": "symbiot",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Your week, written from your real work. Reads your local git — no accounts, no OAuth, just an AI key you bring yourself.",
   "type": "module",
   "bin": {
