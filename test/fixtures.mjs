@@ -8,7 +8,7 @@ import { execSync } from "node:child_process";
 import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { authorship, repoState, readmeInfo, houseRules, findAllRepos } from "../index.mjs";
+import { authorship, repoState, readmeInfo, houseRules, findAllRepos, driftRepo } from "../index.mjs";
 
 const ROOT = mkdtempSync(join(tmpdir(), "symbiot-fix-"));
 let pass = 0, fail = 0;
@@ -73,6 +73,29 @@ try {
     echo KEY=1 > .env && echo KEY= > .env.example && git add . && git commit -qm init`);
   const hr5 = houseRules(f5);
   ok("CLAUDE.md loaded", /deliberately/i.test(hr5) && /CLAUDE\.md/.test(hr5), hr5.slice(0, 80));
+
+  console.log("F6 deployed ahead of default — production runs code not on main");
+  const f6 = build("f6", `
+    git init -q -b main && git config user.email t@x.co && git config user.name T
+    for i in $(seq 5); do echo $i > m; git add m; git commit -qm m$i; done
+    git checkout -qb feature
+    for i in 1 2 3; do echo f$i > f; git add f; git commit -qm f$i; done
+    git rev-parse HEAD > .deployed-sha && git checkout -q main`);
+  const d6 = driftRepo(f6, { deploys: { [f6]: `cat ${JSON.stringify(join(f6, ".deployed-sha"))}` } });
+  const notOnMain = d6.flags.find((f) => /NOT on main/.test(f.text));
+  ok("production flagged not on main", !!notOnMain, d6.flags);
+  ok("reports 3 ahead", notOnMain && /3 commits ahead/.test(notOnMain.text), notOnMain && notOnMain.text);
+
+  console.log("F7 PR merged into a stacked base — not on default");
+  const f7 = build("f7", `
+    git init -q -b main && git config user.email t@x.co && git config user.name T
+    echo a > a && git add . && git commit -qm base
+    git checkout -qb stack && echo s > s && git add . && git commit -qm stack
+    git checkout -qb feat && echo f > f && git add . && git commit -qm feat
+    git checkout -q stack && git merge -q --no-ff feat -m "Merge pull request #2 from me/feat"
+    git checkout -q main`);
+  const d7 = driftRepo(f7, {});
+  ok("off-default PR merge flagged", d7.flags.some((f) => /landed off main/.test(f.text)), d7.flags);
 } finally {
   try { execSync(`git worktree prune 2>/dev/null || true`, { cwd: join(ROOT, "f3parent", "f3"), stdio: "ignore" }); } catch {}
   rmSync(ROOT, { recursive: true, force: true });

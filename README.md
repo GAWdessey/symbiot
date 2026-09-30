@@ -52,6 +52,24 @@ where no Chromium-family browser is found it opens your default browser instead.
 npm install -g symbiot        # or run without installing:  npx symbiot week
 ```
 
+## What's out of sync? `symbiot drift`
+
+```bash
+symbiot drift          # add --ci to also check GitHub Actions state (needs gh)
+```
+
+A **deterministic** report of what's out of sync, stuck, or at risk across your
+repos — computed from git facts, each line citing the fact behind it (no model
+guessing). It flags: **stale checkouts**, **behind upstream**, **multiple
+worktrees**, **branches with work not on the default**, **PR merges that landed
+off the default branch** (the "merged but main didn't move" trap), and — if you
+configure it — **production running code that isn't on your default branch**.
+
+For the production check, add a per-repo deploy command to
+`~/.config/symbiot/deploys.json` (read only from your own config, never from a
+repo), e.g. `{ "/path/to/repo": "ssh prod cat ~/app/.deployed-sha" }`. Also a
+**Drift** tab in the app.
+
 ## Which model? Ask your machine
 
 ```bash

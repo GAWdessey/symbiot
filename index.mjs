@@ -21,7 +21,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { execSync, spawn } from "node:child_process";
 import { homedir, totalmem, cpus as oscpus } from "node:os";
 import { join } from "node:path";
-import { readFileSync, writeFileSync, mkdirSync, existsSync, chmodSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, existsSync, chmodSync, statSync } from "node:fs";
 import { createInterface } from "node:readline";
 import { createServer } from "node:http";
 import { randomBytes } from "node:crypto";
@@ -473,6 +473,91 @@ function cmdModels() {
   console.log("");
 }
 
+// ---- drift: what's out of sync / stuck / at risk (deterministic git facts) -
+function gitDefaultBranch(repo) {
+  const d = sh(`git -C ${JSON.stringify(repo)} symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null`).trim();
+  if (d) return d.replace(/^origin\//, "");
+  for (const b of ["main", "master", "develop"]) if (sh(`git -C ${JSON.stringify(repo)} rev-parse --verify -q refs/remotes/origin/${b} 2>/dev/null`).trim()) return b;
+  return sh(`git -C ${JSON.stringify(repo)} rev-parse --abbrev-ref HEAD 2>/dev/null`).trim() || "main";
+}
+function fetchAgeDays(repo) {
+  const gd = sh(`git -C ${JSON.stringify(repo)} rev-parse --git-common-dir 2>/dev/null`).trim();
+  if (!gd) return null;
+  const p = gd.startsWith("/") ? join(gd, "FETCH_HEAD") : join(repo, gd, "FETCH_HEAD");
+  try { return Math.floor((Date.now() - statSync(p).mtimeMs) / 86400000); } catch { return null; }
+}
+function worktreeCount(repo) { return sh(`git -C ${JSON.stringify(repo)} worktree list 2>/dev/null`).split("\n").filter(Boolean).length; }
+// Deployed-sha commands are read ONLY from the user's own config (never from a
+// repo file, which could be attacker-controlled): ~/.config/symbiot/deploys.json
+function loadDeploys() { try { return JSON.parse(readFileSync(join(CONFIG_DIR, "deploys.json"), "utf8")); } catch { return {}; } }
+function ciState(repo, def) {
+  if (!sh("command -v gh 2>/dev/null").trim()) return null;
+  if (!/github\.com/i.test(sh(`git -C ${JSON.stringify(repo)} remote get-url origin 2>/dev/null`))) return null;
+  const j = sh(`cd ${JSON.stringify(repo)} && gh run list --branch ${def} --limit 1 --json conclusion,status,createdAt 2>/dev/null`).trim();
+  if (!j) return null;
+  try { const a = JSON.parse(j); if (!a.length) return null; const r = a[0];
+    if (r.status && r.status !== "completed") return { level: "info", text: `CI on ${def}: ${r.status}` };
+    if (r.conclusion === "failure") return { level: "warn", text: `CI's last run on ${def} failed — could be a broken build or a stopped runner (check billing/the run)` };
+    if (r.conclusion && r.conclusion !== "success") return { level: "warn", text: `CI on ${def}: ${r.conclusion}` };
+    return { level: "info", text: `CI on ${def}: passing` };
+  } catch { return null; }
+}
+// Drift facts for ONE repo. Compares against origin/<default> when a remote
+// exists, else the local default branch (so it also works on local-only repos).
+function driftRepo(p, opts = {}) {
+  const name = p.split("/").pop();
+  const def = gitDefaultBranch(p), st = repoState(p), flags = [];
+  const originDef = sh(`git -C ${JSON.stringify(p)} rev-parse --verify -q refs/remotes/origin/${def} 2>/dev/null`).trim();
+  const localDef = sh(`git -C ${JSON.stringify(p)} rev-parse --verify -q refs/heads/${def} 2>/dev/null`).trim();
+  const defRef = originDef ? `origin/${def}` : (localDef ? def : "");
+  if (st.stale) flags.push({ level: "warn", text: `checkout is stale — working tree ≈ ${st.staleBy ? "HEAD~" + st.staleBy : "an older commit"}, not new work` });
+  else if (st.dirty) flags.push({ level: "info", text: `${st.dirty} uncommitted (${st.mod} mod / ${st.del} del / ${st.add} new)` });
+  if (st.behind) flags.push({ level: "warn", text: `${st.behind} behind upstream on ${st.branch}` });
+  const wc = worktreeCount(p); if (wc > 1) flags.push({ level: "info", text: `${wc} checkouts of this repo` });
+  if (originDef) {
+    const unmerged = sh(`git -C ${JSON.stringify(p)} branch -r --no-merged origin/${def} 2>/dev/null`).split("\n").map((s) => s.trim()).filter((b) => b && !b.startsWith("origin/HEAD"));
+    if (unmerged.length) flags.push({ level: "info", text: `${unmerged.length} branch(es) with work not on ${def}` });
+  }
+  if (defRef) {
+    const merged = sh(`git -C ${JSON.stringify(p)} log --merges --all --not ${defRef} --format='%h %s' 2>/dev/null`).split("\n").filter((l) => /merge pull request/i.test(l));
+    if (merged.length) flags.push({ level: "warn", text: `${merged.length} PR merge(s) landed off ${def} (in a stacked branch, not the default)`, evidence: merged.slice(0, 3).join(" | ") });
+  }
+  const cmd = opts.deploys && (opts.deploys[p] || opts.deploys[name]);
+  if (cmd && defRef) {
+    const sha = sh(cmd).trim().split(/\s+/)[0];
+    if (sha) {
+      const onDef = sh(`git -C ${JSON.stringify(p)} merge-base --is-ancestor ${sha} ${defRef} 2>/dev/null && echo Y`).trim() === "Y";
+      const behind = Number(sh(`git -C ${JSON.stringify(p)} rev-list --count ${sha}..${defRef} 2>/dev/null`).trim()) || 0;
+      const ahead = Number(sh(`git -C ${JSON.stringify(p)} rev-list --count ${defRef}..${sha} 2>/dev/null`).trim()) || 0;
+      if (!onDef) flags.push({ level: "warn", text: `production runs code NOT on ${def}${ahead ? ` (${ahead} commits ahead of it)` : ""}`, evidence: sha.slice(0, 9) });
+      else if (behind) flags.push({ level: "warn", text: `production is ${behind} behind ${def}`, evidence: sha.slice(0, 9) });
+      else flags.push({ level: "info", text: `production in sync with ${def}`, evidence: sha.slice(0, 9) });
+    }
+  }
+  if (opts.ci) { const ci = ciState(p, def); if (ci) flags.push(ci); }
+  return { name, path: p, def, flags, fetchAgeDays: fetchAgeDays(p) };
+}
+function computeDrift(opts = {}) {
+  const deploys = loadDeploys();
+  const repos = findAllRepos(BASE).slice(0, 20).map((r) => driftRepo(r.path, { deploys, ci: opts.ci }));
+  return { repos, ci: !!opts.ci };
+}
+function cmdDrift() {
+  const d = computeDrift({ ci: has("ci") });
+  const warn = d.repos.filter((r) => r.flags.some((f) => f.level === "warn"));
+  console.log(`\n${c.g("●")} ${c.b("Symbiot drift")} ${c.d("· " + d.repos.length + " repos · " + warn.length + " with risks")}\n`);
+  for (const r of d.repos) {
+    if (!r.flags.length) continue;
+    const risky = r.flags.some((f) => f.level === "warn");
+    console.log(`${risky ? c.y("●") : c.d("○")} ${c.b(r.name)} ${c.d(r.def + (r.fetchAgeDays != null && r.fetchAgeDays > 3 ? " · fetch " + r.fetchAgeDays + "d old" : ""))}`);
+    for (const f of r.flags) console.log(`  ${f.level === "warn" ? c.y("⚠") : c.d("·")} ${f.text}${f.evidence ? c.d("  [" + f.evidence + "]") : ""}`);
+    console.log("");
+  }
+  const clean = d.repos.filter((r) => !r.flags.length).map((r) => r.name);
+  if (clean.length) console.log(c.d(`clean: ${clean.join(", ")}`));
+  console.log(c.d(`\nsymbiot ${VERSION} · local git facts only${d.ci ? " + CI" : " (add --ci for CI status)"}${loadDeploys() && Object.keys(loadDeploys()).length ? "" : " · set ~/.config/symbiot/deploys.json for production-sha checks"}`));
+}
+
 // ---- work map: a node graph of your repos, languages, and tools -----------
 const EXT_LANG = {
   ts: "TypeScript", tsx: "TypeScript", js: "JavaScript", jsx: "JavaScript", mjs: "JavaScript",
@@ -832,6 +917,16 @@ footer{padding:10px 18px;border-top:1px solid var(--line);display:flex}
 .task .rp{font-size:11px;color:var(--faint);background:var(--ink3);border:1px solid var(--line);border-radius:999px;padding:2px 8px}
 .task .rm{background:none;border:0;color:var(--faint);cursor:pointer;font-size:18px;line-height:1}
 .task .rm:hover{color:var(--amber)}
+.drift{border:1px solid var(--line);border-radius:10px;margin-top:10px;padding:12px 14px;background:var(--ink2)}
+.drift .dh{display:flex;gap:8px;align-items:center}
+.drift .dn{color:var(--bone);font-weight:600}
+.drift .dd{color:var(--faint);font-size:12px}
+.drift ul{margin:8px 0 0;padding:0;list-style:none}
+.drift li{padding:3px 0;font-size:13.5px}
+.drift li.warn{color:var(--amber)}
+.drift .ev{color:var(--faint);font-family:ui-monospace,Menlo,monospace;font-size:11px}
+.dot-w{width:9px;height:9px;border-radius:50%;background:var(--amber);display:inline-block}
+.dot-c{width:9px;height:9px;border-radius:50%;background:var(--green);display:inline-block}
 .out2{white-space:pre-wrap;background:var(--ink);border:1px solid var(--line);border-radius:9px;padding:10px;margin-top:10px;font-size:13px;line-height:1.55;color:var(--bone)}
 .legend{display:flex;gap:14px;align-items:center;margin-top:10px;font-size:12px;color:var(--faint);flex-wrap:wrap}
 .lg{display:inline-flex;gap:6px;align-items:center}
@@ -841,6 +936,7 @@ footer{padding:10px 18px;border-top:1px solid var(--line);display:flex}
 <header><span class="dot"></span><span class="brand">Symbiot</span><span class="status" id="status">...</span></header>
 <div class="tabs">
 <button class="tab active" data-tab="map">Map</button>
+<button class="tab" data-tab="drift">Drift</button>
 <button class="tab" data-tab="week">Week</button>
 <button class="tab" data-tab="standup">Standup</button>
 <button class="tab" data-tab="todo">Todo</button>
@@ -876,6 +972,12 @@ footer{padding:10px 18px;border-top:1px solid var(--line);display:flex}
 <div class="row"><input id="newtask" placeholder="Add a task..." style="flex:1"><button class="act" id="addtask">Add</button></div>
 <div id="tasklist"></div>
 </section>
+<section id="panel-drift" class="hidden">
+<div class="row"><span class="muted">What's out of sync, stuck or at risk across your repos — local git facts.</span>
+<label class="muted" style="margin-left:auto"><input type="checkbox" id="driftci"> check CI (needs gh)</label>
+<button class="ghost" id="driftrun">Rescan</button></div>
+<div id="driftout"></div>
+</section>
 <section id="panel-settings" class="hidden">
 <label>Which AI should Symbiot write with?</label>
 <select id="provider">
@@ -905,18 +1007,20 @@ function api(path,body){return fetch(path,{method:body?'POST':'GET',headers:{'x-
 var KEYURL={anthropic:'https://console.anthropic.com/settings/keys',openai:'https://platform.openai.com/api-keys',gemini:'https://aistudio.google.com/apikey',ollama:'https://ollama.com'};
 var DEFMODEL={anthropic:'claude-opus-5-5',openai:'gpt-4o-mini',gemini:'gemini-1.5-flash',ollama:'llama3.1'};
 function $(id){return document.getElementById(id);}
-var current='map';var mapLoaded=false;
+var current='map';var mapLoaded=false;var driftLoaded=false;
 var COLORS={person:'#3DDC97',repo:'#F4F1EA',lang:'#F2A541',tool:'#6bb3ff'};
 function tabs(){return document.querySelectorAll('.tab');}
 function setTab(tab){current=tab;tabs().forEach(function(t){t.classList.toggle('active',t.dataset.tab===tab);});
-var isMap=tab==='map',isSet=tab==='settings',isTasks=tab==='tasks',isRun=(tab==='week'||tab==='standup'||tab==='todo');
+var isMap=tab==='map',isSet=tab==='settings',isTasks=tab==='tasks',isDrift=tab==='drift',isRun=(tab==='week'||tab==='standup'||tab==='todo');
 $('panel-map').classList.toggle('hidden',!isMap);
 $('panel-run').classList.toggle('hidden',!isRun);
 $('panel-settings').classList.toggle('hidden',!isSet);
 $('panel-tasks').classList.toggle('hidden',!isTasks);
+$('panel-drift').classList.toggle('hidden',!isDrift);
 if(isRun){$('what').textContent=tab;$('out').textContent='Nothing yet - hit the button.';$('out').classList.add('muted');$('copy').classList.add('hidden');}
 if(isMap&&!mapLoaded)loadMap();
-if(isTasks)loadTasks();}
+if(isTasks)loadTasks();
+if(isDrift&&!driftLoaded)loadDrift();}
 tabs().forEach(function(t){t.addEventListener('click',function(){setTab(t.dataset.tab);});});
 function refresh(){api('/api/status').then(function(s){$('status').textContent=s.connected?s.line:'Not connected - open Settings';});}
 $('write').addEventListener('click',function(){$('out').textContent='Writing...';$('out').classList.add('muted');$('copy').classList.add('hidden');
@@ -983,6 +1087,18 @@ el.querySelectorAll('.task').forEach(function(row){var id=row.getAttribute('data
 row.querySelector('.taskchk').addEventListener('change',function(){api('/api/tasks/toggle',{id:id}).then(function(){row.classList.toggle('done');});});
 row.querySelector('.rm').addEventListener('click',function(){api('/api/tasks/remove',{id:id}).then(function(){row.remove();if(!el.querySelector('.task'))renderTasks([]);});});});}
 function loadTasks(){api('/api/tasks').then(renderTasks);}
+function loadDrift(){var out=document.getElementById('driftout');out.innerHTML="<div class='muted' style='margin-top:12px'>Reading your repos&hellip;</div>";
+var ci=document.getElementById('driftci').checked?'1':'0';
+api('/api/drift?ci='+ci).then(function(d){driftLoaded=true;var repos=d.repos||[];var risky=repos.filter(function(r){return r.flags.some(function(f){return f.level==='warn';});});
+var h="<div class='k' style='margin:10px 0'><b>"+repos.length+"</b> repos &middot; <b>"+risky.length+"</b> with risks</div>";
+repos.forEach(function(r){if(!r.flags.length)return;var warn=r.flags.some(function(f){return f.level==='warn';});
+h+="<div class='drift'><div class='dh'><span class='"+(warn?'dot-w':'dot-c')+"'></span><span class='dn'>"+esc(r.name)+"</span><span class='dd'>"+esc(r.def)+(r.fetchAgeDays!=null&&r.fetchAgeDays>3?" &middot; fetch "+r.fetchAgeDays+"d old":"")+"</span></div><ul>";
+r.flags.forEach(function(f){h+="<li class='"+esc(f.level)+"'>"+(f.level==='warn'?'&#9888; ':'&middot; ')+esc(f.text)+(f.evidence?" <span class='ev'>["+esc(f.evidence)+"]</span>":"")+"</li>";});
+h+="</ul></div>";});
+var clean=repos.filter(function(r){return !r.flags.length;}).map(function(r){return r.name;});
+if(clean.length)h+="<div class='muted' style='margin-top:10px'>clean: "+esc(clean.join(", "))+"</div>";
+if(!repos.length)h+="<div class='muted'>No repos found under your home folder.</div>";
+out.innerHTML=h;});}
 function addTaskUI(){var i=document.getElementById('newtask');var v=(i.value||'').trim();if(!v)return;api('/api/tasks/add',{text:v,repo:''}).then(function(){i.value='';loadTasks();});}
 function selectNode(id){sel=id;render();updateBar(id);var n=nodeById(id);api('/api/node?id='+encodeURIComponent(id)).then(showDetail);
 if(n&&n.type==='repo'&&n.meta&&n.meta.path){loadReview(n.label,n.meta.path);}else{hideReview();}}
@@ -1012,6 +1128,7 @@ rec.paid.forEach(function(p){h+="<div class='idea'><span><b>"+esc(p.provider)+"<
 h+="</div>";out.innerHTML=h;});}
 document.getElementById('remap').addEventListener('click',loadMap);
 document.getElementById('recbtn').addEventListener('click',loadRec);
+document.getElementById('driftrun').addEventListener('click',function(){driftLoaded=false;loadDrift();});
 document.getElementById('addtask').addEventListener('click',addTaskUI);
 document.getElementById('newtask').addEventListener('keydown',function(e){if(e.key==='Enter')addTaskUI();});
 initGraphEvents();syncP();refresh();loadMap();
@@ -1069,6 +1186,7 @@ async function cmdApp() {
       if (u.pathname === "/api/status") { const r = resolveProvider(); return json(res, r ? { connected: true, line: `${PROVIDERS[r.provider].label} · ${r.model}` } : { connected: false }); }
       if (u.pathname === "/api/map") return json(res, buildMap()); // local git only — no AI key needed
       if (u.pathname === "/api/models") { const hw = detectHardware(); return json(res, { hardware: hw, rec: recommendModels(hw) }); }
+      if (u.pathname === "/api/drift") return json(res, computeDrift({ ci: u.searchParams.get("ci") === "1" }));
       if (u.pathname === "/api/node") return json(res, nodeDetail(u.searchParams.get("id") || "")); // local
       if (u.pathname === "/api/suggest" && req.method === "POST") { const b = await readBody(req); return json(res, await repoSuggest(String(b.path || ""))); }
       if (u.pathname === "/api/review" && req.method === "POST") { const b = await readBody(req); return json(res, await repoReview(String(b.path || ""))); }
@@ -1098,6 +1216,7 @@ ${c.b("Usage")}
   symbiot standup                   yesterday + today, for standup
   symbiot todo                      what's still on your plate
   symbiot app                       open the visual app in your browser
+  symbiot drift                     what's out of sync / at risk across repos
   symbiot models                    recommend AI models for your hardware
   symbiot login                     connect it to an AI (once)
   symbiot whoami                    show how it's connected
@@ -1128,6 +1247,7 @@ async function main() {
   if (cmd === "whoami" || cmd === "status") return cmdWhoami();
   if (cmd === "app" || cmd === "ui") return cmdApp();
   if (cmd === "models" || cmd === "hardware") return cmdModels();
+  if (cmd === "drift") return cmdDrift();
   if (cmd === "week") return cmdRun("week");
   if (cmd === "standup") return cmdRun("standup");
   if (cmd === "todo") return cmdRun("todo");
@@ -1139,4 +1259,4 @@ async function main() {
 const isMain = import.meta.url === pathToFileURL(process.argv[1] || "\0none").href;
 if (isMain) main();
 
-export { authorship, repoState, readmeInfo, repoShape, houseRules, findAllRepos, buildMap, reportFooter, detectHardware, recommendModels };
+export { authorship, repoState, readmeInfo, repoShape, houseRules, findAllRepos, buildMap, reportFooter, detectHardware, recommendModels, computeDrift, driftRepo, gitDefaultBranch };
