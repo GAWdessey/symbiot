@@ -299,6 +299,68 @@ function header(sub) {
 const SINCE_WEEK = Number(flag("since", "7"));
 const BASE = flag("dir", homedir());
 
+// ---- work map: a node graph of your repos, languages, and tools -----------
+const EXT_LANG = {
+  ts: "TypeScript", tsx: "TypeScript", js: "JavaScript", jsx: "JavaScript", mjs: "JavaScript",
+  py: "Python", go: "Go", rs: "Rust", java: "Java", kt: "Kotlin", rb: "Ruby", php: "PHP",
+  cs: "C#", cpp: "C++", cc: "C++", c: "C", swift: "Swift", vue: "Vue", svelte: "Svelte",
+  sql: "SQL", sh: "Shell", css: "CSS", scss: "CSS", html: "HTML",
+};
+const MANIFEST_TOOL = {
+  "package.json": "Node", "requirements.txt": "Python", "pyproject.toml": "Python",
+  "go.mod": "Go", "Cargo.toml": "Rust", "pom.xml": "Maven", "build.gradle": "Gradle",
+  "Gemfile": "Ruby", "composer.json": "PHP", "Dockerfile": "Docker", "docker-compose.yml": "Docker",
+  "terraform.tf": "Terraform", "kubernetes.yml": "Kubernetes", ".github": "GitHub Actions",
+};
+function findAllRepos(base) {
+  const out = sh(
+    `find ${JSON.stringify(base)} -maxdepth 5 -name .git \\( -type d -o -type f \\) 2>/dev/null ` +
+    `| grep -vE 'node_modules|/\\.cache/|/\\.local/|/venvs?/|/\\.npm' | head -300`,
+  );
+  const repos = [];
+  for (const g of out.split("\n").filter(Boolean)) {
+    const repo = g.replace(/\/\.git$/, "");
+    const last = Number(sh(`git -C ${JSON.stringify(repo)} log -1 --format=%ct 2>/dev/null`).trim()) || 0;
+    if (last) repos.push({ path: repo, name: repo.split("/").pop(), recency: last });
+  }
+  return repos.sort((a, b) => b.recency - a.recency).slice(0, 36);
+}
+function detectRepo(r) {
+  const files = sh(`git -C ${JSON.stringify(r.path)} ls-files 2>/dev/null | head -5000`).split("\n").filter(Boolean);
+  const count = {}; const tools = new Set();
+  for (const f of files) {
+    const base = f.split("/").pop();
+    if (MANIFEST_TOOL[base]) tools.add(MANIFEST_TOOL[base]);
+    const ext = (base.includes(".") ? base.split(".").pop() : "").toLowerCase();
+    if (EXT_LANG[ext]) count[EXT_LANG[ext]] = (count[EXT_LANG[ext]] || 0) + 1;
+  }
+  const langs = Object.entries(count).sort((a, b) => b[1] - a[1]).map((x) => x[0]);
+  const email = sh(`git -C ${JSON.stringify(r.path)} config user.email`).trim();
+  const mine = Number(sh(`git -C ${JSON.stringify(r.path)} log ${email ? `--author=${JSON.stringify(email)}` : ""} --oneline 2>/dev/null | wc -l`).trim()) || 0;
+  return { ...r, langs, tools: [...tools], mine };
+}
+function buildMap() {
+  const who = me();
+  const repos = findAllRepos(BASE).map(detectRepo);
+  const nodes = []; const edges = []; const have = new Set();
+  const add = (n) => { if (!have.has(n.id)) { have.add(n.id); nodes.push(n); } };
+  add({ id: "me", type: "person", label: who.name || "You", weight: 22 });
+  for (const r of repos) {
+    const rid = "repo:" + r.path;
+    add({ id: rid, type: "repo", label: r.name, weight: Math.min(9 + Math.log2(1 + r.mine) * 3, 26),
+      meta: { commits: r.mine, langs: r.langs.slice(0, 3), tools: r.tools } });
+    edges.push({ source: "me", target: rid });
+    for (const L of r.langs.slice(0, 3)) { const id = "lang:" + L; add({ id, type: "lang", label: L, weight: 15 }); edges.push({ source: rid, target: id }); }
+    for (const T of r.tools) { const id = "tool:" + T; add({ id, type: "tool", label: T, weight: 12 }); edges.push({ source: rid, target: id }); }
+  }
+  return { nodes, edges, stats: {
+    repos: repos.length,
+    languages: nodes.filter((n) => n.type === "lang").length,
+    tools: nodes.filter((n) => n.type === "tool").length,
+    commits: repos.reduce((s, r) => s + r.mine, 0),
+  } };
+}
+
 // Build a write-up for a command; returns { text, sub, error? } without printing.
 // Shared by the CLI (cmdRun) and the web UI (symbiot app).
 async function produce(cmd) {
@@ -476,16 +538,36 @@ select:focus,input:focus{outline:none;border-color:var(--green)}
 a{color:var(--green);cursor:pointer}.hidden{display:none}
 .note{font-size:12px;margin-top:10px}.ok{color:var(--green)}.err{color:var(--amber)}
 footer{padding:10px 18px;border-top:1px solid var(--line);display:flex}
+.profile{font-size:13px;margin-bottom:8px;line-height:1.5}
+.profile b{color:var(--bone)}
+#graph{width:100%;height:auto;background:var(--ink2);border:1px solid var(--line);border-radius:12px}
+#graph text{font-family:var(--sans);fill:var(--text);font-size:11px}
+#graph .lbl-me{fill:var(--bone);font-weight:700;font-size:13px}
+.legend{display:flex;gap:14px;align-items:center;margin-top:10px;font-size:12px;color:var(--faint);flex-wrap:wrap}
+.lg{display:inline-flex;gap:6px;align-items:center}
+.lg i{width:10px;height:10px;border-radius:50%;display:inline-block}
 </style></head><body>
 <header><span class="dot"></span><span class="brand">Symbiot</span><span class="status" id="status">...</span></header>
 <div class="tabs">
-<button class="tab active" data-tab="week">Week</button>
+<button class="tab active" data-tab="map">Map</button>
+<button class="tab" data-tab="week">Week</button>
 <button class="tab" data-tab="standup">Standup</button>
 <button class="tab" data-tab="todo">Todo</button>
 <button class="tab" data-tab="settings">Settings</button>
 </div>
 <main>
-<section id="panel-run">
+<section id="panel-map">
+<div class="profile muted" id="profile">Mapping your work&hellip;</div>
+<svg id="graph" viewBox="0 0 600 430" preserveAspectRatio="xMidYMid meet"></svg>
+<div class="legend">
+<span class="lg"><i style="background:var(--green)"></i>you</span>
+<span class="lg"><i style="background:var(--bone)"></i>repos</span>
+<span class="lg"><i style="background:var(--amber)"></i>languages</span>
+<span class="lg"><i style="background:#6bb3ff"></i>tools</span>
+<button class="ghost" id="remap" style="margin-left:auto">Rescan</button>
+</div>
+</section>
+<section id="panel-run" class="hidden">
 <div class="row"><button class="act" id="write">Write my <span id="what">week</span></button>
 <button class="ghost hidden" id="copy">Copy</button>
 <span class="muted">Reads your local git and writes it up.</span></div>
@@ -497,8 +579,9 @@ footer{padding:10px 18px;border-top:1px solid var(--line);display:flex}
 <option value="anthropic">Claude (Anthropic)</option>
 <option value="openai">OpenAI (GPT)</option>
 <option value="gemini">Gemini (Google)</option>
-<option value="ollama">Local model (Ollama)</option>
+<option value="ollama">Local model (Ollama) - free, no key</option>
 </select>
+<div class="note muted">The Map above needs no key. For the write-ups, a hosted model needs an API key - or run <b>Ollama</b> locally for a free, private option (nothing leaves your machine).</div>
 <div id="keyWrap"><label>API key</label><input id="key" type="password" placeholder="paste your key">
 <div class="note"><a id="getkey">Where do I get a key?</a></div></div>
 <div id="baseWrap" class="hidden"><label>Ollama URL</label><input id="baseUrl" type="text" value="http://localhost:11434"></div>
@@ -515,11 +598,16 @@ function api(path,body){return fetch(path,{method:body?'POST':'GET',headers:{'x-
 var KEYURL={anthropic:'https://console.anthropic.com/settings/keys',openai:'https://platform.openai.com/api-keys',gemini:'https://aistudio.google.com/apikey',ollama:'https://ollama.com'};
 var DEFMODEL={anthropic:'claude-opus-5-5',openai:'gpt-4o-mini',gemini:'gemini-1.5-flash',ollama:'llama3.1'};
 function $(id){return document.getElementById(id);}
-var current='week';
+var current='map';var mapLoaded=false;
+var COLORS={person:'#3DDC97',repo:'#F4F1EA',lang:'#F2A541',tool:'#6bb3ff'};
 function tabs(){return document.querySelectorAll('.tab');}
 function setTab(tab){current=tab;tabs().forEach(function(t){t.classList.toggle('active',t.dataset.tab===tab);});
-var s=tab==='settings';$('panel-run').classList.toggle('hidden',s);$('panel-settings').classList.toggle('hidden',!s);
-if(!s){$('what').textContent=tab;$('out').textContent='Nothing yet - hit the button.';$('out').classList.add('muted');$('copy').classList.add('hidden');}}
+var isMap=tab==='map',isSet=tab==='settings',isRun=!isMap&&!isSet;
+$('panel-map').classList.toggle('hidden',!isMap);
+$('panel-run').classList.toggle('hidden',!isRun);
+$('panel-settings').classList.toggle('hidden',!isSet);
+if(isRun){$('what').textContent=tab;$('out').textContent='Nothing yet - hit the button.';$('out').classList.add('muted');$('copy').classList.add('hidden');}
+if(isMap&&!mapLoaded)loadMap();}
 tabs().forEach(function(t){t.addEventListener('click',function(){setTab(t.dataset.tab);});});
 function refresh(){api('/api/status').then(function(s){$('status').textContent=s.connected?s.line:'Not connected - open Settings';});}
 $('write').addEventListener('click',function(){$('out').textContent='Writing...';$('out').classList.add('muted');$('copy').classList.add('hidden');
@@ -534,7 +622,21 @@ $('save').addEventListener('click',function(){var p=$('provider').value;$('saveM
 var cfg={provider:p,model:$('model').value.trim()};if(p==='ollama')cfg.baseUrl=$('baseUrl').value.trim();else cfg.key=$('key').value.trim();
 api('/api/connect',cfg).then(function(r){$('saveMsg').textContent=r.message||(r.ok?'Connected.':'Could not connect.');$('saveMsg').className='note '+(r.ok?'ok':'err');if(r.ok){$('key').value='';refresh();}});});
 $('quit').addEventListener('click',function(){api('/api/quit');document.body.innerHTML='<div style=\\'padding:40px;color:#7E9690;font-family:sans-serif\\'>Symbiot stopped. You can close this window.</div>';});
-syncP();refresh();
+function layout(nodes,edges,W,H){var idx={};nodes.forEach(function(n){n.x=W/2+(Math.random()-0.5)*W*0.7;n.y=H/2+(Math.random()-0.5)*H*0.7;n.vx=0;n.vy=0;idx[n.id]=n;});
+for(var it=0;it<280;it++){for(var i=0;i<nodes.length;i++)for(var j=i+1;j<nodes.length;j++){var a=nodes[i],b=nodes[j];var dx=a.x-b.x,dy=a.y-b.y;var d2=dx*dx+dy*dy+0.01;var d=Math.sqrt(d2);var f=1700/d2;a.vx+=f*dx/d;a.vy+=f*dy/d;b.vx-=f*dx/d;b.vy-=f*dy/d;}
+edges.forEach(function(e){var a=idx[e.source],b=idx[e.target];if(!a||!b)return;var dx=b.x-a.x,dy=b.y-a.y;var d=Math.sqrt(dx*dx+dy*dy)+0.01;var f=(d-72)*0.03;a.vx+=f*dx/d;a.vy+=f*dy/d;b.vx-=f*dx/d;b.vy-=f*dy/d;});
+nodes.forEach(function(n){n.vx+=(W/2-n.x)*0.003;n.vy+=(H/2-n.y)*0.003;n.x+=Math.max(-6,Math.min(6,n.vx));n.y+=Math.max(-6,Math.min(6,n.vy));n.vx*=0.86;n.vy*=0.86;n.x=Math.max(26,Math.min(W-26,n.x));n.y=Math.max(20,Math.min(H-24,n.y));});}}
+function esc(s){return String(s).replace(/[&<>]/g,function(ch){return ch==='&'?'&amp;':ch==='<'?'&lt;':'&gt;';});}
+function render(g){var W=600,H=430;layout(g.nodes,g.edges,W,H);var idx={};g.nodes.forEach(function(n){idx[n.id]=n;});var svg="";
+g.edges.forEach(function(e){var a=idx[e.source],b=idx[e.target];if(!a||!b)return;svg+="<line x1='"+a.x.toFixed(1)+"' y1='"+a.y.toFixed(1)+"' x2='"+b.x.toFixed(1)+"' y2='"+b.y.toFixed(1)+"' stroke='#24404A' stroke-width='1'/>";});
+g.nodes.forEach(function(n){var r=Math.max(4,Math.sqrt(n.weight)*1.7);var col=COLORS[n.type]||"#888";var title=esc(n.label)+(n.meta?(" - "+(n.meta.commits||0)+" commits"):"");
+svg+="<circle cx='"+n.x.toFixed(1)+"' cy='"+n.y.toFixed(1)+"' r='"+r.toFixed(1)+"' fill='"+col+"' opacity='0.92'><title>"+title+"</title></circle>";
+var cls=n.type==="person"?"lbl-me":"";svg+="<text x='"+n.x.toFixed(1)+"' y='"+(n.y+r+11).toFixed(1)+"' text-anchor='middle' class='"+cls+"'>"+esc(n.label)+"</text>";});
+document.getElementById("graph").innerHTML=svg;}
+function profileLine(g){var repos=g.nodes.filter(function(n){return n.type==="repo";});if(!repos.length)return "No git repositories found under your home folder yet.";var langs=g.nodes.filter(function(n){return n.type==="lang";}).map(function(n){return n.label;});var top=repos.slice().sort(function(a,b){return (b.meta.commits||0)-(a.meta.commits||0);})[0];var s="<b>"+g.stats.repos+"</b> repos &middot; <b>"+g.stats.commits+"</b> of your commits &middot; ";s+=langs.length?("mostly <b>"+esc(langs.slice(0,3).join(", "))+"</b>"):"no languages detected";if(top)s+=" &middot; most active: <b>"+esc(top.label)+"</b>";return s;}
+function loadMap(){var p=document.getElementById("profile");p.textContent="Mapping your work...";document.getElementById("graph").innerHTML="";api("/api/map").then(function(g){mapLoaded=true;if(!g.nodes||!g.nodes.length){p.textContent="No git repositories found under your home folder.";return;}p.innerHTML=profileLine(g);render(g);});}
+document.getElementById('remap').addEventListener('click',loadMap);
+syncP();refresh();loadMap();
 </script></body></html>`;
 
 function readBody(req) {
@@ -587,6 +689,7 @@ async function cmdApp() {
     }
     try {
       if (u.pathname === "/api/status") { const r = resolveProvider(); return json(res, r ? { connected: true, line: `${PROVIDERS[r.provider].label} · ${r.model}` } : { connected: false }); }
+      if (u.pathname === "/api/map") return json(res, buildMap()); // local git only — no AI key needed
       if (u.pathname === "/api/run" && req.method === "POST") { const b = await readBody(req); const cmd = ["week", "standup", "todo"].includes(b.cmd) ? b.cmd : "week"; return json(res, await produce(cmd)); }
       if (u.pathname === "/api/connect" && req.method === "POST") { return json(res, await connectProvider(await readBody(req))); }
       if (u.pathname === "/api/quit") { res.writeHead(200); res.end("bye"); setTimeout(() => process.exit(0), 150); return; }
