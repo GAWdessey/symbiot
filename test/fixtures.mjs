@@ -8,7 +8,7 @@ import { execSync } from "node:child_process";
 import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { authorship, repoState, readmeInfo, houseRules, findAllRepos, driftRepo } from "../index.mjs";
+import { authorship, repoState, readmeInfo, houseRules, findAllRepos, driftRepo, EMBEDDED_UI } from "../index.mjs";
 
 const ROOT = mkdtempSync(join(tmpdir(), "symbiot-fix-"));
 let pass = 0, fail = 0;
@@ -25,6 +25,12 @@ function build(name, script) {
 writeFileSync(join(ROOT, "globalgitconfig"), "[user]\n  name = Neutral Global\n  email = neutral@example.invalid\n");
 
 try {
+  console.log("UI — the app's embedded client JavaScript parses (guards the whole browser UI)");
+  const scripts = [...EMBEDDED_UI.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]);
+  let uiOk = scripts.length > 0;
+  for (const s of scripts) { try { new Function(s); } catch (e) { uiOk = false; console.log("    parse error: " + e.message); } }
+  ok("embedded app JS parses (" + scripts.length + " script block)", uiOk, scripts.length);
+
   console.log("F1 identity — match all of the person's identities, exclude others");
   const f1 = build("f1", `
     git init -q && git config user.email 123+Login@users.noreply.github.com && git config user.name "Pat Example"
