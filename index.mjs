@@ -122,22 +122,31 @@ function buildTasksMd(name, ctx, list) {
 function pushTasks() {
   const tasks = loadTasks().filter((t) => !t.done);
   if (!tasks.length) return { empty: true, written: [], unresolved: [] };
-  const byName = {}; for (const r of findAllRepos(BASE)) if (!byName[r.name]) byName[r.name] = r.path;
+  // Resolve repo name -> path from the already-scanned map when we have it
+  // (avoids a fresh full scan); fall back to a scan only if needed.
+  const byName = {};
+  const src = (LAST_MAP && LAST_MAP.nodes) ? LAST_MAP.nodes.filter((n) => n.type === "repo").map((n) => ({ name: n.label, path: n.meta && n.meta.path })) : findAllRepos(BASE);
+  for (const r of src) if (r.path && !byName[r.name]) byName[r.name] = r.path;
   const groups = {}; for (const t of tasks) { const k = t.repo || ""; (groups[k] = groups[k] || []).push(t); }
   const written = [], unresolved = [];
   for (const name of Object.keys(groups)) {
     const list = groups[name], path = name && byName[name];
     if (!path) { unresolved.push({ name: name || "(no repo)", count: list.length }); continue; }
     try {
+      // Cheap, per-repo signals only — no full drift scan (that can be very slow
+      // on big repos and would block the request).
       const st = repoState(path);
       const commits = sh(`git -C ${JSON.stringify(path)} log --format='%s' -10 2>/dev/null`).split("\n").filter(Boolean);
-      const drift = driftRepo(path, {}).flags.map((f) => (f.level === "warn" ? "⚠ " : "") + f.text);
       const open = openWork([{ path, name }]).slice(0, 12);
       const det = detectRepo({ path, name, recency: 0 });
       const stack = [...det.langs.slice(0, 4), ...det.tools].join(", ");
+      const risk = [];
+      if (st.stale) risk.push("stale checkout — working tree is an old snapshot, not new work");
+      if (st.behind) risk.push(`${st.behind} behind upstream on ${st.branch}`);
+      if (st.dirty && !st.stale) risk.push(`${st.dirty} uncommitted (${st.mod} mod / ${st.del} del / ${st.add} new)`);
       const dir = join(path, ".symbiot"); mkdirSync(dir, { recursive: true });
       const file = join(dir, "TASKS.md");
-      writeFileSync(file, buildTasksMd(name, { branch: st.branch, commits, open, drift, stack }, list));
+      writeFileSync(file, buildTasksMd(name, { branch: st.branch, commits, open, drift: risk, stack }, list));
       written.push({ name, file, count: list.length });
     } catch (e) { unresolved.push({ name, count: list.length, error: String((e && e.message) || e) }); }
   }
@@ -1202,13 +1211,15 @@ if(clean.length)h+="<div class='muted' style='margin-top:10px'>clean: "+esc(clea
 if(!repos.length)h+="<div class='muted'>No repos found under your home folder.</div>";
 out.innerHTML=h;});}
 function addTaskUI(){var i=document.getElementById('newtask');var v=(i.value||'').trim();if(!v)return;api('/api/tasks/add',{text:v,repo:''}).then(function(){i.value='';loadTasks();});}
-function pushTasksUI(){var o=document.getElementById('pushout');o.innerHTML="<div class='muted' style='margin-top:10px'>Writing .symbiot/TASKS.md into your repos&hellip;</div>";
-api('/api/tasks/push').then(function(r){if(r.empty){o.innerHTML="<div class='muted' style='margin-top:10px'>No open tasks to send. Tick ideas in a repo review, or add tasks above.</div>";return;}
-var h="<div class='drift' style='margin-top:10px'>";
-if(r.written&&r.written.length){h+="<div class='dn'>Sent to "+r.written.length+" repo(s):</div><ul>";r.written.forEach(function(w){h+="<li class='info'>&middot; <b>"+esc(w.name)+"</b> &rarr; "+esc(w.file)+" <span class='ev'>("+w.count+")</span></li>";});h+="</ul>";}
-if(r.unresolved&&r.unresolved.length){h+="<div class='dd' style='margin-top:6px'>Not written (repo not found): "+esc(r.unresolved.map(function(u){return u.name;}).join(", "))+"</div>";}
-h+="<div class='dd' style='margin-top:8px'>Point your agent at <b>.symbiot/TASKS.md</b> in each repo.</div></div>";
-o.innerHTML=h;});}
+function pushTasksUI(){var o=document.getElementById('pushout');var btn=document.getElementById('pushtasks');btn.disabled=true;
+o.innerHTML="<div class='muted' style='margin-top:10px'><span class='dot-c' style='background:var(--amber)'></span> Writing .symbiot/TASKS.md into your repos&hellip;</div>";
+api('/api/tasks/push').then(function(r){btn.disabled=false;
+if(r.empty){o.innerHTML="<div class='muted' style='margin-top:10px'>No open tasks to send. Tick ideas in a repo review, or add tasks above.</div>";return;}
+var n=(r.written||[]).length;var h="<div class='drift' style='margin-top:10px'><div class='dh'><span class='dot-c'></span><span class='dn'>Done &mdash; wrote "+n+" file"+(n===1?"":"s")+"</span></div>";
+if(n){h+="<ul>";r.written.forEach(function(w){h+="<li class='info'>&#10003; <b>"+esc(w.name)+"</b> <span class='ev'>"+esc(w.file)+" ("+w.count+" task"+(w.count===1?"":"s")+")</span></li>";});h+="</ul>";}
+if(r.unresolved&&r.unresolved.length){h+="<div class='dd' style='margin-top:6px'>&#9888; not written (repo not found under your home folder): "+esc(r.unresolved.map(function(u){return u.name;}).join(", "))+"</div>";}
+h+="<div class='dd' style='margin-top:8px'>Now tell your coding agent, in each repo: <b>“Read .symbiot/TASKS.md and implement the unchecked items.”</b></div></div>";
+o.innerHTML=h;}).catch(function(e){btn.disabled=false;o.innerHTML="<div class='err' style='margin-top:10px'>Couldn&#39;t write tasks: "+esc(String((e&&e.message)||e))+"</div>";});}
 function selectNode(id){sel=id;render();updateBar(id);var n=nodeById(id);api('/api/node?id='+encodeURIComponent(id)).then(showDetail);
 if(n&&n.type==='repo'&&n.meta&&n.meta.path){loadReview(n.label,n.meta.path);}else{hideReview();}}
 function screenToGraph(el,ev){var rc=el.getBoundingClientRect();var mx=(ev.clientX-rc.left)/rc.width*GW;var my=(ev.clientY-rc.top)/rc.height*GH;return {x:(mx-view.x)/view.k,y:(my-view.y)/view.k};}
