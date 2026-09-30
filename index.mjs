@@ -21,7 +21,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { execSync, spawn } from "node:child_process";
 import { homedir, totalmem, cpus as oscpus } from "node:os";
 import { join } from "node:path";
-import { readFileSync, writeFileSync, mkdirSync, existsSync, chmodSync, statSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, existsSync, chmodSync, statSync, realpathSync } from "node:fs";
 import { createInterface } from "node:readline";
 import { createServer } from "node:http";
 import { randomBytes } from "node:crypto";
@@ -1308,8 +1308,12 @@ async function main() {
 }
 
 // Run the CLI only when invoked directly; when imported (e.g. by tests) just
-// expose the pure functions.
-const isMain = import.meta.url === pathToFileURL(process.argv[1] || "\0none").href;
+// expose the pure functions. Compare REAL paths so a global/npx bin symlink
+// (argv[1] is the symlink, import.meta.url is the real file) still counts.
+const isMain = (() => {
+  try { return !!process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url)); }
+  catch { return false; }
+})();
 if (isMain) main();
 
 export { authorship, repoState, readmeInfo, repoShape, houseRules, findAllRepos, buildMap, reportFooter, detectHardware, recommendModels, computeDrift, driftRepo, gitDefaultBranch };
