@@ -166,7 +166,7 @@ function pushTasks() {
       written.push({ name, file, path, count: list.length });
     } catch (e) { unresolved.push({ name, count: list.length, error: String((e && e.message) || e) }); }
   }
-  return { empty: false, written, unresolved, ide: loadConfig().ide || "" };
+  return { empty: false, written, unresolved, handoff: handoffCmd() };
 }
 function cmdPush() {
   const r = pushTasks();
@@ -174,10 +174,10 @@ function cmdPush() {
   if (r.written.length) { console.log("\n" + c.g("●") + " " + c.b("Pushed tasks into repos:")); for (const w of r.written) console.log(`  ${c.g("✓")} ${w.name}  ${c.d(w.file + "  (" + w.count + " task" + (w.count > 1 ? "s" : "") + ")")}`); }
   if (r.unresolved.length) { console.log("\n" + c.y(`Not written (repo not found under ${BASE}):`)); for (const u of r.unresolved) console.log(`  · ${u.name} (${u.count})`); }
   if (has("open")) {
-    if (!r.ide) console.log("\n" + c.y("No IDE set.") + c.d("  Pick one in `symbiot app` Settings, or set `ide` in ~/.config/symbiot/config.json."));
-    else { for (const w of r.written) openInIde(w.path); console.log("\n" + c.g("→ ") + `Opened ${r.written.length} repo(s) in ${r.ide}.`); }
+    if (!r.handoff) console.log("\n" + c.y("No agent command set.") + c.d("  Set one in `symbiot app` Settings, or `agentCmd` in ~/.config/symbiot/config.json (use {dir} and {prompt})."));
+    else { for (const w of r.written) runHandoff(w.path); console.log("\n" + c.g("→ ") + `Handed ${r.written.length} repo(s) to your agent (${r.handoff}).`); }
   } else {
-    console.log("\n" + c.d("Open each repo in your IDE/agent and point it at .symbiot/TASKS.md.  (add --open to launch your IDE)"));
+    console.log("\n" + c.d("Point your agent at .symbiot/TASKS.md in each repo.  (add --open to run your configured agent command)"));
   }
 }
 function envKey(provider) {
@@ -536,12 +536,30 @@ function recommendModels(hw) {
   const best = (local.slice().reverse().find((m) => m.fits) || local[0]).model;
   return { local, paid, best };
 }
-// ---- open a repo in the user's chosen IDE -------------------------------
-const IDE_LIST = [["code", "VS Code"], ["cursor", "Cursor"], ["windsurf", "Windsurf"], ["code-insiders", "VS Code Insiders"], ["zed", "Zed"], ["subl", "Sublime Text"], ["idea", "IntelliJ IDEA"], ["webstorm", "WebStorm"], ["pycharm", "PyCharm"], ["nvim", "Neovim"]];
-function detectIdes() { const out = []; for (const [cmd, label] of IDE_LIST) if (sh(`command -v ${cmd} 2>/dev/null`).trim()) out.push({ cmd, label }); return out; }
-function openInIde(repoPath) {
-  try { const cmd = loadConfig().ide; if (!cmd || !repoPath) return false; spawn(cmd, [repoPath], { detached: true, stdio: "ignore" }).unref(); return true; }
-  catch { return false; }
+// ---- hand a repo (+ its tasks) to the user's agent — generic, settings-based
+// The handoff is a command TEMPLATE the user configures, with {dir} (repo path)
+// and {prompt} (the task instruction). Works for any agent/editor:
+//   claude -p "{prompt}"      · aider --message "{prompt}"      · code {dir}
+//   gnome-terminal --working-directory={dir} -- claude "{prompt}"
+// Not tied to any one tool — you decide what runs.
+const IDE_LIST = [["code", "VS Code"], ["cursor", "Cursor"], ["windsurf", "Windsurf"], ["zed", "Zed"], ["subl", "Sublime Text"], ["idea", "IntelliJ IDEA"], ["nvim", "Neovim"]];
+const AGENT_LIST = [["claude", "Claude Code", 'claude -p "{prompt}"'], ["aider", "Aider", 'aider --message "{prompt}"'], ["cursor-agent", "Cursor agent", 'cursor-agent -p "{prompt}"']];
+function detectHandoffs() {
+  const editors = IDE_LIST.filter(([cmd]) => sh(`command -v ${cmd} 2>/dev/null`).trim()).map(([cmd, label]) => ({ label, tmpl: `${cmd} {dir}`, kind: "editor" }));
+  const agents = AGENT_LIST.filter(([cmd]) => sh(`command -v ${cmd} 2>/dev/null`).trim()).map(([cmd, label, tmpl]) => ({ label, tmpl, kind: "agent" }));
+  return { agents, editors };
+}
+const shSingle = (s) => "'" + String(s).replace(/'/g, "'\\''") + "'";
+const escDq = (s) => String(s).replace(/[\\"$`]/g, "\\$&");
+const HANDOFF_PROMPT = "Read .symbiot/TASKS.md and implement the unchecked items in this repo. Confirm before anything destructive.";
+function handoffCmd() { const cfg = loadConfig(); return cfg.agentCmd || (cfg.ide ? `${cfg.ide} {dir}` : ""); } // ide = legacy
+function runHandoff(repoPath) {
+  try {
+    const tmpl = handoffCmd(); if (!tmpl || !repoPath) return false;
+    const cmd = tmpl.replace(/\{dir\}/g, shSingle(repoPath)).replace(/\{prompt\}/g, escDq(HANDOFF_PROMPT));
+    spawn(cmd, { shell: true, cwd: repoPath, detached: true, stdio: "ignore" }).unref();
+    return true;
+  } catch { return false; }
 }
 function cmdModels() {
   const hw = detectHardware(); const rec = recommendModels(hw);
@@ -1152,9 +1170,10 @@ footer{padding:10px 18px;border-top:1px solid var(--line);display:flex}
 <div class="row" style="margin-top:16px"><button class="act" id="save">Save &amp; connect</button>
 <span class="note" id="saveMsg"></span></div>
 <div style="margin-top:20px;border-top:1px solid var(--line);padding-top:16px">
-<label>Open repos in (for "Send to repos")</label>
-<select id="ide"><option value="">None &mdash; just write the file</option></select>
-<div class="note muted" id="idenote"></div>
+<label>Hand off to your agent when you "Send to repos"</label>
+<input id="agentcmd" type="text" placeholder="e.g.  claude -p &quot;{prompt}&quot;   ·   code {dir}   ·   leave blank to just write the file">
+<div class="note muted">Runs in each repo after tasks are written. Use <b>{dir}</b> = repo path, <b>{prompt}</b> = the task instruction. Works with any agent or editor &mdash; it's your command.</div>
+<div id="agentpresets" style="margin-top:8px"></div>
 </div>
 <div style="margin-top:20px;border-top:1px solid var(--line);padding-top:16px">
 <button class="ghost" id="recbtn">Recommend models for my machine</button>
@@ -1276,13 +1295,17 @@ if(r.empty){o.innerHTML="<div class='muted' style='margin-top:10px'>No open task
 var n=(r.written||[]).length;var h="<div class='drift' style='margin-top:10px'><div class='dh'><span class='dot-c'></span><span class='dn'>Done &mdash; wrote "+n+" file"+(n===1?"":"s")+"</span></div>";
 if(n){h+="<ul>";r.written.forEach(function(w){h+="<li class='info'>&#10003; <b>"+esc(w.name)+"</b> <span class='ev'>"+esc(w.file)+" ("+w.count+" task"+(w.count===1?"":"s")+")</span></li>";});h+="</ul>";}
 if(r.unresolved&&r.unresolved.length){h+="<div class='dd' style='margin-top:6px'>&#9888; not written (repo not found under your home folder): "+esc(r.unresolved.map(function(u){return u.name;}).join(", "))+"</div>";}
-if(r.ide&&r.written&&r.written.length){r.written.forEach(function(w){api('/api/open',{path:w.path});});h+="<div class='dd' style='margin-top:8px'>&#128194; Opening "+n+" repo(s) in <b>"+esc(r.ide)+"</b>&hellip;</div>";}
-else if(!r.ide){h+="<div class='dd' style='margin-top:8px'>Tip: pick an IDE in <b>Settings</b> to auto-open these repos on send.</div>";}
-h+="<div class='dd' style='margin-top:6px'>Then tell your agent: <b>“Read .symbiot/TASKS.md and implement the unchecked items.”</b></div></div>";
+if(r.handoff&&r.written&&r.written.length){r.written.forEach(function(w){api('/api/open',{path:w.path});});h+="<div class='dd' style='margin-top:8px'>&#129302; Handing "+n+" repo(s) to your agent (<b>"+esc(r.handoff)+"</b>)&hellip;</div>";}
+else{h+="<div class='dd' style='margin-top:8px'>Set an <b>agent command</b> in Settings to auto-run it on send. For now, tell your agent: <b>“Read .symbiot/TASKS.md and implement the unchecked items.”</b></div>";}
+h+="</div>";
 o.innerHTML=h;}).catch(function(e){btn.disabled=false;o.innerHTML="<div class='err' style='margin-top:10px'>Couldn&#39;t write tasks: "+esc(String((e&&e.message)||e))+"</div>";});}
-function loadIdes(){api('/api/ides').then(function(d){var sel=document.getElementById('ide');var cur=d.current||'';var ides=d.ides||[];sel.innerHTML="<option value=''>None &mdash; just write the file</option>"+ides.map(function(i){return "<option value='"+esc(i.cmd)+"'"+(i.cmd===cur?" selected":"")+">"+esc(i.label)+" ("+esc(i.cmd)+")</option>";}).join("");
-document.getElementById('idenote').textContent=ides.length?("Detected: "+ides.map(function(i){return i.label;}).join(", ")):"No IDEs found on PATH. Install your IDE's shell command (e.g. VS Code: Shell Command: Install 'code').";});}
-function saveIde(){var v=document.getElementById('ide').value;api('/api/ide',{cmd:v});}
+function loadAgentCfg(){api('/api/agentcfg').then(function(d){document.getElementById('agentcmd').value=d.cmd||'';
+var chips=[];(d.agents||[]).forEach(function(a){chips.push(a);});(d.editors||[]).forEach(function(e){chips.push(e);});
+var box=document.getElementById('agentpresets');
+if(!chips.length){box.innerHTML="<span class='muted' style='font-size:12px'>Nothing detected on PATH &mdash; type your own command above.</span>";return;}
+box.innerHTML="<span class='muted' style='font-size:12px'>Detected &mdash; click to use:</span><br>"+chips.map(function(c,i){return "<button class='ghost preset' data-i='"+i+"' style='padding:4px 10px;font-size:12px;margin:5px 5px 0 0'>"+esc(c.label)+"</button>";}).join("");
+box.querySelectorAll('.preset').forEach(function(btn){btn.addEventListener('click',function(){document.getElementById('agentcmd').value=chips[+btn.getAttribute('data-i')].tmpl;saveAgent();});});});}
+function saveAgent(){api('/api/agentcmd',{cmd:document.getElementById('agentcmd').value});}
 function selectNode(id){sel=id;render();updateBar(id);var n=nodeById(id);api('/api/node?id='+encodeURIComponent(id)).then(showDetail);
 if(n&&n.type==='repo'&&n.meta&&n.meta.path){loadReview(n.label,n.meta.path);}else{hideReview();}}
 function screenToGraph(el,ev){var rc=el.getBoundingClientRect();var mx=(ev.clientX-rc.left)/rc.width*GW;var my=(ev.clientY-rc.top)/rc.height*GH;return {x:(mx-view.x)/view.k,y:(my-view.y)/view.k};}
@@ -1314,9 +1337,9 @@ document.getElementById('recbtn').addEventListener('click',loadRec);
 document.getElementById('driftrun').addEventListener('click',function(){driftLoaded=false;loadDrift();});
 document.getElementById('addtask').addEventListener('click',addTaskUI);
 document.getElementById('pushtasks').addEventListener('click',pushTasksUI);
-document.getElementById('ide').addEventListener('change',saveIde);
+document.getElementById('agentcmd').addEventListener('change',saveAgent);
 document.getElementById('newtask').addEventListener('keydown',function(e){if(e.key==='Enter')addTaskUI();});
-initGraphEvents();syncP();refresh();loadMap();loadIdes();
+initGraphEvents();syncP();refresh();loadMap();loadAgentCfg();
 </script></body></html>`;
 
 function readBody(req) {
@@ -1380,9 +1403,9 @@ async function cmdApp() {
       if (u.pathname === "/api/tasks/toggle" && req.method === "POST") { const b = await readBody(req); return json(res, toggleTask(String(b.id || ""))); }
       if (u.pathname === "/api/tasks/remove" && req.method === "POST") { const b = await readBody(req); return json(res, removeTask(String(b.id || ""))); }
       if (u.pathname === "/api/tasks/push" && req.method === "POST") return json(res, pushTasks());
-      if (u.pathname === "/api/ides") return json(res, { ides: detectIdes(), current: loadConfig().ide || "" });
-      if (u.pathname === "/api/ide" && req.method === "POST") { const b = await readBody(req); const cfg = loadConfig(); if (b.cmd) cfg.ide = String(b.cmd); else delete cfg.ide; saveConfig(cfg); return json(res, { ok: true, current: cfg.ide || "" }); }
-      if (u.pathname === "/api/open" && req.method === "POST") { const b = await readBody(req); return json(res, { opened: openInIde(String(b.path || "")) }); }
+      if (u.pathname === "/api/agentcfg") { const d = detectHandoffs(); return json(res, { cmd: handoffCmd(), agents: d.agents, editors: d.editors }); }
+      if (u.pathname === "/api/agentcmd" && req.method === "POST") { const b = await readBody(req); const cfg = loadConfig(); const v = String(b.cmd || "").trim(); if (v) cfg.agentCmd = v; else delete cfg.agentCmd; delete cfg.ide; saveConfig(cfg); return json(res, { ok: true, cmd: cfg.agentCmd || "" }); }
+      if (u.pathname === "/api/open" && req.method === "POST") { const b = await readBody(req); return json(res, { opened: runHandoff(String(b.path || "")) }); }
       if (u.pathname === "/api/run" && req.method === "POST") { const b = await readBody(req); const cmd = ["week", "standup", "todo"].includes(b.cmd) ? b.cmd : "week"; return json(res, await produce(cmd)); }
       if (u.pathname === "/api/connect" && req.method === "POST") { return json(res, await connectProvider(await readBody(req))); }
       if (u.pathname === "/api/quit") { res.writeHead(200); res.end("bye"); setTimeout(() => process.exit(0), 150); return; }
