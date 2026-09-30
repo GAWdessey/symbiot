@@ -86,6 +86,19 @@ function saveConfig(cfg) {
 function antProfileExists() {
   try { return existsSync(join(homedir(), ".config", "anthropic")); } catch { return false; }
 }
+// ---- tasks: a persistent checklist (~/.config/symbiot/tasks.json) ---------
+const TASKS_PATH = join(CONFIG_DIR, "tasks.json");
+function loadTasks() { try { return JSON.parse(readFileSync(TASKS_PATH, "utf8")); } catch { return []; } }
+function saveTasks(t) { try { mkdirSync(CONFIG_DIR, { recursive: true }); writeFileSync(TASKS_PATH, JSON.stringify(t, null, 2)); return true; } catch { return false; } }
+function addTask(text, repo) {
+  text = String(text || "").trim().slice(0, 300);
+  if (!text) return { error: "empty" };
+  const t = loadTasks();
+  const item = { id: randomBytes(6).toString("hex"), text, repo: repo || "", done: false, ts: Date.now() };
+  t.unshift(item); saveTasks(t); return item;
+}
+function toggleTask(id) { const t = loadTasks(); const it = t.find((x) => x.id === id); if (it) { it.done = !it.done; saveTasks(t); } return it || { error: "not found" }; }
+function removeTask(id) { saveTasks(loadTasks().filter((x) => x.id !== id)); return { ok: true }; }
 function envKey(provider) {
   for (const e of (PROVIDERS[provider].env || [])) if (process.env[e]) return process.env[e];
   return null;
@@ -400,15 +413,26 @@ async function repoReview(path) {
   const files = sh(`git -C ${JSON.stringify(path)} ls-files 2>/dev/null | head -60`).trim();
   const recent = sh(`git -C ${JSON.stringify(path)} log --oneline -12 2>/dev/null`).trim();
   const system =
-    `You are reviewing one software project for its owner. In 4-7 sentences or a few short bullets, cover three things: ` +
-    `what it does, what it's meant for (who would use it and why), and 2-3 concrete possible upgrades or next features that fit it. ` +
-    `Be specific and grounded in the README, files, and commits shown — infer from real evidence, don't invent. No preamble.`;
+    `You are reviewing one software project for its owner. Respond with ONLY a JSON object, no markdown fences, no prose outside it, shaped exactly: ` +
+    `{"review": string, "ideas": string[]}. "review" is 3-6 sentences covering what it does and what it's meant for (who'd use it, why). ` +
+    `"ideas" is 3-6 short, concrete upgrade or next-feature items, each a single actionable phrase (something you could put on a to-do list). ` +
+    `Be specific and grounded in the README, files, and commits — infer from real evidence, don't invent.`;
   const prompt =
     `Project: ${name}\nPath: ${path}\n\n` +
     (readme ? `README (excerpt):\n${readme}\n\n` : "(no README found)\n\n") +
-    `Files:\n${files || "(none)"}\n\nRecent commits:\n${recent || "(none)"}\n\nWrite the review.`;
-  const text = await write(system, prompt);
-  return { text: text || "(couldn't reach the model)" };
+    `Files:\n${files || "(none)"}\n\nRecent commits:\n${recent || "(none)"}\n\nReturn the JSON.`;
+  const raw = await write(system, prompt);
+  if (!raw) return { text: "(couldn't reach the model)", ideas: [] };
+  const j = extractJson(raw);
+  if (j && (j.review || j.ideas)) return { text: String(j.review || "").trim() || raw, ideas: Array.isArray(j.ideas) ? j.ideas.map((x) => String(x).trim()).filter(Boolean).slice(0, 8) : [] };
+  return { text: raw, ideas: [] }; // model didn't return clean JSON — show prose, no checkboxes
+}
+function extractJson(s) {
+  if (!s) return null;
+  let t = String(s).trim().replace(/^```(?:json)?/i, "").replace(/```$/,"").trim();
+  const a = t.indexOf("{"), b = t.lastIndexOf("}");
+  if (a >= 0 && b > a) { try { return JSON.parse(t.slice(a, b + 1)); } catch {} }
+  return null;
 }
 // AI "value" suggestions for one repo, from its recent commits + open work.
 async function repoSuggest(path) {
@@ -624,6 +648,16 @@ footer{padding:10px 18px;border-top:1px solid var(--line);display:flex}
 .review h4{margin:0 0 8px;color:var(--green);font-size:11px;letter-spacing:.15em;text-transform:uppercase;font-weight:700}
 .review .body{color:var(--text);line-height:1.65;font-size:14px;white-space:pre-wrap}
 .review .rname{color:var(--bone);font-weight:600}
+.ideas{margin-top:14px}
+.ideas h4{margin:0 0 6px;color:var(--amber);font-size:11px;letter-spacing:.14em;text-transform:uppercase;font-weight:700}
+.idea{display:flex;align-items:flex-start;gap:9px;padding:5px 0;font-size:13.5px;color:var(--text)}
+.idea input{margin-top:3px;flex:none;width:15px;height:15px;cursor:pointer}
+.task{display:flex;align-items:center;gap:10px;padding:9px 11px;border:1px solid var(--line);border-radius:9px;margin-top:8px;background:var(--ink2)}
+.task input[type=checkbox]{width:16px;height:16px;flex:none;cursor:pointer}
+.task .t{flex:1}.task.done .t{color:var(--faint);text-decoration:line-through}
+.task .rp{font-size:11px;color:var(--faint);background:var(--ink3);border:1px solid var(--line);border-radius:999px;padding:2px 8px}
+.task .rm{background:none;border:0;color:var(--faint);cursor:pointer;font-size:18px;line-height:1}
+.task .rm:hover{color:var(--amber)}
 .out2{white-space:pre-wrap;background:var(--ink);border:1px solid var(--line);border-radius:9px;padding:10px;margin-top:10px;font-size:13px;line-height:1.55;color:var(--bone)}
 .legend{display:flex;gap:14px;align-items:center;margin-top:10px;font-size:12px;color:var(--faint);flex-wrap:wrap}
 .lg{display:inline-flex;gap:6px;align-items:center}
@@ -636,6 +670,7 @@ footer{padding:10px 18px;border-top:1px solid var(--line);display:flex}
 <button class="tab" data-tab="week">Week</button>
 <button class="tab" data-tab="standup">Standup</button>
 <button class="tab" data-tab="todo">Todo</button>
+<button class="tab" data-tab="tasks">Tasks</button>
 <button class="tab" data-tab="settings">Settings</button>
 </div>
 <main>
@@ -661,6 +696,10 @@ footer{padding:10px 18px;border-top:1px solid var(--line);display:flex}
 <button class="ghost hidden" id="copy">Copy</button>
 <span class="muted">Reads your local git and writes it up.</span></div>
 <div class="out muted" id="out">Nothing yet - hit the button.</div>
+</section>
+<section id="panel-tasks" class="hidden">
+<div class="row"><input id="newtask" placeholder="Add a task..." style="flex:1"><button class="act" id="addtask">Add</button></div>
+<div id="tasklist"></div>
 </section>
 <section id="panel-settings" class="hidden">
 <label>Which AI should Symbiot write with?</label>
@@ -691,12 +730,14 @@ var current='map';var mapLoaded=false;
 var COLORS={person:'#3DDC97',repo:'#F4F1EA',lang:'#F2A541',tool:'#6bb3ff'};
 function tabs(){return document.querySelectorAll('.tab');}
 function setTab(tab){current=tab;tabs().forEach(function(t){t.classList.toggle('active',t.dataset.tab===tab);});
-var isMap=tab==='map',isSet=tab==='settings',isRun=!isMap&&!isSet;
+var isMap=tab==='map',isSet=tab==='settings',isTasks=tab==='tasks',isRun=(tab==='week'||tab==='standup'||tab==='todo');
 $('panel-map').classList.toggle('hidden',!isMap);
 $('panel-run').classList.toggle('hidden',!isRun);
 $('panel-settings').classList.toggle('hidden',!isSet);
+$('panel-tasks').classList.toggle('hidden',!isTasks);
 if(isRun){$('what').textContent=tab;$('out').textContent='Nothing yet - hit the button.';$('out').classList.add('muted');$('copy').classList.add('hidden');}
-if(isMap&&!mapLoaded)loadMap();}
+if(isMap&&!mapLoaded)loadMap();
+if(isTasks)loadTasks();}
 tabs().forEach(function(t){t.addEventListener('click',function(){setTab(t.dataset.tab);});});
 function refresh(){api('/api/status').then(function(s){$('status').textContent=s.connected?s.line:'Not connected - open Settings';});}
 $('write').addEventListener('click',function(){$('out').textContent='Writing...';$('out').classList.add('muted');$('copy').classList.add('hidden');
@@ -739,10 +780,30 @@ if(d.type==='lang'||d.type==='tool'){var lis=(d.repos||[]).map(function(r){retur
 if(d.type==='person'){var st=d.stats||{};el.innerHTML="<h3>"+esc(d.label)+"</h3><div class='k'>"+st.repos+" repos &middot; "+st.commits+" commits &middot; "+st.languages+" languages &middot; "+st.tools+" tools</div>";return;}}
 var reviewCache={};
 function hideReview(){var el=document.getElementById('review');el.classList.add('hidden');el.innerHTML='';}
+function reviewHtml(name,body,ideas,tasks){
+var h="<h4>AI review &middot; <span class='rname'>"+esc(name)+"</span></h4><div class='body'>"+esc(body)+"</div>";
+if(ideas&&ideas.length){h+="<div class='ideas'><h4>Upgrade ideas &middot; tick to add to Tasks</h4>";
+ideas.forEach(function(idea){var t=(tasks||[]).filter(function(x){return x.text===idea&&x.repo===name;})[0];var tid=t?t.id:"";
+h+="<label class='idea'><input type='checkbox' class='ideachk' data-text=\""+esc(idea)+"\" data-repo=\""+esc(name)+"\" data-tid='"+tid+"'"+(t?" checked":"")+"><span>"+esc(idea)+"</span></label>";});
+h+="</div>";}
+return h;}
+function wireIdeas(){document.querySelectorAll('.ideachk').forEach(function(cb){cb.addEventListener('change',function(){
+if(cb.checked){api('/api/tasks/add',{text:cb.getAttribute('data-text'),repo:cb.getAttribute('data-repo')}).then(function(it){if(it&&it.id)cb.setAttribute('data-tid',it.id);});}
+else{var id=cb.getAttribute('data-tid');if(id){api('/api/tasks/remove',{id:id}).then(function(){cb.setAttribute('data-tid','');});}}});});}
 function loadReview(name,path){var el=document.getElementById('review');el.classList.remove('hidden');
-if(reviewCache[path]){el.innerHTML="<h4>AI review &middot; <span class='rname'>"+esc(name)+"</span></h4><div class='body'>"+esc(reviewCache[path])+"</div>";return;}
+if(reviewCache[path]){var c=reviewCache[path];api('/api/tasks').then(function(tasks){el.innerHTML=reviewHtml(name,c.text,c.ideas,tasks);wireIdeas();});return;}
 el.innerHTML="<h4>AI review &middot; <span class='rname'>"+esc(name)+"</span></h4><div class='body'>Reading the project&hellip;</div>";
-api('/api/review',{path:path}).then(function(r){var body;if(r.error==='not-connected'){body="Connect a model in Settings to get a review - Ollama is free and runs locally.";}else{body=r.text||'(no output)';reviewCache[path]=body;}el.innerHTML="<h4>AI review &middot; <span class='rname'>"+esc(name)+"</span></h4><div class='body'>"+esc(body)+"</div>";});}
+Promise.all([api('/api/review',{path:path}),api('/api/tasks')]).then(function(res){var r=res[0]||{},tasks=res[1]||[];
+if(r.error==='not-connected'){el.innerHTML="<h4>AI review &middot; <span class='rname'>"+esc(name)+"</span></h4><div class='body'>Connect a model in Settings to get a review - Ollama is free and runs locally.</div>";return;}
+var body=r.text||'(no output)';reviewCache[path]={text:body,ideas:r.ideas||[]};el.innerHTML=reviewHtml(name,body,r.ideas||[],tasks);wireIdeas();});}
+function renderTasks(list){var el=document.getElementById('tasklist');if(!list||!list.length){el.innerHTML="<div class='muted' style='margin-top:12px'>No tasks yet. Tick an idea in a repo's review, or add one above.</div>";return;}
+var h="";list.forEach(function(t){h+="<div class='task"+(t.done?" done":"")+"' data-id='"+esc(t.id)+"'><input type='checkbox' class='taskchk'"+(t.done?" checked":"")+"><span class='t'>"+esc(t.text)+"</span>"+(t.repo?"<span class='rp'>"+esc(t.repo)+"</span>":"")+"<button class='rm' title='remove'>&times;</button></div>";});
+el.innerHTML=h;
+el.querySelectorAll('.task').forEach(function(row){var id=row.getAttribute('data-id');
+row.querySelector('.taskchk').addEventListener('change',function(){api('/api/tasks/toggle',{id:id}).then(function(){row.classList.toggle('done');});});
+row.querySelector('.rm').addEventListener('click',function(){api('/api/tasks/remove',{id:id}).then(function(){row.remove();if(!el.querySelector('.task'))renderTasks([]);});});});}
+function loadTasks(){api('/api/tasks').then(renderTasks);}
+function addTaskUI(){var i=document.getElementById('newtask');var v=(i.value||'').trim();if(!v)return;api('/api/tasks/add',{text:v,repo:''}).then(function(){i.value='';loadTasks();});}
 function selectNode(id){sel=id;render();updateBar(id);var n=nodeById(id);api('/api/node?id='+encodeURIComponent(id)).then(showDetail);
 if(n&&n.type==='repo'&&n.meta&&n.meta.path){loadReview(n.label,n.meta.path);}else{hideReview();}}
 function screenToGraph(el,ev){var rc=el.getBoundingClientRect();var mx=(ev.clientX-rc.left)/rc.width*GW;var my=(ev.clientY-rc.top)/rc.height*GH;return {x:(mx-view.x)/view.k,y:(my-view.y)/view.k};}
@@ -760,6 +821,8 @@ if(id){selectNode(id);}else if(wasClick){sel=null;hideDetail();hideReview();rend
 el.addEventListener('mouseleave',function(){if(!mode)updateBar(null);}); }
 function loadMap(){var p=document.getElementById("profile");p.textContent="Mapping your work...";document.getElementById("graph").innerHTML="";sel=null;hideDetail();hideReview();api("/api/map").then(function(g){mapLoaded=true;if(!g.nodes||!g.nodes.length){p.textContent="No git repositories found under your home folder.";return;}GRAPH=g;layout(g.nodes,g.edges);view={k:1,x:0,y:0};p.innerHTML=profileLine(g);render();});}
 document.getElementById('remap').addEventListener('click',loadMap);
+document.getElementById('addtask').addEventListener('click',addTaskUI);
+document.getElementById('newtask').addEventListener('keydown',function(e){if(e.key==='Enter')addTaskUI();});
 initGraphEvents();syncP();refresh();loadMap();
 </script></body></html>`;
 
@@ -817,6 +880,10 @@ async function cmdApp() {
       if (u.pathname === "/api/node") return json(res, nodeDetail(u.searchParams.get("id") || "")); // local
       if (u.pathname === "/api/suggest" && req.method === "POST") { const b = await readBody(req); return json(res, await repoSuggest(String(b.path || ""))); }
       if (u.pathname === "/api/review" && req.method === "POST") { const b = await readBody(req); return json(res, await repoReview(String(b.path || ""))); }
+      if (u.pathname === "/api/tasks" && req.method !== "POST") return json(res, loadTasks());
+      if (u.pathname === "/api/tasks/add" && req.method === "POST") { const b = await readBody(req); return json(res, addTask(b.text, b.repo)); }
+      if (u.pathname === "/api/tasks/toggle" && req.method === "POST") { const b = await readBody(req); return json(res, toggleTask(String(b.id || ""))); }
+      if (u.pathname === "/api/tasks/remove" && req.method === "POST") { const b = await readBody(req); return json(res, removeTask(String(b.id || ""))); }
       if (u.pathname === "/api/run" && req.method === "POST") { const b = await readBody(req); const cmd = ["week", "standup", "todo"].includes(b.cmd) ? b.cmd : "week"; return json(res, await produce(cmd)); }
       if (u.pathname === "/api/connect" && req.method === "POST") { return json(res, await connectProvider(await readBody(req))); }
       if (u.pathname === "/api/quit") { res.writeHead(200); res.end("bye"); setTimeout(() => process.exit(0), 150); return; }
