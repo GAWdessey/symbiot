@@ -35,6 +35,8 @@ const calls = [
   ["/api/tasks/push", "POST"],   // the button's call — the 0.10.2 bug
   ["/api/drift?ci=0&fetch=0", "GET"],
   ["/api/models", "GET"],
+  ["/api/ides", "GET"],
+  ["/api/ide", "POST"],
 ];
 try {
   console.log("SMOKE — every UI endpoint responds (no 404 route/method mismatch)");
