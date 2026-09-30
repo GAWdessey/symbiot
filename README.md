@@ -30,9 +30,13 @@ no install — it's the same CLI. Press Ctrl+C (or click Quit) to stop.
 
 Tabs:
 
-- **Map** — a live node graph of your work, built from your local git: you at the
-  centre, your repos, and the languages and tools they share (so related projects
-  cluster). **Needs no AI key** — it's pure local data. This is the landing view.
+- **Map** — a live, interactive node graph of your work, built from your local git:
+  you at the centre, your repos, and the languages and tools they share (so related
+  projects cluster). **Scroll to zoom, drag to pan, click a node.** Clicking a repo
+  shows its branch/commits/uncommitted/stack and a **Suggest next steps** button —
+  your model reads that repo's recent commits + open TODOs and proposes *In flight /
+  Next steps / Ideas*. The graph itself **needs no AI key** (pure local data);
+  suggestions use your chosen model (free with local Ollama). This is the landing view.
 - **Week / Standup / Todo** — the write-ups (these use your chosen AI).
 - **Settings** — pick your AI. Free/private option: run **Ollama** locally, no key.
 
