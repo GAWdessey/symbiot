@@ -501,11 +501,20 @@ function ciState(repo, def) {
     if (r.conclusion === "success") return { level: "info", text: `CI on ${def}: passing` };
     if (r.conclusion === "failure") {
       // Deterministic "not running" signal: every job has 0 steps (never started).
-      let notRun = false;
-      try { const jobs = (JSON.parse(sh(`cd ${JSON.stringify(repo)} && gh run view ${r.databaseId} --json jobs 2>/dev/null`)).jobs) || []; notRun = jobs.length > 0 && jobs.every((x) => ((x.steps || []).length === 0)); } catch {}
-      return notRun
-        ? { level: "warn", text: `CI is NOT running on ${def} — jobs never started (usually a billing/spending-limit stop), not failing tests` }
-        : { level: "warn", text: `CI's last run on ${def} failed (a real failure — jobs ran)` };
+      let notRun = false, reason = "";
+      try {
+        const jobs = (JSON.parse(sh(`cd ${JSON.stringify(repo)} && gh run view ${r.databaseId} --json jobs 2>/dev/null`)).jobs) || [];
+        notRun = jobs.length > 0 && jobs.every((x) => ((x.steps || []).length === 0));
+        if (notRun && jobs[0] && jobs[0].databaseId) {
+          // Only on the not-running path: fetch the one job's annotation to quote
+          // GitHub's exact reason (billing / spending limit / runner / disabled).
+          const cru = sh(`cd ${JSON.stringify(repo)} && gh api repos/{owner}/{repo}/actions/jobs/${jobs[0].databaseId} --jq .check_run_url 2>/dev/null`).trim();
+          const crid = (cru.match(/check-runs\/(\d+)/) || [])[1];
+          if (crid) { const m = sh(`cd ${JSON.stringify(repo)} && gh api repos/{owner}/{repo}/check-runs/${crid}/annotations --jq '.[0].message' 2>/dev/null`).trim(); if (m) reason = m.slice(0, 240); }
+        }
+      } catch {}
+      if (notRun) return { level: "warn", text: reason ? `CI is NOT running on ${def}: "${reason}"` : `CI is NOT running on ${def} — jobs never started (reason unavailable; usually a billing/spending-limit stop), not failing tests` };
+      return { level: "warn", text: `CI's last run on ${def} failed (a real failure — jobs ran)` };
     }
     if (r.conclusion) return { level: "warn", text: `CI on ${def}: ${r.conclusion}` };
     return null;
