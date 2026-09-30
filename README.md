@@ -52,6 +52,19 @@ where no Chromium-family browser is found it opens your default browser instead.
 npm install -g symbiot        # or run without installing:  npx symbiot week
 ```
 
+## Hand tasks to your coding agent: `symbiot push`
+
+```bash
+symbiot push          # or the "Send to repos" button in the app's Tasks tab
+```
+
+Writes a **`.symbiot/TASKS.md`** into each repo your tasks reference — a checklist
+**plus the context an agent needs to get oriented**: the stack, recent commits,
+open `TODO/FIXME` markers (with `file:line`), and current drift. Then point Claude
+Code / Cursor / any agent at it: *"Read `.symbiot/TASKS.md` and implement the
+unchecked items."* Tasks come from ticking a repo review's ideas, or adding your
+own in the Tasks tab.
+
 ## What's out of sync? `symbiot drift`
 
 ```bash
