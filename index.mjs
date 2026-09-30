@@ -544,12 +544,33 @@ function readBody(req) {
   });
 }
 function onPath(cands) { for (const cc of cands) { if (sh(`command -v ${cc} 2>/dev/null`).trim()) return cc; } return null; }
+// Find a Chromium-family browser for the chrome-less --app window, per OS.
+function chromeBinary() {
+  const p = process.platform;
+  const exists = (f) => { try { return existsSync(f) ? f : null; } catch { return null; } };
+  if (p === "darwin") {
+    return ["/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+      "/Applications/Chromium.app/Contents/MacOS/Chromium",
+      "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+      "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser"].map(exists).find(Boolean) || null;
+  }
+  if (p === "win32") {
+    const bases = [process.env.PROGRAMFILES, process.env["PROGRAMFILES(X86)"], process.env.LOCALAPPDATA].filter(Boolean);
+    const rels = ["Google\\Chrome\\Application\\chrome.exe", "Chromium\\Application\\chrome.exe",
+      "Microsoft\\Edge\\Application\\msedge.exe", "BraveSoftware\\Brave-Browser\\Application\\brave.exe"];
+    for (const base of bases) for (const r of rels) { const f = exists(join(base, r)); if (f) return f; }
+    const w = sh("where chrome 2>NUL").split(/\r?\n/).map((s) => s.trim()).find(Boolean);
+    return w || null;
+  }
+  return onPath(["google-chrome", "google-chrome-stable", "chromium", "chromium-browser", "brave-browser", "microsoft-edge"]);
+}
 function openApp(url) {
   try {
-    const chrome = onPath(["google-chrome", "google-chrome-stable", "chromium", "chromium-browser", "brave-browser", "microsoft-edge"]);
+    const chrome = chromeBinary();
     if (chrome) { spawn(chrome, [`--app=${url}`, "--new-window"], { detached: true, stdio: "ignore" }).unref(); return "app window"; }
-    const opener = process.platform === "darwin" ? "open" : process.platform === "win32" ? "start" : "xdg-open";
-    spawn(opener, [url], { detached: true, stdio: "ignore", shell: process.platform === "win32" }).unref();
+    // fall back to the OS default browser (a normal tab) — still fully functional
+    if (process.platform === "win32") { spawn("cmd", ["/c", "start", "", url], { detached: true, stdio: "ignore" }).unref(); return "browser tab"; }
+    spawn(process.platform === "darwin" ? "open" : "xdg-open", [url], { detached: true, stdio: "ignore" }).unref();
     return "browser tab";
   } catch { return null; }
 }
