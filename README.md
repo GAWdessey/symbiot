@@ -12,6 +12,7 @@ symbiot            your last 7 days, written up   (same as: symbiot week)
 symbiot standup    yesterday + today, for standup
 symbiot todo       what's still on your plate
 symbiot app        open the visual app in your browser
+symbiot models     recommend AI models for your hardware
 symbiot login      connect it to an AI (once)
 symbiot whoami     show how it's connected
 symbiot help
@@ -50,6 +51,17 @@ where no Chromium-family browser is found it opens your default browser instead.
 ```bash
 npm install -g symbiot        # or run without installing:  npx symbiot week
 ```
+
+## Which model? Ask your machine
+
+```bash
+symbiot models
+```
+
+Reads your RAM / CPU / GPU and recommends **local models by tier** (min / med / max,
+marking which fit your RAM) to run free & private via [Ollama](https://ollama.com),
+plus **paid** options (Claude / OpenAI / Gemini, cheap → top). Also available as
+a button in the app's Settings.
 
 ## Connect it (once)
 
