@@ -388,6 +388,28 @@ function nodeDetail(id) {
   }
   return { error: "unknown node" };
 }
+// AI review of one repo: what it does, what it's for, possible upgrades.
+async function repoReview(path) {
+  if (!resolveProvider()) return { error: "not-connected" };
+  if (!path) return { error: "no repo" };
+  const name = path.split("/").pop();
+  let readme = "";
+  for (const f of ["README.md", "README.MD", "Readme.md", "readme.md", "README.txt", "README"]) {
+    try { const p = join(path, f); if (existsSync(p)) { readme = readFileSync(p, "utf8").slice(0, 2500); break; } } catch {}
+  }
+  const files = sh(`git -C ${JSON.stringify(path)} ls-files 2>/dev/null | head -60`).trim();
+  const recent = sh(`git -C ${JSON.stringify(path)} log --oneline -12 2>/dev/null`).trim();
+  const system =
+    `You are reviewing one software project for its owner. In 4-7 sentences or a few short bullets, cover three things: ` +
+    `what it does, what it's meant for (who would use it and why), and 2-3 concrete possible upgrades or next features that fit it. ` +
+    `Be specific and grounded in the README, files, and commits shown — infer from real evidence, don't invent. No preamble.`;
+  const prompt =
+    `Project: ${name}\nPath: ${path}\n\n` +
+    (readme ? `README (excerpt):\n${readme}\n\n` : "(no README found)\n\n") +
+    `Files:\n${files || "(none)"}\n\nRecent commits:\n${recent || "(none)"}\n\nWrite the review.`;
+  const text = await write(system, prompt);
+  return { text: text || "(couldn't reach the model)" };
+}
 // AI "value" suggestions for one repo, from its recent commits + open work.
 async function repoSuggest(path) {
   if (!resolveProvider()) return { error: "not-connected" };
@@ -598,6 +620,10 @@ footer{padding:10px 18px;border-top:1px solid var(--line);display:flex}
 .tag{display:inline-flex;font-size:11px;padding:4px 9px;border-radius:999px;background:var(--green-dim);border:1px solid #2a6b52;color:var(--green)}
 .mapbar{margin-top:8px;font-size:12.5px;color:var(--text);background:var(--ink3);border:1px solid var(--line);border-radius:9px;padding:9px 12px;min-height:18px;font-family:ui-monospace,Menlo,Consolas,monospace}
 .mapbar b{color:var(--bone)}
+.review{margin-top:12px;background:var(--ink2);border:1px solid var(--line);border-radius:12px;padding:16px;min-height:120px}
+.review h4{margin:0 0 8px;color:var(--green);font-size:11px;letter-spacing:.15em;text-transform:uppercase;font-weight:700}
+.review .body{color:var(--text);line-height:1.65;font-size:14px;white-space:pre-wrap}
+.review .rname{color:var(--bone);font-weight:600}
 .out2{white-space:pre-wrap;background:var(--ink);border:1px solid var(--line);border-radius:9px;padding:10px;margin-top:10px;font-size:13px;line-height:1.55;color:var(--bone)}
 .legend{display:flex;gap:14px;align-items:center;margin-top:10px;font-size:12px;color:var(--faint);flex-wrap:wrap}
 .lg{display:inline-flex;gap:6px;align-items:center}
@@ -628,6 +654,7 @@ footer{padding:10px 18px;border-top:1px solid var(--line);display:flex}
 <span class="muted" style="margin-left:8px">scroll to zoom &middot; drag to pan &middot; click a node</span>
 <button class="ghost" id="remap" style="margin-left:auto">Rescan</button>
 </div>
+<div id="review" class="review hidden"></div>
 </section>
 <section id="panel-run" class="hidden">
 <div class="row"><button class="act" id="write">Write my <span id="what">week</span></button>
@@ -710,7 +737,14 @@ el.innerHTML="<h3>"+esc(d.label)+"</h3><div class='chips'>"+chips+"</div><button
 document.getElementById('suggest').addEventListener('click',function(){var o=document.getElementById('sugout');o.innerHTML="<div class='out2'>Thinking...</div>";api('/api/suggest',{path:d.path}).then(function(r){if(r.error==='not-connected'){o.innerHTML="<div class='out2'>Connect a model in Settings to get suggestions - Ollama is free and runs locally.</div>";return;}o.innerHTML="<div class='out2'>"+esc(r.text||'(no output)')+"</div>";});});return;}
 if(d.type==='lang'||d.type==='tool'){var lis=(d.repos||[]).map(function(r){return "<li>"+esc(r)+"</li>";}).join("");el.innerHTML="<h3>"+esc(d.label)+"</h3><div class='k'>Used in "+((d.repos||[]).length)+" repos</div><ul>"+lis+"</ul>";return;}
 if(d.type==='person'){var st=d.stats||{};el.innerHTML="<h3>"+esc(d.label)+"</h3><div class='k'>"+st.repos+" repos &middot; "+st.commits+" commits &middot; "+st.languages+" languages &middot; "+st.tools+" tools</div>";return;}}
-function selectNode(id){sel=id;render();api('/api/node?id='+encodeURIComponent(id)).then(showDetail);}
+var reviewCache={};
+function hideReview(){var el=document.getElementById('review');el.classList.add('hidden');el.innerHTML='';}
+function loadReview(name,path){var el=document.getElementById('review');el.classList.remove('hidden');
+if(reviewCache[path]){el.innerHTML="<h4>AI review &middot; <span class='rname'>"+esc(name)+"</span></h4><div class='body'>"+esc(reviewCache[path])+"</div>";return;}
+el.innerHTML="<h4>AI review &middot; <span class='rname'>"+esc(name)+"</span></h4><div class='body'>Reading the project&hellip;</div>";
+api('/api/review',{path:path}).then(function(r){var body;if(r.error==='not-connected'){body="Connect a model in Settings to get a review - Ollama is free and runs locally.";}else{body=r.text||'(no output)';reviewCache[path]=body;}el.innerHTML="<h4>AI review &middot; <span class='rname'>"+esc(name)+"</span></h4><div class='body'>"+esc(body)+"</div>";});}
+function selectNode(id){sel=id;render();updateBar(id);var n=nodeById(id);api('/api/node?id='+encodeURIComponent(id)).then(showDetail);
+if(n&&n.type==='repo'&&n.meta&&n.meta.path){loadReview(n.label,n.meta.path);}else{hideReview();}}
 function screenToGraph(el,ev){var rc=el.getBoundingClientRect();var mx=(ev.clientX-rc.left)/rc.width*GW;var my=(ev.clientY-rc.top)/rc.height*GH;return {x:(mx-view.x)/view.k,y:(my-view.y)/view.k};}
 function initGraphEvents(){var el=document.getElementById('graph');var mode=null,moved=0,sx=0,sy=0,ox=0,oy=0,downId=null,dnode=null;
 function nodeAt(ev){var t=ev.target;var g=t&&t.closest?t.closest('.node'):null;return g?g.getAttribute('data-id'):null;}
@@ -722,9 +756,9 @@ var dx=ev.clientX-sx,dy=ev.clientY-sy;moved+=Math.abs(dx)+Math.abs(dy);if(moved<
 if(mode==='node'&&dnode){var p=screenToGraph(el,ev);dnode.x=p.x;dnode.y=p.y;render();}
 else if(mode==='pan'){var rc=el.getBoundingClientRect();view.x=ox+dx/rc.width*GW;view.y=oy+dy/rc.height*GH;render();}});
 el.addEventListener('pointerup',function(ev){var id=downId,wasClick=moved<6;mode=null;dnode=null;downId=null;
-if(id){selectNode(id);}else if(wasClick){sel=null;hideDetail();render();updateBar(null);}});
+if(id){selectNode(id);}else if(wasClick){sel=null;hideDetail();hideReview();render();updateBar(null);}});
 el.addEventListener('mouseleave',function(){if(!mode)updateBar(null);}); }
-function loadMap(){var p=document.getElementById("profile");p.textContent="Mapping your work...";document.getElementById("graph").innerHTML="";sel=null;hideDetail();api("/api/map").then(function(g){mapLoaded=true;if(!g.nodes||!g.nodes.length){p.textContent="No git repositories found under your home folder.";return;}GRAPH=g;layout(g.nodes,g.edges);view={k:1,x:0,y:0};p.innerHTML=profileLine(g);render();});}
+function loadMap(){var p=document.getElementById("profile");p.textContent="Mapping your work...";document.getElementById("graph").innerHTML="";sel=null;hideDetail();hideReview();api("/api/map").then(function(g){mapLoaded=true;if(!g.nodes||!g.nodes.length){p.textContent="No git repositories found under your home folder.";return;}GRAPH=g;layout(g.nodes,g.edges);view={k:1,x:0,y:0};p.innerHTML=profileLine(g);render();});}
 document.getElementById('remap').addEventListener('click',loadMap);
 initGraphEvents();syncP();refresh();loadMap();
 </script></body></html>`;
@@ -782,6 +816,7 @@ async function cmdApp() {
       if (u.pathname === "/api/map") return json(res, buildMap()); // local git only — no AI key needed
       if (u.pathname === "/api/node") return json(res, nodeDetail(u.searchParams.get("id") || "")); // local
       if (u.pathname === "/api/suggest" && req.method === "POST") { const b = await readBody(req); return json(res, await repoSuggest(String(b.path || ""))); }
+      if (u.pathname === "/api/review" && req.method === "POST") { const b = await readBody(req); return json(res, await repoReview(String(b.path || ""))); }
       if (u.pathname === "/api/run" && req.method === "POST") { const b = await readBody(req); const cmd = ["week", "standup", "todo"].includes(b.cmd) ? b.cmd : "week"; return json(res, await produce(cmd)); }
       if (u.pathname === "/api/connect" && req.method === "POST") { return json(res, await connectProvider(await readBody(req))); }
       if (u.pathname === "/api/quit") { res.writeHead(200); res.end("bye"); setTimeout(() => process.exit(0), 150); return; }
