@@ -51,6 +51,7 @@ const flag = (name, def) => {
 const has = (name) => argv.includes(`--${name}`);
 const PLAIN = has("plain") || !process.stdout.isTTY;
 let SERVING = false; // set while `symbiot app` runs — silences the CLI spinner
+let LAST_MAP = null;  // cached graph so node clicks don't rescan
 
 // ---- colour + spinner ------------------------------------------------------
 const c = PLAIN
@@ -353,12 +354,52 @@ function buildMap() {
     for (const L of r.langs.slice(0, 3)) { const id = "lang:" + L; add({ id, type: "lang", label: L, weight: 15 }); edges.push({ source: rid, target: id }); }
     for (const T of r.tools) { const id = "tool:" + T; add({ id, type: "tool", label: T, weight: 12 }); edges.push({ source: rid, target: id }); }
   }
-  return { nodes, edges, stats: {
+  const out = { nodes, edges, stats: {
     repos: repos.length,
     languages: nodes.filter((n) => n.type === "lang").length,
     tools: nodes.filter((n) => n.type === "tool").length,
     commits: repos.reduce((s, r) => s + r.mine, 0),
   } };
+  LAST_MAP = out;
+  return out;
+}
+// Local detail for a clicked node (no AI).
+function nodeDetail(id) {
+  const map = LAST_MAP || buildMap();
+  if (id === "me") { const n = map.nodes.find((x) => x.id === "me"); return { type: "person", label: (n && n.label) || "You", stats: map.stats }; }
+  if (id.startsWith("repo:")) {
+    const path = id.slice(5); const n = map.nodes.find((x) => x.id === id); const m = (n && n.meta) || {};
+    return {
+      type: "repo", label: n ? n.label : path.split("/").pop(), path,
+      branch: sh(`git -C ${JSON.stringify(path)} rev-parse --abbrev-ref HEAD 2>/dev/null`).trim(),
+      dirty: sh(`git -C ${JSON.stringify(path)} status --porcelain 2>/dev/null`).split("\n").filter(Boolean).length,
+      last: sh(`git -C ${JSON.stringify(path)} log -1 --format=%cd --date=short 2>/dev/null`).trim(),
+      commits: m.commits || 0, langs: m.langs || [], tools: m.tools || [],
+    };
+  }
+  if (id.startsWith("lang:") || id.startsWith("tool:")) {
+    const n = map.nodes.find((x) => x.id === id);
+    const repos = map.edges.filter((e) => e.target === id).map((e) => { const r = map.nodes.find((x) => x.id === e.source); return r ? r.label : null; }).filter(Boolean);
+    return { type: id.startsWith("lang:") ? "lang" : "tool", label: n ? n.label : id.split(":")[1], repos };
+  }
+  return { error: "unknown node" };
+}
+// AI "value" suggestions for one repo, from its recent commits + open work.
+async function repoSuggest(path) {
+  if (!resolveProvider()) return { error: "not-connected" };
+  if (!path) return { error: "no repo" };
+  const name = path.split("/").pop();
+  const email = sh(`git -C ${JSON.stringify(path)} config user.email`).trim();
+  const recent = sh(`git -C ${JSON.stringify(path)} log --oneline -30 ${email ? `--author=${JSON.stringify(email)}` : ""} 2>/dev/null`).trim();
+  const open = openWork([{ path, name }]);
+  const system =
+    `You are a pragmatic senior engineer advising on one project. From its recent commits and open items, write exactly three short sections with these headings: ` +
+    `"In flight" (what's clearly underway), "Next steps" (3-5 concrete, specific actions), and "Ideas" (2-3 that fit where this build is heading). ` +
+    `Be specific to the actual work shown — no filler, no preamble, no restating the commits verbatim.`;
+  const prompt =
+    `Project: ${name}.\n\nRecent commits:\n${recent || "(none)"}\n\nOpen / unfinished:\n${open.length ? open.map((o) => "- " + o).join("\n") : "(none found)"}\n\nGive the advice.`;
+  const text = await write(system, prompt);
+  return { text: text || "(couldn't reach the model)" };
 }
 
 // Build a write-up for a command; returns { text, sub, error? } without printing.
@@ -540,12 +581,22 @@ a{color:var(--green);cursor:pointer}.hidden{display:none}
 footer{padding:10px 18px;border-top:1px solid var(--line);display:flex}
 .profile{font-size:13px;margin-bottom:8px;line-height:1.5}
 .profile b{color:var(--bone)}
-#graph{width:100%;height:auto;background:var(--ink2);border:1px solid var(--line);border-radius:12px}
-#graph text{font-family:var(--sans);fill:var(--text);font-size:11px}
+.maprow{display:flex;gap:12px;align-items:stretch}
+#graph{flex:1;width:100%;height:62vh;min-height:340px;background:var(--ink2);border:1px solid var(--line);border-radius:12px;touch-action:none;cursor:grab}
+#graph:active{cursor:grabbing}
+#graph text{font-family:var(--sans);fill:var(--text);font-size:11px;pointer-events:none}
 #graph .lbl-me{fill:var(--bone);font-weight:700;font-size:13px}
+.detail{width:290px;flex:none;background:var(--ink2);border:1px solid var(--line);border-radius:12px;padding:14px;overflow:auto;max-height:62vh}
+.detail h3{margin:0 0 4px;color:var(--bone);font-size:15px}
+.detail .k{font-size:12px;color:var(--faint);margin-top:8px}
+.detail ul{margin:6px 0 0;padding-left:18px}.detail li{margin:2px 0}
+.detail .chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.tag{display:inline-flex;font-size:11px;padding:4px 9px;border-radius:999px;background:var(--green-dim);border:1px solid #2a6b52;color:var(--green)}
+.out2{white-space:pre-wrap;background:var(--ink);border:1px solid var(--line);border-radius:9px;padding:10px;margin-top:10px;font-size:13px;line-height:1.55;color:var(--bone)}
 .legend{display:flex;gap:14px;align-items:center;margin-top:10px;font-size:12px;color:var(--faint);flex-wrap:wrap}
 .lg{display:inline-flex;gap:6px;align-items:center}
 .lg i{width:10px;height:10px;border-radius:50%;display:inline-block}
+@media(max-width:760px){.maprow{flex-direction:column}.detail{width:auto;max-height:none}}
 </style></head><body>
 <header><span class="dot"></span><span class="brand">Symbiot</span><span class="status" id="status">...</span></header>
 <div class="tabs">
@@ -558,12 +609,16 @@ footer{padding:10px 18px;border-top:1px solid var(--line);display:flex}
 <main>
 <section id="panel-map">
 <div class="profile muted" id="profile">Mapping your work&hellip;</div>
-<svg id="graph" viewBox="0 0 600 430" preserveAspectRatio="xMidYMid meet"></svg>
+<div class="maprow">
+<svg id="graph" viewBox="0 0 960 620" preserveAspectRatio="xMidYMid meet"></svg>
+<aside id="detail" class="detail hidden"></aside>
+</div>
 <div class="legend">
 <span class="lg"><i style="background:var(--green)"></i>you</span>
 <span class="lg"><i style="background:var(--bone)"></i>repos</span>
 <span class="lg"><i style="background:var(--amber)"></i>languages</span>
 <span class="lg"><i style="background:#6bb3ff"></i>tools</span>
+<span class="muted" style="margin-left:8px">scroll to zoom &middot; drag to pan &middot; click a node</span>
 <button class="ghost" id="remap" style="margin-left:auto">Rescan</button>
 </div>
 </section>
@@ -622,21 +677,38 @@ $('save').addEventListener('click',function(){var p=$('provider').value;$('saveM
 var cfg={provider:p,model:$('model').value.trim()};if(p==='ollama')cfg.baseUrl=$('baseUrl').value.trim();else cfg.key=$('key').value.trim();
 api('/api/connect',cfg).then(function(r){$('saveMsg').textContent=r.message||(r.ok?'Connected.':'Could not connect.');$('saveMsg').className='note '+(r.ok?'ok':'err');if(r.ok){$('key').value='';refresh();}});});
 $('quit').addEventListener('click',function(){api('/api/quit');document.body.innerHTML='<div style=\\'padding:40px;color:#7E9690;font-family:sans-serif\\'>Symbiot stopped. You can close this window.</div>';});
-function layout(nodes,edges,W,H){var idx={};nodes.forEach(function(n){n.x=W/2+(Math.random()-0.5)*W*0.7;n.y=H/2+(Math.random()-0.5)*H*0.7;n.vx=0;n.vy=0;idx[n.id]=n;});
-for(var it=0;it<280;it++){for(var i=0;i<nodes.length;i++)for(var j=i+1;j<nodes.length;j++){var a=nodes[i],b=nodes[j];var dx=a.x-b.x,dy=a.y-b.y;var d2=dx*dx+dy*dy+0.01;var d=Math.sqrt(d2);var f=1700/d2;a.vx+=f*dx/d;a.vy+=f*dy/d;b.vx-=f*dx/d;b.vy-=f*dy/d;}
-edges.forEach(function(e){var a=idx[e.source],b=idx[e.target];if(!a||!b)return;var dx=b.x-a.x,dy=b.y-a.y;var d=Math.sqrt(dx*dx+dy*dy)+0.01;var f=(d-72)*0.03;a.vx+=f*dx/d;a.vy+=f*dy/d;b.vx-=f*dx/d;b.vy-=f*dy/d;});
-nodes.forEach(function(n){n.vx+=(W/2-n.x)*0.003;n.vy+=(H/2-n.y)*0.003;n.x+=Math.max(-6,Math.min(6,n.vx));n.y+=Math.max(-6,Math.min(6,n.vy));n.vx*=0.86;n.vy*=0.86;n.x=Math.max(26,Math.min(W-26,n.x));n.y=Math.max(20,Math.min(H-24,n.y));});}}
+var GRAPH=null,sel=null,view={k:1,x:0,y:0},GW=960,GH=620;
 function esc(s){return String(s).replace(/[&<>]/g,function(ch){return ch==='&'?'&amp;':ch==='<'?'&lt;':'&gt;';});}
-function render(g){var W=600,H=430;layout(g.nodes,g.edges,W,H);var idx={};g.nodes.forEach(function(n){idx[n.id]=n;});var svg="";
-g.edges.forEach(function(e){var a=idx[e.source],b=idx[e.target];if(!a||!b)return;svg+="<line x1='"+a.x.toFixed(1)+"' y1='"+a.y.toFixed(1)+"' x2='"+b.x.toFixed(1)+"' y2='"+b.y.toFixed(1)+"' stroke='#24404A' stroke-width='1'/>";});
-g.nodes.forEach(function(n){var r=Math.max(4,Math.sqrt(n.weight)*1.7);var col=COLORS[n.type]||"#888";var title=esc(n.label)+(n.meta?(" - "+(n.meta.commits||0)+" commits"):"");
-svg+="<circle cx='"+n.x.toFixed(1)+"' cy='"+n.y.toFixed(1)+"' r='"+r.toFixed(1)+"' fill='"+col+"' opacity='0.92'><title>"+title+"</title></circle>";
-var cls=n.type==="person"?"lbl-me":"";svg+="<text x='"+n.x.toFixed(1)+"' y='"+(n.y+r+11).toFixed(1)+"' text-anchor='middle' class='"+cls+"'>"+esc(n.label)+"</text>";});
-document.getElementById("graph").innerHTML=svg;}
+function layout(nodes,edges){var idx={};nodes.forEach(function(n){n.x=GW/2+(Math.random()-0.5)*GW*0.8;n.y=GH/2+(Math.random()-0.5)*GH*0.8;n.vx=0;n.vy=0;idx[n.id]=n;});
+for(var it=0;it<340;it++){for(var i=0;i<nodes.length;i++)for(var j=i+1;j<nodes.length;j++){var a=nodes[i],b=nodes[j];var dx=a.x-b.x,dy=a.y-b.y;var d2=dx*dx+dy*dy+0.01;var d=Math.sqrt(d2);var f=4600/d2;a.vx+=f*dx/d;a.vy+=f*dy/d;b.vx-=f*dx/d;b.vy-=f*dy/d;}
+edges.forEach(function(e){var a=idx[e.source],b=idx[e.target];if(!a||!b)return;var dx=b.x-a.x,dy=b.y-a.y;var d=Math.sqrt(dx*dx+dy*dy)+0.01;var f=(d-115)*0.03;a.vx+=f*dx/d;a.vy+=f*dy/d;b.vx-=f*dx/d;b.vy-=f*dy/d;});
+nodes.forEach(function(n){n.vx+=(GW/2-n.x)*0.002;n.vy+=(GH/2-n.y)*0.002;n.x+=Math.max(-9,Math.min(9,n.vx));n.y+=Math.max(-9,Math.min(9,n.vy));n.vx*=0.86;n.vy*=0.86;n.x=Math.max(30,Math.min(GW-30,n.x));n.y=Math.max(24,Math.min(GH-28,n.y));});}}
+function nbrs(id){var s={};s[id]=1;GRAPH.edges.forEach(function(e){if(e.source===id)s[e.target]=1;if(e.target===id)s[e.source]=1;});return s;}
+function render(){if(!GRAPH)return;var idx={};GRAPH.nodes.forEach(function(n){idx[n.id]=n;});var nb=sel?nbrs(sel):null;
+var s="<g id='vp' transform='translate("+view.x.toFixed(1)+","+view.y.toFixed(1)+") scale("+view.k.toFixed(3)+")'>";
+GRAPH.edges.forEach(function(e){var a=idx[e.source],b=idx[e.target];if(!a||!b)return;var op=nb?((nb[e.source]&&nb[e.target])?0.75:0.06):0.45;s+="<line x1='"+a.x.toFixed(1)+"' y1='"+a.y.toFixed(1)+"' x2='"+b.x.toFixed(1)+"' y2='"+b.y.toFixed(1)+"' stroke='#24404A' stroke-width='1' opacity='"+op+"'/>";});
+GRAPH.nodes.forEach(function(n){var r=Math.max(5,Math.sqrt(n.weight)*2);var col=COLORS[n.type]||"#888";var op=nb?(nb[n.id]?1:0.14):0.95;var st=(n.id===sel)?" stroke='#F4F1EA' stroke-width='2'":"";var title=esc(n.label)+(n.meta?(" - "+(n.meta.commits||0)+" commits"):"");
+s+="<g class='node' data-id='"+esc(n.id)+"' opacity='"+op+"'><circle cx='"+n.x.toFixed(1)+"' cy='"+n.y.toFixed(1)+"' r='"+r.toFixed(1)+"' fill='"+col+"'"+st+"><title>"+title+"</title></circle>";
+var cls=n.type==="person"?"lbl-me":"";s+="<text x='"+n.x.toFixed(1)+"' y='"+(n.y+r+12).toFixed(1)+"' text-anchor='middle' class='"+cls+"'>"+esc(n.label)+"</text></g>";});
+document.getElementById("graph").innerHTML=s+"</g>";}
 function profileLine(g){var repos=g.nodes.filter(function(n){return n.type==="repo";});if(!repos.length)return "No git repositories found under your home folder yet.";var langs=g.nodes.filter(function(n){return n.type==="lang";}).map(function(n){return n.label;});var top=repos.slice().sort(function(a,b){return (b.meta.commits||0)-(a.meta.commits||0);})[0];var s="<b>"+g.stats.repos+"</b> repos &middot; <b>"+g.stats.commits+"</b> of your commits &middot; ";s+=langs.length?("mostly <b>"+esc(langs.slice(0,3).join(", "))+"</b>"):"no languages detected";if(top)s+=" &middot; most active: <b>"+esc(top.label)+"</b>";return s;}
-function loadMap(){var p=document.getElementById("profile");p.textContent="Mapping your work...";document.getElementById("graph").innerHTML="";api("/api/map").then(function(g){mapLoaded=true;if(!g.nodes||!g.nodes.length){p.textContent="No git repositories found under your home folder.";return;}p.innerHTML=profileLine(g);render(g);});}
+function hideDetail(){document.getElementById('detail').classList.add('hidden');}
+function showDetail(d){var el=document.getElementById('detail');el.classList.remove('hidden');
+if(d.error){el.innerHTML="<h3>&mdash;</h3><div class='k'>"+esc(d.error)+"</div>";return;}
+if(d.type==='repo'){var chips="";['branch: '+(d.branch||'?'),d.commits+' commits',(d.dirty?d.dirty+' uncommitted':'clean'),(d.last?'last '+d.last:'')].concat(d.langs||[]).concat(d.tools||[]).forEach(function(x){if(x)chips+="<span class='tag'>"+esc(x)+"</span>";});
+el.innerHTML="<h3>"+esc(d.label)+"</h3><div class='chips'>"+chips+"</div><button class='act' id='suggest' style='margin-top:12px'>Suggest next steps</button><div id='sugout'></div>";
+document.getElementById('suggest').addEventListener('click',function(){var o=document.getElementById('sugout');o.innerHTML="<div class='out2'>Thinking...</div>";api('/api/suggest',{path:d.path}).then(function(r){if(r.error==='not-connected'){o.innerHTML="<div class='out2'>Connect a model in Settings to get suggestions - Ollama is free and runs locally.</div>";return;}o.innerHTML="<div class='out2'>"+esc(r.text||'(no output)')+"</div>";});});return;}
+if(d.type==='lang'||d.type==='tool'){var lis=(d.repos||[]).map(function(r){return "<li>"+esc(r)+"</li>";}).join("");el.innerHTML="<h3>"+esc(d.label)+"</h3><div class='k'>Used in "+((d.repos||[]).length)+" repos</div><ul>"+lis+"</ul>";return;}
+if(d.type==='person'){var st=d.stats||{};el.innerHTML="<h3>"+esc(d.label)+"</h3><div class='k'>"+st.repos+" repos &middot; "+st.commits+" commits &middot; "+st.languages+" languages &middot; "+st.tools+" tools</div>";return;}}
+function selectNode(id){sel=id;render();api('/api/node?id='+encodeURIComponent(id)).then(showDetail);}
+function initGraphEvents(){var el=document.getElementById('graph');var drag=false,moved=0,sx=0,sy=0,ox=0,oy=0;
+el.addEventListener('wheel',function(ev){ev.preventDefault();if(!GRAPH)return;var rc=el.getBoundingClientRect();var mx=(ev.clientX-rc.left)/rc.width*GW;var my=(ev.clientY-rc.top)/rc.height*GH;var nk=Math.max(0.3,Math.min(4,view.k*(ev.deltaY<0?1.12:0.89)));view.x=mx-(mx-view.x)*(nk/view.k);view.y=my-(my-view.y)*(nk/view.k);view.k=nk;render();},{passive:false});
+el.addEventListener('pointerdown',function(ev){drag=true;moved=0;sx=ev.clientX;sy=ev.clientY;ox=view.x;oy=view.y;try{el.setPointerCapture(ev.pointerId);}catch(e){}});
+el.addEventListener('pointermove',function(ev){if(!drag)return;var dx=ev.clientX-sx,dy=ev.clientY-sy;moved+=Math.abs(dx)+Math.abs(dy);var rc=el.getBoundingClientRect();view.x=ox+dx/rc.width*GW;view.y=oy+dy/rc.height*GH;render();});
+el.addEventListener('pointerup',function(ev){drag=false;if(moved<6){var g=ev.target.closest?ev.target.closest('.node'):null;if(g){selectNode(g.getAttribute('data-id'));}else{sel=null;hideDetail();render();}}});}
+function loadMap(){var p=document.getElementById("profile");p.textContent="Mapping your work...";document.getElementById("graph").innerHTML="";sel=null;hideDetail();api("/api/map").then(function(g){mapLoaded=true;if(!g.nodes||!g.nodes.length){p.textContent="No git repositories found under your home folder.";return;}GRAPH=g;layout(g.nodes,g.edges);view={k:1,x:0,y:0};p.innerHTML=profileLine(g);render();});}
 document.getElementById('remap').addEventListener('click',loadMap);
-syncP();refresh();loadMap();
+initGraphEvents();syncP();refresh();loadMap();
 </script></body></html>`;
 
 function readBody(req) {
@@ -690,6 +762,8 @@ async function cmdApp() {
     try {
       if (u.pathname === "/api/status") { const r = resolveProvider(); return json(res, r ? { connected: true, line: `${PROVIDERS[r.provider].label} · ${r.model}` } : { connected: false }); }
       if (u.pathname === "/api/map") return json(res, buildMap()); // local git only — no AI key needed
+      if (u.pathname === "/api/node") return json(res, nodeDetail(u.searchParams.get("id") || "")); // local
+      if (u.pathname === "/api/suggest" && req.method === "POST") { const b = await readBody(req); return json(res, await repoSuggest(String(b.path || ""))); }
       if (u.pathname === "/api/run" && req.method === "POST") { const b = await readBody(req); const cmd = ["week", "standup", "todo"].includes(b.cmd) ? b.cmd : "week"; return json(res, await produce(cmd)); }
       if (u.pathname === "/api/connect" && req.method === "POST") { return json(res, await connectProvider(await readBody(req))); }
       if (u.pathname === "/api/quit") { res.writeHead(200); res.end("bye"); setTimeout(() => process.exit(0), 150); return; }
