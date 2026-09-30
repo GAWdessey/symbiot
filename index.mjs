@@ -19,7 +19,7 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import { execSync, spawn } from "node:child_process";
-import { homedir } from "node:os";
+import { homedir, totalmem, cpus as oscpus } from "node:os";
 import { join } from "node:path";
 import { readFileSync, writeFileSync, mkdirSync, existsSync, chmodSync } from "node:fs";
 import { createInterface } from "node:readline";
@@ -312,6 +312,52 @@ function header(sub) {
 // ---- commands -------------------------------------------------------------
 const SINCE_WEEK = Number(flag("since", "7"));
 const BASE = flag("dir", homedir());
+
+// ---- hardware -> model recommendations ------------------------------------
+function detectGpu() {
+  const nv = sh("nvidia-smi --query-gpu=name,memory.total --format=csv,noheader,nounits 2>/dev/null").trim();
+  if (nv) { const p = nv.split("\n")[0].split(","); return { name: (p[0] || "NVIDIA GPU").trim(), vramGB: Math.round(Number(p[1]) / 1024) || null, kind: "nvidia" }; }
+  if (process.platform === "linux") { const vga = sh("lspci 2>/dev/null | grep -iE 'vga|3d controller|display' | head -1").replace(/^.*?: /, "").trim(); if (vga) return { name: vga, vramGB: null, kind: "other" }; }
+  if (process.platform === "darwin") { const chip = sh("sysctl -n machdep.cpu.brand_string 2>/dev/null").trim(); if (/apple/i.test(chip)) return { name: chip + " (unified memory)", vramGB: null, kind: "apple" }; }
+  return null;
+}
+function detectHardware() {
+  const cpus = oscpus() || [];
+  return { platform: process.platform, arch: process.arch, ramGB: Math.round(totalmem() / 1073741824), cpuCount: cpus.length, cpuModel: ((cpus[0] && cpus[0].model) || "CPU").trim(), gpu: detectGpu() };
+}
+function recommendModels(hw) {
+  const ram = hw.ramGB || 8;
+  const local = [
+    { tier: "min", model: "llama3.2:3b", needGB: 6, note: "fast & light — fine for summaries" },
+    { tier: "med", model: "llama3.1:8b", needGB: 10, note: "solid all-rounder" },
+    { tier: "max", model: "qwen2.5:14b", needGB: 18, note: "stronger reasoning" },
+  ];
+  if (ram >= 40) local.push({ tier: "max+", model: "llama3.1:70b", needGB: 48, note: "top local quality — big machine/GPU" });
+  local.forEach((m) => { m.fits = ram >= m.needGB; });
+  const paid = [
+    { provider: "anthropic", tier: "cheap", model: "claude-haiku-4-5", note: "cheapest Claude" },
+    { provider: "anthropic", tier: "top", model: "claude-opus-5-5", note: "best Claude (default)" },
+    { provider: "openai", tier: "cheap", model: "gpt-4o-mini", note: "cheap OpenAI" },
+    { provider: "openai", tier: "top", model: "gpt-4o", note: "stronger OpenAI" },
+    { provider: "gemini", tier: "cheap", model: "gemini-1.5-flash", note: "cheap Google" },
+    { provider: "gemini", tier: "top", model: "gemini-1.5-pro", note: "stronger Google" },
+  ];
+  const best = (local.slice().reverse().find((m) => m.fits) || local[0]).model;
+  return { local, paid, best };
+}
+function cmdModels() {
+  const hw = detectHardware(); const rec = recommendModels(hw);
+  const pad = (s, n) => String(s).padEnd(n);
+  console.log("\n" + c.b("Your machine"));
+  console.log(`  ${c.b(hw.ramGB + " GB")} RAM · ${hw.cpuCount}-core ${hw.cpuModel} · ${hw.platform}/${hw.arch}`);
+  if (hw.gpu) console.log(`  GPU: ${hw.gpu.name}${hw.gpu.vramGB ? ` (${hw.gpu.vramGB} GB VRAM)` : ""}`);
+  console.log("\n" + c.b("Local models") + c.d("  (free & private via Ollama — install: ollama pull <model>)"));
+  rec.local.forEach((m) => console.log(`  ${m.fits ? c.g("✓") : c.d("·")} ${pad(m.tier, 5)} ${pad(m.model, 16)} ${c.d("~" + m.needGB + "GB  " + m.note + (m.fits ? "" : "  (needs more RAM)"))}`));
+  console.log(c.d(`  Best fit for you: `) + c.b(rec.best) + c.d(`   →  ollama pull ${rec.best}  then  symbiot login  (choose Ollama)`));
+  console.log("\n" + c.b("Paid models") + c.d("  (bring an API key — symbiot login)"));
+  rec.paid.forEach((p) => console.log(`  ${pad(p.provider, 10)} ${pad(p.tier, 6)} ${pad(p.model, 20)} ${c.d(p.note)}`));
+  console.log("");
+}
 
 // ---- work map: a node graph of your repos, languages, and tools -----------
 const EXT_LANG = {
@@ -717,6 +763,10 @@ footer{padding:10px 18px;border-top:1px solid var(--line);display:flex}
 <input id="model" type="text" placeholder="(blank = default)">
 <div class="row" style="margin-top:16px"><button class="act" id="save">Save &amp; connect</button>
 <span class="note" id="saveMsg"></span></div>
+<div style="margin-top:20px;border-top:1px solid var(--line);padding-top:16px">
+<button class="ghost" id="recbtn">Recommend models for my machine</button>
+<div id="recout" style="margin-top:12px"></div>
+</div>
 </section>
 </main>
 <footer><button class="ghost" id="quit" style="margin-left:auto">Quit</button></footer>
@@ -820,7 +870,18 @@ el.addEventListener('pointerup',function(ev){var id=downId,wasClick=moved<6;mode
 if(id){selectNode(id);}else if(wasClick){sel=null;hideDetail();hideReview();render();updateBar(null);}});
 el.addEventListener('mouseleave',function(){if(!mode)updateBar(null);}); }
 function loadMap(){var p=document.getElementById("profile");p.textContent="Mapping your work...";document.getElementById("graph").innerHTML="";sel=null;hideDetail();hideReview();api("/api/map").then(function(g){mapLoaded=true;if(!g.nodes||!g.nodes.length){p.textContent="No git repositories found under your home folder.";return;}GRAPH=g;layout(g.nodes,g.edges);view={k:1,x:0,y:0};p.innerHTML=profileLine(g);render();});}
+function fitBadge(m){return m.fits?"<span class='tag'>fits your RAM</span>":"<span class='tag' style='background:#3a2a12;border-color:#6b4a1f;color:#F2A541'>needs more RAM</span>";}
+function loadRec(){var out=document.getElementById('recout');out.innerHTML="<div class='muted'>Reading your hardware...</div>";
+api('/api/models').then(function(d){var hw=d.hardware,rec=d.rec;
+var h="<div class='k'><b>"+hw.ramGB+" GB</b> RAM &middot; "+hw.cpuCount+"-core &middot; "+esc(hw.platform)+"/"+esc(hw.arch)+(hw.gpu?" &middot; GPU: "+esc(hw.gpu.name)+(hw.gpu.vramGB?" ("+hw.gpu.vramGB+"GB)":""):"")+"</div>";
+h+="<div class='ideas'><h4>Local models &middot; free via Ollama</h4>";
+rec.local.forEach(function(m){h+="<div class='idea' style='justify-content:space-between'><span><b>"+esc(m.tier)+"</b> &middot; <code>ollama pull "+esc(m.model)+"</code> <span class='muted'>~"+m.needGB+"GB &middot; "+esc(m.note)+"</span></span> "+fitBadge(m)+"</div>";});
+h+="<div class='muted' style='margin-top:6px'>Best fit: <b>"+esc(rec.best)+"</b> &mdash; pull it, then pick <b>Local model (Ollama)</b> above.</div></div>";
+h+="<div class='ideas'><h4>Paid models &middot; bring an API key</h4>";
+rec.paid.forEach(function(p){h+="<div class='idea'><span><b>"+esc(p.provider)+"</b> &middot; "+esc(p.tier)+" &middot; <code>"+esc(p.model)+"</code> <span class='muted'>&middot; "+esc(p.note)+"</span></span></div>";});
+h+="</div>";out.innerHTML=h;});}
 document.getElementById('remap').addEventListener('click',loadMap);
+document.getElementById('recbtn').addEventListener('click',loadRec);
 document.getElementById('addtask').addEventListener('click',addTaskUI);
 document.getElementById('newtask').addEventListener('keydown',function(e){if(e.key==='Enter')addTaskUI();});
 initGraphEvents();syncP();refresh();loadMap();
@@ -877,6 +938,7 @@ async function cmdApp() {
     try {
       if (u.pathname === "/api/status") { const r = resolveProvider(); return json(res, r ? { connected: true, line: `${PROVIDERS[r.provider].label} · ${r.model}` } : { connected: false }); }
       if (u.pathname === "/api/map") return json(res, buildMap()); // local git only — no AI key needed
+      if (u.pathname === "/api/models") { const hw = detectHardware(); return json(res, { hardware: hw, rec: recommendModels(hw) }); }
       if (u.pathname === "/api/node") return json(res, nodeDetail(u.searchParams.get("id") || "")); // local
       if (u.pathname === "/api/suggest" && req.method === "POST") { const b = await readBody(req); return json(res, await repoSuggest(String(b.path || ""))); }
       if (u.pathname === "/api/review" && req.method === "POST") { const b = await readBody(req); return json(res, await repoReview(String(b.path || ""))); }
@@ -906,6 +968,7 @@ ${c.b("Usage")}
   symbiot standup                   yesterday + today, for standup
   symbiot todo                      what's still on your plate
   symbiot app                       open the visual app in your browser
+  symbiot models                    recommend AI models for your hardware
   symbiot login                     connect it to an AI (once)
   symbiot whoami                    show how it's connected
   symbiot logout                    forget saved credentials
@@ -934,6 +997,7 @@ ${c.d("with a local Ollama model).")}`;
   if (cmd === "logout") return cmdLogout();
   if (cmd === "whoami" || cmd === "status") return cmdWhoami();
   if (cmd === "app" || cmd === "ui") return cmdApp();
+  if (cmd === "models" || cmd === "hardware") return cmdModels();
   if (cmd === "week") return cmdRun("week");
   if (cmd === "standup") return cmdRun("standup");
   if (cmd === "todo") return cmdRun("todo");
