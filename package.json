@@ -1,16 +1,40 @@
 {
   "name": "symbiot",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Your week, written from your real work. Reads your local git — no accounts, no OAuth, just an AI key you bring yourself.",
   "type": "module",
-  "bin": { "symbiot": "index.mjs" },
-  "files": ["index.mjs", "README.md", "LICENSE"],
-  "engines": { "node": ">=18" },
-  "keywords": ["git", "standup", "weekly-update", "changelog", "productivity", "ai", "developer-tools", "cli"],
+  "bin": {
+    "symbiot": "index.mjs"
+  },
+  "files": [
+    "index.mjs",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "git",
+    "standup",
+    "weekly-update",
+    "changelog",
+    "productivity",
+    "ai",
+    "developer-tools",
+    "cli"
+  ],
   "author": "Garth White <garth@ghost-ai.co.za>",
   "license": "MIT",
-  "repository": { "type": "git", "url": "git+https://github.com/GarthGhostai/symbiot.git" },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/GarthGhostai/symbiot.git"
+  },
   "homepage": "https://github.com/GarthGhostai/symbiot#readme",
-  "bugs": { "url": "https://github.com/GarthGhostai/symbiot/issues" },
-  "dependencies": { "@anthropic-ai/sdk": "^0.128.0" }
+  "bugs": {
+    "url": "https://github.com/GarthGhostai/symbiot/issues"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.128.0"
+  }
 }
