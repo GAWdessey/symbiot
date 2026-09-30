@@ -2,13 +2,14 @@
 // symbiot — your week, written from your real work.
 //
 // Reads your local git activity (no accounts, no OAuth, no integrations) and
-// writes the update you'd actually send. It writes with Claude, so it needs an
-// Anthropic API key — set one up once with `symbiot login`.
+// writes the update you'd actually send. It writes with an AI of your choice —
+// Claude, OpenAI, Gemini, or a local model (Ollama) — set up once with
+// `symbiot login`.
 //
 //   symbiot week      your week, written up          (default)
 //   symbiot standup   yesterday + today, for standup
 //   symbiot todo      what's still on your plate
-//   symbiot login     connect it to Claude (once)
+//   symbiot login     connect it to an AI (once)
 //   symbiot whoami    show how it's connected
 //   symbiot help
 //
@@ -23,11 +24,20 @@ import { join } from "node:path";
 import { readFileSync, writeFileSync, mkdirSync, existsSync, chmodSync } from "node:fs";
 import { createInterface } from "node:readline";
 
-const MODEL = process.env.SYMBIOT_MODEL || "claude-opus-5-5";
 const MAX_REPOS = 14;
 const MAX_COMMITS = 140;
+const MAX_TOKENS = 1600;
 const CONFIG_DIR = join(homedir(), ".config", "symbiot");
 const CONFIG_PATH = join(CONFIG_DIR, "config.json");
+
+// The providers Symbiot can write with. Models are sensible defaults; override
+// per provider at login, or globally with SYMBIOT_MODEL.
+const PROVIDERS = {
+  anthropic: { label: "Claude (Anthropic)", env: ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"], keyUrl: "https://console.anthropic.com/settings/keys", keyName: "Anthropic API key (sk-ant-…)", model: "claude-opus-5-5" },
+  openai:    { label: "OpenAI (GPT)",       env: ["OPENAI_API_KEY"],                            keyUrl: "https://platform.openai.com/api-keys",       keyName: "OpenAI API key (sk-…)",     model: "gpt-4o-mini" },
+  gemini:    { label: "Gemini (Google)",    env: ["GEMINI_API_KEY", "GOOGLE_API_KEY"],          keyUrl: "https://aistudio.google.com/apikey",         keyName: "Google AI API key",         model: "gemini-1.5-flash" },
+  ollama:    { label: "Local model (Ollama)", local: true,                                       keyUrl: "https://ollama.com",                         keyName: null,                        model: "llama3.1" },
+};
 
 // ---- tiny arg parse --------------------------------------------------------
 const argv = process.argv.slice(2);
@@ -56,11 +66,7 @@ function spinner(label) {
   return () => { clearInterval(t); process.stderr.write("\r\x1b[K"); };
 }
 
-// ---- auth ------------------------------------------------------------------
-// Symbiot writes with Claude. Credentials can come from (first wins):
-//   1. ANTHROPIC_API_KEY / ANTHROPIC_AUTH_TOKEN in the environment
-//   2. a key saved by `symbiot login` (~/.config/symbiot/config.json)
-//   3. an Anthropic CLI profile on disk (`ant auth login`), which the SDK reads
+// ---- config + provider resolution -----------------------------------------
 function loadConfig() {
   try { return JSON.parse(readFileSync(CONFIG_PATH, "utf8")); } catch { return {}; }
 }
@@ -75,20 +81,28 @@ function saveConfig(cfg) {
 function antProfileExists() {
   try { return existsSync(join(homedir(), ".config", "anthropic")); } catch { return false; }
 }
-// Returns { opts, source } for building the client, or null if nothing is set up.
-function resolveAuth() {
-  if (process.env.ANTHROPIC_API_KEY) return { opts: {}, source: "ANTHROPIC_API_KEY (environment)" };
-  if (process.env.ANTHROPIC_AUTH_TOKEN) return { opts: {}, source: "ANTHROPIC_AUTH_TOKEN (environment)" };
-  const cfg = loadConfig();
-  if (cfg.apiKey) return { opts: { apiKey: cfg.apiKey }, source: "your saved login (~/.config/symbiot)" };
-  if (antProfileExists()) return { opts: {}, source: "your Anthropic CLI login (ant auth login)" };
+function envKey(provider) {
+  for (const e of (PROVIDERS[provider].env || [])) if (process.env[e]) return process.env[e];
   return null;
 }
-function getClient() {
-  const auth = resolveAuth();
-  if (!auth) return null;
-  try { return { client: new Anthropic(auth.opts), source: auth.source }; }
-  catch { return null; }
+// Returns { provider, key?, baseUrl?, model, source } or null if nothing set up.
+// Order: saved choice → legacy saved key → env keys → an `ant` profile.
+function resolveProvider() {
+  const cfg = loadConfig();
+  const m = process.env.SYMBIOT_MODEL;
+  if (cfg.provider && PROVIDERS[cfg.provider]) {
+    const p = cfg.provider, pc = cfg[p] || {};
+    if (p === "ollama") return { provider: p, baseUrl: pc.baseUrl || "http://localhost:11434", model: m || pc.model || PROVIDERS.ollama.model, source: "saved login" };
+    const key = pc.apiKey || envKey(p);
+    if (key || (p === "anthropic" && (process.env.ANTHROPIC_AUTH_TOKEN || antProfileExists())))
+      return { provider: p, key, model: m || pc.model || PROVIDERS[p].model, source: pc.apiKey ? "saved login" : "environment" };
+  }
+  if (cfg.apiKey) return { provider: "anthropic", key: cfg.apiKey, model: m || PROVIDERS.anthropic.model, source: "saved login (~/.config/symbiot)" };
+  if (process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN) return { provider: "anthropic", key: process.env.ANTHROPIC_API_KEY, model: m || PROVIDERS.anthropic.model, source: "ANTHROPIC_* (environment)" };
+  if (process.env.OPENAI_API_KEY) return { provider: "openai", key: process.env.OPENAI_API_KEY, model: m || PROVIDERS.openai.model, source: "OPENAI_API_KEY (environment)" };
+  if (process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY) return { provider: "gemini", key: process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY, model: m || PROVIDERS.gemini.model, source: "GEMINI/GOOGLE_API_KEY (environment)" };
+  if (antProfileExists()) return { provider: "anthropic", model: m || PROVIDERS.anthropic.model, source: "Anthropic CLI profile (ant auth login)" };
+  return null;
 }
 
 // ---- prompt (with masked secret input) ------------------------------------
@@ -179,41 +193,101 @@ function openWork(repos) {
   return items;
 }
 
-// ---- claude ---------------------------------------------------------------
+// ---- model calls (one per provider, same in/out) --------------------------
+async function callAnthropic(r, system, prompt) {
+  const client = new Anthropic(r.key ? { apiKey: r.key } : {});
+  const base = { model: r.model, max_tokens: MAX_TOKENS, system, messages: [{ role: "user", content: prompt }] };
+  let res;
+  try { res = await client.messages.create({ ...base, output_config: { effort: "low" } }); }
+  catch (e) {
+    // effort/output_config isn't accepted on every model (e.g. Haiku) — retry plain
+    if (/effort|output_config|thinking|budget|400/i.test(e?.message || "")) res = await client.messages.create(base);
+    else throw e;
+  }
+  if (res.stop_reason === "refusal") return "(the model declined this one — odd for a work summary; try again)";
+  return res.content.filter((b) => b.type === "text").map((b) => b.text).join("\n").trim();
+}
+async function callOpenAI(r, system, prompt) {
+  const messages = [{ role: "system", content: system }, { role: "user", content: prompt }];
+  // Newer models want max_completion_tokens instead of max_tokens; try both.
+  for (const tokKey of ["max_tokens", "max_completion_tokens"]) {
+    const res = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${r.key}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ model: r.model, [tokKey]: MAX_TOKENS, messages }),
+    });
+    const text = await res.text();
+    if (res.ok) return (JSON.parse(text).choices?.[0]?.message?.content || "").trim();
+    if (res.status === 400 && tokKey === "max_tokens" && /max_tokens|max_completion_tokens/i.test(text)) continue;
+    throw new Error(`OpenAI ${res.status}: ${text.slice(0, 200)}`);
+  }
+  return "";
+}
+async function callGemini(r, system, prompt) {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(r.model)}:generateContent?key=${encodeURIComponent(r.key)}`;
+  const res = await fetch(url, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      systemInstruction: { parts: [{ text: system }] },
+      contents: [{ role: "user", parts: [{ text: prompt }] }],
+      generationConfig: { maxOutputTokens: MAX_TOKENS },
+    }),
+  });
+  const text = await res.text();
+  if (!res.ok) throw new Error(`Gemini ${res.status}: ${text.slice(0, 200)}`);
+  const parts = JSON.parse(text).candidates?.[0]?.content?.parts || [];
+  return parts.map((p) => p.text || "").join("").trim();
+}
+async function callOllama(r, system, prompt) {
+  const res = await fetch(`${r.baseUrl}/api/chat`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ model: r.model, stream: false, messages: [{ role: "system", content: system }, { role: "user", content: prompt }] }),
+  });
+  const text = await res.text();
+  if (!res.ok) throw new Error(`Ollama ${res.status}: ${text.slice(0, 200)}`);
+  return (JSON.parse(text).message?.content || "").trim();
+}
+
 async function write(system, prompt) {
-  const conn = getClient();
-  if (!conn) { console.log(AUTH_HELP); return null; }
+  const r = resolveProvider();
+  if (!r) { console.log(AUTH_HELP); return null; }
   const stop = spinner("thinking…");
   try {
-    const res = await conn.client.messages.create({
-      model: MODEL, max_tokens: 1600,
-      output_config: { effort: "low" }, // a summary doesn't need deep reasoning — keeps it fast + cheap
-      system, messages: [{ role: "user", content: prompt }],
-    });
-    if (res.stop_reason === "refusal") return "(the model declined this one — odd for a work summary; try again)";
-    return res.content.filter((b) => b.type === "text").map((b) => b.text).join("\n").trim();
+    if (r.provider === "anthropic") return await callAnthropic(r, system, prompt);
+    if (r.provider === "openai") return await callOpenAI(r, system, prompt);
+    if (r.provider === "gemini") return await callGemini(r, system, prompt);
+    if (r.provider === "ollama") return await callOllama(r, system, prompt);
+    return null;
   } catch (err) {
-    if (err instanceof Anthropic.AuthenticationError || /api key|ANTHROPIC_API_KEY|authentication|credential|401/i.test(err?.message || "")) {
-      console.log(c.y("Your Claude key was rejected. ") + "Re-connect with:  " + c.b("symbiot login --force"));
+    if (/\b401\b|\b403\b|invalid|authentication|api key|unauthor/i.test(err?.message || "")) {
+      console.log(c.y(`Your ${PROVIDERS[r.provider].label} credentials were rejected. `) + "Reconnect with:  " + c.b("symbiot login --force"));
       return null;
     }
     return `Couldn't reach the model: ${err?.message || err}`;
   } finally { stop(); }
 }
 
+async function validate(provider, { key, baseUrl } = {}) {
+  try {
+    if (provider === "anthropic") { await new Anthropic({ apiKey: key }).models.list(); return true; }
+    if (provider === "openai") return (await fetch("https://api.openai.com/v1/models", { headers: { Authorization: `Bearer ${key}` } })).ok;
+    if (provider === "gemini") return (await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(key)}`)).ok;
+    if (provider === "ollama") return (await fetch(`${baseUrl}/api/tags`)).ok;
+  } catch { return false; }
+  return false;
+}
+
 const AUTH_HELP =
-  c.y("Symbiot writes your updates with Claude, so it needs an Anthropic API key.\n") +
-  "  Fastest:   " + c.b("symbiot login") + c.d("        paste a key once; saved to ~/.config/symbiot") + "\n" +
-  "  Or set:    export ANTHROPIC_API_KEY=sk-ant-...\n" +
-  "  Get a key: https://console.anthropic.com/settings/keys\n" +
-  c.d("  (If you use the Anthropic CLI, `ant auth login` works too.)");
+  c.y("Symbiot needs an AI to write your updates. Connect one:\n") +
+  "  " + c.b("symbiot login") + c.d("   pick Claude, OpenAI, Gemini, or a local model (Ollama)") + "\n" +
+  c.d("  Or set a key in your environment: ANTHROPIC_API_KEY / OPENAI_API_KEY / GEMINI_API_KEY.");
 
 // ---- render ---------------------------------------------------------------
 function renderCommits(list) {
   return list.map((x) => `- [${x.repo}] ${x.subject}${x.files.length ? ` (${x.files.length} files)` : ""}`).join("\n");
 }
-function header(title, sub) {
-  if (PLAIN) { console.log(`${title}\n${sub}\n`); return; }
+function header(sub) {
+  if (PLAIN) { console.log(`Symbiot\n${sub}\n`); return; }
   console.log(`\n${c.g("●")} ${c.b("Symbiot")} ${c.d("· " + sub)}\n`);
 }
 
@@ -222,7 +296,7 @@ const SINCE_WEEK = Number(flag("since", "7"));
 const BASE = flag("dir", homedir());
 
 async function cmdWeek(days, label) {
-  if (!resolveAuth()) { console.log(AUTH_HELP); return; }
+  if (!resolveProvider()) { console.log(AUTH_HELP); return; }
   const who = me();
   const repos = findRepos(BASE, days);
   if (!repos.length) {
@@ -230,7 +304,6 @@ async function cmdWeek(days, label) {
     console.log(c.d("Try:  symbiot week --dir ~/projects   (point it at where your repos live)"));
     return;
   }
-  // Your own commits (per-repo identity); --all includes everyone's.
   let cs = commits(repos, `${days} days ago`, !has("all"));
   if (!cs.length) cs = commits(repos, `${days} days ago`, false); // fall back to all if none matched you
   const open = label === "week" ? openWork(repos) : [];
@@ -250,13 +323,13 @@ async function cmdWeek(days, label) {
     (open.length ? `Open / in progress:\n${open.map((o) => `- ${o}`).join("\n")}\n\n` : "") +
     `Write the ${label === "standup" ? "standup" : "update"}.`;
 
-  header("Symbiot", `${cs.length} commits across ${new Set(cs.map((x) => x.repo)).size} repos · ${label}`);
+  header(`${cs.length} commits across ${new Set(cs.map((x) => x.repo)).size} repos · ${label}`);
   const out = await write(system, prompt);
   if (out) console.log(out + "\n");
 }
 
 async function cmdTodo() {
-  if (!resolveAuth()) { console.log(AUTH_HELP); return; }
+  if (!resolveProvider()) { console.log(AUTH_HELP); return; }
   const repos = findRepos(BASE, 60);
   const open = openWork(repos);
   if (!open.length) { console.log(c.y("Nothing outstanding found (no TODOs or uncommitted work).")); return; }
@@ -264,67 +337,87 @@ async function cmdTodo() {
     `You summarise what's still on a developer's plate from their TODO markers and uncommitted work. ` +
     `Group by project, lead with what looks most in-flight (uncommitted work) then the to-dos. ` +
     `Be concise and concrete. No preamble.`;
-  header("Symbiot", `${open.length} open items · todo`);
+  header(`${open.length} open items · todo`);
   const out = await write(system, `Open work:\n${open.map((o) => `- ${o}`).join("\n")}\n\nWhat's still on my plate?`);
   if (out) console.log(out + "\n");
 }
 
+function saveAndReport(cfg, what) {
+  if (saveConfig(cfg)) {
+    console.log(c.g("✓ ") + `Connected: ${what}. Try:  ` + c.b("symbiot week"));
+    console.log(c.d(`  Saved in ${CONFIG_PATH} (readable only by you).`));
+  } else console.log(c.y("Couldn't write the config file at " + CONFIG_PATH));
+}
+
 async function cmdLogin() {
-  const existing = resolveAuth();
-  const provided = flag("key", null);
-  if (existing && !provided && !has("force")) {
-    console.log(c.g("✓ ") + `Already connected — Symbiot is using ${existing.source}.`);
-    console.log(c.d("  Replace it with `symbiot login --force`, or just run `symbiot week`."));
+  const flagProvider = flag("provider", null);
+  const existing = resolveProvider();
+  if (existing && !flagProvider && !flag("key", null) && !has("force")) {
+    console.log(c.g("✓ ") + `Already connected — ${PROVIDERS[existing.provider].label} via ${existing.source}.`);
+    console.log(c.d("  Switch or replace it with `symbiot login --force`."));
     return;
   }
-  console.log("\n" + c.b("Connect Symbiot to Claude") + "\n");
-  console.log("Symbiot writes your updates with Claude (Anthropic). It needs an API key,");
-  console.log("stored locally on this machine and used only to write your updates.\n");
-  console.log(c.d("  Get a key at:  https://console.anthropic.com/settings/keys") + "\n");
 
-  let key = provided;
-  if (!key) key = await ask("Paste your Anthropic API key (sk-ant-…): ", { secret: true });
+  let provider = flagProvider;
+  if (!provider) {
+    console.log("\n" + c.b("Connect Symbiot") + "\n");
+    console.log("Which AI should Symbiot write your updates with?\n");
+    console.log("  1) " + PROVIDERS.anthropic.label + c.d("    — needs an Anthropic API key"));
+    console.log("  2) " + PROVIDERS.openai.label + c.d("          — needs an OpenAI API key"));
+    console.log("  3) " + PROVIDERS.gemini.label + c.d("       — needs a Google AI API key"));
+    console.log("  4) " + PROVIDERS.ollama.label + c.d("  — runs on your machine, no key"));
+    const pick = (await ask("\nChoose 1-4 [1]: ")) || "1";
+    provider = { 1: "anthropic", 2: "openai", 3: "gemini", 4: "ollama" }[pick] || (PROVIDERS[pick] ? pick : "anthropic");
+  }
+  if (!PROVIDERS[provider]) { console.log(c.y("Unknown provider: " + provider)); return; }
+  const meta = PROVIDERS[provider];
+  const cfg = loadConfig();
+
+  if (provider === "ollama") {
+    const baseUrl = (flag("base-url", null) || (await ask("Ollama URL [http://localhost:11434]: ")) || "").trim() || "http://localhost:11434";
+    const model = (flag("model", null) || (await ask(`Model name [${meta.model}]: `)) || "").trim() || meta.model;
+    const stop = spinner("checking Ollama…");
+    const ok = await validate("ollama", { baseUrl });
+    stop();
+    if (!ok) { console.log(c.y(`Couldn't reach Ollama at ${baseUrl}. `) + c.d("Is it running?  (try: ollama serve)")); process.exitCode = 1; return; }
+    cfg.provider = "ollama"; cfg.ollama = { baseUrl, model }; delete cfg.apiKey;
+    saveAndReport(cfg, `${meta.label} · ${model}`);
+    return;
+  }
+
+  console.log("\n" + c.b(`Connect ${meta.label}`) + "\n" + c.d(`  Get a key at:  ${meta.keyUrl}`) + "\n");
+  let key = flag("key", null);
+  if (!key) key = await ask(`Paste your ${meta.keyName}: `, { secret: true });
   key = (key || "").trim();
   if (!key) { console.log(c.y("No key entered — nothing saved.")); return; }
-  if (!/^sk-ant-/.test(key)) console.log(c.d("(that doesn't look like an sk-ant- key, but I'll try it)"));
+  const model = (flag("model", null) || "").trim() || meta.model;
 
   const stop = spinner("checking the key…");
-  let ok = false, why = "";
-  try { await new Anthropic({ apiKey: key }).models.list(); ok = true; }
-  catch (e) {
-    if (e instanceof Anthropic.AuthenticationError || /401|invalid|authentication/i.test(e?.message || ""))
-      why = "Anthropic rejected it — the key looks invalid.";
-    else why = `couldn't reach Anthropic — ${e?.message || e}`;
-  }
-  finally { stop(); }
-
+  const ok = await validate(provider, { key });
+  stop();
   if (!ok) {
-    console.log(c.y("That key didn't work: ") + why);
-    console.log(c.d("Double-check it and run `symbiot login` again."));
+    console.log(c.y(`That key didn't work for ${meta.label}. `) + c.d("Double-check it and run `symbiot login` again."));
     process.exitCode = 1;
     return;
   }
-  if (saveConfig({ ...loadConfig(), apiKey: key })) {
-    console.log(c.g("✓ ") + "Connected. You're set — try:  " + c.b("symbiot week"));
-    console.log(c.d(`  Key saved in ${CONFIG_PATH} (readable only by you).`));
-  } else {
-    console.log(c.y("Couldn't write the config file. Set it in your shell instead:"));
-    console.log("  export ANTHROPIC_API_KEY=" + key);
-  }
+  cfg.provider = provider; cfg[provider] = { apiKey: key, model }; delete cfg.apiKey;
+  saveAndReport(cfg, `${meta.label} · ${model}`);
 }
 
 function cmdLogout() {
   const cfg = loadConfig();
-  if (!cfg.apiKey) { console.log("No saved key to remove."); return; }
-  delete cfg.apiKey;
+  const had = cfg.provider || cfg.apiKey || Object.keys(PROVIDERS).some((p) => cfg[p]);
+  delete cfg.provider; delete cfg.apiKey;
+  for (const p of Object.keys(PROVIDERS)) delete cfg[p];
   saveConfig(cfg);
-  console.log(c.g("✓ ") + `Removed the saved key from ${CONFIG_PATH}.`);
-  if (process.env.ANTHROPIC_API_KEY) console.log(c.d("Note: ANTHROPIC_API_KEY is still set in your environment."));
+  console.log(had ? c.g("✓ ") + `Cleared saved credentials from ${CONFIG_PATH}.` : "No saved credentials to remove.");
+  const envs = ["ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY"].filter((e) => process.env[e]);
+  if (envs.length) console.log(c.d(`Note: still set in your environment: ${envs.join(", ")}.`));
 }
 
 function cmdWhoami() {
-  const a = resolveAuth();
-  if (a) console.log(c.g("✓ ") + `Symbiot is connected — using ${a.source}.  Model: ${MODEL}`);
+  const r = resolveProvider();
+  if (r) console.log(c.g("✓ ") + `Connected: ${PROVIDERS[r.provider].label} · model ${r.model} · via ${r.source}.`);
   else { console.log(c.y("Not connected yet.\n")); console.log(AUTH_HELP); }
 }
 
@@ -334,9 +427,9 @@ ${c.b("Usage")}
   symbiot ${c.d("(or)")} symbiot week      write up your last ${SINCE_WEEK} days
   symbiot standup                   yesterday + today, for standup
   symbiot todo                      what's still on your plate
-  symbiot login                     connect it to Claude (once)
+  symbiot login                     connect it to an AI (once)
   symbiot whoami                    show how it's connected
-  symbiot logout                    forget the saved key
+  symbiot logout                    forget saved credentials
   symbiot help
 
 ${c.b("Options")}
@@ -345,13 +438,15 @@ ${c.b("Options")}
   --all           everyone's commits, not just yours
   --plain         no colour/spinner (good for piping)
 
-${c.b("Setup")}  it writes with Claude, so it needs one Anthropic key:
-  symbiot login                         ${c.d("paste a key once (recommended)")}
-  export ANTHROPIC_API_KEY=sk-ant-...   ${c.d("or set it yourself")}
-  ${c.d("Change the model with SYMBIOT_MODEL (default " + MODEL + "; e.g. claude-haiku-4-5 is cheaper).")}
+${c.b("Setup")}  pick any AI to write with:
+  symbiot login                       ${c.d("choose Claude / OpenAI / Gemini / Ollama")}
+  symbiot login --provider openai --key sk-...   ${c.d("(non-interactive)")}
+  ${c.d("Env keys also work: ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY.")}
+  ${c.d("Override the model per run with SYMBIOT_MODEL.")}
 
 ${c.d("Reads only your local git. No accounts, no OAuth, no data leaves except the")}
-${c.d("commit summaries sent to the model to write your update.")}`;
+${c.d("commit summaries sent to the AI to write your update (nothing leaves at all")}
+${c.d("with a local Ollama model).")}`;
 
 // ---- main -----------------------------------------------------------------
 (async () => {
