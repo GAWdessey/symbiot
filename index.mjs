@@ -21,7 +21,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { execSync, spawn } from "node:child_process";
 import { homedir, totalmem, cpus as oscpus } from "node:os";
 import { join } from "node:path";
-import { readFileSync, writeFileSync, mkdirSync, existsSync, chmodSync, statSync, realpathSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, existsSync, chmodSync, statSync, realpathSync, openSync, writeSync } from "node:fs";
 import { createInterface } from "node:readline";
 import { createServer } from "node:http";
 import { randomBytes } from "node:crypto";
@@ -56,6 +56,7 @@ const has = (name) => argv.includes(`--${name}`);
 const PLAIN = has("plain") || !process.stdout.isTTY;
 let SERVING = false; // set while `symbiot app` runs — silences the CLI spinner
 let LAST_MAP = null;  // cached graph so node clicks don't rescan
+const HANDOFFS = []; // live registry of agents Symbiot has handed work to
 
 // ---- colour + spinner ------------------------------------------------------
 const c = PLAIN
@@ -555,11 +556,22 @@ const HANDOFF_PROMPT = "Read .symbiot/TASKS.md and implement the unchecked items
 function handoffCmd() { const cfg = loadConfig(); return cfg.agentCmd || (cfg.ide ? `${cfg.ide} {dir}` : ""); } // ide = legacy
 function runHandoff(repoPath) {
   try {
-    const tmpl = handoffCmd(); if (!tmpl || !repoPath) return false;
+    const tmpl = handoffCmd(); if (!tmpl || !repoPath) return null;
     const cmd = tmpl.replace(/\{dir\}/g, shSingle(repoPath)).replace(/\{prompt\}/g, escDq(HANDOFF_PROMPT));
-    spawn(cmd, { shell: true, cwd: repoPath, detached: true, stdio: "ignore" }).unref();
-    return true;
-  } catch { return false; }
+    const dir = join(repoPath, ".symbiot"); mkdirSync(dir, { recursive: true });
+    const logp = join(dir, "agent.log");
+    const fd = openSync(logp, "a");
+    try { writeSync(fd, `\n=== symbiot handoff ${new Date().toISOString()} ===\n$ ${cmd}\n`); } catch {}
+    const entry = { id: randomBytes(4).toString("hex"), name: repoPath.split("/").pop(), path: repoPath, log: logp, startedAt: Date.now(), status: "running", exitCode: null, endedAt: null };
+    const child = spawn(cmd, { shell: true, cwd: repoPath, detached: true, stdio: ["ignore", fd, fd] });
+    entry.pid = child.pid;
+    child.on("exit", (code) => { entry.status = code === 0 ? "done" : "failed"; entry.exitCode = code; entry.endedAt = Date.now(); });
+    child.on("error", () => { entry.status = "failed"; entry.endedAt = Date.now(); });
+    child.unref();
+    HANDOFFS.unshift(entry);
+    if (HANDOFFS.length > 30) HANDOFFS.length = 30;
+    return entry;
+  } catch { return null; }
 }
 function cmdModels() {
   const hw = detectHardware(); const rec = recommendModels(hw);
@@ -1100,6 +1112,15 @@ footer{padding:10px 18px;border-top:1px solid var(--line);display:flex}
 .drift .ev{color:var(--faint);font-family:ui-monospace,Menlo,monospace;font-size:11px}
 .dot-w{width:9px;height:9px;border-radius:50%;background:var(--amber);display:inline-block}
 .dot-c{width:9px;height:9px;border-radius:50%;background:var(--green);display:inline-block}
+.agent{border:1px solid var(--line);border-radius:10px;margin-top:10px;padding:12px 14px;background:var(--ink2)}
+.adot{width:10px;height:10px;border-radius:50%;display:inline-block;flex:none}
+.adot.run{background:var(--amber);animation:pulse 1s ease-in-out infinite}
+.adot.ok{background:var(--green)} .adot.fail{background:#E5695B}
+@keyframes pulse{0%,100%{opacity:1;box-shadow:0 0 0 0 rgba(242,165,65,.5)}50%{opacity:.4;box-shadow:0 0 0 5px rgba(242,165,65,0)}}
+.alogout{white-space:pre-wrap;background:var(--ink);border:1px solid var(--line);border-radius:8px;padding:10px;margin-top:10px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;line-height:1.5;color:var(--text);max-height:260px;overflow:auto}
+.bar{height:3px;background:var(--green-dim);border-radius:2px;overflow:hidden;margin-top:8px}
+.bar > i{display:block;height:100%;width:35%;background:var(--green);border-radius:2px;animation:slide 1.3s ease-in-out infinite}
+@keyframes slide{0%{margin-left:-35%}100%{margin-left:100%}}
 .out2{white-space:pre-wrap;background:var(--ink);border:1px solid var(--line);border-radius:9px;padding:10px;margin-top:10px;font-size:13px;line-height:1.55;color:var(--bone)}
 .legend{display:flex;gap:14px;align-items:center;margin-top:10px;font-size:12px;color:var(--faint);flex-wrap:wrap}
 .lg{display:inline-flex;gap:6px;align-items:center}
@@ -1114,6 +1135,7 @@ footer{padding:10px 18px;border-top:1px solid var(--line);display:flex}
 <button class="tab" data-tab="standup">Standup</button>
 <button class="tab" data-tab="todo">Todo</button>
 <button class="tab" data-tab="tasks">Tasks</button>
+<button class="tab" data-tab="agents">Agents</button>
 <button class="tab" data-tab="settings">Settings</button>
 </div>
 <main>
@@ -1145,6 +1167,10 @@ footer{padding:10px 18px;border-top:1px solid var(--line);display:flex}
 <div class="row"><input id="newtask" placeholder="Add a task..." style="flex:1"><button class="act" id="addtask">Add</button><button class="ghost" id="pushtasks" title="Write .symbiot/TASKS.md into each repo for your coding agent">Send to repos</button></div>
 <div id="pushout"></div>
 <div id="tasklist"></div>
+</section>
+<section id="panel-agents" class="hidden">
+<div class="row"><span class="muted">Agents Symbiot has handed work to — live status and output.</span><button class="ghost" id="agentsrefresh" style="margin-left:auto">Refresh</button></div>
+<div id="agentslist"></div>
 </section>
 <section id="panel-drift" class="hidden">
 <div class="row"><span class="muted">What's out of sync, stuck or at risk across your repos — local git facts.</span>
@@ -1192,16 +1218,18 @@ var current='map';var mapLoaded=false;var driftLoaded=false;
 var COLORS={person:'#3DDC97',repo:'#F4F1EA',lang:'#F2A541',tool:'#6bb3ff'};
 function tabs(){return document.querySelectorAll('.tab');}
 function setTab(tab){current=tab;tabs().forEach(function(t){t.classList.toggle('active',t.dataset.tab===tab);});
-var isMap=tab==='map',isSet=tab==='settings',isTasks=tab==='tasks',isDrift=tab==='drift',isRun=(tab==='week'||tab==='standup'||tab==='todo');
+var isMap=tab==='map',isSet=tab==='settings',isTasks=tab==='tasks',isDrift=tab==='drift',isAgents=tab==='agents',isRun=(tab==='week'||tab==='standup'||tab==='todo');
 $('panel-map').classList.toggle('hidden',!isMap);
 $('panel-run').classList.toggle('hidden',!isRun);
 $('panel-settings').classList.toggle('hidden',!isSet);
 $('panel-tasks').classList.toggle('hidden',!isTasks);
 $('panel-drift').classList.toggle('hidden',!isDrift);
+$('panel-agents').classList.toggle('hidden',!isAgents);
 if(isRun){$('what').textContent=tab;$('out').textContent='Nothing yet - hit the button.';$('out').classList.add('muted');$('copy').classList.add('hidden');}
 if(isMap&&!mapLoaded)loadMap();
 if(isTasks)loadTasks();
-if(isDrift&&!driftLoaded)loadDrift();}
+if(isDrift&&!driftLoaded)loadDrift();
+if(isAgents)loadAgents(); else stopAgentsPoll();}
 tabs().forEach(function(t){t.addEventListener('click',function(){setTab(t.dataset.tab);});});
 function refresh(){api('/api/status').then(function(s){$('status').textContent=s.connected?s.line:'Not connected - open Settings';});}
 $('write').addEventListener('click',function(){$('out').textContent='Writing...';$('out').classList.add('muted');$('copy').classList.add('hidden');
@@ -1275,6 +1303,20 @@ var keys=Object.keys(groups).sort(function(a,b){var ia=order.indexOf(a),ib=order
 var h="";keys.forEach(function(ty){h+="<div class='tgroup'>"+esc(ty)+" <span class='tcount'>"+groups[ty].length+"</span></div>";groups[ty].forEach(function(t){h+=taskRow(t);});});
 el.innerHTML=h;wireTaskRows(el);}
 function loadTasks(){api('/api/tasks').then(renderTasks);}
+var agentsTimer=null;
+function stopAgentsPoll(){if(agentsTimer){clearTimeout(agentsTimer);agentsTimer=null;}}
+function fmtE(ms){var s=Math.floor(ms/1000);if(s<60)return s+'s';var m=Math.floor(s/60);return m+'m '+(s%60)+'s';}
+function loadAgents(){api('/api/agents').then(function(list){var el=document.getElementById('agentslist');
+if(!list||!list.length){el.innerHTML="<div class='muted' style='margin-top:12px'>No agents yet. In <b>Tasks</b>, tick ideas and hit <b>Send to repos</b> (with an agent command set in Settings) &mdash; you'll watch it work here.</div>";stopAgentsPoll();return;}
+el.innerHTML=list.map(function(a){var cls=a.status==='running'?'run':(a.status==='done'?'ok':'fail');
+var st=a.status==='running'?('working &middot; '+fmtE(a.elapsed)):(esc(a.status)+' &middot; '+fmtE(a.elapsed)+(a.exitCode!=null?' &middot; exit '+a.exitCode:''));
+var b="<div class='dh'><span class='adot "+cls+"'></span><span class='dn'>"+esc(a.name)+"</span><span class='dd'>"+st+"</span></div>";
+if(a.status==='running')b+="<div class='bar'><i></i></div>";
+b+="<pre class='alogout'>"+esc((a.tail&&a.tail.trim())||'(waiting for output…)')+"</pre>";
+return "<div class='agent'>"+b+"</div>";}).join("");
+el.querySelectorAll('.alogout').forEach(function(p){p.scrollTop=p.scrollHeight;});
+var anyRunning=list.some(function(a){return a.status==='running';});
+stopAgentsPoll();if(anyRunning&&current==='agents')agentsTimer=setTimeout(loadAgents,2000);});}
 function loadDrift(){var out=document.getElementById('driftout');out.innerHTML="<div class='muted' style='margin-top:12px'>Reading your repos&hellip;</div>";
 var ci=document.getElementById('driftci').checked?'1':'0';var ft=document.getElementById('driftfetch').checked?'1':'0';
 api('/api/drift?ci='+ci+'&fetch='+ft).then(function(d){driftLoaded=true;var repos=d.repos||[];var risky=repos.filter(function(r){return r.flags.some(function(f){return f.level==='warn';});});
@@ -1295,8 +1337,8 @@ if(r.empty){o.innerHTML="<div class='muted' style='margin-top:10px'>No open task
 var n=(r.written||[]).length;var h="<div class='drift' style='margin-top:10px'><div class='dh'><span class='dot-c'></span><span class='dn'>Done &mdash; wrote "+n+" file"+(n===1?"":"s")+"</span></div>";
 if(n){h+="<ul>";r.written.forEach(function(w){h+="<li class='info'>&#10003; <b>"+esc(w.name)+"</b> <span class='ev'>"+esc(w.file)+" ("+w.count+" task"+(w.count===1?"":"s")+")</span></li>";});h+="</ul>";}
 if(r.unresolved&&r.unresolved.length){h+="<div class='dd' style='margin-top:6px'>&#9888; not written (repo not found under your home folder): "+esc(r.unresolved.map(function(u){return u.name;}).join(", "))+"</div>";}
-if(r.handoff&&r.written&&r.written.length){r.written.forEach(function(w){api('/api/open',{path:w.path});});h+="<div class='dd' style='margin-top:8px'>&#129302; Handing "+n+" repo(s) to your agent (<b>"+esc(r.handoff)+"</b>)&hellip;</div>";}
-else{h+="<div class='dd' style='margin-top:8px'>Set an <b>agent command</b> in Settings to auto-run it on send. For now, tell your agent: <b>“Read .symbiot/TASKS.md and implement the unchecked items.”</b></div>";}
+if(r.handoff&&r.written&&r.written.length){r.written.forEach(function(w){api('/api/open',{path:w.path});});h+="<div class='dd' style='margin-top:8px'>&#129302; Handed "+n+" repo(s) to your agent &mdash; opening the <b>Agents</b> tab to watch it work&hellip;</div>";setTimeout(function(){setTab('agents');},500);}
+else{h+="<div class='dd' style='margin-top:8px'>Set an <b>agent command</b> in Settings to auto-run it on send (and watch it in the Agents tab). For now, tell your agent: <b>“Read .symbiot/TASKS.md and implement the unchecked items.”</b></div>";}
 h+="</div>";
 o.innerHTML=h;}).catch(function(e){btn.disabled=false;o.innerHTML="<div class='err' style='margin-top:10px'>Couldn&#39;t write tasks: "+esc(String((e&&e.message)||e))+"</div>";});}
 function loadAgentCfg(){api('/api/agentcfg').then(function(d){document.getElementById('agentcmd').value=d.cmd||'';
@@ -1335,6 +1377,7 @@ h+="</div>";out.innerHTML=h;});}
 document.getElementById('remap').addEventListener('click',loadMap);
 document.getElementById('recbtn').addEventListener('click',loadRec);
 document.getElementById('driftrun').addEventListener('click',function(){driftLoaded=false;loadDrift();});
+document.getElementById('agentsrefresh').addEventListener('click',loadAgents);
 document.getElementById('addtask').addEventListener('click',addTaskUI);
 document.getElementById('pushtasks').addEventListener('click',pushTasksUI);
 document.getElementById('agentcmd').addEventListener('change',saveAgent);
@@ -1405,7 +1448,8 @@ async function cmdApp() {
       if (u.pathname === "/api/tasks/push" && req.method === "POST") return json(res, pushTasks());
       if (u.pathname === "/api/agentcfg") { const d = detectHandoffs(); return json(res, { cmd: handoffCmd(), agents: d.agents, editors: d.editors }); }
       if (u.pathname === "/api/agentcmd" && req.method === "POST") { const b = await readBody(req); const cfg = loadConfig(); const v = String(b.cmd || "").trim(); if (v) cfg.agentCmd = v; else delete cfg.agentCmd; delete cfg.ide; saveConfig(cfg); return json(res, { ok: true, cmd: cfg.agentCmd || "" }); }
-      if (u.pathname === "/api/open" && req.method === "POST") { const b = await readBody(req); return json(res, { opened: runHandoff(String(b.path || "")) }); }
+      if (u.pathname === "/api/open" && req.method === "POST") { const b = await readBody(req); const e = runHandoff(String(b.path || "")); return json(res, { opened: !!e, id: e ? e.id : "" }); }
+      if (u.pathname === "/api/agents") return json(res, HANDOFFS.map((e) => { let tail = ""; try { tail = readFileSync(e.log, "utf8").slice(-1200); } catch {} return { id: e.id, name: e.name, path: e.path, status: e.status, elapsed: (e.endedAt || Date.now()) - e.startedAt, exitCode: e.exitCode, tail }; }));
       if (u.pathname === "/api/run" && req.method === "POST") { const b = await readBody(req); const cmd = ["week", "standup", "todo"].includes(b.cmd) ? b.cmd : "week"; return json(res, await produce(cmd)); }
       if (u.pathname === "/api/connect" && req.method === "POST") { return json(res, await connectProvider(await readBody(req))); }
       if (u.pathname === "/api/quit") { res.writeHead(200); res.end("bye"); setTimeout(() => process.exit(0), 150); return; }

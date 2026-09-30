@@ -37,6 +37,7 @@ const calls = [
   ["/api/models", "GET"],
   ["/api/agentcfg", "GET"],
   ["/api/agentcmd", "POST"],
+  ["/api/agents", "GET"],
 ];
 try {
   console.log("SMOKE — every UI endpoint responds (no 404 route/method mismatch)");
