@@ -29,6 +29,11 @@ Chrome/Chromium/Edge/Brave (`--app` mode), otherwise a normal tab. Tabs for
 Week / Standup / Todo, a Copy button, and a Settings panel to pick your AI. No
 Electron, no install — it's the same CLI. Press Ctrl+C (or click Quit) to stop.
 
+**Cross-platform:** the app works on **Linux, macOS, and Windows** — the server
+and UI are just a local web page. The chrome-less window is detected per-OS
+(PATH on Linux, the `/Applications` bundle on macOS, `Program Files` on Windows);
+where no Chromium-family browser is found it opens your default browser instead.
+
 ## Install
 
 ```bash
