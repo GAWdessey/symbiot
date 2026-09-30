@@ -11,10 +11,23 @@ Claude, OpenAI, Gemini, or a **local model** via Ollama — set up once.
 symbiot            your last 7 days, written up   (same as: symbiot week)
 symbiot standup    yesterday + today, for standup
 symbiot todo       what's still on your plate
+symbiot app        open the visual app in your browser
 symbiot login      connect it to an AI (once)
 symbiot whoami     show how it's connected
 symbiot help
 ```
+
+## Prefer a window? `symbiot app`
+
+```bash
+symbiot app
+```
+
+Starts a tiny local server (127.0.0.1 only, protected by a one-time token) and
+opens the visual app in your browser — in a clean, chrome-less window if you have
+Chrome/Chromium/Edge/Brave (`--app` mode), otherwise a normal tab. Tabs for
+Week / Standup / Todo, a Copy button, and a Settings panel to pick your AI. No
+Electron, no install — it's the same CLI. Press Ctrl+C (or click Quit) to stop.
 
 ## Install
 
