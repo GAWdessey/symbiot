@@ -25,6 +25,10 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync, chmodSync } from "n
 import { createInterface } from "node:readline";
 import { createServer } from "node:http";
 import { randomBytes } from "node:crypto";
+import { fileURLToPath } from "node:url";
+
+const HERE = fileURLToPath(new URL(".", import.meta.url));
+let VERSION = "0"; try { VERSION = JSON.parse(readFileSync(join(HERE, "package.json"), "utf8")).version; } catch {}
 
 const MAX_REPOS = 14;
 const MAX_COMMITS = 140;
@@ -159,6 +163,107 @@ function findGitDirs(base, limit) {
 function me() {
   return { email: sh("git config --global user.email").trim(), name: sh("git config --global user.name").trim() };
 }
+
+// ---- accurate repo signals (the field-report fixes) -----------------------
+// All author identities in this repo that plausibly belong to the current user,
+// with a fallback when the filter would keep almost nothing of an active repo.
+function authorship(repoPath) {
+  const gName = sh("git config --global user.name 2>/dev/null").trim();
+  const gEmail = sh("git config --global user.email 2>/dev/null").trim();
+  const rEmail = sh(`git -C ${JSON.stringify(repoPath)} config user.email 2>/dev/null`).trim();
+  const total = Number(sh(`git -C ${JSON.stringify(repoPath)} rev-list --count HEAD 2>/dev/null`).trim()) || 0;
+  const rows = sh(`git -C ${JSON.stringify(repoPath)} log --format='%ae|%an' 2>/dev/null | sort | uniq -c | sort -rn | head -60`)
+    .split("\n").map((l) => l.trim()).filter(Boolean).map((l) => {
+      const m = l.match(/^(\d+)\s+(.*)$/); if (!m) return null;
+      const parts = m[2].split("|"); return { count: Number(m[1]), email: parts[0], name: parts.slice(1).join("|") };
+    }).filter(Boolean);
+  const nameKey = gName.toLowerCase().replace(/\s+/g, "");
+  const mine = new Set();
+  for (const r of rows) {
+    const nore = r.email.match(/^\d+\+(.+)@users\.noreply\.github\.com$/i);
+    const isMine = (r.email && (r.email === rEmail || r.email === gEmail))
+      || (gName && r.name && r.name.toLowerCase() === gName.toLowerCase())
+      || (nore && nameKey && nore[1].toLowerCase().replace(/\s+/g, "") === nameKey);
+    if (isMine) mine.add(r.email);
+  }
+  if (rEmail) mine.add(rEmail);
+  let mineCount = rows.filter((r) => mine.has(r.email)).reduce((s, r) => s + r.count, 0);
+  const filterDropped = total >= 20 && mineCount / Math.max(total, 1) < 0.10;
+  const emails = filterDropped ? rows.map((r) => r.email) : [...mine];
+  return { emails, mineCount, total, filterDropped, names: [...new Set(rows.filter((r) => mine.has(r.email)).map((r) => r.email))] };
+}
+function authorArgs(emails) { return (emails || []).filter(Boolean).map((e) => `--author=${JSON.stringify(e)}`).join(" "); }
+
+// Working-tree state, incl. detecting a stale/old checkout (not new work).
+function repoState(repoPath) {
+  const branch = sh(`git -C ${JSON.stringify(repoPath)} rev-parse --abbrev-ref HEAD 2>/dev/null`).trim();
+  const porcelain = sh(`git -C ${JSON.stringify(repoPath)} status --porcelain 2>/dev/null`).split("\n").filter(Boolean);
+  let del = 0, mod = 0, add = 0;
+  for (const l of porcelain) { const x = l.slice(0, 2); if (/\?\?/.test(x)) add++; else if (x.includes("D")) del++; else if (x.includes("A")) add++; else mod++; }
+  const dirty = porcelain.length;
+  let stale = false, staleBy = 0;
+  if (dirty) {
+    for (const k of [3, 5, 10, 20, 40, 80, 160, 320]) {
+      if (!sh(`git -C ${JSON.stringify(repoPath)} rev-parse HEAD~${k} 2>/dev/null`).trim()) break;
+      if (sh(`git -C ${JSON.stringify(repoPath)} diff --quiet HEAD~${k} 2>/dev/null && echo EQ`).trim() === "EQ") { stale = true; staleBy = k; break; }
+    }
+    if (!stale && del >= 20 && del > mod && add === 0) stale = true; // mostly deletions = an old snapshot
+  }
+  const behind = Number(sh(`git -C ${JSON.stringify(repoPath)} rev-list --count HEAD..@{u} 2>/dev/null`).trim()) || 0;
+  return { branch, dirty, del, mod, add, stale, staleBy, behind };
+}
+function readmeInfo(repoPath) {
+  for (const f of ["README.md", "README.MD", "Readme.md", "readme.md", "README.txt", "README"]) {
+    try {
+      const p = join(repoPath, f);
+      if (existsSync(p)) {
+        const hash = sh(`git -C ${JSON.stringify(repoPath)} log -1 --format=%H -- ${JSON.stringify(f)} 2>/dev/null`).trim();
+        return {
+          file: f, excerpt: readFileSync(p, "utf8").slice(0, 2500),
+          lastDate: sh(`git -C ${JSON.stringify(repoPath)} log -1 --format=%cd --date=short -- ${JSON.stringify(f)} 2>/dev/null`).trim(),
+          commitsAgo: hash ? (Number(sh(`git -C ${JSON.stringify(repoPath)} rev-list --count ${hash}..HEAD 2>/dev/null`).trim()) || 0) : 0,
+        };
+      }
+    } catch {}
+  }
+  return { file: null, excerpt: "", lastDate: "", commitsAgo: 0 };
+}
+function repoShape(repoPath) {
+  const files = sh(`git -C ${JSON.stringify(repoPath)} ls-files 2>/dev/null | head -4000`).split("\n").filter(Boolean);
+  const top = {}; const docs = []; const manifests = [];
+  for (const f of files) {
+    const seg = f.includes("/") ? f.split("/")[0] : "(root)";
+    top[seg] = (top[seg] || 0) + 1;
+    const base = f.split("/").pop();
+    if (MANIFEST_TOOL[base]) manifests.push(f);
+    if (/^(readme|contributing|claude|agents|changelog|architecture|design)/i.test(base) || /(^|\/)(docs|knowledge)\//i.test(f)) docs.push(f);
+  }
+  return {
+    total: files.length,
+    dirs: Object.entries(top).sort((a, b) => b[1] - a[1]).slice(0, 14).map(([d, n]) => `${d}/ (${n})`),
+    manifests: manifests.slice(0, 12), docs: [...new Set(docs)].slice(0, 16),
+  };
+}
+// House rules the model must respect (e.g. "we commit .env on purpose").
+function houseRules(repoPath) {
+  const out = [];
+  for (const [label, f] of [["Project rules", "CLAUDE.md"], ["Agent rules", "AGENTS.md"], ["Contributing", "CONTRIBUTING.md"]]) {
+    try { const p = join(repoPath, f); if (existsSync(p)) out.push(`## ${label} (${f})\n` + readFileSync(p, "utf8").slice(0, 1500)); } catch {}
+  }
+  try { const g = join(homedir(), ".config", "symbiot", "rules.md"); if (existsSync(g)) out.push("## Your global rules\n" + readFileSync(g, "utf8").slice(0, 1500)); } catch {}
+  return out.join("\n\n");
+}
+// "Show what was read" footer for every report.
+function reportFooter(repoPath, auth, state, rd) {
+  const b = [`symbiot ${VERSION}`, `path ${repoPath}`];
+  if (state.branch) b.push(`branch ${state.branch}`);
+  b.push(`${auth.mineCount} of ${auth.total} commits matched you${auth.filterDropped ? " — filter dropped, counting everyone" : ""}`);
+  if (rd && rd.lastDate) b.push(`README changed ${rd.lastDate}${rd.commitsAgo ? ` (${rd.commitsAgo} commits ago)` : ""}`);
+  if (state.stale) b.push(`⚠ STALE checkout: working tree ≈ ${state.staleBy ? "HEAD~" + state.staleBy : "an older commit"} — not new work`);
+  else if (state.dirty) b.push(`${state.dirty} uncommitted (${state.mod} mod / ${state.del} del / ${state.add} new)`);
+  if (state.behind) b.push(`${state.behind} behind upstream`);
+  return b.join(" · ");
+}
 function findRepos(base, sinceDays) {
   const repos = [];
   for (const g of findGitDirs(base, 200)) {
@@ -173,10 +278,10 @@ function commits(repos, sinceExpr, mineOnly = true) {
   const all = [];
   const seen = new Set();
   for (const r of repos) {
-    // Filter to the identity you actually commit under IN THIS repo (people use
-    // different emails per project); no filter with --all.
-    const email = mineOnly ? sh(`git -C ${JSON.stringify(r.path)} config user.email`).trim() : "";
-    const authorArg = email ? `--author=${JSON.stringify(email)}` : "";
+    // Match ALL of your identities in this repo (per-repo email, global email,
+    // GitHub noreply login, matching name), with a fallback when almost nothing
+    // matches an active repo. No filter with --all.
+    const authorArg = mineOnly ? authorArgs(authorship(r.path).emails) : "";
     const raw = sh(
       `git -C ${JSON.stringify(r.path)} log --since=${JSON.stringify(sinceExpr)} ${authorArg} ` +
       `--no-merges --date=short --name-only --pretty=format:'@@@%H|%ad|%s' -n 60`,
@@ -207,10 +312,11 @@ function openWork(repos) {
       const m = l.match(/^([^:]+):(\d+):(.*)$/);
       if (m) items.push(`${r.name}: ${m[3].replace(/^[\s/*#-]+/, "").trim().slice(0, 120)} (${m[1]}:${m[2]})`);
     }
-    const dirty = sh(`git -C ${JSON.stringify(r.path)} status --porcelain 2>/dev/null`).split("\n").filter(Boolean);
-    if (dirty.length) {
-      const branch = sh(`git -C ${JSON.stringify(r.path)} rev-parse --abbrev-ref HEAD 2>/dev/null`).trim();
-      items.push(`${r.name}: ${dirty.length} uncommitted file(s) on ${branch || "?"}`);
+    const st = repoState(r.path);
+    if (st.stale) {
+      items.push(`${r.name}: STALE checkout — working tree ≈ ${st.staleBy ? "HEAD~" + st.staleBy : "an older commit"}, NOT new work; do not commit (would revert history)`);
+    } else if (st.dirty) {
+      items.push(`${r.name}: ${st.dirty} uncommitted (${st.mod} mod / ${st.del} del / ${st.add} new) on ${st.branch || "?"}`);
     }
   }
   return items;
@@ -384,7 +490,14 @@ function findAllRepos(base) {
     const last = Number(sh(`git -C ${JSON.stringify(repo)} log -1 --format=%ct 2>/dev/null`).trim()) || 0;
     if (last) repos.push({ path: repo, name: repo.split("/").pop(), recency: last });
   }
-  return repos.sort((a, b) => b.recency - a.recency).slice(0, 30);
+  // Group worktrees by shared git dir; keep only the freshest checkout of each.
+  const byCommon = {};
+  for (const r of repos) {
+    const cd = sh(`git -C ${JSON.stringify(r.path)} rev-parse --git-common-dir 2>/dev/null`).trim() || r.path;
+    const key = cd.startsWith("/") ? cd : join(r.path, cd);
+    if (!byCommon[key] || byCommon[key].recency < r.recency) byCommon[key] = r;
+  }
+  return Object.values(byCommon).sort((a, b) => b.recency - a.recency).slice(0, 30);
 }
 function detectRepo(r) {
   const files = sh(`git -C ${JSON.stringify(r.path)} ls-files 2>/dev/null | head -3000`).split("\n").filter(Boolean);
@@ -453,26 +566,29 @@ async function repoReview(path) {
   if (!resolveProvider()) return { error: "not-connected" };
   if (!path) return { error: "no repo" };
   const name = path.split("/").pop();
-  let readme = "";
-  for (const f of ["README.md", "README.MD", "Readme.md", "readme.md", "README.txt", "README"]) {
-    try { const p = join(path, f); if (existsSync(p)) { readme = readFileSync(p, "utf8").slice(0, 2500); break; } } catch {}
-  }
-  const files = sh(`git -C ${JSON.stringify(path)} ls-files 2>/dev/null | head -60`).trim();
-  const recent = sh(`git -C ${JSON.stringify(path)} log --oneline -12 2>/dev/null`).trim();
+  const auth = authorship(path), state = repoState(path), rd = readmeInfo(path), shape = repoShape(path), rules = houseRules(path);
+  const commits = sh(`git -C ${JSON.stringify(path)} log ${authorArgs(auth.emails)} --format='%ad %s' --date=short -50 2>/dev/null`).trim()
+    || sh(`git -C ${JSON.stringify(path)} log --format='%ad %s' --date=short -50 2>/dev/null`).trim();
+  const footer = reportFooter(path, auth, state, rd);
   const system =
-    `You are reviewing one software project for its owner. Respond with ONLY a JSON object, no markdown fences, no prose outside it, shaped exactly: ` +
-    `{"review": string, "ideas": string[]}. "review" is 3-6 sentences covering what it does and what it's meant for (who'd use it, why). ` +
-    `"ideas" is 3-6 short, concrete upgrade or next-feature items, each a single actionable phrase (something you could put on a to-do list). ` +
-    `Be specific and grounded in the README, files, and commits — infer from real evidence, don't invent.`;
+    `You are reviewing one software project for its owner. Respond with ONLY a JSON object (no fences, no prose outside it): {"review": string, "ideas": string[]}. ` +
+    `"review": 3-6 sentences on what it does and who it's for. "ideas": 3-6 short, concrete upgrade items, each a single actionable phrase. ` +
+    `Ground every claim in the evidence below and tie it to real files/commits. Recent commits are MORE current than the README — when they disagree, trust the commits. ` +
+    `Never propose building something that already appears in the structure. Never advise against anything the conventions call intentional. ` +
+    (state.stale ? `CRITICAL: the working tree is a STALE/old checkout, not new work — never suggest committing it (it would revert history). ` : ``);
   const prompt =
-    `Project: ${name}\nPath: ${path}\n\n` +
-    (readme ? `README (excerpt):\n${readme}\n\n` : "(no README found)\n\n") +
-    `Files:\n${files || "(none)"}\n\nRecent commits:\n${recent || "(none)"}\n\nReturn the JSON.`;
+    `Project: ${name}\nBranch ${state.branch} · ${auth.total} commits total (${auth.mineCount} yours${auth.filterDropped ? ", filter dropped so counting everyone" : ""})\n\n` +
+    (rd.file ? `README (last changed ${rd.lastDate || "?"}, ${rd.commitsAgo} commits ago — may be out of date):\n${rd.excerpt}\n\n` : "(no README)\n\n") +
+    `Structure (top folders · file counts): ${shape.dirs.join(", ")}\nManifests: ${shape.manifests.join(", ") || "none"}\nDocs present: ${shape.docs.join(", ") || "none"}\n\n` +
+    `Recent commits (newest first):\n${commits || "(none)"}\n\n` +
+    (rules ? `Conventions this team has chosen — do NOT advise against these:\n${rules}\n\n` : "") +
+    (state.stale ? `Working tree: STALE (≈ ${state.staleBy ? "HEAD~" + state.staleBy : "older"}); its "changes" are the gap to an old snapshot, not new work.\n\n` : "") +
+    `Return the JSON.`;
   const raw = await write(system, prompt);
-  if (!raw) return { text: "(couldn't reach the model)", ideas: [] };
+  if (!raw) return { text: "(couldn't reach the model)", ideas: [], footer };
   const j = extractJson(raw);
-  if (j && (j.review || j.ideas)) return { text: String(j.review || "").trim() || raw, ideas: Array.isArray(j.ideas) ? j.ideas.map((x) => String(x).trim()).filter(Boolean).slice(0, 8) : [] };
-  return { text: raw, ideas: [] }; // model didn't return clean JSON — show prose, no checkboxes
+  if (j && (j.review || j.ideas)) return { text: String(j.review || "").trim() || raw, ideas: Array.isArray(j.ideas) ? j.ideas.map((x) => String(x).trim()).filter(Boolean).slice(0, 8) : [], footer };
+  return { text: raw, ideas: [], footer };
 }
 function extractJson(s) {
   if (!s) return null;
@@ -486,17 +602,23 @@ async function repoSuggest(path) {
   if (!resolveProvider()) return { error: "not-connected" };
   if (!path) return { error: "no repo" };
   const name = path.split("/").pop();
-  const email = sh(`git -C ${JSON.stringify(path)} config user.email`).trim();
-  const recent = sh(`git -C ${JSON.stringify(path)} log --oneline -30 ${email ? `--author=${JSON.stringify(email)}` : ""} 2>/dev/null`).trim();
+  const auth = authorship(path), state = repoState(path), rd = readmeInfo(path), rules = houseRules(path);
+  const recent = sh(`git -C ${JSON.stringify(path)} log ${authorArgs(auth.emails)} --format='%ad %s' --date=short -50 2>/dev/null`).trim()
+    || sh(`git -C ${JSON.stringify(path)} log --format='%ad %s' --date=short -50 2>/dev/null`).trim();
   const open = openWork([{ path, name }]);
+  const footer = reportFooter(path, auth, state, rd);
   const system =
-    `You are a pragmatic senior engineer advising on one project. From its recent commits and open items, write exactly three short sections with these headings: ` +
-    `"In flight" (what's clearly underway), "Next steps" (3-5 concrete, specific actions), and "Ideas" (2-3 that fit where this build is heading). ` +
-    `Be specific to the actual work shown — no filler, no preamble, no restating the commits verbatim.`;
+    `You are a pragmatic senior engineer advising on one project. Write exactly three short sections with headings: ` +
+    `"In flight" (what's clearly underway), "Next steps" (3-5 concrete actions), "Ideas" (2-3 that fit where this is heading). ` +
+    `Ground each point in the evidence; recent commits beat the README. Do not advise against the stated conventions. ` +
+    (state.stale ? `CRITICAL: the working tree is a STALE checkout — never suggest committing it (would revert history). ` : ``) +
+    `No filler, no preamble.`;
   const prompt =
-    `Project: ${name}.\n\nRecent commits:\n${recent || "(none)"}\n\nOpen / unfinished:\n${open.length ? open.map((o) => "- " + o).join("\n") : "(none found)"}\n\nGive the advice.`;
+    `Project: ${name} (branch ${state.branch}, ${auth.total} commits, ${auth.mineCount} yours${auth.filterDropped ? " — filter dropped" : ""}).\n\n` +
+    `Recent commits:\n${recent || "(none)"}\n\nOpen / unfinished:\n${open.length ? open.map((o) => "- " + o).join("\n") : "(none found)"}\n\n` +
+    (rules ? `Conventions — do NOT advise against these:\n${rules}\n\n` : "") + `Give the advice.`;
   const text = await write(system, prompt);
-  return { text: text || "(couldn't reach the model)" };
+  return { text: text || "(couldn't reach the model)", footer };
 }
 
 // Build a write-up for a command; returns { text, sub, error? } without printing.
@@ -512,7 +634,7 @@ async function produce(cmd) {
       `Group by project, lead with what looks most in-flight (uncommitted work) then the to-dos. ` +
       `Be concise and concrete. No preamble.`;
     const text = await write(system, `Open work:\n${open.map((o) => `- ${o}`).join("\n")}\n\nWhat's still on my plate?`);
-    return { text: text || "(couldn't reach the model)", sub: `${open.length} open items · todo` };
+    return { text: text || "(couldn't reach the model)", sub: `${open.length} open items · todo`, footer: `symbiot ${VERSION} · ${repos.length} repos scanned · ${open.length} open items` };
   }
   const label = cmd === "standup" ? "standup" : "week";
   const days = cmd === "standup" ? 2 : SINCE_WEEK;
@@ -537,7 +659,7 @@ async function produce(cmd) {
     `Write the ${label === "standup" ? "standup" : "update"}.`;
 
   const text = await write(system, prompt);
-  return { text: text || "(couldn't reach the model)", sub: `${cs.length} commits across ${new Set(cs.map((x) => x.repo)).size} repos · ${label}` };
+  return { text: text || "(couldn't reach the model)", sub: `${cs.length} commits across ${new Set(cs.map((x) => x.repo)).size} repos · ${label}`, footer: `symbiot ${VERSION} · ${repos.length} repos scanned · ${cs.length} commits (yours) in last ${days}d` };
 }
 
 async function cmdRun(cmd) {
@@ -545,6 +667,7 @@ async function cmdRun(cmd) {
   const r = await produce(cmd);
   header(r.sub || cmd);
   if (r.text) console.log(r.text + "\n");
+  if (r.footer) console.log(c.d(r.footer) + "\n");
 }
 
 // Save a provider connection (used by the web Settings panel); mirrors cmdLogin.
@@ -695,6 +818,7 @@ footer{padding:10px 18px;border-top:1px solid var(--line);display:flex}
 .review h4{margin:0 0 8px;color:var(--green);font-size:11px;letter-spacing:.15em;text-transform:uppercase;font-weight:700}
 .review .body{color:var(--text);line-height:1.65;font-size:14px;white-space:pre-wrap}
 .review .rname{color:var(--bone);font-weight:600}
+.rfoot{margin-top:12px;font-size:11px;color:var(--faint);font-family:ui-monospace,Menlo,Consolas,monospace;border-top:1px solid var(--line);padding-top:8px;line-height:1.5}
 .ideas{margin-top:14px}
 .ideas h4{margin:0 0 6px;color:var(--amber);font-size:11px;letter-spacing:.14em;text-transform:uppercase;font-weight:700}
 .idea{display:flex;align-items:flex-start;gap:9px;padding:5px 0;font-size:13.5px;color:var(--text)}
@@ -743,6 +867,7 @@ footer{padding:10px 18px;border-top:1px solid var(--line);display:flex}
 <button class="ghost hidden" id="copy">Copy</button>
 <span class="muted">Reads your local git and writes it up.</span></div>
 <div class="out muted" id="out">Nothing yet - hit the button.</div>
+<div class="rfoot" id="outfoot" style="display:none"></div>
 </section>
 <section id="panel-tasks" class="hidden">
 <div class="row"><input id="newtask" placeholder="Add a task..." style="flex:1"><button class="act" id="addtask">Add</button></div>
@@ -792,8 +917,8 @@ if(isTasks)loadTasks();}
 tabs().forEach(function(t){t.addEventListener('click',function(){setTab(t.dataset.tab);});});
 function refresh(){api('/api/status').then(function(s){$('status').textContent=s.connected?s.line:'Not connected - open Settings';});}
 $('write').addEventListener('click',function(){$('out').textContent='Writing...';$('out').classList.add('muted');$('copy').classList.add('hidden');
-api('/api/run',{cmd:current}).then(function(r){if(r.error==='not-connected'){$('out').textContent='Not connected yet - open Settings and pick an AI.';return;}
-$('out').textContent=r.text||'(no output)';$('out').classList.remove('muted');$('copy').classList.remove('hidden');});});
+api('/api/run',{cmd:current}).then(function(r){var f=$('outfoot');if(r.error==='not-connected'){$('out').textContent='Not connected yet - open Settings and pick an AI.';f.style.display='none';return;}
+$('out').textContent=r.text||'(no output)';$('out').classList.remove('muted');$('copy').classList.remove('hidden');if(r.footer){f.textContent=r.footer;f.style.display='block';}else{f.style.display='none';}});});
 $('copy').addEventListener('click',function(){navigator.clipboard.writeText($('out').textContent);$('copy').textContent='Copied';setTimeout(function(){$('copy').textContent='Copy';},1400);});
 function syncP(){var p=$('provider').value;var local=p==='ollama';$('keyWrap').classList.toggle('hidden',local);$('baseWrap').classList.toggle('hidden',!local);
 $('getkey').textContent=local?'About Ollama':'Where do I get a key?';$('modelHint').textContent='(default '+DEFMODEL[p]+')';$('model').placeholder='(blank = '+DEFMODEL[p]+')';}
@@ -826,27 +951,28 @@ function showDetail(d){var el=document.getElementById('detail');el.classList.rem
 if(d.error){el.innerHTML="<h3>&mdash;</h3><div class='k'>"+esc(d.error)+"</div>";return;}
 if(d.type==='repo'){var chips="";['branch: '+(d.branch||'?'),d.commits+' commits',(d.dirty?d.dirty+' uncommitted':'clean'),(d.last?'last '+d.last:'')].concat(d.langs||[]).concat(d.tools||[]).forEach(function(x){if(x)chips+="<span class='tag'>"+esc(x)+"</span>";});
 el.innerHTML="<h3>"+esc(d.label)+"</h3><div class='chips'>"+chips+"</div><button class='act' id='suggest' style='margin-top:12px'>Suggest next steps</button><div id='sugout'></div>";
-document.getElementById('suggest').addEventListener('click',function(){var o=document.getElementById('sugout');o.innerHTML="<div class='out2'>Thinking...</div>";api('/api/suggest',{path:d.path}).then(function(r){if(r.error==='not-connected'){o.innerHTML="<div class='out2'>Connect a model in Settings to get suggestions - Ollama is free and runs locally.</div>";return;}o.innerHTML="<div class='out2'>"+esc(r.text||'(no output)')+"</div>";});});return;}
+document.getElementById('suggest').addEventListener('click',function(){var o=document.getElementById('sugout');o.innerHTML="<div class='out2'>Thinking...</div>";api('/api/suggest',{path:d.path}).then(function(r){if(r.error==='not-connected'){o.innerHTML="<div class='out2'>Connect a model in Settings to get suggestions - Ollama is free and runs locally.</div>";return;}o.innerHTML="<div class='out2'>"+esc(r.text||'(no output)')+"</div>"+(r.footer?"<div class='rfoot'>"+esc(r.footer)+"</div>":"");});});return;}
 if(d.type==='lang'||d.type==='tool'){var lis=(d.repos||[]).map(function(r){return "<li>"+esc(r)+"</li>";}).join("");el.innerHTML="<h3>"+esc(d.label)+"</h3><div class='k'>Used in "+((d.repos||[]).length)+" repos</div><ul>"+lis+"</ul>";return;}
 if(d.type==='person'){var st=d.stats||{};el.innerHTML="<h3>"+esc(d.label)+"</h3><div class='k'>"+st.repos+" repos &middot; "+st.commits+" commits &middot; "+st.languages+" languages &middot; "+st.tools+" tools</div>";return;}}
 var reviewCache={};
 function hideReview(){var el=document.getElementById('review');el.classList.add('hidden');el.innerHTML='';}
-function reviewHtml(name,body,ideas,tasks){
+function reviewHtml(name,body,ideas,tasks,footer){
 var h="<h4>AI review &middot; <span class='rname'>"+esc(name)+"</span></h4><div class='body'>"+esc(body)+"</div>";
 if(ideas&&ideas.length){h+="<div class='ideas'><h4>Upgrade ideas &middot; tick to add to Tasks</h4>";
 ideas.forEach(function(idea){var t=(tasks||[]).filter(function(x){return x.text===idea&&x.repo===name;})[0];var tid=t?t.id:"";
 h+="<label class='idea'><input type='checkbox' class='ideachk' data-text=\""+esc(idea)+"\" data-repo=\""+esc(name)+"\" data-tid='"+tid+"'"+(t?" checked":"")+"><span>"+esc(idea)+"</span></label>";});
 h+="</div>";}
+if(footer)h+="<div class='rfoot'>"+esc(footer)+"</div>";
 return h;}
 function wireIdeas(){document.querySelectorAll('.ideachk').forEach(function(cb){cb.addEventListener('change',function(){
 if(cb.checked){api('/api/tasks/add',{text:cb.getAttribute('data-text'),repo:cb.getAttribute('data-repo')}).then(function(it){if(it&&it.id)cb.setAttribute('data-tid',it.id);});}
 else{var id=cb.getAttribute('data-tid');if(id){api('/api/tasks/remove',{id:id}).then(function(){cb.setAttribute('data-tid','');});}}});});}
 function loadReview(name,path){var el=document.getElementById('review');el.classList.remove('hidden');
-if(reviewCache[path]){var c=reviewCache[path];api('/api/tasks').then(function(tasks){el.innerHTML=reviewHtml(name,c.text,c.ideas,tasks);wireIdeas();});return;}
+if(reviewCache[path]){var c=reviewCache[path];api('/api/tasks').then(function(tasks){el.innerHTML=reviewHtml(name,c.text,c.ideas,tasks,c.footer);wireIdeas();});return;}
 el.innerHTML="<h4>AI review &middot; <span class='rname'>"+esc(name)+"</span></h4><div class='body'>Reading the project&hellip;</div>";
 Promise.all([api('/api/review',{path:path}),api('/api/tasks')]).then(function(res){var r=res[0]||{},tasks=res[1]||[];
-if(r.error==='not-connected'){el.innerHTML="<h4>AI review &middot; <span class='rname'>"+esc(name)+"</span></h4><div class='body'>Connect a model in Settings to get a review - Ollama is free and runs locally.</div>";return;}
-var body=r.text||'(no output)';reviewCache[path]={text:body,ideas:r.ideas||[]};el.innerHTML=reviewHtml(name,body,r.ideas||[],tasks);wireIdeas();});}
+if(r.error==='not-connected'){el.innerHTML="<h4>AI review &middot; <span class='rname'>"+esc(name)+"</span></h4><div class='body'>Connect a model in Settings to get a review - Ollama is free and runs locally.</div>"+(r.footer?"<div class='rfoot'>"+esc(r.footer)+"</div>":"");return;}
+var body=r.text||'(no output)';reviewCache[path]={text:body,ideas:r.ideas||[],footer:r.footer};el.innerHTML=reviewHtml(name,body,r.ideas||[],tasks,r.footer);wireIdeas();});}
 function renderTasks(list){var el=document.getElementById('tasklist');if(!list||!list.length){el.innerHTML="<div class='muted' style='margin-top:12px'>No tasks yet. Tick an idea in a repo's review, or add one above.</div>";return;}
 var h="";list.forEach(function(t){h+="<div class='task"+(t.done?" done":"")+"' data-id='"+esc(t.id)+"'><input type='checkbox' class='taskchk'"+(t.done?" checked":"")+"><span class='t'>"+esc(t.text)+"</span>"+(t.repo?"<span class='rp'>"+esc(t.repo)+"</span>":"")+"<button class='rm' title='remove'>&times;</button></div>";});
 el.innerHTML=h;

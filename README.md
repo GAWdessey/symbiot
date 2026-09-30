@@ -105,9 +105,13 @@ Point it somewhere specific with `--dir ~/work`.
 
 - **Reads:** your local git — commit messages and changed-file names, plus
   `TODO`/`FIXME` markers and uncommitted changes for `todo`. All local.
-- **Sends to the AI:** only those commit/TODO summaries, so it can write the
-  update. Not your code, not file contents. With a **local Ollama model,
-  nothing leaves your machine at all.**
+- **Sends to the AI:** commit messages and dates, changed-file **names**, the
+  folder structure, `TODO`/`FIXME` lines, and (for a repo review) an excerpt of
+  the README and any `CLAUDE.md`/`AGENTS.md` conventions. It does **not** send
+  whole source files. With a **local Ollama model, nothing leaves your machine.**
+- **Shows its work:** every report ends with a footer — path, branch, how many
+  commits matched you (e.g. "1090 of 1101"), the README's age, and the
+  working-tree state — so you can see exactly what it read.
 - **Never:** no keylogging, no screen capture, no browsing history, no accounts.
 
 ## Config
