@@ -25,9 +25,16 @@ symbiot app
 
 Starts a tiny local server (127.0.0.1 only, protected by a one-time token) and
 opens the visual app in your browser — in a clean, chrome-less window if you have
-Chrome/Chromium/Edge/Brave (`--app` mode), otherwise a normal tab. Tabs for
-Week / Standup / Todo, a Copy button, and a Settings panel to pick your AI. No
-Electron, no install — it's the same CLI. Press Ctrl+C (or click Quit) to stop.
+Chrome/Chromium/Edge/Brave (`--app` mode), otherwise a normal tab. No Electron,
+no install — it's the same CLI. Press Ctrl+C (or click Quit) to stop.
+
+Tabs:
+
+- **Map** — a live node graph of your work, built from your local git: you at the
+  centre, your repos, and the languages and tools they share (so related projects
+  cluster). **Needs no AI key** — it's pure local data. This is the landing view.
+- **Week / Standup / Todo** — the write-ups (these use your chosen AI).
+- **Settings** — pick your AI. Free/private option: run **Ollama** locally, no key.
 
 **Cross-platform:** the app works on **Linux, macOS, and Windows** — the server
 and UI are just a local web page. The chrome-less window is detected per-OS
