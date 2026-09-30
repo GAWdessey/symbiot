@@ -42,6 +42,6 @@
     "@anthropic-ai/sdk": "^0.128.0"
   },
   "scripts": {
-    "test": "node test/fixtures.mjs"
+    "test": "node test/fixtures.mjs && node test/smoke.mjs"
   }
 }

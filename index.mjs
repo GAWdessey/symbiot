@@ -1213,7 +1213,7 @@ out.innerHTML=h;});}
 function addTaskUI(){var i=document.getElementById('newtask');var v=(i.value||'').trim();if(!v)return;api('/api/tasks/add',{text:v,repo:''}).then(function(){i.value='';loadTasks();});}
 function pushTasksUI(){var o=document.getElementById('pushout');var btn=document.getElementById('pushtasks');btn.disabled=true;
 o.innerHTML="<div class='muted' style='margin-top:10px'><span class='dot-c' style='background:var(--amber)'></span> Writing .symbiot/TASKS.md into your repos&hellip;</div>";
-api('/api/tasks/push').then(function(r){btn.disabled=false;
+api('/api/tasks/push',{}).then(function(r){btn.disabled=false;
 if(r.empty){o.innerHTML="<div class='muted' style='margin-top:10px'>No open tasks to send. Tick ideas in a repo review, or add tasks above.</div>";return;}
 var n=(r.written||[]).length;var h="<div class='drift' style='margin-top:10px'><div class='dh'><span class='dot-c'></span><span class='dn'>Done &mdash; wrote "+n+" file"+(n===1?"":"s")+"</span></div>";
 if(n){h+="<ul>";r.written.forEach(function(w){h+="<li class='info'>&#10003; <b>"+esc(w.name)+"</b> <span class='ev'>"+esc(w.file)+" ("+w.count+" task"+(w.count===1?"":"s")+")</span></li>";});h+="</ul>";}
