@@ -493,14 +493,48 @@ function loadDeploys() { try { return JSON.parse(readFileSync(join(CONFIG_DIR, "
 function ciState(repo, def) {
   if (!sh("command -v gh 2>/dev/null").trim()) return null;
   if (!/github\.com/i.test(sh(`git -C ${JSON.stringify(repo)} remote get-url origin 2>/dev/null`))) return null;
-  const j = sh(`cd ${JSON.stringify(repo)} && gh run list --branch ${def} --limit 1 --json conclusion,status,createdAt 2>/dev/null`).trim();
+  const j = sh(`cd ${JSON.stringify(repo)} && gh run list --branch ${def} --limit 1 --json databaseId,conclusion,status 2>/dev/null`).trim();
   if (!j) return null;
-  try { const a = JSON.parse(j); if (!a.length) return null; const r = a[0];
+  try {
+    const a = JSON.parse(j); if (!a.length) return null; const r = a[0];
     if (r.status && r.status !== "completed") return { level: "info", text: `CI on ${def}: ${r.status}` };
-    if (r.conclusion === "failure") return { level: "warn", text: `CI's last run on ${def} failed — could be a broken build or a stopped runner (check billing/the run)` };
-    if (r.conclusion && r.conclusion !== "success") return { level: "warn", text: `CI on ${def}: ${r.conclusion}` };
-    return { level: "info", text: `CI on ${def}: passing` };
+    if (r.conclusion === "success") return { level: "info", text: `CI on ${def}: passing` };
+    if (r.conclusion === "failure") {
+      // Deterministic "not running" signal: every job has 0 steps (never started).
+      let notRun = false;
+      try { const jobs = (JSON.parse(sh(`cd ${JSON.stringify(repo)} && gh run view ${r.databaseId} --json jobs 2>/dev/null`)).jobs) || []; notRun = jobs.length > 0 && jobs.every((x) => ((x.steps || []).length === 0)); } catch {}
+      return notRun
+        ? { level: "warn", text: `CI is NOT running on ${def} — jobs never started (usually a billing/spending-limit stop), not failing tests` }
+        : { level: "warn", text: `CI's last run on ${def} failed (a real failure — jobs ran)` };
+    }
+    if (r.conclusion) return { level: "warn", text: `CI on ${def}: ${r.conclusion}` };
+    return null;
   } catch { return null; }
+}
+// For merges that aren't on the default branch, tell "likely never landed"
+// (added files missing from default) from "merged another way" (all present).
+function mergedOffDefault(p, defRef) {
+  const raw = sh(`git -C ${JSON.stringify(p)} log --merges --all --not ${defRef} --format='%H|%s' 2>/dev/null`)
+    .split("\n").filter((l) => /merge pull request/i.test(l));
+  if (!raw.length) return [];
+  const defFiles = new Set(sh(`git -C ${JSON.stringify(p)} ls-tree -r --name-only ${defRef} 2>/dev/null`).split("\n").filter(Boolean));
+  const hits = [];
+  for (const line of raw.slice(0, 12)) {
+    const [sha, subj] = line.split("|");
+    const prNum = (subj.match(/#(\d+)/) || [])[1] || "?";
+    const parents = sh(`git -C ${JSON.stringify(p)} rev-list --parents -n1 ${sha} 2>/dev/null`).trim().split(/\s+/);
+    const head = parents[2]; // 2nd parent = the merged branch head
+    let added = 0, missing = 0;
+    if (head) {
+      const mb = sh(`git -C ${JSON.stringify(p)} merge-base ${head} ${defRef} 2>/dev/null`).trim();
+      const files = sh(`git -C ${JSON.stringify(p)} diff --name-status ${mb || defRef} ${head} 2>/dev/null`)
+        .split("\n").map((l) => l.trim()).filter((l) => /^A\b|^A\t/.test(l)).map((l) => l.split(/\s+/).pop());
+      added = files.length;
+      for (const f of files) if (f && !defFiles.has(f)) missing++;
+    }
+    hits.push({ prNum, sha: sha.slice(0, 9), added, missing });
+  }
+  return hits;
 }
 // Drift facts for ONE repo. Compares against origin/<default> when a remote
 // exists, else the local default branch (so it also works on local-only repos).
@@ -510,19 +544,28 @@ function driftRepo(p, opts = {}) {
   const originDef = sh(`git -C ${JSON.stringify(p)} rev-parse --verify -q refs/remotes/origin/${def} 2>/dev/null`).trim();
   const localDef = sh(`git -C ${JSON.stringify(p)} rev-parse --verify -q refs/heads/${def} 2>/dev/null`).trim();
   const defRef = originDef ? `origin/${def}` : (localDef ? def : "");
+  const cmd = opts.deploys && (opts.deploys[p] || opts.deploys[name]);
+  // Fetch only when asked, or for a deploy-configured repo (comparing a live
+  // deployed sha against a stale origin gives a confidently wrong answer).
+  if (originDef && (opts.fetch || cmd)) sh(`git -C ${JSON.stringify(p)} fetch -q origin 2>/dev/null`);
+  const fa = fetchAgeDays(p);
+  const stale = fa != null && fa > 1 ? ` (as of ${fa}d ago)` : "";
+
   if (st.stale) flags.push({ level: "warn", text: `checkout is stale — working tree ≈ ${st.staleBy ? "HEAD~" + st.staleBy : "an older commit"}, not new work` });
   else if (st.dirty) flags.push({ level: "info", text: `${st.dirty} uncommitted (${st.mod} mod / ${st.del} del / ${st.add} new)` });
-  if (st.behind) flags.push({ level: "warn", text: `${st.behind} behind upstream on ${st.branch}` });
+  if (st.behind) flags.push({ level: "warn", text: `${st.behind} behind upstream on ${st.branch}${stale}` });
   const wc = worktreeCount(p); if (wc > 1) flags.push({ level: "info", text: `${wc} checkouts of this repo` });
   if (originDef) {
     const unmerged = sh(`git -C ${JSON.stringify(p)} branch -r --no-merged origin/${def} 2>/dev/null`).split("\n").map((s) => s.trim()).filter((b) => b && !b.startsWith("origin/HEAD"));
     if (unmerged.length) flags.push({ level: "info", text: `${unmerged.length} branch(es) with work not on ${def}` });
   }
   if (defRef) {
-    const merged = sh(`git -C ${JSON.stringify(p)} log --merges --all --not ${defRef} --format='%h %s' 2>/dev/null`).split("\n").filter((l) => /merge pull request/i.test(l));
-    if (merged.length) flags.push({ level: "warn", text: `${merged.length} PR merge(s) landed off ${def} (in a stacked branch, not the default)`, evidence: merged.slice(0, 3).join(" | ") });
+    const hits = mergedOffDefault(p, defRef);
+    const gone = hits.filter((h) => h.added > 0 && h.missing > 0);
+    const other = hits.length - gone.length;
+    if (gone.length) flags.push({ level: "warn", text: `${gone.length} PR(s) merged off ${def} with added files MISSING from ${def} — likely never landed`, evidence: gone.slice(0, 5).map((h) => `#${h.prNum} (${h.missing}/${h.added} files missing)`).join(" | ") });
+    if (other > 0) flags.push({ level: "info", text: `${other} other PR merge(s) off ${def} (files present — probably re-done/squashed)` });
   }
-  const cmd = opts.deploys && (opts.deploys[p] || opts.deploys[name]);
   if (cmd && defRef) {
     const sha = sh(cmd).trim().split(/\s+/)[0];
     if (sha) {
@@ -535,15 +578,15 @@ function driftRepo(p, opts = {}) {
     }
   }
   if (opts.ci) { const ci = ciState(p, def); if (ci) flags.push(ci); }
-  return { name, path: p, def, flags, fetchAgeDays: fetchAgeDays(p) };
+  return { name, path: p, def, flags, fetchAgeDays: fa };
 }
 function computeDrift(opts = {}) {
   const deploys = loadDeploys();
-  const repos = findAllRepos(BASE).slice(0, 20).map((r) => driftRepo(r.path, { deploys, ci: opts.ci }));
+  const repos = findAllRepos(BASE).slice(0, 20).map((r) => driftRepo(r.path, { deploys, ci: opts.ci, fetch: opts.fetch }));
   return { repos, ci: !!opts.ci };
 }
 function cmdDrift() {
-  const d = computeDrift({ ci: has("ci") });
+  const d = computeDrift({ ci: has("ci"), fetch: has("fetch") });
   const warn = d.repos.filter((r) => r.flags.some((f) => f.level === "warn"));
   console.log(`\n${c.g("●")} ${c.b("Symbiot drift")} ${c.d("· " + d.repos.length + " repos · " + warn.length + " with risks")}\n`);
   for (const r of d.repos) {
@@ -974,7 +1017,8 @@ footer{padding:10px 18px;border-top:1px solid var(--line);display:flex}
 </section>
 <section id="panel-drift" class="hidden">
 <div class="row"><span class="muted">What's out of sync, stuck or at risk across your repos — local git facts.</span>
-<label class="muted" style="margin-left:auto"><input type="checkbox" id="driftci"> check CI (needs gh)</label>
+<label class="muted" style="margin-left:auto"><input type="checkbox" id="driftfetch"> fetch latest</label>
+<label class="muted"><input type="checkbox" id="driftci"> check CI (needs gh)</label>
 <button class="ghost" id="driftrun">Rescan</button></div>
 <div id="driftout"></div>
 </section>
@@ -1088,8 +1132,8 @@ row.querySelector('.taskchk').addEventListener('change',function(){api('/api/tas
 row.querySelector('.rm').addEventListener('click',function(){api('/api/tasks/remove',{id:id}).then(function(){row.remove();if(!el.querySelector('.task'))renderTasks([]);});});});}
 function loadTasks(){api('/api/tasks').then(renderTasks);}
 function loadDrift(){var out=document.getElementById('driftout');out.innerHTML="<div class='muted' style='margin-top:12px'>Reading your repos&hellip;</div>";
-var ci=document.getElementById('driftci').checked?'1':'0';
-api('/api/drift?ci='+ci).then(function(d){driftLoaded=true;var repos=d.repos||[];var risky=repos.filter(function(r){return r.flags.some(function(f){return f.level==='warn';});});
+var ci=document.getElementById('driftci').checked?'1':'0';var ft=document.getElementById('driftfetch').checked?'1':'0';
+api('/api/drift?ci='+ci+'&fetch='+ft).then(function(d){driftLoaded=true;var repos=d.repos||[];var risky=repos.filter(function(r){return r.flags.some(function(f){return f.level==='warn';});});
 var h="<div class='k' style='margin:10px 0'><b>"+repos.length+"</b> repos &middot; <b>"+risky.length+"</b> with risks</div>";
 repos.forEach(function(r){if(!r.flags.length)return;var warn=r.flags.some(function(f){return f.level==='warn';});
 h+="<div class='drift'><div class='dh'><span class='"+(warn?'dot-w':'dot-c')+"'></span><span class='dn'>"+esc(r.name)+"</span><span class='dd'>"+esc(r.def)+(r.fetchAgeDays!=null&&r.fetchAgeDays>3?" &middot; fetch "+r.fetchAgeDays+"d old":"")+"</span></div><ul>";
@@ -1186,7 +1230,7 @@ async function cmdApp() {
       if (u.pathname === "/api/status") { const r = resolveProvider(); return json(res, r ? { connected: true, line: `${PROVIDERS[r.provider].label} · ${r.model}` } : { connected: false }); }
       if (u.pathname === "/api/map") return json(res, buildMap()); // local git only — no AI key needed
       if (u.pathname === "/api/models") { const hw = detectHardware(); return json(res, { hardware: hw, rec: recommendModels(hw) }); }
-      if (u.pathname === "/api/drift") return json(res, computeDrift({ ci: u.searchParams.get("ci") === "1" }));
+      if (u.pathname === "/api/drift") return json(res, computeDrift({ ci: u.searchParams.get("ci") === "1", fetch: u.searchParams.get("fetch") === "1" }));
       if (u.pathname === "/api/node") return json(res, nodeDetail(u.searchParams.get("id") || "")); // local
       if (u.pathname === "/api/suggest" && req.method === "POST") { const b = await readBody(req); return json(res, await repoSuggest(String(b.path || ""))); }
       if (u.pathname === "/api/review" && req.method === "POST") { const b = await readBody(req); return json(res, await repoReview(String(b.path || ""))); }

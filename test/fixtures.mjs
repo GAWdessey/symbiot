@@ -95,7 +95,7 @@ try {
     git checkout -q stack && git merge -q --no-ff feat -m "Merge pull request #2 from me/feat"
     git checkout -q main`);
   const d7 = driftRepo(f7, {});
-  ok("off-default PR merge flagged", d7.flags.some((f) => /landed off main/.test(f.text)), d7.flags);
+  ok("never-landed PR flagged (added file missing from main)", d7.flags.some((f) => /MISSING from main|likely never landed/.test(f.text)), d7.flags);
 } finally {
   try { execSync(`git worktree prune 2>/dev/null || true`, { cwd: join(ROOT, "f3parent", "f3"), stdio: "ignore" }); } catch {}
   rmSync(ROOT, { recursive: true, force: true });
