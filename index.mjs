@@ -25,7 +25,7 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync, chmodSync } from "n
 import { createInterface } from "node:readline";
 import { createServer } from "node:http";
 import { randomBytes } from "node:crypto";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const HERE = fileURLToPath(new URL(".", import.meta.url));
 let VERSION = "0"; try { VERSION = JSON.parse(readFileSync(join(HERE, "package.json"), "utf8")).version; } catch {}
@@ -171,19 +171,22 @@ function authorship(repoPath) {
   const gName = sh("git config --global user.name 2>/dev/null").trim();
   const gEmail = sh("git config --global user.email 2>/dev/null").trim();
   const rEmail = sh(`git -C ${JSON.stringify(repoPath)} config user.email 2>/dev/null`).trim();
+  const rName = sh(`git -C ${JSON.stringify(repoPath)} config user.name 2>/dev/null`).trim();
   const total = Number(sh(`git -C ${JSON.stringify(repoPath)} rev-list --count HEAD 2>/dev/null`).trim()) || 0;
   const rows = sh(`git -C ${JSON.stringify(repoPath)} log --format='%ae|%an' 2>/dev/null | sort | uniq -c | sort -rn | head -60`)
     .split("\n").map((l) => l.trim()).filter(Boolean).map((l) => {
       const m = l.match(/^(\d+)\s+(.*)$/); if (!m) return null;
       const parts = m[2].split("|"); return { count: Number(m[1]), email: parts[0], name: parts.slice(1).join("|") };
     }).filter(Boolean);
-  const nameKey = gName.toLowerCase().replace(/\s+/g, "");
+  const myEmails = new Set([rEmail, gEmail].filter(Boolean));
+  const myNames = new Set([gName, rName].filter(Boolean).map((n) => n.toLowerCase()));
+  const nameKeys = new Set([...myNames].map((n) => n.replace(/\s+/g, "")));
   const mine = new Set();
   for (const r of rows) {
     const nore = r.email.match(/^\d+\+(.+)@users\.noreply\.github\.com$/i);
-    const isMine = (r.email && (r.email === rEmail || r.email === gEmail))
-      || (gName && r.name && r.name.toLowerCase() === gName.toLowerCase())
-      || (nore && nameKey && nore[1].toLowerCase().replace(/\s+/g, "") === nameKey);
+    const isMine = (r.email && myEmails.has(r.email))
+      || (r.name && myNames.has(r.name.toLowerCase()))
+      || (nore && nameKeys.has(nore[1].toLowerCase().replace(/\s+/g, "")));
     if (isMine) mine.add(r.email);
   }
   if (rEmail) mine.add(rEmail);
@@ -1118,7 +1121,7 @@ ${c.d("commit summaries sent to the AI to write your update (nothing leaves at a
 ${c.d("with a local Ollama model).")}`;
 
 // ---- main -----------------------------------------------------------------
-(async () => {
+async function main() {
   if (cmd === "help" || cmd === "--help" || cmd === "-h") { console.log(HELP); return; }
   if (cmd === "login" || cmd === "auth") return cmdLogin();
   if (cmd === "logout") return cmdLogout();
@@ -1129,4 +1132,11 @@ ${c.d("with a local Ollama model).")}`;
   if (cmd === "standup") return cmdRun("standup");
   if (cmd === "todo") return cmdRun("todo");
   console.log(c.y(`Unknown command: ${cmd}`) + "\n"); console.log(HELP);
-})();
+}
+
+// Run the CLI only when invoked directly; when imported (e.g. by tests) just
+// expose the pure functions.
+const isMain = import.meta.url === pathToFileURL(process.argv[1] || "\0none").href;
+if (isMain) main();
+
+export { authorship, repoState, readmeInfo, repoShape, houseRules, findAllRepos, buildMap, reportFooter, detectHardware, recommendModels };
