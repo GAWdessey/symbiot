@@ -164,7 +164,8 @@ function workingDiff(path, cap = 400000) {
 function pendingReview() {
   const by = {}; for (const x of loadTasks()) if (x.review && !x.done && !x.archived) (by[x.repo] = by[x.repo] || []).push(x);
   const map = Object.keys(by).length ? repoPathMap() : {};
-  return Object.keys(by).sort().map((repo) => { const path = map[repo] || ""; return { repo, path, tasks: by[repo], ...(path ? workingChanges(path) : { branch: "", files: [], stat: "" }) }; });
+  const am = autoMergeRepos();
+  return Object.keys(by).sort().map((repo) => { const path = map[repo] || ""; return { repo, path, tasks: by[repo], autoMerge: am.includes(repo), ...(path ? workingChanges(path) : { branch: "", files: [], stat: "" }) }; });
 }
 const branchSlug = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40).replace(/-+$/, "") || "tasks";
 // Sync approved work: off the default branch onto symbiot/<task>, commit the
@@ -202,13 +203,26 @@ function shipChanges(path, texts, opts = {}) {
   const gh = (args) => spawnSync("gh", args, { cwd: path, encoding: "utf8", timeout: 60000 });
   const pr = gh(["pr", "create", "--head", branch, "--base", base, "--title", subject, "--body", body + "\n\nApproved in Symbiot."]);
   const url = (String(pr.stdout || "").match(/https?:\/\/\S+/) || [])[0] || String(gh(["pr", "view", branch, "--json", "url", "-q", ".url"]).stdout || "").trim();
-  return url ? { ...out, pr: url } : { ...out, note: "Pushed, but gh couldn't open the PR: " + String(pr.stderr || "").trim().split("\n").pop() };
+  if (!url) return { ...out, note: "Pushed, but gh couldn't open the PR: " + String(pr.stderr || "").trim().split("\n").pop() };
+  out.pr = url;
+  // Opt-in auto-merge: queue GitHub's native auto-merge, which lands the PR only
+  // once its required checks (CI) pass — never immediately on its own if the repo
+  // has branch protection. Needs 'Allow auto-merge' on the repo; if off, we say so.
+  if (opts.autoMerge) {
+    const am = gh(["pr", "merge", branch, "--auto", "--squash", "--delete-branch"]);
+    if (am.status === 0) out.autoMerge = "queued";
+    else { out.autoMerge = "unavailable"; out.autoMergeErr = String(am.stderr || "").trim().split("\n").filter(Boolean).pop() || "gh pr merge failed"; }
+  }
+  return out;
 }
+// Per-repo opt-in to auto-merge Approve PRs once CI passes (default off).
+function autoMergeRepos() { const a = loadConfig().autoMerge; return Array.isArray(a) ? a : []; }
+function setAutoMerge(repo, on) { const cfg = loadConfig(); let a = (Array.isArray(cfg.autoMerge) ? cfg.autoMerge : []).filter((x) => x !== repo); if (on && repo) a.push(repo); if (a.length) cfg.autoMerge = a; else delete cfg.autoMerge; saveConfig(cfg); return { ok: true, repos: cfg.autoMerge || [] }; }
 function approveRepo(repo, opts = {}) {
   const t = loadTasks(); const items = t.filter((x) => x.repo === repo && x.review && !x.done && !x.archived);
   if (!items.length) return { error: "Nothing awaiting review for " + (repo || "(no repo)") + "." };
   const path = repoPathMap()[repo]; if (!path) return { error: "Repo not found: " + repo };
-  const r = shipChanges(path, items.map((x) => x.text), opts);
+  const r = shipChanges(path, items.map((x) => x.text), { ...opts, autoMerge: opts.autoMerge !== undefined ? opts.autoMerge : autoMergeRepos().includes(repo) });
   if (r.error) return r;
   const now = Date.now();
   for (const x of items) { x.review = false; x.done = true; x.archived = true; x.archivedAt = now; x.approvedAt = now; for (const k of ["branch", "commit", "pr"]) if (r[k]) x[k] = r[k]; }
@@ -1145,20 +1159,36 @@ function detectFolder(path) {
   return { path, name: path.split("/").pop(), langs: Object.entries(count).sort((a, b) => b[1] - a[1]).map((x) => x[0]), tools: [...tools], files: files.length };
 }
 // Projects you've run an AI coding agent on. Claude Code stores one dir per
-// project under ~/.claude/projects, named by the project path with "/"→"-"
-// (verified). Returns { "<encoded path>": { agent, last } } — last = newest
-// session mtime (epoch secs). (Gemini's dir is global config, Codex's is empty,
-// so no reliable per-project signal there yet; add them here when there is.)
+// project under ~/.claude/projects, named by the project path with every
+// non-alphanumeric char → "-" (so "/" "." "_" "-" all collide). Returns
+// { "<encoded path>": { agent, last, path } } — last = newest session mtime
+// (epoch secs); path = the real project dir, read from the "cwd" a session
+// records (empty when no session says, then callers fall back to decoding).
+// (Gemini's dir is global config, Codex's is empty, so no reliable per-project
+// signal there yet; add them here when there is.)
+const claudeEnc = (p) => String(p || "").replace(/[^a-zA-Z0-9]/g, "-");
+function sessionCwd(file) {
+  const head = sh(`head -c 262144 ${JSON.stringify(file)} 2>/dev/null`);
+  const m = head.match(/"cwd":"((?:[^"\\]|\\.)*)"/);
+  if (!m) return "";
+  try { return JSON.parse(`"${m[1]}"`); } catch { return ""; }
+}
 function claudeProjects() {
   const base = join(homedir(), ".claude", "projects");
   const out = {};
   let dirs = [];
   try { dirs = sh(`ls -1 ${JSON.stringify(base)} 2>/dev/null`).split("\n").filter(Boolean); } catch {}
   for (const enc of dirs) {
-    let last = 0;
-    try { last = parseInt(sh(`find ${JSON.stringify(join(base, enc))} -maxdepth 1 -name '*.jsonl' -printf '%T@\\n' 2>/dev/null | sort -rn | head -1`).trim(), 10) || 0; } catch {}
+    let last = 0, path = "";
+    const newest = sh(`find ${JSON.stringify(join(base, enc))} -maxdepth 1 -name '*.jsonl' -printf '%T@ %p\\n' 2>/dev/null | sort -rn | head -1`).trim();
+    if (newest) {
+      const sp = newest.indexOf(" ");
+      last = parseInt(newest.slice(0, sp), 10) || 0;
+      const cwd = sessionCwd(newest.slice(sp + 1));
+      if (cwd && (claudeEnc(cwd) === enc || cwd.replace(/\//g, "-") === enc)) path = cwd; // only trust a cwd that matches this dir
+    }
     if (!last) { try { last = Math.floor(statSync(join(base, enc)).mtimeMs / 1000); } catch {} }
-    out[enc] = { agent: "Claude Code", last };
+    out[enc] = { agent: "Claude Code", last, path };
   }
   return out;
 }
@@ -1226,22 +1256,23 @@ async function buildMapScan() {
   // and surface agent-worked projects the scan missed as their own nodes.
   try {
     const ap = claudeProjects(); const used = new Set();
-    const encOf = (p) => String(p || "").replace(/\//g, "-");
     for (const n of nodes) {
       if ((n.type === "repo" || n.type === "folder") && n.meta && n.meta.path) {
-        const e = encOf(n.meta.path); if (ap[e]) { n.meta.agents = [ap[e]]; used.add(e); }
+        const e = [claudeEnc(n.meta.path), n.meta.path.replace(/\//g, "-")].find((k) => ap[k]); // older Claude Code mapped only "/"
+        if (e) { n.meta.agents = [{ agent: ap[e].agent, last: ap[e].last }]; used.add(e); }
       }
     }
     let extra = 0;
     for (const e of Object.keys(ap)) {
       if (used.has(e) || extra >= 20) continue;
-      const decoded = e.replace(/-/g, "/"); // best-effort; hyphenated names won't resolve and are skipped
+      // the session's recorded cwd; else best-effort decode (names with - . _ won't resolve and are skipped)
+      const decoded = ap[e].path || e.replace(/-/g, "/");
       if (!existsSync(decoded) || !statSync(decoded).isDirectory()) continue;
       if (nodes.some((n) => n.meta && n.meta.path === decoded)) continue;
       const isGit = existsSync(join(decoded, ".git"));
       const id = (isGit ? "repo:" : "folder:") + decoded; if (have.has(id)) continue;
       const det = isGit ? null : detectFolder(decoded);
-      add({ id, type: isGit ? "repo" : "folder", label: decoded.split("/").pop(), weight: 10, meta: { path: decoded, agents: [ap[e]], agentOnly: true, langs: det ? det.langs.slice(0, 3) : [], tools: det ? det.tools : [], files: det ? det.files : 0 } });
+      add({ id, type: isGit ? "repo" : "folder", label: decoded.split("/").pop(), weight: 10, meta: { path: decoded, agents: [{ agent: ap[e].agent, last: ap[e].last }], agentOnly: true, langs: det ? det.langs.slice(0, 3) : [], tools: det ? det.tools : [], files: det ? det.files : 0 } });
       edges.push({ source: "me", target: id }); extra++;
     }
   } catch {}
@@ -1387,6 +1418,48 @@ async function folderSuggest(path) {
   const footer = `symbiot ${VERSION} · folder · ${det.files} files · ${stack} · not a git repo`;
   return { text: text || "(couldn't reach the model)", footer };
 }
+// Ask questions about a task: a short Q&A thread kept on the task itself
+// (task.chat), grounded in the repo/folder it belongs to — and, once an agent
+// has ticked it, in the changes waiting for review.
+const CHAT_KEEP = 40; // messages stored per task
+async function taskChat(id, question) {
+  question = String(question || "").trim().slice(0, 2000);
+  const it = loadTasks().find((x) => x.id === id);
+  if (!it) return { error: "not found" };
+  if (!question) return { error: "empty" };
+  if (!resolveProvider()) return { error: "not-connected" };
+  const path = it.repo ? repoPathMap()[it.repo] : "";
+  const ctx = [];
+  if (path) {
+    const isGit = existsSync(join(path, ".git"));
+    if (isGit) ctx.push(`Recent commits:\n${sh(`git -C ${JSON.stringify(path)} log --format='%ad %s' --date=short -15 2>/dev/null`).trim() || "(none)"}`);
+    else { const det = detectFolder(path); ctx.push(`Project folder (not a git repo) · ${det.files} files · ${[...det.langs, ...det.tools].join(", ") || "unknown stack"}`); }
+    const rd = readmeInfo(path); if (rd.excerpt) ctx.push(`README excerpt:\n${rd.excerpt.slice(0, 1500)}`);
+    const rules = houseRules(path); if (rules) ctx.push(`Conventions — do NOT advise against these:\n${rules}`);
+    if (it.review && isGit) {
+      const ch = workingChanges(path);
+      ctx.push(`The agent has ticked this task; its uncommitted changes await review (${ch.stat || "no changes"}):\n${ch.files.map((f) => `${f.st} ${f.file}`).slice(0, 40).join("\n") || "(none)"}\n\nDiff (truncated):\n${workingDiff(path, 6000)}`);
+    }
+  }
+  const history = (it.chat || []).slice(-12).map((m) => `${m.role === "user" ? "User" : "Assistant"}: ${m.text}`).join("\n\n");
+  const system =
+    `You are a pragmatic senior engineer helping someone with ONE task on their list — before or after they hand it to a coding agent. ` +
+    `Answer their question about the task directly and concisely, in plain text, no preamble. Ground what you say in the project evidence shown; ` +
+    `if the evidence doesn't settle it, say so and what you'd check. If the task is ambiguous, say how you'd read it and what to clarify. ` +
+    `Never invent files, features or history.`;
+  const prompt =
+    `Task: ${it.text}\nKind: ${taskType(it.text)} · repo: ${it.repo || "(none)"} · status: ${it.archived ? "archived" : it.review ? "done by the agent, awaiting review" : it.done ? "done" : "open"}\n\n` +
+    (ctx.length ? ctx.join("\n\n") + "\n\n" : path ? "" : "(no repo attached — answer from the task text alone)\n\n") +
+    (history ? `Conversation so far:\n${history}\n\n` : "") + `Question: ${question}`;
+  const answer = (await write(system, prompt)) || "(couldn't reach the model)";
+  // Re-read: other requests may have changed tasks.json while the model ran.
+  const t = loadTasks(); const cur = t.find((x) => x.id === id); const now = Date.now();
+  if (!cur) return { answer, chat: [] };
+  cur.chat = [...(cur.chat || []), { role: "user", text: question, ts: now }, { role: "ai", text: answer, ts: now }].slice(-CHAT_KEEP);
+  saveTasks(t);
+  return { answer, chat: cur.chat };
+}
+function clearTaskChat(id) { const t = loadTasks(); const it = t.find((x) => x.id === id); if (!it) return { error: "not found" }; delete it.chat; saveTasks(t); return { ok: true }; }
 
 // Build a write-up for a command; returns { text, sub, error? } without printing.
 // Shared by the CLI (cmdRun) and the web UI (symbiot app).
@@ -1616,10 +1689,13 @@ async function cmdApp() {
       if (u.pathname === "/api/tasks/remove" && req.method === "POST") { const b = await readBody(req); return json(res, removeTask(String(b.id || ""))); }
       if (u.pathname === "/api/tasks/restore" && req.method === "POST") { const b = await readBody(req); return json(res, restoreTask(String(b.id || ""))); }
       if (u.pathname === "/api/tasks/sync" && req.method === "POST") return json(res, syncTasks());
+      if (u.pathname === "/api/tasks/chat" && req.method === "POST") { const b = await readBody(req); return json(res, await taskChat(String(b.id || ""), b.question)); }
+      if (u.pathname === "/api/tasks/chat/clear" && req.method === "POST") { const b = await readBody(req); return json(res, clearTaskChat(String(b.id || ""))); }
       if (u.pathname === "/api/pending") return json(res, pendingReview()); // ticked by the agent, awaiting approval
       if (u.pathname === "/api/pending/diff") { const p = repoPathMap()[u.searchParams.get("repo") || ""]; return json(res, { diff: p ? workingDiff(p) : "" }); }
       if (u.pathname === "/api/pending/approve" && req.method === "POST") { const b = await readBody(req); return json(res, approveRepo(String(b.repo || ""))); }
       if (u.pathname === "/api/pending/sendback" && req.method === "POST") { const b = await readBody(req); return json(res, sendBack(String(b.id || ""))); }
+      if (u.pathname === "/api/automerge" && req.method === "POST") { const b = await readBody(req); return json(res, setAutoMerge(String(b.repo || ""), !!b.on)); }
       if (u.pathname === "/api/tasks/push" && req.method === "POST") { const b = await readBody(req); return json(res, pushTasks(b)); }
       if (u.pathname === "/api/scanroots") return json(res, { roots: loadConfig().scanRoots || [], effective: scanRoots(), home: homedir() });
       if (u.pathname === "/api/scanroots/add" && req.method === "POST") { const b = await readBody(req); return json(res, addScanRoot(String(b.path || ""))); }

@@ -61,6 +61,10 @@ Tabs:
   finishes lands in **Awaiting your review** (see
   [Review and approve](#review-and-approve-the-agents-work)). A task you tick
   yourself is done and **auto-archives**; the archived view can restore it.
+  **💬** on any task opens a Q&A thread: ask what it means, how to approach it, or
+  (once it's awaiting review) what the agent changed. Answers use your chosen AI,
+  grounded in that repo's commits, README, rules and pending diff; the thread is
+  kept with the task.
 - **Agents** — every agent run Symbiot has started (and local-model downloads):
   live status, elapsed time, exit code, the tail of its output, and **what it
   did** — files changed and commits made, read from git, whichever agent it was.
