@@ -1559,16 +1559,20 @@ async function cmdApp() {
       if (u.pathname === "/api/connect" && req.method === "POST") { return json(res, await connectProvider(await readBody(req))); }
       if (u.pathname === "/api/ping") { if (u.searchParams.get("fresh") === "1") await checkLatest(); return json(res, { version: VERSION, started: SERVER_STARTED, latest: LATEST_VERSION, newer: semverGt(LATEST_VERSION, VERSION) }); }
       if (u.pathname === "/api/update" && req.method === "POST") {
-        // Install the newest symbiot, then relaunch this same app (same port +
-        // token => same URL) and exit. The open page's heartbeat reconnects and
-        // reloads to the new version. No terminal, no reopening the window.
-        const inst = process.platform === "win32" ? "npm i -g symbiot@latest" : "npm install -g symbiot@latest";
+        // Install the EXACT newest version (not the `latest` tag, which npm's
+        // cache/propagation can resolve stale — that caused an update loop where
+        // the install kept re-fetching the same old version), then relaunch this
+        // same app (same port+token => same URL) and exit. --prefer-online skips
+        // a stale cached packument. The page's heartbeat reconnects and reloads.
+        const target = LATEST_VERSION && semverGt(LATEST_VERSION, VERSION) ? LATEST_VERSION : "latest";
+        const pkg = "symbiot@" + target;
+        const inst = (process.platform === "win32" ? "npm i -g " : "npm install -g ") + pkg + " --prefer-online";
         const e = track("symbiot update", inst, homedir(), (code) => {
           if (code !== 0) return;
           try { const ch = spawn(process.execPath, process.argv.slice(1), { detached: true, stdio: "ignore", env: process.env }); ch.unref(); } catch {}
           setTimeout(() => process.exit(0), 1200);
         });
-        return json(res, { started: true, id: e ? e.id : "" });
+        return json(res, { started: true, id: e ? e.id : "", target });
       }
       if (u.pathname === "/api/quit") { res.writeHead(200); res.end("bye"); setTimeout(() => process.exit(0), 150); return; }
     } catch (e) { res.writeHead(500, { "content-type": "application/json" }); res.end(JSON.stringify({ error: String((e && e.message) || e) })); return; }
