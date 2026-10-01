@@ -164,7 +164,8 @@ function workingDiff(path, cap = 400000) {
 function pendingReview() {
   const by = {}; for (const x of loadTasks()) if (x.review && !x.done && !x.archived) (by[x.repo] = by[x.repo] || []).push(x);
   const map = Object.keys(by).length ? repoPathMap() : {};
-  return Object.keys(by).sort().map((repo) => { const path = map[repo] || ""; return { repo, path, tasks: by[repo], ...(path ? workingChanges(path) : { branch: "", files: [], stat: "" }) }; });
+  const am = autoMergeRepos();
+  return Object.keys(by).sort().map((repo) => { const path = map[repo] || ""; return { repo, path, tasks: by[repo], autoMerge: am.includes(repo), ...(path ? workingChanges(path) : { branch: "", files: [], stat: "" }) }; });
 }
 const branchSlug = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40).replace(/-+$/, "") || "tasks";
 // Sync approved work: off the default branch onto symbiot/<task>, commit the
@@ -202,13 +203,26 @@ function shipChanges(path, texts, opts = {}) {
   const gh = (args) => spawnSync("gh", args, { cwd: path, encoding: "utf8", timeout: 60000 });
   const pr = gh(["pr", "create", "--head", branch, "--base", base, "--title", subject, "--body", body + "\n\nApproved in Symbiot."]);
   const url = (String(pr.stdout || "").match(/https?:\/\/\S+/) || [])[0] || String(gh(["pr", "view", branch, "--json", "url", "-q", ".url"]).stdout || "").trim();
-  return url ? { ...out, pr: url } : { ...out, note: "Pushed, but gh couldn't open the PR: " + String(pr.stderr || "").trim().split("\n").pop() };
+  if (!url) return { ...out, note: "Pushed, but gh couldn't open the PR: " + String(pr.stderr || "").trim().split("\n").pop() };
+  out.pr = url;
+  // Opt-in auto-merge: queue GitHub's native auto-merge, which lands the PR only
+  // once its required checks (CI) pass — never immediately on its own if the repo
+  // has branch protection. Needs 'Allow auto-merge' on the repo; if off, we say so.
+  if (opts.autoMerge) {
+    const am = gh(["pr", "merge", branch, "--auto", "--squash", "--delete-branch"]);
+    if (am.status === 0) out.autoMerge = "queued";
+    else { out.autoMerge = "unavailable"; out.autoMergeErr = String(am.stderr || "").trim().split("\n").filter(Boolean).pop() || "gh pr merge failed"; }
+  }
+  return out;
 }
+// Per-repo opt-in to auto-merge Approve PRs once CI passes (default off).
+function autoMergeRepos() { const a = loadConfig().autoMerge; return Array.isArray(a) ? a : []; }
+function setAutoMerge(repo, on) { const cfg = loadConfig(); let a = (Array.isArray(cfg.autoMerge) ? cfg.autoMerge : []).filter((x) => x !== repo); if (on && repo) a.push(repo); if (a.length) cfg.autoMerge = a; else delete cfg.autoMerge; saveConfig(cfg); return { ok: true, repos: cfg.autoMerge || [] }; }
 function approveRepo(repo, opts = {}) {
   const t = loadTasks(); const items = t.filter((x) => x.repo === repo && x.review && !x.done && !x.archived);
   if (!items.length) return { error: "Nothing awaiting review for " + (repo || "(no repo)") + "." };
   const path = repoPathMap()[repo]; if (!path) return { error: "Repo not found: " + repo };
-  const r = shipChanges(path, items.map((x) => x.text), opts);
+  const r = shipChanges(path, items.map((x) => x.text), { ...opts, autoMerge: opts.autoMerge !== undefined ? opts.autoMerge : autoMergeRepos().includes(repo) });
   if (r.error) return r;
   const now = Date.now();
   for (const x of items) { x.review = false; x.done = true; x.archived = true; x.archivedAt = now; x.approvedAt = now; for (const k of ["branch", "commit", "pr"]) if (r[k]) x[k] = r[k]; }
@@ -1681,6 +1695,7 @@ async function cmdApp() {
       if (u.pathname === "/api/pending/diff") { const p = repoPathMap()[u.searchParams.get("repo") || ""]; return json(res, { diff: p ? workingDiff(p) : "" }); }
       if (u.pathname === "/api/pending/approve" && req.method === "POST") { const b = await readBody(req); return json(res, approveRepo(String(b.repo || ""))); }
       if (u.pathname === "/api/pending/sendback" && req.method === "POST") { const b = await readBody(req); return json(res, sendBack(String(b.id || ""))); }
+      if (u.pathname === "/api/automerge" && req.method === "POST") { const b = await readBody(req); return json(res, setAutoMerge(String(b.repo || ""), !!b.on)); }
       if (u.pathname === "/api/tasks/push" && req.method === "POST") { const b = await readBody(req); return json(res, pushTasks(b)); }
       if (u.pathname === "/api/scanroots") return json(res, { roots: loadConfig().scanRoots || [], effective: scanRoots(), home: homedir() });
       if (u.pathname === "/api/scanroots/add" && req.method === "POST") { const b = await readBody(req); return json(res, addScanRoot(String(b.path || ""))); }

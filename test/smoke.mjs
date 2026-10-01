@@ -144,6 +144,7 @@ const calls = [
   ["/api/pending/diff?repo=x", "GET"],
   ["/api/pending/approve", "POST"], // no repo -> "nothing awaiting review", no git runs
   ["/api/pending/sendback", "POST"],
+  ["/api/automerge", "POST"],       // per-repo auto-merge opt-in toggle
 ];
 // Endpoints never hit here, and why. Anything else the UI calls must be covered.
 const NOT_HIT = { "/api/update": "runs a real global npm install", "/api/quit": "hit last, below" };
