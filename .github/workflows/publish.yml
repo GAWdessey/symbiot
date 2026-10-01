@@ -6,9 +6,9 @@ name: publish
 # the symbiot package → Settings → Trusted Publishing → add GitHub Actions with
 #   user/org: GarthGhostai   repo: symbiot   workflow: publish.yml
 #
-# Two jobs: `test` runs the whole suite and `publish` only starts if it passed
-# (`needs: test`), so a broken build can't reach npm. Only `publish` gets the
-# OIDC token.
+# Two jobs: `test` runs the whole suite (the same ci.yml that gates pushes and
+# PRs) and `publish` only starts if it passed (`needs: test`), so a broken build
+# can't reach npm. Only `publish` gets the OIDC token.
 on:
   push:
     tags: ["v*.*.*"]
@@ -19,25 +19,7 @@ permissions:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-      - run: npm ci
-      - name: Git identity for tests
-        # the 'approve' fixtures commit in throwaway repos; a bare runner has no
-        # git identity, which fails as "empty ident name". Give it one.
-        run: |
-          git config --global user.email "ci@symbiot.local"
-          git config --global user.name "symbiot ci"
-      - name: Test
-        # all four suites, including the npm pack + global install layer: it runs
-        # the tarball exactly as users get it (bin entry point, shipped files)
-        env:
-          SYMBIOT_NO_OPEN: "1"
-        run: npm test
+    uses: ./.github/workflows/ci.yml
 
   publish:
     needs: test

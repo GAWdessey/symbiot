@@ -1,0 +1,37 @@
+name: ci
+
+# The whole test suite on every push to main and every pull request, so a
+# broken ui.mjs, bin entry point or endpoint fails before it merges — not only
+# when a version tag is pushed. publish.yml calls this same workflow
+# (`workflow_call`) as its gate, so PRs and releases run identical checks.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_call: {}
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm ci
+      - name: Git identity for tests
+        # the 'approve' fixtures commit in throwaway repos; a bare runner has no
+        # git identity, which fails as "empty ident name". Give it one.
+        run: |
+          git config --global user.email "ci@symbiot.local"
+          git config --global user.name "symbiot ci"
+      - name: Test
+        # all four suites, including the npm pack + global install layer: it runs
+        # the tarball exactly as users get it (bin entry point, shipped files)
+        env:
+          SYMBIOT_NO_OPEN: "1"
+        run: npm test

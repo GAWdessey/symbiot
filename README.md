@@ -313,8 +313,10 @@ Runs four suites, all against throwaway repos and an isolated `HOME`:
   dependencies; `SYMBIOT_SKIP_INSTALL_TEST=1` skips that part.
 
 `SYMBIOT_NO_OPEN=1` stops `symbiot app` opening a window (the tests set it).
-Releases publish from a version tag via `.github/workflows/publish.yml`, and only
-after the full suite passes in CI.
+CI (`.github/workflows/ci.yml`) runs the full suite on every push to `main` and
+every pull request. Releases publish from a version tag via
+`.github/workflows/publish.yml`, which runs that same workflow first and only
+publishes if it passes.
 
 ---
 
