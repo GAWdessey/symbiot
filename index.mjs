@@ -260,8 +260,8 @@ function sh(cmd) {
 // crawling into them — this is the big speedup for the map scan.
 function findGitDirs(base, limit) {
   return sh(
-    `find ${JSON.stringify(base)} -maxdepth 6 ` +
-    `\\( -name node_modules -o -name .cache -o -name .local -o -name .npm -o -name venv -o -name .venv -o -name .git-crypt \\) -prune ` +
+    `find ${JSON.stringify(base)} -maxdepth 7 ` +
+    `\\( -name node_modules -o -name .cache -o -name .local -o -name .npm -o -name venv -o -name .venv -o -name .gradle -o -name Pods -o -name .git-crypt \\) -prune ` +
     `-o -name .git -print 2>/dev/null | head -${limit}`,
   ).split("\n").filter(Boolean);
 }
@@ -574,7 +574,12 @@ function recommendModels(hw) {
 //   gnome-terminal --working-directory={dir} -- claude "{prompt}"
 // Not tied to any one tool — you decide what runs.
 const IDE_LIST = [["code", "VS Code"], ["cursor", "Cursor"], ["windsurf", "Windsurf"], ["zed", "Zed"], ["subl", "Sublime Text"], ["idea", "IntelliJ IDEA"], ["nvim", "Neovim"]];
-const AGENT_LIST = [["claude", "Claude Code", 'claude -p "{prompt}"'], ["aider", "Aider", 'aider --message "{prompt}"'], ["cursor-agent", "Cursor agent", 'cursor-agent -p "{prompt}"']];
+const AGENT_LIST = [
+  ["claude", "Claude Code — make changes", 'claude -p "{prompt}" --permission-mode acceptEdits'],
+  ["claude", "Claude Code — plan only (asks first)", 'claude -p "{prompt}"'],
+  ["aider", "Aider — make changes", 'aider --message "{prompt}" --yes'],
+  ["cursor-agent", "Cursor agent", 'cursor-agent -p "{prompt}"'],
+];
 function detectHandoffs() {
   const editors = IDE_LIST.filter(([cmd]) => sh(`command -v ${cmd} 2>/dev/null`).trim()).map(([cmd, label]) => ({ label, tmpl: `${cmd} {dir}`, kind: "editor" }));
   const agents = AGENT_LIST.filter(([cmd]) => sh(`command -v ${cmd} 2>/dev/null`).trim()).map(([cmd, label, tmpl]) => ({ label, tmpl, kind: "agent" }));
@@ -813,7 +818,7 @@ const MANIFEST_TOOL = {
 };
 function findAllRepos(base) {
   const repos = [];
-  for (const g of findGitDirs(base, 120)) {
+  for (const g of findGitDirs(base, 300)) {
     const repo = g.replace(/\/\.git$/, "");
     const last = Number(sh(`git -C ${JSON.stringify(repo)} log -1 --format=%ct 2>/dev/null`).trim()) || 0;
     if (last) repos.push({ path: repo, name: repo.split("/").pop(), recency: last });
@@ -825,7 +830,7 @@ function findAllRepos(base) {
     const key = cd.startsWith("/") ? cd : join(r.path, cd);
     if (!byCommon[key] || byCommon[key].recency < r.recency) byCommon[key] = r;
   }
-  return Object.values(byCommon).sort((a, b) => b.recency - a.recency).slice(0, 30);
+  return Object.values(byCommon).sort((a, b) => b.recency - a.recency).slice(0, 60);
 }
 function detectRepo(r) {
   const files = sh(`git -C ${JSON.stringify(r.path)} ls-files 2>/dev/null | head -3000`).split("\n").filter(Boolean);
