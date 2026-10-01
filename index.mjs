@@ -1144,6 +1144,24 @@ function detectFolder(path) {
   for (const f of files) { const base = f.split("/").pop(); if (MANIFEST_TOOL[base]) tools.add(MANIFEST_TOOL[base]); const ext = (base.includes(".") ? base.split(".").pop() : "").toLowerCase(); if (EXT_LANG[ext]) count[EXT_LANG[ext]] = (count[EXT_LANG[ext]] || 0) + 1; }
   return { path, name: path.split("/").pop(), langs: Object.entries(count).sort((a, b) => b[1] - a[1]).map((x) => x[0]), tools: [...tools], files: files.length };
 }
+// Projects you've run an AI coding agent on. Claude Code stores one dir per
+// project under ~/.claude/projects, named by the project path with "/"→"-"
+// (verified). Returns { "<encoded path>": { agent, last } } — last = newest
+// session mtime (epoch secs). (Gemini's dir is global config, Codex's is empty,
+// so no reliable per-project signal there yet; add them here when there is.)
+function claudeProjects() {
+  const base = join(homedir(), ".claude", "projects");
+  const out = {};
+  let dirs = [];
+  try { dirs = sh(`ls -1 ${JSON.stringify(base)} 2>/dev/null`).split("\n").filter(Boolean); } catch {}
+  for (const enc of dirs) {
+    let last = 0;
+    try { last = parseInt(sh(`find ${JSON.stringify(join(base, enc))} -maxdepth 1 -name '*.jsonl' -printf '%T@\\n' 2>/dev/null | sort -rn | head -1`).trim(), 10) || 0; } catch {}
+    if (!last) { try { last = Math.floor(statSync(join(base, enc)).mtimeMs / 1000); } catch {} }
+    out[enc] = { agent: "Claude Code", last };
+  }
+  return out;
+}
 // Async only to YIELD between repos, so the app server can answer /api/scan
 // (progress) mid-scan; the git calls themselves stay synchronous. Concurrent
 // callers (e.g. Rescan while a scan runs) share the one in-flight build.
@@ -1204,6 +1222,29 @@ async function buildMapScan() {
     const prov = resolveProvider();
     if (prov) { const id = "ai:" + prov.provider; add({ id, type: "ai", label: PROVIDERS[prov.provider].label, weight: 14, meta: { model: prov.model, source: prov.source } }); edges.push({ source: "me", target: id }); }
   } catch {}
+  // Agent projects: badge the repo/folder nodes an AI coding agent has worked,
+  // and surface agent-worked projects the scan missed as their own nodes.
+  try {
+    const ap = claudeProjects(); const used = new Set();
+    const encOf = (p) => String(p || "").replace(/\//g, "-");
+    for (const n of nodes) {
+      if ((n.type === "repo" || n.type === "folder") && n.meta && n.meta.path) {
+        const e = encOf(n.meta.path); if (ap[e]) { n.meta.agents = [ap[e]]; used.add(e); }
+      }
+    }
+    let extra = 0;
+    for (const e of Object.keys(ap)) {
+      if (used.has(e) || extra >= 20) continue;
+      const decoded = e.replace(/-/g, "/"); // best-effort; hyphenated names won't resolve and are skipped
+      if (!existsSync(decoded) || !statSync(decoded).isDirectory()) continue;
+      if (nodes.some((n) => n.meta && n.meta.path === decoded)) continue;
+      const isGit = existsSync(join(decoded, ".git"));
+      const id = (isGit ? "repo:" : "folder:") + decoded; if (have.has(id)) continue;
+      const det = isGit ? null : detectFolder(decoded);
+      add({ id, type: isGit ? "repo" : "folder", label: decoded.split("/").pop(), weight: 10, meta: { path: decoded, agents: [ap[e]], agentOnly: true, langs: det ? det.langs.slice(0, 3) : [], tools: det ? det.tools : [], files: det ? det.files : 0 } });
+      edges.push({ source: "me", target: id }); extra++;
+    }
+  } catch {}
   const out = { nodes, edges, stats: {
     repos: repos.length,
     folders: nodes.filter((n) => n.type === "folder").length,
@@ -1229,7 +1270,7 @@ async function nodeDetail(id) {
       branch: sh(`git -C ${JSON.stringify(path)} rev-parse --abbrev-ref HEAD 2>/dev/null`).trim(),
       dirty: sh(`git -C ${JSON.stringify(path)} status --porcelain 2>/dev/null`).split("\n").filter(Boolean).length,
       last: sh(`git -C ${JSON.stringify(path)} log -1 --format=%cd --date=short 2>/dev/null`).trim(),
-      commits: m.commits || 0, langs: m.langs || [], tools: m.tools || [],
+      commits: m.commits || 0, langs: m.langs || [], tools: m.tools || [], agents: m.agents || [],
     };
   }
   if (id.startsWith("lang:") || id.startsWith("tool:")) {
@@ -1243,7 +1284,7 @@ async function nodeDetail(id) {
   }
   if (id.startsWith("folder:")) {
     const path = id.slice(7); const n = map.nodes.find((x) => x.id === id); const m = (n && n.meta) || {};
-    return { type: "folder", label: n ? n.label : path.split("/").pop(), path, langs: m.langs || [], tools: m.tools || [], files: m.files || 0 };
+    return { type: "folder", label: n ? n.label : path.split("/").pop(), path, langs: m.langs || [], tools: m.tools || [], files: m.files || 0, agents: m.agents || [] };
   }
   return { error: "unknown node" };
 }
