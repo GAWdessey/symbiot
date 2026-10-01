@@ -112,7 +112,7 @@ function completedInRepo(repoPath) {
 }
 function repoPathMap() {
   const byName = {};
-  const src = (LAST_MAP && LAST_MAP.nodes) ? LAST_MAP.nodes.filter((n) => n.type === "repo").map((n) => ({ name: n.label, path: n.meta && n.meta.path })) : findAllRepos(BASE);
+  const src = (LAST_MAP && LAST_MAP.nodes) ? LAST_MAP.nodes.filter((n) => n.type === "repo").map((n) => ({ name: n.label, path: n.meta && n.meta.path })) : findAllRepos();
   for (const r of src) if (r.path && !byName[r.name]) byName[r.name] = r.path;
   return byName;
 }
@@ -169,7 +169,7 @@ function pushTasks(filter) {
   // Resolve repo name -> path from the already-scanned map when we have it
   // (avoids a fresh full scan); fall back to a scan only if needed.
   const byName = {};
-  const src = (LAST_MAP && LAST_MAP.nodes) ? LAST_MAP.nodes.filter((n) => n.type === "repo").map((n) => ({ name: n.label, path: n.meta && n.meta.path })) : findAllRepos(BASE);
+  const src = (LAST_MAP && LAST_MAP.nodes) ? LAST_MAP.nodes.filter((n) => n.type === "repo").map((n) => ({ name: n.label, path: n.meta && n.meta.path })) : findAllRepos();
   for (const r of src) if (r.path && !byName[r.name]) byName[r.name] = r.path;
   const groups = {}; for (const t of tasks) { const k = t.repo || ""; (groups[k] = groups[k] || []).push(t); }
   const written = [], unresolved = [];
@@ -372,10 +372,30 @@ function reportFooter(repoPath, auth, state, rd) {
   if (state.behind) b.push(`${state.behind} behind upstream`);
   return b.join(" · ");
 }
+function expandRoot(p) { p = String(p || "").trim(); return p.startsWith("~") ? join(homedir(), p.slice(1)) : p; }
+// Where to look for repos: configured folders, or --dir, else your home folder.
+function scanRoots() {
+  if (flag("dir", null)) return [BASE];
+  const r = loadConfig().scanRoots;
+  const roots = (Array.isArray(r) ? r : []).map(expandRoot).filter((x) => { try { return existsSync(x); } catch { return false; } });
+  return roots.length ? roots : [homedir()];
+}
+function addScanRoot(p) {
+  p = expandRoot(p); if (!p) return { error: "empty" };
+  try { if (!existsSync(p)) return { error: "folder not found: " + p }; } catch { return { error: "can't read: " + p }; }
+  const cfg = loadConfig();
+  let list = Array.isArray(cfg.scanRoots) && cfg.scanRoots.length ? cfg.scanRoots : [homedir()]; // keep home when adding the first extra folder
+  if (!list.includes(p)) list.push(p);
+  cfg.scanRoots = list; saveConfig(cfg); LAST_MAP = null; return { ok: true, roots: cfg.scanRoots };
+}
+function removeScanRoot(p) {
+  const cfg = loadConfig(); cfg.scanRoots = (Array.isArray(cfg.scanRoots) ? cfg.scanRoots : []).filter((x) => x !== p);
+  if (!cfg.scanRoots.length) delete cfg.scanRoots; saveConfig(cfg); LAST_MAP = null; return { ok: true, roots: cfg.scanRoots || [] };
+}
 function findRepos(base, sinceDays) {
-  const repos = [];
-  for (const g of findGitDirs(base, 200)) {
-    const repo = g.replace(/\/\.git$/, "");
+  const repos = []; const seen = new Set();
+  for (const root of scanRoots()) for (const g of findGitDirs(root, 200)) {
+    const repo = g.replace(/\/\.git$/, ""); if (seen.has(repo)) continue; seen.add(repo);
     const n = Number(sh(`git -C ${JSON.stringify(repo)} log --since="${sinceDays} days ago" --oneline 2>/dev/null | wc -l`).trim());
     const last = Number(sh(`git -C ${JSON.stringify(repo)} log -1 --format=%ct 2>/dev/null`).trim()) || 0;
     if (n > 0) repos.push({ path: repo, name: repo.split("/").pop(), recency: last });
@@ -784,7 +804,7 @@ function driftRepo(p, opts = {}) {
 }
 function computeDrift(opts = {}) {
   const deploys = loadDeploys();
-  const repos = findAllRepos(BASE).slice(0, 20).map((r) => driftRepo(r.path, { deploys, ci: opts.ci, fetch: opts.fetch }));
+  const repos = findAllRepos().slice(0, 20).map((r) => driftRepo(r.path, { deploys, ci: opts.ci, fetch: opts.fetch }));
   return { repos, ci: !!opts.ci };
 }
 function cmdDrift() {
@@ -817,9 +837,10 @@ const MANIFEST_TOOL = {
   "terraform.tf": "Terraform", "kubernetes.yml": "Kubernetes", ".github": "GitHub Actions",
 };
 function findAllRepos(base) {
-  const repos = [];
-  for (const g of findGitDirs(base, 300)) {
-    const repo = g.replace(/\/\.git$/, "");
+  const roots = base ? [base] : scanRoots();
+  const repos = []; const seen = new Set();
+  for (const root of roots) for (const g of findGitDirs(root, 300)) {
+    const repo = g.replace(/\/\.git$/, ""); if (seen.has(repo)) continue; seen.add(repo);
     const last = Number(sh(`git -C ${JSON.stringify(repo)} log -1 --format=%ct 2>/dev/null`).trim()) || 0;
     if (last) repos.push({ path: repo, name: repo.split("/").pop(), recency: last });
   }
@@ -850,7 +871,7 @@ function detectRepo(r) {
 }
 function buildMap() {
   const who = me();
-  const repos = findAllRepos(BASE).map(detectRepo);
+  const repos = findAllRepos().map(detectRepo);
   const nodes = []; const edges = []; const have = new Set();
   const add = (n) => { if (!have.has(n.id)) { have.add(n.id); nodes.push(n); } };
   add({ id: "me", type: "person", label: who.name || "You", weight: 22 });
@@ -1302,6 +1323,12 @@ footer{padding:10px 18px;border-top:1px solid var(--line);display:flex}
 <div class="row" style="margin-top:16px"><button class="act" id="save">Save &amp; connect</button>
 <span class="note" id="saveMsg"></span></div>
 <div style="margin-top:20px;border-top:1px solid var(--line);padding-top:16px">
+<label>Folders to scan for repos</label>
+<div id="scanroots"></div>
+<div class="row" style="margin-top:6px"><input id="newroot" placeholder="/path/to/folder  (or ~/work) — where your projects live" style="flex:1"><button class="ghost" id="addroot">Add folder</button></div>
+<div class="note muted" id="scanrootnote">Point Symbiot at where your work lives — inside or outside your home folder. Defaults to your home folder.</div>
+</div>
+<div style="margin-top:20px;border-top:1px solid var(--line);padding-top:16px">
 <label>Hand off to your agent when you "Send to repos"</label>
 <input id="agentcmd" type="text" placeholder="e.g.  claude -p &quot;{prompt}&quot;   ·   code {dir}   ·   leave blank to just write the file">
 <div class="note muted">Runs in each repo after tasks are written. Use <b>{dir}</b> = repo path, <b>{prompt}</b> = the task instruction. Works with any agent or editor &mdash; it's your command.</div>
@@ -1475,6 +1502,11 @@ if(!chips.length){box.innerHTML="<span class='muted' style='font-size:12px'>Noth
 box.innerHTML="<span class='muted' style='font-size:12px'>Detected &mdash; click to use:</span><br>"+chips.map(function(c,i){return "<button class='ghost preset' data-i='"+i+"' style='padding:4px 10px;font-size:12px;margin:5px 5px 0 0'>"+esc(c.label)+"</button>";}).join("");
 box.querySelectorAll('.preset').forEach(function(btn){btn.addEventListener('click',function(){document.getElementById('agentcmd').value=chips[+btn.getAttribute('data-i')].tmpl;saveAgent();});});});}
 function saveAgent(){api('/api/agentcmd',{cmd:document.getElementById('agentcmd').value});}
+function loadScanRoots(){api('/api/scanroots').then(function(d){var box=document.getElementById('scanroots');var roots=d.effective||[];
+box.innerHTML=roots.map(function(r){var custom=(d.roots||[]).indexOf(r)>=0;return "<div class='task' data-p='"+esc(r)+"'><span class='t' style='font-family:ui-monospace,monospace;font-size:12px'>"+esc(r)+"</span>"+(r===d.home?"<span class='rp'>home</span>":"")+(custom?"<button class='rm rmroot' title='remove'>&times;</button>":"")+"</div>";}).join("");
+box.querySelectorAll('.rmroot').forEach(function(btn){btn.addEventListener('click',function(){api('/api/scanroots/remove',{path:btn.closest('.task').getAttribute('data-p')}).then(function(){loadScanRoots();mapLoaded=false;driftLoaded=false;});});});});}
+function addRootUI(){var i=document.getElementById('newroot');var v=(i.value||'').trim();if(!v)return;var n=document.getElementById('scanrootnote');
+api('/api/scanroots/add',{path:v}).then(function(r){if(r.error){n.innerHTML="<span class='err'>"+esc(r.error)+"</span>";return;}i.value='';n.textContent='Added — the Map/Drift will rescan.';loadScanRoots();mapLoaded=false;driftLoaded=false;});}
 function setupLocalUI(){var o=document.getElementById('setupout');o.innerHTML="Setting up a local model&hellip;";
 api('/api/setup-local',{}).then(function(r){if(r.error==='not-installed'){var i=r.install||{};o.innerHTML="Ollama isn't installed. Run this once, then click again:<div class='out2'>"+esc(i.cmd||'')+"</div><div class='muted' style='font-size:11px'>or download: "+esc(i.alt||'https://ollama.com/download')+"</div>";return;}
 o.innerHTML="Pulling <b>"+esc(r.model)+"</b> &mdash; watch it in the <b>Agents</b> tab. Symbiot switches to it automatically when the download finishes.";setTimeout(function(){setTab('agents');},700);}).catch(function(e){o.innerHTML="<span class='err'>Setup failed: "+esc(String((e&&e.message)||e))+"</span>";});}
@@ -1507,13 +1539,15 @@ h+="</div>";out.innerHTML=h;});}
 document.getElementById('remap').addEventListener('click',loadMap);
 document.getElementById('recbtn').addEventListener('click',loadRec);
 document.getElementById('setuplocal').addEventListener('click',setupLocalUI);
+document.getElementById('addroot').addEventListener('click',addRootUI);
+document.getElementById('newroot').addEventListener('keydown',function(e){if(e.key==='Enter')addRootUI();});
 document.getElementById('driftrun').addEventListener('click',function(){driftLoaded=false;loadDrift();});
 document.getElementById('agentsrefresh').addEventListener('click',loadAgents);
 document.getElementById('addtask').addEventListener('click',addTaskUI);
 document.getElementById('pushtasks').addEventListener('click',pushTasksUI);
 document.getElementById('agentcmd').addEventListener('change',saveAgent);
 document.getElementById('newtask').addEventListener('keydown',function(e){if(e.key==='Enter')addTaskUI();});
-initGraphEvents();syncP();refresh();loadMap();loadAgentCfg();
+initGraphEvents();syncP();refresh();loadMap();loadAgentCfg();loadScanRoots();
 </script></body></html>`;
 
 function readBody(req) {
@@ -1579,6 +1613,9 @@ async function cmdApp() {
       if (u.pathname === "/api/tasks/restore" && req.method === "POST") { const b = await readBody(req); return json(res, restoreTask(String(b.id || ""))); }
       if (u.pathname === "/api/tasks/sync" && req.method === "POST") return json(res, syncTasks());
       if (u.pathname === "/api/tasks/push" && req.method === "POST") { const b = await readBody(req); return json(res, pushTasks(b)); }
+      if (u.pathname === "/api/scanroots") return json(res, { roots: loadConfig().scanRoots || [], effective: scanRoots(), home: homedir() });
+      if (u.pathname === "/api/scanroots/add" && req.method === "POST") { const b = await readBody(req); return json(res, addScanRoot(String(b.path || ""))); }
+      if (u.pathname === "/api/scanroots/remove" && req.method === "POST") { const b = await readBody(req); return json(res, removeScanRoot(String(b.path || ""))); }
       if (u.pathname === "/api/agentcfg") { const d = detectHandoffs(); return json(res, { cmd: handoffCmd(), agents: d.agents, editors: d.editors }); }
       if (u.pathname === "/api/agentcmd" && req.method === "POST") { const b = await readBody(req); const cfg = loadConfig(); const v = String(b.cmd || "").trim(); if (v) cfg.agentCmd = v; else delete cfg.agentCmd; delete cfg.ide; saveConfig(cfg); return json(res, { ok: true, cmd: cfg.agentCmd || "" }); }
       if (u.pathname === "/api/open" && req.method === "POST") { const b = await readBody(req); const e = runHandoff(String(b.path || "")); return json(res, { opened: !!e, id: e ? e.id : "" }); }
