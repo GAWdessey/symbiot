@@ -1,0 +1,29 @@
+name: ci
+
+# Runs the test suite on every PR and feature-branch push, so pull requests get
+# a status check. This is what the per-repo "auto-merge on green CI" toggle waits
+# for: enable branch protection on main requiring the "test" check, and an
+# approved PR merges itself only once this passes.
+on:
+  pull_request:
+  push:
+    branches-ignore: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm ci
+      - name: Git identity for tests
+        run: |
+          git config --global user.email "ci@symbiot.local"
+          git config --global user.name "symbiot ci"
+      - name: Test
+        env:
+          SYMBIOT_NO_OPEN: "1"
+          SYMBIOT_SKIP_INSTALL_TEST: "1"
+        run: npm test
