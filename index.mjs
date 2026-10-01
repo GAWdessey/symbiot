@@ -58,6 +58,9 @@ let SERVING = false; // set while `symbiot app` runs — silences the CLI spinne
 let LAST_MAP = null;  // cached graph so node clicks don't rescan
 const HANDOFFS = []; // live registry of agents Symbiot has handed work to
 let LATEST_VERSION = ""; // newest symbiot on npm, checked in the background
+// a.b.c numeric compare: only a HIGHER npm version is an update (a local build
+// ahead of npm must not be offered a "newer" older one)
+function semverGt(a, b) { const p = (v) => String(v || "").replace(/^v/, "").split(/[.-]/).slice(0, 3).map((n) => parseInt(n, 10) || 0); const x = p(a), y = p(b); for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return x[i] > y[i]; return false; }
 async function checkLatest() { try { const r = await fetch("https://registry.npmjs.org/symbiot"); if (!r.ok) return; const j = await r.json(); LATEST_VERSION = (j["dist-tags"] && j["dist-tags"].latest) || ""; } catch {} }
 
 // ---- colour + spinner ------------------------------------------------------
@@ -1912,7 +1915,7 @@ function heartbeat(fresh){
     else if(p.started!==SRV_STARTED){location.reload();return;}
     if(srvDown){location.reload();return;}
     if(updBusy)return;
-    if(p.latest&&p.version&&p.latest!==p.version){
+    if(p.latest&&p.newer){
       b.className='updatebar show';
       b.innerHTML="A new Symbiot ("+esc(p.latest)+") is available &mdash; you're on "+esc(p.version)+". <button id='doupd'>Update &amp; restart</button>";
       var btn=document.getElementById('doupd');if(btn)btn.onclick=doUpdate;
@@ -2016,7 +2019,7 @@ async function cmdApp() {
       if (u.pathname === "/api/agents") return json(res, HANDOFFS.map((e) => { let tail = ""; try { tail = readFileSync(e.log, "utf8").slice(-1200); } catch {} return { id: e.id, name: e.name, path: e.path, status: e.status, elapsed: (e.endedAt || Date.now()) - e.startedAt, exitCode: e.exitCode, tail, changed: agentChanges(e.path, e.startedAt) }; }));
       if (u.pathname === "/api/run" && req.method === "POST") { const b = await readBody(req); const cmd = ["week", "standup", "todo"].includes(b.cmd) ? b.cmd : "week"; return json(res, await produce(cmd)); }
       if (u.pathname === "/api/connect" && req.method === "POST") { return json(res, await connectProvider(await readBody(req))); }
-      if (u.pathname === "/api/ping") { if (u.searchParams.get("fresh") === "1") await checkLatest(); return json(res, { version: VERSION, started: SERVER_STARTED, latest: LATEST_VERSION }); }
+      if (u.pathname === "/api/ping") { if (u.searchParams.get("fresh") === "1") await checkLatest(); return json(res, { version: VERSION, started: SERVER_STARTED, latest: LATEST_VERSION, newer: semverGt(LATEST_VERSION, VERSION) }); }
       if (u.pathname === "/api/update" && req.method === "POST") {
         // Install the newest symbiot, then relaunch this same app (same port +
         // token => same URL) and exit. The open page's heartbeat reconnects and
@@ -2110,4 +2113,4 @@ const isMain = (() => {
 })();
 if (isMain) main();
 
-export { authorship, repoState, readmeInfo, repoShape, houseRules, findAllRepos, buildMap, reportFooter, detectHardware, recommendModels, computeDrift, driftRepo, gitDefaultBranch, buildTasksMd, taskType, EMBEDDED_UI, orcaHandoffCmd, migrateOrcaCmd, fillHandoff, ORCA_CLAUDE_CMD, HANDOFF_PROMPT, shipChanges, syncTasks, pendingReview, approveRepo, sendBack, pushTasks };
+export { authorship, repoState, readmeInfo, repoShape, houseRules, findAllRepos, buildMap, reportFooter, detectHardware, recommendModels, computeDrift, driftRepo, gitDefaultBranch, buildTasksMd, taskType, EMBEDDED_UI, orcaHandoffCmd, migrateOrcaCmd, fillHandoff, ORCA_CLAUDE_CMD, HANDOFF_PROMPT, shipChanges, syncTasks, pendingReview, approveRepo, sendBack, pushTasks, semverGt };
