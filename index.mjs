@@ -1666,6 +1666,26 @@ async function cmdApp() {
   let TOKEN = cfg0.appToken;
   if (!TOKEN) { TOKEN = randomBytes(16).toString("hex"); try { saveConfig({ ...loadConfig(), appToken: TOKEN }); } catch {} }
   const PORT = Number(process.env.SYMBIOT_PORT || cfg0.appPort) || 7391;
+  // Single instance: if a Symbiot app is already serving this port, don't start
+  // a second one (multiple instances race the config and split the open tabs) —
+  // just open the one that's running. SYMBIOT_FORCE_NEW overrides (e.g. tests).
+  if (!process.env.SYMBIOT_FORCE_NEW) {
+    try {
+      const ctrl = new AbortController(); const to = setTimeout(() => ctrl.abort(), 800);
+      const r = await fetch(`http://127.0.0.1:${PORT}/api/ping`, { headers: { "x-symbiot-token": TOKEN }, signal: ctrl.signal }).catch(() => null);
+      clearTimeout(to);
+      if (r && r.ok) {
+        const p = await r.json().catch(() => ({}));
+        if (p && p.version) {
+          const url = `http://127.0.0.1:${PORT}/?t=${TOKEN}`; const how = openApp(url);
+          console.log(`\n${c.g("●")} ${c.b("Symbiot")} is already running (v${p.version}) at ${c.b(url)}`);
+          console.log(how ? c.d(`  Opened the existing window (a ${how}).`) : c.d("  Open that URL in your browser."));
+          console.log(c.d("  (Not starting a second copy. Set SYMBIOT_FORCE_NEW=1 to force one.)"));
+          return;
+        }
+      }
+    } catch {}
+  }
   const json = (res, obj) => { res.writeHead(200, { "content-type": "application/json" }); res.end(JSON.stringify(obj)); };
   const server = createServer(async (req, res) => {
     const u = new URL(req.url, "http://127.0.0.1");
