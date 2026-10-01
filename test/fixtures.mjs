@@ -4,12 +4,14 @@
 //
 //   node test/fixtures.mjs
 //
-import { execSync } from "node:child_process";
-import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
+import { execSync, spawnSync } from "node:child_process";
+import { mkdtempSync, writeFileSync, mkdirSync, rmSync, readFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { authorship, repoState, readmeInfo, houseRules, findAllRepos, driftRepo, buildTasksMd, taskType, EMBEDDED_UI } from "../index.mjs";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+import { authorship, repoState, readmeInfo, houseRules, findAllRepos, driftRepo, buildTasksMd, taskType, EMBEDDED_UI, orcaHandoffCmd, migrateOrcaCmd, fillHandoff, ORCA_CLAUDE_CMD, HANDOFF_PROMPT, shipChanges, semverGt } from "../index.mjs";
 
+const INDEX = join(dirname(fileURLToPath(import.meta.url)), "..", "index.mjs");
 const ROOT = mkdtempSync(join(tmpdir(), "symbiot-fix-"));
 let pass = 0, fail = 0;
 const ok = (name, cond, got) => { if (cond) { pass++; console.log("  ✓ " + name); } else { fail++; console.log("  ✗ " + name + "  got: " + JSON.stringify(got)); } };
@@ -103,6 +105,50 @@ try {
   const d7 = driftRepo(f7, {});
   ok("never-landed PR flagged (added file missing from main)", d7.flags.some((f) => /MISSING from main|likely never landed/.test(f.text)), d7.flags);
 
+  console.log("F8 drift REPORT — what `symbiot drift` prints, end to end through the CLI");
+  // A scan root with one clean, one dirty, one stale and one deploy-configured
+  // repo. The deploy command lives in the isolated HOME's deploys.json — the
+  // only place it's ever read from — and its sha file sits outside the root.
+  const f8 = join(ROOT, "f8"), f8home = join(ROOT, "f8home");
+  build("f8/clean-repo", `git init -q -b main && git config user.email t@x.co && git config user.name T && echo a > a && git add . && git commit -qm init`);
+  build("f8/dirty-repo", `git init -q -b main && git config user.email t@x.co && git config user.name T && echo a > a && git add . && git commit -qm init && echo wip > wip`);
+  build("f8/stale-repo", `
+    git init -q -b main && git config user.email t@x.co && git config user.name T
+    for i in $(seq 12); do echo $i > f$i; git add .; git commit -qm c$i; done
+    git read-tree -u --reset HEAD~10 && git reset -q`);
+  const shaFile = join(ROOT, "f8-deployed-sha");
+  build("f8/deployed-repo", `
+    git init -q -b main && git config user.email t@x.co && git config user.name T
+    for i in $(seq 5); do echo $i > m; git add m; git commit -qm m$i; done
+    git checkout -qb feature
+    for i in 1 2 3; do echo f$i > f; git add f; git commit -qm f$i; done
+    git rev-parse HEAD > ${JSON.stringify(shaFile)} && git checkout -q main`);
+  mkdirSync(join(f8home, ".config", "symbiot"), { recursive: true });
+  writeFileSync(join(f8home, ".config", "symbiot", "deploys.json"), JSON.stringify({ "deployed-repo": `cat ${JSON.stringify(shaFile)}` }));
+  const deployedSha = readFileSync(shaFile, "utf8").trim().slice(0, 9);
+  const cli = (args, extraEnv = {}) => spawnSync(process.execPath, [INDEX, ...args], { encoding: "utf8", timeout: 60000,
+    env: { ...process.env, HOME: f8home, USERPROFILE: f8home, GIT_CONFIG_GLOBAL: join(ROOT, "globalgitconfig"), GIT_CONFIG_SYSTEM: "/dev/null", ...extraEnv } });
+  const r8 = cli(["drift", "--dir", f8]);
+  const out8 = r8.stdout || "";
+  // the block printed for one repo: its header line through the blank line after it
+  const block = (name) => { const m = out8.match(new RegExp(`^(.) ${name} [^\\n]*\\n((?:  [^\\n]*\\n)*)`, "m")); return m ? { mark: m[1], body: m[2] } : null; };
+  ok("exits cleanly", r8.status === 0, { status: r8.status, err: r8.stderr });
+  ok("header counts 4 repos, 2 with risks", /Symbiot drift · 4 repos · 2 with risks/.test(out8), out8.split("\n").slice(0, 3));
+  const st8 = block("stale-repo");
+  ok("stale repo: risky ● + stale-checkout warning", st8 && st8.mark === "●" && /⚠ checkout is stale — working tree ≈ HEAD~10, not new work/.test(st8.body), st8 || out8);
+  const dp8 = block("deployed-repo");
+  ok("deployed repo: production NOT on main, 3 ahead, sha cited", dp8 && dp8.mark === "●" && dp8.body.includes(`⚠ production runs code NOT on main (3 commits ahead of it)  [${deployedSha}]`), dp8 || out8);
+  const dy8 = block("dirty-repo");
+  ok("dirty repo: informational ○, uncommitted counted, no warning", dy8 && dy8.mark === "○" && /· 1 uncommitted \(0 mod \/ 0 del \/ 1 new\)/.test(dy8.body) && !dy8.body.includes("⚠"), dy8 || out8);
+  ok("clean repo listed on the clean: line only", /^clean: clean-repo$/m.test(out8) && !block("clean-repo"), out8);
+  ok("footer: local facts, CI hint, no deploys.json nag (it's configured)", /local git facts only \(add --ci for CI status\)$/m.test(out8.trim()) && !/set ~\/\.config\/symbiot\/deploys\.json/.test(out8), out8.trim().split("\n").pop());
+
+  console.log("F9 scan deadline — a scan that runs out of time returns partial, never hangs");
+  const t9 = Date.now();
+  const r9 = cli(["drift", "--dir", f8], { SYMBIOT_SCAN_TIMEOUT: "0.001" });
+  ok("returns promptly with a clean exit", r9.status === 0 && Date.now() - t9 < 30000, { status: r9.status, ms: Date.now() - t9 });
+  ok("says the scan stopped and results are partial", /scan stopped after .* results are partial/.test(r9.stderr || ""), r9.stderr);
+
   console.log("PUSH — tasks render as an agent brief (checklist + context + instruction)");
   const md = buildTasksMd("demo", { branch: "main", commits: ["did a thing"], open: ["demo: TODO fix X (a.ts:9)"], drift: ["2 behind upstream"], stack: "TypeScript, Node" }, [{ text: "Wire the thing" }, { text: "Add a test" }]);
   ok("checklist items present", /- \[ \] Wire the thing/.test(md) && /- \[ \] Add a test/.test(md), md.slice(0, 60));
@@ -115,6 +161,78 @@ try {
   ok("refactor task -> Refactor", taskType("Split the monolithic index.mjs into modules") === "Refactor", taskType("Split the monolithic index.mjs"));
   ok("bug task -> Fixes", taskType("Fix the hang in the map scan") === "Fixes", taskType("Fix the hang"));
   ok("groups render in TASKS.md", /### Tests & CI/.test(buildTasksMd("x", {}, [{ text: "add a test" }, { text: "update the readme" }])) && /### Docs/.test(buildTasksMd("x", {}, [{ text: "add a test" }, { text: "update the readme" }])), "");
+
+  console.log("ORCA — the Claude-in-a-tab handoff delivers the WHOLE prompt (≤0.26 sent only \"Read\")");
+  // fake orca-ide: `status` reports ready, `terminal create` runs its --command
+  // in a shell like Orca's tab does; fake `claude` records the args it got.
+  const fake = join(ROOT, "orca-fake"); mkdirSync(fake, { recursive: true });
+  const orcaBin = join(fake, "orca-ide"), got = join(fake, "argv");
+  writeFileSync(orcaBin, '#!/bin/bash\ncase "$1" in status) echo \'{"state": "ready"}\';; terminal) while [ $# -gt 0 ]; do [ "$1" = --command ] && { bash -c "$2"; exit; }; shift; done;; esac\n', { mode: 0o755 });
+  writeFileSync(join(fake, "claude"), `#!/bin/bash\nprintf '%s\\n' "$#" "$1" > ${JSON.stringify(got)}\n`, { mode: 0o755 });
+  const runOrca = (tmpl) => { rmSync(got, { force: true }); execSync(fillHandoff(tmpl, fake), { shell: "/bin/bash", stdio: "ignore", env: { ...process.env, PATH: fake + ":" + process.env.PATH } }); return readFileSync(got, "utf8").split("\n"); };
+  const q = JSON.stringify(orcaBin);
+  const [argc, arg1] = runOrca(orcaHandoffCmd(q, ORCA_CLAUDE_CMD));
+  ok("claude gets the prompt as ONE argument", argc === "1" && arg1 === HANDOFF_PROMPT, [argc, arg1]);
+  const legacy = orcaHandoffCmd(q, ` --command "claude {prompt}"`); // what ≤0.26 saved to config
+  const migrated = migrateOrcaCmd(legacy);
+  ok("a saved unquoted command is migrated to the quoted form", migrated === orcaHandoffCmd(q, ORCA_CLAUDE_CMD), migrated);
+  ok("migration is idempotent", migrateOrcaCmd(migrated) === migrated, "");
+  ok("custom --command is preserved", migrateOrcaCmd(orcaHandoffCmd(q, ` --command "codex"`)) === orcaHandoffCmd(q, ` --command "codex"`), "");
+  const [argc2, arg12] = runOrca(migrated);
+  ok("migrated command delivers the whole prompt", argc2 === "1" && arg12 === HANDOFF_PROMPT, [argc2, arg12]);
+
+  console.log("APPROVE — approved work ships: branch off the default, commit (minus .symbiot/), push");
+  const gitEnv = { ...process.env, GIT_CONFIG_GLOBAL: join(ROOT, "globalgitconfig"), GIT_CONFIG_SYSTEM: "/dev/null", GIT_TERMINAL_PROMPT: "0" };
+  const shipRepo = build("ship", `git init -q -b main && echo a > a.txt && git add . && git commit -qm init
+    git clone -q --bare . ../ship-remote.git && git remote add origin ../ship-remote.git && git fetch -q origin && git remote set-head origin main
+    echo b >> a.txt && echo new > new.txt && mkdir .symbiot && echo '- [x] t' > .symbiot/TASKS.md`);
+  const evil = "Fix the $(touch pwned) `id` bug";
+  const r1 = shipChanges(shipRepo, [evil, "Add a test"], { pr: false });
+  const g = (a) => execSync("git " + a, { cwd: shipRepo, encoding: "utf8", env: gitEnv }).trim();
+  ok("commits on a new symbiot/ branch, not main", r1.ok && /^symbiot\//.test(r1.branch) && g("rev-parse --abbrev-ref HEAD") === r1.branch && g("rev-parse main") === g("rev-parse origin/main"), r1);
+  ok("commit message lists the approved tasks verbatim (no shell)", g("log -1 --format=%B").includes("- " + evil) && !existsSync(join(shipRepo, "pwned")), g("log -1 --format=%B"));
+  ok("tracked + new files committed, .symbiot/ left out", g("show --name-only --format= HEAD").split("\n").sort().join(",") === "a.txt,new.txt" && g("status --porcelain") === "?? .symbiot/", g("show --name-only --format= HEAD"));
+  ok("pushed to origin", r1.pushed && g(`rev-parse origin/${r1.branch}`) === g("rev-parse HEAD"), r1);
+  const r2 = shipChanges(shipRepo, ["x"], { pr: false });
+  ok("nothing to commit -> approved without a commit", r2.ok && r2.nothing && !r2.commit, r2);
+
+  console.log("REVIEW — agent ticks -> awaiting review (not archived) -> send back / approve");
+  // isolated HOME: the cycle reads and writes Symbiot's real task store
+  const home = join(ROOT, "rhome"), proj = join(home, "projects", "revapp");
+  mkdirSync(proj, { recursive: true });
+  execSync(`git init -q -b main && echo a > a.txt && git add . && git commit -qm init`, { cwd: proj, env: gitEnv });
+  const cycle = `
+    import * as m from ${JSON.stringify(INDEX)};
+    import { readFileSync, writeFileSync } from "node:fs";
+    const f = ${JSON.stringify(join(proj, ".symbiot", "TASKS.md"))};
+    const tick = () => writeFileSync(f, readFileSync(f, "utf8").replace("- [ ] Fix the bug", "- [x] Fix the bug"));
+    const tasks = () => JSON.parse(readFileSync(${JSON.stringify(join(home, ".config", "symbiot", "tasks.json"))}, "utf8"));
+    const out = {};
+    writeFileSync(${JSON.stringify(join(proj, "a.txt"))}, "changed\\n");
+    m.pushTasks(); tick();
+    out.brief = readFileSync(f, "utf8");
+    out.sync = m.syncTasks(); out.afterTick = tasks()[0];
+    out.pending = m.pendingReview();
+    out.repush = m.pushTasks();
+    m.sendBack(out.afterTick.id); out.afterBack = tasks()[0]; out.md = readFileSync(f, "utf8");
+    m.pushTasks(); tick(); m.syncTasks();
+    out.approve = m.approveRepo("revapp", { push: false }); out.final = tasks()[0];
+    console.log(JSON.stringify(out));`;
+  mkdirSync(join(home, ".config", "symbiot"), { recursive: true });
+  writeFileSync(join(home, ".config", "symbiot", "tasks.json"), JSON.stringify([{ id: "t1", text: "Fix the bug", repo: "revapp", done: false, ts: 1 }]));
+  const cy = spawnSync(process.execPath, ["--input-type=module", "-e", cycle], { encoding: "utf8", env: { ...gitEnv, HOME: home, USERPROFILE: home } });
+  let o = {}; try { o = JSON.parse(cy.stdout.trim().split("\n").pop()); } catch { console.log(cy.stdout, cy.stderr); }
+  ok("brief tells the agent to tick + leave changes uncommitted", /Tick it here/.test(o.brief || "") && /uncommitted/.test(o.brief || ""), "");
+  ok("an agent tick -> awaiting review, NOT done/archived", o.sync && o.sync.review === 1 && o.afterTick.review && !o.afterTick.done && !o.afterTick.archived, o.afterTick);
+  ok("pending shows the repo's uncommitted changes", o.pending && o.pending[0].repo === "revapp" && o.pending[0].files.some((x) => x.file === "a.txt") && /\+1/.test(o.pending[0].stat), o.pending);
+  ok("tasks in review aren't re-sent to the agent", o.repush && o.repush.empty, o.repush);
+  ok("send back reopens it and unticks TASKS.md", o.afterBack && !o.afterBack.review && !o.afterBack.done && /- \[ \] Fix the bug/.test(o.md), o.afterBack);
+  ok("approve commits on a branch, then archives with the commit", o.approve && o.approve.approved === 1 && /^symbiot\/fix-the-bug/.test(o.approve.branch) && o.final.archived && o.final.done && o.final.commit === o.approve.commit, o.approve);
+
+  console.log("UPDATE — only a higher npm version is offered as an update");
+  ok("0.26.0 is not newer than 0.27.0 (local build ahead of npm)", !semverGt("0.26.0", "0.27.0"), "");
+  ok("0.10.0 is newer than 0.9.4 (numeric, not string)", semverGt("0.10.0", "0.9.4"), "");
+  ok("same version is not newer", !semverGt("0.27.0", "0.27.0"), "");
 } finally {
   try { execSync(`git worktree prune 2>/dev/null || true`, { cwd: join(ROOT, "f3parent", "f3"), stdio: "ignore" }); } catch {}
   rmSync(ROOT, { recursive: true, force: true });

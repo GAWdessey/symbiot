@@ -12,10 +12,20 @@ symbiot            your last 7 days, written up   (same as: symbiot week)
 symbiot standup    yesterday + today, for standup
 symbiot todo       what's still on your plate
 symbiot app        open the visual app in your browser
+symbiot drift      what's out of sync / at risk across your repos
+symbiot push       write tasks into each repo for your coding agent
 symbiot models     recommend AI models for your hardware
+symbiot setup-local  set up a free local model (Ollama), one command
 symbiot login      connect it to an AI (once)
 symbiot whoami     show how it's connected
+symbiot logout     forget saved credentials
 symbiot help
+```
+
+## Install
+
+```bash
+npm install -g symbiot        # or run without installing:  npx symbiot week
 ```
 
 ## Prefer a window? `symbiot app`
@@ -24,8 +34,8 @@ symbiot help
 symbiot app
 ```
 
-Starts a tiny local server (127.0.0.1 only, protected by a one-time token) and
-opens the visual app in your browser — in a clean, chrome-less window if you have
+Starts a tiny local server (127.0.0.1 only, protected by a token) and opens the
+visual app in your browser — in a clean, chrome-less window if you have
 Chrome/Chromium/Edge/Brave (`--app` mode), otherwise a normal tab. No Electron,
 no install — it's the same CLI. Press Ctrl+C (or click Quit) to stop.
 
@@ -33,29 +43,53 @@ Tabs:
 
 - **Map** — a live, interactive node graph of your work, built from your local git:
   you at the centre, your repos, and the languages and tools they share (so related
-  projects cluster). **Scroll to zoom, drag to pan, click a node.** Clicking a repo
-  shows its branch/commits/uncommitted/stack and a **Suggest next steps** button —
-  your model reads that repo's recent commits + open TODOs and proposes *In flight /
-  Next steps / Ideas*. The graph itself **needs no AI key** (pure local data);
-  suggestions use your chosen model (free with local Ollama). This is the landing view.
+  projects cluster), plus the coding **agents and editors** you have installed and
+  the **AI** currently powering Symbiot. Project folders that **aren't git repos**
+  show up too (see [Where it looks](#where-it-looks)). **Scroll to zoom, drag to
+  pan, click a node.** Clicking a repo shows its branch/commits/uncommitted/stack, a
+  **Suggest next steps** button, and an **AI review**: what the project does, a
+  one-line verdict on whether it needs new work at all (it's told to prefer
+  stabilising over piling on features), and a short list of ideas you can tick
+  straight into **Tasks**. The graph itself **needs no AI key** (pure local data);
+  reviews and suggestions use your chosen model (free with local Ollama). While
+  the scan runs, the Map shows live progress (which phase, how many repos, which
+  one). This is the landing view.
+- **Drift** — the [`symbiot drift`](#whats-out-of-sync-symbiot-drift) report, with
+  "fetch latest" and "check CI" toggles.
 - **Week / Standup / Todo** — the write-ups (these use your chosen AI).
-- **Settings** — pick your AI. Free/private option: run **Ollama** locally, no key.
+- **Tasks** — a checklist, grouped by kind (Fixes, Tests & CI, Docs, …). Filter by
+  type or repo, then **Send to repos** to hand just those to your agent (see
+  [`symbiot push`](#hand-tasks-to-your-coding-agent-symbiot-push)). What your agent
+  finishes lands in **Awaiting your review**, where you approve or send it back (see
+  [Review and approve](#review-and-approve-the-agents-work)). Ticking a task yourself
+  marks it done and it **auto-archives**. An **archived** view lets you restore any
+  of them.
+- **Agents** — every agent run Symbiot has started (and local-model downloads),
+  with live status, elapsed time, exit code and the tail of its output.
+- **Settings** — pick your AI, the folders to scan, your agent command, and get
+  model recommendations or a one-click local model.
+
+**Stays current by itself.** The app checks npm for a newer Symbiot every couple of
+minutes (and whenever you come back to the window). When there is one, a banner
+offers **Update & restart**: it runs `npm install -g symbiot@latest`, relaunches the
+app on the same address, and the open window reloads itself onto the new version —
+no terminal, no reopening. The version you're on is shown next to the name. The
+same mechanism means that if you restart `symbiot app` yourself, the open window
+reconnects and reloads on its own.
+
+The app listens on port **7391** so its address survives restarts; set
+`SYMBIOT_PORT` to use another (it falls back to a free port if that one is busy).
 
 **Cross-platform:** the app works on **Linux, macOS, and Windows** — the server
 and UI are just a local web page. The chrome-less window is detected per-OS
 (PATH on Linux, the `/Applications` bundle on macOS, `Program Files` on Windows);
 where no Chromium-family browser is found it opens your default browser instead.
 
-## Install
-
-```bash
-npm install -g symbiot        # or run without installing:  npx symbiot week
-```
-
 ## Hand tasks to your coding agent: `symbiot push`
 
 ```bash
 symbiot push          # or the "Send to repos" button in the app's Tasks tab
+symbiot push --open   # ...and run your agent command in each repo
 ```
 
 Writes a **`.symbiot/TASKS.md`** into each repo your tasks reference — a checklist
@@ -63,25 +97,83 @@ Writes a **`.symbiot/TASKS.md`** into each repo your tasks reference — a check
 open `TODO/FIXME` markers (with `file:line`), and current drift. Then point Claude
 Code / Cursor / any agent at it: *"Read `.symbiot/TASKS.md` and implement the
 unchecked items."* Tasks come from ticking a repo review's ideas, or adding your
-own in the Tasks tab.
+own in the Tasks tab. Non-git project folders on the Map can receive tasks too.
+
+The brief asks the agent to tick each item (`- [x]`) as it finishes it and to leave
+its changes **uncommitted**, ready for your review.
+
+### Review and approve the agent's work
+
+A tick from the agent doesn't archive anything. It moves the task into **Awaiting
+your review** at the top of the Tasks tab, grouped by repo, with the branch, the
+size of the uncommitted change and a **Show diff** button. For each repo:
+
+- **Approve → PR** syncs the work. If you're on the default branch it creates
+  `symbiot/<task>`, commits everything except `.symbiot/` with the approved tasks as
+  the message, pushes, and opens a PR with the GitHub CLI (`gh`). If you're already
+  on a feature branch it commits and opens the PR from there. Each step that can't
+  happen stops there and says why: no `origin` remote means a local commit only, and
+  without `gh` it pushes and stops. Your commit is never lost. Then the tasks are
+  archived with their commit and PR link.
+- **↩ (send back)** is for one that isn't right: it reopens the task and unticks it in
+  `TASKS.md`, so the next **Send to repos** hands it to the agent again.
+
+Tasks waiting for review aren't re-sent to the agent.
+
+### Run your agent automatically
+
+Set an **agent command** in Settings (*Hand off to your agent*), and every
+**Send to repos** (or `symbiot push --open`) runs it in each repo it wrote to. It's
+a template — `{dir}` is the repo path, `{prompt}` is the instruction to read
+`TASKS.md` — so it works with any agent or editor:
+
+```
+claude -p "{prompt}" --permission-mode acceptEdits
+aider --message "{prompt}" --yes
+code {dir}
+```
+
+Settings shows **one-click presets** for what's installed on your machine:
+
+- **Agents:** Claude Code (*make changes*, or *plan only* which asks first), Codex
+  (OpenAI), Aider, Cursor agent, Gemini CLI.
+- **Orca IDE** (any OS): opens the repo in Orca — either just the repo, to use
+  Orca's own agent, or with Claude running in a new tab. It launches Orca if it's
+  closed and waits for it to be ready first.
+- **Editors:** VS Code, Cursor, Windsurf, Zed, Sublime Text, IntelliJ IDEA, Neovim
+  (on macOS, also found as `.app` bundles when the CLI isn't on your PATH).
+
+Each run is logged to `.symbiot/agent.log` in the repo and shown live in the
+**Agents** tab. The command is saved as `agentCmd` in
+`~/.config/symbiot/config.json` — it's your command, Symbiot only fills in
+`{dir}` and `{prompt}`.
 
 ## What's out of sync? `symbiot drift`
 
 ```bash
-symbiot drift          # add --ci to also check GitHub Actions state (needs gh)
+symbiot drift          # local git facts only — fast, no network
+symbiot drift --fetch  # fetch from origin first, so "behind" is current
+symbiot drift --ci     # also check GitHub Actions state (needs gh)
 ```
 
 A **deterministic** report of what's out of sync, stuck, or at risk across your
 repos — computed from git facts, each line citing the fact behind it (no model
-guessing). It flags: **stale checkouts**, **behind upstream**, **multiple
-worktrees**, **branches with work not on the default**, **PR merges that landed
-off the default branch** (the "merged but main didn't move" trap), and — if you
-configure it — **production running code that isn't on your default branch**.
+guessing). It flags: **stale checkouts** (a working tree that's an old snapshot,
+not new work), **uncommitted work**, **behind upstream**, **multiple worktrees**,
+**branches with work not on the default**, **PR merges that landed off the default
+branch** (the "merged but main didn't move" trap — split into *likely never
+landed*, when files the PR added are missing from main, and *probably re-done*,
+when they're all there), and — if you configure it — **production running code
+that isn't on your default branch**. With `--ci` it tells a real failing run apart
+from **CI that isn't running at all** (jobs never started — usually a billing or
+spending limit), quoting GitHub's reason when it can. Works on local-only repos
+too: without a remote it compares against your local default branch.
 
 For the production check, add a per-repo deploy command to
 `~/.config/symbiot/deploys.json` (read only from your own config, never from a
-repo), e.g. `{ "/path/to/repo": "ssh prod cat ~/app/.deployed-sha" }`. Also a
-**Drift** tab in the app.
+repo), keyed by repo path or folder name, that prints the deployed commit sha:
+`{ "/path/to/repo": "ssh prod cat ~/app/.deployed-sha" }`. Also the **Drift** tab
+in the app.
 
 ## Which model? Ask your machine
 
@@ -94,6 +186,20 @@ marking which fit your RAM) to run free & private via [Ollama](https://ollama.co
 plus **paid** options (Claude / OpenAI / Gemini, cheap → top). Also available as
 a button in the app's Settings.
 
+### A free local model in one command: `symbiot setup-local`
+
+```bash
+symbiot setup-local                      # the best model for your RAM
+symbiot setup-local --model llama3.2:3b  # or pick one
+```
+
+Starts Ollama if it isn't running, downloads the model (with progress), and
+switches Symbiot over to it — free, private, nothing leaves your machine. If
+Ollama isn't installed yet it prints the one-line install for your OS (Homebrew on
+macOS, winget on Windows, the official script on Linux) and you re-run it after.
+Also the **Set up a free local model** button in Settings, where the download shows
+in the Agents tab and Symbiot switches over when it finishes.
+
 ## Connect it (once)
 
 Pick the AI you want it to write with:
@@ -103,7 +209,8 @@ symbiot login     # choose Claude, OpenAI, Gemini, or a local model (Ollama)
 ```
 
 You'll get a short menu; paste that provider's API key (or, for Ollama, just point
-it at your local server) and it's saved to `~/.config/symbiot/config.json`.
+it at your local server) and it's saved to `~/.config/symbiot/config.json`. The
+app's Settings tab does the same.
 
 | Provider | Get a key | Default model |
 |----------|-----------|---------------|
@@ -119,18 +226,43 @@ Environment keys are auto-detected too (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`,
 ## Use
 
 ```bash
-cd ~/your/projects            # or use --dir
 symbiot week                  # writes up what you did, grouped and readable
 symbiot week --since 14       # a fortnight instead of a week
 symbiot standup               # short: done + next
 symbiot todo                  # TODOs + uncommitted work, prioritised
 symbiot week --all            # everyone's commits, not just yours
 symbiot week --plain          # no colour/spinner, good for piping
+symbiot week --dir ~/work     # just this folder, this once
 ```
 
-By default it looks under your home folder for repos with recent commits, and
-summarises the commits you authored (the email you commit under in each repo).
-Point it somewhere specific with `--dir ~/work`.
+It summarises the commits **you** authored — matching all your identities in each
+repo (per-repo and global email, your GitHub noreply address, your name), and
+counting everyone if that filter would drop almost all of an active repo's history.
+
+## Where it looks
+
+By default Symbiot scans your **home folder**. To point it at where your work
+actually lives — inside or outside your home folder, one place or several — add
+folders under **Settings → Folders to scan for repos** in the app. Adding the first
+extra folder keeps your home folder in the list; remove whichever you don't want.
+They're saved as `scanRoots` in `~/.config/symbiot/config.json` (`~` works).
+`--dir <path>` overrides them for a single run.
+
+Every view uses the **same set of repos** — the Map, Week / Standup / Todo, Drift,
+and Send to repos all agree. Heavy folders (`node_modules`, virtualenvs, caches, …)
+are skipped, and worktrees of one repo count once (the freshest checkout).
+
+**Not everything is a repo.** Inside your scan folders, Symbiot also picks up
+**project folders without git** — any folder (up to three levels down) with a
+project manifest such as `package.json`, `pyproject.toml`, `requirements.txt`,
+`go.mod`, `Cargo.toml`, `pom.xml`, `build.gradle`, `Gemfile`, `composer.json`,
+`Dockerfile`, `pubspec.yaml` or `CMakeLists.txt`. They appear on the Map (sand
+coloured) with their languages, and can receive tasks like a repo.
+
+**Scans can't hang.** A scan has an overall time limit (60 s by default; set
+`SYMBIOT_SCAN_TIMEOUT` in seconds). If it runs out — a slow network drive, a
+gigantic folder — it stops and shows what it found so far, marked **partial**,
+instead of hanging. The CLI shows scan progress on one line as it goes.
 
 ## What it reads, and what it doesn't
 
@@ -144,13 +276,40 @@ Point it somewhere specific with `--dir ~/work`.
   commits matched you (e.g. "1090 of 1101"), the README's age, and the
   working-tree state — so you can see exactly what it read.
 - **Never:** no keylogging, no screen capture, no browsing history, no accounts.
+- **Runs only what you set:** the agent command is yours, and deploy commands are
+  read only from your own `~/.config/symbiot/`, never from a repo.
 
 ## Config
 
+Everything lives in `~/.config/symbiot/`: `config.json` (your AI, `scanRoots`,
+`agentCmd`; readable only by you), `tasks.json` (your tasks),
+`deploys.json` (optional, for drift's production check) and `rules.md` (optional
+conventions every repo review must respect, alongside each repo's own
+`CLAUDE.md` / `AGENTS.md` / `CONTRIBUTING.md`).
+
 - `SYMBIOT_MODEL` — override the model for any provider (e.g. `gpt-4o`,
   `claude-haiku-4-5`, `gemini-1.5-pro`).
+- `SYMBIOT_SCAN_TIMEOUT` — the scan time limit, in seconds (default 60).
+- `SYMBIOT_PORT` — the app's port (default 7391).
 - `symbiot whoami` shows the active provider, model, and where the credential
   came from. `symbiot logout` forgets saved credentials.
+
+## Development
+
+```bash
+npm test
+```
+
+Runs three suites, all against throwaway repos and an isolated `HOME`:
+
+- `test/fixtures.mjs` — accuracy fixtures: the facts Symbiot collects (identity
+  matching, stale checkouts, worktrees, drift) and the `symbiot drift` report as
+  printed, plus the scan time limit.
+- `test/smoke.mjs` — boots `symbiot app`, runs the page's own JavaScript against
+  a fake DOM (every tab, every button), and hits every endpoint the UI calls.
+- `test/install.mjs` — runs the CLI through a bin symlink, then `npm pack` +
+  global install into a temp prefix and runs `symbiot help`. Needs npm registry
+  access for dependencies; `SYMBIOT_SKIP_INSTALL_TEST=1` skips that part.
 
 ---
 
