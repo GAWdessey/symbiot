@@ -1322,6 +1322,30 @@ async function repoSuggest(path) {
   const text = await write(system, prompt);
   return { text: text || "(couldn't reach the model)", footer };
 }
+// Overview + suggestions for a NON-git project folder (no commits to read), from
+// its file tree, manifest and README. The folder-node equivalent of repoSuggest.
+async function folderSuggest(path) {
+  if (!resolveProvider()) return { error: "not-connected" };
+  if (!path) return { error: "no path" };
+  const det = detectFolder(path);
+  const files = sh(`find ${JSON.stringify(path)} -maxdepth 2 \\( -name node_modules -o -name .git \\) -prune -o -type f -print 2>/dev/null | head -200`).split("\n").filter(Boolean);
+  const rels = files.map((f) => f.slice(path.length + 1));
+  const pick = (names) => { for (const n of names) { const hit = files.find((f) => f.split("/").pop().toLowerCase() === n); if (hit) { try { return readFileSync(hit, "utf8").slice(0, 2000); } catch {} } } return ""; };
+  const manifest = pick(["package.json", "requirements.txt", "pyproject.toml", "go.mod", "cargo.toml", "pom.xml", "composer.json", "gemfile", "pubspec.yaml"]);
+  const readme = pick(["readme.md", "readme.txt", "readme"]);
+  const stack = [...det.langs, ...det.tools].join(", ") || "unknown";
+  const system =
+    `You are a pragmatic senior engineer looking at a project FOLDER that is NOT under version control. ` +
+    `From its files, write exactly three short sections with headings: "Overview" (what this project is, 1-2 sentences), ` +
+    `"Next steps" (3-5 concrete actions — a strong first one is often "git init" if this looks like real work), ` +
+    `"Ideas" (2-3 that fit where it's heading). Ground every point in the actual files/manifest/README shown. No preamble.`;
+  const prompt =
+    `Folder: ${det.name}\nStack: ${stack}\nFiles (${det.files}):\n${rels.slice(0, 120).join("\n")}\n\n` +
+    (manifest ? `Manifest:\n${manifest}\n\n` : "") + (readme ? `README excerpt:\n${readme}\n\n` : "") + `Write the overview and suggestions.`;
+  const text = await write(system, prompt);
+  const footer = `symbiot ${VERSION} · folder · ${det.files} files · ${stack} · not a git repo`;
+  return { text: text || "(couldn't reach the model)", footer };
+}
 
 // Build a write-up for a command; returns { text, sub, error? } without printing.
 // Shared by the CLI (cmdRun) and the web UI (symbiot app).
@@ -1543,7 +1567,7 @@ async function cmdApp() {
       if (u.pathname === "/api/models") { const hw = detectHardware(); return json(res, { hardware: hw, rec: recommendModels(hw) }); }
       if (u.pathname === "/api/drift") return json(res, computeDrift({ ci: u.searchParams.get("ci") === "1", fetch: u.searchParams.get("fetch") === "1" }));
       if (u.pathname === "/api/node") return json(res, await nodeDetail(u.searchParams.get("id") || "")); // local
-      if (u.pathname === "/api/suggest" && req.method === "POST") { const b = await readBody(req); return json(res, await repoSuggest(String(b.path || ""))); }
+      if (u.pathname === "/api/suggest" && req.method === "POST") { const b = await readBody(req); const p = String(b.path || ""); const isRepo = p && existsSync(join(p, ".git")); return json(res, await (isRepo ? repoSuggest(p) : folderSuggest(p))); }
       if (u.pathname === "/api/review" && req.method === "POST") { const b = await readBody(req); return json(res, await repoReview(String(b.path || ""))); }
       if (u.pathname === "/api/tasks" && req.method !== "POST") { const arch = u.searchParams.get("archived") === "1"; return json(res, loadTasks().filter((x) => !!x.archived === arch).map((t) => ({ ...t, type: taskType(t.text) }))); }
       if (u.pathname === "/api/tasks/add" && req.method === "POST") { const b = await readBody(req); return json(res, addTask(b.text, b.repo)); }
