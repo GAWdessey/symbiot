@@ -192,7 +192,7 @@ footer{padding:10px 18px;border-top:1px solid var(--line);display:flex}
 </div>
 <div style="margin-top:20px;border-top:1px solid var(--line);padding-top:16px">
 <label>Hand off to your agent when you "Send to repos"</label>
-<input id="agentcmd" type="text" placeholder="e.g.  claude -p &quot;{prompt}&quot;   ·   code {dir}   ·   leave blank to just write the file">
+<input id="agentcmd" type="text" placeholder="e.g.  aider --message &quot;{prompt}&quot; --yes   ·   code {dir}   ·   leave blank to just write the file">
 <div class="note muted">Runs in each repo after tasks are written. Use <b>{dir}</b> = repo path, <b>{prompt}</b> = the task instruction. Works with any agent or editor &mdash; it's your command.</div>
 <div id="agentpresets" style="margin-top:8px"></div>
 </div>

@@ -12,8 +12,8 @@
 //
 //   node test/install.mjs
 //
-import { spawnSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, rmSync, symlinkSync, readdirSync } from "node:fs";
+import { spawn, spawnSync } from "node:child_process";
+import { mkdtempSync, mkdirSync, rmSync, symlinkSync, readdirSync, readFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -28,6 +28,26 @@ const ok = (n, c, got) => { if (c) { pass++; console.log("  ✓ " + n); } else {
 const env = { ...process.env, HOME: join(TMP, "home"), USERPROFILE: join(TMP, "home") };
 const run = (cmd, args, opts = {}) => spawnSync(cmd, args, { encoding: "utf8", env, timeout: 120000, shell: WIN && !cmd.endsWith(".exe"), ...opts });
 const printsHelp = (r) => r.status === 0 && /Usage/.test(r.stdout) && /symbiot week/.test(r.stdout);
+// Boot `<bin> app` on a random port, fetch the page it serves, then quit it.
+// The installed copy has to find and load ui.mjs to serve anything at all.
+async function servesUi(bin) {
+  const appEnv = { ...env, SYMBIOT_NO_OPEN: "1", SYMBIOT_PORT: String(20000 + Math.floor(Math.random() * 20000)) };
+  const child = spawn(bin, ["app"], { env: appEnv, stdio: ["ignore", "pipe", "pipe"], shell: WIN });
+  let out = "";
+  try {
+    const url = await new Promise((resolve) => {
+      const t = setTimeout(() => resolve(""), 15000);
+      const onData = (d) => { out += d; const m = out.match(/http:\/\/127\.0\.0\.1:\d+\/\?t=[a-f0-9]+/); if (m) { clearTimeout(t); resolve(m[0]); } };
+      child.stdout.on("data", onData); child.stderr.on("data", (d) => { out += d; });
+      child.on("exit", () => { clearTimeout(t); resolve(""); });
+    });
+    if (!url) { console.log("    app output: " + out.trim().slice(0, 600)); return false; }
+    const page = await (await fetch(url.replace(/\?t=.*/, ""))).text();
+    try { await fetch(url.replace(/\/\?t=/, "/api/quit?t=")); } catch {}
+    return /<script>[\s\S]+<\/script>/.test(page) && /data-tab="map"/.test(page);
+  } catch (e) { console.log("    " + e.message); return false; }
+  finally { try { child.kill("SIGKILL"); } catch {} }
+}
 
 try {
   console.log("INSTALL — the CLI runs through a bin symlink (the 0.9.3 regression)");
@@ -64,6 +84,11 @@ try {
       ok("installed `symbiot help` prints usage", printsHelp(help), { status: help.status, out: help.stdout, err: help.stderr });
       const unknown = run(bin, ["no-such-command"]);
       ok("installed CLI dispatches commands (not a silent no-op)", /Unknown command/.test(unknown.stdout), { out: unknown.stdout, err: unknown.stderr });
+      const pkgDir = WIN ? join(prefix, "node_modules", "symbiot") : join(prefix, "lib", "node_modules", "symbiot");
+      const files = JSON.parse(readFileSync(join(PKG, "package.json"), "utf8")).files || [];
+      const absent = files.filter((f) => !existsSync(join(pkgDir, f)));
+      ok(`installed package has every file in "files" (${files.join(", ")})`, absent.length === 0, absent);
+      ok("installed `symbiot app` boots and serves the UI page", await servesUi(bin), "no page with a <script> block (see output above)");
     }
   }
 } finally {

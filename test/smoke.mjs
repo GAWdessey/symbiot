@@ -145,6 +145,26 @@ const calls = [
 ];
 // Endpoints never hit here, and why. Anything else the UI calls must be covered.
 const NOT_HIT = { "/api/update": "runs a real global npm install", "/api/quit": "hit last, below" };
+
+// Every api('/api/...') call in the UI's JS, with the method its api() helper
+// sends: POST when a body argument is passed, else GET. Read from the source,
+// so a UI call whose method drifts from the table above fails here.
+function uiCalls(js) {
+  const out = [];
+  for (const m of js.matchAll(/\bapi\(\s*(['"])(\/api\/[A-Za-z0-9\/_-]+)/g)) {
+    let q = m[1], depth = 0, method = "GET"; // we start inside the path's string literal
+    for (let i = m.index + m[0].length; i < js.length; i++) {
+      const ch = js[i];
+      if (q) { if (ch === "\\") i++; else if (ch === q) q = ""; continue; }
+      if (ch === "'" || ch === '"') q = ch;
+      else if ("([{".includes(ch)) depth++;
+      else if (")]}".includes(ch)) { if (!depth) break; depth--; }
+      else if (ch === "," && !depth) { method = "POST"; break; }
+    }
+    out.push([m[2], method]);
+  }
+  return out;
+}
 try {
   console.log("UI — the served page's JS parses, boots, and every tab/button works");
   const page = await (await fetch(base + "/")).text();
@@ -162,6 +182,9 @@ try {
     const covered = new Set([...ui.hits.map((h) => h.path), ...calls.map(([p]) => p.split("?")[0]), ...Object.keys(NOT_HIT)]);
     const missing = [...uiPaths].filter((p) => !covered.has(p));
     ok(`every endpoint the UI calls (${uiPaths.size}) is covered by this test`, missing.length === 0, missing);
+    const apiCalls = uiCalls(js), table = new Set(calls.map(([p, m]) => p.split("?")[0] + " " + m));
+    const drift = apiCalls.filter(([p, m]) => !(p in NOT_HIT) && !table.has(p + " " + m)).map(([p, m]) => `UI sends ${m} ${p}`);
+    ok(`the UI's ${apiCalls.length} api() calls use the methods this test hits`, apiCalls.length > 0 && drift.length === 0, [...new Set(drift)]);
   }
 
   console.log("SMOKE — every UI endpoint responds (no 404 route/method mismatch)");
@@ -170,6 +193,22 @@ try {
     try { const r = await fetch(base + path, { method, headers: H, body: method === "POST" ? "{}" : undefined }); status = r.status; } catch (e) { status = -1; }
     ok(`${method} ${path} -> ${status}`, status !== 404 && status !== -1, status);
   }
+
+  console.log("METHODS — POST-only endpoints refuse GET; /api/* needs the token");
+  // a GET to a POST route must not reach its handler (a GET can't change state,
+  // and a UI calling with the wrong method fails loudly instead of half-working)
+  const postOnly = [...new Set([...calls.filter(([, m]) => m === "POST").map(([p]) => p.split("?")[0]), "/api/update"])];
+  const answered = [];
+  for (const p of postOnly) {
+    let status = 0;
+    try { status = (await fetch(base + p, { headers: H })).status; } catch { status = -1; }
+    if (status !== 404) answered.push(`GET ${p} -> ${status}`);
+  }
+  ok(`all ${postOnly.length} POST-only endpoints answer GET with 404`, answered.length === 0, answered);
+  const noTok = await fetch(base + "/api/status").then((r) => r.status, () => -1);
+  const badTok = await fetch(base + "/api/status", { headers: { "x-symbiot-token": "wrong" } }).then((r) => r.status, () => -1);
+  ok(`no token -> 403, wrong token -> 403`, noTok === 403 && badTok === 403, { noTok, badTok });
+
   let quit = 0;
   try { quit = (await fetch(base + "/api/quit", { headers: H })).status; } catch { quit = -1; }
   ok(`GET /api/quit -> ${quit}`, quit === 200, quit);

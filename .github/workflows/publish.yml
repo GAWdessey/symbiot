@@ -5,6 +5,10 @@ name: publish
 # run by hand from the Actions tab. Requires a one-time setup on npmjs.com:
 # the symbiot package → Settings → Trusted Publishing → add GitHub Actions with
 #   user/org: GarthGhostai   repo: symbiot   workflow: publish.yml
+#
+# Two jobs: `test` runs the whole suite and `publish` only starts if it passed
+# (`needs: test`), so a broken build can't reach npm. Only `publish` gets the
+# OIDC token.
 on:
   push:
     tags: ["v*.*.*"]
@@ -12,19 +16,15 @@ on:
 
 permissions:
   contents: read
-  id-token: write # required for npm OIDC trusted publishing
 
 jobs:
-  publish:
+  test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-          registry-url: "https://registry.npmjs.org"
-      - name: Use an npm new enough for OIDC trusted publishing
-        run: npm install -g npm@latest # trusted publishing needs npm >= 11.5.1
       - run: npm ci
       - name: Git identity for tests
         # the 'approve' fixtures commit in throwaway repos; a bare runner has no
@@ -33,9 +33,25 @@ jobs:
           git config --global user.email "ci@symbiot.local"
           git config --global user.name "symbiot ci"
       - name: Test
+        # all four suites, including the npm pack + global install layer: it runs
+        # the tarball exactly as users get it (bin entry point, shipped files)
         env:
           SYMBIOT_NO_OPEN: "1"
-          SYMBIOT_SKIP_INSTALL_TEST: "1" # the npm-pack layer is covered locally; keep CI fast
         run: npm test
+
+  publish:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # required for npm OIDC trusted publishing
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          registry-url: "https://registry.npmjs.org"
+      - name: Use an npm new enough for OIDC trusted publishing
+        run: npm install -g npm@latest # trusted publishing needs npm >= 11.5.1
       - name: Publish (OIDC — no token)
         run: npm publish

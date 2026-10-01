@@ -181,6 +181,21 @@ try {
   const [argc2, arg12] = runOrca(migrated);
   ok("migrated command delivers the whole prompt", argc2 === "1" && arg12 === HANDOFF_PROMPT, [argc2, arg12]);
 
+  console.log("HANDOFF — one saved template drives every handoff (save, clear, legacy `ide`)");
+  // isolated HOME: these read and write Symbiot's real config.json
+  const hhome = join(ROOT, "hhome"); mkdirSync(join(hhome, ".config", "symbiot"), { recursive: true });
+  writeFileSync(join(hhome, ".config", "symbiot", "config.json"), JSON.stringify({ ide: "code" }));
+  const hs = spawnSync(process.execPath, ["--input-type=module", "-e", `
+    import * as m from ${JSON.stringify(INDEX)};
+    const out = { legacy: m.handoffCmd() };
+    out.saved = m.setHandoffCmd("  zed {dir}  "); out.afterSave = m.handoffCmd();
+    out.cleared = m.setHandoffCmd(""); out.afterClear = m.handoffCmd();
+    console.log(JSON.stringify(out));`], { encoding: "utf8", env: { ...process.env, HOME: hhome, USERPROFILE: hhome } });
+  let h = {}; try { h = JSON.parse(hs.stdout.trim().split("\n").pop()); } catch { console.log(hs.stdout, hs.stderr); }
+  ok("a legacy `ide` setting still hands off", h.legacy === "code {dir}", h.legacy);
+  ok("saving trims and is what runs", h.saved && h.saved.ok && h.saved.cmd === "zed {dir}" && h.afterSave === "zed {dir}", h);
+  ok("clearing leaves no handoff (and the legacy `ide` is gone)", h.cleared && h.cleared.cmd === "" && h.afterClear === "", h);
+
   console.log("APPROVE — approved work ships: branch off the default, commit (minus .symbiot/), push");
   const gitEnv = { ...process.env, GIT_CONFIG_GLOBAL: join(ROOT, "globalgitconfig"), GIT_CONFIG_SYSTEM: "/dev/null", GIT_TERMINAL_PROMPT: "0" };
   const shipRepo = build("ship", `git init -q -b main && git config user.email ci@symbiot.test && git config user.name "Symbiot CI" && echo a > a.txt && git add . && git commit -qm init
@@ -195,6 +210,15 @@ try {
   ok("pushed to origin", r1.pushed && g(`rev-parse origin/${r1.branch}`) === g("rev-parse HEAD"), r1);
   const r2 = shipChanges(shipRepo, ["x"], { pr: false });
   ok("nothing to commit -> approved without a commit", r2.ok && r2.nothing && !r2.commit, r2);
+  // regression: when .symbiot/ is gitignored, `git add . :(exclude).symbiot`
+  // warned+exited-1 ("paths are ignored") and falsely aborted the ship.
+  const giRepo = build("ship-gi", `git init -q -b main && git config user.email ci@symbiot.test && git config user.name "Symbiot CI"
+    printf '.symbiot/\\n' > .gitignore && echo a > a.txt && git add . && git commit -qm init
+    echo b >> a.txt && echo new > new.txt && mkdir .symbiot && echo log > .symbiot/agent.log`);
+  const rg = shipChanges(giRepo, ["Do a thing"], { push: false });
+  const gg = (a) => execSync("git " + a, { cwd: giRepo, encoding: "utf8", env: gitEnv }).trim();
+  ok("ships even when .symbiot/ is gitignored (no false 'git add failed')", rg.ok && !!rg.commit, rg);
+  ok("commit excludes .symbiot/ (gitignored case)", !gg("show --name-only --format= HEAD").split("\n").includes(".symbiot"), gg("show --name-only --format= HEAD"));
 
   console.log("REVIEW — agent ticks -> awaiting review (not archived) -> send back / approve");
   // isolated HOME: the cycle reads and writes Symbiot's real task store

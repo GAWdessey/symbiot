@@ -182,7 +182,12 @@ function shipChanges(path, texts, opts = {}) {
     branch = stem; for (let i = 2; git(path, ["rev-parse", "--verify", "-q", "refs/heads/" + branch]).ok; i++) branch = `${stem}-${i}`;
     const sw = git(path, ["switch", "-c", branch]); if (!sw.ok) return { error: "Could not create branch: " + sw.err };
   }
-  const add = git(path, ["add", "-A", ...NOT_SYMBIOT]); if (!add.ok) return { error: "git add failed: " + add.err, branch };
+  // Stage everything, then drop .symbiot. A `. :(exclude).symbiot` pathspec
+  // warns+exits-1 once .symbiot is gitignored ("paths are ignored, use -f"),
+  // which falsely aborted the ship. `add -A` skips gitignored paths silently;
+  // the reset also covers repos where .symbiot isn't ignored.
+  const add = git(path, ["add", "-A"]); if (!add.ok) return { error: "git add failed: " + add.err, branch };
+  git(path, ["reset", "-q", "--", ".symbiot"]); // never ship Symbiot's own scratch
   const subject = texts.length === 1 ? (texts[0].length > 72 ? texts[0].slice(0, 71).replace(/\s+\S*$/, "") + "…" : texts[0]) : `symbiot: ${texts.length} approved tasks`;
   const body = texts.map((x) => "- " + x).join("\n");
   const cm = git(path, ["commit", "-m", subject, "-m", body]); if (!cm.ok) return { error: "Commit failed: " + (cm.err || cm.out), branch };
@@ -256,11 +261,7 @@ function pushTasks(filter) {
   if (filter && filter.type) tasks = tasks.filter((t) => taskType(t.text) === filter.type);
   if (filter && filter.repo) tasks = tasks.filter((t) => t.repo === filter.repo);
   if (!tasks.length) return { empty: true, written: [], unresolved: [] };
-  // Resolve repo name -> path from the already-scanned map when we have it
-  // (avoids a fresh full scan); fall back to a scan only if needed.
-  const byName = {};
-  const src = (LAST_MAP && LAST_MAP.nodes) ? LAST_MAP.nodes.filter((n) => n.type === "repo" || n.type === "folder").map((n) => ({ name: n.label, path: n.meta && n.meta.path })) : findAllRepos();
-  for (const r of src) if (r.path && !byName[r.name]) byName[r.name] = r.path;
+  const byName = repoPathMap(); // from the already-scanned map when there is one
   const groups = {}; for (const t of tasks) { const k = t.repo || ""; (groups[k] = groups[k] || []).push(t); }
   const written = [], unresolved = [];
   for (const name of Object.keys(groups)) {
@@ -717,44 +718,47 @@ function recommendModels(hw) {
   return { local, paid, best };
 }
 // ---- hand a repo (+ its tasks) to the user's agent — generic, settings-based
-// The handoff is a command TEMPLATE the user configures, with {dir} (repo path)
-// and {prompt} (the task instruction). Works for any agent/editor:
+// ONE code path, whatever the agent. The handoff is a command TEMPLATE the user
+// saves (`agentCmd`), with {dir} (repo path) and {prompt} (the task
+// instruction), and it is the only thing that ever runs:
+//   handoffCmd() -> fillHandoff() -> runHandoff() -> track()
+// Everything else in this section only helps pick a template: one-click presets
+// for what's installed (detectHandoffs), the Orca preset (a template too, kept
+// current by migrateOrcaCmd) and the cross-platform lookups behind them.
 //   claude -p "{prompt}"      · aider --message "{prompt}"      · code {dir}
 //   gnome-terminal --working-directory={dir} -- claude "{prompt}"
 // Not tied to any one tool — you decide what runs.
-// [cmd, label, macAppName] — macApp used to launch GUI editors on macOS where
-// the CLI isn't on PATH (they're .app bundles).
+const shSingle = (s) => "'" + String(s).replace(/'/g, "'\\''") + "'";
+const escDq = (s) => String(s).replace(/[\\"$`]/g, "\\$&");
+// Plain words only: in the Orca preset this passes through two shells, so no
+// backticks or $ (escDq covers one level).
+const HANDOFF_PROMPT = "Read .symbiot/TASKS.md and implement the unchecked items in this repo. Tick each item [x] in that file as you finish it and leave your changes uncommitted, so they can be reviewed and approved. Confirm before anything destructive.";
+function handoffCmd() { const cfg = loadConfig(); return migrateOrcaCmd(cfg.agentCmd) || (cfg.ide ? `${cfg.ide} {dir}` : ""); } // ide = legacy
+// Save the template ("" clears it). Either way the legacy `ide` key goes.
+function setHandoffCmd(cmd) {
+  const cfg = loadConfig(); const v = String(cmd || "").trim();
+  if (v) cfg.agentCmd = v; else delete cfg.agentCmd;
+  delete cfg.ide; saveConfig(cfg);
+  return { ok: true, cmd: cfg.agentCmd || "" };
+}
+const fillHandoff = (tmpl, repoPath) => tmpl.replace(/\{dir\}/g, shSingle(repoPath)).replace(/\{prompt\}/g, escDq(HANDOFF_PROMPT));
+function runHandoff(repoPath) {
+  const tmpl = handoffCmd(); if (!tmpl || !repoPath) return null;
+  return track(repoPath.split("/").pop(), fillHandoff(tmpl, repoPath), repoPath);
+}
+// Presets. [cmd, label, macAppName] — macApp used to launch GUI editors on macOS
+// where the CLI isn't on PATH (they're .app bundles).
 const IDE_LIST = [["code", "VS Code", "Visual Studio Code"], ["cursor", "Cursor", "Cursor"], ["windsurf", "Windsurf", "Windsurf"], ["zed", "Zed", "Zed"], ["subl", "Sublime Text", "Sublime Text"], ["idea", "IntelliJ IDEA", "IntelliJ IDEA"], ["nvim", "Neovim", ""]];
+// [cmd, label, template]. Only agents that leave changes to review: a handoff
+// runs unattended, so a "plan only" run can't ask anything and leaves nothing to
+// approve — that preset was dropped (a saved one still runs as-is).
 const AGENT_LIST = [
   ["claude", "Claude Code — make changes", 'claude -p "{prompt}" --permission-mode acceptEdits'],
-  ["claude", "Claude Code — plan only (asks first)", 'claude -p "{prompt}"'],
   ["codex", "Codex (OpenAI/GPT) — make changes", 'codex exec --full-auto "{prompt}"'],
   ["aider", "Aider — make changes", 'aider --message "{prompt}" --yes'],
   ["gemini", "Gemini — make changes", 'gemini --yolo -p "{prompt}"'],
   ["cursor-agent", "Cursor agent", 'cursor-agent -p "{prompt}"'],
 ];
-// Cross-platform "is this command available?" (command -v on posix, where on win).
-function hasCmd(cmd) { try { return !!sh(process.platform === "win32" ? `where ${cmd}` : `command -v ${cmd}`).trim(); } catch { return false; } }
-function macApp(name) { if (process.platform !== "darwin" || !name) return ""; for (const base of ["/Applications", join(homedir(), "Applications")]) { try { if (existsSync(join(base, name + ".app"))) return name; } catch {} } return ""; }
-// Find the Orca IDE CLI across OSes (known locations, then a bounded search).
-let ORCA_CLI; // cached per process: undefined=unchecked, ""=none, string=path
-function findOrcaCli() {
-  if (ORCA_CLI !== undefined) return ORCA_CLI;
-  ORCA_CLI = _findOrcaCli();
-  return ORCA_CLI;
-}
-function _findOrcaCli() {
-  const home = homedir(); const cands = [];
-  if (process.platform === "linux") cands.push(join(home, ".local/share/orca-ide/app/resources/bin/orca-ide"));
-  if (process.platform === "darwin") { cands.push(join(home, "Library/Application Support/orca-ide/app/resources/bin/orca-ide"), "/Applications/Orca.app/Contents/Resources/app/resources/bin/orca-ide", join(home, "Applications/Orca.app/Contents/Resources/app/resources/bin/orca-ide")); }
-  if (process.platform === "win32") { const la = process.env.LOCALAPPDATA || ""; cands.push(join(la, "orca-ide", "app", "resources", "bin", "orca-ide"), join(la, "Programs", "orca-ide", "resources", "app", "resources", "bin", "orca-ide")); }
-  for (const c of cands) { try { if (existsSync(c)) return c; } catch {} }
-  const roots = process.platform === "darwin" ? [join(home, "Library/Application Support"), "/Applications", join(home, "Applications")]
-    : process.platform === "win32" ? [process.env.LOCALAPPDATA || "", process.env.PROGRAMFILES || ""]
-    : [join(home, ".local/share"), "/opt", join(home, ".config")];
-  for (const r of roots) { if (!r) continue; const hit = sh(`find ${JSON.stringify(r)} -maxdepth 6 -name orca-ide -type f 2>/dev/null | head -1`).trim(); if (hit) return hit; }
-  return "";
-}
 function detectHandoffs() {
   const editors = [];
   for (const [cmd, label, app] of IDE_LIST) {
@@ -779,14 +783,8 @@ function detectHandoffs() {
   }
   return { agents, editors };
 }
-const shSingle = (s) => "'" + String(s).replace(/'/g, "'\\''") + "'";
-const escDq = (s) => String(s).replace(/[\\"$`]/g, "\\$&");
-// Plain words only: in the Orca preset this passes through two shells, so no
-// backticks or $ (escDq covers one level).
-const HANDOFF_PROMPT = "Read .symbiot/TASKS.md and implement the unchecked items in this repo. Tick each item [x] in that file as you finish it and leave your changes uncommitted, so they can be reviewed and approved. Confirm before anything destructive.";
-function handoffCmd() { const cfg = loadConfig(); return migrateOrcaCmd(cfg.agentCmd) || (cfg.ide ? `${cfg.ide} {dir}` : ""); } // ide = legacy
-// Build the full Orca handoff, cold-start safe. `bin` is the quoted orca-ide
-// path; `commandPart` is e.g. ORCA_CLAUDE_CMD or "" (open only).
+// The Orca preset. Build the full Orca handoff, cold-start safe. `bin` is the
+// quoted orca-ide path; `commandPart` is e.g. ORCA_CLAUDE_CMD or "" (open only).
 // open launches Orca & waits for the runtime to be REACHABLE, but on a cold
 // start the workspace graph isn't ready yet (runtime.state=graph_not_ready) and
 // `terminal create` times out — so we poll `status` until state=ready, then add
@@ -817,6 +815,30 @@ function migrateOrcaCmd(cmd) {
   if (rebuilt !== cmd) { try { const cfg = loadConfig(); if (cfg.agentCmd === cmd) { cfg.agentCmd = rebuilt; saveConfig(cfg); } } catch {} }
   return rebuilt;
 }
+// Cross-platform detection for the presets (and gh / the app's browser).
+// "Is this command available?": command -v on posix, where on win.
+function hasCmd(cmd) { try { return !!sh(process.platform === "win32" ? `where ${cmd}` : `command -v ${cmd}`).trim(); } catch { return false; } }
+function macApp(name) { if (process.platform !== "darwin" || !name) return ""; for (const base of ["/Applications", join(homedir(), "Applications")]) { try { if (existsSync(join(base, name + ".app"))) return name; } catch {} } return ""; }
+// Find the Orca IDE CLI across OSes (known locations, then a bounded search).
+let ORCA_CLI; // cached per process: undefined=unchecked, ""=none, string=path
+function findOrcaCli() {
+  if (ORCA_CLI !== undefined) return ORCA_CLI;
+  ORCA_CLI = _findOrcaCli();
+  return ORCA_CLI;
+}
+function _findOrcaCli() {
+  const home = homedir(); const cands = [];
+  if (process.platform === "linux") cands.push(join(home, ".local/share/orca-ide/app/resources/bin/orca-ide"));
+  if (process.platform === "darwin") { cands.push(join(home, "Library/Application Support/orca-ide/app/resources/bin/orca-ide"), "/Applications/Orca.app/Contents/Resources/app/resources/bin/orca-ide", join(home, "Applications/Orca.app/Contents/Resources/app/resources/bin/orca-ide")); }
+  if (process.platform === "win32") { const la = process.env.LOCALAPPDATA || ""; cands.push(join(la, "orca-ide", "app", "resources", "bin", "orca-ide"), join(la, "Programs", "orca-ide", "resources", "app", "resources", "bin", "orca-ide")); }
+  for (const c of cands) { try { if (existsSync(c)) return c; } catch {} }
+  const roots = process.platform === "darwin" ? [join(home, "Library/Application Support"), "/Applications", join(home, "Applications")]
+    : process.platform === "win32" ? [process.env.LOCALAPPDATA || "", process.env.PROGRAMFILES || ""]
+    : [join(home, ".local/share"), "/opt", join(home, ".config")];
+  for (const r of roots) { if (!r) continue; const hit = sh(`find ${JSON.stringify(r)} -maxdepth 6 -name orca-ide -type f 2>/dev/null | head -1`).trim(); if (hit) return hit; }
+  return "";
+}
+// ---- background jobs --------------------------------------------------------
 // Run a shell command as a tracked, logged background job that shows up live in
 // the Agents tab. Shared by the agent handoff and the local-model setup.
 function track(name, cmd, cwd, onExit) {
@@ -850,11 +872,6 @@ function agentChanges(path, startedAt) {
     const commits = raw ? raw.split("\n").slice(0, 8).map((l) => { const i = l.indexOf("\u0001"); return { hash: l.slice(0, i), msg: l.slice(i + 1) }; }) : [];
     return { dirty, stat, commits };
   } catch { return { dirty: 0, stat: "", commits: [] }; }
-}
-const fillHandoff = (tmpl, repoPath) => tmpl.replace(/\{dir\}/g, shSingle(repoPath)).replace(/\{prompt\}/g, escDq(HANDOFF_PROMPT));
-function runHandoff(repoPath) {
-  const tmpl = handoffCmd(); if (!tmpl || !repoPath) return null;
-  return track(repoPath.split("/").pop(), fillHandoff(tmpl, repoPath), repoPath);
 }
 // ---- local model one-command setup (Ollama), OS-aware ---------------------
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -923,7 +940,7 @@ function worktreeCount(repo) { return sh(`git -C ${JSON.stringify(repo)} worktre
 // repo file, which could be attacker-controlled): ~/.config/symbiot/deploys.json
 function loadDeploys() { try { return JSON.parse(readFileSync(join(CONFIG_DIR, "deploys.json"), "utf8")); } catch { return {}; } }
 function ciState(repo, def) {
-  if (!sh("command -v gh 2>/dev/null").trim()) return null;
+  if (!hasCmd("gh")) return null;
   if (!/github\.com/i.test(sh(`git -C ${JSON.stringify(repo)} remote get-url origin 2>/dev/null`))) return null;
   const j = sh(`cd ${JSON.stringify(repo)} && gh run list --branch ${def} --limit 1 --json databaseId,conclusion,status 2>/dev/null`).trim();
   if (!j) return null;
@@ -1472,7 +1489,6 @@ function readBody(req) {
     req.on("end", () => { try { resolve(d ? JSON.parse(d) : {}); } catch { resolve({}); } });
   });
 }
-function onPath(cands) { for (const cc of cands) { if (sh(`command -v ${cc} 2>/dev/null`).trim()) return cc; } return null; }
 // Find a Chromium-family browser for the chrome-less --app window, per OS.
 function chromeBinary() {
   const p = process.platform;
@@ -1491,7 +1507,7 @@ function chromeBinary() {
     const w = sh("where chrome 2>NUL").split(/\r?\n/).map((s) => s.trim()).find(Boolean);
     return w || null;
   }
-  return onPath(["google-chrome", "google-chrome-stable", "chromium", "chromium-browser", "brave-browser", "microsoft-edge"]);
+  return ["google-chrome", "google-chrome-stable", "chromium", "chromium-browser", "brave-browser", "microsoft-edge"].find(hasCmd) || null;
 }
 function openApp(url) {
   try {
@@ -1544,7 +1560,7 @@ async function cmdApp() {
       if (u.pathname === "/api/scanroots/add" && req.method === "POST") { const b = await readBody(req); return json(res, addScanRoot(String(b.path || ""))); }
       if (u.pathname === "/api/scanroots/remove" && req.method === "POST") { const b = await readBody(req); return json(res, removeScanRoot(String(b.path || ""))); }
       if (u.pathname === "/api/agentcfg") { const d = detectHandoffs(); return json(res, { cmd: handoffCmd(), agents: d.agents, editors: d.editors }); }
-      if (u.pathname === "/api/agentcmd" && req.method === "POST") { const b = await readBody(req); const cfg = loadConfig(); const v = String(b.cmd || "").trim(); if (v) cfg.agentCmd = v; else delete cfg.agentCmd; delete cfg.ide; saveConfig(cfg); return json(res, { ok: true, cmd: cfg.agentCmd || "" }); }
+      if (u.pathname === "/api/agentcmd" && req.method === "POST") { const b = await readBody(req); return json(res, setHandoffCmd(b.cmd)); }
       if (u.pathname === "/api/open" && req.method === "POST") { const b = await readBody(req); const e = runHandoff(String(b.path || "")); return json(res, { opened: !!e, id: e ? e.id : "" }); }
       if (u.pathname === "/api/setup-local" && req.method === "POST") {
         const b = await readBody(req);
@@ -1582,7 +1598,7 @@ async function cmdApp() {
   server.on("listening", () => {
     if (announced) return; announced = true;
     const url = `http://127.0.0.1:${server.address().port}/?t=${TOKEN}`;
-    const how = opened ? "" : openApp(url); opened = true; // only pop a window the first time
+    const how = opened || process.env.SYMBIOT_NO_OPEN === "1" ? "" : openApp(url); opened = true; // only pop a window the first time (never in tests)
     console.log(`\n${c.g("●")} ${c.b("Symbiot")} is running at ${c.b(url)}`);
     console.log(how ? c.d(`  Opened in a ${how}.`) : c.d("  Open that URL in your browser."));
     console.log(c.d("  Leave this running; press Ctrl+C to stop (or click Quit in the window)."));
@@ -1605,7 +1621,7 @@ ${c.b("Usage")}
   symbiot todo                      what's still on your plate
   symbiot app                       open the visual app in your browser
   symbiot drift                     what's out of sync / at risk across repos
-  symbiot push [--open]             write tasks into each repo (and open your IDE)
+  symbiot push [--open]             write tasks into each repo (and run your agent)
   symbiot models                    recommend AI models for your hardware
   symbiot setup-local [--model X]   install/run a free local model (Ollama)
   symbiot login                     connect it to an AI (once)
@@ -1655,4 +1671,4 @@ const isMain = (() => {
 })();
 if (isMain) main();
 
-export { authorship, repoState, readmeInfo, repoShape, houseRules, findAllRepos, buildMap, reportFooter, detectHardware, recommendModels, computeDrift, driftRepo, gitDefaultBranch, buildTasksMd, taskType, EMBEDDED_UI, orcaHandoffCmd, migrateOrcaCmd, fillHandoff, ORCA_CLAUDE_CMD, HANDOFF_PROMPT, shipChanges, syncTasks, pendingReview, approveRepo, sendBack, pushTasks, semverGt };
+export { authorship, repoState, readmeInfo, repoShape, houseRules, findAllRepos, buildMap, reportFooter, detectHardware, recommendModels, computeDrift, driftRepo, gitDefaultBranch, buildTasksMd, taskType, EMBEDDED_UI, orcaHandoffCmd, migrateOrcaCmd, fillHandoff, handoffCmd, setHandoffCmd, ORCA_CLAUDE_CMD, HANDOFF_PROMPT, shipChanges, syncTasks, pendingReview, approveRepo, sendBack, pushTasks, semverGt };
