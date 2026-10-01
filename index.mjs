@@ -104,6 +104,31 @@ function addTask(text, repo) {
 }
 function toggleTask(id) { const t = loadTasks(); const it = t.find((x) => x.id === id); if (it) { it.done = !it.done; saveTasks(t); } return it || { error: "not found" }; }
 function removeTask(id) { saveTasks(loadTasks().filter((x) => x.id !== id)); return { ok: true }; }
+function restoreTask(id) { const t = loadTasks(); const it = t.find((x) => x.id === id); if (it) { it.archived = false; it.done = false; delete it.archivedAt; saveTasks(t); } return it || { error: "not found" }; }
+// Which task texts the agent checked off in a repo's .symbiot/TASKS.md
+function completedInRepo(repoPath) {
+  try { return readFileSync(join(repoPath, ".symbiot", "TASKS.md"), "utf8").split("\n").filter((l) => /^\s*-\s*\[x\]/i.test(l)).map((l) => l.replace(/^\s*-\s*\[x\]\s*/i, "").trim().toLowerCase()); }
+  catch { return []; }
+}
+function repoPathMap() {
+  const byName = {};
+  const src = (LAST_MAP && LAST_MAP.nodes) ? LAST_MAP.nodes.filter((n) => n.type === "repo").map((n) => ({ name: n.label, path: n.meta && n.meta.path })) : findAllRepos(BASE);
+  for (const r of src) if (r.path && !byName[r.name]) byName[r.name] = r.path;
+  return byName;
+}
+// "Check what was handed out, see what's completed, then archive it": mark done
+// any task the agent ticked in TASKS.md, then auto-archive every done task.
+function syncTasks() {
+  const t = loadTasks(); const map = repoPathMap(); let completed = 0, archived = 0; const checkedByRepo = {};
+  for (const x of t) {
+    if (x.archived || x.done || !x.repo) continue;
+    if (!(x.repo in checkedByRepo)) checkedByRepo[x.repo] = map[x.repo] ? completedInRepo(map[x.repo]) : [];
+    if (checkedByRepo[x.repo].includes(x.text.toLowerCase())) { x.done = true; completed++; }
+  }
+  for (const x of t) { if (x.done && !x.archived) { x.archived = true; x.archivedAt = Date.now(); archived++; } }
+  saveTasks(t);
+  return { completed, archived };
+}
 // Deterministic task classification (no model) so tasks batch by kind instead
 // of arriving as a flat, mixed pile. Order matters (most specific first).
 const TASK_ORDER = ["Fixes", "Tests & CI", "Security", "Performance", "Refactor", "UI/UX", "Docs", "Features & other"];
@@ -136,8 +161,10 @@ function buildTasksMd(name, ctx, list) {
   L.push("---", 'To action these, tell your coding agent: "Read `.symbiot/TASKS.md` and implement the unchecked items in this repo, using the context above. Confirm with me before anything destructive."');
   return L.join("\n") + "\n";
 }
-function pushTasks() {
-  const tasks = loadTasks().filter((t) => !t.done);
+function pushTasks(filter) {
+  let tasks = loadTasks().filter((t) => !t.done && !t.archived);
+  if (filter && filter.type) tasks = tasks.filter((t) => taskType(t.text) === filter.type);
+  if (filter && filter.repo) tasks = tasks.filter((t) => t.repo === filter.repo);
   if (!tasks.length) return { empty: true, written: [], unresolved: [] };
   // Resolve repo name -> path from the already-scanned map when we have it
   // (avoids a fresh full scan); fall back to a scan only if needed.
@@ -454,7 +481,10 @@ async function callOllama(r, system, prompt) {
     body: JSON.stringify({ model: r.model, stream: false, messages: [{ role: "system", content: system }, { role: "user", content: prompt }] }),
   });
   const text = await res.text();
-  if (!res.ok) throw new Error(`Ollama ${res.status}: ${text.slice(0, 200)}`);
+  if (!res.ok) {
+    if (/not found|no such model|try pulling/i.test(text)) throw new Error(`the model "${r.model}" isn't downloaded yet — run  symbiot setup-local --model ${r.model}  (or click "Set up a free local model" in Settings)`);
+    throw new Error(`Ollama ${res.status}: ${text.slice(0, 200)}`);
+  }
   return (JSON.parse(text).message?.content || "").trim();
 }
 
@@ -1164,6 +1194,11 @@ footer{padding:10px 18px;border-top:1px solid var(--line);display:flex}
 .task .rm:hover{color:var(--amber)}
 .tgroup{margin:14px 0 4px;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--green);font-weight:700}
 .tcount{color:var(--faint);font-weight:400}
+.taskfilter{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:10px 0 2px}
+.fl{font-size:10px;color:var(--faint);text-transform:uppercase;letter-spacing:.12em;margin:0 2px 0 8px}
+.fchip{font-size:12px;padding:4px 10px;border-radius:999px;border:1px solid var(--line);background:var(--ink3);color:var(--text);cursor:pointer;font:inherit}
+.fchip.on{background:var(--green-dim);border-color:#2a6b52;color:var(--green)}
+.task .rm.restore{color:var(--green);font-size:15px}
 .drift{border:1px solid var(--line);border-radius:10px;margin-top:10px;padding:12px 14px;background:var(--ink2)}
 .drift .dh{display:flex;gap:8px;align-items:center}
 .drift .dn{color:var(--bone);font-weight:600}
@@ -1229,7 +1264,9 @@ footer{padding:10px 18px;border-top:1px solid var(--line);display:flex}
 </section>
 <section id="panel-tasks" class="hidden">
 <div class="row"><input id="newtask" placeholder="Add a task..." style="flex:1"><button class="act" id="addtask">Add</button><button class="ghost" id="pushtasks" title="Write .symbiot/TASKS.md into each repo for your coding agent">Send to repos</button></div>
+<div class="note muted" style="margin-top:2px">The checkbox marks a task <b>done</b> (it auto-archives). To give tasks to your agent, use <b>Send to repos</b> &mdash; filter by tag below to choose which.</div>
 <div id="pushout"></div>
+<div id="taskfilter" class="taskfilter"></div>
 <div id="tasklist"></div>
 </section>
 <section id="panel-agents" class="hidden">
@@ -1360,17 +1397,34 @@ el.innerHTML="<h4>AI review &middot; <span class='rname'>"+esc(name)+"</span></h
 Promise.all([api('/api/review',{path:path}),api('/api/tasks')]).then(function(res){var r=res[0]||{},tasks=res[1]||[];
 if(r.error==='not-connected'){el.innerHTML="<h4>AI review &middot; <span class='rname'>"+esc(name)+"</span></h4><div class='body'>Connect a model in Settings to get a review - Ollama is free and runs locally.</div>"+(r.footer?"<div class='rfoot'>"+esc(r.footer)+"</div>":"");return;}
 var body=r.text||'(no output)';reviewCache[path]={text:body,verdict:r.verdict||"",ideas:r.ideas||[],footer:r.footer};el.innerHTML=reviewHtml(name,body,r.verdict||"",r.ideas||[],tasks,r.footer);wireIdeas();});}
-function taskRow(t){return "<div class='task"+(t.done?" done":"")+"' data-id='"+esc(t.id)+"'><input type='checkbox' class='taskchk'"+(t.done?" checked":"")+"><span class='t'>"+esc(t.text)+"</span>"+(t.repo?"<span class='rp'>"+esc(t.repo)+"</span>":"")+"<button class='rm' title='remove'>&times;</button></div>";}
+var ALLTASKS=[];var TFILTER={type:'',repo:''};var TARCH=false;
+var TORDER=['Fixes','Tests & CI','Security','Performance','Refactor','UI/UX','Docs','Features & other'];
+function taskRow(t,arch){return "<div class='task"+(t.done?" done":"")+"' data-id='"+esc(t.id)+"'>"+(arch?"":"<input type='checkbox' class='taskchk' title='mark done (auto-archives on sync)'"+(t.done?" checked":"")+">")+"<span class='t'>"+esc(t.text)+"</span>"+(t.repo?"<span class='rp'>"+esc(t.repo)+"</span>":"")+(arch?"<button class='rm restore' title='restore to active'>&#8630;</button>":"<button class='rm' title='remove'>&times;</button>")+"</div>";}
 function wireTaskRows(el){el.querySelectorAll('.task').forEach(function(row){var id=row.getAttribute('data-id');
-row.querySelector('.taskchk').addEventListener('change',function(){api('/api/tasks/toggle',{id:id}).then(function(){row.classList.toggle('done');});});
-row.querySelector('.rm').addEventListener('click',function(){api('/api/tasks/remove',{id:id}).then(function(){row.remove();if(!el.querySelector('.task'))renderTasks([]);});});});}
-function renderTasks(list){var el=document.getElementById('tasklist');if(!list||!list.length){el.innerHTML="<div class='muted' style='margin-top:12px'>No tasks yet. Tick an idea in a repo's review, or add one above.</div>";return;}
-var order=['Fixes','Tests & CI','Security','Performance','Refactor','UI/UX','Docs','Features & other'];
+var cb=row.querySelector('.taskchk');if(cb)cb.addEventListener('change',function(){api('/api/tasks/toggle',{id:id}).then(function(){row.classList.toggle('done');});});
+var rm=row.querySelector('.rm');if(rm&&rm.classList.contains('restore'))rm.addEventListener('click',function(){api('/api/tasks/restore',{id:id}).then(loadArchived);});
+else if(rm)rm.addEventListener('click',function(){api('/api/tasks/remove',{id:id}).then(function(){row.remove();});});});}
+function fchip(dim,val,label){var on=(TFILTER[dim]||'')===val;return "<button class='fchip"+(on?' on':'')+"' data-dim='"+dim+"' data-val='"+esc(val)+"'>"+esc(label)+"</button>";}
+function renderFilter(){var box=document.getElementById('taskfilter');
+if(TARCH){box.innerHTML="<button class='fchip on' id='archtoggle'>&#8617; back to active</button>";document.getElementById('archtoggle').addEventListener('click',function(){loadTasks();});return;}
+var types={},repos={};ALLTASKS.forEach(function(t){types[t.type||'Features & other']=1;if(t.repo)repos[t.repo]=1;});
+var fb="<span class='fl'>Type</span>"+fchip('type','','All')+Object.keys(types).sort(function(a,b){return TORDER.indexOf(a)-TORDER.indexOf(b);}).map(function(t){return fchip('type',t,t);}).join('');
+fb+="<span class='fl'>Repo</span>"+fchip('repo','','All')+Object.keys(repos).sort().map(function(r){return fchip('repo',r,r);}).join('');
+fb+="<button class='fchip' id='archtoggle' style='margin-left:auto'>&#128451; archived</button>";
+box.innerHTML=fb;
+box.querySelectorAll('.fchip[data-dim]').forEach(function(c){c.addEventListener('click',function(){TFILTER[c.getAttribute('data-dim')]=c.getAttribute('data-val');renderTasks();});});
+document.getElementById('archtoggle').addEventListener('click',loadArchived);}
+function renderTasks(){var el=document.getElementById('tasklist');TARCH=false;renderFilter();
+var list=ALLTASKS.filter(function(t){return (!TFILTER.type||(t.type||'Features & other')===TFILTER.type)&&(!TFILTER.repo||t.repo===TFILTER.repo);});
+if(!list.length){el.innerHTML="<div class='muted' style='margin-top:12px'>"+(ALLTASKS.length?"Nothing matches this filter.":"No tasks yet. Tick ideas in a repo review, or add one above.")+"</div>";return;}
 var groups={};list.forEach(function(t){var ty=t.type||'Features & other';(groups[ty]=groups[ty]||[]).push(t);});
-var keys=Object.keys(groups).sort(function(a,b){var ia=order.indexOf(a),ib=order.indexOf(b);return (ia<0?99:ia)-(ib<0?99:ib);});
-var h="";keys.forEach(function(ty){h+="<div class='tgroup'>"+esc(ty)+" <span class='tcount'>"+groups[ty].length+"</span></div>";groups[ty].forEach(function(t){h+=taskRow(t);});});
+var keys=Object.keys(groups).sort(function(a,b){var ia=TORDER.indexOf(a),ib=TORDER.indexOf(b);return (ia<0?99:ia)-(ib<0?99:ib);});
+var h="";keys.forEach(function(ty){h+="<div class='tgroup'>"+esc(ty)+" <span class='tcount'>"+groups[ty].length+"</span></div>";groups[ty].forEach(function(t){h+=taskRow(t,false);});});
 el.innerHTML=h;wireTaskRows(el);}
-function loadTasks(){api('/api/tasks').then(renderTasks);}
+function loadTasks(){TARCH=false;api('/api/tasks/sync',{}).then(function(){api('/api/tasks').then(function(list){ALLTASKS=list;renderTasks();});});}
+function loadArchived(){TARCH=true;api('/api/tasks?archived=1').then(function(list){ALLTASKS=list;renderFilter();var el=document.getElementById('tasklist');
+if(!list.length){el.innerHTML="<div class='muted' style='margin-top:12px'>Nothing archived yet. Completed tasks land here.</div>";return;}
+var h="<div class='tgroup'>Archived <span class='tcount'>"+list.length+"</span></div>";list.forEach(function(t){h+=taskRow(t,true);});el.innerHTML=h;wireTaskRows(el);});}
 var agentsTimer=null;
 function stopAgentsPoll(){if(agentsTimer){clearTimeout(agentsTimer);agentsTimer=null;}}
 function fmtE(ms){var s=Math.floor(ms/1000);if(s<60)return s+'s';var m=Math.floor(s/60);return m+'m '+(s%60)+'s';}
@@ -1400,7 +1454,7 @@ out.innerHTML=h;});}
 function addTaskUI(){var i=document.getElementById('newtask');var v=(i.value||'').trim();if(!v)return;api('/api/tasks/add',{text:v,repo:''}).then(function(){i.value='';loadTasks();});}
 function pushTasksUI(){var o=document.getElementById('pushout');var btn=document.getElementById('pushtasks');btn.disabled=true;
 o.innerHTML="<div class='muted' style='margin-top:10px'><span class='dot-c' style='background:var(--amber)'></span> Writing .symbiot/TASKS.md into your repos&hellip;</div>";
-api('/api/tasks/push',{}).then(function(r){btn.disabled=false;
+api('/api/tasks/push',{type:TFILTER.type||'',repo:TFILTER.repo||''}).then(function(r){btn.disabled=false;
 if(r.empty){o.innerHTML="<div class='muted' style='margin-top:10px'>No open tasks to send. Tick ideas in a repo review, or add tasks above.</div>";return;}
 var n=(r.written||[]).length;var h="<div class='drift' style='margin-top:10px'><div class='dh'><span class='dot-c'></span><span class='dn'>Done &mdash; wrote "+n+" file"+(n===1?"":"s")+"</span></div>";
 if(n){h+="<ul>";r.written.forEach(function(w){h+="<li class='info'>&#10003; <b>"+esc(w.name)+"</b> <span class='ev'>"+esc(w.file)+" ("+w.count+" task"+(w.count===1?"":"s")+")</span></li>";});h+="</ul>";}
@@ -1513,11 +1567,13 @@ async function cmdApp() {
       if (u.pathname === "/api/node") return json(res, nodeDetail(u.searchParams.get("id") || "")); // local
       if (u.pathname === "/api/suggest" && req.method === "POST") { const b = await readBody(req); return json(res, await repoSuggest(String(b.path || ""))); }
       if (u.pathname === "/api/review" && req.method === "POST") { const b = await readBody(req); return json(res, await repoReview(String(b.path || ""))); }
-      if (u.pathname === "/api/tasks" && req.method !== "POST") return json(res, loadTasks().map((t) => ({ ...t, type: taskType(t.text) })));
+      if (u.pathname === "/api/tasks" && req.method !== "POST") { const arch = u.searchParams.get("archived") === "1"; return json(res, loadTasks().filter((x) => !!x.archived === arch).map((t) => ({ ...t, type: taskType(t.text) }))); }
       if (u.pathname === "/api/tasks/add" && req.method === "POST") { const b = await readBody(req); return json(res, addTask(b.text, b.repo)); }
       if (u.pathname === "/api/tasks/toggle" && req.method === "POST") { const b = await readBody(req); return json(res, toggleTask(String(b.id || ""))); }
       if (u.pathname === "/api/tasks/remove" && req.method === "POST") { const b = await readBody(req); return json(res, removeTask(String(b.id || ""))); }
-      if (u.pathname === "/api/tasks/push" && req.method === "POST") return json(res, pushTasks());
+      if (u.pathname === "/api/tasks/restore" && req.method === "POST") { const b = await readBody(req); return json(res, restoreTask(String(b.id || ""))); }
+      if (u.pathname === "/api/tasks/sync" && req.method === "POST") return json(res, syncTasks());
+      if (u.pathname === "/api/tasks/push" && req.method === "POST") { const b = await readBody(req); return json(res, pushTasks(b)); }
       if (u.pathname === "/api/agentcfg") { const d = detectHandoffs(); return json(res, { cmd: handoffCmd(), agents: d.agents, editors: d.editors }); }
       if (u.pathname === "/api/agentcmd" && req.method === "POST") { const b = await readBody(req); const cfg = loadConfig(); const v = String(b.cmd || "").trim(); if (v) cfg.agentCmd = v; else delete cfg.agentCmd; delete cfg.ide; saveConfig(cfg); return json(res, { ok: true, cmd: cfg.agentCmd || "" }); }
       if (u.pathname === "/api/open" && req.method === "POST") { const b = await readBody(req); const e = runHandoff(String(b.path || "")); return json(res, { opened: !!e, id: e ? e.id : "" }); }

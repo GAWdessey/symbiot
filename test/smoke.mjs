@@ -39,6 +39,8 @@ const calls = [
   ["/api/agentcmd", "POST"],
   ["/api/agents", "GET"],
   ["/api/setup-local", "POST"],
+  ["/api/tasks/sync", "POST"],
+  ["/api/tasks?archived=1", "GET"],
 ];
 try {
   console.log("SMOKE — every UI endpoint responds (no 404 route/method mismatch)");
