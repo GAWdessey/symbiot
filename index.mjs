@@ -112,7 +112,7 @@ function completedInRepo(repoPath) {
 }
 function repoPathMap() {
   const byName = {};
-  const src = (LAST_MAP && LAST_MAP.nodes) ? LAST_MAP.nodes.filter((n) => n.type === "repo").map((n) => ({ name: n.label, path: n.meta && n.meta.path })) : findAllRepos();
+  const src = (LAST_MAP && LAST_MAP.nodes) ? LAST_MAP.nodes.filter((n) => n.type === "repo" || n.type === "folder").map((n) => ({ name: n.label, path: n.meta && n.meta.path })) : findAllRepos();
   for (const r of src) if (r.path && !byName[r.name]) byName[r.name] = r.path;
   return byName;
 }
@@ -169,7 +169,7 @@ function pushTasks(filter) {
   // Resolve repo name -> path from the already-scanned map when we have it
   // (avoids a fresh full scan); fall back to a scan only if needed.
   const byName = {};
-  const src = (LAST_MAP && LAST_MAP.nodes) ? LAST_MAP.nodes.filter((n) => n.type === "repo").map((n) => ({ name: n.label, path: n.meta && n.meta.path })) : findAllRepos();
+  const src = (LAST_MAP && LAST_MAP.nodes) ? LAST_MAP.nodes.filter((n) => n.type === "repo" || n.type === "folder").map((n) => ({ name: n.label, path: n.meta && n.meta.path })) : findAllRepos();
   for (const r of src) if (r.path && !byName[r.name]) byName[r.name] = r.path;
   const groups = {}; for (const t of tasks) { const k = t.repo || ""; (groups[k] = groups[k] || []).push(t); }
   const written = [], unresolved = [];
@@ -869,6 +869,28 @@ function detectRepo(r) {
   const last = sh(`git -C ${JSON.stringify(r.path)} log -1 --format=%cd --date=short 2>/dev/null`).trim();
   return { ...r, langs, tools: [...tools], mine, files: files.length, branch, last };
 }
+// Non-git PROJECT folders inside your scan roots (you added them = consent):
+// a directory with a manifest but no .git — "not everything is a repo".
+function findProjectFolders(root) {
+  const manifests = sh(
+    `find ${JSON.stringify(root)} -maxdepth 3 ` +
+    `\\( -name node_modules -o -name .cache -o -name .local -o -name .npm -o -name venv -o -name .venv -o -name .gradle -o -name Pods -o -name .git \\) -prune ` +
+    `-o -type f \\( -name package.json -o -name requirements.txt -o -name pyproject.toml -o -name go.mod -o -name Cargo.toml -o -name pom.xml -o -name build.gradle -o -name Gemfile -o -name composer.json -o -name Dockerfile -o -name pubspec.yaml -o -name CMakeLists.txt \\) -print 2>/dev/null | head -200`,
+  ).split("\n").filter(Boolean);
+  const dirs = new Set(); for (const m of manifests) dirs.add(m.replace(/\/[^/]+$/, ""));
+  const out = [];
+  for (const d of dirs) {
+    if (sh(`git -C ${JSON.stringify(d)} rev-parse --is-inside-work-tree 2>/dev/null`).trim() === "true") continue; // inside a repo already
+    out.push(d); if (out.length >= 24) break;
+  }
+  return out;
+}
+function detectFolder(path) {
+  const files = sh(`find ${JSON.stringify(path)} -maxdepth 2 \\( -name node_modules -o -name .git \\) -prune -o -type f -print 2>/dev/null | head -2000`).split("\n").filter(Boolean);
+  const count = {}; const tools = new Set();
+  for (const f of files) { const base = f.split("/").pop(); if (MANIFEST_TOOL[base]) tools.add(MANIFEST_TOOL[base]); const ext = (base.includes(".") ? base.split(".").pop() : "").toLowerCase(); if (EXT_LANG[ext]) count[EXT_LANG[ext]] = (count[EXT_LANG[ext]] || 0) + 1; }
+  return { path, name: path.split("/").pop(), langs: Object.entries(count).sort((a, b) => b[1] - a[1]).map((x) => x[0]), tools: [...tools], files: files.length };
+}
 function buildMap() {
   const who = me();
   const repos = findAllRepos().map(detectRepo);
@@ -883,6 +905,17 @@ function buildMap() {
     for (const L of r.langs.slice(0, 3)) { const id = "lang:" + L; add({ id, type: "lang", label: L, weight: 15 }); edges.push({ source: rid, target: id }); }
     for (const T of r.tools) { const id = "tool:" + T; add({ id, type: "tool", label: T, weight: 12 }); edges.push({ source: rid, target: id }); }
   }
+  // Non-git project folders in the scan roots (capped; deduped against repos).
+  try {
+    const repoPaths = new Set(repos.map((r) => r.path)); let folders = 0;
+    for (const root of scanRoots()) { for (const d of findProjectFolders(root)) {
+      if (repoPaths.has(d) || have.has("folder:" + d) || folders >= 20) continue;
+      const det = detectFolder(d); folders++;
+      add({ id: "folder:" + d, type: "folder", label: det.name, weight: 10, meta: { path: d, langs: det.langs.slice(0, 3), tools: det.tools, files: det.files } });
+      edges.push({ source: "me", target: "folder:" + d });
+      for (const L of det.langs.slice(0, 3)) { const id = "lang:" + L; add({ id, type: "lang", label: L, weight: 15 }); edges.push({ source: "folder:" + d, target: id }); }
+    } }
+  } catch {}
   // What you build WITH (person-level, not per-repo): detected agents/editors
   // and the AI currently powering Symbiot — so the initial scan shows the whole
   // setup, not just code. All local detection, nothing invasive.
@@ -898,6 +931,7 @@ function buildMap() {
   } catch {}
   const out = { nodes, edges, stats: {
     repos: repos.length,
+    folders: nodes.filter((n) => n.type === "folder").length,
     languages: nodes.filter((n) => n.type === "lang").length,
     tools: nodes.filter((n) => n.type === "tool").length,
     agents: nodes.filter((n) => n.type === "agent").length,
@@ -930,6 +964,10 @@ function nodeDetail(id) {
   if (id.startsWith("agent:") || id.startsWith("ai:")) {
     const n = map.nodes.find((x) => x.id === id);
     return { type: id.startsWith("agent:") ? "agent" : "ai", label: n ? n.label : id.split(":")[1], meta: (n && n.meta) || {} };
+  }
+  if (id.startsWith("folder:")) {
+    const path = id.slice(7); const n = map.nodes.find((x) => x.id === id); const m = (n && n.meta) || {};
+    return { type: "folder", label: n ? n.label : path.split("/").pop(), path, langs: m.langs || [], tools: m.tools || [], files: m.files || 0 };
   }
   return { error: "unknown node" };
 }
@@ -1276,6 +1314,7 @@ footer{padding:10px 18px;border-top:1px solid var(--line);display:flex}
 <span class="lg"><i style="background:#6bb3ff"></i>tools</span>
 <span class="lg"><i style="background:#c58af9"></i>agents</span>
 <span class="lg"><i style="background:#5fe3b0"></i>AI</span>
+<span class="lg"><i style="background:#b7a98c"></i>folders (no git)</span>
 <span class="muted" style="margin-left:8px">scroll to zoom &middot; drag to pan &middot; click a node</span>
 <button class="ghost" id="remap" style="margin-left:auto">Rescan</button>
 </div>
@@ -1350,7 +1389,7 @@ var KEYURL={anthropic:'https://console.anthropic.com/settings/keys',openai:'http
 var DEFMODEL={anthropic:'claude-opus-5-5',openai:'gpt-4o-mini',gemini:'gemini-1.5-flash',ollama:'llama3.1'};
 function $(id){return document.getElementById(id);}
 var current='map';var mapLoaded=false;var driftLoaded=false;
-var COLORS={person:'#3DDC97',repo:'#F4F1EA',lang:'#F2A541',tool:'#6bb3ff',agent:'#c58af9',ai:'#5fe3b0'};
+var COLORS={person:'#3DDC97',repo:'#F4F1EA',lang:'#F2A541',tool:'#6bb3ff',agent:'#c58af9',ai:'#5fe3b0',folder:'#b7a98c'};
 function tabs(){return document.querySelectorAll('.tab');}
 function setTab(tab){current=tab;tabs().forEach(function(t){t.classList.toggle('active',t.dataset.tab===tab);});
 var isMap=tab==='map',isSet=tab==='settings',isTasks=tab==='tasks',isDrift=tab==='drift',isAgents=tab==='agents',isRun=(tab==='week'||tab==='standup'||tab==='todo');
@@ -1406,6 +1445,7 @@ document.getElementById('suggest').addEventListener('click',function(){var o=doc
 if(d.type==='lang'||d.type==='tool'){var lis=(d.repos||[]).map(function(r){return "<li>"+esc(r)+"</li>";}).join("");el.innerHTML="<h3>"+esc(d.label)+"</h3><div class='k'>Used in "+((d.repos||[]).length)+" repos</div><ul>"+lis+"</ul>";return;}
 if(d.type==='agent'){var m=d.meta||{};el.innerHTML="<h3>"+esc(d.label)+"</h3><div class='k'>"+(m.kind==='agent'?'AI coding agent you have installed':'editor you have installed')+"</div>"+(m.cmd?"<div class='out2' style='font-size:11px'>"+esc(m.cmd)+"</div>":"");return;}
 if(d.type==='ai'){var m=d.meta||{};el.innerHTML="<h3>"+esc(d.label)+"</h3><div class='k'>Currently powering Symbiot &middot; model <b>"+esc(m.model||'?')+"</b>"+(m.source?" &middot; via "+esc(m.source):"")+"</div>";return;}
+if(d.type==='folder'){var chips='';(d.langs||[]).concat(d.tools||[]).forEach(function(x){chips+="<span class='tag'>"+esc(x)+"</span>";});el.innerHTML="<h3>"+esc(d.label)+"</h3><div class='k'>project folder &middot; not a git repo &middot; "+(d.files||0)+" files</div><div class='chips'>"+chips+"</div><div class='k' style='font-family:ui-monospace,monospace'>"+esc(d.path||'')+"</div><div class='k'>Tasks can be sent here too &mdash; the agent runs in this folder.</div>";return;}
 if(d.type==='person'){var st=d.stats||{};el.innerHTML="<h3>"+esc(d.label)+"</h3><div class='k'>"+st.repos+" repos &middot; "+st.commits+" commits &middot; "+st.languages+" languages &middot; "+st.tools+" tools"+(st.agents?" &middot; "+st.agents+" agents/editors":"")+"</div>";return;}}
 var reviewCache={};var IDEAS=[];var IREPO="";
 function hideReview(){var el=document.getElementById('review');el.classList.add('hidden');el.innerHTML='';}
