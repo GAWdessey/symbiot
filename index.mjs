@@ -18,7 +18,7 @@
 //         --plain       no colour, no spinner (for piping)
 
 import Anthropic from "@anthropic-ai/sdk";
-import { execSync, spawn } from "node:child_process";
+import { execSync, spawn, spawnSync } from "node:child_process";
 import { homedir, totalmem, cpus as oscpus } from "node:os";
 import { join } from "node:path";
 import { readFileSync, writeFileSync, mkdirSync, existsSync, chmodSync, statSync, realpathSync, openSync, writeSync } from "node:fs";
@@ -118,18 +118,101 @@ function repoPathMap() {
   for (const r of src) if (r.path && !byName[r.name]) byName[r.name] = r.path;
   return byName;
 }
-// "Check what was handed out, see what's completed, then archive it": mark done
-// any task the agent ticked in TASKS.md, then auto-archive every done task.
+// "Check what was handed out, see what's completed, then archive it" — with an
+// approval step in between. An agent ticking an item in TASKS.md means "done,
+// please review", NOT archived: it waits in review until the user approves it
+// (approveRepo: branch + commit + push + PR, then archive) or sends it back
+// (sendBack: unticked, open again). Only a task the USER ticks archives directly.
 function syncTasks() {
-  const t = loadTasks(); const map = repoPathMap(); let completed = 0, archived = 0; const checkedByRepo = {};
+  const t = loadTasks(); const map = repoPathMap(); let review = 0, archived = 0; const checkedByRepo = {};
   for (const x of t) {
-    if (x.archived || x.done || !x.repo) continue;
+    if (x.archived || x.done || x.review || !x.repo) continue;
     if (!(x.repo in checkedByRepo)) checkedByRepo[x.repo] = map[x.repo] ? completedInRepo(map[x.repo]) : [];
-    if (checkedByRepo[x.repo].includes(x.text.toLowerCase())) { x.done = true; completed++; }
+    if (checkedByRepo[x.repo].includes(x.text.toLowerCase())) { x.review = true; x.reviewAt = Date.now(); review++; }
   }
   for (const x of t) { if (x.done && !x.archived) { x.archived = true; x.archivedAt = Date.now(); archived++; } }
   saveTasks(t);
-  return { completed, archived };
+  return { review, archived };
+}
+// git with an argv (task text goes into commit messages — never through a shell)
+function git(repo, args, timeout = 30000) {
+  const r = spawnSync("git", ["-C", repo, ...args], { encoding: "utf8", timeout, maxBuffer: 32 * 1024 * 1024, env: { ...process.env, GIT_TERMINAL_PROMPT: "0" } });
+  return { ok: r.status === 0, out: String(r.stdout || "").replace(/\s+$/, ""), err: String(r.stderr || (r.error && r.error.message) || "").trim() };
+}
+const NOT_SYMBIOT = ["--", ".", ":(exclude).symbiot"]; // .symbiot/ is Symbiot's scratch (brief + agent log), never shipped
+function workingChanges(path) {
+  const st = git(path, ["status", "--porcelain", "-uall", ...NOT_SYMBIOT]);
+  const files = st.out ? st.out.split("\n").map((l) => ({ st: l.slice(0, 2).trim(), file: l.slice(3) })) : [];
+  const short = git(path, ["diff", "--shortstat", "HEAD", ...NOT_SYMBIOT]).out, n = (re) => +((short.match(re) || [])[1] || 0);
+  const ins = n(/(\d+) insertion/), del = n(/(\d+) deletion/), fresh = files.filter((f) => f.st === "??").length;
+  const stat = [ins && `+${ins}`, del && `−${del}`, fresh && `${fresh} new`].filter(Boolean).join(" ");
+  return { branch: git(path, ["rev-parse", "--abbrev-ref", "HEAD"]).out, files, stat };
+}
+// The full diff the agent left behind: tracked changes + new files, capped.
+function workingDiff(path, cap = 400000) {
+  let d = git(path, ["diff", "HEAD", ...NOT_SYMBIOT]).out;
+  for (const f of workingChanges(path).files.filter((x) => x.st === "??")) {
+    if (d.length > cap) break;
+    d += (d ? "\n" : "") + git(path, ["diff", "--no-index", "--", "/dev/null", f.file]).out; // exits 1 on a difference — output is what we want
+  }
+  return d.length > cap ? d.slice(0, cap) + "\n… (diff truncated)" : d;
+}
+function pendingReview() {
+  const by = {}; for (const x of loadTasks()) if (x.review && !x.done && !x.archived) (by[x.repo] = by[x.repo] || []).push(x);
+  const map = Object.keys(by).length ? repoPathMap() : {};
+  return Object.keys(by).sort().map((repo) => { const path = map[repo] || ""; return { repo, path, tasks: by[repo], ...(path ? workingChanges(path) : { branch: "", files: [], stat: "" }) }; });
+}
+const branchSlug = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40).replace(/-+$/, "") || "tasks";
+// Sync approved work: off the default branch onto symbiot/<task>, commit the
+// working tree (minus .symbiot/), push, and open a PR with gh. Each step that
+// can't happen (no remote, push rejected, no gh) stops there and says so — the
+// commit is never lost. opts.push=false stops after the commit, opts.pr=false
+// after the push.
+function shipChanges(path, texts, opts = {}) {
+  const ch = workingChanges(path);
+  if (!ch.files.length) return { ok: true, nothing: true, note: "No uncommitted changes — approved without a commit." };
+  if (!ch.branch || ch.branch === "HEAD") return { error: "Detached HEAD — check out a branch first." };
+  const base = gitDefaultBranch(path); let branch = ch.branch;
+  if (branch === base) {
+    const stem = "symbiot/" + branchSlug(texts.length === 1 ? texts[0] : `${texts.length}-tasks-${new Date().toISOString().slice(0, 10)}`);
+    branch = stem; for (let i = 2; git(path, ["rev-parse", "--verify", "-q", "refs/heads/" + branch]).ok; i++) branch = `${stem}-${i}`;
+    const sw = git(path, ["switch", "-c", branch]); if (!sw.ok) return { error: "Could not create branch: " + sw.err };
+  }
+  const add = git(path, ["add", "-A", ...NOT_SYMBIOT]); if (!add.ok) return { error: "git add failed: " + add.err, branch };
+  const subject = texts.length === 1 ? (texts[0].length > 72 ? texts[0].slice(0, 71).replace(/\s+\S*$/, "") + "…" : texts[0]) : `symbiot: ${texts.length} approved tasks`;
+  const body = texts.map((x) => "- " + x).join("\n");
+  const cm = git(path, ["commit", "-m", subject, "-m", body]); if (!cm.ok) return { error: "Commit failed: " + (cm.err || cm.out), branch };
+  const out = { ok: true, branch, base, commit: git(path, ["rev-parse", "--short", "HEAD"]).out, subject };
+  if (opts.push === false) return out;
+  if (!git(path, ["remote", "get-url", "origin"]).ok) return { ...out, note: "No origin remote — committed locally." };
+  const ps = git(path, ["push", "-u", "origin", branch], 120000);
+  if (!ps.ok) return { ...out, note: "Committed, but the push failed: " + (ps.err.split("\n").filter(Boolean).pop() || "unknown error") };
+  out.pushed = true;
+  if (opts.pr === false) return out;
+  if (!hasCmd("gh")) return { ...out, note: "Pushed. Install the GitHub CLI (gh) to open the PR automatically." };
+  const gh = (args) => spawnSync("gh", args, { cwd: path, encoding: "utf8", timeout: 60000 });
+  const pr = gh(["pr", "create", "--head", branch, "--base", base, "--title", subject, "--body", body + "\n\nApproved in Symbiot."]);
+  const url = (String(pr.stdout || "").match(/https?:\/\/\S+/) || [])[0] || String(gh(["pr", "view", branch, "--json", "url", "-q", ".url"]).stdout || "").trim();
+  return url ? { ...out, pr: url } : { ...out, note: "Pushed, but gh couldn't open the PR: " + String(pr.stderr || "").trim().split("\n").pop() };
+}
+function approveRepo(repo, opts = {}) {
+  const t = loadTasks(); const items = t.filter((x) => x.repo === repo && x.review && !x.done && !x.archived);
+  if (!items.length) return { error: "Nothing awaiting review for " + (repo || "(no repo)") + "." };
+  const path = repoPathMap()[repo]; if (!path) return { error: "Repo not found: " + repo };
+  const r = shipChanges(path, items.map((x) => x.text), opts);
+  if (r.error) return r;
+  const now = Date.now();
+  for (const x of items) { x.review = false; x.done = true; x.archived = true; x.archivedAt = now; x.approvedAt = now; for (const k of ["branch", "commit", "pr"]) if (r[k]) x[k] = r[k]; }
+  saveTasks(t);
+  return { ...r, approved: items.length };
+}
+// Not right: reopen it and untick it in TASKS.md so the agent picks it up again.
+function sendBack(id) {
+  const t = loadTasks(); const it = t.find((x) => x.id === id); if (!it) return { error: "not found" };
+  it.review = false; delete it.reviewAt; saveTasks(t);
+  const path = it.repo && repoPathMap()[it.repo];
+  if (path) { const f = join(path, ".symbiot", "TASKS.md"); try { const want = it.text.trim().toLowerCase(); writeFileSync(f, readFileSync(f, "utf8").split("\n").map((l) => /^\s*-\s*\[x\]/i.test(l) && l.replace(/^\s*-\s*\[x\]\s*/i, "").trim().toLowerCase() === want ? l.replace(/\[x\]/i, "[ ]") : l).join("\n")); } catch {} }
+  return it;
 }
 // Deterministic task classification (no model) so tasks batch by kind instead
 // of arriving as a flat, mixed pile. Order matters (most specific first).
@@ -160,11 +243,12 @@ function buildTasksMd(name, ctx, list) {
   const byType = {}; for (const t of list) { const ty = taskType(t.text); (byType[ty] = byType[ty] || []).push(t); }
   const keys = Object.keys(byType).sort((a, b) => TASK_ORDER.indexOf(a) - TASK_ORDER.indexOf(b));
   for (const ty of keys) { L.push(`### ${ty}`); for (const t of byType[ty]) L.push(`- [ ] ${t.text}`); L.push(""); }
-  L.push("---", 'To action these, tell your coding agent: "Read `.symbiot/TASKS.md` and implement the unchecked items in this repo, using the context above. Confirm with me before anything destructive."');
+  L.push("## When you finish an item", "- Tick it here (`- [x]`) as soon as it's done — that's how it reaches review. Ticking doesn't archive it: the user approves it in Symbiot, which commits it on a branch and opens a PR.", "- Leave your changes **uncommitted**, and don't tick anything you didn't finish or couldn't verify.", "");
+  L.push("---", 'To action these, tell your coding agent: "Read `.symbiot/TASKS.md` and implement the unchecked items in this repo, using the context above. Tick each item as you finish it and leave changes uncommitted for review. Confirm with me before anything destructive."');
   return L.join("\n") + "\n";
 }
 function pushTasks(filter) {
-  let tasks = loadTasks().filter((t) => !t.done && !t.archived);
+  let tasks = loadTasks().filter((t) => !t.done && !t.archived && !t.review);
   if (filter && filter.type) tasks = tasks.filter((t) => taskType(t.text) === filter.type);
   if (filter && filter.repo) tasks = tasks.filter((t) => t.repo === filter.repo);
   if (!tasks.length) return { empty: true, written: [], unresolved: [] };
@@ -258,14 +342,53 @@ function sh(cmd) {
   try { return execSync(cmd, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], maxBuffer: 32 * 1024 * 1024, timeout: 6000, killSignal: "SIGKILL" }); }
   catch { return ""; } // timeout or error -> empty, never hang the scan
 }
+// ---- scan deadline + progress ---------------------------------------------
+// One slow disk or giant tree must never hang a scan (the 0.7.1 map hang): each
+// scan gets an overall deadline (SYMBIOT_SCAN_TIMEOUT seconds), after which it
+// stops and returns what it has, marked partial. Progress is a live stderr line
+// in the CLI, and served at /api/scan for the app, which polls it while the Map
+// loads. Nested scans (findAllRepos inside buildMap) share the outer deadline.
+const SCAN_TIMEOUT_MS = (Number(process.env.SYMBIOT_SCAN_TIMEOUT) || 60) * 1000;
+const FIND_TIMEOUT_MS = 20000; // one `find` walk; partial results are kept past it
+const SCAN = { active: false, phase: "", done: 0, total: 0, item: "", startedAt: 0, deadline: 0, partial: false };
+function scanBegin() {
+  if (SCAN.active) return false;
+  Object.assign(SCAN, { active: true, phase: "", done: 0, total: 0, item: "", startedAt: Date.now(), deadline: Date.now() + SCAN_TIMEOUT_MS, partial: false });
+  return true;
+}
+function scanPhase(phase, total) { Object.assign(SCAN, { phase, done: 0, total: total || 0, item: "" }); scanDraw(); }
+function scanTick(item) { SCAN.done++; SCAN.item = item || ""; scanDraw(); }
+function scanExpired() { if (SCAN.active && Date.now() > SCAN.deadline) SCAN.partial = true; return SCAN.partial; }
+function scanEnd(owner) {
+  if (!owner) return;
+  SCAN.active = false;
+  if (SERVING) return;
+  if (!PLAIN && process.stderr.isTTY) process.stderr.write("\r\x1b[K");
+  if (SCAN.partial) process.stderr.write(c.y(`⚠ scan stopped after ${SCAN_TIMEOUT_MS / 1000}s — results are partial (raise SYMBIOT_SCAN_TIMEOUT, or narrow the scan folders)`) + "\n");
+}
+// Written synchronously (the scan blocks the event loop, so a timer-driven
+// spinner would freeze): one overwritten stderr line, TTY only.
+function scanDraw() {
+  if (SERVING || PLAIN || !process.stderr.isTTY) return;
+  const n = SCAN.total ? ` ${SCAN.done}/${SCAN.total}` : SCAN.done ? ` ${SCAN.done}` : "";
+  process.stderr.write(`\r\x1b[K${c.g("⠿")} ${c.d(`${SCAN.phase}${n}${SCAN.item ? " · " + SCAN.item : ""}`.slice(0, (process.stderr.columns || 80) - 3))}`);
+}
+// Run `find` directly (no shell, no pipe): a timeout then kills find itself
+// rather than a shell whose piped children keep running, and whatever it found
+// before the timeout is kept instead of discarded.
+function findPaths(args, limit) {
+  const timeout = SCAN.active ? Math.max(1000, Math.min(FIND_TIMEOUT_MS, SCAN.deadline - Date.now())) : FIND_TIMEOUT_MS;
+  const r = spawnSync("find", args, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], maxBuffer: 32 * 1024 * 1024, timeout, killSignal: "SIGKILL" });
+  if (r.error && r.error.code !== "ETIMEDOUT") return [];
+  if (r.error && SCAN.active) SCAN.partial = true;
+  return String(r.stdout || "").split("\n").filter(Boolean).slice(0, limit);
+}
+const PRUNE = ["node_modules", ".cache", ".local", ".npm", "venv", ".venv", ".gradle", "Pods"];
+const anyName = (names) => ["(", ...names.flatMap((n, i) => (i ? ["-o", "-name", n] : ["-name", n])), ")"];
 // find .git dirs quickly by PRUNING heavy trees (node_modules etc.) instead of
 // crawling into them — this is the big speedup for the map scan.
 function findGitDirs(base, limit) {
-  return sh(
-    `find ${JSON.stringify(base)} -maxdepth 7 ` +
-    `\\( -name node_modules -o -name .cache -o -name .local -o -name .npm -o -name venv -o -name .venv -o -name .gradle -o -name Pods -o -name .git-crypt \\) -prune ` +
-    `-o -name .git -print 2>/dev/null | head -${limit}`,
-  ).split("\n").filter(Boolean);
+  return findPaths([base, "-maxdepth", "7", ...anyName([...PRUNE, ".git-crypt"]), "-prune", "-o", "-name", ".git", "-print"], limit);
 }
 function me() {
   return { email: sh("git config --global user.email").trim(), name: sh("git config --global user.name").trim() };
@@ -601,10 +724,10 @@ const IDE_LIST = [["code", "VS Code", "Visual Studio Code"], ["cursor", "Cursor"
 const AGENT_LIST = [
   ["claude", "Claude Code — make changes", 'claude -p "{prompt}" --permission-mode acceptEdits'],
   ["claude", "Claude Code — plan only (asks first)", 'claude -p "{prompt}"'],
-  ["codex", "Codex (OpenAI) — make changes", 'codex exec --full-auto "{prompt}"'],
+  ["codex", "Codex (OpenAI/GPT) — make changes", 'codex exec --full-auto "{prompt}"'],
   ["aider", "Aider — make changes", 'aider --message "{prompt}" --yes'],
+  ["gemini", "Gemini — make changes", 'gemini --yolo -p "{prompt}"'],
   ["cursor-agent", "Cursor agent", 'cursor-agent -p "{prompt}"'],
-  ["gemini", "Gemini CLI", 'gemini -p "{prompt}"'],
 ];
 // Cross-platform "is this command available?" (command -v on posix, where on win).
 function hasCmd(cmd) { try { return !!sh(process.platform === "win32" ? `where ${cmd}` : `command -v ${cmd}`).trim(); } catch { return false; } }
@@ -647,21 +770,27 @@ function detectHandoffs() {
     const q = JSON.stringify(orca);
     agents.unshift(
       { label: "Orca IDE — open repo (use your Orca agent)", tmpl: orcaHandoffCmd(q, ""), kind: "agent" },
-      { label: "Orca IDE — run Claude in a tab", tmpl: orcaHandoffCmd(q, ` --command "claude {prompt}"`), kind: "agent" },
+      { label: "Orca IDE — run Claude in a tab", tmpl: orcaHandoffCmd(q, ORCA_CLAUDE_CMD), kind: "agent" },
     );
   }
   return { agents, editors };
 }
 const shSingle = (s) => "'" + String(s).replace(/'/g, "'\\''") + "'";
 const escDq = (s) => String(s).replace(/[\\"$`]/g, "\\$&");
-const HANDOFF_PROMPT = "Read .symbiot/TASKS.md and implement the unchecked items in this repo. Confirm before anything destructive.";
+// Plain words only: in the Orca preset this passes through two shells, so no
+// backticks or $ (escDq covers one level).
+const HANDOFF_PROMPT = "Read .symbiot/TASKS.md and implement the unchecked items in this repo. Tick each item [x] in that file as you finish it and leave your changes uncommitted, so they can be reviewed and approved. Confirm before anything destructive.";
 function handoffCmd() { const cfg = loadConfig(); return migrateOrcaCmd(cfg.agentCmd) || (cfg.ide ? `${cfg.ide} {dir}` : ""); } // ide = legacy
 // Build the full Orca handoff, cold-start safe. `bin` is the quoted orca-ide
-// path; `commandPart` is e.g. ` --command "claude {prompt}"` or "" (open only).
+// path; `commandPart` is e.g. ORCA_CLAUDE_CMD or "" (open only).
 // open launches Orca & waits for the runtime to be REACHABLE, but on a cold
 // start the workspace graph isn't ready yet (runtime.state=graph_not_ready) and
 // `terminal create` times out — so we poll `status` until state=ready, then add
 // the repo and create the terminal (retry: the worktree can lag a beat behind).
+// {prompt} needs its own (escaped) quotes: the outer shell strips the --command
+// quotes and Orca re-runs the string in the tab, so an unquoted prompt reached
+// the agent as just its first word ("Read").
+const ORCA_CLAUDE_CMD = ` --command "claude \\"{prompt}\\""`;
 function orcaHandoffCmd(bin, commandPart) {
   const waitReady = `for i in $(seq 1 40); do ${bin} status --json 2>/dev/null | grep -q '"state": *"ready"' && break; sleep 1; done`;
   const mkTerm = `for j in 1 2 3; do ${bin} terminal create --worktree path:{dir}${commandPart} --focus && break; sleep 2; done`;
@@ -673,11 +802,13 @@ function orcaHandoffCmd(bin, commandPart) {
 function migrateOrcaCmd(cmd) {
   if (!cmd || typeof cmd !== "string") return cmd;
   if (!/orca-ide/.test(cmd) || !/\brepo add\b/.test(cmd)) return cmd;
-  if (/status --json/.test(cmd) && /grep -q/.test(cmd)) return cmd; // already the wait-for-ready form
+  const cm = cmd.match(/--command\s+"((?:[^"\\]|\\.)*)"/); // preserve a custom agent command
+  // ≤0.26 saved a bare {prompt} here (truncated to one word) — quote it
+  const inner = cm ? cm[1].replace(/(^|\s)\{prompt\}(?=\s|$)/g, '$1\\"{prompt}\\"') : "";
+  if (/status --json/.test(cmd) && /grep -q/.test(cmd) && (!cm || inner === cm[1])) return cmd; // already current
   const bm = cmd.match(/^\s*("[^"]*"|'[^']*'|\S+)/); // leading orca-ide binary token
   const bin = bm ? bm[1] : "";
-  const cm = cmd.match(/--command\s+"([^"]*)"/); // preserve a custom agent command
-  const commandPart = cm ? ` --command "${cm[1]}"` : "";
+  const commandPart = cm ? ` --command "${inner}"` : "";
   const rebuilt = bin ? orcaHandoffCmd(bin, commandPart) : cmd;
   if (rebuilt !== cmd) { try { const cfg = loadConfig(); if (cfg.agentCmd === cmd) { cfg.agentCmd = rebuilt; saveConfig(cfg); } } catch {} }
   return rebuilt;
@@ -700,10 +831,26 @@ function track(name, cmd, cwd, onExit) {
     return entry;
   } catch { return null; }
 }
+// Agent-agnostic "what did it do": read it straight from git, so it works the
+// same whoever the agent was (Claude, Codex/GPT, Aider, Gemini, Cursor…). Shows
+// current working-tree changes + any commits the agent made since it started.
+function agentChanges(path, startedAt) {
+  try {
+    const q = JSON.stringify(path);
+    const porcelain = sh(`git -C ${q} status --porcelain`).trim();
+    // Don't count Symbiot's own .symbiot/ dir (agent.log, TASKS.md) as the agent's work.
+    const dirty = porcelain ? porcelain.split("\n").filter((l) => { const p = l.slice(3); return p !== ".symbiot" && p !== ".symbiot/" && p.indexOf(".symbiot/") !== 0; }).length : 0;
+    const stat = (sh(`git -C ${q} diff --shortstat`).trim() || sh(`git -C ${q} diff --cached --shortstat`).trim()).replace(/^\s+/, "");
+    const since = new Date(startedAt || Date.now()).toISOString();
+    const raw = sh(`git -C ${q} log --since=${JSON.stringify(since)} --pretty=%h\u0001%s`).trim();
+    const commits = raw ? raw.split("\n").slice(0, 8).map((l) => { const i = l.indexOf("\u0001"); return { hash: l.slice(0, i), msg: l.slice(i + 1) }; }) : [];
+    return { dirty, stat, commits };
+  } catch { return { dirty: 0, stat: "", commits: [] }; }
+}
+const fillHandoff = (tmpl, repoPath) => tmpl.replace(/\{dir\}/g, shSingle(repoPath)).replace(/\{prompt\}/g, escDq(HANDOFF_PROMPT));
 function runHandoff(repoPath) {
   const tmpl = handoffCmd(); if (!tmpl || !repoPath) return null;
-  const cmd = tmpl.replace(/\{dir\}/g, shSingle(repoPath)).replace(/\{prompt\}/g, escDq(HANDOFF_PROMPT));
-  return track(repoPath.split("/").pop(), cmd, repoPath);
+  return track(repoPath.split("/").pop(), fillHandoff(tmpl, repoPath), repoPath);
 }
 // ---- local model one-command setup (Ollama), OS-aware ---------------------
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -871,9 +1018,17 @@ function driftRepo(p, opts = {}) {
   return { name, path: p, def, flags, fetchAgeDays: fa };
 }
 function computeDrift(opts = {}) {
-  const deploys = loadDeploys();
-  const repos = findAllRepos().slice(0, 20).map((r) => driftRepo(r.path, { deploys, ci: opts.ci, fetch: opts.fetch }));
-  return { repos, ci: !!opts.ci };
+  const own = scanBegin();
+  try {
+    const deploys = loadDeploys();
+    const found = findAllRepos().slice(0, 20), repos = [];
+    scanPhase("checking drift", found.length);
+    for (const r of found) {
+      if (scanExpired()) break;
+      repos.push(driftRepo(r.path, { deploys, ci: opts.ci, fetch: opts.fetch })); scanTick(r.name);
+    }
+    return { repos, ci: !!opts.ci, partial: SCAN.partial };
+  } finally { scanEnd(own); }
 }
 function cmdDrift() {
   const d = computeDrift({ ci: has("ci"), fetch: has("fetch") });
@@ -905,21 +1060,33 @@ const MANIFEST_TOOL = {
   "terraform.tf": "Terraform", "kubernetes.yml": "Kubernetes", ".github": "GitHub Actions",
 };
 function findAllRepos(base) {
-  const roots = base ? [base] : scanRoots();
-  const repos = []; const seen = new Set();
-  for (const root of roots) for (const g of findGitDirs(root, 300)) {
-    const repo = g.replace(/\/\.git$/, ""); if (seen.has(repo)) continue; seen.add(repo);
-    const last = Number(sh(`git -C ${JSON.stringify(repo)} log -1 --format=%ct 2>/dev/null`).trim()) || 0;
-    if (last) repos.push({ path: repo, name: repo.split("/").pop(), recency: last });
-  }
-  // Group worktrees by shared git dir; keep only the freshest checkout of each.
-  const byCommon = {};
-  for (const r of repos) {
-    const cd = sh(`git -C ${JSON.stringify(r.path)} rev-parse --git-common-dir 2>/dev/null`).trim() || r.path;
-    const key = cd.startsWith("/") ? cd : join(r.path, cd);
-    if (!byCommon[key] || byCommon[key].recency < r.recency) byCommon[key] = r;
-  }
-  return Object.values(byCommon).sort((a, b) => b.recency - a.recency).slice(0, 60);
+  const own = scanBegin();
+  try {
+    const roots = base ? [base] : scanRoots();
+    const repos = []; const seen = new Set();
+    for (const root of roots) {
+      if (scanExpired()) break;
+      scanPhase("finding repos in " + root.replace(homedir(), "~"));
+      const gits = findGitDirs(root, 300);
+      scanPhase("reading repos", gits.length);
+      for (const g of gits) {
+        if (scanExpired()) break;
+        const repo = g.replace(/\/\.git$/, ""); scanTick(repo.split("/").pop());
+        if (seen.has(repo)) continue; seen.add(repo);
+        const last = Number(sh(`git -C ${JSON.stringify(repo)} log -1 --format=%ct 2>/dev/null`).trim()) || 0;
+        if (last) repos.push({ path: repo, name: repo.split("/").pop(), recency: last });
+      }
+    }
+    // Group worktrees by shared git dir; keep only the freshest checkout of each.
+    // (Not deadline-bound: it's what makes the result correct, and it's cheap.)
+    const byCommon = {};
+    for (const r of repos) {
+      const cd = sh(`git -C ${JSON.stringify(r.path)} rev-parse --git-common-dir 2>/dev/null`).trim() || r.path;
+      const key = cd.startsWith("/") ? cd : join(r.path, cd);
+      if (!byCommon[key] || byCommon[key].recency < r.recency) byCommon[key] = r;
+    }
+    return Object.values(byCommon).sort((a, b) => b.recency - a.recency).slice(0, 60);
+  } finally { scanEnd(own); }
 }
 function detectRepo(r) {
   const files = sh(`git -C ${JSON.stringify(r.path)} ls-files 2>/dev/null | head -3000`).split("\n").filter(Boolean);
@@ -940,11 +1107,8 @@ function detectRepo(r) {
 // Non-git PROJECT folders inside your scan roots (you added them = consent):
 // a directory with a manifest but no .git — "not everything is a repo".
 function findProjectFolders(root) {
-  const manifests = sh(
-    `find ${JSON.stringify(root)} -maxdepth 3 ` +
-    `\\( -name node_modules -o -name .cache -o -name .local -o -name .npm -o -name venv -o -name .venv -o -name .gradle -o -name Pods -o -name .git \\) -prune ` +
-    `-o -type f \\( -name package.json -o -name requirements.txt -o -name pyproject.toml -o -name go.mod -o -name Cargo.toml -o -name pom.xml -o -name build.gradle -o -name Gemfile -o -name composer.json -o -name Dockerfile -o -name pubspec.yaml -o -name CMakeLists.txt \\) -print 2>/dev/null | head -200`,
-  ).split("\n").filter(Boolean);
+  const manifests = findPaths([root, "-maxdepth", "3", ...anyName([...PRUNE, ".git"]), "-prune", "-o", "-type", "f",
+    ...anyName(["package.json", "requirements.txt", "pyproject.toml", "go.mod", "Cargo.toml", "pom.xml", "build.gradle", "Gemfile", "composer.json", "Dockerfile", "pubspec.yaml", "CMakeLists.txt"]), "-print"], 200);
   const dirs = new Set(); for (const m of manifests) dirs.add(m.replace(/\/[^/]+$/, ""));
   const out = [];
   for (const d of dirs) {
@@ -959,9 +1123,29 @@ function detectFolder(path) {
   for (const f of files) { const base = f.split("/").pop(); if (MANIFEST_TOOL[base]) tools.add(MANIFEST_TOOL[base]); const ext = (base.includes(".") ? base.split(".").pop() : "").toLowerCase(); if (EXT_LANG[ext]) count[EXT_LANG[ext]] = (count[EXT_LANG[ext]] || 0) + 1; }
   return { path, name: path.split("/").pop(), langs: Object.entries(count).sort((a, b) => b[1] - a[1]).map((x) => x[0]), tools: [...tools], files: files.length };
 }
+// Async only to YIELD between repos, so the app server can answer /api/scan
+// (progress) mid-scan; the git calls themselves stay synchronous. Concurrent
+// callers (e.g. Rescan while a scan runs) share the one in-flight build.
+let MAP_BUILD = null;
 function buildMap() {
+  if (!MAP_BUILD) MAP_BUILD = buildMapNow().finally(() => { MAP_BUILD = null; });
+  return MAP_BUILD;
+}
+const yieldTick = () => new Promise((r) => setImmediate(r));
+async function buildMapNow() {
+  const own = scanBegin();
+  try { return await buildMapScan(); } finally { scanEnd(own); }
+}
+async function buildMapScan() {
   const who = me();
-  const repos = findAllRepos().map(detectRepo);
+  const found = findAllRepos();
+  const repos = [];
+  scanPhase("reading repo details", found.length);
+  for (const r of found) {
+    if (scanExpired()) break;
+    await yieldTick();
+    repos.push(detectRepo(r)); scanTick(r.name);
+  }
   const nodes = []; const edges = []; const have = new Set();
   const add = (n) => { if (!have.has(n.id)) { have.add(n.id); nodes.push(n); } };
   add({ id: "me", type: "person", label: who.name || "You", weight: 22 });
@@ -976,9 +1160,11 @@ function buildMap() {
   // Non-git project folders in the scan roots (capped; deduped against repos).
   try {
     const repoPaths = new Set(repos.map((r) => r.path)); let folders = 0;
-    for (const root of scanRoots()) { for (const d of findProjectFolders(root)) {
+    for (const root of scanRoots()) { if (scanExpired()) break; scanPhase("finding project folders"); for (const d of findProjectFolders(root)) {
       if (repoPaths.has(d) || have.has("folder:" + d) || folders >= 20) continue;
-      const det = detectFolder(d); folders++;
+      if (scanExpired()) break;
+      await yieldTick();
+      const det = detectFolder(d); folders++; scanTick(det.name);
       add({ id: "folder:" + d, type: "folder", label: det.name, weight: 10, meta: { path: d, langs: det.langs.slice(0, 3), tools: det.tools, files: det.files } });
       edges.push({ source: "me", target: "folder:" + d });
       for (const L of det.langs.slice(0, 3)) { const id = "lang:" + L; add({ id, type: "lang", label: L, weight: 15 }); edges.push({ source: "folder:" + d, target: id }); }
@@ -1006,13 +1192,14 @@ function buildMap() {
     commits: repos.reduce((s, r) => s + r.mine, 0),
     files: repos.reduce((s, r) => s + (r.files || 0), 0),
     base: BASE,
+    partial: SCAN.partial, // the scan hit its deadline — this is what it found so far
   } };
   LAST_MAP = out;
   return out;
 }
 // Local detail for a clicked node (no AI).
-function nodeDetail(id) {
-  const map = LAST_MAP || buildMap();
+async function nodeDetail(id) {
+  const map = LAST_MAP || await buildMap();
   if (id === "me") { const n = map.nodes.find((x) => x.id === "me"); return { type: "person", label: (n && n.label) || "You", stats: map.stats }; }
   if (id.startsWith("repo:")) {
     const path = id.slice(5); const n = map.nodes.find((x) => x.id === id); const m = (n && n.meta) || {};
@@ -1344,6 +1531,10 @@ footer{padding:10px 18px;border-top:1px solid var(--line);display:flex}
 .fchip{font-size:12px;padding:4px 10px;border-radius:999px;border:1px solid var(--line);background:var(--ink3);color:var(--text);cursor:pointer;font:inherit}
 .fchip.on{background:var(--green-dim);border-color:#2a6b52;color:var(--green)}
 .task .rm.restore{color:var(--green);font-size:15px}
+.rcard{border:1px solid var(--amber);border-radius:11px;padding:10px 12px;margin-top:8px}
+.rcard .rhead{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}.rcard .rhead .muted{font-size:12px}
+.rcard .row{margin-top:8px}.rcard .task{margin-top:6px}
+.rdiff{max-height:360px;overflow:auto;font-size:11px;line-height:1.45;background:var(--ink2);border:1px solid var(--line);border-radius:8px;padding:8px;margin-top:8px;white-space:pre}
 .drift{border:1px solid var(--line);border-radius:10px;margin-top:10px;padding:12px 14px;background:var(--ink2)}
 .drift .dh{display:flex;gap:8px;align-items:center}
 .drift .dn{color:var(--bone);font-weight:600}
@@ -1358,6 +1549,11 @@ footer{padding:10px 18px;border-top:1px solid var(--line);display:flex}
 .adot{width:10px;height:10px;border-radius:50%;display:inline-block;flex:none}
 .adot.run{background:var(--amber);animation:pulse 1s ease-in-out infinite}
 .adot.ok{background:var(--green)} .adot.fail{background:#E5695B}
+.changed{margin-top:8px;font-size:12.5px;color:var(--bone);background:var(--green-dim);border:1px solid #2a6b52;border-radius:8px;padding:7px 10px}
+.changed.muted{color:var(--faint);background:var(--ink3);border-color:var(--line)}
+.changed b{color:var(--green)}
+.commits{margin-top:6px;font-size:12px;color:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace}
+.commits code{color:var(--amber);margin-right:6px}
 @keyframes pulse{0%,100%{opacity:1;box-shadow:0 0 0 0 rgba(242,165,65,.5)}50%{opacity:.4;box-shadow:0 0 0 5px rgba(242,165,65,0)}}
 .alogout{white-space:pre-wrap;background:var(--ink);border:1px solid var(--line);border-radius:8px;padding:10px;margin-top:10px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;line-height:1.5;color:var(--text);max-height:260px;overflow:auto}
 .bar{height:3px;background:var(--green-dim);border-radius:2px;overflow:hidden;margin-top:8px}
@@ -1411,8 +1607,10 @@ footer{padding:10px 18px;border-top:1px solid var(--line);display:flex}
 </section>
 <section id="panel-tasks" class="hidden">
 <div class="row"><input id="newtask" placeholder="Add a task..." style="flex:1"><button class="act" id="addtask">Add</button><button class="ghost" id="pushtasks" title="Write .symbiot/TASKS.md into each repo for your coding agent">Send to repos</button></div>
-<div class="note muted" style="margin-top:2px">The checkbox marks a task <b>done</b> (it auto-archives). To give tasks to your agent, use <b>Send to repos</b> &mdash; filter by tag below to choose which.</div>
+<div class="note muted" style="margin-top:2px">To give tasks to your agent, use <b>Send to repos</b> &mdash; filter by tag below to choose which. As the agent finishes each one it lands in <b>Awaiting your review</b>: <b>Approve</b> commits it on a branch and opens a PR, <b>&#8630;</b> sends it back. Ticking a task yourself marks it done (it auto-archives).</div>
 <div id="pushout"></div>
+<div id="reviewout"></div>
+<div id="reviewlist"></div>
 <div id="taskfilter" class="taskfilter"></div>
 <div id="tasklist"></div>
 </section>
@@ -1569,13 +1767,34 @@ box.innerHTML=fb;
 box.querySelectorAll('.fchip[data-dim]').forEach(function(c){c.addEventListener('click',function(){TFILTER[c.getAttribute('data-dim')]=c.getAttribute('data-val');renderTasks();});});
 document.getElementById('archtoggle').addEventListener('click',loadArchived);}
 function renderTasks(){var el=document.getElementById('tasklist');TARCH=false;renderFilter();
-var list=ALLTASKS.filter(function(t){return (!TFILTER.type||(t.type||'Features & other')===TFILTER.type)&&(!TFILTER.repo||t.repo===TFILTER.repo);});
+var list=ALLTASKS.filter(function(t){return !t.review&&(!TFILTER.type||(t.type||'Features & other')===TFILTER.type)&&(!TFILTER.repo||t.repo===TFILTER.repo);});
 if(!list.length){el.innerHTML="<div class='muted' style='margin-top:12px'>"+(ALLTASKS.length?"Nothing matches this filter.":"No tasks yet. Tick ideas in a repo review, or add one above.")+"</div>";return;}
 var groups={};list.forEach(function(t){var ty=t.type||'Features & other';(groups[ty]=groups[ty]||[]).push(t);});
 var keys=Object.keys(groups).sort(function(a,b){var ia=TORDER.indexOf(a),ib=TORDER.indexOf(b);return (ia<0?99:ia)-(ib<0?99:ib);});
 var h="";keys.forEach(function(ty){h+="<div class='tgroup'>"+esc(ty)+" <span class='tcount'>"+groups[ty].length+"</span></div>";groups[ty].forEach(function(t){h+=taskRow(t,false);});});
 el.innerHTML=h;wireTaskRows(el);}
-function loadTasks(){TARCH=false;api('/api/tasks/sync',{}).then(function(){api('/api/tasks').then(function(list){ALLTASKS=list;renderTasks();});});}
+function loadTasks(){TARCH=false;api('/api/tasks/sync',{}).then(function(){api('/api/tasks').then(function(list){ALLTASKS=list;renderTasks();});loadReview();});}
+function loadReview(){api('/api/pending').then(function(list){var el=document.getElementById('reviewlist');if(!list||!list.length){el.innerHTML='';return;}
+var n=0;list.forEach(function(r){n+=r.tasks.length;});
+var h="<div class='tgroup' style='color:var(--amber)'>Awaiting your review <span class='tcount'>"+n+"</span></div>";
+list.forEach(function(r){var ch=r.files.length?(r.files.length+" file"+(r.files.length>1?"s":"")+" changed"+(r.stat?" &middot; "+esc(r.stat):"")):"no uncommitted changes";
+h+="<div class='rcard' data-repo='"+esc(r.repo)+"'><div class='rhead'><b>"+esc(r.repo)+"</b><span class='muted'>"+(r.path?"on "+esc(r.branch||'?')+" &middot; "+ch:"repo not found on disk")+"</span></div>";
+r.tasks.forEach(function(t){h+="<div class='task' data-id='"+esc(t.id)+"'><span class='t'>"+esc(t.text)+"</span><button class='rm sendback' title='not right - send back to the agent (unticks it)'>&#8630;</button></div>";});
+h+="<div class='row'><button class='act approve'"+(r.path?"":" disabled")+" title='commit on a branch, push, open a PR, then archive'>Approve &rarr; "+(r.files.length?"PR":"archive")+"</button>"+(r.files.length?"<button class='ghost showdiff'>Show diff</button>":"")+"</div><div class='rdiff hidden'></div></div>";});
+el.innerHTML=h;
+el.querySelectorAll('.rcard').forEach(function(card){var repo=card.getAttribute('data-repo');
+card.querySelectorAll('.sendback').forEach(function(b){b.addEventListener('click',function(){api('/api/pending/sendback',{id:b.closest('.task').getAttribute('data-id')}).then(loadTasks);});});
+var sd=card.querySelector('.showdiff'),pre=card.querySelector('.rdiff');
+if(sd)sd.addEventListener('click',function(){if(!pre.classList.contains('hidden')){pre.classList.add('hidden');sd.textContent='Show diff';return;}
+pre.textContent='Loading...';pre.classList.remove('hidden');sd.textContent='Hide diff';api('/api/pending/diff?repo='+encodeURIComponent(repo)).then(function(d){pre.textContent=(d&&d.diff)||'(no changes)';});});
+var ap=card.querySelector('.approve');if(ap)ap.addEventListener('click',function(){ap.disabled=true;ap.textContent='Committing & pushing...';
+api('/api/pending/approve',{repo:repo}).then(function(r){var o=document.getElementById('reviewout');
+if(!r||r.error){ap.disabled=false;ap.textContent='Approve - retry';o.innerHTML="<div class='note err'>"+esc(repo)+": "+esc((r&&r.error)||'failed')+"</div>";return;}
+var m="&#10003; <b>"+esc(repo)+"</b>: approved "+r.approved+" task"+(r.approved>1?"s":"");
+if(r.commit)m+=" &middot; committed <code>"+esc(r.commit)+"</code> on <code>"+esc(r.branch)+"</code>";
+if(r.pr)m+=" &middot; <a href='"+esc(r.pr)+"' target='_blank' rel='noopener'>open PR</a>";
+if(r.note)m+="<div class='muted'>"+esc(r.note)+"</div>";
+o.innerHTML="<div class='note ok'>"+m+"</div>";loadTasks();});});});});}
 function loadArchived(){TARCH=true;api('/api/tasks?archived=1').then(function(list){ALLTASKS=list;renderFilter();var el=document.getElementById('tasklist');
 if(!list.length){el.innerHTML="<div class='muted' style='margin-top:12px'>Nothing archived yet. Completed tasks land here.</div>";return;}
 var h="<div class='tgroup'>Archived <span class='tcount'>"+list.length+"</span></div>";list.forEach(function(t){h+=taskRow(t,true);});el.innerHTML=h;wireTaskRows(el);});}
@@ -1588,6 +1807,16 @@ el.innerHTML=list.map(function(a){var cls=a.status==='running'?'run':(a.status==
 var st=a.status==='running'?('working &middot; '+fmtE(a.elapsed)):(esc(a.status)+' &middot; '+fmtE(a.elapsed)+(a.exitCode!=null?' &middot; exit '+a.exitCode:''));
 var b="<div class='dh'><span class='adot "+cls+"'></span><span class='dn'>"+esc(a.name)+"</span><span class='dd'>"+st+"</span></div>";
 if(a.status==='running')b+="<div class='bar'><i></i></div>";
+var ch=a.changed;
+if(ch&&(ch.dirty||ch.stat||(ch.commits&&ch.commits.length))){
+  var parts=[];
+  if(ch.dirty)parts.push('<b>'+ch.dirty+'</b> file'+(ch.dirty>1?'s':'')+' changed');
+  if(ch.stat)parts.push(esc(ch.stat));
+  if(parts.length)b+="<div class='changed'>What it did &middot; "+parts.join(' &middot; ')+"</div>";
+  if(ch.commits&&ch.commits.length)b+="<div class='commits'>"+ch.commits.map(function(c){return "<div><code>"+esc(c.hash)+"</code> "+esc(c.msg)+"</div>";}).join("")+"</div>";
+}else if(a.status==='done'){
+  b+="<div class='changed muted'>No file changes detected (the agent may have only planned or asked).</div>";
+}
 b+="<pre class='alogout'>"+esc((a.tail&&a.tail.trim())||'(waiting for output…)')+"</pre>";
 return "<div class='agent'>"+b+"</div>";}).join("");
 el.querySelectorAll('.alogout').forEach(function(p){p.scrollTop=p.scrollHeight;});
@@ -1596,7 +1825,7 @@ stopAgentsPoll();if(anyRunning&&current==='agents')agentsTimer=setTimeout(loadAg
 function loadDrift(){var out=document.getElementById('driftout');out.innerHTML="<div class='muted' style='margin-top:12px'>Reading your repos&hellip;</div>";
 var ci=document.getElementById('driftci').checked?'1':'0';var ft=document.getElementById('driftfetch').checked?'1':'0';
 api('/api/drift?ci='+ci+'&fetch='+ft).then(function(d){driftLoaded=true;var repos=d.repos||[];var risky=repos.filter(function(r){return r.flags.some(function(f){return f.level==='warn';});});
-var h="<div class='k' style='margin:10px 0'><b>"+repos.length+"</b> repos &middot; <b>"+risky.length+"</b> with risks</div>";
+var h="<div class='k' style='margin:10px 0'><b>"+repos.length+"</b> repos &middot; <b>"+risky.length+"</b> with risks"+(d.partial?" &middot; <span class='err'>partial &mdash; the scan hit its time limit</span>":"")+"</div>";
 repos.forEach(function(r){if(!r.flags.length)return;var warn=r.flags.some(function(f){return f.level==='warn';});
 h+="<div class='drift'><div class='dh'><span class='"+(warn?'dot-w':'dot-c')+"'></span><span class='dn'>"+esc(r.name)+"</span><span class='dd'>"+esc(r.def)+(r.fetchAgeDays!=null&&r.fetchAgeDays>3?" &middot; fetch "+r.fetchAgeDays+"d old":"")+"</span></div><ul>";
 r.flags.forEach(function(f){h+="<li class='"+esc(f.level)+"'>"+(f.level==='warn'?'&#9888; ':'&middot; ')+esc(f.text)+(f.evidence?" <span class='ev'>["+esc(f.evidence)+"]</span>":"")+"</li>";});
@@ -1647,7 +1876,11 @@ else if(mode==='pan'){var rc=el.getBoundingClientRect();view.x=ox+dx/rc.width*GW
 el.addEventListener('pointerup',function(ev){var id=downId,wasClick=moved<6;mode=null;dnode=null;downId=null;
 if(id){selectNode(id);}else if(wasClick){sel=null;hideDetail();hideReview();render();updateBar(null);}});
 el.addEventListener('mouseleave',function(){if(!mode)updateBar(null);}); }
-function loadMap(){var p=document.getElementById("profile");p.textContent="Mapping your work...";document.getElementById("graph").innerHTML="";sel=null;hideDetail();hideReview();api("/api/map").then(function(g){mapLoaded=true;if(!g.nodes||!g.nodes.length){p.textContent="No git repositories found under your home folder.";return;}GRAPH=g;layout(g.nodes,g.edges);view={k:1,x:0,y:0};p.innerHTML=profileLine(g);render();});}
+function scanLine(s){return 'Mapping your work… '+s.phase+(s.total?' '+s.done+'/'+s.total:'')+(s.item?' · '+s.item:'')+' · '+Math.round((s.elapsed||0)/1000)+'s';}
+function loadMap(){var p=document.getElementById("profile");p.textContent="Mapping your work...";document.getElementById("graph").innerHTML="";sel=null;hideDetail();hideReview();var done=false;
+function poll(){if(done)return;api('/api/scan').then(function(s){if(done)return;if(s&&s.active&&s.phase)p.textContent=scanLine(s);setTimeout(poll,600);}).catch(function(){});}
+setTimeout(poll,400);
+api("/api/map").then(function(g){done=true;mapLoaded=true;if(!g.nodes||!g.nodes.length){p.textContent="No git repositories found under your home folder.";return;}GRAPH=g;layout(g.nodes,g.edges);view={k:1,x:0,y:0};p.innerHTML=profileLine(g)+(g.stats&&g.stats.partial?" &middot; <span class='err'>partial &mdash; the scan hit its time limit</span>":"");render();});}
 function fitBadge(m){return m.fits?"<span class='tag'>fits your RAM</span>":"<span class='tag' style='background:#3a2a12;border-color:#6b4a1f;color:#F2A541'>needs more RAM</span>";}
 function loadRec(){var out=document.getElementById('recout');out.innerHTML="<div class='muted'>Reading your hardware...</div>";
 api('/api/models').then(function(d){var hw=d.hardware,rec=d.rec;
@@ -1748,10 +1981,11 @@ async function cmdApp() {
     }
     try {
       if (u.pathname === "/api/status") { const r = resolveProvider(); return json(res, r ? { connected: true, line: `${PROVIDERS[r.provider].label} · ${r.model}` } : { connected: false }); }
-      if (u.pathname === "/api/map") return json(res, buildMap()); // local git only — no AI key needed
+      if (u.pathname === "/api/map") return json(res, await buildMap()); // local git only — no AI key needed
+      if (u.pathname === "/api/scan") return json(res, { active: SCAN.active, phase: SCAN.phase, done: SCAN.done, total: SCAN.total, item: SCAN.item, elapsed: SCAN.startedAt ? Date.now() - SCAN.startedAt : 0, timeout: SCAN_TIMEOUT_MS, partial: SCAN.partial });
       if (u.pathname === "/api/models") { const hw = detectHardware(); return json(res, { hardware: hw, rec: recommendModels(hw) }); }
       if (u.pathname === "/api/drift") return json(res, computeDrift({ ci: u.searchParams.get("ci") === "1", fetch: u.searchParams.get("fetch") === "1" }));
-      if (u.pathname === "/api/node") return json(res, nodeDetail(u.searchParams.get("id") || "")); // local
+      if (u.pathname === "/api/node") return json(res, await nodeDetail(u.searchParams.get("id") || "")); // local
       if (u.pathname === "/api/suggest" && req.method === "POST") { const b = await readBody(req); return json(res, await repoSuggest(String(b.path || ""))); }
       if (u.pathname === "/api/review" && req.method === "POST") { const b = await readBody(req); return json(res, await repoReview(String(b.path || ""))); }
       if (u.pathname === "/api/tasks" && req.method !== "POST") { const arch = u.searchParams.get("archived") === "1"; return json(res, loadTasks().filter((x) => !!x.archived === arch).map((t) => ({ ...t, type: taskType(t.text) }))); }
@@ -1760,6 +1994,10 @@ async function cmdApp() {
       if (u.pathname === "/api/tasks/remove" && req.method === "POST") { const b = await readBody(req); return json(res, removeTask(String(b.id || ""))); }
       if (u.pathname === "/api/tasks/restore" && req.method === "POST") { const b = await readBody(req); return json(res, restoreTask(String(b.id || ""))); }
       if (u.pathname === "/api/tasks/sync" && req.method === "POST") return json(res, syncTasks());
+      if (u.pathname === "/api/pending") return json(res, pendingReview()); // ticked by the agent, awaiting approval
+      if (u.pathname === "/api/pending/diff") { const p = repoPathMap()[u.searchParams.get("repo") || ""]; return json(res, { diff: p ? workingDiff(p) : "" }); }
+      if (u.pathname === "/api/pending/approve" && req.method === "POST") { const b = await readBody(req); return json(res, approveRepo(String(b.repo || ""))); }
+      if (u.pathname === "/api/pending/sendback" && req.method === "POST") { const b = await readBody(req); return json(res, sendBack(String(b.id || ""))); }
       if (u.pathname === "/api/tasks/push" && req.method === "POST") { const b = await readBody(req); return json(res, pushTasks(b)); }
       if (u.pathname === "/api/scanroots") return json(res, { roots: loadConfig().scanRoots || [], effective: scanRoots(), home: homedir() });
       if (u.pathname === "/api/scanroots/add" && req.method === "POST") { const b = await readBody(req); return json(res, addScanRoot(String(b.path || ""))); }
@@ -1775,7 +2013,7 @@ async function cmdApp() {
         const e = track("ollama pull " + model, "ollama pull " + shSingle(model), homedir(), (code) => { if (code === 0) useOllamaModel(model); });
         return json(res, { started: true, model, id: e ? e.id : "" });
       }
-      if (u.pathname === "/api/agents") return json(res, HANDOFFS.map((e) => { let tail = ""; try { tail = readFileSync(e.log, "utf8").slice(-1200); } catch {} return { id: e.id, name: e.name, path: e.path, status: e.status, elapsed: (e.endedAt || Date.now()) - e.startedAt, exitCode: e.exitCode, tail }; }));
+      if (u.pathname === "/api/agents") return json(res, HANDOFFS.map((e) => { let tail = ""; try { tail = readFileSync(e.log, "utf8").slice(-1200); } catch {} return { id: e.id, name: e.name, path: e.path, status: e.status, elapsed: (e.endedAt || Date.now()) - e.startedAt, exitCode: e.exitCode, tail, changed: agentChanges(e.path, e.startedAt) }; }));
       if (u.pathname === "/api/run" && req.method === "POST") { const b = await readBody(req); const cmd = ["week", "standup", "todo"].includes(b.cmd) ? b.cmd : "week"; return json(res, await produce(cmd)); }
       if (u.pathname === "/api/connect" && req.method === "POST") { return json(res, await connectProvider(await readBody(req))); }
       if (u.pathname === "/api/ping") { if (u.searchParams.get("fresh") === "1") await checkLatest(); return json(res, { version: VERSION, started: SERVER_STARTED, latest: LATEST_VERSION }); }
@@ -1872,4 +2110,4 @@ const isMain = (() => {
 })();
 if (isMain) main();
 
-export { authorship, repoState, readmeInfo, repoShape, houseRules, findAllRepos, buildMap, reportFooter, detectHardware, recommendModels, computeDrift, driftRepo, gitDefaultBranch, buildTasksMd, taskType, EMBEDDED_UI };
+export { authorship, repoState, readmeInfo, repoShape, houseRules, findAllRepos, buildMap, reportFooter, detectHardware, recommendModels, computeDrift, driftRepo, gitDefaultBranch, buildTasksMd, taskType, EMBEDDED_UI, orcaHandoffCmd, migrateOrcaCmd, fillHandoff, ORCA_CLAUDE_CMD, HANDOFF_PROMPT, shipChanges, syncTasks, pendingReview, approveRepo, sendBack, pushTasks };
