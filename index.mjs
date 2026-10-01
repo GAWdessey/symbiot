@@ -788,10 +788,24 @@ function buildMap() {
     for (const L of r.langs.slice(0, 3)) { const id = "lang:" + L; add({ id, type: "lang", label: L, weight: 15 }); edges.push({ source: rid, target: id }); }
     for (const T of r.tools) { const id = "tool:" + T; add({ id, type: "tool", label: T, weight: 12 }); edges.push({ source: rid, target: id }); }
   }
+  // What you build WITH (person-level, not per-repo): detected agents/editors
+  // and the AI currently powering Symbiot — so the initial scan shows the whole
+  // setup, not just code. All local detection, nothing invasive.
+  try {
+    const hands = detectHandoffs();
+    for (const a of [...hands.agents, ...hands.editors]) {
+      const id = "agent:" + a.label;
+      add({ id, type: "agent", label: a.label.replace(/\s*\(.*\)$/, ""), weight: 11, meta: { cmd: a.tmpl, kind: a.kind } });
+      edges.push({ source: "me", target: id });
+    }
+    const prov = resolveProvider();
+    if (prov) { const id = "ai:" + prov.provider; add({ id, type: "ai", label: PROVIDERS[prov.provider].label, weight: 14, meta: { model: prov.model, source: prov.source } }); edges.push({ source: "me", target: id }); }
+  } catch {}
   const out = { nodes, edges, stats: {
     repos: repos.length,
     languages: nodes.filter((n) => n.type === "lang").length,
     tools: nodes.filter((n) => n.type === "tool").length,
+    agents: nodes.filter((n) => n.type === "agent").length,
     commits: repos.reduce((s, r) => s + r.mine, 0),
     files: repos.reduce((s, r) => s + (r.files || 0), 0),
     base: BASE,
@@ -817,6 +831,10 @@ function nodeDetail(id) {
     const n = map.nodes.find((x) => x.id === id);
     const repos = map.edges.filter((e) => e.target === id).map((e) => { const r = map.nodes.find((x) => x.id === e.source); return r ? r.label : null; }).filter(Boolean);
     return { type: id.startsWith("lang:") ? "lang" : "tool", label: n ? n.label : id.split(":")[1], repos };
+  }
+  if (id.startsWith("agent:") || id.startsWith("ai:")) {
+    const n = map.nodes.find((x) => x.id === id);
+    return { type: id.startsWith("agent:") ? "agent" : "ai", label: n ? n.label : id.split(":")[1], meta: (n && n.meta) || {} };
   }
   return { error: "unknown node" };
 }
@@ -1156,6 +1174,8 @@ footer{padding:10px 18px;border-top:1px solid var(--line);display:flex}
 <span class="lg"><i style="background:var(--bone)"></i>repos</span>
 <span class="lg"><i style="background:var(--amber)"></i>languages</span>
 <span class="lg"><i style="background:#6bb3ff"></i>tools</span>
+<span class="lg"><i style="background:#c58af9"></i>agents</span>
+<span class="lg"><i style="background:#5fe3b0"></i>AI</span>
 <span class="muted" style="margin-left:8px">scroll to zoom &middot; drag to pan &middot; click a node</span>
 <button class="ghost" id="remap" style="margin-left:auto">Rescan</button>
 </div>
@@ -1220,7 +1240,7 @@ var KEYURL={anthropic:'https://console.anthropic.com/settings/keys',openai:'http
 var DEFMODEL={anthropic:'claude-opus-5-5',openai:'gpt-4o-mini',gemini:'gemini-1.5-flash',ollama:'llama3.1'};
 function $(id){return document.getElementById(id);}
 var current='map';var mapLoaded=false;var driftLoaded=false;
-var COLORS={person:'#3DDC97',repo:'#F4F1EA',lang:'#F2A541',tool:'#6bb3ff'};
+var COLORS={person:'#3DDC97',repo:'#F4F1EA',lang:'#F2A541',tool:'#6bb3ff',agent:'#c58af9',ai:'#5fe3b0'};
 function tabs(){return document.querySelectorAll('.tab');}
 function setTab(tab){current=tab;tabs().forEach(function(t){t.classList.toggle('active',t.dataset.tab===tab);});
 var isMap=tab==='map',isSet=tab==='settings',isTasks=tab==='tasks',isDrift=tab==='drift',isAgents=tab==='agents',isRun=(tab==='week'||tab==='standup'||tab==='todo');
@@ -1274,7 +1294,9 @@ if(d.type==='repo'){var chips="";['branch: '+(d.branch||'?'),d.commits+' commits
 el.innerHTML="<h3>"+esc(d.label)+"</h3><div class='chips'>"+chips+"</div><button class='act' id='suggest' style='margin-top:12px'>Suggest next steps</button><div id='sugout'></div>";
 document.getElementById('suggest').addEventListener('click',function(){var o=document.getElementById('sugout');o.innerHTML="<div class='out2'>Thinking...</div>";api('/api/suggest',{path:d.path}).then(function(r){if(r.error==='not-connected'){o.innerHTML="<div class='out2'>Connect a model in Settings to get suggestions - Ollama is free and runs locally.</div>";return;}o.innerHTML="<div class='out2'>"+esc(r.text||'(no output)')+"</div>"+(r.footer?"<div class='rfoot'>"+esc(r.footer)+"</div>":"");});});return;}
 if(d.type==='lang'||d.type==='tool'){var lis=(d.repos||[]).map(function(r){return "<li>"+esc(r)+"</li>";}).join("");el.innerHTML="<h3>"+esc(d.label)+"</h3><div class='k'>Used in "+((d.repos||[]).length)+" repos</div><ul>"+lis+"</ul>";return;}
-if(d.type==='person'){var st=d.stats||{};el.innerHTML="<h3>"+esc(d.label)+"</h3><div class='k'>"+st.repos+" repos &middot; "+st.commits+" commits &middot; "+st.languages+" languages &middot; "+st.tools+" tools</div>";return;}}
+if(d.type==='agent'){var m=d.meta||{};el.innerHTML="<h3>"+esc(d.label)+"</h3><div class='k'>"+(m.kind==='agent'?'AI coding agent you have installed':'editor you have installed')+"</div>"+(m.cmd?"<div class='out2' style='font-size:11px'>"+esc(m.cmd)+"</div>":"");return;}
+if(d.type==='ai'){var m=d.meta||{};el.innerHTML="<h3>"+esc(d.label)+"</h3><div class='k'>Currently powering Symbiot &middot; model <b>"+esc(m.model||'?')+"</b>"+(m.source?" &middot; via "+esc(m.source):"")+"</div>";return;}
+if(d.type==='person'){var st=d.stats||{};el.innerHTML="<h3>"+esc(d.label)+"</h3><div class='k'>"+st.repos+" repos &middot; "+st.commits+" commits &middot; "+st.languages+" languages &middot; "+st.tools+" tools"+(st.agents?" &middot; "+st.agents+" agents/editors":"")+"</div>";return;}}
 var reviewCache={};var IDEAS=[];var IREPO="";
 function hideReview(){var el=document.getElementById('review');el.classList.add('hidden');el.innerHTML='';}
 function reviewHtml(name,body,verdict,ideas,tasks,footer){IDEAS=ideas||[];IREPO=name;
