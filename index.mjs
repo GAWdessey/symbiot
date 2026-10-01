@@ -646,8 +646,8 @@ function detectHandoffs() {
   if (orca) {
     const q = JSON.stringify(orca);
     agents.unshift(
-      { label: "Orca IDE — open repo (use your Orca agent)", tmpl: `${q} open; ${q} repo add --path {dir}; ${q} terminal create --worktree path:{dir} --focus`, kind: "agent" },
-      { label: "Orca IDE — run Claude in a tab", tmpl: `${q} open; ${q} repo add --path {dir}; ${q} terminal create --worktree path:{dir} --command "claude {prompt}" --focus`, kind: "agent" },
+      { label: "Orca IDE — open repo (use your Orca agent)", tmpl: orcaHandoffCmd(q, ""), kind: "agent" },
+      { label: "Orca IDE — run Claude in a tab", tmpl: orcaHandoffCmd(q, ` --command "claude {prompt}"`), kind: "agent" },
     );
   }
   return { agents, editors };
@@ -656,18 +656,31 @@ const shSingle = (s) => "'" + String(s).replace(/'/g, "'\\''") + "'";
 const escDq = (s) => String(s).replace(/[\\"$`]/g, "\\$&");
 const HANDOFF_PROMPT = "Read .symbiot/TASKS.md and implement the unchecked items in this repo. Confirm before anything destructive.";
 function handoffCmd() { const cfg = loadConfig(); return migrateOrcaCmd(cfg.agentCmd) || (cfg.ide ? `${cfg.ide} {dir}` : ""); } // ide = legacy
-// An Orca command saved before we learned its CLI needs a running app lacks the
-// `open` step and silently fails when Orca is closed. Patch it in place: insert
-// `<orca> open; ` before the first `repo add`. Idempotent (skips if already there).
+// Build the full Orca handoff, cold-start safe. `bin` is the quoted orca-ide
+// path; `commandPart` is e.g. ` --command "claude {prompt}"` or "" (open only).
+// open launches Orca & waits for the runtime to be REACHABLE, but on a cold
+// start the workspace graph isn't ready yet (runtime.state=graph_not_ready) and
+// `terminal create` times out — so we poll `status` until state=ready, then add
+// the repo and create the terminal (retry: the worktree can lag a beat behind).
+function orcaHandoffCmd(bin, commandPart) {
+  const waitReady = `for i in $(seq 1 40); do ${bin} status --json 2>/dev/null | grep -q '"state": *"ready"' && break; sleep 1; done`;
+  const mkTerm = `for j in 1 2 3; do ${bin} terminal create --worktree path:{dir}${commandPart} --focus && break; sleep 2; done`;
+  return `${bin} open; ${waitReady}; ${bin} repo add --path {dir}; ${mkTerm}`;
+}
+// Normalise an Orca command saved by an older version (no launch / no wait-for-
+// ready) to the current cold-start-safe form, preserving its binary path and any
+// custom `--command`. Idempotent: already-current commands are left untouched.
 function migrateOrcaCmd(cmd) {
   if (!cmd || typeof cmd !== "string") return cmd;
   if (!/orca-ide/.test(cmd) || !/\brepo add\b/.test(cmd)) return cmd;
-  if (/orca-ide("|')?\s+open\b|\bopen;\s/.test(cmd)) return cmd; // already migrated
-  const m = cmd.match(/^(\S+|"[^"]*"|'[^']*')\s+repo add/); // the orca binary token
-  const bin = m ? m[1] : "";
-  const patched = bin ? cmd.replace(/(\S+|"[^"]*"|'[^']*')\s+repo add/, `${bin} open; $1 repo add`) : cmd;
-  if (patched !== cmd) { try { const cfg = loadConfig(); if (cfg.agentCmd === cmd) { cfg.agentCmd = patched; saveConfig(cfg); } } catch {} }
-  return patched;
+  if (/status --json/.test(cmd) && /grep -q/.test(cmd)) return cmd; // already the wait-for-ready form
+  const bm = cmd.match(/^\s*("[^"]*"|'[^']*'|\S+)/); // leading orca-ide binary token
+  const bin = bm ? bm[1] : "";
+  const cm = cmd.match(/--command\s+"([^"]*)"/); // preserve a custom agent command
+  const commandPart = cm ? ` --command "${cm[1]}"` : "";
+  const rebuilt = bin ? orcaHandoffCmd(bin, commandPart) : cmd;
+  if (rebuilt !== cmd) { try { const cfg = loadConfig(); if (cfg.agentCmd === cmd) { cfg.agentCmd = rebuilt; saveConfig(cfg); } } catch {} }
+  return rebuilt;
 }
 // Run a shell command as a tracked, logged background job that shows up live in
 // the Agents tab. Shared by the agent handoff and the local-model setup.
