@@ -747,8 +747,10 @@ function runHandoff(repoPath) {
   return track(repoPath.split("/").pop(), fillHandoff(tmpl, repoPath), repoPath);
 }
 // Presets. [cmd, label, macAppName] — macApp used to launch GUI editors on macOS
-// where the CLI isn't on PATH (they're .app bundles).
-const IDE_LIST = [["code", "VS Code", "Visual Studio Code"], ["cursor", "Cursor", "Cursor"], ["windsurf", "Windsurf", "Windsurf"], ["zed", "Zed", "Zed"], ["subl", "Sublime Text", "Sublime Text"], ["idea", "IntelliJ IDEA", "IntelliJ IDEA"], ["nvim", "Neovim", ""]];
+// where the CLI isn't on PATH (they're .app bundles). GUI editors only: track()
+// runs the handoff detached with no TTY, so a terminal editor (nvim) never shows
+// up — that preset was dropped (a saved one still runs as-is).
+const IDE_LIST = [["code", "VS Code", "Visual Studio Code"], ["cursor", "Cursor", "Cursor"], ["windsurf", "Windsurf", "Windsurf"], ["zed", "Zed", "Zed"], ["subl", "Sublime Text", "Sublime Text"], ["idea", "IntelliJ IDEA", "IntelliJ IDEA"]];
 // [cmd, label, template]. Only agents that leave changes to review: a handoff
 // runs unattended, so a "plan only" run can't ask anything and leaves nothing to
 // approve — that preset was dropped (a saved one still runs as-is).

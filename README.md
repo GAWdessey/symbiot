@@ -135,8 +135,10 @@ preset only fills in the command box; the saved command is what runs.
 - **Orca IDE** (any OS): opens the repo in Orca — either just the repo, to use
   Orca's own agent, or with Claude running in a new tab. It launches Orca if it's
   closed and waits for it to be ready first.
-- **Editors:** VS Code, Cursor, Windsurf, Zed, Sublime Text, IntelliJ IDEA, Neovim
-  (on macOS, also found as `.app` bundles when the CLI isn't on your PATH).
+- **Editors:** VS Code, Cursor, Windsurf, Zed, Sublime Text, IntelliJ IDEA (on
+  macOS, also found as `.app` bundles when the CLI isn't on your PATH). The
+  handoff runs in the background without a terminal, so terminal editors like
+  Neovim aren't offered.
 
 Each run is logged to `.symbiot/agent.log` in the repo and shown live in the
 **Agents** tab. The command is saved as `agentCmd` in
