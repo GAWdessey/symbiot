@@ -638,12 +638,16 @@ function detectHandoffs() {
   // Orca IDE (any OS): register the repo + open a terminal tab. Two variants —
   // one that just opens the repo (use Orca's own agent, e.g. GPT), and one that
   // runs Claude in the tab for Claude users. Not Claude-only.
+  // `<orca> open` first: it launches Orca AND blocks until the runtime is
+  // reachable, so this works even when Orca is closed (its CLI can't talk to a
+  // dead app). Use the full orca-ide path, never bare `orca` (that's a different
+  // tool on PATH). If Orca is already up, `open` returns fast.
   const orca = findOrcaCli();
   if (orca) {
     const q = JSON.stringify(orca);
     agents.unshift(
-      { label: "Orca IDE — open repo (use your Orca agent)", tmpl: `${q} repo add --path {dir}; ${q} terminal create --worktree path:{dir} --focus`, kind: "agent" },
-      { label: "Orca IDE — run Claude in a tab", tmpl: `${q} repo add --path {dir}; ${q} terminal create --worktree path:{dir} --command "claude {prompt}" --focus`, kind: "agent" },
+      { label: "Orca IDE — open repo (use your Orca agent)", tmpl: `${q} open; ${q} repo add --path {dir}; ${q} terminal create --worktree path:{dir} --focus`, kind: "agent" },
+      { label: "Orca IDE — run Claude in a tab", tmpl: `${q} open; ${q} repo add --path {dir}; ${q} terminal create --worktree path:{dir} --command "claude {prompt}" --focus`, kind: "agent" },
     );
   }
   return { agents, editors };
@@ -651,7 +655,20 @@ function detectHandoffs() {
 const shSingle = (s) => "'" + String(s).replace(/'/g, "'\\''") + "'";
 const escDq = (s) => String(s).replace(/[\\"$`]/g, "\\$&");
 const HANDOFF_PROMPT = "Read .symbiot/TASKS.md and implement the unchecked items in this repo. Confirm before anything destructive.";
-function handoffCmd() { const cfg = loadConfig(); return cfg.agentCmd || (cfg.ide ? `${cfg.ide} {dir}` : ""); } // ide = legacy
+function handoffCmd() { const cfg = loadConfig(); return migrateOrcaCmd(cfg.agentCmd) || (cfg.ide ? `${cfg.ide} {dir}` : ""); } // ide = legacy
+// An Orca command saved before we learned its CLI needs a running app lacks the
+// `open` step and silently fails when Orca is closed. Patch it in place: insert
+// `<orca> open; ` before the first `repo add`. Idempotent (skips if already there).
+function migrateOrcaCmd(cmd) {
+  if (!cmd || typeof cmd !== "string") return cmd;
+  if (!/orca-ide/.test(cmd) || !/\brepo add\b/.test(cmd)) return cmd;
+  if (/orca-ide("|')?\s+open\b|\bopen;\s/.test(cmd)) return cmd; // already migrated
+  const m = cmd.match(/^(\S+|"[^"]*"|'[^']*')\s+repo add/); // the orca binary token
+  const bin = m ? m[1] : "";
+  const patched = bin ? cmd.replace(/(\S+|"[^"]*"|'[^']*')\s+repo add/, `${bin} open; $1 repo add`) : cmd;
+  if (patched !== cmd) { try { const cfg = loadConfig(); if (cfg.agentCmd === cmd) { cfg.agentCmd = patched; saveConfig(cfg); } } catch {} }
+  return patched;
+}
 // Run a shell command as a tracked, logged background job that shows up live in
 // the Agents tab. Shared by the agent handoff and the local-model setup.
 function track(name, cmd, cwd, onExit) {
