@@ -1776,8 +1776,8 @@ var groups={};list.forEach(function(t){var ty=t.type||'Features & other';(groups
 var keys=Object.keys(groups).sort(function(a,b){var ia=TORDER.indexOf(a),ib=TORDER.indexOf(b);return (ia<0?99:ia)-(ib<0?99:ib);});
 var h="";keys.forEach(function(ty){h+="<div class='tgroup'>"+esc(ty)+" <span class='tcount'>"+groups[ty].length+"</span></div>";groups[ty].forEach(function(t){h+=taskRow(t,false);});});
 el.innerHTML=h;wireTaskRows(el);}
-function loadTasks(){TARCH=false;api('/api/tasks/sync',{}).then(function(){api('/api/tasks').then(function(list){ALLTASKS=list;renderTasks();});loadReview();});}
-function loadReview(){api('/api/pending').then(function(list){var el=document.getElementById('reviewlist');if(!list||!list.length){el.innerHTML='';return;}
+function loadTasks(){TARCH=false;api('/api/tasks/sync',{}).then(function(){api('/api/tasks').then(function(list){ALLTASKS=list;renderTasks();});loadPending();});}
+function loadPending(){api('/api/pending').then(function(list){var el=document.getElementById('reviewlist');if(!list||!list.length){el.innerHTML='';return;}
 var n=0;list.forEach(function(r){n+=r.tasks.length;});
 var h="<div class='tgroup' style='color:var(--amber)'>Awaiting your review <span class='tcount'>"+n+"</span></div>";
 list.forEach(function(r){var ch=r.files.length?(r.files.length+" file"+(r.files.length>1?"s":"")+" changed"+(r.stat?" &middot; "+esc(r.stat):"")):"no uncommitted changes";
