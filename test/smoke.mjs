@@ -129,6 +129,8 @@ const calls = [
   ["/api/open", "POST"],         // no path -> no handoff runs
   ["/api/setup-local", "POST"],
   ["/api/tasks/sync", "POST"],
+  ["/api/tasks/chat", "POST"],   // no id -> "not found", no model call
+  ["/api/tasks/chat/clear", "POST"],
   ["/api/tasks?archived=1", "GET"],
   ["/api/scanroots", "GET"],
   ["/api/scanroots/add", "POST"],
