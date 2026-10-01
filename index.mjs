@@ -548,6 +548,11 @@ const AGENT_LIST = [["claude", "Claude Code", 'claude -p "{prompt}"'], ["aider",
 function detectHandoffs() {
   const editors = IDE_LIST.filter(([cmd]) => sh(`command -v ${cmd} 2>/dev/null`).trim()).map(([cmd, label]) => ({ label, tmpl: `${cmd} {dir}`, kind: "editor" }));
   const agents = AGENT_LIST.filter(([cmd]) => sh(`command -v ${cmd} 2>/dev/null`).trim()).map(([cmd, label, tmpl]) => ({ label, tmpl, kind: "agent" }));
+  // Orca IDE: its own CLI (not the ~/.local/bin GPU wrapper, which ignores args).
+  // Registers the repo, then opens a terminal tab running the agent — Orca shows
+  // the live session itself.
+  const orca = join(homedir(), ".local/share/orca-ide/app/resources/bin/orca-ide");
+  if (existsSync(orca)) agents.unshift({ label: "Orca IDE (terminal tab)", tmpl: `${orca} repo add --path {dir}; ${orca} terminal create --worktree path:{dir} --command "claude {prompt}" --focus`, kind: "agent" });
   return { agents, editors };
 }
 const shSingle = (s) => "'" + String(s).replace(/'/g, "'\\''") + "'";
