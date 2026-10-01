@@ -183,7 +183,7 @@ try {
 
   console.log("APPROVE — approved work ships: branch off the default, commit (minus .symbiot/), push");
   const gitEnv = { ...process.env, GIT_CONFIG_GLOBAL: join(ROOT, "globalgitconfig"), GIT_CONFIG_SYSTEM: "/dev/null", GIT_TERMINAL_PROMPT: "0" };
-  const shipRepo = build("ship", `git init -q -b main && echo a > a.txt && git add . && git commit -qm init
+  const shipRepo = build("ship", `git init -q -b main && git config user.email ci@symbiot.test && git config user.name "Symbiot CI" && echo a > a.txt && git add . && git commit -qm init
     git clone -q --bare . ../ship-remote.git && git remote add origin ../ship-remote.git && git fetch -q origin && git remote set-head origin main
     echo b >> a.txt && echo new > new.txt && mkdir .symbiot && echo '- [x] t' > .symbiot/TASKS.md`);
   const evil = "Fix the $(touch pwned) `id` bug";
@@ -200,7 +200,7 @@ try {
   // isolated HOME: the cycle reads and writes Symbiot's real task store
   const home = join(ROOT, "rhome"), proj = join(home, "projects", "revapp");
   mkdirSync(proj, { recursive: true });
-  execSync(`git init -q -b main && echo a > a.txt && git add . && git commit -qm init`, { cwd: proj, env: gitEnv });
+  execSync(`git init -q -b main && git config user.email ci@symbiot.test && git config user.name "Symbiot CI" && echo a > a.txt && git add . && git commit -qm init`, { cwd: proj, env: gitEnv });
   const cycle = `
     import * as m from ${JSON.stringify(INDEX)};
     import { readFileSync, writeFileSync } from "node:fs";

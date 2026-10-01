@@ -26,6 +26,12 @@ jobs:
       - name: Use an npm new enough for OIDC trusted publishing
         run: npm install -g npm@latest # trusted publishing needs npm >= 11.5.1
       - run: npm ci
+      - name: Git identity for tests
+        # the 'approve' fixtures commit in throwaway repos; a bare runner has no
+        # git identity, which fails as "empty ident name". Give it one.
+        run: |
+          git config --global user.email "ci@symbiot.local"
+          git config --global user.name "symbiot ci"
       - name: Test
         env:
           SYMBIOT_NO_OPEN: "1"
