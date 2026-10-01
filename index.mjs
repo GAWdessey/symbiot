@@ -593,21 +593,57 @@ function recommendModels(hw) {
 //   claude -p "{prompt}"      · aider --message "{prompt}"      · code {dir}
 //   gnome-terminal --working-directory={dir} -- claude "{prompt}"
 // Not tied to any one tool — you decide what runs.
-const IDE_LIST = [["code", "VS Code"], ["cursor", "Cursor"], ["windsurf", "Windsurf"], ["zed", "Zed"], ["subl", "Sublime Text"], ["idea", "IntelliJ IDEA"], ["nvim", "Neovim"]];
+// [cmd, label, macAppName] — macApp used to launch GUI editors on macOS where
+// the CLI isn't on PATH (they're .app bundles).
+const IDE_LIST = [["code", "VS Code", "Visual Studio Code"], ["cursor", "Cursor", "Cursor"], ["windsurf", "Windsurf", "Windsurf"], ["zed", "Zed", "Zed"], ["subl", "Sublime Text", "Sublime Text"], ["idea", "IntelliJ IDEA", "IntelliJ IDEA"], ["nvim", "Neovim", ""]];
 const AGENT_LIST = [
   ["claude", "Claude Code — make changes", 'claude -p "{prompt}" --permission-mode acceptEdits'],
   ["claude", "Claude Code — plan only (asks first)", 'claude -p "{prompt}"'],
+  ["codex", "Codex (OpenAI) — make changes", 'codex exec --full-auto "{prompt}"'],
   ["aider", "Aider — make changes", 'aider --message "{prompt}" --yes'],
   ["cursor-agent", "Cursor agent", 'cursor-agent -p "{prompt}"'],
+  ["gemini", "Gemini CLI", 'gemini -p "{prompt}"'],
 ];
+// Cross-platform "is this command available?" (command -v on posix, where on win).
+function hasCmd(cmd) { try { return !!sh(process.platform === "win32" ? `where ${cmd}` : `command -v ${cmd}`).trim(); } catch { return false; } }
+function macApp(name) { if (process.platform !== "darwin" || !name) return ""; for (const base of ["/Applications", join(homedir(), "Applications")]) { try { if (existsSync(join(base, name + ".app"))) return name; } catch {} } return ""; }
+// Find the Orca IDE CLI across OSes (known locations, then a bounded search).
+let ORCA_CLI; // cached per process: undefined=unchecked, ""=none, string=path
+function findOrcaCli() {
+  if (ORCA_CLI !== undefined) return ORCA_CLI;
+  ORCA_CLI = _findOrcaCli();
+  return ORCA_CLI;
+}
+function _findOrcaCli() {
+  const home = homedir(); const cands = [];
+  if (process.platform === "linux") cands.push(join(home, ".local/share/orca-ide/app/resources/bin/orca-ide"));
+  if (process.platform === "darwin") { cands.push(join(home, "Library/Application Support/orca-ide/app/resources/bin/orca-ide"), "/Applications/Orca.app/Contents/Resources/app/resources/bin/orca-ide", join(home, "Applications/Orca.app/Contents/Resources/app/resources/bin/orca-ide")); }
+  if (process.platform === "win32") { const la = process.env.LOCALAPPDATA || ""; cands.push(join(la, "orca-ide", "app", "resources", "bin", "orca-ide"), join(la, "Programs", "orca-ide", "resources", "app", "resources", "bin", "orca-ide")); }
+  for (const c of cands) { try { if (existsSync(c)) return c; } catch {} }
+  const roots = process.platform === "darwin" ? [join(home, "Library/Application Support"), "/Applications", join(home, "Applications")]
+    : process.platform === "win32" ? [process.env.LOCALAPPDATA || "", process.env.PROGRAMFILES || ""]
+    : [join(home, ".local/share"), "/opt", join(home, ".config")];
+  for (const r of roots) { if (!r) continue; const hit = sh(`find ${JSON.stringify(r)} -maxdepth 6 -name orca-ide -type f 2>/dev/null | head -1`).trim(); if (hit) return hit; }
+  return "";
+}
 function detectHandoffs() {
-  const editors = IDE_LIST.filter(([cmd]) => sh(`command -v ${cmd} 2>/dev/null`).trim()).map(([cmd, label]) => ({ label, tmpl: `${cmd} {dir}`, kind: "editor" }));
-  const agents = AGENT_LIST.filter(([cmd]) => sh(`command -v ${cmd} 2>/dev/null`).trim()).map(([cmd, label, tmpl]) => ({ label, tmpl, kind: "agent" }));
-  // Orca IDE: its own CLI (not the ~/.local/bin GPU wrapper, which ignores args).
-  // Registers the repo, then opens a terminal tab running the agent — Orca shows
-  // the live session itself.
-  const orca = join(homedir(), ".local/share/orca-ide/app/resources/bin/orca-ide");
-  if (existsSync(orca)) agents.unshift({ label: "Orca IDE (terminal tab)", tmpl: `${orca} repo add --path {dir}; ${orca} terminal create --worktree path:{dir} --command "claude {prompt}" --focus`, kind: "agent" });
+  const editors = [];
+  for (const [cmd, label, app] of IDE_LIST) {
+    if (hasCmd(cmd)) editors.push({ label, tmpl: `${cmd} {dir}`, kind: "editor" });
+    else { const a = macApp(app); if (a) editors.push({ label, tmpl: `open -a ${JSON.stringify(a)} {dir}`, kind: "editor" }); }
+  }
+  const agents = AGENT_LIST.filter(([cmd]) => hasCmd(cmd)).map(([cmd, label, tmpl]) => ({ label, tmpl, kind: "agent" }));
+  // Orca IDE (any OS): register the repo + open a terminal tab. Two variants —
+  // one that just opens the repo (use Orca's own agent, e.g. GPT), and one that
+  // runs Claude in the tab for Claude users. Not Claude-only.
+  const orca = findOrcaCli();
+  if (orca) {
+    const q = JSON.stringify(orca);
+    agents.unshift(
+      { label: "Orca IDE — open repo (use your Orca agent)", tmpl: `${q} repo add --path {dir}; ${q} terminal create --worktree path:{dir} --focus`, kind: "agent" },
+      { label: "Orca IDE — run Claude in a tab", tmpl: `${q} repo add --path {dir}; ${q} terminal create --worktree path:{dir} --command "claude {prompt}" --focus`, kind: "agent" },
+    );
+  }
   return { agents, editors };
 }
 const shSingle = (s) => "'" + String(s).replace(/'/g, "'\\''") + "'";
