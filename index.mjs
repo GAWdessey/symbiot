@@ -1049,10 +1049,16 @@ async function repoSuggest(path) {
 
 // Build a write-up for a command; returns { text, sub, error? } without printing.
 // Shared by the CLI (cmdRun) and the web UI (symbiot app).
+// The SAME repo set the Map uses — reuse its cached scan when present, else do
+// the identical discovery. So week/standup/todo/drift all agree with the Map.
+function discoveredRepos() {
+  if (LAST_MAP && LAST_MAP.nodes) return LAST_MAP.nodes.filter((n) => n.type === "repo" && n.meta && n.meta.path).map((n) => ({ path: n.meta.path, name: n.label, recency: 0 }));
+  return findAllRepos();
+}
 async function produce(cmd) {
   if (!resolveProvider()) return { error: "not-connected" };
   if (cmd === "todo") {
-    const repos = findRepos(BASE, 60);
+    const repos = discoveredRepos();
     const open = openWork(repos);
     if (!open.length) return { text: "Nothing outstanding found (no TODOs or uncommitted work).", sub: "0 open items · todo" };
     const system =
@@ -1065,8 +1071,10 @@ async function produce(cmd) {
   const label = cmd === "standup" ? "standup" : "week";
   const days = cmd === "standup" ? 2 : SINCE_WEEK;
   const who = me();
-  const repos = findRepos(BASE, days);
-  if (!repos.length) return { text: `No git activity in the last ${days} days under ${BASE}.\nPoint it at your repos with --dir.`, sub: "no activity" };
+  // Discover the Map's repo set, then keep only those with commits in the window.
+  const all = discoveredRepos();
+  const repos = all.filter((r) => sh(`git -C ${JSON.stringify(r.path)} log --since="${days} days ago" --oneline -1 2>/dev/null`).trim());
+  if (!repos.length) return { text: `No commits in the last ${days} days across your ${all.length} repos.\nAdd folders to scan in Settings, or check your git identity.`, sub: "no activity" };
   let cs = commits(repos, `${days} days ago`, !has("all"));
   if (!cs.length) cs = commits(repos, `${days} days ago`, false); // fall back to all if none matched you
   const open = label === "week" ? openWork(repos) : [];
@@ -1085,7 +1093,7 @@ async function produce(cmd) {
     `Write the ${label === "standup" ? "standup" : "update"}.`;
 
   const text = await write(system, prompt);
-  return { text: text || "(couldn't reach the model)", sub: `${cs.length} commits across ${new Set(cs.map((x) => x.repo)).size} repos · ${label}`, footer: `symbiot ${VERSION} · ${repos.length} repos scanned · ${cs.length} commits (yours) in last ${days}d` };
+  return { text: text || "(couldn't reach the model)", sub: `${cs.length} commits across ${new Set(cs.map((x) => x.repo)).size} repos · ${label}`, footer: `symbiot ${VERSION} · ${all.length} repos (same as the Map) · ${repos.length} active · ${cs.length} commits in last ${days}d` };
 }
 
 async function cmdRun(cmd) {
