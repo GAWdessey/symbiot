@@ -559,24 +559,63 @@ const shSingle = (s) => "'" + String(s).replace(/'/g, "'\\''") + "'";
 const escDq = (s) => String(s).replace(/[\\"$`]/g, "\\$&");
 const HANDOFF_PROMPT = "Read .symbiot/TASKS.md and implement the unchecked items in this repo. Confirm before anything destructive.";
 function handoffCmd() { const cfg = loadConfig(); return cfg.agentCmd || (cfg.ide ? `${cfg.ide} {dir}` : ""); } // ide = legacy
-function runHandoff(repoPath) {
+// Run a shell command as a tracked, logged background job that shows up live in
+// the Agents tab. Shared by the agent handoff and the local-model setup.
+function track(name, cmd, cwd, onExit) {
   try {
-    const tmpl = handoffCmd(); if (!tmpl || !repoPath) return null;
-    const cmd = tmpl.replace(/\{dir\}/g, shSingle(repoPath)).replace(/\{prompt\}/g, escDq(HANDOFF_PROMPT));
-    const dir = join(repoPath, ".symbiot"); mkdirSync(dir, { recursive: true });
+    const dir = join(cwd, ".symbiot"); mkdirSync(dir, { recursive: true });
     const logp = join(dir, "agent.log");
-    const fd = openSync(logp, "a");
-    try { writeSync(fd, `\n=== symbiot handoff ${new Date().toISOString()} ===\n$ ${cmd}\n`); } catch {}
-    const entry = { id: randomBytes(4).toString("hex"), name: repoPath.split("/").pop(), path: repoPath, log: logp, startedAt: Date.now(), status: "running", exitCode: null, endedAt: null };
-    const child = spawn(cmd, { shell: true, cwd: repoPath, detached: true, stdio: ["ignore", fd, fd] });
+    let fd = "ignore"; try { fd = openSync(logp, "a"); writeSync(fd, `\n=== ${name} ${new Date().toISOString()} ===\n$ ${cmd}\n`); } catch {}
+    const entry = { id: randomBytes(4).toString("hex"), name, path: cwd, log: logp, startedAt: Date.now(), status: "running", exitCode: null, endedAt: null };
+    const child = spawn(cmd, { shell: true, cwd, detached: true, stdio: ["ignore", fd === "ignore" ? "ignore" : fd, fd === "ignore" ? "ignore" : fd] });
     entry.pid = child.pid;
-    child.on("exit", (code) => { entry.status = code === 0 ? "done" : "failed"; entry.exitCode = code; entry.endedAt = Date.now(); });
+    child.on("exit", (code) => { entry.status = code === 0 ? "done" : "failed"; entry.exitCode = code; entry.endedAt = Date.now(); if (onExit) try { onExit(code); } catch {} });
     child.on("error", () => { entry.status = "failed"; entry.endedAt = Date.now(); });
     child.unref();
     HANDOFFS.unshift(entry);
     if (HANDOFFS.length > 30) HANDOFFS.length = 30;
     return entry;
   } catch { return null; }
+}
+function runHandoff(repoPath) {
+  const tmpl = handoffCmd(); if (!tmpl || !repoPath) return null;
+  const cmd = tmpl.replace(/\{dir\}/g, shSingle(repoPath)).replace(/\{prompt\}/g, escDq(HANDOFF_PROMPT));
+  return track(repoPath.split("/").pop(), cmd, repoPath);
+}
+// ---- local model one-command setup (Ollama), OS-aware ---------------------
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+function hasOllama() { return !!sh("ollama --version").trim(); } // cross-platform (not POSIX command -v)
+function ollamaInstall() {
+  if (process.platform === "darwin") return { cmd: "brew install ollama", alt: "https://ollama.com/download" };
+  if (process.platform === "win32") return { cmd: "winget install Ollama.Ollama", alt: "https://ollama.com/download" };
+  return { cmd: "curl -fsSL https://ollama.com/install.sh | sh", alt: "https://ollama.com/download" };
+}
+async function ollamaUp() { try { const r = await fetch("http://127.0.0.1:11434/api/tags"); return r.ok; } catch { return false; } }
+async function ensureOllama() {
+  if (await ollamaUp()) return true;
+  try { spawn("ollama", ["serve"], { detached: true, stdio: "ignore" }).unref(); } catch {}
+  for (let i = 0; i < 16; i++) { await sleep(500); if (await ollamaUp()) return true; }
+  return false;
+}
+function useOllamaModel(model) { const cfg = loadConfig(); cfg.provider = "ollama"; cfg.ollama = { baseUrl: "http://localhost:11434", model }; delete cfg.apiKey; saveConfig(cfg); }
+async function cmdSetupLocal() {
+  const model = flag("model", null) || recommendModels(detectHardware()).best;
+  if (!hasOllama()) {
+    const inst = ollamaInstall();
+    console.log("\n" + c.y("Ollama isn't installed") + c.d(" — the free, private local-model runner.") + "\n");
+    console.log(`  On ${process.platform === "darwin" ? "macOS" : process.platform === "win32" ? "Windows" : "Linux"}, install it then re-run ${c.b("symbiot setup-local")}:`);
+    console.log("    " + c.b(inst.cmd));
+    console.log(c.d("    or download: " + inst.alt));
+    return;
+  }
+  process.stdout.write(c.d("Starting Ollama… "));
+  if (!(await ensureOllama())) { console.log(c.y("couldn't reach it — start it with ") + c.b("ollama serve")); return; }
+  console.log(c.g("ready"));
+  console.log("\n" + c.b("Pulling " + model) + c.d("  (first time downloads a few GB — progress below)\n"));
+  const code = await new Promise((res) => { const ch = spawn("ollama", ["pull", model], { stdio: "inherit" }); ch.on("close", res); ch.on("error", () => res(1)); });
+  if (code !== 0) { console.log("\n" + c.y("Pull failed.") + c.d(" Try a smaller model: ") + c.b("symbiot setup-local --model llama3.2:3b")); return; }
+  useOllamaModel(model);
+  console.log("\n" + c.g("✓ ") + `Symbiot now runs on ${model} locally — free & private. Try:  ` + c.b("symbiot week"));
 }
 function cmdModels() {
   const hw = detectHardware(); const rec = recommendModels(hw);
@@ -1228,6 +1267,8 @@ footer{padding:10px 18px;border-top:1px solid var(--line);display:flex}
 </div>
 <div style="margin-top:20px;border-top:1px solid var(--line);padding-top:16px">
 <button class="ghost" id="recbtn">Recommend models for my machine</button>
+<button class="ghost" id="setuplocal" style="margin-left:8px">Set up a free local model</button>
+<div id="setupout" class="note muted" style="margin-top:10px"></div>
 <div id="recout" style="margin-top:12px"></div>
 </div>
 </section>
@@ -1375,6 +1416,9 @@ if(!chips.length){box.innerHTML="<span class='muted' style='font-size:12px'>Noth
 box.innerHTML="<span class='muted' style='font-size:12px'>Detected &mdash; click to use:</span><br>"+chips.map(function(c,i){return "<button class='ghost preset' data-i='"+i+"' style='padding:4px 10px;font-size:12px;margin:5px 5px 0 0'>"+esc(c.label)+"</button>";}).join("");
 box.querySelectorAll('.preset').forEach(function(btn){btn.addEventListener('click',function(){document.getElementById('agentcmd').value=chips[+btn.getAttribute('data-i')].tmpl;saveAgent();});});});}
 function saveAgent(){api('/api/agentcmd',{cmd:document.getElementById('agentcmd').value});}
+function setupLocalUI(){var o=document.getElementById('setupout');o.innerHTML="Setting up a local model&hellip;";
+api('/api/setup-local',{}).then(function(r){if(r.error==='not-installed'){var i=r.install||{};o.innerHTML="Ollama isn't installed. Run this once, then click again:<div class='out2'>"+esc(i.cmd||'')+"</div><div class='muted' style='font-size:11px'>or download: "+esc(i.alt||'https://ollama.com/download')+"</div>";return;}
+o.innerHTML="Pulling <b>"+esc(r.model)+"</b> &mdash; watch it in the <b>Agents</b> tab. Symbiot switches to it automatically when the download finishes.";setTimeout(function(){setTab('agents');},700);}).catch(function(e){o.innerHTML="<span class='err'>Setup failed: "+esc(String((e&&e.message)||e))+"</span>";});}
 function selectNode(id){sel=id;render();updateBar(id);var n=nodeById(id);api('/api/node?id='+encodeURIComponent(id)).then(showDetail);
 if(n&&n.type==='repo'&&n.meta&&n.meta.path){loadReview(n.label,n.meta.path);}else{hideReview();}}
 function screenToGraph(el,ev){var rc=el.getBoundingClientRect();var mx=(ev.clientX-rc.left)/rc.width*GW;var my=(ev.clientY-rc.top)/rc.height*GH;return {x:(mx-view.x)/view.k,y:(my-view.y)/view.k};}
@@ -1403,6 +1447,7 @@ rec.paid.forEach(function(p){h+="<div class='idea'><span><b>"+esc(p.provider)+"<
 h+="</div>";out.innerHTML=h;});}
 document.getElementById('remap').addEventListener('click',loadMap);
 document.getElementById('recbtn').addEventListener('click',loadRec);
+document.getElementById('setuplocal').addEventListener('click',setupLocalUI);
 document.getElementById('driftrun').addEventListener('click',function(){driftLoaded=false;loadDrift();});
 document.getElementById('agentsrefresh').addEventListener('click',loadAgents);
 document.getElementById('addtask').addEventListener('click',addTaskUI);
@@ -1476,6 +1521,14 @@ async function cmdApp() {
       if (u.pathname === "/api/agentcfg") { const d = detectHandoffs(); return json(res, { cmd: handoffCmd(), agents: d.agents, editors: d.editors }); }
       if (u.pathname === "/api/agentcmd" && req.method === "POST") { const b = await readBody(req); const cfg = loadConfig(); const v = String(b.cmd || "").trim(); if (v) cfg.agentCmd = v; else delete cfg.agentCmd; delete cfg.ide; saveConfig(cfg); return json(res, { ok: true, cmd: cfg.agentCmd || "" }); }
       if (u.pathname === "/api/open" && req.method === "POST") { const b = await readBody(req); const e = runHandoff(String(b.path || "")); return json(res, { opened: !!e, id: e ? e.id : "" }); }
+      if (u.pathname === "/api/setup-local" && req.method === "POST") {
+        const b = await readBody(req);
+        if (!hasOllama()) return json(res, { error: "not-installed", install: ollamaInstall() });
+        const model = String(b.model || "") || recommendModels(detectHardware()).best;
+        await ensureOllama();
+        const e = track("ollama pull " + model, "ollama pull " + shSingle(model), homedir(), (code) => { if (code === 0) useOllamaModel(model); });
+        return json(res, { started: true, model, id: e ? e.id : "" });
+      }
       if (u.pathname === "/api/agents") return json(res, HANDOFFS.map((e) => { let tail = ""; try { tail = readFileSync(e.log, "utf8").slice(-1200); } catch {} return { id: e.id, name: e.name, path: e.path, status: e.status, elapsed: (e.endedAt || Date.now()) - e.startedAt, exitCode: e.exitCode, tail }; }));
       if (u.pathname === "/api/run" && req.method === "POST") { const b = await readBody(req); const cmd = ["week", "standup", "todo"].includes(b.cmd) ? b.cmd : "week"; return json(res, await produce(cmd)); }
       if (u.pathname === "/api/connect" && req.method === "POST") { return json(res, await connectProvider(await readBody(req))); }
@@ -1502,6 +1555,7 @@ ${c.b("Usage")}
   symbiot drift                     what's out of sync / at risk across repos
   symbiot push [--open]             write tasks into each repo (and open your IDE)
   symbiot models                    recommend AI models for your hardware
+  symbiot setup-local [--model X]   install/run a free local model (Ollama)
   symbiot login                     connect it to an AI (once)
   symbiot whoami                    show how it's connected
   symbiot logout                    forget saved credentials
@@ -1531,6 +1585,7 @@ async function main() {
   if (cmd === "whoami" || cmd === "status") return cmdWhoami();
   if (cmd === "app" || cmd === "ui") return cmdApp();
   if (cmd === "models" || cmd === "hardware") return cmdModels();
+  if (cmd === "setup-local" || cmd === "setup-ollama") return cmdSetupLocal();
   if (cmd === "drift") return cmdDrift();
   if (cmd === "push") return cmdPush();
   if (cmd === "week") return cmdRun("week");
