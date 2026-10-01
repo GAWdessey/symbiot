@@ -302,8 +302,9 @@ npm test
 Runs four suites, all against throwaway repos and an isolated `HOME`:
 
 - `test/load.mjs` — the shipped files parse and load: `node --check` on each
-  module, `ui.mjs` imported on its own with its page's JavaScript parsed, every
-  local import listed in package.json `"files"`, and the `bin` entry point shipped.
+  module, `ui.mjs` imported on its own with its page's JavaScript parsed (one
+  `<script>` block per view, from `ui/*.mjs`), every local import listed in
+  package.json `"files"`, and the `bin` entry point shipped.
 - `test/fixtures.mjs` — accuracy fixtures: the facts Symbiot collects (identity
   matching, stale checkouts, worktrees, drift) and the `symbiot drift` report as
   printed, the scan time limit, the agent handoff, and the review → approve cycle.

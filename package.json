@@ -9,6 +9,13 @@
   "files": [
     "index.mjs",
     "ui.mjs",
+    "ui/core.mjs",
+    "ui/map.mjs",
+    "ui/tasks.mjs",
+    "ui/agents.mjs",
+    "ui/drift.mjs",
+    "ui/settings.mjs",
+    "ui/update.mjs",
     "README.md",
     "LICENSE"
   ],
