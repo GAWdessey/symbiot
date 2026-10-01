@@ -1291,6 +1291,7 @@ a{color:var(--green);cursor:pointer}.hidden{display:none}
 .updatebar.show{display:flex}
 .updatebar.reconnect{background:var(--amber)}
 .updatebar button{font:inherit;font-weight:700;border:0;border-radius:8px;padding:5px 12px;background:var(--ink);color:var(--bone);cursor:pointer}
+.ver{font-size:11px;color:var(--faint);background:var(--ink3);border:1px solid var(--line);border-radius:999px;padding:2px 8px;margin-left:2px;font-family:ui-monospace,Menlo,Consolas,monospace}
 footer{padding:10px 18px;border-top:1px solid var(--line);display:flex}
 .profile{font-size:13px;margin-bottom:8px;line-height:1.5}
 .profile b{color:var(--bone)}
@@ -1356,7 +1357,7 @@ footer{padding:10px 18px;border-top:1px solid var(--line);display:flex}
 @media(max-width:760px){.maprow{flex-direction:column}.detail{width:auto;max-height:none}}
 </style></head><body>
 <div id="updatebar" class="updatebar"></div>
-<header><span class="dot"></span><span class="brand">Symbiot</span><span class="status" id="status">...</span></header>
+<header><span class="dot"></span><span class="brand">Symbiot</span><span class="ver" id="ver"></span><span class="status" id="status">...</span></header>
 <div class="tabs">
 <button class="tab active" data-tab="map">Map</button>
 <button class="tab" data-tab="drift">Drift</button>
@@ -1657,9 +1658,10 @@ document.getElementById('agentcmd').addEventListener('change',saveAgent);
 document.getElementById('newtask').addEventListener('keydown',function(e){if(e.key==='Enter')addTaskUI();});
 var SRV_STARTED=null,srvDown=false,updBusy=false;
 function ubar(){return document.getElementById('updatebar');}
-function heartbeat(){
-  api('/api/ping').then(function(p){
+function heartbeat(fresh){
+  api('/api/ping'+(fresh?'?fresh=1':'')).then(function(p){
     var b=ubar();
+    var ve=document.getElementById('ver');if(ve&&p.version)ve.textContent='v'+p.version;
     if(SRV_STARTED===null){SRV_STARTED=p.started;}
     else if(p.started!==SRV_STARTED){location.reload();return;}
     if(srvDown){location.reload();return;}
@@ -1672,7 +1674,8 @@ function heartbeat(){
   }).catch(function(){srvDown=true;var b=ubar();b.className='updatebar reconnect show';b.textContent='Reconnecting to Symbiot…';});
 }
 function doUpdate(){updBusy=true;var b=ubar();b.className='updatebar show';b.textContent='Updating & restarting… this page will reload itself when it is back.';api('/api/update',{});}
-setInterval(heartbeat,4000);heartbeat();
+setInterval(heartbeat,4000);heartbeat(true);
+window.addEventListener('focus',function(){heartbeat(true);}); // re-check for updates when you come back to the window
 initGraphEvents();syncP();refresh();loadMap();loadAgentCfg();loadScanRoots();
 </script></body></html>`;
 
@@ -1762,7 +1765,7 @@ async function cmdApp() {
       if (u.pathname === "/api/agents") return json(res, HANDOFFS.map((e) => { let tail = ""; try { tail = readFileSync(e.log, "utf8").slice(-1200); } catch {} return { id: e.id, name: e.name, path: e.path, status: e.status, elapsed: (e.endedAt || Date.now()) - e.startedAt, exitCode: e.exitCode, tail }; }));
       if (u.pathname === "/api/run" && req.method === "POST") { const b = await readBody(req); const cmd = ["week", "standup", "todo"].includes(b.cmd) ? b.cmd : "week"; return json(res, await produce(cmd)); }
       if (u.pathname === "/api/connect" && req.method === "POST") { return json(res, await connectProvider(await readBody(req))); }
-      if (u.pathname === "/api/ping") return json(res, { version: VERSION, started: SERVER_STARTED, latest: LATEST_VERSION });
+      if (u.pathname === "/api/ping") { if (u.searchParams.get("fresh") === "1") await checkLatest(); return json(res, { version: VERSION, started: SERVER_STARTED, latest: LATEST_VERSION }); }
       if (u.pathname === "/api/update" && req.method === "POST") {
         // Install the newest symbiot, then relaunch this same app (same port +
         // token => same URL) and exit. The open page's heartbeat reconnects and
@@ -1795,7 +1798,7 @@ async function cmdApp() {
     else { try { server.listen(0, "127.0.0.1"); } catch {} }
   });
   server.listen(PORT, "127.0.0.1");
-  checkLatest(); setInterval(checkLatest, 10 * 60 * 1000).unref(); // background update check
+  checkLatest(); setInterval(checkLatest, 2 * 60 * 1000).unref(); // background update check (every 2 min)
 }
 
 const HELP = `${c.b("symbiot")} — your week, written from your real work.
