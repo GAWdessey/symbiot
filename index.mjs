@@ -57,6 +57,8 @@ const PLAIN = has("plain") || !process.stdout.isTTY;
 let SERVING = false; // set while `symbiot app` runs — silences the CLI spinner
 let LAST_MAP = null;  // cached graph so node clicks don't rescan
 const HANDOFFS = []; // live registry of agents Symbiot has handed work to
+let LATEST_VERSION = ""; // newest symbiot on npm, checked in the background
+async function checkLatest() { try { const r = await fetch("https://registry.npmjs.org/symbiot"); if (!r.ok) return; const j = await r.json(); LATEST_VERSION = (j["dist-tags"] && j["dist-tags"].latest) || ""; } catch {} }
 
 // ---- colour + spinner ------------------------------------------------------
 const c = PLAIN
@@ -1268,6 +1270,10 @@ select,input{width:100%;background:var(--ink);border:1px solid var(--line);borde
 select:focus,input:focus{outline:none;border-color:var(--green)}
 a{color:var(--green);cursor:pointer}.hidden{display:none}
 .note{font-size:12px;margin-top:10px}.ok{color:var(--green)}.err{color:var(--amber)}
+.updatebar{display:none;align-items:center;gap:12px;padding:9px 16px;font-size:13px;font-weight:600;background:var(--green);color:var(--ink)}
+.updatebar.show{display:flex}
+.updatebar.reconnect{background:var(--amber)}
+.updatebar button{font:inherit;font-weight:700;border:0;border-radius:8px;padding:5px 12px;background:var(--ink);color:var(--bone);cursor:pointer}
 footer{padding:10px 18px;border-top:1px solid var(--line);display:flex}
 .profile{font-size:13px;margin-bottom:8px;line-height:1.5}
 .profile b{color:var(--bone)}
@@ -1332,6 +1338,7 @@ footer{padding:10px 18px;border-top:1px solid var(--line);display:flex}
 .lg i{width:10px;height:10px;border-radius:50%;display:inline-block}
 @media(max-width:760px){.maprow{flex-direction:column}.detail{width:auto;max-height:none}}
 </style></head><body>
+<div id="updatebar" class="updatebar"></div>
 <header><span class="dot"></span><span class="brand">Symbiot</span><span class="status" id="status">...</span></header>
 <div class="tabs">
 <button class="tab active" data-tab="map">Map</button>
@@ -1631,6 +1638,24 @@ document.getElementById('addtask').addEventListener('click',addTaskUI);
 document.getElementById('pushtasks').addEventListener('click',pushTasksUI);
 document.getElementById('agentcmd').addEventListener('change',saveAgent);
 document.getElementById('newtask').addEventListener('keydown',function(e){if(e.key==='Enter')addTaskUI();});
+var SRV_STARTED=null,srvDown=false,updBusy=false;
+function ubar(){return document.getElementById('updatebar');}
+function heartbeat(){
+  api('/api/ping').then(function(p){
+    var b=ubar();
+    if(SRV_STARTED===null){SRV_STARTED=p.started;}
+    else if(p.started!==SRV_STARTED){location.reload();return;}
+    if(srvDown){location.reload();return;}
+    if(updBusy)return;
+    if(p.latest&&p.version&&p.latest!==p.version){
+      b.className='updatebar show';
+      b.innerHTML="A new Symbiot ("+esc(p.latest)+") is available &mdash; you're on "+esc(p.version)+". <button id='doupd'>Update &amp; restart</button>";
+      var btn=document.getElementById('doupd');if(btn)btn.onclick=doUpdate;
+    }else{b.className='updatebar';}
+  }).catch(function(){srvDown=true;var b=ubar();b.className='updatebar reconnect show';b.textContent='Reconnecting to Symbiot…';});
+}
+function doUpdate(){updBusy=true;var b=ubar();b.className='updatebar show';b.textContent='Updating & restarting… this page will reload itself when it is back.';api('/api/update',{});}
+setInterval(heartbeat,4000);heartbeat();
 initGraphEvents();syncP();refresh();loadMap();loadAgentCfg();loadScanRoots();
 </script></body></html>`;
 
@@ -1673,7 +1698,13 @@ function openApp(url) {
 }
 async function cmdApp() {
   SERVING = true;
-  const TOKEN = randomBytes(16).toString("hex");
+  const SERVER_STARTED = Date.now();
+  // Stable token + port so the URL survives a restart — the open tab can
+  // reconnect and auto-reload itself instead of you closing and reopening it.
+  const cfg0 = loadConfig();
+  let TOKEN = cfg0.appToken;
+  if (!TOKEN) { TOKEN = randomBytes(16).toString("hex"); try { saveConfig({ ...loadConfig(), appToken: TOKEN }); } catch {} }
+  const PORT = Number(process.env.SYMBIOT_PORT || cfg0.appPort) || 7391;
   const json = (res, obj) => { res.writeHead(200, { "content-type": "application/json" }); res.end(JSON.stringify(obj)); };
   const server = createServer(async (req, res) => {
     const u = new URL(req.url, "http://127.0.0.1");
@@ -1714,17 +1745,40 @@ async function cmdApp() {
       if (u.pathname === "/api/agents") return json(res, HANDOFFS.map((e) => { let tail = ""; try { tail = readFileSync(e.log, "utf8").slice(-1200); } catch {} return { id: e.id, name: e.name, path: e.path, status: e.status, elapsed: (e.endedAt || Date.now()) - e.startedAt, exitCode: e.exitCode, tail }; }));
       if (u.pathname === "/api/run" && req.method === "POST") { const b = await readBody(req); const cmd = ["week", "standup", "todo"].includes(b.cmd) ? b.cmd : "week"; return json(res, await produce(cmd)); }
       if (u.pathname === "/api/connect" && req.method === "POST") { return json(res, await connectProvider(await readBody(req))); }
+      if (u.pathname === "/api/ping") return json(res, { version: VERSION, started: SERVER_STARTED, latest: LATEST_VERSION });
+      if (u.pathname === "/api/update" && req.method === "POST") {
+        // Install the newest symbiot, then relaunch this same app (same port +
+        // token => same URL) and exit. The open page's heartbeat reconnects and
+        // reloads to the new version. No terminal, no reopening the window.
+        const inst = process.platform === "win32" ? "npm i -g symbiot@latest" : "npm install -g symbiot@latest";
+        const e = track("symbiot update", inst, homedir(), (code) => {
+          if (code !== 0) return;
+          try { const ch = spawn(process.execPath, process.argv.slice(1), { detached: true, stdio: "ignore", env: process.env }); ch.unref(); } catch {}
+          setTimeout(() => process.exit(0), 1200);
+        });
+        return json(res, { started: true, id: e ? e.id : "" });
+      }
       if (u.pathname === "/api/quit") { res.writeHead(200); res.end("bye"); setTimeout(() => process.exit(0), 150); return; }
     } catch (e) { res.writeHead(500, { "content-type": "application/json" }); res.end(JSON.stringify({ error: String((e && e.message) || e) })); return; }
     res.writeHead(404); res.end("not found");
   });
-  server.listen(0, "127.0.0.1", () => {
+  let announced = false, tries = 0, opened = false;
+  server.on("listening", () => {
+    if (announced) return; announced = true;
     const url = `http://127.0.0.1:${server.address().port}/?t=${TOKEN}`;
-    const how = openApp(url);
+    const how = opened ? "" : openApp(url); opened = true; // only pop a window the first time
     console.log(`\n${c.g("●")} ${c.b("Symbiot")} is running at ${c.b(url)}`);
     console.log(how ? c.d(`  Opened in a ${how}.`) : c.d("  Open that URL in your browser."));
     console.log(c.d("  Leave this running; press Ctrl+C to stop (or click Quit in the window)."));
   });
+  server.on("error", (e) => {
+    // Stable port busy (an older instance still exiting during an update, or a
+    // second app): retry briefly, then fall back to a random port.
+    if (e && e.code === "EADDRINUSE" && tries < 8) { tries++; setTimeout(() => { try { server.listen(PORT, "127.0.0.1"); } catch {} }, 500); }
+    else { try { server.listen(0, "127.0.0.1"); } catch {} }
+  });
+  server.listen(PORT, "127.0.0.1");
+  checkLatest(); setInterval(checkLatest, 10 * 60 * 1000).unref(); // background update check
 }
 
 const HELP = `${c.b("symbiot")} — your week, written from your real work.

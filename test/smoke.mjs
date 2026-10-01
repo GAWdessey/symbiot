@@ -43,6 +43,7 @@ const calls = [
   ["/api/tasks?archived=1", "GET"],
   ["/api/scanroots", "GET"],
   ["/api/scanroots/add", "POST"],
+  ["/api/ping", "GET"],          // heartbeat the UI polls for auto-refresh/update
 ];
 try {
   console.log("SMOKE — every UI endpoint responds (no 404 route/method mismatch)");
