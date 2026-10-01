@@ -41,49 +41,42 @@ no install — it's the same CLI. Press Ctrl+C (or click Quit) to stop.
 
 Tabs:
 
-- **Map** — a live, interactive node graph of your work, built from your local git:
-  you at the centre, your repos, and the languages and tools they share (so related
-  projects cluster), plus the coding **agents and editors** you have installed and
-  the **AI** currently powering Symbiot. Project folders that **aren't git repos**
-  show up too (see [Where it looks](#where-it-looks)). **Scroll to zoom, drag to
-  pan, click a node.** Clicking a repo shows its branch/commits/uncommitted/stack, a
+- **Map** (the landing view) — a live node graph of your work from your local git:
+  you at the centre, your repos, the languages and tools they share (so related
+  projects cluster), the coding **agents and editors** you have installed, and the
+  **AI** powering Symbiot. Project folders that **aren't git repos** show up too
+  (see [Where it looks](#where-it-looks)). **Scroll to zoom, drag to pan, click a
+  node.** A repo's panel shows its branch, commits, uncommitted work and stack, a
   **Suggest next steps** button, and an **AI review**: what the project does, a
-  one-line verdict on whether it needs new work at all (it's told to prefer
-  stabilising over piling on features), and a short list of ideas you can tick
-  straight into **Tasks**. The graph itself **needs no AI key** (pure local data);
-  reviews and suggestions use your chosen model (free with local Ollama). While
-  the scan runs, the Map shows live progress (which phase, how many repos, which
-  one). This is the landing view.
+  one-line verdict on whether it needs new work at all (it prefers stabilising over
+  new features), and ideas you can tick straight into **Tasks**. The graph needs
+  **no AI key**; reviews and suggestions use your chosen model. While the scan runs
+  the Map shows its progress.
 - **Drift** — the [`symbiot drift`](#whats-out-of-sync-symbiot-drift) report, with
   "fetch latest" and "check CI" toggles.
 - **Week / Standup / Todo** — the write-ups (these use your chosen AI).
 - **Tasks** — a checklist, grouped by kind (Fixes, Tests & CI, Docs, …). Filter by
   type or repo, then **Send to repos** to hand just those to your agent (see
   [`symbiot push`](#hand-tasks-to-your-coding-agent-symbiot-push)). What your agent
-  finishes lands in **Awaiting your review**, where you approve or send it back (see
-  [Review and approve](#review-and-approve-the-agents-work)). Ticking a task yourself
-  marks it done and it **auto-archives**. An **archived** view lets you restore any
-  of them.
-- **Agents** — every agent run Symbiot has started (and local-model downloads),
-  with live status, elapsed time, exit code and the tail of its output.
-- **Settings** — pick your AI, the folders to scan, your agent command, and get
-  model recommendations or a one-click local model.
+  finishes lands in **Awaiting your review** (see
+  [Review and approve](#review-and-approve-the-agents-work)). A task you tick
+  yourself is done and **auto-archives**; the archived view can restore it.
+- **Agents** — every agent run Symbiot has started (and local-model downloads):
+  live status, elapsed time, exit code, the tail of its output, and **what it
+  did** — files changed and commits made, read from git, whichever agent it was.
+- **Settings** — your AI, the folders to scan, your agent command, model
+  recommendations and a one-click local model.
 
 **Stays current by itself.** The app checks npm for a newer Symbiot every couple of
-minutes (and whenever you come back to the window). When there is one, a banner
-offers **Update & restart**: it runs `npm install -g symbiot@latest`, relaunches the
-app on the same address, and the open window reloads itself onto the new version —
-no terminal, no reopening. The version you're on is shown next to the name. The
-same mechanism means that if you restart `symbiot app` yourself, the open window
-reconnects and reloads on its own.
+minutes (and whenever you come back to the window); the version you're on is shown
+next to the name. When there's a newer one, **Update & restart** installs that exact
+version, relaunches the app on the same address, and the open window reloads itself
+onto it. Restart `symbiot app` yourself and the open window reconnects the same way.
 
 The app listens on port **7391** so its address survives restarts; set
 `SYMBIOT_PORT` to use another (it falls back to a free port if that one is busy).
-
-**Cross-platform:** the app works on **Linux, macOS, and Windows** — the server
-and UI are just a local web page. The chrome-less window is detected per-OS
-(PATH on Linux, the `/Applications` bundle on macOS, `Program Files` on Windows);
-where no Chromium-family browser is found it opens your default browser instead.
+It works on **Linux, macOS and Windows**; with no Chromium-family browser to open
+the chrome-less window, it uses your default browser.
 
 ## Hand tasks to your coding agent: `symbiot push`
 
@@ -114,7 +107,8 @@ size of the uncommitted change and a **Show diff** button. For each repo:
   on a feature branch it commits and opens the PR from there. Each step that can't
   happen stops there and says why: no `origin` remote means a local commit only, and
   without `gh` it pushes and stops. Your commit is never lost. Then the tasks are
-  archived with their commit and PR link.
+  archived with their commit and PR link. With no changes to commit the button
+  reads **Approve → archive** and just archives them.
 - **↩ (send back)** is for one that isn't right: it reopens the task and unticks it in
   `TASKS.md`, so the next **Send to repos** hands it to the agent again.
 
@@ -133,9 +127,10 @@ aider --message "{prompt}" --yes
 code {dir}
 ```
 
-Settings shows **one-click presets** for what's installed on your machine:
+Settings shows **one-click presets** for what's installed on your machine. A
+preset only fills in the command box; the saved command is what runs.
 
-- **Agents:** Claude Code (*make changes*, or *plan only* which asks first), Codex
+- **Agents** (all make changes, ready for your review): Claude Code, Codex
   (OpenAI), Aider, Cursor agent, Gemini CLI.
 - **Orca IDE** (any OS): opens the repo in Orca — either just the repo, to use
   Orca's own agent, or with Claude running in a new tab. It launches Orca if it's
@@ -146,7 +141,7 @@ Settings shows **one-click presets** for what's installed on your machine:
 Each run is logged to `.symbiot/agent.log` in the repo and shown live in the
 **Agents** tab. The command is saved as `agentCmd` in
 `~/.config/symbiot/config.json` — it's your command, Symbiot only fills in
-`{dir}` and `{prompt}`.
+`{dir}` and `{prompt}`. A command saved from an older preset keeps working as-is.
 
 ## What's out of sync? `symbiot drift`
 
@@ -300,16 +295,26 @@ conventions every repo review must respect, alongside each repo's own
 npm test
 ```
 
-Runs three suites, all against throwaway repos and an isolated `HOME`:
+Runs four suites, all against throwaway repos and an isolated `HOME`:
 
+- `test/load.mjs` — the shipped files parse and load: `node --check` on each
+  module, `ui.mjs` imported on its own with its page's JavaScript parsed, every
+  local import listed in package.json `"files"`, and the `bin` entry point shipped.
 - `test/fixtures.mjs` — accuracy fixtures: the facts Symbiot collects (identity
   matching, stale checkouts, worktrees, drift) and the `symbiot drift` report as
-  printed, plus the scan time limit.
+  printed, the scan time limit, the agent handoff, and the review → approve cycle.
 - `test/smoke.mjs` — boots `symbiot app`, runs the page's own JavaScript against
-  a fake DOM (every tab, every button), and hits every endpoint the UI calls.
+  a fake DOM (every tab, every button), hits every endpoint the UI calls with the
+  method the UI uses, and checks POST-only endpoints refuse GET and `/api` needs
+  the token.
 - `test/install.mjs` — runs the CLI through a bin symlink, then `npm pack` +
-  global install into a temp prefix and runs `symbiot help`. Needs npm registry
-  access for dependencies; `SYMBIOT_SKIP_INSTALL_TEST=1` skips that part.
+  global install into a temp prefix: `symbiot help`, every shipped file present,
+  and the installed `symbiot app` serving its page. Needs npm registry access for
+  dependencies; `SYMBIOT_SKIP_INSTALL_TEST=1` skips that part.
+
+`SYMBIOT_NO_OPEN=1` stops `symbiot app` opening a window (the tests set it).
+Releases publish from a version tag via `.github/workflows/publish.yml`, and only
+after the full suite passes in CI.
 
 ---
 
