@@ -328,7 +328,12 @@ function cmdPush() {
   if (r.unresolved.length) { console.log("\n" + c.y(`Not written (repo not found under ${BASE}):`)); for (const u of r.unresolved) console.log(`  · ${u.name} (${u.count})`); }
   if (has("open")) {
     if (!r.handoff) console.log("\n" + c.y("No agent command set.") + c.d("  Set one in `symbiot app` Settings, or `agentCmd` in ~/.config/symbiot/config.json (use {dir} and {prompt})."));
-    else { for (const w of r.written) runHandoff(w.path); console.log("\n" + c.g("→ ") + `Handed ${r.written.length} repo(s) to your agent (${r.handoff}).`); }
+    else {
+      const busy = r.written.filter((w) => { const e = runHandoff(w.path); return e && e.busy; });
+      const n = r.written.length - busy.length;
+      if (n) console.log("\n" + c.g("→ ") + `Handed ${n} repo(s) to your agent (${r.handoff}).`);
+      for (const w of busy) console.log("\n" + c.y("Not started: ") + `${w.name} already has an agent running.` + c.d("  Its TASKS.md is updated; send again once it finishes."));
+    }
   } else {
     console.log("\n" + c.d("Point your agent at .symbiot/TASKS.md in each repo.  (add --open to run your configured agent command)"));
   }
@@ -1480,7 +1485,7 @@ async function cmdApp() {
       if (u.pathname === "/api/scanroots/remove" && req.method === "POST") { const b = await readBody(req); return json(res, removeScanRoot(String(b.path || ""))); }
       if (u.pathname === "/api/agentcfg") { const d = detectHandoffs(); return json(res, { cmd: handoffCmd(), agents: d.agents, editors: d.editors }); }
       if (u.pathname === "/api/agentcmd" && req.method === "POST") { const b = await readBody(req); return json(res, setHandoffCmd(b.cmd)); }
-      if (u.pathname === "/api/open" && req.method === "POST") { const b = await readBody(req); const e = runHandoff(String(b.path || "")); return json(res, { opened: !!e, id: e ? e.id : "" }); }
+      if (u.pathname === "/api/open" && req.method === "POST") { const b = await readBody(req); const e = runHandoff(String(b.path || "")); return json(res, { opened: !!e && !e.busy, busy: !!(e && e.busy), id: e ? e.id : "" }); }
       if (u.pathname === "/api/setup-local" && req.method === "POST") {
         const b = await readBody(req);
         if (!hasOllama()) return json(res, { error: "not-installed", install: ollamaInstall() });

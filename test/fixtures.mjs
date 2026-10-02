@@ -211,6 +211,36 @@ try {
   const [cargc, carg1] = readFileSync(got, "utf8").split("\n");
   ok("the Claude preset keeps the prompt and each tool rule as ONE argument", cargc === "7" && carg1 === "-p", [cargc, carg1]);
 
+  console.log("HANDOFF — one agent per folder: a second send while it runs starts nothing");
+  // two identical runs once started on the same repo 6s apart and raced
+  const AGENTS = join(dirname(INDEX), "agents.mjs"), busyDir = join(ROOT, "busy");
+  mkdirSync(busyDir, { recursive: true });
+  const bs = spawnSync(process.execPath, ["--input-type=module", "-e", `
+    import * as a from ${JSON.stringify(AGENTS)};
+    import { existsSync, readFileSync, writeFileSync } from "node:fs";
+    import { spawnSync } from "node:child_process";
+    const dir = ${JSON.stringify(busyDir)}, lock = dir + "/.symbiot/agent.pid", out = {};
+    const until = async (f) => { for (let i = 0; i < 100 && !f(); i++) await new Promise((r) => setTimeout(r, 100)); };
+    a.setHandoffCmd("sleep 3");
+    const first = a.runHandoff(dir); out.first = first && !first.busy && !!first.pid;
+    out.second = a.runHandoff(dir); out.jobs = a.HANDOFFS.length; out.firstId = first.id;
+    out.lock = JSON.parse(readFileSync(lock, "utf8")).pid === first.pid;
+    const o = spawnSync(process.execPath, ["--input-type=module", "-e", "import * as a from " + JSON.stringify(${JSON.stringify(AGENTS)}) + "; console.log(JSON.stringify(a.runHandoff(" + JSON.stringify(dir) + ")))"], { encoding: "utf8" });
+    try { out.other = JSON.parse(o.stdout.trim()); } catch { out.other = o.stdout + o.stderr; }
+    await until(() => first.status !== "running"); await until(() => !existsSync(lock));
+    out.lockGone = !existsSync(lock);
+    writeFileSync(lock, JSON.stringify({ pid: spawnSync("true").pid, id: "x", startedAt: Date.now() }));
+    out.stale = a.runningHandoff(dir);
+    a.setHandoffCmd("true"); const third = a.runHandoff(dir); out.third = third && !third.busy;
+    await until(() => third.status !== "running");
+    console.log(JSON.stringify(out));`], { encoding: "utf8", timeout: 30000, env: { ...process.env, HOME: hhome, USERPROFILE: hhome } });
+  let b = {}; try { b = JSON.parse(bs.stdout.trim().split("\n").pop()); } catch { console.log(bs.stdout, bs.stderr); }
+  ok("the first send starts the agent and holds the folder", b.first && b.lock, b);
+  ok("a second send in the same process starts nothing", b.second && b.second.busy && b.second.id === b.firstId && b.jobs === 1, b);
+  ok("a second Symbiot process sees it running too", b.other && b.other.busy && b.other.pid > 0, b.other);
+  ok("the folder is free again once the agent exits", b.lockGone && b.third, b);
+  ok("a leftover lock from a dead agent doesn't block", b.stale === null, b.stale);
+
   console.log("APPROVE — approved work ships: branch off the default, commit (minus .symbiot/), push");
   const gitEnv = { ...process.env, GIT_CONFIG_GLOBAL: join(ROOT, "globalgitconfig"), GIT_CONFIG_SYSTEM: "/dev/null", GIT_TERMINAL_PROMPT: "0" };
   const shipRepo = build("ship", `git init -q -b main && git config user.email ci@symbiot.test && git config user.name "Symbiot CI" && echo a > a.txt && git add . && git commit -qm init

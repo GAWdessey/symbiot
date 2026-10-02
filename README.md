@@ -169,6 +169,12 @@ Each run is logged to `.symbiot/agent.log` in the repo and shown live in the
 `~/.config/symbiot/config.json` — it's your command, Symbiot only fills in
 `{dir}` and `{prompt}`. A command saved from an older preset keeps working as-is.
 
+One agent per repo: while a run is still going (tracked in
+`.symbiot/agent.pid`, so the app and `symbiot push --open` both see it), sending
+again updates `TASKS.md` but doesn't start a second agent there. Send again once
+it finishes. Orca and editor presets only open a tab and exit, so Symbiot can't
+see the agent you run in them.
+
 ### Questions from your agent
 
 An agent working in your terminal or IDE stops to ask you things: which way to go,

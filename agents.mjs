@@ -4,7 +4,7 @@
 import { spawn } from "node:child_process";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { readFileSync, writeFileSync, mkdirSync, existsSync, openSync, writeSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, existsSync, openSync, writeSync, unlinkSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { loadConfig, saveConfig, loadTasks, sh, hasCmd } from "./core.mjs";
 
@@ -34,9 +34,36 @@ function setHandoffCmd(cmd) {
   return { ok: true, cmd: cfg.agentCmd || "" };
 }
 const fillHandoff = (tmpl, repoPath) => tmpl.replace(/\{dir\}/g, shSingle(repoPath)).replace(/\{prompt\}/g, escDq(HANDOFF_PROMPT));
+// One agent per folder: two identical runs once started on the same repo 6s
+// apart and raced each other. The registry catches a second click in this
+// process; .symbiot/agent.pid catches another one (`symbiot push --open` while
+// the app is up). Returns the job, null (no command set) or { busy, id, pid }.
+// A preset that only opens a tab (Orca, editors) exits at once, so it holds
+// the folder only that long.
 function runHandoff(repoPath) {
   const tmpl = handoffCmd(); if (!tmpl || !repoPath) return null;
-  return track(repoPath.split("/").pop(), fillHandoff(tmpl, repoPath), repoPath);
+  const busy = runningHandoff(repoPath); if (busy) return { busy: true, id: busy.id || "", pid: busy.pid };
+  const lock = join(repoPath, ".symbiot", LOCK);
+  const e = track(repoPath.split("/").pop(), fillHandoff(tmpl, repoPath), repoPath, () => {
+    try { if (JSON.parse(readFileSync(lock, "utf8")).pid === e.pid) unlinkSync(lock); } catch {}
+  });
+  if (!e) return null;
+  e.handoff = true;
+  if (e.pid) try { writeFileSync(lock, JSON.stringify({ pid: e.pid, id: e.id, startedAt: e.startedAt })); } catch {}
+  return e;
+}
+const LOCK = "agent.pid";
+const LOCK_MAX_AGE = 12 * 3600 * 1000; // older than this, the pid has probably been reused
+const pidAlive = (pid) => { try { process.kill(pid, 0); return true; } catch (err) { return !!err && err.code === "EPERM"; } };
+// The agent still running in this folder, if any.
+function runningHandoff(path) {
+  const e = HANDOFFS.find((x) => x.handoff && x.path === path && x.status === "running");
+  if (e) return { id: e.id, pid: e.pid, startedAt: e.startedAt };
+  try {
+    const l = JSON.parse(readSymbiot(path, LOCK));
+    if (l && Number.isInteger(l.pid) && Date.now() - l.startedAt < LOCK_MAX_AGE && pidAlive(l.pid)) return l;
+  } catch {}
+  return null;
 }
 // Presets. [cmd, label, macAppName] — macApp used to launch GUI editors on macOS
 // where the CLI isn't on PATH (they're .app bundles).
@@ -242,7 +269,7 @@ function answerQuestions(path, answers, opts = {}) {
     writeFileSync(join(path, ".symbiot", "ANSWERS.md"), prev.replace(/\s*$/, "\n") + rows.map((x) => `\n### ${x.q}\n${x.a}\n_answered ${day}_\n`).join(""));
   } catch (e) { return { error: "Couldn't write ANSWERS.md: " + ((e && e.message) || e) }; }
   const out = { ok: true, saved: rows.length };
-  if (opts.rerun) { const e = runHandoff(path); if (e) out.rerun = e.id; else out.note = "Answers saved. Set an agent command in Settings to have the agent pick them up automatically."; }
+  if (opts.rerun) { const e = runHandoff(path); if (e && e.busy) out.note = "Answers saved. An agent is still running in that folder, so another wasn't started. Send them again once it finishes."; else if (e) out.rerun = e.id; else out.note = "Answers saved. Set an agent command in Settings to have the agent pick them up automatically."; }
   return out;
 }
 // The Agents tab: every tracked job, its log tail, what it changed, and — on the
@@ -256,4 +283,4 @@ function agentsList() {
   });
 }
 
-export { HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, fillHandoff, runHandoff, detectHandoffs, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, agentQuestions, answerQuestions, agentsList };
+export { HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, fillHandoff, runHandoff, runningHandoff, detectHandoffs, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, agentQuestions, answerQuestions, agentsList };
