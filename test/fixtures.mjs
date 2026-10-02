@@ -9,7 +9,7 @@ import { mkdtempSync, writeFileSync, mkdirSync, rmSync, readFileSync, existsSync
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { authorship, repoState, readmeInfo, houseRules, findAllRepos, driftRepo, buildTasksMd, taskType, EMBEDDED_UI, orcaHandoffCmd, migrateOrcaCmd, fillHandoff, ORCA_CLAUDE_CMD, HANDOFF_PROMPT, shipChanges, semverGt, parseQuestions } from "../index.mjs";
+import { authorship, repoState, readmeInfo, houseRules, findAllRepos, driftRepo, buildTasksMd, taskType, EMBEDDED_UI, orcaHandoffCmd, migrateOrcaCmd, fillHandoff, ORCA_CLAUDE_CMD, CLAUDE_CMD, HANDOFF_PROMPT, shipChanges, semverGt, updateCmd, parseQuestions } from "../index.mjs";
 import { mailActivity } from "../mail.mjs";
 
 const INDEX = join(dirname(fileURLToPath(import.meta.url)), "..", "index.mjs");
@@ -191,11 +191,21 @@ try {
     const out = { legacy: m.handoffCmd() };
     out.saved = m.setHandoffCmd("  zed {dir}  "); out.afterSave = m.handoffCmd();
     out.cleared = m.setHandoffCmd(""); out.afterClear = m.handoffCmd();
+    m.setHandoffCmd('claude -p "{prompt}" --permission-mode acceptEdits'); out.oldClaude = m.handoffCmd();
+    out.oldClaudeSaved = JSON.parse((await import("node:fs")).readFileSync(${JSON.stringify(join(hhome, ".config", "symbiot", "config.json"))}, "utf8")).agentCmd;
+    m.setHandoffCmd('claude -p "{prompt}" --permission-mode acceptEdits --model opus'); out.editedClaude = m.handoffCmd();
     console.log(JSON.stringify(out));`], { encoding: "utf8", env: { ...process.env, HOME: hhome, USERPROFILE: hhome } });
   let h = {}; try { h = JSON.parse(hs.stdout.trim().split("\n").pop()); } catch { console.log(hs.stdout, hs.stderr); }
   ok("a legacy `ide` setting still hands off", h.legacy === "code {dir}", h.legacy);
   ok("saving trims and is what runs", h.saved && h.saved.ok && h.saved.cmd === "zed {dir}" && h.afterSave === "zed {dir}", h);
   ok("clearing leaves no handoff (and the legacy `ide` is gone)", h.cleared && h.cleared.cmd === "" && h.afterClear === "", h);
+  ok("a saved ≤0.33 Claude preset upgrades to the one that can run tests", h.oldClaude === CLAUDE_CMD && h.oldClaudeSaved === CLAUDE_CMD && /--allowedTools/.test(CLAUDE_CMD), h);
+  ok("an edited Claude command is left as-is", h.editedClaude === 'claude -p "{prompt}" --permission-mode acceptEdits --model opus', h.editedClaude);
+  // the fake claude (above) records argc and $1: the prompt + flag + mode + flag + 2 tools
+  rmSync(got, { force: true });
+  execSync(fillHandoff(CLAUDE_CMD, fake), { shell: "/bin/bash", stdio: "ignore", env: { ...process.env, PATH: fake + ":" + process.env.PATH } });
+  const [cargc, carg1] = readFileSync(got, "utf8").split("\n");
+  ok("the Claude preset keeps the prompt and each tool rule as ONE argument", cargc === "7" && carg1 === "-p", [cargc, carg1]);
 
   console.log("APPROVE — approved work ships: branch off the default, commit (minus .symbiot/), push");
   const gitEnv = { ...process.env, GIT_CONFIG_GLOBAL: join(ROOT, "globalgitconfig"), GIT_CONFIG_SYSTEM: "/dev/null", GIT_TERMINAL_PROMPT: "0" };
@@ -284,10 +294,32 @@ try {
   ok("recipients by name, newest first", mail[0].subject === "Launch plan ✔" && mail[0].to.join(",") === "Ann,bob@x.co", mail[0]);
   ok("never reads a body", !JSON.stringify(mail).includes("body text"), "");
 
+  console.log("MAIL — `symbiot mail`: add an export, preview it, off until switched on");
+  const mhome = join(ROOT, "mhome"), mcfg = join(mhome, ".config", "symbiot", "config.json");
+  mkdirSync(mhome, { recursive: true });
+  const mcli = (args) => spawnSync(process.execPath, [INDEX, "mail", ...args], { encoding: "utf8", timeout: 60000,
+    env: { ...process.env, HOME: mhome, USERPROFILE: mhome, GIT_CONFIG_GLOBAL: join(ROOT, "globalgitconfig"), GIT_CONFIG_SYSTEM: "/dev/null" } });
+  const mailCfgOf = () => { try { return JSON.parse(readFileSync(mcfg, "utf8")).mail || {}; } catch { return {}; } };
+  const ma = mcli(["--add", join(mdir, "takeout.mbox")]);
+  ok("--add saves the export as a source, still off", ma.status === 0 && (mailCfgOf().sources || []).includes(join(mdir, "takeout.mbox")) && mailCfgOf().enabled === false, { status: ma.status, cfg: mailCfgOf(), err: ma.stderr });
+  ok("the preview lists what you sent, not what you received", /Launch plan ✔/.test(ma.stdout) && !/You won/.test(ma.stdout) && /symbiot mail --on/.test(ma.stdout), ma.stdout);
+  const mbad = mcli(["--add", join(mdir, "no-such.mbox")]);
+  ok("a missing path is refused and not saved", /not found/.test(mbad.stdout) && (mailCfgOf().sources || []).length === 1, { out: mbad.stdout, cfg: mailCfgOf() });
+  const mon = mcli(["--on"]);
+  ok("--on switches it on (sources kept)", mon.status === 0 && mailCfgOf().enabled === true && (mailCfgOf().sources || []).length === 1, mailCfgOf());
+  mcli(["--off"]);
+  ok("--off switches it off again", mailCfgOf().enabled === false, mailCfgOf());
+
   console.log("UPDATE — only a higher npm version is offered as an update");
   ok("0.26.0 is not newer than 0.27.0 (local build ahead of npm)", !semverGt("0.26.0", "0.27.0"), "");
   ok("0.10.0 is newer than 0.9.4 (numeric, not string)", semverGt("0.10.0", "0.9.4"), "");
   ok("same version is not newer", !semverGt("0.27.0", "0.27.0"), "");
+  // the 0.28.2 loop: installing the `latest` tag could resolve to the stale
+  // version again, so a known newer version is installed by its exact number
+  const up = updateCmd("0.34.0", "0.33.0", "linux");
+  ok("update installs the exact newer version, skipping a stale cache", up.target === "0.34.0" && up.cmd === "npm install -g symbiot@0.34.0 --prefer-online", up);
+  ok("never 'updates' to an older npm version (local build ahead)", updateCmd("0.32.0", "0.33.0", "linux").target === "latest", updateCmd("0.32.0", "0.33.0", "linux"));
+  ok("windows uses npm i -g", updateCmd("0.34.0", "0.33.0", "win32").cmd === "npm i -g symbiot@0.34.0 --prefer-online", updateCmd("0.34.0", "0.33.0", "win32"));
 } finally {
   try { execSync(`git worktree prune 2>/dev/null || true`, { cwd: join(ROOT, "f3parent", "f3"), stdio: "ignore" }); } catch {}
   rmSync(ROOT, { recursive: true, force: true });

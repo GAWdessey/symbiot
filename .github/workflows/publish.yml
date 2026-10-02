@@ -6,9 +6,10 @@ name: publish
 # the symbiot package → Settings → Trusted Publishing → add GitHub Actions with
 #   user/org: GarthGhostai   repo: symbiot   workflow: publish.yml
 #
-# Two jobs: `test` runs the whole suite and `publish` only starts if it passed
-# (`needs: test`), so a broken build can't reach npm. Only `publish` gets the
-# OIDC token.
+# Three jobs: `on-main` refuses a tag that isn't on main, `test` runs the whole
+# suite, and `publish` only starts if both passed (`needs`), so neither a broken
+# build nor code main doesn't have can reach npm. Only `publish` gets the OIDC
+# token.
 on:
   push:
     tags: ["v*.*.*"]
@@ -18,7 +19,35 @@ permissions:
   contents: read
 
 jobs:
+  # Release from main only. A tag on a feature/release branch used to publish
+  # code main didn't have (squash-merge gives main a different commit), which
+  # then needed a "sync main to published X" commit. Now the tag must point at a
+  # commit that's on main, and match package.json's version — otherwise nothing
+  # publishes. Release flow: merge the PR (with its version bump) into main, then
+  #   git checkout main && git pull && git tag v$(node -p "require('./package.json').version") && git push origin --tags
+  on-main:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # full history, to tell whether the tag is on main
+      - name: Tag is on main and matches package.json
+        run: |
+          git fetch --no-tags origin main
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::$GITHUB_REF_NAME ($GITHUB_SHA) is not on main. Merge into main first, then tag main's commit."
+            exit 1
+          fi
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            v=$(node -p "require('./package.json').version")
+            if [ "$GITHUB_REF_NAME" != "v$v" ]; then
+              echo "::error::tag $GITHUB_REF_NAME doesn't match package.json version $v"
+              exit 1
+            fi
+          fi
+
   test:
+    needs: on-main
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

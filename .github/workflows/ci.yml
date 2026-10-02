@@ -23,7 +23,9 @@ jobs:
           git config --global user.email "ci@symbiot.local"
           git config --global user.name "symbiot ci"
       - name: Test
+        # the whole suite, the same as publish.yml runs before a release —
+        # including the npm pack + global install layer, so a PR that breaks the
+        # installed `symbiot` bin fails here, not after it's on npm
         env:
           SYMBIOT_NO_OPEN: "1"
-          SYMBIOT_SKIP_INSTALL_TEST: "1"
         run: npm test

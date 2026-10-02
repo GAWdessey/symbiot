@@ -64,7 +64,17 @@ let LATEST_VERSION = ""; // newest symbiot on npm, checked in the background
 // a.b.c numeric compare: only a HIGHER npm version is an update (a local build
 // ahead of npm must not be offered a "newer" older one)
 function semverGt(a, b) { const p = (v) => String(v || "").replace(/^v/, "").split(/[.-]/).slice(0, 3).map((n) => parseInt(n, 10) || 0); const x = p(a), y = p(b); for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return x[i] > y[i]; return false; }
-async function checkLatest() { try { const r = await fetch("https://registry.npmjs.org/symbiot"); if (!r.ok) return; const j = await r.json(); LATEST_VERSION = (j["dist-tags"] && j["dist-tags"].latest) || ""; } catch {} }
+// SYMBIOT_REGISTRY points the check at another registry (the tests use a fake one)
+const REGISTRY = (process.env.SYMBIOT_REGISTRY || "https://registry.npmjs.org").replace(/\/+$/, "");
+async function checkLatest() { try { const r = await fetch(REGISTRY + "/symbiot"); if (!r.ok) return; const j = await r.json(); LATEST_VERSION = (j["dist-tags"] && j["dist-tags"].latest) || ""; } catch {} }
+// The in-app update installs the EXACT newest version (not the `latest` tag, which
+// npm's cache/propagation can resolve stale — that caused an update loop where the
+// install kept re-fetching the same old version). --prefer-online skips a stale
+// cached packument.
+function updateCmd(latest, current, platform = process.platform) {
+  const target = latest && semverGt(latest, current) ? latest : "latest";
+  return { target, cmd: (platform === "win32" ? "npm i -g " : "npm install -g ") + "symbiot@" + target + " --prefer-online" };
+}
 
 // ---- colour + spinner ------------------------------------------------------
 const c = PLAIN
@@ -753,7 +763,7 @@ const escDq = (s) => String(s).replace(/[\\"$`]/g, "\\$&");
 // Plain words only: in the Orca preset this passes through two shells, so no
 // backticks or $ (escDq covers one level).
 const HANDOFF_PROMPT = "Read .symbiot/TASKS.md and implement the unchecked items in this repo. Tick each item [x] in that file as you finish it and leave your changes uncommitted, so they can be reviewed and approved. If you need a decision, or have ideas or options for the user, write them to .symbiot/QUESTIONS.md as TASKS.md explains, and read .symbiot/ANSWERS.md first if it exists. Confirm before anything destructive.";
-function handoffCmd() { const cfg = loadConfig(); return migrateOrcaCmd(cfg.agentCmd) || (cfg.ide ? `${cfg.ide} {dir}` : ""); } // ide = legacy
+function handoffCmd() { const cfg = loadConfig(); return migrateOrcaCmd(migrateClaudeCmd(cfg.agentCmd)) || (cfg.ide ? `${cfg.ide} {dir}` : ""); } // ide = legacy
 // Save the template ("" clears it). Either way the legacy `ide` key goes.
 function setHandoffCmd(cmd) {
   const cfg = loadConfig(); const v = String(cmd || "").trim();
@@ -772,8 +782,13 @@ const IDE_LIST = [["code", "VS Code", "Visual Studio Code"], ["cursor", "Cursor"
 // [cmd, label, template]. Only agents that leave changes to review: a handoff
 // runs unattended, so a "plan only" run can't ask anything and leaves nothing to
 // approve — that preset was dropped (a saved one still runs as-is).
+// Claude: acceptEdits alone still blocks every shell command, so a run could
+// never run its own tests and had to leave test work unticked. Allow just the
+// test runner and node.
+const CLAUDE_CMD = 'claude -p "{prompt}" --permission-mode acceptEdits --allowedTools "Bash(npm test:*)" "Bash(node:*)"';
+const CLAUDE_CMD_OLD = 'claude -p "{prompt}" --permission-mode acceptEdits'; // ≤0.33
 const AGENT_LIST = [
-  ["claude", "Claude Code — make changes", 'claude -p "{prompt}" --permission-mode acceptEdits'],
+  ["claude", "Claude Code — make changes", CLAUDE_CMD],
   ["codex", "Codex (OpenAI/GPT) — make changes", 'codex exec --full-auto "{prompt}"'],
   ["aider", "Aider — make changes", 'aider --message "{prompt}" --yes'],
   ["gemini", "Gemini — make changes", 'gemini --yolo -p "{prompt}"'],
@@ -834,6 +849,13 @@ function migrateOrcaCmd(cmd) {
   const rebuilt = bin ? orcaHandoffCmd(bin, commandPart) : cmd;
   if (rebuilt !== cmd) { try { const cfg = loadConfig(); if (cfg.agentCmd === cmd) { cfg.agentCmd = rebuilt; saveConfig(cfg); } } catch {} }
   return rebuilt;
+}
+// Upgrade a saved Claude preset from ≤0.33 to the current one. Exact match only:
+// a command the user edited is theirs and runs as-is.
+function migrateClaudeCmd(cmd) {
+  if (typeof cmd !== "string" || cmd.trim() !== CLAUDE_CMD_OLD) return cmd;
+  try { const cfg = loadConfig(); if (cfg.agentCmd === cmd) { cfg.agentCmd = CLAUDE_CMD; saveConfig(cfg); } } catch {}
+  return CLAUDE_CMD;
 }
 // Cross-platform detection for the presets (and gh / the app's browser).
 // "Is this command available?": command -v on posix, where on win.
@@ -1789,7 +1811,7 @@ async function cmdApp() {
       if (r && r.ok) {
         const p = await r.json().catch(() => ({}));
         if (p && p.version) {
-          const url = `http://127.0.0.1:${PORT}/?t=${TOKEN}`; const how = openApp(url);
+          const url = `http://127.0.0.1:${PORT}/?t=${TOKEN}`; const how = process.env.SYMBIOT_NO_OPEN === "1" ? "" : openApp(url);
           console.log(`\n${c.g("●")} ${c.b("Symbiot")} is already running (v${p.version}) at ${c.b(url)}`);
           console.log(how ? c.d(`  Opened the existing window (a ${how}).`) : c.d("  Open that URL in your browser."));
           console.log(c.d("  (Not starting a second copy. Set SYMBIOT_FORCE_NEW=1 to force one.)"));
@@ -1852,14 +1874,10 @@ async function cmdApp() {
       if (u.pathname === "/api/connect" && req.method === "POST") { return json(res, await connectProvider(await readBody(req))); }
       if (u.pathname === "/api/ping") { if (u.searchParams.get("fresh") === "1") await checkLatest(); return json(res, { version: VERSION, started: SERVER_STARTED, latest: LATEST_VERSION, newer: semverGt(LATEST_VERSION, VERSION) }); }
       if (u.pathname === "/api/update" && req.method === "POST") {
-        // Install the EXACT newest version (not the `latest` tag, which npm's
-        // cache/propagation can resolve stale — that caused an update loop where
-        // the install kept re-fetching the same old version), then relaunch this
-        // same app (same port+token => same URL) and exit. --prefer-online skips
-        // a stale cached packument. The page's heartbeat reconnects and reloads.
-        const target = LATEST_VERSION && semverGt(LATEST_VERSION, VERSION) ? LATEST_VERSION : "latest";
-        const pkg = "symbiot@" + target;
-        const inst = (process.platform === "win32" ? "npm i -g " : "npm install -g ") + pkg + " --prefer-online";
+        // Install the exact newest version (see updateCmd), then relaunch this
+        // same app (same port+token => same URL) and exit. The page's heartbeat
+        // reconnects and reloads.
+        const { target, cmd: inst } = updateCmd(LATEST_VERSION, VERSION);
         const e = track("symbiot update", inst, homedir(), (code) => {
           if (code !== 0) return;
           try { const ch = spawn(process.execPath, process.argv.slice(1), { detached: true, stdio: "ignore", env: process.env }); ch.unref(); } catch {}
@@ -1896,7 +1914,7 @@ function cmdMail() {
   const add = flag("add", null);
   if (add) { const r = setMail({ add }); if (r.error) console.log(c.y(r.error)); }
   const m = mailState();
-  console.log(`\n${c.g("●")} ${c.b("Symbiot mail")} ${c.d("· " + (m.enabled ? "on — what you sent feeds week and standup" : "off"))}\n`);
+  console.log(`\n${c.g("●")} ${c.b("Symbiot mail")} ${c.d("(experimental) · " + (m.enabled ? "on — what you sent feeds week and standup" : "off"))}\n`);
   const srcs = [...m.detected.map((d) => [d.path, d.kind]), ...m.sources.map((p) => [p, "added"])];
   if (!srcs.length) console.log(c.y("No mail found on this computer.") + c.d("  Use a desktop mail app (Thunderbird, Apple Mail, Evolution…), or add an export:  symbiot mail --add ~/Takeout/Mail/All.mbox"));
   for (const [p, k] of srcs) console.log(`  ${c.g("·")} ${p}  ${c.d(k)}`);
@@ -1915,15 +1933,18 @@ ${c.b("Usage")}
   symbiot standup                   yesterday + today, for standup
   symbiot todo                      what's still on your plate
   symbiot app                       open the visual app in your browser
-  symbiot drift                     what's out of sync / at risk across repos
+  symbiot drift [--fetch]           what's out of sync / at risk across repos
   symbiot push [--open]             write tasks into each repo (and run your agent)
-  symbiot mail [--on|--off]         use the mail you sent in write-ups (local, no API)
-  symbiot models                    recommend AI models for your hardware
-  symbiot setup-local [--model X]   install/run a free local model (Ollama)
   symbiot login                     connect it to an AI (once)
   symbiot whoami                    show how it's connected
   symbiot logout                    forget saved credentials
   symbiot help
+
+${c.b("Experimental")}
+  symbiot drift --ci                also check GitHub Actions (needs gh)
+  symbiot mail [--on|--off]         use the mail you sent in write-ups (local, no API)
+  symbiot models                    recommend AI models for your hardware
+  symbiot setup-local [--model X]   install/run a free local model (Ollama)
 
 ${c.b("Options")}
   --dir <path>    where your repos are (default: ${homedir()})
@@ -1969,4 +1990,4 @@ const isMain = (() => {
 })();
 if (isMain) main();
 
-export { authorship, repoState, readmeInfo, repoShape, houseRules, findAllRepos, buildMap, reportFooter, detectHardware, recommendModels, computeDrift, driftRepo, gitDefaultBranch, buildTasksMd, taskType, EMBEDDED_UI, orcaHandoffCmd, migrateOrcaCmd, fillHandoff, handoffCmd, setHandoffCmd, ORCA_CLAUDE_CMD, HANDOFF_PROMPT, shipChanges, syncTasks, pendingReview, approveRepo, sendBack, pushTasks, semverGt, parseQuestions, agentQuestions };
+export { authorship, repoState, readmeInfo, repoShape, houseRules, findAllRepos, buildMap, reportFooter, detectHardware, recommendModels, computeDrift, driftRepo, gitDefaultBranch, buildTasksMd, taskType, EMBEDDED_UI, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, fillHandoff, handoffCmd, setHandoffCmd, ORCA_CLAUDE_CMD, CLAUDE_CMD, HANDOFF_PROMPT, shipChanges, syncTasks, pendingReview, approveRepo, sendBack, pushTasks, semverGt, updateCmd, parseQuestions, agentQuestions };
