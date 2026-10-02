@@ -1,53 +1,50 @@
 name: publish
 
-# Publish to npm via Trusted Publishing (OIDC) — no token, no 2FA/QR prompt.
-# Fires when a version tag (created by `npm version`) is pushed, and can also be
-# run by hand from the Actions tab. Requires a one-time setup on npmjs.com:
-# the symbiot package → Settings → Trusted Publishing → add GitHub Actions with
-#   user/org: GarthGhostai   repo: symbiot   workflow: publish.yml
+# Trusted operator: publish to npm automatically when main's package.json
+# version advances — no manual tag, no 2FA/QR, no credential on anyone's machine.
+# The only human gate is the Approve in Symbiot (which opens the PR + bumps the
+# version); once that PR's CI is green it auto-merges, lands on main, and this
+# runs. Publishing is npm Trusted Publishing (OIDC); the record tag is pushed by
+# the Action's own GITHUB_TOKEN. Filename stays `publish.yml` so the npm trusted-
+# publisher binding (npmjs.com → symbiot → Trusted Publishing) keeps matching.
 #
-# Three jobs: `on-main` refuses a tag that isn't on main, `test` runs the whole
-# suite, and `publish` only starts if both passed (`needs`), so neither a broken
-# build nor code main doesn't have can reach npm. Only `publish` gets the OIDC
-# token.
+# gate decides whether this commit is a new release (version has no v<ver> tag
+# yet); test runs the whole suite; publish only runs for a new version, so an
+# ordinary push to main that didn't bump the version publishes nothing.
 on:
   push:
-    tags: ["v*.*.*"]
+    branches: [main]
   workflow_dispatch: {}
 
 permissions:
   contents: read
 
 jobs:
-  # Release from main only. A tag on a feature/release branch used to publish
-  # code main didn't have (squash-merge gives main a different commit), which
-  # then needed a "sync main to published X" commit. Now the tag must point at a
-  # commit that's on main, and match package.json's version — otherwise nothing
-  # publishes. Release flow: merge the PR (with its version bump) into main, then
-  #   git checkout main && git pull && git tag v$(node -p "require('./package.json').version") && git push origin --tags
-  on-main:
+  gate:
     runs-on: ubuntu-latest
+    outputs:
+      release: ${{ steps.check.outputs.release }}
+      version: ${{ steps.check.outputs.version }}
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # full history, to tell whether the tag is on main
-      - name: Tag is on main and matches package.json
+          fetch-depth: 0
+      - id: check
         run: |
-          git fetch --no-tags origin main
-          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
-            echo "::error::$GITHUB_REF_NAME ($GITHUB_SHA) is not on main. Merge into main first, then tag main's commit."
-            exit 1
-          fi
-          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
-            v=$(node -p "require('./package.json').version")
-            if [ "$GITHUB_REF_NAME" != "v$v" ]; then
-              echo "::error::tag $GITHUB_REF_NAME doesn't match package.json version $v"
-              exit 1
-            fi
+          git fetch --tags --quiet origin || true
+          v=$(node -p "require('./package.json').version")
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          if git rev-parse -q --verify "refs/tags/v$v" >/dev/null; then
+            echo "v$v already released — nothing to publish."
+            echo "release=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "v$v is a new version — releasing."
+            echo "release=true" >> "$GITHUB_OUTPUT"
           fi
 
   test:
-    needs: on-main
+    needs: gate
+    if: needs.gate.outputs.release == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -56,24 +53,21 @@ jobs:
           node-version: "22"
       - run: npm ci
       - name: Git identity for tests
-        # the 'approve' fixtures commit in throwaway repos; a bare runner has no
-        # git identity, which fails as "empty ident name". Give it one.
         run: |
           git config --global user.email "ci@symbiot.local"
           git config --global user.name "symbiot ci"
       - name: Test
-        # all four suites, including the npm pack + global install layer: it runs
-        # the tarball exactly as users get it (bin entry point, shipped files)
         env:
           SYMBIOT_NO_OPEN: "1"
         run: npm test
 
   publish:
-    needs: test
+    needs: [gate, test]
+    if: needs.gate.outputs.release == 'true'
     runs-on: ubuntu-latest
     permissions:
-      contents: read
-      id-token: write # required for npm OIDC trusted publishing
+      contents: write # to push the record tag
+      id-token: write # npm OIDC trusted publishing
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -81,6 +75,10 @@ jobs:
           node-version: "22"
           registry-url: "https://registry.npmjs.org"
       - name: Use an npm new enough for OIDC trusted publishing
-        run: npm install -g npm@latest # trusted publishing needs npm >= 11.5.1
+        run: npm install -g npm@latest
       - name: Publish (OIDC — no token)
         run: npm publish
+      - name: Tag the release (record)
+        run: |
+          git tag "v${{ needs.gate.outputs.version }}"
+          git push origin "v${{ needs.gate.outputs.version }}"
