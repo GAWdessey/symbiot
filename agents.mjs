@@ -59,31 +59,35 @@ const fillHandoff = (tmpl, repoPath) => tmpl.replace(/\{dir\}/g, shSingle(repoPa
 // process; .symbiot/agent.pid catches another one (`symbiot push --open` while
 // the app is up). Returns the job, null (no command set) or { busy, id, pid }.
 // A preset that only opens a tab (Orca, editors) exits at once, so it holds
-// the folder only that long.
+// the folder only that long. A busy result's `auto` says whether the process
+// that started that agent is still up to start one on the held tasks.
 function runHandoff(repoPath) {
   const tmpl = handoffCmd(); if (!tmpl || !repoPath) return null;
-  const busy = runningHandoff(repoPath); if (busy) return { busy: true, id: busy.id || "", pid: busy.pid };
+  const busy = runningHandoff(repoPath); if (busy) return { busy: true, id: busy.id || "", pid: busy.pid, auto: !!busy.auto };
   releaseHeldTasks(repoPath); // held for an agent another process started, which has since exited
   const lock = join(repoPath, ".symbiot", LOCK);
   const e = track(repoPath.split("/").pop(), fillHandoff(tmpl, repoPath), repoPath, () => {
     try { if (JSON.parse(readFileSync(lock, "utf8")).pid === e.pid) unlinkSync(lock); } catch {}
-    releaseHeldTasks(repoPath);
+    // tasks sent while it ran land now; start on them as that Send would have
+    if (releaseHeldTasks(repoPath) && /^\s*-\s*\[ \]/m.test(readSymbiot(repoPath, "TASKS.md"))) { const n = runHandoff(repoPath); if (n && !n.busy) n.fromHeld = true; }
   });
   if (!e) return null;
   e.handoff = true;
-  if (e.pid) try { writeFileSync(lock, JSON.stringify({ pid: e.pid, id: e.id, startedAt: e.startedAt })); } catch {}
+  if (e.pid) try { writeFileSync(lock, JSON.stringify({ pid: e.pid, id: e.id, startedAt: e.startedAt, owner: process.pid })); } catch {}
   return e;
 }
 const LOCK = "agent.pid";
 const LOCK_MAX_AGE = 12 * 3600 * 1000; // older than this, the pid has probably been reused
 const pidAlive = (pid) => { try { process.kill(pid, 0); return true; } catch (err) { return !!err && err.code === "EPERM"; } };
-// The agent still running in this folder, if any.
+// The agent still running in this folder, if any. `auto`: its exit will be
+// seen (this process started it, or its owner — e.g. the app — is still up).
+// `symbiot push --open` returns right after starting one, so it never is.
 function runningHandoff(path) {
   const e = HANDOFFS.find((x) => x.handoff && x.path === path && x.status === "running");
-  if (e) return { id: e.id, pid: e.pid, startedAt: e.startedAt };
+  if (e) return { id: e.id, pid: e.pid, startedAt: e.startedAt, auto: true };
   try {
     const l = JSON.parse(readSymbiot(path, LOCK));
-    if (l && Number.isInteger(l.pid) && Date.now() - l.startedAt < LOCK_MAX_AGE && pidAlive(l.pid)) return l;
+    if (l && Number.isInteger(l.pid) && Date.now() - l.startedAt < LOCK_MAX_AGE && pidAlive(l.pid)) return { ...l, auto: Number.isInteger(l.owner) && pidAlive(l.owner) };
   } catch {}
   return null;
 }
@@ -277,7 +281,7 @@ function parseQuestions(md) {
     if (/^#\s/.test(l)) continue;
     const b = l.match(/^(?:[-*+]|\d+[.)])\s+(?:\[[ xX]\]\s+)?(.+)$/);
     if (sec === "s") { if (b) suggestions.push(clip(b[1])); continue; }
-    if (b) { if (cur) cur.options.push(clip(b[1])); else questions.push({ q: clip(b[1]), context: "", options: [] }); continue; }
+    if (b) { if (cur) cur.options.push(clip(b[1])); else if (/\?\s*$/.test(b[1])) questions.push({ q: clip(b[1]), context: "", options: [] }); continue; } // a bullet with no "### question" above it is a question only if it actually ends in "?" — otherwise it's preamble/prose (a file list, etc.)
     if (cur) cur.context = clip((cur.context ? cur.context + " " : "") + l);
   }
   return { questions: questions.filter((x) => x.q).slice(0, 20).map((x) => ({ ...x, options: x.options.slice(0, 6) })), suggestions: suggestions.filter(Boolean).slice(0, 10) };
@@ -314,14 +318,19 @@ function answerQuestions(path, answers, opts = {}) {
   if (opts.rerun) { const e = runHandoff(path); if (e && e.busy) out.note = "Answers saved. An agent is still running in that folder, so another wasn't started. Send them again once it finishes."; else if (e) out.rerun = e.id; else out.note = "Answers saved. Set an agent command in Settings to have the agent pick them up automatically."; }
   return out;
 }
+// Open tasks in a held brief (TASKS.next.md), or null if nothing is held.
+function heldTasks(path) {
+  const md = readSymbiot(path, HELD);
+  return md ? md.split("\n").filter((l) => /^\s*-\s*\[ \]/.test(l)).length : null;
+}
 // The Agents tab: every tracked job, its log tail, what it changed, and — on the
-// newest job per folder — the questions/ideas it left.
+// newest job per folder — the questions/ideas it left and any tasks held for it.
 function agentsList() {
   const seen = new Set();
   return HANDOFFS.map((e) => {
     let tail = ""; try { tail = readFileSync(e.log, "utf8").slice(-1200); } catch {}
     const first = !seen.has(e.path); seen.add(e.path);
-    return { id: e.id, name: e.name, path: e.path, status: e.status, elapsed: (e.endedAt || Date.now()) - e.startedAt, exitCode: e.exitCode, tail, changed: agentChanges(e.path, e.startedAt), ask: first ? agentQuestions(e.path, e.name) : null };
+    return { id: e.id, name: e.name, path: e.path, status: e.status, elapsed: (e.endedAt || Date.now()) - e.startedAt, exitCode: e.exitCode, tail, changed: agentChanges(e.path, e.startedAt), ask: first ? agentQuestions(e.path, e.name) : null, held: first ? heldTasks(e.path) : null, fromHeld: !!e.fromHeld };
   });
 }
 
