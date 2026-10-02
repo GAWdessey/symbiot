@@ -171,6 +171,8 @@ const calls = [
   ["/api/screens/remove", "POST"],
   ["/api/screens/click", "POST"],   // not confirmed -> refused, nothing clicks
   ["/api/screens/allow", "POST"],   // not confirmed -> refused, no permission changes
+  ["/api/screens/monitors", "GET"], // lists the displays (read-only)
+  ["/api/screens/split", "POST"],   // no id -> "not found", nothing written
   ["/api/desktop", "GET"],         // weekly write-up + start-at-login state
   ["/api/desktop/weekly", "POST"],  // empty body -> schedule unchanged (stays off)
   ["/api/desktop/autostart", "POST"], // empty body -> off: removes nothing outside the isolated HOME

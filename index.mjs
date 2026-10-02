@@ -32,7 +32,7 @@ import { detectMailSources, mailActivity } from "./mail.mjs";
 import { CONFIG_PATH, loadConfig, saveConfig, loadTasks, saveTasks, sh, hasCmd, repoState } from "./core.mjs";
 import { HANDOFF_PROMPT, QUESTIONS_MAX, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, fillHandoff, runHandoff, runningHandoff, writeTasks, startHeldTasks, detectHandoffs, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, parseQuestions, agentQuestions, answerQuestions, agentsList } from "./agents.mjs";
 import { gitDefaultBranch, loadDeploys, driftRepo } from "./drift.mjs";
-import { loadScreens, screenImage, captureScreen, allowScreenshots, importScreen, setRegions, renameScreen, removeScreen, blueprint, clickRegion } from "./screens.mjs";
+import { loadScreens, screenImage, captureScreen, splitScreen, listMonitors, allowScreenshots, importScreen, setRegions, renameScreen, removeScreen, blueprint, clickRegion } from "./screens.mjs";
 import { weeklyState, setWeekly, runWeekly, startWeekly, autostartState, setAutostart } from "./desktop.mjs";
 
 const HERE = fileURLToPath(new URL(".", import.meta.url));
@@ -184,6 +184,41 @@ function unreleased(path) {
   const was = ver(git(path, ["show", "HEAD:package.json"]).out);
   return { ...best, ...(now && was && now !== was ? { bump: now } : {}) };
 }
+// Approve can bump the version in the PR itself, for a repo that releases with
+// v* tags: offered when the committed version is already released (its v* tag
+// exists) and these changes don't change it. { version, patch, minor } or null.
+function bumpOffer(path) {
+  const ver = (s) => { try { return String(JSON.parse(s).version || ""); } catch { return ""; } };
+  const was = ver(git(path, ["show", "HEAD:package.json"]).out), m = was.match(/^(\d+)\.(\d+)\.(\d+)$/); if (!m) return null;
+  let now = ""; try { now = ver(readFileSync(join(path, "package.json"), "utf8")); } catch {}
+  if (now !== was || !git(path, ["rev-parse", "-q", "--verify", "refs/tags/v" + was]).ok) return null;
+  return { version: was, patch: `${m[1]}.${m[2]}.${+m[3] + 1}`, minor: `${m[1]}.${+m[2] + 1}.0` };
+}
+// Set the version in package.json and in package-lock.json / npm-shrinkwrap.json
+// (top level and its "" package), keeping each file's indent. Gives back a
+// function that restores them, for when the ship fails.
+function setVersion(path, to) {
+  const saved = [];
+  for (const f of ["package.json", "package-lock.json", "npm-shrinkwrap.json"]) {
+    const file = join(path, f); let text = "", j = null;
+    try { text = readFileSync(file, "utf8"); j = JSON.parse(text); } catch { continue; }
+    if (!j || typeof j !== "object" || (f !== "package.json" && !("version" in j))) continue;
+    j.version = to; if (f !== "package.json" && j.packages && j.packages[""]) j.packages[""].version = to;
+    writeFileSync(file, JSON.stringify(j, null, (text.match(/^[ \t]+(?=")/m) || ["  "])[0]) + (text.endsWith("\n") ? "\n" : ""));
+    saved.push([file, text]);
+  }
+  return () => { for (const [file, text] of saved) try { writeFileSync(file, text); } catch {} };
+}
+// Ship with the version bumped when opts.bump is "patch" or "minor" and the repo
+// is offered one (bumpOffer). The bump is put back if the ship fails.
+function shipWithBump(path, texts, opts) {
+  const offer = (opts.bump === "patch" || opts.bump === "minor") && bumpOffer(path);
+  if (!offer) return shipChanges(path, texts, opts);
+  const to = offer[opts.bump], undo = setVersion(path, to);
+  const r = shipChanges(path, texts, { ...opts, bumped: to });
+  if (r.error) { undo(); return r; }
+  return { ...r, bumped: to };
+}
 // Repos with tasks awaiting review, plus repos Symbiot sent tasks to that have
 // uncommitted changes no ticked task covers (untasked: approve them as-is).
 // running: an agent is still editing there, so its changes may be half done.
@@ -192,10 +227,10 @@ function pendingReview() {
   const sent = [...new Set(t.filter((x) => x.repo && !x.archived && !by[x.repo]).map((x) => x.repo))];
   const map = Object.keys(by).length || sent.length ? repoPathMap() : {};
   const am = autoMergeRepos();
-  const out = Object.keys(by).sort().map((repo) => { const path = map[repo] || ""; return { repo, path, tasks: by[repo], autoMerge: am.includes(repo), running: !!(path && runningHandoff(path)), ...(path ? { ...workingChanges(path), unreleased: unreleased(path) } : { branch: "", files: [], stat: "" }) }; });
+  const out = Object.keys(by).sort().map((repo) => { const path = map[repo] || ""; return { repo, path, tasks: by[repo], autoMerge: am.includes(repo), running: !!(path && runningHandoff(path)), ...(path ? { ...workingChanges(path), unreleased: unreleased(path), bumpOffer: bumpOffer(path) } : { branch: "", files: [], stat: "" }) }; });
   for (const repo of sent.sort()) {
     const path = map[repo]; if (!path || !existsSync(join(path, ".symbiot", "TASKS.md"))) continue;
-    const wc = workingChanges(path); if (wc.files.length) out.push({ repo, path, tasks: [], untasked: true, autoMerge: am.includes(repo), running: !!runningHandoff(path), ...wc, unreleased: unreleased(path) });
+    const wc = workingChanges(path); if (wc.files.length) out.push({ repo, path, tasks: [], untasked: true, autoMerge: am.includes(repo), running: !!runningHandoff(path), ...wc, unreleased: unreleased(path), bumpOffer: bumpOffer(path) });
   }
   return out;
 }
@@ -224,7 +259,7 @@ function shipChanges(path, texts, opts = {}) {
   const add = git(path, ["add", "-A"]); if (!add.ok) return { error: "git add failed: " + add.err, branch };
   git(path, ["reset", "-q", "--", ".symbiot"]); // never ship Symbiot's own scratch
   const subject = !texts.length ? "symbiot: changes approved without a task" : texts.length === 1 ? (texts[0].length > 72 ? texts[0].slice(0, 71).replace(/\s+\S*$/, "") + "…" : texts[0]) : `symbiot: ${texts.length} approved tasks`;
-  const body = texts.length ? texts.map((x) => "- " + x).join("\n") : "No ticked task covers these changes.";
+  const body = (texts.length ? texts.map((x) => "- " + x).join("\n") : "No ticked task covers these changes.") + (opts.bumped ? `\n\nBumps the version to ${opts.bumped}. After this merges, tag v${opts.bumped} on ${base} to release it.` : "");
   const cm = git(path, ["commit", "-m", subject, "-m", body]); if (!cm.ok) return { error: "Commit failed: " + (cm.err || cm.out), branch };
   const out = { ok: true, branch, base, commit: git(path, ["rev-parse", "--short", "HEAD"]).out, subject };
   if (opts.push === false) return out;
@@ -257,7 +292,7 @@ function approveRepo(repo, opts = {}) {
   if (!items.length) return { error: "Nothing awaiting review for " + (repo || "(no repo)") + "." };
   const path = repoPathMap()[repo]; if (!path) return { error: "Repo not found: " + repo };
   const busy = stillWorking(repo, path); if (busy) return busy;
-  const r = shipChanges(path, items.map((x) => x.text), { ...opts, autoMerge: opts.autoMerge !== undefined ? opts.autoMerge : autoMergeRepos().includes(repo) });
+  const r = shipWithBump(path, items.map((x) => x.text), { ...opts, autoMerge: opts.autoMerge !== undefined ? opts.autoMerge : autoMergeRepos().includes(repo) });
   if (r.error) return r;
   const now = Date.now();
   for (const x of items) { x.review = false; x.done = true; x.archived = true; x.archivedAt = now; x.approvedAt = now; for (const k of ["branch", "commit", "pr"]) if (r[k]) x[k] = r[k]; }
@@ -272,7 +307,7 @@ function approveChanges(repo, opts = {}) {
   const path = repoPathMap()[repo]; if (!path) return { error: "Repo not found: " + (repo || "(no repo)") };
   const busy = stillWorking(repo, path); if (busy) return busy;
   if (!workingChanges(path).files.length) return { error: "No uncommitted changes in " + repo + "." };
-  const r = shipChanges(path, [], { ...opts, autoMerge: opts.autoMerge !== undefined ? opts.autoMerge : autoMergeRepos().includes(repo) });
+  const r = shipWithBump(path, [], { ...opts, autoMerge: opts.autoMerge !== undefined ? opts.autoMerge : autoMergeRepos().includes(repo) });
   return r.error ? r : { ...r, approved: 0 };
 }
 // Not right: reopen it and untick it in TASKS.md so the agent picks it up again.
@@ -1478,7 +1513,7 @@ async function cmdApp() {
     } catch {}
   }
   const json = (res, obj) => { res.writeHead(200, { "content-type": "application/json" }); res.end(JSON.stringify(obj)); };
-  const screenOut = (s) => (s && s.id ? { ...s, blueprint: blueprint(s) } : s);
+  const screenOut = (s) => (s && s.id ? { ...s, blueprint: blueprint(s) } : s && s.screens ? { ...s, screens: s.screens.map(screenOut) } : s);
   const server = createServer(async (req, res) => {
     const u = new URL(req.url, "http://127.0.0.1");
     if (req.method === "GET" && u.pathname === "/") { res.writeHead(200, { "content-type": "text/html; charset=utf-8" }); res.end(EMBEDDED_UI); return; }
@@ -1505,8 +1540,8 @@ async function cmdApp() {
       if (u.pathname === "/api/tasks/chat/clear" && req.method === "POST") { const b = await readBody(req); return json(res, clearTaskChat(String(b.id || ""))); }
       if (u.pathname === "/api/pending") return json(res, pendingReview()); // ticked by the agent, awaiting approval
       if (u.pathname === "/api/pending/diff") { const p = repoPathMap()[u.searchParams.get("repo") || ""]; return json(res, { diff: p ? workingDiff(p) : "" }); }
-      if (u.pathname === "/api/pending/approve" && req.method === "POST") { const b = await readBody(req); return json(res, approveRepo(String(b.repo || ""))); }
-      if (u.pathname === "/api/pending/approve-changes" && req.method === "POST") { const b = await readBody(req); return json(res, approveChanges(String(b.repo || ""))); }
+      if (u.pathname === "/api/pending/approve" && req.method === "POST") { const b = await readBody(req); return json(res, approveRepo(String(b.repo || ""), { bump: b.bump })); }
+      if (u.pathname === "/api/pending/approve-changes" && req.method === "POST") { const b = await readBody(req); return json(res, approveChanges(String(b.repo || ""), { bump: b.bump })); }
       if (u.pathname === "/api/pending/sendback" && req.method === "POST") { const b = await readBody(req); return json(res, sendBack(String(b.id || ""))); }
       if (u.pathname === "/api/automerge" && req.method === "POST") { const b = await readBody(req); return json(res, setAutoMerge(String(b.repo || ""), !!b.on)); }
       if (u.pathname === "/api/tasks/push" && req.method === "POST") { const b = await readBody(req); return json(res, pushTasks(b)); }
@@ -1534,7 +1569,11 @@ async function cmdApp() {
       // src, so it carries the token in the query (?t=), which the check above accepts.
       if (u.pathname === "/api/screens") return json(res, loadScreens().map(screenOut));
       if (u.pathname === "/api/screens/image") { const f = screenImage(u.searchParams.get("id")); if (!f) { res.writeHead(404); res.end("not found"); return; } res.writeHead(200, { "content-type": "image/png", "cache-control": "private, max-age=86400" }); res.end(readFileSync(f)); return; } // a screen's image never changes
-      if (u.pathname === "/api/screens/capture" && req.method === "POST") { const b = await readBody(req); const d = Math.min(10, Math.max(0, Number(b.delay) || 0)); if (d) await new Promise((r) => setTimeout(r, d * 1000)); return json(res, screenOut(captureScreen(b.name))); }
+      if (u.pathname === "/api/screens/capture" && req.method === "POST") { const b = await readBody(req); const d = Math.min(10, Math.max(0, Number(b.delay) || 0)); if (d) await new Promise((r) => setTimeout(r, d * 1000)); return json(res, screenOut(captureScreen(b.name, typeof b.which === "string" ? b.which : "all"))); }
+      // The displays connected now (for "which display" next to Capture). macOS
+      // can't take them all in one image (screencapture takes one display at a time).
+      if (u.pathname === "/api/screens/monitors") return json(res, { monitors: listMonitors(), whole: process.platform !== "darwin" });
+      if (u.pathname === "/api/screens/split" && req.method === "POST") { const b = await readBody(req); return json(res, screenOut(splitScreen(String(b.id || "")))); }
       // Changes a desktop permission, so only on the user's confirmed click.
       if (u.pathname === "/api/screens/allow" && req.method === "POST") { const b = await readBody(req); if (b.confirmed !== true) return json(res, { error: "Allowing screenshots needs your confirmation." }); return json(res, allowScreenshots()); }
       if (u.pathname === "/api/screens/import" && req.method === "POST") { const b = await readBody(req); return json(res, screenOut(importScreen(b.name, b.png))); }
@@ -1670,4 +1709,4 @@ const isMain = (() => {
 })();
 if (isMain) main();
 
-export { authorship, repoState, readmeInfo, repoShape, houseRules, findAllRepos, buildMap, reportFooter, detectHardware, recommendModels, computeDrift, driftRepo, gitDefaultBranch, buildTasksMd, taskType, EMBEDDED_UI, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, fillHandoff, handoffCmd, setHandoffCmd, ORCA_CLAUDE_CMD, CLAUDE_CMD, HANDOFF_PROMPT, shipChanges, syncTasks, pendingReview, unreleased, addTask, approveRepo, approveChanges, sendBack, pushTasks, semverGt, updateCmd, parseQuestions, agentQuestions };
+export { authorship, repoState, readmeInfo, repoShape, houseRules, findAllRepos, buildMap, reportFooter, detectHardware, recommendModels, computeDrift, driftRepo, gitDefaultBranch, buildTasksMd, taskType, EMBEDDED_UI, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, fillHandoff, handoffCmd, setHandoffCmd, ORCA_CLAUDE_CMD, CLAUDE_CMD, HANDOFF_PROMPT, shipChanges, shipWithBump, bumpOffer, setVersion, syncTasks, pendingReview, unreleased, addTask, approveRepo, approveChanges, sendBack, pushTasks, semverGt, updateCmd, parseQuestions, agentQuestions };

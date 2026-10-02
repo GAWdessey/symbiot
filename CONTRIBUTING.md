@@ -67,7 +67,8 @@ update check) a fake npm registry:
 
 ## Releasing
 
-Bump the version in the pull request, merge it into `main`, then tag `main`'s
+Bump the version in the pull request (Symbiot's Approve does it for you: the
+**Version** picker on the review card), merge it into `main`, then tag `main`'s
 commit:
 
 ```bash
