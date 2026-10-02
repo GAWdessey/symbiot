@@ -172,15 +172,19 @@ try {
   writeFileSync(join(fake, "claude"), `#!/bin/bash\nprintf '%s\\n' "$#" "$1" > ${JSON.stringify(got)}\n`, { mode: 0o755 });
   const runOrca = (tmpl) => { rmSync(got, { force: true }); execSync(fillHandoff(tmpl, fake), { shell: "/bin/bash", stdio: "ignore", env: { ...process.env, PATH: fake + ":" + process.env.PATH } }); return readFileSync(got, "utf8").split("\n"); };
   const q = JSON.stringify(orcaBin);
+  // the prompt + --allowedTools + 2 tool rules
   const [argc, arg1] = runOrca(orcaHandoffCmd(q, ORCA_CLAUDE_CMD));
-  ok("claude gets the prompt as ONE argument", argc === "1" && arg1 === HANDOFF_PROMPT, [argc, arg1]);
+  ok("claude gets the prompt as ONE argument", argc === "4" && arg1 === HANDOFF_PROMPT, [argc, arg1]);
+  ok("the Orca Claude preset can run the tests too", /--allowedTools \\"Bash\(npm test:\*\)\\"/.test(ORCA_CLAUDE_CMD), ORCA_CLAUDE_CMD);
+  const saved034 = orcaHandoffCmd(q, ` --command "claude \\"{prompt}\\""`); // what ≤0.34 saved
+  ok("a saved ≤0.34 Orca Claude preset upgrades to the one that can run tests", migrateOrcaCmd(saved034) === orcaHandoffCmd(q, ORCA_CLAUDE_CMD), migrateOrcaCmd(saved034));
   const legacy = orcaHandoffCmd(q, ` --command "claude {prompt}"`); // what ≤0.26 saved to config
   const migrated = migrateOrcaCmd(legacy);
   ok("a saved unquoted command is migrated to the quoted form", migrated === orcaHandoffCmd(q, ORCA_CLAUDE_CMD), migrated);
   ok("migration is idempotent", migrateOrcaCmd(migrated) === migrated, "");
   ok("custom --command is preserved", migrateOrcaCmd(orcaHandoffCmd(q, ` --command "codex"`)) === orcaHandoffCmd(q, ` --command "codex"`), "");
   const [argc2, arg12] = runOrca(migrated);
-  ok("migrated command delivers the whole prompt", argc2 === "1" && arg12 === HANDOFF_PROMPT, [argc2, arg12]);
+  ok("migrated command delivers the whole prompt", argc2 === "4" && arg12 === HANDOFF_PROMPT, [argc2, arg12]);
 
   console.log("HANDOFF — one saved template drives every handoff (save, clear, legacy `ide`)");
   // isolated HOME: these read and write Symbiot's real config.json
@@ -207,6 +211,60 @@ try {
   const [cargc, carg1] = readFileSync(got, "utf8").split("\n");
   ok("the Claude preset keeps the prompt and each tool rule as ONE argument", cargc === "7" && carg1 === "-p", [cargc, carg1]);
 
+  console.log("HANDOFF — one agent per folder: a second send while it runs starts nothing");
+  // two identical runs once started on the same repo 6s apart and raced
+  const AGENTS = join(dirname(INDEX), "agents.mjs"), busyDir = join(ROOT, "busy");
+  mkdirSync(busyDir, { recursive: true });
+  const bs = spawnSync(process.execPath, ["--input-type=module", "-e", `
+    import * as a from ${JSON.stringify(AGENTS)};
+    import { existsSync, readFileSync, writeFileSync } from "node:fs";
+    import { spawnSync } from "node:child_process";
+    const dir = ${JSON.stringify(busyDir)}, lock = dir + "/.symbiot/agent.pid", out = {};
+    const until = async (f) => { for (let i = 0; i < 100 && !f(); i++) await new Promise((r) => setTimeout(r, 100)); };
+    a.setHandoffCmd("sleep 3");
+    const first = a.runHandoff(dir); out.first = first && !first.busy && !!first.pid;
+    out.second = a.runHandoff(dir); out.jobs = a.HANDOFFS.length; out.firstId = first.id;
+    out.lock = JSON.parse(readFileSync(lock, "utf8")).pid === first.pid;
+    const o = spawnSync(process.execPath, ["--input-type=module", "-e", "import * as a from " + JSON.stringify(${JSON.stringify(AGENTS)}) + "; console.log(JSON.stringify(a.runHandoff(" + JSON.stringify(dir) + ")))"], { encoding: "utf8" });
+    try { out.other = JSON.parse(o.stdout.trim()); } catch { out.other = o.stdout + o.stderr; }
+    await until(() => first.status !== "running"); await until(() => !existsSync(lock));
+    out.lockGone = !existsSync(lock);
+    writeFileSync(lock, JSON.stringify({ pid: spawnSync("true").pid, id: "x", startedAt: Date.now() }));
+    out.stale = a.runningHandoff(dir);
+    a.setHandoffCmd("true"); const third = a.runHandoff(dir); out.third = third && !third.busy;
+    await until(() => third.status !== "running");
+    console.log(JSON.stringify(out));`], { encoding: "utf8", timeout: 30000, env: { ...process.env, HOME: hhome, USERPROFILE: hhome } });
+  let b = {}; try { b = JSON.parse(bs.stdout.trim().split("\n").pop()); } catch { console.log(bs.stdout, bs.stderr); }
+  ok("the first send starts the agent and holds the folder", b.first && b.lock, b);
+  ok("a second send in the same process starts nothing", b.second && b.second.busy && b.second.id === b.firstId && b.jobs === 1, b);
+  ok("a second Symbiot process sees it running too", b.other && b.other.busy && b.other.pid > 0, b.other);
+  ok("the folder is free again once the agent exits", b.lockGone && b.third, b);
+  ok("a leftover lock from a dead agent doesn't block", b.stale === null, b.stale);
+
+  console.log("HANDOFF — a send while the agent runs holds the new TASKS.md until it finishes");
+  const heldDir = join(ROOT, "held"); mkdirSync(heldDir, { recursive: true });
+  const hd = spawnSync(process.execPath, ["--input-type=module", "-e", `
+    import * as a from ${JSON.stringify(AGENTS)};
+    import { existsSync, readFileSync, writeFileSync } from "node:fs";
+    const dir = ${JSON.stringify(heldDir)}, f = dir + "/.symbiot/TASKS.md", next = dir + "/.symbiot/TASKS.next.md", out = {};
+    const until = async (c) => { for (let i = 0; i < 100 && !c(); i++) await new Promise((r) => setTimeout(r, 100)); };
+    out.freeHeld = a.writeTasks(dir, "- [ ] A\\n- [ ] B\\n");
+    a.setHandoffCmd("sleep 2"); const job = a.runHandoff(dir);
+    out.busyHeld = a.writeTasks(dir, "- [ ] A\\n- [ ] B\\n- [ ] C\\n");
+    out.during = readFileSync(f, "utf8");
+    writeFileSync(f, "- [x] A\\n- [ ] B\\n"); // the agent ticks A meanwhile
+    out.earlyRelease = a.releaseHeldTasks(dir);
+    await until(() => job.status !== "running" && !existsSync(next));
+    out.after = readFileSync(f, "utf8"); out.nextGone = !existsSync(next);
+    writeFileSync(next, "- [ ] stale\\n"); out.supersede = a.writeTasks(dir, "- [ ] D\\n");
+    out.superseded = !existsSync(next) && readFileSync(f, "utf8") === "- [ ] D\\n";
+    console.log(JSON.stringify(out));`], { encoding: "utf8", timeout: 30000, env: { ...process.env, HOME: hhome, USERPROFILE: hhome } });
+  let hv = {}; try { hv = JSON.parse(hd.stdout.trim().split("\n").pop()); } catch { console.log(hd.stdout, hd.stderr); }
+  ok("no agent running -> TASKS.md is written straight away", hv.freeHeld === false, hv);
+  ok("agent running -> the new brief is held, its TASKS.md untouched", hv.busyHeld === true && hv.during === "- [ ] A\n- [ ] B\n" && hv.earlyRelease === false, hv);
+  ok("once it exits the held brief lands, keeping the agent's ticks", hv.nextGone && hv.after === "- [x] A\n- [ ] B\n- [ ] C\n", hv.after);
+  ok("a later send when free replaces a leftover held brief", hv.supersede === false && hv.superseded, hv);
+
   console.log("APPROVE — approved work ships: branch off the default, commit (minus .symbiot/), push");
   const gitEnv = { ...process.env, GIT_CONFIG_GLOBAL: join(ROOT, "globalgitconfig"), GIT_CONFIG_SYSTEM: "/dev/null", GIT_TERMINAL_PROMPT: "0" };
   const shipRepo = build("ship", `git init -q -b main && git config user.email ci@symbiot.test && git config user.name "Symbiot CI" && echo a > a.txt && git add . && git commit -qm init
@@ -221,6 +279,9 @@ try {
   ok("pushed to origin", r1.pushed && g(`rev-parse origin/${r1.branch}`) === g("rev-parse HEAD"), r1);
   const r2 = shipChanges(shipRepo, ["x"], { pr: false });
   ok("nothing to commit -> approved without a commit", r2.ok && r2.nothing && !r2.commit, r2);
+  g("switch -q main"); writeFileSync(join(shipRepo, "c.txt"), "c\n");
+  const r3 = shipChanges(shipRepo, [], { push: false });
+  ok("no task -> its own symbiot/changes-<date> branch and subject", r3.ok && /^symbiot\/changes-\d{4}-\d{2}-\d{2}$/.test(r3.branch) && r3.subject === "symbiot: changes approved without a task", r3);
   // regression: when .symbiot/ is gitignored, `git add . :(exclude).symbiot`
   // warned+exited-1 ("paths are ignored") and falsely aborted the ship.
   const giRepo = build("ship-gi", `git init -q -b main && git config user.email ci@symbiot.test && git config user.name "Symbiot CI"
@@ -252,6 +313,12 @@ try {
     m.sendBack(out.afterTick.id); out.afterBack = tasks()[0]; out.md = readFileSync(f, "utf8");
     m.pushTasks(); tick(); m.syncTasks();
     out.approve = m.approveRepo("revapp", { push: false }); out.final = tasks()[0];
+    // a change no ticked task covers, in a repo that still has an open task
+    writeFileSync(${JSON.stringify(join(home, ".config", "symbiot", "tasks.json"))}, JSON.stringify([...tasks(), { id: "t2", text: "Open task", repo: "revapp", done: false, ts: 2 }]));
+    writeFileSync(${JSON.stringify(join(proj, "b.txt"))}, "fix\\n");
+    out.untasked = m.pendingReview();
+    out.ac = m.approveChanges("revapp", { push: false }); out.acTasks = tasks();
+    out.acAgain = m.approveChanges("revapp", { push: false });
     console.log(JSON.stringify(out));`;
   mkdirSync(join(home, ".config", "symbiot"), { recursive: true });
   writeFileSync(join(home, ".config", "symbiot", "tasks.json"), JSON.stringify([{ id: "t1", text: "Fix the bug", repo: "revapp", done: false, ts: 1 }]));
@@ -263,6 +330,10 @@ try {
   ok("tasks in review aren't re-sent to the agent", o.repush && o.repush.empty, o.repush);
   ok("send back reopens it and unticks TASKS.md", o.afterBack && !o.afterBack.review && !o.afterBack.done && /- \[ \] Fix the bug/.test(o.md), o.afterBack);
   ok("approve commits on a branch, then archives with the commit", o.approve && o.approve.approved === 1 && /^symbiot\/fix-the-bug/.test(o.approve.branch) && o.final.archived && o.final.done && o.final.commit === o.approve.commit, o.approve);
+  ok("untasked changes in a repo that got tasks show up for approval", o.untasked && o.untasked.length === 1 && o.untasked[0].untasked && o.untasked[0].tasks.length === 0 && o.untasked[0].files.some((x) => x.file === "b.txt"), o.untasked);
+  const acMsg = o.ac && o.ac.commit ? execSync("git log -1 --format=%B " + o.ac.commit, { cwd: proj, encoding: "utf8", env: gitEnv }) : "";
+  ok("approve changes without a task commits them, tasks untouched", o.ac && o.ac.ok && o.ac.approved === 0 && /without a task/.test(acMsg) && o.acTasks.find((x) => x.id === "t2" && !x.done && !x.review), o.ac);
+  ok("nothing left -> approve changes without a task says so", o.acAgain && /No uncommitted changes/.test(o.acAgain.error || ""), o.acAgain);
 
   console.log("QUESTIONS — any agent's .symbiot/QUESTIONS.md parses into questions, options and ideas");
   const pq = parseQuestions("# Questions for you\n\n## Questions\n### Keep the old config format?\nReading both costs ~40 lines.\n- Yes, read both (recommended)\n- No, migrate once\n\n### Which port?\n1. 7391\n2. random\n\n## Suggestions\n- Add a --json flag to drift\n- [ ] Cache the map scan\n");
