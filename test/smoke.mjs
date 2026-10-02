@@ -158,6 +158,7 @@ const calls = [
   ["/api/pending/approve", "POST"], // no repo -> "nothing awaiting review", no git runs
   ["/api/pending/sendback", "POST"],
   ["/api/automerge", "POST"],       // per-repo auto-merge opt-in toggle
+  ["/api/agent/grant", "POST"],     // grant the agent a tool/folder it asked for
   ["/api/agents/answer", "POST"],   // no path -> "no agent has run there", nothing written
   ["/api/mail", "GET"],             // detected mail sources (isolated HOME -> none)
   ["/api/mail/set", "POST"],        // empty body -> nothing changes

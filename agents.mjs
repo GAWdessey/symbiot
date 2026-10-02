@@ -33,6 +33,26 @@ function setHandoffCmd(cmd) {
   delete cfg.ide; saveConfig(cfg);
   return { ok: true, cmd: cfg.agentCmd || "" };
 }
+// Grant a blocked agent what it asked for, instead of hand-editing the command:
+// `tool` (a command like "python3" → Bash(python3:*), or a full "Tool(spec)")
+// joins --allowedTools; `dir` joins --add-dir. Claude only (that's where these
+// flags live); for another agent we say to edit the command directly.
+function grantAgent({ tool, dir } = {}) {
+  const cfg = loadConfig(); let cmd = (cfg.agentCmd || CLAUDE_CMD).trim();
+  if (!/^\s*claude\b/.test(cmd)) return { error: "Grants apply to the Claude agent command. Pick a Claude preset first, or edit the command directly." };
+  if (tool) {
+    let t = String(tool).trim();
+    if (t && !/^[A-Za-z]+\(/.test(t)) t = `Bash(${t.replace(/[()"]/g, "")}:*)`; // bare word -> Bash(word:*)
+    if (t && !cmd.includes(`"${t}"`)) {
+      if (/--allowedTools\b/.test(cmd)) cmd = cmd.replace(/(--allowedTools\s+(?:"[^"]*"\s*)+)/, (m) => m.trimEnd() + ` "${t}" `);
+      else cmd += ` --allowedTools "${t}"`;
+    }
+  }
+  if (dir) { const d = String(dir).trim(); if (d && !cmd.includes(`--add-dir "${d}"`)) cmd += ` --add-dir "${d}"`; }
+  cmd = cmd.replace(/\s+/g, " ").trim();
+  cfg.agentCmd = cmd; saveConfig(cfg);
+  return { ok: true, cmd };
+}
 const fillHandoff = (tmpl, repoPath) => tmpl.replace(/\{dir\}/g, shSingle(repoPath)).replace(/\{prompt\}/g, escDq(HANDOFF_PROMPT));
 // One agent per folder: two identical runs once started on the same repo 6s
 // apart and raced each other. The registry catches a second click in this
@@ -305,4 +325,4 @@ function agentsList() {
   });
 }
 
-export { HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, fillHandoff, runHandoff, runningHandoff, writeTasks, releaseHeldTasks, detectHandoffs, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, agentQuestions, answerQuestions, agentsList };
+export { HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, fillHandoff, runHandoff, runningHandoff, writeTasks, releaseHeldTasks, detectHandoffs, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, agentQuestions, answerQuestions, agentsList };
