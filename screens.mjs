@@ -1,6 +1,7 @@
 // symbiot — Screens: screenshots with named regions, i.e. a blueprint of where
-// things are on a screen, in screenshot pixels. The first slice of screen
-// automation: it captures, stores and maps. Nothing here clicks or types yet.
+// things are on a screen, in screenshot pixels. The first slices of screen
+// automation: it captures, stores and maps, and clicks a region's centre when
+// asked (the app confirms each click). Nothing types yet.
 //
 // Stored in ~/.config/symbiot/screens/: <id>.png per screen, and screens.json =
 // [{ id, name, w, h, ts, via, regions: [{ id, label, x, y, w, h }] }], which is
@@ -100,7 +101,7 @@ function removeScreen(id) {
 const center = (r) => ({ x: r.x + Math.floor(r.w / 2), y: r.y + Math.floor(r.h / 2) });
 // What automation reads: each region with the point to aim at (its centre).
 function blueprint(s) {
-  return { screen: s.name, size: { w: s.w, h: s.h }, regions: (s.regions || []).map((r) => ({ id: r.id, label: r.label, x: r.x, y: r.y, w: r.w, h: r.h, center: center(r) })) };
+  return { screen: s.name, size: { w: s.w, h: s.h }, regions: (s.regions || []).map((r) => ({ label: r.label, x: r.x, y: r.y, w: r.w, h: r.h, center: center(r) })) };
 }
 
 // Click tools to try, in order, as a list of [cmd, args] steps that move the
@@ -131,21 +132,20 @@ function clickRegion(id, regionId) {
   const s = loadScreens().find((x) => x.id === id); if (!s) return { error: "not found" };
   const r = (s.regions || []).find((x) => x.id === regionId); if (!r) return { error: "That region is gone. Reload the screen." };
   if (process.platform === "win32") return { error: "Clicking isn't supported on Windows yet." };
-  const c = center(r), tried = [];
-  for (const steps of clickCmds(c.x, c.y)) {
-    const tool = steps[0][0]; if (!hasCmd(tool)) continue;
+  const c = center(r), wayland = process.env.XDG_SESSION_TYPE === "wayland";
+  // The first tool that's installed does it. If that fails it says so, rather
+  // than trying the next one: a half-done move + click could otherwise click twice.
+  const tool = clickCmds(c.x, c.y).map((st) => st[0][0]).find((t) => hasCmd(t));
+  if (tool) {
     const sp = clickSpace(tool), x = sp ? Math.round(c.x * sp.w / s.w) : c.x, y = sp ? Math.round(c.y * sp.h / s.h) : c.y;
-    const run = tool === "ydotool" ? clickCmds(x, y, "linux", true, ydotoolIs1())[0] : clickCmds(x, y)[tool === "xdotool" ? 0 : 0];
-    tried.push(tool);
-    let err = "";
-    for (const [cmd, args] of run) {
+    const steps = clickCmds(x, y, process.platform, wayland, tool === "ydotool" && ydotoolIs1()).find((st) => st[0][0] === tool);
+    for (const [cmd, args] of steps) {
       const p = spawnSync(cmd, args, { encoding: "utf8", timeout: 10000, killSignal: "SIGKILL" });
-      if (p.status !== 0) { err = String(p.stderr || (p.error && p.error.message) || "exit " + p.status).trim().split("\n").filter(Boolean).pop() || "failed"; break; }
+      if (p.status !== 0) return { error: `${tool} couldn't click: ` + (String(p.stderr || (p.error && p.error.message) || "").trim().split("\n").filter((l) => l && !/notice:/.test(l)).pop() || "exit " + p.status) };
     }
-    if (!err) return { ok: true, label: r.label, x, y, via: tool };
-    if (tried.length) return { error: `${tool} couldn't click: ${err}` };
+    return { ok: true, label: r.label, x, y, via: tool };
   }
-  const want = process.platform === "darwin" ? "cliclick (brew install cliclick)" : process.env.XDG_SESSION_TYPE === "wayland" ? "ydotool" : "xdotool or ydotool";
+  const want = process.platform === "darwin" ? "cliclick (brew install cliclick)" : wayland ? "ydotool" : "xdotool or ydotool";
   return { error: `No click tool found. Install ${want}.` };
 }
 
