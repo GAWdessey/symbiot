@@ -32,6 +32,8 @@ import { detectMailSources, mailActivity } from "./mail.mjs";
 import { CONFIG_PATH, loadConfig, saveConfig, loadTasks, saveTasks, sh, hasCmd, repoState } from "./core.mjs";
 import { HANDOFF_PROMPT, QUESTIONS_MAX, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, fillHandoff, runHandoff, writeTasks, startHeldTasks, detectHandoffs, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, parseQuestions, agentQuestions, answerQuestions, agentsList } from "./agents.mjs";
 import { gitDefaultBranch, loadDeploys, driftRepo } from "./drift.mjs";
+import { loadScreens, screenImage, captureScreen, importScreen, setRegions, renameScreen, removeScreen, blueprint } from "./screens.mjs";
+import { weeklyState, setWeekly, runWeekly, startWeekly, autostartState, setAutostart } from "./desktop.mjs";
 
 const HERE = fileURLToPath(new URL(".", import.meta.url));
 let VERSION = "0"; try { VERSION = JSON.parse(readFileSync(join(HERE, "package.json"), "utf8")).version; } catch {}
@@ -1450,6 +1452,7 @@ async function cmdApp() {
     } catch {}
   }
   const json = (res, obj) => { res.writeHead(200, { "content-type": "application/json" }); res.end(JSON.stringify(obj)); };
+  const screenOut = (s) => (s && s.id ? { ...s, blueprint: blueprint(s) } : s);
   const server = createServer(async (req, res) => {
     const u = new URL(req.url, "http://127.0.0.1");
     if (req.method === "GET" && u.pathname === "/") { res.writeHead(200, { "content-type": "text/html; charset=utf-8" }); res.end(EMBEDDED_UI); return; }
@@ -1501,6 +1504,20 @@ async function cmdApp() {
       if (u.pathname === "/api/mail") return json(res, mailState());
       if (u.pathname === "/api/mail/set" && req.method === "POST") { const b = await readBody(req); return json(res, setMail(b)); }
       if (u.pathname === "/api/mail/preview") { const items = sentMail(Number(u.searchParams.get("days")) || SINCE_WEEK, true); return json(res, { count: items.length, items: items.slice(0, 20) }); }
+      // Screens: screenshots + named regions (screens.mjs). The image is an <img>
+      // src, so it carries the token in the query (?t=), which the check above accepts.
+      if (u.pathname === "/api/screens") return json(res, loadScreens().map(screenOut));
+      if (u.pathname === "/api/screens/image") { const f = screenImage(u.searchParams.get("id")); if (!f) { res.writeHead(404); res.end("not found"); return; } res.writeHead(200, { "content-type": "image/png", "cache-control": "no-store" }); res.end(readFileSync(f)); return; }
+      if (u.pathname === "/api/screens/capture" && req.method === "POST") { const b = await readBody(req); const d = Math.min(10, Math.max(0, Number(b.delay) || 0)); if (d) await new Promise((r) => setTimeout(r, d * 1000)); return json(res, screenOut(captureScreen(b.name))); }
+      if (u.pathname === "/api/screens/import" && req.method === "POST") { const b = await readBody(req); return json(res, screenOut(importScreen(b.name, b.png))); }
+      if (u.pathname === "/api/screens/regions" && req.method === "POST") { const b = await readBody(req); return json(res, screenOut(setRegions(String(b.id || ""), b.regions))); }
+      if (u.pathname === "/api/screens/rename" && req.method === "POST") { const b = await readBody(req); return json(res, screenOut(renameScreen(String(b.id || ""), b.name))); }
+      if (u.pathname === "/api/screens/remove" && req.method === "POST") { const b = await readBody(req); return json(res, removeScreen(String(b.id || ""))); }
+      // What symbiot-desktop added (desktop.mjs): the weekly write-up, start at login.
+      if (u.pathname === "/api/desktop") return json(res, { weekly: weeklyState(), autostart: autostartState() });
+      if (u.pathname === "/api/desktop/weekly" && req.method === "POST") { const b = await readBody(req); return json(res, setWeekly(b)); }
+      if (u.pathname === "/api/desktop/weekly/run" && req.method === "POST") return json(res, await runWeekly(produce));
+      if (u.pathname === "/api/desktop/autostart" && req.method === "POST") { const b = await readBody(req); return json(res, setAutostart(!!b.on, realpathSync(fileURLToPath(import.meta.url)))); }
       if (u.pathname === "/api/run" && req.method === "POST") { const b = await readBody(req); const cmd = ["week", "standup", "todo"].includes(b.cmd) ? b.cmd : "week"; return json(res, await produce(cmd)); }
       if (u.pathname === "/api/connect" && req.method === "POST") { return json(res, await connectProvider(await readBody(req))); }
       if (u.pathname === "/api/ping") { if (u.searchParams.get("fresh") === "1") await checkLatest(); return json(res, { version: VERSION, started: SERVER_STARTED, latest: LATEST_VERSION, newer: semverGt(LATEST_VERSION, VERSION) }); }
@@ -1537,6 +1554,7 @@ async function cmdApp() {
   });
   server.listen(PORT, "127.0.0.1");
   checkLatest(); setInterval(checkLatest, 2 * 60 * 1000).unref(); // background update check (every 2 min)
+  startWeekly(produce); // the weekly write-up + notification, when switched on in Settings
 }
 
 // `symbiot mail [--on|--off] [--add <path>]`: what mail it can read, and a preview.
