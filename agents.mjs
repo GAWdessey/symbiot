@@ -68,8 +68,7 @@ function runHandoff(repoPath) {
   const lock = join(repoPath, ".symbiot", LOCK);
   const e = track(repoPath.split("/").pop(), fillHandoff(tmpl, repoPath), repoPath, () => {
     try { if (JSON.parse(readFileSync(lock, "utf8")).pid === e.pid) unlinkSync(lock); } catch {}
-    // tasks sent while it ran land now; start on them as that Send would have
-    if (releaseHeldTasks(repoPath) && /^\s*-\s*\[ \]/m.test(readSymbiot(repoPath, "TASKS.md"))) { const n = runHandoff(repoPath); if (n && !n.busy) n.fromHeld = true; }
+    startHeldTasks(repoPath); // tasks sent while it ran land now; start on them as that Send would have
   });
   if (!e) return null;
   e.handoff = true;
@@ -110,6 +109,16 @@ function releaseHeldTasks(path) {
   const ticked = new Set(readSymbiot(path, "TASKS.md").split("\n").filter((l) => isTick.test(l)).map(key));
   const md = held.split("\n").map((l) => /^\s*-\s*\[ \]/.test(l) && ticked.has(key(l)) ? l.replace("[ ]", "[x]") : l).join("\n");
   try { writeFileSync(join(path, ".symbiot", "TASKS.md"), md); unlinkSync(join(path, ".symbiot", HELD)); return true; } catch { return false; }
+}
+// Land the held brief and, if it leaves anything open, start an agent on it.
+// Runs when an agent this process started exits, and when the app next checks
+// the repo (syncTasks), which covers one `symbiot push --open` started: that
+// process is gone by the time its agent finishes. A held brief is released only
+// once, so this can't loop. Returns the new job, or null.
+function startHeldTasks(path) {
+  if (!releaseHeldTasks(path) || !/^\s*-\s*\[ \]/m.test(readSymbiot(path, "TASKS.md"))) return null;
+  const n = runHandoff(path); if (!n || n.busy) return null;
+  n.fromHeld = true; return n;
 }
 // Presets. [cmd, label, macAppName] — macApp used to launch GUI editors on macOS
 // where the CLI isn't on PATH (they're .app bundles).
@@ -318,10 +327,10 @@ function answerQuestions(path, answers, opts = {}) {
   if (opts.rerun) { const e = runHandoff(path); if (e && e.busy) out.note = "Answers saved. An agent is still running in that folder, so another wasn't started. Send them again once it finishes."; else if (e) out.rerun = e.id; else out.note = "Answers saved. Set an agent command in Settings to have the agent pick them up automatically."; }
   return out;
 }
-// Open tasks in a held brief (TASKS.next.md), or null if nothing is held.
+// The open tasks' titles in a held brief (TASKS.next.md), or null if nothing is held.
 function heldTasks(path) {
   const md = readSymbiot(path, HELD);
-  return md ? md.split("\n").filter((l) => /^\s*-\s*\[ \]/.test(l)).length : null;
+  return md ? md.split("\n").filter((l) => /^\s*-\s*\[ \]/.test(l)).map((l) => l.replace(/^\s*-\s*\[ \]\s*/, "").trim().slice(0, 200)) : null;
 }
 // The Agents tab: every tracked job, its log tail, what it changed, and — on the
 // newest job per folder — the questions/ideas it left and any tasks held for it.
@@ -334,4 +343,4 @@ function agentsList() {
   });
 }
 
-export { HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, fillHandoff, runHandoff, runningHandoff, writeTasks, releaseHeldTasks, detectHandoffs, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, agentQuestions, answerQuestions, agentsList };
+export { HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, fillHandoff, runHandoff, runningHandoff, writeTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, agentQuestions, answerQuestions, agentsList };

@@ -109,10 +109,11 @@ async function runUi(js, page, { storage = {}, handlers = true } = {}) {
   const bar = els.updatebar ? els.updatebar.innerHTML : "";
   if (!handlers) { process.off("unhandledRejection", onRejection); return { errors, hits, tabs: tabs.length, bar }; }
   for (const t of tabs) await fire("tab " + t.dataset.tab, t, "click");
-  // Every handler the page wired up, except Quit (stops the server) and the
-  // local-model setup (starts a download; its route is hit directly below).
-  // The updater is only wired via onclick, which this never calls.
-  const SKIP = new Set(["quit", "setuplocal"]);
+  // Every handler the page wired up, except Quit (stops the server), the
+  // local-model setup (starts a download; its route is hit directly below),
+  // screen capture (takes a real screenshot) and "Write it now" (pops a real
+  // desktop notification). The updater is only wired via onclick, never called.
+  const SKIP = new Set(["quit", "setuplocal", "capture", "weeklynow"]);
   for (const [id, el] of Object.entries({ ...els })) {
     if (SKIP.has(id)) continue;
     for (const type of ["click", "change", "keydown"]) if (el.listeners[type]) await fire("#" + id, el, type);
@@ -163,9 +164,17 @@ const calls = [
   ["/api/mail", "GET"],             // detected mail sources (isolated HOME -> none)
   ["/api/mail/set", "POST"],        // empty body -> nothing changes
   ["/api/mail/preview?days=7", "GET"],
+  ["/api/screens", "GET"],          // saved screens (isolated HOME -> none)
+  ["/api/screens/import", "POST"],  // no image -> "isn't a PNG", nothing saved
+  ["/api/screens/regions", "POST"], // no id -> "not found"
+  ["/api/screens/rename", "POST"],
+  ["/api/screens/remove", "POST"],
+  ["/api/desktop", "GET"],          // weekly write-up + start-at-login state
+  ["/api/desktop/weekly", "POST"],  // empty body -> schedule unchanged (stays off)
+  ["/api/desktop/autostart", "POST"], // empty body -> off: removes nothing outside the isolated HOME
 ];
 // Endpoints never hit here, and why. Anything else the UI calls must be covered.
-const NOT_HIT = { "/api/update": "runs a real global npm install", "/api/quit": "hit last, below" };
+const NOT_HIT = { "/api/update": "runs a real global npm install", "/api/quit": "hit last, below", "/api/screens/capture": "takes a real screenshot", "/api/desktop/weekly/run": "pops a real desktop notification" };
 
 // Every api('/api/...') call in the UI's JS, with the method its api() helper
 // sends: POST when a body argument is passed, else GET. Read from the source,

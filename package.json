@@ -13,6 +13,8 @@
     "drift.mjs",
     "ui.mjs",
     "mail.mjs",
+    "screens.mjs",
+    "desktop.mjs",
     "README.md",
     "LICENSE"
   ],

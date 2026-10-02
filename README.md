@@ -52,7 +52,8 @@ Tabs:
   one-line verdict on whether it needs new work at all (it prefers stabilising over
   new features), and ideas you can tick straight into **Tasks**. The graph needs
   **no AI key**; reviews and suggestions use your chosen model. While the scan runs
-  the Map shows its progress.
+  the Map shows its progress. Under the graph is the [experimental](#screens-blueprints-for-screen-automation)
+  **Screens** view.
 - **Drift** — the [`symbiot drift`](#whats-out-of-sync-symbiot-drift) report, with
   a "fetch latest" toggle (and an [experimental](#experimental) "check CI").
 - **Week / Standup / Todo** — the write-ups (these use your chosen AI).
@@ -71,7 +72,8 @@ Tabs:
   did** — files changed and commits made, read from git, whichever agent it was.
   When an agent leaves **questions, options or ideas** for you, they show up on its
   block (see [Questions from your agent](#questions-from-your-agent)).
-- **Settings** — your AI, the folders to scan and your agent command, plus the
+- **Settings** — your AI, the folders to scan, your agent command, the
+  [weekly write-up and start at login](#every-week-and-at-login), plus the
   [experimental](#experimental) email, model recommendations and one-click local
   model.
 
@@ -88,6 +90,25 @@ copy (`SYMBIOT_FORCE_NEW=1` starts one anyway). If something else holds the port
 it falls back to a free one.
 It works on **Linux, macOS and Windows**; with no Chromium-family browser to open
 the chrome-less window, it uses your default browser.
+
+### Every week, and at login
+
+Two switches in Settings do what the old `symbiot-desktop` tray app did, without
+Electron:
+
+- **Write my week and notify me** on a day and hour you pick (Friday 16:00 by
+  default). The app writes your week with your chosen AI, saves it to
+  `~/.config/symbiot/weeks/<date>.md`, and sends a desktop notification
+  (`notify-send` on Linux, Notification Center on macOS, a tray balloon on
+  Windows). The Week tab shows it until you write a new one. It runs while
+  `symbiot app` is running. A week missed while the computer was off is written
+  when the app next starts, once. **Write it now** checks that it works.
+- **Start Symbiot in the background when I log in** adds an autostart entry
+  (`~/.config/autostart/symbiot.desktop` on Linux, a LaunchAgent on macOS, the
+  Startup folder on Windows) that starts `symbiot app` with no window, so the
+  weekly write-up happens even on days you don't open it. Running `symbiot app`
+  then opens that copy's window. Switch it off to remove the entry. It needs an
+  installed Symbiot (`npm install -g symbiot`), not `npx`.
 
 ## Hand tasks to your coding agent: `symbiot push`
 
@@ -174,10 +195,11 @@ One agent per repo: while a run is still going (tracked in
 again doesn't start a second agent there, and doesn't rewrite the `TASKS.md` it's
 working from either: the new tasks wait in `.symbiot/TASKS.next.md` and replace
 `TASKS.md` when it finishes, keeping anything it ticked. The agent's block in the
-**Agents** tab shows "tasks held" meanwhile, and when the agent finishes, the app
-starts one on the held tasks by itself. If `symbiot push --open` started the
-running agent, the app can't see it exit, so send again once it finishes to
-start an agent on them. Orca and
+**Agents** tab shows "tasks held" meanwhile (hover it for their titles), and
+when the agent finishes, the app starts one on the held tasks by itself. If
+`symbiot push --open` started the running agent, the app can't see it exit, so
+it starts one the next time it checks that repo after it finishes (opening the
+**Tasks** tab), or you can send again. Orca and
 editor presets only open a tab and exit, so Symbiot can't see the agent you run
 in them. Send to repos stays disabled until its
 handoffs have started, so a double click can't send twice.
@@ -376,6 +398,27 @@ with progress, and switches Symbiot over to it. If Ollama isn't installed it pri
 the one-line install for your OS and you re-run it after. Both are buttons in
 Settings, where the download shows in the Agents tab. You can always pick a model
 yourself with `symbiot login`.
+
+### Screens: blueprints for screen automation
+
+Under the Map, **Screens** builds the map that screen automation needs: what's on a
+screen, and where. **Capture screen** (now, or after a few seconds so you can bring
+the right window to the front) or **Load image** for a PNG you already have, then
+drag a box over each part that matters (a button, a field, a menu) and name it.
+Hovering shows the pixel under the pointer. Each region keeps its position and size
+in the screenshot's own pixels, plus its **centre**, the point a click would aim at.
+**Copy blueprint** copies them as JSON; everything is also saved in
+`~/.config/symbiot/screens/screens.json` (next to each screen's PNG), where an
+agent or script can read it.
+
+Nothing clicks or types yet. This is the first slice: seeing the screen and mapping
+it. Capture uses the screenshot tool your system has: `screencapture` on macOS,
+PowerShell on Windows, and on Linux `gnome-screenshot`, `spectacle`,
+`cosmic-screenshot`, `grim` or `xfce4-screenshooter` (plus `scrot` / ImageMagick
+`import` on X11). Why it's experimental: Wayland desktops restrict screenshots, so
+capture may fail or ask for permission (use **Load image** then). And on a scaled
+(HiDPI) display, screenshot pixels can differ from the coordinates a click tool
+expects.
 
 ## Config, development and releasing
 

@@ -30,8 +30,10 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { EMBEDDED_UI } from "./ui.mjs";
 import { detectMailSources, mailActivity } from "./mail.mjs";
 import { CONFIG_PATH, loadConfig, saveConfig, loadTasks, saveTasks, sh, hasCmd, repoState } from "./core.mjs";
-import { HANDOFF_PROMPT, QUESTIONS_MAX, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, fillHandoff, runHandoff, writeTasks, releaseHeldTasks, detectHandoffs, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, parseQuestions, agentQuestions, answerQuestions, agentsList } from "./agents.mjs";
+import { HANDOFF_PROMPT, QUESTIONS_MAX, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, fillHandoff, runHandoff, writeTasks, startHeldTasks, detectHandoffs, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, parseQuestions, agentQuestions, answerQuestions, agentsList } from "./agents.mjs";
 import { gitDefaultBranch, loadDeploys, driftRepo } from "./drift.mjs";
+import { loadScreens, screenImage, captureScreen, importScreen, setRegions, renameScreen, removeScreen, blueprint } from "./screens.mjs";
+import { weeklyState, setWeekly, runWeekly, startWeekly, autostartState, setAutostart } from "./desktop.mjs";
 
 const HERE = fileURLToPath(new URL(".", import.meta.url));
 let VERSION = "0"; try { VERSION = JSON.parse(readFileSync(join(HERE, "package.json"), "utf8")).version; } catch {}
@@ -125,16 +127,18 @@ function repoPathMap() {
 // please review", NOT archived: it waits in review until the user approves it
 // (approveRepo: branch + commit + push + PR, then archive) or sends it back
 // (sendBack: unticked, open again). Only a task the USER ticks archives directly.
+// Tasks held for an agent that has since finished land here too, and an agent
+// starts on what's still open in them (one `push --open` started can't do that).
 function syncTasks() {
-  const t = loadTasks(); const map = repoPathMap(); let review = 0, archived = 0; const checkedByRepo = {};
+  const t = loadTasks(); const map = repoPathMap(); let review = 0, archived = 0, started = 0; const checkedByRepo = {};
   for (const x of t) {
     if (x.archived || x.done || x.review || !x.repo) continue;
-    if (!(x.repo in checkedByRepo)) { const p = map[x.repo]; if (p) releaseHeldTasks(p); checkedByRepo[x.repo] = p ? completedInRepo(p) : []; }
+    if (!(x.repo in checkedByRepo)) { const p = map[x.repo]; if (p && startHeldTasks(p)) started++; checkedByRepo[x.repo] = p ? completedInRepo(p) : []; }
     if (checkedByRepo[x.repo].includes(x.text.toLowerCase())) { x.review = true; x.reviewAt = Date.now(); review++; }
   }
   for (const x of t) { if (x.done && !x.archived) { x.archived = true; x.archivedAt = Date.now(); archived++; } }
   saveTasks(t);
-  return { review, archived };
+  return { review, archived, started };
 }
 // git with an argv (task text goes into commit messages — never through a shell)
 function git(repo, args, timeout = 30000) {
@@ -331,7 +335,7 @@ function cmdPush() {
       const busy = r.written.map((w) => ({ w, e: runHandoff(w.path) })).filter((x) => x.e && x.e.busy);
       const n = r.written.length - busy.length;
       if (n) console.log("\n" + c.g("→ ") + `Handed ${n} repo(s) to your agent (${r.handoff}).`);
-      for (const { w, e } of busy) console.log("\n" + c.y("Not started: ") + `${w.name} already has an agent running.` + c.d(e.auto ? "  Its new tasks are held, and the app starts an agent on them when it finishes." : "  Its new tasks are held until it finishes; send again then to start one on them."));
+      for (const { w, e } of busy) console.log("\n" + c.y("Not started: ") + `${w.name} already has an agent running.` + c.d(e.auto ? "  Its new tasks are held, and the app starts an agent on them when it finishes." : "  Its new tasks are held until it finishes. After that, the app starts an agent on them the next time it checks the repo (opening its Tasks tab), or send again."));
     }
   } else {
     console.log("\n" + c.d("Point your agent at .symbiot/TASKS.md in each repo.  (add --open to run your configured agent command)"));
@@ -1448,6 +1452,7 @@ async function cmdApp() {
     } catch {}
   }
   const json = (res, obj) => { res.writeHead(200, { "content-type": "application/json" }); res.end(JSON.stringify(obj)); };
+  const screenOut = (s) => (s && s.id ? { ...s, blueprint: blueprint(s) } : s);
   const server = createServer(async (req, res) => {
     const u = new URL(req.url, "http://127.0.0.1");
     if (req.method === "GET" && u.pathname === "/") { res.writeHead(200, { "content-type": "text/html; charset=utf-8" }); res.end(EMBEDDED_UI); return; }
@@ -1499,6 +1504,20 @@ async function cmdApp() {
       if (u.pathname === "/api/mail") return json(res, mailState());
       if (u.pathname === "/api/mail/set" && req.method === "POST") { const b = await readBody(req); return json(res, setMail(b)); }
       if (u.pathname === "/api/mail/preview") { const items = sentMail(Number(u.searchParams.get("days")) || SINCE_WEEK, true); return json(res, { count: items.length, items: items.slice(0, 20) }); }
+      // Screens: screenshots + named regions (screens.mjs). The image is an <img>
+      // src, so it carries the token in the query (?t=), which the check above accepts.
+      if (u.pathname === "/api/screens") return json(res, loadScreens().map(screenOut));
+      if (u.pathname === "/api/screens/image") { const f = screenImage(u.searchParams.get("id")); if (!f) { res.writeHead(404); res.end("not found"); return; } res.writeHead(200, { "content-type": "image/png", "cache-control": "private, max-age=86400" }); res.end(readFileSync(f)); return; } // a screen's image never changes
+      if (u.pathname === "/api/screens/capture" && req.method === "POST") { const b = await readBody(req); const d = Math.min(10, Math.max(0, Number(b.delay) || 0)); if (d) await new Promise((r) => setTimeout(r, d * 1000)); return json(res, screenOut(captureScreen(b.name))); }
+      if (u.pathname === "/api/screens/import" && req.method === "POST") { const b = await readBody(req); return json(res, screenOut(importScreen(b.name, b.png))); }
+      if (u.pathname === "/api/screens/regions" && req.method === "POST") { const b = await readBody(req); return json(res, screenOut(setRegions(String(b.id || ""), b.regions))); }
+      if (u.pathname === "/api/screens/rename" && req.method === "POST") { const b = await readBody(req); return json(res, screenOut(renameScreen(String(b.id || ""), b.name))); }
+      if (u.pathname === "/api/screens/remove" && req.method === "POST") { const b = await readBody(req); return json(res, removeScreen(String(b.id || ""))); }
+      // What symbiot-desktop added (desktop.mjs): the weekly write-up, start at login.
+      if (u.pathname === "/api/desktop") return json(res, { weekly: weeklyState(), autostart: autostartState() });
+      if (u.pathname === "/api/desktop/weekly" && req.method === "POST") { const b = await readBody(req); return json(res, setWeekly(b)); }
+      if (u.pathname === "/api/desktop/weekly/run" && req.method === "POST") return json(res, await runWeekly(produce));
+      if (u.pathname === "/api/desktop/autostart" && req.method === "POST") { const b = await readBody(req); return json(res, setAutostart(!!b.on, realpathSync(fileURLToPath(import.meta.url)))); }
       if (u.pathname === "/api/run" && req.method === "POST") { const b = await readBody(req); const cmd = ["week", "standup", "todo"].includes(b.cmd) ? b.cmd : "week"; return json(res, await produce(cmd)); }
       if (u.pathname === "/api/connect" && req.method === "POST") { return json(res, await connectProvider(await readBody(req))); }
       if (u.pathname === "/api/ping") { if (u.searchParams.get("fresh") === "1") await checkLatest(); return json(res, { version: VERSION, started: SERVER_STARTED, latest: LATEST_VERSION, newer: semverGt(LATEST_VERSION, VERSION) }); }
@@ -1535,6 +1554,7 @@ async function cmdApp() {
   });
   server.listen(PORT, "127.0.0.1");
   checkLatest(); setInterval(checkLatest, 2 * 60 * 1000).unref(); // background update check (every 2 min)
+  startWeekly(produce); // the weekly write-up + notification, when switched on in Settings
 }
 
 // `symbiot mail [--on|--off] [--add <path>]`: what mail it can read, and a preview.

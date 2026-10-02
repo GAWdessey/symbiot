@@ -11,6 +11,8 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { authorship, repoState, readmeInfo, houseRules, findAllRepos, driftRepo, buildTasksMd, taskType, EMBEDDED_UI, orcaHandoffCmd, migrateOrcaCmd, fillHandoff, ORCA_CLAUDE_CMD, CLAUDE_CMD, HANDOFF_PROMPT, shipChanges, semverGt, updateCmd, parseQuestions } from "../index.mjs";
 import { mailActivity } from "../mail.mjs";
+import { pngSize, captureCmds } from "../screens.mjs";
+import { weeklyDue, lastSlot, autostartContent, notifyCmd } from "../desktop.mjs";
 
 const INDEX = join(dirname(fileURLToPath(import.meta.url)), "..", "index.mjs");
 const ROOT = mkdtempSync(join(tmpdir(), "symbiot-fix-"));
@@ -264,15 +266,28 @@ try {
     out.noLoop = a.HANDOFFS.length === 2;
     writeFileSync(next, "- [ ] stale\\n"); out.supersede = a.writeTasks(dir, "- [ ] D\\n");
     out.superseded = !existsSync(next) && readFileSync(f, "utf8") === "- [ ] D\\n";
+    // an agent \`symbiot push --open\` started: the CLI that owns its lock has exited
+    const { spawn } = await import("node:child_process");
+    const ext = spawn("sleep", ["1"]), exited = new Promise((r) => ext.on("exit", r));
+    writeFileSync(dir + "/.symbiot/agent.pid", JSON.stringify({ pid: ext.pid, id: "ext", startedAt: Date.now(), owner: 2147483646 }));
+    a.setHandoffCmd("true");
+    out.extHeld = a.writeTasks(dir, "- [x] D\\n- [ ] E\\n"); out.extAuto = a.runningHandoff(dir).auto;
+    out.extEarly = a.startHeldTasks(dir);
+    await exited;
+    const ext2 = a.startHeldTasks(dir); out.extStarted = !!ext2 && ext2.fromHeld && readFileSync(f, "utf8") === "- [x] D\\n- [ ] E\\n";
+    out.extOnce = a.startHeldTasks(dir) === null;
+    await until(() => ext2.status !== "running");
     console.log(JSON.stringify(out));`], { encoding: "utf8", timeout: 30000, env: { ...process.env, HOME: hhome, USERPROFILE: hhome } });
   let hv = {}; try { hv = JSON.parse(hd.stdout.trim().split("\n").pop()); } catch { console.log(hd.stdout, hd.stderr); }
   ok("no agent running -> TASKS.md is written straight away", hv.freeHeld === false, hv);
   ok("agent running -> the new brief is held, its TASKS.md untouched", hv.busyHeld === true && hv.during === "- [ ] A\n- [ ] B\n" && hv.earlyRelease === false, hv);
-  ok("the agent's block shows how many tasks are held", hv.shown === 3 && hv.shownAfter === null, hv);
+  ok("the agent's block lists the held tasks' titles", JSON.stringify(hv.shown) === '["A","B","C"]' && hv.shownAfter === null, hv);
   ok("once it exits the held brief lands, keeping the agent's ticks", hv.nextGone && hv.after === "- [x] A\n- [ ] B\n- [ ] C\n", hv.after);
   ok("...and an agent starts on it by itself", hv.autoStarted, hv);
   ok("a held brief with nothing open lands without starting another", hv.noLoop, hv);
   ok("a later send when free replaces a leftover held brief", hv.supersede === false && hv.superseded, hv);
+  ok("held for a push --open agent: nothing starts while it runs", hv.extHeld === true && hv.extAuto === false && hv.extEarly === null, hv);
+  ok("...and once it has exited, the next check starts one on the held tasks, once", hv.extStarted && hv.extOnce, hv);
 
   console.log("APPROVE — approved work ships: branch off the default, commit (minus .symbiot/), push");
   const gitEnv = { ...process.env, GIT_CONFIG_GLOBAL: join(ROOT, "globalgitconfig"), GIT_CONFIG_SYSTEM: "/dev/null", GIT_TERMINAL_PROMPT: "0" };
@@ -328,6 +343,9 @@ try {
     out.untasked = m.pendingReview();
     out.ac = m.approveChanges("revapp", { push: false }); out.acTasks = tasks();
     out.acAgain = m.approveChanges("revapp", { push: false });
+    // tasks held for an agent no Symbiot process is watching: the app's next check starts one
+    writeFileSync(f.replace("TASKS.md", "TASKS.next.md"), "- [ ] Open task\\n"); m.setHandoffCmd("true");
+    out.heldSync = m.syncTasks(); out.heldSync2 = m.syncTasks();
     console.log(JSON.stringify(out));`;
   mkdirSync(join(home, ".config", "symbiot"), { recursive: true });
   writeFileSync(join(home, ".config", "symbiot", "tasks.json"), JSON.stringify([{ id: "t1", text: "Fix the bug", repo: "revapp", done: false, ts: 1 }]));
@@ -343,6 +361,7 @@ try {
   const acMsg = o.ac && o.ac.commit ? execSync("git log -1 --format=%B " + o.ac.commit, { cwd: proj, encoding: "utf8", env: gitEnv }) : "";
   ok("approve changes without a task commits them, tasks untouched", o.ac && o.ac.ok && o.ac.approved === 0 && /without a task/.test(acMsg) && o.acTasks.find((x) => x.id === "t2" && !x.done && !x.review), o.ac);
   ok("nothing left -> approve changes without a task says so", o.acAgain && /No uncommitted changes/.test(o.acAgain.error || ""), o.acAgain);
+  ok("checking tasks starts an agent on held tasks whose agent has finished, once", o.heldSync && o.heldSync.started === 1 && o.heldSync2.started === 0, [o.heldSync, o.heldSync2]);
 
   console.log("QUESTIONS — any agent's .symbiot/QUESTIONS.md parses into questions, options and ideas");
   const pq = parseQuestions("# Questions for you\n\n## Questions\n### Keep the old config format?\nReading both costs ~40 lines.\n- Yes, read both (recommended)\n- No, migrate once\n\n### Which port?\n1. 7391\n2. random\n\n## Suggestions\n- Add a --json flag to drift\n- [ ] Cache the map scan\n");
@@ -393,6 +412,68 @@ try {
   ok("--on switches it on (sources kept)", mon.status === 0 && mailCfgOf().enabled === true && (mailCfgOf().sources || []).length === 1, mailCfgOf());
   mcli(["--off"]);
   ok("--off switches it off again", mailCfgOf().enabled === false, mailCfgOf());
+
+  console.log("SCREENS — a screenshot's regions are kept in its pixels, with a centre to aim at");
+  // header-only PNG: signature + IHDR (all pngSize reads); 1920x1080
+  const png = (w, h) => { const b = Buffer.alloc(33); Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(b, 0); b.writeUInt32BE(13, 8); b.write("IHDR", 12, "ascii"); b.writeUInt32BE(w, 16); b.writeUInt32BE(h, 20); return b; };
+  ok("pngSize reads a PNG's width and height", JSON.stringify(pngSize(png(1920, 1080))) === '{"w":1920,"h":1080}', pngSize(png(1920, 1080)));
+  ok("pngSize refuses what isn't a PNG", pngSize(Buffer.from("GIF89a not a png at all, really")) === null, "");
+  ok("captureCmds: macOS uses screencapture, Linux tries several tools", captureCmds("/t/a.png", "darwin")[0][0] === "screencapture" && captureCmds("/t/a.png", "linux").map((c) => c[0]).includes("gnome-screenshot"), captureCmds("/t/a.png", "linux"));
+  // isolated HOME: screens live in Symbiot's config folder
+  const shome = join(ROOT, "shome"); mkdirSync(shome, { recursive: true });
+  const sc = spawnSync(process.execPath, ["--input-type=module", "-e", `
+    import * as s from ${JSON.stringify(join(dirname(INDEX), "screens.mjs"))};
+    import { existsSync } from "node:fs";
+    const out = {};
+    out.bad = s.importScreen("x", Buffer.from("not a png").toString("base64"));
+    const a = s.importScreen("PR page", "data:image/png;base64," + ${JSON.stringify(png(1920, 1080).toString("base64"))});
+    out.a = a; out.file = existsSync(s.screenImage(a.id));
+    out.reg = s.setRegions(a.id, [{ label: "Merge button", x: 100.4, y: 50, w: 40, h: 21 }, { label: "", x: 1900, y: 1070, w: 500, h: 500 }]);
+    out.bp = s.blueprint(out.reg);
+    out.traversal = s.screenImage("../../config");
+    out.rm = s.removeScreen(a.id); out.gone = !existsSync(${JSON.stringify(join(shome, ".config", "symbiot", "screens"))} + "/" + a.id + ".png") && s.loadScreens().length === 0;
+    console.log(JSON.stringify(out));`], { encoding: "utf8", env: { ...process.env, HOME: shome, USERPROFILE: shome } });
+  let so = {}; try { so = JSON.parse(sc.stdout); } catch {}
+  ok("a non-PNG upload is refused", /isn't a PNG/.test((so.bad || {}).error || ""), so.bad || sc.stderr);
+  ok("a loaded PNG is saved with its size", so.a && so.a.w === 1920 && so.a.h === 1080 && so.a.name === "PR page" && so.file, so.a);
+  const sr0 = so.reg && so.reg.regions[0], sr1 = so.reg && so.reg.regions[1];
+  ok("regions are whole pixels; one past the edge is clamped to the image", sr0 && sr0.x === 100 && sr0.label === "Merge button" && sr1 && sr1.x + sr1.w === 1920 && sr1.y + sr1.h === 1080 && sr1.label === "region 2", so.reg);
+  ok("the blueprint gives each region's centre", so.bp && JSON.stringify(so.bp.regions[0].center) === '{"x":120,"y":60}' && so.bp.size.w === 1920, so.bp);
+  ok("an image request can't leave the screens folder", so.traversal === "", so.traversal);
+  ok("removing a screen deletes its image too", so.rm && so.rm.ok && so.gone, so);
+
+  console.log("DESKTOP — the weekly write-up's schedule, and start at login (from symbiot-desktop)");
+  const at = (daysAgo, hour, min = 0) => { const d = new Date(); d.setDate(d.getDate() - daysAgo); d.setHours(hour, min, 0, 0); return d.getTime(); };
+  const today = new Date().getDay();
+  ok("due once today's slot has passed and it hasn't run since", weeklyDue({ on: true, day: today, hour: 16, last: at(7, 16, 30) }, at(0, 17)), "");
+  ok("not due before today's slot (last week's already ran)", !weeklyDue({ on: true, day: today, hour: 16, last: at(7, 16, 30) }, at(0, 15)), "");
+  ok("a slot missed while off runs when it's next up (days later)", weeklyDue({ on: true, day: (today + 5) % 7, hour: 9, last: at(9, 9, 30) }, at(0, 12)), "");
+  ok("not due again after it ran", !weeklyDue({ on: true, day: today, hour: 16, last: at(0, 16, 5) }, at(0, 17)), "");
+  ok("never due while off", !weeklyDue({ on: false, day: today, hour: 0, last: 0 }, at(0, 23)), "");
+  ok("lastSlot lands on the right weekday and hour", new Date(lastSlot(at(0, 12), (today + 1) % 7, 8)).getDay() === (today + 1) % 7 && new Date(lastSlot(at(0, 12), (today + 1) % 7, 8)).getHours() === 8 && lastSlot(at(0, 12), (today + 1) % 7, 8) < at(0, 12), "");
+  const lin = autostartContent("/usr/bin/node", "/opt/sym $x/index.mjs", "linux", "/usr/bin:/bin");
+  ok("Linux autostart: an XDG entry that runs `app` with no window, paths quoted", /^Exec=env SYMBIOT_NO_OPEN=1 "PATH=\/usr\/bin:\/bin" "\/usr\/bin\/node" "\/opt\/sym \\\$x\/index.mjs" app$/m.test(lin) && /\[Desktop Entry\]/.test(lin), lin);
+  const mac = autostartContent("/usr/local/bin/node", "/a&b/index.mjs", "darwin", "/usr/bin");
+  ok("macOS autostart: a LaunchAgent that runs at load, XML-escaped", /<key>RunAtLoad<\/key><true\/>/.test(mac) && mac.includes("<string>/a&amp;b/index.mjs</string>") && /SYMBIOT_NO_OPEN<\/key><string>1</.test(mac), mac);
+  ok("Windows autostart: a Startup-folder script", /set SYMBIOT_NO_OPEN=1\r\nstart "Symbiot" \/min "C:\\node.exe" "C:\\s\\index.mjs" app/.test(autostartContent("C:\\node.exe", "C:\\s\\index.mjs", "win32")), autostartContent("C:\\node.exe", "C:\\s\\index.mjs", "win32"));
+  ok("notifications: osascript on macOS, a PowerShell balloon on Windows", notifyCmd("Symbiot", "Hi", "darwin")[0] === "osascript" && notifyCmd("Symbiot", "it's", "win32")[1].join(" ").includes("'it''s'"), notifyCmd("Symbiot", "it's", "win32"));
+  // isolated HOME: these write Symbiot's config and the OS autostart file
+  const dhome = join(ROOT, "dhome"); mkdirSync(dhome, { recursive: true });
+  const ds = spawnSync(process.execPath, ["--input-type=module", "-e", `
+    import * as d from ${JSON.stringify(join(dirname(INDEX), "desktop.mjs"))};
+    import { existsSync } from "node:fs";
+    const out = {};
+    out.on = d.setWeekly({ on: true, day: 3, hour: 9 }); out.dueNow = d.weeklyDue(d.weeklyCfg());
+    out.badDay = d.setWeekly({ day: 9, hour: "" });
+    out.as = d.setAutostart(true, "/opt/symbiot/index.mjs"); out.asFile = existsSync(out.as.file) && out.as.file.startsWith(${JSON.stringify(dhome)});
+    out.off = d.setAutostart(false); out.offGone = !existsSync(out.as.file);
+    out.npx = d.setAutostart(true, "/home/x/.npm/_npx/abc/node_modules/symbiot/index.mjs");
+    console.log(JSON.stringify(out));`], { encoding: "utf8", env: { ...process.env, HOME: dhome, USERPROFILE: dhome } });
+  let dso = {}; try { dso = JSON.parse(ds.stdout); } catch {}
+  ok("switching the weekly write-up on saves the schedule and doesn't fire at once", dso.on && dso.on.on === true && dso.on.day === 3 && dso.on.hour === 9 && dso.dueNow === false, dso.on || ds.stderr);
+  ok("an out-of-range day or empty hour keeps what was set", dso.badDay && dso.badDay.day === 3 && dso.badDay.hour === 9, dso.badDay);
+  ok("start at login writes its file inside HOME, and off removes it", dso.as && dso.as.on && dso.asFile && dso.off && !dso.off.on && dso.offGone, dso);
+  ok("start at login refuses an npx copy (it would vanish)", dso.npx && /npx/.test(dso.npx.error || "") && !dso.npx.on, dso.npx);
 
   console.log("UPDATE — only a higher npm version is offered as an update");
   ok("0.26.0 is not newer than 0.27.0 (local build ahead of npm)", !semverGt("0.26.0", "0.27.0"), "");
