@@ -30,6 +30,13 @@ function pngSize(buf) {
   return w && h ? { w, h } : null;
 }
 
+// Windows: user32 calls for PowerShell. DPI-aware first, so with display scaling
+// the capture is the whole screen in real pixels and a click lands in the same ones.
+const WIN_USER32 = "Add-Type -Namespace Symbiot -Name User32 -MemberDefinition '[DllImport(\"user32.dll\")] public static extern bool SetProcessDPIAware(); [DllImport(\"user32.dll\")] public static extern bool SetCursorPos(int x, int y); [DllImport(\"user32.dll\")] public static extern void mouse_event(uint f, uint dx, uint dy, uint d, System.UIntPtr e);'; ";
+const WIN_DPI = WIN_USER32 + "[Symbiot.User32]::SetProcessDPIAware() | Out-Null; ";
+// -EncodedCommand (base64 UTF-16LE) carries the script's quotes through untouched.
+const psEncoded = (script) => ["powershell", ["-NoProfile", "-NonInteractive", "-EncodedCommand", Buffer.from(script, "utf16le").toString("base64")]];
+
 // Screenshot tools to try, in order, as [cmd, args] that write a PNG to `file`,
 // or [cmd, args, dir] for a tool that only takes a folder (it picks the name).
 // scrot and import only see X11, which on Wayland is a blank screen, so they're
@@ -37,12 +44,42 @@ function pngSize(buf) {
 function captureCmds(file, platform = process.platform, wayland = process.env.XDG_SESSION_TYPE === "wayland") {
   if (platform === "darwin") return [["screencapture", ["-x", "-t", "png", file]]];
   if (platform === "win32") {
-    const ps = "Add-Type -AssemblyName System.Windows.Forms,System.Drawing; $b = [System.Windows.Forms.SystemInformation]::VirtualScreen; $bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height; $g = [System.Drawing.Graphics]::FromImage($bmp); $g.CopyFromScreen($b.Left, $b.Top, 0, 0, $bmp.Size); $bmp.Save('" + file.replace(/'/g, "''") + "', [System.Drawing.Imaging.ImageFormat]::Png)";
-    return [["powershell", ["-NoProfile", "-Command", ps]]];
+    const ps = WIN_DPI + "Add-Type -AssemblyName System.Windows.Forms,System.Drawing; $b = [System.Windows.Forms.SystemInformation]::VirtualScreen; $bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height; $g = [System.Drawing.Graphics]::FromImage($bmp); $g.CopyFromScreen($b.Left, $b.Top, 0, 0, $bmp.Size); $bmp.Save('" + file.replace(/'/g, "''") + "', [System.Drawing.Imaging.ImageFormat]::Png)";
+    return [psEncoded(ps)];
   }
   const dir = file.replace(/\.png$/, ".d");
   return [["gnome-screenshot", ["-f", file]], ["spectacle", ["-b", "-n", "-f", "-o", file]], ["cosmic-screenshot", ["--interactive=false", "--modal=false", "--notify=false", "--save-dir", dir], dir], ["grim", [file]],
     ["xfce4-screenshooter", ["-f", "-s", file]], ...(wayland ? [] : [["scrot", [file]], ["import", ["-window", "root", file]]])];
+}
+// On Wayland, cosmic-screenshot (and other portal tools) ask xdg-desktop-portal,
+// which keys its screenshot permission on the app that started us: the systemd
+// unit in our cgroup, app[-<launcher>]-<AppID>-<random>.scope or
+// app[-<launcher>]-<AppID>[@<random>].service. Started from the COSMIC dock,
+// that's com.system76.CosmicAppList; from a terminal, "" (no app id).
+function portalAppId(cgroup) {
+  const unit = String(cgroup || "").trim().split("\n").pop().split("/").pop();
+  const m = unit.match(/^app-(?:[A-Za-z0-9]+-)?(.+?)(?:-[^-]*)?\.scope$/) || unit.match(/^app-(?:[A-Za-z0-9]+-)?(.+?)(?:@.*)?\.service$/);
+  const id = m ? m[1].replace(/\\x2d/g, "-") : "";
+  return /^[A-Za-z_][\w-]*(\.[A-Za-z_][\w-]*)+$/.test(id) ? id : "";
+}
+const PERMS = ["--session", "--dest", "org.freedesktop.impl.portal.PermissionStore", "--object-path", "/org/freedesktop/impl/portal/PermissionStore", "--method"];
+// The app id the portal has screenshots turned off for (it answers "no" without
+// asking again), or "" when they're allowed, unset or it can't be read.
+function screenshotBlocked() {
+  if (process.platform !== "linux" || !hasCmd("gdbus")) return "";
+  let id = ""; try { id = portalAppId(readFileSync("/proc/self/cgroup", "utf8")); } catch {}
+  if (!id) return "";
+  const out = String(spawnSync("gdbus", ["call", ...PERMS, "org.freedesktop.impl.portal.PermissionStore.Lookup", "screenshot", "screenshot"], { encoding: "utf8", timeout: 5000 }).stdout || "");
+  const m = out.match(new RegExp("'" + id.replace(/[.\\-]/g, "\\$&") + "': \\['(\\w+)'"));
+  return m && m[1] === "no" ? id : "";
+}
+// Turn screenshots on for the app id that blocks them. Only when the user asks,
+// in the app: it's their desktop's permission, and it covers every app started
+// the same way (e.g. everything from the COSMIC dock).
+function allowScreenshots() {
+  const id = screenshotBlocked(); if (!id) return { error: "Screenshots aren't turned off for Symbiot. Try Capture screen again." };
+  const p = spawnSync("gdbus", ["call", ...PERMS, "org.freedesktop.impl.portal.PermissionStore.SetPermission", "screenshot", "true", "screenshot", id, "['yes']"], { encoding: "utf8", timeout: 5000 });
+  return p.status === 0 ? { ok: true, app: id } : { error: "Couldn't change the permission: " + (String(p.stderr || "").trim() || "exit " + p.status) };
 }
 function addScreen(id, name, size, via) {
   const s = { id, name: String(name || "").trim().slice(0, 80) || "Screen " + new Date().toLocaleString(), w: size.w, h: size.h, ts: Date.now(), via, regions: [] };
@@ -64,6 +101,8 @@ function captureScreen(name) {
     if (size) return addScreen(id, name, size, cmd);
     try { unlinkSync(file); } catch {}
   }
+  const blocked = tried.length && screenshotBlocked();
+  if (blocked) return { error: `Your desktop has screenshots turned off for apps started from ${blocked}, which is how Symbiot was started (tried ${tried.join(", ")}). Allow screenshots to turn them back on, or take one yourself and use Load image.`, blocked };
   return { error: tried.length ? `Couldn't take a screenshot (tried ${tried.join(", ")}). Take one yourself and use Load image.` : "No screenshot tool found. Install gnome-screenshot, spectacle, grim or scrot, or take one yourself and use Load image." };
 }
 // A PNG you already have (base64, or a data: URL), for when capture can't run.
@@ -108,11 +147,12 @@ function blueprint(s) {
 // mouse to (x, y) and left-click there. xdotool only reaches X11 windows, so on
 // Wayland it's ydotool (it needs /dev/uinput). ydotool 1.x moves relative unless
 // told --absolute and takes a button code; 0.1.x (Debian/Ubuntu) moves to the
-// point and takes a button number.
+// point and takes a button number. On Windows, PowerShell: SetCursorPos, offset
+// by the virtual screen's corner (the capture's 0,0), then left down + up.
 function clickCmds(x, y, platform = process.platform, wayland = process.env.XDG_SESSION_TYPE === "wayland", ydotool1 = false) {
-  x = String(x); y = String(y);
+  x = String(Math.round(Number(x)) || 0); y = String(Math.round(Number(y)) || 0);
   if (platform === "darwin") return [[["cliclick", ["c:" + x + "," + y]]]];
-  if (platform === "win32") return [];
+  if (platform === "win32") return [[psEncoded(WIN_DPI + "Add-Type -AssemblyName System.Windows.Forms; $b = [System.Windows.Forms.SystemInformation]::VirtualScreen; if (-not [Symbiot.User32]::SetCursorPos($b.Left + " + x + ", $b.Top + " + y + ")) { [Console]::Error.WriteLine('SetCursorPos failed'); exit 1 }; Start-Sleep -Milliseconds 50; [Symbiot.User32]::mouse_event(2, 0, 0, 0, [UIntPtr]::Zero); [Symbiot.User32]::mouse_event(4, 0, 0, 0, [UIntPtr]::Zero)")]];
   const ydo = ydotool1 ? [["ydotool", ["mousemove", "--absolute", "-x", x, "-y", y]], ["ydotool", ["click", "0xC0"]]] : [["ydotool", ["mousemove", x, y]], ["ydotool", ["click", "1"]]];
   const xdo = [["xdotool", ["mousemove", "--sync", x, y, "click", "1"]]];
   return wayland ? [ydo] : [xdo, ydo];
@@ -131,7 +171,6 @@ function clickSpace(tool) {
 function clickRegion(id, regionId) {
   const s = loadScreens().find((x) => x.id === id); if (!s) return { error: "not found" };
   const r = (s.regions || []).find((x) => x.id === regionId); if (!r) return { error: "That region is gone. Reload the screen." };
-  if (process.platform === "win32") return { error: "Clicking isn't supported on Windows yet." };
   const c = center(r), wayland = process.env.XDG_SESSION_TYPE === "wayland";
   // The first tool that's installed does it. If that fails it says so, rather
   // than trying the next one: a half-done move + click could otherwise click twice.
@@ -145,8 +184,8 @@ function clickRegion(id, regionId) {
     }
     return { ok: true, label: r.label, x, y, via: tool };
   }
-  const want = process.platform === "darwin" ? "cliclick (brew install cliclick)" : wayland ? "ydotool" : "xdotool or ydotool";
+  const want = process.platform === "darwin" ? "cliclick (brew install cliclick)" : process.platform === "win32" ? "Windows PowerShell" : wayland ? "ydotool" : "xdotool or ydotool";
   return { error: `No click tool found. Install ${want}.` };
 }
 
-export { loadScreens, screenImage, pngSize, captureCmds, captureScreen, importScreen, setRegions, renameScreen, removeScreen, blueprint, clickCmds, clickRegion };
+export { loadScreens, screenImage, pngSize, captureCmds, portalAppId, allowScreenshots, captureScreen, importScreen, setRegions, renameScreen, removeScreen, blueprint, clickCmds, clickRegion };

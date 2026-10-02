@@ -32,7 +32,7 @@ import { detectMailSources, mailActivity } from "./mail.mjs";
 import { CONFIG_PATH, loadConfig, saveConfig, loadTasks, saveTasks, sh, hasCmd, repoState } from "./core.mjs";
 import { HANDOFF_PROMPT, QUESTIONS_MAX, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, fillHandoff, runHandoff, runningHandoff, writeTasks, startHeldTasks, detectHandoffs, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, parseQuestions, agentQuestions, answerQuestions, agentsList } from "./agents.mjs";
 import { gitDefaultBranch, loadDeploys, driftRepo } from "./drift.mjs";
-import { loadScreens, screenImage, captureScreen, importScreen, setRegions, renameScreen, removeScreen, blueprint, clickRegion } from "./screens.mjs";
+import { loadScreens, screenImage, captureScreen, allowScreenshots, importScreen, setRegions, renameScreen, removeScreen, blueprint, clickRegion } from "./screens.mjs";
 import { weeklyState, setWeekly, runWeekly, startWeekly, autostartState, setAutostart } from "./desktop.mjs";
 
 const HERE = fileURLToPath(new URL(".", import.meta.url));
@@ -105,6 +105,10 @@ function addTask(text, repo) {
   text = String(text || "").trim().slice(0, 300);
   if (!text) return { error: "empty" };
   const t = loadTasks();
+  // The same text already open in the same repo (in review counts): that task, not a duplicate.
+  const same = (s) => String(s || "").replace(/\s+/g, " ").trim().toLowerCase();
+  const dup = t.find((x) => !x.done && !x.archived && (x.repo || "") === (repo || "") && same(x.text) === same(text));
+  if (dup) return { ...dup, duplicate: true };
   const item = { id: randomBytes(6).toString("hex"), text, repo: repo || "", done: false, ts: Date.now() };
   t.unshift(item); saveTasks(t); return item;
 }
@@ -163,6 +167,23 @@ function workingDiff(path, cap = 400000) {
   }
   return d.length > cap ? d.slice(0, cap) + "\n… (diff truncated)" : d;
 }
+// Merged work that isn't released yet: how many commits the default branch (or
+// origin's copy, where approved PRs merge) is past its last v* tag, or null when
+// it isn't, or the repo doesn't release with v* tags. bump: the version these
+// uncommitted changes set in package.json, if they change it.
+function unreleased(path) {
+  const base = gitDefaultBranch(path); let best = null;
+  for (const ref of ["refs/heads/" + base, "refs/remotes/origin/" + base]) {
+    const tag = git(path, ["describe", "--tags", "--abbrev=0", "--match", "v*", ref]).out; if (!tag) continue;
+    const ahead = +git(path, ["rev-list", "--count", tag + ".." + ref]).out || 0;
+    if (!best || ahead > best.ahead) best = { base, tag, ahead };
+  }
+  if (!best || !best.ahead) return null;
+  const ver = (s) => { try { return String(JSON.parse(s).version || ""); } catch { return ""; } };
+  let now = ""; try { now = ver(readFileSync(join(path, "package.json"), "utf8")); } catch {}
+  const was = ver(git(path, ["show", "HEAD:package.json"]).out);
+  return { ...best, ...(now && was && now !== was ? { bump: now } : {}) };
+}
 // Repos with tasks awaiting review, plus repos Symbiot sent tasks to that have
 // uncommitted changes no ticked task covers (untasked: approve them as-is).
 // running: an agent is still editing there, so its changes may be half done.
@@ -171,10 +192,10 @@ function pendingReview() {
   const sent = [...new Set(t.filter((x) => x.repo && !x.archived && !by[x.repo]).map((x) => x.repo))];
   const map = Object.keys(by).length || sent.length ? repoPathMap() : {};
   const am = autoMergeRepos();
-  const out = Object.keys(by).sort().map((repo) => { const path = map[repo] || ""; return { repo, path, tasks: by[repo], autoMerge: am.includes(repo), running: !!(path && runningHandoff(path)), ...(path ? workingChanges(path) : { branch: "", files: [], stat: "" }) }; });
+  const out = Object.keys(by).sort().map((repo) => { const path = map[repo] || ""; return { repo, path, tasks: by[repo], autoMerge: am.includes(repo), running: !!(path && runningHandoff(path)), ...(path ? { ...workingChanges(path), unreleased: unreleased(path) } : { branch: "", files: [], stat: "" }) }; });
   for (const repo of sent.sort()) {
     const path = map[repo]; if (!path || !existsSync(join(path, ".symbiot", "TASKS.md"))) continue;
-    const wc = workingChanges(path); if (wc.files.length) out.push({ repo, path, tasks: [], untasked: true, autoMerge: am.includes(repo), running: !!runningHandoff(path), ...wc });
+    const wc = workingChanges(path); if (wc.files.length) out.push({ repo, path, tasks: [], untasked: true, autoMerge: am.includes(repo), running: !!runningHandoff(path), ...wc, unreleased: unreleased(path) });
   }
   return out;
 }
@@ -1514,6 +1535,8 @@ async function cmdApp() {
       if (u.pathname === "/api/screens") return json(res, loadScreens().map(screenOut));
       if (u.pathname === "/api/screens/image") { const f = screenImage(u.searchParams.get("id")); if (!f) { res.writeHead(404); res.end("not found"); return; } res.writeHead(200, { "content-type": "image/png", "cache-control": "private, max-age=86400" }); res.end(readFileSync(f)); return; } // a screen's image never changes
       if (u.pathname === "/api/screens/capture" && req.method === "POST") { const b = await readBody(req); const d = Math.min(10, Math.max(0, Number(b.delay) || 0)); if (d) await new Promise((r) => setTimeout(r, d * 1000)); return json(res, screenOut(captureScreen(b.name))); }
+      // Changes a desktop permission, so only on the user's confirmed click.
+      if (u.pathname === "/api/screens/allow" && req.method === "POST") { const b = await readBody(req); if (b.confirmed !== true) return json(res, { error: "Allowing screenshots needs your confirmation." }); return json(res, allowScreenshots()); }
       if (u.pathname === "/api/screens/import" && req.method === "POST") { const b = await readBody(req); return json(res, screenOut(importScreen(b.name, b.png))); }
       if (u.pathname === "/api/screens/regions" && req.method === "POST") { const b = await readBody(req); return json(res, screenOut(setRegions(String(b.id || ""), b.regions))); }
       if (u.pathname === "/api/screens/rename" && req.method === "POST") { const b = await readBody(req); return json(res, screenOut(renameScreen(String(b.id || ""), b.name))); }
@@ -1647,4 +1670,4 @@ const isMain = (() => {
 })();
 if (isMain) main();
 
-export { authorship, repoState, readmeInfo, repoShape, houseRules, findAllRepos, buildMap, reportFooter, detectHardware, recommendModels, computeDrift, driftRepo, gitDefaultBranch, buildTasksMd, taskType, EMBEDDED_UI, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, fillHandoff, handoffCmd, setHandoffCmd, ORCA_CLAUDE_CMD, CLAUDE_CMD, HANDOFF_PROMPT, shipChanges, syncTasks, pendingReview, approveRepo, approveChanges, sendBack, pushTasks, semverGt, updateCmd, parseQuestions, agentQuestions };
+export { authorship, repoState, readmeInfo, repoShape, houseRules, findAllRepos, buildMap, reportFooter, detectHardware, recommendModels, computeDrift, driftRepo, gitDefaultBranch, buildTasksMd, taskType, EMBEDDED_UI, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, fillHandoff, handoffCmd, setHandoffCmd, ORCA_CLAUDE_CMD, CLAUDE_CMD, HANDOFF_PROMPT, shipChanges, syncTasks, pendingReview, unreleased, addTask, approveRepo, approveChanges, sendBack, pushTasks, semverGt, updateCmd, parseQuestions, agentQuestions };

@@ -9,9 +9,9 @@ import { mkdtempSync, writeFileSync, mkdirSync, rmSync, readFileSync, existsSync
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { authorship, repoState, readmeInfo, houseRules, findAllRepos, driftRepo, buildTasksMd, taskType, EMBEDDED_UI, orcaHandoffCmd, migrateOrcaCmd, fillHandoff, ORCA_CLAUDE_CMD, CLAUDE_CMD, HANDOFF_PROMPT, shipChanges, semverGt, updateCmd, parseQuestions } from "../index.mjs";
+import { authorship, repoState, readmeInfo, houseRules, findAllRepos, driftRepo, buildTasksMd, taskType, EMBEDDED_UI, orcaHandoffCmd, migrateOrcaCmd, fillHandoff, ORCA_CLAUDE_CMD, CLAUDE_CMD, HANDOFF_PROMPT, shipChanges, semverGt, updateCmd, parseQuestions, unreleased } from "../index.mjs";
 import { mailActivity } from "../mail.mjs";
-import { pngSize, captureCmds, clickCmds } from "../screens.mjs";
+import { pngSize, captureCmds, clickCmds, portalAppId } from "../screens.mjs";
 import { weeklyDue, lastSlot, autostartContent, notifyCmd } from "../desktop.mjs";
 
 const INDEX = join(dirname(fileURLToPath(import.meta.url)), "..", "index.mjs");
@@ -350,6 +350,11 @@ try {
     // tasks held for an agent no Symbiot process is watching: the app's next check starts one
     writeFileSync(f.replace("TASKS.md", "TASKS.next.md"), "- [ ] Open task\\n"); m.setHandoffCmd("true");
     out.heldSync = m.syncTasks(); out.heldSync2 = m.syncTasks();
+    // adding a task that's already open in the same repo gives that task back
+    out.d1 = m.addTask("Dedupe me", "revapp"); out.d2 = m.addTask("  dedupe   ME ", "revapp"); out.d3 = m.addTask("Dedupe me", "otherrepo");
+    writeFileSync(${JSON.stringify(join(home, ".config", "symbiot", "tasks.json"))}, JSON.stringify(tasks().map((x) => x.id === out.d1.id ? { ...x, done: true } : x)));
+    out.d4 = m.addTask("Dedupe me", "revapp");
+    out.dCount = tasks().filter((x) => /dedupe me/i.test(x.text)).length;
     console.log(JSON.stringify(out));`;
   mkdirSync(join(home, ".config", "symbiot"), { recursive: true });
   writeFileSync(join(home, ".config", "symbiot", "tasks.json"), JSON.stringify([{ id: "t1", text: "Fix the bug", repo: "revapp", done: false, ts: 1 }]));
@@ -369,6 +374,23 @@ try {
   ok("approve changes without a task commits them, tasks untouched", o.ac && o.ac.ok && o.ac.approved === 0 && /without a task/.test(acMsg) && o.acTasks.find((x) => x.id === "t2" && !x.done && !x.review), o.ac);
   ok("nothing left -> approve changes without a task says so", o.acAgain && /No uncommitted changes/.test(o.acAgain.error || ""), o.acAgain);
   ok("checking tasks starts an agent on held tasks whose agent has finished, once", o.heldSync && o.heldSync.started === 1 && o.heldSync2.started === 0, [o.heldSync, o.heldSync2]);
+  ok("adding a task already open in the same repo returns it, no duplicate", o.d1 && o.d2 && o.d2.duplicate && o.d2.id === o.d1.id && !o.d1.duplicate, [o.d1, o.d2]);
+  ok("the same text in another repo, or once the first is done, is a new task", o.d3 && !o.d3.duplicate && o.d3.id !== o.d1.id && o.d4 && !o.d4.duplicate && o.d4.id !== o.d1.id && o.dCount === 3, [o.d3, o.d4, o.dCount]);
+
+  console.log("RELEASE — warn when the default branch is past its last v* tag");
+  const rel = build("release", `git init -q -b main && git config user.email t@x.co && git config user.name T
+    echo '{"name":"x","version":"1.0.0"}' > package.json && git add . && git commit -qm init && git tag v1.0.0`);
+  const relEnv = { cwd: rel, env: gitEnv };
+  const ur0 = unreleased(rel);
+  execSync(`echo b > b && git add . && git commit -qm feat && echo c > c && git add . && git commit -qm fix`, relEnv);
+  const ur1 = unreleased(rel);
+  writeFileSync(join(rel, "package.json"), '{"name":"x","version":"1.1.0"}\n');
+  const ur2 = unreleased(rel);
+  const plain = build("release-none", `git init -q -b main && git config user.email t@x.co && git config user.name T && echo a > a && git add . && git commit -qm init && echo b > b && git add . && git commit -qm two`);
+  ok("on the tag: nothing unreleased", ur0 === null, ur0);
+  ok("two commits past v1.0.0: says how far, on which branch", ur1 && ur1.tag === "v1.0.0" && ur1.ahead === 2 && ur1.base === "main" && !ur1.bump, ur1);
+  ok("changes that bump package.json's version say what to tag", ur2 && ur2.bump === "1.1.0", ur2);
+  ok("a repo with no v* tags isn't warned about", unreleased(plain) === null, unreleased(plain));
 
   console.log("QUESTIONS — any agent's .symbiot/QUESTIONS.md parses into questions, options and ideas");
   const pq = parseQuestions("# Questions for you\n\n## Questions\n### Keep the old config format?\nReading both costs ~40 lines.\n- Yes, read both (recommended)\n- No, migrate once\n\n### Which port?\n1. 7391\n2. random\n\n## Suggestions\n- Add a --json flag to drift\n- [ ] Cache the map scan\n");
@@ -431,7 +453,15 @@ try {
   ok("clickCmds: X11 tries xdotool, then ydotool", JSON.stringify(ck("linux", false)) === '["xdotool mousemove --sync 120 60 click 1","ydotool mousemove 120 60 && ydotool click 1"]', ck("linux", false));
   ok("clickCmds: Wayland skips xdotool (it only reaches X11 windows)", ck("linux", true).length === 1 && /^ydotool /.test(ck("linux", true)[0]), ck("linux", true));
   ok("clickCmds: ydotool 1.x moves --absolute and clicks with a button code", ck("linux", true, true)[0] === "ydotool mousemove --absolute -x 120 -y 60 && ydotool click 0xC0", ck("linux", true, true));
-  ok("clickCmds: nothing on Windows yet", ck("win32").length === 0, ck("win32"));
+  const win = clickCmds(120, 60, "win32"), winPs = win.length === 1 && win[0].length === 1 && win[0][0][0] === "powershell" ? Buffer.from(win[0][0][1].at(-1), "base64").toString("utf16le") : "";
+  ok("clickCmds: Windows clicks with PowerShell, DPI-aware, at the point past the virtual screen's corner", win[0] && win[0][0][1].includes("-EncodedCommand") && /SetProcessDPIAware\(\) \| Out-Null/.test(winPs) && /SetCursorPos\(\$b\.Left \+ 120, \$b\.Top \+ 60\)/.test(winPs) && /mouse_event\(2,.*mouse_event\(4,/.test(winPs), winPs);
+  const winCap = captureCmds("C:\\t\\a.png", "win32")[0], winCapPs = Buffer.from(winCap[1].at(-1), "base64").toString("utf16le");
+  ok("captureCmds: Windows capture is DPI-aware too, so its pixels are the ones a click uses", winCap[0] === "powershell" && /SetProcessDPIAware/.test(winCapPs) && winCapPs.includes("Save('C:\\t\\a.png'"), winCapPs);
+  ok("clickCmds: a coordinate is always a whole number (it goes into a script)", clickCmds("1;rm", 2.6, "win32").length === 1 && /\$b\.Left \+ 0, \$b\.Top \+ 3\)/.test(Buffer.from(clickCmds("1;rm", 2.6, "win32")[0][0][1].at(-1), "base64").toString("utf16le")), "");
+  console.log("SCREENS — the app the screenshot portal checks permission for");
+  ok("portalAppId: started from the COSMIC dock", portalAppId("0::/user.slice/user-1000.slice/user@1000.service/app.slice/app-cosmic-com.system76.CosmicAppList-4431.scope\n") === "com.system76.CosmicAppList", portalAppId("0::/a/app-cosmic-com.system76.CosmicAppList-4431.scope"));
+  ok("portalAppId: a launcher-less scope and a service", portalAppId("0::/x/app-org.gnome.Terminal-12.scope") === "org.gnome.Terminal" && portalAppId("0::/x/app-gnome-org.example.App@3.service") === "org.example.App", [portalAppId("0::/x/app-org.gnome.Terminal-12.scope"), portalAppId("0::/x/app-gnome-org.example.App@3.service")]);
+  ok("portalAppId: a terminal session or a scope without an app id gives none", portalAppId("0::/user.slice/user-1000.slice/session-2.scope") === "" && portalAppId("0::/x/app-orca-1234.scope") === "" && portalAppId("") === "", portalAppId("0::/x/app-orca-1234.scope"));
   // isolated HOME: screens live in Symbiot's config folder
   const shome = join(ROOT, "shome"); mkdirSync(shome, { recursive: true });
   const sc = spawnSync(process.execPath, ["--input-type=module", "-e", `
