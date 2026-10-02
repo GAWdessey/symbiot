@@ -125,6 +125,12 @@ size of the uncommitted change and a **Show diff** button. For each repo:
 
 Tasks waiting for review aren't re-sent to the agent.
 
+If a repo you sent tasks to has uncommitted changes but no ticked task (say the
+agent made a fix and didn't tick anything), it still shows up here, with
+**Approve changes without a task → PR**. That ships the changes the same way, on
+a `symbiot/changes-<date>` branch, and leaves your tasks as they are. It also
+lists your own uncommitted work in those repos, so check the diff first.
+
 ### Run your agent automatically
 
 Set an **agent command** in Settings (*Hand off to your agent*), and every
@@ -145,9 +151,14 @@ preset only fills in the command box; the saved command is what runs.
   (OpenAI), Aider, Cursor agent, Gemini CLI. The Claude preset may also run
   `npm test` and `node`, so it can check its own work; a command saved from the
   older preset is upgraded automatically, and an edited one is left alone.
+  The others run as-is, with their own limits: Codex (`--full-auto`) can run
+  tests but has no network in its sandbox, so tests that download packages
+  fail; Gemini (`--yolo`) approves every shell command, tests included; Aider
+  doesn't run shell commands unattended, so it can't check its own work.
 - **Orca IDE** (any OS): opens the repo in Orca — either just the repo, to use
-  Orca's own agent, or with Claude running in a new tab. It launches Orca if it's
-  closed and waits for it to be ready first.
+  Orca's own agent, or with Claude running in a new tab (allowed `npm test` and
+  `node` like the Claude preset, and upgraded the same way). It launches Orca if
+  it's closed and waits for it to be ready first.
 - **Editors — opens only, no review:** VS Code, Cursor, Windsurf, Zed, Sublime
   Text, IntelliJ IDEA, Neovim (on macOS, also found as `.app` bundles when the CLI
   isn't on your PATH). They just open the repo. Nothing comes back for review unless
@@ -353,66 +364,10 @@ the one-line install for your OS and you re-run it after. Both are buttons in
 Settings, where the download shows in the Agents tab. You can always pick a model
 yourself with `symbiot login`.
 
-## Config
+## Config, development and releasing
 
-Everything lives in `~/.config/symbiot/`: `config.json` (your AI, `scanRoots`,
-`agentCmd`, `mail`; readable only by you), `tasks.json` (your tasks),
-`deploys.json` (optional, for drift's production check) and `rules.md` (optional
-conventions every repo review must respect, alongside each repo's own
-`CLAUDE.md` / `AGENTS.md` / `CONTRIBUTING.md`).
-
-- `SYMBIOT_MODEL` — override the model for any provider (e.g. `gpt-4o`,
-  `claude-haiku-4-5`, `gemini-1.5-pro`).
-- `SYMBIOT_SCAN_TIMEOUT` — the scan time limit, in seconds (default 60).
-- `SYMBIOT_PORT` — the app's port (default 7391).
-- `SYMBIOT_FORCE_NEW=1` — start a second app even if one is already running.
-- `symbiot whoami` shows the active provider, model, and where the credential
-  came from. `symbiot logout` forgets saved credentials.
-
-## Development
-
-```bash
-npm test
-```
-
-Runs five suites, all against throwaway repos, an isolated `HOME` and (for the
-update check) a fake npm registry:
-
-- `test/load.mjs` — the shipped files parse and load: `node --check` on each
-  module, `ui.mjs` imported on its own with its page's JavaScript parsed, every
-  local import listed in package.json `"files"`, and the `bin` entry point shipped.
-- `test/fixtures.mjs` — accuracy fixtures: the facts Symbiot collects (identity
-  matching, stale checkouts, worktrees, drift) and the `symbiot drift` report as
-  printed, the scan time limit, the agent handoff, review → send back → approve →
-  ship (including a repo that gitignores `.symbiot/`), agent questions, mail
-  ingestion (`symbiot mail` end to end), and the update command.
-- `test/smoke.mjs` — boots `symbiot app`, runs the page's own JavaScript against
-  a fake DOM (every tab, every button), hits every endpoint the UI calls with the
-  method the UI uses, checks POST-only endpoints refuse GET and `/api` needs the
-  token, and checks the update banner can't loop.
-- `test/app.mjs` — the app's lifecycle: a second `symbiot app` reuses the running
-  one (and `SYMBIOT_FORCE_NEW` / a foreign server on the port don't), and the
-  update check only offers a higher npm version.
-- `test/install.mjs` — runs the CLI through a bin symlink, then `npm pack` +
-  global install into a temp prefix: `symbiot help`, every shipped file present,
-  and the installed `symbiot app` serving its page. Needs npm registry access for
-  dependencies; `SYMBIOT_SKIP_INSTALL_TEST=1` skips that part.
-
-`SYMBIOT_NO_OPEN=1` stops `symbiot app` opening a window (the tests set it), and
-`SYMBIOT_REGISTRY` points its update check at another registry. CI
-(`.github/workflows/ci.yml`) runs the whole suite on every pull request.
-
-**Releasing.** Bump the version in the pull request, merge it into `main`, then tag
-`main`'s commit:
-
-```bash
-git checkout main && git pull
-git tag v$(node -p "require('./package.json').version") && git push origin --tags
-```
-
-`.github/workflows/publish.yml` publishes from that tag only if it's on `main`,
-matches `package.json`, and the full suite passes. A tag on any other branch is
-refused, so what's on npm is always what's on `main`.
+Config files, environment variables (`SYMBIOT_MODEL`, `SYMBIOT_PORT`, …), the test
+suites and how releases are cut are in [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ---
 

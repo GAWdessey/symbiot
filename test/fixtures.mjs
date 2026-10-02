@@ -172,15 +172,19 @@ try {
   writeFileSync(join(fake, "claude"), `#!/bin/bash\nprintf '%s\\n' "$#" "$1" > ${JSON.stringify(got)}\n`, { mode: 0o755 });
   const runOrca = (tmpl) => { rmSync(got, { force: true }); execSync(fillHandoff(tmpl, fake), { shell: "/bin/bash", stdio: "ignore", env: { ...process.env, PATH: fake + ":" + process.env.PATH } }); return readFileSync(got, "utf8").split("\n"); };
   const q = JSON.stringify(orcaBin);
+  // the prompt + --allowedTools + 2 tool rules
   const [argc, arg1] = runOrca(orcaHandoffCmd(q, ORCA_CLAUDE_CMD));
-  ok("claude gets the prompt as ONE argument", argc === "1" && arg1 === HANDOFF_PROMPT, [argc, arg1]);
+  ok("claude gets the prompt as ONE argument", argc === "4" && arg1 === HANDOFF_PROMPT, [argc, arg1]);
+  ok("the Orca Claude preset can run the tests too", /--allowedTools \\"Bash\(npm test:\*\)\\"/.test(ORCA_CLAUDE_CMD), ORCA_CLAUDE_CMD);
+  const saved034 = orcaHandoffCmd(q, ` --command "claude \\"{prompt}\\""`); // what ≤0.34 saved
+  ok("a saved ≤0.34 Orca Claude preset upgrades to the one that can run tests", migrateOrcaCmd(saved034) === orcaHandoffCmd(q, ORCA_CLAUDE_CMD), migrateOrcaCmd(saved034));
   const legacy = orcaHandoffCmd(q, ` --command "claude {prompt}"`); // what ≤0.26 saved to config
   const migrated = migrateOrcaCmd(legacy);
   ok("a saved unquoted command is migrated to the quoted form", migrated === orcaHandoffCmd(q, ORCA_CLAUDE_CMD), migrated);
   ok("migration is idempotent", migrateOrcaCmd(migrated) === migrated, "");
   ok("custom --command is preserved", migrateOrcaCmd(orcaHandoffCmd(q, ` --command "codex"`)) === orcaHandoffCmd(q, ` --command "codex"`), "");
   const [argc2, arg12] = runOrca(migrated);
-  ok("migrated command delivers the whole prompt", argc2 === "1" && arg12 === HANDOFF_PROMPT, [argc2, arg12]);
+  ok("migrated command delivers the whole prompt", argc2 === "4" && arg12 === HANDOFF_PROMPT, [argc2, arg12]);
 
   console.log("HANDOFF — one saved template drives every handoff (save, clear, legacy `ide`)");
   // isolated HOME: these read and write Symbiot's real config.json
@@ -221,6 +225,9 @@ try {
   ok("pushed to origin", r1.pushed && g(`rev-parse origin/${r1.branch}`) === g("rev-parse HEAD"), r1);
   const r2 = shipChanges(shipRepo, ["x"], { pr: false });
   ok("nothing to commit -> approved without a commit", r2.ok && r2.nothing && !r2.commit, r2);
+  g("switch -q main"); writeFileSync(join(shipRepo, "c.txt"), "c\n");
+  const r3 = shipChanges(shipRepo, [], { push: false });
+  ok("no task -> its own symbiot/changes-<date> branch and subject", r3.ok && /^symbiot\/changes-\d{4}-\d{2}-\d{2}$/.test(r3.branch) && r3.subject === "symbiot: changes approved without a task", r3);
   // regression: when .symbiot/ is gitignored, `git add . :(exclude).symbiot`
   // warned+exited-1 ("paths are ignored") and falsely aborted the ship.
   const giRepo = build("ship-gi", `git init -q -b main && git config user.email ci@symbiot.test && git config user.name "Symbiot CI"
@@ -252,6 +259,12 @@ try {
     m.sendBack(out.afterTick.id); out.afterBack = tasks()[0]; out.md = readFileSync(f, "utf8");
     m.pushTasks(); tick(); m.syncTasks();
     out.approve = m.approveRepo("revapp", { push: false }); out.final = tasks()[0];
+    // a change no ticked task covers, in a repo that still has an open task
+    writeFileSync(${JSON.stringify(join(home, ".config", "symbiot", "tasks.json"))}, JSON.stringify([...tasks(), { id: "t2", text: "Open task", repo: "revapp", done: false, ts: 2 }]));
+    writeFileSync(${JSON.stringify(join(proj, "b.txt"))}, "fix\\n");
+    out.untasked = m.pendingReview();
+    out.ac = m.approveChanges("revapp", { push: false }); out.acTasks = tasks();
+    out.acAgain = m.approveChanges("revapp", { push: false });
     console.log(JSON.stringify(out));`;
   mkdirSync(join(home, ".config", "symbiot"), { recursive: true });
   writeFileSync(join(home, ".config", "symbiot", "tasks.json"), JSON.stringify([{ id: "t1", text: "Fix the bug", repo: "revapp", done: false, ts: 1 }]));
@@ -263,6 +276,10 @@ try {
   ok("tasks in review aren't re-sent to the agent", o.repush && o.repush.empty, o.repush);
   ok("send back reopens it and unticks TASKS.md", o.afterBack && !o.afterBack.review && !o.afterBack.done && /- \[ \] Fix the bug/.test(o.md), o.afterBack);
   ok("approve commits on a branch, then archives with the commit", o.approve && o.approve.approved === 1 && /^symbiot\/fix-the-bug/.test(o.approve.branch) && o.final.archived && o.final.done && o.final.commit === o.approve.commit, o.approve);
+  ok("untasked changes in a repo that got tasks show up for approval", o.untasked && o.untasked.length === 1 && o.untasked[0].untasked && o.untasked[0].tasks.length === 0 && o.untasked[0].files.some((x) => x.file === "b.txt"), o.untasked);
+  const acMsg = o.ac && o.ac.commit ? execSync("git log -1 --format=%B " + o.ac.commit, { cwd: proj, encoding: "utf8", env: gitEnv }) : "";
+  ok("approve changes without a task commits them, tasks untouched", o.ac && o.ac.ok && o.ac.approved === 0 && /without a task/.test(acMsg) && o.acTasks.find((x) => x.id === "t2" && !x.done && !x.review), o.ac);
+  ok("nothing left -> approve changes without a task says so", o.acAgain && /No uncommitted changes/.test(o.acAgain.error || ""), o.acAgain);
 
   console.log("QUESTIONS — any agent's .symbiot/QUESTIONS.md parses into questions, options and ideas");
   const pq = parseQuestions("# Questions for you\n\n## Questions\n### Keep the old config format?\nReading both costs ~40 lines.\n- Yes, read both (recommended)\n- No, migrate once\n\n### Which port?\n1. 7391\n2. random\n\n## Suggestions\n- Add a --json flag to drift\n- [ ] Cache the map scan\n");

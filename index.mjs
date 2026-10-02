@@ -19,16 +19,19 @@
 //         --plain       no colour, no spinner (for piping)
 
 import Anthropic from "@anthropic-ai/sdk";
-import { execSync, spawn, spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { homedir, totalmem, cpus as oscpus } from "node:os";
 import { join } from "node:path";
-import { readFileSync, writeFileSync, mkdirSync, existsSync, chmodSync, statSync, realpathSync, openSync, writeSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, existsSync, statSync, realpathSync } from "node:fs";
 import { createInterface } from "node:readline";
 import { createServer } from "node:http";
 import { randomBytes } from "node:crypto";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { EMBEDDED_UI } from "./ui.mjs";
 import { detectMailSources, mailActivity } from "./mail.mjs";
+import { CONFIG_PATH, loadConfig, saveConfig, loadTasks, saveTasks, sh, hasCmd, repoState } from "./core.mjs";
+import { HANDOFF_PROMPT, QUESTIONS_MAX, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, fillHandoff, runHandoff, detectHandoffs, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, parseQuestions, agentQuestions, answerQuestions, agentsList } from "./agents.mjs";
+import { gitDefaultBranch, loadDeploys, driftRepo } from "./drift.mjs";
 
 const HERE = fileURLToPath(new URL(".", import.meta.url));
 let VERSION = "0"; try { VERSION = JSON.parse(readFileSync(join(HERE, "package.json"), "utf8")).version; } catch {}
@@ -36,8 +39,6 @@ let VERSION = "0"; try { VERSION = JSON.parse(readFileSync(join(HERE, "package.j
 const MAX_REPOS = 14;
 const MAX_COMMITS = 140;
 const MAX_TOKENS = 1600;
-const CONFIG_DIR = join(homedir(), ".config", "symbiot");
-const CONFIG_PATH = join(CONFIG_DIR, "config.json");
 
 // The providers Symbiot can write with. Models are sensible defaults; override
 // per provider at login, or globally with SYMBIOT_MODEL.
@@ -59,7 +60,6 @@ const has = (name) => argv.includes(`--${name}`);
 const PLAIN = has("plain") || !process.stdout.isTTY;
 let SERVING = false; // set while `symbiot app` runs — silences the CLI spinner
 let LAST_MAP = null;  // cached graph so node clicks don't rescan
-const HANDOFFS = []; // live registry of agents Symbiot has handed work to
 let LATEST_VERSION = ""; // newest symbiot on npm, checked in the background
 // a.b.c numeric compare: only a HIGHER npm version is an update (a local build
 // ahead of npm must not be offered a "newer" older one)
@@ -94,25 +94,11 @@ function spinner(label) {
   return () => { clearInterval(t); process.stderr.write("\r\x1b[K"); };
 }
 
-// ---- config + provider resolution -----------------------------------------
-function loadConfig() {
-  try { return JSON.parse(readFileSync(CONFIG_PATH, "utf8")); } catch { return {}; }
-}
-function saveConfig(cfg) {
-  try {
-    mkdirSync(CONFIG_DIR, { recursive: true });
-    writeFileSync(CONFIG_PATH, JSON.stringify(cfg, null, 2) + "\n");
-    try { chmodSync(CONFIG_PATH, 0o600); } catch {}
-    return true;
-  } catch { return false; }
-}
+// ---- config + provider resolution (config files: core.mjs) -----------------
 function antProfileExists() {
   try { return existsSync(join(homedir(), ".config", "anthropic")); } catch { return false; }
 }
-// ---- tasks: a persistent checklist (~/.config/symbiot/tasks.json) ---------
-const TASKS_PATH = join(CONFIG_DIR, "tasks.json");
-function loadTasks() { try { return JSON.parse(readFileSync(TASKS_PATH, "utf8")); } catch { return []; } }
-function saveTasks(t) { try { mkdirSync(CONFIG_DIR, { recursive: true }); writeFileSync(TASKS_PATH, JSON.stringify(t, null, 2)); return true; } catch { return false; } }
+// ---- tasks: a persistent checklist (stored by core.mjs) -------------------
 function addTask(text, repo) {
   text = String(text || "").trim().slice(0, 300);
   if (!text) return { error: "empty" };
@@ -173,11 +159,19 @@ function workingDiff(path, cap = 400000) {
   }
   return d.length > cap ? d.slice(0, cap) + "\n… (diff truncated)" : d;
 }
+// Repos with tasks awaiting review, plus repos Symbiot sent tasks to that have
+// uncommitted changes no ticked task covers (untasked: approve them as-is).
 function pendingReview() {
-  const by = {}; for (const x of loadTasks()) if (x.review && !x.done && !x.archived) (by[x.repo] = by[x.repo] || []).push(x);
-  const map = Object.keys(by).length ? repoPathMap() : {};
+  const t = loadTasks(), by = {}; for (const x of t) if (x.review && !x.done && !x.archived) (by[x.repo] = by[x.repo] || []).push(x);
+  const sent = [...new Set(t.filter((x) => x.repo && !x.archived && !by[x.repo]).map((x) => x.repo))];
+  const map = Object.keys(by).length || sent.length ? repoPathMap() : {};
   const am = autoMergeRepos();
-  return Object.keys(by).sort().map((repo) => { const path = map[repo] || ""; return { repo, path, tasks: by[repo], autoMerge: am.includes(repo), ...(path ? workingChanges(path) : { branch: "", files: [], stat: "" }) }; });
+  const out = Object.keys(by).sort().map((repo) => { const path = map[repo] || ""; return { repo, path, tasks: by[repo], autoMerge: am.includes(repo), ...(path ? workingChanges(path) : { branch: "", files: [], stat: "" }) }; });
+  for (const repo of sent.sort()) {
+    const path = map[repo]; if (!path || !existsSync(join(path, ".symbiot", "TASKS.md"))) continue;
+    const wc = workingChanges(path); if (wc.files.length) out.push({ repo, path, tasks: [], untasked: true, autoMerge: am.includes(repo), ...wc });
+  }
+  return out;
 }
 const branchSlug = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40).replace(/-+$/, "") || "tasks";
 // Sync approved work: off the default branch onto symbiot/<task>, commit the
@@ -189,9 +183,9 @@ function shipChanges(path, texts, opts = {}) {
   const ch = workingChanges(path);
   if (!ch.files.length) return { ok: true, nothing: true, note: "No uncommitted changes — approved without a commit." };
   if (!ch.branch || ch.branch === "HEAD") return { error: "Detached HEAD — check out a branch first." };
-  const base = gitDefaultBranch(path); let branch = ch.branch;
+  const base = gitDefaultBranch(path), day = new Date().toISOString().slice(0, 10); let branch = ch.branch;
   if (branch === base) {
-    const stem = "symbiot/" + branchSlug(texts.length === 1 ? texts[0] : `${texts.length}-tasks-${new Date().toISOString().slice(0, 10)}`);
+    const stem = "symbiot/" + branchSlug(!texts.length ? `changes-${day}` : texts.length === 1 ? texts[0] : `${texts.length}-tasks-${day}`);
     branch = stem; for (let i = 2; git(path, ["rev-parse", "--verify", "-q", "refs/heads/" + branch]).ok; i++) branch = `${stem}-${i}`;
     const sw = git(path, ["switch", "-c", branch]); if (!sw.ok) return { error: "Could not create branch: " + sw.err };
   }
@@ -201,8 +195,8 @@ function shipChanges(path, texts, opts = {}) {
   // the reset also covers repos where .symbiot isn't ignored.
   const add = git(path, ["add", "-A"]); if (!add.ok) return { error: "git add failed: " + add.err, branch };
   git(path, ["reset", "-q", "--", ".symbiot"]); // never ship Symbiot's own scratch
-  const subject = texts.length === 1 ? (texts[0].length > 72 ? texts[0].slice(0, 71).replace(/\s+\S*$/, "") + "…" : texts[0]) : `symbiot: ${texts.length} approved tasks`;
-  const body = texts.map((x) => "- " + x).join("\n");
+  const subject = !texts.length ? "symbiot: changes approved without a task" : texts.length === 1 ? (texts[0].length > 72 ? texts[0].slice(0, 71).replace(/\s+\S*$/, "") + "…" : texts[0]) : `symbiot: ${texts.length} approved tasks`;
+  const body = texts.length ? texts.map((x) => "- " + x).join("\n") : "No ticked task covers these changes.";
   const cm = git(path, ["commit", "-m", subject, "-m", body]); if (!cm.ok) return { error: "Commit failed: " + (cm.err || cm.out), branch };
   const out = { ok: true, branch, base, commit: git(path, ["rev-parse", "--short", "HEAD"]).out, subject };
   if (opts.push === false) return out;
@@ -240,6 +234,16 @@ function approveRepo(repo, opts = {}) {
   for (const x of items) { x.review = false; x.done = true; x.archived = true; x.archivedAt = now; x.approvedAt = now; for (const k of ["branch", "commit", "pr"]) if (r[k]) x[k] = r[k]; }
   saveTasks(t);
   return { ...r, approved: items.length };
+}
+// "Approve changes without a task": ship the uncommitted changes even though no
+// ticked task is behind them (a fix the agent made but didn't tick). If tasks are
+// awaiting review in the repo, this is just Approve.
+function approveChanges(repo, opts = {}) {
+  if (loadTasks().some((x) => x.repo === repo && x.review && !x.done && !x.archived)) return approveRepo(repo, opts);
+  const path = repoPathMap()[repo]; if (!path) return { error: "Repo not found: " + (repo || "(no repo)") };
+  if (!workingChanges(path).files.length) return { error: "No uncommitted changes in " + repo + "." };
+  const r = shipChanges(path, [], { ...opts, autoMerge: opts.autoMerge !== undefined ? opts.autoMerge : autoMergeRepos().includes(repo) });
+  return r.error ? r : { ...r, approved: 0 };
 }
 // Not right: reopen it and untick it in TASKS.md so the agent picks it up again.
 function sendBack(id) {
@@ -372,11 +376,6 @@ function ask(question, { secret = false } = {}) {
   });
 }
 
-// ---- git ------------------------------------------------------------------
-function sh(cmd) {
-  try { return execSync(cmd, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], maxBuffer: 32 * 1024 * 1024, timeout: 6000, killSignal: "SIGKILL" }); }
-  catch { return ""; } // timeout or error -> empty, never hang the scan
-}
 // ---- scan deadline + progress ---------------------------------------------
 // One slow disk or giant tree must never hang a scan (the 0.7.1 map hang): each
 // scan gets an overall deadline (SYMBIOT_SCAN_TIMEOUT seconds), after which it
@@ -462,24 +461,6 @@ function authorship(repoPath) {
 }
 function authorArgs(emails) { return (emails || []).filter(Boolean).map((e) => `--author=${JSON.stringify(e)}`).join(" "); }
 
-// Working-tree state, incl. detecting a stale/old checkout (not new work).
-function repoState(repoPath) {
-  const branch = sh(`git -C ${JSON.stringify(repoPath)} rev-parse --abbrev-ref HEAD 2>/dev/null`).trim();
-  const porcelain = sh(`git -C ${JSON.stringify(repoPath)} status --porcelain 2>/dev/null`).split("\n").filter(Boolean);
-  let del = 0, mod = 0, add = 0;
-  for (const l of porcelain) { const x = l.slice(0, 2); if (/\?\?/.test(x)) add++; else if (x.includes("D")) del++; else if (x.includes("A")) add++; else mod++; }
-  const dirty = porcelain.length;
-  let stale = false, staleBy = 0;
-  if (dirty) {
-    for (const k of [3, 5, 10, 20, 40, 80, 160, 320]) {
-      if (!sh(`git -C ${JSON.stringify(repoPath)} rev-parse HEAD~${k} 2>/dev/null`).trim()) break;
-      if (sh(`git -C ${JSON.stringify(repoPath)} diff --quiet HEAD~${k} 2>/dev/null && echo EQ`).trim() === "EQ") { stale = true; staleBy = k; break; }
-    }
-    if (!stale && del >= 20 && del > mod && add === 0) stale = true; // mostly deletions = an old snapshot
-  }
-  const behind = Number(sh(`git -C ${JSON.stringify(repoPath)} rev-list --count HEAD..@{u} 2>/dev/null`).trim()) || 0;
-  return { branch, dirty, del, mod, add, stale, staleBy, behind };
-}
 function readmeInfo(repoPath) {
   for (const f of ["README.md", "README.MD", "Readme.md", "readme.md", "README.txt", "README"]) {
     try {
@@ -747,249 +728,6 @@ function recommendModels(hw) {
   const best = (local.slice().reverse().find((m) => m.fits) || local[0]).model;
   return { local, paid, best };
 }
-// ---- hand a repo (+ its tasks) to the user's agent — generic, settings-based
-// ONE code path, whatever the agent. The handoff is a command TEMPLATE the user
-// saves (`agentCmd`), with {dir} (repo path) and {prompt} (the task
-// instruction), and it is the only thing that ever runs:
-//   handoffCmd() -> fillHandoff() -> runHandoff() -> track()
-// Everything else in this section only helps pick a template: one-click presets
-// for what's installed (detectHandoffs), the Orca preset (a template too, kept
-// current by migrateOrcaCmd) and the cross-platform lookups behind them.
-//   claude -p "{prompt}"      · aider --message "{prompt}"      · code {dir}
-//   gnome-terminal --working-directory={dir} -- claude "{prompt}"
-// Not tied to any one tool — you decide what runs.
-const shSingle = (s) => "'" + String(s).replace(/'/g, "'\\''") + "'";
-const escDq = (s) => String(s).replace(/[\\"$`]/g, "\\$&");
-// Plain words only: in the Orca preset this passes through two shells, so no
-// backticks or $ (escDq covers one level).
-const HANDOFF_PROMPT = "Read .symbiot/TASKS.md and implement the unchecked items in this repo. Tick each item [x] in that file as you finish it and leave your changes uncommitted, so they can be reviewed and approved. If you need a decision, or have ideas or options for the user, write them to .symbiot/QUESTIONS.md as TASKS.md explains, and read .symbiot/ANSWERS.md first if it exists. Confirm before anything destructive.";
-function handoffCmd() { const cfg = loadConfig(); return migrateOrcaCmd(migrateClaudeCmd(cfg.agentCmd)) || (cfg.ide ? `${cfg.ide} {dir}` : ""); } // ide = legacy
-// Save the template ("" clears it). Either way the legacy `ide` key goes.
-function setHandoffCmd(cmd) {
-  const cfg = loadConfig(); const v = String(cmd || "").trim();
-  if (v) cfg.agentCmd = v; else delete cfg.agentCmd;
-  delete cfg.ide; saveConfig(cfg);
-  return { ok: true, cmd: cfg.agentCmd || "" };
-}
-const fillHandoff = (tmpl, repoPath) => tmpl.replace(/\{dir\}/g, shSingle(repoPath)).replace(/\{prompt\}/g, escDq(HANDOFF_PROMPT));
-function runHandoff(repoPath) {
-  const tmpl = handoffCmd(); if (!tmpl || !repoPath) return null;
-  return track(repoPath.split("/").pop(), fillHandoff(tmpl, repoPath), repoPath);
-}
-// Presets. [cmd, label, macAppName] — macApp used to launch GUI editors on macOS
-// where the CLI isn't on PATH (they're .app bundles).
-const IDE_LIST = [["code", "VS Code", "Visual Studio Code"], ["cursor", "Cursor", "Cursor"], ["windsurf", "Windsurf", "Windsurf"], ["zed", "Zed", "Zed"], ["subl", "Sublime Text", "Sublime Text"], ["idea", "IntelliJ IDEA", "IntelliJ IDEA"], ["nvim", "Neovim", ""]];
-// [cmd, label, template]. Only agents that leave changes to review: a handoff
-// runs unattended, so a "plan only" run can't ask anything and leaves nothing to
-// approve — that preset was dropped (a saved one still runs as-is).
-// Claude: acceptEdits alone still blocks every shell command, so a run could
-// never run its own tests and had to leave test work unticked. Allow just the
-// test runner and node.
-const CLAUDE_CMD = 'claude -p "{prompt}" --permission-mode acceptEdits --allowedTools "Bash(npm test:*)" "Bash(node:*)"';
-const CLAUDE_CMD_OLD = 'claude -p "{prompt}" --permission-mode acceptEdits'; // ≤0.33
-const AGENT_LIST = [
-  ["claude", "Claude Code — make changes", CLAUDE_CMD],
-  ["codex", "Codex (OpenAI/GPT) — make changes", 'codex exec --full-auto "{prompt}"'],
-  ["aider", "Aider — make changes", 'aider --message "{prompt}" --yes'],
-  ["gemini", "Gemini — make changes", 'gemini --yolo -p "{prompt}"'],
-  ["cursor-agent", "Cursor agent", 'cursor-agent -p "{prompt}"'],
-];
-function detectHandoffs() {
-  const editors = [];
-  for (const [cmd, label, app] of IDE_LIST) {
-    if (hasCmd(cmd)) editors.push({ label, tmpl: `${cmd} {dir}`, kind: "editor" });
-    else { const a = macApp(app); if (a) editors.push({ label, tmpl: `open -a ${JSON.stringify(a)} {dir}`, kind: "editor" }); }
-  }
-  const agents = AGENT_LIST.filter(([cmd]) => hasCmd(cmd)).map(([cmd, label, tmpl]) => ({ label, tmpl, kind: "agent" }));
-  // Orca IDE (any OS): register the repo + open a terminal tab. Two variants —
-  // one that just opens the repo (use Orca's own agent, e.g. GPT), and one that
-  // runs Claude in the tab for Claude users. Not Claude-only.
-  // `<orca> open` first: it launches Orca AND blocks until the runtime is
-  // reachable, so this works even when Orca is closed (its CLI can't talk to a
-  // dead app). Use the full orca-ide path, never bare `orca` (that's a different
-  // tool on PATH). If Orca is already up, `open` returns fast.
-  const orca = findOrcaCli();
-  if (orca) {
-    const q = JSON.stringify(orca);
-    agents.unshift(
-      { label: "Orca IDE — open repo (use your Orca agent)", tmpl: orcaHandoffCmd(q, ""), kind: "agent" },
-      { label: "Orca IDE — run Claude in a tab", tmpl: orcaHandoffCmd(q, ORCA_CLAUDE_CMD), kind: "agent" },
-    );
-  }
-  return { agents, editors };
-}
-// The Orca preset. Build the full Orca handoff, cold-start safe. `bin` is the
-// quoted orca-ide path; `commandPart` is e.g. ORCA_CLAUDE_CMD or "" (open only).
-// open launches Orca & waits for the runtime to be REACHABLE, but on a cold
-// start the workspace graph isn't ready yet (runtime.state=graph_not_ready) and
-// `terminal create` times out — so we poll `status` until state=ready, then add
-// the repo and create the terminal (retry: the worktree can lag a beat behind).
-// {prompt} needs its own (escaped) quotes: the outer shell strips the --command
-// quotes and Orca re-runs the string in the tab, so an unquoted prompt reached
-// the agent as just its first word ("Read").
-const ORCA_CLAUDE_CMD = ` --command "claude \\"{prompt}\\""`;
-function orcaHandoffCmd(bin, commandPart) {
-  const waitReady = `for i in $(seq 1 40); do ${bin} status --json 2>/dev/null | grep -q '"state": *"ready"' && break; sleep 1; done`;
-  const mkTerm = `for j in 1 2 3; do ${bin} terminal create --worktree path:{dir}${commandPart} --focus && break; sleep 2; done`;
-  return `${bin} open; ${waitReady}; ${bin} repo add --path {dir}; ${mkTerm}`;
-}
-// Normalise an Orca command saved by an older version (no launch / no wait-for-
-// ready) to the current cold-start-safe form, preserving its binary path and any
-// custom `--command`. Idempotent: already-current commands are left untouched.
-function migrateOrcaCmd(cmd) {
-  if (!cmd || typeof cmd !== "string") return cmd;
-  if (!/orca-ide/.test(cmd) || !/\brepo add\b/.test(cmd)) return cmd;
-  const cm = cmd.match(/--command\s+"((?:[^"\\]|\\.)*)"/); // preserve a custom agent command
-  // ≤0.26 saved a bare {prompt} here (truncated to one word) — quote it
-  const inner = cm ? cm[1].replace(/(^|\s)\{prompt\}(?=\s|$)/g, '$1\\"{prompt}\\"') : "";
-  if (/status --json/.test(cmd) && /grep -q/.test(cmd) && (!cm || inner === cm[1])) return cmd; // already current
-  const bm = cmd.match(/^\s*("[^"]*"|'[^']*'|\S+)/); // leading orca-ide binary token
-  const bin = bm ? bm[1] : "";
-  const commandPart = cm ? ` --command "${inner}"` : "";
-  const rebuilt = bin ? orcaHandoffCmd(bin, commandPart) : cmd;
-  if (rebuilt !== cmd) { try { const cfg = loadConfig(); if (cfg.agentCmd === cmd) { cfg.agentCmd = rebuilt; saveConfig(cfg); } } catch {} }
-  return rebuilt;
-}
-// Upgrade a saved Claude preset from ≤0.33 to the current one. Exact match only:
-// a command the user edited is theirs and runs as-is.
-function migrateClaudeCmd(cmd) {
-  if (typeof cmd !== "string" || cmd.trim() !== CLAUDE_CMD_OLD) return cmd;
-  try { const cfg = loadConfig(); if (cfg.agentCmd === cmd) { cfg.agentCmd = CLAUDE_CMD; saveConfig(cfg); } } catch {}
-  return CLAUDE_CMD;
-}
-// Cross-platform detection for the presets (and gh / the app's browser).
-// "Is this command available?": command -v on posix, where on win.
-function hasCmd(cmd) { try { return !!sh(process.platform === "win32" ? `where ${cmd}` : `command -v ${cmd}`).trim(); } catch { return false; } }
-function macApp(name) { if (process.platform !== "darwin" || !name) return ""; for (const base of ["/Applications", join(homedir(), "Applications")]) { try { if (existsSync(join(base, name + ".app"))) return name; } catch {} } return ""; }
-// Find the Orca IDE CLI across OSes (known locations, then a bounded search).
-let ORCA_CLI; // cached per process: undefined=unchecked, ""=none, string=path
-function findOrcaCli() {
-  if (ORCA_CLI !== undefined) return ORCA_CLI;
-  ORCA_CLI = _findOrcaCli();
-  return ORCA_CLI;
-}
-function _findOrcaCli() {
-  const home = homedir(); const cands = [];
-  if (process.platform === "linux") cands.push(join(home, ".local/share/orca-ide/app/resources/bin/orca-ide"));
-  if (process.platform === "darwin") { cands.push(join(home, "Library/Application Support/orca-ide/app/resources/bin/orca-ide"), "/Applications/Orca.app/Contents/Resources/app/resources/bin/orca-ide", join(home, "Applications/Orca.app/Contents/Resources/app/resources/bin/orca-ide")); }
-  if (process.platform === "win32") { const la = process.env.LOCALAPPDATA || ""; cands.push(join(la, "orca-ide", "app", "resources", "bin", "orca-ide"), join(la, "Programs", "orca-ide", "resources", "app", "resources", "bin", "orca-ide")); }
-  for (const c of cands) { try { if (existsSync(c)) return c; } catch {} }
-  const roots = process.platform === "darwin" ? [join(home, "Library/Application Support"), "/Applications", join(home, "Applications")]
-    : process.platform === "win32" ? [process.env.LOCALAPPDATA || "", process.env.PROGRAMFILES || ""]
-    : [join(home, ".local/share"), "/opt", join(home, ".config")];
-  for (const r of roots) { if (!r) continue; const hit = sh(`find ${JSON.stringify(r)} -maxdepth 6 -name orca-ide -type f 2>/dev/null | head -1`).trim(); if (hit) return hit; }
-  return "";
-}
-// ---- background jobs --------------------------------------------------------
-// Run a shell command as a tracked, logged background job that shows up live in
-// the Agents tab. Shared by the agent handoff and the local-model setup.
-function track(name, cmd, cwd, onExit) {
-  try {
-    const dir = join(cwd, ".symbiot"); mkdirSync(dir, { recursive: true });
-    const logp = join(dir, "agent.log");
-    let fd = "ignore"; try { fd = openSync(logp, "a"); writeSync(fd, `\n=== ${name} ${new Date().toISOString()} ===\n$ ${cmd}\n`); } catch {}
-    const entry = { id: randomBytes(4).toString("hex"), name, path: cwd, log: logp, startedAt: Date.now(), status: "running", exitCode: null, endedAt: null };
-    const child = spawn(cmd, { shell: true, cwd, detached: true, stdio: ["ignore", fd === "ignore" ? "ignore" : fd, fd === "ignore" ? "ignore" : fd] });
-    entry.pid = child.pid;
-    child.on("exit", (code) => { entry.status = code === 0 ? "done" : "failed"; entry.exitCode = code; entry.endedAt = Date.now(); if (onExit) try { onExit(code); } catch {} });
-    child.on("error", () => { entry.status = "failed"; entry.endedAt = Date.now(); });
-    child.unref();
-    HANDOFFS.unshift(entry);
-    if (HANDOFFS.length > 30) HANDOFFS.length = 30;
-    return entry;
-  } catch { return null; }
-}
-// Agent-agnostic "what did it do": read it straight from git, so it works the
-// same whoever the agent was (Claude, Codex/GPT, Aider, Gemini, Cursor…). Shows
-// current working-tree changes + any commits the agent made since it started.
-function agentChanges(path, startedAt) {
-  try {
-    const q = JSON.stringify(path);
-    const porcelain = sh(`git -C ${q} status --porcelain`).trim();
-    // Don't count Symbiot's own .symbiot/ dir (agent.log, TASKS.md) as the agent's work.
-    const dirty = porcelain ? porcelain.split("\n").filter((l) => { const p = l.slice(3); return p !== ".symbiot" && p !== ".symbiot/" && p.indexOf(".symbiot/") !== 0; }).length : 0;
-    const stat = (sh(`git -C ${q} diff --shortstat`).trim() || sh(`git -C ${q} diff --cached --shortstat`).trim()).replace(/^\s+/, "");
-    const since = new Date(startedAt || Date.now()).toISOString();
-    const raw = sh(`git -C ${q} log --since=${JSON.stringify(since)} --pretty=%h\u0001%s`).trim();
-    const commits = raw ? raw.split("\n").slice(0, 8).map((l) => { const i = l.indexOf("\u0001"); return { hash: l.slice(0, i), msg: l.slice(i + 1) }; }) : [];
-    return { dirty, stat, commits };
-  } catch { return { dirty: 0, stat: "", commits: [] }; }
-}
-// ---- agent questions: decisions, options and ideas, from ANY agent ---------
-// A handoff runs unattended (claude -p, codex exec, aider --message, …), so the
-// agent can't stop and ask in chat. TASKS.md tells it to write
-// .symbiot/QUESTIONS.md instead — questions with options, plus ideas — which
-// the Agents tab shows on that agent's block. The user's answers are appended to
-// .symbiot/ANSWERS.md for the next run to read. Plain files, so it works the
-// same whichever model or tool the agent is.
-const QUESTIONS_MAX = 5;
-const qKey = (s) => String(s || "").trim().toLowerCase().replace(/\s+/g, " ");
-const readSymbiot = (path, f) => { try { return readFileSync(join(path, ".symbiot", f), "utf8"); } catch { return ""; } };
-// "## Questions" → "### question", context lines, "- option" bullets;
-// "## Suggestions" (or Ideas / Follow-ups) → "- idea" bullets. Forgiving: a bare
-// bullet under Questions is a question with no options.
-function parseQuestions(md) {
-  const questions = [], suggestions = []; let sec = "q", cur = null;
-  const clip = (s) => String(s).trim().slice(0, 300);
-  for (const raw of String(md || "").split(/\r?\n/)) {
-    const l = raw.trim(); if (!l) continue;
-    let m;
-    if ((m = l.match(/^###\s+(.+)$/))) {
-      if (sec === "s") { suggestions.push(clip(m[1])); cur = null; }
-      else { cur = { q: clip(m[1]), context: "", options: [] }; questions.push(cur); }
-      continue;
-    }
-    if ((m = l.match(/^##\s+(.+)$/))) { sec = /suggest|idea|follow|option/i.test(m[1]) ? "s" : "q"; cur = null; continue; }
-    if (/^#\s/.test(l)) continue;
-    const b = l.match(/^(?:[-*+]|\d+[.)])\s+(?:\[[ xX]\]\s+)?(.+)$/);
-    if (sec === "s") { if (b) suggestions.push(clip(b[1])); continue; }
-    if (b) { if (cur) cur.options.push(clip(b[1])); else questions.push({ q: clip(b[1]), context: "", options: [] }); continue; }
-    if (cur) cur.context = clip((cur.context ? cur.context + " " : "") + l);
-  }
-  return { questions: questions.filter((x) => x.q).slice(0, 20).map((x) => ({ ...x, options: x.options.slice(0, 6) })), suggestions: suggestions.filter(Boolean).slice(0, 10) };
-}
-// The OPEN questions (not yet in ANSWERS.md) and the agent's ideas, each marked
-// if it's already on the task list for this repo.
-function agentQuestions(path, repo) {
-  const p = parseQuestions(readSymbiot(path, "QUESTIONS.md"));
-  const done = new Set([...readSymbiot(path, "ANSWERS.md").matchAll(/^###\s+(.+)$/gm)].map((m) => qKey(m[1])));
-  const open = p.questions.filter((x) => !done.has(qKey(x.q)));
-  const tasks = p.suggestions.length ? loadTasks() : [];
-  return {
-    questions: open.slice(0, QUESTIONS_MAX), answered: p.questions.length - open.length,
-    suggestions: p.suggestions.map((text) => ({ text, added: tasks.some((t) => t.repo === repo && qKey(t.text) === qKey(text)) })),
-  };
-}
-// Save answers to .symbiot/ANSWERS.md; opts.rerun hands the repo back to the
-// agent (same saved command) so it carries on with them.
-function answerQuestions(path, answers, opts = {}) {
-  path = String(path || "");
-  if (!path || !HANDOFFS.some((e) => e.path === path)) return { error: "No agent has run in that folder." };
-  const open = new Map(agentQuestions(path, "").questions.map((x) => [qKey(x.q), x.q]));
-  const rows = (Array.isArray(answers) ? answers : [])
-    .map((x) => ({ q: open.get(qKey(x && x.q)), a: String((x && x.a) || "").replace(/^\s*#+/gm, "").trim().slice(0, 2000) }))
-    .filter((x) => x.q && x.a);
-  if (!rows.length) return { error: "Pick or type at least one answer." };
-  const prev = readSymbiot(path, "ANSWERS.md") || "# Answers from the user\nAnswers to the questions in QUESTIONS.md, newest last. Follow them; ask again in QUESTIONS.md if one is unclear.\n";
-  const day = new Date().toISOString().slice(0, 10);
-  try {
-    mkdirSync(join(path, ".symbiot"), { recursive: true });
-    writeFileSync(join(path, ".symbiot", "ANSWERS.md"), prev.replace(/\s*$/, "\n") + rows.map((x) => `\n### ${x.q}\n${x.a}\n_answered ${day}_\n`).join(""));
-  } catch (e) { return { error: "Couldn't write ANSWERS.md: " + ((e && e.message) || e) }; }
-  const out = { ok: true, saved: rows.length };
-  if (opts.rerun) { const e = runHandoff(path); if (e) out.rerun = e.id; else out.note = "Answers saved. Set an agent command in Settings to have the agent pick them up automatically."; }
-  return out;
-}
-// The Agents tab: every tracked job, its log tail, what it changed, and — on the
-// newest job per folder — the questions/ideas it left.
-function agentsList() {
-  const seen = new Set();
-  return HANDOFFS.map((e) => {
-    let tail = ""; try { tail = readFileSync(e.log, "utf8").slice(-1200); } catch {}
-    const first = !seen.has(e.path); seen.add(e.path);
-    return { id: e.id, name: e.name, path: e.path, status: e.status, elapsed: (e.endedAt || Date.now()) - e.startedAt, exitCode: e.exitCode, tail, changed: agentChanges(e.path, e.startedAt), ask: first ? agentQuestions(e.path, e.name) : null };
-  });
-}
 // ---- local model one-command setup (Ollama), OS-aware ---------------------
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 function hasOllama() { return !!sh("ollama --version").trim(); } // cross-platform (not POSIX command -v)
@@ -1039,122 +777,7 @@ function cmdModels() {
   console.log("");
 }
 
-// ---- drift: what's out of sync / stuck / at risk (deterministic git facts) -
-function gitDefaultBranch(repo) {
-  const d = sh(`git -C ${JSON.stringify(repo)} symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null`).trim();
-  if (d) return d.replace(/^origin\//, "");
-  for (const b of ["main", "master", "develop"]) if (sh(`git -C ${JSON.stringify(repo)} rev-parse --verify -q refs/remotes/origin/${b} 2>/dev/null`).trim()) return b;
-  return sh(`git -C ${JSON.stringify(repo)} rev-parse --abbrev-ref HEAD 2>/dev/null`).trim() || "main";
-}
-function fetchAgeDays(repo) {
-  const gd = sh(`git -C ${JSON.stringify(repo)} rev-parse --git-common-dir 2>/dev/null`).trim();
-  if (!gd) return null;
-  const p = gd.startsWith("/") ? join(gd, "FETCH_HEAD") : join(repo, gd, "FETCH_HEAD");
-  try { return Math.floor((Date.now() - statSync(p).mtimeMs) / 86400000); } catch { return null; }
-}
-function worktreeCount(repo) { return sh(`git -C ${JSON.stringify(repo)} worktree list 2>/dev/null`).split("\n").filter(Boolean).length; }
-// Deployed-sha commands are read ONLY from the user's own config (never from a
-// repo file, which could be attacker-controlled): ~/.config/symbiot/deploys.json
-function loadDeploys() { try { return JSON.parse(readFileSync(join(CONFIG_DIR, "deploys.json"), "utf8")); } catch { return {}; } }
-function ciState(repo, def) {
-  if (!hasCmd("gh")) return null;
-  if (!/github\.com/i.test(sh(`git -C ${JSON.stringify(repo)} remote get-url origin 2>/dev/null`))) return null;
-  const j = sh(`cd ${JSON.stringify(repo)} && gh run list --branch ${def} --limit 1 --json databaseId,conclusion,status 2>/dev/null`).trim();
-  if (!j) return null;
-  try {
-    const a = JSON.parse(j); if (!a.length) return null; const r = a[0];
-    if (r.status && r.status !== "completed") return { level: "info", text: `CI on ${def}: ${r.status}` };
-    if (r.conclusion === "success") return { level: "info", text: `CI on ${def}: passing` };
-    if (r.conclusion === "failure") {
-      // Deterministic "not running" signal: every job has 0 steps (never started).
-      let notRun = false, reason = "";
-      try {
-        const jobs = (JSON.parse(sh(`cd ${JSON.stringify(repo)} && gh run view ${r.databaseId} --json jobs 2>/dev/null`)).jobs) || [];
-        notRun = jobs.length > 0 && jobs.every((x) => ((x.steps || []).length === 0));
-        if (notRun && jobs[0] && jobs[0].databaseId) {
-          // Only on the not-running path: fetch the one job's annotation to quote
-          // GitHub's exact reason (billing / spending limit / runner / disabled).
-          const cru = sh(`cd ${JSON.stringify(repo)} && gh api repos/{owner}/{repo}/actions/jobs/${jobs[0].databaseId} --jq .check_run_url 2>/dev/null`).trim();
-          const crid = (cru.match(/check-runs\/(\d+)/) || [])[1];
-          if (crid) { const m = sh(`cd ${JSON.stringify(repo)} && gh api repos/{owner}/{repo}/check-runs/${crid}/annotations --jq '.[0].message' 2>/dev/null`).trim(); if (m) reason = m.slice(0, 240); }
-        }
-      } catch {}
-      if (notRun) return { level: "warn", text: reason ? `CI is NOT running on ${def}: "${reason}"` : `CI is NOT running on ${def} — jobs never started (reason unavailable; usually a billing/spending-limit stop), not failing tests` };
-      return { level: "warn", text: `CI's last run on ${def} failed (a real failure — jobs ran)` };
-    }
-    if (r.conclusion) return { level: "warn", text: `CI on ${def}: ${r.conclusion}` };
-    return null;
-  } catch { return null; }
-}
-// For merges that aren't on the default branch, tell "likely never landed"
-// (added files missing from default) from "merged another way" (all present).
-function mergedOffDefault(p, defRef) {
-  const raw = sh(`git -C ${JSON.stringify(p)} log --merges --all --not ${defRef} --format='%H|%s' 2>/dev/null`)
-    .split("\n").filter((l) => /merge pull request/i.test(l));
-  if (!raw.length) return [];
-  const defFiles = new Set(sh(`git -C ${JSON.stringify(p)} ls-tree -r --name-only ${defRef} 2>/dev/null`).split("\n").filter(Boolean));
-  const hits = [];
-  for (const line of raw.slice(0, 12)) {
-    const [sha, subj] = line.split("|");
-    const prNum = (subj.match(/#(\d+)/) || [])[1] || "?";
-    const parents = sh(`git -C ${JSON.stringify(p)} rev-list --parents -n1 ${sha} 2>/dev/null`).trim().split(/\s+/);
-    const head = parents[2]; // 2nd parent = the merged branch head
-    let added = 0, missing = 0;
-    if (head) {
-      const mb = sh(`git -C ${JSON.stringify(p)} merge-base ${head} ${defRef} 2>/dev/null`).trim();
-      const files = sh(`git -C ${JSON.stringify(p)} diff --name-status ${mb || defRef} ${head} 2>/dev/null`)
-        .split("\n").map((l) => l.trim()).filter((l) => /^A\b|^A\t/.test(l)).map((l) => l.split(/\s+/).pop());
-      added = files.length;
-      for (const f of files) if (f && !defFiles.has(f)) missing++;
-    }
-    hits.push({ prNum, sha: sha.slice(0, 9), added, missing });
-  }
-  return hits;
-}
-// Drift facts for ONE repo. Compares against origin/<default> when a remote
-// exists, else the local default branch (so it also works on local-only repos).
-function driftRepo(p, opts = {}) {
-  const name = p.split("/").pop();
-  const def = gitDefaultBranch(p), st = repoState(p), flags = [];
-  const originDef = sh(`git -C ${JSON.stringify(p)} rev-parse --verify -q refs/remotes/origin/${def} 2>/dev/null`).trim();
-  const localDef = sh(`git -C ${JSON.stringify(p)} rev-parse --verify -q refs/heads/${def} 2>/dev/null`).trim();
-  const defRef = originDef ? `origin/${def}` : (localDef ? def : "");
-  const cmd = opts.deploys && (opts.deploys[p] || opts.deploys[name]);
-  // Fetch only when asked, or for a deploy-configured repo (comparing a live
-  // deployed sha against a stale origin gives a confidently wrong answer).
-  if (originDef && (opts.fetch || cmd)) sh(`git -C ${JSON.stringify(p)} fetch -q origin 2>/dev/null`);
-  const fa = fetchAgeDays(p);
-  const stale = fa != null && fa > 1 ? ` (as of ${fa}d ago)` : "";
-
-  if (st.stale) flags.push({ level: "warn", text: `checkout is stale — working tree ≈ ${st.staleBy ? "HEAD~" + st.staleBy : "an older commit"}, not new work` });
-  else if (st.dirty) flags.push({ level: "info", text: `${st.dirty} uncommitted (${st.mod} mod / ${st.del} del / ${st.add} new)` });
-  if (st.behind) flags.push({ level: "warn", text: `${st.behind} behind upstream on ${st.branch}${stale}` });
-  const wc = worktreeCount(p); if (wc > 1) flags.push({ level: "info", text: `${wc} checkouts of this repo` });
-  if (originDef) {
-    const unmerged = sh(`git -C ${JSON.stringify(p)} branch -r --no-merged origin/${def} 2>/dev/null`).split("\n").map((s) => s.trim()).filter((b) => b && !b.startsWith("origin/HEAD"));
-    if (unmerged.length) flags.push({ level: "info", text: `${unmerged.length} branch(es) with work not on ${def}` });
-  }
-  if (defRef) {
-    const hits = mergedOffDefault(p, defRef);
-    const gone = hits.filter((h) => h.added > 0 && h.missing > 0);
-    const other = hits.length - gone.length;
-    if (gone.length) flags.push({ level: "warn", text: `${gone.length} PR(s) merged off ${def} with added files MISSING from ${def} — likely never landed`, evidence: gone.slice(0, 5).map((h) => `#${h.prNum} (${h.missing}/${h.added} files missing)`).join(" | ") });
-    if (other > 0) flags.push({ level: "info", text: `${other} other PR merge(s) off ${def} (files present — probably re-done/squashed)` });
-  }
-  if (cmd && defRef) {
-    const sha = sh(cmd).trim().split(/\s+/)[0];
-    if (sha) {
-      const onDef = sh(`git -C ${JSON.stringify(p)} merge-base --is-ancestor ${sha} ${defRef} 2>/dev/null && echo Y`).trim() === "Y";
-      const behind = Number(sh(`git -C ${JSON.stringify(p)} rev-list --count ${sha}..${defRef} 2>/dev/null`).trim()) || 0;
-      const ahead = Number(sh(`git -C ${JSON.stringify(p)} rev-list --count ${defRef}..${sha} 2>/dev/null`).trim()) || 0;
-      if (!onDef) flags.push({ level: "warn", text: `production runs code NOT on ${def}${ahead ? ` (${ahead} commits ahead of it)` : ""}`, evidence: sha.slice(0, 9) });
-      else if (behind) flags.push({ level: "warn", text: `production is ${behind} behind ${def}`, evidence: sha.slice(0, 9) });
-      else flags.push({ level: "info", text: `production in sync with ${def}`, evidence: sha.slice(0, 9) });
-    }
-  }
-  if (opts.ci) { const ci = ciState(p, def); if (ci) flags.push(ci); }
-  return { name, path: p, def, flags, fetchAgeDays: fa };
-}
+// ---- drift across every repo (per-repo facts: drift.mjs) -------------------
 function computeDrift(opts = {}) {
   const own = scanBegin();
   try {
@@ -1848,6 +1471,7 @@ async function cmdApp() {
       if (u.pathname === "/api/pending") return json(res, pendingReview()); // ticked by the agent, awaiting approval
       if (u.pathname === "/api/pending/diff") { const p = repoPathMap()[u.searchParams.get("repo") || ""]; return json(res, { diff: p ? workingDiff(p) : "" }); }
       if (u.pathname === "/api/pending/approve" && req.method === "POST") { const b = await readBody(req); return json(res, approveRepo(String(b.repo || ""))); }
+      if (u.pathname === "/api/pending/approve-changes" && req.method === "POST") { const b = await readBody(req); return json(res, approveChanges(String(b.repo || ""))); }
       if (u.pathname === "/api/pending/sendback" && req.method === "POST") { const b = await readBody(req); return json(res, sendBack(String(b.id || ""))); }
       if (u.pathname === "/api/automerge" && req.method === "POST") { const b = await readBody(req); return json(res, setAutoMerge(String(b.repo || ""), !!b.on)); }
       if (u.pathname === "/api/tasks/push" && req.method === "POST") { const b = await readBody(req); return json(res, pushTasks(b)); }
@@ -1990,4 +1614,4 @@ const isMain = (() => {
 })();
 if (isMain) main();
 
-export { authorship, repoState, readmeInfo, repoShape, houseRules, findAllRepos, buildMap, reportFooter, detectHardware, recommendModels, computeDrift, driftRepo, gitDefaultBranch, buildTasksMd, taskType, EMBEDDED_UI, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, fillHandoff, handoffCmd, setHandoffCmd, ORCA_CLAUDE_CMD, CLAUDE_CMD, HANDOFF_PROMPT, shipChanges, syncTasks, pendingReview, approveRepo, sendBack, pushTasks, semverGt, updateCmd, parseQuestions, agentQuestions };
+export { authorship, repoState, readmeInfo, repoShape, houseRules, findAllRepos, buildMap, reportFooter, detectHardware, recommendModels, computeDrift, driftRepo, gitDefaultBranch, buildTasksMd, taskType, EMBEDDED_UI, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, fillHandoff, handoffCmd, setHandoffCmd, ORCA_CLAUDE_CMD, CLAUDE_CMD, HANDOFF_PROMPT, shipChanges, syncTasks, pendingReview, approveRepo, approveChanges, sendBack, pushTasks, semverGt, updateCmd, parseQuestions, agentQuestions };
