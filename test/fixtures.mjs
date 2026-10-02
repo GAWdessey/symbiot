@@ -236,8 +236,8 @@ try {
     console.log(JSON.stringify(out));`], { encoding: "utf8", timeout: 30000, env: { ...process.env, HOME: hhome, USERPROFILE: hhome } });
   let b = {}; try { b = JSON.parse(bs.stdout.trim().split("\n").pop()); } catch { console.log(bs.stdout, bs.stderr); }
   ok("the first send starts the agent and holds the folder", b.first && b.lock, b);
-  ok("a second send in the same process starts nothing", b.second && b.second.busy && b.second.id === b.firstId && b.jobs === 1, b);
-  ok("a second Symbiot process sees it running too", b.other && b.other.busy && b.other.pid > 0, b.other);
+  ok("a second send in the same process starts nothing", b.second && b.second.busy && b.second.id === b.firstId && b.jobs === 1 && b.second.auto, b);
+  ok("a second Symbiot process sees it running too, and that its owner is still up", b.other && b.other.busy && b.other.pid > 0 && b.other.auto, b.other);
   ok("the folder is free again once the agent exits", b.lockGone && b.third, b);
   ok("a leftover lock from a dead agent doesn't block", b.stale === null, b.stale);
 
@@ -254,15 +254,24 @@ try {
     out.during = readFileSync(f, "utf8");
     writeFileSync(f, "- [x] A\\n- [ ] B\\n"); // the agent ticks A meanwhile
     out.earlyRelease = a.releaseHeldTasks(dir);
+    out.shown = a.agentsList()[0].held;
     await until(() => job.status !== "running" && !existsSync(next));
     out.after = readFileSync(f, "utf8"); out.nextGone = !existsSync(next);
+    const auto = a.HANDOFFS[0]; out.autoStarted = a.HANDOFFS.length === 2 && auto !== job && auto.fromHeld && auto.status === "running";
+    out.shownAfter = a.agentsList()[0].held;
+    a.writeTasks(dir, "- [x] A\\n"); // held again, but nothing left open in it
+    await until(() => auto.status !== "running" && !existsSync(next));
+    out.noLoop = a.HANDOFFS.length === 2;
     writeFileSync(next, "- [ ] stale\\n"); out.supersede = a.writeTasks(dir, "- [ ] D\\n");
     out.superseded = !existsSync(next) && readFileSync(f, "utf8") === "- [ ] D\\n";
     console.log(JSON.stringify(out));`], { encoding: "utf8", timeout: 30000, env: { ...process.env, HOME: hhome, USERPROFILE: hhome } });
   let hv = {}; try { hv = JSON.parse(hd.stdout.trim().split("\n").pop()); } catch { console.log(hd.stdout, hd.stderr); }
   ok("no agent running -> TASKS.md is written straight away", hv.freeHeld === false, hv);
   ok("agent running -> the new brief is held, its TASKS.md untouched", hv.busyHeld === true && hv.during === "- [ ] A\n- [ ] B\n" && hv.earlyRelease === false, hv);
+  ok("the agent's block shows how many tasks are held", hv.shown === 3 && hv.shownAfter === null, hv);
   ok("once it exits the held brief lands, keeping the agent's ticks", hv.nextGone && hv.after === "- [x] A\n- [ ] B\n- [ ] C\n", hv.after);
+  ok("...and an agent starts on it by itself", hv.autoStarted, hv);
+  ok("a held brief with nothing open lands without starting another", hv.noLoop, hv);
   ok("a later send when free replaces a leftover held brief", hv.supersede === false && hv.superseded, hv);
 
   console.log("APPROVE — approved work ships: branch off the default, commit (minus .symbiot/), push");
@@ -342,6 +351,10 @@ try {
   ok("suggestions are their own list (checkbox bullets too)", pq.suggestions.join("|") === "Add a --json flag to drift|Cache the map scan", pq.suggestions);
   const loose = parseQuestions("- Should I delete the legacy folder?\n- Rename it instead?");
   ok("bare bullets with no headings are still questions", loose.questions.length === 2 && loose.questions[0].options.length === 0, loose);
+  // regression: a preamble file-list (bullets NOT ending in "?") before the
+  // questions must not become questions — only the real "### …?" one does.
+  const pre = parseQuestions("I updated:\n- the gen script;\n- the PayFast path;\n- docs/README.md.\n\n## Questions\n### Fix the gate?\n- yes\n- no");
+  ok("preamble list bullets are not questions", pre.questions.length === 1 && pre.questions[0].q === "Fix the gate?" && pre.questions[0].options.length === 2, pre.questions);
   ok("TASKS.md tells the agent how to ask", /\.symbiot\/QUESTIONS\.md/.test(md) && /## Suggestions/.test(md) && /\.symbiot\/ANSWERS\.md/.test(md), md.slice(-600));
   ok("the handoff prompt points at QUESTIONS.md, shell-safe", /QUESTIONS\.md/.test(HANDOFF_PROMPT) && !/[`$"\\]/.test(HANDOFF_PROMPT), HANDOFF_PROMPT);
 
