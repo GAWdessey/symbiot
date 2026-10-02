@@ -12,16 +12,16 @@ symbiot            your last 7 days, written up   (same as: symbiot week)
 symbiot standup    yesterday + today, for standup
 symbiot todo       what's still on your plate
 symbiot app        open the visual app in your browser
-symbiot drift      what's out of sync / at risk across your repos
 symbiot push       write tasks into each repo for your coding agent
-symbiot mail       add the mail you sent to your write-ups (local, no API)
-symbiot models     recommend AI models for your hardware
-symbiot setup-local  set up a free local model (Ollama), one command
+symbiot drift      what's out of sync / at risk across your repos
 symbiot login      connect it to an AI (once)
 symbiot whoami     show how it's connected
 symbiot logout     forget saved credentials
 symbiot help
 ```
+
+A few newer extras (email, CI checks, local-model setup) are
+[experimental](#experimental).
 
 ## Install
 
@@ -54,7 +54,7 @@ Tabs:
   **no AI key**; reviews and suggestions use your chosen model. While the scan runs
   the Map shows its progress.
 - **Drift** — the [`symbiot drift`](#whats-out-of-sync-symbiot-drift) report, with
-  "fetch latest" and "check CI" toggles.
+  a "fetch latest" toggle (and an [experimental](#experimental) "check CI").
 - **Week / Standup / Todo** — the write-ups (these use your chosen AI).
 - **Tasks** — a checklist, grouped by kind (Fixes, Tests & CI, Docs, …). Filter by
   type or repo, then **Send to repos** to hand just those to your agent (see
@@ -71,9 +71,9 @@ Tabs:
   did** — files changed and commits made, read from git, whichever agent it was.
   When an agent leaves **questions, options or ideas** for you, they show up on its
   block (see [Questions from your agent](#questions-from-your-agent)).
-- **Settings** — your AI, the folders to scan, your agent command, your
-  [email](#your-email-without-an-api-symbiot-mail), model recommendations and a
-  one-click local model.
+- **Settings** — your AI, the folders to scan and your agent command, plus the
+  [experimental](#experimental) email, model recommendations and one-click local
+  model.
 
 **Stays current by itself.** The app checks npm for a newer Symbiot every couple of
 minutes (and whenever you come back to the window); the version you're on is shown
@@ -82,7 +82,10 @@ version, relaunches the app on the same address, and the open window reloads its
 onto it. Restart `symbiot app` yourself and the open window reconnects the same way.
 
 The app listens on port **7391** so its address survives restarts; set
-`SYMBIOT_PORT` to use another (it falls back to a free port if that one is busy).
+`SYMBIOT_PORT` to use another. **One app at a time:** running `symbiot app` while
+it's already running just opens the existing window instead of starting a second
+copy (`SYMBIOT_FORCE_NEW=1` starts one anyway). If something else holds the port,
+it falls back to a free one.
 It works on **Linux, macOS and Windows**; with no Chromium-family browser to open
 the chrome-less window, it uses your default browser.
 
@@ -143,8 +146,10 @@ preset only fills in the command box; the saved command is what runs.
 - **Orca IDE** (any OS): opens the repo in Orca — either just the repo, to use
   Orca's own agent, or with Claude running in a new tab. It launches Orca if it's
   closed and waits for it to be ready first.
-- **Editors:** VS Code, Cursor, Windsurf, Zed, Sublime Text, IntelliJ IDEA, Neovim
-  (on macOS, also found as `.app` bundles when the CLI isn't on your PATH).
+- **Editors — opens only, no review:** VS Code, Cursor, Windsurf, Zed, Sublime
+  Text, IntelliJ IDEA, Neovim (on macOS, also found as `.app` bundles when the CLI
+  isn't on your PATH). They just open the repo. Nothing comes back for review unless
+  you run an agent there yourself, and Neovim needs a terminal to open in.
 
 Each run is logged to `.symbiot/agent.log` in the repo and shown live in the
 **Agents** tab. The command is saved as `agentCmd` in
@@ -184,7 +189,6 @@ committed.
 ```bash
 symbiot drift          # local git facts only — fast, no network
 symbiot drift --fetch  # fetch from origin first, so "behind" is current
-symbiot drift --ci     # also check GitHub Actions state (needs gh)
 ```
 
 A **deterministic** report of what's out of sync, stuck, or at risk across your
@@ -195,41 +199,15 @@ not new work), **uncommitted work**, **behind upstream**, **multiple worktrees**
 branch** (the "merged but main didn't move" trap — split into *likely never
 landed*, when files the PR added are missing from main, and *probably re-done*,
 when they're all there), and — if you configure it — **production running code
-that isn't on your default branch**. With `--ci` it tells a real failing run apart
-from **CI that isn't running at all** (jobs never started — usually a billing or
-spending limit), quoting GitHub's reason when it can. Works on local-only repos
-too: without a remote it compares against your local default branch.
+that isn't on your default branch**. Works on local-only repos too: without a
+remote it compares against your local default branch. (CI checks with `--ci` are
+[experimental](#ci-status-symbiot-drift---ci).)
 
 For the production check, add a per-repo deploy command to
 `~/.config/symbiot/deploys.json` (read only from your own config, never from a
 repo), keyed by repo path or folder name, that prints the deployed commit sha:
 `{ "/path/to/repo": "ssh prod cat ~/app/.deployed-sha" }`. Also the **Drift** tab
 in the app.
-
-## Which model? Ask your machine
-
-```bash
-symbiot models
-```
-
-Reads your RAM / CPU / GPU and recommends **local models by tier** (min / med / max,
-marking which fit your RAM) to run free & private via [Ollama](https://ollama.com),
-plus **paid** options (Claude / OpenAI / Gemini, cheap → top). Also available as
-a button in the app's Settings.
-
-### A free local model in one command: `symbiot setup-local`
-
-```bash
-symbiot setup-local                      # the best model for your RAM
-symbiot setup-local --model llama3.2:3b  # or pick one
-```
-
-Starts Ollama if it isn't running, downloads the model (with progress), and
-switches Symbiot over to it — free, private, nothing leaves your machine. If
-Ollama isn't installed yet it prints the one-line install for your OS (Homebrew on
-macOS, winget on Windows, the official script on Linux) and you re-run it after.
-Also the **Set up a free local model** button in Settings, where the download shows
-in the Agents tab and Symbiot switches over when it finishes.
 
 ## Connect it (once)
 
@@ -270,34 +248,6 @@ It summarises the commits **you** authored — matching all your identities in e
 repo (per-repo and global email, your GitHub noreply address, your name), and
 counting everyone if that filter would drop almost all of an active repo's history.
 
-## Your email, without an API: `symbiot mail`
-
-```bash
-symbiot mail                 # what mail it can read, and what you sent this week
-symbiot mail --on            # use it in week / standup   (--off to stop)
-symbiot mail --add ~/Takeout/Mail/All\ mail.mbox   # an export, or any mail folder
-```
-
-Much of a week's work happens over email, so Week and Standup can include **what
-you sent**. There's no Gmail or Outlook API, no OAuth, no app to register and no
-password. Symbiot reads the mail a desktop client already keeps on your computer,
-so anyone can link theirs the same way:
-
-- **Thunderbird** (Linux, macOS, Windows, including Snap and Flatpak installs),
-  **Apple Mail**, **Evolution**, **KMail**, and **mutt/neomutt** or any
-  `~/Maildir` / `~/mail` are found automatically. Symbiot only looks at their
-  **Sent** folders.
-- **Webmail only?** Add an export. Google Takeout gives you an `.mbox`, and Symbiot
-  keeps just the messages with Gmail's *Sent* label (or from one of your
-  addresses). You can also point it at any `.mbox` file or a folder of `.eml`
-  files.
-
-It reads **headers only** (date, recipients, subject), never a message body. It's
-**off until you switch it on**, in Settings (*Email*) or with `symbiot mail --on`.
-**Preview** shows exactly what a write-up would see. On macOS, reading Apple Mail
-needs Full Disk Access for your terminal. Outlook for Windows keeps mail in `.pst`
-files, which Symbiot can't read, so export to `.mbox` or use Thunderbird.
-
 ## Where it looks
 
 By default Symbiot scans your **home folder**. To point it at where your work
@@ -327,7 +277,7 @@ instead of hanging. The CLI shows scan progress on one line as it goes.
 
 - **Reads:** your local git — commit messages and changed-file names, plus
   `TODO`/`FIXME` markers and uncommitted changes for `todo`. If you switch
-  [email](#your-email-without-an-api-symbiot-mail) on, it also reads the headers
+  [email](#your-sent-email-without-an-api-symbiot-mail) on, it also reads the headers
   of mail you sent (subject, recipients, date). All local.
 - **Sends to the AI:** commit messages and dates, changed-file **names**, the
   folder structure, `TODO`/`FIXME` lines, and (for a repo review) an excerpt of
@@ -341,6 +291,66 @@ instead of hanging. The CLI shows scan progress on one line as it goes.
 - **Runs only what you set:** the agent command is yours, and deploy commands are
   read only from your own `~/.config/symbiot/`, never from a repo.
 
+## Experimental
+
+These work and are tested, but are newer or depend on things Symbiot can't fully
+check, so they may change. Everything above works without them.
+
+### Your sent email, without an API: `symbiot mail`
+
+```bash
+symbiot mail                 # what mail it can read, and what you sent this week
+symbiot mail --on            # use it in week / standup   (--off to stop)
+symbiot mail --add ~/Takeout/Mail/All\ mail.mbox   # an export, or any mail folder
+```
+
+Week and Standup can include **what you sent**. It needs no Gmail or Outlook API,
+OAuth, app registration or password: Symbiot reads the mail a desktop client
+already keeps on your computer, so anyone can link theirs the same way.
+**Thunderbird** (including Snap and Flatpak), **Apple Mail**, **Evolution**,
+**KMail**, and **mutt/neomutt** or any `~/Maildir` / `~/mail` are found
+automatically, and only their **Sent** folders are read. Webmail only? Add an
+export: Google Takeout gives you an `.mbox`, and Symbiot keeps just the messages
+with Gmail's *Sent* label (or from one of your addresses). Any `.mbox` file or
+folder of `.eml` files works too.
+
+It reads **headers only** (date, recipients, subject), never a message body, and
+it's **off until you switch it on** in Settings (*Email*) or with
+`symbiot mail --on`. **Preview** shows exactly what a write-up would see. Why it's
+experimental: the tests cover mbox and Maildir, but it hasn't been tried against
+real Apple Mail, Evolution or KMail stores. On macOS, reading Apple Mail needs Full
+Disk Access for your terminal. Outlook for Windows (`.pst`) isn't supported:
+export to `.mbox` or use Thunderbird.
+
+### CI status: `symbiot drift --ci`
+
+```bash
+symbiot drift --ci     # also check GitHub Actions state (needs gh)
+```
+
+Adds CI to the drift report, telling a real failing run apart from **CI that isn't
+running at all** (jobs never started, usually a billing or spending limit) and
+quoting GitHub's reason when it can. Also the **check CI** toggle in the Drift tab.
+Why it's experimental: it needs the GitHub CLI (`gh`), only covers GitHub Actions,
+and spotting "not running" is a heuristic.
+
+### Local models: `symbiot models` and `symbiot setup-local`
+
+```bash
+symbiot models                           # recommend models for this machine
+symbiot setup-local                      # the best local model for your RAM
+symbiot setup-local --model llama3.2:3b  # or pick one
+```
+
+`models` reads your RAM / CPU / GPU and recommends **local models by tier** (min /
+med / max, marking which fit your RAM) to run free and private via
+[Ollama](https://ollama.com), plus **paid** options (Claude / OpenAI / Gemini,
+cheap → top). `setup-local` starts Ollama if it isn't running, downloads the model
+with progress, and switches Symbiot over to it. If Ollama isn't installed it prints
+the one-line install for your OS and you re-run it after. Both are buttons in
+Settings, where the download shows in the Agents tab. You can always pick a model
+yourself with `symbiot login`.
+
 ## Config
 
 Everything lives in `~/.config/symbiot/`: `config.json` (your AI, `scanRoots`,
@@ -353,6 +363,7 @@ conventions every repo review must respect, alongside each repo's own
   `claude-haiku-4-5`, `gemini-1.5-pro`).
 - `SYMBIOT_SCAN_TIMEOUT` — the scan time limit, in seconds (default 60).
 - `SYMBIOT_PORT` — the app's port (default 7391).
+- `SYMBIOT_FORCE_NEW=1` — start a second app even if one is already running.
 - `symbiot whoami` shows the active provider, model, and where the credential
   came from. `symbiot logout` forgets saved credentials.
 
@@ -362,26 +373,44 @@ conventions every repo review must respect, alongside each repo's own
 npm test
 ```
 
-Runs four suites, all against throwaway repos and an isolated `HOME`:
+Runs five suites, all against throwaway repos, an isolated `HOME` and (for the
+update check) a fake npm registry:
 
 - `test/load.mjs` — the shipped files parse and load: `node --check` on each
   module, `ui.mjs` imported on its own with its page's JavaScript parsed, every
   local import listed in package.json `"files"`, and the `bin` entry point shipped.
 - `test/fixtures.mjs` — accuracy fixtures: the facts Symbiot collects (identity
   matching, stale checkouts, worktrees, drift) and the `symbiot drift` report as
-  printed, the scan time limit, the agent handoff, and the review → approve cycle.
+  printed, the scan time limit, the agent handoff, review → send back → approve →
+  ship (including a repo that gitignores `.symbiot/`), agent questions, mail
+  ingestion (`symbiot mail` end to end), and the update command.
 - `test/smoke.mjs` — boots `symbiot app`, runs the page's own JavaScript against
   a fake DOM (every tab, every button), hits every endpoint the UI calls with the
-  method the UI uses, and checks POST-only endpoints refuse GET and `/api` needs
-  the token.
+  method the UI uses, checks POST-only endpoints refuse GET and `/api` needs the
+  token, and checks the update banner can't loop.
+- `test/app.mjs` — the app's lifecycle: a second `symbiot app` reuses the running
+  one (and `SYMBIOT_FORCE_NEW` / a foreign server on the port don't), and the
+  update check only offers a higher npm version.
 - `test/install.mjs` — runs the CLI through a bin symlink, then `npm pack` +
   global install into a temp prefix: `symbiot help`, every shipped file present,
   and the installed `symbiot app` serving its page. Needs npm registry access for
   dependencies; `SYMBIOT_SKIP_INSTALL_TEST=1` skips that part.
 
-`SYMBIOT_NO_OPEN=1` stops `symbiot app` opening a window (the tests set it).
-Releases publish from a version tag via `.github/workflows/publish.yml`, and only
-after the full suite passes in CI.
+`SYMBIOT_NO_OPEN=1` stops `symbiot app` opening a window (the tests set it), and
+`SYMBIOT_REGISTRY` points its update check at another registry. CI
+(`.github/workflows/ci.yml`) runs the whole suite on every pull request.
+
+**Releasing.** Bump the version in the pull request, merge it into `main`, then tag
+`main`'s commit:
+
+```bash
+git checkout main && git pull
+git tag v$(node -p "require('./package.json').version") && git push origin --tags
+```
+
+`.github/workflows/publish.yml` publishes from that tag only if it's on `main`,
+matches `package.json`, and the full suite passes. A tag on any other branch is
+refused, so what's on npm is always what's on `main`.
 
 ---
 

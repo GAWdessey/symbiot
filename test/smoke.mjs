@@ -6,10 +6,14 @@
 //      wrong method (the 0.10.2 GET/POST mismatch) fails here;
 //   3. hit every endpoint the UI calls, with the SAME method the UI uses,
 //      asserting none 404 — and fail if the UI calls an endpoint this test
-//      doesn't cover, so a new route can't slip past unexercised.
-// Runs in an isolated HOME, on a random port, with AI keys stripped, so it never
-// touches real config or repos, a running app, or a paid model.
+//      doesn't cover, so a new route can't slip past unexercised;
+//   4. with a newer version on a fake registry, the page offers the update once
+//      and, after an update that didn't take, stops offering it (the 0.28.2 loop).
+// Runs in an isolated HOME, on a random port, with AI keys stripped and a fake
+// npm registry, so it never touches real config or repos, a running app, npm,
+// or a paid model.
 import { spawn } from "node:child_process";
+import { createServer } from "node:http";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
@@ -21,7 +25,11 @@ let pass = 0, fail = 0;
 const ok = (n, c, got) => { if (c) { pass++; console.log("  ✓ " + n); } else { fail++; console.log("  ✗ " + n + (got !== undefined ? "  got: " + JSON.stringify(got) : "")); } };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-const env = { ...process.env, HOME, USERPROFILE: HOME, SYMBIOT_NO_OPEN: "1", SYMBIOT_PORT: String(20000 + Math.floor(Math.random() * 20000)) };
+// a fake npm registry that always has a newer Symbiot
+const LATEST = "999.0.0";
+const reg = createServer((req, res) => { res.writeHead(200, { "content-type": "application/json" }); res.end(JSON.stringify({ "dist-tags": { latest: LATEST } })); });
+await new Promise((r) => reg.listen(0, "127.0.0.1", r));
+const env = { ...process.env, HOME, USERPROFILE: HOME, SYMBIOT_NO_OPEN: "1", SYMBIOT_PORT: String(20000 + Math.floor(Math.random() * 20000)), SYMBIOT_REGISTRY: `http://127.0.0.1:${reg.address().port}` };
 for (const k of ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "OPENAI_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY", "SYMBIOT_MODEL"]) delete env[k];
 const child = spawn(process.execPath, [join(HERE, "..", "index.mjs"), "app"], { env, stdio: ["ignore", "pipe", "pipe"] });
 let buf = "";
@@ -38,8 +46,11 @@ const H = { "x-symbiot-token": token, "content-type": "application/json" };
 // Elements exist only if the page has them: static ids from the HTML, plus ids
 // the UI itself rendered via innerHTML (e.g. the archived-tasks toggle) — so a
 // handler grabbing an element that isn't there throws, like in a browser.
-async function runUi(js, page) {
+// `storage` seeds the page's localStorage; `handlers: false` only boots the page.
+async function runUi(js, page, { storage = {}, handlers = true } = {}) {
   const errors = [], hits = [];
+  const store = { ...storage };
+  const localStorage = { getItem: (k) => (k in store ? store[k] : null), setItem: (k, v) => { store[k] = String(v); }, removeItem: (k) => { delete store[k]; } };
   let inflight = 0;
   const onRejection = (e) => errors.push("unhandled rejection: " + ((e && e.message) || e));
   process.on("unhandledRejection", onRejection);
@@ -91,10 +102,12 @@ async function runUi(js, page) {
     await settle();
   };
   try {
-    new Function("window", "document", "location", "navigator", "fetch", "setTimeout", "clearTimeout", "setInterval", "clearInterval", js)(
-      window, document, location, navigator, fetchShim, noop, noop, noop, noop);
+    new Function("window", "document", "location", "navigator", "localStorage", "fetch", "setTimeout", "clearTimeout", "setInterval", "clearInterval", js)(
+      window, document, location, navigator, localStorage, fetchShim, noop, noop, noop, noop);
   } catch (e) { errors.push("boot: " + e.message); }
   await settle();
+  const bar = els.updatebar ? els.updatebar.innerHTML : "";
+  if (!handlers) { process.off("unhandledRejection", onRejection); return { errors, hits, tabs: tabs.length, bar }; }
   for (const t of tabs) await fire("tab " + t.dataset.tab, t, "click");
   // Every handler the page wired up, except Quit (stops the server) and the
   // local-model setup (starts a download; its route is hit directly below).
@@ -105,7 +118,7 @@ async function runUi(js, page) {
     for (const type of ["click", "change", "keydown"]) if (el.listeners[type]) await fire("#" + id, el, type);
   }
   process.off("unhandledRejection", onRejection);
-  return { errors, hits, tabs: tabs.length };
+  return { errors, hits, tabs: tabs.length, bar };
 }
 
 // (path, method) exactly as the browser UI calls them. Body is always "{}".
@@ -192,6 +205,16 @@ try {
     const apiCalls = uiCalls(js), table = new Set(calls.map(([p, m]) => p.split("?")[0] + " " + m));
     const drift = apiCalls.filter(([p, m]) => !(p in NOT_HIT) && !table.has(p + " " + m)).map(([p, m]) => `UI sends ${m} ${p}`);
     ok(`the UI's ${apiCalls.length} api() calls use the methods this test hits`, apiCalls.length > 0 && drift.length === 0, [...new Set(drift)]);
+
+    console.log("UPDATE — the page offers a newer version once, and stops if the update didn't take");
+    const { version } = await (await fetch(base + "/api/ping", { headers: H })).json();
+    ok(`a newer version on npm (${LATEST}) shows the Update & restart button`, ui.bar.includes(LATEST) && ui.bar.includes("doupd"), ui.bar);
+    // the page sets this before it updates; seeing the SAME version after the
+    // restart means the install didn't advance — the button would just loop
+    const stuck = await runUi(js, page, { storage: { symbiot_update_tried: version }, handlers: false });
+    ok("after an update that didn't take: no button, tells you how to update by hand", stuck.errors.length === 0 && !stuck.bar.includes("doupd") && /didn't take/.test(stuck.bar) && /npm install -g symbiot@latest/.test(stuck.bar), { errors: stuck.errors, bar: stuck.bar });
+    const moved = await runUi(js, page, { storage: { symbiot_update_tried: "0.0.1" }, handlers: false });
+    ok("after an update that advanced: offers the next one normally", moved.errors.length === 0 && moved.bar.includes("doupd"), moved.bar);
   }
 
   console.log("SMOKE — every UI endpoint responds (no 404 route/method mismatch)");
@@ -221,6 +244,7 @@ try {
   ok(`GET /api/quit -> ${quit}`, quit === 200, quit);
 } finally {
   child.kill("SIGKILL");
+  reg.close();
   rmSync(HOME, { recursive: true, force: true });
 }
 console.log(`\n${fail ? "✗" : "✓"} smoke: ${pass} passed, ${fail} failed`);

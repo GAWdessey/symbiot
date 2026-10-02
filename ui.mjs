@@ -183,7 +183,7 @@ label.check input{width:auto}
 <section id="panel-drift" class="hidden">
 <div class="row"><span class="muted">What's out of sync, stuck or at risk across your repos — local git facts.</span>
 <label class="muted" style="margin-left:auto"><input type="checkbox" id="driftfetch"> fetch latest</label>
-<label class="muted"><input type="checkbox" id="driftci"> check CI (needs gh)</label>
+<label class="muted"><input type="checkbox" id="driftci"> check CI (needs gh, experimental)</label>
 <button class="ghost" id="driftrun">Rescan</button></div>
 <div id="driftout"></div>
 </section>
@@ -216,15 +216,16 @@ label.check input{width:auto}
 <div id="agentpresets" style="margin-top:8px"></div>
 </div>
 <div style="margin-top:20px;border-top:1px solid var(--line);padding-top:16px">
-<label>Email &mdash; add what you sent to Week and Standup</label>
+<label>Email &mdash; add what you sent to Week and Standup <span class="muted">(experimental)</span></label>
 <label class="check"><input type="checkbox" id="mailon"> Use my sent email (subjects &amp; recipients only)</label>
 <div id="mailsources"></div>
 <div class="row" style="margin-top:6px"><input id="newmail" placeholder="add a mail folder or .mbox file  (e.g. a Google Takeout export)" style="flex:1"><button class="ghost" id="addmail">Add</button><button class="ghost" id="mailpreview">Preview</button></div>
 <input id="mailaddrs" type="text" placeholder="your email addresses, comma-separated  (only needed for a whole-mailbox export)">
-<div class="note muted" id="mailnote">No API, no OAuth, no password: Symbiot reads the mail your desktop mail app (Thunderbird, Apple Mail, Evolution, mutt&hellip;) already keeps on this computer, or an exported .mbox &mdash; so anyone can link theirs. Headers only, never a message body; off until you tick it.</div>
+<div class="note muted" id="mailnote">No API, no OAuth, no password: Symbiot reads the mail your desktop mail app (Thunderbird, Apple Mail, Evolution, mutt&hellip;) already keeps on this computer, or an exported .mbox &mdash; so anyone can link theirs. Headers only, never a message body; off until you tick it. Experimental: tested with mbox and Maildir, not yet on real Apple Mail, Evolution or KMail stores.</div>
 <div id="mailout"></div>
 </div>
 <div style="margin-top:20px;border-top:1px solid var(--line);padding-top:16px">
+<label>Local models <span class="muted">(experimental)</span></label>
 <button class="ghost" id="recbtn">Recommend models for my machine</button>
 <button class="ghost" id="setuplocal" style="margin-left:8px">Set up a free local model</button>
 <div id="setupout" class="note muted" style="margin-top:10px"></div>
@@ -489,7 +490,11 @@ function loadAgentCfg(){api('/api/agentcfg').then(function(d){document.getElemen
 var chips=[];(d.agents||[]).forEach(function(a){chips.push(a);});(d.editors||[]).forEach(function(e){chips.push(e);});
 var box=document.getElementById('agentpresets');
 if(!chips.length){box.innerHTML="<span class='muted' style='font-size:12px'>Nothing detected on PATH &mdash; type your own command above.</span>";return;}
-box.innerHTML="<span class='muted' style='font-size:12px'>Detected &mdash; click to use:</span><br>"+chips.map(function(c,i){return "<button class='ghost preset' data-i='"+i+"' style='padding:4px 10px;font-size:12px;margin:5px 5px 0 0'>"+esc(c.label)+"</button>";}).join("");
+// Agents leave changes for review; an editor preset only opens the repo, so say so.
+var na=(d.agents||[]).length;function chip(c,i){return "<button class='ghost preset' data-i='"+i+"' style='padding:4px 10px;font-size:12px;margin:5px 5px 0 0'>"+esc(c.label)+"</button>";}
+var h="<span class='muted' style='font-size:12px'>Detected &mdash; click to use:</span><br>"+chips.slice(0,na).map(chip).join("");
+if(chips.length>na)h+="<div class='muted' style='font-size:12px;margin-top:8px'>Editors &mdash; opens only, no review:</div>"+chips.slice(na).map(function(c,i){return chip(c,na+i);}).join("");
+box.innerHTML=h;
 box.querySelectorAll('.preset').forEach(function(btn){btn.addEventListener('click',function(){document.getElementById('agentcmd').value=chips[+btn.getAttribute('data-i')].tmpl;saveAgent();});});});}
 function saveAgent(){api('/api/agentcmd',{cmd:document.getElementById('agentcmd').value});}
 function loadScanRoots(){api('/api/scanroots').then(function(d){var box=document.getElementById('scanroots');var roots=d.effective||[];
