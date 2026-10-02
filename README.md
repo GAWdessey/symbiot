@@ -174,10 +174,11 @@ One agent per repo: while a run is still going (tracked in
 again doesn't start a second agent there, and doesn't rewrite the `TASKS.md` it's
 working from either: the new tasks wait in `.symbiot/TASKS.next.md` and replace
 `TASKS.md` when it finishes, keeping anything it ticked. The agent's block in the
-**Agents** tab shows "tasks held" meanwhile, and when the agent finishes, the app
-starts one on the held tasks by itself. If `symbiot push --open` started the
-running agent, the app can't see it exit, so send again once it finishes to
-start an agent on them. Orca and
+**Agents** tab shows "tasks held" meanwhile (hover it for their titles), and
+when the agent finishes, the app starts one on the held tasks by itself. If
+`symbiot push --open` started the running agent, the app can't see it exit, so
+it starts one the next time it checks that repo after it finishes (opening the
+**Tasks** tab), or you can send again. Orca and
 editor presets only open a tab and exit, so Symbiot can't see the agent you run
 in them. Send to repos stays disabled until its
 handoffs have started, so a double click can't send twice.

@@ -30,7 +30,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { EMBEDDED_UI } from "./ui.mjs";
 import { detectMailSources, mailActivity } from "./mail.mjs";
 import { CONFIG_PATH, loadConfig, saveConfig, loadTasks, saveTasks, sh, hasCmd, repoState } from "./core.mjs";
-import { HANDOFF_PROMPT, QUESTIONS_MAX, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, fillHandoff, runHandoff, writeTasks, releaseHeldTasks, detectHandoffs, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, parseQuestions, agentQuestions, answerQuestions, agentsList } from "./agents.mjs";
+import { HANDOFF_PROMPT, QUESTIONS_MAX, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, fillHandoff, runHandoff, writeTasks, startHeldTasks, detectHandoffs, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, parseQuestions, agentQuestions, answerQuestions, agentsList } from "./agents.mjs";
 import { gitDefaultBranch, loadDeploys, driftRepo } from "./drift.mjs";
 
 const HERE = fileURLToPath(new URL(".", import.meta.url));
@@ -125,16 +125,18 @@ function repoPathMap() {
 // please review", NOT archived: it waits in review until the user approves it
 // (approveRepo: branch + commit + push + PR, then archive) or sends it back
 // (sendBack: unticked, open again). Only a task the USER ticks archives directly.
+// Tasks held for an agent that has since finished land here too, and an agent
+// starts on what's still open in them (one `push --open` started can't do that).
 function syncTasks() {
-  const t = loadTasks(); const map = repoPathMap(); let review = 0, archived = 0; const checkedByRepo = {};
+  const t = loadTasks(); const map = repoPathMap(); let review = 0, archived = 0, started = 0; const checkedByRepo = {};
   for (const x of t) {
     if (x.archived || x.done || x.review || !x.repo) continue;
-    if (!(x.repo in checkedByRepo)) { const p = map[x.repo]; if (p) releaseHeldTasks(p); checkedByRepo[x.repo] = p ? completedInRepo(p) : []; }
+    if (!(x.repo in checkedByRepo)) { const p = map[x.repo]; if (p && startHeldTasks(p)) started++; checkedByRepo[x.repo] = p ? completedInRepo(p) : []; }
     if (checkedByRepo[x.repo].includes(x.text.toLowerCase())) { x.review = true; x.reviewAt = Date.now(); review++; }
   }
   for (const x of t) { if (x.done && !x.archived) { x.archived = true; x.archivedAt = Date.now(); archived++; } }
   saveTasks(t);
-  return { review, archived };
+  return { review, archived, started };
 }
 // git with an argv (task text goes into commit messages — never through a shell)
 function git(repo, args, timeout = 30000) {
@@ -331,7 +333,7 @@ function cmdPush() {
       const busy = r.written.map((w) => ({ w, e: runHandoff(w.path) })).filter((x) => x.e && x.e.busy);
       const n = r.written.length - busy.length;
       if (n) console.log("\n" + c.g("→ ") + `Handed ${n} repo(s) to your agent (${r.handoff}).`);
-      for (const { w, e } of busy) console.log("\n" + c.y("Not started: ") + `${w.name} already has an agent running.` + c.d(e.auto ? "  Its new tasks are held, and the app starts an agent on them when it finishes." : "  Its new tasks are held until it finishes; send again then to start one on them."));
+      for (const { w, e } of busy) console.log("\n" + c.y("Not started: ") + `${w.name} already has an agent running.` + c.d(e.auto ? "  Its new tasks are held, and the app starts an agent on them when it finishes." : "  Its new tasks are held until it finishes. After that, the app starts an agent on them the next time it checks the repo (opening its Tasks tab), or send again."));
     }
   } else {
     console.log("\n" + c.d("Point your agent at .symbiot/TASKS.md in each repo.  (add --open to run your configured agent command)"));

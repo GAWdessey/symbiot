@@ -264,15 +264,28 @@ try {
     out.noLoop = a.HANDOFFS.length === 2;
     writeFileSync(next, "- [ ] stale\\n"); out.supersede = a.writeTasks(dir, "- [ ] D\\n");
     out.superseded = !existsSync(next) && readFileSync(f, "utf8") === "- [ ] D\\n";
+    // an agent \`symbiot push --open\` started: the CLI that owns its lock has exited
+    const { spawn } = await import("node:child_process");
+    const ext = spawn("sleep", ["1"]), exited = new Promise((r) => ext.on("exit", r));
+    writeFileSync(dir + "/.symbiot/agent.pid", JSON.stringify({ pid: ext.pid, id: "ext", startedAt: Date.now(), owner: 2147483646 }));
+    a.setHandoffCmd("true");
+    out.extHeld = a.writeTasks(dir, "- [x] D\\n- [ ] E\\n"); out.extAuto = a.runningHandoff(dir).auto;
+    out.extEarly = a.startHeldTasks(dir);
+    await exited;
+    const ext2 = a.startHeldTasks(dir); out.extStarted = !!ext2 && ext2.fromHeld && readFileSync(f, "utf8") === "- [x] D\\n- [ ] E\\n";
+    out.extOnce = a.startHeldTasks(dir) === null;
+    await until(() => ext2.status !== "running");
     console.log(JSON.stringify(out));`], { encoding: "utf8", timeout: 30000, env: { ...process.env, HOME: hhome, USERPROFILE: hhome } });
   let hv = {}; try { hv = JSON.parse(hd.stdout.trim().split("\n").pop()); } catch { console.log(hd.stdout, hd.stderr); }
   ok("no agent running -> TASKS.md is written straight away", hv.freeHeld === false, hv);
   ok("agent running -> the new brief is held, its TASKS.md untouched", hv.busyHeld === true && hv.during === "- [ ] A\n- [ ] B\n" && hv.earlyRelease === false, hv);
-  ok("the agent's block shows how many tasks are held", hv.shown === 3 && hv.shownAfter === null, hv);
+  ok("the agent's block lists the held tasks' titles", JSON.stringify(hv.shown) === '["A","B","C"]' && hv.shownAfter === null, hv);
   ok("once it exits the held brief lands, keeping the agent's ticks", hv.nextGone && hv.after === "- [x] A\n- [ ] B\n- [ ] C\n", hv.after);
   ok("...and an agent starts on it by itself", hv.autoStarted, hv);
   ok("a held brief with nothing open lands without starting another", hv.noLoop, hv);
   ok("a later send when free replaces a leftover held brief", hv.supersede === false && hv.superseded, hv);
+  ok("held for a push --open agent: nothing starts while it runs", hv.extHeld === true && hv.extAuto === false && hv.extEarly === null, hv);
+  ok("...and once it has exited, the next check starts one on the held tasks, once", hv.extStarted && hv.extOnce, hv);
 
   console.log("APPROVE — approved work ships: branch off the default, commit (minus .symbiot/), push");
   const gitEnv = { ...process.env, GIT_CONFIG_GLOBAL: join(ROOT, "globalgitconfig"), GIT_CONFIG_SYSTEM: "/dev/null", GIT_TERMINAL_PROMPT: "0" };
@@ -328,6 +341,9 @@ try {
     out.untasked = m.pendingReview();
     out.ac = m.approveChanges("revapp", { push: false }); out.acTasks = tasks();
     out.acAgain = m.approveChanges("revapp", { push: false });
+    // tasks held for an agent no Symbiot process is watching: the app's next check starts one
+    writeFileSync(f.replace("TASKS.md", "TASKS.next.md"), "- [ ] Open task\\n"); m.setHandoffCmd("true");
+    out.heldSync = m.syncTasks(); out.heldSync2 = m.syncTasks();
     console.log(JSON.stringify(out));`;
   mkdirSync(join(home, ".config", "symbiot"), { recursive: true });
   writeFileSync(join(home, ".config", "symbiot", "tasks.json"), JSON.stringify([{ id: "t1", text: "Fix the bug", repo: "revapp", done: false, ts: 1 }]));
@@ -343,6 +359,7 @@ try {
   const acMsg = o.ac && o.ac.commit ? execSync("git log -1 --format=%B " + o.ac.commit, { cwd: proj, encoding: "utf8", env: gitEnv }) : "";
   ok("approve changes without a task commits them, tasks untouched", o.ac && o.ac.ok && o.ac.approved === 0 && /without a task/.test(acMsg) && o.acTasks.find((x) => x.id === "t2" && !x.done && !x.review), o.ac);
   ok("nothing left -> approve changes without a task says so", o.acAgain && /No uncommitted changes/.test(o.acAgain.error || ""), o.acAgain);
+  ok("checking tasks starts an agent on held tasks whose agent has finished, once", o.heldSync && o.heldSync.started === 1 && o.heldSync2.started === 0, [o.heldSync, o.heldSync2]);
 
   console.log("QUESTIONS — any agent's .symbiot/QUESTIONS.md parses into questions, options and ideas");
   const pq = parseQuestions("# Questions for you\n\n## Questions\n### Keep the old config format?\nReading both costs ~40 lines.\n- Yes, read both (recommended)\n- No, migrate once\n\n### Which port?\n1. 7391\n2. random\n\n## Suggestions\n- Add a --json flag to drift\n- [ ] Cache the map scan\n");
