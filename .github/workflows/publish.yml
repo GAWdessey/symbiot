@@ -4,13 +4,14 @@ name: publish
 # version advances — no manual tag, no 2FA/QR, no credential on anyone's machine.
 # The only human gate is the Approve in Symbiot (which opens the PR + bumps the
 # version); once that PR's CI is green it auto-merges, lands on main, and this
-# runs. Publishing is npm Trusted Publishing (OIDC); the record tag is pushed by
-# the Action's own GITHUB_TOKEN. Filename stays `publish.yml` so the npm trusted-
-# publisher binding (npmjs.com → symbiot → Trusted Publishing) keeps matching.
+# runs. Publishing is npm Trusted Publishing (OIDC). Filename stays `publish.yml`
+# so the npm trusted-publisher binding (npmjs.com → symbiot) keeps matching.
 #
-# gate decides whether this commit is a new release (version has no v<ver> tag
-# yet); test runs the whole suite; publish only runs for a new version, so an
-# ordinary push to main that didn't bump the version publishes nothing.
+# Source of truth is NPM, not a git tag — a v* tag-protection ruleset can block
+# the Action from pushing tags, so we don't depend on them: gate checks whether
+# this version is already on npm (skip if so), and publish is idempotent (a
+# concurrent "already published" counts as success). The record tag is pushed
+# best-effort and never fails the run.
 on:
   push:
     branches: [main]
@@ -27,18 +28,15 @@ jobs:
       version: ${{ steps.check.outputs.version }}
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
       - id: check
         run: |
-          git fetch --tags --quiet origin || true
           v=$(node -p "require('./package.json').version")
           echo "version=$v" >> "$GITHUB_OUTPUT"
-          if git rev-parse -q --verify "refs/tags/v$v" >/dev/null; then
-            echo "v$v already released — nothing to publish."
+          if npm view "symbiot@$v" version >/dev/null 2>&1; then
+            echo "symbiot@$v is already on npm — nothing to publish."
             echo "release=false" >> "$GITHUB_OUTPUT"
           else
-            echo "v$v is a new version — releasing."
+            echo "symbiot@$v is a new version — releasing."
             echo "release=true" >> "$GITHUB_OUTPUT"
           fi
 
@@ -66,8 +64,10 @@ jobs:
     if: needs.gate.outputs.release == 'true'
     runs-on: ubuntu-latest
     permissions:
-      contents: write # to push the record tag
+      contents: write # for the best-effort record tag
       id-token: write # npm OIDC trusted publishing
+    env:
+      VER: ${{ needs.gate.outputs.version }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -76,9 +76,17 @@ jobs:
           registry-url: "https://registry.npmjs.org"
       - name: Use an npm new enough for OIDC trusted publishing
         run: npm install -g npm@latest
-      - name: Publish (OIDC — no token)
-        run: npm publish
-      - name: Tag the release (record)
+      - name: Publish (OIDC — no token), idempotent
         run: |
-          git tag "v${{ needs.gate.outputs.version }}"
-          git push origin "v${{ needs.gate.outputs.version }}"
+          if npm publish; then
+            echo "published symbiot@$VER"
+          elif npm view "symbiot@$VER" version >/dev/null 2>&1; then
+            echo "symbiot@$VER already on npm (concurrent run) — treating as success."
+          else
+            echo "::error::publish failed and $VER is not on npm"; exit 1
+          fi
+      - name: Record tag (best-effort — ok if a ruleset blocks it)
+        continue-on-error: true
+        run: |
+          git tag "v$VER" || true
+          git push origin "v$VER" || echo "tag push skipped (protected); npm is the source of truth"
