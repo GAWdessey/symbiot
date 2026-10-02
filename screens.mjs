@@ -7,7 +7,7 @@
 // also what an agent or script reads to find a region.
 import { spawnSync } from "node:child_process";
 import { join } from "node:path";
-import { readFileSync, writeFileSync, mkdirSync, existsSync, unlinkSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, existsSync, unlinkSync, readdirSync, renameSync, rmSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { CONFIG_DIR, hasCmd } from "./core.mjs";
 
@@ -29,14 +29,19 @@ function pngSize(buf) {
   return w && h ? { w, h } : null;
 }
 
-// Screenshot tools to try, in order, as [cmd, args] that write a PNG to `file`.
-function captureCmds(file, platform = process.platform) {
+// Screenshot tools to try, in order, as [cmd, args] that write a PNG to `file`,
+// or [cmd, args, dir] for a tool that only takes a folder (it picks the name).
+// scrot and import only see X11, which on Wayland is a blank screen, so they're
+// left out there.
+function captureCmds(file, platform = process.platform, wayland = process.env.XDG_SESSION_TYPE === "wayland") {
   if (platform === "darwin") return [["screencapture", ["-x", "-t", "png", file]]];
   if (platform === "win32") {
     const ps = "Add-Type -AssemblyName System.Windows.Forms,System.Drawing; $b = [System.Windows.Forms.SystemInformation]::VirtualScreen; $bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height; $g = [System.Drawing.Graphics]::FromImage($bmp); $g.CopyFromScreen($b.Left, $b.Top, 0, 0, $bmp.Size); $bmp.Save('" + file.replace(/'/g, "''") + "', [System.Drawing.Imaging.ImageFormat]::Png)";
     return [["powershell", ["-NoProfile", "-Command", ps]]];
   }
-  return [["gnome-screenshot", ["-f", file]], ["spectacle", ["-b", "-n", "-f", "-o", file]], ["grim", [file]], ["scrot", [file]], ["import", ["-window", "root", file]], ["xfce4-screenshooter", ["-f", "-s", file]]];
+  const dir = file.replace(/\.png$/, ".d");
+  return [["gnome-screenshot", ["-f", file]], ["spectacle", ["-b", "-n", "-f", "-o", file]], ["cosmic-screenshot", ["--interactive=false", "--modal=false", "--notify=false", "--save-dir", dir], dir], ["grim", [file]],
+    ["xfce4-screenshooter", ["-f", "-s", file]], ...(wayland ? [] : [["scrot", [file]], ["import", ["-window", "root", file]]])];
 }
 function addScreen(id, name, size, via) {
   const s = { id, name: String(name || "").trim().slice(0, 80) || "Screen " + new Date().toLocaleString(), w: size.w, h: size.h, ts: Date.now(), via, regions: [] };
@@ -48,10 +53,12 @@ function captureScreen(name) {
   const id = randomBytes(6).toString("hex"), file = screenFile(id), tried = [];
   try { mkdirSync(SCREENS_DIR, { recursive: true }); } catch (e) { return { error: String((e && e.message) || e) }; }
   const posix = process.platform !== "win32" && process.platform !== "darwin";
-  for (const [cmd, args] of captureCmds(file)) {
+  for (const [cmd, args, dir] of captureCmds(file)) {
     if (posix && !hasCmd(cmd)) continue;
     tried.push(cmd);
+    if (dir) try { mkdirSync(dir, { recursive: true }); } catch {}
     spawnSync(cmd, args, { stdio: "ignore", timeout: 20000, killSignal: "SIGKILL" });
+    if (dir) { try { const f = readdirSync(dir).find((x) => /\.png$/i.test(x)); if (f) renameSync(join(dir, f), file); } catch {} rmSync(dir, { recursive: true, force: true }); }
     let size = null; try { size = pngSize(readFileSync(file)); } catch {}
     if (size) return addScreen(id, name, size, cmd);
     try { unlinkSync(file); } catch {}
