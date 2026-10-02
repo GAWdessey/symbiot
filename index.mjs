@@ -30,7 +30,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { EMBEDDED_UI } from "./ui.mjs";
 import { detectMailSources, mailActivity } from "./mail.mjs";
 import { CONFIG_PATH, loadConfig, saveConfig, loadTasks, saveTasks, sh, hasCmd, repoState } from "./core.mjs";
-import { HANDOFF_PROMPT, QUESTIONS_MAX, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, fillHandoff, runHandoff, detectHandoffs, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, parseQuestions, agentQuestions, answerQuestions, agentsList } from "./agents.mjs";
+import { HANDOFF_PROMPT, QUESTIONS_MAX, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, fillHandoff, runHandoff, writeTasks, releaseHeldTasks, detectHandoffs, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, parseQuestions, agentQuestions, answerQuestions, agentsList } from "./agents.mjs";
 import { gitDefaultBranch, loadDeploys, driftRepo } from "./drift.mjs";
 
 const HERE = fileURLToPath(new URL(".", import.meta.url));
@@ -129,7 +129,7 @@ function syncTasks() {
   const t = loadTasks(); const map = repoPathMap(); let review = 0, archived = 0; const checkedByRepo = {};
   for (const x of t) {
     if (x.archived || x.done || x.review || !x.repo) continue;
-    if (!(x.repo in checkedByRepo)) checkedByRepo[x.repo] = map[x.repo] ? completedInRepo(map[x.repo]) : [];
+    if (!(x.repo in checkedByRepo)) { const p = map[x.repo]; if (p) releaseHeldTasks(p); checkedByRepo[x.repo] = p ? completedInRepo(p) : []; }
     if (checkedByRepo[x.repo].includes(x.text.toLowerCase())) { x.review = true; x.reviewAt = Date.now(); review++; }
   }
   for (const x of t) { if (x.done && !x.archived) { x.archived = true; x.archivedAt = Date.now(); archived++; } }
@@ -313,10 +313,9 @@ function pushTasks(filter) {
       if (st.stale) risk.push("stale checkout — working tree is an old snapshot, not new work");
       if (st.behind) risk.push(`${st.behind} behind upstream on ${st.branch}`);
       if (st.dirty && !st.stale) risk.push(`${st.dirty} uncommitted (${st.mod} mod / ${st.del} del / ${st.add} new)`);
-      const dir = join(path, ".symbiot"); mkdirSync(dir, { recursive: true });
-      const file = join(dir, "TASKS.md");
-      writeFileSync(file, buildTasksMd(name, { branch: st.branch, commits, open, drift: risk, stack }, list));
-      written.push({ name, file, path, count: list.length });
+      // held: an agent is still running there, so it lands when that one exits
+      const held = writeTasks(path, buildTasksMd(name, { branch: st.branch, commits, open, drift: risk, stack }, list));
+      written.push({ name, file: join(path, ".symbiot", "TASKS.md"), path, count: list.length, held });
     } catch (e) { unresolved.push({ name, count: list.length, error: String((e && e.message) || e) }); }
   }
   return { empty: false, written, unresolved, handoff: handoffCmd() };
@@ -324,7 +323,7 @@ function pushTasks(filter) {
 function cmdPush() {
   const r = pushTasks();
   if (r.empty) { console.log(c.y("No open tasks to push.") + c.d("  Add some in `symbiot app` — a repo review's ideas, or the Tasks tab.")); return; }
-  if (r.written.length) { console.log("\n" + c.g("●") + " " + c.b("Pushed tasks into repos:")); for (const w of r.written) console.log(`  ${c.g("✓")} ${w.name}  ${c.d(w.file + "  (" + w.count + " task" + (w.count > 1 ? "s" : "") + ")")}`); }
+  if (r.written.length) { console.log("\n" + c.g("●") + " " + c.b("Pushed tasks into repos:")); for (const w of r.written) console.log(`  ${c.g("✓")} ${w.name}  ${c.d(w.file + "  (" + w.count + " task" + (w.count > 1 ? "s" : "") + ")")}` + (w.held ? c.y("  held: an agent is still running there, so it lands when that one finishes") : "")); }
   if (r.unresolved.length) { console.log("\n" + c.y(`Not written (repo not found under ${BASE}):`)); for (const u of r.unresolved) console.log(`  · ${u.name} (${u.count})`); }
   if (has("open")) {
     if (!r.handoff) console.log("\n" + c.y("No agent command set.") + c.d("  Set one in `symbiot app` Settings, or `agentCmd` in ~/.config/symbiot/config.json (use {dir} and {prompt})."));
@@ -332,7 +331,7 @@ function cmdPush() {
       const busy = r.written.filter((w) => { const e = runHandoff(w.path); return e && e.busy; });
       const n = r.written.length - busy.length;
       if (n) console.log("\n" + c.g("→ ") + `Handed ${n} repo(s) to your agent (${r.handoff}).`);
-      for (const w of busy) console.log("\n" + c.y("Not started: ") + `${w.name} already has an agent running.` + c.d("  Its TASKS.md is updated; send again once it finishes."));
+      for (const w of busy) console.log("\n" + c.y("Not started: ") + `${w.name} already has an agent running.` + c.d("  Its new tasks are held until it finishes; send again then to start one on them."));
     }
   } else {
     console.log("\n" + c.d("Point your agent at .symbiot/TASKS.md in each repo.  (add --open to run your configured agent command)"));

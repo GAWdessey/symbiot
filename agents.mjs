@@ -43,9 +43,11 @@ const fillHandoff = (tmpl, repoPath) => tmpl.replace(/\{dir\}/g, shSingle(repoPa
 function runHandoff(repoPath) {
   const tmpl = handoffCmd(); if (!tmpl || !repoPath) return null;
   const busy = runningHandoff(repoPath); if (busy) return { busy: true, id: busy.id || "", pid: busy.pid };
+  releaseHeldTasks(repoPath); // held for an agent another process started, which has since exited
   const lock = join(repoPath, ".symbiot", LOCK);
   const e = track(repoPath.split("/").pop(), fillHandoff(tmpl, repoPath), repoPath, () => {
     try { if (JSON.parse(readFileSync(lock, "utf8")).pid === e.pid) unlinkSync(lock); } catch {}
+    releaseHeldTasks(repoPath);
   });
   if (!e) return null;
   e.handoff = true;
@@ -64,6 +66,26 @@ function runningHandoff(path) {
     if (l && Number.isInteger(l.pid) && Date.now() - l.startedAt < LOCK_MAX_AGE && pidAlive(l.pid)) return l;
   } catch {}
   return null;
+}
+// Send to repos while an agent is still running in the folder doesn't rewrite
+// the TASKS.md it's working from: the new brief waits in TASKS.next.md and
+// replaces TASKS.md once that agent exits. Returns true if it was held.
+const HELD = "TASKS.next.md";
+function writeTasks(path, md) {
+  const dir = join(path, ".symbiot"); mkdirSync(dir, { recursive: true });
+  if (runningHandoff(path)) { writeFileSync(join(dir, HELD), md); return true; }
+  writeFileSync(join(dir, "TASKS.md"), md);
+  try { unlinkSync(join(dir, HELD)); } catch {} // superseded by this brief
+  return false;
+}
+// Swap the held brief in, keeping the ticks the agent made meanwhile: a tick
+// is how a task reaches review, so dropping one would lose that task's work.
+function releaseHeldTasks(path) {
+  const held = readSymbiot(path, HELD); if (!held || runningHandoff(path)) return false;
+  const isTick = /^\s*-\s*\[x\]\s*/i, key = (l) => l.replace(/^\s*-\s*\[[ x]\]\s*/i, "").trim().toLowerCase();
+  const ticked = new Set(readSymbiot(path, "TASKS.md").split("\n").filter((l) => isTick.test(l)).map(key));
+  const md = held.split("\n").map((l) => /^\s*-\s*\[ \]/.test(l) && ticked.has(key(l)) ? l.replace("[ ]", "[x]") : l).join("\n");
+  try { writeFileSync(join(path, ".symbiot", "TASKS.md"), md); unlinkSync(join(path, ".symbiot", HELD)); return true; } catch { return false; }
 }
 // Presets. [cmd, label, macAppName] — macApp used to launch GUI editors on macOS
 // where the CLI isn't on PATH (they're .app bundles).
@@ -283,4 +305,4 @@ function agentsList() {
   });
 }
 
-export { HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, fillHandoff, runHandoff, runningHandoff, detectHandoffs, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, agentQuestions, answerQuestions, agentsList };
+export { HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, fillHandoff, runHandoff, runningHandoff, writeTasks, releaseHeldTasks, detectHandoffs, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, agentQuestions, answerQuestions, agentsList };

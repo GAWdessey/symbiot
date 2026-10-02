@@ -241,6 +241,30 @@ try {
   ok("the folder is free again once the agent exits", b.lockGone && b.third, b);
   ok("a leftover lock from a dead agent doesn't block", b.stale === null, b.stale);
 
+  console.log("HANDOFF — a send while the agent runs holds the new TASKS.md until it finishes");
+  const heldDir = join(ROOT, "held"); mkdirSync(heldDir, { recursive: true });
+  const hd = spawnSync(process.execPath, ["--input-type=module", "-e", `
+    import * as a from ${JSON.stringify(AGENTS)};
+    import { existsSync, readFileSync, writeFileSync } from "node:fs";
+    const dir = ${JSON.stringify(heldDir)}, f = dir + "/.symbiot/TASKS.md", next = dir + "/.symbiot/TASKS.next.md", out = {};
+    const until = async (c) => { for (let i = 0; i < 100 && !c(); i++) await new Promise((r) => setTimeout(r, 100)); };
+    out.freeHeld = a.writeTasks(dir, "- [ ] A\\n- [ ] B\\n");
+    a.setHandoffCmd("sleep 2"); const job = a.runHandoff(dir);
+    out.busyHeld = a.writeTasks(dir, "- [ ] A\\n- [ ] B\\n- [ ] C\\n");
+    out.during = readFileSync(f, "utf8");
+    writeFileSync(f, "- [x] A\\n- [ ] B\\n"); // the agent ticks A meanwhile
+    out.earlyRelease = a.releaseHeldTasks(dir);
+    await until(() => job.status !== "running" && !existsSync(next));
+    out.after = readFileSync(f, "utf8"); out.nextGone = !existsSync(next);
+    writeFileSync(next, "- [ ] stale\\n"); out.supersede = a.writeTasks(dir, "- [ ] D\\n");
+    out.superseded = !existsSync(next) && readFileSync(f, "utf8") === "- [ ] D\\n";
+    console.log(JSON.stringify(out));`], { encoding: "utf8", timeout: 30000, env: { ...process.env, HOME: hhome, USERPROFILE: hhome } });
+  let hv = {}; try { hv = JSON.parse(hd.stdout.trim().split("\n").pop()); } catch { console.log(hd.stdout, hd.stderr); }
+  ok("no agent running -> TASKS.md is written straight away", hv.freeHeld === false, hv);
+  ok("agent running -> the new brief is held, its TASKS.md untouched", hv.busyHeld === true && hv.during === "- [ ] A\n- [ ] B\n" && hv.earlyRelease === false, hv);
+  ok("once it exits the held brief lands, keeping the agent's ticks", hv.nextGone && hv.after === "- [x] A\n- [ ] B\n- [ ] C\n", hv.after);
+  ok("a later send when free replaces a leftover held brief", hv.supersede === false && hv.superseded, hv);
+
   console.log("APPROVE — approved work ships: branch off the default, commit (minus .symbiot/), push");
   const gitEnv = { ...process.env, GIT_CONFIG_GLOBAL: join(ROOT, "globalgitconfig"), GIT_CONFIG_SYSTEM: "/dev/null", GIT_TERMINAL_PROMPT: "0" };
   const shipRepo = build("ship", `git init -q -b main && git config user.email ci@symbiot.test && git config user.name "Symbiot CI" && echo a > a.txt && git add . && git commit -qm init
