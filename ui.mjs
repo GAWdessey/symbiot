@@ -105,6 +105,17 @@ footer{padding:10px 18px;border-top:1px solid var(--line);display:flex}
 .commits{margin-top:6px;font-size:12px;color:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace}
 .commits code{color:var(--amber);margin-right:6px}
 @keyframes pulse{0%,100%{opacity:1;box-shadow:0 0 0 0 rgba(242,165,65,.5)}50%{opacity:.4;box-shadow:0 0 0 5px rgba(242,165,65,0)}}
+.aq{margin-top:10px;border:1px solid var(--amber);border-radius:9px;padding:10px 12px;background:var(--ink)}
+.aq h4{margin:4px 0 6px;color:var(--amber);font-size:11px;letter-spacing:.12em;text-transform:uppercase;font-weight:700}
+.aq .q{padding:8px 0;border-bottom:1px solid var(--line)}
+.aq .qt{color:var(--bone);font-weight:600;font-size:13.5px}
+.aq .qc{color:var(--faint);font-size:12.5px;margin-top:3px;line-height:1.5}
+.aq label.opt{display:flex;gap:8px;align-items:flex-start;margin:6px 0 0;font-size:13px;color:var(--text);cursor:pointer}
+.aq .opt input{width:auto;margin-top:3px;flex:none}
+.aq .qother{margin-top:7px;padding:7px 10px;font-size:13px}
+.aq .row{margin:10px 0 2px}
+label.check{display:flex;gap:8px;align-items:center;font-size:13px;color:var(--text);margin:6px 0}
+label.check input{width:auto}
 .alogout{white-space:pre-wrap;background:var(--ink);border:1px solid var(--line);border-radius:8px;padding:10px;margin-top:10px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;line-height:1.5;color:var(--text);max-height:260px;overflow:auto}
 .bar{height:3px;background:var(--green-dim);border-radius:2px;overflow:hidden;margin-top:8px}
 .bar > i{display:block;height:100%;width:35%;background:var(--green);border-radius:2px;animation:slide 1.3s ease-in-out infinite}
@@ -165,7 +176,8 @@ footer{padding:10px 18px;border-top:1px solid var(--line);display:flex}
 <div id="tasklist"></div>
 </section>
 <section id="panel-agents" class="hidden">
-<div class="row"><span class="muted">Agents Symbiot has handed work to — live status and output.</span><button class="ghost" id="agentsrefresh" style="margin-left:auto">Refresh</button></div>
+<div class="row"><span class="muted">Agents Symbiot has handed work to — live status and output. Questions, options and ideas an agent leaves for you show up on its block, whichever model it runs.</span><button class="ghost" id="agentsrefresh" style="margin-left:auto">Refresh</button></div>
+<div id="agentsmsg"></div>
 <div id="agentslist"></div>
 </section>
 <section id="panel-drift" class="hidden">
@@ -202,6 +214,15 @@ footer{padding:10px 18px;border-top:1px solid var(--line);display:flex}
 <input id="agentcmd" type="text" placeholder="e.g.  aider --message &quot;{prompt}&quot; --yes   ·   code {dir}   ·   leave blank to just write the file">
 <div class="note muted">Runs in each repo after tasks are written. Use <b>{dir}</b> = repo path, <b>{prompt}</b> = the task instruction. Works with any agent or editor &mdash; it's your command.</div>
 <div id="agentpresets" style="margin-top:8px"></div>
+</div>
+<div style="margin-top:20px;border-top:1px solid var(--line);padding-top:16px">
+<label>Email &mdash; add what you sent to Week and Standup</label>
+<label class="check"><input type="checkbox" id="mailon"> Use my sent email (subjects &amp; recipients only)</label>
+<div id="mailsources"></div>
+<div class="row" style="margin-top:6px"><input id="newmail" placeholder="add a mail folder or .mbox file  (e.g. a Google Takeout export)" style="flex:1"><button class="ghost" id="addmail">Add</button><button class="ghost" id="mailpreview">Preview</button></div>
+<input id="mailaddrs" type="text" placeholder="your email addresses, comma-separated  (only needed for a whole-mailbox export)">
+<div class="note muted" id="mailnote">No API, no OAuth, no password: Symbiot reads the mail your desktop mail app (Thunderbird, Apple Mail, Evolution, mutt&hellip;) already keeps on this computer, or an exported .mbox &mdash; so anyone can link theirs. Headers only, never a message body; off until you tick it.</div>
+<div id="mailout"></div>
 </div>
 <div style="margin-top:20px;border-top:1px solid var(--line);padding-top:16px">
 <button class="ghost" id="recbtn">Recommend models for my machine</button>
@@ -380,10 +401,47 @@ var h="<div class='tgroup'>Archived <span class='tcount'>"+list.length+"</span><
 var agentsTimer=null;
 function stopAgentsPoll(){if(agentsTimer){clearTimeout(agentsTimer);agentsTimer=null;}}
 function fmtE(ms){var s=Math.floor(ms/1000);if(s<60)return s+'s';var m=Math.floor(s/60);return m+'m '+(s%60)+'s';}
+// Questions, options and ideas an agent left in .symbiot/QUESTIONS.md (any
+// agent: it's a file). Answers go to .symbiot/ANSWERS.md; "Send & continue"
+// re-runs the agent so it picks them up. Text stays out of attributes (esc()
+// doesn't escape quotes) — rows carry indexes into AGENTLIST instead.
+var AGENTLIST=[],QDRAFT={};
+function agentById(id){for(var i=0;i<AGENTLIST.length;i++)if(AGENTLIST[i].id===id)return AGENTLIST[i];return null;}
+function nQs(a){return (a.ask&&a.ask.questions)?a.ask.questions.length:0;}
+function askHtml(a){var k=a.ask;if(!k)return '';var qs=k.questions||[],ss=k.suggestions||[];if(!qs.length&&!ss.length)return '';
+var h="<div class='aq' data-id='"+esc(a.id)+"'>";
+if(qs.length){h+="<h4>&#10067; "+qs.length+" question"+(qs.length>1?"s":"")+" for you</h4>";
+qs.forEach(function(q,i){h+="<div class='q' data-i='"+i+"'><div class='qt'>"+esc(q.q)+"</div>"+(q.context?"<div class='qc'>"+esc(q.context)+"</div>":"");
+(q.options||[]).forEach(function(o,j){h+="<label class='opt'><input type='radio' name='q_"+esc(a.id)+"_"+i+"' value='"+j+"'><span>"+esc(o)+"</span></label>";});
+h+="<input class='qother' placeholder='"+((q.options&&q.options.length)?"or answer in your own words":"your answer")+"'></div>";});
+h+="<div class='row'><button class='act qsend' title='save the answers and hand the repo back to your agent'>Send answers &amp; continue</button><button class='ghost qsave' title='save the answers for the next run'>Save only</button></div>";}
+if(ss.length){h+="<h4>&#128161; Ideas from the agent</h4>";ss.forEach(function(s,i){h+="<div class='idea'><span style='flex:1'>"+esc(s.text)+"</span>"+(s.added?"<span class='tag'>in Tasks</span>":"<button class='ghost qidea' data-i='"+i+"' style='padding:3px 9px;font-size:12px'>+ task</button>")+"</div>";});}
+return h+"</div>";}
+function qKeyOf(qe){var box=qe.closest('.aq');var a=box&&agentById(box.getAttribute('data-id'));var q=a&&a.ask.questions[+qe.getAttribute('data-i')];return q?a.path+'|'+q.q:'';}
+function saveDrafts(el){el.querySelectorAll('.aq .q').forEach(function(qe){var k=qKeyOf(qe);if(!k)return;var pick=qe.querySelector('input[type=radio]:checked');QDRAFT[k]={o:pick?pick.value:'',t:qe.querySelector('.qother').value};});}
+function restoreDrafts(el){el.querySelectorAll('.aq .q').forEach(function(qe){var d=QDRAFT[qKeyOf(qe)];if(!d)return;qe.querySelectorAll('input[type=radio]').forEach(function(r){r.checked=r.value===d.o;});qe.querySelector('.qother').value=d.t||'';});}
+function collectAnswers(box,a){var out=[];box.querySelectorAll('.q').forEach(function(qe){var q=a.ask.questions[+qe.getAttribute('data-i')];if(!q)return;
+var other=(qe.querySelector('.qother').value||'').trim();var pick=qe.querySelector('input[type=radio]:checked');var ans=other||(pick?q.options[+pick.value]:'');if(ans)out.push({q:q.q,a:ans});});return out;}
+function wireAsks(el){el.querySelectorAll('.aq').forEach(function(box){var a=agentById(box.getAttribute('data-id'));if(!a||!a.ask)return;
+function send(rerun){var msg=document.getElementById('agentsmsg');var ans=collectAnswers(box,a);
+if(!ans.length){msg.innerHTML="<div class='note err'>Pick an option or type an answer first.</div>";return;}
+box.querySelectorAll('button').forEach(function(b){b.disabled=true;});
+api('/api/agents/answer',{path:a.path,answers:ans,rerun:rerun}).then(function(r){
+if(!r||r.error){box.querySelectorAll('button').forEach(function(b){b.disabled=false;});msg.innerHTML="<div class='note err'>"+esc((r&&r.error)||'failed')+"</div>";return;}
+msg.innerHTML="<div class='note ok'>&#10003; Saved "+r.saved+" answer"+(r.saved>1?"s":"")+" for <b>"+esc(a.name)+"</b> in .symbiot/ANSWERS.md"+(r.rerun?" &middot; your agent is picking them up now.":".")+(r.note?"<div class='muted'>"+esc(r.note)+"</div>":"")+"</div>";loadAgents();});}
+var s1=box.querySelector('.qsend'),s2=box.querySelector('.qsave');
+if(s1)s1.addEventListener('click',function(){send(true);});if(s2)s2.addEventListener('click',function(){send(false);});
+box.querySelectorAll('.qidea').forEach(function(btn){btn.addEventListener('click',function(){var s=a.ask.suggestions[+btn.getAttribute('data-i')];if(!s)return;btn.disabled=true;
+api('/api/tasks/add',{text:s.text,repo:a.name}).then(function(){s.added=true;btn.outerHTML="<span class='tag'>in Tasks</span>";});});});});}
+function answering(){var f=document.activeElement;return !!(f&&f.closest&&f.closest('.aq'));}
 function loadAgents(){api('/api/agents').then(function(list){var el=document.getElementById('agentslist');
-if(!list||!list.length){el.innerHTML="<div class='muted' style='margin-top:12px'>No agents yet. In <b>Tasks</b>, tick ideas and hit <b>Send to repos</b> (with an agent command set in Settings) &mdash; you'll watch it work here.</div>";stopAgentsPoll();return;}
+if(!list||!list.length){AGENTLIST=[];el.innerHTML="<div class='muted' style='margin-top:12px'>No agents yet. In <b>Tasks</b>, tick ideas and hit <b>Send to repos</b> (with an agent command set in Settings) &mdash; you'll watch it work here.</div>";stopAgentsPoll();return;}
+var anyRunning=list.some(function(a){return a.status==='running';});
+if(answering()){stopAgentsPoll();if(anyRunning&&current==='agents')agentsTimer=setTimeout(loadAgents,2000);return;} // don't re-render under someone typing an answer
+saveDrafts(el);AGENTLIST=list;
 el.innerHTML=list.map(function(a){var cls=a.status==='running'?'run':(a.status==='done'?'ok':'fail');
 var st=a.status==='running'?('working &middot; '+fmtE(a.elapsed)):(esc(a.status)+' &middot; '+fmtE(a.elapsed)+(a.exitCode!=null?' &middot; exit '+a.exitCode:''));
+if(nQs(a))st+=" &middot; <span style='color:var(--amber)'>needs your answers</span>";
 var b="<div class='dh'><span class='adot "+cls+"'></span><span class='dn'>"+esc(a.name)+"</span><span class='dd'>"+st+"</span></div>";
 if(a.status==='running')b+="<div class='bar'><i></i></div>";
 var ch=a.changed;
@@ -396,10 +454,11 @@ if(ch&&(ch.dirty||ch.stat||(ch.commits&&ch.commits.length))){
 }else if(a.status==='done'){
   b+="<div class='changed muted'>No file changes detected (the agent may have only planned or asked).</div>";
 }
+b+=askHtml(a);
 b+="<pre class='alogout'>"+esc((a.tail&&a.tail.trim())||'(waiting for output…)')+"</pre>";
 return "<div class='agent'>"+b+"</div>";}).join("");
 el.querySelectorAll('.alogout').forEach(function(p){p.scrollTop=p.scrollHeight;});
-var anyRunning=list.some(function(a){return a.status==='running';});
+restoreDrafts(el);wireAsks(el);
 stopAgentsPoll();if(anyRunning&&current==='agents')agentsTimer=setTimeout(loadAgents,2000);});}
 function loadDrift(){var out=document.getElementById('driftout');out.innerHTML="<div class='muted' style='margin-top:12px'>Reading your repos&hellip;</div>";
 var ci=document.getElementById('driftci').checked?'1':'0';var ft=document.getElementById('driftfetch').checked?'1':'0';
@@ -438,6 +497,23 @@ box.innerHTML=roots.map(function(r){var custom=(d.roots||[]).indexOf(r)>=0;retur
 box.querySelectorAll('.rmroot').forEach(function(btn){btn.addEventListener('click',function(){api('/api/scanroots/remove',{path:btn.closest('.task').getAttribute('data-p')}).then(function(){loadScanRoots();mapLoaded=false;driftLoaded=false;});});});});}
 function addRootUI(){var i=document.getElementById('newroot');var v=(i.value||'').trim();if(!v)return;var n=document.getElementById('scanrootnote');
 api('/api/scanroots/add',{path:v}).then(function(r){if(r.error){n.innerHTML="<span class='err'>"+esc(r.error)+"</span>";return;}i.value='';n.textContent='Added — the Map/Drift will rescan.';loadScanRoots();mapLoaded=false;driftLoaded=false;});}
+// Email: opt-in, read from mail already on this computer (no API) — see mail.mjs.
+function renderMail(d){if(!d)return;document.getElementById('mailon').checked=!!d.enabled;document.getElementById('mailaddrs').value=(d.addresses||[]).join(', ');
+var rows=(d.detected||[]).map(function(s){return "<div class='task'><span class='t' style='font-family:ui-monospace,monospace;font-size:12px'>"+esc(s.path)+"</span><span class='rp'>"+esc(s.kind)+"</span></div>";});
+(d.sources||[]).forEach(function(p,i){rows.push("<div class='task' data-i='"+i+"'><span class='t' style='font-family:ui-monospace,monospace;font-size:12px'>"+esc(p)+"</span><span class='rp'>added</span><button class='rm rmmail' title='remove'>&times;</button></div>");});
+var box=document.getElementById('mailsources');
+box.innerHTML=rows.length?rows.join(''):"<div class='muted' style='font-size:12px;margin-top:6px'>No mail app data found on this computer. Use a desktop mail app, or add an export (Google Takeout gives you an .mbox).</div>";
+box.querySelectorAll('.rmmail').forEach(function(btn){btn.addEventListener('click',function(){var p=(d.sources||[])[+btn.closest('.task').getAttribute('data-i')];if(p)api('/api/mail/set',{remove:p}).then(renderMail);});});
+if(d.error)document.getElementById('mailout').innerHTML="<div class='note err'>"+esc(d.error)+"</div>";}
+function loadMail(){api('/api/mail').then(renderMail);}
+function setMailOn(){api('/api/mail/set',{enabled:document.getElementById('mailon').checked}).then(renderMail);}
+function saveMailAddrs(){api('/api/mail/set',{addresses:document.getElementById('mailaddrs').value}).then(renderMail);}
+function addMailUI(){var i=document.getElementById('newmail');var v=(i.value||'').trim();if(!v)return;document.getElementById('mailout').innerHTML='';
+api('/api/mail/set',{add:v}).then(function(d){if(d&&!d.error)i.value='';renderMail(d);});}
+function previewMail(){var o=document.getElementById('mailout');o.innerHTML="<div class='muted' style='margin-top:8px'>Reading your sent mail&hellip;</div>";
+api('/api/mail/preview?days=7').then(function(r){var items=(r&&r.items)||[];
+if(!items.length){o.innerHTML="<div class='muted' style='margin-top:8px'>Nothing sent in the last 7 days found in these sources.</div>";return;}
+o.innerHTML="<div class='out2'><b>"+r.count+"</b> sent in the last 7 days &mdash; what a write-up would see:<br>"+items.map(function(x){return esc(x.date)+" &nbsp;"+esc(x.subject)+" &nbsp;&rarr; "+esc((x.to||[]).join(', ')||'?');}).join("<br>")+"</div>";});}
 function setupLocalUI(){var o=document.getElementById('setupout');o.innerHTML="Setting up a local model&hellip;";
 api('/api/setup-local',{}).then(function(r){if(r.error==='not-installed'){var i=r.install||{};o.innerHTML="Ollama isn't installed. Run this once, then click again:<div class='out2'>"+esc(i.cmd||'')+"</div><div class='muted' style='font-size:11px'>or download: "+esc(i.alt||'https://ollama.com/download')+"</div>";return;}
 o.innerHTML="Pulling <b>"+esc(r.model)+"</b> &mdash; watch it in the <b>Agents</b> tab. Symbiot switches to it automatically when the download finishes.";setTimeout(function(){setTab('agents');},700);}).catch(function(e){o.innerHTML="<span class='err'>Setup failed: "+esc(String((e&&e.message)||e))+"</span>";});}
@@ -481,6 +557,11 @@ document.getElementById('agentsrefresh').addEventListener('click',loadAgents);
 document.getElementById('addtask').addEventListener('click',addTaskUI);
 document.getElementById('pushtasks').addEventListener('click',pushTasksUI);
 document.getElementById('agentcmd').addEventListener('change',saveAgent);
+document.getElementById('mailon').addEventListener('change',setMailOn);
+document.getElementById('mailaddrs').addEventListener('change',saveMailAddrs);
+document.getElementById('addmail').addEventListener('click',addMailUI);
+document.getElementById('newmail').addEventListener('keydown',function(e){if(e.key==='Enter')addMailUI();});
+document.getElementById('mailpreview').addEventListener('click',previewMail);
 document.getElementById('newtask').addEventListener('keydown',function(e){if(e.key==='Enter')addTaskUI();});
 var SRV_STARTED=null,srvDown=false,updBusy=false;
 function ubar(){return document.getElementById('updatebar');}
@@ -514,5 +595,5 @@ function heartbeat(fresh){
 function doUpdate(){updBusy=true;try{localStorage.setItem('symbiot_update_tried',document.getElementById('ver').textContent.replace(/^v/,''));}catch(e){}var b=ubar();b.className='updatebar show';b.textContent='Updating & restarting… this page will reload itself when it is back.';api('/api/update',{});}
 setInterval(heartbeat,4000);heartbeat(true);
 window.addEventListener('focus',function(){heartbeat(true);}); // re-check for updates when you come back to the window
-initGraphEvents();syncP();refresh();loadMap();loadAgentCfg();loadScanRoots();
+initGraphEvents();syncP();refresh();loadMap();loadAgentCfg();loadScanRoots();loadMail();
 </script></body></html>`;

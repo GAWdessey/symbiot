@@ -9,7 +9,8 @@ import { mkdtempSync, writeFileSync, mkdirSync, rmSync, readFileSync, existsSync
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { authorship, repoState, readmeInfo, houseRules, findAllRepos, driftRepo, buildTasksMd, taskType, EMBEDDED_UI, orcaHandoffCmd, migrateOrcaCmd, fillHandoff, ORCA_CLAUDE_CMD, HANDOFF_PROMPT, shipChanges, semverGt } from "../index.mjs";
+import { authorship, repoState, readmeInfo, houseRules, findAllRepos, driftRepo, buildTasksMd, taskType, EMBEDDED_UI, orcaHandoffCmd, migrateOrcaCmd, fillHandoff, ORCA_CLAUDE_CMD, HANDOFF_PROMPT, shipChanges, semverGt, parseQuestions } from "../index.mjs";
+import { mailActivity } from "../mail.mjs";
 
 const INDEX = join(dirname(fileURLToPath(import.meta.url)), "..", "index.mjs");
 const ROOT = mkdtempSync(join(tmpdir(), "symbiot-fix-"));
@@ -252,6 +253,36 @@ try {
   ok("tasks in review aren't re-sent to the agent", o.repush && o.repush.empty, o.repush);
   ok("send back reopens it and unticks TASKS.md", o.afterBack && !o.afterBack.review && !o.afterBack.done && /- \[ \] Fix the bug/.test(o.md), o.afterBack);
   ok("approve commits on a branch, then archives with the commit", o.approve && o.approve.approved === 1 && /^symbiot\/fix-the-bug/.test(o.approve.branch) && o.final.archived && o.final.done && o.final.commit === o.approve.commit, o.approve);
+
+  console.log("QUESTIONS — any agent's .symbiot/QUESTIONS.md parses into questions, options and ideas");
+  const pq = parseQuestions("# Questions for you\n\n## Questions\n### Keep the old config format?\nReading both costs ~40 lines.\n- Yes, read both (recommended)\n- No, migrate once\n\n### Which port?\n1. 7391\n2. random\n\n## Suggestions\n- Add a --json flag to drift\n- [ ] Cache the map scan\n");
+  ok("two questions, in order", pq.questions.length === 2 && pq.questions[0].q === "Keep the old config format?" && pq.questions[1].q === "Which port?", pq.questions);
+  ok("context and options attach to their question", pq.questions[0].context === "Reading both costs ~40 lines." && pq.questions[0].options.join("|") === "Yes, read both (recommended)|No, migrate once" && pq.questions[1].options.join("|") === "7391|random", pq.questions);
+  ok("suggestions are their own list (checkbox bullets too)", pq.suggestions.join("|") === "Add a --json flag to drift|Cache the map scan", pq.suggestions);
+  const loose = parseQuestions("- Should I delete the legacy folder?\n- Rename it instead?");
+  ok("bare bullets with no headings are still questions", loose.questions.length === 2 && loose.questions[0].options.length === 0, loose);
+  ok("TASKS.md tells the agent how to ask", /\.symbiot\/QUESTIONS\.md/.test(md) && /## Suggestions/.test(md) && /\.symbiot\/ANSWERS\.md/.test(md), md.slice(-600));
+  ok("the handoff prompt points at QUESTIONS.md, shell-safe", /QUESTIONS\.md/.test(HANDOFF_PROMPT) && !/[`$"\\]/.test(HANDOFF_PROMPT), HANDOFF_PROMPT);
+
+  console.log("MAIL — sent mail is read from local mbox/Maildir (headers only), no API");
+  const mdir = join(ROOT, "mail"), day = (n) => new Date(Date.now() - n * 86400000).toUTCString();
+  mkdirSync(join(mdir, "Sent", "cur"), { recursive: true });
+  const msg = (h) => Object.entries(h).map(([k, v]) => `${k}: ${v}`).join("\n") + "\n\nbody text that must never be read\n";
+  writeFileSync(join(mdir, "takeout.mbox"), [
+    "From 1@x " + day(1) + "\n" + msg({ "Message-ID": "<a@x>", From: "Pat <pat@me.dev>", To: "Ann <ann@client.co>, bob@x.co", Subject: "=?UTF-8?B?TGF1bmNoIHBsYW4g4pyU?=", Date: day(1), "X-Gmail-Labels": "Sent,Opened" }),
+    "From 2@x " + day(1) + "\n" + msg({ "Message-ID": "<b@x>", From: "Spam <s@spam.co>", To: "pat@me.dev", Subject: "You won", Date: day(1), "X-Gmail-Labels": "Inbox" }),
+    "From 3@x " + day(30) + "\n" + msg({ "Message-ID": "<c@x>", From: "pat@me.dev", To: "ann@client.co", Subject: "Old news", Date: day(30), "X-Gmail-Labels": "Sent" }),
+    "From 4@x " + day(2) + "\n" + msg({ "Message-ID": "<d@x>", From: "pat@me.dev", To: "cto@me.dev", Subject: "Re: hiring", Date: day(2) }),
+  ].join("\n"));
+  writeFileSync(join(mdir, "Sent", "cur", "1700000000.M1.host:2,S"), msg({ "Message-ID": "<e@x>", From: "pat@me.dev", To: "=?iso-8859-1?Q?Ren=E9?= <rene@x.co>", Subject: "Contract =?iso-8859-1?Q?sign=E9?=", Date: day(3) }));
+  writeFileSync(join(mdir, "Sent Mail"), "From 6@x " + day(1) + "\n" + msg({ "Message-ID": "<f@x>", From: "pat@me.dev", To: "a@b.co", Subject: "Deleted draft", Date: day(1), "X-Mozilla-Status": "0009" }));
+  const mail = mailActivity({ days: 7, auto: false, sources: [join(mdir, "takeout.mbox"), join(mdir, "Sent"), join(mdir, "Sent Mail")], addresses: ["pat@me.dev"] });
+  const subj = mail.map((x) => x.subject);
+  ok("an export keeps only what you sent (Sent label or your address), in the window", subj.includes("Launch plan ✔") && subj.includes("Re: hiring") && !subj.includes("You won") && !subj.includes("Old news"), subj);
+  ok("Maildir Sent folder is read; encoded headers decode", subj.includes("Contract signé") && mail.find((x) => x.subject === "Contract signé").to[0] === "René", mail);
+  ok("Thunderbird-deleted mail is skipped", !subj.includes("Deleted draft"), subj);
+  ok("recipients by name, newest first", mail[0].subject === "Launch plan ✔" && mail[0].to.join(",") === "Ann,bob@x.co", mail[0]);
+  ok("never reads a body", !JSON.stringify(mail).includes("body text"), "");
 
   console.log("UPDATE — only a higher npm version is offered as an update");
   ok("0.26.0 is not newer than 0.27.0 (local build ahead of npm)", !semverGt("0.26.0", "0.27.0"), "");

@@ -9,7 +9,8 @@
 //   symbiot week      your week, written up          (default)
 //   symbiot standup   yesterday + today, for standup
 //   symbiot todo      what's still on your plate
-//   symbiot login     connect it to an AI (once)
+//   symbiot mail      add the mail you sent to write-ups (local, no API)
+//   symbiot login    connect it to an AI (once)
 //   symbiot whoami    show how it's connected
 //   symbiot help
 //
@@ -27,6 +28,7 @@ import { createServer } from "node:http";
 import { randomBytes } from "node:crypto";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { EMBEDDED_UI } from "./ui.mjs";
+import { detectMailSources, mailActivity } from "./mail.mjs";
 
 const HERE = fileURLToPath(new URL(".", import.meta.url));
 let VERSION = "0"; try { VERSION = JSON.parse(readFileSync(join(HERE, "package.json"), "utf8")).version; } catch {}
@@ -267,6 +269,10 @@ function buildTasksMd(name, ctx, list) {
   const keys = Object.keys(byType).sort((a, b) => TASK_ORDER.indexOf(a) - TASK_ORDER.indexOf(b));
   for (const ty of keys) { L.push(`### ${ty}`); for (const t of byType[ty]) L.push(`- [ ] ${t.text}`); L.push(""); }
   L.push("## When you finish an item", "- Tick it here (`- [x]`) as soon as it's done — that's how it reaches review. Ticking doesn't archive it: the user approves it in Symbiot, which commits it on a branch and opens a PR.", "- Leave your changes **uncommitted**, and don't tick anything you didn't finish or couldn't verify.", "");
+  L.push("## If you need a decision, or have ideas", "You may be running unattended, so you can't ask in chat. Write `.symbiot/QUESTIONS.md` instead: Symbiot shows it to the user on your block in its Agents tab, and their answers come back in `.symbiot/ANSWERS.md` (read that first if it exists).",
+    `- At most ${QUESTIONS_MAX} questions, under a \`## Questions\` heading. Each is a \`### \` heading, then an optional line of context, then 2–4 options as \`- \` bullets (put the one you recommend first).`,
+    "- Ideas, options or follow-ups outside these tasks go under `## Suggestions` as `- ` bullets — the user can add them to their tasks in one click.",
+    "- Carry on with everything that doesn't depend on an answer, and don't tick an item that does. Ask there rather than doing anything destructive.", "");
   L.push("---", 'To action these, tell your coding agent: "Read `.symbiot/TASKS.md` and implement the unchecked items in this repo, using the context above. Tick each item as you finish it and leave changes uncommitted for review. Confirm with me before anything destructive."');
   return L.join("\n") + "\n";
 }
@@ -746,7 +752,7 @@ const shSingle = (s) => "'" + String(s).replace(/'/g, "'\\''") + "'";
 const escDq = (s) => String(s).replace(/[\\"$`]/g, "\\$&");
 // Plain words only: in the Orca preset this passes through two shells, so no
 // backticks or $ (escDq covers one level).
-const HANDOFF_PROMPT = "Read .symbiot/TASKS.md and implement the unchecked items in this repo. Tick each item [x] in that file as you finish it and leave your changes uncommitted, so they can be reviewed and approved. Confirm before anything destructive.";
+const HANDOFF_PROMPT = "Read .symbiot/TASKS.md and implement the unchecked items in this repo. Tick each item [x] in that file as you finish it and leave your changes uncommitted, so they can be reviewed and approved. If you need a decision, or have ideas or options for the user, write them to .symbiot/QUESTIONS.md as TASKS.md explains, and read .symbiot/ANSWERS.md first if it exists. Confirm before anything destructive.";
 function handoffCmd() { const cfg = loadConfig(); return migrateOrcaCmd(cfg.agentCmd) || (cfg.ide ? `${cfg.ide} {dir}` : ""); } // ide = legacy
 // Save the template ("" clears it). Either way the legacy `ide` key goes.
 function setHandoffCmd(cmd) {
@@ -886,6 +892,81 @@ function agentChanges(path, startedAt) {
     const commits = raw ? raw.split("\n").slice(0, 8).map((l) => { const i = l.indexOf("\u0001"); return { hash: l.slice(0, i), msg: l.slice(i + 1) }; }) : [];
     return { dirty, stat, commits };
   } catch { return { dirty: 0, stat: "", commits: [] }; }
+}
+// ---- agent questions: decisions, options and ideas, from ANY agent ---------
+// A handoff runs unattended (claude -p, codex exec, aider --message, …), so the
+// agent can't stop and ask in chat. TASKS.md tells it to write
+// .symbiot/QUESTIONS.md instead — questions with options, plus ideas — which
+// the Agents tab shows on that agent's block. The user's answers are appended to
+// .symbiot/ANSWERS.md for the next run to read. Plain files, so it works the
+// same whichever model or tool the agent is.
+const QUESTIONS_MAX = 5;
+const qKey = (s) => String(s || "").trim().toLowerCase().replace(/\s+/g, " ");
+const readSymbiot = (path, f) => { try { return readFileSync(join(path, ".symbiot", f), "utf8"); } catch { return ""; } };
+// "## Questions" → "### question", context lines, "- option" bullets;
+// "## Suggestions" (or Ideas / Follow-ups) → "- idea" bullets. Forgiving: a bare
+// bullet under Questions is a question with no options.
+function parseQuestions(md) {
+  const questions = [], suggestions = []; let sec = "q", cur = null;
+  const clip = (s) => String(s).trim().slice(0, 300);
+  for (const raw of String(md || "").split(/\r?\n/)) {
+    const l = raw.trim(); if (!l) continue;
+    let m;
+    if ((m = l.match(/^###\s+(.+)$/))) {
+      if (sec === "s") { suggestions.push(clip(m[1])); cur = null; }
+      else { cur = { q: clip(m[1]), context: "", options: [] }; questions.push(cur); }
+      continue;
+    }
+    if ((m = l.match(/^##\s+(.+)$/))) { sec = /suggest|idea|follow|option/i.test(m[1]) ? "s" : "q"; cur = null; continue; }
+    if (/^#\s/.test(l)) continue;
+    const b = l.match(/^(?:[-*+]|\d+[.)])\s+(?:\[[ xX]\]\s+)?(.+)$/);
+    if (sec === "s") { if (b) suggestions.push(clip(b[1])); continue; }
+    if (b) { if (cur) cur.options.push(clip(b[1])); else questions.push({ q: clip(b[1]), context: "", options: [] }); continue; }
+    if (cur) cur.context = clip((cur.context ? cur.context + " " : "") + l);
+  }
+  return { questions: questions.filter((x) => x.q).slice(0, 20).map((x) => ({ ...x, options: x.options.slice(0, 6) })), suggestions: suggestions.filter(Boolean).slice(0, 10) };
+}
+// The OPEN questions (not yet in ANSWERS.md) and the agent's ideas, each marked
+// if it's already on the task list for this repo.
+function agentQuestions(path, repo) {
+  const p = parseQuestions(readSymbiot(path, "QUESTIONS.md"));
+  const done = new Set([...readSymbiot(path, "ANSWERS.md").matchAll(/^###\s+(.+)$/gm)].map((m) => qKey(m[1])));
+  const open = p.questions.filter((x) => !done.has(qKey(x.q)));
+  const tasks = p.suggestions.length ? loadTasks() : [];
+  return {
+    questions: open.slice(0, QUESTIONS_MAX), answered: p.questions.length - open.length,
+    suggestions: p.suggestions.map((text) => ({ text, added: tasks.some((t) => t.repo === repo && qKey(t.text) === qKey(text)) })),
+  };
+}
+// Save answers to .symbiot/ANSWERS.md; opts.rerun hands the repo back to the
+// agent (same saved command) so it carries on with them.
+function answerQuestions(path, answers, opts = {}) {
+  path = String(path || "");
+  if (!path || !HANDOFFS.some((e) => e.path === path)) return { error: "No agent has run in that folder." };
+  const open = new Map(agentQuestions(path, "").questions.map((x) => [qKey(x.q), x.q]));
+  const rows = (Array.isArray(answers) ? answers : [])
+    .map((x) => ({ q: open.get(qKey(x && x.q)), a: String((x && x.a) || "").replace(/^\s*#+/gm, "").trim().slice(0, 2000) }))
+    .filter((x) => x.q && x.a);
+  if (!rows.length) return { error: "Pick or type at least one answer." };
+  const prev = readSymbiot(path, "ANSWERS.md") || "# Answers from the user\nAnswers to the questions in QUESTIONS.md, newest last. Follow them; ask again in QUESTIONS.md if one is unclear.\n";
+  const day = new Date().toISOString().slice(0, 10);
+  try {
+    mkdirSync(join(path, ".symbiot"), { recursive: true });
+    writeFileSync(join(path, ".symbiot", "ANSWERS.md"), prev.replace(/\s*$/, "\n") + rows.map((x) => `\n### ${x.q}\n${x.a}\n_answered ${day}_\n`).join(""));
+  } catch (e) { return { error: "Couldn't write ANSWERS.md: " + ((e && e.message) || e) }; }
+  const out = { ok: true, saved: rows.length };
+  if (opts.rerun) { const e = runHandoff(path); if (e) out.rerun = e.id; else out.note = "Answers saved. Set an agent command in Settings to have the agent pick them up automatically."; }
+  return out;
+}
+// The Agents tab: every tracked job, its log tail, what it changed, and — on the
+// newest job per folder — the questions/ideas it left.
+function agentsList() {
+  const seen = new Set();
+  return HANDOFFS.map((e) => {
+    let tail = ""; try { tail = readFileSync(e.log, "utf8").slice(-1200); } catch {}
+    const first = !seen.has(e.path); seen.add(e.path);
+    return { id: e.id, name: e.name, path: e.path, status: e.status, elapsed: (e.endedAt || Date.now()) - e.startedAt, exitCode: e.exitCode, tail, changed: agentChanges(e.path, e.startedAt), ask: first ? agentQuestions(e.path, e.name) : null };
+  });
 }
 // ---- local model one-command setup (Ollama), OS-aware ---------------------
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -1469,6 +1550,33 @@ function discoveredRepos() {
   if (LAST_MAP && LAST_MAP.nodes) return LAST_MAP.nodes.filter((n) => n.type === "repo" && n.meta && n.meta.path).map((n) => ({ path: n.meta.path, name: n.label, recency: 0 }));
   return findAllRepos();
 }
+// ---- email: opt-in, local, no API (see mail.mjs) ---------------------------
+// config.mail = { enabled, sources: [extra folders/.mbox files], addresses: [your
+// mail addresses, to pick your mail out of a whole-mailbox export] }.
+function mailCfg() {
+  const m = loadConfig().mail || {};
+  return { enabled: !!m.enabled, sources: Array.isArray(m.sources) ? m.sources : [], addresses: Array.isArray(m.addresses) ? m.addresses : [] };
+}
+function mailState() { return { ...mailCfg(), detected: detectMailSources() }; }
+function setMail(b = {}) {
+  const m = mailCfg();
+  if (typeof b.enabled === "boolean") m.enabled = b.enabled;
+  if (b.add) {
+    const p = expandRoot(b.add);
+    if (!p || !existsSync(p)) return { ...mailState(), error: "not found: " + (p || "(empty)") };
+    if (!m.sources.includes(p)) m.sources.push(p);
+  }
+  if (b.remove) m.sources = m.sources.filter((x) => x !== b.remove);
+  if (typeof b.addresses === "string") m.addresses = b.addresses.split(/[\s,;]+/).map((s) => s.trim().toLowerCase()).filter((s) => s.includes("@"));
+  const cfg = loadConfig(); cfg.mail = m; saveConfig(cfg);
+  return mailState();
+}
+// Mail you sent in the window — [] unless it's switched on (preview ignores that).
+function sentMail(days, preview = false) {
+  const m = mailCfg(); if (!m.enabled && !preview) return [];
+  return mailActivity({ days, sources: m.sources, addresses: [...m.addresses, me().email].filter(Boolean) });
+}
+const renderMail = (list) => list.slice(0, 60).map((x) => `- ${x.date} · to ${x.to.join(", ") || "?"} · ${x.subject}`).join("\n");
 async function produce(cmd) {
   if (!resolveProvider()) return { error: "not-connected" };
   if (cmd === "todo") {
@@ -1488,26 +1596,30 @@ async function produce(cmd) {
   // Discover the Map's repo set, then keep only those with commits in the window.
   const all = discoveredRepos();
   const repos = all.filter((r) => sh(`git -C ${JSON.stringify(r.path)} log --since="${days} days ago" --oneline -1 2>/dev/null`).trim());
-  if (!repos.length) return { text: `No commits in the last ${days} days across your ${all.length} repos.\nAdd folders to scan in Settings, or check your git identity.`, sub: "no activity" };
+  const mail = sentMail(days); // [] unless email is switched on
+  if (!repos.length && !mail.length) return { text: `No commits in the last ${days} days across your ${all.length} repos.\nAdd folders to scan in Settings, or check your git identity.`, sub: "no activity" };
   let cs = commits(repos, `${days} days ago`, !has("all"));
   if (!cs.length) cs = commits(repos, `${days} days ago`, false); // fall back to all if none matched you
   const open = label === "week" ? openWork(repos) : [];
-  if (!cs.length) return { text: "Found repos, but no commits in the window.", sub: "no commits" };
+  if (!cs.length && !mail.length) return { text: "Found repos, but no commits in the window.", sub: "no commits" };
 
   const system =
-    `You write a short, first-person work update from a person's git commits. ` +
+    `You write a short, first-person work update from a person's git commits${mail.length ? " and the emails they sent" : ""}. ` +
     `Write as them ("I"), plainly and specifically, grouped by theme or project, most important first. ` +
     `Turn commit messages into outcomes a manager or teammate would understand — not a raw commit list. ` +
+    (mail.length ? `Fold the emails into those themes (a decision, a hand-off, who they worked with); skip routine ones (receipts, scheduling, one-line replies). You only have their subjects and recipients — don't guess at what they said. ` : "") +
     `${label === "standup" ? "Keep it to 3-5 bullets: done, and what's next." : "A short paragraph or a few grouped bullets; end with a one-line 'In progress / next' if there are open items."} ` +
-    `No preamble, no sign-off, no invented work — only what the commits and open items show.`;
+    `No preamble, no sign-off, no invented work — only what the commits${mail.length ? ", emails" : ""} and open items show.`;
   const prompt =
     `Person: ${who.name || "me"}. Window: ${label === "standup" ? "since yesterday" : `last ${days} days`}.\n\n` +
-    `Commits:\n${renderCommits(cs)}\n\n` +
+    `Commits:\n${cs.length ? renderCommits(cs) : "(none)"}\n\n` +
+    (mail.length ? `Emails I sent (date · to · subject):\n${renderMail(mail)}\n\n` : "") +
     (open.length ? `Open / in progress:\n${open.map((o) => `- ${o}`).join("\n")}\n\n` : "") +
     `Write the ${label === "standup" ? "standup" : "update"}.`;
 
   const text = await write(system, prompt);
-  return { text: text || "(couldn't reach the model)", sub: `${cs.length} commits across ${new Set(cs.map((x) => x.repo)).size} repos · ${label}`, footer: `symbiot ${VERSION} · ${all.length} repos (same as the Map) · ${repos.length} active · ${cs.length} commits in last ${days}d` };
+  const mailNote = mail.length ? ` · ${mail.length} sent email${mail.length === 1 ? "" : "s"}` : "";
+  return { text: text || "(couldn't reach the model)", sub: `${cs.length} commits across ${new Set(cs.map((x) => x.repo)).size} repos${mailNote} · ${label}`, footer: `symbiot ${VERSION} · ${all.length} repos (same as the Map) · ${repos.length} active · ${cs.length} commits in last ${days}d${mailNote}` };
 }
 
 async function cmdRun(cmd) {
@@ -1731,7 +1843,11 @@ async function cmdApp() {
         const e = track("ollama pull " + model, "ollama pull " + shSingle(model), homedir(), (code) => { if (code === 0) useOllamaModel(model); });
         return json(res, { started: true, model, id: e ? e.id : "" });
       }
-      if (u.pathname === "/api/agents") return json(res, HANDOFFS.map((e) => { let tail = ""; try { tail = readFileSync(e.log, "utf8").slice(-1200); } catch {} return { id: e.id, name: e.name, path: e.path, status: e.status, elapsed: (e.endedAt || Date.now()) - e.startedAt, exitCode: e.exitCode, tail, changed: agentChanges(e.path, e.startedAt) }; }));
+      if (u.pathname === "/api/agents") return json(res, agentsList());
+      if (u.pathname === "/api/agents/answer" && req.method === "POST") { const b = await readBody(req); return json(res, answerQuestions(String(b.path || ""), b.answers, { rerun: !!b.rerun })); }
+      if (u.pathname === "/api/mail") return json(res, mailState());
+      if (u.pathname === "/api/mail/set" && req.method === "POST") { const b = await readBody(req); return json(res, setMail(b)); }
+      if (u.pathname === "/api/mail/preview") { const items = sentMail(Number(u.searchParams.get("days")) || SINCE_WEEK, true); return json(res, { count: items.length, items: items.slice(0, 20) }); }
       if (u.pathname === "/api/run" && req.method === "POST") { const b = await readBody(req); const cmd = ["week", "standup", "todo"].includes(b.cmd) ? b.cmd : "week"; return json(res, await produce(cmd)); }
       if (u.pathname === "/api/connect" && req.method === "POST") { return json(res, await connectProvider(await readBody(req))); }
       if (u.pathname === "/api/ping") { if (u.searchParams.get("fresh") === "1") await checkLatest(); return json(res, { version: VERSION, started: SERVER_STARTED, latest: LATEST_VERSION, newer: semverGt(LATEST_VERSION, VERSION) }); }
@@ -1774,6 +1890,24 @@ async function cmdApp() {
   checkLatest(); setInterval(checkLatest, 2 * 60 * 1000).unref(); // background update check (every 2 min)
 }
 
+// `symbiot mail [--on|--off] [--add <path>]`: what mail it can read, and a preview.
+function cmdMail() {
+  if (has("on") || has("off")) setMail({ enabled: has("on") });
+  const add = flag("add", null);
+  if (add) { const r = setMail({ add }); if (r.error) console.log(c.y(r.error)); }
+  const m = mailState();
+  console.log(`\n${c.g("●")} ${c.b("Symbiot mail")} ${c.d("· " + (m.enabled ? "on — what you sent feeds week and standup" : "off"))}\n`);
+  const srcs = [...m.detected.map((d) => [d.path, d.kind]), ...m.sources.map((p) => [p, "added"])];
+  if (!srcs.length) console.log(c.y("No mail found on this computer.") + c.d("  Use a desktop mail app (Thunderbird, Apple Mail, Evolution…), or add an export:  symbiot mail --add ~/Takeout/Mail/All.mbox"));
+  for (const [p, k] of srcs) console.log(`  ${c.g("·")} ${p}  ${c.d(k)}`);
+  if (srcs.length) {
+    const items = sentMail(SINCE_WEEK, true);
+    console.log("\n" + c.b(`${items.length} sent in the last ${SINCE_WEEK} days`) + c.d("  (headers only)"));
+    for (const x of items.slice(0, 12)) console.log(`  ${c.d(x.date)}  ${x.subject}  ${c.d("→ " + (x.to.join(", ") || "?"))}`);
+  }
+  if (!m.enabled) console.log("\n" + c.d("Switch it on with  symbiot mail --on  (or in the app's Settings)."));
+}
+
 const HELP = `${c.b("symbiot")} — your week, written from your real work.
 
 ${c.b("Usage")}
@@ -1783,6 +1917,7 @@ ${c.b("Usage")}
   symbiot app                       open the visual app in your browser
   symbiot drift                     what's out of sync / at risk across repos
   symbiot push [--open]             write tasks into each repo (and run your agent)
+  symbiot mail [--on|--off]         use the mail you sent in write-ups (local, no API)
   symbiot models                    recommend AI models for your hardware
   symbiot setup-local [--model X]   install/run a free local model (Ollama)
   symbiot login                     connect it to an AI (once)
@@ -1802,9 +1937,10 @@ ${c.b("Setup")}  pick any AI to write with:
   ${c.d("Env keys also work: ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY.")}
   ${c.d("Override the model per run with SYMBIOT_MODEL.")}
 
-${c.d("Reads only your local git. No accounts, no OAuth, no data leaves except the")}
-${c.d("commit summaries sent to the AI to write your update (nothing leaves at all")}
-${c.d("with a local Ollama model).")}`;
+${c.d("Reads only your local git (and, if you switch it on, the headers of mail you")}
+${c.d("sent). No accounts, no OAuth, no data leaves except the commit and email")}
+${c.d("subjects sent to the AI to write your update (nothing leaves at all with a")}
+${c.d("local Ollama model).")}`;
 
 // ---- main -----------------------------------------------------------------
 async function main() {
@@ -1817,6 +1953,7 @@ async function main() {
   if (cmd === "setup-local" || cmd === "setup-ollama") return cmdSetupLocal();
   if (cmd === "drift") return cmdDrift();
   if (cmd === "push") return cmdPush();
+  if (cmd === "mail" || cmd === "email") return cmdMail();
   if (cmd === "week") return cmdRun("week");
   if (cmd === "standup") return cmdRun("standup");
   if (cmd === "todo") return cmdRun("todo");
@@ -1832,4 +1969,4 @@ const isMain = (() => {
 })();
 if (isMain) main();
 
-export { authorship, repoState, readmeInfo, repoShape, houseRules, findAllRepos, buildMap, reportFooter, detectHardware, recommendModels, computeDrift, driftRepo, gitDefaultBranch, buildTasksMd, taskType, EMBEDDED_UI, orcaHandoffCmd, migrateOrcaCmd, fillHandoff, handoffCmd, setHandoffCmd, ORCA_CLAUDE_CMD, HANDOFF_PROMPT, shipChanges, syncTasks, pendingReview, approveRepo, sendBack, pushTasks, semverGt };
+export { authorship, repoState, readmeInfo, repoShape, houseRules, findAllRepos, buildMap, reportFooter, detectHardware, recommendModels, computeDrift, driftRepo, gitDefaultBranch, buildTasksMd, taskType, EMBEDDED_UI, orcaHandoffCmd, migrateOrcaCmd, fillHandoff, handoffCmd, setHandoffCmd, ORCA_CLAUDE_CMD, HANDOFF_PROMPT, shipChanges, syncTasks, pendingReview, approveRepo, sendBack, pushTasks, semverGt, parseQuestions, agentQuestions };

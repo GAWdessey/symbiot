@@ -9,6 +9,7 @@
   "files": [
     "index.mjs",
     "ui.mjs",
+    "mail.mjs",
     "README.md",
     "LICENSE"
   ],

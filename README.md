@@ -14,6 +14,7 @@ symbiot todo       what's still on your plate
 symbiot app        open the visual app in your browser
 symbiot drift      what's out of sync / at risk across your repos
 symbiot push       write tasks into each repo for your coding agent
+symbiot mail       add the mail you sent to your write-ups (local, no API)
 symbiot models     recommend AI models for your hardware
 symbiot setup-local  set up a free local model (Ollama), one command
 symbiot login      connect it to an AI (once)
@@ -68,8 +69,11 @@ Tabs:
 - **Agents** — every agent run Symbiot has started (and local-model downloads):
   live status, elapsed time, exit code, the tail of its output, and **what it
   did** — files changed and commits made, read from git, whichever agent it was.
-- **Settings** — your AI, the folders to scan, your agent command, model
-  recommendations and a one-click local model.
+  When an agent leaves **questions, options or ideas** for you, they show up on its
+  block (see [Questions from your agent](#questions-from-your-agent)).
+- **Settings** — your AI, the folders to scan, your agent command, your
+  [email](#your-email-without-an-api-symbiot-mail), model recommendations and a
+  one-click local model.
 
 **Stays current by itself.** The app checks npm for a newer Symbiot every couple of
 minutes (and whenever you come back to the window); the version you're on is shown
@@ -146,6 +150,34 @@ Each run is logged to `.symbiot/agent.log` in the repo and shown live in the
 **Agents** tab. The command is saved as `agentCmd` in
 `~/.config/symbiot/config.json` — it's your command, Symbiot only fills in
 `{dir}` and `{prompt}`. A command saved from an older preset keeps working as-is.
+
+### Questions from your agent
+
+An agent working in your terminal or IDE stops to ask you things: which way to go,
+whether to do something risky, ideas it had along the way. A handed-off run can't
+do that, because it runs unattended. So the brief gives **every** agent (Claude,
+Codex, Aider, Gemini, Cursor, whatever you run) a way to ask anyway. It writes
+**`.symbiot/QUESTIONS.md`**:
+
+```markdown
+## Questions
+### Keep the old config format working?
+Reading both costs about 40 lines.
+- Yes, read both (recommended)
+- No, migrate once and drop it
+
+## Suggestions
+- Add a --json flag to drift
+```
+
+Up to five questions show on that agent's block in the **Agents** tab, each with
+its options and room for your own answer, alongside its ideas. **Send answers &
+continue** appends your answers to `.symbiot/ANSWERS.md` and runs your agent
+command again so the agent carries on with them. **Save only** keeps them for the
+next run. **+ task** adds an idea to your Tasks for that repo. The agent is told to
+keep going with everything that doesn't depend on an answer, and to ask instead of
+doing anything destructive. Both files live in `.symbiot/`, so they're never
+committed.
 
 ## What's out of sync? `symbiot drift`
 
@@ -238,6 +270,34 @@ It summarises the commits **you** authored — matching all your identities in e
 repo (per-repo and global email, your GitHub noreply address, your name), and
 counting everyone if that filter would drop almost all of an active repo's history.
 
+## Your email, without an API: `symbiot mail`
+
+```bash
+symbiot mail                 # what mail it can read, and what you sent this week
+symbiot mail --on            # use it in week / standup   (--off to stop)
+symbiot mail --add ~/Takeout/Mail/All\ mail.mbox   # an export, or any mail folder
+```
+
+Much of a week's work happens over email, so Week and Standup can include **what
+you sent**. There's no Gmail or Outlook API, no OAuth, no app to register and no
+password. Symbiot reads the mail a desktop client already keeps on your computer,
+so anyone can link theirs the same way:
+
+- **Thunderbird** (Linux, macOS, Windows, including Snap and Flatpak installs),
+  **Apple Mail**, **Evolution**, **KMail**, and **mutt/neomutt** or any
+  `~/Maildir` / `~/mail` are found automatically. Symbiot only looks at their
+  **Sent** folders.
+- **Webmail only?** Add an export. Google Takeout gives you an `.mbox`, and Symbiot
+  keeps just the messages with Gmail's *Sent* label (or from one of your
+  addresses). You can also point it at any `.mbox` file or a folder of `.eml`
+  files.
+
+It reads **headers only** (date, recipients, subject), never a message body. It's
+**off until you switch it on**, in Settings (*Email*) or with `symbiot mail --on`.
+**Preview** shows exactly what a write-up would see. On macOS, reading Apple Mail
+needs Full Disk Access for your terminal. Outlook for Windows keeps mail in `.pst`
+files, which Symbiot can't read, so export to `.mbox` or use Thunderbird.
+
 ## Where it looks
 
 By default Symbiot scans your **home folder**. To point it at where your work
@@ -266,11 +326,14 @@ instead of hanging. The CLI shows scan progress on one line as it goes.
 ## What it reads, and what it doesn't
 
 - **Reads:** your local git — commit messages and changed-file names, plus
-  `TODO`/`FIXME` markers and uncommitted changes for `todo`. All local.
+  `TODO`/`FIXME` markers and uncommitted changes for `todo`. If you switch
+  [email](#your-email-without-an-api-symbiot-mail) on, it also reads the headers
+  of mail you sent (subject, recipients, date). All local.
 - **Sends to the AI:** commit messages and dates, changed-file **names**, the
   folder structure, `TODO`/`FIXME` lines, and (for a repo review) an excerpt of
-  the README and any `CLAUDE.md`/`AGENTS.md` conventions. It does **not** send
-  whole source files. With a **local Ollama model, nothing leaves your machine.**
+  the README and any `CLAUDE.md`/`AGENTS.md` conventions. With email on, it also
+  sends the subjects and recipient names of mail you sent. It does **not** send
+  whole source files or any email body. With a **local Ollama model, nothing leaves your machine.**
 - **Shows its work:** every report ends with a footer — path, branch, how many
   commits matched you (e.g. "1090 of 1101"), the README's age, and the
   working-tree state — so you can see exactly what it read.
@@ -281,7 +344,7 @@ instead of hanging. The CLI shows scan progress on one line as it goes.
 ## Config
 
 Everything lives in `~/.config/symbiot/`: `config.json` (your AI, `scanRoots`,
-`agentCmd`; readable only by you), `tasks.json` (your tasks),
+`agentCmd`, `mail`; readable only by you), `tasks.json` (your tasks),
 `deploys.json` (optional, for drift's production check) and `rules.md` (optional
 conventions every repo review must respect, alongside each repo's own
 `CLAUDE.md` / `AGENTS.md` / `CONTRIBUTING.md`).
