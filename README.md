@@ -93,8 +93,8 @@ the chrome-less window, it uses your default browser.
 
 ### Every week, and at login
 
-Two switches in Settings do what the old `symbiot-desktop` tray app did, without
-Electron:
+Two switches in Settings do what the old `symbiot-desktop` tray app did (that
+repo is now archived), without Electron:
 
 - **Write my week and notify me** on a day and hour you pick (Friday 16:00 by
   default). The app writes your week with your chosen AI, saves it to

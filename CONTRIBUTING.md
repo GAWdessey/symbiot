@@ -78,3 +78,7 @@ git tag v$(node -p "require('./package.json').version") && git push origin --tag
 `.github/workflows/publish.yml` publishes from that tag only if it's on `main`,
 matches `package.json`, and the full suite passes. A tag on any other branch is
 refused, so what's on npm is always what's on `main`.
+
+Only repo admins can push release tags. A tag ruleset ("Protect release tags
+(v*)", under Settings → Rules → Rulesets) blocks everyone else from creating,
+moving or deleting `v*` tags.

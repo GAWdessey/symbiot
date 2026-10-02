@@ -1,6 +1,7 @@
 // symbiot — Screens: screenshots with named regions, i.e. a blueprint of where
-// things are on a screen, in screenshot pixels. The first slice of screen
-// automation: it captures, stores and maps. Nothing here clicks or types yet.
+// things are on a screen, in screenshot pixels. The first slices of screen
+// automation: it captures, stores and maps, and clicks a region's centre when
+// asked (the app confirms each click). Nothing types yet.
 //
 // Stored in ~/.config/symbiot/screens/: <id>.png per screen, and screens.json =
 // [{ id, name, w, h, ts, via, regions: [{ id, label, x, y, w, h }] }], which is
@@ -97,9 +98,55 @@ function removeScreen(id) {
   try { if (validId(id)) unlinkSync(screenFile(id)); } catch {}
   return { ok: true };
 }
+const center = (r) => ({ x: r.x + Math.floor(r.w / 2), y: r.y + Math.floor(r.h / 2) });
 // What automation reads: each region with the point to aim at (its centre).
 function blueprint(s) {
-  return { screen: s.name, size: { w: s.w, h: s.h }, regions: (s.regions || []).map((r) => ({ label: r.label, x: r.x, y: r.y, w: r.w, h: r.h, center: { x: r.x + Math.floor(r.w / 2), y: r.y + Math.floor(r.h / 2) } })) };
+  return { screen: s.name, size: { w: s.w, h: s.h }, regions: (s.regions || []).map((r) => ({ label: r.label, x: r.x, y: r.y, w: r.w, h: r.h, center: center(r) })) };
 }
 
-export { loadScreens, screenImage, pngSize, captureCmds, captureScreen, importScreen, setRegions, renameScreen, removeScreen, blueprint };
+// Click tools to try, in order, as a list of [cmd, args] steps that move the
+// mouse to (x, y) and left-click there. xdotool only reaches X11 windows, so on
+// Wayland it's ydotool (it needs /dev/uinput). ydotool 1.x moves relative unless
+// told --absolute and takes a button code; 0.1.x (Debian/Ubuntu) moves to the
+// point and takes a button number.
+function clickCmds(x, y, platform = process.platform, wayland = process.env.XDG_SESSION_TYPE === "wayland", ydotool1 = false) {
+  x = String(x); y = String(y);
+  if (platform === "darwin") return [[["cliclick", ["c:" + x + "," + y]]]];
+  if (platform === "win32") return [];
+  const ydo = ydotool1 ? [["ydotool", ["mousemove", "--absolute", "-x", x, "-y", y]], ["ydotool", ["click", "0xC0"]]] : [["ydotool", ["mousemove", x, y]], ["ydotool", ["click", "1"]]];
+  const xdo = [["xdotool", ["mousemove", "--sync", x, y, "click", "1"]]];
+  return wayland ? [ydo] : [xdo, ydo];
+}
+const ydotoolIs1 = () => /absolute/i.test(String(spawnSync("ydotool", ["mousemove", "--help"], { encoding: "utf8", timeout: 5000 }).stdout || ""));
+// The size of the screen in the units the click tool uses, when it can be read:
+// on macOS screencapture saves Retina pixels but cliclick takes points.
+function clickSpace(tool) {
+  const run = (cmd, args) => String(spawnSync(cmd, args, { encoding: "utf8", timeout: 5000 }).stdout || "");
+  const m = tool === "xdotool" ? run("xdotool", ["getdisplaygeometry"]).match(/(\d+)\s+(\d+)/)
+    : tool === "cliclick" ? run("osascript", ["-l", "JavaScript", "-e", "ObjC.import('AppKit'); var f = $.NSScreen.screens.objectAtIndex(0).frame; f.size.width + ' ' + f.size.height"]).match(/(\d+)\s+(\d+)/) : null;
+  return m && +m[1] && +m[2] ? { w: +m[1], h: +m[2] } : null;
+}
+// Move the mouse to a region's centre and click it. The caller confirms first:
+// it clicks whatever is at that spot on the screen right now.
+function clickRegion(id, regionId) {
+  const s = loadScreens().find((x) => x.id === id); if (!s) return { error: "not found" };
+  const r = (s.regions || []).find((x) => x.id === regionId); if (!r) return { error: "That region is gone. Reload the screen." };
+  if (process.platform === "win32") return { error: "Clicking isn't supported on Windows yet." };
+  const c = center(r), wayland = process.env.XDG_SESSION_TYPE === "wayland";
+  // The first tool that's installed does it. If that fails it says so, rather
+  // than trying the next one: a half-done move + click could otherwise click twice.
+  const tool = clickCmds(c.x, c.y).map((st) => st[0][0]).find((t) => hasCmd(t));
+  if (tool) {
+    const sp = clickSpace(tool), x = sp ? Math.round(c.x * sp.w / s.w) : c.x, y = sp ? Math.round(c.y * sp.h / s.h) : c.y;
+    const steps = clickCmds(x, y, process.platform, wayland, tool === "ydotool" && ydotoolIs1()).find((st) => st[0][0] === tool);
+    for (const [cmd, args] of steps) {
+      const p = spawnSync(cmd, args, { encoding: "utf8", timeout: 10000, killSignal: "SIGKILL" });
+      if (p.status !== 0) return { error: `${tool} couldn't click: ` + (String(p.stderr || (p.error && p.error.message) || "").trim().split("\n").filter((l) => l && !/notice:/.test(l)).pop() || "exit " + p.status) };
+    }
+    return { ok: true, label: r.label, x, y, via: tool };
+  }
+  const want = process.platform === "darwin" ? "cliclick (brew install cliclick)" : wayland ? "ydotool" : "xdotool or ydotool";
+  return { error: `No click tool found. Install ${want}.` };
+}
+
+export { loadScreens, screenImage, pngSize, captureCmds, captureScreen, importScreen, setRegions, renameScreen, removeScreen, blueprint, clickCmds, clickRegion };
