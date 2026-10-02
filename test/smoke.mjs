@@ -169,7 +169,8 @@ const calls = [
   ["/api/screens/regions", "POST"], // no id -> "not found"
   ["/api/screens/rename", "POST"],
   ["/api/screens/remove", "POST"],
-  ["/api/desktop", "GET"],          // weekly write-up + start-at-login state
+  ["/api/screens/click", "POST"],   // not confirmed -> refused, nothing clicks
+  ["/api/desktop", "GET"],         // weekly write-up + start-at-login state
   ["/api/desktop/weekly", "POST"],  // empty body -> schedule unchanged (stays off)
   ["/api/desktop/autostart", "POST"], // empty body -> off: removes nothing outside the isolated HOME
 ];
