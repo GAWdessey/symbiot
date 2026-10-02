@@ -145,6 +145,10 @@ const calls = [
   ["/api/pending/approve", "POST"], // no repo -> "nothing awaiting review", no git runs
   ["/api/pending/sendback", "POST"],
   ["/api/automerge", "POST"],       // per-repo auto-merge opt-in toggle
+  ["/api/agents/answer", "POST"],   // no path -> "no agent has run there", nothing written
+  ["/api/mail", "GET"],             // detected mail sources (isolated HOME -> none)
+  ["/api/mail/set", "POST"],        // empty body -> nothing changes
+  ["/api/mail/preview?days=7", "GET"],
 ];
 // Endpoints never hit here, and why. Anything else the UI calls must be covered.
 const NOT_HIT = { "/api/update": "runs a real global npm install", "/api/quit": "hit last, below" };
