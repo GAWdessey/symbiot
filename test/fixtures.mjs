@@ -9,9 +9,10 @@ import { mkdtempSync, writeFileSync, mkdirSync, rmSync, readFileSync, existsSync
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { authorship, repoState, readmeInfo, houseRules, findAllRepos, driftRepo, buildTasksMd, taskType, EMBEDDED_UI, orcaHandoffCmd, migrateOrcaCmd, fillHandoff, ORCA_CLAUDE_CMD, CLAUDE_CMD, HANDOFF_PROMPT, shipChanges, semverGt, updateCmd, parseQuestions, unreleased } from "../index.mjs";
+import { authorship, repoState, readmeInfo, houseRules, findAllRepos, driftRepo, buildTasksMd, taskType, EMBEDDED_UI, orcaHandoffCmd, migrateOrcaCmd, fillHandoff, ORCA_CLAUDE_CMD, CLAUDE_CMD, HANDOFF_PROMPT, shipChanges, shipWithBump, bumpOffer, semverGt, updateCmd, parseQuestions, unreleased } from "../index.mjs";
 import { mailActivity } from "../mail.mjs";
-import { pngSize, captureCmds, clickCmds, portalAppId } from "../screens.mjs";
+import { pngSize, pngDecode, splitPng, captureCmds, clickCmds, portalAppId, monitorCmds, parseCosmicRandr, parseWlrRandr, parseKscreen, parseXrandr, parseLines, tidyMonitors, monitorAreas } from "../screens.mjs";
+import { deflateSync } from "node:zlib";
 import { weeklyDue, lastSlot, autostartContent, notifyCmd } from "../desktop.mjs";
 
 const INDEX = join(dirname(fileURLToPath(import.meta.url)), "..", "index.mjs");
@@ -392,6 +393,28 @@ try {
   ok("changes that bump package.json's version say what to tag", ur2 && ur2.bump === "1.1.0", ur2);
   ok("a repo with no v* tags isn't warned about", unreleased(plain) === null, unreleased(plain));
 
+  console.log("RELEASE — Approve can bump the version in the PR itself");
+  const bmp = build("release-bump", `git init -q -b main && git config user.email t@x.co && git config user.name T
+    printf '{\\n    "name": "x",\\n    "version": "2.3.4"\\n}\\n' > package.json
+    printf '{\\n  "name": "x",\\n  "version": "2.3.4",\\n  "lockfileVersion": 3,\\n  "packages": {\\n    "": {\\n      "name": "x",\\n      "version": "2.3.4"\\n    },\\n    "node_modules/y": {\\n      "version": "2.3.4"\\n    }\\n  }\\n}\\n' > package-lock.json
+    git add . && git commit -qm init && git tag v2.3.4`);
+  const bEnv = { cwd: bmp, env: gitEnv, encoding: "utf8" };
+  const bof = bumpOffer(bmp);
+  ok("offered when the committed version is released (its v* tag exists): patch and minor", bof && bof.version === "2.3.4" && bof.patch === "2.3.5" && bof.minor === "2.4.0", bof);
+  ok("not offered when the changes already bump it, or there's no package.json", bumpOffer(rel) === null && bumpOffer(plain) === null, [bumpOffer(rel), bumpOffer(plain)]);
+  writeFileSync(join(bmp, "a.txt"), "feature\n");
+  const bkp = shipWithBump(bmp, ["Add a feature"], { push: false, bump: "" });
+  ok("no bump asked: shipped as it was", bkp.ok && !bkp.bumped && /"2\.3\.4"/.test(execSync("git show HEAD:package.json", bEnv)), bkp);
+  execSync("git checkout -q main", bEnv); writeFileSync(join(bmp, "b.txt"), "fix\n");
+  const bsh = shipWithBump(bmp, ["Fix a thing"], { push: false, bump: "minor" });
+  const bPkg = execSync("git show HEAD:package.json", bEnv), bLock = JSON.parse(execSync("git show HEAD:package-lock.json", bEnv)), bMsg = execSync("git log -1 --format=%B", bEnv);
+  ok("bump: package.json gets the new version, in its own indent, in the same commit", bsh.ok && bsh.bumped === "2.4.0" && bPkg === '{\n    "name": "x",\n    "version": "2.4.0"\n}\n', [bsh, bPkg]);
+  ok("bump: the lockfile's own version follows; a dependency's doesn't", bLock.version === "2.4.0" && bLock.packages[""].version === "2.4.0" && bLock.packages["node_modules/y"].version === "2.3.4", bLock);
+  ok("bump: the commit (and PR) say which tag to push after merging", /Bumps the version to 2\.4\.0\. After this merges, tag v2\.4\.0 on main/.test(bMsg), bMsg);
+  execSync("git checkout -q main && git merge -q --ff-only " + bsh.branch + " && git tag v2.4.0 && git checkout -q --detach", bEnv); writeFileSync(join(bmp, "c.txt"), "more\n");
+  const bfl = shipWithBump(bmp, ["Fails"], { push: false, bump: "patch" });
+  ok("a ship that fails puts the version back", bfl.error && /Detached HEAD/.test(bfl.error) && /"2\.4\.0"/.test(readFileSync(join(bmp, "package.json"), "utf8")) && /"2\.4\.0"/.test(readFileSync(join(bmp, "package-lock.json"), "utf8")), [bfl, readFileSync(join(bmp, "package.json"), "utf8")]);
+
   console.log("QUESTIONS — any agent's .symbiot/QUESTIONS.md parses into questions, options and ideas");
   const pq = parseQuestions("# Questions for you\n\n## Questions\n### Keep the old config format?\nReading both costs ~40 lines.\n- Yes, read both (recommended)\n- No, migrate once\n\n### Which port?\n1. 7391\n2. random\n\n## Suggestions\n- Add a --json flag to drift\n- [ ] Cache the map scan\n");
   ok("two questions, in order", pq.questions.length === 2 && pq.questions[0].q === "Keep the old config format?" && pq.questions[1].q === "Which port?", pq.questions);
@@ -458,6 +481,77 @@ try {
   const winCap = captureCmds("C:\\t\\a.png", "win32")[0], winCapPs = Buffer.from(winCap[1].at(-1), "base64").toString("utf16le");
   ok("captureCmds: Windows capture is DPI-aware too, so its pixels are the ones a click uses", winCap[0] === "powershell" && /SetProcessDPIAware/.test(winCapPs) && winCapPs.includes("Save('C:\\t\\a.png'"), winCapPs);
   ok("clickCmds: a coordinate is always a whole number (it goes into a script)", clickCmds("1;rm", 2.6, "win32").length === 1 && /\$b\.Left \+ 0, \$b\.Top \+ 3\)/.test(Buffer.from(clickCmds("1;rm", 2.6, "win32")[0][0][1].at(-1), "base64").toString("utf16le")), "");
+  ok("captureCmds: macOS can take one display (-D), the main one by default", captureCmds("/t/a.png", "darwin", false, 2)[0][1].join(" ") === "-x -D 2 -t png /t/a.png" && !captureCmds("/t/a.png", "darwin")[0][1].includes("-D"), captureCmds("/t/a.png", "darwin", false, 2));
+  ok("clickCmds: cliclick gets =-N for a display left of or above the main one (plain -N is relative)", JSON.stringify(clickCmds(-300, -20, "darwin")) === '[[["cliclick",["c:=-300,=-20"]]]]', clickCmds(-300, -20, "darwin"));
+
+  console.log("SCREENS — several displays: where each one is, and one screen per display");
+  const cosmic = `output "eDP-1" enabled=#true {\n  description model=""\n  position 1600 0\n  scale 1.00\n  transform "normal"\n  modes {\n    mode 1920 1080 59999 current=#true preferred=#true\n    mode 1920 1080 40000\n  }\n}\noutput "HDMI-A-1" enabled=#true {\n  description make="Lenovo Group Limited" model="E20-30"\n  position 0 0\n  scale 1.00\n  transform "normal"\n  modes {\n    mode 1600 900 60000 current=#true preferred=#true\n    mode 1440 900 70005\n  }\n}\noutput "DP-2" enabled=#false {\n  position 0 0\n  modes {\n    mode 800 600 60000 current=#true\n  }\n}\n`;
+  const cm = parseCosmicRandr(cosmic);
+  ok("cosmic-randr: enabled displays, their place and current mode (a disabled one is left out)", JSON.stringify(cm.map((m) => [m.name, m.x, m.y, m.w, m.h])) === '[["eDP-1",1600,0,1920,1080],["HDMI-A-1",0,0,1600,900]]' && cm[1].model === "Lenovo Group Limited E20-30", cm);
+  const cs = parseCosmicRandr(`output "DP-1" enabled=#true {\n  position 0 0\n  scale 1.50\n  transform "rotate90"\n  modes {\n    mode 3840 2160 60000 current=#true\n  }\n}\n`);
+  ok("cosmic-randr: a scaled, rotated display is its logical size, turned", JSON.stringify(cs.map((m) => [m.w, m.h])) === "[[1440,2560]]", cs);
+  const wl = parseWlrRandr(JSON.stringify([{ name: "DP-1", make: "Dell", model: "U2720Q", enabled: true, position: { x: 0, y: 0 }, scale: 2, transform: "normal", modes: [{ width: 3840, height: 2160, current: true }] }, { name: "HDMI-A-1", enabled: false, position: { x: 1920, y: 0 }, modes: [{ width: 1920, height: 1080, current: true }] }]));
+  ok("wlr-randr --json: logical size (mode / scale); a disabled output is left out", JSON.stringify(wl) === '[{"name":"DP-1","model":"Dell U2720Q","x":0,"y":0,"w":1920,"h":1080}]', wl);
+  const kd = parseKscreen(JSON.stringify({ outputs: [{ name: "eDP-1", enabled: true, connected: true, pos: { x: 0, y: 0 }, scale: 1.25, rotation: 1, currentModeId: "2", modes: [{ id: "1", size: { width: 1280, height: 720 } }, { id: "2", size: { width: 2560, height: 1600 } }] }] }));
+  ok("kscreen-doctor -j: the current mode, scaled", JSON.stringify(kd.map((m) => [m.name, m.w, m.h])) === '[["eDP-1",2048,1280]]', kd);
+  const xr = parseXrandr("Monitors: 2\n 0: +*HDMI-A-1 1600/440x900/250+0+0  HDMI-A-1\n 1: +eDP-1 1920/340x1080/190+1600+0  eDP-1\n");
+  ok("xrandr --listmonitors: each monitor's size and offset", JSON.stringify(xr.map((m) => [m.name, m.x, m.y, m.w, m.h])) === '[["HDMI-A-1",0,0,1600,900],["eDP-1",1600,0,1920,1080]]', xr);
+  const wn = parseLines("\\\\.\\DISPLAY1|0|0|1920|1080\r\n\\\\.\\DISPLAY2|1920|120|2560|1440\r\n");
+  ok("Windows/macOS lines: name|x|y|w|h, numbered for screencapture -D", JSON.stringify(wn.map((m) => [m.name, m.x, m.y, m.w, m.h, m.display])) === '[["DISPLAY1",0,0,1920,1080,1],["DISPLAY2",1920,120,2560,1440,2]]', wn);
+  ok("monitorCmds: Wayland asks cosmic-randr, wlr-randr, kscreen-doctor, then xrandr; X11 xrandr", monitorCmds("linux", true).map((c) => c[0]).join(",") === "cosmic-randr,wlr-randr,kscreen-doctor,xrandr" && monitorCmds("linux", false).map((c) => c[0]).join(",") === "xrandr" && monitorCmds("win32")[0][0] === "powershell" && monitorCmds("darwin")[0][0] === "osascript", monitorCmds("linux", true).map((c) => c[0]));
+  const tm = tidyMonitors(cm);
+  ok("tidyMonitors: left to right, and which side each is on", JSON.stringify(tm.map((m) => m.name + ":" + m.where)) === '["HDMI-A-1:left","eDP-1:right"]', tm);
+  const tv = tidyMonitors([{ name: "B", x: 0, y: 1080, w: 1920, h: 1080 }, { name: "A", x: 0, y: 0, w: 1920, h: 1080 }, { name: "M", x: 0, y: 0, w: 1920, h: 1080 }, { name: "", x: 0, y: 0, w: 9, h: 9 }]);
+  ok("tidyMonitors: stacked displays are top/bottom; a mirrored pair is one display; nameless is dropped", JSON.stringify(tv.map((m) => m.name + ":" + m.where)) === '["A+M:top","B:bottom"]', tv);
+  const tri = tidyMonitors([{ name: "C", x: 3840, y: 0, w: 1920, h: 1080 }, { name: "A", x: 0, y: 0, w: 1920, h: 1080 }, { name: "B", x: 1920, y: 0, w: 1920, h: 1080 }]);
+  ok("tidyMonitors: three in a row are left, middle, right", tri.map((m) => m.where).join(",") === "left,middle,right", tri);
+  const ar = monitorAreas(tm, 3520, 1080);
+  ok("monitorAreas: each display's rectangle in a whole-desktop screenshot", ar && JSON.stringify(ar.map((a) => a.area)) === '[{"x":0,"y":0,"w":1600,"h":900},{"x":1600,"y":0,"w":1920,"h":1080}]', ar);
+  const ar2 = monitorAreas(tm, 7040, 2160);
+  ok("monitorAreas: a HiDPI capture (twice the layout) is scaled to fit", ar2 && JSON.stringify(ar2[1].area) === '{"x":3200,"y":0,"w":3840,"h":2160}', ar2);
+  ok("monitorAreas: an image that isn't this layout (one display, or another setup) gives null", monitorAreas(tm, 1920, 1080) === null && monitorAreas(tm, 3520, 1440) === null && monitorAreas([tm[0]], 1600, 900) === null, "");
+  // A real RGBA PNG whose pixel (x, y) is [x, y, x+y, 255], each row with one of
+  // PNG's five filters in turn, so decoding undoes all of them.
+  const realPng = (w, h) => {
+    const st = w * 4, px = Buffer.alloc(st * h), out = Buffer.alloc((st + 1) * h);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) px.set([x, y, (x + y) & 255, 255], y * st + x * 4);
+    const pa = (a, b, c) => { const p = a + b - c, q = Math.abs(p - a), r = Math.abs(p - b), s = Math.abs(p - c); return q <= r && q <= s ? a : r <= s ? b : c; };
+    for (let y = 0; y < h; y++) { const f = y % 5, o = y * st; out[y * (st + 1)] = f;
+      for (let i = 0; i < st; i++) { const a = i >= 4 ? px[o + i - 4] : 0, b = y ? px[o - st + i] : 0, c = y && i >= 4 ? px[o - st + i - 4] : 0;
+        out[y * (st + 1) + 1 + i] = (px[o + i] - [0, a, b, (a + b) >> 1, pa(a, b, c)][f]) & 255; } }
+    const chunk = (t, d) => { const b = Buffer.alloc(12 + d.length); b.writeUInt32BE(d.length, 0); b.write(t, 4, "ascii"); d.copy(b, 8); return b; };
+    const ihdr = Buffer.alloc(13); ihdr.writeUInt32BE(w, 0); ihdr.writeUInt32BE(h, 4); ihdr[8] = 8; ihdr[9] = 6;
+    return Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), chunk("IHDR", ihdr), chunk("IDAT", deflateSync(out)), chunk("IEND", Buffer.alloc(0))]);
+  };
+  const big = realPng(8, 6), parts = splitPng(big, [{ x: 0, y: 0, w: 3, h: 6 }, { x: 3, y: 1, w: 5, h: 5 }]);
+  const pixAt = (img, x, y) => [...img.px.subarray((y * img.w + x) * 4, (y * img.w + x) * 4 + 4)].join(",");
+  const d0 = parts && pngDecode(parts[0]), d1 = parts && pngDecode(parts[1]);
+  ok("splitPng: each piece is a PNG of its own size", d0 && d1 && d0.w === 3 && d0.h === 6 && d1.w === 5 && d1.h === 5, [d0 && [d0.w, d0.h], d1 && [d1.w, d1.h]]);
+  ok("splitPng: every row filter decodes, and each piece has the right pixels", d0 && d1 && pixAt(d0, 2, 5) === "2,5,7,255" && pixAt(d1, 0, 0) === "3,1,4,255" && pixAt(d1, 4, 4) === "7,5,12,255" && pixAt(pngDecode(big), 6, 4) === "6,4,10,255", d1 && [pixAt(d1, 0, 0), pixAt(d1, 4, 4)]);
+  ok("splitPng: pieces end with a valid IEND chunk (CRC included)", parts && parts[1].subarray(-12).toString("hex") === "0000000049454e44ae426082", parts && parts[1].subarray(-12).toString("hex"));
+  ok("splitPng: a rectangle outside the image, or a header-only PNG, gives null", splitPng(big, [{ x: 4, y: 0, w: 5, h: 6 }]) === null && splitPng(png(10, 10), [{ x: 0, y: 0, w: 1, h: 1 }]) === null, "");
+  if (process.platform === "linux") {
+    // a stand-in xrandr: display A (3x6) left of B (5x6), the layout of realPng(8, 6)
+    const xhome = join(ROOT, "xhome"), xbin = join(ROOT, "xbin"); mkdirSync(xhome, { recursive: true }); mkdirSync(xbin, { recursive: true });
+    writeFileSync(join(xbin, "xrandr"), "#!/bin/sh\ncat <<'EOF'\nMonitors: 2\n 0: +*A 3/10x6/10+0+0  A\n 1: +B 5/10x6/10+3+0  B\nEOF\n", { mode: 0o755 });
+    const sx = spawnSync(process.execPath, ["--input-type=module", "-e", `
+      import * as s from ${JSON.stringify(join(dirname(INDEX), "screens.mjs"))};
+      const out = {};
+      const a = s.importScreen("desk", ${JSON.stringify(big.toString("base64"))});
+      s.setRegions(a.id, [{ label: "on B", x: 4, y: 1, w: 2, h: 2 }, { label: "on A", x: 0, y: 0, w: 2, h: 2 }]);
+      out.split = s.splitScreen(a.id); out.again = out.split.screens && s.splitScreen(out.split.screens[0].id);
+      out.bp = out.split.screens && s.blueprint(out.split.screens[1]);
+      out.kept = s.loadScreens().some((x) => x.id === a.id); out.count = s.loadScreens().length;
+      out.nope = s.captureScreen("x", "no-such-display");
+      console.log(JSON.stringify(out));`], { encoding: "utf8", env: { ...process.env, HOME: xhome, USERPROFILE: xhome, PATH: xbin + ":" + process.env.PATH, XDG_SESSION_TYPE: "x11" } });
+    let sx2 = {}; try { sx2 = JSON.parse(sx.stdout); } catch {}
+    const [pa, pb] = (sx2.split && sx2.split.screens) || [];
+    ok("splitScreen: one screen per display, left first, named after it", pa && pb && pa.w === 3 && pb.w === 5 && pb.h === 6 && /· A \(left\)$/.test(pa.name) && /· B \(right\)$/.test(pb.name) && pb.monitor.name === "B" && pb.monitor.x === 3, sx2.split || sx.stderr);
+    ok("splitScreen: each region goes with its display, in that display's pixels", pa && pb && pa.regions.map((r) => r.label).join() === "on A" && pb.regions.length === 1 && pb.regions[0].x === 1 && pb.regions[0].y === 1, [pa && pa.regions, pb && pb.regions]);
+    ok("blueprint: a display's region also gives its point on the whole desktop", sx2.bp && JSON.stringify(sx2.bp.regions[0].center) === '{"x":2,"y":2}' && JSON.stringify(sx2.bp.regions[0].desktop) === '{"x":5,"y":2}' && sx2.bp.monitor.name === "B", sx2.bp);
+    ok("splitScreen: the whole image stays; a display's screen can't be split again", sx2.kept && sx2.count === 3 && /already one display/.test((sx2.again || {}).error || ""), sx2);
+    ok("captureScreen: a display that isn't connected is refused before anything is captured", /no display called no-such-display/.test((sx2.nope || {}).error || ""), sx2.nope);
+  }
   console.log("SCREENS — the app the screenshot portal checks permission for");
   ok("portalAppId: started from the COSMIC dock", portalAppId("0::/user.slice/user-1000.slice/user@1000.service/app.slice/app-cosmic-com.system76.CosmicAppList-4431.scope\n") === "com.system76.CosmicAppList", portalAppId("0::/a/app-cosmic-com.system76.CosmicAppList-4431.scope"));
   ok("portalAppId: a launcher-less scope and a service", portalAppId("0::/x/app-org.gnome.Terminal-12.scope") === "org.gnome.Terminal" && portalAppId("0::/x/app-gnome-org.example.App@3.service") === "org.example.App", [portalAppId("0::/x/app-org.gnome.Terminal-12.scope"), portalAppId("0::/x/app-gnome-org.example.App@3.service")]);

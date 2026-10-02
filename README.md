@@ -146,6 +146,13 @@ size of the uncommitted change and a **Show diff** button. For each repo:
 
 Tasks waiting for review aren't re-sent to the agent.
 
+**Releases.** For a repo that releases with `v*` tags, the review card warns when
+the default branch is past its last tag (merged work that isn't released). If
+`package.json`'s version is already released and the changes don't touch it, a
+**Version** picker next to Approve bumps it in the same PR: a patch by default, or a
+minor, or keep it. It updates `package.json` and the lockfile's own version, and the
+PR says which tag to push once it merges.
+
 If a repo you sent tasks to has uncommitted changes but no ticked task (say the
 agent made a fix and didn't tick anything), it still shows up here, with
 **Approve changes without a task → PR**. That ships the changes the same way, on
@@ -410,6 +417,18 @@ in the screenshot's own pixels, plus its **centre**, the point a click would aim
 **Copy blueprint** copies them as JSON; everything is also saved in
 `~/.config/symbiot/screens/screens.json` (next to each screen's PNG), where an
 agent or script can read it.
+
+**More than one display?** Symbiot reads how your displays are laid out
+(`cosmic-randr`, `wlr-randr`, `kscreen-doctor` or `xrandr` on Linux, PowerShell on
+Windows, AppKit on macOS) and a picker appears next to Capture: **each display**
+(one screen per display, named after it, e.g. "PR page · HDMI-1 (left)"), **one
+display only**, or **all displays in one image**. The choice is remembered. A
+screenshot you already took of the whole desktop has **Split by display**, which
+cuts it up the same way and moves each region onto the display it's on (the whole
+image stays). A display's screen remembers where that display sits, so **Click
+here** lands on the right display, and its blueprint gives each region's point on
+the whole desktop too (`desktop`). If the screenshot doesn't match the layout (say
+a display was plugged in since), Symbiot keeps it whole and says why.
 
 **Click here** on a region moves your mouse to the region's centre and clicks there,
 on your real screen. It asks you to confirm every time, and can wait 3, 5 or 10
