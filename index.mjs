@@ -763,7 +763,7 @@ const escDq = (s) => String(s).replace(/[\\"$`]/g, "\\$&");
 // Plain words only: in the Orca preset this passes through two shells, so no
 // backticks or $ (escDq covers one level).
 const HANDOFF_PROMPT = "Read .symbiot/TASKS.md and implement the unchecked items in this repo. Tick each item [x] in that file as you finish it and leave your changes uncommitted, so they can be reviewed and approved. If you need a decision, or have ideas or options for the user, write them to .symbiot/QUESTIONS.md as TASKS.md explains, and read .symbiot/ANSWERS.md first if it exists. Confirm before anything destructive.";
-function handoffCmd() { const cfg = loadConfig(); return migrateOrcaCmd(cfg.agentCmd) || (cfg.ide ? `${cfg.ide} {dir}` : ""); } // ide = legacy
+function handoffCmd() { const cfg = loadConfig(); return migrateOrcaCmd(migrateClaudeCmd(cfg.agentCmd)) || (cfg.ide ? `${cfg.ide} {dir}` : ""); } // ide = legacy
 // Save the template ("" clears it). Either way the legacy `ide` key goes.
 function setHandoffCmd(cmd) {
   const cfg = loadConfig(); const v = String(cmd || "").trim();
@@ -782,8 +782,13 @@ const IDE_LIST = [["code", "VS Code", "Visual Studio Code"], ["cursor", "Cursor"
 // [cmd, label, template]. Only agents that leave changes to review: a handoff
 // runs unattended, so a "plan only" run can't ask anything and leaves nothing to
 // approve — that preset was dropped (a saved one still runs as-is).
+// Claude: acceptEdits alone still blocks every shell command, so a run could
+// never run its own tests and had to leave test work unticked. Allow just the
+// test runner and node.
+const CLAUDE_CMD = 'claude -p "{prompt}" --permission-mode acceptEdits --allowedTools "Bash(npm test:*)" "Bash(node:*)"';
+const CLAUDE_CMD_OLD = 'claude -p "{prompt}" --permission-mode acceptEdits'; // ≤0.33
 const AGENT_LIST = [
-  ["claude", "Claude Code — make changes", 'claude -p "{prompt}" --permission-mode acceptEdits'],
+  ["claude", "Claude Code — make changes", CLAUDE_CMD],
   ["codex", "Codex (OpenAI/GPT) — make changes", 'codex exec --full-auto "{prompt}"'],
   ["aider", "Aider — make changes", 'aider --message "{prompt}" --yes'],
   ["gemini", "Gemini — make changes", 'gemini --yolo -p "{prompt}"'],
@@ -844,6 +849,13 @@ function migrateOrcaCmd(cmd) {
   const rebuilt = bin ? orcaHandoffCmd(bin, commandPart) : cmd;
   if (rebuilt !== cmd) { try { const cfg = loadConfig(); if (cfg.agentCmd === cmd) { cfg.agentCmd = rebuilt; saveConfig(cfg); } } catch {} }
   return rebuilt;
+}
+// Upgrade a saved Claude preset from ≤0.33 to the current one. Exact match only:
+// a command the user edited is theirs and runs as-is.
+function migrateClaudeCmd(cmd) {
+  if (typeof cmd !== "string" || cmd.trim() !== CLAUDE_CMD_OLD) return cmd;
+  try { const cfg = loadConfig(); if (cfg.agentCmd === cmd) { cfg.agentCmd = CLAUDE_CMD; saveConfig(cfg); } } catch {}
+  return CLAUDE_CMD;
 }
 // Cross-platform detection for the presets (and gh / the app's browser).
 // "Is this command available?": command -v on posix, where on win.
@@ -1978,4 +1990,4 @@ const isMain = (() => {
 })();
 if (isMain) main();
 
-export { authorship, repoState, readmeInfo, repoShape, houseRules, findAllRepos, buildMap, reportFooter, detectHardware, recommendModels, computeDrift, driftRepo, gitDefaultBranch, buildTasksMd, taskType, EMBEDDED_UI, orcaHandoffCmd, migrateOrcaCmd, fillHandoff, handoffCmd, setHandoffCmd, ORCA_CLAUDE_CMD, HANDOFF_PROMPT, shipChanges, syncTasks, pendingReview, approveRepo, sendBack, pushTasks, semverGt, updateCmd, parseQuestions, agentQuestions };
+export { authorship, repoState, readmeInfo, repoShape, houseRules, findAllRepos, buildMap, reportFooter, detectHardware, recommendModels, computeDrift, driftRepo, gitDefaultBranch, buildTasksMd, taskType, EMBEDDED_UI, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, fillHandoff, handoffCmd, setHandoffCmd, ORCA_CLAUDE_CMD, CLAUDE_CMD, HANDOFF_PROMPT, shipChanges, syncTasks, pendingReview, approveRepo, sendBack, pushTasks, semverGt, updateCmd, parseQuestions, agentQuestions };

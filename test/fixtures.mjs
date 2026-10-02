@@ -9,7 +9,7 @@ import { mkdtempSync, writeFileSync, mkdirSync, rmSync, readFileSync, existsSync
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { authorship, repoState, readmeInfo, houseRules, findAllRepos, driftRepo, buildTasksMd, taskType, EMBEDDED_UI, orcaHandoffCmd, migrateOrcaCmd, fillHandoff, ORCA_CLAUDE_CMD, HANDOFF_PROMPT, shipChanges, semverGt, updateCmd, parseQuestions } from "../index.mjs";
+import { authorship, repoState, readmeInfo, houseRules, findAllRepos, driftRepo, buildTasksMd, taskType, EMBEDDED_UI, orcaHandoffCmd, migrateOrcaCmd, fillHandoff, ORCA_CLAUDE_CMD, CLAUDE_CMD, HANDOFF_PROMPT, shipChanges, semverGt, updateCmd, parseQuestions } from "../index.mjs";
 import { mailActivity } from "../mail.mjs";
 
 const INDEX = join(dirname(fileURLToPath(import.meta.url)), "..", "index.mjs");
@@ -191,11 +191,21 @@ try {
     const out = { legacy: m.handoffCmd() };
     out.saved = m.setHandoffCmd("  zed {dir}  "); out.afterSave = m.handoffCmd();
     out.cleared = m.setHandoffCmd(""); out.afterClear = m.handoffCmd();
+    m.setHandoffCmd('claude -p "{prompt}" --permission-mode acceptEdits'); out.oldClaude = m.handoffCmd();
+    out.oldClaudeSaved = JSON.parse((await import("node:fs")).readFileSync(${JSON.stringify(join(hhome, ".config", "symbiot", "config.json"))}, "utf8")).agentCmd;
+    m.setHandoffCmd('claude -p "{prompt}" --permission-mode acceptEdits --model opus'); out.editedClaude = m.handoffCmd();
     console.log(JSON.stringify(out));`], { encoding: "utf8", env: { ...process.env, HOME: hhome, USERPROFILE: hhome } });
   let h = {}; try { h = JSON.parse(hs.stdout.trim().split("\n").pop()); } catch { console.log(hs.stdout, hs.stderr); }
   ok("a legacy `ide` setting still hands off", h.legacy === "code {dir}", h.legacy);
   ok("saving trims and is what runs", h.saved && h.saved.ok && h.saved.cmd === "zed {dir}" && h.afterSave === "zed {dir}", h);
   ok("clearing leaves no handoff (and the legacy `ide` is gone)", h.cleared && h.cleared.cmd === "" && h.afterClear === "", h);
+  ok("a saved ≤0.33 Claude preset upgrades to the one that can run tests", h.oldClaude === CLAUDE_CMD && h.oldClaudeSaved === CLAUDE_CMD && /--allowedTools/.test(CLAUDE_CMD), h);
+  ok("an edited Claude command is left as-is", h.editedClaude === 'claude -p "{prompt}" --permission-mode acceptEdits --model opus', h.editedClaude);
+  // the fake claude (above) records argc and $1: the prompt + flag + mode + flag + 2 tools
+  rmSync(got, { force: true });
+  execSync(fillHandoff(CLAUDE_CMD, fake), { shell: "/bin/bash", stdio: "ignore", env: { ...process.env, PATH: fake + ":" + process.env.PATH } });
+  const [cargc, carg1] = readFileSync(got, "utf8").split("\n");
+  ok("the Claude preset keeps the prompt and each tool rule as ONE argument", cargc === "7" && carg1 === "-p", [cargc, carg1]);
 
   console.log("APPROVE — approved work ships: branch off the default, commit (minus .symbiot/), push");
   const gitEnv = { ...process.env, GIT_CONFIG_GLOBAL: join(ROOT, "globalgitconfig"), GIT_CONFIG_SYSTEM: "/dev/null", GIT_TERMINAL_PROMPT: "0" };

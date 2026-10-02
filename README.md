@@ -133,7 +133,7 @@ a template — `{dir}` is the repo path, `{prompt}` is the instruction to read
 `TASKS.md` — so it works with any agent or editor:
 
 ```
-claude -p "{prompt}" --permission-mode acceptEdits
+claude -p "{prompt}" --permission-mode acceptEdits --allowedTools "Bash(npm test:*)" "Bash(node:*)"
 aider --message "{prompt}" --yes
 code {dir}
 ```
@@ -142,7 +142,9 @@ Settings shows **one-click presets** for what's installed on your machine. A
 preset only fills in the command box; the saved command is what runs.
 
 - **Agents** (all make changes, ready for your review): Claude Code, Codex
-  (OpenAI), Aider, Cursor agent, Gemini CLI.
+  (OpenAI), Aider, Cursor agent, Gemini CLI. The Claude preset may also run
+  `npm test` and `node`, so it can check its own work; a command saved from the
+  older preset is upgraded automatically, and an edited one is left alone.
 - **Orca IDE** (any OS): opens the repo in Orca — either just the repo, to use
   Orca's own agent, or with Claude running in a new tab. It launches Orca if it's
   closed and waits for it to be ready first.
