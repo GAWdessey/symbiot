@@ -30,7 +30,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { EMBEDDED_UI } from "./ui.mjs";
 import { detectMailSources, mailActivity } from "./mail.mjs";
 import { CONFIG_PATH, loadConfig, saveConfig, loadTasks, saveTasks, sh, hasCmd, repoState } from "./core.mjs";
-import { HANDOFF_PROMPT, QUESTIONS_MAX, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, fillHandoff, runHandoff, writeTasks, startHeldTasks, detectHandoffs, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, parseQuestions, agentQuestions, answerQuestions, agentsList } from "./agents.mjs";
+import { HANDOFF_PROMPT, QUESTIONS_MAX, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, fillHandoff, runHandoff, runningHandoff, writeTasks, startHeldTasks, detectHandoffs, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, parseQuestions, agentQuestions, answerQuestions, agentsList } from "./agents.mjs";
 import { gitDefaultBranch, loadDeploys, driftRepo } from "./drift.mjs";
 import { loadScreens, screenImage, captureScreen, importScreen, setRegions, renameScreen, removeScreen, blueprint, clickRegion } from "./screens.mjs";
 import { weeklyState, setWeekly, runWeekly, startWeekly, autostartState, setAutostart } from "./desktop.mjs";
@@ -165,18 +165,21 @@ function workingDiff(path, cap = 400000) {
 }
 // Repos with tasks awaiting review, plus repos Symbiot sent tasks to that have
 // uncommitted changes no ticked task covers (untasked: approve them as-is).
+// running: an agent is still editing there, so its changes may be half done.
 function pendingReview() {
   const t = loadTasks(), by = {}; for (const x of t) if (x.review && !x.done && !x.archived) (by[x.repo] = by[x.repo] || []).push(x);
   const sent = [...new Set(t.filter((x) => x.repo && !x.archived && !by[x.repo]).map((x) => x.repo))];
   const map = Object.keys(by).length || sent.length ? repoPathMap() : {};
   const am = autoMergeRepos();
-  const out = Object.keys(by).sort().map((repo) => { const path = map[repo] || ""; return { repo, path, tasks: by[repo], autoMerge: am.includes(repo), ...(path ? workingChanges(path) : { branch: "", files: [], stat: "" }) }; });
+  const out = Object.keys(by).sort().map((repo) => { const path = map[repo] || ""; return { repo, path, tasks: by[repo], autoMerge: am.includes(repo), running: !!(path && runningHandoff(path)), ...(path ? workingChanges(path) : { branch: "", files: [], stat: "" }) }; });
   for (const repo of sent.sort()) {
     const path = map[repo]; if (!path || !existsSync(join(path, ".symbiot", "TASKS.md"))) continue;
-    const wc = workingChanges(path); if (wc.files.length) out.push({ repo, path, tasks: [], untasked: true, autoMerge: am.includes(repo), ...wc });
+    const wc = workingChanges(path); if (wc.files.length) out.push({ repo, path, tasks: [], untasked: true, autoMerge: am.includes(repo), running: !!runningHandoff(path), ...wc });
   }
   return out;
 }
+// Approving while the agent is still editing would commit its half-done work.
+const stillWorking = (repo, path) => path && runningHandoff(path) ? { error: `The agent is still working in ${repo}. Approve once it finishes.`, running: true } : null;
 const branchSlug = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40).replace(/-+$/, "") || "tasks";
 // Sync approved work: off the default branch onto symbiot/<task>, commit the
 // working tree (minus .symbiot/), push, and open a PR with gh. Each step that
@@ -232,6 +235,7 @@ function approveRepo(repo, opts = {}) {
   const t = loadTasks(); const items = t.filter((x) => x.repo === repo && x.review && !x.done && !x.archived);
   if (!items.length) return { error: "Nothing awaiting review for " + (repo || "(no repo)") + "." };
   const path = repoPathMap()[repo]; if (!path) return { error: "Repo not found: " + repo };
+  const busy = stillWorking(repo, path); if (busy) return busy;
   const r = shipChanges(path, items.map((x) => x.text), { ...opts, autoMerge: opts.autoMerge !== undefined ? opts.autoMerge : autoMergeRepos().includes(repo) });
   if (r.error) return r;
   const now = Date.now();
@@ -245,6 +249,7 @@ function approveRepo(repo, opts = {}) {
 function approveChanges(repo, opts = {}) {
   if (loadTasks().some((x) => x.repo === repo && x.review && !x.done && !x.archived)) return approveRepo(repo, opts);
   const path = repoPathMap()[repo]; if (!path) return { error: "Repo not found: " + (repo || "(no repo)") };
+  const busy = stillWorking(repo, path); if (busy) return busy;
   if (!workingChanges(path).files.length) return { error: "No uncommitted changes in " + repo + "." };
   const r = shipChanges(path, [], { ...opts, autoMerge: opts.autoMerge !== undefined ? opts.autoMerge : autoMergeRepos().includes(repo) });
   return r.error ? r : { ...r, approved: 0 };

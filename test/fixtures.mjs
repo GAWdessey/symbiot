@@ -11,7 +11,7 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { authorship, repoState, readmeInfo, houseRules, findAllRepos, driftRepo, buildTasksMd, taskType, EMBEDDED_UI, orcaHandoffCmd, migrateOrcaCmd, fillHandoff, ORCA_CLAUDE_CMD, CLAUDE_CMD, HANDOFF_PROMPT, shipChanges, semverGt, updateCmd, parseQuestions } from "../index.mjs";
 import { mailActivity } from "../mail.mjs";
-import { pngSize, captureCmds } from "../screens.mjs";
+import { pngSize, captureCmds, clickCmds } from "../screens.mjs";
 import { weeklyDue, lastSlot, autostartContent, notifyCmd } from "../desktop.mjs";
 
 const INDEX = join(dirname(fileURLToPath(import.meta.url)), "..", "index.mjs");
@@ -323,8 +323,10 @@ try {
   execSync(`git init -q -b main && git config user.email ci@symbiot.test && git config user.name "Symbiot CI" && echo a > a.txt && git add . && git commit -qm init`, { cwd: proj, env: gitEnv });
   const cycle = `
     import * as m from ${JSON.stringify(INDEX)};
-    import { readFileSync, writeFileSync } from "node:fs";
+    import { readFileSync, writeFileSync, unlinkSync } from "node:fs";
     const f = ${JSON.stringify(join(proj, ".symbiot", "TASKS.md"))};
+    // an agent still running in the repo: its lock, with a live pid (this one)
+    const lock = f.replace("TASKS.md", "agent.pid"), busy = (fn) => { writeFileSync(lock, JSON.stringify({ pid: process.pid, startedAt: Date.now() })); try { return fn(); } finally { unlinkSync(lock); } };
     const tick = () => writeFileSync(f, readFileSync(f, "utf8").replace("- [ ] Fix the bug", "- [x] Fix the bug"));
     const tasks = () => JSON.parse(readFileSync(${JSON.stringify(join(home, ".config", "symbiot", "tasks.json"))}, "utf8"));
     const out = {};
@@ -336,11 +338,13 @@ try {
     out.repush = m.pushTasks();
     m.sendBack(out.afterTick.id); out.afterBack = tasks()[0]; out.md = readFileSync(f, "utf8");
     m.pushTasks(); tick(); m.syncTasks();
+    out.busy = busy(() => ({ pending: m.pendingReview(), approve: m.approveRepo("revapp", { push: false }), ac: m.approveChanges("revapp", { push: false }), head: readFileSync(${JSON.stringify(join(proj, ".git", "HEAD"))}, "utf8") }));
     out.approve = m.approveRepo("revapp", { push: false }); out.final = tasks()[0];
     // a change no ticked task covers, in a repo that still has an open task
     writeFileSync(${JSON.stringify(join(home, ".config", "symbiot", "tasks.json"))}, JSON.stringify([...tasks(), { id: "t2", text: "Open task", repo: "revapp", done: false, ts: 2 }]));
     writeFileSync(${JSON.stringify(join(proj, "b.txt"))}, "fix\\n");
     out.untasked = m.pendingReview();
+    out.busyUntasked = busy(() => ({ pending: m.pendingReview(), ac: m.approveChanges("revapp", { push: false }) }));
     out.ac = m.approveChanges("revapp", { push: false }); out.acTasks = tasks();
     out.acAgain = m.approveChanges("revapp", { push: false });
     // tasks held for an agent no Symbiot process is watching: the app's next check starts one
@@ -356,6 +360,9 @@ try {
   ok("pending shows the repo's uncommitted changes", o.pending && o.pending[0].repo === "revapp" && o.pending[0].files.some((x) => x.file === "a.txt") && /\+1/.test(o.pending[0].stat), o.pending);
   ok("tasks in review aren't re-sent to the agent", o.repush && o.repush.empty, o.repush);
   ok("send back reopens it and unticks TASKS.md", o.afterBack && !o.afterBack.review && !o.afterBack.done && /- \[ \] Fix the bug/.test(o.md), o.afterBack);
+  const ob = o.busy || {}, obu = o.busyUntasked || {};
+  ok("while the repo's agent still runs, its review card says so (and not once it's done)", ob.pending && ob.pending[0] && ob.pending[0].running === true && o.pending[0].running === false && obu.pending && obu.pending[0] && obu.pending[0].running === true && o.untasked[0].running === false, [ob.pending, obu.pending]);
+  ok("Approve and approve-without-a-task refuse while the agent still runs, nothing committed", ob.approve && ob.approve.running && /still working/.test(ob.approve.error) && ob.ac && ob.ac.running && obu.ac && obu.ac.running && /still working/.test(obu.ac.error) && /refs\/heads\/main/.test(ob.head || ""), [ob.approve, ob.ac, obu.ac, ob.head]);
   ok("approve commits on a branch, then archives with the commit", o.approve && o.approve.approved === 1 && /^symbiot\/fix-the-bug/.test(o.approve.branch) && o.final.archived && o.final.done && o.final.commit === o.approve.commit, o.approve);
   ok("untasked changes in a repo that got tasks show up for approval", o.untasked && o.untasked.length === 1 && o.untasked[0].untasked && o.untasked[0].tasks.length === 0 && o.untasked[0].files.some((x) => x.file === "b.txt"), o.untasked);
   const acMsg = o.ac && o.ac.commit ? execSync("git log -1 --format=%B " + o.ac.commit, { cwd: proj, encoding: "utf8", env: gitEnv }) : "";
@@ -419,6 +426,12 @@ try {
   ok("pngSize reads a PNG's width and height", JSON.stringify(pngSize(png(1920, 1080))) === '{"w":1920,"h":1080}', pngSize(png(1920, 1080)));
   ok("pngSize refuses what isn't a PNG", pngSize(Buffer.from("GIF89a not a png at all, really")) === null, "");
   ok("captureCmds: macOS uses screencapture, Linux tries several tools", captureCmds("/t/a.png", "darwin")[0][0] === "screencapture" && captureCmds("/t/a.png", "linux").map((c) => c[0]).includes("gnome-screenshot"), captureCmds("/t/a.png", "linux"));
+  const ck = (p, w, y1) => clickCmds(120, 60, p, w, y1).map((steps) => steps.map(([c, a]) => c + " " + a.join(" ")).join(" && "));
+  ok("clickCmds: cliclick on macOS, at the point", JSON.stringify(ck("darwin")) === '["cliclick c:120,60"]', ck("darwin"));
+  ok("clickCmds: X11 tries xdotool, then ydotool", JSON.stringify(ck("linux", false)) === '["xdotool mousemove --sync 120 60 click 1","ydotool mousemove 120 60 && ydotool click 1"]', ck("linux", false));
+  ok("clickCmds: Wayland skips xdotool (it only reaches X11 windows)", ck("linux", true).length === 1 && /^ydotool /.test(ck("linux", true)[0]), ck("linux", true));
+  ok("clickCmds: ydotool 1.x moves --absolute and clicks with a button code", ck("linux", true, true)[0] === "ydotool mousemove --absolute -x 120 -y 60 && ydotool click 0xC0", ck("linux", true, true));
+  ok("clickCmds: nothing on Windows yet", ck("win32").length === 0, ck("win32"));
   // isolated HOME: screens live in Symbiot's config folder
   const shome = join(ROOT, "shome"); mkdirSync(shome, { recursive: true });
   const sc = spawnSync(process.execPath, ["--input-type=module", "-e", `
@@ -431,6 +444,7 @@ try {
     out.reg = s.setRegions(a.id, [{ label: "Merge button", x: 100.4, y: 50, w: 40, h: 21 }, { label: "", x: 1900, y: 1070, w: 500, h: 500 }]);
     out.bp = s.blueprint(out.reg);
     out.traversal = s.screenImage("../../config");
+    out.clickNoScreen = s.clickRegion("000000000000", out.reg.regions[0].id); out.clickNoRegion = s.clickRegion(a.id, "nope"); // neither reaches a click tool
     out.rm = s.removeScreen(a.id); out.gone = !existsSync(${JSON.stringify(join(shome, ".config", "symbiot", "screens"))} + "/" + a.id + ".png") && s.loadScreens().length === 0;
     console.log(JSON.stringify(out));`], { encoding: "utf8", env: { ...process.env, HOME: shome, USERPROFILE: shome } });
   let so = {}; try { so = JSON.parse(sc.stdout); } catch {}
@@ -440,6 +454,7 @@ try {
   ok("regions are whole pixels; one past the edge is clamped to the image", sr0 && sr0.x === 100 && sr0.label === "Merge button" && sr1 && sr1.x + sr1.w === 1920 && sr1.y + sr1.h === 1080 && sr1.label === "region 2", so.reg);
   ok("the blueprint gives each region's centre", so.bp && JSON.stringify(so.bp.regions[0].center) === '{"x":120,"y":60}' && so.bp.size.w === 1920, so.bp);
   ok("an image request can't leave the screens folder", so.traversal === "", so.traversal);
+  ok("a click on a missing screen or region is refused before any tool runs", /not found/.test((so.clickNoScreen || {}).error || "") && /region is gone/.test((so.clickNoRegion || {}).error || ""), [so.clickNoScreen, so.clickNoRegion]);
   ok("removing a screen deletes its image too", so.rm && so.rm.ok && so.gone, so);
 
   console.log("DESKTOP — the weekly write-up's schedule, and start at login (from symbiot-desktop)");

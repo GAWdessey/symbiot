@@ -411,14 +411,22 @@ in the screenshot's own pixels, plus its **centre**, the point a click would aim
 `~/.config/symbiot/screens/screens.json` (next to each screen's PNG), where an
 agent or script can read it.
 
-Nothing clicks or types yet. This is the first slice: seeing the screen and mapping
-it. Capture uses the screenshot tool your system has: `screencapture` on macOS,
+**Click here** on a region moves your mouse to the region's centre and clicks there,
+on your real screen. It asks you to confirm every time, and can wait 3, 5 or 10
+seconds first so you can bring the right window to the front. It clicks with
+`cliclick` on macOS (`brew install cliclick`), and on Linux with `xdotool` on X11 or
+`ydotool` on Wayland (which needs access to `/dev/uinput`, and `ydotoold` running for
+ydotool 1.x). Windows can't click yet. Nothing types yet.
+
+Capture uses the screenshot tool your system has: `screencapture` on macOS,
 PowerShell on Windows, and on Linux `gnome-screenshot`, `spectacle`,
 `cosmic-screenshot`, `grim` or `xfce4-screenshooter` (plus `scrot` / ImageMagick
 `import` on X11). Why it's experimental: Wayland desktops restrict screenshots, so
 capture may fail or ask for permission (use **Load image** then). And on a scaled
 (HiDPI) display, screenshot pixels can differ from the coordinates a click tool
-expects.
+expects. Symbiot rescales for `xdotool` and for `cliclick` on a Retina screen, but
+it can't read the scale on Wayland, and ydotool's moves follow your pointer
+acceleration, so a click there can land off target.
 
 ## Config, development and releasing
 
