@@ -6,6 +6,8 @@
 //   2. UPDATE CHECK (0.28.2 loop): against a fake npm registry, the app offers an
 //      update only for a HIGHER version — never the one it's on, never an older
 //      one — and a registry error doesn't flip that.
+//   3. UPDATE & RESTART (fixed after 0.39.1): the relaunched copy takes over the same address
+//      instead of finding the old app and exiting (which left nothing running).
 // Isolated HOME, random ports, a local fake registry: never touches real config,
 // a running app, or npm.
 //
@@ -102,6 +104,31 @@ try {
   const down = await ping(baseA, token, "?fresh=1");
   ok("a registry error keeps the last answer (doesn't flip or crash)", down.latest === NEXT && down.newer === true, down);
   registry.down = false;
+
+  // The relaunched copy used to find the old app still serving, open a second
+  // window and exit; then the old one exited too: two "Reconnecting…" windows and
+  // nothing running. SYMBIOT_UPDATE_CMD swaps the global npm install for a no-op.
+  console.log("UPDATE — Update & restart leaves one app serving, on the same address");
+  const UP = port();
+  const u = startApp({ SYMBIOT_PORT: String(UP), SYMBIOT_UPDATE_CMD: `${JSON.stringify(process.execPath)} -e 0` }, 20000);
+  const urlU = await u.ready;
+  const tokU = (urlU.match(URL_RE) || [])[2];
+  const baseU = `http://127.0.0.1:${UP}`;
+  const p0 = await ping(baseU, tokU);
+  const upd = await fetch(`${baseU}/api/update`, { method: "POST", headers: { "x-symbiot-token": tokU, "content-type": "application/json" }, body: "{}" }).then((r) => r.json()).catch((e) => ({ error: e.message }));
+  ok("the update starts", upd.started === true, upd);
+  let p1 = {};
+  for (const t2 = Date.now(); Date.now() - t2 < 20000;) {
+    await new Promise((r) => setTimeout(r, 300));
+    p1 = await ping(baseU, tokU);
+    if (p1.started && p1.started !== p0.started && u.exited() !== null) break;
+  }
+  ok("the old app exits", u.exited() === 0, { exited: u.exited(), out: u.out() });
+  ok("a new app is serving the same address", !!p1.started && p1.started !== p0.started, { p0, p1 });
+  await new Promise((r) => setTimeout(r, 1500)); // a copy that bowed out would be gone by now
+  const p2 = await ping(baseU, tokU);
+  ok("and it stays up", !!p2.started && p2.started === p1.started, { p1, p2 });
+  try { await fetch(`${baseU}/api/quit`, { headers: { "x-symbiot-token": tokU } }); } catch {}
 
   // quit the first app; a fresh `symbiot app` must then start normally
   try { await fetch(`${baseA}/api/quit`, { headers: { "x-symbiot-token": token } }); } catch {}

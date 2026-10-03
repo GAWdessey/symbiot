@@ -13,7 +13,7 @@ import { authorship, repoState, readmeInfo, houseRules, findAllRepos, driftRepo,
 import { mailActivity } from "../mail.mjs";
 import { pngSize, pngDecode, splitPng, captureCmds, clickCmds, portalAppId, monitorCmds, parseCosmicRandr, parseWlrRandr, parseKscreen, parseXrandr, parseLines, tidyMonitors, monitorAreas } from "../screens.mjs";
 import { deflateSync } from "node:zlib";
-import { weeklyDue, lastSlot, autostartContent, notifyCmd } from "../desktop.mjs";
+import { weeklyDue, lastSlot, autostartFile, autostartContent, notifyCmd } from "../desktop.mjs";
 
 const INDEX = join(dirname(fileURLToPath(import.meta.url)), "..", "index.mjs");
 const ROOT = mkdtempSync(join(tmpdir(), "symbiot-fix-"));
@@ -595,6 +595,8 @@ try {
   const mac = autostartContent("/usr/local/bin/node", "/a&b/index.mjs", "darwin", "/usr/bin");
   ok("macOS autostart: a LaunchAgent that runs at load, XML-escaped", /<key>RunAtLoad<\/key><true\/>/.test(mac) && mac.includes("<string>/a&amp;b/index.mjs</string>") && /SYMBIOT_NO_OPEN<\/key><string>1</.test(mac), mac);
   ok("Windows autostart: a Startup-folder script", /set SYMBIOT_NO_OPEN=1\r\nstart "Symbiot" \/min "C:\\node.exe" "C:\\s\\index.mjs" app/.test(autostartContent("C:\\node.exe", "C:\\s\\index.mjs", "win32")), autostartContent("C:\\node.exe", "C:\\s\\index.mjs", "win32"));
+  const droid = autostartContent("/data/data/com.termux/files/usr/bin/node", "/sdcard/it's/index.mjs", "android", "/data/data/com.termux/files/usr/bin");
+  ok("Android autostart: a Termux:Boot script with a wake lock, paths single-quoted", autostartFile("android", "/h") === "/h/.termux/boot/symbiot" && /^#!\/data\/data\/com\.termux\/files\/usr\/bin\/sh\n/.test(droid) && droid.includes("termux-wake-lock") && droid.includes("exec '/data/data/com.termux/files/usr/bin/node' '/sdcard/it'\\''s/index.mjs' app") && /SYMBIOT_NO_OPEN=1/.test(droid), droid);
   ok("notifications: osascript on macOS, a PowerShell balloon on Windows", notifyCmd("Symbiot", "Hi", "darwin")[0] === "osascript" && notifyCmd("Symbiot", "it's", "win32")[1].join(" ").includes("'it''s'"), notifyCmd("Symbiot", "it's", "win32"));
   // isolated HOME: these write Symbiot's config and the OS autostart file
   const dhome = join(ROOT, "dhome"); mkdirSync(dhome, { recursive: true });

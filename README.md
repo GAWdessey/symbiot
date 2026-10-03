@@ -89,7 +89,8 @@ it's already running just opens the existing window instead of starting a second
 copy (`SYMBIOT_FORCE_NEW=1` starts one anyway). If something else holds the port,
 it falls back to a free one.
 It works on **Linux, macOS and Windows**; with no Chromium-family browser to open
-the chrome-less window, it uses your default browser.
+the chrome-less window, it uses your default browser. On an Android phone it runs
+in Termux ([experimental](#on-your-phone-android-in-termux)).
 
 ### Every week, and at login
 
@@ -109,6 +110,35 @@ repo is now archived), without Electron:
   weekly write-up happens even on days you don't open it. Running `symbiot app`
   then opens that copy's window. Switch it off to remove the entry. It needs an
   installed Symbiot (`npm install -g symbiot`), not `npx`.
+
+### On your phone (Android, in Termux)
+
+Experimental, and not yet tried on a real phone. Symbiot is a Node CLI, so it runs
+in [Termux](https://termux.dev) (install it from F-Droid; the Play Store build is
+out of date) next to the coding agent you use there. It works on the repos on your
+phone, the same way it works on your computer's:
+
+```bash
+pkg install nodejs git gh termux-api        # gh: Approve opens the PR; termux-api: notifications
+npm install -g symbiot
+symbiot app                                 # opens in your phone's browser
+```
+
+- The app opens in the phone's browser (through `termux-open-url`) and is laid out
+  for a phone screen: Tasks, Agents (with your agent's questions), Approve and
+  Settings all work there. Set your agent command in Settings as on a computer
+  (Claude Code is detected if it's on Termux's `PATH`). "Add to Home screen" in
+  Chrome gives it an icon.
+- Clone repos into Termux's home (`~`), which Symbiot scans by default. To reach
+  the phone's shared storage, run `termux-setup-storage` and add `~/storage/shared`
+  (or a folder in it) under Settings → Folders to scan.
+- **Write my week and notify me** sends an Android notification when the
+  `termux-api` package and the Termux:API app are installed.
+- **Start Symbiot in the background when the phone starts** writes a
+  [Termux:Boot](https://wiki.termux.com/wiki/Termux:Boot) script
+  (`~/.termux/boot/symbiot`) that takes a wake lock, so Android doesn't stop it.
+  Install Termux:Boot and open it once.
+- **Screens** can't capture the screen from Termux; **Load image** still works.
 
 ## Hand tasks to your coding agent: `symbiot push`
 

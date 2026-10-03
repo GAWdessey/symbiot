@@ -7,8 +7,13 @@
 import { spawn } from "node:child_process";
 import { homedir } from "node:os";
 import { join, dirname } from "node:path";
-import { readFileSync, writeFileSync, mkdirSync, existsSync, unlinkSync, readdirSync, statSync } from "node:fs";
+import { readFileSync, writeFileSync, appendFileSync, mkdirSync, existsSync, unlinkSync, readdirSync, statSync, chmodSync } from "node:fs";
 import { CONFIG_DIR, loadConfig, saveConfig, hasCmd } from "./core.mjs";
+
+// The Android app (android/) runs this same code with SYMBIOT_ANDROID_APP=1. Its
+// Java side posts the notifications and starts Symbiot at boot, so here it's an
+// OS of its own: "android-app" (Termux on Android is plain "android").
+const OS = process.env.SYMBIOT_ANDROID_APP === "1" ? "android-app" : process.platform;
 
 // ---- weekly write-up --------------------------------------------------------
 // config.weekly = { on, day (0 = Sunday … 6 = Saturday), hour (0-23), last (ms) }.
@@ -73,30 +78,39 @@ function startWeekly(produce) {
 
 // ---- desktop notification (no dependencies) ---------------------------------
 // [cmd, args] for this OS, or null when there's nothing to notify with.
-function notifyCmd(title, body, platform = process.platform) {
+function notifyCmd(title, body, platform = OS) {
   if (platform === "darwin") return ["osascript", ["-e", `display notification ${JSON.stringify(body)} with title ${JSON.stringify(title)}`]];
   if (platform === "win32") {
     const q = (s) => "'" + String(s).replace(/'/g, "''") + "'";
     return ["powershell", ["-NoProfile", "-WindowStyle", "Hidden", "-Command", `Add-Type -AssemblyName System.Windows.Forms; $n = New-Object System.Windows.Forms.NotifyIcon; $n.Icon = [System.Drawing.SystemIcons]::Information; $n.Visible = $true; $n.ShowBalloonTip(10000, ${q(title)}, ${q(body)}, 'Info'); Start-Sleep -Seconds 11; $n.Dispose()`]];
   }
+  // Android (Termux): termux-notification, from the termux-api package + the Termux:API app
+  if (platform === "android") return hasCmd("termux-notification") ? ["termux-notification", ["--id", "symbiot", "--title", title, "--content", body]] : null;
   return hasCmd("notify-send") ? ["notify-send", ["--app-name=Symbiot", title, body]] : null;
 }
-function desktopNotify(title, body) {
-  const c = notifyCmd(title, body); if (!c) return false;
+// In the app: a line in a file its service watches, and it posts the notification.
+function desktopNotify(title, body, platform = OS, dir = CONFIG_DIR) {
+  if (platform === "android-app") { try { mkdirSync(dir, { recursive: true }); appendFileSync(join(dir, "android-notify.jsonl"), JSON.stringify({ title, body }) + "\n"); return true; } catch { return false; } }
+  const c = notifyCmd(title, body, platform); if (!c) return false;
   try { const ch = spawn(c[0], c[1], { detached: true, stdio: "ignore" }); ch.on("error", () => {}); ch.unref(); return true; } catch { return false; }
 }
 
 // ---- start at login -----------------------------------------------------------
 // One file per OS, in the place that OS starts things from at login: an XDG
-// autostart entry (Linux), a LaunchAgent (macOS), the Startup folder (Windows).
+// autostart entry (Linux), a LaunchAgent (macOS), the Startup folder (Windows),
+// a Termux:Boot script (Android, run when the phone starts). The Android app
+// starts itself at boot while its flag file is there.
 // It runs `symbiot app` with SYMBIOT_NO_OPEN=1, so no window pops up. PATH is
 // saved too, so agents and git resolve as they do in your terminal.
-function autostartFile(platform = process.platform, home = homedir()) {
+function autostartFile(platform = OS, home = homedir()) {
+  if (platform === "android-app") return join(home, ".config", "symbiot", "android-boot");
   if (platform === "darwin") return join(home, "Library", "LaunchAgents", "co.symbiot.app.plist");
   if (platform === "win32") return join(home, "AppData", "Roaming", "Microsoft", "Windows", "Start Menu", "Programs", "Startup", "symbiot.cmd");
+  if (platform === "android") return join(home, ".termux", "boot", "symbiot");
   return join(home, ".config", "autostart", "symbiot.desktop");
 }
-function autostartContent(node, script, platform = process.platform, path = process.env.PATH || "") {
+function autostartContent(node, script, platform = OS, path = process.env.PATH || "") {
+  if (platform === "android-app") return "While this file exists, Symbiot's Android app starts itself when the phone starts.\n";
   if (platform === "darwin") {
     const x = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
     return `<?xml version="1.0" encoding="UTF-8"?>
@@ -109,13 +123,19 @@ function autostartContent(node, script, platform = process.platform, path = proc
 </dict></plist>
 `;
   }
+  if (platform === "android") {
+    // sh single quotes; the wake lock stops Android from stopping Termux while Symbiot runs
+    const sq = (s) => "'" + String(s).replace(/'/g, "'\\''") + "'";
+    return ["#!/data/data/com.termux/files/usr/bin/sh", "command -v termux-wake-lock >/dev/null && termux-wake-lock",
+      "export SYMBIOT_NO_OPEN=1 PATH=" + sq(path), "exec " + sq(node) + " " + sq(script) + " app", ""].join("\n");
+  }
   if (platform === "win32") return ["@echo off", "set SYMBIOT_NO_OPEN=1", `start "Symbiot" /min "${node}" "${script}" app`, ""].join("\r\n");
   // Desktop Entry Exec quoting: double quotes, with " ` $ \ backslash-escaped
   const q = (s) => '"' + String(s).replace(/(["`$\\])/g, "\\$1") + '"';
   return ["[Desktop Entry]", "Type=Application", "Name=Symbiot", "Comment=Symbiot in the background: the weekly write-up and its notification",
     `Exec=env SYMBIOT_NO_OPEN=1 ${q("PATH=" + path)} ${q(node)} ${q(script)} app`, "Terminal=false", "NoDisplay=true", "X-GNOME-Autostart-enabled=true", ""].join("\n");
 }
-function autostartState() { const file = autostartFile(); return { on: existsSync(file), file }; }
+function autostartState() { const file = autostartFile(); return { on: existsSync(file), file, ...(OS === "android-app" ? { phone: "app" } : OS === "android" ? { phone: "termux" } : {}) }; }
 // `script` is index.mjs's real path. From npx that's a cache folder that goes
 // away, so it has to be installed for this to keep working.
 function setAutostart(on, script) {
@@ -125,6 +145,7 @@ function setAutostart(on, script) {
     if (/[\\/]_npx[\\/]/.test(String(script))) return { ...autostartState(), error: "Symbiot is running from npx. Install it first (npm install -g symbiot), then switch this on." };
     mkdirSync(dirname(file), { recursive: true });
     writeFileSync(file, autostartContent(process.execPath, script));
+    if (OS === "android") chmodSync(file, 0o700); // Termux:Boot only runs executable scripts
     return autostartState();
   } catch (e) { return { ...autostartState(), error: String((e && e.message) || e) }; }
 }

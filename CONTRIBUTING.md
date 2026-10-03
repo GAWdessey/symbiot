@@ -54,15 +54,17 @@ update check) a fake npm registry:
   method the UI uses, checks POST-only endpoints refuse GET and `/api` needs the
   token, and checks the update banner can't loop.
 - `test/app.mjs` — the app's lifecycle: a second `symbiot app` reuses the running
-  one (and `SYMBIOT_FORCE_NEW` / a foreign server on the port don't), and the
-  update check only offers a higher npm version.
+  one (and `SYMBIOT_FORCE_NEW` / a foreign server on the port don't), the
+  update check only offers a higher npm version, and Update & restart leaves one
+  app serving the same address.
 - `test/install.mjs` — runs the CLI through a bin symlink, then `npm pack` +
   global install into a temp prefix: `symbiot help`, every shipped file present,
   and the installed `symbiot app` serving its page. Needs npm registry access for
   dependencies; `SYMBIOT_SKIP_INSTALL_TEST=1` skips that part.
 
 `SYMBIOT_NO_OPEN=1` stops `symbiot app` opening a window (the tests set it), and
-`SYMBIOT_REGISTRY` points its update check at another registry. CI
+`SYMBIOT_REGISTRY` points its update check at another registry, and
+`SYMBIOT_UPDATE_CMD` replaces the global `npm install` that Update & restart runs. CI
 (`.github/workflows/ci.yml`) runs the whole suite on every pull request.
 
 ## Releasing

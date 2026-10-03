@@ -36,7 +36,7 @@ a{color:var(--green);cursor:pointer}.hidden{display:none}
 .updatebar button{font:inherit;font-weight:700;border:0;border-radius:8px;padding:5px 12px;background:var(--ink);color:var(--bone);cursor:pointer}
 .ver{font-size:11px;color:var(--faint);background:var(--ink3);border:1px solid var(--line);border-radius:999px;padding:2px 8px;margin-left:2px;font-family:ui-monospace,Menlo,Consolas,monospace}
 footer{padding:10px 18px;border-top:1px solid var(--line);display:flex}
-.profile{font-size:13px;margin-bottom:8px;line-height:1.5}
+.profile{font-size:13px;margin-bottom:8px;line-height:1.5;overflow-wrap:anywhere}
 .profile b{color:var(--bone)}
 .maprow{display:flex;gap:12px;align-items:stretch}
 #graph{flex:1;width:100%;height:62vh;min-height:340px;background:var(--ink2);border:1px solid var(--line);border-radius:12px;touch-action:none;cursor:grab}
@@ -63,7 +63,7 @@ footer{padding:10px 18px;border-top:1px solid var(--line);display:flex}
 .idea input{margin-top:3px;flex:none;width:15px;height:15px;cursor:pointer}
 .task{display:flex;align-items:center;gap:10px;padding:9px 11px;border:1px solid var(--line);border-radius:9px;margin-top:8px;background:var(--ink2)}
 .task input[type=checkbox]{width:16px;height:16px;flex:none;cursor:pointer}
-.task .t{flex:1}.task.done .t{color:var(--faint);text-decoration:line-through}
+.task .t{flex:1;min-width:0;overflow-wrap:anywhere}.task.done .t{color:var(--faint);text-decoration:line-through}
 .task .rp{font-size:11px;color:var(--faint);background:var(--ink3);border:1px solid var(--line);border-radius:999px;padding:2px 8px}
 .task .rm{background:none;border:0;color:var(--faint);cursor:pointer;font-size:18px;line-height:1}
 .task .rm:hover{color:var(--amber)}
@@ -86,9 +86,9 @@ footer{padding:10px 18px;border-top:1px solid var(--line);display:flex}
 .rcard .row{margin-top:8px}.rcard .task{margin-top:6px}
 .rdiff{max-height:360px;overflow:auto;font-size:11px;line-height:1.45;background:var(--ink2);border:1px solid var(--line);border-radius:8px;padding:8px;margin-top:8px;white-space:pre}
 .drift{border:1px solid var(--line);border-radius:10px;margin-top:10px;padding:12px 14px;background:var(--ink2)}
-.drift .dh{display:flex;gap:8px;align-items:center}
-.drift .dn{color:var(--bone);font-weight:600}
-.drift .dd{color:var(--faint);font-size:12px}
+.drift .dh,.agent .dh{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.drift .dn,.agent .dn{color:var(--bone);font-weight:600}
+.drift .dd,.agent .dd{color:var(--faint);font-size:12px}
 .drift ul{margin:8px 0 0;padding:0;list-style:none}
 .drift li{padding:3px 0;font-size:13.5px}
 .drift li.warn{color:var(--amber)}
@@ -130,6 +130,7 @@ label.check input{width:auto}
 .scrbox span{position:absolute;left:0;top:0;font-size:11px;background:var(--green);color:var(--ink);padding:1px 6px;white-space:nowrap}
 .scrbox.draw{border:2px dashed var(--amber);background:rgba(242,165,65,.14)}
 @media(max-width:760px){.maprow{flex-direction:column}.detail{width:auto;max-height:none}}
+@media(max-width:600px){#panel-tasks .row>#newtask{flex:1 1 100%!important}.tabs{overflow-x:auto;scrollbar-width:none;padding:0 8px;gap:0}.tabs::-webkit-scrollbar{display:none}.tab{flex:none;padding:9px 11px}header{padding:12px 14px 8px}main{padding:12px}}
 </style></head><body>
 <div id="updatebar" class="updatebar"></div>
 <header><span class="dot"></span><span class="brand">Symbiot</span><span class="ver" id="ver"></span><span class="status" id="status">...</span></header>
@@ -247,7 +248,7 @@ label.check input{width:auto}
 <label>Weekly write-up and start at login</label>
 <label class="check"><input type="checkbox" id="weeklyon"> Write my week and send me a desktop notification every</label>
 <div class="row" style="margin-top:2px"><select id="weeklyday" style="width:auto"><option value="1">Monday</option><option value="2">Tuesday</option><option value="3">Wednesday</option><option value="4">Thursday</option><option value="5">Friday</option><option value="6">Saturday</option><option value="0">Sunday</option></select><span class="muted">at</span><select id="weeklyhour" style="width:auto"></select><button class="ghost" id="weeklynow" title="write it now and send the notification, to check it works">Write it now</button></div>
-<label class="check"><input type="checkbox" id="autostart"> Start Symbiot in the background when I log in (no window)</label>
+<label class="check"><input type="checkbox" id="autostart"> <span id="autostartlbl">Start Symbiot in the background when I log in (no window)</span></label>
 <div class="note muted" id="desktopnote"></div>
 </div>
 <div style="margin-top:20px;border-top:1px solid var(--line);padding-top:16px">
@@ -665,9 +666,10 @@ var rd=new FileReader();rd.onload=function(){api('/api/screens/import',{name:$('
 // Weekly write-up + start at login (desktop.mjs). The Week tab shows the latest
 // write-up until you write a new one.
 function renderDesktop(d){if(!d)return;var w=d.weekly||{},a=d.autostart||{};$('weeklyon').checked=!!w.on;$('weeklyday').value=String(w.day);$('weeklyhour').value=String(w.hour);$('autostart').checked=!!a.on;
+if(a.phone)$('autostartlbl').textContent=a.phone==='app'?'Start Symbiot in the background when the phone starts':'Start Symbiot in the background when the phone starts (needs the Termux:Boot app)';
 var n=[];if(d.error)n.push("<span class='err'>"+esc(d.error)+"</span>");
 if(w.latest)n.push("Latest write-up: "+esc(new Date(w.latest.at).toLocaleString())+" &middot; <span style='font-family:ui-monospace,monospace'>"+esc(w.latest.file)+"</span> (also in the Week tab)");
-n.push(a.on?"Starts at login from <span style='font-family:ui-monospace,monospace'>"+esc(a.file)+"</span>. Run <b>symbiot app</b> to open its window.":"The weekly write-up happens while Symbiot is running, so start it at login to have it every week. A week missed while the computer was off is written when Symbiot next starts.");
+n.push(a.on&&a.phone==='app'?"Symbiot starts in the background when the phone starts, and keeps running with its window closed (Stop it from its notification).":a.on&&a.phone?"Termux:Boot starts it from <span style='font-family:ui-monospace,monospace'>"+esc(a.file)+"</span> when the phone starts. Open Termux:Boot once after installing it, so Android lets it run.":a.on?"Starts at login from <span style='font-family:ui-monospace,monospace'>"+esc(a.file)+"</span>. Run <b>symbiot app</b> to open its window.":"The weekly write-up happens while Symbiot is running, so start it at login to have it every week. A week missed while the computer was off is written when Symbiot next starts.");
 $('desktopnote').innerHTML=n.join('<br>');}
 function loadDesktop(err){api('/api/desktop').then(function(d){if(d&&err)d.error=err;renderDesktop(d);});}
 function saveWeekly(){api('/api/desktop/weekly',{on:$('weeklyon').checked,day:$('weeklyday').value,hour:$('weeklyhour').value}).then(function(){loadDesktop();});}

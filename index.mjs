@@ -583,18 +583,21 @@ function reportFooter(repoPath, auth, state, rd) {
   return b.join(" · ");
 }
 function expandRoot(p) { p = String(p || "").trim(); return p.startsWith("~") ? join(homedir(), p.slice(1)) : p; }
+// The default place to look: your home folder. The Android app's HOME is private
+// to it, so it sets SYMBIOT_SCAN_HOME to the phone's shared storage instead.
+function scanHome() { return process.env.SYMBIOT_SCAN_HOME || homedir(); }
 // Where to look for repos: configured folders, or --dir, else your home folder.
 function scanRoots() {
   if (flag("dir", null)) return [BASE];
   const r = loadConfig().scanRoots;
   const roots = (Array.isArray(r) ? r : []).map(expandRoot).filter((x) => { try { return existsSync(x); } catch { return false; } });
-  return roots.length ? roots : [homedir()];
+  return roots.length ? roots : [scanHome()];
 }
 function addScanRoot(p) {
   p = expandRoot(p); if (!p) return { error: "empty" };
   try { if (!existsSync(p)) return { error: "folder not found: " + p }; } catch { return { error: "can't read: " + p }; }
   const cfg = loadConfig();
-  let list = Array.isArray(cfg.scanRoots) && cfg.scanRoots.length ? cfg.scanRoots : [homedir()]; // keep home when adding the first extra folder
+  let list = Array.isArray(cfg.scanRoots) && cfg.scanRoots.length ? cfg.scanRoots : [scanHome()]; // keep home when adding the first extra folder
   if (!list.includes(p)) list.push(p);
   cfg.scanRoots = list; saveConfig(cfg); LAST_MAP = null; return { ok: true, roots: cfg.scanRoots };
 }
@@ -763,7 +766,7 @@ function header(sub) {
 
 // ---- commands -------------------------------------------------------------
 const SINCE_WEEK = Number(flag("since", "7"));
-const BASE = flag("dir", homedir());
+const BASE = flag("dir", scanHome());
 
 // ---- hardware -> model recommendations ------------------------------------
 function detectGpu() {
@@ -1475,6 +1478,13 @@ function chromeBinary() {
 }
 function openApp(url) {
   try {
+    // Android (Termux): hand the URL to the phone's browser. termux-open-url ships
+    // with Termux; `am start` is the fallback.
+    if (process.platform === "android") {
+      if (hasCmd("termux-open-url")) spawn("termux-open-url", [url], { detached: true, stdio: "ignore" }).unref();
+      else spawn("am", ["start", "-a", "android.intent.action.VIEW", "-d", url], { detached: true, stdio: "ignore" }).unref();
+      return "browser tab";
+    }
     const chrome = chromeBinary();
     if (chrome) { spawn(chrome, [`--app=${url}`, "--new-window", "--no-first-run", "--no-default-browser-check"], { detached: true, stdio: "ignore" }).unref(); return "app window"; }
     // fall back to the OS default browser (a normal tab) — still fully functional
@@ -1495,7 +1505,11 @@ async function cmdApp() {
   // Single instance: if a Symbiot app is already serving this port, don't start
   // a second one (multiple instances race the config and split the open tabs) —
   // just open the one that's running. SYMBIOT_FORCE_NEW overrides (e.g. tests).
-  if (!process.env.SYMBIOT_FORCE_NEW) {
+  // Not when "Update & restart" relaunched us (SYMBIOT_RELAUNCH): the old app is
+  // handing this port over and its window is still open, so finding it here would
+  // open a second window and exit, leaving nothing serving either window.
+  const RELAUNCH = process.env.SYMBIOT_RELAUNCH === "1"; delete process.env.SYMBIOT_RELAUNCH;
+  if (!process.env.SYMBIOT_FORCE_NEW && !RELAUNCH) {
     try {
       const ctrl = new AbortController(); const to = setTimeout(() => ctrl.abort(), 800);
       const r = await fetch(`http://127.0.0.1:${PORT}/api/ping`, { headers: { "x-symbiot-token": TOKEN }, signal: ctrl.signal }).catch(() => null);
@@ -1545,7 +1559,7 @@ async function cmdApp() {
       if (u.pathname === "/api/pending/sendback" && req.method === "POST") { const b = await readBody(req); return json(res, sendBack(String(b.id || ""))); }
       if (u.pathname === "/api/automerge" && req.method === "POST") { const b = await readBody(req); return json(res, setAutoMerge(String(b.repo || ""), !!b.on)); }
       if (u.pathname === "/api/tasks/push" && req.method === "POST") { const b = await readBody(req); return json(res, pushTasks(b)); }
-      if (u.pathname === "/api/scanroots") return json(res, { roots: loadConfig().scanRoots || [], effective: scanRoots(), home: homedir() });
+      if (u.pathname === "/api/scanroots") return json(res, { roots: loadConfig().scanRoots || [], effective: scanRoots(), home: scanHome() });
       if (u.pathname === "/api/scanroots/add" && req.method === "POST") { const b = await readBody(req); return json(res, addScanRoot(String(b.path || ""))); }
       if (u.pathname === "/api/scanroots/remove" && req.method === "POST") { const b = await readBody(req); return json(res, removeScanRoot(String(b.path || ""))); }
       if (u.pathname === "/api/agentcfg") { const d = detectHandoffs(); return json(res, { cmd: handoffCmd(), agents: d.agents, editors: d.editors }); }
@@ -1594,11 +1608,15 @@ async function cmdApp() {
       if (u.pathname === "/api/update" && req.method === "POST") {
         // Install the exact newest version (see updateCmd), then relaunch this
         // same app (same port+token => same URL) and exit. The page's heartbeat
-        // reconnects and reloads.
-        const { target, cmd: inst } = updateCmd(LATEST_VERSION, VERSION);
+        // reconnects and reloads. Free the port first and mark the new copy as a
+        // relaunch, so it takes over instead of finding us and bowing out.
+        // SYMBIOT_UPDATE_CMD replaces the install (the tests use a no-op).
+        const { target, cmd } = updateCmd(LATEST_VERSION, VERSION);
+        const inst = process.env.SYMBIOT_UPDATE_CMD || cmd;
         const e = track("symbiot update", inst, homedir(), (code) => {
           if (code !== 0) return;
-          try { const ch = spawn(process.execPath, process.argv.slice(1), { detached: true, stdio: "ignore", env: process.env }); ch.unref(); } catch {}
+          server.close(); if (server.closeAllConnections) server.closeAllConnections();
+          try { const ch = spawn(process.execPath, process.argv.slice(1), { detached: true, stdio: "ignore", env: { ...process.env, SYMBIOT_RELAUNCH: "1" } }); ch.unref(); } catch {}
           setTimeout(() => process.exit(0), 1200);
         });
         return json(res, { started: true, id: e ? e.id : "", target });
@@ -1611,9 +1629,9 @@ async function cmdApp() {
   server.on("listening", () => {
     if (announced) return; announced = true;
     const url = `http://127.0.0.1:${server.address().port}/?t=${TOKEN}`;
-    const how = opened || process.env.SYMBIOT_NO_OPEN === "1" ? "" : openApp(url); opened = true; // only pop a window the first time (never in tests)
+    const how = opened || RELAUNCH || process.env.SYMBIOT_NO_OPEN === "1" ? "" : openApp(url); opened = true; // only pop a window the first time (never in tests, never after an update)
     console.log(`\n${c.g("●")} ${c.b("Symbiot")} is running at ${c.b(url)}`);
-    console.log(how ? c.d(`  Opened in a ${how}.`) : c.d("  Open that URL in your browser."));
+    console.log(RELAUNCH ? c.d("  Restarted after an update; the open window reloads itself.") : how ? c.d(`  Opened in a ${how}.`) : c.d("  Open that URL in your browser."));
     console.log(c.d("  Leave this running; press Ctrl+C to stop (or click Quit in the window)."));
   });
   server.on("error", (e) => {
