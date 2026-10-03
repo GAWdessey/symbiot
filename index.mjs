@@ -29,10 +29,11 @@ import { randomBytes } from "node:crypto";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { EMBEDDED_UI } from "./ui.mjs";
 import { detectMailSources, mailActivity } from "./mail.mjs";
-import { CONFIG_PATH, loadConfig, saveConfig, loadTasks, saveTasks, sh, hasCmd, repoState } from "./core.mjs";
+import { CONFIG_PATH, loadConfig, saveConfig, loadTasks, saveTasks, sh, hasCmd, chromeBinary, repoState } from "./core.mjs";
 import { HANDOFF_PROMPT, QUESTIONS_MAX, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, fillHandoff, runHandoff, runningHandoff, writeTasks, startHeldTasks, detectHandoffs, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, parseQuestions, agentQuestions, answerQuestions, agentsList } from "./agents.mjs";
 import { gitDefaultBranch, loadDeploys, driftRepo } from "./drift.mjs";
 import { loadScreens, screenImage, captureScreen, splitScreen, listMonitors, allowScreenshots, importScreen, setRegions, renameScreen, removeScreen, blueprint, clickRegion } from "./screens.mjs";
+import { mapPage, pressRegion, signIn } from "./headless.mjs";
 import { weeklyState, setWeekly, runWeekly, startWeekly, autostartState, setAutostart } from "./desktop.mjs";
 
 const HERE = fileURLToPath(new URL(".", import.meta.url));
@@ -1456,26 +1457,6 @@ function readBody(req) {
     req.on("end", () => { try { resolve(d ? JSON.parse(d) : {}); } catch { resolve({}); } });
   });
 }
-// Find a Chromium-family browser for the chrome-less --app window, per OS.
-function chromeBinary() {
-  const p = process.platform;
-  const exists = (f) => { try { return existsSync(f) ? f : null; } catch { return null; } };
-  if (p === "darwin") {
-    return ["/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-      "/Applications/Chromium.app/Contents/MacOS/Chromium",
-      "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
-      "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser"].map(exists).find(Boolean) || null;
-  }
-  if (p === "win32") {
-    const bases = [process.env.PROGRAMFILES, process.env["PROGRAMFILES(X86)"], process.env.LOCALAPPDATA].filter(Boolean);
-    const rels = ["Google\\Chrome\\Application\\chrome.exe", "Chromium\\Application\\chrome.exe",
-      "Microsoft\\Edge\\Application\\msedge.exe", "BraveSoftware\\Brave-Browser\\Application\\brave.exe"];
-    for (const base of bases) for (const r of rels) { const f = exists(join(base, r)); if (f) return f; }
-    const w = sh("where chrome 2>NUL").split(/\r?\n/).map((s) => s.trim()).find(Boolean);
-    return w || null;
-  }
-  return ["google-chrome", "google-chrome-stable", "chromium", "chromium-browser", "brave-browser", "microsoft-edge"].find(hasCmd) || null;
-}
 function openApp(url) {
   try {
     // Android (Termux): hand the URL to the phone's browser. termux-open-url ships
@@ -1597,6 +1578,12 @@ async function cmdApp() {
       // A real click on the real screen: only with the user's confirmation, after
       // the delay they picked (to bring the right window to the front).
       if (u.pathname === "/api/screens/click" && req.method === "POST") { const b = await readBody(req); if (b.confirmed !== true) return json(res, { error: "Each click needs your confirmation." }); const d = Math.min(10, Math.max(0, Number(b.delay) || 0)); if (d) await new Promise((r) => setTimeout(r, d * 1000)); return json(res, clickRegion(String(b.id || ""), String(b.region || ""))); }
+      // A web page in the hidden browser (headless.mjs): mapped by itself, no
+      // screen needed. Press acts on the real site, signed in as you, so it's
+      // confirmed like a click; Sign in opens a window the user signs in with.
+      if (u.pathname === "/api/screens/map" && req.method === "POST") { const b = await readBody(req); return json(res, screenOut(await mapPage(b.site, b.name))); }
+      if (u.pathname === "/api/screens/press" && req.method === "POST") { const b = await readBody(req); if (b.confirmed !== true) return json(res, { error: "Each press needs your confirmation." }); return json(res, screenOut(await pressRegion(String(b.id || ""), String(b.region || "")))); }
+      if (u.pathname === "/api/screens/signin" && req.method === "POST") { const b = await readBody(req); return json(res, signIn(b.site)); }
       // What symbiot-desktop added (desktop.mjs): the weekly write-up, start at login.
       if (u.pathname === "/api/desktop") return json(res, { weekly: weeklyState(), autostart: autostartState() });
       if (u.pathname === "/api/desktop/weekly" && req.method === "POST") { const b = await readBody(req); return json(res, setWeekly(b)); }
@@ -1663,6 +1650,45 @@ function cmdMail() {
   if (!m.enabled) console.log("\n" + c.d("Switch it on with  symbiot mail --on  (or in the app's Settings)."));
 }
 
+// ---- `symbiot screens`: Screens from a terminal, for you or an agent ----------
+// map / press / show print JSON: the screen's id, its blueprint, and each
+// region's id, which is what press takes (or a region's label).
+function screenJson(s) {
+  if (!s || s.error) return s;
+  const bp = blueprint(s);
+  return { id: s.id, ...(s.note ? { note: s.note } : {}), ...(s.pressed ? { pressed: s.pressed, found: s.found } : {}), ...bp, regions: bp.regions.map((r, i) => ({ id: s.regions[i].id, ...r })) };
+}
+async function cmdScreens() {
+  const [sub = "list", a1, a2] = argv.slice(1).filter((x, i, all) => !x.startsWith("--") && all[i - 1] !== "--name");
+  const out = (x) => { console.log(JSON.stringify(x, null, 2)); if (x && x.error) process.exitCode = 1; };
+  const find = (id) => loadScreens().find((s) => s.id === id);
+  if (sub === "list") {
+    const list = loadScreens();
+    if (!list.length) console.log(c.d("No screens yet. Map a web page with  symbiot screens map <site>,  or capture one in the app."));
+    for (const s of list) console.log(`${s.id}  ${s.name}  ${c.d(`${(s.regions || []).length} regions · ${s.page ? s.page.url : s.w + "×" + s.h + " " + s.via}`)}`);
+    return;
+  }
+  if (sub === "map") return out(screenJson(await mapPage(a1, flag("name", ""))));
+  if (sub === "show") { const s = find(a1); return out(s ? screenJson(s) : { error: "No screen " + (a1 || "") + ". symbiot screens lists them." }); }
+  if (sub === "signin") { const r = signIn(a1); return out(r.ok ? { ...r, next: "Sign in in the window that opened, close it, then map again." } : r); }
+  if (sub === "press") {
+    const s = find(a1); if (!s) return out({ error: "No screen " + (a1 || "") + ". symbiot screens lists them." });
+    const want = String(a2 || "").toLowerCase(), rs = s.regions || [];
+    const r = rs.find((x) => x.id === a2) || rs.find((x) => x.label.toLowerCase() === want) || (rs.filter((x) => x.label.toLowerCase().includes(want)).length === 1 && rs.find((x) => x.label.toLowerCase().includes(want)));
+    if (!want || !r) return out({ error: `No region "${a2 || ""}" on that screen (give its id, or a label that matches one region).` });
+    if (!has("yes")) return out({ error: `Pressing "${r.label}" acts on the real site, signed in as you. Add --yes to press it.` });
+    return out(screenJson(await pressRegion(s.id, r.id)));
+  }
+  console.log(`${c.b("symbiot screens")} ${c.d("— experimental")}
+  symbiot screens                              list your screens
+  symbiot screens map <site> [--name N]        open a site in a hidden browser and map
+                                               its buttons, links and fields (JSON)
+  symbiot screens show <id>                    a screen's blueprint (JSON)
+  symbiot screens press <id> <region> --yes    press a region there, map where it lands
+  symbiot screens signin <site>                sign in once, in Symbiot's browser window`);
+  if (sub !== "help") process.exitCode = 1;
+}
+
 const HELP = `${c.b("symbiot")} — your week, written from your real work.
 
 ${c.b("Usage")}
@@ -1682,6 +1708,8 @@ ${c.b("Experimental")}
   symbiot mail [--on|--off]         use the mail you sent in write-ups (local, no API)
   symbiot models                    recommend AI models for your hardware
   symbiot setup-local [--model X]   install/run a free local model (Ollama)
+  symbiot screens map <site>        map a web page's buttons in a hidden browser
+                                    (symbiot screens help for more)
 
 ${c.b("Options")}
   --dir <path>    where your repos are (default: ${homedir()})
@@ -1712,6 +1740,7 @@ async function main() {
   if (cmd === "drift") return cmdDrift();
   if (cmd === "push") return cmdPush();
   if (cmd === "mail" || cmd === "email") return cmdMail();
+  if (cmd === "screens" || cmd === "screen") return cmdScreens();
   if (cmd === "week") return cmdRun("week");
   if (cmd === "standup") return cmdRun("standup");
   if (cmd === "todo") return cmdRun("todo");

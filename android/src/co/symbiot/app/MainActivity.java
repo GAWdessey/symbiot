@@ -16,6 +16,7 @@ import android.provider.Settings;
 import android.text.TextUtils;
 import android.webkit.JavascriptInterface;
 import android.webkit.ValueCallback;
+import android.webkit.WebBackForwardList;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
@@ -75,7 +76,14 @@ public class MainActivity extends Activity {
 
     @Override protected void onDestroy() { if (dialog != null) dialog.dismiss(); ui.removeCallbacksAndMessages(null); web.destroy(); super.onDestroy(); }
 
-    @Override public void onBackPressed() { if (web.canGoBack()) web.goBack(); else moveTaskToBack(true); }
+    // Back within Symbiot's page only: the entry before it can be the status page
+    // ("Starting Symbiot…"), which going back to would leave showing for good.
+    @Override public void onBackPressed() {
+        WebBackForwardList h = web.copyBackForwardList();
+        int i = h.getCurrentIndex();
+        if (i > 0 && h.getItemAtIndex(i - 1).getUrl().startsWith("http://127.0.0.1")) web.goBack();
+        else moveTaskToBack(true);
+    }
 
     @Override protected void onActivityResult(int req, int res, Intent data) {
         if (req == FILES && pick != null) { pick.onReceiveValue(WebChromeClient.FileChooserParams.parseResult(res, data)); pick = null; }

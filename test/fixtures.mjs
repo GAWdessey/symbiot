@@ -12,6 +12,7 @@ import { fileURLToPath } from "node:url";
 import { authorship, repoState, readmeInfo, houseRules, findAllRepos, driftRepo, buildTasksMd, taskType, EMBEDDED_UI, orcaHandoffCmd, migrateOrcaCmd, fillHandoff, ORCA_CLAUDE_CMD, CLAUDE_CMD, HANDOFF_PROMPT, shipChanges, shipWithBump, bumpOffer, semverGt, updateCmd, parseQuestions, unreleased } from "../index.mjs";
 import { mailActivity } from "../mail.mjs";
 import { pngSize, pngDecode, splitPng, captureCmds, clickCmds, portalAppId, monitorCmds, parseCosmicRandr, parseWlrRandr, parseKscreen, parseXrandr, parseLines, tidyMonitors, monitorAreas } from "../screens.mjs";
+import { siteUrl, browserArgs } from "../headless.mjs";
 import { deflateSync } from "node:zlib";
 import { weeklyDue, lastSlot, autostartFile, autostartContent, notifyCmd } from "../desktop.mjs";
 
@@ -536,12 +537,14 @@ try {
     writeFileSync(join(xbin, "xrandr"), "#!/bin/sh\ncat <<'EOF'\nMonitors: 2\n 0: +*A 3/10x6/10+0+0  A\n 1: +B 5/10x6/10+3+0  B\nEOF\n", { mode: 0o755 });
     const sx = spawnSync(process.execPath, ["--input-type=module", "-e", `
       import * as s from ${JSON.stringify(join(dirname(INDEX), "screens.mjs"))};
+      import { statSync } from "node:fs";
       const out = {};
       const a = s.importScreen("desk", ${JSON.stringify(big.toString("base64"))});
       s.setRegions(a.id, [{ label: "on B", x: 4, y: 1, w: 2, h: 2 }, { label: "on A", x: 0, y: 0, w: 2, h: 2 }]);
       out.split = s.splitScreen(a.id); out.again = out.split.screens && s.splitScreen(out.split.screens[0].id);
       out.bp = out.split.screens && s.blueprint(out.split.screens[1]);
       out.kept = s.loadScreens().some((x) => x.id === a.id); out.count = s.loadScreens().length;
+      out.modes = (out.split.screens || []).map((x) => statSync(s.screenImage(x.id)).mode & 0o777);
       out.nope = s.captureScreen("x", "no-such-display");
       console.log(JSON.stringify(out));`], { encoding: "utf8", env: { ...process.env, HOME: xhome, USERPROFILE: xhome, PATH: xbin + ":" + process.env.PATH, XDG_SESSION_TYPE: "x11" } });
     let sx2 = {}; try { sx2 = JSON.parse(sx.stdout); } catch {}
@@ -549,6 +552,7 @@ try {
     ok("splitScreen: one screen per display, left first, named after it", pa && pb && pa.w === 3 && pb.w === 5 && pb.h === 6 && /· A \(left\)$/.test(pa.name) && /· B \(right\)$/.test(pb.name) && pb.monitor.name === "B" && pb.monitor.x === 3, sx2.split || sx.stderr);
     ok("splitScreen: each region goes with its display, in that display's pixels", pa && pb && pa.regions.map((r) => r.label).join() === "on A" && pb.regions.length === 1 && pb.regions[0].x === 1 && pb.regions[0].y === 1, [pa && pa.regions, pb && pb.regions]);
     ok("blueprint: a display's region also gives its point on the whole desktop", sx2.bp && JSON.stringify(sx2.bp.regions[0].center) === '{"x":2,"y":2}' && JSON.stringify(sx2.bp.regions[0].desktop) === '{"x":5,"y":2}' && sx2.bp.monitor.name === "B", sx2.bp);
+    ok("splitScreen: each piece is readable by you only (0600)", sx2.modes && sx2.modes.length === 2 && sx2.modes.every((m) => m === 0o600), (sx2.modes || []).map((m) => m.toString(8)));
     ok("splitScreen: the whole image stays; a display's screen can't be split again", sx2.kept && sx2.count === 3 && /already one display/.test((sx2.again || {}).error || ""), sx2);
     ok("captureScreen: a display that isn't connected is refused before anything is captured", /no display called no-such-display/.test((sx2.nope || {}).error || ""), sx2.nope);
   }
@@ -560,11 +564,12 @@ try {
   const shome = join(ROOT, "shome"); mkdirSync(shome, { recursive: true });
   const sc = spawnSync(process.execPath, ["--input-type=module", "-e", `
     import * as s from ${JSON.stringify(join(dirname(INDEX), "screens.mjs"))};
-    import { existsSync } from "node:fs";
+    import { existsSync, statSync } from "node:fs";
     const out = {};
     out.bad = s.importScreen("x", Buffer.from("not a png").toString("base64"));
     const a = s.importScreen("PR page", "data:image/png;base64," + ${JSON.stringify(png(1920, 1080).toString("base64"))});
     out.a = a; out.file = existsSync(s.screenImage(a.id));
+    out.modes = [s.screenImage(a.id), ${JSON.stringify(join(shome, ".config", "symbiot", "screens", "screens.json"))}].map((f) => statSync(f).mode & 0o777);
     out.reg = s.setRegions(a.id, [{ label: "Merge button", x: 100.4, y: 50, w: 40, h: 21 }, { label: "", x: 1900, y: 1070, w: 500, h: 500 }]);
     out.bp = s.blueprint(out.reg);
     out.traversal = s.screenImage("../../config");
@@ -574,12 +579,65 @@ try {
   let so = {}; try { so = JSON.parse(sc.stdout); } catch {}
   ok("a non-PNG upload is refused", /isn't a PNG/.test((so.bad || {}).error || ""), so.bad || sc.stderr);
   ok("a loaded PNG is saved with its size", so.a && so.a.w === 1920 && so.a.h === 1080 && so.a.name === "PR page" && so.file, so.a);
+  if (process.platform !== "win32") ok("the loaded image and screens.json are readable by you only (0600)", JSON.stringify(so.modes) === JSON.stringify([0o600, 0o600]), (so.modes || []).map((m) => m.toString(8)));
   const sr0 = so.reg && so.reg.regions[0], sr1 = so.reg && so.reg.regions[1];
   ok("regions are whole pixels; one past the edge is clamped to the image", sr0 && sr0.x === 100 && sr0.label === "Merge button" && sr1 && sr1.x + sr1.w === 1920 && sr1.y + sr1.h === 1080 && sr1.label === "region 2", so.reg);
   ok("the blueprint gives each region's centre", so.bp && JSON.stringify(so.bp.regions[0].center) === '{"x":120,"y":60}' && so.bp.size.w === 1920, so.bp);
   ok("an image request can't leave the screens folder", so.traversal === "", so.traversal);
   ok("a click on a missing screen or region is refused before any tool runs", /not found/.test((so.clickNoScreen || {}).error || "") && /region is gone/.test((so.clickNoRegion || {}).error || ""), [so.clickNoScreen, so.clickNoRegion]);
   ok("removing a screen deletes its image too", so.rm && so.rm.ok && so.gone, so);
+
+  console.log("SCREENS — a web page mapped by itself in a hidden browser (headless.mjs)");
+  const su = (s) => siteUrl(s);
+  ok("siteUrl: a site's name, a host, a path and \"open …\" become https addresses", su("gmail") === "https://gmail.com/" && su("open GitHub") === "https://github.com/" && su("github.com/pulls?q=1") === "https://github.com/pulls?q=1" && su("mail.google.com") === "https://mail.google.com/", [su("gmail"), su("open GitHub"), su("github.com/pulls?q=1")]);
+  ok("siteUrl: localhost is http; full http(s) addresses are kept", su("localhost:3000/x") === "http://localhost:3000/x" && su("127.0.0.1:8080") === "http://127.0.0.1:8080/" && su("http://example.org/a") === "http://example.org/a", [su("localhost:3000/x"), su("127.0.0.1:8080")]);
+  ok("siteUrl: anything else isn't a site (file:, javascript:, words with spaces, nothing)", ["file:///etc/passwd", "javascript:alert(1)", "two words", "", "chrome://settings"].every((x) => su(x) === ""), ["file:///etc/passwd", "javascript:alert(1)", "two words"].map(su));
+  const hArgs = browserArgs(true), vArgs = browserArgs(false, "https://gmail.com/");
+  const prof = (a) => a.find((x) => x.startsWith("--user-data-dir="));
+  ok("browserArgs: hidden runs headless on the DevTools pipe; the sign-in window is a normal one", hArgs.includes("--headless=new") && hArgs.includes("--remote-debugging-pipe") && !vArgs.some((x) => /headless|remote-debugging/.test(x)) && vArgs[vArgs.length - 1] === "https://gmail.com/", [hArgs, vArgs]);
+  ok("browserArgs: both use Symbiot's own profile (and password store), so a sign-in carries over", prof(hArgs) && prof(hArgs) === prof(vArgs) && /symbiot[\\/]browser$/.test(prof(hArgs)) && (process.platform !== "linux" || (hArgs.includes("--password-store=basic") && vArgs.includes("--password-store=basic"))), prof(hArgs));
+  // The real thing, when there's a Chromium-family browser here (CI has Chrome):
+  // a local page with things to find and things that must be left out.
+  const pghome = join(ROOT, "pghome"); mkdirSync(pghome, { recursive: true });
+  const hx = spawnSync(process.execPath, ["--input-type=module", "-e", `
+    import { createServer } from "node:http";
+    import { statSync } from "node:fs";
+    import { chromeBinary } from ${JSON.stringify(join(dirname(INDEX), "core.mjs"))};
+    if (!chromeBinary()) { console.log(JSON.stringify({ skip: true })); process.exit(0); }
+    const h = await import(${JSON.stringify(join(dirname(INDEX), "headless.mjs"))});
+    const s = await import(${JSON.stringify(join(dirname(INDEX), "screens.mjs"))});
+    const page = '<!doctype html><title>Inbox</title><body style="margin:0">' +
+      '<a href="/two" target="_blank" style="position:absolute;left:10px;top:10px">Go to two</a>' +
+      '<button id="compose" style="position:absolute;left:10px;top:50px">Compose</button>' +
+      '<input placeholder="Search mail" style="position:absolute;left:10px;top:90px">' +
+      '<div role="button" aria-label="Star" style="position:absolute;left:10px;top:130px;width:20px;height:20px"><span role="button">inner</span></div>' +
+      '<button style="display:none">Hidden</button><button style="position:absolute;left:10px;top:2000px">Below the fold</button>' +
+      '<button style="position:absolute;left:300px;top:50px">Covered</button><div style="position:absolute;left:290px;top:40px;width:200px;height:60px;background:red"></div></body>';
+    const srv = createServer((q, r) => { r.writeHead(200, { "content-type": "text/html" }); r.end(q.url === "/two" ? "<title>Page two</title><button>Back</button>" : page); }).listen(0, "127.0.0.1");
+    await new Promise((r) => srv.on("listening", r));
+    const out = {};
+    out.map = await h.mapPage("127.0.0.1:" + srv.address().port, "");
+    out.bp = out.map.id && s.blueprint(out.map);
+    out.mode = out.map.id && (statSync(s.screenImage(out.map.id)).mode & 0o777);
+    const link = (out.map.regions || []).find((r) => r.kind === "link");
+    out.press = link ? await h.pressRegion(out.map.id, link.id) : null;
+    out.click = out.map.id && s.clickRegion(out.map.id, out.map.regions[0].id);
+    srv.close();
+    console.log(JSON.stringify(out));`], { encoding: "utf8", timeout: 150000, env: { ...process.env, HOME: pghome, USERPROFILE: pghome } });
+  let ho = {}; try { ho = JSON.parse(hx.stdout); } catch {}
+  if (ho.skip) console.log("  - skipped mapping a real page: no Chrome, Chromium, Edge or Brave here");
+  else {
+    const hm = ho.map || {}, labels = (hm.regions || []).map((r) => r.label + ":" + r.kind);
+    ok("mapPage: a page's screenshot at 1280×800, named after its title, kept as a page", hm.w === 1280 && hm.h === 800 && hm.name === "Inbox" && hm.via === "headless" && /^http:\/\/127\.0\.0\.1:\d+\/$/.test((hm.page || {}).url || ""), hm.error || hx.stderr.slice(-800) || hm);
+    ok("mapPage: finds the link, button, field and an aria-labelled button, each with its kind", labels.join() === "Go to two:link,Compose:button,Search mail:field,Star:button", labels);
+    ok("mapPage: leaves out hidden, below-the-fold and covered buttons, and a button inside a button", !labels.some((l) => /Hidden|Below|Covered|inner/.test(l)), labels);
+    const comp = (hm.regions || []).find((r) => r.label === "Compose") || {};
+    ok("mapPage: a region is where it is on the page, with a selector to find it again", comp.x === 10 && comp.y === 50 && comp.w > 20 && comp.selector === "#compose", comp);
+    ok("blueprint: a mapped page gives its address, and each region's kind and selector", ho.bp && ho.bp.page && ho.bp.regions[1].kind === "button" && ho.bp.regions[1].selector === "#compose" && /\/two$/.test(ho.bp.regions[0].href || ""), ho.bp);
+    if (process.platform !== "win32") ok("mapPage: its screenshot is readable by you only (0600)", ho.mode === 0o600, ho.mode);
+    ok("pressRegion: follows a new-tab link in the same tab and maps the page it lands on", ho.press && ho.press.found && ho.press.name === "Page two" && /\/two$/.test(ho.press.page.url) && ho.press.regions.map((r) => r.label).join() === "Back", ho.press);
+    ok("clickRegion: a mapped page is never clicked on your real screen", /use Press instead/.test((ho.click || {}).error || ""), ho.click);
+  }
 
   console.log("DESKTOP — the weekly write-up's schedule, and start at login (from symbiot-desktop)");
   const at = (daysAgo, hour, min = 0) => { const d = new Date(); d.setDate(d.getDate() - daysAgo); d.setHours(hour, min, 0, 0); return d.getTime(); };

@@ -90,7 +90,8 @@ copy (`SYMBIOT_FORCE_NEW=1` starts one anyway). If something else holds the port
 it falls back to a free one.
 It works on **Linux, macOS and Windows**; with no Chromium-family browser to open
 the chrome-less window, it uses your default browser. On an Android phone it runs
-in Termux ([experimental](#on-your-phone-android-in-termux)).
+in Termux ([experimental](#on-your-phone-android-in-termux)), or as an
+[Android app](#the-android-app-apk) of its own.
 
 ### Every week, and at login
 
@@ -139,6 +140,38 @@ symbiot app                                 # opens in your phone's browser
   (`~/.termux/boot/symbiot`) that takes a wake lock, so Android doesn't stop it.
   Install Termux:Boot and open it once.
 - **Screens** can't capture the screen from Termux; **Load image** still works.
+
+### The Android app (APK)
+
+Experimental, and so far only tried in the Android emulator (Android 14), not on a
+real phone. The app is Symbiot on its own, with no Termux needed: Node, git and `gh`
+are inside it (the same builds Termux installs), and it shows Symbiot full screen
+with its own icon.
+
+- **Install:** copy `symbiot-<version>-aarch64.apk` to your phone and open it
+  (allow your file manager or browser to install apps). Android may warn that the
+  app was built for an older version of Android. That's on purpose: it's what lets
+  an app run programs it carries, like Node and git, the same reason Termux does.
+  It also keeps the app off the Play Store.
+- **First start** unpacks Node, git and gh (a few seconds), then asks for **All
+  files access**, so it can find the repos in your phone's shared storage. It scans
+  shared storage (for example the folders Termux's `~/storage/shared` points at)
+  instead of a home folder.
+- It keeps running with its window closed (a quiet "Symbiot is running"
+  notification has **Stop**), so the weekly write-up, agent runs and Approve keep
+  going. **Start Symbiot in the background when the phone starts** and **Write my
+  week and notify me** work as they do on a computer, with Android notifications.
+  **Update & restart** updates it from npm, as on a computer.
+- **Your coding agent isn't inside it.** Keep running Claude Code (or your agent)
+  in Termux, on the same repos in shared storage, the way you do now.
+- **Screens:** no capture and no Map page (a phone has no desktop browser to
+  drive); **Load image** works.
+
+To build it yourself: `android/build.sh` (or `android/build.sh x86_64` for the
+emulator) writes `android/build/symbiot-<version>-<arch>.apk`. It needs Node, the
+Android SDK and a JDK 17 (or Docker). The script's header lists the details,
+including the signing key to keep (`~/.android/symbiot.jks`): an update has to be
+signed with the same key.
 
 ## Hand tasks to your coding agent: `symbiot push`
 
@@ -446,7 +479,33 @@ Hovering shows the pixel under the pointer. Each region keeps its position and s
 in the screenshot's own pixels, plus its **centre**, the point a click would aim at.
 **Copy blueprint** copies them as JSON; everything is also saved in
 `~/.config/symbiot/screens/screens.json` (next to each screen's PNG), where an
-agent or script can read it.
+agent or script can read it. Screenshots and that file are readable by you only.
+
+**A web page maps itself.** Type a site next to **Map page** (`gmail`,
+`github.com/pulls` or a full address) and Symbiot opens it in a hidden (headless)
+browser, takes its screenshot and marks every button, link and field on it by
+itself, named from the page (`Compose`, `Search mail`, …) with what each one is
+and a CSS selector to find it again. Nothing to bring to the front, nothing to
+drag. Only what you could click right now counts: anything hidden, below the
+fold or covered by something else is left out. **Press** on a region clicks it
+in that hidden browser and maps the page it leads to as a new screen, so map,
+press, map is how an agent finds its way around a site. Press acts on the real
+site, signed in as you, so it asks first every time. The hidden browser is your
+Chrome, Chromium, Edge or Brave, with a profile of its own
+(`~/.config/symbiot/browser`, separate from your everyday one). For a site behind
+a sign-in, **Sign in** opens it there as a normal window. Sign in once, close the
+window, and later maps are signed in. When a map lands on a sign-in page, Symbiot
+says so. It works for web pages only. A desktop app still needs **Capture screen**.
+
+From a terminal, or for your coding agent, the same thing prints JSON:
+
+```bash
+symbiot screens map gmail              # the screen's id, and each region's id, label, kind, centre and selector
+symbiot screens press <id> Compose --yes   # press a region (by id or label), map where it lands
+symbiot screens show <id>              # a saved screen's blueprint
+symbiot screens signin gmail           # sign in once, in Symbiot's browser window
+symbiot screens                        # list them
+```
 
 **More than one display?** Symbiot reads how your displays are laid out
 (`cosmic-randr`, `wlr-randr`, `kscreen-doctor` or `xrandr` on Linux, PowerShell on

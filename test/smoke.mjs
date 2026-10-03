@@ -173,6 +173,9 @@ const calls = [
   ["/api/screens/allow", "POST"],   // not confirmed -> refused, no permission changes
   ["/api/screens/monitors", "GET"], // lists the displays (read-only)
   ["/api/screens/split", "POST"],   // no id -> "not found", nothing written
+  ["/api/screens/map", "POST"],     // no site -> refused before a browser starts
+  ["/api/screens/press", "POST"],   // not confirmed -> refused, nothing pressed
+  ["/api/screens/signin", "POST"],  // no site -> refused, no window opens
   ["/api/desktop", "GET"],         // weekly write-up + start-at-login state
   ["/api/desktop/weekly", "POST"],  // empty body -> schedule unchanged (stays off)
   ["/api/desktop/autostart", "POST"], // empty body -> off: removes nothing outside the isolated HOME
