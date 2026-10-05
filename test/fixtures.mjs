@@ -11,6 +11,7 @@ import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { authorship, repoState, readmeInfo, houseRules, findAllRepos, driftRepo, buildTasksMd, taskType, EMBEDDED_UI, orcaHandoffCmd, migrateOrcaCmd, fillHandoff, ORCA_CLAUDE_CMD, CLAUDE_CMD, HANDOFF_PROMPT, shipChanges, shipWithBump, bumpOffer, learnNpm, releaseNeeded, withReleases, semverGt, updateCmd, parseQuestions, unreleased, publishesOnMerge } from "../index.mjs";
+import { grantRule } from "../agents.mjs";
 import { mailActivity } from "../mail.mjs";
 import { pngSize, pngDecode, splitPng, captureCmds, clickCmds, portalAppId, monitorCmds, parseCosmicRandr, parseWlrRandr, parseKscreen, parseXrandr, parseLines, tidyMonitors, monitorAreas } from "../screens.mjs";
 import { siteUrl, browserArgs, isTrusted } from "../headless.mjs";
@@ -461,6 +462,18 @@ try {
   execSync("git checkout -q main && git merge -q --ff-only " + psh.branch, pEnv);
   await learnNpm([pom], pomAt); const pu2 = unreleased(pom); pomReg.close();
   ok("a merged bump npm doesn't have yet is due to publish", pu2 && pu2.npm && pu2.pending === "1.0.2", pu2);
+
+  console.log("GRANT — Allow command keeps a Tool(spec) rule as it is and wraps only a bare command");
+  ok("bare command -> wrapped once", grantRule("npm install") === "Bash(npm install:*)" && grantRule("python3") === "Bash(python3:*)", [grantRule("npm install"), grantRule("python3")]);
+  ok("a rule already in Bash(…) form is kept, with or without the quotes it has in the command (was Bash(Bashnpm install:*:*))", grantRule("Bash(npm install:*)") === "Bash(npm install:*)" && grantRule('"Bash(npm install:*)"') === "Bash(npm install:*)" && grantRule("'Read(~/x/**)'") === "Read(~/x/**)", [grantRule('"Bash(npm install:*)"'), grantRule("'Read(~/x/**)'")]);
+  ok("a bare command typed with :* or quotes isn't doubled; empty gives nothing", grantRule("npm run lint:*") === "Bash(npm run lint:*)" && grantRule('"git rm --cached"') === "Bash(git rm --cached:*)" && grantRule('  ""  ') === "", [grantRule("npm run lint:*"), grantRule('"git rm --cached"')]);
+
+  console.log("WHO ACTS — question options say whether the user or the agent does it");
+  ok("the brief tells agents to start each option with 👤 You: / 🤖 Agent:", /`👤 You:`/.test(buildTasksMd("x", {}, [{ text: "t" }])) && /`🤖 Agent:`/.test(buildTasksMd("x", {}, [{ text: "t" }])), "");
+  const uiJs = [...EMBEDDED_UI.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]).join("\n");
+  const whoHtml = new Function(uiJs.slice(uiJs.indexOf("function esc("), uiJs.indexOf("\n", uiJs.indexOf("function whoHtml("))) + "; return whoHtml;")();
+  const wh = whoHtml("👤 You: allow it <b>. 🤖 Agent: the next run adds it");
+  ok("the card shows the markers as You / Agent badges, escaped, and leaves 'Your' and plain options alone", /class='who you'>&#128100; You</.test(wh) && /class='who agent'>&#129302; Agent</.test(wh) && /&lt;b&gt;/.test(wh) && !/👤|🤖/.test(wh) && /You<\/span> Your call/.test(whoHtml("👤 Your call")) && whoHtml("Plain") === "Plain", [wh, whoHtml("👤 Your call")]);
 
   console.log("QUESTIONS — any agent's .symbiot/QUESTIONS.md parses into questions, options and ideas");
   const pq = parseQuestions("# Questions for you\n\n## Questions\n### Keep the old config format?\nReading both costs ~40 lines.\n- Yes, read both (recommended)\n- No, migrate once\n\n### Which port?\n1. 7391\n2. random\n\n## Suggestions\n- Add a --json flag to drift\n- [ ] Cache the map scan\n");
