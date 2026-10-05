@@ -19,7 +19,7 @@ import { repoReview, repoSuggest, folderSuggest, taskChat, clearTaskChat, mailSt
 import { loadScreens, screenImage, captureScreen, splitScreen, listMonitors, allowScreenshots, importScreen, setRegions, renameScreen, removeScreen, blueprint, clickRegion } from "./screens.mjs";
 import { mapPage, pressRegion, typeRegion, signIn, keepBrowserOpen, isTrusted, trustedSites, trustSite, untrustSite } from "./headless.mjs";
 import { weeklyState, setWeekly, runWeekly, startWeekly, autostartState, setAutostart } from "./desktop.mjs";
-import { watchState, addWatch, setEvery, removeWatch, clearNews, checkWatch, startWatches, setBrief, draftReply } from "./watch.mjs";
+import { watchState, addWatch, setEvery, removeWatch, clearNews, checkWatch, startWatches, setBrief, draftReply, watchBoard } from "./watch.mjs";
 import { phoneState, setPhoneLink, newCode, unpairPhone, pairComputer, forgetComputer, pollComputer, startPhone } from "./phone.mjs";
 
 // The in-app update installs the EXACT newest version (not the `latest` tag, which
@@ -69,6 +69,21 @@ function openApp(url) {
     return "browser tab";
   } catch { return null; }
 }
+// What the `symbiot app` already serving on this computer says at /api/<path>,
+// or null when none answers. Knows the app's port and token, so a caller (a
+// tray, a script, startApp's single-instance check) doesn't have to.
+async function askRunningApp(path, { port, token, ms = 800 } = {}) {
+  const cfg = loadConfig(); token = token || cfg.appToken; if (!token) return null;
+  port = port || Number(process.env.SYMBIOT_PORT || cfg.appPort) || 7391;
+  const ctrl = new AbortController(), to = setTimeout(() => ctrl.abort(), ms);
+  try {
+    const r = await fetch(`http://127.0.0.1:${port}/api/${path}`, { headers: { "x-symbiot-token": token }, signal: ctrl.signal });
+    return r.ok ? await r.json() : null;
+  } catch { return null; } finally { clearTimeout(to); }
+}
+// True when a `symbiot app` is running with the weekly write-up on, so it
+// writes the week (and notifies) itself and nothing else needs to.
+async function isAppRunningWeekly() { const d = await askRunningApp("desktop"); return !!(d && d.weekly && d.weekly.on); }
 // How long the app keeps Screens' hidden browser open after an action.
 const BROWSER_KEEP = 5 * 60 * 1000;
 const PLAIN_COLOURS = { g: (s) => s, d: (s) => s, b: (s) => s, y: (s) => s };
@@ -92,21 +107,14 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
   // open a second window and exit, leaving nothing serving either window.
   const RELAUNCH = process.env.SYMBIOT_RELAUNCH === "1"; delete process.env.SYMBIOT_RELAUNCH;
   if (!process.env.SYMBIOT_FORCE_NEW && !RELAUNCH) {
-    try {
-      const ctrl = new AbortController(); const to = setTimeout(() => ctrl.abort(), 800);
-      const r = await fetch(`http://127.0.0.1:${PORT}/api/ping`, { headers: { "x-symbiot-token": TOKEN }, signal: ctrl.signal }).catch(() => null);
-      clearTimeout(to);
-      if (r && r.ok) {
-        const p = await r.json().catch(() => ({}));
-        if (p && p.version) {
-          const url = `http://127.0.0.1:${PORT}/?t=${TOKEN}`; const how = process.env.SYMBIOT_NO_OPEN === "1" ? "" : openApp(url);
-          console.log(`\n${c.g("●")} ${c.b("Symbiot")} is already running (v${p.version}) at ${c.b(url)}`);
-          console.log(how ? c.d(`  Opened the existing window (a ${how}).`) : c.d("  Open that URL in your browser."));
-          console.log(c.d("  (Not starting a second copy. Set SYMBIOT_FORCE_NEW=1 to force one.)"));
-          return;
-        }
-      }
-    } catch {}
+    const p = await askRunningApp("ping", { port: PORT, token: TOKEN });
+    if (p && p.version) {
+      const url = `http://127.0.0.1:${PORT}/?t=${TOKEN}`; const how = process.env.SYMBIOT_NO_OPEN === "1" ? "" : openApp(url);
+      console.log(`\n${c.g("●")} ${c.b("Symbiot")} is already running (v${p.version}) at ${c.b(url)}`);
+      console.log(how ? c.d(`  Opened the existing window (a ${how}).`) : c.d("  Open that URL in your browser."));
+      console.log(c.d("  (Not starting a second copy. Set SYMBIOT_FORCE_NEW=1 to force one.)"));
+      return;
+    }
   }
   // Screens' hidden browser stays open between map, press and type (headless.mjs),
   // so an agent can type into a field and then press a separate button there.
@@ -201,6 +209,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       if (u.pathname === "/api/screens/signin" && req.method === "POST") { const b = await readBody(req); return json(res, await signIn(b.site)); }
       // Watch (watch.mjs): a mapped page read again every few minutes, and what's new on it.
       if (u.pathname === "/api/watch") return json(res, watchState());
+      if (u.pathname === "/api/watch/board") return json(res, watchBoard(Math.min(168, Math.max(1, Number(u.searchParams.get("hours")) || 24))));
       if (u.pathname === "/api/watch/add" && req.method === "POST") { const b = await readBody(req); return json(res, addWatch({ screen: b.screen ? String(b.screen) : "", site: b.site, every: b.every })); }
       if (u.pathname === "/api/watch/every" && req.method === "POST") { const b = await readBody(req); return json(res, setEvery(String(b.id || ""), b.every)); }
       if (u.pathname === "/api/watch/remove" && req.method === "POST") { const b = await readBody(req); return json(res, removeWatch(String(b.id || ""))); }
@@ -222,7 +231,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       // What symbiot-desktop added (desktop.mjs): the weekly write-up, start at login.
       if (u.pathname === "/api/desktop") return json(res, { weekly: weeklyState(), autostart: autostartState() });
       if (u.pathname === "/api/desktop/weekly" && req.method === "POST") { const b = await readBody(req); return json(res, setWeekly(b)); }
-      if (u.pathname === "/api/desktop/weekly/run" && req.method === "POST") return json(res, await runWeekly(writeup));
+      if (u.pathname === "/api/desktop/weekly/run" && req.method === "POST") { const b = await readBody(req); return json(res, await runWeekly(writeup, { notify: b.notify !== false })); }
       if (u.pathname === "/api/desktop/autostart" && req.method === "POST") { const b = await readBody(req); return json(res, setAutostart(!!b.on, bin)); }
       if (u.pathname === "/api/run" && req.method === "POST") { const b = await readBody(req); const cmd = ["week", "standup", "todo"].includes(b.cmd) ? b.cmd : "week"; return json(res, await writeup(cmd)); }
       if (u.pathname === "/api/connect" && req.method === "POST") { return json(res, await connectProvider(await readBody(req))); }
@@ -269,4 +278,4 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
   startPhone(); // Watch on your phone: the computer listens if it's switched on, the phone asks if it's paired
 }
 
-export { updateCmd, BROWSER_KEEP, startApp };
+export { updateCmd, BROWSER_KEEP, startApp, askRunningApp, isAppRunningWeekly };

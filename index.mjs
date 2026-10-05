@@ -25,6 +25,7 @@
 
 import { spawn } from "node:child_process";
 import { homedir } from "node:os";
+import { join } from "node:path";
 import { realpathSync } from "node:fs";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
@@ -38,9 +39,9 @@ import { buildTasksMd, taskType, shipChanges, shipWithBump, bumpOffer, learnNpm,
 import { produce, mailState, setMail, sentMail } from "./writeups.mjs";
 import { loadScreens, screenImage, blueprint } from "./screens.mjs";
 import { mapPage, pressRegion, typeRegion, signIn, isTrusted } from "./headless.mjs";
-import { watchState, addWatch, removeWatch, newsSince, checkWatch, setBrief } from "./watch.mjs";
+import { watchState, addWatch, removeWatch, newsSince, checkWatch, setBrief, isMail, draftReply } from "./watch.mjs";
 import { PORT as PHONE_PORT, phoneState, pairComputer, pollComputer, forgetComputer } from "./phone.mjs";
-import { startApp, updateCmd } from "./server.mjs";
+import { startApp, updateCmd, isAppRunningWeekly } from "./server.mjs";
 
 // ---- tiny arg parse --------------------------------------------------------
 const argv = process.argv.slice(2);
@@ -369,7 +370,13 @@ async function cmdWatch() {
     for (const n of news.slice(0, 20)) console.log(`  ${c.d(new Date(n.ts).toLocaleString())}  ${n.text.slice(0, 110)}  ${c.d(n.name.slice(0, 30))}`);
     return;
   }
-  if (sub === "new") return out(newsSince(hours));
+  if (sub === "new") { const mail = new Set(watchState().watches.filter((w) => isMail(w.url)).map((w) => w.id)); return out(newsSince(hours).map((n) => (mail.has(n.watch) ? { ...n, mail: true } : n))); }
+  // the same as the app's Draft a reply button: through the app when it runs, so its Agents tab tracks the run
+  if (sub === "draft") {
+    if (!a1) return out({ error: "Give the email's id: symbiot watch new lists them, and the ones marked \"mail\": true can get a reply." });
+    const r = (await viaApp("/api/watch/draft", { id: a1 })) || draftReply(a1);
+    return out(r.ok ? { ...r, next: "Your agent is writing the reply and leaves it in Drafts, never sent. Its log is in " + join(r.dir, ".symbiot", "agent.log") + " (and the app's Agents tab)." } : r);
+  }
   if (sub === "add") { const screen = loadScreens().some((s) => s.id === a1) ? a1 : ""; return out(addWatch({ screen, site: screen ? "" : a1, every: flag("every", 15) })); }
   if (sub === "remove") return out(removeWatch(String(a1 || "")));
   if (sub === "brief") { if (a1 === "on" || a1 === "off") return out(setBrief(a1 === "on")); return out({ brief: watchState().brief, briefs: watchState().briefs }); }
@@ -387,6 +394,9 @@ async function cmdWatch() {
                                                failed CI runs (through gh when it's signed in)
   symbiot watch new [--hours 24]               what's new, newest first (JSON)
   symbiot watch check [id]                     read them now (JSON)
+  symbiot watch draft <id>                     your agent drafts a reply to that new email
+                                               ("mail": true in watch new) and leaves it in
+                                               Drafts, never sent, like Draft a reply in the app
   symbiot watch brief [on|off]                 your AI says what needs you, and what can wait
   symbiot watch remove <id>                    stop watching it
   While the app runs it reads each page every few minutes in its hidden browser
@@ -548,5 +558,5 @@ const isMain = (() => {
 })();
 if (isMain) main();
 
-export { authorship, repoState, readmeInfo, repoShape, houseRules, findAllRepos, buildMap, reportFooter, detectHardware, recommendModels, computeDrift, driftRepo, gitDefaultBranch, buildTasksMd, taskType, EMBEDDED_UI, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, fillHandoff, handoffCmd, setHandoffCmd, ORCA_CLAUDE_CMD, CLAUDE_CMD, HANDOFF_PROMPT, shipChanges, shipWithBump, bumpOffer, learnNpm, releaseNeeded, withReleases, setVersion, syncTasks, pendingReview, unreleased, publishesOnMerge, addTask, approveRepo, approveChanges, sendBack, pushTasks, semverGt, updateCmd, parseQuestions, agentQuestions };
+export { authorship, repoState, readmeInfo, repoShape, houseRules, findAllRepos, buildMap, reportFooter, detectHardware, recommendModels, computeDrift, driftRepo, gitDefaultBranch, buildTasksMd, taskType, EMBEDDED_UI, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, fillHandoff, handoffCmd, setHandoffCmd, ORCA_CLAUDE_CMD, CLAUDE_CMD, HANDOFF_PROMPT, shipChanges, shipWithBump, bumpOffer, learnNpm, releaseNeeded, withReleases, setVersion, syncTasks, pendingReview, unreleased, publishesOnMerge, addTask, approveRepo, approveChanges, sendBack, pushTasks, semverGt, updateCmd, parseQuestions, agentQuestions, isAppRunningWeekly };
 

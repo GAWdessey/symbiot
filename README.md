@@ -55,6 +55,11 @@ Tabs:
   **no AI key**; reviews and suggestions use your chosen model. While the scan runs
   the Map shows its progress. Under the graph is the [experimental](#screens-blueprints-for-screen-automation)
   **Screens** view.
+- **Dashboard** — everything you [watch](#screens-blueprints-for-screen-automation)
+  side by side: a card for each page (your inbox, GitHub, WhatsApp, any other) with
+  how many new since yesterday (or in the last 3 or 7 days), its latest brief, the
+  newest items, and **Open**, **Draft a reply** and **Check now** on them. The tab
+  shows the count, so you see what's waiting from any tab.
 - **Drift** — the [`symbiot drift`](#whats-out-of-sync-symbiot-drift) report, with
   a "fetch latest" toggle (and an [experimental](#experimental) "check CI").
 - **Week / Standup / Todo** — the write-ups (these use your chosen AI).
@@ -112,6 +117,12 @@ repo is now archived), without Electron:
   weekly write-up happens even on days you don't open it. Running `symbiot app`
   then opens that copy's window. Switch it off to remove the entry. It needs an
   installed Symbiot (`npm install -g symbiot`), not `npx`.
+
+For a script or tray of your own: `isAppRunningWeekly()` (from
+`symbiot/index.mjs`) says whether a running `symbiot app` already writes the
+week, with no port or token to know; and `runWeekly(produce, { notify: false })`
+(from `symbiot/desktop.mjs`) writes and saves the week in the same `weeks/`
+format without the notification, for a caller that tells you itself.
 
 ### On your phone (Android, in Termux)
 
@@ -620,7 +631,9 @@ there with what it has seen. It only reads: no screenshot is saved and nothing
 on the page is pressed or typed. The first read just learns what's there, so it
 never announces your whole inbox. After that, anything new (a new email, a new
 reply in a thread) gets a desktop notification and goes under **Watching** in
-Screens, newest first. A row is the same row whether its time reads `9:05 AM`,
+Screens, newest first, and on the page's card in the **Dashboard** tab. A chat
+works the same way: map `web.whatsapp.com` once you've signed in, watch it, and new
+messages (counted as WhatsApp messages in Standup) arrive with your mail and GitHub. A row is the same row whether its time reads `9:05 AM`,
 `Oct 5` or `2 hours ago`, or you've read it since. On a page with no rows it
 watches the links instead. If the site has signed you out, the watch says so,
 and notifies you once. With
@@ -633,6 +646,7 @@ symbiot watch add <screen id> --every 15   # watch a mapped page (or: symbiot wa
 symbiot watch add github                   # your GitHub notifications (see below)
 symbiot watch new --hours 24               # what's new, newest first (JSON)
 symbiot watch check                        # read them all now (JSON)
+symbiot watch draft <id>                   # Draft a reply to a new email (see below)
 symbiot watch brief on                     # your AI says what needs you (off to stop)
 symbiot watch                              # what you watch, and what's new
 symbiot watch remove <id>
@@ -666,7 +680,8 @@ your mail's site (`mail.google.com`) under Trusted sites. Each email gets a fold
 of its own in `~/.config/symbiot/drafts` (yours only) with the agent's brief, and
 the run shows in the Agents tab like any other: what it asks (a date only you
 know, say) is answered there. The agent sees the email's text, so it reaches
-whatever AI your agent uses.
+whatever AI your agent uses. From a terminal, `symbiot watch new` marks the
+emails `"mail": true`, and `symbiot watch draft <id>` does the same as the button.
 
 **In Standup.** Standup ends with what's waiting on you since yesterday, counted
 from what Watch found: `Waiting on you: 3 emails, 2 GitHub notifications`. Symbiot
