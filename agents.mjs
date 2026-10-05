@@ -37,12 +37,22 @@ function setHandoffCmd(cmd) {
 // `tool` (a command like "python3" → Bash(python3:*), or a full "Tool(spec)")
 // joins --allowedTools; `dir` joins --add-dir. Claude only (that's where these
 // flags live); for another agent we say to edit the command directly.
+// The --allowedTools rule for what was typed: a rule already in Tool(spec) form
+// is kept as it is, even pasted with its quotes as it reads in the command;
+// only a bare command is wrapped, once (npm install -> Bash(npm install:*)).
+// Stripping quotes first is the point: a quoted "Bash(npm install:*)" once
+// looked bare and became Bash(Bashnpm install:*:*).
+function grantRule(tool) {
+  let t = String(tool || "").trim().replace(/^["'`]+|["'`]+$/g, "").trim();
+  if (/^[A-Za-z]+\(.*\)$/.test(t)) return t;
+  t = t.replace(/[()"'`]/g, "").replace(/:\*$/, "").trim();
+  return t ? `Bash(${t}:*)` : "";
+}
 function grantAgent({ tool, dir } = {}) {
   const cfg = loadConfig(); let cmd = (cfg.agentCmd || CLAUDE_CMD).trim();
   if (!/^\s*claude\b/.test(cmd)) return { error: "Grants apply to the Claude agent command. Pick a Claude preset first, or edit the command directly." };
   if (tool) {
-    let t = String(tool).trim();
-    if (t && !/^[A-Za-z]+\(/.test(t)) t = `Bash(${t.replace(/[()"]/g, "")}:*)`; // bare word -> Bash(word:*)
+    const t = grantRule(tool);
     if (t && !cmd.includes(`"${t}"`)) {
       if (/--allowedTools\b/.test(cmd)) cmd = cmd.replace(/(--allowedTools\s+(?:"[^"]*"\s*)+)/, (m) => m.trimEnd() + ` "${t}" `);
       else cmd += ` --allowedTools "${t}"`;
@@ -343,4 +353,4 @@ function agentsList() {
   });
 }
 
-export { HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, fillHandoff, runHandoff, runningHandoff, writeTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, agentQuestions, answerQuestions, agentsList };
+export { HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, fillHandoff, runHandoff, runningHandoff, writeTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, agentQuestions, answerQuestions, agentsList };
