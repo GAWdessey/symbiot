@@ -707,6 +707,7 @@ try {
   const hx = spawnSync(process.execPath, ["--input-type=module", "-e", `
     import { createServer } from "node:http";
     import { statSync } from "node:fs";
+    import { execFileSync } from "node:child_process";
     import { chromeBinary } from ${JSON.stringify(join(dirname(INDEX), "core.mjs"))};
     if (!chromeBinary()) { console.log(JSON.stringify({ skip: true })); process.exit(0); }
     const h = await import(${JSON.stringify(join(dirname(INDEX), "headless.mjs"))});
@@ -722,7 +723,10 @@ try {
     // an inbox: rows with more text than a region's 80-character label
     let rows = ["Ann Lee, Lunch on Friday?, 9:05 AM, Are you free for lunch on Friday at the usual place near the office", "GitHub, [symbiot] Run failed: CI - main, 8:24 AM, The workflow run failed on the main branch at commit abc123"];
     const inbox = () => '<title>Inbox</title><div role="grid">' + rows.map((t, i) => '<div role="row" id="r' + i + '" style="height:30px">' + t + '</div>').join("") + '</div>';
-    const srv = createServer((q, r) => { r.writeHead(200, { "content-type": "text/html" }); r.end(q.url === "/two" ? "<title>Page two</title><button>Back</button>" : q.url === "/form" ? form : q.url === "/rows" ? inbox() : q.url.startsWith("/search?") ? "<title>Results for " + new URL(q.url, "http://x").searchParams.get("q") + "</title><button>Back</button>" : page); }).listen(0, "127.0.0.1");
+    // taller than the window: the page itself scrolls (/long), or a list inside it, as Gmail's does (/pane)
+    const long = '<title>Long</title><body style="margin:0;height:3000px"><button style="position:absolute;left:10px;top:10px">Top button</button><button style="position:absolute;left:10px;top:1000px">Middle button</button><button style="position:absolute;left:10px;top:2950px">Last button</button></body>';
+    const pane = '<title>Pane</title><body style="margin:0;overflow:hidden"><div style="height:60px">Header</div><div id="list" style="position:absolute;top:60px;bottom:0;left:0;right:0;overflow:auto">' + Array.from({ length: 60 }, (_, i) => '<div role="row" style="height:40px">Row ' + i + '</div>').join("") + '</div></body>';
+    const srv = createServer((q, r) => { r.writeHead(200, { "content-type": "text/html" }); r.end(q.url === "/long" ? long : q.url === "/pane" ? pane : q.url === "/two" ? "<title>Page two</title><button>Back</button>" : q.url === "/form" ? form : q.url === "/rows" ? inbox() : q.url.startsWith("/search?") ? "<title>Results for " + new URL(q.url, "http://x").searchParams.get("q") + "</title><button>Back</button>" : page); }).listen(0, "127.0.0.1");
     await new Promise((r) => srv.on("listening", r));
     const out = {};
     out.map = await h.mapPage("127.0.0.1:" + srv.address().port, "");
@@ -762,6 +766,22 @@ try {
     const go0 = (out.fmap.regions || []).find((r) => r.label === "Go");
     out.fold = go0 ? await h.pressRegion(out.fmap.id, go0.id, { confirmed: true }) : null;
     await h.closeBrowser(); out.fclosed = !h.browserOpen();
+    // Scroll (still kept open): down, to the bottom, past it; then, closed, an older screen again
+    const base = "127.0.0.1:" + srv.address().port;
+    out.lmap = await h.mapPage(base + "/long", "");
+    out.cliShow = JSON.parse(execFileSync(process.execPath, [${JSON.stringify(INDEX)}, "screens", "show", out.lmap.id], { encoding: "utf8" }));
+    out.ldown = await h.scrollPage(out.lmap.id);
+    out.lbottom = await h.scrollPage(out.ldown.id, "bottom");
+    out.lpast = await h.scrollPage(out.lbottom.id, "down");
+    out.lsideways = await h.scrollPage(out.lbottom.id, "sideways");
+    out.cliMore = JSON.parse(execFileSync(process.execPath, [${JSON.stringify(INDEX)}, "screens", "show", out.lbottom.id], { encoding: "utf8" }));
+    await h.closeBrowser();
+    out.lagain = await h.scrollPage(out.ldown.id, "down");
+    out.pmap = await h.mapPage(base + "/pane", "");
+    out.pdown = await h.scrollPage(out.pmap.id);
+    out.pup = await h.scrollPage(out.pdown.id, "up");
+    out.fits = await h.scrollPage(out.fmap.id);
+    await h.closeBrowser();
     srv.close();
     console.log(JSON.stringify(out));`], { encoding: "utf8", timeout: 150000, env: { ...process.env, HOME: pghome, USERPROFILE: pghome } });
   let ho = {}; try { ho = JSON.parse(hx.stdout); } catch {}
@@ -785,6 +805,15 @@ try {
     ok("kept open: typed without Enter, it's still there for a separate button on the screen that mapped", ho.ftype && ho.ftype.found && !ho.ftype.entered && ho.fopen === true && ho.fpress && ho.fpress.kept === true && ho.fpress.name === "Results for kept", [ho.ftype && ho.ftype.error, ho.fopen, ho.fpress && (ho.fpress.error || ho.fpress.name)]);
     ok("kept open: a press on an older screen opens its page again (what was typed there is gone)", ho.fold && !ho.fold.kept && ho.fold.name === "Results for", ho.fold && (ho.fold.error || ho.fold.name));
     ok("closeBrowser closes it", ho.fclosed === true, ho.fclosed);
+    const rl = (x) => ((x || {}).regions || []).map((r) => r.label), sy = (x) => ((x || {}).page || {}).scroll || {};
+    ok("mapPage: a page taller than the window says how far down it is (the page itself scrolls: no selector)", sy(hm).y === 0 && sy(hm).max > 1000 && !sy(hm).selector && sy(ho.lmap).max === 2200 && rl(ho.lmap).join() === "Top button", [sy(hm), sy(ho.lmap), rl(ho.lmap)]);
+    ok("screens show: \"more\" says there's more below, or above at the end", ho.cliShow && ho.cliShow.more === "below" && ho.cliShow.page.scroll.max === 2200 && ho.cliMore && ho.cliMore.more === "above", [ho.cliShow && ho.cliShow.more, ho.cliMore && ho.cliMore.more]);
+    const mid = ((ho.ldown || {}).regions || []).find((r) => r.label === "Middle button") || {};
+    ok("scrollPage: down most of a window, then maps what's in it as a new screen, named for how far down", ho.ldown && ho.ldown.id !== ho.lmap.id && sy(ho.ldown).y === 680 && rl(ho.ldown).join() === "Middle button" && mid.y === 320 && ho.ldown.scrolled === "down" && ho.ldown.kept === true && ho.ldown.name === "Long ↓ 31%", ho.ldown && (ho.ldown.error || [sy(ho.ldown), rl(ho.ldown), mid, ho.ldown.name]));
+    ok("scrollPage: to the bottom, and past it says so without a new screen", sy(ho.lbottom).y === 2200 && rl(ho.lbottom).join() === "Last button" && ho.lbottom.name === "Long ↓ 100%" && /bottom of the page already/.test((ho.lpast || {}).error || "") && !ho.lpast.id && /Scroll down, up, top, bottom/.test((ho.lsideways || {}).error || ""), [sy(ho.lbottom), ho.lpast, ho.lsideways]);
+    ok("scrollPage: an older screen, once closed, opens again where it was, then scrolls on from there", ho.lagain && !ho.lagain.kept && sy(ho.lagain).y === 1360, ho.lagain && (ho.lagain.error || sy(ho.lagain)));
+    ok("scrollPage: a list that scrolls inside the page (Gmail's) is what scrolls, found again by its selector", sy(ho.pmap).selector === "#list" && sy(ho.pmap).max === 1660 && !rl(ho.pmap).includes("Row 25") && rl(ho.pdown).includes("Row 25") && sy(ho.pdown).y === 629 && sy(ho.pup).y === 0 && rl(ho.pup).includes("Row 0"), [sy(ho.pmap), sy(ho.pdown), rl(ho.pdown).slice(0, 3), ho.pup && (ho.pup.error || sy(ho.pup))]);
+    ok("scrollPage: a page that fits in the window has nothing to scroll", /Nothing scrolls/.test((ho.fits || {}).error || "") && !sy(ho.fmap).max, ho.fits);
     const rd = ho.read || {}, rrows = (rd.items || []).filter((r) => r.kind === "row");
     ok("readPage: reads a page's rows, each with all its text, without saving a screen, and closes after", rrows.length === 2 && rrows[0].label.length === 80 && /usual place near the office$/.test(rrows[0].text || "") && ho.readNoScreen && ho.readClosed && rd.login === false, rd.error || [rrows, ho.readNoScreen, ho.readClosed]);
     ok("readPage: leaves the browser alone while it's open for a type-then-press", ho.readBusy && ho.readBusy.busy === true && !ho.readBusy.items, ho.readBusy);

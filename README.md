@@ -584,7 +584,12 @@ browser, takes its screenshot and marks every button, link and field on it by
 itself, named from the page (`Compose`, `Search mail`, …) with what each one is
 and a CSS selector to find it again. Nothing to bring to the front, nothing to
 drag. Only what you could click right now counts: anything hidden, below the
-fold or covered by something else is left out. **Press** on a region clicks it
+fold or covered by something else is left out. A site is usually taller than
+the window, so a map only has the part that fits: when there's more, the screen
+says so and **Scroll down** (and **Scroll up**) scrolls the page in the hidden
+browser and maps what's in the window then, as a new screen. It scrolls what your
+mouse wheel would: the page, or the part of it that scrolls on its own (Gmail's
+list of mail). Scrolling only looks, so it never asks first. **Press** on a region clicks it
 in that hidden browser and maps the page it leads to as a new screen, so map,
 press, map is how an agent finds its way around a site. **Type** on a field types
 your text into it there (replacing what was in it) and, with **Type, then Enter**
@@ -615,6 +620,7 @@ symbiot screens type <id> "Search mail" "invoice" --enter --yes   # type into a 
                                        # (--yes isn't needed on a site under Trusted sites in Settings)
 symbiot screens type <id> To "sam@example.com" --yes   # without --enter: the text stays in the field...
 symbiot screens press <new id> Send --yes  # ...for a press on the screen that just printed
+symbiot screens scroll <id>            # "more": "below"? scroll down and map the next part (or up, top, bottom)
 symbiot screens show <id>              # a saved screen's blueprint
 symbiot screens signin gmail           # sign in once, in Symbiot's browser window
 symbiot screens                        # list them
