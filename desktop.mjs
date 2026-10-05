@@ -84,8 +84,12 @@ function notifyCmd(title, body, platform = OS) {
     const q = (s) => "'" + String(s).replace(/'/g, "''") + "'";
     return ["powershell", ["-NoProfile", "-WindowStyle", "Hidden", "-Command", `Add-Type -AssemblyName System.Windows.Forms; $n = New-Object System.Windows.Forms.NotifyIcon; $n.Icon = [System.Drawing.SystemIcons]::Information; $n.Visible = $true; $n.ShowBalloonTip(10000, ${q(title)}, ${q(body)}, 'Info'); Start-Sleep -Seconds 11; $n.Dispose()`]];
   }
-  // Android (Termux): termux-notification, from the termux-api package + the Termux:API app
-  if (platform === "android") return hasCmd("termux-notification") ? ["termux-notification", ["--id", "symbiot", "--title", title, "--content", body]] : null;
+  // Android (Termux): termux-notification, from the termux-api package + the Termux:API app.
+  // One per source: Watch's "3 new · Inbox" replaces Inbox's last one, not GitHub's.
+  if (platform === "android") {
+    const from = (String(title).match(/ · (.+)$/) || [])[1], id = from ? "symbiot-" + from.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) : "symbiot";
+    return hasCmd("termux-notification") ? ["termux-notification", ["--id", id, "--title", title, "--content", body]] : null;
+  }
   return hasCmd("notify-send") ? ["notify-send", ["--app-name=Symbiot", title, body]] : null;
 }
 // In the app: a line in a file its service watches, and it posts the notification.

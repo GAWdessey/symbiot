@@ -20,8 +20,9 @@ symbiot logout     forget saved credentials
 symbiot help
 ```
 
-A few newer extras (email, CI checks, local-model setup) are
-[experimental](#experimental).
+The newer extras are [experimental](#experimental): email, CI checks,
+local-model setup, Screens and Watch, and Symbiot on a phone. The list there says
+what's stable and what isn't.
 
 ## Install
 
@@ -114,7 +115,8 @@ repo is now archived), without Electron:
 
 ### On your phone (Android, in Termux)
 
-Experimental, and not yet tried on a real phone. Symbiot is a Node CLI, so it runs
+Experimental, and tried on one phone so far (a Galaxy A26, Android 16), where it
+found the projects in Termux's home and in a Debian `proot-distro`. Symbiot is a Node CLI, so it runs
 in [Termux](https://termux.dev) (install it from F-Droid; the Play Store build is
 out of date) next to the coding agent you use there. It works on the repos on your
 phone, the same way it works on your computer's:
@@ -228,24 +230,36 @@ your review** at the top of the Tasks tab, grouped by repo, with the branch, the
 size of the uncommitted change and a **Show diff** button. For each repo:
 
 - **Approve → PR** syncs the work. If you're on the default branch it creates
-  `symbiot/<task>`, commits everything except `.symbiot/` with the approved tasks as
-  the message, pushes, and opens a PR with the GitHub CLI (`gh`). If you're already
-  on a feature branch it commits and opens the PR from there. Each step that can't
+  `symbiot/<task>`, commits everything except `.symbiot/`, pushes, and opens a PR
+  with the GitHub CLI (`gh`). The commit's subject (and the PR's title) is the
+  first approved task, with how many more there are ("Watch GitHub too (+2
+  more)"), and its message lists them all, so `git log` reads as a history. If
+  you're already on a feature branch it commits and opens the PR from there,
+  unless that branch's earlier PR was already squash-merged: then it starts a
+  fresh `symbiot/` branch from the default one, so the new PR can merge. Each step that can't
   happen stops there and says why: no `origin` remote means a local commit only, and
   without `gh` it pushes and stops. Your commit is never lost. Then the tasks are
   archived with their commit and PR link. With no changes to commit the button
   reads **Approve → archive** and just archives them.
 - **↩ (send back)** is for one that isn't right: it reopens the task and unticks it in
   `TASKS.md`, so the next **Send to repos** hands it to the agent again.
+- **Auto-merge when CI passes** (a switch on the card, per repo, off by default)
+  queues GitHub's own auto-merge on the PR Approve opens, so it merges once its
+  required checks pass. It needs "Allow auto-merge" in the repo's GitHub
+  settings; without it, the card says so.
 
-Tasks waiting for review aren't re-sent to the agent.
+Tasks waiting for review aren't re-sent to the agent, and while the repo's agent
+is still running, Approve waits ("agent still working"), so half-done work isn't
+committed.
 
-**Releases.** For a repo that releases with `v*` tags, the review card warns when
-the default branch is past its last tag (merged work that isn't released). If
-`package.json`'s version is already released and the changes don't touch it, a
-**Version** picker next to Approve bumps it in the same PR: a patch by default, or a
-minor, or keep it. It updates `package.json` and the lockfile's own version, and the
-PR says which tag to push once it merges.
+**Releases.** The review card warns about merged work that isn't released yet,
+measured the way the repo releases: from its last `v*` tag, or, for a repo whose
+GitHub workflow runs `npm publish` on every push to its default branch, from the
+version npm has. If `package.json`'s version is already released and the changes
+don't touch it, a **Version** picker next to Approve bumps it in the same PR: a
+patch by default, or a minor, or keep it. It updates `package.json` and the
+lockfile's own version, and the PR says what happens next: it publishes when it
+merges, or which tag to push once it does.
 
 If a repo you sent tasks to has uncommitted changes but no ticked task (say the
 agent made a fix and didn't tick anything), it still shows up here, with
@@ -317,18 +331,25 @@ Codex, Aider, Gemini, Cursor, whatever you run) a way to ask anyway. It writes
 ## Questions
 ### Keep the old config format working?
 Reading both costs about 40 lines.
-- Yes, read both (recommended)
-- No, migrate once and drop it
+- 🤖 Agent: read both (recommended)
+- 👤 You: migrate your config once, then the agent drops the old format
 
 ## Suggestions
 - Add a --json flag to drift
+- [repo: symbiot] Show the drift report in Standup
 ```
 
 Up to five questions show on that agent's block in the **Agents** tab, each with
-its options and room for your own answer, alongside its ideas. **Send answers &
+its options and room for your own answer, alongside its ideas. Each option says
+who acts: **You** (a setting, a click, a command) or **Agent** (picking it is
+enough). A question that needs a release ("Once 0.41.0 is installed: …") shows
+the version installed here and the one on npm, and holds back a "Done" answer
+until that release is out and installed. **Send answers &
 continue** appends your answers to `.symbiot/ANSWERS.md` and runs your agent
 command again so the agent carries on with them. **Save only** keeps them for the
-next run. **+ task** adds an idea to your Tasks for that repo. The agent is told to
+next run. **+ task** adds an idea to your Tasks for that repo, or, for an idea
+that starts with `[repo: <name>]`, to that repo's Tasks: an agent working on one
+project can have ideas for another (Symbiot itself, say). The agent is told to
 keep going with everything that doesn't depend on an answer, and to ask instead of
 doing anything destructive. Both files live in `.symbiot/`, so they're never
 committed.
@@ -431,19 +452,50 @@ instead of hanging. The CLI shows scan progress on one line as it goes.
 - **Sends to the AI:** commit messages and dates, changed-file **names**, the
   folder structure, `TODO`/`FIXME` lines, and (for a repo review) an excerpt of
   the README and any `CLAUDE.md`/`AGENTS.md` conventions. With email on, it also
-  sends the subjects and recipient names of mail you sent. It does **not** send
-  whole source files or any email body. With a **local Ollama model, nothing leaves your machine.**
+  sends the subjects and recipient names of mail you sent. When you ask about a
+  task (💬) the agent has finished, it sends the first 6 KB of the agent's diff,
+  which can include a new file's contents. Standup sends up to 10 of what's new
+  on each page you [Watch](#screens-blueprints-for-screen-automation) since
+  yesterday, and the brief (if you switch it on) sends each batch of it: for
+  Gmail, that's the sender, subject and one-line preview. Otherwise it does
+  **not** send source files, and it never sends a whole email body. With a **local Ollama model, nothing leaves your machine.**
 - **Shows its work:** every report ends with a footer — path, branch, how many
   commits matched you (e.g. "1090 of 1101"), the README's age, and the
   working-tree state — so you can see exactly what it read.
-- **Never:** no keylogging, no screen capture, no browsing history, no accounts.
+- **Never:** no keylogging, no browsing history, no accounts. The
+  [experimental](#screens-blueprints-for-screen-automation) Screens takes a
+  screenshot only when you click Capture, and opens only the web pages you map
+  or Watch (in a browser profile of its own). What it maps and what Watch finds
+  stay on your computer, unless you pair your phone (Watch on your phone) or
+  switch on the brief, which sends what's new to your AI.
 - **Runs only what you set:** the agent command is yours, and deploy commands are
   read only from your own `~/.config/symbiot/`, never from a repo.
 
 ## Experimental
 
-These work and are tested, but are newer or depend on things Symbiot can't fully
-check, so they may change. Everything above works without them.
+**Stable:** `week`, `standup`, `todo`; the app's Map, Drift, Tasks, Agents and
+Settings; folders to scan (including project folders without git); `push` and
+the agent handoff; agent questions; review, Approve, the version bump and
+auto-merge; `drift` from local git facts; the weekly write-up and start at
+login. The test suite covers each of them.
+
+**Experimental:** the rest, below, and Symbiot on a phone ([Termux](#on-your-phone-android-in-termux)
+and the [Android app](#the-android-app-apk)). These work and are tested, but are
+newer, have only been tried on one or two setups, or depend on things Symbiot
+can't fully check, so they may change. Everything above works without them.
+
+- **Email** (`symbiot mail`): tested on mbox and Maildir, not yet on real Apple
+  Mail, Evolution or KMail stores.
+- **CI status** (`drift --ci`): GitHub Actions only, and "not running" is a guess.
+- **Local models** (`models`, `setup-local`).
+- **Screens**: Capture depends on your desktop allowing screenshots; Click here
+  hasn't been confirmed on Wayland (ydotool) or on Windows yet; Map page, Press,
+  Type and Trusted sites work on web pages only.
+- **Watch**: reads your Gmail inbox, but hasn't yet been seen to notify a new
+  email on a real one. GitHub through `gh` has been read from a real account,
+  but not yet left running. The brief, Standup's "Waiting on you" line and
+  **Watch on your phone** are new; the phone side hasn't been tried on a real
+  phone yet.
 
 ### Your sent email, without an API: `symbiot mail`
 
@@ -470,6 +522,9 @@ experimental: the tests cover mbox and Maildir, but it hasn't been tried against
 real Apple Mail, Evolution or KMail stores. On macOS, reading Apple Mail needs Full
 Disk Access for your terminal. Outlook for Windows (`.pst`) isn't supported:
 export to `.mbox` or use Thunderbird.
+
+This is mail you **sent**, for write-ups. To be told about **new mail in your
+inbox**, map it in Screens and [Watch](#screens-blueprints-for-screen-automation) it.
 
 ### CI status: `symbiot drift --ci`
 
@@ -575,11 +630,52 @@ Your coding agent reads it too, so it can act on it with `symbiot screens`:
 
 ```bash
 symbiot watch add <screen id> --every 15   # watch a mapped page (or: symbiot watch add gmail)
+symbiot watch add github                   # your GitHub notifications (see below)
 symbiot watch new --hours 24               # what's new, newest first (JSON)
 symbiot watch check                        # read them all now (JSON)
+symbiot watch brief on                     # your AI says what needs you (off to stop)
 symbiot watch                              # what you watch, and what's new
 symbiot watch remove <id>
 ```
+
+**GitHub too.** **Watch GitHub** (under Watching) or `symbiot watch add github`
+watches your GitHub notifications: review requests, failed CI runs, mentions,
+assignments. With the GitHub CLI signed in (`gh auth login`), Symbiot reads them
+through it (GitHub's API, your unread notifications), so nothing needs mapping or
+signing in. Without `gh`, it reads `github.com/notifications` in the hidden browser
+like any page (click **Sign in** with `github.com` once). Each notification is new
+when its thread changes, so a CI run that fails again on the same branch, or a new
+comment on a pull request, notifies you again. Failed CI runs reach you only if
+GitHub notifies you about them (GitHub → Settings → Notifications → Actions).
+
+**The brief.** Tick **Brief me** under Watching (or `symbiot watch brief on`) and
+the AI you connected reads each batch of what's new and says, in a line or three,
+what needs you and what can wait. The brief shows above what's new, and it's the
+text of the notification. The AI is sent what the page lists for each new item
+(for Gmail, the sender, subject and the one-line preview), and nothing at all
+leaves your computer with a local Ollama model. It's off until you tick it.
+
+**In Standup.** Standup ends with what's waiting on you since yesterday, counted
+from what Watch found: `Waiting on you: 3 emails, 2 GitHub notifications`. Symbiot
+counts them itself, so the numbers are right; the AI only sees them to know
+what's next.
+
+**On your phone.** What Watch finds on your computer can show up as a
+notification on your phone, through Symbiot there (the [Android app](#the-android-app-apk),
+or Symbiot in [Termux](#on-your-phone-android-in-termux)). On the computer, tick
+**Watch on your phone** in Settings: it shows the computer's address and a 6-digit
+code, good for 10 minutes. On the phone, in Settings → **Watch on your phone**,
+type both and click **Pair**. From then on, while Symbiot runs on both, the phone
+asks the computer every 2 minutes and notifies what's new there, with its brief.
+They have to be on the same network (or both on a VPN such as Tailscale, whose
+address is listed too). For this, the computer listens on port 7392 of your
+network, and serves only two things there: pairing with that code (5 wrong tries
+and the code is gone), and what's new for a phone that paired (with a token of its
+own; unpair it in Settings). Nothing can be changed from there, and the rest of
+Symbiot stays on `127.0.0.1`. What's new crosses your network unencrypted, so
+switch it on at home, not on a café's Wi-Fi. A firewall on the computer may need
+to allow the port. In Termux, notifications need the Termux:API app and
+`pkg install termux-api`.
 
 **More than one display?** Symbiot reads how your displays are laid out
 (`cosmic-randr`, `wlr-randr`, `kscreen-doctor` or `xrandr` on Linux, PowerShell on

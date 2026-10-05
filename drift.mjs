@@ -1,8 +1,9 @@
-// Drift facts for one repo: what's out of sync, stuck or at risk, from git
-// alone (plus gh for --ci and the user's own deploy commands).
+// Drift: what's out of sync, stuck or at risk in each repo, from git alone
+// (plus gh for --ci and the user's own deploy commands), and across all of them.
 import { join } from "node:path";
 import { readFileSync, statSync } from "node:fs";
 import { CONFIG_DIR, sh, hasCmd, repoState } from "./core.mjs";
+import { SCAN, scanBegin, scanPhase, scanTick, scanExpired, scanEnd, scanBase, findAllRepos } from "./scan.mjs";
 
 // ---- drift: what's out of sync / stuck / at risk (deterministic git facts) -
 function gitDefaultBranch(repo) {
@@ -121,4 +122,19 @@ function driftRepo(p, opts = {}) {
   return { name, path: p, def, flags, fetchAgeDays: fa };
 }
 
-export { gitDefaultBranch, loadDeploys, driftRepo };
+// ---- drift across every repo (the same repos the Map finds) ----------------
+function computeDrift(opts = {}) {
+  const own = scanBegin();
+  try {
+    const deploys = loadDeploys();
+    const found = findAllRepos().slice(0, 20), repos = [];
+    scanPhase("checking drift", found.length);
+    for (const r of found) {
+      if (scanExpired()) break;
+      repos.push(driftRepo(r.path, { deploys, ci: opts.ci, fetch: opts.fetch })); scanTick(r.name);
+    }
+    return { repos, ci: !!opts.ci, partial: SCAN.partial, base: scanBase() };
+  } finally { scanEnd(own); }
+}
+
+export { gitDefaultBranch, loadDeploys, driftRepo, computeDrift };

@@ -17,7 +17,8 @@ import { pngSize, pngDecode, splitPng, captureCmds, clickCmds, portalAppId, moni
 import { siteUrl, browserArgs, isTrusted } from "../headless.mjs";
 import { deflateSync } from "node:zlib";
 import { weeklyDue, lastSlot, autostartFile, autostartContent, notifyCmd } from "../desktop.mjs";
-import { itemKey, itemsOf, newItems, remember } from "../watch.mjs";
+import { itemKey, itemsOf, newItems, remember, githubItems } from "../watch.mjs";
+import { lanAddresses, computerUrl } from "../phone.mjs";
 
 const INDEX = join(dirname(fileURLToPath(import.meta.url)), "..", "index.mjs");
 const ROOT = mkdtempSync(join(tmpdir(), "symbiot-fix-"));
@@ -480,6 +481,16 @@ try {
   ok("two questions, in order", pq.questions.length === 2 && pq.questions[0].q === "Keep the old config format?" && pq.questions[1].q === "Which port?", pq.questions);
   ok("context and options attach to their question", pq.questions[0].context === "Reading both costs ~40 lines." && pq.questions[0].options.join("|") === "Yes, read both (recommended)|No, migrate once" && pq.questions[1].options.join("|") === "7391|random", pq.questions);
   ok("suggestions are their own list (checkbox bullets too)", pq.suggestions.join("|") === "Add a --json flag to drift|Cache the map scan", pq.suggestions);
+  // an idea for another project names it: an agent on coral with an idea for Symbiot
+  const aqDir = join(ROOT, "aq"), aqHome = join(ROOT, "aqhome");
+  mkdirSync(join(aqDir, ".symbiot"), { recursive: true }); mkdirSync(join(aqHome, ".config", "symbiot"), { recursive: true });
+  writeFileSync(join(aqDir, ".symbiot", "QUESTIONS.md"), "## Suggestions\n- [repo: symbiot] Watch GitHub too\n- Cache the map scan\n- [Repo:coral]  Same repo, named\n- [WIP] Not a repo tag\n");
+  writeFileSync(join(aqHome, ".config", "symbiot", "tasks.json"), JSON.stringify([{ id: "a", text: "Watch GitHub too", repo: "symbiot", done: false }]));
+  const aq = spawnSync(process.execPath, ["--input-type=module", "-e", `import { agentQuestions } from ${JSON.stringify(join(dirname(INDEX), "agents.mjs"))}; console.log(JSON.stringify(agentQuestions(${JSON.stringify(aqDir)}, "coral").suggestions));`], { encoding: "utf8", env: { ...process.env, HOME: aqHome, USERPROFILE: aqHome } });
+  let ideas = []; try { ideas = JSON.parse(aq.stdout); } catch { console.log(aq.stdout, aq.stderr); }
+  ok("an idea starting [repo: symbiot] goes to symbiot's tasks (and shows it's there), not the agent's repo's", ideas[0] && ideas[0].text === "Watch GitHub too" && ideas[0].repo === "symbiot" && ideas[0].other && ideas[0].added, ideas[0]);
+  ok("...ideas naming no repo, or their own, stay with the agent's repo; other brackets are just text", ideas.slice(1).map((x) => `${x.repo}:${x.other}:${x.text}`).join("|") === "coral:false:Cache the map scan|coral:false:Same repo, named|coral:false:[WIP] Not a repo tag", ideas.slice(1));
+  ok("the brief tells agents how to name another project", /`- \[repo: symbiot\] …`/.test(buildTasksMd("x", {}, [{ text: "t" }])), "");
   const loose = parseQuestions("- Should I delete the legacy folder?\n- Rename it instead?");
   ok("bare bullets with no headings are still questions", loose.questions.length === 2 && loose.questions[0].options.length === 0, loose);
   // regression: a preamble file-list (bullets NOT ending in "?") before the
@@ -802,6 +813,98 @@ try {
   if (process.platform !== "win32") ok("watch.json is readable by you only (0600)", wo.mode === 0o600, wo.mode);
   ok("dueWatches: due once its minutes have passed, not straight after a read", wo.due === 1 && wo.notDue === 0, [wo.due, wo.notDue]);
   ok("removeWatch: stops it and forgets what it found", wo.rm && wo.rm.ok && wo.after && wo.after.watches.length === 0 && wo.after.news.length === 0, wo.after);
+
+  console.log("WATCH GITHUB — your notifications through gh, and the brief");
+  const ghn = (id, reason, type, title, updated, url) => ({ id, reason, updated_at: updated, subject: { type, title, url }, repository: { full_name: "pat/app", html_url: "https://github.com/pat/app" } });
+  const gi = githubItems([
+    ghn("1", "review_requested", "PullRequest", "Add login", "2026-10-05T08:00:00Z", "https://api.github.com/repos/pat/app/pulls/12"),
+    ghn("2", "ci_activity", "CheckSuite", "CI workflow run failed for main branch", "2026-10-05T09:00:00Z", null),
+    ghn("3", "mention", "Issue", "Crash on start", "2026-10-05T07:00:00Z", "https://api.github.com/repos/pat/app/issues/7"),
+    { id: "4", subject: {} },
+  ]);
+  ok("githubItems: says why (not for CI, whose title says it), the repo and the title", gi.length === 3 && gi[0].text === "Review requested · pat/app · Add login" && gi[1].text === "pat/app · CI workflow run failed for main branch" && gi[2].text === "Mentioned · pat/app · Crash on start", gi);
+  ok("githubItems: links to the pull request, the issue, or the repo's Actions for a CI run", gi[0].href === "https://github.com/pat/app/pull/12" && gi[2].href === "https://github.com/pat/app/issues/7" && gi[1].href === "https://github.com/pat/app/actions", gi.map((x) => x.href));
+  ok("githubItems: keyed by thread and when it changed", gi[1].key === "github 2 2026-10-05T09:00:00Z", gi[1]);
+  const ghome = join(ROOT, "ghome"); mkdirSync(join(ghome, ".config", "symbiot"), { recursive: true });
+  const gx = spawnSync(process.execPath, ["--input-type=module", "-e", `
+    import * as w from ${JSON.stringify(join(dirname(INDEX), "watch.mjs"))};
+    const n = (id, title, updated) => ({ id, reason: "ci_activity", updated_at: updated, subject: { type: "CheckSuite", title }, repository: { full_name: "pat/app", html_url: "https://github.com/pat/app" } });
+    let list = [n("1", "CI workflow run failed for main branch", "a")], gh = true;
+    const told = [], briefed = [], out = {};
+    const opts = { github: async () => (gh ? { url: w.GITHUB_INBOX, list: w.githubItems(list), via: "gh" } : null), read: async () => ({ url: "https://github.com/notifications", items: [{ kind: "link", label: "Some link on the page" }] }), notify: (t, b) => told.push([t, b]), brief: async (news, name) => { briefed.push([news.length, name]); return "Needs you: main is failing on pat/app."; } };
+    out.add = w.addWatch({ site: "github" }); out.again = w.addWatch({ site: "https://github.com/notifications" });
+    out.first = await w.checkWatch(out.add.id, opts);
+    // the same title again is a new thread: a second failure on main
+    list = [n("2", "CI workflow run failed for main branch", "b"), ...list];
+    out.next = await w.checkWatch(out.add.id, opts); out.toldNext = told.slice(); out.briefedOff = briefed.length;
+    list = []; out.empty = await w.checkWatch(out.add.id, opts);
+    // gh out: the page is read instead, and learned again, not announced
+    gh = false; out.page = await w.checkWatch(out.add.id, opts); gh = true; out.back = await w.checkWatch(out.add.id, opts); out.toldSwitch = told.length;
+    out.on = w.setBrief(true);
+    list = [n("3", "CI workflow run failed for dev branch", "c")];
+    out.briefed = await w.checkWatch(out.add.id, opts); out.toldBrief = told[told.length - 1];
+    out.state = w.watchState();
+    out.waiting = w.waitingOn(24);
+    out.after = w.newsAfter(out.next.last); out.none = w.newsAfter(Date.now() + 1000);
+    console.log(JSON.stringify(out));`], { encoding: "utf8", env: { ...process.env, HOME: ghome, USERPROFILE: ghome } });
+  let go = {}; try { go = JSON.parse(gx.stdout); } catch {}
+  ok("watch add github: GitHub's notifications, named so; github.com/notifications is the same watch", go.add && go.add.url === "https://github.com/notifications" && go.add.name === "GitHub notifications" && go.again && go.again.id === go.add.id, go.add || gx.stderr.slice(-600));
+  ok("through gh: the first read learns what's unread, says so", go.first && go.first.learned === 1 && go.first.via === "gh" && !go.first.error, go.first);
+  ok("a second CI failure with the same title is new, and notified (no brief while it's off)", go.next && (go.next.new || []).length === 1 && /CI workflow run failed for main/.test(go.next.new[0].text) && go.next.new[0].href === "https://github.com/pat/app/actions" && (go.toldNext || []).length === 1 && go.briefedOff === 0, [go.next, go.toldNext]);
+  ok("nothing unread is a good read through gh, not an error", go.empty && !go.empty.error && (go.empty.new || []).length === 0, go.empty);
+  ok("gh out, then back: the page and gh are each learned again, nothing announced", go.page && go.page.learned === 1 && !go.page.via && go.back && go.back.learned === 0 && go.back.via === "gh" && go.toldSwitch === 1, [go.page, go.back, go.toldSwitch]);
+  ok("brief on: the AI's read is kept and is the notification's text", go.on && go.on.brief === true && go.briefed && go.briefed.brief === "Needs you: main is failing on pat/app." && go.toldBrief && /^1 new · GitHub notifications/.test(go.toldBrief[0]) && go.toldBrief[1] === go.briefed.brief && go.state.brief === true && go.state.briefs.length === 1 && go.state.briefs[0].count === 1, [go.briefed, go.toldBrief, go.state && go.state.briefs]);
+  ok("waitingOn: what's new since yesterday per page, as \"2 GitHub notifications\"", (go.waiting || []).length === 1 && go.waiting[0].label === "2 GitHub notifications" && go.waiting[0].items.length === 2, go.waiting);
+  ok("newsAfter: only what's newer, with its brief (what the phone asks for)", go.after && go.after.news.length === 1 && go.after.briefs.length === 1 && go.none.news.length === 0, go.after);
+
+  console.log("WATCH ON YOUR PHONE — pair with a code, then the phone asks what's new (phone.mjs)");
+  const lan = lanAddresses({ lo: [{ family: "IPv4", address: "127.0.0.1", internal: true }], docker0: [{ family: "IPv4", address: "172.17.0.1", internal: false }], tailscale0: [{ family: "IPv4", address: "100.64.0.2", internal: false }], wlp2s0: [{ family: "IPv4", address: "192.168.8.50", internal: false }, { family: "IPv6", address: "fe80::1", internal: false }] });
+  ok("lanAddresses: your Wi-Fi address first, not Docker's or loopback", lan.join() === "192.168.8.50,100.64.0.2", lan);
+  ok("computerUrl: an address as typed, with the port Symbiot uses unless one's given", computerUrl("192.168.8.50") === "http://192.168.8.50:7392" && computerUrl(" 192.168.8.50:8000/ ") === "http://192.168.8.50:8000" && computerUrl("") === "", [computerUrl("192.168.8.50"), computerUrl(" 192.168.8.50:8000/ ")]);
+  const phome = join(ROOT, "phome"); mkdirSync(join(phome, ".config", "symbiot"), { recursive: true });
+  const px = spawnSync(process.execPath, ["--input-type=module", "-e", `
+    import { createServer } from "node:net";
+    import { writeFileSync, readFileSync } from "node:fs";
+    import { join } from "node:path";
+    const port = await new Promise((r) => { const s = createServer().listen(0, "127.0.0.1", () => { const p = s.address().port; s.close(() => r(p)); }); });
+    const dir = join(${JSON.stringify(phome)}, ".config", "symbiot");
+    writeFileSync(join(dir, "config.json"), JSON.stringify({ phoneLink: { port } }));
+    const p = await import(${JSON.stringify(join(dirname(INDEX), "phone.mjs"))});
+    const out = {}, told = [];
+    const put = (news, briefs = []) => writeFileSync(join(dir, "watch.json"), JSON.stringify({ watches: [], news, briefs }));
+    put([{ id: "o", watch: "w1", name: "Inbox", ts: 1, text: "Old mail" }]);
+    out.off = p.linkState();
+    out.on = await p.setPhoneLink(true);
+    out.wrong = await p.pairComputer("127.0.0.1:" + port, "000000" === out.on.code ? "111111" : "000000");
+    out.bad = await p.pairComputer("", "123456");
+    out.paired = await p.pairComputer("127.0.0.1:" + port, out.on.code, { name: "Pixel" });
+    out.reuse = await (await fetch("http://127.0.0.1:" + port + "/phone/pair", { method: "POST", body: JSON.stringify({ code: out.on.code }) })).json();
+    const since = JSON.parse(readFileSync(join(dir, "config.json"), "utf8")).computer.since;
+    put([{ id: "a", watch: "w1", name: "Inbox", ts: since + 10, text: "Sam, Contract signed" }, { id: "b", watch: "w1", name: "Inbox", ts: since + 10, text: "Ann, Lunch?" }, { id: "c", watch: "w2", name: "GitHub notifications", ts: since + 5, text: "pat/app · CI failed" }, { id: "o", watch: "w1", name: "Inbox", ts: 1, text: "Old mail" }],
+      [{ id: "x", watch: "w1", name: "Inbox", ts: since + 10, count: 2, text: "Needs you: Sam's contract." }]);
+    out.poll = await p.pollComputer({ notify: (t, b) => told.push([t, b]) }); out.told = told.slice();
+    out.again = await p.pollComputer({ notify: (t, b) => told.push([t, b]) }); out.toldAgain = told.length;
+    out.stranger = (await fetch("http://127.0.0.1:" + port + "/phone/news?since=0", { headers: { "x-symbiot-phone": "nope" } })).status;
+    out.other = (await fetch("http://127.0.0.1:" + port + "/api/tasks")).status;
+    out.state = p.linkState();
+    p.newCode(); for (let i = 0; i < 5; i++) await fetch("http://127.0.0.1:" + port + "/phone/pair", { method: "POST", body: JSON.stringify({ code: "abc" }) });
+    out.burnt = p.linkState().code || "";
+    p.unpairPhone(out.state.phones[0].id); out.unpaired = await p.pollComputer({ notify: () => {} });
+    out.offAgain = await p.setPhoneLink(false);
+    out.forgot = p.forgetComputer();
+    console.log(JSON.stringify(out)); process.exit(0);`], { encoding: "utf8", timeout: 60000, env: { ...process.env, HOME: phome, USERPROFILE: phome } });
+  let po = {}; try { po = JSON.parse(px.stdout.trim().split("\n").pop()); } catch {}
+  ok("off until you switch it on: nothing listens", po.off && po.off.on === false && po.off.listening === false, po.off || px.stderr.slice(-600));
+  ok("switched on: it listens, and shows a 6-digit code at once", po.on && po.on.listening && /^\d{6}$/.test(po.on.code || "") && po.on.until > 0, po.on);
+  ok("a wrong code, or no address, doesn't pair", po.wrong && !po.wrong.paired && /isn't right/.test(po.wrong.error || "") && po.bad && /address/.test(po.bad.error || ""), [po.wrong, po.bad]);
+  ok("the right code pairs the phone, and the code can't be used again", po.paired && po.paired.paired && po.paired.url && !po.paired.error && /No pairing code is open/.test((po.reuse || {}).error || ""), [po.paired, po.reuse]);
+  ok("the phone shows one notification per watch per read, with its brief, nothing from before pairing", po.poll && po.poll.shown === 2 && (po.told || []).length === 2 && po.told.some(([t, b]) => t === "2 new · Inbox" && b === "Needs you: Sam's contract.") && po.told.some(([t, b]) => t === "1 new · GitHub notifications" && /CI failed/.test(b)) && !po.told.some(([, b]) => /Old mail/.test(b)), [po.poll, po.told]);
+  ok("asked again: nothing new, nothing shown", po.again && po.again.shown === 0 && po.toldAgain === 2 && !po.again.error, po.again);
+  ok("only a paired phone gets what's new, and nothing else is served there", po.stranger === 403 && po.other === 404, [po.stranger, po.other]);
+  ok("the computer lists the phone by name, and when it last asked", po.state && po.state.phones.length === 1 && po.state.phones[0].name === "Pixel" && po.state.phones[0].seen > 0 && !("token" in po.state.phones[0]), po.state && po.state.phones);
+  ok("five wrong codes and the code is gone", po.burnt === "", po.burnt);
+  ok("unpaired: the phone is told to pair again", po.unpaired && /isn't paired any more/.test(po.unpaired.error || ""), po.unpaired);
+  ok("switched off: it stops listening; the phone can forget the computer", po.offAgain && po.offAgain.on === false && po.offAgain.listening === false && po.forgot && po.forgot.paired === false, [po.offAgain, po.forgot]);
 
   console.log("DESKTOP — the weekly write-up's schedule, and start at login (from symbiot-desktop)");
   const at = (daysAgo, hour, min = 0) => { const d = new Date(); d.setDate(d.getDate() - daysAgo); d.setHours(hour, min, 0, 0); return d.getTime(); };
