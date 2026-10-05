@@ -22,17 +22,18 @@ import Anthropic from "@anthropic-ai/sdk";
 import { spawn, spawnSync } from "node:child_process";
 import { homedir, totalmem, cpus as oscpus } from "node:os";
 import { join } from "node:path";
-import { readFileSync, writeFileSync, mkdirSync, existsSync, statSync, realpathSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, existsSync, statSync, realpathSync, readdirSync } from "node:fs";
 import { createInterface } from "node:readline";
 import { createServer } from "node:http";
 import { randomBytes } from "node:crypto";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { EMBEDDED_UI } from "./ui.mjs";
 import { detectMailSources, mailActivity } from "./mail.mjs";
-import { CONFIG_PATH, loadConfig, saveConfig, loadTasks, saveTasks, sh, hasCmd, repoState } from "./core.mjs";
+import { CONFIG_PATH, loadConfig, saveConfig, loadTasks, saveTasks, sh, hasCmd, chromeBinary, repoState } from "./core.mjs";
 import { HANDOFF_PROMPT, QUESTIONS_MAX, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, fillHandoff, runHandoff, runningHandoff, writeTasks, startHeldTasks, detectHandoffs, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, parseQuestions, agentQuestions, answerQuestions, agentsList } from "./agents.mjs";
 import { gitDefaultBranch, loadDeploys, driftRepo } from "./drift.mjs";
 import { loadScreens, screenImage, captureScreen, splitScreen, listMonitors, allowScreenshots, importScreen, setRegions, renameScreen, removeScreen, blueprint, clickRegion } from "./screens.mjs";
+import { mapPage, pressRegion, typeRegion, signIn, keepBrowserOpen, isTrusted, trustedSites, trustSite, untrustSite } from "./headless.mjs";
 import { weeklyState, setWeekly, runWeekly, startWeekly, autostartState, setAutostart } from "./desktop.mjs";
 
 const HERE = fileURLToPath(new URL(".", import.meta.url));
@@ -167,32 +168,86 @@ function workingDiff(path, cap = 400000) {
   }
   return d.length > cap ? d.slice(0, cap) + "\n… (diff truncated)" : d;
 }
-// Merged work that isn't released yet: how many commits the default branch (or
-// origin's copy, where approved PRs merge) is past its last v* tag, or null when
-// it isn't, or the repo doesn't release with v* tags. bump: the version these
-// uncommitted changes set in package.json, if they change it.
+// A repo that publishes on merge: a GitHub workflow runs `npm publish` on a push
+// to a branch, not only on a tag. Its release is the version npm has; a v* tag,
+// if any, is a best-effort record that can lag or be missing.
+function publishesOnMerge(path) {
+  const dir = join(path, ".github", "workflows"); let files = []; try { files = readdirSync(dir).filter((f) => /\.ya?ml$/.test(f)); } catch { return false; }
+  return files.some((f) => { let t = ""; try { t = readFileSync(join(dir, f), "utf8"); } catch {} return /\bnpm publish\b/.test(t) && /^\s*push:\s*\n\s+branches:/m.test(t); });
+}
+// Merged work that isn't released yet, or null when there's none, or the repo
+// has no releases to measure from. bump: the version these uncommitted changes
+// set in package.json, if they change it.
+// - Released by v* tag: how many commits the default branch (or origin's copy,
+//   where approved PRs merge) is past its last v* tag.
+// - Publishes on merge (npm: true): how many commits it's past the one that set
+//   the version npm has (since), once learnNpm knows. A branch whose version
+//   isn't on npm yet is merged and due to publish: { pending: version }.
 function unreleased(path) {
-  const base = gitDefaultBranch(path); let best = null;
+  const base = gitDefaultBranch(path), pom = publishesOnMerge(path); let best = null;
   for (const ref of ["refs/heads/" + base, "refs/remotes/origin/" + base]) {
-    const tag = git(path, ["describe", "--tags", "--abbrev=0", "--match", "v*", ref]).out; if (!tag) continue;
-    const ahead = +git(path, ["rev-list", "--count", tag + ".." + ref]).out || 0;
-    if (!best || ahead > best.ahead) best = { base, tag, ahead };
+    if (!git(path, ["rev-parse", "-q", "--verify", ref]).ok) continue;
+    let r = null;
+    if (pom) {
+      const k = npmKey(path, ref), v = k.slice(k.lastIndexOf("@") + 1), known = k && NPM_HAS.get(k); if (!known) continue;
+      if (!known.yes) r = { base, npm: true, pending: v, ahead: 0 };
+      else {
+        const set = git(path, ["log", "-1", "--format=%H", "-G", `"version"[[:space:]]*:[[:space:]]*"${v.replace(/\./g, "\\.")}"`, ref, "--", "package.json"]).out;
+        r = { base, npm: true, since: v, ahead: set ? +git(path, ["rev-list", "--count", set + ".." + ref]).out || 0 : 0 };
+      }
+    } else {
+      const tag = git(path, ["describe", "--tags", "--abbrev=0", "--match", "v*", ref]).out; if (!tag) continue;
+      r = { base, tag, ahead: +git(path, ["rev-list", "--count", tag + ".." + ref]).out || 0 };
+    }
+    // the copy furthest ahead; a merged version still to publish says more than a count
+    if (!best || (r.pending && !best.pending) || (!best.pending && r.ahead > best.ahead)) best = r;
   }
-  if (!best || !best.ahead) return null;
+  if (!best || (!best.ahead && !best.pending)) return null;
   const ver = (s) => { try { return String(JSON.parse(s).version || ""); } catch { return ""; } };
   let now = ""; try { now = ver(readFileSync(join(path, "package.json"), "utf8")); } catch {}
   const was = ver(git(path, ["show", "HEAD:package.json"]).out);
   return { ...best, ...(now && was && now !== was ? { bump: now } : {}) };
 }
-// Approve can bump the version in the PR itself, for a repo that releases with
-// v* tags: offered when the committed version is already released (its v* tag
-// exists) and these changes don't change it. { version, patch, minor } or null.
+// Approve can bump the version in the PR itself: offered when the committed
+// version is already released and these changes don't change it. Released: its
+// v* tag exists, or npm has it (a repo that publishes on merge may have no tag,
+// or one its release couldn't push). { version, patch, minor } or null.
 function bumpOffer(path) {
   const ver = (s) => { try { return String(JSON.parse(s).version || ""); } catch { return ""; } };
   const was = ver(git(path, ["show", "HEAD:package.json"]).out), m = was.match(/^(\d+)\.(\d+)\.(\d+)$/); if (!m) return null;
   let now = ""; try { now = ver(readFileSync(join(path, "package.json"), "utf8")); } catch {}
-  if (now !== was || !git(path, ["rev-parse", "-q", "--verify", "refs/tags/v" + was]).ok) return null;
+  if (now !== was || !(git(path, ["rev-parse", "-q", "--verify", "refs/tags/v" + was]).ok || onNpm(path))) return null;
   return { version: was, patch: `${m[1]}.${m[2]}.${+m[3] + 1}`, minor: `${m[1]}.${+m[2] + 1}.0` };
+}
+// Whether npm has the committed version, as learnNpm last found ("name@version" →
+// { yes, at }). bumpOffer only reads this; learnNpm asks the registry first.
+const NPM_HAS = new Map();
+function npmKey(path, ref = "HEAD") {
+  let p = {}; try { p = JSON.parse(git(path, ["show", ref + ":package.json"]).out) || {}; } catch {}
+  return typeof p.name === "string" && p.name && !p.private && typeof p.version === "string" && p.version ? p.name + "@" + p.version : "";
+}
+function onNpm(path) { const k = npmKey(path); return !!(k && NPM_HAS.get(k) && NPM_HAS.get(k).yes); }
+// Ask the registry about each repo's committed version, and for a repo that
+// publishes on merge, its default branch's (unreleased measures from that). A
+// yes is kept; a no is asked again after 5 minutes (it may have just been
+// published). True when it learned of a version on npm.
+async function learnNpm(paths, registry = REGISTRY) {
+  let learned = false;
+  const keys = new Set();
+  for (const path of new Set(paths.filter(Boolean))) {
+    keys.add(npmKey(path));
+    if (publishesOnMerge(path)) { const base = gitDefaultBranch(path); for (const ref of ["refs/heads/" + base, "refs/remotes/origin/" + base]) keys.add(npmKey(path, ref)); }
+  }
+  await Promise.all([...keys].map(async (k) => {
+    const was = NPM_HAS.get(k); if (!k || (was && (was.yes || Date.now() - was.at < 300000))) return;
+    const at = k.lastIndexOf("@"), name = k.slice(0, at), version = k.slice(at + 1);
+    try {
+      const r = await fetch(`${registry}/${encodeURIComponent(name).replace(/^%40/, "@")}/${encodeURIComponent(version)}`, { signal: AbortSignal.timeout(5000) });
+      const yes = r.ok && String((await r.json().catch(() => ({}))).version || "") === version;
+      NPM_HAS.set(k, { yes, at: Date.now() }); learned = learned || yes;
+    } catch {}
+  }));
+  return learned;
 }
 // Set the version in package.json and in package-lock.json / npm-shrinkwrap.json
 // (top level and its "" package), keeping each file's indent. Gives back a
@@ -227,10 +282,10 @@ function pendingReview() {
   const sent = [...new Set(t.filter((x) => x.repo && !x.archived && !by[x.repo]).map((x) => x.repo))];
   const map = Object.keys(by).length || sent.length ? repoPathMap() : {};
   const am = autoMergeRepos();
-  const out = Object.keys(by).sort().map((repo) => { const path = map[repo] || ""; return { repo, path, tasks: by[repo], autoMerge: am.includes(repo), running: !!(path && runningHandoff(path)), ...(path ? { ...workingChanges(path), unreleased: unreleased(path), bumpOffer: bumpOffer(path) } : { branch: "", files: [], stat: "" }) }; });
+  const out = Object.keys(by).sort().map((repo) => { const path = map[repo] || ""; return { repo, path, tasks: by[repo], autoMerge: am.includes(repo), running: !!(path && runningHandoff(path)), ...(path ? { ...workingChanges(path), unreleased: unreleased(path), bumpOffer: bumpOffer(path), publishesOnMerge: publishesOnMerge(path) } : { branch: "", files: [], stat: "" }) }; });
   for (const repo of sent.sort()) {
     const path = map[repo]; if (!path || !existsSync(join(path, ".symbiot", "TASKS.md"))) continue;
-    const wc = workingChanges(path); if (wc.files.length) out.push({ repo, path, tasks: [], untasked: true, autoMerge: am.includes(repo), running: !!runningHandoff(path), ...wc, unreleased: unreleased(path), bumpOffer: bumpOffer(path) });
+    const wc = workingChanges(path); if (wc.files.length) out.push({ repo, path, tasks: [], untasked: true, autoMerge: am.includes(repo), running: !!runningHandoff(path), ...wc, unreleased: unreleased(path), bumpOffer: bumpOffer(path), publishesOnMerge: publishesOnMerge(path) });
   }
   return out;
 }
@@ -259,7 +314,7 @@ function shipChanges(path, texts, opts = {}) {
   const add = git(path, ["add", "-A"]); if (!add.ok) return { error: "git add failed: " + add.err, branch };
   git(path, ["reset", "-q", "--", ".symbiot"]); // never ship Symbiot's own scratch
   const subject = !texts.length ? "symbiot: changes approved without a task" : texts.length === 1 ? (texts[0].length > 72 ? texts[0].slice(0, 71).replace(/\s+\S*$/, "") + "…" : texts[0]) : `symbiot: ${texts.length} approved tasks`;
-  const body = (texts.length ? texts.map((x) => "- " + x).join("\n") : "No ticked task covers these changes.") + (opts.bumped ? `\n\nBumps the version to ${opts.bumped}. After this merges, tag v${opts.bumped} on ${base} to release it.` : "");
+  const body = (texts.length ? texts.map((x) => "- " + x).join("\n") : "No ticked task covers these changes.") + (opts.bumped ? `\n\nBumps the version to ${opts.bumped}. ` + (publishesOnMerge(path) ? `It publishes to npm when this merges.` : `After this merges, tag v${opts.bumped} on ${base} to release it.`) : "");
   const cm = git(path, ["commit", "-m", subject, "-m", body]); if (!cm.ok) return { error: "Commit failed: " + (cm.err || cm.out), branch };
   const out = { ok: true, branch, base, commit: git(path, ["rev-parse", "--short", "HEAD"]).out, subject };
   if (opts.push === false) return out;
@@ -586,18 +641,42 @@ function expandRoot(p) { p = String(p || "").trim(); return p.startsWith("~") ? 
 // The default place to look: your home folder. The Android app's HOME is private
 // to it, so it sets SYMBIOT_SCAN_HOME to the phone's shared storage instead.
 function scanHome() { return process.env.SYMBIOT_SCAN_HOME || homedir(); }
-// Where to look for repos: configured folders, or --dir, else your home folder.
+// Without "All files access", the Android app sees shared storage as empty (it
+// always has Download, DCIM...), which would read as "no repos". The map says so
+// instead, with a button that asks for access.
+function storageBlocked() {
+  if (process.env.SYMBIOT_ANDROID_APP !== "1") return false;
+  try { return readdirSync(scanHome()).length === 0; } catch { return true; }
+}
+// Termux: a Linux run with proot-distro (`proot-distro login debian`) keeps its
+// home folders in $PREFIX/var/lib/proot-distro/installed-rootfs/<distro>, outside
+// Termux's home, and that's where projects worked on in it live. Symbiot in
+// Termux reads them there: /root and /home/<user> of each installed distro.
+function prootHomes() {
+  if (!process.env.PREFIX) return [];
+  const base = join(process.env.PREFIX, "var", "lib", "proot-distro", "installed-rootfs"), out = [];
+  const dirs = (p) => { try { return readdirSync(p, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => join(p, d.name)); } catch { return []; } };
+  for (const distro of dirs(base)) {
+    if (existsSync(join(distro, "root"))) out.push(join(distro, "root"));
+    out.push(...dirs(join(distro, "home")));
+  }
+  return out;
+}
+// Where to look when you haven't picked folders: your home folder (and in Termux,
+// the homes of its proot-distro Linuxes).
+function scanDefaults() { return [scanHome(), ...prootHomes()]; }
+// Where to look for repos: configured folders, or --dir, else the defaults.
 function scanRoots() {
   if (flag("dir", null)) return [BASE];
   const r = loadConfig().scanRoots;
   const roots = (Array.isArray(r) ? r : []).map(expandRoot).filter((x) => { try { return existsSync(x); } catch { return false; } });
-  return roots.length ? roots : [scanHome()];
+  return roots.length ? roots : scanDefaults();
 }
 function addScanRoot(p) {
   p = expandRoot(p); if (!p) return { error: "empty" };
   try { if (!existsSync(p)) return { error: "folder not found: " + p }; } catch { return { error: "can't read: " + p }; }
   const cfg = loadConfig();
-  let list = Array.isArray(cfg.scanRoots) && cfg.scanRoots.length ? cfg.scanRoots : [scanHome()]; // keep home when adding the first extra folder
+  let list = Array.isArray(cfg.scanRoots) && cfg.scanRoots.length ? cfg.scanRoots : scanDefaults(); // keep home when adding the first extra folder
   if (!list.includes(p)) list.push(p);
   cfg.scanRoots = list; saveConfig(cfg); LAST_MAP = null; return { ok: true, roots: cfg.scanRoots };
 }
@@ -860,7 +939,7 @@ function computeDrift(opts = {}) {
       if (scanExpired()) break;
       repos.push(driftRepo(r.path, { deploys, ci: opts.ci, fetch: opts.fetch })); scanTick(r.name);
     }
-    return { repos, ci: !!opts.ci, partial: SCAN.partial };
+    return { repos, ci: !!opts.ci, partial: SCAN.partial, base: BASE };
   } finally { scanEnd(own); }
 }
 function cmdDrift() {
@@ -1083,7 +1162,10 @@ async function buildMapScan() {
     commits: repos.reduce((s, r) => s + r.mine, 0),
     files: repos.reduce((s, r) => s + (r.files || 0), 0),
     base: BASE,
+    roots: scanRoots(), // every folder scanned (base is the first, unless you picked others)
     partial: SCAN.partial, // the scan hit its deadline — this is what it found so far
+    android: process.env.SYMBIOT_ANDROID_APP === "1",
+    noStorage: storageBlocked(),
   } };
   LAST_MAP = out;
   return out;
@@ -1280,6 +1362,9 @@ function setMail(b = {}) {
   if (typeof b.enabled === "boolean") m.enabled = b.enabled;
   if (b.add) {
     const p = expandRoot(b.add);
+    // A website typed here (it sits under Trusted sites, easily mixed up): say where it goes.
+    const site = p && !existsSync(p) && !/\.(mbox|mbx|eml|msf|sbd)$/i.test(p) && /^(https?:\/\/)?[a-z0-9-]+(\.[a-z0-9-]+)+(:\d+)?([/?#].*)?$/i.test(p) ? new URL(/^https?:/i.test(p) ? p : "https://" + p).hostname : "";
+    if (site) return { ...mailState(), site, error: `${site} is a website, not mail on this computer. To let Screens press and type there without asking, add it under Trusted sites, just above.` };
     if (!p || !existsSync(p)) return { ...mailState(), error: "not found: " + (p || "(empty)") };
     if (!m.sources.includes(p)) m.sources.push(p);
   }
@@ -1456,31 +1541,22 @@ function readBody(req) {
     req.on("end", () => { try { resolve(d ? JSON.parse(d) : {}); } catch { resolve({}); } });
   });
 }
-// Find a Chromium-family browser for the chrome-less --app window, per OS.
-function chromeBinary() {
-  const p = process.platform;
-  const exists = (f) => { try { return existsSync(f) ? f : null; } catch { return null; } };
-  if (p === "darwin") {
-    return ["/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-      "/Applications/Chromium.app/Contents/MacOS/Chromium",
-      "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
-      "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser"].map(exists).find(Boolean) || null;
-  }
-  if (p === "win32") {
-    const bases = [process.env.PROGRAMFILES, process.env["PROGRAMFILES(X86)"], process.env.LOCALAPPDATA].filter(Boolean);
-    const rels = ["Google\\Chrome\\Application\\chrome.exe", "Chromium\\Application\\chrome.exe",
-      "Microsoft\\Edge\\Application\\msedge.exe", "BraveSoftware\\Brave-Browser\\Application\\brave.exe"];
-    for (const base of bases) for (const r of rels) { const f = exists(join(base, r)); if (f) return f; }
-    const w = sh("where chrome 2>NUL").split(/\r?\n/).map((s) => s.trim()).find(Boolean);
-    return w || null;
-  }
-  return ["google-chrome", "google-chrome-stable", "chromium", "chromium-browser", "brave-browser", "microsoft-edge"].find(hasCmd) || null;
-}
+// http://127.0.0.1:<port>/?t=<token> -> symbiot://127.0.0.1:<port>/?t=<token>, for the Android app
+function appLink(url) { return url.replace(/^http:\/\//, "symbiot://"); }
+// Symbiot running in Termux (not the Android app's own)
+const IN_TERMUX = process.platform === "android" && process.env.SYMBIOT_ANDROID_APP !== "1";
 function openApp(url) {
   try {
-    // Android (Termux): hand the URL to the phone's browser. termux-open-url ships
-    // with Termux; `am start` is the fallback.
+    // Android (Termux): Symbiot's Android app shows this Symbiot full screen (it
+    // can't read Termux's home, this one can), so the link goes to it first, as a
+    // symbiot:// link: only that app takes those, where Android gives an http one
+    // to the browser. Without the app, `am` can't resolve it, and the URL goes to
+    // the phone's browser: termux-open-url ships with Termux, `am start` is the fallback.
     if (process.platform === "android") {
+      if (hasCmd("am")) {
+        const r = spawnSync("am", ["start", "-a", "android.intent.action.VIEW", "-d", appLink(url)], { encoding: "utf8", timeout: 8000 });
+        if (r.status === 0 && !/error|unable|exception/i.test(`${r.stdout || ""}${r.stderr || ""}`)) return "Symbiot app window";
+      }
       if (hasCmd("termux-open-url")) spawn("termux-open-url", [url], { detached: true, stdio: "ignore" }).unref();
       else spawn("am", ["start", "-a", "android.intent.action.VIEW", "-d", url], { detached: true, stdio: "ignore" }).unref();
       return "browser tab";
@@ -1526,8 +1602,11 @@ async function cmdApp() {
       }
     } catch {}
   }
+  // Screens' hidden browser stays open between map, press and type (headless.mjs),
+  // so an agent can type into a field and then press a separate button there.
+  keepBrowserOpen(BROWSER_KEEP);
   const json = (res, obj) => { res.writeHead(200, { "content-type": "application/json" }); res.end(JSON.stringify(obj)); };
-  const screenOut = (s) => (s && s.id ? { ...s, blueprint: blueprint(s) } : s && s.screens ? { ...s, screens: s.screens.map(screenOut) } : s);
+  const screenOut =(s) => (s && s.id ? { ...s, blueprint: blueprint(s), ...(s.page ? { trusted: isTrusted(s.page.url) } : {}) } : s && s.screens ? { ...s, screens: s.screens.map(screenOut) } : s);
   const server = createServer(async (req, res) => {
     const u = new URL(req.url, "http://127.0.0.1");
     if (req.method === "GET" && u.pathname === "/") { res.writeHead(200, { "content-type": "text/html; charset=utf-8" }); res.end(EMBEDDED_UI); return; }
@@ -1552,10 +1631,16 @@ async function cmdApp() {
       if (u.pathname === "/api/tasks/sync" && req.method === "POST") return json(res, syncTasks());
       if (u.pathname === "/api/tasks/chat" && req.method === "POST") { const b = await readBody(req); return json(res, await taskChat(String(b.id || ""), b.question)); }
       if (u.pathname === "/api/tasks/chat/clear" && req.method === "POST") { const b = await readBody(req); return json(res, clearTaskChat(String(b.id || ""))); }
-      if (u.pathname === "/api/pending") return json(res, pendingReview()); // ticked by the agent, awaiting approval
+      if (u.pathname === "/api/pending") { // ticked by the agent, awaiting approval
+        // what npm has decides the bump offer, and for a repo that publishes on
+        // merge, what's unreleased: ask, then recount (answers are cached)
+        const list = pendingReview(), ask = list.filter((r) => r.path && (!r.bumpOffer || r.publishesOnMerge)).map((r) => r.path);
+        if (!ask.length) return json(res, list);
+        await learnNpm(ask); return json(res, pendingReview());
+      }
       if (u.pathname === "/api/pending/diff") { const p = repoPathMap()[u.searchParams.get("repo") || ""]; return json(res, { diff: p ? workingDiff(p) : "" }); }
-      if (u.pathname === "/api/pending/approve" && req.method === "POST") { const b = await readBody(req); return json(res, approveRepo(String(b.repo || ""), { bump: b.bump })); }
-      if (u.pathname === "/api/pending/approve-changes" && req.method === "POST") { const b = await readBody(req); return json(res, approveChanges(String(b.repo || ""), { bump: b.bump })); }
+      if (u.pathname === "/api/pending/approve" && req.method === "POST") { const b = await readBody(req); if (b.bump) await learnNpm([repoPathMap()[String(b.repo || "")]]); return json(res, approveRepo(String(b.repo || ""), { bump: b.bump })); }
+      if (u.pathname === "/api/pending/approve-changes" && req.method === "POST") { const b = await readBody(req); if (b.bump) await learnNpm([repoPathMap()[String(b.repo || "")]]); return json(res, approveChanges(String(b.repo || ""), { bump: b.bump })); }
       if (u.pathname === "/api/pending/sendback" && req.method === "POST") { const b = await readBody(req); return json(res, sendBack(String(b.id || ""))); }
       if (u.pathname === "/api/automerge" && req.method === "POST") { const b = await readBody(req); return json(res, setAutoMerge(String(b.repo || ""), !!b.on)); }
       if (u.pathname === "/api/tasks/push" && req.method === "POST") { const b = await readBody(req); return json(res, pushTasks(b)); }
@@ -1597,6 +1682,17 @@ async function cmdApp() {
       // A real click on the real screen: only with the user's confirmation, after
       // the delay they picked (to bring the right window to the front).
       if (u.pathname === "/api/screens/click" && req.method === "POST") { const b = await readBody(req); if (b.confirmed !== true) return json(res, { error: "Each click needs your confirmation." }); const d = Math.min(10, Math.max(0, Number(b.delay) || 0)); if (d) await new Promise((r) => setTimeout(r, d * 1000)); return json(res, clickRegion(String(b.id || ""), String(b.region || ""))); }
+      // A web page in the hidden browser (headless.mjs): mapped by itself, no
+      // screen needed. Press acts on the real site, signed in as you, so it's
+      // confirmed like a click; Sign in opens a window the user signs in with.
+      if (u.pathname === "/api/screens/map" && req.method === "POST") { const b = await readBody(req); return json(res, screenOut(await mapPage(b.site, b.name))); }
+      // press / type: refused unless confirmed, or the page's site is one you trust
+      if (u.pathname === "/api/screens/press" && req.method === "POST") { const b = await readBody(req); return json(res, screenOut(await pressRegion(String(b.id || ""), String(b.region || ""), { confirmed: b.confirmed === true }))); }
+      if (u.pathname === "/api/screens/type" && req.method === "POST") { const b = await readBody(req); return json(res, screenOut(await typeRegion(String(b.id || ""), String(b.region || ""), b.text, { enter: b.enter === true, confirmed: b.confirmed === true }))); }
+      if (u.pathname === "/api/screens/trusted") return json(res, { sites: trustedSites() });
+      if (u.pathname === "/api/screens/trusted/add" && req.method === "POST") { const b = await readBody(req); return json(res, trustSite(b.site)); }
+      if (u.pathname === "/api/screens/trusted/remove" && req.method === "POST") { const b = await readBody(req); return json(res, untrustSite(b.site)); }
+      if (u.pathname === "/api/screens/signin" && req.method === "POST") { const b = await readBody(req); return json(res, await signIn(b.site)); }
       // What symbiot-desktop added (desktop.mjs): the weekly write-up, start at login.
       if (u.pathname === "/api/desktop") return json(res, { weekly: weeklyState(), autostart: autostartState() });
       if (u.pathname === "/api/desktop/weekly" && req.method === "POST") { const b = await readBody(req); return json(res, setWeekly(b)); }
@@ -1604,7 +1700,7 @@ async function cmdApp() {
       if (u.pathname === "/api/desktop/autostart" && req.method === "POST") { const b = await readBody(req); return json(res, setAutostart(!!b.on, realpathSync(fileURLToPath(import.meta.url)))); }
       if (u.pathname === "/api/run" && req.method === "POST") { const b = await readBody(req); const cmd = ["week", "standup", "todo"].includes(b.cmd) ? b.cmd : "week"; return json(res, await produce(cmd)); }
       if (u.pathname === "/api/connect" && req.method === "POST") { return json(res, await connectProvider(await readBody(req))); }
-      if (u.pathname === "/api/ping") { if (u.searchParams.get("fresh") === "1") await checkLatest(); return json(res, { version: VERSION, started: SERVER_STARTED, latest: LATEST_VERSION, newer: semverGt(LATEST_VERSION, VERSION) }); }
+      if (u.pathname === "/api/ping") { if (u.searchParams.get("fresh") === "1") await checkLatest(); return json(res, { version: VERSION, started: SERVER_STARTED, latest: LATEST_VERSION, newer: semverGt(LATEST_VERSION, VERSION), ...(IN_TERMUX ? { termux: true } : {}) }); }
       if (u.pathname === "/api/update" && req.method === "POST") {
         // Install the exact newest version (see updateCmd), then relaunch this
         // same app (same port+token => same URL) and exit. The page's heartbeat
@@ -1663,6 +1759,70 @@ function cmdMail() {
   if (!m.enabled) console.log("\n" + c.d("Switch it on with  symbiot mail --on  (or in the app's Settings)."));
 }
 
+// ---- `symbiot screens`: Screens from a terminal, for you or an agent ----------
+// map / press / show print JSON: the screen's id, its blueprint, and each
+// region's id, which is what press takes (or a region's label).
+function screenJson(s) {
+  if (!s || s.error) return s;
+  const bp = blueprint(s);
+  return { id: s.id, ...(s.note ? { note: s.note } : {}), ...(s.pressed ? { pressed: s.pressed, found: s.found } : {}), ...(s.typed ? { typed: s.typed, entered: s.entered, found: s.found } : {}), ...(s.kept ? { kept: true } : {}), ...(s.page ? { trusted: isTrusted(s.page.url) } : {}), ...bp, regions: bp.regions.map((r, i) => ({ id: s.regions[i].id, ...r })) };
+}
+// How long the app keeps Screens' hidden browser open after an action.
+const BROWSER_KEEP = 5 * 60 * 1000;
+// map, press, type and signin go through the app when it's running, whose hidden
+// browser stays open between them: type into a field, then press a separate
+// button. null when the app isn't running (then the command runs here, and its
+// browser closes after it). Once the app has the request, its answer is the
+// answer, even a failed one: running it here as well could press twice.
+async function viaApp(path, body) {
+  const cfg = loadConfig(); if (!cfg.appToken) return null;
+  const base = `http://127.0.0.1:${Number(process.env.SYMBIOT_PORT || cfg.appPort) || 7391}`, headers = { "x-symbiot-token": cfg.appToken };
+  try { const p = await fetch(base + "/api/ping", { headers, signal: AbortSignal.timeout(1500) }); if (!p.ok || !(await p.json()).version) return null; } catch { return null; }
+  try {
+    const r = await fetch(base + path, { method: "POST", headers: { ...headers, "content-type": "application/json" }, body: JSON.stringify(body) });
+    return r.ok ? await r.json() : { error: `Symbiot's app answered ${r.status}.` };
+  } catch (e) { return { error: "Lost Symbiot's app mid-way: " + ((e && e.message) || e) }; }
+}
+async function cmdScreens() {
+  const [sub = "list", a1, a2, a3] = argv.slice(1).filter((x, i, all) => !x.startsWith("--") && all[i - 1] !== "--name");
+  const out = (x) => { console.log(JSON.stringify(x, null, 2)); if (x && x.error) process.exitCode = 1; };
+  const find = (id) => loadScreens().find((s) => s.id === id);
+  if (sub === "list") {
+    const list = loadScreens();
+    if (!list.length) console.log(c.d("No screens yet. Map a web page with  symbiot screens map <site>,  or capture one in the app."));
+    for (const s of list) console.log(`${s.id}  ${s.name}  ${c.d(`${(s.regions || []).length} regions · ${s.page ? s.page.url : s.w + "×" + s.h + " " + s.via}`)}`);
+    return;
+  }
+  if (sub === "map") { const body = { site: a1, name: flag("name", "") }; return out(screenJson((await viaApp("/api/screens/map", body)) || await mapPage(body.site, body.name))); }
+  if (sub === "show") { const s = find(a1); return out(s ? screenJson(s) : { error: "No screen " + (a1 || "") + ". symbiot screens lists them." }); }
+  if (sub === "signin") { const r = (await viaApp("/api/screens/signin", { site: a1 })) || await signIn(a1); return out(r.ok ? { ...r, next: "Sign in in the window that opened, close it, then map again." } : r); }
+  if (sub === "press" || sub === "type") {
+    const s = find(a1); if (!s) return out({ error: "No screen " + (a1 || "") + ". symbiot screens lists them." });
+    const want = String(a2 || "").toLowerCase(), rs = s.regions || [];
+    const r = rs.find((x) => x.id === a2) || rs.find((x) => x.label.toLowerCase() === want) || (rs.filter((x) => x.label.toLowerCase().includes(want)).length === 1 && rs.find((x) => x.label.toLowerCase().includes(want)));
+    if (!want || !r) return out({ error: `No region "${a2 || ""}" on that screen (give its id, or a label that matches one region).` });
+    const body = { id: s.id, region: r.id, confirmed: has("yes"), ...(sub === "type" ? { text: a3, enter: has("enter") } : {}) };
+    const done = (await viaApp("/api/screens/" + sub, body)) || (sub === "press" ? await pressRegion(s.id, r.id, { confirmed: body.confirmed }) : await typeRegion(s.id, r.id, a3, { enter: body.enter, confirmed: body.confirmed }));
+    // not a trusted site: say how to go ahead (only you can trust a site, in the app's Settings)
+    if (done && done.confirm) return out({ error: `${done.error} Add --yes to go ahead, or list ${done.host} under Trusted sites in Symbiot's Settings.` });
+    return out(screenJson(done));
+  }
+  console.log(`${c.b("symbiot screens")} ${c.d("— experimental")}
+  symbiot screens                              list your screens
+  symbiot screens map <site> [--name N]        open a site in a hidden browser and map
+                                               its buttons, links and fields (JSON)
+  symbiot screens show <id>                    a screen's blueprint (JSON)
+  symbiot screens press <id> <region> [--yes]  press a region there, map where it lands
+  symbiot screens type <id> <field> "text" [--enter] [--yes]
+                                               type into a field (Enter sends it), map the result
+  symbiot screens signin <site>                sign in once, in Symbiot's browser window
+  --yes is needed unless the page's site is under Trusted sites in the app's Settings.
+  While the app runs, these use its hidden browser, which stays open a few minutes:
+  press on the screen the last command printed carries on from that page as it is
+  (type without --enter, then press the form's button).`);
+  if (sub !== "help") process.exitCode = 1;
+}
+
 const HELP = `${c.b("symbiot")} — your week, written from your real work.
 
 ${c.b("Usage")}
@@ -1682,6 +1842,8 @@ ${c.b("Experimental")}
   symbiot mail [--on|--off]         use the mail you sent in write-ups (local, no API)
   symbiot models                    recommend AI models for your hardware
   symbiot setup-local [--model X]   install/run a free local model (Ollama)
+  symbiot screens map <site>        map a web page's buttons in a hidden browser
+                                    (symbiot screens help for more)
 
 ${c.b("Options")}
   --dir <path>    where your repos are (default: ${homedir()})
@@ -1712,6 +1874,7 @@ async function main() {
   if (cmd === "drift") return cmdDrift();
   if (cmd === "push") return cmdPush();
   if (cmd === "mail" || cmd === "email") return cmdMail();
+  if (cmd === "screens" || cmd === "screen") return cmdScreens();
   if (cmd === "week") return cmdRun("week");
   if (cmd === "standup") return cmdRun("standup");
   if (cmd === "todo") return cmdRun("todo");
@@ -1727,4 +1890,4 @@ const isMain = (() => {
 })();
 if (isMain) main();
 
-export { authorship, repoState, readmeInfo, repoShape, houseRules, findAllRepos, buildMap, reportFooter, detectHardware, recommendModels, computeDrift, driftRepo, gitDefaultBranch, buildTasksMd, taskType, EMBEDDED_UI, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, fillHandoff, handoffCmd, setHandoffCmd, ORCA_CLAUDE_CMD, CLAUDE_CMD, HANDOFF_PROMPT, shipChanges, shipWithBump, bumpOffer, setVersion, syncTasks, pendingReview, unreleased, addTask, approveRepo, approveChanges, sendBack, pushTasks, semverGt, updateCmd, parseQuestions, agentQuestions };
+export { authorship, repoState, readmeInfo, repoShape, houseRules, findAllRepos, buildMap, reportFooter, detectHardware, recommendModels, computeDrift, driftRepo, gitDefaultBranch, buildTasksMd, taskType, EMBEDDED_UI, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, fillHandoff, handoffCmd, setHandoffCmd, ORCA_CLAUDE_CMD, CLAUDE_CMD, HANDOFF_PROMPT, shipChanges, shipWithBump, bumpOffer, learnNpm, setVersion, syncTasks, pendingReview, unreleased, publishesOnMerge, addTask, approveRepo, approveChanges, sendBack, pushTasks, semverGt, updateCmd, parseQuestions, agentQuestions };

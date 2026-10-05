@@ -46,8 +46,9 @@ const H = { "x-symbiot-token": token, "content-type": "application/json" };
 // Elements exist only if the page has them: static ids from the HTML, plus ids
 // the UI itself rendered via innerHTML (e.g. the archived-tasks toggle) — so a
 // handler grabbing an element that isn't there throws, like in a browser.
-// `storage` seeds the page's localStorage; `handlers: false` only boots the page.
-async function runUi(js, page, { storage = {}, handlers = true } = {}) {
+// `storage` seeds the page's localStorage; `handlers: false` only boots the page;
+// `android` stands in for the Android app's window.SymbiotAndroid.
+async function runUi(js, page, { storage = {}, handlers = true, android = null, termux = false, ua = "" } = {}) {
   const errors = [], hits = [];
   const store = { ...storage };
   const localStorage = { getItem: (k) => (k in store ? store[k] : null), setItem: (k, v) => { store[k] = String(v); }, removeItem: (k) => { delete store[k]; } };
@@ -83,13 +84,19 @@ async function runUi(js, page, { storage = {}, handlers = true } = {}) {
     querySelectorAll(sel) { return sel === ".tab" ? tabs : []; },
     querySelector() { return null; },
   };
-  const location = { search: "?t=" + token, reload() {} };
-  const window = { location, open() {}, addEventListener() {} };
-  const navigator = { clipboard: { writeText: () => Promise.resolve() } };
+  const location = { host: "127.0.0.1:7391", search: "?t=" + token, reload() {} };
+  const window = { location, open() {}, addEventListener() {}, ...(android ? { SymbiotAndroid: android } : {}) };
+  if (android) globalThis.SymbiotAndroid = android; // the page also calls it bare, as a browser global
+  const navigator = { userAgent: ua, clipboard: { writeText: () => Promise.resolve() } };
   const fetchShim = (path, opts = {}) => {
     inflight++;
     return fetch(base + path, opts)
-      .then((r) => { hits.push({ path: path.split("?")[0], method: opts.method || "GET", status: r.status }); return r; })
+      .then(async (r) => {
+        hits.push({ path: path.split("?")[0], method: opts.method || "GET", status: r.status });
+        // a Symbiot running in Termux says so in its ping
+        if (termux && path.startsWith("/api/ping")) return new Response(JSON.stringify({ ...(await r.json()), termux: true }), { status: r.status });
+        return r;
+      })
       .finally(() => { inflight--; });
   };
   const noop = () => 0; // timers off: no polling, no delayed tab switches
@@ -107,7 +114,7 @@ async function runUi(js, page, { storage = {}, handlers = true } = {}) {
   } catch (e) { errors.push("boot: " + e.message); }
   await settle();
   const bar = els.updatebar ? els.updatebar.innerHTML : "";
-  if (!handlers) { process.off("unhandledRejection", onRejection); return { errors, hits, tabs: tabs.length, bar }; }
+  if (!handlers) { process.off("unhandledRejection", onRejection); return { errors, hits, tabs: tabs.length, bar, els, store }; }
   for (const t of tabs) await fire("tab " + t.dataset.tab, t, "click");
   // Every handler the page wired up, except Quit (stops the server), the
   // local-model setup (starts a download; its route is hit directly below),
@@ -119,7 +126,7 @@ async function runUi(js, page, { storage = {}, handlers = true } = {}) {
     for (const type of ["click", "change", "keydown"]) if (el.listeners[type]) await fire("#" + id, el, type);
   }
   process.off("unhandledRejection", onRejection);
-  return { errors, hits, tabs: tabs.length, bar };
+  return { errors, hits, tabs: tabs.length, bar, els };
 }
 
 // (path, method) exactly as the browser UI calls them. Body is always "{}".
@@ -173,6 +180,13 @@ const calls = [
   ["/api/screens/allow", "POST"],   // not confirmed -> refused, no permission changes
   ["/api/screens/monitors", "GET"], // lists the displays (read-only)
   ["/api/screens/split", "POST"],   // no id -> "not found", nothing written
+  ["/api/screens/map", "POST"],     // no site -> refused before a browser starts
+  ["/api/screens/press", "POST"],   // not confirmed -> refused, nothing pressed
+  ["/api/screens/type", "POST"],    // no id -> "not found", nothing typed
+  ["/api/screens/trusted", "GET"],  // trusted sites (isolated HOME -> none)
+  ["/api/screens/trusted/add", "POST"],    // no site -> refused, nothing saved
+  ["/api/screens/trusted/remove", "POST"],
+  ["/api/screens/signin", "POST"],  // no site -> refused, no window opens
   ["/api/desktop", "GET"],         // weekly write-up + start-at-login state
   ["/api/desktop/weekly", "POST"],  // empty body -> schedule unchanged (stays off)
   ["/api/desktop/autostart", "POST"], // empty body -> off: removes nothing outside the isolated HOME
@@ -229,6 +243,34 @@ try {
     ok("after an update that didn't take: no button, tells you how to update by hand", stuck.errors.length === 0 && !stuck.bar.includes("doupd") && /didn't take/.test(stuck.bar) && /npm install -g symbiot@latest/.test(stuck.bar), { errors: stuck.errors, bar: stuck.bar });
     const moved = await runUi(js, page, { storage: { symbiot_update_tried: "0.0.1" }, handlers: false });
     ok("after an update that advanced: offers the next one normally", moved.errors.length === 0 && moved.bar.includes("doupd"), moved.bar);
+
+    console.log("ANDROID APP — Settings offers the Symbiot running in Termux, and back");
+    const said = [];
+    const phone = (on) => ({ termux: () => JSON.stringify({ installed: true, on }), openTermux: () => said.push("openTermux"), builtIn: () => said.push("builtIn"), storage() {} });
+    ok("in a browser, there's no Termux block", !ui.els.phonebtn);
+    const off = await runUi(js, page, { handlers: false, android: phone(false) });
+    const offBtn = off.els.phonebtn || {}, offNote = (off.els.phonenote || {}).innerHTML || "";
+    if (offBtn.onclick) offBtn.onclick();
+    ok("in the app, with Termux on the phone: Open Termux, which asks the app to open it", off.errors.length === 0 && offBtn.textContent === "Open Termux" && /private/.test(offNote) && said.join() === "openTermux", { errors: off.errors, btn: offBtn.textContent, said });
+    const on = await runUi(js, page, { handlers: false, android: phone(true) });
+    const onBtn = on.els.phonebtn || {};
+    if (onBtn.onclick) onBtn.onclick();
+    delete globalThis.SymbiotAndroid;
+    ok("showing the Termux Symbiot: a way back to the app's own", on.errors.length === 0 && /own Symbiot/.test(onBtn.textContent) && said.join() === "openTermux,builtIn", { errors: on.errors, btn: onBtn.textContent, said });
+
+    console.log("TERMUX — Symbiot in Termux, open in the phone's browser, offers the Android app");
+    const PHONE = "Mozilla/5.0 (Linux; Android 16; SM-A266B) AppleWebKit/537.36 Chrome/140.0 Mobile Safari/537.36";
+    ok("not in Termux: no app bar", !((ui.els.appbar || {}).innerHTML || ""), (ui.els.appbar || {}).innerHTML);
+    const tb = await runUi(js, page, { handlers: false, termux: true, ua: PHONE });
+    const tbar = (tb.els.appbar || {}).innerHTML || "";
+    ok("in the phone's browser: Open in the app, an intent:// link to the app's symbiot:// scheme with this Symbiot's address", tb.errors.length === 0 && tbar.includes(`intent://127.0.0.1:7391/?t=${token}#Intent;scheme=symbiot;package=co.symbiot.app;end`) && /show/.test(tb.els.appbar.className), { errors: tb.errors, bar: tbar });
+    const off2 = tb.els.appbaroff || {}; if (off2.onclick) off2.onclick();
+    ok("Hide puts it away for good", !/show/.test(tb.els.appbar.className) && tb.store.symbiot_appbar_off === "1", tb.store);
+    const hidden = await runUi(js, page, { handlers: false, termux: true, ua: PHONE, storage: { symbiot_appbar_off: "1" } });
+    const inApp = await runUi(js, page, { handlers: false, termux: true, ua: PHONE, android: phone(true) });
+    delete globalThis.SymbiotAndroid;
+    const desk = await runUi(js, page, { handlers: false, termux: true, ua: "Mozilla/5.0 (X11; Linux x86_64) Chrome/140.0" });
+    ok("no app bar once hidden, inside the app, or off Android", [hidden, inApp, desk].every((r) => r.errors.length === 0 && !((r.els.appbar || {}).innerHTML || "")), [hidden, inApp, desk].map((r) => [r.errors, (r.els.appbar || {}).innerHTML]));
   }
 
   console.log("SMOKE — every UI endpoint responds (no 404 route/method mismatch)");
@@ -237,6 +279,15 @@ try {
     try { const r = await fetch(base + path, { method, headers: H, body: method === "POST" ? "{}" : undefined }); status = r.status; } catch (e) { status = -1; }
     ok(`${method} ${path} -> ${status}`, status !== 404 && status !== -1, status);
   }
+
+  console.log("MAIL — a website typed into the mail box points to Trusted sites, and trusts nothing by itself");
+  const mailAdd = (add) => fetch(base + "/api/mail/set", { method: "POST", headers: H, body: JSON.stringify({ add }) }).then((r) => r.json(), () => ({}));
+  const [mDomain, mUrl, mFile] = [await mailAdd("google.com"), await mailAdd("https://mail.google.com/mail/u/0/"), await mailAdd(join(HOME, "nope", "Sent.mbox"))];
+  const trustedNow = await (await fetch(base + "/api/screens/trusted", { headers: H })).json();
+  ok("google.com in the mail box -> says it's a website and to use Trusted sites", mDomain.site === "google.com" && /Trusted sites/.test(mDomain.error || "") && !(mDomain.sources || []).length, mDomain);
+  ok("a Gmail address -> its host, mail.google.com", mUrl.site === "mail.google.com", mUrl);
+  ok("a missing .mbox -> still \"not found\", not a website", !mFile.site && /^not found/.test(mFile.error || ""), mFile);
+  ok("none of it trusts a site", (trustedNow.sites || []).length === 0, trustedNow);
 
   console.log("METHODS — POST-only endpoints refuse GET; /api/* needs the token");
   // a GET to a POST route must not reach its handler (a GET can't change state,

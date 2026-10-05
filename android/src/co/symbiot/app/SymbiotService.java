@@ -39,6 +39,11 @@ public class SymbiotService extends Service {
     static void start(Context ctx) {
         ctx.startForegroundService(new Intent(ctx, SymbiotService.class));
     }
+    // (while the app shows the Symbiot running in Termux instead)
+    static void stop(Context ctx) {
+        if ("stopped".equals(state) || "failed".equals(state)) return;
+        ctx.startService(new Intent(ctx, SymbiotService.class).setAction(STOP));
+    }
     static synchronized void log(String s) { LOG.addLast(s); while (LOG.size() > 80) LOG.removeFirst(); }
     static synchronized String log() { return String.join("\n", LOG); }
 
@@ -62,6 +67,7 @@ public class SymbiotService extends Service {
         Bootstrap b = new Bootstrap(this);
         try {
             b.install(this, SymbiotService::log);
+            if (stopping) throw new InterruptedException("stopped while unpacking");
             ProcessBuilder pb = new ProcessBuilder(b.node().getAbsolutePath(), b.script().getAbsolutePath(), "app")
                 .directory(b.home).redirectErrorStream(true);
             pb.environment().putAll(b.env());

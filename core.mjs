@@ -3,7 +3,7 @@
 import { execSync } from "node:child_process";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { readFileSync, writeFileSync, mkdirSync, chmodSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, chmodSync, existsSync } from "node:fs";
 
 // ---- config ---------------------------------------------------------------
 const CONFIG_DIR = join(homedir(), ".config", "symbiot");
@@ -31,6 +31,27 @@ function sh(cmd) {
 }
 // "Is this command available?": command -v on posix, where on win.
 function hasCmd(cmd) { try { return !!sh(process.platform === "win32" ? `where ${cmd}` : `command -v ${cmd}`).trim(); } catch { return false; } }
+// A Chromium-family browser, per OS: the app's chrome-less --app window, and
+// Screens' hidden (headless) browser.
+function chromeBinary() {
+  const p = process.platform;
+  const exists = (f) => { try { return existsSync(f) ? f : null; } catch { return null; } };
+  if (p === "darwin") {
+    return ["/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+      "/Applications/Chromium.app/Contents/MacOS/Chromium",
+      "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+      "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser"].map(exists).find(Boolean) || null;
+  }
+  if (p === "win32") {
+    const bases = [process.env.PROGRAMFILES, process.env["PROGRAMFILES(X86)"], process.env.LOCALAPPDATA].filter(Boolean);
+    const rels = ["Google\\Chrome\\Application\\chrome.exe", "Chromium\\Application\\chrome.exe",
+      "Microsoft\\Edge\\Application\\msedge.exe", "BraveSoftware\\Brave-Browser\\Application\\brave.exe"];
+    for (const base of bases) for (const r of rels) { const f = exists(join(base, r)); if (f) return f; }
+    const w = sh("where chrome 2>NUL").split(/\r?\n/).map((s) => s.trim()).find(Boolean);
+    return w || null;
+  }
+  return ["google-chrome", "google-chrome-stable", "chromium", "chromium-browser", "brave-browser", "microsoft-edge"].find(hasCmd) || null;
+}
 // Working-tree state, incl. detecting a stale/old checkout (not new work).
 function repoState(repoPath) {
   const branch = sh(`git -C ${JSON.stringify(repoPath)} rev-parse --abbrev-ref HEAD 2>/dev/null`).trim();
@@ -50,4 +71,4 @@ function repoState(repoPath) {
   return { branch, dirty, del, mod, add, stale, staleBy, behind };
 }
 
-export { CONFIG_DIR, CONFIG_PATH, loadConfig, saveConfig, loadTasks, saveTasks, sh, hasCmd, repoState };
+export { CONFIG_DIR, CONFIG_PATH, loadConfig, saveConfig, loadTasks, saveTasks, sh, hasCmd, chromeBinary, repoState };

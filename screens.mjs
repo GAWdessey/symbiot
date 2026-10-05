@@ -1,16 +1,19 @@
 // symbiot — Screens: screenshots with named regions, i.e. a blueprint of where
 // things are on a screen, in screenshot pixels. The first slices of screen
 // automation: it captures, stores and maps, and clicks a region's centre when
-// asked (the app confirms each click). Nothing types yet.
+// asked (the app confirms each click). Nothing types on the real screen yet
+// (a mapped web page can be typed into: headless.mjs).
 //
 // Stored in ~/.config/symbiot/screens/: <id>.png per screen, and screens.json =
 // [{ id, name, w, h, ts, via, monitor?, regions: [{ id, label, x, y, w, h }] }],
 // which is also what an agent or script reads to find a region. `monitor` is set
 // when the screen is one display of several: { name, x, y, w, h, where } is where
-// that display sits on the desktop, in the units the click tool uses.
+// that display sits on the desktop, in the units the click tool uses. `page`
+// ({ url, title }) is set on a web page mapped in the hidden browser
+// (headless.mjs), whose regions also have kind, selector and href.
 import { spawnSync } from "node:child_process";
 import { join } from "node:path";
-import { readFileSync, writeFileSync, mkdirSync, existsSync, unlinkSync, readdirSync, renameSync, rmSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, existsSync, unlinkSync, readdirSync, renameSync, rmSync, chmodSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { inflateSync, deflateSync } from "node:zlib";
 import { CONFIG_DIR, hasCmd } from "./core.mjs";
@@ -20,7 +23,12 @@ const INDEX = join(SCREENS_DIR, "screens.json");
 const MAX_REGIONS = 200;
 const MAX_IMAGE = 40 * 1024 * 1024;
 function loadScreens() { try { const a = JSON.parse(readFileSync(INDEX, "utf8")); return Array.isArray(a) ? a : []; } catch { return []; } }
-function saveScreens(a) { mkdirSync(SCREENS_DIR, { recursive: true }); writeFileSync(INDEX, JSON.stringify(a, null, 2)); }
+function saveScreens(a) { mkdirSync(SCREENS_DIR, { recursive: true }); writePrivate(INDEX, JSON.stringify(a, null, 2)); }
+// A screenshot can show anything that was on screen, so Symbiot's are readable
+// by you only (0600), the way the desktop's own screenshot tool saves its images.
+// `mode` only applies to a new file; the chmod covers one that was already there.
+function writePrivate(file, data) { writeFileSync(file, data, { mode: 0o600 }); makePrivate(file); }
+function makePrivate(file) { try { chmodSync(file, 0o600); } catch {} }
 const validId = (id) => /^[a-f0-9]{12}$/.test(String(id || ""));
 const screenFile = (id) => join(SCREENS_DIR, id + ".png");
 // The PNG's own file, or "" (ids are checked, so a request can't reach outside the folder).
@@ -251,7 +259,7 @@ function shoot(file, display) {
     spawnSync(cmd, args, { stdio: "ignore", timeout: 20000, killSignal: "SIGKILL" });
     if (dir) { try { const f = readdirSync(dir).find((x) => /\.png$/i.test(x)); if (f) renameSync(join(dir, f), file); } catch {} rmSync(dir, { recursive: true, force: true }); }
     let size = null; try { size = pngSize(readFileSync(file)); } catch {}
-    if (size) return { size, via: cmd };
+    if (size) { makePrivate(file); return { size, via: cmd }; } // whatever mode the tool gave it
     try { unlinkSync(file); } catch {}
   }
   return { tried };
@@ -264,7 +272,7 @@ function piecesOf(buf, size, monitors, want, name, via, regions) {
   const mine = areas.filter((a) => want.some((m) => m.name === a.name));
   const pngs = mine.length && splitPng(buf, mine.map((a) => a.area)); if (!pngs) return null;
   const ids = mine.map(() => newId());
-  try { pngs.forEach((p, i) => writeFileSync(screenFile(ids[i]), p)); } catch (e) { ids.forEach((id) => { try { unlinkSync(screenFile(id)); } catch {} }); return { error: String((e && e.message) || e) }; }
+  try { pngs.forEach((p, i) => writePrivate(screenFile(ids[i]), p)); } catch (e) { ids.forEach((id) => { try { unlinkSync(screenFile(id)); } catch {} }); return { error: String((e && e.message) || e) }; }
   return addScreens(mine.map((a, i) => {
     // a region goes with the display its centre is on, moved into that display's pixels
     const rs = (regions || []).filter((r) => { const c = center(r); return c.x >= a.area.x && c.x < a.area.x + a.area.w && c.y >= a.area.y && c.y < a.area.y + a.area.h; })
@@ -331,21 +339,38 @@ function importScreen(name, data) {
   if (buf.length > MAX_IMAGE) return { error: "That image is too big (40 MB at most)." };
   const size = pngSize(buf); if (!size) return { error: "That isn't a PNG image." };
   const id = randomBytes(6).toString("hex");
-  try { mkdirSync(SCREENS_DIR, { recursive: true }); writeFileSync(screenFile(id), buf); } catch (e) { return { error: String((e && e.message) || e) }; }
+  try { mkdirSync(SCREENS_DIR, { recursive: true }); writePrivate(screenFile(id), buf); } catch (e) { return { error: String((e && e.message) || e) }; }
   return addScreen(id, name, size, "loaded");
 }
-// Replace a screen's regions, clamped to the image and rounded to whole pixels.
-function setRegions(id, regions) {
-  const all = loadScreens(), s = all.find((x) => x.id === id); if (!s) return { error: "not found" };
+// Regions clamped to a w×h image and rounded to whole pixels. A mapped page's
+// regions (headless.mjs) also keep what they are (`kind`: button, link, field…),
+// how to find them again (`selector`) and where a link goes (`href`).
+const EXTRAS = { kind: 20, selector: 1000, href: 500 };
+function cleanRegions(size, regions) {
   const out = [];
   for (const r of (Array.isArray(regions) ? regions : []).slice(0, MAX_REGIONS)) {
     if (!r) continue;
-    const x = Math.max(0, Math.min(s.w - 1, Math.round(Number(r.x) || 0))), y = Math.max(0, Math.min(s.h - 1, Math.round(Number(r.y) || 0)));
-    const w = Math.max(1, Math.min(s.w - x, Math.round(Number(r.w) || 0))), h = Math.max(1, Math.min(s.h - y, Math.round(Number(r.h) || 0)));
-    out.push({ id: validId(r.id) ? r.id : randomBytes(6).toString("hex"), label: String(r.label || "").trim().slice(0, 80) || "region " + (out.length + 1), x, y, w, h });
+    const x = Math.max(0, Math.min(size.w - 1, Math.round(Number(r.x) || 0))), y = Math.max(0, Math.min(size.h - 1, Math.round(Number(r.y) || 0)));
+    const w = Math.max(1, Math.min(size.w - x, Math.round(Number(r.w) || 0))), h = Math.max(1, Math.min(size.h - y, Math.round(Number(r.h) || 0)));
+    const extra = {}; for (const [k, max] of Object.entries(EXTRAS)) if (typeof r[k] === "string" && r[k].trim()) extra[k] = r[k].trim().slice(0, max);
+    out.push({ id: validId(r.id) ? r.id : newId(), label: String(r.label || "").trim().slice(0, 80) || "region " + (out.length + 1), x, y, w, h, ...extra });
   }
-  s.regions = out; saveScreens(all);
+  return out;
+}
+// Replace a screen's regions.
+function setRegions(id, regions) {
+  const all = loadScreens(), s = all.find((x) => x.id === id); if (!s) return { error: "not found" };
+  s.regions = cleanRegions(s, regions); saveScreens(all);
   return s;
+}
+// A web page mapped in the hidden browser (headless.mjs): its screenshot, with a
+// region for each button, link and field found on it. `page` is { url, title }.
+function addPageScreen(name, png, page, regions) {
+  const size = pngSize(png); if (!size) return { error: "The page's screenshot isn't a PNG." };
+  const id = newId();
+  try { mkdirSync(SCREENS_DIR, { recursive: true }); writePrivate(screenFile(id), png); } catch (e) { return { error: String((e && e.message) || e) }; }
+  const p = { url: String(page.url || "").slice(0, 2000), title: String(page.title || "").trim().slice(0, 200) };
+  return addScreen(id, name, size, "headless", { page: p, regions: cleanRegions(size, regions) });
 }
 function renameScreen(id, name) {
   const all = loadScreens(), s = all.find((x) => x.id === id); if (!s) return { error: "not found" };
@@ -365,8 +390,9 @@ const onDesktop = (s, p) => ({ x: Math.round(s.monitor.x + p.x * s.monitor.w / s
 // What automation reads: each region with the point to aim at (its centre), and
 // for one display of several, which display and that point on the whole desktop.
 function blueprint(s) {
-  return { screen: s.name, size: { w: s.w, h: s.h }, ...(s.monitor ? { monitor: s.monitor } : {}),
-    regions: (s.regions || []).map((r) => ({ label: r.label, x: r.x, y: r.y, w: r.w, h: r.h, center: center(r), ...(s.monitor ? { desktop: onDesktop(s, center(r)) } : {}) })) };
+  const extras = (r) => Object.fromEntries(Object.keys(EXTRAS).filter((k) => r[k]).map((k) => [k, r[k]]));
+  return { screen: s.name, size: { w: s.w, h: s.h }, ...(s.monitor ? { monitor: s.monitor } : {}), ...(s.page ? { page: s.page } : {}),
+    regions: (s.regions || []).map((r) => ({ label: r.label, x: r.x, y: r.y, w: r.w, h: r.h, center: center(r), ...(s.monitor ? { desktop: onDesktop(s, center(r)) } : {}), ...extras(r) })) };
 }
 
 // Click tools to try, in order, as a list of [cmd, args] steps that move the
@@ -399,6 +425,7 @@ function clickSpace(tool) {
 function clickRegion(id, regionId) {
   const s = loadScreens().find((x) => x.id === id); if (!s) return { error: "not found" };
   const r = (s.regions || []).find((x) => x.id === regionId); if (!r) return { error: "That region is gone. Reload the screen." };
+  if (s.page) return { error: "This screen is a page in Symbiot's hidden browser, not your screen: use Press instead." };
   const c = center(r), wayland = process.env.XDG_SESSION_TYPE === "wayland";
   // The first tool that's installed does it. If that fails it says so, rather
   // than trying the next one: a half-done move + click could otherwise click twice.
@@ -418,4 +445,4 @@ function clickRegion(id, regionId) {
   return { error: `No click tool found. Install ${want}.` };
 }
 
-export { loadScreens, screenImage, pngSize, pngDecode, splitPng, captureCmds, monitorCmds, parseCosmicRandr, parseWlrRandr, parseKscreen, parseXrandr, parseLines, tidyMonitors, monitorAreas, listMonitors, portalAppId, allowScreenshots, captureScreen, splitScreen, importScreen, setRegions, renameScreen, removeScreen, blueprint, clickCmds, clickRegion };
+export { loadScreens, screenImage, pngSize, pngDecode, splitPng, captureCmds, monitorCmds, parseCosmicRandr, parseWlrRandr, parseKscreen, parseXrandr, parseLines, tidyMonitors, monitorAreas, listMonitors, portalAppId, allowScreenshots, captureScreen, splitScreen, importScreen, setRegions, addPageScreen, renameScreen, removeScreen, blueprint, center, clickCmds, clickRegion };

@@ -34,6 +34,25 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- a Symbiot link, as `symbiot app` in Termux opens it
+                 (symbiot://127.0.0.1:<port>/?t=<token>, which only this app takes):
+                 the app shows that Symbiot here -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="symbiot" android:host="127.0.0.1" />
+                <data android:scheme="symbiot" android:host="localhost" />
+            </intent-filter>
+            <!-- the same as http://, which Android gives to the browser unless
+                 the user lets this app open 127.0.0.1 (App info → Set as default) -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="http" android:host="127.0.0.1" android:path="/" />
+                <data android:scheme="http" android:host="localhost" android:path="/" />
+            </intent-filter>
         </activity>
 
         <service

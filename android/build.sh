@@ -60,7 +60,11 @@ inner() {
 if [ "${SYMBIOT_APK_INNER:-}" = 1 ]; then inner; exit; fi
 
 # 1. what the app carries
-if [ -f "$OUT/runtime.zip" ] && [ -z "${FRESH:-}" ]; then node "$HERE/runtime.mjs" --arch "$ARCH" --symbiot-only
+# (the runtime is refetched when runtime.mjs or node-shell.cjs is newer than it:
+# a stale one starts nowhere, since Node preloads node-shell.cjs)
+if [ -f "$OUT/runtime.zip" ] && [ -z "${FRESH:-}" ] \
+  && [ "$OUT/runtime.zip" -nt "$HERE/runtime.mjs" ] && [ "$OUT/runtime.zip" -nt "$HERE/node-shell.cjs" ]; then
+  node "$HERE/runtime.mjs" --arch "$ARCH" --symbiot-only
 else node "$HERE/runtime.mjs" --arch "$ARCH"; fi
 
 # 2. the APK. versionCode from the version: 0.39.1 -> 39001, so each release is higher.
