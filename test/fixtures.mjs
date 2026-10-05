@@ -12,6 +12,7 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { authorship, repoState, readmeInfo, houseRules, findAllRepos, driftRepo, buildTasksMd, taskType, EMBEDDED_UI, orcaHandoffCmd, migrateOrcaCmd, fillHandoff, ORCA_CLAUDE_CMD, CLAUDE_CMD, HANDOFF_PROMPT, shipChanges, shipWithBump, bumpOffer, learnNpm, releaseNeeded, withReleases, semverGt, updateCmd, parseQuestions, unreleased, publishesOnMerge } from "../index.mjs";
 import { grantRule } from "../agents.mjs";
+import { sameTask, uniqueTasks } from "../core.mjs";
 import { mailActivity } from "../mail.mjs";
 import { pngSize, pngDecode, splitPng, captureCmds, clickCmds, portalAppId, monitorCmds, parseCosmicRandr, parseWlrRandr, parseKscreen, parseXrandr, parseLines, tidyMonitors, monitorAreas } from "../screens.mjs";
 import { siteUrl, browserArgs, isTrusted } from "../headless.mjs";
@@ -375,6 +376,16 @@ try {
     writeFileSync(${JSON.stringify(join(home, ".config", "symbiot", "tasks.json"))}, JSON.stringify(tasks().map((x) => x.id === out.d1.id ? { ...x, done: true } : x)));
     out.d4 = m.addTask("Dedupe me", "revapp");
     out.dCount = tasks().filter((x) => /dedupe me/i.test(x.text)).length;
+    // near-duplicates (#81: a colon for a full stop; #70: one clause more)
+    const gm = "Add Gmail under Settings → Trusted sites as \`mail.google.com\` (or \`google.com\` for all of Google)";
+    out.n1 = m.addTask(gm + ". \\"gmail\\" opens gmail.com", "revapp"); out.n2 = m.addTask(gm + ": \\"gmail\\" opens gmail.com", "revapp");
+    const del = "Delete the leftover release branches that tags were cut from (release-032, sync-031, feature/self-work), now that releases come from main only.";
+    out.e1 = m.addTask(del, "revapp"); out.e2 = m.addTask(del + " Also \`agent/ui-split\`: its WIP is already on main.", "revapp"); out.e3 = m.addTask(del, "revapp");
+    out.short1 = m.addTask("Fix the login bug", "revapp"); out.short2 = m.addTask("Fix the login bug on Safari", "revapp");
+    out.nCount = tasks().filter((x) => !x.done && (/gmail/i.test(x.text) || /leftover release/.test(x.text))).length;
+    // the agent ticks the old wording of the task that has since taken the longer one
+    writeFileSync(f, "- [x] " + del + "\\n"); m.syncTasks();
+    out.eAfter = tasks().find((x) => x.id === out.e1.id);
     console.log(JSON.stringify(out));`;
   mkdirSync(join(home, ".config", "symbiot"), { recursive: true });
   writeFileSync(join(home, ".config", "symbiot", "tasks.json"), JSON.stringify([{ id: "t1", text: "Fix the bug", repo: "revapp", done: false, ts: 1 }]));
@@ -396,6 +407,12 @@ try {
   ok("checking tasks starts an agent on held tasks whose agent has finished, once", o.heldSync && o.heldSync.started === 1 && o.heldSync2.started === 0, [o.heldSync, o.heldSync2]);
   ok("adding a task already open in the same repo returns it, no duplicate", o.d1 && o.d2 && o.d2.duplicate && o.d2.id === o.d1.id && !o.d1.duplicate, [o.d1, o.d2]);
   ok("the same text in another repo, or once the first is done, is a new task", o.d3 && !o.d3.duplicate && o.d3.id !== o.d1.id && o.d4 && !o.d4.duplicate && o.d4.id !== o.d1.id && o.dCount === 3, [o.d3, o.d4, o.dCount]);
+  ok("the same task with different punctuation is a duplicate, kept in its first words", o.n2 && o.n2.duplicate && o.n2.id === o.n1.id && !o.n2.reworded && o.n2.text === o.n1.text, [o.n1, o.n2]);
+  ok("the same task with a clause more is a duplicate that takes the longer words, and not back", o.e2 && o.e2.duplicate && o.e2.reworded && o.e2.id === o.e1.id && /Also/.test(o.e2.text) && o.e3 && o.e3.duplicate && /Also/.test(o.e3.text) && o.nCount === 2, [o.e2, o.e3, o.nCount]);
+  ok("a short task with more words on the end is still its own task", o.short2 && !o.short2.duplicate && o.short2.id !== o.short1.id, [o.short1, o.short2]);
+  ok("an agent's tick on the old wording still sends the reworded task to review", o.eAfter && o.eAfter.review === true, o.eAfter);
+  ok("sameTask: case, spacing and punctuation aside; a clause more only after 8+ words", sameTask("Fix it: `now`", "fix it (now)") && !sameTask("Fix the bug", "Fix the bug in the login form") && sameTask("one two three four five six seven eight", "One two three four five six seven eight, nine.") && !sameTask("one two three four five six seven eight", "one two three four five six seven eighty") && !sameTask("", ""), "");
+  ok("uniqueTasks keeps one of each, in the words that say the most", JSON.stringify(uniqueTasks(["a b c d e f g h", "Other", "A b c d e f g h, i j.", "other!"])) === JSON.stringify(["A b c d e f g h, i j.", "Other"]), uniqueTasks(["a b c d e f g h", "Other", "A b c d e f g h, i j.", "other!"]));
 
   console.log("RELEASE — warn when the default branch is past its last v* tag");
   const rel = build("release", `git init -q -b main && git config user.email t@x.co && git config user.name T
@@ -470,7 +487,7 @@ try {
   ok("a bare command typed with :* or quotes isn't doubled; empty gives nothing", grantRule("npm run lint:*") === "Bash(npm run lint:*)" && grantRule('"git rm --cached"') === "Bash(git rm --cached:*)" && grantRule('  ""  ') === "", [grantRule("npm run lint:*"), grantRule('"git rm --cached"')]);
 
   console.log("WHO ACTS — question options say whether the user or the agent does it");
-  ok("the brief tells agents to start each option with 👤 You: / 🤖 Agent:", /`👤 You:`/.test(buildTasksMd("x", {}, [{ text: "t" }])) && /`🤖 Agent:`/.test(buildTasksMd("x", {}, [{ text: "t" }])), "");
+  ok("the brief tells agents to start each option with 👤 You: / 🤖 Agent:", /`👤 You:`/.test(buildTasksMd("x", {}, [{ text: "t" }])) && /`🤖 Agent:`/.test(buildTasksMd("x", {}, [{ text: "t" }])) && /Tag actions only/.test(buildTasksMd("x", {}, [{ text: "t" }])), "");
   const uiJs = [...EMBEDDED_UI.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]).join("\n");
   const whoHtml = new Function(uiJs.slice(uiJs.indexOf("function esc("), uiJs.indexOf("\n", uiJs.indexOf("function whoHtml("))) + "; return whoHtml;")();
   const wh = whoHtml("👤 You: allow it <b>. 🤖 Agent: the next run adds it");

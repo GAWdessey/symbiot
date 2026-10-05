@@ -6,7 +6,7 @@ import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 import { readFileSync, writeFileSync, existsSync, readdirSync } from "node:fs";
 import { randomBytes } from "node:crypto";
-import { VERSION, LATEST_VERSION, REGISTRY, semverGt, loadConfig, saveConfig, loadTasks, saveTasks, sh, hasCmd, repoState } from "./core.mjs";
+import { VERSION, LATEST_VERSION, REGISTRY, semverGt, loadConfig, saveConfig, loadTasks, saveTasks, taskWords, sameTask, uniqueTasks, sh, hasCmd, repoState } from "./core.mjs";
 import { QUESTIONS_MAX, handoffCmd, runningHandoff, writeTasks, startHeldTasks } from "./agents.mjs";
 import { gitDefaultBranch } from "./drift.mjs";
 import { repoPathMap, openWork, detectRepo } from "./scan.mjs";
@@ -18,9 +18,12 @@ function addTask(text, repo) {
   text = String(text || "").replace(/\s+/g, " ").trim().slice(0, 1000);
   if (!text) return { error: "empty" };
   const t = loadTasks();
-  // The same text already open in the same repo (in review counts): that task, not a duplicate.
-  const same = (s) => String(s || "").replace(/\s+/g, " ").trim().toLowerCase();
-  const dup = t.find((x) => !x.done && !x.archived && (x.repo || "") === (repo || "") && same(x.text) === same(text));
+  // The same task already open in the same repo (in review counts), even in
+  // other words (sameTask): that task, not a duplicate. When the new wording has
+  // a clause more, the task takes it, unless it's in review (its tick is on the
+  // old words). Handed out already, a tick on either wording counts (syncTasks).
+  const dup = t.find((x) => !x.done && !x.archived && (x.repo || "") === (repo || "") && sameTask(x.text, text));
+  if (dup && !dup.review && taskWords(text).length > taskWords(dup.text).length) { dup.text = text; saveTasks(t); return { ...dup, duplicate: true, reworded: true }; }
   if (dup) return { ...dup, duplicate: true };
   const item = { id: randomBytes(6).toString("hex"), text, repo: repo || "", done: false, ts: Date.now() };
   t.unshift(item); saveTasks(t); return item;
@@ -46,7 +49,7 @@ function syncTasks() {
   for (const x of t) {
     if (x.archived || x.done || x.review || !x.repo) continue;
     if (!(x.repo in checkedByRepo)) { const p = map[x.repo]; if (p && startHeldTasks(p)) started++; checkedByRepo[x.repo] = p ? completedInRepo(p) : []; }
-    if (checkedByRepo[x.repo].includes(x.text.toLowerCase())) { x.review = true; x.reviewAt = Date.now(); review++; }
+    if (checkedByRepo[x.repo].some((c) => sameTask(c, x.text))) { x.review = true; x.reviewAt = Date.now(); review++; }
   }
   for (const x of t) { if (x.done && !x.archived) { x.archived = true; x.archivedAt = Date.now(); archived++; } }
   saveTasks(t);
@@ -345,7 +348,7 @@ function approveRepo(repo, opts = {}) {
   if (!items.length) return { error: "Nothing awaiting review for " + (repo || "(no repo)") + "." };
   const path = repoPathMap()[repo]; if (!path) return { error: "Repo not found: " + repo };
   const busy = stillWorking(repo, path); if (busy) return busy;
-  const r = shipWithBump(path, items.map((x) => x.text), { ...opts, autoMerge: opts.autoMerge !== undefined ? opts.autoMerge : autoMergeRepos().includes(repo) });
+  const r = shipWithBump(path, uniqueTasks(items.map((x) => x.text)), { ...opts, autoMerge: opts.autoMerge !== undefined ? opts.autoMerge : autoMergeRepos().includes(repo) });
   if (r.error) return r;
   const now = Date.now();
   for (const x of items) { x.review = false; x.done = true; x.archived = true; x.archivedAt = now; x.approvedAt = now; for (const k of ["branch", "commit", "pr"]) if (r[k]) x[k] = r[k]; }
@@ -368,7 +371,7 @@ function sendBack(id) {
   const t = loadTasks(); const it = t.find((x) => x.id === id); if (!it) return { error: "not found" };
   it.review = false; delete it.reviewAt; saveTasks(t);
   const path = it.repo && repoPathMap()[it.repo];
-  if (path) { const f = join(path, ".symbiot", "TASKS.md"); try { const want = it.text.trim().toLowerCase(); writeFileSync(f, readFileSync(f, "utf8").split("\n").map((l) => /^\s*-\s*\[x\]/i.test(l) && l.replace(/^\s*-\s*\[x\]\s*/i, "").trim().toLowerCase() === want ? l.replace(/\[x\]/i, "[ ]") : l).join("\n")); } catch {} }
+  if (path) { const f = join(path, ".symbiot", "TASKS.md"); try { writeFileSync(f, readFileSync(f, "utf8").split("\n").map((l) => /^\s*-\s*\[x\]/i.test(l) && sameTask(l.replace(/^\s*-\s*\[x\]\s*/i, ""), it.text) ? l.replace(/\[x\]/i, "[ ]") : l).join("\n")); } catch {} }
   return it;
 }
 // Deterministic task classification (no model) so tasks batch by kind instead
@@ -403,7 +406,7 @@ function buildTasksMd(name, ctx, list) {
   L.push("## When you finish an item", "- Tick it here (`- [x]`) as soon as it's done — that's how it reaches review. Ticking doesn't archive it: the user approves it in Symbiot, which commits it on a branch and opens a PR.", "- Leave your changes **uncommitted**, and don't tick anything you didn't finish or couldn't verify.", "");
   L.push("## If you need a decision, or have ideas", "You may be running unattended, so you can't ask in chat. Write `.symbiot/QUESTIONS.md` instead: Symbiot shows it to the user on your block in its Agents tab, and their answers come back in `.symbiot/ANSWERS.md` (read that first if it exists).",
     `- At most ${QUESTIONS_MAX} questions, under a \`## Questions\` heading. Each is a \`### \` heading, then an optional line of context, then 2–4 options as \`- \` bullets (put the one you recommend first).`,
-    "- Start every option with who acts, because the user reads it as something they'd be agreeing to do: `👤 You:` when they have to do something (a setting, a click, a command), `🤖 Agent:` when picking it is enough and the next run does the work. If it takes both, put their step first: `👤 You: allow npm install in Settings. 🤖 Agent: the next run adds ESLint`.",
+    "- Start every option with who acts, because the user reads it as something they'd be agreeing to do: `👤 You:` when they have to do something (a setting, a click, a command), `🤖 Agent:` when picking it is enough and the next run does the work. If it takes both, put their step first: `👤 You: allow npm install in Settings. 🤖 Agent: the next run adds ESLint`. Tag actions only: an option that just reports what the user saw or decides (`it notified me`, `not tried yet`, `keep it as it is`) gets no tag.",
     "- If a step needs a release that isn't out yet, name its version in the question (\"Once 0.41.0 is installed: …\"). Symbiot shows it next to the installed and npm versions, and holds back an answer that starts \"Done\" until that release is out and installed.",
     "- Ideas, options or follow-ups outside these tasks go under `## Suggestions` as `- ` bullets — the user can add them to their tasks in one click.",
     "- An idea for a different project than this one (Symbiot itself, say, the app that sent you this brief) starts with that project's folder name, `- [repo: symbiot] …`, so it goes to that project's tasks instead of this one's.",
@@ -420,7 +423,7 @@ function pushTasks(filter) {
   const groups = {}; for (const t of tasks) { const k = t.repo || ""; (groups[k] = groups[k] || []).push(t); }
   const written = [], unresolved = [];
   for (const name of Object.keys(groups)) {
-    const list = groups[name], path = name && byName[name];
+    const list = uniqueTasks(groups[name].map((t) => t.text)).map((text) => ({ text })), path = name && byName[name]; // near-duplicates once
     if (!path) { unresolved.push({ name: name || "(no repo)", count: list.length }); continue; }
     try {
       // Cheap, per-repo signals only — no full drift scan (that can be very slow

@@ -6,7 +6,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { readFileSync, writeFileSync, mkdirSync, existsSync, openSync, writeSync, unlinkSync } from "node:fs";
 import { randomBytes } from "node:crypto";
-import { loadConfig, saveConfig, loadTasks, sh, hasCmd } from "./core.mjs";
+import { loadConfig, saveConfig, loadTasks, sameTask, sh, hasCmd } from "./core.mjs";
 
 const HANDOFFS = []; // live registry of agents Symbiot has handed work to
 // ---- hand a repo (+ its tasks) to the user's agent — generic, settings-based
@@ -315,7 +315,7 @@ function suggestionTarget(s) {
 }
 // The OPEN questions (not yet in ANSWERS.md) and the agent's ideas, each with
 // the repo whose tasks it goes to (this one unless it names another) and marked
-// if it's already on that repo's task list.
+// if it's already on that repo's task list, in these words or nearly (sameTask).
 function agentQuestions(path, repo) {
   const p = parseQuestions(readSymbiot(path, "QUESTIONS.md"));
   const done = new Set([...readSymbiot(path, "ANSWERS.md").matchAll(/^###\s+(.+)$/gm)].map((m) => qKey(m[1])));
@@ -323,7 +323,7 @@ function agentQuestions(path, repo) {
   const tasks = p.suggestions.length ? loadTasks() : [];
   return {
     questions: open.slice(0, QUESTIONS_MAX), answered: p.questions.length - open.length,
-    suggestions: p.suggestions.map(suggestionTarget).map(({ repo: to, text }) => ({ text, repo: to || repo, other: !!to && to !== repo, added: tasks.some((t) => t.repo === (to || repo) && qKey(t.text) === qKey(text)) })),
+    suggestions: p.suggestions.map(suggestionTarget).map(({ repo: to, text }) => ({ text, repo: to || repo, other: !!to && to !== repo, added: tasks.some((t) => t.repo === (to || repo) && sameTask(t.text, text)) })),
   };
 }
 // Save answers to .symbiot/ANSWERS.md; opts.rerun hands the repo back to the
