@@ -71,15 +71,20 @@ const fillHandoff = (tmpl, repoPath) => tmpl.replace(/\{dir\}/g, shSingle(repoPa
 // A preset that only opens a tab (Orca, editors) exits at once, so it holds
 // the folder only that long. A busy result's `auto` says whether the process
 // that started that agent is still up to start one on the held tasks.
+// A folder's .symbiot/handoff.json ({ name, env }) names its job and joins its
+// environment, on every run there, a rerun with answers too: a draft reply's
+// folder (watch.mjs) carries SYMBIOT_DRAFT, which refuses a press on Send.
 function runHandoff(repoPath) {
   const tmpl = handoffCmd(); if (!tmpl || !repoPath) return null;
+  let opts = {}; try { opts = JSON.parse(readSymbiot(repoPath, "handoff.json")) || {}; } catch {}
   const busy = runningHandoff(repoPath); if (busy) return { busy: true, id: busy.id || "", pid: busy.pid, auto: !!busy.auto };
   releaseHeldTasks(repoPath); // held for an agent another process started, which has since exited
   const lock = join(repoPath, ".symbiot", LOCK);
-  const e = track(repoPath.split("/").pop(), fillHandoff(tmpl, repoPath), repoPath, () => {
+  const env = opts.env && typeof opts.env === "object" ? Object.fromEntries(Object.entries(opts.env).map(([k, v]) => [k, String(v)])) : null;
+  const e = track(typeof opts.name === "string" && opts.name ? opts.name.slice(0, 80) : repoPath.split("/").pop(), fillHandoff(tmpl, repoPath), repoPath, () => {
     try { if (JSON.parse(readFileSync(lock, "utf8")).pid === e.pid) unlinkSync(lock); } catch {}
     startHeldTasks(repoPath); // tasks sent while it ran land now; start on them as that Send would have
-  });
+  }, env);
   if (!e) return null;
   e.handoff = true;
   if (e.pid) try { writeFileSync(lock, JSON.stringify({ pid: e.pid, id: e.id, startedAt: e.startedAt, owner: process.pid })); } catch {}
@@ -240,13 +245,13 @@ function _findOrcaCli() {
 // ---- background jobs --------------------------------------------------------
 // Run a shell command as a tracked, logged background job that shows up live in
 // the Agents tab. Shared by the agent handoff and the local-model setup.
-function track(name, cmd, cwd, onExit) {
+function track(name, cmd, cwd, onExit, env) {
   try {
     const dir = join(cwd, ".symbiot"); mkdirSync(dir, { recursive: true });
     const logp = join(dir, "agent.log");
     let fd = "ignore"; try { fd = openSync(logp, "a"); writeSync(fd, `\n=== ${name} ${new Date().toISOString()} ===\n$ ${cmd}\n`); } catch {}
     const entry = { id: randomBytes(4).toString("hex"), name, path: cwd, log: logp, startedAt: Date.now(), status: "running", exitCode: null, endedAt: null };
-    const child = spawn(cmd, { shell: true, cwd, detached: true, stdio: ["ignore", fd === "ignore" ? "ignore" : fd, fd === "ignore" ? "ignore" : fd] });
+    const child = spawn(cmd, { shell: true, cwd, detached: true, stdio: ["ignore", fd === "ignore" ? "ignore" : fd, fd === "ignore" ? "ignore" : fd], ...(env ? { env: { ...process.env, ...env } } : {}) });
     entry.pid = child.pid;
     child.on("exit", (code) => { entry.status = code === 0 ? "done" : "failed"; entry.exitCode = code; entry.endedAt = Date.now(); if (onExit) try { onExit(code); } catch {} });
     child.on("error", () => { entry.status = "failed"; entry.endedAt = Date.now(); });

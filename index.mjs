@@ -36,9 +36,10 @@ import { setScanOptions, scanBase, authorship, readmeInfo, repoShape, houseRules
 import { gitDefaultBranch, loadDeploys, driftRepo, computeDrift } from "./drift.mjs";
 import { buildTasksMd, taskType, shipChanges, shipWithBump, bumpOffer, learnNpm, releaseNeeded, withReleases, setVersion, syncTasks, pendingReview, unreleased, publishesOnMerge, addTask, approveRepo, approveChanges, sendBack, pushTasks } from "./tasks.mjs";
 import { produce, mailState, setMail, sentMail } from "./writeups.mjs";
-import { loadScreens, blueprint } from "./screens.mjs";
+import { loadScreens, screenImage, blueprint } from "./screens.mjs";
 import { mapPage, pressRegion, typeRegion, signIn, isTrusted } from "./headless.mjs";
 import { watchState, addWatch, removeWatch, newsSince, checkWatch, setBrief } from "./watch.mjs";
+import { PORT as PHONE_PORT, phoneState, pairComputer, pollComputer, forgetComputer } from "./phone.mjs";
 import { startApp, updateCmd } from "./server.mjs";
 
 // ---- tiny arg parse --------------------------------------------------------
@@ -289,12 +290,13 @@ function cmdMail() {
 }
 
 // ---- `symbiot screens`: Screens from a terminal, for you or an agent ----------
-// map / press / show print JSON: the screen's id, its blueprint, and each
-// region's id, which is what press takes (or a region's label).
+// map / press / show print JSON: the screen's id, its blueprint, each region's id,
+// which is what press takes (or a region's label), and the screenshot (`image`),
+// for an agent to see what the page says: an email's text isn't a region.
 function screenJson(s) {
   if (!s || s.error) return s;
-  const bp = blueprint(s);
-  return { id: s.id, ...(s.note ? { note: s.note } : {}), ...(s.pressed ? { pressed: s.pressed, found: s.found } : {}), ...(s.typed ? { typed: s.typed, entered: s.entered, found: s.found } : {}), ...(s.kept ? { kept: true } : {}), ...(s.page ? { trusted: isTrusted(s.page.url) } : {}), ...bp, regions: bp.regions.map((r, i) => ({ id: s.regions[i].id, ...r })) };
+  const bp = blueprint(s), image = screenImage(s.id);
+  return { id: s.id, ...(image ? { image } : {}), ...(s.note ? { note: s.note } : {}), ...(s.pressed ? { pressed: s.pressed, found: s.found } : {}), ...(s.typed ? { typed: s.typed, entered: s.entered, found: s.found } : {}), ...(s.kept ? { kept: true } : {}), ...(s.page ? { trusted: isTrusted(s.page.url) } : {}), ...bp, regions: bp.regions.map((r, i) => ({ id: s.regions[i].id, ...r })) };
 }
 
 // map, press, type and signin go through the app when it's running, whose hidden
@@ -329,8 +331,9 @@ async function cmdScreens() {
     const want = String(a2 || "").toLowerCase(), rs = s.regions || [];
     const r = rs.find((x) => x.id === a2) || rs.find((x) => x.label.toLowerCase() === want) || (rs.filter((x) => x.label.toLowerCase().includes(want)).length === 1 && rs.find((x) => x.label.toLowerCase().includes(want)));
     if (!want || !r) return out({ error: `No region "${a2 || ""}" on that screen (give its id, or a label that matches one region).` });
-    const body = { id: s.id, region: r.id, confirmed: has("yes"), ...(sub === "type" ? { text: a3, enter: has("enter") } : {}) };
-    const done = (await viaApp("/api/screens/" + sub, body)) || (sub === "press" ? await pressRegion(s.id, r.id, { confirmed: body.confirmed }) : await typeRegion(s.id, r.id, a3, { enter: body.enter, confirmed: body.confirmed }));
+    // a draft reply's agent (SYMBIOT_DRAFT, watch.mjs) never presses Send
+    const body = { id: s.id, region: r.id, confirmed: has("yes"), ...(sub === "type" ? { text: a3, enter: has("enter") } : { noSend: !!process.env.SYMBIOT_DRAFT }) };
+    const done = (await viaApp("/api/screens/" + sub, body)) || (sub === "press" ? await pressRegion(s.id, r.id, { confirmed: body.confirmed, noSend: body.noSend }) : await typeRegion(s.id, r.id, a3, { enter: body.enter, confirmed: body.confirmed }));
     // not a trusted site: say how to go ahead (only you can trust a site, in the app's Settings)
     if (done && done.confirm) return out({ error: `${done.error} Add --yes to go ahead, or list ${done.host} under Trusted sites in Symbiot's Settings.` });
     return out(screenJson(done));
@@ -392,6 +395,84 @@ async function cmdWatch() {
   if (sub !== "help") process.exitCode = 1;
 }
 
+// ---- `symbiot phone`: Watch on your phone, from a terminal ----------------------
+// On the phone (Termux), pair with your computer without the app window; on the
+// computer, the addresses and a code to pair with. Through the app when it runs:
+// that's where the computer listens and the phone asks.
+async function cmdPhone() {
+  const [sub = "status", ...rest] = argv.slice(1).filter((x) => !x.startsWith("--"));
+  const fail = (msg) => { console.log(c.y(msg)); process.exitCode = 1; };
+  const app = await viaApp("/api/phone", {}), st = app && !app.error ? app : phoneState();
+  const phone = st.role === "phone", ask = "symbiot phone pair <address> <code>";
+  const notPaired = `Not paired with a computer. On the computer, switch on Settings → Watch on your phone in Symbiot (or run  symbiot phone code  there), then here:  ${ask}`;
+  const onlyPhone = () => fail(`That's for the phone. In Termux there:  ${ask},  with an address and the code this computer shows (symbiot phone code).`);
+  const onlyComputer = () => fail("That's for the computer your phone pairs with: run it there.");
+  const noApp = "Symbiot's app isn't running here, so nothing listens for your phone. Start it with  symbiot app,  switch on Settings → Watch on your phone, then run this again.";
+  const asks = (r) => (app ? `Symbiot here asks ${r.name} what's new every 2 minutes and notifies you.` : `Symbiot here asks ${r.name} what's new every 2 minutes while  symbiot app  runs: start it to be notified.`) + (r.notify === false ? c.d("  For notifications in Termux: pkg install termux-api, and the Termux:API app.") : "");
+  if (sub === "pair") {
+    if (!phone) return onlyPhone();
+    // the code may be typed as shown, in two halves: 123 456
+    const [address, ...code] = rest;
+    if (!address || !code.length) return fail(`Give the computer's address and the 6-digit code it shows:  ${ask}  (like 192.168.1.21:7392 123456)`);
+    const r = (app && await viaApp("/api/phone/pair", { address, code: code.join("") })) || await pairComputer(address, code.join(""));
+    if (r.error || !r.paired) return fail(r.error || "Pairing didn't work.");
+    console.log(`${c.g("✓")} Paired with ${c.b(r.name)} ${c.d(r.url)}\n  ${asks(r)}`);
+    return;
+  }
+  if (sub === "check") {
+    if (!phone) return onlyPhone();
+    if (!st.paired) return fail(notPaired);
+    const r = (app && await viaApp("/api/phone/check", {})) || await pollComputer();
+    if (r.error) return fail(r.error);
+    console.log(r.shown ? `${c.g("✓")} ${r.shown} new from ${r.name}, notified.` : c.d(`Nothing new from ${r.name}.`));
+    return;
+  }
+  if (sub === "forget") {
+    if (!phone) return onlyPhone();
+    (app && await viaApp("/api/phone/forget", {})) || forgetComputer();
+    console.log(st.paired ? `Forgot ${st.name}: this phone doesn't ask it any more.` : c.d("Not paired with a computer."));
+    return;
+  }
+  if (sub === "code") {
+    if (phone) return onlyComputer();
+    if (!app) return fail(noApp);
+    if (!st.on) return fail("Watch on your phone is off. Switch it on in Symbiot: Settings → Watch on your phone.");
+    const r = await viaApp("/api/phone/code", {});
+    if (!r || r.error || !r.code) return fail((r && r.error) || "No code came back.");
+    console.log(`Code ${c.b(r.code)}  ${c.d(`for ${Math.max(1, Math.round((r.until - Date.now()) / 60000))} minutes, 5 tries`)}\nOn the phone, in Termux, with this computer's address:`);
+    for (const a of r.addresses || []) console.log(`  symbiot phone pair ${a}:${r.port || PHONE_PORT} ${r.code}`);
+    return;
+  }
+  if (sub === "status") {
+    if (phone) {
+      if (!st.paired) return console.log(notPaired);
+      console.log(`Paired with ${c.b(st.name)} ${c.d(st.url)}` + (st.last ? c.d(`  · asked ${new Date(st.last).toLocaleString()}`) : ""));
+      if (st.error) console.log(c.y(st.error));
+      console.log("  " + asks(st));
+      return;
+    }
+    if (!app) return console.log(c.y(noApp));
+    if (!st.on) return console.log(c.y("Watch on your phone is off.") + c.d("  Switch it on in Symbiot: Settings → Watch on your phone."));
+    if (st.error) console.log(c.y(st.error));
+    if (st.listening) console.log(`Listening for your phone at ${(st.addresses || []).map((a) => c.b(`${a}:${st.port || PHONE_PORT}`)).join(", ") || c.y("(no network address found)")}`);
+    console.log(st.code ? `Code ${c.b(st.code)}  ${c.d(`until ${new Date(st.until).toLocaleTimeString()}`)}` : c.d("No pairing code open:  symbiot phone code  for one."));
+    for (const p of st.phones || []) console.log(`  ${c.g("·")} ${p.name}  ${c.d("paired " + new Date(p.added).toLocaleDateString() + (p.seen ? ", asked " + new Date(p.seen).toLocaleString() : ""))}`);
+    console.log(c.d(`On the phone, in Termux:  ${ask}`));
+    return;
+  }
+  console.log(`${c.b("symbiot phone")} ${c.d("— experimental")}
+  On the phone (Termux):
+  symbiot phone                         the computer it's paired with
+  symbiot phone pair <address> <code>   pair with your computer, with its address
+                                        (like 192.168.1.21:7392) and the code it shows
+  symbiot phone check                   ask it what's new now
+  symbiot phone forget                  stop asking it
+  On the computer (while  symbiot app  runs, Watch on your phone switched on):
+  symbiot phone                         where it listens, and the phones paired
+  symbiot phone code                    a new 6-digit code to pair a phone with`);
+  if (sub !== "help") process.exitCode = 1;
+}
+
 const HELP =`${c.b("symbiot")} — your week, written from your real work.
 
 ${c.b("Usage")}
@@ -416,6 +497,9 @@ ${c.b("Experimental")}
   symbiot watch add <screen id>     keep track of a mapped page: what's new on it
   symbiot watch add github          ...or your GitHub notifications
                                     (symbiot watch help for more)
+  symbiot phone pair <address> <code>
+                                    in Termux: pair with your computer for
+                                    Watch on your phone (symbiot phone help)
 
 ${c.b("Options")}
   --dir <path>    where your repos are (default: ${homedir()})
@@ -448,6 +532,7 @@ async function main() {
   if (cmd === "mail" || cmd === "email") return cmdMail();
   if (cmd === "screens" || cmd === "screen") return cmdScreens();
   if (cmd === "watch") return cmdWatch();
+  if (cmd === "phone") return cmdPhone();
   if (cmd === "week") return cmdRun("week");
   if (cmd === "standup") return cmdRun("standup");
   if (cmd === "todo") return cmdRun("todo");

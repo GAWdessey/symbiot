@@ -346,9 +346,13 @@ function actOnRegion(id, regionId, verb, confirmed, check, act) {
 }
 const clickAt = async (page, at) => { for (const type of ["mouseMoved", "mousePressed", "mouseReleased"]) await page.send("Input.dispatchMouseEvent", { type, x: at.x, y: at.y, button: "left", clickCount: type === "mouseMoved" ? 0 : 1 }); };
 
-// Press: click it as a mouse would.
-function pressRegion(id, regionId, { confirmed = false } = {}) {
-  return actOnRegion(id, regionId, "Press", confirmed, () => "", async (page, at, r) => { await clickAt(page, at); return { pressed: r.label }; });
+// Press: click it as a mouse would. noSend (a draft reply's run: watch.mjs) refuses
+// a button or menu item that sends ("Send", "Schedule send"), even confirmed: a
+// row whose subject says "send" is still pressed.
+const isSend = (r) => /^(button|menu item)$/.test(r.kind || "button") && /\bsend\b/i.test(r.label || "");
+function pressRegion(id, regionId, { confirmed = false, noSend = false } = {}) {
+  return actOnRegion(id, regionId, "Press", confirmed, (r) => (noSend && isSend(r) ? `"${r.label}" sends. This run only drafts: it never presses Send. The draft stays in Drafts for you to send.` : ""),
+    async (page, at, r) => { await clickAt(page, at); return { pressed: r.label }; });
 }
 
 // Type: click into a field, replace what's in it with text, and press Enter if
@@ -386,4 +390,4 @@ async function signIn(input) {
   return { ok: true, url };
 }
 
-export { siteUrl, browserArgs, mapPage, readPage, pressRegion, typeRegion, signIn, keepBrowserOpen, closeBrowser, browserOpen, trustedSites, isTrusted, trustSite, untrustSite, PROFILE };
+export { siteUrl, browserArgs, mapPage, readPage, isSend, pressRegion, typeRegion, signIn, keepBrowserOpen, closeBrowser, browserOpen, trustedSites, isTrusted, trustSite, untrustSite, PROFILE };

@@ -196,6 +196,7 @@ const calls = [
   ["/api/watch/check", "POST"],     // no id -> "No watch", no browser starts
   ["/api/watch/clear", "POST"],     // clears the (empty) list of what's new
   ["/api/watch/brief", "POST"],     // empty body -> the brief stays off
+  ["/api/watch/draft", "POST"],     // no id -> refused, no agent starts
   ["/api/phone", "GET"],            // Watch on your phone: this computer's side (off)
   ["/api/phone/link", "POST"],      // empty body -> off: nothing listens on the network
   ["/api/phone/code", "POST"],      // a pairing code, held in memory (nothing listens while off)
