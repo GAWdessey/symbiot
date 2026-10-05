@@ -38,7 +38,7 @@ import { gitDefaultBranch, loadDeploys, driftRepo, computeDrift } from "./drift.
 import { buildTasksMd, taskType, shipChanges, shipWithBump, bumpOffer, learnNpm, releaseNeeded, withReleases, setVersion, syncTasks, pendingReview, unreleased, publishesOnMerge, addTask, approveRepo, approveChanges, sendBack, pushTasks } from "./tasks.mjs";
 import { produce, mailState, setMail, sentMail } from "./writeups.mjs";
 import { loadScreens, screenImage, blueprint } from "./screens.mjs";
-import { mapPage, pressRegion, typeRegion, signIn, isTrusted } from "./headless.mjs";
+import { mapPage, pressRegion, typeRegion, scrollPage, signIn, isTrusted } from "./headless.mjs";
 import { watchState, addWatch, removeWatch, newsSince, checkWatch, setBrief, isMail, draftReply } from "./watch.mjs";
 import { PORT as PHONE_PORT, phoneState, pairComputer, pollComputer, forgetComputer } from "./phone.mjs";
 import { startApp, updateCmd, isAppRunningWeekly } from "./server.mjs";
@@ -293,11 +293,14 @@ function cmdMail() {
 // ---- `symbiot screens`: Screens from a terminal, for you or an agent ----------
 // map / press / show print JSON: the screen's id, its blueprint, each region's id,
 // which is what press takes (or a region's label), and the screenshot (`image`),
-// for an agent to see what the page says: an email's text isn't a region.
+// for an agent to see what the page says: an email's text isn't a region. `more`
+// says the page goes on past the window ("below", "above", "above and below"):
+// scroll there to map the rest.
 function screenJson(s) {
   if (!s || s.error) return s;
-  const bp = blueprint(s), image = screenImage(s.id);
-  return { id: s.id, ...(image ? { image } : {}), ...(s.note ? { note: s.note } : {}), ...(s.pressed ? { pressed: s.pressed, found: s.found } : {}), ...(s.typed ? { typed: s.typed, entered: s.entered, found: s.found } : {}), ...(s.kept ? { kept: true } : {}), ...(s.page ? { trusted: isTrusted(s.page.url) } : {}), ...bp, regions: bp.regions.map((r, i) => ({ id: s.regions[i].id, ...r })) };
+  const bp = blueprint(s), image = screenImage(s.id), sc = s.page && s.page.scroll;
+  const more = sc ? [sc.y > 0 && "above", sc.y < sc.max && "below"].filter(Boolean).join(" and ") : "";
+  return { id: s.id, ...(image ? { image } : {}), ...(s.note ? { note: s.note } : {}), ...(more ? { more } : {}), ...(s.scrolled ? { scrolled: s.scrolled } : {}), ...(s.pressed ? { pressed: s.pressed, found: s.found } : {}), ...(s.typed ? { typed: s.typed, entered: s.entered, found: s.found } : {}), ...(s.kept ? { kept: true } : {}), ...(s.page ? { trusted: isTrusted(s.page.url) } : {}), ...bp, regions: bp.regions.map((r, i) => ({ id: s.regions[i].id, ...r })) };
 }
 
 // map, press, type and signin go through the app when it's running, whose hidden
@@ -325,6 +328,11 @@ async function cmdScreens() {
     return;
   }
   if (sub === "map") { const body = { site: a1, name: flag("name", "") }; return out(screenJson((await viaApp("/api/screens/map", body)) || await mapPage(body.site, body.name))); }
+  if (sub === "scroll") {
+    const s = find(a1); if (!s) return out({ error: "No screen " + (a1 || "") + ". symbiot screens lists them." });
+    const body = { id: s.id, to: a2 || "down" };
+    return out(screenJson((await viaApp("/api/screens/scroll", body)) || await scrollPage(body.id, body.to)));
+  }
   if (sub === "show") { const s = find(a1); return out(s ? screenJson(s) : { error: "No screen " + (a1 || "") + ". symbiot screens lists them." }); }
   if (sub === "signin") { const r = (await viaApp("/api/screens/signin", { site: a1 })) || await signIn(a1); return out(r.ok ? { ...r, next: "Sign in in the window that opened, close it, then map again." } : r); }
   if (sub === "press" || sub === "type") {
@@ -347,7 +355,10 @@ async function cmdScreens() {
   symbiot screens press <id> <region> [--yes]  press a region there, map where it lands
   symbiot screens type <id> <field> "text" [--enter] [--yes]
                                                type into a field (Enter sends it), map the result
-  symbiot screens signin <site>                sign in once, in Symbiot's browser window
+  symbiot screens scroll <id> [down|up|top|bottom]
+                                               scroll the page, map what's in the window then
+                                               (a map's "more" says there's more below or above)
+  symbiot screens signin <site>               sign in once, in Symbiot's browser window
   --yes is needed unless the page's site is under Trusted sites in the app's Settings.
   While the app runs, these use its hidden browser, which stays open a few minutes:
   press on the screen the last command printed carries on from that page as it is

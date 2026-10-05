@@ -185,6 +185,7 @@ const calls = [
   ["/api/screens/map", "POST"],     // no site -> refused before a browser starts
   ["/api/screens/press", "POST"],   // not confirmed -> refused, nothing pressed
   ["/api/screens/type", "POST"],    // no id -> "not found", nothing typed
+  ["/api/screens/scroll", "POST"],  // no id -> "not found", no browser starts
   ["/api/screens/trusted", "GET"],  // trusted sites (isolated HOME -> none)
   ["/api/screens/trusted/add", "POST"],    // no site -> refused, nothing saved
   ["/api/screens/trusted/remove", "POST"],

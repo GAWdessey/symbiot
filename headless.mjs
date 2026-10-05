@@ -163,7 +163,8 @@ async function withPage(fn, keep = true) {
   const kill = setTimeout(() => { try { b.proc.kill("SIGKILL"); } catch {} }, TIMEOUT);
   try {
     const r = await fn(b.page, b);
-    b.shown = r && r.id && !r.error ? r.id : "";
+    // stay: nothing changed on the page, so it shows what fn left in b.shown
+    if (r && r.stay) delete r.stay; else b.shown = r && r.id && !r.error ? r.id : "";
     return r;
   } catch (e) { await shut(b); throw e; }
   finally {
@@ -181,11 +182,32 @@ async function open(page, url) {
   await loaded; await page.idle();
 }
 
+// Runs in the page: scroller() is what scrolls it, as a mouse wheel would find it.
+// That's the part under the middle of the window that scrolls (Gmail's list of
+// mail scrolls inside the page, not the page), if it fills half the window or the
+// page itself doesn't scroll; else the page; else the biggest part that scrolls.
+// null when it all fits.
+const SCROLLER = `function scroller() {
+  const W = innerWidth, H = innerHeight, d = document.scrollingElement || document.documentElement;
+  const can = (e) => e.scrollHeight - e.clientHeight > 1 && /^(auto|scroll|overlay)$/.test(getComputedStyle(e).overflowY);
+  const seen = (e) => { const b = e.getBoundingClientRect(); return Math.max(0, Math.min(W, b.right) - Math.max(0, b.left)) * Math.max(0, Math.min(H, b.bottom) - Math.max(0, b.top)); };
+  const page = d.scrollHeight - H > 1 && ![document.documentElement, document.body].some((e) => e && /^(hidden|clip)$/.test(getComputedStyle(e).overflowY));
+  let mid = null;
+  for (let e = document.elementFromPoint(W / 2, H / 2); e && e !== document.documentElement; e = e.parentElement) if (can(e)) { mid = e; break; }
+  if (mid && (!page || seen(mid) >= W * H / 2)) return mid;
+  if (page) return d;
+  let best = null, most = 100 * 100;
+  for (const e of document.querySelectorAll('body, body *')) if (e.scrollHeight - e.clientHeight > 1 && can(e)) { const a = seen(e); if (a > most) { best = e; most = a; } }
+  return best;
+}`;
+
 // Runs in the page: everything you could click or type in that's on screen now
 // and not covered, as { label, kind, x, y, w, h, selector, href? } in CSS pixels
 // of the viewport (= the screenshot's, at scale 1). Inside a matched button or
 // link, a part of the same kind is the same thing, so only the outer one counts.
-const COLLECT = `(() => {
+// And how far down it's scrolled: { y, max, selector? } (no selector: the page
+// itself), when there's more than the window shows.
+const COLLECT = `(() => { ${SCROLLER}
   const SEL = 'a[href],button,input:not([type=hidden]),select,textarea,summary,[contenteditable=""],[contenteditable=true],[onclick],' +
     ['button','link','tab','menuitem','menuitemcheckbox','menuitemradio','option','checkbox','radio','switch','combobox','textbox','searchbox','row','treeitem'].map((r) => '[role=' + r + ']').join(',');
   const W = innerWidth, H = innerHeight, out = [], kinds = new Map();
@@ -246,7 +268,9 @@ const COLLECT = `(() => {
     if (e.href && /^https?:/.test(e.href)) r.href = String(e.href).slice(0, 500);
     out.push(r);
   }
-  return { url: location.href, title: document.title, items: out };
+  const sc = scroller(), max = sc ? Math.round(sc.scrollHeight - sc.clientHeight) : 0;
+  const scroll = max > 0 ? { y: Math.round(sc.scrollTop), max, ...(sc === (document.scrollingElement || document.documentElement) ? {} : { selector: cssPath(sc) }) } : null;
+  return { url: location.href, title: document.title, items: out, ...(scroll ? { scroll } : {}) };
 })()`;
 
 // What's on the page now: { url, title, items }.
@@ -313,6 +337,56 @@ function untrustSite(host) {
   return saveConfig(cfg) ? { ok: true, sites: cfg.trustedSites || [] } : { error: "Couldn't write the config file." };
 }
 
+// Runs in the page: scroll it `to` "down" or "up" (most of a window, so a line
+// or two stays in view), "top", "bottom", or a y from an earlier map. `where` is
+// what scrolled then: a selector, "" for the page itself, null to find it now.
+// Gives { from, y, max }, or null when nothing scrolls.
+const scrollJs = (to, where = null) => `(() => { ${SCROLLER}
+  const sel = ${JSON.stringify(where)}, to = ${JSON.stringify(to)};
+  let e = null; try { e = sel === null ? null : sel ? document.querySelector(sel) : document.scrollingElement || document.documentElement; } catch (x) {}
+  e = e || scroller(); if (!e) return null;
+  const from = e.scrollTop, step = Math.round(Math.min(e.clientHeight, innerHeight) * 0.85);
+  e.scrollTo({ top: to === 'down' ? from + step : to === 'up' ? from - step : to === 'top' ? 0 : to === 'bottom' ? e.scrollHeight : +to || 0, behavior: 'instant' });
+  return { from: Math.round(from), y: Math.round(e.scrollTop), max: Math.round(e.scrollHeight - e.clientHeight) };
+})()`;
+
+// Make the page show what screen s does: it still does if the open browser last
+// mapped it (with what was typed there); else open its address again and scroll
+// to where it was. True if it was still there.
+async function showScreen(page, b, s) {
+  const here = b.shown === s.id && (await page.send("Runtime.evaluate", { expression: "location.href", returnByValue: true })).result?.value === s.page.url;
+  if (!here) {
+    await open(page, s.page.url);
+    const sc = s.page.scroll;
+    if (sc && sc.y) { await page.send("Runtime.evaluate", { expression: scrollJs(sc.y, sc.selector || ""), returnByValue: true }); await page.idle(); }
+  }
+  return here;
+}
+
+// Scroll a mapped page and map what's in the window then, as a new screen: a site
+// is taller than its window, and a map only has what the window shows. Only looks,
+// so it never asks first. At the end already, it says so and maps nothing.
+const SCROLLS = ["down", "up", "top", "bottom"];
+function scrollPage(id, to = "down") {
+  to = String(to || "down").toLowerCase();
+  if (!SCROLLS.includes(to)) return Promise.resolve({ error: `Scroll ${SCROLLS.join(", ")}: not "${to}".` });
+  const s = loadScreens().find((x) => x.id === id); if (!s) return Promise.resolve({ error: "not found" });
+  if (!s.page || !s.page.url) return Promise.resolve({ error: "Scroll works on a mapped page." });
+  return oneAtATime(() => withPage(async (page, b) => {
+    const here = await showScreen(page, b, s), sc = s.page.scroll;
+    const { result } = await page.send("Runtime.evaluate", { expression: scrollJs(to, sc ? sc.selector || "" : null), returnByValue: true });
+    const m = result && result.value;
+    b.shown = s.id;
+    if (!m) return { error: "Nothing scrolls on this page: it all fits in the window.", stay: true };
+    if (m.y === m.from) return { error: `That's the ${/^(up|top)$/.test(to) ? "top" : "bottom"} of the page already.`, stay: true };
+    await page.idle(); // a page that loads more as you scroll
+    // named for how far down it is: "Inbox ↓ 40%"
+    const pct = m.max > 0 ? Math.round(m.y / m.max * 100) : 0;
+    const next = await snapshot(page, s.name.replace(/ ↓ \d+%$/, "") + (pct ? ` ↓ ${pct}%` : ""));
+    return next.error ? next : { ...next, scrolled: to, kept: here };
+  })).catch((e) => ({ error: String((e && e.message) || e) }));
+}
+
 // Act on a mapped region: find it (by its selector, else at the same spot) and give
 // act(page, at, region) where it is now; then map where that leads, as a new screen.
 // On the screen the open browser last mapped, that's the page as it is now (what
@@ -327,8 +401,7 @@ function actOnRegion(id, regionId, verb, confirmed, check, act) {
   const host = hostOf(s.page.url);
   if (!confirmed && !isTrusted(s.page.url)) return Promise.resolve({ error: `${verb === "Type" ? "Typing into" : "Pressing"} "${r.label}" acts on the real site, signed in as you, and ${host} isn't one of your trusted sites.`, confirm: true, host });
   return oneAtATime(() => withPage(async (page, b) => {
-    const here = b.shown === s.id && (await page.send("Runtime.evaluate", { expression: "location.href", returnByValue: true })).result?.value === s.page.url;
-    if (!here) await open(page, s.page.url);
+    const here = await showScreen(page, b, s);
     // A new tab would leave this one where it was, so a link opens here instead.
     const find = `(() => { let e = null; try { e = ${JSON.stringify(r.selector || "")} && document.querySelector(${JSON.stringify(r.selector || "")}); } catch (x) {}
       if (!e) return null; const a = e.closest('a[target]'); if (a) a.removeAttribute('target');
@@ -390,4 +463,4 @@ async function signIn(input) {
   return { ok: true, url };
 }
 
-export { siteUrl, browserArgs, mapPage, readPage, isSend, pressRegion, typeRegion, signIn, keepBrowserOpen, closeBrowser, browserOpen, trustedSites, isTrusted, trustSite, untrustSite, PROFILE };
+export { siteUrl, browserArgs, mapPage, readPage, isSend, pressRegion, typeRegion, scrollPage, SCROLLS, signIn, keepBrowserOpen, closeBrowser, browserOpen, trustedSites, isTrusted, trustSite, untrustSite, PROFILE };

@@ -364,12 +364,16 @@ function setRegions(id, regions) {
   return s;
 }
 // A web page mapped in the hidden browser (headless.mjs): its screenshot, with a
-// region for each button, link and field found on it. `page` is { url, title }.
+// region for each button, link and field found on it. `page` is { url, title,
+// scroll? }: scroll is how far down the window is ({ y, max } in pixels, and the
+// selector of what scrolls when it isn't the page itself), when there's more.
 function addPageScreen(name, png, page, regions) {
   const size = pngSize(png); if (!size) return { error: "The page's screenshot isn't a PNG." };
   const id = newId();
   try { mkdirSync(SCREENS_DIR, { recursive: true }); writePrivate(screenFile(id), png); } catch (e) { return { error: String((e && e.message) || e) }; }
   const p = { url: String(page.url || "").slice(0, 2000), title: String(page.title || "").trim().slice(0, 200) };
+  const sc = page.scroll || {}, max = Math.round(Number(sc.max) || 0);
+  if (max > 0) p.scroll = { y: Math.max(0, Math.min(max, Math.round(Number(sc.y) || 0))), max, ...(typeof sc.selector === "string" && sc.selector.trim() ? { selector: sc.selector.trim().slice(0, 1000) } : {}) };
   return addScreen(id, name, size, "headless", { page: p, regions: cleanRegions(size, regions) });
 }
 function renameScreen(id, name) {
