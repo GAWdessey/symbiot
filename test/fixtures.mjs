@@ -10,7 +10,7 @@ import { mkdtempSync, writeFileSync, mkdirSync, rmSync, readFileSync, existsSync
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { authorship, repoState, readmeInfo, houseRules, findAllRepos, driftRepo, buildTasksMd, taskType, EMBEDDED_UI, orcaHandoffCmd, migrateOrcaCmd, fillHandoff, ORCA_CLAUDE_CMD, CLAUDE_CMD, HANDOFF_PROMPT, shipChanges, shipWithBump, bumpOffer, learnNpm, semverGt, updateCmd, parseQuestions, unreleased, publishesOnMerge } from "../index.mjs";
+import { authorship, repoState, readmeInfo, houseRules, findAllRepos, driftRepo, buildTasksMd, taskType, EMBEDDED_UI, orcaHandoffCmd, migrateOrcaCmd, fillHandoff, ORCA_CLAUDE_CMD, CLAUDE_CMD, HANDOFF_PROMPT, shipChanges, shipWithBump, bumpOffer, learnNpm, releaseNeeded, withReleases, semverGt, updateCmd, parseQuestions, unreleased, publishesOnMerge } from "../index.mjs";
 import { mailActivity } from "../mail.mjs";
 import { pngSize, pngDecode, splitPng, captureCmds, clickCmds, portalAppId, monitorCmds, parseCosmicRandr, parseWlrRandr, parseKscreen, parseXrandr, parseLines, tidyMonitors, monitorAreas } from "../screens.mjs";
 import { siteUrl, browserArgs, isTrusted } from "../headless.mjs";
@@ -318,6 +318,20 @@ try {
   const gg = (a) => execSync("git " + a, { cwd: giRepo, encoding: "utf8", env: gitEnv }).trim();
   ok("ships even when .symbiot/ is gitignored (no false 'git add failed')", rg.ok && !!rg.commit, rg);
   ok("commit excludes .symbiot/ (gitignored case)", !gg("show --name-only --format= HEAD").split("\n").includes(".symbiot"), gg("show --name-only --format= HEAD"));
+  // a branch whose earlier PR was squash-merged: main has its changes under another
+  // history, so a new PR from it can't merge. The next approve starts afresh from main.
+  const sqRepo = build("ship-sq", `git init -q -b main && git config user.email ci@symbiot.test && git config user.name "Symbiot CI" && echo a > a.txt && git add . && git commit -qm init
+    git clone -q --bare . ../ship-sq-remote.git && git remote add origin ../ship-sq-remote.git && git fetch -q origin && git remote set-head origin main
+    git switch -q -c feat && echo b >> a.txt && git commit -qam one && echo c >> a.txt && git commit -qam two && git push -q -u origin feat
+    git switch -q main && git merge -q --squash feat && git commit -qm "feat (#1)" && git push -q origin main && git switch -q feat
+    echo next > next.txt`);
+  const gs = (a) => execSync("git " + a, { cwd: sqRepo, encoding: "utf8", env: gitEnv }).trim();
+  const rs = shipChanges(sqRepo, ["Next thing"], { pr: false });
+  ok("squash-merged branch -> the next approve starts a fresh symbiot/ branch from origin/main", rs.ok && rs.branch === "symbiot/next-thing" && gs("rev-parse HEAD~1") === gs("rev-parse origin/main") && /already merged/.test(rs.note || "") && rs.pushed, rs);
+  ok("...carrying only the new changes (the merged ones aren't in it twice)", gs("show --name-only --format= HEAD") === "next.txt" && gs("rev-parse feat") === gs("rev-parse origin/feat"), gs("show --name-only --format= HEAD"));
+  writeFileSync(join(sqRepo, "more.txt"), "more\n");
+  const rs2 = shipChanges(sqRepo, ["More"], { push: false });
+  ok("a branch with work main doesn't have stays put", rs2.ok && rs2.branch === "symbiot/next-thing" && !rs2.note, rs2);
 
   console.log("REVIEW — agent ticks -> awaiting review (not archived) -> send back / approve");
   // isolated HOME: the cycle reads and writes Symbiot's real task store
@@ -458,6 +472,19 @@ try {
   // questions must not become questions — only the real "### …?" one does.
   const pre = parseQuestions("I updated:\n- the gen script;\n- the PayFast path;\n- docs/README.md.\n\n## Questions\n### Fix the gate?\n- yes\n- no");
   ok("preamble list bullets are not questions", pre.questions.length === 1 && pre.questions[0].q === "Fix the gate?" && pre.questions[0].options.length === 2, pre.questions);
+  // a step that needs a release: shown next to the installed and npm versions; no "Done" until it's possible
+  const rn = [releaseNeeded("Once 0.39.0 or later is installed: does it land? ydotool 0.1.8 may miss", "0.40.1"), releaseNeeded("Approve, and 0.41.0 publishes", "0.40.1"), releaseNeeded("Node 22.1.0 or 0.42.0", "0.40.1"), releaseNeeded("Keep it?", "0.40.1")];
+  ok("releaseNeeded: the highest version in the package's own line, up to its next minor", rn.join("|") === "0.39.0|0.41.0||", rn);
+  const relRepo = build("release-ask", `echo '{"name":"rel-ask-x","version":"1.4.0"}' > package.json`);
+  const relReg = createServer((q, r) => { const yes = q.url === "/rel-ask-x"; r.writeHead(yes ? 200 : 404, { "content-type": "application/json" }); r.end(yes ? '{"dist-tags":{"latest":"1.4.0"}}' : "{}"); }).listen(0, "127.0.0.1");
+  await new Promise((r) => relReg.on("listening", r));
+  const relAsk = { questions: [{ q: "Once 1.5.0 is installed: does it work?", context: "", options: ["Done: it works", "Not tried yet"] }, { q: "Does it look right?", context: "Since 1.4.0 it should.", options: [] }, { q: "Keep it?", context: "", options: [] }] };
+  await withReleases([{ path: relRepo, ask: relAsk }, { path: join(ROOT, "nowhere"), ask: { questions: [{ q: "Is 2.0.0 out?", context: "", options: [] }] } }], `http://127.0.0.1:${relReg.address().port}`); relReg.close();
+  const [rq0, rq1, rq2] = relAsk.questions;
+  ok("a question needing a release npm doesn't have yet is marked as waiting on npm, with both versions", rq0.release && rq0.release.name === "rel-ask-x" && rq0.release.needs === "1.5.0" && rq0.release.npm === "1.4.0" && rq0.release.installed === "" && rq0.release.waiting === "npm", rq0.release);
+  ok("...one npm has is possible now; one naming no version, or in a folder with no package, isn't marked", rq1.release && rq1.release.waiting === "" && !rq2.release, [rq1.release, rq2.release]);
+  const DONEOPT = new Function("return " + (EMBEDDED_UI.match(/var DONEOPT=(\/.*?\/i);/) || [])[1])();
+  ok("the page holds back answers saying it's done or tried, not the others", ["Done both: map my inbox", "Done", "It clicked the right spot on both displays", "It looks right: my projects are on the Map", "Tried it, it missed"].every((s) => DONEOPT.test(s)) && !["Not done yet", "Not tried yet", "Yes: approve it now", "Doner kebab", "Trusted sites still isn't in Settings"].some((s) => DONEOPT.test(s)), DONEOPT);
   ok("TASKS.md tells the agent how to ask", /\.symbiot\/QUESTIONS\.md/.test(md) && /## Suggestions/.test(md) && /\.symbiot\/ANSWERS\.md/.test(md), md.slice(-600));
   ok("the handoff prompt points at QUESTIONS.md, shell-safe", /QUESTIONS\.md/.test(HANDOFF_PROMPT) && !/[`$"\\]/.test(HANDOFF_PROMPT), HANDOFF_PROMPT);
 

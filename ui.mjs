@@ -112,6 +112,8 @@ footer{padding:10px 18px;border-top:1px solid var(--line);display:flex}
 .aq .qc{color:var(--faint);font-size:12.5px;margin-top:3px;line-height:1.5}
 .aq label.opt{display:flex;gap:8px;align-items:flex-start;margin:6px 0 0;font-size:13px;color:var(--text);cursor:pointer}
 .aq .opt input{width:auto;margin-top:3px;flex:none}
+.aq .qrel{font-size:12px;margin-top:4px;color:var(--green)}.aq .qrel.wait{color:var(--amber)}
+.aq label.opt.off{color:var(--faint);cursor:default}.aq .opt.off i{font-size:12px}
 .aq .qother{margin-top:7px;padding:7px 10px;font-size:13px}
 .aq .row{margin:10px 0 2px}
 label.check{display:flex;gap:8px;align-items:center;font-size:13px;color:var(--text);margin:6px 0}
@@ -473,18 +475,23 @@ function fmtE(ms){var s=Math.floor(ms/1000);if(s<60)return s+'s';var m=Math.floo
 var AGENTLIST=[],QDRAFT={};
 function agentById(id){for(var i=0;i<AGENTLIST.length;i++)if(AGENTLIST[i].id===id)return AGENTLIST[i];return null;}
 function nQs(a){return (a.ask&&a.ask.questions)?a.ask.questions.length:0;}
+// A question that needs a release shows it next to the installed and npm versions;
+// until it's out and installed, an answer saying it's done or tried isn't offered.
+var DONEOPT=/^(done|did (it|both|that)|i('ve| have)? (did|done|tried)|tried it|it (worked|works|clicked|looks|landed|opened)|looks right)([^a-z]|$)/i;
+function relHtml(rl){return "<div class='qrel"+(rl.waiting?" wait":"")+"'>Needs "+esc(rl.name+" "+rl.needs)+" &middot; installed: "+esc(rl.installed||'none')+" &middot; on npm: "+esc(rl.npm||'unknown')+
+(rl.waiting==='npm'?" &middot; not published yet, so this can't be done yet":rl.waiting==='install'?" &middot; "+(rl.name==='symbiot'?"update Symbiot first":"install it first"):"")+"</div>";}
 function askHtml(a){var k=a.ask;if(!k)return '';var qs=k.questions||[],ss=k.suggestions||[];if(!qs.length&&!ss.length)return '';
 var h="<div class='aq' data-id='"+esc(a.id)+"'>";
 if(qs.length){h+="<h4>&#10067; "+qs.length+" question"+(qs.length>1?"s":"")+" for you</h4>";
-qs.forEach(function(q,i){h+="<div class='q' data-i='"+i+"'><div class='qt'>"+esc(q.q)+"</div>"+(q.context?"<div class='qc'>"+esc(q.context)+"</div>":"");
-(q.options||[]).forEach(function(o,j){h+="<label class='opt'><input type='radio' name='q_"+esc(a.id)+"_"+i+"' value='"+j+"'><span>"+esc(o)+"</span></label>";});
+qs.forEach(function(q,i){var rl=q.release;h+="<div class='q' data-i='"+i+"'><div class='qt'>"+esc(q.q)+"</div>"+(q.context?"<div class='qc'>"+esc(q.context)+"</div>":"")+(rl?relHtml(rl):"");
+(q.options||[]).forEach(function(o,j){var off=rl&&rl.waiting&&DONEOPT.test(o);h+="<label class='opt"+(off?" off":"")+"'><input type='radio' name='q_"+esc(a.id)+"_"+i+"' value='"+j+"'"+(off?" disabled":"")+"><span>"+esc(o)+(off?" <i>(once "+esc(rl.name+" "+rl.needs)+" is installed)</i>":"")+"</span></label>";});
 h+="<input class='qother' placeholder='"+((q.options&&q.options.length)?"or answer in your own words":"your answer")+"'></div>";});
 h+="<div class='row'><button class='act qsend' title='save the answers and hand the repo back to your agent'>Send answers &amp; continue</button><button class='ghost qsave' title='save the answers for the next run'>Save only</button></div>";}
 if(ss.length){h+="<h4>&#128161; Ideas from the agent</h4>";ss.forEach(function(s,i){h+="<div class='idea'><span style='flex:1'>"+esc(s.text)+"</span>"+(s.added?"<span class='tag'>in Tasks</span>":"<button class='ghost qidea' data-i='"+i+"' style='padding:3px 9px;font-size:12px'>+ task</button>")+"</div>";});}
 return h+"</div>";}
 function qKeyOf(qe){var box=qe.closest('.aq');var a=box&&agentById(box.getAttribute('data-id'));var q=a&&a.ask.questions[+qe.getAttribute('data-i')];return q?a.path+'|'+q.q:'';}
 function saveDrafts(el){el.querySelectorAll('.aq .q').forEach(function(qe){var k=qKeyOf(qe);if(!k)return;var pick=qe.querySelector('input[type=radio]:checked');QDRAFT[k]={o:pick?pick.value:'',t:qe.querySelector('.qother').value};});}
-function restoreDrafts(el){el.querySelectorAll('.aq .q').forEach(function(qe){var d=QDRAFT[qKeyOf(qe)];if(!d)return;qe.querySelectorAll('input[type=radio]').forEach(function(r){r.checked=r.value===d.o;});qe.querySelector('.qother').value=d.t||'';});}
+function restoreDrafts(el){el.querySelectorAll('.aq .q').forEach(function(qe){var d=QDRAFT[qKeyOf(qe)];if(!d)return;qe.querySelectorAll('input[type=radio]').forEach(function(r){r.checked=!r.disabled&&r.value===d.o;});qe.querySelector('.qother').value=d.t||'';});}
 function collectAnswers(box,a){var out=[];box.querySelectorAll('.q').forEach(function(qe){var q=a.ask.questions[+qe.getAttribute('data-i')];if(!q)return;
 var other=(qe.querySelector('.qother').value||'').trim();var pick=qe.querySelector('input[type=radio]:checked');var ans=other||(pick?q.options[+pick.value]:'');if(ans)out.push({q:q.q,a:ans});});return out;}
 function wireAsks(el){el.querySelectorAll('.aq').forEach(function(box){var a=agentById(box.getAttribute('data-id'));if(!a||!a.ask)return;

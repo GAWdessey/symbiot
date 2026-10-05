@@ -249,6 +249,51 @@ async function learnNpm(paths, registry = REGISTRY) {
   }));
   return learned;
 }
+// An agent's question that needs a release ("Once 0.41.0 is installed: …") names
+// a version of the repo's own npm package. The Agents tab shows it next to the
+// version installed here and the one on npm, and doesn't offer a "Done" answer
+// until the step is possible: a release that isn't out, or isn't installed yet,
+// can't have been tried. The version asked about is the highest one the question
+// names in the package's major, up to its next minor (not "ydotool 0.1.8").
+function releaseNeeded(text, current) {
+  const p = (v) => v.split(".").map(Number), [maj, min] = p(current);
+  let best = "";
+  for (const [v] of String(text || "").matchAll(/\b\d+\.\d+\.\d+\b/g)) { const [a, b] = p(v); if (a === maj && b <= min + 1 && (!best || semverGt(v, best))) best = v; }
+  return best;
+}
+// The version npm -g installed, or for Symbiot this app's own; "" if not installed.
+function installedVersion(name) {
+  if (name === "symbiot") return VERSION;
+  const root = process.platform === "win32" ? join(process.execPath, "..", "node_modules") : join(process.execPath, "..", "..", "lib", "node_modules");
+  try { return String(JSON.parse(readFileSync(join(root, name, "package.json"), "utf8")).version || ""); } catch { return ""; }
+}
+// The newest version on npm ("" if unknown), asked again after 5 minutes.
+const NPM_LATEST = new Map();
+async function npmLatest(name, registry = REGISTRY) {
+  if (name === "symbiot" && LATEST_VERSION) return LATEST_VERSION;
+  const was = NPM_LATEST.get(name); if (was && Date.now() - was.at < 300000) return was.v;
+  let v = was ? was.v : "";
+  try {
+    const r = await fetch(`${registry}/${encodeURIComponent(name).replace(/^%40/, "@")}`, { headers: { accept: "application/vnd.npm.install-v1+json" }, signal: AbortSignal.timeout(5000) });
+    if (r.ok) v = String(((await r.json())["dist-tags"] || {}).latest || "");
+  } catch {}
+  NPM_LATEST.set(name, { v, at: Date.now() });
+  return v;
+}
+// Mark each open question that needs a release with { name, needs, installed,
+// npm, waiting }. waiting: "npm" (not published yet), "install" (published, not
+// installed here) or "" (possible now).
+async function withReleases(agents, registry = REGISTRY) {
+  for (const a of agents) {
+    const qs = (a.ask && a.ask.questions) || []; if (!qs.length) continue;
+    let pkg = {}; try { pkg = JSON.parse(readFileSync(join(a.path, "package.json"), "utf8")) || {}; } catch {}
+    if (typeof pkg.name !== "string" || !pkg.name || pkg.private || !/^\d+\.\d+\.\d+/.test(String(pkg.version || ""))) continue;
+    const asks = qs.map((q) => [q, releaseNeeded(q.q + " " + q.context, pkg.version)]).filter((x) => x[1]); if (!asks.length) continue;
+    const npm = await npmLatest(pkg.name, registry), installed = installedVersion(pkg.name);
+    for (const [q, needs] of asks) q.release = { name: pkg.name, needs, installed, npm, waiting: npm && semverGt(needs, npm) ? "npm" : installed && semverGt(needs, installed) ? "install" : "" };
+  }
+  return agents;
+}
 // Set the version in package.json and in package-lock.json / npm-shrinkwrap.json
 // (top level and its "" package), keeping each file's indent. Gives back a
 // function that restores them, for when the ship fails.
@@ -292,20 +337,53 @@ function pendingReview() {
 // Approving while the agent is still editing would commit its half-done work.
 const stillWorking = (repo, path) => path && runningHandoff(path) ? { error: `The agent is still working in ${repo}. Approve once it finishes.`, running: true } : null;
 const branchSlug = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40).replace(/-+$/, "") || "tasks";
+// Whether everything committed on this branch is on the default branch already,
+// because an earlier PR from it merged. Squash-merged, main has the same changes
+// under a different history, so a new PR from the branch carries them twice and
+// can't merge (how #80 got stuck behind #79). Seen two ways: the branch's files
+// are main's though main doesn't hold its commits, or GitHub says a PR from it
+// merged and nothing was committed on it since. Gives the ref to start the next
+// branch from, or "".
+function mergedAlready(path, branch, base) {
+  const origin = git(path, ["remote", "get-url", "origin"]);
+  if (origin.ok) git(path, ["fetch", "-q", "origin", base], 30000); // best effort: main as GitHub has it
+  const ref = git(path, ["rev-parse", "-q", "--verify", "refs/remotes/origin/" + base]).ok ? "origin/" + base : base;
+  if (!git(path, ["rev-parse", "-q", "--verify", ref]).ok) return "";
+  if (!git(path, ["merge-base", "--is-ancestor", "HEAD", ref]).ok && git(path, ["diff", "--quiet", "HEAD", ref, ...NOT_SYMBIOT]).ok) return ref;
+  if (!origin.ok || !/github/i.test(origin.out) || !hasCmd("gh")) return "";
+  const r = spawnSync("gh", ["pr", "list", "--head", branch, "--state", "merged", "--limit", "1", "--json", "headRefOid"], { cwd: path, encoding: "utf8", timeout: 30000 });
+  let head = ""; try { head = String(JSON.parse(r.stdout)[0].headRefOid || ""); } catch {}
+  const since = head && git(path, ["rev-list", "--count", head + "..HEAD"]);
+  return since && since.ok && since.out === "0" ? ref : "";
+}
 // Sync approved work: off the default branch onto symbiot/<task>, commit the
-// working tree (minus .symbiot/), push, and open a PR with gh. Each step that
-// can't happen (no remote, push rejected, no gh) stops there and says so — the
-// commit is never lost. opts.push=false stops after the commit, opts.pr=false
-// after the push.
+// working tree (minus .symbiot/), push, and open a PR with gh. On a branch whose
+// earlier PR already merged, it starts a fresh symbiot/ branch from the default
+// one instead (mergedAlready). Each step that can't happen (no remote, push
+// rejected, no gh) stops there and says so — the commit is never lost.
+// opts.push=false stops after the commit, opts.pr=false after the push.
 function shipChanges(path, texts, opts = {}) {
   const ch = workingChanges(path);
   if (!ch.files.length) return { ok: true, nothing: true, note: "No uncommitted changes — approved without a commit." };
   if (!ch.branch || ch.branch === "HEAD") return { error: "Detached HEAD — check out a branch first." };
-  const base = gitDefaultBranch(path), day = new Date().toISOString().slice(0, 10); let branch = ch.branch;
-  if (branch === base) {
+  const base = gitDefaultBranch(path), day = new Date().toISOString().slice(0, 10); let branch = ch.branch, fresh = "";
+  const newBranch = () => {
     const stem = "symbiot/" + branchSlug(!texts.length ? `changes-${day}` : texts.length === 1 ? texts[0] : `${texts.length}-tasks-${day}`);
-    branch = stem; for (let i = 2; git(path, ["rev-parse", "--verify", "-q", "refs/heads/" + branch]).ok; i++) branch = `${stem}-${i}`;
+    let b = stem; for (let i = 2; git(path, ["rev-parse", "--verify", "-q", "refs/heads/" + b]).ok; i++) b = `${stem}-${i}`;
+    return b;
+  };
+  if (branch === base) {
+    branch = newBranch();
     const sw = git(path, ["switch", "-c", branch]); if (!sw.ok) return { error: "Could not create branch: " + sw.err };
+  } else {
+    const from = mergedAlready(path, branch, base);
+    if (from) {
+      // The changes come along; if main changed a file they touch, git refuses and they stay put.
+      const next = newBranch(), sw = git(path, ["switch", "-c", next, "--no-track", from]);
+      fresh = sw.ok ? `${branch}'s earlier PR already merged, so this starts a fresh branch from ${from}.`
+        : `${branch}'s earlier PR already merged, but these changes couldn't move to a fresh branch from ${from} (${sw.err.split("\n")[0]}), so they're on ${branch}, and its PR may not merge.`;
+      if (sw.ok) branch = next;
+    }
   }
   // Stage everything, then drop .symbiot. A `. :(exclude).symbiot` pathspec
   // warns+exits-1 once .symbiot is gitignored ("paths are ignored, use -f"),
@@ -316,18 +394,19 @@ function shipChanges(path, texts, opts = {}) {
   const subject = !texts.length ? "symbiot: changes approved without a task" : texts.length === 1 ? (texts[0].length > 72 ? texts[0].slice(0, 71).replace(/\s+\S*$/, "") + "…" : texts[0]) : `symbiot: ${texts.length} approved tasks`;
   const body = (texts.length ? texts.map((x) => "- " + x).join("\n") : "No ticked task covers these changes.") + (opts.bumped ? `\n\nBumps the version to ${opts.bumped}. ` + (publishesOnMerge(path) ? `It publishes to npm when this merges.` : `After this merges, tag v${opts.bumped} on ${base} to release it.`) : "");
   const cm = git(path, ["commit", "-m", subject, "-m", body]); if (!cm.ok) return { error: "Commit failed: " + (cm.err || cm.out), branch };
-  const out = { ok: true, branch, base, commit: git(path, ["rev-parse", "--short", "HEAD"]).out, subject };
+  const out = { ok: true, branch, base, commit: git(path, ["rev-parse", "--short", "HEAD"]).out, subject, ...(fresh ? { note: fresh } : {}) };
+  const noted = (note) => ({ ...out, note: (fresh ? fresh + " " : "") + note });
   if (opts.push === false) return out;
-  if (!git(path, ["remote", "get-url", "origin"]).ok) return { ...out, note: "No origin remote — committed locally." };
+  if (!git(path, ["remote", "get-url", "origin"]).ok) return noted("No origin remote — committed locally.");
   const ps = git(path, ["push", "-u", "origin", branch], 120000);
-  if (!ps.ok) return { ...out, note: "Committed, but the push failed: " + (ps.err.split("\n").filter(Boolean).pop() || "unknown error") };
+  if (!ps.ok) return noted("Committed, but the push failed: " + (ps.err.split("\n").filter(Boolean).pop() || "unknown error"));
   out.pushed = true;
   if (opts.pr === false) return out;
-  if (!hasCmd("gh")) return { ...out, note: "Pushed. Install the GitHub CLI (gh) to open the PR automatically." };
+  if (!hasCmd("gh")) return noted("Pushed. Install the GitHub CLI (gh) to open the PR automatically.");
   const gh = (args) => spawnSync("gh", args, { cwd: path, encoding: "utf8", timeout: 60000 });
   const pr = gh(["pr", "create", "--head", branch, "--base", base, "--title", subject, "--body", body + "\n\nApproved in Symbiot."]);
   const url = (String(pr.stdout || "").match(/https?:\/\/\S+/) || [])[0] || String(gh(["pr", "view", branch, "--json", "url", "-q", ".url"]).stdout || "").trim();
-  if (!url) return { ...out, note: "Pushed, but gh couldn't open the PR: " + String(pr.stderr || "").trim().split("\n").pop() };
+  if (!url) return noted("Pushed, but gh couldn't open the PR: " + String(pr.stderr || "").trim().split("\n").pop());
   out.pr = url;
   // Opt-in auto-merge: queue GitHub's native auto-merge, which lands the PR only
   // once its required checks (CI) pass — never immediately on its own if the repo
@@ -405,6 +484,7 @@ function buildTasksMd(name, ctx, list) {
   L.push("## When you finish an item", "- Tick it here (`- [x]`) as soon as it's done — that's how it reaches review. Ticking doesn't archive it: the user approves it in Symbiot, which commits it on a branch and opens a PR.", "- Leave your changes **uncommitted**, and don't tick anything you didn't finish or couldn't verify.", "");
   L.push("## If you need a decision, or have ideas", "You may be running unattended, so you can't ask in chat. Write `.symbiot/QUESTIONS.md` instead: Symbiot shows it to the user on your block in its Agents tab, and their answers come back in `.symbiot/ANSWERS.md` (read that first if it exists).",
     `- At most ${QUESTIONS_MAX} questions, under a \`## Questions\` heading. Each is a \`### \` heading, then an optional line of context, then 2–4 options as \`- \` bullets (put the one you recommend first).`,
+    "- If a step needs a release that isn't out yet, name its version in the question (\"Once 0.41.0 is installed: …\"). Symbiot shows it next to the installed and npm versions, and holds back an answer that starts \"Done\" until that release is out and installed.",
     "- Ideas, options or follow-ups outside these tasks go under `## Suggestions` as `- ` bullets — the user can add them to their tasks in one click.",
     "- Carry on with everything that doesn't depend on an answer, and don't tick an item that does. Ask there rather than doing anything destructive.", "");
   L.push("---", 'To action these, tell your coding agent: "Read `.symbiot/TASKS.md` and implement the unchecked items in this repo, using the context above. Tick each item as you finish it and leave changes uncommitted for review. Confirm with me before anything destructive."');
@@ -1659,7 +1739,7 @@ async function cmdApp() {
         const e = track("ollama pull " + model, "ollama pull " + shSingle(model), homedir(), (code) => { if (code === 0) useOllamaModel(model); });
         return json(res, { started: true, model, id: e ? e.id : "" });
       }
-      if (u.pathname === "/api/agents") return json(res, agentsList());
+      if (u.pathname === "/api/agents") return json(res, await withReleases(agentsList()));
       if (u.pathname === "/api/agents/answer" && req.method === "POST") { const b = await readBody(req); return json(res, answerQuestions(String(b.path || ""), b.answers, { rerun: !!b.rerun })); }
       if (u.pathname === "/api/mail") return json(res, mailState());
       if (u.pathname === "/api/mail/set" && req.method === "POST") { const b = await readBody(req); return json(res, setMail(b)); }
@@ -1890,4 +1970,4 @@ const isMain = (() => {
 })();
 if (isMain) main();
 
-export { authorship, repoState, readmeInfo, repoShape, houseRules, findAllRepos, buildMap, reportFooter, detectHardware, recommendModels, computeDrift, driftRepo, gitDefaultBranch, buildTasksMd, taskType, EMBEDDED_UI, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, fillHandoff, handoffCmd, setHandoffCmd, ORCA_CLAUDE_CMD, CLAUDE_CMD, HANDOFF_PROMPT, shipChanges, shipWithBump, bumpOffer, learnNpm, setVersion, syncTasks, pendingReview, unreleased, publishesOnMerge, addTask, approveRepo, approveChanges, sendBack, pushTasks, semverGt, updateCmd, parseQuestions, agentQuestions };
+export { authorship, repoState, readmeInfo, repoShape, houseRules, findAllRepos, buildMap, reportFooter, detectHardware, recommendModels, computeDrift, driftRepo, gitDefaultBranch, buildTasksMd, taskType, EMBEDDED_UI, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, fillHandoff, handoffCmd, setHandoffCmd, ORCA_CLAUDE_CMD, CLAUDE_CMD, HANDOFF_PROMPT, shipChanges, shipWithBump, bumpOffer, learnNpm, releaseNeeded, withReleases, setVersion, syncTasks, pendingReview, unreleased, publishesOnMerge, addTask, approveRepo, approveChanges, sendBack, pushTasks, semverGt, updateCmd, parseQuestions, agentQuestions };
