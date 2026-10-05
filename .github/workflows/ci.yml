@@ -18,6 +18,10 @@ jobs:
         with:
           node-version: "22"
       - run: npm ci
+      - name: Lint
+        # no-undef / no-unused-vars only (eslint.config.js): catches a name
+        # lost when code moves between modules, before the suite runs
+        run: npm run lint
       - name: Git identity for tests
         run: |
           git config --global user.email "ci@symbiot.local"

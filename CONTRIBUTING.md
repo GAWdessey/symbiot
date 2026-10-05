@@ -97,6 +97,15 @@ update check) a fake npm registry:
 `SYMBIOT_UPDATE_CMD` replaces the global `npm install` that Update & restart runs. CI
 (`.github/workflows/ci.yml`) runs the whole suite on every pull request.
 
+```bash
+npm run lint
+```
+
+An ESLint pass with two rules only (`eslint.config.js`): `no-undef` and
+`no-unused-vars`, which catch a name lost when code moves between modules (used
+but no longer imported, or imported and no longer used). CI runs it before the
+suite.
+
 ## Releasing
 
 A merge to `main` publishes, when it changes the version. Bump it in the pull

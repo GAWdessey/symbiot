@@ -36,6 +36,24 @@ function saveConfig(cfg) {
 const TASKS_PATH = join(CONFIG_DIR, "tasks.json");
 function loadTasks() { try { return JSON.parse(readFileSync(TASKS_PATH, "utf8")); } catch { return []; } }
 function saveTasks(t) { try { mkdirSync(CONFIG_DIR, { recursive: true }); writeFileSync(TASKS_PATH, JSON.stringify(t, null, 2)); return true; } catch { return false; } }
+// Two wordings of one task: the same words once case, spacing and punctuation
+// are set aside (a colon for a bracket, `code` for code), or one is the other
+// with a clause more on the end. An extension only counts when the shorter one
+// is a whole sentence (8+ words), so "Fix the bug" never swallows "Fix the bug
+// in the login form".
+const taskWords = (s) => String(s || "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+function sameTask(a, b) {
+  const x = taskWords(a), y = taskWords(b); if (!x || !y) return false;
+  if (x === y) return true;
+  const [s, l] = x.length < y.length ? [x, y] : [y, x];
+  return s.split(" ").length >= 8 && l.startsWith(s + " ");
+}
+// One of each: near-duplicates collapse into the wording that says the most.
+function uniqueTasks(texts) {
+  const out = [];
+  for (const t of texts) { const i = out.findIndex((u) => sameTask(u, t)); if (i < 0) out.push(t); else if (taskWords(t).length > taskWords(out[i]).length) out[i] = t; }
+  return out;
+}
 
 // ---- shell + git ----------------------------------------------------------
 function sh(cmd) {
@@ -84,4 +102,4 @@ function repoState(repoPath) {
   return { branch, dirty, del, mod, add, stale, staleBy, behind };
 }
 
-export { VERSION, LATEST_VERSION, semverGt, REGISTRY, checkLatest, CONFIG_DIR, CONFIG_PATH, loadConfig, saveConfig, loadTasks, saveTasks, sh, hasCmd, chromeBinary, repoState };
+export { VERSION, LATEST_VERSION, semverGt, REGISTRY, checkLatest, CONFIG_DIR, CONFIG_PATH, loadConfig, saveConfig, loadTasks, saveTasks, taskWords, sameTask, uniqueTasks, sh, hasCmd, chromeBinary, repoState };
