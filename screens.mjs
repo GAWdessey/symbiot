@@ -100,6 +100,19 @@ function splitPng(buf, rects) {
   return rects.map((r) => pngCrop(img, r));
 }
 
+// One PNG h pixels tall from pieces of it ({ png, y }: a window's screenshot and
+// how far down the page it was taken, for a whole-page map). Where two overlap,
+// the later piece's rows are kept: what stuck to the bottom of the window (a bar,
+// a cookie banner) is hidden by then. null when a piece can't be read, or they
+// differ in width or format.
+function stitchPng(pieces, h) {
+  const imgs = pieces.map((p) => ({ img: pngDecode(p.png), y: Math.max(0, Math.round(p.y) || 0) })), first = imgs.length && imgs[0].img;
+  if (!first || !(h > 0) || imgs.some(({ img }) => !img || img.w !== first.w || img.bpp !== first.bpp || img.ctype !== first.ctype || img.depth !== first.depth)) return null;
+  const px = Buffer.alloc(first.stride * h);
+  for (const { img, y } of imgs) { const to = Math.min(h, y + img.h); if (to > y) img.px.copy(px, y * first.stride, 0, (to - y) * img.stride); }
+  return pngCrop({ ...first, h, px }, { x: 0, y: 0, w: first.w, h });
+}
+
 // Displays: where each one sits on the desktop, as { name, x, y, w, h } in the
 // units the click tool uses (logical pixels on Wayland, X pixels on X11, physical
 // pixels from the virtual screen's corner on Windows, points on macOS). Each
@@ -365,13 +378,14 @@ function setRegions(id, regions) {
 }
 // A web page mapped in the hidden browser (headless.mjs): its screenshot, with a
 // region for each button, link and field found on it. `page` is { url, title,
-// scroll? }: scroll is how far down the window is ({ y, max } in pixels, and the
-// selector of what scrolls when it isn't the page itself), when there's more.
+// scroll?, full? }: scroll is how far down the window is ({ y, max } in pixels, and
+// the selector of what scrolls when it isn't the page itself), when there's more;
+// full is set on a map of the whole page in one tall screenshot.
 function addPageScreen(name, png, page, regions) {
   const size = pngSize(png); if (!size) return { error: "The page's screenshot isn't a PNG." };
   const id = newId();
   try { mkdirSync(SCREENS_DIR, { recursive: true }); writePrivate(screenFile(id), png); } catch (e) { return { error: String((e && e.message) || e) }; }
-  const p = { url: String(page.url || "").slice(0, 2000), title: String(page.title || "").trim().slice(0, 200) };
+  const p = { url: String(page.url || "").slice(0, 2000), title: String(page.title || "").trim().slice(0, 200), ...(page.full ? { full: true } : {}) };
   const sc = page.scroll || {}, max = Math.round(Number(sc.max) || 0);
   if (max > 0) p.scroll = { y: Math.max(0, Math.min(max, Math.round(Number(sc.y) || 0))), max, ...(typeof sc.selector === "string" && sc.selector.trim() ? { selector: sc.selector.trim().slice(0, 1000) } : {}) };
   return addScreen(id, name, size, "headless", { page: p, regions: cleanRegions(size, regions) });
@@ -449,4 +463,4 @@ function clickRegion(id, regionId) {
   return { error: `No click tool found. Install ${want}.` };
 }
 
-export { loadScreens, screenImage, pngSize, pngDecode, splitPng, captureCmds, monitorCmds, parseCosmicRandr, parseWlrRandr, parseKscreen, parseXrandr, parseLines, tidyMonitors, monitorAreas, listMonitors, portalAppId, allowScreenshots, captureScreen, splitScreen, importScreen, setRegions, addPageScreen, renameScreen, removeScreen, blueprint, center, clickCmds, clickRegion };
+export { loadScreens, screenImage, pngSize, pngDecode, splitPng, stitchPng, captureCmds, monitorCmds, parseCosmicRandr, parseWlrRandr, parseKscreen, parseXrandr, parseLines, tidyMonitors, monitorAreas, listMonitors, portalAppId, allowScreenshots, captureScreen, splitScreen, importScreen, setRegions, addPageScreen, renameScreen, removeScreen, blueprint, center, clickCmds, clickRegion };

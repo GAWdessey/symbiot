@@ -186,6 +186,7 @@ const calls = [
   ["/api/screens/press", "POST"],   // not confirmed -> refused, nothing pressed
   ["/api/screens/type", "POST"],    // no id -> "not found", nothing typed
   ["/api/screens/scroll", "POST"],  // no id -> "not found", no browser starts
+  ["/api/screens/whole", "POST"],   // no id -> "not found", no browser starts
   ["/api/screens/trusted", "GET"],  // trusted sites (isolated HOME -> none)
   ["/api/screens/trusted/add", "POST"],    // no site -> refused, nothing saved
   ["/api/screens/trusted/remove", "POST"],
@@ -196,6 +197,7 @@ const calls = [
   ["/api/watch/remove", "POST"],
   ["/api/watch/check", "POST"],     // no id -> "No watch", no browser starts
   ["/api/watch/clear", "POST"],     // clears the (empty) list of what's new
+  ["/api/watch/seen", "POST"],      // no id -> "No watch", nothing changes
   ["/api/watch/brief", "POST"],     // empty body -> the brief stays off
   ["/api/watch/draft", "POST"],     // no id -> refused, no agent starts
   ["/api/watch/board", "GET"],      // the Dashboard: a card per watch (none here)

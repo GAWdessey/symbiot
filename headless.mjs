@@ -7,6 +7,8 @@
 // site. On a site you trust (Settings), that goes ahead without asking. In the
 // app the browser stays open for a few minutes after each action, so the next
 // one carries on from the page as it is (type into a field, then press Send).
+// A map has what fits in the window: Scroll down maps the next part, and Whole
+// page maps all of a page that scrolls as a whole in one tall screenshot.
 // readPage reads a page without saving a screen, for Watch (watch.mjs).
 //
 // It drives Chrome / Chromium / Edge / Brave over the DevTools protocol on a pipe
@@ -19,7 +21,7 @@ import { spawn } from "node:child_process";
 import { join } from "node:path";
 import { mkdirSync, existsSync } from "node:fs";
 import { CONFIG_DIR, chromeBinary, loadConfig, saveConfig } from "./core.mjs";
-import { loadScreens, addPageScreen, center } from "./screens.mjs";
+import { loadScreens, addPageScreen, center, stitchPng } from "./screens.mjs";
 
 const PROFILE = join(CONFIG_DIR, "browser");
 const VIEW = { w: 1280, h: 800 }; // the page's size: a laptop-sized window
@@ -207,10 +209,14 @@ const SCROLLER = `function scroller() {
 // link, a part of the same kind is the same thing, so only the outer one counts.
 // And how far down it's scrolled: { y, max, selector? } (no selector: the page
 // itself), when there's more than the window shows.
-const COLLECT = `(() => { ${SCROLLER}
+// whole: called again a window further down each time (snapshotWhole), it adds
+// what's new on screen to what it found before (kept in the page) and gives all
+// of it, each where it is on the page, not the window.
+const collectJs = (whole) => `(() => { ${SCROLLER}
   const SEL = 'a[href],button,input:not([type=hidden]),select,textarea,summary,[contenteditable=""],[contenteditable=true],[onclick],' +
     ['button','link','tab','menuitem','menuitemcheckbox','menuitemradio','option','checkbox','radio','switch','combobox','textbox','searchbox','row','treeitem'].map((r) => '[role=' + r + ']').join(',');
-  const W = innerWidth, H = innerHeight, out = [], kinds = new Map();
+  const W = innerWidth, H = innerHeight, X = ${whole ? "scrollX" : "0"}, Y = ${whole ? "scrollY" : "0"};
+  const kept = ${whole ? "(window.__symbiotWhole = window.__symbiotWhole || { out: [], kinds: new Map() })" : "{ out: [], kinds: new Map() }"}, out = kept.out, kinds = kept.kinds;
   const clean = (s) => String(s || '').replace(/\\s+/g, ' ').trim();
   const kindOf = (e) => {
     const t = e.tagName.toLowerCase(), r = (e.getAttribute('role') || '').toLowerCase(), ty = (e.getAttribute('type') || 'text').toLowerCase();
@@ -236,6 +242,7 @@ const COLLECT = `(() => { ${SCROLLER}
     const img = e.querySelector('img[alt],svg title,[aria-label]');
     return img ? clean(img.getAttribute('alt') || img.getAttribute('aria-label') || img.textContent) : '';
   };
+  const stuck = (e) => { for (let n = e; n && n !== document.body; n = n.parentElement) if (/^(fixed|sticky)$/.test(getComputedStyle(n).position)) return true; return false; };
   const unique = (sel) => { try { return document.querySelectorAll(sel).length === 1; } catch (x) { return false; } };
   const cssPath = (e) => {
     const parts = [];
@@ -250,7 +257,7 @@ const COLLECT = `(() => { ${SCROLLER}
   };
   for (const e of document.querySelectorAll(SEL)) {
     if (out.length >= 200) break;
-    if (e.disabled || e.closest('[aria-hidden=true],[inert]')) continue;
+    if (kinds.has(e) || e.disabled || e.closest('[aria-hidden=true],[inert]')) continue;
     const kind = kindOf(e), up = e.parentElement && e.parentElement.closest(SEL);
     if (up && kinds.get(up) === kind && kind !== 'field') continue;
     const b = e.getBoundingClientRect();
@@ -261,9 +268,11 @@ const COLLECT = `(() => { ${SCROLLER}
     // on top: what's at its centre is it, or inside it (not a banner over it)
     const top = document.elementFromPoint((x + x2) / 2, (y + y2) / 2);
     if (!top || !(top === e || e.contains(top) || top.contains(e))) continue;
+    ${whole ? "if (y >= H - 200 && stuck(e)) continue; // stuck to the window's bottom: left out of the whole page's picture" : ""}
     kinds.set(e, kind);
     const full = labelOf(e);
-    const r = { label: full.slice(0, 80) || kind, kind, x: Math.round(x), y: Math.round(y), w: Math.round(x2 - x), h: Math.round(y2 - y), selector: cssPath(e) };
+    const box = ${whole ? "{ x: Math.max(0, b.left + X), y: Math.max(0, b.top + Y), w: b.width, h: b.height }" : "{ x, y, w: x2 - x, h: y2 - y }"};
+    const r = { label: full.slice(0, 80) || kind, kind, x: Math.round(box.x), y: Math.round(box.y), w: Math.round(box.w), h: Math.round(box.h), selector: cssPath(e) };
     if (full.length > 80) r.text = full.slice(0, 400); // all of a long one (an inbox row), for Watch
     if (e.href && /^https?:/.test(e.href)) r.href = String(e.href).slice(0, 500);
     out.push(r);
@@ -272,10 +281,11 @@ const COLLECT = `(() => { ${SCROLLER}
   const scroll = max > 0 ? { y: Math.round(sc.scrollTop), max, ...(sc === (document.scrollingElement || document.documentElement) ? {} : { selector: cssPath(sc) }) } : null;
   return { url: location.href, title: document.title, items: out, ...(scroll ? { scroll } : {}) };
 })()`;
+const COLLECT = collectJs(false), COLLECT_WHOLE = collectJs(true);
 
 // What's on the page now: { url, title, items }.
-async function collect(page) {
-  const { result, exceptionDetails } = await page.send("Runtime.evaluate", { expression: COLLECT, returnByValue: true });
+async function collect(page, expression = COLLECT) {
+  const { result, exceptionDetails } = await page.send("Runtime.evaluate", { expression, returnByValue: true });
   if (exceptionDetails) throw new Error("Couldn't read the page: " + ((exceptionDetails.exception && exceptionDetails.exception.description) || exceptionDetails.text));
   return (result && result.value) || { url: "", title: "", items: [] };
 }
@@ -285,22 +295,106 @@ function signInPage(url) {
   return /(^|\.)(accounts\.google|login\.(microsoftonline|live)|signin\.aws|auth0|okta)\./i.test(host + ".") || /\/(log-?in|sign-?in|auth|sso)\b/i.test(String(url || ""));
 }
 
-// The page as it is now, saved as a screen with its regions.
-async function snapshot(page, name) {
-  const info = await collect(page);
-  const { data } = await page.send("Page.captureScreenshot", { format: "png" });
-  const host = hostOf(info.url);
-  const s = addPageScreen(String(name || "").trim() || info.title || host || "Page", Buffer.from(data, "base64"), info, info.items);
+// A screenshot and what's on it, saved as a screen named `name`, else for the page.
+function saveScreen(name, data, info, suffix = "") {
+  const host = hostOf(info.url), base = String(name || "").trim() || info.title || host || "Page";
+  const s = addPageScreen(suffix ? base.slice(0, 80 - suffix.length) + suffix : base, Buffer.isBuffer(data) ? data : Buffer.from(data, "base64"), info, info.items);
   if (s.error) return s;
   // a sign-in page instead of the site: say how to get past it once
   return signInPage(info.url) ? { ...s, note: `This looks like a sign-in page (${host}). Click Sign in, sign in once in the window that opens, close it, then map again: the hidden browser keeps that sign-in.` } : s;
 }
+// The page as it is now, saved as a screen with its regions.
+async function snapshot(page, name) {
+  const info = await collect(page);
+  const { data } = await page.send("Page.captureScreenshot", { format: "png" });
+  return saveScreen(name, data, info);
+}
+
+// The whole page at once, in one screenshot as tall as the page (up to MAX_TALL),
+// with every button, link and field on it as a region, where it is on the page.
+// The window stays the laptop size (so a part as tall as the window stays that
+// tall): it scrolls down a window at a time, finds what's on each part and takes
+// its screenshot, and the screenshots are put together (screens.mjs stitchPng).
+// What's fixed or sticky (a menu bar, a cookie banner) is hidden once it's in one,
+// so it shows once, where it was, not on every part. The parts overlap by
+// OVERLAP pixels, and the later one's are kept, so what stuck to the bottom of the
+// window is left out (and not marked: collectJs). Only for a page that scrolls
+// as a whole: a list that scrolls inside the page (Gmail's) wouldn't show more, so
+// that gives { error, inside } and is left to Scroll down.
+const MAX_TALL = 16000, OVERLAP = 200; // pixels
+const PAGE_HEIGHT = `(() => { ${SCROLLER}
+  const d = document.scrollingElement || document.documentElement, sc = scroller();
+  return { h: Math.max(d.scrollHeight, document.body ? document.body.scrollHeight : 0), inside: !!sc && sc !== d };
+})()`;
+const HIDE_STUCK = `(() => { const H = innerHeight;
+  if (!document.getElementById('symbiot-hide')) { const st = document.createElement('style'); st.id = 'symbiot-hide'; st.textContent = '[data-symbiot-hide]{visibility:hidden!important}'; document.documentElement.appendChild(st); }
+  for (const e of document.querySelectorAll('body *')) {
+    const p = getComputedStyle(e).position; if (p !== 'fixed' && p !== 'sticky') continue;
+    const b = e.getBoundingClientRect(); if (b.bottom > 0 && b.top < H) e.setAttribute('data-symbiot-hide', '');
+  }
+})()`;
+const UNHIDE = `document.querySelectorAll('[data-symbiot-hide]').forEach((e) => e.removeAttribute('data-symbiot-hide')); const st = document.getElementById('symbiot-hide'); if (st) st.remove(); window.__symbiotWhole = null; scrollTo({ top: 0, behavior: 'instant' });`;
+async function evaluate(page, expression) {
+  const { result, exceptionDetails } = await page.send("Runtime.evaluate", { expression, returnByValue: true });
+  if (exceptionDetails) throw new Error("Couldn't read the page: " + ((exceptionDetails.exception && exceptionDetails.exception.description) || exceptionDetails.text));
+  return result && result.value;
+}
+async function snapshotWhole(page, name) {
+  const first = await evaluate(page, PAGE_HEIGHT);
+  if (first.inside) return { error: "This page doesn't scroll as a whole: a list inside it does (like Gmail's mail), and a tall screenshot wouldn't show more of that. Use Scroll down to map the next part of the list.", inside: true };
+  if (first.h <= VIEW.h + 1) { const s = await snapshot(page, name); return s.error || s.note ? s : { ...s, note: "It all fits in the window, so this map is the whole page." }; }
+  // a window at a time, overlapping a little; the page can load more as it goes (up to MAX_TALL)
+  let info = null, h = first.h, end = 0; const shots = [];
+  await evaluate(page, "window.__symbiotWhole = null");
+  try {
+    for (let y = 0, i = 0; i < 60; i++) {
+      await evaluate(page, `scrollTo({ top: ${y}, behavior: 'instant' })`); await sleep(150);
+      const at = Number(await evaluate(page, "scrollY")) || 0;
+      if (!info || info.items.length < 200) info = await collect(page, COLLECT_WHOLE);
+      const { data } = await page.send("Page.captureScreenshot", { format: "png" });
+      shots.push({ png: Buffer.from(data, "base64"), y: at }); end = at + VIEW.h;
+      await evaluate(page, HIDE_STUCK);
+      h = (await evaluate(page, PAGE_HEIGHT)).h;
+      if (end >= Math.min(MAX_TALL, h) || at < y) break; // the bottom (or it wouldn't scroll further)
+      y = Math.min(at + VIEW.h - OVERLAP, Math.min(MAX_TALL, h) - VIEW.h);
+    }
+  } finally { await evaluate(page, UNHIDE).catch(() => {}); }
+  const tall = Math.min(MAX_TALL, end), png = stitchPng(shots, tall);
+  if (!png) return { error: "Couldn't put the page's screenshots together." };
+  const items = info.items.filter((r) => r.y < tall);
+  const s = saveScreen(name, png, { url: info.url, title: info.title, full: true, items }, " (whole page)");
+  if (s.error || s.note) return s;
+  const note = [h > tall + 1 && `The page goes on past ${tall} pixels, so this map stops there.`, items.length >= 200 && "It marks the first 200 buttons, links and fields, from the top."].filter(Boolean).join(" ");
+  return note ? { ...s, note } : s;
+}
 
 // Map a site: open it in the hidden browser and save what's on it as a screen.
-function mapPage(input, name) {
+// whole: all of the page in one tall screen (snapshotWhole); a page whose list
+// scrolls inside it gets the usual map, with a note that says why.
+function mapPage(input, name, { whole = false } = {}) {
   const url = siteUrl(input);
   if (!url) return Promise.resolve({ error: "Give a site to map: a name (gmail), a host (github.com/pulls) or a web address." });
-  return oneAtATime(() => withPage(async (page) => { await open(page, url); return snapshot(page, name); })).catch((e) => ({ error: String((e && e.message) || e) }));
+  return oneAtATime(() => withPage(async (page) => {
+    await open(page, url);
+    if (!whole) return snapshot(page, name);
+    const s = await snapshotWhole(page, name);
+    if (!s.inside) return s;
+    const one = await snapshot(page, name);
+    return one.error || one.note ? one : { ...one, note: s.error };
+  })).catch((e) => ({ error: String((e && e.message) || e) }));
+}
+
+// The whole of a page you've mapped, as one tall screen (snapshotWhole). Only
+// looks, so it never asks first.
+function wholePage(id) {
+  const s = loadScreens().find((x) => x.id === id); if (!s) return Promise.resolve({ error: "not found" });
+  if (!s.page || !s.page.url) return Promise.resolve({ error: "Whole page works on a mapped page." });
+  return oneAtATime(() => withPage(async (page, b) => {
+    const here = await showScreen(page, b, s);
+    const next = await snapshotWhole(page, s.name.replace(/ ↓ \d+%$/, "").replace(/ \(whole page\)$/, ""));
+    if (next.error) { delete next.inside; return next; }
+    return { ...next, kept: here };
+  })).catch((e) => ({ error: String((e && e.message) || e) }));
 }
 
 // Read a site as it is now, without saving a screen: { url, title, items, login }.
@@ -408,7 +502,11 @@ function actOnRegion(id, regionId, verb, confirmed, check, act) {
       e.scrollIntoView({ block: 'center', inline: 'center' }); const b = e.getBoundingClientRect();
       return b.width && b.height ? { x: b.left + b.width / 2, y: b.top + b.height / 2 } : null; })()`;
     const { result } = await page.send("Runtime.evaluate", { expression: find, returnByValue: true });
-    const at = (result && result.value) || center(r), found = !!(result && result.value);
+    const found = !!(result && result.value);
+    // not found by its selector: the same spot. On a whole-page screen that spot is
+    // on the page, not the window: scroll it into the window first.
+    let at = found ? result.value : center(r);
+    if (!found && s.page.full) { const y = await evaluate(page, `(scrollTo(0, ${at.y} - innerHeight / 2), scrollY)`); at = { x: at.x, y: at.y - (Number(y) || 0) }; }
     const navigating = page.until("Page.frameStartedLoading", 1500);
     const extra = await act(page, at, r);
     if (await navigating) await page.until("Page.loadEventFired", 30000);
@@ -432,10 +530,15 @@ function pressRegion(id, regionId, { confirmed = false, noSend = false } = {}) {
 // asked (which is how a search or a one-line form is sent). Without Enter, press
 // the form's button next, on the screen this maps, while the browser is still
 // open (the app's): what's typed is still there. Otherwise it's gone by then.
+// noSend (a draft reply's run) refuses Enter, which sends in a chat, and in a
+// WhatsApp chat types line breaks as spaces, in case a new line sends there too.
 const MAX_TEXT = 2000;
-function typeRegion(id, regionId, text, { enter = false, confirmed = false } = {}) {
+const CHAT_HOSTS = new Set(["web.whatsapp.com"]);
+function typeRegion(id, regionId, text, { enter = false, confirmed = false, noSend = false } = {}) {
   text = String(text == null ? "" : text);
+  if (noSend) { const s = loadScreens().find((x) => x.id === id); if (s && s.page && CHAT_HOSTS.has(hostOf(s.page.url))) text = text.replace(/\s*[\r\n]+\s*/g, " ").trim(); }
   return actOnRegion(id, regionId, "Type", confirmed, (r) => {
+    if (noSend && enter) return "Enter sends in a chat, and this run only drafts: type without --enter, and the reply stays unsent for the user to send.";
     if (r.kind !== "field") return `"${r.label}" isn't a field (it's a ${r.kind || "region"}). Type works on a field; use Press for the rest.`;
     if (!text && !enter) return "Give the text to type.";
     if (text.length > MAX_TEXT) return `That's more than ${MAX_TEXT} characters.`;
@@ -463,4 +566,4 @@ async function signIn(input) {
   return { ok: true, url };
 }
 
-export { siteUrl, browserArgs, mapPage, readPage, isSend, pressRegion, typeRegion, scrollPage, SCROLLS, signIn, keepBrowserOpen, closeBrowser, browserOpen, trustedSites, isTrusted, trustSite, untrustSite, PROFILE };
+export { siteUrl, browserArgs, mapPage, wholePage, readPage, isSend, pressRegion, typeRegion, scrollPage, SCROLLS, signIn, keepBrowserOpen, closeBrowser, browserOpen, trustedSites, isTrusted, trustSite, untrustSite, PROFILE };

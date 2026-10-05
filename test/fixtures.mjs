@@ -14,7 +14,7 @@ import { authorship, repoState, readmeInfo, houseRules, findAllRepos, driftRepo,
 import { grantRule } from "../agents.mjs";
 import { sameTask, uniqueTasks } from "../core.mjs";
 import { mailActivity } from "../mail.mjs";
-import { pngSize, pngDecode, splitPng, captureCmds, clickCmds, portalAppId, monitorCmds, parseCosmicRandr, parseWlrRandr, parseKscreen, parseXrandr, parseLines, tidyMonitors, monitorAreas } from "../screens.mjs";
+import { pngSize, pngDecode, splitPng, stitchPng, captureCmds, clickCmds, portalAppId, monitorCmds, parseCosmicRandr, parseWlrRandr, parseKscreen, parseXrandr, parseLines, tidyMonitors, monitorAreas } from "../screens.mjs";
 import { siteUrl, browserArgs, isTrusted, isSend } from "../headless.mjs";
 import { deflateSync } from "node:zlib";
 import { weeklyDue, lastSlot, autostartFile, autostartContent, notifyCmd } from "../desktop.mjs";
@@ -633,6 +633,10 @@ try {
   ok("splitPng: each piece is a PNG of its own size", d0 && d1 && d0.w === 3 && d0.h === 6 && d1.w === 5 && d1.h === 5, [d0 && [d0.w, d0.h], d1 && [d1.w, d1.h]]);
   ok("splitPng: every row filter decodes, and each piece has the right pixels", d0 && d1 && pixAt(d0, 2, 5) === "2,5,7,255" && pixAt(d1, 0, 0) === "3,1,4,255" && pixAt(d1, 4, 4) === "7,5,12,255" && pixAt(pngDecode(big), 6, 4) === "6,4,10,255", d1 && [pixAt(d1, 0, 0), pixAt(d1, 4, 4)]);
   ok("splitPng: pieces end with a valid IEND chunk (CRC included)", parts && parts[1].subarray(-12).toString("hex") === "0000000049454e44ae426082", parts && parts[1].subarray(-12).toString("hex"));
+  // two 8×6 window shots, the second taken 4 rows further down: the second's rows are kept where they overlap
+  const st = stitchPng([{ png: big, y: 0 }, { png: realPng(8, 6), y: 4 }], 10), sd = st && pngDecode(st);
+  ok("stitchPng: window shots put together as one tall PNG; where they overlap, the later one's rows are kept", sd && sd.w === 8 && sd.h === 10 && pixAt(sd, 1, 3) === "1,3,4,255" && pixAt(sd, 1, 5) === "1,1,2,255" && pixAt(sd, 7, 9) === "7,5,12,255", sd && [sd.w, sd.h, pixAt(sd, 1, 3), pixAt(sd, 1, 5)]);
+  ok("stitchPng: shots of different widths, or none, give null", stitchPng([{ png: big, y: 0 }, { png: realPng(5, 6), y: 6 }], 12) === null && stitchPng([], 10) === null, "");
   ok("splitPng: a rectangle outside the image, or a header-only PNG, gives null", splitPng(big, [{ x: 4, y: 0, w: 5, h: 6 }]) === null && splitPng(png(10, 10), [{ x: 0, y: 0, w: 1, h: 1 }]) === null, "");
   if (process.platform === "linux") {
     // a stand-in xrandr: display A (3x6) left of B (5x6), the layout of realPng(8, 6)
@@ -726,7 +730,9 @@ try {
     // taller than the window: the page itself scrolls (/long), or a list inside it, as Gmail's does (/pane)
     const long = '<title>Long</title><body style="margin:0;height:3000px"><button style="position:absolute;left:10px;top:10px">Top button</button><button style="position:absolute;left:10px;top:1000px">Middle button</button><button style="position:absolute;left:10px;top:2950px">Last button</button></body>';
     const pane = '<title>Pane</title><body style="margin:0;overflow:hidden"><div style="height:60px">Header</div><div id="list" style="position:absolute;top:60px;bottom:0;left:0;right:0;overflow:auto">' + Array.from({ length: 60 }, (_, i) => '<div role="row" style="height:40px">Row ' + i + '</div>').join("") + '</div></body>';
-    const srv = createServer((q, r) => { r.writeHead(200, { "content-type": "text/html" }); r.end(q.url === "/long" ? long : q.url === "/pane" ? pane : q.url === "/two" ? "<title>Page two</title><button>Back</button>" : q.url === "/form" ? form : q.url === "/rows" ? inbox() : q.url.startsWith("/search?") ? "<title>Results for " + new URL(q.url, "http://x").searchParams.get("q") + "</title><button>Back</button>" : page); }).listen(0, "127.0.0.1");
+    // a part as tall as the window, a header fixed at the top and a footer below: the whole page keeps the window's height
+    const tall = '<title>Tall</title><body style="margin:0"><button style="position:fixed;left:10px;top:5px">Fixed menu</button><button style="position:fixed;left:10px;bottom:5px">Bottom bar</button><div style="min-height:100vh"><div style="height:2000px">Text</div></div><footer style="height:300px"><button>Footer button</button></footer></body>';
+    const srv = createServer((q, r) => { r.writeHead(200, { "content-type": "text/html" }); r.end(q.url === "/tall" ? tall : q.url === "/long" ? long : q.url === "/pane" ? pane : q.url === "/two" ? "<title>Page two</title><button>Back</button>" : q.url === "/form" ? form : q.url === "/rows" ? inbox() : q.url.startsWith("/search?") ? "<title>Results for " + new URL(q.url, "http://x").searchParams.get("q") + "</title><button>Back</button>" : page); }).listen(0, "127.0.0.1");
     await new Promise((r) => srv.on("listening", r));
     const out = {};
     out.map = await h.mapPage("127.0.0.1:" + srv.address().port, "");
@@ -781,6 +787,16 @@ try {
     out.pdown = await h.scrollPage(out.pmap.id);
     out.pup = await h.scrollPage(out.pdown.id, "up");
     out.fits = await h.scrollPage(out.fmap.id);
+    // the whole page at once: one tall screen, for a page that scrolls as a whole (not Gmail's list)
+    out.wmap = await h.mapPage(base + "/long", "", { whole: true });
+    out.wpane = await h.mapPage(base + "/pane", "", { whole: true });
+    out.wfrom = await h.wholePage(out.ldown.id);
+    out.wfromPane = await h.wholePage(out.pmap.id);
+    out.wfits = await h.wholePage(out.fmap.id);
+    out.wtall = await h.mapPage(base + "/tall", "", { whole: true });
+    const lastBtn = ((out.wmap || {}).regions || []).find((r) => r.label === "Last button");
+    out.wpress = lastBtn ? await h.pressRegion(out.wmap.id, lastBtn.id, { confirmed: true }) : null;
+    out.cliWhole = JSON.parse(execFileSync(process.execPath, [${JSON.stringify(INDEX)}, "screens", "show", out.wmap.id], { encoding: "utf8" }));
     await h.closeBrowser();
     srv.close();
     console.log(JSON.stringify(out));`], { encoding: "utf8", timeout: 150000, env: { ...process.env, HOME: pghome, USERPROFILE: pghome } });
@@ -814,6 +830,14 @@ try {
     ok("scrollPage: an older screen, once closed, opens again where it was, then scrolls on from there", ho.lagain && !ho.lagain.kept && sy(ho.lagain).y === 1360, ho.lagain && (ho.lagain.error || sy(ho.lagain)));
     ok("scrollPage: a list that scrolls inside the page (Gmail's) is what scrolls, found again by its selector", sy(ho.pmap).selector === "#list" && sy(ho.pmap).max === 1660 && !rl(ho.pmap).includes("Row 25") && rl(ho.pdown).includes("Row 25") && sy(ho.pdown).y === 629 && sy(ho.pup).y === 0 && rl(ho.pup).includes("Row 0"), [sy(ho.pmap), sy(ho.pdown), rl(ho.pdown).slice(0, 3), ho.pup && (ho.pup.error || sy(ho.pup))]);
     ok("scrollPage: a page that fits in the window has nothing to scroll", /Nothing scrolls/.test((ho.fits || {}).error || "") && !sy(ho.fmap).max, ho.fits);
+    const wm = ho.wmap || {}, wlast = (wm.regions || []).find((r) => r.label === "Last button") || {};
+    ok("mapPage --whole: one screenshot as tall as the page, with every button on it where it is on the page", wm.w === 1280 && wm.h === 3000 && wm.name === "Long (whole page)" && (wm.page || {}).full === true && !sy(wm).max && rl(wm).join() === "Top button,Middle button,Last button" && wlast.y === 2950, wm.error || [wm.w, wm.h, wm.name, wm.page, rl(wm), wlast]);
+    ok("screens show: a whole-page map has no \"more\" (it's all there)", ho.cliWhole && !ho.cliWhole.more && ho.cliWhole.page.full === true && ho.cliWhole.size.h === 3000, ho.cliWhole && [ho.cliWhole.more, ho.cliWhole.page, ho.cliWhole.size]);
+    ok("mapPage --whole: a list that scrolls inside the page (Gmail's) gets the usual map, and a note saying why", ho.wpane && ho.wpane.h === 800 && !(ho.wpane.page || {}).full && sy(ho.wpane).selector === "#list" && /Scroll down/.test(ho.wpane.note || ""), ho.wpane && (ho.wpane.error || [ho.wpane.h, ho.wpane.page, ho.wpane.note]));
+    ok("wholePage: from a scrolled screen, all of the page (named without the ↓ 31%); refused for an inner list; a page that fits says so", ho.wfrom && ho.wfrom.h === 3000 && ho.wfrom.name === "Long (whole page)" && rl(ho.wfrom).length === 3 && /Scroll down/.test((ho.wfromPane || {}).error || "") && !ho.wfromPane.id && ho.wfits && ho.wfits.h === 800 && /whole page/.test(ho.wfits.note || ""), [ho.wfrom && (ho.wfrom.error || ho.wfrom.name), ho.wfromPane, ho.wfits && (ho.wfits.error || ho.wfits.note)]);
+    const wt = ho.wtall || {}, wfoot = (wt.regions || []).find((r) => r.label === "Footer button") || {};
+    ok("mapPage --whole: a part as tall as the window stays the window's height, a fixed menu is marked once, at the top; a bar stuck to the window's bottom isn't", wt.h === 2300 && rl(wt).join() === "Fixed menu,Footer button" && wfoot.y === 2000 && ((wt.regions || [])[0] || {}).y === 5 && !wt.note, wt.error || [wt.h, rl(wt), wfoot, wt.note]);
+    ok("pressRegion on a whole-page screen: finds the button far down, and the window is laptop-sized again", ho.wpress && ho.wpress.found === true && ho.wpress.pressed === "Last button" && ho.wpress.h === 800, ho.wpress && (ho.wpress.error || [ho.wpress.found, ho.wpress.h]));
     const rd = ho.read || {}, rrows = (rd.items || []).filter((r) => r.kind === "row");
     ok("readPage: reads a page's rows, each with all its text, without saving a screen, and closes after", rrows.length === 2 && rrows[0].label.length === 80 && /usual place near the office$/.test(rrows[0].text || "") && ho.readNoScreen && ho.readClosed && rd.login === false, rd.error || [rrows, ho.readNoScreen, ho.readClosed]);
     ok("readPage: leaves the browser alone while it's open for a type-then-press", ho.readBusy && ho.readBusy.busy === true && !ho.readBusy.items, ho.readBusy);
@@ -915,7 +939,14 @@ try {
     news: [...bnews].sort((a, b) => b.ts - a.ts), briefs: [{ watch: "c", name: "WhatsApp", ts: bnow - 2 * H1, count: 2, text: "Your mom wants a call." }] }));
   const bx = spawnSync(process.execPath, ["--input-type=module", "-e", `
     import * as w from ${JSON.stringify(join(dirname(INDEX), "watch.mjs"))};
-    console.log(JSON.stringify({ day: w.watchBoard(24), week: w.watchBoard(168), waiting: w.waitingOn(24).map((x) => x.label) }));`], { encoding: "utf8", env: { ...process.env, HOME: bhome, USERPROFILE: bhome } });
+    import { execFileSync } from "node:child_process";
+    const sym = (...a) => { try { return { code: 0, j: JSON.parse(execFileSync(process.execPath, [${JSON.stringify(INDEX)}, ...a], { encoding: "utf8" })) }; } catch (e) { let j = null; try { j = JSON.parse(e.stdout); } catch {} return { code: e.status, j }; } };
+    const out = { day: w.watchBoard(24), week: w.watchBoard(168), waiting: w.waitingOn(24).map((x) => x.label) };
+    out.cliBoard = sym("watch", "board"); out.cliWeek = sym("watch", "board", "--hours", "168");
+    out.seen = w.seenWatch("c"); out.seenNone = w.seenWatch("nope"); out.cliSeenNoId = sym("watch", "seen");
+    out.after = w.watchBoard(24); out.afterWaiting = w.waitingOn(24).map((x) => x.label); out.stillNew = w.newsSince(24).filter((n) => n.watch === "c").length;
+    out.cliSeen = sym("watch", "seen", "m"); out.afterCli = w.watchBoard(24);
+    console.log(JSON.stringify(out));`], { encoding: "utf8", env: { ...process.env, HOME: bhome, USERPROFILE: bhome } });
   let bo = {}; try { bo = JSON.parse(bx.stdout); } catch {}
   const bc = ((bo.day || {}).cards || []), bcard = (id) => bc.find((c) => c.id === id) || {};
   ok("a card per watch, in the order you added them, with its source", bc.map((c) => c.id + ":" + c.source).join(" ") === "m:mail g:github c:chat j:page", bc.map((c) => c.id + ":" + c.source));
@@ -923,6 +954,12 @@ try {
   ok("a busy GitHub doesn't push your mail off the board (it would off the 50 newest)", bcard("m").items.length === 1 && bcard("m").items[0].mail === true && bcard("g").items.length === 8 && !bcard("g").items[0].mail, [bcard("m").items, bcard("g").items.length]);
   ok("a card carries its latest brief; the week shows the older email too", bcard("c").brief && bcard("c").brief.text === "Your mom wants a call." && !bcard("m").brief && ((bo.week || {}).cards || [])[0].count === 2, [bcard("c").brief, bo.week && bo.week.cards[0].count]);
   ok("Standup counts WhatsApp as messages too", (bo.waiting || []).includes("2 WhatsApp messages"), bo.waiting);
+  const cbo = (bo.cliBoard || {}).j || {};
+  ok("symbiot watch board: the Dashboard's cards as JSON, --hours as on the Dashboard", bo.cliBoard && bo.cliBoard.code === 0 && cbo.total === 63 && cbo.hours === 24 && (cbo.cards || []).map((c) => c.id + ":" + c.count).join(" ") === "m:1 g:60 c:2 j:0" && cbo.cards[2].items[0].chat === true && ((bo.cliWeek || {}).j || {}).hours === 168, bo.cliBoard);
+  const acard = (id) => ((bo.after || {}).cards || []).find((c) => c.id === id) || {};
+  ok("Seen: that card goes back to 0 (its brief too); the other cards keep theirs", bo.seen && bo.seen.cleared > 0 && acard("c").count === 0 && acard("c").items.length === 0 && !acard("c").brief && acard("m").count === 1 && acard("g").count === 60 && bo.after.total === 61, (bo.after || {}).cards && bo.after.cards.map((c) => c.id + ":" + c.count));
+  ok("Seen: Standup doesn't count it as waiting any more, but what it found is still under Watching", !(bo.afterWaiting || []).some((l) => /WhatsApp/.test(l)) && bo.stillNew === 2 && /No watch nope/.test((bo.seenNone || {}).error || ""), [bo.afterWaiting, bo.stillNew]);
+  ok("symbiot watch seen <id> does the same from a terminal (and needs an id)", bo.cliSeen && bo.cliSeen.code === 0 && ((bo.afterCli || {}).cards || [])[0].count === 0 && bo.afterCli.total === 60 && bo.cliSeenNoId && bo.cliSeenNoId.code === 1, [bo.cliSeen, bo.cliSeenNoId]);
 
   console.log("DRAFT A REPLY — a new email handed to your agent, which never sends (watch.mjs, headless.mjs)");
   ok("isSend: Gmail's Send and Schedule send are sends; a row about sending, or Sender info, isn't", isSend({ kind: "button", label: "Send ‪(Ctrl-Enter)‬" }) && isSend({ kind: "menu item", label: "Schedule send" }) && !isSend({ kind: "row", label: "Ann, Please send the invoice" }) && !isSend({ kind: "button", label: "Sender info" }) && !isSend({ kind: "link", label: "Sent" }), "");
@@ -935,10 +972,11 @@ try {
     const dir = join(${JSON.stringify(drhome)}, ".config", "symbiot"), cfg =(c) => writeFileSync(join(dir, "config.json"), JSON.stringify(c));
     const INBOX = "https://mail.google.com/mail/u/0/#inbox", now = Date.now();
     writeFileSync(join(dir, "watch.json"), JSON.stringify({ briefs: [],
-      watches: [{ id: "w1", name: "Inbox", url: INBOX, every: 15, added: 1, last: 1, checked: 1, seen: [] }, { id: "w2", name: "GitHub notifications", url: "https://github.com/notifications", every: 5, added: 1, last: 1, checked: 1, seen: [] }],
-      news: [{ id: "n1", watch: "w1", name: "Inbox", ts: now, text: "Sam Ng, Contract signed, Here's the signed copy. Can you confirm the start date?" }, { id: "n2", watch: "w2", name: "GitHub notifications", ts: now, text: "pat/app · CI failed" }] }));
+      watches: [{ id: "w1", name: "Inbox", url: INBOX, every: 15, added: 1, last: 1, checked: 1, seen: [] }, { id: "w2", name: "GitHub notifications", url: "https://github.com/notifications", every: 5, added: 1, last: 1, checked: 1, seen: [] }, { id: "w3", name: "WhatsApp", url: "https://web.whatsapp.com/", every: 5, added: 1, last: 1, checked: 1, seen: [] }],
+      news: [{ id: "n1", watch: "w1", name: "Inbox", ts: now, text: "Sam Ng, Contract signed, Here's the signed copy. Can you confirm the start date?" }, { id: "n2", watch: "w2", name: "GitHub notifications", ts: now, text: "pat/app · CI failed" }, { id: "n3", watch: "w3", name: "WhatsApp", ts: now, text: "Mom 10:02 Are you coming for dinner on Sunday?" }] }));
     writeFileSync(join(dir, "screens", "screens.json"), JSON.stringify([{ id: "abcdefabcdef", name: "Reply", w: 1280, h: 800, ts: now, via: "headless", page: { url: INBOX, title: "Inbox" },
-      regions: [{ id: "r1", label: "Send ‪(Ctrl-Enter)‬", kind: "button", x: 10, y: 10, w: 60, h: 30 }, { id: "r2", label: "Ann, Please send the invoice", kind: "row", x: 10, y: 60, w: 600, h: 30 }] }]));
+      regions: [{ id: "r1", label: "Send ‪(Ctrl-Enter)‬", kind: "button", x: 10, y: 10, w: 60, h: 30 }, { id: "r2", label: "Ann, Please send the invoice", kind: "row", x: 10, y: 60, w: 600, h: 30 }] },
+      { id: "bcdefabcdefa", name: "Chat", w: 1280, h: 800, ts: now, via: "headless", page: { url: "https://web.whatsapp.com/", title: "WhatsApp" }, regions: [{ id: "r3", label: "Type a message", kind: "field", x: 400, y: 740, w: 600, h: 40 }] }]));
     cfg({});
     const w = await import(${JSON.stringify(join(dirname(INDEX), "watch.mjs"))});
     const h = await import(${JSON.stringify(join(dirname(INDEX), "headless.mjs"))});
@@ -955,6 +993,13 @@ try {
     try { out.env = readFileSync(envFile, "utf8").trim(); out.prompt = readFileSync(join(out.ok.dir, "prompt.txt"), "utf8"); } catch {}
     try { out.brief = readFileSync(join(out.ok.dir, ".symbiot", "TASKS.md"), "utf8"); out.log = readFileSync(join(out.ok.dir, ".symbiot", "agent.log"), "utf8"); } catch {}
     out.drafted = (w.watchState().news.find((n) => n.id === "n1") || {}).drafted;
+    // a WhatsApp chat: its own brief, and the reply typed into the message box, unsent
+    cfg({ trustedSites: ["mail.google.com"], agentCmd: 'echo "{prompt}" > prompt.txt' }); out.chatUntrusted = w.draftReply("n3");
+    cfg({ trustedSites: ["mail.google.com", "web.whatsapp.com"], agentCmd: 'echo "{prompt}" > prompt.txt' }); out.chat = w.draftReply("n3");
+    try { out.chatBrief = readFileSync(join(out.chat.dir, ".symbiot", "TASKS.md"), "utf8"); } catch {}
+    // Enter sends in a chat: a draft's run can't press it, even confirmed, nor through the CLI
+    out.enter = await h.typeRegion("bcdefabcdefa", "r3", "See you then", { enter: true, confirmed: true, noSend: true });
+    out.cliEnter = await new Promise((r) => execFile(process.execPath, [${JSON.stringify(INDEX)}, "screens", "type", "bcdefabcdefa", "r3", "See you", "--enter", "--yes"], { env: { ...process.env, SYMBIOT_DRAFT: "1" } }, (err, stdout) => r({ code: err ? err.code : 0, out: stdout })));
     out.mode = statSync(w.DRAFTS_DIR).mode & 0o777;
     // the Send guard, even confirmed; and through the CLI, from the run's SYMBIOT_DRAFT
     out.send = await h.pressRegion("abcdefabcdef", "r1", { confirmed: true, noSend: true });
@@ -965,7 +1010,7 @@ try {
     console.log(JSON.stringify(out)); process.exit(0);`], { encoding: "utf8", timeout: 60000, env: { ...process.env, HOME: drhome, USERPROFILE: drhome } });
   let dro = {}; try { dro = JSON.parse(dx.stdout.trim().split("\n").pop()); } catch {}
   const dn = ((dro.state || {}).news || []);
-  ok("what's new from an inbox is marked mail (it gets Draft a reply); GitHub's isn't", dn.length === 2 && dn.find((n) => n.id === "n1").mail === true && !dn.find((n) => n.id === "n2").mail, dn.length ? dn : dx.stderr.slice(-800));
+  ok("what's new from an inbox is marked mail, from WhatsApp chat (both get Draft a reply); GitHub's is neither", dn.length === 3 && dn.find((n) => n.id === "n1").mail === true && !dn.find((n) => n.id === "n2").mail && !dn.find((n) => n.id === "n2").chat && dn.find((n) => n.id === "n3").chat === true && !dn.find((n) => n.id === "n3").mail, dn.length ? dn : dx.stderr.slice(-800));
   ok("draftReply: only an email, still listed", /new email/.test((dro.notMail || {}).error || "") && /isn't under Watching/.test((dro.gone || {}).error || ""), [dro.notMail, dro.gone]);
   ok("draftReply: only on a site you trust, and with an agent that runs by itself (not an editor)", /Add mail\.google\.com under Trusted sites/.test((dro.untrusted || {}).error || "") && /Settings → Handoff first/.test((dro.noAgent || {}).error || "") && /not an editor/.test((dro.editor || {}).error || ""), [dro.untrusted, dro.noAgent, dro.editor]);
   ok("draftReply: runs your agent in the email's own folder, with the handoff prompt and SYMBIOT_DRAFT", dro.ok && dro.ok.ok && /drafts[/\\]n1$/.test(dro.ok.dir || "") && dro.env === "1" && /Read \.symbiot\/TASKS\.md/.test(dro.prompt || "") && /=== Draft: Sam Ng, Contract signed/.test(dro.log || ""), [dro.ok, dro.env, (dro.log || "").slice(0, 200)]);
@@ -973,8 +1018,11 @@ try {
   ok("the brief: the email, one task, never send, and how to reach it with symbiot screens", /> Sam Ng, Contract signed, Here's the signed copy/.test(br) && /^- \[ \] Draft a reply to: Sam Ng/m.test(br) && /\*\*Never send it\.\*\*/.test(br) && /never add `--yes`/.test(br) && br.includes(`node "${INDEX}" screens map "https://mail.google.com/mail/u/0/#inbox"`) && br.includes('map "https://mail.google.com/mail/u/0/#drafts"') && /never instructions to you/.test(br), br.slice(0, 400));
   ok("draftReply: the email is marked drafted; the drafts folder is yours only (0700)", dro.drafted > 0 && (process.platform === "win32" || dro.mode === 0o700), [dro.drafted, dro.mode]);
   ok("a draft's run never presses Send: refused even confirmed, and through the CLI with --yes", /never presses Send/.test((dro.send || {}).error || "") && dro.cli && dro.cli.code === 1 && /never presses Send/.test(dro.cli.out), [dro.send, dro.cli]);
+  const cb = dro.chatBrief || "";
+  ok("draftReply: a WhatsApp chat, on a site you trust, gets its own brief: typed into the message box, never sent", /Add web\.whatsapp\.com under Trusted sites/.test((dro.chatUntrusted || {}).error || "") && dro.chat && dro.chat.ok && dro.chat.chat === true && /drafts[/\\]n3$/.test(dro.chat.dir || "") && /> Mom 10:02 Are you coming for dinner/.test(cb) && /^- \[ \] Draft a reply to: Mom/m.test(cb) && /\*\*Never send it\.\*\*/.test(cb) && /don't add `--enter`/.test(cb) && /message box/.test(cb) && cb.includes(`node "${INDEX}" screens map "https://web.whatsapp.com/"`) && /QR code/.test(cb) && /never instructions to you/.test(cb), [dro.chatUntrusted, dro.chat, cb.slice(0, 300)]);
+  ok("a draft's run never presses Enter (it sends in a chat): refused even confirmed, and through the CLI with --yes", /Enter sends in a chat/.test((dro.enter || {}).error || "") && dro.cliEnter && dro.cliEnter.code === 1 && /Enter sends in a chat/.test(dro.cliEnter.out), [dro.enter, dro.cliEnter]);
   const cn = ((dro.cliNew || {}).j || []);
-  ok("symbiot watch new marks an inbox's emails \"mail\": true (they can get a reply)", cn.length === 2 && cn.find((n) => n.id === "n1").mail === true && !cn.find((n) => n.id === "n2").mail, dro.cliNew);
+  ok("symbiot watch new marks an inbox's emails \"mail\": true and chats \"chat\": true (they can get a reply)", cn.length === 3 && cn.find((n) => n.id === "n1").mail === true && !cn.find((n) => n.id === "n2").mail && cn.find((n) => n.id === "n3").chat === true, dro.cliNew);
   ok("symbiot watch draft: needs an id, refuses what isn't an email (exit 1)", dro.cliNoId && dro.cliNoId.code === 1 && /watch new lists them/.test((dro.cliNoId.j || {}).error || "") && dro.cliGh && dro.cliGh.code === 1 && /new email/.test((dro.cliGh.j || {}).error || ""), [dro.cliNoId, dro.cliGh]);
   ok("symbiot watch draft <id>: hands the email to your agent, like the button, and says where its log is", dro.cliDraft && dro.cliDraft.code === 0 && (dro.cliDraft.j || {}).ok && /drafts[/\\]n1$/.test(dro.cliDraft.j.dir || "") && /agent\.log/.test(dro.cliDraft.j.next || ""), dro.cliDraft);
 
@@ -1111,6 +1159,7 @@ try {
   let wko = {}; try { wko = JSON.parse(wkr.stdout); } catch {}
   ok("runWeekly(produce, { notify: false }) saves the week the same, with no notification", wko.quiet && wko.quiet.ok && wko.quietN === 0 && wko.saved === "Shipped things.\n\n---\nf\n" && wko.offline && wko.offline.error === "not-connected" && wko.offlineN === 0, wko.quiet ? wko : wkr.stderr);
   ok("...and notifies by default", wko.loud && wko.loud.ok && wko.loudN === 1, wko);
+  ok("runWeekly gives back the write-up with where it saved it (the Week tab shows both)", wko.quiet && wko.quiet.text === "Shipped things." && wko.quiet.footer === "f" && /weeks[/\\]\d{4}-\d{2}-\d{2}\.md$/.test(wko.quiet.file || ""), wko.quiet);
 
   console.log("UPDATE — only a higher npm version is offered as an update");
   ok("0.26.0 is not newer than 0.27.0 (local build ahead of npm)", !semverGt("0.26.0", "0.27.0"), "");
