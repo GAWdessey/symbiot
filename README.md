@@ -136,6 +136,9 @@ symbiot app                                 # opens in your phone's browser
   `proot-distro`. To reach
   the phone's shared storage, run `termux-setup-storage` and add `~/storage/shared`
   (or a folder in it) under Settings → Folders to scan.
+- Claude Code's history is read from Termux's home and from those Linuxes'
+  homes, so projects your agent worked on inside `proot-distro login debian` get
+  their "agent" badge on the Map, as they do on a computer.
 - **Write my week and notify me** sends an Android notification when the
   `termux-api` package and the Termux:API app are installed.
 - **Start Symbiot in the background when the phone starts** writes a

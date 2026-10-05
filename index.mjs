@@ -732,16 +732,22 @@ function storageBlocked() {
 // home folders in $PREFIX/var/lib/proot-distro/installed-rootfs/<distro>, outside
 // Termux's home, and that's where projects worked on in it live. Symbiot in
 // Termux reads them there: /root and /home/<user> of each installed distro.
-function prootHomes() {
+const subdirs = (p) => { try { return readdirSync(p, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => join(p, d.name)); } catch { return []; } };
+// The folder each installed distro sees as "/".
+function prootDistros() {
   if (!process.env.PREFIX) return [];
-  const base = join(process.env.PREFIX, "var", "lib", "proot-distro", "installed-rootfs"), out = [];
-  const dirs = (p) => { try { return readdirSync(p, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => join(p, d.name)); } catch { return []; } };
-  for (const distro of dirs(base)) {
-    if (existsSync(join(distro, "root"))) out.push(join(distro, "root"));
-    out.push(...dirs(join(distro, "home")));
+  return subdirs(join(process.env.PREFIX, "var", "lib", "proot-distro", "installed-rootfs"));
+}
+// Each distro's home folders, with the distro they're in.
+function prootHomeDirs() {
+  const out = [];
+  for (const rootfs of prootDistros()) {
+    if (existsSync(join(rootfs, "root"))) out.push({ rootfs, home: join(rootfs, "root") });
+    for (const home of subdirs(join(rootfs, "home"))) out.push({ rootfs, home });
   }
   return out;
 }
+function prootHomes() { return prootHomeDirs().map((h) => h.home); }
 // Where to look when you haven't picked folders: your home folder (and in Termux,
 // the homes of its proot-distro Linuxes).
 function scanDefaults() { return [scanHome(), ...prootHomes()]; }
@@ -1118,9 +1124,13 @@ function detectFolder(path) {
 // Projects you've run an AI coding agent on. Claude Code stores one dir per
 // project under ~/.claude/projects, named by the project path with every
 // non-alphanumeric char → "-" (so "/" "." "_" "-" all collide). Returns
-// { "<encoded path>": { agent, last, path } } — last = newest session mtime
+// { "<key>": { agent, last, path, rootfs, enc } } — last = newest session mtime
 // (epoch secs); path = the real project dir, read from the "cwd" a session
-// records (empty when no session says, then callers fall back to decoding).
+// records (empty when no session says, then callers fall back to decoding enc).
+// In Termux it also reads Claude Code's history inside each proot-distro (in
+// the distro's /root and /home/<user>). Paths there are the distro's own
+// ("/root/work/proj"), so rootfs is the distro's folder ("" outside one), path
+// is prefixed with it, and key = agentKey(rootfs, enc).
 // (Gemini's dir is global config, Codex's is empty, so no reliable per-project
 // signal there yet; add them here when there is.)
 const claudeEnc = (p) => String(p || "").replace(/[^a-zA-Z0-9]/g, "-");
@@ -1130,9 +1140,21 @@ function sessionCwd(file) {
   if (!m) return "";
   try { return JSON.parse(`"${m[1]}"`); } catch { return ""; }
 }
+const agentKey = (rootfs, enc) => (rootfs ? rootfs + "\0" : "") + enc;
+// The keys a project folder's history could be under: its path, and its path as
+// seen from inside the proot-distro it's in (if any), each encoded both ways.
+function agentKeys(path, distros) {
+  const enc = (p) => [claudeEnc(p), p.replace(/\//g, "-")]; // older Claude Code mapped only "/"
+  const rootfs = distros.find((r) => path.startsWith(r + "/"));
+  return [...enc(path), ...(rootfs ? enc(path.slice(rootfs.length)).map((e) => agentKey(rootfs, e)) : [])];
+}
 function claudeProjects() {
-  const base = join(homedir(), ".claude", "projects");
   const out = {};
+  readClaudeProjects(join(homedir(), ".claude", "projects"), "", out);
+  for (const { rootfs, home } of prootHomeDirs()) readClaudeProjects(join(home, ".claude", "projects"), rootfs, out);
+  return out;
+}
+function readClaudeProjects(base, rootfs, out) {
   let dirs = [];
   try { dirs = sh(`ls -1 ${JSON.stringify(base)} 2>/dev/null`).split("\n").filter(Boolean); } catch {}
   for (const enc of dirs) {
@@ -1145,9 +1167,10 @@ function claudeProjects() {
       if (cwd && (claudeEnc(cwd) === enc || cwd.replace(/\//g, "-") === enc)) path = cwd; // only trust a cwd that matches this dir
     }
     if (!last) { try { last = Math.floor(statSync(join(base, enc)).mtimeMs / 1000); } catch {} }
-    out[enc] = { agent: "Claude Code", last, path };
+    const key = agentKey(rootfs, enc);
+    if (out[key] && out[key].last >= last) continue; // one project worked on from two of the distro's homes: keep the newest
+    out[key] = { agent: "Claude Code", last, path: path && rootfs + path, rootfs, enc };
   }
-  return out;
 }
 // Async only to YIELD between repos, so the app server can answer /api/scan
 // (progress) mid-scan; the git calls themselves stay synchronous. Concurrent
@@ -1212,10 +1235,10 @@ async function buildMapScan() {
   // Agent projects: badge the repo/folder nodes an AI coding agent has worked,
   // and surface agent-worked projects the scan missed as their own nodes.
   try {
-    const ap = claudeProjects(); const used = new Set();
+    const ap = claudeProjects(), distros = prootDistros(); const used = new Set();
     for (const n of nodes) {
       if ((n.type === "repo" || n.type === "folder") && n.meta && n.meta.path) {
-        const e = [claudeEnc(n.meta.path), n.meta.path.replace(/\//g, "-")].find((k) => ap[k]); // older Claude Code mapped only "/"
+        const e = agentKeys(n.meta.path, distros).find((k) => ap[k]);
         if (e) { n.meta.agents = [{ agent: ap[e].agent, last: ap[e].last }]; used.add(e); }
       }
     }
@@ -1223,7 +1246,7 @@ async function buildMapScan() {
     for (const e of Object.keys(ap)) {
       if (used.has(e) || extra >= 20) continue;
       // the session's recorded cwd; else best-effort decode (names with - . _ won't resolve and are skipped)
-      const decoded = ap[e].path || e.replace(/-/g, "/");
+      const decoded = ap[e].path || ap[e].rootfs + ap[e].enc.replace(/-/g, "/");
       if (!existsSync(decoded) || !statSync(decoded).isDirectory()) continue;
       if (nodes.some((n) => n.meta && n.meta.path === decoded)) continue;
       const isGit = existsSync(join(decoded, ".git"));

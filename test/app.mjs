@@ -175,6 +175,13 @@ try {
   spawnSync("git", ["init", "-q", proj]);
   spawnSync("git", ["-C", proj, "-c", "user.name=t", "-c", "user.email=t@t", "add", "."]);
   spawnSync("git", ["-C", proj, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "one"]);
+  // Claude Code run inside the distro keeps its history in the distro's homes,
+  // under the distro's own paths: one session there records its cwd, one doesn't.
+  const debian = join(prefix, "var", "lib", "proot-distro", "installed-rootfs", "debian");
+  const hist = (home, enc, line) => { mkdirSync(join(debian, home, ".claude", "projects", enc), { recursive: true }); writeFileSync(join(debian, home, ".claude", "projects", enc, "s.jsonl"), line + "\n"); };
+  hist("root", "-root-work-proj", JSON.stringify({ type: "user", cwd: "/root/work/proj" }));
+  mkdirSync(join(debian, "srv", "app"), { recursive: true }); spawnSync("git", ["init", "-q", join(debian, "srv", "app")]);
+  hist(join("home", "garth"), "-srv-app", JSON.stringify({ type: "user" }));
   const t = startApp({ SYMBIOT_FORCE_NEW: "1", SYMBIOT_PORT: String(port()), SYMBIOT_SCAN_HOME: thome, PREFIX: prefix }, 20000);
   const urlT = await t.ready;
   ok("the app starts with a proot-distro under $PREFIX", !!urlT, t.out());
@@ -185,6 +192,9 @@ try {
     ok("its /root and /home/<user> are default scan folders, after your home", sr.effective.join() === [thome, join(rootfs, "root"), join(rootfs, "home", "garth")].join(), sr);
     const g = await get("/api/map");
     ok("a repo in the distro's /root is on the map, which lists every folder it scanned", g.stats.repos === 1 && g.nodes.some((n) => n.type === "repo" && n.label === "proj") && g.stats.roots.length === 3, g.stats);
+    const pn = g.nodes.find((n) => n.id === "repo:" + proj), an = g.nodes.find((n) => n.id === "repo:" + join(debian, "srv", "app"));
+    ok("Claude Code's history inside the distro gives its repo the agent badge", !!(pn && pn.meta.agents && pn.meta.agents[0].agent === "Claude Code"), pn);
+    ok("a project the distro's Claude Code worked on outside its homes is on the map too, at its real path", !!(an && an.meta.agentOnly && an.meta.agents[0].agent === "Claude Code"), g.nodes.filter((n) => n.meta && n.meta.agentOnly));
     try { await fetch(urlT.replace(/\/\?t=/, "/api/quit?t=")); } catch {}
   }
   rmSync(prefix, { recursive: true, force: true }); rmSync(thome, { recursive: true, force: true });
