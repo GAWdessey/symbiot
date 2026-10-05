@@ -12,7 +12,7 @@ import { fileURLToPath } from "node:url";
 import { authorship, repoState, readmeInfo, houseRules, findAllRepos, driftRepo, buildTasksMd, taskType, EMBEDDED_UI, orcaHandoffCmd, migrateOrcaCmd, fillHandoff, ORCA_CLAUDE_CMD, CLAUDE_CMD, HANDOFF_PROMPT, shipChanges, shipWithBump, bumpOffer, semverGt, updateCmd, parseQuestions, unreleased } from "../index.mjs";
 import { mailActivity } from "../mail.mjs";
 import { pngSize, pngDecode, splitPng, captureCmds, clickCmds, portalAppId, monitorCmds, parseCosmicRandr, parseWlrRandr, parseKscreen, parseXrandr, parseLines, tidyMonitors, monitorAreas } from "../screens.mjs";
-import { siteUrl, browserArgs } from "../headless.mjs";
+import { siteUrl, browserArgs, isTrusted } from "../headless.mjs";
 import { deflateSync } from "node:zlib";
 import { weeklyDue, lastSlot, autostartFile, autostartContent, notifyCmd } from "../desktop.mjs";
 
@@ -592,6 +592,8 @@ try {
   ok("siteUrl: a site's name, a host, a path and \"open …\" become https addresses", su("gmail") === "https://gmail.com/" && su("open GitHub") === "https://github.com/" && su("github.com/pulls?q=1") === "https://github.com/pulls?q=1" && su("mail.google.com") === "https://mail.google.com/", [su("gmail"), su("open GitHub"), su("github.com/pulls?q=1")]);
   ok("siteUrl: localhost is http; full http(s) addresses are kept", su("localhost:3000/x") === "http://localhost:3000/x" && su("127.0.0.1:8080") === "http://127.0.0.1:8080/" && su("http://example.org/a") === "http://example.org/a", [su("localhost:3000/x"), su("127.0.0.1:8080")]);
   ok("siteUrl: anything else isn't a site (file:, javascript:, words with spaces, nothing)", ["file:///etc/passwd", "javascript:alert(1)", "two words", "", "chrome://settings"].every((x) => su(x) === ""), ["file:///etc/passwd", "javascript:alert(1)", "two words"].map(su));
+  const tr = (u) => isTrusted(u, ["google.com", "github.com"]);
+  ok("isTrusted: a trusted host covers itself, www. and its subdomains, and nothing else", tr("https://mail.google.com/mail/u/0/") && tr("https://www.github.com/pulls") && tr("https://google.com/") && !tr("https://evilgoogle.com/") && !tr("https://google.com.evil.io/") && !tr("") && !isTrusted("https://google.com/", []), "");
   const hArgs = browserArgs(true), vArgs = browserArgs(false, "https://gmail.com/");
   const prof = (a) => a.find((x) => x.startsWith("--user-data-dir="));
   ok("browserArgs: hidden runs headless on the DevTools pipe; the sign-in window is a normal one", hArgs.includes("--headless=new") && hArgs.includes("--remote-debugging-pipe") && !vArgs.some((x) => /headless|remote-debugging/.test(x)) && vArgs[vArgs.length - 1] === "https://gmail.com/", [hArgs, vArgs]);
@@ -609,18 +611,25 @@ try {
     const page = '<!doctype html><title>Inbox</title><body style="margin:0">' +
       '<a href="/two" target="_blank" style="position:absolute;left:10px;top:10px">Go to two</a>' +
       '<button id="compose" style="position:absolute;left:10px;top:50px">Compose</button>' +
-      '<input placeholder="Search mail" style="position:absolute;left:10px;top:90px">' +
+      '<form action="/search"><input name="q" placeholder="Search mail" value="old" style="position:absolute;left:10px;top:90px"></form>' +
       '<div role="button" aria-label="Star" style="position:absolute;left:10px;top:130px;width:20px;height:20px"><span role="button">inner</span></div>' +
       '<button style="display:none">Hidden</button><button style="position:absolute;left:10px;top:2000px">Below the fold</button>' +
       '<button style="position:absolute;left:300px;top:50px">Covered</button><div style="position:absolute;left:290px;top:40px;width:200px;height:60px;background:red"></div></body>';
-    const srv = createServer((q, r) => { r.writeHead(200, { "content-type": "text/html" }); r.end(q.url === "/two" ? "<title>Page two</title><button>Back</button>" : page); }).listen(0, "127.0.0.1");
+    const srv = createServer((q, r) => { r.writeHead(200, { "content-type": "text/html" }); r.end(q.url === "/two" ? "<title>Page two</title><button>Back</button>" : q.url.startsWith("/search?") ? "<title>Results for " + new URL(q.url, "http://x").searchParams.get("q") + "</title><button>Back</button>" : page); }).listen(0, "127.0.0.1");
     await new Promise((r) => srv.on("listening", r));
     const out = {};
     out.map = await h.mapPage("127.0.0.1:" + srv.address().port, "");
     out.bp = out.map.id && s.blueprint(out.map);
     out.mode = out.map.id && (statSync(s.screenImage(out.map.id)).mode & 0o777);
     const link = (out.map.regions || []).find((r) => r.kind === "link");
-    out.press = link ? await h.pressRegion(out.map.id, link.id) : null;
+    out.unasked = link ? await h.pressRegion(out.map.id, link.id) : null;
+    out.press = link ? await h.pressRegion(out.map.id, link.id, { confirmed: true }) : null;
+    const field = (out.map.regions || []).find((r) => r.kind === "field");
+    out.typeButton = await h.typeRegion(out.map.id, (out.map.regions || []).find((r) => r.kind === "button").id, "x", { confirmed: true });
+    out.typeUnasked = field ? await h.typeRegion(out.map.id, field.id, "hello", { enter: true }) : null;
+    out.trust = h.trustSite("127.0.0.1:" + srv.address().port);
+    out.type = field ? await h.typeRegion(out.map.id, field.id, "hello world", { enter: true }) : null;
+    out.untrust = h.untrustSite("127.0.0.1");
     out.click = out.map.id && s.clickRegion(out.map.id, out.map.regions[0].id);
     srv.close();
     console.log(JSON.stringify(out));`], { encoding: "utf8", timeout: 150000, env: { ...process.env, HOME: pghome, USERPROFILE: pghome } });
@@ -636,6 +645,11 @@ try {
     ok("blueprint: a mapped page gives its address, and each region's kind and selector", ho.bp && ho.bp.page && ho.bp.regions[1].kind === "button" && ho.bp.regions[1].selector === "#compose" && /\/two$/.test(ho.bp.regions[0].href || ""), ho.bp);
     if (process.platform !== "win32") ok("mapPage: its screenshot is readable by you only (0600)", ho.mode === 0o600, ho.mode);
     ok("pressRegion: follows a new-tab link in the same tab and maps the page it lands on", ho.press && ho.press.found && ho.press.name === "Page two" && /\/two$/.test(ho.press.page.url) && ho.press.regions.map((r) => r.label).join() === "Back", ho.press);
+    ok("pressRegion: refused without your confirmation on a site you don't trust", ho.unasked && ho.unasked.confirm === true && ho.unasked.host === "127.0.0.1" && !ho.unasked.id, ho.unasked);
+    ok("typeRegion: only types into a field", /isn't a field/.test((ho.typeButton || {}).error || ""), ho.typeButton);
+    ok("typeRegion: refused without your confirmation on a site you don't trust", ho.typeUnasked && ho.typeUnasked.confirm === true && !ho.typeUnasked.id, ho.typeUnasked);
+    ok("trustSite: keeps the host, so the site's pages are trusted", ho.trust && ho.trust.host === "127.0.0.1" && ho.trust.sites.join() === "127.0.0.1" && ho.untrust && ho.untrust.sites.length === 0, [ho.trust, ho.untrust]);
+    ok("typeRegion: on a trusted site, replaces what's in the field, presses Enter and maps the result, unasked", ho.type && ho.type.found && ho.type.entered && ho.type.typed === "Search mail" && ho.type.name === "Results for hello world", ho.type);
     ok("clickRegion: a mapped page is never clicked on your real screen", /use Press instead/.test((ho.click || {}).error || ""), ho.click);
   }
 

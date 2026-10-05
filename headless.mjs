@@ -2,8 +2,9 @@
 // screenshot and map every button, link and field on it by itself, as a screen
 // whose regions are already named (screens.mjs). Nothing to bring to the front,
 // nothing to drag. Each region keeps how to find it again (a CSS selector), so it
-// can be pressed in that same hidden browser, which maps the page it lands on:
-// map → press → map is how an agent finds its way around a site.
+// can be pressed (or a field typed into) in that same hidden browser, which maps
+// the page it lands on: map → press → map is how an agent finds its way around a
+// site. On a site you trust (Settings), that goes ahead without asking.
 //
 // It drives Chrome / Chromium / Edge / Brave over the DevTools protocol on a pipe
 // (--remote-debugging-pipe: commands in on fd 3, replies out on fd 4, each JSON
@@ -14,7 +15,7 @@
 import { spawn } from "node:child_process";
 import { join } from "node:path";
 import { mkdirSync, existsSync } from "node:fs";
-import { CONFIG_DIR, chromeBinary } from "./core.mjs";
+import { CONFIG_DIR, chromeBinary, loadConfig, saveConfig } from "./core.mjs";
 import { loadScreens, addPageScreen, center } from "./screens.mjs";
 
 const PROFILE = join(CONFIG_DIR, "browser");
@@ -227,30 +228,80 @@ function mapPage(input, name) {
   return oneAtATime(() => withPage(async (page) => { await open(page, url); return snapshot(page, name); })).catch((e) => ({ error: String((e && e.message) || e) }));
 }
 
-// Press a mapped region: open its page again, find it (by its selector, else at
-// the same spot), click it as a mouse would, and map where that leads, as a new
-// screen. It acts on the real site, signed in as you, so the caller confirms.
-function pressRegion(id, regionId) {
+// Trusted sites (Settings → Screens): on a page from one of these, press and type
+// go ahead without asking, for you and for agents. Anywhere else each one asks.
+// A host covers its subdomains (google.com covers mail.google.com). Only the app's
+// Settings adds to the list: there's no command for it, for an agent to call.
+function hostOf(url) { try { return new URL(url).hostname.replace(/^www\./, "").toLowerCase(); } catch { return ""; } }
+function trustedSites() { const a = loadConfig().trustedSites; return Array.isArray(a) ? a.filter((x) => typeof x === "string" && x) : []; }
+function isTrusted(url, sites = trustedSites()) { const h = hostOf(url); return !!h && sites.some((t) => h === t || h.endsWith("." + t)); }
+function trustSite(input) {
+  const host = hostOf(siteUrl(input));
+  if (!host) return { error: "Give a site to trust: a host (mail.google.com) or a web address." };
+  const cfg = loadConfig(); cfg.trustedSites = [...new Set([...trustedSites(), host])].sort();
+  return saveConfig(cfg) ? { ok: true, host, sites: cfg.trustedSites } : { error: "Couldn't write the config file." };
+}
+function untrustSite(host) {
+  const cfg = loadConfig(); cfg.trustedSites = trustedSites().filter((x) => x !== String(host || "").toLowerCase());
+  if (!cfg.trustedSites.length) delete cfg.trustedSites;
+  return saveConfig(cfg) ? { ok: true, sites: cfg.trustedSites || [] } : { error: "Couldn't write the config file." };
+}
+
+// Act on a mapped region: open its page again, find it (by its selector, else at
+// the same spot) and give act(page, at, region) where it is now; then map where that
+// leads, as a new screen. It acts on the real site, signed in as you, so it needs
+// the caller's confirmation unless the page's site is trusted.
+function actOnRegion(id, regionId, verb, confirmed, check, act) {
   const s = loadScreens().find((x) => x.id === id); if (!s) return Promise.resolve({ error: "not found" });
-  if (!s.page || !s.page.url) return Promise.resolve({ error: "Press works on a mapped page. Use Click here for a screenshot of your screen." });
+  if (!s.page || !s.page.url) return Promise.resolve({ error: `${verb} works on a mapped page. Use Click here for a screenshot of your screen.` });
   const r = (s.regions || []).find((x) => x.id === regionId); if (!r) return Promise.resolve({ error: "That region is gone. Reload the screen." });
+  const bad = check(r); if (bad) return Promise.resolve({ error: bad });
+  const host = hostOf(s.page.url);
+  if (!confirmed && !isTrusted(s.page.url)) return Promise.resolve({ error: `${verb === "Type" ? "Typing into" : "Pressing"} "${r.label}" acts on the real site, signed in as you, and ${host} isn't one of your trusted sites.`, confirm: true, host });
   return oneAtATime(() => withPage(async (page) => {
     await open(page, s.page.url);
-    const c = center(r);
     // A new tab would leave this one where it was, so a link opens here instead.
     const find = `(() => { let e = null; try { e = ${JSON.stringify(r.selector || "")} && document.querySelector(${JSON.stringify(r.selector || "")}); } catch (x) {}
       if (!e) return null; const a = e.closest('a[target]'); if (a) a.removeAttribute('target');
       e.scrollIntoView({ block: 'center', inline: 'center' }); const b = e.getBoundingClientRect();
       return b.width && b.height ? { x: b.left + b.width / 2, y: b.top + b.height / 2 } : null; })()`;
     const { result } = await page.send("Runtime.evaluate", { expression: find, returnByValue: true });
-    const at = (result && result.value) || c, found = !!(result && result.value);
+    const at = (result && result.value) || center(r), found = !!(result && result.value);
     const navigating = page.until("Page.frameStartedLoading", 1500);
-    for (const type of ["mouseMoved", "mousePressed", "mouseReleased"]) await page.send("Input.dispatchMouseEvent", { type, x: at.x, y: at.y, button: "left", clickCount: type === "mouseMoved" ? 0 : 1 });
+    const extra = await act(page, at, r);
     if (await navigating) await page.until("Page.loadEventFired", 30000);
     await page.idle();
     const next = await snapshot(page, ""); // named after the page it landed on
-    return next.error ? next : { ...next, pressed: r.label, found };
+    return next.error ? next : { ...next, ...extra, found };
   })).catch((e) => ({ error: String((e && e.message) || e) }));
+}
+const clickAt = async (page, at) => { for (const type of ["mouseMoved", "mousePressed", "mouseReleased"]) await page.send("Input.dispatchMouseEvent", { type, x: at.x, y: at.y, button: "left", clickCount: type === "mouseMoved" ? 0 : 1 }); };
+
+// Press: click it as a mouse would.
+function pressRegion(id, regionId, { confirmed = false } = {}) {
+  return actOnRegion(id, regionId, "Press", confirmed, () => "", async (page, at, r) => { await clickAt(page, at); return { pressed: r.label }; });
+}
+
+// Type: click into a field, replace what's in it with text, and press Enter if
+// asked (which is how a search or a one-line form is sent). Each action starts
+// from the page's address again, so what's typed is gone by the next press:
+// send it with Enter in the same go.
+const MAX_TEXT = 2000;
+function typeRegion(id, regionId, text, { enter = false, confirmed = false } = {}) {
+  text = String(text == null ? "" : text);
+  return actOnRegion(id, regionId, "Type", confirmed, (r) => {
+    if (r.kind !== "field") return `"${r.label}" isn't a field (it's a ${r.kind || "region"}). Type works on a field; use Press for the rest.`;
+    if (!text && !enter) return "Give the text to type.";
+    if (text.length > MAX_TEXT) return `That's more than ${MAX_TEXT} characters.`;
+    return "";
+  }, async (page, at, r) => {
+    await clickAt(page, at);
+    await page.send("Runtime.evaluate", { expression: `(() => { const e = document.activeElement; if (!e) return;
+      if (typeof e.select === 'function') e.select(); else if (e.isContentEditable) getSelection().selectAllChildren(e); })()` });
+    if (text) await page.send("Input.insertText", { text });
+    if (enter) for (const type of ["keyDown", "keyUp"]) await page.send("Input.dispatchKeyEvent", { type, key: "Enter", code: "Enter", windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13, ...(type === "keyDown" ? { text: "\r" } : {}) });
+    return { typed: r.label, entered: !!enter };
+  });
 }
 
 // Open the site in Symbiot's browser profile as a normal window, to sign in (or
@@ -264,4 +315,4 @@ function signIn(input) {
   return { ok: true, url };
 }
 
-export { siteUrl, browserArgs, mapPage, pressRegion, signIn, PROFILE };
+export { siteUrl, browserArgs, mapPage, pressRegion, typeRegion, signIn, trustedSites, isTrusted, trustSite, untrustSite, PROFILE };

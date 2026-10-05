@@ -8,6 +8,8 @@
 //      one — and a registry error doesn't flip that.
 //   3. UPDATE & RESTART (fixed after 0.39.1): the relaunched copy takes over the same address
 //      instead of finding the old app and exiting (which left nothing running).
+//   4. ANDROID APP: with no access to shared storage, the map says so (and asks
+//      for it) instead of reporting "no repos".
 // Isolated HOME, random ports, a local fake registry: never touches real config,
 // a running app, or npm.
 //
@@ -15,7 +17,7 @@
 //
 import { spawn, spawnSync } from "node:child_process";
 import { createServer } from "node:http";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -142,6 +144,50 @@ try {
   ok("a non-Symbiot server answering 200 doesn't stop the app starting", !!urlC && !/already running/.test(c.out()), c.out());
   if (urlC) { try { await fetch(urlC.replace(/\/\?t=/, "/api/quit?t=")); } catch {} }
   other.close();
+
+  console.log("ANDROID APP — the map says when it can't see shared storage");
+  // Without "All files access" the app sees shared storage as an empty folder;
+  // that used to read as "no repos", and stayed that way after access was allowed.
+  const shared = mkdtempSync(join(tmpdir(), "symbiot-shared-"));
+  const d = startApp({ SYMBIOT_FORCE_NEW: "1", SYMBIOT_PORT: String(port()), SYMBIOT_ANDROID_APP: "1", SYMBIOT_SCAN_HOME: shared }, 20000);
+  const urlD = await d.ready;
+  ok("the app starts with SYMBIOT_ANDROID_APP=1", !!urlD, d.out());
+  if (urlD) {
+    const [, portD, tokenD] = urlD.match(URL_RE);
+    const map = async () => (await (await fetch(`http://127.0.0.1:${portD}/api/map`, { headers: { "x-symbiot-token": tokenD } })).json()).stats;
+    const blocked = await map();
+    ok("empty shared storage is reported as no access", blocked.noStorage === true && blocked.android === true, blocked);
+    mkdirSync(join(shared, "Download"));
+    const allowed = await map();
+    ok("once it can list shared storage, the next scan says so", allowed.noStorage === false, allowed);
+    try { await fetch(urlD.replace(/\/\?t=/, "/api/quit?t=")); } catch {}
+  }
+  rmSync(shared, { recursive: true, force: true });
+
+  console.log("TERMUX — the map also scans the homes of Termux's proot-distro Linuxes");
+  // Projects worked on in `proot-distro login debian` live under
+  // $PREFIX/var/lib/proot-distro/installed-rootfs/debian/root, outside Termux's home.
+  const prefix = mkdtempSync(join(tmpdir(), "symbiot-prefix-")), thome = mkdtempSync(join(tmpdir(), "symbiot-thome-"));
+  const proj = join(prefix, "var", "lib", "proot-distro", "installed-rootfs", "debian", "root", "work", "proj");
+  mkdirSync(join(prefix, "var", "lib", "proot-distro", "installed-rootfs", "debian", "home", "garth"), { recursive: true });
+  mkdirSync(proj, { recursive: true });
+  writeFileSync(join(proj, "a.js"), "1\n");
+  spawnSync("git", ["init", "-q", proj]);
+  spawnSync("git", ["-C", proj, "-c", "user.name=t", "-c", "user.email=t@t", "add", "."]);
+  spawnSync("git", ["-C", proj, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "one"]);
+  const t = startApp({ SYMBIOT_FORCE_NEW: "1", SYMBIOT_PORT: String(port()), SYMBIOT_SCAN_HOME: thome, PREFIX: prefix }, 20000);
+  const urlT = await t.ready;
+  ok("the app starts with a proot-distro under $PREFIX", !!urlT, t.out());
+  if (urlT) {
+    const [, portT, tokenT] = urlT.match(URL_RE);
+    const get = async (p) => (await fetch(`http://127.0.0.1:${portT}${p}`, { headers: { "x-symbiot-token": tokenT } })).json();
+    const sr = await get("/api/scanroots"), rootfs = join(prefix, "var", "lib", "proot-distro", "installed-rootfs", "debian");
+    ok("its /root and /home/<user> are default scan folders, after your home", sr.effective.join() === [thome, join(rootfs, "root"), join(rootfs, "home", "garth")].join(), sr);
+    const g = await get("/api/map");
+    ok("a repo in the distro's /root is on the map, which lists every folder it scanned", g.stats.repos === 1 && g.nodes.some((n) => n.type === "repo" && n.label === "proj") && g.stats.roots.length === 3, g.stats);
+    try { await fetch(urlT.replace(/\/\?t=/, "/api/quit?t=")); } catch {}
+  }
+  rmSync(prefix, { recursive: true, force: true }); rmSync(thome, { recursive: true, force: true });
 } finally {
   for (const ch of children) { try { ch.kill("SIGKILL"); } catch {} }
   reg.close();

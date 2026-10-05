@@ -1,7 +1,8 @@
 // symbiot — Screens: screenshots with named regions, i.e. a blueprint of where
 // things are on a screen, in screenshot pixels. The first slices of screen
 // automation: it captures, stores and maps, and clicks a region's centre when
-// asked (the app confirms each click). Nothing types yet.
+// asked (the app confirms each click). Nothing types on the real screen yet
+// (a mapped web page can be typed into: headless.mjs).
 //
 // Stored in ~/.config/symbiot/screens/: <id>.png per screen, and screens.json =
 // [{ id, name, w, h, ts, via, monitor?, regions: [{ id, label, x, y, w, h }] }],

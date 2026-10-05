@@ -22,7 +22,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { spawn, spawnSync } from "node:child_process";
 import { homedir, totalmem, cpus as oscpus } from "node:os";
 import { join } from "node:path";
-import { readFileSync, writeFileSync, mkdirSync, existsSync, statSync, realpathSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, existsSync, statSync, realpathSync, readdirSync } from "node:fs";
 import { createInterface } from "node:readline";
 import { createServer } from "node:http";
 import { randomBytes } from "node:crypto";
@@ -33,7 +33,7 @@ import { CONFIG_PATH, loadConfig, saveConfig, loadTasks, saveTasks, sh, hasCmd, 
 import { HANDOFF_PROMPT, QUESTIONS_MAX, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, fillHandoff, runHandoff, runningHandoff, writeTasks, startHeldTasks, detectHandoffs, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, parseQuestions, agentQuestions, answerQuestions, agentsList } from "./agents.mjs";
 import { gitDefaultBranch, loadDeploys, driftRepo } from "./drift.mjs";
 import { loadScreens, screenImage, captureScreen, splitScreen, listMonitors, allowScreenshots, importScreen, setRegions, renameScreen, removeScreen, blueprint, clickRegion } from "./screens.mjs";
-import { mapPage, pressRegion, signIn } from "./headless.mjs";
+import { mapPage, pressRegion, typeRegion, signIn, isTrusted, trustedSites, trustSite, untrustSite } from "./headless.mjs";
 import { weeklyState, setWeekly, runWeekly, startWeekly, autostartState, setAutostart } from "./desktop.mjs";
 
 const HERE = fileURLToPath(new URL(".", import.meta.url));
@@ -587,18 +587,42 @@ function expandRoot(p) { p = String(p || "").trim(); return p.startsWith("~") ? 
 // The default place to look: your home folder. The Android app's HOME is private
 // to it, so it sets SYMBIOT_SCAN_HOME to the phone's shared storage instead.
 function scanHome() { return process.env.SYMBIOT_SCAN_HOME || homedir(); }
-// Where to look for repos: configured folders, or --dir, else your home folder.
+// Without "All files access", the Android app sees shared storage as empty (it
+// always has Download, DCIM...), which would read as "no repos". The map says so
+// instead, with a button that asks for access.
+function storageBlocked() {
+  if (process.env.SYMBIOT_ANDROID_APP !== "1") return false;
+  try { return readdirSync(scanHome()).length === 0; } catch { return true; }
+}
+// Termux: a Linux run with proot-distro (`proot-distro login debian`) keeps its
+// home folders in $PREFIX/var/lib/proot-distro/installed-rootfs/<distro>, outside
+// Termux's home, and that's where projects worked on in it live. Symbiot in
+// Termux reads them there: /root and /home/<user> of each installed distro.
+function prootHomes() {
+  if (!process.env.PREFIX) return [];
+  const base = join(process.env.PREFIX, "var", "lib", "proot-distro", "installed-rootfs"), out = [];
+  const dirs = (p) => { try { return readdirSync(p, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => join(p, d.name)); } catch { return []; } };
+  for (const distro of dirs(base)) {
+    if (existsSync(join(distro, "root"))) out.push(join(distro, "root"));
+    out.push(...dirs(join(distro, "home")));
+  }
+  return out;
+}
+// Where to look when you haven't picked folders: your home folder (and in Termux,
+// the homes of its proot-distro Linuxes).
+function scanDefaults() { return [scanHome(), ...prootHomes()]; }
+// Where to look for repos: configured folders, or --dir, else the defaults.
 function scanRoots() {
   if (flag("dir", null)) return [BASE];
   const r = loadConfig().scanRoots;
   const roots = (Array.isArray(r) ? r : []).map(expandRoot).filter((x) => { try { return existsSync(x); } catch { return false; } });
-  return roots.length ? roots : [scanHome()];
+  return roots.length ? roots : scanDefaults();
 }
 function addScanRoot(p) {
   p = expandRoot(p); if (!p) return { error: "empty" };
   try { if (!existsSync(p)) return { error: "folder not found: " + p }; } catch { return { error: "can't read: " + p }; }
   const cfg = loadConfig();
-  let list = Array.isArray(cfg.scanRoots) && cfg.scanRoots.length ? cfg.scanRoots : [scanHome()]; // keep home when adding the first extra folder
+  let list = Array.isArray(cfg.scanRoots) && cfg.scanRoots.length ? cfg.scanRoots : scanDefaults(); // keep home when adding the first extra folder
   if (!list.includes(p)) list.push(p);
   cfg.scanRoots = list; saveConfig(cfg); LAST_MAP = null; return { ok: true, roots: cfg.scanRoots };
 }
@@ -861,7 +885,7 @@ function computeDrift(opts = {}) {
       if (scanExpired()) break;
       repos.push(driftRepo(r.path, { deploys, ci: opts.ci, fetch: opts.fetch })); scanTick(r.name);
     }
-    return { repos, ci: !!opts.ci, partial: SCAN.partial };
+    return { repos, ci: !!opts.ci, partial: SCAN.partial, base: BASE };
   } finally { scanEnd(own); }
 }
 function cmdDrift() {
@@ -1084,7 +1108,10 @@ async function buildMapScan() {
     commits: repos.reduce((s, r) => s + r.mine, 0),
     files: repos.reduce((s, r) => s + (r.files || 0), 0),
     base: BASE,
+    roots: scanRoots(), // every folder scanned (base is the first, unless you picked others)
     partial: SCAN.partial, // the scan hit its deadline — this is what it found so far
+    android: process.env.SYMBIOT_ANDROID_APP === "1",
+    noStorage: storageBlocked(),
   } };
   LAST_MAP = out;
   return out;
@@ -1457,11 +1484,22 @@ function readBody(req) {
     req.on("end", () => { try { resolve(d ? JSON.parse(d) : {}); } catch { resolve({}); } });
   });
 }
+// http://127.0.0.1:<port>/?t=<token> -> symbiot://127.0.0.1:<port>/?t=<token>, for the Android app
+function appLink(url) { return url.replace(/^http:\/\//, "symbiot://"); }
+// Symbiot running in Termux (not the Android app's own)
+const IN_TERMUX = process.platform === "android" && process.env.SYMBIOT_ANDROID_APP !== "1";
 function openApp(url) {
   try {
-    // Android (Termux): hand the URL to the phone's browser. termux-open-url ships
-    // with Termux; `am start` is the fallback.
+    // Android (Termux): Symbiot's Android app shows this Symbiot full screen (it
+    // can't read Termux's home, this one can), so the link goes to it first, as a
+    // symbiot:// link: only that app takes those, where Android gives an http one
+    // to the browser. Without the app, `am` can't resolve it, and the URL goes to
+    // the phone's browser: termux-open-url ships with Termux, `am start` is the fallback.
     if (process.platform === "android") {
+      if (hasCmd("am")) {
+        const r = spawnSync("am", ["start", "-a", "android.intent.action.VIEW", "-d", appLink(url)], { encoding: "utf8", timeout: 8000 });
+        if (r.status === 0 && !/error|unable|exception/i.test(`${r.stdout || ""}${r.stderr || ""}`)) return "Symbiot app window";
+      }
       if (hasCmd("termux-open-url")) spawn("termux-open-url", [url], { detached: true, stdio: "ignore" }).unref();
       else spawn("am", ["start", "-a", "android.intent.action.VIEW", "-d", url], { detached: true, stdio: "ignore" }).unref();
       return "browser tab";
@@ -1508,7 +1546,7 @@ async function cmdApp() {
     } catch {}
   }
   const json = (res, obj) => { res.writeHead(200, { "content-type": "application/json" }); res.end(JSON.stringify(obj)); };
-  const screenOut = (s) => (s && s.id ? { ...s, blueprint: blueprint(s) } : s && s.screens ? { ...s, screens: s.screens.map(screenOut) } : s);
+  const screenOut = (s) => (s && s.id ? { ...s, blueprint: blueprint(s), ...(s.page ? { trusted: isTrusted(s.page.url) } : {}) } : s && s.screens ? { ...s, screens: s.screens.map(screenOut) } : s);
   const server = createServer(async (req, res) => {
     const u = new URL(req.url, "http://127.0.0.1");
     if (req.method === "GET" && u.pathname === "/") { res.writeHead(200, { "content-type": "text/html; charset=utf-8" }); res.end(EMBEDDED_UI); return; }
@@ -1582,7 +1620,12 @@ async function cmdApp() {
       // screen needed. Press acts on the real site, signed in as you, so it's
       // confirmed like a click; Sign in opens a window the user signs in with.
       if (u.pathname === "/api/screens/map" && req.method === "POST") { const b = await readBody(req); return json(res, screenOut(await mapPage(b.site, b.name))); }
-      if (u.pathname === "/api/screens/press" && req.method === "POST") { const b = await readBody(req); if (b.confirmed !== true) return json(res, { error: "Each press needs your confirmation." }); return json(res, screenOut(await pressRegion(String(b.id || ""), String(b.region || "")))); }
+      // press / type: refused unless confirmed, or the page's site is one you trust
+      if (u.pathname === "/api/screens/press" && req.method === "POST") { const b = await readBody(req); return json(res, screenOut(await pressRegion(String(b.id || ""), String(b.region || ""), { confirmed: b.confirmed === true }))); }
+      if (u.pathname === "/api/screens/type" && req.method === "POST") { const b = await readBody(req); return json(res, screenOut(await typeRegion(String(b.id || ""), String(b.region || ""), b.text, { enter: b.enter === true, confirmed: b.confirmed === true }))); }
+      if (u.pathname === "/api/screens/trusted") return json(res, { sites: trustedSites() });
+      if (u.pathname === "/api/screens/trusted/add" && req.method === "POST") { const b = await readBody(req); return json(res, trustSite(b.site)); }
+      if (u.pathname === "/api/screens/trusted/remove" && req.method === "POST") { const b = await readBody(req); return json(res, untrustSite(b.site)); }
       if (u.pathname === "/api/screens/signin" && req.method === "POST") { const b = await readBody(req); return json(res, signIn(b.site)); }
       // What symbiot-desktop added (desktop.mjs): the weekly write-up, start at login.
       if (u.pathname === "/api/desktop") return json(res, { weekly: weeklyState(), autostart: autostartState() });
@@ -1591,7 +1634,7 @@ async function cmdApp() {
       if (u.pathname === "/api/desktop/autostart" && req.method === "POST") { const b = await readBody(req); return json(res, setAutostart(!!b.on, realpathSync(fileURLToPath(import.meta.url)))); }
       if (u.pathname === "/api/run" && req.method === "POST") { const b = await readBody(req); const cmd = ["week", "standup", "todo"].includes(b.cmd) ? b.cmd : "week"; return json(res, await produce(cmd)); }
       if (u.pathname === "/api/connect" && req.method === "POST") { return json(res, await connectProvider(await readBody(req))); }
-      if (u.pathname === "/api/ping") { if (u.searchParams.get("fresh") === "1") await checkLatest(); return json(res, { version: VERSION, started: SERVER_STARTED, latest: LATEST_VERSION, newer: semverGt(LATEST_VERSION, VERSION) }); }
+      if (u.pathname === "/api/ping") { if (u.searchParams.get("fresh") === "1") await checkLatest(); return json(res, { version: VERSION, started: SERVER_STARTED, latest: LATEST_VERSION, newer: semverGt(LATEST_VERSION, VERSION), ...(IN_TERMUX ? { termux: true } : {}) }); }
       if (u.pathname === "/api/update" && req.method === "POST") {
         // Install the exact newest version (see updateCmd), then relaunch this
         // same app (same port+token => same URL) and exit. The page's heartbeat
@@ -1656,10 +1699,10 @@ function cmdMail() {
 function screenJson(s) {
   if (!s || s.error) return s;
   const bp = blueprint(s);
-  return { id: s.id, ...(s.note ? { note: s.note } : {}), ...(s.pressed ? { pressed: s.pressed, found: s.found } : {}), ...bp, regions: bp.regions.map((r, i) => ({ id: s.regions[i].id, ...r })) };
+  return { id: s.id, ...(s.note ? { note: s.note } : {}), ...(s.pressed ? { pressed: s.pressed, found: s.found } : {}), ...(s.typed ? { typed: s.typed, entered: s.entered, found: s.found } : {}), ...(s.page ? { trusted: isTrusted(s.page.url) } : {}), ...bp, regions: bp.regions.map((r, i) => ({ id: s.regions[i].id, ...r })) };
 }
 async function cmdScreens() {
-  const [sub = "list", a1, a2] = argv.slice(1).filter((x, i, all) => !x.startsWith("--") && all[i - 1] !== "--name");
+  const [sub = "list", a1, a2, a3] = argv.slice(1).filter((x, i, all) => !x.startsWith("--") && all[i - 1] !== "--name");
   const out = (x) => { console.log(JSON.stringify(x, null, 2)); if (x && x.error) process.exitCode = 1; };
   const find = (id) => loadScreens().find((s) => s.id === id);
   if (sub === "list") {
@@ -1671,21 +1714,26 @@ async function cmdScreens() {
   if (sub === "map") return out(screenJson(await mapPage(a1, flag("name", ""))));
   if (sub === "show") { const s = find(a1); return out(s ? screenJson(s) : { error: "No screen " + (a1 || "") + ". symbiot screens lists them." }); }
   if (sub === "signin") { const r = signIn(a1); return out(r.ok ? { ...r, next: "Sign in in the window that opened, close it, then map again." } : r); }
-  if (sub === "press") {
+  if (sub === "press" || sub === "type") {
     const s = find(a1); if (!s) return out({ error: "No screen " + (a1 || "") + ". symbiot screens lists them." });
     const want = String(a2 || "").toLowerCase(), rs = s.regions || [];
     const r = rs.find((x) => x.id === a2) || rs.find((x) => x.label.toLowerCase() === want) || (rs.filter((x) => x.label.toLowerCase().includes(want)).length === 1 && rs.find((x) => x.label.toLowerCase().includes(want)));
     if (!want || !r) return out({ error: `No region "${a2 || ""}" on that screen (give its id, or a label that matches one region).` });
-    if (!has("yes")) return out({ error: `Pressing "${r.label}" acts on the real site, signed in as you. Add --yes to press it.` });
-    return out(screenJson(await pressRegion(s.id, r.id)));
+    const done = sub === "press" ? await pressRegion(s.id, r.id, { confirmed: has("yes") }) : await typeRegion(s.id, r.id, a3, { enter: has("enter"), confirmed: has("yes") });
+    // not a trusted site: say how to go ahead (only you can trust a site, in the app's Settings)
+    if (done && done.confirm) return out({ error: `${done.error} Add --yes to go ahead, or list ${done.host} under Trusted sites in Symbiot's Settings.` });
+    return out(screenJson(done));
   }
   console.log(`${c.b("symbiot screens")} ${c.d("— experimental")}
   symbiot screens                              list your screens
   symbiot screens map <site> [--name N]        open a site in a hidden browser and map
                                                its buttons, links and fields (JSON)
   symbiot screens show <id>                    a screen's blueprint (JSON)
-  symbiot screens press <id> <region> --yes    press a region there, map where it lands
-  symbiot screens signin <site>                sign in once, in Symbiot's browser window`);
+  symbiot screens press <id> <region> [--yes]  press a region there, map where it lands
+  symbiot screens type <id> <field> "text" [--enter] [--yes]
+                                               type into a field (Enter sends it), map the result
+  symbiot screens signin <site>                sign in once, in Symbiot's browser window
+  --yes is needed unless the page's site is under Trusted sites in the app's Settings.`);
   if (sub !== "help") process.exitCode = 1;
 }
 

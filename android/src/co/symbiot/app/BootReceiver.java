@@ -5,10 +5,11 @@ import android.content.Context;
 import android.content.Intent;
 
 // Settings → "Start Symbiot in the background when the phone starts" leaves a
-// flag file (desktop.mjs); with it, start the service at boot.
+// flag file (desktop.mjs); with it, start the service at boot. Not while the app
+// shows the Symbiot running in Termux instead.
 public class BootReceiver extends BroadcastReceiver {
     @Override public void onReceive(Context ctx, Intent intent) {
         if (!Intent.ACTION_BOOT_COMPLETED.equals(intent.getAction())) return;
-        if (new Bootstrap(ctx).bootFlag().exists()) SymbiotService.start(ctx);
+        if (new Bootstrap(ctx).bootFlag().exists() && MainActivity.termuxUrl(ctx) == null) SymbiotService.start(ctx);
     }
 }

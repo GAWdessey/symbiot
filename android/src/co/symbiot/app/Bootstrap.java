@@ -48,7 +48,8 @@ final class Bootstrap {
         try { pi = ctx.getPackageManager().getPackageInfo(ctx.getPackageName(), 0); } catch (Exception e) { throw new IOException(e); }
         String stamp = pi.versionName + "/" + pi.lastUpdateTime;
         File stampFile = new File(usr, ".apk");
-        if (!usr.isDirectory() || !stamp.equals(read(stampFile))) {
+        boolean apkChanged = !usr.isDirectory() || !stamp.equals(read(stampFile));
+        if (apkChanged) {
             log.line("Unpacking Node, git and gh (first start after an install or update)...");
             File tmp = new File(files, "usr.new");
             unzip(ctx.getAssets().open("runtime.zip"), tmp);
@@ -62,7 +63,9 @@ final class Bootstrap {
         }
         String bundled = read(ctx.getAssets().open("symbiot.version")).trim();
         String installed = packageVersion(app);
-        if (installed == null || newer(bundled, installed)) {
+        // a newer Symbiot, or a new APK carrying the same version (a rebuild). One
+        // that "Update & restart" has already taken past it is kept.
+        if (installed == null || newer(bundled, installed) || (apkChanged && !newer(installed, bundled))) {
             log.line("Installing Symbiot " + bundled + (installed == null ? "" : " (over " + installed + ")") + "...");
             File tmp = new File(files, "symbiot.new");
             unzip(ctx.getAssets().open("symbiot.zip"), tmp);
@@ -90,6 +93,10 @@ final class Bootstrap {
         e.put("GIT_SSL_CAINFO", u + "/etc/tls/cert.pem");
         e.put("SSL_CERT_FILE", u + "/etc/tls/cert.pem");
         e.put("CURL_CA_BUNDLE", u + "/etc/tls/cert.pem");
+        // Node and git's OpenSSL otherwise read Termux's own openssl.cnf: with Termux
+        // installed that path exists but is private to it, and Node exits on the
+        // "Permission denied" (code 13) before Symbiot starts
+        e.put("OPENSSL_CONF", u + "/etc/tls/openssl.cnf");
         // Repos in shared storage belong to another user id and have no file modes:
         // without these, git refuses them ("dubious ownership") or calls every file changed.
         e.put("GIT_CONFIG_COUNT", "2");

@@ -90,3 +90,63 @@ jobs:
         run: |
           git tag "v$VER" || true
           git push origin "v$VER" || echo "tag push skipped (protected); npm is the source of truth"
+
+  # The Android app, attached to a GitHub release, so a phone can download the
+  # current APK straight from github.com/<repo>/releases/latest. Runs after a
+  # publish, or from "Run workflow" for a version that's already on npm (to add
+  # a missing APK). Never fails the npm release: it runs after it.
+  #
+  # The release's tag is apk-<version>, not v<version>: the v* tag ruleset stops
+  # this workflow's token from creating v* tags. Each APK is signed with the
+  # same key as the ones built on your PC (secrets SYMBIOT_KEYSTORE_B64, the
+  # base64 of ~/.android/symbiot.jks, and SYMBIOT_KEYSTORE_PASS), so one installs
+  # over another. Without the key the job skips with a warning: an APK signed
+  # with a throwaway key couldn't update the app you have.
+  apk:
+    needs: [gate, publish]
+    if: ${{ !cancelled() && needs.gate.result == 'success' && (needs.publish.result == 'success' || (github.event_name == 'workflow_dispatch' && needs.gate.outputs.release == 'false')) }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # create the release, upload the APK
+    env:
+      VER: ${{ needs.gate.outputs.version }}
+      KS_B64: ${{ secrets.SYMBIOT_KEYSTORE_B64 }}
+      SYMBIOT_KEYSTORE_PASS: ${{ secrets.SYMBIOT_KEYSTORE_PASS }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Signing key
+        id: key
+        run: |
+          if [ -z "$KS_B64" ]; then
+            echo "::warning::No SYMBIOT_KEYSTORE_B64 secret, so no APK for $VER (see the apk job's comment in publish.yml)"
+            echo "ok=false" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          echo "$KS_B64" | base64 -d > "$RUNNER_TEMP/symbiot.jks"
+          echo "SYMBIOT_KEYSTORE=$RUNNER_TEMP/symbiot.jks" >> "$GITHUB_ENV"
+          echo "ok=true" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v4
+        if: steps.key.outputs.ok == 'true'
+      - uses: actions/setup-node@v4
+        if: steps.key.outputs.ok == 'true'
+        with:
+          node-version: "22"
+      - uses: actions/setup-java@v4
+        if: steps.key.outputs.ok == 'true'
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Build the APK (aarch64, nearly every phone)
+        if: steps.key.outputs.ok == 'true'
+        run: |
+          bash android/build.sh aarch64
+          # a fixed name too, so releases/latest/download/symbiot-aarch64.apk is
+          # always the current one
+          cp "android/build/symbiot-$VER-aarch64.apk" android/build/symbiot-aarch64.apk
+      - name: Attach it to the release
+        if: steps.key.outputs.ok == 'true'
+        run: |
+          if ! gh release view "apk-$VER" >/dev/null 2>&1; then
+            gh release create "apk-$VER" --target "$GITHUB_SHA" --title "Symbiot $VER" --latest \
+              --notes "Symbiot $VER: \`npm install -g symbiot\`, or on Android install the APK below (see the README's \"The Android app (APK)\")."
+          fi
+          gh release upload "apk-$VER" "android/build/symbiot-$VER-aarch64.apk" android/build/symbiot-aarch64.apk --clobber

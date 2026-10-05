@@ -125,12 +125,15 @@ npm install -g symbiot
 symbiot app                                 # opens in your phone's browser
 ```
 
-- The app opens in the phone's browser (through `termux-open-url`) and is laid out
+- The app opens in Symbiot's Android app if it's installed (below), else in the
+  phone's browser (through `termux-open-url`), and is laid out
   for a phone screen: Tasks, Agents (with your agent's questions), Approve and
   Settings all work there. Set your agent command in Settings as on a computer
   (Claude Code is detected if it's on Termux's `PATH`). "Add to Home screen" in
   Chrome gives it an icon.
-- Clone repos into Termux's home (`~`), which Symbiot scans by default. To reach
+- Clone repos into Termux's home (`~`), which Symbiot scans by default, along
+  with the home folders (`/root`, `/home/<you>`) of any Linux you run with
+  `proot-distro`. To reach
   the phone's shared storage, run `termux-setup-storage` and add `~/storage/shared`
   (or a folder in it) under Settings → Folders to scan.
 - **Write my week and notify me** sends an Android notification when the
@@ -143,20 +146,42 @@ symbiot app                                 # opens in your phone's browser
 
 ### The Android app (APK)
 
-Experimental, and so far only tried in the Android emulator (Android 14), not on a
-real phone. The app is Symbiot on its own, with no Termux needed: Node, git and `gh`
+Experimental, and so far tried in the Android emulator (Android 14) and on one
+phone (a Galaxy A26, Android 16). The app is Symbiot on its own, with no Termux needed: Node, git and `gh`
 are inside it (the same builds Termux installs), and it shows Symbiot full screen
 with its own icon.
 
-- **Install:** copy `symbiot-<version>-aarch64.apk` to your phone and open it
-  (allow your file manager or browser to install apps). Android may warn that the
+- **Install:** on your phone, download `symbiot-aarch64.apk` from the
+  [latest release](https://github.com/GarthGhostai/symbiot/releases/latest)
+  (or copy `symbiot-<version>-aarch64.apk` over from a computer that built it)
+  and open it (allow your browser or file manager to install apps). Android may warn that the
   app was built for an older version of Android. That's on purpose: it's what lets
   an app run programs it carries, like Node and git, the same reason Termux does.
   It also keeps the app off the Play Store.
 - **First start** unpacks Node, git and gh (a few seconds), then asks for **All
   files access**, so it can find the repos in your phone's shared storage. It scans
   shared storage (for example the folders Termux's `~/storage/shared` points at)
-  instead of a home folder.
+  instead of a home folder. Until it has that access, the Map says so and has an
+  **Allow file access** button. Once you allow it and come back, the Map scans again.
+- **Its own Symbiot only sees shared storage.** Projects in Termux's home folder
+  (`~`) are private to Termux, and no other app can read them. Keep a project in
+  shared storage (in Termux, run `termux-setup-storage` once, then work under
+  `~/storage/shared`), or have the app show the Symbiot running in Termux (next
+  point). The repos on your computer aren't on the phone either, so clone the
+  ones you want.
+- **Your Termux projects: show the Symbiot running in Termux.** A Symbiot started
+  in Termux sees everything in its home folder and runs your agent there, and the
+  app can be its window. **Open Termux** (on the Map when it finds no repos, and
+  in Settings → Projects in Termux) copies a command that installs Node and
+  Symbiot in Termux if they're missing, then runs `symbiot app`. Paste it in
+  Termux (it also updates Symbiot there if it's older than the app's). Termux
+  then opens Symbiot's link in the app, as a `symbiot://` link that only the app
+  takes, and the app shows that Symbiot instead of its own, and stops its own. It
+  keeps doing so until you tap **Use the app's own Symbiot**. If that Symbiot
+  stops, the app says so and offers both buttons. If the page opens in your
+  browser instead, it offers **Open in the app**. Termux from
+  Google Play can't take commands from other apps (it
+  has no `RUN_COMMAND`), so the app can't start Symbiot there by itself.
 - It keeps running with its window closed (a quiet "Symbiot is running"
   notification has **Stop**), so the weekly write-up, agent runs and Approve keep
   going. **Start Symbiot in the background when the phone starts** and **Write my
@@ -171,7 +196,10 @@ To build it yourself: `android/build.sh` (or `android/build.sh x86_64` for the
 emulator) writes `android/build/symbiot-<version>-<arch>.apk`. It needs Node, the
 Android SDK and a JDK 17 (or Docker). The script's header lists the details,
 including the signing key to keep (`~/.android/symbiot.jks`): an update has to be
-signed with the same key.
+signed with the same key. Each release also builds the aarch64 APK and attaches it
+to a GitHub release tagged `apk-<version>`, signed with that same key once it's
+in the repo's `SYMBIOT_KEYSTORE_B64` and `SYMBIOT_KEYSTORE_PASS` secrets (see
+`.github/workflows/publish.yml`).
 
 ## Hand tasks to your coding agent: `symbiot push`
 
@@ -489,8 +517,16 @@ and a CSS selector to find it again. Nothing to bring to the front, nothing to
 drag. Only what you could click right now counts: anything hidden, below the
 fold or covered by something else is left out. **Press** on a region clicks it
 in that hidden browser and maps the page it leads to as a new screen, so map,
-press, map is how an agent finds its way around a site. Press acts on the real
-site, signed in as you, so it asks first every time. The hidden browser is your
+press, map is how an agent finds its way around a site. **Type** on a field types
+your text into it there (replacing what was in it) and, with **Type, then Enter**
+ticked, presses Enter, which is how a search or a one-line form is sent; the
+result is mapped as a new screen too. Each press or type opens the page from its
+address again, so text typed without Enter is gone by the next press. Press and
+Type act on the real site, signed in as you, so they ask first, unless the site
+is under **Trusted sites** in Settings: there, they go ahead without asking, for
+you and for agents. A trusted site covers its subdomains (`google.com` covers
+`mail.google.com`), and only you add sites, in Settings (there's no command for
+an agent to do it). The hidden browser is your
 Chrome, Chromium, Edge or Brave, with a profile of its own
 (`~/.config/symbiot/browser`, separate from your everyday one). For a site behind
 a sign-in, **Sign in** opens it there as a normal window. Sign in once, close the
@@ -502,6 +538,8 @@ From a terminal, or for your coding agent, the same thing prints JSON:
 ```bash
 symbiot screens map gmail              # the screen's id, and each region's id, label, kind, centre and selector
 symbiot screens press <id> Compose --yes   # press a region (by id or label), map where it lands
+symbiot screens type <id> "Search mail" "invoice" --enter --yes   # type into a field, press Enter, map the result
+                                       # (--yes isn't needed on a site under Trusted sites in Settings)
 symbiot screens show <id>              # a saved screen's blueprint
 symbiot screens signin gmail           # sign in once, in Symbiot's browser window
 symbiot screens                        # list them
@@ -524,7 +562,7 @@ on your real screen. It asks you to confirm every time, and can wait 3, 5 or 10
 seconds first so you can bring the right window to the front. It clicks with
 `cliclick` on macOS (`brew install cliclick`), with PowerShell on Windows (nothing to
 install), and on Linux with `xdotool` on X11 or `ydotool` on Wayland (which needs
-access to `/dev/uinput`, and `ydotoold` running for ydotool 1.x). Nothing types yet.
+access to `/dev/uinput`, and `ydotoold` running for ydotool 1.x). Nothing types on your real screen yet (Type works on a mapped web page only).
 
 Capture uses the screenshot tool your system has: `screencapture` on macOS,
 PowerShell on Windows, and on Linux `gnome-screenshot`, `spectacle`,
