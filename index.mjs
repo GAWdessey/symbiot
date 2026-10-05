@@ -33,7 +33,7 @@ import { CONFIG_PATH, loadConfig, saveConfig, loadTasks, saveTasks, sh, hasCmd, 
 import { HANDOFF_PROMPT, QUESTIONS_MAX, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, fillHandoff, runHandoff, runningHandoff, writeTasks, startHeldTasks, detectHandoffs, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, parseQuestions, agentQuestions, answerQuestions, agentsList } from "./agents.mjs";
 import { gitDefaultBranch, loadDeploys, driftRepo } from "./drift.mjs";
 import { loadScreens, screenImage, captureScreen, splitScreen, listMonitors, allowScreenshots, importScreen, setRegions, renameScreen, removeScreen, blueprint, clickRegion } from "./screens.mjs";
-import { mapPage, pressRegion, typeRegion, signIn, isTrusted, trustedSites, trustSite, untrustSite } from "./headless.mjs";
+import { mapPage, pressRegion, typeRegion, signIn, keepBrowserOpen, isTrusted, trustedSites, trustSite, untrustSite } from "./headless.mjs";
 import { weeklyState, setWeekly, runWeekly, startWeekly, autostartState, setAutostart } from "./desktop.mjs";
 
 const HERE = fileURLToPath(new URL(".", import.meta.url));
@@ -185,15 +185,40 @@ function unreleased(path) {
   const was = ver(git(path, ["show", "HEAD:package.json"]).out);
   return { ...best, ...(now && was && now !== was ? { bump: now } : {}) };
 }
-// Approve can bump the version in the PR itself, for a repo that releases with
-// v* tags: offered when the committed version is already released (its v* tag
-// exists) and these changes don't change it. { version, patch, minor } or null.
+// Approve can bump the version in the PR itself: offered when the committed
+// version is already released and these changes don't change it. Released: its
+// v* tag exists, or npm has it (a repo that publishes on merge may have no tag,
+// or one its release couldn't push). { version, patch, minor } or null.
 function bumpOffer(path) {
   const ver = (s) => { try { return String(JSON.parse(s).version || ""); } catch { return ""; } };
   const was = ver(git(path, ["show", "HEAD:package.json"]).out), m = was.match(/^(\d+)\.(\d+)\.(\d+)$/); if (!m) return null;
   let now = ""; try { now = ver(readFileSync(join(path, "package.json"), "utf8")); } catch {}
-  if (now !== was || !git(path, ["rev-parse", "-q", "--verify", "refs/tags/v" + was]).ok) return null;
+  if (now !== was || !(git(path, ["rev-parse", "-q", "--verify", "refs/tags/v" + was]).ok || onNpm(path))) return null;
   return { version: was, patch: `${m[1]}.${m[2]}.${+m[3] + 1}`, minor: `${m[1]}.${+m[2] + 1}.0` };
+}
+// Whether npm has the committed version, as learnNpm last found ("name@version" →
+// { yes, at }). bumpOffer only reads this; learnNpm asks the registry first.
+const NPM_HAS = new Map();
+function npmKey(path) {
+  let p = {}; try { p = JSON.parse(git(path, ["show", "HEAD:package.json"]).out) || {}; } catch {}
+  return typeof p.name === "string" && p.name && !p.private && typeof p.version === "string" && p.version ? p.name + "@" + p.version : "";
+}
+function onNpm(path) { const k = npmKey(path); return !!(k && NPM_HAS.get(k) && NPM_HAS.get(k).yes); }
+// Ask the registry about each repo's committed version. A yes is kept; a no is
+// asked again after 5 minutes (it may have just been published). True when it
+// learned of a version on npm.
+async function learnNpm(paths, registry = REGISTRY) {
+  let learned = false;
+  await Promise.all([...new Set(paths.filter(Boolean))].map(async (path) => {
+    const k = npmKey(path), was = NPM_HAS.get(k); if (!k || (was && (was.yes || Date.now() - was.at < 300000))) return;
+    const at = k.lastIndexOf("@"), name = k.slice(0, at), version = k.slice(at + 1);
+    try {
+      const r = await fetch(`${registry}/${encodeURIComponent(name).replace(/^%40/, "@")}/${encodeURIComponent(version)}`, { signal: AbortSignal.timeout(5000) });
+      const yes = r.ok && String((await r.json().catch(() => ({}))).version || "") === version;
+      NPM_HAS.set(k, { yes, at: Date.now() }); learned = learned || yes;
+    } catch {}
+  }));
+  return learned;
 }
 // Set the version in package.json and in package-lock.json / npm-shrinkwrap.json
 // (top level and its "" package), keeping each file's indent. Gives back a
@@ -1545,8 +1570,11 @@ async function cmdApp() {
       }
     } catch {}
   }
+  // Screens' hidden browser stays open between map, press and type (headless.mjs),
+  // so an agent can type into a field and then press a separate button there.
+  keepBrowserOpen(BROWSER_KEEP);
   const json = (res, obj) => { res.writeHead(200, { "content-type": "application/json" }); res.end(JSON.stringify(obj)); };
-  const screenOut = (s) => (s && s.id ? { ...s, blueprint: blueprint(s), ...(s.page ? { trusted: isTrusted(s.page.url) } : {}) } : s && s.screens ? { ...s, screens: s.screens.map(screenOut) } : s);
+  const screenOut =(s) => (s && s.id ? { ...s, blueprint: blueprint(s), ...(s.page ? { trusted: isTrusted(s.page.url) } : {}) } : s && s.screens ? { ...s, screens: s.screens.map(screenOut) } : s);
   const server = createServer(async (req, res) => {
     const u = new URL(req.url, "http://127.0.0.1");
     if (req.method === "GET" && u.pathname === "/") { res.writeHead(200, { "content-type": "text/html; charset=utf-8" }); res.end(EMBEDDED_UI); return; }
@@ -1571,10 +1599,14 @@ async function cmdApp() {
       if (u.pathname === "/api/tasks/sync" && req.method === "POST") return json(res, syncTasks());
       if (u.pathname === "/api/tasks/chat" && req.method === "POST") { const b = await readBody(req); return json(res, await taskChat(String(b.id || ""), b.question)); }
       if (u.pathname === "/api/tasks/chat/clear" && req.method === "POST") { const b = await readBody(req); return json(res, clearTaskChat(String(b.id || ""))); }
-      if (u.pathname === "/api/pending") return json(res, pendingReview()); // ticked by the agent, awaiting approval
+      if (u.pathname === "/api/pending") { // ticked by the agent, awaiting approval
+        const list = pendingReview(), ask = list.filter((r) => r.path && !r.bumpOffer).map((r) => r.path);
+        if (!ask.length) return json(res, list);
+        return json(res, (await learnNpm(ask)) ? pendingReview() : list); // learned it's on npm: offer the bump
+      }
       if (u.pathname === "/api/pending/diff") { const p = repoPathMap()[u.searchParams.get("repo") || ""]; return json(res, { diff: p ? workingDiff(p) : "" }); }
-      if (u.pathname === "/api/pending/approve" && req.method === "POST") { const b = await readBody(req); return json(res, approveRepo(String(b.repo || ""), { bump: b.bump })); }
-      if (u.pathname === "/api/pending/approve-changes" && req.method === "POST") { const b = await readBody(req); return json(res, approveChanges(String(b.repo || ""), { bump: b.bump })); }
+      if (u.pathname === "/api/pending/approve" && req.method === "POST") { const b = await readBody(req); if (b.bump) await learnNpm([repoPathMap()[String(b.repo || "")]]); return json(res, approveRepo(String(b.repo || ""), { bump: b.bump })); }
+      if (u.pathname === "/api/pending/approve-changes" && req.method === "POST") { const b = await readBody(req); if (b.bump) await learnNpm([repoPathMap()[String(b.repo || "")]]); return json(res, approveChanges(String(b.repo || ""), { bump: b.bump })); }
       if (u.pathname === "/api/pending/sendback" && req.method === "POST") { const b = await readBody(req); return json(res, sendBack(String(b.id || ""))); }
       if (u.pathname === "/api/automerge" && req.method === "POST") { const b = await readBody(req); return json(res, setAutoMerge(String(b.repo || ""), !!b.on)); }
       if (u.pathname === "/api/tasks/push" && req.method === "POST") { const b = await readBody(req); return json(res, pushTasks(b)); }
@@ -1626,7 +1658,7 @@ async function cmdApp() {
       if (u.pathname === "/api/screens/trusted") return json(res, { sites: trustedSites() });
       if (u.pathname === "/api/screens/trusted/add" && req.method === "POST") { const b = await readBody(req); return json(res, trustSite(b.site)); }
       if (u.pathname === "/api/screens/trusted/remove" && req.method === "POST") { const b = await readBody(req); return json(res, untrustSite(b.site)); }
-      if (u.pathname === "/api/screens/signin" && req.method === "POST") { const b = await readBody(req); return json(res, signIn(b.site)); }
+      if (u.pathname === "/api/screens/signin" && req.method === "POST") { const b = await readBody(req); return json(res, await signIn(b.site)); }
       // What symbiot-desktop added (desktop.mjs): the weekly write-up, start at login.
       if (u.pathname === "/api/desktop") return json(res, { weekly: weeklyState(), autostart: autostartState() });
       if (u.pathname === "/api/desktop/weekly" && req.method === "POST") { const b = await readBody(req); return json(res, setWeekly(b)); }
@@ -1699,7 +1731,23 @@ function cmdMail() {
 function screenJson(s) {
   if (!s || s.error) return s;
   const bp = blueprint(s);
-  return { id: s.id, ...(s.note ? { note: s.note } : {}), ...(s.pressed ? { pressed: s.pressed, found: s.found } : {}), ...(s.typed ? { typed: s.typed, entered: s.entered, found: s.found } : {}), ...(s.page ? { trusted: isTrusted(s.page.url) } : {}), ...bp, regions: bp.regions.map((r, i) => ({ id: s.regions[i].id, ...r })) };
+  return { id: s.id, ...(s.note ? { note: s.note } : {}), ...(s.pressed ? { pressed: s.pressed, found: s.found } : {}), ...(s.typed ? { typed: s.typed, entered: s.entered, found: s.found } : {}), ...(s.kept ? { kept: true } : {}), ...(s.page ? { trusted: isTrusted(s.page.url) } : {}), ...bp, regions: bp.regions.map((r, i) => ({ id: s.regions[i].id, ...r })) };
+}
+// How long the app keeps Screens' hidden browser open after an action.
+const BROWSER_KEEP = 5 * 60 * 1000;
+// map, press, type and signin go through the app when it's running, whose hidden
+// browser stays open between them: type into a field, then press a separate
+// button. null when the app isn't running (then the command runs here, and its
+// browser closes after it). Once the app has the request, its answer is the
+// answer, even a failed one: running it here as well could press twice.
+async function viaApp(path, body) {
+  const cfg = loadConfig(); if (!cfg.appToken) return null;
+  const base = `http://127.0.0.1:${Number(process.env.SYMBIOT_PORT || cfg.appPort) || 7391}`, headers = { "x-symbiot-token": cfg.appToken };
+  try { const p = await fetch(base + "/api/ping", { headers, signal: AbortSignal.timeout(1500) }); if (!p.ok || !(await p.json()).version) return null; } catch { return null; }
+  try {
+    const r = await fetch(base + path, { method: "POST", headers: { ...headers, "content-type": "application/json" }, body: JSON.stringify(body) });
+    return r.ok ? await r.json() : { error: `Symbiot's app answered ${r.status}.` };
+  } catch (e) { return { error: "Lost Symbiot's app mid-way: " + ((e && e.message) || e) }; }
 }
 async function cmdScreens() {
   const [sub = "list", a1, a2, a3] = argv.slice(1).filter((x, i, all) => !x.startsWith("--") && all[i - 1] !== "--name");
@@ -1711,15 +1759,16 @@ async function cmdScreens() {
     for (const s of list) console.log(`${s.id}  ${s.name}  ${c.d(`${(s.regions || []).length} regions · ${s.page ? s.page.url : s.w + "×" + s.h + " " + s.via}`)}`);
     return;
   }
-  if (sub === "map") return out(screenJson(await mapPage(a1, flag("name", ""))));
+  if (sub === "map") { const body = { site: a1, name: flag("name", "") }; return out(screenJson((await viaApp("/api/screens/map", body)) || await mapPage(body.site, body.name))); }
   if (sub === "show") { const s = find(a1); return out(s ? screenJson(s) : { error: "No screen " + (a1 || "") + ". symbiot screens lists them." }); }
-  if (sub === "signin") { const r = signIn(a1); return out(r.ok ? { ...r, next: "Sign in in the window that opened, close it, then map again." } : r); }
+  if (sub === "signin") { const r = (await viaApp("/api/screens/signin", { site: a1 })) || await signIn(a1); return out(r.ok ? { ...r, next: "Sign in in the window that opened, close it, then map again." } : r); }
   if (sub === "press" || sub === "type") {
     const s = find(a1); if (!s) return out({ error: "No screen " + (a1 || "") + ". symbiot screens lists them." });
     const want = String(a2 || "").toLowerCase(), rs = s.regions || [];
     const r = rs.find((x) => x.id === a2) || rs.find((x) => x.label.toLowerCase() === want) || (rs.filter((x) => x.label.toLowerCase().includes(want)).length === 1 && rs.find((x) => x.label.toLowerCase().includes(want)));
     if (!want || !r) return out({ error: `No region "${a2 || ""}" on that screen (give its id, or a label that matches one region).` });
-    const done = sub === "press" ? await pressRegion(s.id, r.id, { confirmed: has("yes") }) : await typeRegion(s.id, r.id, a3, { enter: has("enter"), confirmed: has("yes") });
+    const body = { id: s.id, region: r.id, confirmed: has("yes"), ...(sub === "type" ? { text: a3, enter: has("enter") } : {}) };
+    const done = (await viaApp("/api/screens/" + sub, body)) || (sub === "press" ? await pressRegion(s.id, r.id, { confirmed: body.confirmed }) : await typeRegion(s.id, r.id, a3, { enter: body.enter, confirmed: body.confirmed }));
     // not a trusted site: say how to go ahead (only you can trust a site, in the app's Settings)
     if (done && done.confirm) return out({ error: `${done.error} Add --yes to go ahead, or list ${done.host} under Trusted sites in Symbiot's Settings.` });
     return out(screenJson(done));
@@ -1733,7 +1782,10 @@ async function cmdScreens() {
   symbiot screens type <id> <field> "text" [--enter] [--yes]
                                                type into a field (Enter sends it), map the result
   symbiot screens signin <site>                sign in once, in Symbiot's browser window
-  --yes is needed unless the page's site is under Trusted sites in the app's Settings.`);
+  --yes is needed unless the page's site is under Trusted sites in the app's Settings.
+  While the app runs, these use its hidden browser, which stays open a few minutes:
+  press on the screen the last command printed carries on from that page as it is
+  (type without --enter, then press the form's button).`);
   if (sub !== "help") process.exitCode = 1;
 }
 
@@ -1804,4 +1856,4 @@ const isMain = (() => {
 })();
 if (isMain) main();
 
-export { authorship, repoState, readmeInfo, repoShape, houseRules, findAllRepos, buildMap, reportFooter, detectHardware, recommendModels, computeDrift, driftRepo, gitDefaultBranch, buildTasksMd, taskType, EMBEDDED_UI, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, fillHandoff, handoffCmd, setHandoffCmd, ORCA_CLAUDE_CMD, CLAUDE_CMD, HANDOFF_PROMPT, shipChanges, shipWithBump, bumpOffer, setVersion, syncTasks, pendingReview, unreleased, addTask, approveRepo, approveChanges, sendBack, pushTasks, semverGt, updateCmd, parseQuestions, agentQuestions };
+export { authorship, repoState, readmeInfo, repoShape, houseRules, findAllRepos, buildMap, reportFooter, detectHardware, recommendModels, computeDrift, driftRepo, gitDefaultBranch, buildTasksMd, taskType, EMBEDDED_UI, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, fillHandoff, handoffCmd, setHandoffCmd, ORCA_CLAUDE_CMD, CLAUDE_CMD, HANDOFF_PROMPT, shipChanges, shipWithBump, bumpOffer, learnNpm, setVersion, syncTasks, pendingReview, unreleased, addTask, approveRepo, approveChanges, sendBack, pushTasks, semverGt, updateCmd, parseQuestions, agentQuestions };

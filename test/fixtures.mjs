@@ -5,11 +5,12 @@
 //   node test/fixtures.mjs
 //
 import { execSync, spawnSync } from "node:child_process";
+import { createServer } from "node:http";
 import { mkdtempSync, writeFileSync, mkdirSync, rmSync, readFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { authorship, repoState, readmeInfo, houseRules, findAllRepos, driftRepo, buildTasksMd, taskType, EMBEDDED_UI, orcaHandoffCmd, migrateOrcaCmd, fillHandoff, ORCA_CLAUDE_CMD, CLAUDE_CMD, HANDOFF_PROMPT, shipChanges, shipWithBump, bumpOffer, semverGt, updateCmd, parseQuestions, unreleased } from "../index.mjs";
+import { authorship, repoState, readmeInfo, houseRules, findAllRepos, driftRepo, buildTasksMd, taskType, EMBEDDED_UI, orcaHandoffCmd, migrateOrcaCmd, fillHandoff, ORCA_CLAUDE_CMD, CLAUDE_CMD, HANDOFF_PROMPT, shipChanges, shipWithBump, bumpOffer, learnNpm, semverGt, updateCmd, parseQuestions, unreleased } from "../index.mjs";
 import { mailActivity } from "../mail.mjs";
 import { pngSize, pngDecode, splitPng, captureCmds, clickCmds, portalAppId, monitorCmds, parseCosmicRandr, parseWlrRandr, parseKscreen, parseXrandr, parseLines, tidyMonitors, monitorAreas } from "../screens.mjs";
 import { siteUrl, browserArgs, isTrusted } from "../headless.mjs";
@@ -414,6 +415,14 @@ try {
   ok("bump: the commit (and PR) say which tag to push after merging", /Bumps the version to 2\.4\.0\. After this merges, tag v2\.4\.0 on main/.test(bMsg), bMsg);
   execSync("git checkout -q main && git merge -q --ff-only " + bsh.branch + " && git tag v2.4.0 && git checkout -q --detach", bEnv); writeFileSync(join(bmp, "c.txt"), "more\n");
   const bfl = shipWithBump(bmp, ["Fails"], { push: false, bump: "patch" });
+  const nbm = build("release-npm", `git init -q -b main && git config user.email t@x.co && git config user.name T && echo '{"name":"@me/x","version":"1.2.3"}' > package.json && git add . && git commit -qm init`);
+  const npmReg = createServer((q, r) => { const yes = q.url === "/@me%2Fx/1.2.3"; r.writeHead(yes ? 200 : 404, { "content-type": "application/json" }); r.end(yes ? '{"version":"1.2.3"}' : "{}"); }).listen(0, "127.0.0.1");
+  await new Promise((r) => npmReg.on("listening", r));
+  const npmAt = `http://127.0.0.1:${npmReg.address().port}`, nb0 = bumpOffer(nbm), nl1 = await learnNpm([nbm], npmAt), nb1 = bumpOffer(nbm);
+  execSync(`echo '{"name":"@me/x","version":"1.2.4"}' > package.json && git commit -qam next`, { cwd: nbm, env: gitEnv });
+  const nl2 = await learnNpm([nbm], npmAt), nb2 = bumpOffer(nbm); npmReg.close();
+  ok("no v* tag: offered once npm has the committed version (a repo that publishes on merge)", nb0 === null && nl1 === true && nb1 && nb1.version === "1.2.3" && nb1.minor === "1.3.0", [nb0, nl1, nb1]);
+  ok("no v* tag: not offered for a version npm doesn't have", nl2 === false && nb2 === null, [nl2, nb2]);
   ok("a ship that fails puts the version back", bfl.error && /Detached HEAD/.test(bfl.error) && /"2\.4\.0"/.test(readFileSync(join(bmp, "package.json"), "utf8")) && /"2\.4\.0"/.test(readFileSync(join(bmp, "package-lock.json"), "utf8")), [bfl, readFileSync(join(bmp, "package.json"), "utf8")]);
 
   console.log("QUESTIONS — any agent's .symbiot/QUESTIONS.md parses into questions, options and ideas");
@@ -615,10 +624,12 @@ try {
       '<div role="button" aria-label="Star" style="position:absolute;left:10px;top:130px;width:20px;height:20px"><span role="button">inner</span></div>' +
       '<button style="display:none">Hidden</button><button style="position:absolute;left:10px;top:2000px">Below the fold</button>' +
       '<button style="position:absolute;left:300px;top:50px">Covered</button><div style="position:absolute;left:290px;top:40px;width:200px;height:60px;background:red"></div></body>';
-    const srv = createServer((q, r) => { r.writeHead(200, { "content-type": "text/html" }); r.end(q.url === "/two" ? "<title>Page two</title><button>Back</button>" : q.url.startsWith("/search?") ? "<title>Results for " + new URL(q.url, "http://x").searchParams.get("q") + "</title><button>Back</button>" : page); }).listen(0, "127.0.0.1");
+    const form = '<title>Form</title><input id="q" placeholder="Query"><button id="go" onclick="location=\\'/search?q=\\'+encodeURIComponent(document.getElementById(\\'q\\').value)">Go</button>';
+    const srv = createServer((q, r) => { r.writeHead(200, { "content-type": "text/html" }); r.end(q.url === "/two" ? "<title>Page two</title><button>Back</button>" : q.url === "/form" ? form : q.url.startsWith("/search?") ? "<title>Results for " + new URL(q.url, "http://x").searchParams.get("q") + "</title><button>Back</button>" : page); }).listen(0, "127.0.0.1");
     await new Promise((r) => srv.on("listening", r));
     const out = {};
     out.map = await h.mapPage("127.0.0.1:" + srv.address().port, "");
+    out.closedAfter = !h.browserOpen();
     out.bp = out.map.id && s.blueprint(out.map);
     out.mode = out.map.id && (statSync(s.screenImage(out.map.id)).mode & 0o777);
     const link = (out.map.regions || []).find((r) => r.kind === "link");
@@ -631,6 +642,17 @@ try {
     out.type = field ? await h.typeRegion(out.map.id, field.id, "hello world", { enter: true }) : null;
     out.untrust = h.untrustSite("127.0.0.1");
     out.click = out.map.id && s.clickRegion(out.map.id, out.map.regions[0].id);
+    // Kept open, as the app does: type without Enter, then press the form's own button.
+    h.keepBrowserOpen(60000);
+    out.fmap = await h.mapPage("127.0.0.1:" + srv.address().port + "/form", "");
+    const ff = (out.fmap.regions || []).find((r) => r.kind === "field");
+    out.ftype = ff ? await h.typeRegion(out.fmap.id, ff.id, "kept", { confirmed: true }) : null;
+    out.fopen = h.browserOpen();
+    const go = ((out.ftype || {}).regions || []).find((r) => r.label === "Go");
+    out.fpress = go ? await h.pressRegion(out.ftype.id, go.id, { confirmed: true }) : null;
+    const go0 = (out.fmap.regions || []).find((r) => r.label === "Go");
+    out.fold = go0 ? await h.pressRegion(out.fmap.id, go0.id, { confirmed: true }) : null;
+    await h.closeBrowser(); out.fclosed = !h.browserOpen();
     srv.close();
     console.log(JSON.stringify(out));`], { encoding: "utf8", timeout: 150000, env: { ...process.env, HOME: pghome, USERPROFILE: pghome } });
   let ho = {}; try { ho = JSON.parse(hx.stdout); } catch {}
@@ -650,6 +672,10 @@ try {
     ok("typeRegion: refused without your confirmation on a site you don't trust", ho.typeUnasked && ho.typeUnasked.confirm === true && !ho.typeUnasked.id, ho.typeUnasked);
     ok("trustSite: keeps the host, so the site's pages are trusted", ho.trust && ho.trust.host === "127.0.0.1" && ho.trust.sites.join() === "127.0.0.1" && ho.untrust && ho.untrust.sites.length === 0, [ho.trust, ho.untrust]);
     ok("typeRegion: on a trusted site, replaces what's in the field, presses Enter and maps the result, unasked", ho.type && ho.type.found && ho.type.entered && ho.type.typed === "Search mail" && ho.type.name === "Results for hello world", ho.type);
+    ok("the hidden browser closes after each action unless it's kept open", ho.closedAfter === true, ho.closedAfter);
+    ok("kept open: typed without Enter, it's still there for a separate button on the screen that mapped", ho.ftype && ho.ftype.found && !ho.ftype.entered && ho.fopen === true && ho.fpress && ho.fpress.kept === true && ho.fpress.name === "Results for kept", [ho.ftype && ho.ftype.error, ho.fopen, ho.fpress && (ho.fpress.error || ho.fpress.name)]);
+    ok("kept open: a press on an older screen opens its page again (what was typed there is gone)", ho.fold && !ho.fold.kept && ho.fold.name === "Results for", ho.fold && (ho.fold.error || ho.fold.name));
+    ok("closeBrowser closes it", ho.fclosed === true, ho.fclosed);
     ok("clickRegion: a mapped page is never clicked on your real screen", /use Press instead/.test((ho.click || {}).error || ""), ho.click);
   }
 

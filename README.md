@@ -520,8 +520,12 @@ in that hidden browser and maps the page it leads to as a new screen, so map,
 press, map is how an agent finds its way around a site. **Type** on a field types
 your text into it there (replacing what was in it) and, with **Type, then Enter**
 ticked, presses Enter, which is how a search or a one-line form is sent; the
-result is mapped as a new screen too. Each press or type opens the page from its
-address again, so text typed without Enter is gone by the next press. Press and
+result is mapped as a new screen too. The hidden browser stays open for five
+minutes after each map, press or type, so a press or type on the screen it just
+mapped carries on from that page as it is: type into a field without Enter, then
+press the form's own button (**Send**, **Next**) on the new screen. On an older
+screen, or once the browser has closed, it opens the page from its address again,
+and anything typed there is gone. Press and
 Type act on the real site, signed in as you, so they ask first, unless the site
 is under **Trusted sites** in Settings: there, they go ahead without asking, for
 you and for agents. A trusted site covers its subdomains (`google.com` covers
@@ -540,10 +544,16 @@ symbiot screens map gmail              # the screen's id, and each region's id, 
 symbiot screens press <id> Compose --yes   # press a region (by id or label), map where it lands
 symbiot screens type <id> "Search mail" "invoice" --enter --yes   # type into a field, press Enter, map the result
                                        # (--yes isn't needed on a site under Trusted sites in Settings)
+symbiot screens type <id> To "sam@example.com" --yes   # without --enter: the text stays in the field...
+symbiot screens press <new id> Send --yes  # ...for a press on the screen that just printed
 symbiot screens show <id>              # a saved screen's blueprint
 symbiot screens signin gmail           # sign in once, in Symbiot's browser window
 symbiot screens                        # list them
 ```
+
+While the app is running, these commands use its hidden browser, so it stays
+open between them as it does in the app. Without the app, each command opens the
+browser and closes it when done.
 
 **More than one display?** Symbiot reads how your displays are laid out
 (`cosmic-randr`, `wlr-randr`, `kscreen-doctor` or `xrandr` on Linux, PowerShell on

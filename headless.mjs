@@ -4,7 +4,9 @@
 // nothing to drag. Each region keeps how to find it again (a CSS selector), so it
 // can be pressed (or a field typed into) in that same hidden browser, which maps
 // the page it lands on: map → press → map is how an agent finds its way around a
-// site. On a site you trust (Settings), that goes ahead without asking.
+// site. On a site you trust (Settings), that goes ahead without asking. In the
+// app the browser stays open for a few minutes after each action, so the next
+// one carries on from the page as it is (type into a field, then press Send).
 //
 // It drives Chrome / Chromium / Edge / Brave over the DevTools protocol on a pipe
 // (--remote-debugging-pipe: commands in on fd 3, replies out on fd 4, each JSON
@@ -20,7 +22,8 @@ import { loadScreens, addPageScreen, center } from "./screens.mjs";
 
 const PROFILE = join(CONFIG_DIR, "browser");
 const VIEW = { w: 1280, h: 800 }; // the page's size: a laptop-sized window
-const TIMEOUT = 90000;            // the most one map or press may take, browser start to close
+const TIMEOUT = 90000;            // the most one map, press or type may take
+const START = 30000;              // the most the browser may take to start
 
 // What the user typed, as a web address: a URL, a host ("github.com/pulls"), or a
 // site's name ("gmail" -> https://gmail.com). "open gmail" works too. "" if none.
@@ -80,9 +83,18 @@ function connect(proc) {
 let queue = Promise.resolve();
 const oneAtATime = (fn) => { const run = queue.then(fn, fn); queue = run.catch(() => {}); return run; };
 
-// Start the hidden browser, open a tab and give fn a page: { send, until, idle }.
-// The browser is closed after, whatever happens.
-async function withPage(fn) {
+// The hidden browser, while it's open: { proc, c, page, shown, timer }. shown is
+// the id of the screen last mapped from its page, which is what the page shows
+// now. keepBrowserOpen(ms) keeps it open that long after each action (the app
+// does); with 0, a one-off `symbiot screens` command, it closes after each one.
+let live = null, KEEP = 0;
+function keepBrowserOpen(ms) { KEEP = Math.max(0, Number(ms) || 0); if (!KEEP && live && !live.busy) closeBrowser(); }
+const browserOpen = () => !!(live && !live.c.closed());
+// Don't leave it running when Symbiot exits (a restart, Ctrl+C).
+process.once("exit", () => { if (live && live.proc.exitCode === null) try { live.proc.kill("SIGKILL"); } catch {} });
+
+// Start the hidden browser and open a tab: { proc, c, page: { send, until, idle } }.
+async function launch() {
   const chrome = chromeBinary();
   if (!chrome) throw new Error(process.platform === "android" || process.env.SYMBIOT_ANDROID_APP === "1"
     ? "Mapping a page needs a desktop browser (Chrome, Chromium, Edge or Brave), which a phone doesn't have. Map pages from Symbiot on your computer."
@@ -90,16 +102,16 @@ async function withPage(fn) {
   mkdirSync(PROFILE, { recursive: true, mode: 0o700 });
   const proc = spawn(chrome, browserArgs(true), { stdio: ["ignore", "ignore", "pipe", "pipe", "pipe"] });
   let err = ""; proc.stderr.on("data", (d) => { err = (err + d).slice(-2000); });
-  const started = new Promise((resolve, reject) => { proc.on("error", reject); });
-  const c = connect(proc);
-  const kill = setTimeout(() => { try { proc.kill("SIGKILL"); } catch {} }, TIMEOUT);
+  const failed = new Promise((resolve, reject) => { proc.on("error", reject); }); failed.catch(() => {});
+  const c = connect(proc), b = { proc, c, shown: "", timer: null };
+  const kill = setTimeout(() => { try { proc.kill("SIGKILL"); } catch {} }, START);
   try {
     const run = (async () => {
       let targetId;
       try { ({ targetId } = await c.send("Target.createTarget", { url: "about:blank" })); }
       catch (e) {
         // A second Chrome on a profile that's open hands over to the first and exits.
-        if (existsSync(join(PROFILE, "SingletonLock")) || /existing browser session/i.test(err)) throw new Error("Symbiot's browser is open in a window (Sign in): close that window, then try again.");
+        if (existsSync(join(PROFILE, "SingletonLock")) || /existing browser session|ProcessSingleton/i.test(err)) throw new Error("Symbiot's browser is already open, in a window (Sign in) or in another Symbiot: close that, then try again.");
         throw new Error("The browser didn't start: " + ((err.trim().split("\n").pop()) || e.message));
       }
       const { sessionId } = await c.send("Target.attachToTarget", { targetId, flatten: true });
@@ -123,13 +135,40 @@ async function withPage(fn) {
       // Sites serve "HeadlessChrome" something else (or a block page): look like the browser it is.
       const { userAgent } = await c.send("Browser.getVersion");
       if (userAgent) await send("Network.setUserAgentOverride", { userAgent: userAgent.replace(/HeadlessChrome/g, "Chrome") });
-      return fn({ send, until, idle });
+      b.page = { send, until, idle };
+      return b;
     })();
-    return await Promise.race([run, started]);
-  } finally {
-    clearTimeout(kill);
-    if (!c.closed()) { try { await Promise.race([c.send("Browser.close"), sleep(3000)]); } catch {} }
-    if (proc.exitCode === null) try { proc.kill("SIGKILL"); } catch {}
+    return await Promise.race([run, failed]);
+  } catch (e) { await shut(b); throw e; }
+  finally { clearTimeout(kill); }
+}
+async function shut(b) {
+  if (!b) return;
+  clearTimeout(b.timer); if (live === b) live = null;
+  if (!b.c.closed()) { try { await Promise.race([b.c.send("Browser.close"), sleep(3000)]); } catch {} }
+  if (b.proc.exitCode === null) try { b.proc.kill("SIGKILL"); } catch {}
+}
+// Close the hidden browser now (the Sign in window needs its profile).
+function closeBrowser() { return shut(live); }
+
+// Give fn the hidden browser's page (the open one, else a new one), and what it
+// shows (b.shown). After: kept open for KEEP ms, or closed; closed on an error,
+// so the next action starts afresh.
+async function withPage(fn) {
+  if (live && live.c.closed()) await shut(live);
+  let b = live;
+  if (b) clearTimeout(b.timer); else b = live = await launch();
+  b.busy = true;
+  const kill = setTimeout(() => { try { b.proc.kill("SIGKILL"); } catch {} }, TIMEOUT);
+  try {
+    const r = await fn(b.page, b);
+    b.shown = r && r.id && !r.error ? r.id : "";
+    return r;
+  } catch (e) { await shut(b); throw e; }
+  finally {
+    clearTimeout(kill); b.busy = false;
+    if (live === b && KEEP && !b.c.closed()) b.timer = setTimeout(() => oneAtATime(() => live === b && !b.busy ? shut(b) : null), KEEP);
+    else await shut(b);
   }
 }
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -247,10 +286,12 @@ function untrustSite(host) {
   return saveConfig(cfg) ? { ok: true, sites: cfg.trustedSites || [] } : { error: "Couldn't write the config file." };
 }
 
-// Act on a mapped region: open its page again, find it (by its selector, else at
-// the same spot) and give act(page, at, region) where it is now; then map where that
-// leads, as a new screen. It acts on the real site, signed in as you, so it needs
-// the caller's confirmation unless the page's site is trusted.
+// Act on a mapped region: find it (by its selector, else at the same spot) and give
+// act(page, at, region) where it is now; then map where that leads, as a new screen.
+// On the screen the open browser last mapped, that's the page as it is now (what
+// was typed is still there); on any other, its page is opened from its address
+// again. It acts on the real site, signed in as you, so it needs the caller's
+// confirmation unless the page's site is trusted.
 function actOnRegion(id, regionId, verb, confirmed, check, act) {
   const s = loadScreens().find((x) => x.id === id); if (!s) return Promise.resolve({ error: "not found" });
   if (!s.page || !s.page.url) return Promise.resolve({ error: `${verb} works on a mapped page. Use Click here for a screenshot of your screen.` });
@@ -258,8 +299,9 @@ function actOnRegion(id, regionId, verb, confirmed, check, act) {
   const bad = check(r); if (bad) return Promise.resolve({ error: bad });
   const host = hostOf(s.page.url);
   if (!confirmed && !isTrusted(s.page.url)) return Promise.resolve({ error: `${verb === "Type" ? "Typing into" : "Pressing"} "${r.label}" acts on the real site, signed in as you, and ${host} isn't one of your trusted sites.`, confirm: true, host });
-  return oneAtATime(() => withPage(async (page) => {
-    await open(page, s.page.url);
+  return oneAtATime(() => withPage(async (page, b) => {
+    const here = b.shown === s.id && (await page.send("Runtime.evaluate", { expression: "location.href", returnByValue: true })).result?.value === s.page.url;
+    if (!here) await open(page, s.page.url);
     // A new tab would leave this one where it was, so a link opens here instead.
     const find = `(() => { let e = null; try { e = ${JSON.stringify(r.selector || "")} && document.querySelector(${JSON.stringify(r.selector || "")}); } catch (x) {}
       if (!e) return null; const a = e.closest('a[target]'); if (a) a.removeAttribute('target');
@@ -272,7 +314,7 @@ function actOnRegion(id, regionId, verb, confirmed, check, act) {
     if (await navigating) await page.until("Page.loadEventFired", 30000);
     await page.idle();
     const next = await snapshot(page, ""); // named after the page it landed on
-    return next.error ? next : { ...next, ...extra, found };
+    return next.error ? next : { ...next, ...extra, found, kept: here };
   })).catch((e) => ({ error: String((e && e.message) || e) }));
 }
 const clickAt = async (page, at) => { for (const type of ["mouseMoved", "mousePressed", "mouseReleased"]) await page.send("Input.dispatchMouseEvent", { type, x: at.x, y: at.y, button: "left", clickCount: type === "mouseMoved" ? 0 : 1 }); };
@@ -283,9 +325,9 @@ function pressRegion(id, regionId, { confirmed = false } = {}) {
 }
 
 // Type: click into a field, replace what's in it with text, and press Enter if
-// asked (which is how a search or a one-line form is sent). Each action starts
-// from the page's address again, so what's typed is gone by the next press:
-// send it with Enter in the same go.
+// asked (which is how a search or a one-line form is sent). Without Enter, press
+// the form's button next, on the screen this maps, while the browser is still
+// open (the app's): what's typed is still there. Otherwise it's gone by then.
 const MAX_TEXT = 2000;
 function typeRegion(id, regionId, text, { enter = false, confirmed = false } = {}) {
   text = String(text == null ? "" : text);
@@ -305,14 +347,16 @@ function typeRegion(id, regionId, text, { enter = false, confirmed = false } = {
 }
 
 // Open the site in Symbiot's browser profile as a normal window, to sign in (or
-// accept cookies) once. Close it before mapping: the profile is shared.
-function signIn(input) {
+// accept cookies) once. Close it before mapping: the profile is shared. The hidden
+// browser is closed first, or the window would open in it, out of sight.
+async function signIn(input) {
   const url = siteUrl(input), chrome = chromeBinary();
   if (!url) return { error: "Give the site to sign in to: a name (gmail), a host or a web address." };
   if (!chrome) return { error: "Signing in needs Chrome, Chromium, Edge or Brave, and none was found." };
+  await oneAtATime(closeBrowser);
   try { mkdirSync(PROFILE, { recursive: true, mode: 0o700 }); spawn(chrome, browserArgs(false, url), { detached: true, stdio: "ignore" }).unref(); }
   catch (e) { return { error: String((e && e.message) || e) }; }
   return { ok: true, url };
 }
 
-export { siteUrl, browserArgs, mapPage, pressRegion, typeRegion, signIn, trustedSites, isTrusted, trustSite, untrustSite, PROFILE };
+export { siteUrl, browserArgs, mapPage, pressRegion, typeRegion, signIn, keepBrowserOpen, closeBrowser, browserOpen, trustedSites, isTrusted, trustSite, untrustSite, PROFILE };
