@@ -280,6 +280,15 @@ try {
     ok(`${method} ${path} -> ${status}`, status !== 404 && status !== -1, status);
   }
 
+  console.log("MAIL — a website typed into the mail box points to Trusted sites, and trusts nothing by itself");
+  const mailAdd = (add) => fetch(base + "/api/mail/set", { method: "POST", headers: H, body: JSON.stringify({ add }) }).then((r) => r.json(), () => ({}));
+  const [mDomain, mUrl, mFile] = [await mailAdd("google.com"), await mailAdd("https://mail.google.com/mail/u/0/"), await mailAdd(join(HOME, "nope", "Sent.mbox"))];
+  const trustedNow = await (await fetch(base + "/api/screens/trusted", { headers: H })).json();
+  ok("google.com in the mail box -> says it's a website and to use Trusted sites", mDomain.site === "google.com" && /Trusted sites/.test(mDomain.error || "") && !(mDomain.sources || []).length, mDomain);
+  ok("a Gmail address -> its host, mail.google.com", mUrl.site === "mail.google.com", mUrl);
+  ok("a missing .mbox -> still \"not found\", not a website", !mFile.site && /^not found/.test(mFile.error || ""), mFile);
+  ok("none of it trusts a site", (trustedNow.sites || []).length === 0, trustedNow);
+
   console.log("METHODS — POST-only endpoints refuse GET; /api/* needs the token");
   // a GET to a POST route must not reach its handler (a GET can't change state,
   // and a UI calling with the wrong method fails loudly instead of half-working)

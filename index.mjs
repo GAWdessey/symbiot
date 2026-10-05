@@ -168,18 +168,41 @@ function workingDiff(path, cap = 400000) {
   }
   return d.length > cap ? d.slice(0, cap) + "\n… (diff truncated)" : d;
 }
-// Merged work that isn't released yet: how many commits the default branch (or
-// origin's copy, where approved PRs merge) is past its last v* tag, or null when
-// it isn't, or the repo doesn't release with v* tags. bump: the version these
-// uncommitted changes set in package.json, if they change it.
+// A repo that publishes on merge: a GitHub workflow runs `npm publish` on a push
+// to a branch, not only on a tag. Its release is the version npm has; a v* tag,
+// if any, is a best-effort record that can lag or be missing.
+function publishesOnMerge(path) {
+  const dir = join(path, ".github", "workflows"); let files = []; try { files = readdirSync(dir).filter((f) => /\.ya?ml$/.test(f)); } catch { return false; }
+  return files.some((f) => { let t = ""; try { t = readFileSync(join(dir, f), "utf8"); } catch {} return /\bnpm publish\b/.test(t) && /^\s*push:\s*\n\s+branches:/m.test(t); });
+}
+// Merged work that isn't released yet, or null when there's none, or the repo
+// has no releases to measure from. bump: the version these uncommitted changes
+// set in package.json, if they change it.
+// - Released by v* tag: how many commits the default branch (or origin's copy,
+//   where approved PRs merge) is past its last v* tag.
+// - Publishes on merge (npm: true): how many commits it's past the one that set
+//   the version npm has (since), once learnNpm knows. A branch whose version
+//   isn't on npm yet is merged and due to publish: { pending: version }.
 function unreleased(path) {
-  const base = gitDefaultBranch(path); let best = null;
+  const base = gitDefaultBranch(path), pom = publishesOnMerge(path); let best = null;
   for (const ref of ["refs/heads/" + base, "refs/remotes/origin/" + base]) {
-    const tag = git(path, ["describe", "--tags", "--abbrev=0", "--match", "v*", ref]).out; if (!tag) continue;
-    const ahead = +git(path, ["rev-list", "--count", tag + ".." + ref]).out || 0;
-    if (!best || ahead > best.ahead) best = { base, tag, ahead };
+    if (!git(path, ["rev-parse", "-q", "--verify", ref]).ok) continue;
+    let r = null;
+    if (pom) {
+      const k = npmKey(path, ref), v = k.slice(k.lastIndexOf("@") + 1), known = k && NPM_HAS.get(k); if (!known) continue;
+      if (!known.yes) r = { base, npm: true, pending: v, ahead: 0 };
+      else {
+        const set = git(path, ["log", "-1", "--format=%H", "-G", `"version"[[:space:]]*:[[:space:]]*"${v.replace(/\./g, "\\.")}"`, ref, "--", "package.json"]).out;
+        r = { base, npm: true, since: v, ahead: set ? +git(path, ["rev-list", "--count", set + ".." + ref]).out || 0 : 0 };
+      }
+    } else {
+      const tag = git(path, ["describe", "--tags", "--abbrev=0", "--match", "v*", ref]).out; if (!tag) continue;
+      r = { base, tag, ahead: +git(path, ["rev-list", "--count", tag + ".." + ref]).out || 0 };
+    }
+    // the copy furthest ahead; a merged version still to publish says more than a count
+    if (!best || (r.pending && !best.pending) || (!best.pending && r.ahead > best.ahead)) best = r;
   }
-  if (!best || !best.ahead) return null;
+  if (!best || (!best.ahead && !best.pending)) return null;
   const ver = (s) => { try { return String(JSON.parse(s).version || ""); } catch { return ""; } };
   let now = ""; try { now = ver(readFileSync(join(path, "package.json"), "utf8")); } catch {}
   const was = ver(git(path, ["show", "HEAD:package.json"]).out);
@@ -199,18 +222,24 @@ function bumpOffer(path) {
 // Whether npm has the committed version, as learnNpm last found ("name@version" →
 // { yes, at }). bumpOffer only reads this; learnNpm asks the registry first.
 const NPM_HAS = new Map();
-function npmKey(path) {
-  let p = {}; try { p = JSON.parse(git(path, ["show", "HEAD:package.json"]).out) || {}; } catch {}
+function npmKey(path, ref = "HEAD") {
+  let p = {}; try { p = JSON.parse(git(path, ["show", ref + ":package.json"]).out) || {}; } catch {}
   return typeof p.name === "string" && p.name && !p.private && typeof p.version === "string" && p.version ? p.name + "@" + p.version : "";
 }
 function onNpm(path) { const k = npmKey(path); return !!(k && NPM_HAS.get(k) && NPM_HAS.get(k).yes); }
-// Ask the registry about each repo's committed version. A yes is kept; a no is
-// asked again after 5 minutes (it may have just been published). True when it
-// learned of a version on npm.
+// Ask the registry about each repo's committed version, and for a repo that
+// publishes on merge, its default branch's (unreleased measures from that). A
+// yes is kept; a no is asked again after 5 minutes (it may have just been
+// published). True when it learned of a version on npm.
 async function learnNpm(paths, registry = REGISTRY) {
   let learned = false;
-  await Promise.all([...new Set(paths.filter(Boolean))].map(async (path) => {
-    const k = npmKey(path), was = NPM_HAS.get(k); if (!k || (was && (was.yes || Date.now() - was.at < 300000))) return;
+  const keys = new Set();
+  for (const path of new Set(paths.filter(Boolean))) {
+    keys.add(npmKey(path));
+    if (publishesOnMerge(path)) { const base = gitDefaultBranch(path); for (const ref of ["refs/heads/" + base, "refs/remotes/origin/" + base]) keys.add(npmKey(path, ref)); }
+  }
+  await Promise.all([...keys].map(async (k) => {
+    const was = NPM_HAS.get(k); if (!k || (was && (was.yes || Date.now() - was.at < 300000))) return;
     const at = k.lastIndexOf("@"), name = k.slice(0, at), version = k.slice(at + 1);
     try {
       const r = await fetch(`${registry}/${encodeURIComponent(name).replace(/^%40/, "@")}/${encodeURIComponent(version)}`, { signal: AbortSignal.timeout(5000) });
@@ -253,10 +282,10 @@ function pendingReview() {
   const sent = [...new Set(t.filter((x) => x.repo && !x.archived && !by[x.repo]).map((x) => x.repo))];
   const map = Object.keys(by).length || sent.length ? repoPathMap() : {};
   const am = autoMergeRepos();
-  const out = Object.keys(by).sort().map((repo) => { const path = map[repo] || ""; return { repo, path, tasks: by[repo], autoMerge: am.includes(repo), running: !!(path && runningHandoff(path)), ...(path ? { ...workingChanges(path), unreleased: unreleased(path), bumpOffer: bumpOffer(path) } : { branch: "", files: [], stat: "" }) }; });
+  const out = Object.keys(by).sort().map((repo) => { const path = map[repo] || ""; return { repo, path, tasks: by[repo], autoMerge: am.includes(repo), running: !!(path && runningHandoff(path)), ...(path ? { ...workingChanges(path), unreleased: unreleased(path), bumpOffer: bumpOffer(path), publishesOnMerge: publishesOnMerge(path) } : { branch: "", files: [], stat: "" }) }; });
   for (const repo of sent.sort()) {
     const path = map[repo]; if (!path || !existsSync(join(path, ".symbiot", "TASKS.md"))) continue;
-    const wc = workingChanges(path); if (wc.files.length) out.push({ repo, path, tasks: [], untasked: true, autoMerge: am.includes(repo), running: !!runningHandoff(path), ...wc, unreleased: unreleased(path), bumpOffer: bumpOffer(path) });
+    const wc = workingChanges(path); if (wc.files.length) out.push({ repo, path, tasks: [], untasked: true, autoMerge: am.includes(repo), running: !!runningHandoff(path), ...wc, unreleased: unreleased(path), bumpOffer: bumpOffer(path), publishesOnMerge: publishesOnMerge(path) });
   }
   return out;
 }
@@ -285,7 +314,7 @@ function shipChanges(path, texts, opts = {}) {
   const add = git(path, ["add", "-A"]); if (!add.ok) return { error: "git add failed: " + add.err, branch };
   git(path, ["reset", "-q", "--", ".symbiot"]); // never ship Symbiot's own scratch
   const subject = !texts.length ? "symbiot: changes approved without a task" : texts.length === 1 ? (texts[0].length > 72 ? texts[0].slice(0, 71).replace(/\s+\S*$/, "") + "…" : texts[0]) : `symbiot: ${texts.length} approved tasks`;
-  const body = (texts.length ? texts.map((x) => "- " + x).join("\n") : "No ticked task covers these changes.") + (opts.bumped ? `\n\nBumps the version to ${opts.bumped}. After this merges, tag v${opts.bumped} on ${base} to release it.` : "");
+  const body = (texts.length ? texts.map((x) => "- " + x).join("\n") : "No ticked task covers these changes.") + (opts.bumped ? `\n\nBumps the version to ${opts.bumped}. ` + (publishesOnMerge(path) ? `It publishes to npm when this merges.` : `After this merges, tag v${opts.bumped} on ${base} to release it.`) : "");
   const cm = git(path, ["commit", "-m", subject, "-m", body]); if (!cm.ok) return { error: "Commit failed: " + (cm.err || cm.out), branch };
   const out = { ok: true, branch, base, commit: git(path, ["rev-parse", "--short", "HEAD"]).out, subject };
   if (opts.push === false) return out;
@@ -1333,6 +1362,9 @@ function setMail(b = {}) {
   if (typeof b.enabled === "boolean") m.enabled = b.enabled;
   if (b.add) {
     const p = expandRoot(b.add);
+    // A website typed here (it sits under Trusted sites, easily mixed up): say where it goes.
+    const site = p && !existsSync(p) && !/\.(mbox|mbx|eml|msf|sbd)$/i.test(p) && /^(https?:\/\/)?[a-z0-9-]+(\.[a-z0-9-]+)+(:\d+)?([/?#].*)?$/i.test(p) ? new URL(/^https?:/i.test(p) ? p : "https://" + p).hostname : "";
+    if (site) return { ...mailState(), site, error: `${site} is a website, not mail on this computer. To let Screens press and type there without asking, add it under Trusted sites, just above.` };
     if (!p || !existsSync(p)) return { ...mailState(), error: "not found: " + (p || "(empty)") };
     if (!m.sources.includes(p)) m.sources.push(p);
   }
@@ -1600,9 +1632,11 @@ async function cmdApp() {
       if (u.pathname === "/api/tasks/chat" && req.method === "POST") { const b = await readBody(req); return json(res, await taskChat(String(b.id || ""), b.question)); }
       if (u.pathname === "/api/tasks/chat/clear" && req.method === "POST") { const b = await readBody(req); return json(res, clearTaskChat(String(b.id || ""))); }
       if (u.pathname === "/api/pending") { // ticked by the agent, awaiting approval
-        const list = pendingReview(), ask = list.filter((r) => r.path && !r.bumpOffer).map((r) => r.path);
+        // what npm has decides the bump offer, and for a repo that publishes on
+        // merge, what's unreleased: ask, then recount (answers are cached)
+        const list = pendingReview(), ask = list.filter((r) => r.path && (!r.bumpOffer || r.publishesOnMerge)).map((r) => r.path);
         if (!ask.length) return json(res, list);
-        return json(res, (await learnNpm(ask)) ? pendingReview() : list); // learned it's on npm: offer the bump
+        await learnNpm(ask); return json(res, pendingReview());
       }
       if (u.pathname === "/api/pending/diff") { const p = repoPathMap()[u.searchParams.get("repo") || ""]; return json(res, { diff: p ? workingDiff(p) : "" }); }
       if (u.pathname === "/api/pending/approve" && req.method === "POST") { const b = await readBody(req); if (b.bump) await learnNpm([repoPathMap()[String(b.repo || "")]]); return json(res, approveRepo(String(b.repo || ""), { bump: b.bump })); }
@@ -1856,4 +1890,4 @@ const isMain = (() => {
 })();
 if (isMain) main();
 
-export { authorship, repoState, readmeInfo, repoShape, houseRules, findAllRepos, buildMap, reportFooter, detectHardware, recommendModels, computeDrift, driftRepo, gitDefaultBranch, buildTasksMd, taskType, EMBEDDED_UI, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, fillHandoff, handoffCmd, setHandoffCmd, ORCA_CLAUDE_CMD, CLAUDE_CMD, HANDOFF_PROMPT, shipChanges, shipWithBump, bumpOffer, learnNpm, setVersion, syncTasks, pendingReview, unreleased, addTask, approveRepo, approveChanges, sendBack, pushTasks, semverGt, updateCmd, parseQuestions, agentQuestions };
+export { authorship, repoState, readmeInfo, repoShape, houseRules, findAllRepos, buildMap, reportFooter, detectHardware, recommendModels, computeDrift, driftRepo, gitDefaultBranch, buildTasksMd, taskType, EMBEDDED_UI, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, fillHandoff, handoffCmd, setHandoffCmd, ORCA_CLAUDE_CMD, CLAUDE_CMD, HANDOFF_PROMPT, shipChanges, shipWithBump, bumpOffer, learnNpm, setVersion, syncTasks, pendingReview, unreleased, publishesOnMerge, addTask, approveRepo, approveChanges, sendBack, pushTasks, semverGt, updateCmd, parseQuestions, agentQuestions };

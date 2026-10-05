@@ -10,7 +10,7 @@ import { mkdtempSync, writeFileSync, mkdirSync, rmSync, readFileSync, existsSync
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { authorship, repoState, readmeInfo, houseRules, findAllRepos, driftRepo, buildTasksMd, taskType, EMBEDDED_UI, orcaHandoffCmd, migrateOrcaCmd, fillHandoff, ORCA_CLAUDE_CMD, CLAUDE_CMD, HANDOFF_PROMPT, shipChanges, shipWithBump, bumpOffer, learnNpm, semverGt, updateCmd, parseQuestions, unreleased } from "../index.mjs";
+import { authorship, repoState, readmeInfo, houseRules, findAllRepos, driftRepo, buildTasksMd, taskType, EMBEDDED_UI, orcaHandoffCmd, migrateOrcaCmd, fillHandoff, ORCA_CLAUDE_CMD, CLAUDE_CMD, HANDOFF_PROMPT, shipChanges, shipWithBump, bumpOffer, learnNpm, semverGt, updateCmd, parseQuestions, unreleased, publishesOnMerge } from "../index.mjs";
 import { mailActivity } from "../mail.mjs";
 import { pngSize, pngDecode, splitPng, captureCmds, clickCmds, portalAppId, monitorCmds, parseCosmicRandr, parseWlrRandr, parseKscreen, parseXrandr, parseLines, tidyMonitors, monitorAreas } from "../screens.mjs";
 import { siteUrl, browserArgs, isTrusted } from "../headless.mjs";
@@ -424,6 +424,28 @@ try {
   ok("no v* tag: offered once npm has the committed version (a repo that publishes on merge)", nb0 === null && nl1 === true && nb1 && nb1.version === "1.2.3" && nb1.minor === "1.3.0", [nb0, nl1, nb1]);
   ok("no v* tag: not offered for a version npm doesn't have", nl2 === false && nb2 === null, [nl2, nb2]);
   ok("a ship that fails puts the version back", bfl.error && /Detached HEAD/.test(bfl.error) && /"2\.4\.0"/.test(readFileSync(join(bmp, "package.json"), "utf8")) && /"2\.4\.0"/.test(readFileSync(join(bmp, "package-lock.json"), "utf8")), [bfl, readFileSync(join(bmp, "package.json"), "utf8")]);
+
+  console.log("RELEASE — a repo that publishes on merge is measured from npm, not a stale v* tag");
+  // v1.0.0 tagged; 1.0.1 set and published with no tag (a ruleset blocked it); two commits since
+  const pom = build("release-pom", `git init -q -b main && git config user.email t@x.co && git config user.name T && mkdir -p .github/workflows
+    printf 'on:\\n  push:\\n    branches: [main]\\njobs:\\n  publish:\\n    steps:\\n      - run: npm publish\\n' > .github/workflows/publish.yml
+    printf '{\\n  "name": "pom-x",\\n  "version": "1.0.0"\\n}\\n' > package.json && git add . && git commit -qm init && git tag v1.0.0
+    sed -i 's/1\\.0\\.0/1.0.1/' package.json && git commit -qam "fix (1.0.1)"
+    echo a > a && git add . && git commit -qm "feat a" && echo b > b && git add . && git commit -qm "feat b"`);
+  const tagOnly = build("release-tagwf", `git init -q -b main && mkdir -p .github/workflows && printf 'on:\\n  push:\\n    tags: [v*]\\njobs:\\n  p:\\n    steps:\\n      - run: npm publish\\n' > .github/workflows/p.yml`);
+  ok("publishes on merge: npm publish on a branch push; not on a tag push, or with no workflow", publishesOnMerge(pom) && !publishesOnMerge(tagOnly) && !publishesOnMerge(rel), [publishesOnMerge(pom), publishesOnMerge(tagOnly), publishesOnMerge(rel)]);
+  const pomReg = createServer((q, r) => { const yes = q.url === "/pom-x/1.0.1"; r.writeHead(yes ? 200 : 404, { "content-type": "application/json" }); r.end(yes ? '{"version":"1.0.1"}' : "{}"); }).listen(0, "127.0.0.1");
+  await new Promise((r) => pomReg.on("listening", r));
+  const pomAt = `http://127.0.0.1:${pomReg.address().port}`, pEnv = { cwd: pom, env: gitEnv, encoding: "utf8" };
+  const pu0 = unreleased(pom); await learnNpm([pom], pomAt); const pu1 = unreleased(pom);
+  ok("not measured from v1.0.0 before npm is known", pu0 === null, pu0);
+  ok("counts the commits since the one that set the version npm has (2 past 1.0.1, not 3 past v1.0.0)", pu1 && pu1.npm && pu1.since === "1.0.1" && pu1.ahead === 2 && !pu1.tag, pu1);
+  writeFileSync(join(pom, "c"), "c\n");
+  const psh = shipWithBump(pom, ["Fix c"], { push: false, bump: "patch" }), pMsg = execSync("git log -1 --format=%B", pEnv);
+  ok("a bump says it publishes on merge, with no tag to push by hand", psh.bumped === "1.0.2" && /It publishes to npm when this merges\./.test(pMsg) && !/tag v/.test(pMsg), [psh, pMsg]);
+  execSync("git checkout -q main && git merge -q --ff-only " + psh.branch, pEnv);
+  await learnNpm([pom], pomAt); const pu2 = unreleased(pom); pomReg.close();
+  ok("a merged bump npm doesn't have yet is due to publish", pu2 && pu2.npm && pu2.pending === "1.0.2", pu2);
 
   console.log("QUESTIONS — any agent's .symbiot/QUESTIONS.md parses into questions, options and ideas");
   const pq = parseQuestions("# Questions for you\n\n## Questions\n### Keep the old config format?\nReading both costs ~40 lines.\n- Yes, read both (recommended)\n- No, migrate once\n\n### Which port?\n1. 7391\n2. random\n\n## Suggestions\n- Add a --json flag to drift\n- [ ] Cache the map scan\n");
