@@ -35,6 +35,7 @@ import { gitDefaultBranch, loadDeploys, driftRepo } from "./drift.mjs";
 import { loadScreens, screenImage, captureScreen, splitScreen, listMonitors, allowScreenshots, importScreen, setRegions, renameScreen, removeScreen, blueprint, clickRegion } from "./screens.mjs";
 import { mapPage, pressRegion, typeRegion, signIn, keepBrowserOpen, isTrusted, trustedSites, trustSite, untrustSite } from "./headless.mjs";
 import { weeklyState, setWeekly, runWeekly, startWeekly, autostartState, setAutostart } from "./desktop.mjs";
+import { watchState, addWatch, setEvery, removeWatch, clearNews, newsSince, checkWatch, startWatches } from "./watch.mjs";
 
 const HERE = fileURLToPath(new URL(".", import.meta.url));
 let VERSION = "0"; try { VERSION = JSON.parse(readFileSync(join(HERE, "package.json"), "utf8")).version; } catch {}
@@ -1796,6 +1797,13 @@ async function cmdApp() {
       if (u.pathname === "/api/screens/trusted/add" && req.method === "POST") { const b = await readBody(req); return json(res, trustSite(b.site)); }
       if (u.pathname === "/api/screens/trusted/remove" && req.method === "POST") { const b = await readBody(req); return json(res, untrustSite(b.site)); }
       if (u.pathname === "/api/screens/signin" && req.method === "POST") { const b = await readBody(req); return json(res, await signIn(b.site)); }
+      // Watch (watch.mjs): a mapped page read again every few minutes, and what's new on it.
+      if (u.pathname === "/api/watch") return json(res, watchState());
+      if (u.pathname === "/api/watch/add" && req.method === "POST") { const b = await readBody(req); return json(res, addWatch({ screen: b.screen ? String(b.screen) : "", site: b.site, every: b.every })); }
+      if (u.pathname === "/api/watch/every" && req.method === "POST") { const b = await readBody(req); return json(res, setEvery(String(b.id || ""), b.every)); }
+      if (u.pathname === "/api/watch/remove" && req.method === "POST") { const b = await readBody(req); return json(res, removeWatch(String(b.id || ""))); }
+      if (u.pathname === "/api/watch/check" && req.method === "POST") { const b = await readBody(req); return json(res, await checkWatch(String(b.id || ""))); }
+      if (u.pathname === "/api/watch/clear" && req.method === "POST") return json(res, clearNews());
       // What symbiot-desktop added (desktop.mjs): the weekly write-up, start at login.
       if (u.pathname === "/api/desktop") return json(res, { weekly: weeklyState(), autostart: autostartState() });
       if (u.pathname === "/api/desktop/weekly" && req.method === "POST") { const b = await readBody(req); return json(res, setWeekly(b)); }
@@ -1842,6 +1850,7 @@ async function cmdApp() {
   server.listen(PORT, "127.0.0.1");
   checkLatest(); setInterval(checkLatest, 2 * 60 * 1000).unref(); // background update check (every 2 min)
   startWeekly(produce); // the weekly write-up + notification, when switched on in Settings
+  startWatches(); // pages you watch (Screens → Watch), read every few minutes
 }
 
 // `symbiot mail [--on|--off] [--add <path>]`: what mail it can read, and a preview.
@@ -1926,7 +1935,43 @@ async function cmdScreens() {
   if (sub !== "help") process.exitCode = 1;
 }
 
-const HELP = `${c.b("symbiot")} — your week, written from your real work.
+// ---- `symbiot watch`: pages Symbiot keeps track of, and what's new on them ----
+// new, add, remove and check print JSON, for you or an agent.
+async function cmdWatch() {
+  const [sub = "list", a1] = argv.slice(1).filter((x, i, all) => !x.startsWith("--") && !["--every", "--hours"].includes(all[i - 1]));
+  const out = (x) => { console.log(JSON.stringify(x, null, 2)); if (x && x.error) process.exitCode = 1; };
+  const hours = Number(flag("hours", 24)) || 24;
+  if (sub === "list") {
+    const st = watchState();
+    if (!st.watches.length) console.log(c.d("Not watching anything yet. Map a page (symbiot screens map gmail), then  symbiot watch add <screen id>,  or click Watch on it in the app."));
+    for (const w of st.watches) console.log(`${w.id}  ${w.name}  ${c.d(`every ${w.every} min · ${w.checked ? "last read " + new Date(w.checked).toLocaleString() : "not read yet"}${w.error ? " · " + w.error : ""}`)}`);
+    const news = newsSince(hours);
+    if (st.watches.length) console.log("\n" + c.b(`${news.length} new in the last ${hours} hours`) + (news.length ? "" : c.d("  (the app reads each page every few minutes while it runs)")));
+    for (const n of news.slice(0, 20)) console.log(`  ${c.d(new Date(n.ts).toLocaleString())}  ${n.text.slice(0, 110)}  ${c.d(n.name.slice(0, 30))}`);
+    return;
+  }
+  if (sub === "new") return out(newsSince(hours));
+  if (sub === "add") { const screen = loadScreens().some((s) => s.id === a1) ? a1 : ""; return out(addWatch({ screen, site: screen ? "" : a1, every: flag("every", 15) })); }
+  if (sub === "remove") return out(removeWatch(String(a1 || "")));
+  if (sub === "check") {
+    // through the app when it runs: its hidden browser may be open, and one profile takes one browser
+    const ids = a1 ? [a1] : watchState().watches.map((w) => w.id), done = [];
+    for (const id of ids) done.push((await viaApp("/api/watch/check", { id })) || await checkWatch(id));
+    return out(a1 ? done[0] : done);
+  }
+  console.log(`${c.b("symbiot watch")} ${c.d("— experimental")}
+  symbiot watch                                the pages you watch, and what's new
+  symbiot watch add <screen id | site> [--every 5|15|30|60]
+                                               watch a mapped page (or a site) for new rows
+  symbiot watch new [--hours 24]               what's new, newest first (JSON)
+  symbiot watch check [id]                     read them now (JSON)
+  symbiot watch remove <id>                    stop watching it
+  While the app runs it reads each page every few minutes in its hidden browser
+  (only reads: nothing is pressed or typed), and notifies you of what's new.`);
+  if (sub !== "help") process.exitCode = 1;
+}
+
+const HELP =`${c.b("symbiot")} — your week, written from your real work.
 
 ${c.b("Usage")}
   symbiot ${c.d("(or)")} symbiot week      write up your last ${SINCE_WEEK} days
@@ -1947,6 +1992,8 @@ ${c.b("Experimental")}
   symbiot setup-local [--model X]   install/run a free local model (Ollama)
   symbiot screens map <site>        map a web page's buttons in a hidden browser
                                     (symbiot screens help for more)
+  symbiot watch add <screen id>     keep track of a mapped page: what's new on it
+                                    (symbiot watch help for more)
 
 ${c.b("Options")}
   --dir <path>    where your repos are (default: ${homedir()})
@@ -1978,6 +2025,7 @@ async function main() {
   if (cmd === "push") return cmdPush();
   if (cmd === "mail" || cmd === "email") return cmdMail();
   if (cmd === "screens" || cmd === "screen") return cmdScreens();
+  if (cmd === "watch") return cmdWatch();
   if (cmd === "week") return cmdRun("week");
   if (cmd === "standup") return cmdRun("standup");
   if (cmd === "todo") return cmdRun("todo");

@@ -7,6 +7,7 @@
 // site. On a site you trust (Settings), that goes ahead without asking. In the
 // app the browser stays open for a few minutes after each action, so the next
 // one carries on from the page as it is (type into a field, then press Send).
+// readPage reads a page without saving a screen, for Watch (watch.mjs).
 //
 // It drives Chrome / Chromium / Edge / Brave over the DevTools protocol on a pipe
 // (--remote-debugging-pipe: commands in on fd 3, replies out on fd 4, each JSON
@@ -154,7 +155,7 @@ function closeBrowser() { return shut(live); }
 // Give fn the hidden browser's page (the open one, else a new one), and what it
 // shows (b.shown). After: kept open for KEEP ms, or closed; closed on an error,
 // so the next action starts afresh.
-async function withPage(fn) {
+async function withPage(fn, keep = true) {
   if (live && live.c.closed()) await shut(live);
   let b = live;
   if (b) clearTimeout(b.timer); else b = live = await launch();
@@ -167,7 +168,7 @@ async function withPage(fn) {
   } catch (e) { await shut(b); throw e; }
   finally {
     clearTimeout(kill); b.busy = false;
-    if (live === b && KEEP && !b.c.closed()) b.timer = setTimeout(() => oneAtATime(() => live === b && !b.busy ? shut(b) : null), KEEP);
+    if (live === b && KEEP && keep && !b.c.closed()) b.timer = setTimeout(() => oneAtATime(() => live === b && !b.busy ? shut(b) : null), KEEP);
     else await shut(b);
   }
 }
@@ -239,25 +240,36 @@ const COLLECT = `(() => {
     const top = document.elementFromPoint((x + x2) / 2, (y + y2) / 2);
     if (!top || !(top === e || e.contains(top) || top.contains(e))) continue;
     kinds.set(e, kind);
-    const r = { label: labelOf(e).slice(0, 80) || kind, kind, x: Math.round(x), y: Math.round(y), w: Math.round(x2 - x), h: Math.round(y2 - y), selector: cssPath(e) };
+    const full = labelOf(e);
+    const r = { label: full.slice(0, 80) || kind, kind, x: Math.round(x), y: Math.round(y), w: Math.round(x2 - x), h: Math.round(y2 - y), selector: cssPath(e) };
+    if (full.length > 80) r.text = full.slice(0, 400); // all of a long one (an inbox row), for Watch
     if (e.href && /^https?:/.test(e.href)) r.href = String(e.href).slice(0, 500);
     out.push(r);
   }
   return { url: location.href, title: document.title, items: out };
 })()`;
 
-// The page as it is now, saved as a screen with its regions.
-async function snapshot(page, name) {
+// What's on the page now: { url, title, items }.
+async function collect(page) {
   const { result, exceptionDetails } = await page.send("Runtime.evaluate", { expression: COLLECT, returnByValue: true });
   if (exceptionDetails) throw new Error("Couldn't read the page: " + ((exceptionDetails.exception && exceptionDetails.exception.description) || exceptionDetails.text));
-  const info = (result && result.value) || { url: "", title: "", items: [] };
+  return (result && result.value) || { url: "", title: "", items: [] };
+}
+// A sign-in page instead of the site.
+function signInPage(url) {
+  const host = hostOf(url);
+  return /(^|\.)(accounts\.google|login\.(microsoftonline|live)|signin\.aws|auth0|okta)\./i.test(host + ".") || /\/(log-?in|sign-?in|auth|sso)\b/i.test(String(url || ""));
+}
+
+// The page as it is now, saved as a screen with its regions.
+async function snapshot(page, name) {
+  const info = await collect(page);
   const { data } = await page.send("Page.captureScreenshot", { format: "png" });
-  let host = ""; try { host = new URL(info.url).hostname.replace(/^www\./, ""); } catch {}
+  const host = hostOf(info.url);
   const s = addPageScreen(String(name || "").trim() || info.title || host || "Page", Buffer.from(data, "base64"), info, info.items);
   if (s.error) return s;
   // a sign-in page instead of the site: say how to get past it once
-  const login = /(^|\.)(accounts\.google|login\.(microsoftonline|live)|signin\.aws|auth0|okta)\./i.test(host + ".") || /\/(log-?in|sign-?in|auth|sso)\b/i.test(info.url);
-  return login ? { ...s, note: `This looks like a sign-in page (${host}). Click Sign in, sign in once in the window that opens, close it, then map again: the hidden browser keeps that sign-in.` } : s;
+  return signInPage(info.url) ? { ...s, note: `This looks like a sign-in page (${host}). Click Sign in, sign in once in the window that opens, close it, then map again: the hidden browser keeps that sign-in.` } : s;
 }
 
 // Map a site: open it in the hidden browser and save what's on it as a screen.
@@ -265,6 +277,21 @@ function mapPage(input, name) {
   const url = siteUrl(input);
   if (!url) return Promise.resolve({ error: "Give a site to map: a name (gmail), a host (github.com/pulls) or a web address." });
   return oneAtATime(() => withPage(async (page) => { await open(page, url); return snapshot(page, name); })).catch((e) => ({ error: String((e && e.message) || e) }));
+}
+
+// Read a site as it is now, without saving a screen: { url, title, items, login }.
+// For Watch (watch.mjs), which only looks: nothing is pressed or typed. While the
+// browser is open for you or an agent (type, then press), it leaves it alone
+// ({ busy }) rather than take its page somewhere else; and it doesn't keep the
+// browser open after.
+function readPage(input) {
+  const url = siteUrl(input);
+  if (!url) return Promise.resolve({ error: "Give a site to read: a name (gmail), a host or a web address." });
+  return oneAtATime(() => browserOpen() ? { busy: true } : withPage(async (page) => {
+    await open(page, url);
+    const info = await collect(page);
+    return { ...info, login: signInPage(info.url) };
+  }, false)).catch((e) => ({ error: String((e && e.message) || e) }));
 }
 
 // Trusted sites (Settings → Screens): on a page from one of these, press and type
@@ -359,4 +386,4 @@ async function signIn(input) {
   return { ok: true, url };
 }
 
-export { siteUrl, browserArgs, mapPage, pressRegion, typeRegion, signIn, keepBrowserOpen, closeBrowser, browserOpen, trustedSites, isTrusted, trustSite, untrustSite, PROFILE };
+export { siteUrl, browserArgs, mapPage, readPage, pressRegion, typeRegion, signIn, keepBrowserOpen, closeBrowser, browserOpen, trustedSites, isTrusted, trustSite, untrustSite, PROFILE };

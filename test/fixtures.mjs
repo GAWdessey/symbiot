@@ -16,6 +16,7 @@ import { pngSize, pngDecode, splitPng, captureCmds, clickCmds, portalAppId, moni
 import { siteUrl, browserArgs, isTrusted } from "../headless.mjs";
 import { deflateSync } from "node:zlib";
 import { weeklyDue, lastSlot, autostartFile, autostartContent, notifyCmd } from "../desktop.mjs";
+import { itemKey, itemsOf, newItems, remember } from "../watch.mjs";
 
 const INDEX = join(dirname(fileURLToPath(import.meta.url)), "..", "index.mjs");
 const ROOT = mkdtempSync(join(tmpdir(), "symbiot-fix-"));
@@ -674,11 +675,25 @@ try {
       '<button style="display:none">Hidden</button><button style="position:absolute;left:10px;top:2000px">Below the fold</button>' +
       '<button style="position:absolute;left:300px;top:50px">Covered</button><div style="position:absolute;left:290px;top:40px;width:200px;height:60px;background:red"></div></body>';
     const form = '<title>Form</title><input id="q" placeholder="Query"><button id="go" onclick="location=\\'/search?q=\\'+encodeURIComponent(document.getElementById(\\'q\\').value)">Go</button>';
-    const srv = createServer((q, r) => { r.writeHead(200, { "content-type": "text/html" }); r.end(q.url === "/two" ? "<title>Page two</title><button>Back</button>" : q.url === "/form" ? form : q.url.startsWith("/search?") ? "<title>Results for " + new URL(q.url, "http://x").searchParams.get("q") + "</title><button>Back</button>" : page); }).listen(0, "127.0.0.1");
+    // an inbox: rows with more text than a region's 80-character label
+    let rows = ["Ann Lee, Lunch on Friday?, 9:05 AM, Are you free for lunch on Friday at the usual place near the office", "GitHub, [symbiot] Run failed: CI - main, 8:24 AM, The workflow run failed on the main branch at commit abc123"];
+    const inbox = () => '<title>Inbox</title><div role="grid">' + rows.map((t, i) => '<div role="row" id="r' + i + '" style="height:30px">' + t + '</div>').join("") + '</div>';
+    const srv = createServer((q, r) => { r.writeHead(200, { "content-type": "text/html" }); r.end(q.url === "/two" ? "<title>Page two</title><button>Back</button>" : q.url === "/form" ? form : q.url === "/rows" ? inbox() : q.url.startsWith("/search?") ? "<title>Results for " + new URL(q.url, "http://x").searchParams.get("q") + "</title><button>Back</button>" : page); }).listen(0, "127.0.0.1");
     await new Promise((r) => srv.on("listening", r));
     const out = {};
     out.map = await h.mapPage("127.0.0.1:" + srv.address().port, "");
     out.closedAfter = !h.browserOpen();
+    // Watch: read a page without saving a screen, then see what's new on it
+    const nScreens = s.loadScreens().length;
+    out.read = await h.readPage("127.0.0.1:" + srv.address().port + "/rows");
+    out.readNoScreen = s.loadScreens().length === nScreens; out.readClosed = !h.browserOpen();
+    const wm = await import(${JSON.stringify(join(dirname(INDEX), "watch.mjs"))});
+    const told = [], notify = (t, b) => told.push([t, b]);
+    const w = wm.addWatch({ site: "127.0.0.1:" + srv.address().port + "/rows" });
+    out.wFirst = await wm.checkWatch(w.id, { notify });
+    rows = ["Sam Ng, Contract signed, 10:30 AM, Here is the signed contract for next month, with the changes we agreed", ...rows.map((t) => t.replace(/\\d+:\\d+ AM/, "Oct 4"))];
+    out.wNext = await wm.checkWatch(w.id, { notify });
+    out.wTold = told; wm.removeWatch(w.id);
     out.bp = out.map.id && s.blueprint(out.map);
     out.mode = out.map.id && (statSync(s.screenImage(out.map.id)).mode & 0o777);
     const link = (out.map.regions || []).find((r) => r.kind === "link");
@@ -697,7 +712,8 @@ try {
     const ff = (out.fmap.regions || []).find((r) => r.kind === "field");
     out.ftype = ff ? await h.typeRegion(out.fmap.id, ff.id, "kept", { confirmed: true }) : null;
     out.fopen = h.browserOpen();
-    const go = ((out.ftype || {}).regions || []).find((r) => r.label === "Go");
+    out.readBusy = await h.readPage("127.0.0.1:" + srv.address().port + "/rows");
+    const go =((out.ftype || {}).regions || []).find((r) => r.label === "Go");
     out.fpress = go ? await h.pressRegion(out.ftype.id, go.id, { confirmed: true }) : null;
     const go0 = (out.fmap.regions || []).find((r) => r.label === "Go");
     out.fold = go0 ? await h.pressRegion(out.fmap.id, go0.id, { confirmed: true }) : null;
@@ -725,8 +741,54 @@ try {
     ok("kept open: typed without Enter, it's still there for a separate button on the screen that mapped", ho.ftype && ho.ftype.found && !ho.ftype.entered && ho.fopen === true && ho.fpress && ho.fpress.kept === true && ho.fpress.name === "Results for kept", [ho.ftype && ho.ftype.error, ho.fopen, ho.fpress && (ho.fpress.error || ho.fpress.name)]);
     ok("kept open: a press on an older screen opens its page again (what was typed there is gone)", ho.fold && !ho.fold.kept && ho.fold.name === "Results for", ho.fold && (ho.fold.error || ho.fold.name));
     ok("closeBrowser closes it", ho.fclosed === true, ho.fclosed);
+    const rd = ho.read || {}, rrows = (rd.items || []).filter((r) => r.kind === "row");
+    ok("readPage: reads a page's rows, each with all its text, without saving a screen, and closes after", rrows.length === 2 && rrows[0].label.length === 80 && /usual place near the office$/.test(rrows[0].text || "") && ho.readNoScreen && ho.readClosed && rd.login === false, rd.error || [rrows, ho.readNoScreen, ho.readClosed]);
+    ok("readPage: leaves the browser alone while it's open for a type-then-press", ho.readBusy && ho.readBusy.busy === true && !ho.readBusy.items, ho.readBusy);
+    ok("Watch, for real: the first read learns the inbox, the next finds only the new row (old ones' times changed)", ho.wFirst && ho.wFirst.learned === 2 && ho.wNext && (ho.wNext.new || []).length === 1 && /^Sam Ng, Contract signed/.test(ho.wNext.new[0].text) && (ho.wTold || []).length === 1, [ho.wFirst, ho.wNext && (ho.wNext.error || ho.wNext.new)]);
     ok("clickRegion: a mapped page is never clicked on your real screen", /use Press instead/.test((ho.click || {}).error || ""), ho.click);
   }
+
+  console.log("WATCH — a mapped page read again, and only what's new on it (watch.mjs)");
+  const k = (t) => itemKey(t);
+  ok("itemKey: the same row whether its time reads 9:05 AM, Oct 5, 5 Oct, 2 hours ago or it's unread", new Set(["Ann, Lunch?, 9:05 AM, Free Friday", "unread, Ann, Lunch?, Oct 5, Free Friday", "Ann, Lunch?, 5 Oct, Free Friday", "Ann, Lunch?, 2 hours ago, Free Friday", "Ann, Lunch?, 10/05/2026, Free Friday"].map(k)).size === 1, ["Ann, Lunch?, 9:05 AM, Free Friday", "Ann, Lunch?, Oct 5, Free Friday"].map(k));
+  ok("itemKey: keeps what tells two rows apart (a version, a word that looks like a month)", k("Release v1.2.3 is out") !== k("Release v1.2.4 is out") && k("Mark 12 says hi") === "mark 12 says hi", [k("Release v1.2.3 is out"), k("Mark 12 says hi")]);
+  const its = itemsOf({ items: [{ kind: "link", label: "Inbox" }, { kind: "row", label: "unread, Ann, Lunch?", text: "unread, Ann, Lunch?, and the rest of it" }, { kind: "row", label: "row" }] });
+  ok("itemsOf: a page's rows (all their text, without 'unread'), else its links", its.length === 1 && its[0].text === "Ann, Lunch?, and the rest of it" && itemsOf({ items: [{ kind: "link", label: "Pull request 12", href: "https://x/12" }, { kind: "button", label: "Menu" }] }).map((x) => x.href).join() === "https://x/12", its);
+  const ni = newItems([k("Ann, Lunch?")], [{ text: "Sam, Contract" }, { text: "Ann, Lunch?" }, { text: "Sam, Contract" }]);
+  ok("newItems: only rows not seen before, once each; remember keeps the newest last", ni.fresh.length === 1 && ni.fresh[0].text === "Sam, Contract" && ni.keys.length === 2 && remember(["a", "b", "c"], ["b", "d"]).join() === "a,c,b,d", ni);
+  const whome = join(ROOT, "whome"); mkdirSync(whome, { recursive: true });
+  const wx = spawnSync(process.execPath, ["--input-type=module", "-e", `
+    import * as w from ${JSON.stringify(join(dirname(INDEX), "watch.mjs"))};
+    import { statSync } from "node:fs";
+    let page = { url: "https://mail.example.com/inbox", items: [{ kind: "row", label: "Ann, Lunch?, 9:05 AM" }, { kind: "row", label: "Bob, Invoice, 8:00 AM" }] };
+    const told = [], opts = { read: async () => page, notify: (t, b) => told.push([t, b]) }, out = {};
+    out.site = w.addWatch({ site: "mail.example.com/inbox", every: 5 });
+    out.again = w.addWatch({ site: "https://mail.example.com/inbox", every: 30 });
+    out.bad = w.addWatch({ site: "two words" }); out.noScreen = w.addWatch({ screen: "abcdefabcdef" });
+    out.first = await w.checkWatch(out.site.id, opts); out.toldFirst = told.length;
+    page = { ...page, items: [{ kind: "row", label: "Cat, Signed contract, 10:30 AM" }, { kind: "row", label: "Ann, Lunch?, Oct 5" }, { kind: "row", label: "Bob, Invoice, Oct 5" }] };
+    out.next = await w.checkWatch(out.site.id, opts); out.toldNext = told.slice();
+    out.same = await w.checkWatch(out.site.id, opts);
+    page = { busy: true }; out.busy = await w.checkWatch(out.site.id, opts);
+    page = { url: "https://accounts.google.com/signin", items: [], login: true };
+    out.login = await w.checkWatch(out.site.id, opts); out.login2 = await w.checkWatch(out.site.id, opts); out.toldLogin = told.length;
+    out.news = w.newsSince(24); out.state = w.watchState();
+    out.mode = statSync(w.WATCH_FILE).mode & 0o777;
+    out.due = w.dueWatches(Date.now() + 31 * 60000).length; out.notDue = w.dueWatches().length;
+    out.rm = w.removeWatch(out.site.id); out.after = w.watchState();
+    console.log(JSON.stringify(out));`], { encoding: "utf8", env: { ...process.env, HOME: whome, USERPROFILE: whome } });
+  let wo = {}; try { wo = JSON.parse(wx.stdout); } catch {}
+  ok("addWatch: a site becomes a watch; the same address again only changes how often", wo.site && wo.site.id && wo.site.url === "https://mail.example.com/inbox" && wo.site.every === 5 && wo.again && wo.again.id === wo.site.id && wo.again.every === 30, wo.site || wx.stderr.slice(-600));
+  ok("addWatch: refuses something that isn't a site, and a screen that isn't there", /Give a mapped page/.test((wo.bad || {}).error || "") && /No screen/.test((wo.noScreen || {}).error || ""), [wo.bad, wo.noScreen]);
+  ok("checkWatch: the first read only learns what's there, and notifies nothing", wo.first && wo.first.learned === 2 && !wo.first.new && wo.toldFirst === 0, wo.first);
+  ok("checkWatch: the next read finds just the new row and notifies it", wo.next && (wo.next.new || []).length === 1 && wo.next.new[0].text === "Cat, Signed contract, 10:30 AM" && (wo.toldNext || []).length === 1 && /^1 new/.test(wo.toldNext[0][0]) && /Signed contract/.test(wo.toldNext[0][1]), [wo.next, wo.toldNext]);
+  ok("checkWatch: nothing new on a read that lists the same rows", wo.same && (wo.same.new || []).length === 0, wo.same);
+  ok("checkWatch: a busy browser changes nothing (it's read later)", wo.busy && wo.busy.busy === true && wo.busy.last === wo.same.last, wo.busy);
+  ok("checkWatch: signed out shows as the watch's error, notified once", /Signed out of accounts\.google\.com/.test((wo.login || {}).error || "") && wo.login2 && wo.login2.error === wo.login.error && wo.toldLogin === 2, [wo.login, wo.toldLogin]);
+  ok("what's new is kept, newest first, for `symbiot watch new`", (wo.news || []).length === 1 && wo.news[0].name === "mail.example.com" && wo.state && wo.state.news.length === 1 && wo.state.watches[0].known === 3, [wo.news, wo.state]);
+  if (process.platform !== "win32") ok("watch.json is readable by you only (0600)", wo.mode === 0o600, wo.mode);
+  ok("dueWatches: due once its minutes have passed, not straight after a read", wo.due === 1 && wo.notDue === 0, [wo.due, wo.notDue]);
+  ok("removeWatch: stops it and forgets what it found", wo.rm && wo.rm.ok && wo.after && wo.after.watches.length === 0 && wo.after.news.length === 0, wo.after);
 
   console.log("DESKTOP — the weekly write-up's schedule, and start at login (from symbiot-desktop)");
   const at = (daysAgo, hour, min = 0) => { const d = new Date(); d.setDate(d.getDate() - daysAgo); d.setHours(hour, min, 0, 0); return d.getTime(); };

@@ -8,7 +8,8 @@ see the [README](README.md).
 Everything lives in `~/.config/symbiot/`: `config.json` (your AI, `scanRoots`,
 `agentCmd`, `mail`, `weekly`; readable only by you), `tasks.json` (your tasks),
 `weeks/` (the saved weekly write-ups), `screens/` (Screens: each PNG plus
-`screens.json` with its regions),
+`screens.json` with its regions), `watch.json` (Watch: the pages you watch and
+what's new on them; readable only by you),
 `deploys.json` (optional, for drift's production check) and `rules.md` (optional
 conventions every repo review must respect, alongside each repo's own
 `CLAUDE.md` / `AGENTS.md` / `CONTRIBUTING.md`).
