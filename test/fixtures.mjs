@@ -11,7 +11,8 @@ import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { authorship, repoState, readmeInfo, houseRules, findAllRepos, driftRepo, buildTasksMd, taskType, EMBEDDED_UI, orcaHandoffCmd, migrateOrcaCmd, fillHandoff, ORCA_CLAUDE_CMD, CLAUDE_CMD, HANDOFF_PROMPT, shipChanges, shipWithBump, bumpOffer, learnNpm, releaseNeeded, withReleases, semverGt, updateCmd, parseQuestions, unreleased, publishesOnMerge } from "../index.mjs";
-import { grantRule } from "../agents.mjs";
+import { grantRule, claudeConnectors, withConnectors } from "../agents.mjs";
+import { applyRemovals, removalOf } from "../tasks.mjs";
 import { sameTask, uniqueTasks } from "../core.mjs";
 import { mailActivity } from "../mail.mjs";
 import { pngSize, pngDecode, splitPng, stitchPng, captureCmds, clickCmds, portalAppId, monitorCmds, parseCosmicRandr, parseWlrRandr, parseKscreen, parseXrandr, parseLines, tidyMonitors, monitorAreas } from "../screens.mjs";
@@ -249,6 +250,69 @@ try {
   ok("a second Symbiot process sees it running too, and that its owner is still up", b.other && b.other.busy && b.other.pid > 0 && b.other.auto, b.other);
   ok("the folder is free again once the agent exits", b.lockGone && b.third, b);
   ok("a leftover lock from a dead agent doesn't block", b.stale === null, b.stale);
+
+  console.log("HANDOFF — connectors linked to Claude reach its runs (--allowedTools names them)");
+  const cj = join(ROOT, "claude.json");
+  writeFileSync(cj, JSON.stringify({ claudeAiMcpEverConnected: ["claude.ai Google Drive", "claude.ai Notion"], mcpNeedsAuthNoticed: ["claude.ai Notion"], mcpServers: { "my-mail": {} }, projects: { "/r": { mcpServers: { local: {} } } } }));
+  const conns = claudeConnectors("/r", cj);
+  ok("claude.ai connectors, your servers and this folder's, named as Claude names their tools", JSON.stringify(conns.map((c) => c.rule)) === JSON.stringify(["mcp__claude_ai_Google_Drive", "mcp__claude_ai_Notion", "mcp__my-mail", "mcp__local"]), conns);
+  ok("one waiting to be authorized isn't ready", conns.find((c) => c.name === "claude.ai Notion").ready === false && conns.find((c) => c.name === "claude.ai Google Drive").ready, conns);
+  const wc = withConnectors(CLAUDE_CMD, "/r", cj);
+  ok("a Claude run allows the ready ones' tools, after the preset's own rules", wc === CLAUDE_CMD + ' "mcp__claude_ai_Google_Drive" "mcp__my-mail" "mcp__local"', wc);
+  ok("a Claude command with no --allowedTools gets one; another agent's runs as-is", withConnectors('claude -p "{prompt}"', "", cj) === 'claude -p "{prompt}" --allowedTools "mcp__claude_ai_Google_Drive" "mcp__my-mail"' && withConnectors('codex exec "{prompt}"', "", cj) === 'codex exec "{prompt}"', withConnectors('claude -p "{prompt}"', "", cj));
+  ok("no ~/.claude.json: nothing added", withConnectors(CLAUDE_CMD, "", join(ROOT, "none.json")) === CLAUDE_CMD, "");
+  rmSync(got, { force: true });
+  execSync(fillHandoff(wc, fake), { shell: "/bin/bash", stdio: "ignore", env: { ...process.env, PATH: fake + ":" + process.env.PATH } });
+  ok("each connector rule reaches claude as ONE argument", readFileSync(got, "utf8").split("\n")[0] === "10", readFileSync(got, "utf8"));
+
+  console.log("HANDOFF — a run that stopped on questions isn't started again on the same .env and answers");
+  const blkDir = join(ROOT, "blocked"); mkdirSync(join(blkDir, ".symbiot"), { recursive: true });
+  const bk = spawnSync(process.execPath, ["--input-type=module", "-e", `
+    import * as a from ${JSON.stringify(AGENTS)};
+    import { writeFileSync, existsSync } from "node:fs";
+    const dir = ${JSON.stringify(blkDir)}, s = dir + "/.symbiot/", out = {};
+    const until = async (c) => { for (let i = 0; i < 100 && !c(); i++) await new Promise((r) => setTimeout(r, 100)); };
+    const run = async (o) => { const j = a.runHandoff(dir, o); if (j && j.pid) await until(() => j.status !== "running" && !existsSync(s + "agent.pid")); return j; };
+    writeFileSync(s + "TASKS.md", "- [ ] Set WA_WABA_ID\\n- [x] Done one\\n"); writeFileSync(dir + "/.env", "A=1\\n");
+    // the agent asks for the value and ticks nothing
+    a.setHandoffCmd("printf '## Questions\\\\n### What is WA_WABA_ID?\\\\n- 👤 You: put it in .env\\\\n' > .symbiot/QUESTIONS.md");
+    out.first = !!(await run()).pid; out.noted = existsSync(s + "blocked.json");
+    out.again = a.runHandoff(dir);
+    writeFileSync(dir + "/.env", "A=1\\nWA_WABA_ID=9\\n"); out.envChanged = !!(await run()).pid;
+    out.again2 = !!a.runHandoff(dir).blocked;
+    writeFileSync(s + "ANSWERS.md", "### An earlier question\\nAn answer\\n"); out.answered = !!(await run()).pid;
+    writeFileSync(s + "TASKS.md", "- [ ] Set WA_WABA_ID\\n- [ ] A new task\\n"); out.newTask = !!(await run()).pid;
+    writeFileSync(s + "TASKS.md", "- [ ] Set WA_WABA_ID\\n"); out.fewer = !!a.runHandoff(dir).blocked;
+    out.forced = !!(await run({ force: true })).pid;
+    a.setHandoffCmd("true"); out.otherCmd = !!(await run()).pid; out.cleared = !existsSync(s + "blocked.json");
+    console.log(JSON.stringify(out));`], { encoding: "utf8", timeout: 60000, env: { ...process.env, HOME: hhome, USERPROFILE: hhome } });
+  let bq = {}; try { bq = JSON.parse(bk.stdout.trim().split("\n").pop()); } catch { console.log(bk.stdout, bk.stderr); }
+  ok("a run that asks and leaves its task open is noted as blocked", bq.first && bq.noted, bq);
+  ok("...so the next send starts nothing, and says why", bq.again && bq.again.blocked && bq.again.questions === 1 && /\.env and ANSWERS\.md haven't changed/.test(bq.again.note), bq.again);
+  ok("a changed .env, a new answer or a new task starts one", bq.envChanged && bq.again2 && bq.answered && bq.newTask, bq);
+  ok("fewer of the same tasks is still blocked; force starts it anyway", bq.fewer && bq.forced, bq);
+  ok("a changed agent command starts one, and a run that didn't ask clears the note", bq.otherCmd && bq.cleared, bq);
+
+  console.log("TASKS — an approved Drop or Merge task removes the tasks it names, so they don't come back");
+  const ap = Date.now(), tk = (id, text, extra = {}) => ({ id, text, repo: "wa", done: false, ts: ap - 1000, ...extra });
+  const tl = [
+    tk("m", "Merge the two `WA_WABA_ID` tasks into one. Both are the same edit to `.env`.", { done: true, archived: true, approvedAt: ap }),
+    tk("d", "Drop the \"gosolr's own WhatsApp number\" task until launch.", { done: true, archived: true, approvedAt: ap }),
+    tk("w1", "Set `WA_WABA_ID` in `.env`. It's needed to create Flows.", { ts: ap - 3000 }),
+    tk("w2", "Set `WA_WABA_ID` in `.env`. It's needed to list templates.", { ts: ap - 2000 }),
+    tk("g", "Get gosolr its own WhatsApp number before launch."),
+    tk("e", "Add `.env.example` with every key."),
+    tk("later", "Get gosolr its own WhatsApp number, again.", { ts: ap + 1000 }),
+    tk("other", "Get gosolr its own WhatsApp number.", { repo: "elsewhere" }),
+    tk("kept", "Set `WA_WABA_ID` for staging too.", { kept: true }),
+    tk("pending", "Drop the `foo` task", { review: true }),
+  ];
+  const nRemoved = applyRemovals(tl), stOf = (id) => tl.find((x) => x.id === id);
+  ok("merge keeps the newest of the tasks it names and archives the rest as merged", nRemoved === 2 && stOf("w1").archived && stOf("w1").merged && stOf("w1").removedBy === "m" && !stOf("w2").archived, tl);
+  ok("drop archives the task it names ('s and \"its\" aside)", stOf("g").archived && stOf("g").removedBy === "d" && !stOf("g").merged, stOf("g"));
+  ok("leaves tasks named after \"task\", added since, in another repo, or restored", !stOf("e").archived && !stOf("later").archived && !stOf("other").archived && !stOf("kept").archived, tl);
+  ok("a second pass removes nothing more", applyRemovals(tl) === 0, "");
+  ok("only a Drop/Merge … task with a quoted name counts", !removalOf("Remove the `WA_WABA_ID` check from config") && !removalOf("Drop the old tasks") && removalOf("Remove the “x y” task").phrases[0] === "x y", "");
 
   console.log("HANDOFF — a send while the agent runs holds the new TASKS.md until it finishes");
   const heldDir = join(ROOT, "held"); mkdirSync(heldDir, { recursive: true });

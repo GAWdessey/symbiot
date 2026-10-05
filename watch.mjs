@@ -358,7 +358,7 @@ function draftReply(id, { run = runHandoff } = {}) {
     writeFileSync(join(dir, ".symbiot", "TASKS.md"), chat ? chatBrief(n, w) : draftBrief(n, w));
     writeFileSync(join(dir, ".symbiot", "handoff.json"), JSON.stringify({ name: ("Draft: " + n.text).slice(0, 60), env: { SYMBIOT_DRAFT: "1" } }));
   } catch (e) { return { error: "Couldn't write the brief: " + ((e && e.message) || e) }; }
-  const e = run(dir);
+  const e = run(dir, { force: true }); // a click on Draft a reply asks for a run, even after one stopped on a question
   if (!e) return { error: "Your agent didn't start. Check its command in Settings → Handoff." };
   if (e.busy) return { error: "Your agent is still drafting this one. It's in the Agents tab." };
   const d2 = loadWatch(), n2 = d2.news.find((x) => x.id === id); if (n2) { n2.drafted = Date.now(); saveWatch(d2); }

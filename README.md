@@ -267,6 +267,16 @@ Tasks waiting for review aren't re-sent to the agent, and while the repo's agent
 is still running, Approve waits ("agent still working"), so half-done work isn't
 committed.
 
+**Tasks about tasks.** An agent can't edit your task list, so a task like
+`Drop the "gosolr's own WhatsApp number" task` or ``Merge the two `WA_WABA_ID`
+tasks into one`` is done once you approve it. The tasks it names then leave your
+list, so a later **Send to repos** doesn't bring them back: a dropped one is
+archived, and of merged ones the newest stays and the rest are archived. Symbiot
+finds them by the quoted name before the word "task": tasks in that repo, from
+before the approval, with all of its words ("'s" aside). If it names more than
+four, it's too vague, and nothing is removed. In the archived view they're marked
+**dropped** or **merged**, and one you restore stays.
+
 **Releases.** The review card warns about merged work that isn't released yet,
 measured the way the repo releases: from its last `v*` tag, or, for a repo whose
 GitHub workflow runs `npm publish` on every push to its default branch, from the
@@ -314,6 +324,18 @@ preset only fills in the command box; the saved command is what runs.
   Text, IntelliJ IDEA, Neovim (on macOS, also found as `.app` bundles when the CLI
   isn't on your PATH). They just open the repo. Nothing comes back for review unless
   you run an agent there yourself, and Neovim needs a terminal to open in.
+
+**Connectors.** The connectors you've linked to Claude (claude.ai's Google Drive,
+Gmail, Notion…, and servers added with `claude mcp add`) are only usable by an
+unattended run when `--allowedTools` names them, so a run asked to check your
+Drive or mail used to be refused. Symbiot now adds each one's rule
+(`mcp__claude_ai_Google_Drive` covers `mcp__claude_ai_Google_Drive__search_files`
+and the rest of its tools) to a Claude command on every run. It reads them from
+`~/.claude.json`, so linking one takes effect on the next run, and your saved
+command stays as you typed it. A connector still waiting to be authorized at
+claude.ai isn't added. Settings → Handoff lists them, and says so when your
+command isn't Claude and its runs can't use them. Claude in Orca's tab asks you
+before using one.
 
 Each run is logged to `.symbiot/agent.log` in the repo and shown live in the
 **Agents** tab. The command is saved as `agentCmd` in
@@ -368,6 +390,16 @@ project can have ideas for another (Symbiot itself, say). The agent is told to
 keep going with everything that doesn't depend on an answer, and to ask instead of
 doing anything destructive. Both files live in `.symbiot/`, so they're never
 committed.
+
+**A run that stopped on questions isn't repeated for nothing.** When a run ends
+having asked questions you haven't answered, with tasks still unticked, Symbiot
+keeps what it ran with in `.symbiot/blocked.json`. The next send to that repo
+starts no agent until something it could act on changes: `.env` (or another
+`.env.*` file there), `ANSWERS.md`, the agent command (a command you allowed, a
+connector), or a task it didn't have. Otherwise the run would only ask the same
+questions again. The send says so, with **Start it anyway** for when what changed
+is somewhere else (`symbiot push --open --force` from the terminal). **Draft a
+reply** always starts its run.
 
 ## What's out of sync? `symbiot drift`
 

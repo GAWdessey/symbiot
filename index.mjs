@@ -81,9 +81,11 @@ function cmdPush() {
   if (has("open")) {
     if (!r.handoff) console.log("\n" + c.y("No agent command set.") + c.d("  Set one in `symbiot app` Settings, or `agentCmd` in ~/.config/symbiot/config.json (use {dir} and {prompt})."));
     else {
-      const busy = r.written.map((w) => ({ w, e: runHandoff(w.path) })).filter((x) => x.e && x.e.busy);
-      const n = r.written.length - busy.length;
+      const runs = r.written.map((w) => ({ w, e: runHandoff(w.path, { force: has("force") }) }));
+      const busy = runs.filter((x) => x.e && x.e.busy), blocked = runs.filter((x) => x.e && x.e.blocked);
+      const n = r.written.length - busy.length - blocked.length;
       if (n) console.log("\n" + c.g("→ ") + `Handed ${n} repo(s) to your agent (${r.handoff}).`);
+      for (const { w, e } of blocked) console.log("\n" + c.y(`${w.name}: `) + e.note + c.d("  (--force starts it anyway)"));
       for (const { w, e } of busy) console.log("\n" + c.y("Not started: ") + `${w.name} already has an agent running.` + c.d(e.auto ? "  Its new tasks are held, and the app starts an agent on them when it finishes." : "  Its new tasks are held until it finishes. After that, the app starts an agent on them the next time it checks the repo (opening its Tasks tab), or send again."));
     }
   } else {
@@ -522,7 +524,7 @@ ${c.b("Usage")}
   symbiot todo                      what's still on your plate
   symbiot app                       open the visual app in your browser
   symbiot drift [--fetch]           what's out of sync / at risk across repos
-  symbiot push [--open]             write tasks into each repo (and run your agent)
+  symbiot push [--open [--force]]   write tasks into each repo (and run your agent)
   symbiot login                     connect it to an AI (once)
   symbiot whoami                    show how it's connected
   symbiot logout                    forget saved credentials
