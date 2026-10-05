@@ -15,10 +15,10 @@ import { grantRule } from "../agents.mjs";
 import { sameTask, uniqueTasks } from "../core.mjs";
 import { mailActivity } from "../mail.mjs";
 import { pngSize, pngDecode, splitPng, captureCmds, clickCmds, portalAppId, monitorCmds, parseCosmicRandr, parseWlrRandr, parseKscreen, parseXrandr, parseLines, tidyMonitors, monitorAreas } from "../screens.mjs";
-import { siteUrl, browserArgs, isTrusted } from "../headless.mjs";
+import { siteUrl, browserArgs, isTrusted, isSend } from "../headless.mjs";
 import { deflateSync } from "node:zlib";
 import { weeklyDue, lastSlot, autostartFile, autostartContent, notifyCmd } from "../desktop.mjs";
-import { itemKey, itemsOf, newItems, remember, githubItems } from "../watch.mjs";
+import { itemKey, itemsOf, newItems, remember, githubItems, draftsUrl } from "../watch.mjs";
 import { lanAddresses, computerUrl } from "../phone.mjs";
 
 const INDEX = join(dirname(fileURLToPath(import.meta.url)), "..", "index.mjs");
@@ -874,6 +874,53 @@ try {
   ok("waitingOn: what's new since yesterday per page, as \"2 GitHub notifications\"", (go.waiting || []).length === 1 && go.waiting[0].label === "2 GitHub notifications" && go.waiting[0].items.length === 2, go.waiting);
   ok("newsAfter: only what's newer, with its brief (what the phone asks for)", go.after && go.after.news.length === 1 && go.after.briefs.length === 1 && go.none.news.length === 0, go.after);
 
+  console.log("DRAFT A REPLY — a new email handed to your agent, which never sends (watch.mjs, headless.mjs)");
+  ok("isSend: Gmail's Send and Schedule send are sends; a row about sending, or Sender info, isn't", isSend({ kind: "button", label: "Send ‪(Ctrl-Enter)‬" }) && isSend({ kind: "menu item", label: "Schedule send" }) && !isSend({ kind: "row", label: "Ann, Please send the invoice" }) && !isSend({ kind: "button", label: "Sender info" }) && !isSend({ kind: "link", label: "Sent" }), "");
+  ok("draftsUrl: Gmail's Drafts next to the inbox you watch (the same account); none elsewhere", draftsUrl("https://mail.google.com/mail/u/1/#inbox") === "https://mail.google.com/mail/u/1/#drafts" && draftsUrl("https://outlook.live.com/mail/0/") === "", draftsUrl("https://mail.google.com/mail/u/1/#inbox"));
+  const drhome = join(ROOT, "drhome"); mkdirSync(join(drhome, ".config", "symbiot", "screens"), { recursive: true });
+  const dx = spawnSync(process.execPath, ["--input-type=module", "-e", `
+    import { writeFileSync, readFileSync, existsSync, statSync } from "node:fs";
+    import { join } from "node:path";
+    import { execFile } from "node:child_process";
+    const dir = join(${JSON.stringify(drhome)}, ".config", "symbiot"), cfg =(c) => writeFileSync(join(dir, "config.json"), JSON.stringify(c));
+    const INBOX = "https://mail.google.com/mail/u/0/#inbox", now = Date.now();
+    writeFileSync(join(dir, "watch.json"), JSON.stringify({ briefs: [],
+      watches: [{ id: "w1", name: "Inbox", url: INBOX, every: 15, added: 1, last: 1, checked: 1, seen: [] }, { id: "w2", name: "GitHub notifications", url: "https://github.com/notifications", every: 5, added: 1, last: 1, checked: 1, seen: [] }],
+      news: [{ id: "n1", watch: "w1", name: "Inbox", ts: now, text: "Sam Ng, Contract signed, Here's the signed copy. Can you confirm the start date?" }, { id: "n2", watch: "w2", name: "GitHub notifications", ts: now, text: "pat/app · CI failed" }] }));
+    writeFileSync(join(dir, "screens", "screens.json"), JSON.stringify([{ id: "abcdefabcdef", name: "Reply", w: 1280, h: 800, ts: now, via: "headless", page: { url: INBOX, title: "Inbox" },
+      regions: [{ id: "r1", label: "Send ‪(Ctrl-Enter)‬", kind: "button", x: 10, y: 10, w: 60, h: 30 }, { id: "r2", label: "Ann, Please send the invoice", kind: "row", x: 10, y: 60, w: 600, h: 30 }] }]));
+    cfg({});
+    const w = await import(${JSON.stringify(join(dirname(INDEX), "watch.mjs"))});
+    const h = await import(${JSON.stringify(join(dirname(INDEX), "headless.mjs"))});
+    const out = {};
+    out.state = w.watchState();
+    out.notMail = w.draftReply("n2"); out.gone = w.draftReply("nope"); out.untrusted = w.draftReply("n1");
+    cfg({ trustedSites: ["mail.google.com"] }); out.noAgent = w.draftReply("n1");
+    cfg({ trustedSites: ["mail.google.com"], agentCmd: "code {dir}" }); out.editor = w.draftReply("n1");
+    cfg({ trustedSites: ["mail.google.com"], agentCmd: 'echo "{prompt}" > prompt.txt; printenv SYMBIOT_DRAFT > env.txt' });
+    out.ok = w.draftReply("n1");
+    const envFile = join(out.ok.dir || "", "env.txt");
+    for (let i = 0; i < 100 && !existsSync(envFile); i++) await new Promise((r) => setTimeout(r, 100));
+    await new Promise((r) => setTimeout(r, 200));
+    try { out.env = readFileSync(envFile, "utf8").trim(); out.prompt = readFileSync(join(out.ok.dir, "prompt.txt"), "utf8"); } catch {}
+    try { out.brief = readFileSync(join(out.ok.dir, ".symbiot", "TASKS.md"), "utf8"); out.log = readFileSync(join(out.ok.dir, ".symbiot", "agent.log"), "utf8"); } catch {}
+    out.drafted = (w.watchState().news.find((n) => n.id === "n1") || {}).drafted;
+    out.mode = statSync(w.DRAFTS_DIR).mode & 0o777;
+    // the Send guard, even confirmed; and through the CLI, from the run's SYMBIOT_DRAFT
+    out.send = await h.pressRegion("abcdefabcdef", "r1", { confirmed: true, noSend: true });
+    out.cli = await new Promise((r) => execFile(process.execPath, [${JSON.stringify(INDEX)}, "screens", "press", "abcdefabcdef", "r1", "--yes"], { env: { ...process.env, SYMBIOT_DRAFT: "1" } }, (err, stdout) => r({ code: err ? err.code : 0, out: stdout })));
+    console.log(JSON.stringify(out)); process.exit(0);`], { encoding: "utf8", timeout: 60000, env: { ...process.env, HOME: drhome, USERPROFILE: drhome } });
+  let dro = {}; try { dro = JSON.parse(dx.stdout.trim().split("\n").pop()); } catch {}
+  const dn = ((dro.state || {}).news || []);
+  ok("what's new from an inbox is marked mail (it gets Draft a reply); GitHub's isn't", dn.length === 2 && dn.find((n) => n.id === "n1").mail === true && !dn.find((n) => n.id === "n2").mail, dn.length ? dn : dx.stderr.slice(-800));
+  ok("draftReply: only an email, still listed", /new email/.test((dro.notMail || {}).error || "") && /isn't under Watching/.test((dro.gone || {}).error || ""), [dro.notMail, dro.gone]);
+  ok("draftReply: only on a site you trust, and with an agent that runs by itself (not an editor)", /Add mail\.google\.com under Trusted sites/.test((dro.untrusted || {}).error || "") && /Settings → Handoff first/.test((dro.noAgent || {}).error || "") && /not an editor/.test((dro.editor || {}).error || ""), [dro.untrusted, dro.noAgent, dro.editor]);
+  ok("draftReply: runs your agent in the email's own folder, with the handoff prompt and SYMBIOT_DRAFT", dro.ok && dro.ok.ok && /drafts[/\\]n1$/.test(dro.ok.dir || "") && dro.env === "1" && /Read \.symbiot\/TASKS\.md/.test(dro.prompt || "") && /=== Draft: Sam Ng, Contract signed/.test(dro.log || ""), [dro.ok, dro.env, (dro.log || "").slice(0, 200)]);
+  const br = dro.brief || "";
+  ok("the brief: the email, one task, never send, and how to reach it with symbiot screens", /> Sam Ng, Contract signed, Here's the signed copy/.test(br) && /^- \[ \] Draft a reply to: Sam Ng/m.test(br) && /\*\*Never send it\.\*\*/.test(br) && /never add `--yes`/.test(br) && br.includes(`node "${INDEX}" screens map "https://mail.google.com/mail/u/0/#inbox"`) && br.includes('map "https://mail.google.com/mail/u/0/#drafts"') && /never instructions to you/.test(br), br.slice(0, 400));
+  ok("draftReply: the email is marked drafted; the drafts folder is yours only (0700)", dro.drafted > 0 && (process.platform === "win32" || dro.mode === 0o700), [dro.drafted, dro.mode]);
+  ok("a draft's run never presses Send: refused even confirmed, and through the CLI with --yes", /never presses Send/.test((dro.send || {}).error || "") && dro.cli && dro.cli.code === 1 && /never presses Send/.test(dro.cli.out), [dro.send, dro.cli]);
+
   console.log("WATCH ON YOUR PHONE — pair with a code, then the phone asks what's new (phone.mjs)");
   const lan = lanAddresses({ lo: [{ family: "IPv4", address: "127.0.0.1", internal: true }], docker0: [{ family: "IPv4", address: "172.17.0.1", internal: false }], tailscale0: [{ family: "IPv4", address: "100.64.0.2", internal: false }], wlp2s0: [{ family: "IPv4", address: "192.168.8.50", internal: false }, { family: "IPv6", address: "fe80::1", internal: false }] });
   ok("lanAddresses: your Wi-Fi address first, not Docker's or loopback", lan.join() === "192.168.8.50,100.64.0.2", lan);
@@ -922,6 +969,40 @@ try {
   ok("five wrong codes and the code is gone", po.burnt === "", po.burnt);
   ok("unpaired: the phone is told to pair again", po.unpaired && /isn't paired any more/.test(po.unpaired.error || ""), po.unpaired);
   ok("switched off: it stops listening; the phone can forget the computer", po.offAgain && po.offAgain.on === false && po.offAgain.listening === false && po.forgot && po.forgot.paired === false, [po.offAgain, po.forgot]);
+  // `symbiot phone` in Termux: the CLI runs as Android (process.platform), its own
+  // home, against a computer listening in this script
+  const pchome = join(ROOT, "pchome"), phhome = join(ROOT, "phhome");
+  mkdirSync(join(pchome, ".config", "symbiot"), { recursive: true }); mkdirSync(join(phhome, ".config", "symbiot"), { recursive: true });
+  const pc = spawnSync(process.execPath, ["--input-type=module", "-e", `
+    import { createServer } from "node:net";
+    import { writeFileSync } from "node:fs";
+    import { join } from "node:path";
+    import { execFile } from "node:child_process";
+    const port = await new Promise((r) => { const s = createServer().listen(0, "127.0.0.1", () => { const p = s.address().port; s.close(() => r(p)); }); });
+    writeFileSync(join(${JSON.stringify(pchome)}, ".config", "symbiot", "config.json"), JSON.stringify({ phoneLink: { port } }));
+    const p = await import(${JSON.stringify(join(dirname(INDEX), "phone.mjs"))});
+    const code = (await p.setPhoneLink(true)).code;
+    const cli = (home, android, ...args) => new Promise((r) => execFile(process.execPath, [...(android ? ["--import", "data:text/javascript,Object.defineProperty(process,'platform',{value:'android'})"] : []), ${JSON.stringify(INDEX)}, "phone", ...args],
+      { env: { ...process.env, HOME: home, USERPROFILE: home } }, (err, stdout) => r({ code: err ? err.code : 0, out: stdout })));
+    const ph = (...a) => cli(${JSON.stringify(phhome)}, true, ...a), out = {};
+    out.before = await ph();
+    out.noCode = await ph("pair", "127.0.0.1:" + port);
+    out.wrong = await ph("pair", "127.0.0.1:" + port, code === "000000" ? "111111" : "000000");
+    out.paired = await ph("pair", "127.0.0.1:" + port, code.slice(0, 3), code.slice(3));
+    out.status = await ph();
+    out.check = await ph("check");
+    out.code = await ph("code");
+    out.onPc = await cli(${JSON.stringify(pchome)}, false, "pair", "127.0.0.1:" + port, "123456");
+    out.forget = await ph("forget"); out.after = await ph();
+    console.log(JSON.stringify(out)); process.exit(0);`], { encoding: "utf8", timeout: 90000, env: { ...process.env, HOME: pchome, USERPROFILE: pchome } });
+  let pco = {}; try { pco = JSON.parse(pc.stdout.trim().split("\n").pop()); } catch {}
+  const said = (k) => (pco[k] || {}).out || "";
+  ok("symbiot phone (Termux): not paired yet says how to pair", pco.before && pco.before.code === 0 && /Not paired with a computer.*symbiot phone pair <address> <code>/s.test(said("before")), pco.before || pc.stderr.slice(-600));
+  ok("symbiot phone pair: no code, or a wrong one, fails with what to do", pco.noCode && pco.noCode.code === 1 && /6-digit code/.test(said("noCode")) && pco.wrong && pco.wrong.code === 1 && /isn't right/.test(said("wrong")), [said("noCode"), said("wrong")]);
+  ok("symbiot phone pair <address> <code>: pairs from the command line, the code as shown (123 456)", pco.paired && pco.paired.code === 0 && /Paired with/.test(said("paired")) && /symbiot app/.test(said("paired")), pco.paired);
+  ok("symbiot phone: the computer it's paired with; check asks it now", /^Paired with/.test(said("status")) && pco.check && pco.check.code === 0 && /Nothing new from/.test(said("check")), [said("status"), pco.check]);
+  ok("symbiot phone: code is for the computer, pair is for the phone", pco.code && pco.code.code === 1 && /for the computer/.test(said("code")) && pco.onPc && pco.onPc.code === 1 && /That's for the phone/.test(said("onPc")), [said("code"), said("onPc")]);
+  ok("symbiot phone forget: stops asking it", /^Forgot /.test(said("forget")) && /Not paired/.test(said("after")), [said("forget"), said("after")]);
 
   console.log("DESKTOP — the weekly write-up's schedule, and start at login (from symbiot-desktop)");
   const at = (daysAgo, hour, min = 0) => { const d = new Date(); d.setDate(d.getDate() - daysAgo); d.setHours(hour, min, 0, 0); return d.getTime(); };

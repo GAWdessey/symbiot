@@ -19,7 +19,7 @@ import { repoReview, repoSuggest, folderSuggest, taskChat, clearTaskChat, mailSt
 import { loadScreens, screenImage, captureScreen, splitScreen, listMonitors, allowScreenshots, importScreen, setRegions, renameScreen, removeScreen, blueprint, clickRegion } from "./screens.mjs";
 import { mapPage, pressRegion, typeRegion, signIn, keepBrowserOpen, isTrusted, trustedSites, trustSite, untrustSite } from "./headless.mjs";
 import { weeklyState, setWeekly, runWeekly, startWeekly, autostartState, setAutostart } from "./desktop.mjs";
-import { watchState, addWatch, setEvery, removeWatch, clearNews, checkWatch, startWatches, setBrief } from "./watch.mjs";
+import { watchState, addWatch, setEvery, removeWatch, clearNews, checkWatch, startWatches, setBrief, draftReply } from "./watch.mjs";
 import { phoneState, setPhoneLink, newCode, unpairPhone, pairComputer, forgetComputer, pollComputer, startPhone } from "./phone.mjs";
 
 // The in-app update installs the EXACT newest version (not the `latest` tag, which
@@ -193,7 +193,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       // confirmed like a click; Sign in opens a window the user signs in with.
       if (u.pathname === "/api/screens/map" && req.method === "POST") { const b = await readBody(req); return json(res, screenOut(await mapPage(b.site, b.name))); }
       // press / type: refused unless confirmed, or the page's site is one you trust
-      if (u.pathname === "/api/screens/press" && req.method === "POST") { const b = await readBody(req); return json(res, screenOut(await pressRegion(String(b.id || ""), String(b.region || ""), { confirmed: b.confirmed === true }))); }
+      if (u.pathname === "/api/screens/press" && req.method === "POST") { const b = await readBody(req); return json(res, screenOut(await pressRegion(String(b.id || ""), String(b.region || ""), { confirmed: b.confirmed === true, noSend: b.noSend === true }))); }
       if (u.pathname === "/api/screens/type" && req.method === "POST") { const b = await readBody(req); return json(res, screenOut(await typeRegion(String(b.id || ""), String(b.region || ""), b.text, { enter: b.enter === true, confirmed: b.confirmed === true }))); }
       if (u.pathname === "/api/screens/trusted") return json(res, { sites: trustedSites() });
       if (u.pathname === "/api/screens/trusted/add" && req.method === "POST") { const b = await readBody(req); return json(res, trustSite(b.site)); }
@@ -207,6 +207,8 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       if (u.pathname === "/api/watch/check" && req.method === "POST") { const b = await readBody(req); return json(res, await checkWatch(String(b.id || ""))); }
       if (u.pathname === "/api/watch/clear" && req.method === "POST") return json(res, clearNews());
       if (u.pathname === "/api/watch/brief" && req.method === "POST") { const b = await readBody(req); return json(res, setBrief(b.on === true)); }
+      // Draft a reply: a new email handed to your agent, which leaves a reply in Drafts (never sends)
+      if (u.pathname === "/api/watch/draft" && req.method === "POST") { const b = await readBody(req); return json(res, draftReply(String(b.id || ""))); }
       // Watch on your phone (phone.mjs). On the computer: listen on your network
       // for the phone (only on your click), a pairing code, the phones paired.
       // On the phone: pair with the computer, ask it now, forget it.

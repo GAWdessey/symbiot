@@ -655,6 +655,19 @@ text of the notification. The AI is sent what the page lists for each new item
 (for Gmail, the sender, subject and the one-line preview), and nothing at all
 leaves your computer with a local Ollama model. It's off until you tick it.
 
+**Draft a reply.** A new email under Watching has **Draft a reply**. It hands the
+email to your coding agent (the command in Settings → Handoff), which opens it in
+your inbox through Screens, reads it, writes a reply and leaves it in Drafts, for
+you to read and send. It never sends: its brief says so, and Symbiot refuses that
+run a press on Send (or Schedule send), even with `--yes`. It needs an agent that
+runs by itself (Claude Code, Codex, Gemini or Aider, not an editor or Orca's tab),
+the app running (its hidden browser stays open between the agent's steps), and
+your mail's site (`mail.google.com`) under Trusted sites. Each email gets a folder
+of its own in `~/.config/symbiot/drafts` (yours only) with the agent's brief, and
+the run shows in the Agents tab like any other: what it asks (a date only you
+know, say) is answered there. The agent sees the email's text, so it reaches
+whatever AI your agent uses.
+
 **In Standup.** Standup ends with what's waiting on you since yesterday, counted
 from what Watch found: `Waiting on you: 3 emails, 2 GitHub notifications`. Symbiot
 counts them itself, so the numbers are right; the AI only sees them to know
@@ -676,6 +689,19 @@ Symbiot stays on `127.0.0.1`. What's new crosses your network unencrypted, so
 switch it on at home, not on a café's Wi-Fi. A firewall on the computer may need
 to allow the port. In Termux, notifications need the Termux:API app and
 `pkg install termux-api`.
+
+In Termux you can pair from the command line too, without the app window:
+
+```bash
+symbiot phone pair 192.168.1.21:7392 123456   # the computer's address and the code it shows
+symbiot phone                                 # the computer it's paired with
+symbiot phone check                           # ask it what's new now
+symbiot phone forget                          # stop asking it
+```
+
+On the computer, `symbiot phone` lists where it listens and the phones paired, and
+`symbiot phone code` opens a new code (while `symbiot app` runs there). The phone
+asks the computer while `symbiot app` runs in Termux, so start it after pairing.
 
 **More than one display?** Symbiot reads how your displays are laid out
 (`cosmic-randr`, `wlr-randr`, `kscreen-doctor` or `xrandr` on Linux, PowerShell on
