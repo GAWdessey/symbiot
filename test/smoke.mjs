@@ -119,8 +119,10 @@ async function runUi(js, page, { storage = {}, handlers = true, android = null, 
   // Every handler the page wired up, except Quit (stops the server), the
   // local-model setup (starts a download; its route is hit directly below),
   // screen capture (takes a real screenshot) and "Write it now" (pops a real
-  // desktop notification). The updater is only wired via onclick, never called.
-  const SKIP = new Set(["quit", "setuplocal", "capture", "weeklynow"]);
+  // desktop notification), and Watch GitHub (the app would read GitHub a minute
+  // later; its route is hit directly below). The updater is only wired via
+  // onclick, never called.
+  const SKIP = new Set(["quit", "setuplocal", "capture", "weeklynow", "wgithub"]);
   for (const [id, el] of Object.entries({ ...els })) {
     if (SKIP.has(id)) continue;
     for (const type of ["click", "change", "keydown"]) if (el.listeners[type]) await fire("#" + id, el, type);
@@ -193,6 +195,14 @@ const calls = [
   ["/api/watch/remove", "POST"],
   ["/api/watch/check", "POST"],     // no id -> "No watch", no browser starts
   ["/api/watch/clear", "POST"],     // clears the (empty) list of what's new
+  ["/api/watch/brief", "POST"],     // empty body -> the brief stays off
+  ["/api/phone", "GET"],            // Watch on your phone: this computer's side (off)
+  ["/api/phone/link", "POST"],      // empty body -> off: nothing listens on the network
+  ["/api/phone/code", "POST"],      // a pairing code, held in memory (nothing listens while off)
+  ["/api/phone/unpair", "POST"],    // no id -> nothing changes
+  ["/api/phone/pair", "POST"],      // no address -> refused before any request
+  ["/api/phone/check", "POST"],     // not paired -> nothing asked
+  ["/api/phone/forget", "POST"],
   ["/api/desktop", "GET"],         // weekly write-up + start-at-login state
   ["/api/desktop/weekly", "POST"],  // empty body -> schedule unchanged (stays off)
   ["/api/desktop/autostart", "POST"], // empty body -> off: removes nothing outside the isolated HOME

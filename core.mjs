@@ -1,9 +1,22 @@
-// Shared basics for every module: Symbiot's config and task files, the one
-// shell helper (never throws, never hangs) and a repo's working-tree state.
+// Shared basics for every module: Symbiot's version (and npm's newest), its
+// config and task files, the one shell helper (never throws, never hangs) and a
+// repo's working-tree state.
 import { execSync } from "node:child_process";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { readFileSync, writeFileSync, mkdirSync, chmodSync, existsSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+
+// ---- version ----------------------------------------------------------------
+const HERE = fileURLToPath(new URL(".", import.meta.url));
+let VERSION = "0"; try { VERSION = JSON.parse(readFileSync(join(HERE, "package.json"), "utf8")).version; } catch {}
+let LATEST_VERSION = ""; // newest symbiot on npm, checked in the background
+// a.b.c numeric compare: only a HIGHER npm version is an update (a local build
+// ahead of npm must not be offered a "newer" older one)
+function semverGt(a, b) { const p = (v) => String(v || "").replace(/^v/, "").split(/[.-]/).slice(0, 3).map((n) => parseInt(n, 10) || 0); const x = p(a), y = p(b); for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return x[i] > y[i]; return false; }
+// SYMBIOT_REGISTRY points the check at another registry (the tests use a fake one)
+const REGISTRY = (process.env.SYMBIOT_REGISTRY || "https://registry.npmjs.org").replace(/\/+$/, "");
+async function checkLatest() { try { const r = await fetch(REGISTRY + "/symbiot"); if (!r.ok) return; const j = await r.json(); LATEST_VERSION = (j["dist-tags"] && j["dist-tags"].latest) || ""; } catch {} }
 
 // ---- config ---------------------------------------------------------------
 const CONFIG_DIR = join(homedir(), ".config", "symbiot");
@@ -71,4 +84,4 @@ function repoState(repoPath) {
   return { branch, dirty, del, mod, add, stale, staleBy, behind };
 }
 
-export { CONFIG_DIR, CONFIG_PATH, loadConfig, saveConfig, loadTasks, saveTasks, sh, hasCmd, chromeBinary, repoState };
+export { VERSION, LATEST_VERSION, semverGt, REGISTRY, checkLatest, CONFIG_DIR, CONFIG_PATH, loadConfig, saveConfig, loadTasks, saveTasks, sh, hasCmd, chromeBinary, repoState };

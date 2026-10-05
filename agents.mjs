@@ -305,8 +305,17 @@ function parseQuestions(md) {
   }
   return { questions: questions.filter((x) => x.q).slice(0, 20).map((x) => ({ ...x, options: x.options.slice(0, 6) })), suggestions: suggestions.filter(Boolean).slice(0, 10) };
 }
-// The OPEN questions (not yet in ANSWERS.md) and the agent's ideas, each marked
-// if it's already on the task list for this repo.
+// An idea for another project names it first: "[repo: symbiot] Watch GitHub
+// too" is for the symbiot repo's tasks, whichever repo's agent had it (an agent
+// working on coral may have ideas for Symbiot, the app that sent it). Gives
+// { repo, text }, repo "" when the idea doesn't name one.
+function suggestionTarget(s) {
+  const m = String(s || "").match(/^\[repo:\s*([^\]]*?)\s*\]\s*(.+)$/i);
+  return m && m[1] ? { repo: m[1], text: m[2].trim() } : { repo: "", text: String(s || "") };
+}
+// The OPEN questions (not yet in ANSWERS.md) and the agent's ideas, each with
+// the repo whose tasks it goes to (this one unless it names another) and marked
+// if it's already on that repo's task list.
 function agentQuestions(path, repo) {
   const p = parseQuestions(readSymbiot(path, "QUESTIONS.md"));
   const done = new Set([...readSymbiot(path, "ANSWERS.md").matchAll(/^###\s+(.+)$/gm)].map((m) => qKey(m[1])));
@@ -314,7 +323,7 @@ function agentQuestions(path, repo) {
   const tasks = p.suggestions.length ? loadTasks() : [];
   return {
     questions: open.slice(0, QUESTIONS_MAX), answered: p.questions.length - open.length,
-    suggestions: p.suggestions.map((text) => ({ text, added: tasks.some((t) => t.repo === repo && qKey(t.text) === qKey(text)) })),
+    suggestions: p.suggestions.map(suggestionTarget).map(({ repo: to, text }) => ({ text, repo: to || repo, other: !!to && to !== repo, added: tasks.some((t) => t.repo === (to || repo) && qKey(t.text) === qKey(text)) })),
   };
 }
 // Save answers to .symbiot/ANSWERS.md; opts.rerun hands the repo back to the
@@ -353,4 +362,4 @@ function agentsList() {
   });
 }
 
-export { HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, fillHandoff, runHandoff, runningHandoff, writeTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, agentQuestions, answerQuestions, agentsList };
+export { HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, fillHandoff, runHandoff, runningHandoff, writeTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, agentQuestions, answerQuestions, agentsList };
