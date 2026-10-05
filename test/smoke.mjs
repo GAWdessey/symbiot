@@ -187,6 +187,12 @@ const calls = [
   ["/api/screens/trusted/add", "POST"],    // no site -> refused, nothing saved
   ["/api/screens/trusted/remove", "POST"],
   ["/api/screens/signin", "POST"],  // no site -> refused, no window opens
+  ["/api/watch", "GET"],            // watched pages + what's new (isolated HOME -> none)
+  ["/api/watch/add", "POST"],       // no screen or site -> refused, nothing saved
+  ["/api/watch/every", "POST"],     // no id -> "No watch"
+  ["/api/watch/remove", "POST"],
+  ["/api/watch/check", "POST"],     // no id -> "No watch", no browser starts
+  ["/api/watch/clear", "POST"],     // clears the (empty) list of what's new
   ["/api/desktop", "GET"],         // weekly write-up + start-at-login state
   ["/api/desktop/weekly", "POST"],  // empty body -> schedule unchanged (stays off)
   ["/api/desktop/autostart", "POST"], // empty body -> off: removes nothing outside the isolated HOME

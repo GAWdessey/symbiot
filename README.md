@@ -558,6 +558,29 @@ While the app is running, these commands use its hidden browser, so it stays
 open between them as it does in the app. Without the app, each command opens the
 browser and closes it when done.
 
+**Watch a page for what's new.** On a mapped page (your Gmail inbox, GitHub's
+notifications), **Watch** has Symbiot read it again every 15 minutes (or 5, 30,
+60) while the app runs, in the same hidden browser, and compare what's listed
+there with what it has seen. It only reads: no screenshot is saved and nothing
+on the page is pressed or typed. The first read just learns what's there, so it
+never announces your whole inbox. After that, anything new (a new email, a new
+reply in a thread) gets a desktop notification and goes under **Watching** in
+Screens, newest first. A row is the same row whether its time reads `9:05 AM`,
+`Oct 5` or `2 hours ago`, or you've read it since. On a page with no rows it
+watches the links instead. If the site has signed you out, the watch says so,
+and notifies you once. With
+**Start at login** on (Settings), this keeps going on days you never open
+Symbiot. What's new is saved in `~/.config/symbiot/watch.json` (yours only).
+Your coding agent reads it too, so it can act on it with `symbiot screens`:
+
+```bash
+symbiot watch add <screen id> --every 15   # watch a mapped page (or: symbiot watch add gmail)
+symbiot watch new --hours 24               # what's new, newest first (JSON)
+symbiot watch check                        # read them all now (JSON)
+symbiot watch                              # what you watch, and what's new
+symbiot watch remove <id>
+```
+
 **More than one display?** Symbiot reads how your displays are laid out
 (`cosmic-randr`, `wlr-randr`, `kscreen-doctor` or `xrandr` on Linux, PowerShell on
 Windows, AppKit on macOS) and a picker appears next to Capture: **each display**
