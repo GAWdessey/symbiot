@@ -197,6 +197,7 @@ const calls = [
   ["/api/watch/clear", "POST"],     // clears the (empty) list of what's new
   ["/api/watch/brief", "POST"],     // empty body -> the brief stays off
   ["/api/watch/draft", "POST"],     // no id -> refused, no agent starts
+  ["/api/watch/board", "GET"],      // the Dashboard: a card per watch (none here)
   ["/api/phone", "GET"],            // Watch on your phone: this computer's side (off)
   ["/api/phone/link", "POST"],      // empty body -> off: nothing listens on the network
   ["/api/phone/code", "POST"],      // a pairing code, held in memory (nothing listens while off)
@@ -209,7 +210,7 @@ const calls = [
   ["/api/desktop/autostart", "POST"], // empty body -> off: removes nothing outside the isolated HOME
 ];
 // Endpoints never hit here, and why. Anything else the UI calls must be covered.
-const NOT_HIT = { "/api/update": "runs a real global npm install", "/api/quit": "hit last, below", "/api/screens/capture": "takes a real screenshot", "/api/desktop/weekly/run": "pops a real desktop notification" };
+const NOT_HIT = { "/api/update": "runs a real global npm install", "/api/quit": "hit last, below", "/api/screens/capture": "takes a real screenshot", "/api/desktop/weekly/run": "the UI's {} pops a real desktop notification: hit below with notify: false" };
 
 // Every api('/api/...') call in the UI's JS, with the method its api() helper
 // sends: POST when a body argument is passed, else GET. Read from the source,
@@ -296,6 +297,19 @@ try {
     try { const r = await fetch(base + path, { method, headers: H, body: method === "POST" ? "{}" : undefined }); status = r.status; } catch (e) { status = -1; }
     ok(`${method} ${path} -> ${status}`, status !== 404 && status !== -1, status);
   }
+  const wk = await fetch(base + "/api/desktop/weekly/run", { method: "POST", headers: H, body: JSON.stringify({ notify: false }) }).then((r) => r.json(), () => ({}));
+  ok("POST /api/desktop/weekly/run with notify: false -> runs, no AI connected", wk.error === "not-connected", wk);
+
+  console.log("WEEKLY — isAppRunningWeekly() finds this app and its schedule, with no port or token passed");
+  const runningWeekly = (extra = {}) => new Promise((resolve) => {
+    const p = spawn(process.execPath, ["--input-type=module", "-e", `import { isAppRunningWeekly } from ${JSON.stringify(join(HERE, "..", "index.mjs"))}; console.log(JSON.stringify(await isAppRunningWeekly()));`], { env: { ...env, ...extra }, stdio: ["ignore", "pipe", "pipe"] });
+    let out = ""; p.stdout.on("data", (d) => (out += d)); p.on("exit", () => resolve(out.trim()));
+  });
+  const setWk = (on) => fetch(base + "/api/desktop/weekly", { method: "POST", headers: H, body: JSON.stringify({ on }) });
+  const wkOff = await runningWeekly(); await setWk(true);
+  const wkOn = await runningWeekly(), wkNoApp = await runningWeekly({ SYMBIOT_PORT: "1" }); await setWk(false);
+  ok("false while the weekly write-up is off, true once it's on", wkOff === "false" && wkOn === "true", [wkOff, wkOn]);
+  ok("false when no app answers", wkNoApp === "false", wkNoApp);
 
   console.log("MAIL — a website typed into the mail box points to Trusted sites, and trusts nothing by itself");
   const mailAdd = (add) => fetch(base + "/api/mail/set", { method: "POST", headers: H, body: JSON.stringify({ add }) }).then((r) => r.json(), () => ({}));

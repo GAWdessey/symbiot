@@ -498,6 +498,9 @@ try {
   ok("two questions, in order", pq.questions.length === 2 && pq.questions[0].q === "Keep the old config format?" && pq.questions[1].q === "Which port?", pq.questions);
   ok("context and options attach to their question", pq.questions[0].context === "Reading both costs ~40 lines." && pq.questions[0].options.join("|") === "Yes, read both (recommended)|No, migrate once" && pq.questions[1].options.join("|") === "7391|random", pq.questions);
   ok("suggestions are their own list (checkbox bullets too)", pq.suggestions.join("|") === "Add a --json flag to drift|Cache the map scan", pq.suggestions);
+  const longIdea = "Next steps: " + "x".repeat(900), longOpt = "👤 You: " + "y".repeat(700);
+  const pl = parseQuestions(`## Questions\n### Long?\n- ${longOpt}\n\n## Suggestions\n- ${longIdea}\n- ${"z".repeat(1200)}\n`);
+  ok("a long idea or option arrives whole, up to the 1000 a task holds", pl.suggestions[0] === longIdea && pl.questions[0].options[0] === longOpt && pl.suggestions[1].length === 1000, pl.suggestions.map((s) => s.length));
   // an idea for another project names it: an agent on coral with an idea for Symbiot
   const aqDir = join(ROOT, "aq"), aqHome = join(ROOT, "aqhome");
   mkdirSync(join(aqDir, ".symbiot"), { recursive: true }); mkdirSync(join(aqHome, ".config", "symbiot"), { recursive: true });
@@ -874,6 +877,24 @@ try {
   ok("waitingOn: what's new since yesterday per page, as \"2 GitHub notifications\"", (go.waiting || []).length === 1 && go.waiting[0].label === "2 GitHub notifications" && go.waiting[0].items.length === 2, go.waiting);
   ok("newsAfter: only what's newer, with its brief (what the phone asks for)", go.after && go.after.news.length === 1 && go.after.briefs.length === 1 && go.none.news.length === 0, go.after);
 
+  console.log("DASHBOARD — a card per page you watch: your inbox, GitHub, WhatsApp (watch.mjs watchBoard)");
+  const bhome = join(ROOT, "bhome"); mkdirSync(join(bhome, ".config", "symbiot"), { recursive: true });
+  const H1 = 3600000, bnow = Date.now(), bw = (id, name, url) => ({ id, name, url, every: 15, added: 1, last: 1, checked: bnow - 60000, seen: [] });
+  const bnews = [{ id: "e1", watch: "m", name: "Inbox", ts: bnow - H1, text: "Sam, Contract" }, { id: "c1", watch: "c", name: "WhatsApp", ts: bnow - 2 * H1, text: "Mom: call me" }, { id: "c2", watch: "c", name: "WhatsApp", ts: bnow - 3 * H1, text: "Team: standup moved" },
+    { id: "e0", watch: "m", name: "Inbox", ts: bnow - 50 * H1, text: "Old newsletter" }, ...Array.from({ length: 60 }, (_, i) => ({ id: "g" + i, watch: "g", name: "GitHub notifications", ts: bnow - 10 * 60000 - i, text: "pat/app · CI failed " + i }))];
+  writeFileSync(join(bhome, ".config", "symbiot", "watch.json"), JSON.stringify({ watches: [bw("m", "Inbox", "https://mail.google.com/mail/u/0/#inbox"), bw("g", "GitHub notifications", "https://github.com/notifications"), bw("c", "WhatsApp", "https://web.whatsapp.com/"), bw("j", "Jira", "https://acme.atlassian.net/jira")],
+    news: [...bnews].sort((a, b) => b.ts - a.ts), briefs: [{ watch: "c", name: "WhatsApp", ts: bnow - 2 * H1, count: 2, text: "Your mom wants a call." }] }));
+  const bx = spawnSync(process.execPath, ["--input-type=module", "-e", `
+    import * as w from ${JSON.stringify(join(dirname(INDEX), "watch.mjs"))};
+    console.log(JSON.stringify({ day: w.watchBoard(24), week: w.watchBoard(168), waiting: w.waitingOn(24).map((x) => x.label) }));`], { encoding: "utf8", env: { ...process.env, HOME: bhome, USERPROFILE: bhome } });
+  let bo = {}; try { bo = JSON.parse(bx.stdout); } catch {}
+  const bc = ((bo.day || {}).cards || []), bcard = (id) => bc.find((c) => c.id === id) || {};
+  ok("a card per watch, in the order you added them, with its source", bc.map((c) => c.id + ":" + c.source).join(" ") === "m:mail g:github c:chat j:page", bc.map((c) => c.id + ":" + c.source));
+  ok("each card counts its own last 24 hours: 1 email, 60 GitHub notifications, 2 WhatsApp messages, 0 on Jira", bcard("m").label === "1 email" && bcard("g").count === 60 && bcard("c").label === "2 WhatsApp messages" && bcard("j").label === "0 new" && bo.day.total === 63, bc.map((c) => c.label));
+  ok("a busy GitHub doesn't push your mail off the board (it would off the 50 newest)", bcard("m").items.length === 1 && bcard("m").items[0].mail === true && bcard("g").items.length === 8 && !bcard("g").items[0].mail, [bcard("m").items, bcard("g").items.length]);
+  ok("a card carries its latest brief; the week shows the older email too", bcard("c").brief && bcard("c").brief.text === "Your mom wants a call." && !bcard("m").brief && ((bo.week || {}).cards || [])[0].count === 2, [bcard("c").brief, bo.week && bo.week.cards[0].count]);
+  ok("Standup counts WhatsApp as messages too", (bo.waiting || []).includes("2 WhatsApp messages"), bo.waiting);
+
   console.log("DRAFT A REPLY — a new email handed to your agent, which never sends (watch.mjs, headless.mjs)");
   ok("isSend: Gmail's Send and Schedule send are sends; a row about sending, or Sender info, isn't", isSend({ kind: "button", label: "Send ‪(Ctrl-Enter)‬" }) && isSend({ kind: "menu item", label: "Schedule send" }) && !isSend({ kind: "row", label: "Ann, Please send the invoice" }) && !isSend({ kind: "button", label: "Sender info" }) && !isSend({ kind: "link", label: "Sent" }), "");
   ok("draftsUrl: Gmail's Drafts next to the inbox you watch (the same account); none elsewhere", draftsUrl("https://mail.google.com/mail/u/1/#inbox") === "https://mail.google.com/mail/u/1/#drafts" && draftsUrl("https://outlook.live.com/mail/0/") === "", draftsUrl("https://mail.google.com/mail/u/1/#inbox"));
@@ -909,6 +930,9 @@ try {
     // the Send guard, even confirmed; and through the CLI, from the run's SYMBIOT_DRAFT
     out.send = await h.pressRegion("abcdefabcdef", "r1", { confirmed: true, noSend: true });
     out.cli = await new Promise((r) => execFile(process.execPath, [${JSON.stringify(INDEX)}, "screens", "press", "abcdefabcdef", "r1", "--yes"], { env: { ...process.env, SYMBIOT_DRAFT: "1" } }, (err, stdout) => r({ code: err ? err.code : 0, out: stdout })));
+    // the same from a terminal: symbiot watch new marks the emails, symbiot watch draft <id> drafts one
+    const sym = (...args) => new Promise((r) => execFile(process.execPath, [${JSON.stringify(INDEX)}, ...args], (err, stdout) => { let j = null; try { j = JSON.parse(stdout); } catch {} r({ code: err ? err.code : 0, j }); }));
+    out.cliNew = await sym("watch", "new"); out.cliNoId = await sym("watch", "draft"); out.cliGh = await sym("watch", "draft", "n2"); out.cliDraft = await sym("watch", "draft", "n1");
     console.log(JSON.stringify(out)); process.exit(0);`], { encoding: "utf8", timeout: 60000, env: { ...process.env, HOME: drhome, USERPROFILE: drhome } });
   let dro = {}; try { dro = JSON.parse(dx.stdout.trim().split("\n").pop()); } catch {}
   const dn = ((dro.state || {}).news || []);
@@ -920,6 +944,10 @@ try {
   ok("the brief: the email, one task, never send, and how to reach it with symbiot screens", /> Sam Ng, Contract signed, Here's the signed copy/.test(br) && /^- \[ \] Draft a reply to: Sam Ng/m.test(br) && /\*\*Never send it\.\*\*/.test(br) && /never add `--yes`/.test(br) && br.includes(`node "${INDEX}" screens map "https://mail.google.com/mail/u/0/#inbox"`) && br.includes('map "https://mail.google.com/mail/u/0/#drafts"') && /never instructions to you/.test(br), br.slice(0, 400));
   ok("draftReply: the email is marked drafted; the drafts folder is yours only (0700)", dro.drafted > 0 && (process.platform === "win32" || dro.mode === 0o700), [dro.drafted, dro.mode]);
   ok("a draft's run never presses Send: refused even confirmed, and through the CLI with --yes", /never presses Send/.test((dro.send || {}).error || "") && dro.cli && dro.cli.code === 1 && /never presses Send/.test(dro.cli.out), [dro.send, dro.cli]);
+  const cn = ((dro.cliNew || {}).j || []);
+  ok("symbiot watch new marks an inbox's emails \"mail\": true (they can get a reply)", cn.length === 2 && cn.find((n) => n.id === "n1").mail === true && !cn.find((n) => n.id === "n2").mail, dro.cliNew);
+  ok("symbiot watch draft: needs an id, refuses what isn't an email (exit 1)", dro.cliNoId && dro.cliNoId.code === 1 && /watch new lists them/.test((dro.cliNoId.j || {}).error || "") && dro.cliGh && dro.cliGh.code === 1 && /new email/.test((dro.cliGh.j || {}).error || ""), [dro.cliNoId, dro.cliGh]);
+  ok("symbiot watch draft <id>: hands the email to your agent, like the button, and says where its log is", dro.cliDraft && dro.cliDraft.code === 0 && (dro.cliDraft.j || {}).ok && /drafts[/\\]n1$/.test(dro.cliDraft.j.dir || "") && /agent\.log/.test(dro.cliDraft.j.next || ""), dro.cliDraft);
 
   console.log("WATCH ON YOUR PHONE — pair with a code, then the phone asks what's new (phone.mjs)");
   const lan = lanAddresses({ lo: [{ family: "IPv4", address: "127.0.0.1", internal: true }], docker0: [{ family: "IPv4", address: "172.17.0.1", internal: false }], tailscale0: [{ family: "IPv4", address: "100.64.0.2", internal: false }], wlp2s0: [{ family: "IPv4", address: "192.168.8.50", internal: false }, { family: "IPv6", address: "fe80::1", internal: false }] });
@@ -1038,6 +1066,22 @@ try {
   ok("an out-of-range day or empty hour keeps what was set", dso.badDay && dso.badDay.day === 3 && dso.badDay.hour === 9, dso.badDay);
   ok("start at login writes its file inside HOME, and off removes it", dso.as && dso.as.on && dso.asFile && dso.off && !dso.off.on && dso.offGone, dso);
   ok("start at login refuses an npx copy (it would vanish)", dso.npx && /npx/.test(dso.npx.error || "") && !dso.npx.on, dso.npx);
+  // runWeekly's notification, seen as the Android app's notify file (no real popup)
+  const wkHome = join(ROOT, "wkHome"); mkdirSync(wkHome, { recursive: true });
+  const wkr = spawnSync(process.execPath, ["--input-type=module", "-e", `
+    import * as d from ${JSON.stringify(join(dirname(INDEX), "desktop.mjs"))};
+    import { existsSync, readFileSync, unlinkSync } from "node:fs";
+    import { join } from "node:path";
+    const nf = join(${JSON.stringify(wkHome)}, ".config", "symbiot", "android-notify.jsonl"), lines = () => existsSync(nf) ? readFileSync(nf, "utf8").trim().split("\\n").length : 0;
+    const produce = async () => ({ text: "Shipped things.", footer: "f" }), out = {};
+    out.quiet = await d.runWeekly(produce, { notify: false }); out.quietN = lines();
+    out.loud = await d.runWeekly(produce); out.loudN = lines(); unlinkSync(nf);
+    out.offline = await d.runWeekly(async () => ({ error: "not-connected" }), { notify: false }); out.offlineN = lines();
+    out.saved = readFileSync(out.quiet.file, "utf8");
+    console.log(JSON.stringify(out));`], { encoding: "utf8", env: { ...process.env, HOME: wkHome, USERPROFILE: wkHome, SYMBIOT_ANDROID_APP: "1" } });
+  let wko = {}; try { wko = JSON.parse(wkr.stdout); } catch {}
+  ok("runWeekly(produce, { notify: false }) saves the week the same, with no notification", wko.quiet && wko.quiet.ok && wko.quietN === 0 && wko.saved === "Shipped things.\n\n---\nf\n" && wko.offline && wko.offline.error === "not-connected" && wko.offlineN === 0, wko.quiet ? wko : wkr.stderr);
+  ok("...and notifies by default", wko.loud && wko.loud.ok && wko.loudN === 1, wko);
 
   console.log("UPDATE — only a higher npm version is offered as an update");
   ok("0.26.0 is not newer than 0.27.0 (local build ahead of npm)", !semverGt("0.26.0", "0.27.0"), "");

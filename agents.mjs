@@ -292,7 +292,7 @@ const readSymbiot = (path, f) => { try { return readFileSync(join(path, ".symbio
 // bullet under Questions is a question with no options.
 function parseQuestions(md) {
   const questions = [], suggestions = []; let sec = "q", cur = null;
-  const clip = (s) => String(s).trim().slice(0, 300);
+  const clip = (s) => String(s).trim().slice(0, 1000); // as long as a task holds (addTask), so an idea added in one click arrives whole
   for (const raw of String(md || "").split(/\r?\n/)) {
     const l = raw.trim(); if (!l) continue;
     let m;

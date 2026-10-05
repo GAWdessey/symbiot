@@ -187,6 +187,7 @@ function kindOf(url) {
   const h = hostOf(url);
   if (isGitHubInbox(url)) return ["GitHub notification", "GitHub notifications"];
   if (/^(mail|webmail)\.|^outlook\.(live|office|office365)\.com$/.test(h)) return ["email", "emails"];
+  if (h === "web.whatsapp.com") return ["WhatsApp message", "WhatsApp messages"];
   return null;
 }
 // What's new on each page you watch in the last `hours`: [{ name, count, label,
@@ -201,6 +202,23 @@ function waitingOn(hours = 24, now = Date.now()) {
     const k = kindOf(g.url), count = g.items.length;
     return { name: g.name, count, label: k ? `${count} ${k[count === 1 ? 0 : 1]}` : `${count} new on ${g.name}`, items: g.items };
   });
+}
+
+// ---- the Dashboard: one card per page you watch ----------------------------------
+// Each watch with what it found in the last `hours`: its source (mail, github,
+// chat, page), how many ("3 emails"), the newest few and its latest brief. Read
+// from all of watch.json, so a busy GitHub can't push your mail off the board the
+// way it can off the 50 newest under Watching.
+const sourceOf = (url) => (isGitHubInbox(url) ? "github" : isMail(url) ? "mail" : hostOf(url) === "web.whatsapp.com" ? "chat" : "page");
+function watchBoard(hours = 24, now = Date.now()) {
+  const d = loadWatch(), since = now - hours * 3600000;
+  const cards = d.watches.map((w) => {
+    const recent = d.news.filter((n) => n.watch === w.id && n.ts >= since), k = kindOf(w.url), mail = isMail(w.url), count = recent.length;
+    const b = d.briefs.find((x) => x.watch === w.id && x.ts >= since);
+    return { ...view(w), source: sourceOf(w.url), count, label: k ? `${count} ${k[count === 1 ? 0 : 1]}` : `${count} new`,
+      items: recent.slice(0, 8).map((n) => (mail ? { ...n, mail: true } : n)), ...(b ? { brief: { text: b.text, ts: b.ts, count: b.count } } : {}) };
+  });
+  return { hours, total: cards.reduce((s, c) => s + c.count, 0), cards, brief: briefOn() };
 }
 
 // A batch of news as one notification: how many and where, then the brief if
@@ -349,4 +367,4 @@ function startWatches(opts = {}) {
   return () => { clearTimeout(first); clearInterval(every); };
 }
 
-export { WATCH_FILE, EVERY, GITHUB_INBOX, DRAFTS_DIR, itemsOf, itemKey, newItems, remember, isGitHubInbox, githubItems, readGitHub, setBrief, briefOf, newsNotice, watchState, addWatch, setEvery, removeWatch, clearNews, newsSince, newsAfter, waitingOn, draftsUrl, draftBrief, draftReply, checkWatch, dueWatches, startWatches };
+export { WATCH_FILE, EVERY, GITHUB_INBOX, DRAFTS_DIR, itemsOf, itemKey, newItems, remember, isGitHubInbox, githubItems, readGitHub, setBrief, briefOf, newsNotice, watchState, addWatch, setEvery, removeWatch, clearNews, newsSince, newsAfter, waitingOn, watchBoard, isMail, draftsUrl, draftBrief, draftReply, checkWatch, dueWatches, startWatches };

@@ -103,8 +103,11 @@ npm run lint
 
 An ESLint pass with two rules only (`eslint.config.js`): `no-undef` and
 `no-unused-vars`, which catch a name lost when code moves between modules (used
-but no longer imported, or imported and no longer used). CI runs it before the
-suite.
+but no longer imported, or imported and no longer used). It covers the page's
+own JavaScript too: the `<script>` inside `ui.mjs` is linted as a browser
+script, with its errors on `ui.mjs`'s lines, so a function lost from the page
+fails here rather than only when the smoke test happens to press that button.
+CI runs it before the suite.
 
 ## Releasing
 
