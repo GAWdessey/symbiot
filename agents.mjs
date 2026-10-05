@@ -4,9 +4,9 @@
 import { spawn } from "node:child_process";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { readFileSync, writeFileSync, mkdirSync, existsSync, openSync, writeSync, unlinkSync } from "node:fs";
-import { randomBytes } from "node:crypto";
-import { loadConfig, saveConfig, loadTasks, sameTask, sh, hasCmd } from "./core.mjs";
+import { readFileSync, writeFileSync, mkdirSync, existsSync, openSync, writeSync, unlinkSync, readdirSync, statSync } from "node:fs";
+import { randomBytes, createHash } from "node:crypto";
+import { loadConfig, saveConfig, loadTasks, sameTask, taskWords, sh, hasCmd } from "./core.mjs";
 
 const HANDOFFS = []; // live registry of agents Symbiot has handed work to
 // ---- hand a repo (+ its tasks) to the user's agent — generic, settings-based
@@ -48,21 +48,50 @@ function grantRule(tool) {
   t = t.replace(/[()"'`]/g, "").replace(/:\*$/, "").trim();
   return t ? `Bash(${t}:*)` : "";
 }
+// Add a rule to a Claude command's --allowedTools (or start the flag), once.
+function allowTool(cmd, t) {
+  if (!t || cmd.includes(`"${t}"`)) return cmd;
+  if (/--allowedTools\b/.test(cmd)) return cmd.replace(/(--allowedTools\s+(?:"[^"]*"\s*)+)/, (m) => m.trimEnd() + ` "${t}" `);
+  return cmd + ` --allowedTools "${t}"`;
+}
+const isClaudeCmd = (cmd) => /^\s*claude\b/.test(String(cmd || ""));
 function grantAgent({ tool, dir } = {}) {
   const cfg = loadConfig(); let cmd = (cfg.agentCmd || CLAUDE_CMD).trim();
-  if (!/^\s*claude\b/.test(cmd)) return { error: "Grants apply to the Claude agent command. Pick a Claude preset first, or edit the command directly." };
-  if (tool) {
-    const t = grantRule(tool);
-    if (t && !cmd.includes(`"${t}"`)) {
-      if (/--allowedTools\b/.test(cmd)) cmd = cmd.replace(/(--allowedTools\s+(?:"[^"]*"\s*)+)/, (m) => m.trimEnd() + ` "${t}" `);
-      else cmd += ` --allowedTools "${t}"`;
-    }
-  }
+  if (!isClaudeCmd(cmd)) return { error: "Grants apply to the Claude agent command. Pick a Claude preset first, or edit the command directly." };
+  if (tool) cmd = allowTool(cmd, grantRule(tool));
   if (dir) { const d = String(dir).trim(); if (d && !cmd.includes(`--add-dir "${d}"`)) cmd += ` --add-dir "${d}"`; }
   cmd = cmd.replace(/\s+/g, " ").trim();
   cfg.agentCmd = cmd; saveConfig(cfg);
   return { ok: true, cmd };
 }
+// ---- connectors: what the user linked to Claude, for its runs -------------
+// Connectors linked to Claude (claude.ai's Google Drive, Gmail, Notion…, and
+// servers added with `claude mcp add`) are tools to an unattended run only when
+// --allowedTools names them: `claude -p` can't ask, so a run told to check your
+// Drive or mail was refused and said it had no access. From ~/.claude.json: the
+// claude.ai connectors that have connected (claudeAiMcpEverConnected), the
+// user's own servers and this folder's. One waiting to be authorized
+// (mcpNeedsAuthNoticed) is listed but not ready. Its rule, mcp__<name>, allows
+// all its tools; Claude names them with anything but letters, digits, _ and -
+// made _ ("claude.ai Google Drive" -> mcp__claude_ai_Google_Drive__search_files).
+function claudeConnectors(dir = "", file = join(homedir(), ".claude.json")) {
+  let j = {}; try { j = JSON.parse(readFileSync(file, "utf8")) || {}; } catch {}
+  const names = (x) => Array.isArray(x) ? x.filter((s) => typeof s === "string" && s) : [];
+  const servers = (o) => o && typeof o === "object" && !Array.isArray(o) ? Object.keys(o) : [];
+  const proj = dir && j.projects && typeof j.projects === "object" ? j.projects[dir] : null;
+  const needsAuth = new Set(names(j.mcpNeedsAuthNoticed));
+  return [...new Set([...names(j.claudeAiMcpEverConnected), ...servers(j.mcpServers), ...servers(proj && proj.mcpServers)])]
+    .map((name) => ({ name, rule: "mcp__" + name.replace(/[^A-Za-z0-9_-]/g, "_"), ready: !needsAuth.has(name) }));
+}
+// A Claude command with the ready connectors' rules added, for this run only:
+// the saved command stays as typed, so linking or unlinking one takes effect on
+// the next run. Any other agent's command runs as-is (Settings says so).
+function withConnectors(tmpl, dir, file) {
+  if (!isClaudeCmd(tmpl)) return tmpl;
+  return claudeConnectors(dir, file).filter((c) => c.ready).reduce((cmd, c) => allowTool(cmd, c.rule), tmpl).replace(/\s+$/, "");
+}
+// For Settings → Handoff: the connectors, and whether this command's runs get them.
+function connectorsInfo(file) { return { claude: isClaudeCmd(handoffCmd()), list: claudeConnectors("", file).map(({ name, ready }) => ({ name, ready })) }; }
 const fillHandoff = (tmpl, repoPath) => tmpl.replace(/\{dir\}/g, shSingle(repoPath)).replace(/\{prompt\}/g, escDq(HANDOFF_PROMPT));
 // One agent per folder: two identical runs once started on the same repo 6s
 // apart and raced each other. The registry catches a second click in this
@@ -74,21 +103,59 @@ const fillHandoff = (tmpl, repoPath) => tmpl.replace(/\{dir\}/g, shSingle(repoPa
 // A folder's .symbiot/handoff.json ({ name, env }) names its job and joins its
 // environment, on every run there, a rerun with answers too: a draft reply's
 // folder (watch.mjs) carries SYMBIOT_DRAFT, which refuses a press on Send.
-function runHandoff(repoPath) {
-  const tmpl = handoffCmd(); if (!tmpl || !repoPath) return null;
+// A folder whose last run stopped on questions, with nothing changed since
+// that could answer them, gets no run: { blocked, questions, note }
+// (blockedAgain). force starts one anyway (something changed elsewhere).
+function runHandoff(repoPath, { force = false } = {}) {
+  let tmpl = handoffCmd(); if (!tmpl || !repoPath) return null;
   let opts = {}; try { opts = JSON.parse(readSymbiot(repoPath, "handoff.json")) || {}; } catch {}
   const busy = runningHandoff(repoPath); if (busy) return { busy: true, id: busy.id || "", pid: busy.pid, auto: !!busy.auto };
   releaseHeldTasks(repoPath); // held for an agent another process started, which has since exited
+  tmpl = withConnectors(tmpl, repoPath);
+  const blocked = !force && blockedAgain(repoPath, tmpl); if (blocked) return blocked;
   const lock = join(repoPath, ".symbiot", LOCK);
   const env = opts.env && typeof opts.env === "object" ? Object.fromEntries(Object.entries(opts.env).map(([k, v]) => [k, String(v)])) : null;
-  const e = track(typeof opts.name === "string" && opts.name ? opts.name.slice(0, 80) : repoPath.split("/").pop(), fillHandoff(tmpl, repoPath), repoPath, () => {
+  const e = track(typeof opts.name === "string" && opts.name ? opts.name.slice(0, 80) : repoPath.split("/").pop(), fillHandoff(tmpl, repoPath), repoPath, (code) => {
     try { if (JSON.parse(readFileSync(lock, "utf8")).pid === e.pid) unlinkSync(lock); } catch {}
+    noteBlocked(repoPath, tmpl, e.startedAt, code);
     startHeldTasks(repoPath); // tasks sent while it ran land now; start on them as that Send would have
   }, env);
   if (!e) return null;
   e.handoff = true;
   if (e.pid) try { writeFileSync(lock, JSON.stringify({ pid: e.pid, id: e.id, startedAt: e.startedAt, owner: process.pid })); } catch {}
   return e;
+}
+// ---- a run that would only report the same blockers again -------------------
+// A run that ends having asked questions (QUESTIONS.md written during it, some
+// still unanswered) with tasks left unticked is blocked on the user: noteBlocked
+// keeps what it ran with in .symbiot/blocked.json. Another run on the same
+// inputs could only say the same things again, so blockedAgain refuses one
+// until something it could act on changes: .env (the values it asked for),
+// ANSWERS.md, the agent command (a grant, a connector) or a task it didn't have.
+const BLOCKED = "blocked.json";
+const digest = (s) => createHash("sha1").update(String(s)).digest("hex").slice(0, 16);
+const openTasks = (path) => readSymbiot(path, "TASKS.md").split("\n").filter((l) => /^\s*-\s*\[ \]/.test(l)).map((l) => taskWords(l.replace(/^\s*-\s*\[ \]\s*/, ""))).filter(Boolean);
+function runInputs(path, cmd) {
+  let files = [], env = ""; try { files = readdirSync(path).filter((f) => /^\.env(\..+)?$/.test(f) && !/\.(example|sample|template)$/.test(f)).sort(); } catch {}
+  for (const f of files) { try { env += f + "\0" + readFileSync(join(path, f), "utf8") + "\0"; } catch {} }
+  return { env: digest(env), answers: digest(readSymbiot(path, "ANSWERS.md")), cmd: digest(cmd), open: openTasks(path) };
+}
+function noteBlocked(path, cmd, startedAt, code) {
+  const f = join(path, ".symbiot", BLOCKED);
+  let asked = false; try { asked = statSync(join(path, ".symbiot", "QUESTIONS.md")).mtimeMs >= startedAt; } catch {}
+  const questions = asked ? agentQuestions(path, "").questions.length : 0, inputs = runInputs(path, cmd);
+  try {
+    if (code === 0 && questions && inputs.open.length) writeFileSync(f, JSON.stringify({ at: Date.now(), questions, ...inputs }));
+    else unlinkSync(f);
+  } catch {}
+}
+function blockedAgain(path, cmd) {
+  let b = null; try { b = JSON.parse(readSymbiot(path, BLOCKED)); } catch {}
+  if (!b || !Array.isArray(b.open)) return null;
+  const now = runInputs(path, cmd), was = new Set(b.open);
+  if (now.env !== b.env || now.answers !== b.answers || now.cmd !== b.cmd || !now.open.length || now.open.some((t) => !was.has(t))) return null;
+  const n = b.questions || 0, them = n === 1 ? "it" : "them";
+  return { blocked: true, questions: n, note: `Not started: the last run here stopped on ${n} question${n === 1 ? "" : "s"}, and .env and ANSWERS.md haven't changed since, so another run would only ask again. Answer ${them} or change .env, then send again.` };
 }
 const LOCK = "agent.pid";
 const LOCK_MAX_AGE = 12 * 3600 * 1000; // older than this, the pid has probably been reused
@@ -132,7 +199,7 @@ function releaseHeldTasks(path) {
 // once, so this can't loop. Returns the new job, or null.
 function startHeldTasks(path) {
   if (!releaseHeldTasks(path) || !/^\s*-\s*\[ \]/m.test(readSymbiot(path, "TASKS.md"))) return null;
-  const n = runHandoff(path); if (!n || n.busy) return null;
+  const n = runHandoff(path); if (!n || n.busy || n.blocked) return null;
   n.fromHeld = true; return n;
 }
 // Presets. [cmd, label, macAppName] — macApp used to launch GUI editors on macOS
@@ -348,7 +415,7 @@ function answerQuestions(path, answers, opts = {}) {
     writeFileSync(join(path, ".symbiot", "ANSWERS.md"), prev.replace(/\s*$/, "\n") + rows.map((x) => `\n### ${x.q}\n${x.a}\n_answered ${day}_\n`).join(""));
   } catch (e) { return { error: "Couldn't write ANSWERS.md: " + ((e && e.message) || e) }; }
   const out = { ok: true, saved: rows.length };
-  if (opts.rerun) { const e = runHandoff(path); if (e && e.busy) out.note = "Answers saved. An agent is still running in that folder, so another wasn't started. Send them again once it finishes."; else if (e) out.rerun = e.id; else out.note = "Answers saved. Set an agent command in Settings to have the agent pick them up automatically."; }
+  if (opts.rerun) { const e = runHandoff(path); if (e && e.busy) out.note = "Answers saved. An agent is still running in that folder, so another wasn't started. Send them again once it finishes."; else if (e && e.blocked) out.note = "Answers saved. " + e.note; else if (e) out.rerun = e.id; else out.note = "Answers saved. Set an agent command in Settings to have the agent pick them up automatically."; }
   return out;
 }
 // The open tasks' titles in a held brief (TASKS.next.md), or null if nothing is held.
@@ -367,4 +434,4 @@ function agentsList() {
   });
 }
 
-export { HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, fillHandoff, runHandoff, runningHandoff, writeTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, agentQuestions, answerQuestions, agentsList };
+export { HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, connectorsInfo, fillHandoff, runHandoff, blockedAgain, runningHandoff, writeTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, agentQuestions, answerQuestions, agentsList };

@@ -30,13 +30,42 @@ function addTask(text, repo) {
 }
 function toggleTask(id) { const t = loadTasks(); const it = t.find((x) => x.id === id); if (it) { it.done = !it.done; saveTasks(t); } return it || { error: "not found" }; }
 function removeTask(id) { saveTasks(loadTasks().filter((x) => x.id !== id)); return { ok: true }; }
-function restoreTask(id) { const t = loadTasks(); const it = t.find((x) => x.id === id); if (it) { it.archived = false; it.done = false; delete it.archivedAt; saveTasks(t); } return it || { error: "not found" }; }
+function restoreTask(id) { const t = loadTasks(); const it = t.find((x) => x.id === id); if (it) { it.archived = false; it.done = false; delete it.archivedAt; if (it.removedBy) { it.kept = true; delete it.removedBy; delete it.merged; } saveTasks(t); } return it || { error: "not found" }; }
 // Which task texts the agent checked off in a repo's .symbiot/TASKS.md
 function completedInRepo(repoPath) {
   try { return readFileSync(join(repoPath, ".symbiot", "TASKS.md"), "utf8").split("\n").filter((l) => /^\s*-\s*\[x\]/i.test(l)).map((l) => l.replace(/^\s*-\s*\[x\]\s*/i, "").trim().toLowerCase()); }
   catch { return []; }
 }
 
+// A task that removes others: `Drop the "gosolr's own WhatsApp number" task`,
+// "Merge the two `WA_WABA_ID` tasks into one". An agent can't edit your task
+// list, so approving one was all that happened: the tasks it named stayed open,
+// and every regenerated TASKS.md brought them back. Once it's approved, they go
+// here: dropped ones are archived, merged ones too, all but the newest. It
+// names them with a quoted phrase (`…`, "…", “…”) whose words are all in
+// theirs ('s aside), and only reaches open tasks in its repo from before its
+// approval. A phrase that names more than MAX_REMOVED is too vague to act on.
+// Archived, each keeps removedBy (and merged); one you restore stays (kept).
+const REMOVES = /^\s*(drop|remove|delete|merge|combine|dedupe|deduplicate)\b/i, MAX_REMOVED = 4;
+const noPossessive = (s) => String(s || "").replace(/['’]s\b/gi, "");
+function removalOf(text) {
+  const s = String(text || ""), m = s.match(REMOVES), at = s.search(/\btasks?\b/i); if (!m || at < 0) return null;
+  // up to "task": "…the two `WA_WABA_ID` tasks. Both are the same edit to `.env`" names no `.env` task
+  const phrases = [...s.slice(0, at).matchAll(/`([^`]+)`|"([^"]+)"|“([^”]+)”/g)].map((x) => taskWords(noPossessive(x[1] || x[2] || x[3]))).filter(Boolean);
+  return phrases.length ? { merge: /^(merge|combine|dedupe)/i.test(m[1]), phrases } : null;
+}
+function applyRemovals(t) {
+  let n = 0; const now = Date.now();
+  for (const r of t.filter((x) => x.approvedAt && x.repo)) {
+    const rm = removalOf(r.text); if (!rm) continue;
+    const named = (x) => { const w = new Set(taskWords(noPossessive(x.text)).split(" ")); return rm.phrases.some((p) => p.split(" ").every((y) => w.has(y))); };
+    const hit = t.filter((x) => x !== r && x.repo === r.repo && !x.done && !x.archived && !x.review && !x.kept && (x.ts || 0) < r.approvedAt && named(x));
+    if (hit.length > MAX_REMOVED || (rm.merge && hit.length < 2)) continue;
+    const go = rm.merge ? hit.sort((a, b) => (b.ts || 0) - (a.ts || 0)).slice(1) : hit;
+    for (const x of go) { Object.assign(x, { done: true, archived: true, archivedAt: now, removedBy: r.id }); if (rm.merge) x.merged = true; n++; }
+  }
+  return n;
+}
 // "Check what was handed out, see what's completed, then archive it" — with an
 // approval step in between. An agent ticking an item in TASKS.md means "done,
 // please review", NOT archived: it waits in review until the user approves it
@@ -52,8 +81,9 @@ function syncTasks() {
     if (checkedByRepo[x.repo].some((c) => sameTask(c, x.text))) { x.review = true; x.reviewAt = Date.now(); review++; }
   }
   for (const x of t) { if (x.done && !x.archived) { x.archived = true; x.archivedAt = Date.now(); archived++; } }
+  const removed = applyRemovals(t);
   saveTasks(t);
-  return { review, archived, started };
+  return { review, archived, started, removed };
 }
 // git with an argv (task text goes into commit messages — never through a shell)
 function git(repo, args, timeout = 30000) {
@@ -352,8 +382,9 @@ function approveRepo(repo, opts = {}) {
   if (r.error) return r;
   const now = Date.now();
   for (const x of items) { x.review = false; x.done = true; x.archived = true; x.archivedAt = now; x.approvedAt = now; for (const k of ["branch", "commit", "pr"]) if (r[k]) x[k] = r[k]; }
+  const removed = applyRemovals(t);
   saveTasks(t);
-  return { ...r, approved: items.length };
+  return { ...r, approved: items.length, ...(removed ? { removed } : {}) };
 }
 // "Approve changes without a task": ship the uncommitted changes even though no
 // ticked task is behind them (a fix the agent made but didn't tick). If tasks are
@@ -415,7 +446,8 @@ function buildTasksMd(name, ctx, list) {
   return L.join("\n") + "\n";
 }
 function pushTasks(filter) {
-  let tasks = loadTasks().filter((t) => !t.done && !t.archived && !t.review);
+  const all = loadTasks(); if (applyRemovals(all)) saveTasks(all); // what an approved Drop/Merge named never goes out again
+  let tasks = all.filter((t) => !t.done && !t.archived && !t.review);
   if (filter && filter.type) tasks = tasks.filter((t) => taskType(t.text) === filter.type);
   if (filter && filter.repo) tasks = tasks.filter((t) => t.repo === filter.repo);
   if (!tasks.length) return { empty: true, written: [], unresolved: [] };
@@ -445,4 +477,4 @@ function pushTasks(filter) {
   return { empty: false, written, unresolved, handoff: handoffCmd() };
 }
 
-export { addTask, toggleTask, removeTask, restoreTask, completedInRepo, syncTasks, workingChanges, workingDiff, publishesOnMerge, unreleased, bumpOffer, learnNpm, releaseNeeded, withReleases, setVersion, shipWithBump, pendingReview, commitSubject, shipChanges, autoMergeRepos, setAutoMerge, approveRepo, approveChanges, sendBack, TASK_ORDER, taskType, buildTasksMd, pushTasks };
+export { addTask, toggleTask, removeTask, restoreTask, completedInRepo, removalOf, applyRemovals, syncTasks, workingChanges, workingDiff, publishesOnMerge, unreleased, bumpOffer, learnNpm, releaseNeeded, withReleases, setVersion, shipWithBump, pendingReview, commitSubject, shipChanges, autoMergeRepos, setAutoMerge, approveRepo, approveChanges, sendBack, TASK_ORDER, taskType, buildTasksMd, pushTasks };
