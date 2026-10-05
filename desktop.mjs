@@ -57,18 +57,20 @@ function weeklyState() { return { ...weeklyCfg(), latest: latestWeek() }; }
 // Write the week with `produce` (index.mjs), save it and notify. `last` is set
 // first, so a slow or failing run is never retried every minute. notify: false
 // skips the notification, for a caller that tells you itself (the saved file
-// and what's returned are the same either way).
+// and what's returned are the same either way): the Week tab's button does, so
+// a week written there is saved too. What's returned is produce's answer (text,
+// footer), plus the file it was saved to, or an error.
 async function runWeekly(produce, { notify: on = true } = {}) {
   const notify = (body) => on && desktopNotify("Symbiot", body);
   const cfg = loadConfig(); cfg.weekly = { ...weeklyCfg(cfg), last: Date.now() }; saveConfig(cfg);
   const r = await produce("week");
   if (r.error === "not-connected") { notify("Time for your weekly update. Connect an AI in Symbiot's Settings and it writes it for you."); return { error: r.error }; }
-  if (/^\(?couldn't reach the model/i.test(String(r.text || ""))) { notify("Couldn't write your week: the model didn't answer. Try the Week tab."); return { error: r.text }; }
+  if (/^\(?couldn't reach the model/i.test(String(r.text || ""))) { notify("Couldn't write your week: the model didn't answer. Try the Week tab."); return { ...r, error: r.text }; }
   const file = join(WEEKS_DIR, localDay() + ".md");
   try { mkdirSync(WEEKS_DIR, { recursive: true }); writeFileSync(file, String(r.text || "").trim() + (r.footer ? FOOT + r.footer : "") + "\n"); }
-  catch (e) { return { error: "Couldn't save the write-up: " + ((e && e.message) || e) }; }
+  catch (e) { return { ...r, error: "Couldn't save the write-up: " + ((e && e.message) || e) }; }
   notify("Your week is written. Open the Week tab in Symbiot, or " + file);
-  return { ok: true, file, text: r.text };
+  return { ...r, ok: true, file };
 }
 // Checks once a minute while the app runs. Returns a stop function.
 function startWeekly(produce) {

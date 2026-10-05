@@ -17,9 +17,9 @@ import { computeDrift } from "./drift.mjs";
 import { addTask, toggleTask, removeTask, restoreTask, syncTasks, taskType, pushTasks, pendingReview, workingDiff, learnNpm, withReleases, approveRepo, approveChanges, sendBack, setAutoMerge } from "./tasks.mjs";
 import { repoReview, repoSuggest, folderSuggest, taskChat, clearTaskChat, mailState, setMail, sentMail, produce } from "./writeups.mjs";
 import { loadScreens, screenImage, captureScreen, splitScreen, listMonitors, allowScreenshots, importScreen, setRegions, renameScreen, removeScreen, blueprint, clickRegion } from "./screens.mjs";
-import { mapPage, pressRegion, typeRegion, scrollPage, signIn, keepBrowserOpen, isTrusted, trustedSites, trustSite, untrustSite } from "./headless.mjs";
+import { mapPage, wholePage, pressRegion, typeRegion, scrollPage, signIn, keepBrowserOpen, isTrusted, trustedSites, trustSite, untrustSite } from "./headless.mjs";
 import { weeklyState, setWeekly, runWeekly, startWeekly, autostartState, setAutostart } from "./desktop.mjs";
-import { watchState, addWatch, setEvery, removeWatch, clearNews, checkWatch, startWatches, setBrief, draftReply, watchBoard } from "./watch.mjs";
+import { watchState, addWatch, setEvery, removeWatch, clearNews, seenWatch, checkWatch, startWatches, setBrief, draftReply, watchBoard } from "./watch.mjs";
 import { phoneState, setPhoneLink, newCode, unpairPhone, pairComputer, forgetComputer, pollComputer, startPhone } from "./phone.mjs";
 
 // The in-app update installs the EXACT newest version (not the `latest` tag, which
@@ -199,12 +199,13 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       // A web page in the hidden browser (headless.mjs): mapped by itself, no
       // screen needed. Press acts on the real site, signed in as you, so it's
       // confirmed like a click; Sign in opens a window the user signs in with.
-      if (u.pathname === "/api/screens/map" && req.method === "POST") { const b = await readBody(req); return json(res, screenOut(await mapPage(b.site, b.name))); }
+      if (u.pathname === "/api/screens/map" && req.method === "POST") { const b = await readBody(req); return json(res, screenOut(await mapPage(b.site, b.name, { whole: b.whole === true }))); }
       // press / type: refused unless confirmed, or the page's site is one you trust
       if (u.pathname === "/api/screens/press" && req.method === "POST") { const b = await readBody(req); return json(res, screenOut(await pressRegion(String(b.id || ""), String(b.region || ""), { confirmed: b.confirmed === true, noSend: b.noSend === true }))); }
-      // scroll: only looks, so it never asks
+      // scroll and whole page: they only look, so they never ask
+      if (u.pathname === "/api/screens/whole" && req.method === "POST") { const b = await readBody(req); return json(res, screenOut(await wholePage(String(b.id || "")))); }
       if (u.pathname === "/api/screens/scroll" && req.method === "POST") { const b = await readBody(req); return json(res, screenOut(await scrollPage(String(b.id || ""), String(b.to || "down")))); }
-      if (u.pathname === "/api/screens/type" && req.method === "POST") { const b = await readBody(req); return json(res, screenOut(await typeRegion(String(b.id || ""), String(b.region || ""), b.text, { enter: b.enter === true, confirmed: b.confirmed === true }))); }
+      if (u.pathname === "/api/screens/type" && req.method === "POST") { const b = await readBody(req); return json(res, screenOut(await typeRegion(String(b.id || ""), String(b.region || ""), b.text, { enter: b.enter === true, confirmed: b.confirmed === true, noSend: b.noSend === true }))); }
       if (u.pathname === "/api/screens/trusted") return json(res, { sites: trustedSites() });
       if (u.pathname === "/api/screens/trusted/add" && req.method === "POST") { const b = await readBody(req); return json(res, trustSite(b.site)); }
       if (u.pathname === "/api/screens/trusted/remove" && req.method === "POST") { const b = await readBody(req); return json(res, untrustSite(b.site)); }
@@ -217,6 +218,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       if (u.pathname === "/api/watch/remove" && req.method === "POST") { const b = await readBody(req); return json(res, removeWatch(String(b.id || ""))); }
       if (u.pathname === "/api/watch/check" && req.method === "POST") { const b = await readBody(req); return json(res, await checkWatch(String(b.id || ""))); }
       if (u.pathname === "/api/watch/clear" && req.method === "POST") return json(res, clearNews());
+      if (u.pathname === "/api/watch/seen" && req.method === "POST") { const b = await readBody(req); return json(res, seenWatch(String(b.id || ""))); }
       if (u.pathname === "/api/watch/brief" && req.method === "POST") { const b = await readBody(req); return json(res, setBrief(b.on === true)); }
       // Draft a reply: a new email handed to your agent, which leaves a reply in Drafts (never sends)
       if (u.pathname === "/api/watch/draft" && req.method === "POST") { const b = await readBody(req); return json(res, draftReply(String(b.id || ""))); }
@@ -235,7 +237,8 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       if (u.pathname === "/api/desktop/weekly" && req.method === "POST") { const b = await readBody(req); return json(res, setWeekly(b)); }
       if (u.pathname === "/api/desktop/weekly/run" && req.method === "POST") { const b = await readBody(req); return json(res, await runWeekly(writeup, { notify: b.notify !== false })); }
       if (u.pathname === "/api/desktop/autostart" && req.method === "POST") { const b = await readBody(req); return json(res, setAutostart(!!b.on, bin)); }
-      if (u.pathname === "/api/run" && req.method === "POST") { const b = await readBody(req); const cmd = ["week", "standup", "todo"].includes(b.cmd) ? b.cmd : "week"; return json(res, await writeup(cmd)); }
+      // the Week tab's week is saved to weeks/ too, as Write it now saves it (no notification: you're looking at it)
+      if (u.pathname === "/api/run" && req.method === "POST") { const b = await readBody(req); const cmd = ["week", "standup", "todo"].includes(b.cmd) ? b.cmd : "week"; return json(res, cmd === "week" ? await runWeekly(writeup, { notify: false }) : await writeup(cmd)); }
       if (u.pathname === "/api/connect" && req.method === "POST") { return json(res, await connectProvider(await readBody(req))); }
       if (u.pathname === "/api/ping") { if (u.searchParams.get("fresh") === "1") await checkLatest(); return json(res, { version: VERSION, started: SERVER_STARTED, latest: LATEST_VERSION, newer: semverGt(LATEST_VERSION, VERSION), ...(IN_TERMUX ? { termux: true } : {}) }); }
       if (u.pathname === "/api/update" && req.method === "POST") {

@@ -38,8 +38,8 @@ import { gitDefaultBranch, loadDeploys, driftRepo, computeDrift } from "./drift.
 import { buildTasksMd, taskType, shipChanges, shipWithBump, bumpOffer, learnNpm, releaseNeeded, withReleases, setVersion, syncTasks, pendingReview, unreleased, publishesOnMerge, addTask, approveRepo, approveChanges, sendBack, pushTasks } from "./tasks.mjs";
 import { produce, mailState, setMail, sentMail } from "./writeups.mjs";
 import { loadScreens, screenImage, blueprint } from "./screens.mjs";
-import { mapPage, pressRegion, typeRegion, scrollPage, signIn, isTrusted } from "./headless.mjs";
-import { watchState, addWatch, removeWatch, newsSince, checkWatch, setBrief, isMail, draftReply } from "./watch.mjs";
+import { mapPage, wholePage, pressRegion, typeRegion, scrollPage, signIn, isTrusted } from "./headless.mjs";
+import { watchState, addWatch, removeWatch, seenWatch, newsSince, markNews, checkWatch, setBrief, draftReply, watchBoard } from "./watch.mjs";
 import { PORT as PHONE_PORT, phoneState, pairComputer, pollComputer, forgetComputer } from "./phone.mjs";
 import { startApp, updateCmd, isAppRunningWeekly } from "./server.mjs";
 
@@ -327,7 +327,11 @@ async function cmdScreens() {
     for (const s of list) console.log(`${s.id}  ${s.name}  ${c.d(`${(s.regions || []).length} regions · ${s.page ? s.page.url : s.w + "×" + s.h + " " + s.via}`)}`);
     return;
   }
-  if (sub === "map") { const body = { site: a1, name: flag("name", "") }; return out(screenJson((await viaApp("/api/screens/map", body)) || await mapPage(body.site, body.name))); }
+  if (sub === "map") { const body = { site: a1, name: flag("name", ""), whole: has("whole") }; return out(screenJson((await viaApp("/api/screens/map", body)) || await mapPage(body.site, body.name, { whole: body.whole }))); }
+  if (sub === "whole") {
+    const s = find(a1); if (!s) return out({ error: "No screen " + (a1 || "") + ". symbiot screens lists them." });
+    return out(screenJson((await viaApp("/api/screens/whole", { id: s.id })) || await wholePage(s.id)));
+  }
   if (sub === "scroll") {
     const s = find(a1); if (!s) return out({ error: "No screen " + (a1 || "") + ". symbiot screens lists them." });
     const body = { id: s.id, to: a2 || "down" };
@@ -340,17 +344,19 @@ async function cmdScreens() {
     const want = String(a2 || "").toLowerCase(), rs = s.regions || [];
     const r = rs.find((x) => x.id === a2) || rs.find((x) => x.label.toLowerCase() === want) || (rs.filter((x) => x.label.toLowerCase().includes(want)).length === 1 && rs.find((x) => x.label.toLowerCase().includes(want)));
     if (!want || !r) return out({ error: `No region "${a2 || ""}" on that screen (give its id, or a label that matches one region).` });
-    // a draft reply's agent (SYMBIOT_DRAFT, watch.mjs) never presses Send
-    const body = { id: s.id, region: r.id, confirmed: has("yes"), ...(sub === "type" ? { text: a3, enter: has("enter") } : { noSend: !!process.env.SYMBIOT_DRAFT }) };
-    const done = (await viaApp("/api/screens/" + sub, body)) || (sub === "press" ? await pressRegion(s.id, r.id, { confirmed: body.confirmed, noSend: body.noSend }) : await typeRegion(s.id, r.id, a3, { enter: body.enter, confirmed: body.confirmed }));
+    // a draft reply's agent (SYMBIOT_DRAFT, watch.mjs) never presses Send, or Enter (it sends in a chat)
+    const body = { id: s.id, region: r.id, confirmed: has("yes"), noSend: !!process.env.SYMBIOT_DRAFT, ...(sub === "type" ? { text: a3, enter: has("enter") } : {}) };
+    const done = (await viaApp("/api/screens/" + sub, body)) || (sub === "press" ? await pressRegion(s.id, r.id, { confirmed: body.confirmed, noSend: body.noSend }) : await typeRegion(s.id, r.id, a3, { enter: body.enter, confirmed: body.confirmed, noSend: body.noSend }));
     // not a trusted site: say how to go ahead (only you can trust a site, in the app's Settings)
     if (done && done.confirm) return out({ error: `${done.error} Add --yes to go ahead, or list ${done.host} under Trusted sites in Symbiot's Settings.` });
     return out(screenJson(done));
   }
   console.log(`${c.b("symbiot screens")} ${c.d("— experimental")}
   symbiot screens                              list your screens
-  symbiot screens map <site> [--name N]        open a site in a hidden browser and map
-                                               its buttons, links and fields (JSON)
+  symbiot screens map <site> [--name N] [--whole]
+                                               open a site in a hidden browser and map
+                                               its buttons, links and fields (JSON);
+                                               --whole: all of the page in one tall screen
   symbiot screens show <id>                    a screen's blueprint (JSON)
   symbiot screens press <id> <region> [--yes]  press a region there, map where it lands
   symbiot screens type <id> <field> "text" [--enter] [--yes]
@@ -358,6 +364,9 @@ async function cmdScreens() {
   symbiot screens scroll <id> [down|up|top|bottom]
                                                scroll the page, map what's in the window then
                                                (a map's "more" says there's more below or above)
+  symbiot screens whole <id>                   map all of that page in one tall screenshot
+                                               (a page that scrolls as a whole, not a list
+                                               inside it like Gmail's: scroll that)
   symbiot screens signin <site>               sign in once, in Symbiot's browser window
   --yes is needed unless the page's site is under Trusted sites in the app's Settings.
   While the app runs, these use its hidden browser, which stays open a few minutes:
@@ -367,7 +376,7 @@ async function cmdScreens() {
 }
 
 // ---- `symbiot watch`: pages Symbiot keeps track of, and what's new on them ----
-// new, add, remove and check print JSON, for you or an agent.
+// new, board, seen, add, remove and check print JSON, for you or an agent.
 async function cmdWatch() {
   const [sub = "list", a1] = argv.slice(1).filter((x, i, all) => !x.startsWith("--") && !["--every", "--hours"].includes(all[i - 1]));
   const out = (x) => { console.log(JSON.stringify(x, null, 2)); if (x && x.error) process.exitCode = 1; };
@@ -381,12 +390,16 @@ async function cmdWatch() {
     for (const n of news.slice(0, 20)) console.log(`  ${c.d(new Date(n.ts).toLocaleString())}  ${n.text.slice(0, 110)}  ${c.d(n.name.slice(0, 30))}`);
     return;
   }
-  if (sub === "new") { const mail = new Set(watchState().watches.filter((w) => isMail(w.url)).map((w) => w.id)); return out(newsSince(hours).map((n) => (mail.has(n.watch) ? { ...n, mail: true } : n))); }
+  // the Dashboard's cards, for an agent or a status bar (.total is the count on the Dashboard tab)
+  if (sub === "board") return out(watchBoard(Math.min(168, Math.max(1, hours))));
+  if (sub === "seen") return out(a1 ? seenWatch(a1) : { error: "Give the watch's id: symbiot watch board lists them." });
+  if (sub === "new") return out(markNews(newsSince(hours), watchState().watches));
   // the same as the app's Draft a reply button: through the app when it runs, so its Agents tab tracks the run
   if (sub === "draft") {
-    if (!a1) return out({ error: "Give the email's id: symbiot watch new lists them, and the ones marked \"mail\": true can get a reply." });
+    if (!a1) return out({ error: "Give the email's id: symbiot watch new lists them, and the ones marked \"mail\": true (or \"chat\": true) can get a reply." });
     const r = (await viaApp("/api/watch/draft", { id: a1 })) || draftReply(a1);
-    return out(r.ok ? { ...r, next: "Your agent is writing the reply and leaves it in Drafts, never sent. Its log is in " + join(r.dir, ".symbiot", "agent.log") + " (and the app's Agents tab)." } : r);
+    const where = r.chat ? "types it into the chat's message box in Symbiot's browser, never sent" : "leaves it in Drafts, never sent";
+    return out(r.ok ? { ...r, next: `Your agent is writing the reply and ${where}. Its log is in ` + join(r.dir, ".symbiot", "agent.log") + " (and the app's Agents tab)." } : r);
   }
   if (sub === "add") { const screen = loadScreens().some((s) => s.id === a1) ? a1 : ""; return out(addWatch({ screen, site: screen ? "" : a1, every: flag("every", 15) })); }
   if (sub === "remove") return out(removeWatch(String(a1 || "")));
@@ -404,10 +417,17 @@ async function cmdWatch() {
   symbiot watch add github                     your GitHub notifications: review requests,
                                                failed CI runs (through gh when it's signed in)
   symbiot watch new [--hours 24]               what's new, newest first (JSON)
+  symbiot watch board [--hours 24]             the Dashboard's cards: how many are new on
+                                               each page, and the newest few (JSON, for an
+                                               agent or a status bar: .total is the count)
+  symbiot watch seen <id>                      set a card's count back to 0, like its Seen
+                                               button (what it found stays in watch new)
   symbiot watch check [id]                     read them now (JSON)
   symbiot watch draft <id>                     your agent drafts a reply to that new email
                                                ("mail": true in watch new) and leaves it in
-                                               Drafts, never sent, like Draft a reply in the app
+                                               Drafts, never sent, like Draft a reply in the app;
+                                               to a WhatsApp chat ("chat": true), it types it
+                                               into the chat's message box, unsent
   symbiot watch brief [on|off]                 your AI says what needs you, and what can wait
   symbiot watch remove <id>                    stop watching it
   While the app runs it reads each page every few minutes in its hidden browser

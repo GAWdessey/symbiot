@@ -58,8 +58,11 @@ Tabs:
 - **Dashboard** — everything you [watch](#screens-blueprints-for-screen-automation)
   side by side: a card for each page (your inbox, GitHub, WhatsApp, any other) with
   how many new since yesterday (or in the last 3 or 7 days), its latest brief, the
-  newest items, and **Open**, **Draft a reply** and **Check now** on them. The tab
-  shows the count, so you see what's waiting from any tab.
+  newest items, and **Open**, **Draft a reply** and **Check now** on them. **Seen**
+  on a card sets its count back to 0 (what it found stays under Watching, and the
+  other cards keep theirs). The tab shows the count, so you see what's waiting from
+  any tab, and once you watch something the app opens on the Dashboard instead of
+  the Map. `symbiot watch board` prints the same cards as JSON.
 - **Drift** — the [`symbiot drift`](#whats-out-of-sync-symbiot-drift) report, with
   a "fetch latest" toggle (and an [experimental](#experimental) "check CI").
 - **Week / Standup / Todo** — the write-ups (these use your chosen AI).
@@ -108,7 +111,8 @@ repo is now archived), without Electron:
   default). The app writes your week with your chosen AI, saves it to
   `~/.config/symbiot/weeks/<date>.md`, and sends a desktop notification
   (`notify-send` on Linux, Notification Center on macOS, a tray balloon on
-  Windows). The Week tab shows it until you write a new one. It runs while
+  Windows). The Week tab shows it until you write a new one, and a week you
+  write there with its button is saved to `weeks/` the same way. It runs while
   `symbiot app` is running. A week missed while the computer was off is written
   when the app next starts, once. **Write it now** checks that it works.
 - **Start Symbiot in the background when I log in** adds an autostart entry
@@ -589,7 +593,13 @@ the window, so a map only has the part that fits: when there's more, the screen
 says so and **Scroll down** (and **Scroll up**) scrolls the page in the hidden
 browser and maps what's in the window then, as a new screen. It scrolls what your
 mouse wheel would: the page, or the part of it that scrolls on its own (Gmail's
-list of mail). Scrolling only looks, so it never asks first. **Press** on a region clicks it
+list of mail). Scrolling only looks, so it never asks first. Or **Whole page**
+maps all of it at once: one tall screenshot (up to 16,000 pixels) with every
+button, link and field on it marked where it is on the page. It's for a page that
+scrolls as a whole; a list that scrolls inside the page, like Gmail's, still takes
+Scroll down. The hidden browser scrolls down a window at a time and puts the
+screenshots together, so a menu bar that stays at the top shows once, at the top,
+and a sticky side menu shows in the first window only. **Press** on a region clicks it
 in that hidden browser and maps the page it leads to as a new screen, so map,
 press, map is how an agent finds its way around a site. **Type** on a field types
 your text into it there (replacing what was in it) and, with **Type, then Enter**
@@ -621,6 +631,7 @@ symbiot screens type <id> "Search mail" "invoice" --enter --yes   # type into a 
 symbiot screens type <id> To "sam@example.com" --yes   # without --enter: the text stays in the field...
 symbiot screens press <new id> Send --yes  # ...for a press on the screen that just printed
 symbiot screens scroll <id>            # "more": "below"? scroll down and map the next part (or up, top, bottom)
+symbiot screens whole <id>             # all of that page in one tall screen (or: symbiot screens map <site> --whole)
 symbiot screens show <id>              # a saved screen's blueprint
 symbiot screens signin gmail           # sign in once, in Symbiot's browser window
 symbiot screens                        # list them
@@ -651,8 +662,10 @@ Your coding agent reads it too, so it can act on it with `symbiot screens`:
 symbiot watch add <screen id> --every 15   # watch a mapped page (or: symbiot watch add gmail)
 symbiot watch add github                   # your GitHub notifications (see below)
 symbiot watch new --hours 24               # what's new, newest first (JSON)
+symbiot watch board                        # the Dashboard's cards (JSON; .total is the count, for a status bar)
+symbiot watch seen <watch id>              # set a card back to 0, like its Seen button
 symbiot watch check                        # read them all now (JSON)
-symbiot watch draft <id>                   # Draft a reply to a new email (see below)
+symbiot watch draft <id>                   # Draft a reply to a new email or chat message (see below)
 symbiot watch brief on                     # your AI says what needs you (off to stop)
 symbiot watch                              # what you watch, and what's new
 symbiot watch remove <id>
@@ -688,6 +701,15 @@ the run shows in the Agents tab like any other: what it asks (a date only you
 know, say) is answered there. The agent sees the email's text, so it reaches
 whatever AI your agent uses. From a terminal, `symbiot watch new` marks the
 emails `"mail": true`, and `symbiot watch draft <id>` does the same as the button.
+
+A new WhatsApp message (a watched `web.whatsapp.com`) has **Draft a reply** too.
+There, the agent opens the chat in the hidden browser and types the reply into
+its message box, and leaves it there unsent. WhatsApp keeps it as that chat's
+draft in Symbiot's browser: type `web.whatsapp.com` under Screens and click
+**Sign in** to read it and send it. The same guard holds, plus one for chats: a
+draft's run can't press Enter (in a chat, Enter sends), and in WhatsApp its line
+breaks are typed as spaces. Add `web.whatsapp.com` under Trusted sites for it.
+`symbiot watch new` marks those `"chat": true`.
 
 **In Standup.** Standup ends with what's waiting on you since yesterday, counted
 from what Watch found: `Waiting on you: 3 emails, 2 GitHub notifications`. Symbiot
