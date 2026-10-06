@@ -86,11 +86,11 @@ function workScene({ deps = {} } = {}) {
   for (const a of agents()) {
     if (a.status !== "running" || seen.has(a.path)) continue; seen.add(a.path);
     const w = a.work || {}, todo = (w.todos || []).find((t) => t.status === "in_progress"), pg = a.progress;
-    running.push({ id: "run:" + a.path, path: a.path, name: a.name, doing: plain(todo ? todo.active : w.doing || "Working on it", 56), progress: pg || null, waiting: !!(a.ask && a.ask.questions && a.ask.questions.length) });
+    running.push({ id: "run:" + a.path, path: a.path, name: a.name, doing: plain(todo ? todo.active : w.doing || "Working on it", 120), progress: pg || null, waiting: !!(a.ask && a.ask.questions && a.ask.questions.length) });
   }
   const ready = pending().filter((r) => r.path && !r.running && ((r.tasks || []).length || (r.files || []).length)).map((r) => ({ id: "ready:" + r.repo, repo: r.repo, count: (r.tasks || []).length }));
   const busy = new Set(running.map((r) => r.name)), open = tasks().filter((t) => !t.done && !t.archived && !t.review && t.repo);
-  const waiting = open.map((t) => ({ id: "task:" + t.id, text: plain(t.text, 56), repo: t.repo, busy: busy.has(t.repo) }));
+  const waiting = open.map((t) => ({ id: "task:" + t.id, text: plain(t.text, 160), repo: t.repo, busy: busy.has(t.repo) })); // the app shortens it for a tag
   // Projects: each repo with work on it, what's going on there in one line's worth
   const by = {}, at = (name) => (by[name] = by[name] || { repo: name, waiting: 0, ready: 0, running: null });
   running.forEach((r) => { at(r.name).running = { doing: r.doing, progress: r.progress, ask: r.waiting }; });
