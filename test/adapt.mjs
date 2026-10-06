@@ -116,10 +116,11 @@ try {
   const { lqSep, lqRelax } = new Function(grab("lqSep") + "\n" + grab("lqRelax") + "\nreturn { lqSep, lqRelax };")();
   const crowd = (w, h) => Array.from({ length: 11 }, (_, i) => ({ r: 40 + (i % 3) * 12, tx: w / 2 + Math.cos(i * 2.4) * 60, ty: h * 0.47 + Math.sin(i * 2.4) * 60 }));
   const bridged = (L) => { let worst = Infinity; for (let i = 0; i < L.length; i++) for (let j = i + 1; j < L.length; j++) { const d = Math.hypot(L[i].tx - L[j].tx, L[i].ty - L[j].ty), b = 2 * Math.sqrt(L[i].r ** 2 + L[j].r ** 2); worst = Math.min(worst, d / b); } return worst; };
-  const small = crowd(480, 860), r0 = small.map((x) => x.r);
-  lqRelax(small, { w: 480, h: 860 }, 240, 404, 80);
-  ok("crowded on a phone: every pair ends up clear of the bridging distance, with margin", bridged(small) >= 1.15, bridged(small));
-  ok("…by giving up some size where they can't all fit (the liquid's conserved, not crowded)", small.some((x, i) => x.r < r0[i]), small.map((x) => Math.round(x.r)));
+  ok("the rule keeps two droplets past where their metal bridges, with margin (2.4·√(r1²+r2²))", lqSep({ r: 50 }, { r: 50 }, 500) >= 2.4 * Math.sqrt(5000) && lqSep({ r: 20 }, { r: 20 }, 500) === 110 && lqSep({ r: 20 }, { r: 20 }, 0) === 158, [lqSep({ r: 50 }, { r: 50 }, 500), lqSep({ r: 20 }, { r: 20 }, 0)]);
+  let small = crowd(480, 860), fits = lqRelax(small, { w: 480, h: 860 }, 240, 404, 80), dropped = 0;
+  ok("eleven on a phone can't all fit clear of each other, and the solver says so", fits === false, fits);
+  while (!fits && dropped < 8) { small = crowd(480, 860).slice(0, 11 - ++dropped); fits = lqRelax(small, { w: 480, h: 860 }, 240, 404, 80); } // as the app does: the least likely part goes under "more"
+  ok("with fewer (the rest under more), every pair is clear of the bridging distance, with margin", fits && bridged(small) >= 1.15 && small.length >= 3, [small.length, bridged(small)]);
   const big = crowd(1600, 1000), rb = big.map((x) => x.r);
   lqRelax(big, { w: 1600, h: 1000 }, 800, 470, 90);
   ok("with room, nothing shrinks, and every pair keeps the rule", big.every((x, i) => x.r === rb[i]) && bridged(big) >= 1.15, [bridged(big)]);
