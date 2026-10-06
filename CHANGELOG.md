@@ -2,6 +2,13 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.46.1 — 2026-10-06
+
+- Fixed the task list showing the same request twice when it was worded two different ways.
+- Fixed agent runs being denied every Gmail, Google Calendar, Google Drive or Notion tool right after you connected that site.
+- Fixed the task list repeating a task when a second copy spelled it out in numbered steps.
+- Changed the Dashboard to count only unread Gmail, so emails you've already read are marked "read" and no longer count, notify or get briefed.
+
 ## 0.46.0 — 2026-10-06
 
 - **The Symbiot look on every part.** Whatever you open pools over the liquid as glass, with a slow silver edge: cards are glass, the main buttons chrome, the map's nodes small silver spheres.

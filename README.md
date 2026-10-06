@@ -361,6 +361,13 @@ Handoff says which of your linked sites aren't wired up, and each run's `TASKS.m
 says which connectors it has and which it doesn't, so it doesn't claim to have
 checked your mail.
 
+Claude writes a claude.ai connector into `~/.claude.json` only after a session
+has connected it, so the first run after you connect Gmail used to get Gmail's
+tools with every call denied. A site you link in Symbiot (Gmail, Google Calendar,
+Google Drive, Notion) now gets its claude.ai connector's rule on every Claude run,
+even before Claude records it or while it waits to be authorized. A rule for tools
+a run doesn't have does nothing.
+
 Each run is logged to `.symbiot/agent.log` in the repo and shown live in the
 **Agents** tab. The command is saved as `agentCmd` in
 `~/.config/symbiot/config.json` — it's your command, Symbiot only fills in
@@ -890,6 +897,13 @@ ticks on what you sent: a chat with unread messages is from them; ticks, "You:" 
 chats with unread messages from them count on the Dashboard and in Standup, get a
 notification and a brief, and the brief and the card's chat are told who each one
 is from.
+
+**Mail: only unread mail needs you.** Gmail starts each unread row with "unread".
+Symbiot keeps that mark, so an email you've already read (on your phone, say) is
+listed on the card marked "read", but it isn't counted, notified or briefed. One
+you read after Watch found it stops counting at the next read, and counts again if
+you mark it unread. Another inbox gets the same once Watch has seen it mark a row
+unread. Until then, every new email counts.
 
 **Draft a reply.** A new email under Watching has **Draft a reply**. It hands the
 email to your coding agent (the command in Settings → Handoff), which opens it in

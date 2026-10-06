@@ -48,7 +48,7 @@ function sameTask(a, b) {
   const x = taskWords(a), y = taskWords(b); if (!x || !y) return false;
   if (x === y) return true;
   const [s, l] = x.length < y.length ? [x, y] : [y, x];
-  return (s.split(" ").length >= 8 && l.startsWith(s + " ")) || nearTask(a, b) || sameAsk(a, b);
+  return (s.split(" ").length >= 8 && l.startsWith(s + " ")) || nearTask(a, b) || sameAsk(a, b) || spelledOut(a, b);
 }
 // Nearly the same task, two ways:
 // - nearly all the same words in the same order, 12+ words each ("…nothing
@@ -101,6 +101,24 @@ function sameAsk(a, b) {
   if (!nx.size || nx.size !== ny.size || [...nx].some((w) => !ny.has(w))) return false;
   let both = 0; for (const w of x) if (y.has(w)) both++;
   return both / Math.min(x.size, y.size) >= ASK;
+}
+// A task spelled out in steps is the task it spells out: "A mail connector linked
+// in Symbiot still doesn't reach agent runs (Drive does now). Pass its tools
+// through…" and "In the symbiot repo: a mail connector linked in Symbiot still
+// doesn't reach agent runs, but the Drive connector now does. 1) Find where… 2)…".
+// The steps name much more (CONTRIBUTING.md, agentCmd), so the whole of it is
+// never the same ask; its first sentence, without "In the … repo:", is (sameAsk),
+// set against the other task or that one's first sentence. Stricter than sameAsk
+// on its own, as a first sentence is short: not when each has a word the other
+// hasn't ("a mail connector…" isn't "a calendar connector…").
+const STEPS = /(?:^|\s)1[.)]\s[\s\S]*\s2[.)]\s/;
+const firstSentence = (s) => { const m = String(s || "").match(/^(.*?[.!?])["'`)\]]*(?:\s|$)/s); return m ? m[1] : String(s || ""); };
+function bothAdd(a, b) { const x = askWords(a), y = askWords(b); return [...x].some((w) => !y.has(w)) && [...y].some((w) => !x.has(w)); }
+function spelledOut(a, b) {
+  const [s, l] = String(a || "").length < String(b || "").length ? [String(a || ""), String(b || "")] : [String(b || ""), String(a || "")];
+  if (!STEPS.test(l) || STEPS.test(s)) return false;
+  const head = firstSentence(l.split(/(?:^|\s)1[.)]\s/)[0].trim()).replace(/^in (?:the )?\S+ (?:repo|project|folder)\s*[:,]\s*/i, "");
+  return [s, firstSentence(s)].some((t) => sameAsk(head, t) && !bothAdd(head, t));
 }
 // One of each: near-duplicates collapse into the wording that says the most.
 function uniqueTasks(texts) {

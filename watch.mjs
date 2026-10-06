@@ -12,7 +12,7 @@
 //
 // Stored in ~/.config/symbiot/watch.json, readable by you only:
 // { watches: [{ id, name, url, every (minutes), added, last, checked?, error?, via?, cleared?, chat?, seen: [key…] }],
-//   news: [{ id, watch, name, ts, text, href?, from?, unread? }],   (from, on a chat: fromOf)
+//   news: [{ id, watch, name, ts, text, href?, from?, unread?, read? }],   (from, on a chat: fromOf; read, mail you've read)
 //   briefs: [{ id, watch, name, ts, count, text }] }
 // `last` is when it was last read, `checked` when a read last worked; `seen`
 // holds what's been listed, as itemKey()s; `cleared` is when you clicked Seen on
@@ -56,12 +56,16 @@ const everyOf = (v, def) => (EVERY.includes(Number(v)) ? Number(v) : def);
 // ---- what's on the page, and what's new ----------------------------------------
 // What a page lists: its rows (an inbox, a table of notifications), else its
 // links. Each { text, href? }, the whole text of a long row (headless.mjs keeps it).
-const tidy = (s) => String(s || "").replace(/^\s*unread\s*,?\s*/i, "").replace(/\s+/g, " ").trim();
+// Gmail starts an unread row with "unread": the word goes, but the row keeps
+// unread (1, or a chat's badge count), so mail you've read doesn't need you.
+const UNREAD_LEAD = /^\s*unread\s*,?\s*/i;
+const tidy = (s) => String(s || "").replace(UNREAD_LEAD, "").replace(/\s+/g, " ").trim();
 function itemsOf(page) {
   const all = (page && page.items) || [], rows = all.filter((r) => r.kind === "row");
   return (rows.length ? rows : all.filter((r) => r.kind === "link"))
     .filter((r) => r.label && r.label !== r.kind)
-    .map((r) => ({ text: tidy(r.text || r.label), ...(r.href ? { href: r.href } : {}), ...(r.unread > 0 ? { unread: r.unread } : {}), ...(r.mine ? { mine: true } : {}) }))
+    .map((r) => { const unread = r.unread > 0 ? r.unread : UNREAD_LEAD.test(r.text || r.label) ? 1 : 0;
+      return { text: tidy(r.text || r.label), ...(r.href ? { href: r.href } : {}), ...(unread ? { unread } : {}), ...(r.mine ? { mine: true } : {}) }; })
     .filter((x) => x.text.length > 2);
 }
 // Who a chat's last message is from: "them", "you" or "unknown". A chat list's
@@ -75,11 +79,16 @@ function fromOf(it) {
   return "unknown";
 }
 // What needs you on a watch: on a chat, only the chats with unread messages from
-// them (a news item from before this was known has no `from`, so it doesn't count).
-const needsYou = (n, w) => !isChat(w.url) || n.from === "them";
+// them (a news item from before this was known has no `from`, so it doesn't count);
+// in your inbox, not mail you've read (read: on your phone, say).
+const needsYou = (n, w) => !n.read && (!isChat(w.url) || n.from === "them");
+// Whether an inbox marks its unread rows, so a row without the mark has been read:
+// Gmail does; another once a read has seen it mark one (w.marksUnread). Until then
+// every new email counts, as before.
+const marksUnread = (w) => isMail(w.url) && (!!w.marksUnread || hostOf(w.url) === "mail.google.com");
 // A chat's line for your AI, saying who the last message is from.
 const FROM_SAYS = { them: (n) => `${n.unread || "some"} unread from them`, you: () => "the last message is the user's own", unknown: () => "nothing unread: the user's own message, or one they've read" };
-const withFrom = (n) => (n.from && FROM_SAYS[n.from] ? `${n.text} [${FROM_SAYS[n.from](n)}]` : n.text);
+const withFrom = (n) => (n.from && FROM_SAYS[n.from] ? `${n.text} [${FROM_SAYS[n.from](n)}]` : n.read ? `${n.text} [the user has read it]` : n.text);
 // The same item from one read to the next, though its time reads differently
 // ("9:05 AM" today, "Oct 5" tomorrow, "2 hours ago") or it's been read or starred.
 const MONTH = "(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\\.?";
@@ -495,8 +504,15 @@ async function checkWatch(id, { read = readPage, github = readGitHub, notify = d
   if (page.via) w.via = page.via; else delete w.via;
   w.seen = remember(w.seen, keys); w.checked = w.last;
   const chat = isChat(w.url);
+  if (isMail(w.url) && items.some((it) => it.unread)) w.marksUnread = true;
+  const readMark = marksUnread(w);
+  // mail found earlier and still listed: read since (on your phone), or marked unread again
+  if (readMark) {
+    const unreadNow = new Map(items.map((it) => [itemKey(it.text.slice(0, 300)), !!it.unread]));
+    for (const n of d.news) if (n.watch === w.id) { const u = unreadNow.get(itemKey(n.text)); if (u === false) n.read = true; else if (u) delete n.read; }
+  }
   const news = first ? [] : fresh.slice(0, MAX_PER_READ).map((it) => ({ id: randomBytes(4).toString("hex"), watch: w.id, name: w.name, ts: w.last, text: it.text.slice(0, 300), ...(it.href ? { href: it.href } : {}),
-    ...(chat ? { from: fromOf(it), ...(it.unread ? { unread: it.unread } : {}) } : {}) }));
+    ...(chat ? { from: fromOf(it), ...(it.unread ? { unread: it.unread } : {}) } : {}), ...(readMark && !it.unread ? { read: true } : {}) }));
   d.news = [...news, ...d.news].slice(0, MAX_NEWS);
   saveWatch(d);
   if (first) return { ...view(w), learned: keys.length };
@@ -504,7 +520,7 @@ async function checkWatch(id, { read = readPage, github = readGitHub, notify = d
   const needy = news.filter((n) => needsYou(n, w));
   let said = "";
   if (needy.length && briefOn()) {
-    said = await brief(news, w.name, { chat }).catch(() => "");
+    said = await brief(chat ? news : needy, w.name, { chat }).catch(() => ""); // a chat's brief says who each is from; mail you've read isn't news
     if (said) { const d2 = loadWatch(); d2.briefs = [{ id: randomBytes(4).toString("hex"), watch: w.id, name: w.name, ts: w.last, count: needy.length, text: said }, ...d2.briefs].slice(0, MAX_BRIEFS); saveWatch(d2); }
   }
   if (needy.length) notify(...newsNotice(needy, w.name, said));

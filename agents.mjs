@@ -83,14 +83,20 @@ function claudeConnectors(dir = "", file = join(homedir(), ".claude.json")) {
   const proj = dir && j.projects && typeof j.projects === "object" ? j.projects[dir] : null;
   const needsAuth = new Set(names(j.mcpNeedsAuthNoticed));
   return [...new Set([...names(j.claudeAiMcpEverConnected), ...servers(j.mcpServers), ...servers(proj && proj.mcpServers)])]
-    .map((name) => ({ name, rule: "mcp__" + name.replace(/[^A-Za-z0-9_-]/g, "_"), ready: !needsAuth.has(name) }));
+    .map((name) => ({ name, rule: connectorRule(name), ready: !needsAuth.has(name) }));
 }
 // A Claude command with the ready connectors' rules added, for this run only:
 // the saved command stays as typed, so linking or unlinking one takes effect on
 // the next run. Any other agent's command runs as-is (Settings says so).
-function withConnectors(tmpl, dir, file) {
+// Claude records a claude.ai connector (claudeAiMcpEverConnected) only once a
+// session has connected it, so the first run after you connect Gmail got Gmail's
+// tools without a rule for them, and every call was denied. A site linked in
+// Symbiot is allowed its claude.ai connector's tools too, recorded or not (a rule
+// for tools a run doesn't have does nothing).
+function withConnectors(tmpl, dir, file, linked = loadConfig().linked) {
   if (!isClaudeCmd(tmpl)) return tmpl;
-  return claudeConnectors(dir, file).filter((c) => c.ready).reduce((cmd, c) => allowTool(cmd, c.rule), tmpl).replace(/\s+$/, "");
+  const rules = [...claudeConnectors(dir, file).filter((c) => c.ready).map((c) => c.rule), ...linkedRules(linked)];
+  return rules.reduce((cmd, r) => allowTool(cmd, r), tmpl).replace(/\s+$/, "");
 }
 // Linking a site in Symbiot (Links: Gmail, Drive…) signs Symbiot's own browser in;
 // it doesn't give Claude's runs that site's tools. Those come from Claude's own
@@ -100,6 +106,14 @@ function withConnectors(tmpl, dir, file) {
 // with the one it has (connector: its name, or "") and whether it's ready.
 const CLI = fileURLToPath(new URL("./index.mjs", import.meta.url));
 const LINK_CONNECTOR = { gmail: ["Gmail", /gmail/i], outlook: ["Outlook", /outlook|microsoft 365/i], gcal: ["Google Calendar", /google calendar/i], gdrive: ["Google Drive", /google drive/i], notion: ["Notion", /notion/i], slack: ["Slack", /slack/i], jira: ["Jira & Confluence", /atlassian|jira|confluence/i], linear: ["Linear", /linear/i], asana: ["Asana", /asana/i], hubspot: ["HubSpot", /hubspot/i] };
+// The claude.ai connector each of those is, by the name Claude gives it (as seen
+// in ~/.claude.json), for its rule before Claude has recorded it (withConnectors).
+const CLAUDE_AI_CONNECTOR = { gmail: "claude.ai Gmail", gcal: "claude.ai Google Calendar", gdrive: "claude.ai Google Drive", notion: "claude.ai Notion" };
+const connectorRule = (name) => "mcp__" + name.replace(/[^A-Za-z0-9_-]/g, "_");
+function linkedRules(l) {
+  if (!l || typeof l !== "object" || Array.isArray(l)) return [];
+  return Object.keys(l).filter((id) => CLAUDE_AI_CONNECTOR[id]).map((id) => connectorRule(CLAUDE_AI_CONNECTOR[id]));
+}
 function linkedConnectors(conns = claudeConnectors(), l = loadConfig().linked) {
   if (!l || typeof l !== "object" || Array.isArray(l)) return [];
   return Object.keys(l).filter((id) => LINK_CONNECTOR[id]).map((id) => {
@@ -115,7 +129,10 @@ function connectorsLine(tmpl = handoffCmd(), file, linked) {
   const nm = (s) => s.replace(/^claude\.ai\s+/i, ""), names = off.map((x) => x.name), them = names.length > 1 ? names.slice(0, -1).join(", ") + " and " + names.at(-1) : names[0];
   const has = ready.length ? `this run can use ${ready.map((c) => `${nm(c.name)} (\`${c.rule}__…\` tools)`).join(", ")}.` : "";
   const not = off.length ? ` ${them} ${off.length === 1 ? "is" : "are"} linked in Symbiot but not ${off.some((x) => x.connector) ? "ready " : ""}as a Claude connector, so this run has no tools for ${off.length === 1 ? "it" : "them"}: don't say you checked ${off.length === 1 ? "it" : "them"}. What's new there is in \`node "${CLI}" watch new\`; to read more, ask the user (👤) to connect ${them} in claude.ai → Settings → Connectors.` : "";
-  return (has + not).trim();
+  // withConnectors allows these anyway: Claude may have connected one since
+  const early = off.filter((x) => CLAUDE_AI_CONNECTOR[x.id]).map((x) => `\`${connectorRule(CLAUDE_AI_CONNECTOR[x.id])}__…\``);
+  const anyway = early.length ? ` If ${early.join(" or ")} tools are here after all, the connector was just connected: they're allowed, so use them.` : "";
+  return (has + not + anyway).trim();
 }
 // For Settings → Handoff: the connectors, whether this command's runs get them, and
 // the sites linked in Symbiot that aren't Claude connectors (so runs can't use them).

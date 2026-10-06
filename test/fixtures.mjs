@@ -259,16 +259,20 @@ try {
   const conns = claudeConnectors("/r", cj);
   ok("claude.ai connectors, your servers and this folder's, named as Claude names their tools", JSON.stringify(conns.map((c) => c.rule)) === JSON.stringify(["mcp__claude_ai_Google_Drive", "mcp__claude_ai_Notion", "mcp__my-mail", "mcp__local"]), conns);
   ok("one waiting to be authorized isn't ready", conns.find((c) => c.name === "claude.ai Notion").ready === false && conns.find((c) => c.name === "claude.ai Google Drive").ready, conns);
-  const wc = withConnectors(CLAUDE_CMD, "/r", cj);
+  const wc = withConnectors(CLAUDE_CMD, "/r", cj, {});
   ok("a Claude run allows the ready ones' tools, after the preset's own rules", wc === CLAUDE_CMD + ' "mcp__claude_ai_Google_Drive" "mcp__my-mail" "mcp__local"', wc);
-  ok("a Claude command with no --allowedTools gets one; another agent's runs as-is", withConnectors('claude -p "{prompt}"', "", cj) === 'claude -p "{prompt}" --allowedTools "mcp__claude_ai_Google_Drive" "mcp__my-mail"' && withConnectors('codex exec "{prompt}"', "", cj) === 'codex exec "{prompt}"', withConnectors('claude -p "{prompt}"', "", cj));
-  ok("no ~/.claude.json: nothing added", withConnectors(CLAUDE_CMD, "", join(ROOT, "none.json")) === CLAUDE_CMD, "");
+  ok("a Claude command with no --allowedTools gets one; another agent's runs as-is", withConnectors('claude -p "{prompt}"', "", cj, {}) === 'claude -p "{prompt}" --allowedTools "mcp__claude_ai_Google_Drive" "mcp__my-mail"' && withConnectors('codex exec "{prompt}"', "", cj, {}) === 'codex exec "{prompt}"', withConnectors('claude -p "{prompt}"', "", cj, {}));
+  ok("no ~/.claude.json: nothing added", withConnectors(CLAUDE_CMD, "", join(ROOT, "none.json"), {}) === CLAUDE_CMD, "");
   // linked in Symbiot (Links): Gmail with no Claude connector, Drive with one, Notion's not authorized, Trello has none to have
   const linkedHere = { gmail: { at: 1 }, gdrive: { at: 1 }, notion: { at: 1 }, trello: { at: 1 } };
+  // the first run after you connect Gmail has its tools before ~/.claude.json lists it: they were all denied
+  const wlink = withConnectors(CLAUDE_CMD, "", cj, linkedHere);
+  ok("a site linked in Symbiot is allowed its claude.ai connector's tools before Claude records it (Gmail), once each; one with no claude.ai connector adds nothing (Trello)", wlink === CLAUDE_CMD + ' "mcp__claude_ai_Google_Drive" "mcp__my-mail" "mcp__claude_ai_Gmail" "mcp__claude_ai_Notion"', wlink);
   const lc = linkedConnectors(conns, linkedHere);
   ok("linkedConnectors: which sites linked in Symbiot Claude has a connector for (Drive), not ready (Notion), or none (Gmail)", JSON.stringify(lc) === JSON.stringify([{ id: "gmail", name: "Gmail", connector: "", ready: false }, { id: "gdrive", name: "Google Drive", connector: "claude.ai Google Drive", ready: true }, { id: "notion", name: "Notion", connector: "claude.ai Notion", ready: false }]), lc);
   const cl = connectorsLine(CLAUDE_CMD, cj, linkedHere);
   ok("a run's brief says which connectors it has, that Gmail (linked only in Symbiot) isn't one, and where to connect it", /this run can use Google Drive \(`mcp__claude_ai_Google_Drive__…` tools\)/.test(cl) && /Gmail and Notion are linked in Symbiot but not ready as a Claude connector, so this run has no tools for them: don't say you checked them/.test(cl) && /claude\.ai → Settings → Connectors/.test(cl) && /watch new/.test(cl) && connectorsLine('codex exec "{prompt}"', cj, linkedHere) === "", cl);
+  ok("...and that their tools are allowed if they turn up anyway, as the command allows them", /If `mcp__claude_ai_Gmail__…` or `mcp__claude_ai_Notion__…` tools are here after all, the connector was just connected: they're allowed/.test(cl), cl);
   ok("...in TASKS.md's context", buildTasksMd("r", { connectors: cl }, [{ text: "Check my mail" }]).includes("- **Connectors:** " + cl), "");
   rmSync(got, { force: true });
   execSync(fillHandoff(wc, fake), { shell: "/bin/bash", stdio: "ignore", env: { ...process.env, PATH: fake + ":" + process.env.PATH } });
@@ -555,6 +559,10 @@ try {
   const gmailWhole = ["Whole page for Gmail too: scroll the list of mail inside the page and put the pieces together, so a whole inbox is one screen", "Map the whole page at once: one tall screenshot with every button, link and field on it, for a page that scrolls as a whole (not for Gmail, whose list scrolls inside the page)"];
   ok("sameTask: the same ask in other words is one task (the two Jono asks), and TASKS.md lists it once", sameTask(jono1, jono2) && uniqueTasks([jono1, jono2]).length === 1, uniqueTasks([jono1, jono2]));
   ok("...but not two tasks that share a topic, or name different things", !sameTask(...gmailWhole) && !sameTask(jono2, jono2.replace(/Jono/g, "Thandi")) && !sameTask("Ask Jono to verify the signature header on his endpoint before go-live", "Ask Jono to sign the contract on his side before go-live"), "");
+  const mailShort = "A mail connector linked in Symbiot still doesn't reach agent runs (Drive does now). Pass its `mcp__…` tools through, or tell the user it isn't wired up.";
+  const mailSteps = "In the symbiot repo: a mail connector linked in Symbiot still doesn't reach agent runs, but the Drive connector now does. 1) Find where Drive's `mcp__…` tools get passed into agent runs. Search for the Drive connector and the `mcp__` allow-list the agent command (`agentCmd` in ~/.config/symbiot/config.json) is launched with. 2) Apply the same pass-through for the linked mail connector's `mcp__…` tools. 3) If it can't be passed through, surface a clear message to the user. 4) Follow CONTRIBUTING.md (plain ES modules, no build step) and run the lint/tests.";
+  ok("sameTask: a task spelled out in steps is the task it spells out (its first sentence, without \"In the … repo:\"), and TASKS.md lists the steps once", sameTask(mailShort, mailSteps) && sameTask(mailSteps, mailShort) && JSON.stringify(uniqueTasks([mailShort, mailSteps])) === JSON.stringify([mailSteps]), uniqueTasks([mailShort, mailSteps]));
+  ok("...but not when its first sentence is another task, or both are in steps", !sameTask(mailSteps, "A calendar connector linked in Symbiot still doesn't reach agent runs (Drive does now). Pass its tools through.") && !sameTask(mailSteps, mailSteps.replace(/Drive/g, "Notion")) && !sameTask("Draft the email to Jono. Ask him for: 1) the endpoint URL 2) the shared secret, sent through a secure channel", jono2), "");
 
   console.log("RELEASE — warn when the default branch is past its last v* tag");
   const rel = build("release", `git init -q -b main && git config user.email t@x.co && git config user.name T
@@ -1057,7 +1065,7 @@ try {
   ok("itemKey: the same row whether its time reads 9:05 AM, Oct 5, 5 Oct, 2 hours ago or it's unread", new Set(["Ann, Lunch?, 9:05 AM, Free Friday", "unread, Ann, Lunch?, Oct 5, Free Friday", "Ann, Lunch?, 5 Oct, Free Friday", "Ann, Lunch?, 2 hours ago, Free Friday", "Ann, Lunch?, 10/05/2026, Free Friday"].map(k)).size === 1, ["Ann, Lunch?, 9:05 AM, Free Friday", "Ann, Lunch?, Oct 5, Free Friday"].map(k));
   ok("itemKey: keeps what tells two rows apart (a version, a word that looks like a month)", k("Release v1.2.3 is out") !== k("Release v1.2.4 is out") && k("Mark 12 says hi") === "mark 12 says hi", [k("Release v1.2.3 is out"), k("Mark 12 says hi")]);
   const its = itemsOf({ items: [{ kind: "link", label: "Inbox" }, { kind: "row", label: "unread, Ann, Lunch?", text: "unread, Ann, Lunch?, and the rest of it" }, { kind: "row", label: "row" }] });
-  ok("itemsOf: a page's rows (all their text, without 'unread'), else its links", its.length === 1 && its[0].text === "Ann, Lunch?, and the rest of it" && itemsOf({ items: [{ kind: "link", label: "Pull request 12", href: "https://x/12" }, { kind: "button", label: "Menu" }] }).map((x) => x.href).join() === "https://x/12", its);
+  ok("itemsOf: a page's rows (all their text, without 'unread' but marked unread), else its links", its.length === 1 && its[0].text === "Ann, Lunch?, and the rest of it" && its[0].unread === 1 && itemsOf({ items: [{ kind: "link", label: "Pull request 12", href: "https://x/12" }, { kind: "button", label: "Menu" }] }).map((x) => x.href).join() === "https://x/12", its);
   const ni = newItems([k("Ann, Lunch?")], [{ text: "Sam, Contract" }, { text: "Ann, Lunch?" }, { text: "Sam, Contract" }]);
   ok("newItems: only rows not seen before, once each; remember keeps the newest last", ni.fresh.length === 1 && ni.fresh[0].text === "Sam, Contract" && ni.keys.length === 2 && remember(["a", "b", "c"], ["b", "d"]).join() === "a,c,b,d", ni);
   const whome = join(ROOT, "whome"); mkdirSync(whome, { recursive: true });
@@ -1093,6 +1101,31 @@ try {
   if (process.platform !== "win32") ok("watch.json is readable by you only (0600)", wo.mode === 0o600, wo.mode);
   ok("dueWatches: due once its minutes have passed, not straight after a read", wo.due === 1 && wo.notDue === 0, [wo.due, wo.notDue]);
   ok("removeWatch: stops it and forgets what it found", wo.rm && wo.rm.ok && wo.after && wo.after.watches.length === 0 && wo.after.news.length === 0, wo.after);
+
+  console.log("WATCH GMAIL — only unread mail waits on you: Gmail starts an unread row with \"unread\"");
+  const gmhome = join(ROOT, "gmhome"); mkdirSync(gmhome, { recursive: true });
+  const gmx = spawnSync(process.execPath, ["--input-type=module", "-e", `
+    import * as w from ${JSON.stringify(join(dirname(INDEX), "watch.mjs"))};
+    const row = (label) => ({ kind: "row", label });
+    let page = { url: "https://mail.google.com/mail/u/0/#inbox", items: [row("unread, Ann, Lunch?, 9:05 AM"), row("Bob, Invoice, 8:00 AM")] };
+    const told = [], opts = { read: async () => page, notify: (t, b) => told.push([t, b]) }, out = {};
+    out.add = w.addWatch({ site: "https://mail.google.com/mail/u/0/#inbox" });
+    out.first = await w.checkWatch(out.add.id, opts);
+    // Cat's came in unread; Dan's you'd already read on your phone before Watch read the inbox
+    page = { ...page, items: [row("unread, Cat, Contract, 10:30 AM"), row("Dan, Receipt, 10:20 AM"), ...page.items] };
+    out.next = await w.checkWatch(out.add.id, opts); out.told = told.slice(); out.board = w.watchBoard(24).cards[0]; out.waiting = w.waitingOn(24).map((x) => x.label);
+    // then you read Cat's on your phone too
+    page = { ...page, items: [row("Cat, Contract, 10:30 AM"), ...page.items.slice(1)] };
+    out.later = await w.checkWatch(out.add.id, opts); out.boardLater = w.watchBoard(24).cards[0]; out.toldLater = told.length;
+    // and marked it unread again
+    page = { ...page, items: [row("unread, Cat, Contract, Oct 6"), ...page.items.slice(1)] };
+    await w.checkWatch(out.add.id, opts); out.boardAgain = w.watchBoard(24).cards[0];
+    console.log(JSON.stringify(out));`], { encoding: "utf8", env: { ...process.env, HOME: gmhome, USERPROFILE: gmhome } });
+  let gm = {}; try { gm = JSON.parse(gmx.stdout); } catch {}
+  const gmRead = (r) => ((r || {}).new || []).map((n) => n.text.split(",")[0] + (n.read ? ":read" : "")).join();
+  ok("checkWatch on Gmail: both new emails are kept, the one you'd read marked read; only the unread one is notified", gm.next && gmRead(gm.next) === "Cat,Dan:read" && (gm.told || []).length === 1 && /^1 new/.test(gm.told[0][0]) && /Cat/.test(gm.told[0][1]) && !/Dan/.test(gm.told[0][1]), [gm.next && gm.next.new, gm.told, gmx.stderr && gmx.stderr.slice(-600)]);
+  ok("...so the Dashboard and Standup say 1 email, and list both", gm.board && gm.board.count === 1 && gm.board.label === "1 email" && gm.board.items.length === 2 && gm.board.items.find((n) => n.read).text.startsWith("Dan") && JSON.stringify(gm.waiting) === '["1 email"]', [gm.board, gm.waiting]);
+  ok("...an email read on your phone after Watch found it stops counting, with nothing notified; marked unread again, it counts again", gm.boardLater && gm.boardLater.count === 0 && gm.boardLater.items.every((n) => n.read) && gm.toldLater === 1 && gm.boardAgain && gm.boardAgain.count === 1, [gm.boardLater, gm.boardAgain && gm.boardAgain.count]);
 
   console.log("WATCH GITHUB — your notifications through gh, and the brief");
   const ghn = (id, reason, type, title, updated, url) => ({ id, reason, updated_at: updated, subject: { type, title, url }, repository: { full_name: "pat/app", html_url: "https://github.com/pat/app" } });
