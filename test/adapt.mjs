@@ -144,6 +144,22 @@ try {
   ok("home's talk is the same Symbiot, told what home shows", hr.answer === "The symbiot Approve and whatsapp_module's question." && /You are Symbiot, the one assistant/.test(sys) && /Approve symbiot/.test(prm) && /whatsapp_module asks/.test(prm), hr);
   ok("…and in their style", /Match how they talk/.test(sys), "");
   ok("an empty question isn't sent", (await homeAsk("  ")).error === "empty", "");
+
+  console.log("WORK SCENE — plain words for what's at work, waiting and ready; Go starts it");
+  const { workScene, workGo } = await import("../home.mjs");
+  const ws = workScene({ deps: {
+    agents: () => [{ name: "symbiot", path: "/s", status: "running", progress: { done: 1, total: 3 }, work: { todos: [{ status: "completed", text: "a", active: "A" }, { status: "in_progress", text: "Fix the reader", active: "Fixing the **WhatsApp** reader" }] }, ask: { questions: [] } },
+      { name: "coral", path: "/c", status: "running", work: { doing: "Ran npm test", todos: [] }, ask: { questions: [{ q: "?" }] } }, { name: "old", path: "/o", status: "done" }],
+    pending: () => [{ repo: "GhostAIChat", path: "/g", tasks: [{}, {}], files: [{}] }, { repo: "busy", path: "/b", running: true, tasks: [{}] }],
+    tasks: () => [{ id: "1", text: "Add a Skip button to each idea in the Agents tab, so you can turn down an idea you don't want", repo: "symbiot" }, { id: "2", text: "Merge near-duplicates", repo: "whatsapp_module" }, { id: "3", text: "done one", repo: "x", done: true }, { id: "4", text: "no repo", repo: "" }],
+  } });
+  ok("at work: what each agent is doing, in its own plain words (no markdown), with progress", ws.running.length === 2 && ws.running[0].doing === "Fixing the WhatsApp reader" && ws.running[0].progress.done === 1 && ws.running[1].doing === "Ran npm test" && ws.running[1].waiting, ws.running);
+  ok("ready for your OK: only what's waiting on an Approve, not what's still being worked on", ws.ready.length === 1 && ws.ready[0].repo === "GhostAIChat" && ws.ready[0].count === 2, ws.ready);
+  ok("waiting: open tasks with a repo, short, and marked when their repo's agent is busy", ws.waiting.length === 2 && ws.waiting[0].text.length <= 56 && /…$/.test(ws.waiting[0].text) && ws.waiting[0].busy && !ws.waiting[1].busy && ws.canGo === 1, ws.waiting);
+  const started = [];
+  const g = workGo({ push: () => ({ written: [{ name: "a", path: "/a" }, { name: "b", path: "/b" }] }), run: (p) => (started.push(p), p === "/a" ? { id: "j1" } : { busy: true }) });
+  ok("Go: every repo's brief written and its agent started, or queued behind one already there", g.started === 1 && g.queued === 1 && started.join() === "/a,/b" && g.repos.join() === "a,b", g);
+  ok("Go with nothing waiting says so", /Nothing waiting/.test(workGo({ push: () => ({ empty: true }) }).note), "");
 } finally {
   rmSync(HOME, { recursive: true, force: true });
 }

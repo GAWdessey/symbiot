@@ -7,8 +7,9 @@
 // how you use them; this is the live data around them. Home's talk goes to the
 // same Symbiot as every chat (mind.mjs converse), told what home shows.
 import { watchBoard } from "./watch.mjs";
-import { pendingReview } from "./tasks.mjs";
-import { agentsList } from "./agents.mjs";
+import { pendingReview, pushTasks } from "./tasks.mjs";
+import { agentsList, runHandoff } from "./agents.mjs";
+import { loadTasks } from "./core.mjs";
 import { lanesState } from "./lanes.mjs";
 import { converse, actIn, actNow, taskIn } from "./mind.mjs";
 import { repoPathMap } from "./scan.mjs";
@@ -71,4 +72,36 @@ async function homeAsk(question, { ask, now = Date.now(), state } = {}) {
   return { answer: r.reply, ...(r.did ? { did: r.did } : {}), steps: r.steps || [] };
 }
 
-export { homeState, homeContext, homeAsk };
+// ---- the work scene: the liquid when you open Tasks or Agents ---------------------
+// Plain words for someone who doesn't read diffs: what each agent is doing now,
+// what's waiting its turn, what's done and waiting for your OK, and whether
+// there's anything a Go would start. The details (steps, files, cost) stay one
+// tap away, in the Agents panel.
+const plain = (s, n = 64) => { s = String(s || "").replace(/[\`*_#>]/g, "").replace(/\s+/g, " ").trim(); return s.length > n ? s.slice(0, n - 1).replace(/\s+\S*$/, "") + "…" : s; };
+function workScene({ deps = {} } = {}) {
+  const agents = deps.agents || (() => { try { return agentsList(); } catch { return []; } });
+  const pending = deps.pending || (() => { try { return pendingReview(); } catch { return []; } });
+  const tasks = deps.tasks || (() => { try { return loadTasks(); } catch { return []; } });
+  const seen = new Set(), running = [];
+  for (const a of agents()) {
+    if (a.status !== "running" || seen.has(a.path)) continue; seen.add(a.path);
+    const w = a.work || {}, todo = (w.todos || []).find((t) => t.status === "in_progress"), pg = a.progress;
+    running.push({ id: "run:" + a.path, path: a.path, name: a.name, doing: plain(todo ? todo.active : w.doing || "Working on it", 56), progress: pg || null, waiting: !!(a.ask && a.ask.questions && a.ask.questions.length) });
+  }
+  const ready = pending().filter((r) => r.path && !r.running && ((r.tasks || []).length || (r.files || []).length)).map((r) => ({ id: "ready:" + r.repo, repo: r.repo, count: (r.tasks || []).length }));
+  const busy = new Set(running.map((r) => r.name)), open = tasks().filter((t) => !t.done && !t.archived && !t.review && t.repo);
+  const waiting = open.map((t) => ({ id: "task:" + t.id, text: plain(t.text, 56), repo: t.repo, busy: busy.has(t.repo) }));
+  return { running, ready, waiting: waiting.slice(0, 12), waitingCount: waiting.length, canGo: waiting.filter((w) => !w.busy).length };
+}
+// Go: everything waiting goes to its repo's agent, the way Send to repos and an
+// agent per repo would: briefs written, an agent started in each (or queued
+// behind one already there). { started, queued, repos } or { error }.
+function workGo({ push = pushTasks, run = runHandoff } = {}) {
+  const r = push({});
+  if (r.empty) return { started: 0, queued: 0, repos: [], note: "Nothing waiting to start." };
+  let started = 0, queued = 0; const repos = [];
+  for (const w of r.written || []) { const e = run(w.path); if (e && e.id && !e.busy && !e.blocked) started++; else queued++; repos.push(w.name); }
+  return { started, queued, repos, ...(r.unresolved && r.unresolved.length ? { unresolved: r.unresolved.map((u) => u.name) } : {}) };
+}
+
+export { homeState, homeContext, homeAsk, workScene, workGo };
