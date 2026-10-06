@@ -146,6 +146,9 @@ a{color:var(--green);cursor:pointer}.hidden{display:none}
 .note{font-size:12px;margin-top:10px}.ok{color:var(--green)}.err{color:var(--amber)}
 .updatebar{display:none;align-items:center;gap:12px;padding:9px 16px;font-size:13px;font-weight:600;background:var(--green);color:var(--ink)}
 .updatebar.show{display:flex}
+body.lq-liquid .updatebar.show{position:fixed;top:10px;left:50%;transform:translateX(-50%);width:max-content;max-width:calc(100vw - 24px);z-index:20;border-radius:999px;border:1px solid #FFFFFF;background:linear-gradient(180deg,#FFFFFF 0%,#D2D8E1 44%,#8E97A6 56%,#E6EAF0 100%);color:#06080B;box-shadow:0 14px 40px -14px rgba(0,0,0,.7)}
+body.lq-liquid .updatebar.show.reconnect{background:var(--amber)}
+body.lq-liquid #appbar.updatebar.show{top:58px}
 .updatebar.reconnect{background:var(--amber)}
 .whatsnew{display:none;padding:10px 16px;font-size:13px;background:var(--ink2);border-bottom:1px solid var(--line);max-height:40vh;overflow:auto}
 .whatsnew.show{display:block}
