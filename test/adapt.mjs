@@ -109,11 +109,39 @@ try {
   ok("the state has a layout, the modes and the style", v.layout.items.length >= 3 && typeof v.modes.talkWeight === "number" && /Match how they talk/.test(v.styleLine), [v.layout.items.length, v.modes]);
   ok("adapt.json is yours only (0600)", (statSync(A.ADAPT_FILE).mode & 0o777) === 0o600, (statSync(A.ADAPT_FILE).mode & 0o777).toString(8));
 
+  console.log("NEAREST NEIGHBOURS — parts you go between sit together; before any use, parts that belong together do");
+  {
+    const fresh = { shapes: {}, trans: {}, hours: {}, modes: {}, slots: {}, shown: null, events: 0 };
+    const n0 = A.neighbours(fresh);
+    ok("at most k = 2 nearest, each above chance, never itself", A.SHAPES.every((id) => n0[id].length <= 2 && n0[id].every((n) => n.id !== id && n.w > 1 / A.SHAPES.length)), n0);
+    ok("with no use yet, the parts form clusters, not a chain: nothing links the work to your time", !n0.tasks.some((n) => n.id === "week" || n.id === "standup") && !n0.week.some((n) => ["tasks", "agents", "todo"].includes(n.id)) && n0.settings.length === 0, [n0.tasks, n0.week, n0.settings]);
+    ok("with no use yet, the built-in pairs lead (Tasks beside Agents, Week beside Standup)", n0.tasks.some((n) => n.id === "agents") && n0.week[0].id === "standup", [n0.tasks, n0.week]);
+    ok("affinity is symmetric", A.affinity(fresh, "map", "week") === A.affinity(fresh, "week", "map"), "");
+    const used = { ...fresh, trans: { week: { map: 12 }, map: { week: 9 } } };
+    ok("going between two parts makes them nearest, over the built-in pairs", A.neighbours(used).week[0].id === "map" && A.neighbours(used).map[0].id === "week", A.neighbours(used).week);
+    ok("the same history gives the same neighbours (a steady picture)", JSON.stringify(A.neighbours(used)) === JSON.stringify(A.neighbours(used)), "");
+  }
   console.log("LAYOUT — droplets never sit where their metal would flicker between merged and apart");
   const { EMBEDDED_UI } = await import("../ui.mjs");
   const uiJs = [...EMBEDDED_UI.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]).join("\n");
   const grab = (name) => { const i = uiJs.indexOf("function " + name + "("); let depth = 0, j = uiJs.indexOf("{", i); for (; j < uiJs.length; j++) { if (uiJs[j] === "{") depth++; else if (uiJs[j] === "}" && --depth === 0) break; } return uiJs.slice(i, j + 1); };
   const { lqSep, lqRelax } = new Function(grab("lqSep") + "\n" + grab("lqRelax") + "\nreturn { lqSep, lqRelax };")();
+  {
+    const { lqNear } = new Function(grab("lqSep") + "\n" + grab("lqNear") + "\nreturn { lqNear };")();
+    const ring = (n) => Array.from({ length: n }, (_, i) => { const a = i * 2 * Math.PI / n, x = 600 + Math.cos(a) * 300, y = 400 + Math.sin(a) * 260; return { r: 40, tx: x, ty: y, ax: x, ay: y }; });
+    const L = ring(8), d0 = Math.hypot(L[0].tx - L[4].tx, L[0].ty - L[4].ty);
+    lqNear(L, [[0, 4, 0.3]], 600, 400, 90, { s: 1 });
+    const d1 = Math.hypot(L[0].tx - L[4].tx, L[0].ty - L[4].ty);
+    ok("nearest neighbours: two linked droplets across the ring are drawn together", d1 < d0 * 0.75, [Math.round(d0), Math.round(d1)]);
+    let clear = true; for (let i = 0; i < L.length; i++) for (let j = i + 1; j < L.length; j++) { const dx = L[j].tx - L[i].tx, dy = L[j].ty - L[i].ty; if (Math.hypot(dx, dy) < 2 * Math.sqrt(L[i].r ** 2 + L[j].r ** 2)) clear = false; }
+    ok("…and still never so close their metal bridges", clear, "");
+    ok("…and kept off the core", L.every((d) => Math.hypot(d.tx - 600, d.ty - 400) >= 90 + d.r + 59), "");
+    const { lqSeed } = new Function("function lqOrg(id,k){var h=k*977;id=String(id);for(var i=0;i<id.length;i++)h=(h*31+id.charCodeAt(i))|0;return ((h>>>0)%1000)/1000;}\n" + grab("lqSeed") + "\nreturn { lqSeed };")();
+    const C = ring(7).map((d, i) => ({ ...d, id: "s" + i, kind: "shape" })), CL = [[0, 3, 0.2], [3, 5, 0.2], [1, 6, 0.2]];
+    lqSeed(C, CL, 600, 400, 1, 1); lqNear(C, CL, 600, 400, 90, { s: 1 });
+    const dd = (i, j) => Math.hypot(C[i].tx - C[j].tx, C[i].ty - C[j].ty), within = Math.max(dd(0, 3), dd(3, 5), dd(1, 6)), across = Math.min(dd(0, 1), dd(0, 6), dd(5, 1), dd(5, 6), dd(3, 1), dd(3, 6));
+    ok("clusters: each linked group sits together, closer within than to the other group, even when they began across a ring", within < across, [Math.round(within), Math.round(across)]);
+  }
   const crowd = (w, h) => Array.from({ length: 11 }, (_, i) => ({ r: 40 + (i % 3) * 12, tx: w / 2 + Math.cos(i * 2.4) * 60, ty: h * 0.47 + Math.sin(i * 2.4) * 60 }));
   const bridged = (L) => { let worst = Infinity; for (let i = 0; i < L.length; i++) for (let j = i + 1; j < L.length; j++) { const d = Math.hypot(L[i].tx - L[j].tx, L[i].ty - L[j].ty), b = 2 * Math.sqrt(L[i].r ** 2 + L[j].r ** 2); worst = Math.min(worst, d / b); } return worst; };
   ok("the rule keeps two droplets past where their metal bridges, with margin (2.4·√(r1²+r2²))", lqSep({ r: 50 }, { r: 50 }, 500) >= 2.4 * Math.sqrt(5000) && lqSep({ r: 20 }, { r: 20 }, 500) === 110 && lqSep({ r: 20 }, { r: 20 }, 0) === 158, [lqSep({ r: 50 }, { r: 50 }, 500), lqSep({ r: 20 }, { r: 20 }, 0)]);

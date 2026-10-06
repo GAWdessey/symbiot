@@ -204,12 +204,32 @@ function userStyleLine(file = MIND_FILE) {
 }
 
 // ---- the app's view ------------------------------------------------------------------
+// Nearest neighbours: two parts are near when you go from one to the other. Their
+// affinity is the symmetric next-step probability, Dirichlet-smoothed as in predict,
+// plus a small prior (KIN) for parts that belong together before you've used them:
+// the work (tasks, agents, todo), your time (week, standup), your repos (dashboard,
+// map, drift). Each part keeps its k nearest (k-NN), counting only links above
+// chance (1/K), and the liquid sets it beside them, so the layout has clusters
+// and gaps, structure without looking ruled.
+const KIN_GROUPS = [["tasks", "agents", "todo"], ["week", "standup"], ["board", "map", "drift"]];
+const KIN = KIN_GROUPS.flatMap((g) => g.flatMap((a, i) => g.slice(i + 1).map((b) => [a, b])));
+const KIN_W = 0.08;
+function affinity(d, a, b, ids = SHAPES) {
+  const K = ids.length, p = (x, y) => { const row = d.trans[x] || {}, N = ids.reduce((s, id) => s + (row[id] || 0), 0); return ((row[y] || 0) + ALPHA) / (N + ALPHA * K); };
+  return (p(a, b) + p(b, a)) / 2 + (KIN.some(([x, y]) => (x === a && y === b) || (x === b && y === a)) ? KIN_W : 0);
+}
+function neighbours(d, ids = SHAPES, k = 2) {
+  const out = {};
+  const chance = 1 / ids.length + 0.02;
+  for (const a of ids) out[a] = ids.filter((b) => b !== a).map((b) => [b, affinity(d, a, b, ids)]).filter(([, w]) => w > chance).sort((x, y) => y[1] - x[1] || (x[0] < y[0] ? -1 : 1)).slice(0, k).map(([id, w]) => ({ id, w: +w.toFixed(3) }));
+  return out;
+}
 function adaptState({ from = "", commit = false, touch, now = Date.now() } = {}) {
   const d = loadAdapt(), m = modes(d, now);
   const layout = layoutFor(d, SHAPES, { from, now, commit, touch: touch ?? m.touch });
   if (commit || layout.changed) saveAdapt(d);
   let style = null; try { const md = JSON.parse(readFileSync(MIND_FILE, "utf8")); style = styleOf((md.log || []).filter((l) => l.role === "user").map((l) => l.text)); } catch {}
-  return { layout, modes: m, style, styleLine: styleLine(style), events: d.events || 0 };
+  return { layout, near: neighbours(d), modes: m, style, styleLine: styleLine(style), events: d.events || 0 };
 }
 function noteUse(body = {}) {
   const shape = String(body.shape || ""), via = String(body.via || "click"), from = String(body.from || "");
@@ -219,4 +239,4 @@ function noteUse(body = {}) {
   return { ok: true, events: d.events };
 }
 
-export { ADAPT_FILE, SHAPES, HALF_LIFE, HYSTERESIS, decayed, bump, recordUse, predict, entropy, adaptivity, fittsTime, allocate, hick, expectedTime, layoutFor, modes, styleOf, styleLine, userStyleLine, adaptState, noteUse, loadAdapt, saveAdapt };
+export { ADAPT_FILE, SHAPES, HALF_LIFE, HYSTERESIS, decayed, bump, recordUse, predict, entropy, adaptivity, fittsTime, allocate, hick, expectedTime, layoutFor, modes, styleOf, styleLine, userStyleLine, adaptState, noteUse, loadAdapt, saveAdapt, affinity, neighbours, KIN };
