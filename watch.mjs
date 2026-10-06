@@ -30,6 +30,8 @@ import { loadScreens } from "./screens.mjs";
 import { desktopNotify } from "./desktop.mjs";
 import { resolveProvider, write } from "./ai.mjs";
 import { handoffCmd, runHandoff, runningHandoff } from "./agents.mjs";
+import { linksIn, peekLinks, peekLine } from "./peek.mjs";
+import { converse, actNow, addToTasks } from "./mind.mjs";
 
 const WATCH_FILE = join(CONFIG_DIR, "watch.json");
 const EVERY = [5, 15, 30, 60]; // minutes between reads
@@ -247,26 +249,36 @@ function boardLine(b) { return b.cards.filter((c) => c.count).map((c) => (c.sour
 // (talkOf), so the agent writes what you agreed. Grounded in what the card
 // lists, like the brief: for mail, the sender, subject and Gmail's preview.
 const TALK_KEEP = 40; // messages kept per card
-async function boardChat(id, question, { hours = 72, now = Date.now(), ask = write } = {}) {
+// Asked about the links on the card ("go look at the links"), or pasted one: the
+// links are looked up (peek.mjs: like a link preview, not signed in, nothing run
+// or downloaded) and what's behind them goes to the AI, so it can say what each is.
+const LINK_ASK = /\b(links?|urls?|websites?|open (?:it|them|these|those|the)|look (?:at|into)|check (?:it|them|these|those|out)|what'?s (?:behind|at|on)|visit|safe)\b/i;
+function cardLinks(w, recent, question) {
+  const own = hostOf(w.url), host = (u) => { try { return new URL(u).hostname.replace(/^www\./, ""); } catch { return ""; } };
+  return [...linksIn(question), ...recent.flatMap((n) => linksIn(n.text))].filter((u) => host(u) && host(u) !== own);
+}
+async function boardChat(id, question, { hours = 72, now = Date.now(), ask = write, look = peekLinks, run = actNow } = {}) {
   question = String(question || "").trim().slice(0, 2000);
   const d = loadWatch(), w = d.watches.find((x) => x.id === id); if (!w) return { error: `No watch ${id}.` };
   if (!question) return { error: "empty" };
   if (ask === write && !resolveProvider()) return { error: "not-connected" };
   const since = now - hours * 3600000, recent = d.news.filter((n) => n.watch === w.id && n.ts >= since).slice(0, 25);
   const b = d.briefs.find((x) => x.watch === w.id && x.ts >= since);
-  const system = `You help someone go over what's new on a page they watch (their email inbox, their WhatsApp chats or their GitHub notifications), so they can agree what needs them and what to reply, before their coding agent drafts the replies. ` +
-    `Answer in plain text, briefly, no preamble and no markdown. Name things by sender and subject so they can find them. Use only what's listed; never guess at what a message says beyond it, and say so when the list doesn't settle it. ` +
-    `When they say how to answer one, say back in a line or two what that reply should say: it's handed to their agent to draft, and they send it themselves.`;
-  const history = (w.chat || []).slice(-12).map((m) => `${m.role === "user" ? "User" : "Assistant"}: ${m.text}`).join("\n\n");
-  const prompt = `${w.name}, new in the last ${hours} hours (newest first):\n${recent.length ? recent.map((n) => `- ${new Date(n.ts).toLocaleString()}: ${n.text}`).join("\n") : "(nothing new)"}\n\n` +
-    (b ? `The brief:\n${b.text}\n\n` : "") + (history ? `Conversation so far:\n${history}\n\n` : "") + `Question: ${question}`;
-  const said = String((await ask(system, prompt)) || "").trim();
-  const answer = said && !/^\(?couldn't reach the model/i.test(said) ? said.slice(0, 4000) : "(couldn't reach the model)";
+  const urls = cardLinks(w, recent, question), peeks = urls.length && (LINK_ASK.test(question) || linksIn(question).length) ? await look(urls).catch(() => []) : [];
+  // one Symbiot everywhere (mind.mjs): this card's messages are what this page knows
+  const listed = recent.length ? recent.map((n) => `- ${new Date(n.ts).toLocaleString()}: ${n.text}`).join("\n") : "(nothing new)";
+  const role = `Here they're on their ${w.name} card in the Dashboard (their inbox, chats or notifications), going over what's new there. Name things by sender and subject so they can find them. Use only what's listed about a message; never guess what it says beyond that, and say so when the list doesn't settle it. When they say how to answer one, say back in a line or two what the reply should say: the card's Draft a reply button has their agent write it, and they send it themselves.` +
+    (peeks.length ? ` "What's behind the links" was looked up just now, the way a link preview does (not signed in, no scripts run, nothing downloaded): say plainly what each link is and what looks off, if anything (a file download such as an .apk rather than a page, a redirect to another site, a lookalike domain, an error). A downloaded file is never something to install unasked.` : "");
+  const context = `${w.name}, new in the last ${hours} hours (newest first):\n${listed}` + (b ? `\n\nThe brief:\n${b.text}` : "") + (peeks.length ? `\n\nWhat's behind the links (looked up just now):\n${peeks.map(peekLine).join("\n")}` : "");
+  const history = (w.chat || []).slice(-12).map((m) => `${m.role === "user" ? "User" : "You"}: ${m.text}`).join("\n\n");
+  const r = await converse({ where: `${w.name} card`, role, context, history, question, ask, now,
+    act: { agent: (req, known) => run(req, { title: w.name, context: `${w.name}, new lately:\n${listed}`, known, now }), task: addToTasks } });
+  const answer = r.reply;
   // read again: a check may have saved the file while the model answered
   const d2 = loadWatch(), w2 = d2.watches.find((x) => x.id === id); if (!w2) return { answer, chat: [] };
   w2.chat = [...(w2.chat || []), { role: "user", text: question, ts: now }, { role: "ai", text: answer, ts: now }].slice(-TALK_KEEP);
   saveWatch(d2);
-  return { answer, chat: w2.chat };
+  return { answer, chat: w2.chat, ...(peeks.length ? { links: peeks } : {}), ...(r.did ? { did: r.did } : {}) };
 }
 function clearBoardChat(id) { const d = loadWatch(), w = d.watches.find((x) => x.id === id); if (!w) return { error: `No watch ${id}.` }; delete w.chat; saveWatch(d); return { ok: true }; }
 // The card's talk, for a draft's brief: "" when there's been none.
@@ -481,4 +493,4 @@ function startWatches(opts = {}) {
   return () => { clearTimeout(first); clearInterval(every); };
 }
 
-export { WATCH_FILE, EVERY, GITHUB_INBOX, DRAFTS_DIR, itemsOf, itemKey, newItems, remember, isGitHubInbox, githubItems, readGitHub, setBrief, briefOf, newsNotice, markNews, watchState, addWatch, setEvery, removeWatch, clearNews, seenWatch, newsSince, newsAfter, waitingOn, watchBoard, boardLine, boardChat, clearBoardChat, talkOf, isMail, isChat, draftsUrl, draftBrief, chatBrief, draftReply, openChat, checkWatch, dueWatches, startWatches };
+export { LINK_ASK, WATCH_FILE, EVERY, GITHUB_INBOX, DRAFTS_DIR, itemsOf, itemKey, newItems, remember, isGitHubInbox, githubItems, readGitHub, setBrief, briefOf, newsNotice, markNews, watchState, addWatch, setEvery, removeWatch, clearNews, seenWatch, newsSince, newsAfter, waitingOn, watchBoard, boardLine, boardChat, clearBoardChat, talkOf, isMail, isChat, draftsUrl, draftBrief, chatBrief, draftReply, openChat, checkWatch, dueWatches, startWatches };

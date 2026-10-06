@@ -8,7 +8,9 @@ import { resolveProvider, write } from "./ai.mjs";
 import { detectMailSources, mailActivity } from "./mail.mjs";
 import { waitingOn, newsSince } from "./watch.mjs";
 import { me, authorship, authorArgs, readmeInfo, repoShape, houseRules, reportFooter, expandRoot, commits, openWork, detectFolder, repoPathMap, discoveredRepos } from "./scan.mjs";
-import { taskType, workingChanges, workingDiff } from "./tasks.mjs";
+import { taskType, workingChanges, workingDiff, addTask, pushTasks } from "./tasks.mjs";
+import { runHandoff } from "./agents.mjs";
+import { converse, actNow, addToTasks } from "./mind.mjs";
 
 // ---- render ---------------------------------------------------------------
 function renderCommits(list) {
@@ -137,23 +139,28 @@ async function taskChat(id, question) {
       ctx.push(`The agent has ticked this task; its uncommitted changes await review (${ch.stat || "no changes"}):\n${ch.files.map((f) => `${f.st} ${f.file}`).slice(0, 40).join("\n") || "(none)"}\n\nDiff (truncated):\n${workingDiff(path, 6000)}`);
     }
   }
-  const history = (it.chat || []).slice(-12).map((m) => `${m.role === "user" ? "User" : "Assistant"}: ${m.text}`).join("\n\n");
-  const system =
-    `You are a pragmatic senior engineer helping someone with ONE task on their list — before or after they hand it to a coding agent. ` +
-    `Answer their question about the task directly and concisely, in plain text, no preamble. Ground what you say in the project evidence shown; ` +
-    `if the evidence doesn't settle it, say so and what you'd check. If the task is ambiguous, say how you'd read it and what to clarify. ` +
-    `Never invent files, features or history.`;
-  const prompt =
-    `Task: ${it.text}\nKind: ${taskType(it.text)} · repo: ${it.repo || "(none)"} · status: ${it.archived ? "archived" : it.review ? "done by the agent, awaiting review" : it.done ? "done" : "open"}\n\n` +
-    (ctx.length ? ctx.join("\n\n") + "\n\n" : path ? "" : "(no repo attached — answer from the task text alone)\n\n") +
-    (history ? `Conversation so far:\n${history}\n\n` : "") + `Question: ${question}`;
-  const answer = (await write(system, prompt)) || "(couldn't reach the model)";
+  const history = (it.chat || []).slice(-12).map((m) => `${m.role === "user" ? "User" : "You"}: ${m.text}`).join("\n\n");
+  // one Symbiot everywhere (mind.mjs): this task and its repo are what this page knows
+  const role = `Here they're on one task in their Tasks list. Be a pragmatic senior engineer about it, before or after it goes to their coding agent: answer directly, grounded in the project evidence shown; if it doesn't settle it, say so and what you'd check; if the task is ambiguous, say how you'd read it. Never invent files, features or history.`;
+  const context = `Task: ${it.text}\nKind: ${taskType(it.text)} · repo: ${it.repo || "(none)"} · status: ${it.archived ? "archived" : it.review ? "done by the agent, awaiting review" : it.done ? "done" : "open"}` +
+    (ctx.length ? "\n\n" + ctx.join("\n\n") : path ? "" : "\n\n(no repo attached: answer from the task text alone)");
+  // "do it" here works on the task's repo the way Send to repos does: the request
+  // joins the repo's tasks and the agent starts there; with no repo, in a run of its own
+  const agent = async (req, known) => {
+    if (!path) return actNow(req, { title: it.text.slice(0, 60), context: `Their task: ${it.text}`, known });
+    const t = addTask(req, it.repo); if (t && t.error) return { error: t.error };
+    const p = pushTasks({ repo: it.repo }); if (!p.written || !p.written.length) return { error: `Couldn't write ${it.repo}'s tasks for the agent.` };
+    const e = runHandoff(path); if (!e) return { error: "Your agent didn't start. Check its command in Settings → Handoff." };
+    return e.busy ? { ok: true, note: "Your agent is already working in that repo: it takes this up when it's done." } : { ok: true, job: e.id };
+  };
+  const r = await converse({ where: `Task: ${it.text.slice(0, 60)}`, role, context, history, question, act: { agent, task: (text, repo) => addToTasks(text, repo || it.repo) } });
+  const answer = r.reply;
   // Re-read: other requests may have changed tasks.json while the model ran.
   const t = loadTasks(); const cur = t.find((x) => x.id === id); const now = Date.now();
   if (!cur) return { answer, chat: [] };
   cur.chat = [...(cur.chat || []), { role: "user", text: question, ts: now }, { role: "ai", text: answer, ts: now }].slice(-CHAT_KEEP);
   saveTasks(t);
-  return { answer, chat: cur.chat };
+  return { answer, chat: cur.chat, ...(r.did ? { did: r.did } : {}) };
 }
 function clearTaskChat(id) { const t = loadTasks(); const it = t.find((x) => x.id === id); if (!it) return { error: "not found" }; delete it.chat; saveTasks(t); return { ok: true }; }
 

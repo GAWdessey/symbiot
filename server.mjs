@@ -21,6 +21,7 @@ import { mapPage, wholePage, pressRegion, typeRegion, scrollPage, signIn, keepBr
 import { weeklyState, setWeekly, runWeekly, startWeekly, autostartState, setAutostart } from "./desktop.mjs";
 import { watchState, addWatch, setEvery, removeWatch, clearNews, seenWatch, checkWatch, startWatches, setBrief, draftReply, openChat, watchBoard, boardChat, clearBoardChat } from "./watch.mjs";
 import { linksState, linkSite, checkLink, unlinkSite } from "./links.mjs";
+import { mindState, forget } from "./mind.mjs";
 import { phoneState, setPhoneLink, newCode, unpairPhone, pairComputer, forgetComputer, pollComputer, startPhone } from "./phone.mjs";
 
 // The in-app update installs the EXACT newest version (not the `latest` tag, which
@@ -211,6 +212,9 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       if (u.pathname === "/api/screens/trusted/add" && req.method === "POST") { const b = await readBody(req); return json(res, trustSite(b.site)); }
       if (u.pathname === "/api/screens/trusted/remove" && req.method === "POST") { const b = await readBody(req); return json(res, untrustSite(b.site)); }
       if (u.pathname === "/api/screens/signin" && req.method === "POST") { const b = await readBody(req); return json(res, await signIn(b.site)); }
+      // What Symbiot remembers across the app (mind.mjs), and forgetting it.
+      if (u.pathname === "/api/mind") return json(res, mindState());
+      if (u.pathname === "/api/mind/forget" && req.method === "POST") { const b = await readBody(req); return json(res, forget(String(b.id || ""))); }
       // Links (links.mjs): one click per standard work site: sign in, trust it, watch it.
       if (u.pathname === "/api/links") return json(res, linksState());
       if (u.pathname === "/api/links/link" && req.method === "POST") { const b = await readBody(req); return json(res, await linkSite(String(b.id || ""))); }
