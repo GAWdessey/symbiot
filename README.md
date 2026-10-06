@@ -473,6 +473,29 @@ hides the ones you don't use. An entry with a built-in's id replaces it:
 Linking stays in the app. Like trusted sites, there's no command an agent could
 call to link a site itself.
 
+## One Symbiot, everywhere
+
+The chat on each Dashboard card and the chat on each task aren't separate bots:
+they're the same Symbiot, and it does what you ask instead of explaining what it
+can't do.
+
+- **It acts.** Ask it to do something ("look into this", "close that account",
+  "chase Dana") and it hands it to your coding agent right away, with what the page
+  showed. The agent has your tools and connectors (MCP, the command line, a
+  browser signed in to your linked sites). Something for later becomes a task on
+  your list. Anything hard to undo (closing an account, deleting, paying, sending)
+  the agent asks you about first, in the Agents tab.
+- **It looks at links.** Ask about the links on a card and it looks each one up the
+  way a link preview does (not signed in, no scripts run, nothing downloaded):
+  where it really goes, what the page is, and whether it's a file such as an .apk.
+  Links into your own network are refused.
+- **It remembers across pages.** What's worth knowing elsewhere (who someone is,
+  which account is what, what you decided) is kept in a small local memory,
+  `mind.json` in Symbiot's config folder, readable by you only. Each chat gets just
+  the parts its question touches, plus the last few things said anywhere in the
+  app, so context carries from page to page without re-sending everything.
+  Settings → **What Symbiot remembers** lists it, and forgets any of it.
+
 ## Connect it (once)
 
 Pick the AI you want it to write with:

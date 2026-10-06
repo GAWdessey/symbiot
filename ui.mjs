@@ -277,6 +277,11 @@ label.check input{width:auto}
 <div class="note muted" id="linksnote">For a whole team, one <b>links.json</b> in Symbiot's config folder adds your company's own sites and hides the ones you don't use, so everyone gets the same buttons.</div>
 </div>
 <div style="margin-top:20px;border-top:1px solid var(--line);padding-top:16px">
+<label>What Symbiot remembers</label>
+<div class="note muted" style="margin-top:2px">Every chat in the app is the same Symbiot. What's worth knowing on another page (who someone is, which account is what, what you decided) is kept here, on this computer only, and each chat gets just the parts its question touches.</div>
+<div id="mindlist"></div>
+</div>
+<div style="margin-top:20px;border-top:1px solid var(--line);padding-top:16px">
 <label>Trusted sites for Screens <span class="muted">(experimental)</span></label>
 <div id="trustedsites"></div>
 <div class="row" style="margin-top:6px"><input id="newtrusted" placeholder="a site, e.g. mail.google.com or github.com" style="flex:1"><button class="ghost" id="addtrusted">Trust site</button></div>
@@ -697,6 +702,11 @@ linksOut("<div class='note ok'>Opened "+esc(name)+" in Symbiot's browser. Sign i
 var m=sp.querySelector('.lmore');if(m)m.addEventListener('click',function(){m.disabled=true;api('/api/links/check',{id:lid}).then(function(r){m.disabled=false;
 if(r&&r.busy)linksOut("<div class='note muted'>Symbiot's browser is busy (a sign-in window is open?). Close it, then check again.</div>");else if(r&&r.error)linksOut("<div class='note err'>"+esc(r.error)+"</div>");loadLinks();loadBoard();});});
 var x=sp.querySelector('.lrm');if(x)x.addEventListener('click',function(){api('/api/links/unlink',{id:lid}).then(function(){linksOut('');loadLinks();loadTrusted();loadBoard();});});});});}
+// What Symbiot remembers (mind.mjs): a row per thing, with what it knows; × forgets one.
+function loadMind(){api('/api/mind').then(function(d){var el=document.getElementById('mindlist');if(!el||!d)return;var ns=d.nodes||[];
+el.innerHTML=ns.length?ns.slice(0,60).map(function(n){return "<div class='task' data-id='"+escQ(n.id)+"'><span class='t'><b>"+esc(n.name)+"</b> <span class='muted' style='font-size:11px'>"+esc(n.kind)+"</span><br><span class='muted' style='font-size:12px'>"+esc(n.facts.join(' · '))+"</span></span><button class='rm forgetone' title='forget this'>&times;</button></div>";}).join('')+"<div class='row' style='margin-top:8px'><button class='ghost' id='forgetall'>Forget everything</button></div>":"<div class='muted' style='font-size:12px;margin-top:6px'>Nothing yet. It fills in as you talk to Symbiot on the Dashboard and in Tasks.</div>";
+el.querySelectorAll('.forgetone').forEach(function(b){b.addEventListener('click',function(){api('/api/mind/forget',{id:b.closest('.task').getAttribute('data-id')}).then(loadMind);});});
+var fa=document.getElementById('forgetall');if(fa)fa.addEventListener('click',function(){api('/api/mind/forget',{id:'all'}).then(loadMind);});});}
 function loadLinks(){api('/api/links').then(function(d){if(d&&d.items){LINKS=d;renderLinks();}});}
 // Trusted sites: where Screens' Press and Type don't ask first (headless.mjs).
 function loadTrusted(){api('/api/screens/trusted').then(function(d){var box=document.getElementById('trustedsites');var sites=(d&&d.sites)||[];
@@ -1054,5 +1064,5 @@ function appBar(p){var b=$('appbar');if(!b||!p.termux||window.SymbiotAndroid||ty
 function doUpdate(){updBusy=true;try{localStorage.setItem('symbiot_update_tried',document.getElementById('ver').textContent.replace(/^v/,''));}catch(e){}var b=ubar();b.className='updatebar show';b.textContent='Updating & restarting… this page will reload itself when it is back.';api('/api/update',{});}
 setInterval(heartbeat,4000);heartbeat(true);
 window.addEventListener('focus',function(){heartbeat(true);}); // re-check for updates when you come back to the window
-initGraphEvents();syncP();refresh();loadMap();firstTab();loadAgentCfg();loadScanRoots();loadPhone();loadLinks();loadTrusted();loadMail();loadScreensUI();loadMonitorsUI();loadDesktop();loadWatchUI();setInterval(loadWatchUI,60000);loadPhoneLink();
+initGraphEvents();syncP();refresh();loadMap();firstTab();loadAgentCfg();loadScanRoots();loadPhone();loadLinks();loadMind();loadTrusted();loadMail();loadScreensUI();loadMonitorsUI();loadDesktop();loadWatchUI();setInterval(loadWatchUI,60000);loadPhoneLink();
 </script></body></html>`;

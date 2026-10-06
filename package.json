@@ -1,6 +1,6 @@
 {
   "name": "symbiot",
-  "version": "0.42.0",
+  "version": "0.43.0",
   "description": "Your week, written from your real work. Reads your local git and writes it up with the AI of your choice — Claude, OpenAI, Gemini, or a local model.",
   "type": "module",
   "bin": {
@@ -22,6 +22,8 @@
     "headless.mjs",
     "watch.mjs",
     "links.mjs",
+    "peek.mjs",
+    "mind.mjs",
     "phone.mjs",
     "desktop.mjs",
     "README.md",
@@ -58,7 +60,7 @@
     "@anthropic-ai/sdk": "^0.128.0"
   },
   "scripts": {
-    "test": "node test/load.mjs && node test/fixtures.mjs && node test/links.mjs && node test/paths.mjs && node test/smoke.mjs && node test/app.mjs && node test/install.mjs",
+    "test": "node test/load.mjs && node test/fixtures.mjs && node test/links.mjs && node test/peek.mjs && node test/mind.mjs && node test/paths.mjs && node test/smoke.mjs && node test/app.mjs && node test/install.mjs",
     "lint": "eslint ."
   },
   "devDependencies": {
