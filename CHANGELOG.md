@@ -6,6 +6,7 @@ What each Symbiot release brought, newest first. When Approve bumps the version,
 
 - **The Symbiot look on every part.** Whatever you open pools over the liquid as glass, with a slow silver edge: cards are glass, the main buttons chrome, the map's nodes small silver spheres.
 - **Watch an agent work, as it works.** What it's doing right now, its own to-do list ticking off (with a progress ring), each step in plain words with how long it took, test results, the files it changed, its pace, its model, turns, tokens and cost, and finally its answer.
+- **Calm, readable droplets.** Droplets keep clear of each other, past where their metal would merge, so none of them flicker or shake their labels; when a screen can't hold them all, the least used go under "more" instead of crowding.
 - **See Symbiot think.** Under each chat reply: what it did to answer (what it recalled, the links it looked up, that it matched how you talk, what it handed over or remembered).
 
 ## 0.45.0 — 2026-10-06
