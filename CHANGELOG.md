@@ -2,6 +2,14 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.49.2
+
+- **Projects shows your projects.** Click **Projects** on the liquid and each repo with work on it is a sphere: what's going on there under its name (an agent at work, ready for your OK, or how many tasks are waiting), spheres orbiting while an agent works, amber when its work waits for you. Click one to open just that project's tasks; right-click comes back.
+- **The Dashboard, in detail.** A headline that says what's waiting, with when it was last read; a 24 hours / 3 days / 7 days switch instead of the old dropdown; a round refresh; **Close** instead of "Sink back". Feeds go by their short names ("Inbox", with your address under it). What you've already seen stays on the stream as small faint beads, so a quiet day isn't an empty line, and the stream lines up with "now" however wide the window is.
+- **Connections.** The link chips are now a grid by kind of site, each with a bead: solid when linked, amber when it wants you to sign in, hollow when it isn't linked. Link, check and Unlink show when you point at one. It's on the Dashboard as well as in Settings.
+- **Every panel's controls, in the look.** Dropdowns have a dark menu in Ferrofluid instead of the white one, buttons are solid in the look's ink (Pearl keeps its chrome), and the card list drops its emoji and green borders.
+- **README** brought up to date: the looks, P.A.R.A., the stream, Connections, click to open and right-click to go back.
+
 ## 0.49.1
 
 - **Click a sphere, it opens.** A sphere (or its name) opens its screen straight away.

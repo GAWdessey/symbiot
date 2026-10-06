@@ -91,7 +91,13 @@ function workScene({ deps = {} } = {}) {
   const ready = pending().filter((r) => r.path && !r.running && ((r.tasks || []).length || (r.files || []).length)).map((r) => ({ id: "ready:" + r.repo, repo: r.repo, count: (r.tasks || []).length }));
   const busy = new Set(running.map((r) => r.name)), open = tasks().filter((t) => !t.done && !t.archived && !t.review && t.repo);
   const waiting = open.map((t) => ({ id: "task:" + t.id, text: plain(t.text, 56), repo: t.repo, busy: busy.has(t.repo) }));
-  return { running, ready, waiting: waiting.slice(0, 12), waitingCount: waiting.length, canGo: waiting.filter((w) => !w.busy).length };
+  // Projects: each repo with work on it, what's going on there in one line's worth
+  const by = {}, at = (name) => (by[name] = by[name] || { repo: name, waiting: 0, ready: 0, running: null });
+  running.forEach((r) => { at(r.name).running = { doing: r.doing, progress: r.progress, ask: r.waiting }; });
+  ready.forEach((r) => { at(r.repo).ready = r.count || 1; });
+  open.forEach((t) => { at(t.repo).waiting++; });
+  const projects = Object.values(by).sort((a, b) => (b.running ? 1 : 0) - (a.running ? 1 : 0) || b.ready - a.ready || b.waiting - a.waiting || (a.repo < b.repo ? -1 : 1));
+  return { running, ready, waiting: waiting.slice(0, 12), waitingCount: waiting.length, canGo: waiting.filter((w) => !w.busy).length, projects: projects.slice(0, 10), projectCount: projects.length };
 }
 // Go: everything waiting goes to its repo's agent, the way Send to repos and an
 // agent per repo would: briefs written, an agent started in each (or queued
