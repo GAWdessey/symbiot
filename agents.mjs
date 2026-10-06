@@ -4,6 +4,7 @@
 import { spawn } from "node:child_process";
 import { homedir } from "node:os";
 import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import { readFileSync, writeFileSync, mkdirSync, existsSync, openSync, writeSync, unlinkSync, readdirSync, statSync } from "node:fs";
 import { randomBytes, createHash } from "node:crypto";
 import { CONFIG_DIR, loadConfig, saveConfig, loadTasks, sameTask, taskWords, sh, hasCmd } from "./core.mjs";
@@ -90,8 +91,34 @@ function withConnectors(tmpl, dir, file) {
   if (!isClaudeCmd(tmpl)) return tmpl;
   return claudeConnectors(dir, file).filter((c) => c.ready).reduce((cmd, c) => allowTool(cmd, c.rule), tmpl).replace(/\s+$/, "");
 }
-// For Settings → Handoff: the connectors, and whether this command's runs get them.
-function connectorsInfo(file) { return { claude: isClaudeCmd(handoffCmd()), list: claudeConnectors("", file).map(({ name, ready }) => ({ name, ready })) }; }
+// Linking a site in Symbiot (Links: Gmail, Drive…) signs Symbiot's own browser in;
+// it doesn't give Claude's runs that site's tools. Those come from Claude's own
+// connector for it (claude.ai → Settings → Connectors), passed through above. So
+// Drive, linked in both, reached runs, and Gmail, linked only in Symbiot, didn't.
+// The sites linked in Symbiot (config.linked) that Claude has connectors for, each
+// with the one it has (connector: its name, or "") and whether it's ready.
+const CLI = fileURLToPath(new URL("./index.mjs", import.meta.url));
+const LINK_CONNECTOR = { gmail: ["Gmail", /gmail/i], outlook: ["Outlook", /outlook|microsoft 365/i], gcal: ["Google Calendar", /google calendar/i], gdrive: ["Google Drive", /google drive/i], notion: ["Notion", /notion/i], slack: ["Slack", /slack/i], jira: ["Jira & Confluence", /atlassian|jira|confluence/i], linear: ["Linear", /linear/i], asana: ["Asana", /asana/i], hubspot: ["HubSpot", /hubspot/i] };
+function linkedConnectors(conns = claudeConnectors(), l = loadConfig().linked) {
+  if (!l || typeof l !== "object" || Array.isArray(l)) return [];
+  return Object.keys(l).filter((id) => LINK_CONNECTOR[id]).map((id) => {
+    const [name, re] = LINK_CONNECTOR[id], c = conns.find((x) => re.test(x.name));
+    return { id, name, connector: c ? c.name : "", ready: !!c && c.ready };
+  });
+}
+// For a run's brief: what its connectors are, and what's linked in Symbiot that
+// isn't one (no tools for it in this run). "" when nothing's linked to either.
+function connectorsLine(tmpl = handoffCmd(), file, linked) {
+  if (!isClaudeCmd(tmpl)) return "";
+  const conns = claudeConnectors("", file), ready = conns.filter((c) => c.ready), off = linkedConnectors(conns, linked).filter((x) => !x.ready);
+  const nm = (s) => s.replace(/^claude\.ai\s+/i, ""), names = off.map((x) => x.name), them = names.length > 1 ? names.slice(0, -1).join(", ") + " and " + names.at(-1) : names[0];
+  const has = ready.length ? `this run can use ${ready.map((c) => `${nm(c.name)} (\`${c.rule}__…\` tools)`).join(", ")}.` : "";
+  const not = off.length ? ` ${them} ${off.length === 1 ? "is" : "are"} linked in Symbiot but not ${off.some((x) => x.connector) ? "ready " : ""}as a Claude connector, so this run has no tools for ${off.length === 1 ? "it" : "them"}: don't say you checked ${off.length === 1 ? "it" : "them"}. What's new there is in \`node "${CLI}" watch new\`; to read more, ask the user (👤) to connect ${them} in claude.ai → Settings → Connectors.` : "";
+  return (has + not).trim();
+}
+// For Settings → Handoff: the connectors, whether this command's runs get them, and
+// the sites linked in Symbiot that aren't Claude connectors (so runs can't use them).
+function connectorsInfo(file) { const conns = claudeConnectors("", file); return { claude: isClaudeCmd(handoffCmd()), list: conns.map(({ name, ready }) => ({ name, ready })), links: linkedConnectors(conns) }; }
 const fillHandoff = (tmpl, repoPath) => tmpl.replace(/\{dir\}/g, shSingle(repoPath)).replace(/\{prompt\}/g, escDq(HANDOFF_PROMPT));
 // One agent per folder: two identical runs once started on the same repo 6s
 // apart and raced each other. The registry catches a second click in this
@@ -112,7 +139,7 @@ function runHandoff(repoPath, { force = false } = {}) {
   const busy = runningHandoff(repoPath); if (busy) return { busy: true, id: busy.id || "", pid: busy.pid, auto: !!busy.auto };
   releaseHeldTasks(repoPath); // held for an agent another process started, which has since exited
   tmpl = withConnectors(tmpl, repoPath);
-  if (!force) { const w = waitingFor(repoPath); if (w) return { blocked: true, waiting: true, questions: 0, note: waitNote(w) }; }
+  if (!force) { const w = waitingFor(repoPath); if (w) { askedFor(repoPath); return { blocked: true, waiting: true, questions: 0, note: waitNote(w) }; } }
   const blocked = !force && blockedAgain(repoPath, tmpl); if (blocked) return blocked;
   try { unlinkSync(join(repoPath, ".symbiot", WAITING)); } catch {} // the step's done (or this is Start it anyway): this is the run it waited for
   const lock = join(repoPath, ".symbiot", LOCK);
@@ -172,6 +199,23 @@ function earlierRuns() {
 // waits for Start it now. Start it anyway (force) always goes ahead.
 const WAITING = "waiting.json";
 const yourStep = (a) => /👤/.test(String(a || ""));
+// An answer in the user's own words that says to wait is their step too: "don't
+// start another run until it's in", "hold off until I've added it", "not yet".
+// It waits on the files the question's 👤 options named (the `.env` that "it"
+// goes in), since the answer itself rarely names one. "That can wait" isn't one.
+const HOLD = [
+  /\b(?:don'?t|do not|never)\s+(?:start|run|send|launch|kick off|begin)\b/i,
+  /\b(?:another|next|new|a) (?:run|agent)\b[^.]{0,60}\b(?:until|till|unless|before)\b/i,
+  /\b(?:wait|hold(?: off| on| back)?|stop)\b[^.]{0,40}\b(?:until|till|for me to|before)\b/i,
+  /^\s*not yet\b/i,
+];
+const holdAnswer = (a) => !yourStep(a) && HOLD.some((re) => re.test(String(a || "")));
+// Asked for a run while one waits on a step of yours (a Send, a handover's
+// result): it starts by itself once the step's done, as the note says.
+function askedFor(path) {
+  const f = join(path, ".symbiot", WAITING);
+  try { const w = JSON.parse(readFileSync(f, "utf8")); if (w && !w.rerun) writeFileSync(f, JSON.stringify({ ...w, rerun: true })); } catch {}
+}
 // A step in Settings → Handoff: the note names the command as what it waits on.
 const settingsStep = (s) => /\bsettings\b|\ballow\b|\bgrant|connector/i.test(String(s || ""));
 // The command the folder's next run would get, connectors and all (runHandoff).
@@ -544,9 +588,14 @@ function answerQuestions(path, answers, opts = {}) {
     writeFileSync(join(path, ".symbiot", "ANSWERS.md"), prev.replace(/\s*$/, "\n") + rows.map((x) => `\n### ${x.q}\n${x.a}\n_answered ${day}_\n`).join(""));
   } catch (e) { return { error: "Couldn't write ANSWERS.md: " + ((e && e.message) || e) }; }
   const out = { ok: true, saved: rows.length };
-  const yours = rows.filter((x) => yourStep(x.a)).map((x) => stepText(x.a)).filter(Boolean);
+  // a "wait until…" answer: the step is the question's 👤 option (what "it" is), and its files are waited on
+  const asked = new Map(parseQuestions(readSymbiot(path, "QUESTIONS.md")).questions.map((x) => [qKey(x.q), x]));
+  const youOpts = (q) => ((asked.get(qKey(q)) || {}).options || []).filter(yourStep).map((o) => o.split("🤖")[0]);
+  const steps = rows.filter((x) => yourStep(x.a) || holdAnswer(x.a)).map((x) => yourStep(x.a) ? { step: stepText(x.a), named: x.a.split("🤖")[0] }
+    : { step: (youOpts(x.q).map(stepText)[0] || x.a).trim(), named: [x.a, ...youOpts(x.q)].join(" ") });
+  const yours = steps.map((s) => s.step).filter(Boolean);
   if (yours.length) {
-    const step = yours.join(" "), files = namedFiles(rows.filter((x) => yourStep(x.a)).map((x) => x.a.split("🤖")[0]).join(" "), path);
+    const step = yours.join(" "), files = namedFiles(steps.map((s) => s.named).join(" "), path);
     try { writeFileSync(join(path, ".symbiot", WAITING), JSON.stringify({ step, files: files.map((f) => ({ ...f, sig: fileSig(f.path) })), cmd: runCmd(path), at: Date.now(), rerun: !!opts.rerun })); } catch {}
     const on = waitOn(files.map((f) => f.name), settingsStep(step));
     out.yours = yours; if (files.length) out.waitFiles = files.map((f) => f.name);
@@ -574,4 +623,4 @@ function agentsList() {
   }).concat(earlierRuns());
 }
 
-export { HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, connectorsInfo, fillHandoff, runHandoff, blockedAgain, runningHandoff, loadRuns, earlierRuns, namedFiles, waitingFor, startWaiting, writeTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, skipIdea, agentQuestions, answerQuestions, agentsList };
+export { HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, connectorsInfo, fillHandoff, runHandoff, blockedAgain, runningHandoff, loadRuns, earlierRuns, namedFiles, waitingFor, startWaiting, writeTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, skipIdea, agentQuestions, answerQuestions, agentsList };

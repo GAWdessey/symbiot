@@ -294,6 +294,14 @@ const collectJs = (whole, list = null) => `(() => { ${SCROLLER}
     const box = ${whole ? "{ x: Math.max(0, b.left + X), y: Math.max(0, b.top + Y), w: b.width, h: b.height }" : "{ x, y: y + down, w: x2 - x, h: y2 - y }"};
     const r = { label: full.slice(0, 80) || kind, kind, x: Math.round(box.x), y: Math.round(box.y), w: Math.round(box.w), h: Math.round(box.h), selector: reused ? '' : cssPath(e) };
     if (full.length > 80) r.text = full.slice(0, 400); // all of a long one (an inbox row), for Watch
+    // a chat list's row (WhatsApp's), for Watch: what only its icons say, not its text. Its
+    // unread badge ("2 unread messages"), and the ticks on a last message you sent
+    if (kind === 'row' || kind === 'menu item') {
+      const un = [...e.querySelectorAll('[aria-label]')].map((x) => clean(x.getAttribute('aria-label'))).find((s) => /\\bunread\\b/i.test(s));
+      if (un) r.unread = +(un.match(/(\\d+)\\s+unread/i) || [0, 1])[1] || 1;
+      if (e.querySelector('[data-icon^="msg-check"],[data-icon^="msg-dblcheck"],[data-icon^="msg-time"],[data-icon^="status-check"],[data-icon^="status-dblcheck"]') ||
+        [...e.querySelectorAll('[aria-label]')].some((x) => /^(read|delivered|sent|pending)$/i.test(clean(x.getAttribute('aria-label'))))) r.mine = true;
+    }
     if (e.href && /^https?:/.test(e.href)) r.href = String(e.href).slice(0, 500);
     out.push(r);
   }

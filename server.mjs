@@ -5,17 +5,19 @@
 import { spawn, spawnSync } from "node:child_process";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { gunzipSync } from "node:zlib";
 import { readFileSync, existsSync } from "node:fs";
 import { createServer } from "node:http";
 import { randomBytes } from "node:crypto";
 import { EMBEDDED_UI } from "./ui.mjs";
-import { VERSION, LATEST_VERSION, semverGt, checkLatest, loadConfig, saveConfig, loadTasks, hasCmd, chromeBinary } from "./core.mjs";
+import { VERSION, LATEST_VERSION, REGISTRY, semverGt, checkLatest, loadConfig, saveConfig, loadTasks, hasCmd, chromeBinary } from "./core.mjs";
 import { shSingle, handoffCmd, setHandoffCmd, grantAgent, runHandoff, track, detectHandoffs, connectorsInfo, answerQuestions, skipIdea, agentsList, startWaiting } from "./agents.mjs";
 import { PROVIDERS, resolveProvider, connectProvider, detectHardware, recommendModels, hasOllama, ollamaInstall, ensureOllama, useOllamaModel } from "./ai.mjs";
 import { SCAN, SCAN_TIMEOUT_MS, scanRoots, scanHome, addScanRoot, removeScanRoot, buildMap, nodeDetail, repoPathMap } from "./scan.mjs";
 import { computeDrift } from "./drift.mjs";
-import { addTask, toggleTask, removeTask, restoreTask, syncTasks, taskType, pushTasks, pendingReview, workingDiff, learnNpm, withReleases, approveRepo, approveChanges, sendBack, setAutoMerge } from "./tasks.mjs";
-import { repoReview, repoSuggest, folderSuggest, taskChat, clearTaskChat, mailState, setMail, sentMail, produce } from "./writeups.mjs";
+import { addTask, toggleTask, removeTask, restoreTask, syncTasks, taskType, pushTasks, pendingReview, workingDiff, learnNpm, withReleases, releaseInput, approveRepo, approveChanges, sendBack, setAutoMerge } from "./tasks.mjs";
+import { repoReview, repoSuggest, folderSuggest, taskChat, clearTaskChat, mailState, setMail, sentMail, produce, releaseNotes } from "./writeups.mjs";
 import { loadScreens, screenImage, captureScreen, splitScreen, listMonitors, allowScreenshots, importScreen, setRegions, renameScreen, removeScreen, blueprint, clickRegion } from "./screens.mjs";
 import { mapPage, wholePage, pressRegion, typeRegion, scrollPage, signIn, keepBrowserOpen, isTrusted, trustedSites, trustSite, untrustSite } from "./headless.mjs";
 import { weeklyState, setWeekly, runWeekly, startWeekly, autostartState, setAutostart } from "./desktop.mjs";
@@ -23,6 +25,8 @@ import { watchState, addWatch, setEvery, removeWatch, clearNews, seenWatch, chec
 import { linksState, linkSite, checkLink, unlinkSite } from "./links.mjs";
 import { mindState, forget } from "./mind.mjs";
 import { lanesTick, lanesState } from "./lanes.mjs";
+import { adaptState, noteUse } from "./adapt.mjs";
+import { homeState, homeAsk } from "./home.mjs";
 import { phoneState, setPhoneLink, newCode, unpairPhone, pairComputer, forgetComputer, pollComputer, startPhone } from "./phone.mjs";
 
 // The in-app update installs the EXACT newest version (not the `latest` tag, which
@@ -32,6 +36,57 @@ import { phoneState, setPhoneLink, newCode, unpairPhone, pairComputer, forgetCom
 function updateCmd(latest, current, platform = process.platform) {
   const target = latest && semverGt(latest, current) ? latest : "latest";
   return { target, cmd: (platform === "win32" ? "npm i -g " : "npm install -g ") + "symbiot@" + target + " --prefer-online" };
+}
+
+// ---- what's new: the changelog's releases between two versions -------------------
+// CHANGELOG.md's "## 0.45.0 — 2026-10-06" sections newer than `from` and up to
+// `to`, newest first: [{ version, date, items }]. It ships with Symbiot, so after an
+// update the app shows once what came with it (config.seenVersion is the version
+// you last saw it for). Before an update, the new version's own CHANGELOG.md is
+// read from its package on npm (registryChangelog).
+const CHANGELOG = fileURLToPath(new URL("./CHANGELOG.md", import.meta.url));
+function changesSince(md, from, to) {
+  const out = [];
+  for (const part of String(md || "").split(/^## /m).slice(1)) {
+    const m = part.match(/^\[?v?(\d+\.\d+\.\d+)\]?(?:\s*[—–-]\s*(\d{4}-\d{2}-\d{2}))?/); if (!m) continue;
+    if ((from && !semverGt(m[1], from)) || (to && semverGt(m[1], to))) continue;
+    out.push({ version: m[1], date: m[2] || "", items: part.split("\n").filter((l) => /^[-*]\s+/.test(l)).map((l) => l.replace(/^[-*]\s+/, "").trim()).slice(0, 30) });
+  }
+  return out.slice(0, 15);
+}
+const localChangelog = () => { try { return readFileSync(CHANGELOG, "utf8"); } catch { return ""; } };
+// After an update: what's new since the version you last saw it for. The first
+// time (no seenVersion yet) that's just this version's own release.
+function whatsNew(cfg = loadConfig(), md = localChangelog()) {
+  const seen = typeof cfg.seenVersion === "string" ? cfg.seenVersion : "";
+  if (seen && !semverGt(VERSION, seen)) return { version: VERSION, changes: [] };
+  const all = changesSince(md, "", VERSION);
+  return { version: VERSION, changes: seen ? changesSince(md, seen, VERSION) : all.slice(0, 1) };
+}
+// A file in a package tarball (.tgz: gzip, then tar's 512-byte headers, each
+// followed by its file's bytes), "" if it isn't there.
+function tarFile(tgz, name) {
+  let buf; try { buf = gunzipSync(tgz); } catch { return ""; }
+  const str = (a, b, at) => buf.subarray(at + a, at + b).toString("utf8").replace(/\0[\s\S]*$/, "");
+  for (let at = 0; at + 512 <= buf.length;) {
+    if (!buf[at]) break;
+    const size = parseInt(str(124, 136, at).trim() || "0", 8) || 0, pre = str(345, 500, at), path = (pre ? pre + "/" : "") + str(0, 100, at);
+    if (path === name) return buf.subarray(at + 512, at + 512 + size).toString("utf8");
+    at += 512 + Math.ceil(size / 512) * 512;
+  }
+  return "";
+}
+// The new version's CHANGELOG.md, from its package on npm (kept once found).
+const REGISTRY_LOGS = new Map();
+async function registryChangelog(version, registry = REGISTRY) {
+  if (REGISTRY_LOGS.has(version)) return REGISTRY_LOGS.get(version);
+  let md = "";
+  try {
+    const r = await fetch(`${registry}/symbiot/-/symbiot-${encodeURIComponent(version)}.tgz`, { signal: AbortSignal.timeout(15000) });
+    if (r.ok) md = tarFile(Buffer.from(await r.arrayBuffer()), "package/CHANGELOG.md");
+  } catch {}
+  if (md) REGISTRY_LOGS.set(version, md);
+  return md;
 }
 
 // ---- `symbiot app` : the same UI in a chrome-less browser window ----------
@@ -156,8 +211,8 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
         await learnNpm(ask); return json(res, pendingReview());
       }
       if (u.pathname === "/api/pending/diff") { const p = repoPathMap()[u.searchParams.get("repo") || ""]; return json(res, { diff: p ? workingDiff(p) : "" }); }
-      if (u.pathname === "/api/pending/approve" && req.method === "POST") { const b = await readBody(req); if (b.bump) await learnNpm([repoPathMap()[String(b.repo || "")]]); return json(res, approveRepo(String(b.repo || ""), { bump: b.bump })); }
-      if (u.pathname === "/api/pending/approve-changes" && req.method === "POST") { const b = await readBody(req); if (b.bump) await learnNpm([repoPathMap()[String(b.repo || "")]]); return json(res, approveChanges(String(b.repo || ""), { bump: b.bump, tick: b.tick })); }
+      if (u.pathname === "/api/pending/approve" && req.method === "POST") { const b = await readBody(req), repo = String(b.repo || ""); if (b.bump) await learnNpm([repoPathMap()[repo]]); const notes = await releaseNotes(releaseInput(repo, { bump: b.bump })); return json(res, approveRepo(repo, { bump: b.bump, notes })); }
+      if (u.pathname === "/api/pending/approve-changes" && req.method === "POST") { const b = await readBody(req), repo = String(b.repo || ""); if (b.bump) await learnNpm([repoPathMap()[repo]]); const notes = await releaseNotes(releaseInput(repo, { bump: b.bump, tick: b.tick })); return json(res, approveChanges(repo, { bump: b.bump, tick: b.tick, notes })); }
       if (u.pathname === "/api/pending/sendback" && req.method === "POST") { const b = await readBody(req); return json(res, sendBack(String(b.id || ""))); }
       if (u.pathname === "/api/automerge" && req.method === "POST") { const b = await readBody(req); return json(res, setAutoMerge(String(b.repo || ""), !!b.on)); }
       if (u.pathname === "/api/tasks/push" && req.method === "POST") { const b = await readBody(req); return json(res, pushTasks(b)); }
@@ -222,6 +277,12 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       if (u.pathname === "/api/links/link" && req.method === "POST") { const b = await readBody(req); return json(res, await linkSite(String(b.id || ""))); }
       if (u.pathname === "/api/links/check" && req.method === "POST") { const b = await readBody(req); return json(res, await checkLink(String(b.id || ""))); }
       if (u.pathname === "/api/links/unlink" && req.method === "POST") { const b = await readBody(req); return json(res, unlinkSite(String(b.id || ""))); }
+      // Home (home.mjs): the liquid's live data, and its talk; Adapt (adapt.mjs): its
+      // shape from how you use it (commit=1 when it wakes from rest, never mid-gesture).
+      if (u.pathname === "/api/home") return json(res, homeState({ fresh: u.searchParams.get("fresh") === "1" }));
+      if (u.pathname === "/api/home/ask" && req.method === "POST") { const b = await readBody(req); return json(res, await homeAsk(b.question)); }
+      if (u.pathname === "/api/adapt") return json(res, adaptState({ from: String(u.searchParams.get("from") || ""), commit: u.searchParams.get("commit") === "1", ...(u.searchParams.has("touch") ? { touch: u.searchParams.get("touch") === "1" } : {}) }));
+      if (u.pathname === "/api/adapt/use" && req.method === "POST") { const b = await readBody(req); return json(res, noteUse(b)); }
       // Lanes (lanes.mjs): work agents handed to each other, and where it stands.
       if (u.pathname === "/api/lanes") return json(res, lanesState());
       // Watch (watch.mjs): a mapped page read again every few minutes, and what's new on it.
@@ -260,6 +321,15 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       if (u.pathname === "/api/run" && req.method === "POST") { const b = await readBody(req); const cmd = ["week", "standup", "todo"].includes(b.cmd) ? b.cmd : "week"; return json(res, cmd === "week" ? await runWeekly(writeup, { notify: false }) : await writeup(cmd)); }
       if (u.pathname === "/api/connect" && req.method === "POST") { return json(res, await connectProvider(await readBody(req))); }
       if (u.pathname === "/api/ping") { if (u.searchParams.get("fresh") === "1") await checkLatest(); return json(res, { version: VERSION, started: SERVER_STARTED, latest: LATEST_VERSION, newer: semverGt(LATEST_VERSION, VERSION), ...(IN_TERMUX ? { termux: true } : {}) }); }
+      // What's new: after an update, since the version you last saw (until you click Got it);
+      // ?latest=1, what the update on offer brings, from its package on npm
+      if (u.pathname === "/api/whatsnew") {
+        if (u.searchParams.get("latest") !== "1") return json(res, whatsNew());
+        const to = LATEST_VERSION; if (!semverGt(to, VERSION)) return json(res, { version: to, changes: [] });
+        const md = await registryChangelog(to);
+        return json(res, { version: to, changes: changesSince(md, VERSION, to), ...(md ? {} : { error: `Couldn't read ${to}'s changelog from npm.` }) });
+      }
+      if (u.pathname === "/api/whatsnew/seen" && req.method === "POST") { const cfg = loadConfig(); cfg.seenVersion = VERSION; return json(res, saveConfig(cfg) ? { ok: true } : { error: "Couldn't write the config file." }); }
       if (u.pathname === "/api/update" && req.method === "POST") {
         // Install the exact newest version (see updateCmd), then relaunch this
         // same app (same port+token => same URL) and exit. The page's heartbeat
@@ -304,4 +374,4 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
   setInterval(() => { try { lanesTick(); } catch {} }, 20000).unref(); // agents hand work to other lanes, and hear back when it's done
 }
 
-export { updateCmd, BROWSER_KEEP, startApp, askRunningApp, isAppRunningWeekly };
+export { updateCmd, changesSince, whatsNew, tarFile, registryChangelog, BROWSER_KEEP, startApp, askRunningApp, isAppRunningWeekly };

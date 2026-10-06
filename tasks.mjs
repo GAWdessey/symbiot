@@ -8,7 +8,8 @@ import { readFileSync, writeFileSync, existsSync, readdirSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { VERSION, LATEST_VERSION, REGISTRY, semverGt, loadConfig, saveConfig, loadTasks, saveTasks, taskWords, sameTask, uniqueTasks, sh, hasCmd, repoState } from "./core.mjs";
 import { handoverRules, ONLY_YOU } from "./handover.mjs";
-import { QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, handoffCmd, runningHandoff, writeTasks, startHeldTasks } from "./agents.mjs";
+import { userStyleLine } from "./adapt.mjs";
+import { QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, handoffCmd, runningHandoff, writeTasks, startHeldTasks, connectorsLine } from "./agents.mjs";
 import { gitDefaultBranch } from "./drift.mjs";
 import { repoPathMap, openWork, detectRepo } from "./scan.mjs";
 
@@ -250,14 +251,61 @@ function setVersion(path, to) {
   }
   return () => { for (const [file, text] of saved) try { writeFileSync(file, text); } catch {} };
 }
+// ---- the changelog: what each release brought ---------------------------------
+// A repo that keeps a CHANGELOG.md gets a section for each version Approve bumps
+// to, "## 0.45.0 — 2026-10-06", newest first, with what was approved: each task
+// (near-duplicates once), up to its first sentence. Changes approved without a
+// task are named by the files they touch. With an AI connected, Approve has it
+// word them as release notes first (writeups.mjs releaseNotes): opts.notes, one
+// per task. Symbiot ships its own, and the app shows it as what's new in an
+// update (server.mjs changesSince).
+const ENTRY_MAX = 220;
+const NOT_OWN = /(^|\/)(package(-lock)?\.json|npm-shrinkwrap\.json|CHANGELOG\.md)$/;
+function changelogEntry(text) {
+  let s = String(text || "").replace(/\s+/g, " ").trim();
+  const m = s.match(/^(.{40,}?(?<!\be\.g|\bi\.e|\betc|\bvs)[.!?])\s+(?=[^a-z])/); if (m && m[1].length <= ENTRY_MAX) s = m[1]; // not at "e.g. `x`" or "e.g. when"
+  return s.length > ENTRY_MAX ? s.slice(0, ENTRY_MAX - 1).replace(/\s+\S*$/, "") + "…" : s;
+}
+function changelogSection(version, texts, files = [], day = new Date().toISOString().slice(0, 10), notes = null) {
+  const own = files.filter((f) => !NOT_OWN.test(f));
+  const items = notes && notes.length ? [...new Set(notes)] : texts.length ? uniqueTasks(texts.map(changelogEntry))
+    : [own.length ? `Changes approved without a task, in ${own.slice(0, 6).join(", ")}${own.length > 6 ? ` and ${own.length - 6} more` : ""}.` : "Version bump only."];
+  return `## ${version} — ${day}\n\n${items.map((x) => "- " + x).join("\n")}\n`;
+}
+// Put the section in above the newest one (after the file's own heading and
+// intro), once per version. Gives back a function that restores the file.
+function noteChangelog(path, version, texts, files, notes) {
+  const file = join(path, "CHANGELOG.md"); let text = "";
+  try { text = readFileSync(file, "utf8"); } catch { return () => {}; }
+  if (new RegExp(`^##\\s+\\[?v?${version.replace(/\./g, "\\.")}\\b`, "m").test(text)) return () => {};
+  const at = text.search(/^## /m), sec = changelogSection(version, texts, files, undefined, notes) + "\n";
+  try { writeFileSync(file, at < 0 ? text.replace(/\s*$/, "\n\n") + sec : text.slice(0, at) + sec + text.slice(at)); } catch { return () => {}; }
+  return () => { try { writeFileSync(file, text); } catch {} };
+}
+// What Approve will put in the changelog, for your AI to word (writeups.mjs
+// releaseNotes): the tasks it ships, in the order it ships them, and the files
+// and diff behind them. null when it won't write one: no bump, no CHANGELOG.md,
+// or the agent is still working there. opts as approveRepo / approveChanges take them.
+function releaseInput(repo, opts = {}) {
+  const path = repoPathMap()[repo];
+  if (!path || !(opts.bump === "patch" || opts.bump === "minor") || !bumpOffer(path) || !existsSync(join(path, "CHANGELOG.md")) || runningHandoff(path)) return null;
+  const t = loadTasks(), ids = new Set(Array.isArray(opts.tick) ? opts.tick.map(String) : []);
+  const review = t.filter((x) => x.repo === repo && x.review && !x.done && !x.archived);
+  const items = review.length ? review : t.filter((x) => ids.has(x.id) && x.repo === repo && !x.done && !x.archived && !x.review);
+  const files = workingChanges(path).files.map((f) => f.file).filter((f) => !NOT_OWN.test(f));
+  const texts = uniqueTasks(items.map((x) => x.text));
+  return texts.length || files.length ? { path, texts, files, diff: workingDiff(path, 30000) } : null;
+}
 // Ship with the version bumped when opts.bump is "patch" or "minor" and the repo
-// is offered one (bumpOffer). The bump is put back if the ship fails.
+// is offered one (bumpOffer), noted in its CHANGELOG.md if it keeps one (in
+// opts.notes' words, when given). Both are put back if the ship fails.
 function shipWithBump(path, texts, opts) {
   const offer = (opts.bump === "patch" || opts.bump === "minor") && bumpOffer(path);
   if (!offer) return shipChanges(path, texts, opts);
-  const to = offer[opts.bump], undo = setVersion(path, to);
+  const to = offer[opts.bump], files = workingChanges(path).files.map((f) => f.file);
+  const undo = setVersion(path, to), undoLog = noteChangelog(path, to, texts, files, opts.notes);
   const r = shipChanges(path, texts, { ...opts, bumped: to });
-  if (r.error) { undo(); return r; }
+  if (r.error) { undo(); undoLog(); return r; }
   return { ...r, bumped: to };
 }
 // What the last run in a folder said when it finished: agent.log after the last
@@ -472,6 +520,7 @@ function buildTasksMd(name, ctx, list) {
   if (ctx.commits && ctx.commits.length) { L.push("- **Recent commits:**"); for (const c of ctx.commits) L.push(`  - ${c}`); }
   if (ctx.open && ctx.open.length) { L.push("- **Open markers (TODO/FIXME + uncommitted):**"); for (const o of ctx.open) L.push(`  - ${o}`); }
   if (ctx.drift && ctx.drift.length) { L.push("- **Current drift / risk:**"); for (const d of ctx.drift) L.push(`  - ${d}`); }
+  if (ctx.connectors) L.push(`- **Connectors:** ${ctx.connectors}`);
   L.push("", "## Tasks");
   const byType = {}; for (const t of list) { const ty = taskType(t.text); (byType[ty] = byType[ty] || []).push(t); }
   const keys = Object.keys(byType).sort((a, b) => TASK_ORDER.indexOf(a) - TASK_ORDER.indexOf(b));
@@ -482,6 +531,7 @@ function buildTasksMd(name, ctx, list) {
     `- At most ${QUESTIONS_MAX} questions, under a \`## Questions\` heading. Each is a \`### \` heading, then a line of context, then exactly ${OPTIONS_SHOWN} options as \`- \` bullets, the one you recommend first, marked \`(recommended)\`. Symbiot shows only the first ${OPTIONS_SHOWN}; the user can always answer in their own words.`,
     "- Judge the options before you ask. Most people pick the recommended option without weighing the other, and Symbiot works for a whole company (developers, sales, everyone), not one person, so the choice is really yours. Both options must be good routes to the best solution, never filler or one you wouldn't take. Each says in plain words, with no jargon, what it does and what it changes from then on for the project, the people working on it and the company. Recommend the one that's best for, in this order, the company, the people doing the work, then the task's goal. Base that on evidence you can check here (git history, tests, logs, how it's used, the answers so far), not on what's quickest, and give that evidence in the context line in a sentence.",
     ONLY_YOU,
+    ...(userStyleLine() ? ["- Writing to the user (questions, options, your last message): " + userStyleLine()] : []),
     "- A `👤 You:` answer holds the next run back until the user's step is done. If their step changes a file, name the file in backticks (`.env`, `~/.termux/termux.properties`): the next run starts once it changes.",
     "- If a step needs a release that isn't out yet, name its version in the question (\"Once 0.41.0 is installed: …\"). Symbiot shows it next to the installed and npm versions, and holds back an answer that starts \"Done\" until that release is out and installed.",
     `- Ideas, options or follow-ups outside these tasks go under \`## Suggestions\` as \`- \` bullets. The user can add them to their tasks in one click, and often adds every one, so judge them the same way: only ideas you'd recommend, best first, each saying what it changes and why it's worth doing. Symbiot shows them ${IDEAS_SHOWN} at a time. Ideas the user turned down are in \`.symbiot/SKIPPED.md\`: don't suggest them again.`,
@@ -498,7 +548,7 @@ function pushTasks(filter) {
   if (!tasks.length) return { empty: true, written: [], unresolved: [] };
   const byName = repoPathMap(); // from the already-scanned map when there is one
   const groups = {}; for (const t of tasks) { const k = t.repo || ""; (groups[k] = groups[k] || []).push(t); }
-  const written = [], unresolved = [];
+  const written = [], unresolved = [], connectors = connectorsLine(); // the same for every repo's run
   for (const name of Object.keys(groups)) {
     const list = uniqueTasks(groups[name].map((t) => t.text)).map((text) => ({ text })), path = name && byName[name]; // near-duplicates once
     if (!path) { unresolved.push({ name: name || "(no repo)", count: list.length }); continue; }
@@ -515,11 +565,11 @@ function pushTasks(filter) {
       if (st.behind) risk.push(`${st.behind} behind upstream on ${st.branch}`);
       if (st.dirty && !st.stale) risk.push(`${st.dirty} uncommitted (${st.mod} mod / ${st.del} del / ${st.add} new)`);
       // held: an agent is still running there, so it lands when that one exits
-      const held = writeTasks(path, buildTasksMd(name, { branch: st.branch, commits, open, drift: risk, stack, lanes: Object.keys(byName) }, list));
+      const held = writeTasks(path, buildTasksMd(name, { branch: st.branch, commits, open, drift: risk, stack, lanes: Object.keys(byName), connectors }, list));
       written.push({ name, file: join(path, ".symbiot", "TASKS.md"), path, count: list.length, held });
     } catch (e) { unresolved.push({ name, count: list.length, error: String((e && e.message) || e) }); }
   }
   return { empty: false, written, unresolved, handoff: handoffCmd() };
 }
 
-export { addTask, toggleTask, removeTask, restoreTask, completedInRepo, removalOf, applyRemovals, syncTasks, workingChanges, workingDiff, publishesOnMerge, unreleased, bumpOffer, learnNpm, releaseNeeded, withReleases, setVersion, shipWithBump, runSummary, saidFinished, pendingReview, commitSubject, shipChanges, autoMergeRepos, setAutoMerge, approveRepo, approveChanges, sendBack, TASK_ORDER, taskType, buildTasksMd, pushTasks };
+export { addTask, toggleTask, removeTask, restoreTask, completedInRepo, removalOf, applyRemovals, syncTasks, workingChanges, workingDiff, publishesOnMerge, unreleased, bumpOffer, learnNpm, releaseNeeded, withReleases, setVersion, changelogEntry, changelogSection, noteChangelog, releaseInput, shipWithBump, runSummary, saidFinished, pendingReview, commitSubject, shipChanges, autoMergeRepos, setAutoMerge, approveRepo, approveChanges, sendBack, TASK_ORDER, taskType, buildTasksMd, pushTasks };

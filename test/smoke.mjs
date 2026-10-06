@@ -163,6 +163,9 @@ const calls = [
   ["/api/suggest", "POST"],
   ["/api/connect", "POST"],      // no provider -> rejected, nothing saved
   ["/api/ping", "GET"],          // heartbeat the UI polls for auto-refresh/update
+  ["/api/whatsnew", "GET"],      // what's new since the version you last saw (the changelog)
+  ["/api/whatsnew?latest=1", "GET"], // what the update on offer brings (none newer here -> nothing fetched)
+  ["/api/whatsnew/seen", "POST"],    // Got it: seenVersion is this version
   ["/api/pending", "GET"],       // tasks the agent ticked, awaiting approval
   ["/api/pending/diff?repo=x", "GET"],
   ["/api/pending/approve", "POST"], // no repo -> "nothing awaiting review", no git runs
@@ -192,6 +195,10 @@ const calls = [
   ["/api/screens/trusted/add", "POST"],    // no site -> refused, nothing saved
   ["/api/screens/trusted/remove", "POST"],
   ["/api/screens/signin", "POST"],  // no site -> refused, no window opens
+  ["/api/home", "GET"],             // the liquid's live data (isolated HOME -> empty)
+  ["/api/home/ask", "POST"],        // no question -> "empty", no model call
+  ["/api/adapt", "GET"],            // its shape from how it's used
+  ["/api/adapt/use", "POST"],       // no shape -> "unknown shape", nothing saved
   ["/api/lanes", "GET"],            // handovers between agents' lanes (isolated HOME -> none)
   ["/api/mind", "GET"],             // what Symbiot remembers across the app (isolated HOME -> nothing)
   ["/api/mind/forget", "POST"],     // no id -> "Nothing remembered by that id"
