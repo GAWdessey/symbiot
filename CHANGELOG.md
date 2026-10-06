@@ -2,6 +2,11 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.50.2
+
+- **An allow list is one click.** When an agent needs permissions it doesn't have, it proposes them, as narrow as the task needs, in `.symbiot/allowlist.proposed.json` and offers it as a choice. Pick it in the app and Symbiot turns it on for that folder only and runs the agent again: no copying files, no running claude in a terminal. A list that would let an agent run anything at all (a shell, sudo, rm) is never turned on by a click.
+- **Fixed:** a flag could end up in the agent command as a rule (`Bash(--allowedtools:*)`). It can't any more, and an old one is cleaned out on the next grant.
+
 ## 0.50.1
 
 - **A permission you pick is given.** When an agent asks for one ("let agents read ~/.config/symbiot/screens") and you choose it in the app, Symbiot grants it then and there (as Settings' grant boxes do) and the agent carries on, instead of leaving it as a step for you to do by hand. Steps only you can do, like pasting your own message, are still yours.
