@@ -15,7 +15,7 @@ import { grantRule, claudeConnectors, withConnectors } from "../agents.mjs";
 import { applyRemovals, removalOf } from "../tasks.mjs";
 import { sameTask, uniqueTasks } from "../core.mjs";
 import { mailActivity } from "../mail.mjs";
-import { pngSize, pngDecode, splitPng, stitchPng, captureCmds, clickCmds, portalAppId, monitorCmds, parseCosmicRandr, parseWlrRandr, parseKscreen, parseXrandr, parseLines, tidyMonitors, monitorAreas } from "../screens.mjs";
+import { pngSize, pngDecode, splitPng, stitchPng, stitchListPng, captureCmds, clickCmds, portalAppId, monitorCmds, parseCosmicRandr, parseWlrRandr, parseKscreen, parseXrandr, parseLines, tidyMonitors, monitorAreas } from "../screens.mjs";
 import { siteUrl, browserArgs, isTrusted, isSend } from "../headless.mjs";
 import { deflateSync } from "node:zlib";
 import { weeklyDue, lastSlot, autostartFile, autostartContent, notifyCmd } from "../desktop.mjs";
@@ -292,6 +292,42 @@ try {
   ok("a changed .env, a new answer or a new task starts one", bq.envChanged && bq.again2 && bq.answered && bq.newTask, bq);
   ok("fewer of the same tasks is still blocked; force starts it anyway", bq.fewer && bq.forced, bq);
   ok("a changed agent command starts one, and a run that didn't ask clears the note", bq.otherCmd && bq.cleared, bq);
+
+  console.log("HANDOFF — after a restart, a run's questions still show; a step of yours holds the next run");
+  const erDir = join(ROOT, "earlier"), erHome = join(ROOT, "erhome"); mkdirSync(join(erDir, ".symbiot"), { recursive: true }); mkdirSync(erHome, { recursive: true });
+  const erRun = (code) => { const r = spawnSync(process.execPath, ["--input-type=module", "-e", `
+    import * as a from ${JSON.stringify(AGENTS)};
+    import { writeFileSync, existsSync } from "node:fs";
+    const dir = ${JSON.stringify(erDir)}, s = dir + "/.symbiot/", out = {};
+    const until = async (c) => { for (let i = 0; i < 100 && !c(); i++) await new Promise((r) => setTimeout(r, 100)); };
+    const run = async (j) => { if (j && j.pid) await until(() => j.status !== "running" && !existsSync(s + "agent.pid")); return j; };
+    ${code}
+    console.log(JSON.stringify(out));`], { encoding: "utf8", timeout: 60000, env: { ...process.env, HOME: erHome, USERPROFILE: erHome } });
+    try { return JSON.parse(r.stdout.trim().split("\n").pop()); } catch { console.log(r.stdout, r.stderr); return {}; } };
+  // the app that started it: the run asks for a value that goes in .env
+  const er1 = erRun(`writeFileSync(s + "TASKS.md", "- [ ] Set WA_WABA_ID\\n");
+    a.setHandoffCmd("printf '## Questions\\\\n### What is WA_WABA_ID?\\\\n- 👤 You: put it in \\\\140.env\\\\140 (recommended)\\\\n' > .symbiot/QUESTIONS.md");
+    out.ran = !!(await run(a.runHandoff(dir))).pid; out.runs = a.loadRuns().map((r) => r.path);`);
+  ok("each folder a run starts in is noted in runs.json", er1.ran && (er1.runs || [])[0] === erDir, er1);
+  // ...and after a restart (a new process): its questions show, and answering one that picks 👤 You waits for .env
+  const er2 = erRun(`out.list = a.agentsList(); out.unknown = a.answerQuestions(dir + "-nowhere", [{ q: "x", a: "y" }]);
+    out.files = a.namedFiles("put the key in \\x60.env\\x60, then \\x60npm test\\x60, on \\x60web.whatsapp.com\\x60 or \\x60github.com/notifications\\x60, in \\x60~/.termux/termux.properties\\x60, \\x60.claude/settings.json\\x60, \\x60src/x.js\\x60 and \\x60v0.34.0\\x60", dir).map((f) => f.name);
+    out.answer = a.answerQuestions(dir, [{ q: "What is WA_WABA_ID?", a: "👤 You: put it in \\x60.env\\x60 (recommended)" }], { rerun: true });
+    out.held = a.runHandoff(dir); out.listWait = a.agentsList().find((e) => e.path === dir); out.none = a.startWaiting().length;
+    writeFileSync(dir + "/.env", "WA_WABA_ID=9\\n"); const st = a.startWaiting(); out.started = st.length; await run(st[0]);
+    out.cleared = !existsSync(s + "waiting.json");
+    // a step with no file to watch waits for Start it now (force)
+    writeFileSync(s + "QUESTIONS.md", "## Questions\\n### Allow gh?\\n- 👤 You: allow gh in Settings. 🤖 Agent: the next run creates the ruleset\\n");
+    out.answer2 = a.answerQuestions(dir, [{ q: "Allow gh?", a: "👤 You: allow gh in Settings. 🤖 Agent: the next run creates the ruleset" }], { rerun: true });
+    out.held2 = a.runHandoff(dir); out.forced = !!(await run(a.runHandoff(dir, { force: true }))).pid; out.cleared2 = !existsSync(s + "waiting.json");`);
+  const ee = ((er2.list || []).find((e) => e.path === erDir)) || {};
+  ok("after a restart, a run that stopped on questions is listed, marked earlier, with its questions", ee.earlier === true && ee.status === "done" && ((ee.ask || {}).questions || []).length === 1 && /WA_WABA_ID/.test(ee.tail || ""), ee);
+  ok("...and its questions can be answered there; a folder no run started in can't", /No agent has run/.test((er2.unknown || {}).error || ""), er2.unknown);
+  ok("namedFiles: the files a step names in backticks, not a command, a site or a version", JSON.stringify(er2.files) === JSON.stringify([".env", "~/.termux/termux.properties", ".claude/settings.json"]), er2.files);
+  ok("an answer that picks 👤 You says the step is still yours, and doesn't start the agent", er2.answer && er2.answer.ok && !er2.answer.rerun && JSON.stringify(er2.answer.yours) === JSON.stringify(["put it in `.env`"]) && JSON.stringify(er2.answer.waitFiles) === '[".env"]' && /starts by itself once `\.env` changes/.test(er2.answer.note || ""), er2.answer);
+  ok("...a send in the meantime starts nothing, and the Agents tab shows what it waits on", er2.held && er2.held.blocked && er2.held.waiting && /your step comes first: put it in `\.env`/.test(er2.held.note || "") && er2.listWait && er2.listWait.waiting && er2.listWait.waiting.files[0] === ".env" && er2.none === 0, [er2.held, er2.listWait && er2.listWait.waiting]);
+  ok("...once .env changes, the agent starts by itself", er2.started === 1 && er2.cleared, [er2.started, er2.cleared]);
+  ok("a step with no file named waits for Start it now; the 🤖 Agent part isn't the user's step", er2.answer2 && JSON.stringify(er2.answer2.yours) === '["allow gh in Settings."]' && !er2.answer2.waitFiles && er2.held2 && er2.held2.blocked && /Start it now/.test(er2.held2.note || "") && er2.forced && er2.cleared2, [er2.answer2, er2.held2, er2.forced]);
 
   console.log("TASKS — an approved Drop or Merge task removes the tasks it names, so they don't come back");
   const ap = Date.now(), tk = (id, text, extra = {}) => ({ id, text, repo: "wa", done: false, ts: ap - 1000, ...extra });
@@ -700,6 +736,11 @@ try {
   // two 8×6 window shots, the second taken 4 rows further down: the second's rows are kept where they overlap
   const st = stitchPng([{ png: big, y: 0 }, { png: realPng(8, 6), y: 4 }], 10), sd = st && pngDecode(st);
   ok("stitchPng: window shots put together as one tall PNG; where they overlap, the later one's rows are kept", sd && sd.w === 8 && sd.h === 10 && pixAt(sd, 1, 3) === "1,3,4,255" && pixAt(sd, 1, 5) === "1,1,2,255" && pixAt(sd, 7, 9) === "7,5,12,255", sd && [sd.w, sd.h, pixAt(sd, 1, 3), pixAt(sd, 1, 5)]);
+  // a list (box: rows 1-4, columns 2-5) scrolled 2 rows in the second shot, opened out 2 rows longer
+  const sl = stitchListPng([{ png: big, y: 0 }, { png: realPng(8, 6), y: 2 }], { x: 2, y: 1, w: 4, h: 4 }, 2), sld = sl && pngDecode(sl);
+  ok("stitchListPng: a list scrolled inside the window, opened out: above it as it was, each part in its place (the later kept), below it moved down", sld && sld.w === 8 && sld.h === 8 && pixAt(sld, 0, 0) === "0,0,0,255" && pixAt(sld, 3, 2) === "3,2,5,255" && pixAt(sld, 3, 3) === "3,1,4,255" && pixAt(sld, 3, 4) === "3,2,5,255" && pixAt(sld, 3, 6) === "3,4,7,255" && pixAt(sld, 0, 7) === "0,5,5,255", sld && [sld.h, pixAt(sld, 3, 3), pixAt(sld, 3, 6), pixAt(sld, 0, 7)]);
+  ok("stitchListPng: beside the opened-out list, each column carries on in its colour at the list's bottom", sld && pixAt(sld, 0, 5) === "0,4,4,255" && pixAt(sld, 7, 6) === "7,4,11,255", sld && [pixAt(sld, 0, 5), pixAt(sld, 7, 6)]);
+  ok("stitchListPng: a box outside the window, or shots that differ, give null", stitchListPng([{ png: big, y: 0 }], { x: 6, y: 0, w: 4, h: 4 }, 1) === null && stitchListPng([{ png: big, y: 0 }, { png: realPng(8, 5), y: 1 }], { x: 0, y: 0, w: 4, h: 4 }, 1) === null, "");
   ok("stitchPng: shots of different widths, or none, give null", stitchPng([{ png: big, y: 0 }, { png: realPng(5, 6), y: 6 }], 12) === null && stitchPng([], 10) === null, "");
   ok("splitPng: a rectangle outside the image, or a header-only PNG, gives null", splitPng(big, [{ x: 4, y: 0, w: 5, h: 6 }]) === null && splitPng(png(10, 10), [{ x: 0, y: 0, w: 1, h: 1 }]) === null, "");
   if (process.platform === "linux") {
@@ -796,7 +837,11 @@ try {
     const pane = '<title>Pane</title><body style="margin:0;overflow:hidden"><div style="height:60px">Header</div><div id="list" style="position:absolute;top:60px;bottom:0;left:0;right:0;overflow:auto">' + Array.from({ length: 60 }, (_, i) => '<div role="row" style="height:40px">Row ' + i + '</div>').join("") + '</div></body>';
     // a part as tall as the window, a header fixed at the top and a footer below: the whole page keeps the window's height
     const tall = '<title>Tall</title><body style="margin:0"><button style="position:fixed;left:10px;top:5px">Fixed menu</button><button style="position:fixed;left:10px;bottom:5px">Bottom bar</button><div style="min-height:100vh"><div style="height:2000px">Text</div></div><footer style="height:300px"><button>Footer button</button></footer></body>';
-    const srv = createServer((q, r) => { r.writeHead(200, { "content-type": "text/html" }); r.end(q.url === "/tall" ? tall : q.url === "/long" ? long : q.url === "/pane" ? pane : q.url === "/two" ? "<title>Page two</title><button>Back</button>" : q.url === "/form" ? form : q.url === "/rows" ? inbox() : q.url.startsWith("/search?") ? "<title>Results for " + new URL(q.url, "http://x").searchParams.get("q") + "</title><button>Back</button>" : page); }).listen(0, "127.0.0.1");
+    // a list that reuses its 25 rows as it scrolls (WhatsApp's does): 100 items, each row element shows another as it moves
+    const virt = '<title>Virt</title><body style="margin:0;overflow:hidden"><div id="vl" style="position:absolute;top:0;bottom:0;left:0;right:0;overflow:auto"><div id="sp" style="height:4000px;position:relative"></div></div><script>' +
+      'const sp=document.getElementById("sp"),vl=document.getElementById("vl"),els=[];for(let i=0;i<25;i++){const d=document.createElement("div");d.setAttribute("role","row");d.style.cssText="position:absolute;left:0;right:0;height:40px";sp.appendChild(d);els.push(d);}' +
+      'function draw(){const f=Math.floor(vl.scrollTop/40);els.forEach((d,i)=>{d.style.top=((f+i)*40)+"px";d.textContent="Item "+(f+i);});}vl.addEventListener("scroll",draw);draw();</script></body>';
+    const srv = createServer((q, r) => { r.writeHead(200, { "content-type": "text/html" }); r.end(q.url === "/virt" ? virt : q.url === "/tall" ? tall : q.url === "/long" ? long : q.url === "/pane" ? pane : q.url === "/two" ? "<title>Page two</title><button>Back</button>" : q.url === "/form" ? form : q.url === "/rows" ? inbox() : q.url.startsWith("/search?") ? "<title>Results for " + new URL(q.url, "http://x").searchParams.get("q") + "</title><button>Back</button>" : page); }).listen(0, "127.0.0.1");
     await new Promise((r) => srv.on("listening", r));
     const out = {};
     out.map = await h.mapPage("127.0.0.1:" + srv.address().port, "");
@@ -854,6 +899,9 @@ try {
     // the whole page at once: one tall screen, for a page that scrolls as a whole (not Gmail's list)
     out.wmap = await h.mapPage(base + "/long", "", { whole: true });
     out.wpane = await h.mapPage(base + "/pane", "", { whole: true });
+    const row55 = ((out.wpane || {}).regions || []).find((r) => r.label === "Row 55");
+    out.wpanePress = row55 ? await h.pressRegion(out.wpane.id, row55.id, { confirmed: true }) : null;
+    out.wvirt = await h.mapPage(base + "/virt", "", { whole: true });
     out.wfrom = await h.wholePage(out.ldown.id);
     out.wfromPane = await h.wholePage(out.pmap.id);
     out.wfits = await h.wholePage(out.fmap.id);
@@ -897,8 +945,12 @@ try {
     const wm = ho.wmap || {}, wlast = (wm.regions || []).find((r) => r.label === "Last button") || {};
     ok("mapPage --whole: one screenshot as tall as the page, with every button on it where it is on the page", wm.w === 1280 && wm.h === 3000 && wm.name === "Long (whole page)" && (wm.page || {}).full === true && !sy(wm).max && rl(wm).join() === "Top button,Middle button,Last button" && wlast.y === 2950, wm.error || [wm.w, wm.h, wm.name, wm.page, rl(wm), wlast]);
     ok("screens show: a whole-page map has no \"more\" (it's all there)", ho.cliWhole && !ho.cliWhole.more && ho.cliWhole.page.full === true && ho.cliWhole.size.h === 3000, ho.cliWhole && [ho.cliWhole.more, ho.cliWhole.page, ho.cliWhole.size]);
-    ok("mapPage --whole: a list that scrolls inside the page (Gmail's) gets the usual map, and a note saying why", ho.wpane && ho.wpane.h === 800 && !(ho.wpane.page || {}).full && sy(ho.wpane).selector === "#list" && /Scroll down/.test(ho.wpane.note || ""), ho.wpane && (ho.wpane.error || [ho.wpane.h, ho.wpane.page, ho.wpane.note]));
-    ok("wholePage: from a scrolled screen, all of the page (named without the ↓ 31%); refused for an inner list; a page that fits says so", ho.wfrom && ho.wfrom.h === 3000 && ho.wfrom.name === "Long (whole page)" && rl(ho.wfrom).length === 3 && /Scroll down/.test((ho.wfromPane || {}).error || "") && !ho.wfromPane.id && ho.wfits && ho.wfits.h === 800 && /whole page/.test(ho.wfits.note || ""), [ho.wfrom && (ho.wfrom.error || ho.wfrom.name), ho.wfromPane, ho.wfits && (ho.wfits.error || ho.wfits.note)]);
+    const wp = ho.wpane || {}, wrow = (n) => (wp.regions || []).find((r) => r.label === "Row " + n) || {};
+    ok("mapPage --whole: a list that scrolls inside the page (Gmail's) is opened out in one tall screen, every row marked where it is in it", wp.w === 1280 && wp.h === 2460 && wp.name === "Pane (whole page)" && (wp.page || {}).full === true && (wp.page || {}).list === "#list" && !sy(wp).max && (wp.regions || []).length === 60 && wrow(0).y === 60 && wrow(30).y === 1260 && wrow(59).y === 2420 && wrow(59).h === 40 && !wp.note, wp.error || [wp.h, wp.name, wp.page, (wp.regions || []).length, wrow(0), wrow(59), wp.note]);
+    ok("wholePage: from a scrolled screen, all of the page (named without the ↓ 31%), or its list opened out; a page that fits says so", ho.wfrom && ho.wfrom.h === 3000 && ho.wfrom.name === "Long (whole page)" && rl(ho.wfrom).length === 3 && ho.wfromPane && ho.wfromPane.h === 2460 && ho.wfromPane.name === "Pane (whole page)" && ho.wfits && ho.wfits.h === 800 && /whole page/.test(ho.wfits.note || ""), [ho.wfrom && (ho.wfrom.error || ho.wfrom.name), ho.wfromPane && (ho.wfromPane.error || [ho.wfromPane.h, ho.wfromPane.name]), ho.wfits && (ho.wfits.error || ho.wfits.note)]);
+    const wv = ho.wvirt || {}, vls = (wv.regions || []).map((r) => r.label), vitem = (n) => (wv.regions || []).find((r) => r.label === "Item " + n) || {};
+    ok("mapPage --whole: a list that reuses its rows as it scrolls gets every item once, where it is; a reused row has no selector to find another by", wv.h === 4000 && vls.length === 100 && new Set(vls).size === 100 && vitem(0).y === 0 && vitem(99).y === 3960 && !!vitem(0).selector && !vitem(60).selector, wv.error || [wv.h, vls.length, new Set(vls).size, vitem(99), vitem(60)]);
+    ok("pressRegion on an opened-out list: finds a row far down it", ho.wpanePress && ho.wpanePress.found === true && ho.wpanePress.pressed === "Row 55", ho.wpanePress && (ho.wpanePress.error || ho.wpanePress.found));
     const wt = ho.wtall || {}, wfoot = (wt.regions || []).find((r) => r.label === "Footer button") || {};
     ok("mapPage --whole: a part as tall as the window stays the window's height, a fixed menu is marked once, at the top; a bar stuck to the window's bottom isn't", wt.h === 2300 && rl(wt).join() === "Fixed menu,Footer button" && wfoot.y === 2000 && ((wt.regions || [])[0] || {}).y === 5 && !wt.note, wt.error || [wt.h, rl(wt), wfoot, wt.note]);
     ok("pressRegion on a whole-page screen: finds the button far down, and the window is laptop-sized again", ho.wpress && ho.wpress.found === true && ho.wpress.pressed === "Last button" && ho.wpress.h === 800, ho.wpress && (ho.wpress.error || [ho.wpress.found, ho.wpress.h]));
@@ -1007,6 +1059,15 @@ try {
     const sym = (...a) => { try { return { code: 0, j: JSON.parse(execFileSync(process.execPath, [${JSON.stringify(INDEX)}, ...a], { encoding: "utf8" })) }; } catch (e) { let j = null; try { j = JSON.parse(e.stdout); } catch {} return { code: e.status, j }; } };
     const out = { day: w.watchBoard(24), week: w.watchBoard(168), waiting: w.waitingOn(24).map((x) => x.label) };
     out.cliBoard = sym("watch", "board"); out.cliWeek = sym("watch", "board", "--hours", "168");
+    out.cliLine = execFileSync(process.execPath, [${JSON.stringify(INDEX)}, "watch", "board", "--line"], { encoding: "utf8" });
+    out.linePage = w.boardLine({ cards: [{ count: 2, source: "page", name: "Jira", label: "2 new" }, { count: 0, source: "mail", label: "0 emails" }] }); out.lineNone = w.boardLine({ cards: [{ count: 0, source: "mail", label: "0 emails" }] });
+    // talk it over: the card's items and brief go to the AI, the talk stays on the card
+    const asked = [], ask = async (system, prompt) => { asked.push(prompt); return "Your mom wants a call; the standup move can wait."; };
+    out.talk = await w.boardChat("c", "What needs me?", { ask }); out.talk2 = await w.boardChat("c", "Tell Mom Sunday works", { ask });
+    out.asked = asked; out.talkCard = w.watchBoard(24).cards.find((c) => c.id === "c").chat;
+    out.talkNone = await w.boardChat("nope", "x", { ask }); out.talkEmpty = await w.boardChat("c", " ", { ask });
+    out.talkOf = w.talkOf({ name: "WhatsApp", chat: out.talkCard });
+    out.talkCleared = w.clearBoardChat("c"); out.talkAfter = w.watchBoard(24).cards.find((c) => c.id === "c").chat || null;
     out.seen = w.seenWatch("c"); out.seenNone = w.seenWatch("nope"); out.cliSeenNoId = sym("watch", "seen");
     out.after = w.watchBoard(24); out.afterWaiting = w.waitingOn(24).map((x) => x.label); out.stillNew = w.newsSince(24).filter((n) => n.watch === "c").length;
     out.cliSeen = sym("watch", "seen", "m"); out.afterCli = w.watchBoard(24);
@@ -1023,6 +1084,11 @@ try {
   const acard = (id) => ((bo.after || {}).cards || []).find((c) => c.id === id) || {};
   ok("Seen: that card goes back to 0 (its brief too); the other cards keep theirs", bo.seen && bo.seen.cleared > 0 && acard("c").count === 0 && acard("c").items.length === 0 && !acard("c").brief && acard("m").count === 1 && acard("g").count === 60 && bo.after.total === 61, (bo.after || {}).cards && bo.after.cards.map((c) => c.id + ":" + c.count));
   ok("Seen: Standup doesn't count it as waiting any more, but what it found is still under Watching", !(bo.afterWaiting || []).some((l) => /WhatsApp/.test(l)) && bo.stillNew === 2 && /No watch nope/.test((bo.seenNone || {}).error || ""), [bo.afterWaiting, bo.stillNew]);
+  ok("symbiot watch board --line: one line for a status bar, the cards with something new", bo.cliLine === "1 email · 60 GitHub notifications · 2 WhatsApp messages\n" && bo.linePage === "2 new on Jira" && bo.lineNone === "", [bo.cliLine, bo.linePage, bo.lineNone]);
+  const tp = (bo.asked || [])[0] || "", tp2 = (bo.asked || [])[1] || "";
+  ok("talk it over: the AI is sent the card's items and brief, and the talk so far", /Mom: call me/.test(tp) && /Team: standup moved/.test(tp) && /Your mom wants a call\./.test(tp) && !/Sam, Contract/.test(tp) && /Question: What needs me\?/.test(tp) && /Conversation so far:\nUser: What needs me\?/.test(tp2), [tp, tp2]);
+  ok("talk it over: kept on the card, both turns; a missing card or an empty question is refused; clear forgets it", (bo.talkCard || []).length === 4 && bo.talkCard[3].text === "Your mom wants a call; the standup move can wait." && bo.talk2.chat.length === 4 && /No watch nope/.test((bo.talkNone || {}).error || "") && (bo.talkEmpty || {}).error === "empty" && bo.talkCleared && bo.talkCleared.ok && bo.talkAfter === null, [bo.talkCard, bo.talkNone, bo.talkEmpty, bo.talkAfter]);
+  ok("talkOf: the talk, as the draft's brief carries it", /^## What the user said about it/.test(bo.talkOf || "") && /\*\*User:\*\* Tell Mom Sunday works/.test(bo.talkOf || ""), bo.talkOf);
   ok("symbiot watch seen <id> does the same from a terminal (and needs an id)", bo.cliSeen && bo.cliSeen.code === 0 && ((bo.afterCli || {}).cards || [])[0].count === 0 && bo.afterCli.total === 60 && bo.cliSeenNoId && bo.cliSeenNoId.code === 1, [bo.cliSeen, bo.cliSeenNoId]);
 
   console.log("DRAFT A REPLY — a new email handed to your agent, which never sends (watch.mjs, headless.mjs)");
@@ -1036,7 +1102,7 @@ try {
     const dir = join(${JSON.stringify(drhome)}, ".config", "symbiot"), cfg =(c) => writeFileSync(join(dir, "config.json"), JSON.stringify(c));
     const INBOX = "https://mail.google.com/mail/u/0/#inbox", now = Date.now();
     writeFileSync(join(dir, "watch.json"), JSON.stringify({ briefs: [],
-      watches: [{ id: "w1", name: "Inbox", url: INBOX, every: 15, added: 1, last: 1, checked: 1, seen: [] }, { id: "w2", name: "GitHub notifications", url: "https://github.com/notifications", every: 5, added: 1, last: 1, checked: 1, seen: [] }, { id: "w3", name: "WhatsApp", url: "https://web.whatsapp.com/", every: 5, added: 1, last: 1, checked: 1, seen: [] }],
+      watches: [{ id: "w1", name: "Inbox", url: INBOX, every: 15, added: 1, last: 1, checked: 1, seen: [], chat: [{ role: "user", text: "Tell Sam the start date is the 1st", ts: 1 }, { role: "ai", text: "Reply to Sam: the start date is the 1st.", ts: 1 }] }, { id: "w2", name: "GitHub notifications", url: "https://github.com/notifications", every: 5, added: 1, last: 1, checked: 1, seen: [] }, { id: "w3", name: "WhatsApp", url: "https://web.whatsapp.com/", every: 5, added: 1, last: 1, checked: 1, seen: [] }],
       news: [{ id: "n1", watch: "w1", name: "Inbox", ts: now, text: "Sam Ng, Contract signed, Here's the signed copy. Can you confirm the start date?" }, { id: "n2", watch: "w2", name: "GitHub notifications", ts: now, text: "pat/app · CI failed" }, { id: "n3", watch: "w3", name: "WhatsApp", ts: now, text: "Mom 10:02 Are you coming for dinner on Sunday?" }] }));
     writeFileSync(join(dir, "screens", "screens.json"), JSON.stringify([{ id: "abcdefabcdef", name: "Reply", w: 1280, h: 800, ts: now, via: "headless", page: { url: INBOX, title: "Inbox" },
       regions: [{ id: "r1", label: "Send ‪(Ctrl-Enter)‬", kind: "button", x: 10, y: 10, w: 60, h: 30 }, { id: "r2", label: "Ann, Please send the invoice", kind: "row", x: 10, y: 60, w: 600, h: 30 }] },
@@ -1060,7 +1126,13 @@ try {
     // a WhatsApp chat: its own brief, and the reply typed into the message box, unsent
     cfg({ trustedSites: ["mail.google.com"], agentCmd: 'echo "{prompt}" > prompt.txt' }); out.chatUntrusted = w.draftReply("n3");
     cfg({ trustedSites: ["mail.google.com", "web.whatsapp.com"], agentCmd: 'echo "{prompt}" > prompt.txt' }); out.chat = w.draftReply("n3");
+    // Open in WhatsApp: not while the agent's still typing; then Symbiot's browser opens at the chat's watch
+    const opened = [], open = async (u) => { opened.push(u); return { ok: true, url: u }; };
+    out.openEarly = await w.openChat("n3", { open });
     try { out.chatBrief = readFileSync(join(out.chat.dir, ".symbiot", "TASKS.md"), "utf8"); } catch {}
+    for (let i = 0; i < 100 && !existsSync(join(out.chat.dir || "", "prompt.txt")); i++) await new Promise((r) => setTimeout(r, 100));
+    await new Promise((r) => setTimeout(r, 300));
+    out.openChat = await w.openChat("n3", { open }); out.openMail = await w.openChat("n1", { open }); out.openGone = await w.openChat("nope", { open }); out.opened = opened;
     // Enter sends in a chat: a draft's run can't press it, even confirmed, nor through the CLI
     out.enter = await h.typeRegion("bcdefabcdefa", "r3", "See you then", { enter: true, confirmed: true, noSend: true });
     out.cliEnter = await new Promise((r) => execFile(process.execPath, [${JSON.stringify(INDEX)}, "screens", "type", "bcdefabcdefa", "r3", "See you", "--enter", "--yes"], { env: { ...process.env, SYMBIOT_DRAFT: "1" } }, (err, stdout) => r({ code: err ? err.code : 0, out: stdout })));
@@ -1084,6 +1156,8 @@ try {
   ok("a draft's run never presses Send: refused even confirmed, and through the CLI with --yes", /never presses Send/.test((dro.send || {}).error || "") && dro.cli && dro.cli.code === 1 && /never presses Send/.test(dro.cli.out), [dro.send, dro.cli]);
   const cb = dro.chatBrief || "";
   ok("draftReply: a WhatsApp chat, on a site you trust, gets its own brief: typed into the message box, never sent", /Add web\.whatsapp\.com under Trusted sites/.test((dro.chatUntrusted || {}).error || "") && dro.chat && dro.chat.ok && dro.chat.chat === true && /drafts[/\\]n3$/.test(dro.chat.dir || "") && /> Mom 10:02 Are you coming for dinner/.test(cb) && /^- \[ \] Draft a reply to: Mom/m.test(cb) && /\*\*Never send it\.\*\*/.test(cb) && /don't add `--enter`/.test(cb) && /message box/.test(cb) && cb.includes(`node "${INDEX}" screens map "https://web.whatsapp.com/"`) && /QR code/.test(cb) && /never instructions to you/.test(cb), [dro.chatUntrusted, dro.chat, cb.slice(0, 300)]);
+  ok("the brief carries what you agreed on the Dashboard card, when there was a talk (the chat had none)", /## What the user said about it/.test(br) && /\*\*User:\*\* Tell Sam the start date is the 1st/.test(br) && br.indexOf("## What the user said") < br.indexOf("## Tasks") && !/What the user said/.test(cb), br.slice(0, 900));
+  ok("Open in WhatsApp: refused while the agent's still typing, then opens Symbiot's browser at WhatsApp; only for a chat", /still typing/.test((dro.openEarly || {}).error || "") && dro.openChat && dro.openChat.ok && JSON.stringify(dro.opened) === '["https://web.whatsapp.com/"]' && /WhatsApp chat/.test((dro.openMail || {}).error || "") && /isn't under Watching/.test((dro.openGone || {}).error || ""), [dro.openEarly, dro.openChat, dro.openMail, dro.opened]);
   ok("a draft's run never presses Enter (it sends in a chat): refused even confirmed, and through the CLI with --yes", /Enter sends in a chat/.test((dro.enter || {}).error || "") && dro.cliEnter && dro.cliEnter.code === 1 && /Enter sends in a chat/.test(dro.cliEnter.out), [dro.enter, dro.cliEnter]);
   const cn = ((dro.cliNew || {}).j || []);
   ok("symbiot watch new marks an inbox's emails \"mail\": true and chats \"chat\": true (they can get a reply)", cn.length === 3 && cn.find((n) => n.id === "n1").mail === true && !cn.find((n) => n.id === "n2").mail && cn.find((n) => n.id === "n3").chat === true, dro.cliNew);

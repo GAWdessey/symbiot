@@ -39,7 +39,7 @@ import { buildTasksMd, taskType, shipChanges, shipWithBump, bumpOffer, learnNpm,
 import { produce, mailState, setMail, sentMail } from "./writeups.mjs";
 import { loadScreens, screenImage, blueprint } from "./screens.mjs";
 import { mapPage, wholePage, pressRegion, typeRegion, scrollPage, signIn, isTrusted } from "./headless.mjs";
-import { watchState, addWatch, removeWatch, seenWatch, newsSince, markNews, checkWatch, setBrief, draftReply, watchBoard } from "./watch.mjs";
+import { watchState, addWatch, removeWatch, seenWatch, newsSince, markNews, checkWatch, setBrief, draftReply, watchBoard, boardLine } from "./watch.mjs";
 import { PORT as PHONE_PORT, phoneState, pairComputer, pollComputer, forgetComputer } from "./phone.mjs";
 import { startApp, updateCmd, isAppRunningWeekly } from "./server.mjs";
 
@@ -367,8 +367,8 @@ async function cmdScreens() {
                                                scroll the page, map what's in the window then
                                                (a map's "more" says there's more below or above)
   symbiot screens whole <id>                   map all of that page in one tall screenshot
-                                               (a page that scrolls as a whole, not a list
-                                               inside it like Gmail's: scroll that)
+                                               (where a list scrolls inside the page, like
+                                               Gmail's mail, that list opened out)
   symbiot screens signin <site>               sign in once, in Symbiot's browser window
   --yes is needed unless the page's site is under Trusted sites in the app's Settings.
   While the app runs, these use its hidden browser, which stays open a few minutes:
@@ -392,8 +392,9 @@ async function cmdWatch() {
     for (const n of news.slice(0, 20)) console.log(`  ${c.d(new Date(n.ts).toLocaleString())}  ${n.text.slice(0, 110)}  ${c.d(n.name.slice(0, 30))}`);
     return;
   }
-  // the Dashboard's cards, for an agent or a status bar (.total is the count on the Dashboard tab)
-  if (sub === "board") return out(watchBoard(Math.min(168, Math.max(1, hours))));
+  // the Dashboard's cards, for an agent or a status bar (.total is the count on the
+  // Dashboard tab); --line: one line of text, "2 emails · 1 WhatsApp message"
+  if (sub === "board") { const b = watchBoard(Math.min(168, Math.max(1, hours))); if (has("line")) return console.log(boardLine(b)); return out(b); }
   if (sub === "seen") return out(a1 ? seenWatch(a1) : { error: "Give the watch's id: symbiot watch board lists them." });
   if (sub === "new") return out(markNews(newsSince(hours), watchState().watches));
   // the same as the app's Draft a reply button: through the app when it runs, so its Agents tab tracks the run
@@ -422,6 +423,9 @@ async function cmdWatch() {
   symbiot watch board [--hours 24]             the Dashboard's cards: how many are new on
                                                each page, and the newest few (JSON, for an
                                                agent or a status bar: .total is the count)
+  symbiot watch board --line                   the same as one line of text, for a status
+                                               bar: "2 emails · 1 WhatsApp message" (an
+                                               empty line when nothing's new)
   symbiot watch seen <id>                      set a card's count back to 0, like its Seen
                                                button (what it found stays in watch new)
   symbiot watch check [id]                     read them now (JSON)

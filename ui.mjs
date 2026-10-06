@@ -95,6 +95,10 @@ footer{padding:10px 18px;border-top:1px solid var(--line);display:flex}
 .drift .ev{color:var(--faint);font-family:ui-monospace,Menlo,monospace;font-size:11px}
 .dot-w{width:9px;height:9px;border-radius:50%;background:var(--amber);display:inline-block}
 .dot-c{width:9px;height:9px;border-radius:50%;background:var(--green);display:inline-block}
+.lgroup{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:8px 0 0}.lgroup .fl{min-width:64px;margin-left:0}
+.lnk{display:inline-flex;align-items:center;gap:4px}.lnk .fchip{display:inline-flex;align-items:center;gap:6px}
+.lnk.ok .fchip{border-color:#2a6b52}.lnk.signin .fchip,.lnk.signedout .fchip,.lnk.error .fchip{border-color:var(--amber)}
+.lnk .lst{font-size:11px;color:var(--faint)}.lnk .lmore,.lnk .lrm{background:none;border:0;color:var(--faint);cursor:pointer;font-size:14px;padding:0 2px}.lnk .lrm:hover{color:var(--amber)}
 .agent{border:1px solid var(--line);border-radius:10px;margin-top:10px;padding:12px 14px;background:var(--ink2)}
 .adot{width:10px;height:10px;border-radius:50%;display:inline-block;flex:none}
 .adot.run{background:var(--amber);animation:pulse 1s ease-in-out infinite}
@@ -140,7 +144,8 @@ label.check input{width:auto}
 .bcard .bc{font-size:26px;font-weight:700;color:var(--faint);margin-top:6px}.bcard.has .bc{color:var(--green)}
 .bcard .bl{font-size:12px;color:var(--faint)}
 .bcard .bi{display:flex;gap:8px;align-items:flex-start;padding:7px 0;border-top:1px solid var(--line);font-size:13px;color:var(--text)}
-.bcard .bi .t{flex:1;min-width:0;overflow-wrap:anywhere}.bcard .bi button{padding:4px 9px;font-size:12px}
+.bcard .bi{flex-wrap:wrap}.bcard .bi .t{flex:1 1 150px;min-width:0;overflow-wrap:anywhere}.bcard .bi button{padding:4px 9px;font-size:12px}
+.bcard .tchat{border-top:1px solid var(--line);border-radius:9px;margin-top:8px}
 .bcard .bbrief{white-space:pre-line;margin:8px 0;padding:8px 10px;border-left:3px solid var(--green);background:var(--ink3);border-radius:0 8px 8px 0;font-size:13px;color:var(--bone)}
 @media(max-width:760px){.maprow{flex-direction:column}.detail{width:auto;max-height:none}}
 @media(max-width:600px){#panel-tasks .row>#newtask,#screenname,#pagesite{flex:1 1 100%!important}.tabs{overflow-x:auto;scrollbar-width:none;padding:0 8px;gap:0}.tabs::-webkit-scrollbar{display:none}.tab{flex:none;padding:9px 11px}header{padding:12px 14px 8px}main{padding:12px}}
@@ -181,7 +186,7 @@ label.check input{width:auto}
 <div id="review" class="review hidden"></div>
 <div style="margin-top:22px;border-top:1px solid var(--line);padding-top:4px">
 <div class="tgroup">Screens <span class="tcount">experimental &middot; blueprints for screen automation</span></div>
-<div class="note muted" style="margin-top:2px">Capture a screen, then drag a box over each part that matters (a button, a field, a menu) and name it. Each region keeps its pixel coordinates and its centre, ready for automation to aim at. With more than one display, pick which one to capture, or one screen per display. <b>Click here</b> on a region clicks its centre on your real screen, after you confirm. Or let Symbiot do it all for a web page: <b>Map page</b> opens it in a hidden browser, takes its screenshot and marks every button, link and field by itself, and <b>Press</b> on one of them follows it there and maps the next page; <b>Type</b> on a field types into it there. A map only has what fits in the window, so on a longer page <b>Scroll down</b> maps the next part, or <b>Whole page</b> maps all of it in one tall screenshot (a page that scrolls as a whole, not a list inside it like Gmail's). Only a mapped page is typed into: nothing types on your real screen. <b>Watch</b> on a mapped page (your inbox, say) has Symbiot read it again every few minutes while it runs and tell you what's new there.</div>
+<div class="note muted" style="margin-top:2px">Capture a screen, then drag a box over each part that matters (a button, a field, a menu) and name it. Each region keeps its pixel coordinates and its centre, ready for automation to aim at. With more than one display, pick which one to capture, or one screen per display. <b>Click here</b> on a region clicks its centre on your real screen, after you confirm. Or let Symbiot do it all for a web page: <b>Map page</b> opens it in a hidden browser, takes its screenshot and marks every button, link and field by itself, and <b>Press</b> on one of them follows it there and maps the next page; <b>Type</b> on a field types into it there. A map only has what fits in the window, so on a longer page <b>Scroll down</b> maps the next part, or <b>Whole page</b> maps all of it in one tall screenshot (where a list scrolls inside the page, like Gmail's mail, that list opened out: a whole inbox on one screen). Only a mapped page is typed into: nothing types on your real screen. <b>Watch</b> on a mapped page (your inbox, say) has Symbiot read it again every few minutes while it runs and tell you what's new there.</div>
 <div class="row" style="margin-top:10px"><input id="pagesite" placeholder="a web page to map by itself: gmail, github.com/pulls or a web address" style="flex:1"><button class="act" id="mappage">Map page</button><button class="ghost" id="pagesignin" title="open this site in Symbiot's own browser as a window, to sign in once; close it when you're done">Sign in</button></div>
 <div class="row" style="margin-top:10px"><input id="screenname" placeholder="name the screen, e.g. GitHub PR page" style="flex:1"><select id="screenwhich" class="hidden" title="which display to capture" style="flex:0 0 auto;width:auto"></select><select id="screendelay" title="wait first, so you can bring the right window to the front" style="flex:0 0 auto;width:auto"><option value="0">now</option><option value="3">in 3s</option><option value="5">in 5s</option><option value="10">in 10s</option></select><button class="ghost" id="capture">Capture screen</button><button class="ghost" id="screenload" title="use a PNG screenshot you already have">Load image</button><input type="file" id="screenfile" accept="image/png" class="hidden"></div>
 <div id="screenmsg"></div>
@@ -193,6 +198,7 @@ label.check input{width:auto}
 <section id="panel-board" class="hidden">
 <div class="row"><span class="muted" id="boardsum" style="flex:1">Everything you watch, side by side.</span><select id="boardhours" title="how far back" style="flex:0 0 auto;width:auto"><option value="24">last 24 hours</option><option value="72">last 3 days</option><option value="168">last 7 days</option></select><button class="ghost" id="boardrefresh">Refresh</button></div>
 <div id="boardmsg"></div>
+<div id="boardlinks"></div>
 <div id="board" class="board"></div>
 </section>
 <section id="panel-run" class="hidden">
@@ -264,6 +270,13 @@ label.check input{width:auto}
 </div>
 </div>
 <div style="margin-top:20px;border-top:1px solid var(--line);padding-top:16px">
+<label>Link your work</label>
+<div class="note muted" style="margin-top:2px">One click per site you work in: it opens the site in Symbiot's own browser, where you sign in the usual way (its own login, SSO and 2FA; Symbiot never sees your password). Symbiot then trusts the site and watches its inbox or notifications, so what arrives there shows on the Dashboard and in Week and Standup. Close the window when you're signed in.</div>
+<div id="links"></div>
+<div id="linksmsg"></div>
+<div class="note muted" id="linksnote">For a whole team, one <b>links.json</b> in Symbiot's config folder adds your company's own sites and hides the ones you don't use, so everyone gets the same buttons.</div>
+</div>
+<div style="margin-top:20px;border-top:1px solid var(--line);padding-top:16px">
 <label>Trusted sites for Screens <span class="muted">(experimental)</span></label>
 <div id="trustedsites"></div>
 <div class="row" style="margin-top:6px"><input id="newtrusted" placeholder="a site, e.g. mail.google.com or github.com" style="flex:1"><button class="ghost" id="addtrusted">Trust site</button></div>
@@ -311,7 +324,7 @@ function tabs(){return document.querySelectorAll('.tab');}
 function setTab(tab){current=tab;tabs().forEach(function(t){t.classList.toggle('active',t.dataset.tab===tab);});
 var isMap=tab==='map',isSet=tab==='settings',isTasks=tab==='tasks',isDrift=tab==='drift',isAgents=tab==='agents',isBoard=tab==='board',isRun=(tab==='week'||tab==='standup'||tab==='todo');
 $('panel-map').classList.toggle('hidden',!isMap);
-$('panel-board').classList.toggle('hidden',!isBoard);if(isBoard)loadBoard();
+$('panel-board').classList.toggle('hidden',!isBoard);if(isBoard){loadBoard();loadLinks();}
 $('panel-run').classList.toggle('hidden',!isRun);
 $('panel-settings').classList.toggle('hidden',!isSet);
 $('panel-tasks').classList.toggle('hidden',!isTasks);
@@ -532,11 +545,16 @@ if(!ans.length){msg.innerHTML="<div class='note err'>Pick an option or type an a
 box.querySelectorAll('button').forEach(function(b){b.disabled=true;});
 api('/api/agents/answer',{path:a.path,answers:ans,rerun:rerun}).then(function(r){
 if(!r||r.error){box.querySelectorAll('button').forEach(function(b){b.disabled=false;});msg.innerHTML="<div class='note err'>"+esc((r&&r.error)||'failed')+"</div>";return;}
-msg.innerHTML="<div class='note ok'>&#10003; Saved "+r.saved+" answer"+(r.saved>1?"s":"")+" for <b>"+esc(a.name)+"</b> in .symbiot/ANSWERS.md"+(r.rerun?" &middot; your agent is picking them up now.":".")+(r.note?"<div class='muted'>"+esc(r.note)+"</div>":"")+"</div>";loadAgents();});}
+msg.innerHTML="<div class='note ok'>&#10003; Saved "+r.saved+" answer"+(r.saved>1?"s":"")+" for <b>"+esc(a.name)+"</b> in .symbiot/ANSWERS.md"+(r.rerun?" &middot; your agent is picking them up now.":".")+(r.yours&&r.yours.length?"<div class='err'>&#128100; Still yours to do: "+esc(r.yours.join(' '))+"</div>":"")+(r.note?"<div class='muted'>"+esc(r.note)+"</div>":"")+"</div>";loadAgents();});}
 var s1=box.querySelector('.qsend'),s2=box.querySelector('.qsave');
 if(s1)s1.addEventListener('click',function(){send(true);});if(s2)s2.addEventListener('click',function(){send(false);});
 box.querySelectorAll('.qidea').forEach(function(btn){btn.addEventListener('click',function(){var s=a.ask.suggestions[+btn.getAttribute('data-i')];if(!s)return;btn.disabled=true;
 api('/api/tasks/add',{text:s.text,repo:s.repo||a.name}).then(function(){s.added=true;btn.outerHTML="<span class='tag'>in Tasks</span>";});});});});}
+// A step of yours an answer picked (👤 You): the next run waits for it (agents.mjs waitingFor)
+function waitHtml(a){var w=a.waiting;if(!w)return '';var fs=(w.files||[]).map(function(f){return "<code>"+esc(f)+"</code>";}).join(" or ");
+return "<div class='aq'><h4>&#9208; Waiting on your step</h4><div class='qt'>&#128100; "+esc(w.step)+"</div><div class='qc'>"+(fs?"Your agent "+(w.rerun?"starts by itself":"can start")+" once "+fs+" changes"+(w.rerun?", while Symbiot runs":"")+". Done it some other way?":"Your agent waits for it, so it doesn't stop on the same questions again.")+" Start it now once it's done.</div><div class='row'><button class='act wstart' data-id='"+esc(a.id)+"'>Start it now</button></div></div>";}
+function wireWaits(el){el.querySelectorAll('.wstart').forEach(function(btn){btn.addEventListener('click',function(){var a=agentById(btn.getAttribute('data-id'));if(!a)return;btn.disabled=true;
+api('/api/open',{path:a.path,force:true}).then(function(x){var msg=document.getElementById('agentsmsg');msg.innerHTML=x&&x.opened?"<div class='note ok'>&#10003; Started your agent in <b>"+esc(a.name)+"</b>.</div>":"<div class='note err'>"+esc(a.name)+": "+(x&&x.busy?"an agent is already running there.":"it didn&#39;t start. Check the command in Settings.")+"</div>";loadAgents();}).catch(function(e){btn.disabled=false;document.getElementById('agentsmsg').innerHTML="<div class='note err'>"+esc(String((e&&e.message)||e))+"</div>";});});});}
 function answering(){var f=document.activeElement;return !!(f&&f.closest&&f.closest('.aq'));}
 function loadAgents(){api('/api/agents').then(function(list){var el=document.getElementById('agentslist');
 if(!list||!list.length){AGENTLIST=[];el.innerHTML="<div class='muted' style='margin-top:12px'>No agents yet. In <b>Tasks</b>, tick ideas and hit <b>Send to repos</b> (with an agent command set in Settings) &mdash; you'll watch it work here.</div>";stopAgentsPoll();return;}
@@ -546,6 +564,8 @@ saveDrafts(el);AGENTLIST=list;
 el.innerHTML=list.map(function(a){var cls=a.status==='running'?'run':(a.status==='done'?'ok':'fail');
 var st=a.status==='running'?('working &middot; '+fmtE(a.elapsed)):(esc(a.status)+' &middot; '+fmtE(a.elapsed)+(a.exitCode!=null?' &middot; exit '+a.exitCode:''));
 if(a.fromHeld)st+=" &middot; started on the tasks held for the last run";
+if(a.earlier)st+=" &middot; "+(a.status==='running'?"started outside this window":"ran before Symbiot last started");
+if(a.waiting)st+=" &middot; <span style='color:var(--amber)'>waiting on your step</span>";
 if(nQs(a))st+=" &middot; <span style='color:var(--amber)'>needs your answers</span>";
 if(a.held!=null){var hn=a.held.length,ht=a.held.map(function(t){return "&bull; "+esc(t).replace(/'/g,'&#39;');}).join('&#10;');
 ht+=(hn?'&#10;&#10;':'')+(a.status==='running'?"Sent while this agent was running. They wait in .symbiot/TASKS.next.md, replace TASKS.md when it finishes (keeping its ticks), and an agent starts on them then.":"They wait in .symbiot/TASKS.next.md for the agent running in this folder to finish. After that, an agent starts on them the next time the Tasks tab checks this repo, or send again.");
@@ -562,11 +582,11 @@ if(ch&&(ch.dirty||ch.stat||(ch.commits&&ch.commits.length))){
 }else if(a.status==='done'){
   b+="<div class='changed muted'>No file changes detected (the agent may have only planned or asked).</div>";
 }
-b+=askHtml(a);
+b+=waitHtml(a)+askHtml(a);
 b+="<pre class='alogout'>"+esc((a.tail&&a.tail.trim())||'(waiting for output…)')+"</pre>";
 return "<div class='agent'>"+b+"</div>";}).join("");
 el.querySelectorAll('.alogout').forEach(function(p){p.scrollTop=p.scrollHeight;});
-restoreDrafts(el);wireAsks(el);
+restoreDrafts(el);wireAsks(el);wireWaits(el);
 stopAgentsPoll();if(anyRunning&&current==='agents')agentsTimer=setTimeout(loadAgents,2000);});}
 function loadDrift(){var out=document.getElementById('driftout');out.innerHTML="<div class='muted' style='margin-top:12px'>Reading your repos&hellip;</div>";
 var ci=document.getElementById('driftci').checked?'1':'0';var ft=document.getElementById('driftfetch').checked?'1':'0';
@@ -651,6 +671,33 @@ box.querySelectorAll('.punpair').forEach(function(b){b.addEventListener('click',
 var pp=$('ppair');if(pp)pp.addEventListener('click',function(){var a=$('paddr').value,cd=$('pcode').value;pp.disabled=true;pp.textContent='Pairing...';api('/api/phone/pair',{address:a,code:cd}).then(function(x){renderPhoneLink(x,x&&x.error?{text:x.error}:{ok:true,text:'Paired. What Watch finds on '+x.name+' shows up here as a notification.'});if(x&&x.error&&$('paddr')){$('paddr').value=a;$('pcode').value=cd;}});});
 var pc=$('pcheck');if(pc)pc.addEventListener('click',function(){pc.disabled=true;api('/api/phone/check',{}).then(function(x){renderPhoneLink(x,x&&!x.error?{ok:true,text:x.shown?'Showed '+x.shown+' notification(s).':'Asked: nothing new.'}:null);});});
 var pf=$('pforget');if(pf)pf.addEventListener('click',function(){if(typeof confirm==='function'&&!confirm('Forget your computer? Its notifications stop.'))return;api('/api/phone/forget',{}).then(function(x){renderPhoneLink(x);});});}
+// Link your work (links.mjs): one button per standard site. A click opens it in
+// Symbiot's browser to sign in, trusts it and watches it. Its dot: grey not
+// linked, amber waiting for you to sign in (or signed out), green linked. Shown
+// in Settings, and on the Dashboard until something is linked.
+var LINKS=null;
+var LINKWORD={ok:'linked',signin:'sign in, then close the window',signedout:'signed out',error:'needs a fix'};
+function escQ(t){return esc(t).replace(/'/g,'&#39;');}
+function linksHtml(d,board){var h=board?"<div class='note muted'>Link your work to see what arrives there here, and in Week and Standup:</div>":"";
+if(d.error)h+="<div class='note err'>"+esc(d.error)+"</div>";
+d.groups.forEach(function(g){h+="<div class='lgroup'><span class='fl'>"+esc(g)+"</span>";
+d.items.filter(function(x){return x.group===g;}).forEach(function(it){var on=it.state!=='off';
+h+="<span class='lnk "+escQ(it.state)+"' data-id='"+escQ(it.id)+"'><button class='fchip lbtn' title='"+escQ(it.note||(on?'open '+it.url+' to sign in again':'sign in at '+it.url+' and link it'))+"'><span class='dot-c' style='background:"+(it.state==='ok'?'var(--green)':on?'var(--amber)':'var(--line)')+"'></span>"+esc(it.name)+"</button>"+
+(on?"<span class='lst'>"+esc(LINKWORD[it.state]||'')+"</span><button class='lmore' title='check it now'>&#8635;</button><button class='lrm' title='unlink: stop watching it and stop trusting it'>&times;</button>":"")+"</span>";});
+h+="</div>";});return h;}
+function linksOut(html){var o=document.getElementById('linksmsg');if(o)o.innerHTML=html;var b=document.getElementById('boardmsg');if(b&&LINKS&&!LINKS.linked)b.innerHTML=html;}
+function renderLinks(){if(!LINKS)return;['links','boardlinks'].forEach(function(id){var el=document.getElementById(id);if(!el)return;
+if(id==='boardlinks'&&LINKS.linked){el.innerHTML='';return;}
+el.innerHTML=linksHtml(LINKS,id==='boardlinks');
+el.querySelectorAll('.lnk').forEach(function(sp){var lid=sp.getAttribute('data-id'),name=sp.querySelector('.lbtn').textContent;
+sp.querySelector('.lbtn').addEventListener('click',function(){linksOut("<div class='note muted'>Opening "+esc(name)+"&hellip;</div>");
+api('/api/links/link',{id:lid}).then(function(r){if(!r||r.error){linksOut("<div class='note err'>"+esc(name)+": "+esc((r&&r.error)||'failed')+"</div>");loadLinks();return;}
+linksOut("<div class='note ok'>Opened "+esc(name)+" in Symbiot's browser. Sign in there as you normally do, then close that window: Symbiot checks it within a minute.</div>");loadLinks();
+[20000,60000,120000].forEach(function(ms){setTimeout(loadLinks,ms);});});});
+var m=sp.querySelector('.lmore');if(m)m.addEventListener('click',function(){m.disabled=true;api('/api/links/check',{id:lid}).then(function(r){m.disabled=false;
+if(r&&r.busy)linksOut("<div class='note muted'>Symbiot's browser is busy (a sign-in window is open?). Close it, then check again.</div>");else if(r&&r.error)linksOut("<div class='note err'>"+esc(r.error)+"</div>");loadLinks();loadBoard();});});
+var x=sp.querySelector('.lrm');if(x)x.addEventListener('click',function(){api('/api/links/unlink',{id:lid}).then(function(){linksOut('');loadLinks();loadTrusted();loadBoard();});});});});}
+function loadLinks(){api('/api/links').then(function(d){if(d&&d.items){LINKS=d;renderLinks();}});}
 // Trusted sites: where Screens' Press and Type don't ask first (headless.mjs).
 function loadTrusted(){api('/api/screens/trusted').then(function(d){var box=document.getElementById('trustedsites');var sites=(d&&d.sites)||[];
 box.innerHTML=sites.length?sites.map(function(h){return "<div class='task' data-h='"+esc(h)+"'><span class='t' style='font-family:ui-monospace,monospace;font-size:12px'>"+esc(h)+"</span><button class='rm rmtrusted' title='stop trusting it: press and type ask first again'>&times;</button></div>";}).join(""):"<div class='muted' style='font-size:12px'>None yet: Press and Type ask first on every site.</div>";
@@ -724,7 +771,7 @@ function scrBox(r,s,cls){return "<div class='scrbox"+(cls?" "+cls:"")+"' style='
 function renderScreen(){var v=$('screenview'),s=SCREEN;if(!s){v.innerHTML='';return;}
 var h="<div class='row' style='margin-top:10px'><input id='scrname' title='rename this screen' style='flex:1'><span class='muted'>"+(s.monitor?esc(s.monitor.name)+(s.monitor.where?" ("+esc(s.monitor.where)+")":"")+" &middot; ":"")+s.w+" &times; "+s.h+" px</span>"+(s.page?"<button class='ghost' id='scrremap' title='open this page in the hidden browser again and map it as it is now'>Map again</button>"+(watchOf(s)?"<button class='ghost' id='scrwatch' title='Symbiot reads this page every few minutes and tells you what&#39;s new: click to stop'>Watching &#10003;</button>":"<button class='ghost' id='scrwatch' title='read this page again every few minutes while Symbiot runs, and tell me what&#39;s new on it'>Watch</button>"):"")+(!s.monitor&&!s.page&&MONITORS.length>1?"<button class='ghost' id='scrsplit' title='cut this screenshot into one screen per display, regions included (this one stays)'>Split by display</button>":"")+"<button class='ghost' id='scrcopy' title='copy the regions and their coordinates as JSON'>Copy blueprint</button><button class='ghost' id='scrdel'>Delete</button></div>";
 // a page taller than its window: where this screen is on it, and Scroll to map the rest
-var sc=s.page&&s.page.scroll,up=sc&&sc.y>0,down=sc&&sc.y<sc.max,whole=sc&&!sc.selector; // whole: the page itself scrolls (not a list inside it, like Gmail's)
+var sc=s.page&&s.page.scroll,up=sc&&sc.y>0,down=sc&&sc.y<sc.max,whole=!!sc; // whole: the page, or a list inside it (Gmail's) opened out
 if(s.page)h+="<div class='row' style='margin-top:6px'><span class='muted' style='font-size:12px;flex:1;overflow-wrap:anywhere'>Mapped in the hidden browser: "+esc(s.page.url)+(sc?" &middot; <b>"+(up&&down?"more above and below":down?"more below":"the end of the page")+"</b>: a map only has what fits in the window, so scroll to map the rest"+(whole?", or map the whole page at once":""):s.page.full?" &middot; <b>the whole page</b>, in one tall screenshot":"")+"</span>"+(up?"<button class='ghost scrscroll' data-to='up' title='scroll up in the hidden browser and map what&#39;s there as a new screen'>&uarr; Scroll up</button>":"")+(down?"<button class='ghost scrscroll' data-to='down' title='scroll down in the hidden browser and map what&#39;s there as a new screen'>Scroll down &darr;</button>":"")+(whole?"<button class='ghost scrwhole' title='map all of this page in one tall screenshot, every button, link and field on it, as a new screen'>Whole page &varr;</button>":"")+"</div>";
 h+="<div class='scrwrap' id='scrwrap'><img src='/api/screens/image?id="+encodeURIComponent(s.id)+"&t="+encodeURIComponent(T)+"' alt='' draggable='false'>"+(s.regions||[]).map(function(r){return scrBox(r,s,'');}).join('')+(SPEND?scrBox(SPEND,s,'draw'):"")+"<div class='scrbox draw hidden' id='scrdraw'></div></div>";
 h+="<div class='mapbar' id='scrbar'>Drag on the screenshot to mark a region &middot; coordinates are screenshot pixels</div>";
@@ -783,7 +830,7 @@ if(!gh)h+="<div class='row' style='margin-top:8px'><span class='muted' style='fo
 if(ws.length){h+="<label class='check' style='margin-top:8px'><input type='checkbox' id='wbrief'"+(WATCH.brief?" checked":"")+"> <span>Brief me: the AI connected in Settings says what needs me and what can wait, here and in the notification. <span class='muted'>It's sent what's new: for mail, the sender, subject and preview. With a local Ollama model nothing leaves this computer.</span></span></label>";
 var b0=bs[0]&&ns.some(function(n){return n.ts===bs[0].ts&&n.watch===bs[0].watch;})?bs[0]:null;
 if(b0)h+="<div class='note' style='white-space:pre-line;margin-top:6px'><b>Brief</b> <span class='muted' style='font-size:12px'>"+esc(b0.name)+" &middot; "+b0.count+" new &middot; "+agoTxt(b0.ts)+"</span><br>"+esc(b0.text)+"</div>";
-h+=ns.length?"<div class='row' style='margin-top:8px'><span class='fl' style='margin-left:0;flex:1'>New &middot; "+ns.length+"</span><button class='ghost' id='wclear' title='clear this list (Symbiot still remembers what it has seen)'>Clear</button></div>"+ns.slice(0,20).map(function(n,i){return "<div class='task' data-i='"+i+"'><span class='t'>"+esc(n.text)+" <span class='muted' style='font-size:12px'>"+esc(n.name)+" &middot; "+agoTxt(n.ts)+"</span></span>"+(n.href?"<button class='ghost wopen' title='open it in your browser'>Open</button>":"")+(n.mail||n.chat?"<button class='ghost wdraft' title='"+(n.chat?DRAFT_CHAT_TIP:"your coding agent opens it in your inbox through Screens, writes a reply and leaves it in Drafts. It never presses Send")+"'>"+(n.drafted?"Drafted &middot; again":"Draft a reply")+"</button>":"")+"</div>";}).join('')
+h+=ns.length?"<div class='row' style='margin-top:8px'><span class='fl' style='margin-left:0;flex:1'>New &middot; "+ns.length+"</span><button class='ghost' id='wclear' title='clear this list (Symbiot still remembers what it has seen)'>Clear</button></div>"+ns.slice(0,20).map(function(n,i){return "<div class='task' data-i='"+i+"'><span class='t'>"+esc(n.text)+" <span class='muted' style='font-size:12px'>"+esc(n.name)+" &middot; "+agoTxt(n.ts)+"</span></span>"+(n.href?"<button class='ghost wopen' title='open it in your browser'>Open</button>":"")+(n.mail||n.chat?"<button class='ghost wdraft' title='"+(n.chat?DRAFT_CHAT_TIP:"your coding agent opens it in your inbox through Screens, writes a reply and leaves it in Drafts. It never presses Send")+"'>"+(n.drafted?"Drafted &middot; again":"Draft a reply")+"</button>":"")+(n.chat&&n.drafted?"<button class='ghost wopenwa' title='"+OPEN_WA_TIP+"'>Open in WhatsApp</button>":"")+"</div>";}).join('')
 :"<div class='muted' style='font-size:12px;margin-top:6px'>Nothing new yet. New rows show up here, and as a notification. Standup counts what's waiting on you, and your agent reads them with <b>symbiot watch new</b>.</div>";}
 box.innerHTML=h;
 var wg=$('wgithub');if(wg)wg.addEventListener('click',function(){wg.disabled=true;api('/api/watch/add',{site:'github',every:5}).then(function(x){wg.disabled=false;if(!x||x.error){screenErr((x&&x.error)||'failed');return;}
@@ -799,16 +846,26 @@ box.querySelectorAll('.wopen').forEach(function(b){b.addEventListener('click',fu
 box.querySelectorAll('.wdraft').forEach(function(b){b.addEventListener('click',function(){var n=ns[+b.closest('.task').getAttribute('data-i')];b.disabled=true;
 api('/api/watch/draft',{id:n.id}).then(function(x){b.disabled=false;if(!x||x.error){screenErr((x&&x.error)||'failed');return;}
 $('screenmsg').innerHTML="<div class='note ok'>"+(x.chat?DRAFTING_CHAT:DRAFTING)+"</div>";loadWatchUI();}).catch(function(e){b.disabled=false;screenErr(String((e&&e.message)||e));});});});
+box.querySelectorAll('.wopenwa').forEach(function(b){b.addEventListener('click',function(){openChatUI(ns[+b.closest('.task').getAttribute('data-i')],b,function(cls,html){$('screenmsg').innerHTML="<div class='note "+cls+"'>"+html+"</div>";});});});
 var wc=$('wclear');if(wc)wc.addEventListener('click',function(){api('/api/watch/clear',{}).then(loadWatchUI);});}
 // what Check now found, for Watching and the Dashboard
 function watchCheckMsg(w,x){return x.busy?"The hidden browser is busy with a map, press or type. It reads "+esc(w.name)+" once that's done.":x.learned!=null?"Read "+esc(x.name)+": learned the "+x.learned+" things listed there now. From here on, anything new is noted.":x["new"]&&x["new"].length?"&#10003; "+x["new"].length+" new on "+esc(x.name)+".":"Read "+esc(x.name)+": nothing new.";}
 // a chat (WhatsApp): the reply is typed into the chat's message box in Symbiot's browser, unsent
 var DRAFT_CHAT_TIP="your coding agent opens the chat in Symbiot&#39;s hidden browser and types a reply into its message box, unsent. It never presses Send or Enter";
-var DRAFTING_CHAT="&#10003; Your agent is drafting a reply in that chat. It opens WhatsApp in Symbiot's hidden browser, types the reply into the chat's message box and leaves it there unsent: it never presses Send or Enter. Once it's done (the Agents tab), type web.whatsapp.com under Screens and click <b>Sign in</b>: the chat shows the reply in its box, for you to read and send.";
+var DRAFTING_CHAT="&#10003; Your agent is drafting a reply in that chat. It opens WhatsApp in Symbiot's hidden browser, types the reply into the chat's message box and leaves it there unsent: it never presses Send or Enter. Once it's done (the Agents tab), click <b>Open in WhatsApp</b> on the message: the chat shows the reply in its box, for you to read and send.";
+// Open in WhatsApp (watch.mjs openChat): Symbiot's browser, as a window, at web.whatsapp.com
+var OPEN_WA_TIP="open WhatsApp in Symbiot&#39;s browser, where the chat shows your agent&#39;s reply in its message box, for you to read and send";
+function openChatUI(n,b,say){if(!n)return;b.disabled=true;
+api('/api/watch/open-chat',{id:n.id}).then(function(x){b.disabled=false;if(!x||x.error){say('err',esc((x&&x.error)||'failed'));return;}
+say('ok',"&#10003; Opened WhatsApp in Symbiot's browser, in a window of its own. The chat shows your agent's reply in its message box: read it, change it if you like, and send it there. Close the window when you're done, so Watch can read WhatsApp again.");}).catch(function(e){b.disabled=false;say('err',esc(String((e&&e.message)||e)));});}
 var DRAFTING="&#10003; Your agent is drafting a reply to it. It opens the email in your inbox through Screens, writes the reply and leaves it in Drafts for you to read and send: it never presses Send. Follow it, and answer anything it asks, in the Agents tab.";
 // ---- Dashboard: a card per page you watch (your inbox, GitHub, WhatsApp…), what's new on each ----
 var BOARD=null;var BOARDICON={mail:'&#9993;&#65039;',github:'&#128276;',chat:'&#128172;',page:'&#127760;'};
-function loadBoard(){api('/api/watch/board?hours='+(+$('boardhours').value||24)).then(function(b){if(b&&b.cards){BOARD=b;renderBoard();}});}
+// Talk it over (watch.mjs boardChat): a chat on a card, open by its id, with what's half typed kept across a refresh
+var BTALK={},BTALKDRAFT={},BTALKBUSY=0;
+var TALKHINT="<div class='muted' style='font-size:12px'>Go over what's new here with your AI: what needs you, and what to say to whom. Then click <b>Draft a reply</b> on one, and your agent writes it the way you agreed here. Your AI is sent what this card lists (for mail: the sender, subject and preview).</div>";
+function talking(){var f=document.activeElement;return BTALKBUSY>0||!!(f&&f.closest&&f.closest('.btalk'));}
+function loadBoard(){api('/api/watch/board?hours='+(+$('boardhours').value||24)).then(function(b){if(b&&b.cards){BOARD=b;if(!talking())renderBoard();}});}
 function boardMsg(cls,html){$('boardmsg').innerHTML="<div class='note "+cls+"'>"+html+"</div>";}
 function renderBoard(){var b=BOARD,cs=b.cards,el=$('board');
 var tab=$('boardtab');if(tab)tab.textContent='Dashboard'+(b.total?' · '+b.total:'');
@@ -818,14 +875,29 @@ $('boardgo').addEventListener('click',function(){setTab('map');var w=$('watchbox
 var when=b.hours===24?'since yesterday':b.hours===72?'in the last 3 days':'in the last 7 days';
 var waiting=cs.filter(function(c){return c.count;}).map(function(c){return c.label+(c.source==='page'?' on '+c.name:'');});
 $('boardsum').innerHTML=waiting.length?"<b style='color:var(--bone)'>Waiting on you "+when+":</b> "+esc(waiting.join(', ')):"Nothing new "+when+" on the "+cs.length+" thing"+(cs.length===1?"":"s")+" you watch.";
-el.innerHTML=cs.map(function(c,i){
-return "<div class='bcard"+(c.count?" has":"")+"' data-i='"+i+"'><div class='bh'><span>"+(BOARDICON[c.source]||BOARDICON.page)+"</span><span class='bn' title='"+esc(c.url)+"'>"+esc(c.name)+"</span>"+(c.count?"<button class='ghost bseen' title='set this card back to 0: only what comes in after counts. It stays under Watching, and the other cards keep theirs' style='padding:4px 9px;font-size:12px'>Seen</button>":"")+"<button class='ghost bcheck' title='read it now' style='padding:4px 9px;font-size:12px'>Check now</button></div>"
+el.innerHTML=cs.map(function(c,i){var nt=Math.ceil(((c.chat||[]).length)/2);
+return "<div class='bcard"+(c.count?" has":"")+"' data-i='"+i+"'><div class='bh'><span>"+(BOARDICON[c.source]||BOARDICON.page)+"</span><span class='bn' title='"+esc(c.url)+"'>"+esc(c.name)+"</span>"+(c.count?"<button class='ghost bseen' title='set this card back to 0: only what comes in after counts. It stays under Watching, and the other cards keep theirs' style='padding:4px 9px;font-size:12px'>Seen</button>":"")+"<button class='ghost btalkbtn' title='talk what&#39;s new here over with your AI before you draft a reply' style='padding:4px 9px;font-size:12px'>&#128172;"+(nt?" "+nt:"")+"</button><button class='ghost bcheck' title='read it now' style='padding:4px 9px;font-size:12px'>Check now</button></div>"
 +"<div class='bc'>"+c.count+"</div><div class='bl'>"+esc(c.count?c.label.replace(/^\\d+ /,''):'nothing new')+" &middot; "+(c.checked?"read "+agoTxt(c.checked):c.last?"tried "+agoTxt(c.last):"first read within a minute")+(c.via==='gh'?" &middot; through gh":"")+"</div>"
 +(c.error?"<div class='note err'>"+esc(c.error)+"</div>":"")
 +(c.brief?"<div class='bbrief'>"+esc(c.brief.text)+"</div>":"")
-+c.items.map(function(n,j){return "<div class='bi' data-j='"+j+"'><span class='t'>"+esc(n.text)+" <span class='muted' style='font-size:11px'>"+agoTxt(n.ts)+"</span></span>"+(n.href?"<button class='ghost bopen' title='open it in your browser'>Open</button>":"")+(n.mail||n.chat?"<button class='ghost bdraft' title='"+(n.chat?DRAFT_CHAT_TIP:"your coding agent writes a reply and leaves it in Drafts. It never presses Send")+"'>"+(n.drafted?"Drafted &middot; again":"Draft a reply")+"</button>":"")+"</div>";}).join('')
-+(c.count>c.items.length?"<div class='bl' style='margin-top:6px'>&hellip;and "+(c.count-c.items.length)+" more</div>":"")+"</div>";}).join('');
++c.items.map(function(n,j){return "<div class='bi' data-j='"+j+"'><span class='t'>"+esc(n.text)+" <span class='muted' style='font-size:11px'>"+agoTxt(n.ts)+"</span></span>"+(n.href?"<button class='ghost bopen' title='open it in your browser'>Open</button>":"")+(n.mail||n.chat?"<button class='ghost bdraft' title='"+(n.chat?DRAFT_CHAT_TIP:"your coding agent writes a reply and leaves it in Drafts. It never presses Send")+"'>"+(n.drafted?"Drafted &middot; again":"Draft a reply")+"</button>":"")+(n.chat&&n.drafted?"<button class='ghost bopenwa' title='"+OPEN_WA_TIP+"'>Open in WhatsApp</button>":"")+"</div>";}).join('')
++(c.count>c.items.length?"<div class='bl' style='margin-top:6px'>&hellip;and "+(c.count-c.items.length)+" more</div>":"")
++(BTALK[c.id]?"<div class='tchat btalk'><div class='msgs'>"+(nt?chatMsgs(c.chat):TALKHINT)+"</div><div class='row'><input class='talkq' placeholder='Ask about these, or say how to answer one...' style='flex:1'><button class='ghost talksend'>Ask</button><a class='talkclear' title='forget this conversation'>clear</a></div></div>":"")+"</div>";}).join('');
 function card(btn){return cs[+btn.closest('.bcard').getAttribute('data-i')];}
+el.querySelectorAll('.btalkbtn').forEach(function(btn){btn.addEventListener('click',function(){var c=card(btn);BTALK[c.id]=!BTALK[c.id];renderBoard();var q=BTALK[c.id]&&el.querySelector(".bcard[data-i='"+cs.indexOf(c)+"'] .talkq");if(q&&q.focus)q.focus();});});
+el.querySelectorAll('.btalk').forEach(function(box){var c=card(box),inp=box.querySelector('.talkq'),send=box.querySelector('.talksend'),msgs=box.querySelector('.msgs');
+inp.value=BTALKDRAFT[c.id]||'';inp.addEventListener('input',function(){BTALKDRAFT[c.id]=inp.value;});
+function ask(){var q=(inp.value||'').trim();if(!q||send.disabled)return;send.disabled=true;inp.value='';BTALKDRAFT[c.id]='';BTALKBUSY++;
+if(!(c.chat&&c.chat.length))msgs.innerHTML='';
+msgs.insertAdjacentHTML('beforeend',chatMsgs([{role:'user',text:q}])+"<div class='msg a muted thinking'>Thinking&hellip;</div>");
+function done(){BTALKBUSY=Math.max(0,BTALKBUSY-1);send.disabled=false;var th=msgs.querySelector('.thinking');if(th)th.remove();}
+api('/api/watch/chat',{id:c.id,question:q}).then(function(r){done();
+if(r.error==='not-connected'){msgs.insertAdjacentHTML('beforeend',"<div class='msg a'>Connect a model in Settings to talk it over - Ollama is free and runs locally.</div>");return;}
+if(r.error){msgs.insertAdjacentHTML('beforeend',"<div class='msg a err'>"+esc(r.error)+"</div>");return;}
+c.chat=r.chat||[];msgs.innerHTML=chatMsgs(c.chat);var tb=box.closest('.bcard').querySelector('.btalkbtn');if(tb)tb.innerHTML='&#128172; '+Math.ceil(c.chat.length/2);}).catch(function(e){done();msgs.insertAdjacentHTML('beforeend',"<div class='msg a err'>"+esc(String((e&&e.message)||e))+"</div>");});}
+send.addEventListener('click',ask);inp.addEventListener('keydown',function(e){if(e.key==='Enter')ask();});
+box.querySelector('.talkclear').addEventListener('click',function(){api('/api/watch/chat/clear',{id:c.id}).then(function(){c.chat=[];msgs.innerHTML=TALKHINT;var tb=box.closest('.bcard').querySelector('.btalkbtn');if(tb)tb.innerHTML='&#128172;';});});});
+el.querySelectorAll('.bopenwa').forEach(function(btn){btn.addEventListener('click',function(){openChatUI(item(btn),btn,boardMsg);});});
 function item(btn){return card(btn).items[+btn.closest('.bi').getAttribute('data-j')];}
 el.querySelectorAll('.bcheck').forEach(function(btn){btn.addEventListener('click',function(){var c=card(btn);btn.disabled=true;btn.textContent='Reading…';
 api('/api/watch/check',{id:c.id}).then(function(x){if(!x||x.error)boardMsg('err',esc((x&&x.error)||'failed'));else boardMsg(x["new"]&&x["new"].length?'ok':'muted',watchCheckMsg(c,x));loadWatchUI();}).catch(function(e){btn.disabled=false;btn.textContent='Check now';boardMsg('err',esc(String((e&&e.message)||e)));});});});
@@ -982,5 +1054,5 @@ function appBar(p){var b=$('appbar');if(!b||!p.termux||window.SymbiotAndroid||ty
 function doUpdate(){updBusy=true;try{localStorage.setItem('symbiot_update_tried',document.getElementById('ver').textContent.replace(/^v/,''));}catch(e){}var b=ubar();b.className='updatebar show';b.textContent='Updating & restarting… this page will reload itself when it is back.';api('/api/update',{});}
 setInterval(heartbeat,4000);heartbeat(true);
 window.addEventListener('focus',function(){heartbeat(true);}); // re-check for updates when you come back to the window
-initGraphEvents();syncP();refresh();loadMap();firstTab();loadAgentCfg();loadScanRoots();loadPhone();loadTrusted();loadMail();loadScreensUI();loadMonitorsUI();loadDesktop();loadWatchUI();setInterval(loadWatchUI,60000);loadPhoneLink();
+initGraphEvents();syncP();refresh();loadMap();firstTab();loadAgentCfg();loadScanRoots();loadPhone();loadLinks();loadTrusted();loadMail();loadScreensUI();loadMonitorsUI();loadDesktop();loadWatchUI();setInterval(loadWatchUI,60000);loadPhoneLink();
 </script></body></html>`;

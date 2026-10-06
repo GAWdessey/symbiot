@@ -191,6 +191,10 @@ const calls = [
   ["/api/screens/trusted/add", "POST"],    // no site -> refused, nothing saved
   ["/api/screens/trusted/remove", "POST"],
   ["/api/screens/signin", "POST"],  // no site -> refused, no window opens
+  ["/api/links", "GET"],            // Link your work: the standard sites and where each stands
+  ["/api/links/link", "POST"],      // no id -> "No link called", no browser opened
+  ["/api/links/check", "POST"],     // no id -> "isn't linked"
+  ["/api/links/unlink", "POST"],
   ["/api/watch", "GET"],            // watched pages + what's new (isolated HOME -> none)
   ["/api/watch/add", "POST"],       // no screen or site -> refused, nothing saved
   ["/api/watch/every", "POST"],     // no id -> "No watch"
@@ -200,6 +204,9 @@ const calls = [
   ["/api/watch/seen", "POST"],      // no id -> "No watch", nothing changes
   ["/api/watch/brief", "POST"],     // empty body -> the brief stays off
   ["/api/watch/draft", "POST"],     // no id -> refused, no agent starts
+  ["/api/watch/open-chat", "POST"], // no id -> refused, no window opens
+  ["/api/watch/chat", "POST"],      // no id -> "No watch", no model call
+  ["/api/watch/chat/clear", "POST"],
   ["/api/watch/board", "GET"],      // the Dashboard: a card per watch (none here)
   ["/api/phone", "GET"],            // Watch on your phone: this computer's side (off)
   ["/api/phone/link", "POST"],      // empty body -> off: nothing listens on the network

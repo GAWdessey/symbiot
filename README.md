@@ -60,9 +60,13 @@ Tabs:
   how many new since yesterday (or in the last 3 or 7 days), its latest brief, the
   newest items, and **Open**, **Draft a reply** and **Check now** on them. **Seen**
   on a card sets its count back to 0 (what it found stays under Watching, and the
-  other cards keep theirs). The tab shows the count, so you see what's waiting from
+  other cards keep theirs). **💬** on a card opens a chat with your AI about what's
+  new there: what needs you, and what to say to whom. Agree it there, then **Draft
+  a reply** on one, and your agent gets that talk with the message, so it writes
+  what you agreed. The tab shows the count, so you see what's waiting from
   any tab, and once you watch something the app opens on the Dashboard instead of
-  the Map. `symbiot watch board` prints the same cards as JSON.
+  the Map. `symbiot watch board` prints the same cards as JSON, and
+  `symbiot watch board --line` as one line for a status bar (`2 emails · 1 WhatsApp message`).
 - **Drift** — the [`symbiot drift`](#whats-out-of-sync-symbiot-drift) report, with
   a "fetch latest" toggle (and an [experimental](#experimental) "check CI").
 - **Week / Standup / Todo** — the write-ups (these use your chosen AI).
@@ -81,7 +85,7 @@ Tabs:
   did** — files changed and commits made, read from git, whichever agent it was.
   When an agent leaves **questions, options or ideas** for you, they show up on its
   block (see [Questions from your agent](#questions-from-your-agent)).
-- **Settings** — your AI, the folders to scan, your agent command, the
+- **Settings** — [Link your work](#link-your-work), your AI, the folders to scan, your agent command, the
   [weekly write-up and start at login](#every-week-and-at-login), plus the
   [experimental](#experimental) email, model recommendations and one-click local
   model.
@@ -389,7 +393,16 @@ that starts with `[repo: <name>]`, to that repo's Tasks: an agent working on one
 project can have ideas for another (Symbiot itself, say). The agent is told to
 keep going with everything that doesn't depend on an answer, and to ask instead of
 doing anything destructive. Both files live in `.symbiot/`, so they're never
-committed.
+committed. The questions stay on the Agents tab after Symbiot restarts (or when
+`symbiot push --open` started the run): Symbiot notes each folder a run starts in
+(`~/.config/symbiot/runs.json`) and lists the ones still waiting on you.
+
+**A 👤 You answer is your step.** Picking an option that starts with **You** saves
+the answer and reminds you the step is still yours to do. Your agent waits for it
+instead of starting straight away and asking the same thing again. If the step
+names a file in backticks (`` `.env` ``), the agent starts by itself once that
+file changes, while the app runs. Otherwise **Start it now** on that folder's
+block starts it once you've done the step.
 
 **A run that stopped on questions isn't repeated for nothing.** When a run ends
 having asked questions you haven't answered, with tasks still unticked, Symbiot
@@ -425,6 +438,40 @@ For the production check, add a per-repo deploy command to
 repo), keyed by repo path or folder name, that prints the deployed commit sha:
 `{ "/path/to/repo": "ssh prod cat ~/app/.deployed-sha" }`. Also the **Drift** tab
 in the app.
+
+## Link your work
+
+Settings → **Link your work** has one button per standard work site: Gmail,
+Outlook, Google and Outlook Calendar, GitHub, GitLab, Slack, Microsoft Teams,
+WhatsApp, Jira & Confluence, Linear, Asana, Trello, Google Drive, Notion,
+HubSpot and Salesforce. One click:
+
+1. opens the site in Symbiot's own browser, where you sign in the usual way (its
+   own login, SSO and 2FA; Symbiot never sees your password). Close the window
+   when you're signed in;
+2. trusts the site, so [Screens](#screens-blueprints-for-screen-automation)' Press
+   and Type work there without asking;
+3. watches its inbox or notifications, so what arrives shows on the **Dashboard**,
+   in Standup's "Waiting on you", and in **Week**. Someone who doesn't write code
+   gets a Week from their linked sites too.
+
+Each button shows where it stands: grey (not linked), amber (sign in, or signed
+out), green (linked), with ↻ to check now and × to unlink. Unlinking stops
+watching it and stops trusting what the link trusted, never a site you trusted
+yourself.
+
+**For a whole company**, one `links.json` in Symbiot's config folder (or the file
+`SYMBIOT_LINKS` names) gives everyone the same buttons. It adds your own sites and
+hides the ones you don't use. An entry with a built-in's id replaces it:
+
+```json
+{ "links": [{ "id": "jira", "name": "Jira", "url": "https://acme.atlassian.net/jira/your-work", "watch": true },
+            { "name": "Acme CRM", "url": "https://crm.acme.example/inbox", "hosts": ["sso.acme.example"], "watch": true }],
+  "hide": ["whatsapp", "trello"] }
+```
+
+Linking stays in the app. Like trusted sites, there's no command an agent could
+call to link a site itself.
 
 ## Connect it (once)
 
@@ -627,11 +674,14 @@ browser and maps what's in the window then, as a new screen. It scrolls what you
 mouse wheel would: the page, or the part of it that scrolls on its own (Gmail's
 list of mail). Scrolling only looks, so it never asks first. Or **Whole page**
 maps all of it at once: one tall screenshot (up to 16,000 pixels) with every
-button, link and field on it marked where it is on the page. It's for a page that
-scrolls as a whole; a list that scrolls inside the page, like Gmail's, still takes
-Scroll down. The hidden browser scrolls down a window at a time and puts the
-screenshots together, so a menu bar that stays at the top shows once, at the top,
-and a sticky side menu shows in the first window only. **Press** on a region clicks it
+button, link and field on it marked where it is on the page. The hidden browser
+scrolls down a window at a time and puts the screenshots together, so a menu bar
+that stays at the top shows once, at the top, and a sticky side menu shows in the
+first window only. Where a list scrolls inside the page instead, like Gmail's
+mail, Whole page opens that list out: it scrolls the list a part at a time and
+puts the parts together, with the rest of the window (the search bar, Compose,
+your folders) around it once, so a whole inbox page is one screen with every row
+marked. **Press** on a region clicks it
 in that hidden browser and maps the page it leads to as a new screen, so map,
 press, map is how an agent finds its way around a site. **Type** on a field types
 your text into it there (replacing what was in it) and, with **Type, then Enter**
@@ -695,6 +745,7 @@ symbiot watch add <screen id> --every 15   # watch a mapped page (or: symbiot wa
 symbiot watch add github                   # your GitHub notifications (see below)
 symbiot watch new --hours 24               # what's new, newest first (JSON)
 symbiot watch board                        # the Dashboard's cards (JSON; .total is the count, for a status bar)
+symbiot watch board --line                 # the same as one line: "2 emails · 1 WhatsApp message" (empty when nothing's new)
 symbiot watch seen <watch id>              # set a card back to 0, like its Seen button
 symbiot watch check                        # read them all now (JSON)
 symbiot watch draft <id>                   # Draft a reply to a new email or chat message (see below)
@@ -737,8 +788,9 @@ emails `"mail": true`, and `symbiot watch draft <id>` does the same as the butto
 A new WhatsApp message (a watched `web.whatsapp.com`) has **Draft a reply** too.
 There, the agent opens the chat in the hidden browser and types the reply into
 its message box, and leaves it there unsent. WhatsApp keeps it as that chat's
-draft in Symbiot's browser: type `web.whatsapp.com` under Screens and click
-**Sign in** to read it and send it. The same guard holds, plus one for chats: a
+draft in Symbiot's browser: once the agent is done, **Open in WhatsApp** on the
+message opens that browser at `web.whatsapp.com` as a window, to read the reply
+and send it (close the window after, so Watch can read WhatsApp again). The same guard holds, plus one for chats: a
 draft's run can't press Enter (in a chat, Enter sends), and in WhatsApp its line
 breaks are typed as spaces. Add `web.whatsapp.com` under Trusted sites for it.
 `symbiot watch new` marks those `"chat": true`.
