@@ -6,7 +6,7 @@ import { readFileSync, existsSync } from "node:fs";
 import { VERSION, loadConfig, saveConfig, loadTasks, saveTasks, sh, repoState } from "./core.mjs";
 import { resolveProvider, write } from "./ai.mjs";
 import { detectMailSources, mailActivity } from "./mail.mjs";
-import { waitingOn } from "./watch.mjs";
+import { waitingOn, newsSince } from "./watch.mjs";
 import { me, authorship, authorArgs, readmeInfo, repoShape, houseRules, reportFooter, expandRoot, commits, openWork, detectFolder, repoPathMap, discoveredRepos } from "./scan.mjs";
 import { taskType, workingChanges, workingDiff } from "./tasks.mjs";
 
@@ -195,6 +195,15 @@ const renderMail = (list) => list.slice(0, 60).map((x) => `- ${x.date} · to ${x
 const WAITING_HOURS = 24;
 function waitingLine(groups) { return groups.length ? "Waiting on you: " + groups.map((g) => g.label).join(", ") : ""; }
 const withWaiting = (text, line) => (line ? `${text}\n\n${line}` : text);
+// What arrived on the sites you've linked or watch (mail, chat, tickets,
+// notifications) in the last `days`, per site, newest first: [{ name, count,
+// items }]. For Week, so the update covers all of your work, not only your
+// commits, and someone who doesn't write code gets one too.
+function arrivedOn(days, now = Date.now()) {
+  const by = new Map();
+  for (const n of newsSince(days * 24, now)) { const g = by.get(n.name) || { name: n.name, count: 0, items: [] }; g.count++; if (g.items.length < 15) g.items.push(n.text); by.set(n.name, g); }
+  return [...by.values()].sort((a, b) => b.count - a.count);
+}
 
 // Build a write-up for a command; returns { text, sub, error? } without printing.
 // Shared by the CLI (cmdRun) and the web UI (symbiot app). since: the days
@@ -221,31 +230,34 @@ async function produce(cmd, { since = 7, all: everyone = false } = {}) {
   const mail = sentMail(days); // [] unless email is switched on
   const waiting = label === "standup" ? waitingOn(WAITING_HOURS) : [], line = waitingLine(waiting);
   const waitNote = waiting.length ? " · " + waiting.map((g) => g.label).join(", ") + " waiting" : "";
-  if (!repos.length && !mail.length) return { text: withWaiting(`No commits in the last ${days} days across your ${all.length} repos.\nAdd folders to scan in Settings, or check your git identity.`, line), sub: "no activity" + waitNote };
+  const arrived = label === "week" ? arrivedOn(days) : [], arrivedN = arrived.reduce((s, g) => s + g.count, 0);
+  if (!repos.length && !mail.length && !arrived.length) return { text: withWaiting(`No commits in the last ${days} days across your ${all.length} repos.\nAdd folders to scan in Settings, or check your git identity.`, line), sub: "no activity" + waitNote };
   let cs = commits(repos, `${days} days ago`, !everyone);
   if (!cs.length) cs = commits(repos, `${days} days ago`, false); // fall back to all if none matched you
   const open = label === "week" ? openWork(repos) : [];
-  if (!cs.length && !mail.length) return { text: withWaiting("Found repos, but no commits in the window.", line), sub: "no commits" + waitNote };
+  if (!cs.length && !mail.length && !arrived.length) return { text: withWaiting("Found repos, but no commits in the window.", line), sub: "no commits" + waitNote };
 
   const system =
-    `You write a short, first-person work update from a person's git commits${mail.length ? " and the emails they sent" : ""}. ` +
+    `You write a short, first-person work update from a person's git commits${mail.length ? " and the emails they sent" : ""}${arrived.length ? ", and what arrived on the work sites they've linked (mail, chat, tickets, notifications)" : ""}. ` +
     `Write as them ("I"), plainly and specifically, grouped by theme or project, most important first. ` +
     `Turn commit messages into outcomes a manager or teammate would understand — not a raw commit list. ` +
     (mail.length ? `Fold the emails into those themes (a decision, a hand-off, who they worked with); skip routine ones (receipts, scheduling, one-line replies). You only have their subjects and recipients — don't guess at what they said. ` : "") +
+    (arrived.length ? `What arrived is titles and senders only, and it came TO them: use it to show what they dealt with and who they worked with, but don't claim they did something unless it shows it (a "merged", "approved" or "sent" line, a commit, an email they sent). Skip noise (newsletters, receipts, routine alerts). ${cs.length ? "" : "They may not write code: with no commits, write the update from these sites. "}` : "") +
     `${label === "standup" ? "Keep it to 3-5 bullets: done, and what's next." : "A short paragraph or a few grouped bullets; end with a one-line 'In progress / next' if there are open items."} ` +
-    `No preamble, no sign-off, no invented work — only what the commits${mail.length ? ", emails" : ""} and open items show.` +
+    `No preamble, no sign-off, no invented work — only what the commits${mail.length ? ", emails" : ""}${arrived.length ? ", linked sites" : ""} and open items show.` +
     (waiting.length ? ` What's waiting on them (new on pages they watch) is counted in a line added under what you write: don't list or count it, but you may name one as next if it's clearly work (a review request, a failed CI run).` : "");
   const prompt =
     `Person: ${who.name || "me"}. Window: ${label === "standup" ? "since yesterday" : `last ${days} days`}.\n\n` +
     `Commits:\n${cs.length ? renderCommits(cs) : "(none)"}\n\n` +
     (mail.length ? `Emails I sent (date · to · subject):\n${renderMail(mail)}\n\n` : "") +
     (open.length ? `Open / in progress:\n${open.map((o) => `- ${o}`).join("\n")}\n\n` : "") +
+    (arrived.length ? `What arrived on my linked sites (site: count, then titles):\n${arrived.map((g) => `- ${g.name}: ${g.count}\n${g.items.map((t) => `  - ${t.slice(0, 160)}`).join("\n")}`).join("\n")}\n\n` : "") +
     (waiting.length ? `Waiting on me (new since yesterday):\n${waiting.map((g) => `- ${g.label}:\n${g.items.slice(0, 10).map((t) => `  - ${t.slice(0, 160)}`).join("\n")}`).join("\n")}\n\n` : "") +
     `Write the ${label === "standup" ? "standup" : "update"}.`;
 
   const text = await write(system, prompt);
-  const mailNote = mail.length ? ` · ${mail.length} sent email${mail.length === 1 ? "" : "s"}` : "";
+  const mailNote = (mail.length ? ` · ${mail.length} sent email${mail.length === 1 ? "" : "s"}` : "") + (arrivedN ? ` · ${arrivedN} from linked sites` : "");
   return { text: text ? withWaiting(text, line) : "(couldn't reach the model)", sub: `${cs.length} commits across ${new Set(cs.map((x) => x.repo)).size} repos${mailNote}${waitNote} · ${label}`, footer: `symbiot ${VERSION} · ${all.length} repos (same as the Map) · ${repos.length} active · ${cs.length} commits in last ${days}d${mailNote}` };
 }
 
-export { repoReview, repoSuggest, folderSuggest, taskChat, clearTaskChat, mailState, setMail, sentMail, produce };
+export { repoReview, repoSuggest, folderSuggest, taskChat, clearTaskChat, mailState, setMail, sentMail, arrivedOn, produce };

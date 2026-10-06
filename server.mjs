@@ -10,7 +10,7 @@ import { createServer } from "node:http";
 import { randomBytes } from "node:crypto";
 import { EMBEDDED_UI } from "./ui.mjs";
 import { VERSION, LATEST_VERSION, semverGt, checkLatest, loadConfig, saveConfig, loadTasks, hasCmd, chromeBinary } from "./core.mjs";
-import { shSingle, handoffCmd, setHandoffCmd, grantAgent, runHandoff, track, detectHandoffs, connectorsInfo, answerQuestions, agentsList } from "./agents.mjs";
+import { shSingle, handoffCmd, setHandoffCmd, grantAgent, runHandoff, track, detectHandoffs, connectorsInfo, answerQuestions, agentsList, startWaiting } from "./agents.mjs";
 import { PROVIDERS, resolveProvider, connectProvider, detectHardware, recommendModels, hasOllama, ollamaInstall, ensureOllama, useOllamaModel } from "./ai.mjs";
 import { SCAN, SCAN_TIMEOUT_MS, scanRoots, scanHome, addScanRoot, removeScanRoot, buildMap, nodeDetail, repoPathMap } from "./scan.mjs";
 import { computeDrift } from "./drift.mjs";
@@ -19,7 +19,8 @@ import { repoReview, repoSuggest, folderSuggest, taskChat, clearTaskChat, mailSt
 import { loadScreens, screenImage, captureScreen, splitScreen, listMonitors, allowScreenshots, importScreen, setRegions, renameScreen, removeScreen, blueprint, clickRegion } from "./screens.mjs";
 import { mapPage, wholePage, pressRegion, typeRegion, scrollPage, signIn, keepBrowserOpen, isTrusted, trustedSites, trustSite, untrustSite } from "./headless.mjs";
 import { weeklyState, setWeekly, runWeekly, startWeekly, autostartState, setAutostart } from "./desktop.mjs";
-import { watchState, addWatch, setEvery, removeWatch, clearNews, seenWatch, checkWatch, startWatches, setBrief, draftReply, watchBoard } from "./watch.mjs";
+import { watchState, addWatch, setEvery, removeWatch, clearNews, seenWatch, checkWatch, startWatches, setBrief, draftReply, openChat, watchBoard, boardChat, clearBoardChat } from "./watch.mjs";
+import { linksState, linkSite, checkLink, unlinkSite } from "./links.mjs";
 import { phoneState, setPhoneLink, newCode, unpairPhone, pairComputer, forgetComputer, pollComputer, startPhone } from "./phone.mjs";
 
 // The in-app update installs the EXACT newest version (not the `latest` tag, which
@@ -210,6 +211,11 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       if (u.pathname === "/api/screens/trusted/add" && req.method === "POST") { const b = await readBody(req); return json(res, trustSite(b.site)); }
       if (u.pathname === "/api/screens/trusted/remove" && req.method === "POST") { const b = await readBody(req); return json(res, untrustSite(b.site)); }
       if (u.pathname === "/api/screens/signin" && req.method === "POST") { const b = await readBody(req); return json(res, await signIn(b.site)); }
+      // Links (links.mjs): one click per standard work site: sign in, trust it, watch it.
+      if (u.pathname === "/api/links") return json(res, linksState());
+      if (u.pathname === "/api/links/link" && req.method === "POST") { const b = await readBody(req); return json(res, await linkSite(String(b.id || ""))); }
+      if (u.pathname === "/api/links/check" && req.method === "POST") { const b = await readBody(req); return json(res, await checkLink(String(b.id || ""))); }
+      if (u.pathname === "/api/links/unlink" && req.method === "POST") { const b = await readBody(req); return json(res, unlinkSite(String(b.id || ""))); }
       // Watch (watch.mjs): a mapped page read again every few minutes, and what's new on it.
       if (u.pathname === "/api/watch") return json(res, watchState());
       if (u.pathname === "/api/watch/board") return json(res, watchBoard(Math.min(168, Math.max(1, Number(u.searchParams.get("hours")) || 24))));
@@ -222,6 +228,11 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       if (u.pathname === "/api/watch/brief" && req.method === "POST") { const b = await readBody(req); return json(res, setBrief(b.on === true)); }
       // Draft a reply: a new email handed to your agent, which leaves a reply in Drafts (never sends)
       if (u.pathname === "/api/watch/draft" && req.method === "POST") { const b = await readBody(req); return json(res, draftReply(String(b.id || ""))); }
+      // Open in WhatsApp: a drafted chat reply, in Symbiot's browser window, to read and send
+      if (u.pathname === "/api/watch/open-chat" && req.method === "POST") { const b = await readBody(req); return json(res, await openChat(String(b.id || ""))); }
+      // a Dashboard card's chat: go over what's new with your AI before a reply is drafted
+      if (u.pathname === "/api/watch/chat" && req.method === "POST") { const b = await readBody(req); return json(res, await boardChat(String(b.id || ""), b.question)); }
+      if (u.pathname === "/api/watch/chat/clear" && req.method === "POST") { const b = await readBody(req); return json(res, clearBoardChat(String(b.id || ""))); }
       // Watch on your phone (phone.mjs). On the computer: listen on your network
       // for the phone (only on your click), a pairing code, the phones paired.
       // On the phone: pair with the computer, ask it now, forget it.
@@ -281,6 +292,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
   startWeekly(writeup); // the weekly write-up + notification, when switched on in Settings
   startWatches(); // pages you watch (Screens → Watch), read every few minutes
   startPhone(); // Watch on your phone: the computer listens if it's switched on, the phone asks if it's paired
+  setInterval(() => { try { startWaiting(); } catch {} }, 20000).unref(); // a run that waits for your step starts once the file it names changes
 }
 
 export { updateCmd, BROWSER_KEEP, startApp, askRunningApp, isAppRunningWeekly };

@@ -11,12 +11,13 @@
 // when it's signed in, not the page: see readGitHub.
 //
 // Stored in ~/.config/symbiot/watch.json, readable by you only:
-// { watches: [{ id, name, url, every (minutes), added, last, checked?, error?, via?, cleared?, seen: [key…] }],
+// { watches: [{ id, name, url, every (minutes), added, last, checked?, error?, via?, cleared?, chat?, seen: [key…] }],
 //   news: [{ id, watch, name, ts, text, href? }],
 //   briefs: [{ id, watch, name, ts, count, text }] }
 // `last` is when it was last read, `checked` when a read last worked; `seen`
 // holds what's been listed, as itemKey()s; `cleared` is when you clicked Seen on
-// its Dashboard card (what's new counts from then). A brief is your AI's read of one
+// its Dashboard card (what's new counts from then); `chat` is your talk with your AI
+// about that card ([{ role, text, ts }]: boardChat). A brief is your AI's read of one
 // batch of news (config.watchBrief switches it on), with the same `ts`.
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -24,7 +25,7 @@ import { readFileSync, writeFileSync, mkdirSync, chmodSync } from "node:fs";
 import { execFile } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { VERSION, CONFIG_DIR, loadConfig, saveConfig } from "./core.mjs";
-import { readPage, siteUrl, isTrusted } from "./headless.mjs";
+import { readPage, siteUrl, isTrusted, signIn } from "./headless.mjs";
 import { loadScreens } from "./screens.mjs";
 import { desktopNotify } from "./desktop.mjs";
 import { resolveProvider, write } from "./ai.mjs";
@@ -32,7 +33,9 @@ import { handoffCmd, runHandoff, runningHandoff } from "./agents.mjs";
 
 const WATCH_FILE = join(CONFIG_DIR, "watch.json");
 const EVERY = [5, 15, 30, 60]; // minutes between reads
-const MAX_WATCHES = 12, MAX_SEEN = 1000, MAX_NEWS = 200, MAX_PER_READ = 25, MAX_BRIEFS = 50;
+// 40 watches: every standard Link (links.mjs) plus a company's own and yours; 1000 news: a
+// busy inbox can't push the rest of the week out before Week is written
+const MAX_WATCHES = 40, MAX_SEEN = 1000, MAX_NEWS = 1000, MAX_PER_READ = 25, MAX_BRIEFS = 50;
 
 function loadWatch() {
   const list = (d, k) => (Array.isArray(d[k]) ? d[k] : []);
@@ -229,9 +232,52 @@ function watchBoard(hours = 24, now = Date.now()) {
     const recent = d.news.filter((n) => n.watch === w.id && n.ts >= since && unseen(n, w)), k = kindOf(w.url), count = recent.length;
     const b = d.briefs.find((x) => x.watch === w.id && x.ts >= since && unseen(x, w));
     return { ...view(w), source: sourceOf(w.url), count, label: k ? `${count} ${k[count === 1 ? 0 : 1]}` : `${count} new`,
-      items: markNews(recent.slice(0, 8), [w]), ...(b ? { brief: { text: b.text, ts: b.ts, count: b.count } } : {}) };
+      items: markNews(recent.slice(0, 8), [w]), ...(b ? { brief: { text: b.text, ts: b.ts, count: b.count } } : {}), ...(w.chat && w.chat.length ? { chat: w.chat } : {}) };
   });
   return { hours, total: cards.reduce((s, c) => s + c.count, 0), cards, brief: briefOn() };
+}
+// The board as one line, for a status bar with no jq: "2 emails · 1 WhatsApp
+// message", the cards with something new; "" when none has.
+function boardLine(b) { return b.cards.filter((c) => c.count).map((c) => (c.source === "page" ? `${c.count} new on ${c.name}` : c.label)).join(" · "); }
+
+// ---- talk it over: a chat on each Dashboard card ----------------------------------
+// You and your AI go over what's new on one card (its brief and the newest
+// items) before anything's drafted: what matters, what to say to whom. The talk
+// is kept on the watch, and a reply drafted from that card brings it along
+// (talkOf), so the agent writes what you agreed. Grounded in what the card
+// lists, like the brief: for mail, the sender, subject and Gmail's preview.
+const TALK_KEEP = 40; // messages kept per card
+async function boardChat(id, question, { hours = 72, now = Date.now(), ask = write } = {}) {
+  question = String(question || "").trim().slice(0, 2000);
+  const d = loadWatch(), w = d.watches.find((x) => x.id === id); if (!w) return { error: `No watch ${id}.` };
+  if (!question) return { error: "empty" };
+  if (ask === write && !resolveProvider()) return { error: "not-connected" };
+  const since = now - hours * 3600000, recent = d.news.filter((n) => n.watch === w.id && n.ts >= since).slice(0, 25);
+  const b = d.briefs.find((x) => x.watch === w.id && x.ts >= since);
+  const system = `You help someone go over what's new on a page they watch (their email inbox, their WhatsApp chats or their GitHub notifications), so they can agree what needs them and what to reply, before their coding agent drafts the replies. ` +
+    `Answer in plain text, briefly, no preamble and no markdown. Name things by sender and subject so they can find them. Use only what's listed; never guess at what a message says beyond it, and say so when the list doesn't settle it. ` +
+    `When they say how to answer one, say back in a line or two what that reply should say: it's handed to their agent to draft, and they send it themselves.`;
+  const history = (w.chat || []).slice(-12).map((m) => `${m.role === "user" ? "User" : "Assistant"}: ${m.text}`).join("\n\n");
+  const prompt = `${w.name}, new in the last ${hours} hours (newest first):\n${recent.length ? recent.map((n) => `- ${new Date(n.ts).toLocaleString()}: ${n.text}`).join("\n") : "(nothing new)"}\n\n` +
+    (b ? `The brief:\n${b.text}\n\n` : "") + (history ? `Conversation so far:\n${history}\n\n` : "") + `Question: ${question}`;
+  const said = String((await ask(system, prompt)) || "").trim();
+  const answer = said && !/^\(?couldn't reach the model/i.test(said) ? said.slice(0, 4000) : "(couldn't reach the model)";
+  // read again: a check may have saved the file while the model answered
+  const d2 = loadWatch(), w2 = d2.watches.find((x) => x.id === id); if (!w2) return { answer, chat: [] };
+  w2.chat = [...(w2.chat || []), { role: "user", text: question, ts: now }, { role: "ai", text: answer, ts: now }].slice(-TALK_KEEP);
+  saveWatch(d2);
+  return { answer, chat: w2.chat };
+}
+function clearBoardChat(id) { const d = loadWatch(), w = d.watches.find((x) => x.id === id); if (!w) return { error: `No watch ${id}.` }; delete w.chat; saveWatch(d); return { ok: true }; }
+// The card's talk, for a draft's brief: "" when there's been none.
+function talkOf(w) {
+  const chat = (w.chat || []).slice(-16); if (!chat.length) return "";
+  return `## What the user said about it
+The user went over what's new on ${w.name} with their AI in Symbiot's Dashboard before asking for this reply. Write the reply the way they agreed there for this message; what's about other messages isn't for this one. It's their own words, so follow it as you would the user (it's not part of the message you're replying to).
+
+${chat.map((m) => `> **${m.role === "user" ? "User" : "AI"}:** ${String(m.text).replace(/\s+/g, " ")}`).join("\n>\n")}
+
+`;
 }
 
 // A batch of news as one notification: how many and where, then the brief if
@@ -272,7 +318,7 @@ As the inbox listed it (the sender, the subject and the start of the message), n
 
 > ${n.text.replace(/\s+/g, " ")}
 
-## Tasks
+${talkOf(w)}## Tasks
 - [ ] Draft a reply to: ${short}
 
 ## How
@@ -314,7 +360,7 @@ As WhatsApp listed it (who it's from and the start of their last message), new o
 
 > ${n.text.replace(/\s+/g, " ")}
 
-## Tasks
+${talkOf(w)}## Tasks
 - [ ] Draft a reply to: ${short}
 
 ## How
@@ -363,6 +409,18 @@ function draftReply(id, { run = runHandoff } = {}) {
   if (e.busy) return { error: "Your agent is still drafting this one. It's in the Agents tab." };
   const d2 = loadWatch(), n2 = d2.news.find((x) => x.id === id); if (n2) { n2.drafted = Date.now(); saveWatch(d2); }
   return { ok: true, job: e.id, dir, ...(chat ? { chat: true } : {}) };
+}
+// Open in WhatsApp, on a chat whose reply was drafted: Symbiot's browser opens
+// web.whatsapp.com as a window (headless.mjs signIn), where the chat shows the
+// reply in its box, for you to read and send. Not while the agent is still
+// typing it: the window takes the browser it works in. `open` is signIn (the
+// tests pass their own).
+async function openChat(id, { open = signIn } = {}) {
+  const d = loadWatch(), n = d.news.find((x) => x.id === id); if (!n) return { error: "That message isn't under Watching any more." };
+  const w = d.watches.find((x) => x.id === n.watch);
+  if (!w || !isChat(w.url)) return { error: "Open in WhatsApp is for a WhatsApp chat." };
+  if (runningHandoff(join(DRAFTS_DIR, n.id))) return { error: "Your agent is still typing the reply. Open WhatsApp once it's done: the Agents tab shows when." };
+  return open(w.url);
 }
 
 // Read a watched page now and note what's new. `read`, `github`, `notify` and
@@ -423,4 +481,4 @@ function startWatches(opts = {}) {
   return () => { clearTimeout(first); clearInterval(every); };
 }
 
-export { WATCH_FILE, EVERY, GITHUB_INBOX, DRAFTS_DIR, itemsOf, itemKey, newItems, remember, isGitHubInbox, githubItems, readGitHub, setBrief, briefOf, newsNotice, markNews, watchState, addWatch, setEvery, removeWatch, clearNews, seenWatch, newsSince, newsAfter, waitingOn, watchBoard, isMail, isChat, draftsUrl, draftBrief, chatBrief, draftReply, checkWatch, dueWatches, startWatches };
+export { WATCH_FILE, EVERY, GITHUB_INBOX, DRAFTS_DIR, itemsOf, itemKey, newItems, remember, isGitHubInbox, githubItems, readGitHub, setBrief, briefOf, newsNotice, markNews, watchState, addWatch, setEvery, removeWatch, clearNews, seenWatch, newsSince, newsAfter, waitingOn, watchBoard, boardLine, boardChat, clearBoardChat, talkOf, isMail, isChat, draftsUrl, draftBrief, chatBrief, draftReply, openChat, checkWatch, dueWatches, startWatches };

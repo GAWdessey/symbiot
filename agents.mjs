@@ -3,10 +3,10 @@
 // tab, and the questions an unattended agent leaves for the user.
 import { spawn } from "node:child_process";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
 import { readFileSync, writeFileSync, mkdirSync, existsSync, openSync, writeSync, unlinkSync, readdirSync, statSync } from "node:fs";
 import { randomBytes, createHash } from "node:crypto";
-import { loadConfig, saveConfig, loadTasks, sameTask, taskWords, sh, hasCmd } from "./core.mjs";
+import { CONFIG_DIR, loadConfig, saveConfig, loadTasks, sameTask, taskWords, sh, hasCmd } from "./core.mjs";
 
 const HANDOFFS = []; // live registry of agents Symbiot has handed work to
 // ---- hand a repo (+ its tasks) to the user's agent — generic, settings-based
@@ -112,6 +112,8 @@ function runHandoff(repoPath, { force = false } = {}) {
   const busy = runningHandoff(repoPath); if (busy) return { busy: true, id: busy.id || "", pid: busy.pid, auto: !!busy.auto };
   releaseHeldTasks(repoPath); // held for an agent another process started, which has since exited
   tmpl = withConnectors(tmpl, repoPath);
+  if (force) { try { unlinkSync(join(repoPath, ".symbiot", WAITING)); } catch {} }
+  else { const w = waitingFor(repoPath); if (w) return { blocked: true, waiting: true, questions: 0, note: waitNote(w) }; }
   const blocked = !force && blockedAgain(repoPath, tmpl); if (blocked) return blocked;
   const lock = join(repoPath, ".symbiot", LOCK);
   const env = opts.env && typeof opts.env === "object" ? Object.fromEntries(Object.entries(opts.env).map(([k, v]) => [k, String(v)])) : null;
@@ -123,7 +125,91 @@ function runHandoff(repoPath, { force = false } = {}) {
   if (!e) return null;
   e.handoff = true;
   if (e.pid) try { writeFileSync(lock, JSON.stringify({ pid: e.pid, id: e.id, startedAt: e.startedAt, owner: process.pid })); } catch {}
+  noteRun(e);
   return e;
+}
+// ---- runs from before the app started ---------------------------------------
+// HANDOFFS lives in memory, so after a restart a run that stopped on questions
+// was gone from the Agents tab, its questions with it: there was no answering
+// them there, only Start it anyway or a change to .env. So each folder a run
+// starts in is noted in ~/.config/symbiot/runs.json ({ path, name, startedAt },
+// newest first, by whichever process started it: the app, or `symbiot push
+// --open`), and the Agents tab lists the ones it isn't tracking itself while they
+// have questions open, a step of yours to wait for, or a run still going.
+const RUNS_FILE = join(CONFIG_DIR, "runs.json"), RUNS_MAX = 60;
+function loadRuns() { try { const a = JSON.parse(readFileSync(RUNS_FILE, "utf8")); return Array.isArray(a) ? a.filter((r) => r && typeof r.path === "string" && r.path) : []; } catch { return []; } }
+function noteRun(e) {
+  const list = [{ path: e.path, name: e.name, startedAt: e.startedAt }, ...loadRuns().filter((r) => r.path !== e.path)].slice(0, RUNS_MAX);
+  try { mkdirSync(CONFIG_DIR, { recursive: true }); writeFileSync(RUNS_FILE, JSON.stringify(list, null, 2), { mode: 0o600 }); } catch {}
+}
+const knownRun = (path) => HANDOFFS.some((e) => e.path === path) || loadRuns().some((r) => r.path === path);
+// The Agents tab's block for a run another process (or this app before a
+// restart) started: as agentsList gives one, marked `earlier`. Its end is when
+// its log last changed; its exit code isn't known.
+function earlierRuns() {
+  const tracked = new Set(HANDOFFS.map((e) => e.path)), out = [];
+  for (const r of loadRuns()) {
+    if (tracked.has(r.path) || !existsSync(join(r.path, ".symbiot"))) continue;
+    const busy = runningHandoff(r.path), ask = agentQuestions(r.path, r.name), wait = waitingFor(r.path);
+    if (!busy && !ask.questions.length && !wait) continue;
+    const log = join(r.path, ".symbiot", "agent.log"), startedAt = (busy && busy.startedAt) || Number(r.startedAt) || Date.now();
+    let tail = "", end = Date.now(); try { tail = readFileSync(log, "utf8").slice(-1200); if (!busy) end = statSync(log).mtimeMs; } catch {}
+    out.push({ id: "earlier-" + digest(r.path).slice(0, 8), name: String(r.name || r.path.split("/").pop()), path: r.path, status: busy ? "running" : "done", earlier: true, elapsed: Math.max(0, end - startedAt), exitCode: null, tail, changed: agentChanges(r.path, startedAt), ask, held: heldTasks(r.path), waiting: wait, fromHeld: false });
+  }
+  return out;
+}
+
+// ---- a step that's yours: wait for it -----------------------------------------
+// An answer that picks a "👤 You:" option leaves a step for the user to do (put a
+// key in .env, allow a command in Settings). Starting the agent before it's done
+// only gets the same questions back. So answerQuestions reminds them the step is
+// theirs, and Send answers & continue waits instead of starting: .symbiot/
+// waiting.json keeps the step and how each file it names (in backticks, like
+// `.env`) was then. Once one of them changes, the next run goes ahead
+// (startWaiting starts the one that was asked for); with no file to watch, it
+// waits for Start it now. Start it anyway (force) always goes ahead.
+const WAITING = "waiting.json";
+const yourStep = (a) => /👤/.test(String(a || ""));
+// The files a step names, in backticks: `.env`, `~/.termux/termux.properties`,
+// `.claude/settings.json`. Not a command (`npm test`), a site (`web.whatsapp.com`,
+// unless there's a file by that name) or a path that can't be one here.
+function namedFiles(text, dir) {
+  const out = [];
+  for (const m of String(text || "").matchAll(/`([^`\s]+)`/g)) {
+    const t = m[1].replace(/[.,:;]+$/, ""), first = t.replace(/^~?\//, "").split("/")[0];
+    if (/:\/\//.test(t) || !/[./]/.test(t) || /^[@\d]/.test(t) || /^\.{1,2}\/?$/.test(t)) continue;
+    const p = t.startsWith("~/") ? join(homedir(), t.slice(2)) : t.startsWith("/") ? t : join(dir, t);
+    const dotted = first.startsWith(".") && first !== "." && first !== "..";
+    const host = !dotted && /\./.test(first) && !t.startsWith("~/") && !t.startsWith("/");
+    if (existsSync(p) || (!host && (dotted || existsSync(dirname(p))))) out.push({ name: t, path: p });
+  }
+  return out.filter((f, i) => out.findIndex((g) => g.path === f.path) === i).slice(0, 5);
+}
+const fileSig = (p) => { try { const s = statSync(p); return s.mtimeMs + ":" + s.size; } catch { return "none"; } };
+// What a folder is waiting on: { step, files: [names], at, rerun }, or null (and
+// waiting.json goes) once a file it names has changed.
+function waitingFor(path) {
+  let w = null; try { w = JSON.parse(readSymbiot(path, WAITING)); } catch {}
+  if (!w || typeof w.step !== "string") return null;
+  const files = Array.isArray(w.files) ? w.files : [];
+  if (files.some((f) => f && fileSig(f.path) !== f.sig)) { try { unlinkSync(join(path, ".symbiot", WAITING)); } catch {} return null; }
+  return { step: w.step, files: files.map((f) => f.name), at: w.at || 0, rerun: !!w.rerun };
+}
+function waitNote(w) {
+  const names = w.files.map((f) => "`" + f + "`").join(" or ");
+  return `Not started: your step comes first: ${w.step.replace(/^\s*👤\s*(You:)?\s*/, "")} ${names ? `Your agent starts once ${names} changes.` : "Once it's done, click Start it now (or Start it anyway)."}`;
+}
+// Runs that waited for a file of yours, and were asked for, start once it changes.
+// The app calls this every so often. Returns the jobs started.
+function startWaiting() {
+  const started = [];
+  for (const r of loadRuns()) {
+    let w = null; try { w = JSON.parse(readSymbiot(r.path, WAITING)); } catch {}
+    if (!w || !w.rerun || !Array.isArray(w.files) || !w.files.length || runningHandoff(r.path)) continue;
+    if (waitingFor(r.path)) continue; // nothing it names has changed yet
+    const e = runHandoff(r.path); if (e && !e.busy && !e.blocked) started.push(e);
+  }
+  return started;
 }
 // ---- a run that would only report the same blockers again -------------------
 // A run that ends having asked questions (QUESTIONS.md written during it, some
@@ -400,9 +486,13 @@ function agentQuestions(path, repo) {
 }
 // Save answers to .symbiot/ANSWERS.md; opts.rerun hands the repo back to the
 // agent (same saved command) so it carries on with them.
+// An answer that picks a "👤 You:" option is a step for the user: they're told
+// it's still theirs (`yours`), and the next run waits for it (waiting.json).
+// A folder a run started in before a restart can be answered too (runs.json).
+const stepText = (a) => String(a).split("🤖")[0].replace(/^\s*👤\s*(You:)?\s*/, "").replace(/\s*\(recommended\)\s*$/i, "").trim();
 function answerQuestions(path, answers, opts = {}) {
   path = String(path || "");
-  if (!path || !HANDOFFS.some((e) => e.path === path)) return { error: "No agent has run in that folder." };
+  if (!path || !knownRun(path)) return { error: "No agent has run in that folder." };
   const open = new Map(agentQuestions(path, "").questions.map((x) => [qKey(x.q), x.q]));
   const rows = (Array.isArray(answers) ? answers : [])
     .map((x) => ({ q: open.get(qKey(x && x.q)), a: String((x && x.a) || "").replace(/^\s*#+/gm, "").trim().slice(0, 2000) }))
@@ -415,6 +505,15 @@ function answerQuestions(path, answers, opts = {}) {
     writeFileSync(join(path, ".symbiot", "ANSWERS.md"), prev.replace(/\s*$/, "\n") + rows.map((x) => `\n### ${x.q}\n${x.a}\n_answered ${day}_\n`).join(""));
   } catch (e) { return { error: "Couldn't write ANSWERS.md: " + ((e && e.message) || e) }; }
   const out = { ok: true, saved: rows.length };
+  const yours = rows.filter((x) => yourStep(x.a)).map((x) => stepText(x.a)).filter(Boolean);
+  if (yours.length) {
+    const step = yours.join(" "), files = namedFiles(rows.filter((x) => yourStep(x.a)).map((x) => x.a.split("🤖")[0]).join(" "), path);
+    try { writeFileSync(join(path, ".symbiot", WAITING), JSON.stringify({ step, files: files.map((f) => ({ ...f, sig: fileSig(f.path) })), at: Date.now(), rerun: !!opts.rerun })); } catch {}
+    const names = files.map((f) => "`" + f.name + "`").join(" or ");
+    out.yours = yours; if (files.length) out.waitFiles = files.map((f) => f.name);
+    out.note = "Answers saved. That step is still yours to do. " + (files.length ? `Your agent ${opts.rerun ? "starts by itself" : "can start"} once ${names} changes${opts.rerun ? " (while Symbiot runs)" : ""}.` : "Once it's done, click Start it now on this folder.");
+    return out;
+  }
   if (opts.rerun) { const e = runHandoff(path); if (e && e.busy) out.note = "Answers saved. An agent is still running in that folder, so another wasn't started. Send them again once it finishes."; else if (e && e.blocked) out.note = "Answers saved. " + e.note; else if (e) out.rerun = e.id; else out.note = "Answers saved. Set an agent command in Settings to have the agent pick them up automatically."; }
   return out;
 }
@@ -424,14 +523,16 @@ function heldTasks(path) {
   return md ? md.split("\n").filter((l) => /^\s*-\s*\[ \]/.test(l)).map((l) => l.replace(/^\s*-\s*\[ \]\s*/, "").trim().slice(0, 200)) : null;
 }
 // The Agents tab: every tracked job, its log tail, what it changed, and — on the
-// newest job per folder — the questions/ideas it left and any tasks held for it.
+// newest job per folder — the questions/ideas it left, any tasks held for it and
+// a step of yours it waits on. Then runs from before the app started that still
+// need you (earlierRuns).
 function agentsList() {
   const seen = new Set();
   return HANDOFFS.map((e) => {
     let tail = ""; try { tail = readFileSync(e.log, "utf8").slice(-1200); } catch {}
     const first = !seen.has(e.path); seen.add(e.path);
-    return { id: e.id, name: e.name, path: e.path, status: e.status, elapsed: (e.endedAt || Date.now()) - e.startedAt, exitCode: e.exitCode, tail, changed: agentChanges(e.path, e.startedAt), ask: first ? agentQuestions(e.path, e.name) : null, held: first ? heldTasks(e.path) : null, fromHeld: !!e.fromHeld };
-  });
+    return { id: e.id, name: e.name, path: e.path, status: e.status, elapsed: (e.endedAt || Date.now()) - e.startedAt, exitCode: e.exitCode, tail, changed: agentChanges(e.path, e.startedAt), ask: first ? agentQuestions(e.path, e.name) : null, held: first ? heldTasks(e.path) : null, waiting: first && e.status !== "running" ? waitingFor(e.path) : null, fromHeld: !!e.fromHeld };
+  }).concat(earlierRuns());
 }
 
-export { HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, connectorsInfo, fillHandoff, runHandoff, blockedAgain, runningHandoff, writeTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, agentQuestions, answerQuestions, agentsList };
+export { HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, connectorsInfo, fillHandoff, runHandoff, blockedAgain, runningHandoff, loadRuns, earlierRuns, namedFiles, waitingFor, startWaiting, writeTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, agentQuestions, answerQuestions, agentsList };

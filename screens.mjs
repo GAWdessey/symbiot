@@ -112,6 +112,28 @@ function stitchPng(pieces, h) {
   for (const { img, y } of imgs) { const to = Math.min(h, y + img.h); if (to > y) img.px.copy(px, y * first.stride, 0, (to - y) * img.stride); }
   return pngCrop({ ...first, h, px }, { x: 0, y: 0, w: first.w, h });
 }
+// One PNG of a window whose list scrolls inside it (Gmail's mail), as if the list
+// were opened out `more` pixels longer: the first shot down to the list's bottom,
+// the list's box ({ x, y, w, h } in the window) filled from each shot ({ png, y }:
+// the window with the list scrolled y down) at its place, the later one's kept
+// where they overlap, and what's below the list in the last shot moved down by
+// `more`. Beside the opened-out list, each column carries on in its colour at the
+// list's bottom edge. null when a shot can't be read, or they differ.
+function stitchListPng(pieces, box, more) {
+  const imgs = pieces.map((p) => ({ img: pngDecode(p.png), y: Math.max(0, Math.round(p.y) || 0) })), first = imgs.length && imgs[0].img;
+  if (!first || !box || imgs.some(({ img }) => !img || img.w !== first.w || img.h !== first.h || img.bpp !== first.bpp || img.ctype !== first.ctype || img.depth !== first.depth)) return null;
+  more = Math.max(0, Math.round(more) || 0);
+  const H = first.h, h = H + more, st = first.stride, bpp = first.bpp, end = Math.min(H, box.y + box.h), last = imgs[imgs.length - 1].img;
+  if (box.x < 0 || box.y < 0 || box.w <= 0 || box.x + box.w > first.w || end <= box.y) return null;
+  const px = Buffer.alloc(st * h);
+  first.px.copy(px, 0, 0, end * st);
+  for (let y = end; y < end + more; y++) first.px.copy(px, y * st, (end - 1) * st, end * st);
+  last.px.copy(px, (end + more) * st, end * st, H * st);
+  for (const { img, y: at } of imgs) {
+    for (let r = box.y; r < end && r + at < end + more; r++) img.px.copy(px, (r + at) * st + box.x * bpp, r * st + box.x * bpp, r * st + (box.x + box.w) * bpp);
+  }
+  return pngCrop({ ...first, h, px }, { x: 0, y: 0, w: first.w, h });
+}
 
 // Displays: where each one sits on the desktop, as { name, x, y, w, h } in the
 // units the click tool uses (logical pixels on Wayland, X pixels on X11, physical
@@ -378,14 +400,15 @@ function setRegions(id, regions) {
 }
 // A web page mapped in the hidden browser (headless.mjs): its screenshot, with a
 // region for each button, link and field found on it. `page` is { url, title,
-// scroll?, full? }: scroll is how far down the window is ({ y, max } in pixels, and
-// the selector of what scrolls when it isn't the page itself), when there's more;
-// full is set on a map of the whole page in one tall screenshot.
+// scroll?, full?, list? }: scroll is how far down the window is ({ y, max } in
+// pixels, and the selector of what scrolls when it isn't the page itself), when
+// there's more; full is set on a map of the whole page in one tall screenshot, and
+// list on one whose list (its selector) was opened out in it.
 function addPageScreen(name, png, page, regions) {
   const size = pngSize(png); if (!size) return { error: "The page's screenshot isn't a PNG." };
   const id = newId();
   try { mkdirSync(SCREENS_DIR, { recursive: true }); writePrivate(screenFile(id), png); } catch (e) { return { error: String((e && e.message) || e) }; }
-  const p = { url: String(page.url || "").slice(0, 2000), title: String(page.title || "").trim().slice(0, 200), ...(page.full ? { full: true } : {}) };
+  const p = { url: String(page.url || "").slice(0, 2000), title: String(page.title || "").trim().slice(0, 200), ...(page.full ? { full: true } : {}), ...(page.full && typeof page.list === "string" && page.list.trim() ? { list: page.list.trim().slice(0, 1000) } : {}) };
   const sc = page.scroll || {}, max = Math.round(Number(sc.max) || 0);
   if (max > 0) p.scroll = { y: Math.max(0, Math.min(max, Math.round(Number(sc.y) || 0))), max, ...(typeof sc.selector === "string" && sc.selector.trim() ? { selector: sc.selector.trim().slice(0, 1000) } : {}) };
   return addScreen(id, name, size, "headless", { page: p, regions: cleanRegions(size, regions) });
@@ -463,4 +486,4 @@ function clickRegion(id, regionId) {
   return { error: `No click tool found. Install ${want}.` };
 }
 
-export { loadScreens, screenImage, pngSize, pngDecode, splitPng, stitchPng, captureCmds, monitorCmds, parseCosmicRandr, parseWlrRandr, parseKscreen, parseXrandr, parseLines, tidyMonitors, monitorAreas, listMonitors, portalAppId, allowScreenshots, captureScreen, splitScreen, importScreen, setRegions, addPageScreen, renameScreen, removeScreen, blueprint, center, clickCmds, clickRegion };
+export { loadScreens, screenImage, pngSize, pngDecode, splitPng, stitchPng, stitchListPng, captureCmds, monitorCmds, parseCosmicRandr, parseWlrRandr, parseKscreen, parseXrandr, parseLines, tidyMonitors, monitorAreas, listMonitors, portalAppId, allowScreenshots, captureScreen, splitScreen, importScreen, setRegions, addPageScreen, renameScreen, removeScreen, blueprint, center, clickCmds, clickRegion };
