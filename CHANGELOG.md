@@ -2,6 +2,12 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.49.0
+
+- **Home by P.A.R.A.** The liquid groups everything Symbiot holds four ways: **Projects** (work with an end: Tasks, Agents, Todo, and what's asking you), **Areas** (what you keep up with: the Dashboard, your feeds, Week, Standup), **Resources** (to look things up in: Map, Drift, Settings) and the **Archive** (what's done). Each group has its own part of the screen and its name on the liquid; tap a name to open it. Projects move the most, the Archive is still, and Agents has spheres orbiting it while one works.
+- **The Dashboard as a stream.** Time runs left to right, one current per feed, "now" on the right. Each message is a bead placed when it arrived, amber when it's waiting for your reply. Point at one to read it and Draft a reply or Open it; each feed's Seen, Talk and Check now sit under its name. The cards are still there under "All of it as a list".
+- **Amber means it needs you, everywhere.** The liquid can tint a single droplet, so what's asking you glows amber at home and in the stream, in every look.
+
 ## 0.48.0
 
 - **Three looks, one switch.** Ferrofluid (glossy black liquid metal, lit like a studio), Glass (clear droplets that bend the colours behind them) and Pearl (silver lit like a product photo). Switch at the top left, next to the name; Ferrofluid is first. Panels follow the look.

@@ -255,7 +255,7 @@ function watchBoard(hours = 24, now = Date.now()) {
     const recent = d.news.filter((n) => n.watch === w.id && n.ts >= since && unseen(n, w)), k = kindOf(w.url), count = recent.filter((n) => needsYou(n, w)).length;
     const b = d.briefs.find((x) => x.watch === w.id && x.ts >= since && unseen(x, w));
     return { ...view(w), source: sourceOf(w.url), count, label: k ? `${count} ${k[count === 1 ? 0 : 1]}` : `${count} new`,
-      items: markNews(recent.slice(0, 8), [w]), ...(b ? { brief: { text: b.text, ts: b.ts, count: b.count } } : {}), ...(w.chat && w.chat.length ? { chat: w.chat } : {}) };
+      items: markNews(recent.slice(0, 8), [w]).map((n) => ({ ...n, need: needsYou(n, w) })), ...(b ? { brief: { text: b.text, ts: b.ts, count: b.count } } : {}), ...(w.chat && w.chat.length ? { chat: w.chat } : {}) };
   });
   return { hours, total: cards.reduce((s, c) => s + c.count, 0), cards, brief: briefOn() };
 }
