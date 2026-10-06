@@ -46,6 +46,7 @@ function setHandoffCmd(cmd) {
 // looked bare and became Bash(Bashnpm install:*:*).
 function grantRule(tool) {
   let t = String(tool || "").trim().replace(/^["'`]+|["'`]+$/g, "").trim();
+  if (/^-/.test(t)) return ""; // a flag (--allowedTools) is never a tool
   if (/^[A-Za-z]+\(.*\)$/.test(t)) return t;
   t = t.replace(/[()"'`]/g, "").replace(/:\*$/, "").trim();
   return t ? `Bash(${t}:*)` : "";
@@ -62,7 +63,7 @@ function grantAgent({ tool, dir } = {}) {
   if (!isClaudeCmd(cmd)) return { error: "Grants apply to the Claude agent command. Pick a Claude preset first, or edit the command directly." };
   if (tool) cmd = allowTool(cmd, grantRule(tool));
   if (dir) { const d = String(dir).trim(); if (d && !cmd.includes(`--add-dir "${d}"`)) cmd += ` --add-dir "${d}"`; }
-  cmd = cmd.replace(/\s+/g, " ").trim();
+  cmd = cmd.replace(/\s*"Bash\(-[^"]*\)"/g, "").replace(/\s+/g, " ").trim(); // and drop any flag that got in as a rule before
   cfg.agentCmd = cmd; saveConfig(cfg);
   return { ok: true, cmd };
 }
@@ -577,9 +578,27 @@ function agentQuestions(path, repo) {
 // say-so. "let agents read ~/x" / "allow /x" becomes --add-dir, "let agents run
 // \`tool\`" a grant for that tool (never sudo/rm), as Settings' grant boxes do. What's
 // granted isn't a step left for the user. Returns what was granted, or null.
-function grantFromStep(step) {
+// An allow list an agent proposed (.symbiot/allowlist.proposed.json) is turned on for
+// that folder only (.claude/settings.local.json, merged), unless it would let an agent
+// run anything at all (a shell, sudo, rm, Bash(*)): then it stays the user's step.
+const WIDE_RULE = /^Bash(\((\*|sudo|su|rm|bash|sh|zsh|dash|dd|mkfs|chmod|chown|eval|exec)\b[^)]*\))?$|^Bash\(\*/i;
+function installAllowlist(path) {
+  let p; try { p = JSON.parse(readFileSync(join(path, ".symbiot", "allowlist.proposed.json"), "utf8")).permissions || {}; } catch { return null; }
+  const list = (x) => (Array.isArray(x) ? x.filter((r) => typeof r === "string" && r.trim()).map((r) => r.trim()) : []);
+  const allow = list(p.allow), deny = list(p.deny), dirs = list(p.additionalDirectories);
+  if (!allow.length && !dirs.length) return null;
+  if (allow.some((r) => WIDE_RULE.test(r))) return null;
+  const f = join(path, ".claude", "settings.local.json");
+  let cur = {}; try { cur = JSON.parse(readFileSync(f, "utf8")); } catch {}
+  const perm = cur.permissions || {}, merge = (a, b) => [...new Set([...list(a), ...b])];
+  cur.permissions = { ...perm, allow: merge(perm.allow, allow), deny: merge(perm.deny, deny), additionalDirectories: merge(perm.additionalDirectories, dirs) };
+  try { mkdirSync(join(path, ".claude"), { recursive: true }); writeFileSync(f, JSON.stringify(cur, null, 2) + "\n", { mode: 0o600 }); } catch { return null; }
+  return [`the allow list for this folder (${allow.length} rule${allow.length === 1 ? "" : "s"})`];
+}
+function grantFromStep(step, path = "") {
   const t = String(step || "");
-  if (!/only you: a permission|\b(let|allow) (the )?agents?\b|\ballow (access|reading)\b/i.test(t)) return null;
+  if (path && /allowlist\.proposed\.json|settings\.local\.json|press allow|\ballow list\b/i.test(t)) { const g = installAllowlist(path); if (g) return g; }
+  if (!/only you: a permission|only you: what (this|the) agent|\b(let|allow) (the )?agents?\b|\ballow (access|reading)\b/i.test(t)) return null;
   const got = [];
   const dir = (t.match(/(~\/[^\s,;)`'"]+|\/(?:home|Users|opt|srv|mnt|media|tmp)\/[^\s,;)`'"]+)/) || [])[1];
   if (dir) { const d = dir.replace(/^~(?=\/)/, homedir()).replace(/[.]$/, ""); const r = grantAgent({ dir: d }); if (r && r.ok) got.push(d); }
@@ -609,7 +628,7 @@ function answerQuestions(path, answers, opts = {}) {
   const steps = rows.filter((x) => yourStep(x.a) || holdAnswer(x.a)).map((x) => yourStep(x.a) ? { step: stepText(x.a), named: x.a.split("🤖")[0] }
     : { step: (youOpts(x.q).map(stepText)[0] || x.a).trim(), named: [x.a, ...youOpts(x.q)].join(" ") });
   const granted = [];
-  const yours = steps.map((s) => s.step).filter(Boolean).filter((st) => { const g = grantFromStep(st); if (g) granted.push(...g); return !g; });
+  const yours = steps.map((s) => s.step).filter(Boolean).filter((st) => { const g = grantFromStep(st, path); if (g) granted.push(...g); return !g; });
   if (granted.length) out.granted = granted;
   if (yours.length) {
     const step = yours.join(" "), files = namedFiles(steps.map((s) => s.named).join(" "), path);
