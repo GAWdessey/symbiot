@@ -2,6 +2,13 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.47.0
+
+- **Tasks and agents in the liquid.** Opening Tasks or Agents re-forms the liquid: each agent at work is a sphere with small spheres revolving round it, named for what it's doing in plain words; work ready for your OK sits at the top; tasks waiting their turn sit below. One **Go** (or just say "go") starts everything waiting.
+- **Tags float on their spheres.** Each sphere carries just its name, floating with a shadow. Tap the sphere to open its tag for a line about it and **Open** for the details.
+- **Less to read.** An agent's block shows what it's doing and its to-do list; steps, files, tokens and cost are under "details".
+- **No stray box.** The moving silver edge round open panels is gone.
+
 ## 0.46.0 — 2026-10-06
 
 - **The Symbiot look on every part.** Whatever you open pools over the liquid as glass, with a slow silver edge: cards are glass, the main buttons chrome, the map's nodes small silver spheres.

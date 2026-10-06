@@ -26,7 +26,7 @@ import { linksState, linkSite, checkLink, unlinkSite } from "./links.mjs";
 import { mindState, forget } from "./mind.mjs";
 import { lanesTick, lanesState } from "./lanes.mjs";
 import { adaptState, noteUse } from "./adapt.mjs";
-import { homeState, homeAsk } from "./home.mjs";
+import { homeState, homeAsk, workScene, workGo } from "./home.mjs";
 import { phoneState, setPhoneLink, newCode, unpairPhone, pairComputer, forgetComputer, pollComputer, startPhone } from "./phone.mjs";
 
 // The in-app update installs the EXACT newest version (not the `latest` tag, which
@@ -280,6 +280,9 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       // Home (home.mjs): the liquid's live data, and its talk; Adapt (adapt.mjs): its
       // shape from how you use it (commit=1 when it wakes from rest, never mid-gesture).
       if (u.pathname === "/api/home") return json(res, homeState({ fresh: u.searchParams.get("fresh") === "1" }));
+      // the work scene: what agents are doing, what's waiting, what's ready; Go starts what's waiting
+      if (u.pathname === "/api/work") return json(res, workScene());
+      if (u.pathname === "/api/work/go" && req.method === "POST") return json(res, workGo());
       if (u.pathname === "/api/home/ask" && req.method === "POST") { const b = await readBody(req); return json(res, await homeAsk(b.question)); }
       if (u.pathname === "/api/adapt") return json(res, adaptState({ from: String(u.searchParams.get("from") || ""), commit: u.searchParams.get("commit") === "1", ...(u.searchParams.has("touch") ? { touch: u.searchParams.get("touch") === "1" } : {}) }));
       if (u.pathname === "/api/adapt/use" && req.method === "POST") { const b = await readBody(req); return json(res, noteUse(b)); }

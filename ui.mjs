@@ -19,8 +19,15 @@ body.lq-liquid.lq-light #liquid{background:#EDEFF3}
 #lq{position:absolute;inset:0;width:100%;height:100%;display:block}
 body.lq-forced #lq{display:none}
 #lqdrops{position:absolute;inset:0;pointer-events:none}
-.lqd{position:absolute;left:0;top:0;display:flex;flex-direction:column;align-items:center;gap:2px;min-height:44px;padding:8px 14px;border-radius:999px;border:1px solid rgba(220,228,240,.35);background:rgba(4,5,7,.72);backdrop-filter:blur(10px);color:#EEF2F8;font:600 14px/1.15 var(--sans);white-space:nowrap;cursor:pointer;pointer-events:auto;transition:opacity .5s ease;will-change:transform}
-.lqd small{font-weight:500;font-size:12px;color:#A9B3C2;max-width:300px;overflow:hidden;text-overflow:ellipsis}
+.lqd{position:absolute;left:0;top:0;display:flex;flex-direction:column;align-items:center;border-radius:999px;border:1px solid rgba(220,228,240,.35);background:rgba(4,5,7,.72);backdrop-filter:blur(10px);color:#EEF2F8;font:600 13.5px/1.2 var(--sans);pointer-events:auto;transition:opacity .5s ease,border-radius .25s ease;will-change:transform;box-shadow:0 16px 30px -12px rgba(0,0,0,.7),0 3px 8px rgba(0,0,0,.35)}
+.lqd .lt{all:unset;box-sizing:border-box;display:flex;align-items:center;justify-content:center;min-height:44px;padding:8px 15px;cursor:pointer;text-align:center;max-width:240px}
+.lqd .lt span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lqd .lgo{display:none;margin:4px 10px 10px;min-height:38px;padding:0 16px;border-radius:999px;border:1px solid #FFFFFF;background:linear-gradient(180deg,#FFFFFF 0%,#D2D8E1 44%,#8E97A6 56%,#E6EAF0 100%);color:#06080B;font:700 12.5px var(--sans);cursor:pointer}
+.lqd.open{z-index:5;border-radius:20px}.lqd.open .lt span{white-space:normal}.lqd.open .lt{max-width:280px}.lqd.open .lgo{display:block}
+.lqd .lt:focus-visible,.lqd .lgo:focus-visible{outline:2px solid currentColor;outline-offset:2px;border-radius:999px}
+.lqmb{min-height:44px;padding:8px 14px;border-radius:999px;border:1px solid rgba(220,228,240,.35);background:rgba(4,5,7,.72);backdrop-filter:blur(10px);color:#EEF2F8;font:600 13.5px var(--sans);cursor:pointer}
+body.lq-light .lqmb{background:rgba(255,255,255,.86);color:#10151C;border-color:rgba(20,30,45,.25)}
+.lqd small{display:none;font-weight:500;font-size:12px;line-height:1.35;color:#A9B3C2;max-width:260px;padding:0 15px 2px;text-align:center}.lqd.open small{display:block}
 .lqd.lq-you{border-color:rgba(255,255,255,.9)}
 .lqd:hover{border-color:rgba(255,255,255,.95)}
 .lqd:focus-visible,#lqcore:focus-visible,#lqask:focus-visible{outline:2px solid currentColor;outline-offset:3px}
@@ -33,7 +40,7 @@ body.lq-light.lq-contrast .lqd{background:#FFF;color:#000;border:2px solid #000}
 body.lq-light.lq-contrast .lqd small{color:#000}
 body.lq-solid .lqd,body.lq-solid .lqglass{backdrop-filter:none;background:#05070A}
 body.lq-light.lq-solid .lqd,body.lq-light.lq-solid .lqglass{background:#FFFFFF}
-body.lq-touch .lqd{min-height:48px;padding:11px 16px}
+body.lq-touch .lqd .lt{min-height:48px}
 body.lq-keys .lqd:focus{outline:2px solid currentColor;outline-offset:3px}
 #lqcore{position:absolute;left:0;top:0;min-height:44px;padding:0 16px;border:1px solid rgba(220,228,240,.22);border-radius:999px;background:rgba(4,5,7,.6);backdrop-filter:blur(8px);color:#C3CBD7;font:500 13px var(--sans);letter-spacing:.05em;cursor:pointer;transition:opacity .6s ease;white-space:nowrap}
 body.lq-light #lqcore{color:#2B3644;background:rgba(255,255,255,.78);border-color:rgba(20,30,45,.18)}
@@ -64,9 +71,6 @@ body.lq-talking .lqd{opacity:.55}
 body.lq-liquid.lq-pooled main{background:rgba(6,8,11,.86);backdrop-filter:blur(20px) saturate(1.25);border:1px solid transparent;background-clip:padding-box;box-shadow:0 0 0 1px rgba(214,222,234,.22),0 40px 90px -30px rgba(0,0,0,.85),inset 0 1px 0 rgba(255,255,255,.12)}
 body.lq-liquid.lq-light.lq-pooled main{background:rgba(246,248,251,.9);box-shadow:0 0 0 1px rgba(20,30,45,.14),0 40px 90px -40px rgba(20,30,45,.45),inset 0 1px 0 #FFFFFF}
 body.lq-liquid.lq-solid.lq-pooled main{backdrop-filter:none;background:var(--ink)}
-.lqedge{position:fixed;top:64px;left:max(12px,4vw);right:max(12px,4vw);bottom:88px;z-index:6;border-radius:24px;pointer-events:none;padding:1px;background:linear-gradient(115deg,rgba(255,255,255,.0) 0%,rgba(255,255,255,.75) 18%,rgba(140,150,166,.3) 32%,rgba(255,255,255,.0) 48%,rgba(230,236,244,.6) 66%,rgba(255,255,255,0) 82%);background-size:260% 260%;-webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude;animation:lqsheen 9s linear infinite;display:none}
-body.lq-liquid.lq-pooled .lqedge{display:block}
-@keyframes lqsheen{0%{background-position:0% 50%}100%{background-position:260% 50%}}
 body.lq-liquid .task,body.lq-liquid .agent,body.lq-liquid .rcard,body.lq-liquid .bcard,body.lq-liquid .drift,body.lq-liquid .q,body.lq-liquid .out,body.lq-liquid .tchat{background:linear-gradient(180deg,rgba(255,255,255,.075),rgba(255,255,255,.02));border:1px solid rgba(220,228,240,.16);border-radius:16px;box-shadow:inset 0 1px 0 rgba(255,255,255,.09),0 12px 30px -24px rgba(0,0,0,.9)}
 body.lq-liquid.lq-light .task,body.lq-liquid.lq-light .agent,body.lq-liquid.lq-light .rcard,body.lq-liquid.lq-light .bcard,body.lq-liquid.lq-light .drift,body.lq-liquid.lq-light .q,body.lq-liquid.lq-light .out,body.lq-liquid.lq-light .tchat{background:linear-gradient(180deg,#FFFFFF,#F2F4F8);border-color:rgba(20,30,45,.12);box-shadow:inset 0 1px 0 #FFFFFF,0 12px 28px -24px rgba(20,30,45,.5)}
 body.lq-liquid button.act{background:linear-gradient(180deg,#FFFFFF 0%,#D2D8E1 44%,#8E97A6 56%,#E6EAF0 100%);color:#06080B;border:1px solid rgba(255,255,255,.9);border-radius:999px;box-shadow:0 6px 18px -10px rgba(0,0,0,.7)}
@@ -80,6 +84,23 @@ body.lq-liquid.lq-light .tgroup{color:#3B4656}
 body.lq-liquid h2,body.lq-liquid h3{letter-spacing:-.01em}
 body.lq-liquid .fchip.on{background:linear-gradient(180deg,#FFFFFF,#C9D1DC);color:#06080B;border-color:#FFFFFF}
 body.lq-contrast.lq-liquid .task,body.lq-contrast.lq-liquid .agent{border:2px solid currentColor}
+
+/* the work scene: tasks and agents in the liquid, with spheres revolving round what's at work */
+#lqorbits{position:absolute;inset:0;pointer-events:none}
+.lqorbit{position:absolute;left:0;top:0;pointer-events:none;transition:opacity .5s ease}
+.lqorbit span{position:absolute;inset:0;animation:lqorbit 3.4s linear infinite}
+.lqorbit span:nth-child(2){animation-duration:4.6s;animation-delay:-1.6s}
+.lqorbit span:nth-child(3){animation-duration:5.8s;animation-delay:-3.9s;animation-direction:reverse}
+.lqorbit i{position:absolute;left:50%;top:0;width:10px;height:10px;margin:-5px 0 0 -5px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#FFFFFF 0%,#C9CFD9 35%,#6F7887 75%,#2A2F38 100%);box-shadow:0 0 8px rgba(255,255,255,.35)}
+.lqorbit.ask i{background:radial-gradient(circle at 35% 30%,#FFF4E2 0%,#F2A541 50%,#7A4A10 100%)}
+@keyframes lqorbit{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion: reduce){.lqorbit span{animation:none}.lqorbit span:nth-child(2){transform:rotate(120deg)}.lqorbit span:nth-child(3){transform:rotate(240deg)}}
+#lqgo,#lqback{display:none}
+body.lq-work #lqgo.on{display:inline-flex;position:absolute;left:50%;bottom:86px;transform:translateX(-50%);z-index:4;align-items:center;gap:8px;min-height:52px;padding:0 26px;border-radius:999px;border:1px solid #FFFFFF;background:linear-gradient(180deg,#FFFFFF 0%,#D2D8E1 44%,#8E97A6 56%,#E6EAF0 100%);color:#06080B;font:700 16px var(--sans);letter-spacing:.02em;cursor:pointer;box-shadow:0 16px 40px -16px rgba(0,0,0,.75)}
+body.lq-work #lqback{display:inline-flex;position:absolute;left:16px;top:52px;z-index:4;align-items:center;min-height:44px;padding:0 16px;border-radius:999px;border:1px solid rgba(220,228,240,.3);background:rgba(4,5,7,.6);backdrop-filter:blur(8px);color:#EEF2F8;font:600 14px var(--sans);cursor:pointer}
+body.lq-light.lq-work #lqback{background:rgba(255,255,255,.8);color:#10151C;border-color:rgba(20,30,45,.2)}
+body.lq-pooled #lqgo,body.lq-pooled #lqback,body.lq-pooled #lqorbits{display:none}
+.lqd.lq-ready{border-color:#F2A541}
 /* the live work of an agent: what it's doing, its to-dos, its steps, its files, its pace */
 .wk{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(260px,100%),1fr));gap:12px;margin-top:10px}
 .wkbox{border-radius:14px;padding:10px 12px;background:rgba(255,255,255,.035);border:1px solid rgba(220,228,240,.12)}
@@ -119,7 +140,7 @@ body.lq-light .wkfile .fb i{background:linear-gradient(90deg,#6F7887,#0F1720)}
 .steps span{font-size:11px;padding:2px 8px;border-radius:999px;border:1px solid rgba(220,228,240,.22);color:var(--faint);white-space:nowrap}
 .thinking{background:linear-gradient(90deg,#8C96A6 0%,#FFFFFF 40%,#8C96A6 60%,#8C96A6 100%);background-size:220% 100%;-webkit-background-clip:text;background-clip:text;color:transparent !important;animation:lqshim 2.2s linear infinite}
 body.lq-light .thinking{background-image:linear-gradient(90deg,#4A5565 0%,#0F1720 40%,#4A5565 60%,#4A5565 100%)}
-@media (prefers-reduced-motion: reduce){.lqedge,.wkdoing,.thinking,.orb.run,.wktodo.in_progress i{animation:none}}
+@media (prefers-reduced-motion: reduce){.wkdoing,.thinking,.orb.run,.wktodo.in_progress i{animation:none}}
 
 
 *{box-sizing:border-box}html,body{margin:0;height:100%}
@@ -273,7 +294,10 @@ label.check input{width:auto}
 </style></head><body>
 <div id="liquid" aria-label="Symbiot">
 <canvas id="lq" aria-hidden="true"></canvas>
+<div id="lqorbits"></div>
 <div id="lqdrops"></div>
+<button type="button" id="lqback">&lsaquo; Home</button>
+<button type="button" id="lqgo"></button>
 <button type="button" id="lqcore" title="talk to Symbiot"></button>
 <div id="lqmore"></div>
 <div id="lqtalk" aria-live="polite"></div>
@@ -296,7 +320,7 @@ label.check input{width:auto}
 <button class="tab" data-tab="settings">Settings</button>
 </div>
 <main>
-<div class="lqedge" aria-hidden="true"></div><div id="lqsinkrow"><button class="ghost" type="button" id="lqsink" title="close it: it sinks back into the liquid (Esc)">Sink back</button></div>
+<div id="lqsinkrow"><button class="ghost" type="button" id="lqsink" title="close it: it sinks back into the liquid (Esc)">Sink back</button></div>
 <section id="panel-map">
 <div class="profile muted" id="profile">Mapping your work&hellip;</div>
 <div class="maprow">
@@ -725,8 +749,8 @@ if(!w){if(run)h+="<div class='bar'><i></i></div>";if(pg)h+="<div class='wkstats'
 var stats=[];if(w.model)stats.push("<span class='wkstat'>"+esc(w.model.split('[')[0])+"</span>");stats.push("<span class='wkstat'><b>"+w.count+"</b> step"+(w.count===1?'':'s')+"</span>");
 if(w.turns!=null)stats.push("<span class='wkstat'><b>"+w.turns+"</b> turns</span>");if(w.tokens)stats.push("<span class='wkstat'><b>"+(w.tokens>999999?(w.tokens/1e6).toFixed(1)+'M':w.tokens>999?Math.round(w.tokens/1000)+'k':w.tokens)+"</b> tokens</span>");
 if(w.cost!=null)stats.push("<span class='wkstat'><b>$"+w.cost.toFixed(2)+"</b></span>");if(w.tests)stats.push("<span class='wktest"+(w.tests.failed?' bad':'')+"'>"+w.tests.passed+" passed &middot; "+w.tests.failed+" failed</span>");if(w.errors)stats.push("<span class='wktest bad'>"+w.errors+" error"+(w.errors>1?'s':'')+"</span>");
-h+="<div class='wkstats'>"+stats.join('')+"</div>";
 if(run&&w.doing)h+="<div class='wkdoing'>"+esc(w.doing)+"&hellip;</div>";
+var first=(w.final||'').split(String.fromCharCode(10))[0];if(!run&&first)h+="<div class='wkfinal'>"+esc(first.length>180?first.slice(0,179)+'\u2026':first)+"</div>";
 var boxes=[];
 if(w.todos&&w.todos.length||pg){var td="<div class='wkbox'><div class='wkh'>"+(pg?wkRing(pg.done,pg.total):'')+"<span>its to-do list</span></div>";
 (w.todos||[]).forEach(function(t){td+="<div class='wktodo "+esc(t.status)+"'><i></i><span>"+esc(t.status==='in_progress'?t.active:t.text)+"</span></div>";});
@@ -736,8 +760,9 @@ w.steps.slice(-10).forEach(function(x){sp+="<div class='wkstep "+esc(x.status)+"
 if(w.count>10)sp+="<div class='muted' style='font-size:11px;margin-top:4px'>and "+(w.count-10)+" earlier step"+(w.count-10>1?'s':'')+"</div>";boxes.push(sp+"</div>");}
 var fs=Object.keys(w.files||{});if(fs.length){var mx=Math.max.apply(null,fs.map(function(f){return w.files[f];}))||1,fb="<div class='wkbox'><div class='wkh'><span>files it changed</span></div>";
 fs.sort(function(x,y){return w.files[y]-w.files[x];}).slice(0,8).forEach(function(f){fb+="<div class='wkfile'><span class='fn'>"+esc(f)+"</span><span class='fb'><i style='width:"+Math.round(100*w.files[f]/mx)+"%'></i></span><span class='wm'>"+w.files[f]+"&times;</span></div>";});boxes.push(fb+"</div>");}
-if(boxes.length)h+="<div class='wk'>"+boxes.join('')+"</div>";
-if(!run&&w.final)h+="<div class='wkfinal'>"+esc(w.final)+"</div>";
+var todoBox=boxes.length&&(w.todos&&w.todos.length||pg)?boxes.shift():'';
+if(todoBox)h+="<div class='wk'>"+todoBox+"</div>";
+h+="<details class='wkraw'><summary>details: steps, files, cost</summary><div class='wkstats'>"+stats.join('')+"</div>"+(boxes.length?"<div class='wk'>"+boxes.join('')+"</div>":"")+(!run&&w.final?"<div class='wkfinal'>"+esc(w.final)+"</div>":"")+"</details>";
 return h;}
 function loadAgents(){loadLanes();api('/api/agents').then(function(list){var el=document.getElementById('agentslist');
 if(!list||!list.length){AGENTLIST=[];el.innerHTML="<div class='muted' style='margin-top:12px'>No agents yet. In <b>Tasks</b>, tick ideas and hit <b>Send to repos</b> (with an agent command set in Settings) &mdash; you'll watch it work here.</div>";stopAgentsPoll();return;}
@@ -1258,6 +1283,33 @@ function doUpdate(){updBusy=true;try{localStorage.setItem('symbiot_update_tried'
 setInterval(heartbeat,4000);heartbeat(true);
 window.addEventListener('focus',function(){heartbeat(true);}); // re-check for updates when you come back to the window
 
+
+// ---- the work scene ------------------------------------------------------------------
+// Tasks and agents, in the liquid: what each agent is doing (spheres revolve round
+// it while it works), what's done and waiting for your OK, and what's waiting its
+// turn. One Go starts what's waiting. A tap opens the details; nothing else to read.
+function lqWork(){LQ.scene='work';LQ.mode='aware';var b=document.body;if(b&&b.classList){b.classList.add('lq-work');b.classList.remove('lq-pooled');}lqLoadWork();
+if(LQ.workTimer)clearInterval(LQ.workTimer);LQ.workTimer=setInterval(function(){if(LQ.scene==='work'&&LQ.mode!=='pool')lqLoadWork();},5000);}
+function lqHome(){LQ.scene='home';var b=document.body;if(b&&b.classList){b.classList.remove('lq-work');b.classList.remove('lq-pooled');}if(LQ.workTimer){clearInterval(LQ.workTimer);LQ.workTimer=null;}LQ.mode='aware';lqLoad(true);}
+function lqLoadWork(){api('/api/work').then(function(w){LQ.workData=w||{};lqBuildWork();}).catch(function(){});}
+function lqBuildWork(){var w=LQ.workData||{},S=lqSize(),cx=S.w/2,cy=S.h*0.5,list=[];LQ.bw=S.w;LQ.bh=S.h;
+var vx=Math.max(0.5,Math.min(S.s*1.3,(S.w/2-90)/400)),vy=Math.max(0.35,Math.min(S.s*0.8,(S.h-cy-230)/400,(cy-160)/400)),rs=Math.min(S.s,(vx+vy)/1.5);
+var run=(w.running||[]).slice(0,3),ready=(w.ready||[]).slice(0,2),wait=(w.waiting||[]).slice(0,5),extra=(w.waitingCount||0)-wait.length;
+run.forEach(function(r,i){var ang=Math.PI+(i+1)*Math.PI/(run.length+1);var pg=r.progress?' · '+r.progress.done+' of '+r.progress.total+' done':'';
+list.push({id:r.id,kind:'run',shape:'agents',ask:r.waiting,title:r.doing,sub:r.name+pg+(r.waiting?' · has a question for you':''),r:58*rs,tx:cx+Math.cos(ang)*190*vx,ty:cy+Math.sin(ang)*130*vy});});
+ready.forEach(function(r,i){var ang=-Math.PI/2+(i-(ready.length-1)/2)*0.9;list.push({id:r.id,kind:'ready',shape:'tasks',title:'Ready for your OK',sub:r.repo+(r.count?' · '+r.count+' task'+(r.count>1?'s':'')+' done':''),r:48*rs,tx:cx+Math.cos(ang)*300*vx,ty:cy+Math.sin(ang)*300*vy});});
+wait.forEach(function(t,i){var ang=Math.PI/2+(i-(wait.length-1)/2)*0.55;list.push({id:t.id,kind:'wait',shape:'tasks',title:t.text,sub:t.repo+(t.busy?' · after the current one':' · waiting'),r:30*rs,tx:cx+Math.cos(ang)*300*vx,ty:cy+Math.sin(ang)*260*vy});});
+if(extra>0)list.push({id:'morewait',kind:'more',shape:'tasks',title:'+'+extra+' more waiting',sub:'see them all',r:24*rs,tx:S.w-Math.max(80,S.w*0.1),ty:S.h-230});
+lqRelax(list,S,cx,cy,60*rs);
+var old={};LQ.drops.forEach(function(d){old[d.id]=d;});
+LQ.drops=list.map(function(d){var o=old[d.id];d.x=o?o.x:cx;d.y=o?o.y:cy;d.vx=o?o.vx:0;d.vy=o?o.vy:0;d.cr=o?o.cr:0;return d;});
+var nr=(w.running||[]).length,nw=w.waitingCount||0,nk=(w.ready||[]).length;
+LQ.coreText=(nr?nr+' at work':'Nobody at work')+(nw?' · '+nw+' waiting':'')+(nk?' · '+nk+' ready for your OK':'');
+var go=$('lqgo');if(go){var n=w.canGo||0;go.textContent=n?'Go \u00b7 start '+n+' task'+(n>1?'s':''):'';if(go.classList)go.classList.toggle('on',n>0);}
+lqLabels();}
+function lqGoWork(){var go=$('lqgo');if(go)go.disabled=true;api('/api/work/go',{}).then(function(r){if(go)go.disabled=false;
+var t=r&&r.error?r.error:r.started||r.queued?(r.started?'Started '+r.started:'')+(r.started&&r.queued?', ':'')+(r.queued?r.queued+' queued behind work already going':'')+'.':(r&&r.note)||'Nothing waiting to start.';
+LQ.talk.push({me:false,text:t});LQ.talk=LQ.talk.slice(-8);lqTalkShow(false);LQ.ripple=[0.5,0.5,LQ.t];lqLoadWork();}).catch(function(){if(go)go.disabled=false;});}
 // ---- the liquid: the app's home ---------------------------------------------------
 // One silver surface is the app. Its droplets: what only you can do, what's new on
 // what you watch, and the parts of the app, sized and placed from how you use them
@@ -1277,7 +1329,7 @@ if(a.style.color){var ca=getComputedStyle(a).color,cb=getComputedStyle(b).color;
 var bd=document.body;if(bd&&bd.classList){bd.classList.toggle('lq-light',th.light);bd.classList.toggle('lq-contrast',th.contrast);bd.classList.toggle('lq-solid',th.solid||th.contrast);bd.classList.toggle('lq-forced',th.forced);}
 LQ.theme=th;return th;}
 function lqSize(){var el=$('liquid');var w=(el&&el.clientWidth)||window.innerWidth||1280,h=(el&&el.clientHeight)||window.innerHeight||800;return {w:w,h:h,s:Math.max(0.55,Math.min(1.15,Math.min(w,h)/860))};}
-function lqLoad(commit){Promise.all([api('/api/adapt?from='+encodeURIComponent(LQ.last)+(commit?'&commit=1':'')+(LQ.touch?'&touch=1':'')),api('/api/home')]).then(function(r){LQ.adapt=r[0]||{};LQ.home=r[1]||{};lqBuild();}).catch(function(){});}
+function lqLoad(commit){if(LQ.scene==='work'){lqLoadWork();return;}Promise.all([api('/api/adapt?from='+encodeURIComponent(LQ.last)+(commit?'&commit=1':'')+(LQ.touch?'&touch=1':'')),api('/api/home')]).then(function(r){LQ.adapt=r[0]||{};LQ.home=r[1]||{};lqBuild();}).catch(function(){});}
 function lqBuild(){var a=LQ.adapt||{},h=LQ.home||{},S=lqSize(),cx=S.w/2,cy=S.h*0.47,list=[];LQ.bw=S.w;LQ.bh=S.h;
 var you=(h.you||[]).slice(0,3),feeds=(h.feeds||[]).slice(0,2),lay=(a.layout&&a.layout.items)||[],more=((a.layout&&a.layout.more)||[]).slice();
 var vx=Math.max(0.5,Math.min(S.s*1.3,(S.w/2-90)/400)),vy=Math.max(0.35,Math.min(S.s*0.8,(S.h-cy-230)/400,(cy-160)/400));var rs=Math.min(S.s,(vx+vy)/1.5);var room=Math.max(3,LQ_MAX-you.length-feeds.length-1);lay.slice(room).forEach(function(it){more.push(it.id);});
@@ -1305,31 +1357,38 @@ lqLabels();}
 // bridge (r²/d² fields sum to 1 midway at d = 2·√(r1²+r2²)), with a margin so the
 // wobble can't flicker a bridge open and shut, and room for their labels when
 // they share a column. Used once, when the layout is solved; nothing fights it live.
-function lqSep(a,b,dx){return Math.max(a.r+b.r+70,2.4*Math.sqrt(a.r*a.r+b.r*b.r))+(Math.abs(dx)<150?48:0);}
+// Tags float on their spheres, so two on the same row also keep a tag's width apart.
+function lqSep(a,b,dx,dy){var m=Math.max(a.r+b.r+70,2.4*Math.sqrt(a.r*a.r+b.r*b.r))+(Math.abs(dx)<150?48:0);return dy!=null&&Math.abs(dy)<56?Math.max(m,232):m;}
 // Solve the layout: push targets apart until every pair keeps lqSep (and clear
 // of the core), within the screen. If they can't all fit, every droplet gives up
 // a little of its size (the liquid is conserved, not crowded) and it solves again.
 function lqRelax(L,S,cx,cy,coreR){var n=L.length;
 for(var pass=0;pass<6;pass++){
 for(var it=0;it<220;it++){var moved=0;for(var i=0;i<n;i++){var a=L[i];
-for(var j=i+1;j<n;j++){var b=L[j],dx=a.tx-b.tx,dy=a.ty-b.ty,dd=Math.sqrt(dx*dx+dy*dy)||0.01,mn=lqSep(a,b,dx);if(dd<mn){var f=(mn-dd)/2/dd;a.tx+=dx*f;a.ty+=dy*f;b.tx-=dx*f;b.ty-=dy*f;moved++;}}
+for(var j=i+1;j<n;j++){var b=L[j],dx=a.tx-b.tx,dy=a.ty-b.ty,dd=Math.sqrt(dx*dx+dy*dy)||0.01,mn=lqSep(a,b,dx,dy);if(dd<mn){var f=(mn-dd)/2/dd;a.tx+=dx*f;a.ty+=dy*f;b.tx-=dx*f;b.ty-=dy*f;moved++;}}
 var cdx=a.tx-cx,cdy=a.ty-cy,cd=Math.sqrt(cdx*cdx+cdy*cdy)||0.01,cm=Math.max(a.r+coreR+70,2.4*Math.sqrt(a.r*a.r+coreR*coreR));if(cd<cm){a.tx+=cdx*(cm-cd)/cd;a.ty+=cdy*(cm-cd)/cd;moved++;}
 a.tx=Math.max(a.r+60,Math.min(S.w-a.r-60,a.tx));a.ty=Math.max(140+a.r,Math.min(S.h-200-a.r,a.ty));}if(!moved)break;}
-var bad=false;for(var i2=0;i2<n&&!bad;i2++)for(var j2=i2+1;j2<n;j2++){var p=L[i2],q=L[j2],ddx=p.tx-q.tx,ddy=p.ty-q.ty;if(Math.sqrt(ddx*ddx+ddy*ddy)<lqSep(p,q,ddx)-1){bad=true;break;}}
+var bad=false;for(var i2=0;i2<n&&!bad;i2++)for(var j2=i2+1;j2<n;j2++){var p=L[i2],q=L[j2],ddx=p.tx-q.tx,ddy=p.ty-q.ty;if(Math.sqrt(ddx*ddx+ddy*ddy)<lqSep(p,q,ddx,ddy)-1){bad=true;break;}}
 if(!bad)return true;L.forEach(function(x){x.r*=0.9;});coreR*=0.9;}return false;}
 function lqLabels(){var el=$('lqdrops');if(!el)return;
-el.innerHTML=LQ.drops.map(function(d,i){return "<button type='button' class='lqd lq-"+d.kind+"' data-i='"+i+"'><span>"+esc(d.title)+"</span>"+(d.sub?"<small>"+esc(d.sub)+"</small>":"")+"</button>";}).join('');
-LQ.btns=[];el.querySelectorAll('.lqd').forEach(function(b){LQ.btns.push(b);b.addEventListener('click',function(ev){lqOpen(LQ.drops[+b.getAttribute('data-i')],ev);});});
+el.innerHTML=LQ.drops.map(function(d,i){return "<div class='lqd lq-"+d.kind+(LQ.openTag===d.id?' open':'')+"' data-i='"+i+"'><button type='button' class='lt' aria-expanded='"+(LQ.openTag===d.id)+"'><span>"+esc(d.title)+"</span></button>"+(d.sub?"<small>"+esc(d.sub)+"</small>":"")+"<button type='button' class='lgo'>Open &rsaquo;</button></div>";}).join('');
+LQ.btns=[];LQ.lts=[];el.querySelectorAll('.lqd').forEach(function(b){LQ.btns.push(b);var d=LQ.drops[+b.getAttribute('data-i')],lt=b.querySelector('.lt'),go=b.querySelector('.lgo');LQ.lts.push(lt);
+if(lt)lt.addEventListener('click',function(ev){if(d.kind==='more'){lqOpen(d,ev);return;}lqTag(d.id);});
+if(go)go.addEventListener('click',function(ev){LQ.openTag=null;lqOpen(d,ev);});});
+var oe=$('lqorbits');if(oe){oe.innerHTML=LQ.drops.map(function(d,i){return d.kind==='run'?"<div class='lqorbit"+(d.ask?' ask':'')+"' data-i='"+i+"'><span><i></i></span><span><i></i></span><span><i></i></span></div>":'';}).join('');LQ.orbs=[];oe.querySelectorAll('.lqorbit').forEach(function(o){LQ.orbs.push(o);});}
 LQ.drops.forEach(function(d){if(d.x===d.tx&&d.y===d.ty)return;if(!LQ.frame){d.x=d.tx;d.y=d.ty;d.cr=d.r;}});lqStep();
 var c=$('lqcore');if(c)c.textContent=LQ.coreText||'';}
+// Tapping a sphere (or its name) opens its tag; tapping it again, or elsewhere, closes it.
+function lqTag(id){LQ.openTag=LQ.openTag===id?null:id;lqAct();LQ.btns.forEach(function(b,i){var d=LQ.drops[+b.getAttribute('data-i')],on=!!d&&d.id===LQ.openTag;if(b.classList)b.classList.toggle('open',on);var lt=LQ.lts&&LQ.lts[i];if(lt&&lt.setAttribute)lt.setAttribute('aria-expanded',on?'true':'false');});}
 function lqVia(ev){return LQ.talking?'talk':ev&&ev.pointerType==='touch'?'touch':ev&&ev.detail===0?'key':'click';}
 function lqUse(shape,ev,via){api('/api/adapt/use',{shape:shape,from:LQ.last,via:via||lqVia(ev)});LQ.last=shape;}
 function lqOpen(d,ev){if(!d)return;lqAct();
 if(d.kind==='more'){LQ.moreOpen=!LQ.moreOpen;lqMore(d);return;}
-var S=lqSize();LQ.ripple=[d.x/S.w,d.y/S.h,LQ.t];lqUse(d.shape||'board',ev);lqPool(d.shape||'board');}
+var S=lqSize();LQ.ripple=[d.x/S.w,d.y/S.h,LQ.t];if(LQ.scene==='work'){lqPool(d.shape||'agents');return;}lqUse(d.shape||'board',ev);lqGo(d.shape||'board');}
 function lqMore(d){var el=$('lqmore');if(!el)return;if(!LQ.moreOpen||!d){el.innerHTML='';return;}
-el.innerHTML=(d.more||[]).map(function(s){return "<button type='button' class='lqd lqm' style='position:static' data-s='"+s+"'><span>"+esc(LQNAMES[s]||s)+"</span></button>";}).join('');
-el.querySelectorAll('.lqm').forEach(function(b){b.addEventListener('click',function(ev){var s=b.getAttribute('data-s');LQ.moreOpen=false;el.innerHTML='';lqUse(s,ev);lqPool(s);});});}
+el.innerHTML=(d.more||[]).map(function(s){return "<button type='button' class='lqmb lqm' data-s='"+s+"'>"+esc(LQNAMES[s]||s)+"</button>";}).join('');
+el.querySelectorAll('.lqm').forEach(function(b){b.addEventListener('click',function(ev){var s=b.getAttribute('data-s');LQ.moreOpen=false;el.innerHTML='';lqUse(s,ev);lqGo(s);});});}
+function lqGo(shape){if(shape==='tasks'||shape==='agents'){lqWork();return;}lqPool(shape);}
 function lqPool(shape){tabPicked=true;setTab(shape);var b=document.body;if(b&&b.classList)b.classList.add('lq-pooled');LQ.mode='pool';var m=document.querySelector('main');if(m&&m.focus)m.focus();}
 function lqSink(){var b=document.body;if(b&&b.classList)b.classList.remove('lq-pooled');LQ.mode='aware';lqAct();lqLoad(false);}
 function lqAct(){LQ.lastAct=Date.now();if(LQ.mode==='rest'){LQ.mode='aware';lqLoad(true);}}
@@ -1338,12 +1397,14 @@ function lqTalkShow(wait){var el=$('lqtalk');if(!el)return;el.innerHTML=LQ.talk.
 function lqSay(){var i=$('lqask');var q=((i&&i.value)||'').trim();if(!q)return;i.value='';lqAct();
 var low=q.toLowerCase().replace(/^(please |can you |could you )/,''),hit='';
 Object.keys(LQNAMES).forEach(function(k){var nm=LQNAMES[k].toLowerCase();if(hit)return;['open ','show ','go to ','take me to '].forEach(function(v){if(low.indexOf(v+nm)===0||low.indexOf(v+'my '+nm)===0)hit=k;});if(low===nm)hit=k;});
-if(hit){lqTalkMode(true);lqUse(hit,null,'talk');lqPool(hit);return;}
+if(hit){lqTalkMode(true);lqUse(hit,null,'talk');lqGo(hit);return;}
+if(/^(go|start|go for it|start them|start it)[.! ]*$/.test(low)){lqTalkMode(true);lqGoWork();return;}
+if(/^(home|back)[.! ]*$/.test(low)&&LQ.scene==='work'){lqHome();return;}
 LQ.talk.push({me:true,text:q});LQ.talk=LQ.talk.slice(-8);lqTalkShow(true);
 api('/api/home/ask',{question:q}).then(function(r){LQ.talk.push({me:false,steps:r.steps||[],text:r.error==='not-connected'?'Connect an AI in Settings to talk to me. Say "open settings".':(r.answer||r.error||'(no answer)')});LQ.talk=LQ.talk.slice(-8);lqTalkShow(false);LQ.ripple=[0.5,0.47,LQ.t];lqLoad(false);}).catch(function(e){LQ.talk.push({me:false,text:String((e&&e.message)||e)});lqTalkShow(false);});}
 // The physics: each droplet a critically damped spring to its place (no wobble,
 // no overshoot), pushed off its neighbours and the core where they'd overlap.
-function lqStep(){var S0=lqSize();if(LQ.adapt&&(S0.w!==LQ.bw||S0.h!==LQ.bh))lqBuild();var S=S0,cx=S.w/2,cy=S.h*0.47,k=0.022,c=2*Math.sqrt(k),th=LQ.theme,still=th.still,rest=LQ.mode==='rest',pool=LQ.mode==='pool',talk=LQ.talking&&!pool;
+function lqStep(){var S0=lqSize();if(S0.w!==LQ.bw||S0.h!==LQ.bh){if(LQ.scene==='work'&&LQ.workData)lqBuildWork();else if(LQ.adapt)lqBuild();}var S=S0,cx=S.w/2,cy=S.h*0.47,k=0.022,c=2*Math.sqrt(k),th=LQ.theme,still=th.still,rest=LQ.mode==='rest',pool=LQ.mode==='pool',talk=LQ.talking&&!pool;
 var core=LQ.core,ctx=cx,cty=talk?S.h-44:cy,ctr=(rest?140:pool?50:talk?54+30*(LQ.talkWeight||0.35):92)*S.s;
 if(!core.x){core.x=cx;core.y=cy;}core.x+=(ctx-core.x)*(still?1:0.06);core.y+=(cty-core.y)*(still?1:0.06);core.cr+=(ctr-core.cr)*(still?1:0.05);
 var D=LQ.drops,N=D.length;
@@ -1355,7 +1416,8 @@ var ax=k*(tx-d.x)-c*d.vx,ay=k*(ty-d.y)-c*d.vy;
 if(still){d.x=tx;d.y=ty;d.vx=0;d.vy=0;}else{d.vx+=ax;d.vy+=ay;d.x+=d.vx;d.y+=d.vy;}
 if(!rest&&!pool){d.x=Math.max(d.cr+12,Math.min(S.w-d.cr-12,d.x));d.y=Math.max(140+d.cr,Math.min(S.h-150-d.cr-50,d.y));}
 d.cr+=(tr-d.cr)*(still?1:0.06);
-var b=LQ.btns[i];if(b&&b.offsetWidth)d.lw=b.offsetWidth;if(b&&b.style){var up=d.y<core.y-core.cr*0.3;b.style.transform='translate('+Math.round(d.x)+'px,'+Math.round(up?d.y-d.cr-10:d.y+d.cr+10)+'px) translateX(-50%)'+(up?' translateY(-100%)':'');var show=!rest&&!pool;b.style.opacity=show?'1':'0';b.style.pointerEvents=show?'auto':'none';b.tabIndex=show?0:-1;}}
+var b=LQ.btns[i];if(b&&b.offsetWidth)d.lw=b.offsetWidth;if(b&&b.style){b.style.transform='translate('+Math.round(d.x)+'px,'+Math.round(d.y)+'px) translate(-50%,-50%)';var show=!rest&&!pool;b.style.opacity=show?'1':'0';b.style.pointerEvents=show?'auto':'none';var lt=LQ.lts&&LQ.lts[i];if(lt)lt.tabIndex=show?0:-1;}}
+(LQ.orbs||[]).forEach(function(o){var d=D[+o.getAttribute('data-i')];if(!d||!o.style)return;var R=Math.round(d.cr+20);o.style.width=o.style.height=(2*R)+'px';o.style.transform='translate('+Math.round(d.x-R)+'px,'+Math.round(d.y-R)+'px)';o.style.opacity=rest||pool?'0':'1';});
 var cb=$('lqcore');if(cb&&cb.style){cb.style.transform='translate('+Math.round(cx)+'px,'+(rest?Math.round(core.y+core.cr+18):56)+'px) translateX(-50%)';var ct=rest?(LQ.coreText||'All handled'):talk||pool?'':(LQ.coreText||'');cb.textContent=ct;cb.style.opacity=ct?'1':'0';cb.style.pointerEvents=ct?'auto':'none';}}
 // The liquid: a metaball surface (Σ r²/d² = 1) shaded as chrome, on the GPU.
 var LQ_FS=['precision highp float;',
@@ -1404,11 +1466,13 @@ gl.uniform1f(U.uLight,th.light?1:0);gl.uniform1f(U.uContrast,th.contrast?1:0);va
 gl.drawArrays(gl.TRIANGLES,0,3);}
 function lqInit(){var bd=document.body;if(!bd||!bd.classList)return;lqTheme();bd.classList.add('lq-liquid');
 ['(prefers-color-scheme: light)','(prefers-contrast: more)','(forced-colors: active)','(prefers-reduced-transparency: reduce)','(prefers-reduced-motion: reduce)'].forEach(function(q){try{var mq=window.matchMedia&&window.matchMedia(q);if(mq&&mq.addEventListener)mq.addEventListener('change',lqTheme);else if(mq&&mq.addListener)mq.addListener(lqTheme);}catch(e){}});
-var L=$('liquid');if(L&&L.addEventListener){L.addEventListener('pointermove',function(ev){LQ.pointer=[ev.clientX,ev.clientY];if(ev.pointerType==='touch')LQ.touch=true;lqAct();});L.addEventListener('pointerdown',function(ev){if(ev.pointerType==='touch')LQ.touch=true;lqAct();});}
+var L=$('liquid');if(L&&L.addEventListener){L.addEventListener('click',function(ev){var t=ev&&ev.target;if(t&&t.closest&&t.closest('button,input,form,.lqd'))return;var x=ev.clientX,y=ev.clientY,hit=null;LQ.drops.forEach(function(d){if(!hit&&Math.hypot(x-d.x,y-d.y)<=d.cr+8)hit=d;});if(hit){if(hit.kind==='more')lqOpen(hit,ev);else lqTag(hit.id);}else if(LQ.openTag)lqTag(LQ.openTag);});L.addEventListener('pointermove',function(ev){LQ.pointer=[ev.clientX,ev.clientY];if(ev.pointerType==='touch')LQ.touch=true;lqAct();});L.addEventListener('pointerdown',function(ev){if(ev.pointerType==='touch')LQ.touch=true;lqAct();});}
 var f=$('lqform');if(f&&f.addEventListener)f.addEventListener('submit',function(ev){if(ev&&ev.preventDefault)ev.preventDefault();lqSay();});
-var ia=$('lqask');if(ia&&ia.addEventListener){ia.addEventListener('focus',function(){lqTalkMode(true);lqAct();});ia.addEventListener('blur',function(){if(!ia.value&&!LQ.talk.length)lqTalkMode(false);});ia.addEventListener('keydown',function(ev){if(ev&&ev.key==='Escape'){if(LQ.mode==='pool'){lqSink();return;}ia.value='';LQ.talk=[];lqTalkShow(false);lqTalkMode(false);if(ia.blur)ia.blur();}});}
+var ia=$('lqask');if(ia&&ia.addEventListener){ia.addEventListener('focus',function(){lqTalkMode(true);lqAct();});ia.addEventListener('blur',function(){if(!ia.value&&!LQ.talk.length)lqTalkMode(false);});ia.addEventListener('keydown',function(ev){if(ev&&ev.key==='Escape'){if(LQ.mode==='pool'){lqSink();return;}if(LQ.scene==='work'&&!ia.value){lqHome();return;}ia.value='';LQ.talk=[];lqTalkShow(false);lqTalkMode(false);if(ia.blur)ia.blur();}});}
 var co=$('lqcore');if(co&&co.addEventListener)co.addEventListener('click',function(){var i=$('lqask');if(i&&i.focus)i.focus();});
 var sk=$('lqsink');if(sk&&sk.addEventListener)sk.addEventListener('click',lqSink);
+var bk=$('lqback');if(bk&&bk.addEventListener)bk.addEventListener('click',lqHome);
+var gb=$('lqgo');if(gb&&gb.addEventListener)gb.addEventListener('click',lqGoWork);
 var mn=document.querySelector('main');if(mn&&mn.addEventListener)mn.addEventListener('keydown',function(ev){if(ev&&ev.key==='Escape')lqSink();});
 lqLoad(true);
 // the only clocks: rest when left alone, fresh data now and then, the hour (night)

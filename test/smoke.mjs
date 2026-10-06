@@ -195,6 +195,8 @@ const calls = [
   ["/api/screens/trusted/add", "POST"],    // no site -> refused, nothing saved
   ["/api/screens/trusted/remove", "POST"],
   ["/api/screens/signin", "POST"],  // no site -> refused, no window opens
+  ["/api/work", "GET"],             // the work scene: who's at work, what's waiting, what's ready
+  ["/api/work/go", "POST"],         // nothing waiting in the isolated HOME -> starts nothing
   ["/api/home", "GET"],             // the liquid's live data (isolated HOME -> empty)
   ["/api/home/ask", "POST"],        // no question -> "empty", no model call
   ["/api/adapt", "GET"],            // its shape from how it's used
