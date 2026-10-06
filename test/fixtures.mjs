@@ -319,7 +319,12 @@ try {
     // a step with no file to watch waits for Start it now (force)
     writeFileSync(s + "QUESTIONS.md", "## Questions\\n### Allow gh?\\n- 👤 You: allow gh in Settings. 🤖 Agent: the next run creates the ruleset\\n");
     out.answer2 = a.answerQuestions(dir, [{ q: "Allow gh?", a: "👤 You: allow gh in Settings. 🤖 Agent: the next run creates the ruleset" }], { rerun: true });
-    out.held2 = a.runHandoff(dir); out.forced = !!(await run(a.runHandoff(dir, { force: true }))).pid; out.cleared2 = !existsSync(s + "waiting.json");`);
+    out.held2 = a.runHandoff(dir); out.forced = !!(await run(a.runHandoff(dir, { force: true }))).pid; out.cleared2 = !existsSync(s + "waiting.json");
+    // ...or for the agent command to change: Allow command in Settings is that step done
+    writeFileSync(s + "QUESTIONS.md", "## Questions\\n### Allow gh again?\\n- 👤 You: allow gh in Settings\\n");
+    out.answer3 = a.answerQuestions(dir, [{ q: "Allow gh again?", a: "👤 You: allow gh in Settings" }], { rerun: true });
+    out.wait3 = a.waitingFor(dir); out.none3 = a.startWaiting().length;
+    a.setHandoffCmd(a.handoffCmd() + " # gh allowed"); out.wait3b = a.waitingFor(dir); const st3 = a.startWaiting(); out.started3 = st3.length; await run(st3[0]);`);
   const ee = ((er2.list || []).find((e) => e.path === erDir)) || {};
   ok("after a restart, a run that stopped on questions is listed, marked earlier, with its questions", ee.earlier === true && ee.status === "done" && ((ee.ask || {}).questions || []).length === 1 && /WA_WABA_ID/.test(ee.tail || ""), ee);
   ok("...and its questions can be answered there; a folder no run started in can't", /No agent has run/.test((er2.unknown || {}).error || ""), er2.unknown);
@@ -328,6 +333,7 @@ try {
   ok("...a send in the meantime starts nothing, and the Agents tab shows what it waits on", er2.held && er2.held.blocked && er2.held.waiting && /your step comes first: put it in `\.env`/.test(er2.held.note || "") && er2.listWait && er2.listWait.waiting && er2.listWait.waiting.files[0] === ".env" && er2.none === 0, [er2.held, er2.listWait && er2.listWait.waiting]);
   ok("...once .env changes, the agent starts by itself", er2.started === 1 && er2.cleared, [er2.started, er2.cleared]);
   ok("a step with no file named waits for Start it now; the 🤖 Agent part isn't the user's step", er2.answer2 && JSON.stringify(er2.answer2.yours) === '["allow gh in Settings."]' && !er2.answer2.waitFiles && er2.held2 && er2.held2.blocked && /Start it now/.test(er2.held2.note || "") && er2.forced && er2.cleared2, [er2.answer2, er2.held2, er2.forced]);
+  ok("a step in Settings waits for the agent command too, says so, and a changed command starts the run", er2.answer3 && /once the agent command \(Settings → Handoff\) changes/.test(er2.answer3.note || "") && er2.wait3 && er2.wait3.cmd && er2.none3 === 0 && er2.wait3b === null && er2.started3 === 1, [er2.answer3, er2.wait3, er2.none3, er2.wait3b, er2.started3]);
 
   console.log("TASKS — an approved Drop or Merge task removes the tasks it names, so they don't come back");
   const ap = Date.now(), tk = (id, text, extra = {}) => ({ id, text, repo: "wa", done: false, ts: ap - 1000, ...extra });
@@ -604,11 +610,15 @@ try {
   // an idea for another project names it: an agent on coral with an idea for Symbiot
   const aqDir = join(ROOT, "aq"), aqHome = join(ROOT, "aqhome");
   mkdirSync(join(aqDir, ".symbiot"), { recursive: true }); mkdirSync(join(aqHome, ".config", "symbiot"), { recursive: true });
-  writeFileSync(join(aqDir, ".symbiot", "QUESTIONS.md"), "## Suggestions\n- [repo: symbiot] Watch GitHub too\n- Cache the map scan\n- [Repo:coral]  Same repo, named\n- [WIP] Not a repo tag\n");
+  writeFileSync(join(aqDir, ".symbiot", "QUESTIONS.md"), "## Questions\n### Which way?\n- 🤖 Agent: A (recommended)\n- 🤖 Agent: B\n- 🤖 Agent: C\n\n## Suggestions\n- [repo: symbiot] Watch GitHub too\n- [repo: symbiot] Watch Jira too\n- Cache the map scan\n- [Repo:coral]  Same repo, named\n- [WIP] Not a repo tag\n");
   writeFileSync(join(aqHome, ".config", "symbiot", "tasks.json"), JSON.stringify([{ id: "a", text: "Watch GitHub too", repo: "symbiot", done: false }]));
-  const aq = spawnSync(process.execPath, ["--input-type=module", "-e", `import { agentQuestions } from ${JSON.stringify(join(dirname(INDEX), "agents.mjs"))}; console.log(JSON.stringify(agentQuestions(${JSON.stringify(aqDir)}, "coral").suggestions));`], { encoding: "utf8", env: { ...process.env, HOME: aqHome, USERPROFILE: aqHome } });
-  let ideas = []; try { ideas = JSON.parse(aq.stdout); } catch { console.log(aq.stdout, aq.stderr); }
-  ok("an idea starting [repo: symbiot] goes to symbiot's tasks (and shows it's there), not the agent's repo's", ideas[0] && ideas[0].text === "Watch GitHub too" && ideas[0].repo === "symbiot" && ideas[0].other && ideas[0].added, ideas[0]);
+  const aq = spawnSync(process.execPath, ["--input-type=module", "-e", `import { agentQuestions } from ${JSON.stringify(join(dirname(INDEX), "agents.mjs"))}; console.log(JSON.stringify(agentQuestions(${JSON.stringify(aqDir)}, "coral")));`], { encoding: "utf8", env: { ...process.env, HOME: aqHome, USERPROFILE: aqHome } });
+  let aqr = {}, ideas = []; try { aqr = JSON.parse(aq.stdout); ideas = aqr.suggestions; } catch { console.log(aq.stdout, aq.stderr); }
+  ok("an idea starting [repo: symbiot] goes to symbiot's tasks, not the agent's repo's", ideas[0] && ideas[0].text === "Watch Jira too" && ideas[0].repo === "symbiot" && ideas[0].other && !ideas[0].added, ideas[0]);
+  ok("...one already in that repo's Tasks leaves the list, so the next moves up; the tab shows 2 at a time", !ideas.some((x) => x.text === "Watch GitHub too") && aqr.ideasShown === 2, [ideas.map((x) => x.text), aqr.ideasShown]);
+  ok("a question shows its first 2 options, whatever the agent wrote", ((aqr.questions || [])[0] || {}).options && aqr.questions[0].options.join("|") === "🤖 Agent: A (recommended)|🤖 Agent: B", aqr.questions);
+  const brief = buildTasksMd("x", {}, [{ text: "t" }]);
+  ok("the brief asks for exactly 2 options, judged for the company, the people, then the goal, on evidence", /exactly 2 options/.test(brief) && /Judge the options/.test(brief) && /the company, the people doing the work, then the task's goal/.test(brief) && /evidence/.test(brief) && /2 at a time/.test(brief), brief.slice(brief.indexOf("## If you need")));
   ok("...ideas naming no repo, or their own, stay with the agent's repo; other brackets are just text", ideas.slice(1).map((x) => `${x.repo}:${x.other}:${x.text}`).join("|") === "coral:false:Cache the map scan|coral:false:Same repo, named|coral:false:[WIP] Not a repo tag", ideas.slice(1));
   ok("the brief tells agents how to name another project", /`- \[repo: symbiot\] …`/.test(buildTasksMd("x", {}, [{ text: "t" }])), "");
   const loose = parseQuestions("- Should I delete the legacy folder?\n- Rename it instead?");
@@ -1067,6 +1077,12 @@ try {
     out.asked = asked; out.talkCard = w.watchBoard(24).cards.find((c) => c.id === "c").chat;
     out.talkNone = await w.boardChat("nope", "x", { ask }); out.talkEmpty = await w.boardChat("c", " ", { ask });
     out.talkOf = w.talkOf({ name: "WhatsApp", chat: out.talkCard });
+    // the same talk from a terminal: symbiot watch chat <id> ["question"] [--clear]
+    const noKey = Object.fromEntries(Object.entries(process.env).filter(([k]) => !/API_KEY|AUTH_TOKEN|SYMBIOT_MODEL/.test(k)));
+    const symNoKey = (...a) => { try { return { code: 0, j: JSON.parse(execFileSync(process.execPath, [${JSON.stringify(INDEX)}, ...a], { encoding: "utf8", env: noKey })) }; } catch (e) { let j = null; try { j = JSON.parse(e.stdout); } catch {} return { code: e.status, j }; } };
+    out.cliChat = sym("watch", "chat", "c"); out.cliChatNoId = sym("watch", "chat"); out.cliChatNone = sym("watch", "chat", "nope");
+    out.cliChatAsk = symNoKey("watch", "chat", "c", "What needs me?");
+    out.cliChatClear = sym("watch", "chat", "c", "--clear"); out.cliChatAfter = w.watchBoard(24).cards.find((c) => c.id === "c").chat || null;
     out.talkCleared = w.clearBoardChat("c"); out.talkAfter = w.watchBoard(24).cards.find((c) => c.id === "c").chat || null;
     out.seen = w.seenWatch("c"); out.seenNone = w.seenWatch("nope"); out.cliSeenNoId = sym("watch", "seen");
     out.after = w.watchBoard(24); out.afterWaiting = w.waitingOn(24).map((x) => x.label); out.stillNew = w.newsSince(24).filter((n) => n.watch === "c").length;
@@ -1088,6 +1104,8 @@ try {
   const tp = (bo.asked || [])[0] || "", tp2 = (bo.asked || [])[1] || "";
   ok("talk it over: the AI is sent the card's items and brief, and the talk so far", /Mom: call me/.test(tp) && /Team: standup moved/.test(tp) && /Your mom wants a call\./.test(tp) && !/Sam, Contract/.test(tp) && /They say \(on WhatsApp card\): What needs me\?/.test(tp) && /This chat so far:\nUser: What needs me\?/.test(tp2), [tp, tp2]);
   ok("talk it over: kept on the card, both turns; a missing card or an empty question is refused; clear forgets it", (bo.talkCard || []).length === 4 && bo.talkCard[3].text === "Your mom wants a call; the standup move can wait." && bo.talk2.chat.length === 4 && /No watch nope/.test((bo.talkNone || {}).error || "") && (bo.talkEmpty || {}).error === "empty" && bo.talkCleared && bo.talkCleared.ok && bo.talkAfter === null, [bo.talkCard, bo.talkNone, bo.talkEmpty, bo.talkAfter]);
+  ok("symbiot watch chat <id>: the card's talk so far, from a terminal (an id it knows, or an error)", bo.cliChat && bo.cliChat.code === 0 && ((bo.cliChat.j || {}).chat || []).length === 4 && bo.cliChat.j.chat[2].text === "Tell Mom Sunday works" && bo.cliChatNoId && bo.cliChatNoId.code === 1 && /symbiot watch board lists them/.test((bo.cliChatNoId.j || {}).error || "") && /No watch nope/.test(((bo.cliChatNone || {}).j || {}).error || ""), [bo.cliChat, bo.cliChatNoId, bo.cliChatNone]);
+  ok("...a question with no model connected says how to connect one; --clear starts the talk over", bo.cliChatAsk && bo.cliChatAsk.code === 1 && /Connect a model first/.test((bo.cliChatAsk.j || {}).error || "") && bo.cliChatClear && bo.cliChatClear.code === 0 && bo.cliChatClear.j.ok && bo.cliChatAfter === null, [bo.cliChatAsk, bo.cliChatClear, bo.cliChatAfter]);
   ok("talkOf: the talk, as the draft's brief carries it", /^## What the user said about it/.test(bo.talkOf || "") && /\*\*User:\*\* Tell Mom Sunday works/.test(bo.talkOf || ""), bo.talkOf);
   ok("symbiot watch seen <id> does the same from a terminal (and needs an id)", bo.cliSeen && bo.cliSeen.code === 0 && ((bo.afterCli || {}).cards || [])[0].count === 0 && bo.afterCli.total === 60 && bo.cliSeenNoId && bo.cliSeenNoId.code === 1, [bo.cliSeen, bo.cliSeenNoId]);
 

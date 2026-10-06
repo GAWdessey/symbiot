@@ -280,6 +280,8 @@ async function boardChat(id, question, { hours = 72, now = Date.now(), ask = wri
   saveWatch(d2);
   return { answer, chat: w2.chat, ...(peeks.length ? { links: peeks } : {}), ...(r.did ? { did: r.did } : {}) };
 }
+// The card's talk so far (symbiot watch chat <id>), [{ role, text, ts }].
+function boardTalk(id) { const w = loadWatch().watches.find((x) => x.id === id); return w ? { chat: w.chat || [] } : { error: `No watch ${id}.` }; }
 function clearBoardChat(id) { const d = loadWatch(), w = d.watches.find((x) => x.id === id); if (!w) return { error: `No watch ${id}.` }; delete w.chat; saveWatch(d); return { ok: true }; }
 // The card's talk, for a draft's brief: "" when there's been none.
 function talkOf(w) {
@@ -493,4 +495,4 @@ function startWatches(opts = {}) {
   return () => { clearTimeout(first); clearInterval(every); };
 }
 
-export { LINK_ASK, WATCH_FILE, EVERY, GITHUB_INBOX, DRAFTS_DIR, itemsOf, itemKey, newItems, remember, isGitHubInbox, githubItems, readGitHub, setBrief, briefOf, newsNotice, markNews, watchState, addWatch, setEvery, removeWatch, clearNews, seenWatch, newsSince, newsAfter, waitingOn, watchBoard, boardLine, boardChat, clearBoardChat, talkOf, isMail, isChat, draftsUrl, draftBrief, chatBrief, draftReply, openChat, checkWatch, dueWatches, startWatches };
+export { LINK_ASK, WATCH_FILE, EVERY, GITHUB_INBOX, DRAFTS_DIR, itemsOf, itemKey, newItems, remember, isGitHubInbox, githubItems, readGitHub, setBrief, briefOf, newsNotice, markNews, watchState, addWatch, setEvery, removeWatch, clearNews, seenWatch, newsSince, newsAfter, waitingOn, watchBoard, boardLine, boardChat, boardTalk, clearBoardChat, talkOf, isMail, isChat, draftsUrl, draftBrief, chatBrief, draftReply, openChat, checkWatch, dueWatches, startWatches };

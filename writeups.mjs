@@ -69,6 +69,12 @@ function extractJson(s) {
   if (a >= 0 && b > a) { try { return JSON.parse(t.slice(a, b + 1)); } catch {} }
   return null;
 }
+// Two at a time, judged (as agents' questions are, agents.mjs OPTIONS_SHOWN):
+// most people act on whatever's suggested without weighing it, so the model
+// picks, and says why in a line.
+const JUDGE = `Judge them before you write them: people tend to do whatever is listed without weighing it, and this is for a whole company, not one person. ` +
+  `List only what you'd recommend, best first, and choose by what's best for, in this order, the company, the people doing the work, then the project's goal. ` +
+  `For each, say in plain words (no jargon) what it changes from then on and the evidence for it. `;
 // AI "value" suggestions for one repo, from its recent commits + open work.
 async function repoSuggest(path) {
   if (!resolveProvider()) return { error: "not-connected" };
@@ -81,8 +87,8 @@ async function repoSuggest(path) {
   const footer = reportFooter(path, auth, state, rd);
   const system =
     `You are a pragmatic senior engineer advising on one project. Write exactly three short sections with headings: ` +
-    `"In flight" (what's clearly underway), "Next steps" (3-5 concrete actions), "Ideas" (2-3 that fit where this is heading). ` +
-    `Ground each point in the evidence; recent commits beat the README. Do not advise against the stated conventions. ` +
+    `"In flight" (what's clearly underway), "Next steps" (the 2 best concrete actions), "Ideas" (the 2 best that fit where this is heading). ` +
+    JUDGE + `Recent commits beat the README. Do not advise against the stated conventions. ` +
     (state.stale ? `CRITICAL: the working tree is a STALE checkout — never suggest committing it (would revert history). ` : ``) +
     `No filler, no preamble.`;
   const prompt =
@@ -107,8 +113,8 @@ async function folderSuggest(path) {
   const system =
     `You are a pragmatic senior engineer looking at a project FOLDER that is NOT under version control. ` +
     `From its files, write exactly three short sections with headings: "Overview" (what this project is, 1-2 sentences), ` +
-    `"Next steps" (3-5 concrete actions — a strong first one is often "git init" if this looks like real work), ` +
-    `"Ideas" (2-3 that fit where it's heading). Ground every point in the actual files/manifest/README shown. No preamble.`;
+    `"Next steps" (the 2 best concrete actions — a strong first one is often "git init" if this looks like real work), ` +
+    `"Ideas" (the 2 best that fit where it's heading). ` + JUDGE + `The evidence here is the files, manifest and README shown. No preamble.`;
   const prompt =
     `Folder: ${det.name}\nStack: ${stack}\nFiles (${det.files}):\n${rels.slice(0, 120).join("\n")}\n\n` +
     (manifest ? `Manifest:\n${manifest}\n\n` : "") + (readme ? `README excerpt:\n${readme}\n\n` : "") + `Write the overview and suggestions.`;

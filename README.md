@@ -67,6 +67,8 @@ Tabs:
   any tab, and once you watch something the app opens on the Dashboard instead of
   the Map. `symbiot watch board` prints the same cards as JSON, and
   `symbiot watch board --line` as one line for a status bar (`2 emails · 1 WhatsApp message`).
+  `symbiot watch chat <id> "question"` is the card's 💬 chat from a terminal, so an
+  agent can go over what's new with you too.
 - **Drift** — the [`symbiot drift`](#whats-out-of-sync-symbiot-drift) report, with
   a "fetch latest" toggle (and an [experimental](#experimental) "check CI").
 - **Week / Standup / Todo** — the write-ups (these use your chosen AI).
@@ -381,7 +383,15 @@ Reading both costs about 40 lines.
 ```
 
 Up to five questions show on that agent's block in the **Agents** tab, each with
-its options and room for your own answer, alongside its ideas. Each option says
+two options and room for your own answer, alongside its ideas, two at a time.
+Two, because most people pick the recommended option or add every idea without
+weighing them, so the agent is told to be the judge. Both options have to be good
+routes, each saying in plain words what it changes for the project, the people on
+it and the company. The recommended one has to be the best for, in that order,
+the company, the people doing the work and the goal, based on evidence the agent
+checked (git history, tests, logs). An idea that's in your Tasks leaves the list,
+and the next one moves up. **Suggest next steps** on the Map follows the same rule
+and suggests two. Each option says
 who acts: **You** (a setting, a click, a command) or **Agent** (picking it is
 enough). A question that needs a release ("Once 0.41.0 is installed: …") shows
 the version installed here and the one on npm, and holds back a "Done" answer
@@ -401,8 +411,10 @@ committed. The questions stay on the Agents tab after Symbiot restarts (or when
 the answer and reminds you the step is still yours to do. Your agent waits for it
 instead of starting straight away and asking the same thing again. If the step
 names a file in backticks (`` `.env` ``), the agent starts by itself once that
-file changes, while the app runs. Otherwise **Start it now** on that folder's
-block starts it once you've done the step.
+file changes, while the app runs. A step in Settings (**Allow command**, a
+connector) changes the agent command rather than a file, so a changed agent
+command counts as the step being done too. Otherwise **Start it now** on that
+folder's block starts it once you've done the step.
 
 **A run that stopped on questions isn't repeated for nothing.** When a run ends
 having asked questions you haven't answered, with tasks still unticked, Symbiot
@@ -770,6 +782,7 @@ symbiot watch new --hours 24               # what's new, newest first (JSON)
 symbiot watch board                        # the Dashboard's cards (JSON; .total is the count, for a status bar)
 symbiot watch board --line                 # the same as one line: "2 emails · 1 WhatsApp message" (empty when nothing's new)
 symbiot watch seen <watch id>              # set a card back to 0, like its Seen button
+symbiot watch chat <watch id> "what needs me?"  # talk a card over with your AI, like its 💬 (--clear starts over)
 symbiot watch check                        # read them all now (JSON)
 symbiot watch draft <id>                   # Draft a reply to a new email or chat message (see below)
 symbiot watch brief on                     # your AI says what needs you (off to stop)

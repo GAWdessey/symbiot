@@ -112,9 +112,9 @@ function runHandoff(repoPath, { force = false } = {}) {
   const busy = runningHandoff(repoPath); if (busy) return { busy: true, id: busy.id || "", pid: busy.pid, auto: !!busy.auto };
   releaseHeldTasks(repoPath); // held for an agent another process started, which has since exited
   tmpl = withConnectors(tmpl, repoPath);
-  if (force) { try { unlinkSync(join(repoPath, ".symbiot", WAITING)); } catch {} }
-  else { const w = waitingFor(repoPath); if (w) return { blocked: true, waiting: true, questions: 0, note: waitNote(w) }; }
+  if (!force) { const w = waitingFor(repoPath); if (w) return { blocked: true, waiting: true, questions: 0, note: waitNote(w) }; }
   const blocked = !force && blockedAgain(repoPath, tmpl); if (blocked) return blocked;
+  try { unlinkSync(join(repoPath, ".symbiot", WAITING)); } catch {} // the step's done (or this is Start it anyway): this is the run it waited for
   const lock = join(repoPath, ".symbiot", LOCK);
   const env = opts.env && typeof opts.env === "object" ? Object.fromEntries(Object.entries(opts.env).map(([k, v]) => [k, String(v)])) : null;
   const e = track(typeof opts.name === "string" && opts.name ? opts.name.slice(0, 80) : repoPath.split("/").pop(), fillHandoff(tmpl, repoPath), repoPath, (code) => {
@@ -165,11 +165,17 @@ function earlierRuns() {
 // only gets the same questions back. So answerQuestions reminds them the step is
 // theirs, and Send answers & continue waits instead of starting: .symbiot/
 // waiting.json keeps the step and how each file it names (in backticks, like
-// `.env`) was then. Once one of them changes, the next run goes ahead
-// (startWaiting starts the one that was asked for); with no file to watch, it
+// `.env`) was then, and the agent command: a step done in Settings (Allow
+// command, a connector) changes that, not a file, so it counts as done too, as
+// it does for blocked.json. Once one of them changes, the next run goes ahead
+// (startWaiting starts the one that was asked for); with neither changed, it
 // waits for Start it now. Start it anyway (force) always goes ahead.
 const WAITING = "waiting.json";
 const yourStep = (a) => /👤/.test(String(a || ""));
+// A step in Settings → Handoff: the note names the command as what it waits on.
+const settingsStep = (s) => /\bsettings\b|\ballow\b|\bgrant|connector/i.test(String(s || ""));
+// The command the folder's next run would get, connectors and all (runHandoff).
+const runCmd = (path) => digest(withConnectors(handoffCmd(), path));
 // The files a step names, in backticks: `.env`, `~/.termux/termux.properties`,
 // `.claude/settings.json`. Not a command (`npm test`), a site (`web.whatsapp.com`,
 // unless there's a file by that name) or a path that can't be one here.
@@ -186,27 +192,36 @@ function namedFiles(text, dir) {
   return out.filter((f, i) => out.findIndex((g) => g.path === f.path) === i).slice(0, 5);
 }
 const fileSig = (p) => { try { const s = statSync(p); return s.mtimeMs + ":" + s.size; } catch { return "none"; } };
-// What a folder is waiting on: { step, files: [names], at, rerun }, or null (and
-// waiting.json goes) once a file it names has changed.
+// What a folder is waiting on: { step, files: [names], cmd, at, rerun }, or null
+// once a file it names, or the agent command, has changed. Then waiting.json
+// goes, unless a run was asked for: startWaiting needs it to start that one (the
+// Agents tab asks this every few seconds, and used to lose it first), and the
+// run deletes it as it starts. cmd: the step is one in Settings, so the note says
+// the command counts.
 function waitingFor(path) {
   let w = null; try { w = JSON.parse(readSymbiot(path, WAITING)); } catch {}
   if (!w || typeof w.step !== "string") return null;
   const files = Array.isArray(w.files) ? w.files : [];
-  if (files.some((f) => f && fileSig(f.path) !== f.sig)) { try { unlinkSync(join(path, ".symbiot", WAITING)); } catch {} return null; }
-  return { step: w.step, files: files.map((f) => f.name), at: w.at || 0, rerun: !!w.rerun };
+  if (files.some((f) => f && fileSig(f.path) !== f.sig) || (w.cmd && runCmd(path) !== w.cmd)) { if (!w.rerun) try { unlinkSync(join(path, ".symbiot", WAITING)); } catch {} return null; }
+  return { step: w.step, files: files.map((f) => f.name), cmd: !!w.cmd && settingsStep(w.step), at: w.at || 0, rerun: !!w.rerun };
+}
+// "`.env` or the agent command in Settings → Handoff", what a wait ends on ("" if neither).
+function waitOn(files, cmd) {
+  const names = files.map((f) => "`" + f + "`").join(" or ");
+  return cmd ? (names ? names + " or " : "") + "the agent command (Settings → Handoff)" : names;
 }
 function waitNote(w) {
-  const names = w.files.map((f) => "`" + f + "`").join(" or ");
-  return `Not started: your step comes first: ${w.step.replace(/^\s*👤\s*(You:)?\s*/, "")} ${names ? `Your agent starts once ${names} changes.` : "Once it's done, click Start it now (or Start it anyway)."}`;
+  const on = waitOn(w.files, w.cmd);
+  return `Not started: your step comes first: ${w.step.replace(/^\s*👤\s*(You:)?\s*/, "")} ${on ? `Your agent starts once ${on} changes. Done it some other way? Click Start it now.` : "Once it's done, click Start it now (or Start it anyway)."}`;
 }
-// Runs that waited for a file of yours, and were asked for, start once it changes.
-// The app calls this every so often. Returns the jobs started.
+// Runs that waited for a file of yours (or the agent command), and were asked
+// for, start once it changes. The app calls this every so often. Returns the jobs started.
 function startWaiting() {
   const started = [];
   for (const r of loadRuns()) {
     let w = null; try { w = JSON.parse(readSymbiot(r.path, WAITING)); } catch {}
-    if (!w || !w.rerun || !Array.isArray(w.files) || !w.files.length || runningHandoff(r.path)) continue;
-    if (waitingFor(r.path)) continue; // nothing it names has changed yet
+    if (!w || !w.rerun || !Array.isArray(w.files) || !(w.files.length || w.cmd) || runningHandoff(r.path)) continue;
+    if (waitingFor(r.path)) continue; // nothing it names, nor the command, has changed yet
     const e = runHandoff(r.path); if (e && !e.busy && !e.blocked) started.push(e);
   }
   return started;
@@ -438,6 +453,12 @@ function agentChanges(path, startedAt) {
 // .symbiot/ANSWERS.md for the next run to read. Plain files, so it works the
 // same whichever model or tool the agent is.
 const QUESTIONS_MAX = 5;
+// Two at a time: most people pick the recommended option, or + task an idea,
+// without weighing the rest, and the choices are the agent's to judge (the
+// brief says how). So a question shows its first two options, and the Agents
+// tab the ideas two at a time (`ideasShown`): one in Tasks leaves the list, and
+// the next moves up. The rest are a click away.
+const OPTIONS_SHOWN = 2, IDEAS_SHOWN = 2;
 const qKey = (s) => String(s || "").trim().toLowerCase().replace(/\s+/g, " ");
 const readSymbiot = (path, f) => { try { return readFileSync(join(path, ".symbiot", f), "utf8"); } catch { return ""; } };
 // "## Questions" → "### question", context lines, "- option" bullets;
@@ -479,9 +500,10 @@ function agentQuestions(path, repo) {
   const done = new Set([...readSymbiot(path, "ANSWERS.md").matchAll(/^###\s+(.+)$/gm)].map((m) => qKey(m[1])));
   const open = p.questions.filter((x) => !done.has(qKey(x.q)));
   const tasks = p.suggestions.length ? loadTasks() : [];
+  const ideas = p.suggestions.map(suggestionTarget).map(({ repo: to, text }) => ({ text, repo: to || repo, other: !!to && to !== repo, added: tasks.some((t) => t.repo === (to || repo) && sameTask(t.text, text)) })).filter((s) => !s.added);
   return {
-    questions: open.slice(0, QUESTIONS_MAX), answered: p.questions.length - open.length,
-    suggestions: p.suggestions.map(suggestionTarget).map(({ repo: to, text }) => ({ text, repo: to || repo, other: !!to && to !== repo, added: tasks.some((t) => t.repo === (to || repo) && sameTask(t.text, text)) })),
+    questions: open.slice(0, QUESTIONS_MAX).map((x) => ({ ...x, options: x.options.slice(0, OPTIONS_SHOWN) })), answered: p.questions.length - open.length,
+    suggestions: ideas, ideasShown: IDEAS_SHOWN,
   };
 }
 // Save answers to .symbiot/ANSWERS.md; opts.rerun hands the repo back to the
@@ -508,10 +530,10 @@ function answerQuestions(path, answers, opts = {}) {
   const yours = rows.filter((x) => yourStep(x.a)).map((x) => stepText(x.a)).filter(Boolean);
   if (yours.length) {
     const step = yours.join(" "), files = namedFiles(rows.filter((x) => yourStep(x.a)).map((x) => x.a.split("🤖")[0]).join(" "), path);
-    try { writeFileSync(join(path, ".symbiot", WAITING), JSON.stringify({ step, files: files.map((f) => ({ ...f, sig: fileSig(f.path) })), at: Date.now(), rerun: !!opts.rerun })); } catch {}
-    const names = files.map((f) => "`" + f.name + "`").join(" or ");
+    try { writeFileSync(join(path, ".symbiot", WAITING), JSON.stringify({ step, files: files.map((f) => ({ ...f, sig: fileSig(f.path) })), cmd: runCmd(path), at: Date.now(), rerun: !!opts.rerun })); } catch {}
+    const on = waitOn(files.map((f) => f.name), settingsStep(step));
     out.yours = yours; if (files.length) out.waitFiles = files.map((f) => f.name);
-    out.note = "Answers saved. That step is still yours to do. " + (files.length ? `Your agent ${opts.rerun ? "starts by itself" : "can start"} once ${names} changes${opts.rerun ? " (while Symbiot runs)" : ""}.` : "Once it's done, click Start it now on this folder.");
+    out.note = "Answers saved. That step is still yours to do. " + (on ? `Your agent ${opts.rerun ? "starts by itself" : "can start"} once ${on} changes${opts.rerun ? " (while Symbiot runs)" : ""}.` : "Once it's done, click Start it now on this folder.");
     return out;
   }
   if (opts.rerun) { const e = runHandoff(path); if (e && e.busy) out.note = "Answers saved. An agent is still running in that folder, so another wasn't started. Send them again once it finishes."; else if (e && e.blocked) out.note = "Answers saved. " + e.note; else if (e) out.rerun = e.id; else out.note = "Answers saved. Set an agent command in Settings to have the agent pick them up automatically."; }
@@ -535,4 +557,4 @@ function agentsList() {
   }).concat(earlierRuns());
 }
 
-export { HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, connectorsInfo, fillHandoff, runHandoff, blockedAgain, runningHandoff, loadRuns, earlierRuns, namedFiles, waitingFor, startWaiting, writeTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, agentQuestions, answerQuestions, agentsList };
+export { HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, connectorsInfo, fillHandoff, runHandoff, blockedAgain, runningHandoff, loadRuns, earlierRuns, namedFiles, waitingFor, startWaiting, writeTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, agentQuestions, answerQuestions, agentsList };
