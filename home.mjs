@@ -68,7 +68,7 @@ async function homeAsk(question, { ask, now = Date.now(), state } = {}) {
       agent: (req, known, repo) => (repo ? actIn(req, repo, { map, known, title: "Home" }) : actNow(req, { title: "Home", known })),
       task: (text, repo) => taskIn(text, repo, { map }),
     } });
-  return { answer: r.reply, ...(r.did ? { did: r.did } : {}) };
+  return { answer: r.reply, ...(r.did ? { did: r.did } : {}), steps: r.steps || [] };
 }
 
 export { homeState, homeContext, homeAsk };

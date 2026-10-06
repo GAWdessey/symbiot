@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 import { readFileSync, writeFileSync, mkdirSync, existsSync, openSync, writeSync, unlinkSync, readdirSync, statSync } from "node:fs";
 import { randomBytes, createHash } from "node:crypto";
 import { CONFIG_DIR, loadConfig, saveConfig, loadTasks, sameTask, taskWords, sh, hasCmd } from "./core.mjs";
+import { parseRun, lastRunText } from "./work.mjs";
 
 const HANDOFFS = []; // live registry of agents Symbiot has handed work to
 // ---- hand a repo (+ its tasks) to the user's agent — generic, settings-based
@@ -138,7 +139,7 @@ function runHandoff(repoPath, { force = false } = {}) {
   let opts = {}; try { opts = JSON.parse(readSymbiot(repoPath, "handoff.json")) || {}; } catch {}
   const busy = runningHandoff(repoPath); if (busy) return { busy: true, id: busy.id || "", pid: busy.pid, auto: !!busy.auto };
   releaseHeldTasks(repoPath); // held for an agent another process started, which has since exited
-  tmpl = withConnectors(tmpl, repoPath);
+  tmpl = withStream(withConnectors(tmpl, repoPath));
   if (!force) { const w = waitingFor(repoPath); if (w) { askedFor(repoPath); return { blocked: true, waiting: true, questions: 0, note: waitNote(w) }; } }
   const blocked = !force && blockedAgain(repoPath, tmpl); if (blocked) return blocked;
   try { unlinkSync(join(repoPath, ".symbiot", WAITING)); } catch {} // the step's done (or this is Start it anyway): this is the run it waited for
@@ -180,8 +181,8 @@ function earlierRuns() {
     const busy = runningHandoff(r.path), ask = agentQuestions(r.path, r.name), wait = waitingFor(r.path);
     if (!busy && !ask.questions.length && !wait) continue;
     const log = join(r.path, ".symbiot", "agent.log"), startedAt = (busy && busy.startedAt) || Number(r.startedAt) || Date.now();
-    let tail = "", end = Date.now(); try { tail = readFileSync(log, "utf8").slice(-1200); if (!busy) end = statSync(log).mtimeMs; } catch {}
-    out.push({ id: "earlier-" + digest(r.path).slice(0, 8), name: String(r.name || r.path.split("/").pop()), path: r.path, status: busy ? "running" : "done", earlier: true, elapsed: Math.max(0, end - startedAt), exitCode: null, tail, changed: agentChanges(r.path, startedAt), ask, held: heldTasks(r.path), waiting: wait, fromHeld: false });
+    let tail = "", work = null, progress = null, end = Date.now(); try { ({ tail, work, progress } = workOf(r.path, readFileSync(log, "utf8"))); if (!busy) end = statSync(log).mtimeMs; } catch {}
+    out.push({ id: "earlier-" + digest(r.path).slice(0, 8), name: String(r.name || r.path.split("/").pop()), path: r.path, status: busy ? "running" : "done", earlier: true, elapsed: Math.max(0, end - startedAt), exitCode: null, tail, work, progress, changed: agentChanges(r.path, startedAt), ask, held: heldTasks(r.path), waiting: wait, fromHeld: false });
   }
   return out;
 }
@@ -614,13 +615,32 @@ function heldTasks(path) {
 // newest job per folder — the questions/ideas it left, any tasks held for it and
 // a step of yours it waits on. Then runs from before the app started that still
 // need you (earlierRuns).
+// A run's work, to draw: parsed from its log (work.mjs), with how far through its
+// TASKS.md it is. tail is what to show as text: what it said, for a streaming
+// run; the log's end, for another agent.
+// Claude Code in print mode (claude -p) streams each step as JSON, so the work
+// can be drawn as it happens (work.mjs). Added to a claude -p command that has no
+// output format of its own; anything else (an Orca tab, another agent) as it is.
+function withStream(cmd) {
+  const c = String(cmd || "");
+  if (!/^\s*claude\b/.test(c) || !/\s-p\b|\s--print\b/.test(c) || /--output-format\b/.test(c)) return c;
+  return c + " --output-format stream-json --verbose";
+}
+function workOf(path, log) {
+  const w = parseRun(lastRunText(log)), md = readSymbiot(path, "TASKS.md");
+  const done = (md.match(/^\s*-\s*\[x\]/gim) || []).length, total = done + (md.match(/^\s*-\s*\[ \]/gm) || []).length;
+  const tail = w.stream ? (w.final || w.said.join("\n\n") || (w.doing ? w.doing + "…" : "")) : String(log).slice(-1200);
+  const work = w.stream ? { model: w.model, doing: w.doing, steps: w.steps.slice(-16), todos: w.todos, cost: w.cost, turns: w.turns, tokens: w.tokens, tests: w.tests, files: w.files, pace: w.pace, errors: w.errors, final: w.final.slice(0, 1200), count: w.steps.length } : null;
+  return { tail, work, progress: total ? { done, total } : null };
+}
 function agentsList() {
   const seen = new Set();
   return HANDOFFS.map((e) => {
-    let tail = ""; try { tail = readFileSync(e.log, "utf8").slice(-1200); } catch {}
+    let log = ""; try { log = readFileSync(e.log, "utf8"); } catch {}
+    const { tail, work, progress } = workOf(e.path, log);
     const first = !seen.has(e.path); seen.add(e.path);
-    return { id: e.id, name: e.name, path: e.path, status: e.status, elapsed: (e.endedAt || Date.now()) - e.startedAt, exitCode: e.exitCode, tail, changed: agentChanges(e.path, e.startedAt), ask: first ? agentQuestions(e.path, e.name) : null, held: first ? heldTasks(e.path) : null, waiting: first && e.status !== "running" ? waitingFor(e.path) : null, fromHeld: !!e.fromHeld };
+    return { id: e.id, name: e.name, path: e.path, status: e.status, elapsed: (e.endedAt || Date.now()) - e.startedAt, exitCode: e.exitCode, tail, work, progress, changed: agentChanges(e.path, e.startedAt), ask: first ? agentQuestions(e.path, e.name) : null, held: first ? heldTasks(e.path) : null, waiting: first && e.status !== "running" ? waitingFor(e.path) : null, fromHeld: !!e.fromHeld };
   }).concat(earlierRuns());
 }
 
-export { HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, connectorsInfo, fillHandoff, runHandoff, blockedAgain, runningHandoff, loadRuns, earlierRuns, namedFiles, waitingFor, startWaiting, writeTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, skipIdea, agentQuestions, answerQuestions, agentsList };
+export { withStream, workOf, HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, connectorsInfo, fillHandoff, runHandoff, blockedAgain, runningHandoff, loadRuns, earlierRuns, namedFiles, waitingFor, startWaiting, writeTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, skipIdea, agentQuestions, answerQuestions, agentsList };

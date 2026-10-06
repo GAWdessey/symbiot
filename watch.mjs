@@ -301,7 +301,8 @@ async function boardChat(id, question, { hours = 72, now = Date.now(), ask = wri
   const answer = r.reply;
   // read again: a check may have saved the file while the model answered
   const d2 = loadWatch(), w2 = d2.watches.find((x) => x.id === id); if (!w2) return { answer, chat: [] };
-  w2.chat = [...(w2.chat || []), { role: "user", text: question, ts: now }, { role: "ai", text: answer, ts: now }].slice(-TALK_KEEP);
+  const steps = [...(peeks.length ? [`looked up ${peeks.length} link${peeks.length > 1 ? "s" : ""}`] : []), ...(r.steps || [])];
+  w2.chat = [...(w2.chat || []), { role: "user", text: question, ts: now }, { role: "ai", text: answer, ts: now, ...(steps.length ? { steps } : {}) }].slice(-TALK_KEEP);
   saveWatch(d2);
   return { answer, chat: w2.chat, ...(peeks.length ? { links: peeks } : {}), ...(r.did ? { did: r.did } : {}) };
 }

@@ -60,6 +60,67 @@ body.lq-liquid footer{position:fixed;right:12px;top:38px;border:0;padding:0;z-in
 body.lq-pooled #lqtalk,body.lq-pooled #lqmore,body.lq-pooled #lqcore{display:none}
 body.lq-talking .lqd{opacity:.55}
 @media (prefers-reduced-motion: reduce){.lqd,#lqcore{transition:none}}
+/* ---- the Symbiot look on every part: glass over the liquid, chrome, a silver edge ---- */
+body.lq-liquid.lq-pooled main{background:rgba(6,8,11,.86);backdrop-filter:blur(20px) saturate(1.25);border:1px solid transparent;background-clip:padding-box;box-shadow:0 0 0 1px rgba(214,222,234,.22),0 40px 90px -30px rgba(0,0,0,.85),inset 0 1px 0 rgba(255,255,255,.12)}
+body.lq-liquid.lq-light.lq-pooled main{background:rgba(246,248,251,.9);box-shadow:0 0 0 1px rgba(20,30,45,.14),0 40px 90px -40px rgba(20,30,45,.45),inset 0 1px 0 #FFFFFF}
+body.lq-liquid.lq-solid.lq-pooled main{backdrop-filter:none;background:var(--ink)}
+.lqedge{position:fixed;top:64px;left:max(12px,4vw);right:max(12px,4vw);bottom:88px;z-index:6;border-radius:24px;pointer-events:none;padding:1px;background:linear-gradient(115deg,rgba(255,255,255,.0) 0%,rgba(255,255,255,.75) 18%,rgba(140,150,166,.3) 32%,rgba(255,255,255,.0) 48%,rgba(230,236,244,.6) 66%,rgba(255,255,255,0) 82%);background-size:260% 260%;-webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude;animation:lqsheen 9s linear infinite;display:none}
+body.lq-liquid.lq-pooled .lqedge{display:block}
+@keyframes lqsheen{0%{background-position:0% 50%}100%{background-position:260% 50%}}
+body.lq-liquid .task,body.lq-liquid .agent,body.lq-liquid .rcard,body.lq-liquid .bcard,body.lq-liquid .drift,body.lq-liquid .q,body.lq-liquid .out,body.lq-liquid .tchat{background:linear-gradient(180deg,rgba(255,255,255,.075),rgba(255,255,255,.02));border:1px solid rgba(220,228,240,.16);border-radius:16px;box-shadow:inset 0 1px 0 rgba(255,255,255,.09),0 12px 30px -24px rgba(0,0,0,.9)}
+body.lq-liquid.lq-light .task,body.lq-liquid.lq-light .agent,body.lq-liquid.lq-light .rcard,body.lq-liquid.lq-light .bcard,body.lq-liquid.lq-light .drift,body.lq-liquid.lq-light .q,body.lq-liquid.lq-light .out,body.lq-liquid.lq-light .tchat{background:linear-gradient(180deg,#FFFFFF,#F2F4F8);border-color:rgba(20,30,45,.12);box-shadow:inset 0 1px 0 #FFFFFF,0 12px 28px -24px rgba(20,30,45,.5)}
+body.lq-liquid button.act{background:linear-gradient(180deg,#FFFFFF 0%,#D2D8E1 44%,#8E97A6 56%,#E6EAF0 100%);color:#06080B;border:1px solid rgba(255,255,255,.9);border-radius:999px;box-shadow:0 6px 18px -10px rgba(0,0,0,.7)}
+body.lq-liquid button.ghost{background:rgba(255,255,255,.05);border:1px solid rgba(220,228,240,.28);border-radius:999px;color:var(--bone);backdrop-filter:blur(6px)}
+body.lq-liquid.lq-light button.ghost{background:rgba(255,255,255,.7);border-color:rgba(20,30,45,.18)}
+body.lq-liquid input,body.lq-liquid select,body.lq-liquid textarea{border-radius:12px;border:1px solid rgba(220,228,240,.2);background:rgba(255,255,255,.04);color:var(--bone)}
+body.lq-liquid.lq-light input,body.lq-liquid.lq-light select,body.lq-liquid.lq-light textarea{background:#FFFFFF;border-color:rgba(20,30,45,.18)}
+body.lq-liquid input:focus,body.lq-liquid select:focus,body.lq-liquid textarea:focus{outline:none;border-color:rgba(255,255,255,.7);box-shadow:0 0 0 3px rgba(200,210,224,.18)}
+body.lq-liquid .tgroup{color:#C9D1DC;letter-spacing:.16em}
+body.lq-liquid.lq-light .tgroup{color:#3B4656}
+body.lq-liquid h2,body.lq-liquid h3{letter-spacing:-.01em}
+body.lq-liquid .fchip.on{background:linear-gradient(180deg,#FFFFFF,#C9D1DC);color:#06080B;border-color:#FFFFFF}
+body.lq-contrast.lq-liquid .task,body.lq-contrast.lq-liquid .agent{border:2px solid currentColor}
+/* the live work of an agent: what it's doing, its to-dos, its steps, its files, its pace */
+.wk{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(260px,100%),1fr));gap:12px;margin-top:10px}
+.wkbox{border-radius:14px;padding:10px 12px;background:rgba(255,255,255,.035);border:1px solid rgba(220,228,240,.12)}
+body.lq-light .wkbox{background:#F6F8FB;border-color:rgba(20,30,45,.1)}
+.wkh{font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--faint);margin-bottom:6px;display:flex;gap:6px;align-items:center}
+.wkstats{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.wkstat{font-size:11.5px;padding:3px 9px;border-radius:999px;border:1px solid rgba(220,228,240,.2);color:var(--text);white-space:nowrap}
+.wkstat b{color:var(--bone)}
+.wkdoing{margin-top:10px;font-size:14px;font-weight:600;background:linear-gradient(90deg,#8C96A6 0%,#FFFFFF 40%,#8C96A6 60%,#8C96A6 100%);background-size:220% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;animation:lqshim 2.2s linear infinite}
+body.lq-light .wkdoing{background-image:linear-gradient(90deg,#4A5565 0%,#0F1720 40%,#4A5565 60%,#4A5565 100%)}
+@keyframes lqshim{0%{background-position:120% 0}100%{background-position:-120% 0}}
+.wktodo{display:flex;gap:8px;align-items:flex-start;font-size:12.5px;line-height:1.4;padding:3px 0}
+.wktodo i{flex:none;width:12px;height:12px;margin-top:2px;border-radius:50%;border:1.5px solid var(--faint)}
+.wktodo.in_progress i{border-color:var(--bone);background:conic-gradient(var(--bone) 0 50%,transparent 50%);animation:lqspin 1.4s linear infinite}
+.wktodo.completed i{border-color:var(--green);background:var(--green)}
+.wktodo.completed span{color:var(--faint);text-decoration:line-through}
+@keyframes lqspin{to{transform:rotate(360deg)}}
+.wkstep{display:flex;gap:8px;align-items:center;font-size:12.5px;padding:3px 0;min-width:0}
+.wkstep svg{flex:none;opacity:.85}
+.wkstep .wt{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.wkstep .wt b{font-weight:600;color:var(--bone)}
+.wkstep .wm{flex:none;font-size:11px;color:var(--faint)}
+.wkstep.error .wt{color:#FF8A75}.wkstep.running .wt{color:var(--bone)}
+.wktest{font-size:11px;padding:1px 7px;border-radius:999px;background:rgba(61,220,151,.14);color:var(--green);white-space:nowrap}
+.wktest.bad{background:rgba(255,138,117,.16);color:#FF8A75}
+.wkfile{display:flex;gap:8px;align-items:center;font-size:12px;padding:2px 0}
+.wkfile .fn{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:ui-monospace,Menlo,Consolas,monospace}
+.wkfile .fb{flex:1;height:6px;border-radius:3px;background:rgba(220,228,240,.12);overflow:hidden}
+.wkfile .fb i{display:block;height:100%;border-radius:3px;background:linear-gradient(90deg,#8E97A6,#FFFFFF)}
+body.lq-light .wkfile .fb i{background:linear-gradient(90deg,#6F7887,#0F1720)}
+.wkfinal{margin-top:10px;font-size:13px;line-height:1.55;white-space:pre-wrap}
+.wkraw summary{cursor:pointer;font-size:12px;color:var(--faint);margin-top:10px}
+.orb{flex:none;display:inline-block;width:14px;height:14px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#FFFFFF 0%,#C9CFD9 30%,#6F7887 70%,#2A2F38 100%);box-shadow:0 0 0 1px rgba(255,255,255,.25)}
+.orb.run{animation:lqpulse 1.6s ease-in-out infinite}.orb.fail{background:radial-gradient(circle at 35% 30%,#FFE1DA 0%,#FF8A75 45%,#7A2A1C 100%)}
+@keyframes lqpulse{0%,100%{transform:scale(1);box-shadow:0 0 0 1px rgba(255,255,255,.25)}50%{transform:scale(1.18);box-shadow:0 0 14px 2px rgba(255,255,255,.35)}}
+.msg .steps,.lqmsg .steps{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px}
+.steps span{font-size:11px;padding:2px 8px;border-radius:999px;border:1px solid rgba(220,228,240,.22);color:var(--faint);white-space:nowrap}
+.thinking{background:linear-gradient(90deg,#8C96A6 0%,#FFFFFF 40%,#8C96A6 60%,#8C96A6 100%);background-size:220% 100%;-webkit-background-clip:text;background-clip:text;color:transparent !important;animation:lqshim 2.2s linear infinite}
+body.lq-light .thinking{background-image:linear-gradient(90deg,#4A5565 0%,#0F1720 40%,#4A5565 60%,#4A5565 100%)}
+@media (prefers-reduced-motion: reduce){.lqedge,.wkdoing,.thinking,.orb.run,.wktodo.in_progress i{animation:none}}
+
 
 *{box-sizing:border-box}html,body{margin:0;height:100%}
 body{background:var(--ink);color:var(--text);font-family:var(--sans);font-size:14px;display:flex;flex-direction:column}
@@ -88,6 +149,8 @@ a{color:var(--green);cursor:pointer}.hidden{display:none}
 .updatebar.reconnect{background:var(--amber)}
 .whatsnew{display:none;padding:10px 16px;font-size:13px;background:var(--ink2);border-bottom:1px solid var(--line);max-height:40vh;overflow:auto}
 .whatsnew.show{display:block}
+body.lq-liquid .whatsnew.show{position:fixed;top:60px;left:50%;transform:translateX(-50%);width:min(660px,calc(100vw - 32px));z-index:8;border:1px solid rgba(220,228,240,.25);border-radius:20px;background:rgba(6,8,11,.82);backdrop-filter:blur(16px);box-shadow:0 30px 70px -30px rgba(0,0,0,.85)}
+body.lq-liquid.lq-light .whatsnew.show{background:rgba(255,255,255,.9);border-color:rgba(20,30,45,.15)}
 .updatebar button,.updatebar a.b{font:inherit;font-weight:700;border:0;border-radius:8px;padding:5px 12px;background:var(--ink);color:var(--bone);cursor:pointer;text-decoration:none}
 .ver{font-size:11px;color:var(--faint);background:var(--ink3);border:1px solid var(--line);border-radius:999px;padding:2px 8px;margin-left:2px;font-family:ui-monospace,Menlo,Consolas,monospace}
 footer{padding:10px 18px;border-top:1px solid var(--line);display:flex}
@@ -230,7 +293,7 @@ label.check input{width:auto}
 <button class="tab" data-tab="settings">Settings</button>
 </div>
 <main>
-<div id="lqsinkrow"><button class="ghost" type="button" id="lqsink" title="close it: it sinks back into the liquid (Esc)">Sink back</button></div>
+<div class="lqedge" aria-hidden="true"></div><div id="lqsinkrow"><button class="ghost" type="button" id="lqsink" title="close it: it sinks back into the liquid (Esc)">Sink back</button></div>
 <section id="panel-map">
 <div class="profile muted" id="profile">Mapping your work&hellip;</div>
 <div class="maprow">
@@ -439,10 +502,10 @@ edges.forEach(function(e){var a=idx[e.source],b=idx[e.target];if(!a||!b)return;v
 nodes.forEach(function(n){n.vx+=(GW/2-n.x)*0.002;n.vy+=(GH/2-n.y)*0.002;n.x+=Math.max(-9,Math.min(9,n.vx));n.y+=Math.max(-9,Math.min(9,n.vy));n.vx*=0.86;n.vy*=0.86;n.x=Math.max(30,Math.min(GW-30,n.x));n.y=Math.max(24,Math.min(GH-28,n.y));});}}
 function nbrs(id){var s={};s[id]=1;GRAPH.edges.forEach(function(e){if(e.source===id)s[e.target]=1;if(e.target===id)s[e.source]=1;});return s;}
 function render(){if(!GRAPH)return;var idx={};GRAPH.nodes.forEach(function(n){idx[n.id]=n;});var nb=sel?nbrs(sel):null;
-var s="<g id='vp' transform='translate("+view.x.toFixed(1)+","+view.y.toFixed(1)+") scale("+view.k.toFixed(3)+")'>";
-GRAPH.edges.forEach(function(e){var a=idx[e.source],b=idx[e.target];if(!a||!b)return;var op=nb?((nb[e.source]&&nb[e.target])?0.75:0.06):0.45;s+="<line x1='"+a.x.toFixed(1)+"' y1='"+a.y.toFixed(1)+"' x2='"+b.x.toFixed(1)+"' y2='"+b.y.toFixed(1)+"' stroke='#24404A' stroke-width='1' opacity='"+op+"'/>";});
-GRAPH.nodes.forEach(function(n){var r=Math.max(5,Math.sqrt(n.weight)*2);var col=COLORS[n.type]||"#888";var op=nb?(nb[n.id]?1:0.14):0.95;var st=(n.id===sel)?" stroke='#F4F1EA' stroke-width='2'":"";var title=esc(n.label)+(n.meta?(" - "+(n.meta.commits||0)+" commits"):"");
-s+="<g class='node' data-id='"+esc(n.id)+"' opacity='"+op+"'><circle cx='"+n.x.toFixed(1)+"' cy='"+n.y.toFixed(1)+"' r='"+r.toFixed(1)+"' fill='"+col+"'"+st+"><title>"+title+"</title></circle>";
+var s="<defs><radialGradient id='lqsilver' cx='35%' cy='30%' r='75%'><stop offset='0%' stop-color='#FFFFFF'/><stop offset='35%' stop-color='#C9CFD9'/><stop offset='75%' stop-color='#6F7887'/><stop offset='100%' stop-color='#2A2F38'/></radialGradient></defs><g id='vp' transform='translate("+view.x.toFixed(1)+","+view.y.toFixed(1)+") scale("+view.k.toFixed(3)+")'>";
+GRAPH.edges.forEach(function(e){var a=idx[e.source],b=idx[e.target];if(!a||!b)return;var op=nb?((nb[e.source]&&nb[e.target])?0.75:0.06):0.45;s+="<line x1='"+a.x.toFixed(1)+"' y1='"+a.y.toFixed(1)+"' x2='"+b.x.toFixed(1)+"' y2='"+b.y.toFixed(1)+"' stroke='"+(LQ.theme&&LQ.theme.light?'#8E97A6':'#5C6878')+"' stroke-width='1' opacity='"+op+"'/>";});
+GRAPH.nodes.forEach(function(n){var r=Math.max(5,Math.sqrt(n.weight)*2);var col=COLORS[n.type]||"#888";var op=nb?(nb[n.id]?1:0.14):0.95;var title=esc(n.label)+(n.meta?(" - "+(n.meta.commits||0)+" commits"):"");
+s+="<g class='node' data-id='"+esc(n.id)+"' opacity='"+op+"'><circle cx='"+n.x.toFixed(1)+"' cy='"+n.y.toFixed(1)+"' r='"+r.toFixed(1)+"' fill='url(#lqsilver)' stroke='"+col+"' stroke-width='"+(n.id===sel?2.5:1.2)+"'"+(n.id===sel?" stroke-opacity='1'":" stroke-opacity='0.7'")+"><title>"+title+"</title></circle>";
 var cls=n.type==="person"?"lbl-me":"";s+="<text x='"+n.x.toFixed(1)+"' y='"+(n.y+r+12).toFixed(1)+"' text-anchor='middle' class='"+cls+"'>"+esc(n.label)+"</text></g>";});
 document.getElementById("graph").innerHTML=s+"</g>";}
 function profileLine(g){var repos=g.nodes.filter(function(n){return n.type==="repo";});var base=g.stats.base||"your home folder";
@@ -498,7 +561,8 @@ else if(rm)rm.addEventListener('click',function(){api('/api/tasks/remove',{id:id
 // connected model, grounded in the task's repo (and its pending changes).
 function askBtn(t){var n=(t.chat||[]).length;return "<button class='ask"+(n?" has":"")+"' title='"+(n?"questions &amp; answers about this task":"ask a question about this task")+"'>&#128172;"+(n?" "+Math.ceil(n/2):"")+"</button>";}
 function taskById(id){var all=PENDTASKS.concat(ALLTASKS);for(var i=0;i<all.length;i++)if(all[i].id===id)return all[i];return null;}
-function chatMsgs(chat){return (chat||[]).map(function(m){return "<div class='msg "+(m.role==='user'?'q':'a')+"'>"+esc(m.text)+"</div>";}).join("");}
+function stepsHtml(st){return st&&st.length?"<div class='steps'>"+st.map(function(x){return "<span>"+esc(x)+"</span>";}).join('')+"</div>":"";}
+function chatMsgs(chat){return (chat||[]).map(function(m){return "<div class='msg "+(m.role==='user'?'q':'a')+"'>"+esc(m.text)+(m.role==='user'?'':stepsHtml(m.steps))+"</div>";}).join("");}
 var CHATHINT="<div class='muted' style='font-size:12px'>Ask anything about this task &mdash; what it means, how to approach it, or what the agent changed. Answers draw on the repo&#39;s commits, README and rules.</div>";
 function wireAsk(row,id){var b=row.querySelector('.ask');if(b)b.addEventListener('click',function(){toggleChat(row,id);});}
 function toggleChat(row,id){var btn=row.querySelector('.ask');var nx=row.nextElementSibling;
@@ -646,6 +710,32 @@ var LANEWORD={started:'working on it',held:'queued: that lane is busy',done:'don
 function loadLanes(){api('/api/lanes').then(function(d){var el=document.getElementById('laneslist');if(!el||!d)return;var hs=d.handoffs||[];
 el.innerHTML=hs.length?"<div class='tgroup'>Handovers <span class='tcount'>"+hs.length+"</span></div>"+hs.slice(0,12).map(function(h){
 return "<div class='task' title='"+escQ(h.result||h.error||h.text)+"'><span class='t'><b>"+esc(h.from)+"</b> &rarr; <b>"+esc(h.to)+"</b>: "+esc(h.text)+"</span><span class='rp'"+(h.status==='error'?" style='color:var(--amber)'":"")+">"+esc(LANEWORD[h.status]||h.status)+"</span></div>";}).join(''):'';});}
+
+// ---- an agent's work, live (work.mjs parses its stream) ------------------------------
+var WKICON={read:"<path d='M2 4h5l1 1h6v8H2z'/>",edit:"<path d='M3 13l1-3 7-7 2 2-7 7z'/>",run:"<path d='M3 5l3 3-3 3M8 12h5'/>",search:"<circle cx='7' cy='7' r='4'/><path d='M10 10l3 3'/>",web:"<circle cx='8' cy='8' r='5.5'/><path d='M2.5 8h11M8 2.5c2 2 2 9 0 11M8 2.5c-2 2-2 9 0 11'/>",agent:"<path d='M8 2l1.5 4.5L14 8l-4.5 1.5L8 14l-1.5-4.5L2 8l4.5-1.5z'/>",connector:"<path d='M6 2v4M10 2v4M4 6h8v2a4 4 0 0 1-8 0zM8 12v2'/>",tool:"<circle cx='8' cy='8' r='2.5'/>"};
+function wkIcon(k){return "<svg width='14' height='14' viewBox='0 0 16 16' fill='none' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round' aria-hidden='true'>"+(WKICON[k]||WKICON.tool)+"</svg>";}
+function wkMs(ms){if(ms==null)return '';return ms<1000?ms+'ms':ms<60000?(ms/1000).toFixed(ms<10000?1:0)+'s':Math.round(ms/60000)+'m';}
+function wkRing(done,total){var r=15,c=2*Math.PI*r,f=total?done/total:0;return "<svg width='40' height='40' viewBox='0 0 40 40' aria-label='"+done+" of "+total+" tasks done'><defs><linearGradient id='wkg' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='#FFFFFF'/><stop offset='1' stop-color='#6F7887'/></linearGradient></defs><circle cx='20' cy='20' r='"+r+"' fill='none' stroke='rgba(140,150,166,.25)' stroke-width='4'/><circle cx='20' cy='20' r='"+r+"' fill='none' stroke='url(#wkg)' stroke-width='4' stroke-linecap='round' stroke-dasharray='"+(c*f).toFixed(1)+" "+c.toFixed(1)+"' transform='rotate(-90 20 20)'/><text x='20' y='24' text-anchor='middle' font-size='10' font-weight='700' fill='currentColor'>"+done+"/"+total+"</text></svg>";}
+function wkSpark(p){if(!p||p.length<2)return '';var m=Math.max.apply(null,p)||1,w=120,h=26,pts=p.map(function(v,i){return (i*w/(p.length-1)).toFixed(1)+','+(h-2-(v/m)*(h-4)).toFixed(1);}).join(' ');return "<svg width='"+w+"' height='"+h+"' viewBox='0 0 "+w+" "+h+"' aria-label='steps per minute'><polyline points='"+pts+"' fill='none' stroke='currentColor' stroke-width='1.6' stroke-linejoin='round' opacity='.85'/></svg>";}
+function workHtml(a){var w=a.work,pg=a.progress,run=a.status==='running',h='';
+if(!w){if(run)h+="<div class='bar'><i></i></div>";if(pg)h+="<div class='wkstats'><span class='wkstat'><b>"+pg.done+"/"+pg.total+"</b> tasks ticked</span></div>";return h;}
+var stats=[];if(w.model)stats.push("<span class='wkstat'>"+esc(w.model.split('[')[0])+"</span>");stats.push("<span class='wkstat'><b>"+w.count+"</b> step"+(w.count===1?'':'s')+"</span>");
+if(w.turns!=null)stats.push("<span class='wkstat'><b>"+w.turns+"</b> turns</span>");if(w.tokens)stats.push("<span class='wkstat'><b>"+(w.tokens>999999?(w.tokens/1e6).toFixed(1)+'M':w.tokens>999?Math.round(w.tokens/1000)+'k':w.tokens)+"</b> tokens</span>");
+if(w.cost!=null)stats.push("<span class='wkstat'><b>$"+w.cost.toFixed(2)+"</b></span>");if(w.tests)stats.push("<span class='wktest"+(w.tests.failed?' bad':'')+"'>"+w.tests.passed+" passed &middot; "+w.tests.failed+" failed</span>");if(w.errors)stats.push("<span class='wktest bad'>"+w.errors+" error"+(w.errors>1?'s':'')+"</span>");
+h+="<div class='wkstats'>"+stats.join('')+"</div>";
+if(run&&w.doing)h+="<div class='wkdoing'>"+esc(w.doing)+"&hellip;</div>";
+var boxes=[];
+if(w.todos&&w.todos.length||pg){var td="<div class='wkbox'><div class='wkh'>"+(pg?wkRing(pg.done,pg.total):'')+"<span>its to-do list</span></div>";
+(w.todos||[]).forEach(function(t){td+="<div class='wktodo "+esc(t.status)+"'><i></i><span>"+esc(t.status==='in_progress'?t.active:t.text)+"</span></div>";});
+if(!(w.todos||[]).length)td+="<div class='muted' style='font-size:12px'>No list of its own: "+pg.done+" of "+pg.total+" tasks ticked in TASKS.md.</div>";boxes.push(td+"</div>");}
+if(w.steps&&w.steps.length){var sp="<div class='wkbox'><div class='wkh'><span>what it did</span><span style='margin-left:auto'>"+wkSpark(w.pace)+"</span></div>";
+w.steps.slice(-10).forEach(function(x){sp+="<div class='wkstep "+esc(x.status)+"'>"+wkIcon(x.kind)+"<span class='wt'><b>"+esc(x.verb)+"</b> "+esc(x.target||'')+"</span>"+(x.tests?"<span class='wktest"+(x.tests.failed?' bad':'')+"'>"+x.tests.passed+"&#10003; "+x.tests.failed+"&#10007;</span>":"")+"<span class='wm'>"+(x.status==='running'?'&hellip;':wkMs(x.ms))+"</span></div>";});
+if(w.count>10)sp+="<div class='muted' style='font-size:11px;margin-top:4px'>and "+(w.count-10)+" earlier step"+(w.count-10>1?'s':'')+"</div>";boxes.push(sp+"</div>");}
+var fs=Object.keys(w.files||{});if(fs.length){var mx=Math.max.apply(null,fs.map(function(f){return w.files[f];}))||1,fb="<div class='wkbox'><div class='wkh'><span>files it changed</span></div>";
+fs.sort(function(x,y){return w.files[y]-w.files[x];}).slice(0,8).forEach(function(f){fb+="<div class='wkfile'><span class='fn'>"+esc(f)+"</span><span class='fb'><i style='width:"+Math.round(100*w.files[f]/mx)+"%'></i></span><span class='wm'>"+w.files[f]+"&times;</span></div>";});boxes.push(fb+"</div>");}
+if(boxes.length)h+="<div class='wk'>"+boxes.join('')+"</div>";
+if(!run&&w.final)h+="<div class='wkfinal'>"+esc(w.final)+"</div>";
+return h;}
 function loadAgents(){loadLanes();api('/api/agents').then(function(list){var el=document.getElementById('agentslist');
 if(!list||!list.length){AGENTLIST=[];el.innerHTML="<div class='muted' style='margin-top:12px'>No agents yet. In <b>Tasks</b>, tick ideas and hit <b>Send to repos</b> (with an agent command set in Settings) &mdash; you'll watch it work here.</div>";stopAgentsPoll();return;}
 var anyRunning=list.some(function(a){return a.status==='running';});
@@ -660,8 +750,8 @@ if(nQs(a))st+=" &middot; <span style='color:var(--amber)'>needs your answers</sp
 if(a.held!=null){var hn=a.held.length,ht=a.held.map(function(t){return "&bull; "+esc(t).replace(/'/g,'&#39;');}).join('&#10;');
 ht+=(hn?'&#10;&#10;':'')+(a.status==='running'?"Sent while this agent was running. They wait in .symbiot/TASKS.next.md, replace TASKS.md when it finishes (keeping its ticks), and an agent starts on them then.":"They wait in .symbiot/TASKS.next.md for the agent running in this folder to finish. After that, an agent starts on them the next time the Tasks tab checks this repo, or send again.");
 st+=" &middot; <span style='color:var(--amber);cursor:help' title='"+ht+"'>&#9208; "+(hn?hn+" task"+(hn>1?"s":"")+" held":"tasks held")+"</span>";}
-var b="<div class='dh'><span class='adot "+cls+"'></span><span class='dn'>"+esc(a.name)+"</span><span class='dd'>"+st+"</span></div>";
-if(a.status==='running')b+="<div class='bar'><i></i></div>";
+var b="<div class='dh'><span class='orb "+cls+"'></span><span class='dn'>"+esc(a.name)+"</span><span class='dd'>"+st+"</span></div>";
+b+=workHtml(a);
 var ch=a.changed;
 if(ch&&(ch.dirty||ch.stat||(ch.commits&&ch.commits.length))){
   var parts=[];
@@ -673,7 +763,7 @@ if(ch&&(ch.dirty||ch.stat||(ch.commits&&ch.commits.length))){
   b+="<div class='changed muted'>No file changes detected (the agent may have only planned or asked).</div>";
 }
 b+=waitHtml(a)+askHtml(a);
-b+="<pre class='alogout'>"+esc((a.tail&&a.tail.trim())||'(waiting for output…)')+"</pre>";
+b+=a.work?("<details class='wkraw'><summary>what it said, in full</summary><pre class='alogout'>"+esc((a.tail&&a.tail.trim())||'(nothing yet)')+"</pre></details>"):("<pre class='alogout'>"+esc((a.tail&&a.tail.trim())||'(waiting for output…)')+"</pre>");
 return "<div class='agent'>"+b+"</div>";}).join("");
 el.querySelectorAll('.alogout').forEach(function(p){p.scrollTop=p.scrollHeight;});
 restoreDrafts(el);wireAsks(el);wireWaits(el);
@@ -1202,13 +1292,26 @@ lqLabels();}
 // Force-directed layout, solved once per change: push overlapping targets apart
 // (each droplet's circle plus its label below or above), and off the core, within
 // the screen. Deterministic, so the same data gives the same layout.
-function lqRelax(L,S,cx,cy,coreR){var n=L.length;for(var it=0;it<160;it++){var moved=0;for(var i=0;i<n;i++){var a=L[i];
-for(var j=i+1;j<n;j++){var b=L[j],dx=a.tx-b.tx,dy=a.ty-b.ty,dd=Math.sqrt(dx*dx+dy*dy)||0.01,mn=a.r+b.r+70+(Math.abs(dx)<150?48:0);if(dd<mn){var f=(mn-dd)/2/dd;a.tx+=dx*f;a.ty+=dy*f;b.tx-=dx*f;b.ty-=dy*f;moved++;}}
-var cdx=a.tx-cx,cdy=a.ty-cy,cd=Math.sqrt(cdx*cdx+cdy*cdy)||0.01,cm=a.r+coreR+70;if(cd<cm){a.tx+=cdx*(cm-cd)/cd;a.ty+=cdy*(cm-cd)/cd;moved++;}
-a.tx=Math.max(a.r+60,Math.min(S.w-a.r-60,a.tx));a.ty=Math.max(140+a.r,Math.min(S.h-200-a.r,a.ty));}if(!moved)break;}}
+// The one rule for how far apart two droplets sit: past where their metal would
+// bridge (r²/d² fields sum to 1 midway at d = 2·√(r1²+r2²)), with a margin so the
+// wobble can't flicker a bridge open and shut, and room for their labels when
+// they share a column. Used once, when the layout is solved; nothing fights it live.
+function lqSep(a,b,dx){return Math.max(a.r+b.r+70,2.4*Math.sqrt(a.r*a.r+b.r*b.r))+(Math.abs(dx)<150?48:0);}
+// Solve the layout: push targets apart until every pair keeps lqSep (and clear
+// of the core), within the screen. If they can't all fit, every droplet gives up
+// a little of its size (the liquid is conserved, not crowded) and it solves again.
+function lqRelax(L,S,cx,cy,coreR){var n=L.length;
+for(var pass=0;pass<6;pass++){
+for(var it=0;it<220;it++){var moved=0;for(var i=0;i<n;i++){var a=L[i];
+for(var j=i+1;j<n;j++){var b=L[j],dx=a.tx-b.tx,dy=a.ty-b.ty,dd=Math.sqrt(dx*dx+dy*dy)||0.01,mn=lqSep(a,b,dx);if(dd<mn){var f=(mn-dd)/2/dd;a.tx+=dx*f;a.ty+=dy*f;b.tx-=dx*f;b.ty-=dy*f;moved++;}}
+var cdx=a.tx-cx,cdy=a.ty-cy,cd=Math.sqrt(cdx*cdx+cdy*cdy)||0.01,cm=Math.max(a.r+coreR+70,2.4*Math.sqrt(a.r*a.r+coreR*coreR));if(cd<cm){a.tx+=cdx*(cm-cd)/cd;a.ty+=cdy*(cm-cd)/cd;moved++;}
+a.tx=Math.max(a.r+60,Math.min(S.w-a.r-60,a.tx));a.ty=Math.max(140+a.r,Math.min(S.h-200-a.r,a.ty));}if(!moved)break;}
+var bad=false;for(var i2=0;i2<n&&!bad;i2++)for(var j2=i2+1;j2<n;j2++){var p=L[i2],q=L[j2],ddx=p.tx-q.tx,ddy=p.ty-q.ty;if(Math.sqrt(ddx*ddx+ddy*ddy)<lqSep(p,q,ddx)-1){bad=true;break;}}
+if(!bad)return;L.forEach(function(x){x.r*=0.9;});coreR*=0.9;}}
 function lqLabels(){var el=$('lqdrops');if(!el)return;
 el.innerHTML=LQ.drops.map(function(d,i){return "<button type='button' class='lqd lq-"+d.kind+"' data-i='"+i+"'><span>"+esc(d.title)+"</span>"+(d.sub?"<small>"+esc(d.sub)+"</small>":"")+"</button>";}).join('');
 LQ.btns=[];el.querySelectorAll('.lqd').forEach(function(b){LQ.btns.push(b);b.addEventListener('click',function(ev){lqOpen(LQ.drops[+b.getAttribute('data-i')],ev);});});
+LQ.drops.forEach(function(d){if(d.x===d.tx&&d.y===d.ty)return;if(!LQ.frame){d.x=d.tx;d.y=d.ty;d.cr=d.r;}});lqStep();
 var c=$('lqcore');if(c)c.textContent=LQ.coreText||'';}
 function lqVia(ev){return LQ.talking?'talk':ev&&ev.pointerType==='touch'?'touch':ev&&ev.detail===0?'key':'click';}
 function lqUse(shape,ev,via){api('/api/adapt/use',{shape:shape,from:LQ.last,via:via||lqVia(ev)});LQ.last=shape;}
@@ -1222,13 +1325,13 @@ function lqPool(shape){tabPicked=true;setTab(shape);var b=document.body;if(b&&b.
 function lqSink(){var b=document.body;if(b&&b.classList)b.classList.remove('lq-pooled');LQ.mode='aware';lqAct();lqLoad(false);}
 function lqAct(){LQ.lastAct=Date.now();if(LQ.mode==='rest'){LQ.mode='aware';lqLoad(true);}}
 function lqTalkMode(on){LQ.talking=on;var b=document.body;if(b&&b.classList)b.classList.toggle('lq-talking',on);}
-function lqTalkShow(wait){var el=$('lqtalk');if(!el)return;el.innerHTML=LQ.talk.map(function(m){return "<div class='lqmsg"+(m.me?' me':'')+"'>"+esc(m.text)+"</div>";}).join('')+(wait?"<div class='lqmsg'>&hellip;</div>":'');if(el.scrollHeight)el.scrollTop=el.scrollHeight;}
+function lqTalkShow(wait){var el=$('lqtalk');if(!el)return;el.innerHTML=LQ.talk.map(function(m){return "<div class='lqmsg"+(m.me?' me':'')+"'>"+esc(m.text)+stepsHtml(m.steps)+"</div>";}).join('')+(wait?"<div class='lqmsg thinking'>Thinking: recalling what it knows, reading what's here&hellip;</div>":'');if(el.scrollHeight)el.scrollTop=el.scrollHeight;}
 function lqSay(){var i=$('lqask');var q=((i&&i.value)||'').trim();if(!q)return;i.value='';lqAct();
 var low=q.toLowerCase().replace(/^(please |can you |could you )/,''),hit='';
 Object.keys(LQNAMES).forEach(function(k){var nm=LQNAMES[k].toLowerCase();if(hit)return;['open ','show ','go to ','take me to '].forEach(function(v){if(low.indexOf(v+nm)===0||low.indexOf(v+'my '+nm)===0)hit=k;});if(low===nm)hit=k;});
 if(hit){lqTalkMode(true);lqUse(hit,null,'talk');lqPool(hit);return;}
 LQ.talk.push({me:true,text:q});LQ.talk=LQ.talk.slice(-8);lqTalkShow(true);
-api('/api/home/ask',{question:q}).then(function(r){LQ.talk.push({me:false,text:r.error==='not-connected'?'Connect an AI in Settings to talk to me. Say "open settings".':(r.answer||r.error||'(no answer)')});LQ.talk=LQ.talk.slice(-8);lqTalkShow(false);LQ.ripple=[0.5,0.47,LQ.t];lqLoad(false);}).catch(function(e){LQ.talk.push({me:false,text:String((e&&e.message)||e)});lqTalkShow(false);});}
+api('/api/home/ask',{question:q}).then(function(r){LQ.talk.push({me:false,steps:r.steps||[],text:r.error==='not-connected'?'Connect an AI in Settings to talk to me. Say "open settings".':(r.answer||r.error||'(no answer)')});LQ.talk=LQ.talk.slice(-8);lqTalkShow(false);LQ.ripple=[0.5,0.47,LQ.t];lqLoad(false);}).catch(function(e){LQ.talk.push({me:false,text:String((e&&e.message)||e)});lqTalkShow(false);});}
 // The physics: each droplet a critically damped spring to its place (no wobble,
 // no overshoot), pushed off its neighbours and the core where they'd overlap.
 function lqStep(){var S0=lqSize();if(LQ.adapt&&(S0.w!==LQ.bw||S0.h!==LQ.bh))lqBuild();var S=S0,cx=S.w/2,cy=S.h*0.47,k=0.022,c=2*Math.sqrt(k),th=LQ.theme,still=th.still,rest=LQ.mode==='rest',pool=LQ.mode==='pool',talk=LQ.talking&&!pool;
@@ -1240,8 +1343,6 @@ if(rest){tx=cx+Math.cos(i*1.3)*16;ty=cy+Math.sin(i*1.3)*16;tr=d.r*0.6;}
 else if(pool){tx=cx+(i-(N-1)/2)*40*S.s;ty=S.h-40;tr=13*S.s;}
 else if(talk){ty=S.h*0.12+(d.ty-S.h*0.12)*0.55;}
 var ax=k*(tx-d.x)-c*d.vx,ay=k*(ty-d.y)-c*d.vy;
-if(!rest&&!pool){for(var j=0;j<N;j++){if(i===j)continue;var e=D[j],dx=d.x-e.x,dy=d.y-e.y,dd=Math.sqrt(dx*dx+dy*dy)||1,mn=d.cr+e.cr+78+(Math.abs(dx)<((d.lw||110)+(e.lw||110))/2?52:0);if(dd<mn){var f=0.06*(mn-dd)/dd;ax+=dx*f;ay+=dy*f;}}
-var dx0=d.x-core.x,dy0=d.y-core.y,d0=Math.sqrt(dx0*dx0+dy0*dy0)||1,m0=d.cr+core.cr+80;if(d0<m0){var f0=0.06*(m0-d0)/d0;ax+=dx0*f0;ay+=dy0*f0;}}
 if(still){d.x=tx;d.y=ty;d.vx=0;d.vy=0;}else{d.vx+=ax;d.vy+=ay;d.x+=d.vx;d.y+=d.vy;}
 if(!rest&&!pool){d.x=Math.max(d.cr+12,Math.min(S.w-d.cr-12,d.x));d.y=Math.max(140+d.cr,Math.min(S.h-150-d.cr-50,d.y));}
 d.cr+=(tr-d.cr)*(still?1:0.06);
@@ -1250,7 +1351,7 @@ var cb=$('lqcore');if(cb&&cb.style){cb.style.transform='translate('+Math.round(c
 // The liquid: a metaball surface (Σ r²/d² = 1) shaded as chrome, on the GPU.
 var LQ_FS=['precision highp float;',
 'uniform vec2 uRes;uniform float uT;uniform float uDpr;uniform vec3 uB[16];uniform vec3 uRip;uniform float uLight;uniform float uContrast;uniform vec4 uAccent;uniform float uExposure;',
-'float field(vec2 p){float f=0.0;for(int i=0;i<16;i++){vec3 b=uB[i];float r=b.z*uDpr;vec2 d=p-b.xy*uRes;f+=r*r/(dot(d,d)+1.0);}vec2 q=p/uDpr;return f*(1.0+0.045*sin(q.x*0.011+uT*0.7)*cos(q.y*0.009-uT*0.55)+0.025*sin(q.x*0.031-q.y*0.027+uT*1.3));}',
+'float field(vec2 p){float f=0.0;for(int i=0;i<16;i++){vec3 b=uB[i];float r=b.z*uDpr;vec2 d=p-b.xy*uRes;f+=r*r/(dot(d,d)+1.0);}vec2 q=p/uDpr;return f*(1.0+0.025*sin(q.x*0.011+uT*0.7)*cos(q.y*0.009-uT*0.55)+0.012*sin(q.x*0.031-q.y*0.027+uT*1.3));}',
 'float hash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}',
 'vec3 env(vec3 r){float y=r.y;vec3 c=mix(mix(vec3(0.02,0.022,0.03),vec3(0.36,0.38,0.43),uLight),vec3(0.82,0.84,0.90),smoothstep(-0.35,0.55,y));c+=vec3(1.0)*pow(max(0.0,1.0-abs(y-0.18+0.04*sin(uT*0.3))*5.0),4.0)*1.1;c+=vec3(0.75,0.82,1.0)*pow(max(0.0,r.x),10.0)*0.9;c+=vec3(1.0,0.93,0.86)*pow(max(0.0,-r.x),14.0)*0.5;c*=0.92+0.08*sin(r.x*4.0+r.y*3.0+uT*0.4);return c;}',
 'void main(){vec2 p=vec2(gl_FragCoord.x,uRes.y-gl_FragCoord.y);float f=field(p);float e=2.0*uDpr;',
@@ -1281,10 +1382,12 @@ function lqDraw(G){var gl=G.gl,c=G.c,S=lqSize(),d=Math.min(window.devicePixelRat
 if(c.width!==W||c.height!==H){c.width=W;c.height=H;gl.viewport(0,0,W,H);}
 var now=(window.performance&&performance.now)?performance.now():Date.now(),t=(now-G.t0)/1000,th=LQ.theme,still=th.still,o=G.out;LQ.t=t;
 for(var i=0;i<48;i++)o[i]=0;
-var put=function(k,x,y,r){if(k>15)return;var w=still?0:1;o[k*3]=x/S.w+Math.sin(t*1.3+k*1.7)*0.004*w;o[k*3+1]=y/S.h+Math.cos(t*1.1+k*2.3)*0.005*w;o[k*3+2]=Math.max(0,r)*(1+0.035*Math.sin(t*2.0+k)*w);};
+var put=function(k,x,y,r){if(k>15)return;var w=still?0:(k===0?1:0.3);o[k*3]=x/S.w+Math.sin(t*1.3+k*1.7)*0.004*w;o[k*3+1]=y/S.h+Math.cos(t*1.1+k*2.3)*0.005*w;o[k*3+2]=Math.max(0,r)*(1+0.035*Math.sin(t*2.0+k)*w);};
 put(0,LQ.core.x,LQ.core.y,LQ.core.cr);var k=1,tend=[];
 LQ.drops.forEach(function(dr){put(k++,dr.x,dr.y,dr.cr);if(dr.tendril&&LQ.mode==='aware'&&!LQ.talking)tend.push(dr);});
-tend.forEach(function(dr){var dx=dr.x-LQ.core.x,dy=dr.y-LQ.core.y,len=Math.sqrt(dx*dx+dy*dy)||1,gap=len-LQ.core.cr-dr.cr;if(k<15&&gap>8){var at=LQ.core.cr+gap/2;put(k++,LQ.core.x+dx/len*at,LQ.core.y+dy/len*at,Math.min(20*S.s,gap*0.45));}});
+// a tendril is a chain of blobs close enough to always bridge (spaced at under 2.8r),
+// never one blob floating in the gap: drawn whole or not at all
+tend.forEach(function(dr){var dx=dr.x-LQ.core.x,dy=dr.y-LQ.core.y,len=Math.sqrt(dx*dx+dy*dy)||1,gap=len-LQ.core.cr-dr.cr;if(gap<=8)return;var n=Math.max(1,Math.min(3,Math.ceil(gap/40))),sp=gap/(n+1),rr=sp/2;if(k+n>15)return;for(var m=1;m<=n;m++){var at=LQ.core.cr+sp*m;put(k++,LQ.core.x+dx/len*at,LQ.core.y+dy/len*at,rr);}});
 var P=LQ.pointer;if(P&&LQ.mode==='aware'&&!LQ.talking){var best=null,bd=1e9;[LQ.core].concat(LQ.drops).forEach(function(g){if(g.cr<18)return;var dd=Math.hypot(P[0]-g.x,P[1]-g.y)-g.cr;if(dd<bd){bd=dd;best=g;}});
 if(best&&bd<230){var dx=P[0]-best.x,dy=P[1]-best.y,dl=Math.hypot(dx,dy)||1,reach=Math.min(dl,best.cr+70);put(15,best.x+dx/dl*reach,best.y+dy/dl*reach,8+20*(1-Math.max(0,bd)/230));}}
 var U=G.U;gl.uniform2f(U.uRes,W,H);gl.uniform1f(U.uT,t);gl.uniform1f(U.uDpr,d);gl.uniform3fv(U.uB,o);gl.uniform3f(U.uRip,LQ.ripple[0],LQ.ripple[1],still?-10:LQ.ripple[2]);
@@ -1301,7 +1404,7 @@ var mn=document.querySelector('main');if(mn&&mn.addEventListener)mn.addEventList
 lqLoad(true);
 // the only clocks: rest when left alone, fresh data now and then, the hour (night)
 setInterval(function(){if(LQ.mode==='aware'&&!LQ.talking&&Date.now()-LQ.lastAct>LQ_REST)LQ.mode='rest';if(LQ.mode!=='pool')lqLoad(false);var h=new Date().getHours(),n=h>=22||h<6;if(n!==LQ.theme.night)lqTheme();},30000);
-var G=lqGL();if(typeof window.requestAnimationFrame!=='function')return;var raf=function(f){return window.requestAnimationFrame(f);};
+var G=lqGL();if(G){try{lqStep();lqDraw(G);}catch(e){}}if(typeof window.requestAnimationFrame!=='function')return;var raf=function(f){return window.requestAnimationFrame(f);};
 function frame(){if(!document.hidden){LQ.frame++;if(LQ.mode!=='pool'||LQ.frame%3===0){lqStep();if(G)lqDraw(G);}}raf(frame);}
 raf(frame);}
 
