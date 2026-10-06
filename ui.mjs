@@ -25,6 +25,9 @@ body.lq-forced #lq{display:none}
 .lqd{position:absolute;left:0;top:0;display:flex;flex-direction:column;align-items:center;border-radius:14px;border:1px solid transparent;background:transparent;color:#ECE9E4;font:600 13.5px/1.25 var(--sans);letter-spacing:-.005em;pointer-events:auto;transition:opacity .5s ease,background-color .2s ease,border-color .2s ease;will-change:transform;text-shadow:0 1px 10px rgba(0,0,0,.6)}
 .lqd .lt .lm{display:block;font-weight:500;font-size:11.5px;color:#8A919B;margin-top:1px}
 .lqd .lt{all:unset;box-sizing:border-box;display:flex;align-items:center;justify-content:center;gap:7px;min-height:36px;padding:6px 10px;cursor:pointer;text-align:center;max-width:220px}
+.lqd.lq-proj .lt{flex-direction:column;gap:1px;max-width:260px}
+.lqd.lq-proj .lt .lm{font-weight:500;font-size:12px;color:#8A919B;max-width:250px}
+body.lq-light .lqd.lq-proj .lt .lm{color:#5A6470}
 .lqd.lq-you .lt::before{content:'';flex:none;width:7px;height:7px;border-radius:50%;background:#F2A541;box-shadow:0 0 0 3px rgba(242,165,65,.2)}
 .lqd .lt span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .lqd .lgo{display:none;margin:4px 10px 10px;min-height:38px;padding:0 16px;border-radius:999px;border:1px solid #FFFFFF;background:linear-gradient(180deg,#FFFFFF 0%,#D2D8E1 44%,#8E97A6 56%,#E6EAF0 100%);color:#06080B;font:700 12.5px var(--sans);cursor:pointer}
@@ -97,8 +100,11 @@ body.lq-liquid.lq-light.lq-pooled main{background:rgba(246,248,251,.9);box-shado
 body.lq-liquid.lq-solid.lq-pooled main{backdrop-filter:none;background:var(--ink)}
 body.lq-liquid .task,body.lq-liquid .agent,body.lq-liquid .rcard,body.lq-liquid .bcard,body.lq-liquid .drift,body.lq-liquid .q,body.lq-liquid .out,body.lq-liquid .tchat{background:linear-gradient(180deg,rgba(255,255,255,.075),rgba(255,255,255,.02));border:1px solid rgba(220,228,240,.16);border-radius:16px;box-shadow:inset 0 1px 0 rgba(255,255,255,.09),0 12px 30px -24px rgba(0,0,0,.9)}
 body.lq-liquid.lq-light .task,body.lq-liquid.lq-light .agent,body.lq-liquid.lq-light .rcard,body.lq-liquid.lq-light .bcard,body.lq-liquid.lq-light .drift,body.lq-liquid.lq-light .q,body.lq-liquid.lq-light .out,body.lq-liquid.lq-light .tchat{background:linear-gradient(180deg,#FFFFFF,#F2F4F8);border-color:rgba(20,30,45,.12);box-shadow:inset 0 1px 0 #FFFFFF,0 12px 28px -24px rgba(20,30,45,.5)}
-body.lq-liquid button.act{background:linear-gradient(180deg,#FFFFFF 0%,#D2D8E1 44%,#8E97A6 56%,#E6EAF0 100%);color:#06080B;border:1px solid rgba(255,255,255,.9);border-radius:999px;box-shadow:0 6px 18px -10px rgba(0,0,0,.7)}
-body.lq-liquid button.ghost{background:rgba(255,255,255,.05);border:1px solid rgba(220,228,240,.28);border-radius:999px;color:var(--bone);backdrop-filter:blur(6px)}
+body.lq-liquid button.act{background:#F3F0EA;color:#0A0B0D;border:0;border-radius:999px;box-shadow:none;font-weight:600}
+body.lq-liquid button.act:hover{background:#FFFFFF}
+body.lq-liquid.lq-light button.act{background:#151A21;color:#FFFFFF}
+body.lq-liquid.lq-look-pearl button.act,body.lq-look-pearl #lqgo.on,body.lq-liquid.lq-look-pearl .updatebar.show{background:linear-gradient(180deg,#FFFFFF 0%,#D9DDE2 45%,#9AA1AA 55%,#E8EAED 100%);color:#1B1E23;box-shadow:0 2px 6px rgba(0,0,0,.18),inset 0 0 0 1px rgba(0,0,0,.08)}
+body.lq-liquid button.ghost{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.14);border-radius:999px;color:var(--bone);backdrop-filter:blur(6px)}
 body.lq-liquid.lq-light button.ghost{background:rgba(255,255,255,.7);border-color:rgba(20,30,45,.18)}
 body.lq-liquid input,body.lq-liquid select,body.lq-liquid textarea{border-radius:12px;border:1px solid rgba(220,228,240,.2);background:rgba(255,255,255,.04);color:var(--bone)}
 body.lq-liquid.lq-light input,body.lq-liquid.lq-light select,body.lq-liquid.lq-light textarea{background:#FFFFFF;border-color:rgba(20,30,45,.18)}
@@ -106,7 +112,8 @@ body.lq-liquid input:focus,body.lq-liquid select:focus,body.lq-liquid textarea:f
 body.lq-liquid .tgroup{color:#C9D1DC;letter-spacing:.16em}
 body.lq-liquid.lq-light .tgroup{color:#3B4656}
 body.lq-liquid h2,body.lq-liquid h3{letter-spacing:-.01em}
-body.lq-liquid .fchip.on{background:linear-gradient(180deg,#FFFFFF,#C9D1DC);color:#06080B;border-color:#FFFFFF}
+body.lq-liquid .fchip.on{background:#F3F0EA;color:#0A0B0D;border-color:#F3F0EA}
+body.lq-liquid.lq-light .fchip.on{background:#151A21;color:#FFFFFF;border-color:#151A21}
 body.lq-contrast.lq-liquid .task,body.lq-contrast.lq-liquid .agent{border:2px solid currentColor}
 
 /* the work scene: tasks and agents in the liquid, with spheres revolving round what's at work */
@@ -128,7 +135,8 @@ body.lq-pooled #lqgroups{display:none}
 @keyframes lqorbit{to{transform:rotate(360deg)}}
 @media (prefers-reduced-motion: reduce){.lqorbit span{animation:none}.lqorbit span:nth-child(2){transform:rotate(120deg)}.lqorbit span:nth-child(3){transform:rotate(240deg)}}
 #lqgo,#lqback{display:none}
-body.lq-work #lqgo.on{display:inline-flex;position:absolute;left:50%;bottom:86px;transform:translateX(-50%);z-index:4;align-items:center;gap:8px;min-height:52px;padding:0 26px;border-radius:999px;border:1px solid #FFFFFF;background:linear-gradient(180deg,#FFFFFF 0%,#D2D8E1 44%,#8E97A6 56%,#E6EAF0 100%);color:#06080B;font:700 16px var(--sans);letter-spacing:.02em;cursor:pointer;box-shadow:0 16px 40px -16px rgba(0,0,0,.75)}
+body.lq-work #lqgo.on{display:inline-flex;position:absolute;left:50%;bottom:86px;transform:translateX(-50%);z-index:4;align-items:center;gap:8px;min-height:52px;padding:0 26px;border-radius:999px;border:0;background:#F3F0EA;color:#06080B;font:700 16px var(--sans);letter-spacing:.02em;cursor:pointer;box-shadow:0 16px 40px -16px rgba(0,0,0,.75)}
+body.lq-light.lq-work #lqgo.on{background:#151A21;color:#FFFFFF}
 body.lq-work #lqback{display:inline-flex;position:absolute;left:16px;top:52px;z-index:4;align-items:center;min-height:44px;padding:0 16px;border-radius:999px;border:1px solid rgba(220,228,240,.3);background:rgba(4,5,7,.6);backdrop-filter:blur(8px);color:#EEF2F8;font:600 14px var(--sans);cursor:pointer}
 body.lq-light.lq-work #lqback{background:rgba(255,255,255,.8);color:#10151C;border-color:rgba(20,30,45,.2)}
 body.lq-pooled #lqgo,body.lq-pooled #lqback,body.lq-pooled #lqorbits,body.lq-work #lqgroups{display:none}
@@ -205,7 +213,8 @@ a{color:var(--green);cursor:pointer}.hidden{display:none}
 .note{font-size:12px;margin-top:10px}.ok{color:var(--green)}.err{color:var(--amber)}
 .updatebar{display:none;align-items:center;gap:12px;padding:9px 16px;font-size:13px;font-weight:600;background:var(--green);color:var(--ink)}
 .updatebar.show{display:flex}
-body.lq-liquid .updatebar.show{position:fixed;top:10px;left:50%;transform:translateX(-50%);width:max-content;max-width:calc(100vw - 24px);z-index:20;border-radius:999px;border:1px solid #FFFFFF;background:linear-gradient(180deg,#FFFFFF 0%,#D2D8E1 44%,#8E97A6 56%,#E6EAF0 100%);color:#06080B;box-shadow:0 14px 40px -14px rgba(0,0,0,.7)}
+body.lq-liquid .updatebar.show{position:fixed;top:10px;left:50%;transform:translateX(-50%);width:max-content;max-width:calc(100vw - 24px);z-index:20;border-radius:999px;border:0;background:#F3F0EA;color:#06080B;box-shadow:0 14px 40px -14px rgba(0,0,0,.7)}
+body.lq-liquid.lq-light .updatebar.show{background:#151A21;color:#FFFFFF}
 body.lq-liquid .updatebar.show.reconnect{background:var(--amber)}
 body.lq-liquid #appbar.updatebar.show{top:58px}
 .updatebar.reconnect{background:var(--amber)}
@@ -318,6 +327,63 @@ label.check input{width:auto}
 .scrbox span{position:absolute;left:0;top:0;font-size:11px;background:var(--green);color:var(--ink);padding:1px 6px;white-space:nowrap}
 .scrbox.draw{border:2px dashed var(--amber);background:rgba(242,165,65,.14)}
 .board{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px;margin-top:12px}
+
+/* ---- finer details: the controls every panel shares, in the look ---- */
+.iconbtn{display:inline-grid;place-items:center;width:36px;height:36px;padding:0;border-radius:999px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.05);color:var(--bone);cursor:pointer;transition:background-color .15s ease}
+.iconbtn:hover{background:rgba(255,255,255,.1)}
+.iconbtn.wide{display:inline-flex;gap:7px;width:auto;padding:0 14px;font:500 13px var(--sans)}
+.iconbtn:focus-visible,.seg button:focus-visible{outline:2px solid currentColor;outline-offset:2px}
+body.lq-light .iconbtn{border-color:rgba(21,26,33,.12);background:rgba(21,26,33,.04)}
+body.lq-light .iconbtn:hover{background:rgba(21,26,33,.08)}
+.seg{display:inline-flex;gap:2px;padding:3px;border-radius:999px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1)}
+.seg button{min-height:30px;padding:0 13px;border:0;border-radius:999px;background:transparent;color:var(--faint);font:500 12.5px var(--sans);cursor:pointer}
+.seg button[aria-checked='true']{background:#F3F0EA;color:#0A0B0D}
+body.lq-light .seg{background:rgba(21,26,33,.04);border-color:rgba(21,26,33,.1)}
+body.lq-light .seg button[aria-checked='true']{background:#151A21;color:#FFFFFF}
+body.lq-liquid select{-webkit-appearance:none;appearance:none;padding:8px 34px 8px 12px;border-radius:12px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.05) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%238A919B' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E") no-repeat right 13px center;color:var(--bone);font:500 13px var(--sans);color-scheme:dark;cursor:pointer}
+body.lq-liquid select option{background:#131518;color:#ECE9E4}
+body.lq-liquid.lq-light select{border-color:rgba(21,26,33,.14);background-color:rgba(21,26,33,.04);color-scheme:light}
+body.lq-liquid.lq-light select option{background:#FFFFFF;color:#151A21}
+/* the Dashboard's head */
+.bhead{display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin:2px 0 4px}
+.bsumw{flex:1;min-width:220px}
+.bsum{font:500 16px/1.4 var(--sans);color:var(--bone);text-wrap:balance}
+.bsum b{font-weight:600}
+.bsub{font-size:12.5px;color:var(--faint);margin-top:2px}
+.blane .blsub{font-size:11.5px;color:var(--faint);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:1px}
+/* Connections */
+.cxh{display:flex;flex-direction:column;gap:2px;margin:26px 0 12px}
+.cxh span{font:600 15px var(--sans);color:var(--bone)}
+.cxh small{font-size:12.5px;color:var(--faint)}
+.cxg{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:18px 28px}
+.cxc{min-width:0}
+.cxl{font:500 11px var(--sans);letter-spacing:.1em;text-transform:uppercase;color:var(--faint);margin-bottom:4px}
+.lnk.cx{display:flex;align-items:center;gap:0}
+.cx .lbtn{all:unset;box-sizing:border-box;display:flex;align-items:center;gap:9px;flex:1;min-width:0;min-height:32px;padding:4px 8px;margin-left:-8px;border-radius:10px;cursor:pointer}
+.cx .lbtn:hover{background:rgba(255,255,255,.05)}
+.cx .lbtn:focus-visible{outline:2px solid currentColor;outline-offset:1px}
+body.lq-light .cx .lbtn:hover{background:rgba(21,26,33,.05)}
+.cxb{flex:none;width:11px;height:11px;border-radius:50%;box-shadow:inset 0 0 0 1.5px var(--faint);opacity:.6}
+.cx.ok .cxb{opacity:1;box-shadow:0 0 0 1px rgba(255,255,255,.08);background:radial-gradient(circle at 34% 28%,#FFFFFF 0,#C9CFD9 20%,#5B626D 58%,#121418 100%)}
+body.lq-light .cx.ok .cxb{box-shadow:0 1px 2px rgba(0,0,0,.25);background:radial-gradient(circle at 34% 28%,#FFFFFF 0,#E3E6EA 22%,#9BA2AC 55%,#3A3F46 100%)}
+.cx.signin .cxb,.cx.signedout .cxb,.cx.error .cxb{opacity:1;box-shadow:inset 0 0 0 2px var(--amber),0 0 10px rgba(242,165,65,.35)}
+.cxn{font:500 13.5px var(--sans);color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cx.ok .cxn{color:var(--bone)}
+.cxs{margin-left:auto;padding-left:8px;font-size:11.5px;color:var(--faint);white-space:nowrap}
+.cx.signin .cxs,.cx.signedout .cxs,.cx.error .cxs{color:var(--amber)}
+.cx.off .cxs{opacity:0;transition:opacity .15s ease}
+.cx.off:hover .cxs,.cx.off .lbtn:focus-visible .cxs,body.lq-touch .cx.off .cxs{opacity:1}
+.cx .lmore,.cx .lrm{display:none;border:0;background:transparent;color:var(--faint);font:500 12px var(--sans);padding:4px 6px;border-radius:8px;cursor:pointer}
+.cx .lmore:hover{color:var(--bone)}.cx .lrm:hover{color:var(--amber)}
+.cx:hover .lmore,.cx:hover .lrm,.cx:focus-within .lmore,.cx:focus-within .lrm,body.lq-touch .cx .lmore,body.lq-touch .cx .lrm{display:inline-flex}
+/* the card list, quiet */
+body.lq-liquid .board .bcard{background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.08);border-radius:16px;box-shadow:none}
+body.lq-liquid.lq-light .board .bcard{background:rgba(255,255,255,.6);border-color:rgba(21,26,33,.08)}
+body.lq-liquid .board .bcard.has{border-color:rgba(242,165,65,.35)}
+body.lq-liquid .bcard .bc{font:300 30px/1.1 var(--sans);letter-spacing:-.02em;color:var(--faint)}
+body.lq-liquid .bcard.has .bc{color:var(--amber)}
+body.lq-liquid .bcard .bbrief{border-left:2px solid var(--line);background:transparent;padding:2px 0 2px 12px;color:var(--text)}
+body.lq-liquid #lqsinkrow{margin:-6px -4px 8px}
 /* the Dashboard as a stream: time runs left to right, a current per feed, now on the right */
 .bstream{position:relative;margin-top:10px;border-radius:18px;overflow:hidden;isolation:isolate;background:#08090B;box-shadow:0 0 0 1px rgba(255,255,255,.08)}
 body.lq-light .bstream{background:#EBEEF0;box-shadow:0 0 0 1px rgba(21,26,33,.08)}
@@ -325,7 +391,7 @@ body.lq-look-pearl .bstream{background:#EDECE9}
 .bstream.none{display:none}
 #bsc{position:absolute;inset:0;width:100%;height:100%;display:block}
 #bsov{position:absolute;inset:0}
-body.lq-liquid .bcard.blane{position:absolute;left:16px;width:150px;padding:0;border:0;background:transparent;box-shadow:none;transform:translateY(-50%)}
+body.lq-liquid .bcard.blane{position:absolute;left:16px;width:186px;padding:0;border:0;background:transparent;box-shadow:none;transform:translateY(-50%)}
 .blane .bln{font:600 14px/1.2 var(--sans);color:var(--bone);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .blane .blc{font-size:12px;color:var(--faint);margin-top:1px}
 .blane .blc b{color:var(--amber);font-weight:600}
@@ -400,7 +466,7 @@ body.lq-light .btip .bta button:not(.quiet){background:#151A21;color:#FFFFFF}
 <button class="tab" data-tab="settings">Settings</button>
 </div>
 <main>
-<div id="lqsinkrow"><button class="ghost" type="button" id="lqsink" title="close it: it sinks back into the liquid (Esc)">Sink back</button></div>
+<div id="lqsinkrow"><button class="iconbtn wide" type="button" id="lqsink" title="close it: it sinks back into the liquid (Esc, or right-click)"><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M2 2l8 8M10 2l-8 8" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>Close</button></div>
 <section id="panel-map">
 <div class="profile muted" id="profile">Mapping your work&hellip;</div>
 <div class="maprow">
@@ -432,7 +498,7 @@ body.lq-light .btip .bta button:not(.quiet){background:#151A21;color:#FFFFFF}
 </div>
 </section>
 <section id="panel-board" class="hidden">
-<div class="row"><span class="muted" id="boardsum" style="flex:1">Everything you watch, side by side.</span><select id="boardhours" title="how far back" style="flex:0 0 auto;width:auto"><option value="24">last 24 hours</option><option value="72">last 3 days</option><option value="168">last 7 days</option></select><button class="ghost" id="boardrefresh">Refresh</button></div>
+<div class="bhead"><div class="bsumw"><div id="boardsum" class="bsum">Everything you watch, side by side.</div><div id="boardsub" class="bsub"></div></div><div class="seg" id="boardwin" role="radiogroup" aria-label="How far back"><button type="button" role="radio" data-h="24" aria-checked="true">24 hours</button><button type="button" role="radio" data-h="72" aria-checked="false">3 days</button><button type="button" role="radio" data-h="168" aria-checked="false">7 days</button></div><button type="button" class="iconbtn" id="boardrefresh" title="Refresh" aria-label="Refresh"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M13 8a5 5 0 1 1-1.5-3.6M13 2.5V5h-2.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button></div>
 <div id="boardmsg"></div>
 <div id="bstream" class="bstream"><canvas id="bsc" aria-hidden="true"></canvas><div id="bsov"></div></div>
 <div id="boardtalk"></div>
@@ -969,20 +1035,20 @@ var pf=$('pforget');if(pf)pf.addEventListener('click',function(){if(typeof confi
 // linked, amber waiting for you to sign in (or signed out), green linked. Shown
 // in Settings, and on the Dashboard until something is linked.
 var LINKS=null;
-var LINKWORD={ok:'linked',signin:'sign in, then close the window',signedout:'signed out',error:'needs a fix'};
+var LINKWORD={ok:'linked',signin:'sign in, then close it',signedout:'signed out',error:'needs a fix'};
 function escQ(t){return esc(t).replace(/'/g,'&#39;');}
-function linksHtml(d,board){var h=board?"<div class='note muted'>Link your work to see what arrives there here, and in Week and Standup:</div>":"";
+// Connections: a column per kind of site; each site a bead in the look: solid when
+// linked, amber when it wants you to sign in, hollow when it isn't linked. Link,
+// check (↻) and Unlink show on hover (always on touch).
+function linksHtml(d,board){var h="<div class='cxh'><span>Connections</span><small>"+(d.linked?"What Symbiot watches for you. Link more to see what arrives there, here and in Week and Standup.":"Link your work to see what arrives there, here and in Week and Standup.")+"</small></div>";
 if(d.error)h+="<div class='note err'>"+esc(d.error)+"</div>";
-d.groups.forEach(function(g){h+="<div class='lgroup'><span class='fl'>"+esc(g)+"</span>";
-d.items.filter(function(x){return x.group===g;}).forEach(function(it){var on=it.state!=='off';
-h+="<span class='lnk "+escQ(it.state)+"' data-id='"+escQ(it.id)+"'><button class='fchip lbtn' title='"+escQ(it.note||(on?'open '+it.url+' to sign in again':'sign in at '+it.url+' and link it'))+"'><span class='dot-c' style='background:"+(it.state==='ok'?'var(--green)':on?'var(--amber)':'var(--line)')+"'></span>"+esc(it.name)+"</button>"+
-(on?"<span class='lst'>"+esc(LINKWORD[it.state]||'')+"</span><button class='lmore' title='check it now'>&#8635;</button><button class='lrm' title='unlink: stop watching it and stop trusting it'>&times;</button>":"")+"</span>";});
-h+="</div>";});return h;}
+h+="<div class='cxg'>"+d.groups.map(function(g){return "<div class='cxc'><div class='cxl'>"+esc(g)+"</div>"+d.items.filter(function(x){return x.group===g;}).map(function(it){var on=it.state!=='off';
+return "<div class='lnk cx "+escQ(it.state)+"' data-id='"+escQ(it.id)+"'><button type='button' class='lbtn' title='"+escQ(it.note||(on?'open '+it.url+' to sign in again':'sign in at '+it.url+' and link it'))+"'><span class='cxb' aria-hidden='true'></span><span class='cxn'>"+esc(it.name)+"</span><span class='cxs'>"+(on?esc(LINKWORD[it.state]||''):'Link')+"</span></button>"+
+(on?"<button type='button' class='lmore' title='check it now' aria-label='Check "+escQ(it.name)+" now'>&#8635;</button><button type='button' class='lrm' title='unlink: stop watching it and stop trusting it'>Unlink</button>":"")+"</div>";}).join('')+"</div>";}).join('')+"</div>";return h;}
 function linksOut(html){var o=document.getElementById('linksmsg');if(o)o.innerHTML=html;var b=document.getElementById('boardmsg');if(b&&LINKS&&!LINKS.linked)b.innerHTML=html;}
 function renderLinks(){if(!LINKS)return;['links','boardlinks'].forEach(function(id){var el=document.getElementById(id);if(!el)return;
-if(id==='boardlinks'&&LINKS.linked){el.innerHTML='';return;}
 el.innerHTML=linksHtml(LINKS,id==='boardlinks');
-el.querySelectorAll('.lnk').forEach(function(sp){var lid=sp.getAttribute('data-id'),name=sp.querySelector('.lbtn').textContent;
+el.querySelectorAll('.lnk').forEach(function(sp){var lid=sp.getAttribute('data-id'),nm=sp.querySelector('.cxn'),name=nm?nm.textContent:sp.querySelector('.lbtn').textContent;
 sp.querySelector('.lbtn').addEventListener('click',function(){linksOut("<div class='note muted'>Opening "+esc(name)+"&hellip;</div>");
 api('/api/links/link',{id:lid}).then(function(r){if(!r||r.error){linksOut("<div class='note err'>"+esc(name)+": "+esc((r&&r.error)||'failed')+"</div>");loadLinks();return;}
 linksOut("<div class='note ok'>Opened "+esc(name)+" in Symbiot's browser. Sign in there as you normally do, then close that window: Symbiot checks it within a minute.</div>");loadLinks();
@@ -1158,14 +1224,15 @@ api('/api/watch/open-chat',{id:n.id}).then(function(x){b.disabled=false;if(!x||x
 say('ok',"&#10003; Opened WhatsApp in Symbiot's browser, in a window of its own. The chat shows your agent's reply in its message box: read it, change it if you like, and send it there. Close the window when you're done, so Watch can read WhatsApp again.");}).catch(function(e){b.disabled=false;say('err',esc(String((e&&e.message)||e)));});}
 var DRAFTING="&#10003; Your agent is drafting a reply to it. It opens the email in your inbox through Screens, writes the reply and leaves it in Drafts for you to read and send: it never presses Send. Follow it, and answer anything it asks, in the Agents tab.";
 // ---- Dashboard: a card per page you watch (your inbox, GitHub, WhatsApp…), what's new on each ----
-var BOARD=null;var BOARDICON={mail:'&#9993;&#65039;',github:'&#128276;',chat:'&#128172;',page:'&#127760;'};
+var BOARD=null;
 // a chat's line says who its last message is from (watch.mjs fromOf): only unread ones count as waiting on you
 var CHATFROM={them:'unread from them',you:'you sent the last one',unknown:'nothing unread, maybe yours'};
 // Talk it over (watch.mjs boardChat): a chat on a card, open by its id, with what's half typed kept across a refresh
 var BTALK={},BTALKDRAFT={},BTALKBUSY=0;
 var TALKHINT="<div class='muted' style='font-size:12px'>Go over what's new here with your AI: what needs you, and what to say to whom. Then click <b>Draft a reply</b> on one, and your agent writes it the way you agreed here. Your AI is sent what this card lists (for mail: the sender, subject and preview).</div>";
 function talking(){var f=document.activeElement;return BTALKBUSY>0||!!(f&&f.closest&&f.closest('.btalk'));}
-function loadBoard(){api('/api/watch/board?hours='+(+$('boardhours').value||24)).then(function(b){if(b&&b.cards){BOARD=b;if(!talking())renderBoard();}});}
+var BOARDH=24;
+function loadBoard(){api('/api/watch/board?hours='+BOARDH).then(function(b){if(b&&b.cards){BOARD=b;if(!talking())renderBoard();}});}
 function boardMsg(cls,html){$('boardmsg').innerHTML="<div class='note "+cls+"'>"+html+"</div>";}
 
 // ---- the Dashboard as a stream ----------------------------------------------------
@@ -1175,38 +1242,41 @@ function boardMsg(cls,html){$('boardmsg').innerHTML="<div class='note "+cls+"'>"
 // the list below, wired by renderBoard's wire); a feed's name carries its Seen,
 // Talk and Check now. Drawn in the look's liquid, with its own canvas.
 var BS={G:null,beads:[],hot:null,on:false,b:null},BWIRE=null;
+// A feed's short name: "Inbox - you@x.com - x Mail" reads as Inbox, with the address under it.
+function bsName(c){var parts=String(c.name||'').split(' - '),acct=parts.filter(function(x){return x.indexOf('@')>=0;})[0]||'';return {n:parts[0]||c.name||'',sub:acct};}
 function bsGeom(){var el=$('bstream'),w=(el&&el.clientWidth)||900,n=((BS.b&&BS.b.cards)||[]).length,narrow=w<720;
-return {w:w,h:Math.max(280,70+n*96+40),x0:narrow?120:200,x1:w-(narrow?28:270),narrow:narrow,n:n};}
+return {w:w,h:Math.max(300,80+n*118+44),x0:narrow?130:220,x1:w-(narrow?36:280),narrow:narrow,n:n};}
 function bsBuild(b){BS.b=b;var ov=$('bsov'),el=$('bstream');if(!ov||!el)return;var cs=b.cards||[];if(!cs.length){ov.innerHTML='';return;}
-var g=bsGeom();if(el.style)el.style.height=g.h+'px';var now=Date.now(),H=(b.hours||24)*3600000,laneY=function(i){return 60+(g.h-110)*(i+0.5)/Math.max(1,g.n);};
+var g=bsGeom();BS.gw=g.w;if(el.style)el.style.height=g.h+'px';var now=Date.now(),H=(b.hours||24)*3600000,laneY=function(i){return 60+(g.h-110)*(i+0.5)/Math.max(1,g.n);};
 var html='';cs.forEach(function(c,i){var y=laneY(i);
-html+="<div class='bline' style='left:"+(g.x0-24)+"px;width:"+(g.x1-g.x0+48)+"px;top:"+Math.round(y)+"px'></div>";
-html+="<div class='bcard blane' data-i='"+i+"' style='top:"+Math.round(y)+"px'><div class='bln' title='"+esc(c.url||'')+"'>"+esc(c.name)+"</div><div class='blc'>"+(c.count?"<b>"+esc(c.label)+"</b>":"nothing new")+"</div><div class='bla'>"+(c.count?"<button class='bseen' title='set this feed back to 0: only what comes in after counts'>Seen</button>":"")+"<button class='btalkbtn' title='talk what&#39;s new here over with your AI before you draft a reply'>Talk"+((c.chat||[]).length?" "+Math.ceil(c.chat.length/2):"")+"</button><button class='bcheck' title='read it now'>Check now</button></div>"+(c.error?"<div class='ble'>"+esc(c.error)+"</div>":"")+"</div>";
+html+="<div class='bline' style='left:"+(g.x0-24)+"px;width:"+(g.x1-g.x0+24)+"px;top:"+Math.round(y)+"px'></div>";
+var nm=bsName(c);html+="<div class='bcard blane' data-i='"+i+"' style='top:"+Math.round(y)+"px'><div class='bln' title='"+esc(c.name+(c.url?' \u00b7 '+c.url:''))+"'>"+esc(nm.n)+"</div>"+(nm.sub?"<div class='blsub'>"+esc(nm.sub)+"</div>":"")+"<div class='blc' title='"+(c.checked?"read "+agoTxt(c.checked):"")+"'>"+(c.count?"<b>"+esc(c.label)+"</b>":"quiet")+"</div><div class='bla'>"+(c.count?"<button class='bseen' title='set this feed back to 0: only what comes in after counts'>Seen</button>":"")+"<button class='btalkbtn' title='talk what&#39;s new here over with your AI before you draft a reply'>Talk"+((c.chat||[]).length?" "+Math.ceil(c.chat.length/2):"")+"</button><button class='bcheck' title='read it now'>Check now</button></div>"+(c.error?"<div class='ble'>"+esc(c.error)+"</div>":"")+"</div>";
 if(c.brief&&!g.narrow)html+="<div class='blb' style='top:"+Math.round(y)+"px'>"+esc(c.brief.text.length>150?c.brief.text.slice(0,149)+'…':c.brief.text)+"</div>";});
 var marks=b.hours===24?[18,12,6]:b.hours===72?[48,24]:[120,72,24];
 marks.forEach(function(m){html+="<span class='btick' style='left:"+Math.round(g.x0+(1-m/(b.hours||24))*(g.x1-g.x0))+"px'>"+(m<48?m+'h ago':Math.round(m/24)+' days ago')+"</span>";});
 html+="<span class='btick' style='left:"+g.x1+"px'>now</span><div class='bnow' style='left:"+g.x1+"px'></div>";
 var old={};BS.beads.forEach(function(x){old[x.key]=x;});BS.beads=[];
 cs.forEach(function(c,i){(c.items||[]).forEach(function(n,j){var age=Math.max(0,now-(n.ts||now));if(age>H)return;var key=c.id+':'+(n.id||j),o=old[key];
-BS.beads.push({key:key,i:i,j:j,n:n,need:!!n.need&&!!(n.mail||n.chat),tx:g.x0+(1-age/H)*(g.x1-g.x0),ty:laneY(i),tr:n.need&&(n.mail||n.chat)?13:n.read?6:9,x:o?o.x:g.x1,y:o?o.y:laneY(i),r:o?o.r:0});});});
+BS.beads.push({key:key,i:i,j:j,n:n,need:!!n.need&&!!(n.mail||n.chat),tx:g.x0+(1-age/H)*(g.x1-g.x0),ty:laneY(i),tr:n.need&&(n.mail||n.chat)?13:n.read?6:9,x:o?o.x:g.x1,y:o?o.y:laneY(i),r:o?o.r:0});});
+(c.past||[]).forEach(function(n,j){var age=Math.max(0,now-(n.ts||now));if(age>H)return;var key=c.id+':p:'+(n.id||j),o=old[key];BS.beads.push({key:key,i:i,j:-1-j,n:n,past:true,need:false,tx:g.x0+(1-age/H)*(g.x1-g.x0),ty:laneY(i),tr:4.5,x:o?o.x:g.x1,y:o?o.y:laneY(i),r:o?o.r:0});});});
 html+=BS.beads.map(function(x,k){return "<button type='button' class='bbead' data-k='"+k+"' aria-label='"+esc(x.n.text||'')+"'></button>";}).join('');
 html+="<div class='btip' role='dialog' aria-live='polite'></div>";ov.innerHTML=html;
 BS.btns=[];ov.querySelectorAll('.bbead').forEach(function(bt){BS.btns.push(bt);var k=+bt.getAttribute('data-k');bt.addEventListener('pointerenter',function(){bsShow(k);});bt.addEventListener('focus',function(){bsShow(k);});bt.addEventListener('click',function(){bsShow(k);});});
 if(el.addEventListener&&!BS.wired){BS.wired=true;el.addEventListener('pointerleave',function(){bsShow(null);});el.addEventListener('keydown',function(e){if(e&&e.key==='Escape')bsShow(null);});}
 BS.hot=null;bsStart();}
 function bsShow(k){var tip=document.querySelector('#bsov .btip');if(!tip)return;BS.hot=k;if(k==null||!BS.beads[k]){tip.className='btip';return;}
-var x=BS.beads[k],c=BS.b.cards[x.i],n=x.n;
-tip.innerHTML="<div class='bcard' data-i='"+x.i+"'><div class='bi' data-j='"+x.j+"'><div class='btf'>"+esc(n.name||c.name)+" <span>&middot; "+esc(c.name)+" &middot; "+agoTxt(n.ts)+(n.from&&CHATFROM[n.from]?" &middot; "+CHATFROM[n.from]:"")+(n.read?" &middot; read":"")+"</span></div><div class='btx'>"+esc(n.text||'')+"</div><div class='bta'>"+(n.mail||n.chat?"<button class='bdraft'>"+(n.drafted?"Drafted &middot; again":"Draft a reply")+"</button>":"")+(n.href?"<button class='bopen"+(n.mail||n.chat?" quiet":"")+"'>Open</button>":"")+(n.chat&&n.drafted?"<button class='bopenwa quiet'>Open in WhatsApp</button>":"")+"</div></div></div>";
+var x=BS.beads[k],c=BS.b.cards[x.i],n=x.n;if(x.past){tip.innerHTML="<div class='bcard'><div class='bi'><div class='btf'>"+esc(n.name||bsName(c).n)+" <span>&middot; "+esc(bsName(c).n)+" &middot; "+agoTxt(n.ts)+" &middot; seen</span></div><div class='btx' style='margin-bottom:0'>"+esc(n.text||'')+"</div></div></div>";tip.className='btip on';return;}
+tip.innerHTML="<div class='bcard' data-i='"+x.i+"'><div class='bi' data-j='"+x.j+"'><div class='btf'>"+esc(n.name||bsName(c).n)+" <span>&middot; "+esc(bsName(c).n)+" &middot; "+agoTxt(n.ts)+(n.from&&CHATFROM[n.from]?" &middot; "+CHATFROM[n.from]:"")+(n.read?" &middot; read":"")+"</span></div><div class='btx'>"+esc(n.text||'')+"</div><div class='bta'>"+(n.mail||n.chat?"<button class='bdraft'>"+(n.drafted?"Drafted &middot; again":"Draft a reply")+"</button>":"")+(n.href?"<button class='bopen"+(n.mail||n.chat?" quiet":"")+"'>Open</button>":"")+(n.chat&&n.drafted?"<button class='bopenwa quiet'>Open in WhatsApp</button>":"")+"</div></div></div>";
 tip.className='btip on';if(BWIRE)BWIRE(tip);}
 function bsStart(){if(BS.on)return;var raf=typeof window.requestAnimationFrame==='function'?function(f){return window.requestAnimationFrame(f);}:null;if(!raf)return;BS.on=true;
 var loop=function(){var p=$('panel-board'),el=$('bstream');if(!p||!el||!p.offsetParent||(el.classList&&el.classList.contains('none'))){BS.on=false;return;}bsFrame();raf(loop);};raf(loop);}
-function bsFrame(){var el=$('bstream'),cv=$('bsc');if(!el||!cv)return;if(!BS.G)BS.G=lqGL(cv,40);var g=bsGeom(),t=LQ.t||0,still=LQ.theme&&LQ.theme.still;
+function bsFrame(){var el=$('bstream'),cv=$('bsc');if(!el||!cv)return;if(!BS.G)BS.G=lqGL(cv,40);var g=bsGeom();if(BS.b&&BS.gw!==g.w){bsBuild(BS.b);g=bsGeom();}var t=LQ.t||0,still=LQ.theme&&LQ.theme.still;
 BS.beads.forEach(function(x,k){var hot=BS.hot===k;x.x+=(x.tx-x.x)*0.12;x.y+=((x.ty+(still?0:Math.sin(t*0.8+k*1.3)*2))-x.y)*0.12;x.r+=((x.tr*(hot?1.35:1))-x.r)*0.15;
 var bt=BS.btns&&BS.btns[k];if(bt&&bt.style){var R=Math.max(14,x.r+6);bt.style.width=bt.style.height=(2*R)+'px';bt.style.transform='translate('+Math.round(x.x-R)+'px,'+Math.round(x.y-R)+'px)';}});
 var tip=document.querySelector('#bsov .btip');if(tip&&BS.hot!=null&&BS.beads[BS.hot]){var x=BS.beads[BS.hot],tw=tip.offsetWidth||300,th=tip.offsetHeight||120,tx=Math.max(12,Math.min(g.w-tw-12,x.x-tw/2)),ty=x.y-x.r-th-14;if(ty<8)ty=x.y+x.r+14;tip.style.transform='translate('+Math.round(tx)+'px,'+Math.round(ty)+'px)';}
 var G=BS.G;if(!G)return;var gl=G.gl,d=Math.min(window.devicePixelRatio||1,3),W=Math.max(1,Math.floor(g.w*d)),H=Math.max(1,Math.floor(g.h*d));if(cv.width!==W||cv.height!==H){cv.width=W;cv.height=H;gl.viewport(0,0,W,H);}
 var o=G.out;for(var i=0;i<o.length;i++)o[i]=0;var k=0,put=function(px,py,r,a){if(k>=40)return;o[k*4]=px/g.w;o[k*4+1]=py/g.h;o[k*4+2]=Math.max(0,r);o[k*4+3]=a;k++;};
-(BS.b.cards||[]).forEach(function(c,i){put(g.x1+16,60+(g.h-110)*(i+0.5)/Math.max(1,g.n),c.count?9+2*Math.min(c.count,6):5,0);});
+(BS.b.cards||[]).forEach(function(c,i){put(g.x1,60+(g.h-110)*(i+0.5)/Math.max(1,g.n),c.count?9+2*Math.min(c.count,6):5,0);});
 BS.beads.forEach(function(x){put(x.x,x.y,x.r,x.need?1:0);});
 var th=LQ.theme||{},U=G.U;gl.uniform2f(U.uRes,W,H);gl.uniform1f(U.uT,t);gl.uniform1f(U.uDpr,d);gl.uniform4fv(U.uB,o);gl.uniform3f(U.uRip,0,0,-10);gl.uniform1f(U.uStyle,th.look==='glass'?0:th.look==='pearl'?2:1);gl.uniform1f(U.uContrast,th.contrast?1:0);gl.uniform1f(U.uExposure,th.night?0.82:1);gl.drawArrays(gl.TRIANGLES,0,3);}
 function renderBoard(){var b=BOARD,cs=b.cards,el=$('board');
@@ -1216,10 +1286,11 @@ if(!cs.length){$('boardsum').textContent='Everything you watch, side by side.';
 el.innerHTML="<div style='grid-column:1/-1'><div class='note muted' style='margin-top:0'>Nothing watched yet. Map your inbox, a chat (web.whatsapp.com) or any page under <b>Screens</b> on the Map tab and click <b>Watch</b> on it, or click <b>Watch GitHub</b> there. Each one gets a card here with what's new on it.</div><div class='row' style='margin-top:8px'><button class='ghost' id='boardgo'>Go to Screens</button></div></div>";
 $('boardgo').addEventListener('click',function(){setTab('map');var w=$('watchbox');if(w&&w.scrollIntoView)w.scrollIntoView({block:'center'});});return;}
 var when=b.hours===24?'since yesterday':b.hours===72?'in the last 3 days':'in the last 7 days';
+var lastRead=0;cs.forEach(function(c){if(c.checked>lastRead)lastRead=c.checked;});var sub=$('boardsub');if(sub)sub.textContent=(lastRead?'Read '+agoTxt(lastRead)+' \u00b7 ':'')+cs.length+(cs.length===1?' feed':' feeds');
 var waiting=cs.filter(function(c){return c.count;}).map(function(c){return c.label+(c.source==='page'?' on '+c.name:'');});
 $('boardsum').innerHTML=waiting.length?"<b style='color:var(--bone)'>Waiting on you "+when+":</b> "+esc(waiting.join(', ')):"Nothing new "+when+" on the "+cs.length+" thing"+(cs.length===1?"":"s")+" you watch.";
 el.innerHTML=cs.map(function(c,i){var nt=Math.ceil(((c.chat||[]).length)/2);
-return "<div class='bcard"+(c.count?" has":"")+"' data-i='"+i+"'><div class='bh'><span>"+(BOARDICON[c.source]||BOARDICON.page)+"</span><span class='bn' title='"+esc(c.url)+"'>"+esc(c.name)+"</span>"+(c.count?"<button class='ghost bseen' title='set this card back to 0: only what comes in after counts. It stays under Watching, and the other cards keep theirs' style='padding:4px 9px;font-size:12px'>Seen</button>":"")+"<button class='ghost btalkbtn' title='talk what&#39;s new here over with your AI before you draft a reply' style='padding:4px 9px;font-size:12px'>&#128172;"+(nt?" "+nt:"")+"</button><button class='ghost bcheck' title='read it now' style='padding:4px 9px;font-size:12px'>Check now</button></div>"
+return "<div class='bcard"+(c.count?" has":"")+"' data-i='"+i+"'><div class='bh'><span class='bn' title='"+esc(c.url)+"'>"+esc(bsName(c).n)+"</span>"+(c.count?"<button class='ghost bseen' title='set this card back to 0: only what comes in after counts. It stays under Watching, and the other cards keep theirs' style='padding:4px 9px;font-size:12px'>Seen</button>":"")+"<button class='ghost btalkbtn' title='talk what&#39;s new here over with your AI before you draft a reply' style='padding:4px 9px;font-size:12px'>Talk"+(nt?" "+nt:"")+"</button><button class='ghost bcheck' title='read it now' style='padding:4px 9px;font-size:12px'>Check now</button></div>"
 +"<div class='bc'>"+c.count+"</div><div class='bl'>"+esc(c.count?c.label.replace(/^\\d+ /,''):'nothing new')+" &middot; "+(c.checked?"read "+agoTxt(c.checked):c.last?"tried "+agoTxt(c.last):"first read within a minute")+(c.via==='gh'?" &middot; through gh":"")+"</div>"
 +(c.error?"<div class='note err'>"+esc(c.error)+"</div>":"")
 +(c.brief?"<div class='bbrief'>"+esc(c.brief.text)+"</div>":"")
@@ -1253,7 +1324,8 @@ el.querySelectorAll('.bopen').forEach(function(btn){btn.addEventListener('click'
 el.querySelectorAll('.bdraft').forEach(function(btn){btn.addEventListener('click',function(){var n=item(btn);btn.disabled=true;
 api('/api/watch/draft',{id:n.id}).then(function(x){btn.disabled=false;if(!x||x.error){boardMsg('err',esc((x&&x.error)||'failed'));return;}boardMsg('ok',x.chat?DRAFTING_CHAT:DRAFTING);loadWatchUI();}).catch(function(e){btn.disabled=false;boardMsg('err',esc(String((e&&e.message)||e)));});});});}
 wire(el);wire($('boardtalk'));wire($('bsov'));BWIRE=wire;}
-$('boardrefresh').addEventListener('click',loadBoard);$('boardhours').addEventListener('change',loadBoard);
+$('boardrefresh').addEventListener('click',loadBoard);
+var bw=$('boardwin');if(bw&&bw.querySelectorAll)bw.querySelectorAll('button').forEach(function(b){b.addEventListener('click',function(){BOARDH=+b.getAttribute('data-h')||24;bw.querySelectorAll('button').forEach(function(x){x.setAttribute('aria-checked',x===b?'true':'false');});loadBoard();});});
 // A web page, mapped by itself in the hidden browser (headless.mjs): no capture,
 // no dragging. It takes a few seconds, so the button says so meanwhile.
 function mapUI(site,b){site=(site||'').trim();if(!site){screenErr('Type a site to map first: gmail, github.com/pulls or a web address.');return;}b.disabled=true;
@@ -1421,7 +1493,7 @@ function lqWork(){lqRemember();LQ.scene='work';LQ.mode='aware';var b=document.bo
 if(LQ.workTimer)clearInterval(LQ.workTimer);LQ.workTimer=setInterval(function(){if(LQ.scene==='work'&&LQ.mode!=='pool')lqLoadWork();},5000);}
 function lqHome(){lqRemember();LQ.scene='home';var b=document.body;if(b&&b.classList){b.classList.remove('lq-work');b.classList.remove('lq-pooled');}if(LQ.workTimer){clearInterval(LQ.workTimer);LQ.workTimer=null;}LQ.mode='aware';lqLoad(true);}
 function lqLoadWork(){api('/api/work').then(function(w){LQ.workData=w||{};lqBuildWork();}).catch(function(){});}
-function lqBuildWork(){var w=LQ.workData||{},S=lqSize(),cx=S.w/2,cy=S.h*0.5,list=[];LQ.bw=S.w;LQ.bh=S.h;
+function lqBuildWork(){if(LQ.workBy==='project'){lqBuildProjects();return;}var w=LQ.workData||{},S=lqSize(),cx=S.w/2,cy=S.h*0.5,list=[];LQ.bw=S.w;LQ.bh=S.h;
 var vx=Math.max(0.5,Math.min(S.s*1.3,(S.w/2-90)/400)),vy=Math.max(0.35,Math.min(S.s*0.8,(S.h-cy-230)/400,(cy-160)/400)),rs=Math.min(S.s,(vx+vy)/1.5);
 var run=(w.running||[]).slice(0,3),ready=(w.ready||[]).slice(0,2),wait=(w.waiting||[]).slice(0,5),extra=(w.waitingCount||0)-wait.length;
 run.forEach(function(r,i){var ang=Math.PI+(i+1)*Math.PI/(run.length+1);var pg=r.progress?' · '+r.progress.done+' of '+r.progress.total+' done':'';
@@ -1436,6 +1508,22 @@ LQ.drops=list.map(function(d){var o=old[d.id];d.x=o?o.x:cx;d.y=o?o.y:cy;d.vx=o?o
 var nr=(w.running||[]).length,nw=w.waitingCount||0,nk=(w.ready||[]).length;
 LQ.coreText=(nr?nr+' at work':'Nobody at work')+(nw?' · '+nw+' waiting':'')+(nk?' · '+nk+' ready for your OK':'');
 var go=$('lqgo');if(go){var n=w.canGo||0;go.textContent=n?'Go \u00b7 start '+n+' task'+(n>1?'s':''):'';if(go.classList)go.classList.toggle('on',n>0);}
+lqLabels();}
+// Projects: a sphere per repo with work on it, sized by how much is going on, its
+// state under its name; spheres orbit while an agent works, amber when its work waits
+// for your OK. A click opens that project's tasks.
+function lqBuildProjects(){var w=LQ.workData||{},S=lqSize(),cx=S.w/2,cy=S.h*0.5,list=[];LQ.bw=S.w;LQ.bh=S.h;
+var vx=Math.max(0.5,Math.min(S.s*1.3,(S.w/2-90)/400)),vy=Math.max(0.35,Math.min(S.s*0.8,(S.h-cy-230)/400,(cy-160)/400)),rs=Math.min(S.s,(vx+vy)/1.5);
+var ps=(w.projects||[]).slice(0,8);ps.forEach(function(p,i){var ang=-2.2+i*2.399963,d=250+50*(i%3),load=p.waiting+2*p.ready+(p.running?3:0);
+var sub=p.running?(p.running.ask?'has a question for you':'agent at work: '+String(p.running.doing||'').toLowerCase()):p.ready?'ready for your OK':p.waiting+' task'+(p.waiting>1?'s':'')+' waiting';
+list.push({id:'proj:'+p.repo,kind:'proj',repo:p.repo,shape:'tasks',title:p.repo,sub:sub,orbit:!!p.running,ask:!!(p.ready||(p.running&&p.running.ask)),r:(30+7*Math.min(6,load))*rs,tx:cx+Math.cos(ang)*d*vx,ty:cy+Math.sin(ang)*d*vy});});
+
+list.forEach(function(d){d.ax=d.tx;d.ay=d.ty;});lqRelax(list,S,cx,cy,92*rs);
+var old={};LQ.drops.forEach(function(d){old[d.id]=d;});
+LQ.drops=list.map(function(d){var o=old[d.id];d.x=o?o.x:cx;d.y=o?o.y:cy;d.vx=o?o.vx:0;d.vy=o?o.vy:0;d.cr=o?o.cr:0;return d;});
+var n=w.projectCount||list.length,nr=(w.running||[]).length,nw=w.waitingCount||0;
+LQ.coreText=n?n+' project'+(n>1?'s':'')+(nr?' \u00b7 '+nr+' at work':'')+(nw?' \u00b7 '+nw+' tasks waiting':''):'No projects with work on them yet. Add a task, or tell me what to do.';
+var go=$('lqgo');if(go){var k=w.canGo||0;go.textContent=k?'Go \u00b7 start '+k+' task'+(k>1?'s':''):'';if(go.classList)go.classList.toggle('on',k>0);}
 lqLabels();}
 function lqGoWork(){var go=$('lqgo');if(go)go.disabled=true;api('/api/work/go',{}).then(function(r){if(go)go.disabled=false;
 var t=r&&r.error?r.error:r.started||r.queued?(r.started?'Started '+r.started:'')+(r.started&&r.queued?', ':'')+(r.queued?r.queued+' queued behind work already going':'')+'.':(r&&r.note)||'Nothing waiting to start.';
@@ -1471,7 +1559,7 @@ var PARA_OF={tasks:'p',agents:'p',todo:'p',board:'a',week:'a',standup:'a',map:'r
 var PARA_NAME={p:'Projects',a:'Areas',r:'Resources',x:'Archive'},PARA_SUB={p:'work with an end',a:'what you keep up with',r:'to look things up in',x:'what’s done'};
 var PARA_ANG={p:-2.4,a:-0.65,r:2.45,x:0.8},PARA_LIVE={p:0.45,a:0.3,r:0.12,x:0};
 function lqPara(d){return d.kind==='archive'?'x':d.kind==='feed'?'a':PARA_OF[d.shape]||'p';}
-function lqParaGo(g){lqAct();if(g==='p'){lqWork();return;}if(g==='a'){lqUse('board');lqPool('board');return;}if(g==='r'){lqUse('map');lqPool('map');return;}lqArchive();}
+function lqParaGo(g){lqAct();if(g==='p'){lqWorkBy('project');return;}if(g==='a'){lqUse('board');lqPool('board');return;}if(g==='r'){lqUse('map');lqPool('map');return;}lqArchive();}
 function lqArchive(){lqPool('tasks');LQ.arch=true;if(typeof loadArchived==='function')loadArchived();}
 function lqOrg(id,k){var h=k*977;id=String(id);for(var i=0;i<id.length;i++)h=(h*31+id.charCodeAt(i))|0;return ((h>>>0)%1000)/1000;}
 function lqGrow(list,cx,cy,vx,vy){list.forEach(function(d){var x=(d.tx-cx)/vx,y=(d.ty-cy)/vy,an=Math.atan2(y,x)+(lqOrg(d.id,1)-0.5)*0.7,rr=Math.sqrt(x*x+y*y)*(0.78+0.44*lqOrg(d.id,2));d.tx=cx+Math.cos(an)*rr*vx;d.ty=cy+Math.sin(an)*rr*vy;});}
@@ -1542,7 +1630,7 @@ a.tx=Math.max(a.r+60,Math.min(S.w-a.r-60,a.tx));a.ty=Math.max(140+a.r,Math.min(S
 var bad=false;for(var i2=0;i2<n&&!bad;i2++)for(var j2=i2+1;j2<n;j2++){var p=L[i2],q=L[j2],ddx=p.tx-q.tx,ddy=p.ty-q.ty;if(Math.sqrt(ddx*ddx+ddy*ddy)<lqSep(p,q,ddx,ddy)-1){bad=true;break;}}
 if(!bad)return true;L.forEach(function(x){x.r*=0.9;});coreR*=0.9;}return false;}
 function lqLabels(){var el=$('lqdrops');if(!el)return;
-el.innerHTML=LQ.drops.map(function(d,i){return "<div class='lqd lq-"+d.kind+(LQ.openTag===d.id?' open':'')+"' data-i='"+i+"'><button type='button' class='lt' aria-expanded='"+(LQ.openTag===d.id)+"'><span>"+esc(d.title)+"</span></button>"+(d.sub?"<small>"+esc(d.sub)+"</small>":"")+"<button type='button' class='lgo'>Open &rsaquo;</button></div>";}).join('');
+el.innerHTML=LQ.drops.map(function(d,i){return "<div class='lqd lq-"+d.kind+(LQ.openTag===d.id?' open':'')+"' data-i='"+i+"'><button type='button' class='lt' aria-expanded='"+(LQ.openTag===d.id)+"'><span>"+esc(d.title)+"</span>"+(d.kind==='proj'&&d.sub?"<span class='lm'>"+esc(d.sub)+"</span>":"")+"</button>"+(d.sub?"<small>"+esc(d.sub)+"</small>":"")+"<button type='button' class='lgo'>Open &rsaquo;</button></div>";}).join('');
 LQ.btns=[];LQ.lts=[];el.querySelectorAll('.lqd').forEach(function(b){LQ.btns.push(b);var d=LQ.drops[+b.getAttribute('data-i')],lt=b.querySelector('.lt'),go=b.querySelector('.lgo');LQ.lts.push(lt);
 if(lt)lt.addEventListener('click',function(ev){lqOpen(d,ev);});
 if(go)go.addEventListener('click',function(ev){LQ.openTag=null;lqOpen(d,ev);});});
@@ -1557,18 +1645,21 @@ function lqUse(shape,ev,via){api('/api/adapt/use',{shape:shape,from:LQ.last,via:
 function lqOpen(d,ev){if(!d)return;lqAct();
 if(d.kind==='more'){LQ.moreOpen=!LQ.moreOpen;lqMore(d);return;}
 if(d.kind==='archive'){lqArchive();return;}
+if(d.kind==='proj'){TFILTER.repo=d.repo;TFILTER.type='';lqPool('tasks');if(typeof loadTasks==='function')loadTasks();return;}
 var S=lqSize();LQ.ripple=[d.x/S.w,d.y/S.h,LQ.t];if(LQ.scene==='work'){lqPool(d.shape||'agents');return;}lqUse(d.shape||'board',ev);lqGo(d.shape||'board');}
 function lqMore(d){var el=$('lqmore');if(!el)return;if(!LQ.moreOpen||!d){el.innerHTML='';return;}
 el.innerHTML=(d.more||[]).map(function(s){return "<button type='button' class='lqmb lqm' data-s='"+s+"'>"+esc(LQNAMES[s]||s)+"</button>";}).join('');
 el.querySelectorAll('.lqm').forEach(function(b){b.addEventListener('click',function(ev){var s=b.getAttribute('data-s');LQ.moreOpen=false;el.innerHTML='';lqUse(s,ev);lqGo(s);});});}
-function lqGo(shape){if(shape==='tasks'||shape==='agents'){lqWork();return;}lqPool(shape);}
+function lqGo(shape){if(shape==='tasks'||shape==='agents'){lqWorkBy('task');return;}lqPool(shape);}
+// The work, by task (Tasks, Agents) or by project (the Projects group): the same scene, a step in the history each.
+function lqWorkBy(by){if(LQ.scene==='work'&&LQ.workBy===by&&LQ.mode!=='pool')return;lqRemember();LQ.back=true;LQ.workBy=by;try{lqWork();}finally{LQ.back=false;}}
 // Back, one step: every move between screens (home, the Tasks scene, a panel, the
 // Archive) notes where you were; a right-click (or the mouse's back button) returns
 // there. In a text field or over selected text the browser's own menu stays.
-function lqState(){return {scene:LQ.scene==='work'?'work':'home',pool:LQ.mode==='pool'?(LQ.poolShape||null):null,arch:LQ.mode==='pool'&&!!LQ.arch};}
+function lqState(){return {by:LQ.workBy||'task',scene:LQ.scene==='work'?'work':'home',pool:LQ.mode==='pool'?(LQ.poolShape||null):null,arch:LQ.mode==='pool'&&!!LQ.arch};}
 function lqRemember(){if(LQ.back)return;LQ.hist=LQ.hist||[];var s=lqState(),top=LQ.hist[LQ.hist.length-1];if(top&&top.scene===s.scene&&top.pool===s.pool&&top.arch===s.arch)return;LQ.hist.push(s);if(LQ.hist.length>40)LQ.hist.shift();}
 function lqBack(){var h=LQ.hist||[],s=h.pop(),cur=lqState();if(!s){if(cur.pool)s={scene:cur.scene,pool:null};else if(cur.scene==='work')s={scene:'home',pool:null};else return;}
-LQ.back=true;try{if(s.scene==='work'&&cur.scene!=='work')lqWork();else if(s.scene==='home'&&cur.scene==='work')lqHome();
+LQ.back=true;try{if(s.scene==='work'&&(cur.scene!=='work'||cur.by!==s.by)){LQ.workBy=s.by||'task';lqWork();}else if(s.scene==='home'&&cur.scene==='work')lqHome();
 if(s.pool){if(s.arch)lqArchive();else lqPool(s.pool);}else if(LQ.mode==='pool')lqSink();}finally{LQ.back=false;}}
 function lqPool(shape){lqRemember();LQ.poolShape=shape;LQ.arch=false;tabPicked=true;setTab(shape);var b=document.body;if(b&&b.classList)b.classList.add('lq-pooled');LQ.mode='pool';var m=document.querySelector('main');if(m&&m.focus)m.focus();}
 function lqSink(){lqRemember();var b=document.body;if(b&&b.classList)b.classList.remove('lq-pooled');LQ.mode='aware';lqAct();lqLoad(false);}

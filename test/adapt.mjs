@@ -187,6 +187,7 @@ try {
   const started = [];
   const g = workGo({ push: () => ({ written: [{ name: "a", path: "/a" }, { name: "b", path: "/b" }] }), run: (p) => (started.push(p), p === "/a" ? { id: "j1" } : { busy: true }) });
   ok("Go: every repo's brief written and its agent started, or queued behind one already there", g.started === 1 && g.queued === 1 && started.join() === "/a,/b" && g.repos.join() === "a,b", g);
+  ok("projects: each repo with work on it, the one an agent is in first, with what's waiting and what's ready", ws.projects.length === 4 && ws.projects[0].repo === "symbiot" && ws.projects[0].running && ws.projects[0].waiting === 1 && ws.projects.some((p) => p.repo === "GhostAIChat" && p.ready === 2) && ws.projects.some((p) => p.repo === "whatsapp_module" && p.waiting === 1 && !p.running), ws.projects);
   ok("Go with nothing waiting says so", /Nothing waiting/.test(workGo({ push: () => ({ empty: true }) }).note), "");
 } finally {
   rmSync(HOME, { recursive: true, force: true });
