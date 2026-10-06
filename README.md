@@ -43,18 +43,24 @@ no install — it's the same CLI. Press Ctrl+C (or click Quit) to stop.
 
 It opens on [the liquid](#the-liquid-a-home-that-shapes-itself-to-you); each of these parts opens from it:
 
-- **Map** — a live node graph of your work from your local git:
-  you at the centre, your repos, the languages and tools they share (so related
-  projects cluster), the coding **agents and editors** you have installed, and the
-  **AI** powering Symbiot. Project folders that **aren't git repos** show up too
-  (see [Where it looks](#where-it-looks)). **Scroll to zoom, drag to pan, click a
-  node.** A repo's panel shows its branch, commits, uncommitted work and stack, a
-  **Suggest next steps** button, and an **AI review**: what the project does, a
-  one-line verdict on whether it needs new work at all (it prefers stabilising over
-  new features), and ideas you can tick straight into **Tasks**. The graph needs
-  **no AI key**; reviews and suggestions use your chosen model. While the scan runs
-  the Map shows its progress. Under the graph is the [experimental](#screens-blueprints-for-screen-automation)
-  **Screens** view.
+- **Map** — your repos and project folders as droplets in the liquid, placed by
+  their **nearest neighbours**: each repo's fingerprint is what it's built with
+  (languages and tools), the weeks you work on it (your commits per week over the
+  last 12), and what it's about (the words of its name, README and package
+  description, TF-IDF weighted), and it sits by the 3 repos most like it
+  (`mapknn.mjs`). The closest merge into one shape, the next are joined by a thin
+  thread of liquid, the rest by a faint line; each cluster is named over its region
+  ("JavaScript · Node"); what you haven't touched in a while is smaller and sinks;
+  **you are here** marks where your recent work is. **Point at a repo** to light up
+  its neighbours and see why ("shares JavaScript, Node; you worked on both the same
+  weeks"). **Click** for its details: branch, commits, uncommitted work, your last
+  12 weeks, **Most like it**, a **Suggest next steps** button, and an **AI review**
+  (what the project does, whether it needs new work at all, and ideas you can tick
+  into **Tasks**). Scroll to zoom, drag to pan. Under the map: the languages and
+  tools you build with. The Map needs **no AI key**; reviews and suggestions use
+  your chosen model. Project folders that **aren't git repos** show up too (see
+  [Where it looks](#where-it-looks)), as rings. The [experimental](#screens-blueprints-for-screen-automation)
+  **Screens** view folds away under the map.
 - **Dashboard** — everything you [watch](#screens-blueprints-for-screen-automation),
   as a stream: time runs left to right, one current per feed (your inbox, GitHub,
   WhatsApp, any other page), "now" on the right where each feed pools. Every message
@@ -75,7 +81,8 @@ It opens on [the liquid](#the-liquid-a-home-that-shapes-itself-to-you); each of 
   agent can go over what's new with you too.
 - **Drift** — the [`symbiot drift`](#whats-out-of-sync-symbiot-drift) report, with
   a "fetch latest" toggle (and an [experimental](#experimental) "check CI").
-- **Week / Standup / Todo** — the write-ups (these use your chosen AI).
+- **Week / Standup / Todo** — the write-ups (these use your chosen AI), set as a
+  readable page with its dates; **Copy** copies the text as written.
 - **Tasks** — a checklist, grouped by kind (Fixes, Tests & CI, Docs, …). Filter by
   type or repo, then **Send to repos** to hand just those to your agent (see
   [`symbiot push`](#hand-tasks-to-your-coding-agent-symbiot-push)). What your agent

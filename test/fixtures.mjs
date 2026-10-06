@@ -663,7 +663,7 @@ try {
   const uiJs = [...EMBEDDED_UI.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]).join("\n");
   const whoHtml = new Function(uiJs.slice(uiJs.indexOf("function esc("), uiJs.indexOf("\n", uiJs.indexOf("function whoHtml("))) + "; return whoHtml;")();
   const wh = whoHtml("👤 You: allow it <b>. 🤖 Agent: the next run adds it");
-  ok("the card shows the markers as You / Agent badges, escaped, and leaves 'Your' and plain options alone", /class='who you'>&#128100; You</.test(wh) && /class='who agent'>&#129302; Agent</.test(wh) && /&lt;b&gt;/.test(wh) && !/👤|🤖/.test(wh) && /You<\/span> Your call/.test(whoHtml("👤 Your call")) && whoHtml("Plain") === "Plain", [wh, whoHtml("👤 Your call")]);
+  ok("the card shows the markers as You / Agent badges (drawn icons, not emoji), escaped, and leaves 'Your' and plain options alone", /class='who you'><i class=ic-person><\/i> You</.test(wh) && /class='who agent'><i class=ic-bot><\/i> Agent</.test(wh) && /&lt;b&gt;/.test(wh) && !/👤|🤖/.test(wh) && /You<\/span> Your call/.test(whoHtml("👤 Your call")) && whoHtml("Plain") === "Plain", [wh, whoHtml("👤 Your call")]);
 
   console.log("QUESTIONS — any agent's .symbiot/QUESTIONS.md parses into questions, options and ideas");
   const pq = parseQuestions("# Questions for you\n\n## Questions\n### Keep the old config format?\nReading both costs ~40 lines.\n- Yes, read both (recommended)\n- No, migrate once\n\n### Which port?\n1. 7391\n2. random\n\n## Suggestions\n- Add a --json flag to drift\n- [ ] Cache the map scan\n");

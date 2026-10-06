@@ -2,6 +2,13 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.50.0
+
+- **The Map, by nearest neighbours.** Your repos are droplets in the liquid, each beside the repos most like it: what they're built with, the weeks you work on them, and what they're about (from their READMEs). The closest merge into one shape, the next are joined by a thread of liquid; each cluster is named over its region; what you haven't touched in a while is smaller and sinks; "you are here" sits where your recent work is. Point at a repo to see its neighbours and why; click for its details, now with **Most like it** and your last 12 weeks. Zoom and fit buttons, and the languages and tools you build with underneath instead of a coloured legend. Screens folds away.
+- **Every panel in the look.** Week, Standup and Todo are a page with a title and dates, the write-up set as a document. Tasks are calm rows with round check beads; Ask and Remove are icons. Agents' questions get a calm card with bead radio buttons. Drift has a status bead per repo, switches for its options, and its issues listed under each. Settings is a column of titled cards.
+- **Icons, not emoji.** Chat, person, agent, idea, question, archive and plug are drawn line icons in the look's ink.
+- **Close stays clean.** Content scrolls under the Close bar instead of colliding with it.
+
 ## 0.49.2
 
 - **Projects shows your projects.** Click **Projects** on the liquid and each repo with work on it is a sphere: what's going on there under its name (an agent at work, ready for your OK, or how many tasks are waiting), spheres orbiting while an agent works, amber when its work waits for you. Click one to open just that project's tasks; right-click comes back.
