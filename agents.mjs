@@ -342,18 +342,44 @@ const HELD = "TASKS.next.md";
 function writeTasks(path, md) {
   const dir = join(path, ".symbiot"); mkdirSync(dir, { recursive: true });
   if (runningHandoff(path)) { writeFileSync(join(dir, HELD), md); return true; }
-  writeFileSync(join(dir, "TASKS.md"), md);
+  writeFileSync(join(dir, "TASKS.md"), md); noteHanded(path, md);
   try { unlinkSync(join(dir, HELD)); } catch {} // superseded by this brief
   return false;
 }
+// ---- a task the agent deleted from TASKS.md --------------------------------
+// TASKS.md is rebuilt from tasks.json on every send, so an agent deleting a
+// line (the user said to drop that task) changed nothing, and the next brief
+// brought it back (GhostAIChat's `pod install`). handed.json keeps what the
+// brief in TASKS.md handed out; a task it handed out that's no longer in the
+// file (ticked or not) was deleted: droppedTasks lists them, and tasks.mjs
+// closes them (applyDrops). The task lines are the `## Tasks` section's, or the
+// whole file's when it has none; a file emptied or gone deleted nothing.
+const HANDED = "handed.json", BOX = /^\s*-\s*\[[ x]\]\s*/i;
+function briefTasks(md) {
+  const lines = String(md || "").split("\n"), at = lines.findIndex((l) => /^##\s+Tasks\s*$/.test(l));
+  const end = at < 0 ? lines.length : lines.findIndex((l, i) => i > at && /^##\s/.test(l));
+  return lines.slice(at + 1, end < 0 ? lines.length : end).filter((l) => BOX.test(l)).map((l) => l.replace(BOX, "").trim()).filter(Boolean);
+}
+function noteHanded(path, md, also = []) {
+  try { writeFileSync(join(path, ".symbiot", HANDED), JSON.stringify({ at: Date.now(), tasks: [...briefTasks(md), ...also] })); } catch {}
+}
+function droppedTasks(path) {
+  let h = null; try { h = JSON.parse(readSymbiot(path, HANDED)); } catch {}
+  const md = readSymbiot(path, "TASKS.md");
+  if (!h || !Array.isArray(h.tasks) || !md.trim() || !/^##\s+Tasks\s*$|^\s*-\s*\[[ x]\]/im.test(md)) return [];
+  const now = briefTasks(md);
+  return h.tasks.filter((t) => !now.some((n) => sameTask(n, t))).map((text) => ({ text, at: h.at || 0 }));
+}
 // Swap the held brief in, keeping the ticks the agent made meanwhile: a tick
 // is how a task reaches review, so dropping one would lose that task's work.
+// A task the agent deleted meanwhile stays out, and stays deleted in handed.json.
 function releaseHeldTasks(path) {
   const held = readSymbiot(path, HELD); if (!held || runningHandoff(path)) return false;
   const isTick = /^\s*-\s*\[x\]\s*/i, key = (l) => l.replace(/^\s*-\s*\[[ x]\]\s*/i, "").trim().toLowerCase();
   const ticked = new Set(readSymbiot(path, "TASKS.md").split("\n").filter((l) => isTick.test(l)).map(key));
-  const md = held.split("\n").map((l) => /^\s*-\s*\[ \]/.test(l) && ticked.has(key(l)) ? l.replace("[ ]", "[x]") : l).join("\n");
-  try { writeFileSync(join(path, ".symbiot", "TASKS.md"), md); unlinkSync(join(path, ".symbiot", HELD)); return true; } catch { return false; }
+  const gone = droppedTasks(path).map((d) => d.text), isGone = (l) => /^\s*-\s*\[ \]/.test(l) && gone.some((g) => sameTask(g, key(l)));
+  const md = held.split("\n").filter((l) => !isGone(l)).map((l) => /^\s*-\s*\[ \]/.test(l) && ticked.has(key(l)) ? l.replace("[ ]", "[x]") : l).join("\n");
+  try { writeFileSync(join(path, ".symbiot", "TASKS.md"), md); unlinkSync(join(path, ".symbiot", HELD)); noteHanded(path, md, gone); return true; } catch { return false; }
 }
 // Land the held brief and, if it leaves anything open, start an agent on it.
 // Runs when an agent this process started exits, and when the app next checks
@@ -660,4 +686,4 @@ function agentsList() {
   }).concat(earlierRuns());
 }
 
-export { withStream, workOf, HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, connectorsInfo, fillHandoff, runHandoff, blockedAgain, runningHandoff, loadRuns, earlierRuns, namedFiles, waitingFor, startWaiting, writeTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, skipIdea, agentQuestions, answerQuestions, agentsList };
+export { withStream, workOf, HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, connectorsInfo, fillHandoff, runHandoff, blockedAgain, runningHandoff, loadRuns, earlierRuns, namedFiles, waitingFor, startWaiting, writeTasks, droppedTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, skipIdea, agentQuestions, answerQuestions, agentsList };

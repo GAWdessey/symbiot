@@ -413,6 +413,13 @@ try {
     const ext2 = a.startHeldTasks(dir); out.extStarted = !!ext2 && ext2.fromHeld && readFileSync(f, "utf8") === "- [x] D\\n- [ ] E\\n";
     out.extOnce = a.startHeldTasks(dir) === null;
     await until(() => ext2.status !== "running");
+    // the user said to drop B: the agent deletes its line while a new brief is held
+    a.writeTasks(dir, "- [ ] A\\n- [ ] B\\n");
+    const ext3 = spawn("sleep", ["1"]), exited3 = new Promise((r) => ext3.on("exit", r));
+    writeFileSync(dir + "/.symbiot/agent.pid", JSON.stringify({ pid: ext3.pid, id: "ext3", startedAt: Date.now(), owner: 2147483646 }));
+    a.writeTasks(dir, "- [ ] A\\n- [ ] B\\n- [ ] C\\n"); writeFileSync(f, "- [ ] A\\n");
+    out.dropped = a.droppedTasks(dir).map((d) => d.text);
+    await exited3; out.dropRelease = a.releaseHeldTasks(dir) && readFileSync(f, "utf8"); out.droppedAfter = a.droppedTasks(dir).map((d) => d.text);
     console.log(JSON.stringify(out));`], { encoding: "utf8", timeout: 30000, env: { ...process.env, HOME: hhome, USERPROFILE: hhome } });
   let hv = {}; try { hv = JSON.parse(hd.stdout.trim().split("\n").pop()); } catch { console.log(hd.stdout, hd.stderr); }
   ok("no agent running -> TASKS.md is written straight away", hv.freeHeld === false, hv);
@@ -424,6 +431,8 @@ try {
   ok("a later send when free replaces a leftover held brief", hv.supersede === false && hv.superseded, hv);
   ok("held for a push --open agent: nothing starts while it runs", hv.extHeld === true && hv.extAuto === false && hv.extEarly === null, hv);
   ok("...and once it has exited, the next check starts one on the held tasks, once", hv.extStarted && hv.extOnce, hv);
+  ok("a task the agent deleted from TASKS.md is seen as dropped", JSON.stringify(hv.dropped) === '["B"]', hv.dropped);
+  ok("...the held brief lands without it, and it stays dropped", hv.dropRelease === "- [ ] A\n- [ ] C\n" && JSON.stringify(hv.droppedAfter) === '["B"]', [hv.dropRelease, hv.droppedAfter]);
 
   console.log("APPROVE — approved work ships: branch off the default, commit (minus .symbiot/), push");
   const gitEnv = { ...process.env, GIT_CONFIG_GLOBAL: join(ROOT, "globalgitconfig"), GIT_CONFIG_SYSTEM: "/dev/null", GIT_TERMINAL_PROMPT: "0" };
