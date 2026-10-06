@@ -8,9 +8,8 @@ import { resolveProvider, write } from "./ai.mjs";
 import { detectMailSources, mailActivity } from "./mail.mjs";
 import { waitingOn, newsSince } from "./watch.mjs";
 import { me, authorship, authorArgs, readmeInfo, repoShape, houseRules, reportFooter, expandRoot, commits, openWork, detectFolder, repoPathMap, discoveredRepos } from "./scan.mjs";
-import { taskType, workingChanges, workingDiff, addTask, pushTasks } from "./tasks.mjs";
-import { runHandoff } from "./agents.mjs";
-import { converse, actNow, addToTasks } from "./mind.mjs";
+import { taskType, workingChanges, workingDiff } from "./tasks.mjs";
+import { converse, actNow, actIn, taskIn } from "./mind.mjs";
 
 // ---- render ---------------------------------------------------------------
 function renderCommits(list) {
@@ -152,14 +151,12 @@ async function taskChat(id, question) {
     (ctx.length ? "\n\n" + ctx.join("\n\n") : path ? "" : "\n\n(no repo attached: answer from the task text alone)");
   // "do it" here works on the task's repo the way Send to repos does: the request
   // joins the repo's tasks and the agent starts there; with no repo, in a run of its own
-  const agent = async (req, known) => {
-    if (!path) return actNow(req, { title: it.text.slice(0, 60), context: `Their task: ${it.text}`, known });
-    const t = addTask(req, it.repo); if (t && t.error) return { error: t.error };
-    const p = pushTasks({ repo: it.repo }); if (!p.written || !p.written.length) return { error: `Couldn't write ${it.repo}'s tasks for the agent.` };
-    const e = runHandoff(path); if (!e) return { error: "Your agent didn't start. Check its command in Settings → Handoff." };
-    return e.busy ? { ok: true, note: "Your agent is already working in that repo: it takes this up when it's done." } : { ok: true, job: e.id };
+  const lanes = repoPathMap(), mine = path ? it.repo : "";
+  const agent = async (req, known, repo) => {
+    const lane = repo || mine;
+    return lane ? actIn(req, lane, { map: lanes, known, title: it.text.slice(0, 60), context: `Their task: ${it.text}` }) : actNow(req, { title: it.text.slice(0, 60), context: `Their task: ${it.text}`, known });
   };
-  const r = await converse({ where: `Task: ${it.text.slice(0, 60)}`, role, context, history, question, act: { agent, task: (text, repo) => addToTasks(text, repo || it.repo) } });
+  const r = await converse({ where: `Task: ${it.text.slice(0, 60)}`, role, context, history, question, map: lanes, act: { agent, task: (text, repo) => taskIn(text, repo || mine, { map: lanes }) } });
   const answer = r.reply;
   // Re-read: other requests may have changed tasks.json while the model ran.
   const t = loadTasks(); const cur = t.find((x) => x.id === id); const now = Date.now();

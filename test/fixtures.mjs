@@ -12,7 +12,7 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { authorship, repoState, readmeInfo, houseRules, findAllRepos, driftRepo, buildTasksMd, taskType, EMBEDDED_UI, orcaHandoffCmd, migrateOrcaCmd, fillHandoff, ORCA_CLAUDE_CMD, CLAUDE_CMD, HANDOFF_PROMPT, shipChanges, shipWithBump, bumpOffer, learnNpm, releaseNeeded, withReleases, semverGt, updateCmd, parseQuestions, unreleased, publishesOnMerge } from "../index.mjs";
 import { grantRule, claudeConnectors, withConnectors } from "../agents.mjs";
-import { applyRemovals, removalOf } from "../tasks.mjs";
+import { applyRemovals, removalOf, saidFinished } from "../tasks.mjs";
 import { sameTask, uniqueTasks } from "../core.mjs";
 import { mailActivity } from "../mail.mjs";
 import { pngSize, pngDecode, splitPng, stitchPng, stitchListPng, captureCmds, clickCmds, portalAppId, monitorCmds, parseCosmicRandr, parseWlrRandr, parseKscreen, parseXrandr, parseLines, tidyMonitors, monitorAreas } from "../screens.mjs";
@@ -468,12 +468,17 @@ try {
     out.busy = busy(() => ({ pending: m.pendingReview(), approve: m.approveRepo("revapp", { push: false }), ac: m.approveChanges("revapp", { push: false }), head: readFileSync(${JSON.stringify(join(proj, ".git", "HEAD"))}, "utf8") }));
     out.approve = m.approveRepo("revapp", { push: false }); out.final = tasks()[0];
     // a change no ticked task covers, in a repo that still has an open task
-    writeFileSync(${JSON.stringify(join(home, ".config", "symbiot", "tasks.json"))}, JSON.stringify([...tasks(), { id: "t2", text: "Open task", repo: "revapp", done: false, ts: 2 }]));
+    const skipTask = "Add a Skip button to each idea in the Agents tab, so you can turn down an idea you don't want";
+    writeFileSync(${JSON.stringify(join(home, ".config", "symbiot", "tasks.json"))}, JSON.stringify([...tasks(), { id: "t2", text: "Open task", repo: "revapp", done: false, ts: 2 }, { id: "t3", text: skipTask, repo: "revapp", done: false, ts: 3 }]));
     writeFileSync(${JSON.stringify(join(proj, "b.txt"))}, "fix\\n");
+    // the run's summary, last in agent.log: it did the Skip button but ticked nothing
+    writeFileSync(f.replace("TASKS.md", "agent.log"), "\\n=== old 2026-01-01 ===\\n$ agent\\nOpen task: done.\\n\\n=== symbiot 2026-01-02 ===\\n$ claude -p go\\n- **Skip button**: each idea in the Agents tab has a Skip button now, so you can turn one down.\\n");
     out.untasked = m.pendingReview();
     out.busyUntasked = busy(() => ({ pending: m.pendingReview(), ac: m.approveChanges("revapp", { push: false }) }));
     out.ac = m.approveChanges("revapp", { push: false }); out.acTasks = tasks();
     out.acAgain = m.approveChanges("revapp", { push: false });
+    writeFileSync(${JSON.stringify(join(proj, "c.txt"))}, "skip\\n");
+    out.acTick = m.approveChanges("revapp", { push: false, tick: ["t3", "t1"] }); out.acTickTasks = tasks();
     // tasks held for an agent no Symbiot process is watching: the app's next check starts one
     writeFileSync(f.replace("TASKS.md", "TASKS.next.md"), "- [ ] Open task\\n"); m.setHandoffCmd("true");
     out.heldSync = m.syncTasks(); out.heldSync2 = m.syncTasks();
@@ -510,6 +515,12 @@ try {
   const acMsg = o.ac && o.ac.commit ? execSync("git log -1 --format=%B " + o.ac.commit, { cwd: proj, encoding: "utf8", env: gitEnv }) : "";
   ok("approve changes without a task commits them, tasks untouched", o.ac && o.ac.ok && o.ac.approved === 0 && /without a task/.test(acMsg) && o.acTasks.find((x) => x.id === "t2" && !x.done && !x.review), o.ac);
   ok("nothing left -> approve changes without a task says so", o.acAgain && /No uncommitted changes/.test(o.acAgain.error || ""), o.acAgain);
+  const offer = (o.untasked && o.untasked[0] && o.untasked[0].open) || [];
+  ok("untasked changes offer the repo's open tasks, ticked where the last run's summary says it finished them", offer.length === 2 && offer.find((x) => x.id === "t3").finished === true && offer.find((x) => x.id === "t2").finished === false, offer);
+  const tickMsg = o.acTick && o.acTick.commit ? execSync("git log -1 --format=%B " + o.acTick.commit, { cwd: proj, encoding: "utf8", env: gitEnv }) : "";
+  const t3 = (o.acTickTasks || []).find((x) => x.id === "t3"), t2 = (o.acTickTasks || []).find((x) => x.id === "t2");
+  ok("approving with ticked tasks approves them with the changes (an already-archived id is ignored), and the commit names them", o.acTick && o.acTick.approved === 1 && t3.done && t3.archived && t3.commit === o.acTick.commit && !t2.done && /^Add a Skip button/.test(tickMsg) && !/without a task/.test(tickMsg), [o.acTick, tickMsg]);
+  ok("saidFinished: a line with most of the task's words; not one that says it wasn't done", saidFinished("Done:\n- Lanes: the chat hands work to the right repo's agent", "Hand chat work to the right repo's agent (its lane)") && !saidFinished("I didn't hand chat work to the repo's agent: blocked on gh", "Hand chat work to the right repo's agent") && !saidFinished("All tasks were already ticked.", "Hand chat work to the right repo's agent") && !saidFinished("", "Anything"), "");
   ok("checking tasks starts an agent on held tasks whose agent has finished, once", o.heldSync && o.heldSync.started === 1 && o.heldSync2.started === 0, [o.heldSync, o.heldSync2]);
   ok("adding a task already open in the same repo returns it, no duplicate", o.d1 && o.d2 && o.d2.duplicate && o.d2.id === o.d1.id && !o.d1.duplicate, [o.d1, o.d2]);
   ok("the same text in another repo, or once the first is done, is a new task", o.d3 && !o.d3.duplicate && o.d3.id !== o.d1.id && o.d4 && !o.d4.duplicate && o.d4.id !== o.d1.id && o.dCount === 3, [o.d3, o.d4, o.dCount]);
@@ -617,7 +628,15 @@ try {
   ok("an idea starting [repo: symbiot] goes to symbiot's tasks, not the agent's repo's", ideas[0] && ideas[0].text === "Watch Jira too" && ideas[0].repo === "symbiot" && ideas[0].other && !ideas[0].added, ideas[0]);
   ok("...one already in that repo's Tasks leaves the list, so the next moves up; the tab shows 2 at a time", !ideas.some((x) => x.text === "Watch GitHub too") && aqr.ideasShown === 2, [ideas.map((x) => x.text), aqr.ideasShown]);
   ok("a question shows its first 2 options, whatever the agent wrote", ((aqr.questions || [])[0] || {}).options && aqr.questions[0].options.join("|") === "🤖 Agent: A (recommended)|🤖 Agent: B", aqr.questions);
+  // Skip: a folder no agent ran in is refused; one that ran keeps the idea in SKIPPED.md, once, and it leaves the list
+  writeFileSync(join(aqHome, ".config", "symbiot", "runs.json"), JSON.stringify([{ path: aqDir, name: "coral", startedAt: 1 }]));
+  const sk = spawnSync(process.execPath, ["--input-type=module", "-e", `import { skipIdea, agentQuestions } from ${JSON.stringify(join(dirname(INDEX), "agents.mjs"))}; const no = skipIdea(${JSON.stringify(join(ROOT, "nowhere"))}, "x"); const a = skipIdea(${JSON.stringify(aqDir)}, "Watch Jira too"), b = skipIdea(${JSON.stringify(aqDir)}, "watch jira too!"); console.log(JSON.stringify({ no, a, b, ideas: agentQuestions(${JSON.stringify(aqDir)}, "coral").suggestions.map((x) => x.text) }));`], { encoding: "utf8", env: { ...process.env, HOME: aqHome, USERPROFILE: aqHome } });
+  let skr = {}; try { skr = JSON.parse(sk.stdout); } catch { console.log(sk.stdout, sk.stderr); }
+  const skMd = existsSync(join(aqDir, ".symbiot", "SKIPPED.md")) ? readFileSync(join(aqDir, ".symbiot", "SKIPPED.md"), "utf8") : "";
+  ok("Skip turns an idea down: kept once in .symbiot/SKIPPED.md, and the next idea moves up", skr.a && skr.a.ok && skr.b && skr.b.ok && (skMd.match(/^- /gm) || []).length === 1 && /^- Watch Jira too$/m.test(skMd) && skr.ideas && skr.ideas[0] === "Cache the map scan" && !skr.ideas.includes("Watch Jira too"), [skr, skMd]);
+  ok("...only in a folder an agent ran in", skr.no && /No agent has run/.test(skr.no.error || ""), skr.no);
   const brief = buildTasksMd("x", {}, [{ text: "t" }]);
+  ok("the brief tells agents not to suggest a skipped idea again", /`\.symbiot\/SKIPPED\.md`: don't suggest them again/.test(brief), "");
   ok("the brief asks for exactly 2 options, judged for the company, the people, then the goal, on evidence", /exactly 2 options/.test(brief) && /Judge the options/.test(brief) && /the company, the people doing the work, then the task's goal/.test(brief) && /evidence/.test(brief) && /2 at a time/.test(brief), brief.slice(brief.indexOf("## If you need")));
   ok("...ideas naming no repo, or their own, stay with the agent's repo; other brackets are just text", ideas.slice(1).map((x) => `${x.repo}:${x.other}:${x.text}`).join("|") === "coral:false:Cache the map scan|coral:false:Same repo, named|coral:false:[WIP] Not a repo tag", ideas.slice(1));
   ok("the brief tells agents how to name another project", /`- \[repo: symbiot\] …`/.test(buildTasksMd("x", {}, [{ text: "t" }])), "");

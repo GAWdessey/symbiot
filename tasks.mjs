@@ -260,8 +260,37 @@ function shipWithBump(path, texts, opts) {
   if (r.error) { undo(); return r; }
   return { ...r, bumped: to };
 }
+// What the last run in a folder said when it finished: agent.log after the last
+// run's "=== name time ===" and "$ command" lines.
+function runSummary(path) {
+  let log = ""; try { log = readFileSync(join(path, ".symbiot", "agent.log"), "utf8"); } catch { return ""; }
+  const at = log.lastIndexOf("\n=== "), rest = at < 0 ? log : log.slice(log.indexOf("\n", at + 1) + 1);
+  return rest.replace(/^\$ .*\n?/, "").trim().slice(-8000);
+}
+// Whether a run's summary says it finished a task: one of its lines (a bullet,
+// a paragraph) has most of the task's words, and doesn't say it wasn't done. A
+// guess the user confirms, so it leans to ticking: an unticked task only comes
+// back as a task.
+const NOT_DONE = /\b(didn['’]?t|did not|couldn['’]?t|could not|can['’]?t|cannot|wasn['’]?t|isn['’]?t|haven['’]?t|not (yet|done|finished|ticked|started)|still (open|to do|needs?)|left (it|them|alone)|blocked)\b/i;
+const keyWords = (s) => new Set(taskWords(s).split(" ").filter((w) => w.length > 3).map((w) => w.replace(/s$/, "")));
+function saidFinished(summary, text) {
+  const want = keyWords(text); if (want.size < 2) return false;
+  return String(summary || "").split(/\n/).some((l) => {
+    if (NOT_DONE.test(l)) return false;
+    const has = keyWords(l); let n = 0; for (const w of want) if (has.has(w)) n++;
+    return n >= Math.min(3, want.size) && n / want.size >= 0.4;
+  });
+}
+// The open tasks of a repo whose changes are approved without one: Approve
+// offers to tick them, checked when the last run's summary says it finished them,
+// so finished work doesn't go out again as new tasks on the next send.
+function finishedOffer(path, open) {
+  const summary = runSummary(path);
+  return uniqueTasks(open.map((x) => x.text)).slice(0, 12).map((text) => { const x = open.find((y) => y.text === text); return { id: x.id, text, finished: saidFinished(summary, text) }; });
+}
 // Repos with tasks awaiting review, plus repos Symbiot sent tasks to that have
-// uncommitted changes no ticked task covers (untasked: approve them as-is).
+// uncommitted changes no ticked task covers (untasked: approve them as-is, with
+// `open`, the repo's open tasks, to tick the ones the run finished).
 // running: an agent is still editing there, so its changes may be half done.
 function pendingReview() {
   const t = loadTasks(), by = {}; for (const x of t) if (x.review && !x.done && !x.archived) (by[x.repo] = by[x.repo] || []).push(x);
@@ -271,7 +300,9 @@ function pendingReview() {
   const out = Object.keys(by).sort().map((repo) => { const path = map[repo] || ""; return { repo, path, tasks: by[repo], autoMerge: am.includes(repo), running: !!(path && runningHandoff(path)), ...(path ? { ...workingChanges(path), unreleased: unreleased(path), bumpOffer: bumpOffer(path), publishesOnMerge: publishesOnMerge(path) } : { branch: "", files: [], stat: "" }) }; });
   for (const repo of sent.sort()) {
     const path = map[repo]; if (!path || !existsSync(join(path, ".symbiot", "TASKS.md"))) continue;
-    const wc = workingChanges(path); if (wc.files.length) out.push({ repo, path, tasks: [], untasked: true, autoMerge: am.includes(repo), running: !!runningHandoff(path), ...wc, unreleased: unreleased(path), bumpOffer: bumpOffer(path), publishesOnMerge: publishesOnMerge(path) });
+    const wc = workingChanges(path); if (!wc.files.length) continue;
+    const open = finishedOffer(path, t.filter((x) => x.repo === repo && !x.done && !x.archived && !x.review));
+    out.push({ repo, path, tasks: [], untasked: true, open, autoMerge: am.includes(repo), running: !!runningHandoff(path), ...wc, unreleased: unreleased(path), bumpOffer: bumpOffer(path), publishesOnMerge: publishesOnMerge(path) });
   }
   return out;
 }
@@ -389,14 +420,24 @@ function approveRepo(repo, opts = {}) {
 }
 // "Approve changes without a task": ship the uncommitted changes even though no
 // ticked task is behind them (a fix the agent made but didn't tick). If tasks are
-// awaiting review in the repo, this is just Approve.
+// awaiting review in the repo, this is just Approve. opts.tick: ids of the
+// repo's open tasks the changes finished (the run didn't tick them): they're
+// approved with the changes, as Approve does, so they don't go out again.
 function approveChanges(repo, opts = {}) {
   if (loadTasks().some((x) => x.repo === repo && x.review && !x.done && !x.archived)) return approveRepo(repo, opts);
   const path = repoPathMap()[repo]; if (!path) return { error: "Repo not found: " + (repo || "(no repo)") };
   const busy = stillWorking(repo, path); if (busy) return busy;
   if (!workingChanges(path).files.length) return { error: "No uncommitted changes in " + repo + "." };
-  const r = shipWithBump(path, [], { ...opts, autoMerge: opts.autoMerge !== undefined ? opts.autoMerge : autoMergeRepos().includes(repo) });
-  return r.error ? r : { ...r, approved: 0 };
+  const ids = new Set(Array.isArray(opts.tick) ? opts.tick.map(String) : []);
+  const ticked = (t) => t.filter((x) => ids.has(x.id) && x.repo === repo && !x.done && !x.archived && !x.review);
+  const r = shipWithBump(path, uniqueTasks(ticked(loadTasks()).map((x) => x.text)), { ...opts, autoMerge: opts.autoMerge !== undefined ? opts.autoMerge : autoMergeRepos().includes(repo) });
+  if (r.error) return r;
+  // read again: the ship took a while, and the list may have changed meanwhile
+  const t = loadTasks(), items = ticked(t), now = Date.now();
+  for (const x of items) { x.done = true; x.archived = true; x.archivedAt = now; x.approvedAt = now; for (const k of ["branch", "commit", "pr"]) if (r[k]) x[k] = r[k]; }
+  const removed = items.length ? applyRemovals(t) : 0;
+  if (items.length) saveTasks(t);
+  return { ...r, approved: items.length, ...(removed ? { removed } : {}) };
 }
 // Not right: reopen it and untick it in TASKS.md so the agent picks it up again.
 function sendBack(id) {
@@ -443,7 +484,7 @@ function buildTasksMd(name, ctx, list) {
     ONLY_YOU,
     "- A `👤 You:` answer holds the next run back until the user's step is done. If their step changes a file, name the file in backticks (`.env`, `~/.termux/termux.properties`): the next run starts once it changes.",
     "- If a step needs a release that isn't out yet, name its version in the question (\"Once 0.41.0 is installed: …\"). Symbiot shows it next to the installed and npm versions, and holds back an answer that starts \"Done\" until that release is out and installed.",
-    `- Ideas, options or follow-ups outside these tasks go under \`## Suggestions\` as \`- \` bullets. The user can add them to their tasks in one click, and often adds every one, so judge them the same way: only ideas you'd recommend, best first, each saying what it changes and why it's worth doing. Symbiot shows them ${IDEAS_SHOWN} at a time.`,
+    `- Ideas, options or follow-ups outside these tasks go under \`## Suggestions\` as \`- \` bullets. The user can add them to their tasks in one click, and often adds every one, so judge them the same way: only ideas you'd recommend, best first, each saying what it changes and why it's worth doing. Symbiot shows them ${IDEAS_SHOWN} at a time. Ideas the user turned down are in \`.symbiot/SKIPPED.md\`: don't suggest them again.`,
     "- An idea for a different project than this one (Symbiot itself, say, the app that sent you this brief) starts with that project's folder name, `- [repo: symbiot] …`, so it goes to that project's tasks instead of this one's.",
     "- Carry on with everything that doesn't depend on an answer, and don't tick an item that does. Ask there rather than doing anything destructive.", "");
   L.push("---", 'To action these, tell your coding agent: "Read `.symbiot/TASKS.md` and implement the unchecked items in this repo, using the context above. Tick each item as you finish it and leave changes uncommitted for review. Confirm with me before anything destructive."');
@@ -481,4 +522,4 @@ function pushTasks(filter) {
   return { empty: false, written, unresolved, handoff: handoffCmd() };
 }
 
-export { addTask, toggleTask, removeTask, restoreTask, completedInRepo, removalOf, applyRemovals, syncTasks, workingChanges, workingDiff, publishesOnMerge, unreleased, bumpOffer, learnNpm, releaseNeeded, withReleases, setVersion, shipWithBump, pendingReview, commitSubject, shipChanges, autoMergeRepos, setAutoMerge, approveRepo, approveChanges, sendBack, TASK_ORDER, taskType, buildTasksMd, pushTasks };
+export { addTask, toggleTask, removeTask, restoreTask, completedInRepo, removalOf, applyRemovals, syncTasks, workingChanges, workingDiff, publishesOnMerge, unreleased, bumpOffer, learnNpm, releaseNeeded, withReleases, setVersion, shipWithBump, runSummary, saidFinished, pendingReview, commitSubject, shipChanges, autoMergeRepos, setAutoMerge, approveRepo, approveChanges, sendBack, TASK_ORDER, taskType, buildTasksMd, pushTasks };

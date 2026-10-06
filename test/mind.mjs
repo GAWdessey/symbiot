@@ -15,7 +15,7 @@ mkdirSync(join(HOME, ".config", "symbiot"), { recursive: true });
 let pass = 0, fail = 0;
 const ok = (n, c, got) => { if (c) { pass++; console.log("  ✓ " + n); } else { fail++; console.log("  ✗ " + n + (got !== undefined ? "  got: " + JSON.stringify(got) : "")); } };
 
-const { MIND_FILE, loadMind, remember, recall, mindState, forget, converse, parseReply, actBrief } = await import("../mind.mjs");
+const { MIND_FILE, loadMind, remember, recall, mindState, forget, converse, parseReply, actBrief, actIn, taskIn, selfLane } = await import("../mind.mjs");
 const said = (j) => async () => JSON.stringify(j);
 
 try {
@@ -45,12 +45,37 @@ try {
   ok("the reply says it's handed over and that it asks first", /Handed to your agent/.test(g.reply) && /asks you there before anything hard to undo/.test(g.reply), g.reply);
   const tk = await converse({ where: "Gmail card", question: "remind me to renew the domain next month", act,
     ask: said({ reply: "Added.", do: { task: "Renew dailify.co.za", repo: "" }, remember: [] }) });
-  ok("for later: a task on your list", tk.did.kind === "task" && taskArgs[0] === "Renew dailify.co.za" && /Added to your tasks: Renew dailify\.co\.za/.test(tk.reply), [tk.did, tk.reply]);
+  ok("for later with no repo: on your list, and it says no agent will pick it up", tk.did.kind === "task" && taskArgs[0] === "Renew dailify.co.za" && /Added to your tasks, but not to a repo, so no agent will pick it up until it has one: Renew dailify\.co\.za/.test(tk.reply), [tk.did, tk.reply]);
   const q = await converse({ where: "Gmail card", question: "what's new?", act, ask: async () => "Two emails from Dana." });
   ok("a model that doesn't answer in JSON: its text is the reply, nothing is run", q.reply === "Two emails from Dana." && !q.did, q);
   const bad = await converse({ where: "Gmail card", question: "do it", act: { agent: async () => ({ error: "Pick your coding agent in Settings → Handoff first" }) }, ask: said({ reply: "On it.", do: { agent: "x" }, remember: [] }) });
-  ok("an agent that can't start says why, in the reply", /couldn't hand it to your agent: Pick your coding agent/.test(bad.reply), bad.reply);
+  ok("an agent that can't start says why, in the reply", /couldn.t hand it to an agent: Pick your coding agent/.test(bad.reply), bad.reply);
   ok("parseReply takes a fenced JSON answer too", parseReply('```json\n{"reply":"hi","do":null}\n```').reply === "hi", "");
+
+  console.log("LANES — it knows where work goes, and says where it went");
+  const { writeFileSync: wf } = await import("node:fs");
+  const symDir = join(HOME, "projects", "symbiot"); mkdirSync(symDir, { recursive: true }); wf(join(symDir, "package.json"), '{"name":"symbiot","version":"1.0.0"}');
+  const map = { symbiot: symDir, coral: join(HOME, "projects", "coral") };
+  ok("Symbiot's own lane is the repo whose package is symbiot", selfLane(map) === "symbiot" && selfLane({ coral: map.coral }) === "", "");
+  let rulesSeen = "";
+  await converse({ where: "WhatsApp card", question: "that line was mine, not hers", map, act, ask: async (sys) => { rulesSeen = sys; return JSON.stringify({ reply: "ok", do: null, remember: [] }); } });
+  ok("the chat is told the lanes and that Symbiot's flaws go to symbiot", /Lanes \("repo" is one of these, exactly\): symbiot, coral/.test(rulesSeen) && /Symbiot itself is "symbiot"/.test(rulesSeen), rulesSeen.slice(-700));
+  ok("…and not to wait to be asked: spot a flaw, start the fix in the same reply", /Don't wait to be asked to fix Symbiot/.test(rulesSeen) && /"agent" with "repo": "symbiot"/.test(rulesSeen), "");
+  const added = [];
+  const add = (t, r) => { added.push([t, r]); return { id: "t" + added.length }; };
+  ok("a task goes to the lane it names, whatever its case", taskIn("Fix sender attribution", "Symbiot", { map, add }).lane === "symbiot" && added.slice(-1)[0][1] === "symbiot", added.slice(-1));
+  ok("a lane that doesn't exist isn't made up: no repo", taskIn("x", "nonesuch", { map, add }).lane === "" && added.slice(-1)[0][1] === "", added.slice(-1));
+  const lt = await converse({ where: "WhatsApp card", question: "fix it", map, act: { task: (t, r) => taskIn(t, r, { map, add }) }, ask: said({ reply: "Done.", do: { task: "Fix WhatsApp sender attribution", repo: "symbiot" }, remember: [] }) });
+  ok("the reply names the lane it really landed in", /→ Added to symbiot's tasks: Fix WhatsApp sender attribution/.test(lt.reply), lt.reply);
+  const lx = await converse({ where: "WhatsApp card", question: "fix it", map, act: { task: (t, r) => taskIn(t, r, { map, add }) }, ask: said({ reply: "Done.", do: { task: "Fix it", repo: "symbiotapp" }, remember: [] }) });
+  ok("a wrong lane is said, not hidden", /not to a repo \(there's no lane called symbiotapp\)/.test(lx.reply), lx.reply);
+  const ran2 = [], pushed = [];
+  const ai = actIn("Treat unnamed WhatsApp lines as unknown", "symbiot", { map, add, push: (f) => { pushed.push(f); return { written: [{}] }; }, run: (p) => { ran2.push(p); return { id: "j9" }; } });
+  ok("do it in a lane: its task, out like Send to repos, its agent started there", ai.ok && ai.lane === "symbiot" && pushed[0].repo === "symbiot" && ran2[0] === symDir && ai.job === "j9", ai);
+  const aq = actIn("x", "symbiot", { map, add, push: () => ({ written: [{}] }), run: () => ({ busy: true }) });
+  ok("that lane busy: queued, and said so", aq.ok && aq.queued, aq);
+  const ao = actIn("Find a JDK", "", { map, ops: () => ({ ok: true, job: "o1", dir: "/x" }) });
+  ok("no lane: an agent of its own (ops)", ao.ok && ao.lane === "" && ao.job === "o1", ao);
 
   console.log("THE AGENT'S BRIEF — hard to undo is asked first");
   const br = actBrief("Close AWS account 049056030093", { title: "Gmail", context: "- Mail from AWS", known: "- AWS 049056030093 (account): the Dailify/CallForge AWS account" });
