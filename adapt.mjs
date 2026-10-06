@@ -206,12 +206,13 @@ function userStyleLine(file = MIND_FILE) {
 // ---- the app's view ------------------------------------------------------------------
 // Nearest neighbours: two parts are near when you go from one to the other. Their
 // affinity is the symmetric next-step probability, Dirichlet-smoothed as in predict,
-// plus a small prior (KIN) for parts that belong together before you've used them:
-// the work (tasks, agents, todo), your time (week, standup), your repos (dashboard,
-// map, drift). Each part keeps its k nearest (k-NN), counting only links above
+// plus a small prior (KIN) for parts that belong together before you've used them,
+// by P.A.R.A.: Projects (tasks, agents, todo: work with an end), Areas (dashboard,
+// week, standup: what you keep up with) and Resources (map, drift, settings: what
+// you look things up in). The Archive is its own droplet in the liquid. Each part keeps its k nearest (k-NN), counting only links above
 // chance (1/K), and the liquid sets it beside them, so the layout has clusters
 // and gaps, structure without looking ruled.
-const KIN_GROUPS = [["tasks", "agents", "todo"], ["week", "standup"], ["board", "map", "drift"]];
+const KIN_GROUPS = [["tasks", "agents", "todo"], ["board", "week", "standup"], ["map", "drift", "settings"]];
 const KIN = KIN_GROUPS.flatMap((g) => g.flatMap((a, i) => g.slice(i + 1).map((b) => [a, b])));
 const KIN_W = 0.08;
 function affinity(d, a, b, ids = SHAPES) {

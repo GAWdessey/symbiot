@@ -114,8 +114,8 @@ try {
     const fresh = { shapes: {}, trans: {}, hours: {}, modes: {}, slots: {}, shown: null, events: 0 };
     const n0 = A.neighbours(fresh);
     ok("at most k = 2 nearest, each above chance, never itself", A.SHAPES.every((id) => n0[id].length <= 2 && n0[id].every((n) => n.id !== id && n.w > 1 / A.SHAPES.length)), n0);
-    ok("with no use yet, the parts form clusters, not a chain: nothing links the work to your time", !n0.tasks.some((n) => n.id === "week" || n.id === "standup") && !n0.week.some((n) => ["tasks", "agents", "todo"].includes(n.id)) && n0.settings.length === 0, [n0.tasks, n0.week, n0.settings]);
-    ok("with no use yet, the built-in pairs lead (Tasks beside Agents, Week beside Standup)", n0.tasks.some((n) => n.id === "agents") && n0.week[0].id === "standup", [n0.tasks, n0.week]);
+    ok("with no use yet, the parts form P.A.R.A. clusters, not a chain: nothing links a Project to an Area or a Resource", !n0.tasks.some((n) => ["board", "week", "standup", "map", "drift", "settings"].includes(n.id)) && !n0.week.some((n) => ["tasks", "agents", "todo", "map", "drift", "settings"].includes(n.id)) && n0.settings.every((n) => ["map", "drift"].includes(n.id)), [n0.tasks, n0.week, n0.settings]);
+    ok("with no use yet, P.A.R.A. groups lead (Tasks beside Agents, Week beside Standup, Map beside Drift)", n0.tasks.some((n) => n.id === "agents") && n0.week.some((n) => n.id === "standup") && n0.map.some((n) => n.id === "drift"), [n0.tasks, n0.week, n0.map]);
     ok("affinity is symmetric", A.affinity(fresh, "map", "week") === A.affinity(fresh, "week", "map"), "");
     const used = { ...fresh, trans: { week: { map: 12 }, map: { week: 9 } } };
     ok("going between two parts makes them nearest, over the built-in pairs", A.neighbours(used).week[0].id === "map" && A.neighbours(used).map[0].id === "week", A.neighbours(used).week);

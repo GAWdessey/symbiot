@@ -111,6 +111,14 @@ body.lq-contrast.lq-liquid .task,body.lq-contrast.lq-liquid .agent{border:2px so
 
 /* the work scene: tasks and agents in the liquid, with spheres revolving round what's at work */
 #lqorbits{position:absolute;inset:0;pointer-events:none}
+#lqgroups{position:absolute;inset:0;pointer-events:none}
+.lqg{position:absolute;left:0;top:0;display:flex;flex-direction:column;align-items:center;gap:1px;padding:4px 10px;border:0;border-radius:12px;background:transparent;color:#ECE9E4;font:600 17px/1.15 var(--sans);letter-spacing:-.01em;cursor:pointer;transition:opacity .5s ease;will-change:transform;text-shadow:0 1px 12px rgba(0,0,0,.6)}
+.lqg small{font:400 12px var(--sans);color:#8A919B;letter-spacing:0}
+.lqg:hover span{text-decoration:underline;text-underline-offset:5px;text-decoration-color:rgba(255,255,255,.3)}
+.lqg:focus-visible{outline:2px solid currentColor;outline-offset:2px}
+body.lq-light .lqg{color:#151A21;text-shadow:0 1px 10px rgba(255,255,255,.8)}
+body.lq-light .lqg small{color:#5A6470}
+body.lq-pooled #lqgroups{display:none}
 .lqorbit{position:absolute;left:0;top:0;pointer-events:none;transition:opacity .5s ease}
 .lqorbit span{position:absolute;inset:0;animation:lqorbit 3.4s linear infinite}
 .lqorbit span:nth-child(2){animation-duration:4.6s;animation-delay:-1.6s}
@@ -123,7 +131,7 @@ body.lq-contrast.lq-liquid .task,body.lq-contrast.lq-liquid .agent{border:2px so
 body.lq-work #lqgo.on{display:inline-flex;position:absolute;left:50%;bottom:86px;transform:translateX(-50%);z-index:4;align-items:center;gap:8px;min-height:52px;padding:0 26px;border-radius:999px;border:1px solid #FFFFFF;background:linear-gradient(180deg,#FFFFFF 0%,#D2D8E1 44%,#8E97A6 56%,#E6EAF0 100%);color:#06080B;font:700 16px var(--sans);letter-spacing:.02em;cursor:pointer;box-shadow:0 16px 40px -16px rgba(0,0,0,.75)}
 body.lq-work #lqback{display:inline-flex;position:absolute;left:16px;top:52px;z-index:4;align-items:center;min-height:44px;padding:0 16px;border-radius:999px;border:1px solid rgba(220,228,240,.3);background:rgba(4,5,7,.6);backdrop-filter:blur(8px);color:#EEF2F8;font:600 14px var(--sans);cursor:pointer}
 body.lq-light.lq-work #lqback{background:rgba(255,255,255,.8);color:#10151C;border-color:rgba(20,30,45,.2)}
-body.lq-pooled #lqgo,body.lq-pooled #lqback,body.lq-pooled #lqorbits{display:none}
+body.lq-pooled #lqgo,body.lq-pooled #lqback,body.lq-pooled #lqorbits,body.lq-work #lqgroups{display:none}
 .lqd.lq-ready{border-color:#F2A541}
 /* the live work of an agent: what it's doing, its to-dos, its steps, its files, its pace */
 .wk{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(260px,100%),1fr));gap:12px;margin-top:10px}
@@ -310,6 +318,47 @@ label.check input{width:auto}
 .scrbox span{position:absolute;left:0;top:0;font-size:11px;background:var(--green);color:var(--ink);padding:1px 6px;white-space:nowrap}
 .scrbox.draw{border:2px dashed var(--amber);background:rgba(242,165,65,.14)}
 .board{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px;margin-top:12px}
+/* the Dashboard as a stream: time runs left to right, a current per feed, now on the right */
+.bstream{position:relative;margin-top:10px;border-radius:18px;overflow:hidden;isolation:isolate;background:#08090B;box-shadow:0 0 0 1px rgba(255,255,255,.08)}
+body.lq-light .bstream{background:#EBEEF0;box-shadow:0 0 0 1px rgba(21,26,33,.08)}
+body.lq-look-pearl .bstream{background:#EDECE9}
+.bstream.none{display:none}
+#bsc{position:absolute;inset:0;width:100%;height:100%;display:block}
+#bsov{position:absolute;inset:0}
+body.lq-liquid .bcard.blane{position:absolute;left:16px;width:150px;padding:0;border:0;background:transparent;box-shadow:none;transform:translateY(-50%)}
+.blane .bln{font:600 14px/1.2 var(--sans);color:var(--bone);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.blane .blc{font-size:12px;color:var(--faint);margin-top:1px}
+.blane .blc b{color:var(--amber);font-weight:600}
+.blane .bla{display:flex;flex-wrap:wrap;gap:0 2px;margin:3px 0 0 -6px}
+.blane .bla button,.btip .bta button.quiet{border:0;background:transparent;color:var(--faint);font:500 12px var(--sans);padding:4px 6px;border-radius:8px;cursor:pointer}
+.blane .bla button:hover{color:var(--bone)}
+.blane .ble{font-size:11.5px;color:#E5484D;margin-top:2px}
+.blb{position:absolute;right:16px;width:230px;text-align:right;font-size:12.5px;line-height:1.4;color:var(--faint);transform:translateY(-50%);pointer-events:none}
+.bline{position:absolute;height:1px;background:linear-gradient(90deg,transparent,rgba(255,255,255,.1) 6%,rgba(255,255,255,.1) 94%,transparent);pointer-events:none}
+body.lq-light .bline{background:linear-gradient(90deg,transparent,rgba(21,26,33,.1) 6%,rgba(21,26,33,.1) 94%,transparent)}
+.btick{position:absolute;bottom:12px;font-size:11px;color:var(--faint);transform:translateX(-50%);pointer-events:none}
+.bnow{position:absolute;top:18px;bottom:30px;width:1px;background:linear-gradient(180deg,transparent,rgba(255,255,255,.25),transparent);pointer-events:none}
+body.lq-light .bnow{background:linear-gradient(180deg,transparent,rgba(21,26,33,.25),transparent)}
+.bbead{position:absolute;left:0;top:0;border:0;padding:0;border-radius:50%;background:transparent;cursor:pointer;will-change:transform}
+.bbead:focus-visible{outline:2px solid var(--bone);outline-offset:2px}
+.btip{position:absolute;left:0;top:0;width:300px;max-width:calc(100% - 24px);z-index:4;opacity:0;pointer-events:none;transition:opacity .18s ease}
+.btip.on{opacity:1;pointer-events:auto}
+body.lq-liquid .btip .bcard{padding:12px 14px;border-radius:16px;background:rgba(16,18,21,.95);border:1px solid rgba(255,255,255,.1);box-shadow:0 24px 50px -20px rgba(0,0,0,.8)}
+body.lq-liquid.lq-light .btip .bcard{background:rgba(255,255,255,.96);border-color:rgba(21,26,33,.1);box-shadow:0 24px 50px -24px rgba(30,45,60,.45)}
+.btip .bi{display:block !important;border:0 !important;padding:0 !important}
+.btip .btf{font:600 13px var(--sans);color:var(--bone)}
+.btip .btf span{font-weight:400;color:var(--faint)}
+.btip .btx{margin:3px 0 10px;font-size:14px;color:var(--text);overflow-wrap:anywhere}
+.btip .bta{display:flex;flex-wrap:wrap;gap:4px;align-items:center}
+.btip .bta button:not(.quiet){border:0;border-radius:999px;padding:7px 13px;font:600 12.5px var(--sans);background:#F3F0EA;color:#0A0B0D;cursor:pointer}
+body.lq-light .btip .bta button:not(.quiet){background:#151A21;color:#FFFFFF}
+.blist{margin-top:12px}
+.blist summary{cursor:pointer;color:var(--faint);font-size:13px;list-style:none}
+.blist summary::-webkit-details-marker{display:none}
+.blist summary::before{content:'';display:inline-block;width:5px;height:5px;margin-right:8px;border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;transform:rotate(-45deg);vertical-align:2px;transition:transform .2s ease}
+.blist[open] summary::before{transform:rotate(45deg)}
+#boardtalk .bcard{margin-top:12px}
+@media (max-width:720px){.blb{display:none}body.lq-liquid .bcard.blane{width:96px}.blane .bla{display:none}}
 .bcard{border:1px solid var(--line);border-radius:12px;padding:12px 14px;background:var(--ink2);min-width:0}
 .bcard.has{border-color:#2a6b52}
 .bcard .bh{display:flex;gap:8px;align-items:center}.bcard .bn{color:var(--bone);font-weight:600;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -325,6 +374,7 @@ label.check input{width:auto}
 <div id="liquid" aria-label="Symbiot">
 <canvas id="lq" aria-hidden="true"></canvas>
 <div id="lqorbits"></div>
+<div id="lqgroups"></div>
 <div id="lqdrops"></div>
 <button type="button" id="lqback">&lsaquo; Home</button>
 <button type="button" id="lqgo"></button>
@@ -384,8 +434,10 @@ label.check input{width:auto}
 <section id="panel-board" class="hidden">
 <div class="row"><span class="muted" id="boardsum" style="flex:1">Everything you watch, side by side.</span><select id="boardhours" title="how far back" style="flex:0 0 auto;width:auto"><option value="24">last 24 hours</option><option value="72">last 3 days</option><option value="168">last 7 days</option></select><button class="ghost" id="boardrefresh">Refresh</button></div>
 <div id="boardmsg"></div>
+<div id="bstream" class="bstream"><canvas id="bsc" aria-hidden="true"></canvas><div id="bsov"></div></div>
+<div id="boardtalk"></div>
+<details id="blist" class="blist"><summary>All of it as a list</summary><div id="board" class="board"></div></details>
 <div id="boardlinks"></div>
-<div id="board" class="board"></div>
 </section>
 <section id="panel-run" class="hidden">
 <div class="row"><button class="act" id="write">Write my <span id="what">week</span></button>
@@ -1115,8 +1167,51 @@ var TALKHINT="<div class='muted' style='font-size:12px'>Go over what's new here 
 function talking(){var f=document.activeElement;return BTALKBUSY>0||!!(f&&f.closest&&f.closest('.btalk'));}
 function loadBoard(){api('/api/watch/board?hours='+(+$('boardhours').value||24)).then(function(b){if(b&&b.cards){BOARD=b;if(!talking())renderBoard();}});}
 function boardMsg(cls,html){$('boardmsg').innerHTML="<div class='note "+cls+"'>"+html+"</div>";}
+
+// ---- the Dashboard as a stream ----------------------------------------------------
+// Time runs left to right, one current per feed, "now" on the right. Each message
+// is a bead placed when it arrived: amber and bigger when it needs you, small when
+// read. A bead opens a popover with that message's own actions (the same buttons as
+// the list below, wired by renderBoard's wire); a feed's name carries its Seen,
+// Talk and Check now. Drawn in the look's liquid, with its own canvas.
+var BS={G:null,beads:[],hot:null,on:false,b:null},BWIRE=null;
+function bsGeom(){var el=$('bstream'),w=(el&&el.clientWidth)||900,n=((BS.b&&BS.b.cards)||[]).length,narrow=w<720;
+return {w:w,h:Math.max(280,70+n*96+40),x0:narrow?120:200,x1:w-(narrow?28:270),narrow:narrow,n:n};}
+function bsBuild(b){BS.b=b;var ov=$('bsov'),el=$('bstream');if(!ov||!el)return;var cs=b.cards||[];if(!cs.length){ov.innerHTML='';return;}
+var g=bsGeom();if(el.style)el.style.height=g.h+'px';var now=Date.now(),H=(b.hours||24)*3600000,laneY=function(i){return 60+(g.h-110)*(i+0.5)/Math.max(1,g.n);};
+var html='';cs.forEach(function(c,i){var y=laneY(i);
+html+="<div class='bline' style='left:"+(g.x0-24)+"px;width:"+(g.x1-g.x0+48)+"px;top:"+Math.round(y)+"px'></div>";
+html+="<div class='bcard blane' data-i='"+i+"' style='top:"+Math.round(y)+"px'><div class='bln' title='"+esc(c.url||'')+"'>"+esc(c.name)+"</div><div class='blc'>"+(c.count?"<b>"+esc(c.label)+"</b>":"nothing new")+"</div><div class='bla'>"+(c.count?"<button class='bseen' title='set this feed back to 0: only what comes in after counts'>Seen</button>":"")+"<button class='btalkbtn' title='talk what&#39;s new here over with your AI before you draft a reply'>Talk"+((c.chat||[]).length?" "+Math.ceil(c.chat.length/2):"")+"</button><button class='bcheck' title='read it now'>Check now</button></div>"+(c.error?"<div class='ble'>"+esc(c.error)+"</div>":"")+"</div>";
+if(c.brief&&!g.narrow)html+="<div class='blb' style='top:"+Math.round(y)+"px'>"+esc(c.brief.text.length>150?c.brief.text.slice(0,149)+'…':c.brief.text)+"</div>";});
+var marks=b.hours===24?[18,12,6]:b.hours===72?[48,24]:[120,72,24];
+marks.forEach(function(m){html+="<span class='btick' style='left:"+Math.round(g.x0+(1-m/(b.hours||24))*(g.x1-g.x0))+"px'>"+(m<48?m+'h ago':Math.round(m/24)+' days ago')+"</span>";});
+html+="<span class='btick' style='left:"+g.x1+"px'>now</span><div class='bnow' style='left:"+g.x1+"px'></div>";
+var old={};BS.beads.forEach(function(x){old[x.key]=x;});BS.beads=[];
+cs.forEach(function(c,i){(c.items||[]).forEach(function(n,j){var age=Math.max(0,now-(n.ts||now));if(age>H)return;var key=c.id+':'+(n.id||j),o=old[key];
+BS.beads.push({key:key,i:i,j:j,n:n,need:!!n.need&&!!(n.mail||n.chat),tx:g.x0+(1-age/H)*(g.x1-g.x0),ty:laneY(i),tr:n.need&&(n.mail||n.chat)?13:n.read?6:9,x:o?o.x:g.x1,y:o?o.y:laneY(i),r:o?o.r:0});});});
+html+=BS.beads.map(function(x,k){return "<button type='button' class='bbead' data-k='"+k+"' aria-label='"+esc(x.n.text||'')+"'></button>";}).join('');
+html+="<div class='btip' role='dialog' aria-live='polite'></div>";ov.innerHTML=html;
+BS.btns=[];ov.querySelectorAll('.bbead').forEach(function(bt){BS.btns.push(bt);var k=+bt.getAttribute('data-k');bt.addEventListener('pointerenter',function(){bsShow(k);});bt.addEventListener('focus',function(){bsShow(k);});bt.addEventListener('click',function(){bsShow(k);});});
+if(el.addEventListener&&!BS.wired){BS.wired=true;el.addEventListener('pointerleave',function(){bsShow(null);});el.addEventListener('keydown',function(e){if(e&&e.key==='Escape')bsShow(null);});}
+BS.hot=null;bsStart();}
+function bsShow(k){var tip=document.querySelector('#bsov .btip');if(!tip)return;BS.hot=k;if(k==null||!BS.beads[k]){tip.className='btip';return;}
+var x=BS.beads[k],c=BS.b.cards[x.i],n=x.n;
+tip.innerHTML="<div class='bcard' data-i='"+x.i+"'><div class='bi' data-j='"+x.j+"'><div class='btf'>"+esc(n.name||c.name)+" <span>&middot; "+esc(c.name)+" &middot; "+agoTxt(n.ts)+(n.from&&CHATFROM[n.from]?" &middot; "+CHATFROM[n.from]:"")+(n.read?" &middot; read":"")+"</span></div><div class='btx'>"+esc(n.text||'')+"</div><div class='bta'>"+(n.mail||n.chat?"<button class='bdraft'>"+(n.drafted?"Drafted &middot; again":"Draft a reply")+"</button>":"")+(n.href?"<button class='bopen"+(n.mail||n.chat?" quiet":"")+"'>Open</button>":"")+(n.chat&&n.drafted?"<button class='bopenwa quiet'>Open in WhatsApp</button>":"")+"</div></div></div>";
+tip.className='btip on';if(BWIRE)BWIRE(tip);}
+function bsStart(){if(BS.on)return;var raf=typeof window.requestAnimationFrame==='function'?function(f){return window.requestAnimationFrame(f);}:null;if(!raf)return;BS.on=true;
+var loop=function(){var p=$('panel-board'),el=$('bstream');if(!p||!el||!p.offsetParent||(el.classList&&el.classList.contains('none'))){BS.on=false;return;}bsFrame();raf(loop);};raf(loop);}
+function bsFrame(){var el=$('bstream'),cv=$('bsc');if(!el||!cv)return;if(!BS.G)BS.G=lqGL(cv,40);var g=bsGeom(),t=LQ.t||0,still=LQ.theme&&LQ.theme.still;
+BS.beads.forEach(function(x,k){var hot=BS.hot===k;x.x+=(x.tx-x.x)*0.12;x.y+=((x.ty+(still?0:Math.sin(t*0.8+k*1.3)*2))-x.y)*0.12;x.r+=((x.tr*(hot?1.35:1))-x.r)*0.15;
+var bt=BS.btns&&BS.btns[k];if(bt&&bt.style){var R=Math.max(14,x.r+6);bt.style.width=bt.style.height=(2*R)+'px';bt.style.transform='translate('+Math.round(x.x-R)+'px,'+Math.round(x.y-R)+'px)';}});
+var tip=document.querySelector('#bsov .btip');if(tip&&BS.hot!=null&&BS.beads[BS.hot]){var x=BS.beads[BS.hot],tw=tip.offsetWidth||300,th=tip.offsetHeight||120,tx=Math.max(12,Math.min(g.w-tw-12,x.x-tw/2)),ty=x.y-x.r-th-14;if(ty<8)ty=x.y+x.r+14;tip.style.transform='translate('+Math.round(tx)+'px,'+Math.round(ty)+'px)';}
+var G=BS.G;if(!G)return;var gl=G.gl,d=Math.min(window.devicePixelRatio||1,3),W=Math.max(1,Math.floor(g.w*d)),H=Math.max(1,Math.floor(g.h*d));if(cv.width!==W||cv.height!==H){cv.width=W;cv.height=H;gl.viewport(0,0,W,H);}
+var o=G.out;for(var i=0;i<o.length;i++)o[i]=0;var k=0,put=function(px,py,r,a){if(k>=40)return;o[k*4]=px/g.w;o[k*4+1]=py/g.h;o[k*4+2]=Math.max(0,r);o[k*4+3]=a;k++;};
+(BS.b.cards||[]).forEach(function(c,i){put(g.x1+16,60+(g.h-110)*(i+0.5)/Math.max(1,g.n),c.count?9+2*Math.min(c.count,6):5,0);});
+BS.beads.forEach(function(x){put(x.x,x.y,x.r,x.need?1:0);});
+var th=LQ.theme||{},U=G.U;gl.uniform2f(U.uRes,W,H);gl.uniform1f(U.uT,t);gl.uniform1f(U.uDpr,d);gl.uniform4fv(U.uB,o);gl.uniform3f(U.uRip,0,0,-10);gl.uniform1f(U.uStyle,th.look==='glass'?0:th.look==='pearl'?2:1);gl.uniform1f(U.uContrast,th.contrast?1:0);gl.uniform1f(U.uExposure,th.night?0.82:1);gl.drawArrays(gl.TRIANGLES,0,3);}
 function renderBoard(){var b=BOARD,cs=b.cards,el=$('board');
 var tab=$('boardtab');if(tab)tab.textContent='Dashboard'+(b.total?' · '+b.total:'');
+var bst=$('bstream');if(bst&&bst.classList)bst.classList.toggle('none',!cs.length);var bl=$('blist');if(bl&&!cs.length)bl.open=true;
 if(!cs.length){$('boardsum').textContent='Everything you watch, side by side.';
 el.innerHTML="<div style='grid-column:1/-1'><div class='note muted' style='margin-top:0'>Nothing watched yet. Map your inbox, a chat (web.whatsapp.com) or any page under <b>Screens</b> on the Map tab and click <b>Watch</b> on it, or click <b>Watch GitHub</b> there. Each one gets a card here with what's new on it.</div><div class='row' style='margin-top:8px'><button class='ghost' id='boardgo'>Go to Screens</button></div></div>";
 $('boardgo').addEventListener('click',function(){setTab('map');var w=$('watchbox');if(w&&w.scrollIntoView)w.scrollIntoView({block:'center'});});return;}
@@ -1130,9 +1225,12 @@ return "<div class='bcard"+(c.count?" has":"")+"' data-i='"+i+"'><div class='bh'
 +(c.brief?"<div class='bbrief'>"+esc(c.brief.text)+"</div>":"")
 +c.items.map(function(n,j){return "<div class='bi' data-j='"+j+"'><span class='t'>"+esc(n.text)+" <span class='muted' style='font-size:11px'>"+agoTxt(n.ts)+(n.from&&CHATFROM[n.from]?" &middot; "+CHATFROM[n.from]:"")+"</span></span>"+(n.href?"<button class='ghost bopen' title='open it in your browser'>Open</button>":"")+(n.mail||n.chat?"<button class='ghost bdraft' title='"+(n.chat?DRAFT_CHAT_TIP:"your coding agent writes a reply and leaves it in Drafts. It never presses Send")+"'>"+(n.drafted?"Drafted &middot; again":"Draft a reply")+"</button>":"")+(n.chat&&n.drafted?"<button class='ghost bopenwa' title='"+OPEN_WA_TIP+"'>Open in WhatsApp</button>":"")+"</div>";}).join('')
 +(c.count>c.items.length?"<div class='bl' style='margin-top:6px'>&hellip;and "+(c.count-c.items.length)+" more</div>":"")
-+(BTALK[c.id]?"<div class='tchat btalk'><div class='msgs'>"+(nt?chatMsgs(c.chat):TALKHINT)+"</div><div class='row'><input class='talkq' placeholder='Ask about these, or say how to answer one...' style='flex:1'><button class='ghost talksend'>Ask</button><a class='talkclear' title='forget this conversation'>clear</a></div></div>":"")+"</div>";}).join('');
++"</div>";}).join('');
+var tk=$('boardtalk');if(tk)tk.innerHTML=cs.map(function(c,i){var nt=Math.ceil(((c.chat||[]).length)/2);return BTALK[c.id]?"<div class='bcard' data-i='"+i+"'><div class='bh'><span class='bn'>Talking over "+esc(c.name)+"</span><button class='ghost btalkbtn' style='padding:4px 9px;font-size:12px'>Close</button></div><div class='tchat btalk'><div class='msgs'>"+(nt?chatMsgs(c.chat):TALKHINT)+"</div><div class='row'><input class='talkq' placeholder='Ask about these, or say how to answer one...' style='flex:1'><button class='ghost talksend'>Ask</button><a class='talkclear' title='forget this conversation'>clear</a></div></div></div>":"";}).join('');
+bsBuild(b);
 function card(btn){return cs[+btn.closest('.bcard').getAttribute('data-i')];}
-el.querySelectorAll('.btalkbtn').forEach(function(btn){btn.addEventListener('click',function(){var c=card(btn);BTALK[c.id]=!BTALK[c.id];renderBoard();var q=BTALK[c.id]&&el.querySelector(".bcard[data-i='"+cs.indexOf(c)+"'] .talkq");if(q&&q.focus)q.focus();});});
+function wire(el){if(!el||!el.querySelectorAll)return;
+el.querySelectorAll('.btalkbtn').forEach(function(btn){btn.addEventListener('click',function(){var c=card(btn);BTALK[c.id]=!BTALK[c.id];renderBoard();var tk2=$('boardtalk'),q=BTALK[c.id]&&tk2&&tk2.querySelector(".bcard[data-i='"+cs.indexOf(c)+"'] .talkq");if(q&&q.focus)q.focus();});});
 el.querySelectorAll('.btalk').forEach(function(box){var c=card(box),inp=box.querySelector('.talkq'),send=box.querySelector('.talksend'),msgs=box.querySelector('.msgs');
 inp.value=BTALKDRAFT[c.id]||'';inp.addEventListener('input',function(){BTALKDRAFT[c.id]=inp.value;});
 function ask(){var q=(inp.value||'').trim();if(!q||send.disabled)return;send.disabled=true;inp.value='';BTALKDRAFT[c.id]='';BTALKBUSY++;
@@ -1154,6 +1252,7 @@ api('/api/watch/seen',{id:c.id}).then(function(x){if(!x||x.error){btn.disabled=f
 el.querySelectorAll('.bopen').forEach(function(btn){btn.addEventListener('click',function(){var n=item(btn);if(n&&/^https?:/.test(n.href))window.open(n.href,'_blank','noopener');});});
 el.querySelectorAll('.bdraft').forEach(function(btn){btn.addEventListener('click',function(){var n=item(btn);btn.disabled=true;
 api('/api/watch/draft',{id:n.id}).then(function(x){btn.disabled=false;if(!x||x.error){boardMsg('err',esc((x&&x.error)||'failed'));return;}boardMsg('ok',x.chat?DRAFTING_CHAT:DRAFTING);loadWatchUI();}).catch(function(e){btn.disabled=false;boardMsg('err',esc(String((e&&e.message)||e)));});});});}
+wire(el);wire($('boardtalk'));wire($('bsov'));BWIRE=wire;}
 $('boardrefresh').addEventListener('click',loadBoard);$('boardhours').addEventListener('change',loadBoard);
 // A web page, mapped by itself in the hidden browser (headless.mjs): no capture,
 // no dragging. It takes a few seconds, so the button says so meanwhile.
@@ -1365,6 +1464,15 @@ function lqSize(){var el=$('liquid');var w=(el&&el.clientWidth)||window.innerWid
 function lqLoad(commit){if(LQ.scene==='work'){lqLoadWork();return;}Promise.all([api('/api/adapt?from='+encodeURIComponent(LQ.last)+(commit?'&commit=1':'')+(LQ.touch?'&touch=1':'')),api('/api/home')]).then(function(r){LQ.adapt=r[0]||{};LQ.home=r[1]||{};lqBuild();}).catch(function(){});}
 // A droplet's own place: a steady nudge in angle and distance from its id, so the
 // layout reads as grown, not ruled, and stays put from one visit to the next.
+// P.A.R.A.: home's droplets in four groups, each in its own part of the screen:
+// Projects (work with an end) up left, Areas (what you keep up with) up right,
+// Resources (to look things up in) down left, the Archive (what's done) sunk low right.
+var PARA_OF={tasks:'p',agents:'p',todo:'p',board:'a',week:'a',standup:'a',map:'r',drift:'r',settings:'r'};
+var PARA_NAME={p:'Projects',a:'Areas',r:'Resources',x:'Archive'},PARA_SUB={p:'work with an end',a:'what you keep up with',r:'to look things up in',x:'what’s done'};
+var PARA_ANG={p:-2.4,a:-0.65,r:2.45,x:0.8},PARA_LIVE={p:0.45,a:0.3,r:0.12,x:0};
+function lqPara(d){return d.kind==='archive'?'x':d.kind==='feed'?'a':PARA_OF[d.shape]||'p';}
+function lqParaGo(g){lqAct();if(g==='p'){lqWork();return;}if(g==='a'){lqUse('board');lqPool('board');return;}if(g==='r'){lqUse('map');lqPool('map');return;}lqArchive();}
+function lqArchive(){lqPool('tasks');if(typeof loadArchived==='function')loadArchived();}
 function lqOrg(id,k){var h=k*977;id=String(id);for(var i=0;i<id.length;i++)h=(h*31+id.charCodeAt(i))|0;return ((h>>>0)%1000)/1000;}
 function lqGrow(list,cx,cy,vx,vy){list.forEach(function(d){var x=(d.tx-cx)/vx,y=(d.ty-cy)/vy,an=Math.atan2(y,x)+(lqOrg(d.id,1)-0.5)*0.7,rr=Math.sqrt(x*x+y*y)*(0.78+0.44*lqOrg(d.id,2));d.tx=cx+Math.cos(an)*rr*vx;d.ty=cy+Math.sin(an)*rr*vy;});}
 // Nearest neighbours, in the liquid: each droplet is drawn towards the ones it's
@@ -1381,22 +1489,24 @@ a.tx+=(cx-a.tx)*0.004;a.ty+=(cy-a.ty)*0.004;var ex=a.tx-cx,ey=a.ty-cy,ed=Math.sq
 // Seed by cluster: the linked groups (union-find) each get their own arc, sized to
 // the group, in the order of where they'd have been, with a steady offset; members
 // sit together, alternately nearer and further. lqNear then only polishes.
-function lqSeed(list,links,cx,cy,vx,vy){var par=list.map(function(_,i){return i;});function root(i){while(par[i]!==i)i=par[i]=par[par[i]];return i;}links.forEach(function(l){par[root(l[0])]=root(l[1]);});
-var groups={};list.forEach(function(d,i){if(d.kind==='more')return;var r=root(i);(groups[r]=groups[r]||[]).push(i);});
-var gs=Object.keys(groups).map(function(k){var g=groups[k];return {m:g,ang:Math.atan2(g.reduce(function(t,i){return t+(list[i].ay-cy)/vy;},0),g.reduce(function(t,i){return t+(list[i].ax-cx)/vx;},0))};});
+function lqSeed(list,links,cx,cy,vx,vy,keyOf,angOf){var par=list.map(function(_,i){return i;});function root(i){while(par[i]!==i)i=par[i]=par[par[i]];return i;}links.forEach(function(l){par[root(l[0])]=root(l[1]);});
+var groups={};list.forEach(function(d,i){if(d.kind==='more')return;var r=keyOf?keyOf(d):root(i);(groups[r]=groups[r]||[]).push(i);});
+var gs=Object.keys(groups).map(function(k){var g=groups[k];return {key:k,m:g,ang:Math.atan2(g.reduce(function(t,i){return t+(list[i].ay-cy)/vy;},0),g.reduce(function(t,i){return t+(list[i].ax-cx)/vx;},0))};});
 gs.sort(function(a,b){return a.ang-b.ang;});var tot=gs.reduce(function(t,g){return t+g.m.length+0.8;},0),acc=gs.length?gs[0].ang-(gs[0].m.length+0.8)/tot*Math.PI:0;
-gs.forEach(function(g){var span=(g.m.length+0.8)/tot*2*Math.PI,mid=acc+span/2+(lqOrg(list[g.m[0]].id,3)-0.5)*span*0.25;acc+=span;
+gs.forEach(function(g){var span=(g.m.length+0.8)/tot*2*Math.PI,mid=acc+span/2+(lqOrg(list[g.m[0]].id,3)-0.5)*span*0.25;acc+=span;if(angOf){span=Math.min(1.5,span);mid=angOf(g.key)+(lqOrg(list[g.m[0]].id,3)-0.5)*0.2;}
 g.m.forEach(function(i,k){var d=list[i],rr=Math.sqrt(Math.pow((d.ax-cx)/vx,2)+Math.pow((d.ay-cy)/vy,2))*(k%2?1.22:0.92),th=mid+(k-(g.m.length-1)/2)*Math.min(0.62,span/Math.max(1,g.m.length)*0.8);d.tx=cx+Math.cos(th)*rr*vx;d.ty=cy+Math.sin(th)*rr*vy;});});}
-function lqLinks(list,near){var at={},links=[];list.forEach(function(d,i){if(d.kind==='shape')at[d.shape]=i;});
+function lqLinks(list,near){var at={},links=[],same=function(l){return lqPara(list[l[0]])===lqPara(list[l[1]]);};list.forEach(function(d,i){if(d.kind==='shape')at[d.shape]=i;});
 list.forEach(function(d,i){if(d.kind==='shape')((near||{})[d.shape]||[]).forEach(function(n){var j=at[n.id];if(j!=null&&j>i)links.push([i,j,n.w]);else if(j!=null&&j<i&&!links.some(function(l){return l[0]===j&&l[1]===i;}))links.push([j,i,n.w]);});
-else if((d.kind==='you'||d.kind==='feed')&&at[d.shape]!=null)links.push([at[d.shape],i,0.5]);});return links;}
+else if((d.kind==='you'||d.kind==='feed')&&at[d.shape]!=null)links.push([at[d.shape],i,0.5]);});return links.filter(same);}
 function lqBuild(){var a=LQ.adapt||{},h=LQ.home||{},S=lqSize(),cx=S.w/2,cy=S.h*0.47,list=[];LQ.bw=S.w;LQ.bh=S.h;
 var you=(h.you||[]).slice(0,3),feeds=(h.feeds||[]).slice(0,2),lay=(a.layout&&a.layout.items)||[],more=((a.layout&&a.layout.more)||[]).slice();
 var vx=Math.max(0.5,Math.min(S.s*1.3,(S.w/2-90)/400)),vy=Math.max(0.35,Math.min(S.s*0.8,(S.h-cy-230)/400,(cy-160)/400));var rs=Math.min(S.s,(vx+vy)/1.5);var room=Math.max(3,LQ_MAX-you.length-feeds.length-1);lay.slice(room).forEach(function(it){more.push(it.id);});
 lay.slice(0,room).forEach(function(it){list.push({id:'shape:'+it.id,kind:'shape',shape:it.id,title:LQNAMES[it.id]||it.id,sub:'',r:it.r*rs,tx:cx+Math.cos(it.angle)*it.d*vx,ty:cy+Math.sin(it.angle)*it.d*vy});});
 you.forEach(function(y,i){var ang=-Math.PI/2+(i-(you.length-1)/2)*0.6;list.push({id:y.id,kind:'you',shape:y.shape,title:y.title,sub:y.sub,r:50*rs,tx:cx+Math.cos(ang)*230*vx,ty:cy+Math.sin(ang)*230*vy*1.05,tendril:true});});
 feeds.forEach(function(f,i){var ang=Math.PI/2+(i-(feeds.length-1)/2)*0.7;list.push({id:f.id,kind:'feed',shape:f.shape,title:f.title,sub:f.sub,r:(28+5*Math.min(f.count||1,5))*rs,tx:cx+Math.cos(ang)*300*vx,ty:cy+Math.sin(ang)*300*vy});});
-lqGrow(list,cx,cy,vx,vy);list.forEach(function(d){d.ax=d.tx;d.ay=d.ty;});var lks=lqLinks(list,a.near);lqSeed(list,lks,cx,cy,vx,vy);lqNear(list,lks,cx,cy,92*rs,S);
+list.push({id:'archive',kind:'archive',shape:'tasks',title:'Archive',sub:'what’s done: archived tasks',r:26*rs,tx:cx+Math.cos(PARA_ANG.x)*330*vx,ty:cy+Math.sin(PARA_ANG.x)*330*vy});
+list.forEach(function(d){var g=lqPara(d);d.live=PARA_LIVE[g];if(g==='r')d.r*=0.82;if(g==='x')d.r*=0.85;if(d.shape==='agents'&&d.kind==='shape'&&h.working)d.orbit=true;});
+lqGrow(list,cx,cy,vx,vy);list.forEach(function(d){d.ax=d.tx;d.ay=d.ty;});var lks=lqLinks(list,a.near);lqSeed(list,lks,cx,cy,vx,vy,lqPara,function(g){return PARA_ANG[g];});lqNear(list,lks,cx,cy,92*rs,S);
 // Solve it. If this screen can't hold them all clear of each other (lqRelax), the
 // least likely part goes under "more" (Hick: fewer, not cramped) and it solves
 // again. What only you can do and your feeds always stay out.
@@ -1436,8 +1546,9 @@ el.innerHTML=LQ.drops.map(function(d,i){return "<div class='lqd lq-"+d.kind+(LQ.
 LQ.btns=[];LQ.lts=[];el.querySelectorAll('.lqd').forEach(function(b){LQ.btns.push(b);var d=LQ.drops[+b.getAttribute('data-i')],lt=b.querySelector('.lt'),go=b.querySelector('.lgo');LQ.lts.push(lt);
 if(lt)lt.addEventListener('click',function(ev){if(d.kind==='more'){lqOpen(d,ev);return;}lqTag(d.id);});
 if(go)go.addEventListener('click',function(ev){LQ.openTag=null;lqOpen(d,ev);});});
-var oe=$('lqorbits');if(oe){oe.innerHTML=LQ.drops.map(function(d,i){return d.kind==='run'?"<div class='lqorbit"+(d.ask?' ask':'')+"' data-i='"+i+"'><span><i></i></span><span><i></i></span><span><i></i></span></div>":'';}).join('');LQ.orbs=[];oe.querySelectorAll('.lqorbit').forEach(function(o){LQ.orbs.push(o);});}
+var oe=$('lqorbits');if(oe){oe.innerHTML=LQ.drops.map(function(d,i){return d.kind==='run'||d.orbit?"<div class='lqorbit"+(d.ask?' ask':'')+"' data-i='"+i+"'><span><i></i></span><span><i></i></span><span><i></i></span></div>":'';}).join('');LQ.orbs=[];oe.querySelectorAll('.lqorbit').forEach(function(o){LQ.orbs.push(o);});}
 LQ.drops.forEach(function(d){if(d.x===d.tx&&d.y===d.ty)return;if(!LQ.frame){d.x=d.tx;d.y=d.ty;d.cr=d.r;}});lqStep();
+var ge=$('lqgroups');if(ge){var gs={};if(LQ.scene!=='work')LQ.drops.forEach(function(d){if(d.kind!=='more')gs[lqPara(d)]=1;});ge.innerHTML=['p','a','r','x'].filter(function(g){return gs[g];}).map(function(g){return "<button type='button' class='lqg' data-g='"+g+"'><span>"+PARA_NAME[g]+"</span><small>"+PARA_SUB[g]+"</small></button>";}).join('');LQ.gbtns=[];ge.querySelectorAll('.lqg').forEach(function(b){LQ.gbtns.push(b);b.addEventListener('click',function(){lqParaGo(b.getAttribute('data-g'));});});}
 var c=$('lqcore');if(c)c.textContent=LQ.coreText||'';}
 // Tapping a sphere (or its name) opens its tag; tapping it again, or elsewhere, closes it.
 function lqTag(id){LQ.openTag=LQ.openTag===id?null:id;lqAct();LQ.btns.forEach(function(b,i){var d=LQ.drops[+b.getAttribute('data-i')],on=!!d&&d.id===LQ.openTag;if(b.classList)b.classList.toggle('open',on);var lt=LQ.lts&&LQ.lts[i];if(lt&&lt.setAttribute)lt.setAttribute('aria-expanded',on?'true':'false');});}
@@ -1445,6 +1556,7 @@ function lqVia(ev){return LQ.talking?'talk':ev&&ev.pointerType==='touch'?'touch'
 function lqUse(shape,ev,via){api('/api/adapt/use',{shape:shape,from:LQ.last,via:via||lqVia(ev)});LQ.last=shape;}
 function lqOpen(d,ev){if(!d)return;lqAct();
 if(d.kind==='more'){LQ.moreOpen=!LQ.moreOpen;lqMore(d);return;}
+if(d.kind==='archive'){lqArchive();return;}
 var S=lqSize();LQ.ripple=[d.x/S.w,d.y/S.h,LQ.t];if(LQ.scene==='work'){lqPool(d.shape||'agents');return;}lqUse(d.shape||'board',ev);lqGo(d.shape||'board');}
 function lqMore(d){var el=$('lqmore');if(!el)return;if(!LQ.moreOpen||!d){el.innerHTML='';return;}
 el.innerHTML=(d.more||[]).map(function(s){return "<button type='button' class='lqmb lqm' data-s='"+s+"'>"+esc(LQNAMES[s]||s)+"</button>";}).join('');
@@ -1478,12 +1590,14 @@ if(still){d.x=tx;d.y=ty;d.vx=0;d.vy=0;}else{d.vx+=ax;d.vy+=ay;d.x+=d.vx;d.y+=d.v
 if(!rest&&!pool){d.x=Math.max(d.cr+12,Math.min(S.w-d.cr-12,d.x));d.y=Math.max(140+d.cr,Math.min(S.h-150-d.cr-50,d.y));}
 d.cr+=(tr-d.cr)*(still?1:0.06);
 var b=LQ.btns[i];if(b&&b.offsetWidth)d.lw=b.offsetWidth;if(b&&b.style){b.style.transform='translate('+Math.round(d.x-(b.offsetWidth||0)/2)+'px,'+Math.round(d.y+d.cr+(d.kind==='run'?28:4))+'px)';var show=!rest&&!pool;b.style.opacity=show?'1':'0';b.style.pointerEvents=show?'auto':'none';var lt=LQ.lts&&LQ.lts[i];if(lt)lt.tabIndex=show?0:-1;}}
+(LQ.gbtns||[]).forEach(function(gb){var g=gb.getAttribute('data-g'),top=1e9,sx=0,nn=0;D.forEach(function(d){if(d.kind!=='more'&&lqPara(d)===g){top=Math.min(top,d.y-d.cr);sx+=d.x;nn++;}});if(!nn||!gb.style)return;var gw=gb.offsetWidth||0,gh=gb.offsetHeight||0;gb.style.transform='translate('+Math.round(Math.max(12,Math.min(lqSize().w-gw-12,sx/nn-gw/2)))+'px,'+Math.round(Math.max(48,top-gh-30))+'px)';var gshow=!rest&&!pool&&!talk;gb.style.opacity=gshow?'1':'0';gb.style.pointerEvents=gshow?'auto':'none';gb.tabIndex=gshow?0:-1;});
 (LQ.orbs||[]).forEach(function(o){var d=D[+o.getAttribute('data-i')];if(!d||!o.style)return;var R=Math.round(d.cr+20);o.style.width=o.style.height=(2*R)+'px';o.style.transform='translate('+Math.round(d.x-R)+'px,'+Math.round(d.y-R)+'px)';o.style.opacity=rest||pool?'0':'1';});
 var cb=$('lqcore');if(cb&&cb.style){var inC=LQ.theme&&LQ.theme.look!=='pearl'&&core.cr>60;cb.style.maxWidth=inC?Math.round(core.cr*1.5)+'px':'340px';var cw=cb.offsetWidth||0,chh=cb.offsetHeight||0;cb.style.transform='translate('+Math.round(cx-cw/2)+'px,'+(rest||inC?(inC?Math.round(core.y-chh/2):Math.round(core.y+core.cr+14)):56)+'px)';var ct=rest?(LQ.coreText||'All handled'):talk||pool?'':(LQ.coreText||'');cb.textContent=ct;cb.style.opacity=ct?'1':'0';cb.style.pointerEvents=ct?'auto':'none';}}
 // The liquid: a metaball surface (Σ r²/d² = 1) shaded as chrome, on the GPU.
 var LQ_FS=['precision highp float;',
-'uniform vec2 uRes;uniform float uT;uniform float uDpr;uniform vec3 uB[16];uniform vec3 uRip;uniform float uStyle;uniform float uContrast;uniform float uExposure;',
-'float field(vec2 p){float f=0.0;for(int i=0;i<16;i++){vec3 b=uB[i];float r=b.z*uDpr;vec2 d=p-b.xy*uRes;f+=r*r/(dot(d,d)+1.0);}vec2 q=p/uDpr;return f*(1.0+0.025*sin(q.x*0.011+uT*0.7)*cos(q.y*0.009-uT*0.55)+0.012*sin(q.x*0.031-q.y*0.027+uT*1.3));}',
+'uniform vec2 uRes;uniform float uT;uniform float uDpr;uniform vec4 uB[NB];uniform vec3 uRip;uniform float uStyle;uniform float uContrast;uniform float uExposure;',
+'float field(vec2 p){float f=0.0;for(int i=0;i<NB;i++){vec4 b=uB[i];float r=b.z*uDpr;vec2 d=p-b.xy*uRes;f+=r*r/(dot(d,d)+1.0);}vec2 q=p/uDpr;return f*(1.0+0.025*sin(q.x*0.011+uT*0.7)*cos(q.y*0.009-uT*0.55)+0.012*sin(q.x*0.031-q.y*0.027+uT*1.3));}',
+'float tint(vec2 p){float f=0.0,t=0.0;for(int i=0;i<NB;i++){vec4 b=uB[i];float r=b.z*uDpr;vec2 d=p-b.xy*uRes;float c=r*r/(dot(d,d)+1.0);f+=c;t+=c*b.w;}return t/max(f,0.0001);}',
 'float hash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}',
 'vec3 glassBg(vec2 p){vec2 q=p/uRes;vec3 c=vec3(0.918,0.927,0.936);',
 'vec2 a=vec2(0.22+0.05*sin(uT*0.13),0.28+0.06*cos(uT*0.11));vec2 b=vec2(0.8+0.04*cos(uT*0.09),0.22+0.05*sin(uT*0.15));vec2 e=vec2(0.52+0.06*sin(uT*0.07),0.62);',
@@ -1497,11 +1611,11 @@ var LQ_FS=['precision highp float;',
 'vec2 rc=uRip.xy*uRes;float rd=distance(p,rc)/uDpr;float age=uT-uRip.z;float ring=0.0;if(age>0.0&&age<4.0){float w=rd-age*300.0;ring=sin(w*0.07)*exp(-abs(w)*0.02)*(1.0-age/4.0);}',
 'vec2 rdir=normalize(p-rc+0.001);float rho=clamp(1.0/sqrt(max(f,0.0001)),0.0,1.0);',
 'vec3 n=normalize(vec3(-gn*rho+ring*0.18*rdir,sqrt(max(0.0,1.0-rho*rho))+0.02));',
-'vec3 r=vec3(2.0*n.z*n.xy,2.0*n.z*n.z-1.0);float fs=field(p-vec2(0.0,12.0*uDpr));float gr=hash(floor(p))-0.5;vec3 col;vec3 ink=vec3(0.0);',
+'vec3 r=vec3(2.0*n.z*n.xy,2.0*n.z*n.z-1.0);float fs=field(p-vec2(0.0,12.0*uDpr));float gr=hash(floor(p))-0.5;vec3 col;vec3 ink=vec3(0.0);float tf=tint(p);vec3 amb=vec3(0.95,0.62,0.22);',
 'if(uStyle<0.5){',
 'vec3 bg=glassBg(p+rdir*ring*6.0*uDpr);bg-=0.09*smoothstep(0.45,1.0,fs)*(1.0-m);',
 'vec2 off=n.xy*34.0*uDpr*rho;vec3 rf=vec3(glassBg(p+off*0.9).r,glassBg(p+off).g,glassBg(p+off*1.1).b);',
-'rf=mix(rf,vec3(dot(rf,vec3(0.33))),0.15)*vec3(0.985,0.995,1.0)+0.03;float fr=pow(1.0-n.z,3.0);rf=mix(rf,vec3(1.0),fr*0.6);',
+'rf=mix(rf,vec3(dot(rf,vec3(0.33))),0.15)*vec3(0.985,0.995,1.0)+0.03;float fr=pow(1.0-n.z,3.0);rf=mix(rf,vec3(1.0),fr*0.6);rf=mix(rf,rf*vec3(1.08,0.86,0.62),tf*0.55);',
 'rf+=vec3(1.0)*pow(max(dot(n,normalize(vec3(-0.35,-0.6,1.0))),0.0),140.0)*0.95;rf+=vec3(1.0,0.97,0.92)*pow(max(dot(n,normalize(vec3(0.5,0.65,1.0))),0.0),24.0)*0.12;',
 'rf-=0.10*smoothstep(2.4*uDpr,0.0,sd);col=mix(bg,rf,m)+gr*0.008;',
 '}else if(uStyle<1.5){',
@@ -1509,38 +1623,39 @@ var LQ_FS=['precision highp float;',
 'bg+=vec3(0.025,0.026,0.03)*smoothstep(0.5,1.0,fs)*(1.0-m)+vec3(0.5,0.55,0.62)*abs(ring)*0.05;',
 'float R=mix(0.16,1.0,pow(1.0-n.z,3.0));',
 'vec3 env=vec3(1.0,0.99,0.97)*box(r.xy,vec2(-0.42,-0.58),vec2(0.30,0.15))*1.2+vec3(0.85,0.9,1.0)*box(r.xy,vec2(0.78,-0.05),vec2(0.07,0.55))*0.55+vec3(0.6,0.5,0.4)*box(r.xy,vec2(0.0,0.85),vec2(0.9,0.12))*0.10;',
-'vec3 c=vec3(0.010,0.011,0.013)+env*R+irid((1.0-n.z)*1.3+0.15)*pow(1.0-n.z,2.2)*0.22;c+=vec3(0.06)*smoothstep(1.8*uDpr,0.0,sd);',
+'vec3 c=vec3(0.010,0.011,0.013)+env*R+irid((1.0-n.z)*1.3+0.15)*pow(1.0-n.z,2.2)*0.22;c+=amb*tf*(0.05+0.7*pow(1.0-n.z,2.0));c+=vec3(0.06)*smoothstep(1.8*uDpr,0.0,sd);',
 'col=mix(bg,c,m)+gr*0.012;ink=vec3(1.0);',
 '}else{',
 'vec2 q=p/uRes;vec3 bg=vec3(0.929,0.925,0.917)-0.06*length(q-vec2(0.5,0.35));bg-=vec3(0.13,0.13,0.12)*smoothstep(0.45,1.0,fs)*(1.0-m)+vec3(0.2)*abs(ring)*0.05;',
 'vec3 env=mix(vec3(0.96,0.965,0.97),vec3(0.36,0.38,0.42),smoothstep(-0.7,0.75,r.y));env=mix(env,vec3(0.62,0.6,0.57),smoothstep(0.55,1.0,r.y)*0.6);',
 'env+=vec3(1.0)*box(r.xy,vec2(-0.45,-0.5),vec2(0.32,0.2))*0.55+vec3(1.0)*box(r.xy,vec2(0.72,-0.1),vec2(0.08,0.45))*0.35;',
-'vec3 c=env*mix(0.82,1.0,pow(1.0-n.z,2.0))+irid((1.0-n.z)*0.9+0.55)*pow(1.0-n.z,1.6)*0.10;c-=0.08*smoothstep(1.6*uDpr,0.0,sd);',
+'vec3 c=env*mix(0.82,1.0,pow(1.0-n.z,2.0))+irid((1.0-n.z)*0.9+0.55)*pow(1.0-n.z,1.6)*0.10;c=mix(c,c*vec3(1.1,0.86,0.6),tf*0.6);c-=0.08*smoothstep(1.6*uDpr,0.0,sd);',
 'col=mix(bg,c,m)+gr*0.014;',
 '}',
 'float line=(smoothstep(-2.0*uDpr,0.0,sd)-smoothstep(0.0,2.0*uDpr,sd))*uContrast;col=mix(col,ink,line);col*=mix(1.0,uExposure,0.5);',
 'gl_FragColor=vec4(col,1.0);}'].join('');
-function lqGL(){var c=$('lq');if(!c||!c.getContext)return null;var gl=null;try{gl=c.getContext('webgl',{antialias:false,alpha:false});}catch(e){}if(!gl)return null;
+function lqFS(n){return LQ_FS.split('NB').join(String(n));}
+function lqGL(c,n){c=c||$('lq');n=n||16;if(!c||!c.getContext)return null;var gl=null;try{gl=c.getContext('webgl',{antialias:false,alpha:false});}catch(e){}if(!gl)return null;
 function sh(t,src){var o=gl.createShader(t);gl.shaderSource(o,src);gl.compileShader(o);return o;}
-var pr=gl.createProgram();gl.attachShader(pr,sh(gl.VERTEX_SHADER,'attribute vec2 a;void main(){gl_Position=vec4(a,0.0,1.0);}'));gl.attachShader(pr,sh(gl.FRAGMENT_SHADER,LQ_FS));gl.linkProgram(pr);
+var pr=gl.createProgram();gl.attachShader(pr,sh(gl.VERTEX_SHADER,'attribute vec2 a;void main(){gl_Position=vec4(a,0.0,1.0);}'));gl.attachShader(pr,sh(gl.FRAGMENT_SHADER,lqFS(n)));gl.linkProgram(pr);
 if(!gl.getProgramParameter(pr,gl.LINK_STATUS))return null;gl.useProgram(pr);
 var bf=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,bf);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,3,-1,-1,3]),gl.STATIC_DRAW);
 var al=gl.getAttribLocation(pr,'a');gl.enableVertexAttribArray(al);gl.vertexAttribPointer(al,2,gl.FLOAT,false,0,0);
 var U={};['uRes','uT','uDpr','uB','uRip','uStyle','uContrast','uExposure'].forEach(function(n){U[n]=gl.getUniformLocation(pr,n);});
-return {gl:gl,c:c,U:U,out:new Float32Array(48),t0:(window.performance&&performance.now)?performance.now():Date.now()};}
+return {gl:gl,c:c,U:U,out:new Float32Array(n*4),t0:(window.performance&&performance.now)?performance.now():Date.now()};}
 function lqDraw(G){var gl=G.gl,c=G.c,S=lqSize(),d=Math.min(window.devicePixelRatio||1,3),W=Math.max(1,Math.floor(S.w*d)),H=Math.max(1,Math.floor(S.h*d));
 if(c.width!==W||c.height!==H){c.width=W;c.height=H;gl.viewport(0,0,W,H);}
 var now=(window.performance&&performance.now)?performance.now():Date.now(),t=(now-G.t0)/1000,th=LQ.theme,still=th.still,o=G.out;LQ.t=t;
-for(var i=0;i<48;i++)o[i]=0;
-var put=function(k,x,y,r){if(k>15)return;var w=still?0:(k===0?1:0.3);o[k*3]=x/S.w+Math.sin(t*1.3+k*1.7)*0.004*w;o[k*3+1]=y/S.h+Math.cos(t*1.1+k*2.3)*0.005*w;o[k*3+2]=Math.max(0,r)*(1+0.035*Math.sin(t*2.0+k)*w);};
+for(var i=0;i<64;i++)o[i]=0;
+var put=function(k,x,y,r,a,lv){if(k>15)return;var w=still?0:(k===0?1:lv!=null?lv:0.3);o[k*4]=x/S.w+Math.sin(t*1.3+k*1.7)*0.004*w;o[k*4+1]=y/S.h+Math.cos(t*1.1+k*2.3)*0.005*w;o[k*4+2]=Math.max(0,r)*(1+0.035*Math.sin(t*2.0+k)*w);o[k*4+3]=a||0;};
 put(0,LQ.core.x,LQ.core.y,LQ.core.cr);var k=1,tend=[];
-LQ.drops.forEach(function(dr){put(k++,dr.x,dr.y,dr.cr);if(dr.tendril&&LQ.mode==='aware'&&!LQ.talking)tend.push(dr);});
+LQ.drops.forEach(function(dr){put(k++,dr.x,dr.y,dr.cr,dr.kind==='you'||dr.ask?1:0,dr.live);if(dr.tendril&&LQ.mode==='aware'&&!LQ.talking)tend.push(dr);});
 // a tendril is a chain of blobs close enough to always bridge (spaced at under 2.8r),
 // never one blob floating in the gap: drawn whole or not at all
 tend.forEach(function(dr){var dx=dr.x-LQ.core.x,dy=dr.y-LQ.core.y,len=Math.sqrt(dx*dx+dy*dy)||1,gap=len-LQ.core.cr-dr.cr;if(gap<=8)return;var n=Math.max(1,Math.min(3,Math.ceil(gap/40))),sp=gap/(n+1),rr=sp/2;if(k+n>15)return;for(var m=1;m<=n;m++){var at=LQ.core.cr+sp*m;put(k++,LQ.core.x+dx/len*at,LQ.core.y+dy/len*at,rr);}});
 var P=LQ.pointer;if(P&&LQ.mode==='aware'&&!LQ.talking){var best=null,bd=1e9;[LQ.core].concat(LQ.drops).forEach(function(g){if(g.cr<18)return;var dd=Math.hypot(P[0]-g.x,P[1]-g.y)-g.cr;if(dd<bd){bd=dd;best=g;}});
 if(best&&bd<230){var dx=P[0]-best.x,dy=P[1]-best.y,dl=Math.hypot(dx,dy)||1,reach=Math.min(dl,best.cr+70);put(15,best.x+dx/dl*reach,best.y+dy/dl*reach,8+20*(1-Math.max(0,bd)/230));}}
-var U=G.U;gl.uniform2f(U.uRes,W,H);gl.uniform1f(U.uT,t);gl.uniform1f(U.uDpr,d);gl.uniform3fv(U.uB,o);gl.uniform3f(U.uRip,LQ.ripple[0],LQ.ripple[1],still?-10:LQ.ripple[2]);
+var U=G.U;gl.uniform2f(U.uRes,W,H);gl.uniform1f(U.uT,t);gl.uniform1f(U.uDpr,d);gl.uniform4fv(U.uB,o);gl.uniform3f(U.uRip,LQ.ripple[0],LQ.ripple[1],still?-10:LQ.ripple[2]);
 gl.uniform1f(U.uStyle,th.look==='glass'?0:th.look==='pearl'?2:1);gl.uniform1f(U.uContrast,th.contrast?1:0);gl.uniform1f(U.uExposure,th.night?0.82:1);
 gl.drawArrays(gl.TRIANGLES,0,3);}
 function lqInit(){var bd=document.body;if(!bd||!bd.classList)return;lqTheme();bd.classList.add('lq-liquid');
