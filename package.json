@@ -24,6 +24,8 @@
     "links.mjs",
     "peek.mjs",
     "mind.mjs",
+    "handover.mjs",
+    "lanes.mjs",
     "phone.mjs",
     "desktop.mjs",
     "README.md",
@@ -60,7 +62,7 @@
     "@anthropic-ai/sdk": "^0.128.0"
   },
   "scripts": {
-    "test": "node test/load.mjs && node test/fixtures.mjs && node test/links.mjs && node test/peek.mjs && node test/mind.mjs && node test/paths.mjs && node test/smoke.mjs && node test/app.mjs && node test/install.mjs",
+    "test": "node test/load.mjs && node test/fixtures.mjs && node test/links.mjs && node test/peek.mjs && node test/mind.mjs && node test/lanes.mjs && node test/paths.mjs && node test/smoke.mjs && node test/app.mjs && node test/install.mjs",
     "lint": "eslint ."
   },
   "devDependencies": {

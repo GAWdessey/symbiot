@@ -22,6 +22,7 @@ import { weeklyState, setWeekly, runWeekly, startWeekly, autostartState, setAuto
 import { watchState, addWatch, setEvery, removeWatch, clearNews, seenWatch, checkWatch, startWatches, setBrief, draftReply, openChat, watchBoard, boardChat, clearBoardChat } from "./watch.mjs";
 import { linksState, linkSite, checkLink, unlinkSite } from "./links.mjs";
 import { mindState, forget } from "./mind.mjs";
+import { lanesTick, lanesState } from "./lanes.mjs";
 import { phoneState, setPhoneLink, newCode, unpairPhone, pairComputer, forgetComputer, pollComputer, startPhone } from "./phone.mjs";
 
 // The in-app update installs the EXACT newest version (not the `latest` tag, which
@@ -220,6 +221,8 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       if (u.pathname === "/api/links/link" && req.method === "POST") { const b = await readBody(req); return json(res, await linkSite(String(b.id || ""))); }
       if (u.pathname === "/api/links/check" && req.method === "POST") { const b = await readBody(req); return json(res, await checkLink(String(b.id || ""))); }
       if (u.pathname === "/api/links/unlink" && req.method === "POST") { const b = await readBody(req); return json(res, unlinkSite(String(b.id || ""))); }
+      // Lanes (lanes.mjs): work agents handed to each other, and where it stands.
+      if (u.pathname === "/api/lanes") return json(res, lanesState());
       // Watch (watch.mjs): a mapped page read again every few minutes, and what's new on it.
       if (u.pathname === "/api/watch") return json(res, watchState());
       if (u.pathname === "/api/watch/board") return json(res, watchBoard(Math.min(168, Math.max(1, Number(u.searchParams.get("hours")) || 24))));
@@ -297,6 +300,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
   startWatches(); // pages you watch (Screens → Watch), read every few minutes
   startPhone(); // Watch on your phone: the computer listens if it's switched on, the phone asks if it's paired
   setInterval(() => { try { startWaiting(); } catch {} }, 20000).unref(); // a run that waits for your step starts once the file it names changes
+  setInterval(() => { try { lanesTick(); } catch {} }, 20000).unref(); // agents hand work to other lanes, and hear back when it's done
 }
 
 export { updateCmd, BROWSER_KEEP, startApp, askRunningApp, isAppRunningWeekly };

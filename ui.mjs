@@ -220,6 +220,7 @@ label.check input{width:auto}
 <section id="panel-agents" class="hidden">
 <div class="row"><span class="muted">Agents Symbiot has handed work to — live status and output. Questions, options and ideas an agent leaves for you show up on its block, whichever model it runs.</span><button class="ghost" id="agentsrefresh" style="margin-left:auto">Refresh</button></div>
 <div id="agentsmsg"></div>
+<div id="laneslist"></div>
 <div id="agentslist"></div>
 </section>
 <section id="panel-drift" class="hidden">
@@ -564,7 +565,12 @@ return "<div class='aq'><h4>&#9208; Waiting on your step</h4><div class='qt'>&#1
 function wireWaits(el){el.querySelectorAll('.wstart').forEach(function(btn){btn.addEventListener('click',function(){var a=agentById(btn.getAttribute('data-id'));if(!a)return;btn.disabled=true;
 api('/api/open',{path:a.path,force:true}).then(function(x){var msg=document.getElementById('agentsmsg');msg.innerHTML=x&&x.opened?"<div class='note ok'>&#10003; Started your agent in <b>"+esc(a.name)+"</b>.</div>":"<div class='note err'>"+esc(a.name)+": "+(x&&x.busy?"an agent is already running there.":"it didn&#39;t start. Check the command in Settings.")+"</div>";loadAgents();}).catch(function(e){btn.disabled=false;document.getElementById('agentsmsg').innerHTML="<div class='note err'>"+esc(String((e&&e.message)||e))+"</div>";});});});}
 function answering(){var f=document.activeElement;return !!(f&&f.closest&&f.closest('.aq'));}
-function loadAgents(){api('/api/agents').then(function(list){var el=document.getElementById('agentslist');
+// Handovers (lanes.mjs): what one lane's agent handed to another, and where it stands.
+var LANEWORD={started:'working on it',held:'queued: that lane is busy',done:'done, reported back',error:"couldn't hand over"};
+function loadLanes(){api('/api/lanes').then(function(d){var el=document.getElementById('laneslist');if(!el||!d)return;var hs=d.handoffs||[];
+el.innerHTML=hs.length?"<div class='tgroup'>Handovers <span class='tcount'>"+hs.length+"</span></div>"+hs.slice(0,12).map(function(h){
+return "<div class='task' title='"+escQ(h.result||h.error||h.text)+"'><span class='t'><b>"+esc(h.from)+"</b> &rarr; <b>"+esc(h.to)+"</b>: "+esc(h.text)+"</span><span class='rp'"+(h.status==='error'?" style='color:var(--amber)'":"")+">"+esc(LANEWORD[h.status]||h.status)+"</span></div>";}).join(''):'';});}
+function loadAgents(){loadLanes();api('/api/agents').then(function(list){var el=document.getElementById('agentslist');
 if(!list||!list.length){AGENTLIST=[];el.innerHTML="<div class='muted' style='margin-top:12px'>No agents yet. In <b>Tasks</b>, tick ideas and hit <b>Send to repos</b> (with an agent command set in Settings) &mdash; you'll watch it work here.</div>";stopAgentsPoll();return;}
 var anyRunning=list.some(function(a){return a.status==='running';});
 if(answering()){stopAgentsPoll();if(anyRunning&&current==='agents')agentsTimer=setTimeout(loadAgents,2000);return;} // don't re-render under someone typing an answer

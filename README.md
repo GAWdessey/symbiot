@@ -508,6 +508,29 @@ can't do.
   app, so context carries from page to page without re-sending everything.
   Settings → **What Symbiot remembers** lists it, and forgets any of it.
 
+### Lanes: agents hand work to each other
+
+Each agent has its own lane: a repo, or **ops** for everything outside one (this
+computer, accounts, services, your connectors). When an agent needs something
+that's another lane's job, it doesn't stop and it doesn't ask you to do it. It
+writes it to its `.symbiot/HANDOFF.md`, under the lane's name, and Symbiot:
+
+1. starts that lane's agent on it: a repo gets it as a task, the way **Send to
+   repos** does, and ops gets a run of its own;
+2. when that agent is done, puts what it did into the asking agent's
+   `.symbiot/ANSWERS.md` and starts that agent again, so it carries on.
+
+The Agents tab lists the **Handovers**: who handed what to whom, and where it
+stands. A handover to a lane that doesn't exist, or back to the agent's own lane,
+goes back to the agent, not to you. After 4 handovers in a row, the next one isn't
+started, so two lanes can't pass the same job back and forth.
+
+What still reaches you is only what no agent can do: your body (a phone in your
+hand, a cable, which network you're on), your identity or secrets (signing in, a
+2FA code, a token from a provider's console) or a decision that's yours (closing an
+account, spending money, sending something in your name). Every brief tells the
+agent so, and such a question says which: `👤 You (only you: your Meta token): …`.
+
 ## Connect it (once)
 
 Pick the AI you want it to write with:
