@@ -2,6 +2,14 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.48.0
+
+- **Three looks, one switch.** Ferrofluid (glossy black liquid metal, lit like a studio), Glass (clear droplets that bend the colours behind them) and Pearl (silver lit like a product photo). Switch at the top left, next to the name; Ferrofluid is first. Panels follow the look.
+- **Geist, in the package.** The app's type is Geist, shipped with Symbiot, so it looks the same offline.
+- **Names without pills.** Each droplet's name sits under it as plain type; tap the droplet or its name and it opens into a small card with Open.
+- **A chat without boxes.** Symbiot's replies are plain text, yours sit in a soft capsule, and the steps fold into one line you can open. No more sideways scrolling.
+- **Nearest neighbours.** Parts you go between sit together (k-nearest neighbours on how you move between them), so home grows into clusters with gaps between, not a ring. Before you've used it, the work (Tasks, Agents, Todo), your time (Week, Standup) and your repos (Dashboard, Map, Drift) start together. In the Tasks scene, waiting tasks gather round the agent working in their repo.
+
 ## 0.47.1
 
 - **Sharp, not blurry.** The liquid renders at your screen's full pixel density (it was capped at 1.5x, so 2x screens were stretched). Sphere edges are crisp at any size, each sphere casts a tight shadow below it instead of a fuzzy halo round it, and tags sit on whole pixels with almost no frosting, so their text is sharp.

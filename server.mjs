@@ -182,6 +182,12 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
   const server = createServer(async (req, res) => {
     const u = new URL(req.url, "http://127.0.0.1");
     if (req.method === "GET" && u.pathname === "/") { res.writeHead(200, { "content-type": "text/html; charset=utf-8" }); res.end(EMBEDDED_UI); return; }
+    // the app's typeface ships in the package (fonts/), so it's there offline
+    if (req.method === "GET" && u.pathname === "/fonts/Geist-Variable.woff2") {
+      try { const b = readFileSync(fileURLToPath(new URL("./fonts/Geist-Variable.woff2", import.meta.url))); res.writeHead(200, { "content-type": "font/woff2", "cache-control": "public, max-age=31536000, immutable" }); res.end(b); }
+      catch { res.writeHead(404); res.end(); }
+      return;
+    }
     if (u.pathname.startsWith("/api/")) {
       const tok = req.headers["x-symbiot-token"] || u.searchParams.get("t");
       if (tok !== TOKEN) { res.writeHead(403); res.end("forbidden"); return; }
