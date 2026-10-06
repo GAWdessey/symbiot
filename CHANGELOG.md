@@ -2,6 +2,12 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.50.1
+
+- **A permission you pick is given.** When an agent asks for one ("let agents read ~/.config/symbiot/screens") and you choose it in the app, Symbiot grants it then and there (as Settings' grant boxes do) and the agent carries on, instead of leaving it as a step for you to do by hand. Steps only you can do, like pasting your own message, are still yours.
+- **The chat on home rolls.** Newest at the bottom by the input; older lines fade as they rise and dissolve before they reach the droplets. Point at it or scroll back to read the whole conversation clearly.
+- **No asterisks in names.** An agent's name on home no longer shows its markdown (`**What's needed:**`).
+
 ## 0.50.0
 
 - **The Map, by nearest neighbours.** Your repos are droplets in the liquid, each beside the repos most like it: what they're built with, the weeks you work on them, and what they're about (from their READMEs). The closest merge into one shape, the next are joined by a thread of liquid; each cluster is named over its region; what you haven't touched in a while is smaller and sinks; "you are here" sits where your recent work is. Point at a repo to see its neighbours and why; click for its details, now with **Most like it** and your last 12 weeks. Zoom and fit buttons, and the languages and tools you build with underneath instead of a coloured legend. Screens folds away.

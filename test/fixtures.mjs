@@ -333,7 +333,13 @@ try {
     writeFileSync(s + "QUESTIONS.md", "## Questions\\n### Allow gh again?\\n- 👤 You: allow gh in Settings\\n");
     out.answer3 = a.answerQuestions(dir, [{ q: "Allow gh again?", a: "👤 You: allow gh in Settings" }], { rerun: true });
     out.wait3 = a.waitingFor(dir); out.none3 = a.startWaiting().length;
-    a.setHandoffCmd(a.handoffCmd() + " # gh allowed"); out.wait3b = a.waitingFor(dir); const st3 = a.startWaiting(); out.started3 = st3.length; await run(st3[0]);`);
+    a.setHandoffCmd(a.handoffCmd() + " # gh allowed"); out.wait3b = a.waitingFor(dir); const st3 = a.startWaiting(); out.started3 = st3.length; await run(st3[0]);
+    // a permission picked in the app is given there and then (the click is the say-so), not left as a step
+    a.setHandoffCmd('claude -p "{prompt}"');
+    writeFileSync(s + "QUESTIONS.md", "## Questions\\n### Can't read the screenshot\\n- 👤 You (only you: a permission): let agents read ~/.config/symbiot/screens, then rerun this\\n- 👤 You (only you: your message): paste it into ANSWERS.md\\n");
+    out.answer4 = a.answerQuestions(dir, [{ q: "Can't read the screenshot", a: "👤 You (only you: a permission): let agents read ~/.config/symbiot/screens, then rerun this" }]); out.cmd4 = a.handoffCmd(); out.wait4 = a.waitingFor(dir);
+    writeFileSync(s + "QUESTIONS.md", "## Questions\\n### Paste it?\\n- 👤 You (only you: your message): paste it into ANSWERS.md\\n");
+    out.answer5 = a.answerQuestions(dir, [{ q: "Paste it?", a: "👤 You (only you: your message): paste it into ANSWERS.md" }]);`);
   const ee = ((er2.list || []).find((e) => e.path === erDir)) || {};
   ok("after a restart, a run that stopped on questions is listed, marked earlier, with its questions", ee.earlier === true && ee.status === "done" && ((ee.ask || {}).questions || []).length === 1 && /WA_WABA_ID/.test(ee.tail || ""), ee);
   ok("...and its questions can be answered there; a folder no run started in can't", /No agent has run/.test((er2.unknown || {}).error || ""), er2.unknown);
@@ -341,6 +347,8 @@ try {
   ok("an answer that picks 👤 You says the step is still yours, and doesn't start the agent", er2.answer && er2.answer.ok && !er2.answer.rerun && JSON.stringify(er2.answer.yours) === JSON.stringify(["put it in `.env`"]) && JSON.stringify(er2.answer.waitFiles) === '[".env"]' && /starts by itself once `\.env` changes/.test(er2.answer.note || ""), er2.answer);
   ok("...a send in the meantime starts nothing, and the Agents tab shows what it waits on", er2.held && er2.held.blocked && er2.held.waiting && /your step comes first: put it in `\.env`/.test(er2.held.note || "") && er2.listWait && er2.listWait.waiting && er2.listWait.waiting.files[0] === ".env" && er2.none === 0, [er2.held, er2.listWait && er2.listWait.waiting]);
   ok("...once .env changes, the agent starts by itself", er2.started === 1 && er2.cleared, [er2.started, er2.cleared]);
+  ok("a permission picked in the app is granted then and there (--add-dir, ~ expanded) and isn't left as the user's step", er2.answer4 && er2.answer4.ok && (er2.answer4.granted || []).some((d) => /\/\.config\/symbiot\/screens$/.test(d) && !d.startsWith("~")) && !er2.answer4.yours && /--add-dir "[^"]*\/\.config\/symbiot\/screens"/.test(er2.cmd4 || "") && !er2.wait4 && /Allowed .*screens for your agents/.test(er2.answer4.note || ""), [er2.answer4, er2.cmd4]);
+  ok("...but a step only the user can do (their message) is still theirs", er2.answer5 && JSON.stringify(er2.answer5.yours) === JSON.stringify(["You (only you: your message): paste it into ANSWERS.md"]) && !er2.answer5.granted, er2.answer5);
   ok("a step with no file named waits for Start it now; the 🤖 Agent part isn't the user's step", er2.answer2 && JSON.stringify(er2.answer2.yours) === '["allow gh in Settings."]' && !er2.answer2.waitFiles && er2.held2 && er2.held2.blocked && /Start it now/.test(er2.held2.note || "") && er2.forced && er2.cleared2, [er2.answer2, er2.held2, er2.forced]);
   // the user answers in their own words: "don't start another run until it's in" (the key the 👤 option puts in .env)
   const er3 = erRun(`writeFileSync(s + "QUESTIONS.md", "## Questions\\n### Where does the WABA id go?\\n- 👤 You: put WA_WABA_ID in \\x60.env\\x60 (recommended)\\n- 🤖 Agent: read it from the Meta export\\n### Ship it now?\\n- Yes\\n");
