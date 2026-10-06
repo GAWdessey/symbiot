@@ -4,9 +4,9 @@
 // it shows.
 import { spawnSync } from "node:child_process";
 import { join } from "node:path";
-import { readFileSync, writeFileSync, existsSync, readdirSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, readdirSync, mkdirSync } from "node:fs";
 import { randomBytes } from "node:crypto";
-import { VERSION, LATEST_VERSION, REGISTRY, semverGt, loadConfig, saveConfig, loadTasks, saveTasks, taskWords, sameTask, uniqueTasks, sh, hasCmd, repoState } from "./core.mjs";
+import { VERSION, LATEST_VERSION, REGISTRY, semverGt, loadConfig, saveConfig, loadTasks, saveTasks, TASK_MAX, clipWords, taskWords, sameTask, uniqueTasks, sh, hasCmd, repoState } from "./core.mjs";
 import { handoverRules, ONLY_YOU } from "./handover.mjs";
 import { userStyleLine } from "./adapt.mjs";
 import { QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, handoffCmd, runningHandoff, writeTasks, droppedTasks, startHeldTasks, connectorsLine } from "./agents.mjs";
@@ -15,19 +15,36 @@ import { repoPathMap, openWork, detectRepo } from "./scan.mjs";
 
 // ---- tasks: a persistent checklist (stored by core.mjs) -------------------
 // One line (TASKS.md has a task per line, and a tick only matches a whole one),
-// long enough for a pasted list of next steps: 300 cut one off mid-list.
-function addTask(text, repo) {
-  text = String(text || "").replace(/\s+/g, " ").trim().slice(0, 1000);
+// long enough for a pasted list of next steps: 300 cut one off mid-list. Longer
+// than a task holds (TASK_MAX), nothing is cut: the task keeps its whole text as
+// written (full), and its line is how it starts plus a link to the rest, which
+// goes out with its brief as .symbiot/full/<id>.md (pushTasks). after: what ends
+// its line either way, "(handed over by coral)".
+const LEAD_MAX = 600, FULL_DIR = "full";
+const fullLink = (id) => ` Full text: \`.symbiot/${FULL_DIR}/${id}.md\``;
+// A long task's start: its whole sentences up to LEAD_MAX, or its words.
+function leadOf(text) {
+  const m = text.slice(0, LEAD_MAX + 1).match(/^.*[.!?](?=\s)/s);
+  return m && m[0].length >= LEAD_MAX / 3 ? m[0] + " …" : clipWords(text, LEAD_MAX);
+}
+function addTask(text, repo, { after = "" } = {}) {
+  const raw = String(text || "").trim(), tail = String(after || "").trim();
+  text = raw.replace(/\s+/g, " ");
   if (!text) return { error: "empty" };
-  const t = loadTasks();
+  const long = text.length + tail.length + 1 > TASK_MAX, full = long ? raw + (tail ? "\n\n" + tail : "") : "";
+  const lineFor = (id) => (long ? leadOf(text) + fullLink(id) : text) + (tail ? " " + tail : "");
+  const t = loadTasks(), id = randomBytes(6).toString("hex"), line = lineFor(id);
   // The same task already open in the same repo (in review counts), even in
   // other words (sameTask): that task, not a duplicate. When the new wording has
   // a clause more, the task takes it, unless it's in review (its tick is on the
   // old words). Handed out already, a tick on either wording counts (syncTasks).
-  const dup = t.find((x) => !x.done && !x.archived && (x.repo || "") === (repo || "") && sameTask(x.text, text));
-  if (dup && !dup.review && taskWords(text).length > taskWords(dup.text).length) { dup.text = text; saveTasks(t); return { ...dup, duplicate: true, reworded: true }; }
+  const dup = t.find((x) => !x.done && !x.archived && (x.repo || "") === (repo || "") && sameTask(x.text, line));
+  if (dup && !dup.review && taskWords(full || line).length > taskWords(dup.full || dup.text).length) {
+    dup.text = lineFor(dup.id); if (long) dup.full = full; else delete dup.full;
+    saveTasks(t); return { ...dup, duplicate: true, reworded: true };
+  }
   if (dup) return { ...dup, duplicate: true };
-  const item = { id: randomBytes(6).toString("hex"), text, repo: repo || "", done: false, ts: Date.now() };
+  const item = { id, text: line, ...(long ? { full } : {}), repo: repo || "", done: false, ts: Date.now() };
   t.unshift(item); saveTasks(t); return item;
 }
 function toggleTask(id) { const t = loadTasks(); const it = t.find((x) => x.id === id); if (it) { it.done = !it.done; saveTasks(t); } return it || { error: "not found" }; }
@@ -278,7 +295,7 @@ const NOT_OWN = /(^|\/)(package(-lock)?\.json|npm-shrinkwrap\.json|CHANGELOG\.md
 function changelogEntry(text) {
   let s = String(text || "").replace(/\s+/g, " ").trim();
   const m = s.match(/^(.{40,}?(?<!\be\.g|\bi\.e|\betc|\bvs)[.!?])\s+(?=[^a-z])/); if (m && m[1].length <= ENTRY_MAX) s = m[1]; // not at "e.g. `x`" or "e.g. when"
-  return s.length > ENTRY_MAX ? s.slice(0, ENTRY_MAX - 1).replace(/\s+\S*$/, "") + "…" : s;
+  return clipWords(s, ENTRY_MAX);
 }
 function changelogSection(version, texts, files = [], day = new Date().toISOString().slice(0, 10), notes = null) {
   const own = files.filter((f) => !NOT_OWN.test(f));
@@ -400,7 +417,7 @@ function commitSubject(texts) {
   const more = texts.length > 1 ? ` (+${texts.length - 1} more)` : "", max = 72 - more.length;
   const t = String(texts[0]).split("\n").find((l) => l.trim()) || "";
   const s = t.replace(/^\s*(#+|[-*+]|\d+[.)])\s+/, "").replace(/\*\*|__/g, "").replace(/\s+/g, " ").trim() || `${texts.length} approved tasks`;
-  return (s.length > max ? s.slice(0, max - 1).replace(/\s+\S*$/, "") + "…" : s) + more;
+  return clipWords(s, max) + more;
 }
 // Sync approved work: off the default branch onto symbiot/<task>, commit the
 // working tree (minus .symbiot/), push, and open a PR with gh. On a branch whose
@@ -575,6 +592,8 @@ function pushTasks(filter) {
       const open = openWork([{ path, name }]).slice(0, 12);
       const det = detectRepo({ path, name, recency: 0 });
       const stack = [...det.langs.slice(0, 4), ...det.tools].join(", ");
+      // a long task's whole text, where its line links to (addTask)
+      for (const t of groups[name].filter((x) => x.full)) { mkdirSync(join(path, ".symbiot", FULL_DIR), { recursive: true }); writeFileSync(join(path, ".symbiot", FULL_DIR, t.id + ".md"), t.full.replace(/\s*$/, "\n")); }
       const risk = [];
       if (st.stale) risk.push("stale checkout — working tree is an old snapshot, not new work");
       if (st.behind) risk.push(`${st.behind} behind upstream on ${st.branch}`);

@@ -8,6 +8,9 @@
 
 const OPS = "ops";
 const MAX_LANES_LISTED = 40;
+// How long a handover can be: an email to draft, quoted whole, fits. 4000 cut
+// the one to ops mid-email (a repo lane's task links to the rest: addTask).
+const HANDOVER_MAX = 20000;
 
 // The lines a brief gets about lanes. here: this agent's lane; lanes: the others
 // it can hand to (repo folder names).
@@ -32,7 +35,7 @@ function parseHandoffs(md) {
     if (/^#{1,2}\s/.test(raw)) { cur = null; continue; }
     if (cur) cur.text += raw + "\n";
   }
-  return out.map((h) => ({ lane: h.lane, text: h.text.trim().slice(0, 4000) })).filter((h) => h.lane && h.text);
+  return out.map((h) => ({ lane: h.lane, text: h.text.trim().slice(0, HANDOVER_MAX) })).filter((h) => h.lane && h.text);
 }
 
-export { OPS, handoverRules, ONLY_YOU, parseHandoffs };
+export { OPS, HANDOVER_MAX, handoverRules, ONLY_YOU, parseHandoffs };

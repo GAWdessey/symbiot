@@ -36,6 +36,12 @@ function saveConfig(cfg) {
 const TASKS_PATH = join(CONFIG_DIR, "tasks.json");
 function loadTasks() { try { return JSON.parse(readFileSync(TASKS_PATH, "utf8")); } catch { return []; } }
 function saveTasks(t) { try { mkdirSync(CONFIG_DIR, { recursive: true }); writeFileSync(TASKS_PATH, JSON.stringify(t, null, 2)); return true; } catch { return false; } }
+// How much a task holds: one line in TASKS.md, long enough for a handover or a
+// pasted list of steps (1000 cut the Jono email task off mid-sentence). Longer,
+// it keeps its whole text (full) and its line links to that (tasks.mjs addTask).
+const TASK_MAX = 4000;
+// A heading or a one-line summary: cut at a word and marked "…", never mid-word.
+const clipWords = (s, max) => { s = String(s || ""); return s.length > max ? s.slice(0, max - 1).replace(/\s+\S*$/, "") + "…" : s; };
 // Two wordings of one task: the same words once case, spacing and punctuation
 // are set aside (a colon for a bracket, `code` for code), or one is the other
 // with a clause more on the end. An extension only counts when the shorter one
@@ -174,4 +180,4 @@ function repoState(repoPath) {
   return { branch, dirty, del, mod, add, stale, staleBy, behind };
 }
 
-export { VERSION, LATEST_VERSION, semverGt, REGISTRY, checkLatest, CONFIG_DIR, CONFIG_PATH, loadConfig, saveConfig, loadTasks, saveTasks, taskWords, sameTask, uniqueTasks, sh, hasCmd, chromeBinary, repoState };
+export { VERSION, LATEST_VERSION, semverGt, REGISTRY, checkLatest, CONFIG_DIR, CONFIG_PATH, loadConfig, saveConfig, loadTasks, saveTasks, TASK_MAX, clipWords, taskWords, sameTask, uniqueTasks, sh, hasCmd, chromeBinary, repoState };

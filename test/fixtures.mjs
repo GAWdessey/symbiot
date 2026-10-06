@@ -529,6 +529,12 @@ try {
     // the agent ticks the old wording of the task that has since taken the longer one
     writeFileSync(f, "- [x] " + del + "\\n"); m.syncTasks();
     out.eAfter = tasks().find((x) => x.id === out.e1.id);
+    // a task longer than a task holds (a handed-over email): nothing cut, its line links to the whole of it
+    const longText = "Draft an email to Jono about forwarding for the Voxi number.\\n\\n" + Array.from({ length: 120 }, (_, i) => "Point " + (i + 1) + ": say what the endpoint needs and why it matters here.").join("\\n") + "\\nGarth";
+    out.longText = longText; out.long = m.addTask(longText, "revapp", { after: "(handed over by ops)" }); m.pushTasks();
+    try { out.longBrief = readFileSync(f.replace("TASKS.md", "TASKS.next.md"), "utf8"); } catch { out.longBrief = readFileSync(f, "utf8"); } // held: the stand-in agent started above may still run
+    try { out.longFull = readFileSync(f.replace("TASKS.md", "full/" + out.long.id + ".md"), "utf8"); } catch {}
+    out.longAgain = m.addTask(longText, "revapp", { after: "(handed over by ops)" });
     console.log(JSON.stringify(out));`;
   mkdirSync(join(home, ".config", "symbiot"), { recursive: true });
   writeFileSync(join(home, ".config", "symbiot", "tasks.json"), JSON.stringify([{ id: "t1", text: "Fix the bug", repo: "revapp", done: false, ts: 1 }]));
@@ -560,6 +566,10 @@ try {
   ok("the same task with a clause more is a duplicate that takes the longer words, and not back", o.e2 && o.e2.duplicate && o.e2.reworded && o.e2.id === o.e1.id && /Also/.test(o.e2.text) && o.e3 && o.e3.duplicate && /Also/.test(o.e3.text) && o.nCount === 2, [o.e2, o.e3, o.nCount]);
   ok("a short task with more words on the end is still its own task", o.short2 && !o.short2.duplicate && o.short2.id !== o.short1.id, [o.short1, o.short2]);
   ok("an agent's tick on the old wording still sends the reworded task to review", o.eAfter && o.eAfter.review === true, o.eAfter);
+  const lg = o.long || {};
+  ok("a task too long for one line keeps all of it; its line is whole sentences and a link to the rest", lg.full === o.longText + "\n\n(handed over by ops)" && lg.text.length < 1000 && /^Draft an email to Jono.*\. … Full text: `\.symbiot\/full\/[0-9a-f]+\.md` \(handed over by ops\)$/.test(lg.text) && lg.text.includes("`.symbiot/full/" + lg.id + ".md`"), lg.text);
+  ok("...the brief lists that line, and its full text goes out with it, sign-off and all", (o.longBrief || "").includes("- [ ] " + lg.text) && o.longFull === lg.full + "\n" && /Point 120: .*\nGarth\n\n\(handed over by ops\)\n$/.test(o.longFull || ""), (o.longBrief || "").split("## Tasks")[1]);
+  ok("...and handed over again, it's the same task", o.longAgain && o.longAgain.duplicate && o.longAgain.id === lg.id, o.longAgain);
   ok("sameTask: case, spacing and punctuation aside; a clause more only after 8+ words", sameTask("Fix it: `now`", "fix it (now)") && !sameTask("Fix the bug", "Fix the bug in the login form") && sameTask("one two three four five six seven eight", "One two three four five six seven eight, nine.") && !sameTask("one two three four five six seven eight", "one two three four five six seven eighty") && !sameTask("", ""), "");
   ok("uniqueTasks keeps one of each, in the words that say the most", JSON.stringify(uniqueTasks(["a b c d e f g h", "Other", "A b c d e f g h, i j.", "other!"])) === JSON.stringify(["A b c d e f g h, i j.", "Other"]), uniqueTasks(["a b c d e f g h", "Other", "A b c d e f g h, i j.", "other!"]));
   // the two Jono asks, as two runs worded them: the same names, mostly the same words
@@ -689,7 +699,8 @@ try {
   ok("suggestions are their own list (checkbox bullets too)", pq.suggestions.join("|") === "Add a --json flag to drift|Cache the map scan", pq.suggestions);
   const longIdea = "Next steps: " + "x".repeat(900), longOpt = "👤 You: " + "y".repeat(700);
   const pl = parseQuestions(`## Questions\n### Long?\n- ${longOpt}\n\n## Suggestions\n- ${longIdea}\n- ${"z".repeat(1200)}\n`);
-  ok("a long idea or option arrives whole, up to the 1000 a task holds", pl.suggestions[0] === longIdea && pl.questions[0].options[0] === longOpt && pl.suggestions[1].length === 1000, pl.suggestions.map((s) => s.length));
+  const pl2 = parseQuestions(`## Suggestions\n- ${"word ".repeat(1000)}\n`);
+  ok("a long idea or option arrives whole, up to the 4000 a task holds, and past that ends at a word", pl.suggestions[0] === longIdea && pl.questions[0].options[0] === longOpt && pl.suggestions[1] === "z".repeat(1200) && pl2.suggestions[0].length <= 4000 && /word…$/.test(pl2.suggestions[0]), [pl.suggestions.map((s) => s.length), pl2.suggestions[0].slice(-20)]);
   // an idea for another project names it: an agent on coral with an idea for Symbiot
   const aqDir = join(ROOT, "aq"), aqHome = join(ROOT, "aqhome");
   mkdirSync(join(aqDir, ".symbiot"), { recursive: true }); mkdirSync(join(aqHome, ".config", "symbiot"), { recursive: true });

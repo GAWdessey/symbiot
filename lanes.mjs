@@ -18,7 +18,7 @@
 import { join, basename } from "node:path";
 import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, chmodSync } from "node:fs";
 import { createHash, randomBytes } from "node:crypto";
-import { CONFIG_DIR, loadTasks } from "./core.mjs";
+import { CONFIG_DIR, loadTasks, clipWords } from "./core.mjs";
 import { runHandoff, runningHandoff, waitingFor } from "./agents.mjs";
 import { addTask, pushTasks } from "./tasks.mjs";
 import { actNow } from "./mind.mjs";
@@ -28,7 +28,7 @@ import { OPS, parseHandoffs } from "./handover.mjs";
 
 const LEDGER = join(CONFIG_DIR, "lanes.json");
 const ACT_DIR = join(CONFIG_DIR, "drafts");
-const MAX_KEEP = 200, MAX_CHAIN = 4, TAIL = 1500;
+const MAX_KEEP = 200, MAX_CHAIN = 4, TAIL = 4000;
 
 function loadLedger() { try { const d = JSON.parse(readFileSync(LEDGER, "utf8")); return { handoffs: Array.isArray(d.handoffs) ? d.handoffs : [] }; } catch { return { handoffs: [] }; } }
 // It can name accounts and what's in them: yours only (0600).
@@ -68,7 +68,7 @@ function dispatch(path, { map = repoPathMap(), act = actNow, run = runHandoff, a
       if (r.error) Object.assign(e, { status: "error", error: r.error });
       else Object.assign(e, { to: { lane: OPS, path: r.dir }, job: r.job });
     } else {
-      const t = add(`${h.text.replace(/\s+/g, " ").slice(0, 900)} (handed over by ${from.lane})`, to.lane);
+      const t = add(h.text, to.lane, { after: `(handed over by ${from.lane})` }); // whole: a long one links to the rest
       if (t.error) Object.assign(e, { status: "error", error: t.error });
       else {
         push({ repo: to.lane });
@@ -86,7 +86,7 @@ function lastWords(path) {
   const log = readSym(path, "agent.log"), at = log.lastIndexOf("\n=== "); if (at < 0) return "";
   const w = parseRun(lastRunText(log)); // a streaming run: its final answer, not its JSON
   const run = w.stream ? (w.final || w.said.join("\n")) : log.slice(at).split("\n").slice(3).join("\n").trim(); // past the header and the command
-  return run.length > TAIL ? "…" + run.slice(-TAIL) : run;
+  return run.length > TAIL ? "…" + run.slice(-TAIL).replace(/^\S*\s+/, "") : run; // from a word on, not mid-word
 }
 // When the newest run in a folder started (its log header), or 0.
 function lastRunStart(path) { const log = readSym(path, "agent.log"), m = [...log.matchAll(/^=== .* (\d{4}-\d\d-\d\dT[\d:.]+Z) ===$/gm)].pop(); return m ? Date.parse(m[1]) || 0 : 0; }
@@ -118,7 +118,7 @@ function report(e, o, { run = runHandoff, running = runningHandoff, waiting = wa
   try {
     mkdirSync(join(p, ".symbiot"), { recursive: true });
     const had = existsSync(file) ? readFileSync(file, "utf8") : "# Answers\nAnswers to your questions, and what other lanes did with what you handed over, newest last.\n";
-    writeFileSync(file, `${had.replace(/\s*$/, "")}\n\n### Handed over to ${e.to.lane}: ${firstLine(e.text).slice(0, 120)}\n${o.text}\n_answered by symbiot (handover) ${new Date(now).toISOString().slice(0, 10)}_\n`);
+    writeFileSync(file, `${had.replace(/\s*$/, "")}\n\n### Handed over to ${e.to.lane}: ${clipWords(firstLine(e.text), 120)}\n${o.text}\n_answered by symbiot (handover) ${new Date(now).toISOString().slice(0, 10)}_\n`);
   } catch { return false; }
   if (!running(p)) run(p, { force: !waiting(p) });
   return true;
@@ -135,12 +135,13 @@ function lanesTick({ map = repoPathMap(), act = actNow, run = runHandoff, runnin
   for (const e of ledger.handoffs) {
     if (e.reportedAt || running(e.from.path)) continue; // the one that asked reads it when it's started again, so not mid-run
     const o = outcome(e, { tasks: t, running }); if (!o) continue;
-    if (report(e, o, { run, running, now })) { e.reportedAt = now; if (e.status !== "error") e.status = "done"; e.result = o.text.slice(0, 600); reported.push(e); }
+    if (report(e, o, { run, running, now })) { e.reportedAt = now; if (e.status !== "error") e.status = "done"; e.result = o.text; reported.push(e); }
   }
   if (started.length || reported.length) saveLedger(ledger);
   return { started, reported };
 }
-// The Agents tab's list: newest first.
-function lanesState() { return { handoffs: loadLedger().handoffs.slice(-30).reverse().map((e) => ({ id: e.id, from: e.from.lane, to: e.to.lane, text: firstLine(e.text).slice(0, 160), at: e.at, status: e.status, ...(e.error ? { error: e.error } : {}), ...(e.result ? { result: e.result } : {}) })) }; }
+// The Agents tab's list: newest first. Each shows its first line; full, all of a
+// longer one, and result, all of what came back, open under it.
+function lanesState() { return { handoffs: loadLedger().handoffs.slice(-30).reverse().map((e) => ({ id: e.id, from: e.from.lane, to: e.to.lane, text: clipWords(firstLine(e.text), 160), ...(e.text.trim() !== firstLine(e.text).trim() || e.text.length > 160 ? { full: e.text } : {}), at: e.at, status: e.status, ...(e.error ? { error: e.error } : {}), ...(e.result ? { result: e.result } : {}) })) }; }
 
 export { LEDGER, MAX_CHAIN, loadLedger, laneOf, lastRunStart, dispatch, outcome, report, lanesTick, lanesState };

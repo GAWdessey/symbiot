@@ -7,7 +7,7 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { readFileSync, writeFileSync, mkdirSync, existsSync, openSync, writeSync, unlinkSync, readdirSync, statSync } from "node:fs";
 import { randomBytes, createHash } from "node:crypto";
-import { CONFIG_DIR, loadConfig, saveConfig, loadTasks, sameTask, taskWords, sh, hasCmd } from "./core.mjs";
+import { CONFIG_DIR, loadConfig, saveConfig, loadTasks, TASK_MAX, clipWords, sameTask, taskWords, sh, hasCmd } from "./core.mjs";
 import { parseRun, lastRunText } from "./work.mjs";
 
 const HANDOFFS = []; // live registry of agents Symbiot has handed work to
@@ -554,7 +554,7 @@ const readSymbiot = (path, f) => { try { return readFileSync(join(path, ".symbio
 // bullet under Questions is a question with no options.
 function parseQuestions(md) {
   const questions = [], suggestions = []; let sec = "q", cur = null;
-  const clip = (s) => String(s).trim().slice(0, 1000); // as long as a task holds (addTask), so an idea added in one click arrives whole
+  const clip = (s) => clipWords(String(s).trim(), TASK_MAX); // as long as a task holds (addTask), so an idea added in one click arrives whole
   for (const raw of String(md || "").split(/\r?\n/)) {
     const l = raw.trim(); if (!l) continue;
     let m;
@@ -589,7 +589,7 @@ function suggestionTarget(s) {
 const SKIPPED = "SKIPPED.md";
 const skippedIdeas = (path) => [...readSymbiot(path, SKIPPED).matchAll(/^-\s+(.+)$/gm)].map((m) => m[1].trim());
 function skipIdea(path, text) {
-  path = String(path || ""); text = String(text || "").replace(/\s+/g, " ").trim().slice(0, 1000);
+  path = String(path || ""); text = clipWords(String(text || "").replace(/\s+/g, " ").trim(), TASK_MAX);
   if (!path || !knownRun(path)) return { error: "No agent has run in that folder." };
   if (!text) return { error: "No idea to skip." };
   const f = join(path, ".symbiot", SKIPPED);
@@ -622,7 +622,7 @@ function answerQuestions(path, answers, opts = {}) {
   if (!path || !knownRun(path)) return { error: "No agent has run in that folder." };
   const open = new Map(agentQuestions(path, "").questions.map((x) => [qKey(x.q), x.q]));
   const rows = (Array.isArray(answers) ? answers : [])
-    .map((x) => ({ q: open.get(qKey(x && x.q)), a: String((x && x.a) || "").replace(/^\s*#+/gm, "").trim().slice(0, 2000) }))
+    .map((x) => ({ q: open.get(qKey(x && x.q)), a: String((x && x.a) || "").replace(/^\s*#+/gm, "").trim().slice(0, TASK_MAX) }))
     .filter((x) => x.q && x.a);
   if (!rows.length) return { error: "Pick or type at least one answer." };
   const prev = readSymbiot(path, "ANSWERS.md") || "# Answers from the user\nAnswers to the questions in QUESTIONS.md, newest last. Follow them; ask again in QUESTIONS.md if one is unclear.\n";

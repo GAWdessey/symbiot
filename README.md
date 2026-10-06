@@ -24,6 +24,16 @@ The newer extras are [experimental](#experimental): email, CI checks,
 local-model setup, Screens and Watch, and Symbiot on a phone. The list there says
 what's stable and what isn't.
 
+## What is Symbiot for?
+
+For developers and small teams who owe someone an update every week (a manager,
+a client, a standup, the team channel) and would rather spend that time on the
+work. The work is already in git: what you committed, merged and released, and
+what's still uncommitted or out of sync. Symbiot reads it on your machine and
+writes the update from it, so it says what actually happened, not what you
+remember on a Friday afternoon. It also hands the next tasks to your coding
+agent and brings its work back to you to approve.
+
 ## Install
 
 ```bash
@@ -41,9 +51,10 @@ visual app in your browser — in a clean, chrome-less window if you have
 Chrome/Chromium/Edge/Brave (`--app` mode), otherwise a normal tab. No Electron,
 no install — it's the same CLI. Press Ctrl+C (or click Quit) to stop.
 
-Tabs:
+It opens on [the liquid home](#the-liquid-a-home-that-shapes-itself-to-you),
+and each tab below pools open from it. Tabs:
 
-- **Map** (the landing view) — a live node graph of your work from your local git:
+- **Map** — a live node graph of your work from your local git:
   you at the centre, your repos, the languages and tools they share (so related
   projects cluster), the coding **agents and editors** you have installed, and the
   **AI** powering Symbiot. Project folders that **aren't git repos** show up too
