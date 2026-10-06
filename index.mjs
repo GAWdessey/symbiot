@@ -39,7 +39,7 @@ import { buildTasksMd, taskType, shipChanges, shipWithBump, bumpOffer, learnNpm,
 import { produce, mailState, setMail, sentMail } from "./writeups.mjs";
 import { loadScreens, screenImage, blueprint } from "./screens.mjs";
 import { mapPage, wholePage, pressRegion, typeRegion, scrollPage, signIn, isTrusted } from "./headless.mjs";
-import { watchState, addWatch, removeWatch, seenWatch, newsSince, markNews, checkWatch, setBrief, draftReply, watchBoard, boardLine } from "./watch.mjs";
+import { watchState, addWatch, removeWatch, seenWatch, newsSince, markNews, checkWatch, setBrief, draftReply, watchBoard, boardLine, boardChat, boardTalk, clearBoardChat } from "./watch.mjs";
 import { PORT as PHONE_PORT, phoneState, pairComputer, pollComputer, forgetComputer } from "./phone.mjs";
 import { startApp, updateCmd, isAppRunningWeekly } from "./server.mjs";
 
@@ -380,7 +380,7 @@ async function cmdScreens() {
 // ---- `symbiot watch`: pages Symbiot keeps track of, and what's new on them ----
 // new, board, seen, add, remove and check print JSON, for you or an agent.
 async function cmdWatch() {
-  const [sub = "list", a1] = argv.slice(1).filter((x, i, all) => !x.startsWith("--") && !["--every", "--hours"].includes(all[i - 1]));
+  const [sub = "list", a1, a2] = argv.slice(1).filter((x, i, all) => !x.startsWith("--") && !["--every", "--hours"].includes(all[i - 1]));
   const out = (x) => { console.log(JSON.stringify(x, null, 2)); if (x && x.error) process.exitCode = 1; };
   const hours = Number(flag("hours", 24)) || 24;
   if (sub === "list") {
@@ -403,6 +403,17 @@ async function cmdWatch() {
     const r = (await viaApp("/api/watch/draft", { id: a1 })) || draftReply(a1);
     const where = r.chat ? "types it into the chat's message box in Symbiot's browser, never sent" : "leaves it in Drafts, never sent";
     return out(r.ok ? { ...r, next: `Your agent is writing the reply and ${where}. Its log is in ` + join(r.dir, ".symbiot", "agent.log") + " (and the app's Agents tab)." } : r);
+  }
+  // a card's chat, the same talk as 💬 on the Dashboard (through the app when it
+  // runs, so an agent it starts shows in its Agents tab): a reply drafted from that
+  // card brings it along. No question: the talk so far; --clear starts it over.
+  if (sub === "chat") {
+    if (!a1) return out({ error: "Give the watch's id: symbiot watch board lists them. Then  symbiot watch chat <id> \"what needs me?\"" });
+    if (has("clear")) return out((await viaApp("/api/watch/chat/clear", { id: a1 })) || clearBoardChat(a1));
+    if (!a2) return out(boardTalk(a1));
+    const r = (await viaApp("/api/watch/chat", { id: a1, question: a2 })) || await boardChat(a1, a2);
+    if (r.error === "not-connected") return out({ error: "Connect a model first: symbiot login (or Settings in the app)." });
+    const { chat, ...rest } = r; return out(chat ? { ...rest, messages: chat.length } : rest);
   }
   if (sub === "add") { const screen = loadScreens().some((s) => s.id === a1) ? a1 : ""; return out(addWatch({ screen, site: screen ? "" : a1, every: flag("every", 15) })); }
   if (sub === "remove") return out(removeWatch(String(a1 || "")));
@@ -428,6 +439,10 @@ async function cmdWatch() {
                                                empty line when nothing's new)
   symbiot watch seen <id>                      set a card's count back to 0, like its Seen
                                                button (what it found stays in watch new)
+  symbiot watch chat <id> "question"           talk over what's new on a card with your AI,
+                                               like 💬 on the Dashboard: a reply drafted from
+                                               that card follows what you agreed (JSON)
+  symbiot watch chat <id> [--clear]            the talk so far, or start it over
   symbiot watch check [id]                     read them now (JSON)
   symbiot watch draft <id>                     your agent drafts a reply to that new email
                                                ("mail": true in watch new) and leaves it in
