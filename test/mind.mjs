@@ -5,7 +5,7 @@
 //
 //   node test/mind.mjs
 //
-import { mkdtempSync, readFileSync, mkdirSync, rmSync, statSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
