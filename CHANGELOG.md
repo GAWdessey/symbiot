@@ -2,6 +2,10 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.47.1
+
+- **Sharp, not blurry.** The liquid renders at your screen's full pixel density (it was capped at 1.5x, so 2x screens were stretched). Sphere edges are crisp at any size, each sphere casts a tight shadow below it instead of a fuzzy halo round it, and tags sit on whole pixels with almost no frosting, so their text is sharp.
+
 ## 0.47.0
 
 - **Tasks and agents in the liquid.** Opening Tasks or Agents re-forms the liquid: each agent at work is a sphere with small spheres revolving round it, named for what it's doing in plain words; work ready for your OK sits at the top; tasks waiting their turn sit below. One **Go** (or just say "go") starts everything waiting.

@@ -19,7 +19,7 @@ body.lq-liquid.lq-light #liquid{background:#EDEFF3}
 #lq{position:absolute;inset:0;width:100%;height:100%;display:block}
 body.lq-forced #lq{display:none}
 #lqdrops{position:absolute;inset:0;pointer-events:none}
-.lqd{position:absolute;left:0;top:0;display:flex;flex-direction:column;align-items:center;border-radius:999px;border:1px solid rgba(220,228,240,.35);background:rgba(4,5,7,.72);backdrop-filter:blur(10px);color:#EEF2F8;font:600 13.5px/1.2 var(--sans);pointer-events:auto;transition:opacity .5s ease,border-radius .25s ease;will-change:transform;box-shadow:0 16px 30px -12px rgba(0,0,0,.7),0 3px 8px rgba(0,0,0,.35)}
+.lqd{position:absolute;left:0;top:0;display:flex;flex-direction:column;align-items:center;border-radius:999px;border:1px solid rgba(220,228,240,.35);background:rgba(4,5,7,.9);backdrop-filter:blur(2px);color:#EEF2F8;font:600 13.5px/1.2 var(--sans);pointer-events:auto;transition:opacity .5s ease,border-radius .25s ease;will-change:transform;box-shadow:0 16px 30px -12px rgba(0,0,0,.7),0 3px 8px rgba(0,0,0,.35)}
 .lqd .lt{all:unset;box-sizing:border-box;display:flex;align-items:center;justify-content:center;min-height:44px;padding:8px 15px;cursor:pointer;text-align:center;max-width:240px}
 .lqd .lt span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .lqd .lgo{display:none;margin:4px 10px 10px;min-height:38px;padding:0 16px;border-radius:999px;border:1px solid #FFFFFF;background:linear-gradient(180deg,#FFFFFF 0%,#D2D8E1 44%,#8E97A6 56%,#E6EAF0 100%);color:#06080B;font:700 12.5px var(--sans);cursor:pointer}
@@ -31,7 +31,7 @@ body.lq-light .lqmb{background:rgba(255,255,255,.86);color:#10151C;border-color:
 .lqd.lq-you{border-color:rgba(255,255,255,.9)}
 .lqd:hover{border-color:rgba(255,255,255,.95)}
 .lqd:focus-visible,#lqcore:focus-visible,#lqask:focus-visible{outline:2px solid currentColor;outline-offset:3px}
-body.lq-light .lqd{background:rgba(255,255,255,.84);color:#10151C;border-color:rgba(20,30,45,.25)}
+body.lq-light .lqd{background:rgba(255,255,255,.95);color:#10151C;border-color:rgba(20,30,45,.25)}
 body.lq-light .lqd small{color:#4A5565}
 body.lq-light .lqd.lq-you{border-color:#10151C}
 body.lq-contrast .lqd{background:#000;color:#FFF;border:2px solid #FFF}
@@ -1416,9 +1416,9 @@ var ax=k*(tx-d.x)-c*d.vx,ay=k*(ty-d.y)-c*d.vy;
 if(still){d.x=tx;d.y=ty;d.vx=0;d.vy=0;}else{d.vx+=ax;d.vy+=ay;d.x+=d.vx;d.y+=d.vy;}
 if(!rest&&!pool){d.x=Math.max(d.cr+12,Math.min(S.w-d.cr-12,d.x));d.y=Math.max(140+d.cr,Math.min(S.h-150-d.cr-50,d.y));}
 d.cr+=(tr-d.cr)*(still?1:0.06);
-var b=LQ.btns[i];if(b&&b.offsetWidth)d.lw=b.offsetWidth;if(b&&b.style){b.style.transform='translate('+Math.round(d.x)+'px,'+Math.round(d.y)+'px) translate(-50%,-50%)';var show=!rest&&!pool;b.style.opacity=show?'1':'0';b.style.pointerEvents=show?'auto':'none';var lt=LQ.lts&&LQ.lts[i];if(lt)lt.tabIndex=show?0:-1;}}
+var b=LQ.btns[i];if(b&&b.offsetWidth)d.lw=b.offsetWidth;if(b&&b.style){b.style.transform='translate('+Math.round(d.x-(b.offsetWidth||0)/2)+'px,'+Math.round(d.y-(b.offsetHeight||0)/2)+'px)';var show=!rest&&!pool;b.style.opacity=show?'1':'0';b.style.pointerEvents=show?'auto':'none';var lt=LQ.lts&&LQ.lts[i];if(lt)lt.tabIndex=show?0:-1;}}
 (LQ.orbs||[]).forEach(function(o){var d=D[+o.getAttribute('data-i')];if(!d||!o.style)return;var R=Math.round(d.cr+20);o.style.width=o.style.height=(2*R)+'px';o.style.transform='translate('+Math.round(d.x-R)+'px,'+Math.round(d.y-R)+'px)';o.style.opacity=rest||pool?'0':'1';});
-var cb=$('lqcore');if(cb&&cb.style){cb.style.transform='translate('+Math.round(cx)+'px,'+(rest?Math.round(core.y+core.cr+18):56)+'px) translateX(-50%)';var ct=rest?(LQ.coreText||'All handled'):talk||pool?'':(LQ.coreText||'');cb.textContent=ct;cb.style.opacity=ct?'1':'0';cb.style.pointerEvents=ct?'auto':'none';}}
+var cb=$('lqcore');if(cb&&cb.style){cb.style.transform='translate('+Math.round(cx-(cb.offsetWidth||0)/2)+'px,'+(rest?Math.round(core.y+core.cr+18):56)+'px)';var ct=rest?(LQ.coreText||'All handled'):talk||pool?'':(LQ.coreText||'');cb.textContent=ct;cb.style.opacity=ct?'1':'0';cb.style.pointerEvents=ct?'auto':'none';}}
 // The liquid: a metaball surface (Σ r²/d² = 1) shaded as chrome, on the GPU.
 var LQ_FS=['precision highp float;',
 'uniform vec2 uRes;uniform float uT;uniform float uDpr;uniform vec3 uB[16];uniform vec3 uRip;uniform float uLight;uniform float uContrast;uniform vec4 uAccent;uniform float uExposure;',
@@ -1426,7 +1426,7 @@ var LQ_FS=['precision highp float;',
 'float hash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}',
 'vec3 env(vec3 r){float y=r.y;vec3 c=mix(mix(vec3(0.02,0.022,0.03),vec3(0.36,0.38,0.43),uLight),vec3(0.82,0.84,0.90),smoothstep(-0.35,0.55,y));c+=vec3(1.0)*pow(max(0.0,1.0-abs(y-0.18+0.04*sin(uT*0.3))*5.0),4.0)*1.1;c+=vec3(0.75,0.82,1.0)*pow(max(0.0,r.x),10.0)*0.9;c+=vec3(1.0,0.93,0.86)*pow(max(0.0,-r.x),14.0)*0.5;c*=0.92+0.08*sin(r.x*4.0+r.y*3.0+uT*0.4);return c;}',
 'void main(){vec2 p=vec2(gl_FragCoord.x,uRes.y-gl_FragCoord.y);float f=field(p);float e=2.0*uDpr;',
-'float fx=field(p+vec2(e,0.0))-field(p-vec2(e,0.0));float fy=field(p+vec2(0.0,e))-field(p-vec2(0.0,e));',
+'float fx=field(p+vec2(e,0.0))-field(p-vec2(e,0.0));float fy=field(p+vec2(0.0,e))-field(p-vec2(0.0,e));float sd=(f-1.0)/(length(vec2(fx,fy))/(2.0*e)+0.00001);',
 'vec2 rc=uRip.xy*uRes;float rd=distance(p,rc)/uDpr;float age=uT-uRip.z;float ring=0.0;if(age>0.0&&age<4.0){float w=rd-age*300.0;ring=sin(w*0.07)*exp(-abs(w)*0.02)*(1.0-age/4.0);}',
 'vec2 rdir=normalize(p-rc+0.001);fx+=ring*0.22*rdir.x;fy+=ring*0.22*rdir.y;',
 'vec3 n=normalize(vec3(-fx*6.0,fy*6.0,1.0));vec3 r=reflect(vec3(0.0,0.0,-1.0),n);vec3 metal=env(r);',
@@ -1434,10 +1434,10 @@ var LQ_FS=['precision highp float;',
 'metal=mix(metal,metal*(0.55+0.9*uAccent.rgb),uAccent.a*0.3);',
 'metal=mix(metal,metal*(1.0-0.5*fres)+0.04,uLight);metal*=uExposure;',
 'vec2 uv=p/uRes;vec2 cell=floor(p/(2.0*uDpr));float s=step(0.9975,hash(cell))*(0.35+0.25*sin(uT*1.5+hash(cell+3.1)*6.28))*(1.0-uLight);',
-'vec3 dark=vec3(0.012,0.014,0.02)+vec3(s);dark*=1.0-0.55*length(uv-0.5);dark+=vec3(0.05,0.055,0.07)*smoothstep(0.25,1.0,f);',
-'vec3 pearl=vec3(0.93,0.94,0.955)-0.07*length(uv-0.5);pearl-=vec3(0.11)*smoothstep(0.3,1.0,f);',
+'vec3 dark=vec3(0.012,0.014,0.02)+vec3(s);dark*=1.0-0.55*length(uv-0.5);dark+=vec3(0.05,0.055,0.07)*smoothstep(0.65,1.0,f);',
+'float fs=field(p-vec2(0.0,9.0*uDpr));vec3 pearl=vec3(0.93,0.94,0.955)-0.07*length(uv-0.5);pearl-=vec3(0.12)*smoothstep(0.6,0.98,fs);',
 'vec3 bg=mix(dark,pearl,uLight)*mix(1.0,uExposure,0.5);bg+=mix(vec3(0.55,0.6,0.7),vec3(-0.3),uLight)*abs(ring)*0.09;',
-'float edge=mix(0.07,0.02,uContrast);float m=smoothstep(1.0-edge,1.0+edge,f);',
+'float m=smoothstep(-0.75*uDpr,0.75*uDpr,sd);',
 'float line=(smoothstep(0.86,0.97,f)-smoothstep(0.97,1.08,f))*uContrast;',
 'vec3 col=mix(bg,metal,m);col=mix(col,mix(vec3(1.0),vec3(0.0),uLight),line);',
 'gl_FragColor=vec4(col,1.0);}'].join('');
@@ -1449,7 +1449,7 @@ var bf=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,bf);gl.bufferData(gl.ARRA
 var al=gl.getAttribLocation(pr,'a');gl.enableVertexAttribArray(al);gl.vertexAttribPointer(al,2,gl.FLOAT,false,0,0);
 var U={};['uRes','uT','uDpr','uB','uRip','uLight','uContrast','uAccent','uExposure'].forEach(function(n){U[n]=gl.getUniformLocation(pr,n);});
 return {gl:gl,c:c,U:U,out:new Float32Array(48),t0:(window.performance&&performance.now)?performance.now():Date.now()};}
-function lqDraw(G){var gl=G.gl,c=G.c,S=lqSize(),d=Math.min(window.devicePixelRatio||1,1.5),W=Math.max(1,Math.floor(S.w*d)),H=Math.max(1,Math.floor(S.h*d));
+function lqDraw(G){var gl=G.gl,c=G.c,S=lqSize(),d=Math.min(window.devicePixelRatio||1,3),W=Math.max(1,Math.floor(S.w*d)),H=Math.max(1,Math.floor(S.h*d));
 if(c.width!==W||c.height!==H){c.width=W;c.height=H;gl.viewport(0,0,W,H);}
 var now=(window.performance&&performance.now)?performance.now():Date.now(),t=(now-G.t0)/1000,th=LQ.theme,still=th.still,o=G.out;LQ.t=t;
 for(var i=0;i<48;i++)o[i]=0;
