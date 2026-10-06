@@ -183,7 +183,7 @@ try {
   } });
   ok("at work: what each agent is doing, in its own plain words (no markdown), with progress", ws.running.length === 2 && ws.running[0].doing === "Fixing the WhatsApp reader" && ws.running[0].progress.done === 1 && ws.running[1].doing === "Ran npm test" && ws.running[1].waiting, ws.running);
   ok("ready for your OK: only what's waiting on an Approve, not what's still being worked on", ws.ready.length === 1 && ws.ready[0].repo === "GhostAIChat" && ws.ready[0].count === 2, ws.ready);
-  ok("waiting: open tasks with a repo, short, and marked when their repo's agent is busy", ws.waiting.length === 2 && ws.waiting[0].text.length <= 56 && /…$/.test(ws.waiting[0].text) && ws.waiting[0].busy && !ws.waiting[1].busy && ws.canGo === 1, ws.waiting);
+  ok("waiting: open tasks with a repo, short, and marked when their repo's agent is busy", ws.waiting.length === 2 && ws.waiting[0].text.length <= 160 && ws.waiting[0].text.startsWith("Add a Skip button") && ws.waiting[0].busy && !ws.waiting[1].busy && ws.canGo === 1, ws.waiting);
   const started = [];
   const g = workGo({ push: () => ({ written: [{ name: "a", path: "/a" }, { name: "b", path: "/b" }] }), run: (p) => (started.push(p), p === "/a" ? { id: "j1" } : { busy: true }) });
   ok("Go: every repo's brief written and its agent started, or queued behind one already there", g.started === 1 && g.queued === 1 && started.join() === "/a,/b" && g.repos.join() === "a,b", g);
