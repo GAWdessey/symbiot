@@ -191,6 +191,7 @@ const calls = [
   ["/api/screens/trusted/add", "POST"],    // no site -> refused, nothing saved
   ["/api/screens/trusted/remove", "POST"],
   ["/api/screens/signin", "POST"],  // no site -> refused, no window opens
+  ["/api/lanes", "GET"],            // handovers between agents' lanes (isolated HOME -> none)
   ["/api/mind", "GET"],             // what Symbiot remembers across the app (isolated HOME -> nothing)
   ["/api/mind/forget", "POST"],     // no id -> "Nothing remembered by that id"
   ["/api/links", "GET"],            // Link your work: the standard sites and where each stands

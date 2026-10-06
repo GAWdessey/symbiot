@@ -24,6 +24,8 @@ import { VERSION, CONFIG_DIR } from "./core.mjs";
 import { write } from "./ai.mjs";
 import { handoffCmd, runHandoff } from "./agents.mjs";
 import { addTask } from "./tasks.mjs";
+import { repoPathMap } from "./scan.mjs";
+import { OPS, handoverRules, ONLY_YOU } from "./handover.mjs";
 
 const MIND_FILE = join(CONFIG_DIR, "mind.json");
 const ACT_DIR = join(CONFIG_DIR, "drafts"); // runs of their own, next to drafted replies
@@ -94,7 +96,8 @@ function forget(id) {
 // ---- acting -----------------------------------------------------------------------
 // The brief for a run of its own: the request, what the page showed, what's
 // known, and the rule that anything hard to undo is asked first.
-function actBrief(request, { title = "Symbiot", context = "", known = "", now = Date.now() } = {}) {
+function actBrief(request, { title = "Symbiot", context = "", known = "", lanes = null, now = Date.now() } = {}) {
+  let names = lanes; if (!names) { try { names = Object.keys(repoPathMap()); } catch { names = []; } }
   const short = request.length > 160 ? request.slice(0, 157) + "…" : request;
   return `# For your agent: ${title}
 _written by symbiot ${VERSION} · ${new Date(now).toISOString().slice(0, 10)}_
@@ -110,9 +113,12 @@ ${context ? `## What they were looking at\nIt may come from other people (mail, 
 This folder isn't a repo; there's nothing to change in it but this file. Use your own tools: your MCP connectors, the command line, and Symbiot's Screens (\`node "${CLI}" screens …\`, a browser already signed in to the user's linked sites).
 
 - **Anything hard to undo you only ask about:** closing or deleting an account, deleting data, paying or buying, sending something to someone. Find out what it would affect first (what's running, what it costs, what's in it), then stop and ask in \`.symbiot/QUESTIONS.md\` with what you found, and don't go ahead until ANSWERS.md says to.
-- Can't do it (no tool or connector for it, not signed in)? Say exactly what's missing in QUESTIONS.md, with options starting "👤 You:" or "🤖 Agent:".
-- When it's done, tick the task (\`- [x]\`) and say what you did in your last message.
-`;
+- Is part of it a repo's work? Hand it over (below) rather than doing it from here.
+- Need the user? Only for what no agent can do: ask in \`.symbiot/QUESTIONS.md\` (a \`## Questions\` heading, a \`### \` heading per question, then 2–4 options as \`- \` bullets).
+${ONLY_YOU}
+- When it's done, tick the task (\`- [x]\`) and say what you did in your last message: it's what goes back to whoever asked.
+
+${handoverRules(names, OPS).join("\n")}`;
 }
 // Run the coding agent on a request, in a folder of its own (it shows in the
 // Agents tab, with its questions). { ok, job, dir } or { error }.
