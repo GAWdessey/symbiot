@@ -41,12 +41,49 @@ function saveTasks(t) { try { mkdirSync(CONFIG_DIR, { recursive: true }); writeF
 // with a clause more on the end. An extension only counts when the shorter one
 // is a whole sentence (8+ words), so "Fix the bug" never swallows "Fix the bug
 // in the login form".
+// Or nearly the same (nearTask): an agent that suggests a task again rewords
+// it, and TASKS.md listed both.
 const taskWords = (s) => String(s || "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
 function sameTask(a, b) {
   const x = taskWords(a), y = taskWords(b); if (!x || !y) return false;
   if (x === y) return true;
   const [s, l] = x.length < y.length ? [x, y] : [y, x];
-  return s.split(" ").length >= 8 && l.startsWith(s + " ");
+  return (s.split(" ").length >= 8 && l.startsWith(s + " ")) || nearTask(a, b);
+}
+// Nearly the same task, two ways:
+// - nearly all the same words in the same order, 12+ words each ("…nothing
+//   recorded since 2026-08-03" and "…since 2026-08-04")
+// - the same first sentence of 5+ words, with only what follows it different:
+//   "Set `WA_WABA_ID` in `.env`. It's needed to list templates" / "…to create Flows"
+// Never when each names something the other doesn't: "Watch Gmail…" and
+// "Watch WhatsApp…" are two tasks, however alike the rest. A name is a word
+// with a capital that doesn't just start a sentence (Gmail, WhatsApp, WA).
+const NEAR = 0.85, NEAR_WORDS = 12, LEAD_WORDS = 5;
+function wordsOf(s) {
+  s = String(s || "");
+  return [...s.matchAll(/[\p{L}\p{N}]+/gu)].map((m) => {
+    const w = m[0], before = s.slice(0, m.index);
+    const starts = !before.trim() || /[.!?]["'`)\]]*\s*$/.test(before);
+    return { w: w.toLowerCase(), name: w.length > 1 && /\p{Lu}/u.test(w) && (!starts || /\p{Lu}/u.test(w.slice(1))) };
+  });
+}
+// The first sentence's words, when more follows it ("" when it's all one sentence).
+function leadOf(s) { const m = String(s || "").match(/^(.*?[.!?])["'`)\]]*\s+\S/s); return m ? taskWords(m[1]) : ""; }
+function nearTask(a, b) {
+  const x = wordsOf(a), y = wordsOf(b), m = x.length, n = y.length; if (!m || !n) return false;
+  const lead = leadOf(a), sameLead = !!lead && lead === leadOf(b) && lead.split(" ").length >= LEAD_WORDS;
+  if (!sameLead && (Math.min(m, n) < NEAR_WORDS || Math.min(m, n) / Math.max(m, n) < NEAR)) return false;
+  // the longest run of words both have in order, and the words left over on each side
+  const L = Array.from({ length: m + 1 }, () => new Uint16Array(n + 1));
+  for (let i = m - 1; i >= 0; i--) for (let j = n - 1; j >= 0; j--) L[i][j] = x[i].w === y[j].w ? L[i + 1][j + 1] + 1 : Math.max(L[i + 1][j], L[i][j + 1]);
+  if (!sameLead && (2 * L[0][0]) / (m + n) < NEAR) return false;
+  let i = 0, j = 0, nx = false, ny = false;
+  while (i < m && j < n) {
+    if (x[i].w === y[j].w) { i++; j++; } else if (L[i + 1][j] >= L[i][j + 1]) { if (x[i++].name) nx = true; } else if (y[j++].name) ny = true;
+  }
+  for (; i < m; i++) if (x[i].name) nx = true;
+  for (; j < n; j++) if (y[j].name) ny = true;
+  return !(nx && ny);
 }
 // One of each: near-duplicates collapse into the wording that says the most.
 function uniqueTasks(texts) {
