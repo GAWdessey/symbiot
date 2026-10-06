@@ -31,7 +31,8 @@ import { desktopNotify } from "./desktop.mjs";
 import { resolveProvider, write } from "./ai.mjs";
 import { handoffCmd, runHandoff, runningHandoff } from "./agents.mjs";
 import { linksIn, peekLinks, peekLine } from "./peek.mjs";
-import { converse, actNow, addToTasks } from "./mind.mjs";
+import { converse, actNow, actIn, taskIn } from "./mind.mjs";
+import { repoPathMap } from "./scan.mjs";
 
 const WATCH_FILE = join(CONFIG_DIR, "watch.json");
 const EVERY = [5, 15, 30, 60]; // minutes between reads
@@ -257,7 +258,7 @@ function cardLinks(w, recent, question) {
   const own = hostOf(w.url), host = (u) => { try { return new URL(u).hostname.replace(/^www\./, ""); } catch { return ""; } };
   return [...linksIn(question), ...recent.flatMap((n) => linksIn(n.text))].filter((u) => host(u) && host(u) !== own);
 }
-async function boardChat(id, question, { hours = 72, now = Date.now(), ask = write, look = peekLinks, run = actNow } = {}) {
+async function boardChat(id, question, { hours = 72, now = Date.now(), ask = write, look = peekLinks, run = actNow, lanes = () => { try { return repoPathMap(); } catch { return {}; } } } = {}) {
   question = String(question || "").trim().slice(0, 2000);
   const d = loadWatch(), w = d.watches.find((x) => x.id === id); if (!w) return { error: `No watch ${id}.` };
   if (!question) return { error: "empty" };
@@ -272,7 +273,9 @@ async function boardChat(id, question, { hours = 72, now = Date.now(), ask = wri
   const context = `${w.name}, new in the last ${hours} hours (newest first):\n${listed}` + (b ? `\n\nThe brief:\n${b.text}` : "") + (peeks.length ? `\n\nWhat's behind the links (looked up just now):\n${peeks.map(peekLine).join("\n")}` : "");
   const history = (w.chat || []).slice(-12).map((m) => `${m.role === "user" ? "User" : "You"}: ${m.text}`).join("\n\n");
   const r = await converse({ where: `${w.name} card`, role, context, history, question, ask, now,
-    act: { agent: (req, known) => run(req, { title: w.name, context: `${w.name}, new lately:\n${listed}`, known, now }), task: addToTasks } });
+    act: { // a repo named: its lane (its tasks, its agent); none: an agent of its own
+      agent: (req, known, repo) => (repo ? actIn(req, repo, { map: lanes(), known, title: w.name, context: `${w.name}, new lately:\n${listed}`, ops: run, now }) : run(req, { title: w.name, context: `${w.name}, new lately:\n${listed}`, known, now })),
+      task: (text, repo) => taskIn(text, repo, { map: lanes() }) } });
   const answer = r.reply;
   // read again: a check may have saved the file while the model answered
   const d2 = loadWatch(), w2 = d2.watches.find((x) => x.id === id); if (!w2) return { answer, chat: [] };

@@ -495,12 +495,29 @@ function suggestionTarget(s) {
 // The OPEN questions (not yet in ANSWERS.md) and the agent's ideas, each with
 // the repo whose tasks it goes to (this one unless it names another) and marked
 // if it's already on that repo's task list, in these words or nearly (sameTask).
+// Ideas the user turned down (Skip) stay in .symbiot/SKIPPED.md, a file like
+// ANSWERS.md, so they leave the list and the brief tells the next run not to
+// suggest them again.
+const SKIPPED = "SKIPPED.md";
+const skippedIdeas = (path) => [...readSymbiot(path, SKIPPED).matchAll(/^-\s+(.+)$/gm)].map((m) => m[1].trim());
+function skipIdea(path, text) {
+  path = String(path || ""); text = String(text || "").replace(/\s+/g, " ").trim().slice(0, 1000);
+  if (!path || !knownRun(path)) return { error: "No agent has run in that folder." };
+  if (!text) return { error: "No idea to skip." };
+  const f = join(path, ".symbiot", SKIPPED);
+  if (!skippedIdeas(path).some((s) => sameTask(s, text))) {
+    try { mkdirSync(dirname(f), { recursive: true }); writeFileSync(f, (existsSync(f) ? readFileSync(f, "utf8").replace(/\n*$/, "\n") : "# Ideas the user turned down\nDon't suggest these again.\n\n") + `- ${text}\n`); }
+    catch (e) { return { error: String((e && e.message) || e) }; }
+  }
+  return { ok: true };
+}
 function agentQuestions(path, repo) {
   const p = parseQuestions(readSymbiot(path, "QUESTIONS.md"));
   const done = new Set([...readSymbiot(path, "ANSWERS.md").matchAll(/^###\s+(.+)$/gm)].map((m) => qKey(m[1])));
   const open = p.questions.filter((x) => !done.has(qKey(x.q)));
-  const tasks = p.suggestions.length ? loadTasks() : [];
-  const ideas = p.suggestions.map(suggestionTarget).map(({ repo: to, text }) => ({ text, repo: to || repo, other: !!to && to !== repo, added: tasks.some((t) => t.repo === (to || repo) && sameTask(t.text, text)) })).filter((s) => !s.added);
+  const tasks = p.suggestions.length ? loadTasks() : [], skipped = p.suggestions.length ? skippedIdeas(path) : [];
+  const ideas = p.suggestions.map(suggestionTarget).filter(({ text }) => !skipped.some((s) => sameTask(s, text)))
+    .map(({ repo: to, text }) => ({ text, repo: to || repo, other: !!to && to !== repo, added: tasks.some((t) => t.repo === (to || repo) && sameTask(t.text, text)) })).filter((s) => !s.added);
   return {
     questions: open.slice(0, QUESTIONS_MAX).map((x) => ({ ...x, options: x.options.slice(0, OPTIONS_SHOWN) })), answered: p.questions.length - open.length,
     suggestions: ideas, ideasShown: IDEAS_SHOWN,
@@ -557,4 +574,4 @@ function agentsList() {
   }).concat(earlierRuns());
 }
 
-export { HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, connectorsInfo, fillHandoff, runHandoff, blockedAgain, runningHandoff, loadRuns, earlierRuns, namedFiles, waitingFor, startWaiting, writeTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, agentQuestions, answerQuestions, agentsList };
+export { HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, connectorsInfo, fillHandoff, runHandoff, blockedAgain, runningHandoff, loadRuns, earlierRuns, namedFiles, waitingFor, startWaiting, writeTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, skipIdea, agentQuestions, answerQuestions, agentsList };
