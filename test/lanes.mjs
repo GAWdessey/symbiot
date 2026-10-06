@@ -69,6 +69,17 @@ try {
   ok("and coral's agent is started again to carry on", calls.run.length === runsBefore + 1 && calls.run.slice(-1)[0].p === coral && calls.run.slice(-1)[0].o.force, calls.run.slice(-1));
   ok("reported once", lanesTick(deps()).reported.length === 0 && loadLedger().handoffs[0].status === "done", loadLedger().handoffs[0].status);
 
+  console.log("A STEP OF THE USER'S — a result coming back doesn't start a run they said to hold");
+  // coral's run asked for a key in .env, and the user said "don't start another run until it's in"
+  put(coral, "waiting.json", JSON.stringify({ step: "put the key in `.env`", files: [{ name: ".env", path: join(coral, ".env"), sig: "none" }], at: Date.now() }));
+  put(coral, "HANDOFF.md", "### ops\nFind the WABA id in the Meta dashboard export.\n"); ran(opsDir, Date.now() - 60000, "the JDK run, long done");
+  lanesTick(deps());
+  const hw = loadLedger().handoffs.find((h) => /WABA/.test(h.text));
+  ran(opsDir, hw.at + 1000, "Found it in the export."); put(opsDir, "TASKS.md", "- [x] Find the WABA id\n");
+  const runsW = calls.run.length, tw = lanesTick(deps());
+  ok("the result is reported, but coral's run isn't forced past the user's step (it starts once .env changes)", tw.reported.length === 1 && calls.run.length === runsW + 1 && calls.run.slice(-1)[0].o.force === false && /Found it in the export/.test(read(coral, "ANSWERS.md")), [tw.reported.length, calls.run.slice(-1)]);
+  rmSync(join(coral, ".symbiot", "waiting.json"));
+
   console.log("TO ANOTHER REPO — coral hands GhostAIChat its part");
   put(coral, "HANDOFF.md", "### GhostAIChat\nBuild the debug APK with the JDK at ~/.gradle/jdks/eclipse_adoptium-17.\n");
   runResult = () => ({ busy: true });

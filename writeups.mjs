@@ -8,7 +8,7 @@ import { resolveProvider, write } from "./ai.mjs";
 import { detectMailSources, mailActivity } from "./mail.mjs";
 import { waitingOn, newsSince } from "./watch.mjs";
 import { me, authorship, authorArgs, readmeInfo, repoShape, houseRules, reportFooter, expandRoot, commits, openWork, detectFolder, repoPathMap, discoveredRepos } from "./scan.mjs";
-import { taskType, workingChanges, workingDiff } from "./tasks.mjs";
+import { taskType, workingChanges, workingDiff, changelogEntry } from "./tasks.mjs";
 import { converse, actNow, actIn, taskIn } from "./mind.mjs";
 
 // ---- render ---------------------------------------------------------------
@@ -270,4 +270,34 @@ async function produce(cmd, { since = 7, all: everyone = false } = {}) {
   return { text: text ? withWaiting(text, line) : "(couldn't reach the model)", sub: `${cs.length} commits across ${new Set(cs.map((x) => x.repo)).size} repos${mailNote}${waitNote} · ${label}`, footer: `symbiot ${VERSION} · ${all.length} repos (same as the Map) · ${repos.length} active · ${cs.length} commits in last ${days}d${mailNote}` };
 }
 
-export { repoReview, repoSuggest, folderSuggest, taskChat, clearTaskChat, mailState, setMail, sentMail, arrivedOn, produce };
+// ---- release notes: Approve's changelog entries, in your AI's words ------------
+// Each approved task as a short note ("Added…", "Fixed…") from the task and the
+// diff (input from tasks.mjs releaseInput); changes with no task, from the diff
+// alone. null keeps the tasks' own words: no AI connected, no answer in time, or
+// an answer that isn't one note per task.
+const NOTES_WAIT_MS = 60000;
+async function releaseNotes(input, ask = write) {
+  if (!input || (ask === write && !resolveProvider())) return null;
+  const { texts, files, diff } = input, n = texts.length;
+  const system =
+    `You write release notes for a changelog that everyone who updates the app reads, not only the developer. ` +
+    `Each note is one plain sentence under 25 words, starting with a past-tense verb (Added, Fixed, Changed, Removed…), saying what changed for the people who use it. ` +
+    `Use the task for what was wanted and the diff for what was actually done; claim nothing the diff doesn't show. ` +
+    `No file or function names unless a user types them (a command, a setting), no jargon, no names of people. ` +
+    `Answer with the notes only, one per line, each starting with "- ".`;
+  const prompt = (n ? `Tasks approved in this release:\n${texts.map((t, i) => `${i + 1}. ${t}`).join("\n")}\n\n` : "") +
+    `Files changed: ${files.join(", ") || "(none)"}\n\nDiff:\n${diff || "(none)"}\n\n` +
+    (n ? `Write exactly ${n} note${n === 1 ? "" : "s"}, one per task, in the same order.` : `No task covers these changes. Write 1 to 3 notes saying what they do.`);
+  let out = null;
+  try { out = await Promise.race([ask(system, prompt), new Promise((r) => setTimeout(r, NOTES_WAIT_MS, null).unref())]); } catch { return null; }
+  return parseNotes(out, n);
+}
+// The "- " lines of the AI's answer, as changelog entries: exactly n of them, or
+// 1 to 3 when no task was approved; null otherwise.
+function parseNotes(out, n) {
+  const notes = String(out || "").split("\n").map((l) => l.match(/^\s*(?:[-*•]|\d+[.)])\s+(.+)/)).filter(Boolean)
+    .map((m) => changelogEntry(m[1].replace(/^\*\*(.+)\*\*$/, "$1").replace(/^["“](.+)["”]$/, "$1"))).filter(Boolean);
+  return (n ? notes.length === n : notes.length >= 1 && notes.length <= 3) ? notes : null;
+}
+
+export { repoReview, repoSuggest, folderSuggest, taskChat, clearTaskChat, mailState, setMail, sentMail, arrivedOn, produce, releaseNotes, parseNotes };

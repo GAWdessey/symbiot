@@ -48,7 +48,7 @@ function sameTask(a, b) {
   const x = taskWords(a), y = taskWords(b); if (!x || !y) return false;
   if (x === y) return true;
   const [s, l] = x.length < y.length ? [x, y] : [y, x];
-  return (s.split(" ").length >= 8 && l.startsWith(s + " ")) || nearTask(a, b);
+  return (s.split(" ").length >= 8 && l.startsWith(s + " ")) || nearTask(a, b) || sameAsk(a, b);
 }
 // Nearly the same task, two ways:
 // - nearly all the same words in the same order, 12+ words each ("…nothing
@@ -84,6 +84,23 @@ function nearTask(a, b) {
   for (; i < m; i++) if (x[i].name) nx = true;
   for (; j < n; j++) if (y[j].name) ny = true;
   return !(nx && ny);
+}
+// The same ask in other words: "Send Jono the two asks yourself: verify
+// `X-Wa-Signature-256`…" and "Ask Jono to verify `X-Wa-Signature-256`… Also ask
+// him…". Both name exactly the same things (Jono, X-Wa-Signature-256), and most
+// of the shorter one's own words (not "the", "his", "once"; "asks" is "ask") are
+// in the other. Checked against 263 real tasks (11,770 pairs): at 0.6 it found 7
+// rewordings and nothing else; at 0.45 it took "Whole page for Gmail too" for
+// "Map the whole page … (not for Gmail)".
+const ASK = 0.6, ASK_WORDS = 8;
+const STOP = new Set(("the and but for from with are was were been its this that these those then than once each his her him she they them their you your yourself can cant not does did have has had will would should could just also there here into onto out about before after when what which who whom how why all any some more most other only own same too very again").split(" "));
+function askWords(s) { return new Set(wordsOf(s).map((x) => x.w).filter((w) => w.length > 2 && !STOP.has(w)).map((w) => w.replace(/(ing|ed|es|s)$/, ""))); }
+function sameAsk(a, b) {
+  const x = askWords(a), y = askWords(b); if (Math.min(x.size, y.size) < ASK_WORDS) return false;
+  const nx = new Set(wordsOf(a).filter((w) => w.name).map((w) => w.w)), ny = new Set(wordsOf(b).filter((w) => w.name).map((w) => w.w));
+  if (!nx.size || nx.size !== ny.size || [...nx].some((w) => !ny.has(w))) return false;
+  let both = 0; for (const w of x) if (y.has(w)) both++;
+  return both / Math.min(x.size, y.size) >= ASK;
 }
 // One of each: near-duplicates collapse into the wording that says the most.
 function uniqueTasks(texts) {

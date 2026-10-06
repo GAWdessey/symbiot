@@ -19,7 +19,7 @@ import { join, basename } from "node:path";
 import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, chmodSync } from "node:fs";
 import { createHash, randomBytes } from "node:crypto";
 import { CONFIG_DIR, loadTasks } from "./core.mjs";
-import { runHandoff, runningHandoff } from "./agents.mjs";
+import { runHandoff, runningHandoff, waitingFor } from "./agents.mjs";
 import { addTask, pushTasks } from "./tasks.mjs";
 import { actNow } from "./mind.mjs";
 import { repoPathMap } from "./scan.mjs";
@@ -109,14 +109,16 @@ function outcome(e, { tasks = loadTasks(), running = runningHandoff } = {}) {
 }
 // Tell the agent that asked: the result as an answer in its ANSWERS.md, then
 // start it again to carry on (unless it's still running: it reads it next time).
-function report(e, o, { run = runHandoff, running = runningHandoff, now = Date.now() } = {}) {
+// Not past a step of the user's it waits on (a key for .env, "don't start another
+// run until it's in"): that run starts by itself once the step's done.
+function report(e, o, { run = runHandoff, running = runningHandoff, waiting = waitingFor, now = Date.now() } = {}) {
   const p = e.from.path, file = join(p, ".symbiot", "ANSWERS.md");
   try {
     mkdirSync(join(p, ".symbiot"), { recursive: true });
     const had = existsSync(file) ? readFileSync(file, "utf8") : "# Answers\nAnswers to your questions, and what other lanes did with what you handed over, newest last.\n";
     writeFileSync(file, `${had.replace(/\s*$/, "")}\n\n### Handed over to ${e.to.lane}: ${firstLine(e.text).slice(0, 120)}\n${o.text}\n_answered by symbiot (handover) ${new Date(now).toISOString().slice(0, 10)}_\n`);
   } catch { return false; }
-  if (!running(p)) run(p, { force: true });
+  if (!running(p)) run(p, { force: !waiting(p) });
   return true;
 }
 

@@ -11,15 +11,17 @@ import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { authorship, repoState, readmeInfo, houseRules, findAllRepos, driftRepo, buildTasksMd, taskType, EMBEDDED_UI, orcaHandoffCmd, migrateOrcaCmd, fillHandoff, ORCA_CLAUDE_CMD, CLAUDE_CMD, HANDOFF_PROMPT, shipChanges, shipWithBump, bumpOffer, learnNpm, releaseNeeded, withReleases, semverGt, updateCmd, parseQuestions, unreleased, publishesOnMerge } from "../index.mjs";
-import { grantRule, claudeConnectors, withConnectors } from "../agents.mjs";
+import { grantRule, claudeConnectors, withConnectors, linkedConnectors, connectorsLine } from "../agents.mjs";
 import { applyRemovals, removalOf, saidFinished } from "../tasks.mjs";
-import { sameTask, uniqueTasks } from "../core.mjs";
+import { releaseNotes, parseNotes } from "../writeups.mjs";
+import { VERSION, sameTask, uniqueTasks } from "../core.mjs";
 import { mailActivity } from "../mail.mjs";
 import { pngSize, pngDecode, splitPng, stitchPng, stitchListPng, captureCmds, clickCmds, portalAppId, monitorCmds, parseCosmicRandr, parseWlrRandr, parseKscreen, parseXrandr, parseLines, tidyMonitors, monitorAreas } from "../screens.mjs";
 import { siteUrl, browserArgs, isTrusted, isSend } from "../headless.mjs";
-import { deflateSync } from "node:zlib";
+import { deflateSync, gzipSync } from "node:zlib";
+import { changesSince, whatsNew, tarFile } from "../server.mjs";
 import { weeklyDue, lastSlot, autostartFile, autostartContent, notifyCmd } from "../desktop.mjs";
-import { itemKey, itemsOf, newItems, remember, githubItems, draftsUrl } from "../watch.mjs";
+import { itemKey, itemsOf, fromOf, newItems, remember, githubItems, draftsUrl } from "../watch.mjs";
 import { lanAddresses, computerUrl } from "../phone.mjs";
 
 const INDEX = join(dirname(fileURLToPath(import.meta.url)), "..", "index.mjs");
@@ -261,6 +263,13 @@ try {
   ok("a Claude run allows the ready ones' tools, after the preset's own rules", wc === CLAUDE_CMD + ' "mcp__claude_ai_Google_Drive" "mcp__my-mail" "mcp__local"', wc);
   ok("a Claude command with no --allowedTools gets one; another agent's runs as-is", withConnectors('claude -p "{prompt}"', "", cj) === 'claude -p "{prompt}" --allowedTools "mcp__claude_ai_Google_Drive" "mcp__my-mail"' && withConnectors('codex exec "{prompt}"', "", cj) === 'codex exec "{prompt}"', withConnectors('claude -p "{prompt}"', "", cj));
   ok("no ~/.claude.json: nothing added", withConnectors(CLAUDE_CMD, "", join(ROOT, "none.json")) === CLAUDE_CMD, "");
+  // linked in Symbiot (Links): Gmail with no Claude connector, Drive with one, Notion's not authorized, Trello has none to have
+  const linkedHere = { gmail: { at: 1 }, gdrive: { at: 1 }, notion: { at: 1 }, trello: { at: 1 } };
+  const lc = linkedConnectors(conns, linkedHere);
+  ok("linkedConnectors: which sites linked in Symbiot Claude has a connector for (Drive), not ready (Notion), or none (Gmail)", JSON.stringify(lc) === JSON.stringify([{ id: "gmail", name: "Gmail", connector: "", ready: false }, { id: "gdrive", name: "Google Drive", connector: "claude.ai Google Drive", ready: true }, { id: "notion", name: "Notion", connector: "claude.ai Notion", ready: false }]), lc);
+  const cl = connectorsLine(CLAUDE_CMD, cj, linkedHere);
+  ok("a run's brief says which connectors it has, that Gmail (linked only in Symbiot) isn't one, and where to connect it", /this run can use Google Drive \(`mcp__claude_ai_Google_Drive__…` tools\)/.test(cl) && /Gmail and Notion are linked in Symbiot but not ready as a Claude connector, so this run has no tools for them: don't say you checked them/.test(cl) && /claude\.ai → Settings → Connectors/.test(cl) && /watch new/.test(cl) && connectorsLine('codex exec "{prompt}"', cj, linkedHere) === "", cl);
+  ok("...in TASKS.md's context", buildTasksMd("r", { connectors: cl }, [{ text: "Check my mail" }]).includes("- **Connectors:** " + cl), "");
   rmSync(got, { force: true });
   execSync(fillHandoff(wc, fake), { shell: "/bin/bash", stdio: "ignore", env: { ...process.env, PATH: fake + ":" + process.env.PATH } });
   ok("each connector rule reaches claude as ONE argument", readFileSync(got, "utf8").split("\n")[0] === "10", readFileSync(got, "utf8"));
@@ -333,6 +342,16 @@ try {
   ok("...a send in the meantime starts nothing, and the Agents tab shows what it waits on", er2.held && er2.held.blocked && er2.held.waiting && /your step comes first: put it in `\.env`/.test(er2.held.note || "") && er2.listWait && er2.listWait.waiting && er2.listWait.waiting.files[0] === ".env" && er2.none === 0, [er2.held, er2.listWait && er2.listWait.waiting]);
   ok("...once .env changes, the agent starts by itself", er2.started === 1 && er2.cleared, [er2.started, er2.cleared]);
   ok("a step with no file named waits for Start it now; the 🤖 Agent part isn't the user's step", er2.answer2 && JSON.stringify(er2.answer2.yours) === '["allow gh in Settings."]' && !er2.answer2.waitFiles && er2.held2 && er2.held2.blocked && /Start it now/.test(er2.held2.note || "") && er2.forced && er2.cleared2, [er2.answer2, er2.held2, er2.forced]);
+  // the user answers in their own words: "don't start another run until it's in" (the key the 👤 option puts in .env)
+  const er3 = erRun(`writeFileSync(s + "QUESTIONS.md", "## Questions\\n### Where does the WABA id go?\\n- 👤 You: put WA_WABA_ID in \\x60.env\\x60 (recommended)\\n- 🤖 Agent: read it from the Meta export\\n### Ship it now?\\n- Yes\\n");
+    out.answer = a.answerQuestions(dir, [{ q: "Where does the WABA id go?", a: "don't start another run until it's in" }]);
+    out.wait = a.waitingFor(dir); out.held = a.runHandoff(dir); out.rerun = (a.waitingFor(dir) || {}).rerun; out.none = a.startWaiting().length;
+    writeFileSync(dir + "/.env", "WA_WABA_ID=10\\n"); const st = a.startWaiting(); out.started = st.length; await run(st[0]);
+    writeFileSync(s + "QUESTIONS.md", "## Questions\\n### Ship it now?\\n- Yes\\n");
+    out.notHold = a.answerQuestions(dir, [{ q: "Ship it now?", a: "No, that can wait" }]); out.notHoldWait = a.waitingFor(dir);`);
+  ok("\"don't start another run until it's in\" is the user's step: it waits on the `.env` the 👤 option named", er3.answer && JSON.stringify(er3.answer.yours) === '["put WA_WABA_ID in `.env`"]' && JSON.stringify(er3.answer.waitFiles) === '[".env"]' && er3.wait && er3.wait.files[0] === ".env", [er3.answer, er3.wait]);
+  ok("...a send meanwhile starts nothing but is remembered, and the run starts by itself once .env changes", er3.held && er3.held.blocked && er3.held.waiting && er3.rerun === true && er3.none === 0 && er3.started === 1, [er3.held, er3.rerun, er3.none, er3.started]);
+  ok("...while \"that can wait\" is just an answer, not a hold", er3.notHold && er3.notHold.ok && !er3.notHold.yours && er3.notHoldWait === null, [er3.notHold, er3.notHoldWait]);
   ok("a step in Settings waits for the agent command too, says so, and a changed command starts the run", er2.answer3 && /once the agent command \(Settings → Handoff\) changes/.test(er2.answer3.note || "") && er2.wait3 && er2.wait3.cmd && er2.none3 === 0 && er2.wait3b === null && er2.started3 === 1, [er2.answer3, er2.wait3, er2.none3, er2.wait3b, er2.started3]);
 
   console.log("TASKS — an approved Drop or Merge task removes the tasks it names, so they don't come back");
@@ -530,6 +549,12 @@ try {
   ok("an agent's tick on the old wording still sends the reworded task to review", o.eAfter && o.eAfter.review === true, o.eAfter);
   ok("sameTask: case, spacing and punctuation aside; a clause more only after 8+ words", sameTask("Fix it: `now`", "fix it (now)") && !sameTask("Fix the bug", "Fix the bug in the login form") && sameTask("one two three four five six seven eight", "One two three four five six seven eight, nine.") && !sameTask("one two three four five six seven eight", "one two three four five six seven eighty") && !sameTask("", ""), "");
   ok("uniqueTasks keeps one of each, in the words that say the most", JSON.stringify(uniqueTasks(["a b c d e f g h", "Other", "A b c d e f g h, i j.", "other!"])) === JSON.stringify(["A b c d e f g h, i j.", "Other"]), uniqueTasks(["a b c d e f g h", "Other", "A b c d e f g h, i j.", "other!"]));
+  // the two Jono asks, as two runs worded them: the same names, mostly the same words
+  const jono1 = "Send Jono the two asks yourself: verify `X-Wa-Signature-256` on his endpoint, and have his agent mark each applicant once the e-sign service reports the consent as signed. I can't message him from here.";
+  const jono2 = "Ask Jono to verify `X-Wa-Signature-256` on his endpoint before go-live. Also ask him to have his agent mark the applicant once the e-sign service reports the consent as signed, so unsigned applications can be chased.";
+  const gmailWhole = ["Whole page for Gmail too: scroll the list of mail inside the page and put the pieces together, so a whole inbox is one screen", "Map the whole page at once: one tall screenshot with every button, link and field on it, for a page that scrolls as a whole (not for Gmail, whose list scrolls inside the page)"];
+  ok("sameTask: the same ask in other words is one task (the two Jono asks), and TASKS.md lists it once", sameTask(jono1, jono2) && uniqueTasks([jono1, jono2]).length === 1, uniqueTasks([jono1, jono2]));
+  ok("...but not two tasks that share a topic, or name different things", !sameTask(...gmailWhole) && !sameTask(jono2, jono2.replace(/Jono/g, "Thandi")) && !sameTask("Ask Jono to verify the signature header on his endpoint before go-live", "Ask Jono to sign the contract on his side before go-live"), "");
 
   console.log("RELEASE — warn when the default branch is past its last v* tag");
   const rel = build("release", `git init -q -b main && git config user.email t@x.co && git config user.name T
@@ -575,6 +600,36 @@ try {
   ok("no v* tag: offered once npm has the committed version (a repo that publishes on merge)", nb0 === null && nl1 === true && nb1 && nb1.version === "1.2.3" && nb1.minor === "1.3.0", [nb0, nl1, nb1]);
   ok("no v* tag: not offered for a version npm doesn't have", nl2 === false && nb2 === null, [nl2, nb2]);
   ok("a ship that fails puts the version back", bfl.error && /Detached HEAD/.test(bfl.error) && /"2\.4\.0"/.test(readFileSync(join(bmp, "package.json"), "utf8")) && /"2\.4\.0"/.test(readFileSync(join(bmp, "package-lock.json"), "utf8")), [bfl, readFileSync(join(bmp, "package.json"), "utf8")]);
+  ok("a repo with no CHANGELOG.md doesn't get one", !existsSync(join(bmp, "CHANGELOG.md")), "");
+
+  console.log("CHANGELOG — Approve's bump writes the release into a repo's CHANGELOG.md");
+  const clg = build("release-log", `git init -q -b main && git config user.email t@x.co && git config user.name T
+    printf '{"name":"x","version":"1.0.0"}\\n' > package.json && printf '# Changelog\\n\\nIntro.\\n\\n## 1.0.0 — 2026-01-01\\n\\n- First release\\n' > CHANGELOG.md
+    git add . && git commit -qm init && git tag v1.0.0`);
+  const cEnv = { cwd: clg, env: gitEnv, encoding: "utf8" };
+  writeFileSync(join(clg, "chat.js"), "x\n");
+  const reply = "Draft a reply on WhatsApp too, typed into the chat's box and left unsent.";
+  const csh = shipWithBump(clg, [reply + " The agent never presses Send, and Enter is refused in a chat.", reply], { push: false, bump: "patch" });
+  const cLog = execSync("git show HEAD:CHANGELOG.md", cEnv);
+  ok("bump: the release goes above the last one, in the same commit, each task once and up to its first sentence", csh.ok && csh.bumped === "1.0.1" && new RegExp("^# Changelog\\n\\nIntro\\.\\n\\n## 1\\.0\\.1 — \\d{4}-\\d{2}-\\d{2}\\n\\n- Draft a reply on WhatsApp too, typed into the chat's box and left unsent\\.\\n\\n## 1\\.0\\.0 — 2026-01-01\\n").test(cLog), [csh, cLog]);
+  execSync("git checkout -q main && git merge -q --ff-only " + csh.branch + " && git tag v1.0.1", cEnv); writeFileSync(join(clg, "fix.js"), "y\n");
+  const cnt = shipWithBump(clg, [], { push: false, bump: "patch" });
+  ok("changes approved without a task: named by the files they touch", cnt.ok && /## 1\.0\.2 — [\d-]+\n\n- Changes approved without a task, in fix\.js\.\n\n## 1\.0\.1/.test(execSync("git show HEAD:CHANGELOG.md", cEnv)), execSync("git show HEAD:CHANGELOG.md", cEnv).slice(0, 200));
+  execSync("git checkout -q main && git merge -q --ff-only " + cnt.branch + " && git tag v1.0.2 && git checkout -q --detach", cEnv); writeFileSync(join(clg, "more.js"), "z\n");
+  const before = readFileSync(join(clg, "CHANGELOG.md"), "utf8"), cfl = shipWithBump(clg, ["Fails"], { push: false, bump: "patch" });
+  ok("a ship that fails puts CHANGELOG.md back too", cfl.error && readFileSync(join(clg, "CHANGELOG.md"), "utf8") === before, cfl);
+  execSync("git checkout -q main", cEnv);
+  const cai = shipWithBump(clg, ["i want the reply drafted on whatsapp too"], { push: false, bump: "patch", notes: ["Added Draft a reply for WhatsApp chats."] });
+  ok("bump with notes (your AI's words): the changelog takes them; the commit keeps the task's own", cai.ok && /## 1\.0\.3 — [\d-]+\n\n- Added Draft a reply for WhatsApp chats\.\n\n## 1\.0\.2/.test(execSync("git show HEAD:CHANGELOG.md", cEnv)) && /- i want the reply drafted on whatsapp too/.test(execSync("git log -1 --format=%B", cEnv)), cai);
+
+  console.log("RELEASE NOTES — your AI words Approve's changelog entries (writeups.mjs)");
+  let asked = "";
+  const answers = (reply) => async (system, prompt) => { asked = prompt; return reply; };
+  const rIn = { texts: ["fix the whatsapp thing where my own msgs look incoming", "change log for updates"], files: ["watch.mjs"], diff: "+ unread" };
+  const rNotes = await releaseNotes(rIn, answers("Here you go:\n- Fixed WhatsApp counting your own messages as waiting on you.\n- **Added a changelog, shown as What's new when you update.**"));
+  ok("one note per task, in order, from the tasks and the diff (bold and preamble dropped)", JSON.stringify(rNotes) === JSON.stringify(["Fixed WhatsApp counting your own messages as waiting on you.", "Added a changelog, shown as What's new when you update."]) && /1\. fix the whatsapp[\s\S]*2\. change log[\s\S]*\+ unread[\s\S]*exactly 2 notes/.test(asked), [rNotes, asked]);
+  ok("the tasks' own words stay when the answer isn't one note per task, or isn't notes at all", await releaseNotes(rIn, answers("- Fixed WhatsApp.")) === null && await releaseNotes(rIn, answers("Couldn't reach the model: 529")) === null && await releaseNotes(rIn, answers(null)) === null && await releaseNotes(rIn, async () => { throw new Error("down"); }) === null, "");
+  ok("no task: 1 to 3 notes from the diff alone; no input (no bump, no CHANGELOG.md), no call", JSON.stringify(parseNotes("- Fixed the map.", 0)) === JSON.stringify(["Fixed the map."]) && parseNotes("- a\n- b\n- c\n- d", 0) === null && await releaseNotes(null, answers("- x")) === null, "");
 
   console.log("RELEASE — a repo that publishes on merge is measured from npm, not a stale v* tag");
   // v1.0.0 tagged; 1.0.1 set and published with no tag (a ruleset blocked it); two commits since
@@ -861,6 +916,10 @@ try {
     // an inbox: rows with more text than a region's 80-character label
     let rows = ["Ann Lee, Lunch on Friday?, 9:05 AM, Are you free for lunch on Friday at the usual place near the office", "GitHub, [symbiot] Run failed: CI - main, 8:24 AM, The workflow run failed on the main branch at commit abc123"];
     const inbox = () => '<title>Inbox</title><div role="grid">' + rows.map((t, i) => '<div role="row" id="r' + i + '" style="height:30px">' + t + '</div>').join("") + '</div>';
+    // a chat list as WhatsApp marks it: an unread badge, and ticks on what you sent, are icons with labels, not text
+    const chats = '<title>Chats</title><div role="grid"><div role="row" style="height:30px">Tee Gee 08:15 I was thinking about you and your value</div>' +
+      '<div role="row" style="height:30px">Bob 08:12 <span data-icon="msg-dblcheck" aria-label=" Read "></span>Done, see you</div>' +
+      '<div role="row" style="height:30px">Ann 08:20 Are you coming? <span aria-label="2 unread messages">2</span></div></div>';
     // taller than the window: the page itself scrolls (/long), or a list inside it, as Gmail's does (/pane)
     const long = '<title>Long</title><body style="margin:0;height:3000px"><button style="position:absolute;left:10px;top:10px">Top button</button><button style="position:absolute;left:10px;top:1000px">Middle button</button><button style="position:absolute;left:10px;top:2950px">Last button</button></body>';
     const pane = '<title>Pane</title><body style="margin:0;overflow:hidden"><div style="height:60px">Header</div><div id="list" style="position:absolute;top:60px;bottom:0;left:0;right:0;overflow:auto">' + Array.from({ length: 60 }, (_, i) => '<div role="row" style="height:40px">Row ' + i + '</div>').join("") + '</div></body>';
@@ -870,7 +929,7 @@ try {
     const virt = '<title>Virt</title><body style="margin:0;overflow:hidden"><div id="vl" style="position:absolute;top:0;bottom:0;left:0;right:0;overflow:auto"><div id="sp" style="height:4000px;position:relative"></div></div><script>' +
       'const sp=document.getElementById("sp"),vl=document.getElementById("vl"),els=[];for(let i=0;i<25;i++){const d=document.createElement("div");d.setAttribute("role","row");d.style.cssText="position:absolute;left:0;right:0;height:40px";sp.appendChild(d);els.push(d);}' +
       'function draw(){const f=Math.floor(vl.scrollTop/40);els.forEach((d,i)=>{d.style.top=((f+i)*40)+"px";d.textContent="Item "+(f+i);});}vl.addEventListener("scroll",draw);draw();</script></body>';
-    const srv = createServer((q, r) => { r.writeHead(200, { "content-type": "text/html" }); r.end(q.url === "/virt" ? virt : q.url === "/tall" ? tall : q.url === "/long" ? long : q.url === "/pane" ? pane : q.url === "/two" ? "<title>Page two</title><button>Back</button>" : q.url === "/form" ? form : q.url === "/rows" ? inbox() : q.url.startsWith("/search?") ? "<title>Results for " + new URL(q.url, "http://x").searchParams.get("q") + "</title><button>Back</button>" : page); }).listen(0, "127.0.0.1");
+    const srv = createServer((q, r) => { r.writeHead(200, { "content-type": "text/html" }); r.end(q.url === "/chats" ? chats : q.url === "/virt" ? virt : q.url === "/tall" ? tall : q.url === "/long" ? long : q.url === "/pane" ? pane : q.url === "/two" ? "<title>Page two</title><button>Back</button>" : q.url === "/form" ? form : q.url === "/rows" ? inbox() : q.url.startsWith("/search?") ? "<title>Results for " + new URL(q.url, "http://x").searchParams.get("q") + "</title><button>Back</button>" : page); }).listen(0, "127.0.0.1");
     await new Promise((r) => srv.on("listening", r));
     const out = {};
     out.map = await h.mapPage("127.0.0.1:" + srv.address().port, "");
@@ -879,6 +938,7 @@ try {
     const nScreens = s.loadScreens().length;
     out.read = await h.readPage("127.0.0.1:" + srv.address().port + "/rows");
     out.readNoScreen = s.loadScreens().length === nScreens; out.readClosed = !h.browserOpen();
+    out.chats = await h.readPage("127.0.0.1:" + srv.address().port + "/chats");
     const wm = await import(${JSON.stringify(join(dirname(INDEX), "watch.mjs"))});
     const told = [], notify = (t, b) => told.push([t, b]);
     const w = wm.addWatch({ site: "127.0.0.1:" + srv.address().port + "/rows" });
@@ -985,6 +1045,8 @@ try {
     ok("pressRegion on a whole-page screen: finds the button far down, and the window is laptop-sized again", ho.wpress && ho.wpress.found === true && ho.wpress.pressed === "Last button" && ho.wpress.h === 800, ho.wpress && (ho.wpress.error || [ho.wpress.found, ho.wpress.h]));
     const rd = ho.read || {}, rrows = (rd.items || []).filter((r) => r.kind === "row");
     ok("readPage: reads a page's rows, each with all its text, without saving a screen, and closes after", rrows.length === 2 && rrows[0].label.length === 80 && /usual place near the office$/.test(rrows[0].text || "") && ho.readNoScreen && ho.readClosed && rd.login === false, rd.error || [rrows, ho.readNoScreen, ho.readClosed]);
+    const crows = ((ho.chats || {}).items || []).filter((r) => r.kind === "row");
+    ok("readPage: a chat row's unread badge and ticks, which only its icons show, come with it", crows.length === 3 && !crows[0].unread && !crows[0].mine && crows[1].mine === true && !crows[1].unread && crows[2].unread === 2 && !crows[2].mine, (ho.chats || {}).error || crows);
     ok("readPage: leaves the browser alone while it's open for a type-then-press", ho.readBusy && ho.readBusy.busy === true && !ho.readBusy.items, ho.readBusy);
     ok("Watch, for real: the first read learns the inbox, the next finds only the new row (old ones' times changed)", ho.wFirst && ho.wFirst.learned === 2 && ho.wNext && (ho.wNext.new || []).length === 1 && /^Sam Ng, Contract signed/.test(ho.wNext.new[0].text) && (ho.wTold || []).length === 1, [ho.wFirst, ho.wNext && (ho.wNext.error || ho.wNext.new)]);
     ok("clickRegion: a mapped page is never clicked on your real screen", /use Press instead/.test((ho.click || {}).error || ""), ho.click);
@@ -1075,10 +1137,40 @@ try {
   ok("waitingOn: what's new since yesterday per page, as \"2 GitHub notifications\"", (go.waiting || []).length === 1 && go.waiting[0].label === "2 GitHub notifications" && go.waiting[0].items.length === 2, go.waiting);
   ok("newsAfter: only what's newer, with its brief (what the phone asks for)", go.after && go.after.news.length === 1 && go.after.briefs.length === 1 && go.none.news.length === 0, go.after);
 
+  console.log("WATCH WHATSAPP — a chat preview doesn't say who wrote it: only unread messages are from them (watch.mjs fromOf)");
+  ok("fromOf: unread is theirs; ticks, \"You:\" or \"(You)\" are yours; a preview with none of these is unknown, never theirs", fromOf({ text: "Ann 08:10 See you then", unread: 2 }) === "them" && fromOf({ text: "Ann 08:10 See you then", mine: true }) === "you" && fromOf({ text: "Team 08:00 You: on my way" }) === "you" && fromOf({ text: "Garth (You) 07:55 note to self" }) === "you" && fromOf({ text: "Tee Gee 08:15 I was thinking about you and your value" }) === "unknown", "");
+  const cits = itemsOf({ items: [{ kind: "row", label: "Ann 08:10 See you then 2", unread: 2 }, { kind: "row", label: "Bob 08:00 Done", mine: true }] });
+  ok("itemsOf: a row keeps its unread count and its ticks (what only its icons say)", cits[0].unread === 2 && !cits[0].mine && cits[1].mine === true && !cits[1].unread, cits);
+  const whahome = join(ROOT, "whahome"); mkdirSync(whahome, { recursive: true });
+  const wax = spawnSync(process.execPath, ["--input-type=module", "-e", `
+    import * as w from ${JSON.stringify(join(dirname(INDEX), "watch.mjs"))};
+    const row = (label, x = {}) => ({ kind: "row", label, ...x });
+    let page = { url: "https://web.whatsapp.com/", items: [row("Old chat 07:00 hello")] };
+    const told = [], briefed = [], out = {};
+    const opts = { read: async () => page, notify: (t, b) => told.push([t, b]), brief: async (news, name, o) => { briefed.push({ n: news.length, chat: !!(o && o.chat), lines: news.map((x) => x.from) }); return "Ann needs you."; } };
+    out.add = w.addWatch({ site: "https://web.whatsapp.com/" }); w.setBrief(true);
+    out.first = await w.checkWatch(out.add.id, opts);
+    // what you sent Tee Gee from your phone moves that chat up, with no unread badge and no "You:"
+    page = { ...page, items: [row("Tee Gee 08:15 I was thinking about you and your value"), row("Bob 08:12 Done, see you", { mine: true }), row("Team 08:11 You: on my way"), ...page.items] };
+    out.mine = await w.checkWatch(out.add.id, opts); out.toldMine = told.length; out.briefedMine = briefed.length;
+    page = { ...page, items: [row("Ann 08:20 Are you coming? 2", { unread: 2 }), ...page.items] };
+    out.theirs = await w.checkWatch(out.add.id, opts); out.told = told.slice(); out.briefed = briefed.slice();
+    out.board = w.watchBoard(24).cards[0]; out.waiting = w.waitingOn(24).map((x) => x.label);
+    out.chatBrief = w.chatBrief(out.mine.new[0], { name: "WhatsApp", url: "https://web.whatsapp.com/" });
+    console.log(JSON.stringify(out));`], { encoding: "utf8", env: { ...process.env, HOME: whahome, USERPROFILE: whahome } });
+  let wa = {}; try { wa = JSON.parse(wax.stdout); } catch {}
+  const waFrom = (r) => ((r || {}).new || []).map((n) => n.from).join();
+  ok("checkWatch on WhatsApp: chats that moved up for what you sent are kept, marked yours or unknown, with no notification and no brief", wa.mine && waFrom(wa.mine) === "unknown,you,you" && wa.toldMine === 0 && wa.briefedMine === 0, [wa.mine && wa.mine.new, wa.toldMine, wa.briefedMine, wax.stderr && wax.stderr.slice(-600)]);
+  ok("...a chat with unread messages from them is theirs, notified and briefed (the brief knows it's a chat)", wa.theirs && waFrom(wa.theirs) === "them" && wa.theirs.new[0].unread === 2 && (wa.told || []).length === 1 && /^1 new · web\.whatsapp\.com/.test(wa.told[0][0]) && (wa.briefed || []).length === 1 && wa.briefed[0].chat === true, [wa.theirs && wa.theirs.new, wa.told, wa.briefed]);
+  ok("...so the Dashboard and Standup say 1 WhatsApp message needs you, not 4", wa.board && wa.board.count === 1 && wa.board.label === "1 WhatsApp message" && wa.board.items.length === 4 && JSON.stringify(wa.waiting) === '["1 WhatsApp message"]', [wa.board && wa.board.label, wa.waiting]);
+  ok("...and a drafted reply's brief doesn't call Tee Gee's preview their message", /Nothing in it was unread, so that last message may be the user's own/.test(wa.chatBrief || "") && !/who it's from/.test(wa.chatBrief || ""), (wa.chatBrief || "").slice(0, 600));
+
   console.log("DASHBOARD — a card per page you watch: your inbox, GitHub, WhatsApp (watch.mjs watchBoard)");
   const bhome = join(ROOT, "bhome"); mkdirSync(join(bhome, ".config", "symbiot"), { recursive: true });
   const H1 = 3600000, bnow = Date.now(), bw = (id, name, url) => ({ id, name, url, every: 15, added: 1, last: 1, checked: bnow - 60000, seen: [] });
-  const bnews = [{ id: "e1", watch: "m", name: "Inbox", ts: bnow - H1, text: "Sam, Contract" }, { id: "c1", watch: "c", name: "WhatsApp", ts: bnow - 2 * H1, text: "Mom: call me" }, { id: "c2", watch: "c", name: "WhatsApp", ts: bnow - 3 * H1, text: "Team: standup moved" },
+  // on WhatsApp, two chats with unread messages from them, and one whose preview is what you sent (nothing unread)
+  const bnews = [{ id: "e1", watch: "m", name: "Inbox", ts: bnow - H1, text: "Sam, Contract" }, { id: "c1", watch: "c", name: "WhatsApp", ts: bnow - 2 * H1, text: "Mom: call me", from: "them", unread: 1 }, { id: "c2", watch: "c", name: "WhatsApp", ts: bnow - 3 * H1, text: "Team: standup moved", from: "them", unread: 2 },
+    { id: "c3", watch: "c", name: "WhatsApp", ts: bnow - 2.5 * H1, text: "Tee Gee 08:15 I was thinking about you and your value", from: "unknown" },
     { id: "e0", watch: "m", name: "Inbox", ts: bnow - 50 * H1, text: "Old newsletter" }, ...Array.from({ length: 60 }, (_, i) => ({ id: "g" + i, watch: "g", name: "GitHub notifications", ts: bnow - 10 * 60000 - i, text: "pat/app · CI failed " + i }))];
   writeFileSync(join(bhome, ".config", "symbiot", "watch.json"), JSON.stringify({ watches: [bw("m", "Inbox", "https://mail.google.com/mail/u/0/#inbox"), bw("g", "GitHub notifications", "https://github.com/notifications"), bw("c", "WhatsApp", "https://web.whatsapp.com/"), bw("j", "Jira", "https://acme.atlassian.net/jira")],
     news: [...bnews].sort((a, b) => b.ts - a.ts), briefs: [{ watch: "c", name: "WhatsApp", ts: bnow - 2 * H1, count: 2, text: "Your mom wants a call." }] }));
@@ -1091,7 +1183,7 @@ try {
     out.cliLine = execFileSync(process.execPath, [${JSON.stringify(INDEX)}, "watch", "board", "--line"], { encoding: "utf8" });
     out.linePage = w.boardLine({ cards: [{ count: 2, source: "page", name: "Jira", label: "2 new" }, { count: 0, source: "mail", label: "0 emails" }] }); out.lineNone = w.boardLine({ cards: [{ count: 0, source: "mail", label: "0 emails" }] });
     // talk it over: the card's items and brief go to the AI, the talk stays on the card
-    const asked = [], ask = async (system, prompt) => { asked.push(prompt); return "Your mom wants a call; the standup move can wait."; };
+    const asked = [], ask = async (system, prompt) => { asked.push(prompt); out.talkSystem = system; return "Your mom wants a call; the standup move can wait."; };
     out.talk = await w.boardChat("c", "What needs me?", { ask }); out.talk2 = await w.boardChat("c", "Tell Mom Sunday works", { ask });
     out.asked = asked; out.talkCard = w.watchBoard(24).cards.find((c) => c.id === "c").chat;
     out.talkNone = await w.boardChat("nope", "x", { ask }); out.talkEmpty = await w.boardChat("c", " ", { ask });
@@ -1118,10 +1210,12 @@ try {
   ok("symbiot watch board: the Dashboard's cards as JSON, --hours as on the Dashboard", bo.cliBoard && bo.cliBoard.code === 0 && cbo.total === 63 && cbo.hours === 24 && (cbo.cards || []).map((c) => c.id + ":" + c.count).join(" ") === "m:1 g:60 c:2 j:0" && cbo.cards[2].items[0].chat === true && ((bo.cliWeek || {}).j || {}).hours === 168, bo.cliBoard);
   const acard = (id) => ((bo.after || {}).cards || []).find((c) => c.id === id) || {};
   ok("Seen: that card goes back to 0 (its brief too); the other cards keep theirs", bo.seen && bo.seen.cleared > 0 && acard("c").count === 0 && acard("c").items.length === 0 && !acard("c").brief && acard("m").count === 1 && acard("g").count === 60 && bo.after.total === 61, (bo.after || {}).cards && bo.after.cards.map((c) => c.id + ":" + c.count));
-  ok("Seen: Standup doesn't count it as waiting any more, but what it found is still under Watching", !(bo.afterWaiting || []).some((l) => /WhatsApp/.test(l)) && bo.stillNew === 2 && /No watch nope/.test((bo.seenNone || {}).error || ""), [bo.afterWaiting, bo.stillNew]);
+  ok("Seen: Standup doesn't count it as waiting any more, but what it found is still under Watching", !(bo.afterWaiting || []).some((l) => /WhatsApp/.test(l)) && bo.stillNew === 3 && /No watch nope/.test((bo.seenNone || {}).error || ""), [bo.afterWaiting, bo.stillNew]);
+  ok("a WhatsApp card counts only chats with unread messages from them: Tee Gee's, with nothing unread, is listed, marked, but not counted", bcard("c").count === 2 && bcard("c").items.length === 3 && bcard("c").items.some((n) => /Tee Gee/.test(n.text) && n.from === "unknown"), bcard("c").items);
   ok("symbiot watch board --line: one line for a status bar, the cards with something new", bo.cliLine === "1 email · 60 GitHub notifications · 2 WhatsApp messages\n" && bo.linePage === "2 new on Jira" && bo.lineNone === "", [bo.cliLine, bo.linePage, bo.lineNone]);
   const tp = (bo.asked || [])[0] || "", tp2 = (bo.asked || [])[1] || "";
   ok("talk it over: the AI is sent the card's items and brief, and the talk so far", /Mom: call me/.test(tp) && /Team: standup moved/.test(tp) && /Your mom wants a call\./.test(tp) && !/Sam, Contract/.test(tp) && /They say \(on WhatsApp card\): What needs me\?/.test(tp) && /This chat so far:\nUser: What needs me\?/.test(tp2), [tp, tp2]);
+  ok("...on a chat card, it's told who each last message is from, and that Tee Gee's needs no reply", /Mom: call me \[1 unread from them\]/.test(tp) && /Tee Gee .*your value \[nothing unread: the user's own message, or one they've read\]/.test(tp) && /never take its message as the contact's/.test(bo.talkSystem || ""), [tp, bo.talkSystem]);
   ok("talk it over: kept on the card, both turns; a missing card or an empty question is refused; clear forgets it", (bo.talkCard || []).length === 4 && bo.talkCard[3].text === "Your mom wants a call; the standup move can wait." && bo.talk2.chat.length === 4 && /No watch nope/.test((bo.talkNone || {}).error || "") && (bo.talkEmpty || {}).error === "empty" && bo.talkCleared && bo.talkCleared.ok && bo.talkAfter === null, [bo.talkCard, bo.talkNone, bo.talkEmpty, bo.talkAfter]);
   ok("symbiot watch chat <id>: the card's talk so far, from a terminal (an id it knows, or an error)", bo.cliChat && bo.cliChat.code === 0 && ((bo.cliChat.j || {}).chat || []).length === 4 && bo.cliChat.j.chat[2].text === "Tell Mom Sunday works" && bo.cliChatNoId && bo.cliChatNoId.code === 1 && /symbiot watch board lists them/.test((bo.cliChatNoId.j || {}).error || "") && /No watch nope/.test(((bo.cliChatNone || {}).j || {}).error || ""), [bo.cliChat, bo.cliChatNoId, bo.cliChatNone]);
   ok("...a question with no model connected says how to connect one; --clear starts the talk over", bo.cliChatAsk && bo.cliChatAsk.code === 1 && /Connect a model first/.test((bo.cliChatAsk.j || {}).error || "") && bo.cliChatClear && bo.cliChatClear.code === 0 && bo.cliChatClear.j.ok && bo.cliChatAfter === null, [bo.cliChatAsk, bo.cliChatClear, bo.cliChatAfter]);
@@ -1346,6 +1440,20 @@ try {
   ok("update installs the exact newer version, skipping a stale cache", up.target === "0.34.0" && up.cmd === "npm install -g symbiot@0.34.0 --prefer-online", up);
   ok("never 'updates' to an older npm version (local build ahead)", updateCmd("0.32.0", "0.33.0", "linux").target === "latest", updateCmd("0.32.0", "0.33.0", "linux"));
   ok("windows uses npm i -g", updateCmd("0.34.0", "0.33.0", "win32").cmd === "npm i -g symbiot@0.34.0 --prefer-online", updateCmd("0.34.0", "0.33.0", "win32"));
+
+  console.log("WHAT'S NEW — the changelog's releases between two versions (server.mjs)");
+  const shipped = readFileSync(join(dirname(INDEX), "CHANGELOG.md"), "utf8"), shippedTop = changesSince(shipped, "", "")[0] || {};
+  ok("CHANGELOG.md ships, and its newest release is package.json's version (Approve's bump writes it)", shippedTop.version === VERSION && shippedTop.items.length > 0 && /"CHANGELOG\.md"/.test(readFileSync(join(dirname(INDEX), "package.json"), "utf8")), [shippedTop.version, VERSION]);
+  const clmd = "# Changelog\n\nIntro.\n\n## 1.2.0 — 2026-10-06\n\n- Watch WhatsApp\n- Draft replies\n\n## 1.1.0 — 2026-10-01\n\n- The Dashboard\n\n## [1.0.0] - 2026-09-30\n\n- First\n";
+  const cs1 = changesSince(clmd, "1.0.0", "1.2.0");
+  ok("changesSince: newer than the one you're on, up to the new one, newest first, with each release's items", cs1.map((c) => c.version).join() === "1.2.0,1.1.0" && cs1[0].date === "2026-10-06" && cs1[0].items.join("|") === "Watch WhatsApp|Draft replies" && changesSince(clmd, "1.1.0", "1.1.0").length === 0 && changesSince(clmd, "", "1.1.0").map((c) => c.version).join() === "1.1.0,1.0.0", cs1);
+  const wmd = `## ${VERSION} — 2026-10-06\n\n- This one\n\n## 0.0.2 — 2026-01-02\n\n- Between\n\n## 0.0.1 — 2026-01-01\n\n- Old\n`;
+  ok("whatsNew: after an update, the releases since the version you last saw; none once you've seen this one", whatsNew({ seenVersion: "0.0.1" }, wmd).changes.map((c) => c.version).join() === VERSION + ",0.0.2" && whatsNew({ seenVersion: VERSION }, wmd).changes.length === 0, whatsNew({ seenVersion: "0.0.1" }, wmd));
+  ok("whatsNew: the first time (nothing seen yet), just this version's own release", JSON.stringify(whatsNew({}, wmd).changes.map((c) => c.version)) === JSON.stringify([VERSION]), whatsNew({}, wmd));
+  // a package tarball as npm serves it: gzip over tar's 512-byte headers and blocks
+  const tarOf = (files) => Buffer.concat([...files.flatMap(([name, text]) => { const body = Buffer.from(text), h = Buffer.alloc(512); h.write(name, 0); h.write(body.length.toString(8).padStart(11, "0") + "\0", 124); h.write("0", 156); h.write("ustar\0", 257); return [h, body, Buffer.alloc((512 - (body.length % 512)) % 512)]; }), Buffer.alloc(1024)]);
+  const tgz = gzipSync(tarOf([["package/package.json", "{".padEnd(700, " ") + "}"], ["package/CHANGELOG.md", clmd]]));
+  ok("tarFile: the new version's CHANGELOG.md, read out of its package (\"\" when it isn't there or isn't a package)", tarFile(tgz, "package/CHANGELOG.md") === clmd && tarFile(tgz, "package/README.md") === "" && tarFile(Buffer.from("not gzip"), "package/CHANGELOG.md") === "", tarFile(tgz, "package/CHANGELOG.md").slice(0, 80));
 } finally {
   try { execSync(`git worktree prune 2>/dev/null || true`, { cwd: join(ROOT, "f3parent", "f3"), stdio: "ignore" }); } catch {}
   rmSync(ROOT, { recursive: true, force: true });

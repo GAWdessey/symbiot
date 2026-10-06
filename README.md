@@ -97,6 +97,9 @@ minutes (and whenever you come back to the window); the version you're on is sho
 next to the name. When there's a newer one, **Update & restart** installs that exact
 version, relaunches the app on the same address, and the open window reloads itself
 onto it. Restart `symbiot app` yourself and the open window reconnects the same way.
+**What's new** on that bar lists what the update brings (read from the new
+version's `CHANGELOG.md` on npm), and after an update the app shows once what came
+with it, until you click **Got it**.
 
 The app listens on port **7391** so its address survives restarts; set
 `SYMBIOT_PORT` to use another. **One app at a time:** running `symbiot app` while
@@ -269,6 +272,13 @@ size of the uncommitted change and a **Show diff** button. For each repo:
   required checks pass. It needs "Allow auto-merge" in the repo's GitHub
   settings; without it, the card says so.
 
+When Approve bumps the version and the repo keeps a `CHANGELOG.md`, it writes the
+release there too ("## 0.45.0 — 2026-10-06" and what was approved), in the same
+commit. With an AI connected, it words each approved task as a short release note
+("Added…", "Fixed…") from the task and its diff, since everyone who updates reads
+these; the commit and PR keep the task's own words. With no AI, or no usable
+answer within a minute, the changelog keeps the task's own words too.
+
 Tasks waiting for review aren't re-sent to the agent, and while the repo's agent
 is still running, Approve waits ("agent still working"), so half-done work isn't
 committed.
@@ -343,6 +353,14 @@ claude.ai isn't added. Settings → Handoff lists them, and says so when your
 command isn't Claude and its runs can't use them. Claude in Orca's tab asks you
 before using one.
 
+A site you link in Symbiot (Link your work: Gmail, Drive…) only signs Symbiot's own
+browser in. It isn't a Claude connector, so runs get no tools for it until you
+connect the same service in claude.ai → Settings → Connectors. That's why Drive,
+linked in both, reached runs and Gmail, linked only in Symbiot, didn't. Settings →
+Handoff says which of your linked sites aren't wired up, and each run's `TASKS.md`
+says which connectors it has and which it doesn't, so it doesn't claim to have
+checked your mail.
+
 Each run is logged to `.symbiot/agent.log` in the repo and shown live in the
 **Agents** tab. The command is saved as `agentCmd` in
 `~/.config/symbiot/config.json` — it's your command, Symbiot only fills in
@@ -414,7 +432,11 @@ names a file in backticks (`` `.env` ``), the agent starts by itself once that
 file changes, while the app runs. A step in Settings (**Allow command**, a
 connector) changes the agent command rather than a file, so a changed agent
 command counts as the step being done too. Otherwise **Start it now** on that
-folder's block starts it once you've done the step.
+folder's block starts it once you've done the step. An answer in your own words
+that says to wait ("don't start another run until it's in", "hold off until I've
+added it", "not yet") is your step too: it waits on the file the question's 👤
+option named. A send in the meantime, or another lane's result coming back,
+doesn't start a run past it; the run starts by itself once the file changes.
 
 **A run that stopped on questions isn't repeated for nothing.** When a run ends
 having asked questions you haven't answered, with tasks still unticked, Symbiot
@@ -450,6 +472,34 @@ For the production check, add a per-repo deploy command to
 repo), keyed by repo path or folder name, that prints the deployed commit sha:
 `{ "/path/to/repo": "ssh prod cat ~/app/.deployed-sha" }`. Also the **Drift** tab
 in the app.
+
+## The liquid: a home that shapes itself to you
+
+`symbiot app` opens on one surface of liquid silver. Its droplets are what only
+you can do (an Approve waiting, an agent's question to you), what's new on what
+you watch, and the parts of the app. Open a droplet and that part pools open over
+the liquid; **Sink back** (or Esc) returns it. Talk to it in the bar at the bottom:
+"open tasks" opens Tasks, anything else goes to the same Symbiot as every chat.
+Leave it alone and it rests as one orb. There are no settings: it adapts to you.
+
+- **How you work** (`adapt.mjs`). Use decays with a 3-day half-life; what you open
+  next comes from a Markov chain (with a Dirichlet prior, so a few moves can't
+  swing it) and your hour of day. The more predictable you are (low Shannon
+  entropy), the more it adapts. Sizes follow Fitts's law under a fixed amount of
+  liquid (area ∝ how likely you are to open it); only the few that matter show
+  (Hick–Hyman), the rest under **more**. It rearranges only when it wakes from
+  rest and the gain is worth it (hysteresis), and nothing changes its angle, so
+  things stay where your hand expects them. Talking more than clicking grows the
+  talk bar; a touch screen gets finger-sized targets.
+- **How you talk.** What you type into Symbiot's chats becomes a style profile
+  (length, casing, punctuation, emoji, requests vs questions, Afrikaans), and
+  every chat and agent brief is told to match it, without copying typos.
+- **Your colours,** from your system, live: light or dark, high contrast, reduced
+  transparency, forced colours, reduced motion, your accent colour, and dimmer
+  at night.
+
+Everything it learns stays on this computer: `adapt.json` and `mind.json` in
+Symbiot's config folder, readable by you only.
 
 ## Link your work
 
@@ -606,7 +656,9 @@ instead of hanging. The CLI shows scan progress on one line as it goes.
   the README and any `CLAUDE.md`/`AGENTS.md` conventions. With email on, it also
   sends the subjects and recipient names of mail you sent. When you ask about a
   task (💬) the agent has finished, it sends the first 6 KB of the agent's diff,
-  which can include a new file's contents. Standup sends up to 10 of what's new
+  which can include a new file's contents. An Approve that bumps the version of
+  a repo with a `CHANGELOG.md` sends the approved tasks and the first 30 KB of
+  their diff, to word the release notes. Standup sends up to 10 of what's new
   on each page you [Watch](#screens-blueprints-for-screen-automation) since
   yesterday, and the brief (if you switch it on) sends each batch of it: for
   Gmail, that's the sender, subject and one-line preview. Otherwise it does
@@ -829,6 +881,15 @@ what needs you and what can wait. The brief shows above what's new, and it's the
 text of the notification. The AI is sent what the page lists for each new item
 (for Gmail, the sender, subject and the one-line preview), and nothing at all
 leaves your computer with a local Ollama model. It's off until you tick it.
+
+**WhatsApp: only unread messages need you.** A chat list's preview doesn't say who
+wrote the last message (WhatsApp writes "You:" only in groups), and a chat moves to
+the top for what you send too. So Symbiot reads each chat's unread badge and the
+ticks on what you sent: a chat with unread messages is from them; ticks, "You:" or
+"(You)" mean it's yours; anything else is unknown, never assumed to be theirs. Only
+chats with unread messages from them count on the Dashboard and in Standup, get a
+notification and a brief, and the brief and the card's chat are told who each one
+is from.
 
 **Draft a reply.** A new email under Watching has **Draft a reply**. It hands the
 email to your coding agent (the command in Settings → Handoff), which opens it in

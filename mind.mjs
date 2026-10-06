@@ -26,6 +26,7 @@ import { handoffCmd, runHandoff } from "./agents.mjs";
 import { addTask, pushTasks } from "./tasks.mjs";
 import { repoPathMap } from "./scan.mjs";
 import { OPS, handoverRules, ONLY_YOU } from "./handover.mjs";
+import { styleOf, styleLine, userStyleLine } from "./adapt.mjs";
 
 const MIND_FILE = join(CONFIG_DIR, "mind.json");
 const ACT_DIR = join(CONFIG_DIR, "drafts"); // runs of their own, next to drafted replies
@@ -114,12 +115,14 @@ This folder isn't a repo; there's nothing to change in it but this file. Use you
 
 - **Anything hard to undo you only ask about:** closing or deleting an account, deleting data, paying or buying, sending something to someone. Find out what it would affect first (what's running, what it costs, what's in it), then stop and ask in \`.symbiot/QUESTIONS.md\` with what you found, and don't go ahead until ANSWERS.md says to.
 - Is part of it a repo's work? Hand it over (below) rather than doing it from here.
-- Need the user? Only for what no agent can do: ask in \`.symbiot/QUESTIONS.md\` (a \`## Questions\` heading, a \`### \` heading per question, then 2–4 options as \`- \` bullets).
+- Need the user? Only for what no agent can do: ask in \`.symbiot/QUESTIONS.md\` (a \`## Questions\` heading, a \`### \` heading per question, then 2–4 options as \`- \` bullets).${voiceLine()}
 ${ONLY_YOU}
 - When it's done, tick the task (\`- [x]\`) and say what you did in your last message: it's what goes back to whoever asked.
 
 ${handoverRules(names, OPS).join("\n")}`;
 }
+// How to write to the user, for a brief: their talking style, if it's known.
+const voiceLine = () => { const v = userStyleLine(); return v ? "\n- Writing to the user (questions, your last message): " + v : ""; };
 // Run the coding agent on a request, in a folder of its own (it shows in the
 // Agents tab, with its questions). { ok, job, dir } or { error }.
 function actNow(request, { title, context, known, run = runHandoff, now = Date.now() } = {}) {
@@ -189,7 +192,9 @@ function parseReply(raw) {
 async function converse({ where, role = "", context = "", history = "", question, act = {}, ask = write, map = null, now = Date.now() }) {
   const d = loadMind(), known = recallText(recall(question, now, d)), elsewhere = lately(where, d);
   let lanes = map; if (!lanes) { try { lanes = repoPathMap(); } catch { lanes = {}; } }
-  const system = `${IDENTITY} ${role}\n\n${rulesFor(Object.keys(lanes), selfLane(lanes))}`;
+  // how they talk, from what they've typed into any chat (adapt.mjs: accommodation)
+  const voice = styleLine(styleOf(d.log.filter((l) => l.role === "user").map((l) => l.text).concat(question)));
+  const system = `${IDENTITY} ${role}\n\n${rulesFor(Object.keys(lanes), selfLane(lanes))}${voice ? "\n" + voice : ""}`;
   const prompt = (known ? `What you know (from across the app):\n${known}\n\n` : "") + (elsewhere ? `Lately, elsewhere in the app:\n${elsewhere}\n\n` : "") +
     (context ? context + "\n\n" : "") + (history ? `This chat so far:\n${history}\n\n` : "") + `They say (on ${where}): ${question}`;
   const raw = await ask(system, prompt);
