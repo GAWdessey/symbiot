@@ -109,6 +109,24 @@ try {
   ok("the state has a layout, the modes and the style", v.layout.items.length >= 3 && typeof v.modes.talkWeight === "number" && /Match how they talk/.test(v.styleLine), [v.layout.items.length, v.modes]);
   ok("adapt.json is yours only (0600)", (statSync(A.ADAPT_FILE).mode & 0o777) === 0o600, (statSync(A.ADAPT_FILE).mode & 0o777).toString(8));
 
+  console.log("LAYOUT — droplets never sit where their metal would flicker between merged and apart");
+  const { EMBEDDED_UI } = await import("../ui.mjs");
+  const uiJs = [...EMBEDDED_UI.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]).join("\n");
+  const grab = (name) => { const i = uiJs.indexOf("function " + name + "("); let depth = 0, j = uiJs.indexOf("{", i); for (; j < uiJs.length; j++) { if (uiJs[j] === "{") depth++; else if (uiJs[j] === "}" && --depth === 0) break; } return uiJs.slice(i, j + 1); };
+  const { lqSep, lqRelax } = new Function(grab("lqSep") + "\n" + grab("lqRelax") + "\nreturn { lqSep, lqRelax };")();
+  const crowd = (w, h) => Array.from({ length: 11 }, (_, i) => ({ r: 40 + (i % 3) * 12, tx: w / 2 + Math.cos(i * 2.4) * 60, ty: h * 0.47 + Math.sin(i * 2.4) * 60 }));
+  const bridged = (L) => { let worst = Infinity; for (let i = 0; i < L.length; i++) for (let j = i + 1; j < L.length; j++) { const d = Math.hypot(L[i].tx - L[j].tx, L[i].ty - L[j].ty), b = 2 * Math.sqrt(L[i].r ** 2 + L[j].r ** 2); worst = Math.min(worst, d / b); } return worst; };
+  ok("the rule keeps two droplets past where their metal bridges, with margin (2.4·√(r1²+r2²))", lqSep({ r: 50 }, { r: 50 }, 500) >= 2.4 * Math.sqrt(5000) && lqSep({ r: 20 }, { r: 20 }, 500) === 110 && lqSep({ r: 20 }, { r: 20 }, 0) === 158, [lqSep({ r: 50 }, { r: 50 }, 500), lqSep({ r: 20 }, { r: 20 }, 0)]);
+  let small = crowd(480, 860), fits = lqRelax(small, { w: 480, h: 860 }, 240, 404, 80), dropped = 0;
+  ok("eleven on a phone can't all fit clear of each other, and the solver says so", fits === false, fits);
+  while (!fits && dropped < 8) { small = crowd(480, 860).slice(0, 11 - ++dropped); fits = lqRelax(small, { w: 480, h: 860 }, 240, 404, 80); } // as the app does: the least likely part goes under "more"
+  ok("with fewer (the rest under more), every pair is clear of the bridging distance, with margin", fits && bridged(small) >= 1.15 && small.length >= 3, [small.length, bridged(small)]);
+  const big = crowd(1600, 1000), rb = big.map((x) => x.r);
+  lqRelax(big, { w: 1600, h: 1000 }, 800, 470, 90);
+  ok("with room, nothing shrinks, and every pair keeps the rule", big.every((x, i) => x.r === rb[i]) && bridged(big) >= 1.15, [bridged(big)]);
+  const again = crowd(1600, 1000); lqRelax(again, { w: 1600, h: 1000 }, 800, 470, 90);
+  ok("the same data, the same layout (deterministic: nothing jitters from run to run)", JSON.stringify(again) === JSON.stringify(big), "");
+
   console.log("HOME — the liquid's droplets from real data, and its talk");
   const { homeState, homeAsk } = await import("../home.mjs");
   const deps = {

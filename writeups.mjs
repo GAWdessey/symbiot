@@ -161,7 +161,7 @@ async function taskChat(id, question) {
   // Re-read: other requests may have changed tasks.json while the model ran.
   const t = loadTasks(); const cur = t.find((x) => x.id === id); const now = Date.now();
   if (!cur) return { answer, chat: [] };
-  cur.chat = [...(cur.chat || []), { role: "user", text: question, ts: now }, { role: "ai", text: answer, ts: now }].slice(-CHAT_KEEP);
+  cur.chat = [...(cur.chat || []), { role: "user", text: question, ts: now }, { role: "ai", text: answer, ts: now, ...(r.steps && r.steps.length ? { steps: r.steps } : {}) }].slice(-CHAT_KEEP);
   saveTasks(t);
   return { answer, chat: cur.chat, ...(r.did ? { did: r.did } : {}) };
 }

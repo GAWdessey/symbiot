@@ -23,6 +23,7 @@ import { runHandoff, runningHandoff, waitingFor } from "./agents.mjs";
 import { addTask, pushTasks } from "./tasks.mjs";
 import { actNow } from "./mind.mjs";
 import { repoPathMap } from "./scan.mjs";
+import { parseRun, lastRunText } from "./work.mjs";
 import { OPS, parseHandoffs } from "./handover.mjs";
 
 const LEDGER = join(CONFIG_DIR, "lanes.json");
@@ -83,7 +84,8 @@ function dispatch(path, { map = repoPathMap(), act = actNow, run = runHandoff, a
 // What an agent said last: its log after the newest run's header.
 function lastWords(path) {
   const log = readSym(path, "agent.log"), at = log.lastIndexOf("\n=== "); if (at < 0) return "";
-  const run = log.slice(at).split("\n").slice(3).join("\n").trim(); // past the header and the command
+  const w = parseRun(lastRunText(log)); // a streaming run: its final answer, not its JSON
+  const run = w.stream ? (w.final || w.said.join("\n")) : log.slice(at).split("\n").slice(3).join("\n").trim(); // past the header and the command
   return run.length > TAIL ? "…" + run.slice(-TAIL) : run;
 }
 // When the newest run in a folder started (its log header), or 0.

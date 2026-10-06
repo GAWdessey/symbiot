@@ -2,6 +2,13 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.46.0 — 2026-10-06
+
+- **The Symbiot look on every part.** Whatever you open pools over the liquid as glass, with a slow silver edge: cards are glass, the main buttons chrome, the map's nodes small silver spheres.
+- **Watch an agent work, as it works.** What it's doing right now, its own to-do list ticking off (with a progress ring), each step in plain words with how long it took, test results, the files it changed, its pace, its model, turns, tokens and cost, and finally its answer.
+- **Calm, readable droplets.** Droplets keep clear of each other, past where their metal would merge, so none of them flicker or shake their labels; when a screen can't hold them all, the least used go under "more" instead of crowding.
+- **See Symbiot think.** Under each chat reply: what it did to answer (what it recalled, the links it looked up, that it matched how you talk, what it handed over or remembered).
+
 ## 0.45.0 — 2026-10-06
 
 - **The liquid.** Symbiot's home is now one surface of liquid silver that shapes itself to you, with no settings. Its droplets are what only you can do, what's new on what you watch, and the parts of the app, which pool open over it. Talk to it in the bar at the bottom; leave it alone and it rests as one orb.

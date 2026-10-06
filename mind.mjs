@@ -190,7 +190,12 @@ function parseReply(raw) {
 // own last turns. act: { agent(request) -> result, task(text, repo) -> result },
 // what "do" runs here. Gives { reply, did?, remembered }.
 async function converse({ where, role = "", context = "", history = "", question, act = {}, ask = write, map = null, now = Date.now() }) {
-  const d = loadMind(), known = recallText(recall(question, now, d)), elsewhere = lately(where, d);
+  const d = loadMind(), hits = recall(question, now, d), known = recallText(hits), elsewhere = lately(where, d);
+  // what it did to answer, to show under the reply (as the app shows an agent's work)
+  const steps = [];
+  if (hits.length) steps.push(`recalled ${hits.length === 1 ? hits[0].name : hits.length + " things: " + hits.slice(0, 3).map((h) => h.name).join(", ")}`);
+  const places = [...new Set(d.log.filter((l) => l.where !== where).slice(-6).map((l) => l.where))];
+  if (places.length) steps.push(`picked up what you said on ${places.slice(0, 2).join(" and ")}`);
   let lanes = map; if (!lanes) { try { lanes = repoPathMap(); } catch { lanes = {}; } }
   // how they talk, from what they've typed into any chat (adapt.mjs: accommodation)
   const voice = styleLine(styleOf(d.log.filter((l) => l.role === "user").map((l) => l.text).concat(question)));
@@ -219,7 +224,10 @@ async function converse({ where, role = "", context = "", history = "", question
   const d2 = loadMind(), remembered = rememberIn(d2, j.remember, where, now);
   logTurn(where, "user", question, now, d2); logTurn(where, "ai", reply, now, d2);
   saveMind(d2);
-  return { reply, ...(did ? { did } : {}), remembered };
+  if (voice) steps.push("matched how you talk");
+  if (did && !did.error) steps.push(did.kind === "agent" ? (did.lane ? `handed it to ${did.lane}'s agent` : "handed it to an agent") : did.lane ? `added a task to ${did.lane}` : "added a task");
+  if (remembered) steps.push(`remembered ${remembered} new thing${remembered > 1 ? "s" : ""}`);
+  return { reply, ...(did ? { did } : {}), remembered, steps };
 }
 // The usual "task" act, for a caller with no lanes of its own to pass.
 const addToTasks = (text, repo) => { let map = {}; try { map = repoPathMap(); } catch {} return taskIn(text, repo, { map }); };
