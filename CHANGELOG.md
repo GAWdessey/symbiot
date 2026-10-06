@@ -2,6 +2,11 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.50.3
+
+- **Finer tags on the spheres.** A sphere's tag is the short form of its task: no "(§5 of .symbiot/BRIEF…)" asides, paths or markdown, cut at a word, in smaller type and two lines at most; point at it for the whole text. The layout makes room for every tag, so a tag never lands on another tag or sphere.
+- **Go sits beside Home** at the top of the work view, clear of the chat.
+
 ## 0.50.2
 
 - **An allow list is one click.** When an agent needs permissions it doesn't have, it proposes them, as narrow as the task needs, in `.symbiot/allowlist.proposed.json` and offers it as a choice. Pick it in the app and Symbiot turns it on for that folder only and runs the agent again: no copying files, no running claude in a terminal. A list that would let an agent run anything at all (a shell, sudo, rm) is never turned on by a click.
