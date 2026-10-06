@@ -41,7 +41,11 @@ import { loadScreens, screenImage, blueprint } from "./screens.mjs";
 import { mapPage, wholePage, pressRegion, typeRegion, scrollPage, signIn, isTrusted } from "./headless.mjs";
 import { watchState, addWatch, removeWatch, seenWatch, newsSince, markNews, checkWatch, setBrief, draftReply, watchBoard, boardLine, boardChat, boardTalk, clearBoardChat } from "./watch.mjs";
 import { PORT as PHONE_PORT, phoneState, pairComputer, pollComputer, forgetComputer } from "./phone.mjs";
+import { KIND_LABEL as POST_KIND, PATHS as POST_PATHS, draftPosts, postsState, postLog, approvePost, editPost, skipPost, voiceFromLinkedIn, openUrl } from "./post.mjs";
 import { startApp, updateCmd, isAppRunningWeekly } from "./server.mjs";
+import { listReports, readReport } from "./reports.mjs";
+import { runSandbox } from "./sandbox.mjs";
+import { knowledgeState, addKnowledgeFolder, removeKnowledgeFolder, indexKnowledge, searchKnowledge, waitingOn, ownerOf, myName, setMyName, itemLine, caseLine } from "./knowledge.mjs";
 
 // ---- tiny arg parse --------------------------------------------------------
 const argv = process.argv.slice(2);
@@ -190,7 +194,12 @@ async function cmdRun(cmd) {
 }
 
 // `symbiot app` (server.mjs). While it serves: no spinner, no scan progress line.
-function cmdApp() {
+async function cmdApp() {
+  // --fresh: a brand-new Symbiot in a throwaway home, to try first run (sandbox.mjs)
+  if (has("fresh") && !process.env.SYMBIOT_SANDBOX) {
+    process.exitCode = await runSandbox({ bin: realpathSync(fileURLToPath(import.meta.url)), args: argv.slice(1).filter((a) => a !== "--fresh" && a !== "--keep"), keep: has("keep") });
+    return;
+  }
   SERVING = true; setScanOptions({ quiet: true });
   return startApp({ bin: realpathSync(fileURLToPath(import.meta.url)), since: SINCE_WEEK, all: has("all"), c });
 }
@@ -401,7 +410,7 @@ async function cmdWatch() {
   if (sub === "draft") {
     if (!a1) return out({ error: "Give the email's id: symbiot watch new lists them, and the ones marked \"mail\": true (or \"chat\": true) can get a reply." });
     const r = (await viaApp("/api/watch/draft", { id: a1 })) || draftReply(a1);
-    const where = r.chat ? "types it into the chat's message box in Symbiot's browser, never sent" : "leaves it in Drafts, never sent";
+    const where = r.chat ? "types it into the chat's message box in Symbiot's browser, never sent" : r.social ? "types it into LinkedIn's comment box and writes it under \"## The reply\" in its TASKS.md, never posted" : "leaves it in Drafts, never sent";
     return out(r.ok ? { ...r, next: `Your agent is writing the reply and ${where}. Its log is in ` + join(r.dir, ".symbiot", "agent.log") + " (and the app's Agents tab)." } : r);
   }
   // a card's chat, the same talk as 💬 on the Dashboard (through the app when it
@@ -454,6 +463,79 @@ async function cmdWatch() {
   While the app runs it reads each page every few minutes in its hidden browser
   (only reads: nothing is pressed or typed), and notifies you of what's new.
   Standup counts what's new since yesterday ("Waiting on you: 3 emails").`);
+  if (sub !== "help") process.exitCode = 1;
+}
+
+// ---- `symbiot knowledge`: folders of your documents that chats quote -------------
+// The same folders as Settings → Knowledge folders; --json prints JSON.
+function cmdKnowledge() {
+  const VAL = ["--examples", "--name", "--limit", "--dir", "--since"];
+  const [sub = "list", ...rest] = argv.slice(1).filter((x, i, all) => !x.startsWith("--") && !VAL.includes(all[i - 1]));
+  const arg = rest.join(" ").trim(), examples = has("with-examples"), json = has("json");
+  const out = (x) => { console.log(JSON.stringify(x, null, 2)); if (x && x.error) process.exitCode = 1; };
+  const fail = (m) => { console.log(c.y(m)); process.exitCode = 1; };
+  const tag = (x) => (x.example ? c.y("  [example, not a real fact]") : "");
+  const indexed = () => { const r = indexKnowledge({ full: has("full") }); console.log(`${c.g("✓")} Indexed: ${r.read} read, ${r.kept} unchanged, ${r.removed} dropped${r.failed ? c.y(`, ${r.failed} couldn't be read`) : ""}. ${r.files} files in all.`); };
+  if (sub === "list") {
+    const st = knowledgeState(); if (json) return out(st);
+    if (!st.folders.length) return console.log(c.d("No knowledge folders yet. Add one:  symbiot knowledge add ~/Company --examples templates/,active/"));
+    for (const f of st.folders) {
+      const nr = Object.entries(f.notRead).map(([k, n]) => `${n} ${k}`).join(", ");
+      console.log(`${c.b(f.path)}\n  ${f.files} files read · ${f.exampleFiles} examples (${f.examples.join(", ") || "none"}) · ${f.cases} cases · ${f.items} open items` + (nr ? c.d(` · not read yet: ${nr}`) : ""));
+    }
+    console.log(c.d(`\n"What's waiting on me" looks for ${st.me || "your name (set it: symbiot knowledge me \"Your Name\")"}.` + (st.indexed ? ` Indexed ${new Date(st.indexed).toLocaleString()}.` : "")));
+    return;
+  }
+  if (sub === "add") {
+    if (!arg) return fail("Give a folder:  symbiot knowledge add ~/Company [--examples templates/,active/]");
+    const r = addKnowledgeFolder(arg, flag("examples", undefined)); if (r.error) return fail(r.error);
+    const f = r.folders[r.folders.length - 1];
+    console.log(`${c.g("✓")} ${f.path}` + c.d(`  examples: ${f.examples.join(", ") || "none"}`)); return indexed();
+  }
+  if (sub === "remove") { const r = removeKnowledgeFolder(arg); if (r.error) return fail(r.error); console.log(`${c.g("✓")} Removed ${arg}.`); return indexed(); }
+  if (sub === "index") return indexed();
+  if (sub === "search") {
+    if (!arg) return fail("Say what to look for:  symbiot knowledge search \"renewal notice period\"");
+    const hits = searchKnowledge(arg, { examples, limit: Number(flag("limit", 8)) || 8 }); if (json) return out(hits);
+    if (!hits.length) return console.log(c.d("Nothing in your knowledge folders." + (examples ? "" : "  (--with-examples looks in examples too)")));
+    for (const h of hits) console.log(`${c.b(h.cite)}${h.where ? c.d(" › " + h.where) : ""}${tag(h)}\n  ${h.excerpt}\n`);
+    return;
+  }
+  if (sub === "waiting") {
+    const w = waitingOn(flag("name", ""), { examples }); if (json) return out(w);
+    if (!w.me) return fail("Your name isn't known:  symbiot knowledge me \"Your Name\"  (or --name \"Your Name\")");
+    console.log(c.b(`Waiting on ${w.me}`)); for (const i of w.waiting) console.log("  " + itemLine(i) + tag(i)); if (!w.waiting.length) console.log(c.d("  nothing"));
+    console.log(c.b(`\nOpen items ${w.me} owns`)); for (const i of w.mine) console.log("  " + itemLine(i) + tag(i)); if (!w.mine.length) console.log(c.d("  none"));
+    return;
+  }
+  if (sub === "owner") {
+    if (!arg) return fail("Say what:  symbiot knowledge owner \"Bluegum renewal\"");
+    const o = ownerOf(arg, { examples }); if (json) return out(o);
+    if (!o.length) return console.log(c.d("No case or item in your knowledge folders matches that." + (examples ? "" : "  (--with-examples looks in examples too)")));
+    for (const x of o) console.log("  " + (x.kind === "case" ? "case: " + caseLine(x) : "item: " + itemLine(x)) + tag(x));
+    return;
+  }
+  if (sub === "me") { if (arg) setMyName(arg); console.log(myName() ? `"What's waiting on me" looks for ${c.b(myName())}.` : c.y("No name known: symbiot knowledge me \"Your Name\"")); return; }
+  console.log(`${c.b("symbiot knowledge")} ${c.d("— folders of your documents that chats quote and cite")}
+  symbiot knowledge                           the folders: what's read, the examples, what's
+                                              not read yet (Word, PDF, Excel: later)
+  symbiot knowledge add <folder> [--examples templates/,active/]
+                                              read a folder (Markdown, CSV, text). Paths in
+                                              --examples are worked examples, never used as
+                                              facts (default templates/; "none" for none).
+                                              Adding it again changes them.
+  symbiot knowledge remove <folder>           stop reading it
+  symbiot knowledge index [--full]            re-read what changed now (the app does it
+                                              every few minutes); --full reads everything
+  symbiot knowledge search "words" [--with-examples] [--json]
+                                              the passages that match, with their files
+  symbiot knowledge waiting [--name "X"] [--with-examples]
+                                              open items waiting on you, and yours, from
+                                              front matter (owner, status, due, waiting_on)
+  symbiot knowledge owner "what" [--with-examples]
+                                              who owns an item, or does a case
+  symbiot knowledge me ["Your Name"]          the name "waiting on me" looks for (default:
+                                              your git user.name)`);
   if (sub !== "help") process.exitCode = 1;
 }
 
@@ -535,6 +617,100 @@ async function cmdPhone() {
   if (sub !== "help") process.exitCode = 1;
 }
 
+// ---- `symbiot post`: the week's real work as 3 draft posts you approve ----------
+// Nothing is ever posted by Symbiot: approve copies one post to your clipboard and
+// gives LinkedIn's share box, where you paste it and post it yourself.
+async function cmdPost() {
+  const [sub = "draft", a1, a2] = argv.slice(1).filter((x, i, all) => !x.startsWith("--") && all[i - 1] !== "--since");
+  const fail = (msg) => { console.log(c.y(msg)); process.exitCode = 1; };
+  const show = (p) => {
+    console.log(`\n${c.b(POST_KIND[p.kind] || p.kind)}  ${c.d(`${p.id} · ${p.status}${p.edited ? " · edited" : ""}`)}\n${p.text}`);
+    if (p.sources && p.sources.length) console.log(c.d("  from git: " + p.sources.slice(0, 4).map((s) => s.replace(/^\[\d+\]\s*/, "")).join("\n            ") + (p.sources.length > 4 ? `\n            …and ${p.sources.length - 4} more` : "")));
+  };
+  if (sub === "draft" || sub === "new") {
+    const r = await draftPosts({ days: SINCE_WEEK || 7 });
+    if (r.error) return fail(r.error);
+    for (const p of r.posts) show(p);
+    if (r.dropped.length) console.log("\n" + c.y(`Dropped ${r.dropped.length}: `) + r.dropped.map((x) => `${POST_KIND[x.kind] || x.kind} (${x.cited ? "claimed " + x.unsupported.join(", ") + ", which git doesn't show" : "cited nothing from git"})`).join("; "));
+    console.log("\n" + c.d(`${r.posts.length} draft${r.posts.length === 1 ? "" : "s"} from ${r.facts} things git shows this week, in the voice of your ${r.voice} example${r.voice === 1 ? "" : "s"}. They wait on the app's Dashboard too.`));
+    console.log(c.d("Nothing is posted until you approve one:  symbiot post approve <id>  (or edit / skip)."));
+    return;
+  }
+  if (sub === "list") {
+    const st = postsState();
+    if (!st.posts.length) console.log(c.d("No drafts waiting.  symbiot post  drafts this week's."));
+    for (const p of st.posts) show(p);
+    return;
+  }
+  if (sub === "approve") {
+    const r = approvePost(a1);
+    if (r.error) return fail(r.error);
+    console.log(`${c.g("✓")} Approved.\n\n${r.post.text}\n`);
+    console.log(r.copied ? `${c.g("✓")} Copied to your clipboard (${r.copied}).` : c.y("No clipboard tool found (wl-copy, xclip, xsel, pbcopy or clip): copy it from above."));
+    console.log(`Paste it into LinkedIn's share box: ${c.b(r.share)}` + (has("open") ? "" : c.d("  (--open opens it)")));
+    if (has("open")) openUrl(r.share);
+    console.log(c.d(r.note));
+    return;
+  }
+  if (sub === "edit") {
+    if (!a2) return fail('Give the new text:  symbiot post edit <id> "the post"');
+    const r = editPost(a1, a2);
+    if (r.error) return fail(r.error);
+    show(r.post);
+    if (r.unsupported) console.log("\n" + c.y("Note: ") + `git doesn't show ${r.unsupported.join(", ")}. It's your post, so it stays as you wrote it.`);
+    return;
+  }
+  if (sub === "skip") { const r = skipPost(a1); if (r.error) return fail(r.error); console.log(`${c.g("✓")} Skipped ${r.post.id}. It stays in the log.`); return; }
+  if (sub === "log") {
+    const log = postLog();
+    if (!log.length) console.log(c.d("Nothing logged yet."));
+    for (const l of log.slice(-40)) console.log(`${c.d(l.date.slice(0, 16).replace("T", " "))}  ${l.action.padEnd(8)} ${c.d((POST_KIND[l.kind] || l.kind || "").padEnd(15))} ${String(l.text || "").replace(/\s+/g, " ").slice(0, 70)}${l.why ? c.d("  (" + l.why + ")") : ""}`);
+    if (log.length) console.log(c.d(`\n${POST_PATHS.log}`));
+    return;
+  }
+  if (sub === "voice") {
+    if (!has("linkedin")) { const n = postsState().voice.count; console.log(n ? `${n} example post${n === 1 ? "" : "s"} in ${POST_PATHS.voice}` : c.y(`No example posts yet.`) + `  Paste 5–10 of yours into ${POST_PATHS.voice}, a line of --- between each, or link LinkedIn and run  symbiot post voice --linkedin`); return; }
+    // through the app when it runs: its hidden browser and this one share a profile
+    const r = (await viaApp("/api/posts/voice", { confirmed: true })) || await voiceFromLinkedIn();
+    if (r.error) return fail(r.error);
+    console.log(`${c.g("✓")} Added ${r.added} of your LinkedIn posts: ${r.total} in ${r.file}. Read them over, and delete any that don't sound like you.`);
+    return;
+  }
+  console.log(`${c.b("symbiot post")} ${c.d("— experimental")}
+  symbiot post                     draft this week's 3 posts (Shipped, Learned /
+                                   fixed, a longer one) from your last 7 days of
+                                   commits, release tags and CHANGELOG.md
+  symbiot post list                the drafts waiting on you
+  symbiot post approve <id> [--open]
+                                   copy it to your clipboard, and give (--open:
+                                   open) LinkedIn's share box to paste it into
+  symbiot post edit <id> "text"    change a draft's words
+  symbiot post skip <id>           drop a draft
+  symbiot post log                 everything drafted, edited, approved, skipped
+  symbiot post voice [--linkedin]  your example posts (voice.md), or read your
+                                   recent LinkedIn posts into it (Link LinkedIn first)
+  It never posts by itself, and doesn't schedule: you paste and post each one.
+  Every claim must be in git; a draft that names what git doesn't show is dropped.`);
+  if (sub !== "help") process.exitCode = 1;
+}
+
+// ---- `symbiot reports`: what agents wrote up for you (reports.mjs) ---------------
+function cmdReports() {
+  const id = argv.slice(1).find((x) => !x.startsWith("--"));
+  const list = listReports();
+  if (!id) {
+    if (!list.length) { console.log(c.d("No reports yet. When an agent writes up findings, an audit or a plan, it leaves a .md in its folder's .symbiot/, and it's listed here.")); return; }
+    for (const r of list) console.log(`${r.new ? c.y("●") : " "} ${c.d(r.id)}  ${c.b(r.title)}  ${c.d(`${!r.run || r.run === r.lane ? r.lane : r.run.startsWith(r.lane + ":") ? r.run : `${r.lane} · ${r.run}`} ·${new Date(r.mtime).toISOString().slice(0, 10)}`)}`);
+    console.log(c.d(`\n● unread.  symbiot reports <id>  prints one (and marks it read).`));
+    return;
+  }
+  const hit = list.filter((r) => r.id.startsWith(id));
+  if (hit.length !== 1) { console.log(c.y(hit.length ? `${hit.length} reports start with ${id}: give more of its id.` : `No report ${id}.  symbiot reports  lists them.`)); process.exitCode = 1; return; }
+  const r = readReport(hit[0].id, { list });
+  if (r.error) { console.log(c.y(r.error)); process.exitCode = 1; return; }
+  console.log(c.d(r.file) + "\n\n" + r.text);
+}
+
 const HELP =`${c.b("symbiot")} — your week, written from your real work.
 
 ${c.b("Usage")}
@@ -542,8 +718,12 @@ ${c.b("Usage")}
   symbiot standup                   yesterday + today, for standup
   symbiot todo                      what's still on your plate
   symbiot app                       open the visual app in your browser
+  symbiot app --fresh [--keep]      try it as someone new: a brand-new Symbiot in
+                                    a throwaway home, none of your data or accounts
   symbiot drift [--fetch]           what's out of sync / at risk across repos
   symbiot push [--open [--force]]   write tasks into each repo (and run your agent)
+  symbiot reports [id]              what your agents wrote up for you (findings,
+                                    audits, plans); give an id to read one
   symbiot login                     connect it to an AI (once)
   symbiot whoami                    show how it's connected
   symbiot logout                    forget saved credentials
@@ -554,6 +734,9 @@ ${c.b("Experimental")}
   symbiot mail [--on|--off]         use the mail you sent in write-ups (local, no API)
   symbiot models                    recommend AI models for your hardware
   symbiot setup-local [--model X]   install/run a free local model (Ollama)
+  symbiot post                      draft 3 LinkedIn posts from this week's git,
+                                    in your voice; never posts by itself
+                                    (symbiot post help for more)
   symbiot screens map <site>        map a web page's buttons in a hidden browser
                                     (symbiot screens help for more)
   symbiot watch add <screen id>     keep track of a mapped page: what's new on it
@@ -562,6 +745,9 @@ ${c.b("Experimental")}
   symbiot phone pair <address> <code>
                                     in Termux: pair with your computer for
                                     Watch on your phone (symbiot phone help)
+  symbiot knowledge add <folder>    documents chats quote and cite (Markdown,
+                                    CSV, text); waiting / owner from case files
+                                    (symbiot knowledge help for more)
 
 ${c.b("Options")}
   --dir <path>    where your repos are (default: ${homedir()})
@@ -595,7 +781,10 @@ async function main() {
   if (cmd === "screens" || cmd === "screen") return cmdScreens();
   if (cmd === "watch") return cmdWatch();
   if (cmd === "phone") return cmdPhone();
-  if (cmd === "week") return cmdRun("week");
+  if (cmd === "post" || cmd === "posts") return cmdPost();
+  if (cmd === "knowledge" || cmd === "know") return cmdKnowledge();
+  if (cmd === "reports" || cmd === "report") return cmdReports();
+  if (cmd === "week")return cmdRun("week");
   if (cmd === "standup") return cmdRun("standup");
   if (cmd === "todo") return cmdRun("todo");
   console.log(c.y(`Unknown command: ${cmd}`) + "\n"); console.log(HELP);

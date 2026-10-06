@@ -158,7 +158,12 @@ const calls = [
   ["/api/scanroots", "GET"],
   ["/api/scanroots/add", "POST"],
   ["/api/scanroots/remove", "POST"],
-  ["/api/run", "POST"],          // no AI connected -> "not-connected", no model call
+  ["/api/knowledge", "GET"],
+  ["/api/knowledge/add", "POST"],     // no path -> "folder not found", nothing saved
+  ["/api/knowledge/remove", "POST"],
+  ["/api/knowledge/index", "POST"],   // no folders -> nothing read
+  ["/api/knowledge/search?q=x", "GET"],
+  ["/api/run", "POST"],         // no AI connected -> "not-connected", no model call
   ["/api/review", "POST"],
   ["/api/suggest", "POST"],
   ["/api/connect", "POST"],      // no provider -> rejected, nothing saved
@@ -174,6 +179,9 @@ const calls = [
   ["/api/agent/grant", "POST"],     // grant the agent a tool/folder it asked for
   ["/api/agents/answer", "POST"],   // no path -> "no agent has run there", nothing written
   ["/api/agents/skip", "POST"],     // no path -> "no agent has run there", nothing written
+  ["/api/agents/remember", "POST"], // no path -> "no agent has run there", nothing remembered
+  ["/api/awaiting", "GET"],
+  ["/api/awaiting/stop", "POST"],   // no id -> "nothing's waiting by that id"
   ["/api/mail", "GET"],             // detected mail sources (isolated HOME -> none)
   ["/api/mail/set", "POST"],        // empty body -> nothing changes
   ["/api/mail/preview?days=7", "GET"],
@@ -206,7 +214,16 @@ const calls = [
   ["/api/links/link", "POST"],      // no id -> "No link called", no browser opened
   ["/api/links/check", "POST"],     // no id -> "isn't linked"
   ["/api/links/unlink", "POST"],
-  ["/api/watch", "GET"],            // watched pages + what's new (isolated HOME -> none)
+  ["/api/posts", "GET"],            // the week's drafts waiting on you (isolated HOME -> none)
+  ["/api/posts/draft", "POST"],     // no AI connected -> says so, nothing written
+  ["/api/posts/approve", "POST"],   // no id -> "No draft", nothing copied
+  ["/api/posts/edit", "POST"],      // no text -> refused
+  ["/api/posts/skip", "POST"],      // no id -> "No draft"
+  ["/api/posts/voice", "POST"],     // not confirmed -> refused, no browser opens
+  ["/api/reports", "GET"],          // what runs wrote up (isolated HOME -> none)
+  ["/api/reports/read", "GET"],     // no id -> "No report by that id"
+  ["/api/reports/seen", "POST"],    // mark all read (none)
+  ["/api/watch", "GET"],           // watched pages + what's new (isolated HOME -> none)
   ["/api/watch/add", "POST"],       // no screen or site -> refused, nothing saved
   ["/api/watch/every", "POST"],     // no id -> "No watch"
   ["/api/watch/remove", "POST"],

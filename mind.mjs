@@ -25,8 +25,9 @@ import { write } from "./ai.mjs";
 import { handoffCmd, runHandoff } from "./agents.mjs";
 import { addTask, pushTasks } from "./tasks.mjs";
 import { repoPathMap } from "./scan.mjs";
-import { OPS, HANDOVER_MAX, handoverRules, ONLY_YOU } from "./handover.mjs";
+import { OPS, HANDOVER_MAX, handoverRules, ONLY_YOU, HANDBACK } from "./handover.mjs";
 import { styleOf, styleLine, userStyleLine } from "./adapt.mjs";
+import { knowledgeFor } from "./knowledge.mjs";
 
 const MIND_FILE = join(CONFIG_DIR, "mind.json");
 const ACT_DIR = join(CONFIG_DIR, "drafts"); // runs of their own, next to drafted replies
@@ -119,7 +120,8 @@ This folder isn't a repo; there's nothing to change in it but this file. Use you
 ${ONLY_YOU}
 - When it's done, tick the task (\`- [x]\`) and say what you did in your last message: it's what goes back to whoever asked.
 
-${handoverRules(names, OPS).join("\n")}`;
+${handoverRules(names, OPS).join("\n")}
+${HANDBACK.join("\n")}`;
 }
 // How to write to the user, for a brief: their talking style, if it's known.
 const voiceLine = () => { const v = userStyleLine(); return v ? "\n- Writing to the user (questions, your last message): " + v : ""; };
@@ -196,11 +198,14 @@ async function converse({ where, role = "", context = "", history = "", question
   if (hits.length) steps.push(`recalled ${hits.length === 1 ? hits[0].name : hits.length + " things: " + hits.slice(0, 3).map((h) => h.name).join(", ")}`);
   const places = [...new Set(d.log.filter((l) => l.where !== where).slice(-6).map((l) => l.where))];
   if (places.length) steps.push(`picked up what you said on ${places.slice(0, 2).join(" and ")}`);
+  // your knowledge folders (knowledge.mjs): a few short excerpts, each with its file to cite; never examples
+  let kn = { text: "", steps: [] }; try { kn = knowledgeFor(question); } catch {}
+  steps.push(...kn.steps);
   let lanes = map; if (!lanes) { try { lanes = repoPathMap(); } catch { lanes = {}; } }
   // how they talk, from what they've typed into any chat (adapt.mjs: accommodation)
   const voice = styleLine(styleOf(d.log.filter((l) => l.role === "user").map((l) => l.text).concat(question)));
   const system = `${IDENTITY} ${role}\n\n${rulesFor(Object.keys(lanes), selfLane(lanes))}${voice ? "\n" + voice : ""}`;
-  const prompt = (known ? `What you know (from across the app):\n${known}\n\n` : "") + (elsewhere ? `Lately, elsewhere in the app:\n${elsewhere}\n\n` : "") +
+  const prompt = (known ? `What you know (from across the app):\n${known}\n\n` : "") + (kn.text ? kn.text + "\n\n" : "") + (elsewhere ? `Lately, elsewhere in the app:\n${elsewhere}\n\n` : "") +
     (context ? context + "\n\n" : "") + (history ? `This chat so far:\n${history}\n\n` : "") + `They say (on ${where}): ${question}`;
   const raw = await ask(system, prompt);
   if (!raw || /^\(?couldn't reach the model/i.test(String(raw))) return { reply: "(couldn't reach the model)", remembered: 0 };

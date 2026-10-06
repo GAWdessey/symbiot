@@ -44,8 +44,11 @@ const CATALOG = [
   { id: "notion", name: "Notion", group: "Docs", url: "https://www.notion.so/", hosts: ["notion.so"] },
   { id: "hubspot", name: "HubSpot", group: "Sales", url: "https://app.hubspot.com/", hosts: ["app.hubspot.com"] },
   { id: "salesforce", name: "Salesforce", group: "Sales", url: "https://login.salesforce.com/", hosts: ["salesforce.com", "lightning.force.com"] },
+  // its notifications: comments and mentions on your posts (post.mjs flags likely
+  // customers); signed in, `symbiot post voice --linkedin` reads your own posts
+  { id: "linkedin", name: "LinkedIn", group: "Social", url: "https://www.linkedin.com/notifications/", hosts: ["linkedin.com"], watch: true },
 ];
-const GROUPS = ["Mail", "Calendar", "Code", "Chat", "Work", "Docs", "Sales"];
+const GROUPS = ["Mail", "Calendar", "Code", "Chat", "Work", "Docs", "Sales", "Social"];
 
 const hostOf = (url) => { try { return new URL(url).hostname.replace(/^www\./, "").toLowerCase(); } catch { return ""; } };
 const linksFile = () => process.env.SYMBIOT_LINKS || join(CONFIG_DIR, "links.json");

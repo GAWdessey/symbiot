@@ -477,6 +477,25 @@ function readPage(input) {
     return { ...info, login: signInPage(info.url) };
   }, false)).catch((e) => ({ error: String((e && e.message) || e) }));
 }
+// The words on a page, not its buttons: the text of each element `selector`
+// matches (a feed's posts), scrolling `scrolls` windows down for more. For
+// `symbiot post voice` (post.mjs), which reads your own recent posts, only on
+// your click. Only looks, like readPage: { url, title, texts, login }.
+function readTexts(input, selector, { scrolls = 3 } = {}) {
+  const url = siteUrl(input);
+  if (!url) return Promise.resolve({ error: "Give a site to read: a name (gmail), a host or a web address." });
+  const js = `(() => [...document.querySelectorAll(${JSON.stringify(String(selector || "body"))})].map((e) => String(e.innerText || '').trim()).filter(Boolean))()`;
+  return oneAtATime(() => browserOpen() ? { busy: true } : withPage(async (page) => {
+    await open(page, url);
+    const texts = [];
+    for (let i = 0; i <= scrolls; i++) {
+      for (const t of (await evaluate(page, js)) || []) if (!texts.includes(t)) texts.push(t);
+      if (i < scrolls) { await evaluate(page, "scrollBy(0, innerHeight)"); await page.idle(); }
+    }
+    const at = String((await evaluate(page, "location.href")) || url);
+    return { url: at, title: String((await evaluate(page, "document.title")) || ""), texts: texts.slice(0, 50), login: signInPage(at) };
+  }, false)).catch((e) => ({ error: String((e && e.message) || e) }));
+}
 
 // Trusted sites (Settings → Screens): on a page from one of these, press and type
 // go ahead without asking, for you and for agents. Anywhere else each one asks.
@@ -590,10 +609,16 @@ const clickAt = async (page, at) => { for (const type of ["mouseMoved", "mousePr
 
 // Press: click it as a mouse would. noSend (a draft reply's run: watch.mjs) refuses
 // a button or menu item that sends ("Send", "Schedule send"), even confirmed: a
-// row whose subject says "send" is still pressed.
-const isSend = (r) => /^(button|menu item)$/.test(r.kind || "button") && /\bsend\b/i.test(r.label || "");
+// row whose subject says "send" is still pressed. Off your mail (`host`), on a
+// social site, it refuses what posts too: LinkedIn's Post, Comment and Reply
+// (which both opens a reply box and submits one: the label can't tell them apart),
+// Submit, Publish, Share, Repost. In your mail, Reply only opens a reply.
+const MAIL_HOSTS = /^(mail\.google\.com|outlook\.(live|office|office365)\.com)$/;
+const POSTS = /\b(post|reply|comment|submit|publish|share|repost|tweet)\b/i;
+const isSend = (r, host = "") => /^(button|menu item)$/.test(r.kind || "button") && (/\bsend\b/i.test(r.label || "") || (!MAIL_HOSTS.test(host) && POSTS.test(r.label || "")));
 function pressRegion(id, regionId, { confirmed = false, noSend = false } = {}) {
-  return actOnRegion(id, regionId, "Press", confirmed, (r) => (noSend && isSend(r) ? `"${r.label}" sends. This run only drafts: it never presses Send. The draft stays in Drafts for you to send.` : ""),
+  const s = noSend ? loadScreens().find((x) => x.id === id) : null, host = s && s.page ? hostOf(s.page.url) : "";
+  return actOnRegion(id, regionId, "Press", confirmed, (r) => (noSend && isSend(r, host) ? `"${r.label}" sends or posts. This run only drafts: it never presses Send, Post, Comment or Reply. The draft stays for the user to send or post.` : ""),
     async (page, at, r) => { await clickAt(page, at); return { pressed: r.label }; });
 }
 
@@ -637,4 +662,4 @@ async function signIn(input) {
   return { ok: true, url };
 }
 
-export { siteUrl, browserArgs, mapPage, wholePage, readPage, isSend, pressRegion, typeRegion, scrollPage, SCROLLS, signIn, keepBrowserOpen, closeBrowser, browserOpen, trustedSites, isTrusted, trustSite, untrustSite, PROFILE };
+export { siteUrl, browserArgs, mapPage, wholePage, readPage, readTexts, isSend, pressRegion, typeRegion, scrollPage, SCROLLS, signIn, keepBrowserOpen, closeBrowser, browserOpen, trustedSites, isTrusted, trustSite, untrustSite, PROFILE };

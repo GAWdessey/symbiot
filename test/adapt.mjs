@@ -62,9 +62,9 @@ try {
 
   console.log("HICK — show the few that matter, the rest under more");
   const hu = A.hick(A.SHAPES, A.SHAPES.map(() => 1 / A.SHAPES.length));
-  ok("scattered use: capped at 7, the rest under more (and still reachable)", hu.shown.length === 7 && hu.more.length === 2, hu);
-  const hs = A.hick(A.SHAPES, [0.6, 0.25, 0.08, 0.03, 0.01, 0.01, 0.01, 0.005, 0.005]);
-  ok("habits: as few as cover 90% (never under 3)", hs.shown.length === 3 && hs.more.length === 6, hs);
+  ok("scattered use: capped at 7, the rest under more (and still reachable)", hu.shown.length === 7 && hu.more.length === A.SHAPES.length - 7, hu);
+  const hs = A.hick(A.SHAPES, [0.6, 0.25, 0.08, 0.03, 0.01, 0.01, 0.01, 0.005, 0.005, 0, 0, 0].slice(0, A.SHAPES.length));
+  ok("habits: as few as cover 90% (never under 3)", hs.shown.length === 3 && hs.more.length === A.SHAPES.length - 3, hs);
 
   console.log("STABILITY — it doesn't move things under your hand");
   const s = fresh();
@@ -134,8 +134,12 @@ try {
     pending: () => [{ repo: "symbiot", path: "/x", tasks: [{}, {}], files: [{}, {}, {}] }, { repo: "busy", path: "/y", running: true, tasks: [{}], files: [{}] }],
     agents: () => [{ name: "whatsapp_module", path: "/w", status: "done", ask: { questions: [{ q: "Paste the new Meta token?" }] } }, { name: "coral", path: "/c", status: "running", ask: { questions: [] } }],
     lanes: () => ({ handoffs: [{ from: "coral", to: "ops", text: "Find a JDK 17", status: "done" }] }),
+    connected: () => true, repos: () => ({ symbiot: "/x" }), reports: () => ({ count: 0 }),
   };
   const h = homeState({ deps });
+  const first = homeState({ deps: { ...deps, pending: () => [], agents: () => [], connected: () => false, repos: () => ({}) } });
+  ok("first run: connect an AI, then show it your folders, both out front and opening Settings", first.you.map((y) => y.id).join() === "setup:ai,setup:folders" && first.you.every((y) => y.shape === "settings"), first.you);
+  ok("…and neither once that's done", !h.you.some((y) => y.kind === "setup"), h.you);
   ok("only you: an Approve that's waiting (not one still being worked on) and an agent's question", h.you.length === 2 && h.you[0].title === "Approve symbiot" && /2 tasks done · 3 files · only you decide/.test(h.you[0].sub) && h.you[1].title === "whatsapp_module asks" && h.you[1].shape === "agents", h.you);
   ok("feeds: only what has something new", h.feeds.length === 1 && h.feeds[0].title === "WhatsApp" && h.feeds[0].shape === "board", h.feeds);
   ok("lanes and who's working", h.lanes[0].to === "ops" && h.working === 1, [h.lanes, h.working]);

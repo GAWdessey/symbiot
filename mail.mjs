@@ -6,7 +6,8 @@
 // password, no server: it works the same for anyone with mail on disk, which is
 // how everyone else can link theirs too. Only headers are read (Date, From, To,
 // Subject, Message-ID), never a message body — and only mail YOU sent, so a
-// write-up gets "what I did over email", not your inbox.
+// write-up gets "what I did over email", not your inbox. The one exception is a
+// reply Symbiot waits on (inboxMail): it looks for that one, and keeps only it.
 import { homedir } from "node:os";
 import { join, basename, dirname } from "node:path";
 import { readdirSync, statSync, openSync, readSync, closeSync, fstatSync } from "node:fs";
@@ -109,6 +110,7 @@ function toItem(h, fallbackTs) {
     ts, id: String(h["message-id"] || "").trim(), labels: String(h["x-gmail-labels"] || ""),
     from: people(h.from || "")[0] || null, to: people([h.to, h.cc].filter(Boolean).join(", ")),
     subject: decodeWords(h.subject || "").replace(/\s+/g, " ").trim().slice(0, 200) || "(no subject)",
+    refs: [h["in-reply-to"], h.references].filter(Boolean).join(" ").slice(0, 2000),
   };
 }
 // One mbox file: read its tail, split on the "From " separator lines.
@@ -152,4 +154,28 @@ export function mailActivity({ days = 7, sources = [], addresses = [], auto = tr
     }
   }
   return items.sort((a, b) => b.ts - a.ts).slice(0, MAX_ITEMS);
+}
+
+// ---- replies you're waiting on ----------------------------------------------------
+// The inbox beside a Sent folder: Thunderbird keeps an IMAP account's subfolders
+// (Sent among them) in INBOX.sbd/ next to its INBOX file; other stores keep an
+// INBOX or Inbox next to Sent. "" when there's none.
+export function inboxOf(sent) {
+  const dir = dirname(String(sent || "")), up = /\.sbd$/i.test(dir) ? dir.replace(/\.sbd$/i, "") : "";
+  for (const p of [up, join(dir, "INBOX"), join(dir, "Inbox"), join(dir, ".INBOX"), join(dir, "Inbox.mbox")]) { try { if (p && statSync(p)) return p; } catch {} }
+  return "";
+}
+// Mail that came into those inboxes since `since`, headers only: [{ ts, from,
+// subject, refs }]. Only for handback.mjs, which waits on a reply to an email you
+// (or an agent) sent and keeps only the one that answers it; nothing else is kept.
+export function inboxMail({ since = Date.now() - 7 * 86400000, sources = [], auto = true } = {}) {
+  const deadline = Date.now() + READ_MS, out = [];
+  const inboxes = [...new Set([...(auto ? detectMailSources().map((s) => s.path) : []), ...sources].map(inboxOf).filter(Boolean))];
+  for (const p of inboxes) {
+    if (Date.now() > deadline) break;
+    let st; try { st = statSync(p); } catch { continue; }
+    if (!st.isDirectory() && st.mtimeMs < since) continue;
+    for (const m of st.isDirectory() ? readMailDir(p, since, deadline) : readMbox(p)) if (m.ts >= since) out.push({ ts: m.ts, from: m.from, subject: m.subject, refs: m.refs, source: p });
+  }
+  return out.sort((a, b) => b.ts - a.ts);
 }

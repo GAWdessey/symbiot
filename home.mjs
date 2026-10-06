@@ -1,8 +1,10 @@
 // symbiot — Home: what the liquid shows, from real data. Three kinds of droplet:
 // - only you: what no agent can do (an Approve waiting for you; an agent's open
-//   question to you), always out front;
+//   question to you; on first run, connecting an AI and showing it your
+//   folders), always out front;
 // - feeds: what's new on the sites you watch (watch.mjs), sized by how much;
 // - lanes: work handed between agents (lanes.mjs), the latest few.
+// Reports agents wrote up that you haven't read (reports.mjs) are a feed too.
 // The app's sections (Map, Tasks, Agents, Week…) are shaped by adapt.mjs from
 // how you use them; this is the live data around them. Home's talk goes to the
 // same Symbiot as every chat (mind.mjs converse), told what home shows.
@@ -13,6 +15,7 @@ import { lanesState } from "./lanes.mjs";
 import { converse, actIn, actNow, taskIn } from "./mind.mjs";
 import { repoPathMap } from "./scan.mjs";
 import { resolveProvider } from "./ai.mjs";
+import { reportsNews } from "./reports.mjs";
 
 const KEEP = 15000; // the slower reads (git per repo awaiting review) are cached this long
 let cached = null;
@@ -25,7 +28,13 @@ function homeState({ now = Date.now(), fresh = false, deps = {} } = {}) {
   const pending = deps.pending || (() => { try { return pendingReview(); } catch { return []; } });
   const agents = deps.agents || (() => { try { return agentsList(); } catch { return []; } });
   const lanes = deps.lanes || (() => { try { return lanesState(); } catch { return { handoffs: [] }; } });
+  const reports = deps.reports || (() => { try { return reportsNews(); } catch { return { count: 0 }; } });
+  const connected = deps.connected || (() => !!resolveProvider());
+  const repos = deps.repos || (() => { try { return repoPathMap(); } catch { return {}; } });
   const you = [];
+  // First run: what only a new user can do before the rest means anything.
+  if (!connected()) you.push({ kind: "setup", id: "setup:ai", title: "Connect an AI", sub: "a key, or a free local model", shape: "settings" });
+  if (!Object.keys(repos() || {}).length) you.push({ kind: "setup", id: "setup:folders", title: "Show me your work", sub: "where your repos are", shape: "settings" });
   for (const r of pending()) {
     if (!r.path || r.running) continue;
     const n = (r.tasks || []).length, files = (r.files || []).length;
@@ -39,6 +48,8 @@ function homeState({ now = Date.now(), fresh = false, deps = {} } = {}) {
     if (q) you.push({ kind: "ask", id: "ask:" + a.path, title: `${a.name} asks`, sub: String(q.q || "").slice(0, 90), shape: "agents" });
   }
   const feeds = ((board() || {}).cards || []).filter((c) => c.count > 0).map((c) => ({ id: "feed:" + c.id, title: c.name, sub: c.label, count: c.count, shape: "board" }));
+  const rep = reports();
+  if (rep.count) feeds.push({ id: "feed:reports", title: "Reports", sub: `${rep.count} unread`, latest: rep.latest, count: rep.count, shape: "reports" });
   const hs = ((lanes() || {}).handoffs || []).slice(0, 5).map((h) => ({ from: h.from, to: h.to, text: h.text, status: h.status }));
   const working = list.filter((a) => a.status === "running").length;
   const out = { you: you.slice(0, 6), feeds: feeds.slice(0, 6), lanes: hs, working, at: now };
@@ -50,7 +61,7 @@ function homeState({ now = Date.now(), fresh = false, deps = {} } = {}) {
 function homeContext(h) {
   return [
     `Only the user can do (${h.you.length}):`, ...h.you.map((y) => `- ${y.title}: ${y.sub}`),
-    `New on what they watch:`, ...(h.feeds.length ? h.feeds.map((f) => `- ${f.title}: ${f.sub}`) : ["- nothing new"]),
+    `New on what they watch:`, ...(h.feeds.length ? h.feeds.map((f) => `- ${f.title}: ${f.sub}${f.latest ? ` (latest: ${f.latest})` : ""}`) : ["- nothing new"]),
     `Agents working: ${h.working}. Recent handovers:`, ...(h.lanes.length ? h.lanes.map((l) => `- ${l.from} → ${l.to}: ${l.text} (${l.status})`) : ["- none"]),
   ].join("\n");
 }

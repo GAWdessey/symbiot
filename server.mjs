@@ -11,7 +11,7 @@ import { readFileSync, existsSync } from "node:fs";
 import { createServer } from "node:http";
 import { randomBytes } from "node:crypto";
 import { EMBEDDED_UI } from "./ui.mjs";
-import { VERSION, LATEST_VERSION, REGISTRY, semverGt, checkLatest, loadConfig, saveConfig, loadTasks, hasCmd, chromeBinary } from "./core.mjs";
+import { VERSION, LATEST_VERSION, REGISTRY, semverGt, checkLatest, CONFIG_PATH, loadConfig, saveConfig, loadTasks, hasCmd, chromeBinary } from "./core.mjs";
 import { shSingle, handoffCmd, setHandoffCmd, grantAgent, runHandoff, track, detectHandoffs, connectorsInfo, answerQuestions, skipIdea, agentsList, startWaiting } from "./agents.mjs";
 import { PROVIDERS, resolveProvider, connectProvider, detectHardware, recommendModels, hasOllama, ollamaInstall, ensureOllama, useOllamaModel } from "./ai.mjs";
 import { SCAN, SCAN_TIMEOUT_MS, scanRoots, scanHome, addScanRoot, removeScanRoot, buildMap, nodeDetail, repoPathMap } from "./scan.mjs";
@@ -23,11 +23,15 @@ import { mapPage, wholePage, pressRegion, typeRegion, scrollPage, signIn, keepBr
 import { weeklyState, setWeekly, runWeekly, startWeekly, autostartState, setAutostart } from "./desktop.mjs";
 import { watchState, addWatch, setEvery, removeWatch, clearNews, seenWatch, checkWatch, startWatches, setBrief, draftReply, openChat, watchBoard, boardChat, clearBoardChat } from "./watch.mjs";
 import { linksState, linkSite, checkLink, unlinkSite } from "./links.mjs";
+import { postsState, draftPosts, approvePost, editPost, skipPost, voiceFromLinkedIn } from "./post.mjs";
 import { mindState, forget } from "./mind.mjs";
 import { lanesTick, lanesState } from "./lanes.mjs";
+import { keepFacts, skipFacts, awaitTick, awaitingState, stopWaiting } from "./handback.mjs";
 import { adaptState, noteUse } from "./adapt.mjs";
 import { homeState, homeAsk } from "./home.mjs";
+import { listReports, readReport, markAllRead } from "./reports.mjs";
 import { phoneState, setPhoneLink, newCode, unpairPhone, pairComputer, forgetComputer, pollComputer, startPhone } from "./phone.mjs";
+import { knowledgeState, addKnowledgeFolder, removeKnowledgeFolder, indexKnowledge, knowledgeTick, searchKnowledge } from "./knowledge.mjs";
 
 // The in-app update installs the EXACT newest version (not the `latest` tag, which
 // npm's cache/propagation can resolve stale — that caused an update loop where the
@@ -103,6 +107,8 @@ function readBody(req) {
 function appLink(url) { return url.replace(/^http:\/\//, "symbiot://"); }
 // Symbiot running in Termux (not the Android app's own)
 const IN_TERMUX = process.platform === "android" && process.env.SYMBIOT_ANDROID_APP !== "1";
+const SANDBOX = !!process.env.SYMBIOT_SANDBOX; // symbiot app --fresh (sandbox.mjs)
+const FIRST_RUN = !existsSync(CONFIG_PATH); // no config yet when Symbiot started: a brand-new install
 function openApp(url) {
   try {
     // Android (Termux): Symbiot's Android app shows this Symbiot full screen (it
@@ -219,6 +225,12 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       if (u.pathname === "/api/scanroots") return json(res, { roots: loadConfig().scanRoots || [], effective: scanRoots(), home: scanHome() });
       if (u.pathname === "/api/scanroots/add" && req.method === "POST") { const b = await readBody(req); return json(res, addScanRoot(String(b.path || ""))); }
       if (u.pathname === "/api/scanroots/remove" && req.method === "POST") { const b = await readBody(req); return json(res, removeScanRoot(String(b.path || ""))); }
+      // knowledge folders (knowledge.mjs): added or removed, the index catches up at once
+      if (u.pathname === "/api/knowledge") return json(res, knowledgeState());
+      if (u.pathname === "/api/knowledge/add" && req.method === "POST") { const b = await readBody(req), r = addKnowledgeFolder(String(b.path || ""), b.examples); if (r.error) return json(res, r); indexKnowledge(); return json(res, { ok: true, ...knowledgeState() }); }
+      if (u.pathname === "/api/knowledge/remove" && req.method === "POST") { const b = await readBody(req), r = removeKnowledgeFolder(String(b.path || "")); if (r.error) return json(res, r); indexKnowledge(); return json(res, { ok: true, ...knowledgeState() }); }
+      if (u.pathname === "/api/knowledge/index" && req.method === "POST") { const r = indexKnowledge(); return json(res, { ...r, ...knowledgeState() }); }
+      if (u.pathname === "/api/knowledge/search") return json(res, { hits: searchKnowledge(u.searchParams.get("q") || "", { examples: u.searchParams.get("examples") === "1" }) });
       if (u.pathname === "/api/agentcfg") { const d = detectHandoffs(); return json(res, { cmd: handoffCmd(), agents: d.agents, editors: d.editors, connectors: connectorsInfo() }); }
       if (u.pathname === "/api/agentcmd" && req.method === "POST") { const b = await readBody(req); return json(res, setHandoffCmd(b.cmd)); }
       if (u.pathname === "/api/agent/grant" && req.method === "POST") { const b = await readBody(req); return json(res, grantAgent({ tool: b.tool, dir: b.dir })); }
@@ -234,6 +246,10 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       if (u.pathname === "/api/agents") return json(res, await withReleases(agentsList()));
       if (u.pathname === "/api/agents/answer" && req.method === "POST") { const b = await readBody(req); return json(res, answerQuestions(String(b.path || ""), b.answers, { rerun: !!b.rerun })); }
       if (u.pathname === "/api/agents/skip" && req.method === "POST") { const b = await readBody(req); return json(res, skipIdea(String(b.path || ""), b.text)); }
+      // What a run handed back (handback.mjs): facts for memory, kept only on Remember; replies it waits on.
+      if (u.pathname === "/api/agents/remember" && req.method === "POST") { const b = await readBody(req); return json(res, b.skip === true ? skipFacts(String(b.path || "")) : keepFacts(String(b.path || ""), { only: Array.isArray(b.only) ? b.only.map(Number) : undefined })); }
+      if (u.pathname === "/api/awaiting") return json(res, awaitingState());
+      if (u.pathname === "/api/awaiting/stop" && req.method === "POST") { const b = await readBody(req); return json(res, stopWaiting(String(b.id || ""))); }
       if (u.pathname === "/api/mail") return json(res, mailState());
       if (u.pathname === "/api/mail/set" && req.method === "POST") { const b = await readBody(req); return json(res, setMail(b)); }
       if (u.pathname === "/api/mail/preview") { const items = sentMail(Number(u.searchParams.get("days")) || since, true); return json(res, { count: items.length, items: items.slice(0, 20) }); }
@@ -277,6 +293,19 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       if (u.pathname === "/api/links/link" && req.method === "POST") { const b = await readBody(req); return json(res, await linkSite(String(b.id || ""))); }
       if (u.pathname === "/api/links/check" && req.method === "POST") { const b = await readBody(req); return json(res, await checkLink(String(b.id || ""))); }
       if (u.pathname === "/api/links/unlink" && req.method === "POST") { const b = await readBody(req); return json(res, unlinkSite(String(b.id || ""))); }
+      // Posts (post.mjs): the week's drafts, waiting on you. Approve only records your yes:
+      // the page copies the post itself and opens LinkedIn's share box; nothing is posted.
+      if (u.pathname === "/api/posts") return json(res, postsState());
+      if (u.pathname === "/api/posts/draft" && req.method === "POST") return json(res, await draftPosts());
+      if (u.pathname === "/api/posts/approve" && req.method === "POST") { const b = await readBody(req); return json(res, approvePost(String(b.id || ""), { copy: null })); }
+      if (u.pathname === "/api/posts/edit" && req.method === "POST") { const b = await readBody(req); return json(res, editPost(String(b.id || ""), b.text)); }
+      if (u.pathname === "/api/posts/skip" && req.method === "POST") { const b = await readBody(req); return json(res, skipPost(String(b.id || ""))); }
+      // reads your LinkedIn only on your click (confirmed), never by itself
+      if (u.pathname === "/api/posts/voice" && req.method === "POST") { const b = await readBody(req); if (b.confirmed !== true) return json(res, { error: "Reading your LinkedIn posts needs your click." }); return json(res, await voiceFromLinkedIn()); }
+      // Reports (reports.mjs): what runs wrote up in their .symbiot/; read by id, never by path.
+      if (u.pathname === "/api/reports") return json(res, { reports: listReports() });
+      if (u.pathname === "/api/reports/read") return json(res, readReport(u.searchParams.get("id") || ""));
+      if (u.pathname === "/api/reports/seen" && req.method === "POST") return json(res, markAllRead());
       // Home (home.mjs): the liquid's live data, and its talk; Adapt (adapt.mjs): its
       // shape from how you use it (commit=1 when it wakes from rest, never mid-gesture).
       if (u.pathname === "/api/home") return json(res, homeState({ fresh: u.searchParams.get("fresh") === "1" }));
@@ -320,10 +349,13 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       // the Week tab's week is saved to weeks/ too, as Write it now saves it (no notification: you're looking at it)
       if (u.pathname === "/api/run" && req.method === "POST") { const b = await readBody(req); const cmd = ["week", "standup", "todo"].includes(b.cmd) ? b.cmd : "week"; return json(res, cmd === "week" ? await runWeekly(writeup, { notify: false }) : await writeup(cmd)); }
       if (u.pathname === "/api/connect" && req.method === "POST") { return json(res, await connectProvider(await readBody(req))); }
-      if (u.pathname === "/api/ping") { if (u.searchParams.get("fresh") === "1") await checkLatest(); return json(res, { version: VERSION, started: SERVER_STARTED, latest: LATEST_VERSION, newer: semverGt(LATEST_VERSION, VERSION), ...(IN_TERMUX ? { termux: true } : {}) }); }
+      // a sandbox (symbiot app --fresh) never offers an update: it would replace your real install
+      if (u.pathname === "/api/ping") { if (u.searchParams.get("fresh") === "1" && !SANDBOX) await checkLatest(); return json(res, { version: VERSION, started: SERVER_STARTED, latest: LATEST_VERSION, newer: !SANDBOX && semverGt(LATEST_VERSION, VERSION), ...(IN_TERMUX ? { termux: true } : {}), ...(SANDBOX ? { sandbox: true } : {}) }); }
       // What's new: after an update, since the version you last saw (until you click Got it);
       // ?latest=1, what the update on offer brings, from its package on npm
       if (u.pathname === "/api/whatsnew") {
+        // a brand-new install has nothing to catch up on: this version counts as seen
+        if (u.searchParams.get("latest") !== "1" && FIRST_RUN && !loadConfig().seenVersion) { const cfg = loadConfig(); cfg.seenVersion = VERSION; saveConfig(cfg); return json(res, { version: VERSION, changes: [] }); }
         if (u.searchParams.get("latest") !== "1") return json(res, whatsNew());
         const to = LATEST_VERSION; if (!semverGt(to, VERSION)) return json(res, { version: to, changes: [] });
         const md = await registryChangelog(to);
@@ -336,6 +368,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
         // reconnects and reloads. Free the port first and mark the new copy as a
         // relaunch, so it takes over instead of finding us and bowing out.
         // SYMBIOT_UPDATE_CMD replaces the install (the tests use a no-op).
+        if (SANDBOX) return json(res, { error: "This is a sandbox (symbiot app --fresh): update your real Symbiot instead." });
         const { target, cmd } = updateCmd(LATEST_VERSION, VERSION);
         const inst = process.env.SYMBIOT_UPDATE_CMD || cmd;
         const e = track("symbiot update", inst, homedir(), (code) => {
@@ -372,6 +405,8 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
   startPhone(); // Watch on your phone: the computer listens if it's switched on, the phone asks if it's paired
   setInterval(() => { try { startWaiting(); } catch {} }, 20000).unref(); // a run that waits for your step starts once the file it names changes
   setInterval(() => { try { lanesTick(); } catch {} }, 20000).unref(); // agents hand work to other lanes, and hear back when it's done
+  setTimeout(() => { try { knowledgeTick(); } catch {} }, 5000).unref(); setInterval(() => { try { knowledgeTick(); } catch {} }, 3 * 60 * 1000).unref(); // knowledge folders: changed files re-read (a stat per file when nothing changed)
+  setInterval(() => { try { awaitTick(); } catch {} }, 60000).unref(); // a reply an agent's email waits on: found, and handed on
 }
 
 export { updateCmd, changesSince, whatsNew, tarFile, registryChangelog, BROWSER_KEEP, startApp, askRunningApp, isAppRunningWeekly };

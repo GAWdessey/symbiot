@@ -21,7 +21,7 @@ import { siteUrl, browserArgs, isTrusted, isSend } from "../headless.mjs";
 import { deflateSync, gzipSync } from "node:zlib";
 import { changesSince, whatsNew, tarFile } from "../server.mjs";
 import { weeklyDue, lastSlot, autostartFile, autostartContent, notifyCmd } from "../desktop.mjs";
-import { itemKey, itemsOf, fromOf, newItems, remember, githubItems, draftsUrl } from "../watch.mjs";
+import { itemKey, itemsOf, fromOf, chatName as w_chatName, newItems, remember, githubItems, draftsUrl } from "../watch.mjs";
 import { lanAddresses, computerUrl } from "../phone.mjs";
 
 const INDEX = join(dirname(fileURLToPath(import.meta.url)), "..", "index.mjs");
@@ -1210,12 +1210,27 @@ try {
     out.theirs = await w.checkWatch(out.add.id, opts); out.told = told.slice(); out.briefed = briefed.slice();
     out.board = w.watchBoard(24).cards[0]; out.waiting = w.waitingOn(24).map((x) => x.label);
     out.chatBrief = w.chatBrief(out.mine.new[0], { name: "WhatsApp", url: "https://web.whatsapp.com/" });
+    // you read Ann's on your phone: the badge goes, the row stays
+    page = { ...page, items: [row("Ann 08:20 Are you coming?"), ...page.items.slice(1)] };
+    await w.checkWatch(out.add.id, opts); out.boardRead = w.watchBoard(24).cards[0];
+    // Mom writes; you answer her from your phone: her row's last message is now yours
+    page = { ...page, items: [row("Mom 08:30 call me when you can 1", { unread: 1 }), ...page.items] };
+    await w.checkWatch(out.add.id, opts); out.boardMom = w.watchBoard(24).cards[0];
+    page = { ...page, items: [row("Mom 08:34 calling you now", { mine: true }), ...page.items.slice(1)] };
+    await w.checkWatch(out.add.id, opts); out.boardAnswered = w.watchBoard(24).cards[0]; out.toldAfter = told.length;
+    // Ann writes again, unread: that counts, once
+    page = { ...page, items: [row("Ann 08:40 Still coming? 1", { unread: 1 }), ...page.items.filter((r) => !/^Ann/.test(r.label))] };
+    await w.checkWatch(out.add.id, opts); out.boardAgain = w.watchBoard(24).cards[0];
     console.log(JSON.stringify(out));`], { encoding: "utf8", env: { ...process.env, HOME: whahome, USERPROFILE: whahome } });
   let wa = {}; try { wa = JSON.parse(wax.stdout); } catch {}
   const waFrom = (r) => ((r || {}).new || []).map((n) => n.from).join();
   ok("checkWatch on WhatsApp: chats that moved up for what you sent are kept, marked yours or unknown, with no notification and no brief", wa.mine && waFrom(wa.mine) === "unknown,you,you" && wa.toldMine === 0 && wa.briefedMine === 0, [wa.mine && wa.mine.new, wa.toldMine, wa.briefedMine, wax.stderr && wax.stderr.slice(-600)]);
   ok("...a chat with unread messages from them is theirs, notified and briefed (the brief knows it's a chat)", wa.theirs && waFrom(wa.theirs) === "them" && wa.theirs.new[0].unread === 2 && (wa.told || []).length === 1 && /^1 new · web\.whatsapp\.com/.test(wa.told[0][0]) && (wa.briefed || []).length === 1 && wa.briefed[0].chat === true, [wa.theirs && wa.theirs.new, wa.told, wa.briefed]);
   ok("...so the Dashboard and Standup say 1 WhatsApp message needs you, not 4", wa.board && wa.board.count === 1 && wa.board.label === "1 WhatsApp message" && wa.board.items.length === 4 && JSON.stringify(wa.waiting) === '["1 WhatsApp message"]', [wa.board && wa.board.label, wa.waiting]);
+  ok("...a chat you read on your phone after Watch found it stops waiting on you: its badge is checked again on every read", wa.boardRead && wa.boardRead.count === 0 && wa.boardRead.items.some((n) => /^Ann 08:20/.test(n.text) && n.from === "them" && n.read), wa.boardRead);
+  ok("...a chat you answered from your phone stops too (its last message is yours now), with nothing notified", wa.boardMom && wa.boardMom.count === 1 && wa.boardAnswered && wa.boardAnswered.count === 0 && wa.toldAfter === 2, [wa.boardMom && wa.boardMom.count, wa.boardAnswered, wa.toldAfter]);
+  ok("...and a new unread message from them counts again, once", wa.boardAgain && wa.boardAgain.count === 1 && wa.boardAgain.items.filter((n) => n.from === "them" && !n.read).length === 1, wa.boardAgain);
+  ok("chatName: a chat's name is its row up to the time", w_chatName("Tee Gee 08:15 I was thinking") === "tee gee" && w_chatName("Team, Yesterday, You: on my way") === "team" && w_chatName("no time here") === "", "");
   ok("...and a drafted reply's brief doesn't call Tee Gee's preview their message", /Nothing in it was unread, so that last message may be the user's own/.test(wa.chatBrief || "") && !/who it's from/.test(wa.chatBrief || ""), (wa.chatBrief || "").slice(0, 600));
 
   console.log("DASHBOARD — a card per page you watch: your inbox, GitHub, WhatsApp (watch.mjs watchBoard)");
