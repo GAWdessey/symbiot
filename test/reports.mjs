@@ -31,7 +31,7 @@ const run = join(CFG, "drafts", "act-1d727d7f"), repo = join(HOME, "code", "symb
 const AUDIT = "# COMPANY-AUDIT.md: mistakes, conflicts and to-dos\n\n_Ops run, read-only._\n\n## Do today\n\n| # | What | Who |\n|---|---|---|\n| 1 | **v4.18.0 ships tonight** untested | Nadia (`10-…/releases/`) |\n\n- one\n  - nested\n- [x] ticked\n";
 put(run, "COMPANY-AUDIT.md", AUDIT, 60000);
 put(run, "COMPANY.md", "# What's in ~/Company\n\nTwelve departments.\n", 3600000);
-for (const f of ["TASKS.md", "QUESTIONS.md", "ANSWERS.md", "HANDOFF.md", "SKIPPED.md"]) put(run, f, "# not a report\n");
+for (const f of ["TASKS.md", "TASKS.next.md", "QUESTIONS.md", "ANSWERS.md", "HANDOFF.md", "SKIPPED.md"]) put(run, f, "# not a report\n");
 put(run, "REMEMBER.json", "[]");
 put(repo, "BRIEF-symbiot-post.md", "# a brief handed in\n");
 put(repo, "PILOTS.md", "Pilot pitch, no heading.\n", 7200000);

@@ -220,6 +220,60 @@ try {
   homeAnswer("failed:r1", { pick: 1 }, fd);
   ok("…Skip: it stops asking", noFail(() => [failedRun()]), "");
   ok("…and an agent's own question is answered on its block, as before", !!homeAnswer("ask:/w", { pick: 0 }).error, "");
+
+  // Next up: with nothing waiting on you, a few things that CAN be done next, each with its gain and one tap
+  const { homeNext, nextUp, laneNamed, NEXT_FILE } = await import("../home.mjs");
+  const NOW0 = Date.now(), DAYS = (n) => NOW0 - n * 86400000 - 60000; // a minute past the day: a slow run never reads 5 days as 4
+  const nx = (o = {}) => ({ taken: () => ({}), parked: () => [], mind: () => [], stuck: () => [], board: () => ({ cards: [] }), reports: () => ({ count: 0 }), tasks: () => [], ...o });
+  const calm = { ...deps, pending: () => [], agents: () => [], repos: () => ({ whatsapp_module: "/wa", coral: "/c" }), board: () => ({ cards: [] }) };
+  const busyNext = nx({
+    reports: () => ({ count: 8 }),
+    stuck: (o) => (o && o.within > 3 * 86400000 ? [{ id: "h1", from: { lane: "symbiot", path: "/s" }, text: "Move ~/Company's registers\nmore", error: "ops is your own lane: do it yourself.", at: DAYS(5) }] : []),
+    tasks: () => [{ id: "t1", text: "Wire the webhook", repo: "coral", ts: DAYS(9) }, { id: "t2", text: "And its test", repo: "coral", ts: DAYS(1) }, { id: "t3", text: "Read the WhatsApp module's group and summarise it", repo: "", ts: DAYS(2) }, { id: "t4", text: "Fresh one", repo: "whatsapp_module", ts: DAYS(0.5) }],
+    board: () => ({ cards: [{ id: "w9", name: "Inbox - me@x.co - Mail", source: "mail", label: "4 emails", count: 4, items: [{ id: "n1", need: true }, { id: "n2", need: true }, { id: "n3", need: false }, { id: "n4", need: true }, { id: "n5", need: true }] }, { id: "p1", name: "A page", source: "page", label: "2 new", count: 2 }] }),
+  });
+  const hx = homeState({ fresh: true, deps: { ...calm, next: busyNext } });
+  const ids = hx.next.map((s) => s.id);
+  ok("nothing needs you: Home suggests what can be done next, best first, at most 5", hx.you.length === 0 && ids.join() === "next:reports,next:retry:h1,next:go:coral,next:float:t3,next:drafts:w9", ids);
+  const byId = Object.fromEntries(hx.next.map((s) => [s.id, s]));
+  ok("…each with its gain and time spelled out, and one tap (a label)", hx.next.every((s) => s.title && s.gain && s.time && s.label && s.act), hx.next);
+  ok("…unread reports: triage them, ~10 min for 8, by an agent", byId["next:reports"].title === "Triage the 8 unread reports" && /clears the backlog/.test(byId["next:reports"].gain) && byId["next:reports"].time === "~10 min, by an agent" && byId["next:reports"].act === "agent", byId["next:reports"]);
+  ok("…a handover that errored days ago and was left: retry it (Home's own asks only look back 3 days)", byId["next:retry:h1"].act === "retry" && /^Retry symbiot's handover: Move ~\/Company's registers$/.test(byId["next:retry:h1"].title) && /errored 5 days ago \(ops is your own lane/.test(byId["next:retry:h1"].gain), byId["next:retry:h1"]);
+  ok("…a project's tasks waiting days with nothing at work there (not one added today)", byId["next:go:coral"].title === "Send coral's 2 waiting tasks to its agent" && /oldest has waited 9 days/.test(byId["next:go:coral"].gain) && !ids.includes("next:go:whatsapp_module"), byId["next:go:coral"]);
+  ok("…a task with no project goes to the project its words name", byId["next:float:t3"].act === "assign" && byId["next:float:t3"].repo === "whatsapp_module" && /^Give whatsapp_module "Read the WhatsApp/.test(byId["next:float:t3"].title), byId["next:float:t3"]);
+  ok("…new mail with no reply: drafts of the newest 3, unsent (not a plain page)", /^Draft replies to the newest 3 of the 4 emails on Inbox$/.test(byId["next:drafts:w9"].title) && /unsent/.test(byId["next:drafts:w9"].gain), byId["next:drafts:w9"]);
+  ok("a task's words name its lane, the longest name that fits, whole words only", laneNamed("fix the whatsapp module webhook", ["whatsapp_module", "whatsapp"]) === "whatsapp_module" && laneNamed("read whatsapp", ["whatsapp_module", "whatsapp"]) === "whatsapp" && laneNamed("coralreef", ["coral"]) === "", "");
+  const busyRun = nextUp({ map: { coral: "/c" }, list: [{ path: "/c", status: "running" }], deps: nx({ tasks: () => [{ id: "t1", text: "x", repo: "coral", ts: DAYS(9) }] }) });
+  const parkedNx = nextUp({ map: { coral: "/c" }, deps: nx({ parked: () => ["/c"], tasks: () => [{ id: "t1", text: "x", repo: "coral", ts: DAYS(9) }] }) });
+  ok("…not a project whose agent is at work, nor a parked one", !busyRun.length && !parkedNx.length, [busyRun, parkedNx]);
+  const dec = (text, ts = DAYS(1)) => [{ id: "dn1", name: "Symbiot", kind: "decision", facts: [{ text, ts }] }];
+  const dn1 = nextUp({ map: { symbiot: "/s" }, deps: nx({ mind: () => dec("The user wants Symbiot's weekly report emailed every Friday") }) });
+  ok("a decision you made lately that no task carries yet: make it a task, in the project it names", dn1.length === 1 && dn1[0].act === "task" && dn1[0].repo === "symbiot" && /^Make a task of what you decided: The user wants Symbiot's weekly report/.test(dn1[0].title), dn1);
+  const dn2 = nextUp({ map: {}, deps: nx({ mind: () => dec("The user wants Symbiot's weekly report emailed every Friday"), tasks: () => [{ id: "x", text: "Email Symbiot's weekly report every Friday", done: true }] }) });
+  const dn3 = nextUp({ map: {}, deps: nx({ mind: () => dec("~/Company is a test set the user made") }) });
+  const dn4 = nextUp({ map: {}, deps: nx({ mind: () => dec("The user wants the weekly report emailed", DAYS(30)) }) });
+  ok("…not once a task took it on (even a done one), not a fact about how things are, not an old one", !dn2.length && !dn3.length && !dn4.length, [dn2, dn3, dn4]);
+  ok("…and no suggestions at all while anything waits on you", homeState({ fresh: true, deps: { ...deps, next: busyNext } }).next.length === 0, "");
+  ok("…nor with nothing to suggest", homeState({ fresh: true, deps: { ...calm, next: nx() } }).next.length === 0, "");
+  ok("Home's talk knows them", /^Could be done next \(Home suggests these, one tap each\):\n- Triage the 8 unread reports: clears the backlog/m.test(homeContext(hx)), "");
+  // one tap: it starts the agent, or makes the task, and stays away a week
+  const did = [], nfile = join(HOME, "next-test.json");
+  const tap = (id, o = {}) => homeNext(id, { state: hx, file: nfile, repos: () => ({ coral: "/c", whatsapp_module: "/wa" }), act: (req, o2) => { did.push(["act", req.split("\n")[0], o2.title]); return { ok: true, job: "j", dir: "/d" }; }, run: (p) => { did.push(["run", p]); return { id: "j" }; }, push: (f) => { did.push(["push", f.repo]); return { written: [{ path: "/c" }] }; }, allow: (id2) => { did.push(["allow", id2]); return { ok: true }; }, draft: (nid) => { did.push(["draft", nid]); return { ok: true }; }, board: busyNext.board, ...o });
+  const tr = tap("next:reports", { reportsList: () => [{ title: "symbiot post: the 4-week test", lane: "symbiot", file: "/s/.symbiot/POST-TEST.md", new: true }, { title: "Old", file: "/o.md", new: false }] });
+  ok("Triage: an agent of its own, told which reports (the unread ones) and to leave one page", tr.ok && did[0][0] === "act" && did[0][1] === "Triage the user's 1 unread Symbiot reports, so they read one page instead of 1. Read each:" && did[0][2] === "Home: what's next", [tr, did]);
+  did.length = 0; const tg = tap("next:go:coral");
+  ok("Send to its agent: the project's tasks written for it, and its agent started", tg.ok && JSON.stringify(did) === JSON.stringify([["push", "coral"], ["run", "/c"]]), did);
+  did.length = 0; const saved = []; const ta = tap("next:float:t3", { tasks: () => [{ id: "t3", text: "Read the WhatsApp module's group", repo: "" }], save: (all) => saved.push(all[0].repo) });
+  ok("Give it a project: the task joins it, and that project's agent starts", ta.ok && saved.join() === "whatsapp_module" && JSON.stringify(did) === JSON.stringify([["push", "whatsapp_module"], ["run", "/wa"]]), [ta, did, saved]);
+  did.length = 0; const tt = tap("next:retry:h1");
+  ok("Retry: the handover runs on its own, and goes back to the agent that asked", tt.ok && JSON.stringify(did) === JSON.stringify([["allow", "h1"]]) && /goes back to the agent that asked/.test(tt.said), [tt, did]);
+  did.length = 0; const td = tap("next:drafts:w9");
+  ok("Draft replies: the newest 3 that need one, each drafted and left unsent", td.ok && JSON.stringify(did) === JSON.stringify([["draft", "n1"], ["draft", "n2"], ["draft", "n4"]]) && /drafting 3 replies.*unsent/.test(td.said), [td, did]);
+  const taken = JSON.parse(readFileSync(nfile, "utf8")).taken;
+  ok("…each one taken stays away a week", ["next:reports", "next:go:coral", "next:float:t3", "next:retry:h1", "next:drafts:w9"].every((k) => taken[k] > 0) && nextUp({ map: { coral: "/c" }, deps: nx({ taken: () => taken, reports: () => ({ count: 8 }), tasks: () => [{ id: "t1", text: "x", repo: "coral", ts: DAYS(9) }] }) }).length === 0, taken);
+  const te = tap("next:go:coral", { push: () => ({ written: [] }) }), tn = tap("next:nope");
+  ok("…and when it can't start, it says why; one that isn't there any more says so", /Nothing of coral's is waiting/.test(te.error) && /isn't here any more/.test(tn.error), [te, tn]);
+  ok("the taken ones are kept in the config folder", NEXT_FILE.endsWith(join(".config", "symbiot", "home-next.json")), NEXT_FILE);
   // a run that ended waiting on you (agents.mjs needsOf): before, Home said "Only the user can do (0)"
   const jonoDir = join(HOME, ".config", "symbiot", "drafts", "act-jono"); mkdirSync(join(jonoDir, ".symbiot"), { recursive: true });
   const waitsRun = (o = {}) => ({ id: "r5", name: "Agent: **What's needed:** draft the email to Jono", path: jonoDir, status: "done", ask: { questions: [] }, needs: { kind: "approve", what: "The draft isn't sent. Draft: it's in Gmail, to jono@example.com.", check: "Cc: You'll add Alex yourself.", label: "Draft", key: "k1" }, ...o });

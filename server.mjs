@@ -14,9 +14,9 @@ import { createServer } from "node:http";
 import { randomBytes } from "node:crypto";
 import { EMBEDDED_UI } from "./ui.mjs";
 import { VERSION, LATEST_VERSION, REGISTRY, semverGt, checkLatest, CONFIG_PATH, loadConfig, saveConfig, loadTasks, hasCmd, chromeBinary, CONFIG_DIR } from "./core.mjs";
-import { shSingle, handoffCmd, setHandoffCmd, grantAgent, runHandoff, track, detectHandoffs, connectorsInfo, linkReach, answerQuestions, skipIdea, agentsList, startWaiting, parkLane, parkedPaths, autoAllowSweep, trustFull } from "./agents.mjs";
+import { shSingle, handoffCmd, setHandoffCmd, grantAgent, runHandoff, track, detectHandoffs, connectorsInfo, linkReach, answerQuestions, skipIdea, agentsList, startWaiting, parkLane, parkedPaths, autoAllowSweep, trustFull, readLastWords, sandboxState } from "./agents.mjs";
 import { PROVIDERS, resolveProvider, connectProvider, detectHardware, recommendModels, hasOllama, ollamaInstall, ensureOllama, useOllamaModel } from "./ai.mjs";
-import { SCAN, SCAN_TIMEOUT_MS, scanRoots, scanHome, addScanRoot, removeScanRoot, buildMap, nodeDetail, repoPathMap } from "./scan.mjs";
+import { SCAN, SCAN_TIMEOUT_MS, scanRoots, scanHome, addScanRoot, removeScanRoot, buildMap, nodeDetail, repoPathMap, laneMap } from "./scan.mjs";
 import { computeDrift } from "./drift.mjs";
 import { addTask, toggleTask, removeTask, restoreTask, syncTasks, taskType, pushTasks, pendingReview, workingDiff, learnNpm, withReleases, releaseInput, approveRepo, approveChanges, sendBack, setAutoMerge } from "./tasks.mjs";
 import { repoReview, repoSuggest, folderSuggest, taskChat, clearTaskChat, mailState, setMail, sentMail, produce, releaseNotes } from "./writeups.mjs";
@@ -30,7 +30,8 @@ import { mindState, forget } from "./mind.mjs";
 import { lanesTick, lanesState, partlyDone, orcaRelink } from "./lanes.mjs";
 import { keepFacts, skipFacts, awaitTick, awaitingState, stopWaiting } from "./handback.mjs";
 import { adaptState, noteUse } from "./adapt.mjs";
-import { homeState, homeAsk, homeAnswer, workScene, workGo, firstSteps } from "./home.mjs";
+import { homeState, homeAsk, homeAnswer, homeNext, workScene, workGo, firstSteps, marketingState, marketingGo, marketingTask, moveToMarketing } from "./home.mjs";
+import { MARKETING_DIR } from "./marketing.mjs";
 import { listReports, readReport, markAllRead } from "./reports.mjs";
 import { phoneState, setPhoneLink, newCode, unpairPhone, pairComputer, forgetComputer, pollComputer, startPhone } from "./phone.mjs";
 import { knowledgeState, addKnowledgeFolder, removeKnowledgeFolder, indexKnowledge, knowledgeTick, searchKnowledge } from "./knowledge.mjs";
@@ -255,9 +256,9 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
         if (!ask.length) return json(res, partly(list));
         await learnNpm(ask); return json(res, partly(pendingReview()));
       }
-      if (u.pathname === "/api/pending/diff") { const p = repoPathMap()[u.searchParams.get("repo") || ""]; return json(res, { diff: p ? workingDiff(p) : "" }); }
-      if (u.pathname === "/api/pending/approve" && req.method === "POST") { const b = await readBody(req), repo = String(b.repo || ""); if (b.bump) await learnNpm([repoPathMap()[repo]]); const notes = await releaseNotes(releaseInput(repo, { bump: b.bump })); return json(res, approveRepo(repo, { bump: b.bump, notes })); }
-      if (u.pathname === "/api/pending/approve-changes" && req.method === "POST") { const b = await readBody(req), repo = String(b.repo || ""); if (b.bump) await learnNpm([repoPathMap()[repo]]); const notes = await releaseNotes(releaseInput(repo, { bump: b.bump, tick: b.tick })); return json(res, approveChanges(repo, { bump: b.bump, tick: b.tick, notes })); }
+      if (u.pathname === "/api/pending/diff") { const p = laneMap()[u.searchParams.get("repo") || ""]; return json(res, { diff: p ? workingDiff(p) : "" }); }
+      if (u.pathname === "/api/pending/approve" && req.method === "POST") { const b = await readBody(req), repo = String(b.repo || ""); if (b.bump) await learnNpm([laneMap()[repo]]); const notes = await releaseNotes(releaseInput(repo, { bump: b.bump })); return json(res, approveRepo(repo, { bump: b.bump, notes })); }
+      if (u.pathname === "/api/pending/approve-changes" && req.method === "POST") { const b = await readBody(req), repo = String(b.repo || ""); if (b.bump) await learnNpm([laneMap()[repo]]); const notes = await releaseNotes(releaseInput(repo, { bump: b.bump, tick: b.tick })); return json(res, approveChanges(repo, { bump: b.bump, tick: b.tick, notes })); }
       if (u.pathname === "/api/pending/sendback" && req.method === "POST") { const b = await readBody(req); return json(res, sendBack(String(b.id || ""))); }
       if (u.pathname === "/api/automerge" && req.method === "POST") { const b = await readBody(req); return json(res, setAutoMerge(String(b.repo || ""), !!b.on)); }
       if (u.pathname === "/api/tasks/push" && req.method === "POST") { const b = await readBody(req); return json(res, pushTasks(b)); }
@@ -277,8 +278,8 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       if (u.pathname === "/api/knowledge/search") return json(res, { hits: searchKnowledge(u.searchParams.get("q") || "", { examples: u.searchParams.get("examples") === "1" }) });
       if (u.pathname === "/api/agentcfg") { const d = detectHandoffs(); return json(res, { cmd: handoffCmd(), agents: d.agents, editors: d.editors, connectors: connectorsInfo() }); }
       if (u.pathname === "/api/agentcmd" && req.method === "POST") { const b = await readBody(req); return json(res, setHandoffCmd(b.cmd)); }
-      if (u.pathname === "/api/agent/trust") return json(res, { full: trustFull() });
-      if (u.pathname === "/api/agent/trust/set" && req.method === "POST") { const b = await readBody(req); const cfg = loadConfig(); if (b.full) delete cfg.agentTrust; else cfg.agentTrust = "ask"; saveConfig(cfg); return json(res, { full: trustFull() }); }
+      if (u.pathname === "/api/agent/trust") return json(res, { full: trustFull(), sandbox: sandboxState() });
+      if (u.pathname === "/api/agent/trust/set" && req.method === "POST") { const b = await readBody(req); const cfg = loadConfig(); if (b.full) delete cfg.agentTrust; else cfg.agentTrust = "ask"; saveConfig(cfg); return json(res, { full: trustFull(), sandbox: sandboxState() }); }
       if (u.pathname === "/api/agent/grant" && req.method === "POST") { const b = await readBody(req); return json(res, grantAgent({ tool: b.tool, dir: b.dir })); }
       if (u.pathname === "/api/open" && req.method === "POST") { const b = await readBody(req); const e = runHandoff(String(b.path || ""), { force: !!b.force }); return json(res, { opened: !!e && !e.busy && !e.blocked, busy: !!(e && e.busy), auto: !!(e && e.auto), blocked: !!(e && e.blocked), note: (e && e.note) || "", id: (e && e.id) || "" }); }
       if (u.pathname === "/api/setup-local" && req.method === "POST") {
@@ -348,8 +349,15 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
         const ws = watchState(), news = markNews(newsSince(24 * 60), ws.watches), p = postsState(), t = testWeeks({ news, map: repoPathMap() });
         let n = null; try { n = await testInstalls(t, { get: (url) => fetch(url, { signal: AbortSignal.timeout(8000) }).then((r) => (r.ok ? r.json() : null)) }); } catch {}
         if (t && n) t.rows.forEach((r, i) => { r.installs = n[i]; });
-        return json(res, { linkedin: p.linkedin, replies: news.filter((x) => x.social && x.ts >= Date.now() - 30 * 86400000).slice(0, 30), test: t });
+        let lane = null; try { lane = marketingState(); } catch {}
+        return json(res, { linkedin: p.linkedin, replies: news.filter((x) => x.social && x.ts >= Date.now() - 30 * 86400000).slice(0, 30), test: t, lane });
       }
+      // Marketing's own lane (marketing.mjs): a task for it, tagged with its product; another
+      // lane's marketing task moved to it; its agent started; a draft its agent wrote, opened
+      if (u.pathname === "/api/marketing/task" && req.method === "POST") { const b = await readBody(req); return json(res, marketingTask(b.text, b.product)); }
+      if (u.pathname === "/api/marketing/move" && req.method === "POST") { const b = await readBody(req); return json(res, moveToMarketing(b.id, b.product)); }
+      if (u.pathname === "/api/marketing/go" && req.method === "POST") return json(res, marketingGo());
+      if (u.pathname === "/api/marketing/open" && req.method === "POST") { const b = await readBody(req), f = join(MARKETING_DIR, String(b.rel || "")); return json(res, f.startsWith(MARKETING_DIR + "/") && existsSync(f) ? { ok: openUrl(f) } : { error: "That draft isn't there any more." }); }
       if (u.pathname === "/api/posts/draft" && req.method === "POST") return json(res, await draftPosts());
       if (u.pathname === "/api/posts/approve" && req.method === "POST") { const b = await readBody(req); return json(res, approvePost(String(b.id || ""), { copy: null })); }
       if (u.pathname === "/api/posts/edit" && req.method === "POST") { const b = await readBody(req); return json(res, editPost(String(b.id || ""), b.text)); }
@@ -375,14 +383,15 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       if (u.pathname === "/api/firststeps") return json(res, firstSteps()); // Settings' first steps: what's set up, in order
       if (u.pathname === "/api/home/answer" && req.method === "POST") { const b = await readBody(req); return json(res, homeAnswer(b.id, { pick: b.pick, text: b.text })); }
       if (u.pathname === "/api/away" && req.method === "POST") { const b = await readBody(req); return json(res, toggleAway(`http://127.0.0.1:${server.address().port}/?t=${TOKEN}`, b.open)); }
+      if (u.pathname === "/api/home/next" && req.method === "POST") { const b = await readBody(req); return json(res, homeNext(b.id)); }
       if (u.pathname === "/api/home/ask" && req.method === "POST") { const b = await readBody(req); return json(res, await homeAsk(b.question, { images: saveShots(b.images) })); }
       if (u.pathname === "/api/adapt") return json(res, adaptState({ from: String(u.searchParams.get("from") || ""), commit: u.searchParams.get("commit") === "1", ...(u.searchParams.has("touch") ? { touch: u.searchParams.get("touch") === "1" } : {}) }));
       if (u.pathname === "/api/adapt/use" && req.method === "POST") { const b = await readBody(req); return json(res, noteUse(b)); }
       // Lanes (lanes.mjs): work agents handed to each other, and where it stands.
       if (u.pathname === "/api/lanes") return json(res, lanesState());
       // a parked project (lane) starts no agent runs until it's unparked (agents.mjs parkLane)
-      if (u.pathname === "/api/lanes/parked") { const map = repoPathMap(), ps = parkedPaths(); return json(res, { repos: Object.keys(map).filter((n) => ps.includes(map[n])), paths: ps }); }
-      if (u.pathname === "/api/lanes/park" && req.method === "POST") { const b = await readBody(req), map = repoPathMap(), p = Object.values(map).includes(String(b.path || "")) ? String(b.path) : map[String(b.repo || "")]; if (!p) return json(res, { error: "That project isn't on this computer." }); return json(res, parkLane(p, b.on !== false)); }
+      if (u.pathname === "/api/lanes/parked") { const map = laneMap(), ps = parkedPaths(); return json(res, { repos: Object.keys(map).filter((n) => ps.includes(map[n])), paths: ps }); }
+      if (u.pathname === "/api/lanes/park" && req.method === "POST") { const b = await readBody(req), map = laneMap(), p = Object.values(map).includes(String(b.path || "")) ? String(b.path) : map[String(b.repo || "")]; if (!p) return json(res, { error: "That project isn't on this computer." }); return json(res, parkLane(p, b.on !== false)); }
       // Watch (watch.mjs): a mapped page read again every few minutes, and what's new on it.
       if (u.pathname === "/api/watch") return json(res, watchState());
       if (u.pathname === "/api/watch/board") return json(res, watchBoard(Math.min(168, Math.max(1, Number(u.searchParams.get("hours")) || 24))));
@@ -491,6 +500,8 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
   // an agent's allow list that stays inside your work is turned on by itself, and the agent carries on
   setTimeout(() => { try { autoAllowSweep(); } catch {} }, 4000).unref();
   setInterval(() => { try { autoAllowSweep(); } catch {} }, 20000).unref();
+  // a finished run's last words, read by your AI for anything left to you that the patterns missed (agents.mjs readLastWords)
+  setInterval(() => { readLastWords().catch(() => {}); }, 60000).unref();
   // knowledge folders: changed files re-read (a stat per file when nothing changed), then checked again for where two files disagree (checks.mjs)
   const knowTick = () => { try { const r = knowledgeTick(); if (r && (r.read || r.removed || !checksState().at)) runChecks(); } catch {} };
   setTimeout(knowTick, 5000).unref(); setInterval(knowTick, 3 * 60 * 1000).unref();

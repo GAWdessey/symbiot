@@ -53,32 +53,34 @@ no install — it's the same CLI. Press Ctrl+C (or click the X in the top corner
 
 It opens on [the liquid](#the-liquid-a-home-that-shapes-itself-to-you); each of these parts opens from it:
 
-- **Map** — your repos and project folders as droplets in the liquid, placed by
-  their **nearest neighbours**: each repo's fingerprint is what it's built with
-  (languages and tools), the weeks you work on it (your commits per week over the
-  last 12), and what it's about (the words of its name, README and package
-  description, TF-IDF weighted), and it sits by the 3 repos most like it
-  (`mapknn.mjs`). The closest merge into one shape, the next are joined by a thin
-  thread of liquid, the rest by a faint line; each cluster is named over its region
-  ("JavaScript · Node"); what you haven't touched in a while is smaller and sinks;
-  **you are here** marks where your recent work is. **Point at a repo** to light up
-  its neighbours and see why ("shares JavaScript, Node; you worked on both the same
-  weeks"). **Click** for its details: branch, commits, uncommitted work, your last
-  12 weeks, **Most like it**, a **Suggest next steps** button, and an **AI review**
-  (what the project does, whether it needs new work at all, and ideas you can tick
-  into **Tasks**). Scroll to zoom, drag to pan. Under the map: the languages and
-  tools you build with. The Map needs **no AI key**; reviews and suggestions use
-  your chosen model. Project folders that **aren't git repos** show up too (see
-  [Where it looks](#where-it-looks)), as rings. The [experimental](#screens-blueprints-for-screen-automation)
+- **Map** — your repos and project folders as droplets in the liquid, in tidy
+  **lanes**: **Needs you** first (a project with a question for you or work ready
+  for your OK, and any agent run waiting on you; click one to answer it), then
+  **Your repos** (the ones with your commits), **Other repos**, **Folders without
+  git** (as rings), and the act-* folders agent runs work in, gathered into one
+  **Agent run folders** group until you click it open. Each lane runs newest first
+  on a grid as wide as the window, so names never sit on top of each other however
+  many folders you add; click a lane's name to fold it away. **Point at a repo** to
+  light up the ones most like it and see why: each repo's fingerprint is what it's
+  built with, the weeks you work on it and what it's about (`mapknn.mjs`), as in
+  "shares JavaScript, Node; you worked on both the same weeks". **Click** for its
+  details: branch, commits, uncommitted work, your last 12 weeks, **Most like it**,
+  a **Suggest next steps** button, and an **AI review** (what the project does,
+  whether it needs new work at all, and ideas you can tick into the **Workdesk**).
+  The page scrolls down the lanes; ctrl+scroll (a pinch) or **+** and **−** zoom.
+  Under the map: the languages and tools you build with. The Map needs **no AI
+  key**; reviews and suggestions use your chosen model. Project folders that
+  **aren't git repos** show up too (see [Where it looks](#where-it-looks)). The
+  [experimental](#screens-blueprints-for-screen-automation)
   **Screens** view folds away under the map.
 - **Dashboard** — everything you [watch](#screens-blueprints-for-screen-automation),
   as a stream: time runs left to right, one current per feed (your inbox, GitHub,
   WhatsApp, any other page), "now" on the right where each feed pools. Every message
   is a bead placed when it arrived; the ones waiting for your reply are bigger and
-  amber, and what you've already seen stays as small faint beads. Point at or tap a
-  bead to read it and **Draft a reply** or **Open** it. Under each feed's name:
-  **Seen** (sets its count back to 0; what it found stays under Watching, and the
-  other feeds keep theirs), **Talk** (a chat with your AI about what's new there:
+  amber. Point at or tap a bead to read it and **Draft a reply** or **Open** it.
+  Under each feed's name: **Seen** (sets its count back to 0 and clears its beads,
+  and remembers it: only what comes in after counts; what it found stays under
+  Watching, and the other feeds keep theirs), **Talk** (a chat with your AI about what's new there:
   what needs you, and what to say to whom; agree it there, then **Draft a reply**
   on one, and your agent gets that talk with the message, so it writes what you
   agreed) and **Check now**. The headline says what's waiting; switch between 24
@@ -93,7 +95,10 @@ It opens on [the liquid](#the-liquid-a-home-that-shapes-itself-to-you); each of 
   a "fetch latest" toggle (and an [experimental](#experimental) "check CI").
 - **Week / Standup / Todo** — the write-ups (these use your chosen AI), set as a
   readable page with its dates; **Copy** copies the text as written.
-- **Tasks** — a checklist, grouped by kind (Fixes, Tests & CI, Docs, …). You add
+- **Workdesk** — everything handed to an agent, in one place: what needs you, work
+  awaiting your review, the tasks queued for later, and below them the agents at
+  work, their questions and the handovers between them.
+  Tasks are a checklist, grouped by kind (Fixes, Tests & CI, Docs, …). You add
   a task by telling Symbiot in the bar at the bottom: it files it under the right
   project. Filter by type or repo, then **Send to repos** (at the top, beside
   Close) to hand just those to your agent (see
@@ -101,7 +106,7 @@ It opens on [the liquid](#the-liquid-a-home-that-shapes-itself-to-you); each of 
   finishes lands in **Awaiting your review** (see
   [Review and approve](#review-and-approve-the-agents-work)). A task you tick
   yourself is done and **auto-archives**; the archived view (the liquid's
-  **Archive**) can restore it. Opening Tasks or Agents from the liquid shows the
+  **Archive**) can restore it. Opening the Workdesk from the liquid shows the
   work first: a sphere per task an agent is on, named in plain words, with small
   spheres orbiting it while it works; what's done and waiting for your OK; and what's
   waiting its turn, gathered round the agent in its repo. One **Go** (or saying
@@ -110,13 +115,20 @@ It opens on [the liquid](#the-liquid-a-home-that-shapes-itself-to-you); each of 
   (once it's awaiting review) what the agent changed. Answers use your chosen AI,
   grounded in that repo's commits, README, rules and pending diff; the thread is
   kept with the task.
-- **Agents** — every agent run Symbiot has started (and local-model downloads):
-  live status, elapsed time, exit code, the tail of its output, and **what it
+  **Agents and handovers**, under the tasks: every agent run Symbiot has started
+  (and local-model downloads): live status, elapsed time, exit code, the tail of its output, and **what it
   did** — files changed and commits made, read from git, whichever agent it was.
   When an agent leaves **questions, options or ideas** for you, they show up on its
   block (see [Questions from your agent](#questions-from-your-agent)).
-- **Reports** — what your agents wrote up for you (findings, audits, plans), to
-  read in the app (see [What a run hands back](#what-a-run-hands-back-facts-to-remember-replies-to-wait-for-reports)).
+- **Reports** — what your agents wrote up for you (findings, audits, plans), newest
+  first, the unread ones marked (**Mark all read** clears them), and a reader for
+  each; unread reports always have their own droplet on Home (see [What a run hands back](#what-a-run-hands-back-facts-to-remember-replies-to-wait-for-reports)).
+- **Marketing** — marketing for every product you make, in a lane of its own (see
+  [The Marketing lane](#the-marketing-lane)): what needs you there first, the
+  lane's tasks and what its agent drafted, each tagged with the product it's for,
+  the LinkedIn **Drafts to post** (Shipped, Learned / fixed, Longer post), the
+  replies to them and the 4-week test (see
+  [`symbiot post`](#post-about-your-week-symbiot-post)).
 - **Settings** — [Link your work](#link-your-work), your AI, the folders to scan, your agent command, the
   [weekly write-up and start at login](#every-week-and-at-login), plus the
   [experimental](#experimental) email, model recommendations and one-click local
@@ -272,7 +284,7 @@ in the repo's `SYMBIOT_KEYSTORE_B64` and `SYMBIOT_KEYSTORE_PASS` secrets (see
 ## Hand tasks to your coding agent: `symbiot push`
 
 ```bash
-symbiot push          # or the "Send to repos" button in the app's Tasks tab
+symbiot push          # or the "Send to repos" button in the app's Workdesk
 symbiot push --open   # ...and run your agent command in each repo
 ```
 
@@ -281,7 +293,7 @@ Writes a **`.symbiot/TASKS.md`** into each repo your tasks reference — a check
 open `TODO/FIXME` markers (with `file:line`), and current drift. Then point Claude
 Code / Cursor / any agent at it: *"Read `.symbiot/TASKS.md` and implement the
 unchecked items."* Tasks come from ticking a repo review's ideas, or adding your
-own in the Tasks tab. Non-git project folders on the Map can receive tasks too.
+own on the Workdesk. Non-git project folders on the Map can receive tasks too.
 
 The brief asks the agent to tick each item (`- [x]`) as it finishes it and to leave
 its changes **uncommitted**, ready for your review.
@@ -289,7 +301,7 @@ its changes **uncommitted**, ready for your review.
 ### Review and approve the agent's work
 
 A tick from the agent doesn't archive anything. It moves the task into **Awaiting
-your review** at the top of the Tasks tab, grouped by repo, with the branch, the
+your review** at the top of the Workdesk, grouped by repo, with the branch, the
 size of the uncommitted change and a **Show diff** button. For each repo:
 
 - **Approve → PR** syncs the work. If you're on the default branch it creates
@@ -358,7 +370,7 @@ quieter choice.
 A project blocked on something only you can give (a token, a sign-in) would
 otherwise start its agent again with every answer, handover or Go, only to say
 the same thing. **Park this project** (at the top of its tasks) or **Park** (on
-its run in the Agents tab) stops its tasks starting agent runs, even Start it
+its run on the Workdesk) stops its tasks starting agent runs, even Start it
 anyway, until you unpark it. A run already going finishes; Go skips a parked
 project and says so.
 
@@ -425,8 +437,8 @@ Google Drive, Notion) now gets its claude.ai connector's rule on every Claude ru
 even before Claude records it or while it waits to be authorized. A rule for tools
 a run doesn't have does nothing.
 
-Each run is logged to `.symbiot/agent.log` in the repo and shown live in the
-**Agents** tab. The command is saved as `agentCmd` in
+Each run is logged to `.symbiot/agent.log` in the repo and shown live on the
+**Workdesk**. The command is saved as `agentCmd` in
 `~/.config/symbiot/config.json` — it's your command, Symbiot only fills in
 `{dir}` and `{prompt}`. A command saved from an older preset keeps working as-is.
 
@@ -434,8 +446,8 @@ One agent per repo: while a run is still going (tracked in
 `.symbiot/agent.pid`, so the app and `symbiot push --open` both see it), sending
 again doesn't start a second agent there, and doesn't rewrite the `TASKS.md` it's
 working from either: the new tasks wait in `.symbiot/TASKS.next.md` and replace
-`TASKS.md` when it finishes, keeping anything it ticked. The agent's block in the
-**Agents** tab shows "tasks held" meanwhile (hover it for their titles), and
+`TASKS.md` when it finishes, keeping anything it ticked. The agent's block on the
+**Workdesk** shows "tasks held" meanwhile (hover it for their titles), and
 when the agent finishes, the app starts one on the held tasks by itself. If
 `symbiot push --open` started the running agent, the app can't see it exit, so
 it starts one the next time it checks that repo after it finishes (opening the
@@ -455,6 +467,19 @@ Talk to Symbiot and its agents just do the work. A Claude run skips permission c
   folder (or `/`), sudo, piping a script from the internet into a shell, reading your
   SSH keys or cloud credentials, and changing Symbiot's own settings. A stopped agent
   is told why, and asks.
+- **The sandbox**, for a repo run, on top of the membrane. Its commands run in Claude
+  Code's own sandbox (bubblewrap on Linux, Seatbelt on macOS). They write only in the
+  repo, the folders you gave Symbiot or allowed it, and the npm and download caches
+  (`~/.npm`, `~/.cache`). They can't read your keys, or your AI's key in Symbiot's
+  settings, and there's no way to run a command outside the sandbox. Local sockets
+  work, so headless Chrome starts, but Docker's and your desktop session's are hidden,
+  since either one is a way out. Its Edit and Write tools are held to the same
+  folders by the membrane, and `gh` keeps working (the run gets its token).
+  Its settings live in `~/.config/symbiot/sandbox/`, not in the repo, so a run can't
+  widen its own sandbox. An ops run, whose job is this computer, and a draft reply's
+  run keep the membrane alone. On Linux it needs `bwrap` and `socat` (`sudo apt
+  install bubblewrap socat`); without them, runs have the membrane only, and Settings
+  says what's missing. `"agentSandbox": false` in `config.json` turns it off.
 - **One mind.** When an agent asks you something, your answer goes back into the same
   conversation (`--resume`), so it carries on knowing everything it knew. It starts
   afresh after 8 runs or 2 days.
@@ -488,7 +513,7 @@ Reading both costs about 40 lines.
 - [repo: symbiot] Show the drift report in Standup
 ```
 
-Up to five questions show on that agent's block in the **Agents** tab, each with
+Up to five questions show on that agent's block on the **Workdesk**, each with
 two options and room for your own answer, alongside its ideas, two at a time.
 Two, because most people pick the recommended option or add every idea without
 weighing them, so the agent is told to be the judge. Both options have to be good
@@ -509,7 +534,7 @@ that starts with `[repo: <name>]`, to that repo's Tasks: an agent working on one
 project can have ideas for another (Symbiot itself, say). The agent is told to
 keep going with everything that doesn't depend on an answer, and to ask instead of
 doing anything destructive. Both files live in `.symbiot/`, so they're never
-committed. The questions stay on the Agents tab after Symbiot restarts (or when
+committed. The questions stay on the Workdesk after Symbiot restarts (or when
 `symbiot push --open` started the run): Symbiot notes each folder a run starts in
 (`~/.config/symbiot/runs.json`) and lists the ones still waiting on you.
 
@@ -567,7 +592,9 @@ in the app.
 name: **Ferrofluid** (glossy black liquid metal, lit like a studio; the default),
 **Glass** (clear droplets that bend the colours behind them) or **Pearl** (silver
 lit like a product photo). Every panel follows the look, and the typeface (Geist)
-ships with Symbiot, so it looks the same offline.
+ships with Symbiot, so it looks the same offline. The core's words sit inside it in
+every look; on Pearl's mirror they sit on a soft pearl sheen, so they read over its
+bright top and its dark underside alike.
 
 At the top, in a band of its own, is **what only you can do**: an agent's question
 to you, an Approve waiting, a first step. Each is a lit lane orb with a liquid line
@@ -580,6 +607,19 @@ and the blob dissolves. More than fit across go on a second page. Clicking the o
 questions and its Approve under **Needs you here** at the top of its tasks, with its
 handovers that are waiting; an ops run's question on its block in Agents.
 
+When nothing waits on you, the band becomes **What could be done next**: three to
+five things that can be done now, from what Symbiot already knows, each with what
+it gains and how long it takes, and one button. **Triage the 8 unread reports**
+starts an agent that reads them and leaves one page, with their next steps as ideas
+you add in a click. **Retry** runs a handover that errored and was left. **Send
+coral's 2 waiting tasks to its agent** is for a project whose tasks have waited
+days with nothing at work there. **Give whatsapp_module "…"** puts a task with no
+project into the project its words name and starts that project's agent. **Draft
+replies** drafts replies to the newest new mail or chats and leaves them unsent.
+**Make a task** turns a decision you made lately, that no task carries yet, into a
+task. One you take stays away for a week, and **×** puts the box away until its
+suggestions change. It never shows while anything still waits on you.
+
 What stopped and can't go on without you is a question there too, on its lane.
 A handover that couldn't start (an ops run, limited to its own folder, handed
 "needs a run that can edit `~/Company`" to ops) asks **Allow this run access to
@@ -589,11 +629,20 @@ that asked; **Skip** lets it go, and that agent reads that you skipped it. It as
 for 3 days, or until the same thing goes through another way. A run that ended in
 an error asks **Run it again?** for a day, until another run starts there.
 
+A run that ended saying something waits on you, without asking it in QUESTIONS.md
+("the draft isn't sent", "needs sudo, and only you can do that"), asks too:
+**Go ahead** or **Done it**, with what to check first. Symbiot catches the usual
+ways of saying it by their words. For a new way of saying it ("the invoice is
+ready as a draft; give me the word and it goes out"), your AI reads each finished
+run's last words once, so it isn't missed.
+
 Under the band, around the core, are the parts of the app, grouped the
 **P.A.R.A.** way, each group a row with its name at its start, always in the same
 place and order:
 
-- **Projects** (work with an end): Tasks, Agents and Todo. Agents has spheres
+- **Projects** (work with an end): Tasks, Agents, Todo and Marketing, which is lit
+  amber (with how many) when something there needs you and has spheres orbiting
+  it while its agent works. Agents has spheres
   orbiting it while an agent works. Click the **Projects** name for your projects
   themselves: a sphere per lane with work on it, saying what's going on there,
   amber when something there needs you, in order (**Needs you** first, **Recent**,
@@ -616,6 +665,10 @@ on the Dashboard. Talk to it in the bar at the bottom: "open tasks" opens Tasks,
 as every chat. Paste a screenshot into the bar (Ctrl+V) or drop one on it, and
 Symbiot sees it with what you say (up to 4, with any AI you've connected that reads
 images); if it hands the work to an agent, the agent gets the screenshot too.
+Once you've said something, the chat has its own bar over the input: **Minimize**
+(or Esc, or a click anywhere outside the chat) shrinks it back to the input and
+brings Home back as it was, and **Chat · 4 messages** opens it again with
+everything said so far. Sending a message opens it too.
 Leave it alone and it rests as one orb. There are no settings for any
 of this: it adapts to you.
 
@@ -712,7 +765,8 @@ and nothing else. **It never posts by itself**, and it doesn't schedule.
   count the facts don't show is sent back once, then dropped. When every draft is
   dropped, Symbiot tries once more from the start by itself before giving up.
 - **You approve each one.** The drafts wait under **Marketing**, a section of its
-  own (its orb shows on Home once posts can be drafted), with **Approve**,
+  own (its orb shows on Home once posts can be drafted, lit while drafts wait on
+  you), each tagged with the product it's about, with **Approve**,
   **Edit** and **Skip**. Approve copies the post to your clipboard and opens
   LinkedIn's share box: you paste it and post it yourself.
 - **Pictures and videos.** Each draft says in a line what picture or short video
@@ -764,7 +818,7 @@ can't do.
   showed. The agent has your tools and connectors (MCP, the command line, a
   browser signed in to your linked sites). Something for later becomes a task on
   your list. Anything hard to undo (closing an account, deleting, paying, sending)
-  the agent asks you about first, in the Agents tab.
+  the agent asks you about first, on the Workdesk.
 - **It looks at links.** Ask about the links on a card and it looks each one up the
   way a link preview does (not signed in, no scripts run, nothing downloaded):
   where it really goes, what the page is, and whether it's a file such as an .apk.
@@ -778,8 +832,9 @@ can't do.
 
 ### Lanes: agents hand work to each other
 
-Each agent has its own lane: a repo, or **ops** for everything outside one (this
-computer, accounts, services, your connectors). When an agent needs something
+Each agent has its own lane: a repo, **ops** for everything outside one (this
+computer, accounts, services, your connectors), or **marketing** for marketing
+across your products ([The Marketing lane](#the-marketing-lane)). When an agent needs something
 that's another lane's job, it doesn't stop and it doesn't ask you to do it. It
 writes it to its `.symbiot/HANDOFF.md`, under the lane's name, and Symbiot:
 
@@ -788,7 +843,7 @@ writes it to its `.symbiot/HANDOFF.md`, under the lane's name, and Symbiot:
 2. when that agent is done, puts what it did into the asking agent's
    `.symbiot/ANSWERS.md` and starts that agent again, so it carries on.
 
-The Agents tab lists the **Handovers**: who handed what to whom, and where it
+The Workdesk lists the **Handovers**: who handed what to whom, and where it
 stands. A handover to a lane that doesn't exist, or back to the agent's own lane,
 goes back to the agent, not to you. After 4 handovers in a row, the next one isn't
 started, so two lanes can't pass the same job back and forth.
@@ -799,13 +854,39 @@ hand, a cable, which network you're on), your identity or secrets (signing in, a
 account, spending money, sending something in your name). Every brief tells the
 agent so, and such a question says which: `👤 You (only you: your Meta token): …`.
 
+### The Marketing lane
+
+Marketing is a lane of its own, not one repo's: posts, demo videos and screenshots,
+launches, landing-page copy and campaigns for every product you make (Symbiot,
+Dailify, the agent products…). Give it work on the Marketing page (**Add**, with the
+product it's for), by telling Symbiot ("a marketing task: a launch post for
+Dailify"), or by **Move to Marketing** on another project's task about posting,
+launches or pricing; any agent can hand work to it too, as `marketing`.
+
+- **Each item is tagged with its product**: `[Dailify] Write the launch post` as you
+  wrote it, else the product its words name (as you write it: "Dailify", from your
+  repos' names as you say them, the way Home names them).
+- **Its agent works in its own folder**, `~/.config/symbiot/marketing`, a git repo of
+  its own on this computer (no remote). It drafts each piece under
+  `drafts/<product>/`, and its brief lists the products in its tasks with where each
+  one's code and docs are. Every post opens with a strong hook, says plainly what
+  the product is and states its end goal; where the end goal isn't written down, it
+  drafts one and asks you to confirm it.
+- **It never posts**, publishes, schedules or sends, and never signs in as you.
+  Its work waits for your OK like any project's (**Approve** commits it in its
+  folder), and its questions reach you like any agent's.
+- **On Home** it's an orb among your projects, lit amber when something there needs
+  you: its questions (which also show as blobs under **Needs you**), its work
+  waiting for your OK, and the week's drafts. Click it and its page opens with
+  those lit at the top.
+
 ### What a run hands back: facts to remember, replies to wait for, reports
 
 Every brief also tells the agent what else it can leave in `.symbiot/`:
 
 - **`REMEMBER.json`**: lasting facts it found (who someone is, which account is
   what, a decision), as `[{ "name", "kind", "fact" }]`. A run can't write
-  Symbiot's memory itself. Once it stops, its block in the Agents tab shows them,
+  Symbiot's memory itself. Once it stops, its block on the Workdesk shows them,
   each ticked, with **Remember** and **Skip**. Remember puts the ticked ones into
   memory, marked with the run's name; Skip drops them. Either way it's asked once.
 - **`AWAITING.json`**: an email it sent (or drafted for you to send) that waits on
@@ -1047,7 +1128,7 @@ med / max, marking which fit your RAM) to run free and private via
 cheap → top). `setup-local` starts Ollama if it isn't running, downloads the model
 with progress, and switches Symbiot over to it. If Ollama isn't installed it prints
 the one-line install for your OS and you re-run it after. Both are buttons in
-Settings, where the download shows in the Agents tab. You can always pick a model
+Settings, where the download shows on the Workdesk. You can always pick a model
 yourself with `symbiot login`.
 
 ### Screens: blueprints for screen automation
@@ -1198,7 +1279,7 @@ runs by itself (Claude Code, Codex, Gemini or Aider, not an editor or Orca's tab
 the app running (its hidden browser stays open between the agent's steps), and
 your mail's site (`mail.google.com`) under Trusted sites. Each email gets a folder
 of its own in `~/.config/symbiot/drafts` (yours only) with the agent's brief, and
-the run shows in the Agents tab like any other: what it asks (a date only you
+the run shows on the Workdesk like any other: what it asks (a date only you
 know, say) is answered there. The agent sees the email's text, so it reaches
 whatever AI your agent uses. From a terminal, `symbiot watch new` marks the
 emails `"mail": true`, and `symbiot watch draft <id>` does the same as the button.

@@ -32,7 +32,7 @@ import { resolveProvider, write } from "./ai.mjs";
 import { handoffCmd, runHandoff, runningHandoff } from "./agents.mjs";
 import { linksIn, peekLinks, peekLine } from "./peek.mjs";
 import { converse, actNow, actIn, taskIn } from "./mind.mjs";
-import { repoPathMap } from "./scan.mjs";
+import { laneMap } from "./scan.mjs";
 import { maybeCustomer } from "./post.mjs";
 
 const WATCH_FILE = join(CONFIG_DIR, "watch.json");
@@ -320,7 +320,7 @@ function cardLinks(w, recent, question) {
   const own = hostOf(w.url), host = (u) => { try { return new URL(u).hostname.replace(/^www\./, ""); } catch { return ""; } };
   return [...linksIn(question), ...recent.flatMap((n) => linksIn(n.text))].filter((u) => host(u) && host(u) !== own);
 }
-async function boardChat(id, question, { hours = 72, now = Date.now(), ask = write, look = peekLinks, run = actNow, lanes = () => { try { return repoPathMap(); } catch { return {}; } } } = {}) {
+async function boardChat(id, question, { hours = 72, now = Date.now(), ask = write, look = peekLinks, run = actNow, lanes = () => { try { return laneMap(); } catch { return {}; } } } = {}) {
   question = String(question || "").trim().slice(0, 2000);
   const d = loadWatch(), w = d.watches.find((x) => x.id === id); if (!w) return { error: `No watch ${id}.` };
   if (!question) return { error: "empty" };
@@ -528,7 +528,7 @@ function draftReply(id, { run = runHandoff } = {}) {
   // it runs by itself, in the background: an editor, or Orca's tab, can't (and Orca's tab wouldn't carry SYMBIOT_DRAFT)
   if (!/\{prompt\}/.test(tmpl) || /orca-ide/.test(tmpl)) return { error: "Drafting runs your agent in the background, so it needs an agent that makes changes by itself (Settings → Handoff: Claude Code, Codex, Gemini or Aider), not an editor or an Orca tab." };
   const dir = join(DRAFTS_DIR, n.id);
-  if (runningHandoff(dir)) return { error: "Your agent is still drafting this one. It's in the Agents tab." };
+  if (runningHandoff(dir)) return { error: "Your agent is still drafting this one. It's on the Workdesk." };
   try {
     // your mail or chats, and the agent's log of them: yours only, like watch.json
     mkdirSync(join(dir, ".symbiot"), { recursive: true, mode: 0o700 }); try { chmodSync(DRAFTS_DIR, 0o700); } catch {}
@@ -537,7 +537,7 @@ function draftReply(id, { run = runHandoff } = {}) {
   } catch (e) { return { error: "Couldn't write the brief: " + ((e && e.message) || e) }; }
   const e = run(dir, { force: true }); // a click on Draft a reply asks for a run, even after one stopped on a question
   if (!e) return { error: "Your agent didn't start. Check its command in Settings → Handoff." };
-  if (e.busy) return { error: "Your agent is still drafting this one. It's in the Agents tab." };
+  if (e.busy) return { error: "Your agent is still drafting this one. It's on the Workdesk." };
   const d2 = loadWatch(), n2 = d2.news.find((x) => x.id === id); if (n2) { n2.drafted = Date.now(); saveWatch(d2); }
   return { ok: true, job: e.id, dir, ...(chat ? { chat: true } : {}), ...(social ? { social: true } : {}) };
 }
@@ -550,7 +550,7 @@ async function openChat(id, { open = signIn } = {}) {
   const d = loadWatch(), n = d.news.find((x) => x.id === id); if (!n) return { error: "That message isn't under Watching any more." };
   const w = d.watches.find((x) => x.id === n.watch);
   if (!w || !isChat(w.url)) return { error: "Open in WhatsApp is for a WhatsApp chat." };
-  if (runningHandoff(join(DRAFTS_DIR, n.id))) return { error: "Your agent is still typing the reply. Open WhatsApp once it's done: the Agents tab shows when." };
+  if (runningHandoff(join(DRAFTS_DIR, n.id))) return { error: "Your agent is still typing the reply. Open WhatsApp once it's done: the Workdesk shows when." };
   return open(w.url);
 }
 

@@ -55,6 +55,32 @@ ok("each resumed run is counted, so a conversation that's gone on long starts fr
 writeFileSync(join(s, "agent.log"), readFileSync(join(s, "agent.log"), "utf8") + "\nNo conversation found with session ID: sess-1\n");
 ok("if its conversation is gone, the session is dropped (and the run starts afresh)", a.noteSession(dir, 1, true) === "lost" && a.resumeFor(dir) === null, "");
 
+console.log("THE SANDBOX — a repo run's commands write only in its repo and your folders");
+const ready = () => ({ ready: true, missing: [] });
+ok("what it needs: bwrap and socat on Linux (socat was missing here), nothing extra on macOS", a.sandboxNeeds({ platform: "linux", has: (c) => c === "bwrap" }).missing.join() === "socat" && a.sandboxNeeds({ platform: "linux", has: () => true }).ready && a.sandboxNeeds({ platform: "darwin", has: () => false }).ready && a.sandboxNeeds({ platform: "win32" }).unsupported, "");
+const repo = join(HOME, "projects", "coral"); mkdirSync(join(repo, ".claude"), { recursive: true });
+writeFileSync(join(repo, ".claude", "settings.local.json"), JSON.stringify({ permissions: { additionalDirectories: ["/home/u/GoSolr"] } }));
+const box = a.sandboxFor(repo, base + ' --add-dir "/home/u/screens"', { needs: ready }), sb = JSON.parse(readFileSync(box.file, "utf8"));
+ok("a repo run gets its own settings, in Symbiot's folder (not the repo, so a run can't widen its own)", box.file.startsWith(a.SANDBOX_DIR + "/") && !box.file.startsWith(repo), box.file);
+ok("…the membrane still on (the guard as its hook), and the sandbox on with no way out of it", /guard\.mjs/.test(sb.hooks.PreToolUse[0].hooks[0].command) && sb.sandbox.enabled && sb.sandbox.allowUnsandboxedCommands === false && sb.sandbox.failIfUnavailable === true && sb.sandbox.autoAllowBashIfSandboxed === true, sb.sandbox);
+const W = sb.sandbox.filesystem.allowWrite;
+ok("…it writes in the repo, the folders you gave it (--add-dir, the repo's allow list) and the npm and download caches", W[0] === repo && W.includes("/home/u/screens") && W.includes("/home/u/GoSolr") && W.includes(join(HOME, ".npm")) && W.includes(join(HOME, ".cache")) && !W.includes(HOME), W);
+ok("…and can't read your keys, or your AI's key and the app's token in Symbiot's settings", sb.sandbox.filesystem.denyRead.includes(join(HOME, ".ssh")) && sb.sandbox.filesystem.denyRead.includes(join(HOME, ".config", "gh")) && sb.sandbox.filesystem.denyRead.includes(join(HOME, ".config", "symbiot", "config.json")), sb.sandbox.filesystem.denyRead);
+ok("…local sockets open (headless Chrome needs one), but not Docker's or your session's (a way out)", sb.sandbox.network.allowAllUnixSockets === true && ["/run/docker.sock", "/var/run/docker.sock", "/tmp/.X11-unix"].every((x) => sb.sandbox.filesystem.denyRead.includes(x)) && (typeof process.getuid !== "function" || sb.sandbox.filesystem.denyRead.includes(`/run/user/${process.getuid()}`)), sb.sandbox.filesystem.denyRead);
+ok("the run's command uses it", a.withTrust(base, box).includes(`--settings "${box.file}"`) && !a.withTrust(base, box).includes(a.GUARD_SETTINGS), a.withTrust(base, box));
+ok("an ops run or a draft reply's run (this computer is their job) keeps the membrane alone", a.sandboxFor(join(HOME, ".config", "symbiot", "drafts", "act-1"), base, { needs: ready }) === null && a.sandboxFor(join(HOME, ".config", "symbiot", "drafts", "n1"), base, { needs: ready }) === null, "");
+ok("…as does a repo run without what the sandbox needs (rather than a run that won't start)", a.sandboxFor(repo, base, { needs: () => ({ ready: false, missing: ["socat"] }) }) === null, "");
+writeFileSync(join(HOME, ".config", "symbiot", "config.json"), JSON.stringify({ agentSandbox: false }));
+ok("…and every run, with agentSandbox off", a.sandboxFor(repo, base, { needs: ready }) === null && a.sandboxState().on === false, a.sandboxState());
+writeFileSync(join(HOME, ".config", "symbiot", "config.json"), "{}");
+const env = a.sandboxEnv(box, { token: () => "gho_" + "x".repeat(32) });
+ok("its environment: the folders for the guard, and gh's token (the sandbox can't reach gh's keyring)", JSON.parse(env.SYMBIOT_WRITES)[0] === repo && (process.env.GH_TOKEN || env.GH_TOKEN === "gho_" + "x".repeat(32)) && a.sandboxEnv(null) === null && !("GH_TOKEN" in a.sandboxEnv(box, { token: () => "not logged in" })), Object.keys(env));
+const ow = { ...o, writes: ["/home/u/proj", "/home/u/GoSolr"] };
+ok("the guard holds its Edit and Write tools to the same folders", judge("Write", { file_path: "/home/u/proj/src/a.js" }, ow) === null && judge("Edit", { file_path: "/home/u/GoSolr/x.md" }, ow) === null && /writes only in its repo and your folders/.test((judge("Write", { file_path: "/home/u/.bashrc" }, ow) || {}).why) && /sandbox/.test((judge("Edit", { file_path: "../other/x.js" }, ow) || {}).why), "");
+ok("…reading anywhere still goes ahead, and an unsandboxed run's writes are as before", judge("Read", { file_path: "/home/u/notes.md" }, ow) === null && judge("Write", { file_path: "/home/u/.bashrc" }, o) === null, "");
+const hw = spawnSync(process.execPath, [GUARD], { input: JSON.stringify({ tool_name: "Write", tool_input: { file_path: "/etc/hosts2" }, cwd: "/home/u/proj" }), encoding: "utf8", env: { ...process.env, SYMBIOT_WRITES: JSON.stringify(["/home/u/proj"]) } });
+ok("…as the hook, from the run's SYMBIOT_WRITES", hw.status === 2 && /its sandbox/.test(hw.stderr), [hw.status, hw.stderr]);
+
 rmSync(HOME, { recursive: true, force: true });
 console.log((fail ? "✗" : "✓") + " guard: " + pass + " passed, " + fail + " failed");
 if (fail) process.exit(1);

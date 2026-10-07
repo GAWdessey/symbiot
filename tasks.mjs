@@ -12,7 +12,8 @@ import { userStyleLine } from "./adapt.mjs";
 import { QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, handoffCmd, runningHandoff, writeTasks, droppedTasks, startHeldTasks, connectorsLine } from "./agents.mjs";
 import { gitDefaultBranch } from "./drift.mjs";
 import { readRunLog } from "./work.mjs";
-import { repoPathMap, openWork, detectRepo } from "./scan.mjs";
+import { repoPathMap, laneMap, openWork, detectRepo } from "./scan.mjs";
+import { MARKETING_DIR, ensureMarketing, marketingBrief } from "./marketing.mjs";
 
 // ---- tasks: a persistent checklist (stored by core.mjs) -------------------
 // One line (TASKS.md has a task per line, and a tick only matches a whole one),
@@ -107,7 +108,7 @@ function applyDrops(t, map) {
 // Tasks held for an agent that has since finished land here too, and an agent
 // starts on what's still open in them (one `push --open` started can't do that).
 function syncTasks() {
-  const t = loadTasks(); const map = repoPathMap(); let review = 0, archived = 0, started = 0; const checkedByRepo = {};
+  const t = loadTasks(); const map = laneMap(); let review = 0, archived = 0, started = 0; const checkedByRepo = {};
   const dropped = applyDrops(t, map);
   for (const x of t) {
     if (x.archived || x.done || x.review || !x.repo) continue;
@@ -375,7 +376,7 @@ function finishedOffer(path, open) {
 function pendingReview() {
   const t = loadTasks(), by = {}; for (const x of t) if (x.review && !x.done && !x.archived) (by[x.repo] = by[x.repo] || []).push(x);
   const sent = [...new Set(t.filter((x) => x.repo && !x.archived && !by[x.repo]).map((x) => x.repo))];
-  const map = Object.keys(by).length || sent.length ? repoPathMap() : {};
+  const map = Object.keys(by).length || sent.length ? laneMap() : {};
   const am = autoMergeRepos();
   const out = Object.keys(by).sort().map((repo) => { const path = map[repo] || ""; return { repo, path, tasks: by[repo], autoMerge: am.includes(repo), running: !!(path && runningHandoff(path)), ...(path ? { ...workingChanges(path), unreleased: unreleased(path), bumpOffer: bumpOffer(path), publishesOnMerge: publishesOnMerge(path) } : { branch: "", files: [], stat: "" }) }; });
   for (const repo of sent.sort()) {
@@ -497,7 +498,7 @@ function setAutoMerge(repo, on) { const cfg = loadConfig(); let a = (Array.isArr
 function approveRepo(repo, opts = {}) {
   const t = loadTasks(); const items = t.filter((x) => x.repo === repo && x.review && !x.done && !x.archived);
   if (!items.length) return { error: "Nothing awaiting review for " + (repo || "(no repo)") + "." };
-  const path = repoPathMap()[repo]; if (!path) return { error: "Repo not found: " + repo };
+  const path = laneMap()[repo]; if (!path) return { error: "Repo not found: " + repo };
   const busy = stillWorking(repo, path); if (busy) return busy;
   const r = shipWithBump(path, uniqueTasks(items.map((x) => x.text)), { ...opts, autoMerge: opts.autoMerge !== undefined ? opts.autoMerge : autoMergeRepos().includes(repo) });
   if (r.error) return r;
@@ -514,7 +515,7 @@ function approveRepo(repo, opts = {}) {
 // approved with the changes, as Approve does, so they don't go out again.
 function approveChanges(repo, opts = {}) {
   if (loadTasks().some((x) => x.repo === repo && x.review && !x.done && !x.archived)) return approveRepo(repo, opts);
-  const path = repoPathMap()[repo]; if (!path) return { error: "Repo not found: " + (repo || "(no repo)") };
+  const path = laneMap()[repo]; if (!path) return { error: "Repo not found: " + (repo || "(no repo)") };
   const busy = stillWorking(repo, path); if (busy) return busy;
   if (!workingChanges(path).files.length) return { error: "No uncommitted changes in " + repo + "." };
   const ids = new Set(Array.isArray(opts.tick) ? opts.tick.map(String) : []);
@@ -532,7 +533,7 @@ function approveChanges(repo, opts = {}) {
 function sendBack(id) {
   const t = loadTasks(); const it = t.find((x) => x.id === id); if (!it) return { error: "not found" };
   it.review = false; delete it.reviewAt; saveTasks(t);
-  const path = it.repo && repoPathMap()[it.repo];
+  const path = it.repo && laneMap()[it.repo];
   if (path) { const f = join(path, ".symbiot", "TASKS.md"); try { writeFileSync(f, readFileSync(f, "utf8").split("\n").map((l) => /^\s*-\s*\[x\]/i.test(l) && sameTask(l.replace(/^\s*-\s*\[x\]\s*/i, ""), it.text) ? l.replace(/\[x\]/i, "[ ]") : l).join("\n")); } catch {} }
   return it;
 }
@@ -562,13 +563,14 @@ function buildTasksMd(name, ctx, list) {
   if (ctx.open && ctx.open.length) { L.push("- **Open markers (TODO/FIXME + uncommitted):**"); for (const o of ctx.open) L.push(`  - ${o}`); }
   if (ctx.drift && ctx.drift.length) { L.push("- **Current drift / risk:**"); for (const d of ctx.drift) L.push(`  - ${d}`); }
   if (ctx.connectors) L.push(`- **Connectors:** ${ctx.connectors}`);
+  if (ctx.about && ctx.about.length) L.push("", ...ctx.about);
   L.push("", "## Tasks");
   const byType = {}; for (const t of list) { const ty = taskType(t.text); (byType[ty] = byType[ty] || []).push(t); }
   const keys = Object.keys(byType).sort((a, b) => TASK_ORDER.indexOf(a) - TASK_ORDER.indexOf(b));
   for (const ty of keys) { L.push(`### ${ty}`); for (const t of byType[ty]) L.push(`- [ ] ${t.text}`); L.push(""); }
   L.push("## When you finish an item", "- Tick it here (`- [x]`) as soon as it's done — that's how it reaches review. Ticking doesn't archive it: the user approves it in Symbiot, which commits it on a branch and opens a PR.", "- Leave your changes **uncommitted**, and don't tick anything you didn't finish or couldn't verify.", "- If the user says to drop an item (in ANSWERS.md, say), delete its line here: Symbiot closes it, so it isn't sent again. Don't delete one for any other reason.", "");
   L.push(...handoverRules(ctx.lanes || [], name), ...HANDBACK);
-  L.push("## If you need a decision, or have ideas", "You may be running unattended, so you can't ask in chat. Write `.symbiot/QUESTIONS.md` instead: Symbiot shows it to the user on your block in its Agents tab, and their answers come back in `.symbiot/ANSWERS.md` (read that first if it exists).",
+  L.push("## If you need a decision, or have ideas", "You may be running unattended, so you can't ask in chat. Write `.symbiot/QUESTIONS.md` instead: Symbiot shows it to the user on your block in its Workdesk, and their answers come back in `.symbiot/ANSWERS.md` (read that first if it exists).",
     `- At most ${QUESTIONS_MAX} questions, under a \`## Questions\` heading. Each is a \`### \` heading, then a line of context, then exactly ${OPTIONS_SHOWN} options as \`- \` bullets, the one you recommend first, marked \`(recommended)\`. Symbiot shows only the first ${OPTIONS_SHOWN}; the user can always answer in their own words.`,
     "- Judge the options before you ask. Most people pick the recommended option without weighing the other, and Symbiot works for a whole company (developers, sales, everyone), not one person, so the choice is really yours. Both options must be good routes to the best solution, never filler or one you wouldn't take. Each says in plain words, with no jargon, what it does and what it changes from then on for the project, the people working on it and the company. Recommend the one that's best for, in this order, the company, the people doing the work, then the task's goal. Base that on evidence you can check here (git history, tests, logs, how it's used, the answers so far), not on what's quickest, and give that evidence in the context line in a sentence.",
     ONLY_YOU,
@@ -582,7 +584,7 @@ function buildTasksMd(name, ctx, list) {
   return L.join("\n") + "\n";
 }
 function pushTasks(filter) {
-  const byName = repoPathMap(); // from the already-scanned map when there is one
+  const byName = laneMap(); // from the already-scanned map when there is one, and Marketing (marketing.mjs)
   // what an approved Drop/Merge named, or an agent deleted from its brief, never goes out again
   const all = loadTasks(); let changed = applyRemovals(all) + applyDrops(all, byName);
   // what an agent ticked since the Tasks tab last looked goes to review first, as
@@ -603,7 +605,7 @@ function pushTasks(filter) {
   const written = [], unresolved = [], connectors = connectorsLine(); // the same for every repo's run
   for (const name of Object.keys(groups)) {
     const list = uniqueTasks(groups[name].map((t) => t.text)).map((text) => ({ text })), path = name && byName[name]; // near-duplicates once
-    if (!path) { unresolved.push({ name: name || "(no repo)", count: list.length }); continue; }
+    if (!path || (path === MARKETING_DIR && !ensureMarketing(path))) { unresolved.push({ name: name || "(no repo)", count: list.length }); continue; }
     try {
       // Cheap, per-repo signals only — no full drift scan (that can be very slow
       // on big repos and would block the request).
@@ -619,7 +621,9 @@ function pushTasks(filter) {
       if (st.behind) risk.push(`${st.behind} behind upstream on ${st.branch}`);
       if (st.dirty && !st.stale) risk.push(`${st.dirty} uncommitted (${st.mod} mod / ${st.del} del / ${st.add} new)`);
       // held: an agent is still running there, so it lands when that one exits
-      const held = writeTasks(path, buildTasksMd(name, { branch: st.branch, commits, open, drift: risk, stack, lanes: Object.keys(byName), connectors }, list));
+      // Marketing's brief says what the lane is, the products its tasks name and where they are
+      const about = path === MARKETING_DIR ? marketingBrief(list, { map: byName }) : [];
+      const held = writeTasks(path, buildTasksMd(name, { branch: st.branch, commits, open, drift: risk, stack, lanes: Object.keys(byName), connectors, about }, list));
       written.push({ name, file: join(path, ".symbiot", "TASKS.md"), path, count: list.length, held });
     } catch (e) { unresolved.push({ name, count: list.length, error: String((e && e.message) || e) }); }
   }
