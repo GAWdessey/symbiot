@@ -817,6 +817,22 @@ body.lq-liquid.lq-light ::-webkit-scrollbar-thumb{background:rgba(21,26,33,.16)}
 body.lq-light .lqatt img{border-color:rgba(21,26,33,.15)}body.lq-light .lqatt button{background:#151A21;color:#FFFFFF}
 #lqform.drop{outline:2px dashed rgba(242,165,65,.7);outline-offset:4px}
 .lqmimgs{display:flex;gap:6px;margin-bottom:6px}.lqmimgs img{width:120px;max-height:90px;object-fit:cover;border-radius:8px}
+
+/* Away (Super+S): the orb, the time and what's going on, on every screen; nothing else */
+#lqaway{display:none}
+body.lq-away{cursor:none;overflow:hidden}
+body.lq-away #lq{position:fixed!important;inset:0!important;width:100vw!important;height:100vh!important;display:block!important}
+body.lq-away>*:not(#liquid):not(#lqaway):not(script),body.lq-away #liquid>*:not(#lq){display:none!important}
+body.lq-away #liquid{display:block!important;position:fixed!important;inset:0!important}
+body.lq-away #lqaway{display:block;position:fixed;left:0;top:0;width:440px;text-align:center;pointer-events:none;z-index:5;color:#F3F0EA;text-shadow:0 1px 14px rgba(0,0,0,.65);will-change:transform;transition:opacity .6s}
+#lqaway .awt{font:300 68px/1 var(--sans);letter-spacing:-.03em;font-variant-numeric:tabular-nums}
+#lqaway .awd{margin-top:10px;font:500 12px var(--sans);letter-spacing:.16em;text-transform:uppercase;opacity:.55}
+#lqaway .aws{margin-top:20px;font:400 15px/1.6 var(--sans);opacity:.9}
+#lqaway .aws b{color:var(--amber);font-weight:600}
+#lqaway .awr{display:block;font-size:13.5px;opacity:.75;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#lqaway .awh{margin-top:16px;font-size:11.5px;opacity:.32}
+body.lq-light #lqaway{color:#151A21;text-shadow:0 1px 12px rgba(255,255,255,.8)}
+body.lq-light #lqaway .aws b{color:#9A5200}
 /* the Dashboard as a stream: time runs left to right, a current per feed, now on the right */
 .bstream{position:relative;margin-top:10px;border-radius:18px;overflow:hidden;isolation:isolate;background:#08090B;box-shadow:0 0 0 1px rgba(255,255,255,.08)}
 body.lq-light .bstream{background:#EBEEF0;box-shadow:0 0 0 1px rgba(21,26,33,.08)}
@@ -2677,7 +2693,7 @@ LQ.back=true;try{if(s.scene==='work'&&(cur.scene!=='work'||cur.by!==s.by)){LQ.wo
 if(s.pool){if(s.arch)lqArchive();else lqPool(s.pool);}else if(LQ.mode==='pool')lqSink();}finally{LQ.back=false;}}
 function lqPool(shape){if(shape==='map'&&LM.items&&LM.items.length)setTimeout(function(){lmFit();lmStart();},60);lqRemember();LQ.poolShape=shape;LQ.arch=false;tabPicked=true;setTab(shape);var b=document.body;if(b&&b.classList)b.classList.add('lq-pooled');LQ.mode='pool';var m=document.querySelector('main');if(m){m.scrollTop=0;if(m.focus)m.focus();}}
 function lqSink(){lqRemember();LQ.focus=null;var b=document.body;if(b&&b.classList)b.classList.remove('lq-pooled');LQ.mode='aware';lqAct();lqLoad(false);}
-function lqAct(){LQ.lastAct=Date.now();if(LQ.mode==='rest'){LQ.mode='aware';lqLoad(true);}}
+function lqAct(){if(AWAY)return;LQ.lastAct=Date.now();if(LQ.mode==='rest'){LQ.mode='aware';lqLoad(true);}}
 function lqTalkMode(on){LQ.talking=on;var b=document.body;if(b&&b.classList)b.classList.toggle('lq-talking',on);}
 function lqTalkShow(wait){var el=$('lqtalk');if(!el)return;var n=LQ.talk.length;el.innerHTML=LQ.talk.map(function(m,i){var age=n-1-i,op=age<2?1:age===2?0.7:age===3?0.45:0.25;return "<div class='lqmsg"+(m.me?' me':'')+"' style='opacity:"+op+"'>"+(m.imgs&&m.imgs.length?"<span class='lqmimgs'>"+m.imgs.map(function(d){return "<img src='"+d+"' alt='your screenshot'>";}).join('')+"</span>":"")+esc(m.text)+stepsHtml(m.steps)+"</div>";}).join('')+(wait?"<div class='lqmsg thinking'>Thinking: recalling what it knows, reading what's here&hellip;</div>":'');if(el.scrollHeight)el.scrollTop=el.scrollHeight;
 // scrolled up to read back: the whole history shows, clear; back at the bottom it rolls on again
@@ -2699,6 +2715,7 @@ api('/api/home/ask',{question:q,images:shots}).then(function(r){LQ.talk.push({me
 // The physics: each droplet a critically damped spring to its place (no wobble,
 // no overshoot), pushed off its neighbours and the core where they'd overlap.
 function lqStep(){var S0=lqSize();if(S0.w!==LQ.bw||S0.h!==LQ.bh){if(LQ.scene==='work'&&LQ.workData)lqBuildWork();else if(LQ.adapt)lqBuild();}var S=S0,cx=S.w/2,cy=(LQ.scene!=='work'&&LQ.cy)||S.h*0.47,k=0.022,c=2*Math.sqrt(k),th=LQ.theme,still=th.still,rest=LQ.mode==='rest',pool=LQ.mode==='pool',talk=LQ.talking&&!pool;
+if(AWAY){LQ.mode='rest';rest=true;pool=false;talk=false;var ap=lqAwayPos(S);cx=ap.x;cy=ap.y;} // away: the orb at rest, where the bounce has it
 var core=LQ.core,ctx=cx,cty=talk?S.h-44:cy,ctr=(rest?140:pool?50:talk?54+30*(LQ.talkWeight||0.35):92)*S.s;
 if(!core.x){core.x=cx;core.y=cy;}core.x+=(ctx-core.x)*(still?1:0.06);core.y+=(cty-core.y)*(still?1:0.06);core.cr+=(ctr-core.cr)*(still?1:0.05);
 var D=LQ.drops,N=D.length;
@@ -2799,6 +2816,49 @@ if(slow){var sig=W+'|'+H+'|'+th.look+th.night+th.contrast;for(var q=0;q<o.length
 var U=G.U;gl.uniform2f(U.uRes,W,H);gl.uniform1f(U.uT,slow?0:t);gl.uniform1f(U.uDpr,d);gl.uniform4fv(U.uB,o);gl.uniform3f(U.uRip,LQ.ripple[0],LQ.ripple[1],still?-10:LQ.ripple[2]);
 gl.uniform1f(U.uStyle,th.look==='glass'?0:th.look==='pearl'?2:1);gl.uniform1f(U.uContrast,th.contrast?1:0);gl.uniform1f(U.uExposure,th.night?0.82:1);
 gl.drawArrays(gl.TRIANGLES,0,3);}
+
+// ---- Away (Super+S) ------------------------------------------------------------
+// ?away=1 from "symbiot away": this window is one of the screens. One screen: the
+// orb rests in the middle. More: it bounces across their shared area (gw x gh) at
+// the same pace in every window from the same start (t0), each drawing it while it's
+// over its own part (ax, ay, aw x ah), so it crosses from screen to screen. Under it,
+// the time and what's going on, counts only. Any key or click closes every window.
+var AWAY=null;
+(function(){try{var q=new URLSearchParams(location.search);if(q.get('away')!=='1')return;var n=function(k,d){var v=Number(q.get(k));return isFinite(v)&&q.get(k)!==null?v:d;};
+AWAY={n:n('n',1),ax:n('ax',0),ay:n('ay',0),aw:n('aw',0),ah:n('ah',0),gw:n('gw',0),gh:n('gh',0),t0:n('t0',Date.now()),since:Date.now(),shown:Date.now()};}catch(e){}})();
+var pingpong=function(d,L){if(L<=0)return 0;var m=d%(2*L);if(m<0)m+=2*L;return m<=L?m:2*L-m;};
+function lqAwayPos(S){var cx=S.w/2,cy=S.h*0.42;if(!AWAY||AWAY.n<2||!AWAY.gw||!AWAY.aw)return {x:cx,y:cy};
+var k=S.w/AWAY.aw,R=220,L=AWAY.gw-2*R,M=AWAY.gh-2*R,t=(Date.now()-AWAY.t0)/1000,v=95;
+var gx=R+pingpong(v*t*0.83+L/2,L),gy=R+pingpong(v*t*0.56+M/2,M);
+return {x:(gx-AWAY.ax)*k,y:(gy-AWAY.ay)*k};}
+function awShort(t){t=String(t||'');var cut=[' - ',' \u00b7 ',' | '];cut.forEach(function(c){var i=t.indexOf(c);if(i>0)t=t.slice(0,i);});return t.trim();}
+function awStatus(){var el=$('awstat');if(!el)return;Promise.all([api('/api/home').catch(function(){return {};}),api('/api/work').catch(function(){return {};})]).then(function(r){var h=r[0]||{},w=r[1]||{},out=[];
+var runs=(w.running||[]).slice(0,4),nr=(w.running||[]).length||h.working||0;
+out.push(nr?'<b>'+nr+' agent'+(nr===1?'':'s')+' at work</b>':'No agent at work');
+runs.forEach(function(x){out.push("<span class='awr'>"+esc(x.lane||x.name||'')+': '+esc(x.doing||'working on it')+'</span>');});
+var y=h.youCount||0;out.push(y?'<b>'+y+' thing'+(y===1?'':'s')+' only you can do</b>':'Nothing needs you');
+var fd=(h.feeds||[]).filter(function(f){return f.count;}).slice(0,4).map(function(f){return esc(awShort(f.title))+' '+f.count;});if(fd.length)out.push('Waiting: '+fd.join(' \u00b7 '));
+el.innerHTML=out.join('<br>');}).catch(function(){});}
+function awTick(){var tm=$('awtime'),dt=$('awdate');if(!tm)return;var d=new Date(),p=function(x){return (x<10?'0':'')+x;};tm.textContent=p(d.getHours())+':'+p(d.getMinutes());
+dt.textContent=d.toLocaleDateString(undefined,{weekday:'long',day:'numeric',month:'long'})+' \u00b7 away since '+p(new Date(AWAY.since).getHours())+':'+p(new Date(AWAY.since).getMinutes());}
+function awPlace(){var o=$('lqaway');if(!o||!LQ.core)return;var S=lqSize(),c=LQ.core,h=o.offsetHeight||220,x=c.x-220,below=c.y+c.cr+30,y=below+h<S.h-10?below:c.y-c.cr-30-h;
+o.style.transform='translate('+Math.round(x)+'px,'+Math.round(y)+'px)';o.style.opacity=(c.x+220<0||c.x-220>S.w)?'0':'1';}
+// Its own screen, full: Chrome lists the screens (its profile lets this address see
+// them) and puts this window full screen on the si-th, left to right; their places
+// come from there too (scaled, as the page sees them). No list: full screen where it is.
+function awayScreen(){var si=0;try{si=Number(new URLSearchParams(location.search).get('si'))||0;}catch(e){}
+var fs=function(scr){var el=document.documentElement;try{var p=scr?el.requestFullscreen({screen:scr}):el.requestFullscreen();if(p&&p.catch)p.catch(function(){});}catch(e){}};
+if(!AWAY||AWAY.n<2||!window.getScreenDetails){fs(null);return;} // one window: full screen where it is
+window.getScreenDetails().then(function(d){var L=((d&&d.screens)||[]).slice().sort(function(a,b){return a.left-b.left||a.top-b.top;}),t=L[si]||L[0];if(!t){fs(null);return;}
+var mn=function(f){return Math.min.apply(null,L.map(f));},mx=function(f){return Math.max.apply(null,L.map(f));},x0=mn(function(s){return s.left;}),y0=mn(function(s){return s.top;});
+AWAY.n=L.length;AWAY.ax=t.left-x0;AWAY.ay=t.top-y0;AWAY.aw=t.width;AWAY.ah=t.height;AWAY.gw=mx(function(s){return s.left+s.width;})-x0;AWAY.gh=mx(function(s){return s.top+s.height;})-y0;
+fs(t);}).catch(function(){fs(null);});}
+function awayInit(){if(!AWAY||!document.body)return;document.body.classList.add('lq-away');LQ.mode='rest';awayScreen();
+var o=document.createElement('div');o.id='lqaway';o.innerHTML="<div class='awt' id='awtime'></div><div class='awd' id='awdate'></div><div class='aws' id='awstat'></div><div class='awh'>Any key or click to come back</div>";document.body.appendChild(o);
+awTick();awStatus();setInterval(awTick,5000);setInterval(awStatus,15000);
+var bye=function(ev){if(Date.now()-AWAY.shown<1500)return;if(ev&&ev.type==='keydown'&&['Meta','OS','Super','Shift','Control','Alt','Hyper'].indexOf(ev.key)>=0)return;api('/api/away',{open:false}).catch(function(){});};
+['keydown','mousedown','touchstart','wheel'].forEach(function(t){document.addEventListener(t,bye,true);});
+var raf=window.requestAnimationFrame&&function(f){return window.requestAnimationFrame(f);};if(raf){var loop=function(){awPlace();raf(loop);};raf(loop);}}
 function lqInit(){var bd=document.body;if(!bd||!bd.classList)return;lqTheme();bd.classList.add('lq-liquid');
 ['(prefers-color-scheme: light)','(prefers-contrast: more)','(forced-colors: active)','(prefers-reduced-transparency: reduce)','(prefers-reduced-motion: reduce)'].forEach(function(q){try{var mq=window.matchMedia&&window.matchMedia(q);if(mq&&mq.addEventListener)mq.addEventListener('change',lqTheme);else if(mq&&mq.addListener)mq.addListener(lqTheme);}catch(e){}});
 if(document.addEventListener){document.addEventListener('contextmenu',function(ev){var b=document.body,t=ev&&ev.target;if(!b||!b.classList||!b.classList.contains('lq-liquid'))return;if(t&&t.closest&&t.closest('input,textarea,select,[contenteditable]'))return;var sel=window.getSelection?String(window.getSelection()):'';if(sel)return;ev.preventDefault();lqBack();});
@@ -2822,5 +2882,5 @@ var G=lqGL();if(G){try{lqStep();lqDraw(G);}catch(e){}}if(typeof window.requestAn
 function frame(){if(!document.hidden){LQ.frame++;if(LQ.mode!=='pool'||LQ.frame%3===0)lqStep();var every=(GLSOFT||GLSTILL)?glEvery(LQ.mode==='aware'):LQ.mode==='pool'?6:LQ.mode==='rest'?2:1;if(G&&LQ.frame%every===0)lqDraw(G);}raf(frame);} // moves every frame; drawn less at rest, behind a panel, without a GPU
 raf(frame);}
 
-initGraphEvents();syncP();refresh();loadMap();firstTab();lqInit();lqDeep();loadWhatsNew();loadAgentCfg();loadScanRoots();loadKnowledge();loadPhone();loadLinks();loadMind();loadTrusted();loadMail();loadScreensUI();loadMonitorsUI();loadDesktop();loadWatchUI();setInterval(function(){whenFree(document.querySelector('main'),'watch',loadWatchUI);},60000);loadPhoneLink();
+initGraphEvents();syncP();refresh();loadMap();firstTab();lqInit();awayInit();lqDeep();loadWhatsNew();loadAgentCfg();loadScanRoots();loadKnowledge();loadPhone();loadLinks();loadMind();loadTrusted();loadMail();loadScreensUI();loadMonitorsUI();loadDesktop();loadWatchUI();setInterval(function(){whenFree(document.querySelector('main'),'watch',loadWatchUI);},60000);loadPhoneLink();
 </script></body></html>`;

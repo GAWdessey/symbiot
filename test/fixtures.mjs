@@ -497,6 +497,21 @@ try {
   writeFileSync(join(sqRepo, "more.txt"), "more\n");
   const rs2 = shipChanges(sqRepo, ["More"], { push: false });
   ok("a branch with work main doesn't have stays put", rs2.ok && rs2.branch === "symbiot/next-thing" && !rs2.note, rs2);
+  // a name already taken on origin (an earlier day's PR of that name, merged), and a
+  // local branch of that name that went another way: the push was refused, and the
+  // approved work sat in a commit with no PR
+  const shipDay = new Date().toISOString().slice(0, 10), taken = `symbiot/2-tasks-${shipDay}`;
+  const tkRepo = build("ship-taken", `git init -q -b main && git config user.email ci@symbiot.test && git config user.name "Symbiot CI" && echo a > a.txt && git add . && git commit -qm init
+    git clone -q --bare . ../ship-taken-remote.git && git remote add origin ../ship-taken-remote.git && git fetch -q origin && git remote set-head origin main
+    git switch -q -c ${taken} && echo old > old.txt && git add . && git commit -qm old && git push -q -u origin ${taken}
+    git switch -q main && git branch -q -D ${taken} && echo one > one.txt`);
+  const gt = (a) => execSync("git " + a, { cwd: tkRepo, encoding: "utf8", env: gitEnv }).trim();
+  const rt = shipChanges(tkRepo, ["One", "Two"], { pr: false });
+  ok("a branch name already on origin isn't reused: it takes the next one", rt.ok && rt.pushed && rt.branch === taken + "-2" && gt(`rev-parse origin/${taken}-2`) === gt("rev-parse HEAD"), rt);
+  gt("switch -q main"); gt(`switch -q -c ${taken}-9`); gt(`push -q origin HEAD:refs/heads/${taken}-9`.replace("HEAD", "origin/" + taken));
+  writeFileSync(join(tkRepo, "three.txt"), "3\n");
+  const rr = shipChanges(tkRepo, ["Three"], { pr: false });
+  ok("a push refused because origin's branch of that name went another way: it goes up under a fresh name", rr.ok && rr.pushed && rr.branch !== taken + "-9" && /^symbiot\//.test(rr.branch) && gt(`rev-parse origin/${rr.branch}`) === gt("rev-parse HEAD"), rr);
 
   console.log("REVIEW — agent ticks -> awaiting review (not archived) -> send back / approve");
   // isolated HOME: the cycle reads and writes Symbiot's real task store

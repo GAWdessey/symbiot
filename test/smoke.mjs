@@ -208,6 +208,7 @@ const calls = [
   ["/api/work", "GET"],             // the work scene: who's at work, what's waiting, what's ready
   ["/api/work/go", "POST"],         // nothing waiting in the isolated HOME -> starts nothing
   ["/api/home", "GET"],             // the liquid's live data (isolated HOME -> empty)
+  ["/api/away", "POST"],            // open: false closes Away (nothing open: nothing to do)
   ["/api/home/ask", "POST"],        // no question -> "empty", no model call
   ["/api/home/answer", "POST"],     // no id -> "answer it on its block", nothing starts
   ["/api/firststeps", "GET"],       // Settings' first steps (isolated HOME -> none done)

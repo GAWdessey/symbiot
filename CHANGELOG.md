@@ -2,6 +2,11 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.55.0
+
+- **Away: Super+S.** Symbiot full screen while you're away from the desk: the orb at rest, the time, the agents at work and what each is doing, how many things only you can do, and how much waits on what you watch. Counts only, never anyone's words. Any key or click brings you back. On X11 with more than one screen the orb bounces across all of them; under Wayland (COSMIC, GNOME, KDE) it's one window on your screen, because no app may place windows there. `symbiot away --shortcut` sets up Super+S (on COSMIC it's done for you). Super+Esc still locks.
+- **Approve no longer strands a commit.** It picked a branch name only by what's local, so a name already on GitHub (an earlier PR of that name, merged) had its push refused, and the approved work sat in a commit with no PR. Now it picks a name free on GitHub too, and if a push is still refused, it moves the commit to a fresh name and pushes that.
+
 ## 0.54.4 — 2026-10-07
 
 - Removed the "Add a task" row from Tasks, since you add tasks through the bottom chat bar, and moved Send to repos beside Close.

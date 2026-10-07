@@ -643,6 +643,23 @@ of this: it adapts to you.
 Everything it learns stays on this computer: `adapt.json` and `mind.json` in
 Symbiot's config folder, readable by you only.
 
+### Away: Super+S
+
+Stepping away? **Super+S** (or `symbiot away`) puts Symbiot full screen: the orb at
+rest, the time, and what's going on. That means the agents at work and what each is
+doing, how many things only you can do, and how much waits on what you watch. It shows
+counts only, never anyone's words, so it's fine on a screen across the room. Any key
+or click (or Super+S again) brings you back.
+
+On one screen the orb rests in the middle. On X11 desktops with more screens it
+bounces across all of them, one window per screen, with the orb crossing from one to
+the next. Under Wayland (COSMIC, GNOME, KDE) no app may place a window on a screen, so
+it's one window on the screen you're on.
+
+`symbiot away --shortcut` sets up Super+S. On COSMIC that's done for you (it replaces
+COSMIC's own Super+S, which stacks windows); elsewhere it tells you what to bind.
+Away isn't a lock: **Super+Esc** still locks the computer.
+
 ## Link your work
 
 **Connections** (on the Dashboard, and in Settings) has one entry per standard work site: Gmail,

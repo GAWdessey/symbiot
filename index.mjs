@@ -328,6 +328,20 @@ async function viaApp(path, body) {
     return r.ok ? await r.json() : { error: `Symbiot's app answered ${r.status}.` };
   } catch (e) { return { error: "Lost Symbiot's app mid-way: " + ((e && e.message) || e) }; }
 }
+// symbiot away: Symbiot full screen on every screen (again: closes it). --shortcut:
+// Super+S runs it (on COSMIC it's set up; elsewhere it says how).
+async function cmdAway() {
+  if (has("shortcut")) {
+    const { installShortcut } = await import("./away.mjs");
+    const r = installShortcut({ cmd: `${process.execPath} ${process.argv[1]} away` });
+    if (r.error) { console.log(c.y(r.error)); process.exitCode = 1; return; }
+    console.log(r.manual ? r.note : `${c.g("✓")} Super+S now opens Away${r.replaced ? " (it replaces what Super+S did before)" : ""}. ${c.d(r.file)}`);
+    return;
+  }
+  const r = await viaApp("/api/away", {});
+  if (!r) { console.log(c.y("Symbiot's app isn't running.") + c.d("  Start it with  symbiot app,  then Away works.")); process.exitCode = 1; return; }
+  if (r.error) { console.log(c.y(r.error)); process.exitCode = 1; }
+}
 async function cmdScreens() {
   const [sub = "list", a1, a2, a3] = argv.slice(1).filter((x, i, all) => !x.startsWith("--") && all[i - 1] !== "--name");
   const out = (x) => { console.log(JSON.stringify(x, null, 2)); if (x && x.error) process.exitCode = 1; };
@@ -753,6 +767,8 @@ ${c.b("Usage")}
   symbiot standup                   yesterday + today, for standup
   symbiot todo                      what's still on your plate
   symbiot app                       open the visual app in your browser
+  symbiot away [--shortcut]         Symbiot full screen on every screen while you're away;
+                                    again closes it. --shortcut: Super+S does it
   symbiot app --fresh [--keep]      try it as someone new: a brand-new Symbiot in
                                     a throwaway home, none of your data or accounts
   symbiot drift [--fetch]           what's out of sync / at risk across repos
@@ -808,6 +824,7 @@ async function main() {
   if (cmd === "logout") return cmdLogout();
   if (cmd === "whoami" || cmd === "status") return cmdWhoami();
   if (cmd === "app" || cmd === "ui") return cmdApp();
+  if (cmd === "away") return cmdAway();
   if (cmd === "models" || cmd === "hardware") return cmdModels();
   if (cmd === "setup-local" || cmd === "setup-ollama") return cmdSetupLocal();
   if (cmd === "drift") return cmdDrift();
