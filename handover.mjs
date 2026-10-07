@@ -7,6 +7,8 @@
 // buildTasksMd, mind.mjs actBrief), by lanes.mjs and by handback.mjs.
 
 const OPS = "ops";
+// Marketing across every product, a lane of its own too (marketing.mjs)
+const MARKETING = "marketing";
 const MAX_LANES_LISTED = 40;
 // How long a handover can be: an email to draft, quoted whole, fits. 4000 cut
 // the one to ops mid-email (a repo lane's task links to the rest: addTask).
@@ -15,10 +17,11 @@ const HANDOVER_MAX = 20000;
 // The lines a brief gets about lanes. here: this agent's lane; lanes: the others
 // it can hand to (repo folder names).
 function handoverRules(lanes = [], here = "") {
-  const others = [...new Set(lanes.filter((l) => l && l !== here))].slice(0, MAX_LANES_LISTED);
+  const mk = lanes.includes(MARKETING) && here !== MARKETING, others = [...new Set(lanes.filter((l) => l && l !== here && l !== MARKETING))].slice(0, MAX_LANES_LISTED);
   return ["## Hand over what's another lane's job",
     `Each agent has its own lane${here ? `: this one is \`${here}\`` : ""}. When something you need is another lane's job, don't stop, and don't ask the user to do it: hand it over. Write \`.symbiot/HANDOFF.md\` with a \`### \` heading naming the lane, then what's needed, self-contained (names, paths, links, ids) and why. Symbiot starts that lane's agent on it, and its result comes back to you in \`.symbiot/ANSWERS.md\`. Carry on with what doesn't depend on it, and don't tick what does.`,
     `- \`${OPS}\`: anything outside a repo: this computer (find or install a tool, a JDK, an SDK), accounts and services (cloud, GitHub, DNS, email), the user's connectors.`,
+    ...(mk ? [`- \`${MARKETING}\`: marketing for any product: posts, demo videos and screenshots, launches, landing-page copy, campaigns. It drafts them for the user to approve, and never posts.`] : []),
     `- A repo, by its folder name, for work that belongs in that project${others.length ? `: ${others.map((l) => `\`${l}\``).join(", ")}` : ""}.`,
     ""];
 }
@@ -69,6 +72,14 @@ const ACTS = /\b(?:send|sent|sending|post|posted|publish|delete|remove|pay|close
 const CATCH = /\b(?:catch|before you|check|make sure|careful|fix (?:that|it)|first)\b/i;
 const NOT_THEIRS = /\bconnectors?\b|\bclaude\.ai\b/i; // a connector to sign in again shows on Home already
 const SENDS = /draft|reply|email|mail|message|post/i;
+// "when / if / once / until …" before it: it says how something behaves, not that
+// something waits on the user now ("It's lit amber when something needs you: … work
+// waiting for your OK" described a feature, and showed as a step only you could do).
+const COND = /\b(?:when|whenever|if|once|until|unless)\b/i;
+function asksNow(s) {
+  for (const re of [HELD, YOURS]) { const m = re.exec(s); if (m) { const c = COND.exec(s); if (!c || c.index > m.index) return true; } }
+  return false;
+}
 function leftToYou(text) {
   const points = String(text || "").replace(/```[\s\S]*?```/g, (m) => m.replace(/\s+/g, " ")).split(/\n+|\s+-\s+(?=\*\*)/).map((p) => p.replace(/^\s*[-*•]\s+/, "").trim()).filter(Boolean)
     .map((p) => { const lm = p.match(/^\*\*([^*]{2,60}?):?\*\*:?\s*/), body = lm ? p.slice(lm[0].length) : p;
@@ -76,7 +87,7 @@ function leftToYou(text) {
   const clean = (x, n) => { x = String(x || "").replace(/\*\*/g, "").replace(/\s+/g, " ").trim(); return x.length > n ? x.slice(0, n - 1).replace(/\s+\S*$/, "") + "…" : x; };
   for (let k = 0; k < points.length; k++) {
     const { label, ss, off } = points[k]; if (off) continue;
-    const i = ss.findIndex((s) => !DID.test(s) && (HELD.test(s) || YOURS.test(s)));
+    const i = ss.findIndex((s) => !DID.test(s) && asksNow(s));
     if (i < 0) continue;
     const s = ss[i], next = points[k + 1] && !points[k + 1].off ? points[k + 1].ss : [];
     // what to check first: the catch it named (in this point, then the next), else what it says next
@@ -104,4 +115,4 @@ function parseHandoffs(md) {
   return out.map((h) => ({ lane: h.lane, text: h.text.trim().slice(0, HANDOVER_MAX) })).filter((h) => h.lane && h.text);
 }
 
-export { OPS, HANDOVER_MAX, handoverRules, ONLY_YOU, HANDBACK, parseFacts, parseAwaiting, parseHandoffs, leftToYou };
+export { OPS, MARKETING, HANDOVER_MAX, handoverRules, ONLY_YOU, HANDBACK, parseFacts, parseAwaiting, parseHandoffs, leftToYou };

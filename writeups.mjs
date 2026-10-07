@@ -7,7 +7,7 @@ import { VERSION, loadConfig, saveConfig, loadTasks, saveTasks, sh, repoState } 
 import { resolveProvider, write } from "./ai.mjs";
 import { detectMailSources, mailActivity } from "./mail.mjs";
 import { waitingOn, newsSince } from "./watch.mjs";
-import { me, authorship, authorArgs, readmeInfo, repoShape, houseRules, reportFooter, expandRoot, commits, openWork, detectFolder, repoPathMap, discoveredRepos } from "./scan.mjs";
+import { me, authorship, authorArgs, readmeInfo, repoShape, houseRules, reportFooter, expandRoot, commits, openWork, detectFolder, laneMap, discoveredRepos } from "./scan.mjs";
 import { taskType, workingChanges, workingDiff, changelogEntry } from "./tasks.mjs";
 import { converse, actNow, actIn, taskIn } from "./mind.mjs";
 
@@ -131,7 +131,7 @@ async function taskChat(id, question) {
   if (!it) return { error: "not found" };
   if (!question) return { error: "empty" };
   if (!resolveProvider()) return { error: "not-connected" };
-  const path = it.repo ? repoPathMap()[it.repo] : "";
+  const path = it.repo ? laneMap()[it.repo] : "";
   const ctx = [];
   if (path) {
     const isGit = existsSync(join(path, ".git"));
@@ -151,7 +151,7 @@ async function taskChat(id, question) {
     (ctx.length ? "\n\n" + ctx.join("\n\n") : path ? "" : "\n\n(no repo attached: answer from the task text alone)");
   // "do it" here works on the task's repo the way Send to repos does: the request
   // joins the repo's tasks and the agent starts there; with no repo, in a run of its own
-  const lanes = repoPathMap(), mine = path ? it.repo : "";
+  const lanes = laneMap(), mine = path ? it.repo : "";
   const agent = async (req, known, repo) => {
     const lane = repo || mine;
     return lane ? actIn(req, lane, { map: lanes, known, title: it.text.slice(0, 60), context: `Their task: ${it.text}` }) : actNow(req, { title: it.text.slice(0, 60), context: `Their task: ${it.text}`, known });

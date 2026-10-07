@@ -2,6 +2,18 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.55.2 — 2026-10-07
+
+- Fixed a feature description being read as something waiting on you: an agent's "lit amber when something needs you: work waiting for your OK" showed as a Marketing lane step only you could do. A "when / if / once / until" before the words now means it describes behaviour.
+- Added a Marketing lane on Home that gathers marketing work for all your products, tags each item by product, and lights up when something needs you.
+- Added drafting of social posts in the Marketing lane, each opening with a hook, explaining the product and its goal, and never posted without your approval.
+- Fixed the Pearl look so the middle orb's words show inside it and stay readable on both its bright and dark sides.
+- Added a Minimize control to the Home chat, also triggered by Esc or clicking outside, which keeps your conversation so you can reopen it.
+- Added a "What could be done next" box on Home when nothing waits on you, suggesting a few useful actions you can start in one tap.
+- Changed finished agent runs so your AI reads their last words, catching new ways of saying something still waits on you.
+- Added a sandbox for project agent runs that limits where they can write, which you can turn off with "agentSandbox": false in settings.
+- Fixed the Seen button and reorganized the Map into tidy lanes, merged Tasks and Agents into a Workdesk, and added Reports and Marketing pages.
+
 ## 0.55.1
 
 - **No more stray Symbiot windows.** 0.55.0's smoke test called Away like every other endpoint, so each full test run (yours, or an agent's in the symbiot repo) opened Away windows on your screen. Away now opens only when asked to by name, and never while windows are turned off (as in tests).

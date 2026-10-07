@@ -8,6 +8,8 @@
 //   - delete outside the agent's own folder, or wipe a disk
 //   - sudo, or pipe something from the internet into a shell
 //   - read SSH keys or cloud credentials; change Symbiot's own settings
+//   - in a sandboxed repo run (agents.mjs sandboxFor), edit or write a file outside its
+//     repo and your folders (SYMBIOT_WRITES): its commands are held there by the sandbox
 // judge(tool, input, { cwd, home }) → null (go ahead) or { why }.
 import { resolve, join, relative } from "node:path";
 import { homedir } from "node:os";
@@ -61,7 +63,7 @@ function judgeBash(cmd, { cwd, home, branch }) {
   return null;
 }
 
-function judge(tool, input = {}, { cwd = process.cwd(), home = homedir(), branch } = {}) {
+function judge(tool, input = {}, { cwd = process.cwd(), home = homedir(), branch, writes = null } = {}) {
   const t = String(tool || "");
   if (t === "Bash") return judgeBash(input.command, { cwd, home, branch: branch != null ? branch : currentBranch(cwd) });
   const p = input.file_path || input.path || input.notebook_path;
@@ -69,6 +71,7 @@ function judge(tool, input = {}, { cwd = process.cwd(), home = homedir(), branch
   const abs = expand(p, home, cwd);
   if (secretPath(abs, home)) return { why: "your keys and cloud credentials stay yours" };
   if (/^(Edit|Write|MultiEdit|NotebookEdit)$/.test(t) && symbiotConfig(abs, home)) return { why: "Symbiot's own settings are yours to change" };
+  if (/^(Edit|Write|MultiEdit|NotebookEdit)$/.test(t) && Array.isArray(writes) && writes.length && !writes.some((d) => under(abs, d))) return { why: "this run writes only in its repo and your folders (its sandbox), not " + p };
   return null;
 }
 
@@ -78,7 +81,8 @@ const main = process.argv[1] && resolve(process.argv[1]) === fileURLToPath(impor
 if (main) {
   let raw = ""; try { raw = readFileSync(0, "utf8"); } catch {}
   let ev = {}; try { ev = JSON.parse(raw); } catch {}
-  const r = judge(ev.tool_name, ev.tool_input || {}, { cwd: ev.cwd || process.cwd() });
+  let writes = null; try { writes = JSON.parse(process.env.SYMBIOT_WRITES || "null"); } catch {} // a sandboxed repo run's folders
+  const r = judge(ev.tool_name, ev.tool_input || {}, { cwd: ev.cwd || process.cwd(), writes });
   if (r) { process.stderr.write("Blocked by Symbiot's membrane: " + r.why + ". If it's needed, ask the user in .symbiot/QUESTIONS.md with options.\n"); process.exit(2); }
   process.exit(0);
 }

@@ -10,6 +10,7 @@ import { VERSION, loadConfig, saveConfig, sh, repoState } from "./core.mjs";
 import { detectHandoffs } from "./agents.mjs";
 import { PROVIDERS, resolveProvider } from "./ai.mjs";
 import { mapKnn } from "./mapknn.mjs";
+import { MARKETING, MARKETING_DIR } from "./marketing.mjs";
 
 const MAX_COMMITS = 140;
 
@@ -444,7 +445,8 @@ async function buildMapScan() {
       if (scanExpired()) break;
       await yieldTick();
       const det = detectFolder(d); folders++; scanTick(det.name);
-      add({ id: "folder:" + d, type: "folder", label: det.name, weight: 10, meta: { path: d, langs: det.langs.slice(0, 3), tools: det.tools, files: det.files } });
+      let last = ""; try { last = new Date(statSync(d).mtimeMs).toISOString().slice(0, 10); } catch {} // the Map sorts folders by it, as repos by their last commit
+      add({ id: "folder:" + d, type: "folder", label: det.name, weight: 10, meta: { path: d, langs: det.langs.slice(0, 3), tools: det.tools, files: det.files, last } });
       edges.push({ source: "me", target: "folder:" + d });
       for (const L of det.langs.slice(0, 3)) { const id = "lang:" + L; add({ id, type: "lang", label: L, weight: 15 }); edges.push({ source: "folder:" + d, target: id }); }
     } }
@@ -547,6 +549,11 @@ function repoPathMap() {
   return byName;
 }
 
+// The lanes a task can go to: every repo and project folder, and Marketing, a lane of
+// its own for marketing across products (marketing.mjs). A repo of yours called
+// marketing keeps the name. Counting your repos is repoPathMap's job, not this.
+function laneMap() { const m = repoPathMap(); if (!Object.keys(m).some((n) => n.toLowerCase() === MARKETING)) m[MARKETING] = MARKETING_DIR; return m; }
+
 // The SAME repo set the Map uses — reuse its cached scan when present, else do
 // the identical discovery. So week/standup/todo/drift all agree with the Map.
 function discoveredRepos() {
@@ -554,4 +561,4 @@ function discoveredRepos() {
   return findAllRepos();
 }
 
-export { SCAN, SCAN_TIMEOUT_MS, setScanOptions, scanBegin, scanPhase, scanTick, scanExpired, scanEnd, me, authorship, authorArgs, readmeInfo, repoShape, houseRules, reportFooter, expandRoot, scanHome, scanBase, storageBlocked, prootDistros, prootHomes, scanRoots, addScanRoot, removeScanRoot, commits, openWork, findAllRepos, detectRepo, findProjectFolders, detectFolder, claudeProjects, buildMap, nodeDetail, repoPathMap, discoveredRepos };
+export { laneMap, SCAN, SCAN_TIMEOUT_MS, setScanOptions, scanBegin, scanPhase, scanTick, scanExpired, scanEnd, me, authorship, authorArgs, readmeInfo, repoShape, houseRules, reportFooter, expandRoot, scanHome, scanBase, storageBlocked, prootDistros, prootHomes, scanRoots, addScanRoot, removeScanRoot, commits, openWork, findAllRepos, detectRepo, findProjectFolders, detectFolder, claudeProjects, buildMap, nodeDetail, repoPathMap, discoveredRepos };
