@@ -210,6 +210,7 @@ const calls = [
   ["/api/home", "GET"],             // the liquid's live data (isolated HOME -> empty)
   ["/api/home/ask", "POST"],        // no question -> "empty", no model call
   ["/api/home/answer", "POST"],     // no id -> "answer it on its block", nothing starts
+  ["/api/home/next", "POST"],       // no id -> "that suggestion isn't here any more", nothing starts
   ["/api/firststeps", "GET"],       // Settings' first steps (isolated HOME -> none done)
   ["/api/knowledge/checks", "GET"], // where knowledge folders' files disagree (isolated HOME -> no folders, nothing)
   ["/api/knowledge/checks/run", "POST"], // checked again now (no folders -> no clashes)
@@ -239,6 +240,10 @@ const calls = [
   ["/api/reports/read", "GET"],     // no id -> "No report by that id"
   ["/api/reports/seen", "POST"],    // mark all read (none)
   ["/api/marketing", "GET"],        // Marketing: replies and the 4-week test (isolated HOME -> no test yet)
+  ["/api/marketing/task", "POST"],  // no text -> refused, no task added
+  ["/api/marketing/move", "POST"],  // no id -> "isn't open", nothing moves
+  ["/api/marketing/go", "POST"],    // nothing waiting -> refused, no folder made, no agent starts
+  ["/api/marketing/open", "POST"],  // no draft named -> refused, nothing opens
   ["/api/watch", "GET"],           // watched pages + what's new (isolated HOME -> none)
   ["/api/watch/add", "POST"],       // no screen or site -> refused, nothing saved
   ["/api/watch/every", "POST"],     // no id -> "No watch"

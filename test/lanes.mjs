@@ -236,6 +236,36 @@ try {
   ok("…which it then does", needsOn(actT) && needsOn(actT).kind === "approve", needsOn(actT));
   const old = Date.now() - NEEDS_FOR - 60000; utimesSync(join(actT, ".symbiot", "agent.log"), old / 1000, old / 1000);
   ok("…and not days later", !needsOn(actT), "");
+
+  // a new way of saying it: your AI reads each finished run's last words, once
+  const { readLastWords, parseRead, READ_FILE } = await import("../agents.mjs");
+  const actN = join(CFG, "drafts", "act-new"), lastSaid = "Everything's set up. The invoice to Acme is ready in Xero as a draft; give me the word and it goes out.";
+  put(actN, "TASKS.md", "- [x] Make Acme's October invoice\n"); streamed(actN, Date.now(), lastSaid);
+  noted({ path: actN, name: "Agent: Acme's invoice", startedAt: Date.now() - 60000 });
+  ok("the patterns miss a new way of saying it (\"give me the word and it goes out\")", leftToYou(lastSaid) === null && !needsOn(actN), leftToYou(lastSaid));
+  const aiAsked = [], aiReply = (o) => async (system, prompt) => { aiAsked.push(prompt); return typeof o === "string" ? o : JSON.stringify(o); };
+  const aiYes = { needs: true, kind: "approve", what: "The invoice to Acme is ready in Xero as a draft; give me the word and it goes out.", check: "", label: "Acme invoice" };
+  const rw1 = await readLastWords({ ask: aiReply(aiYes) });
+  ok("your AI reads the last words of the finished runs the patterns didn't catch (Acme's, and \"Sent it to Jono\"), not the ones they did", rw1.read === 2 && aiAsked.some((p) => p.includes("give me the word")) && aiAsked.some((p) => p.includes("Sent it to Jono")) && !aiAsked.some((p) => /isn't sent/.test(p)), [rw1, aiAsked.map((p) => p.slice(0, 80))]);
+  const nAi = needsOn(actN);
+  ok("…what it found waits on you, on Home and on its block, like the ones the patterns catch", nAi && nAi.kind === "approve" && /give me the word/.test(nAi.what) && nAi.label === "Acme invoice" && nAi.read && nAi.key, nAi);
+  const rw2 = await readLastWords({ ask: aiReply(aiYes) });
+  ok("…once per run's words: the next pass doesn't ask again", rw2.read === 0 && aiAsked.length === 2, rw2);
+  settleNeeds(actN, nAi.key);
+  ok("…and Skip settles it, as for the others", !needsOn(actN), "");
+  const actD = join(CFG, "drafts", "act-done"); put(actD, "TASKS.md", "- [x] Tidy the README\n"); streamed(actD, Date.now(), "Tidied the README: three sections merged, links checked.");
+  noted({ path: actD, name: "Agent: README", startedAt: Date.now() - 60000 });
+  await readLastWords({ ask: aiReply({ needs: false }) });
+  const store = JSON.parse(readFileSync(READ_FILE, "utf8")), doneRead = Object.values(store).filter((x) => !x.what && !x.error).length;
+  ok("…work that's done: nothing waits on you, and it's not asked about again", !needsOn(actD) && doneRead === 1 && (await readLastWords({ ask: aiReply({ needs: false }) })).read === 0, [doneRead, store]);
+  const actE = join(CFG, "drafts", "act-err"); put(actE, "TASKS.md", "- [x] x\n"); streamed(actE, Date.now(), "Left a note for you somewhere.");
+  noted({ path: actE, name: "Agent: x", startedAt: Date.now() - 60000 });
+  const c0 = aiAsked.length; await readLastWords({ ask: aiReply("Couldn't reach the model: 529") });
+  const c1 = aiAsked.length; await readLastWords({ ask: aiReply({ needs: false }) });
+  ok("…a model that couldn't answer is tried again later, not every minute", c1 === c0 + 1 && aiAsked.length === c1 && !needsOn(actE), [c0, c1, aiAsked.length]);
+  const rw3 = await readLastWords({ ask: async () => { throw new Error("no"); }, connected: () => false, list: [] });
+  ok("…and with no runs to read, nothing is asked", rw3.read === 0, rw3);
+  ok("its answer, read strictly: JSON only, a kind it knows, a what it says", parseRead('{"needs": true, "kind": "weird", "what": "Sign in to Meta and copy the token."}').kind === "step" && parseRead('```json\n{"needs": false}\n```').needs === false && parseRead("I think so") === null && parseRead('{"needs": true, "what": ""}').needs === false, "");
 } finally {
   rmSync(HOME, { recursive: true, force: true });
 }

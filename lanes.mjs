@@ -24,7 +24,7 @@ import { CONFIG_DIR, loadTasks, clipWords } from "./core.mjs";
 import { runHandoff, runningHandoff, waitingFor, agentQuestions, findOrcaCli, installAllowlist } from "./agents.mjs";
 import { addTask, pushTasks } from "./tasks.mjs";
 import { actNow } from "./mind.mjs";
-import { repoPathMap } from "./scan.mjs";
+import { laneMap } from "./scan.mjs";
 import { parseRun, lastRunText, readRunLog } from "./work.mjs";
 import { OPS, parseHandoffs } from "./handover.mjs";
 
@@ -53,7 +53,7 @@ function laneTarget(lane, map) {
 
 // Pick up what a folder's agent handed over and start the lanes it named.
 // Each handover is started once (its key: where from, which lane, what).
-function dispatch(path, { map = repoPathMap(), act = actNow, run = runHandoff, add = addTask, push = pushTasks, now = Date.now(), ledger = loadLedger() } = {}) {
+function dispatch(path, { map = laneMap(), act = actNow, run = runHandoff, add = addTask, push = pushTasks, now = Date.now(), ledger = loadLedger() } = {}) {
   const asked = parseHandoffs(readSym(path, "HANDOFF.md")); if (!asked.length) return [];
   const from = { lane: laneOf(path, map), path }, parent = ledger.handoffs.filter((h) => h.to.path === path).pop(), chain = (parent ? parent.chain : 0) + 1;
   const started = [];
@@ -151,7 +151,7 @@ function report(e, o, { run = runHandoff, running = runningHandoff, waiting = wa
 
 // One pass: start what's been handed over, from every lane, then report back
 // what's done. The app runs it every 20 seconds.
-function lanesTick({ map = repoPathMap(), act = actNow, run = runHandoff, running = runningHandoff, add = addTask, push = pushTasks, tasks, now = Date.now(), relink = orcaRelink } = {}) {
+function lanesTick({ map = laneMap(), act = actNow, run = runHandoff, running = runningHandoff, add = addTask, push = pushTasks, tasks, now = Date.now(), relink = orcaRelink } = {}) {
   const ledger = loadLedger();
   let acts = []; try { acts = readdirSync(ACT_DIR).filter((d) => d.startsWith("act-")).map((d) => join(ACT_DIR, d)); } catch {}
   const started = [];
@@ -208,10 +208,10 @@ function pastIt(e, hs) {
 }
 // The errored handovers that still wait on you, newest first:
 // [{ id, from, text, error, at, dirs, q, options }].
-function stuckHandovers({ ledger = loadLedger(), now = Date.now(), dirsOf = namedDirs } = {}) {
+function stuckHandovers({ ledger = loadLedger(), now = Date.now(), dirsOf = namedDirs, within = STUCK_FOR } = {}) {
   const hs = ledger.handoffs, out = [];
   hs.forEach((e) => {
-    if (e.status !== "error" || e.skipped || now - (e.at || 0) > STUCK_FOR) return;
+    if (e.status !== "error" || e.skipped || now - (e.at || 0) > within) return;
     if (pastIt(e, hs)) return;
     const dirs = dirsOf(e.text, e.from.path);
     out.unshift({ id: e.id, from: e.from, text: e.text, error: e.error || "", at: e.at, dirs,
@@ -286,7 +286,7 @@ async function orcaRelink({ map, cli, orca = runOrca, remoteOf } = {}) {
   if (process.env.SYMBIOT_SANDBOX) return { moves: [] };
   cli = cli ?? findOrcaCli(); if (!cli) return { moves: [] };
   let repos = []; try { repos = JSON.parse(await orca(cli, ["repo", "list", "--json"])).result.repos || []; } catch { return { moves: [] }; }
-  const moves = await orcaMoves(repos, map || repoPathMap(), { remoteOf });
+  const moves = await orcaMoves(repos, map || laneMap(), { remoteOf });
   for (const m of moves) m.ok = /"ok":\s*true/.test(await orca(cli, ["repo", "add", "--path", m.to, "--json"]));
   return { moves };
 }

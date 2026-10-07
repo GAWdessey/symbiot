@@ -20,10 +20,10 @@ import { createHash } from "node:crypto";
 import { CONFIG_DIR } from "./core.mjs";
 import { runFolders, laneOf, runTitle } from "./handback.mjs";
 import { runningHandoff } from "./agents.mjs";
-import { repoPathMap } from "./scan.mjs";
+import { laneMap } from "./scan.mjs";
 
 const SEEN_FILE = join(CONFIG_DIR, "reports.json");
-const NOT_REPORTS = /^(?:TASKS|QUESTIONS|ANSWERS|HANDOFF|SKIPPED|CLAUDE|AGENTS)\.md$|^BRIEF/i;
+const NOT_REPORTS = /^(?:TASKS(?:\.[\w-]+)?|QUESTIONS|ANSWERS|HANDOFF|SKIPPED|CLAUDE|AGENTS)\.md$|^BRIEF/i; // TASKS.next.md too: the tasks held for after a run
 const MAX_READ = 512 * 1024, MAX_LIST = 200;
 const idOf = (file) => createHash("sha1").update(file).digest("hex").slice(0, 12);
 
@@ -40,7 +40,7 @@ function titleOf(text, name) {
 // run, size, mtime, new, running }]. `folders`, `running` and `seen` can be given
 // (the tests do).
 function listReports({ map, folders, running = runningHandoff, seen } = {}) {
-  if (!folders) { map = map || repoPathMap(); folders = runFolders(map); }
+  if (!folders) { map = map || laneMap(); folders = runFolders(map); }
   const s = (seen || loadSeen()).seen, out = [];
   for (const folder of folders) {
     const dir = join(folder, ".symbiot");

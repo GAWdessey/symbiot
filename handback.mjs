@@ -33,7 +33,7 @@ import { remember, actIn } from "./mind.mjs";
 import { newsSince, watchState, isMail, isSignedOut } from "./watch.mjs";
 import { inboxMail } from "./mail.mjs";
 import { desktopNotify } from "./desktop.mjs";
-import { repoPathMap } from "./scan.mjs";
+import { laneMap } from "./scan.mjs";
 
 const AWAIT_FILE = join(CONFIG_DIR, "awaiting.json");
 const RUNS_DIR = join(CONFIG_DIR, "drafts"); // runs of their own (act-…) and drafted replies
@@ -151,7 +151,7 @@ function handOn(w, r, { map, act = actIn, notify = desktopNotify, now = Date.now
 // One pass, from the app every minute: take in new waits, look for their
 // replies, and hand on the ones that came in. `news`, `inbox`, `act`, `notify`
 // and `running` can be given (the tests do).
-function awaitTick({ map = repoPathMap(), now = Date.now(), news, inbox, act, notify, running } = {}) {
+function awaitTick({ map = laneMap(), now = Date.now(), news, inbox, act, notify, running } = {}) {
   const d = loadWaits(), added = collectWaits(d, { map, running, now }), open = d.waits.filter((w) => w.status === "waiting");
   const replied = [];
   if (open.length) {

@@ -24,8 +24,8 @@ import { VERSION, CONFIG_DIR, clipWords } from "./core.mjs";
 import { write } from "./ai.mjs";
 import { handoffCmd, runHandoff } from "./agents.mjs";
 import { addTask, pushTasks } from "./tasks.mjs";
-import { repoPathMap } from "./scan.mjs";
-import { OPS, HANDOVER_MAX, handoverRules, ONLY_YOU, HANDBACK } from "./handover.mjs";
+import { laneMap } from "./scan.mjs";
+import { OPS, MARKETING, HANDOVER_MAX, handoverRules, ONLY_YOU, HANDBACK } from "./handover.mjs";
 import { styleOf, styleLine, userStyleLine } from "./adapt.mjs";
 import { knowledgeFor } from "./knowledge.mjs";
 
@@ -99,7 +99,7 @@ function forget(id) {
 // The brief for a run of its own: the request, what the page showed, what's
 // known, and the rule that anything hard to undo is asked first.
 function actBrief(request, { title = "Symbiot", context = "", known = "", lanes = null, now = Date.now() } = {}) {
-  let names = lanes; if (!names) { try { names = Object.keys(repoPathMap()); } catch { names = []; } }
+  let names = lanes; if (!names) { try { names = Object.keys(laneMap()); } catch { names = []; } }
   const short = clipWords(request.replace(/\s+/g, " "), 160); // its task line; the whole request is quoted above it
   return `# For your agent: ${title}
 _written by symbiot ${VERSION} · ${new Date(now).toISOString().slice(0, 10)}_
@@ -153,8 +153,8 @@ function rulesFor(lanes = [], self = "") {
 {"reply": "what you say, plain text, brief, no preamble",
  "do": null or {"agent": "what a coding agent should do now: self-contained, with names, links and ids", "repo": "the lane it's for, or empty"} or {"task": "a task for later", "repo": "the lane it's for, or empty"},
  "remember": [{"name": "…", "kind": "person|account|site|repo|project|decision|preference", "fact": "…"}]}
-When they ask you to do something (look into it, find out, fix, set up, sign in, close, send, chase), do it, don't explain what you can't do: "agent" starts a coding agent now, with their tools and connectors (MCP, the command line, a browser signed in to their linked sites). With a "repo", it's that project's agent, working in it; empty, an agent for everything outside a repo (this computer, accounts, services). Use "task" for what's for later. Don't ask their permission to hand it over: the agent asks them first, in the Agents tab, before anything hard to undo (closing an account, deleting, paying, sending); say so in your reply when it applies, with what to check first. A question you can answer from what's here: answer it, "do": null.
-Lanes ("repo" is one of these, exactly): ${lanes.length ? lanes.slice(0, 60).join(", ") : "(none found)"}.${self ? ` Symbiot itself is "${self}": a flaw in how Symbiot works (how it read a page, what a brief or a card said, anything in the app) goes there.` : ""}
+When they ask you to do something (look into it, find out, fix, set up, sign in, close, send, chase), do it, don't explain what you can't do: "agent" starts a coding agent now, with their tools and connectors (MCP, the command line, a browser signed in to their linked sites). With a "repo", it's that project's agent, working in it; empty, an agent for everything outside a repo (this computer, accounts, services). Use "task" for what's for later. Don't ask their permission to hand it over: the agent asks them first, on the Workdesk, before anything hard to undo (closing an account, deleting, paying, sending); say so in your reply when it applies, with what to check first. A question you can answer from what's here: answer it, "do": null.
+Lanes ("repo" is one of these, exactly): ${lanes.length ? lanes.slice(0, 60).join(", ") : "(none found)"}.${lanes.includes(MARKETING) ? ` "${MARKETING}" is a lane of its own for marketing any of their products (posts, demo videos, launches, campaigns, pricing pages' copy): marketing work goes there, starting with the product it's for in brackets, "[Dailify] a launch post".` : ""}${self ? ` Symbiot itself is "${self}": a flaw in how Symbiot works (how it read a page, what a brief or a card said, anything in the app) goes there.` : ""}
 Don't wait to be asked to fix Symbiot. When you notice it got something wrong (you misread a page, a brief or a card misled them, a step made them do an agent's job), say so plainly and, in the same reply, start the fix: "agent"${self ? ` with "repo": "${self}"` : ""}, saying what went wrong, an example, and what it should do instead.
 "remember": only lasting facts worth knowing on another page (who someone is, which account is what, a decision, how they like things); [] for anything else.`;
 }
@@ -201,7 +201,7 @@ async function converse({ where, role = "", context = "", history = "", question
   // your knowledge folders (knowledge.mjs): a few short excerpts, each with its file to cite; never examples
   let kn = { text: "", steps: [] }; try { kn = knowledgeFor(question); } catch {}
   steps.push(...kn.steps);
-  let lanes = map; if (!lanes) { try { lanes = repoPathMap(); } catch { lanes = {}; } }
+  let lanes = map; if (!lanes) { try { lanes = laneMap(); } catch { lanes = {}; } }
   // how they talk, from what they've typed into any chat (adapt.mjs: accommodation)
   const voice = styleLine(styleOf(d.log.filter((l) => l.role === "user").map((l) => l.text).concat(question)));
   const system = `${IDENTITY} ${role}\n\n${rulesFor(Object.keys(lanes), selfLane(lanes))}${voice ? "\n" + voice : ""}`;
@@ -217,8 +217,8 @@ async function converse({ where, role = "", context = "", history = "", question
   if (want && want.agent && act.agent) {
     did = { kind: "agent", request: String(want.agent).slice(0, HANDOVER_MAX), ...(await act.agent(String(want.agent), known, repo)) };
     reply += did.error ? `\n\n(I couldn't hand it to an agent: ${did.error})`
-      : did.lane ? `\n\n→ Handed to ${did.lane}'s agent, as a task there${did.queued ? " (it starts once the run there now finishes)" : ""}. It's in the Agents tab.`
-      : "\n\n→ Handed to your agent. It's in the Agents tab, and it asks you there before anything hard to undo.";
+      : did.lane ? `\n\n→ Handed to ${did.lane}'s agent, as a task there${did.queued ? " (it starts once the run there now finishes)" : ""}. It's on the Workdesk.`
+      : "\n\n→ Handed to your agent. It's on the Workdesk, and it asks you there before anything hard to undo.";
   } else if (want && want.task && act.task) {
     did = { kind: "task", text: String(want.task).slice(0, 300), ...(await act.task(String(want.task), repo)) };
     reply += did.error ? `\n\n(I couldn't add the task: ${did.error})`
@@ -235,6 +235,6 @@ async function converse({ where, role = "", context = "", history = "", question
   return { reply, ...(did ? { did } : {}), remembered, steps };
 }
 // The usual "task" act, for a caller with no lanes of its own to pass.
-const addToTasks = (text, repo) => { let map = {}; try { map = repoPathMap(); } catch {} return taskIn(text, repo, { map }); };
+const addToTasks = (text, repo) => { let map = {}; try { map = laneMap(); } catch {} return taskIn(text, repo, { map }); };
 
 export { MIND_FILE, loadMind, remember, recall, recallText, lately, mindState, forget, actBrief, actNow, actIn, taskIn, selfLane, rulesFor, parseReply, converse, addToTasks };

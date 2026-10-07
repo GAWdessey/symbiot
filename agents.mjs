@@ -169,13 +169,68 @@ function guardSettings() {
   try { mkdirSync(CONFIG_DIR, { recursive: true }); writeFileSync(GUARD_SETTINGS, JSON.stringify(s, null, 2) + "\n", { mode: 0o600 }); } catch {}
   return GUARD_SETTINGS;
 }
-function withTrust(tmpl) {
+function withTrust(tmpl, box = null) {
   if (!isClaudeCmd(tmpl) || !trustFull()) return tmpl;
   let c = String(tmpl).replace(/\s--permission-mode\s+\S+/g, "");
   if (!/--dangerously-skip-permissions\b/.test(c)) c += " --dangerously-skip-permissions";
-  if (!/--settings\b/.test(c)) c += ` --settings ${JSON.stringify(guardSettings())}`;
+  if (!/--settings\b/.test(c)) c += ` --settings ${JSON.stringify(box ? box.file : guardSettings())}`;
   return c;
 }
+// ---- a repo run, sandboxed ----------------------------------------------------------
+// On top of the membrane, a repo run's commands run in Claude Code's own sandbox
+// (bubblewrap on Linux, Seatbelt on macOS): they write only in the repo, the folders
+// you gave Symbiot or allowed it (--add-dir, the repo's allow list) and the npm and
+// download caches, can't read your keys, and have no way out of it (no unsandboxed
+// commands). Its Edit and Write tools are held to the same folders by the guard
+// (SYMBIOT_WRITES). An ops run, whose job is this computer, and a draft reply's run
+// keep the membrane alone. Its settings live in Symbiot's folder, not the repo, so a
+// run can't widen its own sandbox for the next one. Without what the sandbox needs
+// (Linux: bwrap and socat) runs aren't sandboxed, and Settings says what to install;
+// config.agentSandbox: false turns it off.
+const SANDBOX_DIR = join(CONFIG_DIR, "sandbox");
+const SANDBOX_CACHES = [".npm", ".cache"]; // npm's cache and logs; pip, uv, node-gyp, Chrome for Testing
+const SANDBOX_SECRETS = [".ssh", ".gnupg", ".aws", ".azure", ".kube", ".docker", ".config/gcloud", ".config/gh", ".netrc", ".npmrc", ".pypirc", ".git-credentials", ".config/symbiot/config.json"]; // your AI's key and the app's token too
+// Local sockets are allowed (headless Chrome needs one to start, so the browser tests
+// ran in no sandboxed run), but the ones that would be a way out are hidden: Docker's,
+// and your session's (its bus starts commands outside, through systemd-run; X11 and
+// Wayland type into your windows; the ssh agent and keyring hold your keys).
+const SANDBOX_SOCKETS = (uid = typeof process.getuid === "function" ? process.getuid() : "") => ["/run/docker.sock", "/var/run/docker.sock", "/run/containerd", "/run/podman", "/run/dbus", ...(uid !== "" ? [`/run/user/${uid}`] : []), "/tmp/.X11-unix"];
+function sandboxNeeds({ platform = process.platform, has = hasCmd } = {}) {
+  if (platform === "darwin") return { ready: true, missing: [] };
+  if (platform !== "linux") return { ready: false, missing: [], unsupported: true };
+  const missing = ["bwrap", "socat"].filter((c) => !has(c));
+  return { ready: !missing.length, missing };
+}
+const sandboxed = (repoPath, cfg = loadConfig()) => cfg.agentSandbox !== false && !!repoPath && !resolve(repoPath).startsWith(CONFIG_DIR + "/");
+function sandboxWrites(repoPath, tmpl = "") {
+  const out = [resolve(repoPath)];
+  try { for (const k of knowledgeFolders()) out.push(k.path); } catch {}
+  for (const m of String(tmpl).matchAll(/--add-dir\s+(?:"([^"]+)"|'([^']+)'|(\S+))/g)) out.push(m[1] || m[2] || m[3]);
+  for (const f of ["settings.json", "settings.local.json"]) { try { const d = JSON.parse(readFileSync(join(repoPath, ".claude", f), "utf8")); for (const x of (d.permissions && d.permissions.additionalDirectories) || []) out.push(String(x)); } catch {} }
+  for (const c of SANDBOX_CACHES) out.push(join(homedir(), c));
+  return [...new Set(out.filter(Boolean).map((p) => resolve(String(p).replace(/^~(?=\/|$)/, homedir()))))];
+}
+// { file, writes } for a repo run to be sandboxed, else null.
+function sandboxFor(repoPath, tmpl = "", { needs = sandboxNeeds } = {}) {
+  if (!sandboxed(repoPath) || !needs().ready) return null;
+  const writes = sandboxWrites(repoPath, tmpl);
+  const s = { ...JSON.parse(readFileSync(guardSettings(), "utf8")), sandbox: { enabled: true, failIfUnavailable: true, autoAllowBashIfSandboxed: true, allowUnsandboxedCommands: false,
+    network: { allowAllUnixSockets: true }, filesystem: { allowWrite: writes, denyRead: [...SANDBOX_SECRETS.map((p) => join(homedir(), p)), ...SANDBOX_SOCKETS()] } } };
+  const file = join(SANDBOX_DIR, digest(resolve(repoPath)) + ".json");
+  try { mkdirSync(SANDBOX_DIR, { recursive: true, mode: 0o700 }); writeFileSync(file, JSON.stringify(s, null, 2) + "\n", { mode: 0o600 }); } catch { return null; }
+  return { file, writes };
+}
+// What a sandboxed run's environment adds: the folders its Edit and Write tools may
+// write (the guard reads them), and gh's token, since the sandbox can't reach the
+// keyring gh keeps it in (gh then says "Requires authentication").
+function sandboxEnv(box, { token = () => (hasCmd("gh") ? sh("gh auth token").trim() : "") } = {}) {
+  if (!box) return null;
+  const env = { SYMBIOT_WRITES: JSON.stringify(box.writes) };
+  if (!process.env.GH_TOKEN) { let t = ""; try { t = token(); } catch {} if (/^[\w-]{20,}$/.test(t)) env.GH_TOKEN = t; }
+  return env;
+}
+// For Settings → Handoff: { on, ready, missing } (on: repo runs get it).
+function sandboxState() { const n = sandboxNeeds(); return { on: loadConfig().agentSandbox !== false && trustFull(), ready: n.ready, missing: n.missing, ...(n.unsupported ? { unsupported: true } : {}) }; }
 const SESSION = "session.json", RESUME_MAX = 8, RESUME_AGE = 2 * 86400000;
 const RESUME_PROMPT = "The user has answered: read the newest entries in .symbiot/ANSWERS.md and carry on with .symbiot/TASKS.md from where you were. Same rules as before.";
 function sessionOf(path) { try { return JSON.parse(readSymbiot(path, SESSION)) || null; } catch { return null; } }
@@ -214,14 +269,16 @@ function runHandoff(repoPath, { force = false } = {}) {
   let opts = {}; try { opts = JSON.parse(readSymbiot(repoPath, "handoff.json")) || {}; } catch {}
   const busy = runningHandoff(repoPath); if (busy) return { busy: true, id: busy.id || "", pid: busy.pid, auto: !!busy.auto };
   releaseHeldTasks(repoPath); // held for an agent another process started, which has since exited
-  tmpl = withStream(withTrust(withScope(withConnectors(tmpl, repoPath), repoPath)));
+  const scoped = withScope(withConnectors(tmpl, repoPath), repoPath), box = isClaudeCmd(scoped) && trustFull() ? sandboxFor(repoPath, scoped) : null; // a repo run's sandbox, on top of the membrane
+  tmpl = withStream(withTrust(scoped, box));
   const resume = isClaudeCmd(tmpl) ? resumeFor(repoPath) : null;
   const runCmd = resume ? tmpl + ` --resume ${resume.id}` : tmpl;
   if (!force) { const w = waitingFor(repoPath); if (w) { askedFor(repoPath); return { blocked: true, waiting: true, questions: 0, note: waitNote(w) }; } }
   const blocked = !force && blockedAgain(repoPath, tmpl); if (blocked) return blocked;
   try { unlinkSync(join(repoPath, ".symbiot", WAITING)); } catch {} // the step's done (or this is Start it anyway): this is the run it waited for
   const lock = join(repoPath, ".symbiot", LOCK);
-  const env = opts.env && typeof opts.env === "object" ? Object.fromEntries(Object.entries(opts.env).map(([k, v]) => [k, String(v)])) : null;
+  const own = opts.env && typeof opts.env === "object" ? Object.fromEntries(Object.entries(opts.env).map(([k, v]) => [k, String(v)])) : null, boxEnv = sandboxEnv(box);
+  const env = own || boxEnv ? { ...(own || {}), ...(boxEnv || {}) } : null;
   const e = track(typeof opts.name === "string" && opts.name ? opts.name.slice(0, 80) : repoPath.split("/").pop(), fillHandoff(runCmd, repoPath, resume ? RESUME_PROMPT : HANDOFF_PROMPT), repoPath, (code) => {
     if (noteSession(repoPath, code, !!resume) === "lost") { setTimeout(() => { try { runHandoff(repoPath, { force: true }); } catch {} }, 300); return; } // its conversation is gone: start afresh
     try { if (JSON.parse(readFileSync(lock, "utf8")).pid === e.pid) unlinkSync(lock); } catch {}
@@ -323,11 +380,84 @@ function takenUp(path, end) {
 }
 function needsOf(path, { final = "", waiting = null, end = Date.now(), now = Date.now() } = {}) {
   if (now - end > NEEDS_FOR) return null;
-  const n = waiting ? { kind: "step", what: clipWords(String(waiting.step || "").replace(/^\s*👤\s*(You\s*(\([^)]*\))?:)?\s*/, "").trim(), 240), check: "", label: "", waiting: true } : leftToYou(final);
+  const n = waiting ? { kind: "step", what: clipWords(String(waiting.step || "").replace(/^\s*👤\s*(You\s*(\([^)]*\))?:)?\s*/, "").trim(), 240), check: "", label: "", waiting: true } : leftToYou(final) || readNeeds(path, final);
   if (!n || !n.what) return null;
   const key = digest(n.what);
   if (loadSettled()[path] === key || takenUp(path, end)) return null;
   return { ...n, key };
+}
+
+// ---- your AI reads the last words too ------------------------------------------
+// leftToYou catches the ways runs have said it so far ("isn't sent", "only you can").
+// A new way of saying it would slip by, so once a run ends your AI reads its last
+// words for anything waiting on you, once per run's words (READ_FILE keeps what it
+// found, by folder and words), and needsOf takes that when the patterns found
+// nothing. Only for a run that asked nothing in QUESTIONS.md and isn't waiting on a
+// step already: those show as they are.
+const READ_FILE = join(CONFIG_DIR, "lastwords.json"), READ_KEEP = 300, READ_RETRY = 15 * 60000, READ_PER_TICK = 3, READ_MAX = 4000;
+const loadRead = (file = READ_FILE) => { try { const o = JSON.parse(readFileSync(file, "utf8")); return o && typeof o === "object" && !Array.isArray(o) ? o : {}; } catch { return {}; } };
+const readKey = (path, final) => digest(path + "\n" + String(final || "").trim());
+function readNeeds(path, final, { file = READ_FILE } = {}) {
+  if (!String(final || "").trim()) return null;
+  const r = loadRead(file)[readKey(path, final)];
+  return r && r.what ? { kind: r.kind === "approve" ? "approve" : "step", what: r.what, check: r.check || "", label: r.label || "", read: true } : null;
+}
+const READ_SYSTEM = `You read the last message a coding agent left when its run ended, and say whether it leaves the user something to do before the work is finished.
+That's either something waiting for their OK before it happens (sending, posting, deleting, paying, closing, merging, publishing) or a step only they can take (signing in, a password or a 2FA code, sudo, a phone or a cable, a token from a provider's console, a choice that's theirs to make).
+Not: work that's done, a summary of what changed, an idea they might like, changes waiting for review or Approve in Symbiot, a connector to sign in to again, or a question already asked in QUESTIONS.md.
+Reply with JSON only, no markdown fence: {"needs": false} or {"needs": true, "kind": "approve" or "step", "what": "the sentence that says so, in its own words, under 240 characters", "check": "what it says to check first, or empty", "label": "what it is in 1 to 3 words, or empty"}.`;
+function parseRead(raw) {
+  const t = String(raw || ""), a = t.indexOf("{"), b = t.lastIndexOf("}"); if (a < 0 || b < a) return null;
+  let o; try { o = JSON.parse(t.slice(a, b + 1)); } catch { return null; }
+  if (!o || typeof o.needs !== "boolean") return null;
+  if (!o.needs || !String(o.what || "").trim()) return { needs: false };
+  const c = (x, n) => clipWords(String(x || "").replace(/\s+/g, " ").trim(), n);
+  return { needs: true, kind: o.kind === "approve" ? "approve" : "step", what: c(o.what, 240), check: c(o.check, 240), label: c(o.label, 60) };
+}
+// One pass (the app runs it every minute): each run that ended in the last
+// NEEDS_FOR, whose words neither the patterns nor your AI has read yet, a few at a
+// time. Without an AI connected it does nothing. { read } (how many it asked about).
+let reading = false; // one pass at a time: a slow model mustn't have the next minute's pass ask again
+async function readLastWords(o = {}) {
+  if (reading) return { read: 0, busy: true };
+  reading = true; try { return await readPass(o); } finally { reading = false; }
+}
+// Each folder's newest finished run, with its last words as needsOf reads them:
+// those this app started, then those from before it last started (runs.json).
+function finishedRuns() {
+  const out = [], seen = new Set();
+  for (const e of HANDOFFS) {
+    if (seen.has(e.path)) continue; seen.add(e.path); if (e.status === "running") continue;
+    let tail = "", work = null; try { ({ tail, work } = workOf(e.path, readRunLog(e.log))); } catch {}
+    out.push({ path: e.path, name: e.name, endedAt: e.endedAt, final: work ? tail : "" });
+  }
+  for (const r of loadRuns()) {
+    if (seen.has(r.path)) continue; seen.add(r.path); if (runningHandoff(r.path)) continue;
+    let end = 0; try { end = statSync(join(r.path, ".symbiot", "agent.log")).mtimeMs; } catch { continue; }
+    out.push({ path: r.path, name: r.name, endedAt: end, final: lastFinal(r.path) });
+  }
+  return out;
+}
+async function readPass({ list, ask, connected, now = Date.now(), file = READ_FILE } = {}) {
+  if (!ask) { const ai = await import("./ai.mjs"); if (!(connected ? connected() : ai.resolveProvider())) return { read: 0 }; ask = ai.write; }
+  const store = loadRead(file), due = [];
+  for (const a of list || finishedRuns()) {
+    const final = String(a.final || "").trim();
+    if (!final || now - (a.endedAt || now) > NEEDS_FOR || leftToYou(final)) continue;
+    const k = readKey(a.path, a.final), had = store[k];
+    if (had && !(had.error && now - had.at > READ_RETRY)) continue;
+    if (waitingFor(a.path) || agentQuestions(a.path, a.name).questions.length) continue; // those show as they are
+    due.push({ k, final });
+  }
+  for (const d of due.slice(0, READ_PER_TICK)) {
+    let r = null; try { r = parseRead(await ask(READ_SYSTEM, `The run's last message:\n\n${String(d.final).trim().slice(-READ_MAX)}`)); } catch {}
+    store[d.k] = r ? { at: now, ...(r.needs ? { kind: r.kind, what: r.what, check: r.check, label: r.label } : {}) } : { at: now, error: true };
+  }
+  if (due.length) {
+    const keys = Object.keys(store).sort((x, y) => store[y].at - store[x].at).slice(0, READ_KEEP), kept = {}; for (const k of keys) kept[k] = store[k];
+    try { mkdirSync(CONFIG_DIR, { recursive: true }); writeFileSync(file, JSON.stringify(kept), { mode: 0o600 }); } catch {}
+  }
+  return { read: Math.min(due.length, READ_PER_TICK) };
 }
 
 // ---- a step that's yours: wait for it -----------------------------------------
@@ -945,4 +1075,4 @@ function agentsList() {
   }).concat(earlierRuns());
 }
 
-export { FACTS, factsOf, knownRun, withStream, workOf, HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, connectorsInfo, linkReach, fillHandoff, runHandoff, PARKED_NOTE, parkedPaths, isParked, parkLane, agentMissing, blockedAgain, runningHandoff, loadRuns, earlierRuns, namedFiles, waitingFor, startWaiting, writeTasks, droppedTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, pickAgent, findOrcaCli, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, skipIdea, agentQuestions, answerQuestions, agentsList, needsOf, settleNeeds, NEEDS_FOR , autoAllow, autoAllowSweep, allowlistInWork, installAllowlist, inWork, withScope , withTrust, resumeFor, noteSession, trustFull, GUARD_SETTINGS };
+export { FACTS, factsOf, knownRun, withStream, workOf, HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, connectorsInfo, linkReach, fillHandoff, runHandoff, PARKED_NOTE, parkedPaths, isParked, parkLane, agentMissing, blockedAgain, runningHandoff, loadRuns, earlierRuns, namedFiles, waitingFor, startWaiting, writeTasks, droppedTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, pickAgent, findOrcaCli, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, skipIdea, agentQuestions, answerQuestions, agentsList, needsOf, settleNeeds, NEEDS_FOR , readLastWords, readNeeds, parseRead, READ_FILE, autoAllow, autoAllowSweep, allowlistInWork, installAllowlist, inWork, withScope , withTrust, sandboxFor, sandboxEnv, sandboxNeeds, sandboxState, sandboxWrites, SANDBOX_DIR, resumeFor, noteSession, trustFull, GUARD_SETTINGS };

@@ -2,6 +2,17 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.54.5 — 2026-10-07
+
+- Added a Marketing lane on Home that gathers marketing work for all your products, tags each item by product, and lights up when something needs you.
+- Added drafting of social posts in the Marketing lane, each opening with a hook, explaining the product and its goal, and never posted without your approval.
+- Fixed the Pearl look so the middle orb's words show inside it and stay readable on both its bright and dark sides.
+- Added a Minimize control to the Home chat, also triggered by Esc or clicking outside, which keeps your conversation so you can reopen it.
+- Added a "What could be done next" box on Home when nothing waits on you, suggesting a few useful actions you can start in one tap.
+- Changed finished agent runs so your AI reads their last words, catching new ways of saying something still waits on you.
+- Added a sandbox for project agent runs that limits where they can write, which you can turn off with "agentSandbox": false in settings.
+- Fixed the Seen button and reorganized the Map into tidy lanes, merged Tasks and Agents into a Workdesk, and added Reports and Marketing pages.
+
 ## 0.54.4 — 2026-10-07
 
 - Removed the "Add a task" row from Tasks, since you add tasks through the bottom chat bar, and moved Send to repos beside Close.
