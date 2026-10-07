@@ -40,7 +40,7 @@ function runSandbox({ bin, args = [], keep = false, log = console.log, port = PO
   const home = realpathSync(mkdtempSync(join(tmpdir(), "symbiot-fresh-")));
   log(`Sandbox: a brand-new Symbiot, with its own empty home at ${home}.`);
   log("No AI connected, no memory, no linked accounts, no lanes, none of your repos. Nothing of yours is read or changed.");
-  log(keep ? "That folder stays when you quit (--keep)." : "Quit it (the Quit button, or Ctrl+C here) and that folder is deleted.");
+  log(keep ? "That folder stays when you quit (--keep)." : "Quit it (the X in its top corner, or Ctrl+C here) and that folder is deleted.");
   const child = spawn(process.execPath, [bin, "app", ...args], { env: sandboxEnv(home, process.env, port), stdio: "inherit" });
   const stop = () => {}; // Ctrl+C reaches the app too; wait for it to quit, then clean up
   process.on("SIGINT", stop); process.on("SIGTERM", () => child.kill("SIGTERM"));

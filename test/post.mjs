@@ -109,8 +109,15 @@ try {
   ok("still claiming it after: dropped; the fixed one and the honest one kept", l.ok && l.posts.map((p) => p.kind).join() === "learned,long" && l.dropped.length === 1 && l.dropped[0].kind === "shipped" && l.dropped[0].unsupported.includes("500"), l);
   ok("the dropped one is logged, with why", P.postLog().some((x) => x.action === "dropped" && /git doesn't show/.test(x.why)), P.postLog().slice(-3));
   ok("drafting again replaces the drafts still waiting (logged as replaced)", P.postLog().filter((x) => x.action === "replaced").length === 3 && P.postsState().posts.length === 2, P.postsState().posts.length);
-  const none = await P.draftPosts({ repos, gh: false, ask: async () => JSON.stringify({ posts: [{ kind: "shipped", text: "We have 9000 users.", facts: [1] }] }) });
-  ok("none git backs: an error, and the waiting drafts stay", none.code === "all-dropped" && P.postsState().posts.length === 2, none);
+  let tries = 0;
+  const none = await P.draftPosts({ repos, gh: false, ask: async () => { tries++; return JSON.stringify({ posts: [{ kind: "shipped", text: "We have 9000 users.", facts: [1] }] }); } });
+  ok("none git backs, twice (a fresh try by itself first): an error, and the waiting drafts stay", none.code === "all-dropped" && none.retried && tries === 4 && /twice/.test(none.error) && P.postsState().posts.length === 2, [none, tries]);
+  console.log("EVERY DRAFT DROPPED — a fresh try by itself before giving up (week 1: none of 3, then all 3)");
+  let wk = 0; const drops0 = P.postLog().filter((x) => x.action === "dropped").length, kept0 = readFileSync(P.PATHS.posts, "utf8");
+  const week1 = await P.draftPosts({ repos, gh: false, ask: async (s, p) => { wk++; if (wk <= 2) return JSON.stringify({ posts: P.KINDS.map((k) => ({ kind: k, text: "demo v9.9 shipped to 4000 teams.", facts: [1] })) }); return honest(s, p); } });
+  ok("the first try kept none, so it tried again, and the second kept all 3", week1.ok && week1.retried && wk === 3 && week1.posts.length === 3 && week1.dropped.length === 0, [week1, wk]);
+  ok("…the first try's drops are logged, with why", P.postLog().filter((x) => x.action === "dropped").length === drops0 + 3, P.postLog().slice(-6).map((x) => x.action));
+  writeFileSync(P.PATHS.posts, kept0); // back to the two waiting, for what follows
 
   console.log("APPROVE, EDIT, SKIP — they work, and each is logged");
   const [a, b] = P.postsState().posts;
@@ -143,6 +150,74 @@ try {
   ok("symbiot post skip <id>: skipped and logged", cli("skip", c2.id).code === 0 && P.loadPosts().posts.find((p) => p.id === c2.id).status === "skipped" && P.postLog().slice(-1)[0].action === "skipped", "");
   ok("symbiot post log: every action, with its date", /skipped/.test(cli("log").out) && /edited/.test(cli("log").out) && /approved/.test(cli("log").out) && /\d{4}-\d{2}-\d{2} \d{2}:\d{2}/.test(cli("log").out), cli("log").out.slice(-400));
   ok("a CLI id that isn't there fails, and says so", cli("approve", "nope").code === 1 && /No draft nope/.test(cli("approve", "nope").out), "");
+
+  console.log("PICTURES AND VIDEOS — an idea for each draft, yours or a page's, given to you at Approve");
+  const showing = async (s, p) => JSON.stringify({ posts: JSON.parse(await honest(s, p)).posts.map((x) => ({ ...x, show: "a picture of the   digest export\nin the app" })) });
+  let sysSaid = "";
+  const md = await P.draftPosts({ repos, gh: false, ask: async (s, p) => { sysSaid = s; return showing(s, p); } });
+  ok("the AI is asked what picture or short video would show each post", /"show"/.test(sysSaid) && /picture or short video/.test(sysSaid), sysSaid.slice(-400));
+  ok("…and each draft keeps it, on one line, with no media yet", md.ok && md.posts.every((x) => x.show === "a picture of the digest export in the app" && Array.isArray(x.media) && !x.media.length), md.posts);
+  const [m1, m2, m3] = md.posts;
+  const PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(40, 1)]), JPG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(40, 2)]);
+  const MP4 = Buffer.concat([Buffer.from([0, 0, 0, 0x20]), Buffer.from("ftypisom"), Buffer.alloc(40)]), MOV = Buffer.concat([Buffer.from([0, 0, 0, 0x14]), Buffer.from("ftypqt  "), Buffer.alloc(40)]);
+  ok("a file is known by its first bytes, not its name: PNG, JPG, MP4, MOV; text isn't one", P.mediaType(PNG) === "png" && P.mediaType(JPG) === "jpg" && P.mediaType(MP4) === "mp4" && P.mediaType(MOV) === "mov" && P.mediaType(Buffer.from("just some text, not a picture")) === "", [P.mediaType(PNG), P.mediaType(MOV)]);
+  const pa = P.addMedia(m1.id, PNG, { name: "digest.png" });
+  const pf = join(P.mediaDir(m1.id), pa.media && pa.media.file);
+  ok("a picture of yours goes on a draft: a copy, yours only, in its own folder", pa.ok && pa.media.kind === "picture" && pa.media.from === "yours" && existsSync(pf) && readFileSync(pf).equals(PNG) && mode(pf) === "600" && P.loadPosts().posts.find((x) => x.id === m1.id).media.length === 1, pa);
+  ok("…which the app can show, with its type", (P.mediaFile(m1.id, pa.media.id) || {}).type === "image/png" && P.mediaFile(m1.id, "nope") === null, P.mediaFile(m1.id, pa.media.id));
+  ok("…and the log says what was added", P.postLog().slice(-1)[0].action === "media" && P.postLog().slice(-1)[0].added.file === pa.media.file, P.postLog().slice(-1)[0]);
+  ok("a file that isn't a picture or video is refused, and says what is", /PNG, JPG or GIF/.test(P.addMedia(m1.id, Buffer.from("hello there, this is text")).error || ""), "");
+  ok("LinkedIn's rule: pictures or a video, not both", /not both/.test(P.addMedia(m1.id, MP4).error || ""), P.addMedia(m1.id, MP4));
+  ok("a second picture is fine", P.addMedia(m1.id, JPG, { name: "b.jpg" }).ok && P.loadPosts().posts.find((x) => x.id === m1.id).media.length === 2, "");
+  const va = P.addMedia(m2.id, MP4, { name: "demo.mp4" });
+  ok("a video on another draft; a second video is refused (one a post)", va.ok && va.media.kind === "video" && /one video a post/.test(P.addMedia(m2.id, MOV).error || ""), va);
+  let shotUrl = "";
+  const pp = await P.pictureOfPage(m3.id, "localhost:3000/reports", { shoot: async (u) => { shotUrl = u; return { png: PNG, url: u, title: "Reports" }; } });
+  ok("a picture of a page (localhost works), on your click: kept with where it's from", pp.ok && shotUrl === "http://localhost:3000/reports" && pp.media.from === "page" && pp.media.url === shotUrl && pp.media.name === "Reports", pp);
+  ok("…and the page is remembered for the next one", P.postsState().lastUrl === "localhost:3000/reports", P.postsState().lastUrl);
+  ok("a page that won't open says why, and adds nothing", /refused/.test((await P.pictureOfPage(m3.id, "localhost:9", { shoot: async () => ({ error: "Couldn't open it (refused)." }) })).error) && P.loadPosts().posts.find((x) => x.id === m3.id).media.length === 1, "");
+  ok("not a page: says how to give one", /web address/.test((await P.pictureOfPage(m3.id, "two words")).error || ""), "");
+  ok("a clip goes only where there's nothing yet (LinkedIn: a video, or pictures)", /not both/.test((await P.clipOfPage(m3.id, "localhost:3000", { record: async () => ({}), encode: () => ({}) })).error || ""), "");
+  const rm = P.removeMedia(m3.id, pp.media.id);
+  ok("a picture comes off: its copy deleted, the draft as it was", rm.ok && !existsSync(join(P.mediaDir(m3.id), pp.media.file)) && !P.loadPosts().posts.find((x) => x.id === m3.id).media.length, rm);
+  let recorded = null;
+  const cl = await P.clipOfPage(m3.id, "localhost:3000", { seconds: 5, record: async (u, s) => { recorded = [u, s]; return { frames: [{ ts: 10, jpeg: JPG }, { ts: 10.5, jpeg: JPG }], end: 15, url: u, title: "Home" }; }, encode: (frames, end) => (frames.length === 2 && end === 15 ? { mp4: MP4 } : { error: "wrong frames" }) });
+  ok("a clip of a page: recorded for the seconds asked, made a video, added", cl.ok && recorded[0] === "http://localhost:3000/" && recorded[1] === 5 && cl.media.kind === "video" && cl.media.from === "clip", cl);
+  ok("ffmpeg's list: each frame until the next, the last until the end, the last listed twice", P.concatList([{ ts: 10 }, { ts: 10.5 }, { ts: 12 }], 15) === "ffconcat version 1.0\nfile f00000.jpg\nduration 0.500\nfile f00001.jpg\nduration 1.500\nfile f00002.jpg\nduration 3.000\nfile f00002.jpg\n", P.concatList([{ ts: 10 }, { ts: 10.5 }, { ts: 12 }], 15));
+  if (P.canClip()) {
+    // real frames, made by ffmpeg, then made a video by toVideo
+    const fdir = join(HOME, "frames"); mkdirSync(fdir);
+    const frame = (c) => { const f = join(fdir, c + ".jpg"); execFileSync("ffmpeg", ["-loglevel", "error", "-f", "lavfi", "-i", `color=c=${c}:s=64x48`, "-frames:v", "1", f]); return readFileSync(f); };
+    const v = P.toVideo([{ ts: 0, jpeg: frame("red") }, { ts: 1, jpeg: frame("blue") }], 3);
+    ok("toVideo (ffmpeg here): real frames become an MP4, and its scratch folder goes", v.mp4 && P.mediaType(v.mp4) === "mp4" && !readdirSync(P.PATHS.media).some((x) => x.startsWith(".clip-")), v.error || readdirSync(P.PATHS.media));
+  } else ok("toVideo: without ffmpeg a clip says to install it", /ffmpeg/.test(P.NO_FFMPEG), "");
+  const am = P.approvePost(m1.id, { copy });
+  ok("Approve gives the post's files and their folder, and says to add them in LinkedIn", am.ok && am.files.length === 2 && am.files.every((f) => existsSync(f)) && am.folder === P.mediaDir(m1.id) && /add its 2 pictures there/.test(am.note), am);
+  ok("…and logs what it carried", (P.postLog().slice(-1)[0].media || []).length === 2, P.postLog().slice(-1)[0]);
+  ok("a draft with a video: its one file, and the note says so", (() => { const x = P.approvePost(m2.id, { copy }); return x.ok && x.files.length === 1 && /add its video there/.test(x.note); })(), "");
+  const clip3 = P.loadPosts().posts.find((x) => x.id === m3.id).media[0];
+  ok("symbiot post add <id> <file>: a picture of yours, from the command line", (() => { writeFileSync(join(HOME, "shot.png"), PNG); const r = cli("add", m3.id, join(HOME, "shot.png")); return r.code === 1 && /not both/.test(r.out); })() && clip3.kind === "video", "");
+  ok("symbiot post remove <id> <media id>, then add works", cli("remove", m3.id, clip3.id).code === 0 && cli("add", m3.id, join(HOME, "shot.png")).code === 0 && P.loadPosts().posts.find((x) => x.id === m3.id).media[0].name === "shot.png", P.loadPosts().posts.find((x) => x.id === m3.id).media);
+  ok("symbiot post list shows the picture's file", cli("list").out.includes(P.mediaDir(m3.id)), cli("list").out.slice(-300));
+  await P.draftPosts({ repos, gh: false, ask: honest });
+  ok("after drafting, every media folder is a kept draft's (the approved one's stays)", existsSync(P.mediaDir(m1.id)) && readdirSync(P.PATHS.media).every((x) => P.loadPosts().posts.some((p) => p.id === x)), readdirSync(P.PATHS.media));
+
+  console.log("A PICTURE BY ITSELF — a draft whose idea is a screen of an app you run here arrives with it");
+  const apps = await P.localApps([{ name: "demo", path: REPO }, { name: "symbiot", path: join(dirname(fileURLToPath(import.meta.url)), "..") }, { name: "idle", path: "/nowhere" }],
+    { ports: () => [{ port: 3000, pid: 1 }, { port: 5173, pid: 2 }, { port: 8080, pid: 3 }], cwd: (pid) => ({ 1: "/somewhere/else", 2: join(REPO, "web"), 3: REPO + "-other" })[pid], app: async () => ({ url: "http://127.0.0.1:7391/", open: "http://127.0.0.1:7391/?t=tok" }) });
+  ok("the apps running here: one listening from inside a repo's folder, and Symbiot's own app for its repo", JSON.stringify(apps) === JSON.stringify([{ repo: "demo", url: "http://localhost:5173/" }, { repo: "symbiot", url: "http://127.0.0.1:7391/", open: "http://127.0.0.1:7391/?t=tok", symbiot: true }]), apps);
+  const fx = [{ repo: "demo" }, { repo: "symbiot" }], at = (show, n = 1) => P.screenFor({ show, facts: [n] }, apps, fx);
+  ok("an idea that names a screen: that app's page (a path it names too)", JSON.stringify(at("a picture of the new /digest page")) === JSON.stringify({ url: "http://localhost:5173/digest", open: "http://localhost:5173/digest" }) && at("a picture of the app's home screen").url === "http://localhost:5173/", [at("a picture of the new /digest page"), at("a picture of the app's home screen")]);
+  ok("…Symbiot's screens by name, opened with its token but kept without it", at("a picture of the new Reports view", 2).url === "http://127.0.0.1:7391/#reports" && at("a picture of the new Reports view", 2).open === "http://127.0.0.1:7391/?t=tok#reports" && at("a picture of the Dashboard's cards", 2).url.endsWith("#board"), at("a picture of the new Reports view", 2));
+  ok("…not a clip, a command or a terminal, and not a repo with no app running", !at("a clip of the install running") && !at("the digest command in a terminal") && !at("a picture of the page", 3) && !at(""), "");
+  const showing2 = async (s, p) => { const ps = JSON.parse(await honest(s, p)).posts; return JSON.stringify({ posts: [{ ...ps[0], show: "a picture of the new /digest page" }, { ...ps[1], show: "a clip of the crash fix" }, { ...ps[2], show: "the digest command in a terminal" }] }); };
+  const shots = [];
+  const ap2 = await P.draftPosts({ repos, gh: false, ask: showing2, apps: async () => [{ repo: "demo", url: "http://localhost:5173/" }], shoot: async (u) => { shots.push(u); return { png: PNG, url: u, title: "Digest" }; } });
+  const sh0 = ap2.posts.find((x) => x.kind === "shipped");
+  ok("drafted: the screen's picture is on its draft already, from that page; the others keep their idea", ap2.ok && ap2.pictures === 1 && shots.join() === "http://localhost:5173/digest" && sh0.media.length === 1 && sh0.media[0].from === "page" && sh0.media[0].url === "http://localhost:5173/digest" && P.loadPosts().posts.find((x) => x.id === sh0.id).media.length === 1 && ap2.posts.filter((x) => x.kind !== "shipped").every((x) => !x.media.length), [ap2.pictures, shots, sh0.media]);
+  ok("…you can take it off like any picture", P.removeMedia(sh0.id, sh0.media[0].id).ok && !P.loadPosts().posts.find((x) => x.id === sh0.id).media.length, "");
+  const ap3 = await P.draftPosts({ repos, gh: false, ask: showing2, apps: async () => [{ repo: "demo", url: "http://localhost:5173/" }], shoot: async () => ({ error: "Couldn't open it (refused)." }) });
+  ok("the app not answering: the drafts arrive all the same, with their idea", ap3.ok && ap3.posts.length === 3 && !ap3.pictures && ap3.posts.every((x) => !x.media.length && x.show), ap3);
 
   console.log("YOUR VOICE FROM LINKEDIN — read on your click, in Symbiot's signed-in browser");
   rmSync(P.PATHS.voice);

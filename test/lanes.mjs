@@ -16,7 +16,7 @@ mkdirSync(CFG, { recursive: true });
 let pass = 0, fail = 0;
 const ok = (n, c, got) => { if (c) { pass++; console.log("  ✓ " + n); } else { fail++; console.log("  ✗ " + n + (got !== undefined ? "  got: " + JSON.stringify(got) : "")); } };
 
-const { lanesTick, loadLedger, lanesState, MAX_CHAIN, aboutIt, partlyDone } = await import("../lanes.mjs");
+const { lanesTick, loadLedger, lanesState, MAX_CHAIN, aboutIt, partlyDone, remoteKey, orcaMoves, orcaRelink, stuckHandovers, allowHandover, skipHandover, namedDirs } = await import("../lanes.mjs");
 const { parseHandoffs, handoverRules, ONLY_YOU } = await import("../handover.mjs");
 const { buildTasksMd } = await import("../tasks.mjs");
 const { actBrief } = await import("../mind.mjs");
@@ -30,10 +30,10 @@ const read = (p, f) => { try { return readFileSync(join(p, ".symbiot", f), "utf8
 const ran = (p, ts, said) => put(p, "agent.log", `\n=== x ${new Date(ts).toISOString()} ===\n$ claude -p …\n${said}\n`);
 
 // stand-ins: what was started, and which folders are busy
-const calls = { act: [], run: [], add: [], push: [] };
+const calls = { act: [], run: [], add: [], push: [], relink: 0 };
 let busy = new Set(), runResult = () => ({ id: "j" + calls.run.length });
 const opsDir = join(CFG, "drafts", "act-0001");
-const deps = (extra = {}) => ({ map, now: Date.now(), tasks: extra.tasks || [],
+const deps = (extra = {}) => ({ map, now: Date.now(), tasks: extra.tasks || [], relink: async () => { calls.relink++; return { moves: [] }; },
   act: (text, o) => { calls.act.push({ text, o }); mkdirSync(join(opsDir, ".symbiot"), { recursive: true }); return { ok: true, job: "ops1", dir: opsDir }; },
   run: (p, o) => { calls.run.push({ p, o }); return runResult(p); },
   running: (p) => busy.has(p),
@@ -68,6 +68,29 @@ try {
   ok("the result goes back into coral's ANSWERS.md, with what ops said", t2.reported.length === 1 && /### Handed over to ops: Find a JDK 17/.test(ans) && /Done \(the ops agent\)/.test(ans) && /eclipse_adoptium-17/.test(ans), ans);
   ok("and coral's agent is started again to carry on", calls.run.length === runsBefore + 1 && calls.run.slice(-1)[0].p === coral && calls.run.slice(-1)[0].o.force, calls.run.slice(-1));
   ok("reported once", lanesTick(deps()).reported.length === 0 && loadLedger().handoffs[0].status === "done", loadLedger().handoffs[0].status);
+  ok("…and once it's back, Orca is checked for a lane folder the handover renamed", calls.relink === 1, calls.relink);
+
+  console.log("ORCA — a lane's folder renamed by a handover is added again where it is now");
+  const dailify = join(HOME, "dailify"), other = join(HOME, "proj", "other"), gone = join(HOME, "CallForge AI");
+  mkdirSync(dailify, { recursive: true }); mkdirSync(other, { recursive: true });
+  const orcaList = { ok: true, result: { repos: [
+    { path: gone, displayName: "dailify", gitRemoteIdentity: { canonicalKey: "github.com/GarthGhostai/dailify" } },
+    { path: coral, displayName: "coral" },
+    { path: join(HOME, "old", "nowhere"), displayName: "nowhere" } ] } };
+  const remotes = { [dailify]: "git@github.com:GarthGhostai/Dailify.git", [other]: "https://github.com/GarthGhostai/other.git" };
+  const orcaCalls = [];
+  const fakeOrca = async (cli, args) => { orcaCalls.push(args); return args[1] === "list" ? JSON.stringify(orcaList) : '{"id":"x","ok":true,"result":{}}'; };
+  const omap = { dailify, other, coral };
+  ok("remotes compare however they're written", remoteKey("git@github.com:GarthGhostai/Dailify.git") === "github.com/garthghostai/dailify" && remoteKey("https://user@github.com/GarthGhostai/dailify.git/") === "github.com/garthghostai/dailify" && remoteKey("github.com/GarthGhostai/dailify") === "github.com/garthghostai/dailify", "");
+  const rl = await orcaRelink({ map: omap, cli: "/x/orca-ide", orca: fakeOrca, remoteOf: async (p) => remotes[p] || "" });
+  ok("the gone path's repo is found by its GitHub remote, and added again in Orca", rl.moves.length === 1 && rl.moves[0].from === gone && rl.moves[0].to === dailify && rl.moves[0].ok && orcaCalls.some((a) => a.join(" ") === `repo add --path ${dailify} --json`), rl.moves);
+  ok("…a folder that still exists, or one with nowhere to go, is left alone", orcaCalls.filter((a) => a[1] === "add").length === 1, orcaCalls);
+  const byName = await orcaMoves([{ path: join(HOME, "Old Name"), displayName: "other" }], omap, { remoteOf: async () => "" });
+  ok("…with no remote kept, by its name", byName.length === 1 && byName[0].to === other, byName);
+  const twins = await orcaMoves([{ path: gone, displayName: "dailify", gitRemoteIdentity: { canonicalKey: "github.com/x/y" } }], omap, { remoteOf: async () => "github.com/x/y" });
+  ok("…never a guess: two matches move nothing", twins.length === 0, twins);
+  ok("no Orca here: nothing happens", (await orcaRelink({ map: omap, cli: "", orca: fakeOrca })).moves.length === 0, "");
+  ok("Orca not running (its CLI says nothing): nothing happens", (await orcaRelink({ map: omap, cli: "/x/orca-ide", orca: async () => "" })).moves.length === 0, "");
 
   console.log("A STEP OF THE USER'S — a result coming back doesn't start a run they said to hold");
   // coral's run asked for a key in .env, and the user said "don't start another run until it's in"
@@ -142,6 +165,40 @@ try {
   put(ghost, "QUESTIONS.md", ""); put(ghost, "HANDOFF.md", "");
   L3.handoffs.find((h) => h.id === "w").reportedAt = Date.now(); writeFileSync(join(CFG, "lanes.json"), JSON.stringify(L3));
   ok("nothing open and the handover back: not partly done", partlyDone(ghost) === null, partlyDone(ghost));
+
+  console.log("STUCK, ON HOME — an ops run limited to its folder needs ~/Company; it handed that to ops, its own lane");
+  const co = join(HOME, "Company"); mkdirSync(join(co, "hr", "templates"), { recursive: true }); writeFileSync(join(co, "hr", "templates", "leave-register.csv"), "name,from,to\n");
+  const opsA = join(CFG, "drafts", "act-4e9461d3"); mkdirSync(join(opsA, ".symbiot"), { recursive: true });
+  put(opsA, "TASKS.md", "- [ ] Move ~/Company's registers out of templates/\n");
+  put(opsA, "HANDOFF.md", `### ops\nNeeds a run that can read, edit and \`git mv\` in \`${co}\` (like ops run \`act-1d727d7f\`).\nMove \`${join(co, "hr", "templates", "leave-register.csv")}\` up a level, and fix every link to it.\n`);
+  lanesTick(deps());
+  const err = loadLedger().handoffs.find((h) => h.from.path === opsA);
+  ok("it errors, as before: ops is its own lane", err && err.status === "error" && /ops is your own lane/.test(err.error), err);
+  const st = stuckHandovers().find((x) => x.id === err.id);
+  ok("…and now waits on you: \"Allow this run access to ~/Company?\", Allow or Skip", st && st.q === "Allow this run access to ~/Company?" && st.options.join() === "Allow (recommended),Skip" && st.dirs.join() === co, st);
+  ok("the folders it names: ~/Company once (a file in it counts as it), never Symbiot's, a hidden one or your home", namedDirs(`in ${co} and ${join(co, "hr")} and ~/.ssh and ${HOME} and ${CFG}`).join() === co, namedDirs(`in ${co} and ${join(co, "hr")} and ~/.ssh and ${HOME} and ${CFG}`));
+  const ops2 = join(CFG, "drafts", "act-allowed"), acted = [];
+  const al = allowHandover(err.id, { note: "only the csvs", act: (text, o) => { acted.push({ text, o }); mkdirSync(join(ops2, ".symbiot"), { recursive: true }); o.run(ops2, { force: true }); return { ok: true, job: "j-allow", dir: ops2 }; }, run: () => ({ id: "j-allow" }) });
+  const grant = JSON.parse(readFileSync(join(ops2, ".claude", "settings.local.json"), "utf8")).permissions;
+  ok("Allow: a run of its own on it, with what you said, told it may work in ~/Company", al.ok && acted.length === 1 && /git mv/.test(acted[0].text) && /The user said: only the csvs/.test(acted[0].text) && acted[0].o.context.includes(co), [al, acted[0] && acted[0].o.context]);
+  ok("…that run only is allowed to read, edit and move files there", grant.additionalDirectories.includes(co) && grant.allow.includes(`Edit(/${co}/**)`) && grant.allow.includes("Bash(git mv:*)") && !grant.allow.some((r) => /^Bash\((bash|sudo|rm)/.test(r)), grant);
+  const now2 = loadLedger().handoffs.find((h) => h.id === err.id);
+  ok("…the handover is started, there, and no longer waits on you", now2.status === "started" && now2.to.path === ops2 && !now2.reportedAt && !stuckHandovers().some((x) => x.id === err.id), now2);
+  ok("…a second Allow does nothing", !!allowHandover(err.id, { act: () => { throw new Error("ran again"); } }).error, "");
+  put(ops2, "TASKS.md", "- [x] Move the registers\n"); ran(ops2, Date.now() + 5, "All 39 registers moved.");
+  lanesTick(deps({ tasks: [] }));
+  ok("…and when it's done, the run that asked hears it, like any handover", /Handed over to ops: Needs a run that can read[\s\S]*Done \(the ops agent\)[\s\S]*All 39 registers moved/.test(read(opsA, "ANSWERS.md")), read(opsA, "ANSWERS.md").slice(-300));
+  const nowhere = loadLedger().handoffs.find((h) => h.to.lane === "payroll");
+  const sp = stuckHandovers().find((x) => x.id === nowhere.id);
+  ok("a lane that doesn't exist: start it as a run of its own?", sp && /^coral's handover didn't start \(There's no lane called payroll\)\. Start it as a run of its own\?$/.test(sp.q) && sp.options[0] === "Start it (recommended)", sp);
+  ok("Skip: it stops asking, and its agent reads that you skipped it", skipHandover(nowhere.id).ok && !stuckHandovers().some((x) => x.id === nowhere.id) && /Handed over to payroll: Run payroll\.\nThe user skipped it/.test(read(coral, "ANSWERS.md")), read(coral, "ANSWERS.md").slice(-200));
+  const L4 = JSON.parse(readFileSync(join(CFG, "lanes.json"), "utf8")), t0 = Date.now() - 60000;
+  L4.handoffs.push({ id: "e-old", key: "e-old", from: { lane: "coral", path: coral }, to: { lane: "ops", path: "" }, text: "Renew the SSL certificate for coral.example.com before it lapses.", at: Date.now() - 4 * 86400000, chain: 1, status: "error", error: "x" },
+    { id: "e-done", key: "e-done", from: { lane: "coral", path: coral }, to: { lane: "coral", path: "" }, text: "Rotate the staging database password and update the vault entry.", at: t0, chain: 1, status: "error", error: "coral is your own lane: do it yourself." },
+    { id: "e-later", key: "e-later", from: { lane: "coral", path: coral }, to: { lane: "ops", path: opsDir }, text: "Rotate the staging database password, then update the vault entry for it.", at: t0 + 1000, chain: 1, status: "done", reportedAt: t0 + 2000 });
+  writeFileSync(join(CFG, "lanes.json"), JSON.stringify(L4));
+  const ids = stuckHandovers().map((x) => x.id);
+  ok("past it: one from days ago, and one done another way since", !ids.includes("e-old") && !ids.includes("e-done"), ids);
 } finally {
   rmSync(HOME, { recursive: true, force: true });
 }

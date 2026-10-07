@@ -140,7 +140,7 @@ body.lq-liquid.lq-look-pearl button.act,body.lq-look-pearl #lqgo.on,body.lq-liqu
 body.lq-liquid button.ghost{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.14);border-radius:999px;color:var(--bone);backdrop-filter:blur(6px)}
 body.lq-liquid.lq-light button.ghost{background:rgba(255,255,255,.7);border-color:rgba(20,30,45,.18)}
 body.lq-liquid input,body.lq-liquid select,body.lq-liquid textarea{border-radius:12px;border:1px solid rgba(220,228,240,.2);background:rgba(255,255,255,.04);color:var(--bone)}
-body.lq-liquid.lq-light input,body.lq-liquid.lq-light select,body.lq-liquid.lq-light textarea{background:#FFFFFF;border-color:rgba(20,30,45,.18)}
+body.lq-liquid.lq-light input,body.lq-liquid.lq-light select,body.lq-liquid.lq-light textarea{background-color:#FFFFFF;border-color:rgba(20,30,45,.18)}
 body.lq-liquid input:focus,body.lq-liquid select:focus,body.lq-liquid textarea:focus{outline:none;border-color:rgba(255,255,255,.7);box-shadow:0 0 0 3px rgba(200,210,224,.18)}
 body.lq-liquid .tgroup{color:#C9D1DC;letter-spacing:.16em}
 body.lq-liquid.lq-light .tgroup{color:#3B4656}
@@ -216,6 +216,7 @@ body.lq-pooled #lqneedt,body.lq-work #lqneedt{display:none}
 .lqblob .bfx button{padding:0 12px;border-radius:12px;background:#F3F0EA;color:#0A0B0D;font-weight:600}
 .lqblob .bfx.hidden{display:none}
 .lqblob .bmore{font-size:11.5px;color:#8A919B}
+.lqblob .bfor{font-size:11.5px;line-height:1.3;color:#8A919B;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
 .lqblob .nopt:focus-visible,.lqblob .bfree:focus-visible,.lqblob .bfx button:focus-visible{outline:2px solid currentColor;outline-offset:2px}
 .lqblob.gone{opacity:0!important;filter:blur(8px);transition:opacity .6s ease,filter .6s ease;pointer-events:none!important}
 body.lq-light .lqd.lqblob{background:rgba(255,255,255,.94);border-color:rgba(154,82,0,.32);box-shadow:0 18px 40px -26px rgba(30,45,60,.5)}
@@ -224,7 +225,7 @@ body.lq-light .lqblob .nopt{background:#FFFFFF;border-color:rgba(20,30,45,.16);c
 body.lq-light .lqblob .nopt.rec{background:#151A21;color:#FFFFFF;border-color:#151A21}
 body.lq-light .lqblob .bfx input{background:#FFFFFF;border-color:rgba(20,30,45,.18)}
 body.lq-light .lqblob .bfx button{background:#151A21;color:#FFFFFF}
-body.lq-light .lqblob .bfree,body.lq-light .lqd.lqblob .lt i,body.lq-light .lqblob .bmore{color:#5A6470}
+body.lq-light .lqblob .bfree,body.lq-light .lqd.lqblob .lt i,body.lq-light .lqblob .bmore,body.lq-light .lqblob .bfor{color:#5A6470}
 body.lq-look-pearl .lqblob .nopt.rec,body.lq-look-pearl .lqblob .bfx button{background:linear-gradient(180deg,#FFFFFF 0%,#F1F2F5 60%,#E6E9EE 100%);color:#1B1E23;border-color:rgba(0,0,0,.08)}
 body.lq-contrast .lqblob .nopt{border:2px solid currentColor}
 body.lq-touch .lqblob .nopt,body.lq-touch .lqblob .bfx input{min-height:44px}
@@ -396,6 +397,13 @@ footer{padding:10px 18px;border-top:1px solid var(--line);display:flex}
 .pcard textarea.pedit:focus{outline:none;border-color:var(--green)}
 .pcard .psrc{margin-top:8px;font-size:12px;color:var(--faint)}.pcard .psrc summary{cursor:pointer}.pcard .psrc div{margin-top:3px;overflow-wrap:anywhere}
 .pcard .pchars{font-size:11px;color:var(--faint);margin-left:auto}
+.pcard .pshow{margin-top:8px;font-size:12.5px;color:var(--text)}
+.pcard .pmedia{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+.pcard .pthumb{position:relative;border:1px solid var(--line);border-radius:9px;overflow:hidden;background:var(--ink);line-height:0}
+.pcard .pthumb img,.pcard .pthumb video{display:block;max-height:150px;max-width:260px;width:auto;height:auto}
+.pcard .pthumb .pmdel{position:absolute;top:4px;right:4px;padding:0 7px;min-height:0;line-height:20px;font-size:15px;border-radius:999px;background:var(--ink);opacity:.85}
+.pcard .pthumb .pmdel:hover,.pcard .pthumb .pmdel:focus-visible{opacity:1}
+.pcard .pform input.purl{min-width:0}
 body.lq-liquid .rcard.pcard,body.lq-liquid.lq-light .rcard.pcard{border-left:3px solid var(--amber)}
 .tag.cust{background:transparent;border-color:var(--amber);color:var(--amber)}
 .rrow{cursor:pointer}.rrow:hover,.rrow:focus-visible{border-color:var(--green)}.rrow.rnew{border-left:3px solid var(--amber)}
@@ -968,7 +976,7 @@ body.lq-light .btip .bta button:not(.quiet){background:#151A21;color:#FFFFFF}
 <option value="gemini">Gemini (Google)</option>
 <option value="ollama">Local model (Ollama) - free, no key</option>
 </select>
-<div class="note muted">The Map above needs no key. For the write-ups, a hosted model needs an API key - or run <b>Ollama</b> locally for a free, private option (nothing leaves your machine).</div>
+<div class="note muted">The Map needs no key. For the write-ups, a hosted model needs an API key - or run <b>Ollama</b> locally for a free, private option (nothing leaves your machine).</div>
 <div id="keyWrap"><label>API key</label><input id="key" type="password" placeholder="paste your key">
 <div class="note"><a id="getkey">Where do I get a key?</a></div></div>
 <div id="baseWrap" class="hidden"><label>Ollama URL</label><input id="baseUrl" type="text" value="http://localhost:11434"></div>
@@ -1106,6 +1114,9 @@ var fsTimer=null;(function(){var ps=$('panel-settings');if(ps&&ps.addEventListen
 var tabPicked=false;tabs().forEach(function(t){t.addEventListener('click',function(){tabPicked=true;setTab(t.dataset.tab);});});
 // Watching a page (your inbox, GitHub)? The app opens on the Dashboard instead of
 // the Map, unless you've picked a tab already. The Map still loads behind it.
+// A link to a screen (#reports, #board…) opens on it: how symbiot post's picture of
+// "the new Reports view" shows that view, not home.
+function lqDeep(){var h=String(location.hash||'').slice(1);if(!h||!LQNAMES[h])return;setTimeout(function(){tabPicked=true;lqPool(h);},400);}
 function firstTab(){api('/api/watch/board').then(function(b){if(b&&b.cards&&b.cards.length&&!tabPicked&&current==='map')setTab('board');}).catch(function(){});}
 // The AI in use isn't shown while it works (it's noise); only when none is
 // connected, as an urgent line that opens its part of Settings. Home has it out
@@ -1851,11 +1862,25 @@ var CUSTWHY={pricing:'asks about pricing',install:'asks how to install it',team:
 function custTag(n){return n.customer?" <span class='tag cust' title='"+escQ(CUSTWHY[n.customer]||'')+"'>maybe a customer</span>":"";}
 // ---- Posts (post.mjs): the week's real work as drafts waiting on you: Approve, Edit, Skip. Symbiot never posts:
 // Approve copies the post and opens LinkedIn's share box, where you paste it and post it yourself ----
-var POSTS=null,PEDIT={},PBUSY=0,PMSG='';
+var POSTS=null,PEDIT={},PBUSY=0,PMSG='',PFORM={},PSEEN='';
 // what the last action said: kept across a re-render (the list refreshes right after an Approve)
 function postsMsg(cls,html){PMSG=html?"<div class='note "+cls+"'>"+html+"</div>":'';var o=$('postsmsg');if(o){o.innerHTML=PMSG;wireShare();}}
-var PSHARE='';function wireShare(){var sh=document.querySelector('#postsmsg .pshare');if(sh&&PSHARE)sh.addEventListener('click',function(){window.open(PSHARE,'_blank','noopener');});}
-function loadPostsUI(){api('/api/posts').then(function(p){if(!p||!p.posts)return;POSTS=p;var f=document.activeElement;if(PBUSY||(f&&f.closest&&f.closest('#boardposts')&&f.tagName==='TEXTAREA'))return;renderPosts();});}
+var PSHARE='',PFOLDER='';function wireShare(){var sh=document.querySelector('#postsmsg .pshare');if(sh&&PSHARE)sh.addEventListener('click',function(){window.open(PSHARE,'_blank','noopener');});
+var fo=document.querySelector('#postsmsg .pfolder');if(fo&&PFOLDER)fo.addEventListener('click',function(){api('/api/posts/media/folder',{id:PFOLDER}).then(function(r){if(r&&r.error)postsMsg('err',esc(r.error));});});}
+// unchanged since the last look: left as it is, so a playing video or a half-typed page stays
+function loadPostsUI(){api('/api/posts').then(function(p){if(!p||!p.posts)return;POSTS=p;var f=document.activeElement,k=JSON.stringify(p);if(PBUSY||(f&&f.closest&&f.closest('#boardposts')&&/^(TEXTAREA|INPUT)$/.test(f.tagName)))return;if(k===PSEEN&&$('boardposts')&&$('boardposts').innerHTML)return;PSEEN=k;renderPosts();});}
+// a draft's pictures and video, each with a way off it, and the page form (From a page) when it's open
+function pmediaSrc(x,a){return '/api/posts/media?post='+encodeURIComponent(x.id)+'&m='+encodeURIComponent(a.id)+'&t='+encodeURIComponent(T);}
+function pmediaHtml(x){var m=x.media||[],h='',pf=PFORM[x.id],c=POSTS.clip||{min:3,max:30};
+if(m.length)h+="<div class='pmedia'>"+m.map(function(a){var src=pmediaSrc(x,a),what=a.from==='page'?'picture of '+(a.url||a.name):a.from==='clip'?'clip of '+(a.url||a.name):(a.name||a.kind);
+return "<div class='pthumb' data-m='"+escQ(a.id)+"' title='"+escQ(what)+"'>"+(a.kind==='video'?"<video src='"+escQ(src)+"' controls muted playsinline preload='metadata'></video>":"<img src='"+escQ(src)+"' alt='"+escQ(what)+"'>")
++"<button class='ghost pmdel' title='take it off this draft' aria-label='Remove "+escQ(a.kind)+"'>&times;</button></div>";}).join('')+"</div>";
+if(pf)h+="<div class='row pform'><input class='purl' placeholder='a page: localhost:3000, your site, github.com/you' value='"+escQ(pf.url||'')+"' style='flex:1'>"
++"<button class='ghost ppic' title='the page as it looks now, sharp enough for a feed'>Take a picture</button>"
++"<select class='psecs' title='how long the clip runs' style='flex:0 0 auto;width:auto'>"+[5,8,15,30].filter(function(s){return s>=c.min&&s<=c.max;}).map(function(s){return "<option value='"+s+"'"+(s===(pf.secs||8)?" selected":"")+">"+s+" s</option>";}).join('')+"</select>"
++"<button class='ghost pclip'"+(POSTS.canClip?" title='records the page, scrolling slowly down it, as an MP4'":" disabled title='recording a clip needs ffmpeg, which isn&#39;t installed'")+">Record a clip</button>"
++"<button class='ghost pfclose'>Cancel</button></div>";
+return h;}
 // copy in the page (the click on Approve), else select it for Ctrl+C; gives whether it copied
 function copyPost(text,done){function fallback(){var t=document.createElement('textarea');t.value=text;t.style.position='fixed';t.style.opacity='0';document.body.appendChild(t);t.select();var ok=false;try{ok=document.execCommand('copy');}catch(e){}t.remove();done(ok);}
 if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(text).then(function(){done(true);},fallback);else fallback();}
@@ -1867,9 +1892,13 @@ if(p.posts.length){h+="<div class='pshead'><span>Drafts to post</span><small>"+p
 h+=p.posts.map(function(x){var ed=Object.prototype.hasOwnProperty.call(PEDIT,x.id);
 return "<div class='rcard pcard"+(ed?" editing":"")+"' data-id='"+escQ(x.id)+"'><div class='rhead'><b>"+esc(L[x.kind]||x.kind)+"</b><span class='muted'>LinkedIn &middot; drafted "+agoTxt(x.drafted)+(x.edited?" &middot; edited":"")+"</span></div>"
 +(ed?"<textarea class='pedit' maxlength='3000'>"+esc(PEDIT[x.id])+"</textarea>":"<div class='ptext'>"+esc(x.text)+"</div><button type='button' class='pmore' aria-expanded='false'>Read it all</button>")
++(x.show&&!(x.media||[]).length?"<div class='pshow'><span class='muted'>Picture idea:</span> "+esc(x.show)+"</div>":"")
++pmediaHtml(x)
 +(x.sources&&x.sources.length?"<details class='psrc'><summary>From git: "+x.sources.length+" thing"+(x.sources.length===1?"":"s")+" it says</summary>"+x.sources.map(function(s){return "<div>"+esc(s)+"</div>";}).join('')+"</details>":"")
 +"<div class='row'>"+(ed?"<button class='act psave'>Save</button><button class='ghost pcancel'>Cancel</button><span class='pchars'>"+String(PEDIT[x.id]).length+" / 3000</span>"
-:"<button class='act papprove' title='copies it to your clipboard and opens LinkedIn&#39;s share box, where you paste it and post it yourself. Symbiot never posts it, and doesn&#39;t schedule it'>Approve</button><button class='ghost pedit-btn' title='change its words here'>Edit</button><button class='ghost pskip' title='drop this draft (it stays in the log)'>Skip</button>")+"</div></div>";}).join('')+"</div>";}
+:"<button class='act papprove' title='copies it to your clipboard and opens LinkedIn&#39;s share box, where you paste it and post it yourself. Symbiot never posts it, and doesn&#39;t schedule it'>Approve</button><button class='ghost pedit-btn' title='change its words here'>Edit</button><button class='ghost pskip' title='drop this draft (it stays in the log)'>Skip</button>"
++"<button class='ghost pmadd' title='a picture or video of yours: PNG, JPG, GIF, MP4, MOV or WebM'>Add picture or video</button>"+(PFORM[x.id]?"":"<button class='ghost pmfrom' title='a picture, or a short clip, of a web page (your app on localhost too)'>From a page</button>")
++"<input type='file' class='pmfile hidden' accept='image/png,image/jpeg,image/gif,video/mp4,video/quicktime,video/webm'>")+"</div></div>";}).join('')+"</div>";}
 else h+="<div class='row' style='margin-top:10px'><span class='muted' style='flex:1'>"+(p.voice.count?"Posts: draft this week&#39;s 3 LinkedIn posts from your git, in your voice ("+p.voice.count+" example"+(p.voice.count===1?"":"s")+"). Nothing is posted until you approve one, and then you post it yourself."
 :"Posts: Symbiot drafts LinkedIn posts from your week&#39;s git in your own voice, once it has examples of your posts. Link LinkedIn (below) and click <b>Fill from LinkedIn</b>, or paste 5&ndash;10 of your posts into <code>"+esc(p.voice.file)+"</code>, a line of --- between each.")+"</span>"
 +"<button class='ghost pvoice' title='reads your recent posts on LinkedIn in Symbiot&#39;s signed-in browser into voice.md, which you can read over'>Fill from LinkedIn</button>"
@@ -1879,8 +1908,28 @@ el.querySelectorAll('.pmore').forEach(function(b){b.addEventListener('click',fun
 function post(btn){var id=btn.closest('.pcard').getAttribute('data-id');return p.posts.filter(function(x){return x.id===id;})[0];}
 el.querySelectorAll('.papprove').forEach(function(btn){btn.addEventListener('click',function(){var x=post(btn);if(!x)return;btn.disabled=true;postsMsg('','');
 api('/api/posts/approve',{id:x.id}).then(function(r){if(!r||r.error){btn.disabled=false;postsMsg('err',esc((r&&r.error)||'failed'));return;}
-copyPost(r.post.text,function(ok){PSHARE=r.share;
-postsMsg('ok',(ok?"&#10003; Approved and copied to your clipboard. ":"&#10003; Approved. Your browser didn&#39;t let Symbiot copy it: select it below and copy it (Ctrl+C). ")+"<button class='ghost pshare'>Open LinkedIn&#39;s share box</button> and paste it there (Ctrl+V), then post it yourself. Symbiot doesn&#39;t post or schedule it."+(ok?"":"<div style='user-select:all;white-space:pre-wrap;color:var(--bone);margin-top:6px'>"+esc(r.post.text)+"</div>"));loadPostsUI();});}).catch(function(e){btn.disabled=false;postsMsg('err',esc(String((e&&e.message)||e)));});});});
+copyPost(r.post.text,function(ok){PSHARE=r.share;PFOLDER=r.files&&r.files.length?r.post.id:'';
+var n=(r.post.media||[]).length,vid=(r.post.media||[]).some(function(a){return a.kind==='video';}),what=vid?'its video':n===1?'its picture':'its '+n+' pictures';
+postsMsg('ok',(ok?"&#10003; Approved and copied to your clipboard. ":"&#10003; Approved. Your browser didn&#39;t let Symbiot copy it: select it below and copy it (Ctrl+C). ")+"<button class='ghost pshare'>Open LinkedIn&#39;s share box</button> and paste it there (Ctrl+V)"
++(n?", then add "+what+" with LinkedIn&#39;s "+(vid?"video":"photo")+" button: <button class='ghost pfolder' title='"+escQ(r.folder||'')+"'>Open "+(n===1?"its":"their")+" folder</button>. Post it yourself.":", then post it yourself.")+" Symbiot doesn&#39;t post or schedule it."+(ok?"":"<div style='user-select:all;white-space:pre-wrap;color:var(--bone);margin-top:6px'>"+esc(r.post.text)+"</div>"));loadPostsUI();});}).catch(function(e){btn.disabled=false;postsMsg('err',esc(String((e&&e.message)||e)));});});});
+// pictures and video: yours (a file), or a picture or clip of a page; each comes off with its &times;
+function pmediaDone(btn,label){return function(r){PBUSY=Math.max(0,PBUSY-1);if(btn){btn.disabled=false;if(label)btn.textContent=label;}if(!r||r.error){postsMsg('err',esc((r&&r.error)||'failed'));return;}
+if(r.media&&r.post)delete PFORM[r.post.id];var f=document.activeElement;if(f&&f.blur&&f.closest&&f.closest('#boardposts'))f.blur();postsMsg('','');loadPostsUI();};}
+function pfail(btn,label){return function(e){PBUSY=Math.max(0,PBUSY-1);if(btn){btn.disabled=false;if(label)btn.textContent=label;}postsMsg('err',esc(String((e&&e.message)||e)));};}
+el.querySelectorAll('.pmadd').forEach(function(btn){var inp=btn.parentNode.querySelector('.pmfile');btn.addEventListener('click',function(){if(inp)inp.click();});
+if(inp)inp.addEventListener('change',function(){var x=post(btn),f=inp.files&&inp.files[0];if(!x||!f)return;btn.disabled=true;btn.textContent='Adding…';PBUSY++;postsMsg('','');
+fetch('/api/posts/media/add?id='+encodeURIComponent(x.id)+'&name='+encodeURIComponent(f.name),{method:'POST',headers:{'x-symbiot-token':T,'content-type':'application/octet-stream'},body:f}).then(function(r){return r.json();})
+.then(pmediaDone(btn,'Add picture or video'),pfail(btn,'Add picture or video'));});});
+el.querySelectorAll('.pmfrom').forEach(function(btn){btn.addEventListener('click',function(){var x=post(btn);if(!x)return;PFORM[x.id]={url:p.lastUrl||'',secs:8};renderPosts();var i=el.querySelector(".pcard[data-id='"+x.id+"'] .purl");if(i){i.focus();i.select();}});});
+el.querySelectorAll('.pform').forEach(function(row){var x=post(row),i=row.querySelector('.purl'),s=row.querySelector('.psecs');if(!x)return;
+i.addEventListener('input',function(){PFORM[x.id].url=i.value;});if(s)s.addEventListener('change',function(){PFORM[x.id].secs=Number(s.value)||8;});
+i.addEventListener('keydown',function(e){if(e.key==='Enter'){e.preventDefault();row.querySelector('.ppic').click();}if(e.key==='Escape'){delete PFORM[x.id];renderPosts();}});
+row.querySelector('.pfclose').addEventListener('click',function(){delete PFORM[x.id];renderPosts();});
+function shoot(btn,clip){if(!i.value.trim()){i.focus();return;}var label=btn.textContent,secs=s?Number(s.value)||8:8;btn.disabled=true;btn.textContent=clip?'Recording '+secs+' s…':'Taking it…';PBUSY++;postsMsg('','');
+api('/api/posts/media/page',{id:x.id,url:i.value.trim(),clip:clip,seconds:secs}).then(pmediaDone(btn,label),pfail(btn,label));}
+row.querySelector('.ppic').addEventListener('click',function(){shoot(this,false);});row.querySelector('.pclip').addEventListener('click',function(){shoot(this,true);});});
+el.querySelectorAll('.pmdel').forEach(function(btn){btn.addEventListener('click',function(){var x=post(btn),m=btn.closest('.pthumb').getAttribute('data-m');if(!x)return;btn.disabled=true;PBUSY++;
+api('/api/posts/media/remove',{id:x.id,m:m}).then(pmediaDone(null,''),pfail(null,''));});});
 el.querySelectorAll('.pedit-btn').forEach(function(btn){btn.addEventListener('click',function(){var x=post(btn);if(!x)return;PEDIT[x.id]=x.text;renderPosts();var t=el.querySelector(".pcard[data-id='"+x.id+"'] textarea");if(t)t.focus();});});
 el.querySelectorAll('textarea.pedit').forEach(function(t){t.addEventListener('input',function(){var id=t.closest('.pcard').getAttribute('data-id');PEDIT[id]=t.value;var c=t.closest('.pcard').querySelector('.pchars');if(c)c.textContent=t.value.length+' / 3000';});});
 el.querySelectorAll('.pcancel').forEach(function(btn){btn.addEventListener('click',function(){var x=post(btn);if(x)delete PEDIT[x.id];renderPosts();});});
@@ -1891,7 +1940,7 @@ el.querySelectorAll('.pskip').forEach(function(btn){btn.addEventListener('click'
 api('/api/posts/skip',{id:x.id}).then(function(r){if(!r||r.error){btn.disabled=false;postsMsg('err',esc((r&&r.error)||'failed'));return;}loadPostsUI();}).catch(function(e){btn.disabled=false;postsMsg('err',esc(String((e&&e.message)||e)));});});});
 var dr=el.querySelector('.pdraft');if(dr)dr.addEventListener('click',function(){dr.disabled=true;postsMsg('','');dr.textContent='Drafting…';PBUSY++;
 api('/api/posts/draft',{}).then(function(r){PBUSY=Math.max(0,PBUSY-1);dr.disabled=false;dr.textContent="Draft this week's posts";if(!r||r.error){postsMsg('err',esc((r&&r.error)||'failed'));return;}
-POSTS.posts=r.posts;renderPosts();if(r.dropped&&r.dropped.length)postsMsg('muted',"Dropped "+r.dropped.length+": "+esc(r.dropped.map(function(d){return (L[d.kind]||d.kind)+(d.cited?" (it claimed "+d.unsupported.join(', ')+", which git doesn't show)":" (it cited nothing from git)");}).join('; ')));loadPostsUI();}).catch(function(e){PBUSY=Math.max(0,PBUSY-1);dr.disabled=false;dr.textContent="Draft this week's posts";postsMsg('err',esc(String((e&&e.message)||e)));});});
+POSTS.posts=r.posts;renderPosts();var said=[];if(r.retried)said.push("The first try kept none (each claimed what git doesn't show), so I tried again.");if(r.pictures)said.push((r.pictures===1?"One draft names a screen of an app you run here: its picture's on it already.":r.pictures+" drafts name a screen of an app you run here: their pictures are on them already.")+" Keep or remove it.");if(r.dropped&&r.dropped.length)said.push("Dropped "+r.dropped.length+": "+r.dropped.map(function(d){return (L[d.kind]||d.kind)+(d.cited?" (it claimed "+d.unsupported.join(', ')+", which git doesn't show)":" (it cited nothing from git)");}).join('; '));if(said.length)postsMsg('muted',esc(said.join(' ')));loadPostsUI();}).catch(function(e){PBUSY=Math.max(0,PBUSY-1);dr.disabled=false;dr.textContent="Draft this week's posts";postsMsg('err',esc(String((e&&e.message)||e)));});});
 var vb=el.querySelector('.pvoice');if(vb)vb.addEventListener('click',function(){vb.disabled=true;postsMsg('','');vb.textContent='Reading LinkedIn…';
 api('/api/posts/voice',{confirmed:true}).then(function(r){vb.disabled=false;vb.textContent='Fill from LinkedIn';if(!r||r.error){postsMsg('err',esc((r&&r.error)||'failed'));return;}
 postsMsg('ok',"&#10003; Added "+r.added+" of your LinkedIn posts: "+r.total+" in <code>"+esc(r.file)+"</code>. Read them over, and delete any that don&#39;t sound like you.");loadPostsUI();}).catch(function(e){vb.disabled=false;vb.textContent='Fill from LinkedIn';postsMsg('err',esc(String((e&&e.message)||e)));});});}
@@ -1916,8 +1965,11 @@ var AWAITS=[];
 function bsWaitWord(){var n=(AWAITS||[]).filter(function(w){return w.status==='waiting';}).length;return n?' · waiting on '+n+(n===1?' reply':' replies'):'';}
 function bsMailLane(){var cs=(BS.b&&BS.b.cards)||[];for(var i=0;i<cs.length;i++)if(cs[i].source==='mail')return i;return -1;}
 function loadAwaiting(){api('/api/awaiting').then(function(d){var el=$('boardawait');if(!el||!d)return;var ws=d.waits||[];AWAITS=ws;if(BS.b)bsBuild(BS.b);
-if(!ws.length||bsMailLane()>=0){el.innerHTML='';return;}var open=ws.filter(function(w){return w.status==='waiting';}).length;
-el.innerHTML="<div class='tgroup' style='margin-top:14px'>Waiting on replies <span class='tcount'>"+open+"</span></div><div class='muted' style='font-size:12px;margin-bottom:6px'>Emails your agents sent that need an answer. Symbiot looks for each reply in your inbox itself, and when one is in, the agent that does the next step starts on it. You don&#39;t have to say they replied.</div>"+
+if(!ws.length){el.innerHTML='';return;}var open=ws.filter(function(w){return w.status==='waiting';}).length,s=d.sight;
+// nothing can see the reply arrive: no inbox watched, or the one watched is signed out
+var blind=s&&!s.sees?"<div class='note err'>"+((s.signedOut||[]).length?esc(s.signedOut[0])+" is signed out, so a reply would go unseen. Under Screens, type its address and click Sign in, sign in once and close the window.":"Symbiot can&#39;t see your inbox, so a reply would go unseen. Watch your inbox (map it under Screens, then Watch), or turn on Email in Settings.")+"</div>":"";
+if(bsMailLane()>=0){el.innerHTML=blind;return;}
+el.innerHTML="<div class='tgroup' style='margin-top:14px'>Waiting on replies <span class='tcount'>"+open+"</span></div><div class='muted' style='font-size:12px;margin-bottom:6px'>Emails your agents sent that need an answer. Symbiot looks for each reply in your inbox itself, and when one is in, the agent that does the next step starts on it. You don&#39;t have to say they replied.</div>"+blind+
 ws.map(function(w){var who=(w.to||[]).join(', ')||'?',st=w.status==='waiting'?'waiting since '+agoTxt(w.sent):(AWAITWORD[w.status]||w.status)+(w.reply?' '+agoTxt(w.reply.ts):'')+(w.handed?' &rarr; '+(w.handed==='ops'?'an agent':esc(w.handed)+'&#39;s agent')+' has the next step':'');
 return "<div class='task'><span class='t'><b>"+esc(who)+"</b>: "+esc(w.subject)+(w.asked?"<div class='muted' style='font-size:12px'>asked for: "+esc(w.asked)+"</div>":"")+(w.error?"<div class='note err'>"+esc(w.error)+"</div>":"")+"</span><span class='rp'"+(w.status==='waiting'?" style='color:var(--amber)'":"")+">"+st+"</span>"+(w.status==='waiting'?"<button class='ghost astop' data-id='"+esc(w.id)+"' title='stop looking for this reply' style='padding:3px 9px;font-size:12px'>Stop waiting</button>":"")+"</div>";}).join('');
 el.querySelectorAll('.astop').forEach(function(btn){btn.addEventListener('click',function(){btn.disabled=true;api('/api/awaiting/stop',{id:btn.getAttribute('data-id')}).then(function(r){if(!r||r.error){btn.disabled=false;boardMsg('err',esc((r&&r.error)||'failed'));return;}loadAwaiting();});});});});}
@@ -2229,12 +2281,12 @@ if(!ps.length){el.innerHTML='';return;}
 el.innerHTML=ps.map(function(p,i){var nm=p.name||p.repo,q=(p.qs||[])[0],st=p.parked?'parked':(p.qs&&p.qs.length)?'asks you':p.ready?'ready for your OK':p.state||'';
 var h="<section class='rly"+((p.qs&&p.qs.length)||p.ready?' lit':'')+"' data-i='"+i+"'><div class='rlh'><b>"+esc(nm)+"</b>"+(st?"<span class='rls'>"+esc(st)+"</span>":"")+"</div>";
 if(p.summary)h+="<p class='rlsum' title='"+escQ(p.summary)+"'>"+esc(p.summary)+"</p>";
-if(q)h+="<div class='lqblob rlask'>"+blobBody({kind:'ask',name:nm,repo:p.repo,q:q.q,options:q.options,path:q.path,more:Math.max(0,(p.asks||p.qs.length)-1)},false)+"</div>";
+if(q)h+="<div class='lqblob rlask'>"+blobBody({kind:'ask',name:nm,repo:p.repo,q:q.q,options:q.options,path:q.path,fix:q.fix,id:q.id,sub:q.sub,more:Math.max(0,(p.asks||p.qs.length)-1)},false)+"</div>";
 if(p.ready)h+="<button type='button' class='act rlok'>Review and approve</button>";
 if(p.ideas&&p.ideas.length)h+="<div class='rlk'>Extra tasks it suggests</div>"+p.ideas.map(function(d,j){return "<div class='rli' data-j='"+j+"'><span title='"+escQ(d.full)+"'>"+esc(d.text)+"</span><span class='rlia'><button type='button' class='rladd'>+ task</button><button type='button' class='rlskip'>Skip</button></span></div>";}).join('');
 return h+"<div class='rlf'><button type='button' class='rlopen'>Its tasks &rsaquo;</button><button type='button' class='rlag'>Details in Agents &rsaquo;</button></div></section>";}).join('');
 el.querySelectorAll('.rly').forEach(function(box){var p=ps[+box.getAttribute('data-i')],q=(p.qs||[])[0],nm=p.name||p.repo;
-var ab=box.querySelector('.rlask');if(ab&&q)wireBlob(ab,{kind:'ask',name:nm,repo:p.repo,q:q.q,options:q.options,path:q.path},{done:function(){LQ.relaySig='';lqLoadWork();}});
+var ab=box.querySelector('.rlask');if(ab&&q)wireBlob(ab,{kind:'ask',name:nm,repo:p.repo,q:q.q,options:q.options,path:q.path,fix:q.fix,id:q.id},{done:function(){LQ.relaySig='';lqLoadWork();}});
 var ok=box.querySelector('.rlok');if(ok)ok.addEventListener('click',function(){lqOpen({kind:'proj',repo:p.repo,lit:true});});
 box.querySelector('.rlopen').addEventListener('click',function(){lqOpen({kind:'proj',repo:p.repo});});
 box.querySelector('.rlag').addEventListener('click',function(){lqPool('agents');});
@@ -2334,7 +2386,7 @@ var LQ_BLOBW=250,LQ_NEEDY=128;
 function lqNeeds(h,S){var rank={ask:0,approve:1,setup:2},rk=function(y){return y.urgent?(y.id==='setup:ai'?-3:y.id==='setup:agent'?-2:-1):rank[y.kind]||0;},ys=(h.you||[]).slice().sort(function(a,b){return rk(a)-rk(b)||(a.id<b.id?-1:a.id>b.id?1:0);});
 var R=Math.round(24*Math.max(0.85,Math.min(1.1,S.s))),unit=2*R+30+LQ_BLOBW,gap=28,cols=Math.max(1,Math.min(3,Math.floor((S.w-24+gap)/(unit+gap)))),pages=Math.max(1,Math.ceil(ys.length/cols));
 LQ.needPage=(LQ.needPage||0)%pages;var shown=ys.slice(LQ.needPage*cols,LQ.needPage*cols+cols),x0=Math.max(12,(S.w-(shown.length*unit+(shown.length-1)*gap))/2);
-var tall=shown.some(function(y){return y.kind==='ask'&&(y.options||[]).length;})?172:116;
+var tall=(shown.some(function(y){return y.kind==='ask'&&(y.options||[]).length;})?172:116)+(shown.some(function(y){return y.fix==='handover';})?16:0);
 var items=shown.map(function(y,i){return {id:y.id,kind:'you',blob:true,item:y,shape:y.shape,title:y.title,sub:y.sub,r:R,tx:x0+i*(unit+gap)+R,ty:LQ_NEEDY+R,ax:0,ay:0};});
 return {items:items,bottom:items.length?LQ_NEEDY+tall+20:0,x:x0,page:LQ.needPage,pages:pages,count:ys.length};}
 function lqNeedPage(){LQ.needPage=(LQ.needPage||0)+1;lqAct();lqBuild();}
@@ -2475,6 +2527,8 @@ if(d.kind==='more'){LQ.moreOpen=!LQ.moreOpen;lqMore(d);return;}
 if(d.kind==='archive'){lqArchive();return;}
 if(d.kind==='you'&&d.item){if(d.x!=null){var S1=lqSize();LQ.ripple=[d.x/S1.w,d.y/S1.h,LQ.t];}lqUse(d.shape||'agents',ev);lqFocus(d.item);return;}
 if(d.kind==='proj'){if(d.lit||d.repo==='ops'){lqFocus({kind:'proj',repo:d.repo});return;}TFILTER.repo=d.repo;TFILTER.type='';lqPool('tasks');if(typeof loadTasks==='function')loadTasks();return;}
+// where your files disagree: the checks, lit up in Settings, and these clashes reached you (it dissolves)
+if(d.id==='feed:clash'){api('/api/knowledge/checks/seen',{}).catch(function(){});if(LQ.home)LQ.home.feeds=(LQ.home.feeds||[]).filter(function(f){return f.id!=='feed:clash';});lqUse('settings',ev);loadChecks();lqFocus({kind:'setup',focus:'checks'});return;}
 var S=lqSize();LQ.ripple=[d.x/S.w,d.y/S.h,LQ.t];if(LQ.scene==='work'){lqPool(d.shape||'agents');return;}lqUse(d.shape||'board',ev);lqGo(d.shape||'board');}
 function lqMore(d){var el=$('lqmore');if(!el)return;if(!LQ.moreOpen||!d){el.innerHTML='';return;}
 if(d.lanes){el.innerHTML=d.lanes.map(function(p,i){return "<button type='button' class='lqmb lqm' data-i='"+i+"'>"+(p.lit?"<span style='color:#F2A541'>&#9679;</span> ":"")+esc(p.name)+"</button>";}).join('');
@@ -2489,8 +2543,9 @@ function lqGo(shape){if(shape==='tasks'||shape==='agents'){lqWorkBy('task');retu
 function blobOpt(o){return String(o||'').replace(/[ ]*[(]recommended[)][ ]*$/i,'');}
 function blobBody(y,home){var h='',nm=y.name||y.repo||(y.kind==='setup'?y.title:'')||'';
 h+=home?"<button type='button' class='lt' title='open "+escQ(nm)+", with this lit up'><span>"+esc(lqShort(nm,30))+"</span><i>open &rsaquo;</i></button>":"<div class='nhead'><b>"+esc(nm)+(y.kind==='ask'?" asks":"")+"</b>"+(y.more?"<span class='muted'>+"+y.more+" more on its block in Agents</span>":"")+"</div>";
-if(y.kind!=='ask')return h+"<div class='bq'>"+esc(y.kind==='approve'?String(y.sub||'').replace(/ · only you decide$/,''):String(y.sub||'').charAt(0).toUpperCase()+String(y.sub||'').slice(1)+'.')+"</div><div class='bo'><button type='button' class='nopt rec ngo'><span class='bt'>"+(y.kind==='approve'?'Review and approve':y.id==='setup:inbox'?'Show me your inbox':y.id==='setup:ai'?'Connect an AI':y.urgent?'Reconnect':'Open Settings')+"</span></button></div>";
-var os=y.options||[];h+="<div class='bq' title='"+escQ(y.q||'')+"'>"+esc(y.q||y.sub||'')+"</div>";
+if(y.kind!=='ask')return h+"<div class='bq'>"+esc(y.kind==='approve'?String(y.sub||'').replace(/ · only you decide$/,''):String(y.sub||'').charAt(0).toUpperCase()+String(y.sub||'').slice(1)+'.')+"</div><div class='bo'><button type='button' class='nopt rec ngo'><span class='bt'>"+(y.kind==='approve'?'Review and approve':y.id==='setup:inbox'?(y.signin?'Sign in again':'Show me your inbox'):y.id==='setup:ai'?'Connect an AI':y.urgent?'Reconnect':'Open Settings')+"</span></button></div>";
+var os=y.options||[];h+="<div class='bq' title='"+escQ((y.q||'')+(y.why?' ('+y.why+')':''))+"'>"+esc(y.q||y.sub||'')+"</div>";
+if(y.fix==='handover'&&y.sub)h+="<div class='bfor' title='"+escQ(y.sub)+"'>for: "+esc(y.sub)+"</div>";
 if(os.length)h+="<div class='bo'>"+os.map(function(o,j){return "<button type='button' class='nopt"+(j===0&&/[(]recommended[)]/i.test(o)?' rec':'')+"' data-j='"+j+"' title='"+escQ(o)+"'><span class='bt'>"+whoHtml(blobOpt(o))+"</span></button>";}).join('')+"</div><button type='button' class='bfree' aria-expanded='false'>or answer in your own words</button>";
 h+="<form class='bfx"+(os.length?' hidden':'')+"'><input placeholder='your answer' aria-label='your answer to "+escQ(nm)+"'><button type='submit'>Send</button></form>";
 if(home&&y.more)h+="<span class='bmore'>+"+y.more+" more question"+(y.more>1?'s':'')+" after this one</span>";
@@ -2499,12 +2554,12 @@ return h;}
 // continue): saved to its ANSWERS.md, and its agent picks it up. Then it dissolves.
 function wireBlob(box,y,o){o=o||{};var say=o.say||lqSaid,nm=y.name||y.repo||'the agent';
 var lock=function(on){box.querySelectorAll('button,input').forEach(function(b){b.disabled=on;});};
-var send=function(ans){ans=String(ans||'').trim();if(!ans||!y.path)return;lock(true);
-api('/api/agents/answer',{path:y.path,answers:[{q:y.q,a:ans}],rerun:true}).then(function(r){
+var send=function(ans,j){ans=String(ans||'').trim();if(!ans||(!y.path&&!y.fix))return;lock(true);
+(y.fix?api('/api/home/answer',j!=null?{id:y.id,pick:j}:{id:y.id,text:ans}):api('/api/agents/answer',{path:y.path,answers:[{q:y.q,a:ans}],rerun:true})).then(function(r){
 if(!r||r.error){lock(false);say(nm+': '+((r&&r.error)||'the answer didn’t save. Try again on its block in Agents.'),true);return;}
-say('Sent to '+nm+'. '+(r.yours&&r.yours.length?'Still yours to do: '+r.yours.join(' '):r.rerun?'Its agent is picking it up now.':(r.note||'Saved in its ANSWERS.md.')));
+say(y.fix?nm+': '+(r.said||'Done.'):'Sent to '+nm+'. '+(r.yours&&r.yours.length?'Still yours to do: '+r.yours.join(' '):r.rerun?'Its agent is picking it up now.':(r.note||'Saved in its ANSWERS.md.')));
 if(o.sent)o.sent();if(box.classList)box.classList.add('gone');setTimeout(function(){if(o.done)o.done();},650);}).catch(function(e){lock(false);say(nm+': '+String((e&&e.message)||e),true);});};
-box.querySelectorAll('.nopt[data-j]').forEach(function(b){b.addEventListener('click',function(){send((y.options||[])[+b.getAttribute('data-j')]);});});
+box.querySelectorAll('.nopt[data-j]').forEach(function(b){b.addEventListener('click',function(){var j=+b.getAttribute('data-j');send((y.options||[])[j],j);});});
 var fr=box.querySelector('.bfree'),fx=box.querySelector('.bfx');
 if(fr&&fx)fr.addEventListener('click',function(){var shut=fx.classList.toggle('hidden');fr.setAttribute('aria-expanded',shut?'false':'true');var i=fx.querySelector('input');if(!shut&&i&&i.focus)i.focus();});
 if(fx)fx.addEventListener('submit',function(ev){if(ev&&ev.preventDefault)ev.preventDefault();var i=fx.querySelector('input');send(i&&i.value);});
@@ -2515,6 +2570,7 @@ function lqSaid(t){LQ.talk.push({me:false,text:t});LQ.talk=LQ.talk.slice(-8);lqT
 // tasks, with its held handovers; an ops run's question on its block in Agents;
 // a first step on its part of Settings.
 function lqFocus(y){lqAct();y=y||{};LQ.focus={kind:y.kind||'',repo:y.repo||'',path:y.path||'',focus:y.focus||'',shown:false};
+document.querySelectorAll('main .lit').forEach(function(x){x.classList.remove('lit');}); // only what this orb lit stays lit
 if(y.kind==='setup'){lqPool('settings');setTimeout(lqLight,300);return;}
 if(!y.repo||y.repo==='ops'){lqPool('agents');return;}
 TFILTER.repo=y.repo;TFILTER.type='';lqPool('tasks');
@@ -2534,9 +2590,9 @@ lqLight();};
 api('/api/lanes').then(function(d){paint(((d&&d.handoffs)||[]).filter(function(x){return x.status==='held'&&(x.to===repo||x.from===repo);}));}).catch(function(){paint([]);});}
 // What lit the orb, lit up where it opened (.lit): the first in view, and with only
 // one, its first answer focused. Again after each re-render, but scrolled to once.
-var SETFOCUS={ai:'provider',work:'scanroots',agent:'agentcmd',links:'links',company:'knowroots'};
+var SETFOCUS={ai:'provider',work:'scanroots',agent:'agentcmd',links:'links',company:'knowroots',checks:'knowchecks'};
 function lqLight(){var f=LQ.focus;if(!f||LQ.mode!=='pool')return;var things=[],also=[];
-if(f.kind==='setup'){var a=$(SETFOCUS[f.focus]||''),s=a&&a.closest?a.closest('.sset'):null;if(s)things.push(s);}
+if(f.kind==='setup'){var a=$(SETFOCUS[f.focus]||''),s=a&&a.closest?a.closest('.sset'):null;if(f.focus==='checks'&&a)things.push(a);else if(s)things.push(s);}
 else if(current==='tasks'){document.querySelectorAll('#needsbox .nitem').forEach(function(e){things.push(e);});document.querySelectorAll('#reviewlist .rcard').forEach(function(e){if(e.getAttribute('data-repo')===f.repo)(things.length?also:things).push(e);});}
 else if(current==='agents'){document.querySelectorAll('#agentslist .agent[data-i]').forEach(function(e){var g=AGENTLIST[+e.getAttribute('data-i')];if(g&&(nQs(g)||g.waiting)&&(f.path?g.path===f.path:/act-[0-9a-f]+$/.test(String(g.path))))things.push(e);});}
 things.concat(also).forEach(function(e){if(e.classList)e.classList.add('lit');});
@@ -2591,7 +2647,7 @@ var b=LQ.btns[i];if(b&&b.offsetWidth)d.lw=b.offsetWidth;if(b&&b.style){b.style.t
 (LQ.gbtns||[]).forEach(function(gb){var g=gb.getAttribute('data-g'),top=1e9,sx=0,nn=0;D.forEach(function(d){if(d.kind!=='more'&&lqPara(d)===g){top=Math.min(top,d.y-d.cr);sx+=d.x;nn++;}});if(!nn||!gb.style)return;var gw=gb.offsetWidth||0,gh=gb.offsetHeight||0,zt=LQ.scene!=='work'&&LQ.zoneT&&LQ.zoneT[g];if(zt)gb.style.transform='translate('+Math.round(zt[0]-gw/2)+'px,'+Math.round(zt[1]-gh/2)+'px)';else gb.style.transform='translate('+Math.round(Math.max(12,Math.min(lqSize().w-gw-12,sx/nn-gw/2)))+'px,'+Math.round(Math.max(LQ.scene!=='work'&&LQ.top?LQ.top:48,top-gh-30))+'px)';var gshow=!rest&&!pool&&!talk;gb.style.opacity=gshow?'1':'0';gb.style.pointerEvents=gshow?'auto':'none';gb.tabIndex=gshow?0:-1;});
 var ntl=$('lqneedt');if(ntl&&ntl.style)ntl.style.opacity=rest?'0':'1';
 (LQ.orbs||[]).forEach(function(o){var d=D[+o.getAttribute('data-i')];if(!d||!o.style)return;var R=Math.round(d.cr+20);o.style.width=o.style.height=(2*R)+'px';o.style.transform='translate('+Math.round(d.x-R)+'px,'+Math.round(d.y-R)+'px)';o.style.opacity=rest||pool?'0':'1';});
-var cb=$('lqcore');if(cb&&cb.style){var inC=LQ.theme&&LQ.theme.look!=='pearl'&&core.cr>60;cb.style.maxWidth=inC?Math.round(core.cr*1.5)+'px':'340px';var cw=cb.offsetWidth||0,chh=cb.offsetHeight||0;cb.style.transform='translate('+Math.round(cx-cw/2)+'px,'+(rest||inC?(inC?Math.round(core.y-chh/2):Math.round(core.y+core.cr+14)):56)+'px)';var ct=rest?(LQ.coreText||'All handled'):talk||pool?'':(LQ.coreText||'');lqCoreText(cb,ct);cb.style.opacity=ct?'1':'0';cb.style.pointerEvents=ct?'auto':'none';}}
+var cb=$('lqcore');if(cb&&cb.style){var inC=LQ.theme&&LQ.theme.look!=='pearl'&&core.cr>60;cb.style.maxWidth=inC?Math.round(core.cr*1.5)+'px':'340px';var cw=cb.offsetWidth||0,chh=cb.offsetHeight||0;cb.style.transform='translate('+Math.round(cx-cw/2)+'px,'+(rest||inC?(inC?Math.round(core.y-chh/2):Math.round(core.y+core.cr+14)):LQ.scene==='work'?112:56)+'px)';var ct=rest?(LQ.coreText||'All handled'):talk||pool?'':(LQ.coreText||'');lqCoreText(cb,ct);cb.style.opacity=ct?'1':'0';cb.style.pointerEvents=ct?'auto':'none';}}
 // The liquid: a metaball surface (Σ r²/d² = 1) shaded as chrome, on the GPU.
 var LQ_FS=['precision highp float;',
 'uniform vec2 uRes;uniform float uT;uniform float uDpr;uniform vec4 uB[NB];uniform vec3 uRip;uniform float uStyle;uniform float uContrast;uniform float uExposure;',
@@ -2696,5 +2752,5 @@ var G=lqGL();if(G){try{lqStep();lqDraw(G);}catch(e){}}if(typeof window.requestAn
 function frame(){if(!document.hidden){LQ.frame++;if(LQ.mode!=='pool'||LQ.frame%3===0)lqStep();var every=(GLSOFT||GLSTILL)?glEvery(LQ.mode==='aware'):LQ.mode==='pool'?6:LQ.mode==='rest'?2:1;if(G&&LQ.frame%every===0)lqDraw(G);}raf(frame);} // moves every frame; drawn less at rest, behind a panel, without a GPU
 raf(frame);}
 
-initGraphEvents();syncP();refresh();loadMap();firstTab();lqInit();loadWhatsNew();loadAgentCfg();loadScanRoots();loadKnowledge();loadPhone();loadLinks();loadMind();loadTrusted();loadMail();loadScreensUI();loadMonitorsUI();loadDesktop();loadWatchUI();setInterval(function(){whenFree(document.querySelector('main'),'watch',loadWatchUI);},60000);loadPhoneLink();
+initGraphEvents();syncP();refresh();loadMap();firstTab();lqInit();lqDeep();loadWhatsNew();loadAgentCfg();loadScanRoots();loadKnowledge();loadPhone();loadLinks();loadMind();loadTrusted();loadMail();loadScreensUI();loadMonitorsUI();loadDesktop();loadWatchUI();setInterval(function(){whenFree(document.querySelector('main'),'watch',loadWatchUI);},60000);loadPhoneLink();
 </script></body></html>`;

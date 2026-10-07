@@ -387,7 +387,10 @@ preset only fills in the command box; the saved command is what runs.
 - **Orca IDE** (any OS): opens the repo in Orca — either just the repo, to use
   Orca's own agent, or with Claude running in a new tab (allowed `npm test` and
   `node` like the Claude preset, and upgraded the same way). It launches Orca if
-  it's closed and waits for it to be ready first.
+  it's closed and waits for it to be ready first. When a handover renames a
+  repo's folder, Symbiot adds it to Orca again at its new path (matched by its
+  GitHub remote, else its name). Orca keeps the old entry, marked missing, until
+  you remove it there.
 - **Editors — opens only, no review:** VS Code, Cursor, Windsurf, Zed, Sublime
   Text, IntelliJ IDEA, Neovim (on macOS, also found as `.app` bundles when the CLI
   isn't on your PATH). They just open the repo. Nothing comes back for review unless
@@ -575,6 +578,15 @@ and the blob dissolves. More than fit across go on a second page. Clicking the o
 questions and its Approve under **Needs you here** at the top of its tasks, with its
 handovers that are waiting; an ops run's question on its block in Agents.
 
+What stopped and can't go on without you is a question there too, on its lane.
+A handover that couldn't start (an ops run, limited to its own folder, handed
+"needs a run that can edit `~/Company`" to ops) asks **Allow this run access to
+~/Company?**: **Allow** starts a run of its own on it, allowed to read, edit and
+move files in that folder (that run only), and what it does goes back to the agent
+that asked; **Skip** lets it go, and that agent reads that you skipped it. It asks
+for 3 days, or until the same thing goes through another way. A run that ended in
+an error asks **Run it again?** for a day, until another run starts there.
+
 Under the band, around the core, are the parts of the app, grouped the
 **P.A.R.A.** way, each group a row with its name at its start, always in the same
 place and order:
@@ -678,10 +690,22 @@ and nothing else. **It never posts by itself**, and it doesn't schedule.
   recent posts in Symbiot's signed-in browser. Without examples it doesn't draft.
 - **Only what git shows.** Your AI gets the week as numbered facts and must say
   which ones each post uses. A post that names a number, version, name or user
-  count the facts don't show is sent back once, then dropped.
+  count the facts don't show is sent back once, then dropped. When every draft is
+  dropped, Symbiot tries once more from the start by itself before giving up.
 - **You approve each one.** The drafts wait on the **Dashboard** with **Approve**,
   **Edit** and **Skip**. Approve copies the post to your clipboard and opens
   LinkedIn's share box: you paste it and post it yourself.
+- **Pictures and videos.** Each draft says in a line what picture or short video
+  would show it best. Add one of yours (**Add picture or video**: PNG, JPG, GIF,
+  MP4, MOV, WebM), or click **From a page** and give a web address (your app on
+  `localhost` works) to **Take a picture** of it, sharp enough for a feed, or
+  **Record a clip**: 5–30 seconds of it, scrolling slowly down, as an MP4 (needs
+  `ffmpeg`). A post takes a video or up to 20 pictures, as LinkedIn does. They're
+  copies, kept in `~/.config/symbiot/post-media/`; Approve opens their folder for
+  you to add them with LinkedIn's photo or video button. A draft whose idea is a
+  screen of an app you run here (listening on `localhost`, started in that repo's
+  folder, or Symbiot's own app: "the new Reports view" opens Reports) arrives with
+  its picture already on it: keep it or remove it.
 - **Everything is logged** in `~/.config/symbiot/posts-log.jsonl`: each draft,
   edit, approval and skip, with its text, date and platform.
 - **Replies.** Linked LinkedIn is watched like an inbox: new comments and mentions
@@ -695,6 +719,9 @@ symbiot post                    # draft this week's 3 posts
 symbiot post list               # the drafts waiting on you
 symbiot post approve <id>       # copy it, and get LinkedIn's share box (--open opens it)
 symbiot post edit <id> "text"   # change a draft's words
+symbiot post add <id> <file>    # put a picture or video of yours on it
+symbiot post page <id> <page>   # a picture of a web page on it (--clip: a short video)
+symbiot post remove <id> <m>    # take a picture or video off it
 symbiot post skip <id>          # drop one
 symbiot post log                # everything that happened
 ```
@@ -765,7 +792,9 @@ Every brief also tells the agent what else it can leave in `.symbiot/`:
   gets it as a task and its agent starts, told what was asked for and what to do
   next. The task it's for says so in its chat, and you get a notification. The
   Dashboard lists **Waiting on replies**, with **Stop waiting** on each. Anything
-  the reply leaves for you to decide comes back as that agent's question.
+  the reply leaves for you to decide comes back as that agent's question. While
+  one waits and nothing can see the reply (no inbox watched and Email off, or the
+  watched inbox signed out), Home and the Dashboard say so.
 - **A report** (findings, an audit, a plan, a pitch): any `.md` named for what it
   is, with a `# ` title. **Reports** in the app lists every one your runs left,
   in your repos and in runs of their own, newest first, unread ones marked; click
@@ -861,6 +890,8 @@ CSV and Markdown tables, front matter and "Owner:" lines, and examples are never
 used as facts. The list, most pressing first and each with its files, is under
 **Settings → Knowledge folders**; it's checked again whenever a file changes, and
 **Check again** does it now. It's kept in `~/.config/symbiot/checks.json`, yours only.
+A clash that matters (a deadline on someone's leave or a holiday, a renewal or
+price told two ways) also shows on Home, under Watching, until you open it.
 
 - **Examples aren't facts.** Say which paths in a folder hold worked examples
   (`--examples templates/,active/`, or the second box in Settings; `templates/`

@@ -80,7 +80,7 @@ function connect(proc) {
     function done(v) { clearTimeout(t); listeners.delete(f); resolve(v); }
     listeners.add(f);
   });
-  return { send, until, on: (f) => listeners.add(f), closed: () => closed };
+  return { send, until, on: (f) => { listeners.add(f); return () => listeners.delete(f); }, closed: () => closed };
 }
 
 // One browser at a time: they share a profile, and Chrome locks it.
@@ -139,7 +139,9 @@ async function launch() {
       // Sites serve "HeadlessChrome" something else (or a block page): look like the browser it is.
       const { userAgent } = await c.send("Browser.getVersion");
       if (userAgent) await send("Network.setUserAgentOverride", { userAgent: userAgent.replace(/HeadlessChrome/g, "Chrome") });
-      b.page = { send, until, idle };
+      // every `method` event on this tab, until the function it gives is called
+      const on = (method, f) => c.on((m) => { if (m && m.sessionId === sessionId && m.method === method) f(m.params || {}); });
+      b.page = { send, until, idle, on };
       return b;
     })();
     return await Promise.race([run, failed]);
@@ -497,6 +499,56 @@ function readTexts(input, selector, { scrolls = 3 } = {}) {
   }, false)).catch((e) => ({ error: String((e && e.message) || e) }));
 }
 
+// A picture, or a short clip, of a page, for a post (post.mjs): only on your
+// click, and it only looks, like readPage. The picture is the window at twice its
+// pixels, so it stays sharp in a feed: { png, url, title }. The clip records the
+// window for `seconds` (the DevTools screencast: a frame each time the page
+// changes, with its time), scrolling slowly down a page longer than the window,
+// so even a still page moves: { frames: [{ ts, jpeg }], end, url, title }, the
+// times in seconds. post.mjs makes it a video.
+const CLIP = { min: 3, max: 30, speed: 450 }; // seconds; pixels a second, scrolling
+const SCROLL_THROUGH = (ms) => `(() => { ${SCROLLER}
+  const sc = scroller(); if (!sc) return 0;
+  const hold = 800, run = Math.max(500, ${ms} - 2 * hold), dist = Math.min(sc.scrollHeight - sc.clientHeight, run / 1000 * ${CLIP.speed}), t0 = performance.now();
+  const ease = (x) => x < 0.5 ? 2 * x * x : 1 - Math.pow(-2 * x + 2, 2) / 2;
+  (function step(now) { const k = Math.min(1, Math.max(0, (now - t0 - hold) / run)); sc.scrollTop = Math.round(dist * ease(k)); if (k < 1) requestAnimationFrame(step); })(t0);
+  return Math.round(dist);
+})()`;
+function pagePicture(input) {
+  const url = siteUrl(input);
+  if (!url) return Promise.resolve({ error: "Give a page: a web address (localhost:3000 works), a host (github.com/you) or a site's name." });
+  return oneAtATime(() => withPage(async (page) => {
+    await page.send("Emulation.setDeviceMetricsOverride", { width: VIEW.w, height: VIEW.h, deviceScaleFactor: 2, mobile: false });
+    try {
+      await open(page, url);
+      const { data } = await page.send("Page.captureScreenshot", { format: "png" });
+      return { png: Buffer.from(data, "base64"), url: String((await evaluate(page, "location.href")) || url), title: String((await evaluate(page, "document.title")) || "") };
+    } finally { await page.send("Emulation.setDeviceMetricsOverride", { width: VIEW.w, height: VIEW.h, deviceScaleFactor: 1, mobile: false }).catch(() => {}); }
+  })).catch((e) => ({ error: String((e && e.message) || e) }));
+}
+function pageClip(input, seconds = 8) {
+  const url = siteUrl(input);
+  if (!url) return Promise.resolve({ error: "Give a page: a web address (localhost:3000 works), a host (github.com/you) or a site's name." });
+  const ms = Math.round(Math.min(CLIP.max, Math.max(CLIP.min, Number(seconds) || 8)) * 1000);
+  return oneAtATime(() => withPage(async (page) => {
+    await open(page, url);
+    const frames = [];
+    const off = page.on("Page.screencastFrame", (p) => {
+      frames.push({ ts: (p.metadata && p.metadata.timestamp) || Date.now() / 1000, jpeg: Buffer.from(p.data, "base64") });
+      page.send("Page.screencastFrameAck", { sessionId: p.sessionId }).catch(() => {});
+    });
+    try {
+      await page.send("Page.startScreencast", { format: "jpeg", quality: 88, maxWidth: VIEW.w, maxHeight: VIEW.h, everyNthFrame: 1 });
+      await evaluate(page, SCROLL_THROUGH(ms));
+      await sleep(ms);
+      await page.send("Page.stopScreencast").catch(() => {});
+    } finally { off(); }
+    const end = frames.length ? Math.max(frames[frames.length - 1].ts, frames[0].ts + ms / 1000) : 0;
+    if (!frames.length) return { error: "The page showed nothing to record." };
+    return { frames, end, url: String((await evaluate(page, "location.href")) || url), title: String((await evaluate(page, "document.title")) || "") };
+  })).catch((e) => ({ error: String((e && e.message) || e) }));
+}
+
 // Trusted sites (Settings → Screens): on a page from one of these, press and type
 // go ahead without asking, for you and for agents. Anywhere else each one asks.
 // A host covers its subdomains (google.com covers mail.google.com). Only the app's
@@ -662,4 +714,4 @@ async function signIn(input) {
   return { ok: true, url };
 }
 
-export { siteUrl, browserArgs, mapPage, wholePage, readPage, readTexts, isSend, pressRegion, typeRegion, scrollPage, SCROLLS, signIn, keepBrowserOpen, closeBrowser, browserOpen, trustedSites, isTrusted, trustSite, untrustSite, PROFILE };
+export { siteUrl, browserArgs, mapPage, wholePage, readPage, readTexts, pagePicture, pageClip, CLIP, isSend, pressRegion, typeRegion, scrollPage, SCROLLS, signIn, keepBrowserOpen, closeBrowser, browserOpen, trustedSites, isTrusted, trustSite, untrustSite, PROFILE };

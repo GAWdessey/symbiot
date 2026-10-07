@@ -4,24 +4,27 @@
 //   folders), always out front;
 // - feeds: what's new on the sites you watch (watch.mjs), sized by how much;
 // - lanes: work handed between agents (lanes.mjs), the latest few.
-// Reports agents wrote up that you haven't read (reports.mjs) are a feed too.
+// Reports agents wrote up that you haven't read (reports.mjs) are a feed too, and
+// so is a clash in your company folder that matters (checks.mjs newClashes).
 // The app's sections (Map, Tasks, Agents, Week…) are shaped by adapt.mjs from
 // how you use them; this is the live data around them. Home's talk goes to the
 // same Symbiot as every chat (mind.mjs converse), told what home shows.
 import { join } from "node:path";
-import { readFileSync } from "node:fs";
-import { watchBoard, watchState, isMail } from "./watch.mjs";
+import { homedir } from "node:os";
+import { readFileSync, writeFileSync } from "node:fs";
+import { watchBoard } from "./watch.mjs";
 import { pendingReview, pushTasks } from "./tasks.mjs";
-import { agentsList, runHandoff, handoffCmd, connectorsInfo, parkedPaths, agentMissing } from "./agents.mjs";
+import { agentsList, runHandoff, runningHandoff, handoffCmd, connectorsInfo, parkedPaths, agentMissing } from "./agents.mjs";
 import { linksState } from "./links.mjs";
 import { knowledgeState } from "./knowledge.mjs";
-import { CONFIG_DIR, loadConfig, loadTasks } from "./core.mjs";
-import { lanesState } from "./lanes.mjs";
+import { CONFIG_DIR, loadTasks } from "./core.mjs";
+import { lanesState, stuckHandovers, allowHandover, skipHandover } from "./lanes.mjs";
 import { converse, actIn, actNow, taskIn } from "./mind.mjs";
 import { repoPathMap } from "./scan.mjs";
 import { resolveProvider } from "./ai.mjs";
 import { reportsNews } from "./reports.mjs";
-import { awaitingState } from "./handback.mjs";
+import { awaitingState, inboxSight } from "./handback.mjs";
+import { newClashes } from "./checks.mjs";
 
 const KEEP = 15000; // the slower reads (git per repo awaiting review) are cached this long
 let cached = null;
@@ -46,6 +49,32 @@ function displayName(path, folder) {
 // The lane a folder is: the repo it is (by the scan's map), or an ops run.
 const laneOfPath = (path, map) => Object.keys(map || {}).find((n) => map[n] === path) || (String(path || "").startsWith(RUNS) ? "" : null);
 
+// A run that failed shows for a day, until you run it again or skip it; one
+// that's been followed by another run in its folder is past.
+const FAILED_FOR = 86400000, dropped = new Set();
+const firstLine = (t) => String(t || "").split("\n").find((l) => l.trim()) || "";
+// What stopped and can't go on without you, as questions: a handover that couldn't
+// start (lanes.mjs stuckHandovers: "Allow this run access to ~/Company?"), and a run
+// that ended in an error. Each is answered on its blob (homeAnswer), on Home and on
+// its lane in Tasks. repo: its lane ("" for an ops run).
+function troubles({ stuck = [], list = [], map = {}, named = displayName, now = Date.now() } = {}) {
+  const out = [], seen = new Set();
+  for (const t of stuck) {
+    const lane = t.from.lane === RUNS_LANE ? "" : t.from.lane;
+    out.push({ kind: "ask", fix: "handover", id: "stuck:" + t.id, path: lane ? map[lane] || t.from.path : t.from.path, repo: lane, name: lane ? named(map[lane], lane) : "Agent runs",
+      title: `${lane || "An agent run"} is stuck`, sub: plain(firstLine(t.text), 90), q: t.q, options: t.options, why: plain(t.error, 160), shape: "agents" });
+  }
+  for (const a of list) {
+    if (seen.has(a.path)) continue; seen.add(a.path); // the newest run in each folder (agentsList: newest first)
+    if (a.status !== "failed" || dropped.has(a.id) || (a.endedAt && now - a.endedAt > FAILED_FOR)) continue;
+    if (a.ask && a.ask.questions && a.ask.questions.length) continue; // it asked: that's its question
+    const lane = laneOfPath(a.path, map), repo = lane || "", nm = repo ? named(map[lane], repo) : plain(String(a.name || "an agent").replace(/^Agent:\s*/, ""), 60);
+    const said = plain(String(a.tail || "").split(/\n+/).filter((l) => l.trim()).pop() || "", 140);
+    out.push({ kind: "ask", fix: "failed", id: "failed:" + a.id, path: a.path, repo, name: nm, title: `${nm}'s run stopped`, sub: said || `it exited with code ${a.exitCode}`,
+      q: `Its run stopped with an error${said ? `: ${said}` : ` (exit code ${a.exitCode})`}. Run it again?`, options: ["Run it again (recommended)", "Skip"], shape: "agents" });
+  }
+  return out;
+}
 // { you: [{ kind, id, title, sub, shape, … }], feeds: [{ id, title, sub, count, shape }],
 //   lanes: [{ from, to, text, status, times }], working: n, at }
 // An ask carries what its blob on home needs: the lane (repo, or "" for an ops
@@ -60,11 +89,13 @@ function homeState({ now = Date.now(), fresh = false, deps = {} } = {}) {
   const connected = deps.connected || (() => !!resolveProvider());
   const repos = deps.repos || (() => { try { return repoPathMap(); } catch { return {}; } });
   const waits = deps.waits || (() => { try { return awaitingState().waits; } catch { return []; } });
-  // can a reply be noticed? Email on (mail on this computer), or an inbox watched
-  const seesInbox = deps.seesInbox || (() => { try { return !!(loadConfig().mail || {}).enabled || watchState().watches.some((w) => isMail(w.url)); } catch { return true; } });
+  const clashes = deps.clashes || (() => { try { return newClashes(); } catch { return []; } });
+  // can a reply be noticed? Email on (mail on this computer), or an inbox watched and signed in
+  const seesInbox = deps.seesInbox || (() => { try { return inboxSight(); } catch { return true; } });
   // the agent the handoff command runs, gone from this computer; Claude connectors linked here but signed out
   const agentGone = deps.agentGone || (() => { try { return handoffCmd() ? agentMissing() : ""; } catch { return ""; } });
   const signedOut = deps.signedOut || (() => { try { const c = connectorsInfo(); return c.claude ? (c.links || []).filter((x) => x.connector && !x.ready) : []; } catch { return []; } });
+  const stuck = deps.stuck || (() => { try { return stuckHandovers({ now }); } catch { return []; } });
   const named = deps.name || displayName;
   const you = [], map = repos() || {};
   // What Symbiot works through (an AI, your agent, the connectors runs use) shows
@@ -89,10 +120,22 @@ function homeState({ now = Date.now(), fresh = false, deps = {} } = {}) {
     you.push({ kind: "ask", id: "ask:" + a.path, path: a.path, repo, name: repo ? named(lane ? map[lane] : a.path, repo) : plain(String(a.name || "an agent").replace(/^Agent:\s*/, ""), 60),
       title: `${a.name} asks`, sub: String(q.q || "").slice(0, 90), q: String(q.q || ""), options: (q.options || []).slice(0, 2), ...(qs.length > 1 ? { more: qs.length - 1 } : {}), shape: "agents" });
   }
+  // What stopped and can't go on without you, as a question too: a handover that
+  // couldn't start (lanes.mjs stuckHandovers: "Allow this run access to ~/Company?"),
+  // and a run that ended in an error. Answered on its blob (homeAnswer).
+  you.push(...troubles({ stuck: stuck(), list, map, named, now }));
   // A run is waiting on an emailed reply that nothing will see: say so, once,
-  // until an inbox is watched or Email is on (handback.mjs looks in either).
-  if (waits().some((w) => w.status === "waiting") && !seesInbox()) you.push({ kind: "setup", id: "setup:inbox", title: "Let me see your inbox", sub: "so I notice their reply", shape: "settings", focus: "links" });
+  // until an inbox is watched (and signed in) or Email is on (handback.mjs looks in either).
+  if (waits().some((w) => w.status === "waiting")) {
+    const s = seesInbox(), sight = s && typeof s === "object" ? s : { sees: !!s, signedOut: [] };
+    if (!sight.sees) you.push(sight.signedOut.length
+      ? { kind: "setup", id: "setup:inbox", signin: true, title: `Sign in to ${sight.signedOut[0]} again`, sub: "it's signed out, so I won't notice their reply", shape: "settings", focus: "links" }
+      : { kind: "setup", id: "setup:inbox", title: "Let me see your inbox", sub: "so I notice their reply", shape: "settings", focus: "links" });
+  }
   const feeds = ((board() || {}).cards || []).filter((c) => c.count > 0).map((c) => ({ id: "feed:" + c.id, title: c.name, sub: c.label, count: c.count, shape: "board" }));
+  // a clash in your files that matters (checks.mjs: high), first under Watching, until you've opened it
+  const clash = clashes();
+  if (clash.length) feeds.unshift({ id: "feed:clash", title: "Where your files disagree", sub: `${clash.length} clash${clash.length > 1 ? "es" : ""} to look at`, latest: plain(clash[0].text, 140), count: clash.length, shape: "settings" });
   const rep = reports();
   if (rep.count) feeds.push({ id: "feed:reports", title: "Reports", sub: `${rep.count} unread`, latest: rep.latest, count: rep.count, shape: "reports" });
   const hs = ((lanes() || {}).handoffs || []).slice(0, 5).map((h) => ({ from: h.from, to: h.to, text: h.text, status: h.status, ...(h.times > 1 ? { times: h.times } : {}) }));
@@ -100,6 +143,33 @@ function homeState({ now = Date.now(), fresh = false, deps = {} } = {}) {
   const out = { you: you.slice(0, 6), youCount: you.length, feeds: feeds.slice(0, 6), lanes: hs, working, at: now };
   if (!deps.board) cached = out;
   return out;
+}
+
+// An answer on a stuck handover's or a failed run's blob. pick: the option's place
+// (0 goes ahead, 1 skips); text: your own words, which go ahead with them unless
+// they say no. The handover's run (lanes.mjs allowHandover) reports back to the
+// agent that asked; a failed run starts again in its folder, with your words in its
+// ANSWERS.md. { ok, said } or { error }.
+const SAYS_NO = /^\s*(skip|no|nope|don'?t|do not|cancel|leave it|never ?mind|stop)\b/i;
+function homeAnswer(id, { pick, text = "" } = {}, deps = {}) {
+  id = String(id || ""); text = String(text || "").trim().slice(0, 2000);
+  const go = text ? !SAYS_NO.test(text) : Number(pick) === 0, ref = id.replace(/^\w+:/, "");
+  cached = null;
+  if (id.startsWith("stuck:")) {
+    if (!go) { const r = (deps.skip || skipHandover)(ref); return r.error ? r : { ok: true, said: "Skipped. Its agent knows." }; }
+    const r = (deps.allow || allowHandover)(ref, { note: text }); if (r.error) return r;
+    return { ok: true, said: `Started a run on it${r.dirs && r.dirs.length ? `, allowed into ${r.dirs.map((d) => (d.startsWith(homedir() + "/") ? "~" + d.slice(homedir().length) : d)).join(" and ")}` : ""}. What it does goes back to the agent that asked.` };
+  }
+  if (id.startsWith("failed:")) {
+    const a = (deps.agents || agentsList)().find((x) => x.id === ref); if (!a) return { error: "That run isn't here any more." };
+    if (!go) { dropped.add(ref); return { ok: true, said: "Skipped." }; }
+    if ((deps.running || runningHandoff)(a.path)) return { ok: true, said: "An agent is already at work there." };
+    if (text) { const f = join(a.path, ".symbiot", "ANSWERS.md"); let had = ""; try { had = readFileSync(f, "utf8"); } catch {}
+      try { writeFileSync(f, `${(had || "# Answers\n").replace(/\s*$/, "")}\n\n### Your last run stopped with an error\n${text}\n_answered ${new Date().toISOString().slice(0, 10)}_\n`); } catch {} }
+    const e = (deps.run || runHandoff)(a.path, { force: true }); dropped.add(ref);
+    return e && e.id && !e.blocked ? { ok: true, said: "Running it again.", rerun: e.id } : { error: (e && e.note) || "It didn't start. Check your agent in Settings." };
+  }
+  return { error: "Answer that one on its block in Agents." };
 }
 
 // Settings' first steps, in the order they matter (FIRST-RUN-AUDIT.md: a new user
@@ -136,7 +206,7 @@ function firstSteps({ deps = {} } = {}) {
 // One line per thing home shows, for the talk's context.
 function homeContext(h) {
   return [
-    `Only the user can do (${h.you.length}):`, ...h.you.map((y) => `- ${y.title}: ${y.sub}`),
+    `Only the user can do (${h.you.length}):`, ...h.you.map((y) => `- ${y.title}: ${y.sub}${y.q && y.q !== y.sub ? ` (asks: ${y.q}${(y.options || []).length ? ` ${y.options.join(" / ")}` : ""})` : ""}`),
     `New on what they watch:`, ...(h.feeds.length ? h.feeds.map((f) => `- ${f.title}: ${f.sub}${f.latest ? ` (latest: ${f.latest})` : ""}`) : ["- nothing new"]),
     `Agents working: ${h.working}. Recent handovers:`, ...(h.lanes.length ? h.lanes.map((l) => `- ${l.from} → ${l.to}: ${l.text} (${l.status}${l.times ? `, handed over ${l.times} times` : ""})`) : ["- none"]),
   ].join("\n");
@@ -218,6 +288,11 @@ function workScene({ deps = {} } = {}) {
     for (const q of qs) { p.qs = p.qs || []; if (p.qs.length < 3) p.qs.push({ q: q.q, options: (q.options || []).slice(0, 3), path: a.path }); }
     for (const s of ideas) { p.ideas = p.ideas || []; if (p.ideas.length < 4) p.ideas.push({ text: plain(s.text, 200), full: String(s.text), repo: s.repo || l, path: a.path }); }
   }
+  const stuck = deps.stuck || (() => { try { return stuckHandovers(); } catch { return []; } });
+  for (const t of troubles({ stuck: stuck(), list: AG, map, named })) {
+    const p = at(t.repo || RUNS_LANE); p.asks++; p.qs = p.qs || [];
+    if (p.qs.length < 3) p.qs.unshift({ q: t.q, options: t.options, path: t.path, fix: t.fix, id: t.id, sub: t.sub });
+  }
   for (const p of Object.values(by)) { p.lit = !!(p.asks || p.ready); if (isParked(p.repo)) p.parked = true; }
   const projects = Object.values(by).sort((a, b) => (b.lit ? 1 : 0) - (a.lit ? 1 : 0) || (a.parked ? 1 : 0) - (b.parked ? 1 : 0) || (b.running ? 1 : 0) - (a.running ? 1 : 0) || b.ready - a.ready || b.waiting - a.waiting || b.last - a.last || (a.repo < b.repo ? -1 : 1));
   return { running, ready, waiting: waiting.slice(0, 12), waitingCount: waiting.length, canGo: waiting.filter((w) => !w.busy && !w.parked).length, projects: projects.slice(0, 24), projectCount: projects.length };
@@ -234,4 +309,4 @@ function workGo({ push = pushTasks, run = runHandoff } = {}) {
   return { started, queued, repos, ...(parked.length ? { parked } : {}), ...(r.unresolved && r.unresolved.length ? { unresolved: r.unresolved.map((u) => u.name) } : {}) };
 }
 
-export { homeState, homeContext, homeAsk, workScene, workGo, displayName, firstSteps };
+export { homeState, homeContext, homeAsk, homeAnswer, workScene, workGo, displayName, firstSteps };

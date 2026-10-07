@@ -209,9 +209,11 @@ const calls = [
   ["/api/work/go", "POST"],         // nothing waiting in the isolated HOME -> starts nothing
   ["/api/home", "GET"],             // the liquid's live data (isolated HOME -> empty)
   ["/api/home/ask", "POST"],        // no question -> "empty", no model call
+  ["/api/home/answer", "POST"],     // no id -> "answer it on its block", nothing starts
   ["/api/firststeps", "GET"],       // Settings' first steps (isolated HOME -> none done)
   ["/api/knowledge/checks", "GET"], // where knowledge folders' files disagree (isolated HOME -> no folders, nothing)
   ["/api/knowledge/checks/run", "POST"], // checked again now (no folders -> no clashes)
+  ["/api/knowledge/checks/seen", "POST"], // Home's "Where your files disagree" opened: its clashes reached you
   ["/api/adapt", "GET"],            // its shape from how it's used
   ["/api/adapt/use", "POST"],       // no shape -> "unknown shape", nothing saved
   ["/api/lanes", "GET"],            // handovers between agents' lanes (isolated HOME -> none)
@@ -229,6 +231,10 @@ const calls = [
   ["/api/posts/edit", "POST"],      // no text -> refused
   ["/api/posts/skip", "POST"],      // no id -> "No draft"
   ["/api/posts/voice", "POST"],     // not confirmed -> refused, no browser opens
+  ["/api/posts/media/add", "POST"], // no id -> "No draft", nothing kept
+  ["/api/posts/media/page", "POST"], // no id -> "No draft", no browser starts
+  ["/api/posts/media/remove", "POST"], // no id -> "No draft"
+  ["/api/posts/media/folder", "POST"], // no id -> refused, no folder opens
   ["/api/reports", "GET"],          // what runs wrote up (isolated HOME -> none)
   ["/api/reports/read", "GET"],     // no id -> "No report by that id"
   ["/api/reports/seen", "POST"],    // mark all read (none)
