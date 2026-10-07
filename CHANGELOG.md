@@ -2,6 +2,12 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.55.1
+
+- **No more stray Symbiot windows.** 0.55.0's smoke test called Away like every other endpoint, so each full test run (yours, or an agent's in the symbiot repo) opened Away windows on your screen. Away now opens only when asked to by name, and never while windows are turned off (as in tests).
+- **One Symbiot window, not a pile.** Opening Symbiot again (its icon, `symbiot app`) used to add a window each time. Now the newest window wins and older ones close themselves; a tab that can't close itself says Symbiot is open in a newer window, with **Use this one**. An update's restart that can't get its port bows out instead of lingering unseen.
+- **Away is Super+`** (Super and the key above Tab). Super+S stacks windows on COSMIC, so it was the wrong key; `symbiot away --shortcut` sets up Super+` and clears the old one.
+
 ## 0.55.0
 
 - **Away: Super+S.** Symbiot full screen while you're away from the desk: the orb at rest, the time, the agents at work and what each is doing, how many things only you can do, and how much waits on what you watch. Counts only, never anyone's words. Any key or click brings you back. On X11 with more than one screen the orb bounces across all of them; under Wayland (COSMIC, GNOME, KDE) it's one window on your screen, because no app may place windows there. `symbiot away --shortcut` sets up Super+S (on COSMIC it's done for you). Super+Esc still locks.

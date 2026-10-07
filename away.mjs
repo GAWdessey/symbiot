@@ -1,5 +1,5 @@
 // symbiot — Away: Symbiot full screen on every screen while you're away from the
-// desk (Super+S, or `symbiot away`): the orb at rest, the time, and what's going on
+// desk (Super+`, or `symbiot away`): the orb at rest, the time, and what's going on
 // (agents at work and what they're doing, how much waits on you), counts only, no
 // one's words. One screen: the orb in the middle. More: it bounces across all of
 // them, one kiosk window per screen, each working out where the orb is from the
@@ -11,7 +11,7 @@
 // own move-to-screen shortcut). So under Wayland it's one window, full screen where
 // you are, the orb in the middle. Each window's profile lets Symbiot's address see the
 // screens and go full screen without a click, so nothing asks.
-// Any key or click, or Super+S again, closes every window. Not a lock: Super+Esc
+// Any key or click, or Super+` again, closes every window. Not a lock: Super+Esc
 // locks the computer.
 import { spawn, spawnSync } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
@@ -65,6 +65,7 @@ function grantProfile(dir, origin) {
 const placeable = (env = process.env) => (env.XDG_SESSION_TYPE || "").toLowerCase() === "x11" || (!env.WAYLAND_DISPLAY && !!env.DISPLAY);
 function openAway(url, { chrome = chromeBinary(), scr = placeable() ? screens() : { list: [], display: "" }, now = Date.now() } = {}) {
   if (!chrome) return { error: "Away needs Chrome or Chromium on this computer." };
+  if (process.env.SYMBIOT_NO_OPEN === "1") return { open: false, note: "Windows are off here (SYMBIOT_NO_OPEN): tests, and runs that mustn't open any." };
   closeAway();
   const qs = awayQueries(scr.list, now);
   const origin = (String(url).match(/^https?:\/\/[^/?#]+/) || [""])[0];
@@ -77,31 +78,36 @@ function openAway(url, { chrome = chromeBinary(), scr = placeable() ? screens() 
   });
   return { open: KIDS.length > 0, screens: Math.max(1, scr.list.length) };
 }
-// Open, close (open: false) or, with neither said, the other way round.
+// open: true opens, false closes, "toggle" goes the other way; anything else only
+// says whether it's open (a call that names nothing never opens windows: the smoke
+// test calls every endpoint, and it opened Away on the owner's screen every run).
 function toggleAway(url, open, deps) {
-  const want = open === undefined || open === null ? !awayOpen() : !!open;
+  if (open !== true && open !== false && open !== "toggle") return { open: awayOpen() };
+  const want = open === "toggle" ? !awayOpen() : open;
   if (!want) { closeAway(); return { open: false }; }
   return openAway(url, deps);
 }
 
 // ---- the shortcut -------------------------------------------------------------
-// Super+S runs `symbiot away`. COSMIC: a custom shortcut in its config (it reloads
-// it as it changes; one for Super+S takes over the default there, which stacks
-// windows). Elsewhere it says how to add one.
+// Super+` (the key above Tab) runs `symbiot away`: free on COSMIC, where Super+S
+// stacks windows. COSMIC: a custom shortcut in its config (it reloads it as it
+// changes). Elsewhere it says how to add one.
 const COSMIC_CUSTOM = (home = homedir()) => join(home, ".config", "cosmic", "com.system76.CosmicSettings.Shortcuts", "v1", "custom");
-function shortcutLine(cmd) { return `    (modifiers: [Super], key: "s"): Spawn(${JSON.stringify(cmd)}),`; }
-// The new custom file: whatever was there, minus any Super+S, plus ours.
+const KEY = "grave";
+function shortcutLine(cmd) { return `    (modifiers: [Super], key: "${KEY}"): Spawn(${JSON.stringify(cmd)}),`; }
+// The new custom file: whatever was there, minus any Super+` and any earlier one of
+// ours (on another key), plus ours.
 function withShortcut(text, cmd) {
   const body = String(text || "").trim().replace(/^\{/, "").replace(/\}\s*$/, "");
-  const kept = body.split("\n").filter((l) => l.trim() && !/\(modifiers:\s*\[\s*Super\s*,?\s*\],\s*key:\s*"s"\s*\)/.test(l));
+  const kept = body.split("\n").filter((l) => l.trim() && !/\(modifiers:\s*\[\s*Super\s*,?\s*\],\s*key:\s*"grave"\s*\)/.test(l) && !/Spawn\("[^"]*symbiot[^"]* away"\)/.test(l));
   return "{\n" + [...kept.map((l) => l.replace(/\s*$/, "")), shortcutLine(cmd)].join("\n") + "\n}\n";
 }
 function installShortcut({ cmd, home = homedir(), desktop = process.env.XDG_CURRENT_DESKTOP || "" } = {}) {
-  if (!/cosmic/i.test(desktop)) return { manual: true, note: `Add a keyboard shortcut in your desktop's settings: Super+S runs  ${cmd}` };
+  if (!/cosmic/i.test(desktop)) return { manual: true, note: `Add a keyboard shortcut in your desktop's settings: Super+\` runs  ${cmd}` };
   const f = COSMIC_CUSTOM(home);
   let had = ""; try { had = existsSync(f) ? readFileSync(f, "utf8") : ""; } catch {}
   try { mkdirSync(join(f, ".."), { recursive: true }); writeFileSync(f, withShortcut(had, cmd)); } catch (e) { return { error: "Couldn't write " + f + ": " + ((e && e.message) || e) }; }
-  return { ok: true, file: f, replaced: /key:\s*"s"/.test(had) };
+  return { ok: true, file: f, replaced: /key:\s*"grave"/.test(had) };
 }
 
 export { placeable, grantProfile, parseMonitors, screens, awayQueries, openAway, closeAway, awayOpen, toggleAway, withShortcut, installShortcut, COSMIC_CUSTOM };
