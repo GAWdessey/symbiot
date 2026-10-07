@@ -2145,6 +2145,9 @@ function heartbeat(fresh){
     var tried=null;try{tried=localStorage.getItem('symbiot_update_tried');}catch(e){}
     if(tried){
       if(p.version!==tried){try{localStorage.removeItem('symbiot_update_tried');}catch(e){} } // advanced → success, clear
+      else if(p.retrying){ // npm hasn't finished publishing it: the app is trying again by itself
+        b.className='updatebar show';b.innerHTML="Updating to "+esc(p.retrying.target)+": npm is still publishing it, so Symbiot tries again every 30 seconds (try "+p.retrying.attempt+" of 5). Nothing to do.";return;
+      }
       else if(p.latest&&p.newer){ // still on the same version → the install didn't advance
         b.className='updatebar reconnect show';
         b.innerHTML="Auto-update to "+esc(p.latest)+" didn't take (still on "+esc(p.version)+"). Run <code>npm install -g symbiot@latest</code> in a terminal, then restart.";

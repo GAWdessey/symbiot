@@ -2,6 +2,10 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.53.4
+
+- **Updates wait for npm instead of giving up.** npm lists a new version a little before its download is there, so an update straight after a release could fail and tell you to run `npm install` in a terminal. Now Symbiot tries again every 30 seconds (up to 5 times) and the bar says it's waiting on npm; there's nothing for you to do.
+
 ## 0.53.3
 
 - **The window's top bar matches the look.** Symbiot now tells the browser its colour, so the bar the app window opens with is the look's own (warm grey in Pearl, near-black in Ferrofluid, cool grey in Glass) instead of your desktop's accent colour.
