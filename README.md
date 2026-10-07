@@ -599,7 +599,10 @@ time; **Close** or Esc closes a part. In a text box, or over text you've selecte
 right-click still gives the usual menu. Whatever needs you glows **amber**, here and
 on the Dashboard. Talk to it in the bar at the bottom: "open tasks" opens Tasks,
 "go" in the work view starts what's waiting, anything else goes to the same Symbiot
-as every chat. Leave it alone and it rests as one orb. There are no settings for any
+as every chat. Paste a screenshot into the bar (Ctrl+V) or drop one on it, and
+Symbiot sees it with what you say (up to 4, with any AI you've connected that reads
+images); if it hands the work to an agent, the agent gets the screenshot too.
+Leave it alone and it rests as one orb. There are no settings for any
 of this: it adapts to you.
 
 - **Where things sit: nearest neighbours.** Inside a group, the parts you move

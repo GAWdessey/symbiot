@@ -64,7 +64,7 @@ body.lq-light #lqform.lqglass{background:rgba(255,255,255,.62);border-color:rgba
 body.lq-light #lqask::placeholder{color:#6A7480}
 #lqsend{flex:none;width:40px;height:40px;padding:0;display:grid;place-items:center;border-radius:50%;border:0;background:#F3F0EA;color:#0A0B0D;cursor:pointer}
 body.lq-light #lqsend{background:#151A21;color:#FFFFFF}
-body.lq-look-pearl #lqsend{background:linear-gradient(180deg,#FFFFFF 0%,#D9DDE2 45%,#9AA1AA 55%,#E8EAED 100%);color:#1B1E23;box-shadow:0 2px 6px rgba(0,0,0,.18),inset 0 0 0 1px rgba(0,0,0,.08)}
+body.lq-look-pearl #lqsend{background:linear-gradient(180deg,#FFFFFF 0%,#F1F2F5 60%,#E6E9EE 100%);color:#1B1E23;box-shadow:0 1px 2px rgba(21,26,33,.10),0 8px 18px -10px rgba(40,52,74,.45),inset 0 0 0 1px rgba(21,26,33,.10)}
 #lqtalk{position:absolute;left:50%;bottom:88px;transform:translateX(-50%);width:min(640px,calc(100vw - 32px));display:flex;flex-direction:column;gap:16px;z-index:3;max-height:min(34vh,320px);overflow-x:hidden;overflow-y:auto;scrollbar-width:none;padding-top:90px;scroll-behavior:smooth;-webkit-mask-image:linear-gradient(to bottom,transparent 0,rgba(0,0,0,.12) 22%,rgba(0,0,0,.6) 48%,#000 72%);mask-image:linear-gradient(to bottom,transparent 0,rgba(0,0,0,.12) 22%,rgba(0,0,0,.6) 48%,#000 72%);transition:max-height .3s ease}
 #lqtalk:hover,#lqtalk:focus-within,#lqtalk.back{max-height:min(56vh,560px);-webkit-mask-image:linear-gradient(to bottom,transparent 0,#000 60px);mask-image:linear-gradient(to bottom,transparent 0,#000 60px)}
 #lqtalk .lqmsg{transition:opacity .4s ease}
@@ -124,7 +124,7 @@ body.lq-light #quit{border-color:rgba(20,30,45,.16);background:rgba(255,255,255,
 body.lq-pooled #lqtalk,body.lq-pooled #lqmore,body.lq-pooled #lqcore{display:none}
 /* the work view says where things stand in its line under the heading, not in the core */
 body.lq-work #lqcore{display:none}
-body.lq-pooled #lqgo,body.lq-pooled #lqgo.on{display:none}
+body.lq-pooled #lqgo,body.lq-pooled.lq-work #lqgo.on{display:none}
 body.lq-talking .lqd{opacity:.55}
 @media (prefers-reduced-motion: reduce){.lqd,#lqcore{transition:none}}
 /* ---- the Symbiot look on every part: glass over the liquid, chrome, a silver edge ---- */
@@ -136,7 +136,7 @@ body.lq-liquid.lq-light .task,body.lq-liquid.lq-light .agent,body.lq-liquid.lq-l
 body.lq-liquid button.act{background:#F3F0EA;color:#0A0B0D;border:0;border-radius:999px;box-shadow:none;font-weight:600}
 body.lq-liquid button.act:hover{background:#FFFFFF}
 body.lq-liquid.lq-light button.act{background:#151A21;color:#FFFFFF}
-body.lq-liquid.lq-look-pearl button.act,body.lq-look-pearl #lqgo.on,body.lq-liquid.lq-look-pearl .updatebar.show{background:linear-gradient(180deg,#FFFFFF 0%,#D9DDE2 45%,#9AA1AA 55%,#E8EAED 100%);color:#1B1E23;box-shadow:0 2px 6px rgba(0,0,0,.18),inset 0 0 0 1px rgba(0,0,0,.08)}
+body.lq-liquid.lq-look-pearl button.act,body.lq-look-pearl #lqgo.on,body.lq-liquid.lq-look-pearl .updatebar.show{background:linear-gradient(180deg,#FFFFFF 0%,#F1F2F5 60%,#E6E9EE 100%);color:#1B1E23;box-shadow:0 1px 2px rgba(21,26,33,.10),0 8px 18px -10px rgba(40,52,74,.45),inset 0 0 0 1px rgba(21,26,33,.10)}
 body.lq-liquid button.ghost{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.14);border-radius:999px;color:var(--bone);backdrop-filter:blur(6px)}
 body.lq-liquid.lq-light button.ghost{background:rgba(255,255,255,.7);border-color:rgba(20,30,45,.18)}
 body.lq-liquid input,body.lq-liquid select,body.lq-liquid textarea{border-radius:12px;border:1px solid rgba(220,228,240,.2);background:rgba(255,255,255,.04);color:var(--bone)}
@@ -185,7 +185,7 @@ body.lq-work.lq-byproj #lqsort{display:inline-flex;position:absolute;left:112px;
 body.lq-light #lqsort{background:rgba(21,26,33,.05);border-color:rgba(21,26,33,.1)}
 body.lq-light #lqsort button{color:#5A6470}
 body.lq-light #lqsort button[aria-checked='true']{background:#151A21;color:#FFFFFF}
-body.lq-look-pearl #lqsort button[aria-checked='true']{background:linear-gradient(180deg,#FFFFFF 0%,#D9DDE2 45%,#9AA1AA 55%,#E8EAED 100%);color:#1B1E23}
+body.lq-look-pearl #lqsort button[aria-checked='true']{background:linear-gradient(180deg,#FFFFFF 0%,#F1F2F5 60%,#E6E9EE 100%);color:#1B1E23}
 body.lq-touch #lqsort button{min-height:44px}
 body.lq-pooled #lqsort{display:none!important}
 @media (max-width:700px){body.lq-work.lq-byproj #lqsort{left:16px;top:104px}}
@@ -225,7 +225,7 @@ body.lq-light .lqblob .nopt.rec{background:#151A21;color:#FFFFFF;border-color:#1
 body.lq-light .lqblob .bfx input{background:#FFFFFF;border-color:rgba(20,30,45,.18)}
 body.lq-light .lqblob .bfx button{background:#151A21;color:#FFFFFF}
 body.lq-light .lqblob .bfree,body.lq-light .lqd.lqblob .lt i,body.lq-light .lqblob .bmore{color:#5A6470}
-body.lq-look-pearl .lqblob .nopt.rec,body.lq-look-pearl .lqblob .bfx button{background:linear-gradient(180deg,#FFFFFF 0%,#D9DDE2 45%,#9AA1AA 55%,#E8EAED 100%);color:#1B1E23;border-color:rgba(0,0,0,.08)}
+body.lq-look-pearl .lqblob .nopt.rec,body.lq-look-pearl .lqblob .bfx button{background:linear-gradient(180deg,#FFFFFF 0%,#F1F2F5 60%,#E6E9EE 100%);color:#1B1E23;border-color:rgba(0,0,0,.08)}
 body.lq-contrast .lqblob .nopt{border:2px solid currentColor}
 body.lq-touch .lqblob .nopt,body.lq-touch .lqblob .bfx input{min-height:44px}
 body.lq-talking .lqd.lqblob{opacity:.55}
@@ -696,7 +696,7 @@ body.lq-liquid.lq-light.lq-pooled #lqsinkrow{background:linear-gradient(180deg,r
 #lqline,#lqrelay{display:none}
 body.lq-work:not(.lq-pooled) #lqline{display:block;position:absolute;left:50%;top:84px;transform:translateX(-50%);z-index:3;max-width:calc(100% - 32px);text-align:center;font:400 13.5px/1.4 var(--sans);color:#A1A8B1;text-shadow:0 1px 10px rgba(0,0,0,.7)}
 #lqline b{color:#F2A541;font-weight:600}
-body.lq-light #lqline{color:#4A5565;text-shadow:0 1px 8px rgba(255,255,255,.8)}body.lq-light #lqline b{color:#9A5200}
+body.lq-light #lqline{color:#2E3743;text-shadow:none}body.lq-light #lqline b{color:#9A5200}
 body.lq-work:not(.lq-pooled) #lqrelay:not(:empty){display:flex;flex-direction:column;gap:12px;position:absolute;right:16px;top:116px;bottom:96px;width:min(420px,32vw);overflow-y:auto;scrollbar-width:none;z-index:4;padding:2px 2px 24px;-webkit-mask-image:linear-gradient(to bottom,#000 calc(100% - 28px),transparent);mask-image:linear-gradient(to bottom,#000 calc(100% - 28px),transparent)}
 #lqrelay::-webkit-scrollbar{display:none}
 @media (max-width:899px){body.lq-work:not(.lq-pooled) #lqrelay:not(:empty){display:none}}
@@ -775,6 +775,25 @@ body.lq-liquid .rcard .task{margin-top:6px;padding:9px 12px;border-radius:12px}
 .rwork i{flex:none;width:9px;height:9px;border-radius:50%;background:#F2A541;box-shadow:0 0 0 0 rgba(242,165,65,.5);animation:rwork 1.8s ease-out infinite}
 @keyframes rwork{0%{box-shadow:0 0 0 0 rgba(242,165,65,.5)}100%{box-shadow:0 0 0 9px rgba(242,165,65,0)}}
 @media (prefers-reduced-motion: reduce){.rwork i{animation:none}}
+
+/* scrollbars, everywhere: thin, no arrows, in the look's ink */
+body.lq-liquid,body.lq-liquid *{scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.16) transparent}
+body.lq-liquid.lq-light,body.lq-liquid.lq-light *{scrollbar-color:rgba(21,26,33,.18) transparent}
+body.lq-liquid ::-webkit-scrollbar{width:8px;height:8px}
+body.lq-liquid ::-webkit-scrollbar-button{display:none}
+body.lq-liquid ::-webkit-scrollbar-track{background:transparent}
+body.lq-liquid ::-webkit-scrollbar-thumb{background:rgba(255,255,255,.14);border-radius:999px}
+body.lq-liquid.lq-light ::-webkit-scrollbar-thumb{background:rgba(21,26,33,.16)}
+
+/* screenshots in the talk */
+#lqatts{position:absolute;left:50%;bottom:78px;transform:translateX(-50%);width:min(640px,calc(100vw - 32px));display:flex;gap:8px;z-index:3;pointer-events:none}
+#lqatts:empty{display:none}
+.lqatt{position:relative;pointer-events:auto}
+.lqatt img{display:block;width:64px;height:48px;object-fit:cover;border-radius:10px;border:1px solid rgba(255,255,255,.2);box-shadow:0 8px 20px -10px rgba(0,0,0,.8)}
+.lqatt button{position:absolute;top:-7px;right:-7px;width:20px;height:20px;border-radius:50%;border:0;background:#F3F0EA;color:#0A0B0D;font:600 13px/20px var(--sans);text-align:center;cursor:pointer;padding:0}
+body.lq-light .lqatt img{border-color:rgba(21,26,33,.15)}body.lq-light .lqatt button{background:#151A21;color:#FFFFFF}
+#lqform.drop{outline:2px dashed rgba(242,165,65,.7);outline-offset:4px}
+.lqmimgs{display:flex;gap:6px;margin-bottom:6px}.lqmimgs img{width:120px;max-height:90px;object-fit:cover;border-radius:8px}
 /* the Dashboard as a stream: time runs left to right, a current per feed, now on the right */
 .bstream{position:relative;margin-top:10px;border-radius:18px;overflow:hidden;isolation:isolate;background:#08090B;box-shadow:0 0 0 1px rgba(255,255,255,.08)}
 body.lq-light .bstream{background:#EBEEF0;box-shadow:0 0 0 1px rgba(21,26,33,.08)}
@@ -843,7 +862,8 @@ body.lq-light .btip .bta button:not(.quiet){background:#151A21;color:#FFFFFF}
 <button type="button" id="lqcore" title="talk to Symbiot"></button>
 <div id="lqmore"></div>
 <div id="lqtalk" aria-live="polite"></div>
-<form id="lqform" class="lqglass"><label for="lqask" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)">Talk to Symbiot</label><input id="lqask" autocomplete="off" placeholder="Talk to Symbiot, or tell it what to do"><button type="submit" id="lqsend" aria-label="Send"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 13V3M3.5 7.5 8 3l4.5 4.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button></form>
+<div id="lqatts" aria-live="polite"></div>
+<form id="lqform" class="lqglass"><label for="lqask" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)">Talk to Symbiot</label><input id="lqask" autocomplete="off" placeholder="Talk to Symbiot, or tell it what to do (paste a screenshot to show it)"><button type="submit" id="lqsend" aria-label="Send"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 13V3M3.5 7.5 8 3l4.5 4.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button></form>
 </div>
 
 <div id="updatebar" class="updatebar"></div>
@@ -921,13 +941,13 @@ body.lq-light .btip .bta button:not(.quiet){background:#151A21;color:#FFFFFF}
 <div id="tasklist"></div>
 </section>
 <section id="panel-agents" class="hidden">
-<div class="row"><span class="muted">Agents Symbiot has handed work to — live status and output. Questions, options and ideas an agent leaves for you show up on its block, whichever model it runs.</span><button class="ghost" id="agentsrefresh" style="margin-left:auto">Refresh</button></div>
+<div class="row"><span class="muted">Agents Symbiot has handed work to — live status and output. Questions, options and ideas an agent leaves for you show up on its block, whichever model it runs.</span><button class="iconbtn" id="agentsrefresh" style="margin-left:auto" title="Refresh" aria-label="Refresh"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M13 8a5 5 0 1 1-1.5-3.6M13 2.5V5h-2.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button></div>
 <div id="agentsmsg"></div>
 <div id="laneslist"></div>
 <div id="agentslist"></div>
 </section>
 <section id="panel-reports" class="hidden">
-<div class="row"><span class="muted" style="flex:1">What agents wrote up for you (findings, audits, plans), newest first. They leave each one in a project's .symbiot folder; it shows here as soon as it's written.</span><button class="ghost" id="reportsrefresh">Refresh</button></div>
+<div class="row"><span class="muted" style="flex:1">What agents wrote up for you (findings, audits, plans), newest first. They leave each one in a project's .symbiot folder; it shows here as soon as it's written.</span><button class="iconbtn" id="reportsrefresh" title="Refresh" aria-label="Refresh"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M13 8a5 5 0 1 1-1.5-3.6M13 2.5V5h-2.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button></div>
 <div id="reportslist"></div>
 <div id="reportview"></div>
 </section>
@@ -1944,6 +1964,7 @@ cs.forEach(function(c,i){(c.items||[]).forEach(function(n,j){var age=Math.max(0,
 BS.beads.push({key:key,i:i,j:j,n:n,need:!!n.need&&!!(n.mail||n.chat),tx:g.x0+(1-age/H)*(g.x1-g.x0),ty:laneY(i),tr:n.need&&(n.mail||n.chat)?13:n.read?6:9,x:o?o.x:g.x1,y:o?o.y:laneY(i),r:o?o.r:0});});
 (c.past||[]).forEach(function(n,j){var age=Math.max(0,now-(n.ts||now));if(age>H)return;var key=c.id+':p:'+(n.id||j),o=old[key];BS.beads.push({key:key,i:i,j:-1-j,n:n,past:true,need:false,tx:g.x0+(1-age/H)*(g.x1-g.x0),ty:laneY(i),tr:4.5,x:o?o.x:g.x1,y:o?o.y:laneY(i),r:o?o.r:0});});});
 html+=BS.beads.map(function(x,k){return "<button type='button' class='bbead' data-k='"+k+"' aria-label='"+esc(x.n.text||'')+"'></button>";}).join('');
+var byLane={};BS.beads.forEach(function(x){(byLane[x.i]=byLane[x.i]||[]).push(x);});Object.keys(byLane).forEach(function(k){var L=byLane[k].slice().sort(function(a,b){return a.tx-b.tx;}),run=0;for(var q=1;q<L.length;q++){if(L[q].tx-L[q-1].tx<26){run++;L[q].ty+=(run%2?-1:1)*Math.ceil(run/2)*20;}else run=0;}});
 var ml=bsMailLane();BS.waits=[];if(ml>=0)(AWAITS||[]).forEach(function(w,k){if(w.status!=='waiting'&&!(w.reply&&now-w.reply.ts<H))return;var sent=w.sent||now,age=Math.max(0,now-sent),x=g.x0+(1-Math.min(age,H)/H)*(g.x1-g.x0),y=laneY(ml)+(k%2?14:-14);BS.waits.push({w:w,x:x,y:y});
 html+=(w.status==='waiting'?"<div class='bwthread' style='left:"+Math.round(x)+"px;width:"+Math.max(0,Math.round(g.x1-x))+"px;top:"+Math.round(y)+"px'></div>":"")+"<button type='button' class='bwait"+(w.status==='waiting'?'':' in')+(age>H?' early':'')+"' data-w='"+(BS.waits.length-1)+"' style='left:"+Math.round(x)+"px;top:"+Math.round(y)+"px' aria-label='"+escQ((w.status==='waiting'?'waiting on a reply from ':'reply in from ')+(w.to||[]).join(', '))+"'></button>";});
 html+="<div class='btip' role='dialog' aria-live='polite'></div>";ov.innerHTML=html;
@@ -2501,7 +2522,7 @@ api('/api/home?fresh=1').then(function(h){if(h&&h.you)LQ.home=h;renderNeeds();})
 // Needs you here: what only you can do in the project the Tasks list is filtered
 // to, at its top, each answerable where it is; its held handovers under them.
 function renderNeeds(){var el=$('needsbox');if(!el)return;var repo=TFILTER.repo;if(!repo||TARCH){el.innerHTML='';return;}
-var ys=((LQ.home&&LQ.home.you)||[]).filter(function(y){return y.repo===repo&&(y.kind==='ask'||y.kind==='approve');});
+var ys=((LQ.home&&LQ.home.you)||[]).filter(function(y){return y.repo===repo&&y.kind==='ask';});
 var paint=function(held){if(TFILTER.repo!==repo)return;if(!ys.length&&!held.length){el.innerHTML='';lqLight();return;}
 el.innerHTML="<div class='tgroup' style='color:var(--amber)'>Needs you here <span class='tcount'>"+(ys.length+held.length)+"</span></div>"+
 ys.map(function(y,i){return "<div class='task nitem lqblob' data-k='"+i+"'>"+blobBody(y,false)+"</div>";}).join('')+
@@ -2535,17 +2556,23 @@ function lqPool(shape){if(shape==='map'&&LM.items&&LM.items.length)setTimeout(fu
 function lqSink(){lqRemember();LQ.focus=null;var b=document.body;if(b&&b.classList)b.classList.remove('lq-pooled');LQ.mode='aware';lqAct();lqLoad(false);}
 function lqAct(){LQ.lastAct=Date.now();if(LQ.mode==='rest'){LQ.mode='aware';lqLoad(true);}}
 function lqTalkMode(on){LQ.talking=on;var b=document.body;if(b&&b.classList)b.classList.toggle('lq-talking',on);}
-function lqTalkShow(wait){var el=$('lqtalk');if(!el)return;var n=LQ.talk.length;el.innerHTML=LQ.talk.map(function(m,i){var age=n-1-i,op=age<2?1:age===2?0.7:age===3?0.45:0.25;return "<div class='lqmsg"+(m.me?' me':'')+"' style='opacity:"+op+"'>"+esc(m.text)+stepsHtml(m.steps)+"</div>";}).join('')+(wait?"<div class='lqmsg thinking'>Thinking: recalling what it knows, reading what's here&hellip;</div>":'');if(el.scrollHeight)el.scrollTop=el.scrollHeight;
+function lqTalkShow(wait){var el=$('lqtalk');if(!el)return;var n=LQ.talk.length;el.innerHTML=LQ.talk.map(function(m,i){var age=n-1-i,op=age<2?1:age===2?0.7:age===3?0.45:0.25;return "<div class='lqmsg"+(m.me?' me':'')+"' style='opacity:"+op+"'>"+(m.imgs&&m.imgs.length?"<span class='lqmimgs'>"+m.imgs.map(function(d){return "<img src='"+d+"' alt='your screenshot'>";}).join('')+"</span>":"")+esc(m.text)+stepsHtml(m.steps)+"</div>";}).join('')+(wait?"<div class='lqmsg thinking'>Thinking: recalling what it knows, reading what's here&hellip;</div>":'');if(el.scrollHeight)el.scrollTop=el.scrollHeight;
 // scrolled up to read back: the whole history shows, clear; back at the bottom it rolls on again
 if(!el.wired&&el.addEventListener){el.wired=true;el.addEventListener('scroll',function(){var up=el.scrollHeight-el.scrollTop-el.clientHeight>24;if(el.classList)el.classList.toggle('back',up);});}}
-function lqSay(){var i=$('lqask');var q=((i&&i.value)||'').trim();if(!q)return;i.value='';lqAct();
+// Screenshots in the talk: paste one (Ctrl+V) or drop it on the bar; it shows as a
+// thumbnail above it, goes with what you say, and the model sees it.
+LQ.atts=[];
+function lqAttsShow(){var el=$('lqatts');if(!el)return;el.innerHTML=LQ.atts.map(function(a,i){return "<span class='lqatt'><img src='"+a.data+"' alt='screenshot "+(i+1)+"'><button type='button' data-i='"+i+"' aria-label='remove screenshot "+(i+1)+"'>&times;</button></span>";}).join('');
+el.querySelectorAll('button').forEach(function(b){b.addEventListener('click',function(){LQ.atts.splice(+b.getAttribute('data-i'),1);lqAttsShow();});});}
+function lqAttach(file){if(!file||['image/png','image/jpeg','image/webp','image/gif'].indexOf(file.type)<0||file.size>8*1024*1024||LQ.atts.length>=4)return;var r=new FileReader();r.onload=function(){LQ.atts.push({data:String(r.result)});lqAttsShow();};r.readAsDataURL(file);}
+function lqSay(){var i=$('lqask');var q=((i&&i.value)||'').trim(),shots=LQ.atts.slice();if(!q&&!shots.length)return;if(!q)q='Take a look at this screenshot.';i.value='';LQ.atts=[];lqAttsShow();lqAct();
 var low=q.toLowerCase().replace(/^(please |can you |could you )/,''),hit='';
 Object.keys(LQNAMES).forEach(function(k){var nm=LQNAMES[k].toLowerCase();if(hit)return;['open ','show ','go to ','take me to '].forEach(function(v){if(low.indexOf(v+nm)===0||low.indexOf(v+'my '+nm)===0)hit=k;});if(low===nm)hit=k;});
 if(hit){lqTalkMode(true);lqUse(hit,null,'talk');lqGo(hit);return;}
 if(/^(go|start|go for it|start them|start it)[.! ]*$/.test(low)){lqTalkMode(true);lqGoWork();return;}
 if(/^(home|back)[.! ]*$/.test(low)&&LQ.scene==='work'){lqHome();return;}
-LQ.talk.push({me:true,text:q});LQ.talk=LQ.talk.slice(-8);lqTalkShow(true);
-api('/api/home/ask',{question:q}).then(function(r){LQ.talk.push({me:false,steps:r.steps||[],text:r.error==='not-connected'?'Connect an AI in Settings to talk to me. Say "open settings".':(r.answer||r.error||'(no answer)')});LQ.talk=LQ.talk.slice(-8);lqTalkShow(false);LQ.ripple=[0.5,0.47,LQ.t];lqLoad(false);}).catch(function(e){LQ.talk.push({me:false,text:String((e&&e.message)||e)});lqTalkShow(false);});}
+LQ.talk.push({me:true,text:q,imgs:shots.map(function(a){return a.data;})});LQ.talk=LQ.talk.slice(-8);lqTalkShow(true);
+api('/api/home/ask',{question:q,images:shots}).then(function(r){LQ.talk.push({me:false,steps:r.steps||[],text:r.error==='not-connected'?'Connect an AI in Settings to talk to me. Say "open settings".':(r.answer||r.error||'(no answer)')});LQ.talk=LQ.talk.slice(-8);lqTalkShow(false);LQ.ripple=[0.5,0.47,LQ.t];lqLoad(false);}).catch(function(e){LQ.talk.push({me:false,text:String((e&&e.message)||e)});lqTalkShow(false);});}
 // The physics: each droplet a critically damped spring to its place (no wobble,
 // no overshoot), pushed off its neighbours and the core where they'd overlap.
 function lqStep(){var S0=lqSize();if(S0.w!==LQ.bw||S0.h!==LQ.bh){if(LQ.scene==='work'&&LQ.workData)lqBuildWork();else if(LQ.adapt)lqBuild();}var S=S0,cx=S.w/2,cy=(LQ.scene!=='work'&&LQ.cy)||S.h*0.47,k=0.022,c=2*Math.sqrt(k),th=LQ.theme,still=th.still,rest=LQ.mode==='rest',pool=LQ.mode==='pool',talk=LQ.talking&&!pool;
@@ -2640,7 +2667,9 @@ if(document.addEventListener){document.addEventListener('contextmenu',function(e
 document.addEventListener('mouseup',function(ev){var b=document.body;if(ev&&ev.button===3&&b&&b.classList&&b.classList.contains('lq-liquid')){ev.preventDefault();lqBack();}});}
 var L=$('liquid');if(L&&L.addEventListener){L.addEventListener('click',function(ev){var t=ev&&ev.target;if(t&&t.closest&&t.closest('button,input,form,.lqd'))return;var x=ev.clientX,y=ev.clientY,hit=null;LQ.drops.forEach(function(d){if(!hit&&Math.hypot(x-d.x,y-d.y)<=d.cr+8)hit=d;});if(hit)lqOpen(hit,ev);else if(LQ.openTag)lqTag(LQ.openTag);});L.addEventListener('pointermove',function(ev){LQ.pointer=[ev.clientX,ev.clientY];if(ev.pointerType==='touch')LQ.touch=true;lqAct();});L.addEventListener('pointerdown',function(ev){if(ev.pointerType==='touch')LQ.touch=true;lqAct();});}
 var f=$('lqform');if(f&&f.addEventListener)f.addEventListener('submit',function(ev){if(ev&&ev.preventDefault)ev.preventDefault();lqSay();});
-var ia=$('lqask');if(ia&&ia.addEventListener){ia.addEventListener('focus',function(){lqTalkMode(true);lqAct();});ia.addEventListener('blur',function(){if(!ia.value&&!LQ.talk.length)lqTalkMode(false);});ia.addEventListener('keydown',function(ev){if(ev&&ev.key==='Escape'){if(LQ.mode==='pool'){lqSink();return;}if(LQ.scene==='work'&&!ia.value){lqHome();return;}ia.value='';LQ.talk=[];lqTalkShow(false);lqTalkMode(false);if(ia.blur)ia.blur();}});}
+var ia=$('lqask');if(ia&&ia.addEventListener){ia.addEventListener('paste',function(ev){var it=(ev.clipboardData&&ev.clipboardData.items)||[],got=false;for(var k=0;k<it.length;k++){if(it[k].kind==='file'&&String(it[k].type).indexOf('image/')===0){lqAttach(it[k].getAsFile());got=true;}}if(got)ev.preventDefault();});
+var fm=$('lqform');if(fm&&fm.addEventListener){fm.addEventListener('dragover',function(ev){ev.preventDefault();if(fm.classList)fm.classList.add('drop');});fm.addEventListener('dragleave',function(){if(fm.classList)fm.classList.remove('drop');});fm.addEventListener('drop',function(ev){ev.preventDefault();if(fm.classList)fm.classList.remove('drop');var fs=(ev.dataTransfer&&ev.dataTransfer.files)||[];for(var k=0;k<fs.length;k++)lqAttach(fs[k]);});}
+ia.addEventListener('focus',function(){lqTalkMode(true);lqAct();});ia.addEventListener('blur',function(){if(!ia.value&&!LQ.talk.length)lqTalkMode(false);});ia.addEventListener('keydown',function(ev){if(ev&&ev.key==='Escape'){if(LQ.mode==='pool'){lqSink();return;}if(LQ.scene==='work'&&!ia.value){lqHome();return;}ia.value='';LQ.talk=[];lqTalkShow(false);lqTalkMode(false);if(ia.blur)ia.blur();}});}
 var co=$('lqcore');if(co&&co.addEventListener)co.addEventListener('click',function(){var i=$('lqask');if(i&&i.focus)i.focus();});
 var sk=$('lqsink');if(sk&&sk.addEventListener)sk.addEventListener('click',lqSink);
 var bk=$('lqback');if(bk&&bk.addEventListener)bk.addEventListener('click',lqHome);
