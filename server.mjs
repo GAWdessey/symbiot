@@ -186,6 +186,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
   keepBrowserOpen(BROWSER_KEEP);
   const json = (res, obj) => { res.writeHead(200, { "content-type": "application/json" }); res.end(JSON.stringify(obj)); };
   const screenOut =(s) => (s && s.id ? { ...s, blueprint: blueprint(s), ...(s.page ? { trusted: isTrusted(s.page.url) } : {}) } : s && s.screens ? { ...s, screens: s.screens.map(screenOut) } : s);
+  let UPDATING = null; // an update in flight: { target, attempt, retrying? }
   const server = createServer(async (req, res) => {
     const u = new URL(req.url, "http://127.0.0.1");
     if (req.method === "GET" && u.pathname === "/") { res.writeHead(200, { "content-type": "text/html; charset=utf-8" }); res.end(EMBEDDED_UI); return; }
@@ -371,7 +372,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       if (u.pathname === "/api/run" && req.method === "POST") { const b = await readBody(req); const cmd = ["week", "standup", "todo"].includes(b.cmd) ? b.cmd : "week"; return json(res, cmd === "week" ? await runWeekly(writeup, { notify: false }) : await writeup(cmd)); }
       if (u.pathname === "/api/connect" && req.method === "POST") { return json(res, await connectProvider(await readBody(req))); }
       // a sandbox (symbiot app --fresh) never offers an update: it would replace your real install
-      if (u.pathname === "/api/ping") { if (u.searchParams.get("fresh") === "1" && !SANDBOX) await checkLatest(); return json(res, { version: VERSION, started: SERVER_STARTED, latest: LATEST_VERSION, newer: !SANDBOX && semverGt(LATEST_VERSION, VERSION), ...(IN_TERMUX ? { termux: true } : {}), ...(SANDBOX ? { sandbox: true } : {}) }); }
+      if (u.pathname === "/api/ping") { if (u.searchParams.get("fresh") === "1" && !SANDBOX) await checkLatest(); return json(res, { version: VERSION, started: SERVER_STARTED, latest: LATEST_VERSION, newer: !SANDBOX && semverGt(LATEST_VERSION, VERSION), ...(UPDATING && UPDATING.retrying ? { retrying: UPDATING } : {}), ...(IN_TERMUX ? { termux: true } : {}), ...(SANDBOX ? { sandbox: true } : {}) }); }
       // What's new: after an update, since the version you last saw (until you click Got it);
       // ?latest=1, what the update on offer brings, from its package on npm
       if (u.pathname === "/api/whatsnew") {
@@ -392,12 +393,22 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
         if (SANDBOX) return json(res, { error: "This is a sandbox (symbiot app --fresh): update your real Symbiot instead." });
         const { target, cmd } = updateCmd(LATEST_VERSION, VERSION);
         const inst = process.env.SYMBIOT_UPDATE_CMD || cmd;
-        const e = track("symbiot update", inst, homedir(), (code) => {
-          if (code !== 0) return;
+        // npm lists a new version a little before its download is there (a 404 for the
+        // .tgz): then it tries again every 30s, up to 5 times, and says so, instead of
+        // giving up and sending you to a terminal.
+        const attempt = (n) => track("symbiot update", inst, homedir(), (code) => {
+          if (code !== 0) {
+            let tail = ""; try { tail = readFileSync(join(homedir(), ".symbiot", "agent.log"), "utf8").slice(-3000); } catch {}
+            if (n < 5 && /E404|ETARGET|notarget|No matching version|is not in this registry/i.test(tail)) { UPDATING = { target, retrying: true, attempt: n + 1, at: Date.now() }; setTimeout(() => attempt(n + 1), 30000).unref(); }
+            else UPDATING = null;
+            return;
+          }
           server.close(); if (server.closeAllConnections) server.closeAllConnections();
           try { const ch = spawn(process.execPath, process.argv.slice(1), { detached: true, stdio: "ignore", env: { ...process.env, SYMBIOT_RELAUNCH: "1" } }); ch.unref(); } catch {}
           setTimeout(() => process.exit(0), 1200);
         });
+        UPDATING = { target, attempt: 1, at: Date.now() };
+        const e = attempt(1);
         return json(res, { started: true, id: e ? e.id : "", target });
       }
       if (u.pathname === "/api/quit") { res.writeHead(200); res.end("bye"); setTimeout(() => process.exit(0), 150); return; }
