@@ -7,11 +7,11 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { gunzipSync } from "node:zlib";
-import { readFileSync, existsSync } from "node:fs";
+import { readFileSync, existsSync, mkdirSync, writeFileSync, readdirSync, statSync, unlinkSync } from "node:fs";
 import { createServer } from "node:http";
 import { randomBytes } from "node:crypto";
 import { EMBEDDED_UI } from "./ui.mjs";
-import { VERSION, LATEST_VERSION, REGISTRY, semverGt, checkLatest, CONFIG_PATH, loadConfig, saveConfig, loadTasks, hasCmd, chromeBinary } from "./core.mjs";
+import { VERSION, LATEST_VERSION, REGISTRY, semverGt, checkLatest, CONFIG_PATH, loadConfig, saveConfig, loadTasks, hasCmd, chromeBinary, CONFIG_DIR } from "./core.mjs";
 import { shSingle, handoffCmd, setHandoffCmd, grantAgent, runHandoff, track, detectHandoffs, connectorsInfo, answerQuestions, skipIdea, agentsList, startWaiting, parkLane, parkedPaths, autoAllowSweep, trustFull } from "./agents.mjs";
 import { PROVIDERS, resolveProvider, connectProvider, detectHardware, recommendModels, hasOllama, ollamaInstall, ensureOllama, useOllamaModel } from "./ai.mjs";
 import { SCAN, SCAN_TIMEOUT_MS, scanRoots, scanHome, addScanRoot, removeScanRoot, buildMap, nodeDetail, repoPathMap } from "./scan.mjs";
@@ -98,6 +98,21 @@ async function registryChangelog(version, registry = REGISTRY) {
 // Self-contained HTML served at / — no backticks or ${} inside (it lives in a
 // template literal). Talks to the local API with the per-launch token.
 
+// Screenshots dropped into the talk: data: URLs of PNG, JPEG, WebP or GIF, up to 4 of
+// 8 MB each, saved under Symbiot's config (uploads/, readable by you only, kept a week), so the
+// model can see them and an agent can open them. Returns their paths.
+const UPLOADS = join(CONFIG_DIR, "uploads");
+function saveShots(list) {
+  const out = [];
+  try { for (const f of readdirSync(UPLOADS)) { const fp = join(UPLOADS, f); if (Date.now() - statSync(fp).mtimeMs > 7 * 86400000) unlinkSync(fp); } } catch {} // kept a week
+  for (const it of (Array.isArray(list) ? list : []).slice(0, 4)) {
+    const m = /^data:image\/(png|jpeg|jpg|webp|gif);base64,([A-Za-z0-9+/=]+)$/.exec(String((it && it.data) || ""));
+    if (!m) continue;
+    const buf = Buffer.from(m[2], "base64"); if (!buf.length || buf.length > 8 * 1024 * 1024) continue;
+    try { mkdirSync(UPLOADS, { recursive: true, mode: 0o700 }); const f = join(UPLOADS, `${Date.now()}-${randomBytes(3).toString("hex")}.${m[1] === "jpeg" ? "jpg" : m[1]}`); writeFileSync(f, buf, { mode: 0o600 }); out.push(f); } catch {}
+  }
+  return out;
+}
 function readBody(req) {
   return new Promise((resolve) => {
     let d = ""; req.on("data", (ch) => (d += ch));
@@ -137,7 +152,7 @@ function openApp(url) {
       return "browser tab";
     }
     const chrome = chromeBinary();
-    if (chrome) { spawn(chrome, [`--app=${url}`, "--new-window", "--no-first-run", "--no-default-browser-check"], { detached: true, stdio: "ignore" }).unref(); return "app window"; }
+    if (chrome) { spawn(chrome, [`--app=${url}`, "--new-window", "--start-maximized", "--no-first-run", "--no-default-browser-check"], { detached: true, stdio: "ignore" }).unref(); return "app window"; }
     // fall back to the OS default browser (a normal tab) — still fully functional
     if (process.platform === "win32") { spawn("cmd", ["/c", "start", "", url], { detached: true, stdio: "ignore" }).unref(); return "browser tab"; }
     spawn(process.platform === "darwin" ? "open" : "xdg-open", [url], { detached: true, stdio: "ignore" }).unref();
@@ -196,6 +211,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
   keepBrowserOpen(BROWSER_KEEP);
   const json = (res, obj) => { res.writeHead(200, { "content-type": "application/json" }); res.end(JSON.stringify(obj)); };
   const screenOut =(s) => (s && s.id ? { ...s, blueprint: blueprint(s), ...(s.page ? { trusted: isTrusted(s.page.url) } : {}) } : s && s.screens ? { ...s, screens: s.screens.map(screenOut) } : s);
+  let UPDATING = null; // an update in flight: { target, attempt, retrying? }
   const server = createServer(async (req, res) => {
     const u = new URL(req.url, "http://127.0.0.1");
     if (req.method === "GET" && u.pathname === "/") { res.writeHead(200, { "content-type": "text/html; charset=utf-8" }); res.end(EMBEDDED_UI); return; }
@@ -346,7 +362,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       if (u.pathname === "/api/work/go" && req.method === "POST") return json(res, workGo());
       if (u.pathname === "/api/firststeps") return json(res, firstSteps()); // Settings' first steps: what's set up, in order
       if (u.pathname === "/api/home/answer" && req.method === "POST") { const b = await readBody(req); return json(res, homeAnswer(b.id, { pick: b.pick, text: b.text })); }
-      if (u.pathname === "/api/home/ask" && req.method === "POST") { const b = await readBody(req); return json(res, await homeAsk(b.question)); }
+      if (u.pathname === "/api/home/ask" && req.method === "POST") { const b = await readBody(req); return json(res, await homeAsk(b.question, { images: saveShots(b.images) })); }
       if (u.pathname === "/api/adapt") return json(res, adaptState({ from: String(u.searchParams.get("from") || ""), commit: u.searchParams.get("commit") === "1", ...(u.searchParams.has("touch") ? { touch: u.searchParams.get("touch") === "1" } : {}) }));
       if (u.pathname === "/api/adapt/use" && req.method === "POST") { const b = await readBody(req); return json(res, noteUse(b)); }
       // Lanes (lanes.mjs): work agents handed to each other, and where it stands.
@@ -390,7 +406,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       if (u.pathname === "/api/run" && req.method === "POST") { const b = await readBody(req); const cmd = ["week", "standup", "todo"].includes(b.cmd) ? b.cmd : "week"; return json(res, cmd === "week" ? await runWeekly(writeup, { notify: false }) : await writeup(cmd)); }
       if (u.pathname === "/api/connect" && req.method === "POST") { return json(res, await connectProvider(await readBody(req))); }
       // a sandbox (symbiot app --fresh) never offers an update: it would replace your real install
-      if (u.pathname === "/api/ping") { if (u.searchParams.get("fresh") === "1" && !SANDBOX) await checkLatest(); return json(res, { version: VERSION, started: SERVER_STARTED, latest: LATEST_VERSION, newer: !SANDBOX && semverGt(LATEST_VERSION, VERSION), ...(IN_TERMUX ? { termux: true } : {}), ...(SANDBOX ? { sandbox: true } : {}) }); }
+      if (u.pathname === "/api/ping") { if (u.searchParams.get("fresh") === "1" && !SANDBOX) await checkLatest(); return json(res, { version: VERSION, started: SERVER_STARTED, latest: LATEST_VERSION, newer: !SANDBOX && semverGt(LATEST_VERSION, VERSION), ...(UPDATING && UPDATING.retrying ? { retrying: UPDATING } : {}), ...(IN_TERMUX ? { termux: true } : {}), ...(SANDBOX ? { sandbox: true } : {}) }); }
       // What's new: after an update, since the version you last saw (until you click Got it);
       // ?latest=1, what the update on offer brings, from its package on npm
       if (u.pathname === "/api/whatsnew") {
@@ -411,12 +427,22 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
         if (SANDBOX) return json(res, { error: "This is a sandbox (symbiot app --fresh): update your real Symbiot instead." });
         const { target, cmd } = updateCmd(LATEST_VERSION, VERSION);
         const inst = process.env.SYMBIOT_UPDATE_CMD || cmd;
-        const e = track("symbiot update", inst, homedir(), (code) => {
-          if (code !== 0) return;
+        // npm lists a new version a little before its download is there (a 404 for the
+        // .tgz): then it tries again every 30s, up to 5 times, and says so, instead of
+        // giving up and sending you to a terminal.
+        const attempt = (n) => track("symbiot update", inst, homedir(), (code) => {
+          if (code !== 0) {
+            let tail = ""; try { tail = readFileSync(join(homedir(), ".symbiot", "agent.log"), "utf8").slice(-3000); } catch {}
+            if (n < 5 && /E404|ETARGET|notarget|No matching version|is not in this registry/i.test(tail)) { UPDATING = { target, retrying: true, attempt: n + 1, at: Date.now() }; setTimeout(() => attempt(n + 1), 30000).unref(); }
+            else UPDATING = null;
+            return;
+          }
           server.close(); if (server.closeAllConnections) server.closeAllConnections();
           try { const ch = spawn(process.execPath, process.argv.slice(1), { detached: true, stdio: "ignore", env: { ...process.env, SYMBIOT_RELAUNCH: "1" } }); ch.unref(); } catch {}
           setTimeout(() => process.exit(0), 1200);
         });
+        UPDATING = { target, attempt: 1, at: Date.now() };
+        const e = attempt(1);
         return json(res, { started: true, id: e ? e.id : "", target });
       }
       if (u.pathname === "/api/quit") { res.writeHead(200); res.end("bye"); setTimeout(() => process.exit(0), 150); return; }

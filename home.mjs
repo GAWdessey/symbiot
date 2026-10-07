@@ -213,17 +213,21 @@ function homeContext(h) {
 }
 
 // Home's talk: the same Symbiot, acting in the right lane (mind.mjs actIn/actNow).
-async function homeAsk(question, { ask, now = Date.now(), state } = {}) {
+async function homeAsk(question, { ask, now = Date.now(), state, images = [] } = {}) {
   question = String(question || "").trim().slice(0, 2000);
+  if (!question && images.length) question = "Take a look at this screenshot.";
   if (!question) return { error: "empty" };
+  // the screenshots go to the model, and their files with any work it hands an agent
+  let pics = []; try { pics = images.map((p) => ({ path: p, mime: /\.png$/i.test(p) ? "image/png" : /\.webp$/i.test(p) ? "image/webp" : /\.gif$/i.test(p) ? "image/gif" : "image/jpeg", data: readFileSync(p).toString("base64") })); } catch {}
+  const shotNote = pics.length ? `\n\nScreenshots the user attached (open them with your Read tool): ${pics.map((i) => i.path).join(", ")}` : "";
   if (!ask && !resolveProvider()) return { error: "not-connected" };
   const h = state || homeState({ now });
   let map = {}; try { map = repoPathMap(); } catch {}
   const role = "Here they're on Symbiot's home: one liquid surface that shows what only they can do, what's new on what they watch, and the lanes. Answer from what it shows, and act on what they ask.";
-  const r = await converse({ where: "Home", role, context: homeContext(h), question, map, now, ...(ask ? { ask } : {}),
+  const r = await converse({ where: "Home", role, context: homeContext(h), question: question + (pics.length ? `\n(The user attached ${pics.length} screenshot${pics.length > 1 ? "s" : ""}: you can see ${pics.length > 1 ? "them" : "it"}.)` : ""), map, now, images: pics.map(({ mime, data }) => ({ mime, data })), ...(ask ? { ask } : {}),
     act: {
-      agent: (req, known, repo) => (repo ? actIn(req, repo, { map, known, title: "Home" }) : actNow(req, { title: "Home", known })),
-      task: (text, repo) => taskIn(text, repo, { map }),
+      agent: (req, known, repo) => (repo ? actIn(req + shotNote, repo, { map, known, title: "Home" }) : actNow(req + shotNote, { title: "Home", known })),
+      task: (text, repo) => taskIn(text + shotNote, repo, { map }),
     } });
   return { answer: r.reply, ...(r.did ? { did: r.did } : {}), steps: r.steps || [] };
 }

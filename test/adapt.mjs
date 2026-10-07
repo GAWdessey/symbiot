@@ -234,6 +234,13 @@ try {
   ok("home's talk is the same Symbiot, told what home shows", hr.answer === "The symbiot Approve and whatsapp_module's question." && /You are Symbiot, the one assistant/.test(sys) && /Approve symbiot/.test(prm) && /whatsapp_module asks/.test(prm), hr);
   ok("…and in their style", /Match how they talk/.test(sys), "");
   ok("an empty question isn't sent", (await homeAsk("  ")).error === "empty", "");
+  // a screenshot dropped into the talk: the model gets the picture, and the words say so
+  const shot = join(HOME, "shot.png"); writeFileSync(shot, Buffer.from("89504e470d0a1a0a", "hex"));
+  let seen = null, sprm = "";
+  const sr = await homeAsk("", { state: h, images: [shot], ask: async (s2, p2, o2) => { seen = o2; sprm = p2; return JSON.stringify({ reply: "I see it.", do: null, remember: [] }); } });
+  ok("a screenshot alone is a question, and the model is sent the image", sr.answer === "I see it." && seen && seen.images && seen.images.length === 1 && seen.images[0].mime === "image/png" && seen.images[0].data === Buffer.from("89504e470d0a1a0a", "hex").toString("base64"), seen);
+  ok("…and told it can see it", /attached 1 screenshot/.test(sprm), sprm.slice(-200));
+  ok("…no screenshot, no image sent", (await homeAsk("hi", { state: h, ask: async (s2, p2, o2) => { seen = o2; return JSON.stringify({ reply: "hi", do: null, remember: [] }); } })) && !seen, seen);
 
   console.log("THE RELAY — Agents on the Tasks screen: what each project's agent did, asks and suggests");
   {

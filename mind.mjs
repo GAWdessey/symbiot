@@ -191,7 +191,7 @@ function parseReply(raw) {
 // what this page is for; context: what the page shows; history: this chat's
 // own last turns. act: { agent(request) -> result, task(text, repo) -> result },
 // what "do" runs here. Gives { reply, did?, remembered }.
-async function converse({ where, role = "", context = "", history = "", question, act = {}, ask = write, map = null, now = Date.now() }) {
+async function converse({ where, role = "", context = "", history = "", question, act = {}, ask = write, map = null, now = Date.now(), images = [] }) {
   const d = loadMind(), hits = recall(question, now, d), known = recallText(hits), elsewhere = lately(where, d);
   // what it did to answer, to show under the reply (as the app shows an agent's work)
   const steps = [];
@@ -207,7 +207,7 @@ async function converse({ where, role = "", context = "", history = "", question
   const system = `${IDENTITY} ${role}\n\n${rulesFor(Object.keys(lanes), selfLane(lanes))}${voice ? "\n" + voice : ""}`;
   const prompt = (known ? `What you know (from across the app):\n${known}\n\n` : "") + (kn.text ? kn.text + "\n\n" : "") + (elsewhere ? `Lately, elsewhere in the app:\n${elsewhere}\n\n` : "") +
     (context ? context + "\n\n" : "") + (history ? `This chat so far:\n${history}\n\n` : "") + `They say (on ${where}): ${question}`;
-  const raw = await ask(system, prompt);
+  const raw = await ask(system, prompt, images.length ? { images } : undefined);
   if (!raw || /^\(?couldn't reach the model/i.test(String(raw))) return { reply: "(couldn't reach the model)", remembered: 0 };
   const j = parseReply(raw);
   let reply = String(j.reply || "").trim().slice(0, 4000) || "(no answer)", did = null;
