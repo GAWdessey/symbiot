@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// The guard: what an agent working "like Orca" (permission checks skipped, so it just
+// The guard: what an agent working on its own (permission checks skipped, so it just
 // does the work) still can't do. Claude Code runs this before every tool call (a
 // PreToolUse hook, from the settings Symbiot passes the run), and a call it blocks
 // never happens, whatever the agent was told or decided. The list is short on purpose:
@@ -79,7 +79,7 @@ if (main) {
   let raw = ""; try { raw = readFileSync(0, "utf8"); } catch {}
   let ev = {}; try { ev = JSON.parse(raw); } catch {}
   const r = judge(ev.tool_name, ev.tool_input || {}, { cwd: ev.cwd || process.cwd() });
-  if (r) { process.stderr.write("Blocked by Symbiot's guard: " + r.why + ". If it's needed, ask the user in .symbiot/QUESTIONS.md with options.\n"); process.exit(2); }
+  if (r) { process.stderr.write("Blocked by Symbiot's membrane: " + r.why + ". If it's needed, ask the user in .symbiot/QUESTIONS.md with options.\n"); process.exit(2); }
   process.exit(0);
 }
 

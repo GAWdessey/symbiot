@@ -439,26 +439,29 @@ editor presets only open a tab and exit, so Symbiot can't see the agent you run
 in them. Send to repos stays disabled until its
 handoffs have started, so a double click can't send twice.
 
-### Agents work like Orca
+### Symbiosis: agents work on their own
 
-Talk to Symbiot and its agents just do the work, the way Claude does in Orca: a Claude
-run skips permission checks (`--dangerously-skip-permissions`), and when it asks you
-something, your answer goes back into **the same conversation** (`--resume`), so the
-agent carries on knowing everything it knew. Its brief tells it to decide what can be
-undone itself (the approach, names, which of two fixes) and say what it chose, and to
-ask only about what can't be undone, costs money, goes out in your name or needs who
-you are, with options and its pick first.
+Talk to Symbiot and its agents just do the work. A Claude run skips permission checks
+(`--dangerously-skip-permissions`); three things make that safe and useful:
 
-What it still can't do is stopped by **Symbiot's guard** (`guard.mjs`), which Claude
-Code runs before every action, whatever the agent decided: pushing to main or master,
-force-pushing, publishing a package, deleting outside its folder (or `/`), sudo, piping
-a script from the internet into a shell, reading your SSH keys or cloud credentials,
-and changing Symbiot's own settings. A blocked agent is told why, and asks.
+- **The membrane** (`guard.mjs`) lets the work through and stops the few things only
+  you do. Claude Code runs it before every action, whatever the agent decided:
+  pushing to main or master, force-pushing, publishing a package, deleting outside its
+  folder (or `/`), sudo, piping a script from the internet into a shell, reading your
+  SSH keys or cloud credentials, and changing Symbiot's own settings. A stopped agent
+  is told why, and asks.
+- **One mind.** When an agent asks you something, your answer goes back into the same
+  conversation (`--resume`), so it carries on knowing everything it knew. It starts
+  afresh after 8 runs or 2 days.
+- **Instinct.** Its brief tells it to decide what can be undone itself (the approach,
+  names, which of two fixes) and say what it chose, and to ask only about what can't be
+  undone, costs money, goes out in your name or needs who you are, with options and its
+  pick first.
 
-Settings → Your agent → **Agents work like Orca** is on by default. Off, a run keeps
-its allow list, and an allow list it proposes is turned on by itself only when it stays
-inside your work: the folders you gave Symbiot, not `~/.ssh` or `~/.config`, nothing
-that could run anything, nothing that publishes or reaches another machine.
+Settings → Your agent → **Symbiosis** is on by default. Off, a run keeps its allow
+list, and an allow list it proposes is turned on by itself only when it stays inside
+your work: the folders you gave Symbiot, not `~/.ssh` or `~/.config`, nothing that
+could run anything, nothing that publishes or reaches another machine.
 
 ### Questions from your agent
 

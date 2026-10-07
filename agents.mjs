@@ -142,9 +142,9 @@ function connectorsLine(tmpl = handoffCmd(), file, linked) {
 // the sites linked in Symbiot that aren't Claude connectors (so runs can't use them).
 function connectorsInfo(file) { const conns = claudeConnectors("", file); return { claude: isClaudeCmd(handoffCmd()), list: conns.map(({ name, ready }) => ({ name, ready })), links: linkedConnectors(conns) }; }
 const fillHandoff = (tmpl, repoPath, prompt = HANDOFF_PROMPT) => tmpl.replace(/\{dir\}/g, shSingle(repoPath)).replace(/\{prompt\}/g, escDq(prompt));
-// ---- working like Orca --------------------------------------------------------------
-// In Orca you talk to Claude and it just does the work: permission checks skipped, one
-// conversation that goes on. Symbiot's Claude runs work the same way (config.agentTrust:
+// ---- agents work on their own --------------------------------------------------------
+// Talk to an agent and it just does the work: permission checks skipped, one
+// conversation that goes on. Symbiot's Claude runs work that way (config.agentTrust:
 // "full", the default; "ask" keeps the allow lists): --dangerously-skip-permissions, with
 // guard.mjs as a PreToolUse hook that stops the few things only the owner does (push to
 // main, publish, delete outside the folder, sudo, keys, Symbiot's settings), whatever the
