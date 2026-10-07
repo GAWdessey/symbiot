@@ -11,6 +11,7 @@ import { handoverRules, ONLY_YOU, HANDBACK } from "./handover.mjs";
 import { userStyleLine } from "./adapt.mjs";
 import { QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, handoffCmd, runningHandoff, writeTasks, droppedTasks, startHeldTasks, connectorsLine } from "./agents.mjs";
 import { gitDefaultBranch } from "./drift.mjs";
+import { readRunLog } from "./work.mjs";
 import { repoPathMap, openWork, detectRepo } from "./scan.mjs";
 
 // ---- tasks: a persistent checklist (stored by core.mjs) -------------------
@@ -342,7 +343,7 @@ function shipWithBump(path, texts, opts) {
 // What the last run in a folder said when it finished: agent.log after the last
 // run's "=== name time ===" and "$ command" lines.
 function runSummary(path) {
-  let log = ""; try { log = readFileSync(join(path, ".symbiot", "agent.log"), "utf8"); } catch { return ""; }
+  const log = readRunLog(join(path, ".symbiot", "agent.log")); if (!log) return "";
   const at = log.lastIndexOf("\n=== "), rest = at < 0 ? log : log.slice(log.indexOf("\n", at + 1) + 1);
   return rest.replace(/^\$ .*\n?/, "").trim().slice(-8000);
 }

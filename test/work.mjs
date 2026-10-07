@@ -88,6 +88,26 @@ try {
   const wo = workOf(repo, "\n=== r " + ts(0) + " ===\n$ claude -p …\n" + running);
   ok("its work, how far through TASKS.md it is, and readable text instead of JSON", wo.work && wo.work.doing === "Adding a test" && wo.progress.done === 1 && wo.progress.total === 3 && !/\{"type"/.test(wo.tail), [wo.progress, wo.tail.slice(0, 80)]);
   ok("another agent: no work view, the log's end as before", workOf(repo, "\n=== r x ===\n$ codex\nhello").work === null && /hello/.test(workOf(repo, "\n=== r x ===\n$ codex\nhello").tail), "");
+  console.log("A BIG LOG — only the newest run is read, from the end, and kept until the file changes");
+  const { readRunLog } = await import("../work.mjs");
+  const big = join(HOME, "big", ".symbiot"); mkdirSync(big, { recursive: true });
+  const blob = "x".repeat(1024 * 1024); // a screenshot an agent read, as it lands in the log
+  let txt = ""; for (let i = 0; i < 40; i++) txt += `\n=== r 2026-10-0${1 + (i % 9)}T08:00:00.000Z ===\n$ claude -p x\n` + JSON.stringify({ type: "user", message: { content: [{ type: "image", data: blob }] } }) + "\n" + JSON.stringify({ type: "result", result: "run " + i }) + "\n";
+  writeFileSync(join(big, "agent.log"), txt);
+  let t0 = Date.now(); const last = readRunLog(join(big, "agent.log")); const took = Date.now() - t0;
+  ok("a 40 MB log of 40 runs gives just the newest run, header and all", last.startsWith("\n=== r ") && /"run 39"/.test(last) && !/"run 38"/.test(last) && last.length < 1.2 * 1024 * 1024, [last.length, last.slice(0, 40)]);
+  ok("…and parses as before", parseRun(lastRunText(last)).final === "run 39", parseRun(lastRunText(last)).final);
+  t0 = Date.now(); readRunLog(join(big, "agent.log")); ok("…asked again, it's kept: no read", Date.now() - t0 < 5, [took, Date.now() - t0]);
+  writeFileSync(join(big, "agent.log"), txt + "\n=== r 2026-10-09T09:00:00.000Z ===\n$ claude -p x\n" + JSON.stringify({ type: "result", result: "run 40" }) + "\n");
+  ok("…a new run in the file is read fresh", /"run 40"/.test(readRunLog(join(big, "agent.log"))), "");
+  writeFileSync(join(big, "agent.log"), "no header at all\n");
+  ok("…a log with no header is all of it; no log is empty", readRunLog(join(big, "agent.log")) === "no header at all\n" && readRunLog(join(big, "none.log")) === "", "");
+  const { track } = await import("../agents.mjs");
+  const rot = join(HOME, "rot"); mkdirSync(join(rot, ".symbiot"), { recursive: true }); writeFileSync(join(rot, ".symbiot", "agent.log"), "\n=== old ===\n" + "y".repeat(9 * 1024 * 1024));
+  const { readFileSync: rf, statSync: sf } = await import("node:fs");
+  track("rot", "echo fresh", rot);
+  for (let i = 0; i < 50 && !/fresh\n/.test(rf(join(rot, ".symbiot", "agent.log"), "utf8")); i++) await new Promise((r) => setTimeout(r, 100));
+  ok("a log past 8 MB starts afresh at the next run; the old one is kept as agent.log.old", /fresh/.test(rf(join(rot, ".symbiot", "agent.log"), "utf8")) && sf(join(rot, ".symbiot", "agent.log")).size < 4096 && sf(join(rot, ".symbiot", "agent.log.old")).size > 9 * 1024 * 1024, "");
 } finally {
   rmSync(HOME, { recursive: true, force: true });
 }
