@@ -3,13 +3,15 @@
 // tab, and the questions an unattended agent leaves for the user.
 import { spawn } from "node:child_process";
 import { homedir } from "node:os";
-import { join, dirname } from "node:path";
+import { join, dirname, resolve, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { readFileSync, writeFileSync, mkdirSync, existsSync, openSync, writeSync, unlinkSync, readdirSync, statSync } from "node:fs";
 import { randomBytes, createHash } from "node:crypto";
 import { CONFIG_DIR, loadConfig, saveConfig, loadTasks, TASK_MAX, clipWords, sameTask, taskWords, sh, hasCmd } from "./core.mjs";
 import { parseRun, lastRunText } from "./work.mjs";
 import { parseFacts } from "./handover.mjs";
+import { scanRoots, repoPathMap } from "./scan.mjs";
+import { knowledgeFolders } from "./knowledge.mjs";
 
 const HANDOFFS = []; // live registry of agents Symbiot has handed work to
 // ---- hand a repo (+ its tasks) to the user's agent — generic, settings-based
@@ -159,7 +161,7 @@ function runHandoff(repoPath, { force = false } = {}) {
   let opts = {}; try { opts = JSON.parse(readSymbiot(repoPath, "handoff.json")) || {}; } catch {}
   const busy = runningHandoff(repoPath); if (busy) return { busy: true, id: busy.id || "", pid: busy.pid, auto: !!busy.auto };
   releaseHeldTasks(repoPath); // held for an agent another process started, which has since exited
-  tmpl = withStream(withConnectors(tmpl, repoPath));
+  tmpl = withStream(withScope(withConnectors(tmpl, repoPath), repoPath));
   if (!force) { const w = waitingFor(repoPath); if (w) { askedFor(repoPath); return { blocked: true, waiting: true, questions: 0, note: waitNote(w) }; } }
   const blocked = !force && blockedAgain(repoPath, tmpl); if (blocked) return blocked;
   try { unlinkSync(join(repoPath, ".symbiot", WAITING)); } catch {} // the step's done (or this is Start it anyway): this is the run it waited for
@@ -168,6 +170,7 @@ function runHandoff(repoPath, { force = false } = {}) {
   const e = track(typeof opts.name === "string" && opts.name ? opts.name.slice(0, 80) : repoPath.split("/").pop(), fillHandoff(tmpl, repoPath), repoPath, (code) => {
     try { if (JSON.parse(readFileSync(lock, "utf8")).pid === e.pid) unlinkSync(lock); } catch {}
     noteBlocked(repoPath, tmpl, e.startedAt, code);
+    setTimeout(() => { try { autoAllow(repoPath); } catch {} }, 300); // a list it proposed inside your work: turned on, and on it goes
     startHeldTasks(repoPath); // tasks sent while it ran land now; start on them as that Send would have
   }, env);
   if (!e) return null;
@@ -673,6 +676,75 @@ function installAllowlist(path) {
   try { mkdirSync(join(path, ".claude"), { recursive: true }); writeFileSync(f, JSON.stringify(cur, null, 2) + "\n", { mode: 0o600 }); } catch { return null; }
   return [`the allow list for this folder (${allow.length} rule${allow.length === 1 ? "" : "s"})`];
 }
+// ---- the owner's work, and allow lists inside it ---------------------------------------
+// What the owner told Symbiot is their work: the folders it scans (Settings → Folders) and
+// their knowledge folders, but not a hidden folder at the top of their home (~/.ssh,
+// ~/.config: keys and settings), bar the folders Symbiot's own agents run in. An agent
+// reaches its knowledge folders from the start (withScope), and an allow list it proposes
+// that stays inside this work, asks for nothing wide, and doesn't publish or reach another
+// machine is turned on by itself when its run ends (autoAllow): no question for the user.
+const PUBLISH_RULE = /^Bash\(\s*(git push|git\s+-C\s+\S+\s+push|npm publish|yarn publish|pnpm publish|aws|gcloud|az|kubectl|docker|podman|terraform|ssh|scp|sftp|rsync|ftp|heroku|vercel|netlify|fly|flyctl)\b/i;
+function workRoots() {
+  const roots = new Set();
+  try { for (const r of scanRoots()) roots.add(r); } catch {}
+  try { for (const k of knowledgeFolders()) roots.add(k.path); } catch {}
+  return [...roots].filter(Boolean).map((r) => r.replace(/\/+$/, "") || "/");
+}
+function inWork(p, roots = workRoots()) {
+  if (!p) return false;
+  p = resolve(String(p).replace(/^~(?=\/|$)/, homedir()).replace(/[/*]+$/, "")) || "/";
+  const drafts = join(CONFIG_DIR, "drafts");
+  if (p === drafts || p.startsWith(drafts + "/")) return true;
+  if (!roots.some((r) => p === r || p.startsWith(r === "/" ? "/" : r + "/"))) return false;
+  const rel = relative(homedir(), p);
+  if (!rel.startsWith("..") && rel.split("/")[0].startsWith(".")) return false; // ~/.ssh, ~/.config…
+  return true;
+}
+// The paths a rule names: Read(/x/**), Bash(find /x:*), additionalDirectories' /x.
+const rulePaths = (r) => (String(r).match(/(?:~|\/)[^\s:*()"',]*/g) || []).filter((x) => x === "~" || x.length > 1);
+// Whether a proposed list can be turned on without asking: { ok } or { why }.
+function allowlistInWork(path) {
+  let p; try { p = JSON.parse(readFileSync(join(path, ".symbiot", "allowlist.proposed.json"), "utf8")).permissions || {}; } catch { return { why: "no list" }; }
+  const list = (x) => (Array.isArray(x) ? x.filter((r) => typeof r === "string" && r.trim()).map((r) => r.trim()) : []);
+  const allow = list(p.allow), dirs = list(p.additionalDirectories), roots = [...workRoots(), path];
+  const wide = allow.filter(wideRule); if (wide.length) return { why: "wide: " + wide.join(", ") };
+  const pub = allow.filter((r) => PUBLISH_RULE.test(r)); if (pub.length) return { why: "publishes or reaches another machine: " + pub.join(", ") };
+  const out = [...dirs, ...allow.flatMap(rulePaths)].filter((x) => !inWork(x, roots));
+  if (out.length) return { why: "outside your work: " + [...new Set(out)].slice(0, 3).join(", ") };
+  return { ok: true, allow, dirs };
+}
+// A run ended asking for its proposed list: inside the work, it's turned on, the
+// question is answered for the user, and the agent starts again. Once per proposal
+// (.symbiot/autoallow.json), so an agent can't loop on it; past that it's the user's.
+function autoAllow(path) {
+  if (!path || runningHandoff(path)) return null;
+  const f = join(path, ".symbiot", "allowlist.proposed.json"); let raw = ""; try { raw = readFileSync(f, "utf8"); } catch { return null; }
+  const q = agentQuestions(path, "").questions.find((x) => (x.options || []).some((o) => /allowlist\.proposed\.json/i.test(o)) || /allowlist\.proposed\.json/i.test(x.context || ""));
+  if (!q) return null;
+  const mark = join(path, ".symbiot", "autoallow.json"), d = digest(raw); let done = []; try { done = JSON.parse(readFileSync(mark, "utf8")); } catch {}
+  if (done.includes(d)) return null;
+  const v = allowlistInWork(path); if (!v.ok) return { asked: true, why: v.why };
+  const g = installAllowlist(path); if (!g || g.refused) return null;
+  try { writeFileSync(mark, JSON.stringify([...done, d].slice(-20))); } catch {}
+  const day = new Date().toISOString().slice(0, 10);
+  try { writeFileSync(join(path, ".symbiot", "ANSWERS.md"), (readSymbiot(path, "ANSWERS.md") || "# Answers from the user\nAnswers to the questions in QUESTIONS.md, newest last. Follow them; ask again in QUESTIONS.md if one is unclear.\n").replace(/\s*$/, "\n") + `\n### ${q.q}\nSymbiot turned your list on (it stays inside the user's work and asks for nothing wide): .claude/settings.local.json in this folder. Carry on.\n_answered ${day}_\n`); } catch {}
+  try { unlinkSync(join(path, ".symbiot", WAITING)); } catch {}
+  const e = runHandoff(path, { force: true });
+  return { allowed: true, rerun: e && e.id ? e.id : null };
+}
+// Every run that stopped asking for its list, now: on start and every so often, so
+// asks from before this version clear too.
+function autoAllowSweep() { const out = []; for (const r of loadRuns()) { try { const a = autoAllow(r.path); if (a && a.allowed) out.push(r.path); } catch {} } return out; }
+// Every agent reaches the owner's knowledge folders from the start; an ops run (no repo
+// of its own) their repos too, the way a person at their desk would.
+function withScope(tmpl, repoPath) {
+  if (!isClaudeCmd(tmpl)) return tmpl;
+  const dirs = new Set(); try { for (const k of knowledgeFolders()) dirs.add(k.path); } catch {}
+  if (/\/drafts\/act-[^/]+$/.test(String(repoPath || ""))) { try { for (const p of Object.values(repoPathMap() || {})) dirs.add(p); } catch {} }
+  dirs.delete(repoPath);
+  let cmd = tmpl; for (const d of dirs) if (d && !cmd.includes(`--add-dir "${d}"`)) cmd += ` --add-dir "${d}"`;
+  return cmd;
+}
 function grantFromStep(step, path = "", notes = {}) {
   const t = String(step || "");
   if (path && /allowlist\.proposed\.json|settings\.local\.json|press allow|\ballow list\b/i.test(t)) { const g = installAllowlist(path); if (g && g.refused) { notes.refused = g.refused; return null; } if (g) return g; }
@@ -771,4 +843,4 @@ function agentsList() {
   }).concat(earlierRuns());
 }
 
-export { FACTS, factsOf, knownRun, withStream, workOf, HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, connectorsInfo, fillHandoff, runHandoff, PARKED_NOTE, parkedPaths, isParked, parkLane, agentMissing, blockedAgain, runningHandoff, loadRuns, earlierRuns, namedFiles, waitingFor, startWaiting, writeTasks, droppedTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, skipIdea, agentQuestions, answerQuestions, agentsList };
+export { FACTS, factsOf, knownRun, withStream, workOf, HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, connectorsInfo, fillHandoff, runHandoff, PARKED_NOTE, parkedPaths, isParked, parkLane, agentMissing, blockedAgain, runningHandoff, loadRuns, earlierRuns, namedFiles, waitingFor, startWaiting, writeTasks, droppedTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, skipIdea, agentQuestions, answerQuestions, agentsList , autoAllow, autoAllowSweep, allowlistInWork, inWork, withScope };

@@ -439,6 +439,18 @@ editor presets only open a tab and exit, so Symbiot can't see the agent you run
 in them. Send to repos stays disabled until its
 handoffs have started, so a double click can't send twice.
 
+### What agents may do without asking
+
+Your work is the folders you gave Symbiot (Settings → Folders, and Knowledge folders),
+except the hidden folders at the top of your home (`~/.ssh`, `~/.config`). An agent
+reaches your knowledge folders from the start, and an ops agent your repos too. When
+one needs more, it proposes an allow list; if the list stays inside your work, can't
+run anything at all (a shell, sudo, a wildcard `rm`) and doesn't publish or reach
+another machine (`git push`, `npm publish`, `aws`, `docker`, `ssh`), Symbiot turns it
+on for that agent's folder and the agent carries on, with no question for you. Every
+list also blocks editing Symbiot's own settings. Only what reaches outside your work
+comes to you, with the reason.
+
 ### Questions from your agent
 
 An agent working in your terminal or IDE stops to ask you things: which way to go,

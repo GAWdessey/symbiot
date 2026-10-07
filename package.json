@@ -1,6 +1,6 @@
 {
   "name": "symbiot",
-  "version": "0.52.0",
+  "version": "0.52.1",
   "description": "Your week, written from your real work. Reads your local git and writes it up with the AI of your choice — Claude, OpenAI, Gemini, or a local model.",
   "type": "module",
   "bin": {
@@ -74,7 +74,7 @@
     "@anthropic-ai/sdk": "^0.128.0"
   },
   "scripts": {
-    "test": "node test/load.mjs && node test/fixtures.mjs && node test/links.mjs && node test/post.mjs && node test/peek.mjs && node test/mind.mjs && node test/knowledge.mjs && node test/checks.mjs &&node test/lanes.mjs && node test/handback.mjs && node test/reports.mjs && node test/sandbox.mjs && node test/adapt.mjs && node test/work.mjs && node test/mapknn.mjs && node test/paths.mjs && node test/smoke.mjs && node test/app.mjs && node test/install.mjs",
+    "test": "node test/load.mjs && node test/fixtures.mjs && node test/links.mjs && node test/post.mjs && node test/peek.mjs && node test/mind.mjs && node test/knowledge.mjs && node test/checks.mjs &&node test/lanes.mjs && node test/handback.mjs && node test/autoallow.mjs && node test/reports.mjs && node test/sandbox.mjs && node test/adapt.mjs && node test/work.mjs && node test/mapknn.mjs && node test/paths.mjs && node test/smoke.mjs && node test/app.mjs && node test/install.mjs",
     "lint": "eslint ."
   },
   "devDependencies": {
