@@ -625,23 +625,32 @@ function agentQuestions(path, repo) {
 // An allow list an agent proposed (.symbiot/allowlist.proposed.json) is turned on for
 // that folder only (.claude/settings.local.json, merged), unless it would let an agent
 // run anything at all (a shell, sudo, rm, Bash(*)): then it stays the user's step.
-const WIDE_RULE = /^Bash(\((\*|sudo|su|rm|bash|sh|zsh|dash|dd|mkfs|chmod|chown|eval|exec)\b[^)]*\))?$|^Bash\(\*/i;
+// A rule is wide when it lets an agent run anything: Bash with no command, a shell
+// (bash, sh, eval…) or sudo in any form, or a destructive command (rm, dd, chmod…)
+// with a wildcard. The same command spelled out exactly (rm -r ~/x/site) is narrow.
+const ANY_RULE = /^Bash(\(\s*\*.*\))?$|^Bash\(\s*(sudo|su|bash|sh|zsh|dash|fish|eval|exec|env|xargs)\b/i;
+const HARM_RULE = /^Bash\(\s*(rm|dd|mkfs|chmod|chown|shred|truncate)\b/i;
+const wideRule = (r) => ANY_RULE.test(r) || (HARM_RULE.test(r) && /\*/.test(r));
+// Whatever an agent is allowed, it never edits Symbiot's own settings: that's where
+// what agents may do is kept, so an agent could widen its own permissions there.
+const GUARD = () => { const c = join(homedir(), ".config", "symbiot", "config.json"); return [`Edit(${c})`, `Write(${c})`]; };
 function installAllowlist(path) {
   let p; try { p = JSON.parse(readFileSync(join(path, ".symbiot", "allowlist.proposed.json"), "utf8")).permissions || {}; } catch { return null; }
   const list = (x) => (Array.isArray(x) ? x.filter((r) => typeof r === "string" && r.trim()).map((r) => r.trim()) : []);
   const allow = list(p.allow), deny = list(p.deny), dirs = list(p.additionalDirectories);
   if (!allow.length && !dirs.length) return null;
-  if (allow.some((r) => WIDE_RULE.test(r))) return null;
+  const wide = allow.filter(wideRule);
+  if (wide.length) return { refused: wide };
   const f = join(path, ".claude", "settings.local.json");
   let cur = {}; try { cur = JSON.parse(readFileSync(f, "utf8")); } catch {}
   const perm = cur.permissions || {}, merge = (a, b) => [...new Set([...list(a), ...b])];
-  cur.permissions = { ...perm, allow: merge(perm.allow, allow), deny: merge(perm.deny, deny), additionalDirectories: merge(perm.additionalDirectories, dirs) };
+  cur.permissions = { ...perm, allow: merge(perm.allow, allow), deny: merge(perm.deny, [...deny, ...GUARD()]), additionalDirectories: merge(perm.additionalDirectories, dirs) };
   try { mkdirSync(join(path, ".claude"), { recursive: true }); writeFileSync(f, JSON.stringify(cur, null, 2) + "\n", { mode: 0o600 }); } catch { return null; }
   return [`the allow list for this folder (${allow.length} rule${allow.length === 1 ? "" : "s"})`];
 }
-function grantFromStep(step, path = "") {
+function grantFromStep(step, path = "", notes = {}) {
   const t = String(step || "");
-  if (path && /allowlist\.proposed\.json|settings\.local\.json|press allow|\ballow list\b/i.test(t)) { const g = installAllowlist(path); if (g) return g; }
+  if (path && /allowlist\.proposed\.json|settings\.local\.json|press allow|\ballow list\b/i.test(t)) { const g = installAllowlist(path); if (g && g.refused) { notes.refused = g.refused; return null; } if (g) return g; }
   if (!/only you: a permission|only you: what (this|the) agent|\b(let|allow) (the )?agents?\b|\ballow (access|reading)\b/i.test(t)) return null;
   const got = [];
   const dir = (t.match(/(~\/[^\s,;)`'"]+|\/(?:home|Users|opt|srv|mnt|media|tmp)\/[^\s,;)`'"]+)/) || [])[1];
@@ -671,9 +680,18 @@ function answerQuestions(path, answers, opts = {}) {
   const youOpts = (q) => ((asked.get(qKey(q)) || {}).options || []).filter(yourStep).map((o) => o.split("🤖")[0]);
   const steps = rows.filter((x) => yourStep(x.a) || holdAnswer(x.a)).map((x) => yourStep(x.a) ? { step: stepText(x.a), named: x.a.split("🤖")[0] }
     : { step: (youOpts(x.q).map(stepText)[0] || x.a).trim(), named: [x.a, ...youOpts(x.q)].join(" ") });
-  const granted = [];
-  const yours = steps.map((s) => s.step).filter(Boolean).filter((st) => { const g = grantFromStep(st, path); if (g) granted.push(...g); return !g; });
+  const granted = [], notes = {};
+  let yours = steps.map((s) => s.step).filter(Boolean).filter((st) => { const g = grantFromStep(st, path, notes); if (g) granted.push(...g); return !g; });
   if (granted.length) out.granted = granted;
+  // A list too wide to turn on by a click: say which rules, tell the agent to ask for
+  // less, and don't leave it as the user's step (picking it again would do nothing).
+  if (notes.refused) {
+    const which = notes.refused.slice(0, 3).map((r) => "`" + r + "`").join(", ");
+    try { writeFileSync(join(path, ".symbiot", "ANSWERS.md"), readSymbiot(path, "ANSWERS.md").replace(/\s*$/, "\n") + `\n### Symbiot didn't turn your allow list on\nIt has ${which}, which would let you run anything (a shell, sudo, or a wildcard rm/dd/chmod). Write a narrower .symbiot/allowlist.proposed.json: each such command spelled out exactly, the paths it touches named, and ask again.\n_${day}_\n`); } catch {}
+    out.refused = notes.refused;
+    yours = yours.filter((st) => !/allowlist\.proposed\.json|settings\.local\.json|press allow|\ballow list\b/i.test(st));
+    out.note = `Not turned on: the list has ${which}, which would let an agent run anything. Your agent has been asked for a narrower one` + (opts.rerun ? " and is starting again." : ".");
+  }
   if (yours.length) {
     const step = yours.join(" "), files = namedFiles(steps.map((s) => s.named).join(" "), path);
     try { writeFileSync(join(path, ".symbiot", WAITING), JSON.stringify({ step, files: files.map((f) => ({ ...f, sig: fileSig(f.path) })), cmd: runCmd(path), at: Date.now(), rerun: !!opts.rerun })); } catch {}

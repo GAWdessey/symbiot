@@ -2,6 +2,12 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.51.1
+
+- **Allowing an agent's list works when the list is fine.** An exact command such as `rm -r ~/dailify/site` no longer counts as dangerous; only Bash with no command, a shell, sudo, or a wildcard `rm`/`dd`/`chmod` does. Before, one such rule refused the whole list, silently, and the agent asked you again and again.
+- **When a list is too wide, you're told why.** The note names the rules, the agent is asked for a narrower list, and it starts again, instead of waiting on a click that can't work.
+- **An agent can never edit Symbiot's own settings.** Every list Symbiot turns on also blocks editing `config.json`, where what agents may do is kept.
+
 ## 0.51.0
 
 What your agents built on the symbiot repo yesterday, merged with everything since:
