@@ -2,6 +2,18 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.54.4 — 2026-10-07
+
+- Removed the "Add a task" row from Tasks, since you add tasks through the bottom chat bar, and moved Send to repos beside Close.
+- Fixed agent runs that wait on you, such as unsent drafts or steps only you can take, so they now appear on Home with what to check first.
+- Moved the Reports Refresh button so it sits beside Close instead of under it.
+- Added a Marketing section with post drafts, replies marked "maybe a customer", picture tools and the 4-week table, moved off the Dashboard.
+- Reviewed where sandboxing for agent runs stands, with no changes to the app.
+- Added marks on Connections showing which sites your agents can also use, visible before you link them.
+- Changed the Dashboard to lead with what you watch; posts now appear under Marketing once drafting is possible.
+- Fixed Home's right-side orbs overlapping zone names on screens 1366–1440 pixels wide.
+- Added a "Pick your agent" step on first run that sets up the detected agent, such as Claude Code, in one click.
+
 ## 0.54.3 — 2026-10-07
 
 - Added questions on Home for stuck or failed agent runs, so you can allow access, skip, or run them again right there.

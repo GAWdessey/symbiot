@@ -636,7 +636,7 @@ async function cmdPost() {
     if (r.retried) console.log("\n" + c.d("The first try kept none (each claimed what git doesn't show), so Symbiot tried again by itself."));
     if (r.pictures) console.log(c.d(`${r.pictures === 1 ? "One draft names" : `${r.pictures} drafts name`} a screen of an app you run here, so ${r.pictures === 1 ? "it has its picture" : "they have their pictures"} already: keep or remove (symbiot post remove <id> <media id>).`));
     if (r.dropped.length) console.log("\n" + c.y(`Dropped ${r.dropped.length}: `) + r.dropped.map((x) => `${POST_KIND[x.kind] || x.kind} (${x.cited ? "claimed " + x.unsupported.join(", ") + ", which git doesn't show" : "cited nothing from git"})`).join("; "));
-    console.log("\n" + c.d(`${r.posts.length} draft${r.posts.length === 1 ? "" : "s"} from ${r.facts} things git shows this week, in the voice of your ${r.voice} example${r.voice === 1 ? "" : "s"}. They wait on the app's Dashboard too.`));
+    console.log("\n" + c.d(`${r.posts.length} draft${r.posts.length === 1 ? "" : "s"} from ${r.facts} things git shows this week, in the voice of your ${r.voice} example${r.voice === 1 ? "" : "s"}. They wait under Marketing in the app too.`));
     console.log(c.d("Nothing is posted until you approve one:  symbiot post approve <id>  (or edit / skip)."));
     return;
   }

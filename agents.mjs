@@ -9,7 +9,7 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync, openSync, writeSync
 import { randomBytes, createHash } from "node:crypto";
 import { CONFIG_DIR, loadConfig, saveConfig, loadTasks, TASK_MAX, clipWords, sameTask, taskWords, sh, hasCmd } from "./core.mjs";
 import { parseRun, lastRunText, readRunLog } from "./work.mjs";
-import { parseFacts } from "./handover.mjs";
+import { parseFacts, leftToYou } from "./handover.mjs";
 import { scanRoots, repoPathMap } from "./scan.mjs";
 import { knowledgeFolders } from "./knowledge.mjs";
 
@@ -141,6 +141,17 @@ function connectorsLine(tmpl = handoffCmd(), file, linked) {
 // For Settings → Handoff: the connectors, whether this command's runs get them, and
 // the sites linked in Symbiot that aren't Claude connectors (so runs can't use them).
 function connectorsInfo(file) { const conns = claudeConnectors("", file); return { claude: isClaudeCmd(handoffCmd()), list: conns.map(({ name, ready }) => ({ name, ready })), links: linkedConnectors(conns) }; }
+// Connections, before you link: which sites agent runs can use too. A link signs
+// Symbiot's browser in; a run reaches a site only through Claude's own connector for
+// it (LINK_CONNECTOR), and only with Claude Code as your agent (or, with none picked
+// yet, on this computer to pick). { claude, sites: { id: { name, connector, ready } } }:
+// connector "" while you haven't connected it in claude.ai.
+const claudeAgent = () => { const c = handoffCmd(); return isClaudeCmd(c) || (!c && hasCmd("claude")); };
+function linkReach(conns = claudeConnectors(), claude = claudeAgent()) {
+  const sites = {};
+  for (const [id, [name, re]] of Object.entries(LINK_CONNECTOR)) { const c = conns.find((x) => re.test(x.name)); sites[id] = { name, connector: c ? c.name : "", ready: !!c && c.ready }; }
+  return { claude, sites };
+}
 const fillHandoff = (tmpl, repoPath, prompt = HANDOFF_PROMPT) => tmpl.replace(/\{dir\}/g, shSingle(repoPath)).replace(/\{prompt\}/g, escDq(prompt));
 // ---- agents work on their own --------------------------------------------------------
 // Talk to an agent and it just does the work: permission checks skipped, one
@@ -271,12 +282,52 @@ function earlierRuns() {
   for (const r of loadRuns()) {
     if (tracked.has(r.path) || !existsSync(join(r.path, ".symbiot"))) continue;
     const busy = runningHandoff(r.path), ask = agentQuestions(r.path, r.name), wait = waitingFor(r.path), facts = busy ? [] : factsOf(r.path);
-    if (!busy && !ask.questions.length && !wait && !facts.length) continue;
     const log = join(r.path, ".symbiot", "agent.log"), startedAt = (busy && busy.startedAt) || Number(r.startedAt) || Date.now();
-    let tail = "", work = null, progress = null, end = Date.now(); try { ({ tail, work, progress } = workOf(r.path, readRunLog(log))); if (!busy) end = statSync(log).mtimeMs; } catch {}
-    out.push({ id: "earlier-" + digest(r.path).slice(0, 8), name: String(r.name || r.path.split("/").pop()), path: r.path, status: busy ? "running" : "done", earlier: true, elapsed: Math.max(0, end - startedAt), exitCode: null, tail, work, progress, changed: agentChanges(r.path, startedAt), ask, held: heldTasks(r.path), waiting: wait, remember: facts.length ? facts : null, fromHeld: false });
+    let end = Date.now(); if (!busy) try { end = statSync(log).mtimeMs; } catch {}
+    const needs = busy ? null : needsOf(r.path, { final: lastFinal(r.path), waiting: wait, end });
+    if (!busy && !ask.questions.length && !wait && !facts.length && !needs) continue;
+    let tail = "", work = null, progress = null; try { ({ tail, work, progress } = workOf(r.path, readRunLog(log))); } catch {}
+    out.push({ id: "earlier-" + digest(r.path).slice(0, 8), name: String(r.name || r.path.split("/").pop()), path: r.path, status: busy ? "running" : "done", earlier: true, startedAt, endedAt: busy ? null : end, elapsed: Math.max(0, end - startedAt), exitCode: null, tail, work, progress, changed: agentChanges(r.path, startedAt), ask, held: heldTasks(r.path), waiting: wait, needs, remember: facts.length ? facts : null, fromHeld: false });
   }
   return out;
+}
+
+// ---- what a finished run left to you ----------------------------------------
+// A run that ended saying something waits on you (handover.mjs leftToYou: "the
+// draft isn't sent", "needs sudo, and only you can do that"), or waiting on a step
+// an answer of yours picked (waitingFor), needs you, and says so: on its block in
+// Agents and on Home, with what to check first. It did end, so before this nothing
+// showed it: Home said nothing needed you while a reply to Cale sat in Drafts. It
+// stays for NEEDS_FOR, until you go ahead or skip it (settled.json keeps which, per
+// folder), a newer run there says something else, or a newer ops run took up the
+// same task. { kind: "approve"|"step", what, check, label, key, waiting? } or null.
+const NEEDS_FOR = 3 * 86400000, SETTLED = join(CONFIG_DIR, "settled.json"), ACT_DIR = join(CONFIG_DIR, "drafts") + "/";
+const loadSettled = () => { try { const o = JSON.parse(readFileSync(SETTLED, "utf8")); return o && typeof o === "object" && !Array.isArray(o) ? o : {}; } catch { return {}; } };
+function settleNeeds(path, key) {
+  const o = loadSettled(); o[path] = String(key || "");
+  try { mkdirSync(CONFIG_DIR, { recursive: true }); writeFileSync(SETTLED, JSON.stringify(o, null, 2), { mode: 0o600 }); } catch {}
+}
+// A streaming run's last words (its final answer), read once per change of its log.
+const FINALS = new Map();
+function lastFinal(path) {
+  const log = join(path, ".symbiot", "agent.log"); let m = 0; try { m = statSync(log).mtimeMs; } catch { return ""; }
+  const c = FINALS.get(path); if (c && c.m === m) return c.final;
+  let final = ""; try { const w = parseRun(lastRunText(readRunLog(log))); final = w.stream ? w.final : ""; } catch {}
+  FINALS.set(path, { m, final }); return final;
+}
+const firstTask = (path) => (readSymbiot(path, "TASKS.md").match(/^\s*-\s*\[[ x]\]\s*(.+)$/im) || [])[1] || "";
+// an ops run (a folder of its own each time) whose task a newer ops run took up
+function takenUp(path, end) {
+  if (!path.startsWith(ACT_DIR)) return false;
+  const t = firstTask(path); return !!t && loadRuns().some((r) => r.path !== path && r.path.startsWith(ACT_DIR) && Number(r.startedAt) > end && sameTask(firstTask(r.path), t));
+}
+function needsOf(path, { final = "", waiting = null, end = Date.now(), now = Date.now() } = {}) {
+  if (now - end > NEEDS_FOR) return null;
+  const n = waiting ? { kind: "step", what: clipWords(String(waiting.step || "").replace(/^\s*👤\s*(You\s*(\([^)]*\))?:)?\s*/, "").trim(), 240), check: "", label: "", waiting: true } : leftToYou(final);
+  if (!n || !n.what) return null;
+  const key = digest(n.what);
+  if (loadSettled()[path] === key || takenUp(path, end)) return null;
+  return { ...n, key };
 }
 
 // ---- a step that's yours: wait for it -----------------------------------------
@@ -484,6 +535,9 @@ const AGENT_LIST = [
   ["gemini", "Gemini — make changes", 'gemini --yolo -p "{prompt}"'],
   ["cursor-agent", "Cursor agent", 'cursor-agent -p "{prompt}"'],
 ];
+// The agent to offer a new user in one click (Home's "Pick your agent"): the first
+// coding agent on this computer, in AGENT_LIST's order (Claude Code first). null if none.
+function pickAgent() { const a = AGENT_LIST.find(([cmd]) => hasCmd(cmd)); return a ? { label: a[1], name: a[1].split(" — ")[0], tmpl: a[2] } : null; }
 function detectHandoffs() {
   const editors = [];
   for (const [cmd, label, app] of IDE_LIST) {
@@ -885,8 +939,10 @@ function agentsList() {
     const { tail, work, progress } = workOf(e.path, readRunLog(e.log));
     const first = !seen.has(e.path); seen.add(e.path);
     const facts = first && e.status !== "running" ? factsOf(e.path) : [];
-    return { id: e.id, name: e.name, path: e.path, status: e.status, startedAt: e.startedAt, endedAt: e.endedAt, elapsed: (e.endedAt || Date.now()) - e.startedAt, exitCode: e.exitCode, tail, work, progress, changed: agentChanges(e.path, e.startedAt), ask: first ? agentQuestions(e.path, e.name) : null, held: first ? heldTasks(e.path) : null, waiting: first && e.status !== "running" ? waitingFor(e.path) : null, remember: facts.length ? facts : null, fromHeld: !!e.fromHeld };
+    const waiting = first && e.status !== "running" ? waitingFor(e.path) : null;
+    const needs = first && e.status !== "running" ? needsOf(e.path, { final: work ? tail : "", waiting, end: e.endedAt || Date.now() }) : null;
+    return { id: e.id, name: e.name, path: e.path, status: e.status, startedAt: e.startedAt, endedAt: e.endedAt, elapsed: (e.endedAt || Date.now()) - e.startedAt, exitCode: e.exitCode, tail, work, progress, changed: agentChanges(e.path, e.startedAt), ask: first ? agentQuestions(e.path, e.name) : null, held: first ? heldTasks(e.path) : null, waiting, needs, remember: facts.length ? facts : null, fromHeld: !!e.fromHeld };
   }).concat(earlierRuns());
 }
 
-export { FACTS, factsOf, knownRun, withStream, workOf, HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, connectorsInfo, fillHandoff, runHandoff, PARKED_NOTE, parkedPaths, isParked, parkLane, agentMissing, blockedAgain, runningHandoff, loadRuns, earlierRuns, namedFiles, waitingFor, startWaiting, writeTasks, droppedTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, findOrcaCli, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, skipIdea, agentQuestions, answerQuestions, agentsList , autoAllow, autoAllowSweep, allowlistInWork, installAllowlist, inWork, withScope , withTrust, resumeFor, noteSession, trustFull, GUARD_SETTINGS };
+export { FACTS, factsOf, knownRun, withStream, workOf, HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, connectorsInfo, linkReach, fillHandoff, runHandoff, PARKED_NOTE, parkedPaths, isParked, parkLane, agentMissing, blockedAgain, runningHandoff, loadRuns, earlierRuns, namedFiles, waitingFor, startWaiting, writeTasks, droppedTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, pickAgent, findOrcaCli, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, skipIdea, agentQuestions, answerQuestions, agentsList, needsOf, settleNeeds, NEEDS_FOR , autoAllow, autoAllowSweep, allowlistInWork, installAllowlist, inWork, withScope , withTrust, resumeFor, noteSession, trustFull, GUARD_SETTINGS };

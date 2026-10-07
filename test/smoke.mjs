@@ -238,6 +238,7 @@ const calls = [
   ["/api/reports", "GET"],          // what runs wrote up (isolated HOME -> none)
   ["/api/reports/read", "GET"],     // no id -> "No report by that id"
   ["/api/reports/seen", "POST"],    // mark all read (none)
+  ["/api/marketing", "GET"],        // Marketing: replies and the 4-week test (isolated HOME -> no test yet)
   ["/api/watch", "GET"],           // watched pages + what's new (isolated HOME -> none)
   ["/api/watch/add", "POST"],       // no screen or site -> refused, nothing saved
   ["/api/watch/every", "POST"],     // no id -> "No watch"

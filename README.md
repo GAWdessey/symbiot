@@ -93,8 +93,10 @@ It opens on [the liquid](#the-liquid-a-home-that-shapes-itself-to-you); each of 
   a "fetch latest" toggle (and an [experimental](#experimental) "check CI").
 - **Week / Standup / Todo** — the write-ups (these use your chosen AI), set as a
   readable page with its dates; **Copy** copies the text as written.
-- **Tasks** — a checklist, grouped by kind (Fixes, Tests & CI, Docs, …). Filter by
-  type or repo, then **Send to repos** to hand just those to your agent (see
+- **Tasks** — a checklist, grouped by kind (Fixes, Tests & CI, Docs, …). You add
+  a task by telling Symbiot in the bar at the bottom: it files it under the right
+  project. Filter by type or repo, then **Send to repos** (at the top, beside
+  Close) to hand just those to your agent (see
   [`symbiot push`](#hand-tasks-to-your-coding-agent-symbiot-push)). What your agent
   finishes lands in **Awaiting your review** (see
   [Review and approve](#review-and-approve-the-agents-work)). A task you tick
@@ -685,14 +687,15 @@ release tags and dated `CHANGELOG.md` sections in the repos Symbiot already scan
 and nothing else. **It never posts by itself**, and it doesn't schedule.
 
 - **Your voice.** Put 5–10 posts you wrote in `~/.config/symbiot/voice.md`, with a
-  line of `---` between each. Or link LinkedIn (above) and click **Fill from
-  LinkedIn** on the Dashboard (`symbiot post voice --linkedin`), which reads your
+  line of `---` between each. Or link LinkedIn (above, or **Link LinkedIn** under
+  **Marketing**) and click **Fill from LinkedIn** there (`symbiot post voice --linkedin`), which reads your
   recent posts in Symbiot's signed-in browser. Without examples it doesn't draft.
 - **Only what git shows.** Your AI gets the week as numbered facts and must say
   which ones each post uses. A post that names a number, version, name or user
   count the facts don't show is sent back once, then dropped. When every draft is
   dropped, Symbiot tries once more from the start by itself before giving up.
-- **You approve each one.** The drafts wait on the **Dashboard** with **Approve**,
+- **You approve each one.** The drafts wait under **Marketing**, a section of its
+  own (its orb shows on Home once posts can be drafted), with **Approve**,
   **Edit** and **Skip**. Approve copies the post to your clipboard and opens
   LinkedIn's share box: you paste it and post it yourself.
 - **Pictures and videos.** Each draft says in a line what picture or short video
@@ -709,10 +712,15 @@ and nothing else. **It never posts by itself**, and it doesn't schedule.
 - **Everything is logged** in `~/.config/symbiot/posts-log.jsonl`: each draft,
   edit, approval and skip, with its text, date and platform.
 - **Replies.** Linked LinkedIn is watched like an inbox: new comments and mentions
-  show on its Dashboard card, marked **maybe a customer** when they ask how to
-  install it, what it costs or about team use. **Draft a reply** has your agent
+  show under **Marketing** (and on its Dashboard card), marked **maybe a customer**
+  when they ask how to install it, what it costs or about team use. **Draft a reply** has your agent
   type a reply into the comment box without posting it (it can't press Post,
   Comment, Reply or Send), and write it in its brief for you to paste.
+- **The 4-week test.** Marketing keeps a row a week: posts published (and how
+  many had a picture), replies, profile visits (LinkedIn's own count), installs
+  (npm downloads of the packages your posts are about) and pricing questions.
+  Week 1 is the first week a post goes out; to move it, put
+  `{ "start": "2026-10-13" }` in `~/.config/symbiot/post-test.json`.
 
 ```bash
 symbiot post                    # draft this week's 3 posts

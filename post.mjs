@@ -1,5 +1,5 @@
 // symbiot — Post: your week's real work as three draft posts (LinkedIn), in your
-// own voice, each waiting on you on the Dashboard: Approve, Edit or Skip.
+// own voice, each waiting on you under Marketing: Approve, Edit or Skip.
 //
 // - What it writes from: the last 7 days of commits, the release tags (and gh's
 //   releases, when gh works) and the CHANGELOG.md sections dated in that window,
@@ -21,7 +21,7 @@
 //
 // Stored in ~/.config/symbiot/posts.json, readable by you only:
 // { posts: [{ id, kind, text, show, facts: [n], sources: [fact line], media: [{ id, kind, file, name, from, url?, bytes, added }], platform, status, drafted, edited?, approved?, skipped? }], lastUrl }
-// status: waiting (on the Dashboard), approved, skipped or replaced (a newer draft took its place).
+// status: waiting (under Marketing), approved, skipped or replaced (a newer draft took its place).
 import { join, dirname } from "node:path";
 import { readFileSync, writeFileSync, appendFileSync, mkdirSync, chmodSync, existsSync, readdirSync, rmSync, readlinkSync } from "node:fs";
 import { spawn, spawnSync } from "node:child_process";
@@ -32,7 +32,7 @@ import { resolveProvider, write } from "./ai.mjs";
 import { commits, discoveredRepos } from "./scan.mjs";
 import { readTexts, pagePicture, pageClip, siteUrl, CLIP } from "./headless.mjs";
 
-const PATHS = { posts: join(CONFIG_DIR, "posts.json"), log: join(CONFIG_DIR, "posts-log.jsonl"), voice: join(CONFIG_DIR, "voice.md"), media: join(CONFIG_DIR, "post-media") };
+const PATHS = { posts: join(CONFIG_DIR, "posts.json"), log: join(CONFIG_DIR, "posts-log.jsonl"), voice: join(CONFIG_DIR, "voice.md"), media: join(CONFIG_DIR, "post-media"), test: join(CONFIG_DIR, "post-test.json") };
 const PLATFORM = "linkedin";
 // LinkedIn's share box, opened for you to paste an approved post into.
 const SHARE_URL = "https://www.linkedin.com/feed/?shareActive=true";
@@ -42,7 +42,7 @@ const MAX_FACTS = 120, MAX_TEXT = 3000, KEEP = 200; // LinkedIn takes 3000 chara
 const q = (s) => JSON.stringify(String(s));
 
 const NO_AI = "Symbiot needs an AI to draft your posts, and none is connected. Connect one with  symbiot login  (or Settings in the app), then run  symbiot post  again. Nothing was drafted, saved or logged.";
-const noVoice = (file) => `Symbiot drafts posts in your voice, from examples of your own posts, and has none yet. Either link LinkedIn (Dashboard → Links → LinkedIn, sign in once) and click Fill from LinkedIn (or run  symbiot post voice --linkedin), or paste 5–10 posts you wrote into ${file}, with a line of --- between each. Nothing was drafted.`;
+const noVoice = (file) => `Symbiot drafts posts in your voice, from examples of your own posts, and has none yet. Either link LinkedIn (Marketing → Link LinkedIn, sign in once) and click Fill from LinkedIn (or run  symbiot post voice --linkedin), or paste 5–10 posts you wrote into ${file}, with a line of --- between each. Nothing was drafted.`;
 
 // ---- your voice ------------------------------------------------------------------
 // voice.md's examples: what's between lines of ---, each long enough to be a post.
@@ -62,7 +62,7 @@ const tidyPost = (t) => noTagLabels(t).replace(/\s*…\s*(see )?more\s*$/i, "").
 async function voiceFromLinkedIn({ read = readTexts, paths = PATHS, max = 10 } = {}) {
   const r = (await read(LINKEDIN_ACTIVITY, LINKEDIN_POST_TEXT)) || { error: "Nothing came back from LinkedIn." };
   if (r.busy) return { error: "Symbiot's browser is busy (a sign-in window, or a map). Close it, then try again." };
-  if (r.login || /linkedin\.com\/(login|authwall|uas\/|checkpoint|signup)/i.test(r.url || "")) return { error: "You're not signed in to LinkedIn in Symbiot's browser. Link LinkedIn on the Dashboard (Links → LinkedIn), sign in in the window that opens, close it, then try again." };
+  if (r.login || /linkedin\.com\/(login|authwall|uas\/|checkpoint|signup)/i.test(r.url || "")) return { error: "You're not signed in to LinkedIn in Symbiot's browser. Link LinkedIn (Marketing → Link LinkedIn, or Connections), sign in in the window that opens, close it, then try again." };
   if (r.error) return { error: r.error };
   const found = []; for (const t of (r.texts || []).map(tidyPost)) if (t.length >= 40 && !found.includes(t)) found.push(t);
   if (!found.length) return { error: `Found no posts of yours on LinkedIn's activity page. Paste 5–10 of your posts into ${paths.voice} instead, with a line of --- between each.` };
@@ -200,7 +200,7 @@ const SYSTEM = `You draft LinkedIn posts for a developer, from their real work t
   `Answer with JSON only: {"posts":[{"kind":"shipped","text":"…","show":"…","facts":[1,4]},{"kind":"learned","text":"…","show":"…","facts":[…]},{"kind":"long","text":"…","show":"…","facts":[…]}]}, ` +
   `where "facts" lists the numbers of every fact the post uses, and "show" is one short line (not posted) saying what picture or short video would show it best, ` +
   `for them to take: the screen, page or command the post is about, as the facts name it (e.g. "a picture of the new Reports view", "a clip of the install running").`;
-// Draft this week's 3 posts and put them on the Dashboard (waiting on you). With
+// Draft this week's 3 posts and put them under Marketing (waiting on you). With
 // no AI connected it says so and does nothing else: nothing is read, written or
 // logged. `ask` is ai.mjs write (the tests pass their own); `repos`, `gh`, `now`
 // and `paths` likewise. Gives { ok, posts, dropped, facts } or { error, code }.
@@ -265,9 +265,10 @@ function logAction(action, p, now = Date.now(), paths = PATHS, extra = {}) {
   } catch { return false; }
 }
 function postLog(paths = PATHS) { try { return readFileSync(paths.log, "utf8").split("\n").filter(Boolean).map((l) => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean); } catch { return []; } }
-// What the Dashboard shows: the drafts waiting on you, the last few you dealt with,
+// What Marketing shows: the drafts waiting on you, the last few you dealt with,
 // and whether it can draft: an AI connected, and your voice (examples in voice.md,
-// or LinkedIn linked to fill it from). Until then the Dashboard says so in a line.
+// or LinkedIn linked to fill it from). Until then Marketing says so in a line, and
+// Home shows no Marketing orb (home.mjs).
 function postsState(paths = PATHS, { linked = () => (loadConfig().linked || {}) } = {}) {
   const d = loadPosts(paths), voice = loadVoice(paths.voice).length, connected = !!resolveProvider();
   let linkedin = false; try { linkedin = !!linked().linkedin; } catch {}
@@ -520,14 +521,71 @@ function openUrl(url) {
 
 // ---- replies: who might be a customer ------------------------------------------------
 // A comment or mention that asks how to install it, what it costs or about its
-// licence, or about using it in a team: "maybe a customer" on the Dashboard.
+// licence, or about using it in a team: "maybe a customer" under Marketing and on the Dashboard.
 // Gives why ("install", "pricing", "team") or "".
 const CUSTOMER = [
   ["pricing", /\b(?:pric(?:e|es|ed|ing)|costs?|how much|licen[cs](?:e|es|ing)|subscriptions?|paid (?:plan|version|tier)|free tier|pay(?:ing)? for|per (?:seat|user|month))\b/i],
   ["install", /\b(?:install(?:ing|ed|ation)?|npm i|npx|download(?:ing)?)\b|\bhow (?:do|can|would|could) (?:i|we|you|one) (?:set (?:it |this )?up|get started|start|use|try|get|run)\b|\bwhere (?:can|do) (?:i|we) (?:get|find)\b/i],
   ["team", /\b(?:my|our|whole)\s+(?:dev\s+|engineering\s+)?(?:team|teams|company|org|organi[sz]ation|startup)\b|\bteam (?:use|plan|licen[cs]e|version|pricing)\b|\bfor (?:a |small )?teams\b|\b(?:enterprise|seats)\b/i],
 ];
+// ---- the 4-week test: a row a week (Marketing) -------------------------------------
+// Does posting bring anyone? Four weeks, a row each. Weeks run from the day of your
+// first draft; week 1 is the first of them a post went out in (until one has, the one
+// you're in: a week with nothing posted doesn't count), or the day post-test.json's
+// start names, when you've moved it ({ "start": "2026-10-13" }). Each row: posts published, and how many
+// carried a picture or video; replies on LinkedIn (its watched notifications, marked
+// by watch.mjs markNews), the ones that may be a customer and those asking what it
+// costs; and npm installs of the packages your posts are about. Profile visits are
+// only in LinkedIn's own analytics. null before there's a first draft.
+const TEST_WEEKS = 4;
+const dayStart = (ts) => { const d = new Date(ts); d.setHours(0, 0, 0, 0); return d.getTime(); };
+const addDays = (ts, n) => { const d = new Date(ts); d.setDate(d.getDate() + n); return d.getTime(); };
+const ymd = (ts) => { const d = new Date(ts); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
+function testPlan(paths = PATHS, now = Date.now()) {
+  const posts = loadPosts(paths).posts;
+  let set = NaN; try { set = Date.parse(String(JSON.parse(readFileSync(paths.test, "utf8")).start || "").slice(0, 10) + "T00:00:00"); } catch {}
+  const first = posts.reduce((m, p) => Math.min(m, Number(p.drafted) || Infinity), Infinity);
+  if (!set && first === Infinity) return null;
+  let start = set ? dayStart(set) : dayStart(first);
+  if (!set) { const out = postLog(paths).filter((l) => l.action === "approved").map((l) => Number(l.ts)).sort((a, b) => a - b)[0], to = out || now; while (addDays(start, 7) <= to) start = addDays(start, 7); }
+  return { start, weeks: Array.from({ length: TEST_WEEKS }, (_, i) => [addDays(start, 7 * i), addDays(start, 7 * (i + 1))]), posts };
+}
+// The npm packages your posts are about: the repos their git facts came from
+// ("[21] symbiot · 2026-10-06 · changelog: …"), each one's package.json name unless private.
+function testPackages(posts, map = {}) {
+  const repos = new Set(posts.flatMap((p) => (Array.isArray(p.sources) ? p.sources : []).map((x) => (String(x).match(/^(?:\[\d+\]\s*)?(.+?)\s+·\s/) || [])[1]).filter(Boolean)));
+  const out = [];
+  for (const r of repos) { if (!map[r]) continue; try { const j = JSON.parse(readFileSync(join(map[r], "package.json"), "utf8")); if (j.name && !j.private && !out.includes(j.name)) out.push(j.name); } catch {} }
+  return out.slice(0, 3);
+}
+function testWeeks({ paths = PATHS, now = Date.now(), news = [], installs = null, map = {} } = {}) {
+  const plan = testPlan(paths, now); if (!plan) return null;
+  const log = postLog(paths);
+  const rows = plan.weeks.map(([from, to], i) => {
+    const inW = (t) => Number(t) >= from && Number(t) < to, pub = log.filter((l) => l.action === "approved" && inW(l.ts)), rep = news.filter((n) => n.social && inW(n.ts));
+    return { week: i + 1, from: ymd(from), to: ymd(addDays(to, -1)), started: now >= from, over: now >= to, published: pub.length, media: pub.filter((l) => (l.media || []).length).length,
+      replies: rep.length, customers: rep.filter((n) => n.customer).length, pricing: rep.filter((n) => n.customer === "pricing").length, installs: installs && installs[i] != null ? installs[i] : null };
+  });
+  return { start: ymd(plan.start), end: ymd(addDays(plan.weeks[TEST_WEEKS - 1][1], -1)), rows, packages: testPackages(plan.posts, map), week: rows.filter((r) => r.started).length };
+}
+// npm's daily downloads for those packages, summed per test week (weeks not begun:
+// null): [n, …] or null. get(url) reads npm's JSON (the app passes it: nothing here
+// goes on the network by itself). One read per package for the whole test, kept a few hours.
+const NPM_DAYS = "https://api.npmjs.org/downloads/range/";
+let npmCache = { key: "", at: 0, counts: null };
+async function testInstalls(t, { now = Date.now(), get = null } = {}) {
+  if (!t || !t.packages.length || !t.rows[0].started || typeof get !== "function") return null;
+  const key = t.packages.join(",") + "|" + t.start; if (npmCache.key === key && now - npmCache.at < 3 * 3600000) return npmCache.counts;
+  const counts = t.rows.map((r) => (r.started ? 0 : null));
+  for (const p of t.packages) {
+    let d = null; try { d = await get(`${NPM_DAYS}${t.start}:${t.end}/${encodeURIComponent(p)}`); } catch {}
+    if (!d || !Array.isArray(d.downloads)) return null;
+    for (const x of d.downloads) { const r = t.rows.findIndex((w) => x.day >= w.from && x.day <= w.to); if (r >= 0 && counts[r] != null) counts[r] += Number(x.downloads) || 0; }
+  }
+  npmCache = { key, at: now, counts };
+  return counts;
+}
 function maybeCustomer(text) { const s = String(text || ""); const hit = CUSTOMER.find(([, re]) => re.test(s)); return hit ? hit[0] : ""; }
 
-export { PATHS, PLATFORM, SHARE_URL, KINDS, KIND_LABEL, LINKEDIN_ACTIVITY, NO_AI, voiceOf, loadVoice, voiceFromLinkedIn, tagsIn, changelogIn, gatherFacts, factLine, numbersIn, namesIn, checkClaims, parseDrafts, vetDraft, draftPosts, loadPosts, postLog, postsState, editPost, skipPost, approvePost, copyText, openUrl, maybeCustomer,
+export { TEST_WEEKS, testWeeks, testInstalls, testPackages, PATHS, PLATFORM, SHARE_URL, KINDS, KIND_LABEL, LINKEDIN_ACTIVITY, NO_AI, voiceOf, loadVoice, voiceFromLinkedIn, tagsIn, changelogIn, gatherFacts, factLine, numbersIn, namesIn, checkClaims, parseDrafts, vetDraft, draftPosts, loadPosts, postLog, postsState, editPost, skipPost, approvePost, copyText, openUrl, maybeCustomer,
   mediaType, mediaDir, mediaWords, addMedia, removeMedia, mediaFile, pictureOfPage, clipOfPage, concatList, toVideo, canClip, NO_FFMPEG, localApps, screenFor, picturesFor, listening };

@@ -55,7 +55,7 @@ console.log("SYMBIOT APP --FRESH — a brand-new Symbiot, gone when it quits");
   const wn = await get("/api/whatsnew");
   ok("first run: no changelog to catch up on", Array.isArray(wn.changes) && wn.changes.length === 0, wn);
   const hs = await get("/api/home");
-  ok("first run: Home asks for what only a new user can do (connect an AI, show it your folders)", (hs.you || []).map((y) => y.id).join() === "setup:ai,setup:folders", hs.you);
+  ok("first run: Home asks for what only a new user can do (connect an AI, show it your folders, pick your agent)", (hs.you || []).map((y) => y.id).join() === "setup:ai,setup:folders,setup:pick", hs.you);
   const mind = await get("/api/mind");
   ok("no memory", !JSON.stringify(mind).includes("Jono"), mind);
   const links = await get("/api/links");

@@ -5,7 +5,7 @@
 //
 //   node test/adapt.mjs
 //
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync, statSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -162,12 +162,18 @@ try {
     pending: () => [{ repo: "symbiot", path: "/x", tasks: [{}, {}], files: [{}, {}, {}] }, { repo: "busy", path: "/y", running: true, tasks: [{}], files: [{}] }],
     agents: () => [{ name: "whatsapp_module", path: "/w", status: "done", ask: { questions: [{ q: "Paste the new Meta token?" }] } }, { name: "coral", path: "/c", status: "running", ask: { questions: [] } }],
     lanes: () => ({ handoffs: [{ from: "coral", to: "ops", text: "Find a JDK 17", status: "done" }] }),
-    connected: () => true, repos: () => ({ symbiot: "/x" }), reports: () => ({ count: 0 }),
+    connected: () => true, repos: () => ({ symbiot: "/x" }), reports: () => ({ count: 0 }), agentCmd: () => 'claude -p "{prompt}"',
   };
   const h = homeState({ deps });
   const first = homeState({ deps: { ...deps, pending: () => [], agents: () => [], connected: () => false, repos: () => ({}) } });
   ok("first run: connect an AI, then show it your folders, both out front and opening Settings", first.you.map((y) => y.id).join() === "setup:ai,setup:folders" && first.you.every((y) => y.shape === "settings"), first.you);
   ok("…and neither once that's done", !h.you.some((y) => y.kind === "setup"), h.you);
+  const claude = { name: "Claude Code", tmpl: 'claude -p "{prompt}"' };
+  const pk = homeState({ fresh: true, deps: { ...deps, agentCmd: () => "", pickAgent: () => claude } }).you.find((y) => y.id === "setup:pick");
+  ok("no agent picked: \"Pick your agent\" on Home, not \"All handled\", one click for the one on this computer", pk && pk.kind === "setup" && pk.title === "Pick your agent" && /^Claude Code is on this computer: one click/.test(pk.sub) && pk.pick && pk.pick.tmpl === claude.tmpl && pk.focus === "agent" && pk.shape === "settings", pk);
+  const pk2 = homeState({ fresh: true, deps: { ...deps, agentCmd: () => "", pickAgent: () => null } }).you.find((y) => y.id === "setup:pick");
+  ok("…none on this computer: it opens Settings, with no one-click pick", pk2 && !pk2.pick && pk2.sub === "the coding agent that takes your tasks", pk2);
+  ok("…and not once an agent is picked", !h.you.some((y) => y.id === "setup:pick"), "");
   ok("only you: an Approve that's waiting (not one still being worked on) and an agent's question", h.you.length === 2 && h.you[0].title === "Approve symbiot" && /2 tasks done · 3 files · only you decide/.test(h.you[0].sub) && h.you[1].title === "whatsapp_module asks" && h.you[1].shape === "agents", h.you);
   ok("feeds: only what has something new", h.feeds.length === 1 && h.feeds[0].title === "WhatsApp" && h.feeds[0].shape === "board", h.feeds);
   const clashed = homeState({ fresh: true, deps: { ...deps, clashes: () => [{ kind: "leave", severity: "high", text: "Lerato Khoza's annual leave Mon 12 Oct to Fri 16 Oct 2026 (~/Co/hr/leave.csv) covers the **VAT return** due Wed 14 Oct (~/Co/finance/STATUS.md)." }, { kind: "customer", severity: "high", text: "Acacia Mining's renewal date disagrees." }] } }).feeds[0];
@@ -214,6 +220,23 @@ try {
   homeAnswer("failed:r1", { pick: 1 }, fd);
   ok("…Skip: it stops asking", noFail(() => [failedRun()]), "");
   ok("…and an agent's own question is answered on its block, as before", !!homeAnswer("ask:/w", { pick: 0 }).error, "");
+  // a run that ended waiting on you (agents.mjs needsOf): before, Home said "Only the user can do (0)"
+  const jonoDir = join(HOME, ".config", "symbiot", "drafts", "act-jono"); mkdirSync(join(jonoDir, ".symbiot"), { recursive: true });
+  const waitsRun = (o = {}) => ({ id: "r5", name: "Agent: **What's needed:** draft the email to Jono", path: jonoDir, status: "done", ask: { questions: [] }, needs: { kind: "approve", what: "The draft isn't sent. Draft: it's in Gmail, to jono@example.com.", check: "Cc: You'll add Alex yourself.", label: "Draft", key: "k1" }, ...o });
+  const hn = homeState({ fresh: true, deps: { ...deps, pending: () => [], agents: () => [waitsRun()] } }), nb = hn.you.find((y) => y.fix === "needs");
+  ok("a run that ended with a draft for your OK: on Home, with what to check first, Go ahead or Skip", nb && nb.id === "needs:r5" && nb.kind === "ask" && nb.repo === "" && nb.title === "Draft the email to Jono waits for your OK" && nb.q === "The draft isn't sent. Draft: it's in Gmail, to jono@example.com. Check first: Cc: You'll add Alex yourself." && nb.options.join() === "Go ahead (recommended),Skip", nb);
+  ok("…and Home's talk counts it", /^Only the user can do \([1-9]\):[\s\S]*- Draft the email to Jono waits for your OK: Draft \(asks: The draft isn't sent/m.test(homeContext(hn)), homeContext(hn).split("\n").slice(0, 3));
+  const st5 = homeState({ fresh: true, deps: { ...deps, pending: () => [], agents: () => [waitsRun({ needs: { kind: "step", what: "Running tailscale needs sudo, and only you can do that.", check: "", label: "", key: "k2" } })] } }).you.find((y) => y.fix === "needs");
+  ok("…a step only you can take: Done it or Skip", st5 && st5.title === "Draft the email to Jono needs you" && st5.q === "Running tailscale needs sudo, and only you can do that." && st5.options.join() === "Done it (recommended),Skip", st5);
+  const noNeeds = (agents) => !homeState({ fresh: true, deps: { ...deps, pending: () => [], agents } }).you.some((y) => y.fix === "needs");
+  ok("…not while an agent works there, nor when it asked in QUESTIONS.md (that's its question)", noNeeds(() => [{ id: "r6", path: jonoDir, status: "running", ask: { questions: [] } }, waitsRun()]) && noNeeds(() => [waitsRun({ ask: { questions: [{ q: "Send the draft to Jono?" }] } })]), "");
+  const reran5 = [], settled5 = [], nd = { agents: () => [waitsRun()], running: () => false, run: (p, o) => { reran5.push([p, o.force]); return { id: "j5" }; }, settle: (p, k) => settled5.push([p, k]) };
+  const g5 = homeAnswer("needs:r5", { pick: 0 }, nd), ans5 = readFileSync(join(jonoDir, ".symbiot", "ANSWERS.md"), "utf8");
+  ok("…Go ahead: its agent goes ahead, told so in its ANSWERS.md, and it stops asking", g5.ok && g5.rerun === "j5" && JSON.stringify(reran5) === JSON.stringify([[jonoDir, true]]) && /### The draft isn't sent\. Draft: it's in Gmail, to jono@example\.com\.\nGo ahead: do it as you had it/.test(ans5) && JSON.stringify(settled5) === JSON.stringify([[jonoDir, "k1"]]), [g5, reran5, ans5, settled5]);
+  const s5 = homeAnswer("needs:r5", { text: "skip, I sent it" }, nd);
+  ok("…Skip (or your words saying no): it stops asking, and no agent starts", s5.ok && /won't ask again/.test(s5.said) && reran5.length === 1 && settled5.length === 2, [s5, reran5, settled5]);
+  const pj = ws3({ deps: { repos: () => ({}), pending: () => [], tasks: () => [], parked: () => [], agents: () => [waitsRun({ id: "r8" })], stuck: () => [] } }).projects.find((p) => p.repo === "ops");
+  ok("…and on its lane in Tasks: lit, the OK first, answerable there", pj && pj.lit && pj.qs[0].fix === "needs" && pj.qs[0].id === "needs:r8", pj);
   const wsS = ws3({ deps: { repos: () => ({ coral: "/c" }), pending: () => [], tasks: () => [], parked: () => [], agents: () => [failedRun({ id: "r9" })], stuck: () => stuckT } });
   const pc = wsS.projects.find((p) => p.repo === "coral"), po = wsS.projects.find((p) => p.repo === "ops");
   ok("on its lane in Tasks too: the project lit, the question first, answerable there", pc && pc.lit && pc.asks === 1 && pc.qs[0].fix === "failed" && pc.qs[0].id === "failed:r9" && po && po.lit && po.qs[0].q === "Allow this run access to ~/Company?" && po.qs[0].id === "stuck:2d8f4ec8", [pc, po]);

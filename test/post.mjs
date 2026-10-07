@@ -256,6 +256,36 @@ try {
   const tagged = "Shipped the liquid home this week, and it rests as one orb.\n\nhashtag\n#DeveloperTools\nhashtag\n#AI";
   ok("voice.md's examples lose the labels, keep the tags (and a word 'hashtag' in a sentence)", P.voiceOf(tagged + "\n---\nI wrote a hashtag guide once, plain words only.")[0].endsWith("orb.\n\n#DeveloperTools\n#AI") && /a hashtag guide/.test(P.voiceOf(tagged + "\n---\nI wrote a hashtag guide once, plain words only.")[1]), P.voiceOf(tagged));
   ok("…and so do the drafts", P.parseDrafts(JSON.stringify({ posts: [{ kind: "shipped", text: tagged, facts: [1] }] }))[0].text === "Shipped the liquid home this week, and it rests as one orb.\n\n#DeveloperTools\n#AI", P.parseDrafts(JSON.stringify({ posts: [{ kind: "shipped", text: tagged, facts: [1] }] })));
+
+  { // its own names, apart from the rest
+  console.log("THE 4-WEEK TEST — a row a week under Marketing");
+  const T4 = join(HOME, "t4"); mkdirSync(T4, { recursive: true });
+  const tp = { ...P.PATHS, posts: join(T4, "posts.json"), log: join(T4, "log.jsonl"), test: join(T4, "post-test.json") };
+  const day = (s, h = 12) => new Date(s + "T" + String(h).padStart(2, "0") + ":00:00").getTime();
+  ok("no drafts yet: no test", P.testWeeks({ paths: tp }) === null, "");
+  writeFileSync(tp.posts, JSON.stringify({ posts: [{ id: "a1", kind: "shipped", text: "x", status: "waiting", drafted: day("2026-10-07", 8), sources: ["[1] demo · 2026-10-06 · release: released v1.2.0", "[2] other · 2026-10-06 · commit: y"] }] }));
+  const t0 = P.testWeeks({ paths: tp, now: day("2026-10-09") });
+  ok("nothing posted yet: week 1 is the week you're in, from the day of the first draft", t0 && t0.start === "2026-10-07" && t0.end === "2026-11-03" && t0.week === 1 && t0.rows.length === 4 && t0.rows[0].to === "2026-10-13" && t0.rows[1].from === "2026-10-14", t0);
+  const t1 = P.testWeeks({ paths: tp, now: day("2026-10-16") });
+  ok("…a week with nothing posted doesn't count: the test moves on", t1.start === "2026-10-14" && t1.week === 1, [t1.start, t1.week]);
+  const line = (o) => JSON.stringify(o) + "\n";
+  writeFileSync(tp.log, line({ ts: day("2026-10-15"), action: "approved", id: "a1", media: [{ kind: "image" }] }) + line({ ts: day("2026-10-16"), action: "approved", id: "a2" }) + line({ ts: day("2026-10-16"), action: "skipped", id: "a3" }) + line({ ts: day("2026-10-22"), action: "approved", id: "a4" }));
+  const news = [{ id: "n1", social: true, ts: day("2026-10-15", 15), text: "how much is it for a team?", customer: "pricing" }, { id: "n2", social: true, ts: day("2026-10-17"), text: "nice one", }, { id: "n3", ts: day("2026-10-17"), text: "an email" }, { id: "n4", social: true, ts: day("2026-10-23"), text: "how do I install it?", customer: "install" }];
+  const t2 = P.testWeeks({ paths: tp, now: day("2026-10-24"), news, map: { demo: REPO } });
+  const [w1, w2, w3] = t2.rows;
+  ok("week 1 is the first week a post went out; each row: published (with a picture), replies, maybe-customers, pricing", t2.start === "2026-10-14" && t2.week === 2 && w1.over && w1.published === 2 && w1.media === 1 && w1.replies === 2 && w1.customers === 1 && w1.pricing === 1 && w2.published === 1 && w2.replies === 1 && w2.customers === 1 && w2.pricing === 0 && !w3.started, t2.rows);
+  writeFileSync(join(REPO, "package.json"), JSON.stringify({ name: "demo-cli" }));
+  ok("installs: the npm packages the posts are about (their repos' package.json, not private)", JSON.stringify(P.testWeeks({ paths: tp, now: day("2026-10-24"), map: { demo: REPO } }).packages) === '["demo-cli"]' && !P.testWeeks({ paths: tp, now: day("2026-10-24"), map: {} }).packages.length, "");
+  writeFileSync(tp.test, JSON.stringify({ start: "2026-10-13" }));
+  const t3 = P.testWeeks({ paths: tp, now: day("2026-10-24"), news, map: { demo: REPO } });
+  ok("moved by hand (post-test.json): the weeks start there", t3.start === "2026-10-13" && t3.end === "2026-11-09" && t3.rows[0].to === "2026-10-19", [t3.start, t3.end]);
+  const asked = [];
+  const days = { downloads: [{ day: "2026-10-13", downloads: 10 }, { day: "2026-10-19", downloads: 5 }, { day: "2026-10-20", downloads: 7 }, { day: "2026-10-30", downloads: 99 }] };
+  const n3 = await P.testInstalls(t3, { now: day("2026-10-24"), get: async (u) => { asked.push(u); return days; } });
+  ok("npm's daily downloads, summed per week, none for weeks not begun", JSON.stringify(n3) === "[15,7,null,null]" && asked.length === 1 && /downloads\/range\/2026-10-13:2026-11-09\/demo-cli$/.test(asked[0]), [n3, asked]);
+  ok("…kept a while: no second fetch", JSON.stringify(await P.testInstalls(t3, { now: day("2026-10-24"), get: async () => { throw new Error("fetched again"); } })) === "[15,7,null,null]", "");
+  ok("…and nothing when npm can't be reached or nothing's started", (await P.testInstalls({ ...t3, packages: ["x"], start: "2026-10-12" }, { get: async () => null })) === null && (await P.testInstalls({ ...t3, rows: t3.rows.map((r) => ({ ...r, started: false })) })) === null, "");
+  }
 } finally {
   rmSync(HOME, { recursive: true, force: true });
 }
