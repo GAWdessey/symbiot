@@ -1,6 +1,6 @@
 {
   "name": "symbiot",
-  "version": "0.53.2",
+  "version": "0.53.3",
   "description": "Your week, written from your real work. Reads your local git and writes it up with the AI of your choice \u2014 Claude, OpenAI, Gemini, or a local model.",
   "type": "module",
   "bin": {

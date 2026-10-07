@@ -127,7 +127,7 @@ function openApp(url) {
       return "browser tab";
     }
     const chrome = chromeBinary();
-    if (chrome) { spawn(chrome, [`--app=${url}`, "--new-window", "--no-first-run", "--no-default-browser-check"], { detached: true, stdio: "ignore" }).unref(); return "app window"; }
+    if (chrome) { spawn(chrome, [`--app=${url}`, "--new-window", "--start-maximized", "--no-first-run", "--no-default-browser-check"], { detached: true, stdio: "ignore" }).unref(); return "app window"; }
     // fall back to the OS default browser (a normal tab) — still fully functional
     if (process.platform === "win32") { spawn("cmd", ["/c", "start", "", url], { detached: true, stdio: "ignore" }).unref(); return "browser tab"; }
     spawn(process.platform === "darwin" ? "open" : "xdg-open", [url], { detached: true, stdio: "ignore" }).unref();

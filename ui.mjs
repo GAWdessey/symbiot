@@ -5,7 +5,7 @@
 // Kept apart from the CLI/server so UI edits can't break the backend (and vice
 // versa); test/smoke.mjs boots the real page and exercises every handler.
 export const EMBEDDED_UI = `<!doctype html><html><head><meta charset="utf8">
-<meta name="viewport" content="width=device-width,initial-scale=1"><title>Symbiot</title>
+<meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" id="themecolor" content="#08090B"><meta name="color-scheme" content="dark light"><title>Symbiot</title>
 <style>
 @font-face{font-family:'Geist';src:url('/fonts/Geist-Variable.woff2') format('woff2');font-weight:100 900;font-style:normal;font-display:swap}
 :root{--ink:#0E1A1F;--ink2:#15262C;--ink3:#1D333A;--line:#24404A;--bone:#F4F1EA;--text:#B7C9C4;--faint:#7E9690;--green:#3DDC97;--amber:#F2A541;--green-dim:#16322D;--sans:'Geist',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif}
@@ -2285,6 +2285,8 @@ function lqTheme(){var look=lqLookGet();var th={look:look,light:look!=='ferro',c
 var h=new Date().getHours();th.night=h>=22||h<6;
 try{if(document.createElement&&typeof getComputedStyle==='function'&&document.body&&document.body.appendChild){var a=document.createElement('span'),b=document.createElement('span');a.style.color='AccentColor';b.style.color='CanvasText';document.body.appendChild(a);document.body.appendChild(b);
 if(a.style.color){var ca=getComputedStyle(a).color,cb=getComputedStyle(b).color;if(ca&&ca!==cb){var m=ca.match(/[0-9.]+/g);if(m&&m.length>=3)th.accent=[m[0]/255,m[1]/255,m[2]/255];}}a.remove();b.remove();}}catch(e){}
+// the window's own bar takes the look's colour, so it reads as part of the app, not a frame round it
+var tc=document.getElementById('themecolor');if(tc&&tc.setAttribute)tc.setAttribute('content',th.forced?'Canvas':look==='pearl'?'#ECEBE8':look==='glass'?'#E9ECEE':'#08090B');
 var bd=document.body;if(bd&&bd.classList){bd.classList.toggle('lq-light',th.light);['ferro','glass','pearl'].forEach(function(l){bd.classList.toggle('lq-look-'+l,l===look);});bd.classList.toggle('lq-contrast',th.contrast);bd.classList.toggle('lq-solid',th.solid||th.contrast);bd.classList.toggle('lq-forced',th.forced);}
 LQ.theme=th;return th;}
 function lqSize(){var el=$('liquid');var w=(el&&el.clientWidth)||window.innerWidth||1280,h=(el&&el.clientHeight)||window.innerHeight||800;return {w:w,h:h,s:Math.max(0.55,Math.min(1.15,Math.min(w,h)/860))};}
