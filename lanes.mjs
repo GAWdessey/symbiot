@@ -19,7 +19,7 @@ import { join, basename } from "node:path";
 import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, chmodSync } from "node:fs";
 import { createHash, randomBytes } from "node:crypto";
 import { CONFIG_DIR, loadTasks, clipWords } from "./core.mjs";
-import { runHandoff, runningHandoff, waitingFor } from "./agents.mjs";
+import { runHandoff, runningHandoff, waitingFor, agentQuestions } from "./agents.mjs";
 import { addTask, pushTasks } from "./tasks.mjs";
 import { actNow } from "./mind.mjs";
 import { repoPathMap } from "./scan.mjs";
@@ -91,6 +91,17 @@ function lastWords(path) {
 // When the newest run in a folder started (its log header), or 0.
 function lastRunStart(path) { const log = readSym(path, "agent.log"), m = [...log.matchAll(/^=== .* (\d{4}-\d\d-\d\dT[\d:.]+Z) ===$/gm)].pop(); return m ? Date.parse(m[1]) || 0 : 0; }
 const openQuestions = (path) => /^###\s+/m.test(readSym(path, "QUESTIONS.md").split(/^##\s+Suggestions/m)[0]);
+// A repo lane's run does a whole brief, so its last words cover every task in it,
+// not just the one handed over (ops heard about a first-run audit and a posting
+// test, three times, in reply to its four gaps). Only the lines about this one
+// go back: those sharing most of its words. "" when it said nothing about it.
+const COMMON = new Set(["with", "that", "this", "from", "have", "will", "your", "them", "then", "what", "when", "into", "about", "there", "their", "which", "would", "could", "should", "while", "please"]);
+const keyWords = (s) => new Set(String(s || "").toLowerCase().replace(/[^a-z0-9\s]/g, " ").split(/\s+/).filter((w) => w.length > 3 && !COMMON.has(w)).map((w) => w.replace(/s$/, "")));
+function aboutIt(words, text) {
+  const want = keyWords(firstLine(text)); if (want.size < 2) return words;
+  const hits = String(words || "").split(/\n+/).filter((l) => { const has = keyWords(l); let n = 0; for (const w of want) if (has.has(w)) n++; return n >= 2 && n / want.size >= 0.25; });
+  return hits.join("\n").trim();
+}
 
 // Is it done? Ops: its run ended (ticked or not). A repo: the task it was given
 // is ticked or its run ended, and no agent is working there. Waiting on the
@@ -106,8 +117,20 @@ function outcome(e, { tasks = loadTasks(), running = runningHandoff } = {}) {
     return { text: `${ticked ? "Done" : "It stopped without finishing"} (the ops agent).${words ? `\n\nWhat it said:\n${words}` : ""}` };
   }
   const t = tasks.find((x) => x.id === e.task);
-  const done = t && (t.review || t.done || t.archived);
-  return { text: `${done ? `Done in ${e.to.lane}: the task is ticked, and its changes wait for the user's review in Symbiot` : `${e.to.lane}'s agent stopped without ticking it`}.${words ? `\n\nWhat it said:\n${words}` : ""}` };
+  const done = t && (t.review || t.done || t.archived), about = aboutIt(words, e.text);
+  return { text: `${done ? `Done in ${e.to.lane}: the task is ticked, and its changes wait for the user's review in Symbiot` : `${e.to.lane}'s agent stopped without ticking it`}.${about ? `\n\nWhat it said about this:\n${about}` : words ? `\n\nIts last message was about other work in ${e.to.lane}, not this.` : ""}` };
+}
+// A run that stopped partway: questions to the user still open, or work it
+// handed to another lane that hasn't come back (the ledger, or HANDOFF.md not
+// picked up yet). The review card says what it waits on, rather than calling its
+// changes "uncommitted, with no ticked task". null when it waits on nothing.
+function partlyDone(path, { ledger = loadLedger() } = {}) {
+  if (!path) return null;
+  let questions = 0; try { questions = agentQuestions(path, "").questions.length; } catch {}
+  const mine = ledger.handoffs.filter((h) => h.from.path === path);
+  const handed = mine.filter((h) => !h.reportedAt && h.status !== "error").map((h) => ({ lane: h.to.lane, text: clipWords(firstLine(h.text), 90) }));
+  for (const h of parseHandoffs(readSym(path, "HANDOFF.md"))) if (!mine.some((x) => x.to.lane.toLowerCase() === h.lane.toLowerCase() && x.text === h.text)) handed.push({ lane: h.lane, text: clipWords(firstLine(h.text), 90) });
+  return questions || handed.length ? { questions, handed: handed.slice(0, 3) } : null;
 }
 // Tell the agent that asked: the result as an answer in its ANSWERS.md, then
 // start it again to carry on (unless it's still running: it reads it next time).
@@ -141,7 +164,18 @@ function lanesTick({ map = repoPathMap(), act = actNow, run = runHandoff, runnin
   return { started, reported };
 }
 // The Agents tab's list: newest first. Each shows its first line; full, all of a
-// longer one, and result, all of what came back, open under it.
-function lanesState() { return { handoffs: loadLedger().handoffs.slice(-30).reverse().map((e) => ({ id: e.id, from: e.from.lane, to: e.to.lane, text: clipWords(firstLine(e.text), 160), ...(e.text.trim() !== firstLine(e.text).trim() || e.text.length > 160 ? { full: e.text } : {}), at: e.at, status: e.status, ...(e.error ? { error: e.error } : {}), ...(e.result ? { result: e.result } : {}) })) }; }
+// longer one, and result, all of what came back, open under it. What reads the
+// same (one lane to the same lane, the same first line: a run that handed it
+// over twice) is one row, the newest, with how many times (times).
+function lanesState() {
+  const out = [], byKey = new Map();
+  for (const e of loadLedger().handoffs.slice().reverse()) {
+    const k = [e.from.lane, e.to.lane, firstLine(e.text).replace(/\s+/g, " ").trim()].join("\n").toLowerCase();
+    if (byKey.has(k)) { byKey.get(k).times++; continue; }
+    const row = { id: e.id, from: e.from.lane, to: e.to.lane, text: clipWords(firstLine(e.text), 160), ...(e.text.trim() !== firstLine(e.text).trim() || e.text.length > 160 ? { full: e.text } : {}), at: e.at, status: e.status, ...(e.error ? { error: e.error } : {}), ...(e.result ? { result: e.result } : {}), times: 1 };
+    byKey.set(k, row); out.push(row);
+  }
+  return { handoffs: out.slice(0, 30) };
+}
 
-export { LEDGER, MAX_CHAIN, loadLedger, laneOf, lastRunStart, dispatch, outcome, report, lanesTick, lanesState };
+export { LEDGER, MAX_CHAIN, loadLedger, laneOf, lastRunStart, dispatch, outcome, report, lanesTick, lanesState, aboutIt, partlyDone };

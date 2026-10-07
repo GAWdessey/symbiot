@@ -171,6 +171,34 @@ try {
   ok("only you: an Approve that's waiting (not one still being worked on) and an agent's question", h.you.length === 2 && h.you[0].title === "Approve symbiot" && /2 tasks done · 3 files · only you decide/.test(h.you[0].sub) && h.you[1].title === "whatsapp_module asks" && h.you[1].shape === "agents", h.you);
   ok("feeds: only what has something new", h.feeds.length === 1 && h.feeds[0].title === "WhatsApp" && h.feeds[0].shape === "board", h.feeds);
   ok("lanes and who's working", h.lanes[0].to === "ops" && h.working === 1, [h.lanes, h.working]);
+  const blob = homeState({ fresh: true, deps: { ...deps, board: () => ({ cards: [] }), pending: () => [], repos: () => ({ "CallForge AI": "/cf" }), name: (p, n) => (p === "/cf" ? "Dailify" : n),
+    agents: () => [{ name: "CallForge AI", path: "/cf", status: "done", ask: { questions: [{ q: "Rename the folder `CallForge AI` to `dailify`?", options: ["🤖 Agent: rename it (recommended)", "Keep the folder's name", "a third, never shown"] }, { q: "And the other?" }] } },
+      { name: "Agent: Find the newest Kooha clip", path: join(HOME, ".config", "symbiot", "drafts", "act-c165d613"), status: "done", ask: { questions: [{ q: "which way?", options: [] }] } }] } });
+  const cf = blob.you.find((y) => y.path === "/cf"), run = blob.you.find((y) => /act-c165d613/.test(y.id));
+  ok("an ask carries its blob: the lane, its name as people say it, the question and its two options", cf && cf.repo === "CallForge AI" && cf.name === "Dailify" && /^Rename the folder/.test(cf.q) && cf.options.length === 2 && cf.more === 1 && cf.title === "CallForge AI asks", cf);
+  ok("…an ops run's ask has no repo, and is named by what it's doing", run && run.repo === "" && run.name === "Find the newest Kooha clip" && !run.options.length, run);
+  const wait = [{ status: "waiting", subject: "endpoint and secret" }];
+  const blind = homeState({ fresh: true, deps: { ...deps, waits: () => wait, seesInbox: () => false } });
+  ok("a reply is waited on and no inbox is watched (Email off too): only you can let it see your inbox", blind.you.some((y) => y.id === "setup:inbox" && y.title === "Let me see your inbox" && y.sub === "so I notice their reply" && y.shape === "settings"), blind.you);
+  ok("…not once an inbox is watched or Email is on, and not with nothing waited on", !homeState({ fresh: true, deps: { ...deps, waits: () => wait, seesInbox: () => true } }).you.some((y) => y.id === "setup:inbox") && !homeState({ fresh: true, deps: { ...deps, waits: () => [{ status: "replied" }], seesInbox: () => false } }).you.some((y) => y.id === "setup:inbox"), "");
+  ok("no AI: urgent, first, saying Symbiot can't work without one", first.you[0].id === "setup:ai" && first.you[0].urgent && /can't work without one/.test(first.you[0].sub), first.you[0]);
+  const down = homeState({ fresh: true, deps: { ...deps, agentGone: () => "claude", signedOut: () => [{ id: "gmail", name: "Gmail", connector: "claude.ai Gmail", ready: false }] } });
+  const ag = down.you.find((y) => y.id === "setup:agent"), gm = down.you.find((y) => y.id === "setup:conn:gmail");
+  ok("the agent gone from this computer: an urgent ask to reconnect it, opening its part of Settings", ag && ag.urgent && /claude isn't on this computer/.test(ag.sub) && ag.focus === "agent", ag);
+  ok("…a linked site's connector signed out: an urgent Reconnect", gm && gm.urgent && gm.title === "Reconnect Gmail" && /signed out/.test(gm.sub), gm);
+  ok("…and with all of it working, no status at all", !h.you.some((y) => y.urgent), h.you);
+  const { agentMissing } = await import("../agents.mjs");
+  ok("the agent's program: found on PATH, or named when it isn't", agentMissing('node -e "{prompt}"') === "" && agentMissing('no-such-agent-xyz -p "{prompt}"') === "no-such-agent-xyz" && agentMissing('FOO=1 no-such-agent-xyz "{prompt}"') === "no-such-agent-xyz" && agentMissing("/nowhere/agent {dir}") === "/nowhere/agent" && agentMissing("") === "", "");
+  const { firstSteps } = await import("../home.mjs");
+  const fsd = { connected: () => true, repos: () => ({ a: "/a" }), cmd: () => "claude -p {prompt}", knowledge: () => ({ folders: [] }), links: () => ({ items: [{ id: "gmail", name: "Gmail", state: "ok" }] }) };
+  const f1 = firstSteps({ deps: { ...fsd, connectors: () => ({ claude: true, links: [{ id: "gmail", name: "Gmail", connector: "claude.ai Gmail", ready: true }] }) } });
+  ok("first steps, in order: an AI, where your work is, your agent, one site, a company folder (optional)", f1.steps.map((s) => s.id).join() === "ai,work,agent,site,company" && f1.steps.slice(0, 4).every((s) => s.done) && !f1.steps[4].done && f1.steps[4].optional && !f1.done, f1.steps);
+  ok("…the linked site says agent runs can use it, through Claude's connector", /Gmail linked\. Agent runs can use it too, through Claude's claude\.ai Gmail connector/.test(f1.steps[3].sub), f1.steps[3].sub);
+  const f2 = firstSteps({ deps: { ...fsd, connectors: () => ({ claude: true, links: [{ id: "gmail", name: "Gmail", connector: "", ready: false }] }) } });
+  ok("…or that they can't yet, and the one step that's yours", /can't use it yet: connect Gmail in claude\.ai/.test(f2.steps[3].sub), f2.steps[3].sub);
+  const f3 = firstSteps({ deps: { connected: () => false, repos: () => ({}), cmd: () => "", knowledge: () => ({ folders: [] }), links: () => ({ items: [{ id: "x", state: "off" }] }), connectors: () => ({}) } });
+  ok("…each ticks itself from what's set up: nothing yet, none ticked", f3.steps.every((s) => !s.done), f3.steps);
+  ok("…and all done (the company folder too) says so", firstSteps({ deps: { ...fsd, knowledge: () => ({ folders: [{}] }), connectors: () => ({ claude: true, links: [] }) } }).done, "");
   let sys = "", prm = "";
   const hr = await homeAsk("what needs me?", { state: h, ask: async (s2, p2) => { sys = s2; prm = p2; return JSON.stringify({ reply: "The symbiot Approve and whatsapp_module's question.", do: null, remember: [] }); } });
   ok("home's talk is the same Symbiot, told what home shows", hr.answer === "The symbiot Approve and whatsapp_module's question." && /You are Symbiot, the one assistant/.test(sys) && /Approve symbiot/.test(prm) && /whatsapp_module asks/.test(prm), hr);
@@ -191,8 +219,31 @@ try {
   const started = [];
   const g = workGo({ push: () => ({ written: [{ name: "a", path: "/a" }, { name: "b", path: "/b" }] }), run: (p) => (started.push(p), p === "/a" ? { id: "j1" } : { busy: true }) });
   ok("Go: every repo's brief written and its agent started, or queued behind one already there", g.started === 1 && g.queued === 1 && started.join() === "/a,/b" && g.repos.join() === "a,b", g);
-  ok("projects: each repo with work on it, the one an agent is in first, with what's waiting and what's ready", ws.projects.length === 4 && ws.projects[0].repo === "symbiot" && ws.projects[0].running && ws.projects[0].waiting === 1 && ws.projects.some((p) => p.repo === "GhostAIChat" && p.ready === 2) && ws.projects.some((p) => p.repo === "whatsapp_module" && p.waiting === 1 && !p.running), ws.projects);
+  ok("projects: each repo with work on it, with what's waiting and what's ready", ws.projects.length === 4 && ws.projects.some((p) => p.repo === "symbiot" && p.running && p.waiting === 1) && ws.projects.some((p) => p.repo === "GhostAIChat" && p.ready === 2) && ws.projects.some((p) => p.repo === "whatsapp_module" && p.waiting === 1 && !p.running), ws.projects);
+  ok("…what needs you first (a question, an Approve: lit), then the one an agent is in, then what waits", ws.projects.map((p) => p.repo).join() === "coral,GhostAIChat,symbiot,whatsapp_module" && ws.projects[0].lit && ws.projects[0].asks === 1 && ws.projects[1].lit && !ws.projects[2].lit, ws.projects.map((p) => [p.repo, p.lit]));
+  const RUNDIR = join(HOME, ".config", "symbiot", "drafts");
+  const wr = workScene({ deps: { repos: () => ({ symbiot: "/s" }), name: (p, n) => (n === "symbiot" ? "Symbiot" : n), pending: () => [], tasks: () => [],
+    agents: () => [{ name: "Agent: Find the newest Kooha clip", path: join(RUNDIR, "act-c165d613"), status: "done", ask: { questions: [{ q: "which way?" }] } }, { name: "Agent: tidy ~/Company", path: join(RUNDIR, "act-1d727d7f"), status: "running", work: {} }, { name: "symbiot", path: "/s", status: "running", work: {} }] } });
+  const ops = wr.projects.find((p) => p.repo === "ops");
+  ok("ops runs (act-…) are one lane, Agent runs, not a sphere each named by an id", wr.projects.length === 2 && ops && ops.name === "Agent runs" && ops.runs === 1 && ops.asks === 1 && ops.lit && wr.projects[0] === ops, wr.projects);
+  ok("…and a repo is shown by the name people use for it", wr.projects.find((p) => p.repo === "symbiot").name === "Symbiot", wr.projects);
   ok("Go with nothing waiting says so", /Nothing waiting/.test(workGo({ push: () => ({ empty: true }) }).note), "");
+
+  console.log("PARKED — a lane blocked on you starts no runs until you unpark it");
+  const wp = workScene({ deps: { repos: () => ({ whatsapp_module: "/w", symbiot: "/s" }), parked: () => ["/w"], pending: () => [], agents: () => [],
+    tasks: () => [{ id: "1", text: "Submit the template", repo: "whatsapp_module" }, { id: "2", text: "Fix the reader", repo: "symbiot" }] } });
+  ok("its tasks don't count towards Go, and it's marked parked, after the rest", wp.canGo === 1 && wp.waiting.find((w) => w.repo === "whatsapp_module").parked && wp.projects.map((p) => p.repo).join() === "symbiot,whatsapp_module" && wp.projects[1].parked, wp);
+  const gp = workGo({ push: () => ({ written: [{ name: "whatsapp_module", path: "/w" }, { name: "symbiot", path: "/s" }] }), run: (p) => (p === "/w" ? { blocked: true, parked: true } : { id: "j" }) });
+  ok("Go starts the rest and says which it left parked", gp.started === 1 && gp.queued === 0 && gp.parked.join() === "whatsapp_module" && gp.repos.join() === "symbiot", gp);
+  const { parkLane, parkedPaths, runHandoff, setHandoffCmd } = await import("../agents.mjs");
+  const pdir = join(HOME, "projects", "parked"); mkdirSync(join(pdir, ".symbiot"), { recursive: true });
+  setHandoffCmd("true {dir}");
+  parkLane(pdir, true);
+  const pr = runHandoff(pdir, { force: true });
+  ok("parked: no run starts there, not even Start it anyway", pr && pr.blocked && pr.parked && /Parked/.test(pr.note) && parkedPaths().join() === pdir, pr);
+  parkLane(pdir, false);
+  ok("…unparked, it's gone from the list", !parkedPaths().length, parkedPaths());
+  setHandoffCmd("");
 } finally {
   rmSync(HOME, { recursive: true, force: true });
 }

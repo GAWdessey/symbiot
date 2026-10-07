@@ -574,7 +574,17 @@ function buildTasksMd(name, ctx, list) {
 function pushTasks(filter) {
   const byName = repoPathMap(); // from the already-scanned map when there is one
   // what an approved Drop/Merge named, or an agent deleted from its brief, never goes out again
-  const all = loadTasks(); if (applyRemovals(all) + applyDrops(all, byName)) saveTasks(all);
+  const all = loadTasks(); let changed = applyRemovals(all) + applyDrops(all, byName);
+  // what an agent ticked since the Tasks tab last looked goes to review first, as
+  // syncTasks would: a new brief over TASKS.md would wipe its ticks, and finished
+  // work went out again as new tasks (7 of symbiot's, 2026-10-07)
+  const ticked = {};
+  for (const t of all) {
+    if (t.done || t.archived || t.review || !t.repo || !byName[t.repo]) continue;
+    if (!(t.repo in ticked)) ticked[t.repo] = completedInRepo(byName[t.repo]);
+    if (ticked[t.repo].some((c) => sameTask(c, t.text))) { t.review = true; t.reviewAt = Date.now(); changed++; }
+  }
+  if (changed) saveTasks(all);
   let tasks = all.filter((t) => !t.done && !t.archived && !t.review);
   if (filter && filter.type) tasks = tasks.filter((t) => taskType(t.text) === filter.type);
   if (filter && filter.repo) tasks = tasks.filter((t) => t.repo === filter.repo);

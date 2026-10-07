@@ -155,6 +155,7 @@ const fillHandoff = (tmpl, repoPath) => tmpl.replace(/\{dir\}/g, shSingle(repoPa
 // (blockedAgain). force starts one anyway (something changed elsewhere).
 function runHandoff(repoPath, { force = false } = {}) {
   let tmpl = handoffCmd(); if (!tmpl || !repoPath) return null;
+  if (isParked(repoPath)) return { blocked: true, parked: true, questions: 0, note: PARKED_NOTE }; // even forced: that's what parking is for
   let opts = {}; try { opts = JSON.parse(readSymbiot(repoPath, "handoff.json")) || {}; } catch {}
   const busy = runningHandoff(repoPath); if (busy) return { busy: true, id: busy.id || "", pid: busy.pid, auto: !!busy.auto };
   releaseHeldTasks(repoPath); // held for an agent another process started, which has since exited
@@ -174,6 +175,30 @@ function runHandoff(repoPath, { force = false } = {}) {
   if (e.pid) try { writeFileSync(lock, JSON.stringify({ pid: e.pid, id: e.id, startedAt: e.startedAt, owner: process.pid })); } catch {}
   noteRun(e);
   return e;
+}
+// ---- a parked lane: its tasks start no runs ----------------------------------
+// A lane blocked on something only the user can give (a token from Meta) ran 27
+// times: every answer, handover, Go and Start it anyway started it again, to say
+// the same thing. Parked (config.parked: folder paths), nothing starts an agent
+// there until it's unparked; a run already going finishes.
+const PARKED_NOTE = "Parked: its tasks start no agent runs until you unpark it.";
+function parkedPaths() { const p = loadConfig().parked; return Array.isArray(p) ? p.filter((x) => typeof x === "string" && x) : []; }
+const isParked = (path) => !!path && parkedPaths().includes(path);
+function parkLane(path, on) {
+  path = String(path || ""); if (!path) return { error: "No project to park." };
+  const cfg = loadConfig(), list = parkedPaths().filter((p) => p !== path);
+  if (on) list.push(path);
+  if (list.length) cfg.parked = list; else delete cfg.parked;
+  saveConfig(cfg);
+  return { ok: true, parked: !!on };
+}
+// The agent the handoff command runs, when it isn't on this computer (the CLI
+// was uninstalled, or PATH lost it): its name, else "". Then no task can start.
+function agentMissing(tmpl = handoffCmd()) {
+  const words = String(tmpl || "").trim().split(/\s+/), bin = words.find((w) => !/^\w+=/.test(w)) || "";
+  if (!bin || /[{}"'$`]/.test(bin)) return "";
+  if (bin.includes("/")) return existsSync(bin.replace(/^~(?=\/)/, homedir())) ? "" : bin;
+  return /^[\w.+-]+$/.test(bin) && !hasCmd(bin) ? bin : "";
 }
 // ---- runs from before the app started ---------------------------------------
 // HANDOFFS lives in memory, so after a restart a run that stopped on questions
@@ -746,4 +771,4 @@ function agentsList() {
   }).concat(earlierRuns());
 }
 
-export { FACTS, factsOf, knownRun, withStream, workOf, HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, connectorsInfo, fillHandoff, runHandoff, blockedAgain, runningHandoff, loadRuns, earlierRuns, namedFiles, waitingFor, startWaiting, writeTasks, droppedTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, skipIdea, agentQuestions, answerQuestions, agentsList };
+export { FACTS, factsOf, knownRun, withStream, workOf, HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, connectorsInfo, fillHandoff, runHandoff, PARKED_NOTE, parkedPaths, isParked, parkLane, agentMissing, blockedAgain, runningHandoff, loadRuns, earlierRuns, namedFiles, waitingFor, startWaiting, writeTasks, droppedTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, skipIdea, agentQuestions, answerQuestions, agentsList };

@@ -12,7 +12,7 @@ import { createServer } from "node:http";
 import { randomBytes } from "node:crypto";
 import { EMBEDDED_UI } from "./ui.mjs";
 import { VERSION, LATEST_VERSION, REGISTRY, semverGt, checkLatest, CONFIG_PATH, loadConfig, saveConfig, loadTasks, hasCmd, chromeBinary } from "./core.mjs";
-import { shSingle, handoffCmd, setHandoffCmd, grantAgent, runHandoff, track, detectHandoffs, connectorsInfo, answerQuestions, skipIdea, agentsList, startWaiting } from "./agents.mjs";
+import { shSingle, handoffCmd, setHandoffCmd, grantAgent, runHandoff, track, detectHandoffs, connectorsInfo, answerQuestions, skipIdea, agentsList, startWaiting, parkLane, parkedPaths } from "./agents.mjs";
 import { PROVIDERS, resolveProvider, connectProvider, detectHardware, recommendModels, hasOllama, ollamaInstall, ensureOllama, useOllamaModel } from "./ai.mjs";
 import { SCAN, SCAN_TIMEOUT_MS, scanRoots, scanHome, addScanRoot, removeScanRoot, buildMap, nodeDetail, repoPathMap } from "./scan.mjs";
 import { computeDrift } from "./drift.mjs";
@@ -25,13 +25,14 @@ import { watchState, addWatch, setEvery, removeWatch, clearNews, seenWatch, chec
 import { linksState, linkSite, checkLink, unlinkSite } from "./links.mjs";
 import { postsState, draftPosts, approvePost, editPost, skipPost, voiceFromLinkedIn } from "./post.mjs";
 import { mindState, forget } from "./mind.mjs";
-import { lanesTick, lanesState } from "./lanes.mjs";
+import { lanesTick, lanesState, partlyDone } from "./lanes.mjs";
 import { keepFacts, skipFacts, awaitTick, awaitingState, stopWaiting } from "./handback.mjs";
 import { adaptState, noteUse } from "./adapt.mjs";
-import { homeState, homeAsk, workScene, workGo } from "./home.mjs";
+import { homeState, homeAsk, workScene, workGo, firstSteps } from "./home.mjs";
 import { listReports, readReport, markAllRead } from "./reports.mjs";
 import { phoneState, setPhoneLink, newCode, unpairPhone, pairComputer, forgetComputer, pollComputer, startPhone } from "./phone.mjs";
 import { knowledgeState, addKnowledgeFolder, removeKnowledgeFolder, indexKnowledge, knowledgeTick, searchKnowledge } from "./knowledge.mjs";
+import { runChecks, checksState } from "./checks.mjs";
 
 // The in-app update installs the EXACT newest version (not the `latest` tag, which
 // npm's cache/propagation can resolve stale — that caused an update loop where the
@@ -218,9 +219,11 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       if (u.pathname === "/api/pending") { // ticked by the agent, awaiting approval
         // what npm has decides the bump offer, and for a repo that publishes on
         // merge, what's unreleased: ask, then recount (answers are cached)
+        // partly: what a run that stopped partway still waits on (its questions, a handover)
+        const partly = (l) => l.map((r) => { const p = r.path ? partlyDone(r.path) : null; return p ? { ...r, partly: p } : r; });
         const list = pendingReview(), ask = list.filter((r) => r.path && (!r.bumpOffer || r.publishesOnMerge)).map((r) => r.path);
-        if (!ask.length) return json(res, list);
-        await learnNpm(ask); return json(res, pendingReview());
+        if (!ask.length) return json(res, partly(list));
+        await learnNpm(ask); return json(res, partly(pendingReview()));
       }
       if (u.pathname === "/api/pending/diff") { const p = repoPathMap()[u.searchParams.get("repo") || ""]; return json(res, { diff: p ? workingDiff(p) : "" }); }
       if (u.pathname === "/api/pending/approve" && req.method === "POST") { const b = await readBody(req), repo = String(b.repo || ""); if (b.bump) await learnNpm([repoPathMap()[repo]]); const notes = await releaseNotes(releaseInput(repo, { bump: b.bump })); return json(res, approveRepo(repo, { bump: b.bump, notes })); }
@@ -234,8 +237,11 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       // knowledge folders (knowledge.mjs): added or removed, the index catches up at once
       if (u.pathname === "/api/knowledge") return json(res, knowledgeState());
       if (u.pathname === "/api/knowledge/add" && req.method === "POST") { const b = await readBody(req), r = addKnowledgeFolder(String(b.path || ""), b.examples); if (r.error) return json(res, r); indexKnowledge(); return json(res, { ok: true, ...knowledgeState() }); }
-      if (u.pathname === "/api/knowledge/remove" && req.method === "POST") { const b = await readBody(req), r = removeKnowledgeFolder(String(b.path || "")); if (r.error) return json(res, r); indexKnowledge(); return json(res, { ok: true, ...knowledgeState() }); }
+      if (u.pathname === "/api/knowledge/remove" && req.method === "POST") { const b = await readBody(req), r = removeKnowledgeFolder(String(b.path || "")); if (r.error) return json(res, r); indexKnowledge(); try { runChecks(); } catch {} return json(res, { ok: true, ...knowledgeState() }); }
       if (u.pathname === "/api/knowledge/index" && req.method === "POST") { const r = indexKnowledge(); return json(res, { ...r, ...knowledgeState() }); }
+      // where two of the folders' files disagree (checks.mjs): the last result, or checked again now
+      if (u.pathname === "/api/knowledge/checks") return json(res, checksState());
+      if (u.pathname === "/api/knowledge/checks/run" && req.method === "POST") return json(res, runChecks());
       if (u.pathname === "/api/knowledge/search") return json(res, { hits: searchKnowledge(u.searchParams.get("q") || "", { examples: u.searchParams.get("examples") === "1" }) });
       if (u.pathname === "/api/agentcfg") { const d = detectHandoffs(); return json(res, { cmd: handoffCmd(), agents: d.agents, editors: d.editors, connectors: connectorsInfo() }); }
       if (u.pathname === "/api/agentcmd" && req.method === "POST") { const b = await readBody(req); return json(res, setHandoffCmd(b.cmd)); }
@@ -318,11 +324,15 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       // the work scene: what agents are doing, what's waiting, what's ready; Go starts what's waiting
       if (u.pathname === "/api/work") return json(res, workScene());
       if (u.pathname === "/api/work/go" && req.method === "POST") return json(res, workGo());
+      if (u.pathname === "/api/firststeps") return json(res, firstSteps()); // Settings' first steps: what's set up, in order
       if (u.pathname === "/api/home/ask" && req.method === "POST") { const b = await readBody(req); return json(res, await homeAsk(b.question)); }
       if (u.pathname === "/api/adapt") return json(res, adaptState({ from: String(u.searchParams.get("from") || ""), commit: u.searchParams.get("commit") === "1", ...(u.searchParams.has("touch") ? { touch: u.searchParams.get("touch") === "1" } : {}) }));
       if (u.pathname === "/api/adapt/use" && req.method === "POST") { const b = await readBody(req); return json(res, noteUse(b)); }
       // Lanes (lanes.mjs): work agents handed to each other, and where it stands.
       if (u.pathname === "/api/lanes") return json(res, lanesState());
+      // a parked project (lane) starts no agent runs until it's unparked (agents.mjs parkLane)
+      if (u.pathname === "/api/lanes/parked") { const map = repoPathMap(), ps = parkedPaths(); return json(res, { repos: Object.keys(map).filter((n) => ps.includes(map[n])), paths: ps }); }
+      if (u.pathname === "/api/lanes/park" && req.method === "POST") { const b = await readBody(req), map = repoPathMap(), p = Object.values(map).includes(String(b.path || "")) ? String(b.path) : map[String(b.repo || "")]; if (!p) return json(res, { error: "That project isn't on this computer." }); return json(res, parkLane(p, b.on !== false)); }
       // Watch (watch.mjs): a mapped page read again every few minutes, and what's new on it.
       if (u.pathname === "/api/watch") return json(res, watchState());
       if (u.pathname === "/api/watch/board") return json(res, watchBoard(Math.min(168, Math.max(1, Number(u.searchParams.get("hours")) || 24))));
@@ -414,7 +424,9 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
   startPhone(); // Watch on your phone: the computer listens if it's switched on, the phone asks if it's paired
   setInterval(() => { try { startWaiting(); } catch {} }, 20000).unref(); // a run that waits for your step starts once the file it names changes
   setInterval(() => { try { lanesTick(); } catch {} }, 20000).unref(); // agents hand work to other lanes, and hear back when it's done
-  setTimeout(() => { try { knowledgeTick(); } catch {} }, 5000).unref(); setInterval(() => { try { knowledgeTick(); } catch {} }, 3 * 60 * 1000).unref(); // knowledge folders: changed files re-read (a stat per file when nothing changed)
+  // knowledge folders: changed files re-read (a stat per file when nothing changed), then checked again for where two files disagree (checks.mjs)
+  const knowTick = () => { try { const r = knowledgeTick(); if (r && (r.read || r.removed || !checksState().at)) runChecks(); } catch {} };
+  setTimeout(knowTick, 5000).unref(); setInterval(knowTick, 3 * 60 * 1000).unref();
   setInterval(() => { try { awaitTick(); } catch {} }, 60000).unref(); // a reply an agent's email waits on: found, and handed on
 }
 

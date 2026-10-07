@@ -16,7 +16,7 @@ mkdirSync(CFG, { recursive: true });
 let pass = 0, fail = 0;
 const ok = (n, c, got) => { if (c) { pass++; console.log("  ✓ " + n); } else { fail++; console.log("  ✗ " + n + (got !== undefined ? "  got: " + JSON.stringify(got) : "")); } };
 
-const { lanesTick, loadLedger, lanesState, MAX_CHAIN } = await import("../lanes.mjs");
+const { lanesTick, loadLedger, lanesState, MAX_CHAIN, aboutIt, partlyDone } = await import("../lanes.mjs");
 const { parseHandoffs, handoverRules, ONLY_YOU } = await import("../handover.mjs");
 const { buildTasksMd } = await import("../tasks.mjs");
 const { actBrief } = await import("../mind.mjs");
@@ -117,6 +117,31 @@ try {
   const e6 = loadLedger().handoffs.find((h) => h.from.path === deep);
   ok(`${MAX_CHAIN} handovers in a row: the next one isn't started (no ping-pong)`, e6 && e6.status === "error" && /handovers in a row/.test(e6.error), e6);
   ok("the ledger is yours only (0600)", existsSync(join(CFG, "lanes.json")) && (await import("node:fs")).statSync(join(CFG, "lanes.json")).mode % 0o1000 === 0o600, "");
+
+  console.log("ONE ROW FOR WHAT READS THE SAME — a run that handed it over twice");
+  const L2 = JSON.parse(readFileSync(join(CFG, "lanes.json"), "utf8")), run2 = { lane: "ops", path: join(CFG, "drafts", "act-1d727d7f") }, sym = { lane: "symbiot", path: "/s" };
+  L2.handoffs.push({ id: "d1", key: "d1", from: run2, to: sym, text: "Three gaps found while turning the company folder into memory.\n1. one", at: Date.now() - 2000, chain: 1, status: "done" },
+    { id: "d2", key: "d2", from: run2, to: sym, text: "Three gaps found while turning the company folder into memory.\n1. one, in other words", at: Date.now() - 1000, chain: 1, status: "started" },
+    { id: "d3", key: "d3", from: run2, to: { lane: "coral", path: coral }, text: "Three gaps found while turning the company folder into memory.", at: Date.now(), chain: 1, status: "done" });
+  writeFileSync(join(CFG, "lanes.json"), JSON.stringify(L2));
+  const rows = lanesState().handoffs.filter((h) => /^Three gaps/.test(h.text));
+  ok("the same first line from one lane to the same lane: one row, the newest, said twice", rows.length === 2 && rows.find((h) => h.to === "symbiot").id === "d2" && rows.find((h) => h.to === "symbiot").times === 2, rows);
+  ok("…the same words to another lane stay a row of their own", rows.find((h) => h.to === "coral").times === 1, rows);
+
+  console.log("ABOUT THIS ONE — a repo run's last words cover its whole brief; only the part about the handover goes back");
+  const said = "I finished 7 of the 8 items.\n- **Home:** a needs-you band at the top, with blobs.\n- **Posts:** hidden on the Dashboard until it can draft.\n- **Company folder checks:** checks.mjs flags commitments on leave days, scored against the company audit.";
+  ok("the lines sharing the handover's words, not the rest", aboutIt(said, "Cross-file checks for the company folder: score them against the company audit") === "- **Company folder checks:** checks.mjs flags commitments on leave days, scored against the company audit.", aboutIt(said, "Cross-file checks for the company folder: score them against the company audit"));
+  ok("nothing about it: nothing", aboutIt(said, "Four gaps found while turning the user's knowledge into memory, reports wanted") === "", aboutIt(said, "Four gaps found while turning the user's knowledge into memory, reports wanted"));
+  put(ghost, "HANDOFF.md", "### coral\nBuild the release APK and sign it with the new key.\n");
+  const L3 = JSON.parse(readFileSync(join(CFG, "lanes.json"), "utf8"));
+  L3.handoffs.push({ id: "w", key: "w", from: { lane: "GhostAIChat", path: ghost }, to: { lane: "ops", path: opsDir }, text: "Move the folder `CallForge AI` to `dailify`.\nWhy: the rename.", at: Date.now(), chain: 1, status: "started" });
+  writeFileSync(join(CFG, "lanes.json"), JSON.stringify(L3));
+  put(ghost, "QUESTIONS.md", "## Questions\n### Rename the folder?\nwhy\n- yes (recommended)\n- no\n### Which key?\nwhy\n- the new one (recommended)\n- the old one\n");
+  const pd = partlyDone(ghost);
+  ok("partly done: its open questions and the handover not back yet, in its own words", pd && pd.questions === 2 && pd.handed.length === 2 && pd.handed[0].lane === "ops" && /^Move the folder/.test(pd.handed[0].text) && /release APK/.test(pd.handed[1].text), pd);
+  put(ghost, "QUESTIONS.md", ""); put(ghost, "HANDOFF.md", "");
+  L3.handoffs.find((h) => h.id === "w").reportedAt = Date.now(); writeFileSync(join(CFG, "lanes.json"), JSON.stringify(L3));
+  ok("nothing open and the handover back: not partly done", partlyDone(ghost) === null, partlyDone(ghost));
 } finally {
   rmSync(HOME, { recursive: true, force: true });
 }

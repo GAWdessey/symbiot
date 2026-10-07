@@ -49,7 +49,7 @@ symbiot app
 Starts a tiny local server (127.0.0.1 only, protected by a token) and opens the
 visual app in your browser — in a clean, chrome-less window if you have
 Chrome/Chromium/Edge/Brave (`--app` mode), otherwise a normal tab. No Electron,
-no install — it's the same CLI. Press Ctrl+C (or click Quit) to stop.
+no install — it's the same CLI. Press Ctrl+C (or click the X in the top corner) to stop.
 
 It opens on [the liquid](#the-liquid-a-home-that-shapes-itself-to-you); each of these parts opens from it:
 
@@ -345,6 +345,21 @@ agent made a fix and didn't tick anything), it still shows up here, with
 a `symbiot/changes-<date>` branch, and leaves your tasks as they are. It also
 lists your own uncommitted work in those repos, so check the diff first.
 
+When the run behind those changes stopped partway (questions for you still
+open, or work it handed to another lane not back yet), the card says so in
+plain words ("Partly done: 2 questions for you, and ops is on …"), with
+**Answer its questions** first and **Approve the changes so far** as the
+quieter choice.
+
+### Park a project
+
+A project blocked on something only you can give (a token, a sign-in) would
+otherwise start its agent again with every answer, handover or Go, only to say
+the same thing. **Park this project** (at the top of its tasks) or **Park** (on
+its run in the Agents tab) stops its tasks starting agent runs, even Start it
+anyway, until you unpark it. A run already going finishes; Go skips a parked
+project and says so.
+
 ### Run your agent automatically
 
 Set an **agent command** in Settings (*Hand off to your agent*), and every
@@ -525,18 +540,34 @@ name: **Ferrofluid** (glossy black liquid metal, lit like a studio; the default)
 lit like a product photo). Every panel follows the look, and the typeface (Geist)
 ships with Symbiot, so it looks the same offline.
 
-Its droplets are what only you can do (an Approve waiting, an agent's question to
-you), what's new on what you watch, and the parts of the app, grouped the
-**P.A.R.A.** way, each group in its own part of the screen with its name over it:
+At the top, in a band of its own, is **what only you can do**: an agent's question
+to you, an Approve waiting, a first step. Each is a lit lane orb with a liquid line
+to its blob: the project (by the name you use for it: the `CallForge AI` folder
+shows as **Dailify**, from its README), the question in a line and its two answers
+as buttons, or **answer in your own words**. Answering there is the same as on the
+agent's block in Agents (it's saved to its ANSWERS.md and the agent carries on),
+and the blob dissolves. More than fit across go on a second page. Clicking the orb
+(or **open**) opens that project with what needs you lit up and in view: its
+questions and its Approve under **Needs you here** at the top of its tasks, with its
+handovers that are waiting; an ops run's question on its block in Agents.
 
-- **Projects** (work with an end): Tasks, Agents, Todo and what's asking you. They
-  move the most; Agents has spheres orbiting it while an agent works. Click the
-  **Projects** name for your projects themselves: a sphere per repo with work on it,
-  saying what's going on there, amber when its work waits for your OK; click one for
-  just its tasks.
-- **Areas** (what you keep up with): the Dashboard, your feeds, Week and Standup.
+Under the band, around the core, are the parts of the app, grouped the
+**P.A.R.A.** way, each group a row with its name at its start, always in the same
+place and order:
+
+- **Projects** (work with an end): Tasks, Agents and Todo. Agents has spheres
+  orbiting it while an agent works. Click the **Projects** name for your projects
+  themselves: a sphere per lane with work on it, saying what's going on there,
+  amber when something there needs you, in order (**Needs you** first, **Recent**,
+  or **A–Z**), with the quieter ones under one **more** and every ops run in one
+  **Agent runs** sphere; click one for its tasks. **Go** (start what's waiting)
+  sits small in the bottom corner, never over them.
+- **Areas** (what you keep up with): the Dashboard, Week and Standup.
+- **Watching** (new on what you watch): your feeds with something new.
 - **Resources** (to look things up in): Map, Drift and Settings.
-- **Archive** (what's done): your archived tasks. It sits still, low on the right.
+- **Archive** (what's done): your archived tasks, at the end of a row.
+
+On a narrow screen the groups find their own places around the core instead.
 
 **Click a droplet** and its part opens over the liquid; click a group's name to open
 that group. **Right-click** (or your mouse's back button) goes back one step at a
@@ -793,6 +824,16 @@ the files that changed, every few minutes; `symbiot knowledge index` does it now
 Every chat in the app — the home bar, a Dashboard card, a task — then gets the few
 passages that best answer what you asked, each with the file it came from, and
 quotes and cites that file when it uses one.
+
+**Where your files disagree.** Symbiot also checks the folder: each person's dated
+commitments (deadlines, bookings, log entries) against the leave register, public
+holidays and office days, two files giving the same leave or the same record
+different dates, and each customer's renewal date, price, users, plan, health and
+owner where two files say different things. No AI is asked: it reads dates,
+CSV and Markdown tables, front matter and "Owner:" lines, and examples are never
+used as facts. The list, most pressing first and each with its files, is under
+**Settings → Knowledge folders**; it's checked again whenever a file changes, and
+**Check again** does it now. It's kept in `~/.config/symbiot/checks.json`, yours only.
 
 - **Examples aren't facts.** Say which paths in a folder hold worked examples
   (`--examples templates/,active/`, or the second box in Settings; `templates/`
