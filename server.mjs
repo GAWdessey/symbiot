@@ -12,7 +12,7 @@ import { createServer } from "node:http";
 import { randomBytes } from "node:crypto";
 import { EMBEDDED_UI } from "./ui.mjs";
 import { VERSION, LATEST_VERSION, REGISTRY, semverGt, checkLatest, CONFIG_PATH, loadConfig, saveConfig, loadTasks, hasCmd, chromeBinary } from "./core.mjs";
-import { shSingle, handoffCmd, setHandoffCmd, grantAgent, runHandoff, track, detectHandoffs, connectorsInfo, answerQuestions, skipIdea, agentsList, startWaiting, parkLane, parkedPaths } from "./agents.mjs";
+import { shSingle, handoffCmd, setHandoffCmd, grantAgent, runHandoff, track, detectHandoffs, connectorsInfo, answerQuestions, skipIdea, agentsList, startWaiting, parkLane, parkedPaths, autoAllowSweep } from "./agents.mjs";
 import { PROVIDERS, resolveProvider, connectProvider, detectHardware, recommendModels, hasOllama, ollamaInstall, ensureOllama, useOllamaModel } from "./ai.mjs";
 import { SCAN, SCAN_TIMEOUT_MS, scanRoots, scanHome, addScanRoot, removeScanRoot, buildMap, nodeDetail, repoPathMap } from "./scan.mjs";
 import { computeDrift } from "./drift.mjs";
@@ -424,6 +424,9 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
   startPhone(); // Watch on your phone: the computer listens if it's switched on, the phone asks if it's paired
   setInterval(() => { try { startWaiting(); } catch {} }, 20000).unref(); // a run that waits for your step starts once the file it names changes
   setInterval(() => { try { lanesTick(); } catch {} }, 20000).unref(); // agents hand work to other lanes, and hear back when it's done
+  // an agent's allow list that stays inside your work is turned on by itself, and the agent carries on
+  setTimeout(() => { try { autoAllowSweep(); } catch {} }, 4000).unref();
+  setInterval(() => { try { autoAllowSweep(); } catch {} }, 20000).unref();
   // knowledge folders: changed files re-read (a stat per file when nothing changed), then checked again for where two files disagree (checks.mjs)
   const knowTick = () => { try { const r = knowledgeTick(); if (r && (r.read || r.removed || !checksState().at)) runChecks(); } catch {} };
   setTimeout(knowTick, 5000).unref(); setInterval(knowTick, 3 * 60 * 1000).unref();

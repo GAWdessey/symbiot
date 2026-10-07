@@ -2,6 +2,10 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.52.1
+
+- **Agents stop asking you for permission inside your work.** An agent reaches your knowledge folders from the start, and an ops agent your repos too. When it needs more and proposes a list that stays inside the folders you gave Symbiot, asks for nothing that could run anything, and doesn't publish or reach another machine, Symbiot turns it on by itself and the agent carries on: no question reaches you. Only a list that reaches outside your work (`~/.ssh`, `~/.config`, another machine) still asks, and it says why. Asks already waiting clear the same way.
+
 ## 0.52.0
 
 - **Your agents, on the Tasks screen.** No need to open Agents: a line at the top says where everything stands ("1 question for you · 1 ready for your OK · 2 at work"), and a blob per project shows what its agent did or is doing, what it asks you (its answers as buttons, or your own words), Review and approve when its work is ready, and the extra tasks it suggests, each with **+ task** or **Skip**. The liquid moves left to make room.
