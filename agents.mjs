@@ -141,7 +141,49 @@ function connectorsLine(tmpl = handoffCmd(), file, linked) {
 // For Settings → Handoff: the connectors, whether this command's runs get them, and
 // the sites linked in Symbiot that aren't Claude connectors (so runs can't use them).
 function connectorsInfo(file) { const conns = claudeConnectors("", file); return { claude: isClaudeCmd(handoffCmd()), list: conns.map(({ name, ready }) => ({ name, ready })), links: linkedConnectors(conns) }; }
-const fillHandoff = (tmpl, repoPath) => tmpl.replace(/\{dir\}/g, shSingle(repoPath)).replace(/\{prompt\}/g, escDq(HANDOFF_PROMPT));
+const fillHandoff = (tmpl, repoPath, prompt = HANDOFF_PROMPT) => tmpl.replace(/\{dir\}/g, shSingle(repoPath)).replace(/\{prompt\}/g, escDq(prompt));
+// ---- working like Orca --------------------------------------------------------------
+// In Orca you talk to Claude and it just does the work: permission checks skipped, one
+// conversation that goes on. Symbiot's Claude runs work the same way (config.agentTrust:
+// "full", the default; "ask" keeps the allow lists): --dangerously-skip-permissions, with
+// guard.mjs as a PreToolUse hook that stops the few things only the owner does (push to
+// main, publish, delete outside the folder, sudo, keys, Symbiot's settings), whatever the
+// agent decides. And an answer goes back into the same conversation (--resume), so the
+// agent that asked carries on knowing everything it knew.
+const GUARD_HOOK = fileURLToPath(new URL("./guard.mjs", import.meta.url));
+const GUARD_SETTINGS = join(CONFIG_DIR, "agent-guard.json");
+const trustFull = (cfg = loadConfig()) => cfg.agentTrust !== "ask";
+function guardSettings() {
+  const s = { hooks: { PreToolUse: [{ matcher: "Bash|Read|Edit|Write|MultiEdit|NotebookEdit|Grep|Glob", hooks: [{ type: "command", command: `node ${JSON.stringify(GUARD_HOOK)}` }] }] } };
+  try { mkdirSync(CONFIG_DIR, { recursive: true }); writeFileSync(GUARD_SETTINGS, JSON.stringify(s, null, 2) + "\n", { mode: 0o600 }); } catch {}
+  return GUARD_SETTINGS;
+}
+function withTrust(tmpl) {
+  if (!isClaudeCmd(tmpl) || !trustFull()) return tmpl;
+  let c = String(tmpl).replace(/\s--permission-mode\s+\S+/g, "");
+  if (!/--dangerously-skip-permissions\b/.test(c)) c += " --dangerously-skip-permissions";
+  if (!/--settings\b/.test(c)) c += ` --settings ${JSON.stringify(guardSettings())}`;
+  return c;
+}
+const SESSION = "session.json", RESUME_MAX = 8, RESUME_AGE = 2 * 86400000;
+const RESUME_PROMPT = "The user has answered: read the newest entries in .symbiot/ANSWERS.md and carry on with .symbiot/TASKS.md from where you were. Same rules as before.";
+function sessionOf(path) { try { return JSON.parse(readSymbiot(path, SESSION)) || null; } catch { return null; } }
+// Resume when an answer has come in since its last run, and the conversation is fresh enough
+function resumeFor(path) {
+  const s = sessionOf(path); if (!s || !s.id || (s.runs || 0) >= RESUME_MAX || Date.now() - (s.at || 0) > RESUME_AGE) return null;
+  let answered = 0; try { answered = statSync(join(path, ".symbiot", "ANSWERS.md")).mtimeMs; } catch {}
+  return answered > (s.at || 0) ? s : null;
+}
+function noteSession(path, code, resumed) {
+  const f = join(path, ".symbiot", SESSION);
+  let run = {}; try { run = parseRun(lastRunText(readSymbiot(path, "agent.log"))); } catch {}
+  if (code !== 0) {
+    if (resumed && /No conversation found|session .*not found/i.test(readSymbiot(path, "agent.log").slice(-2000))) { try { unlinkSync(f); } catch {} return "lost"; }
+    return null;
+  }
+  if (run.session) { const prev = sessionOf(path) || {}; try { writeFileSync(f, JSON.stringify({ id: run.session, at: Date.now(), runs: prev.id === run.session ? (prev.runs || 1) + 1 : 1 })); } catch {} }
+  return run.session || null;
+}
 // One agent per folder: two identical runs once started on the same repo 6s
 // apart and raced each other. The registry catches a second click in this
 // process; .symbiot/agent.pid catches another one (`symbiot push --open` while
@@ -161,13 +203,16 @@ function runHandoff(repoPath, { force = false } = {}) {
   let opts = {}; try { opts = JSON.parse(readSymbiot(repoPath, "handoff.json")) || {}; } catch {}
   const busy = runningHandoff(repoPath); if (busy) return { busy: true, id: busy.id || "", pid: busy.pid, auto: !!busy.auto };
   releaseHeldTasks(repoPath); // held for an agent another process started, which has since exited
-  tmpl = withStream(withScope(withConnectors(tmpl, repoPath), repoPath));
+  tmpl = withStream(withTrust(withScope(withConnectors(tmpl, repoPath), repoPath)));
+  const resume = isClaudeCmd(tmpl) ? resumeFor(repoPath) : null;
+  const runCmd = resume ? tmpl + ` --resume ${resume.id}` : tmpl;
   if (!force) { const w = waitingFor(repoPath); if (w) { askedFor(repoPath); return { blocked: true, waiting: true, questions: 0, note: waitNote(w) }; } }
   const blocked = !force && blockedAgain(repoPath, tmpl); if (blocked) return blocked;
   try { unlinkSync(join(repoPath, ".symbiot", WAITING)); } catch {} // the step's done (or this is Start it anyway): this is the run it waited for
   const lock = join(repoPath, ".symbiot", LOCK);
   const env = opts.env && typeof opts.env === "object" ? Object.fromEntries(Object.entries(opts.env).map(([k, v]) => [k, String(v)])) : null;
-  const e = track(typeof opts.name === "string" && opts.name ? opts.name.slice(0, 80) : repoPath.split("/").pop(), fillHandoff(tmpl, repoPath), repoPath, (code) => {
+  const e = track(typeof opts.name === "string" && opts.name ? opts.name.slice(0, 80) : repoPath.split("/").pop(), fillHandoff(runCmd, repoPath, resume ? RESUME_PROMPT : HANDOFF_PROMPT), repoPath, (code) => {
+    if (noteSession(repoPath, code, !!resume) === "lost") { setTimeout(() => { try { runHandoff(repoPath, { force: true }); } catch {} }, 300); return; } // its conversation is gone: start afresh
     try { if (JSON.parse(readFileSync(lock, "utf8")).pid === e.pid) unlinkSync(lock); } catch {}
     noteBlocked(repoPath, tmpl, e.startedAt, code);
     setTimeout(() => { try { autoAllow(repoPath); } catch {} }, 300); // a list it proposed inside your work: turned on, and on it goes
@@ -843,4 +888,4 @@ function agentsList() {
   }).concat(earlierRuns());
 }
 
-export { FACTS, factsOf, knownRun, withStream, workOf, HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, connectorsInfo, fillHandoff, runHandoff, PARKED_NOTE, parkedPaths, isParked, parkLane, agentMissing, blockedAgain, runningHandoff, loadRuns, earlierRuns, namedFiles, waitingFor, startWaiting, writeTasks, droppedTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, skipIdea, agentQuestions, answerQuestions, agentsList , autoAllow, autoAllowSweep, allowlistInWork, inWork, withScope };
+export { FACTS, factsOf, knownRun, withStream, workOf, HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, connectorsInfo, fillHandoff, runHandoff, PARKED_NOTE, parkedPaths, isParked, parkLane, agentMissing, blockedAgain, runningHandoff, loadRuns, earlierRuns, namedFiles, waitingFor, startWaiting, writeTasks, droppedTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, skipIdea, agentQuestions, answerQuestions, agentsList , autoAllow, autoAllowSweep, allowlistInWork, inWork, withScope , withTrust, resumeFor, noteSession, trustFull, GUARD_SETTINGS };

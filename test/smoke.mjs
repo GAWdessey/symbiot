@@ -203,6 +203,8 @@ const calls = [
   ["/api/screens/trusted/add", "POST"],    // no site -> refused, nothing saved
   ["/api/screens/trusted/remove", "POST"],
   ["/api/screens/signin", "POST"],  // no site -> refused, no window opens
+  ["/api/agent/trust", "GET"],      // whether agents work like Orca (default) or ask
+  ["/api/agent/trust/set", "POST"], // the Settings switch (in the isolated HOME)
   ["/api/work", "GET"],             // the work scene: who's at work, what's waiting, what's ready
   ["/api/work/go", "POST"],         // nothing waiting in the isolated HOME -> starts nothing
   ["/api/home", "GET"],             // the liquid's live data (isolated HOME -> empty)

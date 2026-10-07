@@ -929,6 +929,7 @@ body.lq-light .btip .bta button:not(.quiet){background:#151A21;color:#FFFFFF}
 <h3 class="ssh">Hand off to your agent when you "Send to repos"</h3>
 <input id="agentcmd" type="text" placeholder="e.g.  aider --message &quot;{prompt}&quot; --yes   ·   code {dir}   ·   leave blank to just write the file">
 <div class="note muted">Runs in each repo after tasks are written. Use <b>{dir}</b> = repo path, <b>{prompt}</b> = the task instruction. Works with any agent or editor &mdash; it's your command.</div>
+<label class="check swl" style="margin-top:12px"><input type="checkbox" class="sw" id="agenttrust" checked> <span>Agents work like Orca: they just do it. Symbiot's guard still stops pushing to main, publishing, deleting outside their folder, sudo, your keys and Symbiot's settings. Off: they ask before anything outside their allow list.</span></label>
 <div id="agentpresets" style="margin-top:8px"></div>
 <div class="note muted" id="agentconnectors"></div>
 <div id="grantbox" style="margin-top:10px">
@@ -1951,6 +1952,7 @@ el.querySelectorAll('.bdraft').forEach(function(btn){btn.addEventListener('click
 api('/api/watch/draft',{id:n.id}).then(function(x){btn.disabled=false;if(!x||x.error){boardMsg('err',esc((x&&x.error)||'failed'));return;}boardMsg('ok',x.chat?DRAFTING_CHAT:x.social?DRAFTING_SOCIAL:DRAFTING);loadWatchUI();}).catch(function(e){btn.disabled=false;boardMsg('err',esc(String((e&&e.message)||e)));});});});}
 wire(el);wire($('boardtalk'));wire($('bsov'));BWIRE=wire;}
 $('boardrefresh').addEventListener('click',loadBoard);
+var atr=$('agenttrust');if(atr&&atr.addEventListener){api('/api/agent/trust').then(function(r){if(r)atr.checked=!!r.full;}).catch(function(){});atr.addEventListener('change',function(){api('/api/agent/trust/set',{full:atr.checked}).then(function(r){if(r)atr.checked=!!r.full;});});}
 var bw=$('boardwin');if(bw&&bw.querySelectorAll)bw.querySelectorAll('button').forEach(function(b){b.addEventListener('click',function(){BOARDH=+b.getAttribute('data-h')||24;bw.querySelectorAll('button').forEach(function(x){x.setAttribute('aria-checked',x===b?'true':'false');});loadBoard();});});
 // A web page, mapped by itself in the hidden browser (headless.mjs): no capture,
 // no dragging. It takes a few seconds, so the button says so meanwhile.
