@@ -12,6 +12,10 @@ What each Symbiot release brought, newest first. When Approve bumps the version,
 - Fixed reply tracking treating a signed-out inbox as watched; Home now asks you to sign in again so replies aren't missed.
 - Added a "Where your files disagree" alert under Watching on Home when your files contradict each other on something important.
 
+## 0.54.2
+
+- **Lighter without a graphics card.** When the liquid is drawn by the CPU (no GPU, or a headless browser like the ones agents check Symbiot's screens in), it used 6 cores or more. Now it draws at a third of the resolution, without the breathing, and only when something actually moved, at most 20 times a second: about a third of the CPU. It does the same when your system asks for less motion. With a graphics card, Home also draws half as often at rest and a sixth as often behind an open panel, where it barely shows.
+
 ## 0.54.1
 
 - **No more lag from a big agent log.** An agent's log keeps every run and everything it reads, screenshots included; one reached 144 MB, and Symbiot reread all of it on almost every refresh, so the app stalled for 5–28 seconds at a time and ate a core. Now it reads only the newest run, from the end of the file, and keeps it until the file changes. A log past 8 MB starts afresh at the next run, with the old one kept as `agent.log.old`.

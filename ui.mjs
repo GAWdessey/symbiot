@@ -1235,7 +1235,7 @@ el.addEventListener('pointerleave',function(){if(!LM.pan)lmHot(null);});
 var zi=$('lmin'),zo=$('lmout'),zf=$('lmfit');function z(f){var w=el.clientWidth/2,h=el.clientHeight/2,k0=LM.view.k,k=Math.max(0.3,Math.min(4,k0*f));LM.view.x=w-(w-LM.view.x)*k/k0;LM.view.y=h-(h-LM.view.y)*k/k0;LM.view.k=k;}
 if(zi)zi.addEventListener('click',function(){z(1.25);});if(zo)zo.addEventListener('click',function(){z(0.8);});if(zf)zf.addEventListener('click',lmFit);}
 function lmStart(){if(LM.on)return;var raf=typeof window.requestAnimationFrame==='function'?function(f){return window.requestAnimationFrame(f);}:null;if(!raf)return;LM.on=true;
-var loop=function(){var p=$('panel-map'),el=$('lmap');if(!p||!el||!el.offsetParent){LM.on=false;return;}lmFrame();raf(loop);};raf(loop);}
+var loop=function(){var p=$('panel-map'),el=$('lmap');if(!p||!el||!el.offsetParent){LM.on=false;return;}LM.fr=(LM.fr||0)+1;if(LM.fr%glEvery(true)===0)lmFrame();raf(loop);};raf(loop);}
 function lmFrame(){var el=$('lmap'),cv=$('lmc');if(!el||!cv||!LM.items.length)return;if(!LM.G)LM.G=lqGL(cv,64);var w=el.clientWidth,h=el.clientHeight,t=LM.t=(LM.t||0)+0.016,still=LQ.theme&&LQ.theme.still,k=LM.view.k;
 var P=LM.items.map(function(a,i){var p=lmS(a);if(!still){p.x+=Math.sin(t*0.4+i*1.7)*2;p.y+=Math.cos(t*0.35+i*2.3)*2;}return p;}),ME=lmS(LM.me);
 // labels, rings, cluster names, tip
@@ -1246,7 +1246,7 @@ var me=$('lmme');if(me&&me.style)me.style.transform='translate('+Math.round(ME.x
 var tip=$('lmtip');if(tip&&LM.hot){var hi=LM.items.indexOf(LM.hot),hp=P[hi],tw=tip.offsetWidth||280,th=tip.offsetHeight||100,tx=Math.max(10,Math.min(w-tw-10,hp.x+LM.hot.r*k+16)),ty=Math.max(10,Math.min(h-th-10,hp.y-th/2));if(tx<hp.x&&hp.x+LM.hot.r*k+16+tw>w)tx=Math.max(10,hp.x-LM.hot.r*k-16-tw);tip.style.transform='translate('+Math.round(tx)+'px,'+Math.round(ty)+'px)';}
 // faint lines for the weak links
 var sv=$('lmlines');if(sv){var ln='';LM.edges.forEach(function(e){if(e.sim>=0.3)return;var a=P[LM.items.indexOf(e.a)],b=P[LM.items.indexOf(e.b)],hot=LM.hot&&(LM.hot===e.a||LM.hot===e.b);ln+="<line x1='"+a.x.toFixed(1)+"' y1='"+a.y.toFixed(1)+"' x2='"+b.x.toFixed(1)+"' y2='"+b.y.toFixed(1)+"' class='"+(hot?'hot':'')+"'/>";});sv.innerHTML=ln;}
-var G=LM.G;if(!G)return;var gl=G.gl,d=Math.min(window.devicePixelRatio||1,2),W=Math.max(1,Math.floor(w*d)),H=Math.max(1,Math.floor(h*d));if(cv.width!==W||cv.height!==H){cv.width=W;cv.height=H;gl.viewport(0,0,W,H);}
+var G=LM.G;if(!G)return;var gl=G.gl,d=glDpr(2),W=Math.max(1,Math.floor(w*d)),H=Math.max(1,Math.floor(h*d));if(cv.width!==W||cv.height!==H){cv.width=W;cv.height=H;gl.viewport(0,0,W,H);}
 var o=G.out;for(var z=0;z<o.length;z++)o[z]=0;var n=0,put=function(x,y,r,a){if(n>=64||r<=0)return;o[n*4]=x/w;o[n*4+1]=y/h;o[n*4+2]=r;o[n*4+3]=a||0;n++;};
 LM.items.forEach(function(a,i){if(!a.fold)put(P[i].x,P[i].y,a.r*k*(LM.hot===a?1.08:1),0);});
 // tendrils: a chain of small drops, close enough to always bridge, for the middling links
@@ -2032,13 +2032,13 @@ var x=BS.beads[k],c=BS.b.cards[x.i],n=x.n;if(x.past){tip.innerHTML="<div class='
 tip.innerHTML="<div class='bcard' data-i='"+x.i+"'><div class='bi' data-j='"+x.j+"'><div class='btf'>"+esc(n.name||bsName(c).n)+" <span>&middot; "+esc(bsName(c).n)+" &middot; "+agoTxt(n.ts)+(n.from&&CHATFROM[n.from]?" &middot; "+CHATFROM[n.from]:"")+(n.read?" &middot; read":"")+"</span></div><div class='btx'>"+esc(n.text||'')+"</div><div class='bta'>"+(n.mail||n.chat?"<button class='bdraft'>"+(n.drafted?"Drafted &middot; again":"Draft a reply")+"</button>":"")+(n.href?"<button class='bopen"+(n.mail||n.chat?" quiet":"")+"'>Open</button>":"")+(n.chat&&n.drafted?"<button class='bopenwa quiet'>Open in WhatsApp</button>":"")+"</div></div></div>";
 tip.className='btip on';if(BWIRE)BWIRE(tip);}
 function bsStart(){if(BS.on)return;var raf=typeof window.requestAnimationFrame==='function'?function(f){return window.requestAnimationFrame(f);}:null;if(!raf)return;BS.on=true;
-var loop=function(){var p=$('panel-board'),el=$('bstream');if(!p||!el||!p.offsetParent||(el.classList&&el.classList.contains('none'))){BS.on=false;return;}bsFrame();raf(loop);};raf(loop);}
+var loop=function(){var p=$('panel-board'),el=$('bstream');if(!p||!el||!p.offsetParent||(el.classList&&el.classList.contains('none'))){BS.on=false;return;}BS.fr=(BS.fr||0)+1;if(BS.fr%glEvery(true)===0)bsFrame();raf(loop);};raf(loop);}
 function bsFrame(){var el=$('bstream'),cv=$('bsc');if(!el||!cv)return;if(!BS.G)BS.G=lqGL(cv,40);var g=bsGeom();if(BS.b&&BS.gw!==g.w){bsBuild(BS.b);g=bsGeom();}var t=LQ.t||0,still=LQ.theme&&LQ.theme.still;
 BS.beads.forEach(function(x,k){var hot=BS.hot===k;x.x+=(x.tx-x.x)*0.12;x.y+=((x.ty+(still?0:Math.sin(t*0.8+k*1.3)*2))-x.y)*0.12;x.r+=((x.tr*(hot?1.35:1))-x.r)*0.15;
 var bt=BS.btns&&BS.btns[k];if(bt&&bt.style){var R=Math.max(14,x.r+6);bt.style.width=bt.style.height=(2*R)+'px';bt.style.transform='translate('+Math.round(x.x-R)+'px,'+Math.round(x.y-R)+'px)';}});
 var tip=document.querySelector('#bsov .btip');if(tip&&BS.hotWait!=null&&BS.waits&&BS.waits[BS.hotWait]){var wx=BS.waits[BS.hotWait],tw2=tip.offsetWidth||300,th2=tip.offsetHeight||140,tx2=Math.max(12,Math.min(g.w-tw2-12,wx.x-tw2/2)),ty2=wx.y-th2-16;if(ty2<8)ty2=wx.y+16;tip.style.transform='translate('+Math.round(tx2)+'px,'+Math.round(ty2)+'px)';}
 else if(tip&&BS.hot!=null&&BS.beads[BS.hot]){var x=BS.beads[BS.hot],tw=tip.offsetWidth||300,th=tip.offsetHeight||120,tx=Math.max(12,Math.min(g.w-tw-12,x.x-tw/2)),ty=x.y-x.r-th-14;if(ty<8)ty=x.y+x.r+14;tip.style.transform='translate('+Math.round(tx)+'px,'+Math.round(ty)+'px)';}
-var G=BS.G;if(!G)return;var gl=G.gl,d=Math.min(window.devicePixelRatio||1,3),W=Math.max(1,Math.floor(g.w*d)),H=Math.max(1,Math.floor(g.h*d));if(cv.width!==W||cv.height!==H){cv.width=W;cv.height=H;gl.viewport(0,0,W,H);}
+var G=BS.G;if(!G)return;var gl=G.gl,d=glDpr(3),W=Math.max(1,Math.floor(g.w*d)),H=Math.max(1,Math.floor(g.h*d));if(cv.width!==W||cv.height!==H){cv.width=W;cv.height=H;gl.viewport(0,0,W,H);}
 var o=G.out;for(var i=0;i<o.length;i++)o[i]=0;var k=0,put=function(px,py,r,a){if(k>=40)return;o[k*4]=px/g.w;o[k*4+1]=py/g.h;o[k*4+2]=Math.max(0,r);o[k*4+3]=a;k++;};
 (BS.b.cards||[]).forEach(function(c,i){put(g.x1,60+(g.h-110)*(i+0.5)/Math.max(1,g.n),c.count?9+2*Math.min(c.count,6):5,0);});
 BS.beads.forEach(function(x){put(x.x,x.y,x.r,x.need?1:0);});
@@ -2691,7 +2691,17 @@ var LQ_FS=['precision highp float;',
 'gl_FragColor=vec4(col,1.0);}'].join('');
 function lqFS(n){return LQ_FS.split('NB').join(String(n));}
 var LQ_NB=32; // metaballs home can draw: the core, the droplets, the lines to their blobs, the one at your pointer
+// No graphics card (WebGL drawn by the CPU: SwiftShader, llvmpipe), any steady drawing
+// keeps several cores spinning (measured: 2.4-6 cores at full speed, 0.9 at 2 a second,
+// 0.06 not drawing). Then, or when the system asks for less motion, the liquid draws at
+// a third of the resolution, without the breathing, and only when something moved (Home), at most
+// 20 a second while you use it and 5 at rest. glDpr: the pixel ratio a canvas draws at;
+// glEvery: draw 1 frame in n.
+var GLSOFT=false,GLSTILL=false;try{GLSTILL=!!(window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches);}catch(e){}
+function glEvery(busy){return GLSOFT||GLSTILL?(busy?3:12):1;}
+function glDpr(max){return GLSOFT?0.34:Math.min(window.devicePixelRatio||1,max);}
 function lqGL(c,n){c=c||$('lq');n=n||LQ_NB;if(!c||!c.getContext)return null;var gl=null;try{gl=c.getContext('webgl',{antialias:false,alpha:false});}catch(e){}if(!gl)return null;
+try{var dbg=gl.getExtension('WEBGL_debug_renderer_info'),rn=String(dbg?gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL):gl.getParameter(gl.RENDERER)).toLowerCase();if(['swiftshader','llvmpipe','softpipe','software'].some(function(k){return rn.indexOf(k)>=0;}))GLSOFT=true;}catch(e){}
 function sh(t,src){var o=gl.createShader(t);gl.shaderSource(o,src);gl.compileShader(o);return o;}
 var pr=gl.createProgram();gl.attachShader(pr,sh(gl.VERTEX_SHADER,'attribute vec2 a;void main(){gl_Position=vec4(a,0.0,1.0);}'));gl.attachShader(pr,sh(gl.FRAGMENT_SHADER,lqFS(n)));gl.linkProgram(pr);
 if(!gl.getProgramParameter(pr,gl.LINK_STATUS))return null;gl.useProgram(pr);
@@ -2699,9 +2709,9 @@ var bf=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,bf);gl.bufferData(gl.ARRA
 var al=gl.getAttribLocation(pr,'a');gl.enableVertexAttribArray(al);gl.vertexAttribPointer(al,2,gl.FLOAT,false,0,0);
 var U={};['uRes','uT','uDpr','uB','uRip','uStyle','uContrast','uExposure'].forEach(function(n){U[n]=gl.getUniformLocation(pr,n);});
 return {gl:gl,c:c,U:U,out:new Float32Array(n*4),t0:(window.performance&&performance.now)?performance.now():Date.now()};}
-function lqDraw(G){var gl=G.gl,c=G.c,S=lqSize(),d=Math.min(window.devicePixelRatio||1,3),W=Math.max(1,Math.floor(S.w*d)),H=Math.max(1,Math.floor(S.h*d));
+function lqDraw(G){var gl=G.gl,c=G.c,S=lqSize(),d=glDpr(3),W=Math.max(1,Math.floor(S.w*d)),H=Math.max(1,Math.floor(S.h*d));
 if(c.width!==W||c.height!==H){c.width=W;c.height=H;gl.viewport(0,0,W,H);}
-var now=(window.performance&&performance.now)?performance.now():Date.now(),t=(now-G.t0)/1000,th=LQ.theme,still=th.still,o=G.out;LQ.t=t;
+var now=(window.performance&&performance.now)?performance.now():Date.now(),t=(now-G.t0)/1000,th=LQ.theme,slow=GLSOFT||GLSTILL,still=th.still||slow,o=G.out;LQ.t=t;
 for(var i=0;i<o.length;i++)o[i]=0;var NB=o.length/4;
 var put=function(k,x,y,r,a,lv){if(k>NB-1)return;var w=still?0:(k===0?1:lv!=null?lv:0.3);o[k*4]=x/S.w+Math.sin(t*1.3+k*1.7)*0.004*w;o[k*4+1]=y/S.h+Math.cos(t*1.1+k*2.3)*0.005*w;o[k*4+2]=Math.max(0,r)*(1+0.035*Math.sin(t*2.0+k)*w);o[k*4+3]=a||0;};
 put(0,LQ.core.x,LQ.core.y,LQ.core.cr);var k=1,tend=[];
@@ -2714,7 +2724,9 @@ tend.forEach(function(dr){var dx=dr.x-LQ.core.x,dy=dr.y-LQ.core.y,len=Math.sqrt(
 if(LQ.mode!=='rest'&&LQ.mode!=='pool')LQ.drops.forEach(function(dr){if(!dr.blob||dr.gone||dr.cr<6||k+3>NB-1)return;var x1=dr.x+dr.cr;put(k++,x1+8,dr.y,7*Math.min(1,dr.cr/dr.r),1,0.2);put(k++,x1+18,dr.y,6,1,0.2);put(k++,x1+31,dr.y,10,1,0.2);});
 var P=LQ.pointer;if(P&&LQ.mode==='aware'&&!LQ.talking){var best=null,bd=1e9;[LQ.core].concat(LQ.drops).forEach(function(g){if(g.cr<18)return;var dd=Math.hypot(P[0]-g.x,P[1]-g.y)-g.cr;if(dd<bd){bd=dd;best=g;}});
 if(best&&bd<230){var dx=P[0]-best.x,dy=P[1]-best.y,dl=Math.hypot(dx,dy)||1,reach=Math.min(dl,best.cr+70);put(NB-1,best.x+dx/dl*reach,best.y+dy/dl*reach,8+20*(1-Math.max(0,bd)/230));}}
-var U=G.U;gl.uniform2f(U.uRes,W,H);gl.uniform1f(U.uT,t);gl.uniform1f(U.uDpr,d);gl.uniform4fv(U.uB,o);gl.uniform3f(U.uRip,LQ.ripple[0],LQ.ripple[1],still?-10:LQ.ripple[2]);
+// drawn seldom (no GPU, or less motion asked for): still, and only when something moved
+if(slow){var sig=W+'|'+H+'|'+th.look+th.night+th.contrast;for(var q=0;q<o.length;q++)sig+=','+Math.round(o[q]*400);if(sig===G.sig)return;G.sig=sig;}
+var U=G.U;gl.uniform2f(U.uRes,W,H);gl.uniform1f(U.uT,slow?0:t);gl.uniform1f(U.uDpr,d);gl.uniform4fv(U.uB,o);gl.uniform3f(U.uRip,LQ.ripple[0],LQ.ripple[1],still?-10:LQ.ripple[2]);
 gl.uniform1f(U.uStyle,th.look==='glass'?0:th.look==='pearl'?2:1);gl.uniform1f(U.uContrast,th.contrast?1:0);gl.uniform1f(U.uExposure,th.night?0.82:1);
 gl.drawArrays(gl.TRIANGLES,0,3);}
 function lqInit(){var bd=document.body;if(!bd||!bd.classList)return;lqTheme();bd.classList.add('lq-liquid');
@@ -2737,7 +2749,7 @@ lqLoad(true);
 // the only clocks: rest when left alone, fresh data now and then, the hour (night)
 setInterval(function(){if(LQ.mode==='aware'&&!LQ.talking&&Date.now()-LQ.lastAct>LQ_REST)LQ.mode='rest';if(LQ.mode!=='pool')lqLoad(false);var h=new Date().getHours(),n=h>=22||h<6;if(n!==LQ.theme.night)lqTheme();},30000);
 var G=lqGL();if(G){try{lqStep();lqDraw(G);}catch(e){}}if(typeof window.requestAnimationFrame!=='function')return;var raf=function(f){return window.requestAnimationFrame(f);};
-function frame(){if(!document.hidden){LQ.frame++;if(LQ.mode!=='pool'||LQ.frame%3===0){lqStep();if(G)lqDraw(G);}}raf(frame);}
+function frame(){if(!document.hidden){LQ.frame++;if(LQ.mode!=='pool'||LQ.frame%3===0)lqStep();var every=(GLSOFT||GLSTILL)?glEvery(LQ.mode==='aware'):LQ.mode==='pool'?6:LQ.mode==='rest'?2:1;if(G&&LQ.frame%every===0)lqDraw(G);}raf(frame);} // moves every frame; drawn less at rest, behind a panel, without a GPU
 raf(frame);}
 
 initGraphEvents();syncP();refresh();loadMap();firstTab();lqInit();lqDeep();loadWhatsNew();loadAgentCfg();loadScanRoots();loadKnowledge();loadPhone();loadLinks();loadMind();loadTrusted();loadMail();loadScreensUI();loadMonitorsUI();loadDesktop();loadWatchUI();setInterval(function(){whenFree(document.querySelector('main'),'watch',loadWatchUI);},60000);loadPhoneLink();
