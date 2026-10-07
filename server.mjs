@@ -214,6 +214,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
   const json = (res, obj) => { res.writeHead(200, { "content-type": "application/json" }); res.end(JSON.stringify(obj)); };
   const screenOut =(s) => (s && s.id ? { ...s, blueprint: blueprint(s), ...(s.page ? { trusted: isTrusted(s.page.url) } : {}) } : s && s.screens ? { ...s, screens: s.screens.map(screenOut) } : s);
   let UPDATING = null; // an update in flight: { target, attempt, retrying? }
+  let NEWEST_WIN = ""; // the Symbiot window opened last: older ones close themselves (one window, not a pile)
   process.on("exit", () => closeAway()); // Away's windows go with the app (a quit, an update's restart)
   const server = createServer(async (req, res) => {
     const u = new URL(req.url, "http://127.0.0.1");
@@ -418,7 +419,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       if (u.pathname === "/api/run" && req.method === "POST") { const b = await readBody(req); const cmd = ["week", "standup", "todo"].includes(b.cmd) ? b.cmd : "week"; return json(res, cmd === "week" ? await runWeekly(writeup, { notify: false }) : await writeup(cmd)); }
       if (u.pathname === "/api/connect" && req.method === "POST") { return json(res, await connectProvider(await readBody(req))); }
       // a sandbox (symbiot app --fresh) never offers an update: it would replace your real install
-      if (u.pathname === "/api/ping") { if (u.searchParams.get("fresh") === "1" && !SANDBOX) await checkLatest(); return json(res, { version: VERSION, started: SERVER_STARTED, latest: LATEST_VERSION, newer: !SANDBOX && semverGt(LATEST_VERSION, VERSION), ...(UPDATING && UPDATING.retrying ? { retrying: UPDATING } : {}), ...(IN_TERMUX ? { termux: true } : {}), ...(SANDBOX ? { sandbox: true } : {}) }); }
+      if (u.pathname === "/api/ping") { if (u.searchParams.get("fresh") === "1" && !SANDBOX) await checkLatest(); const w = u.searchParams.get("w") || ""; if (/^[a-z0-9]{6,20}$/.test(w) && u.searchParams.get("new") === "1") NEWEST_WIN = w; return json(res, { ...(NEWEST_WIN ? { window: NEWEST_WIN } : {}), version: VERSION, started: SERVER_STARTED, latest: LATEST_VERSION, newer: !SANDBOX && semverGt(LATEST_VERSION, VERSION), ...(UPDATING && UPDATING.retrying ? { retrying: UPDATING } : {}), ...(IN_TERMUX ? { termux: true } : {}), ...(SANDBOX ? { sandbox: true } : {}) }); }
       // What's new: after an update, since the version you last saw (until you click Got it);
       // ?latest=1, what the update on offer brings, from its package on npm
       if (u.pathname === "/api/whatsnew") {
@@ -473,7 +474,10 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
   server.on("error", (e) => {
     // Stable port busy (an older instance still exiting during an update, or a
     // second app): retry briefly, then fall back to a random port.
-    if (e && e.code === "EADDRINUSE" && tries < 8) { tries++; setTimeout(() => { try { server.listen(PORT, "127.0.0.1"); } catch {} }, 500); }
+    if (e && e.code === "EADDRINUSE" && tries < (RELAUNCH ? 40 : 8)) { tries++; setTimeout(() => { try { server.listen(PORT, "127.0.0.1"); } catch {} }, 500); }
+    // after an update, the window only ever looks for the stable port: a copy on another
+    // port would serve nobody and linger (one did, for hours), so it bows out
+    else if (RELAUNCH) process.exit(0);
     else { try { server.listen(0, "127.0.0.1"); } catch {} }
   });
   server.listen(PORT, "127.0.0.1");

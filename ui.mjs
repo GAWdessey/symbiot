@@ -818,7 +818,7 @@ body.lq-light .lqatt img{border-color:rgba(21,26,33,.15)}body.lq-light .lqatt bu
 #lqform.drop{outline:2px dashed rgba(242,165,65,.7);outline-offset:4px}
 .lqmimgs{display:flex;gap:6px;margin-bottom:6px}.lqmimgs img{width:120px;max-height:90px;object-fit:cover;border-radius:8px}
 
-/* Away (Super+S): the orb, the time and what's going on, on every screen; nothing else */
+/* Away (Super and the key above Tab): the orb, the time and what's going on, on every screen; nothing else */
 #lqaway{display:none}
 body.lq-away{cursor:none;overflow:hidden}
 body.lq-away #lq{position:fixed!important;inset:0!important;width:100vw!important;height:100vh!important;display:block!important}
@@ -2280,8 +2280,17 @@ document.getElementById('autostart').addEventListener('change',saveAutostart);
 (function(){var h='';for(var i=0;i<24;i++)h+="<option value='"+i+"'>"+(i<10?'0':'')+i+":00</option>";document.getElementById('weeklyhour').innerHTML=h;})();
 var SRV_STARTED=null,srvDown=false,updBusy=false;
 function ubar(){return document.getElementById('updatebar');}
+// One Symbiot window, not a pile: each window has an id, says so the first time it
+// asks, and the server remembers the newest. An older one closes itself; where the
+// browser won't let it (a tab you opened), it says so and can take over. Away's
+// windows don't count.
+var WIN_ID=/[?&]away=1(&|$)/.test(location.search||'')?'':Math.random().toString(36).slice(2,12),WIN_NEW=true; // read from the address: AWAY is set further down
+function winTakeOver(){WIN_NEW=true;var o=$('winold');if(o)o.remove();heartbeat(false);}
+function winOld(){try{window.close();}catch(e){}setTimeout(function(){if($('winold')||!document.body)return;var o=document.createElement('div');o.id='winold';o.className='updatebar reconnect show';o.innerHTML="Symbiot is open in a newer window. <button class='ghost' id='wintake'>Use this one</button>";document.body.appendChild(o);var t=$('wintake');if(t)t.onclick=winTakeOver;},400);}
 function heartbeat(fresh){
-  api('/api/ping'+(fresh?'?fresh=1':'')).then(function(p){
+  var q=[];if(fresh)q.push('fresh=1');if(WIN_ID){q.push('w='+WIN_ID);if(WIN_NEW)q.push('new=1');}
+  api('/api/ping'+(q.length?'?'+q.join('&'):'')).then(function(p){
+    if(WIN_ID){WIN_NEW=false;if(p&&p.window&&p.window!==WIN_ID){if(!$('winold'))winOld();return;}}
     var b=ubar();
     var ve=document.getElementById('ver');if(ve&&p.version){ve.textContent='v'+p.version+(p.sandbox?' · sandbox':'');if(p.sandbox){ve.title='A brand-new Symbiot to try first run in (symbiot app --fresh): its own empty home, none of your data, accounts or memory. It is deleted when you quit.';ve.style.color='var(--amber)';}}
     if(SRV_STARTED===null){SRV_STARTED=p.started;appBar(p);}
@@ -2817,7 +2826,7 @@ var U=G.U;gl.uniform2f(U.uRes,W,H);gl.uniform1f(U.uT,slow?0:t);gl.uniform1f(U.uD
 gl.uniform1f(U.uStyle,th.look==='glass'?0:th.look==='pearl'?2:1);gl.uniform1f(U.uContrast,th.contrast?1:0);gl.uniform1f(U.uExposure,th.night?0.82:1);
 gl.drawArrays(gl.TRIANGLES,0,3);}
 
-// ---- Away (Super+S) ------------------------------------------------------------
+// ---- Away (Super and the key above Tab) ------------------------------------------------------------
 // ?away=1 from "symbiot away": this window is one of the screens. One screen: the
 // orb rests in the middle. More: it bounces across their shared area (gw x gh) at
 // the same pace in every window from the same start (t0), each drawing it while it's

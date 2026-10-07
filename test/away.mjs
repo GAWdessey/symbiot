@@ -33,22 +33,29 @@ try {
   ok("four: the area is 3840 x 2160, the bottom-right one at 1920,1080", q4.length === 4 && q4[0].gw === "3840" && q4[0].gh === "2160" && q4.some((q) => q.ax === "1920" && q.ay === "1080"), q4);
   ok("can't tell: one window, the orb in the middle", awayQueries([], 1).length === 1 && /n=1/.test(awayQueries([], 1)[0]), "");
 
-  console.log("THE SHORTCUT — Super+S in COSMIC's custom shortcuts");
+  console.log("THE SHORTCUT — Super+` (above Tab) in COSMIC's custom shortcuts; Super+S stacks windows there");
   const cmd = "/usr/bin/node /home/x/.npm-global/bin/symbiot away";
   const fresh = withShortcut("", cmd);
-  ok("a new file: just ours", /^\{\n {4}\(modifiers: \[Super\], key: "s"\): Spawn\("\/usr\/bin\/node \/home\/x\/\.npm-global\/bin\/symbiot away"\),\n\}\n$/.test(fresh), fresh);
-  const other = '{\n    (modifiers: [Super], key: "t"): Spawn("cosmic-term"),\n    (modifiers: [Super], key: "s"): ToggleStacking,\n}\n';
+  ok("a new file: just ours, on Super+grave", /^\{\n {4}\(modifiers: \[Super\], key: "grave"\): Spawn\("\/usr\/bin\/node \/home\/x\/\.npm-global\/bin\/symbiot away"\),\n\}\n$/.test(fresh), fresh);
+  const other = '{\n    (modifiers: [Super], key: "t"): Spawn("cosmic-term"),\n    (modifiers: [Super], key: "s"): Spawn("/usr/bin/node /x/symbiot away"),\n    (modifiers: [Super], key: "grave"): Spawn("old"),\n}\n';
   const merged = withShortcut(other, cmd);
-  ok("…another shortcut is kept, an old Super+S replaced, once", /key: "t"\): Spawn\("cosmic-term"\)/.test(merged) && !/ToggleStacking/.test(merged) && (merged.match(/key: "s"/g) || []).length === 1, merged);
-  ok("…set twice, still once", (withShortcut(merged, cmd).match(/key: "s"/g) || []).length === 1, "");
+  ok("…another shortcut is kept; an earlier one of ours (Super+S) and an old Super+grave go; ours once", /key: "t"\): Spawn\("cosmic-term"\)/.test(merged) && !/key: "s"/.test(merged) && !/Spawn\("old"\)/.test(merged) && (merged.match(/key: "grave"/g) || []).length === 1, merged);
+  ok("…set twice, still once", (withShortcut(merged, cmd).match(/key: "grave"/g) || []).length === 1, "");
   ok("not COSMIC: it says how to add it yourself, and writes nothing", installShortcut({ cmd, home: HOME, desktop: "GNOME" }).manual === true, "");
   const r = installShortcut({ cmd, home: HOME, desktop: "COSMIC" });
-  ok("COSMIC: written to its custom shortcuts file", r.ok && /key: "s"\): Spawn/.test(readFileSync(COSMIC_CUSTOM(HOME), "utf8")), r);
+  ok("COSMIC: written to its custom shortcuts file", r.ok && /key: "grave"\): Spawn/.test(readFileSync(COSMIC_CUSTOM(HOME), "utf8")), r);
 
   console.log("OPEN AND CLOSE — a window per screen; again, or open: false, closes them");
   const fake = join(HOME, "fake-chrome"), seen = join(HOME, "seen.txt");
   writeFileSync(fake, `#!/bin/sh\necho "$@" >> ${JSON.stringify(seen)}\nexec sleep 30\n`); chmodSync(fake, 0o755);
-  const o = toggleAway("http://127.0.0.1:1/?t=abc", undefined, { chrome: fake, scr: { list: two, display: ":0" }, now: 7 });
+  ok("a call that names nothing opens nothing (the smoke test calls every endpoint)", toggleAway("http://127.0.0.1:1/?t=abc", undefined, { chrome: fake, scr: { list: two, display: ":0" } }).open === false && !awayOpen(), "");
+  process.env.SYMBIOT_NO_OPEN = "1";
+  ok("…nor does anything while windows are off (SYMBIOT_NO_OPEN, as in tests)", toggleAway("http://127.0.0.1:1/?t=abc", true, { chrome: fake, scr: { list: two, display: ":0" } }).open === false && !awayOpen(), "");
+  delete process.env.SYMBIOT_NO_OPEN;
+  await sleep(300);
+  let seenNothing = ""; try { seenNothing = readFileSync(seen, "utf8"); } catch {}
+  ok("…no browser was started for either", seenNothing === "", seenNothing);
+  const o = toggleAway("http://127.0.0.1:1/?t=abc", "toggle", { chrome: fake, scr: { list: two, display: ":0" }, now: 7 });
   await sleep(400);
   const args = readFileSync(seen, "utf8").trim().split("\n");
   ok("two screens (X): two kiosk windows, each placed on its screen and told which it is", o.open && o.screens === 2 && args.length === 2 && args.every((a) => /--kiosk/.test(a)) && /--window-position=1600,0/.test(args[1]) && /--window-size=1920,1080/.test(args[1]) && /&si=0$/.test(args[0]) && /&si=1$/.test(args[1]), args);
@@ -56,7 +63,7 @@ try {
   const prefs = JSON.parse(readFileSync(join(HOME, ".config", "symbiot", "away", "1", "Default", "Preferences"), "utf8")).profile.content_settings.exceptions;
   ok("…its profile lets the app's address (only) see the screens and go full screen without a click", prefs.window_placement["http://127.0.0.1:1,*"].setting === 1 && prefs.automatic_fullscreen["http://127.0.0.1:1,*"].setting === 1 && Object.keys(prefs.window_placement).length === 1, prefs);
   ok("…open", awayOpen(), "");
-  const c = toggleAway("http://127.0.0.1:1/?t=abc", undefined, { chrome: fake, scr: { list: two, display: ":0" } });
+  const c = toggleAway("http://127.0.0.1:1/?t=abc", "toggle", { chrome: fake, scr: { list: two, display: ":0" } });
   await sleep(300);
   ok("again: closed", c.open === false && !awayOpen(), c);
   ok("closing what isn't open is fine", toggleAway("x", false).open === false, "");

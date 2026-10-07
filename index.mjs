@@ -329,16 +329,16 @@ async function viaApp(path, body) {
   } catch (e) { return { error: "Lost Symbiot's app mid-way: " + ((e && e.message) || e) }; }
 }
 // symbiot away: Symbiot full screen on every screen (again: closes it). --shortcut:
-// Super+S runs it (on COSMIC it's set up; elsewhere it says how).
+// Super+` runs it (on COSMIC it's set up; elsewhere it says how).
 async function cmdAway() {
   if (has("shortcut")) {
     const { installShortcut } = await import("./away.mjs");
     const r = installShortcut({ cmd: `${process.execPath} ${process.argv[1]} away` });
     if (r.error) { console.log(c.y(r.error)); process.exitCode = 1; return; }
-    console.log(r.manual ? r.note : `${c.g("✓")} Super+S now opens Away${r.replaced ? " (it replaces what Super+S did before)" : ""}. ${c.d(r.file)}`);
+    console.log(r.manual ? r.note : `${c.g("✓")} Super+\` (the key above Tab) now opens Away. ${c.d(r.file)}`);
     return;
   }
-  const r = await viaApp("/api/away", {});
+  const r = await viaApp("/api/away", { open: "toggle" });
   if (!r) { console.log(c.y("Symbiot's app isn't running.") + c.d("  Start it with  symbiot app,  then Away works.")); process.exitCode = 1; return; }
   if (r.error) { console.log(c.y(r.error)); process.exitCode = 1; }
 }
@@ -768,7 +768,7 @@ ${c.b("Usage")}
   symbiot todo                      what's still on your plate
   symbiot app                       open the visual app in your browser
   symbiot away [--shortcut]         Symbiot full screen on every screen while you're away;
-                                    again closes it. --shortcut: Super+S does it
+                                    again closes it. --shortcut: Super+\` does it
   symbiot app --fresh [--keep]      try it as someone new: a brand-new Symbiot in
                                     a throwaway home, none of your data or accounts
   symbiot drift [--fetch]           what's out of sync / at risk across repos
