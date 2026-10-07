@@ -2,6 +2,21 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.51.1 — 2026-10-07
+
+- Replaced the Quit button with an X in the top corner, and Home warns about your AI, agent or connectors only when one is missing.
+- Added a Park button so a blocked project stops starting agent runs, even when forced, until you unpark it.
+- Listed the text selection problem on live-updating screens as in progress; this release shows no change to it yet.
+- Changed the review card to say when a run is only partly done, with Answer its questions first and Approve the changes so far second.
+- Listed the Reports section as in progress; this release shows no change to it yet.
+- Added answer bubbles on Home linked to each asking project, showing its familiar name, the question and two answer buttons or your own words.
+- Listed hiding Posts on the Dashboard until it can draft as in progress; this release shows no change to it yet.
+- Added a Home alert asking to see your inbox when a run awaits an emailed reply that nothing would notice.
+- Added first steps at the top of Settings that tick themselves off and say whether agent runs can use your linked site.
+- Added checks that flag where your company folder's files disagree on dates, leave, holidays or customer details, listed under Settings.
+- Changed Home into tidy, fixed groups, with projects sortable by needs you, recent or name, and repeated handovers shown once.
+- Moved Go to a small bottom-corner button, and opening a highlighted project now shows what needs you at the top.
+
 ## 0.51.0
 
 What your agents built on the symbiot repo yesterday, merged with everything since:

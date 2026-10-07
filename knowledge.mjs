@@ -358,4 +358,4 @@ function knowledgeState({ file = KNOW_FILE, cfg = loadConfig() } = {}) {
   };
 }
 
-export { KNOW_FILE, DEFAULT_EXAMPLES, knowledgeFolders, addKnowledgeFolder, removeKnowledgeFolder, isExample, frontMatter, csvRows, indexKnowledge, knowledgeTick, searchKnowledge, myName, setMyName, namesYou, waitingOn, ownerOf, knowledgeFor, knowledgeState, itemLine, caseLine };
+export { KNOW_FILE, DEFAULT_EXAMPLES, READ, MAX_BYTES, walk, cite, knowledgeFolders, addKnowledgeFolder, removeKnowledgeFolder, isExample, frontMatter, csvRows, indexKnowledge, knowledgeTick, searchKnowledge, myName, setMyName, namesYou, waitingOn, ownerOf, knowledgeFor, knowledgeState, itemLine, caseLine };

@@ -207,9 +207,14 @@ const calls = [
   ["/api/work/go", "POST"],         // nothing waiting in the isolated HOME -> starts nothing
   ["/api/home", "GET"],             // the liquid's live data (isolated HOME -> empty)
   ["/api/home/ask", "POST"],        // no question -> "empty", no model call
+  ["/api/firststeps", "GET"],       // Settings' first steps (isolated HOME -> none done)
+  ["/api/knowledge/checks", "GET"], // where knowledge folders' files disagree (isolated HOME -> no folders, nothing)
+  ["/api/knowledge/checks/run", "POST"], // checked again now (no folders -> no clashes)
   ["/api/adapt", "GET"],            // its shape from how it's used
   ["/api/adapt/use", "POST"],       // no shape -> "unknown shape", nothing saved
   ["/api/lanes", "GET"],            // handovers between agents' lanes (isolated HOME -> none)
+  ["/api/lanes/parked", "GET"],     // parked projects (isolated HOME -> none)
+  ["/api/lanes/park", "POST"],      // no repo -> "isn't on this computer", nothing parked
   ["/api/mind", "GET"],             // what Symbiot remembers across the app (isolated HOME -> nothing)
   ["/api/mind/forget", "POST"],     // no id -> "Nothing remembered by that id"
   ["/api/links", "GET"],            // Link your work: the standard sites and where each stands

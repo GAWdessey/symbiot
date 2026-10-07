@@ -22,7 +22,7 @@ import { join, dirname } from "node:path";
 import { readFileSync, writeFileSync, appendFileSync, mkdirSync, chmodSync, existsSync } from "node:fs";
 import { spawn, spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { CONFIG_DIR, sh, hasCmd } from "./core.mjs";
+import { CONFIG_DIR, sh, hasCmd, loadConfig } from "./core.mjs";
 import { resolveProvider, write } from "./ai.mjs";
 import { commits, discoveredRepos } from "./scan.mjs";
 import { readTexts } from "./headless.mjs";
@@ -41,7 +41,10 @@ const noVoice = (file) => `Symbiot drafts posts in your voice, from examples of 
 
 // ---- your voice ------------------------------------------------------------------
 // voice.md's examples: what's between lines of ---, each long enough to be a post.
-function voiceOf(text) { return String(text || "").split(/^\s*-{3,}\s*$/m).map((s) => s.trim()).filter((s) => s.length >= 20); }
+// LinkedIn's page text puts a "hashtag" line (a label for screen readers) over each
+// #tag; read into voice.md, the drafts copied it under every tag. Dropped wherever seen.
+const noTagLabels = (t) => String(t || "").replace(/^[ \t]*hashtag[ \t]*\r?\n(?=[ \t]*#)/gim, "");
+function voiceOf(text) { return noTagLabels(text).split(/^\s*-{3,}\s*$/m).map((s) => s.trim()).filter((s) => s.length >= 20); }
 function loadVoice(file = PATHS.voice) { try { return voiceOf(readFileSync(file, "utf8")); } catch { return []; } }
 function saveText(file, text) { mkdirSync(dirname(file), { recursive: true }); writeFileSync(file, text, { mode: 0o600 }); try { chmodSync(file, 0o600); } catch {} }
 
@@ -50,7 +53,7 @@ function saveText(file, text) { mkdirSync(dirname(file), { recursive: true }); w
 // runs by itself. `read` is headless.mjs readTexts (the tests pass their own).
 const LINKEDIN_ACTIVITY = "https://www.linkedin.com/in/me/recent-activity/shares/";
 const LINKEDIN_POST_TEXT = ".update-components-text, .feed-shared-update-v2__description, .feed-shared-text";
-const tidyPost = (t) => String(t || "").replace(/\s*…\s*(see )?more\s*$/i, "").replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
+const tidyPost = (t) => noTagLabels(t).replace(/\s*…\s*(see )?more\s*$/i, "").replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
 async function voiceFromLinkedIn({ read = readTexts, paths = PATHS, max = 10 } = {}) {
   const r = (await read(LINKEDIN_ACTIVITY, LINKEDIN_POST_TEXT)) || { error: "Nothing came back from LinkedIn." };
   if (r.busy) return { error: "Symbiot's browser is busy (a sign-in window, or a map). Close it, then try again." };
@@ -173,7 +176,7 @@ function extractJson(s) {
 // The AI's answer as drafts, by kind: [{ kind, text, facts: [n] }].
 function parseDrafts(raw) {
   const j = extractJson(raw), list = j && Array.isArray(j.posts) ? j.posts : [];
-  return list.map((p, i) => ({ kind: KINDS.includes(p && p.kind) ? p.kind : KINDS[i] || "", text: String((p && p.text) || "").trim().slice(0, MAX_TEXT), facts: (Array.isArray(p && p.facts) ? p.facts : []).map(Number).filter(Number.isInteger) }))
+  return list.map((p, i) => ({ kind: KINDS.includes(p && p.kind) ? p.kind : KINDS[i] || "", text: noTagLabels((p && p.text) || "").trim().slice(0, MAX_TEXT), facts: (Array.isArray(p && p.facts) ? p.facts : []).map(Number).filter(Number.isInteger) }))
     .filter((p) => p.kind && p.text);
 }
 // A draft checked against the facts: the facts it cites that exist, and what it
@@ -244,11 +247,13 @@ function logAction(action, p, now = Date.now(), paths = PATHS, extra = {}) {
 }
 function postLog(paths = PATHS) { try { return readFileSync(paths.log, "utf8").split("\n").filter(Boolean).map((l) => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean); } catch { return []; } }
 // What the Dashboard shows: the drafts waiting on you, the last few you dealt with,
-// and whether it can draft (an AI connected, voice examples).
-function postsState(paths = PATHS) {
-  const d = loadPosts(paths);
+// and whether it can draft: an AI connected, and your voice (examples in voice.md,
+// or LinkedIn linked to fill it from). Until then the Dashboard says so in a line.
+function postsState(paths = PATHS, { linked = () => (loadConfig().linked || {}) } = {}) {
+  const d = loadPosts(paths), voice = loadVoice(paths.voice).length, connected = !!resolveProvider();
+  let linkedin = false; try { linkedin = !!linked().linkedin; } catch {}
   return { posts: d.posts.filter((p) => p.status === "waiting"), done: d.posts.filter((p) => p.status === "approved" || p.status === "skipped").slice(0, 5),
-    voice: { count: loadVoice(paths.voice).length, file: paths.voice }, connected: !!resolveProvider(), share: SHARE_URL, labels: KIND_LABEL };
+    voice: { count: voice, file: paths.voice }, connected, linkedin, canDraft: connected && (linkedin || voice > 0), share: SHARE_URL, labels: KIND_LABEL };
 }
 // One waiting draft, by id (or the start of one), and the store it's in.
 function waiting(id, paths) {

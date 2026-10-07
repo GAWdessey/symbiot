@@ -127,6 +127,9 @@ try {
   ok("the app's Approve (copy: null) records it; the page copies", P.approvePost("nope", { copy: null }).error && copies.length === 1, "");
   const sk = P.skipPost(b.id);
   ok("Skip drops it from the Dashboard", sk.ok && P.postsState().posts.length === 0 && P.postsState().done.length === 2, P.postsState());
+  const bare = { ...P.PATHS, voice: P.PATHS.voice + ".none" }, s0 = P.postsState(bare, { linked: () => ({}) }), s1 = P.postsState(bare, { linked: () => ({ linkedin: { at: 1 } }) });
+  ok("it can't draft with no voice to go on: no examples in voice.md and LinkedIn not linked (the Dashboard says so in a line)", s0.canDraft === false && !s0.linkedin && s0.voice.count === 0, s0);
+  ok("…LinkedIn linked is enough, once an AI is connected", s1.linkedin && s1.canDraft === s1.connected, s1);
   const acts = P.postLog().map((x) => x.action);
   ok("every action is in the log: drafted, replaced, dropped, edited, approved, skipped", ["drafted", "replaced", "dropped", "edited", "approved", "skipped"].every((x) => acts.includes(x)) && P.postLog().filter((x) => x.action === "edited").some((x) => /big relief/.test(x.text)), acts);
   ok("the log only grows (append-only lines)", readFileSync(P.PATHS.log, "utf8").trim().split("\n").length === acts.length, "");
@@ -173,6 +176,11 @@ try {
   const dr = W.draftReply("n1", { run: (dir, o) => { ran.push([dir, o]); return { id: "j1" }; } });
   const dir = join(CFG, "drafts", "n1");
   ok("Draft a reply on it: the run gets the LinkedIn brief and SYMBIOT_DRAFT (no Post, no Send)", dr.ok && dr.social && ran.length === 1 && /Never post it/.test(readFileSync(join(dir, ".symbiot", "TASKS.md"), "utf8")) && JSON.parse(readFileSync(join(dir, ".symbiot", "handoff.json"), "utf8")).env.SYMBIOT_DRAFT === "1", dr);
+
+  console.log("HASHTAG LABELS — LinkedIn's \"hashtag\" line over each #tag stays out of the voice and the drafts");
+  const tagged = "Shipped the liquid home this week, and it rests as one orb.\n\nhashtag\n#DeveloperTools\nhashtag\n#AI";
+  ok("voice.md's examples lose the labels, keep the tags (and a word 'hashtag' in a sentence)", P.voiceOf(tagged + "\n---\nI wrote a hashtag guide once, plain words only.")[0].endsWith("orb.\n\n#DeveloperTools\n#AI") && /a hashtag guide/.test(P.voiceOf(tagged + "\n---\nI wrote a hashtag guide once, plain words only.")[1]), P.voiceOf(tagged));
+  ok("…and so do the drafts", P.parseDrafts(JSON.stringify({ posts: [{ kind: "shipped", text: tagged, facts: [1] }] }))[0].text === "Shipped the liquid home this week, and it rests as one orb.\n\n#DeveloperTools\n#AI", P.parseDrafts(JSON.stringify({ posts: [{ kind: "shipped", text: tagged, facts: [1] }] })));
 } finally {
   rmSync(HOME, { recursive: true, force: true });
 }
