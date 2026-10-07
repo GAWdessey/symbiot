@@ -2,6 +2,13 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.53.2
+
+- **Replies you're waiting on sit on the stream.** An email your agent is waiting on a reply to is a ring on your inbox's current, where it was sent, with a thread to now; it fills when the reply is in. Point at it for who, what was asked, and Stop waiting. The header says how many you're waiting on.
+- **Drafts to post, as a shelf.** Your drafted posts sit side by side as cards: the start of each, where it goes, and Approve, Edit or Skip; Read it all opens the rest.
+- **A project's tasks, calmer.** How tasks work folds away; each task shows two lines (click for all of it), without its repo's name inside its own page; the review card is a quiet card with a live dot while its agent works.
+- **Fixed:** the top of the work view drew the heading, the old summary and the status line over each other; Go sat off the bottom of the window. Go now sits beside Home.
+
 ## 0.53.1
 
 - **Named for Symbiot.** Agents working on their own is **Symbiosis** (Settings → Your agent); the guard that stops what only you do is **the membrane**; your answer going back into the same conversation is **one mind**; agents deciding what can be undone themselves is **instinct**. Same behaviour, each with what it does spelled out next to it.
