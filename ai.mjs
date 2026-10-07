@@ -48,9 +48,11 @@ function resolveProvider() {
 }
 
 // ---- model calls (one per provider, same in/out) --------------------------
-async function callAnthropic(r, system, prompt) {
+// Screenshots you dropped into the talk: [{ mime, data (base64) }], in each model's own shape.
+async function callAnthropic(r, system, prompt, images = []) {
   const client = new Anthropic(r.key ? { apiKey: r.key } : {});
-  const base = { model: r.model, max_tokens: MAX_TOKENS, system, messages: [{ role: "user", content: prompt }] };
+  const content = images.length ? [...images.map((i) => ({ type: "image", source: { type: "base64", media_type: i.mime, data: i.data } })), { type: "text", text: prompt }] : prompt;
+  const base = { model: r.model, max_tokens: MAX_TOKENS, system, messages: [{ role: "user", content }] };
   let res;
   try { res = await client.messages.create({ ...base, output_config: { effort: "low" } }); }
   catch (e) {
@@ -61,8 +63,8 @@ async function callAnthropic(r, system, prompt) {
   if (res.stop_reason === "refusal") return "(the model declined this one — odd for a work summary; try again)";
   return res.content.filter((b) => b.type === "text").map((b) => b.text).join("\n").trim();
 }
-async function callOpenAI(r, system, prompt) {
-  const messages = [{ role: "system", content: system }, { role: "user", content: prompt }];
+async function callOpenAI(r, system, prompt, images = []) {
+  const messages = [{ role: "system", content: system }, { role: "user", content: images.length ? [{ type: "text", text: prompt }, ...images.map((i) => ({ type: "image_url", image_url: { url: `data:${i.mime};base64,${i.data}` } }))] : prompt }];
   // Newer models want max_completion_tokens instead of max_tokens; try both.
   for (const tokKey of ["max_tokens", "max_completion_tokens"]) {
     const res = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -77,13 +79,13 @@ async function callOpenAI(r, system, prompt) {
   }
   return "";
 }
-async function callGemini(r, system, prompt) {
+async function callGemini(r, system, prompt, images = []) {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(r.model)}:generateContent?key=${encodeURIComponent(r.key)}`;
   const res = await fetch(url, {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       systemInstruction: { parts: [{ text: system }] },
-      contents: [{ role: "user", parts: [{ text: prompt }] }],
+      contents: [{ role: "user", parts: [{ text: prompt }, ...images.map((i) => ({ inline_data: { mime_type: i.mime, data: i.data } }))] }],
       generationConfig: { maxOutputTokens: MAX_TOKENS },
     }),
   });
@@ -92,10 +94,10 @@ async function callGemini(r, system, prompt) {
   const parts = JSON.parse(text).candidates?.[0]?.content?.parts || [];
   return parts.map((p) => p.text || "").join("").trim();
 }
-async function callOllama(r, system, prompt) {
+async function callOllama(r, system, prompt, images = []) {
   const res = await fetch(`${r.baseUrl}/api/chat`, {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ model: r.model, stream: false, messages: [{ role: "system", content: system }, { role: "user", content: prompt }] }),
+    body: JSON.stringify({ model: r.model, stream: false, messages: [{ role: "system", content: system }, { role: "user", content: prompt, ...(images.length ? { images: images.map((i) => i.data) } : {}) }] }),
   });
   const text = await res.text();
   if (!res.ok) {
@@ -112,15 +114,15 @@ const AI_UI = {
   notConnected: () => console.log("Symbiot needs an AI to write your updates. Connect one with: symbiot login"),
   rejected: (label) => console.log(`Your ${label} credentials were rejected. Reconnect with:  symbiot login --force`),
 };
-async function write(system, prompt) {
+async function write(system, prompt, { images = [] } = {}) {
   const r = resolveProvider();
   if (!r) { AI_UI.notConnected(); return null; }
   const stop = AI_UI.spinner("thinking…");
   try {
-    if (r.provider === "anthropic") return await callAnthropic(r, system, prompt);
-    if (r.provider === "openai") return await callOpenAI(r, system, prompt);
-    if (r.provider === "gemini") return await callGemini(r, system, prompt);
-    if (r.provider === "ollama") return await callOllama(r, system, prompt);
+    if (r.provider === "anthropic") return await callAnthropic(r, system, prompt, images);
+    if (r.provider === "openai") return await callOpenAI(r, system, prompt, images);
+    if (r.provider === "gemini") return await callGemini(r, system, prompt, images);
+    if (r.provider === "ollama") return await callOllama(r, system, prompt, images);
     return null;
   } catch (err) {
     if (/\b401\b|\b403\b|invalid|authentication|api key|unauthor/i.test(err?.message || "")) {

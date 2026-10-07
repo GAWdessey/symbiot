@@ -2,6 +2,18 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.54.0
+
+- **Show Symbiot a screenshot.** Paste one into "Talk to Symbiot" (Ctrl+V) or drop it on the bar: it shows as a thumbnail you can remove, goes with what you say, and the AI you connected sees it (Claude, OpenAI, Gemini, or a local model that reads images). If Symbiot hands the work to an agent, the agent gets the screenshot too. Up to 4 at a time; they're kept a week, readable by you only.
+- **A pass over every screen, in every look.**
+  - Scrollbars match the look everywhere: thin, no arrows, no white track.
+  - On the Dashboard, emails that land minutes apart fan out along their current instead of melting into one blob.
+  - The **Go** button no longer peeks out under the top of an open panel.
+  - A project's page no longer shows the same Approve twice ("Needs you here" and "Awaiting your review").
+  - The Agents and Reports **Refresh** buttons are round icons, like the Dashboard's.
+  - In Pearl, the main buttons lose the old chrome stripe for a soft pearl sheen.
+  - In the light looks, the Tasks screen's status line is crisp instead of washed out.
+
 ## 0.53.4
 
 - **Updates wait for npm instead of giving up.** npm lists a new version a little before its download is there, so an update straight after a release could fail and tell you to run `npm install` in a terminal. Now Symbiot tries again every 30 seconds (up to 5 times) and the bar says it's waiting on npm; there's nothing for you to do.
