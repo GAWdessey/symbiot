@@ -5,7 +5,7 @@
 //
 //   node test/lanes.mjs
 //
-import { mkdtempSync, writeFileSync, readFileSync, mkdirSync, rmSync, existsSync } from "node:fs";
+import { mkdtempSync, writeFileSync, readFileSync, mkdirSync, rmSync, existsSync, utimesSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -17,7 +17,7 @@ let pass = 0, fail = 0;
 const ok = (n, c, got) => { if (c) { pass++; console.log("  ✓ " + n); } else { fail++; console.log("  ✗ " + n + (got !== undefined ? "  got: " + JSON.stringify(got) : "")); } };
 
 const { lanesTick, loadLedger, lanesState, MAX_CHAIN, aboutIt, partlyDone, remoteKey, orcaMoves, orcaRelink, stuckHandovers, allowHandover, skipHandover, namedDirs } = await import("../lanes.mjs");
-const { parseHandoffs, handoverRules, ONLY_YOU } = await import("../handover.mjs");
+const { parseHandoffs, handoverRules, ONLY_YOU, leftToYou } = await import("../handover.mjs");
 const { buildTasksMd } = await import("../tasks.mjs");
 const { actBrief } = await import("../mind.mjs");
 
@@ -199,6 +199,43 @@ try {
   writeFileSync(join(CFG, "lanes.json"), JSON.stringify(L4));
   const ids = stuckHandovers().map((x) => x.id);
   ok("past it: one from days ago, and one done another way since", !ids.includes("e-old") && !ids.includes("e-done"), ids);
+
+  console.log("WAITS ON YOU — a run that ended leaving you an OK to give, or a step only you can take");
+  // the last words of real runs that ended "success" with it only said there, so nothing asked the user
+  const jono = "Both parts are done and the task is ticked. The draft isn't sent.\n\n- **Jono's endpoint and secret:** neither is in your mail.\n- **Draft:** it's in Gmail, to jono@example.com, with the right subject.\n- **Cc:** empty, like you said. You'll add Alex yourself.\n\nGemini and Notion need authorizing in your claude.ai connector settings before an agent can use them.";
+  const l1 = leftToYou(jono);
+  ok("the email to Jono, drafted, not sent: your OK, which draft, and what to check first", l1 && l1.kind === "approve" && /^The draft isn't sent\. Draft: it's in Gmail, to jono@example\.com/.test(l1.what) && l1.check === "Cc: You'll add Alex yourself.", l1);
+  const l2 = leftToYou("Nothing left to do here.\n\n- **Reply to Cale:** you picked sending it yourself. The draft is still in drafts, not sent. One catch: the link in it is wrapped in a google.com redirect. Fix that before you send.\n- **Jono:** left alone, you'll tell him.");
+  ok("…the reply to Cale you said you'd send: named by its point, with the catch it found", l2 && l2.kind === "approve" && l2.label === "Reply to Cale" && /^Reply to Cale: you picked sending it yourself/.test(l2.what) && l2.check === "One catch: the link in it is wrapped in a google.com redirect. Fix that before you send.", l2);
+  const l3 = leftToYou("The fixed URL still isn't live. Running tailscale needs sudo, and only you can do that.\n\nOpen a terminal, paste this, and type your password when it asks:\n\n```\nsudo tailscale up\n```\n\nThat gives the URL.");
+  ok("…a sudo step: yours, with the command to run", l3 && l3.kind === "step" && /only you can do that/.test(l3.what) && /type your password when it asks: ``` sudo tailscale up ```/.test(l3.check), l3);
+  const none = ["I sent the email to Cale (2:19pm, it's in Sent).", "Done. Nothing was sent, since you said you'll drag it into your chat yourself.", "The Gemini and Notion connectors need authorizing in your claude.ai connector settings before an agent can use them.", "**Forwarding code removal:** done in whatsapp_module and waiting for your review.", "All 39 registers moved.", ""];
+  ok("…not what's done, a connector to sign in to (Home has those), or an Approve waiting in Tasks", none.every((t) => leftToYou(t) === null), none.map(leftToYou));
+  ok("the brief: what waits on the user's OK goes in QUESTIONS.md with what to check first, never only in the last message", /Whatever waits on the user's OK \(sending, posting, deleting, paying, closing\)[^.]*goes in QUESTIONS\.md as a question, with what they should check first[^.]*never only in your last message/.test(ONLY_YOU), "");
+  const { agentsList, settleNeeds, NEEDS_FOR } = await import("../agents.mjs");
+  const streamed = (p, ts, result) => put(p, "agent.log", `\n=== x ${new Date(ts).toISOString()} ===\n$ claude -p …\n${JSON.stringify({ type: "result", subtype: "success", is_error: false, result })}\n`);
+  const noted = (...rs) => { let had = []; try { had = JSON.parse(readFileSync(join(CFG, "runs.json"), "utf8")); } catch {} writeFileSync(join(CFG, "runs.json"), JSON.stringify([...rs, ...had])); };
+  const actJ = join(CFG, "drafts", "act-jono"), tAgo = Date.now() - 3600000;
+  put(actJ, "TASKS.md", "- [x] Draft an email to Jono, cc Alex, asking for the WA_FORWARD_URL endpoint and WA_FORWARD_SECRET\n"); streamed(actJ, tAgo, jono);
+  noted({ path: actJ, name: "Agent: Draft an email to Jono", startedAt: tAgo });
+  const needsOn = (p) => { const a = agentsList().find((x) => x.path === p); return a && a.needs; };
+  const nj = needsOn(actJ);
+  ok("a past run (before Symbiot last started) that left the draft for your OK is listed, needing you", nj && nj.kind === "approve" && /The draft isn't sent/.test(nj.what) && nj.check === "Cc: You'll add Alex yourself." && nj.key, nj);
+  const actJ2 = join(CFG, "drafts", "act-jono2");
+  put(actJ2, "TASKS.md", "- [x] Draft an email to Jono, cc Alex, asking for the WA_FORWARD_URL endpoint and WA_FORWARD_SECRET\n"); streamed(actJ2, Date.now(), "Sent it to Jono at 10:48.");
+  noted({ path: actJ2, name: "Agent: Draft an email to Jono", startedAt: Date.now() + 1000 });
+  ok("…not once a newer ops run took up the same task", !needsOn(actJ), needsOn(actJ));
+  const actT = join(CFG, "drafts", "act-tail");
+  put(actT, "TASKS.md", "- [ ] Give the WhatsApp module a fixed public URL\n"); streamed(actT, tAgo, "Running tailscale needs sudo, and only you can do that.\n\nPaste this: `sudo tailscale up`.");
+  noted({ path: actT, name: "Agent: a fixed URL", startedAt: tAgo });
+  const nt = needsOn(actT);
+  ok("…a step only you can take, the same way", nt && nt.kind === "step", nt);
+  settleNeeds(actT, nt.key);
+  ok("…skipped (or gone ahead), it stops asking, until a newer run there says something else", !needsOn(actT), "");
+  streamed(actT, Date.now(), "The draft to Cale isn't sent: it waits for your OK.");
+  ok("…which it then does", needsOn(actT) && needsOn(actT).kind === "approve", needsOn(actT));
+  const old = Date.now() - NEEDS_FOR - 60000; utimesSync(join(actT, ".symbiot", "agent.log"), old / 1000, old / 1000);
+  ok("…and not days later", !needsOn(actT), "");
 } finally {
   rmSync(HOME, { recursive: true, force: true });
 }

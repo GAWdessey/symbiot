@@ -101,6 +101,9 @@ body.lq-liquid.lq-light.lq-pooled #lqsinkrow{background:rgba(246,248,251,.94);bo
 #lqtitle{margin:0;font:650 24px/1.15 var(--sans);letter-spacing:-.02em;color:var(--bone);overflow-wrap:anywhere}
 #lqtitle .lqpk{margin-left:10px;font:600 11.5px var(--sans);letter-spacing:.06em;text-transform:uppercase;color:var(--amber);vertical-align:middle}
 #lqpark{align-self:center;padding:5px 12px;font-size:12.5px}
+/* what the open panel does to itself (its Refresh) sits beside Close */
+.lqacts,#lqtools{display:flex;align-items:center;gap:8px;flex:0 0 auto}#lqtools:empty,#lqtools:not(:has(>:not(.hidden))){display:none}
+#pushtasks{padding:7px 14px;font-size:13px}
 #lqscene{display:none}
 body.lq-work:not(.lq-pooled) #lqscene{display:block;position:absolute;left:50%;top:50px;transform:translateX(-50%);z-index:3;margin:0;font:650 24px/1.15 var(--sans);letter-spacing:-.02em;color:#F3F0EA;text-shadow:0 1px 12px rgba(0,0,0,.6);pointer-events:none;white-space:nowrap}
 body.lq-light.lq-work #lqscene{color:#151A21;text-shadow:0 1px 10px rgba(255,255,255,.8)}
@@ -248,6 +251,7 @@ body.lq-talking .lqd.lqblob{opacity:.55}
 #firststeps .fst span{font-size:12.5px;color:var(--faint);overflow-wrap:anywhere}
 #firststeps li button{flex:none;padding:5px 12px;font-size:12.5px}
 #needsbox:empty{display:none}
+#pushout .pushed{margin-top:6px;padding:10px 14px}#pushout .pushed .dh{flex-wrap:wrap;row-gap:2px}#pushout .pushed .dd{font-size:12.5px;line-height:1.5}#pushout>.dd{margin-top:4px}
 #needsbox{margin:4px 0 12px}
 #needsbox .nitem{display:flex;flex-direction:column;align-items:stretch;gap:6px;padding:12px 14px;margin-top:8px}
 #needsbox .nitem .nopt{max-width:720px}
@@ -508,6 +512,8 @@ body.lq-light .cx .lbtn:hover{background:rgba(21,26,33,.05)}
 body.lq-light .cx.ok .cxb{box-shadow:0 1px 2px rgba(0,0,0,.25);background:radial-gradient(circle at 34% 28%,#FFFFFF 0,#E3E6EA 22%,#9BA2AC 55%,#3A3F46 100%)}
 .cx.signin .cxb,.cx.signedout .cxb,.cx.error .cxb{opacity:1;box-shadow:inset 0 0 0 2px var(--amber),0 0 10px rgba(242,165,65,.35)}
 .cxn{font:500 13.5px var(--sans);color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cxa{flex:none;font-size:12px;color:var(--faint);opacity:.55}.cxa.ready{color:var(--bone);opacity:1}
+.cxlg{display:flex;flex-wrap:wrap;align-items:center;gap:4px 6px}.cxh .cxlg .cxlgf{display:inline-flex;align-items:center;gap:6px;margin-left:8px;font:inherit;color:inherit}
 .cx.ok .cxn{color:var(--bone)}
 .cxs{margin-left:auto;padding-left:8px;font-size:11.5px;color:var(--faint);white-space:nowrap}
 .cx.signin .cxs,.cx.signedout .cxs,.cx.error .cxs{color:var(--amber)}
@@ -690,7 +696,8 @@ body.lq-liquid .sset label.check{display:flex;align-items:center;gap:10px;margin
 body.lq-liquid .sset .note{font-size:12.5px;max-width:70ch}
 body.lq-liquid .sset .cxh{margin-top:0}
 /* the Close bar carries the panel's own ground, so what scrolls under it stays clean */
-body.lq-liquid.lq-pooled #lqsinkrow{margin:-14px -14px 10px;padding:10px 10px 8px;background:linear-gradient(180deg,rgba(6,8,11,.97) 70%,rgba(6,8,11,0));border-radius:22px 22px 0 0}
+/* top: the panel's padding (main's 16px), so it sticks at the very top edge: scrolled content no longer shows in a strip above it */
+body.lq-liquid.lq-pooled #lqsinkrow{top:-16px;margin:-14px -14px 10px;padding:10px 10px 8px;background:linear-gradient(180deg,rgba(6,8,11,.97) 70%,rgba(6,8,11,0));border-radius:22px 22px 0 0}
 body.lq-liquid.lq-light.lq-pooled #lqsinkrow{background:linear-gradient(180deg,rgba(246,248,251,.98) 70%,rgba(246,248,251,0))}
 
 /* Agents: needs you, at work, finished (folded) */
@@ -751,6 +758,11 @@ body.lq-light .bwthread{border-top-color:rgba(184,106,12,.45)}
 .pshead{display:flex;flex-direction:column;gap:2px;margin:24px 0 10px}
 .pshead span{font:600 15px var(--sans);color:var(--bone)}
 .pshead small{font-size:12.5px;color:var(--faint)}
+/* Marketing's 4-week test: a row a week; the week you're in marked, the ones to come faint */
+.mkwrap{overflow-x:auto}.mktab{width:100%;border-collapse:collapse;font-size:13px}
+.mktab th{font:500 11px var(--sans);letter-spacing:.08em;text-transform:uppercase;color:var(--faint);text-align:left;padding:6px 10px 8px 0;border-bottom:1px solid var(--line);white-space:nowrap}
+.mktab td{padding:9px 10px 9px 0;border-bottom:1px solid var(--line);color:var(--text);vertical-align:baseline}.mktab td b{color:var(--bone)}
+.mktab td.n{font-variant-numeric:tabular-nums}.mktab tr[aria-current] td{color:var(--bone)}.mktab tr[aria-current] td:first-child{box-shadow:inset 2px 0 0 var(--amber);padding-left:8px}
 .pshelf{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px;align-items:start}
 body.lq-liquid .pshelf .pcard{position:relative;display:flex;flex-direction:column;gap:10px;margin:0;padding:16px 18px;border-radius:20px;border:1px solid rgba(255,255,255,.08);border-left:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.035)}
 body.lq-liquid.lq-light .pshelf .pcard{background:rgba(255,255,255,.75);border-color:rgba(21,26,33,.08)}
@@ -777,6 +789,9 @@ body.lq-liquid #panel-tasks .task.open .t{display:block;-webkit-line-clamp:unset
 #tasklist.onerepo .task .rp,.rcard .task .rp{display:none}
 body.lq-liquid .rcard{border:1px solid rgba(242,165,65,.3);border-radius:20px;padding:16px 18px 14px;background:rgba(255,255,255,.035);box-shadow:none;margin-top:10px}
 body.lq-liquid.lq-light .rcard{background:rgba(255,255,255,.75);border-color:rgba(154,82,0,.25)}
+/* a long card's Approve row sticks to the panel's bottom edge (bottom: main's padding) while the card is in view, so it's never scrolled out of reach */
+body.lq-liquid .rcard>.ract{position:sticky;bottom:-16px;z-index:1;margin:8px -18px 0;padding:12px 18px 10px;background:linear-gradient(180deg,rgba(9,11,15,0),rgba(9,11,15,.97) 14px)}
+body.lq-liquid.lq-light .rcard>.ract{background:linear-gradient(180deg,rgba(248,249,251,0),rgba(248,249,251,.96) 14px)}
 body.lq-liquid .rcard .rhead b{font:600 16px var(--sans);letter-spacing:-.01em}
 body.lq-liquid .rcard .task{margin-top:6px;padding:9px 12px;border-radius:12px}
 .rwork{display:flex;align-items:center;gap:9px;margin:10px 0 2px;font-size:13px;color:var(--text)}
@@ -853,7 +868,7 @@ body.lq-light .btip .bta button:not(.quiet){background:#151A21;color:#FFFFFF}
 .bcard .tchat{border-top:1px solid var(--line);border-radius:9px;margin-top:8px}
 .bcard .bbrief{white-space:pre-line;margin:8px 0;padding:8px 10px;border-left:3px solid var(--green);background:var(--ink3);border-radius:0 8px 8px 0;font-size:13px;color:var(--bone)}
 @media(max-width:760px){.maprow{flex-direction:column}.detail{width:auto;max-height:none}}
-@media(max-width:600px){#panel-tasks .row>#newtask,#screenname,#pagesite{flex:1 1 100%!important}.tabs{overflow-x:auto;scrollbar-width:none;padding:0 8px;gap:0}.tabs::-webkit-scrollbar{display:none}.tab{flex:none;padding:9px 11px}header{padding:12px 14px 8px}main{padding:12px}}
+@media(max-width:600px){#screenname,#pagesite{flex:1 1 100%!important}.tabs{overflow-x:auto;scrollbar-width:none;padding:0 8px;gap:0}.tabs::-webkit-scrollbar{display:none}.tab{flex:none;padding:9px 11px}header{padding:12px 14px 8px}main{padding:12px}}
 </style></head><body>
 <div id="liquid" aria-label="Symbiot">
 <canvas id="lq" aria-hidden="true"></canvas>
@@ -887,11 +902,11 @@ body.lq-light .btip .bta button:not(.quiet){background:#151A21;color:#FFFFFF}
 <button class="tab" data-tab="todo">Todo</button>
 <button class="tab" data-tab="tasks">Tasks</button>
 <button class="tab" data-tab="agents">Agents</button>
-<button class="tab" data-tab="reports">Reports</button>
+<button class="tab" data-tab="reports">Reports</button><button class="tab" data-tab="marketing">Marketing</button>
 <button class="tab" data-tab="settings">Settings</button>
 </div>
 <main>
-<div id="lqsinkrow"><div class="lqwhere"><span id="lqcrumb" class="lqcrumb">Home</span><h2 id="lqtitle" aria-live="polite"></h2><button type="button" class="ghost hidden" id="lqpark"></button></div><button class="iconbtn wide" type="button" id="lqsink" title="close it: it sinks back into the liquid (Esc, or right-click)"><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M2 2l8 8M10 2l-8 8" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>Close</button></div>
+<div id="lqsinkrow"><div class="lqwhere"><span id="lqcrumb" class="lqcrumb">Home</span><h2 id="lqtitle" aria-live="polite"></h2><button type="button" class="ghost hidden" id="lqpark"></button></div><div class="lqacts"><span id="lqtools"><button class="ghost hidden" type="button" id="pushtasks" title="Write .symbiot/TASKS.md into each repo for your coding agent">Send to repos</button></span><button class="iconbtn wide" type="button" id="lqsink" title="close it: it sinks back into the liquid (Esc, or right-click)"><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M2 2l8 8M10 2l-8 8" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>Close</button></div></div>
 <section id="panel-map">
 <div class="profile muted" id="profile">Mapping your work&hellip;</div>
 <div class="maprow">
@@ -929,7 +944,6 @@ body.lq-light .btip .bta button:not(.quiet){background:#151A21;color:#FFFFFF}
 <div id="bstream" class="bstream"><canvas id="bsc" aria-hidden="true"></canvas><div id="bsov"></div></div>
 <div id="boardtalk"></div>
 <div id="boardawait"></div>
-<div id="boardposts"></div>
 <details id="blist" class="blist"><summary>All of it as a list</summary><div id="board" class="board"></div></details>
 <div id="boardlinks"></div>
 </section>
@@ -939,8 +953,7 @@ body.lq-light .btip .bta button:not(.quiet){background:#151A21;color:#FFFFFF}
 <div class="rfoot" id="outfoot" style="display:none"></div>
 </section>
 <section id="panel-tasks" class="hidden">
-<div class="row"><input id="newtask" placeholder="Add a task..." style="flex:1"><select id="newtaskrepo" title="Which repo this task is for (needed to send it to an agent)" style="flex:0 0 auto;max-width:180px"><option value="">repo…</option></select><button class="act" id="addtask">Add</button><button class="ghost" id="pushtasks" title="Write .symbiot/TASKS.md into each repo for your coding agent">Send to repos</button></div>
-<details class="tnhow"><summary>How tasks work</summary><div class="note muted">To give tasks to your agent, use <b>Send to repos</b> &mdash; filter by tag below to choose which. As the agent finishes each one it lands in <b>Awaiting your review</b>: <b>Approve</b> commits it on a branch and opens a PR, <b>&#8630;</b> sends it back. Ticking a task yourself marks it done (it auto-archives). Click <b><i class=ic-chat></i></b> on a task to ask questions about it.</div></details>
+<details class="tnhow"><summary>How tasks work</summary><div class="note muted">To add a task, tell Symbiot in the bar at the bottom: it files it under the right project. To give tasks to your agent, use <b>Send to repos</b> at the top, beside Close &mdash; filter by tag below to choose which. As the agent finishes each one it lands in <b>Awaiting your review</b>: <b>Approve</b> commits it on a branch and opens a PR, <b>&#8630;</b> sends it back. Ticking a task yourself marks it done (it auto-archives). Click <b><i class=ic-chat></i></b> on a task to ask questions about it.</div></details>
 <div id="needsbox"></div>
 <div id="pushout"></div>
 <div id="reviewout"></div>
@@ -949,7 +962,7 @@ body.lq-light .btip .bta button:not(.quiet){background:#151A21;color:#FFFFFF}
 <div id="tasklist"></div>
 </section>
 <section id="panel-agents" class="hidden">
-<div class="row"><span class="muted">Agents Symbiot has handed work to — live status and output. Questions, options and ideas an agent leaves for you show up on its block, whichever model it runs.</span><button class="iconbtn" id="agentsrefresh" style="margin-left:auto" title="Refresh" aria-label="Refresh"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M13 8a5 5 0 1 1-1.5-3.6M13 2.5V5h-2.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button></div>
+<div class="row"><span class="muted">Agents Symbiot has handed work to — live status and output. Questions, options and ideas an agent leaves for you show up on its block, whichever model it runs.</span><button class="iconbtn" id="agentsrefresh" title="Refresh" aria-label="Refresh"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M13 8a5 5 0 1 1-1.5-3.6M13 2.5V5h-2.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button></div>
 <div id="agentsmsg"></div>
 <div id="laneslist"></div>
 <div id="agentslist"></div>
@@ -958,6 +971,13 @@ body.lq-light .btip .bta button:not(.quiet){background:#151A21;color:#FFFFFF}
 <div class="row"><span class="muted" style="flex:1">What agents wrote up for you (findings, audits, plans), newest first. They leave each one in a project's .symbiot folder; it shows here as soon as it's written.</span><button class="iconbtn" id="reportsrefresh" title="Refresh" aria-label="Refresh"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M13 8a5 5 0 1 1-1.5-3.6M13 2.5V5h-2.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button></div>
 <div id="reportslist"></div>
 <div id="reportview"></div>
+</section>
+<section id="panel-marketing" class="hidden">
+<div class="row"><span class="muted" style="flex:1">What you post about your work, and who answers: your drafts, the replies to them, and the 4-week test of whether posting brings anyone. Symbiot never posts: you do, on LinkedIn.</span></div>
+<div id="mkmsg"></div>
+<div id="boardposts"></div>
+<div id="mkreplies"></div>
+<div id="mktest"></div>
 </section>
 <section id="panel-drift" class="hidden">
 <div class="row"><span class="muted">What's out of sync, stuck or at risk across your repos — local git facts.</span>
@@ -1091,9 +1111,10 @@ $('panel-tasks').classList.toggle('hidden',!isTasks);
 $('panel-drift').classList.toggle('hidden',!isDrift);
 $('panel-agents').classList.toggle('hidden',!isAgents);
 $('panel-reports').classList.toggle('hidden',tab!=='reports');if(tab==='reports')loadReports();
+$('panel-marketing').classList.toggle('hidden',tab!=='marketing');if(tab==='marketing')loadMarketing();
 if(isRun){$('what').textContent=tab;wuHead();WUTEXT='';$('out').textContent=WUEMPTY;$('out').classList.add('muted');$('copy').classList.add('hidden');$('outfoot').style.display='none';if(tab==='week')showLatestWeek();}
 if(isMap&&!mapLoaded)loadMap();
-if(isTasks){fillTaskRepos();loadTasks();}
+if(isTasks)loadTasks();
 if(isDrift&&!driftLoaded)loadDrift();
 if(isAgents)loadAgents(); else stopAgentsPoll();
 lqTitle();if(isTasks&&TFILTER.repo)loadParked(lqTitle);}
@@ -1134,6 +1155,9 @@ var tf=typeof TFILTER!=='undefined'&&TFILTER||{},arch=typeof TARCH!=='undefined'
 if(proj)name=lqProjName(proj);var parked=!!proj&&PARKED.repos.indexOf(proj)>=0;
 if(c)c.textContent=proj?'Projects':'Home';t.innerHTML=esc(name)+(parked?"<span class='lqpk'>parked</span>":'');
 var pk=$('lqpark');if(pk){pk.classList.toggle('hidden',!proj);pk.textContent=parked?'Unpark':'Park this project';pk.title=parked?'let its tasks start agent runs again':'stop its tasks starting agent runs, until you unpark it';pk.setAttribute('data-repo',proj);}
+// the open panel's own Refresh sits beside Close, not under it on the panel's top line
+var tl=$('lqtools');if(tl&&tl.appendChild)['agents','reports'].forEach(function(p){var b=$(p+'refresh'),row=$('panel-'+p);row=row&&row.querySelector('.row');if(!b)return;if(p===current){if(b.parentNode!==tl)tl.appendChild(b);}else if(b.parentNode===tl&&row&&row.appendChild)row.appendChild(b);});
+var pt=$('pushtasks');if(pt&&pt.classList)pt.classList.toggle('hidden',current!=='tasks'||!!arch);
 try{document.title=name+' \\u00b7 Symbiot';}catch(e){}}
 function lqPark(repo,on,then,path){api('/api/lanes/park',{repo:repo,path:path||'',on:on}).then(function(r){if(r&&r.error){if(then)then(r.error);return;}loadParked(function(){lqTitle();if(then)then('');if(LQ.scene==='work')lqLoadWork();});});}
 function loadParked(then){api('/api/lanes/parked').then(function(p){PARKED={repos:(p&&p.repos)||[],paths:(p&&p.paths)||[]};if(then)then();}).catch(function(){if(then)then();});}
@@ -1380,7 +1404,7 @@ else if(ur)h+="<div class='muted' style='margin:6px 0'><span class='err'>Unrelea
 // The version is already released (its v* tag exists, or npm has it) and these changes keep it:
 // Approve bumps it in the PR too, a patch unless you pick otherwise.
 var bo=r.bumpOffer;if(bo&&r.files.length)h+="<div class='row' style='margin:6px 0;font-size:12px'><span class='muted'>Version</span><select class='bumpsel' title='bump the version in package.json (and the lockfile) in this PR' style='flex:0 0 auto;width:auto'><option value='patch'>bump to "+esc(bo.patch)+" (patch)</option><option value='minor'>bump to "+esc(bo.minor)+" (minor)</option><option value=''>keep "+esc(bo.version)+"</option></select></div>";
-h+="<div class='row'>"+(pq&&r.path?"<button class='act answerq' data-path='"+esc(r.path).replace(/'/g,'&#39;')+"'>Answer its question"+(pq>1?"s":"")+"</button>":"")+"<button class='"+(pd?'ghost':'act')+" approve'"+(pd?" data-partly='1'":"")+(r.path&&!r.running?"":" disabled")+(r.running?" title='the agent is still editing this repo'>"+(r.untasked?"Approve changes without a task":"Approve")+" &middot; agent still working":r.untasked?" data-untasked='1' title='commit on a branch, push and open a PR, without a task'>Approve changes without a task &rarr; PR":" title='commit on a branch, push, open a PR, then archive'>Approve &rarr; "+(r.files.length?"PR":"archive"))+"</button>"+(r.files.length?"<button class='ghost showdiff'>Show diff</button>":"")+"<label title='Queue GitHub auto-merge so this PR lands once its CI checks pass. Needs Allow auto-merge on the repo.' style='margin-left:auto;font-size:12px;color:var(--faint);display:flex;align-items:center;gap:6px'><input type='checkbox' class='amtoggle' style='width:auto'"+(r.autoMerge?" checked":"")+"> auto-merge on green CI</label></div><div class='rdiff hidden'></div></div>";});
+h+="<div class='row ract'>"+(pq&&r.path?"<button class='act answerq' data-path='"+esc(r.path).replace(/'/g,'&#39;')+"'>Answer its question"+(pq>1?"s":"")+"</button>":"")+"<button class='"+(pd?'ghost':'act')+" approve'"+(pd?" data-partly='1'":"")+(r.path&&!r.running?"":" disabled")+(r.running?" title='the agent is still editing this repo'>"+(r.untasked?"Approve changes without a task":"Approve")+" &middot; agent still working":r.untasked?" data-untasked='1' title='commit on a branch, push and open a PR, without a task'>Approve changes without a task &rarr; PR":" title='commit on a branch, push, open a PR, then archive'>Approve &rarr; "+(r.files.length?"PR":"archive"))+"</button>"+(r.files.length?"<button class='ghost showdiff'>Show diff</button>":"")+"<label title='Queue GitHub auto-merge so this PR lands once its CI checks pass. Needs Allow auto-merge on the repo.' style='margin-left:auto;font-size:12px;color:var(--faint);display:flex;align-items:center;gap:6px'><input type='checkbox' class='amtoggle' style='width:auto'"+(r.autoMerge?" checked":"")+"> auto-merge on green CI</label></div><div class='rdiff hidden'></div></div>";});
 el.innerHTML=h;
 el.querySelectorAll('.rcard').forEach(function(card){var repo=card.getAttribute('data-repo');
 card.querySelectorAll('.task').forEach(function(row){wireAsk(row,row.getAttribute('data-id'));});
@@ -1459,6 +1483,13 @@ api('/api/agents/skip',{path:a.path,text:s.text}).then(function(r){if(!r||r.erro
 // A step of yours an answer picked (👤 You): the next run waits for it (agents.mjs waitingFor)
 function waitHtml(a){var w=a.waiting;if(!w)return '';var fs=(w.files||[]).map(function(f){return "<code>"+esc(f)+"</code>";}).join(" or ");if(w.cmd)fs=(fs?fs+" or ":"")+"the agent command in Settings &rarr; Handoff";
 return "<div class='aq'><h4><i class=ic-pause></i> Waiting on your step</h4><div class='qt'><i class=ic-person></i> "+esc(w.step)+"</div><div class='qc'>"+(fs?"Your agent "+(w.rerun?"starts by itself":"can start")+" once "+fs+" changes"+(w.rerun?", while Symbiot runs":"")+". Done it some other way?":"Your agent waits for it, so it doesn't stop on the same questions again.")+" Start it now once it's done.</div><div class='row'><button class='act wstart' data-id='"+esc(a.id)+"'>Start it now</button></div></div>";}
+// A run that ended waiting on you (agents.mjs needsOf): your OK for what it would send or
+// change, or a step only you can do, with what to check first. Answered as on Home.
+function needsHtml(a){var n=a.needs;if(!n||n.waiting)return '';var ok=n.kind==='approve';
+return "<div class='aq'><h4><i class=ic-person></i> "+(ok?"Waits for your OK":"Needs you")+"</h4><div class='qt'>"+esc(n.what)+"</div>"+(n.check?"<div class='qc'><b>Check first:</b> "+esc(n.check)+"</div>":"")
++"<div class='row'><button class='act ngo' data-id='"+esc(a.id)+"' title='"+(ok?"its agent goes ahead with it":"its agent checks it worked and carries on")+"'>"+(ok?"Go ahead":"Done it")+"</button><button class='ghost nskip' data-id='"+esc(a.id)+"' title='it stops asking'>Skip</button></div></div>";}
+function wireNeeds(el){el.querySelectorAll('.ngo,.nskip').forEach(function(btn){btn.addEventListener('click',function(){var a=agentById(btn.getAttribute('data-id'));if(!a)return;btn.disabled=true;var msg=document.getElementById('agentsmsg');
+api('/api/home/answer',{id:'needs:'+a.id,pick:btn.classList.contains('ngo')?0:1}).then(function(r){msg.innerHTML=r&&!r.error?"<div class='note ok'>"+esc(a.name)+": "+esc(r.said||'Done.')+"</div>":"<div class='note err'>"+esc((r&&r.error)||'failed')+"</div>";loadAgents();}).catch(function(e){btn.disabled=false;msg.innerHTML="<div class='note err'>"+esc(String((e&&e.message)||e))+"</div>";});});});}
 function wireWaits(el){el.querySelectorAll('.wstart').forEach(function(btn){btn.addEventListener('click',function(){var a=agentById(btn.getAttribute('data-id'));if(!a)return;btn.disabled=true;
 api('/api/open',{path:a.path,force:true}).then(function(x){var msg=document.getElementById('agentsmsg');msg.innerHTML=x&&x.opened?"<div class='note ok'>&#10003; Started your agent in <b>"+esc(a.name)+"</b>.</div>":"<div class='note err'>"+esc(a.name)+": "+(x&&x.busy?"an agent is already running there.":"it didn&#39;t start. Check the command in Settings.")+"</div>";loadAgents();}).catch(function(e){btn.disabled=false;document.getElementById('agentsmsg').innerHTML="<div class='note err'>"+esc(String((e&&e.message)||e))+"</div>";});});});}
 // What a run left for Symbiot's memory (.symbiot/REMEMBER.json, handback.mjs): nothing goes in until Remember
@@ -1515,7 +1546,7 @@ function loadAgents(){loadLanes();loadParked(agentsDraw);}
 // Agents, in order: what needs you (a question, a step of yours), what's at work, and
 // what's finished, folded away (open stays open across refreshes).
 var AGDONEOPEN=false;
-function agentGroups(list,fn){var needs=[],run=[],done=[];list.forEach(function(a){if(nQs(a)||a.waiting)needs.push(a);else if(a.status==='running')run.push(a);else done.push(a);});
+function agentGroups(list,fn){var needs=[],run=[],done=[];list.forEach(function(a){if(nQs(a)||a.waiting||a.needs)needs.push(a);else if(a.status==='running')run.push(a);else done.push(a);});
 var g=function(t,xs){return xs.length?"<div class='tgroup agg'>"+t+" <span class='tcount'>"+xs.length+"</span></div>"+xs.map(fn).join(''):'';};
 return g('Needs you',needs)+g('At work',run)+(done.length?"<details class='agdone'"+(AGDONEOPEN?' open':'')+"><summary class='tgroup agg'>Finished <span class='tcount'>"+done.length+"</span></summary>"+done.map(fn).join('')+"</details>":'');}
 function agentsDraw(){api('/api/agents').then(function(list){var el=document.getElementById('agentslist');
@@ -1529,6 +1560,7 @@ if(a.fromHeld)st+=" &middot; started on the tasks held for the last run";
 if(a.earlier)st+=" &middot; "+(a.status==='running'?"started outside this window":"ran before Symbiot last started");
 if(a.waiting)st+=" &middot; <span style='color:var(--amber)'>waiting on your step</span>";
 if(nQs(a))st+=" &middot; <span style='color:var(--amber)'>needs your answers</span>";
+if(a.needs&&!a.needs.waiting)st+=" &middot; <span style='color:var(--amber)'>"+(a.needs.kind==='approve'?"waits for your OK":"needs you")+"</span>";
 if(a.remember&&a.remember.length)st+=" &middot; <span style='color:var(--amber)'>found "+a.remember.length+" thing"+(a.remember.length>1?"s":"")+" to remember</span>";
 if(a.held!=null){var hn=a.held.length,ht=a.held.map(function(t){return "&bull; "+esc(t).replace(/'/g,'&#39;');}).join('&#10;');
 ht+=(hn?'&#10;&#10;':'')+(a.status==='running'?"Sent while this agent was running. They wait in .symbiot/TASKS.next.md, replace TASKS.md when it finishes (keeping its ticks), and an agent starts on them then.":"They wait in .symbiot/TASKS.next.md for the agent running in this folder to finish. After that, an agent starts on them the next time the Tasks tab checks this repo, or send again.");
@@ -1536,7 +1568,7 @@ st+=" &middot; <span style='color:var(--amber);cursor:help' title='"+ht+"'><i cl
 // a repo's run can be parked from here in one click: its tasks start no runs until it's unparked
 var pk=!/\\/drafts\\/act-[^/]*$/.test(String(a.path||''))&&a.path,parked=pk&&PARKED.paths.indexOf(a.path)>=0;
 if(parked)st+=" &middot; <span style='color:var(--amber)'>parked: no new runs</span>";
-var b="<div class='dh'><span class='orb "+cls+"'></span><span class='dn'>"+esc(String(a.name||'').split('**').join(''))+"</span><span class='dd'>"+st+"</span>"+(pk?"<button type='button' class='ghost apark' data-on='"+(parked?'0':'1')+"' title='"+(parked?"let its tasks start agent runs again":"stop its tasks starting agent runs, until you unpark it")+"'>"+(parked?'Unpark':'Park')+"</button>":"")+"</div>";
+var b="<div class='dh'><span class='orb "+cls+"'></span><span class='dn'>"+esc(String(a.name||'').split('**').join('').replace(/^(Agent:\s*)What['’]s needed:\s*/i,'$1'))+"</span><span class='dd'>"+st+"</span>"+(pk?"<button type='button' class='ghost apark' data-on='"+(parked?'0':'1')+"' title='"+(parked?"let its tasks start agent runs again":"stop its tasks starting agent runs, until you unpark it")+"'>"+(parked?'Unpark':'Park')+"</button>":"")+"</div>";
 b+=workHtml(a);
 var ch=a.changed;
 if(ch&&(ch.dirty||ch.stat||(ch.commits&&ch.commits.length))){
@@ -1548,12 +1580,12 @@ if(ch&&(ch.dirty||ch.stat||(ch.commits&&ch.commits.length))){
 }else if(a.status==='done'){
   b+="<div class='changed muted'>No file changes detected (the agent may have only planned or asked).</div>";
 }
-b+=waitHtml(a)+askHtml(a)+factsHtml(a);
+b+=waitHtml(a)+needsHtml(a)+askHtml(a)+factsHtml(a);
 b+=a.work?("<details class='wkraw'><summary>what it said, in full</summary><pre class='alogout'>"+esc((a.tail&&a.tail.trim())||'(nothing yet)')+"</pre></details>"):("<pre class='alogout'>"+esc((a.tail&&a.tail.trim())||'(waiting for output…)')+"</pre>");
 return "<div class='agent' data-i='"+list.indexOf(a)+"'>"+b+"</div>";};
 el.innerHTML=agentGroups(list,agentBlock);var dn=el.querySelector('.agdone');if(dn)dn.addEventListener('toggle',function(){AGDONEOPEN=dn.open;});
 el.querySelectorAll('.alogout').forEach(function(p){p.scrollTop=p.scrollHeight;});
-restoreDrafts(el);wireAsks(el);wireWaits(el);wireFacts(el);lqLight();
+restoreDrafts(el);wireAsks(el);wireWaits(el);wireNeeds(el);wireFacts(el);lqLight();
 el.querySelectorAll('.apark').forEach(function(btn){btn.addEventListener('click',function(){var g=AGENTLIST[+btn.closest('.agent').getAttribute('data-i')];if(!g)return;btn.disabled=true;lqPark('',btn.getAttribute('data-on')==='1',function(err){btn.disabled=false;$('agentsmsg').innerHTML=err?"<div class='note err'>"+esc(err)+"</div>":'';loadAgents();},g.path);});});
 stopAgentsPoll();if(anyRunning&&current==='agents')agentsTimer=setTimeout(loadAgents,2000);});}
 function loadDrift(){var out=document.getElementById('driftout');out.innerHTML="<div class='muted' style='margin-top:12px'>Reading your repos&hellip;</div>";
@@ -1568,16 +1600,15 @@ var clean=repos.filter(function(r){return !r.flags.length;}).map(function(r){ret
 if(clean.length)h+="<div class='muted' style='margin-top:10px'>clean: "+esc(clean.join(", "))+"</div>";
 if(!repos.length)h+="<div class='muted'>No repos found under "+esc(d.base||"your home folder")+".</div>";
 out.innerHTML=h;});}
-function fillTaskRepos(){var sel=document.getElementById('newtaskrepo');if(!sel||!GRAPH)return;var cur=sel.value;var names=GRAPH.nodes.filter(function(n){return n.type==='repo'||n.type==='folder';}).map(function(n){return n.label;}).sort();sel.innerHTML="<option value=''>repo…</option>"+names.map(function(n){return "<option value='"+esc(n)+"'"+(n===cur?" selected":"")+">"+esc(n)+"</option>";}).join("");}
-function addTaskUI(){var i=document.getElementById('newtask');var v=(i.value||'').trim();if(!v)return;var repo=(document.getElementById('newtaskrepo')||{}).value||'';api('/api/tasks/add',{text:v,repo:repo}).then(function(){i.value='';TFILTER={type:'',repo:''};loadTasks();});}
 function pushTasksUI(){var o=document.getElementById('pushout');var btn=document.getElementById('pushtasks');btn.disabled=true;
 o.innerHTML="<div class='muted' style='margin-top:10px'><span class='dot-c' style='background:var(--amber)'></span> Writing .symbiot/TASKS.md into your repos&hellip;</div>";
 api('/api/tasks/push',{type:TFILTER.type||'',repo:TFILTER.repo||''}).then(function(r){
-if(r.empty){btn.disabled=false;o.innerHTML="<div class='muted' style='margin-top:10px'>No open tasks to send. Tick ideas in a repo review, or add tasks above.</div>";return;}
-var n=(r.written||[]).length;var opens=[];var h="<div class='drift' style='margin-top:10px'><div class='dh'><span class='dot-c'></span><span class='dn'>Done &mdash; wrote "+n+" file"+(n===1?"":"s")+"</span></div>";
-if(n){h+="<ul>";r.written.forEach(function(w){h+="<li class='info'>&#10003; <b>"+esc(w.name)+"</b> <span class='ev'>"+esc(w.file)+" ("+w.count+" task"+(w.count===1?"":"s")+")</span>"+(w.held?" <span class='ev'><i class=ic-pause></i> held: an agent is still running there, so these land when it finishes</span>":"")+"</li>";});h+="</ul>";}
-if(r.unresolved&&r.unresolved.length){var names=r.unresolved.map(function(u){return u.name;}).join(", ");var hasNoRepo=r.unresolved.some(function(u){return u.name==='(no repo)';});h+="<div class='dd' style='margin-top:6px'><i class=ic-warn></i> not sent: "+esc(names)+". "+(hasNoRepo?"Pick a repo in the dropdown next to <b>Add</b> so the task has somewhere to go.":"That repo isn't in the map &mdash; add its folder in Settings.")+"</div>";}
-if(r.handoff&&r.written&&r.written.length){opens=r.written.map(function(w){return api('/api/open',{path:w.path}).then(function(x){if(x&&x.blocked){var d=document.createElement('div');d.className='dd';d.innerHTML="<i class=ic-pause></i> <b>"+esc(w.name)+"</b>: "+esc(x.note)+" <button class='ghost' style='padding:2px 8px;font-size:12px'>Start it anyway</button>";d.querySelector('button').addEventListener('click',function(){this.disabled=true;api('/api/open',{path:w.path,force:true}).then(function(y){d.innerHTML=y&&y.opened?"&#10003; Started an agent in <b>"+esc(w.name)+"</b>.":"<i class=ic-warn></i> <b>"+esc(w.name)+"</b>: "+(y&&y.busy?"an agent is already running there.":"it didn&#39;t start. Check the command in Settings.");});});o.appendChild(d);}if(x&&x.busy){var d=document.createElement('div');d.className='dd';d.innerHTML="<i class=ic-warn></i> <b>"+esc(w.name)+"</b> already has an agent running, so another wasn&#39;t started. "+(x.auto?"Its new tasks are held, and an agent starts on them when it finishes.":"Its new tasks are held until it finishes. After that, an agent starts on them the next time this tab checks the repo, or send again.");o.appendChild(d);}}).catch(function(){});});h+="<div class='dd' style='margin-top:8px'><i class=ic-bot></i> Handed "+n+" repo(s) to your agent &mdash; opening the <b>Agents</b> tab to watch it work&hellip;</div>";setTimeout(function(){setTab('agents');},500);}
+if(r.empty){btn.disabled=false;o.innerHTML="<div class='muted' style='margin-top:10px'>No open tasks to send. Tell Symbiot what to do in the bar at the bottom, or tick ideas in a repo review.</div>";return;}
+var n=(r.written||[]).length;var opens=[];
+// one line, its paths on hover: the review cards below it stay in view
+var h="<div class='drift pushed'><div class='dh'><span class='dot-c'></span><span class='dn'>Sent to "+n+" repo"+(n===1?"":"s")+"</span><span class='dd'>"+(r.written||[]).map(function(w){return "<span title='"+esc(w.file).replace(/'/g,'&#39;')+"'>&#10003; <b>"+esc(w.name)+"</b> ("+w.count+" task"+(w.count===1?"":"s")+(w.held?", <i class=ic-pause></i> held till its running agent finishes":"")+")</span>";}).join(" &middot; ")+"</span></div>";
+if(r.unresolved&&r.unresolved.length){var names=r.unresolved.map(function(u){return u.name;}).join(", ");var hasNoRepo=r.unresolved.some(function(u){return u.name==='(no repo)';});h+="<div class='dd' style='margin-top:6px'><i class=ic-warn></i> not sent: "+esc(names)+". "+(hasNoRepo?"Tell Symbiot in the bar at the bottom which project it&#39;s for, so it has somewhere to go.":"That repo isn't in the map &mdash; add its folder in Settings.")+"</div>";}
+if(r.handoff&&r.written&&r.written.length){opens=r.written.map(function(w){return api('/api/open',{path:w.path}).then(function(x){if(x&&x.blocked){var d=document.createElement('div');d.className='dd';d.innerHTML="<i class=ic-pause></i> <b>"+esc(w.name)+"</b>: "+esc(x.note)+" <button class='ghost' style='padding:2px 8px;font-size:12px'>Start it anyway</button>";d.querySelector('button').addEventListener('click',function(){this.disabled=true;api('/api/open',{path:w.path,force:true}).then(function(y){d.innerHTML=y&&y.opened?"&#10003; Started an agent in <b>"+esc(w.name)+"</b>.":"<i class=ic-warn></i> <b>"+esc(w.name)+"</b>: "+(y&&y.busy?"an agent is already running there.":"it didn&#39;t start. Check the command in Settings.");});});o.appendChild(d);}if(x&&x.busy){var d=document.createElement('div');d.className='dd';d.innerHTML="<i class=ic-warn></i> <b>"+esc(w.name)+"</b> already has an agent running, so another wasn&#39;t started. "+(x.auto?"Its new tasks are held, and an agent starts on them when it finishes.":"Its new tasks are held until it finishes. After that, an agent starts on them the next time this tab checks the repo, or send again.");o.appendChild(d);}}).catch(function(){});});h+="<div class='dd'><i class=ic-bot></i> Handed "+n+" repo"+(n===1?"":"s")+" to your agent &mdash; opening the <b>Agents</b> tab to watch it work&hellip;</div>";setTimeout(function(){setTab('agents');},500);}
 else{h+="<div class='dd' style='margin-top:8px'>Set an <b>agent command</b> in Settings to auto-run it on send (and watch it in the Agents tab). For now, tell your agent: <b>“Read .symbiot/TASKS.md and implement the unchecked items.”</b></div>";}
 h+="</div>";
 o.innerHTML=h;
@@ -1671,10 +1702,17 @@ function escQ(t){return esc(t).replace(/'/g,'&#39;');}
 // Connections: a column per kind of site; each site a bead in the look: solid when
 // linked, amber when it wants you to sign in, hollow when it isn't linked. Link,
 // check (↻) and Unlink show on hover (always on touch).
-function linksHtml(d,board){var h="<div class='cxh'><span>Connections</span><small>"+(d.linked?"What Symbiot watches for you. Link more to see what arrives there, here and in Week and Standup.":"Link your work to see what arrives there, here and in Week and Standup.")+"</small></div>";
+// The plug marks the sites your agent's runs can use too, before you link them: only
+// those Claude has a connector for, and only with Claude Code as your agent (agents.mjs
+// linkReach). Faint until you've connected it in claude.ai.
+function reachOf(d,id){var r=d.reach,s=r&&r.claude&&r.sites&&r.sites[id];return s||null;}
+function linksHtml(d,board){var anyR=d.items.some(function(it){return reachOf(d,it.id);});
+var h="<div class='cxh'><span>Connections</span><small>"+(d.linked?"What Symbiot watches for you. Link more to see what arrives there, here and in Week and Standup.":"Link your work to see what arrives there, here and in Week and Standup.")+"</small>"
++(anyR?"<small class='cxlg'><i class='ic-plug cxa ready' aria-hidden='true'></i> your agent&#39;s runs can use it too, through Claude&#39;s connector for it <span class='cxlgf'><i class='ic-plug cxa' aria-hidden='true'></i> faint: once you connect it in claude.ai (Settings &rarr; Connectors)</span></small>":"")+"</div>";
 if(d.error)h+="<div class='note err'>"+esc(d.error)+"</div>";
 h+="<div class='cxg'>"+d.groups.map(function(g){return "<div class='cxc'><div class='cxl'>"+esc(g)+"</div>"+d.items.filter(function(x){return x.group===g;}).map(function(it){var on=it.state!=='off';
-return "<div class='lnk cx "+escQ(it.state)+"' data-id='"+escQ(it.id)+"'><button type='button' class='lbtn' title='"+escQ(it.note||(on?'open '+it.url+' to sign in again':'sign in at '+it.url+' and link it'))+"'><span class='cxb' aria-hidden='true'></span><span class='cxn'>"+esc(it.name)+"</span><span class='cxs'>"+(on?esc(LINKWORD[it.state]||''):'Link')+"</span></button>"+
+var rc=reachOf(d,it.id),rt=rc?(rc.ready?" Your agent's runs can use it too, through Claude's "+rc.connector.replace(/^claude\.ai\s+/i,'')+" connector.":" Your agent's runs can use it too once you connect "+rc.name+" in claude.ai → Settings → Connectors (only you can sign in there)."):'';
+return "<div class='lnk cx "+escQ(it.state)+"' data-id='"+escQ(it.id)+"'><button type='button' class='lbtn' title='"+escQ(String(it.note||(on?'open '+it.url+' to sign in again':'sign in at '+it.url+' and link it')).replace(/\.?\s*$/,rt?'.':'')+rt)+"'><span class='cxb' aria-hidden='true'></span><span class='cxn'>"+esc(it.name)+"</span>"+(rc?"<i class='ic-plug cxa"+(rc.ready?" ready":"")+"' role='img' aria-label='"+escQ(rc.ready?"agent runs can use it too":"agent runs can use it once connected in claude.ai")+"'></i>":"")+"<span class='cxs'>"+(on?esc(LINKWORD[it.state]||''):'Link')+"</span></button>"+
 (on?"<button type='button' class='lmore' title='check it now' aria-label='Check "+escQ(it.name)+" now'>&#8635;</button><button type='button' class='lrm' title='unlink: stop watching it and stop trusting it'>Unlink</button>":"")+"</div>";}).join('')+"</div>";}).join('')+"</div>";return h;}
 function linksOut(html){var o=document.getElementById('linksmsg');if(o)o.innerHTML=html;var b=document.getElementById('boardmsg');if(b&&LINKS&&!LINKS.linked)b.innerHTML=html;}
 function renderLinks(){if(!LINKS)return;['links','boardlinks'].forEach(function(id){var el=document.getElementById(id);if(!el)return;
@@ -1741,7 +1779,7 @@ function scanLine(s){return 'Mapping your work… '+s.phase+(s.total?' '+s.done+
 function loadMap(){var p=document.getElementById("profile");p.textContent="Mapping your work...";document.getElementById("graph").innerHTML="";sel=null;hideDetail();hideReview();var done=false;
 function poll(){if(done)return;api('/api/scan').then(function(s){if(done)return;if(s&&s.active&&s.phase)p.textContent=scanLine(s);setTimeout(poll,600);}).catch(function(){});}
 setTimeout(poll,400);
-api("/api/map").then(function(g){done=true;mapLoaded=true;if(!g.nodes||!g.nodes.length){p.textContent="No git repositories found under your home folder.";return;}GRAPH=g;fillTaskRepos();layout(g.nodes,g.edges);lmBuild(g);view={k:1,x:0,y:0};p.innerHTML=profileLine(g)+(g.stats&&g.stats.partial?" &middot; <span class='err'>partial &mdash; the scan hit its time limit</span>":"");var af=$('allowfiles');if(af)af.addEventListener('click',function(){SymbiotAndroid.storage();});var ut=$('usetermux');if(ut)ut.addEventListener('click',function(){SymbiotAndroid.openTermux();});render();});}
+api("/api/map").then(function(g){done=true;mapLoaded=true;if(!g.nodes||!g.nodes.length){p.textContent="No git repositories found under your home folder.";return;}GRAPH=g;layout(g.nodes,g.edges);lmBuild(g);view={k:1,x:0,y:0};p.innerHTML=profileLine(g)+(g.stats&&g.stats.partial?" &middot; <span class='err'>partial &mdash; the scan hit its time limit</span>":"");var af=$('allowfiles');if(af)af.addEventListener('click',function(){SymbiotAndroid.storage();});var ut=$('usetermux');if(ut)ut.addEventListener('click',function(){SymbiotAndroid.openTermux();});render();});}
 // The Android app calls this when you come back having allowed file access, so
 // the map rescans instead of staying empty.
 window.symbiotStorageGranted=function(){if(current==='map')loadMap();else mapLoaded=false;};
@@ -1886,8 +1924,9 @@ function copyPost(text,done){function fallback(){var t=document.createElement('t
 if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(text).then(function(){done(true);},fallback);else fallback();}
 function renderPosts(){var p=POSTS,el=$('boardposts');if(!el||!p)return;var L=p.labels||{},h='';
 // it can't draft yet (no AI, or neither LinkedIn linked nor examples in voice.md): one line, not a block a new user meets first
-if(!p.posts.length&&p.canDraft===false){var need=[];if(!p.connected)need.push('an AI is connected (Settings)');if(!p.linkedin&&!p.voice.count)need.push('LinkedIn is linked (below), or <code>'+esc(p.voice.file)+'</code> has a few of your posts');
-el.innerHTML="<div class='muted' style='margin-top:12px;font-size:13px'>Posts: Symbiot drafts your week&#39;s LinkedIn posts here once "+need.join(', and ')+".</div>";return;}
+if(!p.posts.length&&p.canDraft===false){var need=[];if(!p.connected)need.push('an AI is connected (Settings)');if(!p.linkedin&&!p.voice.count)need.push('LinkedIn is linked, or <code>'+esc(p.voice.file)+'</code> has a few of your posts');
+el.innerHTML="<div class='pshead'><span>Drafts to post</span><small>Symbiot drafts your week&#39;s LinkedIn posts from your git, in your voice, once "+need.join(', and ')+".</small></div>"+(!p.linkedin?"<div class='row'><button class='ghost plink' title='sign in to LinkedIn once in Symbiot&#39;s browser: it reads your posts for your voice, and replies to them show here'>Link LinkedIn</button></div>":"");
+var pl=el.querySelector('.plink');if(pl)pl.addEventListener('click',function(){pl.disabled=true;api('/api/links/link',{id:'linkedin'}).then(function(r){pl.disabled=false;mkMsg(r&&!r.error?'ok':'err',r&&!r.error?"Opened LinkedIn in Symbiot&#39;s browser. Sign in as you normally do, then close that window.":esc((r&&r.error)||'failed'));});});return;}
 if(p.posts.length){h+="<div class='pshead'><span>Drafts to post</span><small>"+p.posts.length+" waiting on you &middot; Approve copies one and opens LinkedIn, where you post it yourself</small></div><div class='pshelf'>";
 h+=p.posts.map(function(x){var ed=Object.prototype.hasOwnProperty.call(PEDIT,x.id);
 return "<div class='rcard pcard"+(ed?" editing":"")+"' data-id='"+escQ(x.id)+"'><div class='rhead'><b>"+esc(L[x.kind]||x.kind)+"</b><span class='muted'>LinkedIn &middot; drafted "+agoTxt(x.drafted)+(x.edited?" &middot; edited":"")+"</span></div>"
@@ -1944,6 +1983,29 @@ POSTS.posts=r.posts;renderPosts();var said=[];if(r.retried)said.push("The first 
 var vb=el.querySelector('.pvoice');if(vb)vb.addEventListener('click',function(){vb.disabled=true;postsMsg('','');vb.textContent='Reading LinkedIn…';
 api('/api/posts/voice',{confirmed:true}).then(function(r){vb.disabled=false;vb.textContent='Fill from LinkedIn';if(!r||r.error){postsMsg('err',esc((r&&r.error)||'failed'));return;}
 postsMsg('ok',"&#10003; Added "+r.added+" of your LinkedIn posts: "+r.total+" in <code>"+esc(r.file)+"</code>. Read them over, and delete any that don&#39;t sound like you.");loadPostsUI();}).catch(function(e){vb.disabled=false;vb.textContent='Fill from LinkedIn';postsMsg('err',esc(String((e&&e.message)||e)));});});}
+// ---- Marketing: what you post about your work (post.mjs), who answers, and the 4-week test ----
+// Off the Dashboard, which shows only what you watch. Its orb shows on Home once posts
+// can be drafted, or are (home.mjs marketing).
+var MKT=null;
+function mkMsg(cls,html){var o=$('mkmsg');if(o)o.innerHTML=html?"<div class='note "+cls+"'>"+html+"</div>":'';}
+function loadMarketing(){loadPostsUI();api('/api/marketing').then(function(d){if(d&&!d.error){MKT=d;renderMarketing();}});}
+var MKDAY=function(s){var d=new Date(s+'T00:00:00');return isNaN(d)?s:d.toLocaleDateString(undefined,{day:'numeric',month:'short'});};
+function renderMarketing(){var d=MKT,r=$('mkreplies'),t=$('mktest');if(!d||!r||!t)return;var rs=d.replies||[];
+r.innerHTML="<div class='pshead'><span>Replies</span><small>"+(!d.linkedin?"Link LinkedIn, and comments on and mentions of your posts show here, marked when they may be a customer.":rs.length?"On LinkedIn in the last 30 days. Draft a reply leaves one in the comment box for you to post.":"None on LinkedIn in the last 30 days. Comments on and mentions of your posts show here, marked when they may be a customer.")+"</small></div>"
++rs.map(function(n){return "<div class='task' data-id='"+escQ(n.id)+"'><span class='t'>"+esc(n.text)+custTag(n)+" <span class='muted' style='font-size:11px'>"+agoTxt(n.ts)+"</span></span><button class='ghost mkdraft' title='your agent drafts a reply in your voice and leaves it in the comment box, never posted'>Draft a reply</button></div>";}).join('');
+r.querySelectorAll('.mkdraft').forEach(function(b){b.addEventListener('click',function(){var id=b.closest('.task').getAttribute('data-id');b.disabled=true;
+api('/api/watch/draft',{id:id}).then(function(x){b.disabled=false;mkMsg(x&&!x.error?'ok':'err',x&&!x.error?DRAFTING_SOCIAL:esc((x&&x.error)||'failed'));}).catch(function(e){b.disabled=false;mkMsg('err',esc(String((e&&e.message)||e)));});});});
+var T4=d.test;if(!T4){t.innerHTML='';return;}
+var pk=(T4.packages||[]).join(', '),now=T4.week,over=T4.rows.every(function(x){return x.over;});
+var cell=function(x,v,extra){return x.started?"<td class='n'>"+v+(extra?" <span class='muted'>("+extra+")</span>":"")+"</td>":"<td class='n muted'>&ndash;</td>";};
+var h="<div class='pshead'><span>The 4-week test</span><small>"+(over?"Done: "+MKDAY(T4.start)+" to "+MKDAY(T4.end)+".":now?"Week "+now+" of 4 ("+MKDAY(T4.start)+" to "+MKDAY(T4.end)+").":"Starts "+MKDAY(T4.start)+", runs to "+MKDAY(T4.end)+".")+" Does posting bring anyone? Real replies, installs or pricing questions say it does.</small></div>"
++"<div class='mkwrap'><table class='mktab'><thead><tr><th>Week</th><th>Posts published</th><th>Replies</th><th title='LinkedIn&#39;s own count: Who viewed your profile'>Profile visits</th><th"+(pk?" title='npm downloads of "+escQ(pk)+"'":"")+">Installs</th><th>Pricing questions</th></tr></thead><tbody>"
++T4.rows.map(function(x){return "<tr"+(x.started?"":" class='later'")+(x.started&&!x.over?" aria-current='true'":"")+"><td><b>"+x.week+"</b> <span class='muted'>"+MKDAY(x.from)+"&ndash;"+MKDAY(x.to)+"</span></td>"
++cell(x,x.published,x.media?x.media+" with a picture":"")+cell(x,x.replies,x.customers?x.customers+" maybe a customer":"")
++(x.started?"<td class='n muted' title='LinkedIn&#39;s own count: its analytics on each post, and Who viewed your profile'>on LinkedIn</td>":"<td class='n muted'>&ndash;</td>")
++cell(x,x.installs==null?"&ndash;":Number(x.installs).toLocaleString())+cell(x,x.pricing)+"</tr>";}).join('')+"</tbody></table></div>"
++"<div class='muted' style='font-size:12px;margin-top:6px'>"+(pk?"Installs: npm downloads of "+esc(pk)+". Releases, mirrors and CI download too, so trust replies and pricing questions more. ":"")+"Replies and pricing questions come from LinkedIn&#39;s notifications, which Symbiot watches once LinkedIn is linked.</div>";
+t.innerHTML=h;}
 // ---- Dashboard: a card per page you watch (your inbox, GitHub, WhatsApp…), what's new on each ----
 var BOARD=null;
 // a chat's line says who its last message is from (watch.mjs fromOf): only unread ones count as waiting on you
@@ -1953,7 +2015,7 @@ var BTALK={},BTALKDRAFT={},BTALKBUSY=0;
 var TALKHINT="<div class='muted' style='font-size:12px'>Go over what's new here with your AI: what needs you, and what to say to whom. Then click <b>Draft a reply</b> on one, and your agent writes it the way you agreed here. Your AI is sent what this card lists (for mail: the sender, subject and preview).</div>";
 function talking(){var f=document.activeElement;return BTALKBUSY>0||!!(f&&f.closest&&f.closest('.btalk'));}
 var BOARDH=24;
-function loadBoard(){api('/api/watch/board?hours='+BOARDH).then(function(b){if(b&&b.cards){BOARD=b;if(!talking())renderBoard();}});loadAwaiting();loadPostsUI();}
+function loadBoard(){api('/api/watch/board?hours='+BOARDH).then(function(b){if(b&&b.cards){BOARD=b;if(!talking())renderBoard();}});loadAwaiting();}
 function boardMsg(cls,html){$('boardmsg').innerHTML="<div class='note "+cls+"'>"+html+"</div>";}
 
 // Replies an agent's email waits on (handback.mjs): Symbiot watches your inbox for them, and hands each on when it's in
@@ -2176,7 +2238,6 @@ document.getElementById('addtrusted').addEventListener('click',addTrustedUI);
 document.getElementById('newtrusted').addEventListener('keydown',function(e){if(e.key==='Enter')addTrustedUI();});
 document.getElementById('driftrun').addEventListener('click',function(){driftLoaded=false;loadDrift();});
 document.getElementById('agentsrefresh').addEventListener('click',loadAgents);
-document.getElementById('addtask').addEventListener('click',addTaskUI);
 document.getElementById('pushtasks').addEventListener('click',pushTasksUI);
 document.getElementById('agentcmd').addEventListener('change',saveAgent);
 document.getElementById('granttoolbtn').addEventListener('click',function(){grant('tool');});
@@ -2188,7 +2249,6 @@ document.getElementById('mailaddrs').addEventListener('change',saveMailAddrs);
 document.getElementById('addmail').addEventListener('click',addMailUI);
 document.getElementById('newmail').addEventListener('keydown',function(e){if(e.key==='Enter')addMailUI();});
 document.getElementById('mailpreview').addEventListener('click',previewMail);
-document.getElementById('newtask').addEventListener('keydown',function(e){if(e.key==='Enter')addTaskUI();});
 document.getElementById('capture').addEventListener('click',captureUI);
 document.getElementById('screenload').addEventListener('click',pickImageUI);
 document.getElementById('mappage').addEventListener('click',function(){mapUI($('pagesite').value,$('mappage'));});
@@ -2336,7 +2396,7 @@ list.forEach(function(d){d.ax=d.tx;d.ay=d.ty;});lqRelax(list,S,cx,cy,92*S.s);
 var old={};LQ.drops.forEach(function(d){old[d.id]=d;});
 LQ.drops=list.map(function(d){var o=old[d.id];d.x=o?o.x:cx;d.y=o?o.y:cy;d.vx=o?o.vx:0;d.vy=o?o.vy:0;d.cr=o?o.cr:0;return d;});
 var n=w.projectCount||list.length,nr=(w.running||[]).length,nw=w.waitingCount||0;
-LQ.coreText=n?n+' project'+(n>1?'s':'')+(nr?' \u00b7 '+nr+' at work':'')+(nw?' \u00b7 '+nw+' tasks waiting':''):'No projects with work on them yet. Add a task, or tell me what to do.';
+LQ.coreText=n?n+' project'+(n>1?'s':'')+(nr?' \u00b7 '+nr+' at work':'')+(nw?' \u00b7 '+nw+' tasks waiting':''):'No projects with work on them yet. Tell me what to do.';
 var go=$('lqgo');if(go){var k=w.canGo||0;go.textContent=k?'Go \u00b7 start '+k+' task'+(k>1?'s':''):'';if(go.classList)go.classList.toggle('on',k>0);}
 lqLabels();}
 function lqGoWork(){var go=$('lqgo');if(go)go.disabled=true;api('/api/work/go',{}).then(function(r){if(go)go.disabled=false;
@@ -2352,7 +2412,7 @@ LQ.talk.push({me:false,text:t});LQ.talk=LQ.talk.slice(-8);lqTalkShow(false);LQ.r
 // comes out of the core (mass is conserved). Your colours come from the system,
 // live: light or dark, contrast, transparency, forced colours, your accent, night.
 var LQ={drops:[],btns:[],core:{x:0,y:0,cr:0},mode:'aware',last:'',lastAct:Date.now(),talk:[],talking:false,theme:{},ripple:[0.5,0.5,-10],t:0,pointer:null,touch:false,frame:0};
-var LQNAMES={board:'Dashboard',map:'Map',tasks:'Tasks',agents:'Agents',week:'Week',standup:'Standup',todo:'Todo',drift:'Drift',settings:'Settings',reports:'Reports'};
+var LQNAMES={board:'Dashboard',map:'Map',tasks:'Tasks',agents:'Agents',week:'Week',standup:'Standup',todo:'Todo',drift:'Drift',settings:'Settings',reports:'Reports',marketing:'Marketing'};
 var LQ_REST=60000,LQ_MAX=11;
 function lqMM(q){try{return !!(window.matchMedia&&window.matchMedia(q).matches);}catch(e){return false;}}
 function lqLookGet(){var l='';try{l=window.localStorage&&window.localStorage.getItem('symbiot-look')||'';}catch(e){}return l==='glass'||l==='pearl'?l:'ferro';}
@@ -2374,7 +2434,7 @@ function lqLoad(commit){if(LQ.scene==='work'){lqLoadWork();return;}var fresh=LQ.
 // (work with an end) up left, Areas (what you keep up with) up right, Resources (to
 // look things up in) down left, the Archive (what's done) sunk low; and what's new on
 // what you watch (Watching) as a zone of its own on the right.
-var PARA_OF={tasks:'p',agents:'p',todo:'p',board:'a',week:'a',standup:'a',map:'r',drift:'r',settings:'r',reports:'r'};
+var PARA_OF={tasks:'p',agents:'p',todo:'p',board:'a',week:'a',standup:'a',marketing:'a',map:'r',drift:'r',settings:'r',reports:'r'};
 var PARA_NAME={p:'Projects',a:'Areas',w:'Watching',r:'Resources',x:'Archive'},PARA_SUB={p:'work with an end',a:'what you keep up with',w:'new on what you watch',r:'to look things up in',x:'what’s done'};
 var PARA_ANG={p:-2.55,a:-0.6,w:0.3,r:2.6,x:1.25},PARA_LIVE={p:0.45,a:0.3,w:0.3,r:0.12,x:0};
 function lqPara(d){return d.kind==='you'?'n':d.kind==='archive'?'x':d.kind==='feed'&&d.shape!=='reports'?'w':PARA_OF[d.shape]||'p';}
@@ -2419,7 +2479,9 @@ else if((d.kind==='you'||d.kind==='feed')&&at[d.shape]!=null)links.push([at[d.sh
 function lqBuild(){var a=LQ.adapt||{},h=LQ.home||{},S=lqSize(),list=[];LQ.bw=S.w;LQ.bh=S.h;
 // the band first: everything else sits under it, round a core centred in what's left
 var need=lqNeeds(h,S),top=need.bottom,cx=S.w/2,cy=need.items.length?Math.max(S.h*0.47,(top+60+S.h-200)/2):S.h*0.47;LQ.cy=cy;LQ.top=top;LQ.need=need;
-var feeds=(h.feeds||[]).slice(0,2),lay=(a.layout&&a.layout.items)||[],more=((a.layout&&a.layout.more)||[]).slice();
+// Marketing only once posts can be drafted, or are (home.mjs): a new user meets what they watch first
+var mk=function(id){return id!=='marketing'||!!h.marketing;};
+var feeds=(h.feeds||[]).slice(0,2),lay=((a.layout&&a.layout.items)||[]).filter(function(it){return mk(it.id);}),more=((a.layout&&a.layout.more)||[]).filter(mk);
 var vx=Math.max(0.5,Math.min(S.s*1.3,(S.w/2-90)/400)),vy=Math.max(0.35,Math.min(S.s*0.8,(S.h-cy-230)/400,(cy-(top?top+60:160))/400));var rs=Math.min(S.s,(vx+vy)/1.5);var room=Math.max(3,LQ_MAX-feeds.length-1-(need.items.length?2:0));lay.slice(room).forEach(function(it){more.push(it.id);});
 var repNew=(h.feeds||[]).filter(function(f){return f.id==='feed:reports';})[0],repOut=repNew&&feeds.indexOf(repNew)<0; // new reports, when their own droplet didn't fit
 lay.slice(0,room).forEach(function(it){list.push({id:'shape:'+it.id,kind:'shape',shape:it.id,title:LQNAMES[it.id]||it.id,sub:it.id==='reports'&&repOut?repNew.count+' new':'',r:it.r*rs,tx:cx+Math.cos(it.angle)*it.d*vx,ty:cy+Math.sin(it.angle)*it.d*vy});});
@@ -2447,12 +2509,14 @@ LQ.talkWeight=(a.modes&&a.modes.talkWeight)||0.35;
 lqLabels();}
 // Home in zones, on a screen wide enough for them: the core in the middle of what's
 // under the band; Projects then Resources to its left, Areas then Watching (with the
-// Archive and "more" at its end) to its right; each a row with its name at its
-// start. Fixed places in a fixed order, so nothing overlaps and each part is where
-// it was last time. Sizes still come from how you use them (adapt.mjs), all scaled
+// Archive and "more" at its end) to its right; each a row with its name at its outer
+// end, so the droplets, which flow out of the core, never cross a name on their way
+// (on the right, names next to the core had the Dashboard orb sitting on "what you
+// keep up with" until it landed). Fixed places in a fixed order, so nothing overlaps
+// and each part is where it was last time. Sizes still come from how you use them (adapt.mjs), all scaled
 // by one factor when the screen is short, so they stay comparable. null when they
 // can't fit (a narrow or very short screen): the liquid's own layout then.
-var ZONE_ORDER=['tasks','agents','todo','board','week','standup','map','drift','settings','reports'],ZONE_KIND={shape:0,feed:1,archive:2,more:3};
+var ZONE_ORDER=['tasks','agents','todo','board','week','standup','marketing','map','drift','settings','reports'],ZONE_KIND={shape:0,feed:1,archive:2,more:3};
 function lqZones(list,S,top,coreR){LQ.zoneT=null;if(S.w<1000||S.h<540)return null;
 var y0=top?top+10:96,y1=S.h-180,mid=(y0+y1)/2,cx=S.w/2,gapC=coreR+36,colW=S.w/2-gapC-20,titleW=150;if(colW-titleW<250||mid-y0<70)return null;
 var cells={p:[cx-gapC-colW,y0,mid],a:[cx+gapC,y0,mid],r:[cx-gapC-colW,mid,y1],w:[cx+gapC,mid,y1]},by={},plan={},k=1;
@@ -2466,8 +2530,8 @@ var R=0;m.forEach(function(d){R=Math.max(R,d.r);});var av=colW-titleW,fitW=funct
 if(fitW(per)<0.6&&m.length>1)per=Math.ceil(m.length/2);var rows=Math.ceil(m.length/per);
 k=Math.min(k,fitW(per),((c[2]-c[1])/rows-46)/(2*R));plan[g]={m:m,per:per,rows:rows,stepX:av/per};});
 if(k<0.55)return null;k=Math.min(1,k);LQ.zoneT={};
-Object.keys(plan).forEach(function(g){var c=cells[g],p=plan[g],rowH=(c[2]-c[1])/p.rows,x0=c[0]+titleW+(colW-titleW)/2;
-LQ.zoneT[g]=[c[0]+titleW/2,c[1]+rowH/2-13];
+Object.keys(plan).forEach(function(g){var c=cells[g],p=plan[g],rowH=(c[2]-c[1])/p.rows,right=g==='a'||g==='w',x0=c[0]+(right?0:titleW)+(colW-titleW)/2;
+LQ.zoneT[g]=[right?c[0]+colW-titleW/2:c[0]+titleW/2,c[1]+rowH/2-13];
 p.m.forEach(function(d,i){d.r*=k;var row=Math.floor(i/p.per),n=Math.min(p.per,p.m.length-row*p.per);d.tx=x0+(i%p.per-(n-1)/2)*p.stepX;d.ty=c[1]+row*rowH+rowH/2-13;});});
 return {cy:mid};}
 // Force-directed layout, solved once per change: push overlapping targets apart
@@ -2543,7 +2607,7 @@ function lqGo(shape){if(shape==='tasks'||shape==='agents'){lqWorkBy('task');retu
 function blobOpt(o){return String(o||'').replace(/[ ]*[(]recommended[)][ ]*$/i,'');}
 function blobBody(y,home){var h='',nm=y.name||y.repo||(y.kind==='setup'?y.title:'')||'';
 h+=home?"<button type='button' class='lt' title='open "+escQ(nm)+", with this lit up'><span>"+esc(lqShort(nm,30))+"</span><i>open &rsaquo;</i></button>":"<div class='nhead'><b>"+esc(nm)+(y.kind==='ask'?" asks":"")+"</b>"+(y.more?"<span class='muted'>+"+y.more+" more on its block in Agents</span>":"")+"</div>";
-if(y.kind!=='ask')return h+"<div class='bq'>"+esc(y.kind==='approve'?String(y.sub||'').replace(/ · only you decide$/,''):String(y.sub||'').charAt(0).toUpperCase()+String(y.sub||'').slice(1)+'.')+"</div><div class='bo'><button type='button' class='nopt rec ngo'><span class='bt'>"+(y.kind==='approve'?'Review and approve':y.id==='setup:inbox'?(y.signin?'Sign in again':'Show me your inbox'):y.id==='setup:ai'?'Connect an AI':y.urgent?'Reconnect':'Open Settings')+"</span></button></div>";
+if(y.kind!=='ask')return h+"<div class='bq'>"+esc(y.kind==='approve'?String(y.sub||'').replace(/ · only you decide$/,''):String(y.sub||'').charAt(0).toUpperCase()+String(y.sub||'').slice(1)+'.')+"</div><div class='bo'><button type='button' class='nopt rec ngo'><span class='bt'>"+(y.kind==='approve'?'Review and approve':y.id==='setup:inbox'?(y.signin?'Sign in again':'Show me your inbox'):y.id==='setup:ai'?'Connect an AI':y.pick?'Use '+y.pick.name:y.urgent?'Reconnect':'Open Settings')+"</span></button></div>";
 var os=y.options||[];h+="<div class='bq' title='"+escQ((y.q||'')+(y.why?' ('+y.why+')':''))+"'>"+esc(y.q||y.sub||'')+"</div>";
 if(y.fix==='handover'&&y.sub)h+="<div class='bfor' title='"+escQ(y.sub)+"'>for: "+esc(y.sub)+"</div>";
 if(os.length)h+="<div class='bo'>"+os.map(function(o,j){return "<button type='button' class='nopt"+(j===0&&/[(]recommended[)]/i.test(o)?' rec':'')+"' data-j='"+j+"' title='"+escQ(o)+"'><span class='bt'>"+whoHtml(blobOpt(o))+"</span></button>";}).join('')+"</div><button type='button' class='bfree' aria-expanded='false'>or answer in your own words</button>";
@@ -2563,7 +2627,10 @@ box.querySelectorAll('.nopt[data-j]').forEach(function(b){b.addEventListener('cl
 var fr=box.querySelector('.bfree'),fx=box.querySelector('.bfx');
 if(fr&&fx)fr.addEventListener('click',function(){var shut=fx.classList.toggle('hidden');fr.setAttribute('aria-expanded',shut?'false':'true');var i=fx.querySelector('input');if(!shut&&i&&i.focus)i.focus();});
 if(fx)fx.addEventListener('submit',function(ev){if(ev&&ev.preventDefault)ev.preventDefault();var i=fx.querySelector('input');send(i&&i.value);});
-var go=box.querySelector('.ngo');if(go)go.addEventListener('click',function(){lqFocus(y);});}
+var go=box.querySelector('.ngo');if(go)go.addEventListener('click',function(){if(!y.pick){lqFocus(y);return;}
+// Pick your agent: the one Symbiot found, in one click; Settings has the others
+lock(true);api('/api/agentcmd',{cmd:y.pick.tmpl}).then(function(r){if(!r||r.error){lock(false);say((r&&r.error)||'It didn’t save. Pick it in Settings.',true);return;}
+say('Your agent is '+y.pick.name+' now: Send to repos and Go hand your tasks to it.');if(box.classList)box.classList.add('gone');LQ.fresh=true;setTimeout(function(){if(o.done)o.done();else lqLoad(false);},650);}).catch(function(e){lock(false);say(String((e&&e.message)||e),true);});});}
 function lqSaid(t){LQ.talk.push({me:false,text:t});LQ.talk=LQ.talk.slice(-8);lqTalkShow(false);}
 // A lit orb opens its project with what lit it lit up and in view (lqLight): a
 // repo's questions and its Approve, under "Needs you here" at the top of its
@@ -2644,7 +2711,10 @@ if(still){d.x=tx;d.y=ty;d.vx=0;d.vy=0;}else{d.vx+=ax;d.vy+=ay;d.x+=d.vx;d.y+=d.v
 if(!rest&&!pool){d.x=Math.max(d.cr+12,Math.min(S.w-d.cr-12,d.x));d.y=Math.max((d.blob?60:140)+d.cr,Math.min(S.h-150-d.cr-50,d.y));}
 d.cr+=(tr-d.cr)*(still?1:0.06);
 var b=LQ.btns[i];if(b&&b.offsetWidth)d.lw=b.offsetWidth;if(b&&b.style){b.style.transform=d.blob?'translate('+Math.round(d.x+d.r+30)+'px,'+Math.round(d.y-d.r-4)+'px)':'translate('+Math.round(d.x-(b.offsetWidth||0)/2)+'px,'+Math.round(d.y+d.cr+(d.kind==='run'?28:4))+'px)';var show=!rest&&!pool;b.style.opacity=show?'1':'0';b.style.pointerEvents=show?'auto':'none';var lt=LQ.lts&&LQ.lts[i];if(lt)lt.tabIndex=show?0:-1;}}
-(LQ.gbtns||[]).forEach(function(gb){var g=gb.getAttribute('data-g'),top=1e9,sx=0,nn=0;D.forEach(function(d){if(d.kind!=='more'&&lqPara(d)===g){top=Math.min(top,d.y-d.cr);sx+=d.x;nn++;}});if(!nn||!gb.style)return;var gw=gb.offsetWidth||0,gh=gb.offsetHeight||0,zt=LQ.scene!=='work'&&LQ.zoneT&&LQ.zoneT[g];if(zt)gb.style.transform='translate('+Math.round(zt[0]-gw/2)+'px,'+Math.round(zt[1]-gh/2)+'px)';else gb.style.transform='translate('+Math.round(Math.max(12,Math.min(lqSize().w-gw-12,sx/nn-gw/2)))+'px,'+Math.round(Math.max(LQ.scene!=='work'&&LQ.top?LQ.top:48,top-gh-30))+'px)';var gshow=!rest&&!pool&&!talk;gb.style.opacity=gshow?'1':'0';gb.style.pointerEvents=gshow?'auto':'none';gb.tabIndex=gshow?0:-1;});
+(LQ.gbtns||[]).forEach(function(gb){var g=gb.getAttribute('data-g'),top=1e9,sx=0,nn=0;D.forEach(function(d){if(d.kind!=='more'&&lqPara(d)===g){top=Math.min(top,d.y-d.cr);sx+=d.x;nn++;}});if(!nn||!gb.style)return;var gw=gb.offsetWidth||0,gh=gb.offsetHeight||0,zt=LQ.scene!=='work'&&LQ.zoneT&&LQ.zoneT[g];if(zt)gb.style.transform='translate('+Math.round(zt[0]-gw/2)+'px,'+Math.round(zt[1]-gh/2)+'px)';else{var gx=Math.max(12,Math.min(lqSize().w-gw-12,sx/nn-gw/2)),gy=top-gh-30;
+// off any droplet it would sit on (the "more" droplet, another group's): above it instead
+for(var pass=0;pass<3;pass++)D.forEach(function(d){if(d.blob||lqPara(d)===g&&d.kind!=='more')return;var l=d.x-d.cr-6,r=d.x+d.cr+6,t=d.y-d.cr-6,b=d.y+d.cr+(d.lw?24:6);if(gx<r&&gx+gw>l&&gy<b&&gy+gh>t)gy=t-gh-4;});
+gb.style.transform='translate('+Math.round(gx)+'px,'+Math.round(Math.max(LQ.scene!=='work'&&LQ.top?LQ.top:48,gy))+'px)';}var gshow=!rest&&!pool&&!talk;gb.style.opacity=gshow?'1':'0';gb.style.pointerEvents=gshow?'auto':'none';gb.tabIndex=gshow?0:-1;});
 var ntl=$('lqneedt');if(ntl&&ntl.style)ntl.style.opacity=rest?'0':'1';
 (LQ.orbs||[]).forEach(function(o){var d=D[+o.getAttribute('data-i')];if(!d||!o.style)return;var R=Math.round(d.cr+20);o.style.width=o.style.height=(2*R)+'px';o.style.transform='translate('+Math.round(d.x-R)+'px,'+Math.round(d.y-R)+'px)';o.style.opacity=rest||pool?'0':'1';});
 var cb=$('lqcore');if(cb&&cb.style){var inC=LQ.theme&&LQ.theme.look!=='pearl'&&core.cr>60;cb.style.maxWidth=inC?Math.round(core.cr*1.5)+'px':'340px';var cw=cb.offsetWidth||0,chh=cb.offsetHeight||0;cb.style.transform='translate('+Math.round(cx-cw/2)+'px,'+(rest||inC?(inC?Math.round(core.y-chh/2):Math.round(core.y+core.cr+14)):LQ.scene==='work'?112:56)+'px)';var ct=rest?(LQ.coreText||'All handled'):talk||pool?'':(LQ.coreText||'');lqCoreText(cb,ct);cb.style.opacity=ct?'1':'0';cb.style.pointerEvents=ct?'auto':'none';}}

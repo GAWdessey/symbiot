@@ -14,7 +14,7 @@ import { homedir } from "node:os";
 import { readFileSync, writeFileSync } from "node:fs";
 import { watchBoard } from "./watch.mjs";
 import { pendingReview, pushTasks } from "./tasks.mjs";
-import { agentsList, runHandoff, runningHandoff, handoffCmd, connectorsInfo, parkedPaths, agentMissing } from "./agents.mjs";
+import { agentsList, runHandoff, runningHandoff, handoffCmd, connectorsInfo, parkedPaths, agentMissing, settleNeeds, pickAgent } from "./agents.mjs";
 import { linksState } from "./links.mjs";
 import { knowledgeState } from "./knowledge.mjs";
 import { CONFIG_DIR, loadTasks } from "./core.mjs";
@@ -25,6 +25,7 @@ import { resolveProvider } from "./ai.mjs";
 import { reportsNews } from "./reports.mjs";
 import { awaitingState, inboxSight } from "./handback.mjs";
 import { newClashes } from "./checks.mjs";
+import { postsState } from "./post.mjs";
 
 const KEEP = 15000; // the slower reads (git per repo awaiting review) are cached this long
 let cached = null;
@@ -54,9 +55,11 @@ const laneOfPath = (path, map) => Object.keys(map || {}).find((n) => map[n] === 
 const FAILED_FOR = 86400000, dropped = new Set();
 const firstLine = (t) => String(t || "").split("\n").find((l) => l.trim()) || "";
 // What stopped and can't go on without you, as questions: a handover that couldn't
-// start (lanes.mjs stuckHandovers: "Allow this run access to ~/Company?"), and a run
-// that ended in an error. Each is answered on its blob (homeAnswer), on Home and on
-// its lane in Tasks. repo: its lane ("" for an ops run).
+// start (lanes.mjs stuckHandovers: "Allow this run access to ~/Company?"), a run
+// that ended waiting on you (agents.mjs needsOf: a draft for your OK, a sudo step,
+// a step your answer left you) with what to check first, and a run that ended in an
+// error. Each is answered on its blob (homeAnswer), on Home and on its lane in
+// Tasks. repo: its lane ("" for an ops run).
 function troubles({ stuck = [], list = [], map = {}, named = displayName, now = Date.now() } = {}) {
   const out = [], seen = new Set();
   for (const t of stuck) {
@@ -66,9 +69,16 @@ function troubles({ stuck = [], list = [], map = {}, named = displayName, now = 
   }
   for (const a of list) {
     if (seen.has(a.path)) continue; seen.add(a.path); // the newest run in each folder (agentsList: newest first)
+    if (a.status === "running" || (a.ask && a.ask.questions && a.ask.questions.length)) continue; // at work, or it asked: that's its question
+    const lane = laneOfPath(a.path, map), repo = lane || "", nm = repo ? named(map[lane], repo) : plain(String(a.name || "an agent").replace(/^Agent:\s*/, "").replace(/^\W*What['’]s needed:\W*/i, "").replace(/^./, (c) => c.toUpperCase()), 60);
+    const n = a.needs;
+    if (n && !dropped.has("needs:" + a.id)) {
+      const ok = n.kind === "approve";
+      out.push({ kind: "ask", fix: "needs", id: "needs:" + a.id, path: a.path, repo, name: nm, title: ok ? `${nm} waits for your OK` : `${nm} needs you`, sub: plain(n.label || n.what, 90),
+        q: n.what + (n.check ? ` Check first: ${n.check}` : ""), options: ok ? ["Go ahead (recommended)", "Skip"] : ["Done it (recommended)", "Skip"], shape: "agents" });
+      continue;
+    }
     if (a.status !== "failed" || dropped.has(a.id) || (a.endedAt && now - a.endedAt > FAILED_FOR)) continue;
-    if (a.ask && a.ask.questions && a.ask.questions.length) continue; // it asked: that's its question
-    const lane = laneOfPath(a.path, map), repo = lane || "", nm = repo ? named(map[lane], repo) : plain(String(a.name || "an agent").replace(/^Agent:\s*/, ""), 60);
     const said = plain(String(a.tail || "").split(/\n+/).filter((l) => l.trim()).pop() || "", 140);
     out.push({ kind: "ask", fix: "failed", id: "failed:" + a.id, path: a.path, repo, name: nm, title: `${nm}'s run stopped`, sub: said || `it exited with code ${a.exitCode}`,
       q: `Its run stopped with an error${said ? `: ${said}` : ` (exit code ${a.exitCode})`}. Run it again?`, options: ["Run it again (recommended)", "Skip"], shape: "agents" });
@@ -96,6 +106,10 @@ function homeState({ now = Date.now(), fresh = false, deps = {} } = {}) {
   const agentGone = deps.agentGone || (() => { try { return handoffCmd() ? agentMissing() : ""; } catch { return ""; } });
   const signedOut = deps.signedOut || (() => { try { const c = connectorsInfo(); return c.claude ? (c.links || []).filter((x) => x.connector && !x.ready) : []; } catch { return []; } });
   const stuck = deps.stuck || (() => { try { return stuckHandovers({ now }); } catch { return []; } });
+  const agentCmd = deps.agentCmd || (() => { try { return handoffCmd(); } catch { return "x"; } });
+  const offer = deps.pickAgent || (() => { try { return pickAgent(); } catch { return null; } });
+  // Marketing (its own section, off the Dashboard) once posts can be drafted, or there are some
+  const marketing = deps.marketing || (() => { try { const p = postsState(); return !!(p.canDraft || p.posts.length || p.done.length); } catch { return false; } });
   const named = deps.name || displayName;
   const you = [], map = repos() || {};
   // What Symbiot works through (an AI, your agent, the connectors runs use) shows
@@ -105,6 +119,9 @@ function homeState({ now = Date.now(), fresh = false, deps = {} } = {}) {
   const gone = agentGone(); if (gone) you.push({ kind: "setup", id: "setup:agent", urgent: true, title: "Your agent is unavailable", sub: `${gone} isn't on this computer any more, so no task can start`, shape: "settings", focus: "agent" });
   for (const c of signedOut()) you.push({ kind: "setup", id: "setup:conn:" + c.id, urgent: true, title: `Reconnect ${c.name}`, sub: `its Claude connector is signed out, so agent runs can't use ${c.name}`, shape: "settings", focus: "agent" });
   if (!Object.keys(map).length) you.push({ kind: "setup", id: "setup:folders", title: "Show me your work", sub: "where your repos are", shape: "settings", focus: "work" });
+  // no agent yet: Send to repos and Go would only write TASKS.md files nothing runs, so
+  // Home didn't say "All handled" truthfully. One click for the one on this computer.
+  if (!agentCmd()) { const p = offer(); you.push({ kind: "setup", id: "setup:pick", title: "Pick your agent", sub: p ? `${p.name} is on this computer: one click and it takes your tasks` : "the coding agent that takes your tasks", shape: "settings", focus: "agent", ...(p ? { pick: { name: p.name, tmpl: p.tmpl } } : {}) }); }
   for (const r of pending()) {
     if (!r.path || r.running) continue;
     const n = (r.tasks || []).length, files = (r.files || []).length;
@@ -140,17 +157,23 @@ function homeState({ now = Date.now(), fresh = false, deps = {} } = {}) {
   if (rep.count) feeds.push({ id: "feed:reports", title: "Reports", sub: `${rep.count} unread`, latest: rep.latest, count: rep.count, shape: "reports" });
   const hs = ((lanes() || {}).handoffs || []).slice(0, 5).map((h) => ({ from: h.from, to: h.to, text: h.text, status: h.status, ...(h.times > 1 ? { times: h.times } : {}) }));
   const working = list.filter((a) => a.status === "running").length;
-  const out = { you: you.slice(0, 6), youCount: you.length, feeds: feeds.slice(0, 6), lanes: hs, working, at: now };
+  const out = { you: you.slice(0, 6), youCount: you.length, feeds: feeds.slice(0, 6), lanes: hs, working, marketing: marketing(), at: now };
   if (!deps.board) cached = out;
   return out;
 }
 
-// An answer on a stuck handover's or a failed run's blob. pick: the option's place
-// (0 goes ahead, 1 skips); text: your own words, which go ahead with them unless
-// they say no. The handover's run (lanes.mjs allowHandover) reports back to the
-// agent that asked; a failed run starts again in its folder, with your words in its
-// ANSWERS.md. { ok, said } or { error }.
+// An answer on a stuck handover's, a waiting run's or a failed run's blob. pick: the
+// option's place (0 goes ahead, 1 skips); text: your own words, which go ahead with
+// them unless they say no. The handover's run (lanes.mjs allowHandover) reports back
+// to the agent that asked; a run waiting on your OK or your step starts again with
+// "go ahead" or "done" in its ANSWERS.md (skipped, it doesn't ask again); a failed
+// run starts again in its folder, with your words in its ANSWERS.md. { ok, said } or { error }.
 const SAYS_NO = /^\s*(skip|no|nope|don'?t|do not|cancel|leave it|never ?mind|stop)\b/i;
+// An answer, in the folder's ANSWERS.md, for the run that picks it up.
+function noteAnswer(path, heading, text) {
+  const f = join(path, ".symbiot", "ANSWERS.md"); let had = ""; try { had = readFileSync(f, "utf8"); } catch {}
+  try { writeFileSync(f, `${(had || "# Answers\n").replace(/\s*$/, "")}\n\n### ${String(heading).replace(/\s+/g, " ").trim()}\n${text}\n_answered ${new Date().toISOString().slice(0, 10)}_\n`); } catch {}
+}
 function homeAnswer(id, { pick, text = "" } = {}, deps = {}) {
   id = String(id || ""); text = String(text || "").trim().slice(0, 2000);
   const go = text ? !SAYS_NO.test(text) : Number(pick) === 0, ref = id.replace(/^\w+:/, "");
@@ -164,10 +187,21 @@ function homeAnswer(id, { pick, text = "" } = {}, deps = {}) {
     const a = (deps.agents || agentsList)().find((x) => x.id === ref); if (!a) return { error: "That run isn't here any more." };
     if (!go) { dropped.add(ref); return { ok: true, said: "Skipped." }; }
     if ((deps.running || runningHandoff)(a.path)) return { ok: true, said: "An agent is already at work there." };
-    if (text) { const f = join(a.path, ".symbiot", "ANSWERS.md"); let had = ""; try { had = readFileSync(f, "utf8"); } catch {}
-      try { writeFileSync(f, `${(had || "# Answers\n").replace(/\s*$/, "")}\n\n### Your last run stopped with an error\n${text}\n_answered ${new Date().toISOString().slice(0, 10)}_\n`); } catch {} }
+    if (text) noteAnswer(a.path, "Your last run stopped with an error", text);
     const e = (deps.run || runHandoff)(a.path, { force: true }); dropped.add(ref);
     return e && e.id && !e.blocked ? { ok: true, said: "Running it again.", rerun: e.id } : { error: (e && e.note) || "It didn't start. Check your agent in Settings." };
+  }
+  if (id.startsWith("needs:")) {
+    const a = (deps.agents || agentsList)().find((x) => x.id === ref), n = a && a.needs;
+    if (!n) return { error: "That isn't waiting on you any more." };
+    const settle = deps.settle || settleNeeds;
+    if (!go) { settle(a.path, n.key); dropped.add(id); return { ok: true, said: "Skipped. It won't ask again." }; }
+    if ((deps.running || runningHandoff)(a.path)) return { ok: true, said: "An agent is already at work there." };
+    const said = n.kind === "approve" ? `Go ahead: ${text || "do it as you had it, once you've checked what you flagged"}.` : `Done: the user did it${text ? ` (${text})` : ""}. Check it worked, then carry on.`;
+    noteAnswer(a.path, n.what, said);
+    const e = (deps.run || runHandoff)(a.path, { force: true });
+    if (e && e.id && !e.blocked) { settle(a.path, n.key); dropped.add(id); }
+    return e && e.id && !e.blocked ? { ok: true, said: n.kind === "approve" ? "Its agent is going ahead." : "Its agent is checking and carrying on.", rerun: e.id } : { error: (e && e.note) || "It didn't start. Check your agent in Settings." };
   }
   return { error: "Answer that one on its block in Agents." };
 }

@@ -13,7 +13,7 @@ import { createServer } from "node:http";
 import { randomBytes } from "node:crypto";
 import { EMBEDDED_UI } from "./ui.mjs";
 import { VERSION, LATEST_VERSION, REGISTRY, semverGt, checkLatest, CONFIG_PATH, loadConfig, saveConfig, loadTasks, hasCmd, chromeBinary, CONFIG_DIR } from "./core.mjs";
-import { shSingle, handoffCmd, setHandoffCmd, grantAgent, runHandoff, track, detectHandoffs, connectorsInfo, answerQuestions, skipIdea, agentsList, startWaiting, parkLane, parkedPaths, autoAllowSweep, trustFull } from "./agents.mjs";
+import { shSingle, handoffCmd, setHandoffCmd, grantAgent, runHandoff, track, detectHandoffs, connectorsInfo, linkReach, answerQuestions, skipIdea, agentsList, startWaiting, parkLane, parkedPaths, autoAllowSweep, trustFull } from "./agents.mjs";
 import { PROVIDERS, resolveProvider, connectProvider, detectHardware, recommendModels, hasOllama, ollamaInstall, ensureOllama, useOllamaModel } from "./ai.mjs";
 import { SCAN, SCAN_TIMEOUT_MS, scanRoots, scanHome, addScanRoot, removeScanRoot, buildMap, nodeDetail, repoPathMap } from "./scan.mjs";
 import { computeDrift } from "./drift.mjs";
@@ -22,9 +22,9 @@ import { repoReview, repoSuggest, folderSuggest, taskChat, clearTaskChat, mailSt
 import { loadScreens, screenImage, captureScreen, splitScreen, listMonitors, allowScreenshots, importScreen, setRegions, renameScreen, removeScreen, blueprint, clickRegion } from "./screens.mjs";
 import { mapPage, wholePage, pressRegion, typeRegion, scrollPage, signIn, keepBrowserOpen, isTrusted, trustedSites, trustSite, untrustSite } from "./headless.mjs";
 import { weeklyState, setWeekly, runWeekly, startWeekly, autostartState, setAutostart } from "./desktop.mjs";
-import { watchState, addWatch, setEvery, removeWatch, clearNews, seenWatch, checkWatch, startWatches, setBrief, draftReply, openChat, watchBoard, boardChat, clearBoardChat } from "./watch.mjs";
+import { markNews, newsSince, watchState, addWatch, setEvery, removeWatch, clearNews, seenWatch, checkWatch, startWatches, setBrief, draftReply, openChat, watchBoard, boardChat, clearBoardChat } from "./watch.mjs";
 import { linksState, linkSite, checkLink, unlinkSite } from "./links.mjs";
-import { postsState, draftPosts, approvePost, editPost, skipPost, voiceFromLinkedIn, addMedia, removeMedia, mediaFile, mediaDir, pictureOfPage, clipOfPage, openUrl } from "./post.mjs";
+import { testWeeks, testInstalls, postsState, draftPosts, approvePost, editPost, skipPost, voiceFromLinkedIn, addMedia, removeMedia, mediaFile, mediaDir, pictureOfPage, clipOfPage, openUrl } from "./post.mjs";
 import { mindState, forget } from "./mind.mjs";
 import { lanesTick, lanesState, partlyDone, orcaRelink } from "./lanes.mjs";
 import { keepFacts, skipFacts, awaitTick, awaitingState, stopWaiting } from "./handback.mjs";
@@ -332,13 +332,21 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       if (u.pathname === "/api/mind") return json(res, mindState());
       if (u.pathname === "/api/mind/forget" && req.method === "POST") { const b = await readBody(req); return json(res, forget(String(b.id || ""))); }
       // Links (links.mjs): one click per standard work site: sign in, trust it, watch it.
-      if (u.pathname === "/api/links") return json(res, linksState());
+      if (u.pathname === "/api/links") { let reach = null; try { reach = linkReach(); } catch {} return json(res, { ...linksState(), ...(reach ? { reach } : {}) }); } // reach: which sites agent runs can use too (agents.mjs)
       if (u.pathname === "/api/links/link" && req.method === "POST") { const b = await readBody(req); return json(res, await linkSite(String(b.id || ""))); }
       if (u.pathname === "/api/links/check" && req.method === "POST") { const b = await readBody(req); return json(res, await checkLink(String(b.id || ""))); }
       if (u.pathname === "/api/links/unlink" && req.method === "POST") { const b = await readBody(req); return json(res, unlinkSite(String(b.id || ""))); }
       // Posts (post.mjs): the week's drafts, waiting on you. Approve only records your yes:
       // the page copies the post itself and opens LinkedIn's share box; nothing is posted.
       if (u.pathname === "/api/posts") return json(res, postsState());
+      // Marketing: replies on LinkedIn (its watched notifications, marked "maybe a customer"),
+      // and the 4-week test's table, with npm installs of the packages the posts are about
+      if (u.pathname === "/api/marketing") {
+        const ws = watchState(), news = markNews(newsSince(24 * 60), ws.watches), p = postsState(), t = testWeeks({ news, map: repoPathMap() });
+        let n = null; try { n = await testInstalls(t, { get: (url) => fetch(url, { signal: AbortSignal.timeout(8000) }).then((r) => (r.ok ? r.json() : null)) }); } catch {}
+        if (t && n) t.rows.forEach((r, i) => { r.installs = n[i]; });
+        return json(res, { linkedin: p.linkedin, replies: news.filter((x) => x.social && x.ts >= Date.now() - 30 * 86400000).slice(0, 30), test: t });
+      }
       if (u.pathname === "/api/posts/draft" && req.method === "POST") return json(res, await draftPosts());
       if (u.pathname === "/api/posts/approve" && req.method === "POST") { const b = await readBody(req); return json(res, approvePost(String(b.id || ""), { copy: null })); }
       if (u.pathname === "/api/posts/edit" && req.method === "POST") { const b = await readBody(req); return json(res, editPost(String(b.id || ""), b.text)); }

@@ -48,7 +48,7 @@ const MIN_EVENTS = 12;                   // under this many uses, adaptation fad
 const HICK_COVER = 0.9, HICK_MIN = 3, HICK_MAX = 7;
 const HYSTERESIS = 0.15;
 const FITTS = { a: 0.1, b: 0.15 };       // seconds; only ratios matter here
-const SHAPES = ["board", "map", "tasks", "agents", "week", "standup", "todo", "drift", "settings", "reports"];
+const SHAPES = ["board", "map", "tasks", "agents", "week", "standup", "todo", "drift", "settings", "reports", "marketing"];
 
 function loadAdapt(file = ADAPT_FILE) {
   try { const d = JSON.parse(readFileSync(file, "utf8")); return { shapes: d.shapes || {}, trans: d.trans || {}, hours: d.hours || {}, modes: d.modes || {}, slots: d.slots || {}, shown: d.shown || null, events: d.events || 0 }; }
