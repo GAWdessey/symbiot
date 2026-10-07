@@ -7,6 +7,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { gunzipSync } from "node:zlib";
+import { readRunLog } from "./work.mjs";
 import { readFileSync, existsSync, mkdirSync, writeFileSync, readdirSync, statSync, unlinkSync } from "node:fs";
 import { createServer } from "node:http";
 import { randomBytes } from "node:crypto";
@@ -413,7 +414,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
         // giving up and sending you to a terminal.
         const attempt = (n) => track("symbiot update", inst, homedir(), (code) => {
           if (code !== 0) {
-            let tail = ""; try { tail = readFileSync(join(homedir(), ".symbiot", "agent.log"), "utf8").slice(-3000); } catch {}
+            const tail = readRunLog(join(homedir(), ".symbiot", "agent.log")).slice(-3000);
             if (n < 5 && /E404|ETARGET|notarget|No matching version|is not in this registry/i.test(tail)) { UPDATING = { target, retrying: true, attempt: n + 1, at: Date.now() }; setTimeout(() => attempt(n + 1), 30000).unref(); }
             else UPDATING = null;
             return;

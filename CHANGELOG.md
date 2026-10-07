@@ -2,6 +2,10 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.54.1
+
+- **No more lag from a big agent log.** An agent's log keeps every run and everything it reads, screenshots included; one reached 144 MB, and Symbiot reread all of it on almost every refresh, so the app stalled for 5–28 seconds at a time and ate a core. Now it reads only the newest run, from the end of the file, and keeps it until the file changes. A log past 8 MB starts afresh at the next run, with the old one kept as `agent.log.old`.
+
 ## 0.54.0
 
 - **Show Symbiot a screenshot.** Paste one into "Talk to Symbiot" (Ctrl+V) or drop it on the bar: it shows as a thumbnail you can remove, goes with what you say, and the AI you connected sees it (Claude, OpenAI, Gemini, or a local model that reads images). If Symbiot hands the work to an agent, the agent gets the screenshot too. Up to 4 at a time; they're kept a week, readable by you only.
