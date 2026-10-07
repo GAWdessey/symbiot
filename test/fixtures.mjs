@@ -310,7 +310,7 @@ try {
   const erDir = join(ROOT, "earlier"), erHome = join(ROOT, "erhome"); mkdirSync(join(erDir, ".symbiot"), { recursive: true }); mkdirSync(erHome, { recursive: true });
   const erRun = (code) => { const r = spawnSync(process.execPath, ["--input-type=module", "-e", `
     import * as a from ${JSON.stringify(AGENTS)};
-    import { writeFileSync, existsSync } from "node:fs";
+    import { writeFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
     const dir = ${JSON.stringify(erDir)}, s = dir + "/.symbiot/", out = {};
     const until = async (c) => { for (let i = 0; i < 100 && !c(); i++) await new Promise((r) => setTimeout(r, 100)); };
     const run = async (j) => { if (j && j.pid) await until(() => j.status !== "running" && !existsSync(s + "agent.pid")); return j; };
@@ -337,7 +337,24 @@ try {
     writeFileSync(s + "QUESTIONS.md", "## Questions\\n### Allow gh again?\\n- 👤 You: allow gh in Settings\\n");
     out.answer3 = a.answerQuestions(dir, [{ q: "Allow gh again?", a: "👤 You: allow gh in Settings" }], { rerun: true });
     out.wait3 = a.waitingFor(dir); out.none3 = a.startWaiting().length;
-    a.setHandoffCmd(a.handoffCmd() + " # gh allowed"); out.wait3b = a.waitingFor(dir); const st3 = a.startWaiting(); out.started3 = st3.length; await run(st3[0]);`);
+    a.setHandoffCmd(a.handoffCmd() + " # gh allowed"); out.wait3b = a.waitingFor(dir); const st3 = a.startWaiting(); out.started3 = st3.length; await run(st3[0]);
+    // a permission picked in the app is given there and then (the click is the say-so), not left as a step
+    a.setHandoffCmd('claude -p "{prompt}"');
+    writeFileSync(s + "QUESTIONS.md", "## Questions\\n### Can't read the screenshot\\n- 👤 You (only you: a permission): let agents read ~/.config/symbiot/screens, then rerun this\\n- 👤 You (only you: your message): paste it into ANSWERS.md\\n");
+    out.answer4 = a.answerQuestions(dir, [{ q: "Can't read the screenshot", a: "👤 You (only you: a permission): let agents read ~/.config/symbiot/screens, then rerun this" }]); out.cmd4 = a.handoffCmd(); out.wait4 = a.waitingFor(dir);
+    writeFileSync(s + "QUESTIONS.md", "## Questions\\n### Paste it?\\n- 👤 You (only you: your message): paste it into ANSWERS.md\\n");
+    out.answer5 = a.answerQuestions(dir, [{ q: "Paste it?", a: "👤 You (only you: your message): paste it into ANSWERS.md" }]);
+    // an allow list the agent proposed is turned on for this folder when picked; a wide one stays the user's step
+    writeFileSync(s + "allowlist.proposed.json", JSON.stringify({ permissions: { allow: ["Bash(cloudflared:*)", "Bash(dig:*)"], deny: ["Read(/x/.env)"], additionalDirectories: ["/tmp/cf"] } }));
+    mkdirSync(dir + "/.claude", { recursive: true }); writeFileSync(dir + "/.claude/settings.local.json", JSON.stringify({ permissions: { allow: ["Bash(ls:*)"] } }));
+    writeFileSync(s + "QUESTIONS.md", "## Questions\\n### Turn on the allow list?\\n- 👤 You (only you: a permission): allow the list in .symbiot/allowlist.proposed.json\\n");
+    out.answer6 = a.answerQuestions(dir, [{ q: "Turn on the allow list?", a: "👤 You (only you: a permission): allow the list in .symbiot/allowlist.proposed.json" }]);
+    out.local6 = JSON.parse(readFileSync(dir + "/.claude/settings.local.json", "utf8"));
+    writeFileSync(s + "allowlist.proposed.json", JSON.stringify({ permissions: { allow: ["Bash(bash:*)"] } }));
+    writeFileSync(s + "QUESTIONS.md", "## Questions\\n### Allow it all?\\n- 👤 You (only you: a permission): allow the list in .symbiot/allowlist.proposed.json\\n");
+    out.answer7 = a.answerQuestions(dir, [{ q: "Allow it all?", a: "👤 You (only you: a permission): allow the list in .symbiot/allowlist.proposed.json" }]);
+    out.local7 = JSON.parse(readFileSync(dir + "/.claude/settings.local.json", "utf8"));
+    a.setHandoffCmd('claude -p "{prompt}" --allowedTools "Bash(node:*)" "Bash(--allowedtools:*)"'); out.flag = a.grantAgent({ tool: "--allowedTools" }); out.flag2 = a.grantAgent({ tool: "dig" });`);
   const ee = ((er2.list || []).find((e) => e.path === erDir)) || {};
   ok("after a restart, a run that stopped on questions is listed, marked earlier, with its questions", ee.earlier === true && ee.status === "done" && ((ee.ask || {}).questions || []).length === 1 && /WA_WABA_ID/.test(ee.tail || ""), ee);
   ok("...and its questions can be answered there; a folder no run started in can't", /No agent has run/.test((er2.unknown || {}).error || ""), er2.unknown);
@@ -345,6 +362,11 @@ try {
   ok("an answer that picks 👤 You says the step is still yours, and doesn't start the agent", er2.answer && er2.answer.ok && !er2.answer.rerun && JSON.stringify(er2.answer.yours) === JSON.stringify(["put it in `.env`"]) && JSON.stringify(er2.answer.waitFiles) === '[".env"]' && /starts by itself once `\.env` changes/.test(er2.answer.note || ""), er2.answer);
   ok("...a send in the meantime starts nothing, and the Agents tab shows what it waits on", er2.held && er2.held.blocked && er2.held.waiting && /your step comes first: put it in `\.env`/.test(er2.held.note || "") && er2.listWait && er2.listWait.waiting && er2.listWait.waiting.files[0] === ".env" && er2.none === 0, [er2.held, er2.listWait && er2.listWait.waiting]);
   ok("...once .env changes, the agent starts by itself", er2.started === 1 && er2.cleared, [er2.started, er2.cleared]);
+  ok("a permission picked in the app is granted then and there (--add-dir, ~ expanded) and isn't left as the user's step", er2.answer4 && er2.answer4.ok && (er2.answer4.granted || []).some((d) => /\/\.config\/symbiot\/screens$/.test(d) && !d.startsWith("~")) && !er2.answer4.yours && /--add-dir "[^"]*\/\.config\/symbiot\/screens"/.test(er2.cmd4 || "") && !er2.wait4 && /Allowed .*screens for your agents/.test(er2.answer4.note || ""), [er2.answer4, er2.cmd4]);
+  ok("...but a step only the user can do (their message) is still theirs", er2.answer5 && JSON.stringify(er2.answer5.yours) === JSON.stringify(["You (only you: your message): paste it into ANSWERS.md"]) && !er2.answer5.granted, er2.answer5);
+  ok("an allow list the agent proposed is turned on for its folder only, merged with what's there, when picked", er2.answer6 && er2.answer6.granted && !er2.answer6.yours && JSON.stringify(er2.local6.permissions.allow) === JSON.stringify(["Bash(ls:*)", "Bash(cloudflared:*)", "Bash(dig:*)"]) && er2.local6.permissions.deny[0] === "Read(/x/.env)" && er2.local6.permissions.additionalDirectories[0] === "/tmp/cf", [er2.answer6, er2.local6]);
+  ok("...but one that would let an agent run anything (a shell, sudo, rm) isn't turned on: it stays the user's step", er2.answer7 && !er2.answer7.granted && (er2.answer7.yours || []).length === 1 && !er2.local7.permissions.allow.includes("Bash(bash:*)"), [er2.answer7, er2.local7]);
+  ok("a flag is never granted as a tool, and an old broken rule (Bash(--allowedtools:*)) is cleaned out", er2.flag && er2.flag.ok && !/--allowedtools:\*/i.test(er2.flag.cmd) && /"Bash\(dig:\*\)"/.test(er2.flag2.cmd) && !/Bash\(-/.test(er2.flag2.cmd), [er2.flag, er2.flag2]);
   ok("a step with no file named waits for Start it now; the 🤖 Agent part isn't the user's step", er2.answer2 && JSON.stringify(er2.answer2.yours) === '["allow gh in Settings."]' && !er2.answer2.waitFiles && er2.held2 && er2.held2.blocked && /Start it now/.test(er2.held2.note || "") && er2.forced && er2.cleared2, [er2.answer2, er2.held2, er2.forced]);
   // the user answers in their own words: "don't start another run until it's in" (the key the 👤 option puts in .env)
   const er3 = erRun(`writeFileSync(s + "QUESTIONS.md", "## Questions\\n### Where does the WABA id go?\\n- 👤 You: put WA_WABA_ID in \\x60.env\\x60 (recommended)\\n- 🤖 Agent: read it from the Meta export\\n### Ship it now?\\n- Yes\\n");
@@ -690,7 +712,7 @@ try {
   const uiJs = [...EMBEDDED_UI.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]).join("\n");
   const whoHtml = new Function(uiJs.slice(uiJs.indexOf("function esc("), uiJs.indexOf("\n", uiJs.indexOf("function whoHtml("))) + "; return whoHtml;")();
   const wh = whoHtml("👤 You: allow it <b>. 🤖 Agent: the next run adds it");
-  ok("the card shows the markers as You / Agent badges, escaped, and leaves 'Your' and plain options alone", /class='who you'>&#128100; You</.test(wh) && /class='who agent'>&#129302; Agent</.test(wh) && /&lt;b&gt;/.test(wh) && !/👤|🤖/.test(wh) && /You<\/span> Your call/.test(whoHtml("👤 Your call")) && whoHtml("Plain") === "Plain", [wh, whoHtml("👤 Your call")]);
+  ok("the card shows the markers as You / Agent badges (drawn icons, not emoji), escaped, and leaves 'Your' and plain options alone", /class='who you'><i class=ic-person><\/i> You</.test(wh) && /class='who agent'><i class=ic-bot><\/i> Agent</.test(wh) && /&lt;b&gt;/.test(wh) && !/👤|🤖/.test(wh) && /You<\/span> Your call/.test(whoHtml("👤 Your call")) && whoHtml("Plain") === "Plain", [wh, whoHtml("👤 Your call")]);
 
   console.log("QUESTIONS — any agent's .symbiot/QUESTIONS.md parses into questions, options and ideas");
   const pq = parseQuestions("# Questions for you\n\n## Questions\n### Keep the old config format?\nReading both costs ~40 lines.\n- Yes, read both (recommended)\n- No, migrate once\n\n### Which port?\n1. 7391\n2. random\n\n## Suggestions\n- Add a --json flag to drift\n- [ ] Cache the map scan\n");

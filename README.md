@@ -51,44 +51,59 @@ visual app in your browser — in a clean, chrome-less window if you have
 Chrome/Chromium/Edge/Brave (`--app` mode), otherwise a normal tab. No Electron,
 no install — it's the same CLI. Press Ctrl+C (or click Quit) to stop.
 
-It opens on [the liquid home](#the-liquid-a-home-that-shapes-itself-to-you),
-and each tab below pools open from it. Tabs:
+It opens on [the liquid](#the-liquid-a-home-that-shapes-itself-to-you); each of these parts opens from it:
 
-- **Map** — a live node graph of your work from your local git:
-  you at the centre, your repos, the languages and tools they share (so related
-  projects cluster), the coding **agents and editors** you have installed, and the
-  **AI** powering Symbiot. Project folders that **aren't git repos** show up too
-  (see [Where it looks](#where-it-looks)). **Scroll to zoom, drag to pan, click a
-  node.** A repo's panel shows its branch, commits, uncommitted work and stack, a
-  **Suggest next steps** button, and an **AI review**: what the project does, a
-  one-line verdict on whether it needs new work at all (it prefers stabilising over
-  new features), and ideas you can tick straight into **Tasks**. The graph needs
-  **no AI key**; reviews and suggestions use your chosen model. While the scan runs
-  the Map shows its progress. Under the graph is the [experimental](#screens-blueprints-for-screen-automation)
-  **Screens** view.
-- **Dashboard** — everything you [watch](#screens-blueprints-for-screen-automation)
-  side by side: a card for each page (your inbox, GitHub, WhatsApp, any other) with
-  how many new since yesterday (or in the last 3 or 7 days), its latest brief, the
-  newest items, and **Open**, **Draft a reply** and **Check now** on them. **Seen**
-  on a card sets its count back to 0 (what it found stays under Watching, and the
-  other cards keep theirs). **💬** on a card opens a chat with your AI about what's
-  new there: what needs you, and what to say to whom. Agree it there, then **Draft
-  a reply** on one, and your agent gets that talk with the message, so it writes
-  what you agreed. The tab shows the count, so you see what's waiting from
-  any tab, and once you watch something the app opens on the Dashboard instead of
-  the Map. `symbiot watch board` prints the same cards as JSON, and
+- **Map** — your repos and project folders as droplets in the liquid, placed by
+  their **nearest neighbours**: each repo's fingerprint is what it's built with
+  (languages and tools), the weeks you work on it (your commits per week over the
+  last 12), and what it's about (the words of its name, README and package
+  description, TF-IDF weighted), and it sits by the 3 repos most like it
+  (`mapknn.mjs`). The closest merge into one shape, the next are joined by a thin
+  thread of liquid, the rest by a faint line; each cluster is named over its region
+  ("JavaScript · Node"); what you haven't touched in a while is smaller and sinks;
+  **you are here** marks where your recent work is. **Point at a repo** to light up
+  its neighbours and see why ("shares JavaScript, Node; you worked on both the same
+  weeks"). **Click** for its details: branch, commits, uncommitted work, your last
+  12 weeks, **Most like it**, a **Suggest next steps** button, and an **AI review**
+  (what the project does, whether it needs new work at all, and ideas you can tick
+  into **Tasks**). Scroll to zoom, drag to pan. Under the map: the languages and
+  tools you build with. The Map needs **no AI key**; reviews and suggestions use
+  your chosen model. Project folders that **aren't git repos** show up too (see
+  [Where it looks](#where-it-looks)), as rings. The [experimental](#screens-blueprints-for-screen-automation)
+  **Screens** view folds away under the map.
+- **Dashboard** — everything you [watch](#screens-blueprints-for-screen-automation),
+  as a stream: time runs left to right, one current per feed (your inbox, GitHub,
+  WhatsApp, any other page), "now" on the right where each feed pools. Every message
+  is a bead placed when it arrived; the ones waiting for your reply are bigger and
+  amber, and what you've already seen stays as small faint beads. Point at or tap a
+  bead to read it and **Draft a reply** or **Open** it. Under each feed's name:
+  **Seen** (sets its count back to 0; what it found stays under Watching, and the
+  other feeds keep theirs), **Talk** (a chat with your AI about what's new there:
+  what needs you, and what to say to whom; agree it there, then **Draft a reply**
+  on one, and your agent gets that talk with the message, so it writes what you
+  agreed) and **Check now**. The headline says what's waiting; switch between 24
+  hours, 3 days and 7 days. Each feed's latest brief sits at the end of its
+  current, the cards are still there under **All of it as a list**, and
+  **Connections** below shows every site you can [link](#link-your-work).
+  `symbiot watch board` prints the same feeds as JSON, and
   `symbiot watch board --line` as one line for a status bar (`2 emails · 1 WhatsApp message`).
-  `symbiot watch chat <id> "question"` is the card's 💬 chat from a terminal, so an
+  `symbiot watch chat <id> "question"` is a feed's Talk from a terminal, so an
   agent can go over what's new with you too.
 - **Drift** — the [`symbiot drift`](#whats-out-of-sync-symbiot-drift) report, with
   a "fetch latest" toggle (and an [experimental](#experimental) "check CI").
-- **Week / Standup / Todo** — the write-ups (these use your chosen AI).
+- **Week / Standup / Todo** — the write-ups (these use your chosen AI), set as a
+  readable page with its dates; **Copy** copies the text as written.
 - **Tasks** — a checklist, grouped by kind (Fixes, Tests & CI, Docs, …). Filter by
   type or repo, then **Send to repos** to hand just those to your agent (see
   [`symbiot push`](#hand-tasks-to-your-coding-agent-symbiot-push)). What your agent
   finishes lands in **Awaiting your review** (see
   [Review and approve](#review-and-approve-the-agents-work)). A task you tick
-  yourself is done and **auto-archives**; the archived view can restore it.
+  yourself is done and **auto-archives**; the archived view (the liquid's
+  **Archive**) can restore it. Opening Tasks or Agents from the liquid shows the
+  work first: a sphere per task an agent is on, named in plain words, with small
+  spheres orbiting it while it works; what's done and waiting for your OK; and what's
+  waiting its turn, gathered round the agent in its repo. One **Go** (or saying
+  "go") starts everything waiting. Tap a sphere for the details.
   **💬** on any task opens a Q&A thread: ask what it means, how to approach it, or
   (once it's awaiting review) what the agent changed. Answers use your chosen AI,
   grounded in that repo's commits, README, rules and pending diff; the thread is
@@ -504,13 +519,39 @@ in the app.
 
 ## The liquid: a home that shapes itself to you
 
-`symbiot app` opens on one surface of liquid silver. Its droplets are what only
-you can do (an Approve waiting, an agent's question to you), what's new on what
-you watch, and the parts of the app. Open a droplet and that part pools open over
-the liquid; **Sink back** (or Esc) returns it. Talk to it in the bar at the bottom:
-"open tasks" opens Tasks, anything else goes to the same Symbiot as every chat.
-Leave it alone and it rests as one orb. There are no settings: it adapts to you.
+`symbiot app` opens on one surface of liquid. Pick its look at the top, next to the
+name: **Ferrofluid** (glossy black liquid metal, lit like a studio; the default),
+**Glass** (clear droplets that bend the colours behind them) or **Pearl** (silver
+lit like a product photo). Every panel follows the look, and the typeface (Geist)
+ships with Symbiot, so it looks the same offline.
 
+Its droplets are what only you can do (an Approve waiting, an agent's question to
+you), what's new on what you watch, and the parts of the app, grouped the
+**P.A.R.A.** way, each group in its own part of the screen with its name over it:
+
+- **Projects** (work with an end): Tasks, Agents, Todo and what's asking you. They
+  move the most; Agents has spheres orbiting it while an agent works. Click the
+  **Projects** name for your projects themselves: a sphere per repo with work on it,
+  saying what's going on there, amber when its work waits for your OK; click one for
+  just its tasks.
+- **Areas** (what you keep up with): the Dashboard, your feeds, Week and Standup.
+- **Resources** (to look things up in): Map, Drift and Settings.
+- **Archive** (what's done): your archived tasks. It sits still, low on the right.
+
+**Click a droplet** and its part opens over the liquid; click a group's name to open
+that group. **Right-click** (or your mouse's back button) goes back one step at a
+time; **Close** or Esc closes a part. In a text box, or over text you've selected,
+right-click still gives the usual menu. Whatever needs you glows **amber**, here and
+on the Dashboard. Talk to it in the bar at the bottom: "open tasks" opens Tasks,
+"go" in the work view starts what's waiting, anything else goes to the same Symbiot
+as every chat. Leave it alone and it rests as one orb. There are no settings for any
+of this: it adapts to you.
+
+- **Where things sit: nearest neighbours.** Inside a group, the parts you move
+  between most sit together (k-nearest neighbours on the same Markov chain as
+  below, counting only links stronger than chance), so the layout has clusters and
+  gaps instead of a ring. Each droplet keeps a steady offset of its own, so it
+  reads as grown, not ruled, and stays where it was from one visit to the next.
 - **How you work** (`adapt.mjs`). Use decays with a 3-day half-life; what you open
   next comes from a Markov chain (with a Dirichlet prior, so a few moves can't
   swing it) and your hour of day. The more predictable you are (low Shannon
@@ -532,7 +573,7 @@ Symbiot's config folder, readable by you only.
 
 ## Link your work
 
-Settings → **Link your work** has one button per standard work site: Gmail,
+**Connections** (on the Dashboard, and in Settings) has one entry per standard work site: Gmail,
 Outlook, Google and Outlook Calendar, GitHub, GitLab, Slack, Microsoft Teams,
 WhatsApp, Jira & Confluence, Linear, Asana, Trello, Google Drive, Notion,
 HubSpot, Salesforce and LinkedIn. One click:
@@ -546,8 +587,9 @@ HubSpot, Salesforce and LinkedIn. One click:
    in Standup's "Waiting on you", and in **Week**. Someone who doesn't write code
    gets a Week from their linked sites too.
 
-Each button shows where it stands: grey (not linked), amber (sign in, or signed
-out), green (linked), with ↻ to check now and × to unlink. Unlinking stops
+They're grouped by kind (Mail, Calendar, Code, Chat, Work, Docs, Sales), each with
+a bead that shows where it stands: hollow (not linked), amber (sign in, or signed
+out), solid (linked). Point at one for **Link**, **↻** (check now) and **Unlink**. Unlinking stops
 watching it and stops trusting what the link trusted, never a site you trusted
 yourself.
 
@@ -982,7 +1024,7 @@ symbiot watch new --hours 24               # what's new, newest first (JSON)
 symbiot watch board                        # the Dashboard's cards (JSON; .total is the count, for a status bar)
 symbiot watch board --line                 # the same as one line: "2 emails · 1 WhatsApp message" (empty when nothing's new)
 symbiot watch seen <watch id>              # set a card back to 0, like its Seen button
-symbiot watch chat <watch id> "what needs me?"  # talk a card over with your AI, like its 💬 (--clear starts over)
+symbiot watch chat <watch id> "what needs me?"  # talk a card over with your AI, like its Talk (--clear starts over)
 symbiot watch check                        # read them all now (JSON)
 symbiot watch draft <id>                   # Draft a reply to a new email or chat message (see below)
 symbiot watch brief on                     # your AI says what needs you (off to stop)

@@ -7,49 +7,86 @@
 export const EMBEDDED_UI = `<!doctype html><html><head><meta charset="utf8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>Symbiot</title>
 <style>
-:root{--ink:#0E1A1F;--ink2:#15262C;--ink3:#1D333A;--line:#24404A;--bone:#F4F1EA;--text:#B7C9C4;--faint:#7E9690;--green:#3DDC97;--amber:#F2A541;--green-dim:#16322D;--sans:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif}
+@font-face{font-family:'Geist';src:url('/fonts/Geist-Variable.woff2') format('woff2');font-weight:100 900;font-style:normal;font-display:swap}
+:root{--ink:#0E1A1F;--ink2:#15262C;--ink3:#1D333A;--line:#24404A;--bone:#F4F1EA;--text:#B7C9C4;--faint:#7E9690;--green:#3DDC97;--amber:#F2A541;--green-dim:#16322D;--sans:'Geist',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif}
 /* ---- the liquid: the app's home (adapt.mjs shapes it, home.mjs fills it) ---- */
 /* Your colours, from the system, live: light/dark, contrast, transparency, forced colours. */
 body.lq-light{--ink:#F4F6F9;--ink2:#FFFFFF;--ink3:#EDF0F4;--line:#D3D9E2;--bone:#0F1720;--text:#2B3644;--faint:#5C6878;--green:#0B7A55;--amber:#9A5200;--green-dim:#DDF2E9}
+body.lq-look-ferro{--ink:#0B0C0E;--ink2:#131518;--ink3:#1B1E22;--line:#2A2E34;--bone:#F3F0EA;--text:#C9CDD3;--faint:#8A919B;--green-dim:#17241F}
 body.lq-contrast{--line:#9FB3BB;--faint:#C9D6D2}
 body.lq-light.lq-contrast{--line:#4A5565;--faint:#2B3644;--text:#10151C}
 #liquid{display:none}
-body.lq-liquid #liquid{display:block;position:fixed;inset:0;z-index:0;overflow:hidden;background:#030405}
-body.lq-liquid.lq-light #liquid{background:#EDEFF3}
+body.lq-liquid #liquid{display:block;position:fixed;inset:0;z-index:0;overflow:hidden;background:#08090B}
+body.lq-liquid.lq-light #liquid{background:#EBEEF0}
+body.lq-liquid.lq-look-pearl #liquid{background:#EDECE9}
 #lq{position:absolute;inset:0;width:100%;height:100%;display:block}
 body.lq-forced #lq{display:none}
 #lqdrops{position:absolute;inset:0;pointer-events:none}
-.lqd{position:absolute;left:0;top:0;display:flex;flex-direction:column;align-items:center;gap:2px;min-height:44px;padding:8px 14px;border-radius:999px;border:1px solid rgba(220,228,240,.35);background:rgba(4,5,7,.72);backdrop-filter:blur(10px);color:#EEF2F8;font:600 14px/1.15 var(--sans);white-space:nowrap;cursor:pointer;pointer-events:auto;transition:opacity .5s ease;will-change:transform}
-.lqd small{font-weight:500;font-size:12px;color:#A9B3C2;max-width:300px;overflow:hidden;text-overflow:ellipsis}
-.lqd.lq-you{border-color:rgba(255,255,255,.9)}
-.lqd:hover{border-color:rgba(255,255,255,.95)}
+.lqd{position:absolute;left:0;top:0;display:flex;flex-direction:column;align-items:center;border-radius:14px;border:1px solid transparent;background:transparent;color:#ECE9E4;font:600 13.5px/1.25 var(--sans);letter-spacing:-.005em;pointer-events:auto;transition:opacity .5s ease,background-color .2s ease,border-color .2s ease;will-change:transform;text-shadow:0 1px 10px rgba(0,0,0,.6)}
+.lqd .lt .lm{display:block;font-weight:500;font-size:11.5px;color:#8A919B;margin-top:1px}
+.lqd .lt{all:unset;box-sizing:border-box;display:flex;align-items:center;justify-content:center;gap:7px;min-height:32px;padding:4px 8px;cursor:pointer;text-align:center;max-width:170px}
+.lqd.lq-proj .lt{flex-direction:column;gap:1px;max-width:190px}
+.lqd.lq-proj .lt .lm{font-weight:500;font-size:11.5px;color:#8A919B;max-width:180px;-webkit-line-clamp:1}
+body.lq-light .lqd.lq-proj .lt .lm{color:#5A6470}
+.lqd.lq-you .lt::before{content:'';flex:none;width:7px;height:7px;border-radius:50%;background:#F2A541;box-shadow:0 0 0 3px rgba(242,165,65,.2)}
+.lqd .lt span{overflow:hidden;white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;font-size:12.5px;line-height:1.3;overflow-wrap:anywhere}
+.lqd .lgo{display:none;margin:4px 10px 10px;min-height:38px;padding:0 16px;border-radius:999px;border:1px solid #FFFFFF;background:linear-gradient(180deg,#FFFFFF 0%,#D2D8E1 44%,#8E97A6 56%,#E6EAF0 100%);color:#06080B;font:700 12.5px var(--sans);cursor:pointer}
+.lqd.open{z-index:5;border-radius:18px;background:rgba(16,18,21,.92);border-color:rgba(255,255,255,.12);box-shadow:0 24px 50px -20px rgba(0,0,0,.8);text-shadow:none;backdrop-filter:blur(12px)}.lqd.open .lt span{white-space:normal}.lqd.open .lt{max-width:280px}.lqd.open .lgo{display:block}
+.lqd .lt:focus-visible,.lqd .lgo:focus-visible{outline:2px solid currentColor;outline-offset:2px;border-radius:999px}
+.lqmb{min-height:44px;padding:8px 14px;border-radius:999px;border:1px solid rgba(220,228,240,.35);background:rgba(4,5,7,.72);backdrop-filter:blur(10px);color:#EEF2F8;font:600 13.5px var(--sans);cursor:pointer}
+body.lq-light .lqmb{background:rgba(255,255,255,.86);color:#10151C;border-color:rgba(20,30,45,.25)}
+.lqd small{display:none;font-weight:500;font-size:12.5px;line-height:1.4;color:#A1A8B1;max-width:260px;padding:0 15px 2px;text-align:center}.lqd.open small{display:block}
+.lqd:hover .lt span{text-decoration:underline;text-decoration-color:rgba(255,255,255,.35);text-underline-offset:4px}
 .lqd:focus-visible,#lqcore:focus-visible,#lqask:focus-visible{outline:2px solid currentColor;outline-offset:3px}
-body.lq-light .lqd{background:rgba(255,255,255,.84);color:#10151C;border-color:rgba(20,30,45,.25)}
+body.lq-light .lqd{color:#151A21;text-shadow:0 1px 8px rgba(255,255,255,.7)}
+body.lq-light .lqd .lt .lm{color:#5A6470}
+body.lq-light .lqd.open{background:rgba(255,255,255,.94);border-color:rgba(20,30,45,.1);box-shadow:0 24px 50px -24px rgba(30,45,60,.45)}
 body.lq-light .lqd small{color:#4A5565}
-body.lq-light .lqd.lq-you{border-color:#10151C}
+body.lq-light .lqd:hover .lt span{text-decoration-color:rgba(21,26,33,.35)}
 body.lq-contrast .lqd{background:#000;color:#FFF;border:2px solid #FFF}
 body.lq-contrast .lqd small{color:#FFF}
 body.lq-light.lq-contrast .lqd{background:#FFF;color:#000;border:2px solid #000}
 body.lq-light.lq-contrast .lqd small{color:#000}
 body.lq-solid .lqd,body.lq-solid .lqglass{backdrop-filter:none;background:#05070A}
 body.lq-light.lq-solid .lqd,body.lq-light.lq-solid .lqglass{background:#FFFFFF}
-body.lq-touch .lqd{min-height:48px;padding:11px 16px}
+body.lq-touch .lqd .lt{min-height:48px}
 body.lq-keys .lqd:focus{outline:2px solid currentColor;outline-offset:3px}
-#lqcore{position:absolute;left:0;top:0;min-height:44px;padding:0 16px;border:1px solid rgba(220,228,240,.22);border-radius:999px;background:rgba(4,5,7,.6);backdrop-filter:blur(8px);color:#C3CBD7;font:500 13px var(--sans);letter-spacing:.05em;cursor:pointer;transition:opacity .6s ease;white-space:nowrap}
-body.lq-light #lqcore{color:#2B3644;background:rgba(255,255,255,.78);border-color:rgba(20,30,45,.18)}
+#lqcore{position:absolute;left:0;top:0;padding:4px 8px;border:0;border-radius:12px;background:transparent;color:#F3F0EA;font:600 16px/1.25 var(--sans);letter-spacing:-.01em;text-align:center;cursor:pointer;transition:opacity .6s ease;white-space:normal;text-wrap:balance}
+body.lq-light #lqcore{color:#151A21}
 .lqglass{background:rgba(4,5,8,.78);border:1px solid rgba(220,228,240,.32);backdrop-filter:blur(14px)}
 body.lq-light .lqglass{background:rgba(255,255,255,.82);border-color:rgba(20,30,45,.2)}
-#lqform{position:absolute;left:50%;bottom:20px;transform:translateX(-50%);width:min(640px,calc(100vw - 32px));display:flex;gap:8px;padding:6px;border-radius:999px;z-index:3;color:#EEF2F8}
-body.lq-light #lqform{color:#10151C}
-#lqask{flex:1;min-width:0;min-height:48px;padding:0 18px;border:0;border-radius:999px;background:transparent;color:inherit;font:400 16px var(--sans);outline:none}
-#lqsend{min-height:48px;padding:0 20px;border-radius:999px;border:1px solid #FFFFFF;background:linear-gradient(180deg,#FFFFFF 0%,#C9CFD9 45%,#8E97A6 55%,#E6EAF0 100%);color:#06080B;font:600 14px var(--sans);cursor:pointer}
-#lqtalk{position:absolute;left:50%;bottom:92px;transform:translateX(-50%);width:min(640px,calc(100vw - 32px));display:flex;flex-direction:column;gap:8px;z-index:3;max-height:46vh;overflow:auto}
-.lqmsg{align-self:flex-start;max-width:85%;padding:10px 14px;border-radius:16px;background:rgba(4,5,8,.84);border:1px solid rgba(220,228,240,.3);color:#E8ECF3;line-height:1.45;white-space:pre-wrap}
-.lqmsg.me{align-self:flex-end}
-body.lq-light .lqmsg{background:#FFFFFF;color:#10151C;border-color:rgba(20,30,45,.2)}
+#lqform{position:absolute;left:50%;bottom:20px;transform:translateX(-50%);width:min(640px,calc(100vw - 32px));display:flex;align-items:center;gap:8px;padding:5px 5px 5px 6px;border-radius:20px;z-index:3;color:#ECE9E4}
+#lqform.lqglass{background:rgba(255,255,255,.055);border:1px solid rgba(255,255,255,.12);backdrop-filter:blur(16px)}
+body.lq-light #lqform{color:#151A21}
+body.lq-light #lqform.lqglass{background:rgba(255,255,255,.62);border-color:rgba(255,255,255,.9);box-shadow:0 20px 50px -30px rgba(30,45,60,.5)}
+#lqask{flex:1;min-width:0;min-height:44px;padding:0 12px;border:0;border-radius:14px;background:transparent;color:inherit;font:400 15.5px var(--sans);outline:none}
+#lqask::placeholder{color:#7A818B}
+body.lq-light #lqask::placeholder{color:#6A7480}
+#lqsend{flex:none;width:40px;height:40px;padding:0;display:grid;place-items:center;border-radius:50%;border:0;background:#F3F0EA;color:#0A0B0D;cursor:pointer}
+body.lq-light #lqsend{background:#151A21;color:#FFFFFF}
+body.lq-look-pearl #lqsend{background:linear-gradient(180deg,#FFFFFF 0%,#D9DDE2 45%,#9AA1AA 55%,#E8EAED 100%);color:#1B1E23;box-shadow:0 2px 6px rgba(0,0,0,.18),inset 0 0 0 1px rgba(0,0,0,.08)}
+#lqtalk{position:absolute;left:50%;bottom:88px;transform:translateX(-50%);width:min(640px,calc(100vw - 32px));display:flex;flex-direction:column;gap:16px;z-index:3;max-height:min(34vh,320px);overflow-x:hidden;overflow-y:auto;scrollbar-width:none;padding-top:90px;scroll-behavior:smooth;-webkit-mask-image:linear-gradient(to bottom,transparent 0,rgba(0,0,0,.12) 22%,rgba(0,0,0,.6) 48%,#000 72%);mask-image:linear-gradient(to bottom,transparent 0,rgba(0,0,0,.12) 22%,rgba(0,0,0,.6) 48%,#000 72%);transition:max-height .3s ease}
+#lqtalk:hover,#lqtalk:focus-within,#lqtalk.back{max-height:min(56vh,560px);-webkit-mask-image:linear-gradient(to bottom,transparent 0,#000 60px);mask-image:linear-gradient(to bottom,transparent 0,#000 60px)}
+#lqtalk .lqmsg{transition:opacity .4s ease}
+#lqtalk:hover .lqmsg,#lqtalk.back .lqmsg{opacity:1 !important}
+#lqtalk::-webkit-scrollbar{display:none}
+.lqmsg{align-self:flex-start;max-width:92%;padding:0;border:0;background:none;color:#ECE9E4;font-size:15px;line-height:1.55;white-space:pre-wrap;overflow-wrap:anywhere;text-shadow:0 1px 12px rgba(0,0,0,.7)}
+.lqmsg.me{align-self:flex-end;max-width:80%;padding:8px 14px;border-radius:18px;background:rgba(255,255,255,.09);color:#C9CDD3;font-size:14.5px;text-shadow:none}
+body.lq-light .lqmsg{color:#151A21;text-shadow:0 1px 10px rgba(255,255,255,.8)}
+body.lq-light .lqmsg.me{background:rgba(21,26,33,.07);color:#151A21;text-shadow:none}
+body.lq-look-pearl .lqmsg.me{background:#1B1E23;color:#F4F4F2}
 #lqmore{position:absolute;right:16px;bottom:92px;display:flex;flex-direction:column;align-items:flex-end;gap:6px;z-index:3}
 body.lq-liquid header{position:fixed;top:0;left:0;right:0;z-index:4;background:transparent;pointer-events:none}
-body.lq-liquid header .status,body.lq-liquid header .ver{pointer-events:auto}
+body.lq-liquid header .status,body.lq-liquid header .ver,body.lq-liquid #lqlook{pointer-events:auto}
+#lqlook{display:none}
+body.lq-liquid #lqlook{display:inline-flex;gap:2px;margin-left:10px;padding:3px;border-radius:999px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1)}
+#lqlook button{min-height:28px;padding:0 12px;border:0;border-radius:999px;background:transparent;color:#8A919B;font:500 12.5px var(--sans);cursor:pointer}
+#lqlook button[aria-checked='true']{background:#F3F0EA;color:#0A0B0D}
+#lqlook button:focus-visible{outline:2px solid currentColor;outline-offset:2px}
+body.lq-light #lqlook{background:rgba(21,26,33,.05);border-color:rgba(21,26,33,.1)}
+body.lq-light #lqlook button{color:#5A6470}
+body.lq-light #lqlook button[aria-checked='true']{background:#151A21;color:#FFFFFF}
+body.lq-touch #lqlook button{min-height:40px}
 body.lq-liquid header .brand{letter-spacing:.38em;font-weight:500;text-transform:uppercase}
 body.lq-liquid .tabs{display:none}
 body.lq-liquid main{display:none}
@@ -64,13 +101,13 @@ body.lq-talking .lqd{opacity:.55}
 body.lq-liquid.lq-pooled main{background:rgba(6,8,11,.86);backdrop-filter:blur(20px) saturate(1.25);border:1px solid transparent;background-clip:padding-box;box-shadow:0 0 0 1px rgba(214,222,234,.22),0 40px 90px -30px rgba(0,0,0,.85),inset 0 1px 0 rgba(255,255,255,.12)}
 body.lq-liquid.lq-light.lq-pooled main{background:rgba(246,248,251,.9);box-shadow:0 0 0 1px rgba(20,30,45,.14),0 40px 90px -40px rgba(20,30,45,.45),inset 0 1px 0 #FFFFFF}
 body.lq-liquid.lq-solid.lq-pooled main{backdrop-filter:none;background:var(--ink)}
-.lqedge{position:fixed;top:64px;left:max(12px,4vw);right:max(12px,4vw);bottom:88px;z-index:6;border-radius:24px;pointer-events:none;padding:1px;background:linear-gradient(115deg,rgba(255,255,255,.0) 0%,rgba(255,255,255,.75) 18%,rgba(140,150,166,.3) 32%,rgba(255,255,255,.0) 48%,rgba(230,236,244,.6) 66%,rgba(255,255,255,0) 82%);background-size:260% 260%;-webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude;animation:lqsheen 9s linear infinite;display:none}
-body.lq-liquid.lq-pooled .lqedge{display:block}
-@keyframes lqsheen{0%{background-position:0% 50%}100%{background-position:260% 50%}}
 body.lq-liquid .task,body.lq-liquid .agent,body.lq-liquid .rcard,body.lq-liquid .bcard,body.lq-liquid .drift,body.lq-liquid .q,body.lq-liquid .out,body.lq-liquid .tchat{background:linear-gradient(180deg,rgba(255,255,255,.075),rgba(255,255,255,.02));border:1px solid rgba(220,228,240,.16);border-radius:16px;box-shadow:inset 0 1px 0 rgba(255,255,255,.09),0 12px 30px -24px rgba(0,0,0,.9)}
 body.lq-liquid.lq-light .task,body.lq-liquid.lq-light .agent,body.lq-liquid.lq-light .rcard,body.lq-liquid.lq-light .bcard,body.lq-liquid.lq-light .drift,body.lq-liquid.lq-light .q,body.lq-liquid.lq-light .out,body.lq-liquid.lq-light .tchat{background:linear-gradient(180deg,#FFFFFF,#F2F4F8);border-color:rgba(20,30,45,.12);box-shadow:inset 0 1px 0 #FFFFFF,0 12px 28px -24px rgba(20,30,45,.5)}
-body.lq-liquid button.act{background:linear-gradient(180deg,#FFFFFF 0%,#D2D8E1 44%,#8E97A6 56%,#E6EAF0 100%);color:#06080B;border:1px solid rgba(255,255,255,.9);border-radius:999px;box-shadow:0 6px 18px -10px rgba(0,0,0,.7)}
-body.lq-liquid button.ghost{background:rgba(255,255,255,.05);border:1px solid rgba(220,228,240,.28);border-radius:999px;color:var(--bone);backdrop-filter:blur(6px)}
+body.lq-liquid button.act{background:#F3F0EA;color:#0A0B0D;border:0;border-radius:999px;box-shadow:none;font-weight:600}
+body.lq-liquid button.act:hover{background:#FFFFFF}
+body.lq-liquid.lq-light button.act{background:#151A21;color:#FFFFFF}
+body.lq-liquid.lq-look-pearl button.act,body.lq-look-pearl #lqgo.on,body.lq-liquid.lq-look-pearl .updatebar.show{background:linear-gradient(180deg,#FFFFFF 0%,#D9DDE2 45%,#9AA1AA 55%,#E8EAED 100%);color:#1B1E23;box-shadow:0 2px 6px rgba(0,0,0,.18),inset 0 0 0 1px rgba(0,0,0,.08)}
+body.lq-liquid button.ghost{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.14);border-radius:999px;color:var(--bone);backdrop-filter:blur(6px)}
 body.lq-liquid.lq-light button.ghost{background:rgba(255,255,255,.7);border-color:rgba(20,30,45,.18)}
 body.lq-liquid input,body.lq-liquid select,body.lq-liquid textarea{border-radius:12px;border:1px solid rgba(220,228,240,.2);background:rgba(255,255,255,.04);color:var(--bone)}
 body.lq-liquid.lq-light input,body.lq-liquid.lq-light select,body.lq-liquid.lq-light textarea{background:#FFFFFF;border-color:rgba(20,30,45,.18)}
@@ -78,8 +115,35 @@ body.lq-liquid input:focus,body.lq-liquid select:focus,body.lq-liquid textarea:f
 body.lq-liquid .tgroup{color:#C9D1DC;letter-spacing:.16em}
 body.lq-liquid.lq-light .tgroup{color:#3B4656}
 body.lq-liquid h2,body.lq-liquid h3{letter-spacing:-.01em}
-body.lq-liquid .fchip.on{background:linear-gradient(180deg,#FFFFFF,#C9D1DC);color:#06080B;border-color:#FFFFFF}
+body.lq-liquid .fchip.on{background:#F3F0EA;color:#0A0B0D;border-color:#F3F0EA}
+body.lq-liquid.lq-light .fchip.on{background:#151A21;color:#FFFFFF;border-color:#151A21}
 body.lq-contrast.lq-liquid .task,body.lq-contrast.lq-liquid .agent{border:2px solid currentColor}
+
+/* the work scene: tasks and agents in the liquid, with spheres revolving round what's at work */
+#lqorbits{position:absolute;inset:0;pointer-events:none}
+#lqgroups{position:absolute;inset:0;pointer-events:none}
+.lqg{position:absolute;left:0;top:0;display:flex;flex-direction:column;align-items:center;gap:1px;padding:4px 10px;border:0;border-radius:12px;background:transparent;color:#ECE9E4;font:600 17px/1.15 var(--sans);letter-spacing:-.01em;cursor:pointer;transition:opacity .5s ease;will-change:transform;text-shadow:0 1px 12px rgba(0,0,0,.6)}
+.lqg small{font:400 12px var(--sans);color:#8A919B;letter-spacing:0}
+.lqg:hover span{text-decoration:underline;text-underline-offset:5px;text-decoration-color:rgba(255,255,255,.3)}
+.lqg:focus-visible{outline:2px solid currentColor;outline-offset:2px}
+body.lq-light .lqg{color:#151A21;text-shadow:0 1px 10px rgba(255,255,255,.8)}
+body.lq-light .lqg small{color:#5A6470}
+body.lq-pooled #lqgroups{display:none}
+.lqorbit{position:absolute;left:0;top:0;pointer-events:none;transition:opacity .5s ease}
+.lqorbit span{position:absolute;inset:0;animation:lqorbit 3.4s linear infinite}
+.lqorbit span:nth-child(2){animation-duration:4.6s;animation-delay:-1.6s}
+.lqorbit span:nth-child(3){animation-duration:5.8s;animation-delay:-3.9s;animation-direction:reverse}
+.lqorbit i{position:absolute;left:50%;top:0;width:10px;height:10px;margin:-5px 0 0 -5px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#FFFFFF 0%,#C9CFD9 35%,#6F7887 75%,#2A2F38 100%);box-shadow:0 0 8px rgba(255,255,255,.35)}
+.lqorbit.ask i{background:radial-gradient(circle at 35% 30%,#FFF4E2 0%,#F2A541 50%,#7A4A10 100%)}
+@keyframes lqorbit{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion: reduce){.lqorbit span{animation:none}.lqorbit span:nth-child(2){transform:rotate(120deg)}.lqorbit span:nth-child(3){transform:rotate(240deg)}}
+#lqgo,#lqback{display:none}
+body.lq-work #lqgo.on{display:inline-flex;position:absolute;left:112px;top:48px;z-index:4;align-items:center;gap:8px;min-height:44px;padding:0 20px;border-radius:999px;border:0;background:#F3F0EA;color:#06080B;font:700 14px var(--sans);letter-spacing:.02em;cursor:pointer;box-shadow:0 16px 40px -16px rgba(0,0,0,.75)}
+body.lq-light.lq-work #lqgo.on{background:#151A21;color:#FFFFFF}
+body.lq-work #lqback{display:inline-flex;position:absolute;left:16px;top:52px;z-index:4;align-items:center;min-height:44px;padding:0 16px;border-radius:999px;border:1px solid rgba(220,228,240,.3);background:rgba(4,5,7,.6);backdrop-filter:blur(8px);color:#EEF2F8;font:600 14px var(--sans);cursor:pointer}
+body.lq-light.lq-work #lqback{background:rgba(255,255,255,.8);color:#10151C;border-color:rgba(20,30,45,.2)}
+body.lq-pooled #lqgo,body.lq-pooled #lqback,body.lq-pooled #lqorbits,body.lq-work #lqgroups{display:none}
+.lqd.lq-ready{border-color:#F2A541}
 /* the live work of an agent: what it's doing, its to-dos, its steps, its files, its pace */
 .wk{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(260px,100%),1fr));gap:12px;margin-top:10px}
 .wkbox{border-radius:14px;padding:10px 12px;background:rgba(255,255,255,.035);border:1px solid rgba(220,228,240,.12)}
@@ -115,11 +179,17 @@ body.lq-light .wkfile .fb i{background:linear-gradient(90deg,#6F7887,#0F1720)}
 .orb{flex:none;display:inline-block;width:14px;height:14px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#FFFFFF 0%,#C9CFD9 30%,#6F7887 70%,#2A2F38 100%);box-shadow:0 0 0 1px rgba(255,255,255,.25)}
 .orb.run{animation:lqpulse 1.6s ease-in-out infinite}.orb.fail{background:radial-gradient(circle at 35% 30%,#FFE1DA 0%,#FF8A75 45%,#7A2A1C 100%)}
 @keyframes lqpulse{0%,100%{transform:scale(1);box-shadow:0 0 0 1px rgba(255,255,255,.25)}50%{transform:scale(1.18);box-shadow:0 0 14px 2px rgba(255,255,255,.35)}}
-.msg .steps,.lqmsg .steps{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px}
-.steps span{font-size:11px;padding:2px 8px;border-radius:999px;border:1px solid rgba(220,228,240,.22);color:var(--faint);white-space:nowrap}
+details.steps{margin-top:6px;white-space:normal;font-size:12.5px;color:var(--faint);text-shadow:none}
+details.steps summary{cursor:pointer;list-style:none;display:inline-flex;align-items:center;gap:6px}
+details.steps summary::-webkit-details-marker{display:none}
+details.steps summary::before{content:'';width:5px;height:5px;border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;transform:rotate(-45deg);transition:transform .2s ease}
+details.steps[open] summary::before{transform:rotate(45deg)}
+details.steps ul{margin:6px 0 0;padding:0 0 0 12px;list-style:none;border-left:1px solid var(--line);display:flex;flex-direction:column;gap:3px}
+.lqmsg details.steps{color:#8A919B}
+body.lq-light .lqmsg details.steps{color:#5A6470}
 .thinking{background:linear-gradient(90deg,#8C96A6 0%,#FFFFFF 40%,#8C96A6 60%,#8C96A6 100%);background-size:220% 100%;-webkit-background-clip:text;background-clip:text;color:transparent !important;animation:lqshim 2.2s linear infinite}
 body.lq-light .thinking{background-image:linear-gradient(90deg,#4A5565 0%,#0F1720 40%,#4A5565 60%,#4A5565 100%)}
-@media (prefers-reduced-motion: reduce){.lqedge,.wkdoing,.thinking,.orb.run,.wktodo.in_progress i{animation:none}}
+@media (prefers-reduced-motion: reduce){.wkdoing,.thinking,.orb.run,.wktodo.in_progress i{animation:none}}
 
 
 *{box-sizing:border-box}html,body{margin:0;height:100%}
@@ -146,7 +216,8 @@ a{color:var(--green);cursor:pointer}.hidden{display:none}
 .note{font-size:12px;margin-top:10px}.ok{color:var(--green)}.err{color:var(--amber)}
 .updatebar{display:none;align-items:center;gap:12px;padding:9px 16px;font-size:13px;font-weight:600;background:var(--green);color:var(--ink)}
 .updatebar.show{display:flex}
-body.lq-liquid .updatebar.show{position:fixed;top:10px;left:50%;transform:translateX(-50%);width:max-content;max-width:calc(100vw - 24px);z-index:20;border-radius:999px;border:1px solid #FFFFFF;background:linear-gradient(180deg,#FFFFFF 0%,#D2D8E1 44%,#8E97A6 56%,#E6EAF0 100%);color:#06080B;box-shadow:0 14px 40px -14px rgba(0,0,0,.7)}
+body.lq-liquid .updatebar.show{position:fixed;top:10px;left:50%;transform:translateX(-50%);width:max-content;max-width:calc(100vw - 24px);z-index:20;border-radius:999px;border:0;background:#F3F0EA;color:#06080B;box-shadow:0 14px 40px -14px rgba(0,0,0,.7)}
+body.lq-liquid.lq-light .updatebar.show{background:#151A21;color:#FFFFFF}
 body.lq-liquid .updatebar.show.reconnect{background:var(--amber)}
 body.lq-liquid #appbar.updatebar.show{top:58px}
 .updatebar.reconnect{background:var(--amber)}
@@ -274,6 +345,272 @@ label.check input{width:auto}
 .scrbox span{position:absolute;left:0;top:0;font-size:11px;background:var(--green);color:var(--ink);padding:1px 6px;white-space:nowrap}
 .scrbox.draw{border:2px dashed var(--amber);background:rgba(242,165,65,.14)}
 .board{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px;margin-top:12px}
+
+/* ---- finer details: the controls every panel shares, in the look ---- */
+.iconbtn{display:inline-grid;place-items:center;width:36px;height:36px;padding:0;border-radius:999px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.05);color:var(--bone);cursor:pointer;transition:background-color .15s ease}
+.iconbtn:hover{background:rgba(255,255,255,.1)}
+.iconbtn.wide{display:inline-flex;gap:7px;width:auto;padding:0 14px;font:500 13px var(--sans)}
+.iconbtn:focus-visible,.seg button:focus-visible{outline:2px solid currentColor;outline-offset:2px}
+body.lq-light .iconbtn{border-color:rgba(21,26,33,.12);background:rgba(21,26,33,.04)}
+body.lq-light .iconbtn:hover{background:rgba(21,26,33,.08)}
+.seg{display:inline-flex;gap:2px;padding:3px;border-radius:999px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1)}
+.seg button{min-height:30px;padding:0 13px;border:0;border-radius:999px;background:transparent;color:var(--faint);font:500 12.5px var(--sans);cursor:pointer}
+.seg button[aria-checked='true']{background:#F3F0EA;color:#0A0B0D}
+body.lq-light .seg{background:rgba(21,26,33,.04);border-color:rgba(21,26,33,.1)}
+body.lq-light .seg button[aria-checked='true']{background:#151A21;color:#FFFFFF}
+body.lq-liquid select{-webkit-appearance:none;appearance:none;padding:8px 34px 8px 12px;border-radius:12px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.05) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%238A919B' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E") no-repeat right 13px center;color:var(--bone);font:500 13px var(--sans);color-scheme:dark;cursor:pointer}
+body.lq-liquid select option{background:#131518;color:#ECE9E4}
+body.lq-liquid.lq-light select{border-color:rgba(21,26,33,.14);background-color:rgba(21,26,33,.04);color-scheme:light}
+body.lq-liquid.lq-light select option{background:#FFFFFF;color:#151A21}
+/* the Dashboard's head */
+.bhead{display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin:2px 0 4px}
+.bsumw{flex:1;min-width:220px}
+.bsum{font:500 16px/1.4 var(--sans);color:var(--bone);text-wrap:balance}
+.bsum b{font-weight:600}
+.bsub{font-size:12.5px;color:var(--faint);margin-top:2px}
+.blane .blsub{font-size:11.5px;color:var(--faint);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:1px}
+/* Connections */
+.cxh{display:flex;flex-direction:column;gap:2px;margin:26px 0 12px}
+.cxh span{font:600 15px var(--sans);color:var(--bone)}
+.cxh small{font-size:12.5px;color:var(--faint)}
+.cxg{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:18px 28px}
+.cxc{min-width:0}
+.cxl{font:500 11px var(--sans);letter-spacing:.1em;text-transform:uppercase;color:var(--faint);margin-bottom:4px}
+.lnk.cx{display:flex;align-items:center;gap:0}
+.cx .lbtn{all:unset;box-sizing:border-box;display:flex;align-items:center;gap:9px;flex:1;min-width:0;min-height:32px;padding:4px 8px;margin-left:-8px;border-radius:10px;cursor:pointer}
+.cx .lbtn:hover{background:rgba(255,255,255,.05)}
+.cx .lbtn:focus-visible{outline:2px solid currentColor;outline-offset:1px}
+body.lq-light .cx .lbtn:hover{background:rgba(21,26,33,.05)}
+.cxb{flex:none;width:11px;height:11px;border-radius:50%;box-shadow:inset 0 0 0 1.5px var(--faint);opacity:.6}
+.cx.ok .cxb{opacity:1;box-shadow:0 0 0 1px rgba(255,255,255,.08);background:radial-gradient(circle at 34% 28%,#FFFFFF 0,#C9CFD9 20%,#5B626D 58%,#121418 100%)}
+body.lq-light .cx.ok .cxb{box-shadow:0 1px 2px rgba(0,0,0,.25);background:radial-gradient(circle at 34% 28%,#FFFFFF 0,#E3E6EA 22%,#9BA2AC 55%,#3A3F46 100%)}
+.cx.signin .cxb,.cx.signedout .cxb,.cx.error .cxb{opacity:1;box-shadow:inset 0 0 0 2px var(--amber),0 0 10px rgba(242,165,65,.35)}
+.cxn{font:500 13.5px var(--sans);color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cx.ok .cxn{color:var(--bone)}
+.cxs{margin-left:auto;padding-left:8px;font-size:11.5px;color:var(--faint);white-space:nowrap}
+.cx.signin .cxs,.cx.signedout .cxs,.cx.error .cxs{color:var(--amber)}
+.cx.off .cxs{opacity:0;transition:opacity .15s ease}
+.cx.off:hover .cxs,.cx.off .lbtn:focus-visible .cxs,body.lq-touch .cx.off .cxs{opacity:1}
+.cx .lmore,.cx .lrm{display:none;border:0;background:transparent;color:var(--faint);font:500 12px var(--sans);padding:4px 6px;border-radius:8px;cursor:pointer}
+.cx .lmore:hover{color:var(--bone)}.cx .lrm:hover{color:var(--amber)}
+.cx:hover .lmore,.cx:hover .lrm,.cx:focus-within .lmore,.cx:focus-within .lrm,body.lq-touch .cx .lmore,body.lq-touch .cx .lrm{display:inline-flex}
+/* the card list, quiet */
+body.lq-liquid .board .bcard{background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.08);border-radius:16px;box-shadow:none}
+body.lq-liquid.lq-light .board .bcard{background:rgba(255,255,255,.6);border-color:rgba(21,26,33,.08)}
+body.lq-liquid .board .bcard.has{border-color:rgba(242,165,65,.35)}
+body.lq-liquid .bcard .bc{font:300 30px/1.1 var(--sans);letter-spacing:-.02em;color:var(--faint)}
+body.lq-liquid .bcard.has .bc{color:var(--amber)}
+body.lq-liquid .bcard .bbrief{border-left:2px solid var(--line);background:transparent;padding:2px 0 2px 12px;color:var(--text)}
+
+
+/* the Map, in the liquid */
+#lmap,#lmtools{display:none}
+body.lq-liquid #graph,body.lq-liquid #mapbar,body.lq-liquid .legend .lg,body.lq-liquid .legend > .muted{display:none}
+body.lq-liquid #lmap{display:block;position:relative;flex:1;min-width:0;height:64vh;min-height:420px;border-radius:18px;overflow:hidden;isolation:isolate;background:#08090B;box-shadow:0 0 0 1px rgba(255,255,255,.08);touch-action:none;cursor:grab}
+body.lq-liquid #lmap:active{cursor:grabbing}
+body.lq-liquid.lq-light #lmap{background:#EBEEF0;box-shadow:0 0 0 1px rgba(21,26,33,.08)}
+body.lq-look-pearl #lmap{background:#EDECE9}
+#lmc{position:absolute;inset:0;width:100%;height:100%;display:block}
+#lmlines{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+#lmlines line{stroke:rgba(255,255,255,.12);stroke-width:1;stroke-dasharray:2 4}
+#lmlines line.hot{stroke:rgba(255,255,255,.4)}
+body.lq-light #lmlines line{stroke:rgba(21,26,33,.14)}body.lq-light #lmlines line.hot{stroke:rgba(21,26,33,.45)}
+#lmov{position:absolute;inset:0;pointer-events:none}
+.lml{position:absolute;left:0;top:0;display:flex;flex-direction:column;align-items:center;gap:0;padding:2px 6px;border:0;border-radius:8px;background:transparent;color:#ECE9E4;font:inherit;text-align:center;white-space:nowrap;pointer-events:auto;cursor:pointer;transition:opacity .25s ease;will-change:transform;text-shadow:0 1px 10px rgba(0,0,0,.7)}
+.lml b{font:600 13px/1.2 var(--sans)}
+.lml span{font:400 11.5px/1.3 var(--sans);color:#8A919B}
+.lml.dormant{opacity:.55}.lml.far{opacity:.3}.lml.near b{color:#F2A541}
+.lmme{position:absolute;left:0;top:0;display:flex;align-items:center;gap:7px;pointer-events:none;will-change:transform;font:500 11px var(--sans);letter-spacing:.08em;text-transform:uppercase;color:#ECE9E4}
+.lmme i{width:14px;height:14px;border-radius:50%;background:#F3F0EA;box-shadow:0 0 0 4px rgba(243,240,234,.18),0 0 18px rgba(243,240,234,.45)}
+body.lq-light .lmme{color:#151A21}body.lq-light .lmme i{background:#151A21;box-shadow:0 0 0 4px rgba(21,26,33,.15)}
+.lml:focus-visible{outline:2px solid currentColor;outline-offset:2px}
+body.lq-light .lml{color:#151A21;text-shadow:0 1px 8px rgba(255,255,255,.8)}body.lq-light .lml span{color:#5A6470}body.lq-light .lml.near b{color:#A85F0A}
+.lmc{position:absolute;left:0;top:0;font:500 11px var(--sans);letter-spacing:.12em;text-transform:uppercase;color:#8A919B;white-space:nowrap;pointer-events:none;will-change:transform}
+body.lq-light .lmc{color:#5A6470}
+.lmring{position:absolute;left:0;top:0;border-radius:50%;box-shadow:inset 0 0 0 1.5px rgba(255,255,255,.35);pointer-events:none}
+body.lq-light .lmring{box-shadow:inset 0 0 0 1.5px rgba(21,26,33,.35)}
+.lmtip{position:absolute;left:0;top:0;width:300px;max-width:calc(100% - 20px);padding:12px 14px;border-radius:16px;background:rgba(16,18,21,.94);border:1px solid rgba(255,255,255,.1);box-shadow:0 24px 50px -20px rgba(0,0,0,.8);color:#ECE9E4;opacity:0;pointer-events:none;transition:opacity .15s ease;z-index:3}
+.lmtip.on{opacity:1}
+.lmtip b{font:600 13.5px var(--sans)}
+.lmtip .lmts{display:block;font-size:12px;color:#8A919B;margin-top:1px}
+.lmtip .lmtn{margin-top:8px;display:flex;flex-direction:column;gap:4px;font-size:12.5px;color:#C9CDD3}
+.lmtip .lmtn b{font-size:12.5px;color:#F2A541}
+body.lq-light .lmtip{background:rgba(255,255,255,.96);border-color:rgba(21,26,33,.1);color:#151A21;box-shadow:0 24px 50px -24px rgba(30,45,60,.45)}
+body.lq-light .lmtip .lmtn{color:#2B3644}body.lq-light .lmtip .lmtn b{color:#A85F0A}
+.lmzoom{position:absolute;right:12px;bottom:12px;display:flex;flex-direction:column;gap:6px;z-index:2}
+.lmzoom .iconbtn{width:32px;height:32px;font:500 16px var(--sans)}
+body.lq-liquid #lmtools{display:flex;flex-direction:column;gap:8px;margin-top:14px}
+.lmrow{display:flex;flex-wrap:wrap;align-items:center;gap:4px 6px}
+.lmk{font:500 11px var(--sans);letter-spacing:.1em;text-transform:uppercase;color:var(--faint);margin-right:6px;min-width:110px}
+.lmt{display:inline-flex;align-items:center;gap:6px;border:0;background:transparent;color:var(--text);font:500 13px var(--sans);padding:4px 8px;border-radius:8px;cursor:pointer}
+.lmt:hover{background:rgba(255,255,255,.05);color:var(--bone)}body.lq-light .lmt:hover{background:rgba(21,26,33,.05)}
+.lmt small{font-size:11px;color:var(--faint)}
+.lmnear{list-style:none;margin:6px 0 0;padding:0;display:flex;flex-direction:column;gap:2px}
+.lmnear button{all:unset;box-sizing:border-box;display:flex;flex-direction:column;width:100%;padding:6px 8px;margin-left:-8px;border-radius:10px;cursor:pointer}
+.lmnear button:hover{background:rgba(255,255,255,.05)}body.lq-light .lmnear button:hover{background:rgba(21,26,33,.05)}
+.lmnear button:focus-visible{outline:2px solid currentColor}
+.lmnear b{font:600 13px var(--sans);color:var(--bone)}.lmnear span{font-size:12px;color:var(--faint)}
+.lmweeks{display:flex;align-items:flex-end;gap:3px;height:30px;margin-top:6px}
+.lmweeks i{flex:1;min-width:4px;border-radius:2px;background:var(--faint);opacity:.6}
+.lmweeks i:last-child{background:var(--bone);opacity:1}
+body.lq-liquid .detail{width:310px;background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.08);border-radius:18px;padding:16px;max-height:64vh}
+body.lq-liquid.lq-light .detail{background:rgba(255,255,255,.6);border-color:rgba(21,26,33,.08)}
+body.lq-liquid .detail h3{font:600 17px var(--sans);letter-spacing:-.01em}
+body.lq-liquid .detail .k{font:500 11px var(--sans);letter-spacing:.1em;text-transform:uppercase;margin-top:14px}
+body.lq-liquid .detail .tag{border:0;background:rgba(255,255,255,.06);border-radius:999px;padding:3px 9px;font-size:12px;color:var(--text)}
+body.lq-liquid.lq-light .detail .tag{background:rgba(21,26,33,.05)}
+body.lq-liquid .profile{font-size:14px;color:var(--text);margin-bottom:10px}
+.screensbox{margin-top:22px;border-top:1px solid var(--line);padding-top:12px}
+.screensbox > summary{cursor:pointer;list-style:none;display:flex;align-items:baseline;gap:8px}
+.screensbox > summary::-webkit-details-marker{display:none}
+.screensbox > summary::before{content:'';width:5px;height:5px;border-right:1.5px solid var(--faint);border-bottom:1.5px solid var(--faint);transform:rotate(-45deg);transition:transform .2s ease;align-self:center}
+.screensbox[open] > summary::before{transform:rotate(45deg)}
+.screensbox .note{max-width:80ch}
+@media (max-width:720px){body.lq-liquid .maprow{flex-direction:column}body.lq-liquid .detail{width:auto;max-height:none}.lmk{min-width:0;width:100%}}
+i[class^=ic-]{display:inline-block;width:1.05em;height:1.05em;vertical-align:-.17em;background:currentColor;-webkit-mask:var(--ic) center/contain no-repeat;mask:var(--ic) center/contain no-repeat;font-style:normal}
+.ic-chat{--ic:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 5h16v11H9l-5 4z'/%3E%3C/svg%3E")}
+.ic-plug{--ic:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M9 2v6M15 2v6M6 8h12v3a6 6 0 0 1-12 0zM12 17v5'/%3E%3C/svg%3E")}
+.ic-person{--ic:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='8' r='4'/%3E%3Cpath d='M4 21a8 8 0 0 1 16 0'/%3E%3C/svg%3E")}
+.ic-bot{--ic:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='4' y='8' width='16' height='12' rx='3'/%3E%3Cpath d='M12 3v5M9 14h.01M15 14h.01'/%3E%3C/svg%3E")}
+.ic-archive{--ic:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='4' width='18' height='5' rx='1'/%3E%3Cpath d='M5 9v11h14V9M10 13h4'/%3E%3C/svg%3E")}
+.ic-idea{--ic:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M9 18h6M10 21h4M12 3a6 6 0 0 0-4 10.5c.8.9 1 1.5 1 2.5h6c0-1 .2-1.6 1-2.5A6 6 0 0 0 12 3z'/%3E%3C/svg%3E")}
+.ic-ask{--ic:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='9'/%3E%3Cpath d='M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.7.4-1 1-1 1.7M12 17h.01'/%3E%3C/svg%3E")}
+.ic-pause{--ic:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M9 5v14M15 5v14'/%3E%3C/svg%3E")}
+.ic-warn{--ic:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 3l10 18H2zM12 10v4M12 18h.01'/%3E%3C/svg%3E")}
+.ic-x{--ic:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 6l12 12M18 6L6 18'/%3E%3C/svg%3E")}
+
+/* ---- every panel, in the look ---- */
+body.lq-liquid input[type=checkbox],body.lq-liquid input[type=radio]{-webkit-appearance:none;appearance:none;flex:none;width:18px;height:18px;margin:0;border-radius:50%;border:1.5px solid rgba(255,255,255,.3);background:transparent;cursor:pointer;display:inline-grid;place-items:center;transition:background-color .15s ease,border-color .15s ease;vertical-align:-4px}
+body.lq-liquid input[type=checkbox]:checked{border-color:transparent;background:radial-gradient(circle at 34% 28%,#FFFFFF 0,#C9CFD9 20%,#5B626D 58%,#121418 100%)}
+body.lq-liquid input[type=radio]:checked{border-color:#F3F0EA;background:radial-gradient(circle,#F3F0EA 0 4px,transparent 4.5px)}
+body.lq-liquid.lq-light input[type=checkbox],body.lq-liquid.lq-light input[type=radio]{border-color:rgba(21,26,33,.3)}
+body.lq-liquid.lq-light input[type=checkbox]:checked{background:radial-gradient(circle at 34% 28%,#FFFFFF 0,#E3E6EA 22%,#9BA2AC 55%,#3A3F46 100%)}
+body.lq-liquid.lq-light input[type=radio]:checked{border-color:#151A21;background:radial-gradient(circle,#151A21 0 4px,transparent 4.5px)}
+body.lq-liquid input[type=checkbox]:focus-visible,body.lq-liquid input[type=radio]:focus-visible{outline:2px solid currentColor;outline-offset:2px}
+body.lq-liquid .switch input[type=checkbox],body.lq-liquid input[type=checkbox].sw{width:34px;height:20px;border-radius:999px;background:rgba(255,255,255,.1);border:0;position:relative}
+body.lq-liquid .switch input[type=checkbox]::after,body.lq-liquid input[type=checkbox].sw::after{content:'';position:absolute;left:3px;top:3px;width:14px;height:14px;border-radius:50%;background:#8A919B;transition:transform .18s ease,background-color .18s ease}
+body.lq-liquid .switch input[type=checkbox]:checked,body.lq-liquid input[type=checkbox].sw:checked{background:#F3F0EA}
+body.lq-liquid .switch input[type=checkbox]:checked::after,body.lq-liquid input[type=checkbox].sw:checked::after{transform:translateX(14px);background:#0A0B0D}
+body.lq-liquid.lq-light .switch input[type=checkbox],body.lq-liquid.lq-light input[type=checkbox].sw{background:rgba(21,26,33,.12)}
+body.lq-liquid.lq-light .switch input[type=checkbox]:checked,body.lq-liquid.lq-light input[type=checkbox].sw:checked{background:#151A21}
+body.lq-liquid.lq-light .switch input[type=checkbox]:checked::after,body.lq-liquid.lq-light input[type=checkbox].sw:checked::after{background:#FFFFFF}
+body.lq-liquid .fchip{border:1px solid rgba(255,255,255,.1);background:transparent;color:var(--text);font:500 12.5px var(--sans);padding:5px 11px}
+body.lq-liquid .fchip:hover{border-color:rgba(255,255,255,.22);color:var(--bone)}
+body.lq-liquid.lq-light .fchip{border-color:rgba(21,26,33,.12)}
+body.lq-liquid .tag{background:rgba(255,255,255,.06);border:0;color:var(--text)}
+body.lq-liquid.lq-light .tag{background:rgba(21,26,33,.05)}
+body.lq-liquid .note{border-radius:12px}
+/* write-ups */
+.wuhead{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:12px;max-width:680px;margin:4px auto 18px}
+.wut{margin:0;font:600 26px/1.15 var(--sans);letter-spacing:-.02em;color:var(--bone)}
+.wus{font-size:13px;color:var(--faint);margin-top:4px}
+.wua{display:flex;align-items:center;gap:8px}
+#copy.done{color:#F2A541}
+.swl{display:inline-flex;align-items:center;gap:8px;cursor:pointer;font-size:13px}.swl small{color:var(--faint)}
+body.lq-liquid .out{max-width:680px;margin:0 auto;min-height:0;padding:0;background:transparent;border:0;border-radius:0;white-space:normal;font-size:15.5px;line-height:1.7;color:var(--text)}
+body.lq-liquid .out.muted{padding:48px 0;text-align:center;color:var(--faint)}
+body.lq-liquid .out h3,body.lq-liquid .out h4{margin:22px 0 6px;font:600 15px var(--sans);letter-spacing:.01em;color:var(--bone)}
+body.lq-liquid .out h3{font-size:17px}
+body.lq-liquid .out p{margin:0 0 10px}
+body.lq-liquid .out ul{margin:4px 0 12px;padding-left:20px}
+body.lq-liquid .out li{margin:3px 0}
+body.lq-liquid .out li::marker{color:var(--faint)}
+body.lq-liquid .out b{color:var(--bone);font-weight:600}
+body.lq-liquid .rfoot{max-width:680px;margin:18px auto 0;font-family:var(--sans);border-top:1px solid var(--line)}
+/* tasks */
+body.lq-liquid .task{gap:12px;padding:11px 14px;border-radius:14px;border:1px solid rgba(255,255,255,.07);background:rgba(255,255,255,.03);margin-top:6px;transition:background-color .15s ease}
+body.lq-liquid .task:hover{background:rgba(255,255,255,.055)}
+body.lq-liquid.lq-light .task{border-color:rgba(21,26,33,.07);background:rgba(255,255,255,.55)}
+body.lq-liquid.lq-light .task:hover{background:rgba(255,255,255,.85)}
+body.lq-liquid .task .t{font-size:14px;line-height:1.5;color:var(--text)}
+body.lq-liquid .task .rp{background:transparent;border:0;padding:0;font-size:12px;color:var(--faint);white-space:nowrap}
+body.lq-liquid .task .ask,body.lq-liquid .task .rm{display:inline-flex;align-items:center;justify-content:center;gap:4px;white-space:nowrap;min-width:28px;padding:0 6px;height:28px;border-radius:8px;font-size:15px;color:var(--faint)}
+body.lq-liquid .task .rm{opacity:0;transition:opacity .15s ease}
+body.lq-liquid .task:hover .rm,body.lq-liquid .task .rm:focus-visible,body.lq-touch .task .rm{opacity:1}
+body.lq-liquid .task .ask:hover,body.lq-liquid .task .rm:hover{background:rgba(255,255,255,.07);color:var(--bone)}
+body.lq-liquid .task .ask.has,body.lq-liquid .task .ask.on{color:var(--bone)}
+body.lq-liquid #panel-tasks > .note,body.lq-liquid #panel-tasks .tnote{font-size:12.5px}
+/* agents' questions */
+body.lq-liquid .aq{border:1px solid rgba(255,255,255,.08);border-left:2px solid var(--amber);border-radius:14px;background:rgba(255,255,255,.03);padding:12px 16px}
+body.lq-liquid.lq-light .aq{border-color:rgba(21,26,33,.08);border-left-color:var(--amber);background:rgba(255,255,255,.55)}
+body.lq-liquid .aq h4{font:600 11px var(--sans);letter-spacing:.1em;display:flex;align-items:center;gap:6px}
+body.lq-liquid .aq .q{border-bottom-color:var(--line)}
+body.lq-liquid .aq label.opt{gap:10px;padding:4px 0}
+body.lq-liquid .aq .opt input{margin-top:1px}
+body.lq-liquid .who{display:inline-flex;align-items:center;gap:4px;padding:1px 8px;border-radius:999px;background:rgba(255,255,255,.07);font-size:12px;font-weight:600;color:var(--bone);white-space:nowrap}
+body.lq-liquid.lq-light .who{background:rgba(21,26,33,.06)}
+/* drift */
+body.lq-liquid .drift{border:1px solid rgba(255,255,255,.07);background:rgba(255,255,255,.03);border-radius:14px;padding:14px 16px}
+body.lq-liquid.lq-light .drift{border-color:rgba(21,26,33,.07);background:rgba(255,255,255,.55)}
+.dbead{flex:none;width:12px;height:12px;border-radius:50%;background:radial-gradient(circle at 34% 28%,#FFFFFF 0,#C9CFD9 20%,#5B626D 58%,#121418 100%)}
+body.lq-light .dbead{background:radial-gradient(circle at 34% 28%,#FFFFFF 0,#E3E6EA 22%,#9BA2AC 55%,#3A3F46 100%)}
+.drift.risk .dbead{background:radial-gradient(circle at 34% 28%,#FFF4E2 0,#F2A541 45%,#7A4A10 100%);box-shadow:0 0 10px rgba(242,165,65,.4)}
+body.lq-liquid .drift .dn{font-size:14.5px}
+body.lq-liquid .drift ul{margin:8px 0 0 20px}
+body.lq-liquid .drift li{position:relative;padding:3px 0 3px 14px;font-size:13.5px;color:var(--text)}
+body.lq-liquid .drift li::before{content:'';position:absolute;left:0;top:11px;width:5px;height:5px;border-radius:50%;background:var(--faint)}
+body.lq-liquid .drift li.warn{color:var(--bone)}
+body.lq-liquid .drift li.warn::before{background:var(--amber);box-shadow:0 0 6px rgba(242,165,65,.6)}
+body.lq-liquid .drift .ev{font-family:var(--sans);font-size:11.5px}
+
+/* links in the look's ink */
+body.lq-liquid main a{color:var(--bone);text-decoration:underline;text-decoration-color:rgba(255,255,255,.3);text-underline-offset:3px;cursor:pointer}
+body.lq-liquid.lq-light main a{text-decoration-color:rgba(21,26,33,.3)}
+/* Settings: one column of titled cards */
+body.lq-liquid #panel-settings{max-width:780px;margin:0 auto;display:flex;flex-direction:column;gap:14px;padding-bottom:20px}
+body.lq-liquid .sset{border:1px solid rgba(255,255,255,.07);background:rgba(255,255,255,.03);border-radius:18px;padding:18px 20px}
+body.lq-liquid.lq-light .sset{border-color:rgba(21,26,33,.07);background:rgba(255,255,255,.55)}
+body.lq-liquid .sset.hidden{display:none}
+.ssh{margin:0 0 10px;font:600 16px var(--sans);letter-spacing:-.01em;color:var(--bone);display:flex;align-items:baseline;gap:8px}
+.ssh .muted{font-weight:400;font-size:12.5px}
+body.lq-liquid .sset > label:not(.check):not(.swl){display:block;font:500 12.5px var(--sans);color:var(--faint);margin:12px 0 6px}
+body.lq-liquid .sset label.check{display:flex;align-items:center;gap:10px;margin:8px 0;color:var(--text);font-size:13.5px}
+body.lq-liquid .sset .note{font-size:12.5px;max-width:70ch}
+body.lq-liquid .sset .cxh{margin-top:0}
+/* the Close bar carries the panel's own ground, so what scrolls under it stays clean */
+body.lq-liquid.lq-pooled #lqsinkrow{margin:-14px -14px 10px;padding:10px 10px 8px;background:linear-gradient(180deg,rgba(6,8,11,.97) 70%,rgba(6,8,11,0));border-radius:22px 22px 0 0}
+body.lq-liquid.lq-light.lq-pooled #lqsinkrow{background:linear-gradient(180deg,rgba(246,248,251,.98) 70%,rgba(246,248,251,0))}
+/* the Dashboard as a stream: time runs left to right, a current per feed, now on the right */
+.bstream{position:relative;margin-top:10px;border-radius:18px;overflow:hidden;isolation:isolate;background:#08090B;box-shadow:0 0 0 1px rgba(255,255,255,.08)}
+body.lq-light .bstream{background:#EBEEF0;box-shadow:0 0 0 1px rgba(21,26,33,.08)}
+body.lq-look-pearl .bstream{background:#EDECE9}
+.bstream.none{display:none}
+#bsc{position:absolute;inset:0;width:100%;height:100%;display:block}
+#bsov{position:absolute;inset:0}
+body.lq-liquid .bcard.blane{position:absolute;left:16px;width:186px;padding:0;border:0;background:transparent;box-shadow:none;transform:translateY(-50%)}
+.blane .bln{font:600 14px/1.2 var(--sans);color:var(--bone);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.blane .blc{font-size:12px;color:var(--faint);margin-top:1px}
+.blane .blc b{color:var(--amber);font-weight:600}
+.blane .bla{display:flex;flex-wrap:wrap;gap:0 2px;margin:3px 0 0 -6px}
+.blane .bla button,.btip .bta button.quiet{border:0;background:transparent;color:var(--faint);font:500 12px var(--sans);padding:4px 6px;border-radius:8px;cursor:pointer}
+.blane .bla button:hover{color:var(--bone)}
+.blane .ble{font-size:11.5px;color:#E5484D;margin-top:2px}
+.blb{position:absolute;right:16px;width:230px;text-align:right;font-size:12.5px;line-height:1.4;color:var(--faint);transform:translateY(-50%);pointer-events:none}
+.bline{position:absolute;height:1px;background:linear-gradient(90deg,transparent,rgba(255,255,255,.1) 6%,rgba(255,255,255,.1) 94%,transparent);pointer-events:none}
+body.lq-light .bline{background:linear-gradient(90deg,transparent,rgba(21,26,33,.1) 6%,rgba(21,26,33,.1) 94%,transparent)}
+.btick{position:absolute;bottom:12px;font-size:11px;color:var(--faint);transform:translateX(-50%);pointer-events:none}
+.bnow{position:absolute;top:18px;bottom:30px;width:1px;background:linear-gradient(180deg,transparent,rgba(255,255,255,.25),transparent);pointer-events:none}
+body.lq-light .bnow{background:linear-gradient(180deg,transparent,rgba(21,26,33,.25),transparent)}
+.bbead{position:absolute;left:0;top:0;border:0;padding:0;border-radius:50%;background:transparent;cursor:pointer;will-change:transform}
+.bbead:focus-visible{outline:2px solid var(--bone);outline-offset:2px}
+.btip{position:absolute;left:0;top:0;width:300px;max-width:calc(100% - 24px);z-index:4;opacity:0;pointer-events:none;transition:opacity .18s ease}
+.btip.on{opacity:1;pointer-events:auto}
+body.lq-liquid .btip .bcard{padding:12px 14px;border-radius:16px;background:rgba(16,18,21,.95);border:1px solid rgba(255,255,255,.1);box-shadow:0 24px 50px -20px rgba(0,0,0,.8)}
+body.lq-liquid.lq-light .btip .bcard{background:rgba(255,255,255,.96);border-color:rgba(21,26,33,.1);box-shadow:0 24px 50px -24px rgba(30,45,60,.45)}
+.btip .bi{display:block !important;border:0 !important;padding:0 !important}
+.btip .btf{font:600 13px var(--sans);color:var(--bone)}
+.btip .btf span{font-weight:400;color:var(--faint)}
+.btip .btx{margin:3px 0 10px;font-size:14px;color:var(--text);overflow-wrap:anywhere}
+.btip .bta{display:flex;flex-wrap:wrap;gap:4px;align-items:center}
+.btip .bta button:not(.quiet){border:0;border-radius:999px;padding:7px 13px;font:600 12.5px var(--sans);background:#F3F0EA;color:#0A0B0D;cursor:pointer}
+body.lq-light .btip .bta button:not(.quiet){background:#151A21;color:#FFFFFF}
+.blist{margin-top:12px}
+.blist summary{cursor:pointer;color:var(--faint);font-size:13px;list-style:none}
+.blist summary::-webkit-details-marker{display:none}
+.blist summary::before{content:'';display:inline-block;width:5px;height:5px;margin-right:8px;border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;transform:rotate(-45deg);vertical-align:2px;transition:transform .2s ease}
+.blist[open] summary::before{transform:rotate(45deg)}
+#boardtalk .bcard{margin-top:12px}
+@media (max-width:720px){.blb{display:none}body.lq-liquid .bcard.blane{width:96px}.blane .bla{display:none}}
 .bcard{border:1px solid var(--line);border-radius:12px;padding:12px 14px;background:var(--ink2);min-width:0}
 .bcard.has{border-color:#2a6b52}
 .bcard .bh{display:flex;gap:8px;align-items:center}.bcard .bn{color:var(--bone);font-weight:600;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -288,17 +625,21 @@ label.check input{width:auto}
 </style></head><body>
 <div id="liquid" aria-label="Symbiot">
 <canvas id="lq" aria-hidden="true"></canvas>
+<div id="lqorbits"></div>
+<div id="lqgroups"></div>
 <div id="lqdrops"></div>
+<button type="button" id="lqback">&lsaquo; Home</button>
+<button type="button" id="lqgo"></button>
 <button type="button" id="lqcore" title="talk to Symbiot"></button>
 <div id="lqmore"></div>
 <div id="lqtalk" aria-live="polite"></div>
-<form id="lqform" class="lqglass"><label for="lqask" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)">Talk to Symbiot</label><input id="lqask" autocomplete="off" placeholder="Talk to Symbiot, or tell it what to do"><button type="submit" id="lqsend">Send</button></form>
+<form id="lqform" class="lqglass"><label for="lqask" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)">Talk to Symbiot</label><input id="lqask" autocomplete="off" placeholder="Talk to Symbiot, or tell it what to do"><button type="submit" id="lqsend" aria-label="Send"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 13V3M3.5 7.5 8 3l4.5 4.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button></form>
 </div>
 
 <div id="updatebar" class="updatebar"></div>
 <div id="appbar" class="updatebar"></div>
 <div id="whatsnew" class="whatsnew"></div>
-<header><span class="dot"></span><span class="brand">Symbiot</span><span class="ver" id="ver"></span><span class="status" id="status">...</span></header>
+<header><span class="dot"></span><span class="brand">Symbiot</span><span class="ver" id="ver"></span><span id="lqlook" role="radiogroup" aria-label="Look"><button type="button" role="radio" data-look="glass" aria-checked="false">Glass</button><button type="button" role="radio" data-look="ferro" aria-checked="true">Ferrofluid</button><button type="button" role="radio" data-look="pearl" aria-checked="false">Pearl</button></span><span class="status" id="status">...</span></header>
 <div class="tabs">
 <button class="tab active" data-tab="map">Map</button>
 <button class="tab" data-tab="board" id="boardtab">Dashboard</button>
@@ -312,13 +653,15 @@ label.check input{width:auto}
 <button class="tab" data-tab="settings">Settings</button>
 </div>
 <main>
-<div class="lqedge" aria-hidden="true"></div><div id="lqsinkrow"><button class="ghost" type="button" id="lqsink" title="close it: it sinks back into the liquid (Esc)">Sink back</button></div>
+<div id="lqsinkrow"><button class="iconbtn wide" type="button" id="lqsink" title="close it: it sinks back into the liquid (Esc, or right-click)"><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M2 2l8 8M10 2l-8 8" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>Close</button></div>
 <section id="panel-map">
 <div class="profile muted" id="profile">Mapping your work&hellip;</div>
 <div class="maprow">
+<div id="lmap" class="lmap"><canvas id="lmc" aria-hidden="true"></canvas><svg id="lmlines" aria-hidden="true"></svg><div id="lmov"></div><div id="lmtip" class="lmtip" role="status" aria-live="polite"></div><div class="lmzoom"><button type="button" class="iconbtn" id="lmin" aria-label="Zoom in">+</button><button type="button" class="iconbtn" id="lmout" aria-label="Zoom out">&minus;</button><button type="button" class="iconbtn" id="lmfit" aria-label="Fit the map" title="Fit the map"><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M1 5V1h4M13 5V1H9M1 9v4h4M13 9v4H9" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button></div></div>
 <svg id="graph" viewBox="0 0 960 620" preserveAspectRatio="xMidYMid meet"></svg>
 <aside id="detail" class="detail hidden"></aside>
 </div>
+<div id="lmtools" class="lmtools"></div>
 <div id="mapbar" class="mapbar">Hover a node for a summary &middot; click for details &middot; drag to move</div>
 <div class="legend">
 <span class="lg"><i style="background:var(--green)"></i>you</span>
@@ -332,8 +675,7 @@ label.check input{width:auto}
 <button class="ghost" id="remap" style="margin-left:auto">Rescan</button>
 </div>
 <div id="review" class="review hidden"></div>
-<div style="margin-top:22px;border-top:1px solid var(--line);padding-top:4px">
-<div class="tgroup">Screens <span class="tcount">experimental &middot; blueprints for screen automation</span></div>
+<details id="screensbox" class="screensbox"><summary><span class="tgroup">Screens</span> <span class="tcount">experimental &middot; blueprints for screen automation</span></summary>
 <div class="note muted" style="margin-top:2px">Capture a screen, then drag a box over each part that matters (a button, a field, a menu) and name it. Each region keeps its pixel coordinates and its centre, ready for automation to aim at. With more than one display, pick which one to capture, or one screen per display. <b>Click here</b> on a region clicks its centre on your real screen, after you confirm. Or let Symbiot do it all for a web page: <b>Map page</b> opens it in a hidden browser, takes its screenshot and marks every button, link and field by itself, and <b>Press</b> on one of them follows it there and maps the next page; <b>Type</b> on a field types into it there. A map only has what fits in the window, so on a longer page <b>Scroll down</b> maps the next part, or <b>Whole page</b> maps all of it in one tall screenshot (where a list scrolls inside the page, like Gmail's mail, that list opened out: a whole inbox on one screen). Only a mapped page is typed into: nothing types on your real screen. <b>Watch</b> on a mapped page (your inbox, say) has Symbiot read it again every few minutes while it runs and tell you what's new there.</div>
 <div class="row" style="margin-top:10px"><input id="pagesite" placeholder="a web page to map by itself: gmail, github.com/pulls or a web address" style="flex:1"><button class="act" id="mappage">Map page</button><button class="ghost" id="pagesignin" title="open this site in Symbiot's own browser as a window, to sign in once; close it when you're done">Sign in</button></div>
 <div class="row" style="margin-top:10px"><input id="screenname" placeholder="name the screen, e.g. GitHub PR page" style="flex:1"><select id="screenwhich" class="hidden" title="which display to capture" style="flex:0 0 auto;width:auto"></select><select id="screendelay" title="wait first, so you can bring the right window to the front" style="flex:0 0 auto;width:auto"><option value="0">now</option><option value="3">in 3s</option><option value="5">in 5s</option><option value="10">in 10s</option></select><button class="ghost" id="capture">Capture screen</button><button class="ghost" id="screenload" title="use a PNG screenshot you already have">Load image</button><input type="file" id="screenfile" accept="image/png" class="hidden"></div>
@@ -341,26 +683,26 @@ label.check input{width:auto}
 <div id="watchbox"></div>
 <div id="screenlist" class="taskfilter"></div>
 <div id="screenview"></div>
-</div>
+</details>
 </section>
 <section id="panel-board" class="hidden">
-<div class="row"><span class="muted" id="boardsum" style="flex:1">Everything you watch, side by side.</span><select id="boardhours" title="how far back" style="flex:0 0 auto;width:auto"><option value="24">last 24 hours</option><option value="72">last 3 days</option><option value="168">last 7 days</option></select><button class="ghost" id="boardrefresh">Refresh</button></div>
+<div class="bhead"><div class="bsumw"><div id="boardsum" class="bsum">Everything you watch, side by side.</div><div id="boardsub" class="bsub"></div></div><div class="seg" id="boardwin" role="radiogroup" aria-label="How far back"><button type="button" role="radio" data-h="24" aria-checked="true">24 hours</button><button type="button" role="radio" data-h="72" aria-checked="false">3 days</button><button type="button" role="radio" data-h="168" aria-checked="false">7 days</button></div><button type="button" class="iconbtn" id="boardrefresh" title="Refresh" aria-label="Refresh"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M13 8a5 5 0 1 1-1.5-3.6M13 2.5V5h-2.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button></div>
 <div id="boardmsg"></div>
-<div id="boardposts"></div>
-<div id="boardlinks"></div>
-<div id="board" class="board"></div>
+<div id="bstream" class="bstream"><canvas id="bsc" aria-hidden="true"></canvas><div id="bsov"></div></div>
+<div id="boardtalk"></div>
 <div id="boardawait"></div>
+<div id="boardposts"></div>
+<details id="blist" class="blist"><summary>All of it as a list</summary><div id="board" class="board"></div></details>
+<div id="boardlinks"></div>
 </section>
 <section id="panel-run" class="hidden">
-<div class="row"><button class="act" id="write">Write my <span id="what">week</span></button>
-<button class="ghost hidden" id="copy">Copy</button>
-<span class="muted">Reads your local git and writes it up.</span></div>
-<div class="out muted" id="out">Nothing yet - hit the button.</div>
+<div class="wuhead"><div><h2 class="wut" id="wutitle">Your week</h2><div class="wus" id="wusub">The last 7 days, from your local git</div></div><div class="wua"><button class="iconbtn hidden" id="copy" title="Copy" aria-label="Copy"><svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true"><rect x="5" y="5" width="9" height="9" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M3 11V3a1 1 0 0 1 1-1h7" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button><button class="act" id="write">Write my <span id="what">week</span></button></div></div>
+<div class="out muted" id="out">Nothing written yet. Symbiot reads your local git and writes it up for you.</div>
 <div class="rfoot" id="outfoot" style="display:none"></div>
 </section>
 <section id="panel-tasks" class="hidden">
 <div class="row"><input id="newtask" placeholder="Add a task..." style="flex:1"><select id="newtaskrepo" title="Which repo this task is for (needed to send it to an agent)" style="flex:0 0 auto;max-width:180px"><option value="">repo…</option></select><button class="act" id="addtask">Add</button><button class="ghost" id="pushtasks" title="Write .symbiot/TASKS.md into each repo for your coding agent">Send to repos</button></div>
-<div class="note muted" style="margin-top:2px">To give tasks to your agent, use <b>Send to repos</b> &mdash; filter by tag below to choose which. As the agent finishes each one it lands in <b>Awaiting your review</b>: <b>Approve</b> commits it on a branch and opens a PR, <b>&#8630;</b> sends it back. Ticking a task yourself marks it done (it auto-archives). Click <b>&#128172;</b> on a task to ask questions about it.</div>
+<div class="note muted" style="margin-top:2px">To give tasks to your agent, use <b>Send to repos</b> &mdash; filter by tag below to choose which. As the agent finishes each one it lands in <b>Awaiting your review</b>: <b>Approve</b> commits it on a branch and opens a PR, <b>&#8630;</b> sends it back. Ticking a task yourself marks it done (it auto-archives). Click <b><i class=ic-chat></i></b> on a task to ask questions about it.</div>
 <div id="pushout"></div>
 <div id="reviewout"></div>
 <div id="reviewlist"></div>
@@ -380,12 +722,13 @@ label.check input{width:auto}
 </section>
 <section id="panel-drift" class="hidden">
 <div class="row"><span class="muted">What's out of sync, stuck or at risk across your repos — local git facts.</span>
-<label class="muted" style="margin-left:auto"><input type="checkbox" id="driftfetch"> fetch latest</label>
-<label class="muted"><input type="checkbox" id="driftci"> check CI (needs gh, experimental)</label>
+<label class="muted swl" style="margin-left:auto"><input type="checkbox" class="sw" id="driftfetch"> Fetch latest</label>
+<label class="muted swl"><input type="checkbox" class="sw" id="driftci"> Check CI <small>(needs gh, experimental)</small></label>
 <button class="ghost" id="driftrun">Rescan</button></div>
 <div id="driftout"></div>
 </section>
 <section id="panel-settings" class="hidden">
+<div class="sset"><h3 class="ssh">Your AI</h3>
 <label>Which AI should Symbiot write with?</label>
 <select id="provider">
 <option value="anthropic">Claude (Anthropic)</option>
@@ -401,25 +744,26 @@ label.check input{width:auto}
 <input id="model" type="text" placeholder="(blank = default)">
 <div class="row" style="margin-top:16px"><button class="act" id="save">Save &amp; connect</button>
 <span class="note" id="saveMsg"></span></div>
-<div style="margin-top:20px;border-top:1px solid var(--line);padding-top:16px">
-<label>Folders to scan for repos</label>
+</div>
+<div class="sset">
+<h3 class="ssh">Folders to scan for repos</h3>
 <div id="scanroots"></div>
 <div class="row" style="margin-top:6px"><input id="newroot" placeholder="/path/to/folder  (or ~/work) — where your projects live" style="flex:1"><button class="ghost" id="addroot">Add folder</button></div>
 <div class="note muted" id="scanrootnote">Point Symbiot at where your work lives — inside or outside your home folder. Defaults to your home folder.</div>
 </div>
-<div style="margin-top:20px;border-top:1px solid var(--line);padding-top:16px">
-<label>Knowledge folders</label>
+<div class="sset">
+<h3 class="ssh">Knowledge folders</h3>
 <div id="knowroots"></div>
 <div class="row" style="margin-top:6px"><input id="newknow" placeholder="~/Company — documents your chats can quote" style="flex:1"><input id="newknowex" placeholder="examples: templates/" title="Paths inside it that hold worked examples, comma-separated" style="width:190px"><button class="ghost" id="addknow">Add folder</button></div>
 <div class="note muted" id="knownote">Chats quote these files (Markdown, CSV, text) and say which one. Paths listed as examples (<code>templates/</code> unless you say otherwise: any folder of that name) are worked examples, never used as facts; so is a file whose front matter says <code>example: true</code>. Click a folder to change its examples.</div>
 </div>
-<div id="phonebox" class="hidden" style="margin-top:20px;border-top:1px solid var(--line);padding-top:16px">
-<label>Projects in Termux</label>
+<div id="phonebox" class="hidden sset">
+<h3 class="ssh">Projects in Termux</h3>
 <div class="note muted" id="phonenote"></div>
 <div class="row" style="margin-top:6px"><button class="ghost" id="phonebtn"></button></div>
 </div>
-<div style="margin-top:20px;border-top:1px solid var(--line);padding-top:16px">
-<label>Hand off to your agent when you "Send to repos"</label>
+<div class="sset">
+<h3 class="ssh">Hand off to your agent when you "Send to repos"</h3>
 <input id="agentcmd" type="text" placeholder="e.g.  aider --message &quot;{prompt}&quot; --yes   ·   code {dir}   ·   leave blank to just write the file">
 <div class="note muted">Runs in each repo after tasks are written. Use <b>{dir}</b> = repo path, <b>{prompt}</b> = the task instruction. Works with any agent or editor &mdash; it's your command.</div>
 <div id="agentpresets" style="margin-top:8px"></div>
@@ -431,26 +775,24 @@ label.check input{width:auto}
 <div class="note" id="grantnote"></div>
 </div>
 </div>
-<div style="margin-top:20px;border-top:1px solid var(--line);padding-top:16px">
-<label>Link your work</label>
-<div class="note muted" style="margin-top:2px">One click per site you work in: it opens the site in Symbiot's own browser, where you sign in the usual way (its own login, SSO and 2FA; Symbiot never sees your password). Symbiot then trusts the site and watches its inbox or notifications, so what arrives there shows on the Dashboard and in Week and Standup. Close the window when you're signed in.</div>
+<div class="sset">
 <div id="links"></div>
 <div id="linksmsg"></div>
 <div class="note muted" id="linksnote">For a whole team, one <b>links.json</b> in Symbiot's config folder adds your company's own sites and hides the ones you don't use, so everyone gets the same buttons.</div>
 </div>
-<div style="margin-top:20px;border-top:1px solid var(--line);padding-top:16px">
-<label>What Symbiot remembers</label>
+<div class="sset">
+<h3 class="ssh">What Symbiot remembers</h3>
 <div class="note muted" style="margin-top:2px">Every chat in the app is the same Symbiot. What's worth knowing on another page (who someone is, which account is what, what you decided) is kept here, on this computer only, and each chat gets just the parts its question touches.</div>
 <div id="mindlist"></div>
 </div>
-<div style="margin-top:20px;border-top:1px solid var(--line);padding-top:16px">
-<label>Trusted sites for Screens <span class="muted">(experimental)</span></label>
+<div class="sset">
+<h3 class="ssh">Trusted sites for Screens <span class="muted">(experimental)</span></h3>
 <div id="trustedsites"></div>
 <div class="row" style="margin-top:6px"><input id="newtrusted" placeholder="a site, e.g. mail.google.com or github.com" style="flex:1"><button class="ghost" id="addtrusted">Trust site</button></div>
 <div class="note muted" id="trustednote">On a mapped page from one of these sites, <b>Press</b> and <b>Type</b> go ahead without asking, for you and for agents (<b>symbiot screens press</b> / <b>type</b>), signed in as you. A site covers its subdomains: google.com covers mail.google.com. Everywhere else, each one asks first. Only you add sites, here: Symbiot gives agents no command for it.</div>
 </div>
-<div style="margin-top:20px;border-top:1px solid var(--line);padding-top:16px">
-<label>Email &mdash; add what you sent to Week and Standup <span class="muted">(experimental)</span></label>
+<div class="sset">
+<h3 class="ssh">Email &mdash; add what you sent to Week and Standup <span class="muted">(experimental)</span></h3>
 <label class="check"><input type="checkbox" id="mailon"> Use my sent email (subjects &amp; recipients only)</label>
 <div id="mailsources"></div>
 <div class="row" style="margin-top:6px"><input id="newmail" placeholder="add a mail folder or .mbox file  (e.g. a Google Takeout export)" style="flex:1"><button class="ghost" id="addmail">Add</button><button class="ghost" id="mailpreview">Preview</button></div>
@@ -458,19 +800,19 @@ label.check input{width:auto}
 <div class="note muted" id="mailnote">No API, no OAuth, no password: Symbiot reads the mail your desktop mail app (Thunderbird, Apple Mail, Evolution, mutt&hellip;) already keeps on this computer, or an exported .mbox &mdash; so anyone can link theirs. Headers only, never a message body; off until you tick it. Experimental: tested with mbox and Maildir, not yet on real Apple Mail, Evolution or KMail stores.</div>
 <div id="mailout"></div>
 </div>
-<div style="margin-top:20px;border-top:1px solid var(--line);padding-top:16px">
-<label>Weekly write-up and start at login</label>
+<div class="sset">
+<h3 class="ssh">Weekly write-up and start at login</h3>
 <label class="check"><input type="checkbox" id="weeklyon"> Write my week and send me a desktop notification every</label>
 <div class="row" style="margin-top:2px"><select id="weeklyday" style="width:auto"><option value="1">Monday</option><option value="2">Tuesday</option><option value="3">Wednesday</option><option value="4">Thursday</option><option value="5">Friday</option><option value="6">Saturday</option><option value="0">Sunday</option></select><span class="muted">at</span><select id="weeklyhour" style="width:auto"></select><button class="ghost" id="weeklynow" title="write it now and send the notification, to check it works">Write it now</button></div>
 <label class="check"><input type="checkbox" id="autostart"> <span id="autostartlbl">Start Symbiot in the background when I log in (no window)</span></label>
 <div class="note muted" id="desktopnote"></div>
 </div>
-<div style="margin-top:20px;border-top:1px solid var(--line);padding-top:16px">
-<label>Watch on your phone <span class="muted">(experimental)</span></label>
+<div class="sset">
+<h3 class="ssh">Watch on your phone <span class="muted">(experimental)</span></h3>
 <div id="phonelink"></div>
 </div>
-<div style="margin-top:20px;border-top:1px solid var(--line);padding-top:16px">
-<label>Local models <span class="muted">(experimental)</span></label>
+<div class="sset">
+<h3 class="ssh">Local models <span class="muted">(experimental)</span></h3>
 <button class="ghost" id="recbtn">Recommend models for my machine</button>
 <button class="ghost" id="setuplocal" style="margin-left:8px">Set up a free local model</button>
 <div id="setupout" class="note muted" style="margin-top:10px"></div>
@@ -498,7 +840,7 @@ $('panel-tasks').classList.toggle('hidden',!isTasks);
 $('panel-drift').classList.toggle('hidden',!isDrift);
 $('panel-agents').classList.toggle('hidden',!isAgents);
 $('panel-reports').classList.toggle('hidden',tab!=='reports');if(tab==='reports')loadReports();
-if(isRun){$('what').textContent=tab;$('out').textContent='Nothing yet - hit the button.';$('out').classList.add('muted');$('copy').classList.add('hidden');$('outfoot').style.display='none';if(tab==='week')showLatestWeek();}
+if(isRun){$('what').textContent=tab;wuHead();WUTEXT='';$('out').textContent=WUEMPTY;$('out').classList.add('muted');$('copy').classList.add('hidden');$('outfoot').style.display='none';if(tab==='week')showLatestWeek();}
 if(isMap&&!mapLoaded)loadMap();
 if(isTasks){fillTaskRepos();loadTasks();}
 if(isDrift&&!driftLoaded)loadDrift();
@@ -510,12 +852,13 @@ function firstTab(){api('/api/watch/board').then(function(b){if(b&&b.cards&&b.ca
 function refresh(){api('/api/status').then(function(s){$('status').textContent=s.connected?s.line:'Not connected - open Settings';});}
 // the status opens Settings: on a phone its tab is scrolled out of sight
 $('status').style.cursor='pointer';$('status').addEventListener('click',function(){setTab('settings');var t=document.querySelector('.tab[data-tab=settings]');if(t&&t.scrollIntoView)t.scrollIntoView({block:'nearest',inline:'nearest'});});
-$('write').addEventListener('click',function(){$('out').textContent='Writing...';$('out').classList.add('muted');$('copy').classList.add('hidden');
+var WUEMPTY='Nothing written yet. Symbiot reads your local git and writes it up for you.',WUTEXT='';
+$('write').addEventListener('click',function(){$('out').textContent='Writing it up from your local git…';$('out').classList.add('muted');$('copy').classList.add('hidden');
 api('/api/run',{cmd:current}).then(function(r){var f=$('outfoot');if(r.error==='not-connected'){$('out').textContent='Not connected yet - open Settings and pick an AI.';f.style.display='none';return;}
 // a week is saved to weeks/ as well (r.file), like Settings' Write it now
 var foot=[r.footer,r.file?'Saved to '+r.file:'',r.error&&r.text&&r.error!==r.text?r.error:''].filter(Boolean).join(' · ');
-$('out').textContent=r.text||'(no output)';$('out').classList.remove('muted');$('copy').classList.remove('hidden');if(foot){f.textContent=foot;f.style.display='block';}else{f.style.display='none';}});});
-$('copy').addEventListener('click',function(){navigator.clipboard.writeText($('out').textContent);$('copy').textContent='Copied';setTimeout(function(){$('copy').textContent='Copy';},1400);});
+WUTEXT=r.text||'';$('out').innerHTML=r.text?mdLite(r.text):'(no output)';$('out').classList.remove('muted');$('copy').classList.remove('hidden');if(foot){f.textContent=foot;f.style.display='block';}else{f.style.display='none';}});});
+$('copy').addEventListener('click',function(){var c=$('copy');try{navigator.clipboard.writeText(WUTEXT||$('out').textContent);}catch(e){}c.setAttribute('title','Copied');c.classList.add('done');setTimeout(function(){c.setAttribute('title','Copy');c.classList.remove('done');},1400);});
 function syncP(){var p=$('provider').value;var local=p==='ollama';$('keyWrap').classList.toggle('hidden',local);$('baseWrap').classList.toggle('hidden',!local);
 $('getkey').textContent=local?'About Ollama':'Where do I get a key?';$('modelHint').textContent='(default '+DEFMODEL[p]+')';$('model').placeholder='(blank = '+DEFMODEL[p]+')';}
 $('provider').addEventListener('change',syncP);
@@ -528,7 +871,7 @@ var GRAPH=null,sel=null,view={k:1,x:0,y:0},GW=960,GH=620;
 function esc(s){return String(s).replace(/[&<>]/g,function(ch){return ch==='&'?'&amp;':ch==='<'?'&lt;':'&gt;';});}
 // An agent's option, with its who-acts markers as badges: 👤 You (you do this
 // step) and 🤖 Agent (picking it is enough; the next run does it). Escaped first.
-function whoHtml(o){return esc(o).replace(/👤[ ]*(You:|You(?=[ ]))?/g,"<span class='who you'>&#128100; You</span> ").replace(/🤖[ ]*(Agent:|Agent(?=[ ]))?/g,"<span class='who agent'>&#129302; Agent</span> ");}
+function whoHtml(o){return esc(o).replace(/👤[ ]*(You:|You(?=[ ]))?/g,"<span class='who you'><i class=ic-person></i> You</span> ").replace(/🤖[ ]*(Agent:|Agent(?=[ ]))?/g,"<span class='who agent'><i class=ic-bot></i> Agent</span> ");}
 function layout(nodes,edges){var idx={};nodes.forEach(function(n){n.x=GW/2+(Math.random()-0.5)*GW*0.8;n.y=GH/2+(Math.random()-0.5)*GH*0.8;n.vx=0;n.vy=0;idx[n.id]=n;});
 for(var it=0;it<340;it++){for(var i=0;i<nodes.length;i++)for(var j=i+1;j<nodes.length;j++){var a=nodes[i],b=nodes[j];var dx=a.x-b.x,dy=a.y-b.y;var d2=dx*dx+dy*dy+0.01;var d=Math.sqrt(d2);var f=4600/d2;a.vx+=f*dx/d;a.vy+=f*dy/d;b.vx-=f*dx/d;b.vy-=f*dy/d;}
 edges.forEach(function(e){var a=idx[e.source],b=idx[e.target];if(!a||!b)return;var dx=b.x-a.x,dy=b.y-a.y;var d=Math.sqrt(dx*dx+dy*dy)+0.01;var f=(d-115)*0.03;a.vx+=f*dx/d;a.vy+=f*dy/d;b.vx-=f*dx/d;b.vy-=f*dy/d;});
@@ -541,7 +884,97 @@ GRAPH.nodes.forEach(function(n){var r=Math.max(5,Math.sqrt(n.weight)*2);var col=
 s+="<g class='node' data-id='"+esc(n.id)+"' opacity='"+op+"'><circle cx='"+n.x.toFixed(1)+"' cy='"+n.y.toFixed(1)+"' r='"+r.toFixed(1)+"' fill='url(#lqsilver)' stroke='"+col+"' stroke-width='"+(n.id===sel?2.5:1.2)+"'"+(n.id===sel?" stroke-opacity='1'":" stroke-opacity='0.7'")+"><title>"+title+"</title></circle>";
 var cls=n.type==="person"?"lbl-me":"";s+="<text x='"+n.x.toFixed(1)+"' y='"+(n.y+r+12).toFixed(1)+"' text-anchor='middle' class='"+cls+"'>"+esc(n.label)+"</text></g>";});
 document.getElementById("graph").innerHTML=s+"</g>";}
-function profileLine(g){var repos=g.nodes.filter(function(n){return n.type==="repo";});var base=g.stats.base||"your home folder";
+
+// ---- the Map, in the liquid -------------------------------------------------------
+// Your repos and project folders as droplets in the look, placed by their nearest
+// neighbours (mapknn.mjs: what they're built with, the weeks you work on them, what
+// they're about). The closest merge into one shape, the next are joined by a tendril,
+// the rest by a faint line; each cluster is named over its region; what you haven't
+// touched in a while is smaller and sinks; you sit where your recent work is.
+// Point at a droplet: its neighbours light up and say why. Click: its details.
+var LM={G:null,on:false,items:[],edges:[],clusters:[],view:{k:1,x:0,y:0},hot:null,pan:null,built:false};
+function lmTilde(p){p=String(p||'');var parts=p.split('/');return (parts[1]==='home'||parts[1]==='Users')&&parts.length>2?'~'+(parts.length>3?'/'+parts.slice(3).join('/'):''):p;}
+function lmName(id){var n=GRAPH&&nodeById(id);return n?n.label:String(id).split('/').pop();}
+function lmNearHtml(id){var k=GRAPH&&GRAPH.knn,ns=k&&k.neighbours&&k.neighbours[id];if(!ns||!ns.length)return '';
+return "<div class='k'>Most like it</div><ul class='lmnear'>"+ns.map(function(n){return "<li><button type='button' data-id='"+escQ(n.id)+"'><b>"+esc(lmName(n.id))+"</b><span>"+esc(n.why.join('; ')||'a little alike')+"</span></button></li>";}).join('')+"</ul>";}
+function lmNearWire(el){if(el&&el.querySelectorAll)el.querySelectorAll('.lmnear button').forEach(function(b){b.addEventListener('click',function(){selectNode(b.getAttribute('data-id'));});});}
+function lmWeeks(d){var n=GRAPH&&nodeById('repo:'+d.path),w=n&&n.meta&&n.meta.weeks;if(!w||!w.length)return '';var mx=Math.max.apply(null,w.concat([1]));
+return "<div class='k'>Your last 12 weeks</div><div class='lmweeks' role='img' aria-label='"+w.join(', ')+" commits a week'>"+w.map(function(x){return "<i style='height:"+Math.max(2,Math.round(28*x/mx))+"px' title='"+x+" commits'></i>";}).join('')+"</div>";}
+function lmBuild(g){var el=$('lmap');if(!el||!g)return;LM.g=g;var K=g.knn||{neighbours:{},edges:[],clusters:[],vitality:{}};
+var items=g.nodes.filter(function(n){return n.type==='repo'||n.type==='folder';}),mx=1;items.forEach(function(n){var c=(n.meta&&n.meta.commits)||0;if(c>mx)mx=c;});
+var byId={};LM.items=items.map(function(n){var v=K.vitality[n.id]||0,c=(n.meta&&n.meta.commits)||0,fold=n.type==='folder';
+var it={id:n.id,n:n,v:v,fold:fold,r:fold?10:(14+30*Math.sqrt(c/mx))*(0.7+0.3*v),x:0,y:0};byId[n.id]=it;return it;});
+LM.edges=(K.edges||[]).filter(function(e){return byId[e.a]&&byId[e.b];}).map(function(e){return {a:byId[e.a],b:byId[e.b],sim:e.sim};});
+// seed by cluster: each cluster (and each repo on its own) gets its own arc
+var groups=(K.clusters||[]).map(function(c){return c.ids.filter(function(id){return byId[id];}).map(function(id){return byId[id];});}).filter(function(m){return m.length;}),inG={};
+groups.forEach(function(m){m.forEach(function(it){inG[it.id]=1;});});LM.items.forEach(function(it){if(!inG[it.id])groups.push([it]);});
+var tot=0;groups.forEach(function(m){tot+=m.length+0.6;});var acc=-Math.PI/2;
+groups.forEach(function(m){var span=(m.length+0.6)/tot*2*Math.PI,mid=acc+span/2;acc+=span;var R=180+40*m.length;m.forEach(function(it,i){var a=mid+(i-(m.length-1)/2)*Math.min(0.5,span/m.length);it.x=Math.cos(a)*R*(i%2?1.12:0.92);it.y=Math.sin(a)*R*0.8*(i%2?1.12:0.92);});});
+var link={};LM.edges.forEach(function(e){link[e.a.id+'|'+e.b.id]=link[e.b.id+'|'+e.a.id]=e.sim;});
+var L=LM.items;for(var it=0;it<700;it++){
+LM.edges.forEach(function(e){var dx=e.b.x-e.a.x,dy=e.b.y-e.a.y,d=Math.sqrt(dx*dx+dy*dy)||1,rest=e.sim>=0.45?(e.a.r+e.b.r)*1.15:e.a.r+e.b.r+40+150*(1-e.sim),f=(d-rest)*0.05*Math.min(1,e.sim*2.2)/d;e.a.x+=dx*f;e.a.y+=dy*f;e.b.x-=dx*f;e.b.y-=dy*f;});
+for(var i=0;i<L.length;i++){var a=L[i];for(var j=i+1;j<L.length;j++){var b=L[j],dx=b.x-a.x,dy=b.y-a.y,d=Math.sqrt(dx*dx+dy*dy)||1,sm=link[a.id+'|'+b.id],mn=sm>=0.45?(a.r+b.r)*1.08:a.r+b.r+(sm?30:70);if(d<mn){var f=(mn-d)*0.3/d;a.x-=dx*f;a.y-=dy*f;b.x+=dx*f;b.y+=dy*f;}}
+a.x*=0.996;a.y=a.y*0.996+(1-a.v)*0.5;}}
+// you: where your recent work is
+var sx=0,sy=0,sw=0;L.forEach(function(a){var w=a.fold?0:a.v*(1+((a.n.meta&&a.n.meta.commits)||0));sx+=a.x*w;sy+=a.y*w;sw+=w;});
+LM.me={id:'me',x:sw?sx/sw:0,y:sw?sy/sw-10:-10,r:14};for(var q=0;q<200;q++)L.forEach(function(a){var dx=LM.me.x-a.x,dy=LM.me.y-a.y,d=Math.sqrt(dx*dx+dy*dy)||1,mn=a.r+LM.me.r+28;if(d<mn){LM.me.x+=dx/d*(mn-d)*0.5;LM.me.y+=dy/d*(mn-d)*0.5;}});
+LM.clusters=(K.clusters||[]).map(function(c){return {label:c.label,m:c.ids.map(function(id){return byId[id];}).filter(Boolean)};}).filter(function(c){return c.m.length>1;});
+// labels
+var ov=$('lmov');if(ov){ov.innerHTML=L.map(function(a,i){var m=a.n.meta||{},sub=a.fold?'folder, no git':(m.commits||0)+((m.commits||0)===1?' commit':' commits')+(m.last?' &middot; '+lmAgo(m.last):'');return "<button type='button' class='lml"+(a.v<0.25&&!a.fold?' dormant':'')+(a.fold?' fold':'')+"' data-i='"+i+"'><b>"+esc(a.n.label)+"</b><span>"+sub+"</span></button>";}).join('')+
+"<div class='lmme' id='lmme' aria-hidden='true'><i></i><b>you are here</b></div>"+LM.clusters.map(function(c,i){return "<div class='lmc' data-c='"+i+"'>"+esc(c.label)+"</div>";}).join('')+L.filter(function(a){return a.fold;}).map(function(a){return "<i class='lmring' data-id='"+escQ(a.id)+"'></i>";}).join('');
+LM.labs=[].slice.call(ov.querySelectorAll('.lml[data-i]'));LM.cls=[].slice.call(ov.querySelectorAll('.lmc'));LM.rings=[].slice.call(ov.querySelectorAll('.lmring'));
+LM.labs.forEach(function(b){var a=L[+b.getAttribute('data-i')];b.addEventListener('click',function(){selectNode(a.id);});b.addEventListener('pointerenter',function(){lmHot(a);});b.addEventListener('focus',function(){lmHot(a);});b.addEventListener('pointerleave',function(){lmHot(null);});b.addEventListener('blur',function(){lmHot(null);});});}
+// the rest of what you build with, as a quiet row under the map
+var tl=$('lmtools');if(tl){var langs={};L.forEach(function(a){((a.n.meta&&a.n.meta.langs)||[]).forEach(function(x){langs[x]=(langs[x]||0)+1;});});
+var lg=Object.keys(langs).sort(function(x,y){return langs[y]-langs[x];});var tools=g.nodes.filter(function(n){return n.type==='tool'||n.type==='agent'||n.type==='ai';});
+tl.innerHTML=(lg.length?"<div class='lmrow'><span class='lmk'>Languages</span>"+lg.map(function(x){return "<button type='button' class='lmt' data-id='lang:"+escQ(x)+"'>"+esc(x)+"<small>"+langs[x]+"</small></button>";}).join('')+"</div>":"")+
+(tools.length?"<div class='lmrow'><span class='lmk'>You build with</span>"+tools.map(function(n){return "<button type='button' class='lmt' data-id='"+escQ(n.id)+"'>"+esc(n.label)+"</button>";}).join('')+"</div>":"");
+tl.querySelectorAll('.lmt').forEach(function(b){b.addEventListener('click',function(){selectNode(b.getAttribute('data-id'));});});}
+lmFit();if(!LM.built){LM.built=true;lmWire();}lmStart();}
+function lmAgo(day){var t=Date.parse(day);if(!t)return day;var d=Math.round((Date.now()-t)/86400000);return d<=0?'today':d===1?'yesterday':d<14?d+' days ago':d<60?Math.round(d/7)+' weeks ago':Math.round(d/30)+' months ago';}
+function lmFit(){var el=$('lmap'),L=LM.items;if(!el||!L.length)return;var x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;L.concat([LM.me]).forEach(function(a){x0=Math.min(x0,a.x-a.r);y0=Math.min(y0,a.y-a.r);x1=Math.max(x1,a.x+a.r);y1=Math.max(y1,a.y+a.r+30);});
+var w=el.clientWidth||900,h=el.clientHeight||520,k=Math.min(1.6,(w-160)/Math.max(1,x1-x0),(h-150)/Math.max(1,y1-y0));LM.view={k:k,x:w/2-(x0+x1)/2*k,y:h/2-(y0+y1)/2*k+20};}
+function lmHot(a){LM.hot=a;var tip=$('lmtip');var near={};if(a&&GRAPH&&GRAPH.knn)(GRAPH.knn.neighbours[a.id]||[]).forEach(function(n){near[n.id]=n;});
+(LM.labs||[]).forEach(function(b){var it=LM.items[+b.getAttribute('data-i')];if(b.classList){b.classList.toggle('near',!!(a&&near[it.id]));b.classList.toggle('far',!!(a&&it!==a&&!near[it.id]));}});
+if(!tip)return;if(!a){tip.className='lmtip';return;}var m=a.n.meta||{},ns=(GRAPH&&GRAPH.knn&&GRAPH.knn.neighbours[a.id])||[];
+tip.innerHTML="<b>"+esc(a.n.label)+"</b><span class='lmts'>"+(a.fold?'a project folder, not a git repo':(m.commits||0)+((m.commits||0)===1?' commit':' commits')+(m.last?' &middot; last '+lmAgo(m.last):'')+(m.branch?' &middot; on '+esc(m.branch):''))+"</span>"+(ns.length?"<div class='lmtn'>"+ns.map(function(n){return "<div><b>"+esc(lmName(n.id))+"</b> "+esc(n.why.join('; ')||'a little alike')+"</div>";}).join('')+"</div>":"<div class='lmtn'>Nothing else is much like it.</div>");tip.className='lmtip on';}
+function lmS(p){return {x:p.x*LM.view.k+LM.view.x,y:p.y*LM.view.k+LM.view.y};}
+function lmWire(){var el=$('lmap');if(!el||!el.addEventListener)return;
+el.addEventListener('wheel',function(e){if(!e)return;e.preventDefault();var r=el.getBoundingClientRect(),mx=e.clientX-r.left,my=e.clientY-r.top,k0=LM.view.k,k=Math.max(0.3,Math.min(4,k0*Math.exp(-e.deltaY*0.0015)));LM.view.x=mx-(mx-LM.view.x)*k/k0;LM.view.y=my-(my-LM.view.y)*k/k0;LM.view.k=k;},{passive:false});
+el.addEventListener('pointerdown',function(e){if(e.target&&e.target.closest&&e.target.closest('button,.lmtip'))return;LM.pan={x:e.clientX,y:e.clientY,vx:LM.view.x,vy:LM.view.y,moved:false};if(el.setPointerCapture)el.setPointerCapture(e.pointerId);});
+el.addEventListener('pointermove',function(e){if(LM.pan){var dx=e.clientX-LM.pan.x,dy=e.clientY-LM.pan.y;if(Math.abs(dx)+Math.abs(dy)>3)LM.pan.moved=true;LM.view.x=LM.pan.vx+dx;LM.view.y=LM.pan.vy+dy;return;}
+var r=el.getBoundingClientRect(),mx=e.clientX-r.left,my=e.clientY-r.top,hit=null;LM.items.forEach(function(a){var p=lmS(a);if(!hit&&Math.hypot(mx-p.x,my-p.y)<=a.r*LM.view.k+6)hit=a;});if(hit!==LM.hot&&!(e.target&&e.target.closest&&e.target.closest('.lml')))lmHot(hit);});
+el.addEventListener('pointerup',function(e){var p=LM.pan;LM.pan=null;if(p&&!p.moved&&LM.hot&&!(e.target&&e.target.closest&&e.target.closest('button')))selectNode(LM.hot.id);});
+el.addEventListener('pointerleave',function(){if(!LM.pan)lmHot(null);});
+var zi=$('lmin'),zo=$('lmout'),zf=$('lmfit');function z(f){var w=el.clientWidth/2,h=el.clientHeight/2,k0=LM.view.k,k=Math.max(0.3,Math.min(4,k0*f));LM.view.x=w-(w-LM.view.x)*k/k0;LM.view.y=h-(h-LM.view.y)*k/k0;LM.view.k=k;}
+if(zi)zi.addEventListener('click',function(){z(1.25);});if(zo)zo.addEventListener('click',function(){z(0.8);});if(zf)zf.addEventListener('click',lmFit);}
+function lmStart(){if(LM.on)return;var raf=typeof window.requestAnimationFrame==='function'?function(f){return window.requestAnimationFrame(f);}:null;if(!raf)return;LM.on=true;
+var loop=function(){var p=$('panel-map'),el=$('lmap');if(!p||!el||!el.offsetParent){LM.on=false;return;}lmFrame();raf(loop);};raf(loop);}
+function lmFrame(){var el=$('lmap'),cv=$('lmc');if(!el||!cv||!LM.items.length)return;if(!LM.G)LM.G=lqGL(cv,64);var w=el.clientWidth,h=el.clientHeight,t=LM.t=(LM.t||0)+0.016,still=LQ.theme&&LQ.theme.still,k=LM.view.k;
+var P=LM.items.map(function(a,i){var p=lmS(a);if(!still){p.x+=Math.sin(t*0.4+i*1.7)*2;p.y+=Math.cos(t*0.35+i*2.3)*2;}return p;}),ME=lmS(LM.me);
+// labels, rings, cluster names, tip
+(LM.labs||[]).forEach(function(b){var i=+b.getAttribute('data-i'),a=LM.items[i],p=P[i];if(!b.style)return;b.style.transform='translate('+Math.round(p.x-(b.offsetWidth||0)/2)+'px,'+Math.round(p.y+a.r*k+4)+'px)';});
+var me=$('lmme');if(me&&me.style)me.style.transform='translate('+Math.round(ME.x-(me.offsetWidth||0)/2)+'px,'+Math.round(ME.y-7)+'px)';
+(LM.rings||[]).forEach(function(rg){var i=-1;LM.items.forEach(function(a,j){if(a.id===rg.getAttribute('data-id'))i=j;});if(i<0||!rg.style)return;var R=Math.round(LM.items[i].r*k);rg.style.width=rg.style.height=(2*R)+'px';rg.style.transform='translate('+Math.round(P[i].x-R)+'px,'+Math.round(P[i].y-R)+'px)';});
+(LM.cls||[]).forEach(function(c){var cl=LM.clusters[+c.getAttribute('data-c')],sx=0,top=1e9;cl.m.forEach(function(a){var i=LM.items.indexOf(a);sx+=P[i].x;top=Math.min(top,P[i].y-a.r*k);});if(c.style)c.style.transform='translate('+Math.round(sx/cl.m.length-(c.offsetWidth||0)/2)+'px,'+Math.round(top-30)+'px)';});
+var tip=$('lmtip');if(tip&&LM.hot){var hi=LM.items.indexOf(LM.hot),hp=P[hi],tw=tip.offsetWidth||280,th=tip.offsetHeight||100,tx=Math.max(10,Math.min(w-tw-10,hp.x+LM.hot.r*k+16)),ty=Math.max(10,Math.min(h-th-10,hp.y-th/2));if(tx<hp.x&&hp.x+LM.hot.r*k+16+tw>w)tx=Math.max(10,hp.x-LM.hot.r*k-16-tw);tip.style.transform='translate('+Math.round(tx)+'px,'+Math.round(ty)+'px)';}
+// faint lines for the weak links
+var sv=$('lmlines');if(sv){var ln='';LM.edges.forEach(function(e){if(e.sim>=0.3)return;var a=P[LM.items.indexOf(e.a)],b=P[LM.items.indexOf(e.b)],hot=LM.hot&&(LM.hot===e.a||LM.hot===e.b);ln+="<line x1='"+a.x.toFixed(1)+"' y1='"+a.y.toFixed(1)+"' x2='"+b.x.toFixed(1)+"' y2='"+b.y.toFixed(1)+"' class='"+(hot?'hot':'')+"'/>";});sv.innerHTML=ln;}
+var G=LM.G;if(!G)return;var gl=G.gl,d=Math.min(window.devicePixelRatio||1,2),W=Math.max(1,Math.floor(w*d)),H=Math.max(1,Math.floor(h*d));if(cv.width!==W||cv.height!==H){cv.width=W;cv.height=H;gl.viewport(0,0,W,H);}
+var o=G.out;for(var z=0;z<o.length;z++)o[z]=0;var n=0,put=function(x,y,r,a){if(n>=64||r<=0)return;o[n*4]=x/w;o[n*4+1]=y/h;o[n*4+2]=r;o[n*4+3]=a||0;n++;};
+LM.items.forEach(function(a,i){if(!a.fold)put(P[i].x,P[i].y,a.r*k*(LM.hot===a?1.08:1),0);});
+// tendrils: a chain of small drops, close enough to always bridge, for the middling links
+LM.edges.forEach(function(e){if(e.sim<0.3||e.a.fold||e.b.fold)return;var A=P[LM.items.indexOf(e.a)],B=P[LM.items.indexOf(e.b)],dx=B.x-A.x,dy=B.y-A.y,D=Math.sqrt(dx*dx+dy*dy)||1,gap=D-(e.a.r+e.b.r)*k;if(gap<=4)return;var m=Math.min(20,Math.ceil(gap/8)),sp=gap/(m+1),rr=Math.max(1.8,sp*0.4);for(var c=1;c<=m;c++){var f=(e.a.r*k+sp*c)/D;put(A.x+dx*f,A.y+dy*f,rr,0);}});
+var th=LQ.theme||{},U=G.U;gl.uniform2f(U.uRes,W,H);gl.uniform1f(U.uT,t);gl.uniform1f(U.uDpr,d);gl.uniform4fv(U.uB,o);gl.uniform3f(U.uRip,0,0,-10);gl.uniform1f(U.uStyle,th.look==='glass'?0:th.look==='pearl'?2:1);gl.uniform1f(U.uContrast,th.contrast?1:0);gl.uniform1f(U.uExposure,th.night?0.82:1);gl.drawArrays(gl.TRIANGLES,0,3);}
+
+// The write-ups as a document: # headings, - bullets, **bold**; everything escaped first.
+function mdLite(t){var out=[],list=false;String(t||'').split(String.fromCharCode(10)).forEach(function(line){var l=line.trim(),b=function(x){var p=esc(x).split('**');return p.map(function(s,i){return i%2?'<b>'+s+'</b>':s;}).join('');};
+if(l.indexOf('- ')===0||l.indexOf('* ')===0||l.indexOf('• ')===0){if(!list){out.push('<ul>');list=true;}out.push('<li>'+b(l.slice(2))+'</li>');return;}
+if(list){out.push('</ul>');list=false;}if(!l){return;}var h=0;while(l.charAt(h)==='#')h++;if(h&&l.charAt(h)===' '){out.push('<h'+Math.min(4,h+2)+'>'+b(l.slice(h+1))+'</h'+Math.min(4,h+2)+'>');return;}
+out.push('<p>'+b(l)+'</p>');});if(list)out.push('</ul>');return out.join('');}
+function wuHead(){var t=$('wutitle'),u=$('wusub');if(!t||!u)return;var c=typeof current==='string'?current:'week',d=new Date(),f=function(x){return x.toLocaleDateString(undefined,{day:'numeric',month:'short'});};
+if(c==='standup'){t.textContent='Your standup';u.textContent='Yesterday and today, from your local git';}else if(c==='todo'){t.textContent='Still on your plate';u.textContent='What your repos say is unfinished';}else{var a=new Date(d.getTime()-6*86400000);t.textContent='Your week';u.textContent=f(a)+' to '+f(d)+', from your local git';}}
+function profileLine(g){var repos=g.nodes.filter(function(n){return n.type==="repo";});var base=lmTilde(g.stats.base)||"your home folder";
 if(g.stats.noStorage)return "Symbiot can't see your phone's files yet, so it can't find your projects. Android calls this <b>All files access</b>."+(window.SymbiotAndroid?" <button class='act' id='allowfiles'>Allow file access</button>":"");
 if(!repos.length)return "No git repositories found under "+esc(base)+" yet."+(g.stats.android?" Projects in Termux's home folder (<code>~</code>) are private to Termux, so no other app can see them."+(phoneTermux().installed?" Symbiot running in Termux can, and this app can show it: <button class='act' id='usetermux'>Open Termux</button> copies the command that starts it. Paste it there, and Termux opens it here. Or keep":" Keep")+" your projects in shared storage: in Termux, run <code>termux-setup-storage</code> and work under <code>~/storage/shared</code>.":"");var langs=g.nodes.filter(function(n){return n.type==="lang";}).map(function(n){return n.label;});var top=repos.slice().sort(function(a,b){return (b.meta.commits||0)-(a.meta.commits||0);})[0];var more=(g.stats.roots||[]).filter(function(r){return r!==base;}).length;var s="Scanned <b>"+esc(base)+"</b>"+(more?" and "+more+" more folder"+(more>1?"s":""):"")+" &middot;<b>"+g.stats.repos+"</b> repos &middot; <b>"+g.stats.commits+"</b> of your commits &middot; <b>"+(g.stats.files||0)+"</b> files &middot; ";s+=langs.length?("mostly <b>"+esc(langs.slice(0,3).join(", "))+"</b>"):"no languages detected";if(top)s+=" &middot; most active: <b>"+esc(top.label)+"</b>";return s;}
 function nodeById(id){for(var i=0;i<GRAPH.nodes.length;i++)if(GRAPH.nodes[i].id===id)return GRAPH.nodes[i];return null;}
@@ -553,7 +986,7 @@ function agentBadge(d){if(!d.agents||!d.agents.length)return'';return d.agents.m
 function showDetail(d){var el=document.getElementById('detail');el.classList.remove('hidden');
 if(d.error){el.innerHTML="<h3>&mdash;</h3><div class='k'>"+esc(d.error)+"</div>";return;}
 if(d.type==='repo'){var chips="";['branch: '+(d.branch||'?'),d.commits+' commits',(d.dirty?d.dirty+' uncommitted':'clean'),(d.last?'last '+d.last:'')].concat(d.langs||[]).concat(d.tools||[]).forEach(function(x){if(x)chips+="<span class='tag'>"+esc(x)+"</span>";});
-el.innerHTML="<h3>"+esc(d.label)+"</h3><div class='chips'>"+chips+"</div>"+agentBadge(d)+"<button class='act' id='suggest' style='margin-top:12px'>Suggest next steps</button><div id='sugout'></div>";
+el.innerHTML="<h3>"+esc(d.label)+"</h3><div class='chips'>"+chips+"</div>"+lmWeeks(d)+lmNearHtml('repo:'+d.path)+agentBadge(d)+"<button class='act' id='suggest' style='margin-top:12px'>Suggest next steps</button><div id='sugout'></div>";lmNearWire(el);
 document.getElementById('suggest').addEventListener('click',function(){var o=document.getElementById('sugout');o.innerHTML="<div class='out2'>Thinking...</div>";api('/api/suggest',{path:d.path}).then(function(r){if(r.error==='not-connected'){o.innerHTML="<div class='out2'>Connect a model in Settings to get suggestions - Ollama is free and runs locally.</div>";return;}o.innerHTML="<div class='out2'>"+esc(r.text||'(no output)')+"</div>"+(r.footer?"<div class='rfoot'>"+esc(r.footer)+"</div>":"");});});return;}
 if(d.type==='lang'||d.type==='tool'){var lis=(d.repos||[]).map(function(r){return "<li>"+esc(r)+"</li>";}).join("");el.innerHTML="<h3>"+esc(d.label)+"</h3><div class='k'>Used in "+((d.repos||[]).length)+" repos</div><ul>"+lis+"</ul>";return;}
 if(d.type==='agent'){var m=d.meta||{};el.innerHTML="<h3>"+esc(d.label)+"</h3><div class='k'>"+(m.kind==='agent'?'AI coding agent you have installed':'editor you have installed')+"</div>"+(m.cmd?"<div class='out2' style='font-size:11px'>"+esc(m.cmd)+"</div>":"");return;}
@@ -592,9 +1025,9 @@ var rm=row.querySelector('.rm');if(rm&&rm.classList.contains('restore'))rm.addEv
 else if(rm)rm.addEventListener('click',function(){api('/api/tasks/remove',{id:id}).then(function(){var nx=row.nextElementSibling;if(nx&&nx.classList.contains('tchat'))nx.remove();row.remove();});});});}
 // Per-task Q&A: the button opens a thread under the row; answers come from the
 // connected model, grounded in the task's repo (and its pending changes).
-function askBtn(t){var n=(t.chat||[]).length;return "<button class='ask"+(n?" has":"")+"' title='"+(n?"questions &amp; answers about this task":"ask a question about this task")+"'>&#128172;"+(n?" "+Math.ceil(n/2):"")+"</button>";}
+function askBtn(t){var n=(t.chat||[]).length;return "<button class='ask"+(n?" has":"")+"' title='"+(n?"questions &amp; answers about this task":"ask a question about this task")+"'><i class=ic-chat></i>"+(n?" "+Math.ceil(n/2):"")+"</button>";}
 function taskById(id){var all=PENDTASKS.concat(ALLTASKS);for(var i=0;i<all.length;i++)if(all[i].id===id)return all[i];return null;}
-function stepsHtml(st){return st&&st.length?"<div class='steps'>"+st.map(function(x){return "<span>"+esc(x)+"</span>";}).join('')+"</div>":"";}
+function stepsHtml(st){return st&&st.length?"<details class='steps'><summary>"+st.length+(st.length>1?' steps':' step')+" &middot; "+esc(String(st[0]).charAt(0).toLowerCase()+String(st[0]).slice(1))+"</summary><ul>"+st.map(function(x){return "<li>"+esc(x)+"</li>";}).join('')+"</ul></details>":"";}
 function chatMsgs(chat){return (chat||[]).map(function(m){return "<div class='msg "+(m.role==='user'?'q':'a')+"'>"+esc(m.text)+(m.role==='user'?'':stepsHtml(m.steps))+"</div>";}).join("");}
 var CHATHINT="<div class='muted' style='font-size:12px'>Ask anything about this task &mdash; what it means, how to approach it, or what the agent changed. Answers draw on the repo&#39;s commits, README and rules.</div>";
 function wireAsk(row,id){var b=row.querySelector('.ask');if(b)b.addEventListener('click',function(){toggleChat(row,id);});}
@@ -609,9 +1042,9 @@ msgs.insertAdjacentHTML('beforeend',chatMsgs([{role:'user',text:q}])+"<div class
 api('/api/tasks/chat',{id:id,question:q}).then(function(r){send.disabled=false;var th=msgs.querySelector('.thinking');if(th)th.remove();
 if(r.error==='not-connected'){msgs.insertAdjacentHTML('beforeend',"<div class='msg a'>Connect a model in Settings to ask questions - Ollama is free and runs locally.</div>");return;}
 if(r.error){msgs.insertAdjacentHTML('beforeend',"<div class='msg a err'>"+esc(r.error)+"</div>");return;}
-t.chat=r.chat||[];msgs.innerHTML=chatMsgs(t.chat);btn.className='ask on has';btn.innerHTML="&#128172; "+Math.ceil(t.chat.length/2);}).catch(function(e){send.disabled=false;var th=msgs.querySelector('.thinking');if(th)th.remove();msgs.insertAdjacentHTML('beforeend',"<div class='msg a err'>"+esc(String((e&&e.message)||e))+"</div>");});}
+t.chat=r.chat||[];msgs.innerHTML=chatMsgs(t.chat);btn.className='ask on has';btn.innerHTML="<i class=ic-chat></i> "+Math.ceil(t.chat.length/2);}).catch(function(e){send.disabled=false;var th=msgs.querySelector('.thinking');if(th)th.remove();msgs.insertAdjacentHTML('beforeend',"<div class='msg a err'>"+esc(String((e&&e.message)||e))+"</div>");});}
 send.addEventListener('click',ask);inp.addEventListener('keydown',function(e){if(e.key==='Enter')ask();});
-box.querySelector('.askclear').addEventListener('click',function(){api('/api/tasks/chat/clear',{id:id}).then(function(){t.chat=[];msgs.innerHTML=CHATHINT;btn.className='ask on';btn.innerHTML='&#128172;';});});
+box.querySelector('.askclear').addEventListener('click',function(){api('/api/tasks/chat/clear',{id:id}).then(function(){t.chat=[];msgs.innerHTML=CHATHINT;btn.className='ask on';btn.innerHTML='<i class=ic-chat></i>';});});
 inp.focus();}
 function fchip(dim,val,label){var on=(TFILTER[dim]||'')===val;return "<button class='fchip"+(on?' on':'')+"' data-dim='"+dim+"' data-val='"+esc(val)+"'>"+esc(label)+"</button>";}
 function renderFilter(){var box=document.getElementById('taskfilter');
@@ -619,7 +1052,7 @@ if(TARCH){box.innerHTML="<button class='fchip on' id='archtoggle'>&#8617; back t
 var types={},repos={};ALLTASKS.forEach(function(t){types[t.type||'Features & other']=1;if(t.repo)repos[t.repo]=1;});
 var fb="<span class='fl'>Type</span>"+fchip('type','','All')+Object.keys(types).sort(function(a,b){return TORDER.indexOf(a)-TORDER.indexOf(b);}).map(function(t){return fchip('type',t,t);}).join('');
 fb+="<span class='fl'>Repo</span>"+fchip('repo','','All')+Object.keys(repos).sort().map(function(r){return fchip('repo',r,r);}).join('');
-fb+="<button class='fchip' id='archtoggle' style='margin-left:auto'>&#128451; archived</button>";
+fb+="<button class='fchip' id='archtoggle' style='margin-left:auto'><i class=ic-archive></i> archived</button>";
 box.innerHTML=fb;
 box.querySelectorAll('.fchip[data-dim]').forEach(function(c){c.addEventListener('click',function(){TFILTER[c.getAttribute('data-dim')]=c.getAttribute('data-val');renderTasks();});});
 document.getElementById('archtoggle').addEventListener('click',loadArchived);}
@@ -703,12 +1136,12 @@ function relHtml(rl){return "<div class='qrel"+(rl.waiting?" wait":"")+"'>Needs 
 (rl.waiting==='npm'?" &middot; not published yet, so this can't be done yet":rl.waiting==='install'?" &middot; "+(rl.name==='symbiot'?"update Symbiot first":"install it first"):"")+"</div>";}
 function askHtml(a){var k=a.ask;if(!k)return '';var qs=k.questions||[],ss=k.suggestions||[];if(!qs.length&&!ss.length)return '';
 var h="<div class='aq' data-id='"+esc(a.id)+"'>";
-if(qs.length){h+="<h4>&#10067; "+qs.length+" question"+(qs.length>1?"s":"")+" for you</h4>";
+if(qs.length){h+="<h4><i class=ic-ask></i> "+qs.length+" question"+(qs.length>1?"s":"")+" for you</h4>";
 qs.forEach(function(q,i){var rl=q.release;h+="<div class='q' data-i='"+i+"'><div class='qt'>"+esc(q.q)+"</div>"+(q.context?"<div class='qc'>"+esc(q.context)+"</div>":"")+(rl?relHtml(rl):"");
 (q.options||[]).forEach(function(o,j){var off=rl&&rl.waiting&&DONEOPT.test(o);h+="<label class='opt"+(off?" off":"")+"'><input type='radio' name='q_"+esc(a.id)+"_"+i+"' value='"+j+"'"+(off?" disabled":"")+"><span>"+whoHtml(o)+(off?" <i>(once "+esc(rl.name+" "+rl.needs)+" is installed)</i>":"")+"</span></label>";});
 h+="<input class='qother' placeholder='"+((q.options&&q.options.length)?"or answer in your own words":"your answer")+"'></div>";});
 h+="<div class='row'><button class='act qsend' title='save the answers and hand the repo back to your agent'>Send answers &amp; continue</button><button class='ghost qsave' title='save the answers for the next run'>Save only</button></div>";}
-if(ss.length){var shown=IDEASOPEN[a.path]?ss.length:(k.ideasShown||ss.length);h+="<h4>&#128161; Ideas from the agent</h4>";ss.forEach(function(s,i){if(i>=shown)return;h+="<div class='idea'><span style='flex:1'>"+esc(s.text)+(s.other?" <span class='tag' title='this idea is for another project, so + task adds it to that one'>for "+esc(s.repo)+"</span>":"")+"</span>"+(s.added?"<span class='tag'>in Tasks</span>":"<button class='ghost qidea' data-i='"+i+"' style='padding:3px 9px;font-size:12px'>+ task</button><button class='ghost qskip' data-i='"+i+"' title='turn this idea down: the next one moves up, and the agent is told not to suggest it again' style='padding:3px 9px;font-size:12px'>Skip</button>")+"</div>";});
+if(ss.length){var shown=IDEASOPEN[a.path]?ss.length:(k.ideasShown||ss.length);h+="<h4><i class=ic-idea></i> Ideas from the agent</h4>";ss.forEach(function(s,i){if(i>=shown)return;h+="<div class='idea'><span style='flex:1'>"+esc(s.text)+(s.other?" <span class='tag' title='this idea is for another project, so + task adds it to that one'>for "+esc(s.repo)+"</span>":"")+"</span>"+(s.added?"<span class='tag'>in Tasks</span>":"<button class='ghost qidea' data-i='"+i+"' style='padding:3px 9px;font-size:12px'>+ task</button><button class='ghost qskip' data-i='"+i+"' title='turn this idea down: the next one moves up, and the agent is told not to suggest it again' style='padding:3px 9px;font-size:12px'>Skip</button>")+"</div>";});
 if(ss.length>shown)h+="<div class='row'><button class='ghost qmore' title='the agent ranks its ideas best first: weigh these two before adding more'>"+(ss.length-shown)+" more idea"+(ss.length-shown>1?"s":"")+", ranked lower</button></div>";}
 return h+"</div>";}
 var IDEASOPEN={};
@@ -723,7 +1156,7 @@ if(!ans.length){msg.innerHTML="<div class='note err'>Pick an option or type an a
 box.querySelectorAll('button').forEach(function(b){b.disabled=true;});
 api('/api/agents/answer',{path:a.path,answers:ans,rerun:rerun}).then(function(r){
 if(!r||r.error){box.querySelectorAll('button').forEach(function(b){b.disabled=false;});msg.innerHTML="<div class='note err'>"+esc((r&&r.error)||'failed')+"</div>";return;}
-msg.innerHTML="<div class='note ok'>&#10003; Saved "+r.saved+" answer"+(r.saved>1?"s":"")+" for <b>"+esc(a.name)+"</b> in .symbiot/ANSWERS.md"+(r.rerun?" &middot; your agent is picking them up now.":".")+(r.yours&&r.yours.length?"<div class='err'>&#128100; Still yours to do: "+esc(r.yours.join(' '))+"</div>":"")+(r.note?"<div class='muted'>"+esc(r.note)+"</div>":"")+"</div>";loadAgents();});}
+msg.innerHTML="<div class='note ok'>&#10003; Saved "+r.saved+" answer"+(r.saved>1?"s":"")+" for <b>"+esc(a.name)+"</b> in .symbiot/ANSWERS.md"+(r.rerun?" &middot; your agent is picking them up now.":".")+(r.yours&&r.yours.length?"<div class='err'><i class=ic-person></i> Still yours to do: "+esc(r.yours.join(' '))+"</div>":"")+(r.note?"<div class='muted'>"+esc(r.note)+"</div>":"")+"</div>";loadAgents();});}
 var s1=box.querySelector('.qsend'),s2=box.querySelector('.qsave');
 if(s1)s1.addEventListener('click',function(){send(true);});if(s2)s2.addEventListener('click',function(){send(false);});
 var more=box.querySelector('.qmore');if(more)more.addEventListener('click',function(){IDEASOPEN[a.path]=true;loadAgents();});
@@ -734,7 +1167,7 @@ box.querySelectorAll('.qskip').forEach(function(btn){btn.addEventListener('click
 api('/api/agents/skip',{path:a.path,text:s.text}).then(function(r){if(!r||r.error){btn.disabled=false;document.getElementById('agentsmsg').innerHTML="<div class='note err'>"+esc((r&&r.error)||'failed')+"</div>";return;}loadAgents();});});});});}
 // A step of yours an answer picked (👤 You): the next run waits for it (agents.mjs waitingFor)
 function waitHtml(a){var w=a.waiting;if(!w)return '';var fs=(w.files||[]).map(function(f){return "<code>"+esc(f)+"</code>";}).join(" or ");if(w.cmd)fs=(fs?fs+" or ":"")+"the agent command in Settings &rarr; Handoff";
-return "<div class='aq'><h4>&#9208; Waiting on your step</h4><div class='qt'>&#128100; "+esc(w.step)+"</div><div class='qc'>"+(fs?"Your agent "+(w.rerun?"starts by itself":"can start")+" once "+fs+" changes"+(w.rerun?", while Symbiot runs":"")+". Done it some other way?":"Your agent waits for it, so it doesn't stop on the same questions again.")+" Start it now once it's done.</div><div class='row'><button class='act wstart' data-id='"+esc(a.id)+"'>Start it now</button></div></div>";}
+return "<div class='aq'><h4><i class=ic-pause></i> Waiting on your step</h4><div class='qt'><i class=ic-person></i> "+esc(w.step)+"</div><div class='qc'>"+(fs?"Your agent "+(w.rerun?"starts by itself":"can start")+" once "+fs+" changes"+(w.rerun?", while Symbiot runs":"")+". Done it some other way?":"Your agent waits for it, so it doesn't stop on the same questions again.")+" Start it now once it's done.</div><div class='row'><button class='act wstart' data-id='"+esc(a.id)+"'>Start it now</button></div></div>";}
 function wireWaits(el){el.querySelectorAll('.wstart').forEach(function(btn){btn.addEventListener('click',function(){var a=agentById(btn.getAttribute('data-id'));if(!a)return;btn.disabled=true;
 api('/api/open',{path:a.path,force:true}).then(function(x){var msg=document.getElementById('agentsmsg');msg.innerHTML=x&&x.opened?"<div class='note ok'>&#10003; Started your agent in <b>"+esc(a.name)+"</b>.</div>":"<div class='note err'>"+esc(a.name)+": "+(x&&x.busy?"an agent is already running there.":"it didn&#39;t start. Check the command in Settings.")+"</div>";loadAgents();}).catch(function(e){btn.disabled=false;document.getElementById('agentsmsg').innerHTML="<div class='note err'>"+esc(String((e&&e.message)||e))+"</div>";});});});}
 // What a run left for Symbiot's memory (.symbiot/REMEMBER.json, handback.mjs): nothing goes in until Remember
@@ -769,8 +1202,8 @@ if(!w){if(run)h+="<div class='bar'><i></i></div>";if(pg)h+="<div class='wkstats'
 var stats=[];if(w.model)stats.push("<span class='wkstat'>"+esc(w.model.split('[')[0])+"</span>");stats.push("<span class='wkstat'><b>"+w.count+"</b> step"+(w.count===1?'':'s')+"</span>");
 if(w.turns!=null)stats.push("<span class='wkstat'><b>"+w.turns+"</b> turns</span>");if(w.tokens)stats.push("<span class='wkstat'><b>"+(w.tokens>999999?(w.tokens/1e6).toFixed(1)+'M':w.tokens>999?Math.round(w.tokens/1000)+'k':w.tokens)+"</b> tokens</span>");
 if(w.cost!=null)stats.push("<span class='wkstat'><b>$"+w.cost.toFixed(2)+"</b></span>");if(w.tests)stats.push("<span class='wktest"+(w.tests.failed?' bad':'')+"'>"+w.tests.passed+" passed &middot; "+w.tests.failed+" failed</span>");if(w.errors)stats.push("<span class='wktest bad'>"+w.errors+" error"+(w.errors>1?'s':'')+"</span>");
-h+="<div class='wkstats'>"+stats.join('')+"</div>";
 if(run&&w.doing)h+="<div class='wkdoing'>"+esc(w.doing)+"&hellip;</div>";
+var first=(w.final||'').split(String.fromCharCode(10))[0];if(!run&&first)h+="<div class='wkfinal'>"+esc(first.length>180?first.slice(0,179)+'\u2026':first)+"</div>";
 var boxes=[];
 if(w.todos&&w.todos.length||pg){var td="<div class='wkbox'><div class='wkh'>"+(pg?wkRing(pg.done,pg.total):'')+"<span>its to-do list</span></div>";
 (w.todos||[]).forEach(function(t){td+="<div class='wktodo "+esc(t.status)+"'><i></i><span>"+esc(t.status==='in_progress'?t.active:t.text)+"</span></div>";});
@@ -780,8 +1213,9 @@ w.steps.slice(-10).forEach(function(x){sp+="<div class='wkstep "+esc(x.status)+"
 if(w.count>10)sp+="<div class='muted' style='font-size:11px;margin-top:4px'>and "+(w.count-10)+" earlier step"+(w.count-10>1?'s':'')+"</div>";boxes.push(sp+"</div>");}
 var fs=Object.keys(w.files||{});if(fs.length){var mx=Math.max.apply(null,fs.map(function(f){return w.files[f];}))||1,fb="<div class='wkbox'><div class='wkh'><span>files it changed</span></div>";
 fs.sort(function(x,y){return w.files[y]-w.files[x];}).slice(0,8).forEach(function(f){fb+="<div class='wkfile'><span class='fn'>"+esc(f)+"</span><span class='fb'><i style='width:"+Math.round(100*w.files[f]/mx)+"%'></i></span><span class='wm'>"+w.files[f]+"&times;</span></div>";});boxes.push(fb+"</div>");}
-if(boxes.length)h+="<div class='wk'>"+boxes.join('')+"</div>";
-if(!run&&w.final)h+="<div class='wkfinal'>"+esc(w.final)+"</div>";
+var todoBox=boxes.length&&(w.todos&&w.todos.length||pg)?boxes.shift():'';
+if(todoBox)h+="<div class='wk'>"+todoBox+"</div>";
+h+="<details class='wkraw'><summary>details: steps, files, cost</summary><div class='wkstats'>"+stats.join('')+"</div>"+(boxes.length?"<div class='wk'>"+boxes.join('')+"</div>":"")+(!run&&w.final?"<div class='wkfinal'>"+esc(w.final)+"</div>":"")+"</details>";
 return h;}
 function loadAgents(){loadLanes();api('/api/agents').then(function(list){var el=document.getElementById('agentslist');
 if(!list||!list.length){AGENTLIST=[];el.innerHTML="<div class='muted' style='margin-top:12px'>No agents yet. In <b>Tasks</b>, tick ideas and hit <b>Send to repos</b> (with an agent command set in Settings) &mdash; you'll watch it work here.</div>";stopAgentsPoll();return;}
@@ -797,8 +1231,8 @@ if(nQs(a))st+=" &middot; <span style='color:var(--amber)'>needs your answers</sp
 if(a.remember&&a.remember.length)st+=" &middot; <span style='color:var(--amber)'>found "+a.remember.length+" thing"+(a.remember.length>1?"s":"")+" to remember</span>";
 if(a.held!=null){var hn=a.held.length,ht=a.held.map(function(t){return "&bull; "+esc(t).replace(/'/g,'&#39;');}).join('&#10;');
 ht+=(hn?'&#10;&#10;':'')+(a.status==='running'?"Sent while this agent was running. They wait in .symbiot/TASKS.next.md, replace TASKS.md when it finishes (keeping its ticks), and an agent starts on them then.":"They wait in .symbiot/TASKS.next.md for the agent running in this folder to finish. After that, an agent starts on them the next time the Tasks tab checks this repo, or send again.");
-st+=" &middot; <span style='color:var(--amber);cursor:help' title='"+ht+"'>&#9208; "+(hn?hn+" task"+(hn>1?"s":"")+" held":"tasks held")+"</span>";}
-var b="<div class='dh'><span class='orb "+cls+"'></span><span class='dn'>"+esc(a.name)+"</span><span class='dd'>"+st+"</span></div>";
+st+=" &middot; <span style='color:var(--amber);cursor:help' title='"+ht+"'><i class=ic-pause></i> "+(hn?hn+" task"+(hn>1?"s":"")+" held":"tasks held")+"</span>";}
+var b="<div class='dh'><span class='orb "+cls+"'></span><span class='dn'>"+esc(String(a.name||'').split('**').join(''))+"</span><span class='dd'>"+st+"</span></div>";
 b+=workHtml(a);
 var ch=a.changed;
 if(ch&&(ch.dirty||ch.stat||(ch.commits&&ch.commits.length))){
@@ -821,8 +1255,8 @@ var ci=document.getElementById('driftci').checked?'1':'0';var ft=document.getEle
 api('/api/drift?ci='+ci+'&fetch='+ft).then(function(d){driftLoaded=true;var repos=d.repos||[];var risky=repos.filter(function(r){return r.flags.some(function(f){return f.level==='warn';});});
 var h="<div class='k' style='margin:10px 0'><b>"+repos.length+"</b> repos &middot; <b>"+risky.length+"</b> with risks"+(d.partial?" &middot; <span class='err'>partial &mdash; the scan hit its time limit</span>":"")+"</div>";
 repos.forEach(function(r){if(!r.flags.length)return;var warn=r.flags.some(function(f){return f.level==='warn';});
-h+="<div class='drift'><div class='dh'><span class='"+(warn?'dot-w':'dot-c')+"'></span><span class='dn'>"+esc(r.name)+"</span><span class='dd'>"+esc(r.def)+(r.fetchAgeDays!=null&&r.fetchAgeDays>3?" &middot; fetch "+r.fetchAgeDays+"d old":"")+"</span></div><ul>";
-r.flags.forEach(function(f){h+="<li class='"+esc(f.level)+"'>"+(f.level==='warn'?'&#9888; ':'&middot; ')+esc(f.text)+(f.evidence?" <span class='ev'>["+esc(f.evidence)+"]</span>":"")+"</li>";});
+h+="<div class='drift"+(warn?' risk':'')+"'><div class='dh'><span class='dbead' aria-hidden='true'></span><span class='dn'>"+esc(r.name)+"</span><span class='dd'>"+esc(r.def)+(r.fetchAgeDays!=null&&r.fetchAgeDays>3?" &middot; fetch "+r.fetchAgeDays+"d old":"")+"</span></div><ul>";
+r.flags.forEach(function(f){h+="<li class='"+esc(f.level)+"'>"+esc(f.text)+(f.evidence?" <span class='ev'>["+esc(f.evidence)+"]</span>":"")+"</li>";});
 h+="</ul></div>";});
 var clean=repos.filter(function(r){return !r.flags.length;}).map(function(r){return r.name;});
 if(clean.length)h+="<div class='muted' style='margin-top:10px'>clean: "+esc(clean.join(", "))+"</div>";
@@ -835,9 +1269,9 @@ o.innerHTML="<div class='muted' style='margin-top:10px'><span class='dot-c' styl
 api('/api/tasks/push',{type:TFILTER.type||'',repo:TFILTER.repo||''}).then(function(r){
 if(r.empty){btn.disabled=false;o.innerHTML="<div class='muted' style='margin-top:10px'>No open tasks to send. Tick ideas in a repo review, or add tasks above.</div>";return;}
 var n=(r.written||[]).length;var opens=[];var h="<div class='drift' style='margin-top:10px'><div class='dh'><span class='dot-c'></span><span class='dn'>Done &mdash; wrote "+n+" file"+(n===1?"":"s")+"</span></div>";
-if(n){h+="<ul>";r.written.forEach(function(w){h+="<li class='info'>&#10003; <b>"+esc(w.name)+"</b> <span class='ev'>"+esc(w.file)+" ("+w.count+" task"+(w.count===1?"":"s")+")</span>"+(w.held?" <span class='ev'>&#9208; held: an agent is still running there, so these land when it finishes</span>":"")+"</li>";});h+="</ul>";}
-if(r.unresolved&&r.unresolved.length){var names=r.unresolved.map(function(u){return u.name;}).join(", ");var hasNoRepo=r.unresolved.some(function(u){return u.name==='(no repo)';});h+="<div class='dd' style='margin-top:6px'>&#9888; not sent: "+esc(names)+". "+(hasNoRepo?"Pick a repo in the dropdown next to <b>Add</b> so the task has somewhere to go.":"That repo isn't in the map &mdash; add its folder in Settings.")+"</div>";}
-if(r.handoff&&r.written&&r.written.length){opens=r.written.map(function(w){return api('/api/open',{path:w.path}).then(function(x){if(x&&x.blocked){var d=document.createElement('div');d.className='dd';d.innerHTML="&#9208; <b>"+esc(w.name)+"</b>: "+esc(x.note)+" <button class='ghost' style='padding:2px 8px;font-size:12px'>Start it anyway</button>";d.querySelector('button').addEventListener('click',function(){this.disabled=true;api('/api/open',{path:w.path,force:true}).then(function(y){d.innerHTML=y&&y.opened?"&#10003; Started an agent in <b>"+esc(w.name)+"</b>.":"&#9888; <b>"+esc(w.name)+"</b>: "+(y&&y.busy?"an agent is already running there.":"it didn&#39;t start. Check the command in Settings.");});});o.appendChild(d);}if(x&&x.busy){var d=document.createElement('div');d.className='dd';d.innerHTML="&#9888; <b>"+esc(w.name)+"</b> already has an agent running, so another wasn&#39;t started. "+(x.auto?"Its new tasks are held, and an agent starts on them when it finishes.":"Its new tasks are held until it finishes. After that, an agent starts on them the next time this tab checks the repo, or send again.");o.appendChild(d);}}).catch(function(){});});h+="<div class='dd' style='margin-top:8px'>&#129302; Handed "+n+" repo(s) to your agent &mdash; opening the <b>Agents</b> tab to watch it work&hellip;</div>";setTimeout(function(){setTab('agents');},500);}
+if(n){h+="<ul>";r.written.forEach(function(w){h+="<li class='info'>&#10003; <b>"+esc(w.name)+"</b> <span class='ev'>"+esc(w.file)+" ("+w.count+" task"+(w.count===1?"":"s")+")</span>"+(w.held?" <span class='ev'><i class=ic-pause></i> held: an agent is still running there, so these land when it finishes</span>":"")+"</li>";});h+="</ul>";}
+if(r.unresolved&&r.unresolved.length){var names=r.unresolved.map(function(u){return u.name;}).join(", ");var hasNoRepo=r.unresolved.some(function(u){return u.name==='(no repo)';});h+="<div class='dd' style='margin-top:6px'><i class=ic-warn></i> not sent: "+esc(names)+". "+(hasNoRepo?"Pick a repo in the dropdown next to <b>Add</b> so the task has somewhere to go.":"That repo isn't in the map &mdash; add its folder in Settings.")+"</div>";}
+if(r.handoff&&r.written&&r.written.length){opens=r.written.map(function(w){return api('/api/open',{path:w.path}).then(function(x){if(x&&x.blocked){var d=document.createElement('div');d.className='dd';d.innerHTML="<i class=ic-pause></i> <b>"+esc(w.name)+"</b>: "+esc(x.note)+" <button class='ghost' style='padding:2px 8px;font-size:12px'>Start it anyway</button>";d.querySelector('button').addEventListener('click',function(){this.disabled=true;api('/api/open',{path:w.path,force:true}).then(function(y){d.innerHTML=y&&y.opened?"&#10003; Started an agent in <b>"+esc(w.name)+"</b>.":"<i class=ic-warn></i> <b>"+esc(w.name)+"</b>: "+(y&&y.busy?"an agent is already running there.":"it didn&#39;t start. Check the command in Settings.");});});o.appendChild(d);}if(x&&x.busy){var d=document.createElement('div');d.className='dd';d.innerHTML="<i class=ic-warn></i> <b>"+esc(w.name)+"</b> already has an agent running, so another wasn&#39;t started. "+(x.auto?"Its new tasks are held, and an agent starts on them when it finishes.":"Its new tasks are held until it finishes. After that, an agent starts on them the next time this tab checks the repo, or send again.");o.appendChild(d);}}).catch(function(){});});h+="<div class='dd' style='margin-top:8px'><i class=ic-bot></i> Handed "+n+" repo(s) to your agent &mdash; opening the <b>Agents</b> tab to watch it work&hellip;</div>";setTimeout(function(){setTab('agents');},500);}
 else{h+="<div class='dd' style='margin-top:8px'>Set an <b>agent command</b> in Settings to auto-run it on send (and watch it in the Agents tab). For now, tell your agent: <b>“Read .symbiot/TASKS.md and implement the unchecked items.”</b></div>";}
 h+="</div>";
 o.innerHTML=h;
@@ -850,9 +1284,9 @@ function linkGap(){var off=LINKCONN.filter(function(x){return !x.ready;});if(!of
 return "&#9993;&#65039; "+n+(one?" is":" are")+" linked in Symbiot, but not "+(off.some(function(x){return x.connector;})?"ready ":"")+"as a Claude connector, so your agent&#39;s runs have no tools for "+(one?"it":"them")+": linking a site here signs Symbiot&#39;s browser in, not Claude. Connect "+n+" in claude.ai &rarr; Settings &rarr; Connectors, and the next run gets "+(one?"it":"them")+" by itself. Until then a run sees only what&#39;s new there (Watch).";}
 function renderConnectors(){var el=document.getElementById('agentconnectors'),gap=linkGap();if(!CONNECTORS.length){el.innerHTML=/^\\s*claude\\b/.test(document.getElementById('agentcmd').value)?gap:'';return;}
 var nm=function(c){return "<b>"+esc(c.name.replace(/^claude\\.ai\\s+/i,''))+"</b>";},ready=CONNECTORS.filter(function(c){return c.ready;}),wait=CONNECTORS.filter(function(c){return !c.ready;});
-var cmd=document.getElementById('agentcmd').value;if(/orca-ide/.test(cmd)&&/claude/.test(cmd)){el.innerHTML="&#128268; Claude in Orca&#39;s tab asks you before it uses your connectors ("+CONNECTORS.map(nm).join(", ")+").";return;}
-if(!/^\\s*claude\\b/.test(cmd)){el.innerHTML="&#128268; Your Claude connectors ("+CONNECTORS.map(nm).join(", ")+") reach Claude Code runs only. This command isn&#39;t Claude, so its runs can&#39;t use them.";return;}
-el.innerHTML=(ready.length?"&#128268; Your agent&#39;s runs can use "+ready.map(nm).join(", ")+": linked to Claude, so each run allows their tools.":"")+(wait.length?(ready.length?" ":"&#128268; ")+wait.map(nm).join(", ")+(wait.length===1?" needs":" need")+" authorizing in your claude.ai connector settings first.":"")+(gap?" "+gap:"");}
+var cmd=document.getElementById('agentcmd').value;if(/orca-ide/.test(cmd)&&/claude/.test(cmd)){el.innerHTML="<i class=ic-plug></i> Claude in Orca&#39;s tab asks you before it uses your connectors ("+CONNECTORS.map(nm).join(", ")+").";return;}
+if(!/^\\s*claude\\b/.test(cmd)){el.innerHTML="<i class=ic-plug></i> Your Claude connectors ("+CONNECTORS.map(nm).join(", ")+") reach Claude Code runs only. This command isn&#39;t Claude, so its runs can&#39;t use them.";return;}
+el.innerHTML=(ready.length?"<i class=ic-plug></i> Your agent&#39;s runs can use "+ready.map(nm).join(", ")+": linked to Claude, so each run allows their tools.":"")+(wait.length?(ready.length?" ":"<i class=ic-plug></i> ")+wait.map(nm).join(", ")+(wait.length===1?" needs":" need")+" authorizing in your claude.ai connector settings first.":"")+(gap?" "+gap:"");}
 function loadAgentCfg(){api('/api/agentcfg').then(function(d){document.getElementById('agentcmd').value=d.cmd||'';
 CONNECTORS=(d.connectors&&d.connectors.list)||[];LINKCONN=(d.connectors&&d.connectors.links)||[];renderConnectors();
 var chips=[];(d.agents||[]).forEach(function(a){chips.push(a);});(d.editors||[]).forEach(function(e){chips.push(e);});
@@ -917,20 +1351,20 @@ var pf=$('pforget');if(pf)pf.addEventListener('click',function(){if(typeof confi
 // linked, amber waiting for you to sign in (or signed out), green linked. Shown
 // in Settings, and on the Dashboard until something is linked.
 var LINKS=null;
-var LINKWORD={ok:'linked',signin:'sign in, then close the window',signedout:'signed out',error:'needs a fix'};
+var LINKWORD={ok:'linked',signin:'sign in, then close it',signedout:'signed out',error:'needs a fix'};
 function escQ(t){return esc(t).replace(/'/g,'&#39;');}
-function linksHtml(d,board){var h=board?"<div class='note muted'>Link your work to see what arrives there here, and in Week and Standup:</div>":"";
+// Connections: a column per kind of site; each site a bead in the look: solid when
+// linked, amber when it wants you to sign in, hollow when it isn't linked. Link,
+// check (↻) and Unlink show on hover (always on touch).
+function linksHtml(d,board){var h="<div class='cxh'><span>Connections</span><small>"+(d.linked?"What Symbiot watches for you. Link more to see what arrives there, here and in Week and Standup.":"Link your work to see what arrives there, here and in Week and Standup.")+"</small></div>";
 if(d.error)h+="<div class='note err'>"+esc(d.error)+"</div>";
-d.groups.forEach(function(g){h+="<div class='lgroup'><span class='fl'>"+esc(g)+"</span>";
-d.items.filter(function(x){return x.group===g;}).forEach(function(it){var on=it.state!=='off';
-h+="<span class='lnk "+escQ(it.state)+"' data-id='"+escQ(it.id)+"'><button class='fchip lbtn' title='"+escQ(it.note||(on?'open '+it.url+' to sign in again':'sign in at '+it.url+' and link it'))+"'><span class='dot-c' style='background:"+(it.state==='ok'?'var(--green)':on?'var(--amber)':'var(--line)')+"'></span>"+esc(it.name)+"</button>"+
-(on?"<span class='lst'>"+esc(LINKWORD[it.state]||'')+"</span><button class='lmore' title='check it now'>&#8635;</button><button class='lrm' title='unlink: stop watching it and stop trusting it'>&times;</button>":"")+"</span>";});
-h+="</div>";});return h;}
+h+="<div class='cxg'>"+d.groups.map(function(g){return "<div class='cxc'><div class='cxl'>"+esc(g)+"</div>"+d.items.filter(function(x){return x.group===g;}).map(function(it){var on=it.state!=='off';
+return "<div class='lnk cx "+escQ(it.state)+"' data-id='"+escQ(it.id)+"'><button type='button' class='lbtn' title='"+escQ(it.note||(on?'open '+it.url+' to sign in again':'sign in at '+it.url+' and link it'))+"'><span class='cxb' aria-hidden='true'></span><span class='cxn'>"+esc(it.name)+"</span><span class='cxs'>"+(on?esc(LINKWORD[it.state]||''):'Link')+"</span></button>"+
+(on?"<button type='button' class='lmore' title='check it now' aria-label='Check "+escQ(it.name)+" now'>&#8635;</button><button type='button' class='lrm' title='unlink: stop watching it and stop trusting it'>Unlink</button>":"")+"</div>";}).join('')+"</div>";}).join('')+"</div>";return h;}
 function linksOut(html){var o=document.getElementById('linksmsg');if(o)o.innerHTML=html;var b=document.getElementById('boardmsg');if(b&&LINKS&&!LINKS.linked)b.innerHTML=html;}
 function renderLinks(){if(!LINKS)return;['links','boardlinks'].forEach(function(id){var el=document.getElementById(id);if(!el)return;
-if(id==='boardlinks'&&LINKS.linked){el.innerHTML='';return;}
 el.innerHTML=linksHtml(LINKS,id==='boardlinks');
-el.querySelectorAll('.lnk').forEach(function(sp){var lid=sp.getAttribute('data-id'),name=sp.querySelector('.lbtn').textContent;
+el.querySelectorAll('.lnk').forEach(function(sp){var lid=sp.getAttribute('data-id'),nm=sp.querySelector('.cxn'),name=nm?nm.textContent:sp.querySelector('.lbtn').textContent;
 sp.querySelector('.lbtn').addEventListener('click',function(){linksOut("<div class='note muted'>Opening "+esc(name)+"&hellip;</div>");
 api('/api/links/link',{id:lid}).then(function(r){if(!r||r.error){linksOut("<div class='note err'>"+esc(name)+": "+esc((r&&r.error)||'failed')+"</div>");loadLinks();return;}
 linksOut("<div class='note ok'>Opened "+esc(name)+" in Symbiot's browser. Sign in there as you normally do, then close that window: Symbiot checks it within a minute.</div>");loadLinks();
@@ -992,7 +1426,7 @@ function scanLine(s){return 'Mapping your work… '+s.phase+(s.total?' '+s.done+
 function loadMap(){var p=document.getElementById("profile");p.textContent="Mapping your work...";document.getElementById("graph").innerHTML="";sel=null;hideDetail();hideReview();var done=false;
 function poll(){if(done)return;api('/api/scan').then(function(s){if(done)return;if(s&&s.active&&s.phase)p.textContent=scanLine(s);setTimeout(poll,600);}).catch(function(){});}
 setTimeout(poll,400);
-api("/api/map").then(function(g){done=true;mapLoaded=true;if(!g.nodes||!g.nodes.length){p.textContent="No git repositories found under your home folder.";return;}GRAPH=g;fillTaskRepos();layout(g.nodes,g.edges);view={k:1,x:0,y:0};p.innerHTML=profileLine(g)+(g.stats&&g.stats.partial?" &middot; <span class='err'>partial &mdash; the scan hit its time limit</span>":"");var af=$('allowfiles');if(af)af.addEventListener('click',function(){SymbiotAndroid.storage();});var ut=$('usetermux');if(ut)ut.addEventListener('click',function(){SymbiotAndroid.openTermux();});render();});}
+api("/api/map").then(function(g){done=true;mapLoaded=true;if(!g.nodes||!g.nodes.length){p.textContent="No git repositories found under your home folder.";return;}GRAPH=g;fillTaskRepos();layout(g.nodes,g.edges);lmBuild(g);view={k:1,x:0,y:0};p.innerHTML=profileLine(g)+(g.stats&&g.stats.partial?" &middot; <span class='err'>partial &mdash; the scan hit its time limit</span>":"");var af=$('allowfiles');if(af)af.addEventListener('click',function(){SymbiotAndroid.storage();});var ut=$('usetermux');if(ut)ut.addEventListener('click',function(){SymbiotAndroid.openTermux();});render();});}
 // The Android app calls this when you come back having allowed file access, so
 // the map rescans instead of staying empty.
 window.symbiotStorageGranted=function(){if(current==='map')loadMap();else mapLoaded=false;};
@@ -1154,14 +1588,17 @@ var vb=el.querySelector('.pvoice');if(vb)vb.addEventListener('click',function(){
 api('/api/posts/voice',{confirmed:true}).then(function(r){vb.disabled=false;vb.textContent='Fill from LinkedIn';if(!r||r.error){postsMsg('err',esc((r&&r.error)||'failed'));return;}
 postsMsg('ok',"&#10003; Added "+r.added+" of your LinkedIn posts: "+r.total+" in <code>"+esc(r.file)+"</code>. Read them over, and delete any that don&#39;t sound like you.");loadPostsUI();}).catch(function(e){vb.disabled=false;vb.textContent='Fill from LinkedIn';postsMsg('err',esc(String((e&&e.message)||e)));});});}
 // ---- Dashboard: a card per page you watch (your inbox, GitHub, WhatsApp…), what's new on each ----
-var BOARD=null;var BOARDICON={mail:'&#9993;&#65039;',github:'&#128276;',chat:'&#128172;',social:'&#128101;',page:'&#127760;'};
+var BOARD=null;
 // a chat's line says who its last message is from (watch.mjs fromOf): only unread ones count as waiting on you
 var CHATFROM={them:'unread from them',you:'you sent the last one',unknown:'nothing unread, maybe yours'};
 // Talk it over (watch.mjs boardChat): a chat on a card, open by its id, with what's half typed kept across a refresh
 var BTALK={},BTALKDRAFT={},BTALKBUSY=0;
 var TALKHINT="<div class='muted' style='font-size:12px'>Go over what's new here with your AI: what needs you, and what to say to whom. Then click <b>Draft a reply</b> on one, and your agent writes it the way you agreed here. Your AI is sent what this card lists (for mail: the sender, subject and preview).</div>";
 function talking(){var f=document.activeElement;return BTALKBUSY>0||!!(f&&f.closest&&f.closest('.btalk'));}
-function loadBoard(){api('/api/watch/board?hours='+(+$('boardhours').value||24)).then(function(b){if(b&&b.cards){BOARD=b;if(!talking())renderBoard();}});loadAwaiting();loadPostsUI();}
+var BOARDH=24;
+function loadBoard(){api('/api/watch/board?hours='+BOARDH).then(function(b){if(b&&b.cards){BOARD=b;if(!talking())renderBoard();}});loadAwaiting();loadPostsUI();}
+function boardMsg(cls,html){$('boardmsg').innerHTML="<div class='note "+cls+"'>"+html+"</div>";}
+
 // Replies an agent's email waits on (handback.mjs): Symbiot watches your inbox for them, and hands each on when it's in
 var AWAITWORD={waiting:'waiting',replied:'replied',error:"replied, but the next step didn't start"};
 function loadAwaiting(){api('/api/awaiting').then(function(d){var el=$('boardawait');if(!el||!d)return;var ws=d.waits||[];
@@ -1170,7 +1607,6 @@ el.innerHTML="<div class='tgroup' style='margin-top:14px'>Waiting on replies <sp
 ws.map(function(w){var who=(w.to||[]).join(', ')||'?',st=w.status==='waiting'?'waiting since '+agoTxt(w.sent):(AWAITWORD[w.status]||w.status)+(w.reply?' '+agoTxt(w.reply.ts):'')+(w.handed?' &rarr; '+(w.handed==='ops'?'an agent':esc(w.handed)+'&#39;s agent')+' has the next step':'');
 return "<div class='task'><span class='t'><b>"+esc(who)+"</b>: "+esc(w.subject)+(w.asked?"<div class='muted' style='font-size:12px'>asked for: "+esc(w.asked)+"</div>":"")+(w.error?"<div class='note err'>"+esc(w.error)+"</div>":"")+"</span><span class='rp'"+(w.status==='waiting'?" style='color:var(--amber)'":"")+">"+st+"</span>"+(w.status==='waiting'?"<button class='ghost astop' data-id='"+esc(w.id)+"' title='stop looking for this reply' style='padding:3px 9px;font-size:12px'>Stop waiting</button>":"")+"</div>";}).join('');
 el.querySelectorAll('.astop').forEach(function(btn){btn.addEventListener('click',function(){btn.disabled=true;api('/api/awaiting/stop',{id:btn.getAttribute('data-id')}).then(function(r){if(!r||r.error){btn.disabled=false;boardMsg('err',esc((r&&r.error)||'failed'));return;}loadAwaiting();});});});});}
-function boardMsg(cls,html){$('boardmsg').innerHTML="<div class='note "+cls+"'>"+html+"</div>";}
 // ---- Reports (reports.mjs): what agents wrote up in their .symbiot/, newest first, the
 // unread ones marked. Opening one shows it here, as HTML the app made (escaped first).
 var REPS=[],REPOPEN='';
@@ -1189,24 +1625,73 @@ $('reportback').addEventListener('click',function(){loadReports();renderReports(
 api('/api/reports/read?id='+encodeURIComponent(r.id)).then(function(d){if(REPOPEN!==r.id)return;if(!d||d.error){v.innerHTML="<div class='note err'>"+esc((d&&d.error)||'failed')+"</div>";return;}
 v.innerHTML="<div class='out rdoc'>"+d.html+"</div>";var m=document.querySelector('main');if(m&&m.scrollTo)m.scrollTo(0,0);lqLoad(false);}).catch(function(e){v.innerHTML="<div class='note err'>"+esc(String((e&&e.message)||e))+"</div>";});}
 $('reportsrefresh').addEventListener('click',function(){REPOPEN='';loadReports();});
+// ---- the Dashboard as a stream ----------------------------------------------------
+// Time runs left to right, one current per feed, "now" on the right. Each message
+// is a bead placed when it arrived: amber and bigger when it needs you, small when
+// read. A bead opens a popover with that message's own actions (the same buttons as
+// the list below, wired by renderBoard's wire); a feed's name carries its Seen,
+// Talk and Check now. Drawn in the look's liquid, with its own canvas.
+var BS={G:null,beads:[],hot:null,on:false,b:null},BWIRE=null;
+// A feed's short name: "Inbox - you@x.com - x Mail" reads as Inbox, with the address under it.
+function bsName(c){var parts=String(c.name||'').split(' - '),acct=parts.filter(function(x){return x.indexOf('@')>=0;})[0]||'';return {n:parts[0]||c.name||'',sub:acct};}
+function bsGeom(){var el=$('bstream'),w=(el&&el.clientWidth)||900,n=((BS.b&&BS.b.cards)||[]).length,narrow=w<720;
+return {w:w,h:Math.max(300,80+n*118+44),x0:narrow?130:220,x1:w-(narrow?36:280),narrow:narrow,n:n};}
+function bsBuild(b){BS.b=b;var ov=$('bsov'),el=$('bstream');if(!ov||!el)return;var cs=b.cards||[];if(!cs.length){ov.innerHTML='';return;}
+var g=bsGeom();BS.gw=g.w;if(el.style)el.style.height=g.h+'px';var now=Date.now(),H=(b.hours||24)*3600000,laneY=function(i){return 60+(g.h-110)*(i+0.5)/Math.max(1,g.n);};
+var html='';cs.forEach(function(c,i){var y=laneY(i);
+html+="<div class='bline' style='left:"+(g.x0-24)+"px;width:"+(g.x1-g.x0+24)+"px;top:"+Math.round(y)+"px'></div>";
+var nm=bsName(c);html+="<div class='bcard blane' data-i='"+i+"' style='top:"+Math.round(y)+"px'><div class='bln' title='"+esc(c.name+(c.url?' \u00b7 '+c.url:''))+"'>"+esc(nm.n)+"</div>"+(nm.sub?"<div class='blsub'>"+esc(nm.sub)+"</div>":"")+"<div class='blc' title='"+(c.checked?"read "+agoTxt(c.checked):"")+"'>"+(c.count?"<b>"+esc(c.label)+"</b>":"quiet")+"</div><div class='bla'>"+(c.count?"<button class='bseen' title='set this feed back to 0: only what comes in after counts'>Seen</button>":"")+"<button class='btalkbtn' title='talk what&#39;s new here over with your AI before you draft a reply'>Talk"+((c.chat||[]).length?" "+Math.ceil(c.chat.length/2):"")+"</button><button class='bcheck' title='read it now'>Check now</button></div>"+(c.error?"<div class='ble'>"+esc(c.error)+"</div>":"")+"</div>";
+if(c.brief&&!g.narrow)html+="<div class='blb' style='top:"+Math.round(y)+"px'>"+esc(c.brief.text.length>150?c.brief.text.slice(0,149)+'…':c.brief.text)+"</div>";});
+var marks=b.hours===24?[18,12,6]:b.hours===72?[48,24]:[120,72,24];
+marks.forEach(function(m){html+="<span class='btick' style='left:"+Math.round(g.x0+(1-m/(b.hours||24))*(g.x1-g.x0))+"px'>"+(m<48?m+'h ago':Math.round(m/24)+' days ago')+"</span>";});
+html+="<span class='btick' style='left:"+g.x1+"px'>now</span><div class='bnow' style='left:"+g.x1+"px'></div>";
+var old={};BS.beads.forEach(function(x){old[x.key]=x;});BS.beads=[];
+cs.forEach(function(c,i){(c.items||[]).forEach(function(n,j){var age=Math.max(0,now-(n.ts||now));if(age>H)return;var key=c.id+':'+(n.id||j),o=old[key];
+BS.beads.push({key:key,i:i,j:j,n:n,need:!!n.need&&!!(n.mail||n.chat),tx:g.x0+(1-age/H)*(g.x1-g.x0),ty:laneY(i),tr:n.need&&(n.mail||n.chat)?13:n.read?6:9,x:o?o.x:g.x1,y:o?o.y:laneY(i),r:o?o.r:0});});
+(c.past||[]).forEach(function(n,j){var age=Math.max(0,now-(n.ts||now));if(age>H)return;var key=c.id+':p:'+(n.id||j),o=old[key];BS.beads.push({key:key,i:i,j:-1-j,n:n,past:true,need:false,tx:g.x0+(1-age/H)*(g.x1-g.x0),ty:laneY(i),tr:4.5,x:o?o.x:g.x1,y:o?o.y:laneY(i),r:o?o.r:0});});});
+html+=BS.beads.map(function(x,k){return "<button type='button' class='bbead' data-k='"+k+"' aria-label='"+esc(x.n.text||'')+"'></button>";}).join('');
+html+="<div class='btip' role='dialog' aria-live='polite'></div>";ov.innerHTML=html;
+BS.btns=[];ov.querySelectorAll('.bbead').forEach(function(bt){BS.btns.push(bt);var k=+bt.getAttribute('data-k');bt.addEventListener('pointerenter',function(){bsShow(k);});bt.addEventListener('focus',function(){bsShow(k);});bt.addEventListener('click',function(){bsShow(k);});});
+if(el.addEventListener&&!BS.wired){BS.wired=true;el.addEventListener('pointerleave',function(){bsShow(null);});el.addEventListener('keydown',function(e){if(e&&e.key==='Escape')bsShow(null);});}
+BS.hot=null;bsStart();}
+function bsShow(k){var tip=document.querySelector('#bsov .btip');if(!tip)return;BS.hot=k;if(k==null||!BS.beads[k]){tip.className='btip';return;}
+var x=BS.beads[k],c=BS.b.cards[x.i],n=x.n;if(x.past){tip.innerHTML="<div class='bcard'><div class='bi'><div class='btf'>"+esc(n.name||bsName(c).n)+" <span>&middot; "+esc(bsName(c).n)+" &middot; "+agoTxt(n.ts)+" &middot; seen</span></div><div class='btx' style='margin-bottom:0'>"+esc(n.text||'')+"</div></div></div>";tip.className='btip on';return;}
+tip.innerHTML="<div class='bcard' data-i='"+x.i+"'><div class='bi' data-j='"+x.j+"'><div class='btf'>"+esc(n.name||bsName(c).n)+" <span>&middot; "+esc(bsName(c).n)+" &middot; "+agoTxt(n.ts)+(n.from&&CHATFROM[n.from]?" &middot; "+CHATFROM[n.from]:"")+(n.read?" &middot; read":"")+"</span></div><div class='btx'>"+esc(n.text||'')+"</div><div class='bta'>"+(n.mail||n.chat?"<button class='bdraft'>"+(n.drafted?"Drafted &middot; again":"Draft a reply")+"</button>":"")+(n.href?"<button class='bopen"+(n.mail||n.chat?" quiet":"")+"'>Open</button>":"")+(n.chat&&n.drafted?"<button class='bopenwa quiet'>Open in WhatsApp</button>":"")+"</div></div></div>";
+tip.className='btip on';if(BWIRE)BWIRE(tip);}
+function bsStart(){if(BS.on)return;var raf=typeof window.requestAnimationFrame==='function'?function(f){return window.requestAnimationFrame(f);}:null;if(!raf)return;BS.on=true;
+var loop=function(){var p=$('panel-board'),el=$('bstream');if(!p||!el||!p.offsetParent||(el.classList&&el.classList.contains('none'))){BS.on=false;return;}bsFrame();raf(loop);};raf(loop);}
+function bsFrame(){var el=$('bstream'),cv=$('bsc');if(!el||!cv)return;if(!BS.G)BS.G=lqGL(cv,40);var g=bsGeom();if(BS.b&&BS.gw!==g.w){bsBuild(BS.b);g=bsGeom();}var t=LQ.t||0,still=LQ.theme&&LQ.theme.still;
+BS.beads.forEach(function(x,k){var hot=BS.hot===k;x.x+=(x.tx-x.x)*0.12;x.y+=((x.ty+(still?0:Math.sin(t*0.8+k*1.3)*2))-x.y)*0.12;x.r+=((x.tr*(hot?1.35:1))-x.r)*0.15;
+var bt=BS.btns&&BS.btns[k];if(bt&&bt.style){var R=Math.max(14,x.r+6);bt.style.width=bt.style.height=(2*R)+'px';bt.style.transform='translate('+Math.round(x.x-R)+'px,'+Math.round(x.y-R)+'px)';}});
+var tip=document.querySelector('#bsov .btip');if(tip&&BS.hot!=null&&BS.beads[BS.hot]){var x=BS.beads[BS.hot],tw=tip.offsetWidth||300,th=tip.offsetHeight||120,tx=Math.max(12,Math.min(g.w-tw-12,x.x-tw/2)),ty=x.y-x.r-th-14;if(ty<8)ty=x.y+x.r+14;tip.style.transform='translate('+Math.round(tx)+'px,'+Math.round(ty)+'px)';}
+var G=BS.G;if(!G)return;var gl=G.gl,d=Math.min(window.devicePixelRatio||1,3),W=Math.max(1,Math.floor(g.w*d)),H=Math.max(1,Math.floor(g.h*d));if(cv.width!==W||cv.height!==H){cv.width=W;cv.height=H;gl.viewport(0,0,W,H);}
+var o=G.out;for(var i=0;i<o.length;i++)o[i]=0;var k=0,put=function(px,py,r,a){if(k>=40)return;o[k*4]=px/g.w;o[k*4+1]=py/g.h;o[k*4+2]=Math.max(0,r);o[k*4+3]=a;k++;};
+(BS.b.cards||[]).forEach(function(c,i){put(g.x1,60+(g.h-110)*(i+0.5)/Math.max(1,g.n),c.count?9+2*Math.min(c.count,6):5,0);});
+BS.beads.forEach(function(x){put(x.x,x.y,x.r,x.need?1:0);});
+var th=LQ.theme||{},U=G.U;gl.uniform2f(U.uRes,W,H);gl.uniform1f(U.uT,t);gl.uniform1f(U.uDpr,d);gl.uniform4fv(U.uB,o);gl.uniform3f(U.uRip,0,0,-10);gl.uniform1f(U.uStyle,th.look==='glass'?0:th.look==='pearl'?2:1);gl.uniform1f(U.uContrast,th.contrast?1:0);gl.uniform1f(U.uExposure,th.night?0.82:1);gl.drawArrays(gl.TRIANGLES,0,3);}
 function renderBoard(){var b=BOARD,cs=b.cards,el=$('board');
 var tab=$('boardtab');if(tab)tab.textContent='Dashboard'+(b.total?' · '+b.total:'');
+var bst=$('bstream');if(bst&&bst.classList)bst.classList.toggle('none',!cs.length);var bl=$('blist');if(bl&&!cs.length)bl.open=true;
 if(!cs.length){$('boardsum').textContent='Everything you watch, side by side.';
 el.innerHTML="<div style='grid-column:1/-1'><div class='note muted' style='margin-top:0'>Nothing watched yet. Map your inbox, a chat (web.whatsapp.com) or any page under <b>Screens</b> on the Map tab and click <b>Watch</b> on it, or click <b>Watch GitHub</b> there. Each one gets a card here with what's new on it.</div><div class='row' style='margin-top:8px'><button class='ghost' id='boardgo'>Go to Screens</button></div></div>";
-$('boardgo').addEventListener('click',function(){setTab('map');var w=$('watchbox');if(w&&w.scrollIntoView)w.scrollIntoView({block:'center'});});return;}
+$('boardgo').addEventListener('click',function(){setTab('map');var sbx=$('screensbox');if(sbx)sbx.open=true;var w=$('watchbox');if(w&&w.scrollIntoView)w.scrollIntoView({block:'center'});});return;}
 var when=b.hours===24?'since yesterday':b.hours===72?'in the last 3 days':'in the last 7 days';
+var lastRead=0;cs.forEach(function(c){if(c.checked>lastRead)lastRead=c.checked;});var sub=$('boardsub');if(sub)sub.textContent=(lastRead?'Read '+agoTxt(lastRead)+' \u00b7 ':'')+cs.length+(cs.length===1?' feed':' feeds');
 var waiting=cs.filter(function(c){return c.count;}).map(function(c){return c.label+(c.source==='page'?' on '+c.name:'');});
 $('boardsum').innerHTML=waiting.length?"<b style='color:var(--bone)'>Waiting on you "+when+":</b> "+esc(waiting.join(', ')):"Nothing new "+when+" on the "+cs.length+" thing"+(cs.length===1?"":"s")+" you watch.";
 el.innerHTML=cs.map(function(c,i){var nt=Math.ceil(((c.chat||[]).length)/2);
-return "<div class='bcard"+(c.count?" has":"")+"' data-i='"+i+"'><div class='bh'><span>"+(BOARDICON[c.source]||BOARDICON.page)+"</span><span class='bn' title='"+esc(c.url)+"'>"+esc(c.name)+"</span>"+(c.count?"<button class='ghost bseen' title='set this card back to 0: only what comes in after counts. It stays under Watching, and the other cards keep theirs' style='padding:4px 9px;font-size:12px'>Seen</button>":"")+"<button class='ghost btalkbtn' title='talk what&#39;s new here over with your AI before you draft a reply' style='padding:4px 9px;font-size:12px'>&#128172;"+(nt?" "+nt:"")+"</button><button class='ghost bcheck' title='read it now' style='padding:4px 9px;font-size:12px'>Check now</button></div>"
+return "<div class='bcard"+(c.count?" has":"")+"' data-i='"+i+"'><div class='bh'><span class='bn' title='"+esc(c.url)+"'>"+esc(bsName(c).n)+"</span>"+(c.count?"<button class='ghost bseen' title='set this card back to 0: only what comes in after counts. It stays under Watching, and the other cards keep theirs' style='padding:4px 9px;font-size:12px'>Seen</button>":"")+"<button class='ghost btalkbtn' title='talk what&#39;s new here over with your AI before you draft a reply' style='padding:4px 9px;font-size:12px'>Talk"+(nt?" "+nt:"")+"</button><button class='ghost bcheck' title='read it now' style='padding:4px 9px;font-size:12px'>Check now</button></div>"
 +"<div class='bc'>"+c.count+"</div><div class='bl'>"+esc(c.count?c.label.replace(/^\\d+ /,''):'nothing new')+" &middot; "+(c.checked?"read "+agoTxt(c.checked):c.last?"tried "+agoTxt(c.last):"first read within a minute")+(c.via==='gh'?" &middot; through gh":"")+"</div>"
 +(c.error?"<div class='note err'>"+esc(c.error)+"</div>":"")
 +(c.brief?"<div class='bbrief'>"+esc(c.brief.text)+"</div>":"")
 +c.items.map(function(n,j){return "<div class='bi' data-j='"+j+"'><span class='t'>"+esc(n.text)+" <span class='muted' style='font-size:11px'>"+agoTxt(n.ts)+(n.from&&CHATFROM[n.from]?" &middot; "+CHATFROM[n.from]:"")+(n.read?" &middot; read":"")+"</span>"+custTag(n)+"</span>"+(n.href?"<button class='ghost bopen' title='open it in your browser'>Open</button>":"")+(n.mail||n.chat||n.social?"<button class='ghost bdraft' title='"+(n.chat?DRAFT_CHAT_TIP:n.social?DRAFT_SOCIAL_TIP:"your coding agent writes a reply and leaves it in Drafts. It never presses Send")+"'>"+(n.drafted?"Drafted &middot; again":"Draft a reply")+"</button>":"")+(n.chat&&n.drafted?"<button class='ghost bopenwa' title='"+OPEN_WA_TIP+"'>Open in WhatsApp</button>":"")+"</div>";}).join('')
 +(c.count>c.items.length?"<div class='bl' style='margin-top:6px'>&hellip;and "+(c.count-c.items.length)+" more</div>":"")
-+(BTALK[c.id]?"<div class='tchat btalk'><div class='msgs'>"+(nt?chatMsgs(c.chat):TALKHINT)+"</div><div class='row'><input class='talkq' placeholder='Ask about these, or say how to answer one...' style='flex:1'><button class='ghost talksend'>Ask</button><a class='talkclear' title='forget this conversation'>clear</a></div></div>":"")+"</div>";}).join('');
++"</div>";}).join('');
+var tk=$('boardtalk');if(tk)tk.innerHTML=cs.map(function(c,i){var nt=Math.ceil(((c.chat||[]).length)/2);return BTALK[c.id]?"<div class='bcard' data-i='"+i+"'><div class='bh'><span class='bn'>Talking over "+esc(c.name)+"</span><button class='ghost btalkbtn' style='padding:4px 9px;font-size:12px'>Close</button></div><div class='tchat btalk'><div class='msgs'>"+(nt?chatMsgs(c.chat):TALKHINT)+"</div><div class='row'><input class='talkq' placeholder='Ask about these, or say how to answer one...' style='flex:1'><button class='ghost talksend'>Ask</button><a class='talkclear' title='forget this conversation'>clear</a></div></div></div>":"";}).join('');
+bsBuild(b);
 function card(btn){return cs[+btn.closest('.bcard').getAttribute('data-i')];}
-el.querySelectorAll('.btalkbtn').forEach(function(btn){btn.addEventListener('click',function(){var c=card(btn);BTALK[c.id]=!BTALK[c.id];renderBoard();var q=BTALK[c.id]&&el.querySelector(".bcard[data-i='"+cs.indexOf(c)+"'] .talkq");if(q&&q.focus)q.focus();});});
+function wire(el){if(!el||!el.querySelectorAll)return;
+el.querySelectorAll('.btalkbtn').forEach(function(btn){btn.addEventListener('click',function(){var c=card(btn);BTALK[c.id]=!BTALK[c.id];renderBoard();var tk2=$('boardtalk'),q=BTALK[c.id]&&tk2&&tk2.querySelector(".bcard[data-i='"+cs.indexOf(c)+"'] .talkq");if(q&&q.focus)q.focus();});});
 el.querySelectorAll('.btalk').forEach(function(box){var c=card(box),inp=box.querySelector('.talkq'),send=box.querySelector('.talksend'),msgs=box.querySelector('.msgs');
 inp.value=BTALKDRAFT[c.id]||'';inp.addEventListener('input',function(){BTALKDRAFT[c.id]=inp.value;});
 function ask(){var q=(inp.value||'').trim();if(!q||send.disabled)return;send.disabled=true;inp.value='';BTALKDRAFT[c.id]='';BTALKBUSY++;
@@ -1216,9 +1701,9 @@ function done(){BTALKBUSY=Math.max(0,BTALKBUSY-1);send.disabled=false;var th=msg
 api('/api/watch/chat',{id:c.id,question:q}).then(function(r){done();
 if(r.error==='not-connected'){msgs.insertAdjacentHTML('beforeend',"<div class='msg a'>Connect a model in Settings to talk it over - Ollama is free and runs locally.</div>");return;}
 if(r.error){msgs.insertAdjacentHTML('beforeend',"<div class='msg a err'>"+esc(r.error)+"</div>");return;}
-c.chat=r.chat||[];msgs.innerHTML=chatMsgs(c.chat);var tb=box.closest('.bcard').querySelector('.btalkbtn');if(tb)tb.innerHTML='&#128172; '+Math.ceil(c.chat.length/2);}).catch(function(e){done();msgs.insertAdjacentHTML('beforeend',"<div class='msg a err'>"+esc(String((e&&e.message)||e))+"</div>");});}
+c.chat=r.chat||[];msgs.innerHTML=chatMsgs(c.chat);var tb=box.closest('.bcard').querySelector('.btalkbtn');if(tb)tb.innerHTML='<i class=ic-chat></i> '+Math.ceil(c.chat.length/2);}).catch(function(e){done();msgs.insertAdjacentHTML('beforeend',"<div class='msg a err'>"+esc(String((e&&e.message)||e))+"</div>");});}
 send.addEventListener('click',ask);inp.addEventListener('keydown',function(e){if(e.key==='Enter')ask();});
-box.querySelector('.talkclear').addEventListener('click',function(){api('/api/watch/chat/clear',{id:c.id}).then(function(){c.chat=[];msgs.innerHTML=TALKHINT;var tb=box.closest('.bcard').querySelector('.btalkbtn');if(tb)tb.innerHTML='&#128172;';});});});
+box.querySelector('.talkclear').addEventListener('click',function(){api('/api/watch/chat/clear',{id:c.id}).then(function(){c.chat=[];msgs.innerHTML=TALKHINT;var tb=box.closest('.bcard').querySelector('.btalkbtn');if(tb)tb.innerHTML='<i class=ic-chat></i>';});});});
 el.querySelectorAll('.bopenwa').forEach(function(btn){btn.addEventListener('click',function(){openChatUI(item(btn),btn,boardMsg);});});
 function item(btn){return card(btn).items[+btn.closest('.bi').getAttribute('data-j')];}
 el.querySelectorAll('.bcheck').forEach(function(btn){btn.addEventListener('click',function(){var c=card(btn);btn.disabled=true;btn.textContent='Reading…';
@@ -1228,7 +1713,9 @@ api('/api/watch/seen',{id:c.id}).then(function(x){if(!x||x.error){btn.disabled=f
 el.querySelectorAll('.bopen').forEach(function(btn){btn.addEventListener('click',function(){var n=item(btn);if(n&&/^https?:/.test(n.href))window.open(n.href,'_blank','noopener');});});
 el.querySelectorAll('.bdraft').forEach(function(btn){btn.addEventListener('click',function(){var n=item(btn);btn.disabled=true;
 api('/api/watch/draft',{id:n.id}).then(function(x){btn.disabled=false;if(!x||x.error){boardMsg('err',esc((x&&x.error)||'failed'));return;}boardMsg('ok',x.chat?DRAFTING_CHAT:x.social?DRAFTING_SOCIAL:DRAFTING);loadWatchUI();}).catch(function(e){btn.disabled=false;boardMsg('err',esc(String((e&&e.message)||e)));});});});}
-$('boardrefresh').addEventListener('click',loadBoard);$('boardhours').addEventListener('change',loadBoard);
+wire(el);wire($('boardtalk'));wire($('bsov'));BWIRE=wire;}
+$('boardrefresh').addEventListener('click',loadBoard);
+var bw=$('boardwin');if(bw&&bw.querySelectorAll)bw.querySelectorAll('button').forEach(function(b){b.addEventListener('click',function(){BOARDH=+b.getAttribute('data-h')||24;bw.querySelectorAll('button').forEach(function(x){x.setAttribute('aria-checked',x===b?'true':'false');});loadBoard();});});
 // A web page, mapped by itself in the hidden browser (headless.mjs): no capture,
 // no dragging. It takes a few seconds, so the button says so meanwhile.
 function mapUI(site,b){site=(site||'').trim();if(!site){screenErr('Type a site to map first: gmail, github.com/pulls or a web address.');return;}b.disabled=true;
@@ -1290,8 +1777,8 @@ function saveWeekly(){api('/api/desktop/weekly',{on:$('weeklyon').checked,day:$(
 function saveAutostart(){api('/api/desktop/autostart',{on:$('autostart').checked}).then(function(a){loadDesktop(a&&a.error);});}
 function weeklyNow(){var b=$('weeklynow');b.disabled=true;b.textContent='Writing...';
 api('/api/desktop/weekly/run',{}).then(function(r){b.disabled=false;b.textContent='Write it now';loadDesktop(r&&r.error?(r.error==='not-connected'?'Connect an AI above first.':r.error):'');});}
-function showLatestWeek(){api('/api/desktop').then(function(d){var l=d&&d.weekly&&d.weekly.latest;if(!l||current!=='week'||$('out').textContent!=='Nothing yet - hit the button.')return;
-$('out').textContent=l.text;$('out').classList.remove('muted');$('copy').classList.remove('hidden');var f=$('outfoot');f.textContent='Written automatically '+new Date(l.at).toLocaleString()+' · '+l.file+(l.footer?' · '+l.footer:'');f.style.display='block';});}
+function showLatestWeek(){api('/api/desktop').then(function(d){var l=d&&d.weekly&&d.weekly.latest;if(!l||current!=='week'||$('out').textContent!==WUEMPTY)return;
+WUTEXT=l.text;$('out').innerHTML=mdLite(l.text);$('out').classList.remove('muted');$('copy').classList.remove('hidden');var f=$('outfoot');f.textContent='Written automatically '+new Date(l.at).toLocaleString()+' · '+l.file+(l.footer?' · '+l.footer:'');f.style.display='block';});}
 function fitBadge(m){return m.fits?"<span class='tag'>fits your RAM</span>":"<span class='tag' style='background:#3a2a12;border-color:#6b4a1f;color:#F2A541'>needs more RAM</span>";}
 function loadRec(){var out=document.getElementById('recout');out.innerHTML="<div class='muted'>Reading your hardware...</div>";
 api('/api/models').then(function(d){var hw=d.hardware,rec=d.rec;
@@ -1389,6 +1876,50 @@ function doUpdate(){updBusy=true;try{localStorage.setItem('symbiot_update_tried'
 setInterval(heartbeat,4000);heartbeat(true);
 window.addEventListener('focus',function(){heartbeat(true);}); // re-check for updates when you come back to the window
 
+
+// ---- the work scene ------------------------------------------------------------------
+// Tasks and agents, in the liquid: what each agent is doing (spheres revolve round
+// it while it works), what's done and waiting for your OK, and what's waiting its
+// turn. One Go starts what's waiting. A tap opens the details; nothing else to read.
+function lqWork(){lqRemember();LQ.scene='work';LQ.mode='aware';var b=document.body;if(b&&b.classList){b.classList.add('lq-work');b.classList.remove('lq-pooled');}lqLoadWork();
+if(LQ.workTimer)clearInterval(LQ.workTimer);LQ.workTimer=setInterval(function(){if(LQ.scene==='work'&&LQ.mode!=='pool')lqLoadWork();},5000);}
+function lqHome(){lqRemember();LQ.scene='home';var b=document.body;if(b&&b.classList){b.classList.remove('lq-work');b.classList.remove('lq-pooled');}if(LQ.workTimer){clearInterval(LQ.workTimer);LQ.workTimer=null;}LQ.mode='aware';lqLoad(true);}
+function lqLoadWork(){api('/api/work').then(function(w){LQ.workData=w||{};lqBuildWork();}).catch(function(){});}
+function lqBuildWork(){if(LQ.workBy==='project'){lqBuildProjects();return;}var w=LQ.workData||{},S=lqSize(),cx=S.w/2,cy=S.h*0.5,list=[];LQ.bw=S.w;LQ.bh=S.h;
+var vx=Math.max(0.5,Math.min(S.s*1.3,(S.w/2-90)/400)),vy=Math.max(0.35,Math.min(S.s*0.8,(S.h-cy-230)/400,(cy-160)/400)),rs=Math.min(S.s,(vx+vy)/1.5);
+var run=(w.running||[]).slice(0,3),ready=(w.ready||[]).slice(0,2),wait=(w.waiting||[]).slice(0,5),extra=(w.waitingCount||0)-wait.length;
+run.forEach(function(r,i){var ang=Math.PI+(i+1)*Math.PI/(run.length+1);var pg=r.progress?' · '+r.progress.done+' of '+r.progress.total+' done':'';
+list.push({id:r.id,kind:'run',repo:r.name,shape:'agents',ask:r.waiting,title:r.doing,sub:r.name+pg+(r.waiting?' · has a question for you':''),r:58*rs,tx:cx+Math.cos(ang)*190*vx,ty:cy+Math.sin(ang)*130*vy});});
+ready.forEach(function(r,i){var ang=-Math.PI/2+(i-(ready.length-1)/2)*0.9;list.push({id:r.id,kind:'ready',repo:r.repo,shape:'tasks',title:'Ready for your OK',sub:r.repo+(r.count?' · '+r.count+' task'+(r.count>1?'s':'')+' done':''),r:48*rs,tx:cx+Math.cos(ang)*300*vx,ty:cy+Math.sin(ang)*300*vy});});
+wait.forEach(function(t,i){var ang=Math.PI/2+(i-(wait.length-1)/2)*0.55;list.push({id:t.id,kind:'wait',repo:t.repo,shape:'tasks',title:t.text,sub:t.repo+(t.busy?' · after the current one':' · waiting'),r:30*rs,tx:cx+Math.cos(ang)*300*vx,ty:cy+Math.sin(ang)*260*vy});});
+if(extra>0)list.push({id:'morewait',kind:'more',shape:'tasks',title:'+'+extra+' more waiting',sub:'see them all',r:24*rs,tx:S.w-Math.max(80,S.w*0.1),ty:S.h-230});
+lqGrow(list,cx,cy,vx,vy);list.forEach(function(d){d.ax=d.tx;d.ay=d.ty;});
+var wl=[];list.forEach(function(d,i){if(d.kind!=='wait'&&d.kind!=='ready')return;list.forEach(function(e,j){if(e.kind==='run'&&e.repo===d.repo)wl.push([j,i,0.5]);});});lqSeed(list,wl,cx,cy,vx,vy);lqNear(list,wl,cx,cy,92*rs,S);lqRelax(list,S,cx,cy,92*rs);
+var old={};LQ.drops.forEach(function(d){old[d.id]=d;});
+LQ.drops=list.map(function(d){var o=old[d.id];d.x=o?o.x:cx;d.y=o?o.y:cy;d.vx=o?o.vx:0;d.vy=o?o.vy:0;d.cr=o?o.cr:0;return d;});
+var nr=(w.running||[]).length,nw=w.waitingCount||0,nk=(w.ready||[]).length;
+LQ.coreText=(nr?nr+' at work':'Nobody at work')+(nw?' · '+nw+' waiting':'')+(nk?' · '+nk+' ready for your OK':'');
+var go=$('lqgo');if(go){var n=w.canGo||0;go.textContent=n?'Go \u00b7 start '+n+' task'+(n>1?'s':''):'';if(go.classList)go.classList.toggle('on',n>0);}
+lqLabels();}
+// Projects: a sphere per repo with work on it, sized by how much is going on, its
+// state under its name; spheres orbit while an agent works, amber when its work waits
+// for your OK. A click opens that project's tasks.
+function lqBuildProjects(){var w=LQ.workData||{},S=lqSize(),cx=S.w/2,cy=S.h*0.5,list=[];LQ.bw=S.w;LQ.bh=S.h;
+var vx=Math.max(0.5,Math.min(S.s*1.3,(S.w/2-90)/400)),vy=Math.max(0.35,Math.min(S.s*0.8,(S.h-cy-230)/400,(cy-160)/400)),rs=Math.min(S.s,(vx+vy)/1.5);
+var ps=(w.projects||[]).slice(0,8);ps.forEach(function(p,i){var ang=-2.2+i*2.399963,d=250+50*(i%3),load=p.waiting+2*p.ready+(p.running?3:0);
+var sub=p.running?(p.running.ask?'has a question for you':'agent at work: '+String(p.running.doing||'').toLowerCase()):p.ready?'ready for your OK':p.waiting+' task'+(p.waiting>1?'s':'')+' waiting';
+list.push({id:'proj:'+p.repo,kind:'proj',repo:p.repo,shape:'tasks',title:p.repo,sub:sub,orbit:!!p.running,ask:!!(p.ready||(p.running&&p.running.ask)),r:(30+7*Math.min(6,load))*rs,tx:cx+Math.cos(ang)*d*vx,ty:cy+Math.sin(ang)*d*vy});});
+
+list.forEach(function(d){d.ax=d.tx;d.ay=d.ty;});lqRelax(list,S,cx,cy,92*rs);
+var old={};LQ.drops.forEach(function(d){old[d.id]=d;});
+LQ.drops=list.map(function(d){var o=old[d.id];d.x=o?o.x:cx;d.y=o?o.y:cy;d.vx=o?o.vx:0;d.vy=o?o.vy:0;d.cr=o?o.cr:0;return d;});
+var n=w.projectCount||list.length,nr=(w.running||[]).length,nw=w.waitingCount||0;
+LQ.coreText=n?n+' project'+(n>1?'s':'')+(nr?' \u00b7 '+nr+' at work':'')+(nw?' \u00b7 '+nw+' tasks waiting':''):'No projects with work on them yet. Add a task, or tell me what to do.';
+var go=$('lqgo');if(go){var k=w.canGo||0;go.textContent=k?'Go \u00b7 start '+k+' task'+(k>1?'s':''):'';if(go.classList)go.classList.toggle('on',k>0);}
+lqLabels();}
+function lqGoWork(){var go=$('lqgo');if(go)go.disabled=true;api('/api/work/go',{}).then(function(r){if(go)go.disabled=false;
+var t=r&&r.error?r.error:r.started||r.queued?(r.started?'Started '+r.started:'')+(r.started&&r.queued?', ':'')+(r.queued?r.queued+' queued behind work already going':'')+'.':(r&&r.note)||'Nothing waiting to start.';
+LQ.talk.push({me:false,text:t});LQ.talk=LQ.talk.slice(-8);lqTalkShow(false);LQ.ripple=[0.5,0.5,LQ.t];lqLoadWork();}).catch(function(){if(go)go.disabled=false;});}
 // ---- the liquid: the app's home ---------------------------------------------------
 // One silver surface is the app. Its droplets: what only you can do, what's new on
 // what you watch, and the parts of the app, sized and placed from how you use them
@@ -1401,14 +1932,52 @@ var LQ={drops:[],btns:[],core:{x:0,y:0,cr:0},mode:'aware',last:'',lastAct:Date.n
 var LQNAMES={board:'Dashboard',map:'Map',tasks:'Tasks',agents:'Agents',week:'Week',standup:'Standup',todo:'Todo',drift:'Drift',settings:'Settings',reports:'Reports'};
 var LQ_REST=60000,LQ_MAX=11;
 function lqMM(q){try{return !!(window.matchMedia&&window.matchMedia(q).matches);}catch(e){return false;}}
-function lqTheme(){var th={light:lqMM('(prefers-color-scheme: light)'),contrast:lqMM('(prefers-contrast: more)'),forced:lqMM('(forced-colors: active)'),solid:lqMM('(prefers-reduced-transparency: reduce)'),still:lqMM('(prefers-reduced-motion: reduce)'),wide:lqMM('(color-gamut: p3)'),night:false,accent:null};
+function lqLookGet(){var l='';try{l=window.localStorage&&window.localStorage.getItem('symbiot-look')||'';}catch(e){}return l==='glass'||l==='pearl'?l:'ferro';}
+function lqLook(l){try{if(window.localStorage)window.localStorage.setItem('symbiot-look',l);}catch(e){}lqTheme();var g=$('lqlook');if(g&&g.querySelectorAll)g.querySelectorAll('button').forEach(function(b){b.setAttribute('aria-checked',b.getAttribute('data-look')===l?'true':'false');});LQ.ripple=[0.5,0.47,LQ.t||0];}
+function lqTheme(){var look=lqLookGet();var th={look:look,light:look!=='ferro',contrast:lqMM('(prefers-contrast: more)'),forced:lqMM('(forced-colors: active)'),solid:lqMM('(prefers-reduced-transparency: reduce)'),still:lqMM('(prefers-reduced-motion: reduce)'),wide:lqMM('(color-gamut: p3)'),night:false,accent:null};
 var h=new Date().getHours();th.night=h>=22||h<6;
 try{if(document.createElement&&typeof getComputedStyle==='function'&&document.body&&document.body.appendChild){var a=document.createElement('span'),b=document.createElement('span');a.style.color='AccentColor';b.style.color='CanvasText';document.body.appendChild(a);document.body.appendChild(b);
 if(a.style.color){var ca=getComputedStyle(a).color,cb=getComputedStyle(b).color;if(ca&&ca!==cb){var m=ca.match(/[0-9.]+/g);if(m&&m.length>=3)th.accent=[m[0]/255,m[1]/255,m[2]/255];}}a.remove();b.remove();}}catch(e){}
-var bd=document.body;if(bd&&bd.classList){bd.classList.toggle('lq-light',th.light);bd.classList.toggle('lq-contrast',th.contrast);bd.classList.toggle('lq-solid',th.solid||th.contrast);bd.classList.toggle('lq-forced',th.forced);}
+var bd=document.body;if(bd&&bd.classList){bd.classList.toggle('lq-light',th.light);['ferro','glass','pearl'].forEach(function(l){bd.classList.toggle('lq-look-'+l,l===look);});bd.classList.toggle('lq-contrast',th.contrast);bd.classList.toggle('lq-solid',th.solid||th.contrast);bd.classList.toggle('lq-forced',th.forced);}
 LQ.theme=th;return th;}
 function lqSize(){var el=$('liquid');var w=(el&&el.clientWidth)||window.innerWidth||1280,h=(el&&el.clientHeight)||window.innerHeight||800;return {w:w,h:h,s:Math.max(0.55,Math.min(1.15,Math.min(w,h)/860))};}
-function lqLoad(commit){Promise.all([api('/api/adapt?from='+encodeURIComponent(LQ.last)+(commit?'&commit=1':'')+(LQ.touch?'&touch=1':'')),api('/api/home')]).then(function(r){LQ.adapt=r[0]||{};LQ.home=r[1]||{};lqBuild();}).catch(function(){});}
+function lqLoad(commit){if(LQ.scene==='work'){lqLoadWork();return;}Promise.all([api('/api/adapt?from='+encodeURIComponent(LQ.last)+(commit?'&commit=1':'')+(LQ.touch?'&touch=1':'')),api('/api/home')]).then(function(r){LQ.adapt=r[0]||{};LQ.home=r[1]||{};lqBuild();}).catch(function(){});}
+// A droplet's own place: a steady nudge in angle and distance from its id, so the
+// layout reads as grown, not ruled, and stays put from one visit to the next.
+// P.A.R.A.: home's droplets in four groups, each in its own part of the screen:
+// Projects (work with an end) up left, Areas (what you keep up with) up right,
+// Resources (to look things up in) down left, the Archive (what's done) sunk low right.
+var PARA_OF={tasks:'p',agents:'p',todo:'p',board:'a',week:'a',standup:'a',map:'r',drift:'r',settings:'r',reports:'r'};
+var PARA_NAME={p:'Projects',a:'Areas',r:'Resources',x:'Archive'},PARA_SUB={p:'work with an end',a:'what you keep up with',r:'to look things up in',x:'what’s done'};
+var PARA_ANG={p:-2.4,a:-0.65,r:2.45,x:0.8},PARA_LIVE={p:0.45,a:0.3,r:0.12,x:0};
+function lqPara(d){return d.kind==='archive'?'x':d.kind==='feed'&&d.shape!=='reports'?'a':PARA_OF[d.shape]||'p';}
+function lqParaGo(g){lqAct();if(g==='p'){lqWorkBy('project');return;}if(g==='a'){lqUse('board');lqPool('board');return;}if(g==='r'){lqUse('map');lqPool('map');return;}lqArchive();}
+function lqArchive(){lqPool('tasks');LQ.arch=true;if(typeof loadArchived==='function')loadArchived();}
+function lqOrg(id,k){var h=k*977;id=String(id);for(var i=0;i<id.length;i++)h=(h*31+id.charCodeAt(i))|0;return ((h>>>0)%1000)/1000;}
+function lqGrow(list,cx,cy,vx,vy){list.forEach(function(d){var x=(d.tx-cx)/vx,y=(d.ty-cy)/vy,an=Math.atan2(y,x)+(lqOrg(d.id,1)-0.5)*0.7,rr=Math.sqrt(x*x+y*y)*(0.78+0.44*lqOrg(d.id,2));d.tx=cx+Math.cos(an)*rr*vx;d.ty=cy+Math.sin(an)*rr*vy;});}
+// Nearest neighbours, in the liquid: each droplet is drawn towards the ones it's
+// linked to (its k nearest, from adapt.mjs, or the part or repo it belongs to),
+// pushed off the rest, and loosely held at its own distance from the core. A few
+// hundred fixed steps, so the same links give the same picture every time.
+// Linked droplets settle just past their separation; unlinked ones keep a wider gap,
+// so clusters read as groups. Only the distance from the core is held (the likely
+// nearer); the angle is free, so there's no ring for them to fall into.
+function lqNear(list,links,cx,cy,cr,S){if(!links.length)return;var gap=36*S.s,lk={};links.forEach(function(l){lk[l[0]+','+l[1]]=1;lk[l[1]+','+l[0]]=1;});
+for(var it=0;it<320;it++){links.forEach(function(l){var a=list[l[0]],b=list[l[1]],dx=b.tx-a.tx,dy=b.ty-a.ty,d=Math.sqrt(dx*dx+dy*dy)||1,L=lqSep(a,b,dx,dy)+10,f=(d-L)*0.08*Math.max(0.4,Math.min(1,l[2]*4))/d;if(d>L){a.tx+=dx*f;a.ty+=dy*f;b.tx-=dx*f;b.ty-=dy*f;}});
+for(var i=0;i<list.length;i++){var a=list[i];for(var j=i+1;j<list.length;j++){var b=list[j],dx=b.tx-a.tx,dy=b.ty-a.ty,d=Math.sqrt(dx*dx+dy*dy)||1,mn=lqSep(a,b,dx,dy)+(lk[i+','+j]?0:gap);if(d<mn){var f=(mn-d)*0.2/d;a.tx-=dx*f;a.ty-=dy*f;b.tx+=dx*f;b.ty+=dy*f;}}
+a.tx+=(cx-a.tx)*0.004;a.ty+=(cy-a.ty)*0.004;var ex=a.tx-cx,ey=a.ty-cy,ed=Math.sqrt(ex*ex+ey*ey)||1,mn2=cr+a.r+60;if(ed<mn2){a.tx=cx+ex/ed*mn2;a.ty=cy+ey/ed*mn2;}}}}
+// Seed by cluster: the linked groups (union-find) each get their own arc, sized to
+// the group, in the order of where they'd have been, with a steady offset; members
+// sit together, alternately nearer and further. lqNear then only polishes.
+function lqSeed(list,links,cx,cy,vx,vy,keyOf,angOf){var par=list.map(function(_,i){return i;});function root(i){while(par[i]!==i)i=par[i]=par[par[i]];return i;}links.forEach(function(l){par[root(l[0])]=root(l[1]);});
+var groups={};list.forEach(function(d,i){if(d.kind==='more')return;var r=keyOf?keyOf(d):root(i);(groups[r]=groups[r]||[]).push(i);});
+var gs=Object.keys(groups).map(function(k){var g=groups[k];return {key:k,m:g,ang:Math.atan2(g.reduce(function(t,i){return t+(list[i].ay-cy)/vy;},0),g.reduce(function(t,i){return t+(list[i].ax-cx)/vx;},0))};});
+gs.sort(function(a,b){return a.ang-b.ang;});var tot=gs.reduce(function(t,g){return t+g.m.length+0.8;},0),acc=gs.length?gs[0].ang-(gs[0].m.length+0.8)/tot*Math.PI:0;
+gs.forEach(function(g){var span=(g.m.length+0.8)/tot*2*Math.PI,mid=acc+span/2+(lqOrg(list[g.m[0]].id,3)-0.5)*span*0.25;acc+=span;if(angOf){span=Math.min(1.5,span);mid=angOf(g.key)+(lqOrg(list[g.m[0]].id,3)-0.5)*0.2;}
+g.m.forEach(function(i,k){var d=list[i],rr=Math.sqrt(Math.pow((d.ax-cx)/vx,2)+Math.pow((d.ay-cy)/vy,2))*(k%2?1.22:0.92),th=mid+(k-(g.m.length-1)/2)*Math.min(0.62,span/Math.max(1,g.m.length)*0.8);d.tx=cx+Math.cos(th)*rr*vx;d.ty=cy+Math.sin(th)*rr*vy;});});}
+function lqLinks(list,near){var at={},links=[],same=function(l){return lqPara(list[l[0]])===lqPara(list[l[1]]);};list.forEach(function(d,i){if(d.kind==='shape')at[d.shape]=i;});
+list.forEach(function(d,i){if(d.kind==='shape')((near||{})[d.shape]||[]).forEach(function(n){var j=at[n.id];if(j!=null&&j>i)links.push([i,j,n.w]);else if(j!=null&&j<i&&!links.some(function(l){return l[0]===j&&l[1]===i;}))links.push([j,i,n.w]);});
+else if((d.kind==='you'||d.kind==='feed')&&at[d.shape]!=null)links.push([at[d.shape],i,0.5]);});return links.filter(same);}
 function lqBuild(){var a=LQ.adapt||{},h=LQ.home||{},S=lqSize(),cx=S.w/2,cy=S.h*0.47,list=[];LQ.bw=S.w;LQ.bh=S.h;
 var you=(h.you||[]).slice(0,3),feeds=(h.feeds||[]).slice(0,2),lay=(a.layout&&a.layout.items)||[],more=((a.layout&&a.layout.more)||[]).slice();
 var vx=Math.max(0.5,Math.min(S.s*1.3,(S.w/2-90)/400)),vy=Math.max(0.35,Math.min(S.s*0.8,(S.h-cy-230)/400,(cy-160)/400));var rs=Math.min(S.s,(vx+vy)/1.5);var room=Math.max(3,LQ_MAX-you.length-feeds.length-1);lay.slice(room).forEach(function(it){more.push(it.id);});
@@ -1416,6 +1985,9 @@ var repNew=(h.feeds||[]).filter(function(f){return f.id==='feed:reports';})[0],r
 lay.slice(0,room).forEach(function(it){list.push({id:'shape:'+it.id,kind:'shape',shape:it.id,title:LQNAMES[it.id]||it.id,sub:it.id==='reports'&&repOut?repNew.count+' new':'',r:it.r*rs,tx:cx+Math.cos(it.angle)*it.d*vx,ty:cy+Math.sin(it.angle)*it.d*vy});});
 you.forEach(function(y,i){var ang=-Math.PI/2+(i-(you.length-1)/2)*0.6;list.push({id:y.id,kind:'you',shape:y.shape,title:y.title,sub:y.sub,r:50*rs,tx:cx+Math.cos(ang)*230*vx,ty:cy+Math.sin(ang)*230*vy*1.05,tendril:true});});
 feeds.forEach(function(f,i){var ang=Math.PI/2+(i-(feeds.length-1)/2)*0.7;list.push({id:f.id,kind:'feed',shape:f.shape,title:f.title,sub:f.sub,r:(28+5*Math.min(f.count||1,5))*rs,tx:cx+Math.cos(ang)*300*vx,ty:cy+Math.sin(ang)*300*vy});});
+list.push({id:'archive',kind:'archive',shape:'tasks',title:'Archive',sub:'what’s done: archived tasks',r:26*rs,tx:cx+Math.cos(PARA_ANG.x)*330*vx,ty:cy+Math.sin(PARA_ANG.x)*330*vy});
+list.forEach(function(d){var g=lqPara(d);d.live=PARA_LIVE[g];if(g==='r')d.r*=0.82;if(g==='x')d.r*=0.85;if(d.shape==='agents'&&d.kind==='shape'&&h.working)d.orbit=true;});
+lqGrow(list,cx,cy,vx,vy);list.forEach(function(d){d.ax=d.tx;d.ay=d.ty;});var lks=lqLinks(list,a.near);lqSeed(list,lks,cx,cy,vx,vy,lqPara,function(g){return PARA_ANG[g];});lqNear(list,lks,cx,cy,92*rs,S);
 // Solve it. If this screen can't hold them all clear of each other (lqRelax), the
 // least likely part goes under "more" (Hick: fewer, not cramped) and it solves
 // again. What only you can do and your feeds always stay out.
@@ -1437,45 +2009,77 @@ lqLabels();}
 // bridge (r²/d² fields sum to 1 midway at d = 2·√(r1²+r2²)), with a margin so the
 // wobble can't flicker a bridge open and shut, and room for their labels when
 // they share a column. Used once, when the layout is solved; nothing fights it live.
-function lqSep(a,b,dx){return Math.max(a.r+b.r+70,2.4*Math.sqrt(a.r*a.r+b.r*b.r))+(Math.abs(dx)<150?48:0);}
+// Tags float on their spheres, so two on the same row also keep a tag's width apart.
+function lqSep(a,b,dx,dy){var m=Math.max(a.r+b.r+70,2.4*Math.sqrt(a.r*a.r+b.r*b.r))+(Math.abs(dx)<150?48:0);return dy!=null&&Math.abs(dy)<56?Math.max(m,232):m;}
 // Solve the layout: push targets apart until every pair keeps lqSep (and clear
 // of the core), within the screen. If they can't all fit, every droplet gives up
 // a little of its size (the liquid is conserved, not crowded) and it solves again.
 function lqRelax(L,S,cx,cy,coreR){var n=L.length;
+// each sphere's tag, roughly: up to 170px wide, one or two lines, under it
+var lqLb=function(d){if(!d._lb){var t=typeof lqShort==='function'?lqShort(d.title,42):String(d.title||''),w=Math.min(170,t.length*6.6+18);d._lb={w:d.title?w:0,h:d.title?(t.length*6.6+18>170?42:26)+(d.kind==='proj'?16:0):0};}return d._lb;};
 for(var pass=0;pass<6;pass++){
 for(var it=0;it<220;it++){var moved=0;for(var i=0;i<n;i++){var a=L[i];
-for(var j=i+1;j<n;j++){var b=L[j],dx=a.tx-b.tx,dy=a.ty-b.ty,dd=Math.sqrt(dx*dx+dy*dy)||0.01,mn=lqSep(a,b,dx);if(dd<mn){var f=(mn-dd)/2/dd;a.tx+=dx*f;a.ty+=dy*f;b.tx-=dx*f;b.ty-=dy*f;moved++;}}
+for(var j=i+1;j<n;j++){var b=L[j],dx=a.tx-b.tx,dy=a.ty-b.ty,dd=Math.sqrt(dx*dx+dy*dy)||0.01,mn=lqSep(a,b,dx,dy);if(dd<mn){var f=(mn-dd)/2/dd;a.tx+=dx*f;a.ty+=dy*f;b.tx-=dx*f;b.ty-=dy*f;moved++;}
+var la=lqLb(a),lb=lqLb(b),sg=a.tx>=b.tx?1:-1,ox=0;if(Math.abs(a.tx-b.tx)<(la.w+lb.w)/2+10&&Math.abs((a.ty+a.r+4+la.h/2)-(b.ty+b.r+4+lb.h/2))<(la.h+lb.h)/2+4)ox=(la.w+lb.w)/2+10-Math.abs(a.tx-b.tx);else if(Math.abs(a.tx-b.tx)<la.w/2+b.r+6&&a.ty+a.r+4<b.ty+b.r&&a.ty+a.r+4+la.h>b.ty-b.r)ox=la.w/2+b.r+6-Math.abs(a.tx-b.tx);else if(Math.abs(a.tx-b.tx)<lb.w/2+a.r+6&&b.ty+b.r+4<a.ty+a.r&&b.ty+b.r+4+lb.h>a.ty-a.r)ox=lb.w/2+a.r+6-Math.abs(a.tx-b.tx);if(ox>0.5){a.tx+=sg*ox/2;b.tx-=sg*ox/2;moved++;}}
 var cdx=a.tx-cx,cdy=a.ty-cy,cd=Math.sqrt(cdx*cdx+cdy*cdy)||0.01,cm=Math.max(a.r+coreR+70,2.4*Math.sqrt(a.r*a.r+coreR*coreR));if(cd<cm){a.tx+=cdx*(cm-cd)/cd;a.ty+=cdy*(cm-cd)/cd;moved++;}
 a.tx=Math.max(a.r+60,Math.min(S.w-a.r-60,a.tx));a.ty=Math.max(140+a.r,Math.min(S.h-200-a.r,a.ty));}if(!moved)break;}
-var bad=false;for(var i2=0;i2<n&&!bad;i2++)for(var j2=i2+1;j2<n;j2++){var p=L[i2],q=L[j2],ddx=p.tx-q.tx,ddy=p.ty-q.ty;if(Math.sqrt(ddx*ddx+ddy*ddy)<lqSep(p,q,ddx)-1){bad=true;break;}}
+var bad=false;for(var i2=0;i2<n&&!bad;i2++)for(var j2=i2+1;j2<n;j2++){var p=L[i2],q=L[j2],ddx=p.tx-q.tx,ddy=p.ty-q.ty;if(Math.sqrt(ddx*ddx+ddy*ddy)<lqSep(p,q,ddx,ddy)-1){bad=true;break;}}
 if(!bad)return true;L.forEach(function(x){x.r*=0.9;});coreR*=0.9;}return false;}
+// A sphere's tag, short: no markdown, no (§5 of .symbiot/BRIEF…) or path asides, cut
+// at a word near n characters. The whole text stays on the tag's title.
+function lqShort(t,n){t=String(t||'').split('**').join('').split(String.fromCharCode(96)).join('').split(String.fromCharCode(10)).join(' ');var out='',buf='',depth=0;
+for(var i=0;i<t.length;i++){var ch=t.charAt(i);if(ch==='('){depth++;buf+=ch;continue;}if(depth){buf+=ch;if(ch===')'){depth--;if(!depth){if(buf.indexOf('§')<0&&buf.indexOf('/')<0&&buf.indexOf('.symbiot')<0)out+=buf;buf='';}}continue;}out+=ch;}
+while(out.indexOf('  ')>=0)out=out.split('  ').join(' ');[' :',' ,',' ;',' .'].forEach(function(x){out=out.split(x).join(x.charAt(1));});out=out.trim();n=n||42;if(out.length>n){out=out.slice(0,n);var k=out.lastIndexOf(' ');if(k>n*0.6)out=out.slice(0,k);out=out.replace(/[ ,;:.-]+$/,'')+'…';}return out;}
 function lqLabels(){var el=$('lqdrops');if(!el)return;
-el.innerHTML=LQ.drops.map(function(d,i){return "<button type='button' class='lqd lq-"+d.kind+"' data-i='"+i+"'><span>"+esc(d.title)+"</span>"+(d.sub?"<small>"+esc(d.sub)+"</small>":"")+"</button>";}).join('');
-LQ.btns=[];el.querySelectorAll('.lqd').forEach(function(b){LQ.btns.push(b);b.addEventListener('click',function(ev){lqOpen(LQ.drops[+b.getAttribute('data-i')],ev);});});
+el.innerHTML=LQ.drops.map(function(d,i){return "<div class='lqd lq-"+d.kind+(LQ.openTag===d.id?' open':'')+"' data-i='"+i+"'><button type='button' class='lt' title='"+escQ(String(d.title||'').split('**').join('')+(d.sub?' · '+d.sub:''))+"' aria-expanded='"+(LQ.openTag===d.id)+"'><span>"+esc(lqShort(d.title,42))+"</span>"+(d.kind==='proj'&&d.sub?"<span class='lm'>"+esc(lqShort(d.sub,40))+"</span>":"")+"</button>"+(d.sub?"<small>"+esc(d.sub)+"</small>":"")+"<button type='button' class='lgo'>Open &rsaquo;</button></div>";}).join('');
+LQ.btns=[];LQ.lts=[];el.querySelectorAll('.lqd').forEach(function(b){LQ.btns.push(b);var d=LQ.drops[+b.getAttribute('data-i')],lt=b.querySelector('.lt'),go=b.querySelector('.lgo');LQ.lts.push(lt);
+if(lt)lt.addEventListener('click',function(ev){lqOpen(d,ev);});
+if(go)go.addEventListener('click',function(ev){LQ.openTag=null;lqOpen(d,ev);});});
+var oe=$('lqorbits');if(oe){oe.innerHTML=LQ.drops.map(function(d,i){return d.kind==='run'||d.orbit?"<div class='lqorbit"+(d.ask?' ask':'')+"' data-i='"+i+"'><span><i></i></span><span><i></i></span><span><i></i></span></div>":'';}).join('');LQ.orbs=[];oe.querySelectorAll('.lqorbit').forEach(function(o){LQ.orbs.push(o);});}
 LQ.drops.forEach(function(d){if(d.x===d.tx&&d.y===d.ty)return;if(!LQ.frame){d.x=d.tx;d.y=d.ty;d.cr=d.r;}});lqStep();
+var ge=$('lqgroups');if(ge){var gs={};if(LQ.scene!=='work')LQ.drops.forEach(function(d){if(d.kind!=='more')gs[lqPara(d)]=1;});ge.innerHTML=['p','a','r','x'].filter(function(g){return gs[g];}).map(function(g){return "<button type='button' class='lqg' data-g='"+g+"'><span>"+PARA_NAME[g]+"</span><small>"+PARA_SUB[g]+"</small></button>";}).join('');LQ.gbtns=[];ge.querySelectorAll('.lqg').forEach(function(b){LQ.gbtns.push(b);b.addEventListener('click',function(){lqParaGo(b.getAttribute('data-g'));});});}
 var c=$('lqcore');if(c)c.textContent=LQ.coreText||'';}
+// Tapping a sphere (or its name) opens its tag; tapping it again, or elsewhere, closes it.
+function lqTag(id){LQ.openTag=LQ.openTag===id?null:id;lqAct();LQ.btns.forEach(function(b,i){var d=LQ.drops[+b.getAttribute('data-i')],on=!!d&&d.id===LQ.openTag;if(b.classList)b.classList.toggle('open',on);var lt=LQ.lts&&LQ.lts[i];if(lt&&lt.setAttribute)lt.setAttribute('aria-expanded',on?'true':'false');});}
 function lqVia(ev){return LQ.talking?'talk':ev&&ev.pointerType==='touch'?'touch':ev&&ev.detail===0?'key':'click';}
 function lqUse(shape,ev,via){api('/api/adapt/use',{shape:shape,from:LQ.last,via:via||lqVia(ev)});LQ.last=shape;}
 function lqOpen(d,ev){if(!d)return;lqAct();
 if(d.kind==='more'){LQ.moreOpen=!LQ.moreOpen;lqMore(d);return;}
-var S=lqSize();LQ.ripple=[d.x/S.w,d.y/S.h,LQ.t];lqUse(d.shape||'board',ev);lqPool(d.shape||'board');}
+if(d.kind==='archive'){lqArchive();return;}
+if(d.kind==='proj'){TFILTER.repo=d.repo;TFILTER.type='';lqPool('tasks');if(typeof loadTasks==='function')loadTasks();return;}
+var S=lqSize();LQ.ripple=[d.x/S.w,d.y/S.h,LQ.t];if(LQ.scene==='work'){lqPool(d.shape||'agents');return;}lqUse(d.shape||'board',ev);lqGo(d.shape||'board');}
 function lqMore(d){var el=$('lqmore');if(!el)return;if(!LQ.moreOpen||!d){el.innerHTML='';return;}
-el.innerHTML=(d.more||[]).map(function(s){return "<button type='button' class='lqd lqm' style='position:static' data-s='"+s+"'><span>"+esc(LQNAMES[s]||s)+"</span></button>";}).join('');
-el.querySelectorAll('.lqm').forEach(function(b){b.addEventListener('click',function(ev){var s=b.getAttribute('data-s');LQ.moreOpen=false;el.innerHTML='';lqUse(s,ev);lqPool(s);});});}
-function lqPool(shape){tabPicked=true;setTab(shape);var b=document.body;if(b&&b.classList)b.classList.add('lq-pooled');LQ.mode='pool';var m=document.querySelector('main');if(m&&m.focus)m.focus();}
-function lqSink(){var b=document.body;if(b&&b.classList)b.classList.remove('lq-pooled');LQ.mode='aware';lqAct();lqLoad(false);}
+el.innerHTML=(d.more||[]).map(function(s){return "<button type='button' class='lqmb lqm' data-s='"+s+"'>"+esc(LQNAMES[s]||s)+"</button>";}).join('');
+el.querySelectorAll('.lqm').forEach(function(b){b.addEventListener('click',function(ev){var s=b.getAttribute('data-s');LQ.moreOpen=false;el.innerHTML='';lqUse(s,ev);lqGo(s);});});}
+function lqGo(shape){if(shape==='tasks'||shape==='agents'){lqWorkBy('task');return;}lqPool(shape);}
+// The work, by task (Tasks, Agents) or by project (the Projects group): the same scene, a step in the history each.
+function lqWorkBy(by){if(LQ.scene==='work'&&LQ.workBy===by&&LQ.mode!=='pool')return;lqRemember();LQ.back=true;LQ.workBy=by;try{lqWork();}finally{LQ.back=false;}}
+// Back, one step: every move between screens (home, the Tasks scene, a panel, the
+// Archive) notes where you were; a right-click (or the mouse's back button) returns
+// there. In a text field or over selected text the browser's own menu stays.
+function lqState(){return {by:LQ.workBy||'task',scene:LQ.scene==='work'?'work':'home',pool:LQ.mode==='pool'?(LQ.poolShape||null):null,arch:LQ.mode==='pool'&&!!LQ.arch};}
+function lqRemember(){if(LQ.back)return;LQ.hist=LQ.hist||[];var s=lqState(),top=LQ.hist[LQ.hist.length-1];if(top&&top.scene===s.scene&&top.pool===s.pool&&top.arch===s.arch)return;LQ.hist.push(s);if(LQ.hist.length>40)LQ.hist.shift();}
+function lqBack(){var h=LQ.hist||[],s=h.pop(),cur=lqState();if(!s){if(cur.pool)s={scene:cur.scene,pool:null};else if(cur.scene==='work')s={scene:'home',pool:null};else return;}
+LQ.back=true;try{if(s.scene==='work'&&(cur.scene!=='work'||cur.by!==s.by)){LQ.workBy=s.by||'task';lqWork();}else if(s.scene==='home'&&cur.scene==='work')lqHome();
+if(s.pool){if(s.arch)lqArchive();else lqPool(s.pool);}else if(LQ.mode==='pool')lqSink();}finally{LQ.back=false;}}
+function lqPool(shape){if(shape==='map'&&LM.items&&LM.items.length)setTimeout(function(){lmFit();lmStart();},60);lqRemember();LQ.poolShape=shape;LQ.arch=false;tabPicked=true;setTab(shape);var b=document.body;if(b&&b.classList)b.classList.add('lq-pooled');LQ.mode='pool';var m=document.querySelector('main');if(m&&m.focus)m.focus();}
+function lqSink(){lqRemember();var b=document.body;if(b&&b.classList)b.classList.remove('lq-pooled');LQ.mode='aware';lqAct();lqLoad(false);}
 function lqAct(){LQ.lastAct=Date.now();if(LQ.mode==='rest'){LQ.mode='aware';lqLoad(true);}}
 function lqTalkMode(on){LQ.talking=on;var b=document.body;if(b&&b.classList)b.classList.toggle('lq-talking',on);}
-function lqTalkShow(wait){var el=$('lqtalk');if(!el)return;el.innerHTML=LQ.talk.map(function(m){return "<div class='lqmsg"+(m.me?' me':'')+"'>"+esc(m.text)+stepsHtml(m.steps)+"</div>";}).join('')+(wait?"<div class='lqmsg thinking'>Thinking: recalling what it knows, reading what's here&hellip;</div>":'');if(el.scrollHeight)el.scrollTop=el.scrollHeight;}
+function lqTalkShow(wait){var el=$('lqtalk');if(!el)return;var n=LQ.talk.length;el.innerHTML=LQ.talk.map(function(m,i){var age=n-1-i,op=age<2?1:age===2?0.7:age===3?0.45:0.25;return "<div class='lqmsg"+(m.me?' me':'')+"' style='opacity:"+op+"'>"+esc(m.text)+stepsHtml(m.steps)+"</div>";}).join('')+(wait?"<div class='lqmsg thinking'>Thinking: recalling what it knows, reading what's here&hellip;</div>":'');if(el.scrollHeight)el.scrollTop=el.scrollHeight;
+// scrolled up to read back: the whole history shows, clear; back at the bottom it rolls on again
+if(!el.wired&&el.addEventListener){el.wired=true;el.addEventListener('scroll',function(){var up=el.scrollHeight-el.scrollTop-el.clientHeight>24;if(el.classList)el.classList.toggle('back',up);});}}
 function lqSay(){var i=$('lqask');var q=((i&&i.value)||'').trim();if(!q)return;i.value='';lqAct();
 var low=q.toLowerCase().replace(/^(please |can you |could you )/,''),hit='';
 Object.keys(LQNAMES).forEach(function(k){var nm=LQNAMES[k].toLowerCase();if(hit)return;['open ','show ','go to ','take me to '].forEach(function(v){if(low.indexOf(v+nm)===0||low.indexOf(v+'my '+nm)===0)hit=k;});if(low===nm)hit=k;});
-if(hit){lqTalkMode(true);lqUse(hit,null,'talk');lqPool(hit);return;}
+if(hit){lqTalkMode(true);lqUse(hit,null,'talk');lqGo(hit);return;}
+if(/^(go|start|go for it|start them|start it)[.! ]*$/.test(low)){lqTalkMode(true);lqGoWork();return;}
+if(/^(home|back)[.! ]*$/.test(low)&&LQ.scene==='work'){lqHome();return;}
 LQ.talk.push({me:true,text:q});LQ.talk=LQ.talk.slice(-8);lqTalkShow(true);
 api('/api/home/ask',{question:q}).then(function(r){LQ.talk.push({me:false,steps:r.steps||[],text:r.error==='not-connected'?'Connect an AI in Settings to talk to me. Say "open settings".':(r.answer||r.error||'(no answer)')});LQ.talk=LQ.talk.slice(-8);lqTalkShow(false);LQ.ripple=[0.5,0.47,LQ.t];lqLoad(false);}).catch(function(e){LQ.talk.push({me:false,text:String((e&&e.message)||e)});lqTalkShow(false);});}
 // The physics: each droplet a critically damped spring to its place (no wobble,
 // no overshoot), pushed off its neighbours and the core where they'd overlap.
-function lqStep(){var S0=lqSize();if(LQ.adapt&&(S0.w!==LQ.bw||S0.h!==LQ.bh))lqBuild();var S=S0,cx=S.w/2,cy=S.h*0.47,k=0.022,c=2*Math.sqrt(k),th=LQ.theme,still=th.still,rest=LQ.mode==='rest',pool=LQ.mode==='pool',talk=LQ.talking&&!pool;
+function lqStep(){var S0=lqSize();if(S0.w!==LQ.bw||S0.h!==LQ.bh){if(LQ.scene==='work'&&LQ.workData)lqBuildWork();else if(LQ.adapt)lqBuild();}var S=S0,cx=S.w/2,cy=S.h*0.47,k=0.022,c=2*Math.sqrt(k),th=LQ.theme,still=th.still,rest=LQ.mode==='rest',pool=LQ.mode==='pool',talk=LQ.talking&&!pool;
 var core=LQ.core,ctx=cx,cty=talk?S.h-44:cy,ctr=(rest?140:pool?50:talk?54+30*(LQ.talkWeight||0.35):92)*S.s;
 if(!core.x){core.x=cx;core.y=cy;}core.x+=(ctx-core.x)*(still?1:0.06);core.y+=(cty-core.y)*(still?1:0.06);core.cr+=(ctr-core.cr)*(still?1:0.05);
 var D=LQ.drops,N=D.length;
@@ -1487,60 +2091,87 @@ var ax=k*(tx-d.x)-c*d.vx,ay=k*(ty-d.y)-c*d.vy;
 if(still){d.x=tx;d.y=ty;d.vx=0;d.vy=0;}else{d.vx+=ax;d.vy+=ay;d.x+=d.vx;d.y+=d.vy;}
 if(!rest&&!pool){d.x=Math.max(d.cr+12,Math.min(S.w-d.cr-12,d.x));d.y=Math.max(140+d.cr,Math.min(S.h-150-d.cr-50,d.y));}
 d.cr+=(tr-d.cr)*(still?1:0.06);
-var b=LQ.btns[i];if(b&&b.offsetWidth)d.lw=b.offsetWidth;if(b&&b.style){var up=d.y<core.y-core.cr*0.3;b.style.transform='translate('+Math.round(d.x)+'px,'+Math.round(up?d.y-d.cr-10:d.y+d.cr+10)+'px) translateX(-50%)'+(up?' translateY(-100%)':'');var show=!rest&&!pool;b.style.opacity=show?'1':'0';b.style.pointerEvents=show?'auto':'none';b.tabIndex=show?0:-1;}}
-var cb=$('lqcore');if(cb&&cb.style){cb.style.transform='translate('+Math.round(cx)+'px,'+(rest?Math.round(core.y+core.cr+18):56)+'px) translateX(-50%)';var ct=rest?(LQ.coreText||'All handled'):talk||pool?'':(LQ.coreText||'');cb.textContent=ct;cb.style.opacity=ct?'1':'0';cb.style.pointerEvents=ct?'auto':'none';}}
+var b=LQ.btns[i];if(b&&b.offsetWidth)d.lw=b.offsetWidth;if(b&&b.style){b.style.transform='translate('+Math.round(d.x-(b.offsetWidth||0)/2)+'px,'+Math.round(d.y+d.cr+(d.kind==='run'?28:4))+'px)';var show=!rest&&!pool;b.style.opacity=show?'1':'0';b.style.pointerEvents=show?'auto':'none';var lt=LQ.lts&&LQ.lts[i];if(lt)lt.tabIndex=show?0:-1;}}
+(LQ.gbtns||[]).forEach(function(gb){var g=gb.getAttribute('data-g'),top=1e9,sx=0,nn=0;D.forEach(function(d){if(d.kind!=='more'&&lqPara(d)===g){top=Math.min(top,d.y-d.cr);sx+=d.x;nn++;}});if(!nn||!gb.style)return;var gw=gb.offsetWidth||0,gh=gb.offsetHeight||0;gb.style.transform='translate('+Math.round(Math.max(12,Math.min(lqSize().w-gw-12,sx/nn-gw/2)))+'px,'+Math.round(Math.max(48,top-gh-30))+'px)';var gshow=!rest&&!pool&&!talk;gb.style.opacity=gshow?'1':'0';gb.style.pointerEvents=gshow?'auto':'none';gb.tabIndex=gshow?0:-1;});
+(LQ.orbs||[]).forEach(function(o){var d=D[+o.getAttribute('data-i')];if(!d||!o.style)return;var R=Math.round(d.cr+20);o.style.width=o.style.height=(2*R)+'px';o.style.transform='translate('+Math.round(d.x-R)+'px,'+Math.round(d.y-R)+'px)';o.style.opacity=rest||pool?'0':'1';});
+var cb=$('lqcore');if(cb&&cb.style){var inC=LQ.theme&&LQ.theme.look!=='pearl'&&core.cr>60;cb.style.maxWidth=inC?Math.round(core.cr*1.5)+'px':'340px';var cw=cb.offsetWidth||0,chh=cb.offsetHeight||0;cb.style.transform='translate('+Math.round(cx-cw/2)+'px,'+(rest||inC?(inC?Math.round(core.y-chh/2):Math.round(core.y+core.cr+14)):56)+'px)';var ct=rest?(LQ.coreText||'All handled'):talk||pool?'':(LQ.coreText||'');cb.textContent=ct;cb.style.opacity=ct?'1':'0';cb.style.pointerEvents=ct?'auto':'none';}}
 // The liquid: a metaball surface (Σ r²/d² = 1) shaded as chrome, on the GPU.
 var LQ_FS=['precision highp float;',
-'uniform vec2 uRes;uniform float uT;uniform float uDpr;uniform vec3 uB[16];uniform vec3 uRip;uniform float uLight;uniform float uContrast;uniform vec4 uAccent;uniform float uExposure;',
-'float field(vec2 p){float f=0.0;for(int i=0;i<16;i++){vec3 b=uB[i];float r=b.z*uDpr;vec2 d=p-b.xy*uRes;f+=r*r/(dot(d,d)+1.0);}vec2 q=p/uDpr;return f*(1.0+0.025*sin(q.x*0.011+uT*0.7)*cos(q.y*0.009-uT*0.55)+0.012*sin(q.x*0.031-q.y*0.027+uT*1.3));}',
+'uniform vec2 uRes;uniform float uT;uniform float uDpr;uniform vec4 uB[NB];uniform vec3 uRip;uniform float uStyle;uniform float uContrast;uniform float uExposure;',
+'float field(vec2 p){float f=0.0;for(int i=0;i<NB;i++){vec4 b=uB[i];float r=b.z*uDpr;vec2 d=p-b.xy*uRes;f+=r*r/(dot(d,d)+1.0);}vec2 q=p/uDpr;return f*(1.0+0.025*sin(q.x*0.011+uT*0.7)*cos(q.y*0.009-uT*0.55)+0.012*sin(q.x*0.031-q.y*0.027+uT*1.3));}',
+'float tint(vec2 p){float f=0.0,t=0.0;for(int i=0;i<NB;i++){vec4 b=uB[i];float r=b.z*uDpr;vec2 d=p-b.xy*uRes;float c=r*r/(dot(d,d)+1.0);f+=c;t+=c*b.w;}return t/max(f,0.0001);}',
 'float hash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}',
-'vec3 env(vec3 r){float y=r.y;vec3 c=mix(mix(vec3(0.02,0.022,0.03),vec3(0.36,0.38,0.43),uLight),vec3(0.82,0.84,0.90),smoothstep(-0.35,0.55,y));c+=vec3(1.0)*pow(max(0.0,1.0-abs(y-0.18+0.04*sin(uT*0.3))*5.0),4.0)*1.1;c+=vec3(0.75,0.82,1.0)*pow(max(0.0,r.x),10.0)*0.9;c+=vec3(1.0,0.93,0.86)*pow(max(0.0,-r.x),14.0)*0.5;c*=0.92+0.08*sin(r.x*4.0+r.y*3.0+uT*0.4);return c;}',
-'void main(){vec2 p=vec2(gl_FragCoord.x,uRes.y-gl_FragCoord.y);float f=field(p);float e=2.0*uDpr;',
-'float fx=field(p+vec2(e,0.0))-field(p-vec2(e,0.0));float fy=field(p+vec2(0.0,e))-field(p-vec2(0.0,e));',
+'vec3 glassBg(vec2 p){vec2 q=p/uRes;vec3 c=vec3(0.918,0.927,0.936);',
+'vec2 a=vec2(0.22+0.05*sin(uT*0.13),0.28+0.06*cos(uT*0.11));vec2 b=vec2(0.8+0.04*cos(uT*0.09),0.22+0.05*sin(uT*0.15));vec2 e=vec2(0.52+0.06*sin(uT*0.07),0.62);',
+'c=mix(c,vec3(0.56,0.79,0.80),0.6*exp(-dot(q-a,q-a)*6.0));c=mix(c,vec3(0.98,0.79,0.60),0.55*exp(-dot(q-b,q-b)*7.0));c=mix(c,vec3(0.72,0.76,0.93),0.45*exp(-dot(q-e,q-e)*5.0));',
+'vec2 gp=mod(p,22.0*uDpr)-11.0*uDpr;c-=0.07*smoothstep(1.7*uDpr,0.7*uDpr,length(gp));return c;}',
+'float box(vec2 d,vec2 c,vec2 s){vec2 k=abs(d-c)/s;return 1.0-smoothstep(0.55,1.0,max(k.x,k.y));}',
+'vec3 irid(float x){return 0.5+0.5*cos(6.2832*(vec3(0.0,0.33,0.67)+x));}',
+'void main(){vec2 p=vec2(gl_FragCoord.x,uRes.y-gl_FragCoord.y);float f=field(p);float e=1.5*uDpr;',
+'vec2 g=vec2(field(p+vec2(e,0.0))-field(p-vec2(e,0.0)),field(p+vec2(0.0,e))-field(p-vec2(0.0,e)))/(2.0*e);float gm=length(g)+0.00001;',
+'float sd=(f-1.0)/gm;float m=smoothstep(-0.75*uDpr,0.75*uDpr,sd);vec2 gn=g/gm;',
 'vec2 rc=uRip.xy*uRes;float rd=distance(p,rc)/uDpr;float age=uT-uRip.z;float ring=0.0;if(age>0.0&&age<4.0){float w=rd-age*300.0;ring=sin(w*0.07)*exp(-abs(w)*0.02)*(1.0-age/4.0);}',
-'vec2 rdir=normalize(p-rc+0.001);fx+=ring*0.22*rdir.x;fy+=ring*0.22*rdir.y;',
-'vec3 n=normalize(vec3(-fx*6.0,fy*6.0,1.0));vec3 r=reflect(vec3(0.0,0.0,-1.0),n);vec3 metal=env(r);',
-'float fres=pow(1.0-n.z,2.0);metal=mix(metal,vec3(1.0),fres*0.25);metal*=0.86+0.14*smoothstep(1.0,4.0,f);',
-'metal=mix(metal,metal*(0.55+0.9*uAccent.rgb),uAccent.a*0.3);',
-'metal=mix(metal,metal*(1.0-0.5*fres)+0.04,uLight);metal*=uExposure;',
-'vec2 uv=p/uRes;vec2 cell=floor(p/(2.0*uDpr));float s=step(0.9975,hash(cell))*(0.35+0.25*sin(uT*1.5+hash(cell+3.1)*6.28))*(1.0-uLight);',
-'vec3 dark=vec3(0.012,0.014,0.02)+vec3(s);dark*=1.0-0.55*length(uv-0.5);dark+=vec3(0.05,0.055,0.07)*smoothstep(0.25,1.0,f);',
-'vec3 pearl=vec3(0.93,0.94,0.955)-0.07*length(uv-0.5);pearl-=vec3(0.11)*smoothstep(0.3,1.0,f);',
-'vec3 bg=mix(dark,pearl,uLight)*mix(1.0,uExposure,0.5);bg+=mix(vec3(0.55,0.6,0.7),vec3(-0.3),uLight)*abs(ring)*0.09;',
-'float edge=mix(0.07,0.02,uContrast);float m=smoothstep(1.0-edge,1.0+edge,f);',
-'float line=(smoothstep(0.86,0.97,f)-smoothstep(0.97,1.08,f))*uContrast;',
-'vec3 col=mix(bg,metal,m);col=mix(col,mix(vec3(1.0),vec3(0.0),uLight),line);',
+'vec2 rdir=normalize(p-rc+0.001);float rho=clamp(1.0/sqrt(max(f,0.0001)),0.0,1.0);',
+'vec3 n=normalize(vec3(-gn*rho+ring*0.18*rdir,sqrt(max(0.0,1.0-rho*rho))+0.02));',
+'vec3 r=vec3(2.0*n.z*n.xy,2.0*n.z*n.z-1.0);float fs=field(p-vec2(0.0,12.0*uDpr));float gr=hash(floor(p))-0.5;vec3 col;vec3 ink=vec3(0.0);float tf=tint(p);vec3 amb=vec3(0.95,0.62,0.22);',
+'if(uStyle<0.5){',
+'vec3 bg=glassBg(p+rdir*ring*6.0*uDpr);bg-=0.09*smoothstep(0.45,1.0,fs)*(1.0-m);',
+'vec2 off=n.xy*34.0*uDpr*rho;vec3 rf=vec3(glassBg(p+off*0.9).r,glassBg(p+off).g,glassBg(p+off*1.1).b);',
+'rf=mix(rf,vec3(dot(rf,vec3(0.33))),0.15)*vec3(0.985,0.995,1.0)+0.03;float fr=pow(1.0-n.z,3.0);rf=mix(rf,vec3(1.0),fr*0.6);rf=mix(rf,rf*vec3(1.08,0.86,0.62),tf*0.55);',
+'rf+=vec3(1.0)*pow(max(dot(n,normalize(vec3(-0.35,-0.6,1.0))),0.0),140.0)*0.95;rf+=vec3(1.0,0.97,0.92)*pow(max(dot(n,normalize(vec3(0.5,0.65,1.0))),0.0),24.0)*0.12;',
+'rf-=0.10*smoothstep(2.4*uDpr,0.0,sd);col=mix(bg,rf,m)+gr*0.008;',
+'}else if(uStyle<1.5){',
+'vec2 q=p/uRes;vec3 bg=vec3(0.03,0.034,0.04)+0.045*exp(-dot(q-vec2(0.5,0.2),q-vec2(0.5,0.2))*3.0);bg*=1.0-0.35*length(q-0.5);',
+'bg+=vec3(0.025,0.026,0.03)*smoothstep(0.5,1.0,fs)*(1.0-m)+vec3(0.5,0.55,0.62)*abs(ring)*0.05;',
+'float R=mix(0.16,1.0,pow(1.0-n.z,3.0));',
+'vec3 env=vec3(1.0,0.99,0.97)*box(r.xy,vec2(-0.42,-0.58),vec2(0.30,0.15))*1.2+vec3(0.85,0.9,1.0)*box(r.xy,vec2(0.78,-0.05),vec2(0.07,0.55))*0.55+vec3(0.6,0.5,0.4)*box(r.xy,vec2(0.0,0.85),vec2(0.9,0.12))*0.10;',
+'vec3 c=vec3(0.010,0.011,0.013)+env*R+irid((1.0-n.z)*1.3+0.15)*pow(1.0-n.z,2.2)*0.22;c+=amb*tf*(0.05+0.7*pow(1.0-n.z,2.0));c+=vec3(0.06)*smoothstep(1.8*uDpr,0.0,sd);',
+'col=mix(bg,c,m)+gr*0.012;ink=vec3(1.0);',
+'}else{',
+'vec2 q=p/uRes;vec3 bg=vec3(0.929,0.925,0.917)-0.06*length(q-vec2(0.5,0.35));bg-=vec3(0.13,0.13,0.12)*smoothstep(0.45,1.0,fs)*(1.0-m)+vec3(0.2)*abs(ring)*0.05;',
+'vec3 env=mix(vec3(0.96,0.965,0.97),vec3(0.36,0.38,0.42),smoothstep(-0.7,0.75,r.y));env=mix(env,vec3(0.62,0.6,0.57),smoothstep(0.55,1.0,r.y)*0.6);',
+'env+=vec3(1.0)*box(r.xy,vec2(-0.45,-0.5),vec2(0.32,0.2))*0.55+vec3(1.0)*box(r.xy,vec2(0.72,-0.1),vec2(0.08,0.45))*0.35;',
+'vec3 c=env*mix(0.82,1.0,pow(1.0-n.z,2.0))+irid((1.0-n.z)*0.9+0.55)*pow(1.0-n.z,1.6)*0.10;c=mix(c,c*vec3(1.1,0.86,0.6),tf*0.6);c-=0.08*smoothstep(1.6*uDpr,0.0,sd);',
+'col=mix(bg,c,m)+gr*0.014;',
+'}',
+'float line=(smoothstep(-2.0*uDpr,0.0,sd)-smoothstep(0.0,2.0*uDpr,sd))*uContrast;col=mix(col,ink,line);col*=mix(1.0,uExposure,0.5);',
 'gl_FragColor=vec4(col,1.0);}'].join('');
-function lqGL(){var c=$('lq');if(!c||!c.getContext)return null;var gl=null;try{gl=c.getContext('webgl',{antialias:false,alpha:false});}catch(e){}if(!gl)return null;
+function lqFS(n){return LQ_FS.split('NB').join(String(n));}
+function lqGL(c,n){c=c||$('lq');n=n||16;if(!c||!c.getContext)return null;var gl=null;try{gl=c.getContext('webgl',{antialias:false,alpha:false});}catch(e){}if(!gl)return null;
 function sh(t,src){var o=gl.createShader(t);gl.shaderSource(o,src);gl.compileShader(o);return o;}
-var pr=gl.createProgram();gl.attachShader(pr,sh(gl.VERTEX_SHADER,'attribute vec2 a;void main(){gl_Position=vec4(a,0.0,1.0);}'));gl.attachShader(pr,sh(gl.FRAGMENT_SHADER,LQ_FS));gl.linkProgram(pr);
+var pr=gl.createProgram();gl.attachShader(pr,sh(gl.VERTEX_SHADER,'attribute vec2 a;void main(){gl_Position=vec4(a,0.0,1.0);}'));gl.attachShader(pr,sh(gl.FRAGMENT_SHADER,lqFS(n)));gl.linkProgram(pr);
 if(!gl.getProgramParameter(pr,gl.LINK_STATUS))return null;gl.useProgram(pr);
 var bf=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,bf);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,3,-1,-1,3]),gl.STATIC_DRAW);
 var al=gl.getAttribLocation(pr,'a');gl.enableVertexAttribArray(al);gl.vertexAttribPointer(al,2,gl.FLOAT,false,0,0);
-var U={};['uRes','uT','uDpr','uB','uRip','uLight','uContrast','uAccent','uExposure'].forEach(function(n){U[n]=gl.getUniformLocation(pr,n);});
-return {gl:gl,c:c,U:U,out:new Float32Array(48),t0:(window.performance&&performance.now)?performance.now():Date.now()};}
-function lqDraw(G){var gl=G.gl,c=G.c,S=lqSize(),d=Math.min(window.devicePixelRatio||1,1.5),W=Math.max(1,Math.floor(S.w*d)),H=Math.max(1,Math.floor(S.h*d));
+var U={};['uRes','uT','uDpr','uB','uRip','uStyle','uContrast','uExposure'].forEach(function(n){U[n]=gl.getUniformLocation(pr,n);});
+return {gl:gl,c:c,U:U,out:new Float32Array(n*4),t0:(window.performance&&performance.now)?performance.now():Date.now()};}
+function lqDraw(G){var gl=G.gl,c=G.c,S=lqSize(),d=Math.min(window.devicePixelRatio||1,3),W=Math.max(1,Math.floor(S.w*d)),H=Math.max(1,Math.floor(S.h*d));
 if(c.width!==W||c.height!==H){c.width=W;c.height=H;gl.viewport(0,0,W,H);}
 var now=(window.performance&&performance.now)?performance.now():Date.now(),t=(now-G.t0)/1000,th=LQ.theme,still=th.still,o=G.out;LQ.t=t;
-for(var i=0;i<48;i++)o[i]=0;
-var put=function(k,x,y,r){if(k>15)return;var w=still?0:(k===0?1:0.3);o[k*3]=x/S.w+Math.sin(t*1.3+k*1.7)*0.004*w;o[k*3+1]=y/S.h+Math.cos(t*1.1+k*2.3)*0.005*w;o[k*3+2]=Math.max(0,r)*(1+0.035*Math.sin(t*2.0+k)*w);};
+for(var i=0;i<64;i++)o[i]=0;
+var put=function(k,x,y,r,a,lv){if(k>15)return;var w=still?0:(k===0?1:lv!=null?lv:0.3);o[k*4]=x/S.w+Math.sin(t*1.3+k*1.7)*0.004*w;o[k*4+1]=y/S.h+Math.cos(t*1.1+k*2.3)*0.005*w;o[k*4+2]=Math.max(0,r)*(1+0.035*Math.sin(t*2.0+k)*w);o[k*4+3]=a||0;};
 put(0,LQ.core.x,LQ.core.y,LQ.core.cr);var k=1,tend=[];
-LQ.drops.forEach(function(dr){put(k++,dr.x,dr.y,dr.cr);if(dr.tendril&&LQ.mode==='aware'&&!LQ.talking)tend.push(dr);});
+LQ.drops.forEach(function(dr){put(k++,dr.x,dr.y,dr.cr,dr.kind==='you'||dr.ask?1:0,dr.live);if(dr.tendril&&LQ.mode==='aware'&&!LQ.talking)tend.push(dr);});
 // a tendril is a chain of blobs close enough to always bridge (spaced at under 2.8r),
 // never one blob floating in the gap: drawn whole or not at all
 tend.forEach(function(dr){var dx=dr.x-LQ.core.x,dy=dr.y-LQ.core.y,len=Math.sqrt(dx*dx+dy*dy)||1,gap=len-LQ.core.cr-dr.cr;if(gap<=8)return;var n=Math.max(1,Math.min(3,Math.ceil(gap/40))),sp=gap/(n+1),rr=sp/2;if(k+n>15)return;for(var m=1;m<=n;m++){var at=LQ.core.cr+sp*m;put(k++,LQ.core.x+dx/len*at,LQ.core.y+dy/len*at,rr);}});
 var P=LQ.pointer;if(P&&LQ.mode==='aware'&&!LQ.talking){var best=null,bd=1e9;[LQ.core].concat(LQ.drops).forEach(function(g){if(g.cr<18)return;var dd=Math.hypot(P[0]-g.x,P[1]-g.y)-g.cr;if(dd<bd){bd=dd;best=g;}});
 if(best&&bd<230){var dx=P[0]-best.x,dy=P[1]-best.y,dl=Math.hypot(dx,dy)||1,reach=Math.min(dl,best.cr+70);put(15,best.x+dx/dl*reach,best.y+dy/dl*reach,8+20*(1-Math.max(0,bd)/230));}}
-var U=G.U;gl.uniform2f(U.uRes,W,H);gl.uniform1f(U.uT,t);gl.uniform1f(U.uDpr,d);gl.uniform3fv(U.uB,o);gl.uniform3f(U.uRip,LQ.ripple[0],LQ.ripple[1],still?-10:LQ.ripple[2]);
-gl.uniform1f(U.uLight,th.light?1:0);gl.uniform1f(U.uContrast,th.contrast?1:0);var ac=th.accent;gl.uniform4f(U.uAccent,ac?ac[0]:1,ac?ac[1]:1,ac?ac[2]:1,ac?1:0);gl.uniform1f(U.uExposure,th.night?0.82:1);
+var U=G.U;gl.uniform2f(U.uRes,W,H);gl.uniform1f(U.uT,t);gl.uniform1f(U.uDpr,d);gl.uniform4fv(U.uB,o);gl.uniform3f(U.uRip,LQ.ripple[0],LQ.ripple[1],still?-10:LQ.ripple[2]);
+gl.uniform1f(U.uStyle,th.look==='glass'?0:th.look==='pearl'?2:1);gl.uniform1f(U.uContrast,th.contrast?1:0);gl.uniform1f(U.uExposure,th.night?0.82:1);
 gl.drawArrays(gl.TRIANGLES,0,3);}
 function lqInit(){var bd=document.body;if(!bd||!bd.classList)return;lqTheme();bd.classList.add('lq-liquid');
 ['(prefers-color-scheme: light)','(prefers-contrast: more)','(forced-colors: active)','(prefers-reduced-transparency: reduce)','(prefers-reduced-motion: reduce)'].forEach(function(q){try{var mq=window.matchMedia&&window.matchMedia(q);if(mq&&mq.addEventListener)mq.addEventListener('change',lqTheme);else if(mq&&mq.addListener)mq.addListener(lqTheme);}catch(e){}});
-var L=$('liquid');if(L&&L.addEventListener){L.addEventListener('pointermove',function(ev){LQ.pointer=[ev.clientX,ev.clientY];if(ev.pointerType==='touch')LQ.touch=true;lqAct();});L.addEventListener('pointerdown',function(ev){if(ev.pointerType==='touch')LQ.touch=true;lqAct();});}
+if(document.addEventListener){document.addEventListener('contextmenu',function(ev){var b=document.body,t=ev&&ev.target;if(!b||!b.classList||!b.classList.contains('lq-liquid'))return;if(t&&t.closest&&t.closest('input,textarea,select,[contenteditable]'))return;var sel=window.getSelection?String(window.getSelection()):'';if(sel)return;ev.preventDefault();lqBack();});
+document.addEventListener('mouseup',function(ev){var b=document.body;if(ev&&ev.button===3&&b&&b.classList&&b.classList.contains('lq-liquid')){ev.preventDefault();lqBack();}});}
+var L=$('liquid');if(L&&L.addEventListener){L.addEventListener('click',function(ev){var t=ev&&ev.target;if(t&&t.closest&&t.closest('button,input,form,.lqd'))return;var x=ev.clientX,y=ev.clientY,hit=null;LQ.drops.forEach(function(d){if(!hit&&Math.hypot(x-d.x,y-d.y)<=d.cr+8)hit=d;});if(hit)lqOpen(hit,ev);else if(LQ.openTag)lqTag(LQ.openTag);});L.addEventListener('pointermove',function(ev){LQ.pointer=[ev.clientX,ev.clientY];if(ev.pointerType==='touch')LQ.touch=true;lqAct();});L.addEventListener('pointerdown',function(ev){if(ev.pointerType==='touch')LQ.touch=true;lqAct();});}
 var f=$('lqform');if(f&&f.addEventListener)f.addEventListener('submit',function(ev){if(ev&&ev.preventDefault)ev.preventDefault();lqSay();});
-var ia=$('lqask');if(ia&&ia.addEventListener){ia.addEventListener('focus',function(){lqTalkMode(true);lqAct();});ia.addEventListener('blur',function(){if(!ia.value&&!LQ.talk.length)lqTalkMode(false);});ia.addEventListener('keydown',function(ev){if(ev&&ev.key==='Escape'){if(LQ.mode==='pool'){lqSink();return;}ia.value='';LQ.talk=[];lqTalkShow(false);lqTalkMode(false);if(ia.blur)ia.blur();}});}
+var ia=$('lqask');if(ia&&ia.addEventListener){ia.addEventListener('focus',function(){lqTalkMode(true);lqAct();});ia.addEventListener('blur',function(){if(!ia.value&&!LQ.talk.length)lqTalkMode(false);});ia.addEventListener('keydown',function(ev){if(ev&&ev.key==='Escape'){if(LQ.mode==='pool'){lqSink();return;}if(LQ.scene==='work'&&!ia.value){lqHome();return;}ia.value='';LQ.talk=[];lqTalkShow(false);lqTalkMode(false);if(ia.blur)ia.blur();}});}
 var co=$('lqcore');if(co&&co.addEventListener)co.addEventListener('click',function(){var i=$('lqask');if(i&&i.focus)i.focus();});
 var sk=$('lqsink');if(sk&&sk.addEventListener)sk.addEventListener('click',lqSink);
+var bk=$('lqback');if(bk&&bk.addEventListener)bk.addEventListener('click',lqHome);
+var lk=$('lqlook');if(lk&&lk.querySelectorAll){var cur=lqLookGet();lk.querySelectorAll('button').forEach(function(b){b.setAttribute('aria-checked',b.getAttribute('data-look')===cur?'true':'false');b.addEventListener('click',function(){lqLook(b.getAttribute('data-look'));});});}
+var gb=$('lqgo');if(gb&&gb.addEventListener)gb.addEventListener('click',lqGoWork);
 var mn=document.querySelector('main');if(mn&&mn.addEventListener)mn.addEventListener('keydown',function(ev){if(ev&&ev.key==='Escape')lqSink();});
 lqLoad(true);
 // the only clocks: rest when left alone, fresh data now and then, the hour (night)

@@ -28,7 +28,7 @@ import { mindState, forget } from "./mind.mjs";
 import { lanesTick, lanesState } from "./lanes.mjs";
 import { keepFacts, skipFacts, awaitTick, awaitingState, stopWaiting } from "./handback.mjs";
 import { adaptState, noteUse } from "./adapt.mjs";
-import { homeState, homeAsk } from "./home.mjs";
+import { homeState, homeAsk, workScene, workGo } from "./home.mjs";
 import { listReports, readReport, markAllRead } from "./reports.mjs";
 import { phoneState, setPhoneLink, newCode, unpairPhone, pairComputer, forgetComputer, pollComputer, startPhone } from "./phone.mjs";
 import { knowledgeState, addKnowledgeFolder, removeKnowledgeFolder, indexKnowledge, knowledgeTick, searchKnowledge } from "./knowledge.mjs";
@@ -188,6 +188,12 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
   const server = createServer(async (req, res) => {
     const u = new URL(req.url, "http://127.0.0.1");
     if (req.method === "GET" && u.pathname === "/") { res.writeHead(200, { "content-type": "text/html; charset=utf-8" }); res.end(EMBEDDED_UI); return; }
+    // the app's typeface ships in the package (fonts/), so it's there offline
+    if (req.method === "GET" && u.pathname === "/fonts/Geist-Variable.woff2") {
+      try { const b = readFileSync(fileURLToPath(new URL("./fonts/Geist-Variable.woff2", import.meta.url))); res.writeHead(200, { "content-type": "font/woff2", "cache-control": "public, max-age=31536000, immutable" }); res.end(b); }
+      catch { res.writeHead(404); res.end(); }
+      return;
+    }
     if (u.pathname.startsWith("/api/")) {
       const tok = req.headers["x-symbiot-token"] || u.searchParams.get("t");
       if (tok !== TOKEN) { res.writeHead(403); res.end("forbidden"); return; }
@@ -309,6 +315,9 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       // Home (home.mjs): the liquid's live data, and its talk; Adapt (adapt.mjs): its
       // shape from how you use it (commit=1 when it wakes from rest, never mid-gesture).
       if (u.pathname === "/api/home") return json(res, homeState({ fresh: u.searchParams.get("fresh") === "1" }));
+      // the work scene: what agents are doing, what's waiting, what's ready; Go starts what's waiting
+      if (u.pathname === "/api/work") return json(res, workScene());
+      if (u.pathname === "/api/work/go" && req.method === "POST") return json(res, workGo());
       if (u.pathname === "/api/home/ask" && req.method === "POST") { const b = await readBody(req); return json(res, await homeAsk(b.question)); }
       if (u.pathname === "/api/adapt") return json(res, adaptState({ from: String(u.searchParams.get("from") || ""), commit: u.searchParams.get("commit") === "1", ...(u.searchParams.has("touch") ? { touch: u.searchParams.get("touch") === "1" } : {}) }));
       if (u.pathname === "/api/adapt/use" && req.method === "POST") { const b = await readBody(req); return json(res, noteUse(b)); }

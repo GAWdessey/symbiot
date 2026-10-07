@@ -2,12 +2,78 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
-## 0.46.1 — 2026-10-06
+## 0.51.0
 
-- Fixed the task list showing the same request twice when it was worded two different ways.
-- Fixed agent runs being denied every Gmail, Google Calendar, Google Drive or Notion tool right after you connected that site.
-- Fixed the task list repeating a task when a second copy spelled it out in numbered steps.
-- Changed the Dashboard to count only unread Gmail, so emails you've already read are marked "read" and no longer count, notify or get briefed.
+What your agents built on the symbiot repo yesterday, merged with everything since:
+
+- **`symbiot post`.** Drafts three posts a week from your real git activity, releases and CHANGELOG (shipped, learned or fixed, and a longer one) in your voice from `voice.md`. They wait on the Dashboard for Approve, Edit or Skip; nothing is published without your approval, and every choice is logged. It can draft replies to comments too, for you to approve.
+- **Company knowledge folders.** Point Symbiot at a folder of documents (Settings → Knowledge folders) and every chat can quote them and say which file; worked examples are kept apart from facts.
+- **Reports.** What agents write up (findings, audits, plans) shows in one place, unread ones marked.
+- **Waiting on replies.** When an agent's email needs an answer, Symbiot watches your inbox for it and hands the reply on to the next step itself.
+- **Facts from a run.** An agent can hand back what it learned; Remember or Skip it on the run's block.
+- **A first-run sandbox**, to walk through Symbiot's setup like a new user, apart from your real data.
+- **Fixed:** the same task listed twice in different words, or spelled out in steps; a task you closed coming back; long tasks cut mid-sentence; mail and WhatsApp chats you've already read still counting as waiting on you; agent runs denied the Gmail, Calendar, Drive and Notion tools right after you connected them.
+
+## 0.50.3
+
+- **Finer tags on the spheres.** A sphere's tag is the short form of its task: no "(§5 of .symbiot/BRIEF…)" asides, paths or markdown, cut at a word, in smaller type and two lines at most; point at it for the whole text. The layout makes room for every tag, so a tag never lands on another tag or sphere.
+- **Go sits beside Home** at the top of the work view, clear of the chat.
+
+## 0.50.2
+
+- **An allow list is one click.** When an agent needs permissions it doesn't have, it proposes them, as narrow as the task needs, in `.symbiot/allowlist.proposed.json` and offers it as a choice. Pick it in the app and Symbiot turns it on for that folder only and runs the agent again: no copying files, no running claude in a terminal. A list that would let an agent run anything at all (a shell, sudo, rm) is never turned on by a click.
+- **Fixed:** a flag could end up in the agent command as a rule (`Bash(--allowedtools:*)`). It can't any more, and an old one is cleaned out on the next grant.
+
+## 0.50.1
+
+- **A permission you pick is given.** When an agent asks for one ("let agents read ~/.config/symbiot/screens") and you choose it in the app, Symbiot grants it then and there (as Settings' grant boxes do) and the agent carries on, instead of leaving it as a step for you to do by hand. Steps only you can do, like pasting your own message, are still yours.
+- **The chat on home rolls.** Newest at the bottom by the input; older lines fade as they rise and dissolve before they reach the droplets. Point at it or scroll back to read the whole conversation clearly.
+- **No asterisks in names.** An agent's name on home no longer shows its markdown (`**What's needed:**`).
+
+## 0.50.0
+
+- **The Map, by nearest neighbours.** Your repos are droplets in the liquid, each beside the repos most like it: what they're built with, the weeks you work on them, and what they're about (from their READMEs). The closest merge into one shape, the next are joined by a thread of liquid; each cluster is named over its region; what you haven't touched in a while is smaller and sinks; "you are here" sits where your recent work is. Point at a repo to see its neighbours and why; click for its details, now with **Most like it** and your last 12 weeks. Zoom and fit buttons, and the languages and tools you build with underneath instead of a coloured legend. Screens folds away.
+- **Every panel in the look.** Week, Standup and Todo are a page with a title and dates, the write-up set as a document. Tasks are calm rows with round check beads; Ask and Remove are icons. Agents' questions get a calm card with bead radio buttons. Drift has a status bead per repo, switches for its options, and its issues listed under each. Settings is a column of titled cards.
+- **Icons, not emoji.** Chat, person, agent, idea, question, archive and plug are drawn line icons in the look's ink.
+- **Close stays clean.** Content scrolls under the Close bar instead of colliding with it.
+
+## 0.49.2
+
+- **Projects shows your projects.** Click **Projects** on the liquid and each repo with work on it is a sphere: what's going on there under its name (an agent at work, ready for your OK, or how many tasks are waiting), spheres orbiting while an agent works, amber when its work waits for you. Click one to open just that project's tasks; right-click comes back.
+- **The Dashboard, in detail.** A headline that says what's waiting, with when it was last read; a 24 hours / 3 days / 7 days switch instead of the old dropdown; a round refresh; **Close** instead of "Sink back". Feeds go by their short names ("Inbox", with your address under it). What you've already seen stays on the stream as small faint beads, so a quiet day isn't an empty line, and the stream lines up with "now" however wide the window is.
+- **Connections.** The link chips are now a grid by kind of site, each with a bead: solid when linked, amber when it wants you to sign in, hollow when it isn't linked. Link, check and Unlink show when you point at one. It's on the Dashboard as well as in Settings.
+- **Every panel's controls, in the look.** Dropdowns have a dark menu in Ferrofluid instead of the white one, buttons are solid in the look's ink (Pearl keeps its chrome), and the card list drops its emoji and green borders.
+- **README** brought up to date: the looks, P.A.R.A., the stream, Connections, click to open and right-click to go back.
+
+## 0.49.1
+
+- **Click a sphere, it opens.** A sphere (or its name) opens its screen straight away.
+- **Right-click goes back.** One step at a time: from a panel to the screen you opened it from, from the Tasks scene to home. Your mouse's back button does the same. In a text box, or over text you've selected, right-click still gives the usual menu.
+
+## 0.49.0
+
+- **Home by P.A.R.A.** The liquid groups everything Symbiot holds four ways: **Projects** (work with an end: Tasks, Agents, Todo, and what's asking you), **Areas** (what you keep up with: the Dashboard, your feeds, Week, Standup), **Resources** (to look things up in: Map, Drift, Settings) and the **Archive** (what's done). Each group has its own part of the screen and its name on the liquid; tap a name to open it. Projects move the most, the Archive is still, and Agents has spheres orbiting it while one works.
+- **The Dashboard as a stream.** Time runs left to right, one current per feed, "now" on the right. Each message is a bead placed when it arrived, amber when it's waiting for your reply. Point at one to read it and Draft a reply or Open it; each feed's Seen, Talk and Check now sit under its name. The cards are still there under "All of it as a list".
+- **Amber means it needs you, everywhere.** The liquid can tint a single droplet, so what's asking you glows amber at home and in the stream, in every look.
+
+## 0.48.0
+
+- **Three looks, one switch.** Ferrofluid (glossy black liquid metal, lit like a studio), Glass (clear droplets that bend the colours behind them) and Pearl (silver lit like a product photo). Switch at the top left, next to the name; Ferrofluid is first. Panels follow the look.
+- **Geist, in the package.** The app's type is Geist, shipped with Symbiot, so it looks the same offline.
+- **Names without pills.** Each droplet's name sits under it as plain type; tap the droplet or its name and it opens into a small card with Open.
+- **A chat without boxes.** Symbiot's replies are plain text, yours sit in a soft capsule, and the steps fold into one line you can open. No more sideways scrolling.
+- **Nearest neighbours.** Parts you go between sit together (k-nearest neighbours on how you move between them), so home grows into clusters with gaps between, not a ring. Before you've used it, the work (Tasks, Agents, Todo), your time (Week, Standup) and your repos (Dashboard, Map, Drift) start together. In the Tasks scene, waiting tasks gather round the agent working in their repo.
+
+## 0.47.1
+
+- **Sharp, not blurry.** The liquid renders at your screen's full pixel density (it was capped at 1.5x, so 2x screens were stretched). Sphere edges are crisp at any size, each sphere casts a tight shadow below it instead of a fuzzy halo round it, and tags sit on whole pixels with almost no frosting, so their text is sharp.
+
+## 0.47.0
+
+- **Tasks and agents in the liquid.** Opening Tasks or Agents re-forms the liquid: each agent at work is a sphere with small spheres revolving round it, named for what it's doing in plain words; work ready for your OK sits at the top; tasks waiting their turn sit below. One **Go** (or just say "go") starts everything waiting.
+- **Tags float on their spheres.** Each sphere carries just its name, floating with a shadow. Tap the sphere to open its tag for a line about it and **Open** for the details.
+- **Less to read.** An agent's block shows what it's doing and its to-do list; steps, files, tokens and cost are under "details".
+- **No stray box.** The moving silver edge round open panels is gone.
 
 ## 0.46.0 — 2026-10-06
 

@@ -9,6 +9,7 @@ import { readFileSync, existsSync, statSync, readdirSync } from "node:fs";
 import { VERSION, loadConfig, saveConfig, sh, repoState } from "./core.mjs";
 import { detectHandoffs } from "./agents.mjs";
 import { PROVIDERS, resolveProvider } from "./ai.mjs";
+import { mapKnn } from "./mapknn.mjs";
 
 const MAX_COMMITS = 140;
 
@@ -304,6 +305,14 @@ function findAllRepos(base) {
     return Object.values(byCommon).sort((a, b) => b.recency - a.recency).slice(0, 60);
   } finally { scanEnd(own); }
 }
+// What a project is about, in its own words: its package description and keywords
+// and the start of its README (the Map's neighbours read the words, nothing else).
+function aboutText(path) {
+  let t = "";
+  try { const p = JSON.parse(readFileSync(join(path, "package.json"), "utf8")); t += " " + (p.description || "") + " " + (Array.isArray(p.keywords) ? p.keywords.join(" ") : ""); } catch {}
+  for (const f of ["README.md", "readme.md", "README"]) { try { t += " " + readFileSync(join(path, f), "utf8").slice(0, 3000); break; } catch {} }
+  return t.slice(0, 4000);
+}
 function detectRepo(r) {
   const files = sh(`git -C ${JSON.stringify(r.path)} ls-files 2>/dev/null | head -3000`).split("\n").filter(Boolean);
   const count = {}; const tools = new Set();
@@ -318,7 +327,10 @@ function detectRepo(r) {
   const mine = Number(sh(`git -C ${JSON.stringify(r.path)} log ${email ? `--author=${JSON.stringify(email)}` : ""} --oneline 2>/dev/null | wc -l`).trim()) || 0;
   const branch = sh(`git -C ${JSON.stringify(r.path)} rev-parse --abbrev-ref HEAD 2>/dev/null`).trim();
   const last = sh(`git -C ${JSON.stringify(r.path)} log -1 --format=%cd --date=short 2>/dev/null`).trim();
-  return { ...r, langs, tools: [...tools], mine, files: files.length, branch, last };
+  // for the Map's neighbours (mapknn.mjs): your commits per week, 12 weeks, oldest first; and what it's about
+  const weeks = Array(12).fill(0), now = Date.now();
+  for (const t of sh(`git -C ${JSON.stringify(r.path)} log ${email ? `--author=${JSON.stringify(email)}` : ""} --since=84.days --format=%ct 2>/dev/null`).split("\n").filter(Boolean)) { const w = Math.floor((now - Number(t) * 1000) / (7 * 86400000)); if (w >= 0 && w < 12) weeks[11 - w]++; }
+  return { ...r, langs, tools: [...tools], mine, files: files.length, branch, last, weeks, text: aboutText(r.path) };
 }
 // Non-git PROJECT folders inside your scan roots (you added them = consent):
 // a directory with a manifest but no .git — "not everything is a repo".
@@ -419,7 +431,7 @@ async function buildMapScan() {
   for (const r of repos) {
     const rid = "repo:" + r.path;
     add({ id: rid, type: "repo", label: r.name, weight: Math.min(9 + Math.log2(1 + r.mine) * 3, 26),
-      meta: { commits: r.mine, langs: r.langs.slice(0, 3), tools: r.tools, files: r.files, branch: r.branch, last: r.last, path: r.path } });
+      meta: { commits: r.mine, langs: r.langs.slice(0, 3), tools: r.tools, files: r.files, branch: r.branch, last: r.last, path: r.path, weeks: r.weeks } });
     edges.push({ source: "me", target: rid });
     for (const L of r.langs.slice(0, 3)) { const id = "lang:" + L; add({ id, type: "lang", label: L, weight: 15 }); edges.push({ source: rid, target: id }); }
     for (const T of r.tools) { const id = "tool:" + T; add({ id, type: "tool", label: T, weight: 12 }); edges.push({ source: rid, target: id }); }
@@ -474,7 +486,12 @@ async function buildMapScan() {
       edges.push({ source: "me", target: id }); extra++;
     }
   } catch {}
-  const out = { nodes, edges, stats: {
+  // the Map's nearest neighbours (mapknn.mjs): repos and project folders, by stack, weeks and words
+  let knn = null;
+  try { const byPath = new Map(repos.map((r) => [r.path, r]));
+    knn = mapKnn(nodes.filter((n) => n.type === "repo" || n.type === "folder").map((n) => { const m = n.meta || {}, r = byPath.get(m.path) || {};
+      return { id: n.id, name: n.label, langs: m.langs || [], tools: m.tools || [], weeks: r.weeks || [], text: r.text != null ? r.text : (m.path ? aboutText(m.path) : ""), last: m.last || r.last || "" }; })); } catch {}
+  const out = { nodes, edges, ...(knn ? { knn } : {}), stats: {
     repos: repos.length,
     folders: nodes.filter((n) => n.type === "folder").length,
     languages: nodes.filter((n) => n.type === "lang").length,
