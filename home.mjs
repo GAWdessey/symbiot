@@ -178,7 +178,8 @@ function workScene({ deps = {} } = {}) {
   const isParked = (repo) => !!map[repo] && parked.has(map[repo]);
   const laneOf = (a) => { const l = laneOfPath(a.path, map); return l === "" ? RUNS_LANE : l || a.name; };
   const seen = new Set(), running = [], asks = {};
-  for (const a of agents()) {
+  const AG = agents();
+  for (const a of AG) {
     if (seen.has(a.path)) continue; seen.add(a.path);
     const nq = (a.ask && a.ask.questions && a.ask.questions.length) || 0;
     if (nq) asks[laneOf(a)] = (asks[laneOf(a)] || 0) + nq;
@@ -195,6 +196,24 @@ function workScene({ deps = {} } = {}) {
   ready.forEach((r) => { at(r.repo).ready = r.count || 1; });
   open.forEach((t) => { const p = at(t.repo); p.waiting++; p.last = Math.max(p.last, Number(t.ts) || 0); });
   Object.keys(asks).forEach((l) => { at(l).asks = asks[l]; });
+  // The relay (the Tasks screen, so you needn't open Agents): per project, what its
+  // latest run did or is doing in a line, its open questions with their answers,
+  // and the extra tasks its agents suggested, each with the folder that asked.
+  const DAY = 86400000, now = Date.now(), seenR = new Set();
+  for (const a of AG) {
+    if (seenR.has(a.path)) continue; seenR.add(a.path);
+    const l = laneOf(a), qs = (a.ask && a.ask.questions) || [], ideas = ((a.ask && a.ask.suggestions) || []).filter((s) => s && s.text && !s.added);
+    const age = a.startedAt ? now - a.startedAt : a.elapsed != null ? a.elapsed : Infinity, recent = a.status === "running" || age < DAY;
+    if (!by[l] && !qs.length && !ideas.length && !recent) continue;
+    const p = at(l);
+    if (!p.summary && (recent || qs.length)) {
+      const w = a.work || {}, todo = (w.todos || []).find((x) => x.status === "in_progress"), t = a.status === "running" ? ((todo && todo.active) || w.doing || "Working on it") : (w.final || a.tail || "");
+      const line = plain(String(t).split(/\n\s*\n/)[0], 220);
+      if (line) { p.summary = line; p.state = a.status === "running" ? "at work" : qs.length ? "asks you" : "done"; p.path = a.path; }
+    }
+    for (const q of qs) { p.qs = p.qs || []; if (p.qs.length < 3) p.qs.push({ q: q.q, options: (q.options || []).slice(0, 3), path: a.path }); }
+    for (const s of ideas) { p.ideas = p.ideas || []; if (p.ideas.length < 4) p.ideas.push({ text: plain(s.text, 200), full: String(s.text), repo: s.repo || l, path: a.path }); }
+  }
   for (const p of Object.values(by)) { p.lit = !!(p.asks || p.ready); if (isParked(p.repo)) p.parked = true; }
   const projects = Object.values(by).sort((a, b) => (b.lit ? 1 : 0) - (a.lit ? 1 : 0) || (a.parked ? 1 : 0) - (b.parked ? 1 : 0) || (b.running ? 1 : 0) - (a.running ? 1 : 0) || b.ready - a.ready || b.waiting - a.waiting || b.last - a.last || (a.repo < b.repo ? -1 : 1));
   return { running, ready, waiting: waiting.slice(0, 12), waitingCount: waiting.length, canGo: waiting.filter((w) => !w.busy && !w.parked).length, projects: projects.slice(0, 24), projectCount: projects.length };

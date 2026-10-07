@@ -681,6 +681,50 @@ body.lq-liquid .sset .cxh{margin-top:0}
 /* the Close bar carries the panel's own ground, so what scrolls under it stays clean */
 body.lq-liquid.lq-pooled #lqsinkrow{margin:-14px -14px 10px;padding:10px 10px 8px;background:linear-gradient(180deg,rgba(6,8,11,.97) 70%,rgba(6,8,11,0));border-radius:22px 22px 0 0}
 body.lq-liquid.lq-light.lq-pooled #lqsinkrow{background:linear-gradient(180deg,rgba(246,248,251,.98) 70%,rgba(246,248,251,0))}
+
+/* Agents: needs you, at work, finished (folded) */
+.agdone{margin-top:6px}
+.agdone > summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:8px}
+.agdone > summary::-webkit-details-marker{display:none}
+.agdone > summary::before{content:'';width:5px;height:5px;border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;transform:rotate(-45deg);transition:transform .2s ease}
+.agdone[open] > summary::before{transform:rotate(45deg)}
+.tgroup.agg{margin-top:16px}
+/* the relay: Agents on the Tasks screen, a line and a blob per project */
+#lqline,#lqrelay{display:none}
+body.lq-work:not(.lq-pooled) #lqline{display:block;position:absolute;left:50%;top:84px;transform:translateX(-50%);z-index:3;max-width:calc(100% - 32px);text-align:center;font:400 13.5px/1.4 var(--sans);color:#A1A8B1;text-shadow:0 1px 10px rgba(0,0,0,.7)}
+#lqline b{color:#F2A541;font-weight:600}
+body.lq-light #lqline{color:#4A5565;text-shadow:0 1px 8px rgba(255,255,255,.8)}body.lq-light #lqline b{color:#9A5200}
+body.lq-work:not(.lq-pooled) #lqrelay:not(:empty){display:flex;flex-direction:column;gap:12px;position:absolute;right:16px;top:116px;bottom:96px;width:min(420px,32vw);overflow-y:auto;scrollbar-width:none;z-index:4;padding:2px 2px 24px;-webkit-mask-image:linear-gradient(to bottom,#000 calc(100% - 28px),transparent);mask-image:linear-gradient(to bottom,#000 calc(100% - 28px),transparent)}
+#lqrelay::-webkit-scrollbar{display:none}
+@media (max-width:899px){body.lq-work:not(.lq-pooled) #lqrelay:not(:empty){display:none}}
+.rly{flex:none;display:flex;flex-direction:column;gap:8px;padding:14px 16px;border-radius:20px;background:rgba(14,16,19,.86);border:1px solid rgba(255,255,255,.08);backdrop-filter:blur(14px);box-shadow:0 22px 50px -28px rgba(0,0,0,.9);color:#ECE9E4}
+.rly.lit{border-color:rgba(242,165,65,.35)}
+body.lq-light .rly{background:rgba(255,255,255,.92);border-color:rgba(21,26,33,.08);color:#151A21;box-shadow:0 22px 50px -30px rgba(30,45,60,.45)}
+body.lq-light .rly.lit{border-color:rgba(154,82,0,.3)}
+.rlh{display:flex;align-items:baseline;justify-content:space-between;gap:10px}
+.rlh b{font:600 15px var(--sans);letter-spacing:-.01em}
+.rls{font:500 11.5px var(--sans);color:#8A919B;white-space:nowrap}
+.rly.lit .rls{color:#F2A541}body.lq-light .rly.lit .rls{color:#9A5200}
+.rlsum{margin:0;font-size:13.5px;line-height:1.45;color:#C9CDD3;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+body.lq-light .rlsum{color:#2B3644}
+.lqblob.rlask{position:static;display:flex;flex-direction:column;gap:7px;padding:10px 12px;border-radius:14px;background:rgba(242,165,65,.06);border:1px solid rgba(242,165,65,.22)}
+.lqblob.rlask .nhead{font-size:12px;color:#8A919B}.lqblob.rlask .nhead b{font-weight:600;color:inherit}
+.lqblob.rlask .bq{-webkit-line-clamp:4;font-size:13px}
+body.lq-light .lqblob.rlask{background:rgba(154,82,0,.05);border-color:rgba(154,82,0,.2)}
+.rly .rlok{align-self:flex-start}
+.rlk{margin-top:2px;font:500 11px var(--sans);letter-spacing:.1em;text-transform:uppercase;color:#8A919B}
+.rli{display:flex;align-items:flex-start;gap:10px;padding:6px 0;border-top:1px solid rgba(255,255,255,.06);font-size:13px;line-height:1.4;color:#C9CDD3;transition:opacity .3s ease}
+.rli > span:first-child{flex:1;min-width:0}
+.rli.gone{opacity:0}
+body.lq-light .rli{border-top-color:rgba(21,26,33,.07);color:#2B3644}
+.rlia{flex:none;display:flex;gap:2px}
+.rlia button,.rlf button{all:unset;box-sizing:border-box;cursor:pointer;padding:3px 7px;border-radius:8px;font:500 12px var(--sans);color:#8A919B}
+.rlia button:hover,.rlf button:hover{color:#ECE9E4;background:rgba(255,255,255,.06)}
+body.lq-light .rlia button:hover,body.lq-light .rlf button:hover{color:#151A21;background:rgba(21,26,33,.05)}
+.rlia .rladd{color:#ECE9E4}body.lq-light .rlia .rladd{color:#151A21}
+.rlia button:focus-visible,.rlf button:focus-visible{outline:2px solid currentColor;outline-offset:1px}
+.rldone{font-size:12px;color:#8A919B}
+.rlf{display:flex;justify-content:space-between;margin:2px -7px -4px}
 /* the Dashboard as a stream: time runs left to right, a current per feed, now on the right */
 .bstream{position:relative;margin-top:10px;border-radius:18px;overflow:hidden;isolation:isolate;background:#08090B;box-shadow:0 0 0 1px rgba(255,255,255,.08)}
 body.lq-light .bstream{background:#EBEEF0;box-shadow:0 0 0 1px rgba(21,26,33,.08)}
@@ -737,6 +781,8 @@ body.lq-light .btip .bta button:not(.quiet){background:#151A21;color:#FFFFFF}
 <div id="liquid" aria-label="Symbiot">
 <canvas id="lq" aria-hidden="true"></canvas>
 <div id="lqorbits"></div>
+<div id="lqline" aria-live="polite"></div>
+<div id="lqrelay" aria-label="Your projects: what their agents did, ask and suggest"></div>
 <div id="lqgroups"></div>
 <div id="lqneedt"><span>Needs you</span><small>only you can do these</small></div>
 <div id="lqdrops"></div>
@@ -1350,9 +1396,12 @@ function answering(){var f=document.activeElement;return !!(f&&f.closest&&f.clos
 // Handovers (lanes.mjs): what one lane's agent handed to another, and where it stands.
 var LANEWORD={started:'working on it',held:'queued: that lane is busy',done:'done, reported back',error:"couldn't hand over"};
 function loadLanes(){api('/api/lanes').then(function(d){var el=document.getElementById('laneslist');if(!el||!d)return;var hs=d.handoffs||[];
-whenFree(el,'lanes',function(){sameHtml(el,hs.length?"<div class='tgroup'>Handovers <span class='tcount'>"+hs.length+"</span></div>"+hs.slice(0,12).map(function(h){
+var row=function(h){
 var back=h.result||h.error,more=(h.full?"<div>"+esc(h.full)+"</div>":"")+(back?"<div class='tres'>"+esc(back)+"</div>":"");
-return "<div class='task'><span class='t'><b>"+esc(h.from)+"</b> &rarr; <b>"+esc(h.to)+"</b>: "+esc(h.text)+(more?"<details class='tfull'><summary>"+(h.full?"in full":"what came back")+"</summary>"+more+"</details>":"")+"</span><span class='rp'"+(h.status==='error'?" style='color:var(--amber)'":"")+">"+esc(LANEWORD[h.status]||h.status)+"</span></div>";}).join(''):'');});});}
+return "<div class='task'><span class='t'><b>"+esc(h.from)+"</b> &rarr; <b>"+esc(h.to)+"</b>: "+esc(String(h.text||'').split('**').join(''))+(h.n>1?" <span class='muted'>&times;"+h.n+"</span>":"")+(more?"<details class='tfull'><summary>"+(h.full?"in full":"what came back")+"</summary>"+more+"</details>":"")+"</span><span class='rp'"+(h.status==='error'?" style='color:var(--amber)'":"")+">"+esc(LANEWORD[h.status]||h.status)+"</span></div>";};
+var seen={},uniq=[];hs.forEach(function(h){var k=h.from+'|'+h.to+'|'+h.status+'|'+h.text;if(seen[k]){seen[k].n++;return;}var c={};for(var x in h)c[x]=h[x];c.n=1;seen[k]=c;uniq.push(c);});
+var live=uniq.filter(function(h){return h.status!=='done';}),fin=uniq.filter(function(h){return h.status==='done';});
+whenFree(el,'lanes',function(){sameHtml(el,(live.length?"<div class='tgroup agg'>Handovers under way <span class='tcount'>"+live.length+"</span></div>"+live.slice(0,12).map(row).join(''):'')+(fin.length?"<details class='agdone'><summary class='tgroup agg'>Finished handovers <span class='tcount'>"+fin.length+"</span></summary>"+fin.slice(0,20).map(row).join('')+"</details>":''));});});}
 
 // ---- an agent's work, live (work.mjs parses its stream) ------------------------------
 var WKICON={read:"<path d='M2 4h5l1 1h6v8H2z'/>",edit:"<path d='M3 13l1-3 7-7 2 2-7 7z'/>",run:"<path d='M3 5l3 3-3 3M8 12h5'/>",search:"<circle cx='7' cy='7' r='4'/><path d='M10 10l3 3'/>",web:"<circle cx='8' cy='8' r='5.5'/><path d='M2.5 8h11M8 2.5c2 2 2 9 0 11M8 2.5c-2 2-2 9 0 11'/>",agent:"<path d='M8 2l1.5 4.5L14 8l-4.5 1.5L8 14l-1.5-4.5L2 8l4.5-1.5z'/>",connector:"<path d='M6 2v4M10 2v4M4 6h8v2a4 4 0 0 1-8 0zM8 12v2'/>",tool:"<circle cx='8' cy='8' r='2.5'/>"};
@@ -1381,12 +1430,18 @@ if(todoBox)h+="<div class='wk'>"+todoBox+"</div>";
 h+="<details class='wkraw'><summary>details: steps, files, cost</summary><div class='wkstats'>"+stats.join('')+"</div>"+(boxes.length?"<div class='wk'>"+boxes.join('')+"</div>":"")+(!run&&w.final?"<div class='wkfinal'>"+esc(w.final)+"</div>":"")+"</details>";
 return h;}
 function loadAgents(){loadLanes();loadParked(agentsDraw);}
+// Agents, in order: what needs you (a question, a step of yours), what's at work, and
+// what's finished, folded away (open stays open across refreshes).
+var AGDONEOPEN=false;
+function agentGroups(list,fn){var needs=[],run=[],done=[];list.forEach(function(a){if(nQs(a)||a.waiting)needs.push(a);else if(a.status==='running')run.push(a);else done.push(a);});
+var g=function(t,xs){return xs.length?"<div class='tgroup agg'>"+t+" <span class='tcount'>"+xs.length+"</span></div>"+xs.map(fn).join(''):'';};
+return g('Needs you',needs)+g('At work',run)+(done.length?"<details class='agdone'"+(AGDONEOPEN?' open':'')+"><summary class='tgroup agg'>Finished <span class='tcount'>"+done.length+"</span></summary>"+done.map(fn).join('')+"</details>":'');}
 function agentsDraw(){api('/api/agents').then(function(list){var el=document.getElementById('agentslist');
 if(!list||!list.length){AGENTLIST=[];el.innerHTML="<div class='muted' style='margin-top:12px'>No agents yet. In <b>Tasks</b>, tick ideas and hit <b>Send to repos</b> (with an agent command set in Settings) &mdash; you'll watch it work here.</div>";stopAgentsPoll();return;}
 var anyRunning=list.some(function(a){return a.status==='running';});
 if(answering()||selIn(el)){stopAgentsPoll();if(anyRunning&&current==='agents')agentsTimer=setTimeout(loadAgents,2000);else selWait('agents',loadAgents);return;} // don't re-render under someone typing an answer, or selecting text to copy
 saveDrafts(el);AGENTLIST=list;
-el.innerHTML=list.map(function(a){var cls=a.status==='running'?'run':(a.status==='done'?'ok':'fail');
+var agentBlock=function(a){var cls=a.status==='running'?'run':(a.status==='done'?'ok':'fail');
 var st=a.status==='running'?('working &middot; '+fmtE(a.elapsed)):(esc(a.status)+' &middot; '+fmtE(a.elapsed)+(a.exitCode!=null?' &middot; exit '+a.exitCode:''));
 if(a.fromHeld)st+=" &middot; started on the tasks held for the last run";
 if(a.earlier)st+=" &middot; "+(a.status==='running'?"started outside this window":"ran before Symbiot last started");
@@ -1413,7 +1468,8 @@ if(ch&&(ch.dirty||ch.stat||(ch.commits&&ch.commits.length))){
 }
 b+=waitHtml(a)+askHtml(a)+factsHtml(a);
 b+=a.work?("<details class='wkraw'><summary>what it said, in full</summary><pre class='alogout'>"+esc((a.tail&&a.tail.trim())||'(nothing yet)')+"</pre></details>"):("<pre class='alogout'>"+esc((a.tail&&a.tail.trim())||'(waiting for output…)')+"</pre>");
-return "<div class='agent' data-i='"+list.indexOf(a)+"'>"+b+"</div>";}).join("");
+return "<div class='agent' data-i='"+list.indexOf(a)+"'>"+b+"</div>";};
+el.innerHTML=agentGroups(list,agentBlock);var dn=el.querySelector('.agdone');if(dn)dn.addEventListener('toggle',function(){AGDONEOPEN=dn.open;});
 el.querySelectorAll('.alogout').forEach(function(p){p.scrollTop=p.scrollHeight;});
 restoreDrafts(el);wireAsks(el);wireWaits(el);wireFacts(el);lqLight();
 el.querySelectorAll('.apark').forEach(function(btn){btn.addEventListener('click',function(){var g=AGENTLIST[+btn.closest('.agent').getAttribute('data-i')];if(!g)return;btn.disabled=true;lqPark('',btn.getAttribute('data-on')==='1',function(err){btn.disabled=false;$('agentsmsg').innerHTML=err?"<div class='note err'>"+esc(err)+"</div>":'';loadAgents();},g.path);});});
@@ -2063,11 +2119,41 @@ window.addEventListener('focus',function(){heartbeat(true);}); // re-check for u
 // turn. One Go starts what's waiting. A tap opens the details; nothing else to read.
 function lqWork(){lqRemember();LQ.scene='work';LQ.mode='aware';var sc=$('lqscene');if(sc)sc.textContent=LQ.workBy==='project'?'Projects':'Tasks and agents';var b=document.body;if(b&&b.classList){b.classList.add('lq-work');b.classList.toggle('lq-byproj',LQ.workBy==='project');b.classList.remove('lq-pooled');}lqLoadWork();
 if(LQ.workTimer)clearInterval(LQ.workTimer);LQ.workTimer=setInterval(function(){if(LQ.scene==='work'&&LQ.mode!=='pool')lqLoadWork();},5000);}
-function lqHome(){lqRemember();LQ.scene='home';var b=document.body;if(b&&b.classList){b.classList.remove('lq-work');b.classList.remove('lq-byproj');b.classList.remove('lq-pooled');}if(LQ.workTimer){clearInterval(LQ.workTimer);LQ.workTimer=null;}LQ.mode='aware';lqLoad(true);}
+function lqHome(){lqRemember();LQ.scene='home';LQ.relaySig='';var rl=$('lqrelay');if(rl)rl.innerHTML='';var li=$('lqline');if(li)li.innerHTML='';var b=document.body;if(b&&b.classList){b.classList.remove('lq-work');b.classList.remove('lq-byproj');b.classList.remove('lq-pooled');}if(LQ.workTimer){clearInterval(LQ.workTimer);LQ.workTimer=null;}LQ.mode='aware';lqLoad(true);}
+
+// ---- the relay: Agents, on the Tasks screen ----------------------------------------
+// One line for where everything stands, then a blob per project with something to say:
+// what its agent did or is doing, what it asks you (its answers as buttons, as on
+// home), Review and approve when it's ready, and the extra tasks it suggests (+ task
+// or Skip). You needn't open Agents; it's still there for the detail.
+function lqLineText(w){var nr=(w.running||[]).length,nq=0,ni=0,nk=(w.ready||[]).length,nw=w.waitingCount||0;(w.projects||[]).forEach(function(p){nq+=p.asks||0;ni+=(p.ideas||[]).length;});
+var bits=[];if(nq)bits.push('<b>'+nq+' question'+(nq>1?'s':'')+' for you</b>');if(nk)bits.push('<b>'+nk+' ready for your OK</b>');if(nr)bits.push(nr+' at work');if(nw)bits.push(nw+' waiting');if(ni)bits.push(ni+' suggested task'+(ni>1?'s':''));
+return bits.length?bits.join(' &middot; '):'All quiet: nothing at work, nothing asking you.';}
+function lqRelayList(w){return lqSortLanes((w.projects||[]).filter(function(p){return p.summary||(p.qs&&p.qs.length)||p.ready||(p.ideas&&p.ideas.length);}).slice());}
+function lqRelayOn(){var S=lqSize();return LQ.scene==='work'&&S.w>=900&&lqRelayList(LQ.workData||{}).length>0;}
+function lqRelay(){var el=$('lqrelay'),ln=$('lqline'),w=LQ.workData||{};if(ln)ln.innerHTML=LQ.scene==='work'?lqLineText(w):'';if(!el)return;
+var ps=lqRelayList(w),sig=JSON.stringify(ps.map(function(p){return [p.repo,p.summary,p.state,p.ready,(p.qs||[]).map(function(q){return q.q;}),(p.ideas||[]).map(function(i){return i.full;}),p.parked];}));
+if(el.contains&&document.activeElement&&el.contains(document.activeElement)&&el.innerHTML)return;if(sig===LQ.relaySig&&el.innerHTML)return;LQ.relaySig=sig;
+if(!ps.length){el.innerHTML='';return;}
+el.innerHTML=ps.map(function(p,i){var nm=p.name||p.repo,q=(p.qs||[])[0],st=p.parked?'parked':(p.qs&&p.qs.length)?'asks you':p.ready?'ready for your OK':p.state||'';
+var h="<section class='rly"+((p.qs&&p.qs.length)||p.ready?' lit':'')+"' data-i='"+i+"'><div class='rlh'><b>"+esc(nm)+"</b>"+(st?"<span class='rls'>"+esc(st)+"</span>":"")+"</div>";
+if(p.summary)h+="<p class='rlsum' title='"+escQ(p.summary)+"'>"+esc(p.summary)+"</p>";
+if(q)h+="<div class='lqblob rlask'>"+blobBody({kind:'ask',name:nm,repo:p.repo,q:q.q,options:q.options,path:q.path,more:Math.max(0,(p.asks||p.qs.length)-1)},false)+"</div>";
+if(p.ready)h+="<button type='button' class='act rlok'>Review and approve</button>";
+if(p.ideas&&p.ideas.length)h+="<div class='rlk'>Extra tasks it suggests</div>"+p.ideas.map(function(d,j){return "<div class='rli' data-j='"+j+"'><span title='"+escQ(d.full)+"'>"+esc(d.text)+"</span><span class='rlia'><button type='button' class='rladd'>+ task</button><button type='button' class='rlskip'>Skip</button></span></div>";}).join('');
+return h+"<div class='rlf'><button type='button' class='rlopen'>Its tasks &rsaquo;</button><button type='button' class='rlag'>Details in Agents &rsaquo;</button></div></section>";}).join('');
+el.querySelectorAll('.rly').forEach(function(box){var p=ps[+box.getAttribute('data-i')],q=(p.qs||[])[0],nm=p.name||p.repo;
+var ab=box.querySelector('.rlask');if(ab&&q)wireBlob(ab,{kind:'ask',name:nm,repo:p.repo,q:q.q,options:q.options,path:q.path},{done:function(){LQ.relaySig='';lqLoadWork();}});
+var ok=box.querySelector('.rlok');if(ok)ok.addEventListener('click',function(){lqOpen({kind:'proj',repo:p.repo,lit:true});});
+box.querySelector('.rlopen').addEventListener('click',function(){lqOpen({kind:'proj',repo:p.repo});});
+box.querySelector('.rlag').addEventListener('click',function(){lqPool('agents');});
+box.querySelectorAll('.rli').forEach(function(row){var d=p.ideas[+row.getAttribute('data-j')],a=row.querySelector('.rladd'),k=row.querySelector('.rlskip');
+a.addEventListener('click',function(){a.disabled=k.disabled=true;api('/api/tasks/add',{text:d.full,repo:d.repo}).then(function(r){if(!r||r.error){a.disabled=k.disabled=false;lqSaid(nm+': '+((r&&r.error)||'couldn’t add it'),true);return;}row.querySelector('.rlia').innerHTML="<span class='rldone'>in Tasks</span>";lqSaid('Added to '+nm+'’s tasks.');});});
+k.addEventListener('click',function(){a.disabled=k.disabled=true;api('/api/agents/skip',{path:d.path,text:d.full}).then(function(r){if(!r||r.error){a.disabled=k.disabled=false;lqSaid(nm+': '+((r&&r.error)||'couldn’t skip it'),true);return;}if(row.classList)row.classList.add('gone');setTimeout(function(){row.remove();},300);});});});});}
 function lqLoadWork(){api('/api/work').then(function(w){LQ.workData=w||{};lqRedraw();}).catch(function(){});}
 // New data, drawn: unless you're selecting text on the surface, then once you let go
 function lqRedraw(){whenFree($('liquid'),'liquid',function(){if(LQ.scene==='work')lqBuildWork();else lqBuild();});}
-function lqBuildWork(){if(LQ.workBy==='project'){lqBuildProjects();return;}var w=LQ.workData||{},S=lqSize(),cx=S.w/2,cy=S.h*0.5,list=[];LQ.bw=S.w;LQ.bh=S.h;
+function lqBuildWork(){lqRelay();if(LQ.workBy==='project'){lqBuildProjects();return;}var w=LQ.workData||{},S=lqSize(),cx=S.w/2,cy=S.h*0.5,list=[];LQ.bw=S.w;LQ.bh=S.h;if(lqRelayOn()){var RW=Math.min(420,S.w*0.32)+28;S={w:S.w-RW,h:S.h,s:S.s};cx=S.w/2;}
 var vx=Math.max(0.5,Math.min(S.s*1.3,(S.w/2-90)/400)),vy=Math.max(0.35,Math.min(S.s*0.8,(S.h-cy-230)/400,(cy-160)/400)),rs=Math.min(S.s,(vx+vy)/1.5);
 var run=(w.running||[]).slice(0,3),ready=(w.ready||[]).slice(0,2),wait=(w.waiting||[]).slice(0,5),extra=(w.waitingCount||0)-wait.length;
 run.forEach(function(r,i){var ang=Math.PI+(i+1)*Math.PI/(run.length+1);var pg=r.progress?' · '+r.progress.done+' of '+r.progress.total+' done':'';
@@ -2095,7 +2181,7 @@ var LANESORT='need';try{LANESORT=(window.localStorage&&window.localStorage.getIt
 function lqSortLanes(ps){if(LANESORT==='name')return ps.sort(function(a,b){var x=String(a.name||a.repo).toLowerCase(),y=String(b.name||b.repo).toLowerCase();return x<y?-1:x>y?1:0;});
 if(LANESORT==='recent')return ps.sort(function(a,b){return (b.last||0)-(a.last||0)||(b.lit?1:0)-(a.lit?1:0);});return ps;}
 function lqSort(s){LANESORT=s;try{if(window.localStorage)window.localStorage.setItem('symbiot-lanesort',s);}catch(e){}var g=$('lqsort');if(g&&g.querySelectorAll)g.querySelectorAll('button').forEach(function(b){b.setAttribute('aria-checked',b.getAttribute('data-sort')===s?'true':'false');});lqAct();if(LQ.scene==='work'&&LQ.workBy==='project')lqBuildProjects();}
-function lqBuildProjects(){var w=LQ.workData||{},S=lqSize(),cx=S.w/2,cy=S.h*0.5,list=[];LQ.bw=S.w;LQ.bh=S.h;
+function lqBuildProjects(){var w=LQ.workData||{},S=lqSize(),cx=S.w/2,cy=S.h*0.5,list=[];LQ.bw=S.w;LQ.bh=S.h;if(lqRelayOn()){var RW=Math.min(420,S.w*0.32)+28;S={w:S.w-RW,h:S.h,s:S.s};cx=S.w/2;}
 var vx=Math.max(0.5,Math.min(S.s*1.3,(S.w/2-90)/400)),vy=Math.max(0.35,Math.min(S.s*0.8,(S.h-cy-230)/400,(cy-160)/400)),rs=Math.min(S.s,(vx+vy)/1.5);
 var all=lqSortLanes((w.projects||[]).slice()),cap=S.w<700?5:7,ps=all.slice(0,cap),rest=all.slice(cap),slots=Math.max(3,ps.length+(rest.length?1:0));
 ps.forEach(function(p,i){var ang=Math.PI+i*2*Math.PI/slots,load=p.waiting+2*p.ready+(p.running?3:0)+2*Math.min(2,p.asks||0);

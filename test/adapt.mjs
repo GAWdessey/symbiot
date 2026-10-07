@@ -205,6 +205,23 @@ try {
   ok("…and in their style", /Match how they talk/.test(sys), "");
   ok("an empty question isn't sent", (await homeAsk("  ")).error === "empty", "");
 
+  console.log("THE RELAY — Agents on the Tasks screen: what each project's agent did, asks and suggests");
+  {
+    const { workScene: ws2 } = await import("../home.mjs");
+    const now = Date.now();
+    const r = ws2({ deps: {
+      agents: () => [
+        { name: "dailify", path: "/d", status: "done", startedAt: now - 3600e3, work: { final: "I read the **lead** code.\n\nMore detail here." }, ask: { questions: [{ q: "Who gets each yes?", options: ["one brokerage (recommended)", "book on the first call", "a third", "a fourth"] }], suggestions: [{ text: "Fix the exhausted-campaign dead end" }, { text: "Already added", added: true }] } },
+        { name: "symbiot", path: "/s", status: "running", elapsed: 60e3, work: { doing: "Ran npm test", todos: [{ status: "in_progress", active: "Editing ui.mjs" }] }, ask: { questions: [] } },
+        { name: "ancient", path: "/a", status: "done", elapsed: 9 * 86400e3, work: { final: "old news" }, ask: { questions: [] } }],
+      pending: () => [], tasks: () => [], repos: () => ({ dailify: "/d", symbiot: "/s", ancient: "/a" }), name: (p, n) => n, parked: () => [] } });
+    const d = r.projects.find((p) => p.repo === "dailify") || {}, sy = r.projects.find((p) => p.repo === "symbiot") || {};
+    ok("a project's summary is its agent's last word, first paragraph, plain (no markdown)", d.summary === "I read the lead code." && d.state === "asks you", d);
+    ok("its open question comes with up to 3 answers and the folder to send the answer to", d.qs && d.qs[0].q === "Who gets each yes?" && d.qs[0].options.length === 3 && d.qs[0].path === "/d", d.qs);
+    ok("the extra tasks it suggests, not the ones already added", d.ideas && d.ideas.length === 1 && d.ideas[0].full === "Fix the exhausted-campaign dead end" && d.ideas[0].repo === "dailify" && d.ideas[0].path === "/d", d.ideas);
+    ok("a running agent's summary is the to-do it's on now (from elapsed, as the agent list gives it)", sy.summary === "Editing ui.mjs" && sy.state === "at work", sy);
+    ok("a project with nothing new in a day, and nothing asked or suggested, isn't relayed", !r.projects.some((p) => p.repo === "ancient"), r.projects.map((p) => p.repo));
+  }
   console.log("WORK SCENE — plain words for what's at work, waiting and ready; Go starts it");
   const { workScene, workGo } = await import("../home.mjs");
   const ws = workScene({ deps: {
