@@ -5,10 +5,10 @@ import { spawn } from "node:child_process";
 import { homedir } from "node:os";
 import { join, dirname, resolve, relative } from "node:path";
 import { fileURLToPath } from "node:url";
-import { readFileSync, writeFileSync, mkdirSync, existsSync, openSync, writeSync, unlinkSync, readdirSync, statSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, existsSync, openSync, writeSync, unlinkSync, readdirSync, statSync, renameSync } from "node:fs";
 import { randomBytes, createHash } from "node:crypto";
 import { CONFIG_DIR, loadConfig, saveConfig, loadTasks, TASK_MAX, clipWords, sameTask, taskWords, sh, hasCmd } from "./core.mjs";
-import { parseRun, lastRunText } from "./work.mjs";
+import { parseRun, lastRunText, readRunLog } from "./work.mjs";
 import { parseFacts } from "./handover.mjs";
 import { scanRoots, repoPathMap } from "./scan.mjs";
 import { knowledgeFolders } from "./knowledge.mjs";
@@ -273,7 +273,7 @@ function earlierRuns() {
     const busy = runningHandoff(r.path), ask = agentQuestions(r.path, r.name), wait = waitingFor(r.path), facts = busy ? [] : factsOf(r.path);
     if (!busy && !ask.questions.length && !wait && !facts.length) continue;
     const log = join(r.path, ".symbiot", "agent.log"), startedAt = (busy && busy.startedAt) || Number(r.startedAt) || Date.now();
-    let tail = "", work = null, progress = null, end = Date.now(); try { ({ tail, work, progress } = workOf(r.path, readFileSync(log, "utf8"))); if (!busy) end = statSync(log).mtimeMs; } catch {}
+    let tail = "", work = null, progress = null, end = Date.now(); try { ({ tail, work, progress } = workOf(r.path, readRunLog(log))); if (!busy) end = statSync(log).mtimeMs; } catch {}
     out.push({ id: "earlier-" + digest(r.path).slice(0, 8), name: String(r.name || r.path.split("/").pop()), path: r.path, status: busy ? "running" : "done", earlier: true, elapsed: Math.max(0, end - startedAt), exitCode: null, tail, work, progress, changed: agentChanges(r.path, startedAt), ask, held: heldTasks(r.path), waiting: wait, remember: facts.length ? facts : null, fromHeld: false });
   }
   return out;
@@ -576,10 +576,12 @@ function _findOrcaCli() {
 // ---- background jobs --------------------------------------------------------
 // Run a shell command as a tracked, logged background job that shows up live in
 // the Agents tab. Shared by the agent handoff and the local-model setup.
+const LOG_KEEP = 8 * 1024 * 1024;
 function track(name, cmd, cwd, onExit, env) {
   try {
     const dir = join(cwd, ".symbiot"); mkdirSync(dir, { recursive: true });
     const logp = join(dir, "agent.log");
+    try { if (statSync(logp).size > LOG_KEEP) renameSync(logp, logp + ".old"); } catch {} // past 8 MB: kept as agent.log.old, and a fresh one starts
     let fd = "ignore"; try { fd = openSync(logp, "a"); writeSync(fd, `\n=== ${name} ${new Date().toISOString()} ===\n$ ${cmd}\n`); } catch {}
     const entry = { id: randomBytes(4).toString("hex"), name, path: cwd, log: logp, startedAt: Date.now(), status: "running", exitCode: null, endedAt: null };
     const child = spawn(cmd, { shell: true, cwd, detached: true, stdio: ["ignore", fd === "ignore" ? "ignore" : fd, fd === "ignore" ? "ignore" : fd], ...(env ? { env: { ...process.env, ...env } } : {}) });
@@ -623,7 +625,7 @@ const QUESTIONS_MAX = 5;
 // the next moves up. The rest are a click away.
 const OPTIONS_SHOWN = 2, IDEAS_SHOWN = 2;
 const qKey = (s) => String(s || "").trim().toLowerCase().replace(/\s+/g, " ");
-const readSymbiot = (path, f) => { try { return readFileSync(join(path, ".symbiot", f), "utf8"); } catch { return ""; } };
+const readSymbiot = (path, f) => { if (f === "agent.log") return readRunLog(join(path, ".symbiot", f)); try { return readFileSync(join(path, ".symbiot", f), "utf8"); } catch { return ""; } };
 // "## Questions" → "### question", context lines, "- option" bullets;
 // "## Suggestions" (or Ideas / Follow-ups) → "- idea" bullets. Forgiving: a bare
 // bullet under Questions is a question with no options.
@@ -880,8 +882,7 @@ function workOf(path, log) {
 function agentsList() {
   const seen = new Set();
   return HANDOFFS.map((e) => {
-    let log = ""; try { log = readFileSync(e.log, "utf8"); } catch {}
-    const { tail, work, progress } = workOf(e.path, log);
+    const { tail, work, progress } = workOf(e.path, readRunLog(e.log));
     const first = !seen.has(e.path); seen.add(e.path);
     const facts = first && e.status !== "running" ? factsOf(e.path) : [];
     return { id: e.id, name: e.name, path: e.path, status: e.status, elapsed: (e.endedAt || Date.now()) - e.startedAt, exitCode: e.exitCode, tail, work, progress, changed: agentChanges(e.path, e.startedAt), ask: first ? agentQuestions(e.path, e.name) : null, held: first ? heldTasks(e.path) : null, waiting: first && e.status !== "running" ? waitingFor(e.path) : null, remember: facts.length ? facts : null, fromHeld: !!e.fromHeld };

@@ -8,6 +8,8 @@
 // time. Another agent (Codex, Aider, Gemini) writes plain text: its last lines
 // come through as what it said. Pure: text in, data out.
 
+import { statSync, openSync, readSync, closeSync } from "node:fs";
+
 const MAX_STEPS = 60;
 const short = (s, n = 80) => { s = String(s ?? "").replace(/\s+/g, " ").trim(); return s.length > n ? s.slice(0, n - 1) + "…" : s; };
 const base = (p) => String(p || "").split("/").filter(Boolean).slice(-2).join("/");
@@ -103,6 +105,29 @@ function parseRun(text) {
   return out;
 }
 
+// The newest run of an agent.log, from its "=== " header on, read from the end of the
+// file. A log keeps every run and everything they read (one reached 144 MB: 96 runs and
+// the screenshots they looked at), and every view only needs the newest, so it never
+// reads the rest; and it's kept until the file changes, so a view that asks again
+// costs nothing. Past RUN_CAP of one run, it's that run's last RUN_CAP.
+const RUN_CAP = 16 * 1024 * 1024, RUN_CACHE = new Map();
+function readRunLog(file) {
+  let st; try { st = statSync(file); } catch { return ""; }
+  const hit = RUN_CACHE.get(file); if (hit && hit.size === st.size && hit.mtime === st.mtimeMs) return hit.text;
+  let fd; try { fd = openSync(file, "r"); } catch { return ""; }
+  let buf = Buffer.alloc(0), at = -1;
+  try {
+    for (let end = st.size; end > 0 && buf.length < RUN_CAP;) {
+      const start = Math.max(0, end - (1 << 20)), b = Buffer.alloc(end - start);
+      readSync(fd, b, 0, b.length, start); buf = Buffer.concat([b, buf]); end = start;
+      at = buf.lastIndexOf("\n=== "); if (at >= 0) break;
+    }
+  } catch { buf = Buffer.alloc(0); } finally { try { closeSync(fd); } catch {} }
+  const text = (at >= 0 ? buf.subarray(at) : buf).toString("utf8");
+  RUN_CACHE.delete(file); RUN_CACHE.set(file, { size: st.size, mtime: st.mtimeMs, text });
+  if (RUN_CACHE.size > 40) RUN_CACHE.delete(RUN_CACHE.keys().next().value);
+  return text;
+}
 // The newest run's part of an agent.log (after its header and command line).
 function lastRunText(log) {
   const s = String(log || ""), at = s.lastIndexOf("\n=== ");
@@ -111,4 +136,4 @@ function lastRunText(log) {
 // What the agent said last: its final answer, from either kind of log.
 function finalOf(log) { return parseRun(lastRunText(log)).final; }
 
-export { parseRun, lastRunText, finalOf, describe, testsIn };
+export { parseRun, lastRunText, finalOf, describe, testsIn, readRunLog };

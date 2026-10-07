@@ -23,7 +23,7 @@ import { runHandoff, runningHandoff, waitingFor, agentQuestions } from "./agents
 import { addTask, pushTasks } from "./tasks.mjs";
 import { actNow } from "./mind.mjs";
 import { repoPathMap } from "./scan.mjs";
-import { parseRun, lastRunText } from "./work.mjs";
+import { parseRun, lastRunText, readRunLog } from "./work.mjs";
 import { OPS, parseHandoffs } from "./handover.mjs";
 
 const LEDGER = join(CONFIG_DIR, "lanes.json");
@@ -33,7 +33,7 @@ const MAX_KEEP = 200, MAX_CHAIN = 4, TAIL = 4000;
 function loadLedger() { try { const d = JSON.parse(readFileSync(LEDGER, "utf8")); return { handoffs: Array.isArray(d.handoffs) ? d.handoffs : [] }; } catch { return { handoffs: [] }; } }
 // It can name accounts and what's in them: yours only (0600).
 function saveLedger(d) { try { mkdirSync(CONFIG_DIR, { recursive: true }); writeFileSync(LEDGER, JSON.stringify({ handoffs: d.handoffs.slice(-MAX_KEEP) }, null, 1), { mode: 0o600 }); try { chmodSync(LEDGER, 0o600); } catch {} return true; } catch { return false; } }
-const readSym = (path, f) => { try { return readFileSync(join(path, ".symbiot", f), "utf8"); } catch { return ""; } };
+const readSym = (path, f) => { if (f === "agent.log") return readRunLog(join(path, ".symbiot", f)); try { return readFileSync(join(path, ".symbiot", f), "utf8"); } catch { return ""; } };
 const firstLine = (t) => String(t || "").split("\n").find((l) => l.trim()) || "";
 
 // A folder's lane: the repo it is, or ops for a run of its own.
