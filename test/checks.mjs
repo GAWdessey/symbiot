@@ -77,6 +77,10 @@ try {
   const st = C.checksState();
   ok("checksState gives the last run and when", st.at === now && st.clashes.length === r.clashes.length && st.officeDays.join() === "Tuesday,Thursday", st);
   ok("kept yours only (0600)", (statSync(C.CHECKS_FILE).mode & 0o777) === 0o600, (statSync(C.CHECKS_FILE).mode & 0o777).toString(8));
+  const high = st.clashes.filter((c) => c.severity === "high");
+  ok("Home's droplet: the high clashes, none seen yet", high.length > 0 && C.newClashes().length === high.length, C.newClashes());
+  ok("…opening it marks them seen, so the same ones don't come back", C.markClashesSeen().ok && C.newClashes().length === 0, C.seenClashes());
+  ok("…a new one does", C.newClashes({ state: { clashes: [...st.clashes, { kind: "customer", severity: "high", text: "Bluegum's price disagrees: R1 vs R2." }, { kind: "weekday", severity: "low", text: "a low one never reaches Home" }] } }).map((c) => c.text).join() === "Bluegum's price disagrees: R1 vs R2.", "");
   rmSync(C.CHECKS_FILE);
   ok("before the first run: nothing, at 0", C.checksState().at === 0 && C.checksState().clashes.length === 0);
 

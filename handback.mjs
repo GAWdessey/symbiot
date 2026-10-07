@@ -30,7 +30,7 @@ import { CONFIG_DIR, loadConfig, loadTasks, saveTasks, sameTask, clipWords } fro
 import { OPS, parseAwaiting } from "./handover.mjs";
 import { FACTS, factsOf, knownRun, loadRuns, HANDOFFS, runningHandoff } from "./agents.mjs";
 import { remember, actIn } from "./mind.mjs";
-import { newsSince, watchState, isMail } from "./watch.mjs";
+import { newsSince, watchState, isMail, isSignedOut } from "./watch.mjs";
 import { inboxMail } from "./mail.mjs";
 import { desktopNotify } from "./desktop.mjs";
 import { repoPathMap } from "./scan.mjs";
@@ -163,11 +163,21 @@ function awaitTick({ map = repoPathMap(), now = Date.now(), news, inbox, act, no
   if (added.length || replied.length) saveWaits(d);
   return { added, replied };
 }
-// The Dashboard's list: what's still waiting, then what came in lately, newest first.
-function awaitingState() {
+// Can a reply be noticed? Email on (the inbox on this computer), or a watched
+// inbox that's signed in: a signed-out one reads nothing, so it doesn't count.
+// { sees, signedOut: [the signed-out inboxes' names] }
+function inboxSight({ mail, watches } = {}) {
+  if (!mail) { try { mail = loadConfig().mail || {}; } catch { mail = {}; } }
+  if (!watches) { try { watches = watchState().watches; } catch { watches = []; } }
+  const inboxes = watches.filter((w) => isMail(w.url)), out = inboxes.filter(isSignedOut);
+  return { sees: !!mail.enabled || inboxes.length > out.length, signedOut: out.map((w) => w.name) };
+}
+// The Dashboard's list: what's still waiting, then what came in lately, newest
+// first; and, while one waits, whether anything can see the reply arrive.
+function awaitingState({ sight = inboxSight } = {}) {
   const view = (w) => ({ id: w.id, from: w.from.lane, to: w.to, subject: w.subject, asked: w.asked, task: w.task, lane: w.lane, sent: w.sent, status: w.status, ...(w.reply ? { reply: w.reply } : {}), ...(w.handed ? { handed: w.handed } : {}), ...(w.error ? { error: w.error } : {}) });
-  const all = loadWaits().waits.slice().reverse();
-  return { waits: [...all.filter((w) => w.status === "waiting"), ...all.filter((w) => w.status !== "waiting" && w.status !== "stopped").slice(0, 10)].map(view) };
+  const all = loadWaits().waits.slice().reverse(), open = all.filter((w) => w.status === "waiting");
+  return { waits: [...open, ...all.filter((w) => w.status !== "waiting" && w.status !== "stopped").slice(0, 10)].map(view), ...(open.length ? { sight: sight() } : {}) };
 }
 // Stop waiting (its button): it stays in the file, so the run's AWAITING.json doesn't bring it back.
 function stopWaiting(id) {
@@ -175,4 +185,4 @@ function stopWaiting(id) {
   w.status = "stopped"; return saveWaits(d) ? { ok: true, ...awaitingState() } : { error: "Couldn't write " + AWAIT_FILE + "." };
 }
 
-export { AWAIT_FILE, RUNS_DIR, runFolders, laneOf, runTitle, subjectCore, keepFacts, skipFacts, loadWaits, collectWaits, answers, replyTo, nextRequest, awaitTick, awaitingState, stopWaiting };
+export { AWAIT_FILE, RUNS_DIR, runFolders, laneOf, runTitle, subjectCore, keepFacts, skipFacts, loadWaits, collectWaits, answers, replyTo, nextRequest, awaitTick, inboxSight, awaitingState, stopWaiting };

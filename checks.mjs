@@ -647,5 +647,20 @@ function checksState({ file = CHECKS_FILE } = {}) {
   try { const d = JSON.parse(readFileSync(file, "utf8")); return { at: d.at || 0, clashes: d.clashes || [], counts: d.counts || {}, officeDays: d.officeDays || [], folders: d.folders || [], ms: d.ms || 0 }; }
   catch { return { at: 0, clashes: [], counts: {}, officeDays: [], folders: [], ms: 0 }; }
 }
+// Home's "Where your files disagree" droplet: the high clashes (a deadline on
+// someone's leave or a holiday, a renewal or price told two ways) you haven't
+// opened from it yet. Opening it marks them seen (checks-seen.json), so the same
+// clash reaches you once; a new one, or one that changes, comes back.
+const SEEN_FILE = join(CONFIG_DIR, "checks-seen.json");
+const clashKey = (c) => c.kind + "|" + c.text;
+function seenClashes({ file = SEEN_FILE } = {}) { try { const d = JSON.parse(readFileSync(file, "utf8")); return Array.isArray(d) ? d : []; } catch { return []; } }
+function newClashes({ state = checksState(), seen = seenClashes() } = {}) {
+  const s = new Set(seen);
+  return (state.clashes || []).filter((c) => c.severity === "high" && !s.has(clashKey(c)));
+}
+function markClashesSeen({ state = checksState(), file = SEEN_FILE } = {}) {
+  const keys = [...new Set([...seenClashes({ file }), ...(state.clashes || []).filter((c) => c.severity === "high").map(clashKey)])].slice(-MAX_CLASHES);
+  try { mkdirSync(join(file, ".."), { recursive: true }); writeFileSync(file, JSON.stringify(keys), { mode: 0o600 }); return { ok: true }; } catch { return { error: "Couldn't write " + file + "." }; }
+}
 
-export { CHECKS_FILE, parseDates, timeOf, loadFiles, extractFacts, findClashes, runChecks, checksState };
+export { CHECKS_FILE, parseDates, timeOf, loadFiles, extractFacts, findClashes, runChecks, checksState, newClashes, markClashesSeen, seenClashes };

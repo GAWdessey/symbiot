@@ -25,8 +25,8 @@
 
 import { spawn } from "node:child_process";
 import { homedir } from "node:os";
-import { join } from "node:path";
-import { realpathSync } from "node:fs";
+import { join, basename } from "node:path";
+import { realpathSync, readFileSync } from "node:fs";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 import { EMBEDDED_UI } from "./ui.mjs";
@@ -41,7 +41,7 @@ import { loadScreens, screenImage, blueprint } from "./screens.mjs";
 import { mapPage, wholePage, pressRegion, typeRegion, scrollPage, signIn, isTrusted } from "./headless.mjs";
 import { watchState, addWatch, removeWatch, seenWatch, newsSince, markNews, checkWatch, setBrief, draftReply, watchBoard, boardLine, boardChat, boardTalk, clearBoardChat } from "./watch.mjs";
 import { PORT as PHONE_PORT, phoneState, pairComputer, pollComputer, forgetComputer } from "./phone.mjs";
-import { KIND_LABEL as POST_KIND, PATHS as POST_PATHS, draftPosts, postsState, postLog, approvePost, editPost, skipPost, voiceFromLinkedIn, openUrl } from "./post.mjs";
+import { KIND_LABEL as POST_KIND, PATHS as POST_PATHS, draftPosts, postsState, postLog, approvePost, editPost, skipPost, voiceFromLinkedIn, openUrl, addMedia as addPostMedia, removeMedia as removePostMedia, mediaDir as postMediaDir, pictureOfPage, clipOfPage } from "./post.mjs";
 import { startApp, updateCmd, isAppRunningWeekly } from "./server.mjs";
 import { listReports, readReport } from "./reports.mjs";
 import { runSandbox } from "./sandbox.mjs";
@@ -621,16 +621,20 @@ async function cmdPhone() {
 // Nothing is ever posted by Symbiot: approve copies one post to your clipboard and
 // gives LinkedIn's share box, where you paste it and post it yourself.
 async function cmdPost() {
-  const [sub = "draft", a1, a2] = argv.slice(1).filter((x, i, all) => !x.startsWith("--") && all[i - 1] !== "--since");
+  const [sub = "draft", a1, a2] = argv.slice(1).filter((x, i, all) => !x.startsWith("--") && all[i - 1] !== "--since" && all[i - 1] !== "--seconds");
   const fail = (msg) => { console.log(c.y(msg)); process.exitCode = 1; };
   const show = (p) => {
     console.log(`\n${c.b(POST_KIND[p.kind] || p.kind)}  ${c.d(`${p.id} · ${p.status}${p.edited ? " · edited" : ""}`)}\n${p.text}`);
     if (p.sources && p.sources.length) console.log(c.d("  from git: " + p.sources.slice(0, 4).map((s) => s.replace(/^\[\d+\]\s*/, "")).join("\n            ") + (p.sources.length > 4 ? `\n            …and ${p.sources.length - 4} more` : "")));
+    for (const m of p.media || []) console.log(c.d(`  ${m.kind} ${m.id}: `) + join(postMediaDir(p.id), m.file) + c.d(m.url ? `  (${m.from === "clip" ? "clip" : "picture"} of ${m.url})` : ""));
+    if (p.show && !(p.media || []).length) console.log(c.d("  picture idea: " + p.show));
   };
   if (sub === "draft" || sub === "new") {
     const r = await draftPosts({ days: SINCE_WEEK || 7 });
     if (r.error) return fail(r.error);
     for (const p of r.posts) show(p);
+    if (r.retried) console.log("\n" + c.d("The first try kept none (each claimed what git doesn't show), so Symbiot tried again by itself."));
+    if (r.pictures) console.log(c.d(`${r.pictures === 1 ? "One draft names" : `${r.pictures} drafts name`} a screen of an app you run here, so ${r.pictures === 1 ? "it has its picture" : "they have their pictures"} already: keep or remove (symbiot post remove <id> <media id>).`));
     if (r.dropped.length) console.log("\n" + c.y(`Dropped ${r.dropped.length}: `) + r.dropped.map((x) => `${POST_KIND[x.kind] || x.kind} (${x.cited ? "claimed " + x.unsupported.join(", ") + ", which git doesn't show" : "cited nothing from git"})`).join("; "));
     console.log("\n" + c.d(`${r.posts.length} draft${r.posts.length === 1 ? "" : "s"} from ${r.facts} things git shows this week, in the voice of your ${r.voice} example${r.voice === 1 ? "" : "s"}. They wait on the app's Dashboard too.`));
     console.log(c.d("Nothing is posted until you approve one:  symbiot post approve <id>  (or edit / skip)."));
@@ -648,9 +652,32 @@ async function cmdPost() {
     console.log(`${c.g("✓")} Approved.\n\n${r.post.text}\n`);
     console.log(r.copied ? `${c.g("✓")} Copied to your clipboard (${r.copied}).` : c.y("No clipboard tool found (wl-copy, xclip, xsel, pbcopy or clip): copy it from above."));
     console.log(`Paste it into LinkedIn's share box: ${c.b(r.share)}` + (has("open") ? "" : c.d("  (--open opens it)")));
-    if (has("open")) openUrl(r.share);
+    if (r.files.length) console.log(`Then add ${r.files.length === 1 ? "this" : "these"} with its photo or video button:\n${r.files.map((f) => "  " + f).join("\n")}` + (has("open") ? "" : c.d("  (--open opens their folder)")));
+    if (has("open")) { openUrl(r.share); if (r.folder) openUrl(r.folder); }
     console.log(c.d(r.note));
     return;
+  }
+  // pictures and video on a draft: a file of yours, or a picture or clip of a page
+  if (sub === "add") {
+    if (!a2) return fail("Give the draft and the file:  symbiot post add <id> <picture or video>");
+    let data; try { data = readFileSync(a2); } catch (e) { return fail(`Can't read ${a2}: ${e.message}`); }
+    const r = addPostMedia(a1, data, { name: basename(a2) });
+    if (r.error) return fail(r.error);
+    show(r.post); return;
+  }
+  if (sub === "page") {
+    if (!a2) return fail("Give the draft and the page:  symbiot post page <id> <web address> [--clip] [--seconds 8]");
+    const clip = has("clip"), i = argv.indexOf("--seconds"), seconds = i >= 0 ? Number(argv[i + 1]) || 8 : 8;
+    console.log(c.d(clip ? `Recording ${seconds} s of ${a2}…` : `Taking a picture of ${a2}…`));
+    // through the app when it runs: its hidden browser and this one share a profile
+    const r = (await viaApp("/api/posts/media/page", { id: a1, url: a2, clip, seconds })) || await (clip ? clipOfPage(a1, a2, { seconds }) : pictureOfPage(a1, a2));
+    if (r.error) return fail(r.error);
+    show(r.post); return;
+  }
+  if (sub === "unadd" || sub === "remove") {
+    const r = removePostMedia(a1, a2);
+    if (r.error) return fail(r.error);
+    console.log(`${c.g("✓")} Taken off ${r.post.id}.`); return;
   }
   if (sub === "edit") {
     if (!a2) return fail('Give the new text:  symbiot post edit <id> "the post"');
@@ -685,6 +712,14 @@ async function cmdPost() {
                                    copy it to your clipboard, and give (--open:
                                    open) LinkedIn's share box to paste it into
   symbiot post edit <id> "text"    change a draft's words
+  symbiot post add <id> <file>     put a picture or video of yours on a draft
+                                   (PNG, JPG, GIF, MP4, MOV, WebM)
+  symbiot post page <id> <page> [--clip] [--seconds 8]
+                                   a picture of a web page (localhost too) on a
+                                   draft; --clip records a short video of it,
+                                   scrolling down (needs ffmpeg)
+  symbiot post remove <id> <media id>
+                                   take a picture or video off a draft
   symbiot post skip <id>           drop a draft
   symbiot post log                 everything drafted, edited, approved, skipped
   symbiot post voice [--linkedin]  your example posts (voice.md), or read your

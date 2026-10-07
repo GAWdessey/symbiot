@@ -15,11 +15,13 @@
 // it starts when it's free), done (reported back) or error (reported back too).
 // chain: how many handovers in a row led here; past MAX_CHAIN it stops, so two
 // lanes can't hand the same thing back and forth forever.
-import { join, basename } from "node:path";
-import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, chmodSync } from "node:fs";
+import { join, basename, dirname, resolve, relative } from "node:path";
+import { homedir } from "node:os";
+import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, chmodSync, statSync } from "node:fs";
 import { createHash, randomBytes } from "node:crypto";
+import { execFile } from "node:child_process";
 import { CONFIG_DIR, loadTasks, clipWords } from "./core.mjs";
-import { runHandoff, runningHandoff, waitingFor, agentQuestions } from "./agents.mjs";
+import { runHandoff, runningHandoff, waitingFor, agentQuestions, findOrcaCli, installAllowlist } from "./agents.mjs";
 import { addTask, pushTasks } from "./tasks.mjs";
 import { actNow } from "./mind.mjs";
 import { repoPathMap } from "./scan.mjs";
@@ -149,7 +151,7 @@ function report(e, o, { run = runHandoff, running = runningHandoff, waiting = wa
 
 // One pass: start what's been handed over, from every lane, then report back
 // what's done. The app runs it every 20 seconds.
-function lanesTick({ map = repoPathMap(), act = actNow, run = runHandoff, running = runningHandoff, add = addTask, push = pushTasks, tasks, now = Date.now() } = {}) {
+function lanesTick({ map = repoPathMap(), act = actNow, run = runHandoff, running = runningHandoff, add = addTask, push = pushTasks, tasks, now = Date.now(), relink = orcaRelink } = {}) {
   const ledger = loadLedger();
   let acts = []; try { acts = readdirSync(ACT_DIR).filter((d) => d.startsWith("act-")).map((d) => join(ACT_DIR, d)); } catch {}
   const started = [];
@@ -161,7 +163,132 @@ function lanesTick({ map = repoPathMap(), act = actNow, run = runHandoff, runnin
     if (report(e, o, { run, running, now })) { e.reportedAt = now; if (e.status !== "error") e.status = "done"; e.result = o.text; reported.push(e); }
   }
   if (started.length || reported.length) saveLedger(ledger);
+  if (reported.length) relink({ map }).catch(() => {}); // a handover may have renamed a lane's folder
   return { started, reported };
+}
+
+// ---- a handover that couldn't start: yours to unblock, on Home ---------------------
+// A handover that errored (an ops run limited to its folder handed "needs a run that
+// can edit ~/Company" to ops, its own lane; a lane that doesn't exist; too long a
+// chain) went back to the agent that asked, and stopped there: Home said nothing
+// needed you. Now it's a question on Home (homeState) for STUCK_FOR, until you
+// answer it or something like it goes through another way. Allow starts it as a
+// run of its own, allowed to read, edit and move files in the folders it names
+// (that run only: its .claude/settings.local.json), and its result goes back to the
+// agent that asked, as any handover's does; Skip lets it go.
+const STUCK_FOR = 3 * 86400000;
+const tilde = (p) => { const h = homedir(); return p === h ? "~" : p.startsWith(h + "/") ? "~" + p.slice(h.length) : p; };
+// Two handovers about the same thing: most of the shorter one's words in the other.
+function alike(a, b) {
+  const x = keyWords(a), y = keyWords(b), [s, l] = x.size <= y.size ? [x, y] : [y, x]; if (s.size < 3) return false;
+  let n = 0; for (const w of s) if (l.has(w)) n++;
+  return n / s.size >= 0.5;
+}
+// The folders a handover names that a run would need: ones on this computer, not
+// the asking run's own, not Symbiot's, not your home itself or a hidden one in it
+// (~/.ssh). A file named in one counts as the folder it's in. Outermost only, 3 at most.
+function namedDirs(text, own = "", { exists = (p) => { try { return statSync(p); } catch { return null; } } } = {}) {
+  const home = homedir(), out = [];
+  const roots = ["~", "/home", "/Users", "/srv", "/opt", "/mnt", "/media", home].map((r) => r.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&")).join("|");
+  for (const m of String(text || "").matchAll(new RegExp(`(?:^|[\\s\`'"(])((?:${roots})\\/[^\\s\`'",;)]+)`, "g"))) {
+    let p = resolve(m[1].replace(/^~(?=\/)/, home).replace(/[.:]+$/, "")); const st = exists(p); if (!st) continue;
+    if (!st.isDirectory()) p = dirname(p);
+    const rel = relative(home, p);
+    if (p === home || p === "/" || (!rel.startsWith("..") && rel.split("/")[0].startsWith(".")) || p.startsWith(CONFIG_DIR) || (own && (p === own || p.startsWith(own + "/")))) continue;
+    out.push(p);
+  }
+  return [...new Set(out)].filter((p, i, all) => !all.some((q) => q !== p && p.startsWith(q + "/"))).slice(0, 3);
+}
+// It went through since another way: the same thing handed over again (or done,
+// after it), or the run that asked has run again and ticked all it had.
+function pastIt(e, hs) {
+  if (hs.some((x) => x !== e && x.status !== "error" && Math.max(x.at || 0, x.reportedAt || 0) > e.at && alike(x.text, e.text))) return true;
+  const md = readSym(e.from.path, "TASKS.md");
+  return lastRunStart(e.from.path) > e.at && /^- \[x\]/im.test(md) && !/^\s*- \[ \]/m.test(md);
+}
+// The errored handovers that still wait on you, newest first:
+// [{ id, from, text, error, at, dirs, q, options }].
+function stuckHandovers({ ledger = loadLedger(), now = Date.now(), dirsOf = namedDirs } = {}) {
+  const hs = ledger.handoffs, out = [];
+  hs.forEach((e) => {
+    if (e.status !== "error" || e.skipped || now - (e.at || 0) > STUCK_FOR) return;
+    if (pastIt(e, hs)) return;
+    const dirs = dirsOf(e.text, e.from.path);
+    out.unshift({ id: e.id, from: e.from, text: e.text, error: e.error || "", at: e.at, dirs,
+      q: dirs.length ? `Allow this run access to ${dirs.map(tilde).join(" and ")}?` : `${e.from.lane}'s handover didn't start (${String(e.error || "").replace(/[.:]\s.*$|\.$/, "")}). Start it as a run of its own?`,
+      options: [dirs.length ? "Allow (recommended)" : "Start it (recommended)", "Skip"] });
+  });
+  return out;
+}
+// The rules a run gets for the folders you allowed it: read, edit and move files
+// there (git mv too), nothing wide.
+const dirRules = (dirs) => dirs.flatMap((d) => [`Read(/${d}/**)`, `Edit(/${d}/**)`, `Write(/${d}/**)`]).concat(dirs.length ? ["Bash(mv:*)", "Bash(git mv:*)", "Bash(mkdir:*)", "Bash(ls:*)", "Bash(find:*)"] : []);
+function grantDirs(dir, dirs) {
+  if (!dirs.length) return null;
+  try { writeFileSync(join(dir, ".symbiot", "allowlist.proposed.json"), JSON.stringify({ permissions: { allow: dirRules(dirs), additionalDirectories: dirs } }, null, 2) + "\n"); } catch { return null; }
+  return installAllowlist(dir);
+}
+// Allow (or Start it): a run of its own on what was handed over, with what you
+// said added, allowed into the folders it names. The ledger's entry becomes that
+// handover, started, so its result goes back to the agent that asked. { ok, job, dirs } or { error }.
+function allowHandover(id, { note = "", act = actNow, run = runHandoff, now = Date.now(), dirsOf = namedDirs } = {}) {
+  const ledger = loadLedger(), e = ledger.handoffs.find((x) => x.id === id);
+  if (!e || e.status !== "error" || e.skipped) return { error: "That handover isn't waiting on you any more." };
+  const dirs = dirsOf(e.text, e.from.path), said = String(note || "").trim().slice(0, 2000);
+  const r = act(e.text + (said ? `\n\nThe user said: ${said}` : ""), { now, title: `handed over by ${e.from.lane}`,
+    context: `${e.from.lane}'s agent (in ${e.from.path}) handed this over, and carries on once it's done.${dirs.length ? ` The user allowed this run to read, edit and move files in ${dirs.join(", ")}.` : ""}`,
+    run: (dir, o) => { grantDirs(dir, dirs); return run(dir, o); } });
+  if (!r || r.error) return { error: (r && r.error) || "The run didn't start." };
+  Object.assign(e, { status: "started", to: { lane: OPS, path: r.dir }, job: r.job, at: now, allowedAt: now });
+  delete e.error; delete e.reportedAt; delete e.result;
+  saveLedger(ledger);
+  return { ok: true, job: r.job, dirs };
+}
+// Skip: it stops asking, and the agent that handed it over reads that you skipped it.
+function skipHandover(id, { now = Date.now() } = {}) {
+  const ledger = loadLedger(), e = ledger.handoffs.find((x) => x.id === id);
+  if (!e || e.status !== "error") return { error: "That handover isn't waiting on you any more." };
+  e.skipped = now; saveLedger(ledger);
+  const file = join(e.from.path, ".symbiot", "ANSWERS.md");
+  try { if (existsSync(join(e.from.path, ".symbiot"))) writeFileSync(file, `${(existsSync(file) ? readFileSync(file, "utf8") : "# Answers\n").replace(/\s*$/, "")}\n\n### Handed over to ${e.to.lane}: ${clipWords(firstLine(e.text), 120)}\nThe user skipped it: don't hand it over again.\n_answered ${new Date(now).toISOString().slice(0, 10)}_\n`); } catch {}
+  return { ok: true };
+}
+
+// ---- Orca, kept pointing at the lanes ---------------------------------------------
+// A handover can rename a lane's folder (CallForge AI → dailify), and the run that
+// did it can't tell Orca (its CLI is outside what a run may do), so Orca keeps a
+// path that's gone. After a handover comes back, and when the app starts, each repo
+// Orca has at a path that's gone is added again where it is now: the scanned repo
+// with the GitHub remote Orca kept for it, else the one with its name. Orca's CLI
+// can't drop the old entry: it shows as missing there until you remove it.
+const remoteKey = (url) => String(url || "").trim().replace(/^[a-z+]+:\/\//i, "").replace(/^[^@/]+@/, "").replace(/:(?!\d)/, "/").replace(/\/+$/, "").replace(/\.git$/i, "").toLowerCase();
+const gitRemote = (path) => new Promise((res) => execFile("git", ["-C", path, "remote", "get-url", "origin"], { timeout: 5000, encoding: "utf8" }, (e, out) => res(e ? "" : out)));
+const runOrca = (cli, args) => new Promise((res) => execFile(cli, args, { timeout: 20000, encoding: "utf8" }, (e, out) => res(e ? "" : out)));
+// Orca's repos ({ path, displayName, gitRemoteIdentity }) whose folder is gone, each
+// with where it is now: [{ from, to, name }]. Only a single match moves it.
+async function orcaMoves(repos, map, { remoteOf = gitRemote, exists = existsSync } = {}) {
+  const known = new Set(repos.map((r) => r.path)), free = Object.values(map).filter((p) => !known.has(p) && exists(p)), remotes = new Map();
+  const remote = async (p) => { if (!remotes.has(p)) remotes.set(p, remoteKey(await remoteOf(p))); return remotes.get(p); };
+  const moves = [];
+  for (const r of repos) {
+    if (!r.path || exists(r.path)) continue;
+    const key = remoteKey((r.gitRemoteIdentity || {}).canonicalKey), hit = [];
+    if (key) for (const p of free) if ((await remote(p)) === key) hit.push(p);
+    if (!hit.length) { const names = [r.displayName, basename(r.path)].filter(Boolean).map((s) => s.toLowerCase()); hit.push(...free.filter((p) => names.includes(basename(p).toLowerCase()))); }
+    if (hit.length === 1 && !moves.some((m) => m.to === hit[0])) moves.push({ from: r.path, to: hit[0], name: r.displayName || basename(hit[0]) });
+  }
+  return moves;
+}
+// Add each moved repo again in Orca, where it is now. Nothing when Orca isn't
+// installed or isn't running (its CLI can't reach it), and never from a sandbox
+// (symbiot app --fresh): that Orca is your real one. { moves: [{ from, to, name, ok }] }
+async function orcaRelink({ map, cli, orca = runOrca, remoteOf } = {}) {
+  if (process.env.SYMBIOT_SANDBOX) return { moves: [] };
+  cli = cli ?? findOrcaCli(); if (!cli) return { moves: [] };
+  let repos = []; try { repos = JSON.parse(await orca(cli, ["repo", "list", "--json"])).result.repos || []; } catch { return { moves: [] }; }
+  const moves = await orcaMoves(repos, map || repoPathMap(), { remoteOf });
+  for (const m of moves) m.ok = /"ok":\s*true/.test(await orca(cli, ["repo", "add", "--path", m.to, "--json"]));
+  return { moves };
 }
 // The Agents tab's list: newest first. Each shows its first line; full, all of a
 // longer one, and result, all of what came back, open under it. What reads the
@@ -178,4 +305,4 @@ function lanesState() {
   return { handoffs: out.slice(0, 30) };
 }
 
-export { LEDGER, MAX_CHAIN, loadLedger, laneOf, lastRunStart, dispatch, outcome, report, lanesTick, lanesState, aboutIt, partlyDone };
+export { LEDGER, MAX_CHAIN, loadLedger, laneOf, lastRunStart, dispatch, outcome, report, lanesTick, lanesState, aboutIt, partlyDone, remoteKey, orcaMoves, orcaRelink, stuckHandovers, allowHandover, skipHandover, namedDirs, alike };

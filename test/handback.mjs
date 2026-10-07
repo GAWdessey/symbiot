@@ -18,7 +18,7 @@ let pass = 0, fail = 0;
 const ok = (n, c, got) => { if (c) { pass++; console.log("  ✓ " + n); } else { fail++; console.log("  ✗ " + n + (got !== undefined ? "  got: " + JSON.stringify(got) : "")); } };
 
 const { parseFacts, parseAwaiting, HANDBACK } = await import("../handover.mjs");
-const { keepFacts, skipFacts, awaitTick, awaitingState, stopWaiting, answers, subjectCore, loadWaits } = await import("../handback.mjs");
+const { keepFacts, skipFacts, awaitTick, awaitingState, inboxSight, stopWaiting, answers, subjectCore, loadWaits } = await import("../handback.mjs");
 const { agentsList, factsOf } = await import("../agents.mjs");
 const { loadMind } = await import("../mind.mjs");
 const { buildTasksMd } = await import("../tasks.mjs");
@@ -130,6 +130,17 @@ console.log("AWAITING.json — the reply is watched for, and handed on");
   const nm = awaitingState().waits.find((x) => x.subject === "Never mind this one");
   ok("Stop waiting takes it off the list", stopWaiting(nm.id).ok && !awaitingState().waits.some((x) => x.id === nm.id));
   ok("…and the run's file doesn't bring it back", awaitTick(deps()).added.length === 0);
+
+  // can anything see the reply arrive? a signed-out inbox can't
+  const gmail = { name: "Gmail", url: "https://mail.google.com/mail/u/0/#inbox" }, out = { ...gmail, error: "Signed out of mail.google.com. Under Screens, type mail.google.com and click Sign in." };
+  const sight = (mail, watches) => inboxSight({ mail, watches });
+  ok("a watched inbox, signed in, sees the reply", sight({}, [gmail]).sees);
+  ok("…signed out, it doesn't, and says which", !sight({}, [out]).sees && sight({}, [out]).signedOut.join() === "Gmail", sight({}, [out]));
+  ok("…another error (a slow page) still counts as watching", sight({}, [{ ...gmail, error: "Found nothing listed on the page this time." }]).sees);
+  ok("…Email on sees it, whatever the watch", sight({ enabled: true }, [out]).sees && !sight({}, []).sees && !sight({}, [{ name: "WhatsApp", url: "https://web.whatsapp.com/" }]).sees);
+  put(sym, "AWAITING.json", [{ to: "a@b.com", subject: "Still out there" }]); awaitTick(deps());
+  const dash = awaitingState({ sight: () => ({ sees: false, signedOut: ["Gmail"] }) });
+  ok("the Dashboard hears it while one waits", dash.sight && !dash.sight.sees && dash.sight.signedOut[0] === "Gmail", dash.sight);
 }
 
 console.log("MAIL — the inbox beside the Sent folder, headers only");

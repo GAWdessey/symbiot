@@ -2,6 +2,16 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.53.2 — 2026-10-07
+
+- Added questions on Home for stuck or failed agent runs, so you can allow access, skip, or run them again right there.
+- Added a ready picture to post drafts whose idea is a screen of an app you run locally; keep it or remove it.
+- Changed post drafting to try once more by itself when every draft gets dropped for claiming things git doesn't show.
+- Added a separate sandbox for trying Symbiot's first-run setup without touching your real settings, drafts or files.
+- Fixed Orca losing track of a repo when a handover renames its folder; Symbiot now adds it again at the new location.
+- Fixed reply tracking treating a signed-out inbox as watched; Home now asks you to sign in again so replies aren't missed.
+- Added a "Where your files disagree" alert under Watching on Home when your files contradict each other on something important.
+
 ## 0.53.1
 
 - **Named for Symbiot.** Agents working on their own is **Symbiosis** (Settings → Your agent); the guard that stops what only you do is **the membrane**; your answer going back into the same conversation is **one mind**; agents deciding what can be undone themselves is **instinct**. Same behaviour, each with what it does spelled out next to it.

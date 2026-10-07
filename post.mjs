@@ -14,20 +14,25 @@
 //   share box for you to paste it. It doesn't schedule.
 // - Every action (drafted, edited, approved, skipped, dropped, replaced) is
 //   appended to posts-log.jsonl, with the text, the date and the platform.
+// - Pictures and videos: each draft says in a line what would show it best
+//   (show), and can carry its own: a picture or video of yours, a picture of a
+//   page, or a short clip of one (see "pictures and videos" below). One whose idea
+//   is a screen of an app you run here arrives with its picture (a picture by itself).
 //
 // Stored in ~/.config/symbiot/posts.json, readable by you only:
-// { posts: [{ id, kind, text, facts: [n], sources: [fact line], platform, status, drafted, edited?, approved?, skipped? }] }
+// { posts: [{ id, kind, text, show, facts: [n], sources: [fact line], media: [{ id, kind, file, name, from, url?, bytes, added }], platform, status, drafted, edited?, approved?, skipped? }], lastUrl }
 // status: waiting (on the Dashboard), approved, skipped or replaced (a newer draft took its place).
 import { join, dirname } from "node:path";
-import { readFileSync, writeFileSync, appendFileSync, mkdirSync, chmodSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync, appendFileSync, mkdirSync, chmodSync, existsSync, readdirSync, rmSync, readlinkSync } from "node:fs";
 import { spawn, spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
+import { connect } from "node:net";
 import { CONFIG_DIR, sh, hasCmd, loadConfig } from "./core.mjs";
 import { resolveProvider, write } from "./ai.mjs";
 import { commits, discoveredRepos } from "./scan.mjs";
-import { readTexts } from "./headless.mjs";
+import { readTexts, pagePicture, pageClip, siteUrl, CLIP } from "./headless.mjs";
 
-const PATHS = { posts: join(CONFIG_DIR, "posts.json"), log: join(CONFIG_DIR, "posts-log.jsonl"), voice: join(CONFIG_DIR, "voice.md") };
+const PATHS = { posts: join(CONFIG_DIR, "posts.json"), log: join(CONFIG_DIR, "posts-log.jsonl"), voice: join(CONFIG_DIR, "voice.md"), media: join(CONFIG_DIR, "post-media") };
 const PLATFORM = "linkedin";
 // LinkedIn's share box, opened for you to paste an approved post into.
 const SHARE_URL = "https://www.linkedin.com/feed/?shareActive=true";
@@ -176,7 +181,7 @@ function extractJson(s) {
 // The AI's answer as drafts, by kind: [{ kind, text, facts: [n] }].
 function parseDrafts(raw) {
   const j = extractJson(raw), list = j && Array.isArray(j.posts) ? j.posts : [];
-  return list.map((p, i) => ({ kind: KINDS.includes(p && p.kind) ? p.kind : KINDS[i] || "", text: noTagLabels((p && p.text) || "").trim().slice(0, MAX_TEXT), facts: (Array.isArray(p && p.facts) ? p.facts : []).map(Number).filter(Number.isInteger) }))
+  return list.map((p, i) => ({ kind: KINDS.includes(p && p.kind) ? p.kind : KINDS[i] || "", text: noTagLabels((p && p.text) || "").trim().slice(0, MAX_TEXT), show: String((p && p.show) || "").replace(/\s+/g, " ").trim().slice(0, 200), facts: (Array.isArray(p && p.facts) ? p.facts : []).map(Number).filter(Number.isInteger) }))
     .filter((p) => p.kind && p.text);
 }
 // A draft checked against the facts: the facts it cites that exist, and what it
@@ -192,49 +197,63 @@ const SYSTEM = `You draft LinkedIn posts for a developer, from their real work t
   `Write the way their example posts do (length, tone, emoji, hashtags, how they open and close), but take nothing from the examples as fact: they're old posts. ` +
   `Every claim must come from the numbered facts. Never invent anything: no numbers, versions, names, users, downloads, revenue, results or testimonials the facts don't show, ` +
   `and no counts ("12 commits"). Use versions and names exactly as the facts write them. Plain text, no markdown, no links unless a fact has one. Never say it was written by AI. ` +
-  `Answer with JSON only: {"posts":[{"kind":"shipped","text":"…","facts":[1,4]},{"kind":"learned","text":"…","facts":[…]},{"kind":"long","text":"…","facts":[…]}]}, ` +
-  `where "facts" lists the numbers of every fact the post uses.`;
+  `Answer with JSON only: {"posts":[{"kind":"shipped","text":"…","show":"…","facts":[1,4]},{"kind":"learned","text":"…","show":"…","facts":[…]},{"kind":"long","text":"…","show":"…","facts":[…]}]}, ` +
+  `where "facts" lists the numbers of every fact the post uses, and "show" is one short line (not posted) saying what picture or short video would show it best, ` +
+  `for them to take: the screen, page or command the post is about, as the facts name it (e.g. "a picture of the new Reports view", "a clip of the install running").`;
 // Draft this week's 3 posts and put them on the Dashboard (waiting on you). With
 // no AI connected it says so and does nothing else: nothing is read, written or
 // logged. `ask` is ai.mjs write (the tests pass their own); `repos`, `gh`, `now`
 // and `paths` likewise. Gives { ok, posts, dropped, facts } or { error, code }.
-async function draftPosts({ ask = write, now = Date.now(), days = 7, repos, gh, paths = PATHS } = {}) {
+async function draftPosts({ ask = write, now = Date.now(), days = 7, repos, gh, paths = PATHS, apps = localApps, shoot = pagePicture } = {}) {
   if (ask === write && !resolveProvider()) return { error: NO_AI, code: "not-connected" };
   const voice = loadVoice(paths.voice);
   if (!voice.length) return { error: noVoice(paths.voice), code: "no-voice" };
-  const facts = gatherFacts({ days, now, repos, gh });
+  const list = (repos || discoveredRepos()).filter((r) => r && r.path);
+  const facts = gatherFacts({ days, now, repos: list, gh });
   if (!facts.length) return { error: `Nothing in git in the last ${days} days (no commits, release tags or dated CHANGELOG.md sections) in the repos Symbiot scans, so there's nothing true to post about. Nothing was drafted.`, code: "no-facts" };
   const listed = facts.map(factLine).join("\n");
   const prompt = `Example posts of mine (my voice; not facts about this week):\n\n${voice.slice(0, 10).map((v, i) => `Example ${i + 1}:\n${v}`).join("\n\n")}\n\n` +
     `This week's facts (the only things you may claim), numbered:\n${listed}\n\nDraft the 3 posts.`;
   const said = async (sys, p) => { const raw = await ask(sys, p); return !raw || /^\(?couldn't reach the model/i.test(raw) ? null : raw; };
-  const first = await said(SYSTEM, prompt);
-  if (first == null) return { error: "Your AI didn't answer (or turned the request down). Nothing was drafted. Check it with  symbiot whoami,  then try again.", code: "no-answer" };
-  const byKind = new Map(); for (const p of parseDrafts(first)) if (!byKind.has(p.kind)) byKind.set(p.kind, vetDraft(p, facts, voice));
-  // once more for any that's missing or claims what git doesn't show, told what was wrong
-  const wrong = KINDS.filter((k) => !byKind.get(k) || !byKind.get(k).ok);
-  if (wrong.length) {
-    const why = wrong.map((k) => { const d = byKind.get(k); return `- "${k}": ${!d ? "missing" : !d.facts.length ? "it cited no facts" : `it claims ${d.unsupported.map((x) => `"${x}"`).join(", ")}, which the facts don't show`}`; }).join("\n");
-    const again = await said(SYSTEM, `${prompt}\n\nYour last answer had problems:\n${why}\n\nWrite only ${wrong.map((k) => `"${k}"`).join(", ")} again, in the same JSON shape, using only what the facts show.`);
-    for (const p of again ? parseDrafts(again) : []) if (wrong.includes(p.kind)) { const v = vetDraft(p, facts, voice); if (v.ok || !byKind.get(p.kind)) byKind.set(p.kind, v); }
+  // One try: the 3 drafts, then once more for any that's missing or claims what git
+  // doesn't show, told what was wrong. null when the AI didn't answer.
+  const attempt = async () => {
+    const first = await said(SYSTEM, prompt); if (first == null) return null;
+    const byKind = new Map(); for (const p of parseDrafts(first)) if (!byKind.has(p.kind)) byKind.set(p.kind, vetDraft(p, facts, voice));
+    const wrong = KINDS.filter((k) => !byKind.get(k) || !byKind.get(k).ok);
+    if (wrong.length) {
+      const why = wrong.map((k) => { const d = byKind.get(k); return `- "${k}": ${!d ? "missing" : !d.facts.length ? "it cited no facts" : `it claims ${d.unsupported.map((x) => `"${x}"`).join(", ")}, which the facts don't show`}`; }).join("\n");
+      const again = await said(SYSTEM, `${prompt}\n\nYour last answer had problems:\n${why}\n\nWrite only ${wrong.map((k) => `"${k}"`).join(", ")} again, in the same JSON shape, using only what the facts show.`);
+      for (const p of again ? parseDrafts(again) : []) if (wrong.includes(p.kind)) { const v = vetDraft(p, facts, voice); if (v.ok || !byKind.get(p.kind)) byKind.set(p.kind, v); }
+    }
+    return KINDS.map((k) => byKind.get(k)).filter(Boolean);
+  };
+  const logDropped = (ds) => { for (const x of ds.filter((y) => !y.ok)) logAction("dropped", { id: "", kind: x.kind, text: x.text, platform: PLATFORM }, now, paths, { why: x.facts.length ? `claims ${x.unsupported.join(", ")}, which git doesn't show` : "cited no facts" }); };
+  let drafts = await attempt(), retried = false;
+  if (drafts == null) return { error: "Your AI didn't answer (or turned the request down). Nothing was drafted. Check it with  symbiot whoami,  then try again.", code: "no-answer" };
+  // every one dropped: a fresh try by itself before giving up (week 1's first try
+  // kept none of 3; the second, the same request again, kept all 3)
+  if (!drafts.some((x) => x.ok)) {
+    logDropped(drafts); retried = true;
+    const again = await attempt(); if (again && again.length) drafts = again; else drafts = drafts.map((x) => ({ ...x, logged: true }));
   }
-  const good = KINDS.map((k) => byKind.get(k)).filter((d) => d && d.ok), dropped = KINDS.map((k) => byKind.get(k)).filter((d) => d && !d.ok);
-  const logDropped = () => { for (const x of dropped) logAction("dropped", { id: "", kind: x.kind, text: x.text, platform: PLATFORM }, now, paths, { why: x.facts.length ? `claims ${x.unsupported.join(", ")}, which git doesn't show` : "cited no facts" }); };
+  const good = drafts.filter((x) => x.ok), dropped = drafts.filter((x) => !x.ok);
   const droppedOut = dropped.map((x) => ({ kind: x.kind, unsupported: x.unsupported, cited: x.facts.length }));
-  // none that git backs: the drafts already waiting stay
-  if (!good.length) { logDropped(); return { error: "Your AI's drafts all claimed things git doesn't show (or cited nothing), so none was kept. Try again, or add to voice.md.", code: "all-dropped", dropped: droppedOut }; }
+  // none that git backs, twice: the drafts already waiting stay
+  if (!good.length) { logDropped(dropped.filter((x) => !x.logged)); return { error: "Your AI's drafts all claimed things git doesn't show (or cited nothing), twice, so none was kept. Try again, or add to voice.md.", code: "all-dropped", dropped: droppedOut, retried }; }
   const d = loadPosts(paths);
   for (const p of d.posts) if (p.status === "waiting") { p.status = "replaced"; p.replaced = now; logAction("replaced", p, now, paths); }
-  const posts = good.map((g) => ({ id: randomBytes(4).toString("hex"), kind: g.kind, text: g.text, facts: g.facts, sources: g.facts.map((n) => factLine(facts[n - 1], n - 1)), platform: PLATFORM, status: "waiting", drafted: now }));
+  const posts = good.map((g) => ({ id: randomBytes(4).toString("hex"), kind: g.kind, text: g.text, show: g.show, facts: g.facts, sources: g.facts.map((n) => factLine(facts[n - 1], n - 1)), media: [], platform: PLATFORM, status: "waiting", drafted: now }));
   d.posts = [...posts, ...d.posts].slice(0, KEEP);
-  savePosts(d, paths);
+  savePosts(d, paths); pruneMedia(d, paths);
   for (const p of posts) logAction("drafted", p, now, paths);
-  logDropped();
-  return { ok: true, posts, dropped: droppedOut, facts: facts.length, voice: voice.length };
+  logDropped(dropped);
+  let pictures = 0; try { pictures = await picturesFor(posts, facts, { apps: await apps(list), shoot, now, paths }); } catch {}
+  return { ok: true, posts, dropped: droppedOut, facts: facts.length, voice: voice.length, ...(retried ? { retried: true } : {}), ...(pictures ? { pictures } : {}) };
 }
 
 // ---- the drafts, and what you do with them ------------------------------------------
-function loadPosts(paths = PATHS) { try { const d = JSON.parse(readFileSync(paths.posts, "utf8")); return { posts: Array.isArray(d.posts) ? d.posts : [] }; } catch { return { posts: [] }; } }
+function loadPosts(paths = PATHS) { try { const d = JSON.parse(readFileSync(paths.posts, "utf8")); return { posts: Array.isArray(d.posts) ? d.posts : [], lastUrl: typeof d.lastUrl === "string" ? d.lastUrl : "" }; } catch { return { posts: [], lastUrl: "" }; } }
 function savePosts(d, paths = PATHS) { try { saveText(paths.posts, JSON.stringify(d, null, 2)); return true; } catch { return false; } }
 // The log: one JSON line per action, only ever appended to. Yours only (0600).
 function logAction(action, p, now = Date.now(), paths = PATHS, extra = {}) {
@@ -253,7 +272,8 @@ function postsState(paths = PATHS, { linked = () => (loadConfig().linked || {}) 
   const d = loadPosts(paths), voice = loadVoice(paths.voice).length, connected = !!resolveProvider();
   let linkedin = false; try { linkedin = !!linked().linkedin; } catch {}
   return { posts: d.posts.filter((p) => p.status === "waiting"), done: d.posts.filter((p) => p.status === "approved" || p.status === "skipped").slice(0, 5),
-    voice: { count: voice, file: paths.voice }, connected, linkedin, canDraft: connected && (linkedin || voice > 0), share: SHARE_URL, labels: KIND_LABEL };
+    voice: { count: voice, file: paths.voice }, connected, linkedin, canDraft: connected && (linkedin || voice > 0), share: SHARE_URL, labels: KIND_LABEL,
+    lastUrl: d.lastUrl, canClip: canClip(), clip: CLIP };
 }
 // One waiting draft, by id (or the start of one), and the store it's in.
 function waiting(id, paths) {
@@ -281,13 +301,203 @@ function skipPost(id, { now = Date.now(), paths = PATHS } = {}) {
 }
 // Approve: your yes to this one post. It's logged, then copied to your clipboard
 // (`copy`: copyText in a terminal; the app's page copies it itself, so it passes
-// null) for you to paste into LinkedIn's share box (`share`). Symbiot doesn't post
-// or schedule it.
+// null) for you to paste into LinkedIn's share box (`share`), with its pictures or
+// video (`files`, in `folder`) to add there. Symbiot doesn't post or schedule it.
 function approvePost(id, { copy = copyText, now = Date.now(), paths = PATHS } = {}) {
   const w = waiting(id, paths); if (w.error) return w;
-  w.p.status = "approved"; w.p.approved = now; savePosts(w.d, paths); logAction("approved", w.p, now, paths);
+  w.p.status = "approved"; w.p.approved = now; savePosts(w.d, paths); logAction("approved", w.p, now, paths, mediaNote(w.p));
   const copied = copy ? copy(w.p.text) : "";
-  return { ok: true, post: w.p, copied, share: SHARE_URL, note: "Symbiot doesn't post or schedule it: paste it into LinkedIn's share box and post it yourself." };
+  const files = mediaFiles(w.p, paths), what = mediaWords(w.p.media);
+  return { ok: true, post: w.p, copied, share: SHARE_URL, files, folder: files.length ? mediaDir(w.p.id, paths) : "",
+    note: `Symbiot doesn't post or schedule it: paste it into LinkedIn's share box${what ? `, add its ${what} there (the photo or video button)` : ""} and post it yourself.` };
+}
+
+// ---- pictures and videos -----------------------------------------------------------
+// A post on LinkedIn takes one video, or up to 20 pictures, not both. A draft can
+// carry its own: a picture or video of yours, a picture of a page (the hidden
+// browser, at twice the pixels), or a short clip of one (recorded there, scrolling
+// slowly down, and made an MP4 by ffmpeg). Each is a copy, kept yours only in
+// post-media/<post id>/ in Symbiot's config folder. Symbiot attaches nothing:
+// LinkedIn's share box can't be filled in from outside, so Approve gives you the
+// files (and the app opens their folder) to add there yourself.
+const MEDIA = { png: ["picture", "image/png"], jpg: ["picture", "image/jpeg"], gif: ["picture", "image/gif"], mp4: ["video", "video/mp4"], mov: ["video", "video/quicktime"], webm: ["video", "video/webm"] };
+const MAX_PICTURES = 20, MAX_BYTES = { picture: 20 * 1024 * 1024, video: 500 * 1024 * 1024 };
+const NOT_MEDIA = "That isn't a picture or video LinkedIn takes: a PNG, JPG or GIF picture, or an MP4, MOV or WebM video.";
+// What a file is, by its first bytes (not its name): a key of MEDIA, or "".
+function mediaType(buf) {
+  if (!Buffer.isBuffer(buf) || buf.length < 12) return "";
+  if (buf.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return "png";
+  if (buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return "jpg";
+  if (buf.subarray(0, 4).toString("latin1") === "GIF8") return "gif";
+  const box = buf.subarray(4, 8).toString("latin1");
+  if (box === "ftyp") return buf.subarray(8, 10).toString("latin1") === "qt" ? "mov" : "mp4";
+  if (["moov", "mdat", "wide"].includes(box)) return "mov";
+  if (buf.readUInt32BE(0) === 0x1a45dfa3) return "webm";
+  return "";
+}
+const mediaDir = (postId, paths = PATHS) => join(paths.media, String(postId).replace(/[^\w-]/g, ""));
+const mediaFiles = (p, paths = PATHS) => (p.media || []).map((m) => join(mediaDir(p.id, paths), m.file));
+// "2 pictures", "its video": what a post carries, in words ("" for nothing)
+function mediaWords(media = []) {
+  const v = media.filter((m) => m.kind === "video").length, n = media.length - v;
+  return v ? "video" : n ? (n === 1 ? "picture" : `${n} pictures`) : "";
+}
+const mediaNote = (p) => ((p.media || []).length ? { media: (p.media || []).map((m) => ({ kind: m.kind, from: m.from, file: m.file, ...(m.url ? { url: m.url } : {}) })) } : {});
+// Add a picture or video (a Buffer, or base64) to a waiting draft. `from`: yours, page or clip.
+function addMedia(id, data, { name = "", from = "yours", url = "", now = Date.now(), paths = PATHS } = {}) {
+  const w = waiting(id, paths); if (w.error) return w;
+  const buf = Buffer.isBuffer(data) ? data : Buffer.from(String(data || ""), "base64"), ext = mediaType(buf);
+  if (!ext) return { error: NOT_MEDIA };
+  const kind = MEDIA[ext][0], have = w.p.media || [];
+  if (buf.length > MAX_BYTES[kind]) return { error: `That ${kind} is ${Math.round(buf.length / 1048576)} MB: Symbiot keeps ${kind === "video" ? "videos" : "pictures"} up to ${MAX_BYTES[kind] / 1048576} MB.` };
+  if (kind === "video" && have.length) return { error: have.some((m) => m.kind === "video") ? "LinkedIn takes one video a post: remove this one's first." : "LinkedIn takes pictures or a video in a post, not both: remove the pictures first." };
+  if (kind === "picture" && have.some((m) => m.kind === "video")) return { error: "LinkedIn takes pictures or a video in a post, not both: remove the video first." };
+  if (have.length >= MAX_PICTURES) return { error: `LinkedIn takes up to ${MAX_PICTURES} pictures a post.` };
+  const mid = randomBytes(4).toString("hex");
+  const m = { id: mid, kind, file: `${mid}.${ext}`, name: String(name || "").replace(/\s+/g, " ").trim().slice(0, 120), from, ...(url ? { url: String(url).slice(0, 500) } : {}), bytes: buf.length, added: now };
+  try { mkdirSync(mediaDir(w.p.id, paths), { recursive: true, mode: 0o700 }); saveText(join(mediaDir(w.p.id, paths), m.file), buf); } catch (e) { return { error: `Couldn't keep it: ${e.message}` }; }
+  w.p.media = [...have, m]; savePosts(w.d, paths); logAction("media", w.p, now, paths, { added: { kind, from, file: m.file, ...(m.url ? { url: m.url } : {}) } });
+  return { ok: true, post: w.p, media: m };
+}
+function removeMedia(id, mediaId, { now = Date.now(), paths = PATHS } = {}) {
+  const w = waiting(id, paths); if (w.error) return w;
+  const m = (w.p.media || []).find((x) => x.id === mediaId); if (!m) return { error: "That picture or video isn't on this draft." };
+  try { rmSync(join(mediaDir(w.p.id, paths), m.file), { force: true }); } catch {}
+  w.p.media = w.p.media.filter((x) => x !== m); savePosts(w.d, paths); logAction("media", w.p, now, paths, { removed: { kind: m.kind, file: m.file } });
+  return { ok: true, post: w.p };
+}
+// A draft's picture or video, for the app to show: { file, type }, or null.
+function mediaFile(postId, mediaId, paths = PATHS) {
+  const p = loadPosts(paths).posts.find((x) => x.id === postId), m = p && (p.media || []).find((x) => x.id === mediaId);
+  const file = m && join(mediaDir(p.id, paths), m.file);
+  return file && existsSync(file) ? { file, type: (MEDIA[m.file.split(".").pop()] || [])[1] || "application/octet-stream" } : null;
+}
+// The folders of drafts no longer kept (posts.json keeps the last KEEP), and a clip's leftovers, go.
+function pruneMedia(d, paths = PATHS) {
+  const ids = new Set(d.posts.map((p) => p.id));
+  let dirs = []; try { dirs = readdirSync(paths.media); } catch { return; }
+  for (const x of dirs) if (!ids.has(x)) try { rmSync(join(paths.media, x), { recursive: true, force: true }); } catch {}
+}
+// The page you gave, kept as the next one's default.
+function rememberUrl(url, paths) { const d = loadPosts(paths); d.lastUrl = url; savePosts(d, paths); }
+// A picture of a page (headless.mjs pagePicture), added to a waiting draft. Only on your click.
+async function pictureOfPage(id, input, { shoot = pagePicture, now = Date.now(), paths = PATHS } = {}) {
+  const w = waiting(id, paths); if (w.error) return w;
+  const url = siteUrl(input); if (!url) return { error: "Give a page: a web address (localhost:3000 works), a host (github.com/you) or a site's name." };
+  rememberUrl(String(input).trim(), paths);
+  const r = (await shoot(url)) || { error: "Nothing came back from the page." };
+  if (r.error) return { error: r.error };
+  return addMedia(id, r.png, { name: r.title || url, from: "page", url: r.url || url, now, paths });
+}
+// A clip of a page: recorded (headless.mjs pageClip), made an MP4 (`encode`), added. Needs ffmpeg.
+let FFMPEG = null;
+const canClip = () => (FFMPEG === null ? (FFMPEG = hasCmd("ffmpeg")) : FFMPEG);
+const NO_FFMPEG = "Recording a clip needs ffmpeg, which isn't installed (on Linux: sudo apt install ffmpeg; on a Mac: brew install ffmpeg). Or add a video of yours.";
+async function clipOfPage(id, input, { seconds = 8, record = pageClip, encode = toVideo, now = Date.now(), paths = PATHS } = {}) {
+  const w = waiting(id, paths); if (w.error) return w;
+  if (encode === toVideo && !canClip()) return { error: NO_FFMPEG };
+  if ((w.p.media || []).length) return { error: (w.p.media || []).some((m) => m.kind === "video") ? "LinkedIn takes one video a post: remove this one's first." : "LinkedIn takes pictures or a video in a post, not both: remove the pictures first." };
+  const url = siteUrl(input); if (!url) return { error: "Give a page: a web address (localhost:3000 works), a host (github.com/you) or a site's name." };
+  rememberUrl(String(input).trim(), paths);
+  const r = (await record(url, seconds)) || { error: "Nothing came back from the page." };
+  if (r.error) return { error: r.error };
+  const v = encode(r.frames, r.end, paths);
+  if (v.error) return { error: v.error };
+  return addMedia(id, v.mp4, { name: r.title || url, from: "clip", url: r.url || url, now, paths });
+}
+// ffmpeg's concat list for frames that each show until the next one (the last
+// until `end`), times in seconds: so a page that sat still stays still that long.
+function concatList(frames, end) {
+  const name = (i) => `f${String(i).padStart(5, "0")}.jpg`, out = ["ffconcat version 1.0"];
+  frames.forEach((f, i) => out.push(`file ${name(i)}`, `duration ${Math.max(0.001, (i + 1 < frames.length ? frames[i + 1].ts : end) - f.ts).toFixed(3)}`));
+  if (frames.length) out.push(`file ${name(frames.length - 1)}`); // ffmpeg keeps the last one's duration only when it's listed again
+  return out.join("\n") + "\n";
+}
+const FFMPEG_ARGS = ["-y", "-loglevel", "error", "-f", "concat", "-i", "list.ffconcat", "-vf", "fps=30,scale=trunc(iw/2)*2:trunc(ih/2)*2,format=yuv420p",
+  "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-movflags", "+faststart", "-an", "clip.mp4"];
+// The frames as an MP4 that plays anywhere (H.264, yuv420p): { mp4 } or { error }.
+function toVideo(frames, end, paths = PATHS) {
+  const dir = join(paths.media, `.clip-${randomBytes(4).toString("hex")}`);
+  try {
+    mkdirSync(dir, { recursive: true, mode: 0o700 });
+    frames.forEach((f, i) => writeFileSync(join(dir, `f${String(i).padStart(5, "0")}.jpg`), f.jpeg));
+    writeFileSync(join(dir, "list.ffconcat"), concatList(frames, end));
+    const r = spawnSync("ffmpeg", FFMPEG_ARGS, { cwd: dir, encoding: "utf8", timeout: 180000 });
+    if (r.error || r.status !== 0) return { error: `ffmpeg couldn't make the video: ${String((r.error && r.error.message) || r.stderr || "").trim().split("\n").pop() || "it stopped"}` };
+    return { mp4: readFileSync(join(dir, "clip.mp4")) };
+  } catch (e) { return { error: `Couldn't make the video: ${e.message}` }; }
+  finally { try { rmSync(dir, { recursive: true, force: true }); } catch {} }
+}
+
+// ---- a picture by itself ---------------------------------------------------------------
+// A draft whose picture idea (show) names a screen of an app you run here arrives
+// with a picture of it, taken in the hidden browser as it's drafted: keep it or
+// remove it (it saves that step most weeks). The apps (localApps): each one
+// listening on localhost, as the repo it was started in (its process's folder),
+// and Symbiot's own app, open, as the symbiot repo: its screens by name (the Reports
+// view → #reports). Only a draft about that repo, whose idea is a picture of a
+// screen (not a clip, not a command), and nothing on failure: the idea stays.
+const SCREEN_WORD = /\b(screens?|pages?|views?|dashboards?|tabs?|panels?|panes?|home ?page|ui|app|window|cards?|blobs?|map)\b/i;
+const NOT_A_PICTURE = /\b(clip|video|recording|gif|terminal|command|cli|commit|diff|code|log|chart|graph)\b/i;
+const SYMBIOT_SCREENS = [["reports", /\breports?\b/i], ["board", /\bdashboard\b/i], ["map", /\bmap\b/i], ["agents", /\bagents?\b/i], ["tasks", /\btasks?\b/i], ["week", /\bweek(ly)?\b/i], ["standup", /\bstand-?up\b/i], ["todo", /\bto-?do\b/i], ["drift", /\bdrift\b/i], ["settings", /\bsettings\b/i]];
+const isSymbiot = (path) => { try { return JSON.parse(readFileSync(join(path, "package.json"), "utf8")).name === "symbiot"; } catch { return false; } };
+// What's listening on localhost: [{ port, pid }]. ss on Linux, else lsof.
+function listening() {
+  const out = [], local = /^(127\.0\.0\.1|0\.0\.0\.0|\*|\[::1?\]|::1?|localhost)$/;
+  if (hasCmd("ss")) {
+    for (const l of sh("ss -ltnpH 2>/dev/null").split("\n")) {
+      const f = l.trim().split(/\s+/), addr = f[3] || "", at = addr.lastIndexOf(":"), pid = (l.match(/pid=(\d+)/) || [])[1];
+      if (at > 0 && pid && local.test(addr.slice(0, at))) out.push({ port: Number(addr.slice(at + 1)), pid: Number(pid) });
+    }
+  } else if (hasCmd("lsof")) {
+    let pid = 0; for (const l of sh("lsof -nP -iTCP -sTCP:LISTEN -Fpn 2>/dev/null").split("\n")) {
+      if (l[0] === "p") pid = Number(l.slice(1));
+      else if (l[0] === "n") { const at = l.lastIndexOf(":"); if (at > 1 && local.test(l.slice(1, at))) out.push({ port: Number(l.slice(at + 1)), pid }); }
+    }
+  }
+  return out.filter((x) => x.port > 0 && x.pid > 0);
+}
+function cwdOf(pid) {
+  try { return readlinkSync(`/proc/${pid}/cwd`); } catch {}
+  return (sh(`lsof -a -p ${Number(pid)} -d cwd -Fn 2>/dev/null`).split("\n").find((l) => l[0] === "n") || "").slice(1);
+}
+// The apps running here, by repo: [{ repo, url, symbiot? }]; url carries no token.
+async function localApps(repos = [], { ports = listening, cwd = cwdOf, app = symbiotApp } = {}) {
+  const out = [];
+  for (const r of repos) {
+    if (isSymbiot(r.path)) { const a = await app(); if (a) out.push({ repo: r.name, url: a.url, open: a.open, symbiot: true }); continue; }
+    const hit = ports().filter((x) => { const d = cwd(x.pid); return d && (d === r.path || d.startsWith(r.path + "/")); }).sort((a, b) => a.port - b.port)[0];
+    if (hit) out.push({ repo: r.name, url: `http://localhost:${hit.port}/` });
+  }
+  return out;
+}
+// Symbiot's own app, if it's open: { url, open } (open has its token, to load it).
+// Whether it's listening, by a local connection: post.mjs never sends anything out.
+async function symbiotApp() {
+  const cfg = loadConfig(), port = Number(process.env.SYMBIOT_PORT || cfg.appPort) || 7391; if (!cfg.appToken) return null;
+  const up = await new Promise((res) => { const c = connect({ host: "127.0.0.1", port }); const done = (v) => { c.destroy(); res(v); }; c.setTimeout(800, () => done(false)); c.on("connect", () => done(true)); c.on("error", () => done(false)); });
+  return up ? { url: `http://127.0.0.1:${port}/`, open: `http://127.0.0.1:${port}/?t=${encodeURIComponent(cfg.appToken)}` } : null;
+}
+// The page a draft's idea names, in an app of its repo's: { url, open } or null.
+function screenFor(post, apps, facts) {
+  const show = String(post.show || ""); if (!show || NOT_A_PICTURE.test(show) || !SCREEN_WORD.test(show)) return null;
+  const repos = new Set((post.facts || []).map((n) => facts[n - 1] && facts[n - 1].repo).filter(Boolean));
+  const a = apps.find((x) => repos.has(x.repo)); if (!a) return null;
+  if (!a.symbiot) { const path = (show.match(/(?:^|\s)(\/[\w./-]*[\w/])/) || [])[1] || ""; return { url: a.url.replace(/\/$/, "") + (path || "/"), open: a.url.replace(/\/$/, "") + (path || "/") }; }
+  const s = (SYMBIOT_SCREENS.find(([, re]) => re.test(show)) || [])[0];
+  return { url: a.url + (s ? "#" + s : ""), open: a.open + (s ? "#" + s : "") };
+}
+// Take each one's picture (one at a time: the hidden browser is one). How many came.
+async function picturesFor(posts, facts, { apps = [], shoot = pagePicture, now = Date.now(), paths = PATHS } = {}) {
+  let n = 0;
+  for (const p of posts) {
+    const at = screenFor(p, apps, facts); if (!at) continue;
+    const r = await shoot(at.open).catch(() => null);
+    if (!r || r.error || !r.png) continue;
+    const m = addMedia(p.id, r.png, { name: r.title || at.url, from: "page", url: at.url, now, paths });
+    if (m.ok) { p.media = m.post.media; n++; }
+  }
+  return n;
 }
 
 // ---- clipboard, and opening the share box, from a terminal -----------------------
@@ -319,4 +529,5 @@ const CUSTOMER = [
 ];
 function maybeCustomer(text) { const s = String(text || ""); const hit = CUSTOMER.find(([, re]) => re.test(s)); return hit ? hit[0] : ""; }
 
-export { PATHS, PLATFORM, SHARE_URL, KINDS, KIND_LABEL, LINKEDIN_ACTIVITY, NO_AI, voiceOf, loadVoice, voiceFromLinkedIn, tagsIn, changelogIn, gatherFacts, factLine, numbersIn, namesIn, checkClaims, parseDrafts, vetDraft, draftPosts, loadPosts, postLog, postsState, editPost, skipPost, approvePost, copyText, openUrl, maybeCustomer };
+export { PATHS, PLATFORM, SHARE_URL, KINDS, KIND_LABEL, LINKEDIN_ACTIVITY, NO_AI, voiceOf, loadVoice, voiceFromLinkedIn, tagsIn, changelogIn, gatherFacts, factLine, numbersIn, namesIn, checkClaims, parseDrafts, vetDraft, draftPosts, loadPosts, postLog, postsState, editPost, skipPost, approvePost, copyText, openUrl, maybeCustomer,
+  mediaType, mediaDir, mediaWords, addMedia, removeMedia, mediaFile, pictureOfPage, clipOfPage, concatList, toVideo, canClip, NO_FFMPEG, localApps, screenFor, picturesFor, listening };

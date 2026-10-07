@@ -201,6 +201,9 @@ async function briefOf(news, name, { chat = false } = {}) {
 }
 
 // ---- watches -------------------------------------------------------------------
+// A watch whose last read found the sign-in page: it reads nothing until you sign in again.
+const SIGNED_OUT = "Signed out of ";
+const isSignedOut = (w) => String((w && w.error) || "").startsWith(SIGNED_OUT);
 const view = (w) => ({ id: w.id, name: w.name, url: w.url, every: w.every, added: w.added, last: w.last || 0, ...(w.checked ? { checked: w.checked } : {}), ...(w.error ? { error: w.error } : {}), ...(w.via ? { via: w.via } : {}), ...(w.cleared ? { cleared: w.cleared } : {}), known: (w.seen || []).length });
 // What's new is marked `mail` when it's from an inbox, `chat` from WhatsApp,
 // `social` from LinkedIn's notifications: each can get a drafted reply. A social
@@ -565,7 +568,7 @@ async function checkWatch(id, { read = readPage, github = readGitHub, notify = d
   w.last = Date.now();
   // through gh, a list with nothing unread is a good read; a page always lists something
   const items = page.error || page.login ? [] : page.list || itemsOf(page), before = w.error || "";
-  if (page.login) w.error = `Signed out of ${hostOf(page.url) || hostOf(w.url)}. Under Screens, type ${hostOf(w.url)} and click Sign in, sign in once and close the window.` + (isGitHubInbox(w.url) ? " Or sign in the GitHub CLI (gh auth login): Symbiot then reads your notifications through it." : "");
+  if (page.login) w.error = `${SIGNED_OUT}${hostOf(page.url) || hostOf(w.url)}. Under Screens, type ${hostOf(w.url)} and click Sign in, sign in once and close the window.` + (isGitHubInbox(w.url) ? " Or sign in the GitHub CLI (gh auth login): Symbiot then reads your notifications through it." : "");
   else if (page.error) w.error = page.error;
   else if (!items.length && !page.list) w.error = "Found nothing listed on the page this time.";
   if (page.error || page.login || (!items.length && !page.list)) {
@@ -621,4 +624,4 @@ function startWatches(opts = {}) {
   return () => { clearTimeout(first); clearInterval(every); };
 }
 
-export { LINK_ASK, WATCH_FILE, EVERY, GITHUB_INBOX, DRAFTS_DIR, itemsOf, fromOf, chatName, recheckChats, itemKey, newItems, remember, isGitHubInbox, githubItems, readGitHub, setBrief, briefOf, newsNotice, markNews, watchState, addWatch, setEvery, removeWatch, clearNews, seenWatch, newsSince, newsAfter, waitingOn, watchBoard, boardLine, boardChat, boardTalk, clearBoardChat, talkOf, isMail, isChat, isSocial, draftsUrl, draftBrief, chatBrief, socialBrief, draftReply, openChat, checkWatch, dueWatches, startWatches };
+export { LINK_ASK, WATCH_FILE, EVERY, GITHUB_INBOX, DRAFTS_DIR, itemsOf, fromOf, chatName, recheckChats, itemKey, newItems, remember, isGitHubInbox, githubItems, readGitHub, setBrief, briefOf, newsNotice, markNews, watchState, addWatch, setEvery, removeWatch, clearNews, seenWatch, newsSince, newsAfter, waitingOn, watchBoard, boardLine, boardChat, boardTalk, clearBoardChat, talkOf, isSignedOut, isMail, isChat, isSocial, draftsUrl, draftBrief, chatBrief, socialBrief, draftReply, openChat, checkWatch, dueWatches, startWatches };

@@ -23,16 +23,16 @@ import { mapPage, wholePage, pressRegion, typeRegion, scrollPage, signIn, keepBr
 import { weeklyState, setWeekly, runWeekly, startWeekly, autostartState, setAutostart } from "./desktop.mjs";
 import { watchState, addWatch, setEvery, removeWatch, clearNews, seenWatch, checkWatch, startWatches, setBrief, draftReply, openChat, watchBoard, boardChat, clearBoardChat } from "./watch.mjs";
 import { linksState, linkSite, checkLink, unlinkSite } from "./links.mjs";
-import { postsState, draftPosts, approvePost, editPost, skipPost, voiceFromLinkedIn } from "./post.mjs";
+import { postsState, draftPosts, approvePost, editPost, skipPost, voiceFromLinkedIn, addMedia, removeMedia, mediaFile, mediaDir, pictureOfPage, clipOfPage, openUrl } from "./post.mjs";
 import { mindState, forget } from "./mind.mjs";
-import { lanesTick, lanesState, partlyDone } from "./lanes.mjs";
+import { lanesTick, lanesState, partlyDone, orcaRelink } from "./lanes.mjs";
 import { keepFacts, skipFacts, awaitTick, awaitingState, stopWaiting } from "./handback.mjs";
 import { adaptState, noteUse } from "./adapt.mjs";
-import { homeState, homeAsk, workScene, workGo, firstSteps } from "./home.mjs";
+import { homeState, homeAsk, homeAnswer, workScene, workGo, firstSteps } from "./home.mjs";
 import { listReports, readReport, markAllRead } from "./reports.mjs";
 import { phoneState, setPhoneLink, newCode, unpairPhone, pairComputer, forgetComputer, pollComputer, startPhone } from "./phone.mjs";
 import { knowledgeState, addKnowledgeFolder, removeKnowledgeFolder, indexKnowledge, knowledgeTick, searchKnowledge } from "./knowledge.mjs";
-import { runChecks, checksState } from "./checks.mjs";
+import { runChecks, checksState, markClashesSeen } from "./checks.mjs";
 
 // The in-app update installs the EXACT newest version (not the `latest` tag, which
 // npm's cache/propagation can resolve stale — that caused an update loop where the
@@ -102,6 +102,16 @@ function readBody(req) {
   return new Promise((resolve) => {
     let d = ""; req.on("data", (ch) => (d += ch));
     req.on("end", () => { try { resolve(d ? JSON.parse(d) : {}); } catch { resolve({}); } });
+  });
+}
+// A body as it came (a file the page sends), up to max bytes: a Buffer, or null when it's bigger.
+const POST_MEDIA_MAX = 500 * 1024 * 1024;
+function readBytes(req, max) {
+  return new Promise((resolve) => {
+    const parts = []; let n = 0, over = false;
+    req.on("data", (ch) => { if (over) return; n += ch.length; if (n > max) { over = true; parts.length = 0; return; } parts.push(ch); });
+    req.on("end", () => resolve(over ? null : Buffer.concat(parts)));
+    req.on("error", () => resolve(null));
   });
 }
 // http://127.0.0.1:<port>/?t=<token> -> symbiot://127.0.0.1:<port>/?t=<token>, for the Android app
@@ -242,6 +252,8 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       // where two of the folders' files disagree (checks.mjs): the last result, or checked again now
       if (u.pathname === "/api/knowledge/checks") return json(res, checksState());
       if (u.pathname === "/api/knowledge/checks/run" && req.method === "POST") return json(res, runChecks());
+      // Home's "Where your files disagree" droplet, opened: its clashes reached you
+      if (u.pathname === "/api/knowledge/checks/seen" && req.method === "POST") { const r = markClashesSeen(); try { homeState({ fresh: true }); } catch {} return json(res, r); }
       if (u.pathname === "/api/knowledge/search") return json(res, { hits: searchKnowledge(u.searchParams.get("q") || "", { examples: u.searchParams.get("examples") === "1" }) });
       if (u.pathname === "/api/agentcfg") { const d = detectHandoffs(); return json(res, { cmd: handoffCmd(), agents: d.agents, editors: d.editors, connectors: connectorsInfo() }); }
       if (u.pathname === "/api/agentcmd" && req.method === "POST") { const b = await readBody(req); return json(res, setHandoffCmd(b.cmd)); }
@@ -314,6 +326,12 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       if (u.pathname === "/api/posts/approve" && req.method === "POST") { const b = await readBody(req); return json(res, approvePost(String(b.id || ""), { copy: null })); }
       if (u.pathname === "/api/posts/edit" && req.method === "POST") { const b = await readBody(req); return json(res, editPost(String(b.id || ""), b.text)); }
       if (u.pathname === "/api/posts/skip" && req.method === "POST") { const b = await readBody(req); return json(res, skipPost(String(b.id || ""))); }
+      // a draft's pictures and video: yours (the file itself as the body), a picture or clip of a page, shown, removed, their folder opened
+      if (u.pathname === "/api/posts/media") { const m = mediaFile(String(u.searchParams.get("post") || ""), String(u.searchParams.get("m") || "")); if (!m) { res.writeHead(404); res.end("not found"); return; } res.writeHead(200, { "content-type": m.type, "cache-control": "private, max-age=86400" }); res.end(readFileSync(m.file)); return; }
+      if (u.pathname === "/api/posts/media/add" && req.method === "POST") { const data = await readBytes(req, POST_MEDIA_MAX); return json(res, data ? addMedia(String(u.searchParams.get("id") || ""), data, { name: String(u.searchParams.get("name") || "") }) : { error: "That file is too big: Symbiot keeps videos up to 500 MB." }); }
+      if (u.pathname === "/api/posts/media/page" && req.method === "POST") { const b = await readBody(req); return json(res, b.clip ? await clipOfPage(String(b.id || ""), String(b.url || ""), { seconds: Number(b.seconds) || 8 }) : await pictureOfPage(String(b.id || ""), String(b.url || ""))); }
+      if (u.pathname === "/api/posts/media/remove" && req.method === "POST") { const b = await readBody(req); return json(res, removeMedia(String(b.id || ""), String(b.m || ""))); }
+      if (u.pathname === "/api/posts/media/folder" && req.method === "POST") { const b = await readBody(req), d = b.id ? mediaDir(String(b.id)) : ""; return json(res, d && existsSync(d) ? { ok: openUrl(d), folder: d } : { error: "This draft has no pictures or video yet." }); }
       // reads your LinkedIn only on your click (confirmed), never by itself
       if (u.pathname === "/api/posts/voice" && req.method === "POST") { const b = await readBody(req); if (b.confirmed !== true) return json(res, { error: "Reading your LinkedIn posts needs your click." }); return json(res, await voiceFromLinkedIn()); }
       // Reports (reports.mjs): what runs wrote up in their .symbiot/; read by id, never by path.
@@ -327,6 +345,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       if (u.pathname === "/api/work") return json(res, workScene());
       if (u.pathname === "/api/work/go" && req.method === "POST") return json(res, workGo());
       if (u.pathname === "/api/firststeps") return json(res, firstSteps()); // Settings' first steps: what's set up, in order
+      if (u.pathname === "/api/home/answer" && req.method === "POST") { const b = await readBody(req); return json(res, homeAnswer(b.id, { pick: b.pick, text: b.text })); }
       if (u.pathname === "/api/home/ask" && req.method === "POST") { const b = await readBody(req); return json(res, await homeAsk(b.question)); }
       if (u.pathname === "/api/adapt") return json(res, adaptState({ from: String(u.searchParams.get("from") || ""), commit: u.searchParams.get("commit") === "1", ...(u.searchParams.has("touch") ? { touch: u.searchParams.get("touch") === "1" } : {}) }));
       if (u.pathname === "/api/adapt/use" && req.method === "POST") { const b = await readBody(req); return json(res, noteUse(b)); }
@@ -411,7 +430,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
     const how = opened || RELAUNCH || process.env.SYMBIOT_NO_OPEN === "1" ? "" : openApp(url); opened = true; // only pop a window the first time (never in tests, never after an update)
     console.log(`\n${c.g("●")} ${c.b("Symbiot")} is running at ${c.b(url)}`);
     console.log(RELAUNCH ? c.d("  Restarted after an update; the open window reloads itself.") : how ? c.d(`  Opened in a ${how}.`) : c.d("  Open that URL in your browser."));
-    console.log(c.d("  Leave this running; press Ctrl+C to stop (or click Quit in the window)."));
+    console.log(c.d("  Leave this running; press Ctrl+C to stop (or click the X in the window's top corner)."));
   });
   server.on("error", (e) => {
     // Stable port busy (an older instance still exiting during an update, or a
@@ -426,6 +445,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
   startPhone(); // Watch on your phone: the computer listens if it's switched on, the phone asks if it's paired
   setInterval(() => { try { startWaiting(); } catch {} }, 20000).unref(); // a run that waits for your step starts once the file it names changes
   setInterval(() => { try { lanesTick(); } catch {} }, 20000).unref(); // agents hand work to other lanes, and hear back when it's done
+  setTimeout(() => { orcaRelink().catch(() => {}); }, 15000).unref(); // a lane folder a handover renamed, added again in Orca where it is now
   // an agent's allow list that stays inside your work is turned on by itself, and the agent carries on
   setTimeout(() => { try { autoAllowSweep(); } catch {} }, 4000).unref();
   setInterval(() => { try { autoAllowSweep(); } catch {} }, 20000).unref();
