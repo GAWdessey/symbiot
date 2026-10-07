@@ -16,7 +16,7 @@ mkdirSync(CFG, { recursive: true });
 let pass = 0, fail = 0;
 const ok = (n, c, got) => { if (c) { pass++; console.log("  ✓ " + n); } else { fail++; console.log("  ✗ " + n + (got !== undefined ? "  got: " + JSON.stringify(got) : "")); } };
 
-const { lanesTick, loadLedger, MAX_CHAIN } = await import("../lanes.mjs");
+const { lanesTick, loadLedger, lanesState, MAX_CHAIN } = await import("../lanes.mjs");
 const { parseHandoffs, handoverRules, ONLY_YOU } = await import("../handover.mjs");
 const { buildTasksMd } = await import("../tasks.mjs");
 const { actBrief } = await import("../mind.mjs");
@@ -37,7 +37,7 @@ const deps = (extra = {}) => ({ map, now: Date.now(), tasks: extra.tasks || [],
   act: (text, o) => { calls.act.push({ text, o }); mkdirSync(join(opsDir, ".symbiot"), { recursive: true }); return { ok: true, job: "ops1", dir: opsDir }; },
   run: (p, o) => { calls.run.push({ p, o }); return runResult(p); },
   running: (p) => busy.has(p),
-  add: (text, repo) => { calls.add.push({ text, repo }); return { id: "task" + calls.add.length }; },
+  add: (text, repo, o = {}) => { calls.add.push({ text, repo, after: o.after }); return { id: "task" + calls.add.length }; },
   push: (f) => { calls.push.push(f); return { written: [{}] }; } });
 
 try {
@@ -85,12 +85,23 @@ try {
   runResult = () => ({ busy: true });
   const t3 = lanesTick(deps());
   const h3 = loadLedger().handoffs.find((h) => h.to.lane === "GhostAIChat");
-  ok("it joins GhostAIChat's tasks, marked who it's from, and goes out like Send to repos", calls.add.slice(-1)[0].repo === "GhostAIChat" && /\(handed over by coral\)/.test(calls.add.slice(-1)[0].text) && calls.push.slice(-1)[0].repo === "GhostAIChat" && t3.started.length === 1, calls.add.slice(-1));
+  ok("it joins GhostAIChat's tasks, marked who it's from, and goes out like Send to repos", calls.add.slice(-1)[0].repo === "GhostAIChat" && /\(handed over by coral\)/.test(calls.add.slice(-1)[0].after) && calls.push.slice(-1)[0].repo === "GhostAIChat" && t3.started.length === 1, calls.add.slice(-1));
   ok("that lane busy: queued, and not counted done when the busy run ends", h3.status === "held" && (ran(ghost, h3.at - 5000, "an earlier run"), lanesTick(deps()).reported.length === 0), h3.status);
   ran(ghost, h3.at + 2000, "Built android/app/build/outputs/apk/debug/app-debug.apk.");
   const t4 = lanesTick(deps({ tasks: [{ id: h3.task, review: true }] }));
   ok("its run done and the task ticked: coral hears it's done and waits for review", t4.reported.length === 1 && /Done in GhostAIChat: the task is ticked/.test(read(coral, "ANSWERS.md")) && /app-debug\.apk/.test(read(coral, "ANSWERS.md")), read(coral, "ANSWERS.md").slice(-300));
   runResult = () => ({ id: "j" });
+
+  console.log("LONG HANDOVERS — nothing cut: an email to draft arrives whole");
+  const email = "Draft the email below to Jono, then stop.\n\n" + Array.from({ length: 60 }, (_, i) => `${i + 1}. A shared secret, line ${i + 1}: we'll both use it to sign and verify each request.`).join("\n") + "\n\nGarth";
+  put(coral, "HANDOFF.md", "### ops\n" + email + "\n### GhostAIChat\n" + email + "\n");
+  lanesTick(deps());
+  ok("to ops, every line of it", calls.act.slice(-1)[0].text === email, calls.act.slice(-1)[0].text.length);
+  ok("to a repo, all of it goes to its task (a long one links to the rest there)", calls.add.slice(-1)[0].text === email && calls.add.slice(-1)[0].after === "(handed over by coral)", calls.add.slice(-1)[0].text.length);
+  const eb = actBrief(email, { lanes: [] });
+  ok("the ops brief quotes it line by line, sign-off and all; its task line ends at a word", eb.includes("> 60. A shared secret, line 60: we'll both") && /\n>\n> Garth\n/.test(eb) && /- \[ \] Draft the email below to Jono, then stop\. 1\. A shared .*\S…\n/.test(eb), eb.slice(0, 300));
+  const ls = lanesState().handoffs.find((h) => h.to === "GhostAIChat" && h.full);
+  ok("the Agents tab gets its first line, and all of it to open", ls && ls.text === "Draft the email below to Jono, then stop." && ls.full === email, ls && ls.text);
 
   console.log("NOT DONE BY HAND — mistakes go back to the agent, not to the user");
   put(coral, "HANDOFF.md", "### payroll\nRun payroll.\n### coral\nDo my own thing.\n");

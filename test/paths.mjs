@@ -218,6 +218,28 @@ try {
   ok("approve commits the change on its own branch, then archives the task with that commit", tk.approve && tk.approve.ok && /^symbiot\/write-the-docs-for-beta/.test(tk.approve.branch) && tk.final.archived && tk.final.done && tk.final.commit === tk.approve.commit && tk.final.approvedAt > 0 && /^Write the docs for beta\n- Write the docs for beta/.test(subj), [tk.approve, subj]);
   ok("tasks.json ends with the right ones open and archived", (tk.open || []).join("|") === "A task for a repo that isn't here|Fix the login bug" && (tk.archived || []).join() === "Write the docs for beta", [tk.open, tk.archived]);
 
+  console.log("TASKS — a task the agent deleted from TASKS.md is closed, not sent again");
+  const dr = inChild(`
+    import * as t from ${mod("tasks.mjs")};
+    import { readFileSync, writeFileSync } from "node:fs";
+    const f = ${JSON.stringify(join(WORK, "alpha", ".symbiot", "TASKS.md"))}, md = () => readFileSync(f, "utf8");
+    const by = (text) => JSON.parse(readFileSync(${T}, "utf8")).find((x) => x.text === text);
+    const out = {}, pod = "Run \`cd ios && pod install\` before the next iOS build";
+    t.addTask(pod, "alpha"); t.pushTasks(); out.sent = md().includes(pod);
+    // the user said to drop it: the agent deletes its line, and ticks nothing
+    writeFileSync(f, md().replace("- [ ] " + pod + "\\n", ""));
+    out.push = t.pushTasks(); out.after = md(); out.task = by(pod);
+    out.sync = t.syncTasks();
+    out.restored = t.restoreTask(out.task.id); out.sync2 = t.syncTasks(); out.kept = by(pod);
+    t.pushTasks(); out.back = md().includes(pod);
+    // an emptied TASKS.md deleted nothing
+    writeFileSync(f, ""); out.sync3 = t.syncTasks();
+    console.log(JSON.stringify(out));`);
+  ok("the next send leaves out a task the agent deleted, and archives it as dropped", dr.sent && !(dr.after || "").includes("pod install") && /- \[ \] Fix the login bug/.test(dr.after || "") && dr.task && dr.task.archived && dr.task.done && dr.task.dropped, [dr.after, dr.task]);
+  ok("a sync after that drops nothing more", dr.sync && dr.sync.dropped === 0, dr.sync);
+  ok("restored, it stays open and goes out again", dr.kept && !dr.kept.archived && dr.kept.kept && !dr.kept.dropped && dr.sync2.dropped === 0 && dr.back, [dr.kept, dr.sync2, dr.back]);
+  ok("an emptied TASKS.md closes nothing", dr.sync3 && dr.sync3.dropped === 0, dr.sync3);
+
   console.log("COMMIT TRAIL — an approved batch's subject says what it did");
   ok("one task: the task", commitSubject(["Fix the login bug"]) === "Fix the login bug", commitSubject(["Fix the login bug"]));
   ok("several: the first, and how many more (not 'symbiot: 3 approved tasks')", commitSubject(["Fix the login bug", "Add a test", "Docs"]) === "Fix the login bug (+2 more)", commitSubject(["Fix the login bug", "Add a test", "Docs"]));

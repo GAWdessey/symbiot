@@ -7,8 +7,9 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { readFileSync, writeFileSync, mkdirSync, existsSync, openSync, writeSync, unlinkSync, readdirSync, statSync } from "node:fs";
 import { randomBytes, createHash } from "node:crypto";
-import { CONFIG_DIR, loadConfig, saveConfig, loadTasks, sameTask, taskWords, sh, hasCmd } from "./core.mjs";
+import { CONFIG_DIR, loadConfig, saveConfig, loadTasks, TASK_MAX, clipWords, sameTask, taskWords, sh, hasCmd } from "./core.mjs";
 import { parseRun, lastRunText } from "./work.mjs";
+import { parseFacts } from "./handover.mjs";
 
 const HANDOFFS = []; // live registry of agents Symbiot has handed work to
 // ---- hand a repo (+ its tasks) to the user's agent — generic, settings-based
@@ -84,14 +85,20 @@ function claudeConnectors(dir = "", file = join(homedir(), ".claude.json")) {
   const proj = dir && j.projects && typeof j.projects === "object" ? j.projects[dir] : null;
   const needsAuth = new Set(names(j.mcpNeedsAuthNoticed));
   return [...new Set([...names(j.claudeAiMcpEverConnected), ...servers(j.mcpServers), ...servers(proj && proj.mcpServers)])]
-    .map((name) => ({ name, rule: "mcp__" + name.replace(/[^A-Za-z0-9_-]/g, "_"), ready: !needsAuth.has(name) }));
+    .map((name) => ({ name, rule: connectorRule(name), ready: !needsAuth.has(name) }));
 }
 // A Claude command with the ready connectors' rules added, for this run only:
 // the saved command stays as typed, so linking or unlinking one takes effect on
 // the next run. Any other agent's command runs as-is (Settings says so).
-function withConnectors(tmpl, dir, file) {
+// Claude records a claude.ai connector (claudeAiMcpEverConnected) only once a
+// session has connected it, so the first run after you connect Gmail got Gmail's
+// tools without a rule for them, and every call was denied. A site linked in
+// Symbiot is allowed its claude.ai connector's tools too, recorded or not (a rule
+// for tools a run doesn't have does nothing).
+function withConnectors(tmpl, dir, file, linked = loadConfig().linked) {
   if (!isClaudeCmd(tmpl)) return tmpl;
-  return claudeConnectors(dir, file).filter((c) => c.ready).reduce((cmd, c) => allowTool(cmd, c.rule), tmpl).replace(/\s+$/, "");
+  const rules = [...claudeConnectors(dir, file).filter((c) => c.ready).map((c) => c.rule), ...linkedRules(linked)];
+  return rules.reduce((cmd, r) => allowTool(cmd, r), tmpl).replace(/\s+$/, "");
 }
 // Linking a site in Symbiot (Links: Gmail, Drive…) signs Symbiot's own browser in;
 // it doesn't give Claude's runs that site's tools. Those come from Claude's own
@@ -101,6 +108,14 @@ function withConnectors(tmpl, dir, file) {
 // with the one it has (connector: its name, or "") and whether it's ready.
 const CLI = fileURLToPath(new URL("./index.mjs", import.meta.url));
 const LINK_CONNECTOR = { gmail: ["Gmail", /gmail/i], outlook: ["Outlook", /outlook|microsoft 365/i], gcal: ["Google Calendar", /google calendar/i], gdrive: ["Google Drive", /google drive/i], notion: ["Notion", /notion/i], slack: ["Slack", /slack/i], jira: ["Jira & Confluence", /atlassian|jira|confluence/i], linear: ["Linear", /linear/i], asana: ["Asana", /asana/i], hubspot: ["HubSpot", /hubspot/i] };
+// The claude.ai connector each of those is, by the name Claude gives it (as seen
+// in ~/.claude.json), for its rule before Claude has recorded it (withConnectors).
+const CLAUDE_AI_CONNECTOR = { gmail: "claude.ai Gmail", gcal: "claude.ai Google Calendar", gdrive: "claude.ai Google Drive", notion: "claude.ai Notion" };
+const connectorRule = (name) => "mcp__" + name.replace(/[^A-Za-z0-9_-]/g, "_");
+function linkedRules(l) {
+  if (!l || typeof l !== "object" || Array.isArray(l)) return [];
+  return Object.keys(l).filter((id) => CLAUDE_AI_CONNECTOR[id]).map((id) => connectorRule(CLAUDE_AI_CONNECTOR[id]));
+}
 function linkedConnectors(conns = claudeConnectors(), l = loadConfig().linked) {
   if (!l || typeof l !== "object" || Array.isArray(l)) return [];
   return Object.keys(l).filter((id) => LINK_CONNECTOR[id]).map((id) => {
@@ -116,7 +131,10 @@ function connectorsLine(tmpl = handoffCmd(), file, linked) {
   const nm = (s) => s.replace(/^claude\.ai\s+/i, ""), names = off.map((x) => x.name), them = names.length > 1 ? names.slice(0, -1).join(", ") + " and " + names.at(-1) : names[0];
   const has = ready.length ? `this run can use ${ready.map((c) => `${nm(c.name)} (\`${c.rule}__…\` tools)`).join(", ")}.` : "";
   const not = off.length ? ` ${them} ${off.length === 1 ? "is" : "are"} linked in Symbiot but not ${off.some((x) => x.connector) ? "ready " : ""}as a Claude connector, so this run has no tools for ${off.length === 1 ? "it" : "them"}: don't say you checked ${off.length === 1 ? "it" : "them"}. What's new there is in \`node "${CLI}" watch new\`; to read more, ask the user (👤) to connect ${them} in claude.ai → Settings → Connectors.` : "";
-  return (has + not).trim();
+  // withConnectors allows these anyway: Claude may have connected one since
+  const early = off.filter((x) => CLAUDE_AI_CONNECTOR[x.id]).map((x) => `\`${connectorRule(CLAUDE_AI_CONNECTOR[x.id])}__…\``);
+  const anyway = early.length ? ` If ${early.join(" or ")} tools are here after all, the connector was just connected: they're allowed, so use them.` : "";
+  return (has + not + anyway).trim();
 }
 // For Settings → Handoff: the connectors, whether this command's runs get them, and
 // the sites linked in Symbiot that aren't Claude connectors (so runs can't use them).
@@ -179,11 +197,11 @@ function earlierRuns() {
   const tracked = new Set(HANDOFFS.map((e) => e.path)), out = [];
   for (const r of loadRuns()) {
     if (tracked.has(r.path) || !existsSync(join(r.path, ".symbiot"))) continue;
-    const busy = runningHandoff(r.path), ask = agentQuestions(r.path, r.name), wait = waitingFor(r.path);
-    if (!busy && !ask.questions.length && !wait) continue;
+    const busy = runningHandoff(r.path), ask = agentQuestions(r.path, r.name), wait = waitingFor(r.path), facts = busy ? [] : factsOf(r.path);
+    if (!busy && !ask.questions.length && !wait && !facts.length) continue;
     const log = join(r.path, ".symbiot", "agent.log"), startedAt = (busy && busy.startedAt) || Number(r.startedAt) || Date.now();
     let tail = "", work = null, progress = null, end = Date.now(); try { ({ tail, work, progress } = workOf(r.path, readFileSync(log, "utf8"))); if (!busy) end = statSync(log).mtimeMs; } catch {}
-    out.push({ id: "earlier-" + digest(r.path).slice(0, 8), name: String(r.name || r.path.split("/").pop()), path: r.path, status: busy ? "running" : "done", earlier: true, elapsed: Math.max(0, end - startedAt), exitCode: null, tail, work, progress, changed: agentChanges(r.path, startedAt), ask, held: heldTasks(r.path), waiting: wait, fromHeld: false });
+    out.push({ id: "earlier-" + digest(r.path).slice(0, 8), name: String(r.name || r.path.split("/").pop()), path: r.path, status: busy ? "running" : "done", earlier: true, elapsed: Math.max(0, end - startedAt), exitCode: null, tail, work, progress, changed: agentChanges(r.path, startedAt), ask, held: heldTasks(r.path), waiting: wait, remember: facts.length ? facts : null, fromHeld: false });
   }
   return out;
 }
@@ -326,18 +344,44 @@ const HELD = "TASKS.next.md";
 function writeTasks(path, md) {
   const dir = join(path, ".symbiot"); mkdirSync(dir, { recursive: true });
   if (runningHandoff(path)) { writeFileSync(join(dir, HELD), md); return true; }
-  writeFileSync(join(dir, "TASKS.md"), md);
+  writeFileSync(join(dir, "TASKS.md"), md); noteHanded(path, md);
   try { unlinkSync(join(dir, HELD)); } catch {} // superseded by this brief
   return false;
 }
+// ---- a task the agent deleted from TASKS.md --------------------------------
+// TASKS.md is rebuilt from tasks.json on every send, so an agent deleting a
+// line (the user said to drop that task) changed nothing, and the next brief
+// brought it back (GhostAIChat's `pod install`). handed.json keeps what the
+// brief in TASKS.md handed out; a task it handed out that's no longer in the
+// file (ticked or not) was deleted: droppedTasks lists them, and tasks.mjs
+// closes them (applyDrops). The task lines are the `## Tasks` section's, or the
+// whole file's when it has none; a file emptied or gone deleted nothing.
+const HANDED = "handed.json", BOX = /^\s*-\s*\[[ x]\]\s*/i;
+function briefTasks(md) {
+  const lines = String(md || "").split("\n"), at = lines.findIndex((l) => /^##\s+Tasks\s*$/.test(l));
+  const end = at < 0 ? lines.length : lines.findIndex((l, i) => i > at && /^##\s/.test(l));
+  return lines.slice(at + 1, end < 0 ? lines.length : end).filter((l) => BOX.test(l)).map((l) => l.replace(BOX, "").trim()).filter(Boolean);
+}
+function noteHanded(path, md, also = []) {
+  try { writeFileSync(join(path, ".symbiot", HANDED), JSON.stringify({ at: Date.now(), tasks: [...briefTasks(md), ...also] })); } catch {}
+}
+function droppedTasks(path) {
+  let h = null; try { h = JSON.parse(readSymbiot(path, HANDED)); } catch {}
+  const md = readSymbiot(path, "TASKS.md");
+  if (!h || !Array.isArray(h.tasks) || !md.trim() || !/^##\s+Tasks\s*$|^\s*-\s*\[[ x]\]/im.test(md)) return [];
+  const now = briefTasks(md);
+  return h.tasks.filter((t) => !now.some((n) => sameTask(n, t))).map((text) => ({ text, at: h.at || 0 }));
+}
 // Swap the held brief in, keeping the ticks the agent made meanwhile: a tick
 // is how a task reaches review, so dropping one would lose that task's work.
+// A task the agent deleted meanwhile stays out, and stays deleted in handed.json.
 function releaseHeldTasks(path) {
   const held = readSymbiot(path, HELD); if (!held || runningHandoff(path)) return false;
   const isTick = /^\s*-\s*\[x\]\s*/i, key = (l) => l.replace(/^\s*-\s*\[[ x]\]\s*/i, "").trim().toLowerCase();
   const ticked = new Set(readSymbiot(path, "TASKS.md").split("\n").filter((l) => isTick.test(l)).map(key));
-  const md = held.split("\n").map((l) => /^\s*-\s*\[ \]/.test(l) && ticked.has(key(l)) ? l.replace("[ ]", "[x]") : l).join("\n");
-  try { writeFileSync(join(path, ".symbiot", "TASKS.md"), md); unlinkSync(join(path, ".symbiot", HELD)); return true; } catch { return false; }
+  const gone = droppedTasks(path).map((d) => d.text), isGone = (l) => /^\s*-\s*\[ \]/.test(l) && gone.some((g) => sameTask(g, key(l)));
+  const md = held.split("\n").filter((l) => !isGone(l)).map((l) => /^\s*-\s*\[ \]/.test(l) && ticked.has(key(l)) ? l.replace("[ ]", "[x]") : l).join("\n");
+  try { writeFileSync(join(path, ".symbiot", "TASKS.md"), md); unlinkSync(join(path, ".symbiot", HELD)); noteHanded(path, md, gone); return true; } catch { return false; }
 }
 // Land the held brief and, if it leaves anything open, start an agent on it.
 // Runs when an agent this process started exits, and when the app next checks
@@ -512,7 +556,7 @@ const readSymbiot = (path, f) => { try { return readFileSync(join(path, ".symbio
 // bullet under Questions is a question with no options.
 function parseQuestions(md) {
   const questions = [], suggestions = []; let sec = "q", cur = null;
-  const clip = (s) => String(s).trim().slice(0, 1000); // as long as a task holds (addTask), so an idea added in one click arrives whole
+  const clip = (s) => clipWords(String(s).trim(), TASK_MAX); // as long as a task holds (addTask), so an idea added in one click arrives whole
   for (const raw of String(md || "").split(/\r?\n/)) {
     const l = raw.trim(); if (!l) continue;
     let m;
@@ -547,7 +591,7 @@ function suggestionTarget(s) {
 const SKIPPED = "SKIPPED.md";
 const skippedIdeas = (path) => [...readSymbiot(path, SKIPPED).matchAll(/^-\s+(.+)$/gm)].map((m) => m[1].trim());
 function skipIdea(path, text) {
-  path = String(path || ""); text = String(text || "").replace(/\s+/g, " ").trim().slice(0, 1000);
+  path = String(path || ""); text = clipWords(String(text || "").replace(/\s+/g, " ").trim(), TASK_MAX);
   if (!path || !knownRun(path)) return { error: "No agent has run in that folder." };
   if (!text) return { error: "No idea to skip." };
   const f = join(path, ".symbiot", SKIPPED);
@@ -612,7 +656,7 @@ function answerQuestions(path, answers, opts = {}) {
   if (!path || !knownRun(path)) return { error: "No agent has run in that folder." };
   const open = new Map(agentQuestions(path, "").questions.map((x) => [qKey(x.q), x.q]));
   const rows = (Array.isArray(answers) ? answers : [])
-    .map((x) => ({ q: open.get(qKey(x && x.q)), a: String((x && x.a) || "").replace(/^\s*#+/gm, "").trim().slice(0, 2000) }))
+    .map((x) => ({ q: open.get(qKey(x && x.q)), a: String((x && x.a) || "").replace(/^\s*#+/gm, "").trim().slice(0, TASK_MAX) }))
     .filter((x) => x.q && x.a);
   if (!rows.length) return { error: "Pick or type at least one answer." };
   const prev = readSymbiot(path, "ANSWERS.md") || "# Answers from the user\nAnswers to the questions in QUESTIONS.md, newest last. Follow them; ask again in QUESTIONS.md if one is unclear.\n";
@@ -642,6 +686,10 @@ function answerQuestions(path, answers, opts = {}) {
   if (out.granted) out.note = "Allowed " + out.granted.join(", ") + " for your agents" + (opts.rerun ? ", and carried on. " : ". ") + (out.note || "");
   return out;
 }
+// What a run left for Symbiot's memory (.symbiot/REMEMBER.json, handback.mjs):
+// shown on its block with Remember and Skip once it has stopped. [] when none.
+const FACTS = "REMEMBER.json";
+const factsOf = (path) => parseFacts(readSymbiot(path, FACTS));
 // The open tasks' titles in a held brief (TASKS.next.md), or null if nothing is held.
 function heldTasks(path) {
   const md = readSymbiot(path, HELD);
@@ -675,8 +723,9 @@ function agentsList() {
     let log = ""; try { log = readFileSync(e.log, "utf8"); } catch {}
     const { tail, work, progress } = workOf(e.path, log);
     const first = !seen.has(e.path); seen.add(e.path);
-    return { id: e.id, name: e.name, path: e.path, status: e.status, elapsed: (e.endedAt || Date.now()) - e.startedAt, exitCode: e.exitCode, tail, work, progress, changed: agentChanges(e.path, e.startedAt), ask: first ? agentQuestions(e.path, e.name) : null, held: first ? heldTasks(e.path) : null, waiting: first && e.status !== "running" ? waitingFor(e.path) : null, fromHeld: !!e.fromHeld };
+    const facts = first && e.status !== "running" ? factsOf(e.path) : [];
+    return { id: e.id, name: e.name, path: e.path, status: e.status, elapsed: (e.endedAt || Date.now()) - e.startedAt, exitCode: e.exitCode, tail, work, progress, changed: agentChanges(e.path, e.startedAt), ask: first ? agentQuestions(e.path, e.name) : null, held: first ? heldTasks(e.path) : null, waiting: first && e.status !== "running" ? waitingFor(e.path) : null, remember: facts.length ? facts : null, fromHeld: !!e.fromHeld };
   }).concat(earlierRuns());
 }
 
-export { withStream, workOf, HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, connectorsInfo, fillHandoff, runHandoff, blockedAgain, runningHandoff, loadRuns, earlierRuns, namedFiles, waitingFor, startWaiting, writeTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, skipIdea, agentQuestions, answerQuestions, agentsList };
+export { FACTS, factsOf, knownRun, withStream, workOf, HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, connectorsInfo, fillHandoff, runHandoff, blockedAgain, runningHandoff, loadRuns, earlierRuns, namedFiles, waitingFor, startWaiting, writeTasks, droppedTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, skipIdea, agentQuestions, answerQuestions, agentsList };

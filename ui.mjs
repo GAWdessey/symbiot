@@ -256,6 +256,7 @@ footer{padding:10px 18px;border-top:1px solid var(--line);display:flex}
 .task{display:flex;align-items:center;gap:10px;padding:9px 11px;border:1px solid var(--line);border-radius:9px;margin-top:8px;background:var(--ink2)}
 .task input[type=checkbox]{width:16px;height:16px;flex:none;cursor:pointer}
 .task .t{flex:1;min-width:0;overflow-wrap:anywhere}.task.done .t{color:var(--faint);text-decoration:line-through}
+.task:has(.tfull[open]){align-items:flex-start}.tfull summary{cursor:pointer;font-size:12px;color:var(--faint);margin-top:4px}.tfull div{white-space:pre-wrap;overflow-wrap:anywhere;margin-top:6px;font-size:13px;line-height:1.5}.tfull div+.tres{border-top:1px solid var(--line);padding-top:6px}
 .task .rp{font-size:11px;color:var(--faint);background:var(--ink3);border:1px solid var(--line);border-radius:999px;padding:2px 8px}
 .task .rm{background:none;border:0;color:var(--faint);cursor:pointer;font-size:18px;line-height:1}
 .task .rm:hover{color:var(--amber)}
@@ -276,6 +277,20 @@ footer{padding:10px 18px;border-top:1px solid var(--line);display:flex}
 .rcard{border:1px solid var(--amber);border-radius:11px;padding:10px 12px;margin-top:8px}
 .rcard .rhead{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}.rcard .rhead .muted{font-size:12px}
 .rcard .row{margin-top:8px}.rcard .task{margin-top:6px}
+.pcard .ptext{white-space:pre-wrap;overflow-wrap:anywhere;margin-top:8px;color:var(--bone);font-size:13.5px;line-height:1.55}
+.pcard textarea.pedit{display:block;width:100%;min-height:150px;margin-top:8px;background:var(--ink);border:1px solid var(--line);border-radius:9px;padding:10px 12px;color:var(--bone);font:inherit;font-size:13.5px;line-height:1.55;resize:vertical}
+.pcard textarea.pedit:focus{outline:none;border-color:var(--green)}
+.pcard .psrc{margin-top:8px;font-size:12px;color:var(--faint)}.pcard .psrc summary{cursor:pointer}.pcard .psrc div{margin-top:3px;overflow-wrap:anywhere}
+.pcard .pchars{font-size:11px;color:var(--faint);margin-left:auto}
+body.lq-liquid .rcard.pcard,body.lq-liquid.lq-light .rcard.pcard{border-left:3px solid var(--amber)}
+.tag.cust{background:transparent;border-color:var(--amber);color:var(--amber)}
+.rrow{cursor:pointer}.rrow:hover,.rrow:focus-visible{border-color:var(--green)}.rrow.rnew{border-left:3px solid var(--amber)}
+.out.rdoc{white-space:normal;line-height:1.55;font-size:14px;padding:18px 22px;overflow-wrap:anywhere}
+.rdoc h2{font-size:21px;margin:4px 0 10px;color:var(--bone)}.rdoc h3{font-size:16px;margin:22px 0 8px;color:var(--bone)}.rdoc h4,.rdoc h5,.rdoc h6{font-size:14px;margin:16px 0 6px;color:var(--bone)}
+.rdoc p{margin:8px 0}.rdoc ul,.rdoc ol{margin:6px 0;padding-left:22px}.rdoc li{margin:3px 0}.rdoc hr{border:0;border-top:1px solid var(--line);margin:16px 0}
+.rdoc code{font-size:12.5px;background:var(--ink3);border:1px solid var(--line);border-radius:5px;padding:0 4px}.rdoc pre{background:var(--ink3);border:1px solid var(--line);border-radius:9px;padding:10px 12px;overflow:auto}.rdoc pre code{background:none;border:0;padding:0}
+.rdoc blockquote{margin:8px 0;padding:2px 12px;border-left:3px solid var(--line);color:var(--faint)}.rdoc a{color:var(--green)}
+.rdoc .rtable{overflow-x:auto;margin:10px 0}.rdoc table{border-collapse:collapse;font-size:13px;min-width:100%}.rdoc th,.rdoc td{border:1px solid var(--line);padding:6px 8px;text-align:left;vertical-align:top}.rdoc th{background:var(--ink3);color:var(--bone);font-weight:600}
 .rdiff{max-height:360px;overflow:auto;font-size:11px;line-height:1.45;background:var(--ink2);border:1px solid var(--line);border-radius:8px;padding:8px;margin-top:8px;white-space:pre}
 .drift{border:1px solid var(--line);border-radius:10px;margin-top:10px;padding:12px 14px;background:var(--ink2)}
 .drift .dh,.agent .dh{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
@@ -634,6 +649,7 @@ body.lq-light .btip .bta button:not(.quiet){background:#151A21;color:#FFFFFF}
 <button class="tab" data-tab="todo">Todo</button>
 <button class="tab" data-tab="tasks">Tasks</button>
 <button class="tab" data-tab="agents">Agents</button>
+<button class="tab" data-tab="reports">Reports</button>
 <button class="tab" data-tab="settings">Settings</button>
 </div>
 <main>
@@ -674,6 +690,8 @@ body.lq-light .btip .bta button:not(.quiet){background:#151A21;color:#FFFFFF}
 <div id="boardmsg"></div>
 <div id="bstream" class="bstream"><canvas id="bsc" aria-hidden="true"></canvas><div id="bsov"></div></div>
 <div id="boardtalk"></div>
+<div id="boardawait"></div>
+<div id="boardposts"></div>
 <details id="blist" class="blist"><summary>All of it as a list</summary><div id="board" class="board"></div></details>
 <div id="boardlinks"></div>
 </section>
@@ -696,6 +714,11 @@ body.lq-light .btip .bta button:not(.quiet){background:#151A21;color:#FFFFFF}
 <div id="agentsmsg"></div>
 <div id="laneslist"></div>
 <div id="agentslist"></div>
+</section>
+<section id="panel-reports" class="hidden">
+<div class="row"><span class="muted" style="flex:1">What agents wrote up for you (findings, audits, plans), newest first. They leave each one in a project's .symbiot folder; it shows here as soon as it's written.</span><button class="ghost" id="reportsrefresh">Refresh</button></div>
+<div id="reportslist"></div>
+<div id="reportview"></div>
 </section>
 <section id="panel-drift" class="hidden">
 <div class="row"><span class="muted">What's out of sync, stuck or at risk across your repos — local git facts.</span>
@@ -727,6 +750,12 @@ body.lq-light .btip .bta button:not(.quiet){background:#151A21;color:#FFFFFF}
 <div id="scanroots"></div>
 <div class="row" style="margin-top:6px"><input id="newroot" placeholder="/path/to/folder  (or ~/work) — where your projects live" style="flex:1"><button class="ghost" id="addroot">Add folder</button></div>
 <div class="note muted" id="scanrootnote">Point Symbiot at where your work lives — inside or outside your home folder. Defaults to your home folder.</div>
+</div>
+<div class="sset">
+<h3 class="ssh">Knowledge folders</h3>
+<div id="knowroots"></div>
+<div class="row" style="margin-top:6px"><input id="newknow" placeholder="~/Company — documents your chats can quote" style="flex:1"><input id="newknowex" placeholder="examples: templates/" title="Paths inside it that hold worked examples, comma-separated" style="width:190px"><button class="ghost" id="addknow">Add folder</button></div>
+<div class="note muted" id="knownote">Chats quote these files (Markdown, CSV, text) and say which one. Paths listed as examples (<code>templates/</code> unless you say otherwise: any folder of that name) are worked examples, never used as facts; so is a file whose front matter says <code>example: true</code>. Click a folder to change its examples.</div>
 </div>
 <div id="phonebox" class="hidden sset">
 <h3 class="ssh">Projects in Termux</h3>
@@ -810,6 +839,7 @@ $('panel-settings').classList.toggle('hidden',!isSet);
 $('panel-tasks').classList.toggle('hidden',!isTasks);
 $('panel-drift').classList.toggle('hidden',!isDrift);
 $('panel-agents').classList.toggle('hidden',!isAgents);
+$('panel-reports').classList.toggle('hidden',tab!=='reports');if(tab==='reports')loadReports();
 if(isRun){$('what').textContent=tab;wuHead();WUTEXT='';$('out').textContent=WUEMPTY;$('out').classList.add('muted');$('copy').classList.add('hidden');$('outfoot').style.display='none';if(tab==='week')showLatestWeek();}
 if(isMap&&!mapLoaded)loadMap();
 if(isTasks){fillTaskRepos();loadTasks();}
@@ -987,7 +1017,7 @@ if(r.error==='not-connected'){el.innerHTML="<h4>AI review &middot; <span class='
 var body=r.text||'(no output)';reviewCache[path]={text:body,verdict:r.verdict||"",ideas:r.ideas||[],footer:r.footer};el.innerHTML=reviewHtml(name,body,r.verdict||"",r.ideas||[],tasks,r.footer);wireIdeas();});}
 var ALLTASKS=[];var PENDTASKS=[];var TFILTER={type:'',repo:''};var TARCH=false;
 var TORDER=['Fixes','Tests & CI','Security','Performance','Refactor','UI/UX','Docs','Features & other'];
-function taskRow(t,arch){return "<div class='task"+(t.done?" done":"")+"' data-id='"+esc(t.id)+"'>"+(arch?"":"<input type='checkbox' class='taskchk' title='mark done (auto-archives on sync)'"+(t.done?" checked":"")+">")+"<span class='t'>"+esc(t.text)+"</span>"+(t.repo?"<span class='rp'>"+esc(t.repo)+"</span>":"")+(arch&&t.removedBy?"<span class='rp' title='An approved task "+(t.merged?"merged it into another":"dropped it")+". Restore it to keep it.'>"+(t.merged?"merged":"dropped")+"</span>":"")+askBtn(t)+(arch?"<button class='rm restore' title='restore to active'>&#8630;</button>":"<button class='rm' title='remove'>&times;</button>")+"</div>";}
+function taskRow(t,arch){return "<div class='task"+(t.done?" done":"")+"' data-id='"+esc(t.id)+"'>"+(arch?"":"<input type='checkbox' class='taskchk' title='mark done (auto-archives on sync)'"+(t.done?" checked":"")+">")+"<span class='t'>"+esc(t.full?t.text.replace(/ Full text: \\x60[^\\x60]*\\x60/,''):t.text)+(t.full?"<details class='tfull'><summary>full text</summary><div>"+esc(t.full)+"</div></details>":"")+"</span>"+(t.repo?"<span class='rp'>"+esc(t.repo)+"</span>":"")+(arch&&t.removedBy?"<span class='rp' title='An approved task "+(t.merged?"merged it into another":"dropped it")+". Restore it to keep it.'>"+(t.merged?"merged":"dropped")+"</span>":"")+(arch&&t.dropped?"<span class='rp' title='An agent deleted it from TASKS.md, as you said to drop it. Restore it to keep it.'>dropped</span>":"")+askBtn(t)+(arch?"<button class='rm restore' title='restore to active'>&#8630;</button>":"<button class='rm' title='remove'>&times;</button>")+"</div>";}
 function wireTaskRows(el){el.querySelectorAll('.task').forEach(function(row){var id=row.getAttribute('data-id');
 var cb=row.querySelector('.taskchk');if(cb)cb.addEventListener('change',function(){api('/api/tasks/toggle',{id:id}).then(function(){row.classList.toggle('done');});});
 wireAsk(row,id);
@@ -1140,12 +1170,26 @@ function waitHtml(a){var w=a.waiting;if(!w)return '';var fs=(w.files||[]).map(fu
 return "<div class='aq'><h4><i class=ic-pause></i> Waiting on your step</h4><div class='qt'><i class=ic-person></i> "+esc(w.step)+"</div><div class='qc'>"+(fs?"Your agent "+(w.rerun?"starts by itself":"can start")+" once "+fs+" changes"+(w.rerun?", while Symbiot runs":"")+". Done it some other way?":"Your agent waits for it, so it doesn't stop on the same questions again.")+" Start it now once it's done.</div><div class='row'><button class='act wstart' data-id='"+esc(a.id)+"'>Start it now</button></div></div>";}
 function wireWaits(el){el.querySelectorAll('.wstart').forEach(function(btn){btn.addEventListener('click',function(){var a=agentById(btn.getAttribute('data-id'));if(!a)return;btn.disabled=true;
 api('/api/open',{path:a.path,force:true}).then(function(x){var msg=document.getElementById('agentsmsg');msg.innerHTML=x&&x.opened?"<div class='note ok'>&#10003; Started your agent in <b>"+esc(a.name)+"</b>.</div>":"<div class='note err'>"+esc(a.name)+": "+(x&&x.busy?"an agent is already running there.":"it didn&#39;t start. Check the command in Settings.")+"</div>";loadAgents();}).catch(function(e){btn.disabled=false;document.getElementById('agentsmsg').innerHTML="<div class='note err'>"+esc(String((e&&e.message)||e))+"</div>";});});});}
+// What a run left for Symbiot's memory (.symbiot/REMEMBER.json, handback.mjs): nothing goes in until Remember
+function factsHtml(a){var fs=a.remember;if(!fs||!fs.length)return '';
+return "<div class='aq rfacts' data-id='"+esc(a.id)+"'><h4>&#129504; For Symbiot to remember</h4><div class='qc'>This run found "+fs.length+" lasting fact"+(fs.length>1?"s":"")+". Untick any you don&#39;t want, then Remember: every chat can use them from then on.</div>"+
+fs.map(function(f,i){return "<label class='opt'><input type='checkbox' class='rfact' value='"+i+"' checked><span><b>"+esc(f.name)+"</b> <span class='muted'>("+esc(f.kind)+")</span>: "+esc(f.fact)+"</span></label>";}).join('')+
+"<div class='row'><button class='act rkeep' title='put the ticked facts into what Symbiot remembers'>Remember</button><button class='ghost rskip' title='nothing goes into memory, and this run&#39;s facts aren&#39;t asked about again'>Skip</button></div></div>";}
+function wireFacts(el){el.querySelectorAll('.rfacts').forEach(function(box){var a=agentById(box.getAttribute('data-id'));if(!a)return;
+function send(skip){var msg=document.getElementById('agentsmsg');var only=[].slice.call(box.querySelectorAll('.rfact:checked')).map(function(c){return +c.value;});
+if(!skip&&!only.length){msg.innerHTML="<div class='note err'>Tick at least one, or Skip.</div>";return;}
+box.querySelectorAll('button').forEach(function(b){b.disabled=true;});
+api('/api/agents/remember',skip?{path:a.path,skip:true}:{path:a.path,only:only}).then(function(r){
+if(!r||r.error){box.querySelectorAll('button').forEach(function(b){b.disabled=false;});msg.innerHTML="<div class='note err'>"+esc((r&&r.error)||'failed')+"</div>";return;}
+msg.innerHTML=skip?"<div class='note ok'>Skipped what <b>"+esc(a.name)+"</b> found: nothing went into memory.</div>":"<div class='note ok'>&#10003; Remembered "+r.remembered+" new fact"+(r.remembered===1?"":"s")+" from <b>"+esc(r.title||a.name)+"</b>"+(r.remembered<r.of?" (the rest were known already)":"")+".</div>";loadAgents();});}
+var k=box.querySelector('.rkeep'),s=box.querySelector('.rskip');if(k)k.addEventListener('click',function(){send(false);});if(s)s.addEventListener('click',function(){send(true);});});}
 function answering(){var f=document.activeElement;return !!(f&&f.closest&&f.closest('.aq'));}
 // Handovers (lanes.mjs): what one lane's agent handed to another, and where it stands.
 var LANEWORD={started:'working on it',held:'queued: that lane is busy',done:'done, reported back',error:"couldn't hand over"};
 function loadLanes(){api('/api/lanes').then(function(d){var el=document.getElementById('laneslist');if(!el||!d)return;var hs=d.handoffs||[];
 el.innerHTML=hs.length?"<div class='tgroup'>Handovers <span class='tcount'>"+hs.length+"</span></div>"+hs.slice(0,12).map(function(h){
-return "<div class='task' title='"+escQ(h.result||h.error||h.text)+"'><span class='t'><b>"+esc(h.from)+"</b> &rarr; <b>"+esc(h.to)+"</b>: "+esc(h.text)+"</span><span class='rp'"+(h.status==='error'?" style='color:var(--amber)'":"")+">"+esc(LANEWORD[h.status]||h.status)+"</span></div>";}).join(''):'';});}
+var back=h.result||h.error,more=(h.full?"<div>"+esc(h.full)+"</div>":"")+(back?"<div class='tres'>"+esc(back)+"</div>":"");
+return "<div class='task'><span class='t'><b>"+esc(h.from)+"</b> &rarr; <b>"+esc(h.to)+"</b>: "+esc(h.text)+(more?"<details class='tfull'><summary>"+(h.full?"in full":"what came back")+"</summary>"+more+"</details>":"")+"</span><span class='rp'"+(h.status==='error'?" style='color:var(--amber)'":"")+">"+esc(LANEWORD[h.status]||h.status)+"</span></div>";}).join(''):'';});}
 
 // ---- an agent's work, live (work.mjs parses its stream) ------------------------------
 var WKICON={read:"<path d='M2 4h5l1 1h6v8H2z'/>",edit:"<path d='M3 13l1-3 7-7 2 2-7 7z'/>",run:"<path d='M3 5l3 3-3 3M8 12h5'/>",search:"<circle cx='7' cy='7' r='4'/><path d='M10 10l3 3'/>",web:"<circle cx='8' cy='8' r='5.5'/><path d='M2.5 8h11M8 2.5c2 2 2 9 0 11M8 2.5c-2 2-2 9 0 11'/>",agent:"<path d='M8 2l1.5 4.5L14 8l-4.5 1.5L8 14l-1.5-4.5L2 8l4.5-1.5z'/>",connector:"<path d='M6 2v4M10 2v4M4 6h8v2a4 4 0 0 1-8 0zM8 12v2'/>",tool:"<circle cx='8' cy='8' r='2.5'/>"};
@@ -1184,6 +1228,7 @@ if(a.fromHeld)st+=" &middot; started on the tasks held for the last run";
 if(a.earlier)st+=" &middot; "+(a.status==='running'?"started outside this window":"ran before Symbiot last started");
 if(a.waiting)st+=" &middot; <span style='color:var(--amber)'>waiting on your step</span>";
 if(nQs(a))st+=" &middot; <span style='color:var(--amber)'>needs your answers</span>";
+if(a.remember&&a.remember.length)st+=" &middot; <span style='color:var(--amber)'>found "+a.remember.length+" thing"+(a.remember.length>1?"s":"")+" to remember</span>";
 if(a.held!=null){var hn=a.held.length,ht=a.held.map(function(t){return "&bull; "+esc(t).replace(/'/g,'&#39;');}).join('&#10;');
 ht+=(hn?'&#10;&#10;':'')+(a.status==='running'?"Sent while this agent was running. They wait in .symbiot/TASKS.next.md, replace TASKS.md when it finishes (keeping its ticks), and an agent starts on them then.":"They wait in .symbiot/TASKS.next.md for the agent running in this folder to finish. After that, an agent starts on them the next time the Tasks tab checks this repo, or send again.");
 st+=" &middot; <span style='color:var(--amber);cursor:help' title='"+ht+"'><i class=ic-pause></i> "+(hn?hn+" task"+(hn>1?"s":"")+" held":"tasks held")+"</span>";}
@@ -1199,11 +1244,11 @@ if(ch&&(ch.dirty||ch.stat||(ch.commits&&ch.commits.length))){
 }else if(a.status==='done'){
   b+="<div class='changed muted'>No file changes detected (the agent may have only planned or asked).</div>";
 }
-b+=waitHtml(a)+askHtml(a);
+b+=waitHtml(a)+askHtml(a)+factsHtml(a);
 b+=a.work?("<details class='wkraw'><summary>what it said, in full</summary><pre class='alogout'>"+esc((a.tail&&a.tail.trim())||'(nothing yet)')+"</pre></details>"):("<pre class='alogout'>"+esc((a.tail&&a.tail.trim())||'(waiting for output…)')+"</pre>");
 return "<div class='agent'>"+b+"</div>";}).join("");
 el.querySelectorAll('.alogout').forEach(function(p){p.scrollTop=p.scrollHeight;});
-restoreDrafts(el);wireAsks(el);wireWaits(el);
+restoreDrafts(el);wireAsks(el);wireWaits(el);wireFacts(el);
 stopAgentsPoll();if(anyRunning&&current==='agents')agentsTimer=setTimeout(loadAgents,2000);});}
 function loadDrift(){var out=document.getElementById('driftout');out.innerHTML="<div class='muted' style='margin-top:12px'>Reading your repos&hellip;</div>";
 var ci=document.getElementById('driftci').checked?'1':'0';var ft=document.getElementById('driftfetch').checked?'1':'0';
@@ -1260,6 +1305,16 @@ box.innerHTML=roots.map(function(r){var custom=(d.roots||[]).indexOf(r)>=0;retur
 box.querySelectorAll('.rmroot').forEach(function(btn){btn.addEventListener('click',function(){api('/api/scanroots/remove',{path:btn.closest('.task').getAttribute('data-p')}).then(function(){loadScanRoots();mapLoaded=false;driftLoaded=false;});});});});}
 function addRootUI(){var i=document.getElementById('newroot');var v=(i.value||'').trim();if(!v)return;var n=document.getElementById('scanrootnote');
 api('/api/scanroots/add',{path:v}).then(function(r){if(r.error){n.innerHTML="<span class='err'>"+esc(r.error)+"</span>";return;}i.value='';n.textContent='Added — the Map/Drift will rescan.';loadScanRoots();mapLoaded=false;driftLoaded=false;});}
+// Knowledge folders (knowledge.mjs): what's read in each, its examples, and what
+// isn't read yet (Word, PDF, Excel). Clicking one puts it in the boxes to change its examples.
+function knowRows(d){var box=$('knowroots');var fs=(d&&d.folders)||[];
+box.innerHTML=fs.length?fs.map(function(f){var nr=Object.keys(f.notRead||{}).map(function(k){return f.notRead[k]+' '+k;}).join(', ');
+return "<div class='task' data-p='"+esc(f.path)+"' data-x='"+esc((f.examples||[]).join(', '))+"'><span class='t knowedit' style='font-family:ui-monospace,monospace;font-size:12px;cursor:pointer' title='Change its examples'>"+esc(f.path)+"<br><span class='muted' style='font-family:inherit'>"+f.files+" file"+(f.files===1?"":"s")+" read"+(f.cases?" &middot; "+f.cases+" case"+(f.cases===1?"":"s"):"")+(f.items?" &middot; "+f.items+" open item"+(f.items===1?"":"s"):"")+(nr?" &middot; not read yet: "+esc(nr):"")+"</span></span><span class='rp' title='Worked examples: never used as facts'>examples: "+esc((f.examples||[]).join(', ')||'none')+(f.exampleFiles?" ("+f.exampleFiles+")":"")+"</span><button class='rm rmknow' title='remove'>&times;</button></div>";}).join(""):"";
+box.querySelectorAll('.rmknow').forEach(function(btn){btn.addEventListener('click',function(){var n=$('knownote');n.textContent='Removing…';api('/api/knowledge/remove',{path:btn.closest('.task').getAttribute('data-p')}).then(function(r){n.textContent=r.error?r.error:'Removed: chats no longer quote it.';knowRows(r.error?d:r);});});});
+box.querySelectorAll('.knowedit').forEach(function(s){s.addEventListener('click',function(){var t=s.closest('.task');$('newknow').value=t.getAttribute('data-p');$('newknowex').value=t.getAttribute('data-x')||'none';$('addknow').textContent='Save';$('newknowex').focus();});});}
+function loadKnowledge(){api('/api/knowledge').then(knowRows);}
+function addKnowUI(){var i=$('newknow'),x=$('newknowex');var v=(i.value||'').trim();if(!v)return;var n=$('knownote');n.textContent='Reading it…';
+api('/api/knowledge/add',{path:v,examples:(x.value||'').trim()}).then(function(r){if(r.error){n.innerHTML="<span class='err'>"+esc(r.error)+"</span>";return;}i.value='';x.value='';$('addknow').textContent='Add folder';var f=(r.folders||[]).filter(function(y){return y.path===v||y.cite===v;})[0];n.textContent=f?'Read '+f.files+' files'+(f.exampleFiles?', '+f.exampleFiles+' of them examples':'')+'. Chats can quote them now.':'Saved.';knowRows(r);});}
 // In the Android app (window.SymbiotAndroid): Termux keeps its home folder
 // private, so only a Symbiot running there sees those projects. The app can show
 // that one instead of its own, from the link Termux opens.
@@ -1455,7 +1510,7 @@ if(!gh)h+="<div class='row' style='margin-top:8px'><span class='muted' style='fo
 if(ws.length){h+="<label class='check' style='margin-top:8px'><input type='checkbox' id='wbrief'"+(WATCH.brief?" checked":"")+"> <span>Brief me: the AI connected in Settings says what needs me and what can wait, here and in the notification. <span class='muted'>It's sent what's new: for mail, the sender, subject and preview. With a local Ollama model nothing leaves this computer.</span></span></label>";
 var b0=bs[0]&&ns.some(function(n){return n.ts===bs[0].ts&&n.watch===bs[0].watch;})?bs[0]:null;
 if(b0)h+="<div class='note' style='white-space:pre-line;margin-top:6px'><b>Brief</b> <span class='muted' style='font-size:12px'>"+esc(b0.name)+" &middot; "+b0.count+" new &middot; "+agoTxt(b0.ts)+"</span><br>"+esc(b0.text)+"</div>";
-h+=ns.length?"<div class='row' style='margin-top:8px'><span class='fl' style='margin-left:0;flex:1'>New &middot; "+ns.length+"</span><button class='ghost' id='wclear' title='clear this list (Symbiot still remembers what it has seen)'>Clear</button></div>"+ns.slice(0,20).map(function(n,i){return "<div class='task' data-i='"+i+"'><span class='t'>"+esc(n.text)+" <span class='muted' style='font-size:12px'>"+esc(n.name)+" &middot; "+agoTxt(n.ts)+"</span></span>"+(n.href?"<button class='ghost wopen' title='open it in your browser'>Open</button>":"")+(n.mail||n.chat?"<button class='ghost wdraft' title='"+(n.chat?DRAFT_CHAT_TIP:"your coding agent opens it in your inbox through Screens, writes a reply and leaves it in Drafts. It never presses Send")+"'>"+(n.drafted?"Drafted &middot; again":"Draft a reply")+"</button>":"")+(n.chat&&n.drafted?"<button class='ghost wopenwa' title='"+OPEN_WA_TIP+"'>Open in WhatsApp</button>":"")+"</div>";}).join('')
+h+=ns.length?"<div class='row' style='margin-top:8px'><span class='fl' style='margin-left:0;flex:1'>New &middot; "+ns.length+"</span><button class='ghost' id='wclear' title='clear this list (Symbiot still remembers what it has seen)'>Clear</button></div>"+ns.slice(0,20).map(function(n,i){return "<div class='task' data-i='"+i+"'><span class='t'>"+esc(n.text)+" <span class='muted' style='font-size:12px'>"+esc(n.name)+" &middot; "+agoTxt(n.ts)+"</span>"+custTag(n)+"</span>"+(n.href?"<button class='ghost wopen' title='open it in your browser'>Open</button>":"")+(n.mail||n.chat||n.social?"<button class='ghost wdraft' title='"+(n.chat?DRAFT_CHAT_TIP:n.social?DRAFT_SOCIAL_TIP:"your coding agent opens it in your inbox through Screens, writes a reply and leaves it in Drafts. It never presses Send")+"'>"+(n.drafted?"Drafted &middot; again":"Draft a reply")+"</button>":"")+(n.chat&&n.drafted?"<button class='ghost wopenwa' title='"+OPEN_WA_TIP+"'>Open in WhatsApp</button>":"")+"</div>";}).join('')
 :"<div class='muted' style='font-size:12px;margin-top:6px'>Nothing new yet. New rows show up here, and as a notification. Standup counts what's waiting on you, and your agent reads them with <b>symbiot watch new</b>.</div>";}
 box.innerHTML=h;
 var wg=$('wgithub');if(wg)wg.addEventListener('click',function(){wg.disabled=true;api('/api/watch/add',{site:'github',every:5}).then(function(x){wg.disabled=false;if(!x||x.error){screenErr((x&&x.error)||'failed');return;}
@@ -1470,7 +1525,7 @@ box.querySelectorAll('.wopen').forEach(function(b){b.addEventListener('click',fu
 // Draft a reply (watch.mjs draftReply): handed to your agent, which never sends it
 box.querySelectorAll('.wdraft').forEach(function(b){b.addEventListener('click',function(){var n=ns[+b.closest('.task').getAttribute('data-i')];b.disabled=true;
 api('/api/watch/draft',{id:n.id}).then(function(x){b.disabled=false;if(!x||x.error){screenErr((x&&x.error)||'failed');return;}
-$('screenmsg').innerHTML="<div class='note ok'>"+(x.chat?DRAFTING_CHAT:DRAFTING)+"</div>";loadWatchUI();}).catch(function(e){b.disabled=false;screenErr(String((e&&e.message)||e));});});});
+$('screenmsg').innerHTML="<div class='note ok'>"+(x.chat?DRAFTING_CHAT:x.social?DRAFTING_SOCIAL:DRAFTING)+"</div>";loadWatchUI();}).catch(function(e){b.disabled=false;screenErr(String((e&&e.message)||e));});});});
 box.querySelectorAll('.wopenwa').forEach(function(b){b.addEventListener('click',function(){openChatUI(ns[+b.closest('.task').getAttribute('data-i')],b,function(cls,html){$('screenmsg').innerHTML="<div class='note "+cls+"'>"+html+"</div>";});});});
 var wc=$('wclear');if(wc)wc.addEventListener('click',function(){api('/api/watch/clear',{}).then(loadWatchUI);});}
 // what Check now found, for Watching and the Dashboard
@@ -1484,6 +1539,54 @@ function openChatUI(n,b,say){if(!n)return;b.disabled=true;
 api('/api/watch/open-chat',{id:n.id}).then(function(x){b.disabled=false;if(!x||x.error){say('err',esc((x&&x.error)||'failed'));return;}
 say('ok',"&#10003; Opened WhatsApp in Symbiot's browser, in a window of its own. The chat shows your agent's reply in its message box: read it, change it if you like, and send it there. Close the window when you're done, so Watch can read WhatsApp again.");}).catch(function(e){b.disabled=false;say('err',esc(String((e&&e.message)||e)));});}
 var DRAFTING="&#10003; Your agent is drafting a reply to it. It opens the email in your inbox through Screens, writes the reply and leaves it in Drafts for you to read and send: it never presses Send. Follow it, and answer anything it asks, in the Agents tab.";
+// a LinkedIn comment or mention (watch.mjs socialBrief): typed into the comment box, never posted
+var DRAFT_SOCIAL_TIP="your coding agent opens it on LinkedIn in Symbiot&#39;s hidden browser and types a reply into the comment box, unposted. It never presses Post, Comment, Reply or Send";
+var DRAFTING_SOCIAL="&#10003; Your agent is drafting a reply to it. It opens the comment on LinkedIn in Symbiot's hidden browser, types the reply into the comment box and leaves it there, never posted: it can't press Post, Comment, Reply or Send. It also writes the reply under <b>The reply</b> in its brief (the Agents tab), for you to paste and post yourself.";
+// asks how to install it, about pricing or about team use (post.mjs maybeCustomer)
+var CUSTWHY={pricing:'asks about pricing',install:'asks how to install it',team:'asks about team use'};
+function custTag(n){return n.customer?" <span class='tag cust' title='"+escQ(CUSTWHY[n.customer]||'')+"'>maybe a customer</span>":"";}
+// ---- Posts (post.mjs): the week's real work as drafts waiting on you: Approve, Edit, Skip. Symbiot never posts:
+// Approve copies the post and opens LinkedIn's share box, where you paste it and post it yourself ----
+var POSTS=null,PEDIT={},PBUSY=0,PMSG='';
+// what the last action said: kept across a re-render (the list refreshes right after an Approve)
+function postsMsg(cls,html){PMSG=html?"<div class='note "+cls+"'>"+html+"</div>":'';var o=$('postsmsg');if(o){o.innerHTML=PMSG;wireShare();}}
+var PSHARE='';function wireShare(){var sh=document.querySelector('#postsmsg .pshare');if(sh&&PSHARE)sh.addEventListener('click',function(){window.open(PSHARE,'_blank','noopener');});}
+function loadPostsUI(){api('/api/posts').then(function(p){if(!p||!p.posts)return;POSTS=p;var f=document.activeElement;if(PBUSY||(f&&f.closest&&f.closest('#boardposts')&&f.tagName==='TEXTAREA'))return;renderPosts();});}
+// copy in the page (the click on Approve), else select it for Ctrl+C; gives whether it copied
+function copyPost(text,done){function fallback(){var t=document.createElement('textarea');t.value=text;t.style.position='fixed';t.style.opacity='0';document.body.appendChild(t);t.select();var ok=false;try{ok=document.execCommand('copy');}catch(e){}t.remove();done(ok);}
+if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(text).then(function(){done(true);},fallback);else fallback();}
+function renderPosts(){var p=POSTS,el=$('boardposts');if(!el||!p)return;var L=p.labels||{},h='';
+if(p.posts.length){h+="<div class='tgroup' style='color:var(--amber)'>Posts waiting on you <span class='tcount'>"+p.posts.length+"</span></div>";
+h+=p.posts.map(function(x){var ed=Object.prototype.hasOwnProperty.call(PEDIT,x.id);
+return "<div class='rcard pcard' data-id='"+escQ(x.id)+"'><div class='rhead'><b>"+esc(L[x.kind]||x.kind)+"</b><span class='muted'>LinkedIn &middot; drafted "+agoTxt(x.drafted)+(x.edited?" &middot; edited":"")+"</span></div>"
++(ed?"<textarea class='pedit' maxlength='3000'>"+esc(PEDIT[x.id])+"</textarea>":"<div class='ptext'>"+esc(x.text)+"</div>")
++(x.sources&&x.sources.length?"<details class='psrc'><summary>From git: "+x.sources.length+" thing"+(x.sources.length===1?"":"s")+" it says</summary>"+x.sources.map(function(s){return "<div>"+esc(s)+"</div>";}).join('')+"</details>":"")
++"<div class='row'>"+(ed?"<button class='act psave'>Save</button><button class='ghost pcancel'>Cancel</button><span class='pchars'>"+String(PEDIT[x.id]).length+" / 3000</span>"
+:"<button class='act papprove' title='copies it to your clipboard and opens LinkedIn&#39;s share box, where you paste it and post it yourself. Symbiot never posts it, and doesn&#39;t schedule it'>Approve</button><button class='ghost pedit-btn' title='change its words here'>Edit</button><button class='ghost pskip' title='drop this draft (it stays in the log)'>Skip</button>")+"</div></div>";}).join('');}
+else h+="<div class='row' style='margin-top:10px'><span class='muted' style='flex:1'>"+(p.voice.count?"Posts: draft this week&#39;s 3 LinkedIn posts from your git, in your voice ("+p.voice.count+" example"+(p.voice.count===1?"":"s")+"). Nothing is posted until you approve one, and then you post it yourself."
+:"Posts: Symbiot drafts LinkedIn posts from your week&#39;s git in your own voice, once it has examples of your posts. Link LinkedIn (below) and click <b>Fill from LinkedIn</b>, or paste 5&ndash;10 of your posts into <code>"+esc(p.voice.file)+"</code>, a line of --- between each.")+"</span>"
++"<button class='ghost pvoice' title='reads your recent posts on LinkedIn in Symbiot&#39;s signed-in browser into voice.md, which you can read over'>Fill from LinkedIn</button>"
++"<button class='ghost pdraft'"+(p.voice.count?" title='your AI drafts 3 posts from your last 7 days of commits, release tags and changelog; each must cite what git shows'":" disabled title='add example posts first'")+">Draft this week&#39;s posts</button></div>";
+el.innerHTML=h+"<div id='postsmsg'>"+PMSG+"</div>";wireShare();
+function post(btn){var id=btn.closest('.pcard').getAttribute('data-id');return p.posts.filter(function(x){return x.id===id;})[0];}
+el.querySelectorAll('.papprove').forEach(function(btn){btn.addEventListener('click',function(){var x=post(btn);if(!x)return;btn.disabled=true;postsMsg('','');
+api('/api/posts/approve',{id:x.id}).then(function(r){if(!r||r.error){btn.disabled=false;postsMsg('err',esc((r&&r.error)||'failed'));return;}
+copyPost(r.post.text,function(ok){PSHARE=r.share;
+postsMsg('ok',(ok?"&#10003; Approved and copied to your clipboard. ":"&#10003; Approved. Your browser didn&#39;t let Symbiot copy it: select it below and copy it (Ctrl+C). ")+"<button class='ghost pshare'>Open LinkedIn&#39;s share box</button> and paste it there (Ctrl+V), then post it yourself. Symbiot doesn&#39;t post or schedule it."+(ok?"":"<div style='user-select:all;white-space:pre-wrap;color:var(--bone);margin-top:6px'>"+esc(r.post.text)+"</div>"));loadPostsUI();});}).catch(function(e){btn.disabled=false;postsMsg('err',esc(String((e&&e.message)||e)));});});});
+el.querySelectorAll('.pedit-btn').forEach(function(btn){btn.addEventListener('click',function(){var x=post(btn);if(!x)return;PEDIT[x.id]=x.text;renderPosts();var t=el.querySelector(".pcard[data-id='"+x.id+"'] textarea");if(t)t.focus();});});
+el.querySelectorAll('textarea.pedit').forEach(function(t){t.addEventListener('input',function(){var id=t.closest('.pcard').getAttribute('data-id');PEDIT[id]=t.value;var c=t.closest('.pcard').querySelector('.pchars');if(c)c.textContent=t.value.length+' / 3000';});});
+el.querySelectorAll('.pcancel').forEach(function(btn){btn.addEventListener('click',function(){var x=post(btn);if(x)delete PEDIT[x.id];renderPosts();});});
+el.querySelectorAll('.psave').forEach(function(btn){btn.addEventListener('click',function(){var x=post(btn);if(!x)return;btn.disabled=true;PBUSY++;
+api('/api/posts/edit',{id:x.id,text:PEDIT[x.id]}).then(function(r){PBUSY=Math.max(0,PBUSY-1);btn.disabled=false;if(!r||r.error){postsMsg('err',esc((r&&r.error)||'failed'));return;}
+delete PEDIT[x.id];x.text=r.post.text;x.edited=r.post.edited;renderPosts();postsMsg(r.unsupported?'err':'ok',r.unsupported?"Saved. Note: git doesn&#39;t show "+esc(r.unsupported.join(', '))+". It&#39;s your post, so it stays as you wrote it.":"&#10003; Saved.");}).catch(function(e){PBUSY=Math.max(0,PBUSY-1);btn.disabled=false;postsMsg('err',esc(String((e&&e.message)||e)));});});});
+el.querySelectorAll('.pskip').forEach(function(btn){btn.addEventListener('click',function(){var x=post(btn);if(!x)return;btn.disabled=true;postsMsg('','');
+api('/api/posts/skip',{id:x.id}).then(function(r){if(!r||r.error){btn.disabled=false;postsMsg('err',esc((r&&r.error)||'failed'));return;}loadPostsUI();}).catch(function(e){btn.disabled=false;postsMsg('err',esc(String((e&&e.message)||e)));});});});
+var dr=el.querySelector('.pdraft');if(dr)dr.addEventListener('click',function(){dr.disabled=true;postsMsg('','');dr.textContent='Drafting…';PBUSY++;
+api('/api/posts/draft',{}).then(function(r){PBUSY=Math.max(0,PBUSY-1);dr.disabled=false;dr.textContent="Draft this week's posts";if(!r||r.error){postsMsg('err',esc((r&&r.error)||'failed'));return;}
+POSTS.posts=r.posts;renderPosts();if(r.dropped&&r.dropped.length)postsMsg('muted',"Dropped "+r.dropped.length+": "+esc(r.dropped.map(function(d){return (L[d.kind]||d.kind)+(d.cited?" (it claimed "+d.unsupported.join(', ')+", which git doesn't show)":" (it cited nothing from git)");}).join('; ')));loadPostsUI();}).catch(function(e){PBUSY=Math.max(0,PBUSY-1);dr.disabled=false;dr.textContent="Draft this week's posts";postsMsg('err',esc(String((e&&e.message)||e)));});});
+var vb=el.querySelector('.pvoice');if(vb)vb.addEventListener('click',function(){vb.disabled=true;postsMsg('','');vb.textContent='Reading LinkedIn…';
+api('/api/posts/voice',{confirmed:true}).then(function(r){vb.disabled=false;vb.textContent='Fill from LinkedIn';if(!r||r.error){postsMsg('err',esc((r&&r.error)||'failed'));return;}
+postsMsg('ok',"&#10003; Added "+r.added+" of your LinkedIn posts: "+r.total+" in <code>"+esc(r.file)+"</code>. Read them over, and delete any that don&#39;t sound like you.");loadPostsUI();}).catch(function(e){vb.disabled=false;vb.textContent='Fill from LinkedIn';postsMsg('err',esc(String((e&&e.message)||e)));});});}
 // ---- Dashboard: a card per page you watch (your inbox, GitHub, WhatsApp…), what's new on each ----
 var BOARD=null;
 // a chat's line says who its last message is from (watch.mjs fromOf): only unread ones count as waiting on you
@@ -1493,9 +1596,35 @@ var BTALK={},BTALKDRAFT={},BTALKBUSY=0;
 var TALKHINT="<div class='muted' style='font-size:12px'>Go over what's new here with your AI: what needs you, and what to say to whom. Then click <b>Draft a reply</b> on one, and your agent writes it the way you agreed here. Your AI is sent what this card lists (for mail: the sender, subject and preview).</div>";
 function talking(){var f=document.activeElement;return BTALKBUSY>0||!!(f&&f.closest&&f.closest('.btalk'));}
 var BOARDH=24;
-function loadBoard(){api('/api/watch/board?hours='+BOARDH).then(function(b){if(b&&b.cards){BOARD=b;if(!talking())renderBoard();}});}
+function loadBoard(){api('/api/watch/board?hours='+BOARDH).then(function(b){if(b&&b.cards){BOARD=b;if(!talking())renderBoard();}});loadAwaiting();loadPostsUI();}
 function boardMsg(cls,html){$('boardmsg').innerHTML="<div class='note "+cls+"'>"+html+"</div>";}
 
+// Replies an agent's email waits on (handback.mjs): Symbiot watches your inbox for them, and hands each on when it's in
+var AWAITWORD={waiting:'waiting',replied:'replied',error:"replied, but the next step didn't start"};
+function loadAwaiting(){api('/api/awaiting').then(function(d){var el=$('boardawait');if(!el||!d)return;var ws=d.waits||[];
+if(!ws.length){el.innerHTML='';return;}var open=ws.filter(function(w){return w.status==='waiting';}).length;
+el.innerHTML="<div class='tgroup' style='margin-top:14px'>Waiting on replies <span class='tcount'>"+open+"</span></div><div class='muted' style='font-size:12px;margin-bottom:6px'>Emails your agents sent that need an answer. Symbiot looks for each reply in your inbox itself, and when one is in, the agent that does the next step starts on it. You don&#39;t have to say they replied.</div>"+
+ws.map(function(w){var who=(w.to||[]).join(', ')||'?',st=w.status==='waiting'?'waiting since '+agoTxt(w.sent):(AWAITWORD[w.status]||w.status)+(w.reply?' '+agoTxt(w.reply.ts):'')+(w.handed?' &rarr; '+(w.handed==='ops'?'an agent':esc(w.handed)+'&#39;s agent')+' has the next step':'');
+return "<div class='task'><span class='t'><b>"+esc(who)+"</b>: "+esc(w.subject)+(w.asked?"<div class='muted' style='font-size:12px'>asked for: "+esc(w.asked)+"</div>":"")+(w.error?"<div class='note err'>"+esc(w.error)+"</div>":"")+"</span><span class='rp'"+(w.status==='waiting'?" style='color:var(--amber)'":"")+">"+st+"</span>"+(w.status==='waiting'?"<button class='ghost astop' data-id='"+esc(w.id)+"' title='stop looking for this reply' style='padding:3px 9px;font-size:12px'>Stop waiting</button>":"")+"</div>";}).join('');
+el.querySelectorAll('.astop').forEach(function(btn){btn.addEventListener('click',function(){btn.disabled=true;api('/api/awaiting/stop',{id:btn.getAttribute('data-id')}).then(function(r){if(!r||r.error){btn.disabled=false;boardMsg('err',esc((r&&r.error)||'failed'));return;}loadAwaiting();});});});});}
+// ---- Reports (reports.mjs): what agents wrote up in their .symbiot/, newest first, the
+// unread ones marked. Opening one shows it here, as HTML the app made (escaped first).
+var REPS=[],REPOPEN='';
+function kb(n){return n<1024?n+' B':Math.round(n/1024)+' KB';}
+function loadReports(){api('/api/reports').then(function(d){REPS=(d&&d.reports)||[];if(!REPOPEN)renderReports();}).catch(function(e){$('reportslist').innerHTML="<div class='note err'>"+esc(String((e&&e.message)||e))+"</div>";});}
+function renderReports(){var el=$('reportslist');$('reportview').innerHTML='';REPOPEN='';
+if(!REPS.length){el.innerHTML="<div class='muted' style='margin-top:12px'>No reports yet. When an agent writes up findings, an audit or a plan, it leaves it as a .md file in its folder&#39;s .symbiot, and it shows up here.</div>";return;}
+var n=REPS.filter(function(r){return r.new;}).length;
+el.innerHTML="<div class='tgroup' style='display:flex;align-items:center;gap:8px"+(n?";color:var(--amber)":"")+"'>"+(n?n+' unread':'All read')+" <span class='tcount'>of "+REPS.length+"</span>"+(n?"<button class='ghost' id='reportsseen' style='margin-left:auto;padding:3px 9px;font-size:12px;letter-spacing:0;text-transform:none'>Mark all read</button>":"")+"</div>"+
+REPS.map(function(r,i){var where=!r.run||r.run===r.lane?esc(r.lane):r.run.indexOf(r.lane+':')===0?esc(r.run):esc(r.lane)+' &middot; '+esc(r.run);
+return "<div class='task rrow"+(r.new?" rnew":"")+"' data-i='"+i+"' tabindex='0' role='button' title='"+escQ(r.file)+"'><span class='t'><b>"+esc(r.title)+"</b><div class='muted' style='font-size:12px'>"+(r.new?"<span style='color:var(--amber)'>unread</span> &middot; ":"")+where+" &middot; "+esc(r.name)+" &middot; "+kb(r.size)+(r.running?" &middot; <span style='color:var(--amber)'>its agent is still writing</span>":"")+"</div></span><span class='rp'>"+agoTxt(r.mtime)+"</span></div>";}).join('');
+el.querySelectorAll('.rrow').forEach(function(row){var go=function(){openReport(REPS[+row.getAttribute('data-i')]);};row.addEventListener('click',go);row.addEventListener('keydown',function(ev){if(ev.key==='Enter'||ev.key===' '){ev.preventDefault();go();}});});
+var s=$('reportsseen');if(s)s.addEventListener('click',function(){s.disabled=true;api('/api/reports/seen',{}).then(function(){loadReports();lqLoad(false);});});}
+function openReport(r){if(!r)return;REPOPEN=r.id;var v=$('reportview');$('reportslist').innerHTML="<div class='row' style='margin-top:10px'><button class='ghost' id='reportback'>&larr; All reports</button><span class='muted' style='font-size:12px;overflow-wrap:anywhere'>"+esc(r.file)+"</span></div>";
+$('reportback').addEventListener('click',function(){loadReports();renderReports();});v.innerHTML="<div class='out rdoc muted'>Opening&hellip;</div>";
+api('/api/reports/read?id='+encodeURIComponent(r.id)).then(function(d){if(REPOPEN!==r.id)return;if(!d||d.error){v.innerHTML="<div class='note err'>"+esc((d&&d.error)||'failed')+"</div>";return;}
+v.innerHTML="<div class='out rdoc'>"+d.html+"</div>";var m=document.querySelector('main');if(m&&m.scrollTo)m.scrollTo(0,0);lqLoad(false);}).catch(function(e){v.innerHTML="<div class='note err'>"+esc(String((e&&e.message)||e))+"</div>";});}
+$('reportsrefresh').addEventListener('click',function(){REPOPEN='';loadReports();});
 // ---- the Dashboard as a stream ----------------------------------------------------
 // Time runs left to right, one current per feed, "now" on the right. Each message
 // is a bead placed when it arrived: amber and bigger when it needs you, small when
@@ -1555,7 +1684,7 @@ return "<div class='bcard"+(c.count?" has":"")+"' data-i='"+i+"'><div class='bh'
 +"<div class='bc'>"+c.count+"</div><div class='bl'>"+esc(c.count?c.label.replace(/^\\d+ /,''):'nothing new')+" &middot; "+(c.checked?"read "+agoTxt(c.checked):c.last?"tried "+agoTxt(c.last):"first read within a minute")+(c.via==='gh'?" &middot; through gh":"")+"</div>"
 +(c.error?"<div class='note err'>"+esc(c.error)+"</div>":"")
 +(c.brief?"<div class='bbrief'>"+esc(c.brief.text)+"</div>":"")
-+c.items.map(function(n,j){return "<div class='bi' data-j='"+j+"'><span class='t'>"+esc(n.text)+" <span class='muted' style='font-size:11px'>"+agoTxt(n.ts)+(n.from&&CHATFROM[n.from]?" &middot; "+CHATFROM[n.from]:"")+"</span></span>"+(n.href?"<button class='ghost bopen' title='open it in your browser'>Open</button>":"")+(n.mail||n.chat?"<button class='ghost bdraft' title='"+(n.chat?DRAFT_CHAT_TIP:"your coding agent writes a reply and leaves it in Drafts. It never presses Send")+"'>"+(n.drafted?"Drafted &middot; again":"Draft a reply")+"</button>":"")+(n.chat&&n.drafted?"<button class='ghost bopenwa' title='"+OPEN_WA_TIP+"'>Open in WhatsApp</button>":"")+"</div>";}).join('')
++c.items.map(function(n,j){return "<div class='bi' data-j='"+j+"'><span class='t'>"+esc(n.text)+" <span class='muted' style='font-size:11px'>"+agoTxt(n.ts)+(n.from&&CHATFROM[n.from]?" &middot; "+CHATFROM[n.from]:"")+(n.read?" &middot; read":"")+"</span>"+custTag(n)+"</span>"+(n.href?"<button class='ghost bopen' title='open it in your browser'>Open</button>":"")+(n.mail||n.chat||n.social?"<button class='ghost bdraft' title='"+(n.chat?DRAFT_CHAT_TIP:n.social?DRAFT_SOCIAL_TIP:"your coding agent writes a reply and leaves it in Drafts. It never presses Send")+"'>"+(n.drafted?"Drafted &middot; again":"Draft a reply")+"</button>":"")+(n.chat&&n.drafted?"<button class='ghost bopenwa' title='"+OPEN_WA_TIP+"'>Open in WhatsApp</button>":"")+"</div>";}).join('')
 +(c.count>c.items.length?"<div class='bl' style='margin-top:6px'>&hellip;and "+(c.count-c.items.length)+" more</div>":"")
 +"</div>";}).join('');
 var tk=$('boardtalk');if(tk)tk.innerHTML=cs.map(function(c,i){var nt=Math.ceil(((c.chat||[]).length)/2);return BTALK[c.id]?"<div class='bcard' data-i='"+i+"'><div class='bh'><span class='bn'>Talking over "+esc(c.name)+"</span><button class='ghost btalkbtn' style='padding:4px 9px;font-size:12px'>Close</button></div><div class='tchat btalk'><div class='msgs'>"+(nt?chatMsgs(c.chat):TALKHINT)+"</div><div class='row'><input class='talkq' placeholder='Ask about these, or say how to answer one...' style='flex:1'><button class='ghost talksend'>Ask</button><a class='talkclear' title='forget this conversation'>clear</a></div></div></div>":"";}).join('');
@@ -1583,7 +1712,7 @@ el.querySelectorAll('.bseen').forEach(function(btn){btn.addEventListener('click'
 api('/api/watch/seen',{id:c.id}).then(function(x){if(!x||x.error){btn.disabled=false;boardMsg('err',esc((x&&x.error)||'failed'));return;}$('boardmsg').innerHTML='';loadBoard();}).catch(function(e){btn.disabled=false;boardMsg('err',esc(String((e&&e.message)||e)));});});});
 el.querySelectorAll('.bopen').forEach(function(btn){btn.addEventListener('click',function(){var n=item(btn);if(n&&/^https?:/.test(n.href))window.open(n.href,'_blank','noopener');});});
 el.querySelectorAll('.bdraft').forEach(function(btn){btn.addEventListener('click',function(){var n=item(btn);btn.disabled=true;
-api('/api/watch/draft',{id:n.id}).then(function(x){btn.disabled=false;if(!x||x.error){boardMsg('err',esc((x&&x.error)||'failed'));return;}boardMsg('ok',x.chat?DRAFTING_CHAT:DRAFTING);loadWatchUI();}).catch(function(e){btn.disabled=false;boardMsg('err',esc(String((e&&e.message)||e)));});});});}
+api('/api/watch/draft',{id:n.id}).then(function(x){btn.disabled=false;if(!x||x.error){boardMsg('err',esc((x&&x.error)||'failed'));return;}boardMsg('ok',x.chat?DRAFTING_CHAT:x.social?DRAFTING_SOCIAL:DRAFTING);loadWatchUI();}).catch(function(e){btn.disabled=false;boardMsg('err',esc(String((e&&e.message)||e)));});});});}
 wire(el);wire($('boardtalk'));wire($('bsov'));BWIRE=wire;}
 $('boardrefresh').addEventListener('click',loadBoard);
 var bw=$('boardwin');if(bw&&bw.querySelectorAll)bw.querySelectorAll('button').forEach(function(b){b.addEventListener('click',function(){BOARDH=+b.getAttribute('data-h')||24;bw.querySelectorAll('button').forEach(function(x){x.setAttribute('aria-checked',x===b?'true':'false');});loadBoard();});});
@@ -1665,6 +1794,8 @@ document.getElementById('recbtn').addEventListener('click',loadRec);
 document.getElementById('setuplocal').addEventListener('click',setupLocalUI);
 document.getElementById('addroot').addEventListener('click',addRootUI);
 document.getElementById('newroot').addEventListener('keydown',function(e){if(e.key==='Enter')addRootUI();});
+$('addknow').addEventListener('click',addKnowUI);
+['newknow','newknowex'].forEach(function(id){$(id).addEventListener('keydown',function(e){if(e.key==='Enter')addKnowUI();});});
 document.getElementById('addtrusted').addEventListener('click',addTrustedUI);
 document.getElementById('newtrusted').addEventListener('keydown',function(e){if(e.key==='Enter')addTrustedUI();});
 document.getElementById('driftrun').addEventListener('click',function(){driftLoaded=false;loadDrift();});
@@ -1700,7 +1831,7 @@ function ubar(){return document.getElementById('updatebar');}
 function heartbeat(fresh){
   api('/api/ping'+(fresh?'?fresh=1':'')).then(function(p){
     var b=ubar();
-    var ve=document.getElementById('ver');if(ve&&p.version)ve.textContent='v'+p.version;
+    var ve=document.getElementById('ver');if(ve&&p.version){ve.textContent='v'+p.version+(p.sandbox?' · sandbox':'');if(p.sandbox){ve.title='A brand-new Symbiot to try first run in (symbiot app --fresh): its own empty home, none of your data, accounts or memory. It is deleted when you quit.';ve.style.color='var(--amber)';}}
     if(SRV_STARTED===null){SRV_STARTED=p.started;appBar(p);}
     else if(p.started!==SRV_STARTED){location.reload();return;}
     if(srvDown){location.reload();return;}
@@ -1798,7 +1929,7 @@ LQ.talk.push({me:false,text:t});LQ.talk=LQ.talk.slice(-8);lqTalkShow(false);LQ.r
 // comes out of the core (mass is conserved). Your colours come from the system,
 // live: light or dark, contrast, transparency, forced colours, your accent, night.
 var LQ={drops:[],btns:[],core:{x:0,y:0,cr:0},mode:'aware',last:'',lastAct:Date.now(),talk:[],talking:false,theme:{},ripple:[0.5,0.5,-10],t:0,pointer:null,touch:false,frame:0};
-var LQNAMES={board:'Dashboard',map:'Map',tasks:'Tasks',agents:'Agents',week:'Week',standup:'Standup',todo:'Todo',drift:'Drift',settings:'Settings'};
+var LQNAMES={board:'Dashboard',map:'Map',tasks:'Tasks',agents:'Agents',week:'Week',standup:'Standup',todo:'Todo',drift:'Drift',settings:'Settings',reports:'Reports'};
 var LQ_REST=60000,LQ_MAX=11;
 function lqMM(q){try{return !!(window.matchMedia&&window.matchMedia(q).matches);}catch(e){return false;}}
 function lqLookGet(){var l='';try{l=window.localStorage&&window.localStorage.getItem('symbiot-look')||'';}catch(e){}return l==='glass'||l==='pearl'?l:'ferro';}
@@ -1816,10 +1947,10 @@ function lqLoad(commit){if(LQ.scene==='work'){lqLoadWork();return;}Promise.all([
 // P.A.R.A.: home's droplets in four groups, each in its own part of the screen:
 // Projects (work with an end) up left, Areas (what you keep up with) up right,
 // Resources (to look things up in) down left, the Archive (what's done) sunk low right.
-var PARA_OF={tasks:'p',agents:'p',todo:'p',board:'a',week:'a',standup:'a',map:'r',drift:'r',settings:'r'};
+var PARA_OF={tasks:'p',agents:'p',todo:'p',board:'a',week:'a',standup:'a',map:'r',drift:'r',settings:'r',reports:'r'};
 var PARA_NAME={p:'Projects',a:'Areas',r:'Resources',x:'Archive'},PARA_SUB={p:'work with an end',a:'what you keep up with',r:'to look things up in',x:'what’s done'};
 var PARA_ANG={p:-2.4,a:-0.65,r:2.45,x:0.8},PARA_LIVE={p:0.45,a:0.3,r:0.12,x:0};
-function lqPara(d){return d.kind==='archive'?'x':d.kind==='feed'?'a':PARA_OF[d.shape]||'p';}
+function lqPara(d){return d.kind==='archive'?'x':d.kind==='feed'&&d.shape!=='reports'?'a':PARA_OF[d.shape]||'p';}
 function lqParaGo(g){lqAct();if(g==='p'){lqWorkBy('project');return;}if(g==='a'){lqUse('board');lqPool('board');return;}if(g==='r'){lqUse('map');lqPool('map');return;}lqArchive();}
 function lqArchive(){lqPool('tasks');LQ.arch=true;if(typeof loadArchived==='function')loadArchived();}
 function lqOrg(id,k){var h=k*977;id=String(id);for(var i=0;i<id.length;i++)h=(h*31+id.charCodeAt(i))|0;return ((h>>>0)%1000)/1000;}
@@ -1850,7 +1981,8 @@ else if((d.kind==='you'||d.kind==='feed')&&at[d.shape]!=null)links.push([at[d.sh
 function lqBuild(){var a=LQ.adapt||{},h=LQ.home||{},S=lqSize(),cx=S.w/2,cy=S.h*0.47,list=[];LQ.bw=S.w;LQ.bh=S.h;
 var you=(h.you||[]).slice(0,3),feeds=(h.feeds||[]).slice(0,2),lay=(a.layout&&a.layout.items)||[],more=((a.layout&&a.layout.more)||[]).slice();
 var vx=Math.max(0.5,Math.min(S.s*1.3,(S.w/2-90)/400)),vy=Math.max(0.35,Math.min(S.s*0.8,(S.h-cy-230)/400,(cy-160)/400));var rs=Math.min(S.s,(vx+vy)/1.5);var room=Math.max(3,LQ_MAX-you.length-feeds.length-1);lay.slice(room).forEach(function(it){more.push(it.id);});
-lay.slice(0,room).forEach(function(it){list.push({id:'shape:'+it.id,kind:'shape',shape:it.id,title:LQNAMES[it.id]||it.id,sub:'',r:it.r*rs,tx:cx+Math.cos(it.angle)*it.d*vx,ty:cy+Math.sin(it.angle)*it.d*vy});});
+var repNew=(h.feeds||[]).filter(function(f){return f.id==='feed:reports';})[0],repOut=repNew&&feeds.indexOf(repNew)<0; // new reports, when their own droplet didn't fit
+lay.slice(0,room).forEach(function(it){list.push({id:'shape:'+it.id,kind:'shape',shape:it.id,title:LQNAMES[it.id]||it.id,sub:it.id==='reports'&&repOut?repNew.count+' new':'',r:it.r*rs,tx:cx+Math.cos(it.angle)*it.d*vx,ty:cy+Math.sin(it.angle)*it.d*vy});});
 you.forEach(function(y,i){var ang=-Math.PI/2+(i-(you.length-1)/2)*0.6;list.push({id:y.id,kind:'you',shape:y.shape,title:y.title,sub:y.sub,r:50*rs,tx:cx+Math.cos(ang)*230*vx,ty:cy+Math.sin(ang)*230*vy*1.05,tendril:true});});
 feeds.forEach(function(f,i){var ang=Math.PI/2+(i-(feeds.length-1)/2)*0.7;list.push({id:f.id,kind:'feed',shape:f.shape,title:f.title,sub:f.sub,r:(28+5*Math.min(f.count||1,5))*rs,tx:cx+Math.cos(ang)*300*vx,ty:cy+Math.sin(ang)*300*vy});});
 list.push({id:'archive',kind:'archive',shape:'tasks',title:'Archive',sub:'what’s done: archived tasks',r:26*rs,tx:cx+Math.cos(PARA_ANG.x)*330*vx,ty:cy+Math.sin(PARA_ANG.x)*330*vy});
@@ -2048,5 +2180,5 @@ var G=lqGL();if(G){try{lqStep();lqDraw(G);}catch(e){}}if(typeof window.requestAn
 function frame(){if(!document.hidden){LQ.frame++;if(LQ.mode!=='pool'||LQ.frame%3===0){lqStep();if(G)lqDraw(G);}}raf(frame);}
 raf(frame);}
 
-initGraphEvents();syncP();refresh();loadMap();firstTab();lqInit();loadWhatsNew();loadAgentCfg();loadScanRoots();loadPhone();loadLinks();loadMind();loadTrusted();loadMail();loadScreensUI();loadMonitorsUI();loadDesktop();loadWatchUI();setInterval(loadWatchUI,60000);loadPhoneLink();
+initGraphEvents();syncP();refresh();loadMap();firstTab();lqInit();loadWhatsNew();loadAgentCfg();loadScanRoots();loadKnowledge();loadPhone();loadLinks();loadMind();loadTrusted();loadMail();loadScreensUI();loadMonitorsUI();loadDesktop();loadWatchUI();setInterval(loadWatchUI,60000);loadPhoneLink();
 </script></body></html>`;

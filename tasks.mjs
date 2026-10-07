@@ -4,35 +4,52 @@
 // it shows.
 import { spawnSync } from "node:child_process";
 import { join } from "node:path";
-import { readFileSync, writeFileSync, existsSync, readdirSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, readdirSync, mkdirSync } from "node:fs";
 import { randomBytes } from "node:crypto";
-import { VERSION, LATEST_VERSION, REGISTRY, semverGt, loadConfig, saveConfig, loadTasks, saveTasks, taskWords, sameTask, uniqueTasks, sh, hasCmd, repoState } from "./core.mjs";
-import { handoverRules, ONLY_YOU } from "./handover.mjs";
+import { VERSION, LATEST_VERSION, REGISTRY, semverGt, loadConfig, saveConfig, loadTasks, saveTasks, TASK_MAX, clipWords, taskWords, sameTask, uniqueTasks, sh, hasCmd, repoState } from "./core.mjs";
+import { handoverRules, ONLY_YOU, HANDBACK } from "./handover.mjs";
 import { userStyleLine } from "./adapt.mjs";
-import { QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, handoffCmd, runningHandoff, writeTasks, startHeldTasks, connectorsLine } from "./agents.mjs";
+import { QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, handoffCmd, runningHandoff, writeTasks, droppedTasks, startHeldTasks, connectorsLine } from "./agents.mjs";
 import { gitDefaultBranch } from "./drift.mjs";
 import { repoPathMap, openWork, detectRepo } from "./scan.mjs";
 
 // ---- tasks: a persistent checklist (stored by core.mjs) -------------------
 // One line (TASKS.md has a task per line, and a tick only matches a whole one),
-// long enough for a pasted list of next steps: 300 cut one off mid-list.
-function addTask(text, repo) {
-  text = String(text || "").replace(/\s+/g, " ").trim().slice(0, 1000);
+// long enough for a pasted list of next steps: 300 cut one off mid-list. Longer
+// than a task holds (TASK_MAX), nothing is cut: the task keeps its whole text as
+// written (full), and its line is how it starts plus a link to the rest, which
+// goes out with its brief as .symbiot/full/<id>.md (pushTasks). after: what ends
+// its line either way, "(handed over by coral)".
+const LEAD_MAX = 600, FULL_DIR = "full";
+const fullLink = (id) => ` Full text: \`.symbiot/${FULL_DIR}/${id}.md\``;
+// A long task's start: its whole sentences up to LEAD_MAX, or its words.
+function leadOf(text) {
+  const m = text.slice(0, LEAD_MAX + 1).match(/^.*[.!?](?=\s)/s);
+  return m && m[0].length >= LEAD_MAX / 3 ? m[0] + " …" : clipWords(text, LEAD_MAX);
+}
+function addTask(text, repo, { after = "" } = {}) {
+  const raw = String(text || "").trim(), tail = String(after || "").trim();
+  text = raw.replace(/\s+/g, " ");
   if (!text) return { error: "empty" };
-  const t = loadTasks();
+  const long = text.length + tail.length + 1 > TASK_MAX, full = long ? raw + (tail ? "\n\n" + tail : "") : "";
+  const lineFor = (id) => (long ? leadOf(text) + fullLink(id) : text) + (tail ? " " + tail : "");
+  const t = loadTasks(), id = randomBytes(6).toString("hex"), line = lineFor(id);
   // The same task already open in the same repo (in review counts), even in
   // other words (sameTask): that task, not a duplicate. When the new wording has
   // a clause more, the task takes it, unless it's in review (its tick is on the
   // old words). Handed out already, a tick on either wording counts (syncTasks).
-  const dup = t.find((x) => !x.done && !x.archived && (x.repo || "") === (repo || "") && sameTask(x.text, text));
-  if (dup && !dup.review && taskWords(text).length > taskWords(dup.text).length) { dup.text = text; saveTasks(t); return { ...dup, duplicate: true, reworded: true }; }
+  const dup = t.find((x) => !x.done && !x.archived && (x.repo || "") === (repo || "") && sameTask(x.text, line));
+  if (dup && !dup.review && taskWords(full || line).length > taskWords(dup.full || dup.text).length) {
+    dup.text = lineFor(dup.id); if (long) dup.full = full; else delete dup.full;
+    saveTasks(t); return { ...dup, duplicate: true, reworded: true };
+  }
   if (dup) return { ...dup, duplicate: true };
-  const item = { id: randomBytes(6).toString("hex"), text, repo: repo || "", done: false, ts: Date.now() };
+  const item = { id, text: line, ...(long ? { full } : {}), repo: repo || "", done: false, ts: Date.now() };
   t.unshift(item); saveTasks(t); return item;
 }
 function toggleTask(id) { const t = loadTasks(); const it = t.find((x) => x.id === id); if (it) { it.done = !it.done; saveTasks(t); } return it || { error: "not found" }; }
 function removeTask(id) { saveTasks(loadTasks().filter((x) => x.id !== id)); return { ok: true }; }
-function restoreTask(id) { const t = loadTasks(); const it = t.find((x) => x.id === id); if (it) { it.archived = false; it.done = false; delete it.archivedAt; if (it.removedBy) { it.kept = true; delete it.removedBy; delete it.merged; } saveTasks(t); } return it || { error: "not found" }; }
+function restoreTask(id) { const t = loadTasks(); const it = t.find((x) => x.id === id); if (it) { it.archived = false; it.done = false; delete it.archivedAt; if (it.removedBy || it.dropped) { it.kept = true; delete it.removedBy; delete it.merged; delete it.dropped; } saveTasks(t); } return it || { error: "not found" }; }
 // Which task texts the agent checked off in a repo's .symbiot/TASKS.md
 function completedInRepo(repoPath) {
   try { return readFileSync(join(repoPath, ".symbiot", "TASKS.md"), "utf8").split("\n").filter((l) => /^\s*-\s*\[x\]/i.test(l)).map((l) => l.replace(/^\s*-\s*\[x\]\s*/i, "").trim().toLowerCase()); }
@@ -68,6 +85,19 @@ function applyRemovals(t) {
   }
   return n;
 }
+// A task the agent deleted from its TASKS.md (droppedTasks: the brief tells it
+// to, only when the user says to drop one) is closed: archived as dropped, so
+// the next brief doesn't bring it back. Only open tasks from before that brief,
+// and never one you restored (kept). map: repo name → path.
+function applyDrops(t, map) {
+  let n = 0; const now = Date.now(), seen = {};
+  for (const x of t) {
+    if (x.done || x.archived || x.review || x.kept || !x.repo || !map[x.repo]) continue;
+    const gone = seen[x.repo] || (seen[x.repo] = droppedTasks(map[x.repo]));
+    if (gone.some((d) => (x.ts || 0) <= d.at && sameTask(d.text, x.text))) { Object.assign(x, { done: true, archived: true, archivedAt: now, dropped: true }); n++; }
+  }
+  return n;
+}
 // "Check what was handed out, see what's completed, then archive it" — with an
 // approval step in between. An agent ticking an item in TASKS.md means "done,
 // please review", NOT archived: it waits in review until the user approves it
@@ -77,6 +107,7 @@ function applyRemovals(t) {
 // starts on what's still open in them (one `push --open` started can't do that).
 function syncTasks() {
   const t = loadTasks(); const map = repoPathMap(); let review = 0, archived = 0, started = 0; const checkedByRepo = {};
+  const dropped = applyDrops(t, map);
   for (const x of t) {
     if (x.archived || x.done || x.review || !x.repo) continue;
     if (!(x.repo in checkedByRepo)) { const p = map[x.repo]; if (p && startHeldTasks(p)) started++; checkedByRepo[x.repo] = p ? completedInRepo(p) : []; }
@@ -85,7 +116,7 @@ function syncTasks() {
   for (const x of t) { if (x.done && !x.archived) { x.archived = true; x.archivedAt = Date.now(); archived++; } }
   const removed = applyRemovals(t);
   saveTasks(t);
-  return { review, archived, started, removed };
+  return { review, archived, started, removed, dropped };
 }
 // git with an argv (task text goes into commit messages — never through a shell)
 function git(repo, args, timeout = 30000) {
@@ -264,7 +295,7 @@ const NOT_OWN = /(^|\/)(package(-lock)?\.json|npm-shrinkwrap\.json|CHANGELOG\.md
 function changelogEntry(text) {
   let s = String(text || "").replace(/\s+/g, " ").trim();
   const m = s.match(/^(.{40,}?(?<!\be\.g|\bi\.e|\betc|\bvs)[.!?])\s+(?=[^a-z])/); if (m && m[1].length <= ENTRY_MAX) s = m[1]; // not at "e.g. `x`" or "e.g. when"
-  return s.length > ENTRY_MAX ? s.slice(0, ENTRY_MAX - 1).replace(/\s+\S*$/, "") + "…" : s;
+  return clipWords(s, ENTRY_MAX);
 }
 function changelogSection(version, texts, files = [], day = new Date().toISOString().slice(0, 10), notes = null) {
   const own = files.filter((f) => !NOT_OWN.test(f));
@@ -386,7 +417,7 @@ function commitSubject(texts) {
   const more = texts.length > 1 ? ` (+${texts.length - 1} more)` : "", max = 72 - more.length;
   const t = String(texts[0]).split("\n").find((l) => l.trim()) || "";
   const s = t.replace(/^\s*(#+|[-*+]|\d+[.)])\s+/, "").replace(/\*\*|__/g, "").replace(/\s+/g, " ").trim() || `${texts.length} approved tasks`;
-  return (s.length > max ? s.slice(0, max - 1).replace(/\s+\S*$/, "") + "…" : s) + more;
+  return clipWords(s, max) + more;
 }
 // Sync approved work: off the default branch onto symbiot/<task>, commit the
 // working tree (minus .symbiot/), push, and open a PR with gh. On a branch whose
@@ -525,8 +556,8 @@ function buildTasksMd(name, ctx, list) {
   const byType = {}; for (const t of list) { const ty = taskType(t.text); (byType[ty] = byType[ty] || []).push(t); }
   const keys = Object.keys(byType).sort((a, b) => TASK_ORDER.indexOf(a) - TASK_ORDER.indexOf(b));
   for (const ty of keys) { L.push(`### ${ty}`); for (const t of byType[ty]) L.push(`- [ ] ${t.text}`); L.push(""); }
-  L.push("## When you finish an item", "- Tick it here (`- [x]`) as soon as it's done — that's how it reaches review. Ticking doesn't archive it: the user approves it in Symbiot, which commits it on a branch and opens a PR.", "- Leave your changes **uncommitted**, and don't tick anything you didn't finish or couldn't verify.", "");
-  L.push(...handoverRules(ctx.lanes || [], name));
+  L.push("## When you finish an item", "- Tick it here (`- [x]`) as soon as it's done — that's how it reaches review. Ticking doesn't archive it: the user approves it in Symbiot, which commits it on a branch and opens a PR.", "- Leave your changes **uncommitted**, and don't tick anything you didn't finish or couldn't verify.", "- If the user says to drop an item (in ANSWERS.md, say), delete its line here: Symbiot closes it, so it isn't sent again. Don't delete one for any other reason.", "");
+  L.push(...handoverRules(ctx.lanes || [], name), ...HANDBACK);
   L.push("## If you need a decision, or have ideas", "You may be running unattended, so you can't ask in chat. Write `.symbiot/QUESTIONS.md` instead: Symbiot shows it to the user on your block in its Agents tab, and their answers come back in `.symbiot/ANSWERS.md` (read that first if it exists).",
     `- At most ${QUESTIONS_MAX} questions, under a \`## Questions\` heading. Each is a \`### \` heading, then a line of context, then exactly ${OPTIONS_SHOWN} options as \`- \` bullets, the one you recommend first, marked \`(recommended)\`. Symbiot shows only the first ${OPTIONS_SHOWN}; the user can always answer in their own words.`,
     "- Judge the options before you ask. Most people pick the recommended option without weighing the other, and Symbiot works for a whole company (developers, sales, everyone), not one person, so the choice is really yours. Both options must be good routes to the best solution, never filler or one you wouldn't take. Each says in plain words, with no jargon, what it does and what it changes from then on for the project, the people working on it and the company. Recommend the one that's best for, in this order, the company, the people doing the work, then the task's goal. Base that on evidence you can check here (git history, tests, logs, how it's used, the answers so far), not on what's quickest, and give that evidence in the context line in a sentence.",
@@ -541,12 +572,13 @@ function buildTasksMd(name, ctx, list) {
   return L.join("\n") + "\n";
 }
 function pushTasks(filter) {
-  const all = loadTasks(); if (applyRemovals(all)) saveTasks(all); // what an approved Drop/Merge named never goes out again
+  const byName = repoPathMap(); // from the already-scanned map when there is one
+  // what an approved Drop/Merge named, or an agent deleted from its brief, never goes out again
+  const all = loadTasks(); if (applyRemovals(all) + applyDrops(all, byName)) saveTasks(all);
   let tasks = all.filter((t) => !t.done && !t.archived && !t.review);
   if (filter && filter.type) tasks = tasks.filter((t) => taskType(t.text) === filter.type);
   if (filter && filter.repo) tasks = tasks.filter((t) => t.repo === filter.repo);
   if (!tasks.length) return { empty: true, written: [], unresolved: [] };
-  const byName = repoPathMap(); // from the already-scanned map when there is one
   const groups = {}; for (const t of tasks) { const k = t.repo || ""; (groups[k] = groups[k] || []).push(t); }
   const written = [], unresolved = [], connectors = connectorsLine(); // the same for every repo's run
   for (const name of Object.keys(groups)) {
@@ -560,6 +592,8 @@ function pushTasks(filter) {
       const open = openWork([{ path, name }]).slice(0, 12);
       const det = detectRepo({ path, name, recency: 0 });
       const stack = [...det.langs.slice(0, 4), ...det.tools].join(", ");
+      // a long task's whole text, where its line links to (addTask)
+      for (const t of groups[name].filter((x) => x.full)) { mkdirSync(join(path, ".symbiot", FULL_DIR), { recursive: true }); writeFileSync(join(path, ".symbiot", FULL_DIR, t.id + ".md"), t.full.replace(/\s*$/, "\n")); }
       const risk = [];
       if (st.stale) risk.push("stale checkout — working tree is an old snapshot, not new work");
       if (st.behind) risk.push(`${st.behind} behind upstream on ${st.branch}`);
@@ -572,4 +606,4 @@ function pushTasks(filter) {
   return { empty: false, written, unresolved, handoff: handoffCmd() };
 }
 
-export { addTask, toggleTask, removeTask, restoreTask, completedInRepo, removalOf, applyRemovals, syncTasks, workingChanges, workingDiff, publishesOnMerge, unreleased, bumpOffer, learnNpm, releaseNeeded, withReleases, setVersion, changelogEntry, changelogSection, noteChangelog, releaseInput, shipWithBump, runSummary, saidFinished, pendingReview, commitSubject, shipChanges, autoMergeRepos, setAutoMerge, approveRepo, approveChanges, sendBack, TASK_ORDER, taskType, buildTasksMd, pushTasks };
+export { addTask, toggleTask, removeTask, restoreTask, completedInRepo, removalOf, applyRemovals, applyDrops, syncTasks, workingChanges, workingDiff, publishesOnMerge, unreleased, bumpOffer, learnNpm, releaseNeeded, withReleases, setVersion, changelogEntry, changelogSection, noteChangelog, releaseInput, shipWithBump, runSummary, saidFinished, pendingReview, commitSubject, shipChanges, autoMergeRepos, setAutoMerge, approveRepo, approveChanges, sendBack, TASK_ORDER, taskType, buildTasksMd, pushTasks };

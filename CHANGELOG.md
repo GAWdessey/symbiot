@@ -2,6 +2,18 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.51.0
+
+What your agents built on the symbiot repo yesterday, merged with everything since:
+
+- **`symbiot post`.** Drafts three posts a week from your real git activity, releases and CHANGELOG (shipped, learned or fixed, and a longer one) in your voice from `voice.md`. They wait on the Dashboard for Approve, Edit or Skip; nothing is published without your approval, and every choice is logged. It can draft replies to comments too, for you to approve.
+- **Company knowledge folders.** Point Symbiot at a folder of documents (Settings → Knowledge folders) and every chat can quote them and say which file; worked examples are kept apart from facts.
+- **Reports.** What agents write up (findings, audits, plans) shows in one place, unread ones marked.
+- **Waiting on replies.** When an agent's email needs an answer, Symbiot watches your inbox for it and hands the reply on to the next step itself.
+- **Facts from a run.** An agent can hand back what it learned; Remember or Skip it on the run's block.
+- **A first-run sandbox**, to walk through Symbiot's setup like a new user, apart from your real data.
+- **Fixed:** the same task listed twice in different words, or spelled out in steps; a task you closed coming back; long tasks cut mid-sentence; mail and WhatsApp chats you've already read still counting as waiting on you; agent runs denied the Gmail, Calendar, Drive and Notion tools right after you connected them.
+
 ## 0.50.3
 
 - **Finer tags on the spheres.** A sphere's tag is the short form of its task: no "(§5 of .symbiot/BRIEF…)" asides, paths or markdown, cut at a word, in smaller type and two lines at most; point at it for the whole text. The layout makes room for every tag, so a tag never lands on another tag or sphere.

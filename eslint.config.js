@@ -44,7 +44,7 @@ const pageScripts = {
 };
 
 export default [
-  { ignores: ["node_modules/", "android/"] },
+  { ignores: ["node_modules/", "android/", ".symbiot/"] }, // .symbiot: Symbiot's and its agents' scratch, never shipped
   {
     files: ["**/*.mjs", "**/*.js"],
     languageOptions: {

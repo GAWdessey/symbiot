@@ -24,6 +24,16 @@ The newer extras are [experimental](#experimental): email, CI checks,
 local-model setup, Screens and Watch, and Symbiot on a phone. The list there says
 what's stable and what isn't.
 
+## What is Symbiot for?
+
+For developers and small teams who owe someone an update every week (a manager,
+a client, a standup, the team channel) and would rather spend that time on the
+work. The work is already in git: what you committed, merged and released, and
+what's still uncommitted or out of sync. Symbiot reads it on your machine and
+writes the update from it, so it says what actually happened, not what you
+remember on a Friday afternoon. It also hands the next tasks to your coding
+agent and brings its work back to you to approve.
+
 ## Install
 
 ```bash
@@ -103,6 +113,8 @@ It opens on [the liquid](#the-liquid-a-home-that-shapes-itself-to-you); each of 
   did** — files changed and commits made, read from git, whichever agent it was.
   When an agent leaves **questions, options or ideas** for you, they show up on its
   block (see [Questions from your agent](#questions-from-your-agent)).
+- **Reports** — what your agents wrote up for you (findings, audits, plans), to
+  read in the app (see [What a run hands back](#what-a-run-hands-back-facts-to-remember-replies-to-wait-for-reports)).
 - **Settings** — [Link your work](#link-your-work), your AI, the folders to scan, your agent command, the
   [weekly write-up and start at login](#every-week-and-at-login), plus the
   [experimental](#experimental) email, model recommendations and one-click local
@@ -126,6 +138,15 @@ It works on **Linux, macOS and Windows**; with no Chromium-family browser to ope
 the chrome-less window, it uses your default browser. On an Android phone it runs
 in Termux ([experimental](#on-your-phone-android-in-termux)), or as an
 [Android app](#the-android-app-apk) of its own.
+
+**Try it as someone new: `symbiot app --fresh`.** A brand-new Symbiot opens next
+to yours, marked **sandbox** by its version, to walk through first run and
+setup: no AI connected (keys in your environment are left out), no memory, no
+linked accounts, no lanes, none of your repos. It has its own home folder under
+your temp folder, deleted when you quit it (`--keep` keeps it, to see what setup
+wrote), and it never offers an update. A folder you add to it is read like any
+other, and agents it starts run as you on this computer, without your Claude
+sign-in.
 
 ### Every week, and at login
 
@@ -377,6 +398,13 @@ Handoff says which of your linked sites aren't wired up, and each run's `TASKS.m
 says which connectors it has and which it doesn't, so it doesn't claim to have
 checked your mail.
 
+Claude writes a claude.ai connector into `~/.claude.json` only after a session
+has connected it, so the first run after you connect Gmail used to get Gmail's
+tools with every call denied. A site you link in Symbiot (Gmail, Google Calendar,
+Google Drive, Notion) now gets its claude.ai connector's rule on every Claude run,
+even before Claude records it or while it waits to be authorized. A rule for tools
+a run doesn't have does nothing.
+
 Each run is logged to `.symbiot/agent.log` in the repo and shown live in the
 **Agents** tab. The command is saved as `agentCmd` in
 `~/.config/symbiot/config.json` — it's your command, Symbiot only fills in
@@ -548,7 +576,7 @@ Symbiot's config folder, readable by you only.
 **Connections** (on the Dashboard, and in Settings) has one entry per standard work site: Gmail,
 Outlook, Google and Outlook Calendar, GitHub, GitLab, Slack, Microsoft Teams,
 WhatsApp, Jira & Confluence, Linear, Asana, Trello, Google Drive, Notion,
-HubSpot and Salesforce. One click:
+HubSpot, Salesforce and LinkedIn. One click:
 
 1. opens the site in Symbiot's own browser, where you sign in the usual way (its
    own login, SSO and 2FA; Symbiot never sees your password). Close the window
@@ -577,6 +605,43 @@ hides the ones you don't use. An entry with a built-in's id replaces it:
 
 Linking stays in the app. Like trusted sites, there's no command an agent could
 call to link a site itself.
+
+## Post about your week: `symbiot post`
+
+`symbiot post` turns your last 7 days of real work into 3 draft LinkedIn posts,
+in your own voice: what you **shipped**, one thing you **learned or fixed**, and a
+**longer post** (or a short thread) about the best of it. It reads the commits,
+release tags and dated `CHANGELOG.md` sections in the repos Symbiot already scans,
+and nothing else. **It never posts by itself**, and it doesn't schedule.
+
+- **Your voice.** Put 5–10 posts you wrote in `~/.config/symbiot/voice.md`, with a
+  line of `---` between each. Or link LinkedIn (above) and click **Fill from
+  LinkedIn** on the Dashboard (`symbiot post voice --linkedin`), which reads your
+  recent posts in Symbiot's signed-in browser. Without examples it doesn't draft.
+- **Only what git shows.** Your AI gets the week as numbered facts and must say
+  which ones each post uses. A post that names a number, version, name or user
+  count the facts don't show is sent back once, then dropped.
+- **You approve each one.** The drafts wait on the **Dashboard** with **Approve**,
+  **Edit** and **Skip**. Approve copies the post to your clipboard and opens
+  LinkedIn's share box: you paste it and post it yourself.
+- **Everything is logged** in `~/.config/symbiot/posts-log.jsonl`: each draft,
+  edit, approval and skip, with its text, date and platform.
+- **Replies.** Linked LinkedIn is watched like an inbox: new comments and mentions
+  show on its Dashboard card, marked **maybe a customer** when they ask how to
+  install it, what it costs or about team use. **Draft a reply** has your agent
+  type a reply into the comment box without posting it (it can't press Post,
+  Comment, Reply or Send), and write it in its brief for you to paste.
+
+```bash
+symbiot post                    # draft this week's 3 posts
+symbiot post list               # the drafts waiting on you
+symbiot post approve <id>       # copy it, and get LinkedIn's share box (--open opens it)
+symbiot post edit <id> "text"   # change a draft's words
+symbiot post skip <id>          # drop one
+symbiot post log                # everything that happened
+```
+
+With no AI connected it says so and does nothing else.
 
 ## One Symbiot, everywhere
 
@@ -623,6 +688,33 @@ hand, a cable, which network you're on), your identity or secrets (signing in, a
 2FA code, a token from a provider's console) or a decision that's yours (closing an
 account, spending money, sending something in your name). Every brief tells the
 agent so, and such a question says which: `👤 You (only you: your Meta token): …`.
+
+### What a run hands back: facts to remember, replies to wait for, reports
+
+Every brief also tells the agent what else it can leave in `.symbiot/`:
+
+- **`REMEMBER.json`**: lasting facts it found (who someone is, which account is
+  what, a decision), as `[{ "name", "kind", "fact" }]`. A run can't write
+  Symbiot's memory itself. Once it stops, its block in the Agents tab shows them,
+  each ticked, with **Remember** and **Skip**. Remember puts the ticked ones into
+  memory, marked with the run's name; Skip drops them. Either way it's asked once.
+- **`AWAITING.json`**: an email it sent (or drafted for you to send) that waits on
+  a reply, as `[{ "to", "subject", "asked", "next", "task", "lane" }]`. Symbiot
+  watches for the reply itself, so you never have to say "they replied": in what
+  Watch finds new in your inbox, and, with Email switched on, in the inbox beside
+  the Sent folder you linked (headers only, and only the reply it waits for). When
+  it's in, the lane that does the next step (`lane`, else the one that sent it)
+  gets it as a task and its agent starts, told what was asked for and what to do
+  next. The task it's for says so in its chat, and you get a notification. The
+  Dashboard lists **Waiting on replies**, with **Stop waiting** on each. Anything
+  the reply leaves for you to decide comes back as that agent's question.
+- **A report** (findings, an audit, a plan, a pitch): any `.md` named for what it
+  is, with a `# ` title. **Reports** in the app lists every one your runs left,
+  in your repos and in runs of their own, newest first, unread ones marked; click
+  one to read it there, tables and all. Home shows how many are unread.
+  `symbiot reports` lists them in a terminal, and `symbiot reports <id>` prints
+  one. Symbiot's own files there (TASKS, QUESTIONS, ANSWERS, HANDOFF, SKIPPED)
+  and the briefs handed in (`BRIEF*.md`) aren't reports.
 
 ## Connect it (once)
 
@@ -688,12 +780,44 @@ coloured) with their languages, and can receive tasks like a repo.
 gigantic folder — it stops and shows what it found so far, marked **partial**,
 instead of hanging. The CLI shows scan progress on one line as it goes.
 
+### Knowledge folders
+
+Repos are your code; a **knowledge folder** is your documents — a company folder
+of how work is done, policies, price lists, notes. Add one under **Settings →
+Knowledge folders** in the app, or with `symbiot knowledge add ~/Company`. Symbiot
+reads its Markdown, CSV and text files (Word, PDF and Excel are counted as "not
+read yet") into an index of its own, `~/.config/symbiot/knowledge.json`, readable
+only by you and kept apart from its memory. While the app runs it re-reads only
+the files that changed, every few minutes; `symbiot knowledge index` does it now.
+
+Every chat in the app — the home bar, a Dashboard card, a task — then gets the few
+passages that best answer what you asked, each with the file it came from, and
+quotes and cites that file when it uses one.
+
+- **Examples aren't facts.** Say which paths in a folder hold worked examples
+  (`--examples templates/,active/`, or the second box in Settings; `templates/`
+  unless you say otherwise, meaning any folder of that name). A file whose front
+  matter says `example: true` is one too. Examples never come back in a chat;
+  `symbiot knowledge search … --with-examples` finds them, marked as examples.
+  Add the folder again to change its examples.
+- **Cases.** A folder's `README.md` with *Who does it*, *When*, *Steps*, *Hands
+  off to* and *What Symbiot should learn and remember*, and items whose front
+  matter has `owner`, `status`, `due` and `waiting_on` (like
+  `active/<item>/STATUS.md`), answer "what's waiting on me?" and "who owns X?"
+  straight from those fields. "Me" is the name in `symbiot knowledge me "Your
+  Name"` (saved as `myName` in config.json), or else your git `user.name`; your
+  first name on its own counts too.
+- `symbiot knowledge` lists the folders and what was read; `search`, `waiting`
+  and `owner` answer from the terminal (`symbiot knowledge help`).
+
 ## What it reads, and what it doesn't
 
 - **Reads:** your local git — commit messages and changed-file names, plus
   `TODO`/`FIXME` markers and uncommitted changes for `todo`. If you switch
   [email](#your-sent-email-without-an-api-symbiot-mail) on, it also reads the headers
-  of mail you sent (subject, recipients, date). All local.
+  of mail you sent (subject, recipients, date), and, while an agent's email
+  [waits on a reply](#what-a-run-hands-back-facts-to-remember-replies-to-wait-for-reports),
+  the headers in your inbox there to find that reply (only it is kept). All local.
 - **Sends to the AI:** commit messages and dates, changed-file **names**, the
   folder structure, `TODO`/`FIXME` lines, and (for a repo review) an excerpt of
   the README and any `CLAUDE.md`/`AGENTS.md` conventions. With email on, it also
@@ -933,6 +1057,13 @@ ticks on what you sent: a chat with unread messages is from them; ticks, "You:" 
 chats with unread messages from them count on the Dashboard and in Standup, get a
 notification and a brief, and the brief and the card's chat are told who each one
 is from.
+
+**Mail: only unread mail needs you.** Gmail starts each unread row with "unread".
+Symbiot keeps that mark, so an email you've already read (on your phone, say) is
+listed on the card marked "read", but it isn't counted, notified or briefed. One
+you read after Watch found it stops counting at the next read, and counts again if
+you mark it unread. Another inbox gets the same once Watch has seen it mark a row
+unread. Until then, every new email counts.
 
 **Draft a reply.** A new email under Watching has **Draft a reply**. It hands the
 email to your coding agent (the command in Settings → Handoff), which opens it in

@@ -21,7 +21,7 @@ import { siteUrl, browserArgs, isTrusted, isSend } from "../headless.mjs";
 import { deflateSync, gzipSync } from "node:zlib";
 import { changesSince, whatsNew, tarFile } from "../server.mjs";
 import { weeklyDue, lastSlot, autostartFile, autostartContent, notifyCmd } from "../desktop.mjs";
-import { itemKey, itemsOf, fromOf, newItems, remember, githubItems, draftsUrl } from "../watch.mjs";
+import { itemKey, itemsOf, fromOf, chatName as w_chatName, newItems, remember, githubItems, draftsUrl } from "../watch.mjs";
 import { lanAddresses, computerUrl } from "../phone.mjs";
 
 const INDEX = join(dirname(fileURLToPath(import.meta.url)), "..", "index.mjs");
@@ -259,16 +259,20 @@ try {
   const conns = claudeConnectors("/r", cj);
   ok("claude.ai connectors, your servers and this folder's, named as Claude names their tools", JSON.stringify(conns.map((c) => c.rule)) === JSON.stringify(["mcp__claude_ai_Google_Drive", "mcp__claude_ai_Notion", "mcp__my-mail", "mcp__local"]), conns);
   ok("one waiting to be authorized isn't ready", conns.find((c) => c.name === "claude.ai Notion").ready === false && conns.find((c) => c.name === "claude.ai Google Drive").ready, conns);
-  const wc = withConnectors(CLAUDE_CMD, "/r", cj);
+  const wc = withConnectors(CLAUDE_CMD, "/r", cj, {});
   ok("a Claude run allows the ready ones' tools, after the preset's own rules", wc === CLAUDE_CMD + ' "mcp__claude_ai_Google_Drive" "mcp__my-mail" "mcp__local"', wc);
-  ok("a Claude command with no --allowedTools gets one; another agent's runs as-is", withConnectors('claude -p "{prompt}"', "", cj) === 'claude -p "{prompt}" --allowedTools "mcp__claude_ai_Google_Drive" "mcp__my-mail"' && withConnectors('codex exec "{prompt}"', "", cj) === 'codex exec "{prompt}"', withConnectors('claude -p "{prompt}"', "", cj));
-  ok("no ~/.claude.json: nothing added", withConnectors(CLAUDE_CMD, "", join(ROOT, "none.json")) === CLAUDE_CMD, "");
+  ok("a Claude command with no --allowedTools gets one; another agent's runs as-is", withConnectors('claude -p "{prompt}"', "", cj, {}) === 'claude -p "{prompt}" --allowedTools "mcp__claude_ai_Google_Drive" "mcp__my-mail"' && withConnectors('codex exec "{prompt}"', "", cj, {}) === 'codex exec "{prompt}"', withConnectors('claude -p "{prompt}"', "", cj, {}));
+  ok("no ~/.claude.json: nothing added", withConnectors(CLAUDE_CMD, "", join(ROOT, "none.json"), {}) === CLAUDE_CMD, "");
   // linked in Symbiot (Links): Gmail with no Claude connector, Drive with one, Notion's not authorized, Trello has none to have
   const linkedHere = { gmail: { at: 1 }, gdrive: { at: 1 }, notion: { at: 1 }, trello: { at: 1 } };
+  // the first run after you connect Gmail has its tools before ~/.claude.json lists it: they were all denied
+  const wlink = withConnectors(CLAUDE_CMD, "", cj, linkedHere);
+  ok("a site linked in Symbiot is allowed its claude.ai connector's tools before Claude records it (Gmail), once each; one with no claude.ai connector adds nothing (Trello)", wlink === CLAUDE_CMD + ' "mcp__claude_ai_Google_Drive" "mcp__my-mail" "mcp__claude_ai_Gmail" "mcp__claude_ai_Notion"', wlink);
   const lc = linkedConnectors(conns, linkedHere);
   ok("linkedConnectors: which sites linked in Symbiot Claude has a connector for (Drive), not ready (Notion), or none (Gmail)", JSON.stringify(lc) === JSON.stringify([{ id: "gmail", name: "Gmail", connector: "", ready: false }, { id: "gdrive", name: "Google Drive", connector: "claude.ai Google Drive", ready: true }, { id: "notion", name: "Notion", connector: "claude.ai Notion", ready: false }]), lc);
   const cl = connectorsLine(CLAUDE_CMD, cj, linkedHere);
   ok("a run's brief says which connectors it has, that Gmail (linked only in Symbiot) isn't one, and where to connect it", /this run can use Google Drive \(`mcp__claude_ai_Google_Drive__…` tools\)/.test(cl) && /Gmail and Notion are linked in Symbiot but not ready as a Claude connector, so this run has no tools for them: don't say you checked them/.test(cl) && /claude\.ai → Settings → Connectors/.test(cl) && /watch new/.test(cl) && connectorsLine('codex exec "{prompt}"', cj, linkedHere) === "", cl);
+  ok("...and that their tools are allowed if they turn up anyway, as the command allows them", /If `mcp__claude_ai_Gmail__…` or `mcp__claude_ai_Notion__…` tools are here after all, the connector was just connected: they're allowed/.test(cl), cl);
   ok("...in TASKS.md's context", buildTasksMd("r", { connectors: cl }, [{ text: "Check my mail" }]).includes("- **Connectors:** " + cl), "");
   rmSync(got, { force: true });
   execSync(fillHandoff(wc, fake), { shell: "/bin/bash", stdio: "ignore", env: { ...process.env, PATH: fake + ":" + process.env.PATH } });
@@ -431,6 +435,13 @@ try {
     const ext2 = a.startHeldTasks(dir); out.extStarted = !!ext2 && ext2.fromHeld && readFileSync(f, "utf8") === "- [x] D\\n- [ ] E\\n";
     out.extOnce = a.startHeldTasks(dir) === null;
     await until(() => ext2.status !== "running");
+    // the user said to drop B: the agent deletes its line while a new brief is held
+    a.writeTasks(dir, "- [ ] A\\n- [ ] B\\n");
+    const ext3 = spawn("sleep", ["1"]), exited3 = new Promise((r) => ext3.on("exit", r));
+    writeFileSync(dir + "/.symbiot/agent.pid", JSON.stringify({ pid: ext3.pid, id: "ext3", startedAt: Date.now(), owner: 2147483646 }));
+    a.writeTasks(dir, "- [ ] A\\n- [ ] B\\n- [ ] C\\n"); writeFileSync(f, "- [ ] A\\n");
+    out.dropped = a.droppedTasks(dir).map((d) => d.text);
+    await exited3; out.dropRelease = a.releaseHeldTasks(dir) && readFileSync(f, "utf8"); out.droppedAfter = a.droppedTasks(dir).map((d) => d.text);
     console.log(JSON.stringify(out));`], { encoding: "utf8", timeout: 30000, env: { ...process.env, HOME: hhome, USERPROFILE: hhome } });
   let hv = {}; try { hv = JSON.parse(hd.stdout.trim().split("\n").pop()); } catch { console.log(hd.stdout, hd.stderr); }
   ok("no agent running -> TASKS.md is written straight away", hv.freeHeld === false, hv);
@@ -442,6 +453,8 @@ try {
   ok("a later send when free replaces a leftover held brief", hv.supersede === false && hv.superseded, hv);
   ok("held for a push --open agent: nothing starts while it runs", hv.extHeld === true && hv.extAuto === false && hv.extEarly === null, hv);
   ok("...and once it has exited, the next check starts one on the held tasks, once", hv.extStarted && hv.extOnce, hv);
+  ok("a task the agent deleted from TASKS.md is seen as dropped", JSON.stringify(hv.dropped) === '["B"]', hv.dropped);
+  ok("...the held brief lands without it, and it stays dropped", hv.dropRelease === "- [ ] A\n- [ ] C\n" && JSON.stringify(hv.droppedAfter) === '["B"]', [hv.dropRelease, hv.droppedAfter]);
 
   console.log("APPROVE — approved work ships: branch off the default, commit (minus .symbiot/), push");
   const gitEnv = { ...process.env, GIT_CONFIG_GLOBAL: join(ROOT, "globalgitconfig"), GIT_CONFIG_SYSTEM: "/dev/null", GIT_TERMINAL_PROMPT: "0" };
@@ -538,6 +551,12 @@ try {
     // the agent ticks the old wording of the task that has since taken the longer one
     writeFileSync(f, "- [x] " + del + "\\n"); m.syncTasks();
     out.eAfter = tasks().find((x) => x.id === out.e1.id);
+    // a task longer than a task holds (a handed-over email): nothing cut, its line links to the whole of it
+    const longText = "Draft an email to Jono about forwarding for the Voxi number.\\n\\n" + Array.from({ length: 120 }, (_, i) => "Point " + (i + 1) + ": say what the endpoint needs and why it matters here.").join("\\n") + "\\nGarth";
+    out.longText = longText; out.long = m.addTask(longText, "revapp", { after: "(handed over by ops)" }); m.pushTasks();
+    try { out.longBrief = readFileSync(f.replace("TASKS.md", "TASKS.next.md"), "utf8"); } catch { out.longBrief = readFileSync(f, "utf8"); } // held: the stand-in agent started above may still run
+    try { out.longFull = readFileSync(f.replace("TASKS.md", "full/" + out.long.id + ".md"), "utf8"); } catch {}
+    out.longAgain = m.addTask(longText, "revapp", { after: "(handed over by ops)" });
     console.log(JSON.stringify(out));`;
   mkdirSync(join(home, ".config", "symbiot"), { recursive: true });
   writeFileSync(join(home, ".config", "symbiot", "tasks.json"), JSON.stringify([{ id: "t1", text: "Fix the bug", repo: "revapp", done: false, ts: 1 }]));
@@ -569,6 +588,10 @@ try {
   ok("the same task with a clause more is a duplicate that takes the longer words, and not back", o.e2 && o.e2.duplicate && o.e2.reworded && o.e2.id === o.e1.id && /Also/.test(o.e2.text) && o.e3 && o.e3.duplicate && /Also/.test(o.e3.text) && o.nCount === 2, [o.e2, o.e3, o.nCount]);
   ok("a short task with more words on the end is still its own task", o.short2 && !o.short2.duplicate && o.short2.id !== o.short1.id, [o.short1, o.short2]);
   ok("an agent's tick on the old wording still sends the reworded task to review", o.eAfter && o.eAfter.review === true, o.eAfter);
+  const lg = o.long || {};
+  ok("a task too long for one line keeps all of it; its line is whole sentences and a link to the rest", lg.full === o.longText + "\n\n(handed over by ops)" && lg.text.length < 1000 && /^Draft an email to Jono.*\. … Full text: `\.symbiot\/full\/[0-9a-f]+\.md` \(handed over by ops\)$/.test(lg.text) && lg.text.includes("`.symbiot/full/" + lg.id + ".md`"), lg.text);
+  ok("...the brief lists that line, and its full text goes out with it, sign-off and all", (o.longBrief || "").includes("- [ ] " + lg.text) && o.longFull === lg.full + "\n" && /Point 120: .*\nGarth\n\n\(handed over by ops\)\n$/.test(o.longFull || ""), (o.longBrief || "").split("## Tasks")[1]);
+  ok("...and handed over again, it's the same task", o.longAgain && o.longAgain.duplicate && o.longAgain.id === lg.id, o.longAgain);
   ok("sameTask: case, spacing and punctuation aside; a clause more only after 8+ words", sameTask("Fix it: `now`", "fix it (now)") && !sameTask("Fix the bug", "Fix the bug in the login form") && sameTask("one two three four five six seven eight", "One two three four five six seven eight, nine.") && !sameTask("one two three four five six seven eight", "one two three four five six seven eighty") && !sameTask("", ""), "");
   ok("uniqueTasks keeps one of each, in the words that say the most", JSON.stringify(uniqueTasks(["a b c d e f g h", "Other", "A b c d e f g h, i j.", "other!"])) === JSON.stringify(["A b c d e f g h, i j.", "Other"]), uniqueTasks(["a b c d e f g h", "Other", "A b c d e f g h, i j.", "other!"]));
   // the two Jono asks, as two runs worded them: the same names, mostly the same words
@@ -577,6 +600,10 @@ try {
   const gmailWhole = ["Whole page for Gmail too: scroll the list of mail inside the page and put the pieces together, so a whole inbox is one screen", "Map the whole page at once: one tall screenshot with every button, link and field on it, for a page that scrolls as a whole (not for Gmail, whose list scrolls inside the page)"];
   ok("sameTask: the same ask in other words is one task (the two Jono asks), and TASKS.md lists it once", sameTask(jono1, jono2) && uniqueTasks([jono1, jono2]).length === 1, uniqueTasks([jono1, jono2]));
   ok("...but not two tasks that share a topic, or name different things", !sameTask(...gmailWhole) && !sameTask(jono2, jono2.replace(/Jono/g, "Thandi")) && !sameTask("Ask Jono to verify the signature header on his endpoint before go-live", "Ask Jono to sign the contract on his side before go-live"), "");
+  const mailShort = "A mail connector linked in Symbiot still doesn't reach agent runs (Drive does now). Pass its `mcp__…` tools through, or tell the user it isn't wired up.";
+  const mailSteps = "In the symbiot repo: a mail connector linked in Symbiot still doesn't reach agent runs, but the Drive connector now does. 1) Find where Drive's `mcp__…` tools get passed into agent runs. Search for the Drive connector and the `mcp__` allow-list the agent command (`agentCmd` in ~/.config/symbiot/config.json) is launched with. 2) Apply the same pass-through for the linked mail connector's `mcp__…` tools. 3) If it can't be passed through, surface a clear message to the user. 4) Follow CONTRIBUTING.md (plain ES modules, no build step) and run the lint/tests.";
+  ok("sameTask: a task spelled out in steps is the task it spells out (its first sentence, without \"In the … repo:\"), and TASKS.md lists the steps once", sameTask(mailShort, mailSteps) && sameTask(mailSteps, mailShort) && JSON.stringify(uniqueTasks([mailShort, mailSteps])) === JSON.stringify([mailSteps]), uniqueTasks([mailShort, mailSteps]));
+  ok("...but not when its first sentence is another task, or both are in steps", !sameTask(mailSteps, "A calendar connector linked in Symbiot still doesn't reach agent runs (Drive does now). Pass its tools through.") && !sameTask(mailSteps, mailSteps.replace(/Drive/g, "Notion")) && !sameTask("Draft the email to Jono. Ask him for: 1) the endpoint URL 2) the shared secret, sent through a secure channel", jono2), "");
 
   console.log("RELEASE — warn when the default branch is past its last v* tag");
   const rel = build("release", `git init -q -b main && git config user.email t@x.co && git config user.name T
@@ -694,7 +721,8 @@ try {
   ok("suggestions are their own list (checkbox bullets too)", pq.suggestions.join("|") === "Add a --json flag to drift|Cache the map scan", pq.suggestions);
   const longIdea = "Next steps: " + "x".repeat(900), longOpt = "👤 You: " + "y".repeat(700);
   const pl = parseQuestions(`## Questions\n### Long?\n- ${longOpt}\n\n## Suggestions\n- ${longIdea}\n- ${"z".repeat(1200)}\n`);
-  ok("a long idea or option arrives whole, up to the 1000 a task holds", pl.suggestions[0] === longIdea && pl.questions[0].options[0] === longOpt && pl.suggestions[1].length === 1000, pl.suggestions.map((s) => s.length));
+  const pl2 = parseQuestions(`## Suggestions\n- ${"word ".repeat(1000)}\n`);
+  ok("a long idea or option arrives whole, up to the 4000 a task holds, and past that ends at a word", pl.suggestions[0] === longIdea && pl.questions[0].options[0] === longOpt && pl.suggestions[1] === "z".repeat(1200) && pl2.suggestions[0].length <= 4000 && /word…$/.test(pl2.suggestions[0]), [pl.suggestions.map((s) => s.length), pl2.suggestions[0].slice(-20)]);
   // an idea for another project names it: an agent on coral with an idea for Symbiot
   const aqDir = join(ROOT, "aq"), aqHome = join(ROOT, "aqhome");
   mkdirSync(join(aqDir, ".symbiot"), { recursive: true }); mkdirSync(join(aqHome, ".config", "symbiot"), { recursive: true });
@@ -1079,7 +1107,7 @@ try {
   ok("itemKey: the same row whether its time reads 9:05 AM, Oct 5, 5 Oct, 2 hours ago or it's unread", new Set(["Ann, Lunch?, 9:05 AM, Free Friday", "unread, Ann, Lunch?, Oct 5, Free Friday", "Ann, Lunch?, 5 Oct, Free Friday", "Ann, Lunch?, 2 hours ago, Free Friday", "Ann, Lunch?, 10/05/2026, Free Friday"].map(k)).size === 1, ["Ann, Lunch?, 9:05 AM, Free Friday", "Ann, Lunch?, Oct 5, Free Friday"].map(k));
   ok("itemKey: keeps what tells two rows apart (a version, a word that looks like a month)", k("Release v1.2.3 is out") !== k("Release v1.2.4 is out") && k("Mark 12 says hi") === "mark 12 says hi", [k("Release v1.2.3 is out"), k("Mark 12 says hi")]);
   const its = itemsOf({ items: [{ kind: "link", label: "Inbox" }, { kind: "row", label: "unread, Ann, Lunch?", text: "unread, Ann, Lunch?, and the rest of it" }, { kind: "row", label: "row" }] });
-  ok("itemsOf: a page's rows (all their text, without 'unread'), else its links", its.length === 1 && its[0].text === "Ann, Lunch?, and the rest of it" && itemsOf({ items: [{ kind: "link", label: "Pull request 12", href: "https://x/12" }, { kind: "button", label: "Menu" }] }).map((x) => x.href).join() === "https://x/12", its);
+  ok("itemsOf: a page's rows (all their text, without 'unread' but marked unread), else its links", its.length === 1 && its[0].text === "Ann, Lunch?, and the rest of it" && its[0].unread === 1 && itemsOf({ items: [{ kind: "link", label: "Pull request 12", href: "https://x/12" }, { kind: "button", label: "Menu" }] }).map((x) => x.href).join() === "https://x/12", its);
   const ni = newItems([k("Ann, Lunch?")], [{ text: "Sam, Contract" }, { text: "Ann, Lunch?" }, { text: "Sam, Contract" }]);
   ok("newItems: only rows not seen before, once each; remember keeps the newest last", ni.fresh.length === 1 && ni.fresh[0].text === "Sam, Contract" && ni.keys.length === 2 && remember(["a", "b", "c"], ["b", "d"]).join() === "a,c,b,d", ni);
   const whome = join(ROOT, "whome"); mkdirSync(whome, { recursive: true });
@@ -1115,6 +1143,31 @@ try {
   if (process.platform !== "win32") ok("watch.json is readable by you only (0600)", wo.mode === 0o600, wo.mode);
   ok("dueWatches: due once its minutes have passed, not straight after a read", wo.due === 1 && wo.notDue === 0, [wo.due, wo.notDue]);
   ok("removeWatch: stops it and forgets what it found", wo.rm && wo.rm.ok && wo.after && wo.after.watches.length === 0 && wo.after.news.length === 0, wo.after);
+
+  console.log("WATCH GMAIL — only unread mail waits on you: Gmail starts an unread row with \"unread\"");
+  const gmhome = join(ROOT, "gmhome"); mkdirSync(gmhome, { recursive: true });
+  const gmx = spawnSync(process.execPath, ["--input-type=module", "-e", `
+    import * as w from ${JSON.stringify(join(dirname(INDEX), "watch.mjs"))};
+    const row = (label) => ({ kind: "row", label });
+    let page = { url: "https://mail.google.com/mail/u/0/#inbox", items: [row("unread, Ann, Lunch?, 9:05 AM"), row("Bob, Invoice, 8:00 AM")] };
+    const told = [], opts = { read: async () => page, notify: (t, b) => told.push([t, b]) }, out = {};
+    out.add = w.addWatch({ site: "https://mail.google.com/mail/u/0/#inbox" });
+    out.first = await w.checkWatch(out.add.id, opts);
+    // Cat's came in unread; Dan's you'd already read on your phone before Watch read the inbox
+    page = { ...page, items: [row("unread, Cat, Contract, 10:30 AM"), row("Dan, Receipt, 10:20 AM"), ...page.items] };
+    out.next = await w.checkWatch(out.add.id, opts); out.told = told.slice(); out.board = w.watchBoard(24).cards[0]; out.waiting = w.waitingOn(24).map((x) => x.label);
+    // then you read Cat's on your phone too
+    page = { ...page, items: [row("Cat, Contract, 10:30 AM"), ...page.items.slice(1)] };
+    out.later = await w.checkWatch(out.add.id, opts); out.boardLater = w.watchBoard(24).cards[0]; out.toldLater = told.length;
+    // and marked it unread again
+    page = { ...page, items: [row("unread, Cat, Contract, Oct 6"), ...page.items.slice(1)] };
+    await w.checkWatch(out.add.id, opts); out.boardAgain = w.watchBoard(24).cards[0];
+    console.log(JSON.stringify(out));`], { encoding: "utf8", env: { ...process.env, HOME: gmhome, USERPROFILE: gmhome } });
+  let gm = {}; try { gm = JSON.parse(gmx.stdout); } catch {}
+  const gmRead = (r) => ((r || {}).new || []).map((n) => n.text.split(",")[0] + (n.read ? ":read" : "")).join();
+  ok("checkWatch on Gmail: both new emails are kept, the one you'd read marked read; only the unread one is notified", gm.next && gmRead(gm.next) === "Cat,Dan:read" && (gm.told || []).length === 1 && /^1 new/.test(gm.told[0][0]) && /Cat/.test(gm.told[0][1]) && !/Dan/.test(gm.told[0][1]), [gm.next && gm.next.new, gm.told, gmx.stderr && gmx.stderr.slice(-600)]);
+  ok("...so the Dashboard and Standup say 1 email, and list both", gm.board && gm.board.count === 1 && gm.board.label === "1 email" && gm.board.items.length === 2 && gm.board.items.find((n) => n.read).text.startsWith("Dan") && JSON.stringify(gm.waiting) === '["1 email"]', [gm.board, gm.waiting]);
+  ok("...an email read on your phone after Watch found it stops counting, with nothing notified; marked unread again, it counts again", gm.boardLater && gm.boardLater.count === 0 && gm.boardLater.items.every((n) => n.read) && gm.toldLater === 1 && gm.boardAgain && gm.boardAgain.count === 1, [gm.boardLater, gm.boardAgain && gm.boardAgain.count]);
 
   console.log("WATCH GITHUB — your notifications through gh, and the brief");
   const ghn = (id, reason, type, title, updated, url) => ({ id, reason, updated_at: updated, subject: { type, title, url }, repository: { full_name: "pat/app", html_url: "https://github.com/pat/app" } });
@@ -1179,12 +1232,27 @@ try {
     out.theirs = await w.checkWatch(out.add.id, opts); out.told = told.slice(); out.briefed = briefed.slice();
     out.board = w.watchBoard(24).cards[0]; out.waiting = w.waitingOn(24).map((x) => x.label);
     out.chatBrief = w.chatBrief(out.mine.new[0], { name: "WhatsApp", url: "https://web.whatsapp.com/" });
+    // you read Ann's on your phone: the badge goes, the row stays
+    page = { ...page, items: [row("Ann 08:20 Are you coming?"), ...page.items.slice(1)] };
+    await w.checkWatch(out.add.id, opts); out.boardRead = w.watchBoard(24).cards[0];
+    // Mom writes; you answer her from your phone: her row's last message is now yours
+    page = { ...page, items: [row("Mom 08:30 call me when you can 1", { unread: 1 }), ...page.items] };
+    await w.checkWatch(out.add.id, opts); out.boardMom = w.watchBoard(24).cards[0];
+    page = { ...page, items: [row("Mom 08:34 calling you now", { mine: true }), ...page.items.slice(1)] };
+    await w.checkWatch(out.add.id, opts); out.boardAnswered = w.watchBoard(24).cards[0]; out.toldAfter = told.length;
+    // Ann writes again, unread: that counts, once
+    page = { ...page, items: [row("Ann 08:40 Still coming? 1", { unread: 1 }), ...page.items.filter((r) => !/^Ann/.test(r.label))] };
+    await w.checkWatch(out.add.id, opts); out.boardAgain = w.watchBoard(24).cards[0];
     console.log(JSON.stringify(out));`], { encoding: "utf8", env: { ...process.env, HOME: whahome, USERPROFILE: whahome } });
   let wa = {}; try { wa = JSON.parse(wax.stdout); } catch {}
   const waFrom = (r) => ((r || {}).new || []).map((n) => n.from).join();
   ok("checkWatch on WhatsApp: chats that moved up for what you sent are kept, marked yours or unknown, with no notification and no brief", wa.mine && waFrom(wa.mine) === "unknown,you,you" && wa.toldMine === 0 && wa.briefedMine === 0, [wa.mine && wa.mine.new, wa.toldMine, wa.briefedMine, wax.stderr && wax.stderr.slice(-600)]);
   ok("...a chat with unread messages from them is theirs, notified and briefed (the brief knows it's a chat)", wa.theirs && waFrom(wa.theirs) === "them" && wa.theirs.new[0].unread === 2 && (wa.told || []).length === 1 && /^1 new · web\.whatsapp\.com/.test(wa.told[0][0]) && (wa.briefed || []).length === 1 && wa.briefed[0].chat === true, [wa.theirs && wa.theirs.new, wa.told, wa.briefed]);
   ok("...so the Dashboard and Standup say 1 WhatsApp message needs you, not 4", wa.board && wa.board.count === 1 && wa.board.label === "1 WhatsApp message" && wa.board.items.length === 4 && JSON.stringify(wa.waiting) === '["1 WhatsApp message"]', [wa.board && wa.board.label, wa.waiting]);
+  ok("...a chat you read on your phone after Watch found it stops waiting on you: its badge is checked again on every read", wa.boardRead && wa.boardRead.count === 0 && wa.boardRead.items.some((n) => /^Ann 08:20/.test(n.text) && n.from === "them" && n.read), wa.boardRead);
+  ok("...a chat you answered from your phone stops too (its last message is yours now), with nothing notified", wa.boardMom && wa.boardMom.count === 1 && wa.boardAnswered && wa.boardAnswered.count === 0 && wa.toldAfter === 2, [wa.boardMom && wa.boardMom.count, wa.boardAnswered, wa.toldAfter]);
+  ok("...and a new unread message from them counts again, once", wa.boardAgain && wa.boardAgain.count === 1 && wa.boardAgain.items.filter((n) => n.from === "them" && !n.read).length === 1, wa.boardAgain);
+  ok("chatName: a chat's name is its row up to the time", w_chatName("Tee Gee 08:15 I was thinking") === "tee gee" && w_chatName("Team, Yesterday, You: on my way") === "team" && w_chatName("no time here") === "", "");
   ok("...and a drafted reply's brief doesn't call Tee Gee's preview their message", /Nothing in it was unread, so that last message may be the user's own/.test(wa.chatBrief || "") && !/who it's from/.test(wa.chatBrief || ""), (wa.chatBrief || "").slice(0, 600));
 
   console.log("DASHBOARD — a card per page you watch: your inbox, GitHub, WhatsApp (watch.mjs watchBoard)");

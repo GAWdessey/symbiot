@@ -36,6 +36,12 @@ function saveConfig(cfg) {
 const TASKS_PATH = join(CONFIG_DIR, "tasks.json");
 function loadTasks() { try { return JSON.parse(readFileSync(TASKS_PATH, "utf8")); } catch { return []; } }
 function saveTasks(t) { try { mkdirSync(CONFIG_DIR, { recursive: true }); writeFileSync(TASKS_PATH, JSON.stringify(t, null, 2)); return true; } catch { return false; } }
+// How much a task holds: one line in TASKS.md, long enough for a handover or a
+// pasted list of steps (1000 cut the Jono email task off mid-sentence). Longer,
+// it keeps its whole text (full) and its line links to that (tasks.mjs addTask).
+const TASK_MAX = 4000;
+// A heading or a one-line summary: cut at a word and marked "…", never mid-word.
+const clipWords = (s, max) => { s = String(s || ""); return s.length > max ? s.slice(0, max - 1).replace(/\s+\S*$/, "") + "…" : s; };
 // Two wordings of one task: the same words once case, spacing and punctuation
 // are set aside (a colon for a bracket, `code` for code), or one is the other
 // with a clause more on the end. An extension only counts when the shorter one
@@ -48,7 +54,7 @@ function sameTask(a, b) {
   const x = taskWords(a), y = taskWords(b); if (!x || !y) return false;
   if (x === y) return true;
   const [s, l] = x.length < y.length ? [x, y] : [y, x];
-  return (s.split(" ").length >= 8 && l.startsWith(s + " ")) || nearTask(a, b) || sameAsk(a, b);
+  return (s.split(" ").length >= 8 && l.startsWith(s + " ")) || nearTask(a, b) || sameAsk(a, b) || spelledOut(a, b);
 }
 // Nearly the same task, two ways:
 // - nearly all the same words in the same order, 12+ words each ("…nothing
@@ -101,6 +107,24 @@ function sameAsk(a, b) {
   if (!nx.size || nx.size !== ny.size || [...nx].some((w) => !ny.has(w))) return false;
   let both = 0; for (const w of x) if (y.has(w)) both++;
   return both / Math.min(x.size, y.size) >= ASK;
+}
+// A task spelled out in steps is the task it spells out: "A mail connector linked
+// in Symbiot still doesn't reach agent runs (Drive does now). Pass its tools
+// through…" and "In the symbiot repo: a mail connector linked in Symbiot still
+// doesn't reach agent runs, but the Drive connector now does. 1) Find where… 2)…".
+// The steps name much more (CONTRIBUTING.md, agentCmd), so the whole of it is
+// never the same ask; its first sentence, without "In the … repo:", is (sameAsk),
+// set against the other task or that one's first sentence. Stricter than sameAsk
+// on its own, as a first sentence is short: not when each has a word the other
+// hasn't ("a mail connector…" isn't "a calendar connector…").
+const STEPS = /(?:^|\s)1[.)]\s[\s\S]*\s2[.)]\s/;
+const firstSentence = (s) => { const m = String(s || "").match(/^(.*?[.!?])["'`)\]]*(?:\s|$)/s); return m ? m[1] : String(s || ""); };
+function bothAdd(a, b) { const x = askWords(a), y = askWords(b); return [...x].some((w) => !y.has(w)) && [...y].some((w) => !x.has(w)); }
+function spelledOut(a, b) {
+  const [s, l] = String(a || "").length < String(b || "").length ? [String(a || ""), String(b || "")] : [String(b || ""), String(a || "")];
+  if (!STEPS.test(l) || STEPS.test(s)) return false;
+  const head = firstSentence(l.split(/(?:^|\s)1[.)]\s/)[0].trim()).replace(/^in (?:the )?\S+ (?:repo|project|folder)\s*[:,]\s*/i, "");
+  return [s, firstSentence(s)].some((t) => sameAsk(head, t) && !bothAdd(head, t));
 }
 // One of each: near-duplicates collapse into the wording that says the most.
 function uniqueTasks(texts) {
@@ -156,4 +180,4 @@ function repoState(repoPath) {
   return { branch, dirty, del, mod, add, stale, staleBy, behind };
 }
 
-export { VERSION, LATEST_VERSION, semverGt, REGISTRY, checkLatest, CONFIG_DIR, CONFIG_PATH, loadConfig, saveConfig, loadTasks, saveTasks, taskWords, sameTask, uniqueTasks, sh, hasCmd, chromeBinary, repoState };
+export { VERSION, LATEST_VERSION, semverGt, REGISTRY, checkLatest, CONFIG_DIR, CONFIG_PATH, loadConfig, saveConfig, loadTasks, saveTasks, TASK_MAX, clipWords, taskWords, sameTask, uniqueTasks, sh, hasCmd, chromeBinary, repoState };
