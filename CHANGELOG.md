@@ -2,9 +2,13 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.53.1
+
+- **Named for Symbiot.** Agents working on their own is **Symbiosis** (Settings → Your agent); the guard that stops what only you do is **the membrane**; your answer going back into the same conversation is **one mind**; agents deciding what can be undone themselves is **instinct**. Same behaviour, each with what it does spelled out next to it.
+
 ## 0.53.0
 
-- **Agents work like Orca.** A Claude agent now just does the work, the way Claude does when you talk to it in Orca: no permission prompts, no "You" for a folder or a command. Symbiot's guard, which Claude Code runs before every action, still stops the few things only you do: pushing to main, force-pushing, publishing, deleting outside its folder, sudo, piping a script from the internet into a shell, reading your keys, changing Symbiot's settings. A stopped agent is told why and asks. Settings → Your agent → **Agents work like Orca** (on; off keeps allow lists).
+- **Agents work on their own.** A Claude agent now just does the work: no permission prompts, no "You" for a folder or a command. Symbiot's guard, which Claude Code runs before every action, still stops the few things only you do: pushing to main, force-pushing, publishing, deleting outside its folder, sudo, piping a script from the internet into a shell, reading your keys, changing Symbiot's settings. A stopped agent is told why and asks. Settings → Your agent → **Agents work on their own** (on; off keeps allow lists).
 - **One conversation that goes on.** When you answer an agent, the same conversation resumes, so it carries on knowing everything it knew, instead of a new agent rereading a brief.
 - **Agents decide like a colleague.** They choose what can be undone themselves and say what they chose; they ask only about what can't be undone, costs money, goes out in your name or needs who you are, with their pick first.
 

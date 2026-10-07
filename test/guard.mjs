@@ -1,4 +1,4 @@
-// Working like Orca (agents.mjs withTrust, resumeFor; guard.mjs): agents just do the work,
+// Agents working on their own (agents.mjs withTrust, resumeFor; guard.mjs): agents just do the work,
 // the guard stops the few things only the owner does, and an answer goes back into the
 // same conversation.
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, utimesSync } from "node:fs";
@@ -16,7 +16,7 @@ const a = await import("../agents.mjs");
 let pass = 0, fail = 0;
 function ok(name, cond, got) { if (cond) { pass++; console.log("  ✓ " + name); } else { fail++; console.log("  ✗ " + name + "  got: " + JSON.stringify(got).slice(0, 300)); } }
 
-console.log("THE GUARD — what an agent working like Orca still can't do");
+console.log("THE GUARD — what an agent working on its own still can't do");
 const o = { cwd: "/home/u/proj", home: "/home/u", branch: "symbiot/x" };
 const go = (c) => judge("Bash", { command: c }, o) === null, stop = (c, re) => (judge("Bash", { command: c }, o) || {}).why && re.test(judge("Bash", { command: c }, o).why);
 ok("the work goes ahead: tests, a branch push, deleting in its own folder, git in a chain", go("npm test") && go("git push -u origin symbiot/x") && go("rm -rf build dist") && go("cd sub && git status; ls -la") && go("curl -s https://example.com/api"), "");
@@ -31,9 +31,9 @@ ok("Symbiot's settings can be read but not changed", judge("Read", { file_path: 
 const GUARD = fileURLToPath(new URL("../guard.mjs", import.meta.url));
 const hook = (ev) => spawnSync(process.execPath, [GUARD], { input: JSON.stringify(ev), encoding: "utf8" });
 const blocked = hook({ tool_name: "Bash", tool_input: { command: "npm publish" }, cwd: "/tmp" }), allowed = hook({ tool_name: "Bash", tool_input: { command: "npm test" }, cwd: "/tmp" });
-ok("as Claude Code's hook: a blocked call exits 2 with the reason for the agent; anything else exits 0", blocked.status === 2 && /Blocked by Symbiot's guard: publishing/.test(blocked.stderr) && /QUESTIONS\.md/.test(blocked.stderr) && allowed.status === 0, [blocked.status, blocked.stderr, allowed.status]);
+ok("as Claude Code's hook: a blocked call exits 2 with the reason for the agent; anything else exits 0", blocked.status === 2 && /Blocked by Symbiot's membrane: publishing/.test(blocked.stderr) && /QUESTIONS\.md/.test(blocked.stderr) && allowed.status === 0, [blocked.status, blocked.stderr, allowed.status]);
 
-console.log("WORKING LIKE ORCA — trust, and one conversation that goes on");
+console.log("WORKING ON THEIR OWN — trust, and one conversation that goes on");
 const base = 'claude -p "{prompt}" --permission-mode acceptEdits --allowedTools "Bash(npm test:*)"';
 const full = a.withTrust(base);
 const settings = JSON.parse(readFileSync(a.GUARD_SETTINGS, "utf8"));

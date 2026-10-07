@@ -929,7 +929,7 @@ body.lq-light .btip .bta button:not(.quiet){background:#151A21;color:#FFFFFF}
 <h3 class="ssh">Hand off to your agent when you "Send to repos"</h3>
 <input id="agentcmd" type="text" placeholder="e.g.  aider --message &quot;{prompt}&quot; --yes   ·   code {dir}   ·   leave blank to just write the file">
 <div class="note muted">Runs in each repo after tasks are written. Use <b>{dir}</b> = repo path, <b>{prompt}</b> = the task instruction. Works with any agent or editor &mdash; it's your command.</div>
-<label class="check swl" style="margin-top:12px"><input type="checkbox" class="sw" id="agenttrust" checked> <span>Agents work like Orca: they just do it. Symbiot's guard still stops pushing to main, publishing, deleting outside their folder, sudo, your keys and Symbiot's settings. Off: they ask before anything outside their allow list.</span></label>
+<label class="check swl" style="margin-top:12px"><input type="checkbox" class="sw" id="agenttrust" checked> <span><b>Symbiosis</b> &middot; agents work on their own. They do the work without stopping to ask permission. <b>The membrane</b> still stops pushing to main, publishing, deleting outside their folder, sudo, reading your keys and changing Symbiot's settings. Off: they ask before anything outside their allow list.</span></label>
 <div id="agentpresets" style="margin-top:8px"></div>
 <div class="note muted" id="agentconnectors"></div>
 <div id="grantbox" style="margin-top:10px">
