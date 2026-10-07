@@ -2,6 +2,11 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.52.0
+
+- **Your agents, on the Tasks screen.** No need to open Agents: a line at the top says where everything stands ("1 question for you · 1 ready for your OK · 2 at work"), and a blob per project shows what its agent did or is doing, what it asks you (its answers as buttons, or your own words), Review and approve when its work is ready, and the extra tasks it suggests, each with **+ task** or **Skip**. The liquid moves left to make room.
+- **Agents, organised.** Runs are grouped: what needs you first, then what's at work, then what's finished, folded away. Handovers show only what's under way; the finished ones fold into one line, and repeats show once (×2).
+
 ## 0.51.2 — 2026-10-07
 
 - Replaced the Quit button with an X in the top corner, and Home warns about your AI, agent or connectors only when one is missing.
