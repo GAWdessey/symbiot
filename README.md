@@ -439,17 +439,26 @@ editor presets only open a tab and exit, so Symbiot can't see the agent you run
 in them. Send to repos stays disabled until its
 handoffs have started, so a double click can't send twice.
 
-### What agents may do without asking
+### Agents work like Orca
 
-Your work is the folders you gave Symbiot (Settings → Folders, and Knowledge folders),
-except the hidden folders at the top of your home (`~/.ssh`, `~/.config`). An agent
-reaches your knowledge folders from the start, and an ops agent your repos too. When
-one needs more, it proposes an allow list; if the list stays inside your work, can't
-run anything at all (a shell, sudo, a wildcard `rm`) and doesn't publish or reach
-another machine (`git push`, `npm publish`, `aws`, `docker`, `ssh`), Symbiot turns it
-on for that agent's folder and the agent carries on, with no question for you. Every
-list also blocks editing Symbiot's own settings. Only what reaches outside your work
-comes to you, with the reason.
+Talk to Symbiot and its agents just do the work, the way Claude does in Orca: a Claude
+run skips permission checks (`--dangerously-skip-permissions`), and when it asks you
+something, your answer goes back into **the same conversation** (`--resume`), so the
+agent carries on knowing everything it knew. Its brief tells it to decide what can be
+undone itself (the approach, names, which of two fixes) and say what it chose, and to
+ask only about what can't be undone, costs money, goes out in your name or needs who
+you are, with options and its pick first.
+
+What it still can't do is stopped by **Symbiot's guard** (`guard.mjs`), which Claude
+Code runs before every action, whatever the agent decided: pushing to main or master,
+force-pushing, publishing a package, deleting outside its folder (or `/`), sudo, piping
+a script from the internet into a shell, reading your SSH keys or cloud credentials,
+and changing Symbiot's own settings. A blocked agent is told why, and asks.
+
+Settings → Your agent → **Agents work like Orca** is on by default. Off, a run keeps
+its allow list, and an allow list it proposes is turned on by itself only when it stays
+inside your work: the folders you gave Symbiot, not `~/.ssh` or `~/.config`, nothing
+that could run anything, nothing that publishes or reaches another machine.
 
 ### Questions from your agent
 

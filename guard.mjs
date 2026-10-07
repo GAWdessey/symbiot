@@ -1,0 +1,86 @@
+#!/usr/bin/env node
+// The guard: what an agent working "like Orca" (permission checks skipped, so it just
+// does the work) still can't do. Claude Code runs this before every tool call (a
+// PreToolUse hook, from the settings Symbiot passes the run), and a call it blocks
+// never happens, whatever the agent was told or decided. The list is short on purpose:
+// the things only the owner should do, or that can't be undone.
+//   - push to main/master, or force-push; publish a package
+//   - delete outside the agent's own folder, or wipe a disk
+//   - sudo, or pipe something from the internet into a shell
+//   - read SSH keys or cloud credentials; change Symbiot's own settings
+// judge(tool, input, { cwd, home }) → null (go ahead) or { why }.
+import { resolve, join, relative } from "node:path";
+import { homedir } from "node:os";
+import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+
+const SECRET = [".ssh", ".gnupg", ".aws", ".azure", ".kube", ".docker/config.json", ".config/gcloud", ".config/gh/hosts.yml", ".netrc", ".npmrc", ".pypirc", ".git-credentials"];
+const under = (p, d) => p === d || p.startsWith(d.endsWith("/") ? d : d + "/");
+const expand = (p, home, cwd) => resolve(cwd, String(p).replace(/^~(?=\/|$)/, home).replace(/^\$HOME(?=\/|$)/, home).replace(/^\$\{HOME\}(?=\/|$)/, home));
+function secretPath(p, home) { return SECRET.some((s) => under(p, join(home, s))); }
+function symbiotConfig(p, home) { return p === join(home, ".config", "symbiot", "config.json"); }
+
+// the branch a bare `git push` pushes: the one checked out in cwd
+function currentBranch(cwd) { try { return execFileSync("git", ["-C", cwd, "rev-parse", "--abbrev-ref", "HEAD"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim(); } catch { return ""; } }
+
+function judgeBash(cmd, { cwd, home, branch }) {
+  const c = String(cmd || "");
+  // each simple command on its own (a; b && c | d)
+  for (const part of c.split(/&&|\|\||;|\n/)) {
+    const s = part.trim(); if (!s) continue;
+    const w = s.split(/\s+/);
+    if (/^(sudo|su|doas)$/.test(w[0])) return { why: "sudo: only you run things as root" };
+    if (/^(shutdown|reboot|poweroff|halt)$/.test(w[0])) return { why: "shutting the computer down is yours to do" };
+    if (/^(mkfs(\.\w+)?|fdisk|parted|wipefs)$/.test(w[0]) || (/^dd$/.test(w[0]) && /\bof=\/dev\//.test(s))) return { why: "that writes a disk directly" };
+    if (/^git$/.test(w[0]) || /^git\s/.test(s)) {
+      const args = w.slice(1).filter((x, i, a) => !(a[i - 1] === "-C" || x === "-C"));
+      if (args[0] === "push") {
+        if (args.some((a) => /^(-f|--force|--force-with-lease)(=|$)/.test(a) || /^\+/.test(a))) return { why: "force-pushing rewrites history others may have" };
+        const refs = args.slice(1).filter((a) => !a.startsWith("-"));
+        const target = refs.length >= 2 ? refs[refs.length - 1].split(":").pop() : branch;
+        if (/^(main|master)$/.test(target || "")) return { why: "pushing to " + target + ": changes go on a branch and a PR (Approve), never straight to " + target };
+      }
+    }
+    if (/^(npm|yarn|pnpm|bun)$/.test(w[0]) && w[1] === "publish") return { why: "publishing a package is yours to do (Approve ships it)" };
+    if (/^(twine|cargo|gem|poetry)$/.test(w[0]) && /\b(upload|publish|push)\b/.test(s)) return { why: "publishing a package is yours to do" };
+    if (/^rm$/.test(w[0])) {
+      const paths = w.slice(1).filter((a) => !a.startsWith("-"));
+      for (const p of paths) {
+        const abs = expand(p, home, cwd);
+        if (abs === "/" || abs === home || /^\/(\*|bin|boot|dev|etc|lib|lib64|proc|root|sbin|sys|usr|var)(\/|$)/.test(abs)) return { why: "deleting " + p + " can't be undone" };
+        if (!under(abs, cwd) && !under(abs, "/tmp") && !under(abs, join(home, ".cache"))) return { why: "deleting outside this folder (" + p + "): ask for it" };
+      }
+    }
+    if (/^(cat|less|more|head|tail|cp|scp|base64|xxd|strings|grep|rg|sed|awk)$/.test(w[0])) {
+      for (const p of w.slice(1).filter((a) => !a.startsWith("-"))) { if (secretPath(expand(p, home, cwd), home)) return { why: "your keys and cloud credentials stay yours" }; }
+    }
+    if (/(^|\s)(>|>>|tee|sed\s+-i)\s*\S*\.config\/symbiot\/config\.json/.test(s)) return { why: "Symbiot's own settings are yours to change" };
+  }
+  if (/\b(curl|wget)\b[^|]*\|\s*(sudo\s+)?(ba|z|da)?sh\b/.test(c)) return { why: "running a script straight from the internet" };
+  return null;
+}
+
+function judge(tool, input = {}, { cwd = process.cwd(), home = homedir(), branch } = {}) {
+  const t = String(tool || "");
+  if (t === "Bash") return judgeBash(input.command, { cwd, home, branch: branch != null ? branch : currentBranch(cwd) });
+  const p = input.file_path || input.path || input.notebook_path;
+  if (!p) return null;
+  const abs = expand(p, home, cwd);
+  if (secretPath(abs, home)) return { why: "your keys and cloud credentials stay yours" };
+  if (/^(Edit|Write|MultiEdit|NotebookEdit)$/.test(t) && symbiotConfig(abs, home)) return { why: "Symbiot's own settings are yours to change" };
+  return null;
+}
+
+// As a hook: Claude Code passes the call as JSON on stdin; exit 2 blocks it, and what's
+// on stderr goes back to the agent as the reason (so it can ask, or do it another way).
+const main = process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+if (main) {
+  let raw = ""; try { raw = readFileSync(0, "utf8"); } catch {}
+  let ev = {}; try { ev = JSON.parse(raw); } catch {}
+  const r = judge(ev.tool_name, ev.tool_input || {}, { cwd: ev.cwd || process.cwd() });
+  if (r) { process.stderr.write("Blocked by Symbiot's guard: " + r.why + ". If it's needed, ask the user in .symbiot/QUESTIONS.md with options.\n"); process.exit(2); }
+  process.exit(0);
+}
+
+export { judge, judgeBash, relative };

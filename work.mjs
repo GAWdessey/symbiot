@@ -53,6 +53,7 @@ function parseRun(text) {
   const byId = new Map(), tasks = new Map(); let thinking = false;
   for (const e of events) {
     const at = e.timestamp ? Date.parse(e.timestamp) : null;
+    if (e.session_id && !out.session) out.session = String(e.session_id);
     if (e.type === "system" && e.subtype === "init") { out.model = String(e.model || ""); continue; }
     if (e.type === "assistant" && e.message && Array.isArray(e.message.content)) {
       for (const b of e.message.content) {
