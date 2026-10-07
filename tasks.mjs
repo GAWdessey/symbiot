@@ -433,7 +433,10 @@ function shipChanges(path, texts, opts = {}) {
   const base = gitDefaultBranch(path), day = new Date().toISOString().slice(0, 10); let branch = ch.branch, fresh = "";
   const newBranch = () => {
     const stem = "symbiot/" + branchSlug(!texts.length ? `changes-${day}` : texts.length === 1 ? texts[0] : `${texts.length}-tasks-${day}`);
-    let b = stem; for (let i = 2; git(path, ["rev-parse", "--verify", "-q", "refs/heads/" + b]).ok; i++) b = `${stem}-${i}`;
+    // a name free here and on origin: an earlier day's "7 tasks" may be merged and gone
+    // locally but still there, and pushing onto it is refused
+    const taken = (b) => git(path, ["rev-parse", "--verify", "-q", "refs/heads/" + b]).ok || git(path, ["rev-parse", "--verify", "-q", "refs/remotes/origin/" + b]).ok;
+    let b = stem; for (let i = 2; taken(b); i++) b = `${stem}-${i}`;
     return b;
   };
   if (branch === base) {
@@ -462,7 +465,13 @@ function shipChanges(path, texts, opts = {}) {
   const noted = (note) => ({ ...out, note: (fresh ? fresh + " " : "") + note });
   if (opts.push === false) return out;
   if (!git(path, ["remote", "get-url", "origin"]).ok) return noted("No origin remote — committed locally.");
-  const ps = git(path, ["push", "-u", "origin", branch], 120000);
+  let ps = git(path, ["push", "-u", "origin", branch], 120000);
+  // refused because origin's branch of that name went another way (an earlier PR of
+  // that name, merged): the commit moves to a fresh name and goes up on that
+  if (!ps.ok && /rejected|non-fast-forward|fetch first/i.test(ps.err)) {
+    const next = newBranch();
+    if (git(path, ["branch", "-m", branch, next]).ok) { branch = next; out.branch = next; ps = git(path, ["push", "-u", "origin", branch], 120000); }
+  }
   if (!ps.ok) return noted("Committed, but the push failed: " + (ps.err.split("\n").filter(Boolean).pop() || "unknown error"));
   out.pushed = true;
   if (opts.pr === false) return out;
