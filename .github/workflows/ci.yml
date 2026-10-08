@@ -33,3 +33,31 @@ jobs:
         env:
           SYMBIOT_NO_OPEN: "1"
         run: npm test
+
+  windows:
+    # Symbiot on a Windows PC. test/windows.mjs is what has to work there (it starts,
+    # opens into setup, finds your Claude subscription through claude.cmd, long
+    # instructions get through, uninstall works): it must pass. The whole suite runs
+    # too, each file on its own with a table at the end: Windows isn't green there yet,
+    # so that step reports without blocking.
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm ci
+      - run: npm run lint
+      - name: Git identity for tests
+        run: |
+          git config --global user.email "ci@symbiot.local"
+          git config --global user.name "symbiot ci"
+      - name: What has to work on Windows
+        env:
+          SYMBIOT_NO_OPEN: "1"
+        run: node test/windows.mjs
+      - name: The whole suite on Windows (reports, doesn't block yet)
+        continue-on-error: true
+        env:
+          SYMBIOT_NO_OPEN: "1"
+        run: node test/each.mjs

@@ -22,7 +22,8 @@ writeFileSync(fake, `#!/usr/bin/env node
 const fs = require("fs"), a = process.argv.slice(2);
 if (a[0] === "auth") { console.log(JSON.stringify({ loggedIn: process.env.SIGNED === "1", authMethod: "claude.ai" })); process.exit(0); }
 let stdin = ""; process.stdin.on("data", (d) => stdin += d).on("end", () => {
-  fs.writeFileSync(${JSON.stringify(calls)}, JSON.stringify({ args: a, stdin, cwd: process.cwd() }));
+  const fi = a.indexOf("--system-prompt-file"), sys = fi >= 0 ? fs.readFileSync(a[fi + 1], "utf8") : (a.indexOf("--system-prompt") >= 0 ? a[a.indexOf("--system-prompt") + 1] : null);
+  fs.writeFileSync(${JSON.stringify(calls)}, JSON.stringify({ args: a, stdin, cwd: process.cwd(), sys }));
   if (process.env.FAIL === "1") { console.log(JSON.stringify({ type: "result", is_error: true, result: "Your usage limit is reached" })); process.exit(1); }
   console.log(JSON.stringify({ type: "result", subtype: "success", is_error: false, result: "hello from your subscription" }));
 });
@@ -53,7 +54,8 @@ try {
   const a = await write("You are Symbiot.", "Say hello.");
   const c = JSON.parse(readFileSync(calls, "utf8"));
   ok("its answer is the reply", a === "hello from your subscription", a);
-  ok("run as claude -p with Symbiot's system prompt, the prompt on stdin, JSON out", c.args[0] === "-p" && c.args.includes("--output-format") && c.args[c.args.indexOf("--system-prompt") + 1] === "You are Symbiot." && c.stdin === "Say hello.", c);
+  ok("run as claude -p with Symbiot's system prompt (from a file), the prompt on stdin, JSON out", c.args[0] === "-p" && c.args.includes("--output-format") && c.args.includes("--system-prompt-file") && c.sys === "You are Symbiot." && c.stdin === "Say hello.", c);
+  ok("…the file is gone afterwards (it holds Symbiot's instructions)", !existsSync(c.args[c.args.indexOf("--system-prompt-file") + 1]), "");
   ok("…no tools, none of your settings, plugins or servers, no session kept", c.args[c.args.indexOf("--tools") + 1] === "" && c.args[c.args.indexOf("--setting-sources") + 1] === "" && c.args.includes("--strict-mcp-config") && c.args.includes("--no-session-persistence"), c.args);
   ok("…never --bare (it ignores the subscription sign-in), and in Symbiot's own folder", !c.args.includes("--bare") && c.cwd === CFG, [c.args, c.cwd]);
   await write("You are Symbiot.", "What's this?", { images: [{ mime: "image/png", data: Buffer.from("png").toString("base64") }] });

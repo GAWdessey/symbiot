@@ -4,7 +4,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { spawn, spawnSync } from "node:child_process";
 import { homedir, totalmem, cpus as oscpus } from "node:os";
 import { join } from "node:path";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync, unlinkSync } from "node:fs";
 import { loadConfig, saveConfig, sh, hasCmd, CONFIG_DIR } from "./core.mjs";
 
 const MAX_TOKENS = 1600;
@@ -26,13 +26,33 @@ const PROVIDERS = {
 // agents. Whether it's there and signed in: `claude auth status` (a quarter of a
 // second), kept 5 minutes. SYMBIOT_CLAUDE_CMD replaces the command (the tests' stand-in).
 const CLAUDE_BIN = () => process.env.SYMBIOT_CLAUDE_CMD || "claude";
+// How to run it. Windows: npm installs `claude` as claude.cmd, which Node can only
+// start through cmd.exe (a .exe, from Claude's own installer, it starts directly), so
+// it's found with `where` and its arguments are quoted for cmd.exe.
+const winQuote = (a) => '"' + String(a).replace(/"/g, '""') + '"';
+function claudeCommand(platform = process.platform) {
+  const bin = CLAUDE_BIN();
+  if (platform !== "win32") return { file: bin, shell: false };
+  if (/\.exe$/i.test(bin)) return { file: bin, shell: false };
+  if (/\.(cmd|bat)$/i.test(bin)) return { file: bin, shell: true };
+  try {
+    const hits = String(spawnSync("where", [bin], { encoding: "utf8", timeout: 5000 }).stdout || "").split(/\r?\n/).map((x) => x.trim()).filter(Boolean);
+    const exe = hits.find((h) => /\.exe$/i.test(h)); if (exe) return { file: exe, shell: false };
+    const cmd = hits.find((h) => /\.(cmd|bat)$/i.test(h)); if (cmd) return { file: cmd, shell: true };
+  } catch {}
+  return { file: bin, shell: true };
+}
+function claudeSpawn(args, opts = {}, sync = false) {
+  const c = claudeCommand(), run = sync ? spawnSync : spawn;
+  return c.shell ? run([c.file, ...args].map(winQuote).join(" "), [], { ...opts, shell: true, windowsHide: true }) : run(c.file, args, { ...opts, windowsHide: true });
+}
 let CLAUDE_SEEN = null;
 function claudeState(fresh = false) {
   if (!fresh && CLAUDE_SEEN && Date.now() - CLAUDE_SEEN.at < 300000) return CLAUDE_SEEN;
   let installed = !!process.env.SYMBIOT_CLAUDE_CMD || hasCmd("claude"), signedIn = false;
   if (installed) {
     try {
-      const r = spawnSync(CLAUDE_BIN(), ["auth", "status"], { encoding: "utf8", timeout: 8000, env: process.env });
+      const r = claudeSpawn(["auth", "status"], { encoding: "utf8", timeout: 8000, env: process.env }, true);
       if (r.error && r.error.code === "ENOENT") installed = false;
       else { const j = JSON.parse(String(r.stdout || "").trim() || "{}"); signedIn = !!j.loggedIn && j.authMethod !== "apiKey"; }
     } catch {}
@@ -83,7 +103,8 @@ function resolveProvider() {
 
 // ---- model calls (one per provider, same in/out) --------------------------
 // Claude Code, headless, on your subscription: Symbiot's own instructions as the
-// system prompt, the prompt on stdin, no tools (Read only, for screenshots you
+// system prompt (from a file: Windows' command line holds only ~8,000 characters,
+// and they run longer), the prompt on stdin, no tools (Read only, for screenshots you
 // attached), none of your settings, plugins or servers, no session kept. Not --bare:
 // that ignores the subscription sign-in.
 function callClaude(r, system, prompt, images = []) {
@@ -93,15 +114,18 @@ function callClaude(r, system, prompt, images = []) {
     try { const dir = join(CONFIG_DIR, "uploads"); mkdirSync(dir, { recursive: true, mode: 0o700 }); const f = join(dir, `${Date.now()}-${shots.length}.${/png/.test(i.mime) ? "png" : /webp/.test(i.mime) ? "webp" : /gif/.test(i.mime) ? "gif" : "jpg"}`); writeFileSync(f, Buffer.from(i.data, "base64"), { mode: 0o600 }); shots.push(f); } catch {}
   }
   const input = shots.length ? `${prompt}\n\nScreenshots they attached (look at them with your Read tool): ${shots.join(", ")}` : prompt;
-  const args = ["-p", "--output-format", "json", "--system-prompt", system, "--tools", shots.length ? "Read" : "", "--setting-sources", "",
+  let sysFile = ""; try { mkdirSync(CONFIG_DIR, { recursive: true }); sysFile = join(CONFIG_DIR, `.system-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.txt`); writeFileSync(sysFile, system, { mode: 0o600 }); } catch { sysFile = ""; }
+  const drop = () => { if (sysFile) { try { unlinkSync(sysFile); } catch {} } };
+  const args = ["-p", "--output-format", "json", ...(sysFile ? ["--system-prompt-file", sysFile] : ["--system-prompt", system]), "--tools", shots.length ? "Read" : "", "--setting-sources", "",
     "--strict-mcp-config", "--no-session-persistence", "--disable-slash-commands", ...(r.model ? ["--model", r.model] : [])];
   return new Promise((resolve, reject) => {
     let out = "", err = "", done = false;
-    let ch; try { ch = spawn(CLAUDE_BIN(), args, { cwd: CONFIG_DIR, stdio: ["pipe", "pipe", "pipe"], env: process.env }); } catch (e) { reject(e); return; }
+    let ch; try { ch = claudeSpawn(args, { cwd: CONFIG_DIR, stdio: ["pipe", "pipe", "pipe"], env: process.env }); } catch (e) { drop(); reject(e); return; }
     const t = setTimeout(() => { if (!done) { done = true; try { ch.kill("SIGTERM"); } catch {} reject(new Error("Claude Code didn't answer within 3 minutes")); } }, 180000);
     ch.stdout.on("data", (d) => { out += d; }); ch.stderr.on("data", (d) => { err += d; });
-    ch.on("error", (e) => { if (!done) { done = true; clearTimeout(t); reject(e); } });
+    ch.on("error", (e) => { drop(); if (!done) { done = true; clearTimeout(t); reject(e); } });
     ch.on("close", () => {
+      drop();
       if (done) return; done = true; clearTimeout(t);
       let j = null; try { j = JSON.parse(out.trim().split("\n").filter(Boolean).pop() || "{}"); } catch {}
       if (j && j.is_error === false && typeof j.result === "string") { resolve(j.result.trim()); return; }
@@ -284,4 +308,4 @@ async function connectProvider(b) {
   return saveConfig(cfg) ? { ok: true, message: `Connected: ${PROVIDERS[provider].label} · ${model}` } : { ok: false, message: "Couldn't write the config file." };
 }
 
-export { PROVIDERS, AI_UI, resolveProvider, write, validate, connectProvider, detectHardware, recommendModels, hasOllama, ollamaInstall, ensureOllama, useOllamaModel , claudeState, claudeReady, claudeHelp };
+export { PROVIDERS, AI_UI, resolveProvider, write, validate, connectProvider, detectHardware, recommendModels, hasOllama, ollamaInstall, ensureOllama, useOllamaModel , claudeState, claudeReady, claudeHelp , claudeCommand };
