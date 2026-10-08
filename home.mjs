@@ -13,7 +13,8 @@ import { join } from "node:path";
 import { homedir } from "node:os";
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { watchBoard, draftReply } from "./watch.mjs";
-import { pendingReview, pushTasks, addTask } from "./tasks.mjs";
+import { pendingReview, pushTasks, addTask, taskType } from "./tasks.mjs";
+import { estimate, estimateWords } from "./estimate.mjs";
 import { agentsList, runHandoff, runningHandoff, handoffCmd, connectorsInfo, parkedPaths, agentMissing, settleNeeds, pickAgent, detectHandoffs, linkReach } from "./agents.mjs";
 import { linksState } from "./links.mjs";
 import { knowledgeState } from "./knowledge.mjs";
@@ -306,9 +307,16 @@ function homeState({ now = Date.now(), fresh = false, deps = {} } = {}) {
   if (rep.count) feeds.push({ id: "feed:reports", title: "Reports", sub: `${rep.count} unread`, latest: rep.latest, count: rep.count, shape: "reports" });
   const hs = ((lanes() || {}).handoffs || []).slice(0, 5).map((h) => ({ from: h.from, to: h.to, text: h.text, status: h.status, ...(h.times > 1 ? { times: h.times } : {}) }));
   const working = list.filter((a) => a.status === "running").length;
+  // each run at work, in a line: which lane, where it is in its brief, how long it has left, and whether it has gone quiet
+  const seenRun = new Set(), runs = [];
+  for (const a of list) {
+    if (a.status !== "running" || seenRun.has(a.path)) continue; seenRun.add(a.path);
+    const lane = laneOfPath(a.path, map);
+    runs.push({ id: "run:" + a.path, path: a.path, repo: lane || "", name: lane ? named(map[lane], lane) : plain(String(a.name || "an agent").replace(/^Agent:\s*/, ""), 40), ...runNow(a), started: a.startedAt || 0 });
+  }
   // nothing waits on you: a few things that can be done next (none while anything does)
   const next = you.length ? [] : nextUp({ now, map, list, named, deps: { board: () => bd, reports: () => rep, ...(deps.next || {}) } });
-  const out = { you: you.slice(0, 6), youCount: you.length, feeds: feeds.slice(0, 6), lanes: hs, working, next, marketing: marketing({ list, map, named, pend }), at: now };
+  const out = { you: you.slice(0, 6), youCount: you.length, feeds: feeds.slice(0, 6), lanes: hs, working, runs: runs.slice(0, 4), next, marketing: marketing({ list, map, named, pend }), at: now };
   if (!deps.board) cached = out;
   return out;
 }
@@ -393,7 +401,8 @@ function homeContext(h) {
   return [
     `Only the user can do (${h.you.length}):`, ...h.you.map((y) => `- ${y.title}: ${y.sub}${y.q && y.q !== y.sub ? ` (asks: ${y.q}${(y.options || []).length ? ` ${y.options.join(" / ")}` : ""})` : ""}`),
     `New on what they watch:`, ...(h.feeds.length ? h.feeds.map((f) => `- ${f.title}: ${f.sub}${f.latest ? ` (latest: ${f.latest})` : ""}`) : ["- nothing new"]),
-    `Agents working: ${h.working}. Recent handovers:`, ...(h.lanes.length ? h.lanes.map((l) => `- ${l.from} → ${l.to}: ${l.text} (${l.status}${l.times ? `, handed over ${l.times} times` : ""})`) : ["- none"]),
+    `Agents working: ${h.working}.`, ...(h.runs || []).map((r) => `- ${r.name}: ${r.line}${r.eta ? ` (${r.eta})` : ""}${r.quiet ? ` (no progress in ${r.quiet} min)` : ""}${r.looping ? " (repeating the same step)" : ""}`),
+    "Recent handovers:", ...(h.lanes.length ? h.lanes.map((l) => `- ${l.from} → ${l.to}: ${l.text} (${l.status}${l.times ? `, handed over ${l.times} times` : ""})`) : ["- none"]),
     ...(h.marketing ? [`Marketing (a lane of its own, for marketing across all their products; "repo": "${MARKETING}"): ${h.marketing.needs ? `${h.marketing.needs} thing${h.marketing.needs > 1 ? "s" : ""} there need${h.marketing.needs > 1 ? "" : "s"} them` : "nothing needs them"}${h.marketing.working ? ", its agent is at work" : ""}.`] : []),
     ...((h.next || []).length ? ["Could be done next (Home suggests these, one tap each):", ...h.next.map((s) => `- ${s.title}: ${s.gain} (${s.time})`)] : []),
   ].join("\n");
@@ -425,6 +434,16 @@ async function homeAsk(question, { ask, now = Date.now(), state, images = [] } =
 // there's anything a Go would start. The details (steps, files, cost) stay one
 // tap away, in the Agents panel.
 const plain = (s, n = 64) => { s = String(s || "").replace(/[\`*_#>]/g, "").replace(/\s+/g, " ").trim(); return s.length > n ? s.slice(0, n - 1).replace(/\s+\S*$/, "") + "…" : s; };
+// A running agent's line (agents.mjs workOf → work.mjs runLine): "step 2 of 4: look
+// and feel, plus a zoned world · shooting the monsters", with quiet (minutes since it
+// last moved, once that's long) and looping. Without one, what it's doing now. eta:
+// how long it has left, as a range from the lane's past runs of its kind and what's
+// held for its next run (estimate.mjs), when there's enough to go on.
+function runNow(a, { now = Date.now(), est = estimate } = {}) {
+  const l = a.line, w = a.work || {}, todo = (w.todos || []).find((t) => t.status === "in_progress");
+  let eta = null; try { if (l && a.path) eta = est({ path: a.path, kind: l.kind || "brief", type: l.task ? taskType(l.task) : "", typeOf: taskType, elapsed: a.startedAt ? now - a.startedAt : a.elapsed || 0, queued: (a.held || []).length }); } catch {}
+  return { line: plain(l ? l.line : todo ? todo.active : w.doing || "working on it", 140), ...(l && l.step ? { step: l.step, of: l.of } : {}), ...(l && l.quiet ? { quiet: l.quiet } : {}), ...(l && l.looping ? { looping: true } : {}), ...(eta ? { eta: estimateWords(eta), etaLo: eta.lo, etaHi: eta.hi } : {}) };
+}
 // Projects (the lanes) are sorted the way you'd look for them: what needs you
 // first (a question, an Approve), then what's at work, ready, waiting, and the
 // most recent. Ops runs (act-…: no repo of their own) are one "Agent runs" lane,
@@ -446,14 +465,14 @@ function workScene({ deps = {} } = {}) {
     if (nq) asks[laneOf(a)] = (asks[laneOf(a)] || 0) + nq;
     if (a.status !== "running") continue;
     const w = a.work || {}, todo = (w.todos || []).find((t) => t.status === "in_progress"), pg = a.progress;
-    running.push({ id: "run:" + a.path, path: a.path, name: a.name, lane: laneOf(a), doing: plain(todo ? todo.active : w.doing || "Working on it", 120), progress: pg || null, waiting: !!nq, started: a.startedAt || (a.elapsed ? Date.now() - a.elapsed : 0) });
+    running.push({ id: "run:" + a.path, path: a.path, name: a.name, lane: laneOf(a), doing: plain(todo ? todo.active : w.doing || "Working on it", 120), progress: pg || null, ...runNow(a), waiting: !!nq, started: a.startedAt || (a.elapsed ? Date.now() - a.elapsed : 0) });
   }
   const ready = pending().filter((r) => r.path && !r.running && ((r.tasks || []).length || (r.files || []).length)).map((r) => ({ id: "ready:" + r.repo, repo: r.repo, count: (r.tasks || []).length }));
   const busy = new Set(running.map((r) => r.lane)), open = tasks().filter((t) => !t.done && !t.archived && !t.review && t.repo);
   const waiting = open.map((t) => ({ id: "task:" + t.id, text: plain(t.text, 160), repo: t.repo, busy: busy.has(t.repo), ...(isParked(t.repo) ? { parked: true } : {}) })); // the app shortens it for a tag
   // Projects: each lane with work on it, what's going on there in one line's worth
   const by = {}, at = (name) => (by[name] = by[name] || { repo: name, name: name === RUNS_LANE ? "Agent runs" : named(map[name], name), waiting: 0, ready: 0, asks: 0, running: null, last: 0, ...(name === RUNS_LANE ? { runs: 0 } : {}) });
-  running.forEach((r) => { const p = at(r.lane); if (r.lane === RUNS_LANE) p.runs++; if (!p.running) p.running = { doing: r.doing, progress: r.progress, ask: r.waiting }; p.last = Math.max(p.last, r.started || 0); });
+  running.forEach((r) => { const p = at(r.lane); if (r.lane === RUNS_LANE) p.runs++; if (!p.running) p.running = { doing: r.doing, progress: r.progress, ask: r.waiting, ...(r.line ? { line: r.line } : {}), ...(r.eta ? { eta: r.eta } : {}), ...(r.quiet ? { quiet: r.quiet } : {}), ...(r.looping ? { looping: true } : {}) }; p.last = Math.max(p.last, r.started || 0); });
   ready.forEach((r) => { at(r.repo).ready = r.count || 1; });
   open.forEach((t) => { const p = at(t.repo); p.waiting++; p.last = Math.max(p.last, Number(t.ts) || 0); });
   Object.keys(asks).forEach((l) => { at(l).asks = asks[l]; });

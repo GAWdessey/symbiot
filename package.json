@@ -1,6 +1,6 @@
 {
   "name": "symbiot",
-  "version": "0.57.2",
+  "version": "0.57.3",
   "description": "Your week, written from your real work. Reads your local git and writes it up with the AI of your choice \u2014 Claude, OpenAI, Gemini, or a local model.",
   "type": "module",
   "bin": {
@@ -47,7 +47,8 @@
     "marketing.mjs",
     "postinstall.mjs",
     "icon.svg",
-    "scanworker.mjs"
+    "scanworker.mjs",
+    "estimate.mjs"
   ],
   "engines": {
     "node": ">=18"

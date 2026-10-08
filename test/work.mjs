@@ -4,7 +4,7 @@
 //
 //   node test/work.mjs
 //
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -88,6 +88,45 @@ try {
   const wo = workOf(repo, "\n=== r " + ts(0) + " ===\n$ claude -p …\n" + running);
   ok("its work, how far through TASKS.md it is, and readable text instead of JSON", wo.work && wo.work.doing === "Adding a test" && wo.progress.done === 1 && wo.progress.total === 3 && !/\{"type"/.test(wo.tail), [wo.progress, wo.tail.slice(0, 80)]);
   ok("another agent: no work view, the log's end as before", workOf(repo, "\n=== r x ===\n$ codex\nhello").work === null && /hello/.test(workOf(repo, "\n=== r x ===\n$ codex\nhello").tail), "");
+  console.log("HOW FAR ALONG — a run's step in its brief's plan, on Home (steve and argena, 2026-10-08: only 'Agents working: 2')");
+  const { briefPlan, stepOf, runLine, STALL_MS } = await import("../work.mjs");
+  const brief = "## Tasks\n- [x] old\n- [ ] Argena (v6.7). Do these in order. 1) Device pass on v6.7. Earlier today it got three hotfixes. 2) Look and feel, plus a zoned world. This is Garth's priority, with monsters. 3) Wire the class bible into the game, starting with core class apprenticeships. 4) Symbiot slow loop v0. Monsters use behaviour cards.\n";
+  const plan = briefPlan(brief);
+  ok("a brief's numbered steps, each a short label (v6.7 isn't a sentence's end)", plan.map((p) => p.label).join(" | ") === "Device pass on v6.7 | Look and feel, plus a zoned world | Wire the class bible into the game | Symbiot slow loop v0", plan.map((p) => p.label));
+  ok("…none without numbered steps, or with only one", briefPlan("- [ ] Fix the login bug.").length === 0 && briefPlan("- [ ] 1) Just this.").length === 0, "");
+  ok("its step, from what it says: 'step 1 done' is the next one", stepOf(plan, ["Fresh install works.", "Device pass done. Moving to step 2 (art direction)."]) === 2 && stepOf(plan, ["Step 1 is done."]) === 2, "");
+  ok("…two words of a step's label name it, in order, only forward", stepOf(plan, ["Device pass going well"]) === 1 && stepOf(plan, ["Step 3: wiring the bible", "Device pass recheck"]) === 3, "");
+  ok("…a step's other words, or one word of its label, don't: 'the monsters' isn't step 4, 'wiring the map' isn't step 3", stepOf(plan, ["Step 2: art.", "Shooting the monsters and the map screens.", "Wiring the map into sky and fog."]) === 2, "");
+  const busy = parseRun([A([{ type: "text", text: "Step 2: look and feel. Shooting the monsters, camp and gates." }], 0), A([use("g1", "Bash", { command: "godot", description: "Render the marsh" })], 1)].join("\n"));
+  const rl = runLine({ plan, step: stepOf(plan, busy.talk), work: busy, now: T + 60000 });
+  ok("Home's line: step N of M, its label, and what it's on now", rl.line === "step 2 of 4: look and feel, plus a zoned world · shooting the monsters, camp and gates" && rl.step === 2 && rl.of === 4 && !rl.quiet, rl);
+  ok("…quiet past STALL_MS since its last move (a heartbeat isn't one), with the minutes", runLine({ plan, step: 2, work: busy, now: T + 1000 + STALL_MS + 5 * 60000 }).quiet === 25, runLine({ plan, step: 2, work: busy, now: T + STALL_MS + 5 * 60000 }));
+  const loop = parseRun([1, 2, 3, 4, 5].map((i) => A([use("l" + i, "Bash", { command: "curl x", description: "Poll the server" })], i)).join("\n"));
+  ok("…going round: its last steps all the same call", loop.looping === true && runLine({ work: loop, now: T + 6000 }).looping === true && !busy.looping, "");
+  ok("…no plan: what it's on, still a line", runLine({ work: busy, now: T }).line === "shooting the monsters, camp and gates", runLine({ work: busy, now: T }).line);
+  writeFileSync(join(repo, ".symbiot", "TASKS.md"), brief);
+  const wl = workOf(repo, "\n=== r " + ts(0) + " ===\n$ claude -p …\n" + [A([{ type: "text", text: "Step 2: look and feel. Shooting the monsters, camp and gates." }], 0)].join("\n"));
+  ok("the Agents list carries it (workOf line); a finished run doesn't", wl.line && wl.line.step === 2 && !workOf(repo, "\n=== r x ===\n$ claude -p …\n" + JSON.stringify({ type: "result", result: "done" })).line, wl.line);
+  console.log("HOW LONG IT HAS LEFT — a range from the lane's past runs, and what's queued behind it");
+  const { estimate, estimateWords, runsInLog, noteDuration, loadDurations } = await import("../estimate.mjs");
+  const M = 60000, past = [10, 12, 15, 20, 25, 30, 1, 1].map((m, i) => ({ at: i, kind: i > 5 ? "answer" : "brief", ms: m * M }));
+  const e1 = estimate({ path: "/x", elapsed: 5 * M, runs: past, durations: [] });
+  ok("a brief run 5 min in, its lane's briefs took 10–30 min: what's left, as a range", e1 && e1.left === "8–20 min" && estimateWords(e1) === "8–20 min left", e1);
+  const e2 = estimate({ path: "/x", elapsed: 5 * M, queued: 2, runs: past, durations: [] });
+  ok("…tasks held for its next run add that run to the total", /^\+2 queued: /.test(estimateWords(e2).split(" · ")[1] || "") && e2.total, estimateWords(e2));
+  ok("…judged on the runs that lasted longer than this one has so far, never the 1-minute replies", estimate({ path: "/x", kind: "answer", elapsed: 9 * M, runs: past, durations: [] }).left === "4–15 min", estimate({ path: "/x", kind: "answer", elapsed: 9 * M, runs: past, durations: [] }));
+  const e3 = estimate({ path: "/x", elapsed: 40 * M, runs: past, durations: [] });
+  ok("…past nearly all of them: longer than usual, with what usual is, not '1 min left'", e3.over && estimateWords(e3).startsWith("longer than its usual"), e3);
+  ok("…too little to go on: none", estimate({ path: "/x", elapsed: M, runs: past.slice(0, 2), durations: [] }) === null, "");
+  const typed = [1, 2, 3].map(() => ({ path: "/x", kind: "brief", task: "Fix the login crash", ms: 4 * M })), typeOf = (t) => (/fix/i.test(t) ? "Fixes" : "Other");
+  ok("…the same lane and kind of task first (durations Symbiot saw end)", estimate({ path: "/x", type: "Fixes", typeOf, elapsed: M, runs: past, durations: typed }).from === "lane+type", "");
+  const lg = join(HOME, "est.log");
+  writeFileSync(lg, "\n=== r 2026-10-08T09:00:00.000Z ===\n$ claude -p \"Read .symbiot/TASKS.md\"\n" + JSON.stringify({ type: "assistant", message: { content: [] } }) + "\n" + JSON.stringify({ duration_api_ms: 1, type: "result", duration_ms: 600000 }) + "\n=== r 2026-10-08T10:00:00.000Z ===\n$ claude -p \"The user has answered: …\"\n");
+  ok("a log's finished runs, by kind, from each run's result (its keys in any order)", JSON.stringify(runsInLog(lg).map((r) => [r.kind, r.ms])) === '[["brief",600000]]', runsInLog(lg));
+  writeFileSync(lg, readFileSync(lg, "utf8") + JSON.stringify({ type: "result", duration_ms: 60000 }) + "\n");
+  ok("…and only what's been added is read next time", JSON.stringify(runsInLog(lg).map((r) => r.kind)) === '["brief","answer"]', runsInLog(lg));
+  const df = join(HOME, "durations.json"); noteDuration({ path: "/x", cmd: "claude -p x", task: "Fix it", ms: 5 * M }, df);
+  ok("a run Symbiot saw end is kept with its lane, kind and task", loadDurations(df)[0].kind === "brief" && loadDurations(df)[0].task === "Fix it", loadDurations(df));
   console.log("A BIG LOG — only the newest run is read, from the end, and kept until the file changes");
   const { readRunLog } = await import("../work.mjs");
   const big = join(HOME, "big", ".symbiot"); mkdirSync(big, { recursive: true });
