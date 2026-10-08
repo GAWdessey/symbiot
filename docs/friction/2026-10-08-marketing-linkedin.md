@@ -290,6 +290,34 @@ approves, the agent does.**
   first; `SYMBIOT_FORCE_NEW` still starts a second one on purpose). Tests:
   `test/app.mjs`, "a Symbiot that answers late". Shipped in 0.57.7.
 
+## 15. An approved deploy, blocked by the membrane
+
+- **What happened:** Garth approved argena's deploy of the Symbiot server code to the
+  game server, twice, and its exact commands were in the lane's
+  `allowlist.proposed.json`. `ssh -i ~/.ssh/oracle_key …` passed, but `scp -i
+  ~/.ssh/oracle_key server/argena_net.py server/symbiot.py ubuntu@…:…` was blocked
+  with "your keys and cloud credentials stay yours".
+- **Why it was wrong:** `-i` names the key scp signs in with. scp doesn't copy it. The
+  rule meant to stop a key leaving the machine stopped an ordinary, approved deploy,
+  and only for scp.
+- **What it should do instead:** judge what scp copies, not what it signs in with.
+  Copying a key itself stays blocked.
+- **Fixed in:** `guard.mjs` (`SCP_VALUE`: scp's options that take a value are skipped).
+  Tests: `test/guard.mjs`, including argena's two commands word for word. Shipped in
+  0.57.8.
+
+## 16. Checks on the live app closed his window
+
+- **What happened:** checking Home's layout, the symbiot lane's agent took headless
+  screenshots of Garth's running app. Each page counted as a new window and closed his
+  (case 10).
+- **Why it was wrong:** an agent's check acted on the user's own window and data.
+- **What it should do instead:** check in a sandbox copy (`symbiot app --fresh`, its
+  own home and port), never in the running app.
+- **Fixed in:** every brief says so (`tasks.mjs`), and `guard.mjs` stops a browser
+  pointed at 127.0.0.1:7391 (reading its API with curl still goes ahead). Tests:
+  `test/guard.mjs`. Shipped in 0.57.8.
+
 ## Other places the same pattern shows up
 
 - **`post.mjs` `approvePost`** (Marketing's "Drafts to post": Shipped, Learned / fixed,
