@@ -2,6 +2,12 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.56.0
+
+- **Symbiot in your app menu, no terminal.** On Linux, `npm install -g symbiot` puts Symbiot in your app menu with its own icon, the orb. Click it and Symbiot starts in the background and opens its window; click it again and the window comes up. You never need a terminal to run it. Its window shows the orb in your taskbar too, and the menu entry keeps itself pointing at the installed Symbiot (a new Node, a moved install).
+- **`symbiot uninstall`** removes Symbiot and everything it added: the menu entry and icon, start at login, the Away shortcut, and its data (`--keep-data` keeps your settings, tasks and memory). Claude Code and its sign-in stay.
+- `symbiot open` does what the icon does, from a terminal.
+
 ## 0.55.3
 
 - **Your Claude subscription, no API key.** With Claude Code signed in to your Claude account (Pro or Max), Symbiot now answers through it: chats, write-ups, posts, screenshots. Nothing to connect, no separate bill. It comes first when you haven't picked an AI, ahead of an old saved key. `symbiot login` and Settings → Your AI offer it first; if Claude Code isn't signed in yet, they tell you to run `claude` once and sign in. Before, a fresh install sent you to `symbiot login`, which only asked for an API key.

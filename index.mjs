@@ -23,14 +23,14 @@
 // tasks.mjs (tasks, review and Approve), agents.mjs (handing work to an agent),
 // drift.mjs, server.mjs (`symbiot app`'s server) and ui.mjs (its page).
 
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { homedir } from "node:os";
 import { join, basename } from "node:path";
-import { realpathSync, readFileSync } from "node:fs";
+import { realpathSync, readFileSync, mkdirSync, openSync, rmSync, existsSync } from "node:fs";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 import { EMBEDDED_UI } from "./ui.mjs";
-import { VERSION, CONFIG_PATH, loadConfig, saveConfig, repoState, semverGt } from "./core.mjs";
+import { VERSION, CONFIG_PATH, CONFIG_DIR, loadConfig, saveConfig, repoState, semverGt } from "./core.mjs";
 import { HANDOFF_PROMPT, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, fillHandoff, runHandoff, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, parseQuestions, agentQuestions } from "./agents.mjs";
 import { AI_UI, PROVIDERS, resolveProvider, validate, detectHardware, recommendModels, hasOllama, ollamaInstall, ensureOllama, useOllamaModel, claudeState, connectProvider } from "./ai.mjs";
 import { setScanOptions, scanBase, authorship, readmeInfo, repoShape, houseRules, reportFooter, findAllRepos, buildMap } from "./scan.mjs";
@@ -42,7 +42,7 @@ import { mapPage, wholePage, pressRegion, typeRegion, scrollPage, signIn, isTrus
 import { watchState, addWatch, removeWatch, seenWatch, newsSince, markNews, checkWatch, setBrief, draftReply, watchBoard, boardLine, boardChat, boardTalk, clearBoardChat } from "./watch.mjs";
 import { PORT as PHONE_PORT, phoneState, pairComputer, pollComputer, forgetComputer } from "./phone.mjs";
 import { KIND_LABEL as POST_KIND, PATHS as POST_PATHS, draftPosts, postsState, postLog, approvePost, editPost, skipPost, voiceFromLinkedIn, openUrl, addMedia as addPostMedia, removeMedia as removePostMedia, mediaDir as postMediaDir, pictureOfPage, clipOfPage } from "./post.mjs";
-import { startApp, updateCmd, isAppRunningWeekly } from "./server.mjs";
+import { startApp, updateCmd, isAppRunningWeekly, askRunningApp, openApp } from "./server.mjs";
 import { listReports, readReport } from "./reports.mjs";
 import { runSandbox } from "./sandbox.mjs";
 import { knowledgeState, addKnowledgeFolder, removeKnowledgeFolder, indexKnowledge, searchKnowledge, waitingOn, ownerOf, myName, setMyName, itemLine, caseLine } from "./knowledge.mjs";
@@ -349,6 +349,43 @@ async function cmdAway() {
   const r = await viaApp("/api/away", { open: "toggle" });
   if (!r) { console.log(c.y("Symbiot's app isn't running.") + c.d("  Start it with  symbiot app,  then Away works.")); process.exitCode = 1; return; }
   if (r.error) { console.log(c.y(r.error)); process.exitCode = 1; }
+}
+// symbiot open: what the app-menu icon runs. Running: its window comes up. Not
+// running: it starts in the background (no terminal; what it prints goes to
+// ~/.config/symbiot/app.log) and opens its own window.
+async function cmdOpen() {
+  const cfg = loadConfig(), port = Number(process.env.SYMBIOT_PORT || cfg.appPort) || 7391;
+  const p = cfg.appToken ? await askRunningApp("ping", { port, token: cfg.appToken, ms: 1500 }) : null;
+  if (p && p.version) { openApp(`http://127.0.0.1:${port}/?t=${cfg.appToken}`); return; }
+  let fd = "ignore"; try { mkdirSync(CONFIG_DIR, { recursive: true }); fd = openSync(join(CONFIG_DIR, "app.log"), "a"); } catch {}
+  const env = { ...process.env }; delete env.SYMBIOT_NO_OPEN;
+  spawn(process.execPath, [realpathSync(fileURLToPath(import.meta.url)), "app"], { detached: true, stdio: ["ignore", fd, fd], env }).unref();
+}
+// symbiot uninstall: everything Symbiot put on this computer, then the program.
+// --keep-data keeps ~/.config/symbiot (settings, tasks, memory); --yes doesn't ask.
+async function cmdUninstall() {
+  const keep = has("keep-data");
+  console.log(c.b("Remove Symbiot from this computer") + "\n");
+  console.log("  · its app-menu entry and icon, start at login, the Super+` shortcut");
+  console.log(keep ? "  · " + c.d("keeps your data in " + CONFIG_DIR) : "  · everything it knows: settings, tasks, memory, drafts, screenshots (" + CONFIG_DIR + ")");
+  if (!has("keep-program")) console.log("  · the program itself (npm uninstall -g symbiot)");
+  console.log(c.d("  Claude Code and its sign-in stay. Folders it made inside your projects (.symbiot/) stay too."));
+  if (!has("yes")) {
+    if (!process.stdin.isTTY) { console.log("\n" + c.y("Run it again with --yes to go ahead.")); process.exitCode = 1; return; }
+    if (((await ask("\nType yes to remove it: ")) || "").trim().toLowerCase() !== "yes") { console.log("Nothing removed."); return; }
+  }
+  const { removeLauncher, setAutostart } = await import("./desktop.mjs");
+  const { removeShortcut } = await import("./away.mjs");
+  await askRunningApp("quit", { ms: 2000 });
+  try { setAutostart(false); } catch {}
+  removeLauncher(); removeShortcut();
+  try { rmSync(join(homedir(), ".symbiot"), { recursive: true, force: true }); } catch {}
+  if (!keep) { try { rmSync(CONFIG_DIR, { recursive: true, force: true }); } catch {} }
+  console.log(c.g("✓ ") + "Removed what Symbiot added" + (keep ? ", your data kept." : ", and its data."));
+  if (has("keep-program")) return;
+  const r = spawnSync("npm", ["uninstall", "-g", "symbiot"], { stdio: "inherit", shell: process.platform === "win32" });
+  console.log(r.status === 0 ? c.g("✓ ") + "Symbiot is uninstalled." : c.y("Couldn't remove the program: run  npm uninstall -g symbiot"));
+  if (existsSync(CONFIG_DIR) && !keep) console.log(c.d("(Something wrote to " + CONFIG_DIR + " meanwhile; delete it if you like.)"));
 }
 async function cmdScreens() {
   const [sub = "list", a1, a2, a3] = argv.slice(1).filter((x, i, all) => !x.startsWith("--") && all[i - 1] !== "--name");
@@ -775,6 +812,9 @@ ${c.b("Usage")}
   symbiot standup                   yesterday + today, for standup
   symbiot todo                      what's still on your plate
   symbiot app                       open the visual app in your browser
+  symbiot open                      start Symbiot in the background and open its window
+                                    (what its app-menu icon does)
+  symbiot uninstall [--keep-data]   remove Symbiot and everything it added
   symbiot away [--shortcut]         Symbiot full screen on every screen while you're away;
                                     again closes it. --shortcut: Super+\` does it
   symbiot app --fresh [--keep]      try it as someone new: a brand-new Symbiot in
@@ -833,6 +873,8 @@ async function main() {
   if (cmd === "whoami" || cmd === "status") return cmdWhoami();
   if (cmd === "app" || cmd === "ui") return cmdApp();
   if (cmd === "away") return cmdAway();
+  if (cmd === "open") return cmdOpen();
+  if (cmd === "uninstall") return cmdUninstall();
   if (cmd === "models" || cmd === "hardware") return cmdModels();
   if (cmd === "setup-local" || cmd === "setup-ollama") return cmdSetupLocal();
   if (cmd === "drift") return cmdDrift();

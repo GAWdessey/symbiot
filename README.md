@@ -43,6 +43,14 @@ npm install -g symbiot        # or run without installing:  npx symbiot week
 With Claude Code signed in to your Claude account, that's all: Symbiot uses your
 subscription, no API key. See [Connect it (once)](#connect-it-once) for the other options.
 
+On Linux, installing puts **Symbiot in your app menu**, with its icon. Open it from
+there: it starts in the background (no terminal) and opens its window, or brings the
+window up if it's already running. You don't need a terminal again; `symbiot open`
+does the same from one.
+
+To remove it and everything it added (menu entry, icon, start at login, shortcut,
+its data): `symbiot uninstall` (`--keep-data` keeps your settings, tasks and memory).
+
 ## Prefer a window? `symbiot app`
 
 ```bash
