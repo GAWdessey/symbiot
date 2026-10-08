@@ -208,6 +208,11 @@ const calls = [
   ["/api/work", "GET"],             // the work scene: who's at work, what's waiting, what's ready
   ["/api/work/go", "POST"],         // nothing waiting in the isolated HOME -> starts nothing
   ["/api/home", "GET"],             // the liquid's live data (isolated HOME -> empty)
+  ["/api/onboarding", "GET"],       // setup: where you are, what's set up
+  ["/api/onboarding/set", "POST"],  // a step, an app you don't use
+  ["/api/onboarding/done", "POST"],
+  ["/api/onboarding/restart", "POST"],
+  ["/api/look", "POST"],            // the look: the app menu's icon follows
   ["/api/away", "POST"],            // open: false closes Away (nothing open: nothing to do)
   ["/api/home/ask", "POST"],        // no question -> "empty", no model call
   ["/api/home/answer", "POST"],     // no id -> "answer it on its block", nothing starts

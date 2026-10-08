@@ -2,6 +2,14 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.57.0
+
+- **Setup, before anything else.** A new Symbiot opens straight into setup: what it is (it watches, it works, it asks), your AI (your Claude subscription, found by itself), your work (your projects, found while you read), your coding agent (one click), every app you use (each connected, or marked "I don't use it"; you can't go on until they're all decided), and an optional folder of your documents. Then a short "finding your way" and Home. Where you are is kept, so closing it resumes there; Settings → Setup → Run setup again walks it again.
+- **Installing opens it.** `npm install -g symbiot` on a desktop opens Symbiot right away, into setup, and says so in the terminal (npm used to hide that line).
+- **No more blank orb on the first run.** Symbiot searched your folders for projects again on every Home refresh, and built the Map at startup even when you didn't open it: on a big home folder that froze it for a minute. Your projects are now found once, in the background, kept between runs and refreshed every ten minutes or when your folders change; the Map is built when you open it. Anything slow is noted in Symbiot's log.
+- **The icon follows your look.** Ferrofluid, Glass or Pearl: the app menu's icon and the window's change with it.
+- A new install's Home says "Nothing needs you right now" instead of "All handled".
+
 ## 0.56.0
 
 - **Symbiot in your app menu, no terminal.** On Linux, `npm install -g symbiot` puts Symbiot in your app menu with its own icon, the orb. Click it and Symbiot starts in the background and opens its window; click it again and the window comes up. You never need a terminal to run it. Its window shows the orb in your taskbar too, and the menu entry keeps itself pointing at the installed Symbiot (a new Node, a moved install).

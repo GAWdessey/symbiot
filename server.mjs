@@ -16,13 +16,13 @@ import { EMBEDDED_UI } from "./ui.mjs";
 import { VERSION, LATEST_VERSION, REGISTRY, semverGt, checkLatest, CONFIG_PATH, loadConfig, saveConfig, loadTasks, hasCmd, chromeBinary, CONFIG_DIR } from "./core.mjs";
 import { shSingle, handoffCmd, setHandoffCmd, grantAgent, runHandoff, track, detectHandoffs, connectorsInfo, linkReach, answerQuestions, skipIdea, agentsList, startWaiting, parkLane, parkedPaths, autoAllowSweep, trustFull, readLastWords, sandboxState } from "./agents.mjs";
 import { PROVIDERS, resolveProvider, connectProvider, detectHardware, recommendModels, hasOllama, ollamaInstall, ensureOllama, useOllamaModel } from "./ai.mjs";
-import { SCAN, SCAN_TIMEOUT_MS, scanRoots, scanHome, addScanRoot, removeScanRoot, buildMap, nodeDetail, repoPathMap, laneMap } from "./scan.mjs";
+import { SCAN, SCAN_TIMEOUT_MS, scanRoots, scanHome, addScanRoot, removeScanRoot, buildMap, nodeDetail, repoPathMap, laneMap, setScanOptions, refreshRepos, REPO_STATE } from "./scan.mjs";
 import { computeDrift } from "./drift.mjs";
 import { addTask, toggleTask, removeTask, restoreTask, syncTasks, taskType, pushTasks, pendingReview, workingDiff, learnNpm, withReleases, releaseInput, approveRepo, approveChanges, sendBack, setAutoMerge } from "./tasks.mjs";
 import { repoReview, repoSuggest, folderSuggest, taskChat, clearTaskChat, mailState, setMail, sentMail, produce, releaseNotes } from "./writeups.mjs";
 import { loadScreens, screenImage, captureScreen, splitScreen, listMonitors, allowScreenshots, importScreen, setRegions, renameScreen, removeScreen, blueprint, clickRegion } from "./screens.mjs";
 import { mapPage, wholePage, pressRegion, typeRegion, scrollPage, signIn, keepBrowserOpen, isTrusted, trustedSites, trustSite, untrustSite } from "./headless.mjs";
-import { weeklyState, setWeekly, runWeekly, startWeekly, autostartState, setAutostart, installLauncher } from "./desktop.mjs";
+import { weeklyState, setWeekly, runWeekly, startWeekly, autostartState, setAutostart, installLauncher, iconSvg, setLauncherLook } from "./desktop.mjs";
 import { markNews, newsSince, watchState, addWatch, setEvery, removeWatch, clearNews, seenWatch, checkWatch, startWatches, setBrief, draftReply, openChat, watchBoard, boardChat, clearBoardChat } from "./watch.mjs";
 import { linksState, linkSite, checkLink, unlinkSite } from "./links.mjs";
 import { testWeeks, testInstalls, postsState, draftPosts, approvePost, editPost, skipPost, voiceFromLinkedIn, addMedia, removeMedia, mediaFile, mediaDir, pictureOfPage, clipOfPage, openUrl } from "./post.mjs";
@@ -30,7 +30,7 @@ import { mindState, forget } from "./mind.mjs";
 import { lanesTick, lanesState, partlyDone, orcaRelink } from "./lanes.mjs";
 import { keepFacts, skipFacts, awaitTick, awaitingState, stopWaiting } from "./handback.mjs";
 import { adaptState, noteUse } from "./adapt.mjs";
-import { homeState, homeAsk, homeAnswer, homeNext, workScene, workGo, firstSteps, marketingState, marketingGo, marketingTask, moveToMarketing } from "./home.mjs";
+import { homeState, homeAsk, homeAnswer, homeNext, workScene, workGo, firstSteps, marketingState, marketingGo, marketingTask, moveToMarketing, onboarding, setOnboarding } from "./home.mjs";
 import { MARKETING_DIR } from "./marketing.mjs";
 import { listReports, readReport, markAllRead } from "./reports.mjs";
 import { phoneState, setPhoneLink, newCode, unpairPhone, pairComputer, forgetComputer, pollComputer, startPhone } from "./phone.mjs";
@@ -186,6 +186,8 @@ const PLAIN_COLOURS = { g: (s) => s, d: (s) => s, b: (s) => s, y: (s) => s };
 async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {}) {
   const writeup = (cmd) => produce(cmd, { since, all });
   const SERVER_STARTED = Date.now();
+  // a brand-new Symbiot (no config yet) walks you through setup first (home.mjs onboarding)
+  const FRESH = !SANDBOX && !existsSync(CONFIG_PATH);
   // Stable token + port so the URL survives a restart — the open tab can
   // reconnect and auto-reload itself instead of you closing and reopening it.
   const cfg0 = loadConfig();
@@ -217,16 +219,21 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
   // an installed Symbiot keeps its app-menu entry pointing at itself (a new Node, a moved
   // install); not a copy run from a checkout or a test
   if (/[\\/]node_modules[\\/]symbiot[\\/]/.test(bin || "") && !SANDBOX) { try { installLauncher({ script: bin }); } catch {} }
+  if (FRESH) { try { const cf = loadConfig(); if (!cf.onboarding) { cf.onboarding = { pending: true, step: "welcome", skipped: [] }; saveConfig(cf); } } catch {} }
+  // your projects: kept, and found again off the main thread, so nothing waits on a search
+  setScanOptions({ cache: true }); REPO_STATE.onChange = () => { try { homeState({ fresh: true }); } catch {} };
+  { const t0 = Date.now(); refreshRepos().then((l) => console.log(`Found ${l.length} project${l.length === 1 ? "" : "s"} in ${((Date.now() - t0) / 1000).toFixed(1)}s.`)); }
   let UPDATING = null; // an update in flight: { target, attempt, retrying? }
   let NEWEST_WIN = ""; // the Symbiot window opened last: older ones close themselves (one window, not a pile)
   process.on("exit", () => closeAway()); // Away's windows go with the app (a quit, an update's restart)
   const server = createServer(async (req, res) => {
+    const t0 = Date.now(); res.on("finish", () => { const ms = Date.now() - t0; if (ms > 1500) console.log(`slow: ${String(req.url || "").split("?")[0]} took ${(ms / 1000).toFixed(1)}s`); });
     const u = new URL(req.url, "http://127.0.0.1");
     if (req.method === "GET" && u.pathname === "/") { res.writeHead(200, { "content-type": "text/html; charset=utf-8" }); res.end(EMBEDDED_UI); return; }
     // the app's typeface ships in the package (fonts/), so it's there offline
     // the window's own icon (its taskbar entry), the same orb as the app menu's
     if (req.method === "GET" && (u.pathname === "/favicon.svg" || u.pathname === "/favicon.ico")) {
-      try { const b = readFileSync(fileURLToPath(new URL("./icon.svg", import.meta.url))); res.writeHead(200, { "content-type": "image/svg+xml", "cache-control": "public, max-age=86400" }); res.end(b); }
+      try { const b = iconSvg(u.searchParams.get("look") || loadConfig().look || "ferro"); res.writeHead(200, { "content-type": "image/svg+xml", "cache-control": "no-cache" }); res.end(b); }
       catch { res.writeHead(404); res.end(); }
       return;
     }
@@ -389,6 +396,11 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       // the work scene: what agents are doing, what's waiting, what's ready; Go starts what's waiting
       if (u.pathname === "/api/work") return json(res, workScene());
       if (u.pathname === "/api/work/go" && req.method === "POST") return json(res, workGo());
+      if (u.pathname === "/api/onboarding") return json(res, onboarding({ fresh: u.searchParams.get("fresh") === "1" }));
+      if (u.pathname === "/api/onboarding/set" && req.method === "POST") { const b = await readBody(req); return json(res, setOnboarding({ step: b.step, skip: b.skip, unskip: b.unskip, skipRest: !!b.skipRest })); }
+      if (u.pathname === "/api/onboarding/done" && req.method === "POST") return json(res, setOnboarding({ done: true }));
+      if (u.pathname === "/api/onboarding/restart" && req.method === "POST") return json(res, setOnboarding({ restart: true }));
+      if (u.pathname === "/api/look" && req.method === "POST") { const b = await readBody(req), look = ["ferro", "glass", "pearl"].includes(b.look) ? b.look : "ferro"; const cf = loadConfig(); if (cf.look !== look) { cf.look = look; saveConfig(cf); } return json(res, { look, launcher: setLauncherLook(look) }); }
       if (u.pathname === "/api/firststeps") return json(res, firstSteps()); // Settings' first steps: what's set up, in order
       if (u.pathname === "/api/home/answer" && req.method === "POST") { const b = await readBody(req); return json(res, homeAnswer(b.id, { pick: b.pick, text: b.text })); }
       if (u.pathname === "/api/away" && req.method === "POST") { const b = await readBody(req); return json(res, toggleAway(`http://127.0.0.1:${server.address().port}/?t=${TOKEN}`, b.open)); }

@@ -155,6 +155,26 @@ function autostartContent(node, script, platform = OS, path = process.env.PATH |
 const launcherFile = (home = homedir()) => join(home, ".local", "share", "applications", "symbiot.desktop");
 const launcherIcon = (home = homedir()) => join(home, ".local", "share", "icons", "hicolor", "scalable", "apps", "symbiot.svg");
 const ICON_SRC = fileURLToPath(new URL("./icon.svg", import.meta.url));
+// The orb in each look: Ferrofluid (icon.svg, dark), Glass (clear, on a cool light
+// ground) and Pearl (white pearl, on a warm light ground). The app menu's icon and
+// the window's follow the look you pick (setLauncherLook).
+const LOOK_COLOURS = {
+  glass: { bg: ["#F4F7FB", "#D9E1EC"], orb: ["#FFFFFF", "#C9D6E6", "#7F93AE"], rim: "#5B8DEF", glow: "#5B8DEF" },
+  pearl: { bg: ["#F7F4EE", "#E6E0D5"], orb: ["#FFFFFF", "#ECE7DF", "#A99F92"], rim: "#C9A46A", glow: "#F2A541" },
+};
+function iconSvg(look = "ferro") {
+  const base = readFileSync(ICON_SRC, "utf8"), c = LOOK_COLOURS[look];
+  if (!c) return base;
+  return base.replace('stop-color="#1B1D22"', `stop-color="${c.bg[0]}"`).replace('stop-color="#08090B"', `stop-color="${c.bg[1]}"`)
+    .replace('stop-color="#3A3D44"', `stop-color="${c.orb[0]}"`).replace('stop-color="#121317"', `stop-color="${c.orb[1]}"`).replace('stop-color="#030304"', `stop-color="${c.orb[2]}"`)
+    .replace('stop-color="#B0466E" stop-opacity="0.55"', `stop-color="${c.rim}" stop-opacity="0.45"`)
+    .replace(/stop-color="#F2A541" stop-opacity="0\.16"/, `stop-color="${c.glow}" stop-opacity="0.18"`);
+}
+// The look changed: the app menu's icon follows, if the app menu has Symbiot.
+function setLauncherLook(look, home = homedir()) {
+  if (!existsSync(launcherFile(home))) return false;
+  try { writeFileSync(launcherIcon(home), iconSvg(look), { mode: 0o644 }); return true; } catch { return false; }
+}
 function launcherContent(node, script, path = process.env.PATH || "") {
   const q = (s) => '"' + String(s).replace(/(["`$\\])/g, "\\$1") + '"';
   return ["[Desktop Entry]", "Type=Application", "Name=Symbiot", "GenericName=Assistant",
@@ -180,7 +200,7 @@ function installLauncher({ node = process.execPath, script, home = homedir(), pl
     let had = ""; try { had = readFileSync(file, "utf8"); } catch {}
     if (had !== want) { mkdirSync(join(file, ".."), { recursive: true }); writeFileSync(file, want, { mode: 0o644 }); wrote = true; }
     let hadIcon = ""; try { hadIcon = readFileSync(icon, "utf8"); } catch {}
-    const svg = readFileSync(ICON_SRC, "utf8");
+    const svg = iconSvg(loadConfig().look || "ferro");
     if (hadIcon !== svg) { mkdirSync(join(icon, ".."), { recursive: true }); writeFileSync(icon, svg, { mode: 0o644 }); wrote = true; }
   } catch (e) { return { error: (e && e.message) || String(e) }; }
   if (wrote) { try { spawn("update-desktop-database", [join(file, "..")], { stdio: "ignore", detached: true }).on("error", () => {}).unref(); } catch {} }
@@ -206,4 +226,4 @@ function setAutostart(on, script) {
   } catch (e) { return { ...autostartState(), error: String((e && e.message) || e) }; }
 }
 
-export { launcherPath, launcherFile, launcherIcon, launcherContent, installLauncher, removeLauncher, weeklyCfg, lastSlot, weeklyDue, setWeekly, weeklyState, latestWeek, runWeekly, startWeekly, notifyCmd, desktopNotify, autostartFile, autostartContent, autostartState, setAutostart };
+export { iconSvg, setLauncherLook, launcherPath, launcherFile, launcherIcon, launcherContent, installLauncher, removeLauncher, weeklyCfg, lastSlot, weeklyDue, setWeekly, weeklyState, latestWeek, runWeekly, startWeekly, notifyCmd, desktopNotify, autostartFile, autostartContent, autostartState, setAutostart };

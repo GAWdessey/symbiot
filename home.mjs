@@ -14,14 +14,14 @@ import { homedir } from "node:os";
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { watchBoard, draftReply } from "./watch.mjs";
 import { pendingReview, pushTasks, addTask } from "./tasks.mjs";
-import { agentsList, runHandoff, runningHandoff, handoffCmd, connectorsInfo, parkedPaths, agentMissing, settleNeeds, pickAgent } from "./agents.mjs";
+import { agentsList, runHandoff, runningHandoff, handoffCmd, connectorsInfo, parkedPaths, agentMissing, settleNeeds, pickAgent, detectHandoffs, linkReach } from "./agents.mjs";
 import { linksState } from "./links.mjs";
 import { knowledgeState } from "./knowledge.mjs";
-import { CONFIG_DIR, loadTasks, saveTasks } from "./core.mjs";
+import { CONFIG_DIR, loadTasks, saveTasks, loadConfig, saveConfig } from "./core.mjs";
 import { lanesState, stuckHandovers, allowHandover, skipHandover } from "./lanes.mjs";
 import { converse, actIn, actNow, taskIn, loadMind } from "./mind.mjs";
-import { repoPathMap, laneMap } from "./scan.mjs";
-import { resolveProvider } from "./ai.mjs";
+import { repoPathMap, laneMap, reposState, scanRoots } from "./scan.mjs";
+import { resolveProvider, PROVIDERS, claudeState } from "./ai.mjs";
 import { reportsNews, listReports } from "./reports.mjs";
 import { awaitingState, inboxSight } from "./handback.mjs";
 import { newClashes } from "./checks.mjs";
@@ -493,4 +493,42 @@ function workGo({ push = pushTasks, run = runHandoff } = {}) {
   return { started, queued, repos, ...(parked.length ? { parked } : {}), ...(r.unresolved && r.unresolved.length ? { unresolved: r.unresolved.map((u) => u.name) } : {}) };
 }
 
-export { marketingState, marketingGo, marketingTask, moveToMarketing, goLane, homeState, homeContext, homeAsk, homeAnswer, homeNext, nextUp, laneNamed, NEXT_FILE, workScene, workGo, displayName, firstSteps };
+// ---- setup (the first run) --------------------------------------------------------
+// A new Symbiot walks you through setup before anything else: what it is, your AI,
+// where your work is, your agent, every app you use (connected, or "I don't use it"),
+// your documents, then Home. It's in config.onboarding: { pending, step, skipped: [link
+// ids you don't use] }; a Symbiot that ran before this existed isn't sent through it.
+const ONB_STEPS = ["welcome", "ai", "work", "agent", "apps", "docs", "done"];
+function onboarding({ fresh = false } = {}) {
+  const cfg = loadConfig(), o = cfg.onboarding || {};
+  const tryOr = (f, d) => { try { return f(); } catch { return d; } };
+  let st = null; try { st = claudeState(fresh); } catch {}
+  const r = tryOr(() => resolveProvider(), null);
+  const reps = tryOr(() => reposState(), { searching: false, list: [] });
+  const links = tryOr(() => linksState(), { items: [] }), reach = tryOr(() => linkReach(), null), skipped = new Set(o.skipped || []);
+  const apps = (links.items || []).map((x) => ({ id: x.id, name: x.name, group: x.group, state: x.state, ...(x.note ? { note: x.note } : {}), skipped: skipped.has(x.id),
+    ...(reach && reach.sites && reach.sites[x.id] ? { agents: !!reach.sites[x.id].ready, connector: reach.sites[x.id].name } : {}) }));
+  const det = tryOr(() => detectHandoffs(), { agents: [] }), cmd = tryOr(() => handoffCmd(), "");
+  return {
+    pending: !!o.pending, step: ONB_STEPS.includes(o.step) ? o.step : "welcome", steps: ONB_STEPS,
+    ai: { connected: !!r, provider: r ? r.provider : "", line: r ? `${PROVIDERS[r.provider].label}${r.model ? " · " + r.model : ""}` : "", claude: st ? { installed: st.installed, signedIn: st.signedIn } : null },
+    work: { searching: reps.searching, done: reps.done || 0, total: reps.total || 0, count: reps.list.length, repos: reps.list.slice(0, 60).map((x) => ({ name: x.name, path: x.path })), roots: tryOr(() => scanRoots(), []).map((r) => (r === homedir() ? "~" : r.startsWith(homedir() + "/") ? "~" + r.slice(homedir().length) : r)) },
+    agent: { cmd, pick: tryOr(() => pickAgent(), null), agents: (det.agents || []).map((a) => ({ label: a.label, tmpl: a.tmpl })) },
+    apps, groups: links.groups || [], decided: apps.every((a) => a.skipped || a.state !== "off"),
+    docs: { folders: tryOr(() => (knowledgeState().folders || []).map((f) => f.path), []) },
+  };
+}
+// step: where you are; skip / unskip: an app you do or don't use; skipRest: every app not connected.
+function setOnboarding({ step, skip, unskip, skipRest, done, restart } = {}) {
+  const cfg = loadConfig(), o = { ...(cfg.onboarding || {}) }, sk = new Set(o.skipped || []);
+  if (restart) { o.pending = true; o.step = "welcome"; }
+  if (step && ONB_STEPS.includes(step)) o.step = step;
+  if (skip) sk.add(String(skip)); if (unskip) sk.delete(String(unskip));
+  if (skipRest) { try { for (const x of linksState().items) if (x.state === "off") sk.add(x.id); } catch {} }
+  o.skipped = [...sk];
+  if (done) { o.pending = false; o.done = Date.now(); o.step = "done"; }
+  cfg.onboarding = o; saveConfig(cfg); cached = null;
+  return onboarding();
+}
+
+export { marketingState, marketingGo, marketingTask, moveToMarketing, goLane, homeState, homeContext, homeAsk, homeAnswer, homeNext, nextUp, laneNamed, NEXT_FILE, workScene, workGo, displayName, firstSteps, onboarding, setOnboarding, ONB_STEPS };
