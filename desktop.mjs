@@ -4,6 +4,7 @@
 // start-at-login launches that server in the background (no window) when you
 // log in, so the write-up still happens on days you never open Symbiot.
 // `symbiot app` then finds that running copy and opens its window.
+import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 import { homedir } from "node:os";
 import { join, dirname } from "node:path";
@@ -144,6 +145,52 @@ function autostartContent(node, script, platform = OS, path = process.env.PATH |
   return ["[Desktop Entry]", "Type=Application", "Name=Symbiot", "Comment=Symbiot in the background: the weekly write-up and its notification",
     `Exec=env SYMBIOT_NO_OPEN=1 ${q("PATH=" + path)} ${q(node)} ${q(script)} app`, "Terminal=false", "NoDisplay=true", "X-GNOME-Autostart-enabled=true", ""].join("\n");
 }
+// ---- the app launcher ---------------------------------------------------------
+// Symbiot in your app menu, with its icon: click it and Symbiot starts in the
+// background (no terminal) and opens its window, or brings the window up if it's
+// running (`symbiot open`). Linux (XDG): an entry in ~/.local/share/applications and
+// the icon in your icon theme. `npm install -g` writes it (postinstall.mjs), and each
+// start of an installed Symbiot writes it again if it's missing or out of date (a
+// new Node, a moved install), so it never points at something gone.
+const launcherFile = (home = homedir()) => join(home, ".local", "share", "applications", "symbiot.desktop");
+const launcherIcon = (home = homedir()) => join(home, ".local", "share", "icons", "hicolor", "scalable", "apps", "symbiot.svg");
+const ICON_SRC = fileURLToPath(new URL("./icon.svg", import.meta.url));
+function launcherContent(node, script, path = process.env.PATH || "") {
+  const q = (s) => '"' + String(s).replace(/(["`$\\])/g, "\\$1") + '"';
+  return ["[Desktop Entry]", "Type=Application", "Name=Symbiot", "GenericName=Assistant",
+    "Comment=Your work, your agents and what needs you, in one place",
+    `Exec=env ${q("PATH=" + path)} ${q(node)} ${q(script)} open`, "Icon=symbiot", "Terminal=false",
+    "Categories=Office;Utility;Development;", "Keywords=assistant;agents;tasks;week;standup;", "StartupNotify=true",
+    // the app's window is Chrome's --app window on Symbiot's address: this groups it under this icon
+    "StartupWMClass=chrome-127.0.0.1__-Default", ""].join("\n");
+}
+// The PATH the launcher starts it with: yours, without the throwaway folders npm adds
+// while it installs (…/node_modules/.bin), each once, and Node's own folder in it.
+function launcherPath(path, node) {
+  const seen = new Set(), out = [];
+  for (const d of [...String(path || "").split(":"), dirname(node)]) if (d && !/node_modules[\\/]\.bin|node-gyp-bin/.test(d) && !seen.has(d)) { seen.add(d); out.push(d); }
+  return out.join(":");
+}
+// Writes the entry and icon when they're missing or differ. { written, file } or { skipped }.
+function installLauncher({ node = process.execPath, script, home = homedir(), platform = OS, path = process.env.PATH || "" } = {}) {
+  if (platform !== "linux" || !script) return { skipped: true };
+  const file = launcherFile(home), icon = launcherIcon(home), want = launcherContent(node, script, launcherPath(path, node));
+  let wrote = false;
+  try {
+    let had = ""; try { had = readFileSync(file, "utf8"); } catch {}
+    if (had !== want) { mkdirSync(join(file, ".."), { recursive: true }); writeFileSync(file, want, { mode: 0o644 }); wrote = true; }
+    let hadIcon = ""; try { hadIcon = readFileSync(icon, "utf8"); } catch {}
+    const svg = readFileSync(ICON_SRC, "utf8");
+    if (hadIcon !== svg) { mkdirSync(join(icon, ".."), { recursive: true }); writeFileSync(icon, svg, { mode: 0o644 }); wrote = true; }
+  } catch (e) { return { error: (e && e.message) || String(e) }; }
+  if (wrote) { try { spawn("update-desktop-database", [join(file, "..")], { stdio: "ignore", detached: true }).on("error", () => {}).unref(); } catch {} }
+  return { written: wrote, file };
+}
+function removeLauncher(home = homedir()) {
+  const gone = [];
+  for (const f of [launcherFile(home), launcherIcon(home)]) { try { if (existsSync(f)) { unlinkSync(f); gone.push(f); } } catch {} }
+  return gone;
+}
 function autostartState() { const file = autostartFile(); return { on: existsSync(file), file, ...(OS === "android-app" ? { phone: "app" } : OS === "android" ? { phone: "termux" } : {}) }; }
 // `script` is index.mjs's real path. From npx that's a cache folder that goes
 // away, so it has to be installed for this to keep working.
@@ -159,4 +206,4 @@ function setAutostart(on, script) {
   } catch (e) { return { ...autostartState(), error: String((e && e.message) || e) }; }
 }
 
-export { weeklyCfg, lastSlot, weeklyDue, setWeekly, weeklyState, latestWeek, runWeekly, startWeekly, notifyCmd, desktopNotify, autostartFile, autostartContent, autostartState, setAutostart };
+export { launcherPath, launcherFile, launcherIcon, launcherContent, installLauncher, removeLauncher, weeklyCfg, lastSlot, weeklyDue, setWeekly, weeklyState, latestWeek, runWeekly, startWeekly, notifyCmd, desktopNotify, autostartFile, autostartContent, autostartState, setAutostart };

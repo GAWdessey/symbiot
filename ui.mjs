@@ -5,7 +5,8 @@
 // Kept apart from the CLI/server so UI edits can't break the backend (and vice
 // versa); test/smoke.mjs boots the real page and exercises every handler.
 export const EMBEDDED_UI = `<!doctype html><html><head><meta charset="utf8">
-<meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" id="themecolor" content="#08090B"><meta name="color-scheme" content="dark light"><title>Symbiot</title>
+<meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" id="themecolor" content="#08090B">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg"><meta name="color-scheme" content="dark light"><title>Symbiot</title>
 <style>
 @font-face{font-family:'Geist';src:url('/fonts/Geist-Variable.woff2') format('woff2');font-weight:100 900;font-style:normal;font-display:swap}
 :root{--ink:#0E1A1F;--ink2:#15262C;--ink3:#1D333A;--line:#24404A;--bone:#F4F1EA;--text:#B7C9C4;--faint:#7E9690;--green:#3DDC97;--amber:#F2A541;--green-dim:#16322D;--sans:'Geist',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif}

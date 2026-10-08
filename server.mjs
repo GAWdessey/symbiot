@@ -22,7 +22,7 @@ import { addTask, toggleTask, removeTask, restoreTask, syncTasks, taskType, push
 import { repoReview, repoSuggest, folderSuggest, taskChat, clearTaskChat, mailState, setMail, sentMail, produce, releaseNotes } from "./writeups.mjs";
 import { loadScreens, screenImage, captureScreen, splitScreen, listMonitors, allowScreenshots, importScreen, setRegions, renameScreen, removeScreen, blueprint, clickRegion } from "./screens.mjs";
 import { mapPage, wholePage, pressRegion, typeRegion, scrollPage, signIn, keepBrowserOpen, isTrusted, trustedSites, trustSite, untrustSite } from "./headless.mjs";
-import { weeklyState, setWeekly, runWeekly, startWeekly, autostartState, setAutostart } from "./desktop.mjs";
+import { weeklyState, setWeekly, runWeekly, startWeekly, autostartState, setAutostart, installLauncher } from "./desktop.mjs";
 import { markNews, newsSince, watchState, addWatch, setEvery, removeWatch, clearNews, seenWatch, checkWatch, startWatches, setBrief, draftReply, openChat, watchBoard, boardChat, clearBoardChat } from "./watch.mjs";
 import { linksState, linkSite, checkLink, unlinkSite } from "./links.mjs";
 import { testWeeks, testInstalls, postsState, draftPosts, approvePost, editPost, skipPost, voiceFromLinkedIn, addMedia, removeMedia, mediaFile, mediaDir, pictureOfPage, clipOfPage, openUrl } from "./post.mjs";
@@ -204,7 +204,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
     if (p && p.version) {
       const url = `http://127.0.0.1:${PORT}/?t=${TOKEN}`; const how = process.env.SYMBIOT_NO_OPEN === "1" ? "" : openApp(url);
       console.log(`\n${c.g("●")} ${c.b("Symbiot")} is already running (v${p.version}) at ${c.b(url)}`);
-      console.log(how ? c.d(`  Opened the existing window (a ${how}).`) : c.d("  Open that URL in your browser."));
+      console.log(how ? c.d(`  Opened the existing window (${/^[aeiou]/.test(how) ? "an" : "a"} ${how}).`) : c.d("  Open that URL in your browser."));
       console.log(c.d("  (Not starting a second copy. Set SYMBIOT_FORCE_NEW=1 to force one.)"));
       return;
     }
@@ -214,6 +214,9 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
   keepBrowserOpen(BROWSER_KEEP);
   const json = (res, obj) => { res.writeHead(200, { "content-type": "application/json" }); res.end(JSON.stringify(obj)); };
   const screenOut =(s) => (s && s.id ? { ...s, blueprint: blueprint(s), ...(s.page ? { trusted: isTrusted(s.page.url) } : {}) } : s && s.screens ? { ...s, screens: s.screens.map(screenOut) } : s);
+  // an installed Symbiot keeps its app-menu entry pointing at itself (a new Node, a moved
+  // install); not a copy run from a checkout or a test
+  if (/[\\/]node_modules[\\/]symbiot[\\/]/.test(bin || "") && !SANDBOX) { try { installLauncher({ script: bin }); } catch {} }
   let UPDATING = null; // an update in flight: { target, attempt, retrying? }
   let NEWEST_WIN = ""; // the Symbiot window opened last: older ones close themselves (one window, not a pile)
   process.on("exit", () => closeAway()); // Away's windows go with the app (a quit, an update's restart)
@@ -221,6 +224,12 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
     const u = new URL(req.url, "http://127.0.0.1");
     if (req.method === "GET" && u.pathname === "/") { res.writeHead(200, { "content-type": "text/html; charset=utf-8" }); res.end(EMBEDDED_UI); return; }
     // the app's typeface ships in the package (fonts/), so it's there offline
+    // the window's own icon (its taskbar entry), the same orb as the app menu's
+    if (req.method === "GET" && (u.pathname === "/favicon.svg" || u.pathname === "/favicon.ico")) {
+      try { const b = readFileSync(fileURLToPath(new URL("./icon.svg", import.meta.url))); res.writeHead(200, { "content-type": "image/svg+xml", "cache-control": "public, max-age=86400" }); res.end(b); }
+      catch { res.writeHead(404); res.end(); }
+      return;
+    }
     if (req.method === "GET" && u.pathname === "/fonts/Geist-Variable.woff2") {
       try { const b = readFileSync(fileURLToPath(new URL("./fonts/Geist-Variable.woff2", import.meta.url))); res.writeHead(200, { "content-type": "font/woff2", "cache-control": "public, max-age=31536000, immutable" }); res.end(b); }
       catch { res.writeHead(404); res.end(); }
@@ -477,7 +486,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
     const url = `http://127.0.0.1:${server.address().port}/?t=${TOKEN}`;
     const how = opened || RELAUNCH || process.env.SYMBIOT_NO_OPEN === "1" ? "" : openApp(url); opened = true; // only pop a window the first time (never in tests, never after an update)
     console.log(`\n${c.g("●")} ${c.b("Symbiot")} is running at ${c.b(url)}`);
-    console.log(RELAUNCH ? c.d("  Restarted after an update; the open window reloads itself.") : how ? c.d(`  Opened in a ${how}.`) : c.d("  Open that URL in your browser."));
+    console.log(RELAUNCH ? c.d("  Restarted after an update; the open window reloads itself.") : how ? c.d(`  Opened in ${/^[aeiou]/.test(how) ? "an" : "a"} ${how}.`) : c.d("  Open that URL in your browser."));
     console.log(c.d("  Leave this running; press Ctrl+C to stop (or click the X in the window's top corner)."));
   });
   server.on("error", (e) => {
@@ -508,4 +517,4 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
   setInterval(() => { try { awaitTick(); } catch {} }, 60000).unref(); // a reply an agent's email waits on: found, and handed on
 }
 
-export { updateCmd, changesSince, whatsNew, tarFile, registryChangelog, BROWSER_KEEP, startApp, askRunningApp, isAppRunningWeekly };
+export { updateCmd, changesSince, whatsNew, tarFile, registryChangelog, BROWSER_KEEP, startApp, askRunningApp, isAppRunningWeekly, openApp };

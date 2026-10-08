@@ -14,7 +14,7 @@
 // Any key or click, or Super+` again, closes every window. Not a lock: Super+Esc
 // locks the computer.
 import { spawn, spawnSync } from "node:child_process";
-import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync, existsSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { CONFIG_DIR, chromeBinary } from "./core.mjs";
@@ -110,4 +110,14 @@ function installShortcut({ cmd, home = homedir(), desktop = process.env.XDG_CURR
   return { ok: true, file: f, replaced: /key:\s*"grave"/.test(had) };
 }
 
-export { placeable, grantProfile, parseMonitors, screens, awayQueries, openAway, closeAway, awayOpen, toggleAway, withShortcut, installShortcut, COSMIC_CUSTOM };
+// Uninstalling: our Super+` line comes out of COSMIC's custom shortcuts; the file
+// goes if nothing else was in it. True when there was one.
+function removeShortcut(home = homedir()) {
+  const f = COSMIC_CUSTOM(home); let had = ""; try { had = readFileSync(f, "utf8"); } catch { return false; }
+  const lines = had.split("\n"), kept = lines.filter((l) => !/Spawn\("[^"]*symbiot[^"]* away"\)/.test(l));
+  if (kept.length === lines.length) return false;
+  const rest = kept.join("\n");
+  try { if (!rest.replace(/[{}\s]/g, "")) unlinkSync(f); else writeFileSync(f, rest); } catch {}
+  return true;
+}
+export { removeShortcut, placeable, grantProfile, parseMonitors, screens, awayQueries, openAway, closeAway, awayOpen, toggleAway, withShortcut, installShortcut, COSMIC_CUSTOM };
