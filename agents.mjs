@@ -8,7 +8,8 @@ import { fileURLToPath } from "node:url";
 import { readFileSync, writeFileSync, mkdirSync, existsSync, openSync, writeSync, unlinkSync, readdirSync, statSync, renameSync } from "node:fs";
 import { randomBytes, createHash } from "node:crypto";
 import { CONFIG_DIR, loadConfig, saveConfig, loadTasks, TASK_MAX, clipWords, sameTask, taskWords, sh, hasCmd } from "./core.mjs";
-import { parseRun, lastRunText, readRunLog } from "./work.mjs";
+import { parseRun, lastRunText, readRunLog, briefPlan, stepOf, runLine } from "./work.mjs";
+import { noteDuration, kindOf } from "./estimate.mjs";
 import { parseFacts, leftToYou } from "./handover.mjs";
 import { scanRoots, repoPathMap } from "./scan.mjs";
 import { knowledgeFolders } from "./knowledge.mjs";
@@ -343,8 +344,8 @@ function earlierRuns() {
     let end = Date.now(); if (!busy) try { end = statSync(log).mtimeMs; } catch {}
     const needs = busy ? null : needsOf(r.path, { final: lastFinal(r.path), waiting: wait, end });
     if (!busy && !ask.questions.length && !wait && !facts.length && !needs) continue;
-    let tail = "", work = null, progress = null; try { ({ tail, work, progress } = workOf(r.path, readRunLog(log))); } catch {}
-    out.push({ id: "earlier-" + digest(r.path).slice(0, 8), name: String(r.name || r.path.split("/").pop()), path: r.path, status: busy ? "running" : "done", earlier: true, startedAt, endedAt: busy ? null : end, elapsed: Math.max(0, end - startedAt), exitCode: null, tail, work, progress, changed: agentChanges(r.path, startedAt), ask, held: heldTasks(r.path), waiting: wait, needs, remember: facts.length ? facts : null, fromHeld: false });
+    let tail = "", work = null, progress = null, line = null; try { ({ tail, work, progress, line } = workOf(r.path, readRunLog(log))); } catch {}
+    out.push({ id: "earlier-" + digest(r.path).slice(0, 8), name: String(r.name || r.path.split("/").pop()), path: r.path, status: busy ? "running" : "done", earlier: true, startedAt, endedAt: busy ? null : end, elapsed: Math.max(0, end - startedAt), exitCode: null, tail, work, progress, ...(busy && line ? { line } : {}), changed: agentChanges(r.path, startedAt), ask, held: heldTasks(r.path), waiting: wait, needs, remember: facts.length ? facts : null, fromHeld: false });
   }
   return out;
 }
@@ -768,9 +769,10 @@ function track(name, cmd, cwd, onExit, env) {
     try { if (statSync(logp).size > LOG_KEEP) renameSync(logp, logp + ".old"); } catch {} // past 8 MB: kept as agent.log.old, and a fresh one starts
     let fd = "ignore"; try { fd = openSync(logp, "a"); writeSync(fd, `\n=== ${name} ${new Date().toISOString()} ===\n$ ${cmd}\n`); } catch {}
     const entry = { id: randomBytes(4).toString("hex"), name, path: cwd, log: logp, startedAt: Date.now(), status: "running", exitCode: null, endedAt: null };
+    const task = firstOpen(readSymbiot(cwd, "TASKS.md")); // what it's on, for how long runs like it take (estimate.mjs)
     const child = spawn(cmd, { shell: true, cwd, detached: true, stdio: ["ignore", fd === "ignore" ? "ignore" : fd, fd === "ignore" ? "ignore" : fd], ...(env ? { env: { ...process.env, ...env } } : {}) });
     entry.pid = child.pid;
-    child.on("exit", (code) => { entry.status = code === 0 ? "done" : "failed"; entry.exitCode = code; entry.endedAt = Date.now(); if (onExit) try { onExit(code); } catch {} });
+    child.on("exit", (code) => { entry.status = code === 0 ? "done" : "failed"; entry.exitCode = code; entry.endedAt = Date.now(); if (code === 0) try { noteDuration({ path: cwd, cmd, task, ms: entry.endedAt - entry.startedAt }); } catch {} if (onExit) try { onExit(code); } catch {} });
     child.on("error", () => { entry.status = "failed"; entry.endedAt = Date.now(); });
     child.unref();
     HANDOFFS.unshift(entry);
@@ -1046,7 +1048,8 @@ function heldTasks(path) {
 // a step of yours it waits on. Then runs from before the app started that still
 // need you (earlierRuns).
 // A run's work, to draw: parsed from its log (work.mjs), with how far through its
-// TASKS.md it is. tail is what to show as text: what it said, for a streaming
+// TASKS.md it is, and (line) where it is in its brief's numbered steps, in a line, and
+// whether it has gone quiet or is going round (work.mjs runLine). tail is what to show as text: what it said, for a streaming
 // run; the log's end, for another agent.
 // Claude Code in print mode (claude -p) streams each step as JSON, so the work
 // can be drawn as it happens (work.mjs). Added to a claude -p command that has no
@@ -1056,22 +1059,26 @@ function withStream(cmd) {
   if (!/^\s*claude\b/.test(c) || !/\s-p\b|\s--print\b/.test(c) || /--output-format\b/.test(c)) return c;
   return c + " --output-format stream-json --verbose";
 }
+const firstOpen = (md) => { const l = String(md || "").split("\n").find((x) => /^\s*-\s*\[ \]/.test(x)); return l ? l.replace(/^\s*-\s*\[ \]\s*/, "").trim() : ""; };
 function workOf(path, log) {
   const w = parseRun(lastRunText(log)), md = readSymbiot(path, "TASKS.md");
   const done = (md.match(/^\s*-\s*\[x\]/gim) || []).length, total = done + (md.match(/^\s*-\s*\[ \]/gm) || []).length;
   const tail = w.stream ? (w.final || w.said.join("\n\n") || (w.doing ? w.doing + "…" : "")) : String(log).slice(-1200);
-  const work = w.stream ? { model: w.model, doing: w.doing, steps: w.steps.slice(-16), todos: w.todos, cost: w.cost, turns: w.turns, tokens: w.tokens, tests: w.tests, files: w.files, pace: w.pace, errors: w.errors, final: w.final.slice(0, 1200), count: w.steps.length } : null;
-  return { tail, work, progress: total ? { done, total } : null };
+  const plan = w.stream ? briefPlan(md) : [], line = w.stream && !w.final ? runLine({ plan, step: stepOf(plan, w.talk), work: w }) : null;
+  const work = w.stream ? { model: w.model, doing: w.doing, moved: w.moved, looping: w.looping, steps: w.steps.slice(-16), todos: w.todos, cost: w.cost, turns: w.turns, tokens: w.tokens, tests: w.tests, files: w.files, pace: w.pace, errors: w.errors, final: w.final.slice(0, 1200), count: w.steps.length } : null;
+  // its kind (a brief, or answers) from its command line, and the task it's on: what estimate.mjs compares it with
+  if (line) { const c = String(log || "").slice(String(log || "").lastIndexOf("\n=== ")).split("\n")[2] || ""; line.kind = kindOf(c); line.task = firstOpen(md).slice(0, 200); }
+  return { tail, work, progress: total ? { done, total } : null, ...(line ? { line } : {}) };
 }
 function agentsList() {
   const seen = new Set();
   return HANDOFFS.map((e) => {
-    const { tail, work, progress } = workOf(e.path, readRunLog(e.log));
+    const { tail, work, progress, line } = workOf(e.path, readRunLog(e.log));
     const first = !seen.has(e.path); seen.add(e.path);
     const facts = first && e.status !== "running" ? factsOf(e.path) : [];
     const waiting = first && e.status !== "running" ? waitingFor(e.path) : null;
     const needs = first && e.status !== "running" ? needsOf(e.path, { final: work ? tail : "", waiting, end: e.endedAt || Date.now() }) : null;
-    return { id: e.id, name: e.name, path: e.path, status: e.status, startedAt: e.startedAt, endedAt: e.endedAt, elapsed: (e.endedAt || Date.now()) - e.startedAt, exitCode: e.exitCode, tail, work, progress, changed: agentChanges(e.path, e.startedAt), ask: first ? agentQuestions(e.path, e.name) : null, held: first ? heldTasks(e.path) : null, waiting, needs, remember: facts.length ? facts : null, fromHeld: !!e.fromHeld };
+    return { id: e.id, name: e.name, path: e.path, status: e.status, startedAt: e.startedAt, endedAt: e.endedAt, elapsed: (e.endedAt || Date.now()) - e.startedAt, exitCode: e.exitCode, tail, work, progress, ...(e.status === "running" && line ? { line } : {}), changed: agentChanges(e.path, e.startedAt), ask: first ? agentQuestions(e.path, e.name) : null, held: first ? heldTasks(e.path) : null, waiting, needs, remember: facts.length ? facts : null, fromHeld: !!e.fromHeld };
   }).concat(earlierRuns());
 }
 

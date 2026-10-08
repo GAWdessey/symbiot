@@ -2,6 +2,12 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.57.3
+
+- **See how far along each agent is.** Home used to say only "Agents working: 2". Now each agent at work gets its own drop by the Workdesk, showing its lane, which step of its brief it's on ("step 2 of 4: look and feel, plus a zoned world") and what it's doing right now ("shooting the monsters, camp and gates"), taken from its latest actions. The same line shows on its lane under Tasks, on the Away screen, and in what Home's chat knows. Every brief now asks an agent to say "Step N: …" as it starts each numbered step, so the count stays right.
+- **How long it has left.** Next to the step, a range like "5–15 min left". It comes from that lane's past runs of the same kind, counting only the ones that ran longer than this one has so far, so a run 20 minutes in isn't compared with one-minute replies. Tasks queued for the lane's next run add to it ("+2 queued: 30–60 min in all"). If a run is past nearly all of its lane's runs, it says "longer than its usual 10–25 min" rather than guessing. Symbiot also keeps how long each finished run took, and on which task, so the estimate gets better the more you use it.
+- **A stalled run is flagged.** If an agent hasn't said or done anything for 20 minutes, its drop turns amber and says "no progress in 25 min". The same happens if its last five steps were all the same call ("repeating the same step"). The middle of Home counts them: "2 agents working (1 stalled)".
+
 ## 0.57.2
 
 - **No more "Show me your work" when you've already said.** On a big home folder the search for your projects could run out of time and come back empty, so Home asked where your repos were. Repos found before the cut-off are now kept, a short search keeps the repos the last one found, the folders you set in Settings count as your answer, and your main checkout stays a lane even when a worktree is fresher. Tool installs like `~/.nvm` and `~/.rustup` are no longer taken for projects.

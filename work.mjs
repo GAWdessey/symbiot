@@ -52,15 +52,17 @@ function parseRun(text) {
   for (const l of lines) { if (l.startsWith("{")) { try { events.push(JSON.parse(l)); continue; } catch {} } if (l.trim()) plain.push(l); }
   const out = { stream: events.length > 0, model: "", steps: [], todos: [], doing: "", said: [], final: "", cost: null, turns: null, tokens: null, tests: null, files: {}, pace: [], errors: 0 };
   if (!out.stream) { out.said = plain.slice(-12).map((l) => short(l, 160)); out.final = plain.slice(-40).join("\n").trim(); return out; }
-  const byId = new Map(), tasks = new Map(); let thinking = false;
+  const byId = new Map(), tasks = new Map(), talk = []; let thinking = false, moved = 0;
   for (const e of events) {
     const at = e.timestamp ? Date.parse(e.timestamp) : null;
+    // a move: something it said or did, or a step coming back; not a heartbeat
+    if (at && (e.type === "assistant" || e.type === "user")) moved = Math.max(moved, at);
     if (e.session_id && !out.session) out.session = String(e.session_id);
     if (e.type === "system" && e.subtype === "init") { out.model = String(e.model || ""); continue; }
     if (e.type === "assistant" && e.message && Array.isArray(e.message.content)) {
       for (const b of e.message.content) {
         if (b.type === "thinking") { thinking = true; continue; }
-        if (b.type === "text" && b.text && b.text.trim()) { out.said.push(short(b.text, 220)); thinking = false; continue; }
+        if (b.type === "text" && b.text && b.text.trim()) { out.said.push(short(b.text, 220)); talk.push(short(b.text, 400)); thinking = false; continue; }
         if (b.type !== "tool_use") continue;
         thinking = false;
         const inp = b.input || {};
@@ -102,7 +104,76 @@ function parseRun(text) {
   if (times.length > 1) { const t0 = times[0], span = Math.max(times[times.length - 1] - t0, 60000), n = Math.min(24, Math.max(6, Math.ceil(span / 60000))), w = span / n; out.pace = new Array(n).fill(0); for (const t of times) out.pace[Math.min(n - 1, Math.floor((t - t0) / w))]++; }
   out.steps = out.steps.slice(-MAX_STEPS).map(({ at, ...s }) => ({ ...s, ...(at ? { at } : {}) }));
   out.said = out.said.slice(-6);
+  out.talk = talk.slice(-120); out.moved = moved || null;
+  // going round: its last LOOP steps all the same call
+  const tail = out.steps.slice(-LOOP), k = (x) => x.verb + " " + x.target;
+  out.looping = tail.length === LOOP && !out.final && tail.every((x) => k(x) === k(tail[0]));
   return out;
+}
+
+// ---- how far along a run is ---------------------------------------------------------
+// Home said only "Agents working: 2" while steve and argena had each been at it for
+// half an hour (2026-10-08): nothing said what either was doing or how far along.
+// A brief's plan is the numbered steps of the first open task in its TASKS.md
+// ("1) Device pass on v6.7. … 2) Look and feel, plus a zoned world. …"), each as a
+// short label; where the run is in it comes from what the agent says as it goes
+// ("Device pass done … moving to step 2", "Now comparing item by item…").
+const LOOP = 5;
+const STOP = new Set("against about after again also because been before being both but can could did does doing done each else even every first from have here into just like make more most much must next now once only other over same should since some sure than that the their them then there these they this those through what when where which while will with without would your you yours step steps check checks checked".split(" "));
+const stem = (w) => w.toLowerCase().replace(/(ings?|ed|es|s|e)$/, "").slice(0, 6);
+const stems = (t) => new Set(String(t || "").toLowerCase().match(/[a-z][a-z'-]{3,}/g)?.filter((w) => !STOP.has(w)).map(stem) || []);
+// The numbered steps of a brief's first open task → ["Device pass on v6.7", …]; [] when it has none.
+function briefPlan(md) {
+  const line = String(md || "").split("\n").find((l) => /^\s*-\s*\[ \]/.test(l));
+  if (!line) return [];
+  const t = line.replace(/^\s*-\s*\[ \]\s*/, ""), cuts = [];
+  for (const m of t.matchAll(/(^|[\s.:;])(\d{1,2})[).]\s+/g)) { if (+m[2] === cuts.length + 1) cuts.push({ n: +m[2], at: m.index + m[1].length, body: m.index + m[0].length }); }
+  if (cuts.length < 2) return [];
+  return cuts.map((c, i) => {
+    const full = t.slice(c.body, i + 1 < cuts.length ? cuts[i + 1].at : undefined).trim();
+    let label = full.split(/[.;:!?](?:\s|$)|\s\(|\s[—–-]\s/)[0].trim();
+    const comma = label.indexOf(", ", 20); if (comma > 0) label = label.slice(0, comma);
+    return { label: short(label, 70), full: full.split(/\s+/).slice(0, 30).join(" ") };
+  });
+}
+// Which step (1-based) of plan the run is on, from what it said, in order: "step 2"
+// names it ("step 1 done" means the next; every brief asks for "Step 2: …"); otherwise
+// two words of a step's label in what it said. Fewer, or the step's other words, would
+// be too loose: "wiring the map" isn't step 3's "wire the class bible", nor "the
+// monsters" step 4 because step 4 mentions monsters. Only forward. 0: can't tell.
+function stepOf(plan, talk) {
+  if (!plan || !plan.length) return 0;
+  const L = plan.map((p) => [...stems(p.label)]);
+  let cur = 0;
+  for (const text of talk || []) {
+    let named = 0;
+    for (const m of String(text).matchAll(/\bstep\s+(\d{1,2})\b([^.\n]{0,40})/gi)) { const n = +m[1] + (/^\W*(?:\([^)]*\)\W*)?(?:is\s+|are\s+)?(?:done|finished|complete)/i.test(m[2]) ? 1 : 0); if (n <= plan.length) named = Math.max(named, n); }
+    if (named) { cur = Math.max(cur, named); continue; }
+    const said = stems(text), hits = L.map((l) => l.filter((w) => said.has(w)).length);
+    const top = Math.max(...hits), at = hits.indexOf(top);
+    if (top >= 2 && hits.lastIndexOf(top) === at) cur = Math.max(cur, at + 1);
+  }
+  return Math.min(cur, plan.length);
+}
+// What it's on, in a line: its in-progress to-do, else the last thing it said it's
+// doing (the last sentence of what it said last), else its last step.
+function nowLine(w) {
+  const todo = (w.todos || []).find((t) => t.status === "in_progress");
+  if (todo) return todo.active;
+  const last = (w.talk || [])[(w.talk || []).length - 1];
+  if (last) { const ss = String(last).replace(/\s+/g, " ").trim().split(/(?<=[.!?])\s+/); const s = (ss.filter((x) => x.trim().length > 12).pop() || ss.pop() || "").trim().replace(/[.:]$/, ""); if (s) return s; }
+  return w.doing || "";
+}
+// A running agent in one line for Home: "step 2 of 4: look and feel, plus a zoned world
+// · shooting the monsters"; quiet: minutes since its last move, once that's past
+// STALL_MS (it may be stuck, or one long command), looping: its last steps all alike.
+const STALL_MS = 20 * 60 * 1000;
+function runLine({ plan = [], step = 0, work = {}, now = Date.now() } = {}) {
+  const n = short(nowLine(work), 90), lower = (s) => s.charAt(0).toLowerCase() + s.slice(1);
+  const at = step && plan[step - 1] ? `step ${step} of ${plan.length}: ${lower(plan[step - 1].label)}` : plan.length ? `${plan.length} steps in its brief` : "";
+  const line = [at, n && lower(n)].filter(Boolean).join(" · ") || "working on it";
+  const quiet = work.moved && now - work.moved > STALL_MS ? Math.round((now - work.moved) / 60000) : 0;
+  return { line, ...(step ? { step, of: plan.length } : {}), ...(quiet ? { quiet } : {}), ...(work.looping ? { looping: true } : {}) };
 }
 
 // The newest run of an agent.log, from its "=== " header on, read from the end of the
@@ -136,4 +207,4 @@ function lastRunText(log) {
 // What the agent said last: its final answer, from either kind of log.
 function finalOf(log) { return parseRun(lastRunText(log)).final; }
 
-export { parseRun, lastRunText, finalOf, describe, testsIn, readRunLog };
+export { parseRun, lastRunText, finalOf, describe, testsIn, readRunLog, briefPlan, stepOf, nowLine, runLine, STALL_MS };

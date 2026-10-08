@@ -2552,8 +2552,8 @@ function lqRedraw(){whenFree($('liquid'),'liquid',function(){if(LQ.scene==='work
 function lqBuildWork(){lqRelay();if(LQ.workBy==='project'){lqBuildProjects();return;}var w=LQ.workData||{},S=lqSize(),cx=S.w/2,cy=S.h*0.5,list=[];LQ.bw=S.w;LQ.bh=S.h;if(lqRelayOn()){var RW=Math.min(420,S.w*0.32)+28;S={w:S.w-RW,h:S.h,s:S.s};cx=S.w/2;}
 var vx=Math.max(0.5,Math.min(S.s*1.3,(S.w/2-90)/400)),vy=Math.max(0.35,Math.min(S.s*0.8,(S.h-cy-230)/400,(cy-160)/400)),rs=Math.min(S.s,(vx+vy)/1.5);
 var run=(w.running||[]).slice(0,3),ready=(w.ready||[]).slice(0,2),wait=(w.waiting||[]).slice(0,5),extra=(w.waitingCount||0)-wait.length;
-run.forEach(function(r,i){var ang=Math.PI+(i+1)*Math.PI/(run.length+1);var pg=r.progress?' · '+r.progress.done+' of '+r.progress.total+' done':'';
-list.push({id:r.id,kind:'run',repo:r.name,shape:'agents',ask:r.waiting,title:r.doing,sub:r.name+pg+(r.waiting?' · has a question for you':''),r:58*rs,tx:cx+Math.cos(ang)*190*vx,ty:cy+Math.sin(ang)*130*vy});});
+run.forEach(function(r,i){var ang=Math.PI+(i+1)*Math.PI/(run.length+1);var pg=r.step?' · step '+r.step+' of '+r.of:r.progress?' · '+r.progress.done+' of '+r.progress.total+' done':'';
+list.push({id:r.id,kind:'run',repo:r.name,shape:'agents',ask:r.waiting||!!(r.quiet||r.looping),title:r.doing,sub:r.name+pg+(r.eta?' · '+r.eta:'')+(r.waiting?' · has a question for you':'')+(r.quiet||r.looping?' · '+runWarn(r).replace(/ · $/,''):''),r:58*rs,tx:cx+Math.cos(ang)*190*vx,ty:cy+Math.sin(ang)*130*vy});});
 ready.forEach(function(r,i){var ang=-Math.PI/2+(i-(ready.length-1)/2)*0.9;list.push({id:r.id,kind:'ready',repo:r.repo,shape:'tasks',title:'Ready for your OK',sub:r.repo+(r.count?' · '+r.count+' task'+(r.count>1?'s':'')+' done':''),r:48*rs,tx:cx+Math.cos(ang)*300*vx,ty:cy+Math.sin(ang)*300*vy});});
 wait.forEach(function(t,i){var ang=Math.PI/2+(i-(wait.length-1)/2)*0.55;list.push({id:t.id,kind:'wait',repo:t.repo,shape:'tasks',title:t.text,sub:t.repo+(t.busy?' · after the current one':' · waiting'),r:30*rs,tx:cx+Math.cos(ang)*300*vx,ty:cy+Math.sin(ang)*260*vy});});
 if(extra>0)list.push({id:'morewait',kind:'more',shape:'tasks',title:'+'+extra+' more waiting',sub:'see them all',r:24*rs,tx:S.w-Math.max(80,S.w*0.1),ty:S.h-230});
@@ -2581,7 +2581,7 @@ function lqBuildProjects(){var w=LQ.workData||{},S=lqSize(),cx=S.w/2,cy=S.h*0.5,
 var vx=Math.max(0.5,Math.min(S.s*1.3,(S.w/2-90)/400)),vy=Math.max(0.35,Math.min(S.s*0.8,(S.h-cy-230)/400,(cy-160)/400)),rs=Math.min(S.s,(vx+vy)/1.5);
 var all=lqSortLanes((w.projects||[]).slice()),cap=S.w<700?5:7,ps=all.slice(0,cap),rest=all.slice(cap),slots=Math.max(3,ps.length+(rest.length?1:0));
 ps.forEach(function(p,i){var ang=Math.PI+i*2*Math.PI/slots,load=p.waiting+2*p.ready+(p.running?3:0)+2*Math.min(2,p.asks||0);
-var sub=p.asks?p.asks+' question'+(p.asks>1?'s':'')+' for you':p.ready?'ready for your OK':p.runs>1?p.runs+' agents at work':p.running?(p.running.ask?'has a question for you':'agent at work: '+String(p.running.doing||'').toLowerCase()):p.waiting+' task'+(p.waiting>1?'s':'')+' waiting';if(p.parked)sub='parked \\u00b7 '+sub;
+var sub=p.asks?p.asks+' question'+(p.asks>1?'s':'')+' for you':p.ready?'ready for your OK':p.runs>1?p.runs+' agents at work':p.running?(p.running.ask?'has a question for you':p.running.quiet||p.running.looping?runWarn(p.running).replace(/ · $/,''):p.running.line?String(p.running.line)+(p.running.eta?' · '+p.running.eta:''):'agent at work: '+String(p.running.doing||'').toLowerCase()):p.waiting+' task'+(p.waiting>1?'s':'')+' waiting';if(p.parked)sub='parked \\u00b7 '+sub;
 list.push({id:'proj:'+p.repo,kind:'proj',repo:p.repo,shape:'tasks',title:p.name||p.repo,sub:sub,orbit:!!p.running,ask:!!p.lit,lit:!!p.lit,parked:!!p.parked,r:(30+7*Math.min(6,load))*rs,tx:cx+Math.cos(ang)*260*vx,ty:cy+Math.sin(ang)*260*vy});});
 if(rest.length){var am=Math.PI+ps.length*2*Math.PI/slots;list.push({id:'moreproj',kind:'more',title:'+'+rest.length+' more',sub:'quieter: '+rest.map(function(p){return p.name||p.repo;}).join(' · '),lanes:rest.map(function(p){return {repo:p.repo,name:p.name||p.repo,lit:!!p.lit};}),r:24*rs,tx:cx+Math.cos(am)*260*vx,ty:cy+Math.sin(am)*260*vy});}
 
@@ -2683,6 +2683,7 @@ var gs=Object.keys(groups).map(function(k){var g=groups[k];return {key:k,m:g,ang
 gs.sort(function(a,b){return a.ang-b.ang;});var tot=gs.reduce(function(t,g){return t+g.m.length+0.8;},0),acc=gs.length?gs[0].ang-(gs[0].m.length+0.8)/tot*Math.PI:0;
 gs.forEach(function(g){var span=(g.m.length+0.8)/tot*2*Math.PI,mid=acc+span/2+(lqOrg(list[g.m[0]].id,3)-0.5)*span*0.25;acc+=span;if(angOf){span=Math.min(1.5,span);mid=angOf(g.key)+(lqOrg(list[g.m[0]].id,3)-0.5)*0.2;}
 g.m.forEach(function(i,k){var d=list[i],rr=Math.sqrt(Math.pow((d.ax-cx)/vx,2)+Math.pow((d.ay-cy)/vy,2))*(k%2?1.22:0.92),th=mid+(k-(g.m.length-1)/2)*Math.min(0.62,span/Math.max(1,g.m.length)*0.8);d.tx=cx+Math.cos(th)*rr*vx;d.ty=cy+Math.sin(th)*rr*vy;});});}
+function runWarn(x){return x.quiet?'no progress in '+x.quiet+' min · ':x.looping?'repeating the same step · ':'';}
 function lqLinks(list,near){var at={},links=[],same=function(l){return lqPara(list[l[0]])===lqPara(list[l[1]]);};list.forEach(function(d,i){if(d.kind==='shape')at[d.shape]=i;});
 list.forEach(function(d,i){if(d.kind==='shape')((near||{})[d.shape]||[]).forEach(function(n){var j=at[n.id];if(j!=null&&j>i)links.push([i,j,n.w]);else if(j!=null&&j<i&&!links.some(function(l){return l[0]===j&&l[1]===i;}))links.push([j,i,n.w]);});
 else if((d.kind==='you'||d.kind==='feed')&&at[d.shape]!=null)links.push([at[d.shape],i,0.5]);});return links.filter(same);}
@@ -2702,6 +2703,8 @@ lay.slice(room).forEach(function(it){if(!vis.some(function(x){return x.id===it.i
 var mkh=h.marketing||{},mkSub=mkh.needs?mkh.needs+(mkh.needs>1?' need you':' needs you'):mkh.working?'its agent is at work':'';
 lay.slice(0,room).forEach(function(it){var mko=it.id==='marketing';list.push({id:'shape:'+it.id,kind:'shape',shape:it.id,title:LQNAMES[it.id]||it.id,sub:it.id==='reports'&&repOut?repNew.count+' new':mko?mkSub:'',ask:mko&&!!mkh.needs,orbit:mko&&!!mkh.working,r:it.r*rs,tx:cx+Math.cos(it.angle)*it.d*vx,ty:cy+Math.sin(it.angle)*it.d*vy});});
 feeds.forEach(function(f,i){var ang=Math.PI/2+(i-(feeds.length-1)/2)*0.7;var fn=bsName({name:f.title});list.push({id:f.id,kind:'feed',shape:f.shape,title:fn.n+(fn.sub?' · '+fn.sub.split('@').pop():''),sub:f.sub,r:(28+5*Math.min(f.count||1,5))*rs,tx:cx+Math.cos(ang)*300*vx,ty:cy+Math.sin(ang)*300*vy});});
+// each agent at work, a drop of its own by the Workdesk: its lane, where it is in its brief ("step 2 of 4: …"), what it's on and how long it has left, amber once it has gone quiet or round in circles
+(h.runs||[]).slice(0,3).forEach(function(x,i,a){var ang=PARA_ANG.p+(i-(a.length-1)/2)*0.45;list.push({id:x.id,kind:'run',shape:'agents',repo:x.repo,title:x.name,sub:runWarn(x)+x.line+(x.eta?' · '+x.eta:''),ask:!!(x.quiet||x.looping),r:30*rs,tx:cx+Math.cos(ang)*330*vx,ty:cy+Math.sin(ang)*300*vy});});
 list.push({id:'archive',kind:'archive',shape:'tasks',title:'Archive',sub:'what’s done: archived tasks',r:26*rs,tx:cx+Math.cos(PARA_ANG.x)*330*vx,ty:cy+Math.sin(PARA_ANG.x)*330*vy});
 list.forEach(function(d){var g=lqPara(d);d.live=PARA_LIVE[g];if(g==='r')d.r*=0.82;if(g==='x')d.r*=0.85;if(d.shape==='tasks'&&d.kind==='shape'&&h.working)d.orbit=true;});
 var mr=more.length?[{id:'more',kind:'more',title:'more',sub:more.map(function(m){return LQNAMES[m]||m;}).join(' · '),more:more.slice(),r:24*S.s}]:[],zl=list.concat(mr),zc=lqZones(zl,S,top,92*S.s);
@@ -2718,8 +2721,8 @@ list=cur;}
 list=list.concat(need.items);var old={};LQ.drops.forEach(function(d){old[d.id]=d;});
 // a new blob grows where it belongs, rather than sweeping out of the core across the rest
 LQ.drops=list.map(function(d){var o=old[d.id];d.x=o?o.x:d.blob?d.tx:cx;d.y=o?o.y:d.blob?d.ty:cy;d.vx=o?o.vx:0;d.vy=o?o.vy:0;d.cr=o?o.cr:0;return d;});
-var n=(h.you||[]).length,w=h.working||0;
-LQ.coreText=n?(n+(n>1?' things need':' thing needs')+' only you'+(w?' · '+w+' agent'+(w>1?'s':'')+' working':'')):(w?w+' agent'+(w>1?'s':'')+' working · nothing needs you':'Nothing needs you right now');
+var n=(h.you||[]).length,w=h.working||0,qt=(h.runs||[]).filter(function(x){return x.quiet||x.looping;}).length,wk=w?w+' agent'+(w>1?'s':'')+' working'+(qt?' ('+qt+' stalled)':''):'';
+LQ.coreText=n?(n+(n>1?' things need':' thing needs')+' only you'+(w?' · '+wk:'')):(w?wk+' · nothing needs you':'Nothing needs you right now');
 var b=document.body;if(b&&b.classList){b.classList.toggle('lq-touch',!!(a.modes&&a.modes.touch)||LQ.touch);b.classList.toggle('lq-keys',!!(a.modes&&a.modes.keyboard));}
 LQ.talkWeight=(a.modes&&a.modes.talkWeight)||0.35;
 lqLabels();}
@@ -2784,7 +2787,7 @@ while(out.indexOf('  ')>=0)out=out.split('  ').join(' ');[' :',' ,',' ;',' .'].f
 function lqLabels(){var el=$('lqdrops');if(!el)return;
 var dropAt=function(b){return LQ.drops[+b.getAttribute('data-i')];};
 var same=sameHtml(el,LQ.drops.map(function(d,i){if(d.blob)return "<div class='lqd lq-you lqblob"+(d.item.urgent?' urgent':'')+"' data-i='"+i+"' role='group' aria-label='"+escQ(String(d.item.name||d.item.title||'')+': '+String(d.item.q||d.item.sub||''))+"'>"+blobBody(d.item,true)+"</div>";
-return "<div class='lqd lq-"+d.kind+(d.parked?' lq-parked':'')+(d.ask&&d.kind==='shape'?' lq-lit':'')+(LQ.openTag===d.id?' open':'')+"' data-i='"+i+"'><button type='button' class='lt' title='"+escQ(String(d.title||'').split('**').join('')+(d.sub?' · '+d.sub:''))+"' aria-expanded='"+(LQ.openTag===d.id)+"'><span>"+esc(lqShort(d.title,42))+"</span>"+(d.kind==='proj'&&d.sub?"<span class='lm'>"+esc(lqShort(d.sub,40))+"</span>":"")+"</button>"+(d.sub?"<small>"+esc(d.sub)+"</small>":"")+"<button type='button' class='lgo'>Open &rsaquo;</button></div>";}).join(''));
+return "<div class='lqd lq-"+d.kind+(d.parked?' lq-parked':'')+(d.ask&&d.kind==='shape'?' lq-lit':'')+(LQ.openTag===d.id?' open':'')+"' data-i='"+i+"'><button type='button' class='lt' title='"+escQ(String(d.title||'').split('**').join('')+(d.sub?' · '+d.sub:''))+"' aria-expanded='"+(LQ.openTag===d.id)+"'><span>"+esc(lqShort(d.title,42))+"</span>"+((d.kind==='proj'||d.kind==='run')&&d.sub?"<span class='lm'>"+esc(lqShort(d.sub,d.kind==='proj'?40:56))+"</span>":"")+"</button>"+(d.sub?"<small>"+esc(d.sub)+"</small>":"")+"<button type='button' class='lgo'>Open &rsaquo;</button></div>";}).join(''));
 if(!same){LQ.btns=[];LQ.lts=[];el.querySelectorAll('.lqd').forEach(function(b){LQ.btns.push(b);var d=dropAt(b),lt=b.querySelector('.lt'),go=b.querySelector('.lgo');LQ.lts.push(lt);
 if(lt)lt.addEventListener('click',function(ev){lqOpen(dropAt(b),ev);});
 if(go)go.addEventListener('click',function(ev){LQ.openTag=null;lqOpen(dropAt(b),ev);});
@@ -3052,7 +3055,7 @@ function awShort(t){t=String(t||'');var cut=[' - ',' \u00b7 ',' | '];cut.forEach
 function awStatus(){var el=$('awstat');if(!el)return;Promise.all([api('/api/home').catch(function(){return {};}),api('/api/work').catch(function(){return {};})]).then(function(r){var h=r[0]||{},w=r[1]||{},out=[];
 var runs=(w.running||[]).slice(0,4),nr=(w.running||[]).length||h.working||0;
 out.push(nr?'<b>'+nr+' agent'+(nr===1?'':'s')+' at work</b>':'No agent at work');
-runs.forEach(function(x){out.push("<span class='awr'>"+esc(x.lane||x.name||'')+': '+esc(x.doing||'working on it')+'</span>');});
+runs.forEach(function(x){out.push("<span class='awr'>"+esc(x.lane||x.name||'')+': '+esc(runWarn(x)+(x.line||x.doing||'working on it')+(x.eta?' · '+x.eta:''))+'</span>');});
 var y=h.youCount||0;out.push(y?'<b>'+y+' thing'+(y===1?'':'s')+' only you can do</b>':'Nothing needs you');
 var fd=(h.feeds||[]).filter(function(f){return f.count;}).slice(0,4).map(function(f){return esc(awShort(f.title))+' '+f.count;});if(fd.length)out.push('Waiting: '+fd.join(' \u00b7 '));
 el.innerHTML=out.join('<br>');}).catch(function(){});}
