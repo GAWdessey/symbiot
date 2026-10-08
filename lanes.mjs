@@ -21,9 +21,9 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, chmodS
 import { createHash, randomBytes } from "node:crypto";
 import { execFile } from "node:child_process";
 import { CONFIG_DIR, loadTasks, clipWords } from "./core.mjs";
-import { runHandoff, runningHandoff, waitingFor, agentQuestions, findOrcaCli, installAllowlist } from "./agents.mjs";
-import { addTask, pushTasks } from "./tasks.mjs";
-import { actNow } from "./mind.mjs";
+import { runHandoff, runningHandoff, waitingFor, agentQuestions, findOrcaCli, installAllowlist, writeTasks } from "./agents.mjs";
+import { addTask, removeTask, pushTasks } from "./tasks.mjs";
+import { actNow, actBrief } from "./mind.mjs";
 import { laneMap } from "./scan.mjs";
 import { parseRun, lastRunText, readRunLog } from "./work.mjs";
 import { OPS, parseHandoffs } from "./handover.mjs";
@@ -51,15 +51,56 @@ function laneTarget(lane, map) {
   return name ? { lane: name, path: map[name] } : null;
 }
 
+// A handover whose text changed while the run doing the earlier version is still
+// going (the LinkedIn auto-poster spec reached ops twice, on top of a run already
+// building it) supersedes that run rather than starting a second one: the same
+// ledger row takes the new text, and the lane's agent gets it once it's free.
+// Ops: the new brief waits in that run's folder (writeTasks holds it while it
+// runs; it lands and starts there, resuming the same conversation, when it exits),
+// with a note in its ANSWERS.md saying what changed. A repo: the earlier task
+// gives way to the new one. The earlier row: same asker, same lane, not reported
+// back, about the same thing (alike), and its run still going (ops) or its task
+// still open (a repo). null when there's none.
+function supersedes(h, from, ledger, { running, tasks }) {
+  return ledger.handoffs.slice().reverse().find((x) => x.from.path === from.path && x.to.lane.toLowerCase() === h.lane.toLowerCase() && !x.reportedAt && (x.status === "started" || x.status === "held") && x.text !== h.text && alike(x.text, h.text)
+    && (x.to.lane === OPS ? !!x.to.path && !!running(x.to.path) : !!x.task && tasks().some((t) => t.id === x.task && !t.done && !t.archived && !t.review))) || null;
+}
+function resupply(e, text, { now, title, context }) {
+  const p = e.to.path;
+  try {
+    writeTasks(p, actBrief(text, { title, context, now }));
+    const file = join(p, ".symbiot", "ANSWERS.md"), had = existsSync(file) ? readFileSync(file, "utf8") : "# Answers\n";
+    writeFileSync(file, `${had.replace(/\s*$/, "")}\n\n### The handover changed while you ran\n${e.from.lane} rewrote what it handed over: TASKS.md has the new version, and it replaces the one you started on. Carry on from what you've done, to the new version.\n_symbiot (handover) ${new Date(now).toISOString().slice(0, 10)}_\n`);
+    return { ok: true };
+  } catch (err) { return { error: "Couldn't hand the new version to the run already going: " + ((err && err.message) || err) }; }
+}
+
 // Pick up what a folder's agent handed over and start the lanes it named.
 // Each handover is started once (its key: where from, which lane, what).
-function dispatch(path, { map = laneMap(), act = actNow, run = runHandoff, add = addTask, push = pushTasks, now = Date.now(), ledger = loadLedger() } = {}) {
+function dispatch(path, { map = laneMap(), act = actNow, run = runHandoff, add = addTask, push = pushTasks, drop = removeTask, running = runningHandoff, refresh = resupply, tasks = loadTasks, now = Date.now(), ledger = loadLedger() } = {}) {
   const asked = parseHandoffs(readSym(path, "HANDOFF.md")); if (!asked.length) return [];
   const from = { lane: laneOf(path, map), path }, parent = ledger.handoffs.filter((h) => h.to.path === path).pop(), chain = (parent ? parent.chain : 0) + 1;
   const started = [];
   for (const h of asked) {
     const key = createHash("sha1").update(path + "\n" + h.lane.toLowerCase() + "\n" + h.text).digest("hex").slice(0, 16);
-    if (ledger.handoffs.some((x) => x.key === key)) continue;
+    if (ledger.handoffs.some((x) => x.key === key || (x.was || []).includes(key))) continue;
+    const prior = supersedes(h, from, ledger, { running, tasks });
+    if (prior) {
+      const was = [...(prior.was || []), prior.key];
+      if (prior.to.lane === OPS) {
+        const r = refresh(prior, h.text, { now, title: `handed over by ${from.lane}`, context: `${from.lane}'s agent (in ${path}) handed this over, and carries on once it's done.` });
+        if (r.error) { Object.assign(prior, { status: "error", error: r.error, text: h.text, key, was }); started.push(prior); continue; }
+        Object.assign(prior, { text: h.text, key, was, at: now, superseded: (prior.superseded || 0) + 1 });
+      } else {
+        drop(prior.task);
+        const t = add(h.text, prior.to.lane, { after: `(handed over by ${from.lane})` });
+        if (t.error) { Object.assign(prior, { status: "error", error: t.error, text: h.text, key, was }); started.push(prior); continue; }
+        push({ repo: prior.to.lane });
+        const r = run(prior.to.path) || {};
+        Object.assign(prior, { text: h.text, key, was, at: now, task: t.id, superseded: (prior.superseded || 0) + 1, status: r.id && !r.busy && !r.blocked ? "started" : "held", ...(r.id ? { job: r.id } : {}) });
+      }
+      started.push(prior); continue;
+    }
     const e = { id: randomBytes(4).toString("hex"), key, from, to: { lane: h.lane, path: "" }, text: h.text, at: now, chain, status: "started" };
     const to = laneTarget(h.lane, map);
     if (chain > MAX_CHAIN) Object.assign(e, { status: "error", error: `${MAX_CHAIN} handovers in a row led here, so this one wasn't started. Do it yourself, or ask the user.` });
@@ -155,9 +196,11 @@ function lanesTick({ map = laneMap(), act = actNow, run = runHandoff, running = 
   const ledger = loadLedger();
   let acts = []; try { acts = readdirSync(ACT_DIR).filter((d) => d.startsWith("act-")).map((d) => join(ACT_DIR, d)); } catch {}
   const started = [];
-  for (const path of [...Object.values(map), ...acts]) if (existsSync(join(path, ".symbiot", "HANDOFF.md"))) started.push(...dispatch(path, { map, act, run, add, push, now, ledger }));
+  for (const path of [...Object.values(map), ...acts]) if (existsSync(join(path, ".symbiot", "HANDOFF.md"))) started.push(...dispatch(path, { map, act, run, add, push, running, now, ledger, ...(tasks ? { tasks: () => tasks } : {}) }));
   const t = tasks || loadTasks(), reported = [];
   for (const e of ledger.handoffs) {
+    // a superseded ops run that ended where nothing started its new brief (another process ran it): start it here
+    if (e.superseded && !e.reportedAt && e.status !== "error" && e.to.lane === OPS && e.to.path && !running(e.to.path) && lastRunStart(e.to.path) < e.at) { const r = run(e.to.path, { force: true }) || {}; if (r.id && !r.busy) e.job = r.id; }
     if (e.reportedAt || running(e.from.path)) continue; // the one that asked reads it when it's started again, so not mid-run
     const o = outcome(e, { tasks: t, running }); if (!o) continue;
     if (report(e, o, { run, running, now })) { e.reportedAt = now; if (e.status !== "error") e.status = "done"; e.result = o.text; reported.push(e); }

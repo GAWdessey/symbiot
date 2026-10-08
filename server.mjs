@@ -16,7 +16,7 @@ import { EMBEDDED_UI } from "./ui.mjs";
 import { VERSION, LATEST_VERSION, REGISTRY, semverGt, checkLatest, CONFIG_PATH, loadConfig, saveConfig, loadTasks, hasCmd, chromeBinary, CONFIG_DIR } from "./core.mjs";
 import { shSingle, handoffCmd, setHandoffCmd, grantAgent, runHandoff, track, detectHandoffs, connectorsInfo, linkReach, answerQuestions, skipIdea, agentsList, startWaiting, parkLane, parkedPaths, autoAllowSweep, trustFull, readLastWords, sandboxState } from "./agents.mjs";
 import { PROVIDERS, resolveProvider, connectProvider, detectHardware, recommendModels, hasOllama, ollamaInstall, ensureOllama, useOllamaModel } from "./ai.mjs";
-import { SCAN, SCAN_TIMEOUT_MS, scanRoots, scanHome, addScanRoot, removeScanRoot, buildMap, nodeDetail, repoPathMap, laneMap, setScanOptions, refreshRepos, REPO_STATE } from "./scan.mjs";
+import { SCAN, SCAN_TIMEOUT_MS, scanRoots, scanHome, addScanRoot, removeScanRoot, buildMap, nodeDetail, repoPathMap, laneMap, setScanOptions, refreshRepos, REPO_STATE, reposState } from "./scan.mjs";
 import { computeDrift } from "./drift.mjs";
 import { addTask, toggleTask, removeTask, restoreTask, syncTasks, taskType, pushTasks, pendingReview, workingDiff, learnNpm, withReleases, releaseInput, approveRepo, approveChanges, sendBack, setAutoMerge } from "./tasks.mjs";
 import { repoReview, repoSuggest, folderSuggest, taskChat, clearTaskChat, mailState, setMail, sentMail, produce, releaseNotes } from "./writeups.mjs";
@@ -30,9 +30,9 @@ import { mindState, forget } from "./mind.mjs";
 import { lanesTick, lanesState, partlyDone, orcaRelink } from "./lanes.mjs";
 import { keepFacts, skipFacts, awaitTick, awaitingState, stopWaiting } from "./handback.mjs";
 import { adaptState, noteUse } from "./adapt.mjs";
-import { homeState, homeAsk, homeAnswer, homeNext, workScene, workGo, firstSteps, marketingState, marketingGo, marketingTask, moveToMarketing, onboarding, setOnboarding } from "./home.mjs";
-import { MARKETING_DIR } from "./marketing.mjs";
-import { listReports, readReport, markAllRead } from "./reports.mjs";
+import { reportIdeasAdd, reportAsk, reportDraftAnswer, homeState, homeAsk, homeAnswer, homeNext, workScene, workGo, workTick, firstSteps, marketingState, marketingGo, marketingDraftAnswer, marketingTask, moveToMarketing, onboarding, setOnboarding } from "./home.mjs";
+import { MARKETING_DIR, MARKETING, draftPreview, laneMedia, displayName } from "./marketing.mjs";
+import { listReports, readReport, reportImage, markAllRead } from "./reports.mjs";
 import { phoneState, setPhoneLink, newCode, unpairPhone, pairComputer, forgetComputer, pollComputer, startPhone } from "./phone.mjs";
 import { knowledgeState, addKnowledgeFolder, removeKnowledgeFolder, indexKnowledge, knowledgeTick, searchKnowledge } from "./knowledge.mjs";
 import { runChecks, checksState, markClashesSeen } from "./checks.mjs";
@@ -52,6 +52,14 @@ function updateCmd(latest, current, platform = process.platform) {
 // update the app shows once what came with it (config.seenVersion is the version
 // you last saw it for). Before an update, the new version's own CHANGELOG.md is
 // read from its package on npm (registryChangelog).
+
+// A folder's lane as people say it: the repo (or Marketing) it is, else "" (an ops run).
+function laneOfFolder(path) {
+  if (path === MARKETING_DIR) return "Marketing";
+  let map = {}; try { map = laneMap() || {}; } catch {}
+  const n = Object.keys(map).find((k) => map[k] === path);
+  return n ? (n === MARKETING ? "Marketing" : displayName(path, n)) : "";
+}
 const CHANGELOG = fileURLToPath(new URL("./CHANGELOG.md", import.meta.url));
 function changesSince(md, from, to) {
   const out = [];
@@ -275,12 +283,12 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
         await learnNpm(ask); return json(res, partly(pendingReview()));
       }
       if (u.pathname === "/api/pending/diff") { const p = laneMap()[u.searchParams.get("repo") || ""]; return json(res, { diff: p ? workingDiff(p) : "" }); }
-      if (u.pathname === "/api/pending/approve" && req.method === "POST") { const b = await readBody(req), repo = String(b.repo || ""); if (b.bump) await learnNpm([laneMap()[repo]]); const notes = await releaseNotes(releaseInput(repo, { bump: b.bump })); return json(res, approveRepo(repo, { bump: b.bump, notes })); }
-      if (u.pathname === "/api/pending/approve-changes" && req.method === "POST") { const b = await readBody(req), repo = String(b.repo || ""); if (b.bump) await learnNpm([laneMap()[repo]]); const notes = await releaseNotes(releaseInput(repo, { bump: b.bump, tick: b.tick })); return json(res, approveChanges(repo, { bump: b.bump, tick: b.tick, notes })); }
+      if (u.pathname === "/api/pending/approve" && req.method === "POST") { const b = await readBody(req), repo = String(b.repo || ""); if (b.bump) await learnNpm([laneMap()[repo]]); const notes = await releaseNotes(releaseInput(repo, { bump: b.bump })); return json(res, await approveRepo(repo, { bump: b.bump, notes })); }
+      if (u.pathname === "/api/pending/approve-changes" && req.method === "POST") { const b = await readBody(req), repo = String(b.repo || ""); if (b.bump) await learnNpm([laneMap()[repo]]); const notes = await releaseNotes(releaseInput(repo, { bump: b.bump, tick: b.tick })); return json(res, await approveChanges(repo, { bump: b.bump, tick: b.tick, notes })); }
       if (u.pathname === "/api/pending/sendback" && req.method === "POST") { const b = await readBody(req); return json(res, sendBack(String(b.id || ""))); }
       if (u.pathname === "/api/automerge" && req.method === "POST") { const b = await readBody(req); return json(res, setAutoMerge(String(b.repo || ""), !!b.on)); }
       if (u.pathname === "/api/tasks/push" && req.method === "POST") { const b = await readBody(req); return json(res, pushTasks(b)); }
-      if (u.pathname === "/api/scanroots") return json(res, { roots: loadConfig().scanRoots || [], effective: scanRoots(), home: scanHome() });
+      if (u.pathname === "/api/scanroots") { const st = reposState(); return json(res, { roots: loadConfig().scanRoots || [], effective: scanRoots(), home: scanHome(), searching: st.searching, searched: st.at || 0, found: st.list.length }); }
       if (u.pathname === "/api/scanroots/add" && req.method === "POST") { const b = await readBody(req); return json(res, addScanRoot(String(b.path || ""))); }
       if (u.pathname === "/api/scanroots/remove" && req.method === "POST") { const b = await readBody(req); return json(res, removeScanRoot(String(b.path || ""))); }
       // knowledge folders (knowledge.mjs): added or removed, the index catches up at once
@@ -309,7 +317,9 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
         return json(res, { started: true, model, id: e ? e.id : "" });
       }
       if (u.pathname === "/api/agents") return json(res, await withReleases(agentsList()));
-      if (u.pathname === "/api/agents/answer" && req.method === "POST") { const b = await readBody(req); return json(res, answerQuestions(String(b.path || ""), b.answers, { rerun: !!b.rerun })); }
+      // the answer, saved in the folder that asked; it says which lane that is, so "Sent to …"
+      // names where it went (a Marketing answer said "Sent to Paperclip Steve")
+      if (u.pathname === "/api/agents/answer" && req.method === "POST") { const b = await readBody(req), path = String(b.path || ""), r = answerQuestions(path, b.answers, { rerun: !!b.rerun }); return json(res, r && r.ok ? { ...r, lane: laneOfFolder(path) } : r); }
       if (u.pathname === "/api/agents/skip" && req.method === "POST") { const b = await readBody(req); return json(res, skipIdea(String(b.path || ""), b.text)); }
       // What a run handed back (handback.mjs): facts for memory, kept only on Remember; replies it waits on.
       if (u.pathname === "/api/agents/remember" && req.method === "POST") { const b = await readBody(req); return json(res, b.skip === true ? skipFacts(String(b.path || "")) : keepFacts(String(b.path || ""), { only: Array.isArray(b.only) ? b.only.map(Number) : undefined })); }
@@ -358,8 +368,8 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       if (u.pathname === "/api/links/link" && req.method === "POST") { const b = await readBody(req); return json(res, await linkSite(String(b.id || ""))); }
       if (u.pathname === "/api/links/check" && req.method === "POST") { const b = await readBody(req); return json(res, await checkLink(String(b.id || ""))); }
       if (u.pathname === "/api/links/unlink" && req.method === "POST") { const b = await readBody(req); return json(res, unlinkSite(String(b.id || ""))); }
-      // Posts (post.mjs): the week's drafts, waiting on you. Approve only records your yes:
-      // the page copies the post itself and opens LinkedIn's share box; nothing is posted.
+      // Posts (post.mjs): the week's drafts, waiting on you. Approve is your yes: Marketing's
+      // agent posts it through Symbiot's signed-in browser.
       if (u.pathname === "/api/posts") return json(res, postsState());
       // Marketing: replies on LinkedIn (its watched notifications, marked "maybe a customer"),
       // and the 4-week test's table, with npm installs of the packages the posts are about
@@ -375,9 +385,14 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       if (u.pathname === "/api/marketing/task" && req.method === "POST") { const b = await readBody(req); return json(res, marketingTask(b.text, b.product)); }
       if (u.pathname === "/api/marketing/move" && req.method === "POST") { const b = await readBody(req); return json(res, moveToMarketing(b.id, b.product)); }
       if (u.pathname === "/api/marketing/go" && req.method === "POST") return json(res, marketingGo());
+      // a draft as the post it will be (its preview, notes apart), its picture or video, and
+      // your Approve or Skip on it: approved, its agent posts it through Symbiot's browser
+      if (u.pathname === "/api/marketing/draft") return json(res, draftPreview(String(u.searchParams.get("rel") || "")));
+      if (u.pathname === "/api/marketing/media") { const m = laneMedia(String(u.searchParams.get("rel") || "")); if (!m) { res.writeHead(404); res.end("not found"); return; } res.writeHead(200, { "content-type": m.type, "cache-control": "private, max-age=300" }); res.end(readFileSync(m.file)); return; }
+      if (u.pathname === "/api/marketing/draft/answer" && req.method === "POST") { const b = await readBody(req); return json(res, marketingDraftAnswer(String(b.rel || ""), b.skip ? "skipped" : "approved")); }
       if (u.pathname === "/api/marketing/open" && req.method === "POST") { const b = await readBody(req), f = join(MARKETING_DIR, String(b.rel || "")); return json(res, f.startsWith(MARKETING_DIR + "/") && existsSync(f) ? { ok: openUrl(f) } : { error: "That draft isn't there any more." }); }
       if (u.pathname === "/api/posts/draft" && req.method === "POST") return json(res, await draftPosts());
-      if (u.pathname === "/api/posts/approve" && req.method === "POST") { const b = await readBody(req); return json(res, approvePost(String(b.id || ""), { copy: null })); }
+      if (u.pathname === "/api/posts/approve" && req.method === "POST") { const b = await readBody(req); return json(res, approvePost(String(b.id || ""))); }
       if (u.pathname === "/api/posts/edit" && req.method === "POST") { const b = await readBody(req); return json(res, editPost(String(b.id || ""), b.text)); }
       if (u.pathname === "/api/posts/skip" && req.method === "POST") { const b = await readBody(req); return json(res, skipPost(String(b.id || ""))); }
       // a draft's pictures and video: yours (the file itself as the body), a picture or clip of a page, shown, removed, their folder opened
@@ -391,7 +406,12 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       // Reports (reports.mjs): what runs wrote up in their .symbiot/; read by id, never by path.
       if (u.pathname === "/api/reports") return json(res, { reports: listReports() });
       if (u.pathname === "/api/reports/read") return json(res, readReport(u.searchParams.get("id") || ""));
+      // A report's image (an <img> src, so its token is in ?t=): by the report's id and a src it shows, from its allowed folders only.
+      if (u.pathname === "/api/reports/image") { const f = reportImage(u.searchParams.get("id") || "", u.searchParams.get("src") || ""); if (f.error) { res.writeHead(404, { "content-type": "text/plain" }); res.end(f.error); return; } res.writeHead(200, { "content-type": f.type, "cache-control": "private, no-cache", "x-content-type-options": "nosniff" }); res.end(readFileSync(f.file)); return; }
       if (u.pathname === "/api/reports/seen" && req.method === "POST") return json(res, markAllRead());
+      if (u.pathname === "/api/reports/ideas" && req.method === "POST") { const b = await readBody(req); return json(res, reportIdeasAdd(String(b.id || ""), b.ideas)); }
+      if (u.pathname === "/api/reports/ask" && req.method === "POST") { const b = await readBody(req); return json(res, await reportAsk(String(b.id || ""), b.question)); }
+      if (u.pathname === "/api/reports/draft" && req.method === "POST") { const b = await readBody(req); return json(res, reportDraftAnswer(String(b.id || ""), !!b.approve)); }
       // Home (home.mjs): the liquid's live data, and its talk; Adapt (adapt.mjs): its
       // shape from how you use it (commit=1 when it wakes from rest, never mid-gesture).
       if (u.pathname === "/api/home") return json(res, homeState({ fresh: u.searchParams.get("fresh") === "1" }));
@@ -520,6 +540,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
   startWatches(); // pages you watch (Screens → Watch), read every few minutes
   startPhone(); // Watch on your phone: the computer listens if it's switched on, the phone asks if it's paired
   setInterval(() => { try { startWaiting(); } catch {} }, 20000).unref(); // a run that waits for your step starts once the file it names changes
+  setInterval(() => { try { workTick(); } catch {} }, 20000).unref(); // a waiting task starts once its lane is free (config.autoStart: false leaves it to Go)
   setInterval(() => { try { lanesTick(); } catch {} }, 20000).unref(); // agents hand work to other lanes, and hear back when it's done
   setTimeout(() => { orcaRelink().catch(() => {}); }, 15000).unref(); // a lane folder a handover renamed, added again in Orca where it is now
   // an agent's allow list that stays inside your work is turned on by itself, and the agent carries on

@@ -2,6 +2,19 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.57.6
+
+- **Every waiting task says why.** On Home, a waiting task now says in plain words what it's waiting on: its lane's agent is on it now, it's queued behind that lane's run (named, with what it's doing), it waits on your answer or your OK (a tap opens that card on the Workdesk), or it's blocked (no folder, no agent, parked, or its start failed, and why). One that's sat for more than a few minutes with nothing in its way, or whose run ended without finishing it, is flagged instead of sitting there quietly.
+- **Tasks start by themselves.** A waiting task goes to its lane's agent as soon as that lane is free, without pressing Go; lanes run side by side. A "🤖 Agent: …" task (the ops lane) starts as an agent run of its own instead of waiting forever; a "👤 You" one is left to you. `"autoStart": false` in settings leaves it all to Go.
+- **Commit and push are an agent's job.** When a CI run fails and the fix is local git work (stage, commit, pull, push), the lane's agent does it and only asks for your OK on the Workdesk, with the files, before it pushes. It no longer lands under "Only the user can do" asking you to paste git commands into a terminal.
+- **See a post the way it will look.** Under Marketing, **Preview** shows each draft its agent wrote as the platform's own post: for LinkedIn, your name, headline and photo, the text with its real line breaks, cut with "…see more" where the feed cuts it, hashtags, and its picture or video inline. The agent's notes are folded away below it, never mixed into the post: each draft keeps the post under `## Post` and the notes under `## Notes`, so the preview and what goes out are the same text.
+- **Approving the preview is your only step in a post.** **Approve** and **Skip** sit next to the preview. Approved, Marketing's agent posts it, or schedules it for its date, through Symbiot's browser, already signed in to LinkedIn, with exactly the text you approved. If the post changes afterwards, it asks you again. A Marketing question no longer asks you to schedule, paste or attach posts on a platform you've linked: that's the agent's option now, once you approve. Only signing in stays yours.
+- **What's linked is never asked for again.** With LinkedIn signed in in Symbiot's browser, no card asks you to sign in, link it, make a developer app or do it by hand: those options become the agent's ("post it through Symbiot's browser, already signed in to LinkedIn, once you approve its preview"). It asks you to sign in again only when a real attempt found the session expired, and says so. Every agent's brief now says to prefer the linked session over an API or app that needs you.
+- **A post to approve, lit.** Every draft Marketing's agent wrote that you haven't approved or skipped shows under Marketing's **Needs you** as "a post to approve", with **Preview** one click away, and lights Marketing's orb on Home.
+- **Reports end with what to do about them.** A report's own "Top 3 next" (or next steps, recommendations) shows at its end as up to 4 ideas you tick straight onto the Workdesk, in that report's lane, with a box to ask Symbiot about the report right there. A draft report (a post preview, say) gets **Approve** and **Reject** instead.
+- **"Sent to" names the right lane.** Answering a Marketing question said "Sent to Paperclip Steve". It now names the lane the answer was saved in, and an answer's note no longer lingers under another project's cards.
+- **Approve stages only the task's own files**, runs git in the background with a longer timeout, and says plainly what went wrong instead of `ETIMEDOUT`.
+
 ## 0.57.5
 
 - **Home's layout holds with agents at work.** The agents at work used to sit among the section orbs. That pushed the headings off their own orbs ("Projects" over Todo, "Resources" over Workdesk), drew "Watching" on top of "Areas", scattered what you watch, and squeezed each agent's name into a narrow column ("Ste / ve"). Now they have a band of their own under "Needs you": a small orb each, the lane's name in full, and its step, what it's on and the time left under it. The sections keep their own places, each heading by its orbs. When the window is too small for that and Home falls back to its free layout, no heading is drawn on another.
@@ -28,6 +41,7 @@ What each Symbiot release brought, newest first. When Approve bumps the version,
 - **Windows is tested on every change.** A Windows job runs on GitHub with each pull request: Symbiot has to install, start, open into setup, find your Claude subscription and uninstall cleanly there, or the change doesn't go in. The whole suite runs there too and reports what isn't Windows-ready yet.
 - **Your Claude subscription on Windows.** Claude Code installs as `claude.cmd` on Windows, which Symbiot didn't find, so it fell back to asking for a key. And Symbiot's instructions now reach Claude Code in a file instead of on the command line, which Windows caps at about 8,000 characters.
 - **`symbiot --version` and `symbiot --help` work.** Both ran the weekly write-up instead.
+
 
 ## 0.57.0
 

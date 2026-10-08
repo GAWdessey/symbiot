@@ -10,7 +10,7 @@ import { randomBytes, createHash } from "node:crypto";
 import { CONFIG_DIR, loadConfig, saveConfig, loadTasks, TASK_MAX, clipWords, sameTask, taskWords, sh, hasCmd } from "./core.mjs";
 import { parseRun, lastRunText, readRunLog, briefPlan, stepOf, runLine } from "./work.mjs";
 import { noteDuration, kindOf } from "./estimate.mjs";
-import { parseFacts, leftToYou } from "./handover.mjs";
+import { parseFacts, leftToYou, gitWork, agentsGitWork, agentsPosting, linkedAsks, linkedChore, PUSH_OK } from "./handover.mjs";
 import { scanRoots, repoPathMap } from "./scan.mjs";
 import { knowledgeFolders } from "./knowledge.mjs";
 
@@ -35,7 +35,7 @@ function handoffCmd() { const cfg = loadConfig(); return migrateOrcaCmd(migrateC
 // Save the template ("" clears it). Either way the legacy `ide` key goes.
 function setHandoffCmd(cmd) {
   const cfg = loadConfig(); const v = String(cmd || "").trim();
-  if (v) cfg.agentCmd = v; else delete cfg.agentCmd;
+  if (v) { cfg.agentCmd = v; delete cfg.agentOff; } else { delete cfg.agentCmd; cfg.agentOff = true; } // agentOff: you cleared it, so Home doesn't pick one for you again
   delete cfg.ide; saveConfig(cfg);
   return { ok: true, cmd: cfg.agentCmd || "" };
 }
@@ -277,6 +277,7 @@ function runHandoff(repoPath, { force = false } = {}) {
   if (!force) { const w = waitingFor(repoPath); if (w) { askedFor(repoPath); return { blocked: true, waiting: true, questions: 0, note: waitNote(w) }; } }
   const blocked = !force && blockedAgain(repoPath, tmpl); if (blocked) return blocked;
   try { unlinkSync(join(repoPath, ".symbiot", WAITING)); } catch {} // the step's done (or this is Start it anyway): this is the run it waited for
+  noteUntracked(repoPath);
   const lock = join(repoPath, ".symbiot", LOCK);
   const own = opts.env && typeof opts.env === "object" ? Object.fromEntries(Object.entries(opts.env).map(([k, v]) => [k, String(v)])) : null, boxEnv = sandboxEnv(box);
   const env = own || boxEnv ? { ...(own || {}), ...(boxEnv || {}) } : null;
@@ -458,6 +459,8 @@ function needsOf(path, { final = "", waiting = null, end = Date.now(), now = Dat
   if (now - end > NEEDS_FOR) return null;
   const n = waiting ? { kind: "step", what: clipWords(String(waiting.step || "").replace(/^\s*👤\s*(You\s*(\([^)]*\))?:)?\s*/, "").trim(), 240), check: "", label: "", waiting: true } : leftToYou(final) || readNeeds(path, final);
   if (!n || !n.what) return null;
+  // signing in to, linking or doing by hand on a platform that's linked: the agent's, not yours
+  if (n.kind !== "approve" && linkedChore(`${n.label} ${n.what} ${n.check}`, linkedIds())) return null;
   const key = digest(n.what);
   if (loadSettled()[path] === key || takenUp(path, end)) return null;
   return { ...n, key };
@@ -476,10 +479,10 @@ const readKey = (path, final) => digest(path + "\n" + String(final || "").trim()
 function readNeeds(path, final, { file = READ_FILE } = {}) {
   if (!String(final || "").trim()) return null;
   const r = loadRead(file)[readKey(path, final)];
-  return r && r.what ? { kind: r.kind === "approve" ? "approve" : "step", what: r.what, check: r.check || "", label: r.label || "", read: true } : null;
+  return r && r.what ? { kind: r.kind === "approve" || gitWork(r.what + " " + (r.check || "")) ? "approve" : "step", what: r.what, check: r.check || "", label: r.label || "", read: true } : null;
 }
 const READ_SYSTEM = `You read the last message a coding agent left when its run ended, and say whether it leaves the user something to do before the work is finished.
-That's either something waiting for their OK before it happens (sending, posting, deleting, paying, closing, merging, publishing) or a step only they can take (signing in, a password or a 2FA code, sudo, a phone or a cable, a token from a provider's console, a choice that's theirs to make).
+That's either something waiting for their OK before it happens (sending, posting, deleting, paying, closing, merging, publishing) or a step only they can take (signing in, a password or a 2FA code, sudo, a phone or a cable, a token from a provider's console, a choice that's theirs to make). Local git work (staging, committing, pulling, pushing) is never a step only they can take: an agent does it, so it's "approve", their OK before a push.
 Not: work that's done, a summary of what changed, an idea they might like, changes waiting for review or Approve in Symbiot, a connector to sign in to again, or a question already asked in QUESTIONS.md.
 Reply with JSON only, no markdown fence: {"needs": false} or {"needs": true, "kind": "approve" or "step", "what": "the sentence that says so, in its own words, under 240 characters", "check": "what it says to check first, or empty", "label": "what it is in 1 to 3 words, or empty"}.`;
 function parseRead(raw) {
@@ -668,6 +671,26 @@ function runningHandoff(path) {
   } catch {}
   return null;
 }
+// ---- the untracked files that were there before the agent ran ---------------
+// Approve stages only a run's own changes (tasks.mjs taskPaths), so the first run
+// since the last approve notes the untracked files already in the folder:
+// .symbiot/untracked.json, { at, files }. Approve forgets it once it commits.
+// Listed in the background: in a big tree (scratch's 170k files) that takes a
+// while, and a file the agent writes meanwhile is newer than `at`, so it counts
+// as the agent's anyway. Not a git repo: no note.
+const UNTRACKED = "untracked.json";
+function noteUntracked(path) {
+  const f = join(path, ".symbiot", UNTRACKED); if (existsSync(f)) return;
+  const at = Date.now(), out = [], p = spawn("git", ["-C", path, "ls-files", "--others", "--exclude-standard", "-z"], { stdio: ["ignore", "pipe", "ignore"], env: { ...process.env, GIT_TERMINAL_PROMPT: "0" } });
+  p.on("error", () => {}); p.stdout.on("data", (d) => out.push(d));
+  p.on("close", (code) => {
+    if (code !== 0 || existsSync(f)) return;
+    const files = Buffer.concat(out).toString("utf8").split("\0").filter((x) => x && !x.startsWith(".symbiot/"));
+    try { mkdirSync(dirname(f), { recursive: true }); writeFileSync(f, JSON.stringify({ at, files })); } catch {}
+  });
+}
+function untrackedBefore(path) { try { const u = JSON.parse(readSymbiot(path, UNTRACKED)); return u && Array.isArray(u.files) && Number.isFinite(u.at) ? u : null; } catch { return null; } }
+function forgetUntracked(path) { try { unlinkSync(join(path, ".symbiot", UNTRACKED)); } catch {} }
 // Send to repos while an agent is still running in the folder doesn't rewrite
 // the TASKS.md it's working from: the new brief waits in TASKS.next.md and
 // replaces TASKS.md once that agent exits. Returns true if it was held.
@@ -891,7 +914,11 @@ const readSymbiot = (path, f) => { if (f === "agent.log") return readRunLog(join
 // "## Questions" → "### question", context lines, "- option" bullets;
 // "## Suggestions" (or Ideas / Follow-ups) → "- idea" bullets. Forgiving: a bare
 // bullet under Questions is a question with no options.
-function parseQuestions(md) {
+// The platforms linked in Symbiot's browser (links.mjs keeps them in config.linked): a
+// 👤 option to post there, or to sign in or link it again, is the agent's, and doing it
+// by hand isn't offered (handover.mjs agentsPosting, linkedAsks).
+const linkedIds = () => { try { return Object.keys(loadConfig().linked || {}); } catch { return []; } };
+function parseQuestions(md, { linked = linkedIds() } = {}) {
   const questions = [], suggestions = []; let sec = "q", cur = null;
   const clip = (s) => clipWords(String(s).trim(), TASK_MAX); // as long as a task holds (addTask), so an idea added in one click arrives whole
   for (const raw of String(md || "").split(/\r?\n/)) {
@@ -909,7 +936,7 @@ function parseQuestions(md) {
     if (b) { if (cur) cur.options.push(clip(b[1])); else if (/\?\s*$/.test(b[1])) questions.push({ q: clip(b[1]), context: "", options: [] }); continue; } // a bullet with no "### question" above it is a question only if it actually ends in "?" — otherwise it's preamble/prose (a file list, etc.)
     if (cur) cur.context = clip((cur.context ? cur.context + " " : "") + l);
   }
-  return { questions: questions.filter((x) => x.q).slice(0, 20).map((x) => ({ ...x, options: x.options.slice(0, 6) })), suggestions: suggestions.filter(Boolean).slice(0, 10) };
+  return { questions: questions.filter((x) => x.q).slice(0, 20).map((x) => ({ ...x, options: agentsPosting(linkedAsks(agentsGitWork(x.options), linked, `${x.q} ${x.context}`), linked).slice(0, 6) })), suggestions: suggestions.filter(Boolean).slice(0, 10) };
 }
 // An idea for another project names it first: "[repo: symbiot] Watch GitHub
 // too" is for the symbiot repo's tasks, whichever repo's agent had it (an agent
@@ -1087,7 +1114,10 @@ function answerQuestions(path, answers, opts = {}) {
   const steps = rows.filter((x) => yourStep(x.a) || holdAnswer(x.a)).map((x) => yourStep(x.a) ? { step: stepText(x.a), named: x.a.split("🤖")[0] }
     : { step: (youOpts(x.q).map(stepText)[0] || x.a).trim(), named: [x.a, ...youOpts(x.q)].join(" ") });
   const granted = [], notes = {};
-  let yours = steps.map((s) => s.step).filter(Boolean).filter((st) => { const g = grantFromStep(st, path, notes); if (g) granted.push(...g); return !g; });
+  // local git work picked as the user's step (typed in, or from a QUESTIONS.md written before this): the agent's, with an OK before a push
+  const git = steps.map((s) => s.step).filter(gitWork);
+  if (git.length) try { writeFileSync(join(path, ".symbiot", "ANSWERS.md"), readSymbiot(path, "ANSWERS.md").replace(/\s*$/, "\n") + `\n### Symbiot: that git work is yours to do, not the user's\nDo it yourself: ${git.join(" ")}. Check what's staged first, and ${PUSH_OK.replace("your OK", "the user's OK").replace("it pushes", "you push")}: ask in QUESTIONS.md and stop there.\n_${day}_\n`); } catch {}
+  let yours = steps.map((s) => s.step).filter(Boolean).filter((st) => !gitWork(st)).filter((st) => { const g = grantFromStep(st, path, notes); if (g) granted.push(...g); return !g; });
   if (granted.length) out.granted = granted;
   // A list too wide to turn on by a click: say which rules, tell the agent to ask for
   // less, and don't leave it as the user's step (picking it again would do nothing).
@@ -1158,4 +1188,4 @@ function agentsList() {
   }).concat(earlierRuns());
 }
 
-export { isUrgent, urgentFirst, urgentDone, urgentSweep, urgentState, FACTS, factsOf, knownRun, withStream, workOf, HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, connectorsInfo, linkReach, fillHandoff, runHandoff, PARKED_NOTE, parkedPaths, isParked, parkLane, agentMissing, blockedAgain, runningHandoff, loadRuns, earlierRuns, namedFiles, waitingFor, startWaiting, writeTasks, droppedTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, pickAgent, findOrcaCli, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, skipIdea, agentQuestions, answerQuestions, agentsList, needsOf, settleNeeds, NEEDS_FOR , readLastWords, readNeeds, parseRead, READ_FILE, autoAllow, autoAllowSweep, allowlistInWork, installAllowlist, inWork, withScope , withTrust, sandboxFor, sandboxEnv, sandboxNeeds, sandboxState, sandboxWrites, SANDBOX_DIR, resumeFor, noteSession, trustFull, GUARD_SETTINGS };
+export { FACTS, factsOf, knownRun, withStream, workOf, HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, connectorsInfo, linkReach, fillHandoff, runHandoff, PARKED_NOTE, parkedPaths, isParked, parkLane, agentMissing, blockedAgain, runningHandoff, loadRuns, earlierRuns, namedFiles, waitingFor, startWaiting, noteUntracked, untrackedBefore, forgetUntracked, writeTasks, droppedTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, pickAgent, findOrcaCli, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, skipIdea, agentQuestions, answerQuestions, agentsList, needsOf, settleNeeds, NEEDS_FOR, readLastWords, readNeeds, parseRead, READ_FILE, autoAllow, autoAllowSweep, allowlistInWork, installAllowlist, inWork, withScope, withTrust, sandboxFor, sandboxEnv, sandboxNeeds, sandboxState, sandboxWrites, SANDBOX_DIR, resumeFor, noteSession, trustFull, GUARD_SETTINGS, isUrgent, urgentFirst, urgentDone, urgentSweep, urgentState };

@@ -196,19 +196,30 @@ try {
     agents: () => [{ name: "whatsapp_module", path: "/w", status: "done", ask: { questions: [{ q: "Paste the new Meta token?" }] } }, { name: "coral", path: "/c", status: "running", ask: { questions: [] } }],
     lanes: () => ({ handoffs: [{ from: "coral", to: "ops", text: "Find a JDK 17", status: "done" }] }),
     connected: () => true, repos: () => ({ symbiot: "/x" }), reports: () => ({ count: 0 }), agentCmd: () => 'claude -p "{prompt}"',
-    rootsSet: () => false,
+    search: () => ({ searching: false, at: 1 }), confirmed: () => true, rootsSet: () => false,
   };
   const h = homeState({ deps });
   const first = homeState({ deps: { ...deps, pending: () => [], agents: () => [], connected: () => false, repos: () => ({}) } });
-  ok("first run: connect an AI, then show it your folders, both out front and opening Settings", first.you.map((y) => y.id).join() === "setup:ai,setup:folders" && first.you.every((y) => y.shape === "settings"), first.you);
-  const given = homeState({ fresh: true, deps: { ...deps, pending: () => [], agents: () => [], repos: () => ({}), rootsSet: () => true } }).you;
-  ok("…not once you've set your work folders, when a search finds none or is cut short: that's Symbiot's to retry", !given.some((y) => y.id === "setup:folders"), given);
+  ok("first run, a finished search found nothing: connect an AI, then the folder your repos are in, both out front and opening Settings", first.you.map((y) => y.id).join() === "setup:ai,setup:folders" && first.you.every((y) => y.shape === "settings"), first.you);
+  const looking = homeState({ fresh: true, deps: { ...deps, pending: () => [], agents: () => [], repos: () => ({}), search: () => ({ searching: true, at: 0 }) } });
+  ok("…never while it's still looking: where your repos are is found, not asked", !looking.you.some((y) => y.id === "setup:folders"), looking.you);
+  const unsearched = homeState({ fresh: true, deps: { ...deps, pending: () => [], agents: () => [], repos: () => ({}), search: () => ({ searching: false, at: 0 }) } });
+  ok("…nor before the first search has run", !unsearched.you.some((y) => y.id === "setup:folders"), unsearched.you);
+  const given = (search) => homeState({ fresh: true, deps: { ...deps, pending: () => [], agents: () => [], repos: () => ({}), rootsSet: () => true, search: () => search } }).you;
+  ok("…nor once you've set your work folders, when a search finds none or is cut short: that's Symbiot's to retry", [{ searching: false, at: 1 }, { searching: false, at: 1, partial: true }].every((s) => !given(s).some((y) => y.id === "setup:folders" || y.kind === "setup" && /folder|projects/i.test(y.title))), given({ searching: false, at: 1 }));
+  const givenFound = homeState({ fresh: true, deps: { ...deps, repos: () => ({ symbiot: "/x", argena: "/a" }), confirmed: () => false, rootsSet: () => true } }).you;
+  ok("…and the folders you set count as confirmed: no \"is that all?\"", !givenFound.some((y) => y.id === "repos:confirm"), givenFound);
+  const found2 = homeState({ fresh: true, deps: { ...deps, pending: () => [], agents: () => [], repos: () => ({ symbiot: "/x", argena: "/a" }), confirmed: () => false } }).you.find((y) => y.id === "repos:confirm");
+  ok("found: asked once to confirm the list, not where it is", found2 && found2.fix === "repos" && found2.title === "I found 2 projects" && found2.sub === "symbiot, argena" && found2.options[0] === "Looks right (recommended)", found2);
   ok("…and neither once that's done", !h.you.some((y) => y.kind === "setup"), h.you);
   const claude = { name: "Claude Code", tmpl: 'claude -p "{prompt}"' };
-  const pk = homeState({ fresh: true, deps: { ...deps, agentCmd: () => "", pickAgent: () => claude } }).you.find((y) => y.id === "setup:pick");
-  ok("no agent picked: \"Pick your agent\" on Home, not \"All handled\", one click for the one on this computer", pk && pk.kind === "setup" && pk.title === "Pick your agent" && /^Claude Code is on this computer: one click/.test(pk.sub) && pk.pick && pk.pick.tmpl === claude.tmpl && pk.focus === "agent" && pk.shape === "settings", pk);
-  const pk2 = homeState({ fresh: true, deps: { ...deps, agentCmd: () => "", pickAgent: () => null } }).you.find((y) => y.id === "setup:pick");
-  ok("…none on this computer: it opens Settings, with no one-click pick", pk2 && !pk2.pick && pk2.sub === "the coding agent that takes your tasks", pk2);
+  let picked = null;
+  const auto = homeState({ fresh: true, deps: { ...deps, agentCmd: () => "", pickAgent: () => claude, agentOff: () => false, setAgent: (t) => (picked = t) } });
+  ok("no agent picked, one on this computer: Symbiot sets it, and Home doesn't ask", picked === claude.tmpl && !auto.you.some((y) => y.id === "setup:pick"), auto.you);
+  const pk = homeState({ fresh: true, deps: { ...deps, agentCmd: () => "", pickAgent: () => claude, agentOff: () => true, setAgent: () => { throw new Error("set"); } } }).you.find((y) => y.id === "setup:pick");
+  ok("…you cleared yours: \"Pick your agent\" on Home, not \"All handled\", one click for the one on this computer", pk && pk.kind === "setup" && pk.title === "Pick your agent" && /^Claude Code is on this computer: one click/.test(pk.sub) && pk.pick && pk.pick.tmpl === claude.tmpl && pk.focus === "agent" && pk.shape === "settings", pk);
+  const pk2 = homeState({ fresh: true, deps: { ...deps, agentCmd: () => "", pickAgent: () => null, agentOff: () => false } }).you.find((y) => y.id === "setup:pick");
+  ok("…none on this computer: it opens Settings, with no one-click pick", pk2 && !pk2.pick && /^no coding agent on this computer yet/.test(pk2.sub), pk2);
   ok("…and not once an agent is picked", !h.you.some((y) => y.id === "setup:pick"), "");
   ok("only you: an Approve that's waiting (not one still being worked on) and an agent's question", h.you.length === 2 && h.you[0].title === "Approve symbiot" && /2 tasks done · 3 files · only you decide/.test(h.you[0].sub) && h.you[1].title === "whatsapp_module asks" && h.you[1].shape === "agents", h.you);
   ok("feeds: only what has something new", h.feeds.length === 1 && h.feeds[0].title === "WhatsApp" && h.feeds[0].shape === "board", h.feeds);
@@ -395,6 +406,44 @@ try {
   ok("ops runs (act-…) are one lane, Agent runs, not a sphere each named by an id", wr.projects.length === 2 && ops && ops.name === "Agent runs" && ops.runs === 1 && ops.asks === 1 && ops.lit && wr.projects[0] === ops, wr.projects);
   ok("…and a repo is shown by the name people use for it", wr.projects.find((p) => p.repo === "symbiot").name === "Symbiot", wr.projects);
   ok("Go with nothing waiting says so", /Nothing waiting/.test(workGo({ push: () => ({ empty: true }) }).note), "");
+
+  console.log("WAITING — each waiting task says why, and starts by itself once its lane is free");
+  {
+    const { workTick, STUCK_AFTER } = await import("../home.mjs");
+    const NOW = 1e13, old = NOW - STUCK_AFTER - 1000, fresh = NOW - 40000;
+    const map = { symbiot: "/s", coral: "/c", g: "/g", f: "/f" };
+    const T = () => [{ id: "1", text: "Fix the reader", repo: "symbiot", ts: fresh }, { id: "2", text: "Add a Skip button", repo: "symbiot", ts: fresh },
+      { id: "3", text: "Tidy the docs", repo: "coral", ts: fresh }, { id: "4", text: "🤖 Agent: free space on /mnt/storage", repo: "ops", ts: fresh },
+      { id: "5", text: "👤 You (only you: deleting outside the agent's folder): run the delete", repo: "ops", ts: fresh }, { id: "6", text: "Old one", repo: "g", ts: old },
+      { id: "7", text: "Write the README", repo: "f", ts: old }, { id: "8", text: "Somewhere", repo: "nowhere", ts: fresh }, { id: "9", text: "Just added", repo: "f", ts: NOW - 5000 }];
+    let tasks = T();
+    const base = { repos: () => map, name: (p, n) => n, pending: () => [], parked: () => [], cmd: () => "claude -p {prompt}", now: NOW, tasks: () => tasks, save: () => {}, config: () => ({}),
+      agents: () => [{ name: "symbiot", path: "/s", status: "running", work: { doing: "Fixing the reader", todos: [] }, ask: { questions: [] } }, { name: "coral", path: "/c", status: "done", ask: { questions: [{ q: "Which docs?" }] } }],
+      brief: (p) => (p === "/s" ? { at: 1, tasks: ["Fix the reader"] } : p === "/g" ? { at: 5, tasks: ["Old one"] } : { at: 0, tasks: [] }), lastRun: (p) => (p === "/g" ? 10 : 0) };
+    const sc = workScene({ deps: { ...base, fails: {} } }), why = (id) => (sc.waiting.find((w) => w.id === "task:" + id) || {}).why || {};
+    ok("in the brief of the run at work in its lane: its agent is on it now", why(1).kind === "working" && /symbiot's agent is on it now/.test(why(1).text), why(1));
+    ok("not in it: queued behind that lane's run, named, with what it's doing", why(2).kind === "queued" && /Queued behind symbiot's run: fixing the reader/.test(why(2).text), why(2));
+    ok("its lane's last run asked something: waiting on your answer, with the Workdesk card's folder", why(3).kind === "asks" && why(3).path === "/c" && /your answer/.test(why(3).text), why(3));
+    ok("an ops task (🤖 Agent: …) is next, as a run of its own; a 👤 one is yours and counts for no Go", why(4).kind === "next" && why(5).kind === "you" && sc.canGo === 4, [why(4), why(5), sc.canGo]);
+    ok("its lane's run ended without ticking it: flagged, not started again and again", why(6).stuck && why(6).ended && /ended without finishing/.test(why(6).text), why(6));
+    ok("a free lane, waiting past a few minutes: flagged as stuck with nothing in its way", why(7).stuck && /Not started after \d+ min/.test(why(7).text) && sc.stuckCount === 2, [why(7), sc.stuckCount]);
+    ok("a lane Symbiot can't find a folder for: blocked, saying so", why(8).kind === "blocked" && /can't find nowhere's folder/.test(why(8).text), why(8));
+    const ws0 = workScene({ deps: { ...base, cmd: () => "", fails: {} } });
+    ok("no agent set: every one says it's blocked on that", ws0.waiting.filter((w) => w.why.kind !== "you").every((w) => /no coding agent/.test(w.why.text)), ws0.waiting.map((w) => w.why.kind));
+    const pushed = [], ran = [], acted = [], fails = {};
+    const r = workTick({ deps: { ...base, fails, push: ({ repo }) => (pushed.push(repo), { written: [{ name: repo, path: map[repo] }] }), run: (p) => (ran.push(p), { id: "j" }), act: (t) => (acted.push(t), { ok: true, dir: "/runs/act-1" }) } });
+    ok("the tick starts the free lane's tasks (one run per lane), not a busy, asking or ended one, nor one just added", r.started.join() === "f" && pushed.join() === "f" && ran.join() === "/f", r);
+    ok("…and an ops 🤖 Agent: task as an agent run of its own, without the tag; never a 👤 one", r.ops.join() === "4" && acted.join() === "free space on /mnt/storage" && tasks.find((t) => t.id === "4").done && tasks.find((t) => t.id === "4").act === "/runs/act-1" && !tasks.find((t) => t.id === "5").done, [r, acted]);
+    tasks = T(); const f2 = {};
+    const r2 = workTick({ deps: { ...base, fails: f2, push: ({ repo }) => ({ written: [{ name: repo, path: map[repo] }] }), run: () => null, act: () => ({ error: "Pick your coding agent first" }) } });
+    const sc2 = workScene({ deps: { ...base, fails: f2 } }), w7 = sc2.waiting.find((w) => w.id === "task:7").why, w4 = sc2.waiting.find((w) => w.id === "task:4").why;
+    ok("a start that didn't take is shown as the block on its tasks, in plain words", r2.failed.includes("f") && r2.failed.includes("ops") && w7.kind === "blocked" && /didn't start/.test(w7.text) && /Pick your coding agent/.test(w4.text), [r2, w7, w4]);
+    const ran4 = []; workTick({ deps: { ...base, fails: f2, push: ({ repo }) => ({ written: [{ name: repo, path: map[repo] }] }), run: (p) => (ran4.push(p), { id: "j" }), act: () => ({ ok: true, dir: "/x" }) } });
+    const ran5 = []; workTick({ deps: { ...base, now: NOW + STUCK_AFTER, fails: f2, push: ({ repo }) => ({ written: [{ name: repo, path: map[repo] }] }), run: (p) => (ran5.push(p), { id: "j" }), act: () => ({ ok: true, dir: "/x" }) } });
+    ok("…and tried again a few minutes later, not on every tick", !ran4.length && ran5.includes("/f") && !f2.f, [ran4, ran5, f2]);
+    const r3 = workTick({ deps: { ...base, config: () => ({ autoStart: false }), fails: {}, run: () => { throw new Error("ran"); } } });
+    ok("autoStart: false leaves it all to Go", !r3.started.length && !r3.ops.length, r3);
+  }
 
   console.log("PARKED — a lane blocked on you starts no runs until you unpark it");
   const wp = workScene({ deps: { repos: () => ({ whatsapp_module: "/w", symbiot: "/s" }), parked: () => ["/w"], pending: () => [], agents: () => [],

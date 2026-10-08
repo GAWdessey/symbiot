@@ -41,7 +41,7 @@ import { loadScreens, screenImage, blueprint } from "./screens.mjs";
 import { mapPage, wholePage, pressRegion, typeRegion, scrollPage, signIn, isTrusted } from "./headless.mjs";
 import { watchState, addWatch, removeWatch, seenWatch, newsSince, markNews, checkWatch, setBrief, draftReply, watchBoard, boardLine, boardChat, boardTalk, clearBoardChat } from "./watch.mjs";
 import { PORT as PHONE_PORT, phoneState, pairComputer, pollComputer, forgetComputer } from "./phone.mjs";
-import { KIND_LABEL as POST_KIND, PATHS as POST_PATHS, draftPosts, postsState, postLog, approvePost, editPost, skipPost, voiceFromLinkedIn, openUrl, addMedia as addPostMedia, removeMedia as removePostMedia, mediaDir as postMediaDir, pictureOfPage, clipOfPage } from "./post.mjs";
+import { KIND_LABEL as POST_KIND, PATHS as POST_PATHS, draftPosts, postsState, postLog, approvePost, editPost, skipPost, voiceFromLinkedIn, addMedia as addPostMedia, removeMedia as removePostMedia, mediaDir as postMediaDir, pictureOfPage, clipOfPage } from "./post.mjs";
 import { startApp, updateCmd, isAppRunningWeekly, askRunningApp, openApp } from "./server.mjs";
 import { listReports, readReport } from "./reports.mjs";
 import { runSandbox } from "./sandbox.mjs";
@@ -678,8 +678,8 @@ async function cmdPhone() {
 }
 
 // ---- `symbiot post`: the week's real work as 3 draft posts you approve ----------
-// Nothing is ever posted by Symbiot: approve copies one post to your clipboard and
-// gives LinkedIn's share box, where you paste it and post it yourself.
+// Nothing is posted until you approve one: then Marketing's agent posts it, through
+// Symbiot's browser signed in to LinkedIn.
 async function cmdPost() {
   const [sub = "draft", a1, a2] = argv.slice(1).filter((x, i, all) => !x.startsWith("--") && all[i - 1] !== "--since" && all[i - 1] !== "--seconds");
   const fail = (msg) => { console.log(c.y(msg)); process.exitCode = 1; };
@@ -710,11 +710,8 @@ async function cmdPost() {
     const r = approvePost(a1);
     if (r.error) return fail(r.error);
     console.log(`${c.g("✓")} Approved.\n\n${r.post.text}\n`);
-    console.log(r.copied ? `${c.g("✓")} Copied to your clipboard (${r.copied}).` : c.y("No clipboard tool found (wl-copy, xclip, xsel, pbcopy or clip): copy it from above."));
-    console.log(`Paste it into LinkedIn's share box: ${c.b(r.share)}` + (has("open") ? "" : c.d("  (--open opens it)")));
-    if (r.files.length) console.log(`Then add ${r.files.length === 1 ? "this" : "these"} with its photo or video button:\n${r.files.map((f) => "  " + f).join("\n")}` + (has("open") ? "" : c.d("  (--open opens their folder)")));
-    if (has("open")) { openUrl(r.share); if (r.folder) openUrl(r.folder); }
-    console.log(c.d(r.note));
+    console.log(r.handed.error ? c.y(r.note) : r.note);
+    if (r.handed.error) process.exitCode = 1;
     return;
   }
   // pictures and video on a draft: a file of yours, or a picture or clip of a page
@@ -768,9 +765,8 @@ async function cmdPost() {
                                    fixed, a longer one) from your last 7 days of
                                    commits, release tags and CHANGELOG.md
   symbiot post list                the drafts waiting on you
-  symbiot post approve <id> [--open]
-                                   copy it to your clipboard, and give (--open:
-                                   open) LinkedIn's share box to paste it into
+  symbiot post approve <id>        approve it: Marketing's agent posts it on
+                                   LinkedIn through Symbiot's signed-in browser
   symbiot post edit <id> "text"    change a draft's words
   symbiot post add <id> <file>     put a picture or video of yours on a draft
                                    (PNG, JPG, GIF, MP4, MOV, WebM)
