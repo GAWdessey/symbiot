@@ -231,7 +231,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       if (tok !== TOKEN) { res.writeHead(403); res.end("forbidden"); return; }
     }
     try {
-      if (u.pathname === "/api/status") { const r = resolveProvider(); return json(res, r ? { connected: true, line: `${PROVIDERS[r.provider].label} · ${r.model}` } : { connected: false }); }
+      if (u.pathname === "/api/status") { const r = resolveProvider(); return json(res, r ? { connected: true, provider: r.provider, line: `${PROVIDERS[r.provider].label}${r.model ? " · " + r.model : ""}` } : { connected: false }); }
       if (u.pathname === "/api/map") return json(res, await buildMap()); // local git only — no AI key needed
       if (u.pathname === "/api/scan") return json(res, { active: SCAN.active, phase: SCAN.phase, done: SCAN.done, total: SCAN.total, item: SCAN.item, elapsed: SCAN.startedAt ? Date.now() - SCAN.startedAt : 0, timeout: SCAN_TIMEOUT_MS, partial: SCAN.partial });
       if (u.pathname === "/api/models") { const hw = detectHardware(); return json(res, { hardware: hw, rec: recommendModels(hw) }); }

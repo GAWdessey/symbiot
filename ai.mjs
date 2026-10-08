@@ -1,22 +1,51 @@
 // The AI Symbiot writes with: the providers, which one is set up, one call per
 // provider (same in, same out), and the local-model (Ollama) setup.
 import Anthropic from "@anthropic-ai/sdk";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { homedir, totalmem, cpus as oscpus } from "node:os";
 import { join } from "node:path";
-import { existsSync } from "node:fs";
-import { loadConfig, saveConfig, sh } from "./core.mjs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { loadConfig, saveConfig, sh, hasCmd, CONFIG_DIR } from "./core.mjs";
 
 const MAX_TOKENS = 1600;
 
 // The providers Symbiot can write with. Models are sensible defaults; override
 // per provider at login, or globally with SYMBIOT_MODEL.
 const PROVIDERS = {
+  // your Claude subscription (Pro or Max), through Claude Code signed in on this computer: no key
+  claude:    { label: "Your Claude subscription (Claude Code)", sub: true, keyUrl: "https://claude.com/claude-code", keyName: null, model: "" },
   anthropic: { label: "Claude (Anthropic)", env: ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"], keyUrl: "https://console.anthropic.com/settings/keys", keyName: "Anthropic API key (sk-ant-…)", model: "claude-opus-5-5" },
   openai:    { label: "OpenAI (GPT)",       env: ["OPENAI_API_KEY"],                            keyUrl: "https://platform.openai.com/api-keys",       keyName: "OpenAI API key (sk-…)",     model: "gpt-4o-mini" },
   gemini:    { label: "Gemini (Google)",    env: ["GEMINI_API_KEY", "GOOGLE_API_KEY"],          keyUrl: "https://aistudio.google.com/apikey",         keyName: "Google AI API key",         model: "gemini-1.5-flash" },
   ollama:    { label: "Local model (Ollama)", local: true,                                       keyUrl: "https://ollama.com",                         keyName: null,                        model: "llama3.1" },
 };
+
+// ---- your Claude subscription -------------------------------------------------
+// Claude Code signed in with a Claude account (Pro or Max) answers with that account,
+// no API key: Symbiot runs it headless (claude -p), the way it already runs your
+// agents. Whether it's there and signed in: `claude auth status` (a quarter of a
+// second), kept 5 minutes. SYMBIOT_CLAUDE_CMD replaces the command (the tests' stand-in).
+const CLAUDE_BIN = () => process.env.SYMBIOT_CLAUDE_CMD || "claude";
+let CLAUDE_SEEN = null;
+function claudeState(fresh = false) {
+  if (!fresh && CLAUDE_SEEN && Date.now() - CLAUDE_SEEN.at < 300000) return CLAUDE_SEEN;
+  let installed = !!process.env.SYMBIOT_CLAUDE_CMD || hasCmd("claude"), signedIn = false;
+  if (installed) {
+    try {
+      const r = spawnSync(CLAUDE_BIN(), ["auth", "status"], { encoding: "utf8", timeout: 8000, env: process.env });
+      if (r.error && r.error.code === "ENOENT") installed = false;
+      else { const j = JSON.parse(String(r.stdout || "").trim() || "{}"); signedIn = !!j.loggedIn && j.authMethod !== "apiKey"; }
+    } catch {}
+  }
+  CLAUDE_SEEN = { installed, signedIn, at: Date.now() };
+  return CLAUDE_SEEN;
+}
+const claudeReady = (fresh) => claudeState(fresh).signedIn;
+// What to do when it isn't: one line, for the CLI and the app.
+function claudeHelp(st = claudeState()) {
+  return st.installed ? "Claude Code is installed but not signed in: run  claude  once in a terminal and sign in with your Claude account, then try again."
+    : "Install Claude Code ( npm install -g @anthropic-ai/claude-code ), run  claude  once and sign in with your Claude account, then try again.";
+}
 
 // ---- config + provider resolution (config files: core.mjs) -----------------
 function antProfileExists() {
@@ -28,17 +57,22 @@ function envKey(provider) {
   return null;
 }
 // Returns { provider, key?, baseUrl?, model, source } or null if nothing set up.
-// Order: saved choice → legacy saved key → env keys → an `ant` profile.
+// Order: saved choice → your Claude subscription (Claude Code signed in) → legacy
+// saved key → env keys → an `ant` profile. With no choice saved, the subscription
+// comes before a key: it's what most people already pay for.
 function resolveProvider() {
   const cfg = loadConfig();
   const m = process.env.SYMBIOT_MODEL;
-  if (cfg.provider && PROVIDERS[cfg.provider]) {
+  const sub = () => ({ provider: "claude", model: m || (cfg.claude || {}).model || "", source: "your Claude subscription (Claude Code)" });
+  if (cfg.provider === "claude" && claudeReady()) return sub();
+  if (cfg.provider && cfg.provider !== "claude" && PROVIDERS[cfg.provider]) {
     const p = cfg.provider, pc = cfg[p] || {};
     if (p === "ollama") return { provider: p, baseUrl: pc.baseUrl || "http://localhost:11434", model: m || pc.model || PROVIDERS.ollama.model, source: "saved login" };
     const key = pc.apiKey || envKey(p);
     if (key || (p === "anthropic" && (process.env.ANTHROPIC_AUTH_TOKEN || antProfileExists())))
       return { provider: p, key, model: m || pc.model || PROVIDERS[p].model, source: pc.apiKey ? "saved login" : "environment" };
   }
+  if ((!cfg.provider || cfg.provider === "claude") && claudeReady()) return sub();
   if (cfg.apiKey) return { provider: "anthropic", key: cfg.apiKey, model: m || PROVIDERS.anthropic.model, source: "saved login (~/.config/symbiot)" };
   if (process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN) return { provider: "anthropic", key: process.env.ANTHROPIC_API_KEY, model: m || PROVIDERS.anthropic.model, source: "ANTHROPIC_* (environment)" };
   if (process.env.OPENAI_API_KEY) return { provider: "openai", key: process.env.OPENAI_API_KEY, model: m || PROVIDERS.openai.model, source: "OPENAI_API_KEY (environment)" };
@@ -48,6 +82,36 @@ function resolveProvider() {
 }
 
 // ---- model calls (one per provider, same in/out) --------------------------
+// Claude Code, headless, on your subscription: Symbiot's own instructions as the
+// system prompt, the prompt on stdin, no tools (Read only, for screenshots you
+// attached), none of your settings, plugins or servers, no session kept. Not --bare:
+// that ignores the subscription sign-in.
+function callClaude(r, system, prompt, images = []) {
+  const shots = [];
+  for (const i of images) {
+    if (i.path) { shots.push(i.path); continue; }
+    try { const dir = join(CONFIG_DIR, "uploads"); mkdirSync(dir, { recursive: true, mode: 0o700 }); const f = join(dir, `${Date.now()}-${shots.length}.${/png/.test(i.mime) ? "png" : /webp/.test(i.mime) ? "webp" : /gif/.test(i.mime) ? "gif" : "jpg"}`); writeFileSync(f, Buffer.from(i.data, "base64"), { mode: 0o600 }); shots.push(f); } catch {}
+  }
+  const input = shots.length ? `${prompt}\n\nScreenshots they attached (look at them with your Read tool): ${shots.join(", ")}` : prompt;
+  const args = ["-p", "--output-format", "json", "--system-prompt", system, "--tools", shots.length ? "Read" : "", "--setting-sources", "",
+    "--strict-mcp-config", "--no-session-persistence", "--disable-slash-commands", ...(r.model ? ["--model", r.model] : [])];
+  return new Promise((resolve, reject) => {
+    let out = "", err = "", done = false;
+    let ch; try { ch = spawn(CLAUDE_BIN(), args, { cwd: CONFIG_DIR, stdio: ["pipe", "pipe", "pipe"], env: process.env }); } catch (e) { reject(e); return; }
+    const t = setTimeout(() => { if (!done) { done = true; try { ch.kill("SIGTERM"); } catch {} reject(new Error("Claude Code didn't answer within 3 minutes")); } }, 180000);
+    ch.stdout.on("data", (d) => { out += d; }); ch.stderr.on("data", (d) => { err += d; });
+    ch.on("error", (e) => { if (!done) { done = true; clearTimeout(t); reject(e); } });
+    ch.on("close", () => {
+      if (done) return; done = true; clearTimeout(t);
+      let j = null; try { j = JSON.parse(out.trim().split("\n").filter(Boolean).pop() || "{}"); } catch {}
+      if (j && j.is_error === false && typeof j.result === "string") { resolve(j.result.trim()); return; }
+      const why = (j && j.result) || err.trim().split("\n").pop() || out.trim().slice(0, 200) || "no answer";
+      CLAUDE_SEEN = null; // signed out since? ask again next time
+      reject(new Error(`Claude Code: ${String(why).slice(0, 300)}`));
+    });
+    ch.stdin.end(input);
+  });
+}
 // Screenshots you dropped into the talk: [{ mime, data (base64) }], in each model's own shape.
 async function callAnthropic(r, system, prompt, images = []) {
   const client = new Anthropic(r.key ? { apiKey: r.key } : {});
@@ -111,7 +175,7 @@ async function callOllama(r, system, prompt, images = []) {
 // spinner, its coloured hints); imported on its own, it stays quiet.
 const AI_UI = {
   spinner: () => () => {},
-  notConnected: () => console.log("Symbiot needs an AI to write your updates. Connect one with: symbiot login"),
+  notConnected: () => console.log("Symbiot needs an AI to write your updates. With a Claude subscription, sign in to Claude Code (run  claude  once) and Symbiot uses it, no key. Otherwise: symbiot login"),
   rejected: (label) => console.log(`Your ${label} credentials were rejected. Reconnect with:  symbiot login --force`),
 };
 async function write(system, prompt, { images = [] } = {}) {
@@ -119,6 +183,7 @@ async function write(system, prompt, { images = [] } = {}) {
   if (!r) { AI_UI.notConnected(); return null; }
   const stop = AI_UI.spinner("thinking…");
   try {
+    if (r.provider === "claude") return await callClaude(r, system, prompt, images);
     if (r.provider === "anthropic") return await callAnthropic(r, system, prompt, images);
     if (r.provider === "openai") return await callOpenAI(r, system, prompt, images);
     if (r.provider === "gemini") return await callGemini(r, system, prompt, images);
@@ -135,6 +200,7 @@ async function write(system, prompt, { images = [] } = {}) {
 
 async function validate(provider, { key, baseUrl } = {}) {
   try {
+    if (provider === "claude") return claudeReady(true);
     if (provider === "anthropic") { await new Anthropic({ apiKey: key }).models.list(); return true; }
     if (provider === "openai") return (await fetch("https://api.openai.com/v1/models", { headers: { Authorization: `Bearer ${key}` } })).ok;
     if (provider === "gemini") return (await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(key)}`)).ok;
@@ -197,6 +263,12 @@ async function connectProvider(b) {
   const provider = b && b.provider;
   if (!PROVIDERS[provider]) return { ok: false, message: "Unknown provider." };
   const cfg = loadConfig();
+  if (provider === "claude") {
+    if (!claudeReady(true)) return { ok: false, message: claudeHelp(claudeState()) };
+    const model = (b.model || "").trim();
+    cfg.provider = "claude"; cfg.claude = model ? { model } : {};
+    return saveConfig(cfg) ? { ok: true, message: `Connected: ${PROVIDERS.claude.label}${model ? " · " + model : ""}. No key needed.` } : { ok: false, message: "Couldn't write the config file." };
+  }
   if (provider === "ollama") {
     const baseUrl = (b.baseUrl || "http://localhost:11434").trim();
     const model = (b.model || "").trim() || PROVIDERS.ollama.model;
@@ -212,4 +284,4 @@ async function connectProvider(b) {
   return saveConfig(cfg) ? { ok: true, message: `Connected: ${PROVIDERS[provider].label} · ${model}` } : { ok: false, message: "Couldn't write the config file." };
 }
 
-export { PROVIDERS, AI_UI, resolveProvider, write, validate, connectProvider, detectHardware, recommendModels, hasOllama, ollamaInstall, ensureOllama, useOllamaModel };
+export { PROVIDERS, AI_UI, resolveProvider, write, validate, connectProvider, detectHardware, recommendModels, hasOllama, ollamaInstall, ensureOllama, useOllamaModel , claudeState, claudeReady, claudeHelp };

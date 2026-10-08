@@ -2,6 +2,13 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.55.3
+
+- **Your Claude subscription, no API key.** With Claude Code signed in to your Claude account (Pro or Max), Symbiot now answers through it: chats, write-ups, posts, screenshots. Nothing to connect, no separate bill. It comes first when you haven't picked an AI, ahead of an old saved key. `symbiot login` and Settings → Your AI offer it first; if Claude Code isn't signed in yet, they tell you to run `claude` once and sign in. Before, a fresh install sent you to `symbiot login`, which only asked for an API key.
+- **Home remembers the conversation you're having.** Home's chat didn't pass its own last turns to the AI, only what was said elsewhere in the app, so a "yeah" to its own "want that?" was read as an answer to something else and the task you'd agreed to was never made. Home now keeps its own thread: the last 16 turns, each in full, from the last 12 hours. A short answer (yes, yeah, ok, do it, 2) always answers what it just said there.
+- **Ideas get hashed out first.** Bring Symbiot an idea and it sharpens it with you (what's strong, where it's weak, what's missing) before proposing a task, and files it once you agree.
+- **An ambiguous ask gets readings, not a guess.** When a request could mean two things (which project, how big, what done looks like), Symbiot gives two or three numbered readings, its pick first, and asks which. Clear asks still go straight through.
+
 ## 0.55.2 — 2026-10-07
 
 - Fixed a feature description being read as something waiting on you: an agent's "lit amber when something needs you: work waiting for your OK" showed as a Marketing lane step only you could do. A "when / if / once / until" before the words now means it describes behaviour.

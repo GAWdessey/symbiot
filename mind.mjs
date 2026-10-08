@@ -32,7 +32,7 @@ import { knowledgeFor } from "./knowledge.mjs";
 const MIND_FILE = join(CONFIG_DIR, "mind.json");
 const ACT_DIR = join(CONFIG_DIR, "drafts"); // runs of their own, next to drafted replies
 const CLI = fileURLToPath(new URL("./index.mjs", import.meta.url));
-const MAX_NODES = 400, MAX_FACTS = 12, MAX_LOG = 120, RECALL = 8, LOG_LINES = 6;
+const MAX_NODES = 400, MAX_FACTS = 12, MAX_LOG = 240, RECALL = 8, LOG_LINES = 6, TURN_CHARS = 1500;
 
 // ---- memory ---------------------------------------------------------------------
 function loadMind() {
@@ -80,10 +80,19 @@ function recall(query, now = Date.now(), d = loadMind(), limit = RECALL) {
 }
 const recallText = (nodes) => nodes.map((n) => `- ${n.name} (${n.kind}): ${n.facts.slice(-4).map((f) => f.text).join("; ")}`).join("\n");
 function logTurn(where, role, text, now = Date.now(), d = loadMind()) {
-  d.log = [...d.log, { ts: now, where, role, text: String(text || "").replace(/\s+/g, " ").trim().slice(0, 400) }].slice(-MAX_LOG);
+  d.log = [...d.log, { ts: now, where, role, text: String(text || "").replace(/\s+/g, " ").trim().slice(0, TURN_CHARS) }].slice(-MAX_LOG);
 }
 // The last few lines said anywhere else in the app: how the next page knows
 // what you were just talking about.
+// This chat's own last turns, for a chat that doesn't keep its thread itself (Home):
+// without them a "yeah" to "want that?" went to whatever was said elsewhere (a
+// kernel reboot card) and the task they'd agreed to was never made. Home is where
+// people think things through, so it keeps a real conversation: 16 turns, each whole
+// (up to TURN_CHARS), from the last 12 hours.
+const THREAD_TURNS = 16, THREAD_AGE = 12 * 3600000;
+function ownThread(where, d = loadMind(), now = Date.now()) {
+  return d.log.filter((l) => l.where === where && now - (l.ts || 0) < THREAD_AGE).slice(-THREAD_TURNS).map((l) => `${l.role === "user" ? "User" : "You"}: ${l.text}`).join("\n");
+}
 function lately(where, d = loadMind(), n = LOG_LINES) {
   return d.log.filter((l) => l.where !== where).slice(-n).map((l) => `- [${l.where}] ${l.role === "user" ? "User" : "You"}: ${l.text.slice(0, 200)}`).join("\n");
 }
@@ -156,6 +165,9 @@ function rulesFor(lanes = [], self = "") {
 When they ask you to do something (look into it, find out, fix, set up, sign in, close, send, chase), do it, don't explain what you can't do: "agent" starts a coding agent now, with their tools and connectors (MCP, the command line, a browser signed in to their linked sites). With a "repo", it's that project's agent, working in it; empty, an agent for everything outside a repo (this computer, accounts, services). Use "task" for what's for later. Don't ask their permission to hand it over: the agent asks them first, on the Workdesk, before anything hard to undo (closing an account, deleting, paying, sending); say so in your reply when it applies, with what to check first. A question you can answer from what's here: answer it, "do": null.
 Lanes ("repo" is one of these, exactly): ${lanes.length ? lanes.slice(0, 60).join(", ") : "(none found)"}.${lanes.includes(MARKETING) ? ` "${MARKETING}" is a lane of its own for marketing any of their products (posts, demo videos, launches, campaigns, pricing pages' copy): marketing work goes there, starting with the product it's for in brackets, "[Dailify] a launch post".` : ""}${self ? ` Symbiot itself is "${self}": a flaw in how Symbiot works (how it read a page, what a brief or a card said, anything in the app) goes there.` : ""}
 Don't wait to be asked to fix Symbiot. When you notice it got something wrong (you misread a page, a brief or a card misled them, a step made them do an agent's job), say so plainly and, in the same reply, start the fix: "agent"${self ? ` with "repo": "${self}"` : ""}, saying what went wrong, an example, and what it should do instead.
+A short answer (yes, yeah, ok, sure, go, do it, that one, 2) answers what you last said in "This chat so far", never something from elsewhere in the app. If you'd proposed a task or an agent and they agree, do it now in "do", in the lane you named.
+Hash it out first: when they bring an idea rather than a clear ask, sharpen it with them: say what's strong, push back where it's weak, add what's missing, and propose it as a task (naming the lane) once it holds up. "do" stays null until they agree.
+When an ask could mean two or more things (which lane, how much, what done looks like), don't guess: "do" stays null, and the reply gives 2-3 short numbered readings, your pick first, and asks which. A clear ask goes straight through.
 "remember": only lasting facts worth knowing on another page (who someone is, which account is what, a decision, how they like things); [] for anything else.`;
 }
 // Symbiot's own repo among your lanes (its package.json is symbiot's), or "".
@@ -193,6 +205,7 @@ function parseReply(raw) {
 // what "do" runs here. Gives { reply, did?, remembered }.
 async function converse({ where, role = "", context = "", history = "", question, act = {}, ask = write, map = null, now = Date.now(), images = [] }) {
   const d = loadMind(), hits = recall(question, now, d), known = recallText(hits), elsewhere = lately(where, d);
+  if (!history) history = ownThread(where, d, now);
   // what it did to answer, to show under the reply (as the app shows an agent's work)
   const steps = [];
   if (hits.length) steps.push(`recalled ${hits.length === 1 ? hits[0].name : hits.length + " things: " + hits.slice(0, 3).map((h) => h.name).join(", ")}`);
@@ -205,7 +218,7 @@ async function converse({ where, role = "", context = "", history = "", question
   // how they talk, from what they've typed into any chat (adapt.mjs: accommodation)
   const voice = styleLine(styleOf(d.log.filter((l) => l.role === "user").map((l) => l.text).concat(question)));
   const system = `${IDENTITY} ${role}\n\n${rulesFor(Object.keys(lanes), selfLane(lanes))}${voice ? "\n" + voice : ""}`;
-  const prompt = (known ? `What you know (from across the app):\n${known}\n\n` : "") + (kn.text ? kn.text + "\n\n" : "") + (elsewhere ? `Lately, elsewhere in the app:\n${elsewhere}\n\n` : "") +
+  const prompt = (known ? `What you know (from across the app):\n${known}\n\n` : "") + (kn.text ? kn.text + "\n\n" : "") + (elsewhere ? `Lately, elsewhere in the app (other chats: a short answer here doesn't reply to these):\n${elsewhere}\n\n` : "") +
     (context ? context + "\n\n" : "") + (history ? `This chat so far:\n${history}\n\n` : "") + `They say (on ${where}): ${question}`;
   const raw = await ask(system, prompt, images.length ? { images } : undefined);
   if (!raw || /^\(?couldn't reach the model/i.test(String(raw))) return { reply: "(couldn't reach the model)", remembered: 0 };
@@ -237,4 +250,4 @@ async function converse({ where, role = "", context = "", history = "", question
 // The usual "task" act, for a caller with no lanes of its own to pass.
 const addToTasks = (text, repo) => { let map = {}; try { map = laneMap(); } catch {} return taskIn(text, repo, { map }); };
 
-export { MIND_FILE, loadMind, remember, recall, recallText, lately, mindState, forget, actBrief, actNow, actIn, taskIn, selfLane, rulesFor, parseReply, converse, addToTasks };
+export { MIND_FILE, loadMind, remember, recall, recallText, lately, mindState, forget, actBrief, actNow, actIn, taskIn, selfLane, rulesFor, parseReply, converse, addToTasks , ownThread };
