@@ -527,12 +527,23 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
   });
   server.on("error", (e) => {
     // Stable port busy (an older instance still exiting during an update, or a
-    // second app): retry briefly, then fall back to a random port.
+    // second app): retry briefly, then fall back to a random port unless it's Symbiot's.
     if (e && e.code === "EADDRINUSE" && tries < (RELAUNCH ? 40 : 8)) { tries++; setTimeout(() => { try { server.listen(PORT, "127.0.0.1"); } catch {} }, 500); }
     // after an update, the window only ever looks for the stable port: a copy on another
     // port would serve nobody and linger (one did, for hours), so it bows out
     else if (RELAUNCH) process.exit(0);
-    else { try { server.listen(0, "127.0.0.1"); } catch {} }
+    // still busy: if it's a Symbiot (one restarting after an update answers late), open its
+    // window and bow out. A copy on another port runs every timer a second time: one started
+    // just as 0.57.6 relaunched itself, and two apps ran side by side (2026-10-08).
+    else (process.env.SYMBIOT_FORCE_NEW ? Promise.resolve(null) : askRunningApp("ping", { port: PORT, token: TOKEN, ms: 2500 })).then((p) => {
+      if (p && p.version) {
+        const url = `http://127.0.0.1:${PORT}/?t=${TOKEN}`, how = process.env.SYMBIOT_NO_OPEN === "1" ? "" : openApp(url);
+        console.log(`\n${c.g("●")} ${c.b("Symbiot")} is already running (v${p.version}) at ${c.b(url)}`);
+        console.log(how ? c.d(`  Opened the existing window (${/^[aeiou]/.test(how) ? "an" : "a"} ${how}).`) : c.d("  Open that URL in your browser."));
+        process.exit(0);
+      }
+      try { server.listen(0, "127.0.0.1"); } catch {}
+    });
   });
   server.listen(PORT, "127.0.0.1");
   checkLatest(); setInterval(checkLatest, 2 * 60 * 1000).unref(); // background update check (every 2 min)

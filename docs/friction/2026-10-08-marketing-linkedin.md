@@ -259,6 +259,37 @@ approves, the agent does.**
 - **The Frikkie reply itself:** already sent. He pasted and sent it at 14:10 ("Pasted and
   sent, so this one's done"), so there was nothing left in the box to pull onto the card.
 
+## 13. A reply he'd already sent, still waiting for his OK
+
+- **What happened:** once 0.57.6 was installed, Home showed "Reply on LinkedIn" to
+  Frikkie with Go ahead and Skip. He had pasted that reply in and sent it himself at
+  14:10, and told Symbiot so ("Pasted and sent, so this one's done"). The card's text
+  also ended with the agent's note: "Sent by the user on 2026-10-08 at 2:10 PM,
+  shortened to: …".
+- **Why it was wrong:** it asked for an OK on something already done, and Go ahead
+  would have sent the reply a second time. The note wasn't part of the reply.
+- **What it should do instead:** a draft the user sent, or one its run notes as sent,
+  has no card. A note after the reply is never shown as part of it.
+- **Fixed in:** `watch.mjs` `replyOf` (stops at a "Sent …/Posted … by/on/at" note and
+  marks the draft sent) and `sentByUser` (the newest answers say it was sent); and
+  `draftCard`, which returns no card for either. Tests: `test/post.mjs`, "A DRAFT ON
+  ITS CARD". Shipped in 0.57.7.
+
+## 14. Two Symbiots at once, after an update
+
+- **What happened:** as 0.57.6 installed and relaunched itself at 15:43, a second launch
+  (the install opening Symbiot) found the port taken, but no answer from it yet. So it
+  started its own app on port 41017, with its own window. Two apps ran side by side,
+  each with the timers that start agents and hand over work.
+- **Why it was wrong:** one Symbiot is the rule (since 0.32). Two race the same config
+  and can start the same work twice.
+- **What it should do instead:** while the usual port stays busy, ask whether it's
+  Symbiot. If it is, open that window and exit. Only something else on the port earns
+  another port.
+- **Fixed in:** `server.mjs` `startApp` (its port-busy fallback asks the app on the port
+  first; `SYMBIOT_FORCE_NEW` still starts a second one on purpose). Tests:
+  `test/app.mjs`, "a Symbiot that answers late". Shipped in 0.57.7.
+
 ## Other places the same pattern shows up
 
 - **`post.mjs` `approvePost`** (Marketing's "Drafts to post": Shipped, Learned / fixed,

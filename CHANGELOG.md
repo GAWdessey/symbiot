@@ -2,6 +2,11 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.57.7
+
+- **A reply you sent yourself leaves Home.** If you paste a drafted reply in and send it yourself, then say so, its card goes, and so does a draft its agent noted as sent. Before, 0.57.6 kept asking for your OK on Frikkie's reply, already sent at 14:10, and showed the agent's note "Sent by the user… shortened to…" as if it were part of the reply.
+- **One Symbiot, even mid-update.** A launch that found Symbiot still restarting after an update used to start a second copy on another port, with its own window, and every timer then ran twice. Now it waits for the restarted app, opens that window and leaves it at that.
+
 ## 0.57.6
 
 - **See a drafted reply before you OK it.** A card like "Draft: Messaging, 1 new notification waits for your OK" used to say "The reply to Frikkie is ready for you to send" without showing the reply, so to check it you had to open LinkedIn. Now the card is "Reply to Frikkie on LinkedIn", with the reply itself on it, as it will look there (a LinkedIn message, a WhatsApp bubble or an email) and with none of the agent's notes. **Go ahead** sends it from your account in Symbiot's signed-in browser, exactly as shown. **Skip** drops it. **Change it** takes what you'd change in your own words: the agent redrafts, and the new version shows on the same card. The card no longer says the agent can't send it.
