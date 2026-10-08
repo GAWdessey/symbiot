@@ -902,6 +902,42 @@ body.lq-away #lqaway{display:block;position:fixed;left:0;top:0;width:440px;text-
 #lqaway .awh{margin-top:16px;font-size:11.5px;opacity:.32}
 body.lq-light #lqaway{color:#151A21;text-shadow:0 1px 12px rgba(255,255,255,.8)}
 body.lq-light #lqaway .aws b{color:#9A5200}
+
+/* Setup: the first run, over everything, until it's done */
+.onb{position:fixed;inset:0;z-index:60;display:flex;align-items:center;justify-content:center;background:rgba(5,6,8,.74);-webkit-backdrop-filter:blur(18px);backdrop-filter:blur(18px)}
+.onb.hidden{display:none}
+.onbin{width:min(700px,calc(100vw - 32px));max-height:calc(100vh - 40px);overflow:auto;padding:30px 32px 26px;border-radius:28px;background:rgba(19,21,25,.9);border:1px solid rgba(255,255,255,.08);box-shadow:0 30px 80px -30px rgba(0,0,0,.9);color:var(--text)}
+.onbdots{display:flex;gap:6px;margin-bottom:22px}.onbdots i{display:block;height:4px;flex:1;border-radius:4px;background:rgba(255,255,255,.1)}.onbdots i.on{background:var(--amber)}.onbdots i.past{background:rgba(242,165,65,.45)}
+.onb h2{margin:0 0 8px;font:650 28px/1.15 var(--sans);letter-spacing:-.02em;color:var(--bone)}
+.onbl{margin:0 0 20px;font-size:15px;line-height:1.55;color:var(--faint)}
+.onbcards{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:6px 0 20px}
+.onbcard{padding:16px;border-radius:18px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07)}
+.onbcard b{display:block;margin-bottom:6px;font:600 15px var(--sans);color:var(--bone)}.onbcard span{font-size:13.5px;line-height:1.5;color:var(--faint)}
+.onbnote{font-size:13px;color:var(--faint);margin:0 0 18px}
+.onbok{display:flex;gap:10px;align-items:flex-start;padding:14px 16px;border-radius:16px;background:rgba(79,190,140,.08);border:1px solid rgba(79,190,140,.25);margin-bottom:18px;font-size:14.5px;line-height:1.5}
+.onbok i{flex:none;width:20px;height:20px;border-radius:50%;background:#4FBE8C;color:#06120C;font:700 12px/20px var(--sans);text-align:center;font-style:normal}
+.onbbox{padding:16px;border-radius:18px;background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.07);margin-bottom:12px}
+.onbbox h3{margin:0 0 6px;font:600 15px var(--sans);color:var(--bone)}.onbbox p{margin:0 0 10px;font-size:13.5px;line-height:1.5;color:var(--faint)}
+.onbbox code{font-size:12.5px;padding:1px 6px;border-radius:6px;background:rgba(255,255,255,.08)}
+.onbrow{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.onbrow input,.onbrow select{flex:1;min-width:160px}
+.onbnav{display:flex;align-items:center;gap:10px;margin-top:22px}.onbnav .sp{flex:1}
+.onbnav .back{background:none;border:0;color:var(--faint);font:500 13.5px var(--sans);cursor:pointer;padding:6px 2px}
+.onbrepos{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0 4px}.onbrepos span{padding:5px 10px;border-radius:999px;font-size:12.5px;background:rgba(255,255,255,.06);color:var(--text)}
+.onbspin{display:inline-block;width:12px;height:12px;margin-right:8px;border-radius:50%;border:2px solid rgba(242,165,65,.3);border-top-color:var(--amber);animation:onbspin 1s linear infinite;vertical-align:-1px}
+@keyframes onbspin{to{transform:rotate(360deg)}}
+.onbgrp{margin:16px 0 6px;font:600 11px var(--sans);letter-spacing:.12em;text-transform:uppercase;color:var(--faint)}
+.onbapp{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:14px;background:rgba(255,255,255,.03);margin-bottom:6px}
+.onbapp .nm{flex:1;font-size:14px;color:var(--bone)}.onbapp .st{font-size:12.5px;color:var(--faint)}.onbapp .st.ok{color:#4FBE8C}.onbapp .st.wait{color:var(--amber)}
+.onbapp button{padding:5px 12px;font-size:12.5px}
+.onborb{display:block;width:72px;height:72px;margin:0 0 14px;border-radius:18px}
+.onbfoot{position:sticky;bottom:-26px;margin:12px -32px -26px;padding:12px 32px 22px;background:#15171B;border-top:1px solid rgba(255,255,255,.06)}.onbfoot .onbnav{margin-top:6px}.onbfoot .onbnote{margin:0}
+body.lq-light .onbfoot{background:#FFFFFF;border-top-color:rgba(21,26,33,.07)}
+.onbtour{margin:6px 0 0;padding:0 0 0 18px;font-size:14px;line-height:1.7;color:var(--text)}
+body.lq-light .onb{background:rgba(236,239,244,.7)}
+body.lq-light .onbin{background:rgba(255,255,255,.92);border-color:rgba(21,26,33,.08);box-shadow:0 30px 80px -30px rgba(40,52,74,.45)}
+body.lq-light .onbcard,body.lq-light .onbbox,body.lq-light .onbapp{background:rgba(21,26,33,.035);border-color:rgba(21,26,33,.07)}
+body.lq-light .onbdots i{background:rgba(21,26,33,.1)}body.lq-light .onbdots i.on{background:var(--amber)}body.lq-light .onbdots i.past{background:rgba(242,165,65,.5)}body.lq-light .onbrepos span{background:rgba(21,26,33,.06)}body.lq-light .onbbox code{background:rgba(21,26,33,.07)}
+@media(max-width:640px){.onbcards{grid-template-columns:1fr}.onbin{padding:22px 18px}}
 /* the Dashboard as a stream: time runs left to right, a current per feed, now on the right */
 .bstream{position:relative;margin-top:10px;border-radius:18px;overflow:hidden;isolation:isolate;background:#08090B;box-shadow:0 0 0 1px rgba(255,255,255,.08)}
 body.lq-light .bstream{background:#EBEEF0;box-shadow:0 0 0 1px rgba(21,26,33,.08)}
@@ -955,6 +991,7 @@ body.lq-light .btip .bta button:not(.quiet){background:#151A21;color:#FFFFFF}
 @media(max-width:760px){.maprow{flex-direction:column}.detail{width:auto;max-height:none}}
 @media(max-width:600px){#screenname,#pagesite{flex:1 1 100%!important}.tabs{overflow-x:auto;scrollbar-width:none;padding:0 8px;gap:0}.tabs::-webkit-scrollbar{display:none}.tab{flex:none;padding:9px 11px}header{padding:12px 14px 8px}main{padding:12px}}
 </style></head><body>
+<div id="onb" class="onb hidden" role="dialog" aria-modal="true" aria-labelledby="onbt"><div class="onbin"><div class="onbdots" id="onbdots"></div><div id="onbbody"></div></div></div>
 <div id="liquid" aria-label="Symbiot">
 <canvas id="lq" aria-hidden="true"></canvas>
 <div id="lqorbits"></div>
@@ -1076,6 +1113,7 @@ body.lq-light .btip .bta button:not(.quiet){background:#151A21;color:#FFFFFF}
 </section>
 <section id="panel-settings" class="hidden">
 <div id="firststeps" class="sset hidden" aria-live="polite"></div>
+<div class="sset"><h3 class="ssh">Setup</h3><div class="row"><span class="muted" style="flex:1">Walk through setup again: your AI, your work, your agent and your apps.</span><button class="ghost" id="rerunsetup">Run setup again</button></div></div>
 <div class="sset"><h3 class="ssh">Your AI</h3>
 <label>Which AI should Symbiot write with?</label>
 <select id="provider">
@@ -2571,7 +2609,7 @@ var LQNAMES={board:'Dashboard',map:'Map',tasks:'Workdesk',agents:'Workdesk',week
 var LQ_REST=60000,LQ_MAX=11;
 function lqMM(q){try{return !!(window.matchMedia&&window.matchMedia(q).matches);}catch(e){return false;}}
 function lqLookGet(){var l='';try{l=window.localStorage&&window.localStorage.getItem('symbiot-look')||'';}catch(e){}return l==='glass'||l==='pearl'?l:'ferro';}
-function lqLook(l){try{if(window.localStorage)window.localStorage.setItem('symbiot-look',l);}catch(e){}lqTheme();var g=$('lqlook');if(g&&g.querySelectorAll)g.querySelectorAll('button').forEach(function(b){b.setAttribute('aria-checked',b.getAttribute('data-look')===l?'true':'false');});LQ.ripple=[0.5,0.47,LQ.t||0];}
+function lqLook(l){try{if(window.localStorage)window.localStorage.setItem('symbiot-look',l);}catch(e){}lqTheme();lqIcon(l);api('/api/look',{look:l}).catch(function(){});var g=$('lqlook');if(g&&g.querySelectorAll)g.querySelectorAll('button').forEach(function(b){b.setAttribute('aria-checked',b.getAttribute('data-look')===l?'true':'false');});LQ.ripple=[0.5,0.47,LQ.t||0];}
 function lqTheme(){var look=lqLookGet();var th={look:look,light:look!=='ferro',contrast:lqMM('(prefers-contrast: more)'),forced:lqMM('(forced-colors: active)'),solid:lqMM('(prefers-reduced-transparency: reduce)'),still:lqMM('(prefers-reduced-motion: reduce)'),wide:lqMM('(color-gamut: p3)'),night:false,accent:null};
 var h=new Date().getHours();th.night=h>=22||h<6;
 try{if(document.createElement&&typeof getComputedStyle==='function'&&document.body&&document.body.appendChild){var a=document.createElement('span'),b=document.createElement('span');a.style.color='AccentColor';b.style.color='CanvasText';document.body.appendChild(a);document.body.appendChild(b);
@@ -2681,7 +2719,7 @@ list=list.concat(need.items);var old={};LQ.drops.forEach(function(d){old[d.id]=d
 // a new blob grows where it belongs, rather than sweeping out of the core across the rest
 LQ.drops=list.map(function(d){var o=old[d.id];d.x=o?o.x:d.blob?d.tx:cx;d.y=o?o.y:d.blob?d.ty:cy;d.vx=o?o.vx:0;d.vy=o?o.vy:0;d.cr=o?o.cr:0;return d;});
 var n=(h.you||[]).length,w=h.working||0;
-LQ.coreText=n?(n+(n>1?' things need':' thing needs')+' only you'+(w?' · '+w+' agent'+(w>1?'s':'')+' working':'')):(w?w+' agent'+(w>1?'s':'')+' working · nothing needs you':'All handled');
+LQ.coreText=n?(n+(n>1?' things need':' thing needs')+' only you'+(w?' · '+w+' agent'+(w>1?'s':'')+' working':'')):(w?w+' agent'+(w>1?'s':'')+' working · nothing needs you':'Nothing needs you right now');
 var b=document.body;if(b&&b.classList){b.classList.toggle('lq-touch',!!(a.modes&&a.modes.touch)||LQ.touch);b.classList.toggle('lq-keys',!!(a.modes&&a.modes.keyboard));}
 LQ.talkWeight=(a.modes&&a.modes.talkWeight)||0.35;
 lqLabels();}
@@ -3038,7 +3076,80 @@ awTick();awStatus();setInterval(awTick,5000);setInterval(awStatus,15000);
 var bye=function(ev){if(Date.now()-AWAY.shown<1500)return;if(ev&&ev.type==='keydown'&&['Meta','OS','Super','Shift','Control','Alt','Hyper'].indexOf(ev.key)>=0)return;api('/api/away',{open:false}).catch(function(){});};
 ['keydown','mousedown','touchstart','wheel'].forEach(function(t){document.addEventListener(t,bye,true);});
 var raf=window.requestAnimationFrame&&function(f){return window.requestAnimationFrame(f);};if(raf){var loop=function(){awPlace();raf(loop);};raf(loop);}}
-function lqInit(){var bd=document.body;if(!bd||!bd.classList)return;lqTheme();bd.classList.add('lq-liquid');
+
+// ---- Setup: the first run --------------------------------------------------------
+// A new Symbiot shows this before anything else (home.mjs onboarding): what it is, your
+// AI, where your work is, your agent, every app you use (connected, or "I don't use
+// it"), your documents, then Home. Where you are is kept, so closing it resumes there.
+var ONB=null,ONB_T=null,ONB_NAMES={welcome:'Welcome',ai:'Your AI',work:'Your work',agent:'Your agent',apps:'Your apps',docs:'Documents',done:'Done'};
+function onbLoad(fresh){return api('/api/onboarding'+(fresh?'?fresh=1':'')).then(function(o){ONB=o;var el=$('onb');if(!el)return;if(!o||!o.pending){el.classList.add('hidden');document.body.classList.remove('lq-onb');if(ONB_T){clearInterval(ONB_T);ONB_T=null;}return;}
+el.classList.remove('hidden');document.body.classList.add('lq-onb');onbRender();
+if(!ONB_T)ONB_T=setInterval(function(){if(ONB&&ONB.pending&&['ai','work','agent','apps'].indexOf(ONB.step)>=0&&!onbBusy())onbLoad(ONB.step==='ai');},2500);}).catch(function(){});}
+// not while you're typing in it
+function onbBusy(){var a=document.activeElement;return !!(a&&$('onb').contains(a)&&(a.tagName==='INPUT'||a.tagName==='SELECT'));}
+function onbGo(step){api('/api/onboarding/set',{step:step}).then(function(o){ONB=o;onbRender();var b=$('onbbody');if(b&&b.parentNode)b.parentNode.scrollTop=0;});}
+function onbNav(prev,next,label,ok){return "<div class='onbnav'>"+(prev?"<button class='back' data-go='"+prev+"'>Back</button>":"")+"<span class='sp'></span>"+(next?"<button class='act' data-go='"+next+"'"+(ok===false?' disabled':'')+">"+esc(label||'Continue')+"</button>":"")+"</div>";}
+function onbRender(){var o=ONB,b=$('onbbody'),d=$('onbdots');if(!o||!b)return;var st=o.steps||[],k=st.indexOf(o.step);
+d.innerHTML=st.map(function(x,i){return "<i class='"+(i===k?'on':i<k?'past':'')+"' title='"+esc(ONB_NAMES[x]||x)+"'></i>";}).join('');
+var h='';
+if(o.step==='welcome'){
+h="<img class='onborb' src='/favicon.svg?look="+encodeURIComponent(lqLookGet()||'ferro')+"' alt=''><h2 id='onbt'>Meet Symbiot</h2><p class='onbl'>It works alongside you, so your time goes on what only you can do.</p><div class='onbcards'>"+
+[['It watches','What you work on and what comes in: your projects, your mail, chats and code.'],['It works','It hands tasks to your coding agent, which does them on its own and tells you what it did.'],['It asks','Only what only you can do: a sign-in, a decision, your OK before anything goes out.']].map(function(c){return "<div class='onbcard'><b>"+c[0]+"</b><span>"+c[1]+"</span></div>";}).join('')+
+"</div><p class='onbnote'>Setup takes a few minutes: your AI, your work, your agent and every app you use. Symbiot starts finding your projects meanwhile.</p>"+onbNav('', 'ai', 'Set it up');}
+else if(o.step==='ai'){var a=o.ai||{},c=a.claude||{};
+h="<h2 id='onbt'>Your AI</h2><p class='onbl'>Symbiot thinks with an AI: it reads what comes in, talks with you and writes for you.</p>";
+if(a.connected)h+="<div class='onbok'><i>✓</i><div>Symbiot is using <b>"+esc(a.line)+"</b>"+(a.provider==='claude'?". It’s the Claude account you’re signed in with in Claude Code: no key, nothing extra to pay.":".")+"</div></div>";
+else h+="<div class='onbbox'><h3>Your Claude subscription (recommended)</h3><p>"+(c.installed?"Claude Code is on this computer but not signed in. Open a terminal, run <code>claude</code> once and sign in with your Claude account.":"Install Claude Code (<code>npm install -g @anthropic-ai/claude-code</code>), run <code>claude</code> once and sign in with your Claude account.")+" No key, and nothing extra to pay.</p><button class='ghost' id='onbrecheck'>I’ve signed in: check again</button></div>"+
+"<div class='onbbox'><h3>Or an API key, or a free local model</h3><div class='onbrow'><select id='onbprov'><option value='anthropic'>Claude (Anthropic) API key</option><option value='openai'>OpenAI API key</option><option value='gemini'>Gemini API key</option><option value='ollama'>Local model (Ollama), no key</option></select><input id='onbkey' type='password' placeholder='paste your key'><button class='ghost' id='onbconnect'>Connect</button></div><p id='onbaimsg' style='margin:8px 0 0'></p></div>";
+h+=onbNav('welcome','work','Continue',!!a.connected);}
+else if(o.step==='work'){var w=o.work||{};
+h="<h2 id='onbt'>Your work</h2><p class='onbl'>Symbiot finds the projects on this computer, so it knows what you’re working on and where to send each task.</p>";
+h+=w.searching?"<p><span class='onbspin'></span>Looking through your folders"+(w.total?": "+w.done+" of "+w.total+" checked":"")+"…</p>":"<p>"+(w.count?"Found <b>"+w.count+"</b> project"+(w.count>1?'s':'')+".":"No projects found yet. Add the folder they’re in.")+"</p>";
+if(w.repos&&w.repos.length)h+="<div class='onbrepos'>"+w.repos.slice(0,40).map(function(r){return "<span title='"+esc(r.path)+"'>"+esc(r.name)+"</span>";}).join('')+(w.count>40?"<span>and "+(w.count-40)+" more</span>":"")+"</div>";
+h+="<div class='onbbox' style='margin-top:14px'><p>Looking in: "+((w.roots||[]).map(function(r){return "<code>"+esc(r)+"</code>";}).join(' ')||'your home folder')+"</p><div class='onbrow'><input id='onbroot' placeholder='Add a folder, e.g. ~/work'><button class='ghost' id='onbaddroot'>Add</button></div></div>";
+h+=onbNav('ai','agent');}
+else if(o.step==='agent'){var g=o.agent||{},cur=(g.agents||[]).find(function(x){return x.tmpl===g.cmd;}),pk=g.pick;
+h="<h2 id='onbt'>Your agent</h2><p class='onbl'>Your coding agent takes the tasks Symbiot hands it and does them on its own, inside that project. Symbiot stops it from pushing to main, publishing, deleting outside the project or touching your keys.</p>";
+if(g.cmd)h+="<div class='onbok'><i>✓</i><div>Tasks go to <b>"+esc(cur?cur.label:'your agent')+"</b>.</div></div>";
+else if(pk)h+="<div class='onbbox'><h3>"+esc(pk.name)+" is on this computer</h3><p>"+esc(pk.label)+"</p><button class='act' id='onbuse' data-cmd='"+esc(pk.tmpl)+"'>Use "+esc(pk.name)+"</button></div>";
+else h+="<div class='onbbox'><h3>No coding agent found</h3><p>Install Claude Code (<code>npm install -g @anthropic-ai/claude-code</code>) to let Symbiot hand work over. You can carry on and add it later in Settings.</p></div>";
+h+=onbNav('work','apps');}
+else if(o.step==='apps'){var ap=o.apps||[],left=ap.filter(function(x){return !x.skipped&&x.state==='off';}).length;
+h="<h2 id='onbt'>Your apps</h2><p class='onbl'>Connect every app you use, so Symbiot sees what comes in. Each opens in a window to sign in; Symbiot keeps the sign-in on this computer. Mark the ones you don’t use.</p>";
+(o.groups||[]).forEach(function(gp){var rows=ap.filter(function(x){return x.group===gp;});if(!rows.length)return;h+="<div class='onbgrp'>"+esc(gp)+"</div>";
+rows.forEach(function(x){var stt=x.skipped?"<span class='st'>Not used</span><button class='ghost' data-unskip='"+esc(x.id)+"'>Undo</button>":
+x.state==='off'?"<button class='act' data-link='"+esc(x.id)+"'>Connect</button><button class='ghost' data-skip='"+esc(x.id)+"'>I don’t use it</button>":
+x.state==='ok'?"<span class='st ok'>✓ Connected"+(x.agents?" · your agents can use it too":"")+"</span>":
+"<span class='st wait'>"+(x.state==='signedout'?'Signed out':'Sign in in the window that opened')+"</span><button class='ghost' data-check='"+esc(x.id)+"'>Check</button><button class='ghost' data-link='"+esc(x.id)+"'>Open again</button>";
+h+="<div class='onbapp'><span class='nm'>"+esc(x.name)+"</span>"+stt+"</div>";});});
+h+="<div class='onbfoot'><p class='onbnote'>"+(left?left+" left to decide. ":"All decided. ")+(left?"<button class='ghost' id='onbskiprest'>I don’t use the rest</button>":"")+"</p>"+onbNav('agent','docs','Continue',!!o.decided)+"</div>";}
+else if(o.step==='docs'){var fs=(o.docs||{}).folders||[];
+h="<h2 id='onbt'>Your documents</h2><p class='onbl'>Optional. A folder of your company’s documents lets Symbiot quote them when you ask, and spot where they disagree (a deadline on someone’s leave, a price told two ways).</p>";
+if(fs.length)h+="<div class='onbok'><i>✓</i><div>"+fs.map(function(f){return "<code>"+esc(f)+"</code>";}).join(' ')+"</div></div>";
+h+="<div class='onbbox'><div class='onbrow'><input id='onbdoc' placeholder='A folder, e.g. ~/Company'><button class='ghost' id='onbadddoc'>Add</button></div><p id='onbdocmsg' style='margin:8px 0 0'></p></div>";
+h+=onbNav('apps','done',fs.length?'Continue':'Skip for now');}
+else{var conn=(o.apps||[]).filter(function(x){return x.state!=='off'&&!x.skipped;}).length;
+h="<h2 id='onbt'>You’re set up</h2><p class='onbl'>Here’s what Symbiot has to work with. You can change any of it in Settings.</p><div class='onbbox'><p>"+
+[(o.ai&&o.ai.connected?'✓ ':'· ')+'AI: '+esc((o.ai&&o.ai.line)||'not connected'),(((o.work||{}).count)?'✓ ':'· ')+((o.work||{}).count||0)+' project'+(((o.work||{}).count)===1?'':'s'),(o.agent&&o.agent.cmd?'✓ ':'· ')+'Agent: '+(o.agent&&o.agent.cmd?'ready':'none yet'),(conn?'✓ ':'· ')+(conn?conn+' app'+(conn===1?'':'s')+' connected':'no apps connected yet')].join('<br>')+
+"</p></div><h3 style='margin:18px 0 4px;font:600 15px var(--sans);color:var(--bone)'>Finding your way</h3><ul class='onbtour'><li>Each orb is a place: tap it to open it, right-click to go back.</li><li>Amber means something needs you.</li><li>Talk to Symbiot at the bottom: ask anything, or tell it what to do.</li></ul>"+
+"<div class='onbnav'><button class='back' data-go='docs'>Back</button><span class='sp'></span><button class='act' id='onbfinish'>Open Symbiot</button></div>";}
+b.innerHTML=h;
+b.querySelectorAll('[data-go]').forEach(function(x){x.addEventListener('click',function(){onbGo(x.getAttribute('data-go'));});});
+var on=function(id,f){var x=$(id);if(x)x.addEventListener('click',f);};
+on('onbrecheck',function(){onbLoad(true);});
+on('onbconnect',function(){var pv=$('onbprov').value,m=$('onbaimsg');m.textContent='Checking…';api('/api/connect',{provider:pv,key:$('onbkey').value.trim(),model:''}).then(function(r){m.textContent=r.message||'';onbLoad(true);});});
+var pvs=$('onbprov');if(pvs)pvs.addEventListener('change',function(){$('onbkey').style.display=pvs.value==='ollama'?'none':'';});
+on('onbaddroot',function(){var v=$('onbroot').value.trim();if(!v)return;api('/api/scanroots/add',{path:v}).then(function(){onbLoad();});});
+on('onbuse',function(){var c=$('onbuse').getAttribute('data-cmd');api('/api/agentcmd',{cmd:c}).then(function(){onbLoad();});});
+on('onbskiprest',function(){api('/api/onboarding/set',{skipRest:true}).then(function(r){ONB=r;onbRender();});});
+on('onbadddoc',function(){var v=$('onbdoc').value.trim();if(!v)return;api('/api/knowledge/add',{path:v}).then(function(r){$('onbdocmsg').textContent=r&&r.error?r.error:'';onbLoad();});});
+on('onbfinish',function(){api('/api/onboarding/done',{}).then(function(){onbLoad();LQ.fresh=true;lqLoad(true);});});
+b.querySelectorAll('[data-link]').forEach(function(x){x.addEventListener('click',function(){x.disabled=true;api('/api/links/link',{id:x.getAttribute('data-link')}).then(function(){onbLoad();});});});
+b.querySelectorAll('[data-check]').forEach(function(x){x.addEventListener('click',function(){x.disabled=true;api('/api/links/check',{id:x.getAttribute('data-check')}).then(function(){onbLoad();});});});
+b.querySelectorAll('[data-skip]').forEach(function(x){x.addEventListener('click',function(){api('/api/onboarding/set',{skip:x.getAttribute('data-skip')}).then(function(r){ONB=r;onbRender();});});});
+b.querySelectorAll('[data-unskip]').forEach(function(x){x.addEventListener('click',function(){api('/api/onboarding/set',{unskip:x.getAttribute('data-unskip')}).then(function(r){ONB=r;onbRender();});});});}
+function lqIcon(l){var k=document.querySelector('link[rel=icon]');if(k)k.setAttribute('href','/favicon.svg?look='+encodeURIComponent(l||'ferro'));}
+function lqInit(){var bd=document.body;if(!bd||!bd.classList)return;lqIcon(lqLookGet());lqTheme();bd.classList.add('lq-liquid');
 ['(prefers-color-scheme: light)','(prefers-contrast: more)','(forced-colors: active)','(prefers-reduced-transparency: reduce)','(prefers-reduced-motion: reduce)'].forEach(function(q){try{var mq=window.matchMedia&&window.matchMedia(q);if(mq&&mq.addEventListener)mq.addEventListener('change',lqTheme);else if(mq&&mq.addListener)mq.addListener(lqTheme);}catch(e){}});
 if(document.addEventListener){document.addEventListener('contextmenu',function(ev){var b=document.body,t=ev&&ev.target;if(!b||!b.classList||!b.classList.contains('lq-liquid'))return;if(t&&t.closest&&t.closest('input,textarea,select,[contenteditable]'))return;var sel=window.getSelection?String(window.getSelection()):'';if(sel)return;ev.preventDefault();lqBack();});
 document.addEventListener('mouseup',function(ev){var b=document.body;if(ev&&ev.button===3&&b&&b.classList&&b.classList.contains('lq-liquid')){ev.preventDefault();lqBack();}});}
@@ -3067,5 +3178,5 @@ var G=lqGL();if(G){try{lqStep();lqDraw(G);}catch(e){}}if(typeof window.requestAn
 function frame(){if(!document.hidden){LQ.frame++;if(LQ.mode!=='pool'||LQ.frame%3===0)lqStep();var every=(GLSOFT||GLSTILL)?glEvery(LQ.mode==='aware'):LQ.mode==='pool'?6:LQ.mode==='rest'?2:1;if(G&&LQ.frame%every===0)lqDraw(G);}raf(frame);} // moves every frame; drawn less at rest, behind a panel, without a GPU
 raf(frame);}
 
-initGraphEvents();syncP();refresh();loadMap();firstTab();lqInit();awayInit();lqDeep();loadWhatsNew();loadAgentCfg();loadScanRoots();loadKnowledge();loadPhone();loadLinks();loadMind();loadTrusted();loadMail();loadScreensUI();loadMonitorsUI();loadDesktop();loadWatchUI();setInterval(function(){whenFree(document.querySelector('main'),'watch',loadWatchUI);},60000);loadPhoneLink();
+initGraphEvents();syncP();refresh();firstTab();lqInit();onbLoad();var rr=$('rerunsetup');if(rr)rr.addEventListener('click',function(){api('/api/onboarding/restart',{}).then(function(){lqSink();onbLoad();});});awayInit();lqDeep();loadWhatsNew();loadAgentCfg();loadScanRoots();loadKnowledge();loadPhone();loadLinks();loadMind();loadTrusted();loadMail();loadScreensUI();loadMonitorsUI();loadDesktop();loadWatchUI();setInterval(function(){whenFree(document.querySelector('main'),'watch',loadWatchUI);},60000);loadPhoneLink();
 </script></body></html>`;

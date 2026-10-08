@@ -38,11 +38,14 @@ try {
 
   console.log("INSTALLING — npm install -g writes it; a dev install doesn't");
   const post = fileURLToPath(new URL("../postinstall.mjs", import.meta.url)), h2 = join(HOME, "h2"), h3 = join(HOME, "h3");
-  const env = (h, g) => ({ ...process.env, HOME: h, npm_config_global: g, SYMBIOT_NO_LAUNCHER: "" });
+  // windows off (a test must never open one): the hook writes the entry and says where it is
+  const env = (h, g) => ({ ...process.env, HOME: h, npm_config_global: g, SYMBIOT_NO_LAUNCHER: "", SYMBIOT_NO_OPEN: "1" });
   const g = spawnSync(process.execPath, [post], { env: env(h2, "true"), encoding: "utf8" });
   ok("global: the entry is written, and it says where to find Symbiot", g.status === 0 && existsSync(launcherFile(h2)) && /in your app menu/.test(g.stdout), [g.status, g.stdout, g.stderr]);
   const d = spawnSync(process.execPath, [post], { env: env(h3, ""), encoding: "utf8" });
   ok("not global (working on Symbiot itself): nothing written, nothing fails", d.status === 0 && !existsSync(launcherFile(h3)), [d.status, d.stderr]);
+  const h4 = join(HOME, "h4"), nd = spawnSync(process.execPath, [post], { env: { ...env(h4, "true"), DISPLAY: "", WAYLAND_DISPLAY: "", SYMBIOT_NO_OPEN: "" }, encoding: "utf8" });
+  ok("no desktop (a server, CI): the entry, and nothing opened", nd.status === 0 && existsSync(launcherFile(h4)) && /in your app menu/.test(nd.stdout) && !/opening now/.test(nd.stdout), nd.stdout);
 
   console.log("UNINSTALLING — the entry, the icon, and Away's shortcut only");
   ok("entry and icon gone", removeLauncher(HOME).length === 2 && !existsSync(launcherFile(HOME)) && !existsSync(launcherIcon(HOME)), "");

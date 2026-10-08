@@ -2,10 +2,11 @@
 // distros), finding repos and project folders without hanging, the facts each
 // one gives (who you are in it, its commits, open work, README, rules), the
 // Map's graph, and the one repo set every view shares.
+import { Worker } from "node:worker_threads";
 import { spawnSync } from "node:child_process";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { readFileSync, existsSync, statSync, readdirSync } from "node:fs";
+import { readFileSync, existsSync, statSync, readdirSync, writeFileSync, mkdirSync } from "node:fs";
 import { VERSION, loadConfig, saveConfig, sh, repoState } from "./core.mjs";
 import { detectHandoffs } from "./agents.mjs";
 import { PROVIDERS, resolveProvider } from "./ai.mjs";
@@ -18,7 +19,7 @@ let LAST_MAP = null;  // cached graph so node clicks don't rescan
 // How this process scans: dir (--dir, one folder this run instead of the scan
 // folders), quiet (the app: no progress line) and plain (no colour). Set by
 // index.mjs from its flags.
-const OPTS = { dir: "", quiet: false, plain: false };
+const OPTS = { dir: "", quiet: false, plain: false, cache: false };
 function setScanOptions(o) { Object.assign(OPTS, o); }
 const paint = (code) => (s) => OPTS.plain ? s : `\x1b[38;5;${code}m${s}\x1b[0m`;
 const green = paint(42), faint = paint(66), amber = paint(179);
@@ -209,11 +210,11 @@ function addScanRoot(p) {
   const cfg = loadConfig();
   let list = Array.isArray(cfg.scanRoots) && cfg.scanRoots.length ? cfg.scanRoots : scanDefaults(); // keep home when adding the first extra folder
   if (!list.includes(p)) list.push(p);
-  cfg.scanRoots = list; saveConfig(cfg); LAST_MAP = null; return { ok: true, roots: cfg.scanRoots };
+  cfg.scanRoots = list; saveConfig(cfg); LAST_MAP = null; if (OPTS.cache) refreshRepos(); return { ok: true, roots: cfg.scanRoots };
 }
 function removeScanRoot(p) {
   const cfg = loadConfig(); cfg.scanRoots = (Array.isArray(cfg.scanRoots) ? cfg.scanRoots : []).filter((x) => x !== p);
-  if (!cfg.scanRoots.length) delete cfg.scanRoots; saveConfig(cfg); LAST_MAP = null; return { ok: true, roots: cfg.scanRoots || [] };
+  if (!cfg.scanRoots.length) delete cfg.scanRoots; saveConfig(cfg); LAST_MAP = null; if (OPTS.cache) refreshRepos(); return { ok: true, roots: cfg.scanRoots || [] };
 }
 
 function commits(repos, sinceExpr, mineOnly = true) {
@@ -277,7 +278,50 @@ const MANIFEST_TOOL = {
   "Gemfile": "Ruby", "composer.json": "PHP", "Dockerfile": "Docker", "docker-compose.yml": "Docker",
   "terraform.tf": "Terraform", "kubernetes.yml": "Kubernetes", ".github": "GitHub Actions",
 };
+// ---- your projects, kept (the app) -------------------------------------------------
+// Finding them walks your folders and calls git in each repo: a second here, a minute
+// on a big home folder, and it ran again on every Home refresh, so the app stood still
+// (a blank orb for a minute on a first run). The app (setScanOptions({ cache: true }))
+// keeps the list: from repos.json at once on start, refreshed in a worker thread
+// (scanworker.mjs) on start, every REPO_FRESH, and when your folders change. Until the
+// first search ends there's nothing yet, rather than a wait. The CLI still searches
+// each time.
+const REPO_FRESH = 10 * 60 * 1000;
+const repoFile = () => join(homedir(), ".config", "symbiot", "repos.json");
+let REPO_CACHE = null, REPO_JOB = null;
+const REPO_STATE = { searching: false, done: 0, total: 0, phase: "", at: 0, onChange: null };
+function loadRepoCache() {
+  if (REPO_CACHE) return REPO_CACHE;
+  try { const j = JSON.parse(readFileSync(repoFile(), "utf8")); if (j && Array.isArray(j.list)) { REPO_CACHE = { at: Number(j.at) || 0, list: j.list }; REPO_STATE.at = REPO_CACHE.at; } } catch {}
+  return REPO_CACHE;
+}
+// Find them again in a worker; when it's done, keep and save the list. One at a time.
+function refreshRepos({ worker = true } = {}) {
+  if (REPO_JOB) return REPO_JOB;
+  REPO_STATE.searching = true; Object.assign(REPO_STATE, { done: 0, total: 0, phase: "" });
+  const finish = (list) => {
+    REPO_CACHE = { at: Date.now(), list: Array.isArray(list) ? list : [] }; REPO_STATE.at = REPO_CACHE.at; REPO_STATE.searching = false; REPO_JOB = null; LAST_MAP = null;
+    try { mkdirSync(join(repoFile(), ".."), { recursive: true }); writeFileSync(repoFile(), JSON.stringify(REPO_CACHE), { mode: 0o600 }); } catch {}
+    try { if (REPO_STATE.onChange) REPO_STATE.onChange(REPO_CACHE.list); } catch {}
+    return REPO_CACHE.list;
+  };
+  if (!worker) { const was = OPTS.cache; OPTS.cache = false; let l = []; try { l = findAllRepos(); } finally { OPTS.cache = was; } return Promise.resolve(finish(l)); }
+  REPO_JOB = new Promise((resolve) => {
+    let w; try { w = new Worker(new URL("./scanworker.mjs", import.meta.url)); } catch { const was = OPTS.cache; OPTS.cache = false; let l = []; try { l = findAllRepos(); } finally { OPTS.cache = was; } resolve(finish(l)); return; }
+    let got = null;
+    w.on("message", (m) => { if (m && m.progress) Object.assign(REPO_STATE, m.progress); if (m && m.list) got = m.list; });
+    w.on("error", () => {}); w.on("exit", () => resolve(finish(got || (REPO_CACHE && REPO_CACHE.list) || [])));
+  });
+  return REPO_JOB;
+}
+// What the app knows of your projects right now, and whether it's still looking.
+const reposState = () => ({ searching: REPO_STATE.searching, done: REPO_STATE.done, total: REPO_STATE.total, phase: REPO_STATE.phase, at: REPO_STATE.at, list: (REPO_CACHE && REPO_CACHE.list) || [] });
 function findAllRepos(base) {
+  if (!base && OPTS.cache) {
+    const c = loadRepoCache();
+    if (!c || Date.now() - c.at > REPO_FRESH) refreshRepos();
+    return c ? c.list : [];
+  }
   const own = scanBegin();
   try {
     const roots = base ? [base] : scanRoots();
@@ -418,6 +462,7 @@ async function buildMapNow() {
 }
 async function buildMapScan() {
   const who = me();
+  if (OPTS.cache && (REPO_STATE.searching || !loadRepoCache())) await refreshRepos(); // the first search, not an empty Map
   const found = findAllRepos();
   const repos = [];
   scanPhase("reading repo details", found.length);
@@ -561,4 +606,4 @@ function discoveredRepos() {
   return findAllRepos();
 }
 
-export { laneMap, SCAN, SCAN_TIMEOUT_MS, setScanOptions, scanBegin, scanPhase, scanTick, scanExpired, scanEnd, me, authorship, authorArgs, readmeInfo, repoShape, houseRules, reportFooter, expandRoot, scanHome, scanBase, storageBlocked, prootDistros, prootHomes, scanRoots, addScanRoot, removeScanRoot, commits, openWork, findAllRepos, detectRepo, findProjectFolders, detectFolder, claudeProjects, buildMap, nodeDetail, repoPathMap, discoveredRepos };
+export { refreshRepos, reposState, REPO_STATE, laneMap, SCAN, SCAN_TIMEOUT_MS, setScanOptions, scanBegin, scanPhase, scanTick, scanExpired, scanEnd, me, authorship, authorArgs, readmeInfo, repoShape, houseRules, reportFooter, expandRoot, scanHome, scanBase, storageBlocked, prootDistros, prootHomes, scanRoots, addScanRoot, removeScanRoot, commits, openWork, findAllRepos, detectRepo, findProjectFolders, detectFolder, claudeProjects, buildMap, nodeDetail, repoPathMap, discoveredRepos };
