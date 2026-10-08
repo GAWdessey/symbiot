@@ -163,10 +163,13 @@ try {
     agents: () => [{ name: "whatsapp_module", path: "/w", status: "done", ask: { questions: [{ q: "Paste the new Meta token?" }] } }, { name: "coral", path: "/c", status: "running", ask: { questions: [] } }],
     lanes: () => ({ handoffs: [{ from: "coral", to: "ops", text: "Find a JDK 17", status: "done" }] }),
     connected: () => true, repos: () => ({ symbiot: "/x" }), reports: () => ({ count: 0 }), agentCmd: () => 'claude -p "{prompt}"',
+    rootsSet: () => false,
   };
   const h = homeState({ deps });
   const first = homeState({ deps: { ...deps, pending: () => [], agents: () => [], connected: () => false, repos: () => ({}) } });
   ok("first run: connect an AI, then show it your folders, both out front and opening Settings", first.you.map((y) => y.id).join() === "setup:ai,setup:folders" && first.you.every((y) => y.shape === "settings"), first.you);
+  const given = homeState({ fresh: true, deps: { ...deps, pending: () => [], agents: () => [], repos: () => ({}), rootsSet: () => true } }).you;
+  ok("…not once you've set your work folders, when a search finds none or is cut short: that's Symbiot's to retry", !given.some((y) => y.id === "setup:folders"), given);
   ok("…and neither once that's done", !h.you.some((y) => y.kind === "setup"), h.you);
   const claude = { name: "Claude Code", tmpl: 'claude -p "{prompt}"' };
   const pk = homeState({ fresh: true, deps: { ...deps, agentCmd: () => "", pickAgent: () => claude } }).you.find((y) => y.id === "setup:pick");

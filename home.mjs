@@ -256,6 +256,7 @@ function homeState({ now = Date.now(), fresh = false, deps = {} } = {}) {
   // Marketing, a lane of its own across products: its orb, lit when something there needs you
   const marketing = deps.marketing || ((o) => { try { const m = marketingState(o); return m.on ? { needs: m.needCount, working: m.working, waiting: m.waiting } : false; } catch { return false; } });
   const named = deps.name || displayName;
+  const rootsSet = deps.rootsSet || (() => { try { const r = loadConfig().scanRoots; return Array.isArray(r) && r.length > 0; } catch { return false; } });
   const you = [], map = repos() || {};
   // What Symbiot works through (an AI, your agent, the connectors runs use) shows
   // only when it's missing, and then first (urgent): nothing works without it.
@@ -263,7 +264,9 @@ function homeState({ now = Date.now(), fresh = false, deps = {} } = {}) {
   if (!connected()) you.push({ kind: "setup", id: "setup:ai", urgent: true, title: "Connect an AI", sub: "Symbiot can't work without one: your Claude subscription (sign in to Claude Code), a key, or a free local model", shape: "settings", focus: "ai" });
   const gone = agentGone(); if (gone) you.push({ kind: "setup", id: "setup:agent", urgent: true, title: "Your agent is unavailable", sub: `${gone} isn't on this computer any more, so no task can start`, shape: "settings", focus: "agent" });
   for (const c of signedOut()) you.push({ kind: "setup", id: "setup:conn:" + c.id, urgent: true, title: `Reconnect ${c.name}`, sub: `its Claude connector is signed out, so agent runs can't use ${c.name}`, shape: "settings", focus: "agent" });
-  if (!Object.keys(map).some((n) => map[n] !== MARKETING_DIR)) you.push({ kind: "setup", id: "setup:folders", title: "Show me your work", sub: "where your repos are", shape: "settings", focus: "work" });
+  // Folders you set in Settings (scanRoots) are your answer already: a search that finds
+  // nothing in them (or is cut short) is Symbiot's to retry, never a card asking again.
+  if (!rootsSet() && !Object.keys(map).some((n) => map[n] !== MARKETING_DIR)) you.push({ kind: "setup", id: "setup:folders", title: "Show me your work", sub: "where your repos are", shape: "settings", focus: "work" });
   // no agent yet: Send to repos and Go would only write TASKS.md files nothing runs, so
   // Home didn't say "All handled" truthfully. One click for the one on this computer.
   if (!agentCmd()) { const p = offer(); you.push({ kind: "setup", id: "setup:pick", title: "Pick your agent", sub: p ? `${p.name} is on this computer: one click and it takes your tasks` : "the coding agent that takes your tasks", shape: "settings", focus: "agent", ...(p ? { pick: { name: p.name, tmpl: p.tmpl } } : {}) }); }

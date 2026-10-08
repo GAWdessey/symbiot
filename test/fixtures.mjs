@@ -66,7 +66,7 @@ try {
   ok("staleBy ~= 10", s2.staleBy === 10, s2);
   ok("deletions detected", s2.del === 10, s2);
 
-  console.log("F3 worktrees — one entry, freshest reviewed");
+  console.log("F3 worktrees — the main checkout, and the freshest worktree");
   const parent = join(ROOT, "f3parent"); mkdirSync(parent, { recursive: true });
   build("f3parent/f3", `
     git init -q && git config user.email t@x.co && git config user.name T
@@ -75,8 +75,11 @@ try {
     git worktree add -q -b feat ../f3-new
     ( cd ../f3-new && echo n > n && git add n && git commit -qm newer )`);
   const repos3 = findAllRepos(parent);
-  ok("worktrees collapse to 1 entry", repos3.length === 1, repos3.map((r) => r.path));
-  ok("freshest checkout chosen", repos3[0] && /f3-new$/.test(repos3[0].path), repos3[0] && repos3[0].path);
+  ok("worktrees collapse to 2 entries: the main checkout is never dropped for a fresher worktree", repos3.length === 2, repos3.map((r) => r.path));
+  ok("the freshest worktree and the main checkout kept, the stale worktree gone", repos3.some((r) => /f3-new$/.test(r.path)) && repos3.some((r) => /\/f3$/.test(r.path)) && !repos3.some((r) => /f3-old$/.test(r.path)), repos3.map((r) => r.path));
+  build("f3parent/f3", `git worktree add -q -b scratch .claude/worktrees/w && ( cd .claude/worktrees/w && echo s > s && git add s && git commit -qm newest )`);
+  const repos3b = findAllRepos(parent);
+  ok("…a worktree inside the checkout (an agent's .claude/worktrees copy) isn't a project of its own", !repos3b.some((r) => /\.claude\/worktrees/.test(r.path)) && repos3b.some((r) => /f3-new$/.test(r.path)), repos3b.map((r) => r.path));
 
   console.log("F4 old README — its age is captured");
   const f4 = build("f4", `

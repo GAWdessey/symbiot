@@ -9,4 +9,4 @@ const tick = setInterval(() => { const s = scan.SCAN; parentPort.postMessage({ p
 let list = [];
 try { list = scan.findAllRepos(); } catch {}
 clearInterval(tick);
-parentPort.postMessage({ list });
+parentPort.postMessage({ list, partial: scan.SCAN.partial });

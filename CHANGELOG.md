@@ -2,6 +2,10 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.57.2
+
+- **No more "Show me your work" when you've already said.** On a big home folder the search for your projects could run out of time and come back empty, so Home asked where your repos were. Repos found before the cut-off are now kept, a short search keeps the repos the last one found, the folders you set in Settings count as your answer, and your main checkout stays a lane even when a worktree is fresher. Tool installs like `~/.nvm` and `~/.rustup` are no longer taken for projects.
+
 ## 0.57.1
 
 - **Windows is tested on every change.** A Windows job runs on GitHub with each pull request: Symbiot has to install, start, open into setup, find your Claude subscription and uninstall cleanly there, or the change doesn't go in. The whole suite runs there too and reports what isn't Windows-ready yet.
