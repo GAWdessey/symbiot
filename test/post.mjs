@@ -280,6 +280,19 @@ try {
   const dgo = homeAnswer("draft:n1", { pick: 0 }, { draftAnswer: (id, o) => W.draftAnswer(id, { ...o, run: (d, oo) => { ran3.push([d, oo]); return { id: "j3" }; } }) });
   ok("Go ahead: a run that sends it, without SYMBIOT_DRAFT, with the approved text", dgo.ok && ran3.length === 1 && ran3[0][1].force && !meta().env.SYMBIOT_DRAFT && /# Send the approved reply: LinkedIn/.test(brief()) && /## The reply\nTo: Sam\nHi Sam, it's free for teams of up to 5\.\n/.test(brief()), [dgo, meta(), brief().slice(0, 200)]);
   ok("…and the card is gone while it sends", W.draftCard(dir) === null && meta().draft.state === "sending", meta());
+  { // Frikkie's reply went out at 14:10 (Garth pasted it in himself), and the card still asked for his OK
+    const fr = join(CFG, "drafts", "fr"); mkdirSync(join(fr, ".symbiot"), { recursive: true });
+    writeFileSync(join(fr, ".symbiot", "handoff.json"), JSON.stringify({ draft: { kind: "social", platform: "LinkedIn" } }));
+    const md = "# Draft a reply: LinkedIn\n## Tasks\n- [x] Draft a reply to: Frikkie\n\n## The reply\nHi Frikkie, 09:30 works well for me!\n";
+    writeFileSync(join(fr, ".symbiot", "TASKS.md"), md + "\nSent by the user on 2026-10-08 at 2:10 PM, shortened to: \"Hi, 09:30 works\"\n");
+    ok("a reply the run notes as sent ('Sent by the user … at 2:10 PM') has no card", W.draftCard(fr) === null, W.draftCard(fr));
+    writeFileSync(join(fr, ".symbiot", "TASKS.md"), md);
+    ok("…without the note, it does, and the note is never part of the reply", W.draftCard(fr) && W.draftCard(fr).text === "Hi Frikkie, 09:30 works well for me!", W.draftCard(fr));
+    writeFileSync(join(fr, ".symbiot", "ANSWERS.md"), "# Answers\n\n### The reply is on your clipboard now. Paste it and press Send.\n👤 You: Pasted and sent, so this one's done\n\n### Pasted and sent, so this one's done\nDone: the user did it. Check it worked, then carry on.\n");
+    ok("…nor once the user has said they sent it themselves", W.draftCard(fr) === null, W.draftCard(fr));
+    writeFileSync(join(fr, ".symbiot", "ANSWERS.md"), "# Answers\n\n### Change the tone?\nmake it warmer\n");
+    ok("…while an answer that isn't about sending leaves the card", !!W.draftCard(fr), "");
+  }
   const { needsOf } = await import("../agents.mjs"), said = "The reply to Sam is ready for you to send. It isn't sent.";
   ok("a draft folder's 'ready for you to send' is its card's, never a 'waits for your OK' rerun (that run can't send)", needsOf(dir, { final: said }) === null, needsOf(dir, { final: said }));
   const other = join(HOME, "elsewhere"); mkdirSync(join(other, ".symbiot"), { recursive: true });

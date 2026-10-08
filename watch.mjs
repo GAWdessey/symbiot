@@ -561,22 +561,33 @@ const PLATFORM = { chat: "WhatsApp", social: "LinkedIn" };
 function replyOf(md) {
   const s = String(md || ""), m = s.match(/^##\s+The reply\s*$/m); if (!m) return null;
   let body = s.slice(m.index + m[0].length); const nx = body.search(/^##\s/m); if (nx >= 0) body = body.slice(0, nx);
-  const lines = body.replace(/^\s*\n/, "").replace(/\s+$/, "").split("\n");
+  let lines = body.replace(/^\s*\n/, "").replace(/\s+$/, "").split("\n");
   const to = /^\s*To:\s*/i.test(lines[0] || "") ? lines.shift().replace(/^\s*To:\s*/i, "").trim() : "";
+  // a run's note that it went out ("Sent by the user on … at 2:10 PM, shortened to: …") isn't the reply
+  const at = lines.findIndex((l) => SENT_NOTE.test(l)), sent = at >= 0; if (sent) lines = lines.slice(0, at);
   const text = lines.join("\n").trim();
-  return text ? { to, text } : null;
+  return text ? { to, text, ...(sent ? { sent: true } : {}) } : null;
+}
+const SENT_NOTE = /^\s*(sent|posted|replied)\b.*\b(by|on|at)\b/i;
+// The user sent it themselves (they pasted it in, say) and said so: the newest answer in
+// its ANSWERS.md ("Pasted and sent, so this one's done", then "Done: the user did it").
+// Frikkie's reply went out at 14:10, and 0.57.6 still put it on Home for an OK (2026-10-08).
+function sentByUser(answers) {
+  const blocks = String(answers || "").split(/^###\s+/m).slice(1);
+  const last = blocks.slice(-2).join("\n");
+  return /\b(pasted and sent|i sent|sent it|already sent|it'?s sent|was sent|sent, so)\b/i.test(last);
 }
 const readDraftFile = (dir, f) => { try { return readFileSync(join(dir, ".symbiot", f), "utf8"); } catch { return ""; } };
 const draftMeta = (dir) => { try { return JSON.parse(readDraftFile(dir, "handoff.json")) || {}; } catch { return {}; } };
 const isDraftDir = (dir) => { const h = draftMeta(dir); return !!(h.draft || (h.env && h.env.SYMBIOT_DRAFT)); };
 // A draft waiting for the user: its run drafted it (the task ticked) and wrote the
-// reply down, and it hasn't been sent or skipped. { id, dir, platform, kind, to, text } or null.
+// reply down, and it hasn't been sent (by Symbiot, or by the user, who said so) or skipped. { id, dir, platform, kind, to, text } or null.
 function draftCard(dir) {
   const h = draftMeta(dir); if (!h.draft && !(h.env && h.env.SYMBIOT_DRAFT)) return null;
   const d = h.draft || {}; if (d.state === "skipped" || d.state === "sent") return null;
   const md = readDraftFile(dir, "TASKS.md");
   if (!/^\s*-\s*\[x\]\s*Draft a reply/im.test(md)) return null; // still drafting, sending, or never got that far
-  const r = replyOf(md); if (!r) return null;
+  const r = replyOf(md); if (!r || r.sent || sentByUser(readDraftFile(dir, "ANSWERS.md"))) return null; // gone out already: nothing to OK
   const kind = d.kind || (/^# Draft a reply: .*(LinkedIn)/m.test(md) ? "social" : /WhatsApp/.test(md) ? "chat" : "mail");
   const platform = d.platform || PLATFORM[kind] || (md.match(/^# Draft a reply: (.+)$/m) || [])[1] || "your mail";
   return { id: dir.split(/[\\/]/).pop(), dir, platform, kind, to: r.to, text: r.text };

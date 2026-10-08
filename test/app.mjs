@@ -154,6 +154,19 @@ try {
   if (urlC) { try { await fetch(urlC.replace(/\/\?t=/, "/api/quit?t=")); } catch {} }
   other.close();
 
+  console.log("INSTANCE — a Symbiot that answers late (restarting after an update) still isn't doubled");
+  { // 2026-10-08: a launch as 0.57.6 relaunched itself found the port busy and no answer yet, and ran a second app on a random port
+    const LATE = port(), t0 = Date.now();
+    const late = createServer((req, res) => { const go = () => { res.writeHead(200, { "content-type": "application/json" }); res.end(JSON.stringify({ version: "9.9.9" })); }; if (Date.now() - t0 < 2500) setTimeout(go, 1500); else go(); });
+    await new Promise((r) => late.listen(LATE, "127.0.0.1", r));
+    const l = startApp({ SYMBIOT_PORT: String(LATE) }, 20000);
+    const urlL = await l.ready;
+    for (let i = 0; i < 40 && l.exited() === null; i++) await new Promise((r) => setTimeout(r, 250));
+    ok("it opens that one and exits, never a second app on another port", !urlL && l.exited() === 0 && /already running \(v9\.9\.9\)/.test(l.out()) && !/is running at/.test(l.out()), [l.exited(), l.out()]);
+    if (urlL) { try { await fetch(urlL.replace(/\/\?t=/, "/api/quit?t=")); } catch {} }
+    late.close();
+  }
+
   console.log("ANDROID APP — the map says when it can't see shared storage");
   // Without "All files access" the app sees shared storage as an empty folder;
   // that used to read as "no repos", and stayed that way after access was allowed.
