@@ -22,7 +22,7 @@ import { fileURLToPath } from "node:url";
 import { randomBytes } from "node:crypto";
 import { VERSION, CONFIG_DIR, clipWords } from "./core.mjs";
 import { write } from "./ai.mjs";
-import { handoffCmd, runHandoff } from "./agents.mjs";
+import { handoffCmd, runHandoff, isUrgent, urgentFirst } from "./agents.mjs";
 import { addTask, pushTasks } from "./tasks.mjs";
 import { laneMap } from "./scan.mjs";
 import { OPS, MARKETING, HANDOVER_MAX, handoverRules, ONLY_YOU, HANDBACK } from "./handover.mjs";
@@ -178,13 +178,16 @@ function selfLane(map) {
 const laneName = (repo, map) => Object.keys(map).find((n) => n.toLowerCase() === String(repo || "").trim().toLowerCase()) || "";
 // Do it, in the right lane: a repo's work joins its tasks and its agent starts
 // there, the way Send to repos does; anything else, an agent of its own (actNow).
-function actIn(request, repo, { map = {}, known = "", title, context, run = runHandoff, add = addTask, push = pushTasks, ops = actNow, now = Date.now() } = {}) {
+// Urgent work (agents.mjs isUrgent) goes first: every other lane with work going
+// parks, and the lane's own routine run stops, so this one starts now.
+function actIn(request, repo, { map = {}, known = "", title, context, run = runHandoff, add = addTask, push = pushTasks, ops = actNow, first = urgentFirst, now = Date.now() } = {}) {
   const lane = laneName(repo, map);
   if (!lane) return { ...ops(request, { title, context, known, now }), lane: "" };
   const t = add(request, lane); if (t && t.error) return { error: t.error };
   const p = push({ repo: lane }); if (!p || !p.written || !p.written.length) return { error: `Couldn't write ${lane}'s tasks for its agent.` };
+  const urgent = isUrgent(request) ? first(map[lane], { lanes: map }) : null;
   const e = run(map[lane]); if (!e) return { error: "The agent didn't start. Check its command in Settings → Handoff." };
-  return { ok: true, lane, task: t.id, ...(e.busy || e.blocked ? { queued: true } : { job: e.id }) };
+  return { ok: true, lane, task: t.id, ...(e.busy || e.blocked ? { queued: true } : { job: e.id }), ...(urgent ? { urgent } : {}) };
 }
 // For later: on the list, in a repo's lane if it names one Symbiot knows.
 function taskIn(text, repo, { map = {}, add = addTask } = {}) {
@@ -230,6 +233,7 @@ async function converse({ where, role = "", context = "", history = "", question
   if (want && want.agent && act.agent) {
     did = { kind: "agent", request: String(want.agent).slice(0, HANDOVER_MAX), ...(await act.agent(String(want.agent), known, repo)) };
     reply += did.error ? `\n\n(I couldn't hand it to an agent: ${did.error})`
+      : did.lane && did.urgent ? `\n\n→ Urgent, so it goes first: handed to ${did.lane}'s agent${did.urgent.stopped ? `, which stopped what it was on (its changes stay) to start on this now` : did.queued ? " (it's already on urgent work, and takes this next)" : ""}. ${did.urgent.parked.length ? `Parked till it's done: ${did.urgent.parked.join(", ")} (a run already going there finishes first, then they wait). They pick up again in that order once it's done.` : "Nothing else was running to park."} It's on the Workdesk.`
       : did.lane ? `\n\n→ Handed to ${did.lane}'s agent, as a task there${did.queued ? " (it starts once the run there now finishes)" : ""}. It's on the Workdesk.`
       : "\n\n→ Handed to your agent. It's on the Workdesk, and it asks you there before anything hard to undo.";
   } else if (want && want.task && act.task) {

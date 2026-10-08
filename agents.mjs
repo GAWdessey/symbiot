@@ -286,9 +286,11 @@ function runHandoff(repoPath, { force = false } = {}) {
     noteBlocked(repoPath, tmpl, e.startedAt, code);
     setTimeout(() => { try { autoAllow(repoPath); } catch {} }, 300); // a list it proposed inside your work: turned on, and on it goes
     startHeldTasks(repoPath); // tasks sent while it ran land now; start on them as that Send would have
+    try { urgentDone(repoPath, e.id); } catch {} // the urgent run's done: the lanes it parked carry on
   }, env);
   if (!e) return null;
   e.handoff = true;
+  try { if (urgentState()) noteUrgentRun(repoPath, e.id); } catch {}
   if (e.pid) try { writeFileSync(lock, JSON.stringify({ pid: e.pid, id: e.id, startedAt: e.startedAt, owner: process.pid })); } catch {}
   noteRun(e);
   return e;
@@ -308,6 +310,79 @@ function parkLane(path, on) {
   if (list.length) cfg.parked = list; else delete cfg.parked;
   saveConfig(cfg);
   return { ok: true, parked: !!on };
+}
+// ---- urgent work goes first -------------------------------------------------
+// "symbiot keeps crashing" waited behind a routine run in its own lane (the Home
+// layout, step 5 of 6) and 5 more tasks, and Garth parked argena and steve by hand
+// (2026-10-08). Urgent is a crash, "urgent", "comes first" or a word in capitals.
+// Then urgentFirst parks every other lane with work going or waiting (a run already
+// going there finishes, as parking does: the end of a run is the safe point, and a
+// test stopped halfway would be void), stops the urgent lane's own routine run (its
+// changes stay in the folder, and the next run carries on from them) so the urgent
+// one starts now, and when that run ends, urgentDone unparks those lanes in their
+// old order and starts the ones with work waiting. Lanes you parked stay parked.
+const CAPS_OK = /^(README|TODO|FIXME|HTML|JSON|YAML|HTTP|HTTPS|OAUTH|CHANGELOG|TASKS|ANSWERS|QUESTIONS|HANDOFF|REMEMBER|AWAITING|SKIPPED|LICENSE|CLAUDE|AGENTS|NOTE|ASAP|SAST|UTC|GPU|CPU|RAM|USB|SDK|JDK|API|URL|CSS|DNS|SSH|SMS|PDF|PNG|SVG|MCP|LLM|CLI|ENV|PATH|HOME|WIP|ETA)$/;
+function isUrgent(text) {
+  const t = String(text || "");
+  if (/\burgent\b|\b(asap|right now|drop everything)\b|\b(do (this|it) first|comes? first|goes? first|first thing|takes? priority|before (anything|everything) else)\b/i.test(t)) return true;
+  if (/\bcrash(es|ing|ed)\b|\bkeeps? (closing|quitting|dying)\b|\b(won'?t|doesn'?t|can'?t) (start|open|launch)\b/i.test(t)) return true;
+  // capitals: a word of 4+ letters, not a file's name (TASKS.md) nor a usual acronym
+  return (t.match(/(?<![\w./-])[A-Z]{4,}(?![\w.])/g) || []).some((w) => !CAPS_OK.test(w));
+}
+const urgentState = () => { const u = loadConfig().urgent; return u && Array.isArray(u.paths) && u.paths.length ? u : null; };
+function saveUrgent(u) { const cfg = loadConfig(); if (u) cfg.urgent = u; else delete cfg.urgent; saveConfig(cfg); }
+const hasOpenUrgent = (md) => String(md || "").split("\n").some((l) => /^\s*-\s*\[ \]/.test(l) && isUrgent(l));
+function stopRun(path) {
+  const r = runningHandoff(path); if (!r || !r.pid) return false;
+  try { process.kill(-r.pid, "SIGTERM"); } catch { try { process.kill(r.pid, "SIGTERM"); } catch { return false; } } // its own process group (track: detached)
+  return true;
+}
+// lanes: the paths to consider ({ name: path }); returns { parked: [names], stopped }
+function urgentFirst(path, { lanes = null, stop = stopRun, running = runningHandoff } = {}) {
+  if (!path) return { parked: [], stopped: false };
+  const u = urgentState() || { at: Date.now(), paths: [], parked: [], runs: [] };
+  if (!u.paths.includes(path)) u.paths.push(path);
+  if (u.parked.includes(path)) { u.parked = u.parked.filter((p) => p !== path); parkLane(path, false); } // urgent itself now
+  const all = lanes || Object.fromEntries(loadRuns().map((r) => [String(r.name || r.path.split("/").pop()), r.path]));
+  const parked = [], already = parkedPaths();
+  for (const [name, p] of Object.entries(all)) {
+    if (!p || u.paths.includes(p) || already.includes(p)) continue; // yours stay yours
+    if (!running(p) && !readSymbiot(p, HELD)) continue; // nothing going or waiting there
+    parkLane(p, true); u.parked.push(p); parked.push(name);
+  }
+  // its own lane: a routine run stops so this one starts now; one that's already on urgent work keeps going
+  const busy = running(path), onIt = busy && (u.runs.includes(busy.id) || hasOpenUrgent(readSymbiot(path, "TASKS.md")));
+  const stopped = !!busy && !onIt && stop(path);
+  saveUrgent(u);
+  return { parked, stopped };
+}
+// the urgent lane's run started: when it ends, the parked work resumes (runHandoff's exit)
+function noteUrgentRun(path, id) { const u = urgentState(); if (u && u.paths.includes(path) && id && !u.runs.includes(id)) { u.runs.push(id); saveUrgent(u); } }
+function urgentDone(path, id, { running = runningHandoff, start = runHandoff } = {}) {
+  const u = urgentState(); if (!u || !u.paths.includes(path) || !u.runs.includes(id)) return null;
+  u.paths = u.paths.filter((p) => p !== path);
+  if (u.paths.some((p) => running(p))) { saveUrgent(u); return null; } // another urgent lane is still at it
+  saveUrgent(null);
+  return resumeParked(u.parked, start);
+}
+function resumeParked(paths, start = runHandoff) {
+  const resumed = [];
+  for (const p of paths) { // in the order they were parked
+    if (!parkedPaths().includes(p)) continue; // you unparked it meanwhile
+    parkLane(p, false);
+    if (/^\s*-\s*\[ \]/m.test(readSymbiot(p, HELD) || readSymbiot(p, "TASKS.md"))) { try { const e = startHeldTasks(p) || start(p); if (e && e.id) resumed.push(p); } catch {} }
+  }
+  return { unparked: paths, resumed };
+}
+// The app restarted under an urgent run (its exit never came), or it never started:
+// the parked lanes don't wait forever.
+const URGENT_MAX = 6 * 3600 * 1000;
+function urgentSweep({ running = runningHandoff, now = Date.now(), start = runHandoff } = {}) {
+  const u = urgentState(); if (!u) return null;
+  const ended = u.runs.length > 0 && !u.paths.some((p) => running(p));
+  if (!ended && now - (u.at || 0) < URGENT_MAX) return null;
+  saveUrgent(null);
+  return resumeParked(u.parked, start);
 }
 // The agent the handoff command runs, when it isn't on this computer (the CLI
 // was uninstalled, or PATH lost it): its name, else "". Then no task can start.
@@ -537,6 +612,7 @@ function waitNote(w) {
 // for, start once it changes. The app calls this every so often. Returns the jobs started.
 function startWaiting() {
   const started = [];
+  try { urgentSweep(); } catch {}
   for (const r of loadRuns()) {
     let w = null; try { w = JSON.parse(readSymbiot(r.path, WAITING)); } catch {}
     if (!w || !w.rerun || !Array.isArray(w.files) || !(w.files.length || w.cmd) || runningHandoff(r.path)) continue;
@@ -1082,4 +1158,4 @@ function agentsList() {
   }).concat(earlierRuns());
 }
 
-export { FACTS, factsOf, knownRun, withStream, workOf, HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, connectorsInfo, linkReach, fillHandoff, runHandoff, PARKED_NOTE, parkedPaths, isParked, parkLane, agentMissing, blockedAgain, runningHandoff, loadRuns, earlierRuns, namedFiles, waitingFor, startWaiting, writeTasks, droppedTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, pickAgent, findOrcaCli, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, skipIdea, agentQuestions, answerQuestions, agentsList, needsOf, settleNeeds, NEEDS_FOR , readLastWords, readNeeds, parseRead, READ_FILE, autoAllow, autoAllowSweep, allowlistInWork, installAllowlist, inWork, withScope , withTrust, sandboxFor, sandboxEnv, sandboxNeeds, sandboxState, sandboxWrites, SANDBOX_DIR, resumeFor, noteSession, trustFull, GUARD_SETTINGS };
+export { isUrgent, urgentFirst, urgentDone, urgentSweep, urgentState, FACTS, factsOf, knownRun, withStream, workOf, HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, connectorsInfo, linkReach, fillHandoff, runHandoff, PARKED_NOTE, parkedPaths, isParked, parkLane, agentMissing, blockedAgain, runningHandoff, loadRuns, earlierRuns, namedFiles, waitingFor, startWaiting, writeTasks, droppedTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, pickAgent, findOrcaCli, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, skipIdea, agentQuestions, answerQuestions, agentsList, needsOf, settleNeeds, NEEDS_FOR , readLastWords, readNeeds, parseRead, READ_FILE, autoAllow, autoAllowSweep, allowlistInWork, installAllowlist, inWork, withScope , withTrust, sandboxFor, sandboxEnv, sandboxNeeds, sandboxState, sandboxWrites, SANDBOX_DIR, resumeFor, noteSession, trustFull, GUARD_SETTINGS };
