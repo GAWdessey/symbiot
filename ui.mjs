@@ -1078,12 +1078,14 @@ body.lq-light .btip .bta button:not(.quiet){background:#151A21;color:#FFFFFF}
 <div class="sset"><h3 class="ssh">Your AI</h3>
 <label>Which AI should Symbiot write with?</label>
 <select id="provider">
-<option value="anthropic">Claude (Anthropic)</option>
+<option value="claude">Your Claude subscription (Claude Code) - no key</option>
+<option value="anthropic">Claude (Anthropic) - API key</option>
 <option value="openai">OpenAI (GPT)</option>
 <option value="gemini">Gemini (Google)</option>
 <option value="ollama">Local model (Ollama) - free, no key</option>
 </select>
-<div class="note muted">The Map needs no key. For the write-ups, a hosted model needs an API key - or run <b>Ollama</b> locally for a free, private option (nothing leaves your machine).</div>
+<div class="note muted">With a Claude subscription (Pro or Max), Symbiot answers through <b>Claude Code</b> signed in on this computer: no key, no extra bill. Otherwise a hosted model needs an API key, or run <b>Ollama</b> locally for a free, private option (nothing leaves your machine).</div>
+<div id="subWrap" class="note hidden"></div>
 <div id="keyWrap"><label>API key</label><input id="key" type="password" placeholder="paste your key">
 <div class="note"><a id="getkey">Where do I get a key?</a></div></div>
 <div id="baseWrap" class="hidden"><label>Ollama URL</label><input id="baseUrl" type="text" value="http://localhost:11434"></div>
@@ -1174,8 +1176,8 @@ body.lq-light .btip .bta button:not(.quiet){background:#151A21;color:#FFFFFF}
 <script>
 var T=new URLSearchParams(window.location.search).get('t')||'';
 function api(path,body){return fetch(path,{method:body?'POST':'GET',headers:{'x-symbiot-token':T,'content-type':'application/json'},body:body?JSON.stringify(body):undefined}).then(function(r){return r.json();});}
-var KEYURL={anthropic:'https://console.anthropic.com/settings/keys',openai:'https://platform.openai.com/api-keys',gemini:'https://aistudio.google.com/apikey',ollama:'https://ollama.com'};
-var DEFMODEL={anthropic:'claude-opus-5-5',openai:'gpt-4o-mini',gemini:'gemini-1.5-flash',ollama:'llama3.1'};
+var KEYURL={claude:'https://claude.com/claude-code',anthropic:'https://console.anthropic.com/settings/keys',openai:'https://platform.openai.com/api-keys',gemini:'https://aistudio.google.com/apikey',ollama:'https://ollama.com'};
+var DEFMODEL={claude:'your plan’s default',anthropic:'claude-opus-5-5',openai:'gpt-4o-mini',gemini:'gemini-1.5-flash',ollama:'llama3.1'};
 function $(id){return document.getElementById(id);}
 // Live updates never pull text out from under your selection. A refresh that would
 // redraw what you're selecting in waits until you let it go (selWait), and a redraw
@@ -1233,7 +1235,8 @@ function firstTab(){api('/api/watch/board').then(function(b){if(b&&b.cards&&b.ca
 // The AI in use isn't shown while it works (it's noise); only when none is
 // connected, as an urgent line that opens its part of Settings. Home has it out
 // front too, with the agent and the connectors runs use (home.mjs).
-function refresh(){api('/api/status').then(function(s){var st=$('status');if(!st)return;st.classList.toggle('hidden',!!s.connected);st.classList.toggle('urgent',!s.connected);st.textContent=s.connected?'':"No AI connected: Symbiot can't work. Connect one \\u203a";});}
+var SUBLINE='';
+function refresh(){api('/api/status').then(function(s){if(s&&s.connected&&s.provider){var pv=$('provider');if(pv&&!pv.getAttribute('data-touched')){pv.value=s.provider;SUBLINE=s.provider==='claude'?'Connected: '+s.line+'. No key needed.':'';syncP();}}var st=$('status');if(!st)return;st.classList.toggle('hidden',!!s.connected);st.classList.toggle('urgent',!s.connected);st.textContent=s.connected?'':"No AI connected: Symbiot can't work. Connect one \\u203a";});}
 // the status opens Settings: on a phone its tab is scrolled out of sight
 $('status').addEventListener('click',function(){var b=document.body;if(b&&b.classList&&b.classList.contains('lq-liquid')&&typeof lqFocus==='function'){lqFocus({kind:'setup',focus:'ai'});return;}setTab('settings');var t=document.querySelector('.tab[data-tab=settings]');if(t&&t.scrollIntoView)t.scrollIntoView({block:'nearest',inline:'nearest'});});
 // Where you are: the section you opened, named at the top of its panel (and the
@@ -1261,9 +1264,9 @@ api('/api/run',{cmd:current}).then(function(r){var f=$('outfoot');if(r.error==='
 var foot=[r.footer,r.file?'Saved to '+r.file:'',r.error&&r.text&&r.error!==r.text?r.error:''].filter(Boolean).join(' · ');
 WUTEXT=r.text||'';$('out').innerHTML=r.text?mdLite(r.text):'(no output)';$('out').classList.remove('muted');$('copy').classList.remove('hidden');if(foot){f.textContent=foot;f.style.display='block';}else{f.style.display='none';}});});
 $('copy').addEventListener('click',function(){var c=$('copy');try{navigator.clipboard.writeText(WUTEXT||$('out').textContent);}catch(e){}c.setAttribute('title','Copied');c.classList.add('done');setTimeout(function(){c.setAttribute('title','Copy');c.classList.remove('done');},1400);});
-function syncP(){var p=$('provider').value;var local=p==='ollama';$('keyWrap').classList.toggle('hidden',local);$('baseWrap').classList.toggle('hidden',!local);
+function syncP(){var p=$('provider').value;var local=p==='ollama',sub=p==='claude';$('keyWrap').classList.toggle('hidden',local||sub);$('baseWrap').classList.toggle('hidden',!local);var sw=$('subWrap');if(sw){sw.classList.toggle('hidden',!sub);sw.textContent=sub?(SUBLINE||'Uses Claude Code signed in on this computer with your Claude account. Not signed in yet? Run  claude  once in a terminal and sign in, then Save.'):'';}
 $('getkey').textContent=local?'About Ollama':'Where do I get a key?';$('modelHint').textContent='(default '+DEFMODEL[p]+')';$('model').placeholder='(blank = '+DEFMODEL[p]+')';}
-$('provider').addEventListener('change',syncP);
+$('provider').addEventListener('change',function(){$('provider').setAttribute('data-touched','1');syncP();});
 $('getkey').addEventListener('click',function(){window.open(KEYURL[$('provider').value],'_blank');});
 $('save').addEventListener('click',function(){var p=$('provider').value;$('saveMsg').textContent='checking...';$('saveMsg').className='note muted';
 var cfg={provider:p,model:$('model').value.trim()};if(p==='ollama')cfg.baseUrl=$('baseUrl').value.trim();else cfg.key=$('key').value.trim();

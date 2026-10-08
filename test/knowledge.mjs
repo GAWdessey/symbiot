@@ -131,7 +131,8 @@ try {
   ok("active/ items are now examples: nothing waiting on you, no item's owner answered (the real case README still is)", K.waitingOn().waiting.length === 0 && !K.ownerOf("Bluegum renewal").some((x) => x.kind === "item") && K.ownerOf("Bluegum renewal").some((x) => x.kind === "case"), [K.waitingOn(), K.ownerOf("Bluegum renewal")]);
   ok("…unless asked for, and then marked", K.waitingOn("", { examples: true }).waiting.some((i) => i.example), K.waitingOn("", { examples: true }).waiting);
   await converse({ where: "Home", question: "what's waiting on me?", ask, map: {} });
-  ok("…and a chat says none rather than an example", /waiting on Garth White, [^\n]*:\n- none/.test(seen) && !/Bluegum/.test(seen), seen.slice(0, 600));
+  const kpart = seen.split("This chat so far:")[0]; // Home's own thread (its earlier answers) comes after
+  ok("…and a chat says none rather than an example", /waiting on Garth White, [^\n]*:\n- none/.test(kpart) && !/Bluegum/.test(kpart), kpart.slice(0, 600));
 
   console.log("REMOVE");
   const rm = K.removeKnowledgeFolder("~/Co"), r5 = K.indexKnowledge();

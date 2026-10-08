@@ -260,7 +260,7 @@ function homeState({ now = Date.now(), fresh = false, deps = {} } = {}) {
   // What Symbiot works through (an AI, your agent, the connectors runs use) shows
   // only when it's missing, and then first (urgent): nothing works without it.
   // First run: what only a new user can do before the rest means anything.
-  if (!connected()) you.push({ kind: "setup", id: "setup:ai", urgent: true, title: "Connect an AI", sub: "Symbiot can't work without one: a key, or a free local model", shape: "settings", focus: "ai" });
+  if (!connected()) you.push({ kind: "setup", id: "setup:ai", urgent: true, title: "Connect an AI", sub: "Symbiot can't work without one: your Claude subscription (sign in to Claude Code), a key, or a free local model", shape: "settings", focus: "ai" });
   const gone = agentGone(); if (gone) you.push({ kind: "setup", id: "setup:agent", urgent: true, title: "Your agent is unavailable", sub: `${gone} isn't on this computer any more, so no task can start`, shape: "settings", focus: "agent" });
   for (const c of signedOut()) you.push({ kind: "setup", id: "setup:conn:" + c.id, urgent: true, title: `Reconnect ${c.name}`, sub: `its Claude connector is signed out, so agent runs can't use ${c.name}`, shape: "settings", focus: "agent" });
   if (!Object.keys(map).some((n) => map[n] !== MARKETING_DIR)) you.push({ kind: "setup", id: "setup:folders", title: "Show me your work", sub: "where your repos are", shape: "settings", focus: "work" });
@@ -408,7 +408,7 @@ async function homeAsk(question, { ask, now = Date.now(), state, images = [] } =
   const h = state || homeState({ now });
   let map = {}; try { map = laneMap(); } catch {}
   const role = "Here they're on Symbiot's home: one liquid surface that shows what only they can do, what's new on what they watch, and the lanes. Answer from what it shows, and act on what they ask.";
-  const r = await converse({ where: "Home", role, context: homeContext(h), question: question + (pics.length ? `\n(The user attached ${pics.length} screenshot${pics.length > 1 ? "s" : ""}: you can see ${pics.length > 1 ? "them" : "it"}.)` : ""), map, now, images: pics.map(({ mime, data }) => ({ mime, data })), ...(ask ? { ask } : {}),
+  const r = await converse({ where: "Home", role, context: homeContext(h), question: question + (pics.length ? `\n(The user attached ${pics.length} screenshot${pics.length > 1 ? "s" : ""}: you can see ${pics.length > 1 ? "them" : "it"}.)` : ""), map, now, images: pics.map(({ mime, data, path }) => ({ mime, data, path })), ...(ask ? { ask } : {}),
     act: {
       agent: (req, known, repo) => (repo ? actIn(req + shotNote, repo, { map, known, title: "Home" }) : actNow(req + shotNote, { title: "Home", known })),
       task: (text, repo) => taskIn(text + shotNote, repo, { map }),

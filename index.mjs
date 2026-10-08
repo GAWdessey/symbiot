@@ -32,7 +32,7 @@ import { fileURLToPath } from "node:url";
 import { EMBEDDED_UI } from "./ui.mjs";
 import { VERSION, CONFIG_PATH, loadConfig, saveConfig, repoState, semverGt } from "./core.mjs";
 import { HANDOFF_PROMPT, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, fillHandoff, runHandoff, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, parseQuestions, agentQuestions } from "./agents.mjs";
-import { AI_UI, PROVIDERS, resolveProvider, validate, detectHardware, recommendModels, hasOllama, ollamaInstall, ensureOllama, useOllamaModel } from "./ai.mjs";
+import { AI_UI, PROVIDERS, resolveProvider, validate, detectHardware, recommendModels, hasOllama, ollamaInstall, ensureOllama, useOllamaModel, claudeState, connectProvider } from "./ai.mjs";
 import { setScanOptions, scanBase, authorship, readmeInfo, repoShape, houseRules, reportFooter, findAllRepos, buildMap } from "./scan.mjs";
 import { gitDefaultBranch, loadDeploys, driftRepo, computeDrift } from "./drift.mjs";
 import { buildTasksMd, taskType, shipChanges, shipWithBump, bumpOffer, learnNpm, releaseNeeded, withReleases, setVersion, syncTasks, pendingReview, unreleased, publishesOnMerge, addTask, approveRepo, approveChanges, sendBack, pushTasks } from "./tasks.mjs";
@@ -118,7 +118,7 @@ function ask(question, { secret = false } = {}) {
 
 const AUTH_HELP =
   c.y("Symbiot needs an AI to write your updates. Connect one:\n") +
-  "  " + c.b("symbiot login") + c.d("   pick Claude, OpenAI, Gemini, or a local model (Ollama)") + "\n" +
+  "  " + c.b("symbiot login") + c.d("   your Claude subscription (Claude Code, no key), Claude, OpenAI, Gemini or a local model") + "\n" +
   c.d("  Or set a key in your environment: ANTHROPIC_API_KEY / OPENAI_API_KEY / GEMINI_API_KEY.");
 // What writing with the AI (ai.mjs) shows in the terminal.
 Object.assign(AI_UI, {
@@ -215,26 +215,34 @@ async function cmdLogin() {
   const flagProvider = flag("provider", null);
   const existing = resolveProvider();
   if (existing && !flagProvider && !flag("key", null) && !has("force")) {
-    console.log(c.g("✓ ") + `Already connected — ${PROVIDERS[existing.provider].label} via ${existing.source}.`);
+    console.log(c.g("✓ ") + (existing.provider === "claude" ? "Already connected: your Claude subscription, through Claude Code signed in here. No key needed." : `Already connected — ${PROVIDERS[existing.provider].label} via ${existing.source}.`));
     console.log(c.d("  Switch or replace it with `symbiot login --force`."));
     return;
   }
 
   let provider = flagProvider;
   if (!provider) {
+    const cs = claudeState(true);
     console.log("\n" + c.b("Connect Symbiot") + "\n");
     console.log("Which AI should Symbiot write your updates with?\n");
-    console.log("  1) " + PROVIDERS.anthropic.label + c.d("    — needs an Anthropic API key"));
-    console.log("  2) " + PROVIDERS.openai.label + c.d("          — needs an OpenAI API key"));
-    console.log("  3) " + PROVIDERS.gemini.label + c.d("       — needs a Google AI API key"));
-    console.log("  4) " + PROVIDERS.ollama.label + c.d("  — runs on your machine, no key"));
-    const pick = (await ask("\nChoose 1-4 [1]: ")) || "1";
-    provider = { 1: "anthropic", 2: "openai", 3: "gemini", 4: "ollama" }[pick] || (PROVIDERS[pick] ? pick : "anthropic");
+    console.log("  1) " + PROVIDERS.claude.label + c.d(cs.signedIn ? "  — signed in here, no key" : cs.installed ? "  — Claude Code is here; sign in first (run  claude )" : "  — needs Claude Code, signed in (no key)"));
+    console.log("  2) " + PROVIDERS.anthropic.label + c.d("    — needs an Anthropic API key"));
+    console.log("  3) " + PROVIDERS.openai.label + c.d("          — needs an OpenAI API key"));
+    console.log("  4) " + PROVIDERS.gemini.label + c.d("       — needs a Google AI API key"));
+    console.log("  5) " + PROVIDERS.ollama.label + c.d("  — runs on your machine, no key"));
+    const pick = (await ask("\nChoose 1-5 [1]: ")) || "1";
+    provider = { 1: "claude", 2: "anthropic", 3: "openai", 4: "gemini", 5: "ollama" }[pick] || (PROVIDERS[pick] ? pick : "claude");
   }
   if (!PROVIDERS[provider]) { console.log(c.y("Unknown provider: " + provider)); return; }
   const meta = PROVIDERS[provider];
   const cfg = loadConfig();
 
+  if (provider === "claude") {
+    const r = await connectProvider({ provider: "claude", model: flag("model", null) || "" });
+    if (!r.ok) { console.log(c.y(r.message)); process.exitCode = 1; return; }
+    console.log(c.g("✓ ") + r.message + "  Try:  " + c.b("symbiot week"));
+    return;
+  }
   if (provider === "ollama") {
     const baseUrl = (flag("base-url", null) || (await ask("Ollama URL [http://localhost:11434]: ")) || "").trim() || "http://localhost:11434";
     const model = (flag("model", null) || (await ask(`Model name [${meta.model}]: `)) || "").trim() || meta.model;

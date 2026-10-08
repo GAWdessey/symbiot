@@ -36,6 +36,25 @@ try {
   ok("one node per name; a fact isn't kept twice", loadMind().nodes.length === 2 && fr.facts.length === 2, fr);
   ok("recall ranks by what the question names", recall("what did francois send")[0].name === "Francois Huyzers" && recall("weather tomorrow").length === 0, recall("what did francois send").map((n) => n.name));
 
+  console.log("ITS OWN THREAD — a short answer answers this chat, not another");
+  const tH = Date.now() - 600000;
+  await converse({ where: "Home", question: "sometimes people mean different things, can you give options before submitting?", now: tH,
+    ask: said({ reply: "honestly no, not always. when something could mean two things I show you two or three readings and you pick. want that?", do: null, remember: [] }) });
+  await converse({ where: "Task: Fix Symbiot's WhatsApp reading", question: "the kernel update is in, should I reboot?", now: tH + 60000,
+    ask: said({ reply: "go ahead and reboot, then tap Done it on the card", do: null, remember: [] }) });
+  let yPrompt = "", ySys = "";
+  await converse({ where: "Home", question: "yeah", now: tH + 120000, ask: async (sy, p) => { ySys = sy; yPrompt = p; return JSON.stringify({ reply: "ok", do: null, remember: [] }); } });
+  const thread = (yPrompt.split("This chat so far:\n")[1] || "").split("\n\n")[0];
+  ok("Home's own last turns are its thread: \"yeah\" comes after its \"want that?\"", /You: honestly no.*want that\?/.test(thread) && /User: sometimes people mean different things/.test(thread), thread);
+  ok("…the reboot from another chat isn't in the thread, only under elsewhere (marked as not this chat)", !/reboot/.test(thread) && /other chats: a short answer here doesn't reply to these\):\n[\s\S]*reboot/.test(yPrompt), yPrompt.slice(0, 600));
+  ok("the rules: a short answer answers this chat, and an agreed proposal is done now", /A short answer \(yes, yeah, ok/.test(ySys) && /If you'd proposed a task or an agent and they agree, do it now/.test(ySys), "");
+  ok("…an idea is hashed out first, an ambiguous ask gets 2-3 readings to pick from", /Hash it out first/.test(ySys) && /2-3 short numbered readings, your pick first/.test(ySys), "");
+  const long = "x".repeat(1400);
+  await converse({ where: "Home", question: long, now: tH + 180000, ask: said({ reply: "ok", do: null, remember: [] }) });
+  const { ownThread } = await import("../mind.mjs");
+  ok("…a long turn on Home is kept whole (thinking out loud isn't clipped)", ownThread("Home", loadMind(), tH + 200000).includes(long), "");
+  ok("…and a thread from yesterday isn't brought back", ownThread("Home", loadMind(), tH + 13 * 3600000) === "", "");
+
   console.log("IT ACTS — your agent now, or a task for later");
   let agentReq = "", agentKnown = "", taskArgs = null;
   const act = { agent: async (r, known) => { agentReq = r; agentKnown = known; return { ok: true, job: "j1" }; }, task: async (t, repo) => { taskArgs = [t, repo]; return { ok: true, id: "t1" }; } };

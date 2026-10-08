@@ -40,6 +40,9 @@ agent and brings its work back to you to approve.
 npm install -g symbiot        # or run without installing:  npx symbiot week
 ```
 
+With Claude Code signed in to your Claude account, that's all: Symbiot uses your
+subscription, no API key. See [Connect it (once)](#connect-it-once) for the other options.
+
 ## Prefer a window? `symbiot app`
 
 ```bash
@@ -911,18 +914,26 @@ Every brief also tells the agent what else it can leave in `.symbiot/`:
 
 ## Connect it (once)
 
-Pick the AI you want it to write with:
+**Have a Claude subscription (Pro or Max)? There's nothing to connect.** If
+[Claude Code](https://claude.com/claude-code) is installed and signed in with your
+Claude account (run `claude` once and sign in), Symbiot answers through it: no API
+key, no separate bill. It runs Claude Code headless with Symbiot's own instructions,
+no tools (Read only, for a screenshot you attach), none of your settings, plugins or
+servers, and no session kept.
+
+Otherwise, pick the AI you want it to write with:
 
 ```bash
-symbiot login     # choose Claude, OpenAI, Gemini, or a local model (Ollama)
+symbiot login     # your Claude subscription, Claude (API key), OpenAI, Gemini, or a local model (Ollama)
 ```
 
-You'll get a short menu; paste that provider's API key (or, for Ollama, just point
+You'll get a short menu; for a hosted model paste its API key (for Ollama, just point
 it at your local server) and it's saved to `~/.config/symbiot/config.json`. The
 app's Settings tab does the same.
 
 | Provider | Get a key | Default model |
 |----------|-----------|---------------|
+| Your Claude subscription (Claude Code) | no key: sign in to Claude Code | your plan's default |
 | Claude (Anthropic) | <https://console.anthropic.com/settings/keys> | `claude-opus-5-5` |
 | OpenAI (GPT) | <https://platform.openai.com/api-keys> | `gpt-4o-mini` |
 | Gemini (Google) | <https://aistudio.google.com/apikey> | `gemini-1.5-flash` |
