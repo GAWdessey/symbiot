@@ -155,6 +155,39 @@ try {
   const again = crowd(1600, 1000); lqRelax(again, { w: 1600, h: 1000 }, 800, 470, 90);
   ok("the same data, the same layout (deterministic: nothing jitters from run to run)", JSON.stringify(again) === JSON.stringify(big), "");
 
+  console.log("HOME'S LAYOUT — agents at work in a band of their own; no label, heading or orb on another (2026-10-08)");
+  {
+    const line = (re) => uiJs.match(re)[0];
+    const pre = ["var LQ={};", line(/var PARA_OF=\{[^}]*\};/), line(/var ZONE_ORDER=\[[^\]]*\],ZONE_KIND=\{[^}]*\};/), line(/var LQ_RUNW=\d+;/)].join("\n");
+    const F = new Function(pre + grab("lqPara") + grab("runWarn") + grab("lqRunBand") + grab("lqZones") + "\nreturn { lqZones, lqRunBand, LQ };")();
+    const shapes = [["tasks", 58.7], ["settings", 48.5], ["reports", 41.5], ["marketing", 35], ["board", 34.8], ["todo", 34.5], ["map", 34.5]]; // the layout Garth's Home had
+    const names = ["argena", "steve", "Garth just restarted his Symbiot app", "symbiot"];
+    const runs = names.map((n) => ({ id: "run:" + n, name: n, repo: n, line: "step 3 of 4: wire the class bible into the game · trials in a sealed circle", eta: "5–15 min left" }));
+    const over = (a, b) => a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3];
+    const tag = (d) => Math.min(170, String(d.title).length * 6.6 + 18);
+    for (const [w, hgt, needBottom] of [[1840, 873, 320], [1600, 900, 320], [1440, 860, 0], [1280, 800, 320]]) {
+      const S = { w, h: hgt, s: Math.max(0.55, Math.min(1.15, Math.min(w, hgt) / 860)) };
+      const band = F.lqRunBand({ runs }, S, needBottom);
+      const list = shapes.map(([id, r]) => ({ id: "shape:" + id, kind: "shape", shape: id, title: id, r: r * S.s }))
+        .concat([{ id: "feed:gh", kind: "feed", shape: "board", title: "GitHub", r: 33 }, { id: "feed:li", kind: "feed", shape: "board", title: "LinkedIn", r: 33 }, { id: "archive", kind: "archive", shape: "tasks", title: "Archive", r: 22 }, { id: "more", kind: "more", title: "more", r: 24 }]);
+      const z = F.lqZones(list, S, band.bottom || needBottom, 92 * S.s);
+      const at = `${w}×${hgt}`;
+      ok(`${at}: the agents are a band of their own, below the needs band, never in a group`, band.items.length >= 3 && band.items.every((d) => d.band && d.ty - d.r - 20 >= needBottom && !list.includes(d)) && band.bottom > needBottom, band.items.map((d) => [d.tx, d.ty]));
+      ok(`${at}: each agent's name in full, on one line, with its step under it`, band.items.every((d, i) => d.title === names[i] && /^step 3 of 4/.test(d.sub) && /5–15 min left/.test(d.sub)), band.items.map((d) => d.title));
+      if (w < 1400) { ok(`${at}: too little room for the groups' own places: the solver's layout instead, under the band`, z === null || !!z, ""); if (!z) continue; }
+      else ok(`${at}: the groups keep their own places (zones) with agents at work`, !!z, z);
+      if (!z) continue;
+      const boxes = [];
+      band.items.forEach((d) => { boxes.push({ who: d.title + " orb", b: [d.tx - d.r - 20, d.ty - d.r - 20, d.tx + d.r + 20, d.ty + d.r + 20] }); boxes.push({ who: d.title + " label", b: [d.tx + d.r + 30, d.ty - 18, d.tx + d.r + 30 + 270, d.ty + 18] }); });
+      list.forEach((d) => { boxes.push({ who: d.id + " orb", b: [d.tx - d.r, d.ty - d.r, d.tx + d.r, d.ty + d.r] }); boxes.push({ who: d.id + " label", b: [d.tx - tag(d) / 2, d.ty + d.r + 4, d.tx + tag(d) / 2, d.ty + d.r + 30] }); });
+      Object.entries(F.LQ.zoneT).forEach(([g, p]) => boxes.push({ who: "heading " + g, b: [p[0] - 75, p[1] - 20, p[0] + 75, p[1] + 20] }));
+      const cr = 92 * S.s; boxes.push({ who: "core", b: [w / 2 - cr, z.cy - cr, w / 2 + cr, z.cy + cr] });
+      const clash = [];
+      for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) if (boxes[i].who.split(" ")[0] !== boxes[j].who.split(" ")[0] && over(boxes[i].b, boxes[j].b)) clash.push(boxes[i].who + " × " + boxes[j].who);
+      ok(`${at}: no label, heading or orb overlaps another`, !clash.length, clash.slice(0, 6));
+      ok(`${at}: all of it on screen, above the chat`, boxes.every((x) => x.b[0] >= 0 && x.b[2] <= w && x.b[3] <= hgt - 150), boxes.filter((x) => x.b[0] < 0 || x.b[2] > w || x.b[3] > hgt - 150).map((x) => x.who));
+    }
+  }
   console.log("HOME — the liquid's droplets from real data, and its talk");
   const { homeState, homeAsk } = await import("../home.mjs");
   const deps = {

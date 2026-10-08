@@ -2,6 +2,12 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.57.4
+
+- **Home's layout holds with agents at work.** The agents at work used to sit among the section orbs. That pushed the headings off their own orbs ("Projects" over Todo, "Resources" over Workdesk), drew "Watching" on top of "Areas", scattered what you watch, and squeezed each agent's name into a narrow column ("Ste / ve"). Now they have a band of their own under "Needs you": a small orb each, the lane's name in full, and its step, what it's on and the time left under it. The sections keep their own places, each heading by its orbs. When the window is too small for that and Home falls back to its free layout, no heading is drawn on another.
+- **No stray orb by the chat.** An orb reaching toward your pointer could hang in the gap as an orb of its own, with no label. It now stays a bulge on the orb's edge.
+- **The Needs-you card no longer covers its orb.** It sits clear to the side, joined to the orb by a short liquid line.
+
 ## 0.57.3
 
 - **See how far along each agent is.** Home used to say only "Agents working: 2". Now each agent at work gets its own drop by the Workdesk, showing its lane, which step of its brief it's on ("step 2 of 4: look and feel, plus a zoned world") and what it's doing right now ("shooting the monsters, camp and gates"), taken from its latest actions. The same line shows on its lane under Tasks, on the Away screen, and in what Home's chat knows. Every brief now asks an agent to say "Step N: …" as it starts each numbered step, so the count stays right.
