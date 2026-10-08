@@ -49,7 +49,8 @@ import { knowledgeState, addKnowledgeFolder, removeKnowledgeFolder, indexKnowled
 
 // ---- tiny arg parse --------------------------------------------------------
 const argv = process.argv.slice(2);
-const cmd = (argv[0] && !argv[0].startsWith("-") ? argv[0] : "week").toLowerCase();
+// a first word that's a flag means the default (week), except asking for help or the version
+const cmd = (argv[0] && (!argv[0].startsWith("-") || ["--help", "-h", "--version", "-v"].includes(argv[0])) ? argv[0] : "week").toLowerCase();
 const flag = (name, def) => {
   const i = argv.indexOf(`--${name}`);
   return i >= 0 && argv[i + 1] ? argv[i + 1] : def;
@@ -812,6 +813,7 @@ ${c.b("Usage")}
   symbiot standup                   yesterday + today, for standup
   symbiot todo                      what's still on your plate
   symbiot app                       open the visual app in your browser
+  symbiot --version                 which Symbiot this is
   symbiot open                      start Symbiot in the background and open its window
                                     (what its app-menu icon does)
   symbiot uninstall [--keep-data]   remove Symbiot and everything it added
@@ -868,6 +870,7 @@ ${c.d("local Ollama model).")}`;
 // ---- main -----------------------------------------------------------------
 async function main() {
   if (cmd === "help" || cmd === "--help" || cmd === "-h") { console.log(HELP); return; }
+  if (cmd === "--version" || cmd === "-v" || cmd === "version") { console.log(VERSION); return; }
   if (cmd === "login" || cmd === "auth") return cmdLogin();
   if (cmd === "logout") return cmdLogout();
   if (cmd === "whoami" || cmd === "status") return cmdWhoami();

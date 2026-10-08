@@ -2,6 +2,12 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.57.1
+
+- **Windows is tested on every change.** A Windows job runs on GitHub with each pull request: Symbiot has to install, start, open into setup, find your Claude subscription and uninstall cleanly there, or the change doesn't go in. The whole suite runs there too and reports what isn't Windows-ready yet.
+- **Your Claude subscription on Windows.** Claude Code installs as `claude.cmd` on Windows, which Symbiot didn't find, so it fell back to asking for a key. And Symbiot's instructions now reach Claude Code in a file instead of on the command line, which Windows caps at about 8,000 characters.
+- **`symbiot --version` and `symbiot --help` work.** Both ran the weekly write-up instead.
+
 ## 0.57.0
 
 - **Setup, before anything else.** A new Symbiot opens straight into setup: what it is (it watches, it works, it asks), your AI (your Claude subscription, found by itself), your work (your projects, found while you read), your coding agent (one click), every app you use (each connected, or marked "I don't use it"; you can't go on until they're all decided), and an optional folder of your documents. Then a short "finding your way" and Home. Where you are is kept, so closing it resumes there; Settings → Setup → Run setup again walks it again.
