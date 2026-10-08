@@ -2449,12 +2449,14 @@ document.getElementById('autostart').addEventListener('change',saveAutostart);
 var SRV_STARTED=null,srvDown=false,updBusy=false;
 function ubar(){return document.getElementById('updatebar');}
 // One Symbiot window, not a pile: each window has an id, says so the first time it
-// asks, and the server remembers the newest. An older one closes itself; where the
-// browser won't let it (a tab you opened), it says so and can take over. Away's
-// windows don't count.
-var WIN_ID=/[?&]away=1(&|$)/.test(location.search||'')?'':Math.random().toString(36).slice(2,12),WIN_NEW=true; // read from the address: AWAY is set further down
+// asks, and the server remembers the newest. An older one closes itself, unless it's
+// the one you're in (it says so and can take over; so does a tab the browser won't
+// close). Away's windows don't count, nor does a headless browser: an agent taking a
+// screenshot of Home closed the user's window each time (2026-10-08).
+function winHeadless(){var n=window.navigator||{};return !!n.webdriver||/Headless/i.test(n.userAgent||'');}
+var WIN_ID=/[?&]away=1(&|$)/.test(location.search||'')||winHeadless()?'':Math.random().toString(36).slice(2,12),WIN_NEW=true; // read from the address: AWAY is set further down
 function winTakeOver(){WIN_NEW=true;var o=$('winold');if(o)o.remove();heartbeat(false);}
-function winOld(){try{window.close();}catch(e){}setTimeout(function(){if($('winold')||!document.body)return;var o=document.createElement('div');o.id='winold';o.className='updatebar reconnect show';o.innerHTML="Symbiot is open in a newer window. <button class='ghost' id='wintake'>Use this one</button>";document.body.appendChild(o);var t=$('wintake');if(t)t.onclick=winTakeOver;},400);}
+function winOld(){if(!(document.hasFocus&&document.hasFocus()))try{window.close();}catch(e){}setTimeout(function(){if($('winold')||!document.body)return;var o=document.createElement('div');o.id='winold';o.className='updatebar reconnect show';o.innerHTML="Symbiot is open in a newer window. <button class='ghost' id='wintake'>Use this one</button>";document.body.appendChild(o);var t=$('wintake');if(t)t.onclick=winTakeOver;},400);}
 function heartbeat(fresh){
   var q=[];if(fresh)q.push('fresh=1');if(WIN_ID){q.push('w='+WIN_ID);if(WIN_NEW)q.push('new=1');}
   api('/api/ping'+(q.length?'?'+q.join('&'):'')).then(function(p){

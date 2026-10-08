@@ -9,7 +9,7 @@ import { randomBytes } from "node:crypto";
 import { VERSION, LATEST_VERSION, REGISTRY, semverGt, loadConfig, saveConfig, loadTasks, saveTasks, TASK_MAX, clipWords, taskWords, sameTask, uniqueTasks, sh, hasCmd, repoState } from "./core.mjs";
 import { handoverRules, ONLY_YOU, HANDBACK } from "./handover.mjs";
 import { userStyleLine } from "./adapt.mjs";
-import { QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, handoffCmd, runningHandoff, writeTasks, droppedTasks, startHeldTasks, connectorsLine } from "./agents.mjs";
+import { QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, isUrgent, handoffCmd, runningHandoff, writeTasks, droppedTasks, startHeldTasks, connectorsLine } from "./agents.mjs";
 import { gitDefaultBranch } from "./drift.mjs";
 import { readRunLog } from "./work.mjs";
 import { repoPathMap, laneMap, openWork, detectRepo } from "./scan.mjs";
@@ -565,6 +565,9 @@ function buildTasksMd(name, ctx, list) {
   if (ctx.connectors) L.push(`- **Connectors:** ${ctx.connectors}`);
   if (ctx.about && ctx.about.length) L.push("", ...ctx.about);
   L.push("", "## Tasks");
+  // urgent first, whatever kind it is (a crash fix filed under Docs waited behind 5 tasks, 2026-10-08)
+  const urgent = list.filter((t) => isUrgent(t.text)); list = list.filter((t) => !urgent.includes(t));
+  if (urgent.length) { L.push("### Urgent: do these first", "Stop at a safe point in anything else you're on (your changes stay), do these, then carry on with the rest."); for (const t of urgent) L.push(`- [ ] ${t.text}`); L.push(""); }
   const byType = {}; for (const t of list) { const ty = taskType(t.text); (byType[ty] = byType[ty] || []).push(t); }
   const keys = Object.keys(byType).sort((a, b) => TASK_ORDER.indexOf(a) - TASK_ORDER.indexOf(b));
   for (const ty of keys) { L.push(`### ${ty}`); for (const t of byType[ty]) L.push(`- [ ] ${t.text}`); L.push(""); }

@@ -62,6 +62,8 @@ function changesSince(md, from, to) {
   }
   return out.slice(0, 15);
 }
+// A headless browser: an agent or a test looking at the page, not someone using it.
+const headlessAgent = (ua) => /Headless/i.test(String(ua || ""));
 const localChangelog = () => { try { return readFileSync(CHANGELOG, "utf8"); } catch { return ""; } };
 // After an update: what's new since the version you last saw it for. The first
 // time (no seenVersion yet) that's just this version's own release.
@@ -448,8 +450,10 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       // the Week tab's week is saved to weeks/ too, as Write it now saves it (no notification: you're looking at it)
       if (u.pathname === "/api/run" && req.method === "POST") { const b = await readBody(req); const cmd = ["week", "standup", "todo"].includes(b.cmd) ? b.cmd : "week"; return json(res, cmd === "week" ? await runWeekly(writeup, { notify: false }) : await writeup(cmd)); }
       if (u.pathname === "/api/connect" && req.method === "POST") { return json(res, await connectProvider(await readBody(req))); }
-      // a sandbox (symbiot app --fresh) never offers an update: it would replace your real install
-      if (u.pathname === "/api/ping") { if (u.searchParams.get("fresh") === "1" && !SANDBOX) await checkLatest(); const w = u.searchParams.get("w") || ""; if (/^[a-z0-9]{6,20}$/.test(w) && u.searchParams.get("new") === "1") NEWEST_WIN = w; return json(res, { ...(NEWEST_WIN ? { window: NEWEST_WIN } : {}), version: VERSION, started: SERVER_STARTED, latest: LATEST_VERSION, newer: !SANDBOX && semverGt(LATEST_VERSION, VERSION), ...(UPDATING && UPDATING.retrying ? { retrying: UPDATING } : {}), ...(IN_TERMUX ? { termux: true } : {}), ...(SANDBOX ? { sandbox: true } : {}) }); }
+      // a sandbox (symbiot app --fresh) never offers an update: it would replace your real install.
+      // A headless browser (an agent's screenshot of Home) never becomes the newest window:
+      // that closed the user's real one, again and again (2026-10-08, "symbiot keeps crashing").
+      if (u.pathname === "/api/ping") { if (u.searchParams.get("fresh") === "1" && !SANDBOX) await checkLatest(); const w = u.searchParams.get("w") || ""; if (/^[a-z0-9]{6,20}$/.test(w) && u.searchParams.get("new") === "1" && !headlessAgent(req.headers["user-agent"])) NEWEST_WIN = w; return json(res, { ...(NEWEST_WIN ? { window: NEWEST_WIN } : {}), version: VERSION, started: SERVER_STARTED, latest: LATEST_VERSION, newer: !SANDBOX && semverGt(LATEST_VERSION, VERSION), ...(UPDATING && UPDATING.retrying ? { retrying: UPDATING } : {}), ...(IN_TERMUX ? { termux: true } : {}), ...(SANDBOX ? { sandbox: true } : {}) }); }
       // What's new: after an update, since the version you last saw (until you click Got it);
       // ?latest=1, what the update on offer brings, from its package on npm
       if (u.pathname === "/api/whatsnew") {
@@ -529,4 +533,4 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
   setInterval(() => { try { awaitTick(); } catch {} }, 60000).unref(); // a reply an agent's email waits on: found, and handed on
 }
 
-export { updateCmd, changesSince, whatsNew, tarFile, registryChangelog, BROWSER_KEEP, startApp, askRunningApp, isAppRunningWeekly, openApp };
+export { headlessAgent, updateCmd, changesSince, whatsNew, tarFile, registryChangelog, BROWSER_KEEP, startApp, askRunningApp, isAppRunningWeekly, openApp };
