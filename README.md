@@ -783,8 +783,10 @@ and nothing else. **It never posts by itself**, and it doesn't schedule.
 - **You approve each one.** The drafts wait under **Marketing**, a section of its
   own (its orb shows on Home once posts can be drafted, lit while drafts wait on
   you), each tagged with the product it's about, with **Approve**,
-  **Edit** and **Skip**. Approve copies the post to your clipboard and opens
-  LinkedIn's share box: you paste it and post it yourself.
+  **Edit** and **Skip**. Approve is your only step: it hands the post to
+  Marketing's agent, which posts it on LinkedIn through Symbiot's signed-in
+  browser, with exactly the text you approved and its picture or video, and
+  checks it's there.
 - **Pictures and videos.** Each draft says in a line what picture or short video
   would show it best. Add one of yours (**Add picture or video**: PNG, JPG, GIF,
   MP4, MOV, WebM), or click **From a page** and give a web address (your app on
@@ -812,7 +814,7 @@ and nothing else. **It never posts by itself**, and it doesn't schedule.
 ```bash
 symbiot post                    # draft this week's 3 posts
 symbiot post list               # the drafts waiting on you
-symbiot post approve <id>       # copy it, and get LinkedIn's share box (--open opens it)
+symbiot post approve <id>       # approve it: Marketing's agent posts it
 symbiot post edit <id> "text"   # change a draft's words
 symbiot post add <id> <file>    # put a picture or video of yours on it
 symbiot post page <id> <page>   # a picture of a web page on it (--clip: a short video)
@@ -888,13 +890,37 @@ launches or pricing; any agent can hand work to it too, as `marketing`.
   one's code and docs are. Every post opens with a strong hook, says plainly what
   the product is and states its end goal; where the end goal isn't written down, it
   drafts one and asks you to confirm it.
-- **It never posts**, publishes, schedules or sends, and never signs in as you.
-  Its work waits for your OK like any project's (**Approve** commits it in its
-  folder), and its questions reach you like any agent's.
+- **Each draft holds the post apart from its notes.** A draft is a `.md` with a
+  `# ` title, then `product:`, `platform:` (`linkedin`), `when:` (`2026-10-13 08:00`,
+  when it's scheduled) and `media:` (its picture or video, kept next to it) lines,
+  then `## Post` with exactly the text that goes out, and `## Notes` with the agent's
+  reasoning and sources. A draft written before this, with the post between two
+  `---` lines, still reads the same way.
+- **You see the post, not the file.** Under **What its agent drafted**, **Preview**
+  shows each draft the way the platform will: for LinkedIn, your name, headline and
+  photo (`"profile": { "name", "headline", "avatar" }` in
+  `~/.config/symbiot/config.json`, else your git name and initials), the text with its
+  own line breaks, cut with **…see more** where LinkedIn's feed cuts it (about 210
+  characters; click it for the rest), hashtags in blue, and its picture or video
+  inline. The agent's notes are folded away under **Its notes**, never in the post.
+- **Approving the preview is your only step.** **Approve** and **Skip** sit next to
+  it. Approved, the agent is told in its `ANSWERS.md` and starts: it posts the post,
+  or schedules it in the platform's own scheduler for its `when:`, through Symbiot's
+  browser, already signed in to the platforms you linked, with exactly the text you
+  approved, then checks it's there. The approval goes with that text: if the post
+  changes afterwards, it asks you again. It never asks you to post, schedule, paste
+  or attach anything yourself. A question that does, on a platform you've linked,
+  shows as the agent's option ("🤖 Agent: …, once you approve its preview"). Only
+  signing in, for a platform that isn't linked or has signed out, is yours. It never
+  posts what you haven't approved, and never signs in as you.
+- **Its work waits for your OK like any project's** (**Approve** commits it in its
+  folder), and its questions reach you like any agent's. Answering one says
+  **Sent to Marketing**, the lane it went to.
 - **On Home** it's an orb among your projects, lit amber when something there needs
   you: its questions (which also show as blobs under **Needs you**), its work
-  waiting for your OK, and the week's drafts. Click it and its page opens with
-  those lit at the top.
+  waiting for your OK, the week's drafts, and every post its agent drafted that
+  you haven't approved or skipped yet, as **a post to approve** with **Preview** one
+  click away. Click it and its page opens with those lit at the top.
 
 ### What a run hands back: facts to remember, replies to wait for, reports
 
@@ -920,7 +946,13 @@ Every brief also tells the agent what else it can leave in `.symbiot/`:
 - **A report** (findings, an audit, a plan, a pitch): any `.md` named for what it
   is, with a `# ` title. **Reports** in the app lists every one your runs left,
   in your repos and in runs of their own, newest first, unread ones marked; click
-  one to read it there, tables and all. Home shows how many are unread.
+  one to read it there, tables and all. Home shows how many are unread. Each one
+  ends with what to do about it: up to 4 ideas drawn from its own "next" section
+  (**Top 3 next**, **Next steps**, **Recommendations**…), ticked straight onto the
+  Workdesk in its lane with **Add to the Workdesk**, and a box to ask Symbiot about
+  it in place. A draft for your OK (a report whose title or file says draft or
+  preview, a post preview say) gets **Approve** and **Reject** instead: its agent is
+  told in its `ANSWERS.md`, and goes ahead once you approve.
   `symbiot reports` lists them in a terminal, and `symbiot reports <id>` prints
   one. Symbiot's own files there (TASKS, QUESTIONS, ANSWERS, HANDOFF, SKIPPED)
   and the briefs handed in (`BRIEF*.md`) aren't reports.

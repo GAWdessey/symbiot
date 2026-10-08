@@ -201,7 +201,7 @@ try {
     t.sendBack(out.review.id); out.back = by("Write the docs for beta"); out.betaBack = md("beta");
     // ticked again and approved: committed, then archived with its commit
     writeFileSync(${JSON.stringify(join(WORK, "beta", ".symbiot", "TASKS.md"))}, md("beta").replace("- [ ] write the docs for BETA", "- [x] write the docs for BETA"));
-    t.syncTasks(); out.approve = t.approveRepo("beta", { push: false }); out.final = by("Write the docs for beta");
+    t.syncTasks(); out.approve = await t.approveRepo("beta", { push: false }); out.final = by("Write the docs for beta");
     out.open = all().filter((x) => !x.archived).map((x) => x.text).sort(); out.archived = all().filter((x) => x.archived).map((x) => x.text);
     console.log(JSON.stringify(out));`);
   const pushed = tk.push || {};

@@ -79,6 +79,15 @@ try {
   const after = await ping(baseA, token);
   ok("the first app is still the one serving (same start time)", !!before.started && after.started === before.started, { before, after });
 
+  console.log("ONE WINDOW — a headless browser never becomes the newest window (2026-10-08: agents' screenshots of Home closed Garth's window, 'symbiot keeps crashing')");
+  const pingUa = async (q, ua) => (await fetch(`${baseA}/api/ping${q}`, { headers: { "x-symbiot-token": token, ...(ua ? { "user-agent": ua } : {}) } })).json();
+  const mine = await pingUa("?w=realwin01&new=1", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/141.0.0.0 Safari/537.36");
+  ok("a real window that opens is the newest", mine.window === "realwin01", mine);
+  const shot = await pingUa("?w=shotwin01&new=1", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 HeadlessChrome/141.0.0.0 Safari/537.36");
+  ok("a headless one opening after it isn't: the real window stays the newest, so it doesn't close", shot.window === "realwin01", shot);
+  const next = await pingUa("?w=realwin02&new=1", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/141.0.0.0 Safari/537.36");
+  ok("a second real window still takes over (one window, not a pile)", next.window === "realwin02", next);
+
   console.log("INSTANCE — SYMBIOT_FORCE_NEW=1 starts a second app anyway");
   const f = startApp({ SYMBIOT_FORCE_NEW: "1" }, 20000);
   const urlF = await f.ready; // the port is taken: it retries, then takes a free one
@@ -202,6 +211,30 @@ try {
   for (const ch of children) { try { ch.kill("SIGKILL"); } catch {} }
   reg.close();
   rmSync(HOME, { recursive: true, force: true });
+}
+{
+  console.log("ONE WINDOW — in the page: a headless browser takes no part, and the window you're in never closes itself");
+  const { EMBEDDED_UI } = await import("../ui.mjs");
+  const uiJs = [...EMBEDDED_UI.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]).join("\n");
+  const grab = (name) => { const i = uiJs.indexOf("function " + name + "("); let depth = 0, j = uiJs.indexOf("{", i); for (; j < uiJs.length; j++) { if (uiJs[j] === "{") depth++; else if (uiJs[j] === "}" && --depth === 0) break; } return uiJs.slice(i, j + 1); };
+  const idLine = (uiJs.match(/^var WIN_ID=.*$/m) || [""])[0].replace(/\/\/ read from.*$/, "");
+  const page = ({ ua = "Mozilla/5.0 Chrome/141.0", webdriver = false, search = "", focused = false } = {}) => {
+    const closed = { n: 0 }, timers = [];
+    const window = { navigator: { userAgent: ua, webdriver }, close: () => { closed.n++; } };
+    const document = { hasFocus: () => focused, body: { appendChild: () => {} }, createElement: () => ({}) };
+    const run = new Function("window", "document", "location", "$", "setTimeout", `${grab("winHeadless")}\n${grab("winOld")}\n${idLine}\nreturn { WIN_ID, winOld };`);
+    const r = run(window, document, { search }, () => null, (f) => timers.push(f));
+    return { ...r, closed, bar: () => { timers.forEach((f) => f()); } };
+  };
+  ok("the page has its window code to test", !!idLine && grab("winHeadless").length > 20 && grab("winOld").length > 20, idLine);
+  ok("a real window has an id", /^[a-z0-9]{6,}$/.test(page().WIN_ID), page().WIN_ID);
+  ok("a headless browser (an agent's screenshot) has none, so it never claims to be the newest", page({ ua: "Mozilla/5.0 HeadlessChrome/141.0" }).WIN_ID === "", "");
+  ok("nor does a driven one (navigator.webdriver)", page({ webdriver: true }).WIN_ID === "", "");
+  ok("nor Away's", page({ search: "?away=1&n=1" }).WIN_ID === "", "");
+  const away = page({ focused: false }); away.winOld();
+  ok("an older window you're not in closes itself", away.closed.n === 1, away.closed);
+  const inUse = page({ focused: true }); inUse.winOld();
+  ok("the window you're in doesn't: it says a newer one is open, and can take over", inUse.closed.n === 0, inUse.closed);
 }
 console.log(`\n${fail ? "✗" : "✓"} app: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

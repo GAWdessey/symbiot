@@ -11,8 +11,8 @@ import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { authorship, repoState, readmeInfo, houseRules, findAllRepos, driftRepo, buildTasksMd, taskType, EMBEDDED_UI, orcaHandoffCmd, migrateOrcaCmd, fillHandoff, ORCA_CLAUDE_CMD, CLAUDE_CMD, HANDOFF_PROMPT, shipChanges, shipWithBump, bumpOffer, learnNpm, releaseNeeded, withReleases, semverGt, updateCmd, parseQuestions, unreleased, publishesOnMerge } from "../index.mjs";
-import { grantRule, claudeConnectors, withConnectors, linkedConnectors, connectorsLine } from "../agents.mjs";
-import { applyRemovals, removalOf, saidFinished } from "../tasks.mjs";
+import { grantRule, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, noteUntracked, untrackedBefore } from "../agents.mjs";
+import { applyRemovals, removalOf, saidFinished, gitFailed } from "../tasks.mjs";
 import { releaseNotes, parseNotes } from "../writeups.mjs";
 import { VERSION, sameTask, uniqueTasks } from "../core.mjs";
 import { mailActivity } from "../mail.mjs";
@@ -382,6 +382,15 @@ try {
   ok("\"don't start another run until it's in\" is the user's step: it waits on the `.env` the 👤 option named", er3.answer && JSON.stringify(er3.answer.yours) === '["put WA_WABA_ID in `.env`"]' && JSON.stringify(er3.answer.waitFiles) === '[".env"]' && er3.wait && er3.wait.files[0] === ".env", [er3.answer, er3.wait]);
   ok("...a send meanwhile starts nothing but is remembered, and the run starts by itself once .env changes", er3.held && er3.held.blocked && er3.held.waiting && er3.rerun === true && er3.none === 0 && er3.started === 1, [er3.held, er3.rerun, er3.none, er3.started]);
   ok("...while \"that can wait\" is just an answer, not a hold", er3.notHold && er3.notHold.ok && !er3.notHold.yours && er3.notHoldWait === null, [er3.notHold, er3.notHoldWait]);
+  // a CI run failed, and the run that looked into it asked the user to paste git commands into a terminal (paperclip-steve, 2026-10-08)
+  const er4 = erRun(`a.setHandoffCmd("true {dir}");
+    const git = "👤 You: In \x60~/scratch/paperclip-steve\x60: \x60git add -A && git commit -m \\"ci: skip claude test when absent\\"\x60, then \x60git push origin main\x60.";
+    writeFileSync(s + "QUESTIONS.md", "## Questions\\n### The commit and push didn't happen. Do it again, or shall I?\\n- " + git + "\\n- 🤖 Agent: Commit the three changes and \x60git push origin main\x60 for you, then check the CI run.\\n### Commit and push?\\n- 👤 You: Review the diff, commit, and \x60git push origin main\x60 (recommended)\\n- 👤 You (only you: your GitHub password): type it when git asks\\n");
+    out.qs = a.parseQuestions(readFileSync(s + "QUESTIONS.md", "utf8")).questions.map((q) => q.options);
+    out.answer = a.answerQuestions(dir, [{ q: "The commit and push didn't happen. Do it again, or shall I?", a: git }], { rerun: true });
+    out.wait = a.waitingFor(dir); out.answers = readFileSync(s + "ANSWERS.md", "utf8");`);
+  ok("CI fix: a 👤 git add/commit/push option is the agent's job: dropped when an agent option does it, else the agent's, with an OK before the push", er4.qs && er4.qs[0].length === 1 && /^🤖 Agent: Commit the three changes/.test(er4.qs[0][0]) && /^🤖 Agent: Review the diff, commit, and `git push origin main`, asking for your OK on the Workdesk, with the files, before it pushes \(recommended\)$/.test(er4.qs[1][0]) && /^👤 You \(only you: your GitHub password\)/.test(er4.qs[1][1]), er4.qs);
+  ok("...picked as the user's step anyway: no step left to the user, nothing waits on them, and the agent is told to do it and ask before the push", er4.answer && er4.answer.ok && !er4.answer.yours && er4.wait === null && /that git work is yours to do, not the user's/.test(er4.answers) && /git push origin main/.test(er4.answers.split("yours to do, not the user's").pop()) && /before you push/.test(er4.answers), [er4.answer, er4.wait]);
   ok("a step in Settings waits for the agent command too, says so, and a changed command starts the run", er2.answer3 && /once the agent command \(Settings → Handoff\) changes/.test(er2.answer3.note || "") && er2.wait3 && er2.wait3.cmd && er2.none3 === 0 && er2.wait3b === null && er2.started3 === 1, [er2.answer3, er2.wait3, er2.none3, er2.wait3b, er2.started3]);
 
   console.log("TASKS — an approved Drop or Merge task removes the tasks it names, so they don't come back");
@@ -466,23 +475,23 @@ try {
     git clone -q --bare . ../ship-remote.git && git remote add origin ../ship-remote.git && git fetch -q origin && git remote set-head origin main
     echo b >> a.txt && echo new > new.txt && mkdir .symbiot && echo '- [x] t' > .symbiot/TASKS.md`);
   const evil = "Fix the $(touch pwned) `id` bug";
-  const r1 = shipChanges(shipRepo, [evil, "Add a test"], { pr: false });
+  const r1 = await shipChanges(shipRepo, [evil, "Add a test"], { pr: false });
   const g = (a) => execSync("git " + a, { cwd: shipRepo, encoding: "utf8", env: gitEnv }).trim();
   ok("commits on a new symbiot/ branch, not main", r1.ok && /^symbiot\//.test(r1.branch) && g("rev-parse --abbrev-ref HEAD") === r1.branch && g("rev-parse main") === g("rev-parse origin/main"), r1);
   ok("commit message lists the approved tasks verbatim (no shell)", g("log -1 --format=%B").includes("- " + evil) && !existsSync(join(shipRepo, "pwned")), g("log -1 --format=%B"));
   ok("tracked + new files committed, .symbiot/ left out", g("show --name-only --format= HEAD").split("\n").sort().join(",") === "a.txt,new.txt" && g("status --porcelain") === "?? .symbiot/", g("show --name-only --format= HEAD"));
   ok("pushed to origin", r1.pushed && g(`rev-parse origin/${r1.branch}`) === g("rev-parse HEAD"), r1);
-  const r2 = shipChanges(shipRepo, ["x"], { pr: false });
+  const r2 = await shipChanges(shipRepo, ["x"], { pr: false });
   ok("nothing to commit -> approved without a commit", r2.ok && r2.nothing && !r2.commit, r2);
   g("switch -q main"); writeFileSync(join(shipRepo, "c.txt"), "c\n");
-  const r3 = shipChanges(shipRepo, [], { push: false });
+  const r3 = await shipChanges(shipRepo, [], { push: false });
   ok("no task -> its own symbiot/changes-<date> branch and subject", r3.ok && /^symbiot\/changes-\d{4}-\d{2}-\d{2}$/.test(r3.branch) && r3.subject === "symbiot: changes approved without a task", r3);
   // regression: when .symbiot/ is gitignored, `git add . :(exclude).symbiot`
   // warned+exited-1 ("paths are ignored") and falsely aborted the ship.
   const giRepo = build("ship-gi", `git init -q -b main && git config user.email ci@symbiot.test && git config user.name "Symbiot CI"
     printf '.symbiot/\\n' > .gitignore && echo a > a.txt && git add . && git commit -qm init
     echo b >> a.txt && echo new > new.txt && mkdir .symbiot && echo log > .symbiot/agent.log`);
-  const rg = shipChanges(giRepo, ["Do a thing"], { push: false });
+  const rg = await shipChanges(giRepo, ["Do a thing"], { push: false });
   const gg = (a) => execSync("git " + a, { cwd: giRepo, encoding: "utf8", env: gitEnv }).trim();
   ok("ships even when .symbiot/ is gitignored (no false 'git add failed')", rg.ok && !!rg.commit, rg);
   ok("commit excludes .symbiot/ (gitignored case)", !gg("show --name-only --format= HEAD").split("\n").includes(".symbiot"), gg("show --name-only --format= HEAD"));
@@ -494,11 +503,11 @@ try {
     git switch -q main && git merge -q --squash feat && git commit -qm "feat (#1)" && git push -q origin main && git switch -q feat
     echo next > next.txt`);
   const gs = (a) => execSync("git " + a, { cwd: sqRepo, encoding: "utf8", env: gitEnv }).trim();
-  const rs = shipChanges(sqRepo, ["Next thing"], { pr: false });
+  const rs = await shipChanges(sqRepo, ["Next thing"], { pr: false });
   ok("squash-merged branch -> the next approve starts a fresh symbiot/ branch from origin/main", rs.ok && rs.branch === "symbiot/next-thing" && gs("rev-parse HEAD~1") === gs("rev-parse origin/main") && /already merged/.test(rs.note || "") && rs.pushed, rs);
   ok("...carrying only the new changes (the merged ones aren't in it twice)", gs("show --name-only --format= HEAD") === "next.txt" && gs("rev-parse feat") === gs("rev-parse origin/feat"), gs("show --name-only --format= HEAD"));
   writeFileSync(join(sqRepo, "more.txt"), "more\n");
-  const rs2 = shipChanges(sqRepo, ["More"], { push: false });
+  const rs2 = await shipChanges(sqRepo, ["More"], { push: false });
   ok("a branch with work main doesn't have stays put", rs2.ok && rs2.branch === "symbiot/next-thing" && !rs2.note, rs2);
   // a name already taken on origin (an earlier day's PR of that name, merged), and a
   // local branch of that name that went another way: the push was refused, and the
@@ -509,12 +518,29 @@ try {
     git switch -q -c ${taken} && echo old > old.txt && git add . && git commit -qm old && git push -q -u origin ${taken}
     git switch -q main && git branch -q -D ${taken} && echo one > one.txt`);
   const gt = (a) => execSync("git " + a, { cwd: tkRepo, encoding: "utf8", env: gitEnv }).trim();
-  const rt = shipChanges(tkRepo, ["One", "Two"], { pr: false });
+  const rt = await shipChanges(tkRepo, ["One", "Two"], { pr: false });
   ok("a branch name already on origin isn't reused: it takes the next one", rt.ok && rt.pushed && rt.branch === taken + "-2" && gt(`rev-parse origin/${taken}-2`) === gt("rev-parse HEAD"), rt);
   gt("switch -q main"); gt(`switch -q -c ${taken}-9`); gt(`push -q origin HEAD:refs/heads/${taken}-9`.replace("HEAD", "origin/" + taken));
   writeFileSync(join(tkRepo, "three.txt"), "3\n");
-  const rr = shipChanges(tkRepo, ["Three"], { pr: false });
+  const rr = await shipChanges(tkRepo, ["Three"], { pr: false });
   ok("a push refused because origin's branch of that name went another way: it goes up under a fresh name", rr.ok && rr.pushed && rr.branch !== taken + "-9" && /^symbiot\//.test(rr.branch) && gt(`rev-parse origin/${rr.branch}`) === gt("rev-parse HEAD"), rr);
+
+  // scratch: 170k untracked files (venvs, datasets) timed out `git add -A`
+  // (spawnSync ETIMEDOUT), and whole-tree staging took in an unignored .env.
+  // Approve stages just the task's paths: what was untracked before the run stays out.
+  const utRepo = build("ship-untracked", `git init -q -b main && git config user.email ci@symbiot.test && git config user.name "Symbiot CI" && echo a > a.txt && git add . && git commit -qm init
+    mkdir -p venv/lib && echo x > venv/lib/site.py && echo SECRET=1 > .env && echo old > old.txt && mkdir .symbiot`);
+  const gu = (a) => execSync("git " + a, { cwd: utRepo, encoding: "utf8", env: gitEnv }).trim();
+  noteUntracked(utRepo);
+  for (let i = 0; i < 100 && !untrackedBefore(utRepo); i++) await new Promise((r) => setTimeout(r, 50));
+  const ub = untrackedBefore(utRepo);
+  ok("a run notes the untracked files already there, .symbiot/ aside", ub && ub.files.sort().join() === ".env,old.txt,venv/lib/site.py", ub);
+  await new Promise((r) => setTimeout(r, 20));
+  writeFileSync(join(utRepo, "a.txt"), "b\n"); writeFileSync(join(utRepo, "new [1]*.txt"), "n\n"); writeFileSync(join(utRepo, "old.txt"), "edited\n");
+  const ru = await shipChanges(utRepo, ["Do it"], { push: false });
+  ok("approve stages the run's changes (a [glob]* name taken literally, an old file it edited), not what was there before", ru.ok && gu("show --name-only --format= HEAD").split("\n").sort().join() === "a.txt,new [1]*.txt,old.txt", gu("show --name-only --format= HEAD"));
+  ok("...says what it left out, leaves it untracked, and forgets the note", /2 untracked files that were already there before the agent ran were left out/.test(ru.note || "") && /\?\? \.env/.test(gu("status --porcelain")) && !untrackedBefore(utRepo), [ru, gu("status --porcelain")]);
+  ok("git that didn't finish says why in words, not ETIMEDOUT", /^git add timed out after 120 s: this repo has about 170,363 changed or untracked files, probably a venv, node_modules, a dataset or a cache missing from \.gitignore/.test(gitFailed("git add", { timedOut: true, timeout: 120000, err: "" }, 170363)) && gitFailed("git add", { timedOut: false, err: "fatal: x\n" }) === "git add failed: fatal: x", gitFailed("git add", { timedOut: true, timeout: 120000, err: "" }, 170363));
 
   console.log("REVIEW — agent ticks -> awaiting review (not archived) -> send back / approve");
   // isolated HOME: the cycle reads and writes Symbiot's real task store
@@ -526,7 +552,7 @@ try {
     import { readFileSync, writeFileSync, unlinkSync } from "node:fs";
     const f = ${JSON.stringify(join(proj, ".symbiot", "TASKS.md"))};
     // an agent still running in the repo: its lock, with a live pid (this one)
-    const lock = f.replace("TASKS.md", "agent.pid"), busy = (fn) => { writeFileSync(lock, JSON.stringify({ pid: process.pid, startedAt: Date.now() })); try { return fn(); } finally { unlinkSync(lock); } };
+    const lock = f.replace("TASKS.md", "agent.pid"), busy = async (fn) => { writeFileSync(lock, JSON.stringify({ pid: process.pid, startedAt: Date.now() })); try { return await fn(); } finally { unlinkSync(lock); } };
     const tick = () => writeFileSync(f, readFileSync(f, "utf8").replace("- [ ] Fix the bug", "- [x] Fix the bug"));
     const tasks = () => JSON.parse(readFileSync(${JSON.stringify(join(home, ".config", "symbiot", "tasks.json"))}, "utf8"));
     const out = {};
@@ -538,8 +564,8 @@ try {
     out.repush = m.pushTasks();
     m.sendBack(out.afterTick.id); out.afterBack = tasks()[0]; out.md = readFileSync(f, "utf8");
     m.pushTasks(); tick(); m.syncTasks();
-    out.busy = busy(() => ({ pending: m.pendingReview(), approve: m.approveRepo("revapp", { push: false }), ac: m.approveChanges("revapp", { push: false }), head: readFileSync(${JSON.stringify(join(proj, ".git", "HEAD"))}, "utf8") }));
-    out.approve = m.approveRepo("revapp", { push: false }); out.final = tasks()[0];
+    out.busy = await busy(async () => ({ pending: m.pendingReview(), approve: await m.approveRepo("revapp", { push: false }), ac: await m.approveChanges("revapp", { push: false }), head: readFileSync(${JSON.stringify(join(proj, ".git", "HEAD"))}, "utf8") }));
+    out.approve = await m.approveRepo("revapp", { push: false }); out.final = tasks()[0];
     // a change no ticked task covers, in a repo that still has an open task
     const skipTask = "Add a Skip button to each idea in the Agents tab, so you can turn down an idea you don't want";
     writeFileSync(${JSON.stringify(join(home, ".config", "symbiot", "tasks.json"))}, JSON.stringify([...tasks(), { id: "t2", text: "Open task", repo: "revapp", done: false, ts: 2 }, { id: "t3", text: skipTask, repo: "revapp", done: false, ts: 3 }]));
@@ -547,11 +573,11 @@ try {
     // the run's summary, last in agent.log: it did the Skip button but ticked nothing
     writeFileSync(f.replace("TASKS.md", "agent.log"), "\\n=== old 2026-01-01 ===\\n$ agent\\nOpen task: done.\\n\\n=== symbiot 2026-01-02 ===\\n$ claude -p go\\n- **Skip button**: each idea in the Agents tab has a Skip button now, so you can turn one down.\\n");
     out.untasked = m.pendingReview();
-    out.busyUntasked = busy(() => ({ pending: m.pendingReview(), ac: m.approveChanges("revapp", { push: false }) }));
-    out.ac = m.approveChanges("revapp", { push: false }); out.acTasks = tasks();
-    out.acAgain = m.approveChanges("revapp", { push: false });
+    out.busyUntasked = await busy(async () => ({ pending: m.pendingReview(), ac: await m.approveChanges("revapp", { push: false }) }));
+    out.ac = await m.approveChanges("revapp", { push: false }); out.acTasks = tasks();
+    out.acAgain = await m.approveChanges("revapp", { push: false });
     writeFileSync(${JSON.stringify(join(proj, "c.txt"))}, "skip\\n");
-    out.acTick = m.approveChanges("revapp", { push: false, tick: ["t3", "t1"] }); out.acTickTasks = tasks();
+    out.acTick = await m.approveChanges("revapp", { push: false, tick: ["t3", "t1"] }); out.acTickTasks = tasks();
     // tasks held for an agent no Symbiot process is watching: the app's next check starts one
     writeFileSync(f.replace("TASKS.md", "TASKS.next.md"), "- [ ] Open task\\n"); m.setHandoffCmd("true");
     out.heldSync = m.syncTasks(); out.heldSync2 = m.syncTasks();
@@ -649,16 +675,16 @@ try {
   ok("offered when the committed version is released (its v* tag exists): patch and minor", bof && bof.version === "2.3.4" && bof.patch === "2.3.5" && bof.minor === "2.4.0", bof);
   ok("not offered when the changes already bump it, or there's no package.json", bumpOffer(rel) === null && bumpOffer(plain) === null, [bumpOffer(rel), bumpOffer(plain)]);
   writeFileSync(join(bmp, "a.txt"), "feature\n");
-  const bkp = shipWithBump(bmp, ["Add a feature"], { push: false, bump: "" });
+  const bkp = await shipWithBump(bmp, ["Add a feature"], { push: false, bump: "" });
   ok("no bump asked: shipped as it was", bkp.ok && !bkp.bumped && /"2\.3\.4"/.test(execSync("git show HEAD:package.json", bEnv)), bkp);
   execSync("git checkout -q main", bEnv); writeFileSync(join(bmp, "b.txt"), "fix\n");
-  const bsh = shipWithBump(bmp, ["Fix a thing"], { push: false, bump: "minor" });
+  const bsh = await shipWithBump(bmp, ["Fix a thing"], { push: false, bump: "minor" });
   const bPkg = execSync("git show HEAD:package.json", bEnv), bLock = JSON.parse(execSync("git show HEAD:package-lock.json", bEnv)), bMsg = execSync("git log -1 --format=%B", bEnv);
   ok("bump: package.json gets the new version, in its own indent, in the same commit", bsh.ok && bsh.bumped === "2.4.0" && bPkg === '{\n    "name": "x",\n    "version": "2.4.0"\n}\n', [bsh, bPkg]);
   ok("bump: the lockfile's own version follows; a dependency's doesn't", bLock.version === "2.4.0" && bLock.packages[""].version === "2.4.0" && bLock.packages["node_modules/y"].version === "2.3.4", bLock);
   ok("bump: the commit (and PR) say which tag to push after merging", /Bumps the version to 2\.4\.0\. After this merges, tag v2\.4\.0 on main/.test(bMsg), bMsg);
   execSync("git checkout -q main && git merge -q --ff-only " + bsh.branch + " && git tag v2.4.0 && git checkout -q --detach", bEnv); writeFileSync(join(bmp, "c.txt"), "more\n");
-  const bfl = shipWithBump(bmp, ["Fails"], { push: false, bump: "patch" });
+  const bfl = await shipWithBump(bmp, ["Fails"], { push: false, bump: "patch" });
   const nbm = build("release-npm", `git init -q -b main && git config user.email t@x.co && git config user.name T && echo '{"name":"@me/x","version":"1.2.3"}' > package.json && git add . && git commit -qm init`);
   const npmReg = createServer((q, r) => { const yes = q.url === "/@me%2Fx/1.2.3"; r.writeHead(yes ? 200 : 404, { "content-type": "application/json" }); r.end(yes ? '{"version":"1.2.3"}' : "{}"); }).listen(0, "127.0.0.1");
   await new Promise((r) => npmReg.on("listening", r));
@@ -677,17 +703,17 @@ try {
   const cEnv = { cwd: clg, env: gitEnv, encoding: "utf8" };
   writeFileSync(join(clg, "chat.js"), "x\n");
   const reply = "Draft a reply on WhatsApp too, typed into the chat's box and left unsent.";
-  const csh = shipWithBump(clg, [reply + " The agent never presses Send, and Enter is refused in a chat.", reply], { push: false, bump: "patch" });
+  const csh = await shipWithBump(clg, [reply + " The agent never presses Send, and Enter is refused in a chat.", reply], { push: false, bump: "patch" });
   const cLog = execSync("git show HEAD:CHANGELOG.md", cEnv);
   ok("bump: the release goes above the last one, in the same commit, each task once and up to its first sentence", csh.ok && csh.bumped === "1.0.1" && new RegExp("^# Changelog\\n\\nIntro\\.\\n\\n## 1\\.0\\.1 — \\d{4}-\\d{2}-\\d{2}\\n\\n- Draft a reply on WhatsApp too, typed into the chat's box and left unsent\\.\\n\\n## 1\\.0\\.0 — 2026-01-01\\n").test(cLog), [csh, cLog]);
   execSync("git checkout -q main && git merge -q --ff-only " + csh.branch + " && git tag v1.0.1", cEnv); writeFileSync(join(clg, "fix.js"), "y\n");
-  const cnt = shipWithBump(clg, [], { push: false, bump: "patch" });
+  const cnt = await shipWithBump(clg, [], { push: false, bump: "patch" });
   ok("changes approved without a task: named by the files they touch", cnt.ok && /## 1\.0\.2 — [\d-]+\n\n- Changes approved without a task, in fix\.js\.\n\n## 1\.0\.1/.test(execSync("git show HEAD:CHANGELOG.md", cEnv)), execSync("git show HEAD:CHANGELOG.md", cEnv).slice(0, 200));
   execSync("git checkout -q main && git merge -q --ff-only " + cnt.branch + " && git tag v1.0.2 && git checkout -q --detach", cEnv); writeFileSync(join(clg, "more.js"), "z\n");
-  const before = readFileSync(join(clg, "CHANGELOG.md"), "utf8"), cfl = shipWithBump(clg, ["Fails"], { push: false, bump: "patch" });
+  const before = readFileSync(join(clg, "CHANGELOG.md"), "utf8"), cfl = await shipWithBump(clg, ["Fails"], { push: false, bump: "patch" });
   ok("a ship that fails puts CHANGELOG.md back too", cfl.error && readFileSync(join(clg, "CHANGELOG.md"), "utf8") === before, cfl);
   execSync("git checkout -q main", cEnv);
-  const cai = shipWithBump(clg, ["i want the reply drafted on whatsapp too"], { push: false, bump: "patch", notes: ["Added Draft a reply for WhatsApp chats."] });
+  const cai = await shipWithBump(clg, ["i want the reply drafted on whatsapp too"], { push: false, bump: "patch", notes: ["Added Draft a reply for WhatsApp chats."] });
   ok("bump with notes (your AI's words): the changelog takes them; the commit keeps the task's own", cai.ok && /## 1\.0\.3 — [\d-]+\n\n- Added Draft a reply for WhatsApp chats\.\n\n## 1\.0\.2/.test(execSync("git show HEAD:CHANGELOG.md", cEnv)) && /- i want the reply drafted on whatsapp too/.test(execSync("git log -1 --format=%B", cEnv)), cai);
 
   console.log("RELEASE NOTES — your AI words Approve's changelog entries (writeups.mjs)");
@@ -715,7 +741,7 @@ try {
   ok("not measured from v1.0.0 before npm is known", pu0 === null, pu0);
   ok("counts the commits since the one that set the version npm has (2 past 1.0.1, not 3 past v1.0.0)", pu1 && pu1.npm && pu1.since === "1.0.1" && pu1.ahead === 2 && !pu1.tag, pu1);
   writeFileSync(join(pom, "c"), "c\n");
-  const psh = shipWithBump(pom, ["Fix c"], { push: false, bump: "patch" }), pMsg = execSync("git log -1 --format=%B", pEnv);
+  const psh = await shipWithBump(pom, ["Fix c"], { push: false, bump: "patch" }), pMsg = execSync("git log -1 --format=%B", pEnv);
   ok("a bump says it publishes on merge, with no tag to push by hand", psh.bumped === "1.0.2" && /It publishes to npm when this merges\./.test(pMsg) && !/tag v/.test(pMsg), [psh, pMsg]);
   execSync("git checkout -q main && git merge -q --ff-only " + psh.branch, pEnv);
   await learnNpm([pom], pomAt); const pu2 = unreleased(pom); pomReg.close();

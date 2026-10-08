@@ -5,7 +5,7 @@
 //
 //   node test/reports.mjs
 //
-import { mkdtempSync, writeFileSync, mkdirSync, utimesSync } from "node:fs";
+import { mkdtempSync, writeFileSync, mkdirSync, utimesSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -68,6 +68,35 @@ console.log("READING ONE — by its id, as safe HTML; it's read after");
   ok("Mark all read", R.listReports({ map, folders, running: none }).every((r) => !r.new));
 }
 
+console.log("IMAGES AND DRAFT TEXT — the Steve LinkedIn week 5 preview showed its pictures as raw text and cut its post off (2026-10-08)");
+{
+  const prev = join(CFG, "drafts", "act-dfac7fff"), card = join(CFG, "marketing", "drafts", "steve", "linkedin-week-05-card.png");
+  mkdirSync(dirname(card), { recursive: true }); writeFileSync(card, Buffer.from("89504e470d0a1a0a", "hex"));
+  put(prev, "shot.png", "x"); // relative to the report: .symbiot/shot.png
+  const outside = join(HOME, "elsewhere", "secret.png"); mkdirSync(dirname(outside), { recursive: true }); writeFileSync(outside, "x");
+  const long = "My AI spent half an hour one morning thinking about capacitors. Nobody asked him to. Here's every step, unedited, including the one he got wrong.";
+  const md = `# Steve LinkedIn previews\n\n## Week 5: Tue 3 Nov 2026, 08:00 SAST (scheduled)\n\n![week 5 card](${card})\n\n\`\`\`text\n${long}\n\n- novel — look at capacitor\n\`\`\`\n\nIn LinkedIn, ready to schedule: ![week 5 in LinkedIn's composer]\n(${join(CFG, "poster", "shots", "linkedin-week-05-capacitor-3-ready.png")})\n\n![tilde](~/.config/symbiot/marketing/drafts/steve/linkedin-week-05-card.png) ![rel](shot.png) ![nope](${outside}) ![web](https://example.com/a.png)\n`;
+  put(prev, "STEVE-LINKEDIN-PREVIEWS.md", md);
+  const l = R.listReports({ map: {}, folders: [prev], running: none, seen: { seen: {} } }), r = R.readReport(l[0].id, { list: l, mark: false });
+  const imgs = [...r.html.matchAll(/<img class="rimg" data-src="([^"]+)"/g)].map((m) => m[1].replace(/&amp;/g, "&"));
+  ok("an absolute local image shows as a picture, not as ![…](…) text", imgs.length === 3 && !/!\[week 5 card\]/.test(r.html), r.html);
+  ok("~/ paths and paths relative to the report show too", imgs.some((u) => /src=~/.test(u)) && imgs.some((u) => /src=shot\.png/.test(u)), imgs);
+  ok("one that isn't there says 'Image missing', even split across a line", /class="rimgmiss"[^>]*>🖼 Image missing: week 5 in LinkedIn&#39;s composer/.test(r.html), r.html);
+  ok("one outside Symbiot's folder and your projects isn't shown", /Image not shown \(outside your project folders\): nope/.test(r.html), r.html);
+  ok("a web image stays a link (nothing remote loads)", /<a href="https:\/\/example\.com\/a\.png"[^>]*>web<\/a>/.test(r.html) && !/data-src="https/.test(r.html));
+  ok("the draft post is a wrapping block, its line breaks kept", /<pre class="prose"><code>My AI spent[^<]*\n\n- novel/.test(r.html), r.html);
+  ok("…and code fences still don't wrap", /<pre><code>/.test(R.mdHtml("```js\nconst a = 1;\n```")));
+  const q = (u) => Object.fromEntries(new URL(u, "http://x").searchParams), first = q(imgs[0]);
+  const got = R.reportImage(first.id, first.src, { list: l, roots: [CFG] });
+  ok("the image is fetched by the report's id and the src it shows", got.file === card && got.type === "image/png", got);
+  ok("…the relative one from the report's own folder", R.reportImage(first.id, "shot.png", { list: l, roots: [CFG] }).file === join(prev, ".symbiot", "shot.png"));
+  ok("…not a src the report doesn't show", !!R.reportImage(first.id, "/etc/passwd", { list: l, roots: [CFG] }).error && !!R.reportImage(first.id, join(CFG, "config.json"), { list: l, roots: [CFG] }).error);
+  ok("…not from outside its folders, even when the report shows it", /outside/.test(R.reportImage(first.id, outside, { list: l, roots: [CFG] }).error || ""));
+  ok("…not by an id it didn't list", !!R.reportImage("nope", first.src, { list: l }).error);
+  ok("without a report to fetch by, a local image is a placeholder, never a bare path in an <img>", !/<img/.test(R.mdHtml(`![x](${card})`)));
+  ok("an image's alt can't break out of its attribute", !/onerror/.test(R.mdHtml(`![" onerror="alert(1)](${card})`, { id: "a", roots: [CFG] }).replace(/&quot; onerror=&quot;/g, "")));
+}
+
 console.log("SAFE HTML — a report can't put its own HTML or script on the page");
 {
   const h = R.mdHtml("# Hi <script>alert(1)</script>\n\n<img src=x onerror=alert(1)> and [x](javascript:alert(1)) and [ok](https://example.com) and 'q' \"d\"\n\n```\n<b>raw</b>\n```\n\n| a | b |\n|---|---|\n| <i>x</i> | `<y>` |");
@@ -102,6 +131,36 @@ console.log("SYMBIOT REPORTS — the CLI lists them and prints one");
   ok("symbiot reports <id> prints it", one.status === 0 && /Three things\./.test(one.stdout), one.stdout + one.stderr);
   const bad = spawnSync(process.execPath, [join(ROOT, "index.mjs"), "reports", "zzzzzz", "--plain"], { env, encoding: "utf8", timeout: 60000 });
   ok("an id that isn't there fails, and says so", bad.status === 1 && /No report zzzzzz/.test(bad.stdout), bad.stdout);
+}
+
+console.log("REPORTS — each ends with what to do about it");
+{
+  const { reportIdeasAdd, reportAsk, reportDraftAnswer } = await import("../home.mjs");
+  const arg = join(HOME, "code", "argena");
+  const CATCH = "# Argena catch-up\n\nWhere it stands.\n\n## What changed\n\n- the API moved to v2\n\n## Top 3 next\n\n1. **Fix the login redirect** on staging (`auth.ts`)\n2. Add a test for [the export](https://x.y/z)\n   - with a big file\n3. Ship 0.9 to the beta group\n\n## Notes\n\n- not an idea\n";
+  put(arg, "ARGENA-CATCHUP.md", CATCH);
+  const list = R.listReports({ map: { argena: arg }, folders: [arg], running: () => false, seen: { seen: {} } });
+  const seenFile = join(HOME, "seen-ideas.json");
+  const r = R.readReport(list[0].id, { list, seenFile });
+  ok("a write-up's end: its own \"Top 3 next\", as ideas, in plain words, nothing from other sections", r.ideas.join("|") === "Fix the login redirect on staging (auth.ts)|Add a test for the export|Ship 0.9 to the beta group" && !r.draft, r.ideas);
+  ok("…at most 4, from \"Recommendations\" or \"Next steps\" too; none when it has no such section", R.reportIdeas("## Next steps\n- a\n- b\n- c\n- d\n- e\n").length === 4 && R.reportIdeas("## Recommendations\n* x\n").join() === "x" && R.reportIdeas("# Plain\n\n- a list\n").length === 0);
+  const added = [];
+  const ia = reportIdeasAdd(list[0].id, [r.ideas[0], r.ideas[2]], { list: () => list, add: (t, lane, o) => (added.push({ t, lane, o }), { id: "x" }) });
+  ok("ticked ideas go onto the Workdesk in the report's lane, saying which report they came from", ia.ok && ia.added === 2 && ia.lane === "argena" && added.every((a) => a.lane === "argena" && /from the report "Argena catch-up"/.test(a.o.after)) && added[0].t === "Fix the login redirect on staging (auth.ts)", [ia, added]);
+  ok("…none ticked: says so", !!reportIdeasAdd(list[0].id, [], { list: () => list }).error);
+  let saw = "";
+  const asked = await reportAsk(list[0].id, "which of these first?", { ask: async (sys, prompt) => { saw = prompt; return JSON.stringify({ reply: "The login redirect: it blocks the beta." }); }, deps: { read: (id) => R.readReport(id, { list, mark: false, seenFile }) } });
+  ok("ask about it in place: the report is in front of the model, the answer comes back here", asked.answer === "The login redirect: it blocks the beta." && /Top 3 next/.test(saw) && /which of these first\?/.test(saw), [asked, saw.slice(0, 200)]);
+  put(arg, "LINKEDIN-POST-PREVIEW.md", "# Draft: Steve week 2 LinkedIn post\n\nThe post.\n\n## Next\n- post it\n");
+  const l2 = R.listReports({ map: { argena: arg }, folders: [arg], running: () => false, seen: { seen: {} } }), dr = l2.find((x) => /PREVIEW/.test(x.name));
+  const d2 = R.readReport(dr.id, { list: l2, seenFile });
+  ok("a draft report gets Approve / Reject, not ideas", d2.draft === true && !d2.ideas && d2.decided === "", d2);
+  const ran = [];
+  const ap = reportDraftAnswer(dr.id, true, { list: () => l2, decide: (x, st) => R.decide(x, st, seenFile), running: () => false, run: (p) => (ran.push(p), { id: "j" }) });
+  const ans = readFileSync(join(arg, ".symbiot", "ANSWERS.md"), "utf8");
+  ok("Approve: its agent is told in ANSWERS.md and goes ahead; the report says you approved it", ap.ok && ran.join() === arg && /### Approved: \.symbiot\/LINKEDIN-POST-PREVIEW\.md/.test(ans) && R.readReport(dr.id, { list: l2, seenFile }).decided === "approved", [ap, ans]);
+  const rj = reportDraftAnswer(dr.id, false, { list: () => l2, decide: (x, st) => R.decide(x, st, seenFile), run: () => { throw new Error("ran"); } });
+  ok("Reject: told not to use it, nothing starts", rj.ok && /### Rejected: \.symbiot\/LINKEDIN-POST-PREVIEW\.md\nThe user rejected/.test(readFileSync(join(arg, ".symbiot", "ANSWERS.md"), "utf8")), rj);
 }
 
 console.log(`\n${fail ? "✗" : "✓"} reports: ${pass} passed, ${fail} failed`);

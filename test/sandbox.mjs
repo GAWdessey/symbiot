@@ -54,8 +54,12 @@ console.log("SYMBIOT APP --FRESH — a brand-new Symbiot, gone when it quits");
   ok("Update & restart is refused (it would replace your real install)", !!up.error && /sandbox/.test(up.error), up);
   const wn = await get("/api/whatsnew");
   ok("first run: no changelog to catch up on", Array.isArray(wn.changes) && wn.changes.length === 0, wn);
-  const hs = await get("/api/home");
-  ok("first run: Home asks for what only a new user can do (connect an AI, show it your folders, pick your agent)", (hs.you || []).map((y) => y.id).join() === "setup:ai,setup:folders,setup:pick", hs.you);
+  // Home doesn't ask where your repos are while the first search is still looking (a slow CI runner
+  // read it mid-search, 2026-10-08): wait for that search to finish, as a new user would see it
+  let hs = await get("/api/home?fresh=1");
+  for (let i = 0; i < 60 && !(hs.you || []).some((y) => y.id === "setup:folders"); i++) { await new Promise((r) => setTimeout(r, 500)); hs = await get("/api/home?fresh=1"); }
+  const ids = (hs.you || []).map((y) => y.id), pick = (hs.you || []).find((y) => y.id === "setup:pick");
+  ok("first run: Home asks for what only a new user can do (connect an AI; a folder, as its empty home has no repos), not for an agent that's on this computer", ids.slice(0, 2).join() === "setup:ai,setup:folders" && (!pick || /^no coding agent/.test(pick.sub)), hs.you);
   const mind = await get("/api/mind");
   ok("no memory", !JSON.stringify(mind).includes("Jono"), mind);
   const links = await get("/api/links");

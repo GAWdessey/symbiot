@@ -1,5 +1,5 @@
 // Post (post.mjs): the week's real git as 3 draft LinkedIn posts in your voice,
-// waiting on you; Approve copies one for you to paste, Edit and Skip, every
+// waiting on you; Approve hands one to Marketing's agent to post, Edit and Skip, every
 // action logged; never a claim git doesn't show; with no AI, nothing at all.
 // Plus the replies: LinkedIn watched like an inbox, Draft a reply that can't
 // post, and likely customers marked. Isolated HOME (set before the modules
@@ -84,8 +84,8 @@ try {
   ok("a thread's 1/ 2/ and a list's 1. aren't claims; neither is today's date", P.checkClaims(`1/ The digest export.\n\n2/ The crash fix.\n\n3. On ${today}.`, F).length === 0, P.checkClaims(`1/ The digest export.\n\n2/ The crash fix.\n\n3. On ${today}.`, F));
 
   console.log("SYMBIOT POST — 3 drafts from real git, nothing published");
-  const copies = [];
-  const copy = (t) => { copies.push(t); return "test-clip"; };
+  const MK = join(HOME, "marketing-lane"), runs = [];
+  const hand = (p, o) => P.handToMarketing(p, { ...o, dir: MK, names: ["Demo"], run: (d, o2) => { runs.push({ d, o2 }); return { id: "mj" + runs.length }; }, running: () => false });
   let prompt = "";
   const d = await P.draftPosts({ repos, gh: false, ask: async (s, p) => { prompt = p; return honest(s, p); } });
   ok("3 drafts: Shipped, Learned / fixed, and a longer one", d.ok && d.posts.length === 3 && d.posts.map((p) => p.kind).join() === "shipped,learned,long" && d.dropped.length === 0, d);
@@ -93,7 +93,7 @@ try {
   ok("each draft keeps the git it rests on", d.posts.every((p) => p.sources.length && p.sources.every((s) => /^\[\d+\] demo · /.test(s))), d.posts.map((p) => p.sources));
   ok("they wait on you (the Dashboard's amber items)", P.postsState().posts.length === 3 && P.postsState().posts.every((p) => p.status === "waiting" && p.platform === "linkedin"), P.postsState().posts);
   ok("kept yours only (0600): drafts and log", mode(P.PATHS.posts) === "600" && mode(P.PATHS.log) === "600", [mode(P.PATHS.posts), mode(P.PATHS.log)]);
-  ok("drafting copies nothing and posts nothing", copies.length === 0 && !/fetch\(/.test(readFileSync(new URL("../post.mjs", import.meta.url), "utf8")), copies);
+  ok("drafting hands nothing over and posts nothing", runs.length === 0 && !/fetch\(/.test(readFileSync(new URL("../post.mjs", import.meta.url), "utf8")), runs);
   ok("each draft is logged: drafted, with its text, date and platform", P.postLog().filter((l) => l.action === "drafted").length === 3 && P.postLog().every((l) => l.text && /^\d{4}-\d{2}-\d{2}T/.test(l.date) && l.platform === "linkedin"), P.postLog());
 
   console.log("A DRAFT THAT CLAIMS WHAT GIT DOESN'T SHOW — sent back once, then dropped");
@@ -126,12 +126,16 @@ try {
   ok("…and says (doesn't block) what git doesn't show", P.editPost(a.id, "Fixed the crash for Stripe users.").unsupported.includes("Stripe"), "");
   P.editPost(a.id, "Fixed the crash when the inbox is empty in demo. Small fix, big relief.");
   ok("Edit with nothing in it is refused", /new text/.test(P.editPost(a.id, "  ").error || ""), "");
-  ok("nothing copied before an approval", copies.length === 0, copies);
-  const ap = P.approvePost(a.id, { copy });
-  ok("Approve copies that post to the clipboard, once, and gives LinkedIn's share box", ap.ok && copies.length === 1 && copies[0] === ap.post.text && ap.copied === "test-clip" && /linkedin\.com\/feed\/\?shareActive=true/.test(ap.share), ap);
-  ok("…says plainly it doesn't post or schedule", /doesn't post or schedule/.test(ap.note), ap.note);
-  ok("an approved post can't be approved, edited or skipped again", /approved already/.test(P.approvePost(a.id, { copy }).error) && /approved already/.test(P.editPost(a.id, "x").error) && /approved already/.test(P.skipPost(a.id).error) && copies.length === 1, "");
-  ok("the app's Approve (copy: null) records it; the page copies", P.approvePost("nope", { copy: null }).error && copies.length === 1, "");
+  ok("nothing handed over before an approval", runs.length === 0, runs);
+  const ap = P.approvePost(a.id, { hand });
+  const apMd = readFileSync(join(MK, ap.handed.rel || "x"), "utf8"), apAns = readFileSync(join(MK, ".symbiot", "ANSWERS.md"), "utf8");
+  ok("Approve hands the post to Marketing's agent and starts it, once: nothing for you to copy or paste", ap.ok && ap.handed.job === "mj1" && runs.length === 1 && runs[0].d === MK && runs[0].o2.force && /posting it on LinkedIn now/.test(ap.note) && !/paste|yourself/i.test(ap.note) && ap.copied === undefined && ap.share === undefined, ap);
+  ok("…as an approved draft in its lane, the text exactly as approved", /^## Post\n/m.test(apMd) && apMd.includes("## Post\n" + ap.post.text + "\n\n## Notes") && /platform: linkedin/.test(apMd) && JSON.parse(readFileSync(join(MK, ".symbiot", "drafts.json"), "utf8"))[ap.handed.rel].status === "approved", apMd);
+  ok("…and its agent is told to post it through the signed-in browser and check it's there", apAns.includes(`### Approved: ${ap.handed.rel}`) && /signed-in browser/.test(apAns) && /check it's there/.test(apAns), apAns);
+  ok("an approved post can't be approved, edited or skipped again", /approved already/.test(P.approvePost(a.id, { hand }).error) && /approved already/.test(P.editPost(a.id, "x").error) && /approved already/.test(P.skipPost(a.id).error) && runs.length === 1, "");
+  ok("one that isn't there hands nothing over", P.approvePost("nope", { hand }).error && runs.length === 1, "");
+  const busy = P.handToMarketing({ id: "zz", kind: "shipped", text: "Demo shipped a thing.", media: [] }, { dir: MK, names: ["Demo"], run: () => { throw new Error("must not start"); }, running: () => true });
+  ok("Marketing's agent already running: it posts it once that run finishes, no second run", busy.queued && /once the run there now finishes/.test(busy.said) && busy.rel === "drafts/demo/post-zz.md", busy);
   const sk = P.skipPost(b.id);
   ok("Skip drops it from the Dashboard", sk.ok && P.postsState().posts.length === 0 && P.postsState().done.length === 2, P.postsState());
   const bare = { ...P.PATHS, voice: P.PATHS.voice + ".none" }, s0 = P.postsState(bare, { linked: () => ({}) }), s1 = P.postsState(bare, { linked: () => ({ linkedin: { at: 1 } }) });
@@ -151,7 +155,7 @@ try {
   ok("symbiot post log: every action, with its date", /skipped/.test(cli("log").out) && /edited/.test(cli("log").out) && /approved/.test(cli("log").out) && /\d{4}-\d{2}-\d{2} \d{2}:\d{2}/.test(cli("log").out), cli("log").out.slice(-400));
   ok("a CLI id that isn't there fails, and says so", cli("approve", "nope").code === 1 && /No draft nope/.test(cli("approve", "nope").out), "");
 
-  console.log("PICTURES AND VIDEOS — an idea for each draft, yours or a page's, given to you at Approve");
+  console.log("PICTURES AND VIDEOS — an idea for each draft, yours or a page's, handed over at Approve");
   const showing = async (s, p) => JSON.stringify({ posts: JSON.parse(await honest(s, p)).posts.map((x) => ({ ...x, show: "a picture of the   digest export\nin the app" })) });
   let sysSaid = "";
   const md = await P.draftPosts({ repos, gh: false, ask: async (s, p) => { sysSaid = s; return showing(s, p); } });
@@ -191,10 +195,11 @@ try {
     const v = P.toVideo([{ ts: 0, jpeg: frame("red") }, { ts: 1, jpeg: frame("blue") }], 3);
     ok("toVideo (ffmpeg here): real frames become an MP4, and its scratch folder goes", v.mp4 && P.mediaType(v.mp4) === "mp4" && !readdirSync(P.PATHS.media).some((x) => x.startsWith(".clip-")), v.error || readdirSync(P.PATHS.media));
   } else ok("toVideo: without ffmpeg a clip says to install it", /ffmpeg/.test(P.NO_FFMPEG), "");
-  const am = P.approvePost(m1.id, { copy });
-  ok("Approve gives the post's files and their folder, and says to add them in LinkedIn", am.ok && am.files.length === 2 && am.files.every((f) => existsSync(f)) && am.folder === P.mediaDir(m1.id) && /add its 2 pictures there/.test(am.note), am);
+  const am = P.approvePost(m1.id, { hand });
+  const amMd = readFileSync(join(MK, am.handed.rel), "utf8"), amMedia = (amMd.match(/^media: (.+)$/m) || [])[1] || "";
+  ok("Approve hands the post's pictures over with it, next to it in Marketing's lane, and its agent attaches them", am.ok && amMedia.split(", ").length === 2 && amMedia.split(", ").every((f) => existsSync(join(MK, am.handed.rel, "..", f))) && readFileSync(join(MK, ".symbiot", "ANSWERS.md"), "utf8").includes(amMedia + " attached"), amMd);
   ok("…and logs what it carried", (P.postLog().slice(-1)[0].media || []).length === 2, P.postLog().slice(-1)[0]);
-  ok("a draft with a video: its one file, and the note says so", (() => { const x = P.approvePost(m2.id, { copy }); return x.ok && x.files.length === 1 && /add its video there/.test(x.note); })(), "");
+  ok("a draft with a video: its one file goes over with it", (() => { const x = P.approvePost(m2.id, { hand }); return x.ok && /^media: [^,\n]+$/m.test(readFileSync(join(MK, x.handed.rel), "utf8")); })(), "");
   const clip3 = P.loadPosts().posts.find((x) => x.id === m3.id).media[0];
   ok("symbiot post add <id> <file>: a picture of yours, from the command line", (() => { writeFileSync(join(HOME, "shot.png"), PNG); const r = cli("add", m3.id, join(HOME, "shot.png")); return r.code === 1 && /not both/.test(r.out); })() && clip3.kind === "video", "");
   ok("symbiot post remove <id> <media id>, then add works", cli("remove", m3.id, clip3.id).code === 0 && cli("add", m3.id, join(HOME, "shot.png")).code === 0 && P.loadPosts().posts.find((x) => x.id === m3.id).media[0].name === "shot.png", P.loadPosts().posts.find((x) => x.id === m3.id).media);
@@ -251,6 +256,37 @@ try {
   const dr = W.draftReply("n1", { run: (dir, o) => { ran.push([dir, o]); return { id: "j1" }; } });
   const dir = join(CFG, "drafts", "n1");
   ok("Draft a reply on it: the run gets the LinkedIn brief and SYMBIOT_DRAFT (no Post, no Send)", dr.ok && dr.social && ran.length === 1 && /Never post it/.test(readFileSync(join(dir, ".symbiot", "TASKS.md"), "utf8")) && JSON.parse(readFileSync(join(dir, ".symbiot", "handoff.json"), "utf8")).env.SYMBIOT_DRAFT === "1", dr);
+
+  console.log("A DRAFT ON ITS CARD — the reply itself, Go ahead sends it, Change it redrafts (2026-10-08: Frikkie's reply never showed)");
+  const meta = () => JSON.parse(readFileSync(join(dir, ".symbiot", "handoff.json"), "utf8")), brief = () => readFileSync(join(dir, ".symbiot", "TASKS.md"), "utf8");
+  ok("the brief: the reply under ## The reply with To:, notes apart; no asking to send it, the card does", /a first line `To: <their first name>`/.test(br) && /## Notes/.test(br) && /Don't ask in QUESTIONS\.md to send/.test(br) && !/posts it themselves/.test(br), br.slice(0, 300));
+  ok("its folder says it's a LinkedIn draft", meta().draft && meta().draft.kind === "social" && meta().draft.platform === "LinkedIn", meta());
+  ok("no card while it's drafting", W.draftCard(dir) === null, "");
+  writeFileSync(join(dir, ".symbiot", "TASKS.md"), brief().replace("- [ ] Draft a reply", "- [x] Draft a reply") + "\n## The reply\nTo: Sam\nHi Sam, it's free for teams of up to 5.\n\nHappy to help you set it up.\n\n## Notes\nI checked the pricing page first.\n");
+  const dc = W.draftCard(dir);
+  ok("drafted: the card has the reply, all of it and only it, to whom and where", dc && dc.to === "Sam" && dc.text === "Hi Sam, it's free for teams of up to 5.\n\nHappy to help you set it up." && dc.platform === "LinkedIn" && dc.kind === "social", dc);
+  const { homeState, homeAnswer } = await import("../home.mjs");
+  const hs = homeState({ fresh: true, deps: { pending: () => [], agents: () => [], repos: () => ({}), tasks: () => [], stuck: () => [], drafts: () => [dc], connected: () => true, rootsSet: () => true, search: () => ({ searching: false, at: 1 }), confirmed: () => true } });
+  const dy = hs.you.find((x) => x.id === "draft:n1");
+  ok("on Home: 'Reply to Sam on LinkedIn', the reply on it, Go ahead or Skip", dy && dy.title === "Reply to Sam on LinkedIn" && dy.draft && dy.draft.text === dc.text && dy.options.join() === "Go ahead (recommended),Skip", hs.you.map((x) => x.id));
+  ok("…and it says what Go ahead does, never that the agent can't send", dy && /Go ahead sends it to Sam from your LinkedIn/.test(dy.q) && !/can't|cannot|won't let/i.test(dy.q + dy.sub), dy && dy.q);
+  const ran2 = [];
+  const dch = homeAnswer("draft:n1", { text: "make it shorter, no second line" }, { draftAnswer: (id, o) => W.draftAnswer(id, { ...o, run: (d, oo) => { ran2.push([d, oo]); return { id: "j2" }; } }) });
+  ok("Change it (your own words): the drafting agent redrafts, still unable to send", dch.ok && ran2.length === 1 && /## Change it\n[^\n]*make it shorter, no second line/.test(brief()) && /- \[ \] Draft a reply/.test(brief()) && meta().env.SYMBIOT_DRAFT === "1", [dch, brief().slice(-400)]);
+  ok("…the card waits for the new version", W.draftCard(dir) === null, "");
+  writeFileSync(join(dir, ".symbiot", "TASKS.md"), brief().replace("- [ ] Draft a reply", "- [x] Draft a reply").replace(/## The reply\n[\s\S]*?(?=\n## )/, "## The reply\nTo: Sam\nHi Sam, it's free for teams of up to 5.\n"));
+  ok("…and shows it when it's there", W.draftCard(dir) && W.draftCard(dir).text === "Hi Sam, it's free for teams of up to 5.", W.draftCard(dir));
+  const ran3 = [];
+  const dgo = homeAnswer("draft:n1", { pick: 0 }, { draftAnswer: (id, o) => W.draftAnswer(id, { ...o, run: (d, oo) => { ran3.push([d, oo]); return { id: "j3" }; } }) });
+  ok("Go ahead: a run that sends it, without SYMBIOT_DRAFT, with the approved text", dgo.ok && ran3.length === 1 && ran3[0][1].force && !meta().env.SYMBIOT_DRAFT && /# Send the approved reply: LinkedIn/.test(brief()) && /## The reply\nTo: Sam\nHi Sam, it's free for teams of up to 5\.\n/.test(brief()), [dgo, meta(), brief().slice(0, 200)]);
+  ok("…and the card is gone while it sends", W.draftCard(dir) === null && meta().draft.state === "sending", meta());
+  const { needsOf } = await import("../agents.mjs"), said = "The reply to Sam is ready for you to send. It isn't sent.";
+  ok("a draft folder's 'ready for you to send' is its card's, never a 'waits for your OK' rerun (that run can't send)", needsOf(dir, { final: said }) === null, needsOf(dir, { final: said }));
+  const other = join(HOME, "elsewhere"); mkdirSync(join(other, ".symbiot"), { recursive: true });
+  ok("…while any other run's still is", !!needsOf(other, { final: said }), "");
+  writeFileSync(join(dir, ".symbiot", "TASKS.md"), "# Draft a reply: LinkedIn\n## Tasks\n- [x] Draft a reply to: x\n\n## The reply\nTo: Sam\nHi\n");
+  const dsk = homeAnswer("draft:n1", { pick: 1 }, {});
+  ok("Skip: it won't be sent, and the card goes", dsk.ok && W.draftCard(dir) === null && meta().draft.state === "skipped", [dsk, meta()]);
 
   console.log("HASHTAG LABELS — LinkedIn's \"hashtag\" line over each #tag stays out of the voice and the drafts");
   const tagged = "Shipped the liquid home this week, and it rests as one orb.\n\nhashtag\n#DeveloperTools\nhashtag\n#AI";

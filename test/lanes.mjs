@@ -16,8 +16,8 @@ mkdirSync(CFG, { recursive: true });
 let pass = 0, fail = 0;
 const ok = (n, c, got) => { if (c) { pass++; console.log("  ✓ " + n); } else { fail++; console.log("  ✗ " + n + (got !== undefined ? "  got: " + JSON.stringify(got) : "")); } };
 
-const { lanesTick, loadLedger, lanesState, MAX_CHAIN, aboutIt, partlyDone, remoteKey, orcaMoves, orcaRelink, stuckHandovers, allowHandover, skipHandover, namedDirs } = await import("../lanes.mjs");
-const { parseHandoffs, handoverRules, ONLY_YOU, leftToYou } = await import("../handover.mjs");
+const { dispatch, lanesTick, loadLedger, lanesState, MAX_CHAIN, aboutIt, partlyDone, remoteKey, orcaMoves, orcaRelink, stuckHandovers, allowHandover, skipHandover, namedDirs } = await import("../lanes.mjs");
+const { parseHandoffs, handoverRules, ONLY_YOU, leftToYou, gitWork, agentsGitWork, agentsPosting, linkedAsks, linkedChore } = await import("../handover.mjs");
 const { buildTasksMd } = await import("../tasks.mjs");
 const { actBrief } = await import("../mind.mjs");
 
@@ -215,6 +215,31 @@ try {
   ok("…nor a feature it describes (\"lit amber when something needs you: work waiting for your OK\")", leftToYou(feat) === null, leftToYou(feat));
   ok("…while a held draft still counts, with a \"when\" after it", (leftToYou("The draft isn't sent. Send it when you're happy with it.") || {}).kind === "approve", leftToYou("The draft isn't sent. Send it when you're happy with it."));
   ok("the brief: what waits on the user's OK goes in QUESTIONS.md with what to check first, never only in the last message", /Whatever waits on the user's OK \(sending, posting, deleting, paying, closing\)[^.]*goes in QUESTIONS\.md as a question, with what they should check first[^.]*never only in your last message/.test(ONLY_YOU), "");
+  const pc = leftToYou("The commit and push didn't happen. The three changes are still uncommitted, and waiting for you to commit and push them: `git add -A && git commit`, then `git push origin main`.");
+  ok("…local git work left in its last words (commit, push) is an OK for its agent to do it, never a step only you can take", pc && pc.kind === "approve", pc);
+  ok("…git work is told apart from what needs who you are (a password, a token, signing in)", gitWork("git push origin main") && gitWork("Commit the fix and push it to main") && gitWork("pull the latest from origin") && !gitWork("type your GitHub password when git push asks") && !gitWork("sign in to gh, then push the branch") && !gitWork("paste the token into .env"), "");
+  // the card a failed CI run left (paperclip-steve, 2026-10-08): paste git commands into a terminal yourself
+  const ci = agentsGitWork(["👤 You: review the diff, then run `git add -A && git commit -m \"ci: skip claude test when absent\"` and `git push origin main` (recommended)", "Leave it for now"]);
+  ok("a failed CI run's \"👤 You: … git add, commit, push\" option is the agent's, with an OK on the Workdesk before the push", /^🤖 Agent: review the diff, then run `git add -A/.test(ci[0]) && /asking for your OK on the Workdesk, with the files, before it pushes \(recommended\)$/.test(ci[0]) && ci[1] === "Leave it for now", ci);
+  ok("…dropped when another option already has the agent do it", agentsGitWork(["🤖 Agent: commit and push the fix", "👤 You: commit and push it yourself"]).join("|") === "🤖 Agent: commit and push the fix", "");
+  ok("…while a step that needs who you are stays yours", /^👤/.test(agentsGitWork(["👤 You: type your GitHub password when git push asks"])[0]), "");
+  // the Marketing card (the [Steve] series, 2026-10-08), with LinkedIn linked in Symbiot's browser
+  const mk = ["👤 You (only you: your linkedin): schedule all three now in linkedin's scheduler, 08:00 on tue 13, 20 and 27 oct. paste each post's text and attach its card (recommended)", "👤 You (only you: your linkedin): schedule only week 2 now and approve 3 and 4 one at a time"];
+  const mp = agentsPosting(mk, ["github", "linkedin"]);
+  ok("posting, scheduling or pasting on a linked platform is never \"only you\": the agent's, once you approve its preview", mp.every((o) => /^🤖 Agent: schedule/.test(o) && /once you approve its preview on the Workdesk/.test(o)) && /\(recommended\)$/.test(mp[0]) && !mp.some((o) => /only you/.test(o)), mp);
+  ok("…signing in to it stays yours", /^👤/.test(agentsPosting(["👤 You (only you: your linkedin sign-in): sign in once on linkedin's own page"], ["linkedin"])[0]), "");
+  ok("…and so does a platform that isn't linked in Symbiot", agentsPosting(mk, ["github"]).join() === mk.join(), "");
+  // the poster card (2026-10-08): "let a poster on this computer put the steve posts up for you?", LinkedIn linked
+  const pq = ["👤 You (only you: your linkedin sign-in): ok it, and i'll have the ops lane build a poster that posts each one as you (recommended)", "👤 You (only you: your linkedin): keep doing it by hand. schedule each post in linkedin yourself"];
+  const pl = linkedAsks(pq, ["linkedin"]), shown = agentsPosting(pl, ["linkedin"]);
+  ok("a linked platform: no sign-in or link step is yours, and doing it by hand isn't offered", shown.length === 1 && /^🤖 Agent: post it through Symbiot's browser, already signed in to LinkedIn, once you approve its preview on the Workdesk \(recommended\)$/.test(shown[0]) && !shown.some((o) => /👤|only you|by hand|yourself|sign-in/.test(o)), shown);
+  ok("…every option by hand: the agent's one is offered instead, never none", linkedAsks(["do it by hand", "👤 You (only you: a browser): paste it in manually"], ["linkedin"], "Post week 2 on LinkedIn?").join() === "🤖 Agent: post it through Symbiot's browser, already signed in to LinkedIn, once you approve its preview on the Workdesk (recommended)", "");
+  ok("…signing in again stays yours when a real attempt found the session expired, and says so", /^👤/.test(linkedAsks(["👤 You (only you: your linkedin sign-in): the session expired when it tried to post: sign in again in Symbiot's browser"], ["linkedin"])[0]), "");
+  ok("…and a platform that isn't linked still asks you to sign in", linkedAsks(pq, ["github"]).join() === pq.join(), "");
+  ok("a run's last words asking you to sign in to a linked platform, or make its developer app, aren't left to you", linkedChore("👤 You: create LinkedIn's developer app and sign in to give it the one-time OK to post as you", ["linkedin"]) && !linkedChore("👤 You: create LinkedIn's developer app", ["github"]) && !linkedChore("LinkedIn signed out when it tried: sign in again", ["linkedin"]), "");
+  ok("the brief: prefer the linked browser session over APIs and apps that need the user; never offer it by hand", /Prefer what's already linked: Symbiot's own browser \(`~\/\.config\/symbiot\/browser`\) is signed in to the sites the user linked/.test(ONLY_YOU) && /ask them to sign in only when a real attempt found the session expired/.test(ONLY_YOU) && /never offer doing an agent's job by hand/.test(ONLY_YOU), "");
+  ok("the brief: marketing posts once the user approves its preview, it doesn't leave it to them", /`marketing`:[^\n]*approves each one's preview, and then it posts or schedules it itself through Symbiot's signed-in browser/.test(handoverRules(["symbiot", "marketing"], "symbiot").join("\n")), "");
+  ok("the brief: local git work is never a 👤 step: do it, ask for an OK before a push", /Local git work \(staging, committing, pulling, pushing[^)]*\) is never a 👤 step[^.]*ask only for an OK in QUESTIONS\.md before a push/.test(ONLY_YOU), "");
   const { agentsList, settleNeeds, NEEDS_FOR } = await import("../agents.mjs");
   const streamed = (p, ts, result) => put(p, "agent.log", `\n=== x ${new Date(ts).toISOString()} ===\n$ claude -p …\n${JSON.stringify({ type: "result", subtype: "success", is_error: false, result })}\n`);
   const noted = (...rs) => { let had = []; try { had = JSON.parse(readFileSync(join(CFG, "runs.json"), "utf8")); } catch {} writeFileSync(join(CFG, "runs.json"), JSON.stringify([...rs, ...had])); };
@@ -269,6 +294,38 @@ try {
   const rw3 = await readLastWords({ ask: async () => { throw new Error("no"); }, connected: () => false, list: [] });
   ok("…and with no runs to read, nothing is asked", rw3.read === 0, rw3);
   ok("its answer, read strictly: JSON only, a kind it knows, a what it says", parseRead('{"needs": true, "kind": "weird", "what": "Sign in to Meta and copy the token."}').kind === "step" && parseRead('```json\n{"needs": false}\n```').needs === false && parseRead("I think so") === null && parseRead('{"needs": true, "what": ""}').needs === false, "");
+
+  console.log("A HANDOVER REWRITTEN MID-RUN — it supersedes that run, never a second one");
+  {
+    const asker = lane("marketer"), smap = { ...map, marketer: asker }, sOps = join(CFG, "drafts", "act-sup"); mkdirSync(join(sOps, ".symbiot"), { recursive: true });
+    const led = { handoffs: [] }, acts = [], refreshed = [], drops = [], adds = [], runs = [];
+    let going = new Set();
+    const sd = (extra = {}) => ({ map: smap, ledger: led, now: Date.now(), running: (p) => going.has(p), tasks: () => extra.tasks || [],
+      act: (text) => { acts.push(text); return { ok: true, job: "a" + acts.length, dir: sOps }; },
+      refresh: (e, text) => { refreshed.push({ e: e.id, text }); return { ok: true }; },
+      drop: (id) => drops.push(id), add: (text, repo) => { adds.push({ text, repo }); return { id: "t" + (adds.length) }; },
+      push: () => ({ written: [{}] }), run: (p) => { runs.push(p); return { busy: true }; } });
+    const v1 = "Build a LinkedIn auto-poster that posts approved drafts through the signed-in browser session.";
+    const v2 = "Build a LinkedIn auto-poster that posts approved drafts through the signed-in browser session, and schedules weeks 2-4.";
+    put(asker, "HANDOFF.md", "### ops\n" + v1 + "\n");
+    dispatch(asker, sd()); going = new Set([sOps]);
+    put(asker, "HANDOFF.md", "### ops\n" + v2 + "\n");
+    const s2 = dispatch(asker, sd());
+    ok("ops still building v1: v2 goes to that run, no second ops run", acts.length === 1 && refreshed.length === 1 && refreshed[0].text === v2 && s2.length === 1, { acts, refreshed });
+    ok("…one ledger row, now v2, not counted done by the old run", led.handoffs.length === 1 && led.handoffs[0].text === v2 && led.handoffs[0].superseded === 1 && led.handoffs[0].was.length === 1, led.handoffs);
+    ok("…and not picked up again on the next pass", dispatch(asker, sd()).length === 0 && acts.length === 1, acts.length);
+    put(asker, "HANDOFF.md", "### ops\nFind a JDK 17 on this machine and give its path.\n");
+    dispatch(asker, sd());
+    ok("a different handover to the same lane: a run of its own", acts.length === 2 && refreshed.length === 1, acts.length);
+    going = new Set(); led.handoffs.length = 0; acts.length = 0; refreshed.length = 0;
+    put(asker, "HANDOFF.md", "### ops\n" + v1 + "\n"); dispatch(asker, sd());
+    put(asker, "HANDOFF.md", "### ops\n" + v2 + "\n"); dispatch(asker, sd());
+    ok("the earlier run already over: the new version starts as usual", acts.length === 2 && refreshed.length === 0, acts.length);
+    led.handoffs.length = 0;
+    put(asker, "HANDOFF.md", "### coral\n" + v1 + "\n"); dispatch(asker, sd());
+    put(asker, "HANDOFF.md", "### coral\n" + v2 + "\n"); const r2 = dispatch(asker, sd({ tasks: [{ id: "t1" }] }));
+    ok("a repo lane, its task still open: the old task gives way to the new one, one row", drops[0] === "t1" && adds.length === 2 && adds[1].text === v2 && led.handoffs.length === 1 && led.handoffs[0].task === "t2" && r2[0].status === "held", { drops, adds, led: led.handoffs });
+  }
 } finally {
   rmSync(HOME, { recursive: true, force: true });
 }

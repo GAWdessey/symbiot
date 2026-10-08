@@ -9,9 +9,10 @@
 // - Your voice: example posts of yours in voice.md (Symbiot's config folder), a
 //   line of --- between each. Without them it doesn't draft. Link LinkedIn and it
 //   can read your recent posts into voice.md for you, on your click.
-// - Nothing is posted by Symbiot, ever. LinkedIn has no posting route without a
-//   partner app, so Approve copies the post to your clipboard and opens LinkedIn's
-//   share box for you to paste it. It doesn't schedule.
+// - Nothing is posted until you approve it, and then posting is the agent's job,
+//   not yours: Approve hands the post to Marketing's agent, which posts it through
+//   Symbiot's browser signed in to LinkedIn (LinkedIn has no posting route without
+//   a partner app), with exactly the text you approved, and checks it's there.
 // - Every action (drafted, edited, approved, skipped, dropped, replaced) is
 //   appended to posts-log.jsonl, with the text, the date and the platform.
 // - Pictures and videos: each draft says in a line what would show it best
@@ -29,8 +30,10 @@ import { randomBytes } from "node:crypto";
 import { connect } from "node:net";
 import { CONFIG_DIR, sh, hasCmd, loadConfig } from "./core.mjs";
 import { resolveProvider, write } from "./ai.mjs";
-import { commits, discoveredRepos } from "./scan.mjs";
+import { commits, discoveredRepos, laneMap } from "./scan.mjs";
 import { readTexts, pagePicture, pageClip, siteUrl, CLIP } from "./headless.mjs";
+import { runHandoff, runningHandoff } from "./agents.mjs";
+import { MARKETING_DIR, ensureMarketing, setDraftStatus, productOf, productNames } from "./marketing.mjs";
 
 const PATHS = { posts: join(CONFIG_DIR, "posts.json"), log: join(CONFIG_DIR, "posts-log.jsonl"), voice: join(CONFIG_DIR, "voice.md"), media: join(CONFIG_DIR, "post-media"), test: join(CONFIG_DIR, "post-test.json") };
 const PLATFORM = "linkedin";
@@ -300,17 +303,39 @@ function skipPost(id, { now = Date.now(), paths = PATHS } = {}) {
   w.p.status = "skipped"; w.p.skipped = now; savePosts(w.d, paths); logAction("skipped", w.p, now, paths);
   return { ok: true, post: w.p };
 }
-// Approve: your yes to this one post. It's logged, then copied to your clipboard
-// (`copy`: copyText in a terminal; the app's page copies it itself, so it passes
-// null) for you to paste into LinkedIn's share box (`share`), with its pictures or
-// video (`files`, in `folder`) to add there. Symbiot doesn't post or schedule it.
-function approvePost(id, { copy = copyText, now = Date.now(), paths = PATHS } = {}) {
+// Approve: your yes to this one post, and your only step in it. It's logged, then
+// handed to Marketing's agent (handToMarketing), which posts it through Symbiot's
+// browser signed in to LinkedIn, pictures or video and all. Nothing for you to
+// copy, paste or attach (that made posting your job: the last place that still did).
+function approvePost(id, { hand = handToMarketing, now = Date.now(), paths = PATHS } = {}) {
   const w = waiting(id, paths); if (w.error) return w;
   w.p.status = "approved"; w.p.approved = now; savePosts(w.d, paths); logAction("approved", w.p, now, paths, mediaNote(w.p));
-  const copied = copy ? copy(w.p.text) : "";
-  const files = mediaFiles(w.p, paths), what = mediaWords(w.p.media);
-  return { ok: true, post: w.p, copied, share: SHARE_URL, files, folder: files.length ? mediaDir(w.p.id, paths) : "",
-    note: `Symbiot doesn't post or schedule it: paste it into LinkedIn's share box${what ? `, add its ${what} there (the photo or video button)` : ""} and post it yourself.` };
+  const h = hand(w.p, { now, paths }) || { error: "Marketing's agent wasn't given it." };
+  return { ok: true, post: w.p, handed: h, note: h.error ? `Approved, but it didn't reach Marketing's agent: ${h.error}` : h.said };
+}
+// The post, into Marketing's lane as an approved draft (drafts/<product>/post-<id>.md,
+// the text under ## Post, unchanged, its pictures or video copied next to it, approved
+// by its text as the Marketing page approves one), and its agent told in ANSWERS.md to
+// post it, then started: now, or once the run there finishes. { rel, said, job?, queued? } or { error }.
+function handToMarketing(p, { now = Date.now(), paths = PATHS, dir = MARKETING_DIR, run = runHandoff, running = runningHandoff, names } = {}) {
+  if (!ensureMarketing(dir)) return { error: "Couldn't make Marketing's folder." };
+  if (!names) { try { names = productNames(laneMap()); } catch { names = []; } }
+  const product = productOf(p.text, names), folder = (product.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "linkedin"), rel = `drafts/${folder}/post-${p.id}.md`;
+  const media = [];
+  try {
+    mkdirSync(join(dir, "drafts", folder), { recursive: true });
+    for (const m of p.media || []) { const name = `post-${p.id}-${m.file}`; writeFileSync(join(dir, "drafts", folder, name), readFileSync(join(mediaDir(p.id, paths), m.file))); media.push(name); }
+    writeFileSync(join(dir, rel), `# ${KIND_LABEL[p.kind] || "Post"}: approved under Drafts to post\n${product ? `product: ${product}\n` : ""}platform: ${PLATFORM}\n${media.length ? `media: ${media.join(", ")}\n` : ""}\n## Post\n${p.text}\n\n## Notes\nDrafted by Symbiot from the week's git and approved by the user on ${new Date(now).toISOString().slice(0, 10)}.${(p.sources || []).length ? `\nFrom git:\n${p.sources.map((x) => "- " + x).join("\n")}` : ""}\n`);
+  } catch (e) { return { error: "Couldn't write it into Marketing's folder: " + ((e && e.message) || e) }; }
+  const st = setDraftStatus(rel, "approved", { dir, now }); if (st.error) return st;
+  try {
+    const f = join(dir, ".symbiot", "ANSWERS.md"), had = existsSync(f) ? readFileSync(f, "utf8") : "# Answers\n";
+    writeFileSync(f, `${had.replace(/\s*$/, "")}\n\n### Approved: ${rel}\nThe user approved this post under Drafts to post. Post it on LinkedIn now, through Symbiot's signed-in browser, with exactly the text under its post (${p.text.length} characters, unchanged)${media.length ? ` and ${media.join(", ")} attached` : ""}. Then check it's there, and say so in your last message.\n_answered ${new Date(now).toISOString().slice(0, 10)}_\n`);
+  } catch (e) { return { error: "Couldn't tell Marketing's agent: " + ((e && e.message) || e) }; }
+  if (running(dir)) return { rel, queued: true, said: "Approved. Marketing's agent posts it on LinkedIn once the run there now finishes." };
+  const e = run(dir, { force: true });
+  return e && e.id && !e.blocked && !e.busy ? { rel, job: e.id, said: "Approved. Marketing's agent is posting it on LinkedIn now, through Symbiot's signed-in browser." }
+    : { rel, queued: true, said: `Approved. ${(e && e.note) || "Marketing's agent posts it once it starts: pick your coding agent in Settings → Handoff if it doesn't."}` };
 }
 
 // ---- pictures and videos -----------------------------------------------------------
@@ -319,8 +344,8 @@ function approvePost(id, { copy = copyText, now = Date.now(), paths = PATHS } = 
 // browser, at twice the pixels), or a short clip of one (recorded there, scrolling
 // slowly down, and made an MP4 by ffmpeg). Each is a copy, kept yours only in
 // post-media/<post id>/ in Symbiot's config folder. Symbiot attaches nothing:
-// LinkedIn's share box can't be filled in from outside, so Approve gives you the
-// files (and the app opens their folder) to add there yourself.
+// Approve hands them to Marketing's agent with the post, to attach in LinkedIn's
+// share box through Symbiot's signed-in browser.
 const MEDIA = { png: ["picture", "image/png"], jpg: ["picture", "image/jpeg"], gif: ["picture", "image/gif"], mp4: ["video", "video/mp4"], mov: ["video", "video/quicktime"], webm: ["video", "video/webm"] };
 const MAX_PICTURES = 20, MAX_BYTES = { picture: 20 * 1024 * 1024, video: 500 * 1024 * 1024 };
 const NOT_MEDIA = "That isn't a picture or video LinkedIn takes: a PNG, JPG or GIF picture, or an MP4, MOV or WebM video.";
@@ -337,7 +362,6 @@ function mediaType(buf) {
   return "";
 }
 const mediaDir = (postId, paths = PATHS) => join(paths.media, String(postId).replace(/[^\w-]/g, ""));
-const mediaFiles = (p, paths = PATHS) => (p.media || []).map((m) => join(mediaDir(p.id, paths), m.file));
 // "2 pictures", "its video": what a post carries, in words ("" for nothing)
 function mediaWords(media = []) {
   const v = media.filter((m) => m.kind === "video").length, n = media.length - v;
@@ -587,5 +611,5 @@ async function testInstalls(t, { now = Date.now(), get = null } = {}) {
 }
 function maybeCustomer(text) { const s = String(text || ""); const hit = CUSTOMER.find(([, re]) => re.test(s)); return hit ? hit[0] : ""; }
 
-export { TEST_WEEKS, testWeeks, testInstalls, testPackages, PATHS, PLATFORM, SHARE_URL, KINDS, KIND_LABEL, LINKEDIN_ACTIVITY, NO_AI, voiceOf, loadVoice, voiceFromLinkedIn, tagsIn, changelogIn, gatherFacts, factLine, numbersIn, namesIn, checkClaims, parseDrafts, vetDraft, draftPosts, loadPosts, postLog, postsState, editPost, skipPost, approvePost, copyText, openUrl, maybeCustomer,
+export { TEST_WEEKS, testWeeks, testInstalls, testPackages, PATHS, PLATFORM, SHARE_URL, KINDS, KIND_LABEL, LINKEDIN_ACTIVITY, NO_AI, voiceOf, loadVoice, voiceFromLinkedIn, tagsIn, changelogIn, gatherFacts, factLine, numbersIn, namesIn, checkClaims, parseDrafts, vetDraft, draftPosts, loadPosts, postLog, postsState, editPost, skipPost, approvePost, handToMarketing, copyText, openUrl, maybeCustomer,
   mediaType, mediaDir, mediaWords, addMedia, removeMedia, mediaFile, pictureOfPage, clipOfPage, concatList, toVideo, canClip, NO_FFMPEG, localApps, screenFor, picturesFor, listening };

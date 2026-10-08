@@ -2,14 +2,14 @@
 // each repo gets (.symbiot/TASKS.md), what the agent ticked (review), and
 // Approve: branch, commit, push, PR, and the version bump and npm release facts
 // it shows.
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { join } from "node:path";
-import { readFileSync, writeFileSync, existsSync, readdirSync, mkdirSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, readdirSync, mkdirSync, statSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { VERSION, LATEST_VERSION, REGISTRY, semverGt, loadConfig, saveConfig, loadTasks, saveTasks, TASK_MAX, clipWords, taskWords, sameTask, uniqueTasks, sh, hasCmd, repoState } from "./core.mjs";
 import { handoverRules, ONLY_YOU, HANDBACK } from "./handover.mjs";
 import { userStyleLine } from "./adapt.mjs";
-import { QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, handoffCmd, runningHandoff, writeTasks, droppedTasks, startHeldTasks, connectorsLine } from "./agents.mjs";
+import { QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, isUrgent, handoffCmd, runningHandoff, untrackedBefore, forgetUntracked, writeTasks, droppedTasks, startHeldTasks, connectorsLine } from "./agents.mjs";
 import { gitDefaultBranch } from "./drift.mjs";
 import { readRunLog } from "./work.mjs";
 import { repoPathMap, laneMap, openWork, detectRepo } from "./scan.mjs";
@@ -125,6 +125,29 @@ function git(repo, args, timeout = 30000) {
   const r = spawnSync("git", ["-C", repo, ...args], { encoding: "utf8", timeout, maxBuffer: 32 * 1024 * 1024, env: { ...process.env, GIT_TERMINAL_PROMPT: "0" } });
   return { ok: r.status === 0, out: String(r.stdout || "").replace(/\s+$/, ""), err: String(r.stderr || (r.error && r.error.message) || "").trim() };
 }
+// The same, in the background: Approve's status and add can take minutes in a big
+// tree, and spawnSync held the whole app up until it timed out (ETIMEDOUT). On a
+// timeout git gets SIGTERM first, so it lets go of .git/index.lock.
+function gitAsync(repo, args, timeout = 30000, { input = null, env = {} } = {}) {
+  return new Promise((resolve) => {
+    let out = "", err = "", timedOut = false, done = false, kill = null;
+    const p = spawn("git", ["-C", repo, ...args], { env: { ...process.env, GIT_TERMINAL_PROMPT: "0", ...env }, stdio: [input == null ? "ignore" : "pipe", "pipe", "pipe"] });
+    const t = setTimeout(() => { timedOut = true; p.kill("SIGTERM"); kill = setTimeout(() => p.kill("SIGKILL"), 5000); }, timeout);
+    const end = (code, e) => { if (done) return; done = true; clearTimeout(t); clearTimeout(kill); resolve({ ok: code === 0 && !timedOut, out: out.replace(/\s+$/, ""), err: String(err || (e && e.message) || "").trim(), timedOut, timeout }); };
+    p.stdout.setEncoding("utf8"); p.stderr.setEncoding("utf8");
+    p.stdout.on("data", (d) => { out += d; }); p.stderr.on("data", (d) => { err += d; });
+    p.on("error", (e) => end(-1, e)); p.on("close", (code) => end(code));
+    if (input != null) { p.stdin.on("error", () => {}); p.stdin.end(input); }
+  });
+}
+// At least 2 minutes, and more for a long list of paths: 2 ms a path, up to 10.
+const gitTimeout = (n = 0) => Math.min(600000, 120000 + 2 * n);
+// What to tell the user when git didn't finish: never a bare ETIMEDOUT.
+function gitFailed(what, r, n = 0) {
+  if (!r.timedOut) return `${what} failed: ` + (r.err.split("\n").filter(Boolean).pop() || "unknown error");
+  const many = n > 5000 ? `this repo has about ${n.toLocaleString("en")} changed or untracked files` : "this repo may have a big untracked tree";
+  return `${what} timed out after ${Math.round(r.timeout / 1000)} s: ${many}, probably a venv, node_modules, a dataset or a cache missing from .gitignore. Add it to .gitignore, then approve again.`;
+}
 const NOT_SYMBIOT = ["--", ".", ":(exclude).symbiot"]; // .symbiot/ is Symbiot's scratch (brief + agent log), never shipped
 function workingChanges(path) {
   const st = git(path, ["status", "--porcelain", "-uall", ...NOT_SYMBIOT]);
@@ -133,6 +156,31 @@ function workingChanges(path) {
   const ins = n(/(\d+) insertion/), del = n(/(\d+) deletion/), fresh = files.filter((f) => f.st === "??").length;
   const stat = [ins && `+${ins}`, del && `−${del}`, fresh && `${fresh} new`].filter(Boolean).join(" ");
   return { branch: git(path, ["rev-parse", "--abbrev-ref", "HEAD"]).out, files, stat };
+}
+// `git status --porcelain -z`: [{ st, file, from }], from being a rename's old path.
+function parseStatusZ(out) {
+  const parts = String(out || "").split("\0"), files = [];
+  for (let i = 0; i < parts.length; i++) {
+    const l = parts[i]; if (l.length < 4) continue;
+    const f = { st: l.slice(0, 2).trim(), file: l.slice(3) };
+    if (/^[RC]/.test(l)) f.from = parts[++i];
+    files.push(f);
+  }
+  return files;
+}
+// The paths Approve stages: every tracked change, and the untracked files the
+// agent's runs made. An untracked file that was already there before the first
+// run since the last approve (agents.mjs untrackedBefore) and hasn't changed
+// since is left out: scratch's 170k files of venvs and datasets timed out
+// `git add -A`, and staging the whole tree took in an unignored .env too. With
+// no note of what was there (a run started before Symbiot kept one), it's
+// every change.
+function taskPaths(path, files) {
+  const before = untrackedBefore(path), had = before ? new Set(before.files) : null;
+  const changed = (f) => { try { return statSync(join(path, f)).mtimeMs >= before.at; } catch { return true; } };
+  const mine = (f) => f.st !== "??" || !had || !had.has(f.file) || changed(f.file);
+  const keep = files.filter(mine);
+  return { paths: keep.flatMap((f) => (f.from ? [f.file, f.from] : [f.file])), left: files.length - keep.length };
 }
 // The full diff the agent left behind: tracked changes + new files, capped.
 function workingDiff(path, cap = 400000) {
@@ -332,14 +380,21 @@ function releaseInput(repo, opts = {}) {
 // Ship with the version bumped when opts.bump is "patch" or "minor" and the repo
 // is offered one (bumpOffer), noted in its CHANGELOG.md if it keeps one (in
 // opts.notes' words, when given). Both are put back if the ship fails.
-function shipWithBump(path, texts, opts) {
-  const offer = (opts.bump === "patch" || opts.bump === "minor") && bumpOffer(path);
-  if (!offer) return shipChanges(path, texts, opts);
-  const to = offer[opts.bump], files = workingChanges(path).files.map((f) => f.file);
-  const undo = setVersion(path, to), undoLog = noteChangelog(path, to, texts, files, opts.notes);
-  const r = shipChanges(path, texts, { ...opts, bumped: to });
-  if (r.error) { undo(); undoLog(); return r; }
-  return { ...r, bumped: to };
+// One ship at a time per folder: Approve no longer holds the app up while git
+// runs, so a second click could start another on the same tree.
+const SHIPPING = new Set();
+async function shipWithBump(path, texts, opts) {
+  if (SHIPPING.has(path)) return { error: "Already approving here: wait for that one to finish." };
+  SHIPPING.add(path);
+  try {
+    const offer = (opts.bump === "patch" || opts.bump === "minor") && bumpOffer(path);
+    if (!offer) return await shipChanges(path, texts, opts);
+    const to = offer[opts.bump], files = workingChanges(path).files.map((f) => f.file);
+    const undo = setVersion(path, to), undoLog = noteChangelog(path, to, texts, files, opts.notes);
+    const r = await shipChanges(path, texts, { ...opts, bumped: to });
+    if (r.error) { undo(); undoLog(); return r; }
+    return { ...r, bumped: to };
+  } finally { SHIPPING.delete(path); }
 }
 // What the last run in a folder said when it finished: agent.log after the last
 // run's "=== name time ===" and "$ command" lines.
@@ -427,9 +482,13 @@ function commitSubject(texts) {
 // one instead (mergedAlready). Each step that can't happen (no remote, push
 // rejected, no gh) stops there and says so — the commit is never lost.
 // opts.push=false stops after the commit, opts.pr=false after the push.
-function shipChanges(path, texts, opts = {}) {
-  const ch = workingChanges(path);
+async function shipChanges(path, texts, opts = {}) {
+  const st = await gitAsync(path, ["status", "--porcelain", "-z", "-uall", ...NOT_SYMBIOT], gitTimeout());
+  if (!st.ok) return { error: gitFailed("git status", st) };
+  const ch = { files: parseStatusZ(st.out), branch: git(path, ["rev-parse", "--abbrev-ref", "HEAD"]).out };
   if (!ch.files.length) return { ok: true, nothing: true, note: "No uncommitted changes — approved without a commit." };
+  const { paths, left } = taskPaths(path, ch.files), leftNote = left ? `${left.toLocaleString("en")} untracked file${left === 1 ? " that was" : "s that were"} already there before the agent ran ${left === 1 ? "was" : "were"} left out.` : "";
+  if (!paths.length) return { ok: true, nothing: true, note: "No changes from the agent's runs — approved without a commit. " + leftNote };
   if (!ch.branch || ch.branch === "HEAD") return { error: "Detached HEAD — check out a branch first." };
   const base = gitDefaultBranch(path), day = new Date().toISOString().slice(0, 10); let branch = ch.branch, fresh = "";
   const newBranch = () => {
@@ -453,17 +512,20 @@ function shipChanges(path, texts, opts = {}) {
       if (sw.ok) branch = next;
     }
   }
-  // Stage everything, then drop .symbiot. A `. :(exclude).symbiot` pathspec
-  // warns+exits-1 once .symbiot is gitignored ("paths are ignored, use -f"),
-  // which falsely aborted the ship. `add -A` skips gitignored paths silently;
-  // the reset also covers repos where .symbiot isn't ignored.
-  const add = git(path, ["add", "-A"]); if (!add.ok) return { error: "git add failed: " + add.err, branch };
+  // Stage just the task's paths (taskPaths), in the background, given on stdin
+  // (170k of them don't fit in an argv) and taken literally (a `[` or `*` in a
+  // name isn't a glob). They come from a status that leaves .symbiot out; the
+  // reset also covers anything of it staged before.
+  const add = await gitAsync(path, ["add", "-A", "--pathspec-from-file=-", "--pathspec-file-nul"], gitTimeout(paths.length), { input: paths.join("\0"), env: { GIT_LITERAL_PATHSPECS: "1" } });
+  if (!add.ok) return { error: gitFailed("git add", add, paths.length), branch };
   git(path, ["reset", "-q", "--", ".symbiot"]); // never ship Symbiot's own scratch
   const subject = commitSubject(texts);
   const body = (texts.length ? texts.map((x) => "- " + x).join("\n") : "No ticked task covers these changes.") + (opts.bumped ? `\n\nBumps the version to ${opts.bumped}. ` + (publishesOnMerge(path) ? `It publishes to npm when this merges.` : `After this merges, tag v${opts.bumped} on ${base} to release it.`) : "");
   const cm = git(path, ["commit", "-m", subject, "-m", body]); if (!cm.ok) return { error: "Commit failed: " + (cm.err || cm.out), branch };
-  const out = { ok: true, branch, base, commit: git(path, ["rev-parse", "--short", "HEAD"]).out, subject, ...(fresh ? { note: fresh } : {}) };
-  const noted = (note) => ({ ...out, note: (fresh ? fresh + " " : "") + note });
+  forgetUntracked(path); // committed: the next run notes what's there afresh
+  const said = [fresh, leftNote].filter(Boolean).join(" ");
+  const out = { ok: true, branch, base, commit: git(path, ["rev-parse", "--short", "HEAD"]).out, subject, ...(said ? { note: said } : {}) };
+  const noted = (note) => ({ ...out, note: (said ? said + " " : "") + note });
   if (opts.push === false) return out;
   if (!git(path, ["remote", "get-url", "origin"]).ok) return noted("No origin remote — committed locally.");
   let ps = git(path, ["push", "-u", "origin", branch], 120000);
@@ -495,14 +557,16 @@ function shipChanges(path, texts, opts = {}) {
 // Per-repo opt-in to auto-merge Approve PRs once CI passes (default off).
 function autoMergeRepos() { const a = loadConfig().autoMerge; return Array.isArray(a) ? a : []; }
 function setAutoMerge(repo, on) { const cfg = loadConfig(); let a = (Array.isArray(cfg.autoMerge) ? cfg.autoMerge : []).filter((x) => x !== repo); if (on && repo) a.push(repo); if (a.length) cfg.autoMerge = a; else delete cfg.autoMerge; saveConfig(cfg); return { ok: true, repos: cfg.autoMerge || [] }; }
-function approveRepo(repo, opts = {}) {
-  const t = loadTasks(); const items = t.filter((x) => x.repo === repo && x.review && !x.done && !x.archived);
-  if (!items.length) return { error: "Nothing awaiting review for " + (repo || "(no repo)") + "." };
+async function approveRepo(repo, opts = {}) {
+  const waiting = (t) => t.filter((x) => x.repo === repo && x.review && !x.done && !x.archived);
+  const shipped = waiting(loadTasks());
+  if (!shipped.length) return { error: "Nothing awaiting review for " + (repo || "(no repo)") + "." };
   const path = laneMap()[repo]; if (!path) return { error: "Repo not found: " + repo };
   const busy = stillWorking(repo, path); if (busy) return busy;
-  const r = shipWithBump(path, uniqueTasks(items.map((x) => x.text)), { ...opts, autoMerge: opts.autoMerge !== undefined ? opts.autoMerge : autoMergeRepos().includes(repo) });
+  const r = await shipWithBump(path, uniqueTasks(shipped.map((x) => x.text)), { ...opts, autoMerge: opts.autoMerge !== undefined ? opts.autoMerge : autoMergeRepos().includes(repo) });
   if (r.error) return r;
-  const now = Date.now();
+  // read again: the ship took a while, and the list may have changed meanwhile
+  const ids = new Set(shipped.map((x) => x.id)), t = loadTasks(), items = waiting(t).filter((x) => ids.has(x.id)), now = Date.now();
   for (const x of items) { x.review = false; x.done = true; x.archived = true; x.archivedAt = now; x.approvedAt = now; for (const k of ["branch", "commit", "pr"]) if (r[k]) x[k] = r[k]; }
   const removed = applyRemovals(t);
   saveTasks(t);
@@ -513,14 +577,14 @@ function approveRepo(repo, opts = {}) {
 // awaiting review in the repo, this is just Approve. opts.tick: ids of the
 // repo's open tasks the changes finished (the run didn't tick them): they're
 // approved with the changes, as Approve does, so they don't go out again.
-function approveChanges(repo, opts = {}) {
-  if (loadTasks().some((x) => x.repo === repo && x.review && !x.done && !x.archived)) return approveRepo(repo, opts);
+async function approveChanges(repo, opts = {}) {
+  if (loadTasks().some((x) => x.repo === repo && x.review && !x.done && !x.archived)) return await approveRepo(repo, opts);
   const path = laneMap()[repo]; if (!path) return { error: "Repo not found: " + (repo || "(no repo)") };
   const busy = stillWorking(repo, path); if (busy) return busy;
   if (!workingChanges(path).files.length) return { error: "No uncommitted changes in " + repo + "." };
   const ids = new Set(Array.isArray(opts.tick) ? opts.tick.map(String) : []);
   const ticked = (t) => t.filter((x) => ids.has(x.id) && x.repo === repo && !x.done && !x.archived && !x.review);
-  const r = shipWithBump(path, uniqueTasks(ticked(loadTasks()).map((x) => x.text)), { ...opts, autoMerge: opts.autoMerge !== undefined ? opts.autoMerge : autoMergeRepos().includes(repo) });
+  const r = await shipWithBump(path, uniqueTasks(ticked(loadTasks()).map((x) => x.text)), { ...opts, autoMerge: opts.autoMerge !== undefined ? opts.autoMerge : autoMergeRepos().includes(repo) });
   if (r.error) return r;
   // read again: the ship took a while, and the list may have changed meanwhile
   const t = loadTasks(), items = ticked(t), now = Date.now();
@@ -565,6 +629,9 @@ function buildTasksMd(name, ctx, list) {
   if (ctx.connectors) L.push(`- **Connectors:** ${ctx.connectors}`);
   if (ctx.about && ctx.about.length) L.push("", ...ctx.about);
   L.push("", "## Tasks");
+  // urgent first, whatever kind it is (a crash fix filed under Docs waited behind 5 tasks, 2026-10-08)
+  const urgent = list.filter((t) => isUrgent(t.text)); list = list.filter((t) => !urgent.includes(t));
+  if (urgent.length) { L.push("### Urgent: do these first", "Stop at a safe point in anything else you're on (your changes stay), do these, then carry on with the rest."); for (const t of urgent) L.push(`- [ ] ${t.text}`); L.push(""); }
   const byType = {}; for (const t of list) { const ty = taskType(t.text); (byType[ty] = byType[ty] || []).push(t); }
   const keys = Object.keys(byType).sort((a, b) => TASK_ORDER.indexOf(a) - TASK_ORDER.indexOf(b));
   for (const ty of keys) { L.push(`### ${ty}`); for (const t of byType[ty]) L.push(`- [ ] ${t.text}`); L.push(""); }
@@ -630,4 +697,4 @@ function pushTasks(filter) {
   return { empty: false, written, unresolved, handoff: handoffCmd() };
 }
 
-export { addTask, toggleTask, removeTask, restoreTask, completedInRepo, removalOf, applyRemovals, applyDrops, syncTasks, workingChanges, workingDiff, publishesOnMerge, unreleased, bumpOffer, learnNpm, releaseNeeded, withReleases, setVersion, changelogEntry, changelogSection, noteChangelog, releaseInput, shipWithBump, runSummary, saidFinished, pendingReview, commitSubject, shipChanges, autoMergeRepos, setAutoMerge, approveRepo, approveChanges, sendBack, TASK_ORDER, taskType, buildTasksMd, pushTasks };
+export { gitFailed, taskPaths, addTask, toggleTask, removeTask, restoreTask, completedInRepo, removalOf, applyRemovals, applyDrops, syncTasks, workingChanges, workingDiff, publishesOnMerge, unreleased, bumpOffer, learnNpm, releaseNeeded, withReleases, setVersion, changelogEntry, changelogSection, noteChangelog, releaseInput, shipWithBump, runSummary, saidFinished, pendingReview, commitSubject, shipChanges, autoMergeRepos, setAutoMerge, approveRepo, approveChanges, sendBack, TASK_ORDER, taskType, buildTasksMd, pushTasks };

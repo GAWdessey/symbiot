@@ -10,7 +10,7 @@ import { randomBytes, createHash } from "node:crypto";
 import { CONFIG_DIR, loadConfig, saveConfig, loadTasks, TASK_MAX, clipWords, sameTask, taskWords, sh, hasCmd } from "./core.mjs";
 import { parseRun, lastRunText, readRunLog, briefPlan, stepOf, runLine } from "./work.mjs";
 import { noteDuration, kindOf } from "./estimate.mjs";
-import { parseFacts, leftToYou } from "./handover.mjs";
+import { parseFacts, leftToYou, gitWork, agentsGitWork, agentsPosting, linkedAsks, linkedChore, PUSH_OK } from "./handover.mjs";
 import { scanRoots, repoPathMap } from "./scan.mjs";
 import { knowledgeFolders } from "./knowledge.mjs";
 
@@ -35,7 +35,7 @@ function handoffCmd() { const cfg = loadConfig(); return migrateOrcaCmd(migrateC
 // Save the template ("" clears it). Either way the legacy `ide` key goes.
 function setHandoffCmd(cmd) {
   const cfg = loadConfig(); const v = String(cmd || "").trim();
-  if (v) cfg.agentCmd = v; else delete cfg.agentCmd;
+  if (v) { cfg.agentCmd = v; delete cfg.agentOff; } else { delete cfg.agentCmd; cfg.agentOff = true; } // agentOff: you cleared it, so Home doesn't pick one for you again
   delete cfg.ide; saveConfig(cfg);
   return { ok: true, cmd: cfg.agentCmd || "" };
 }
@@ -277,6 +277,7 @@ function runHandoff(repoPath, { force = false } = {}) {
   if (!force) { const w = waitingFor(repoPath); if (w) { askedFor(repoPath); return { blocked: true, waiting: true, questions: 0, note: waitNote(w) }; } }
   const blocked = !force && blockedAgain(repoPath, tmpl); if (blocked) return blocked;
   try { unlinkSync(join(repoPath, ".symbiot", WAITING)); } catch {} // the step's done (or this is Start it anyway): this is the run it waited for
+  noteUntracked(repoPath);
   const lock = join(repoPath, ".symbiot", LOCK);
   const own = opts.env && typeof opts.env === "object" ? Object.fromEntries(Object.entries(opts.env).map(([k, v]) => [k, String(v)])) : null, boxEnv = sandboxEnv(box);
   const env = own || boxEnv ? { ...(own || {}), ...(boxEnv || {}) } : null;
@@ -286,9 +287,11 @@ function runHandoff(repoPath, { force = false } = {}) {
     noteBlocked(repoPath, tmpl, e.startedAt, code);
     setTimeout(() => { try { autoAllow(repoPath); } catch {} }, 300); // a list it proposed inside your work: turned on, and on it goes
     startHeldTasks(repoPath); // tasks sent while it ran land now; start on them as that Send would have
+    try { urgentDone(repoPath, e.id); } catch {} // the urgent run's done: the lanes it parked carry on
   }, env);
   if (!e) return null;
   e.handoff = true;
+  try { if (urgentState()) noteUrgentRun(repoPath, e.id); } catch {}
   if (e.pid) try { writeFileSync(lock, JSON.stringify({ pid: e.pid, id: e.id, startedAt: e.startedAt, owner: process.pid })); } catch {}
   noteRun(e);
   return e;
@@ -308,6 +311,79 @@ function parkLane(path, on) {
   if (list.length) cfg.parked = list; else delete cfg.parked;
   saveConfig(cfg);
   return { ok: true, parked: !!on };
+}
+// ---- urgent work goes first -------------------------------------------------
+// "symbiot keeps crashing" waited behind a routine run in its own lane (the Home
+// layout, step 5 of 6) and 5 more tasks, and Garth parked argena and steve by hand
+// (2026-10-08). Urgent is a crash, "urgent", "comes first" or a word in capitals.
+// Then urgentFirst parks every other lane with work going or waiting (a run already
+// going there finishes, as parking does: the end of a run is the safe point, and a
+// test stopped halfway would be void), stops the urgent lane's own routine run (its
+// changes stay in the folder, and the next run carries on from them) so the urgent
+// one starts now, and when that run ends, urgentDone unparks those lanes in their
+// old order and starts the ones with work waiting. Lanes you parked stay parked.
+const CAPS_OK = /^(README|TODO|FIXME|HTML|JSON|YAML|HTTP|HTTPS|OAUTH|CHANGELOG|TASKS|ANSWERS|QUESTIONS|HANDOFF|REMEMBER|AWAITING|SKIPPED|LICENSE|CLAUDE|AGENTS|NOTE|ASAP|SAST|UTC|GPU|CPU|RAM|USB|SDK|JDK|API|URL|CSS|DNS|SSH|SMS|PDF|PNG|SVG|MCP|LLM|CLI|ENV|PATH|HOME|WIP|ETA)$/;
+function isUrgent(text) {
+  const t = String(text || "");
+  if (/\burgent\b|\b(asap|right now|drop everything)\b|\b(do (this|it) first|comes? first|goes? first|first thing|takes? priority|before (anything|everything) else)\b/i.test(t)) return true;
+  if (/\bcrash(es|ing|ed)\b|\bkeeps? (closing|quitting|dying)\b|\b(won'?t|doesn'?t|can'?t) (start|open|launch)\b/i.test(t)) return true;
+  // capitals: a word of 4+ letters, not a file's name (TASKS.md) nor a usual acronym
+  return (t.match(/(?<![\w./-])[A-Z]{4,}(?![\w.])/g) || []).some((w) => !CAPS_OK.test(w));
+}
+const urgentState = () => { const u = loadConfig().urgent; return u && Array.isArray(u.paths) && u.paths.length ? u : null; };
+function saveUrgent(u) { const cfg = loadConfig(); if (u) cfg.urgent = u; else delete cfg.urgent; saveConfig(cfg); }
+const hasOpenUrgent = (md) => String(md || "").split("\n").some((l) => /^\s*-\s*\[ \]/.test(l) && isUrgent(l));
+function stopRun(path) {
+  const r = runningHandoff(path); if (!r || !r.pid) return false;
+  try { process.kill(-r.pid, "SIGTERM"); } catch { try { process.kill(r.pid, "SIGTERM"); } catch { return false; } } // its own process group (track: detached)
+  return true;
+}
+// lanes: the paths to consider ({ name: path }); returns { parked: [names], stopped }
+function urgentFirst(path, { lanes = null, stop = stopRun, running = runningHandoff } = {}) {
+  if (!path) return { parked: [], stopped: false };
+  const u = urgentState() || { at: Date.now(), paths: [], parked: [], runs: [] };
+  if (!u.paths.includes(path)) u.paths.push(path);
+  if (u.parked.includes(path)) { u.parked = u.parked.filter((p) => p !== path); parkLane(path, false); } // urgent itself now
+  const all = lanes || Object.fromEntries(loadRuns().map((r) => [String(r.name || r.path.split("/").pop()), r.path]));
+  const parked = [], already = parkedPaths();
+  for (const [name, p] of Object.entries(all)) {
+    if (!p || u.paths.includes(p) || already.includes(p)) continue; // yours stay yours
+    if (!running(p) && !readSymbiot(p, HELD)) continue; // nothing going or waiting there
+    parkLane(p, true); u.parked.push(p); parked.push(name);
+  }
+  // its own lane: a routine run stops so this one starts now; one that's already on urgent work keeps going
+  const busy = running(path), onIt = busy && (u.runs.includes(busy.id) || hasOpenUrgent(readSymbiot(path, "TASKS.md")));
+  const stopped = !!busy && !onIt && stop(path);
+  saveUrgent(u);
+  return { parked, stopped };
+}
+// the urgent lane's run started: when it ends, the parked work resumes (runHandoff's exit)
+function noteUrgentRun(path, id) { const u = urgentState(); if (u && u.paths.includes(path) && id && !u.runs.includes(id)) { u.runs.push(id); saveUrgent(u); } }
+function urgentDone(path, id, { running = runningHandoff, start = runHandoff } = {}) {
+  const u = urgentState(); if (!u || !u.paths.includes(path) || !u.runs.includes(id)) return null;
+  u.paths = u.paths.filter((p) => p !== path);
+  if (u.paths.some((p) => running(p))) { saveUrgent(u); return null; } // another urgent lane is still at it
+  saveUrgent(null);
+  return resumeParked(u.parked, start);
+}
+function resumeParked(paths, start = runHandoff) {
+  const resumed = [];
+  for (const p of paths) { // in the order they were parked
+    if (!parkedPaths().includes(p)) continue; // you unparked it meanwhile
+    parkLane(p, false);
+    if (/^\s*-\s*\[ \]/m.test(readSymbiot(p, HELD) || readSymbiot(p, "TASKS.md"))) { try { const e = startHeldTasks(p) || start(p); if (e && e.id) resumed.push(p); } catch {} }
+  }
+  return { unparked: paths, resumed };
+}
+// The app restarted under an urgent run (its exit never came), or it never started:
+// the parked lanes don't wait forever.
+const URGENT_MAX = 6 * 3600 * 1000;
+function urgentSweep({ running = runningHandoff, now = Date.now(), start = runHandoff } = {}) {
+  const u = urgentState(); if (!u) return null;
+  const ended = u.runs.length > 0 && !u.paths.some((p) => running(p));
+  if (!ended && now - (u.at || 0) < URGENT_MAX) return null;
+  saveUrgent(null);
+  return resumeParked(u.parked, start);
 }
 // The agent the handoff command runs, when it isn't on this computer (the CLI
 // was uninstalled, or PATH lost it): its name, else "". Then no task can start.
@@ -379,10 +455,14 @@ function takenUp(path, end) {
   if (!path.startsWith(ACT_DIR)) return false;
   const t = firstTask(path); return !!t && loadRuns().some((r) => r.path !== path && r.path.startsWith(ACT_DIR) && Number(r.startedAt) > end && sameTask(firstTask(r.path), t));
 }
+const draftRun = (path) => { try { const h = JSON.parse(readSymbiot(path, "handoff.json")) || {}; return !!(h.draft || (h.env && h.env.SYMBIOT_DRAFT)); } catch { return false; } };
 function needsOf(path, { final = "", waiting = null, end = Date.now(), now = Date.now() } = {}) {
   if (now - end > NEEDS_FOR) return null;
   const n = waiting ? { kind: "step", what: clipWords(String(waiting.step || "").replace(/^\s*👤\s*(You\s*(\([^)]*\))?:)?\s*/, "").trim(), 240), check: "", label: "", waiting: true } : leftToYou(final) || readNeeds(path, final);
   if (!n || !n.what) return null;
+  if (n.kind === "approve" && draftRun(path)) return null; // a drafted reply: its card shows it and sends it (watch.mjs draftCard)
+  // signing in to, linking or doing by hand on a platform that's linked: the agent's, not yours
+  if (n.kind !== "approve" && linkedChore(`${n.label} ${n.what} ${n.check}`, linkedIds())) return null;
   const key = digest(n.what);
   if (loadSettled()[path] === key || takenUp(path, end)) return null;
   return { ...n, key };
@@ -401,10 +481,10 @@ const readKey = (path, final) => digest(path + "\n" + String(final || "").trim()
 function readNeeds(path, final, { file = READ_FILE } = {}) {
   if (!String(final || "").trim()) return null;
   const r = loadRead(file)[readKey(path, final)];
-  return r && r.what ? { kind: r.kind === "approve" ? "approve" : "step", what: r.what, check: r.check || "", label: r.label || "", read: true } : null;
+  return r && r.what ? { kind: r.kind === "approve" || gitWork(r.what + " " + (r.check || "")) ? "approve" : "step", what: r.what, check: r.check || "", label: r.label || "", read: true } : null;
 }
 const READ_SYSTEM = `You read the last message a coding agent left when its run ended, and say whether it leaves the user something to do before the work is finished.
-That's either something waiting for their OK before it happens (sending, posting, deleting, paying, closing, merging, publishing) or a step only they can take (signing in, a password or a 2FA code, sudo, a phone or a cable, a token from a provider's console, a choice that's theirs to make).
+That's either something waiting for their OK before it happens (sending, posting, deleting, paying, closing, merging, publishing) or a step only they can take (signing in, a password or a 2FA code, sudo, a phone or a cable, a token from a provider's console, a choice that's theirs to make). Local git work (staging, committing, pulling, pushing) is never a step only they can take: an agent does it, so it's "approve", their OK before a push.
 Not: work that's done, a summary of what changed, an idea they might like, changes waiting for review or Approve in Symbiot, a connector to sign in to again, or a question already asked in QUESTIONS.md.
 Reply with JSON only, no markdown fence: {"needs": false} or {"needs": true, "kind": "approve" or "step", "what": "the sentence that says so, in its own words, under 240 characters", "check": "what it says to check first, or empty", "label": "what it is in 1 to 3 words, or empty"}.`;
 function parseRead(raw) {
@@ -537,6 +617,7 @@ function waitNote(w) {
 // for, start once it changes. The app calls this every so often. Returns the jobs started.
 function startWaiting() {
   const started = [];
+  try { urgentSweep(); } catch {}
   for (const r of loadRuns()) {
     let w = null; try { w = JSON.parse(readSymbiot(r.path, WAITING)); } catch {}
     if (!w || !w.rerun || !Array.isArray(w.files) || !(w.files.length || w.cmd) || runningHandoff(r.path)) continue;
@@ -592,6 +673,26 @@ function runningHandoff(path) {
   } catch {}
   return null;
 }
+// ---- the untracked files that were there before the agent ran ---------------
+// Approve stages only a run's own changes (tasks.mjs taskPaths), so the first run
+// since the last approve notes the untracked files already in the folder:
+// .symbiot/untracked.json, { at, files }. Approve forgets it once it commits.
+// Listed in the background: in a big tree (scratch's 170k files) that takes a
+// while, and a file the agent writes meanwhile is newer than `at`, so it counts
+// as the agent's anyway. Not a git repo: no note.
+const UNTRACKED = "untracked.json";
+function noteUntracked(path) {
+  const f = join(path, ".symbiot", UNTRACKED); if (existsSync(f)) return;
+  const at = Date.now(), out = [], p = spawn("git", ["-C", path, "ls-files", "--others", "--exclude-standard", "-z"], { stdio: ["ignore", "pipe", "ignore"], env: { ...process.env, GIT_TERMINAL_PROMPT: "0" } });
+  p.on("error", () => {}); p.stdout.on("data", (d) => out.push(d));
+  p.on("close", (code) => {
+    if (code !== 0 || existsSync(f)) return;
+    const files = Buffer.concat(out).toString("utf8").split("\0").filter((x) => x && !x.startsWith(".symbiot/"));
+    try { mkdirSync(dirname(f), { recursive: true }); writeFileSync(f, JSON.stringify({ at, files })); } catch {}
+  });
+}
+function untrackedBefore(path) { try { const u = JSON.parse(readSymbiot(path, UNTRACKED)); return u && Array.isArray(u.files) && Number.isFinite(u.at) ? u : null; } catch { return null; } }
+function forgetUntracked(path) { try { unlinkSync(join(path, ".symbiot", UNTRACKED)); } catch {} }
 // Send to repos while an agent is still running in the folder doesn't rewrite
 // the TASKS.md it's working from: the new brief waits in TASKS.next.md and
 // replaces TASKS.md once that agent exits. Returns true if it was held.
@@ -815,7 +916,11 @@ const readSymbiot = (path, f) => { if (f === "agent.log") return readRunLog(join
 // "## Questions" → "### question", context lines, "- option" bullets;
 // "## Suggestions" (or Ideas / Follow-ups) → "- idea" bullets. Forgiving: a bare
 // bullet under Questions is a question with no options.
-function parseQuestions(md) {
+// The platforms linked in Symbiot's browser (links.mjs keeps them in config.linked): a
+// 👤 option to post there, or to sign in or link it again, is the agent's, and doing it
+// by hand isn't offered (handover.mjs agentsPosting, linkedAsks).
+const linkedIds = () => { try { return Object.keys(loadConfig().linked || {}); } catch { return []; } };
+function parseQuestions(md, { linked = linkedIds() } = {}) {
   const questions = [], suggestions = []; let sec = "q", cur = null;
   const clip = (s) => clipWords(String(s).trim(), TASK_MAX); // as long as a task holds (addTask), so an idea added in one click arrives whole
   for (const raw of String(md || "").split(/\r?\n/)) {
@@ -833,7 +938,7 @@ function parseQuestions(md) {
     if (b) { if (cur) cur.options.push(clip(b[1])); else if (/\?\s*$/.test(b[1])) questions.push({ q: clip(b[1]), context: "", options: [] }); continue; } // a bullet with no "### question" above it is a question only if it actually ends in "?" — otherwise it's preamble/prose (a file list, etc.)
     if (cur) cur.context = clip((cur.context ? cur.context + " " : "") + l);
   }
-  return { questions: questions.filter((x) => x.q).slice(0, 20).map((x) => ({ ...x, options: x.options.slice(0, 6) })), suggestions: suggestions.filter(Boolean).slice(0, 10) };
+  return { questions: questions.filter((x) => x.q).slice(0, 20).map((x) => ({ ...x, options: agentsPosting(linkedAsks(agentsGitWork(x.options), linked, `${x.q} ${x.context}`), linked).slice(0, 6) })), suggestions: suggestions.filter(Boolean).slice(0, 10) };
 }
 // An idea for another project names it first: "[repo: symbiot] Watch GitHub
 // too" is for the symbiot repo's tasks, whichever repo's agent had it (an agent
@@ -1011,7 +1116,10 @@ function answerQuestions(path, answers, opts = {}) {
   const steps = rows.filter((x) => yourStep(x.a) || holdAnswer(x.a)).map((x) => yourStep(x.a) ? { step: stepText(x.a), named: x.a.split("🤖")[0] }
     : { step: (youOpts(x.q).map(stepText)[0] || x.a).trim(), named: [x.a, ...youOpts(x.q)].join(" ") });
   const granted = [], notes = {};
-  let yours = steps.map((s) => s.step).filter(Boolean).filter((st) => { const g = grantFromStep(st, path, notes); if (g) granted.push(...g); return !g; });
+  // local git work picked as the user's step (typed in, or from a QUESTIONS.md written before this): the agent's, with an OK before a push
+  const git = steps.map((s) => s.step).filter(gitWork);
+  if (git.length) try { writeFileSync(join(path, ".symbiot", "ANSWERS.md"), readSymbiot(path, "ANSWERS.md").replace(/\s*$/, "\n") + `\n### Symbiot: that git work is yours to do, not the user's\nDo it yourself: ${git.join(" ")}. Check what's staged first, and ${PUSH_OK.replace("your OK", "the user's OK").replace("it pushes", "you push")}: ask in QUESTIONS.md and stop there.\n_${day}_\n`); } catch {}
+  let yours = steps.map((s) => s.step).filter(Boolean).filter((st) => !gitWork(st)).filter((st) => { const g = grantFromStep(st, path, notes); if (g) granted.push(...g); return !g; });
   if (granted.length) out.granted = granted;
   // A list too wide to turn on by a click: say which rules, tell the agent to ask for
   // less, and don't leave it as the user's step (picking it again would do nothing).
@@ -1082,4 +1190,4 @@ function agentsList() {
   }).concat(earlierRuns());
 }
 
-export { FACTS, factsOf, knownRun, withStream, workOf, HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, connectorsInfo, linkReach, fillHandoff, runHandoff, PARKED_NOTE, parkedPaths, isParked, parkLane, agentMissing, blockedAgain, runningHandoff, loadRuns, earlierRuns, namedFiles, waitingFor, startWaiting, writeTasks, droppedTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, pickAgent, findOrcaCli, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, skipIdea, agentQuestions, answerQuestions, agentsList, needsOf, settleNeeds, NEEDS_FOR , readLastWords, readNeeds, parseRead, READ_FILE, autoAllow, autoAllowSweep, allowlistInWork, installAllowlist, inWork, withScope , withTrust, sandboxFor, sandboxEnv, sandboxNeeds, sandboxState, sandboxWrites, SANDBOX_DIR, resumeFor, noteSession, trustFull, GUARD_SETTINGS };
+export { FACTS, factsOf, knownRun, withStream, workOf, HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, connectorsInfo, linkReach, fillHandoff, runHandoff, PARKED_NOTE, parkedPaths, isParked, parkLane, agentMissing, blockedAgain, runningHandoff, loadRuns, earlierRuns, namedFiles, waitingFor, startWaiting, noteUntracked, untrackedBefore, forgetUntracked, writeTasks, droppedTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, pickAgent, findOrcaCli, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, skipIdea, agentQuestions, answerQuestions, agentsList, needsOf, settleNeeds, NEEDS_FOR, readLastWords, readNeeds, parseRead, READ_FILE, autoAllow, autoAllowSweep, allowlistInWork, installAllowlist, inWork, withScope, withTrust, sandboxFor, sandboxEnv, sandboxNeeds, sandboxState, sandboxWrites, SANDBOX_DIR, resumeFor, noteSession, trustFull, GUARD_SETTINGS, isUrgent, urgentFirst, urgentDone, urgentSweep, urgentState };

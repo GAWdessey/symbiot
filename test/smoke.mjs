@@ -234,7 +234,7 @@ const calls = [
   ["/api/links/unlink", "POST"],
   ["/api/posts", "GET"],            // the week's drafts waiting on you (isolated HOME -> none)
   ["/api/posts/draft", "POST"],     // no AI connected -> says so, nothing written
-  ["/api/posts/approve", "POST"],   // no id -> "No draft", nothing copied
+  ["/api/posts/approve", "POST"],   // no id -> "No draft", nothing handed over
   ["/api/posts/edit", "POST"],      // no text -> refused
   ["/api/posts/skip", "POST"],      // no id -> "No draft"
   ["/api/posts/voice", "POST"],     // not confirmed -> refused, no browser opens
@@ -245,11 +245,16 @@ const calls = [
   ["/api/reports", "GET"],          // what runs wrote up (isolated HOME -> none)
   ["/api/reports/read", "GET"],     // no id -> "No report by that id"
   ["/api/reports/seen", "POST"],    // mark all read (none)
+  ["/api/reports/ideas", "POST"],   // no report named -> refused, nothing added
+  ["/api/reports/draft", "POST"],   // no report named -> refused, no agent starts
+  ["/api/reports/ask", "POST"],     // no question -> refused, no model asked
   ["/api/marketing", "GET"],        // Marketing: replies and the 4-week test (isolated HOME -> no test yet)
   ["/api/marketing/task", "POST"],  // no text -> refused, no task added
   ["/api/marketing/move", "POST"],  // no id -> "isn't open", nothing moves
   ["/api/marketing/go", "POST"],    // nothing waiting -> refused, no folder made, no agent starts
   ["/api/marketing/open", "POST"],  // no draft named -> refused, nothing opens
+  ["/api/marketing/draft", "GET"],  // no draft named -> "isn't there", nothing read
+  ["/api/marketing/draft/answer", "POST"], // no draft named -> refused, nothing approved, no agent starts
   ["/api/watch", "GET"],           // watched pages + what's new (isolated HOME -> none)
   ["/api/watch/add", "POST"],       // no screen or site -> refused, nothing saved
   ["/api/watch/every", "POST"],     // no id -> "No watch"
