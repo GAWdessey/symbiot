@@ -8,6 +8,7 @@
 //   - delete outside the agent's own folder, or wipe a disk
 //   - sudo, or pipe something from the internet into a shell
 //   - read SSH keys or cloud credentials; change Symbiot's own settings
+//   - open the user's running Symbiot in a browser (a check uses a sandbox copy)
 //   - in a sandboxed repo run (agents.mjs sandboxFor), edit or write a file outside its
 //     repo and your folders (SYMBIOT_WRITES): its commands are held there by the sandbox
 // judge(tool, input, { cwd, home }) → null (go ahead) or { why }.
@@ -20,6 +21,8 @@ import { fileURLToPath } from "node:url";
 const SECRET = [".ssh", ".gnupg", ".aws", ".azure", ".kube", ".docker/config.json", ".config/gcloud", ".config/gh/hosts.yml", ".netrc", ".npmrc", ".pypirc", ".git-credentials"];
 const under = (p, d) => p === d || p.startsWith(d.endsWith("/") ? d : d + "/");
 const expand = (p, home, cwd) => resolve(cwd, String(p).replace(/^~(?=\/|$)/, home).replace(/^\$HOME(?=\/|$)/, home).replace(/^\$\{HOME\}(?=\/|$)/, home));
+const BROWSER = /\b(google-chrome(-stable)?|chromium(-browser)?|chrome|firefox|msedge|playwright|puppeteer|wkhtmltoimage|cutycapt)\b/i;
+const SCP_VALUE = /^-[346ABCOpqRrTv]*[iFoPSJcl]$/; // an scp option (alone or after flags, -rpi) whose value is the next word
 function secretPath(p, home) { return SECRET.some((s) => under(p, join(home, s))); }
 function symbiotConfig(p, home) { return p === join(home, ".config", "symbiot", "config.json"); }
 
@@ -55,11 +58,19 @@ function judgeBash(cmd, { cwd, home, branch }) {
       }
     }
     if (/^(cat|less|more|head|tail|cp|scp|base64|xxd|strings|grep|rg|sed|awk)$/.test(w[0])) {
-      for (const p of w.slice(1).filter((a) => !a.startsWith("-"))) { if (secretPath(expand(p, home, cwd), home)) return { why: "your keys and cloud credentials stay yours" }; }
+      // scp's sign-in options take a value (`-i ~/.ssh/key` is the key it signs in with, as
+      // ssh's is, never a file it copies): those aren't what it reads. Only what it copies
+      // counts: `scp ~/.ssh/id_rsa host:` stays blocked. The argena lane's approved deploy
+      // (`scp -i ~/.ssh/oracle_key server/x.py ubuntu@host:…`) was blocked (2026-10-08).
+      const own = w[0] === "scp" ? SCP_VALUE : null;
+      for (const p of w.slice(1).filter((a, i, all) => !a.startsWith("-") && !(own && own.test(all[i - 1] || "")))) { if (secretPath(expand(p, home, cwd), home)) return { why: "your keys and cloud credentials stay yours" }; }
     }
     if (/(^|\s)(>|>>|tee|sed\s+-i)\s*\S*\.config\/symbiot\/config\.json/.test(s)) return { why: "Symbiot's own settings are yours to change" };
   }
   if (/\b(curl|wget)\b[^|]*\|\s*(sudo\s+)?(ba|z|da)?sh\b/.test(c)) return { why: "running a script straight from the internet" };
+  // a browser on the user's running Symbiot: each page it opened counted as a new window and
+  // closed theirs, five times in four minutes (2026-10-08). Its API (curl) is fine to read.
+  if (BROWSER.test(c) && /\b(127\.0\.0\.1|localhost):7391\b/.test(c)) return { why: "that's the user's running Symbiot (their window and data): check it in a copy of your own, `symbiot app --fresh`" };
   return null;
 }
 
