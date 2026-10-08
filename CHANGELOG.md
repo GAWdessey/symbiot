@@ -2,6 +2,11 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.57.8
+
+- **An approved deploy with your server key goes through.** The membrane read `scp -i ~/.ssh/oracle_key …` as copying your key, when the key is only what scp signs in with (`ssh -i` already passed). So argena's deploy to the game server stayed blocked even after you approved it twice. Now scp's sign-in options don't count as files it copies. Copying a key or credentials themselves (`scp ~/.ssh/id_rsa host:`) is still stopped.
+- **Agents check Symbiot in a copy of their own.** Every brief now says to see Symbiot working in a sandbox (`symbiot app --fresh`), and the membrane stops a browser or screenshot pointed at your running app. That's what closed your window five times on 2026-10-08. Reading its API with curl is still fine.
+
 ## 0.57.7
 
 - **A reply you sent yourself leaves Home.** If you paste a drafted reply in and send it yourself, then say so, its card goes, and so does a draft its agent noted as sent. Before, 0.57.6 kept asking for your OK on Frikkie's reply, already sent at 14:10, and showed the agent's note "Sent by the user… shortened to…" as if it were part of the reply.
