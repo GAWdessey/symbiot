@@ -12,7 +12,7 @@
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
-import { watchBoard, draftReply } from "./watch.mjs";
+import { watchBoard, draftReply, draftCards, draftAnswer } from "./watch.mjs";
 import { pendingReview, pushTasks, addTask, taskType } from "./tasks.mjs";
 import { estimate, estimateWords } from "./estimate.mjs";
 import { setHandoffCmd, agentsList, runHandoff, runningHandoff, handoffCmd, loadRuns, connectorsInfo, parkedPaths, agentMissing, settleNeeds, pickAgent, detectHandoffs, linkReach } from "./agents.mjs";
@@ -47,8 +47,16 @@ const firstLine = (t) => String(t || "").split("\n").find((l) => l.trim()) || ""
 // a step your answer left you) with what to check first, and a run that ended in an
 // error. Each is answered on its blob (homeAnswer), on Home and on its lane in
 // Tasks. repo: its lane ("" for an ops run).
-function troubles({ stuck = [], list = [], map = {}, named = displayName, now = Date.now() } = {}) {
+function troubles({ stuck = [], list = [], map = {}, named = displayName, now = Date.now(), drafts = [] } = {}) {
   const out = [], seen = new Set();
+  // a drafted reply: the reply itself on the card, as it will look, and Go ahead sends it (watch.mjs draftCard)
+  for (const c of drafts) {
+    seen.add(c.dir);
+    const to = c.to ? ` to ${c.to}` : "";
+    out.push({ kind: "ask", fix: "draft", id: "draft:" + c.id, path: c.dir, repo: "", name: `Reply${to} on ${c.platform}`, title: `Reply${to} on ${c.platform}`, sub: plain(c.text, 90),
+      q: `Go ahead sends it${to} from your ${c.platform}, signed in in Symbiot's browser, exactly as it shows here.`, options: ["Go ahead (recommended)", "Skip"],
+      draft: { platform: c.platform, kind: c.kind, to: c.to, text: c.text }, shape: "agents" });
+  }
   for (const t of stuck) {
     const lane = t.from.lane === RUNS_LANE ? "" : t.from.lane;
     out.push({ kind: "ask", fix: "handover", id: "stuck:" + t.id, path: lane ? map[lane] || t.from.path : t.from.path, repo: lane, name: lane ? named(map[lane], lane) : "Agent runs",
@@ -348,7 +356,8 @@ function homeState({ now = Date.now(), fresh = false, deps = {} } = {}) {
   // What stopped and can't go on without you, as a question too: a handover that
   // couldn't start (lanes.mjs stuckHandovers: "Allow this run access to ~/Company?"),
   // and a run that ended in an error. Answered on its blob (homeAnswer).
-  you.push(...troubles({ stuck: stuck(), list, map, named, now }));
+  const drafts = deps.drafts || (() => { try { return draftCards(); } catch { return []; } });
+  you.push(...troubles({ stuck: stuck(), list, map, named, now, drafts: drafts() }));
   // A run is waiting on an emailed reply that nothing will see: say so, once,
   // until an inbox is watched (and signed in) or Email is on (handback.mjs looks in either).
   if (waits().some((w) => w.status === "waiting")) {
@@ -409,6 +418,8 @@ function homeAnswer(id, { pick, text = "" } = {}, deps = {}) {
     return e && e.id && !e.blocked ? { ok: true, said: "Running it again.", rerun: e.id } : { error: (e && e.note) || "It didn't start. Check your agent in Settings." };
   }
   if (id.startsWith("repos:")) return reposAnswer({ pick, text }, deps);
+  // a drafted reply: Go ahead sends it, Skip drops it, your own words are Change it (a redraft on the same card)
+  if (id.startsWith("draft:")) return (deps.draftAnswer || draftAnswer)(ref, text ? (SAYS_NO.test(text) ? { skip: true } : { change: text }) : go ? { go: true } : { skip: true });
   if (id.startsWith("needs:")) {
     const a = (deps.agents || agentsList)().find((x) => x.id === ref), n = a && a.needs;
     if (!n) return { error: "That isn't waiting on you any more." };
@@ -601,9 +612,10 @@ function workScene({ deps = {}, full = false } = {}) {
     for (const s of ideas) { p.ideas = p.ideas || []; if (p.ideas.length < 4) p.ideas.push({ text: plain(s.text, 200), full: String(s.text), repo: s.repo || l, path: a.path }); }
   }
   const stuck = deps.stuck || (() => { try { return stuckHandovers(); } catch { return []; } });
-  for (const t of troubles({ stuck: stuck(), list: AG, map, named })) {
+  const drafts = deps.drafts || (() => { try { return draftCards(); } catch { return []; } });
+  for (const t of troubles({ stuck: stuck(), list: AG, map, named, drafts: drafts() })) {
     const p = at(t.repo || RUNS_LANE); p.asks++; p.qs = p.qs || [];
-    if (p.qs.length < 3) p.qs.unshift({ q: t.q, options: t.options, path: t.path, fix: t.fix, id: t.id, sub: t.sub });
+    if (p.qs.length < 3) p.qs.unshift({ q: t.q, options: t.options, path: t.path, fix: t.fix, id: t.id, sub: t.sub, ...(t.draft ? { draft: t.draft } : {}) });
   }
   for (const p of Object.values(by)) { p.lit = !!(p.asks || p.ready); if (isParked(p.repo)) p.parked = true; }
   const projects = Object.values(by).sort((a, b) => (b.lit ? 1 : 0) - (a.lit ? 1 : 0) || (a.parked ? 1 : 0) - (b.parked ? 1 : 0) || (b.running ? 1 : 0) - (a.running ? 1 : 0) || b.ready - a.ready || b.waiting - a.waiting || b.last - a.last || (a.repo < b.repo ? -1 : 1));

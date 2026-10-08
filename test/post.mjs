@@ -257,6 +257,37 @@ try {
   const dir = join(CFG, "drafts", "n1");
   ok("Draft a reply on it: the run gets the LinkedIn brief and SYMBIOT_DRAFT (no Post, no Send)", dr.ok && dr.social && ran.length === 1 && /Never post it/.test(readFileSync(join(dir, ".symbiot", "TASKS.md"), "utf8")) && JSON.parse(readFileSync(join(dir, ".symbiot", "handoff.json"), "utf8")).env.SYMBIOT_DRAFT === "1", dr);
 
+  console.log("A DRAFT ON ITS CARD — the reply itself, Go ahead sends it, Change it redrafts (2026-10-08: Frikkie's reply never showed)");
+  const meta = () => JSON.parse(readFileSync(join(dir, ".symbiot", "handoff.json"), "utf8")), brief = () => readFileSync(join(dir, ".symbiot", "TASKS.md"), "utf8");
+  ok("the brief: the reply under ## The reply with To:, notes apart; no asking to send it, the card does", /a first line `To: <their first name>`/.test(br) && /## Notes/.test(br) && /Don't ask in QUESTIONS\.md to send/.test(br) && !/posts it themselves/.test(br), br.slice(0, 300));
+  ok("its folder says it's a LinkedIn draft", meta().draft && meta().draft.kind === "social" && meta().draft.platform === "LinkedIn", meta());
+  ok("no card while it's drafting", W.draftCard(dir) === null, "");
+  writeFileSync(join(dir, ".symbiot", "TASKS.md"), brief().replace("- [ ] Draft a reply", "- [x] Draft a reply") + "\n## The reply\nTo: Sam\nHi Sam, it's free for teams of up to 5.\n\nHappy to help you set it up.\n\n## Notes\nI checked the pricing page first.\n");
+  const dc = W.draftCard(dir);
+  ok("drafted: the card has the reply, all of it and only it, to whom and where", dc && dc.to === "Sam" && dc.text === "Hi Sam, it's free for teams of up to 5.\n\nHappy to help you set it up." && dc.platform === "LinkedIn" && dc.kind === "social", dc);
+  const { homeState, homeAnswer } = await import("../home.mjs");
+  const hs = homeState({ fresh: true, deps: { pending: () => [], agents: () => [], repos: () => ({}), tasks: () => [], stuck: () => [], drafts: () => [dc], connected: () => true, rootsSet: () => true, search: () => ({ searching: false, at: 1 }), confirmed: () => true } });
+  const dy = hs.you.find((x) => x.id === "draft:n1");
+  ok("on Home: 'Reply to Sam on LinkedIn', the reply on it, Go ahead or Skip", dy && dy.title === "Reply to Sam on LinkedIn" && dy.draft && dy.draft.text === dc.text && dy.options.join() === "Go ahead (recommended),Skip", hs.you.map((x) => x.id));
+  ok("…and it says what Go ahead does, never that the agent can't send", dy && /Go ahead sends it to Sam from your LinkedIn/.test(dy.q) && !/can't|cannot|won't let/i.test(dy.q + dy.sub), dy && dy.q);
+  const ran2 = [];
+  const dch = homeAnswer("draft:n1", { text: "make it shorter, no second line" }, { draftAnswer: (id, o) => W.draftAnswer(id, { ...o, run: (d, oo) => { ran2.push([d, oo]); return { id: "j2" }; } }) });
+  ok("Change it (your own words): the drafting agent redrafts, still unable to send", dch.ok && ran2.length === 1 && /## Change it\n[^\n]*make it shorter, no second line/.test(brief()) && /- \[ \] Draft a reply/.test(brief()) && meta().env.SYMBIOT_DRAFT === "1", [dch, brief().slice(-400)]);
+  ok("…the card waits for the new version", W.draftCard(dir) === null, "");
+  writeFileSync(join(dir, ".symbiot", "TASKS.md"), brief().replace("- [ ] Draft a reply", "- [x] Draft a reply").replace(/## The reply\n[\s\S]*?(?=\n## )/, "## The reply\nTo: Sam\nHi Sam, it's free for teams of up to 5.\n"));
+  ok("…and shows it when it's there", W.draftCard(dir) && W.draftCard(dir).text === "Hi Sam, it's free for teams of up to 5.", W.draftCard(dir));
+  const ran3 = [];
+  const dgo = homeAnswer("draft:n1", { pick: 0 }, { draftAnswer: (id, o) => W.draftAnswer(id, { ...o, run: (d, oo) => { ran3.push([d, oo]); return { id: "j3" }; } }) });
+  ok("Go ahead: a run that sends it, without SYMBIOT_DRAFT, with the approved text", dgo.ok && ran3.length === 1 && ran3[0][1].force && !meta().env.SYMBIOT_DRAFT && /# Send the approved reply: LinkedIn/.test(brief()) && /## The reply\nTo: Sam\nHi Sam, it's free for teams of up to 5\.\n/.test(brief()), [dgo, meta(), brief().slice(0, 200)]);
+  ok("…and the card is gone while it sends", W.draftCard(dir) === null && meta().draft.state === "sending", meta());
+  const { needsOf } = await import("../agents.mjs"), said = "The reply to Sam is ready for you to send. It isn't sent.";
+  ok("a draft folder's 'ready for you to send' is its card's, never a 'waits for your OK' rerun (that run can't send)", needsOf(dir, { final: said }) === null, needsOf(dir, { final: said }));
+  const other = join(HOME, "elsewhere"); mkdirSync(join(other, ".symbiot"), { recursive: true });
+  ok("…while any other run's still is", !!needsOf(other, { final: said }), "");
+  writeFileSync(join(dir, ".symbiot", "TASKS.md"), "# Draft a reply: LinkedIn\n## Tasks\n- [x] Draft a reply to: x\n\n## The reply\nTo: Sam\nHi\n");
+  const dsk = homeAnswer("draft:n1", { pick: 1 }, {});
+  ok("Skip: it won't be sent, and the card goes", dsk.ok && W.draftCard(dir) === null && meta().draft.state === "skipped", [dsk, meta()]);
+
   console.log("HASHTAG LABELS — LinkedIn's \"hashtag\" line over each #tag stays out of the voice and the drafts");
   const tagged = "Shipped the liquid home this week, and it rests as one orb.\n\nhashtag\n#DeveloperTools\nhashtag\n#AI";
   ok("voice.md's examples lose the labels, keep the tags (and a word 'hashtag' in a sentence)", P.voiceOf(tagged + "\n---\nI wrote a hashtag guide once, plain words only.")[0].endsWith("orb.\n\n#DeveloperTools\n#AI") && /a hashtag guide/.test(P.voiceOf(tagged + "\n---\nI wrote a hashtag guide once, plain words only.")[1]), P.voiceOf(tagged));

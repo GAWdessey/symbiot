@@ -231,6 +231,34 @@ approves, the agent does.**
   parked) and `tasks.mjs` `buildTasksMd` (an "Urgent: do these first" section on top).
   Tests: `test/urgent.mjs`. Shipped in 0.57.4.
 
+## 12. A draft to approve that didn't show the draft
+
+- **What happened:** on Home, under "Only the user can do", the card "Draft: Messaging,
+  1 new notification waits for your OK" said "The reply to Frikkie is ready for you to
+  send" with Go ahead / Skip, but never showed the reply. Its own text also said "I can't
+  send it myself, because Symbiot won't let me press Send", next to a Go ahead button.
+  Go ahead only started the same drafting run again, which couldn't send, so it retyped
+  the reply and asked again, four times, until he pasted and sent it himself (14:10).
+- **Why it was wrong:** to check a reply, he had to open LinkedIn, read it there, and come
+  back to say it was wrong. He called that a waste of his time. The card also contradicted
+  itself.
+- **What it should do instead:** every draft approval card (messages, replies, posts) shows
+  the whole draft inline, as it will look on the platform, with none of the agent's notes.
+  Go ahead sends it through the signed-in browser, Skip drops it, and Change it takes his
+  words, so the agent redrafts and the new version shows on the same card. The card says
+  what Go ahead does, never that the agent can't send.
+- **Fixed in:** `watch.mjs`: every draft brief writes the reply under `## The reply`
+  (`To:` first, notes under `## Notes`) and never asks to send or paste it; `draftCard` /
+  `draftCards` (the card's draft, from the folder, after a restart too); `draftAnswer`
+  (Go ahead: a send run with `sendBrief`, without SYMBIOT_DRAFT; Change it: a redraft;
+  Skip). `home.mjs` `troubles` (the "Reply to Frikkie on LinkedIn" card) and `homeAnswer`;
+  `agents.mjs` `needsOf` (a draft's "ready for you to send" is no longer a needs card);
+  `ui.mjs` `draftHtml` (the reply as a LinkedIn message, a WhatsApp bubble or an email)
+  and "Change it" on the card. Marketing's posts already preview this way (case 1).
+  Tests: `test/post.mjs`, "A DRAFT ON ITS CARD". Shipped in 0.57.6.
+- **The Frikkie reply itself:** already sent. He pasted and sent it at 14:10 ("Pasted and
+  sent, so this one's done"), so there was nothing left in the box to pull onto the card.
+
 ## Other places the same pattern shows up
 
 - **`post.mjs` `approvePost`** (Marketing's "Drafts to post": Shipped, Learned / fixed,
