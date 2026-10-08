@@ -185,7 +185,7 @@ approves, the agent does.**
   in `lqDraw`). Tests: `test/adapt.mjs`, "HOME'S LAYOUT": at 1840×873, 1600×900,
   1440×860 and 1280×800, with four agents at work, no orb, label or heading overlaps
   another, everything stays on screen, and the groups keep their zones. Shipped in
-  0.57.5 (PR #139, renumbered after the crash fix below).
+  0.57.4 (PR #139).
 
 ## 10. "Symbiot keeps crashing": its window closed itself
 
@@ -207,7 +207,7 @@ approves, the agent does.**
 - **Fixed in:** `ui.mjs` `winHeadless` (a headless or driven browser gets no window id)
   and `winOld` (closes only when it isn't the window you're in), `server.mjs`
   `headlessAgent` (a headless browser's ping never becomes the newest window). Tests:
-  `test/app.mjs`, "ONE WINDOW". Shipped in 0.57.4.
+  `test/app.mjs`, "ONE WINDOW". Shipped in 0.57.5 (PR #140).
 
 ## 11. The urgent crash fix waited behind routine work
 
@@ -229,7 +229,7 @@ approves, the agent does.**
   `urgentSweep` (unpark in order and start what's waiting; a 6-hour cap if the urgent
   run never ends). `mind.mjs` `actIn` (Home's hand-over, and its reply naming what got
   parked) and `tasks.mjs` `buildTasksMd` (an "Urgent: do these first" section on top).
-  Tests: `test/urgent.mjs`. Shipped in 0.57.4.
+  Tests: `test/urgent.mjs`. Shipped in 0.57.5 (PR #140).
 
 ## 12. A draft to approve that didn't show the draft
 
