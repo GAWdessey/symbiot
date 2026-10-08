@@ -2,10 +2,16 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
-## 0.57.4
+## 0.57.5
 
 - **Symbiot's window stops closing by itself.** Since 0.55.1, opening a second Symbiot window closes the older one, so you don't end up with a pile of them. But an agent taking a screenshot of Home in a headless browser counted as a new window too, so each screenshot closed the one you were using. Today that looked like Symbiot crashing again and again while the symbiot agent was checking Home's layout. The app itself never stopped. A headless browser no longer counts as a window, and the window you're in never closes itself: if a newer one opens, it says so and offers "Use this one".
 - **Urgent work goes first.** When you hand over something urgent (the app crashing, "urgent", "comes first", or a word in capitals), Symbiot parks every other lane that has work going or waiting. Their current run finishes, but nothing new starts. If the lane's own agent is on routine work, it stops (its changes stay in the folder) and the urgent task starts at once. Once that run is done, the parked lanes pick up again in the order they were parked. Lanes you parked yourself stay parked. Home's reply says what got parked, and urgent tasks get a section of their own at the top of the brief, whatever kind of task they are.
+
+## 0.57.4
+
+- **Home's layout holds with agents at work.** The agents at work used to sit among the section orbs. That pushed the headings off their own orbs ("Projects" over Todo, "Resources" over Workdesk), drew "Watching" on top of "Areas", scattered what you watch, and squeezed each agent's name into a narrow column ("Ste / ve"). Now they have a band of their own under "Needs you": a small orb each, the lane's name in full, and its step, what it's on and the time left under it. The sections keep their own places, each heading by its orbs. When the window is too small for that and Home falls back to its free layout, no heading is drawn on another.
+- **No stray orb by the chat.** An orb reaching toward your pointer could hang in the gap as an orb of its own, with no label. It now stays a bulge on the orb's edge.
+- **The Needs-you card no longer covers its orb.** It sits clear to the side, joined to the orb by a short liquid line.
 
 ## 0.57.3
 

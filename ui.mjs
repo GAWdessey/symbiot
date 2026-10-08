@@ -27,8 +27,13 @@ body.lq-forced #lq{display:none}
 .lqd .lt .lm{display:block;font-weight:500;font-size:11.5px;color:#8A919B;margin-top:1px}
 .lqd .lt{all:unset;box-sizing:border-box;display:flex;align-items:center;justify-content:center;gap:7px;min-height:32px;padding:4px 8px;cursor:pointer;text-align:center;max-width:170px}
 .lqd.lq-proj .lt{flex-direction:column;gap:1px;max-width:190px}
+.lqd.lq-run .lt{flex-direction:column;gap:1px;max-width:220px}
+.lqd.lq-band .lt{flex-direction:column;align-items:flex-start;gap:1px;text-align:left;max-width:270px;width:270px;padding:2px 6px;min-height:0}
+.lqd.lq-band .lt>span:first-child{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.lqd.lq-band .lt .lm{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;max-width:100%}
+.lqd.lq-band small,.lqd.lq-band .lgo{display:none}
 .lqd.lq-proj .lt .lm{font-weight:500;font-size:11.5px;color:#8A919B;max-width:180px;-webkit-line-clamp:1}
-body.lq-light .lqd.lq-proj .lt .lm{color:#5A6470}
+body.lq-light .lqd.lq-proj .lt .lm,body.lq-light .lqd.lq-run .lt .lm{color:#5A6470}
 .lqd.lq-you .lt::before,.lqd.lq-lit .lt::before{content:'';flex:none;width:7px;height:7px;border-radius:50%;background:#F2A541;box-shadow:0 0 0 3px rgba(242,165,65,.2)}
 .lqd .lt span{overflow:hidden;white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;font-size:12.5px;line-height:1.3;overflow-wrap:anywhere}
 .lqd .lgo{display:none;margin:4px 10px 10px;min-height:38px;padding:0 16px;border-radius:999px;border:1px solid #FFFFFF;background:linear-gradient(180deg,#FFFFFF 0%,#D2D8E1 44%,#8E97A6 56%,#E6EAF0 100%);color:#06080B;font:700 12.5px var(--sans);cursor:pointer}
@@ -2632,7 +2637,7 @@ function lqLoad(commit){if(LQ.scene==='work'){lqLoadWork();return;}var fresh=LQ.
 var PARA_OF={tasks:'p',agents:'p',todo:'p',marketing:'p',board:'a',week:'a',standup:'a',map:'r',drift:'r',settings:'r',reports:'r'};
 var PARA_NAME={p:'Projects',a:'Areas',w:'Watching',r:'Resources',x:'Archive'},PARA_SUB={p:'work with an end',a:'what you keep up with',w:'new on what you watch',r:'to look things up in',x:'what’s done'};
 var PARA_ANG={p:-2.55,a:-0.6,w:0.3,r:2.6,x:1.25},PARA_LIVE={p:0.45,a:0.3,w:0.3,r:0.12,x:0};
-function lqPara(d){return d.kind==='you'?'n':d.kind==='archive'?'x':d.kind==='feed'&&d.shape!=='reports'?'w':PARA_OF[d.shape]||'p';}
+function lqPara(d){return d.kind==='you'?'n':d.band?'b':d.kind==='archive'?'x':d.kind==='feed'&&d.shape!=='reports'?'w':PARA_OF[d.shape]||'p';}
 function lqParaGo(g){lqAct();if(g==='p'){lqWorkBy('project');return;}if(g==='a'||g==='w'){lqUse('board');lqPool('board');return;}if(g==='r'){lqUse('map');lqPool('map');return;}lqArchive();}
 // The needs-you band: a lit orb per thing only you can do, its blob beside it (the
 // project, the question, its two answers), as many across as fit, in a steady
@@ -2640,11 +2645,23 @@ function lqParaGo(g){lqAct();if(g==='p'){lqWorkBy('project');return;}if(g==='a'|
 var LQ_BLOBW=250,LQ_NEEDY=128;
 function lqNeeds(h,S){var rank={ask:0,approve:1,setup:2},rk=function(y){return y.urgent?(y.id==='setup:ai'?-3:y.id==='setup:agent'?-2:-1):rank[y.kind]||0;},ys=(h.you||[]).slice().sort(function(a,b){return rk(a)-rk(b)||(a.id<b.id?-1:a.id>b.id?1:0);});
 var nb=lqNextBox(h,S);if(!ys.length)return {items:[],bottom:nb,x:0,page:0,pages:1,count:0};
-var R=Math.round(24*Math.max(0.85,Math.min(1.1,S.s))),unit=2*R+30+LQ_BLOBW,gap=28,cols=Math.max(1,Math.min(3,Math.floor((S.w-24+gap)/(unit+gap)))),pages=Math.max(1,Math.ceil(ys.length/cols));
+var R=Math.round(24*Math.max(0.85,Math.min(1.1,S.s))),unit=3*R+22+LQ_BLOBW,gap=28,cols=Math.max(1,Math.min(3,Math.floor((S.w-24+gap)/(unit+gap)))),pages=Math.max(1,Math.ceil(ys.length/cols));
 LQ.needPage=(LQ.needPage||0)%pages;var shown=ys.slice(LQ.needPage*cols,LQ.needPage*cols+cols),x0=Math.max(12,(S.w-(shown.length*unit+(shown.length-1)*gap))/2);
 var tall=(shown.some(function(y){return y.kind==='ask'&&(y.options||[]).length;})?172:116)+(shown.some(function(y){return y.fix==='handover';})?16:0);
 var items=shown.map(function(y,i){return {id:y.id,kind:'you',blob:true,item:y,shape:y.shape,title:y.title,sub:y.sub,r:R,tx:x0+i*(unit+gap)+R,ty:LQ_NEEDY+R,ax:0,ay:0};});
 return {items:items,bottom:items.length?LQ_NEEDY+tall+20:0,x:x0,page:LQ.needPage,pages:pages,count:ys.length};}
+// The agents at work, a band of their own under the needs-you band (or the header):
+// a small orb each, its lane's name in full and, under it, where it is in its brief
+// ("step 2 of 4: …"), what it's on and how long it has left, amber once it has gone
+// quiet or round in circles. Among the groups they pushed the headings off their
+// own orbs and squeezed the names letter by letter (2026-10-08), so they never join
+// a group: the groups lay out under the band, as if it were the header.
+var LQ_RUNW=270;
+function lqRunBand(h,S,y){var rs=(h.runs||[]);if(!rs.length)return {items:[],bottom:0};
+var R=Math.round(15*Math.max(0.85,Math.min(1.1,S.s))),unit=2*R+50+LQ_RUNW,gap=22,cols=Math.max(1,Math.min(4,Math.floor((S.w-24+gap)/(unit+gap)))),shown=rs.slice(0,cols);
+var x0=Math.max(12,(S.w-(shown.length*unit+(shown.length-1)*gap))/2),y0=Math.max(y||0,84)+18;
+var items=shown.map(function(x,i){return {id:x.id,kind:'run',band:true,shape:'agents',repo:x.repo,title:x.name,sub:runWarn(x)+x.line+(x.eta?' · '+x.eta:''),ask:!!(x.quiet||x.looping),r:R,tx:x0+i*(unit+gap)+R,ty:y0+22,ax:0,ay:0};});
+return {items:items,bottom:y0+44+16,more:rs.length-shown.length};}
 // Next up, where the needs-you band would be: with nothing waiting on you (and only
 // then), a few things that CAN be done next (home.mjs nextUp), each with its gain
 // and one tap that starts an agent or makes a task. × puts the box away until what
@@ -2691,7 +2708,7 @@ list.forEach(function(d,i){if(d.kind==='shape')((near||{})[d.shape]||[]).forEach
 else if((d.kind==='you'||d.kind==='feed')&&at[d.shape]!=null)links.push([at[d.shape],i,0.5]);});return links.filter(same);}
 function lqBuild(){var a=LQ.adapt||{},h=LQ.home||{},S=lqSize(),list=[];LQ.bw=S.w;LQ.bh=S.h;
 // the band first: everything else sits under it, round a core centred in what's left
-var need=lqNeeds(h,S),top=need.bottom,cx=S.w/2,cy=top?Math.max(S.h*0.47,(top+60+S.h-200)/2):S.h*0.47;LQ.cy=cy;LQ.top=top;LQ.need=need;
+var need=lqNeeds(h,S),band=lqRunBand(h,S,need.bottom),top=band.bottom||need.bottom,cx=S.w/2,cy=top?Math.max(S.h*0.47,(top+60+S.h-200)/2):S.h*0.47;LQ.cy=cy;LQ.top=top;LQ.need=need;
 // Marketing only once posts can be drafted, or are (home.mjs): a new user meets what they watch first
 var mk=function(id){return id!=='agents'&&(id!=='marketing'||!!h.marketing);}; // and Agents is the Workdesk (tasks), one orb
 var feeds=(h.feeds||[]).slice(0,2),lay=((a.layout&&a.layout.items)||[]).filter(function(it){return mk(it.id);}),more=((a.layout&&a.layout.more)||[]).filter(mk);
@@ -2705,8 +2722,6 @@ lay.slice(room).forEach(function(it){if(!vis.some(function(x){return x.id===it.i
 var mkh=h.marketing||{},mkSub=mkh.needs?mkh.needs+(mkh.needs>1?' need you':' needs you'):mkh.working?'its agent is at work':'';
 lay.slice(0,room).forEach(function(it){var mko=it.id==='marketing';list.push({id:'shape:'+it.id,kind:'shape',shape:it.id,title:LQNAMES[it.id]||it.id,sub:it.id==='reports'&&repOut?repNew.count+' new':mko?mkSub:'',ask:mko&&!!mkh.needs,orbit:mko&&!!mkh.working,r:it.r*rs,tx:cx+Math.cos(it.angle)*it.d*vx,ty:cy+Math.sin(it.angle)*it.d*vy});});
 feeds.forEach(function(f,i){var ang=Math.PI/2+(i-(feeds.length-1)/2)*0.7;var fn=bsName({name:f.title});list.push({id:f.id,kind:'feed',shape:f.shape,title:fn.n+(fn.sub?' · '+fn.sub.split('@').pop():''),sub:f.sub,r:(28+5*Math.min(f.count||1,5))*rs,tx:cx+Math.cos(ang)*300*vx,ty:cy+Math.sin(ang)*300*vy});});
-// each agent at work, a drop of its own by the Workdesk: its lane, where it is in its brief ("step 2 of 4: …"), what it's on and how long it has left, amber once it has gone quiet or round in circles
-(h.runs||[]).slice(0,3).forEach(function(x,i,a){var ang=PARA_ANG.p+(i-(a.length-1)/2)*0.45;list.push({id:x.id,kind:'run',shape:'agents',repo:x.repo,title:x.name,sub:runWarn(x)+x.line+(x.eta?' · '+x.eta:''),ask:!!(x.quiet||x.looping),r:30*rs,tx:cx+Math.cos(ang)*330*vx,ty:cy+Math.sin(ang)*300*vy});});
 list.push({id:'archive',kind:'archive',shape:'tasks',title:'Archive',sub:'what’s done: archived tasks',r:26*rs,tx:cx+Math.cos(PARA_ANG.x)*330*vx,ty:cy+Math.sin(PARA_ANG.x)*330*vy});
 list.forEach(function(d){var g=lqPara(d);d.live=PARA_LIVE[g];if(g==='r')d.r*=0.82;if(g==='x')d.r*=0.85;if(d.shape==='tasks'&&d.kind==='shape'&&h.working)d.orbit=true;});
 var mr=more.length?[{id:'more',kind:'more',title:'more',sub:more.map(function(m){return LQNAMES[m]||m;}).join(' · '),more:more.slice(),r:24*S.s}]:[],zl=list.concat(mr),zc=lqZones(zl,S,top,92*S.s);
@@ -2720,7 +2735,7 @@ for(;;){cur=base.slice();if(more.length)cur.push({id:'more',kind:'more',title:'m
 cur.forEach(function(d){d.r=d.r0;d.tx=d.tx0;d.ty=d.ty0;});if(lqRelax(cur,S,cx,cy,92*S.s,top?top+60:0)||tries++>=8)break;
 var q=-1;for(var z=base.length-1;z>=0;z--)if(base[z].kind==='shape'){q=z;break;}if(q<0)break;more.push(base[q].shape);base.splice(q,1);}
 list=cur;}
-list=list.concat(need.items);var old={};LQ.drops.forEach(function(d){old[d.id]=d;});
+list=list.concat(need.items,band.items);var old={};LQ.drops.forEach(function(d){old[d.id]=d;});
 // a new blob grows where it belongs, rather than sweeping out of the core across the rest
 LQ.drops=list.map(function(d){var o=old[d.id];d.x=o?o.x:d.blob?d.tx:cx;d.y=o?o.y:d.blob?d.ty:cy;d.vx=o?o.vx:0;d.vy=o?o.vy:0;d.cr=o?o.cr:0;return d;});
 var n=(h.you||[]).length,w=h.working||0,qt=(h.runs||[]).filter(function(x){return x.quiet||x.looping;}).length,wk=w?w+' agent'+(w>1?'s':'')+' working'+(qt?' ('+qt+' stalled)':''):'';
@@ -2789,7 +2804,7 @@ while(out.indexOf('  ')>=0)out=out.split('  ').join(' ');[' :',' ,',' ;',' .'].f
 function lqLabels(){var el=$('lqdrops');if(!el)return;
 var dropAt=function(b){return LQ.drops[+b.getAttribute('data-i')];};
 var same=sameHtml(el,LQ.drops.map(function(d,i){if(d.blob)return "<div class='lqd lq-you lqblob"+(d.item.urgent?' urgent':'')+"' data-i='"+i+"' role='group' aria-label='"+escQ(String(d.item.name||d.item.title||'')+': '+String(d.item.q||d.item.sub||''))+"'>"+blobBody(d.item,true)+"</div>";
-return "<div class='lqd lq-"+d.kind+(d.parked?' lq-parked':'')+(d.ask&&d.kind==='shape'?' lq-lit':'')+(LQ.openTag===d.id?' open':'')+"' data-i='"+i+"'><button type='button' class='lt' title='"+escQ(String(d.title||'').split('**').join('')+(d.sub?' · '+d.sub:''))+"' aria-expanded='"+(LQ.openTag===d.id)+"'><span>"+esc(lqShort(d.title,42))+"</span>"+((d.kind==='proj'||d.kind==='run')&&d.sub?"<span class='lm'>"+esc(lqShort(d.sub,d.kind==='proj'?40:56))+"</span>":"")+"</button>"+(d.sub?"<small>"+esc(d.sub)+"</small>":"")+"<button type='button' class='lgo'>Open &rsaquo;</button></div>";}).join(''));
+return "<div class='lqd lq-"+d.kind+(d.band?' lq-band':'')+(d.parked?' lq-parked':'')+(d.ask&&d.kind==='shape'?' lq-lit':'')+(LQ.openTag===d.id?' open':'')+"' data-i='"+i+"'><button type='button' class='lt' title='"+escQ(String(d.title||'').split('**').join('')+(d.sub?' · '+d.sub:''))+"' aria-expanded='"+(LQ.openTag===d.id)+"'><span>"+esc(lqShort(d.title,42))+"</span>"+((d.kind==='proj'||d.kind==='run')&&d.sub?"<span class='lm'>"+esc(lqShort(d.sub,d.kind==='proj'?40:56))+"</span>":"")+"</button>"+(d.sub?"<small>"+esc(d.sub)+"</small>":"")+"<button type='button' class='lgo'>Open &rsaquo;</button></div>";}).join(''));
 if(!same){LQ.btns=[];LQ.lts=[];el.querySelectorAll('.lqd').forEach(function(b){LQ.btns.push(b);var d=dropAt(b),lt=b.querySelector('.lt'),go=b.querySelector('.lgo');LQ.lts.push(lt);
 if(lt)lt.addEventListener('click',function(ev){lqOpen(dropAt(b),ev);});
 if(go)go.addEventListener('click',function(ev){LQ.openTag=null;lqOpen(dropAt(b),ev);});
@@ -2941,16 +2956,19 @@ var D=LQ.drops,N=D.length;
 for(var i=0;i<N;i++){var d=D[i],tx=d.tx,ty=d.ty,tr=d.gone?0:d.r;
 if(rest){tx=cx+Math.cos(i*1.3)*16;ty=cy+Math.sin(i*1.3)*16;tr=d.r*0.6;}
 else if(pool){tx=cx+(i-(N-1)/2)*40*S.s;ty=S.h-40;tr=13*S.s;}
-else if(talk&&!d.blob){var t0=(LQ.scene!=='work'&&LQ.top)||S.h*0.12;ty=t0+(d.ty-t0)*0.55;}
+else if(talk&&!d.blob&&!d.band){var t0=(LQ.scene!=='work'&&LQ.top)||S.h*0.12;ty=t0+(d.ty-t0)*0.55;}
 var ax=k*(tx-d.x)-c*d.vx,ay=k*(ty-d.y)-c*d.vy;
 if(still){d.x=tx;d.y=ty;d.vx=0;d.vy=0;}else{d.vx+=ax;d.vy+=ay;d.x+=d.vx;d.y+=d.vy;}
-if(!rest&&!pool){d.x=Math.max(d.cr+12,Math.min(S.w-d.cr-12,d.x));d.y=Math.max((d.blob?60:140)+d.cr,Math.min(S.h-150-d.cr-50,d.y));}
+if(!rest&&!pool){d.x=Math.max(d.cr+12,Math.min(S.w-d.cr-12,d.x));d.y=Math.max((d.blob||d.band?60:140)+d.cr,Math.min(S.h-150-d.cr-50,d.y));}
 d.cr+=(tr-d.cr)*(still?1:0.06);
-var b=LQ.btns[i];if(b&&b.offsetWidth)d.lw=b.offsetWidth;if(b&&b.style){b.style.transform=d.blob?'translate('+Math.round(d.x+d.r+30)+'px,'+Math.round(d.y-d.r-4)+'px)':'translate('+Math.round(d.x-(b.offsetWidth||0)/2)+'px,'+Math.round(d.y+d.cr+(d.kind==='run'?28:4))+'px)';var show=!rest&&!pool;b.style.opacity=show?'1':'0';b.style.pointerEvents=show?'auto':'none';var lt=LQ.lts&&LQ.lts[i];if(lt)lt.tabIndex=show?0:-1;}}
-(LQ.gbtns||[]).forEach(function(gb){var g=gb.getAttribute('data-g'),top=1e9,sx=0,nn=0;D.forEach(function(d){if(d.kind!=='more'&&lqPara(d)===g){top=Math.min(top,d.y-d.cr);sx+=d.x;nn++;}});if(!nn||!gb.style)return;var gw=gb.offsetWidth||0,gh=gb.offsetHeight||0,zt=LQ.scene!=='work'&&LQ.zoneT&&LQ.zoneT[g];if(zt)gb.style.transform='translate('+Math.round(zt[0]-gw/2)+'px,'+Math.round(zt[1]-gh/2)+'px)';else{var gx=Math.max(12,Math.min(lqSize().w-gw-12,sx/nn-gw/2)),gy=top-gh-30;
+var b=LQ.btns[i];if(b&&b.offsetWidth)d.lw=b.offsetWidth;if(b&&b.style){b.style.transform=d.blob?'translate('+Math.round(d.x+2*d.r+22)+'px,'+Math.round(d.y-d.r-4)+'px)':d.band?'translate('+Math.round(d.x+d.r+30)+'px,'+Math.round(d.y-(b.offsetHeight||36)/2)+'px)':'translate('+Math.round(d.x-(b.offsetWidth||0)/2)+'px,'+Math.round(d.y+d.cr+(d.kind==='run'?28:4))+'px)';var show=!rest&&!pool;b.style.opacity=show?'1':'0';b.style.pointerEvents=show?'auto':'none';var lt=LQ.lts&&LQ.lts[i];if(lt)lt.tabIndex=show?0:-1;}}
+var gplaced=[];(LQ.gbtns||[]).forEach(function(gb){var g=gb.getAttribute('data-g'),top=1e9,sx=0,nn=0;D.forEach(function(d){if(d.kind!=='more'&&lqPara(d)===g){top=Math.min(top,d.y-d.cr);sx+=d.x;nn++;}});if(!nn||!gb.style)return;var gw=gb.offsetWidth||0,gh=gb.offsetHeight||0,zt=LQ.scene!=='work'&&LQ.zoneT&&LQ.zoneT[g];if(zt){gb.style.transform='translate('+Math.round(zt[0]-gw/2)+'px,'+Math.round(zt[1]-gh/2)+'px)';gplaced.push([zt[0]-gw/2,zt[1]-gh/2,zt[0]+gw/2,zt[1]+gh/2]);}else{var gx=Math.max(12,Math.min(lqSize().w-gw-12,sx/nn-gw/2)),gy=top-gh-30;
 // off any droplet it would sit on (the "more" droplet, another group's): above it instead
 for(var pass=0;pass<3;pass++)D.forEach(function(d){if(d.blob||lqPara(d)===g&&d.kind!=='more')return;var l=d.x-d.cr-6,r=d.x+d.cr+6,t=d.y-d.cr-6,b=d.y+d.cr+(d.lw?24:6);if(gx<r&&gx+gw>l&&gy<b&&gy+gh>t)gy=t-gh-4;});
-gb.style.transform='translate('+Math.round(gx)+'px,'+Math.round(Math.max(LQ.scene!=='work'&&LQ.top?LQ.top:48,gy))+'px)';}var gshow=!rest&&!pool&&!talk;gb.style.opacity=gshow?'1':'0';gb.style.pointerEvents=gshow?'auto':'none';gb.tabIndex=gshow?0:-1;});
+gy=Math.max(LQ.scene!=='work'&&LQ.top?LQ.top:48,gy);
+// nor on another group's heading ("Watching" was drawn over "Areas"): beside it instead, on the side its own group is
+for(var ps=0;ps<3;ps++)gplaced.forEach(function(p){if(gx<p[2]+6&&gx+gw>p[0]-6&&gy<p[3]+4&&gy+gh>p[1]-4)gx=gx+gw/2<(p[0]+p[2])/2?p[0]-gw-12:p[2]+12;});gx=Math.max(12,Math.min(lqSize().w-gw-12,gx));
+gplaced.push([gx,gy,gx+gw,gy+gh]);gb.style.transform='translate('+Math.round(gx)+'px,'+Math.round(gy)+'px)';}var gshow=!rest&&!pool&&!talk;gb.style.opacity=gshow?'1':'0';gb.style.pointerEvents=gshow?'auto':'none';gb.tabIndex=gshow?0:-1;});
 var ntl=$('lqneedt');if(ntl&&ntl.style)ntl.style.opacity=rest?'0':'1';var nxb=$('lqnext');if(nxb&&nxb.style){nxb.style.opacity=rest?'0':'';nxb.style.pointerEvents=rest?'none':'';}
 (LQ.orbs||[]).forEach(function(o){var d=D[+o.getAttribute('data-i')];if(!d||!o.style)return;var R=Math.round(d.cr+20);o.style.width=o.style.height=(2*R)+'px';o.style.transform='translate('+Math.round(d.x-R)+'px,'+Math.round(d.y-R)+'px)';o.style.opacity=rest||pool?'0':'1';});
 var cb=$('lqcore');if(cb&&cb.style){var inC=core.cr>60;if(cb.classList)cb.classList.toggle('in',inC&&!rest);cb.style.maxWidth=inC?Math.round(core.cr*1.5)+'px':'340px';var cw=cb.offsetWidth||0,chh=cb.offsetHeight||0;
@@ -3028,11 +3046,12 @@ LQ.drops.forEach(function(dr){put(k++,dr.x,dr.y,dr.cr,dr.kind==='you'||dr.ask?1:
 // a tendril is a chain of blobs close enough to always bridge (spaced at under 2.8r),
 // never one blob floating in the gap: drawn whole or not at all
 tend.forEach(function(dr){var dx=dr.x-LQ.core.x,dy=dr.y-LQ.core.y,len=Math.sqrt(dx*dx+dy*dy)||1,gap=len-LQ.core.cr-dr.cr;if(gap<=8)return;var n=Math.max(1,Math.min(3,Math.ceil(gap/40))),sp=gap/(n+1),rr=sp/2;if(k+n>NB-1)return;for(var m=1;m<=n;m++){var at=LQ.core.cr+sp*m;put(k++,LQ.core.x+dx/len*at,LQ.core.y+dy/len*at,rr);}});
-// the liquid line from a lit orb to its blob: three drops close enough to always
+// the liquid line from a lit orb to its blob (which sits 2r+22 right of it, clear of the orb): four drops close enough to always
 // bridge, the last under the blob's edge, so the blob hangs off the orb; drawn whole or not at all
-if(LQ.mode!=='rest'&&LQ.mode!=='pool')LQ.drops.forEach(function(dr){if(!dr.blob||dr.gone||dr.cr<6||k+3>NB-1)return;var x1=dr.x+dr.cr;put(k++,x1+8,dr.y,7*Math.min(1,dr.cr/dr.r),1,0.2);put(k++,x1+18,dr.y,6,1,0.2);put(k++,x1+31,dr.y,10,1,0.2);});
+if(LQ.mode!=='rest'&&LQ.mode!=='pool')LQ.drops.forEach(function(dr){if(!dr.blob||dr.gone||dr.cr<6||k+4>NB-1)return;var x1=dr.x+dr.cr+8,x2=dr.x+2*dr.r+28,st=(x2-x1)/3;put(k++,x1,dr.y,7*Math.min(1,dr.cr/dr.r),1,0.2);put(k++,x1+st,dr.y,6,1,0.2);put(k++,x1+2*st,dr.y,6,1,0.2);put(k++,x2,dr.y,10,1,0.2);});
 var P=LQ.pointer;if(P&&LQ.mode==='aware'&&!LQ.talking){var best=null,bd=1e9;[LQ.core].concat(LQ.drops).forEach(function(g){if(g.cr<18)return;var dd=Math.hypot(P[0]-g.x,P[1]-g.y)-g.cr;if(dd<bd){bd=dd;best=g;}});
-if(best&&bd<230){var dx=P[0]-best.x,dy=P[1]-best.y,dl=Math.hypot(dx,dy)||1,reach=Math.min(dl,best.cr+70);put(NB-1,best.x+dx/dl*reach,best.y+dy/dl*reach,8+20*(1-Math.max(0,bd)/230));}}
+// a bulge toward the pointer, its tip always on the orb's edge: reaching further, it hung in the gap as an orb of its own with no label (2026-10-08)
+if(best&&bd<230){var dx=P[0]-best.x,dy=P[1]-best.y,dl=Math.hypot(dx,dy)||1,tr=8+20*(1-Math.max(0,bd)/230),reach=Math.min(dl,best.cr+tr*0.6);put(NB-1,best.x+dx/dl*reach,best.y+dy/dl*reach,tr);}}
 // drawn seldom (no GPU, or less motion asked for): still, and only when something moved
 if(slow){var sig=W+'|'+H+'|'+th.look+th.night+th.contrast;for(var q=0;q<o.length;q++)sig+=','+Math.round(o[q]*400);if(sig===G.sig)return;G.sig=sig;}
 var U=G.U;gl.uniform2f(U.uRes,W,H);gl.uniform1f(U.uT,slow?0:t);gl.uniform1f(U.uDpr,d);gl.uniform4fv(U.uB,o);gl.uniform3f(U.uRip,LQ.ripple[0],LQ.ripple[1],still?-10:LQ.ripple[2]);
