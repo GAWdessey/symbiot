@@ -57,20 +57,29 @@ function scanDraw() {
 }
 // Run `find` directly (no shell, no pipe): a timeout then kills find itself
 // rather than a shell whose piped children keep running, and whatever it found
-// before the timeout is kept instead of discarded.
-function findPaths(args, limit) {
-  const timeout = SCAN.active ? Math.max(1000, Math.min(FIND_TIMEOUT_MS, SCAN.deadline - Date.now())) : FIND_TIMEOUT_MS;
-  const r = spawnSync("find", args, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], maxBuffer: 32 * 1024 * 1024, timeout, killSignal: "SIGKILL" });
+// before the timeout is kept instead of discarded. Kept only if find wrote it out:
+// writing to a pipe, GNU find holds its output in a 4 KB buffer, so a kill threw
+// every repo away (a home folder that took 21s gave 0 repos, and Home then asked
+// the user where their repos were). stdbuf -oL makes it write each line as found.
+let STDBUF = null;
+const hasStdbuf = () => (STDBUF === null ? (STDBUF = spawnSync("stdbuf", ["--version"], { stdio: "ignore" }).status === 0) : STDBUF);
+function findPaths(args, limit, cap = FIND_TIMEOUT_MS) {
+  const timeout = SCAN.active ? Math.max(1000, Math.min(cap, SCAN.deadline - Date.now())) : cap;
+  const [cmd, argv] = hasStdbuf() ? ["stdbuf", ["-oL", "find", ...args]] : ["find", args];
+  const r = spawnSync(cmd, argv, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], maxBuffer: 32 * 1024 * 1024, timeout, killSignal: "SIGKILL" });
   if (r.error && r.error.code !== "ETIMEDOUT") return [];
   if (r.error && SCAN.active) SCAN.partial = true;
   return String(r.stdout || "").split("\n").filter(Boolean).slice(0, limit);
 }
-const PRUNE = ["node_modules", ".cache", ".local", ".npm", "venv", ".venv", ".gradle", "Pods"];
+// Tool installs that are git checkouts (~/.nvm, ~/.rustup…) aren't your projects: a lane for
+// them is a lane nobody works in.
+const PRUNE = ["node_modules", ".cache", ".local", ".npm", "venv", ".venv", ".gradle", "Pods", ".nvm", ".rustup", ".cargo", ".pyenv", ".oh-my-zsh"];
 const anyName = (names) => ["(", ...names.flatMap((n, i) => (i ? ["-o", "-name", n] : ["-name", n])), ")"];
 // find .git dirs quickly by PRUNING heavy trees (node_modules etc.) instead of
-// crawling into them — this is the big speedup for the map scan.
+// crawling into them — this is the big speedup for the map scan. Finding the repos
+// is what the scan is for, so this walk gets the scan's whole budget, not one walk's.
 function findGitDirs(base, limit) {
-  return findPaths([base, "-maxdepth", "7", ...anyName([...PRUNE, ".git-crypt"]), "-prune", "-o", "-name", ".git", "-print"], limit);
+  return findPaths([base, "-maxdepth", "7", ...anyName([...PRUNE, ".git-crypt"]), "-prune", "-o", "-name", ".git", "-print"], limit, SCAN_TIMEOUT_MS);
 }
 function me() {
   return { email: sh("git config --global user.email").trim(), name: sh("git config --global user.name").trim() };
@@ -299,18 +308,24 @@ function loadRepoCache() {
 function refreshRepos({ worker = true } = {}) {
   if (REPO_JOB) return REPO_JOB;
   REPO_STATE.searching = true; Object.assign(REPO_STATE, { done: 0, total: 0, phase: "" });
-  const finish = (list) => {
-    REPO_CACHE = { at: Date.now(), list: Array.isArray(list) ? list : [] }; REPO_STATE.at = REPO_CACHE.at; REPO_STATE.searching = false; REPO_JOB = null; LAST_MAP = null;
+  const finish = (list, partial = false) => {
+    list = Array.isArray(list) ? list : [];
+    // A search cut short by its deadline found less than is there: keep the repos the
+    // last one found that still exist, rather than lose lanes (and ask the user where
+    // their repos are) because a disk was slow this time.
+    if (partial && REPO_CACHE) { const have = new Set(list.map((r) => r.path)); list = [...list, ...REPO_CACHE.list.filter((r) => r && !have.has(r.path) && existsSync(join(r.path, ".git")))]; }
+    REPO_CACHE = { at: Date.now(), list }; REPO_STATE.at = REPO_CACHE.at; REPO_STATE.searching = false; REPO_JOB = null; LAST_MAP = null;
     try { mkdirSync(join(repoFile(), ".."), { recursive: true }); writeFileSync(repoFile(), JSON.stringify(REPO_CACHE), { mode: 0o600 }); } catch {}
     try { if (REPO_STATE.onChange) REPO_STATE.onChange(REPO_CACHE.list); } catch {}
     return REPO_CACHE.list;
   };
-  if (!worker) { const was = OPTS.cache; OPTS.cache = false; let l = []; try { l = findAllRepos(); } finally { OPTS.cache = was; } return Promise.resolve(finish(l)); }
+  loadRepoCache();
+  if (!worker) { const was = OPTS.cache; OPTS.cache = false; let l = []; try { l = findAllRepos(); } finally { OPTS.cache = was; } return Promise.resolve(finish(l, SCAN.partial)); }
   REPO_JOB = new Promise((resolve) => {
     let w; try { w = new Worker(new URL("./scanworker.mjs", import.meta.url)); } catch { const was = OPTS.cache; OPTS.cache = false; let l = []; try { l = findAllRepos(); } finally { OPTS.cache = was; } resolve(finish(l)); return; }
-    let got = null;
-    w.on("message", (m) => { if (m && m.progress) Object.assign(REPO_STATE, m.progress); if (m && m.list) got = m.list; });
-    w.on("error", () => {}); w.on("exit", () => resolve(finish(got || (REPO_CACHE && REPO_CACHE.list) || [])));
+    let got = null, partial = false;
+    w.on("message", (m) => { if (m && m.progress) Object.assign(REPO_STATE, m.progress); if (m && m.list) { got = m.list; partial = !!m.partial; } });
+    w.on("error", () => {}); w.on("exit", () => resolve(finish(got || (REPO_CACHE && REPO_CACHE.list) || [], partial || !got)));
   });
   return REPO_JOB;
 }
@@ -339,15 +354,25 @@ function findAllRepos(base) {
         if (last) repos.push({ path: repo, name: repo.split("/").pop(), recency: last });
       }
     }
-    // Group worktrees by shared git dir; keep only the freshest checkout of each.
+    // Group worktrees by shared git dir: the main checkout is always a lane (it's
+    // where the project lives: dropping it for a fresher worktree lost the lane), plus
+    // the freshest worktree kept outside it (one inside it, like .claude/worktrees,
+    // is an agent's scratch copy, not a place of its own).
     // (Not deadline-bound: it's what makes the result correct, and it's cheap.)
     const byCommon = {};
     for (const r of repos) {
-      const cd = sh(`git -C ${JSON.stringify(r.path)} rev-parse --git-common-dir 2>/dev/null`).trim() || r.path;
+      const cd = sh(`git -C ${JSON.stringify(r.path)} rev-parse --git-common-dir 2>/dev/null`).trim() || join(r.path, ".git");
       const key = cd.startsWith("/") ? cd : join(r.path, cd);
-      if (!byCommon[key] || byCommon[key].recency < r.recency) byCommon[key] = r;
+      const g = byCommon[key] || (byCommon[key] = { main: null, trees: [] });
+      if (key === join(r.path, ".git")) g.main = r; else g.trees.push(r);
     }
-    return Object.values(byCommon).sort((a, b) => b.recency - a.recency).slice(0, 60);
+    const kept = [];
+    for (const { main, trees } of Object.values(byCommon)) {
+      if (main) kept.push(main);
+      const tree = trees.filter((t) => !(main && t.path.startsWith(main.path + "/"))).sort((a, b) => b.recency - a.recency)[0];
+      if (tree) kept.push(tree);
+    }
+    return kept.sort((a, b) => b.recency - a.recency).slice(0, 60);
   } finally { scanEnd(own); }
 }
 // What a project is about, in its own words: its package description and keywords
