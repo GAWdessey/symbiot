@@ -5,10 +5,10 @@
 // log in, so the write-up still happens on days you never open Symbiot.
 // `symbiot app` then finds that running copy and opens its window.
 import { fileURLToPath } from "node:url";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { homedir } from "node:os";
 import { join, dirname } from "node:path";
-import { readFileSync, writeFileSync, appendFileSync, mkdirSync, existsSync, unlinkSync, readdirSync, statSync, chmodSync } from "node:fs";
+import { readFileSync, writeFileSync, appendFileSync, mkdirSync, existsSync, unlinkSync, readdirSync, statSync, chmodSync, rmdirSync } from "node:fs";
 import { CONFIG_DIR, loadConfig, saveConfig, hasCmd } from "./core.mjs";
 
 // The Android app (android/) runs this same code with SYMBIOT_ANDROID_APP=1. Its
@@ -191,9 +191,54 @@ function launcherPath(path, node) {
   for (const d of [...String(path || "").split(":"), dirname(node)]) if (d && !/node_modules[\\/]\.bin|node-gyp-bin/.test(d) && !seen.has(d)) { seen.add(d); out.push(d); }
   return out.join(":");
 }
+// ---- Windows: the Start menu and the desktop -------------------------------------
+// A shortcut in the Start menu and one on the desktop, with the orb (icon.ico). Each
+// runs a small script through wscript (open.vbs), which starts `symbiot open` with
+// its window hidden: node is a console program, and run straight from a shortcut it
+// would flash a black window.
+// Windows' own APPDATA (when it's in this home); the desktop as Windows reports it
+// (often in OneDrive), kept in desktop.txt so uninstalling finds that shortcut again.
+const winDirs = (home = homedir()) => {
+  const env = process.env.APPDATA || "", appdata = env && env.toLowerCase().startsWith(home.toLowerCase()) ? env : join(home, "AppData", "Roaming"), own = join(appdata, "Symbiot");
+  let desk = ""; try { desk = readFileSync(join(own, "desktop.txt"), "utf8").trim(); } catch {}
+  return { own, menu: join(appdata, "Microsoft", "Windows", "Start Menu", "Programs", "Symbiot.lnk"), desk: desk || join(home, "Desktop", "Symbiot.lnk") };
+};
+const ICO_SRC = fileURLToPath(new URL("./icon.ico", import.meta.url));
+// VBScript: "" is a quote inside a string
+const vbsContent = (node, script) => `' Symbiot: start it (or show it) with no console window\r\nCreateObject("WScript.Shell").Run """${node.replace(/"/g, '""')}"" ""${script.replace(/"/g, '""')}"" open", 0, False\r\n`;
+// PowerShell that makes one shortcut: single quotes, '' is a quote inside one
+function shortcutPs(lnk, vbs, ico) {
+  const q = (s) => "'" + String(s).replace(/'/g, "''") + "'";
+  return `$s = (New-Object -ComObject WScript.Shell).CreateShortcut(${q(lnk)}); $s.TargetPath = (Join-Path $env:WINDIR 'System32\\wscript.exe'); $s.Arguments = ${q('"' + vbs + '"')}; $s.IconLocation = ${q(ico + ",0")}; $s.Description = 'Symbiot'; $s.WorkingDirectory = $env:USERPROFILE; $s.Save()`;
+}
+function installWindows({ node, script, home, run }) {
+  const d = winDirs(home), vbs = join(d.own, "open.vbs"), ico = join(d.own, "symbiot.ico"), want = vbsContent(node, script);
+  let wrote = false;
+  try {
+    mkdirSync(d.own, { recursive: true });
+    if (!existsSync(join(d.own, "desktop.txt")) && home === homedir()) {
+      const r = run("powershell", ["-NoProfile", "-NonInteractive", "-Command", "[Environment]::GetFolderPath('Desktop')"]);
+      const dir = r && r.status === 0 ? String(r.stdout || "").trim() : "";
+      if (dir) { d.desk = join(dir, "Symbiot.lnk"); writeFileSync(join(d.own, "desktop.txt"), d.desk); }
+    }
+    let had = ""; try { had = readFileSync(vbs, "utf8"); } catch {}
+    if (had !== want) { writeFileSync(vbs, want); wrote = true; }
+    if (!existsSync(ico)) { writeFileSync(ico, readFileSync(ICO_SRC)); wrote = true; }
+    for (const lnk of [d.menu, d.desk]) {
+      if (!wrote && existsSync(lnk)) continue;
+      try { mkdirSync(join(lnk, ".."), { recursive: true }); } catch {}
+      const r = run("powershell", ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", shortcutPs(lnk, vbs, ico)]);
+      if (r && r.status !== 0) return { error: String((r.stderr || r.stdout || "") || "PowerShell couldn't make the shortcut").trim().slice(0, 300) };
+      wrote = true;
+    }
+  } catch (e) { return { error: (e && e.message) || String(e) }; }
+  return { written: wrote, file: d.menu, desktop: d.desk };
+}
 // Writes the entry and icon when they're missing or differ. { written, file } or { skipped }.
-function installLauncher({ node = process.execPath, script, home = homedir(), platform = OS, path = process.env.PATH || "" } = {}) {
-  if (platform !== "linux" || !script) return { skipped: true };
+function installLauncher({ node = process.execPath, script, home = homedir(), platform = OS, path = process.env.PATH || "", run = (c, a) => spawnSync(c, a, { encoding: "utf8", windowsHide: true, timeout: 30000 }) } = {}) {
+  if (!script) return { skipped: true };
+  if (platform === "win32") return installWindows({ node, script, home, run });
+  if (platform !== "linux") return { skipped: true };
   const file = launcherFile(home), icon = launcherIcon(home), want = launcherContent(node, script, launcherPath(path, node));
   let wrote = false;
   try {
@@ -207,8 +252,9 @@ function installLauncher({ node = process.execPath, script, home = homedir(), pl
   return { written: wrote, file };
 }
 function removeLauncher(home = homedir()) {
-  const gone = [];
-  for (const f of [launcherFile(home), launcherIcon(home)]) { try { if (existsSync(f)) { unlinkSync(f); gone.push(f); } } catch {} }
+  const gone = [], d = winDirs(home);
+  for (const f of [launcherFile(home), launcherIcon(home), d.menu, d.desk, join(d.own, "open.vbs"), join(d.own, "symbiot.ico"), join(d.own, "desktop.txt")]) { try { if (existsSync(f)) { unlinkSync(f); gone.push(f); } } catch {} }
+  try { rmdirSync(d.own); } catch {}
   return gone;
 }
 function autostartState() { const file = autostartFile(); return { on: existsSync(file), file, ...(OS === "android-app" ? { phone: "app" } : OS === "android" ? { phone: "termux" } : {}) }; }
@@ -226,4 +272,4 @@ function setAutostart(on, script) {
   } catch (e) { return { ...autostartState(), error: String((e && e.message) || e) }; }
 }
 
-export { iconSvg, setLauncherLook, launcherPath, launcherFile, launcherIcon, launcherContent, installLauncher, removeLauncher, weeklyCfg, lastSlot, weeklyDue, setWeekly, weeklyState, latestWeek, runWeekly, startWeekly, notifyCmd, desktopNotify, autostartFile, autostartContent, autostartState, setAutostart };
+export { winDirs, vbsContent, shortcutPs, iconSvg, setLauncherLook, launcherPath, launcherFile, launcherIcon, launcherContent, installLauncher, removeLauncher, weeklyCfg, lastSlot, weeklyDue, setWeekly, weeklyState, latestWeek, runWeekly, startWeekly, notifyCmd, desktopNotify, autostartFile, autostartContent, autostartState, setAutostart };

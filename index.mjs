@@ -360,7 +360,7 @@ async function cmdOpen() {
   if (p && p.version) { openApp(`http://127.0.0.1:${port}/?t=${cfg.appToken}`); return; }
   let fd = "ignore"; try { mkdirSync(CONFIG_DIR, { recursive: true }); fd = openSync(join(CONFIG_DIR, "app.log"), "a"); } catch {}
   const env = { ...process.env }; delete env.SYMBIOT_NO_OPEN;
-  spawn(process.execPath, [realpathSync(fileURLToPath(import.meta.url)), "app"], { detached: true, stdio: ["ignore", fd, fd], env }).unref();
+  spawn(process.execPath, [realpathSync(fileURLToPath(import.meta.url)), "app"], { detached: true, stdio: ["ignore", fd, fd], env, windowsHide: true }).unref();
 }
 // symbiot uninstall: everything Symbiot put on this computer, then the program.
 // --keep-data keeps ~/.config/symbiot (settings, tasks, memory); --yes doesn't ask.

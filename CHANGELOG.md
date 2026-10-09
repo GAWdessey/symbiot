@@ -2,6 +2,10 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.57.9
+
+- **On Windows, Symbiot is in the Start menu and on your desktop.** Installing puts a Symbiot shortcut with the orb in both (your real desktop, even when it's in OneDrive), and opens Symbiot right away, into setup. The shortcuts start it through a small hidden script, so no black console window flashes up; `symbiot uninstall` takes them away again. Installing on a Windows desktop now opens Symbiot too, and says so in the terminal.
+
 ## 0.57.8
 
 - **An approved deploy with your server key goes through.** The membrane read `scp -i ~/.ssh/oracle_key …` as copying your key, when the key is only what scp signs in with (`ssh -i` already passed). So argena's deploy to the game server stayed blocked even after you approved it twice. Now scp's sign-in options don't count as files it copies. Copying a key or credentials themselves (`scp ~/.ssh/id_rsa host:`) is still stopped.

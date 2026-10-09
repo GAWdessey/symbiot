@@ -88,12 +88,19 @@ try {
   console.log("INSTALLING AND REMOVING");
   const { installLauncher } = await import("../desktop.mjs");
   const li = installLauncher({ script: CLI, home: HOME });
-  ok(WIN ? "the app-menu entry is Linux's only (here: nothing written, nothing fails)" : "the app-menu entry is written here (Linux)", WIN ? li.skipped === true : !!li.file, li);
+  if (WIN) {
+    const vbs = join(HOME, "AppData", "Roaming", "Symbiot", "open.vbs");
+    ok("Windows: a Start-menu shortcut and one on the desktop, with the orb", !li.error && existsSync(li.file) && existsSync(li.desktop) && existsSync(join(HOME, "AppData", "Roaming", "Symbiot", "symbiot.ico")), li);
+    ok("…each opens Symbiot through a hidden script (no console window)", existsSync(vbs) && /\.Run """.*node.*"" "".*index\.mjs"" open", 0, False/i.test(readFileSync(vbs, "utf8")), existsSync(vbs) ? readFileSync(vbs, "utf8") : "");
+    const sc = spawnSync("powershell", ["-NoProfile", "-Command", `$s=(New-Object -ComObject WScript.Shell).CreateShortcut('${li.file.replace(/'/g, "''")}'); $s.TargetPath + '|' + $s.Arguments + '|' + $s.IconLocation`], { encoding: "utf8" });
+    ok("…the shortcut runs wscript on that script, with the orb icon", /wscript\.exe\|"[^"]*open\.vbs"\|[^|]*symbiot\.ico,0/i.test(sc.stdout.trim()), sc.stdout.trim());
+  } else ok("the app-menu entry is written here (Linux)", !!li.file, li);
   const post = spawnSync(process.execPath, [join(ROOT, "postinstall.mjs")], { encoding: "utf8", env: { ...process.env, npm_config_global: "true", SYMBIOT_NO_LAUNCHER: "" } });
   ok("the install step never fails the install", post.status === 0, [post.status, post.stderr]);
   mkdirSync(CFG, { recursive: true }); writeFileSync(join(CFG, "config.json"), "{}");
   const un = spawnSync(process.execPath, [CLI, "uninstall", "--yes", "--keep-program"], { encoding: "utf8", env: process.env });
   ok("symbiot uninstall removes its data", un.status === 0 && !existsSync(CFG), [un.status, un.stdout.slice(-200), un.stderr]);
+  if (WIN) ok("…and its Start-menu and desktop shortcuts", !existsSync(li.file) && !existsSync(li.desktop), [li.file, li.desktop]);
 } finally {
   if (app) app.kill();
   await sleep(300);
