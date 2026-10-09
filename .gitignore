@@ -2,3 +2,5 @@ node_modules/
 *.tgz
 .symbiot/
 android/build/
+desktop/node_modules/
+desktop/dist/

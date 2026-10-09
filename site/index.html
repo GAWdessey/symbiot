@@ -161,22 +161,22 @@ footer a{text-decoration:none}footer a:hover{color:var(--bone)}
           <span class="tag">Your computer</span>
           <h3>Windows</h3>
           <p class="alt">Windows 10 and 11</p>
-          <a class="btn" href="https://github.com/GarthGhostai/symbiot-desktop/releases/latest/download/Symbiot-Setup.exe">Download for Windows</a>
+          <a class="btn" data-file="Symbiot-Setup.exe" href="https://github.com/GarthGhostai/symbiot/releases/latest/download/Symbiot-Setup.exe">Download for Windows</a>
           <p class="alt">If Windows says it protected your PC, choose <b>More info</b> → <b>Run anyway</b>.</p>
         </div>
         <div class="card" data-os="mac">
           <span class="tag">Your computer</span>
           <h3>Mac</h3>
-          <p class="alt">macOS 12 or later, Apple silicon and Intel</p>
-          <a class="btn" href="https://github.com/GarthGhostai/symbiot-desktop/releases/latest/download/Symbiot.dmg">Download for Mac</a>
-          <p class="alt">The first time, right-click Symbiot and choose <b>Open</b>.</p>
+          <p class="alt">macOS 11 or later, Apple silicon and Intel</p>
+          <a class="btn" data-file="Symbiot.dmg" href="https://github.com/GarthGhostai/symbiot/releases/latest/download/Symbiot.dmg">Download for Mac</a>
+          <p class="alt">Drag Symbiot to Applications. The first time, your Mac asks you to allow it: <b>System Settings</b> → <b>Privacy &amp; Security</b> → <b>Open Anyway</b>.</p>
         </div>
         <div class="card" data-os="linux">
           <span class="tag">Your computer</span>
           <h3>Linux</h3>
           <p class="alt">Ubuntu, Pop!_OS, Debian and most others</p>
-          <a class="btn" href="https://github.com/GarthGhostai/symbiot-desktop/releases/latest/download/Symbiot.AppImage">Download for Linux</a>
-          <p class="alt">Or the <a href="https://github.com/GarthGhostai/symbiot-desktop/releases/latest/download/symbiot.deb">.deb package</a> for Ubuntu and Debian.</p>
+          <a class="btn" data-file="symbiot.deb" href="https://github.com/GarthGhostai/symbiot/releases/latest/download/symbiot.deb">Download for Linux</a>
+          <p class="alt">Open the download to install it. Not Ubuntu, Pop!_OS, Debian or Mint? Use the <a data-file="Symbiot.AppImage" href="https://github.com/GarthGhostai/symbiot/releases/latest/download/Symbiot.AppImage">AppImage</a>.</p>
         </div>
       </div>
       <p class="term">Prefer the terminal? <code>npm install -g symbiot</code> (needs Node.js 18 or later).</p>
@@ -203,32 +203,40 @@ footer a{text-decoration:none}footer a:hover{color:var(--bone)}
 </footer>
 
 <script>
-// Before the first installers are published, the download buttons say so instead of
-// leading to a missing file; they switch over by themselves once a release exists.
-(function () {
-  fetch("https://api.github.com/repos/GarthGhostai/symbiot-desktop/releases/latest", { headers: { Accept: "application/vnd.github+json" } })
-    .then(function (r) { if (r.ok) return; soon(); }).catch(function () {});
-  function soon() {
-    document.querySelectorAll('.plat .card a.btn').forEach(function (a) { a.removeAttribute("href"); a.textContent = "Coming very soon"; a.setAttribute("aria-disabled", "true"); a.style.opacity = ".55"; a.style.cursor = "default"; });
-    var p = document.getElementById("primary"); p.href = "#install"; document.getElementById("primary-label").textContent = "Installers coming very soon";
-    document.getElementById("primary-note").innerHTML = "Developers can install it today: <code style=\"font-size:12.5px\">npm install -g symbiot</code>";
-  }
-})();
-// Which computer is this? The big button downloads the installer for it, and its card is marked.
+// The downloads: each button gets the newest release that has its installer (a version
+// still being built never leaves a button pointing at nothing); one that no release has
+// yet says so. The big button is the installer for this computer.
 (function () {
   var ua = navigator.userAgent || "", plat = ((navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || "").toLowerCase();
   var mobile = /android|iphone|ipad|ipod/i.test(ua) || (navigator.userAgentData && navigator.userAgentData.mobile);
   var os = mobile ? "" : /win/.test(plat) || /windows/i.test(ua) ? "windows" : /mac/.test(plat) || /mac os/i.test(ua) ? "mac" : /linux|x11|cros/.test(plat) || /linux/i.test(ua) ? "linux" : "";
   var names = { windows: "Windows", mac: "Mac", linux: "Linux" };
-  if (mobile) { document.getElementById("mobile-note").style.display = "block"; return; }
-  if (!os) return;
-  var card = document.querySelector('.plat .card[data-os="' + os + '"]');
-  if (card) {
-    card.classList.add("here");
-    var link = card.querySelector("a.btn"), primary = document.getElementById("primary");
-    primary.href = link.href;
-    document.getElementById("primary-label").textContent = "Install Symbiot for " + names[os];
+  if (mobile) document.getElementById("mobile-note").style.display = "block";
+  var card = os ? document.querySelector('.plat .card[data-os="' + os + '"]') : null;
+  if (card) card.classList.add("here");
+  function primary() {
+    if (!card) return;
+    var link = card.querySelector("a.btn"), p = document.getElementById("primary");
+    if (link.getAttribute("href")) { p.href = link.href; document.getElementById("primary-label").textContent = "Install Symbiot for " + names[os]; }
+    else { p.href = "#install"; document.getElementById("primary-label").textContent = "Coming very soon for " + names[os]; }
   }
+  primary();
+  fetch("https://api.github.com/repos/GarthGhostai/symbiot/releases?per_page=30", { headers: { Accept: "application/vnd.github+json" } })
+    .then(function (r) { return r.ok ? r.json() : null; })
+    .then(function (rels) {
+      if (!rels) return; // GitHub didn't answer (rate limit): the links to the latest release stay
+      var url = {};
+      rels.filter(function (r) { return !r.draft && !r.prerelease; }).forEach(function (r) {
+        (r.assets || []).forEach(function (a) { if (!url[a.name]) url[a.name] = a.browser_download_url; });
+      });
+      document.querySelectorAll("a[data-file]").forEach(function (a) {
+        var u = url[a.getAttribute("data-file")];
+        if (u) { a.href = u; return; }
+        a.removeAttribute("href"); a.setAttribute("aria-disabled", "true"); a.style.opacity = ".55"; a.style.cursor = "default";
+        if (a.classList.contains("btn")) a.textContent = "Coming very soon";
+      });
+      primary();
+    }).catch(function () {});
 })();
 </script>
 </body>
