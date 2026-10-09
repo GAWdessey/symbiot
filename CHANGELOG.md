@@ -4,6 +4,7 @@ What each Symbiot release brought, newest first. When Approve bumps the version,
 
 ## 0.63.0
 
+- **The Android app is built again.** 0.62.1's release went out without its APK: a link to a build folder on this computer had been committed by mistake, so GitHub's build couldn't make the folder. It's gone, and the ignore rule now covers a link as well as a folder. 0.63.0 carries 0.62.1's phone fix (setup going to **Your computer**).
 - **Symbiot's new mark.** The app's own orb, lit the way Home lights it, with an S inside in the two colours Symbiot already speaks in: the silver of agents at work above, the amber of "needs you" below. It's everywhere: the app-menu, Start-menu and dock icon (in each look: Ferrofluid's black chrome, Glass's clear droplet, Pearl's mirror), the window and tab icon (a simpler drawing at small sizes), the app's header (the old green dot is gone), setup, the Windows, Mac and Linux installers (the Mac one inside Apple's icon grid), the tray and the Mac menu bar, the Android app and its notifications, and symbiot.co.za, which now has a sharing image for links.
 ## 0.62.1
 
