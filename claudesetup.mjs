@@ -4,7 +4,7 @@
 // sign-in page in the browser and finishes by itself once they've signed in. If the
 // page shows a code instead (the browser couldn't hand it back), setup has a box for
 // it, which goes to the sign-in that's waiting. SYMBIOT_CLAUDE_INSTALL_CMD replaces
-// the installer (tests).
+// the installer (tests); SYMBIOT_NO_SIGNIN turns both off (the smoke test presses every button).
 import { spawn } from "node:child_process";
 import { homedir } from "node:os";
 import { claudeState, claudeSpawn } from "./ai.mjs";
@@ -19,6 +19,7 @@ function installCmd(platform = process.platform) {
 }
 function installClaude() {
   if (S.installing) return claudeSetup();
+  if (process.env.SYMBIOT_NO_SIGNIN && !process.env.SYMBIOT_CLAUDE_INSTALL_CMD) { S.installError = "Installing is switched off here (SYMBIOT_NO_SIGNIN)."; return claudeSetup(); }
   S.installing = true; S.installError = ""; S.log = "";
   const c = installCmd();
   let ch; try { ch = spawn(c.cmd, c.args, { cwd: homedir(), shell: c.shell, windowsHide: true, env: process.env }); } catch (e) { S.installing = false; S.installError = String((e && e.message) || e); return claudeSetup(); }
@@ -33,6 +34,8 @@ function installClaude() {
 }
 function signInClaude() {
   if (S.signingIn) return claudeSetup();
+  // tests press every button: a real sign-in would open the browser on someone's real account
+  if (process.env.SYMBIOT_NO_SIGNIN) { S.signinError = "Signing in is switched off here (SYMBIOT_NO_SIGNIN)."; return claudeSetup(); }
   S.signingIn = true; S.signinError = "";
   let ch; try { ch = claudeSpawn(["auth", "login", "--claudeai"], { cwd: homedir(), stdio: ["pipe", "pipe", "pipe"], env: process.env }); } catch (e) { S.signingIn = false; S.signinError = String((e && e.message) || e); return claudeSetup(); }
   S.child = ch;

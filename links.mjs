@@ -18,6 +18,7 @@
 // trusted sites, there's no command an agent could call to link a site itself.
 //
 // What's linked is config.linked: { <id>: { at, watch?, hosts: [trusted by the link] } }.
+import { can } from "./licence.mjs";
 import { join } from "node:path";
 import { readFileSync } from "node:fs";
 import { CONFIG_DIR, loadConfig, saveConfig } from "./core.mjs";
@@ -100,10 +101,16 @@ function linksState() {
 // Link one: trust its hosts, watch its page, open it to sign in. Clicking a link
 // that's already there just opens it again to sign in (signed out, or a second
 // account). Gives { ok, url, item } or { error }.
+// what counts as an inbox or chat for Free's one
+const INBOX_GROUPS = new Set(["Mail", "Calendar", "Chat", "Social"]);
 async function linkSite(id, { open = signIn } = {}) {
   const e = catalog().list.find((x) => x.id === id);
   if (!e) return { error: `No link called ${id}.` };
   const l = linked(), had = l[id], before = new Set(trustedSites()), added = [];
+  if (!had && INBOX_GROUPS.has(e.group)) { // Free connects one inbox or chat (licence.mjs)
+    const n = Object.keys(l).filter((k) => { const x = catalog().list.find((c) => c.id === k); return x && INBOX_GROUPS.has(x.group); }).length;
+    const ok = can("inboxes", { count: n }); if (!ok.ok) return { error: ok.why, pro: true };
+  }
   for (const h of e.hosts) if (!before.has(h)) { const r = trustSite(h); if (r && r.ok) added.push(h); }
   let watch = had && had.watch;
   if (e.watch && !(watch && watchState().watches.some((x) => x.id === watch))) {

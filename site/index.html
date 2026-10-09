@@ -101,6 +101,15 @@ h2{margin:0 0 14px;font:650 clamp(28px,4vw,40px)/1.15 var(--sans);letter-spacing
 .term code{font:500 14px ui-monospace,SFMono-Regular,Menlo,monospace;padding:2px 8px;border-radius:8px;background:var(--card);color:var(--bone)}
 .need{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
 @media(max-width:820px){.need{grid-template-columns:1fr}}
+.plans{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
+@media(max-width:820px){.plans{grid-template-columns:1fr}}
+.plans .card{display:flex;flex-direction:column;gap:6px}
+.plans .price{font:650 30px/1.1 var(--sans);letter-spacing:-.02em;color:var(--bone)}
+.plans .price small{font:500 14px var(--sans);color:var(--faint);letter-spacing:0}
+.plans ul{margin:10px 0 18px;padding-left:18px}
+.plans li{margin:6px 0}
+.plans .card.pro{border-color:color-mix(in srgb,var(--amber) 45%,var(--line))}
+.plans .btn{align-self:flex-start;margin-top:auto}
 .need li{margin:6px 0}
 .need ul{margin:0;padding-left:18px;color:var(--faint);font-size:15px}
 
@@ -117,6 +126,7 @@ footer a{text-decoration:none}footer a:hover{color:var(--bone)}
     <nav aria-label="Main">
       <a href="#what">What it does</a>
       <a href="#how">How it works</a>
+      <a href="#pro">Pro</a>
       <a href="https://github.com/GarthGhostai/symbiot">GitHub</a>
       <a class="btn" href="#install">Install</a>
     </nav>
@@ -196,6 +206,32 @@ footer a{text-decoration:none}footer a:hover{color:var(--bone)}
     </div>
   </section>
 
+  <section id="pro">
+    <div class="wrap">
+      <p class="kicker">Free and Pro</p>
+      <h2>Free to use. Pro when it's doing more of your work.</h2>
+      <p class="sub">Every install starts with 14 days of Pro, no key and no card needed. After that it carries on as Free unless you choose Pro.</p>
+      <div class="plans">
+        <div class="card"><h3>Free</h3><p class="price">US$0</p><ul>
+          <li>The orb, Home and Talk to Symbiot, typed or spoken</li>
+          <li>Your week, your standup and what's still on your plate</li>
+          <li>One agent at a time, in up to 3 projects</li>
+          <li>One connected inbox or chat</li>
+          <li>The Away screen</li></ul>
+          <a class="btn ghost" href="#install">Install Symbiot</a></div>
+        <div class="card pro"><h3>Pro</h3><p class="price">US$12 <small>a month, or US$99 a year</small></p><ul>
+          <li>Everything in Free</li>
+          <li>As many agents at once as you like, in every project</li>
+          <li>Every inbox and chat: all your mail, WhatsApp, LinkedIn and your calendars</li>
+          <li>The marketing lane: posts drafted from your real work</li>
+          <li>Approve-and-ship: Symbiot opens the pull request and ships it</li>
+          <li>Fixes for Pro customers first</li></ul>
+          <a class="btn" href="mailto:sales@symbiot.co.za?subject=Symbiot%20Pro&amp;body=I%27d%20like%20Symbiot%20Pro%20(monthly%20or%20yearly%3F)">Get Pro</a>
+          <p class="alt">Email sales@symbiot.co.za. You'll get a key to paste into Symbiot's Settings.</p></div>
+      </div>
+    </div>
+  </section>
+
   <section>
     <div class="wrap">
       <p class="kicker">What you need</p>
@@ -219,7 +255,7 @@ footer a{text-decoration:none}footer a:hover{color:var(--bone)}
 <footer>
   <div class="wrap">
     <span>© 2026 Ghost AI · Symbiot</span>
-    <span><a href="https://github.com/GarthGhostai/symbiot">GitHub</a> · <a href="https://github.com/GarthGhostai/symbiot/blob/main/CHANGELOG.md">What's new</a> · <a href="https://github.com/GarthGhostai/symbiot/issues">Report a problem</a></span>
+    <span><a href="https://github.com/GarthGhostai/symbiot/blob/main/LICENSE">Elastic License 2.0</a> · <a href="https://github.com/GarthGhostai/symbiot">GitHub</a> · <a href="https://github.com/GarthGhostai/symbiot/blob/main/CHANGELOG.md">What's new</a> · <a href="https://github.com/GarthGhostai/symbiot/issues">Report a problem</a></span>
   </div>
 </footer>
 

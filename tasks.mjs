@@ -2,6 +2,7 @@
 // each repo gets (.symbiot/TASKS.md), what the agent ticked (review), and
 // Approve: branch, commit, push, PR, and the version bump and npm release facts
 // it shows.
+import { can } from "./licence.mjs";
 import { spawn, spawnSync } from "node:child_process";
 import { join } from "node:path";
 import { readFileSync, writeFileSync, existsSync, readdirSync, mkdirSync, statSync } from "node:fs";
@@ -558,6 +559,7 @@ async function shipChanges(path, texts, opts = {}) {
 function autoMergeRepos() { const a = loadConfig().autoMerge; return Array.isArray(a) ? a : []; }
 function setAutoMerge(repo, on) { const cfg = loadConfig(); let a = (Array.isArray(cfg.autoMerge) ? cfg.autoMerge : []).filter((x) => x !== repo); if (on && repo) a.push(repo); if (a.length) cfg.autoMerge = a; else delete cfg.autoMerge; saveConfig(cfg); return { ok: true, repos: cfg.autoMerge || [] }; }
 async function approveRepo(repo, opts = {}) {
+  const pro = can("ship"); if (!pro.ok) return { error: pro.why, pro: true }; // Pro (licence.mjs); the work stays on its branch
   const waiting = (t) => t.filter((x) => x.repo === repo && x.review && !x.done && !x.archived);
   const shipped = waiting(loadTasks());
   if (!shipped.length) return { error: "Nothing awaiting review for " + (repo || "(no repo)") + "." };
@@ -578,6 +580,7 @@ async function approveRepo(repo, opts = {}) {
 // repo's open tasks the changes finished (the run didn't tick them): they're
 // approved with the changes, as Approve does, so they don't go out again.
 async function approveChanges(repo, opts = {}) {
+  const pro = can("ship"); if (!pro.ok) return { error: pro.why, pro: true };
   if (loadTasks().some((x) => x.repo === repo && x.review && !x.done && !x.archived)) return await approveRepo(repo, opts);
   const path = laneMap()[repo]; if (!path) return { error: "Repo not found: " + (repo || "(no repo)") };
   const busy = stillWorking(repo, path); if (busy) return busy;

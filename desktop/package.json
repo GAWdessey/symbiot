@@ -5,7 +5,7 @@
   "description": "Symbiot's desktop app: Symbiot installed like any other app, with its own Node and a tray icon.",
   "main": "main.js",
   "author": "Garth White <garth@ghost-ai.co.za>",
-  "license": "MIT",
+  "license": "Elastic-2.0",
   "scripts": {
     "start": "electron .",
     "dist": "electron-builder",

@@ -1,6 +1,8 @@
 // Handing a repo to the user's agent: the saved command template, the one-click
 // presets (and the Orca IDE one), the background-job registry behind the Agents
 // tab, and the questions an unattended agent leaves for the user.
+import { MARKETING_DIR } from "./marketing.mjs";
+import { licenceState, isPro, can, canWorkIn } from "./licence.mjs";
 import { spawn } from "node:child_process";
 import { homedir } from "node:os";
 import { join, dirname, resolve, relative } from "node:path";
@@ -268,6 +270,7 @@ function noteSession(path, code, resumed) {
 function runHandoff(repoPath, { force = false, lost = false } = {}) {
   let tmpl = handoffCmd(); if (!tmpl || !repoPath) return null;
   if (isParked(repoPath)) return { blocked: true, parked: true, questions: 0, note: PARKED_NOTE }; // even forced: that's what parking is for
+  const lic = licenceGate(repoPath); if (lic) return lic; // Free's limits, and never Symbiot's own code (licence.mjs); even forced
   let opts = {}; try { opts = JSON.parse(readSymbiot(repoPath, "handoff.json")) || {}; } catch {}
   const busy = runningHandoff(repoPath); if (busy) return { busy: true, id: busy.id || "", pid: busy.pid, auto: !!busy.auto };
   releaseHeldTasks(repoPath); // held for an agent another process started, which has since exited
@@ -282,7 +285,8 @@ function runHandoff(repoPath, { force = false, lost = false } = {}) {
   noteUntracked(repoPath);
   const lock = join(repoPath, ".symbiot", LOCK);
   const own = opts.env && typeof opts.env === "object" ? Object.fromEntries(Object.entries(opts.env).map(([k, v]) => [k, String(v)])) : null, boxEnv = sandboxEnv(box);
-  const env = own || boxEnv ? { ...(own || {}), ...(boxEnv || {}) } : null;
+  const owner = licenceState().plan === "owner" ? { SYMBIOT_OWNER: "1" } : null; // the guard lets only the owner's runs touch Symbiot's own files
+  const env = own || boxEnv || owner ? { ...(own || {}), ...(boxEnv || {}), ...(owner || {}) } : null;
   const e = track(typeof opts.name === "string" && opts.name ? opts.name.slice(0, 80) : repoPath.split("/").pop(), fillHandoff(runCmd, repoPath, resume ? RESUME_PROMPT : HANDOFF_PROMPT), repoPath, (code) => {
     if (noteSession(repoPath, code, !!resume) === "lost") { setTimeout(() => { try { runHandoff(repoPath, { force: true, lost: true }); } catch {} }, 300); return; } // its conversation is gone: start afresh
     try { if (JSON.parse(readFileSync(lock, "utf8")).pid === e.pid) unlinkSync(lock); } catch {}
@@ -318,6 +322,23 @@ function nothingToDo(path) {
   const name = path === homedir() ? "~" : path.split(/[\\/]/).filter(Boolean).pop() || path;
   return md.trim() ? `Not started: every task in ${name}'s .symbiot/TASKS.md is ticked and no answer has come in since its last run, so an agent there would have nothing to do. Send it a task first.`
     : `Not started: ${name} has no .symbiot/TASKS.md, so an agent there would have nothing to do. Send it a task first.`;
+}
+// ---- Symbiot Free and Pro (licence.mjs) -------------------------------------
+// A run that Free doesn't cover doesn't start; it says why, the way a parked lane does.
+// Nothing running is touched. Free's 3 projects are the first 3 it works in (Settings
+// can free one); the marketing lane is Pro.
+function licenceGate(repoPath, st = licenceState()) {
+  const self = canWorkIn(repoPath, st); if (!self.ok) return { blocked: true, self: true, questions: 0, note: self.why };
+  if (isPro(st)) return null;
+  if (repoPath === MARKETING_DIR) { const m = can("marketing", {}, st); return { blocked: true, pro: true, questions: 0, note: m.why }; }
+  const running = HANDOFFS.filter((x) => x.handoff && x.status === "running" && x.path !== repoPath).length;
+  const a = can("agents", { running }, st); if (!a.ok) return { blocked: true, pro: true, questions: 0, note: a.why };
+  const cfg = loadConfig(), L = cfg.licence || {}, mine = Array.isArray(L.projects) ? L.projects : [];
+  if (!mine.includes(repoPath)) {
+    const p = can("projects", { count: mine.length }, st); if (!p.ok) return { blocked: true, pro: true, questions: 0, note: p.why + " Settings → Symbiot Pro can swap one of your 3 for this." };
+    cfg.licence = { ...L, projects: [...mine, repoPath] }; saveConfig(cfg);
+  }
+  return null;
 }
 // ---- a parked lane: its tasks start no runs ----------------------------------
 // A lane blocked on something only the user can give (a token from Meta) ran 27
@@ -1239,4 +1260,4 @@ function agentsList() {
   }).concat(earlierRuns());
 }
 
-export { FACTS, factsOf, knownRun, withStream, workOf, HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, connectorsInfo, linkReach, fillHandoff, runHandoff, nothingToDo, PARKED_NOTE, parkedPaths, isParked, parkLane, agentMissing, blockedAgain, runningHandoff, loadRuns, earlierRuns, namedFiles, waitingFor, startWaiting, noteUntracked, untrackedBefore, forgetUntracked, writeTasks, droppedTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, pickAgent, findOrcaCli, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, skipIdea, agentQuestions, answerQuestions, agentsList, needsOf, settleNeeds, NEEDS_FOR, readLastWords, readNeeds, parseRead, READ_FILE, autoAllow, autoAllowSweep, allowlistInWork, installAllowlist, inWork, withScope, withTrust, sandboxFor, sandboxEnv, sandboxNeeds, sandboxState, sandboxWrites, SANDBOX_DIR, resumeFor, noteSession, trustFull, GUARD_SETTINGS, isUrgent, urgentFirst, urgentUndo, urgentDone, urgentSweep, urgentState };
+export { FACTS, factsOf, knownRun, withStream, workOf, HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, connectorsInfo, linkReach, fillHandoff, runHandoff, nothingToDo, PARKED_NOTE, parkedPaths, isParked, parkLane, agentMissing, blockedAgain, runningHandoff, loadRuns, earlierRuns, namedFiles, waitingFor, startWaiting, noteUntracked, untrackedBefore, forgetUntracked, writeTasks, droppedTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, pickAgent, findOrcaCli, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, skipIdea, agentQuestions, answerQuestions, agentsList, needsOf, settleNeeds, NEEDS_FOR, readLastWords, readNeeds, parseRead, READ_FILE, autoAllow, autoAllowSweep, allowlistInWork, installAllowlist, inWork, withScope, withTrust, sandboxFor, sandboxEnv, sandboxNeeds, sandboxState, sandboxWrites, SANDBOX_DIR, resumeFor, noteSession, trustFull, GUARD_SETTINGS, isUrgent, urgentFirst, urgentUndo, urgentDone, urgentSweep, urgentState , licenceGate };

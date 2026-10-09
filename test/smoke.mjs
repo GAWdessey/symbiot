@@ -29,7 +29,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const LATEST = "999.0.0";
 const reg = createServer((req, res) => { res.writeHead(200, { "content-type": "application/json" }); res.end(JSON.stringify({ "dist-tags": { latest: LATEST } })); });
 await new Promise((r) => reg.listen(0, "127.0.0.1", r));
-const env = { ...process.env, HOME, USERPROFILE: HOME, SYMBIOT_NO_OPEN: "1", SYMBIOT_PORT: String(20000 + Math.floor(Math.random() * 20000)), SYMBIOT_REGISTRY: `http://127.0.0.1:${reg.address().port}` };
+const env = { ...process.env, HOME, USERPROFILE: HOME, SYMBIOT_NO_OPEN: "1", SYMBIOT_NO_SIGNIN: "1", SYMBIOT_PORT: String(20000 + Math.floor(Math.random() * 20000)), SYMBIOT_REGISTRY: `http://127.0.0.1:${reg.address().port}` };
 for (const k of ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "OPENAI_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY", "SYMBIOT_MODEL"]) delete env[k];
 const child = spawn(process.execPath, [join(HERE, "..", "index.mjs"), "app"], { env, stdio: ["ignore", "pipe", "pipe"] });
 let buf = "";
@@ -213,6 +213,10 @@ const calls = [
   ["/api/claude/install", "POST"],  // runs Anthropic's installer
   ["/api/claude/signin", "POST"],   // opens the sign-in page
   ["/api/claude/code", "POST"],     // no code -> error, nothing sent
+  ["/api/licence", "GET"],          // Symbiot Free and Pro: the plan, the trial, Free's projects
+  ["/api/licence/key", "POST"],     // a key in (no key -> error)
+  ["/api/licence/clear", "POST"],   // the key out
+  ["/api/licence/project/free", "POST"], // a Free project slot freed
   ["/api/voice", "GET"],            // Symbiot's own voice: ready, downloading, missing or none
   ["/api/voice/prepare", "POST"],   // fetches it (not in tests: no lang means no voice)
   ["/api/voice/say", "POST"],       // not ready -> error, no audio
