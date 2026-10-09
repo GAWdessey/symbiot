@@ -89,7 +89,8 @@ const agents = [{ path: M.MARKETING_DIR, status: "done", ask: { questions: [{ q:
 const pending = [{ repo: "marketing", path: M.MARKETING_DIR, tasks: [tasks[1]], files: [{ file: "drafts/symbiot/demo.md" }] }];
 const s = marketingState({ deps: { repos: () => map, tasks: () => tasks, posts: () => posts, agents: () => agents, pending: () => pending } });
 ok("what needs you: its agent's question, its work for your OK, the drafts waiting, each post it drafted to approve", s.needCount === 5 && s.needs.map((n) => n.kind).join() === "ask,approve,draft,post,post", s.needs);
-ok("…a post to approve: by its file, so Preview opens it, with its product", s.needs[3].rel === "drafts/dailify/launch.md" && s.needs[3].product === "Dailify" && s.needs[3].text === "The Dailify launch post", s.needs[3]);
+const launchPost = s.needs.find((n) => n.kind === "post" && n.rel === "drafts/dailify/launch.md") || {};
+ok("…a post to approve: by its file, so Preview opens it, with its product", launchPost.product === "Dailify" && launchPost.text === "The Dailify launch post", s.needs);
 const s2 = marketingState({ deps: { repos: () => map, tasks: () => [], posts: () => ({ posts: [], done: [] }), agents: () => [], pending: () => [], files: () => [{ rel: "a.md", name: "A", product: "Steve", status: "approved" }, { rel: "b.md", name: "B", product: "Steve", status: "skipped" }, { rel: "c.md", name: "C", product: "Steve", status: "" }] } });
 ok("…only the ones not approved or skipped yet", s2.needs.map((n) => n.rel).join() === "c.md" && s2.needCount === 1, s2.needs);
 ok("each tagged: the question and the draft are Dailify's", s.needs[0].product === "Dailify" && s.needs[2].product === "Dailify");
