@@ -212,6 +212,9 @@ const calls = [
   ["/api/claude/install", "POST"],  // runs Anthropic's installer
   ["/api/claude/signin", "POST"],   // opens the sign-in page
   ["/api/claude/code", "POST"],     // no code -> error, nothing sent
+  ["/api/voice", "GET"],            // Symbiot's own voice: ready, downloading, missing or none
+  ["/api/voice/prepare", "POST"],   // fetches it (not in tests: no lang means no voice)
+  ["/api/voice/say", "POST"],       // not ready -> error, no audio
   ["/api/onboarding", "GET"],       // setup: where you are, what's set up
   ["/api/onboarding/set", "POST"],  // a step, an app you don't use
   ["/api/onboarding/done", "POST"],

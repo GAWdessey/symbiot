@@ -3,6 +3,7 @@
 // work, on 127.0.0.1 only and behind the per-install token. (Watch on your phone
 // listens on your network separately, only for that: phone.mjs.)
 import { claudeSetup, installClaude, signInClaude, sendClaudeCode } from "./claudesetup.mjs";
+import { voiceState, prepareVoice, speak, stopVoices } from "./voice.mjs";
 import { spawn, spawnSync } from "node:child_process";
 import { toggleAway, closeAway } from "./away.mjs";
 import { homedir } from "node:os";
@@ -430,6 +431,14 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       if (u.pathname === "/api/home/answer" && req.method === "POST") { const b = await readBody(req); return json(res, homeAnswer(b.id, { pick: b.pick, text: b.text })); }
       if (u.pathname === "/api/away" && req.method === "POST") { const b = await readBody(req); return json(res, toggleAway(`http://127.0.0.1:${server.address().port}/?t=${TOKEN}`, b.open)); }
       if (u.pathname === "/api/home/next" && req.method === "POST") { const b = await readBody(req); return json(res, homeNext(b.id)); }
+      // Symbiot's own voice (voice.mjs), for computers without a natural one: the page asks
+      if (u.pathname === "/api/voice") return json(res, voiceState(u.searchParams.get("lang") || ""));
+      if (u.pathname === "/api/voice/prepare" && req.method === "POST") { const b = await readBody(req); return json(res, prepareVoice(b.lang || "")); }
+      if (u.pathname === "/api/voice/say" && req.method === "POST") {
+        const b = await readBody(req);
+        try { const wav = await speak(b.text, b.lang || ""); res.writeHead(200, { "content-type": "audio/wav", "cache-control": "no-store", "content-length": wav.length }); return res.end(wav); }
+        catch (e) { return json(res, { error: String((e && e.message) || e) }); }
+      }
       if (u.pathname === "/api/home/ask" && req.method === "POST") { const b = await readBody(req); return json(res, await homeAsk(b.question, { images: saveShots(b.images) })); }
       if (u.pathname === "/api/adapt") return json(res, adaptState({ from: String(u.searchParams.get("from") || ""), commit: u.searchParams.get("commit") === "1", ...(u.searchParams.has("touch") ? { touch: u.searchParams.get("touch") === "1" } : {}) }));
       if (u.pathname === "/api/adapt/use" && req.method === "POST") { const b = await readBody(req); return json(res, noteUse(b)); }
@@ -520,7 +529,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
         const e = attempt(1);
         return json(res, { started: true, id: e ? e.id : "", target });
       }
-      if (u.pathname === "/api/quit") { res.writeHead(200); res.end("bye"); setTimeout(() => process.exit(0), 150); return; }
+      if (u.pathname === "/api/quit") { stopVoices(); res.writeHead(200); res.end("bye"); setTimeout(() => process.exit(0), 150); return; }
     } catch (e) { res.writeHead(500, { "content-type": "application/json" }); res.end(JSON.stringify({ error: String((e && e.message) || e) })); return; }
     res.writeHead(404); res.end("not found");
   });
