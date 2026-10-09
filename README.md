@@ -1419,6 +1419,15 @@ expects. Symbiot rescales for `xdotool` and for `cliclick` on a Retina screen, b
 it can't read the scale on Wayland, and ydotool's moves follow your pointer
 acceleration, so a click there can land off target.
 
+## The Symbiot Browser
+
+Symbiot reads your sites (Gmail, LinkedIn, WhatsApp, Jira…) with your own sign-in, in
+its own browser. **Settings → Links → Open the Symbiot Browser** (or `symbiot browser`)
+opens it: a window of its own listing your sites, each with whether you're signed in and
+a **Sign in** button, plus an address bar for any other site. Sign in the usual way
+(the site's own login and 2FA; Symbiot never sees a password), then click **Done**: it
+closes and Symbiot checks each site.
+
 ## Any language
 
 Symbiot uses the language your computer is set to, or any language you name in

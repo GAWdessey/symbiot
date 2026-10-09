@@ -2,6 +2,12 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.61.0
+
+- **The Symbiot Browser.** Where you sign in to your sites for Symbiot, now a window of its own, named and marked as Symbiot's, instead of a plain Chrome window that looked like any other. It opens on a page of your sites (Gmail, Outlook, calendars, GitHub, Slack, WhatsApp, Jira, LinkedIn…), each saying whether you're signed in, with a **Sign in** (or **Connect**) button, an address bar for any other site, and **Done**, which closes it and has Symbiot check each site. Open it from **Settings → Links → Open the Symbiot Browser**, or `symbiot browser [site]`; connecting a site anywhere in Symbiot opens it too.
+- **No more invisible sign-in windows.** If Symbiot's hidden browser was running, a sign-in window could open inside it, where you'd never see it. It's closed first now.
+- **No more stray empty windows.** While the Symbiot Browser (or any sign-in window) is open, Symbiot's background reads wait for Done instead of starting a second Chrome, which popped an empty window into yours.
+
 ## 0.60.0
 
 - **A release no longer trips on file times.** Linux stamps files with a clock a few milliseconds behind the precise one, so a run that asked a question straight away could look as if it asked before it started, and wasn't noted as waiting on you. Symbiot now allows for that (it also made a test fail on GitHub's machines, which held up 0.59.0).

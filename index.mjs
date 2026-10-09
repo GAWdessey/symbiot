@@ -351,6 +351,15 @@ async function cmdAway() {
   if (!r) { console.log(c.y("Symbiot's app isn't running.") + c.d("  Start it with  symbiot app,  then Away works.")); process.exitCode = 1; return; }
   if (r.error) { console.log(c.y(r.error)); process.exitCode = 1; }
 }
+// symbiot browser [site]: the Symbiot Browser, where you sign in to your sites for
+// Symbiot (headless.mjs openSymbiotBrowser), opened by the running app.
+async function cmdBrowser() {
+  const site = argv.slice(1).find((a) => !a.startsWith("-")) || "";
+  const r = await viaApp("/api/browser/open", site ? { url: site } : {});
+  if (!r) { console.log(c.y("Symbiot's app isn't running.") + c.d("  Open Symbiot first, then the Symbiot Browser opens from Settings → Links, or with  symbiot browser.")); process.exitCode = 1; return; }
+  if (r.error) { console.log(c.y(r.error)); process.exitCode = 1; return; }
+  console.log(`${c.g("✓")} Opened the Symbiot Browser${site ? " at " + (r.url || site) : ""}. Sign in to your sites there, then click Done.`);
+}
 // symbiot open: what the app-menu icon runs. Running: its window comes up. Not
 // running: it starts in the background (no terminal; what it prints goes to
 // ~/.config/symbiot/app.log) and opens its own window.
@@ -446,7 +455,8 @@ async function cmdScreens() {
   symbiot screens whole <id>                   map all of that page in one tall screenshot
                                                (where a list scrolls inside the page, like
                                                Gmail's mail, that list opened out)
-  symbiot screens signin <site>               sign in once, in Symbiot's browser window
+  symbiot browser [site]                      the Symbiot Browser: sign in to your sites for Symbiot
+  symbiot screens signin <site>               sign in once, in the Symbiot Browser
   --yes is needed (press, type, upload) unless the page's site is under Trusted sites in the app's Settings.
   While the app runs, these use its hidden browser, which stays open a few minutes:
   press on the screen the last command printed carries on from that page as it is
@@ -926,6 +936,7 @@ async function main() {
   // an old copy npm replaced), and Claude Code won't run from a deleted folder
   if (cmd === "app" || cmd === "ui") { try { process.chdir(homedir()); } catch {} return cmdApp(); }
   if (cmd === "away") return cmdAway();
+  if (cmd === "browser") return cmdBrowser();
   if (cmd === "open") return cmdOpen();
   if (cmd === "uninstall") return cmdUninstall();
   if (cmd === "models" || cmd === "hardware") return cmdModels();

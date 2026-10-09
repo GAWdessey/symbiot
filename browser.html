@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Symbiot Browser</title>
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<meta name="theme-color" content="#0B0C0E">
+<style>
+/* The Symbiot Browser's own page: where you sign in to your sites, once, for Symbiot.
+   It runs in Symbiot's browser profile, so a sign-in here is the one Symbiot uses. */
+@font-face{font-family:"Geist";src:url("/fonts/Geist-Variable.woff2") format("woff2");font-weight:100 900;font-display:swap}
+:root{--bg:#0B0C0E;--panel:#131518;--line:#2A2E34;--bone:#F3F0EA;--text:#C9CDD3;--faint:#8A919B;--amber:#F2A541;--ok:#4FBE8C;--bad:#FF8A75;color-scheme:dark;
+  --sans:"Geist",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+@media (prefers-color-scheme: light){:root{--bg:#F4F2EE;--panel:#FFFFFF;--line:#DEDAD2;--bone:#11151B;--text:#3A414C;--faint:#6B7380;--amber:#B86A0C;--ok:#0B7A55;--bad:#B4361F;color-scheme:light}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:15px/1.5 var(--sans)}
+.wrap{max-width:880px;margin:0 auto;padding:28px 24px 40px;display:grid;gap:22px}
+header{display:flex;align-items:center;gap:14px}
+header img{width:44px;height:44px;border-radius:12px}
+h1{margin:0;font:650 24px/1.2 var(--sans);letter-spacing:-.02em;color:var(--bone)}
+.lede{margin:2px 0 0;color:var(--faint);font-size:14px;max-width:62ch}
+form.go{display:flex;gap:10px}
+form.go input{flex:1;min-width:0;padding:12px 16px;border-radius:999px;border:1px solid var(--line);background:var(--panel);color:var(--bone);font:15px var(--sans)}
+button{font:600 14px var(--sans);border-radius:999px;padding:10px 18px;border:1px solid var(--line);background:transparent;color:var(--bone);cursor:pointer}
+button.main{background:var(--bone);color:var(--bg);border-color:var(--bone)}
+button:focus-visible,input:focus-visible{outline:2px solid var(--amber);outline-offset:2px}
+h2{margin:6px 0 0;font:600 12px var(--sans);letter-spacing:.14em;text-transform:uppercase;color:var(--faint)}
+.sites{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px}
+.site{display:flex;align-items:center;gap:12px;padding:14px 16px;border:1px solid var(--line);border-radius:16px;background:var(--panel)}
+.site .n{flex:1;min-width:0}
+.site b{display:block;color:var(--bone);font-weight:600}
+.site small{display:block;color:var(--faint);font-size:12.5px}
+.site small.ok{color:var(--ok)}.site small.bad{color:var(--bad)}.site small.wait{color:var(--amber)}
+.site button{padding:8px 14px;font-size:13px;flex:none}
+.done{display:flex;align-items:center;gap:16px;flex-wrap:wrap;padding:18px 20px;border-radius:18px;border:1px solid var(--line);background:var(--panel)}
+.done p{margin:0;flex:1;min-width:220px;font-size:14px}
+.msg{min-height:20px;font-size:14px;color:var(--amber)}
+</style>
+</head>
+<body>
+<main class="wrap">
+  <header>
+    <img src="/favicon.svg" alt="">
+    <div><h1>Symbiot Browser</h1>
+    <p class="lede">Symbiot’s own browser. Sign in to your sites here, once, the usual way (their own login, 2FA and all). Symbiot then reads them for you with that sign-in. It never sees your passwords.</p></div>
+  </header>
+
+  <form class="go" id="go"><input id="addr" placeholder="Go to any site: a name like gmail, or an address" autocomplete="off" aria-label="Site to open"><button class="main" type="submit">Open</button></form>
+  <div class="msg" id="msg" role="status"></div>
+
+  <section id="list"></section>
+
+  <div class="done">
+    <p><b>Signed in?</b> Click Done: the Symbiot Browser closes and Symbiot checks each site, so the ticks come up in Symbiot within a minute.</p>
+    <button class="main" id="done" type="button">Done</button>
+  </div>
+</main>
+<script>
+var T = new URLSearchParams(location.search).get("t") || "";
+function api(path, body) { return fetch(path, { method: body ? "POST" : "GET", headers: { "x-symbiot-token": T, "content-type": "application/json" }, body: body ? JSON.stringify(body) : undefined }).then(function (r) { return r.json(); }); }
+function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
+function say(t) { document.getElementById("msg").textContent = t || ""; }
+// a window of this same browser (so the sign-in is Symbiot's), the size of a laptop screen
+function openSite(url) { var w = window.open(url, "_blank", "popup=no,width=1200,height=860"); if (!w) say("Your browser blocked the window: allow pop-ups for this page, then try again."); return w; }
+function fromInput(v) { v = String(v || "").trim(); if (!v) return ""; if (/^https?:\/\//i.test(v)) return v; if (/^[a-z0-9-]+$/i.test(v)) return "https://" + v.toLowerCase() + ".com"; return "https://" + v; }
+var STATE = { off: ["Not connected", ""], signin: ["Not signed in yet", "wait"], signedout: ["Signed out", "bad"], error: ["Needs attention", "bad"], ok: ["Signed in", "ok"] };
+function render(d) {
+  var items = (d && d.items) || [], groups = (d && d.groups) || [], h = "";
+  groups.forEach(function (g) {
+    var its = items.filter(function (x) { return x.group === g; }); if (!its.length) return;
+    h += "<h2>" + esc(g) + "</h2><div class='sites'>" + its.map(function (x) {
+      var s = STATE[x.state] || STATE.off, label = x.state === "off" ? "Connect" : x.state === "ok" ? "Open" : "Sign in";
+      return "<div class='site'><div class='n'><b>" + esc(x.name) + "</b><small class='" + s[1] + "'>" + (x.state === "ok" ? "✓ " : "") + esc(s[0]) + "</small></div><button type='button' data-id='" + esc(x.id) + "' data-url='" + esc(x.url) + "' data-state='" + esc(x.state) + "'>" + label + "</button></div>";
+    }).join("") + "</div>";
+  });
+  document.getElementById("list").innerHTML = h;
+}
+function load() { api("/api/links").then(render).catch(function () { say("Symbiot isn't answering. Is it still running?"); }); }
+document.getElementById("list").addEventListener("click", function (e) {
+  var b = e.target.closest && e.target.closest("button[data-id]"); if (!b) return;
+  var url = b.getAttribute("data-url"), id = b.getAttribute("data-id");
+  var w = openSite(url); // first, while the click still counts (pop-up rules)
+  if (b.getAttribute("data-state") === "off") api("/api/links/link", { id: id, here: true }).then(function (r) {
+    if (r && r.error) { if (w) w.close(); say(r.error); } else { say("Sign in to it in the window that opened, then come back here."); load(); }
+  }).catch(function () {});
+  else say("Sign in to it in the window that opened, then come back here.");
+});
+document.getElementById("go").addEventListener("submit", function (e) { e.preventDefault(); var u = fromInput(document.getElementById("addr").value); if (u) openSite(u); });
+document.getElementById("done").addEventListener("click", function () { say("Closing, and checking your sites…"); api("/api/browser/done", {}).catch(function () {}); });
+load(); setInterval(load, 5000);
+</script>
+</body>
+</html>
