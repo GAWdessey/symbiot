@@ -34,7 +34,7 @@ import { mindState, forget } from "./mind.mjs";
 import { lanesTick, lanesState, partlyDone, orcaRelink } from "./lanes.mjs";
 import { keepFacts, skipFacts, awaitTick, awaitingState, stopWaiting } from "./handback.mjs";
 import { adaptState, noteUse } from "./adapt.mjs";
-import { reportIdeasAdd, reportAsk, reportDraftAnswer, homeState, homeAsk, homeAnswer, homeNext, workScene, workGo, workTick, firstSteps, marketingState, marketingGo, marketingDraftAnswer, marketingTask, moveToMarketing, onboarding, setOnboarding, startOnboarding } from "./home.mjs";
+import { reportIdeasAdd, reportAsk, reportDraftAnswer, homeState, homeAsk, homeAnswer, homeNext, workScene, workGo, workTick, firstSteps, marketingState, marketingGo, marketingDraftAnswer, marketingTask, moveToMarketing, onboarding, setOnboarding, startOnboarding, phoneSetupFirst } from "./home.mjs";
 import { MARKETING_DIR, MARKETING, draftPreview, laneMedia, displayName, setDraftMedia } from "./marketing.mjs";
 import { trays, trayMedia, setBlur, renderCapture } from "./tray.mjs";
 import { listReports, readReport, reportImage, markAllRead } from "./reports.mjs";
@@ -242,6 +242,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
   if (/[\\/]node_modules[\\/]symbiot[\\/]/.test(bin || "") && !SANDBOX && !process.env.SYMBIOT_NO_LAUNCHER) { try { installLauncher({ script: bin }); } catch {} }
   // setup's first step: "Your computer" in the Android app, so a phone paired by its QR shows it
   if (FRESH) { try { startOnboarding(); } catch {} }
+  try { phoneSetupFirst(); } catch {} // the phone app, over an older one: setup goes to "Your computer" first
   // your projects: kept, and found again off the main thread, so nothing waits on a search
   setScanOptions({ cache: true }); REPO_STATE.onChange = () => { try { homeState({ fresh: true }); } catch {} };
   if (!SANDBOX) { refreshRevoked().catch(() => {}); setInterval(() => refreshRevoked().catch(() => {}), 6 * 3600 * 1000).unref(); } // cancelled Pro keys, about daily
