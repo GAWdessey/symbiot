@@ -9,6 +9,7 @@
 // The app's sections (Map, Tasks, Agents, Week…) are shaped by adapt.mjs from
 // how you use them; this is the live data around them. Home's talk goes to the
 // same Symbiot as every chat (mind.mjs converse), told what home shows.
+import { claudeSetup } from "./claudesetup.mjs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
@@ -734,7 +735,7 @@ function onboarding({ fresh = false } = {}) {
   const det = tryOr(() => detectHandoffs(), { agents: [] }), cmd = tryOr(() => handoffCmd(), "");
   return {
     pending: !!o.pending, step: ONB_STEPS.includes(o.step) ? o.step : "welcome", steps: ONB_STEPS,
-    ai: { connected: !!r, provider: r ? r.provider : "", line: r ? `${PROVIDERS[r.provider].label}${r.model ? " · " + r.model : ""}` : "", claude: st ? { installed: st.installed, signedIn: st.signedIn } : null },
+    ai: { connected: !!r, provider: r ? r.provider : "", line: r ? `${PROVIDERS[r.provider].label}${r.model ? " · " + r.model : ""}` : "", claude: tryOr(() => claudeSetup(), st ? { installed: st.installed, signedIn: st.signedIn } : null) },
     work: { searching: reps.searching, at: reps.at || 0, done: reps.done || 0, total: reps.total || 0, count: reps.list.length, repos: reps.list.slice(0, 60).map((x) => ({ name: x.name, path: x.path })), roots: tryOr(() => scanRoots(), []).map((r) => (r === homedir() ? "~" : r.startsWith(homedir() + "/") ? "~" + r.slice(homedir().length) : r)) },
     agent: { cmd, pick: tryOr(() => pickAgent(), null), agents: (det.agents || []).map((a) => ({ label: a.label, tmpl: a.tmpl })) },
     apps, groups: links.groups || [], decided: apps.every((a) => a.skipped || a.state !== "off"),

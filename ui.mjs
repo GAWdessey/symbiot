@@ -3231,7 +3231,12 @@ h="<img class='onborb' src='/favicon.svg?look="+encodeURIComponent(lqLookGet()||
 else if(o.step==='ai'){var a=o.ai||{},c=a.claude||{};
 h="<h2 id='onbt'>Your AI</h2><p class='onbl'>Symbiot thinks with an AI: it reads what comes in, talks with you and writes for you.</p>";
 if(a.connected)h+="<div class='onbok'><i>✓</i><div>Symbiot is using <b>"+esc(a.line)+"</b>"+(a.provider==='claude'?". It’s the Claude account you’re signed in with in Claude Code: no key, nothing extra to pay.":".")+"</div></div>";
-else h+="<div class='onbbox'><h3>Your Claude subscription (recommended)</h3><p>"+(c.installed?"Claude Code is on this computer but not signed in. Open a terminal, run <code>claude</code> once and sign in with your Claude account.":"Install Claude Code (<code>npm install -g @anthropic-ai/claude-code</code>), run <code>claude</code> once and sign in with your Claude account.")+" No key, and nothing extra to pay.</p><button class='ghost' id='onbrecheck'>I’ve signed in: check again</button></div>"+
+else h+="<div class='onbbox'><h3>Your Claude subscription (recommended)</h3><p>Symbiot thinks through Claude Code, Anthropic’s own app, with your Claude account: no key, and nothing extra to pay.</p>"+
+(c.installing?"<p><span class='onbspin'></span>Installing Claude Code… this takes about a minute.</p>":
+ !c.installed?"<button class='act' id='onbccinst'>Install Claude Code</button>"+(c.installError?"<p class='onbnote' style='margin-top:10px'>"+esc(c.installError)+"</p>":""):
+ c.signingIn?"<p><span class='onbspin'></span>Sign in on the page that opened in your browser. This ticks itself when you’re done.</p><div class='onbrow'><input id='onbcccode' placeholder='If the page shows a code, paste it here'><button class='ghost' id='onbccsend'>Send</button></div>":
+ "<p>Claude Code is installed. Now sign in with your Claude account.</p><button class='act' id='onbccsign'>Sign in with Claude</button>"+(c.signinError?"<p class='onbnote' style='margin-top:10px'>"+esc(c.signinError)+"</p>":""))+
+"<p class='onbnote' style='margin:12px 0 0'>Already done it yourself? <button class='back' id='onbrecheck' style='padding:0'>Check again</button></p></div>"+
 "<div class='onbbox'><h3>Or an API key, or a free local model</h3><div class='onbrow'><select id='onbprov'><option value='anthropic'>Claude (Anthropic) API key</option><option value='openai'>OpenAI API key</option><option value='gemini'>Gemini API key</option><option value='ollama'>Local model (Ollama), no key</option></select><input id='onbkey' type='password' placeholder='paste your key'><button class='ghost' id='onbconnect'>Connect</button></div><p id='onbaimsg' style='margin:8px 0 0'></p></div>";
 h+=onbNav('welcome','work','Continue',!!a.connected);}
 else if(o.step==='work'){var w=o.work||{};
@@ -3269,6 +3274,9 @@ b.innerHTML=h;
 b.querySelectorAll('[data-go]').forEach(function(x){x.addEventListener('click',function(){onbGo(x.getAttribute('data-go'));});});
 var on=function(id,f){var x=$(id);if(x)x.addEventListener('click',f);};
 on('onbrecheck',function(){onbLoad(true);});
+on('onbccinst',function(){api('/api/claude/install',{}).then(function(){onbLoad(true);});});
+on('onbccsign',function(){api('/api/claude/signin',{}).then(function(){onbLoad(true);});});
+on('onbccsend',function(){var v=$('onbcccode').value.trim();if(!v)return;api('/api/claude/code',{code:v}).then(function(){onbLoad(true);});});
 on('onbconnect',function(){var pv=$('onbprov').value,m=$('onbaimsg');m.textContent='Checking…';api('/api/connect',{provider:pv,key:$('onbkey').value.trim(),model:''}).then(function(r){m.textContent=r.message||'';onbLoad(true);});});
 var pvs=$('onbprov');if(pvs)pvs.addEventListener('change',function(){$('onbkey').style.display=pvs.value==='ollama'?'none':'';});
 on('onbaddroot',function(){var v=$('onbroot').value.trim();if(!v)return;api('/api/scanroots/add',{path:v}).then(function(){onbLoad();});});

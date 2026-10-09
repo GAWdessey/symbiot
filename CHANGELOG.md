@@ -2,6 +2,12 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.58.1
+
+- **No more "couldn't reach the model" after an update.** An update restarted Symbiot in whatever folder had started it, and when that folder was later deleted, Claude Code refused to run there: Symbiot thought you'd signed out of Claude and fell back to an old API key that no longer worked. Symbiot now always runs, and asks Claude Code, from your home folder.
+- **Setup installs Claude Code and signs you in.** If Claude Code isn't on your computer, setup's "Your AI" step has an **Install Claude Code** button (Anthropic's own installer, for Windows, Mac or Linux) and then **Sign in with Claude**, which opens the sign-in page and ticks itself once you've signed in. No terminal at any point. If the page shows a code instead, setup has a box to paste it in. Symbiot also finds Claude Code in `~/.local/bin`, where that installer puts it.
+- **Ready for the desktop app.** Running inside Symbiot's installed app, Symbiot doesn't offer npm updates (the app updates itself) or make shortcuts of its own (the installer made them), and "Start at login" starts the app.
+
 ## 0.58.0
 
 - **Talk to Symbiot instead of typing.** A mic on the talk bar: click it and speak. Your words appear as you say them, and a pause sends them, as Enter would. When you spoke, Symbiot reads its answer out too, in the most natural voice your computer has (typed questions stay quiet), and talking again cuts it off. It uses the speech recognition built into Chrome and Edge: no key, nothing to pay. If the microphone is blocked or missing, it says what to do.

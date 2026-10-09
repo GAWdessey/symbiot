@@ -2,6 +2,7 @@
 // (ui.mjs) and its /api routes, each a thin call into the module that does the
 // work, on 127.0.0.1 only and behind the per-install token. (Watch on your phone
 // listens on your network separately, only for that: phone.mjs.)
+import { claudeSetup, installClaude, signInClaude, sendClaudeCode } from "./claudesetup.mjs";
 import { spawn, spawnSync } from "node:child_process";
 import { toggleAway, closeAway } from "./away.mjs";
 import { homedir } from "node:os";
@@ -146,7 +147,9 @@ function readBytes(req, max) {
 function appLink(url) { return url.replace(/^http:\/\//, "symbiot://"); }
 // Symbiot running in Termux (not the Android app's own)
 const IN_TERMUX = process.platform === "android" && process.env.SYMBIOT_ANDROID_APP !== "1";
-const SANDBOX = !!process.env.SYMBIOT_SANDBOX; // symbiot app --fresh (sandbox.mjs)
+const SANDBOX = !!process.env.SYMBIOT_SANDBOX;
+// the installed app (symbiot-desktop): it updates itself and made its own shortcuts
+const DESKTOP = process.env.SYMBIOT_DESKTOP === "1"; // symbiot app --fresh (sandbox.mjs)
 const FIRST_RUN = !existsSync(CONFIG_PATH); // no config yet when Symbiot started: a brand-new install
 function openApp(url) {
   try {
@@ -228,7 +231,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
   const screenOut =(s) => (s && s.id ? { ...s, blueprint: blueprint(s), ...(s.page ? { trusted: isTrusted(s.page.url) } : {}) } : s && s.screens ? { ...s, screens: s.screens.map(screenOut) } : s);
   // an installed Symbiot keeps its app-menu entry pointing at itself (a new Node, a moved
   // install); not a copy run from a checkout or a test
-  if (/[\\/]node_modules[\\/]symbiot[\\/]/.test(bin || "") && !SANDBOX) { try { installLauncher({ script: bin }); } catch {} }
+  if (/[\\/]node_modules[\\/]symbiot[\\/]/.test(bin || "") && !SANDBOX && !process.env.SYMBIOT_NO_LAUNCHER) { try { installLauncher({ script: bin }); } catch {} }
   if (FRESH) { try { const cf = loadConfig(); if (!cf.onboarding) { cf.onboarding = { pending: true, step: "welcome", skipped: [] }; saveConfig(cf); } } catch {} }
   // your projects: kept, and found again off the main thread, so nothing waits on a search
   setScanOptions({ cache: true }); REPO_STATE.onChange = () => { try { homeState({ fresh: true }); } catch {} };
@@ -473,7 +476,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       // a sandbox (symbiot app --fresh) never offers an update: it would replace your real install.
       // A headless browser (an agent's screenshot of Home) never becomes the newest window:
       // that closed the user's real one, again and again (2026-10-08, "symbiot keeps crashing").
-      if (u.pathname === "/api/ping") { if (u.searchParams.get("fresh") === "1" && !SANDBOX) await checkLatest(); const w = u.searchParams.get("w") || ""; if (/^[a-z0-9]{6,20}$/.test(w) && u.searchParams.get("new") === "1" && !headlessAgent(req.headers["user-agent"])) NEWEST_WIN = w; return json(res, { ...(NEWEST_WIN ? { window: NEWEST_WIN } : {}), version: VERSION, started: SERVER_STARTED, latest: LATEST_VERSION, newer: !SANDBOX && semverGt(LATEST_VERSION, VERSION), ...(UPDATING && UPDATING.retrying ? { retrying: UPDATING } : {}), ...(IN_TERMUX ? { termux: true } : {}), ...(SANDBOX ? { sandbox: true } : {}) }); }
+      if (u.pathname === "/api/ping") { if (u.searchParams.get("fresh") === "1" && !SANDBOX) await checkLatest(); const w = u.searchParams.get("w") || ""; if (/^[a-z0-9]{6,20}$/.test(w) && u.searchParams.get("new") === "1" && !headlessAgent(req.headers["user-agent"])) NEWEST_WIN = w; return json(res, { ...(NEWEST_WIN ? { window: NEWEST_WIN } : {}), version: VERSION, started: SERVER_STARTED, latest: LATEST_VERSION, newer: !SANDBOX && !DESKTOP && semverGt(LATEST_VERSION, VERSION), ...(DESKTOP ? { desktop: true } : {}), ...(UPDATING && UPDATING.retrying ? { retrying: UPDATING } : {}), ...(IN_TERMUX ? { termux: true } : {}), ...(SANDBOX ? { sandbox: true } : {}) }); }
       // What's new: after an update, since the version you last saw (until you click Got it);
       // ?latest=1, what the update on offer brings, from its package on npm
       if (u.pathname === "/api/whatsnew") {
@@ -485,6 +488,11 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
         return json(res, { version: to, changes: changesSince(md, VERSION, to), ...(md ? {} : { error: `Couldn't read ${to}'s changelog from npm.` }) });
       }
       if (u.pathname === "/api/whatsnew/seen" && req.method === "POST") { const cfg = loadConfig(); cfg.seenVersion = VERSION; return json(res, saveConfig(cfg) ? { ok: true } : { error: "Couldn't write the config file." }); }
+      if (u.pathname === "/api/claude/setup") return json(res, claudeSetup(u.searchParams.get("fresh") === "1"));
+      if (u.pathname === "/api/claude/install" && req.method === "POST") return json(res, installClaude());
+      if (u.pathname === "/api/claude/signin" && req.method === "POST") return json(res, signInClaude());
+      if (u.pathname === "/api/claude/code" && req.method === "POST") { const b = await readBody(req); return json(res, sendClaudeCode(b.code)); }
+      if (u.pathname === "/api/update" && req.method === "POST" && DESKTOP) return json(res, { error: "This Symbiot updates with its app." });
       if (u.pathname === "/api/update" && req.method === "POST") {
         // Install the exact newest version (see updateCmd), then relaunch this
         // same app (same port+token => same URL) and exit. The page's heartbeat
@@ -505,7 +513,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
             return;
           }
           server.close(); if (server.closeAllConnections) server.closeAllConnections();
-          try { const ch = spawn(process.execPath, process.argv.slice(1), { detached: true, stdio: "ignore", env: { ...process.env, SYMBIOT_RELAUNCH: "1" } }); ch.unref(); } catch {}
+          try { const ch = spawn(process.execPath, process.argv.slice(1), { detached: true, stdio: "ignore", env: { ...process.env, SYMBIOT_RELAUNCH: "1" }, cwd: homedir() }); ch.unref(); } catch {}
           setTimeout(() => process.exit(0), 1200);
         });
         UPDATING = { target, attempt: 1, at: Date.now() };
