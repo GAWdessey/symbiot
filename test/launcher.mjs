@@ -36,6 +36,21 @@ try {
   ok("the PATH saved: npm's throwaway install folders dropped, each folder once, Node's own added", launcherPath("/a/node_modules/.bin:/usr/lib/node_modules/npm/node_modules/@npmcli/run-script/lib/node-gyp-bin:/home/x/.npm-global/bin:/usr/bin:/home/x/.npm-global/bin", "/opt/n/bin/node") === "/home/x/.npm-global/bin:/usr/bin:/opt/n/bin", launcherPath("/a/node_modules/.bin:/x/node-gyp-bin:/home/x/.npm-global/bin:/usr/bin:/home/x/.npm-global/bin", "/opt/n/bin/node"));
   ok("not on Linux: nothing written here (other systems differ)", installLauncher({ script: "/x/index.mjs", home: join(HOME, "mac"), platform: "darwin" }).skipped && !existsSync(launcherFile(join(HOME, "mac"))), "");
 
+  console.log("WINDOWS — the Start menu and the desktop, opened with no console window");
+  const wh = join(HOME, "winhome"), calls = [];
+  const run = (c, a) => { calls.push([c, a[a.length - 1]]); return { status: 0, stdout: "" }; };
+  const w1 = installLauncher({ node: "C:\\Program Files\\nodejs\\node.exe", script: "C:\\npm\\node_modules\\symbiot\\index.mjs", home: wh, platform: "win32", run });
+  const own = join(wh, "AppData", "Roaming", "Symbiot");
+  ok("a Start-menu shortcut and one on the desktop, made by PowerShell", w1.written && calls.filter(([c, a]) => c === "powershell" && /CreateShortcut/.test(a)).length === 2 && /Start Menu.Programs.Symbiot\.lnk$/.test(w1.file), [w1, calls.map((x) => x[1].slice(0, 80))]);
+  ok("…each runs wscript on open.vbs, with the orb icon", calls.every(([, a]) => !/CreateShortcut/.test(a) || (/wscript\.exe/.test(a) && /open\.vbs/.test(a) && /symbiot\.ico,0/.test(a))), "");
+  ok("…open.vbs starts `symbiot open` hidden (window style 0)", /\.Run """C:\\Program Files\\nodejs\\node\.exe"" ""C:\\npm\\node_modules\\symbiot\\index\.mjs"" open", 0, False/.test(readFileSync(join(own, "open.vbs"), "utf8")) && existsSync(join(own, "symbiot.ico")), readFileSync(join(own, "open.vbs"), "utf8"));
+  calls.length = 0; writeFileSync(join(wh, "menu-made"), ""); // shortcuts exist from here (the stand-in made none), so mark them
+  mkdirSync(join(own, "..", "Microsoft", "Windows", "Start Menu", "Programs"), { recursive: true }); writeFileSync(w1.file, "lnk"); mkdirSync(join(wh, "Desktop"), { recursive: true }); writeFileSync(w1.desktop, "lnk");
+  const w2 = installLauncher({ node: "C:\\Program Files\\nodejs\\node.exe", script: "C:\\npm\\node_modules\\symbiot\\index.mjs", home: wh, platform: "win32", run });
+  ok("…the same again: left alone (no PowerShell)", w2.written === false && calls.length === 0, [w2, calls]);
+  const gone = removeLauncher(wh);
+  ok("…uninstalling removes both shortcuts, the script and the icon", !existsSync(w1.file) && !existsSync(w1.desktop) && !existsSync(join(own, "open.vbs")) && gone.length >= 4, gone);
+
   console.log("INSTALLING — npm install -g writes it; a dev install doesn't");
   const post = fileURLToPath(new URL("../postinstall.mjs", import.meta.url)), h2 = join(HOME, "h2"), h3 = join(HOME, "h3");
   // windows off (a test must never open one): the hook writes the entry and says where it is
