@@ -28,6 +28,8 @@ import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.Toast;
 
+import org.json.JSONObject;
+
 import java.util.regex.Pattern;
 
 // Symbiot's own page, full screen. Until the service says where Symbiot is
@@ -41,6 +43,9 @@ import java.util.regex.Pattern;
 public class MainActivity extends Activity {
     private static final int FILES = 1, STORAGE = 2;
     private static final Pattern LINK = Pattern.compile("^(?:http|symbiot)://(?:127\\.0\\.0\\.1|localhost):\\d+/\\?t=[0-9a-f]+$");
+    // your computer's pairing link (its QR, scanned), for the page to pair with (phone.mjs)
+    private static final Pattern PAIR = Pattern.compile("^(?:symbiot://pair/?\\?|https://(?:www\\.)?symbiot\\.co\\.za/pair/?[#?]).+");
+    private volatile String pair;
     private final Handler ui = new Handler(Looper.getMainLooper());
     private WebView web;
     private String shown = "";       // the Symbiot URL loaded, or "" while the status page shows
@@ -97,9 +102,11 @@ public class MainActivity extends Activity {
     @Override protected void onNewIntent(Intent i) { super.onNewIntent(i); take(i); }
 
     // A Symbiot link (symbiot:// or http://127.0.0.1:<port>/?t=<token>) opened with this app.
+    // A pairing link isn't one: it's kept for the page (tick), and Symbiot starts as usual.
     private boolean take(Intent i) {
         Uri d = i != null && Intent.ACTION_VIEW.equals(i.getAction()) ? i.getData() : null;
         if (d == null) return false;
+        if (PAIR.matcher(d.toString()).matches()) { pair = d.toString(); return false; }
         if (!LINK.matcher(d.toString()).matches()) { Toast.makeText(this, "That isn't a Symbiot link", Toast.LENGTH_SHORT).show(); return false; }
         useExternal(http(d.toString()));
         return true;
@@ -181,6 +188,8 @@ public class MainActivity extends Activity {
 
     @Override protected void onResume() {
         super.onResume();
+        // back in front: ask your computer now, so what it shows is fresh (phone.mjs)
+        SymbiotService.poke(external != null ? external : SymbiotService.url);
         boolean has = hasStorage();
         if (!has && !asked && external == null) { asked = true; askStorage(); }
         // back from Settings with file access allowed: the map Symbiot drew without
@@ -209,13 +218,14 @@ public class MainActivity extends Activity {
         String url = SymbiotService.url, state = SymbiotService.state, ext = external;
         if (ext != null) {
             String st = externalState;
-            if ("up".equals(st)) { if (!ext.equals(shown)) { shown = ext; statusShown = ""; web.loadUrl(ext); } }
+            if ("up".equals(st)) { if (!ext.equals(shown)) { shown = ext; statusShown = ""; web.loadUrl(ext); } else if (pair != null) handPair(); }
             else if (shown.isEmpty() || "down".equals(st)) {
                 String key = "termux\n" + st;
                 if (!key.equals(statusShown)) { statusShown = key; shown = ""; web.loadDataWithBaseURL("about:blank", termuxStatus(st), "text/html", "utf-8", null); }
             }
         } else if (url != null) {
             if (!url.equals(shown)) { shown = url; statusShown = ""; web.loadUrl(url); }
+            else if (pair != null) handPair();
         } else if (shown.isEmpty() || "stopped".equals(state) || "failed".equals(state)) {
             // (Symbiot's own page reconnects by itself across a restart, so it only
             // gives way to this once Symbiot has really stopped)
@@ -223,6 +233,15 @@ public class MainActivity extends Activity {
             if (!key.equals(statusShown)) { statusShown = key; shown = ""; web.loadDataWithBaseURL("about:blank", status(state), "text/html", "utf-8", null); }
         }
         ui.postDelayed(this::tick, 500);
+    }
+
+    // The scanned pairing link, to the page once it's ready for it (window.symbiotPairLink).
+    private boolean handing; // (once: a code pairs one phone, so a second try would only say it's used)
+    private void handPair() {
+        if (handing) return;
+        handing = true;
+        final String p = pair;
+        web.evaluateJavascript("window.symbiotPairLink?(symbiotPairLink(" + JSONObject.quote(p) + "),'ok'):''", r -> { handing = false; if ("\"ok\"".equals(r) && p.equals(pair)) pair = null; });
     }
 
     private String status(String state) {

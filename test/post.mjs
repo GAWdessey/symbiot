@@ -319,15 +319,26 @@ try {
   ok("…a week with nothing posted doesn't count: the test moves on", t1.start === "2026-10-14" && t1.week === 1, [t1.start, t1.week]);
   const line = (o) => JSON.stringify(o) + "\n";
   writeFileSync(tp.log, line({ ts: day("2026-10-15"), action: "approved", id: "a1", media: [{ kind: "image" }] }) + line({ ts: day("2026-10-16"), action: "approved", id: "a2" }) + line({ ts: day("2026-10-16"), action: "skipped", id: "a3" }) + line({ ts: day("2026-10-22"), action: "approved", id: "a4" }));
-  const news = [{ id: "n1", social: true, ts: day("2026-10-15", 15), text: "how much is it for a team?", customer: "pricing" }, { id: "n2", social: true, ts: day("2026-10-17"), text: "nice one", }, { id: "n3", ts: day("2026-10-17"), text: "an email" }, { id: "n4", social: true, ts: day("2026-10-23"), text: "how do I install it?", customer: "install" }];
+  const news = [{ id: "n1", social: true, ts: day("2026-10-15", 15), text: "how much is it for a team?", customer: "pricing" }, { id: "n2", social: true, ts: day("2026-10-17"), text: "Sam commented on your post: nice one", li: "notification", type: "comment" }, { id: "n5", social: true, ts: day("2026-10-17"), text: "Sam reacted to your post", li: "notification", type: "reaction" }, { id: "n6", social: true, ts: day("2026-10-18"), text: "Notifications, 3 new notifications" }, { id: "n7", social: true, ts: day("2026-10-18"), text: "Message from Lee: hi", li: "message" }, { id: "n3", ts: day("2026-10-17"), text: "an email" }, { id: "n4", social: true, ts: day("2026-10-23"), text: "how do I install it?", customer: "install" }];
   const t2 = P.testWeeks({ paths: tp, now: day("2026-10-24"), news, map: { demo: REPO } });
   const [w1, w2, w3] = t2.rows;
-  ok("week 1 is the first week a post went out; each row: published (with a picture), replies, maybe-customers, pricing", t2.start === "2026-10-14" && t2.week === 2 && w1.over && w1.published === 2 && w1.media === 1 && w1.replies === 2 && w1.customers === 1 && w1.pricing === 1 && w2.published === 1 && w2.replies === 1 && w2.customers === 1 && w2.pricing === 0 && !w3.started, t2.rows);
+  ok("week 1 is the first week a post went out; each row: published (with a picture), replies (comments and messages, not reactions or a bare badge), maybe-customers, pricing", t2.start === "2026-10-14" && t2.week === 2 && w1.over && w1.published === 2 && w1.media === 1 && w1.replies === 3 && w1.customers === 1 && w1.pricing === 1 && w2.published === 1 && w2.replies === 1 && w2.customers === 1 && w2.pricing === 0 && !w3.started, t2.rows);
   writeFileSync(join(REPO, "package.json"), JSON.stringify({ name: "demo-cli" }));
   ok("installs: the npm packages the posts are about (their repos' package.json, not private)", JSON.stringify(P.testWeeks({ paths: tp, now: day("2026-10-24"), map: { demo: REPO } }).packages) === '["demo-cli"]' && !P.testWeeks({ paths: tp, now: day("2026-10-24"), map: {} }).packages.length, "");
   writeFileSync(tp.test, JSON.stringify({ start: "2026-10-13" }));
   const t3 = P.testWeeks({ paths: tp, now: day("2026-10-24"), news, map: { demo: REPO } });
   ok("moved by hand (post-test.json): the weeks start there", t3.start === "2026-10-13" && t3.end === "2026-11-09" && t3.rows[0].to === "2026-10-19", [t3.start, t3.end]);
+  const lane = join(T4, "lane"); mkdirSync(join(lane, "drafts", "p"), { recursive: true }); mkdirSync(join(lane, ".symbiot"), { recursive: true });
+  writeFileSync(join(lane, "drafts", "p", "01.md"), "# One\nplatform: linkedin\nmedia: reel.mp4\n\n## Post\nHello\n");
+  writeFileSync(join(lane, ".symbiot", "drafts.json"), JSON.stringify({
+    "drafts/p/01.md": { status: "approved", posted: day("2026-10-14"), postedOn: "linkedin" }, // its agent posted it
+    "drafts/p/02.md": { status: "approved", scheduled: "2026-10-21 08:00" }, // in LinkedIn's scheduler, its time come (its file gone since)
+    "drafts/p/03.md": { status: "approved", scheduled: "2026-10-30 08:00" }, // not yet
+    "drafts/p/04.md": { status: "skipped" }, "drafts/p/05.md": { status: "superseded", by: ["drafts/p/01.md"] },
+    "drafts/p/post-0123abcd.md": { status: "posted", posted: day("2026-10-15") }, // handed over from Drafts to post: the log has it
+  }));
+  const t4 = P.testWeeks({ paths: tp, now: day("2026-10-24"), news, dir: lane });
+  ok("posts that went out through Marketing count too: marked posted, or their scheduled time come; not one handed over from Drafts to post", t4.rows[0].published === 3 && t4.rows[0].media === 2 && t4.rows[1].published === 2 && t4.rows[2].published === 0, t4.rows.map((r) => [r.published, r.media]));
   const asked = [];
   const days = { downloads: [{ day: "2026-10-13", downloads: 10 }, { day: "2026-10-19", downloads: 5 }, { day: "2026-10-20", downloads: 7 }, { day: "2026-10-30", downloads: 99 }] };
   const n3 = await P.testInstalls(t3, { now: day("2026-10-24"), get: async (u) => { asked.push(u); return days; } });

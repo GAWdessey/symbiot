@@ -951,6 +951,27 @@ body.lq-light #lqaway{color:#151A21;text-shadow:0 1px 12px rgba(255,255,255,.8)}
 body.lq-light #lqaway .aws b{color:#9A5200}
 
 /* Setup: the first run, over everything, until it's done */
+/* Your phone: the QR that pairs it, the line saying how fresh the copy is, an agent's question answered from the phone */
+.pqr{display:flex;gap:16px;align-items:center;flex-wrap:wrap;margin:10px 0}
+.pqr .qrimg{flex:none;width:188px;height:188px;border-radius:14px;overflow:hidden;background:#fff;box-shadow:0 8px 26px -12px rgba(0,0,0,.55)}
+.pqr .qrimg svg{display:block;width:100%;height:100%}
+.pqr .qrtxt{flex:1;min-width:190px;font-size:13.5px;line-height:1.55;color:var(--text)}
+.pqr .qrtxt .muted{display:block;margin-top:6px;font-size:12.5px}
+.pqr .code{letter-spacing:3px;margin-right:-3px;white-space:nowrap}
+#pcline{font-size:13.5px;line-height:1.5;color:var(--faint);margin:2px 0 8px}
+#pcline b{color:var(--amber);font-weight:600}
+.pcwait{font-size:11px;color:var(--amber);white-space:nowrap}
+.pcq{padding:12px 13px;border:1px solid var(--line);border-radius:12px;margin-top:8px;background:var(--ink2)}
+.pcq .qn{font-size:12px;color:var(--faint)}
+.pcq .qq{font-size:13.5px;line-height:1.5;color:var(--text);margin:4px 0 8px;overflow-wrap:anywhere}
+.pcq .opts{display:flex;flex-direction:column;gap:6px;align-items:stretch}
+.pcq .opts button{text-align:left;white-space:normal;line-height:1.4;height:auto;padding:8px 12px}
+.pcq form{display:flex;gap:8px;margin-top:8px}.pcq form input{flex:1;min-width:0}
+.pcq ul{margin:6px 0 8px;padding-left:18px;font-size:13px;line-height:1.5;color:var(--text)}
+.pcadd{display:flex;gap:8px;margin:8px 0 2px;flex-wrap:wrap}.pcadd input{flex:1;min-width:150px}.pcadd select{flex:0 1 160px;min-width:0}
+.pcfound{display:flex;flex-direction:column;gap:6px;margin-top:8px}
+body.lq-hline:not(.lq-work):not(.lq-pooled):not(.lq-chat):not(.lq-onb) #lqline{display:block;position:absolute;left:50%;top:auto;bottom:100px;transform:translateX(-50%);z-index:3;max-width:calc(100% - 32px);text-align:center;font:400 13.5px/1.4 var(--sans);color:#A1A8B1;text-shadow:0 1px 10px rgba(0,0,0,.7)}
+body.lq-hline.lq-light:not(.lq-work):not(.lq-pooled):not(.lq-chat):not(.lq-onb) #lqline{color:#2E3743;text-shadow:none}
 .onb{position:fixed;inset:0;z-index:60;display:flex;align-items:center;justify-content:center;background:rgba(5,6,8,.74);-webkit-backdrop-filter:blur(18px);backdrop-filter:blur(18px)}
 .onb.hidden{display:none}
 .onbin{width:min(700px,calc(100vw - 32px));max-height:calc(100vh - 40px);overflow:auto;padding:30px 32px 26px;border-radius:28px;background:rgba(19,21,25,.9);border:1px solid rgba(255,255,255,.08);box-shadow:0 30px 80px -30px rgba(0,0,0,.9);color:var(--text)}
@@ -1141,6 +1162,7 @@ body.lq-light .btip .bta button:not(.quiet){background:#151A21;color:#FFFFFF}
 <div id="tasklist"></div>
 <div id="panel-agents" class="wdagents">
 <div class="row"><span class="muted" style="flex:1"><span class="tgroup" style="margin-right:8px">Agents and handovers</span>What each agent is doing, live, and the work handed between them. Questions, options and ideas an agent leaves for you show up on its block, whichever model it runs.</span><button class="iconbtn" id="agentsrefresh" title="Refresh" aria-label="Refresh"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M13 8a5 5 0 1 1-1.5-3.6M13 2.5V5h-2.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button></div>
+<div id="phoneappr"></div>
 <div id="agentsmsg"></div>
 <div id="laneslist"></div>
 <div id="agentslist"></div>
@@ -1161,6 +1183,11 @@ body.lq-light .btip .bta button:not(.quiet){background:#151A21;color:#FFFFFF}
 <div id="mkreplies"></div>
 <div id="mktest"></div>
 </section>
+<section id="panel-computer" class="hidden">
+<div id="pcline" aria-live="polite"></div>
+<div id="pcmsg"></div>
+<div id="pcbody"></div>
+</section>
 <section id="panel-drift" class="hidden">
 <div class="row"><span class="muted">What's out of sync, stuck or at risk across your repos — local git facts.</span>
 <label class="muted swl" style="margin-left:auto"><input type="checkbox" class="sw" id="driftfetch"> Fetch latest</label>
@@ -1172,7 +1199,7 @@ body.lq-light .btip .bta button:not(.quiet){background:#151A21;color:#FFFFFF}
 <div id="firststeps" class="sset hidden" aria-live="polite"></div>
 <div class="sset" id="langset"><h3 class="ssh">Language</h3><div id="langbox"><span class="muted">…</span></div></div>
 <div class="sset" id="licset"><h3 class="ssh">Symbiot Pro</h3><div id="licbox"><span class="muted">Checking…</span></div></div>
-<div class="sset"><h3 class="ssh">Setup</h3><div class="row"><span class="muted" style="flex:1">Walk through setup again: your AI, your work, your agent and your apps.</span><button class="ghost" id="rerunsetup">Run setup again</button></div></div>
+<div class="sset"><h3 class="ssh">Setup</h3><div class="row"><span class="muted" style="flex:1">Walk through setup again: your AI, your work, your agent, your apps and your phone.</span><button class="ghost" id="rerunsetup">Run setup again</button></div></div>
 <div class="sset"><h3 class="ssh">Your AI</h3>
 <label>Which AI should Symbiot write with?</label>
 <select id="provider">
@@ -1228,6 +1255,7 @@ body.lq-light .btip .bta button:not(.quiet){background:#151A21;color:#FFFFFF}
 <div class="sset">
 <div class="row" id="sbrow" style="margin-bottom:12px"><span style="flex:1"><b>The Symbiot Browser</b><br><span class="muted">Symbiot’s own browser window, where you sign in to your sites once so Symbiot can read them for you.</span></span><button class="act" id="sbopen">Open the Symbiot Browser</button></div>
 <div id="links"></div>
+<div class="row" style="margin-top:8px"><input id="addsite" placeholder="Add a site: the page you see once signed in, e.g. www.domains.co.za/client/dashboard" aria-label="add a site to sign in to" style="flex:1"><button class="act" id="addsitego">Add and sign in</button></div>
 <div id="linksmsg"></div>
 <div class="note muted" id="linksnote">For a whole team, one <b>links.json</b> in Symbiot's config folder adds your company's own sites and hides the ones you don't use, so everyone gets the same buttons.</div>
 </div>
@@ -1240,7 +1268,7 @@ body.lq-light .btip .bta button:not(.quiet){background:#151A21;color:#FFFFFF}
 <h3 class="ssh">Trusted sites for Screens <span class="muted">(experimental)</span></h3>
 <div id="trustedsites"></div>
 <div class="row" style="margin-top:6px"><input id="newtrusted" placeholder="a site, e.g. mail.google.com or github.com" style="flex:1"><button class="ghost" id="addtrusted">Trust site</button></div>
-<div class="note muted" id="trustednote">On a mapped page from one of these sites, <b>Press</b> and <b>Type</b> go ahead without asking, for you and for agents (<b>symbiot screens press</b> / <b>type</b>), signed in as you. A site covers its subdomains: google.com covers mail.google.com. Everywhere else, each one asks first. Only you add sites, here: Symbiot gives agents no command for it.</div>
+<div class="note muted" id="trustednote">To sign in to a site for agents, use <b>Sign in</b> next to it, or <b>Add a site</b> under Connections. On a mapped page from one of these sites, <b>Press</b> and <b>Type</b> go ahead without asking, for you and for agents (<b>symbiot screens press</b> / <b>type</b>), signed in as you. A site covers its subdomains: google.com covers mail.google.com. Everywhere else, each one asks first. Only you add sites, here: Symbiot gives agents no command for it.</div>
 </div>
 <div class="sset">
 <h3 class="ssh">Email &mdash; add what you sent to Week and Standup <span class="muted">(experimental)</span></h3>
@@ -1259,7 +1287,7 @@ body.lq-light .btip .bta button:not(.quiet){background:#151A21;color:#FFFFFF}
 <div class="note muted" id="desktopnote"></div>
 </div>
 <div class="sset">
-<h3 class="ssh">Watch on your phone <span class="muted">(experimental)</span></h3>
+<h3 class="ssh">Your phone <span class="muted">(experimental)</span></h3>
 <div id="phonelink"></div>
 </div>
 <div class="sset">
@@ -1321,6 +1349,7 @@ $('panel-tasks').classList.toggle('hidden',!isTasks);
 $('panel-drift').classList.toggle('hidden',!isDrift);
 $('panel-reports').classList.toggle('hidden',tab!=='reports');if(tab==='reports')loadReports();
 $('panel-marketing').classList.toggle('hidden',tab!=='marketing');if(tab==='marketing')loadMarketing();
+$('panel-computer').classList.toggle('hidden',tab!=='computer');if(tab==='computer')loadComputer();
 if(isRun){$('what').textContent=tab;wuHead();WUTEXT='';$('out').textContent=WUEMPTY;$('out').classList.add('muted');$('copy').classList.add('hidden');$('outfoot').style.display='none';if(tab==='week')showLatestWeek();}
 if(isMap&&!mapLoaded)loadMap();
 if(isTasks)loadTasks();
@@ -1332,7 +1361,8 @@ lqTitle();if(isTasks&&TFILTER.repo)loadParked(lqTitle);}
 // (optional, or skipped). Each ticks itself as it's done anywhere in Settings; Go
 // takes you to its part, lit up. The block goes once all are done.
 var FSKIP='symbiot-skip-company';
-function fsSkipped(){try{return !!(window.localStorage&&window.localStorage.getItem(FSKIP));}catch(e){return false;}}
+function fsKey(id){return id==='company'?FSKIP:'symbiot-skip-'+id;}
+function fsSkipped(id){try{return !!(window.localStorage&&window.localStorage.getItem(fsKey(id||'company')));}catch(e){return false;}}
 // The app in your language (lang.mjs). Its own words on screen are swapped for their
 // translation (your AI makes each once; they're kept, so it's instant after that).
 // Numbers stay out of what's translated: "3 at work" is "{#} at work". Your content
@@ -1401,12 +1431,12 @@ var sv=$('licsave');if(sv)sv.addEventListener('click',function(){var k=($('licke
 var cl=$('licclear');if(cl)cl.addEventListener('click',function(){api('/api/licence/clear',{}).then(function(r){licRender(r);}).catch(function(){});});
 el.querySelectorAll('.licproj button[data-i]').forEach(function(b){b.addEventListener('click',function(){var p=st.projects[+b.getAttribute('data-i')];if(!p)return;api('/api/licence/project/free',{path:p.path}).then(function(r){licRender(r);}).catch(function(){});});});}
 function loadFirstSteps(){api('/api/firststeps').then(function(f){var el=$('firststeps');if(!el||!f||!f.steps)return;
-var st=f.steps.map(function(s){return s.id==='company'&&!s.done&&fsSkipped()?Object.assign({},s,{done:true,skipped:true}):s;}),next=st.filter(function(s){return !s.done;})[0];
+var st=f.steps.map(function(s){return s.optional&&!s.done&&fsSkipped(s.id)?Object.assign({},s,{done:true,skipped:true}):s;}),next=st.filter(function(s){return !s.done;})[0];
 if(!next){el.innerHTML='';el.classList.add('hidden');return;}el.classList.remove('hidden');
-el.innerHTML="<h3 class='ssh'>First steps</h3><div class='note muted' style='margin-top:2px'>In this order: each one ticks itself once it&#39;s done.</div><ol>"+st.map(function(s,i){return "<li class='"+(s.done?'done':s===next?'next':'')+"'><span class='fsn' aria-hidden='true'>"+(s.done?'&#10003;':(i+1))+"</span><span class='fst'><b>"+esc(s.title)+(s.optional?" <span class='muted' style='font-weight:400'>(optional)</span>":"")+"</b><span>"+(s.skipped?'skipped':esc(s.sub))+"</span></span>"+(s.done?"<span class='sr' style='position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)'>done</span>":"<button type='button' class='"+(s===next?'act':'ghost')+" fsgo' data-id='"+s.id+"'>"+(s===next?'Do it now':'Go')+"</button>"+(s.optional?"<button type='button' class='ghost fsskip'>Skip</button>":""))+"</li>";}).join('')+"</ol>";
+el.innerHTML="<h3 class='ssh'>First steps</h3><div class='note muted' style='margin-top:2px'>In this order: each one ticks itself once it&#39;s done.</div><ol>"+st.map(function(s,i){return "<li class='"+(s.done?'done':s===next?'next':'')+"'><span class='fsn' aria-hidden='true'>"+(s.done?'&#10003;':(i+1))+"</span><span class='fst'><b>"+esc(s.title)+(s.optional?" <span class='muted' style='font-weight:400'>(optional)</span>":"")+"</b><span>"+(s.skipped?'skipped':esc(s.sub))+"</span></span>"+(s.done?"<span class='sr' style='position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)'>done</span>":"<button type='button' class='"+(s===next?'act':'ghost')+" fsgo' data-id='"+s.id+"'>"+(s===next?'Do it now':'Go')+"</button>"+(s.optional?"<button type='button' class='ghost fsskip' data-id='"+s.id+"'>Skip</button>":""))+"</li>";}).join('')+"</ol>";
 el.querySelectorAll('.fsgo').forEach(function(b){b.addEventListener('click',function(){var id=b.getAttribute('data-id'),a=$(SETFOCUS[id==='site'?'links':id]||''),s=a&&a.closest?a.closest('.sset'):null;if(!s)return;
 document.querySelectorAll('#panel-settings .lit').forEach(function(x){x.classList.remove('lit');});s.classList.add('lit');if(s.scrollIntoView)s.scrollIntoView({block:'start',behavior:'smooth'});var c=s.querySelector('select,input,button');if(c&&c.focus){try{c.focus({preventScroll:true});}catch(e){c.focus();}}});});
-var sk=el.querySelector('.fsskip');if(sk)sk.addEventListener('click',function(){try{if(window.localStorage)window.localStorage.setItem(FSKIP,'1');}catch(e){}loadFirstSteps();});});}
+el.querySelectorAll('.fsskip').forEach(function(sk){sk.addEventListener('click',function(){try{if(window.localStorage)window.localStorage.setItem(fsKey(sk.getAttribute('data-id')),'1');}catch(e){}loadFirstSteps();});});});}
 var fsTimer=null;(function(){var ps=$('panel-settings');if(ps&&ps.addEventListener){var again=function(){if(fsTimer)clearTimeout(fsTimer);fsTimer=setTimeout(function(){if(current==='settings')whenFree($('firststeps'),'firststeps',loadFirstSteps);},1800);};ps.addEventListener('click',again);ps.addEventListener('change',again);}})();
 var tabPicked=false;tabs().forEach(function(t){t.addEventListener('click',function(){tabPicked=true;setTab(t.dataset.tab);});});
 // Watching a page (your inbox, GitHub)? The app opens on the Dashboard instead of
@@ -1835,7 +1865,10 @@ var todoBox=boxes.length&&(w.todos&&w.todos.length||pg)?boxes.shift():'';
 if(todoBox)h+="<div class='wk'>"+todoBox+"</div>";
 h+="<details class='wkraw'><summary>details: steps, files, cost</summary><div class='wkstats'>"+stats.join('')+"</div>"+(boxes.length?"<div class='wk'>"+boxes.join('')+"</div>":"")+(!run&&w.final?"<div class='wkfinal'>"+esc(w.final)+"</div>":"")+"</details>";
 return h;}
-function loadAgents(){loadLanes();loadParked(agentsDraw);}
+function loadAgents(){loadLanes();loadParked(agentsDraw);phoneApprovedNote();}
+// What was approved from your phone today (phone.mjs), above the agents: it wasn't you at this desk.
+function phoneApprovedNote(){var el=$('phoneappr');if(!el)return;var ap=(LQ.home&&LQ.home.phoneApproved)||[];
+el.innerHTML=ap.map(function(a){return "<div class='note "+(a.status==='failed'?'err':'ok')+"'>"+(a.status==='failed'?"Approving <b>"+esc(a.repo)+"</b> from "+esc(a.phone)+" failed: "+esc(a.error||''):(a.status==='approving'?"Approving ":"&#10003; Approved ")+"<b>"+esc(a.repo)+"</b> from "+esc(a.phone)+", "+agoTxt(a.at)+(a.pr?" &middot; <a href='"+escQ(a.pr)+"' target='_blank' rel='noopener'>its PR</a>":""))+"</div>";}).join('');}
 // Agents, in order: what needs you (a question, a step of yours), what's at work, and
 // what's finished, folded away (open stays open across refreshes).
 var AGDONEOPEN=false;
@@ -1962,30 +1995,93 @@ function phoneTermux(){var A=window.SymbiotAndroid,t={};if(A&&A.termux){try{t=JS
 function loadPhone(){var t=phoneTermux();if(!t.installed&&!t.on)return;$('phonebox').classList.remove('hidden');
 $('phonenote').innerHTML=t.on?"This window shows the Symbiot running in Termux, so it sees the projects in Termux's home folder and runs your agents there. The app's own Symbiot sees only shared storage.":"Termux keeps its home folder (<code>~</code>) private, so the app's own Symbiot can't see the projects there. Symbiot running in Termux can, and this app can show it. <b>Open Termux</b> copies the command that starts it (it installs Node and Symbiot there first if they're missing). Paste it in Termux, and Termux opens it here.";
 var b=$('phonebtn');b.textContent=t.on?"Use the app's own Symbiot":"Open Termux";b.onclick=function(){if(t.on)SymbiotAndroid.builtIn();else SymbiotAndroid.openTermux();};}
-// Watch on your phone (phone.mjs): the computer lets a paired phone ask what
-// Watch found; the phone pairs once with its address and code, then asks every 2 minutes.
+// Your phone (phone.mjs). On the computer: switch it on and it shows a QR (and a code)
+// to pair the app on your phone with; the phones paired, when each last asked and how
+// (your Wi-Fi, or the relay away from home), and the relay's switch. On the phone:
+// pair by scanning (the app opens the QR's link), or by the address and code typed in,
+// with the computers it finds on this network listed; then Check now and Forget.
 function loadPhoneLink(msg){api('/api/phone').then(function(d){renderPhoneLink(d,msg);});}
-function renderPhoneLink(d,msg){if(!d||!d.role)return;var box=$('phonelink'),h='';
+function phoneQr(d,where){var ad=(d.addresses||[]).map(function(a){return a+':'+d.port;});
+return "<div class='pqr'><div class='qrimg' role='img' aria-label='QR code to pair your phone'>"+(d.qr||'')+"</div><div class='qrtxt'><b>Scan it with your phone&rsquo;s camera.</b> Symbiot&rsquo;s app on your phone opens and pairs with this computer."+
+"<span class='muted'>No camera, or Symbiot in Termux? On the phone, in "+where+", type "+(ad.length?"the address <b>"+esc(ad[0])+"</b>"+(ad.length>1?" (or "+esc(ad.slice(1).join(', '))+")":"")+" and ":"this computer&rsquo;s address and ")+"the code <b class='code'>"+esc(d.code)+"</b>. It works for 10 minutes.</span></div></div>";}
+function phoneSeen(p){return p.old?"<span class='err'>paired before the link was sealed: pair it again</span>":(p.seen?"asked "+agoTxt(p.seen)+(p.via==='relay'?" through the relay":p.via==='wifi'?" on your Wi-Fi":""):"hasn&rsquo;t asked yet");}
+function renderPhoneLink(d,msg){if(!d||!d.role)return;var box=$('phonelink'),h='';if(!box)return;
 if(d.role==='phone'){
-if(d.paired){h+="<div class='task'><span class='t'>Paired with <b>"+esc(d.name)+"</b> <span class='muted' style='font-size:12px'>"+esc(d.url)+(d.last?" &middot; asked "+agoTxt(d.last):"")+"</span>"+(d.error?"<br><span class='err' style='font-size:12px'>"+esc(d.error)+"</span>":"")+"</span><button class='ghost' id='pcheck' title='ask your computer now'>Check now</button><button class='rm' id='pforget' title='stop getting its notifications'>&times;</button></div>";
-h+="<div class='note muted'>While Symbiot runs on this phone, it asks your computer every 2 minutes and shows what Watch found there as a notification, with its brief if you switched that on there.</div>";}
-else h+="<div class='row'><input id='paddr' placeholder='your computer&rsquo;s address, e.g. 192.168.8.50:7392' style='flex:1'><input id='pcode' placeholder='code' inputmode='numeric' style='flex:0 0 90px'><button class='act' id='ppair'>Pair</button></div><div class='note muted'>Get what Watch finds on your computer (new mail, review requests, failed CI runs) as notifications here. On your computer, in Symbiot&rsquo;s Settings, tick <b>Watch on your phone</b>: it shows its address and a 6-digit code. Type both here. The phone has to be on the same Wi-Fi.</div>";
+if(d.paired&&!d.old){h+="<div class='task'><span class='t'>Paired with <b>"+esc(d.name)+"</b> <span class='muted' style='font-size:12px'>"+esc(d.url||'')+(d.last?" &middot; asked "+agoTxt(d.last)+(d.via==='relay'?" through the relay":""):"")+"</span>"+(d.error?"<br><span class='err' style='font-size:12px'>"+esc(d.error)+"</span>":"")+"</span><button class='ghost' id='pcheck' title='ask your computer now'>Check now</button><button class='rm' id='pforget' title='forget it: its copy here goes too'>&times;</button></div>";
+h+="<div class='note muted'>Its tasks, what needs you and its agents&rsquo; questions are on Home, in <b>On "+esc(d.name)+"</b>: tick, add, answer and approve from there. While Symbiot runs on this phone it asks every 2 minutes (and as soon as this phone&rsquo;s network changes), and shows what Watch found there as a notification.</div>";}
+else{if(d.old)h+="<div class='note err'>"+esc(d.error||'')+"</div>";
+h+="<div class='note muted' style='margin-top:2px'>"+(window.SymbiotAndroid?"<b>Scan the code your computer shows:</b> in Symbiot on your computer, open Settings &rarr; <b>Your phone</b> and switch it on. Point this phone&rsquo;s camera at the QR, and tap its link. Or type its address and code here:":"In Symbiot on your computer, open Settings &rarr; <b>Your phone</b> and switch it on: it shows its address and a 6-digit code. Type both here.")+"</div>"+
+"<div class='row'><input id='paddr' placeholder='your computer&rsquo;s address, e.g. 192.168.8.50:7392' style='flex:1'><input id='pcode' placeholder='code' inputmode='numeric' style='flex:0 0 90px'><button class='act' id='ppair'>Pair</button></div>"+
+"<div class='row' style='margin-top:4px'><button class='ghost' id='pfind'>Look for it on this network</button></div><div id='pfound' class='pcfound'></div>";}
 if(!d.notify)h+="<div class='note err'>Notifications from Termux need the Termux:API app: install it, then run <b>pkg install termux-api</b> in Termux.</div>";}
-else{h+="<label class='check'><input type='checkbox' id='plinkon'"+(d.on?" checked":"")+"> Let the Symbiot app on my phone get Watch&rsquo;s notifications, over this network</label>";
+else{h+="<label class='check'><input type='checkbox' id='plinkon'"+(d.on?" checked":"")+"> Let the Symbiot app on my phone show my work here, and send back what I do on it</label>";
 if(d.on&&d.error)h+="<div class='note err'>"+esc(d.error)+"</div>";
-else if(d.on&&d.listening){var ad=(d.addresses||[]).map(function(a){return a+":"+d.port;});
-h+=d.code?"<div class='note ok'>On your phone, open Symbiot &rarr; Settings &rarr; <b>Watch on your phone</b>, and type the address <b>"+esc(ad[0]||"(this computer&rsquo;s address)")+"</b>"+(ad.length>1?" <span class='muted'>(or "+esc(ad.slice(1).join(", "))+")</span>":"")+" and the code <b style='letter-spacing:2px'>"+esc(d.code)+"</b>. <span class='muted'>The code works for 10 minutes.</span></div>"
-:"<div class='row' style='margin-top:4px'><button class='ghost' id='pnewcode'>Pair a phone</button></div>";
-h+=(d.phones||[]).map(function(p){return "<div class='task' data-id='"+esc(p.id)+"'><span class='t'>"+esc(p.name)+" <span class='muted' style='font-size:12px'>paired "+agoTxt(p.added)+(p.seen?" &middot; asked "+agoTxt(p.seen):"")+"</span></span><button class='rm punpair' title='unpair it: it gets nothing more'>&times;</button></div>";}).join('');}
-h+="<div class='note muted'>"+(d.on?"Symbiot listens on port "+d.port+" of your network for this alone: the pairing code, then what&rsquo;s new for a phone that paired. Nothing can be changed from there, and the rest of Symbiot stays on this computer. What&rsquo;s new (your mail&rsquo;s senders and subjects) crosses your Wi-Fi unencrypted, so use it on a network you trust. Pairing fails? A firewall here may need to allow port "+d.port+".":"New mail, review requests and failed CI runs that Watch finds here, as notifications on your phone, through the Symbiot app there. It asks this computer every 2 minutes while both are running, on the same Wi-Fi.")+"</div>";}
+else if(d.on&&d.listening){h+=d.code&&d.qr?phoneQr(d,"Settings &rarr; <b>Your phone</b>"):"<div class='row' style='margin-top:4px'><button class='ghost' id='pnewcode'>Pair a phone</button></div>";
+h+=(d.phones||[]).map(function(p){return "<div class='task' data-id='"+escQ(p.id)+"'><span class='t'>"+esc(p.name)+" <span class='muted' style='font-size:12px'>paired "+agoTxt(p.added)+" &middot; "+phoneSeen(p)+"</span></span><button class='rm punpair' title='unpair it: it gets nothing more, and what it queued (an approve too) is refused'>&times;</button></div>";}).join('');
+var rl=d.relay||{};if((d.phones||[]).length)h+="<label class='check'><input type='checkbox' id='prelay'"+(rl.on!==false?" checked":"")+"> Away from home too, through symbiot.co.za</label><div class='note muted' style='margin-top:0'>"+(rl.on===false?"Off: your phone reaches this computer only on your Wi-Fi.":rl.connected?"Connected. Away from home, what your phone and this computer send each other passes through symbiot.co.za, sealed: it can&rsquo;t read it, and keeps none of it. At home nothing goes through it.":"Not connected yet"+(rl.error?": "+esc(rl.error):"")+". Away from home, what they send passes through symbiot.co.za, sealed: it can&rsquo;t read it.")+"</div>";}
+h+="<div class='note muted'>"+(d.on?"Symbiot listens on port "+d.port+" of your network for this alone: pairing, then sealed requests from a phone that paired. Everything between them is encrypted with a key the two agree when they pair, and a phone can only add and tick tasks, answer your agents and approve. The rest of Symbiot stays on this computer. Pairing fails? A firewall here may need to allow port "+d.port+".":"Your tasks, what needs you, your agents&rsquo; questions and what Watch finds, on your phone through the Symbiot app there: tick, add, answer and approve from it, sealed between the two.")+"</div>";}
 if(msg)h+="<div class='note "+(msg.ok?"ok":"err")+"'>"+esc(msg.text)+"</div>";
 box.innerHTML=h;
 var on=$('plinkon');if(on)on.addEventListener('change',function(){on.disabled=true;api('/api/phone/link',{on:on.checked}).then(function(x){renderPhoneLink(x);});});
+var rlb=$('prelay');if(rlb)rlb.addEventListener('change',function(){rlb.disabled=true;api('/api/phone/relay',{on:rlb.checked}).then(function(x){renderPhoneLink(x);});});
 var nc=$('pnewcode');if(nc)nc.addEventListener('click',function(){api('/api/phone/code',{}).then(function(x){renderPhoneLink(x);});});
-box.querySelectorAll('.punpair').forEach(function(b){b.addEventListener('click',function(){if(typeof confirm==='function'&&!confirm('Unpair this phone? It gets no more notifications from here.'))return;api('/api/phone/unpair',{id:b.closest('.task').getAttribute('data-id')}).then(function(x){renderPhoneLink(x);});});});
-var pp=$('ppair');if(pp)pp.addEventListener('click',function(){var a=$('paddr').value,cd=$('pcode').value;pp.disabled=true;pp.textContent='Pairing...';api('/api/phone/pair',{address:a,code:cd}).then(function(x){renderPhoneLink(x,x&&x.error?{text:x.error}:{ok:true,text:'Paired. What Watch finds on '+x.name+' shows up here as a notification.'});if(x&&x.error&&$('paddr')){$('paddr').value=a;$('pcode').value=cd;}});});
+box.querySelectorAll('.punpair').forEach(function(b){b.addEventListener('click',function(){if(typeof confirm==='function'&&!confirm('Unpair this phone? It gets nothing more from here, and what it queued (an approve too) is refused.'))return;api('/api/phone/unpair',{id:b.closest('.task').getAttribute('data-id')}).then(function(x){renderPhoneLink(x);});});});
+var pp=$('ppair');if(pp)pp.addEventListener('click',function(){var a=$('paddr').value,cd=$('pcode').value;pp.disabled=true;pp.textContent='Pairing...';api('/api/phone/pair',{address:a,code:cd}).then(function(x){renderPhoneLink(x,x&&x.error?{text:x.error}:{ok:true,text:'Paired. What needs you on '+x.name+' is on Home now.'});if(x&&x.error&&$('paddr')){$('paddr').value=a;$('pcode').value=cd;}if(x&&!x.error){LQ.fresh=true;lqLoad(true);}});});
+var pf0=$('pfind');if(pf0)pf0.addEventListener('click',function(){phoneFind(pf0,$('pfound'),function(u){var i=$('paddr');if(i)i.value=u.replace(/^http:[/][/]/,'');var c0=$('pcode');if(c0&&c0.focus)c0.focus();});});
 var pc=$('pcheck');if(pc)pc.addEventListener('click',function(){pc.disabled=true;api('/api/phone/check',{}).then(function(x){renderPhoneLink(x,x&&!x.error?{ok:true,text:x.shown?'Showed '+x.shown+' notification(s).':'Asked: nothing new.'}:null);});});
-var pf=$('pforget');if(pf)pf.addEventListener('click',function(){if(typeof confirm==='function'&&!confirm('Forget your computer? Its notifications stop.'))return;api('/api/phone/forget',{}).then(function(x){renderPhoneLink(x);});});}
+var pf=$('pforget');if(pf)pf.addEventListener('click',function(){if(typeof confirm==='function'&&!confirm('Forget your computer? Its notifications stop, and its copy here goes, with any change not sent yet.'))return;api('/api/phone/forget',{}).then(function(x){renderPhoneLink(x);LQ.fresh=true;lqLoad(true);});});}
+// On your computer, on your phone (phone.mjs computerView): the copy of your computer's
+// work this phone keeps, so it shows with the computer off. First a line saying how
+// fresh it is (out of reach: since when), then what needs you there (its agents'
+// questions, its work waiting for your Approve), its tasks (tick, or add one), and
+// what Watch found. What you do here shows at once, marked "waiting to send" until the
+// computer has it; what it couldn't apply is said here, in plain words.
+var PCV=null;
+function loadComputer(){api('/api/phone').then(function(d){PCV=d;renderComputer();}).catch(function(){});}
+function pcDo(op,args,then){api('/api/phone/do',{op:op,args:args}).then(function(d){if(d&&d.refused){$('pcmsg').innerHTML="<div class='note err'>"+esc(d.refused)+"</div>";}else $('pcmsg').innerHTML='';if(d&&d.role){PCV=d;renderComputer();}if(then)then(d);LQ.fresh=true;});}
+function pcTime(t){var d=new Date(t),n=new Date();return d.toDateString()===n.toDateString()?d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}):d.toLocaleString([],{weekday:'short',hour:'2-digit',minute:'2-digit'});}
+function renderComputer(){var d=PCV,el=$('pcbody'),ln=$('pcline');if(!el||!ln)return;
+if(d&&d.name&&LQNAMES.computer!=='On '+d.name){LQNAMES.computer='On '+d.name;lqTitle();}
+if(!d||d.role!=='phone'||!d.paired||d.old){ln.innerHTML=d&&d.old?"<b>"+esc(d.error||'')+"</b>":'';el.innerHTML="<div class='note muted'>"+(d&&d.role==='computer'?"This is your computer: your phone shows this, there.":"Not paired with a computer yet.")+" <button class='ghost' id='pcsettings'>Your phone, in Settings</button></div>";var g=$('pcsettings');if(g)g.addEventListener('click',function(){lqFocus({kind:'setup',focus:'phone'});lqPool('settings');});return;}
+var c=d.copy,wait=d.queued?" &middot; "+d.queued+" change"+(d.queued>1?"s":"")+" waiting to send":"";
+ln.innerHTML=d.away?"<b>"+esc(d.name)+" is out of reach.</b> Showing what it sent "+(d.heard?"at "+esc(pcTime(d.heard)):"last")+"."+wait:(c?"From "+esc(d.name)+", "+(d.heard?agoTxt(d.heard):"just now")+(d.via==='relay'?" through the relay":"")+"."+wait:"Asking "+esc(d.name)+" for its work&hellip;");
+if(!c){el.innerHTML="<div class='row'><button class='ghost' id='pcnow'>Ask it now</button></div>";var n0=$('pcnow');if(n0)n0.addEventListener('click',function(){n0.disabled=true;api('/api/phone/check',{}).then(loadComputer);});return;}
+var h='',W="<span class='pcwait'> waiting to send</span>";
+(c.notes||[]).forEach(function(n){h+="<div class='task' data-note='"+escQ(n.id)+"'><span class='t err'>"+esc(n.error)+(n.what?" <span class='muted'>("+esc(n.what)+")</span>":"")+"</span><button class='ghost pcnote'>OK</button></div>";});
+var asks=c.asks||[],aps=c.approves||[],needs=c.needs||[];
+if(asks.length||aps.length||needs.length){h+="<div class='mkneeds lit'><div class='pshead'><span>Needs you &middot; "+(asks.length+aps.length+needs.length)+"</span><small>on "+esc(d.name)+"</small></div>";
+asks.forEach(function(a,i){var q=(a.questions||[])[0]||{};h+="<div class='pcq' data-ask='"+i+"'><div class='qn'>"+esc(a.name)+" asks"+((a.questions||[]).length>1?" &middot; 1 of "+a.questions.length:"")+"</div><div class='qq'>"+esc(q.q||'')+"</div>"+
+(a.waiting?"<div class='note' style='margin:0'>You answered: "+esc((a.answered||[])[0]||'')+W+"</div>":"<div class='opts'>"+(q.options||[]).map(function(o,j){return "<button class='"+(j?'ghost':'act')+" pcopt' data-j='"+j+"'>"+esc(o)+"</button>";}).join('')+"</div><form class='pcown'><input placeholder='Or say it in your own words' maxlength='2000'><button class='ghost' type='submit'>Send</button></form>")+"</div>";});
+aps.forEach(function(a,i){h+="<div class='pcq' data-ap='"+i+"'><div class='qn'>"+esc(a.repo)+" &middot; waiting for your Approve</div><div class='qq'>"+(a.tasks.length?a.tasks.length+" task"+(a.tasks.length>1?"s":"")+" done":"Changes without a task")+" &middot; <span class='muted'>"+esc(a.stat||(a.files+" file"+(a.files===1?"":"s")+" changed"))+"</span></div>"+(a.tasks.length?"<ul>"+a.tasks.map(function(t){return "<li>"+esc(t.text)+"</li>";}).join('')+"</ul>":"")+
+(a.waiting?"<div class='note' style='margin:0'>Approved here"+W+"</div>":"<div class='row' style='margin:0'><button class='act pcapprove'>Approve</button><span class='muted' style='font-size:12px'>exactly this: if the work changes before your computer gets it, it isn&rsquo;t approved</span></div>")+"</div>";});
+needs.forEach(function(n){h+="<div class='task'><span class='t'>"+esc(n.title)+" <span class='muted' style='font-size:12px'>"+esc(n.sub)+" &middot; on your computer</span></span></div>";});
+h+="</div>";}
+(c.recent||[]).slice(-3).forEach(function(r){h+="<div class='note "+(r.status==='failed'?'err':'ok')+"'>"+(r.status==='approving'?"Approving "+esc(r.repo)+" (from "+esc(r.phone)+")&hellip;":r.status==='failed'?"Approving "+esc(r.repo)+" from "+esc(r.phone)+" failed: "+esc(r.error||''):"&#10003; "+esc(r.repo)+" approved from "+esc(r.phone)+(r.pr?" &middot; <a href='"+escQ(r.pr)+"' target='_blank' rel='noopener'>its PR</a>":""))+"</div>";});
+var open=(c.tasks||[]).filter(function(t){return !t.done;}),done=(c.tasks||[]).filter(function(t){return t.done;}),repos=[];(c.tasks||[]).forEach(function(t){if(t.repo&&repos.indexOf(t.repo)<0)repos.push(t.repo);});
+h+="<div class='pshead' style='margin-top:14px'><span>Tasks &middot; "+open.length+" open</span><small>on "+esc(d.name)+"</small></div>";
+h+="<form class='pcadd'><input id='pctask' placeholder='Add a task' maxlength='4000' autocomplete='off'><select id='pcrepo' aria-label='Which project'><option value=''>No project</option>"+repos.sort().map(function(r){return "<option value='"+escQ(r)+"'>"+esc(r)+"</option>";}).join('')+"</select><button class='act' type='submit'>Add</button></form>";
+h+=open.concat(done.slice(0,8)).map(function(t){return "<div class='task"+(t.done?" done":"")+"' data-id='"+escQ(t.id)+"'><input type='checkbox' class='pctick'"+(t.done?" checked":"")+(String(t.id).indexOf('q:')===0?" disabled":"")+" aria-label='done'><span class='t'>"+esc(t.text)+(t.repo?" <span class='rp'>"+esc(t.repo)+"</span>":"")+(t.review?" <span class='muted' style='font-size:11px'>done by its agent, waits for your Approve</span>":"")+(t.waiting?W:"")+"</span></div>";}).join('');
+if((c.watch||[]).length)h+="<div class='pshead' style='margin-top:14px'><span>What Watch found</span><small>on "+esc(d.name)+", today</small></div>"+c.watch.map(function(w){return "<div class='task'><span class='t'><b>"+esc(w.name)+"</b> <span class='muted' style='font-size:12px'>"+esc(w.label)+"</span>"+(w.items||[]).map(function(i){return "<br><span style='font-size:13px'>"+esc(i.text)+"</span>";}).join('')+"</span></div>";}).join('');
+var typed=$('pctask')?[$('pctask').value,$('pcrepo').value,document.activeElement&&document.activeElement.id]:null;
+el.innerHTML=h;if(typed){$('pctask').value=typed[0]||'';$('pcrepo').value=typed[1]||'';if(typed[2]==='pctask')$('pctask').focus();}
+el.querySelectorAll('.pcnote').forEach(function(b){b.addEventListener('click',function(){api('/api/phone/note',{id:b.closest('.task').getAttribute('data-note')}).then(function(x){PCV=x;renderComputer();});});});
+el.querySelectorAll('.pcq[data-ask]').forEach(function(box){var a=asks[+box.getAttribute('data-ask')],q=(a.questions||[])[0]||{};if(a.waiting)return;
+var send=function(t){if(!t)return;pcDo('agent.answer',{path:a.path,answers:[{q:q.q,a:t}]});};
+box.querySelectorAll('.pcopt').forEach(function(b){b.addEventListener('click',function(){send((q.options||[])[+b.getAttribute('data-j')]);});});
+var f=box.querySelector('form');if(f)f.addEventListener('submit',function(ev){ev.preventDefault();send(f.querySelector('input').value.trim());});});
+el.querySelectorAll('.pcq[data-ap]').forEach(function(box){var a=aps[+box.getAttribute('data-ap')],b=box.querySelector('.pcapprove');if(!b)return;b.addEventListener('click',function(){if(typeof confirm==='function'&&!confirm('Approve '+a.repo+'? It goes out as Approve on your computer does: committed, a PR opened, and a release if the version changed.'))return;b.disabled=true;pcDo('pending.approve',{repo:a.repo,sum:a.sum});});});
+el.querySelectorAll('.pctick').forEach(function(cb){cb.addEventListener('change',function(){pcDo('task.setDone',{id:cb.closest('.task').getAttribute('data-id'),done:cb.checked});});});
+var fm=el.querySelector('.pcadd');if(fm)fm.addEventListener('submit',function(ev){ev.preventDefault();var t=$('pctask');if(!t.value.trim()){t.focus();return;}pcDo('task.add',{text:t.value,repo:$('pcrepo').value},function(x){if(x&&!x.refused){var i=$('pctask');if(i)i.value='';}});});}
+// A pairing link the Android app was opened with (the QR, scanned): pair with it here.
+// In Setup's "Your computer" step it shows there; anywhere else, the computer's droplet opens.
+window.symbiotPairLink=function(link){api('/api/phone/pair',{link:String(link||'')}).then(function(x){
+if(ONB&&ONB.pending){var show=function(){if(x&&x.error){var m=$('onbpairmsg');if(m)m.textContent=x.error;}}; // Setup goes to "Your computer", where it shows paired, or why not
+if((ONB.steps||[]).indexOf('computer')>=0&&ONB.step!=='computer')api('/api/onboarding/set',{step:'computer'}).then(function(){return onbLoad();}).then(show).catch(show);else{var r=onbLoad();if(r&&r.then)r.then(show);else show();}return;}
+renderPhoneLink(x,x&&x.error?{text:x.error}:{ok:true,text:'Paired with '+x.name+'.'});if(x&&!x.error){LQ.fresh=true;lqLoad(true);lqPool('computer');}else lqPool('settings');});};
+// The computers saying they're here on this network (phone.mjs findComputers): a tap fills the address in.
+function phoneFind(btn,el,pick){if(!el)return;btn.disabled=true;btn.textContent='Looking...';api('/api/phone/find').then(function(r){btn.disabled=false;btn.textContent='Look again';var f=(r&&r.found)||[];
+el.innerHTML=f.length?f.map(function(x,i){return "<button class='ghost' data-i='"+i+"' style='text-align:left'>"+esc(x.name)+" <span class='muted'>"+esc(x.url.replace(/^http:[/][/]/,''))+"</span></button>";}).join(''):"<div class='note muted' style='margin:0'>None found. Is Symbiot running on your computer with Your phone switched on, and is this phone on the same Wi-Fi?</div>";
+el.querySelectorAll('button').forEach(function(b){b.addEventListener('click',function(){pick(f[+b.getAttribute('data-i')].url);});});}).catch(function(){btn.disabled=false;btn.textContent='Look again';});}
 // Link your work (links.mjs): one button per standard site. A click opens it in
 // Symbiot's browser to sign in, trusts it and watches it. Its dot: grey not
 // linked, amber waiting for you to sign in (or signed out), green linked. Shown
@@ -2026,9 +2122,17 @@ el.innerHTML=ns.length?ns.slice(0,60).map(function(n){return "<div class='task' 
 el.querySelectorAll('.forgetone').forEach(function(b){b.addEventListener('click',function(){api('/api/mind/forget',{id:b.closest('.task').getAttribute('data-id')}).then(loadMind);});});
 var fa=document.getElementById('forgetall');if(fa)fa.addEventListener('click',function(){api('/api/mind/forget',{id:'all'}).then(loadMind);});});}
 function loadLinks(){api('/api/links').then(function(d){if(d&&d.items){LINKS=d;renderLinks();}});}
+// Sign in to a site for agents: the Symbiot Browser opens on it (links.mjs addSite:
+// added under Connections → Your sites, trusted, checked once you click Done there).
+// From Settings, a trusted site, a card or a reply that asks you to sign in. s: { site } or { id }.
+function signInSaid(nm){return 'Opened the Symbiot Browser with '+nm+'. Sign in there as you normally do, then click Done in the Symbiot Browser: Settings → Connections shows when it’s signed in.';}
+function openSignIn(s,say){if(!s||(!s.site&&!s.id))return;api('/api/links/site',s.id?{id:s.id}:{site:s.site}).then(function(r){var nm=(r&&r.item&&r.item.name)||s.name||s.site||'it';
+if(!r||r.error){say(nm+': '+((r&&r.error)||'it didn’t open'),false);return;}say(signInSaid(nm),true);loadLinks();loadTrusted();[20000,60000,120000].forEach(function(ms){setTimeout(loadLinks,ms);});}).catch(function(e){say(String((e&&e.message)||e),false);});}
+function addSiteUI(){var i=document.getElementById('addsite'),v=((i&&i.value)||'').trim();if(!v)return;openSignIn({site:v},function(t,ok){if(ok)i.value='';linksOut("<div class='note "+(ok?'ok':'err')+"'>"+esc(t)+"</div>");});}
 // Trusted sites: where Screens' Press and Type don't ask first (headless.mjs).
 function loadTrusted(){api('/api/screens/trusted').then(function(d){var box=document.getElementById('trustedsites');var sites=(d&&d.sites)||[];
-box.innerHTML=sites.length?sites.map(function(h){return "<div class='task' data-h='"+esc(h)+"'><span class='t' style='font-family:ui-monospace,monospace;font-size:12px'>"+esc(h)+"</span><button class='rm rmtrusted' title='stop trusting it: press and type ask first again'>&times;</button></div>";}).join(""):"<div class='muted' style='font-size:12px'>None yet: Press and Type ask first on every site.</div>";
+box.innerHTML=sites.length?sites.map(function(h){return "<div class='task' data-h='"+esc(h)+"'><span class='t' style='font-family:ui-monospace,monospace;font-size:12px'>"+esc(h)+"</span><button class='ghost tsign' title='open "+esc(h)+" in the Symbiot Browser, to sign in for agents'>Sign in</button><button class='rm rmtrusted' title='stop trusting it: press and type ask first again'>&times;</button></div>";}).join(""):"<div class='muted' style='font-size:12px'>None yet: Press and Type ask first on every site.</div>";
+box.querySelectorAll('.tsign').forEach(function(btn){btn.addEventListener('click',function(){var h=btn.closest('.task').getAttribute('data-h');openSignIn({site:h},function(t,ok){var n=document.getElementById('trustednote');if(n)n.innerHTML="<span class='"+(ok?'ok':'err')+"'>"+esc(t)+"</span>";});});});
 box.querySelectorAll('.rmtrusted').forEach(function(btn){btn.addEventListener('click',function(){api('/api/screens/trusted/remove',{site:btn.closest('.task').getAttribute('data-h')}).then(function(){loadTrusted();loadScreensUI();});});});});}
 function addTrustedUI(){var i=document.getElementById('newtrusted');var v=(i.value||'').trim();if(!v)return;var n=document.getElementById('trustednote');
 api('/api/screens/trusted/add',{site:v}).then(function(r){if(!r||r.error){n.innerHTML="<span class='err'>"+esc((r&&r.error)||'failed')+"</span>";return;}i.value='';loadTrusted();loadScreensUI();});}
@@ -2639,6 +2743,8 @@ document.getElementById('newroot').addEventListener('keydown',function(e){if(e.k
 $('addknow').addEventListener('click',addKnowUI);
 ['newknow','newknowex'].forEach(function(id){$(id).addEventListener('keydown',function(e){if(e.key==='Enter')addKnowUI();});});
 document.getElementById('addtrusted').addEventListener('click',addTrustedUI);
+document.getElementById('addsitego').addEventListener('click',addSiteUI);
+document.getElementById('addsite').addEventListener('keydown',function(e){if(e.key==='Enter')addSiteUI();});
 document.getElementById('newtrusted').addEventListener('keydown',function(e){if(e.key==='Enter')addTrustedUI();});
 document.getElementById('driftrun').addEventListener('click',function(){driftLoaded=false;loadDrift();});
 document.getElementById('agentsrefresh').addEventListener('click',loadAgents);
@@ -2756,7 +2862,7 @@ if(!ps.length){el.innerHTML='';return;}
 el.innerHTML=ps.map(function(p,i){var nm=p.name||p.repo,q=(p.qs||[])[0],st=p.parked?'parked':(p.qs&&p.qs.length)?'asks you':p.ready?'ready for your OK':p.state||'';
 var h="<section class='rly"+((p.qs&&p.qs.length)||p.ready?' lit':'')+"' data-i='"+i+"'><div class='rlh'><b>"+esc(nm)+"</b>"+(st?"<span class='rls'>"+esc(st)+"</span>":"")+"</div>";
 if(p.summary)h+="<p class='rlsum' title='"+escQ(p.summary)+"'>"+esc(p.summary)+"</p>";
-if(q)h+="<div class='lqblob rlask'>"+blobBody({kind:'ask',name:nm,repo:p.repo,q:q.q,options:q.options,path:q.path,fix:q.fix,id:q.id,sub:q.sub,draft:q.draft,more:Math.max(0,(p.asks||p.qs.length)-1)},false)+"</div>";
+if(q)h+="<div class='lqblob rlask'>"+blobBody({kind:'ask',name:nm,repo:p.repo,q:q.q,options:q.options,path:q.path,fix:q.fix,id:q.id,sub:q.sub,draft:q.draft,signInTo:q.signInTo,more:Math.max(0,(p.asks||p.qs.length)-1)},false)+"</div>";
 if(p.ready)h+="<button type='button' class='act rlok'>Review and approve</button>";
 if(p.ideas&&p.ideas.length)h+="<div class='rlk'>Extra tasks it suggests</div>"+p.ideas.map(function(d,j){return "<div class='rli' data-j='"+j+"'><span title='"+escQ(d.full)+"'>"+esc(d.text)+"</span><span class='rlia'><button type='button' class='rladd'>+ task</button><button type='button' class='rlskip'>Skip</button></span></div>";}).join('');
 return h+"<div class='rlf'><button type='button' class='rlopen'>Its tasks &rsaquo;</button><button type='button' class='rlag'>Its agents &rsaquo;</button></div></section>";}).join('');
@@ -2827,7 +2933,7 @@ LQ.talk.push({me:false,text:t});LQ.talk=LQ.talk.slice(-8);lqTalkShow(false);LQ.r
 // comes out of the core (mass is conserved). Your colours come from the system,
 // live: light or dark, contrast, transparency, forced colours, your accent, night.
 var LQ={drops:[],btns:[],core:{x:0,y:0,cr:0},mode:'aware',last:'',lastAct:Date.now(),talk:[],talking:false,theme:{},ripple:[0.5,0.5,-10],t:0,pointer:null,touch:false,frame:0};
-var LQNAMES={board:'Dashboard',map:'Map',tasks:'Workdesk',agents:'Workdesk',week:'Week',standup:'Standup',todo:'Todo',drift:'Drift',settings:'Settings',reports:'Reports',marketing:'Marketing'};
+var LQNAMES={board:'Dashboard',map:'Map',tasks:'Workdesk',agents:'Workdesk',week:'Week',standup:'Standup',todo:'Todo',drift:'Drift',settings:'Settings',reports:'Reports',marketing:'Marketing',computer:'Your computer'};
 var LQ_REST=60000,LQ_MAX=11;
 function lqMM(q){try{return !!(window.matchMedia&&window.matchMedia(q).matches);}catch(e){return false;}}
 function lqLookGet(){var l='';try{l=window.localStorage&&window.localStorage.getItem('symbiot-look')||'';}catch(e){}return l==='glass'||l==='pearl'?l:'ferro';}
@@ -2932,6 +3038,13 @@ function runWarn(x){return x.quiet?'no progress in '+x.quiet+' min · ':x.loopin
 function lqLinks(list,near){var at={},links=[],same=function(l){return lqPara(list[l[0]])===lqPara(list[l[1]]);};list.forEach(function(d,i){if(d.kind==='shape')at[d.shape]=i;});
 list.forEach(function(d,i){if(d.kind==='shape')((near||{})[d.shape]||[]).forEach(function(n){var j=at[n.id];if(j!=null&&j>i)links.push([i,j,n.w]);else if(j!=null&&j<i&&!links.some(function(l){return l[0]===j&&l[1]===i;}))links.push([j,i,n.w]);});
 else if((d.kind==='you'||d.kind==='feed')&&at[d.shape]!=null)links.push([at[d.shape],i,0.5]);});return links.filter(same);}
+// One calm line on Home, never a pop-up: on a phone, that your computer is out of reach
+// and what you see is its copy, from when; on the computer, what was approved from your phone today.
+function lqHomeLine(h){var el=$('lqline'),b=document.body,t='',pc=h.computer,ap=(h.phoneApproved||[]).slice(-1)[0];
+if(pc&&pc.away)t="<b>"+esc(pc.name)+" is out of reach.</b> Showing what it sent "+(pc.heard?"at "+esc(pcTime(pc.heard)):"last")+(pc.queued?" · "+pc.queued+" change"+(pc.queued>1?"s":"")+" waiting to send":"")+".";
+else if(pc&&pc.old)t="<b>Pair this phone with "+esc(pc.name)+" again:</b> the link between them is sealed now.";
+else if(ap)t=ap.status==='failed'?"<b>Approving "+esc(ap.repo)+" from "+esc(ap.phone)+" failed:</b> "+esc(ap.error||''):(ap.status==='approving'?"Approving ":"Approved ")+esc(ap.repo)+" from "+esc(ap.phone)+" at "+esc(pcTime(ap.at))+".";
+if(b&&b.classList)b.classList.toggle('lq-hline',!!t);if(el&&LQ.scene!=='work'&&el.innerHTML!==t)el.innerHTML=t;}
 function lqBuild(){var a=LQ.adapt||{},h=LQ.home||{},S=lqSize(),list=[];LQ.bw=S.w;LQ.bh=S.h;
 // the band first: everything else sits under it, round a core centred in what's left
 var need=lqNeeds(h,S),band=lqRunBand(h,S,need.bottom),top=band.bottom||need.bottom,cx=S.w/2,cy=top?Math.max(S.h*0.47,(top+60+S.h-200)/2):S.h*0.47;LQ.cy=cy;LQ.top=top;LQ.need=need;
@@ -2948,6 +3061,10 @@ lay.slice(room).forEach(function(it){if(!vis.some(function(x){return x.id===it.i
 var mkh=h.marketing||{},mkSub=mkh.needs?mkh.needs+(mkh.needs>1?' need you':' needs you'):mkh.working?'its agent is at work':'';
 lay.slice(0,room).forEach(function(it){var mko=it.id==='marketing';list.push({id:'shape:'+it.id,kind:'shape',shape:it.id,title:LQNAMES[it.id]||it.id,sub:it.id==='reports'&&repOut?repNew.count+' new':mko?mkSub:'',ask:mko&&!!mkh.needs,orbit:mko&&!!mkh.working,r:it.r*rs,tx:cx+Math.cos(it.angle)*it.d*vx,ty:cy+Math.sin(it.angle)*it.d*vy});});
 feeds.forEach(function(f,i){var ang=Math.PI/2+(i-(feeds.length-1)/2)*0.7;var fn=bsName({name:f.title});list.push({id:f.id,kind:'feed',shape:f.shape,title:fn.n+(fn.sub?' · '+fn.sub.split('@').pop():''),sub:f.sub,r:(28+5*Math.min(f.count||1,5))*rs,tx:cx+Math.cos(ang)*300*vx,ty:cy+Math.sin(ang)*300*vy});});
+// on a phone paired with your computer: its droplet, lit when something there needs you (phone.mjs)
+var pc=h.computer;if(pc&&!pc.old){var pn=pc.asks+pc.approves,pang=Math.PI/2+((feeds.length+1)/2)*0.7;list.push({id:'computer',kind:'feed',shape:'computer',title:'On '+pc.name,sub:pc.away?'out of reach · its copy':pn?pn+(pn>1?' need you':' needs you'):pc.tasks+' open task'+(pc.tasks===1?'':'s'),ask:pn>0,r:(32+4*Math.min(pn,5))*rs,tx:cx+Math.cos(pang)*300*vx,ty:cy+Math.sin(pang)*300*vy});}
+// on the computer: your phone, and when it last asked (a droplet only while one's paired)
+var phs=h.phones||[];if(phs.length){var p0=phs.slice().sort(function(x,y){return (y.seen||0)-(x.seen||0);})[0],gang=Math.PI/2+((feeds.length+1)/2)*0.7;list.push({id:'phones',kind:'feed',shape:'settings',title:phs.length>1?phs.length+' phones':p0.name,sub:p0.old?'pair it again':p0.seen?'seen '+agoTxt(p0.seen)+(p0.via==='relay'?', away':''):'hasn’t asked yet',ask:!!p0.old,r:28*rs,tx:cx+Math.cos(gang)*300*vx,ty:cy+Math.sin(gang)*300*vy});}
 list.push({id:'archive',kind:'archive',shape:'tasks',title:'Archive',sub:'what’s done: archived tasks',r:26*rs,tx:cx+Math.cos(PARA_ANG.x)*330*vx,ty:cy+Math.sin(PARA_ANG.x)*330*vy});
 list.forEach(function(d){var g=lqPara(d);d.live=PARA_LIVE[g];if(g==='r')d.r*=0.82;if(g==='x')d.r*=0.85;if(d.shape==='tasks'&&d.kind==='shape'&&h.working)d.orbit=true;});
 var mr=more.length?[{id:'more',kind:'more',title:'more',sub:more.map(function(m){return LQNAMES[m]||m;}).join(' · '),more:more.slice(),r:24*S.s}]:[],zl=list.concat(mr),zc=lqZones(zl,S,top,92*S.s);
@@ -2966,6 +3083,7 @@ list=list.concat(need.items,band.items);var old={};LQ.drops.forEach(function(d){
 LQ.drops=list.map(function(d){var o=old[d.id];d.x=o?o.x:d.blob?d.tx:cx;d.y=o?o.y:d.blob?d.ty:cy;d.vx=o?o.vx:0;d.vy=o?o.vy:0;d.cr=o?o.cr:0;return d;});
 var n=(h.you||[]).length,w=h.working||0,qt=(h.runs||[]).filter(function(x){return x.quiet||x.looping;}).length,wk=w?w+' agent'+(w>1?'s':'')+' working'+(qt?' ('+qt+' stalled)':''):'';
 LQ.coreText=n?(n+(n>1?' things need':' thing needs')+' only you'+(w?' · '+wk:'')):(w?wk+' · nothing needs you':'Nothing needs you right now');
+lqHomeLine(h);
 var b=document.body;if(b&&b.classList){b.classList.toggle('lq-touch',!!(a.modes&&a.modes.touch)||LQ.touch);b.classList.toggle('lq-keys',!!(a.modes&&a.modes.keyboard));}
 LQ.talkWeight=(a.modes&&a.modes.talkWeight)||0.35;
 lqLabels();}
@@ -3058,6 +3176,7 @@ if(d.kind==='you'&&d.item){if(d.x!=null){var S1=lqSize();LQ.ripple=[d.x/S1.w,d.y
 if(d.kind==='wait'&&d.focus){lqFocus({kind:'proj',repo:d.repo,path:d.focus});return;}
 if(d.kind==='proj'){if(d.lit||d.repo==='ops'){lqFocus({kind:'proj',repo:d.repo});return;}TFILTER.repo=d.repo;TFILTER.type='';lqPool('tasks');if(typeof loadTasks==='function')loadTasks();return;}
 // where your files disagree: the checks, lit up in Settings, and these clashes reached you (it dissolves)
+if(d.id==='phones'){lqUse('settings',ev);lqFocus({kind:'setup',focus:'phone'});return;}
 if(d.id==='feed:clash'){api('/api/knowledge/checks/seen',{}).catch(function(){});if(LQ.home)LQ.home.feeds=(LQ.home.feeds||[]).filter(function(f){return f.id!=='feed:clash';});lqUse('settings',ev);loadChecks();lqFocus({kind:'setup',focus:'checks'});return;}
 var S=lqSize();LQ.ripple=[d.x/S.w,d.y/S.h,LQ.t];if(LQ.scene==='work'){lqPool(d.shape||'agents');return;}lqUse(d.shape||'board',ev);lqGo(d.shape||'board');}
 function lqMore(d){var el=$('lqmore');if(!el)return;if(!LQ.moreOpen||!d){el.innerHTML='';return;}
@@ -3092,6 +3211,7 @@ h+=home?"<button type='button' class='lt' title='open "+escQ(nm)+", with this li
 if(y.kind!=='ask')return h+"<div class='bq'>"+esc(y.kind==='approve'?String(y.sub||'').replace(/ · only you decide$/,''):String(y.sub||'').charAt(0).toUpperCase()+String(y.sub||'').slice(1)+'.')+"</div><div class='bo'><button type='button' class='nopt rec ngo'><span class='bt'>"+(y.kind==='approve'?'Review and approve':y.id==='setup:inbox'?(y.signin?'Sign in again':'Show me your inbox'):y.id==='setup:ai'?'Connect an AI':y.pick?'Use '+y.pick.name:y.urgent?'Reconnect':'Open Settings')+"</span></button></div>";
 var os=y.options||[];if(y.draft)h+=draftHtml(y.draft);h+="<div class='bq' title='"+escQ((y.q||'')+(y.why?' ('+y.why+')':''))+"'>"+esc(y.q||y.sub||'')+"</div>";
 if(y.fix==='handover'&&y.sub)h+="<div class='bfor' title='"+escQ(y.sub)+"'>for: "+esc(y.sub)+"</div>";
+if(y.signInTo)h+="<div class='bo'><button type='button' class='nopt bsign' title='opens "+escQ(y.signInTo.name)+" in the Symbiot Browser: sign in there, then click Done'><span class='bt'>Sign in to "+esc(y.signInTo.name)+" &rsaquo;</span></button></div>";
 if(os.length)h+="<div class='bo'>"+os.map(function(o,j){return "<button type='button' class='nopt"+(j===0&&/[(]recommended[)]/i.test(o)?' rec':'')+"' data-j='"+j+"' title='"+escQ(o)+"'><span class='bt'>"+whoHtml(blobOpt(o))+"</span></button>";}).join('')+"</div><button type='button' class='bfree' aria-expanded='false'>"+(y.draft?'Change it':'or answer in your own words')+"</button>";
 h+="<form class='bfx"+(os.length?' hidden':'')+"'><input placeholder='"+(y.draft?'what to change':'your answer')+"' aria-label='"+(y.draft?'what to change in the reply':'your answer to '+escQ(nm))+"'><button type='submit'>"+(y.draft?'Redraft':'Send')+"</button></form>";
 if(home&&y.more)h+="<span class='bmore'>+"+y.more+" more question"+(y.more>1?'s':'')+" after this one</span>";
@@ -3106,6 +3226,7 @@ if(!r||r.error){lock(false);say(nm+': '+((r&&r.error)||'the answer didn’t save
 say(y.fix?nm+': '+(r.said||'Done.'):'Sent to '+(r.lane||nm)+'. '+(r.yours&&r.yours.length?'Still yours to do: '+r.yours.join(' '):r.rerun?'Its agent is picking it up now.':(r.note||'Saved in its ANSWERS.md.')));
 bdSet(y,'');if(o.sent)o.sent();if(box.classList)box.classList.add('gone');setTimeout(function(){if(o.done)o.done();},650);}).catch(function(e){lock(false);say(nm+': '+String((e&&e.message)||e),true);});};
 box.querySelectorAll('.nopt[data-j]').forEach(function(b){b.addEventListener('click',function(){var j=+b.getAttribute('data-j');send((y.options||[])[j],j);});});
+var bs=box.querySelector('.bsign');if(bs)bs.addEventListener('click',function(){bs.disabled=true;openSignIn(y.signInTo,function(t,ok){bs.disabled=false;say(t,!ok);});});
 var fr=box.querySelector('.bfree'),fx=box.querySelector('.bfx'),fi=fx&&fx.querySelector('input');
 if(fi){var dr=bdGet(y);if(dr&&!fi.value){fi.value=dr.text;if(fx.classList)fx.classList.remove('hidden');if(fr)fr.setAttribute('aria-expanded','true');try{if(dr.s!=null)fi.setSelectionRange(dr.s,dr.e!=null?dr.e:dr.s);}catch(e){}}
 var keep=function(){bdSet(y,fi.value,fi.selectionStart,fi.selectionEnd);};['input','keyup','mouseup','select'].forEach(function(t){fi.addEventListener(t,keep);});}
@@ -3144,7 +3265,7 @@ lqLight();};
 api('/api/lanes').then(function(d){paint(((d&&d.handoffs)||[]).filter(function(x){return x.status==='held'&&(x.to===repo||x.from===repo);}));}).catch(function(){paint([]);});}
 // What lit the orb, lit up where it opened (.lit): the first in view, and with only
 // one, its first answer focused. Again after each re-render, but scrolled to once.
-var SETFOCUS={ai:'provider',work:'scanroots',agent:'agentcmd',links:'links',company:'knowroots',checks:'knowchecks'};
+var SETFOCUS={ai:'provider',work:'scanroots',agent:'agentcmd',links:'links',company:'knowroots',checks:'knowchecks',phone:'phonelink'};
 function lqLight(){var f=LQ.focus;if(!f||LQ.mode!=='pool')return;var things=[],also=[];
 if(f.kind==='setup'){var a=$(SETFOCUS[f.focus]||''),s=a&&a.closest?a.closest('.sset'):null;if(f.focus==='checks'&&a)things.push(a);else if(s)things.push(s);}
 else if(current==='tasks'&&f.repo&&f.repo!=='ops'){document.querySelectorAll('#needsbox .nitem').forEach(function(e){things.push(e);});document.querySelectorAll('#reviewlist .rcard').forEach(function(e){if(e.getAttribute('data-repo')===f.repo)(things.length?also:things).push(e);});}
@@ -3176,8 +3297,9 @@ var h=!n?'':LQ.talkMin?"<button type='button' class='lqtb-open' aria-expanded='f
 if(!sameHtml(el,h)){var bt=el.querySelector('button');if(bt)bt.addEventListener('click',function(){if(LQ.talkMin)lqChatOpen();else lqChatMin();});}}
 function lqChatMin(){if(!LQ.talk.length||LQ.talkMin)return;LQ.talkMin=true;var i=$('lqask');if(i&&i.blur&&document.activeElement===i)i.blur();lqTalkMode(false);lqTalkBar();lqAct();}
 function lqChatOpen(){LQ.talkMin=false;lqTalkMode(true);lqTalkShow(false);lqAct();var i=$('lqask');if(i&&i.focus)i.focus();}
-function lqTalkShow(wait){var el=$('lqtalk');if(!el)return;var n=LQ.talk.length;el.innerHTML=LQ.talk.map(function(m,i){var age=n-1-i,op=age<2?1:age===2?0.7:age===3?0.45:0.25;return "<div class='lqmsg"+(m.me?' me':'')+"' style='opacity:"+op+"'>"+(m.imgs&&m.imgs.length?"<span class='lqmimgs'>"+m.imgs.map(function(d){return "<img src='"+d+"' alt='your screenshot'>";}).join('')+"</span>":"")+esc(m.text)+lqAltsHtml(m.go)+stepsHtml(m.steps)+"</div>";}).join('')+(wait?"<div class='lqmsg thinking'>Thinking: recalling what it knows, reading what's here&hellip;</div>":'');if(el.scrollHeight)el.scrollTop=el.scrollHeight;
+function lqTalkShow(wait){var el=$('lqtalk');if(!el)return;var n=LQ.talk.length;el.innerHTML=LQ.talk.map(function(m,i){var age=n-1-i,op=age<2?1:age===2?0.7:age===3?0.45:0.25;return "<div class='lqmsg"+(m.me?' me':'')+"' style='opacity:"+op+"'>"+(m.imgs&&m.imgs.length?"<span class='lqmimgs'>"+m.imgs.map(function(d){return "<img src='"+d+"' alt='your screenshot'>";}).join('')+"</span>":"")+esc(m.text)+lqAltsHtml(m.go)+(m.signInTo?"<span class='lqalts'><button type='button' class='lqmb lqsign' data-i='"+i+"'>Sign in to "+esc(m.signInTo.name)+"</button></span>":"")+stepsHtml(m.steps)+"</div>";}).join('')+(wait?"<div class='lqmsg thinking'>Thinking: recalling what it knows, reading what's here&hellip;</div>":'');if(el.scrollHeight)el.scrollTop=el.scrollHeight;
 el.querySelectorAll('[data-go]').forEach(function(b){b.addEventListener('click',function(){lqNav(b.getAttribute('data-go'));});});
+el.querySelectorAll('.lqsign').forEach(function(b){b.addEventListener('click',function(){var m=LQ.talk[+b.getAttribute('data-i')];if(m)openSignIn(m.signInTo,function(t){lqSaid(t);});});});
 // scrolled up to read back: the whole history shows, clear; back at the bottom it rolls on again
 if(!el.wired&&el.addEventListener){el.wired=true;el.addEventListener('scroll',function(){var up=el.scrollHeight-el.scrollTop-el.clientHeight>24;if(el.classList)el.classList.toggle('back',up);});}lqTalkBar();}
 // Screenshots in the talk: paste one (Ctrl+V) or drop it on the bar; it shows as a
@@ -3279,7 +3401,7 @@ if(hit){lqNav(hit);return;}
 if(/^(go|start|go for it|start them|start it)[.! ]*$/.test(low)){lqTalkMode(true);lqGoWork();return;}
 if(/^(home|back)[.! ]*$/.test(low)&&LQ.scene==='work'){lqHome();return;}
 LQ.talkMin=false;lqTalkMode(true);LQ.talk.push({me:true,text:q,imgs:shots.map(function(a){return a.data;})});LQ.talk=LQ.talk.slice(-8);lqTalkShow(true);
-api('/api/home/ask',{question:q,images:shots}).then(function(r){LQ.talk.push({me:false,steps:r.steps||[],go:r.go||null,text:r.error==='not-connected'?'Connect an AI in Settings to talk to me. Say "open settings".':(r.answer||r.error||'(no answer)')});if(spoke)voiceSpeak(r.spoken||LQ.talk[LQ.talk.length-1].text);LQ.talk=LQ.talk.slice(-8);lqTalkShow(false);LQ.ripple=[0.5,0.47,LQ.t];if(r.go&&r.go.to){lqNav(r.go.to,r.go);return;}lqLoad(false);}).catch(function(e){LQ.talk.push({me:false,text:String((e&&e.message)||e)});lqTalkShow(false);});}
+api('/api/home/ask',{question:q,images:shots}).then(function(r){LQ.talk.push({me:false,steps:r.steps||[],go:r.go||null,signInTo:r.signInTo||null,text:r.error==='not-connected'?'Connect an AI in Settings to talk to me. Say "open settings".':(r.answer||r.error||'(no answer)')});if(spoke)voiceSpeak(r.spoken||LQ.talk[LQ.talk.length-1].text);LQ.talk=LQ.talk.slice(-8);lqTalkShow(false);LQ.ripple=[0.5,0.47,LQ.t];if(r.go&&r.go.to){lqNav(r.go.to,r.go);return;}lqLoad(false);}).catch(function(e){LQ.talk.push({me:false,text:String((e&&e.message)||e)});lqTalkShow(false);});}
 // The physics: each droplet a critically damped spring to its place (no wobble,
 // no overshoot), pushed off its neighbours and the core where they'd overlap.
 function lqStep(){var S0=lqSize();if(S0.w!==LQ.bw||S0.h!==LQ.bh){if(LQ.scene==='work'&&LQ.workData)lqBuildWork();else if(LQ.adapt)lqBuild();}var S=S0,cx=S.w/2,cy=(LQ.scene!=='work'&&LQ.cy)||S.h*0.47,k=0.022,c=2*Math.sqrt(k),th=LQ.theme,still=th.still,rest=LQ.mode==='rest',pool=LQ.mode==='pool',talk=LQ.talking&&!pool;
@@ -3439,10 +3561,11 @@ var raf=window.requestAnimationFrame&&function(f){return window.requestAnimation
 // A new Symbiot shows this before anything else (home.mjs onboarding): what it is, your
 // AI, where your work is, your agent, every app you use (connected, or "I don't use
 // it"), your documents, then Home. Where you are is kept, so closing it resumes there.
-var ONB=null,ONB_T=null,ONB_NAMES={welcome:'Welcome',ai:'Your AI',work:'Your work',agent:'Your agent',apps:'Your apps',docs:'Documents',done:'Done'};
+var ONB=null,ONB_T=null,ONB_NAMES={computer:'Your computer',welcome:'Welcome',ai:'Your AI',work:'Your work',agent:'Your agent',apps:'Your apps',docs:'Documents',phone:'Your phone',done:'Done'};
+function onbStep(d){var st=(ONB&&ONB.steps)||[],k=st.indexOf(ONB&&ONB.step);return st[k+d]||'';} // the step before (-1) or after (1) this one
 function onbLoad(fresh){return api('/api/onboarding'+(fresh?'?fresh=1':'')).then(function(o){ONB=o;var el=$('onb');if(!el)return;if(!o||!o.pending){el.classList.add('hidden');document.body.classList.remove('lq-onb');if(ONB_T){clearInterval(ONB_T);ONB_T=null;}return;}
 el.classList.remove('hidden');document.body.classList.add('lq-onb');onbRender();
-if(!ONB_T)ONB_T=setInterval(function(){if(ONB&&ONB.pending&&['ai','work','agent','apps'].indexOf(ONB.step)>=0&&!onbBusy())onbLoad(ONB.step==='ai');},2500);}).catch(function(){});}
+if(!ONB_T)ONB_T=setInterval(function(){if(ONB&&ONB.pending&&['ai','work','agent','apps','phone','computer'].indexOf(ONB.step)>=0&&!onbBusy())onbLoad(ONB.step==='ai');},2500);}).catch(function(){});}
 // not while you're typing in it
 function onbBusy(){var a=document.activeElement;return !!(a&&$('onb').contains(a)&&(a.tagName==='INPUT'||a.tagName==='SELECT'));}
 function onbGo(step){api('/api/onboarding/set',{step:step}).then(function(o){ONB=o;onbRender();var b=$('onbbody');if(b&&b.parentNode)b.parentNode.scrollTop=0;});}
@@ -3453,7 +3576,7 @@ var h='';
 if(o.step==='welcome'){
 h="<img class='onborb' src='/favicon.svg?look="+encodeURIComponent(lqLookGet()||'ferro')+"' alt=''><h2 id='onbt'>Meet Symbiot</h2><p class='onbl'>It works alongside you, so your time goes on what only you can do.</p><div class='onbcards'>"+
 [['It watches','What you work on and what comes in: your projects, your mail, chats and code.'],['It works','It hands tasks to your coding agent, which does them on its own and tells you what it did.'],['It asks','Only what only you can do: a sign-in, a decision, your OK before anything goes out.']].map(function(c){return "<div class='onbcard'><b>"+c[0]+"</b><span>"+c[1]+"</span></div>";}).join('')+
-"</div><p class='onbnote'>Setup takes a few minutes: your AI, your work, your agent and every app you use. Symbiot starts finding your projects meanwhile.</p>"+onbNav('', 'ai', 'Set it up');}
+"</div><p class='onbnote'>Setup takes a few minutes: your AI, your work, your agent and every app you use. Symbiot starts finding your projects meanwhile.</p>"+onbNav(onbStep(-1), 'ai', 'Set it up');}
 else if(o.step==='ai'){var a=o.ai||{},c=a.claude||{};
 h="<h2 id='onbt'>Your AI</h2><p class='onbl'>Symbiot thinks with an AI: it reads what comes in, talks with you and writes for you.</p>";
 if(a.connected)h+="<div class='onbok'><i>✓</i><div>Symbiot is using <b>"+esc(a.line)+"</b>"+(a.provider==='claude'?". It’s the Claude account you’re signed in with in Claude Code: no key, nothing extra to pay.":".")+"</div></div>";
@@ -3490,12 +3613,24 @@ else if(o.step==='docs'){var fs=(o.docs||{}).folders||[];
 h="<h2 id='onbt'>Your documents</h2><p class='onbl'>Optional. A folder of your company’s documents lets Symbiot quote them when you ask, and spot where they disagree (a deadline on someone’s leave, a price told two ways).</p>";
 if(fs.length)h+="<div class='onbok'><i>✓</i><div>"+fs.map(function(f){return "<code>"+esc(f)+"</code>";}).join(' ')+"</div></div>";
 h+="<div class='onbbox'><div class='onbrow'><input id='onbdoc' placeholder='A folder, e.g. ~/Company'><button class='ghost' id='onbadddoc'>Add</button></div><p id='onbdocmsg' style='margin:8px 0 0'></p></div>";
-h+=onbNav('apps','done',fs.length?'Continue':'Skip for now');}
+h+=onbNav('apps',onbStep(1),fs.length?'Continue':'Skip for now');}
+else if(o.step==='phone'){var pp=o.phone||{},pn=pp.phones||[];
+h="<h2 id='onbt'>Your phone</h2><p class='onbl'>Optional. Your tasks, what needs you and your agents’ questions on your phone, with Symbiot’s app there: tick, add, answer and approve from it, at home or away.</p>";
+if(pn.length)h+="<div class='onbok'><i>✓</i><div>Paired: <b>"+esc(pn.join(', '))+"</b>. Your work is on it now.</div></div>";
+else if(pp.on&&pp.listening&&pp.qr)h+="<div class='onbbox'>"+phoneQr(pp,"Symbiot’s Settings → <b>Your phone</b>")+"<p class='onbnote' style='margin:0'>Away from home, what they send passes through symbiot.co.za, sealed: it can’t read it. No app on your phone yet? It’s at <a href='https://symbiot.co.za' target='_blank' rel='noopener'>symbiot.co.za</a>.</p></div>";
+else h+=(pp.error?"<p class='onbnote err'>"+esc(pp.error)+"</p>":"")+"<div class='onbbox'><h3>Pair the app on your phone</h3><p>This computer shows a code for your phone to scan. It listens on your Wi-Fi for your phone alone, and everything between the two is sealed with a key they agree.</p><button class='act' id='onbphone'>"+(pp.on&&pp.listening?'New code':'Show the code')+"</button></div>";
+h+=onbNav('docs','done',pn.length?'Continue':'I don’t have the app');}
+else if(o.step==='computer'){var pc0=o.phone||{};
+h="<h2 id='onbt'>Your computer</h2><p class='onbl'>Does Symbiot run on your computer? Pair this phone with it and your work there is here too: your tasks, what needs you, your agents’ questions, and Approve, at home or away.</p>";
+if(pc0.paired)h+="<div class='onbok'><i>✓</i><div>Paired with <b>"+esc(pc0.name)+"</b>. Its work is on Home, in its own droplet.</div></div><div class='onbnav'><button class='back' data-go='welcome'>Also use Symbiot on this phone</button><span class='sp'></span><button class='act' id='onbfinish'>Open Symbiot</button></div>";
+else h+="<div class='onbbox'><h3>Scan the code your computer shows</h3><p>In Symbiot on your computer, open Settings → <b>Your phone</b> and switch it on: it shows a QR. Point this phone’s camera at it and tap its link.</p><p id='onbpairmsg' class='onbnote' style='margin:0'></p></div>"+
+"<div class='onbbox'><h3>Or type its address and code</h3><div class='onbrow'><input id='onbpaddr' placeholder='e.g. 192.168.8.50:7392'><input id='onbpcode' placeholder='code' inputmode='numeric' style='flex:0 0 100px;min-width:0'><button class='ghost' id='onbppair'>Pair</button></div><div class='onbrow' style='margin-top:8px'><button class='ghost' id='onbpfind'>Look for it on this network</button></div><div id='onbpfound' class='pcfound'></div></div>"+
+"<div class='onbnav'><span class='sp'></span><button class='act' data-go='welcome'>No computer: use Symbiot on this phone</button></div>";}
 else{var conn=(o.apps||[]).filter(function(x){return x.state!=='off'&&!x.skipped;}).length;
 h="<h2 id='onbt'>You’re set up</h2><p class='onbl'>Here’s what Symbiot has to work with. You can change any of it in Settings.</p><div class='onbbox'><p>"+
-[(o.ai&&o.ai.connected?'✓ ':'· ')+'AI: '+esc((o.ai&&o.ai.line)||'not connected'),(((o.work||{}).count)?'✓ ':'· ')+((o.work||{}).count||0)+' project'+(((o.work||{}).count)===1?'':'s'),(o.agent&&o.agent.cmd?'✓ ':'· ')+'Agent: '+(o.agent&&o.agent.cmd?'ready':'none yet'),(conn?'✓ ':'· ')+(conn?conn+' app'+(conn===1?'':'s')+' connected':'no apps connected yet')].join('<br>')+
+[(o.ai&&o.ai.connected?'✓ ':'· ')+'AI: '+esc((o.ai&&o.ai.line)||'not connected'),(((o.work||{}).count)?'✓ ':'· ')+((o.work||{}).count||0)+' project'+(((o.work||{}).count)===1?'':'s'),(o.agent&&o.agent.cmd?'✓ ':'· ')+'Agent: '+(o.agent&&o.agent.cmd?'ready':'none yet'),(conn?'✓ ':'· ')+(conn?conn+' app'+(conn===1?'':'s')+' connected':'no apps connected yet')].concat(o.phone&&o.phone.role==='computer'?[((o.phone.phones||[]).length?'✓ Phone: '+esc(o.phone.phones.join(', ')):'· Phone: not paired (Settings → Your phone)')]:o.phone&&o.phone.paired?['✓ Computer: '+esc(o.phone.name)]:[]).join('<br>')+
 "</p></div><h3 style='margin:18px 0 4px;font:600 15px var(--sans);color:var(--bone)'>Finding your way</h3><ul class='onbtour'><li>Each orb is a place: tap it to open it, right-click to go back.</li><li>Amber means something needs you.</li><li>Talk to Symbiot at the bottom: ask anything, or tell it what to do.</li></ul>"+
-"<div class='onbnav'><button class='back' data-go='docs'>Back</button><span class='sp'></span><button class='act' id='onbfinish'>Open Symbiot</button></div>";}
+"<div class='onbnav'><button class='back' data-go='"+onbStep(-1)+"'>Back</button><span class='sp'></span><button class='act' id='onbfinish'>Open Symbiot</button></div>";}
 b.innerHTML=h;
 b.querySelectorAll('[data-go]').forEach(function(x){x.addEventListener('click',function(){onbGo(x.getAttribute('data-go'));});});
 var on=function(id,f){var x=$(id);if(x)x.addEventListener('click',f);};
@@ -3510,6 +3645,9 @@ on('onbuse',function(){var c=$('onbuse').getAttribute('data-cmd');api('/api/agen
 on('onbskiprest',function(){api('/api/onboarding/set',{skipRest:true}).then(function(r){ONB=r;onbRender();});});
 on('onbadddoc',function(){var v=$('onbdoc').value.trim();if(!v)return;api('/api/knowledge/add',{path:v}).then(function(r){$('onbdocmsg').textContent=r&&r.error?r.error:'';onbLoad();});});
 on('onbfinish',function(){api('/api/onboarding/done',{}).then(function(){onbLoad();LQ.fresh=true;lqLoad(true);});});
+on('onbphone',function(){var x=$('onbphone');x.disabled=true;api(ONB.phone&&ONB.phone.on&&ONB.phone.listening?'/api/phone/code':'/api/phone/link',{on:true}).then(function(){onbLoad();});});
+on('onbppair',function(){var m=$('onbpairmsg'),x=$('onbppair');x.disabled=true;api('/api/phone/pair',{address:$('onbpaddr').value,code:$('onbpcode').value}).then(function(r){x.disabled=false;if(r&&r.error){if(m)m.textContent=r.error;return;}onbLoad();LQ.fresh=true;});});
+on('onbpfind',function(){phoneFind($('onbpfind'),$('onbpfound'),function(u){$('onbpaddr').value=u.replace(/^http:[/][/]/,'');$('onbpcode').focus();});});
 b.querySelectorAll('[data-link]').forEach(function(x){x.addEventListener('click',function(){x.disabled=true;api('/api/links/link',{id:x.getAttribute('data-link')}).then(function(){onbLoad();});});});
 b.querySelectorAll('[data-check]').forEach(function(x){x.addEventListener('click',function(){x.disabled=true;api('/api/links/check',{id:x.getAttribute('data-check')}).then(function(){onbLoad();});});});
 b.querySelectorAll('[data-skip]').forEach(function(x){x.addEventListener('click',function(){api('/api/onboarding/set',{skip:x.getAttribute('data-skip')}).then(function(r){ONB=r;onbRender();});});});

@@ -36,6 +36,17 @@ const hook = (ev) => spawnSync(process.execPath, [GUARD], { input: JSON.stringif
 const blocked = hook({ tool_name: "Bash", tool_input: { command: "npm publish" }, cwd: "/tmp" }), allowed = hook({ tool_name: "Bash", tool_input: { command: "npm test" }, cwd: "/tmp" });
 ok("as Claude Code's hook: a blocked call exits 2 with the reason for the agent; anything else exits 0", blocked.status === 2 && /Blocked by Symbiot's membrane: publishing/.test(blocked.stderr) && /QUESTIONS\.md/.test(blocked.stderr) && allowed.status === 0, [blocked.status, blocked.stderr, allowed.status]);
 
+console.log("SYMBIOT'S OWN CODE — named is fine, changed is stopped (the ops run on domains.co.za, 2026-10-09)");
+{
+  delete process.env.SYMBIOT_OWNER; // an owner's run sets it: these are about everyone else's
+  const SELF = fileURLToPath(new URL("..", import.meta.url)).replace(/\/$/, ""), S = SELF + "/index.mjs";
+  const sg = (c) => judge("Bash", { command: c }, o) === null, ss = (c) => /own code/.test((judge("Bash", { command: c }, o) || {}).why || "");
+  ok("its CLI run from where it's installed goes ahead: Screens on a site, as TASKS.md says", sg(`cd /tmp && S=${S}; timeout 120 node $S screens map "https://www.domains.co.za/client/dashboard" --whole 2>&1 | /usr/bin/grep -E 'Welcome|Sign' | head -60`) && sg(`node ${S} screens map https://mailadmin.zoho.com`) && sg(`timeout 60 node "${S}" screens press s1 r3 2>&1 | tail -5`), "");
+  ok("…and so does a command that only names the path: a variable, a note in its own .symbiot/, reading or listing", sg(`export SYMBIOT=${S}; echo "ran ${S} screens map" > .symbiot/notes.md`) && sg(`printf '%s\\n' ${S} >> .symbiot/log.txt`) && sg(`grep -n linkSite ${SELF}/links.mjs | head`) && sg(`cat ${S} | wc -l`) && sg(`ls ${SELF}`) && sg(`find ${SELF} -name '*.mjs'`), "");
+  ok("changing its files from the shell is still stopped: sed -i, cp/mv/rm, a redirect or tee into them, git there", ss(`sed -i s/a/b/ ${SELF}/guard.mjs`) && ss(`cp x.mjs ${SELF}/guard.mjs`) && ss(`mv ${SELF}/guard.mjs /tmp/g`) && ss(`rm ${SELF}/licence.mjs`) && ss(`echo x > ${SELF}/guard.mjs`) && ss(`echo x >> "${SELF}/guard.mjs"`) && ss(`cat x | tee ${SELF}/guard.mjs`) && ss(`git -C ${SELF} checkout -- .`), "");
+  ok("…and so are the ways round it: cd into them, find -delete, inline node, a wrapper in front", ss(`cd ${SELF} && git status`) && ss(`find ${SELF} -name x -delete`) && ss(`node -e "require('fs').writeFileSync('${SELF}/guard.mjs','')"`) && ss(`timeout 5 sed -i s/a/b/ ${SELF}/guard.mjs`) && ss(`S=${S} perl -pi -e s/a/b/ ${SELF}/guard.mjs`), "");
+}
+
 console.log("WORKING ON THEIR OWN — trust, and one conversation that goes on");
 const base = 'claude -p "{prompt}" --permission-mode acceptEdits --allowedTools "Bash(npm test:*)"';
 const full = a.withTrust(base);

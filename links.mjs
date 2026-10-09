@@ -50,6 +50,9 @@ const CATALOG = [
   { id: "linkedin", name: "LinkedIn", group: "Social", url: "https://www.linkedin.com/notifications/", hosts: ["linkedin.com"], watch: true },
 ];
 const GROUPS = ["Mail", "Calendar", "Code", "Chat", "Work", "Docs", "Sales", "Social"];
+// Any other site, added by you (Settings → Connections → Add a site): domains.co.za, a
+// supplier's portal. config.sites: [{ id, name, url, hosts }], linked like the buttons.
+const OWN = "Your sites";
 
 const hostOf = (url) => { try { return new URL(url).hostname.replace(/^www\./, "").toLowerCase(); } catch { return ""; } };
 const linksFile = () => process.env.SYMBIOT_LINKS || join(CONFIG_DIR, "links.json");
@@ -69,11 +72,13 @@ function catalog() {
   try { file = JSON.parse(readFileSync(linksFile(), "utf8")); } catch (e) { if (e && e.code !== "ENOENT") error = `${linksFile()} isn't valid JSON, so it was skipped.`; }
   const extra = ((file && Array.isArray(file.links) && file.links) || []).map(cleanEntry).filter(Boolean);
   const hide = new Set(((file && Array.isArray(file.hide) && file.hide) || []).map((x) => String(x).toLowerCase()));
-  const byId = new Map(); for (const e of [...CATALOG, ...extra]) byId.set(e.id, e);
+  const own = ownSites().map((e) => ({ ...cleanEntry(e), group: OWN, own: true, company: false })).filter((e) => e.id);
+  const byId = new Map(); for (const e of [...CATALOG, ...extra, ...own]) if (!(e.own && byId.has(e.id))) byId.set(e.id, e);
   const list = [...byId.values()].filter((e) => !hide.has(e.id));
   return { list, error, file: file ? linksFile() : "" };
 }
 
+function ownSites() { const s = loadConfig().sites; return Array.isArray(s) ? s.filter((x) => x && typeof x === "object" && x.id && x.url) : []; }
 function linked() { const l = loadConfig().linked; return l && typeof l === "object" && !Array.isArray(l) ? l : {}; }
 function saveLinked(l) { const cfg = loadConfig(); if (Object.keys(l).length) cfg.linked = l; else delete cfg.linked; return saveConfig(cfg); }
 
@@ -93,8 +98,8 @@ function stateOf(e, l, watches) {
 }
 function linksState() {
   const c = catalog(), l = linked(), watches = watchState().watches;
-  const items = c.list.map((e) => ({ id: e.id, name: e.name, group: e.group, url: e.url, ...(e.company ? { company: true } : {}), ...stateOf(e, l[e.id], watches) }));
-  const groups = [...new Set([...GROUPS, ...items.map((x) => x.group)])].filter((g) => items.some((x) => x.group === g));
+  const items = c.list.map((e) => ({ id: e.id, name: e.name, group: e.group, url: e.url, ...(e.company ? { company: true } : {}), ...(e.own ? { own: true } : {}), ...stateOf(e, l[e.id], watches) }));
+  const groups = [...new Set([...GROUPS, ...items.map((x) => x.group).filter((g) => g !== OWN), OWN])].filter((g) => items.some((x) => x.group === g));
   return { items, groups, linked: items.filter((x) => x.state !== "off").length, ...(c.file ? { file: c.file } : {}), ...(c.error ? { error: c.error } : {}) };
 }
 
@@ -130,7 +135,7 @@ async function checkLink(id, { check = checkWatch, read = readPage } = {}) {
   if (!e || !l[id]) return { error: `${e ? e.name : id} isn't linked.` };
   if (l[id].watch) { const r = await check(l[id].watch); if (r && r.busy) return { busy: true, item: linksState().items.find((x) => x.id === id) }; }
   else {
-    const p = await read(e.url);
+    const p = await read(e.url, { password: true });
     if (p && p.busy) return { busy: true, item: linksState().items.find((x) => x.id === id) };
     const l2 = linked(); if (!l2[id]) return { error: `${e.name} isn't linked.` };
     l2[id] = { ...l2[id], ok: !!(p && !p.error && !p.login), checked: Date.now() }; saveLinked(l2);
@@ -153,7 +158,37 @@ function unlinkSite(id) {
     else untrustSite(h);
   }
   saveLinked(l);
+  if (ownSites().some((x) => x.id === id)) { const cfg = loadConfig(); cfg.sites = ownSites().filter((x) => x.id !== id); if (!cfg.sites.length) delete cfg.sites; saveConfig(cfg); }
   return { ok: true, ...linksState() };
 }
+// Add a site that isn't one of the buttons, and link it: trusted, opened in the Symbiot
+// Browser to sign in, checked when you click Done there (server.mjs /api/browser/done). A site that is one (gmail,
+// linkedin.com) links that one. input: a host or a web address, best the page you see
+// once signed in (www.domains.co.za/client/dashboard), so the check can tell.
+async function addSite(input, opts = {}) {
+  const url = siteUrl(input), host = hostOf(url);
+  if (!url || !host || !host.includes(".")) return { error: "Give the site: a host like domains.co.za, or the page you see once you're signed in." };
+  const known = catalog().list.find((e) => !e.own && e.hosts.some((h) => host === h || host.endsWith("." + h)));
+  if (known) return linkSite(known.id, opts);
+  const id = "site-" + host.replace(/[^a-z0-9]+/g, "-").slice(0, 34), cfg = loadConfig(), had = ownSites().find((x) => x.id === id);
+  cfg.sites = [...ownSites().filter((x) => x.id !== id), { id, name: host, url: had && /^https?:\/\/[^/]+\/?$/.test(url) ? had.url : url, hosts: [host] }];
+  saveConfig(cfg);
+  return linkSite(id, opts);
+}
+// A card or a reply that asks you to sign in to a site (an agent's "sign in to
+// domains.co.za in Symbiot's browser"): which, so it carries a button that opens it
+// in the Symbiot Browser (addSite). { site, name } or null. A site among the buttons by its name (LinkedIn) too.
+const ASKS_SIGNIN = /\b(?:sign(?:ed)?[ -]?in|log[ -]?in)(?:\s+again)?(?:\s+(?:to|at|on|into))?\s+(?:your\s+|the\s+)?/gi;
+function signInAsked(text) {
+  const t = String(text || "");
+  for (const m of t.matchAll(ASKS_SIGNIN)) {
+    const rest = t.slice(m.index + m[0].length, m.index + m[0].length + 80);
+    const d = rest.match(/^(?:https?:\/\/)?((?:[a-z0-9-]+\.)+[a-z]{2,})(\/[^\s"'`)]*)?/i);
+    if (d && !/\.(?:md|json|mjs|js|txt|env|pem)$/i.test(d[1])) return { site: (d[1] + (d[2] || "")).replace(/[.,;:]+$/, ""), name: d[1].toLowerCase().replace(/^www\./, "") };
+    const e = catalog().list.find((x) => new RegExp("^" + x.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\b", "i").test(rest));
+    if (e) return { site: e.hosts[0], name: e.name, id: e.id };
+  }
+  return null;
+}
 
-export { CATALOG, catalog, cleanEntry, linksState, linkSite, checkLink, unlinkSite };
+export { CATALOG, catalog, cleanEntry, linksState, linkSite, checkLink, unlinkSite, addSite, ownSites, signInAsked, OWN };

@@ -248,6 +248,7 @@ const calls = [
   ["/api/mind/forget", "POST"],     // no id -> "Nothing remembered by that id"
   ["/api/links", "GET"],            // Link your work: the standard sites and where each stands
   ["/api/links/link", "POST"],      // no id -> "No link called", no browser opened
+  ["/api/links/site", "POST"],      // no site -> "Give the site", no browser opened
   ["/api/links/check", "POST"],     // no id -> "isn't linked"
   ["/api/links/unlink", "POST"],
   ["/api/posts", "GET"],            // the week's drafts waiting on you (isolated HOME -> none)
@@ -289,12 +290,16 @@ const calls = [
   ["/api/watch/chat", "POST"],      // no id -> "No watch", no model call
   ["/api/watch/chat/clear", "POST"],
   ["/api/watch/board", "GET"],      // the Dashboard: a card per watch (none here)
-  ["/api/phone", "GET"],            // Watch on your phone: this computer's side (off)
+  ["/api/phone", "GET"],            // Your phone: this computer's side (off)
   ["/api/phone/link", "POST"],      // empty body -> off: nothing listens on the network
   ["/api/phone/code", "POST"],      // a pairing code, held in memory (nothing listens while off)
   ["/api/phone/unpair", "POST"],    // no id -> nothing changes
+  ["/api/phone/relay", "POST"],     // empty body -> the relay off (it isn't on: no phone paired)
   ["/api/phone/pair", "POST"],      // no address -> refused before any request
   ["/api/phone/check", "POST"],     // not paired -> nothing asked
+  ["/api/phone/find", "GET"],       // computers saying they're here on this network (asked over mDNS; a sandbox has none)
+  ["/api/phone/do", "POST"],        // not paired -> refused, nothing queued
+  ["/api/phone/note", "POST"],      // no copy -> nothing changes
   ["/api/phone/forget", "POST"],
   ["/api/desktop", "GET"],         // weekly write-up + start-at-login state
   ["/api/desktop/weekly", "POST"],  // empty body -> schedule unchanged (stays off)

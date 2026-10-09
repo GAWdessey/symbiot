@@ -41,6 +41,12 @@ final class Bootstrap {
     File bootFlag() { return new File(home, ".config/symbiot/android-boot"); }
     // and the weekly write-up's notification lands here for the service to post
     File notifyFile() { return new File(home, ".config/symbiot/android-notify.jsonl"); }
+    // Your phone (phone.mjs): the link's key, handed over to be sealed (LinkKey), and
+    // sealed, outside HOME; Android's own discovery, asked for and answered
+    File sealFile() { return new File(home, ".config/symbiot/android-seal.json"); }
+    File sealedFile() { return new File(files, "link.sealed"); }
+    File nsdWant() { return new File(home, ".config/symbiot/android-nsd.want"); }
+    File nsdFile() { return new File(home, ".config/symbiot/android-nsd.json"); }
 
     void install(Context ctx, Log log) throws IOException {
         mkdirs(home); mkdirs(global);

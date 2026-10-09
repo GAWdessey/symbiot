@@ -6,6 +6,8 @@
     package="co.symbiot.app">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- your phone's link (phone.mjs): ask your computer again as soon as the network changes -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
@@ -43,6 +45,20 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="symbiot" android:host="127.0.0.1" />
                 <data android:scheme="symbiot" android:host="localhost" />
+            </intent-filter>
+            <!-- pairing with your computer: the link its QR holds (symbiot.co.za/pair, which
+                 the site hands on as symbiot://pair), so the phone's own camera scans it -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="symbiot" android:host="pair" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="symbiot.co.za" android:pathPrefix="/pair" />
             </intent-filter>
             <!-- the same as http://, which Android gives to the browser unless
                  the user lets this app open 127.0.0.1 (App info → Set as default) -->

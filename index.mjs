@@ -40,7 +40,8 @@ import { produce, mailState, setMail, sentMail } from "./writeups.mjs";
 import { loadScreens, screenImage, blueprint } from "./screens.mjs";
 import { mapPage, wholePage, pressRegion, typeRegion, uploadRegion, uploadFiles, scrollPage, signIn, isTrusted } from "./headless.mjs";
 import { watchState, addWatch, removeWatch, seenWatch, newsSince, markNews, checkWatch, setBrief, draftReply, watchBoard, boardLine, boardChat, boardTalk, clearBoardChat } from "./watch.mjs";
-import { PORT as PHONE_PORT, phoneState, pairComputer, pollComputer, forgetComputer } from "./phone.mjs";
+import { PORT as PHONE_PORT, phoneState, pairComputer, pollComputer, forgetComputer, parsePairLink } from "./phone.mjs";
+import { qrMatrix } from "./qr.mjs";
 import { KIND_LABEL as POST_KIND, PATHS as POST_PATHS, draftPosts, postsState, postLog, approvePost, editPost, skipPost, voiceFromLinkedIn, addMedia as addPostMedia, removeMedia as removePostMedia, mediaDir as postMediaDir, pictureOfPage, clipOfPage } from "./post.mjs";
 import { startApp, updateCmd, isAppRunningWeekly, askRunningApp, openApp } from "./server.mjs";
 import { listReports, readReport } from "./reports.mjs";
@@ -617,26 +618,35 @@ function cmdKnowledge() {
   if (sub !== "help") process.exitCode = 1;
 }
 
-// ---- `symbiot phone`: Watch on your phone, from a terminal ----------------------
+// ---- `symbiot phone`: Your phone, from a terminal --------------------------------
 // On the phone (Termux), pair with your computer without the app window; on the
-// computer, the addresses and a code to pair with. Through the app when it runs:
+// computer, a code (and its QR) to pair with. Through the app when it runs:
 // that's where the computer listens and the phone asks.
+// A QR in the terminal: two rows of modules per line, in half blocks, with the
+// quiet zone a camera needs (light on dark terminals too: it draws the light parts).
+function terminalQr(text) {
+  const { modules, size } = qrMatrix(text), q = 2, n = size + 2 * q, dark = (r, c) => r >= q && c >= q && r < size + q && c < size + q && modules[r - q][c - q];
+  const lines = [];
+  for (let r = 0; r < n; r += 2) { let l = ""; for (let c = 0; c < n; c++) { const a = !dark(r, c), b = r + 1 < n && !dark(r + 1, c); l += a && b ? "█" : a ? "▀" : b ? "▄" : " "; } lines.push(l); }
+  return lines.join("\n");
+}
 async function cmdPhone() {
   const [sub = "status", ...rest] = argv.slice(1).filter((x) => !x.startsWith("--"));
   const fail = (msg) => { console.log(c.y(msg)); process.exitCode = 1; };
   const app = await viaApp("/api/phone", {}), st = app && !app.error ? app : phoneState();
   const phone = st.role === "phone", ask = "symbiot phone pair <address> <code>";
-  const notPaired = `Not paired with a computer. On the computer, switch on Settings → Watch on your phone in Symbiot (or run  symbiot phone code  there), then here:  ${ask}`;
+  const notPaired = `Not paired with a computer. On the computer, switch on Settings → Your phone in Symbiot (or run  symbiot phone code  there), then here:  ${ask}`;
   const onlyPhone = () => fail(`That's for the phone. In Termux there:  ${ask},  with an address and the code this computer shows (symbiot phone code).`);
   const onlyComputer = () => fail("That's for the computer your phone pairs with: run it there.");
-  const noApp = "Symbiot's app isn't running here, so nothing listens for your phone. Start it with  symbiot app,  switch on Settings → Watch on your phone, then run this again.";
+  const noApp = "Symbiot's app isn't running here, so nothing listens for your phone. Start it with  symbiot app,  switch on Settings → Your phone, then run this again.";
   const asks = (r) => (app ? `Symbiot here asks ${r.name} what's new every 2 minutes and notifies you.` : `Symbiot here asks ${r.name} what's new every 2 minutes while  symbiot app  runs: start it to be notified.`) + (r.notify === false ? c.d("  For notifications in Termux: pkg install termux-api, and the Termux:API app.") : "");
   if (sub === "pair") {
     if (!phone) return onlyPhone();
-    // the code may be typed as shown, in two halves: 123 456
-    const [address, ...code] = rest;
-    if (!address || !code.length) return fail(`Give the computer's address and the 6-digit code it shows:  ${ask}  (like 192.168.1.21:7392 123456)`);
-    const r = (app && await viaApp("/api/phone/pair", { address, code: code.join("") })) || await pairComputer(address, code.join(""));
+    // the code may be typed as shown, in two halves: 123 456; or the whole link the QR holds
+    const [address, ...code] = rest, link = parsePairLink(address) ? address : "";
+    if (!link && (!address || !code.length)) return fail(`Give the computer's address and the 6-digit code it shows:  ${ask}  (like 192.168.1.21:7392 123456)`);
+    const body = link ? { link } : { address, code: code.join("") };
+    const r = (app && await viaApp("/api/phone/pair", body)) || await pairComputer(body.address, body.code, { link });
     if (r.error || !r.paired) return fail(r.error || "Pairing didn't work.");
     console.log(`${c.g("✓")} Paired with ${c.b(r.name)} ${c.d(r.url)}\n  ${asks(r)}`);
     return;
@@ -658,27 +668,30 @@ async function cmdPhone() {
   if (sub === "code") {
     if (phone) return onlyComputer();
     if (!app) return fail(noApp);
-    if (!st.on) return fail("Watch on your phone is off. Switch it on in Symbiot: Settings → Watch on your phone.");
+    if (!st.on) return fail("Your phone's link is off. Switch it on in Symbiot: Settings → Your phone.");
     const r = await viaApp("/api/phone/code", {});
     if (!r || r.error || !r.code) return fail((r && r.error) || "No code came back.");
-    console.log(`Code ${c.b(r.code)}  ${c.d(`for ${Math.max(1, Math.round((r.until - Date.now()) / 60000))} minutes, 5 tries`)}\nOn the phone, in Termux, with this computer's address:`);
+    if (r.link && process.stdout.isTTY) console.log(terminalQr(r.link) + "\n" + c.d("Scan it with your phone's camera: Symbiot's app pairs with this computer.") + "\n");
+    console.log(`Code ${c.b(r.code)}  ${c.d(`for ${Math.max(1, Math.round((r.until - Date.now()) / 60000))} minutes, 5 tries`)}\nOr on the phone, in Termux, with this computer's address:`);
     for (const a of r.addresses || []) console.log(`  symbiot phone pair ${a}:${r.port || PHONE_PORT} ${r.code}`);
     return;
   }
   if (sub === "status") {
     if (phone) {
       if (!st.paired) return console.log(notPaired);
-      console.log(`Paired with ${c.b(st.name)} ${c.d(st.url)}` + (st.last ? c.d(`  · asked ${new Date(st.last).toLocaleString()}`) : ""));
+      console.log(`Paired with ${c.b(st.name)} ${c.d(st.url)}` + (st.last ? c.d(`  · asked ${new Date(st.last).toLocaleString()}${st.via === "relay" ? " through the relay" : ""}`) : ""));
       if (st.error) console.log(c.y(st.error));
+      if (st.queued) console.log(c.d(`  ${st.queued} change${st.queued > 1 ? "s" : ""} waiting to send`));
       console.log("  " + asks(st));
       return;
     }
     if (!app) return console.log(c.y(noApp));
-    if (!st.on) return console.log(c.y("Watch on your phone is off.") + c.d("  Switch it on in Symbiot: Settings → Watch on your phone."));
+    if (!st.on) return console.log(c.y("Your phone's link is off.") + c.d("  Switch it on in Symbiot: Settings → Your phone."));
     if (st.error) console.log(c.y(st.error));
     if (st.listening) console.log(`Listening for your phone at ${(st.addresses || []).map((a) => c.b(`${a}:${st.port || PHONE_PORT}`)).join(", ") || c.y("(no network address found)")}`);
+    if (st.relay && st.relay.on && (st.phones || []).length) console.log(c.d(st.relay.connected ? "Away from home, your phone reaches it through relay.symbiot.co.za (sealed: the relay can't read it)." : `Away from home: not connected to the relay yet${st.relay.error ? ` (${st.relay.error})` : ""}.`));
     console.log(st.code ? `Code ${c.b(st.code)}  ${c.d(`until ${new Date(st.until).toLocaleTimeString()}`)}` : c.d("No pairing code open:  symbiot phone code  for one."));
-    for (const p of st.phones || []) console.log(`  ${c.g("·")} ${p.name}  ${c.d("paired " + new Date(p.added).toLocaleDateString() + (p.seen ? ", asked " + new Date(p.seen).toLocaleString() : ""))}`);
+    for (const p of st.phones || []) console.log(`  ${c.g("·")} ${p.name}  ${c.d("paired " + new Date(p.added).toLocaleDateString() + (p.seen ? ", asked " + new Date(p.seen).toLocaleString() : "") + (p.old ? " (paired before the link was sealed: pair it again)" : ""))}`);
     console.log(c.d(`On the phone, in Termux:  ${ask}`));
     return;
   }
@@ -687,11 +700,12 @@ async function cmdPhone() {
   symbiot phone                         the computer it's paired with
   symbiot phone pair <address> <code>   pair with your computer, with its address
                                         (like 192.168.1.21:7392) and the code it shows
+  symbiot phone pair <link>             or with the link its QR holds
   symbiot phone check                   ask it what's new now
   symbiot phone forget                  stop asking it
-  On the computer (while  symbiot app  runs, Watch on your phone switched on):
+  On the computer (while  symbiot app  runs, Your phone switched on):
   symbiot phone                         where it listens, and the phones paired
-  symbiot phone code                    a new 6-digit code to pair a phone with`);
+  symbiot phone code                    a new code (and its QR) to pair a phone with`);
   if (sub !== "help") process.exitCode = 1;
 }
 
@@ -903,7 +917,7 @@ ${c.b("Experimental")}
                                     (symbiot watch help for more)
   symbiot phone pair <address> <code>
                                     in Termux: pair with your computer for
-                                    Watch on your phone (symbiot phone help)
+                                    Your phone (symbiot phone help)
   symbiot knowledge add <folder>    documents chats quote and cite (Markdown,
                                     CSV, text); waiting / owner from case files
                                     (symbiot knowledge help for more)

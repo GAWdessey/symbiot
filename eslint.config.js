@@ -56,6 +56,8 @@ export default [
     rules: RULES,
   },
   { files: ["ui.mjs"], processor: pageScripts },
+  // the relay on Cloudflare: a Worker's own globals
+  { files: ["relay/worker.mjs"], languageOptions: { globals: { WebSocketPair: "readonly", WebSocketRequestResponsePair: "readonly" } } },
   {
     // the page script itself: a classic browser <script>, so its top-level
     // functions are globals the page's onclick="…" attributes can call.

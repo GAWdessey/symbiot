@@ -4,3 +4,4 @@ node_modules
 android/build/
 desktop/node_modules/
 desktop/dist/
+relay/.wrangler/

@@ -1,6 +1,6 @@
 // `symbiot app`: the local server behind the app window. It serves the page
 // (ui.mjs) and its /api routes, each a thin call into the module that does the
-// work, on 127.0.0.1 only and behind the per-install token. (Watch on your phone
+// work, on 127.0.0.1 only and behind the per-install token. (Your phone's link
 // listens on your network separately, only for that: phone.mjs.)
 import { languageState, setLanguage, translate, allTranslations } from "./lang.mjs";
 import { licenceState, setKey, clearKey, can, refreshRevoked, FREE } from "./licence.mjs";
@@ -28,17 +28,17 @@ import { loadScreens, screenImage, captureScreen, splitScreen, listMonitors, all
 import { mapPage, wholePage, pressRegion, typeRegion, uploadRegion, scrollPage, signIn, keepBrowserOpen, isTrusted, trustedSites, trustSite, untrustSite, openSymbiotBrowser, closeSymbiotBrowser, setBrowserHub, siteUrl, browserHub } from "./headless.mjs";
 import { weeklyState, setWeekly, runWeekly, startWeekly, autostartState, setAutostart, installLauncher, iconSvg, setLauncherLook } from "./desktop.mjs";
 import { markNews, newsSince, watchState, addWatch, setEvery, removeWatch, clearNews, seenWatch, checkWatch, startWatches, setBrief, draftReply, openChat, watchBoard, boardChat, clearBoardChat } from "./watch.mjs";
-import { linksState, linkSite, checkLink, unlinkSite } from "./links.mjs";
+import { linksState, linkSite, checkLink, unlinkSite, addSite, signInAsked } from "./links.mjs";
 import { testWeeks, testInstalls, postsState, draftPosts, approvePost, editPost, skipPost, voiceFromLinkedIn, addMedia, removeMedia, mediaFile, mediaDir, pictureOfPage, clipOfPage, openUrl } from "./post.mjs";
 import { mindState, forget } from "./mind.mjs";
 import { lanesTick, lanesState, partlyDone, orcaRelink } from "./lanes.mjs";
 import { keepFacts, skipFacts, awaitTick, awaitingState, stopWaiting } from "./handback.mjs";
 import { adaptState, noteUse } from "./adapt.mjs";
-import { reportIdeasAdd, reportAsk, reportDraftAnswer, homeState, homeAsk, homeAnswer, homeNext, workScene, workGo, workTick, firstSteps, marketingState, marketingGo, marketingDraftAnswer, marketingTask, moveToMarketing, onboarding, setOnboarding } from "./home.mjs";
+import { reportIdeasAdd, reportAsk, reportDraftAnswer, homeState, homeAsk, homeAnswer, homeNext, workScene, workGo, workTick, firstSteps, marketingState, marketingGo, marketingDraftAnswer, marketingTask, moveToMarketing, onboarding, setOnboarding, startOnboarding } from "./home.mjs";
 import { MARKETING_DIR, MARKETING, draftPreview, laneMedia, displayName, setDraftMedia } from "./marketing.mjs";
 import { trays, trayMedia, setBlur, renderCapture } from "./tray.mjs";
 import { listReports, readReport, reportImage, markAllRead } from "./reports.mjs";
-import { phoneState, setPhoneLink, newCode, unpairPhone, pairComputer, forgetComputer, pollComputer, startPhone } from "./phone.mjs";
+import { phoneState, setPhoneLink, newCode, unpairPhone, setRelay, findComputers, pairComputer, forgetComputer, pollComputer, queueChange, dismissNote, setPhoneApprove, startPhone } from "./phone.mjs";
 import { knowledgeState, addKnowledgeFolder, removeKnowledgeFolder, indexKnowledge, knowledgeTick, searchKnowledge } from "./knowledge.mjs";
 import { runChecks, checksState, markClashesSeen } from "./checks.mjs";
 
@@ -240,7 +240,8 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
   // an installed Symbiot keeps its app-menu entry pointing at itself (a new Node, a moved
   // install); not a copy run from a checkout or a test
   if (/[\\/]node_modules[\\/]symbiot[\\/]/.test(bin || "") && !SANDBOX && !process.env.SYMBIOT_NO_LAUNCHER) { try { installLauncher({ script: bin }); } catch {} }
-  if (FRESH) { try { const cf = loadConfig(); if (!cf.onboarding) { cf.onboarding = { pending: true, step: "welcome", skipped: [] }; saveConfig(cf); } } catch {} }
+  // setup's first step: "Your computer" in the Android app, so a phone paired by its QR shows it
+  if (FRESH) { try { startOnboarding(); } catch {} }
   // your projects: kept, and found again off the main thread, so nothing waits on a search
   setScanOptions({ cache: true }); REPO_STATE.onChange = () => { try { homeState({ fresh: true }); } catch {} };
   if (!SANDBOX) { refreshRevoked().catch(() => {}); setInterval(() => refreshRevoked().catch(() => {}), 6 * 3600 * 1000).unref(); } // cancelled Pro keys, about daily
@@ -384,6 +385,8 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       if (u.pathname === "/api/links/link" && req.method === "POST") { const b = await readBody(req); return json(res, await linkSite(String(b.id || ""), b.here ? { open: async (url) => ({ ok: true, url }) } : undefined)); } // here: from the Symbiot Browser, which opens the site itself
       if (u.pathname === "/api/browser/open" && req.method === "POST") { const b = await readBody(req); if (process.env.SYMBIOT_NO_OPEN === "1") return json(res, { ok: false, note: "not opened (SYMBIOT_NO_OPEN)", page: browserHub() }); return json(res, await openSymbiotBrowser(b.url ? siteUrl(String(b.url)) : "")); }
       if (u.pathname === "/api/browser/done" && req.method === "POST") { if (process.env.SYMBIOT_NO_OPEN === "1") return json(res, { closed: 0 }); const r = await closeSymbiotBrowser(); setTimeout(() => { for (const it of linksState().items) if (it.state !== "off" && it.state !== "ok") checkLink(it.id).catch(() => {}); }, 1500); return json(res, { ...r, checking: true }); }
+      // any site, added in Settings → Connections or the Symbiot Browser's address bar, or a card's / reply's "Sign in to <site>": linked and opened to sign in
+      if (u.pathname === "/api/links/site" && req.method === "POST") { const b = await readBody(req), here = b.here ? { open: async (url) => ({ ok: true, url }) } : undefined; return json(res, b.id ? await linkSite(String(b.id), here) : await addSite(String(b.site || ""), here)); }
       if (u.pathname === "/api/links/check" && req.method === "POST") { const b = await readBody(req); return json(res, await checkLink(String(b.id || ""))); }
       if (u.pathname === "/api/links/unlink" && req.method === "POST") { const b = await readBody(req); return json(res, unlinkSite(String(b.id || ""))); }
       // Posts (post.mjs): the week's drafts, waiting on you. Approve is your yes: Marketing's
@@ -459,7 +462,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
         try { const wav = await speak(b.text, b.lang || ""); res.writeHead(200, { "content-type": "audio/wav", "cache-control": "no-store", "content-length": wav.length }); return res.end(wav); }
         catch (e) { return json(res, { error: String((e && e.message) || e) }); }
       }
-      if (u.pathname === "/api/home/ask" && req.method === "POST") { const b = await readBody(req); return json(res, await homeAsk(b.question, { images: saveShots(b.images) })); }
+      if (u.pathname === "/api/home/ask" && req.method === "POST") { const b = await readBody(req); const r = await homeAsk(b.question, { images: saveShots(b.images) }); let si = null; try { si = r && r.answer ? signInAsked(r.answer) : null; } catch {} return json(res, si ? { ...r, signInTo: si } : r); } // a reply asking you to sign in carries the button
       if (u.pathname === "/api/adapt") return json(res, adaptState({ from: String(u.searchParams.get("from") || ""), commit: u.searchParams.get("commit") === "1", ...(u.searchParams.has("touch") ? { touch: u.searchParams.get("touch") === "1" } : {}) }));
       if (u.pathname === "/api/adapt/use" && req.method === "POST") { const b = await readBody(req); return json(res, noteUse(b)); }
       // Lanes (lanes.mjs): work agents handed to each other, and where it stands.
@@ -484,15 +487,21 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       // a Dashboard card's chat: go over what's new with your AI before a reply is drafted
       if (u.pathname === "/api/watch/chat" && req.method === "POST") { const b = await readBody(req); return json(res, await boardChat(String(b.id || ""), b.question)); }
       if (u.pathname === "/api/watch/chat/clear" && req.method === "POST") { const b = await readBody(req); return json(res, clearBoardChat(String(b.id || ""))); }
-      // Watch on your phone (phone.mjs). On the computer: listen on your network
-      // for the phone (only on your click), a pairing code, the phones paired.
-      // On the phone: pair with the computer, ask it now, forget it.
+      // Your phone (phone.mjs). On the computer: listen on your network for the phone
+      // (only on your click), a pairing code and its QR, the phones paired, the relay.
+      // On the phone: pair with the computer (typed, or a scanned link), ask it now
+      // (also when the phone's network changes), the copy of your work there, a change
+      // made on the phone (queued until the computer answers), forget it.
       if (u.pathname === "/api/phone") return json(res, phoneState());
       if (u.pathname === "/api/phone/link" && req.method === "POST") { const b = await readBody(req); return json(res, await setPhoneLink(b.on === true)); }
       if (u.pathname === "/api/phone/code" && req.method === "POST") return json(res, newCode());
       if (u.pathname === "/api/phone/unpair" && req.method === "POST") { const b = await readBody(req); return json(res, unpairPhone(String(b.id || ""))); }
-      if (u.pathname === "/api/phone/pair" && req.method === "POST") { const b = await readBody(req); return json(res, await pairComputer(b.address, b.code)); }
+      if (u.pathname === "/api/phone/relay" && req.method === "POST") { const b = await readBody(req); return json(res, setRelay(b.on === true)); }
+      if (u.pathname === "/api/phone/pair" && req.method === "POST") { const b = await readBody(req); return json(res, await pairComputer(b.address, b.code, { link: String(b.link || "") })); }
       if (u.pathname === "/api/phone/check" && req.method === "POST") return json(res, await pollComputer());
+      if (u.pathname === "/api/phone/find") return json(res, { found: await findComputers() });
+      if (u.pathname === "/api/phone/do" && req.method === "POST") { const b = await readBody(req); return json(res, queueChange(String(b.op || ""), b.args || {})); }
+      if (u.pathname === "/api/phone/note" && req.method === "POST") { const b = await readBody(req); return json(res, dismissNote(String(b.id || ""))); }
       if (u.pathname === "/api/phone/forget" && req.method === "POST") return json(res, forgetComputer());
       // What symbiot-desktop added (desktop.mjs): the weekly write-up, start at login.
       if (u.pathname === "/api/desktop") return json(res, { weekly: weeklyState(), autostart: autostartState() });
@@ -597,7 +606,10 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
   checkLatest(); setInterval(checkLatest, 2 * 60 * 1000).unref(); // background update check (every 2 min)
   startWeekly(writeup); // the weekly write-up + notification, when switched on in Settings
   startWatches(); // pages you watch (Screens → Watch), read every few minutes
-  startPhone(); // Watch on your phone: the computer listens if it's switched on, the phone asks if it's paired
+  // Your phone: the computer listens if it's switched on, the phone asks if it's paired.
+  // An Approve from a paired phone is this same Approve, release notes and all.
+  setPhoneApprove(async (repo, untasked) => { const notes = await releaseNotes(releaseInput(repo, {})); return untasked ? approveChanges(repo, { tick: [], notes }) : approveRepo(repo, { notes }); });
+  startPhone();
   setInterval(() => { try { startWaiting(); } catch {} }, 20000).unref(); // a run that waits for your step starts once the file it names changes
   setInterval(() => { try { workTick(); } catch {} }, 20000).unref(); // a waiting task starts once its lane is free (config.autoStart: false leaves it to Go)
   setInterval(() => { try { lanesTick(); } catch {} }, 20000).unref(); // agents hand work to other lanes, and hear back when it's done

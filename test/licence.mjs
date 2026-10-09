@@ -14,6 +14,7 @@ import { fileURLToPath } from "node:url";
 
 const HOME = mkdtempSync(join(tmpdir(), "symbiot-licence-"));
 process.env.HOME = HOME; process.env.USERPROFILE = HOME;
+delete process.env.SYMBIOT_OWNER; // run from an owner's agent run, it's set: the guard's checks need it off
 mkdirSync(join(HOME, ".config", "symbiot"), { recursive: true });
 const ISSUER = join(HOME, "issuer"); mkdirSync(ISSUER);
 const { publicKey, privateKey } = generateKeyPairSync("ed25519");

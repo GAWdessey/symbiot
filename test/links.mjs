@@ -17,7 +17,7 @@ mkdirSync(CFG, { recursive: true });
 let pass = 0, fail = 0;
 const ok = (n, c, got) => { if (c) { pass++; console.log("  ✓ " + n); } else { fail++; console.log("  ✗ " + n + (got !== undefined ? "  got: " + JSON.stringify(got) : "")); } };
 
-const { catalog, linksState, linkSite, checkLink, unlinkSite } = await import("../links.mjs");
+const { catalog, linksState, linkSite, checkLink, unlinkSite, addSite, ownSites, signInAsked } = await import("../links.mjs");
 const { trustedSites, trustSite } = await import("../headless.mjs");
 const { arrivedOn } = await import("../writeups.mjs");
 const watchFile = join(CFG, "watch.json");
@@ -86,6 +86,37 @@ try {
   const n0 = item("notion"), n1 = (await checkLink("notion", { read: async () => ({ url: "https://www.notion.so/login", login: true }) })).item, n2 = (await checkLink("notion", { read: async () => ({ url: "https://www.notion.so/acme" }) })).item;
   ok("not watched: 'sign in' until a read finds it signed in", n0.state === "signin" && n1.state === "signin" && n2.state === "ok", [n0.state, n1.state, n2.state]);
   ok("a busy browser (sign-in window open) is said so, not counted", (await checkLink("notion", { read: async () => ({ busy: true }) })).busy === true && item("notion").state === "ok", "");
+
+  console.log("ANY SITE — added in Settings → Connections or the Symbiot Browser, opened to sign in (domains.co.za, 2026-10-09)");
+  {
+    const openC = async (url) => { opened.push(url); return { ok: true, url }; };
+    const r = await addSite("www.domains.co.za/client/dashboard", { open: openC });
+    const it = item("site-domains-co-za");
+    ok("Add a site: under Your sites, linked, waiting for you to sign in, at the page you gave", r.ok && it && it.group === "Your sites" && it.own && it.state === "signin" && it.url === "https://www.domains.co.za/client/dashboard" && opened[opened.length - 1] === it.url, [r, it]);
+    ok("…and trusted (Press and Type go ahead there), www. or not", trustedSites().includes("domains.co.za"), trustedSites());
+    const s1 = (await checkLink("site-domains-co-za", { read: async (u, o) => ({ url: "https://www.domains.co.za/login/dashboard", login: !!(o && o.password) }) })).item;
+    const s2 = (await checkLink("site-domains-co-za", { read: async () => ({ url: "https://www.domains.co.za/client/dashboard", title: "Welcome Garth" }) })).item;
+    ok("checked: still 'sign in' on its login page (or one asking for a password), 'linked' once it shows the dashboard", s1.state === "signin" && s2.state === "ok", [s1.state, s2.state]);
+    await addSite("domains.co.za", { open: openC });
+    ok("added again by its bare name: still one, keeping the page you gave first", ownSites().length === 1 && item("site-domains-co-za").url === "https://www.domains.co.za/client/dashboard", ownSites());
+    const li = await addSite("https://www.linkedin.com/feed/", { open: openC });
+    ok("a site that's one of the buttons (linkedin.com) links that button, not a copy", li.ok && li.item && li.item.id === "linkedin" && !ownSites().some((x) => /linkedin/.test(x.id)), li.item);
+    ok("not a site: refused, nothing opened", !!(await addSite("two words", { open: openC })).error && !!(await addSite("", { open: openC })).error, "");
+    unlinkSite("site-domains-co-za");
+    ok("unlinked: it leaves Your sites, and isn't trusted any more", !item("site-domains-co-za") && !ownSites().length && !trustedSites().includes("domains.co.za"), [ownSites(), trustedSites()]);
+    unlinkSite("linkedin");
+  }
+
+  console.log("ASKED TO SIGN IN — a card or reply that asks it carries the site, for its Sign in button");
+  {
+    const zoho = signInAsked("👤 You (only you: a new account): sign up for Zoho Mail's free plan as Symbiot and sign in to domains.co.za in Symbiot's browser");
+    ok("an agent's 👤 step: sign in to domains.co.za", zoho && zoho.site === "domains.co.za" && zoho.name === "domains.co.za", zoho);
+    const page = signInAsked("Log in at https://www.domains.co.za/client/dashboard, then say done.");
+    ok("…a full address keeps its page", page && page.site === "www.domains.co.za/client/dashboard" && page.name === "domains.co.za", page);
+    const named = signInAsked("The session expired when it tried to post: sign in again to LinkedIn.");
+    ok("…one of the buttons by its name (LinkedIn)", named && named.id === "linkedin" && named.name === "LinkedIn", named);
+    ok("…and nothing when it doesn't ask you to sign in to a site", ["Approve the release?", "Sign in to your Claude account", "edit .symbiot/QUESTIONS.md", "Symbiot's browser is signed in to the sites the user linked"].every((t) => signInAsked(t) === null), "");
+  }
 
   console.log("WEEK — what arrived on linked sites reaches the write-up");
   const now = Date.now(), day = 86400000;

@@ -21,7 +21,7 @@
 // signed in. It's separate from your everyday browser profile.
 import { spawn, spawnSync } from "node:child_process";
 import { join, resolve as resolvePath } from "node:path";
-import { mkdirSync, existsSync, statSync, readlinkSync } from "node:fs";
+import { mkdirSync, existsSync, statSync, readlinkSync, readFileSync, writeFileSync } from "node:fs";
 import { CONFIG_DIR, chromeBinary, loadConfig, saveConfig } from "./core.mjs";
 import { loadScreens, addPageScreen, center, stitchPng, stitchListPng } from "./screens.mjs";
 
@@ -45,10 +45,11 @@ function siteUrl(input) {
 }
 
 // The browser's flags. The same profile and password store headless and not, so
-// a sign-in made in the window is readable by the hidden browser.
+// a sign-in made in the window is readable by the hidden browser. The hidden one
+// restores the last session: that's what keeps a site's session-only sign-in (keepSessions).
 function browserArgs(headless, url = "about:blank") {
   return [
-    ...(headless ? ["--headless=new", "--hide-scrollbars", "--mute-audio", "--remote-debugging-pipe", `--window-size=${VIEW.w},${VIEW.h}`] : ["--new-window"]),
+    ...(headless ? ["--headless=new", "--hide-scrollbars", "--mute-audio", "--remote-debugging-pipe", `--window-size=${VIEW.w},${VIEW.h}`, "--restore-last-session"] : ["--new-window"]),
     "--user-data-dir=" + PROFILE, "--no-first-run", "--no-default-browser-check",
     ...(process.platform === "linux" ? ["--password-store=basic"] : process.platform === "darwin" ? ["--use-mock-keychain"] : []),
     url,
@@ -82,6 +83,67 @@ function connect(proc) {
     listeners.add(f);
   });
   return { send, until, on: (f) => { listeners.add(f); return () => listeners.delete(f); }, closed: () => closed };
+}
+
+// A sign-in that lives in a session-only cookie (domains.co.za's PHPSESSID: no "remember
+// me") is still on disk when the Sign in window closes, but Chrome drops session cookies
+// when it next starts, unless it restores the last session. So the hidden browser starts
+// that way (browserArgs), and at once makes each session cookie a cookie that lasts
+// SESSION_KEEP; and again before it closes, for one a site set meanwhile. Twice the user
+// signed in to domains.co.za, SMS PIN and all, and lost it as the window closed (2026-10-09).
+const SESSION_KEEP = 12 * 3600; // seconds
+async function keepSessions(c, now = Date.now()) {
+  let cookies = []; try { ({ cookies = [] } = await c.send("Storage.getCookies")); } catch { return 0; }
+  let n = 0;
+  for (const k of cookies.filter((x) => x.session)) {
+    const host = String(k.domain || "").replace(/^\./, ""); if (!host) continue;
+    const port = k.sourcePort > 0 && k.sourcePort !== 80 && k.sourcePort !== 443 ? ":" + k.sourcePort : "";
+    const at = k.domain.startsWith(".") ? { domain: k.domain } : { url: `${k.secure ? "https" : "http"}://${host}${port}${k.path || "/"}` }; // host-only stays host-only
+    const p = { name: k.name, value: k.value, path: k.path || "/", secure: !!k.secure, httpOnly: !!k.httpOnly, expires: Math.floor(now / 1000) + SESSION_KEEP, ...at,
+      ...(k.sameSite ? { sameSite: k.sameSite } : {}), ...(k.priority ? { priority: k.priority } : {}), ...(k.partitionKey ? { partitionKey: k.partitionKey } : {}) };
+    try { await c.send("Storage.setCookies", { cookies: [p] }); n++; } catch {}
+  }
+  return n;
+}
+// A sign-in some sites keep in sessionStorage (a tab's own, not a cookie) comes back with
+// the tab it was in when the last session is restored, and the hidden browser works in a
+// tab of its own. So each restored tab's sessionStorage is kept, by site, for SESSION_KEEP,
+// in the profile (SESSIONS), and filled into the hidden browser's tab when it opens a page
+// of that site with none of its own (sessionFill: in a world of its own, so no page sees
+// another site's). Its own tab's is kept again before it closes.
+const SESSIONS = join(PROFILE, "symbiot-sessions.json"), SS_MAX = 200000; // bytes, all of it
+const SS_READ = `location.origin.startsWith("http") ? JSON.stringify({ origin: location.origin, items: Object.fromEntries(Object.entries(sessionStorage)) }) : ""`;
+function loadSessions(now = Date.now(), file = SESSIONS) {
+  let d = {}; try { d = JSON.parse(readFileSync(file, "utf8")) || {}; } catch {}
+  return Object.fromEntries(Object.entries(d).filter(([o, v]) => /^https?:\/\//.test(o) && v && v.items && typeof v.items === "object" && now - Number(v.at) < SESSION_KEEP * 1000));
+}
+function saveSessions(add, now = Date.now(), file = SESSIONS) {
+  const d = { ...loadSessions(now, file) };
+  for (const x of add) if (x && x.origin && x.items) { if (Object.keys(x.items).length) d[x.origin] = { at: now, items: x.items }; else delete d[x.origin]; }
+  let out = JSON.stringify(d); if (out.length > SS_MAX) out = "{}"; // too big to be a sign-in: keep nothing rather than half
+  try { writeFileSync(file, out, { mode: 0o600 }); } catch {}
+}
+const sessionFill = (d) => `(() => { try { const o = ${JSON.stringify(Object.fromEntries(Object.entries(d).map(([k, v]) => [k, v.items])))}[location.origin]; if (!o || sessionStorage.length) return; for (const k of Object.keys(o)) sessionStorage.setItem(k, String(o[k])); } catch {} })()`;
+// wait: a restored tab may not have its page yet (about:blank a moment longer); our own tab has it
+async function readSession(send, wait = false) {
+  for (let i = 0; i < (wait ? 10 : 1); i++) {
+    try { const r = await send("Runtime.evaluate", { expression: SS_READ, returnByValue: true }); const v = r && r.result && r.result.value; if (v) return JSON.parse(v); } catch {}
+    if (wait) await sleep(200);
+  }
+  return null;
+}
+// The tabs the last session left (restored with it): their sessionStorage kept, then
+// closed, so nothing loads unseen.
+async function closeOthers(c, keep) {
+  try {
+    const { targetInfos = [] } = await c.send("Target.getTargets"), got = [];
+    for (const t of targetInfos) {
+      if (t.type !== "page" || t.targetId === keep) continue;
+      if (/^https?:/.test(t.url || "")) try { const { sessionId } = await c.send("Target.attachToTarget", { targetId: t.targetId, flatten: true }); got.push(await readSession((m, p) => c.send(m, p, sessionId), true)); } catch {}
+      try { await c.send("Target.closeTarget", { targetId: t.targetId }); } catch {}
+    }
+    if (got.some(Boolean)) saveSessions(got.filter(Boolean));
+  } catch {}
 }
 
 // One browser at a time: they share a profile, and Chrome locks it.
@@ -135,6 +197,7 @@ async function launch() {
         if (existsSync(join(PROFILE, "SingletonLock")) || /existing browser session|ProcessSingleton/i.test(err)) throw new Error("Symbiot's browser is already open, in a window (Sign in) or in another Symbiot: close that, then try again.");
         throw new Error("The browser didn't start: " + ((err.trim().split("\n").pop()) || e.message));
       }
+      await closeOthers(c, targetId); await keepSessions(c);
       const { sessionId } = await c.send("Target.attachToTarget", { targetId, flatten: true });
       const send = (method, params) => c.send(method, params, sessionId);
       const until = (method, ms) => c.until((m) => m.sessionId === sessionId && m.method === method, ms);
@@ -152,6 +215,7 @@ async function launch() {
         while (Date.now() < end && calm < 600) { await sleep(100); calm = inflight.size <= 1 ? calm + 100 : 0; }
       };
       await send("Page.enable"); await send("Network.enable");
+      const ss = loadSessions(); if (Object.keys(ss).length) try { await send("Page.addScriptToEvaluateOnNewDocument", { source: sessionFill(ss), worldName: "symbiot-sessions" }); } catch {}
       await send("Emulation.setDeviceMetricsOverride", { width: VIEW.w, height: VIEW.h, deviceScaleFactor: 1, mobile: false });
       // Sites serve "HeadlessChrome" something else (or a block page): look like the browser it is.
       const { userAgent } = await c.send("Browser.getVersion");
@@ -168,7 +232,10 @@ async function launch() {
 async function shut(b) {
   if (!b) return;
   clearTimeout(b.timer); if (live === b) live = null;
-  if (!b.c.closed()) { try { await Promise.race([b.c.send("Browser.close"), sleep(3000)]); } catch {} }
+  if (!b.c.closed()) { try { if (b.page) { const own = await Promise.race([readSession(b.page.send), sleep(2500)]); if (own) saveSessions([own]); } await Promise.race([keepSessions(b.c), sleep(3000)]); await Promise.race([b.c.send("Browser.close"), sleep(3000)]); } catch {} }
+  // Chrome writes its cookies to disk as it shuts down: killed before that, a sign-in made
+  // or kept since it started is lost. Give it a few seconds to finish.
+  if (b.proc.exitCode === null) await Promise.race([new Promise((r) => b.proc.once("exit", r)), sleep(5000)]);
   if (b.proc.exitCode === null) try { b.proc.kill("SIGKILL"); } catch {}
 }
 // Close the hidden browser now (the Sign in window needs its profile).
@@ -487,13 +554,17 @@ function wholePage(id) {
 // browser is open for you or an agent (type, then press), it leaves it alone
 // ({ busy }) rather than take its page somewhere else; and it doesn't keep the
 // browser open after.
-function readPage(input) {
+// password: a page asking for a password counts as a sign-in page too (a site's own login
+// form at an address that doesn't say so), for a check of whether you're signed in.
+const ASKS_PASSWORD = `!![...document.querySelectorAll('input[type=password]')].find((e) => { const b = e.getBoundingClientRect(); return b.width > 0 && b.height > 0; })`;
+function readPage(input, { password = false } = {}) {
   const url = siteUrl(input);
   if (!url) return Promise.resolve({ error: "Give a site to read: a name (gmail), a host or a web address." });
   return oneAtATime(() => browserOpen() ? { busy: true } : withPage(async (page) => {
     await open(page, url);
     const info = await collect(page);
-    return { ...info, login: signInPage(info.url) };
+    let pw = false; if (password) try { pw = !!((await page.send("Runtime.evaluate", { expression: ASKS_PASSWORD, returnByValue: true })).result || {}).value; } catch {}
+    return { ...info, login: signInPage(info.url) || pw };
   }, false)).catch((e) => ({ error: String((e && e.message) || e) }));
 }
 // The words on a page, not its buttons: the text of each element `selector`
@@ -846,7 +917,10 @@ const kill = (pids) => { for (const p of pids) try { process.kill(p, "SIGTERM");
 async function openSymbiotBrowser(url = "") {
   const chrome = chromeBinary();
   if (!chrome) return { error: "The Symbiot Browser needs Chrome, Chromium, Edge or Brave on this computer, and none was found." };
-  await oneAtATime(closeBrowser);
+  // the hidden browser starts and closes once first (not when a window's open already: it'd
+  // hand over to it): a session sign-in from the last window is kept (keepSessions) before
+  // this one, which doesn't restore the last session, drops it
+  await oneAtATime(async () => { await closeBrowser(); if (process.platform !== "win32" && existsSync(PROFILE) && !profilePids({ headless: false }).length) try { await shut(await launch()); } catch {} });
   const hidden = profilePids({ headless: true }); if (hidden.length) { kill(hidden); await sleep(800); }
   try {
     mkdirSync(PROFILE, { recursive: true, mode: 0o700 });
@@ -867,4 +941,4 @@ async function closeSymbiotBrowser() {
   return { closed: open.length };
 }
 
-export { siteUrl, browserArgs, mapPage, wholePage, readPage, readTexts, readLinkedIn, LI_READ, pagePicture, pageClip, CLIP, isSend, pressRegion, typeRegion, uploadRegion, uploadFiles, attachFiles, FILE_BOX, scrollPage, SCROLLS, signIn, keepBrowserOpen, closeBrowser, browserOpen, trustedSites, isTrusted, trustSite, untrustSite, PROFILE , openSymbiotBrowser, closeSymbiotBrowser, setBrowserHub , browserHub };
+export { siteUrl, browserArgs, mapPage, wholePage, readPage, readTexts, readLinkedIn, LI_READ, pagePicture, pageClip, CLIP, isSend, pressRegion, typeRegion, uploadRegion, uploadFiles, attachFiles, FILE_BOX, scrollPage, SCROLLS, signIn, keepBrowserOpen, closeBrowser, browserOpen, keepSessions, SESSION_KEEP, SESSIONS, loadSessions, trustedSites, isTrusted, trustSite, untrustSite, PROFILE , openSymbiotBrowser, closeSymbiotBrowser, setBrowserHub , browserHub };
