@@ -213,6 +213,8 @@ const calls = [
   ["/api/claude/install", "POST"],  // runs Anthropic's installer
   ["/api/claude/signin", "POST"],   // opens the sign-in page
   ["/api/claude/code", "POST"],     // no code -> error, nothing sent
+  ["/api/browser/open", "POST"],    // the Symbiot Browser (not in tests: SYMBIOT_NO_OPEN)
+  ["/api/browser/done", "POST"],    // closes it and checks the sites (not in tests)
   ["/api/language", "GET"],         // the language: the computer's, or one named in Settings
   ["/api/language/set", "POST"],    // the computer's, or one named (no body: nothing changes)
   ["/api/i18n/all", "GET"],         // every translation kept for the language

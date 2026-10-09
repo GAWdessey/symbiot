@@ -89,7 +89,7 @@ function stateOf(e, l, watches) {
   // finished signing in in the window is still "sign in"
   if (w.error && /^Signed out/.test(w.error)) return w.checked ? { state: "signedout", note: "Signed out: click it to sign in again." } : { state: "signin" };
   if (w.checked) return { state: "ok", checked: w.checked, ...(w.error ? { note: w.error } : {}) };
-  return { state: "signin", ...(w.error && !/in use|busy|already running/i.test(w.error) ? { note: w.error } : {}) };
+  return { state: "signin", ...(w.error && !/in use|busy|already running|Symbiot Browser is open/i.test(w.error) ? { note: w.error } : {}) };
 }
 function linksState() {
   const c = catalog(), l = linked(), watches = watchState().watches;
@@ -98,7 +98,7 @@ function linksState() {
   return { items, groups, linked: items.filter((x) => x.state !== "off").length, ...(c.file ? { file: c.file } : {}), ...(c.error ? { error: c.error } : {}) };
 }
 
-// Link one: trust its hosts, watch its page, open it to sign in. Clicking a link
+// Link one: trust its hosts, watch its page, open it to sign in (in the Symbiot Browser). Clicking a link
 // that's already there just opens it again to sign in (signed out, or a second
 // account). Gives { ok, url, item } or { error }.
 // what counts as an inbox or chat for Free's one

@@ -19,9 +19,9 @@
 // The browser keeps its own profile in ~/.config/symbiot/browser: sign in to a
 // site once there (signIn opens it as a normal window) and later maps see it
 // signed in. It's separate from your everyday browser profile.
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { join, resolve as resolvePath } from "node:path";
-import { mkdirSync, existsSync, statSync } from "node:fs";
+import { mkdirSync, existsSync, statSync, readlinkSync } from "node:fs";
 import { CONFIG_DIR, chromeBinary, loadConfig, saveConfig } from "./core.mjs";
 import { loadScreens, addPageScreen, center, stitchPng, stitchListPng } from "./screens.mjs";
 
@@ -98,6 +98,18 @@ const browserOpen = () => !!(live && !live.c.closed());
 // Don't leave it running when Symbiot exits (a restart, Ctrl+C).
 process.once("exit", () => { if (live && live.proc.exitCode === null) try { live.proc.kill("SIGKILL"); } catch {} });
 
+// Is a visible Chrome (the Symbiot Browser) using Symbiot's profile? Its SingletonLock names the process
+// ("host-1234", Linux and Mac); a lock whose process has gone is a leftover.
+const OWN = new Set(); // every hidden Chrome this Symbiot started
+function windowOpen() {
+  try {
+    const m = /-(\d+)$/.exec(readlinkSync(join(PROFILE, "SingletonLock")));
+    if (!m) return false;
+    if (OWN.has(Number(m[1]))) return false; // our own hidden browser (running, or still closing) isn't a window
+    process.kill(Number(m[1]), 0);
+    return true;
+  } catch { return false; }
+}
 // Start the hidden browser and open a tab: { proc, c, page: { send, until, idle } }.
 async function launch() {
   const chrome = chromeBinary();
@@ -105,7 +117,11 @@ async function launch() {
     ? "Mapping a page needs a desktop browser (Chrome, Chromium, Edge or Brave), which a phone doesn't have. Map pages from Symbiot on your computer."
     : "Mapping a page needs Chrome, Chromium, Edge or Brave, and none was found.");
   mkdirSync(PROFILE, { recursive: true, mode: 0o700 });
+  // the Symbiot Browser (or a sign-in window) has the profile: a second Chrome would hand
+  // over to it and pop an empty window into it, so wait for Done instead
+  if (windowOpen()) throw new Error("The Symbiot Browser is open: Symbiot reads your sites once you click Done in it.");
   const proc = spawn(chrome, browserArgs(true), { stdio: ["ignore", "ignore", "pipe", "pipe", "pipe"] });
+  if (proc.pid) OWN.add(proc.pid);
   let err = ""; proc.stderr.on("data", (d) => { err = (err + d).slice(-2000); });
   const failed = new Promise((resolve, reject) => { proc.on("error", reject); }); failed.catch(() => {});
   const c = connect(proc), b = { proc, c, shown: "", timer: null };
@@ -801,13 +817,53 @@ function uploadRegion(id, regionId, files, { confirmed = false } = {}) {
 // accept cookies) once. Close it before mapping: the profile is shared. The hidden
 // browser is closed first, or the window would open in it, out of sight.
 async function signIn(input) {
-  const url = siteUrl(input), chrome = chromeBinary();
+  const url = siteUrl(input);
   if (!url) return { error: "Give the site to sign in to: a name (gmail), a host or a web address." };
-  if (!chrome) return { error: "Signing in needs Chrome, Chromium, Edge or Brave, and none was found." };
-  await oneAtATime(closeBrowser);
-  try { mkdirSync(PROFILE, { recursive: true, mode: 0o700 }); spawn(chrome, browserArgs(false, url), { detached: true, stdio: "ignore" }).unref(); }
-  catch (e) { return { error: String((e && e.message) || e) }; }
-  return { ok: true, url };
+  return openSymbiotBrowser(url);
 }
 
-export { siteUrl, browserArgs, mapPage, wholePage, readPage, readTexts, readLinkedIn, LI_READ, pagePicture, pageClip, CLIP, isSend, pressRegion, typeRegion, uploadRegion, uploadFiles, attachFiles, FILE_BOX, scrollPage, SCROLLS, signIn, keepBrowserOpen, closeBrowser, browserOpen, trustedSites, isTrusted, trustSite, untrustSite, PROFILE };
+// ---- the Symbiot Browser --------------------------------------------------------
+// Where you sign in to your sites for Symbiot: a window of its own, named and marked
+// as Symbiot's, on Symbiot's browser profile (so its sign-ins are the ones the hidden
+// browser reads with). It opens on its own page (browser.html, served by the app:
+// your sites, signed in or not, a Sign in for each, an address bar, Done), plus the
+// site asked for in a window beside it. Chrome lets one copy use a profile at a time,
+// and a window asked of a hidden copy opens hidden: so any hidden copy on this profile
+// is closed first, Symbiot's or a stray one (Linux, Mac).
+let HUB = ""; // the app's address for that page: http://127.0.0.1:<port>/browser?t=<token>
+function setBrowserHub(url) { HUB = String(url || ""); }
+function profilePids({ headless } = {}) {
+  if (process.platform === "win32") return [];
+  try {
+    const out = spawnSync("ps", ["-eo", "pid=,args="], { encoding: "utf8", timeout: 5000 }).stdout || "";
+    return out.split("\n").map((l) => l.trim().match(/^(\d+)\s+(.*)$/)).filter(Boolean)
+      .filter(([, , a]) => a.includes("--user-data-dir=" + PROFILE) && !/--type=/.test(a) && (headless === undefined || /--headless/.test(a) === headless))
+      .map(([, pid]) => Number(pid)).filter((p) => p && p !== process.pid);
+  } catch { return []; }
+}
+const kill = (pids) => { for (const p of pids) try { process.kill(p, "SIGTERM"); } catch {} };
+async function openSymbiotBrowser(url = "") {
+  const chrome = chromeBinary();
+  if (!chrome) return { error: "The Symbiot Browser needs Chrome, Chromium, Edge or Brave on this computer, and none was found." };
+  await oneAtATime(closeBrowser);
+  const hidden = profilePids({ headless: true }); if (hidden.length) { kill(hidden); await sleep(800); }
+  try {
+    mkdirSync(PROFILE, { recursive: true, mode: 0o700 });
+    const base = ["--user-data-dir=" + PROFILE, "--no-first-run", "--no-default-browser-check",
+      ...(process.platform === "linux" ? ["--password-store=basic", "--class=SymbiotBrowser"] : process.platform === "darwin" ? ["--use-mock-keychain"] : [])];
+    const page = HUB ? ["--app=" + HUB, "--window-size=1040,820"] : [];
+    if (page.length) spawn(chrome, [...base, ...page], { detached: true, stdio: "ignore" }).unref();
+    if (url) setTimeout(() => { try { spawn(chrome, [...base, "--new-window", url], { detached: true, stdio: "ignore" }).unref(); } catch {} }, page.length ? 1500 : 0);
+    if (!page.length && !url) spawn(chrome, [...base, "--new-window", "about:blank"], { detached: true, stdio: "ignore" }).unref();
+  } catch (e) { return { error: String((e && e.message) || e) }; }
+  return { ok: true, ...(url ? { url } : {}), browser: true };
+}
+// Done: the Symbiot Browser closes (its sign-ins are saved), so the hidden browser can read with them.
+async function closeSymbiotBrowser() {
+  const open = profilePids({ headless: false });
+  kill(open);
+  for (let i = 0; i < 20 && profilePids({ headless: false }).length; i++) await sleep(250);
+  return { closed: open.length };
+}
+
+export { siteUrl, browserArgs, mapPage, wholePage, readPage, readTexts, readLinkedIn, LI_READ, pagePicture, pageClip, CLIP, isSend, pressRegion, typeRegion, uploadRegion, uploadFiles, attachFiles, FILE_BOX, scrollPage, SCROLLS, signIn, keepBrowserOpen, closeBrowser, browserOpen, trustedSites, isTrusted, trustSite, untrustSite, PROFILE , openSymbiotBrowser, closeSymbiotBrowser, setBrowserHub };

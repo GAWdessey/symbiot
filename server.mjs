@@ -25,7 +25,7 @@ import { computeDrift } from "./drift.mjs";
 import { addTask, toggleTask, removeTask, restoreTask, syncTasks, taskType, pushTasks, pendingReview, workingDiff, learnNpm, withReleases, releaseInput, approveRepo, approveChanges, sendBack, setAutoMerge } from "./tasks.mjs";
 import { repoReview, repoSuggest, folderSuggest, taskChat, clearTaskChat, mailState, setMail, sentMail, produce, releaseNotes } from "./writeups.mjs";
 import { loadScreens, screenImage, captureScreen, splitScreen, listMonitors, allowScreenshots, importScreen, setRegions, renameScreen, removeScreen, blueprint, clickRegion } from "./screens.mjs";
-import { mapPage, wholePage, pressRegion, typeRegion, uploadRegion, scrollPage, signIn, keepBrowserOpen, isTrusted, trustedSites, trustSite, untrustSite } from "./headless.mjs";
+import { mapPage, wholePage, pressRegion, typeRegion, uploadRegion, scrollPage, signIn, keepBrowserOpen, isTrusted, trustedSites, trustSite, untrustSite, openSymbiotBrowser, closeSymbiotBrowser, setBrowserHub, siteUrl } from "./headless.mjs";
 import { weeklyState, setWeekly, runWeekly, startWeekly, autostartState, setAutostart, installLauncher, iconSvg, setLauncherLook } from "./desktop.mjs";
 import { markNews, newsSince, watchState, addWatch, setEvery, removeWatch, clearNews, seenWatch, checkWatch, startWatches, setBrief, draftReply, openChat, watchBoard, boardChat, clearBoardChat } from "./watch.mjs";
 import { linksState, linkSite, checkLink, unlinkSite } from "./links.mjs";
@@ -224,6 +224,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
   if (!process.env.SYMBIOT_FORCE_NEW && !RELAUNCH) {
     const p = await askRunningApp("ping", { port: PORT, token: TOKEN });
     if (p && p.version) {
+      setBrowserHub(`http://127.0.0.1:${PORT}/browser?t=${TOKEN}`);
       const url = `http://127.0.0.1:${PORT}/?t=${TOKEN}`; const how = process.env.SYMBIOT_NO_OPEN === "1" ? "" : openApp(url);
       console.log(`\n${c.g("●")} ${c.b("Symbiot")} is already running (v${p.version}) at ${c.b(url)}`);
       console.log(how ? c.d(`  Opened the existing window (${/^[aeiou]/.test(how) ? "an" : "a"} ${how}).`) : c.d("  Open that URL in your browser."));
@@ -251,6 +252,8 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
     const t0 = Date.now(); res.on("finish", () => { const ms = Date.now() - t0; if (ms > 1500) console.log(`slow: ${String(req.url || "").split("?")[0]} took ${(ms / 1000).toFixed(1)}s`); });
     const u = new URL(req.url, "http://127.0.0.1");
     if (req.method === "GET" && u.pathname === "/") { res.writeHead(200, { "content-type": "text/html; charset=utf-8" }); res.end(EMBEDDED_UI); return; }
+    // the Symbiot Browser's own page (headless.mjs openSymbiotBrowser): like /, it gets its token in ?t=
+    if (req.method === "GET" && u.pathname === "/browser") { try { res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" }); res.end(readFileSync(new URL("./browser.html", import.meta.url))); } catch { res.writeHead(404); res.end(); } return; }
     // the app's typeface ships in the package (fonts/), so it's there offline
     // the window's own icon (its taskbar entry), the same orb as the app menu's
     if (req.method === "GET" && (u.pathname === "/favicon.svg" || u.pathname === "/favicon.ico")) {
@@ -378,7 +381,9 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       if (u.pathname === "/api/mind/forget" && req.method === "POST") { const b = await readBody(req); return json(res, forget(String(b.id || ""))); }
       // Links (links.mjs): one click per standard work site: sign in, trust it, watch it.
       if (u.pathname === "/api/links") { let reach = null; try { reach = linkReach(); } catch {} return json(res, { ...linksState(), ...(reach ? { reach } : {}) }); } // reach: which sites agent runs can use too (agents.mjs)
-      if (u.pathname === "/api/links/link" && req.method === "POST") { const b = await readBody(req); return json(res, await linkSite(String(b.id || ""))); }
+      if (u.pathname === "/api/links/link" && req.method === "POST") { const b = await readBody(req); return json(res, await linkSite(String(b.id || ""), b.here ? { open: async (url) => ({ ok: true, url }) } : undefined)); } // here: from the Symbiot Browser, which opens the site itself
+      if (u.pathname === "/api/browser/open" && req.method === "POST") { const b = await readBody(req); if (process.env.SYMBIOT_NO_OPEN === "1") return json(res, { ok: false, note: "not opened (SYMBIOT_NO_OPEN)" }); return json(res, await openSymbiotBrowser(b.url ? siteUrl(String(b.url)) : "")); }
+      if (u.pathname === "/api/browser/done" && req.method === "POST") { if (process.env.SYMBIOT_NO_OPEN === "1") return json(res, { closed: 0 }); const r = await closeSymbiotBrowser(); setTimeout(() => { for (const it of linksState().items) if (it.state !== "off" && it.state !== "ok") checkLink(it.id).catch(() => {}); }, 1500); return json(res, { ...r, checking: true }); }
       if (u.pathname === "/api/links/check" && req.method === "POST") { const b = await readBody(req); return json(res, await checkLink(String(b.id || ""))); }
       if (u.pathname === "/api/links/unlink" && req.method === "POST") { const b = await readBody(req); return json(res, unlinkSite(String(b.id || ""))); }
       // Posts (post.mjs): the week's drafts, waiting on you. Approve is your yes: Marketing's
