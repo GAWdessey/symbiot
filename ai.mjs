@@ -26,6 +26,10 @@ const PROVIDERS = {
 // agents. Whether it's there and signed in: `claude auth status` (a quarter of a
 // second), kept 5 minutes. SYMBIOT_CLAUDE_CMD replaces the command (the tests' stand-in).
 const CLAUDE_BIN = () => process.env.SYMBIOT_CLAUDE_CMD || "claude";
+// Claude Code's own installer puts it in ~/.local/bin, which a desktop session (and
+// Windows) often doesn't have on PATH yet: Symbiot, and the agents it starts, look there too.
+{ const dir = join(homedir(), ".local", "bin"), sep = process.platform === "win32" ? ";" : ":";
+  if (existsSync(dir) && !String(process.env.PATH || "").split(sep).includes(dir)) process.env.PATH = dir + sep + (process.env.PATH || ""); }
 // How to run it. Windows: npm installs `claude` as claude.cmd, which Node can only
 // start through cmd.exe (a .exe, from Claude's own installer, it starts directly), so
 // it's found with `where` and its arguments are quoted for cmd.exe.
@@ -52,7 +56,8 @@ function claudeState(fresh = false) {
   let installed = !!process.env.SYMBIOT_CLAUDE_CMD || hasCmd("claude"), signedIn = false;
   if (installed) {
     try {
-      const r = claudeSpawn(["auth", "status"], { encoding: "utf8", timeout: 8000, env: process.env }, true);
+      // from home: Claude Code refuses to run in a folder that has since been deleted
+      const r = claudeSpawn(["auth", "status"], { cwd: homedir(), encoding: "utf8", timeout: 8000, env: process.env }, true);
       if (r.error && r.error.code === "ENOENT") installed = false;
       else { const j = JSON.parse(String(r.stdout || "").trim() || "{}"); signedIn = !!j.loggedIn && j.authMethod !== "apiKey"; }
     } catch {}
@@ -308,4 +313,4 @@ async function connectProvider(b) {
   return saveConfig(cfg) ? { ok: true, message: `Connected: ${PROVIDERS[provider].label} · ${model}` } : { ok: false, message: "Couldn't write the config file." };
 }
 
-export { PROVIDERS, AI_UI, resolveProvider, write, validate, connectProvider, detectHardware, recommendModels, hasOllama, ollamaInstall, ensureOllama, useOllamaModel , claudeState, claudeReady, claudeHelp , claudeCommand };
+export { PROVIDERS, AI_UI, resolveProvider, write, validate, connectProvider, detectHardware, recommendModels, hasOllama, ollamaInstall, ensureOllama, useOllamaModel , claudeState, claudeReady, claudeHelp , claudeCommand , claudeSpawn };

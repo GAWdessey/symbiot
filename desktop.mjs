@@ -119,7 +119,13 @@ function autostartFile(platform = OS, home = homedir()) {
   if (platform === "android") return join(home, ".termux", "boot", "symbiot");
   return join(home, ".config", "autostart", "symbiot.desktop");
 }
-function autostartContent(node, script, platform = OS, path = process.env.PATH || "") {
+function autostartContent(node, script, platform = OS, path = process.env.PATH || "", exe = process.env.SYMBIOT_DESKTOP_EXE || "") {
+  if (exe) { // the installed app: it starts its tray and Symbiot itself
+    const q = (s) => '"' + String(s).replace(/(["`$\\])/g, "\\$1") + '"';
+    if (platform === "win32") return ["@echo off", `start "" "${exe}"`, ""].join("\r\n");
+    if (platform === "darwin") return `<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0"><dict><key>Label</key><string>co.symbiot.app</string><key>ProgramArguments</key><array><string>${String(exe).replace(/&/g, "&amp;").replace(/</g, "&lt;")}</string></array><key>RunAtLoad</key><true/></dict></plist>\n`;
+    return ["[Desktop Entry]", "Type=Application", "Name=Symbiot", `Exec=${q(exe)}`, "Terminal=false", "NoDisplay=true", "X-GNOME-Autostart-enabled=true", ""].join("\n");
+  }
   if (platform === "android-app") return "While this file exists, Symbiot's Android app starts itself when the phone starts.\n";
   if (platform === "darwin") {
     const x = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");

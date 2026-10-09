@@ -870,7 +870,9 @@ async function main() {
   if (cmd === "login" || cmd === "auth") return cmdLogin();
   if (cmd === "logout") return cmdLogout();
   if (cmd === "whoami" || cmd === "status") return cmdWhoami();
-  if (cmd === "app" || cmd === "ui") return cmdApp();
+  // the app runs from home: whatever folder started it may be deleted later (a worktree,
+  // an old copy npm replaced), and Claude Code won't run from a deleted folder
+  if (cmd === "app" || cmd === "ui") { try { process.chdir(homedir()); } catch {} return cmdApp(); }
   if (cmd === "away") return cmdAway();
   if (cmd === "open") return cmdOpen();
   if (cmd === "uninstall") return cmdUninstall();

@@ -208,6 +208,10 @@ const calls = [
   ["/api/work", "GET"],             // the work scene: who's at work, what's waiting, what's ready
   ["/api/work/go", "POST"],         // nothing waiting in the isolated HOME -> starts nothing
   ["/api/home", "GET"],             // the liquid's live data (isolated HOME -> empty)
+  ["/api/claude/setup", "GET"],     // Claude Code: installed, signed in, installing, signing in
+  ["/api/claude/install", "POST"],  // runs Anthropic's installer
+  ["/api/claude/signin", "POST"],   // opens the sign-in page
+  ["/api/claude/code", "POST"],     // no code -> error, nothing sent
   ["/api/onboarding", "GET"],       // setup: where you are, what's set up
   ["/api/onboarding/set", "POST"],  // a step, an app you don't use
   ["/api/onboarding/done", "POST"],
