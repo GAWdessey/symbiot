@@ -150,3 +150,59 @@ jobs:
               --notes "Symbiot $VER: \`npm install -g symbiot\`, or on Android install the APK below (see the README's \"The Android app (APK)\")."
           fi
           gh release upload "apk-$VER" "android/build/symbiot-$VER-aarch64.apk" android/build/symbiot-aarch64.apk --clobber
+
+  # The desktop app (desktop/): installers for people who'll never open a terminal,
+  # the ones symbiot.co.za offers. Built for every version on a real Windows, Mac and
+  # Linux machine, bundling exactly the symbiot just published, and attached to the
+  # same release as the APK under fixed names. Not signed with a paid certificate yet:
+  # Windows shows SmartScreen's "More info -> Run anyway", and a Mac asks to allow it
+  # in System Settings -> Privacy & Security the first time.
+  desktop:
+    needs: [gate, publish]
+    if: ${{ !cancelled() && needs.gate.result == 'success' && (needs.publish.result == 'success' || (github.event_name == 'workflow_dispatch' && needs.gate.outputs.release == 'false')) }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: --win
+            files: dist/Symbiot-Setup.exe
+          - os: macos-latest
+            target: --mac
+            files: dist/Symbiot.dmg
+          - os: ubuntu-latest
+            target: --linux
+            files: dist/symbiot.deb dist/Symbiot.AppImage
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write # create the release, upload the installers
+    env:
+      VER: ${{ needs.gate.outputs.version }}
+      GH_TOKEN: ${{ github.token }}
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+    defaults:
+      run:
+        shell: bash
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Wait for npm to serve symbiot@${{ env.VER }}
+        run: |
+          for i in $(seq 1 60); do
+            curl -sfo /dev/null "https://registry.npmjs.org/symbiot/-/symbiot-$VER.tgz" && exit 0
+            sleep 10
+          done
+          echo "::error::symbiot@$VER isn't downloadable from npm"; exit 1
+      - name: This version, bundling exactly this symbiot
+        run: |
+          npm pkg set version="$VER"
+          npm install --no-audit --no-fund --save-exact "symbiot@$VER"
+      - run: npx electron-builder ${{ matrix.target }} --publish never
+      - name: Attach to the release
+        run: |
+          gh release view "apk-$VER" >/dev/null 2>&1 || gh release create "apk-$VER" --target "$GITHUB_SHA" --title "Symbiot $VER" --latest \
+            --notes "Symbiot $VER. Download it for your computer at https://symbiot.co.za, or \`npm install -g symbiot\`." || true
+          gh release upload "apk-$VER" ${{ matrix.files }} --clobber

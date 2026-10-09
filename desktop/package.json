@@ -1,0 +1,90 @@
+{
+  "name": "symbiot-desktop",
+  "version": "0.58.2",
+  "private": true,
+  "description": "Symbiot's desktop app: Symbiot installed like any other app, with its own Node and a tray icon.",
+  "main": "main.js",
+  "author": "Garth White <garth@ghost-ai.co.za>",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder",
+    "dist:win": "electron-builder --win",
+    "dist:mac": "electron-builder --mac",
+    "dist:linux": "electron-builder --linux"
+  },
+  "dependencies": {
+    "symbiot": "0.58.2"
+  },
+  "devDependencies": {
+    "electron": "^32.2.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "za.co.ghostai.symbiot",
+    "productName": "Symbiot",
+    "asar": false,
+    "files": [
+      "main.js",
+      "package.json",
+      "assets/**"
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "assets/icon.ico",
+      "artifactName": "Symbiot-Setup.${ext}"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "runAfterFinish": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Symbiot",
+      "deleteAppDataOnUninstall": false
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "universal"
+          ]
+        }
+      ],
+      "icon": "assets/icon.png",
+      "category": "public.app-category.productivity",
+      "artifactName": "Symbiot.${ext}",
+      "identity": "-"
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Utility",
+      "icon": "assets/icon.png",
+      "artifactName": "Symbiot.${ext}",
+      "synopsis": "Your work, handled alongside you"
+    },
+    "deb": {
+      "artifactName": "symbiot.deb"
+    }
+  },
+  "homepage": "https://symbiot.co.za",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/GarthGhostai/symbiot.git",
+    "directory": "desktop"
+  }
+}
