@@ -1,12 +1,13 @@
 // The pick tray (tray.mjs): a product's captures under drafts/<product>/tray in Marketing's
-// lane, as tools/tray.py writes them (tray.json, each capture's .blur.json), shown on the
-// Marketing page with their blur boxes; a box switched and written back; a capture served
+// lane, as its agent writes them (tray.json, each capture's .blur.json), shown on the
+// Marketing page with their blur boxes; a box switched, written back and blurred again by
+// Symbiot with ffmpeg (never by the lane's own script); a capture served
 // only from inside a tray; one put on a post as its media (marketing.mjs setDraftMedia).
 // Isolated HOME (set before the modules load).
 //
 //   node test/tray.mjs
 //
-import { mkdtempSync, writeFileSync, readFileSync, mkdirSync, symlinkSync, existsSync } from "node:fs";
+import { mkdtempSync, writeFileSync, readFileSync, mkdirSync, symlinkSync, existsSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -20,7 +21,7 @@ const ok = (n, c, got) => { if (c) { pass++; console.log("  ✓ " + n); } else {
 const M = await import("../marketing.mjs");
 const T = await import("../tray.mjs");
 
-// a lane with a tray as tray.py leaves it: a still, a clip (the same box in two moments), a reel
+// a lane with a tray as its agent leaves it: a still, a clip (the same box in two moments), a reel
 const dir = join(HOME, "lane"), tray = join(dir, "drafts", "symbiot", "tray");
 mkdirSync(tray, { recursive: true }); mkdirSync(join(dir, ".symbiot", "tray-originals", "symbiot"), { recursive: true }); mkdirSync(join(HOME, "outside"), { recursive: true });
 for (const f of ["home.png", "clip-dash.gif", "clip-dash.mp4", "reel.mp4"]) writeFileSync(join(tray, f), "x");
@@ -60,7 +61,7 @@ ok("the unblurred originals (.symbiot/tray-originals) aren't", !T.trayMedia(".sy
 ok("a draft beside the tray isn't (only the tray's own files)", !T.trayMedia("drafts/symbiot/old.png", { dir }) && !T.trayMedia("drafts/symbiot/01-first.md", { dir }));
 ok("nor its .blur.json or tray.json (not pictures or videos)", !T.trayMedia("drafts/symbiot/tray/tray.json", { dir }) && !T.trayMedia("drafts/symbiot/tray/home.blur.json", { dir }));
 
-console.log("TRAY — a blur box switched, written back where tray.py reads it");
+console.log("TRAY — a blur box switched, written back to its .blur.json");
 const b1 = T.setBlur("drafts/symbiot/tray", "home", 2, true, { dir });
 const back = JSON.parse(readFileSync(join(tray, "home.blur.json"), "utf8"));
 ok("switched on in home.blur.json, everything else in it as it was", b1.ok && back.regions[1].on === true && back.regions[0].on === true && back.source === "home.png" && back.demo === true && back.regions[1].kind === "path" && back.regions[1].w === 800, back);
@@ -70,20 +71,49 @@ ok("a box that isn't there: refused, nothing written", !!T.setBlur("drafts/symbi
 ok("a capture outside a tray, or named with ../: refused", !!T.setBlur("drafts/symbiot", "home", 1, true, { dir }).error && !!T.setBlur("drafts/symbiot/tray", "../tray/home", 1, true, { dir }).error && !!T.setBlur("../outside", "x", 1, true, { dir }).error);
 ok("the page sees it", T.trays({ dir })[0].items[0].regions[1].on === true);
 
-console.log("TRAY — blurred again by the lane's tray.py");
-const ran = [];
-const r0 = await T.renderCapture("drafts/symbiot/tray", "home", { dir, run: (cwd, args) => (ran.push([cwd, ...args]), { ok: true }) });
-ok("no tools/tray.py in the lane: says its agent renders it, runs nothing", /no tools\/tray\.py/.test(r0.error || "") && !ran.length, r0);
-mkdirSync(join(dir, "tools"), { recursive: true }); writeFileSync(join(dir, "tools", "tray.py"), "import sys, pathlib\npathlib.Path(sys.argv[2], 'rendered-' + sys.argv[3]).write_text('ok')\n");
-const r1 = await T.renderCapture("drafts/symbiot/tray", "home", { dir, run: (cwd, args) => (ran.push([cwd, ...args]), { ok: true }) });
-ok("tray.py render <tray> <capture>, run in the lane", r1.ok && ran[0].join(" ") === `${dir} tools/tray.py render drafts/symbiot/tray home`, ran);
-ok("not for a capture outside a tray", !!(await T.renderCapture("drafts", "x", { dir, run: () => ({ ok: true }) })).error);
-if (spawnSync("python3", ["--version"]).status === 0) {
-  const r2 = await T.renderCapture("drafts/symbiot/tray", "home", { dir });
-  ok("…really run (python3 here): it ran in the lane", r2.ok && existsSync(join(tray, "rendered-home")), r2);
-  writeFileSync(join(dir, "tools", "tray.py"), "raise SystemExit('PIL is missing')\n");
-  const r3 = await T.renderCapture("drafts/symbiot/tray", "home", { dir });
-  ok("…one that fails says why", /PIL is missing/.test(r3.error || ""), r3);
+console.log("TRAY — blurred again by Symbiot itself, with ffmpeg, never by the lane's own script");
+// a fake ffmpeg: notes what it was asked and writes the files it was to make
+const ran = [], fake = (args) => { ran.push(args); for (const a of args) if (/\.render\.(png|gif|mp4)$/.test(a)) writeFileSync(a, "rendered"); return { ok: true }; };
+const sz = () => [1600, 900], ORIG = join(dir, ".symbiot", "tray-originals", "symbiot");
+mkdirSync(join(dir, "tools"), { recursive: true }); writeFileSync(join(dir, "tools", "tray.py"), "import pathlib\npathlib.Path('RAN-TRAY-PY').write_text('ran')\n"); // an agent's script: never run by the app
+const r0 = await T.renderCapture("drafts/symbiot/tray", "clip-dash", { dir, run: fake, size: sz });
+ok("its unblurred original isn't there: says its agent renders it, runs nothing", /tray-originals/.test(r0.error || "") && !ran.length, r0);
+const r1 = await T.renderCapture("drafts/symbiot/tray", "home", { dir, run: fake, size: sz }), a1 = (ran[0] || []).join(" ");
+ok("a still: from its original, into its picture in the tray", r1.ok && r1.files.join() === "home.png" && ran[0].includes(join(ORIG, "home.png")) && readFileSync(join(tray, "home.png"), "utf8") === "rendered", [r1, a1]);
+ok("…only the boxes switched on, pixelated, then blurred", /crop=800:450:0:0,scale=80:45:flags=bilinear,scale=800:450:flags=neighbor,gblur=sigma=6/.test(a1) && !/crop=160:45/.test(a1), a1);
+ok("…and the lane's tools/tray.py isn't run", !existsSync(join(dir, "RAN-TRAY-PY")) && !existsSync("RAN-TRAY-PY") && !ran.some((x) => x.some((y) => /tray\.py|python/.test(y))));
+writeFileSync(join(ORIG, "clip-dash.webm"), "unblurred");
+writeFileSync(join(tray, "reel.reel.json"), JSON.stringify({ parts: ["clip-dash"], caption: "Reel" })); writeFileSync(join(tray, "other.reel.json"), JSON.stringify({ parts: ["home-clip"] }));
+ran.length = 0;
+const r2 = await T.renderCapture("drafts/symbiot/tray", "clip-dash", { dir, run: fake, size: sz }), a2 = (ran[0] || []).join(" ");
+ok("a clip: its GIF and MP4, at its fps, each box only in its moments", r2.ok && /fps=10,/.test(a2) && /enable='between\(t,6\.7,7\.5\)'/.test(a2) && /enable='between\(t,7\.5,14\.9\)'/.test(a2) && readFileSync(join(tray, "clip-dash.gif"), "utf8") === "rendered" && readFileSync(join(tray, "clip-dash.mp4"), "utf8") === "rendered", [r2, a2]);
+ok("…and the reel it's in joined again (its blur is in the reel too), not a reel it isn't in", r2.files.join() === "clip-dash.gif,clip-dash.mp4,reel.mp4" && ran.length === 2 && ran[1].includes("concat") && readFileSync(join(tray, "reel.mp4"), "utf8") === "rendered", [r2.files, ran.length]);
+ok("…no half-made file left in the tray", !readdirSync(tray).some((f) => /\.render\./.test(f)), readdirSync(tray));
+const keep = readFileSync(join(tray, "home.png"), "utf8");
+const r3 = await T.renderCapture("drafts/symbiot/tray", "home", { dir, run: (args) => { for (const a of args) if (/\.render\./.test(a)) writeFileSync(a, "half"); return { error: "Invalid too big or non positive size" }; }, size: sz });
+ok("ffmpeg fails: says why, the picture there stays, nothing half-made left", /non positive size/.test(r3.error || "") && readFileSync(join(tray, "home.png"), "utf8") === keep && !readdirSync(tray).some((f) => /\.render\./.test(f)), r3);
+const spec = JSON.parse(readFileSync(join(tray, "home.blur.json"), "utf8"));
+writeFileSync(join(tray, "home.blur.json"), JSON.stringify({ ...spec, source: "../../outside/secret.png" })); ran.length = 0;
+ok("an original named out of tray-originals: refused, nothing run", !!(await T.renderCapture("drafts/symbiot/tray", "home", { dir, run: fake, size: sz })).error && !ran.length);
+symlinkSync(join(HOME, "outside", "secret.png"), join(ORIG, "linked.png")); writeFileSync(join(tray, "home.blur.json"), JSON.stringify({ ...spec, source: "linked.png" }));
+ok("…or linked out of it: refused", !!(await T.renderCapture("drafts/symbiot/tray", "home", { dir, run: fake, size: sz })).error && !ran.length);
+writeFileSync(join(tray, "home.blur.json"), JSON.stringify(spec));
+ok("not for a capture outside a tray", !!(await T.renderCapture("drafts", "x", { dir, run: fake })).error && !!(await T.renderCapture("drafts/symbiot/tray", "../tray/home", { dir, run: fake })).error);
+if (spawnSync("ffmpeg", ["-version"]).status === 0) {
+  // really blurred (ffmpeg here): a picture and a clip with text on, a box over part of it
+  const real = join(HOME, "real"), rt = join(real, "drafts", "demo", "tray"), ro = join(real, ".symbiot", "tray-originals", "demo");
+  mkdirSync(rt, { recursive: true }); mkdirSync(ro, { recursive: true });
+  spawnSync("ffmpeg", ["-loglevel", "error", "-y", "-f", "lavfi", "-i", "testsrc=size=320x180:rate=1", "-frames:v", "1", join(ro, "pic.png")]);
+  spawnSync("ffmpeg", ["-loglevel", "error", "-y", "-f", "lavfi", "-i", "testsrc=size=320x180:rate=10", "-t", "2", "-pix_fmt", "yuv420p", join(ro, "mov.mp4")]);
+  writeFileSync(join(rt, "pic.blur.json"), JSON.stringify({ source: "pic.png", kind: "still", size: [320, 180], regions: [{ id: 1, kind: "name", x: 20, y: 20, w: 120, h: 60, on: true }, { id: 2, kind: "edge", x: 300, y: 170, w: 100, h: 100, on: true }] }));
+  writeFileSync(join(rt, "mov.blur.json"), JSON.stringify({ source: "mov.mp4", kind: "clip", size: [320, 180], fps: 10, width: 160, trim: [0.5, 0], regions: [{ id: 1, kind: "name", x: 20, y: 20, w: 120, h: 60, from: 1, to: 2, on: true }] }));
+  writeFileSync(join(rt, "reel.reel.json"), JSON.stringify({ parts: ["mov", "mov"] }));
+  writeFileSync(join(rt, "tray.json"), JSON.stringify({ tray: "demo", items: [] }));
+  const px = (f, x, y) => spawnSync("ffmpeg", ["-loglevel", "error", "-i", f, "-vf", `crop=1:1:${x}:${y},format=rgb24`, "-frames:v", "1", "-f", "rawvideo", "-"]).stdout.toString("hex");
+  const s1 = await T.renderCapture("drafts/demo/tray", "pic", { dir: real }), out = join(rt, "pic.png");
+  ok("…really blurred (ffmpeg here): inside the box changed, outside it as it was, a box over the edge cut to fit", s1.ok && existsSync(out) && px(out, 60, 50) !== px(join(ro, "pic.png"), 60, 50) && px(out, 250, 120) === px(join(ro, "pic.png"), 250, 120), s1);
+  const s2 = await T.renderCapture("drafts/demo/tray", "mov", { dir: real });
+  ok("…a clip: a GIF and an MP4, and its reel joined", s2.ok && readFileSync(join(rt, "mov.gif")).subarray(0, 6).toString() === "GIF89a" && existsSync(join(rt, "mov.mp4")) && existsSync(join(rt, "reel.mp4")) && s2.files.includes("reel.mp4"), s2);
 }
 
 console.log("TRAY — a capture as a post's media, one click (marketing.mjs setDraftMedia)");

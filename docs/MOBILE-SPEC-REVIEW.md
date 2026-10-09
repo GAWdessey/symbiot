@@ -40,7 +40,7 @@ What Symbiot has today, in short: the computer runs `symbiot app`, a Node server
 - **A phone becomes a remote control for a computer that runs agents.** The app's full API includes `/api/agentcmd`, which sets the shell command every agent run executes (`server.mjs` 310). It also includes `/api/update`, `/api/quit`, Screens clicks and typing, and provider keys (`/api/connect`). The phone link must never get the app token or forward to that API. It needs its own short allowlist on the 7392 listener, with each route checked against that phone's token.
 - **Approve from a phone can publish a release.** Approve merges, and a version bump publishes to npm (project practice). Approving is a decision for the user (Decision 2).
 - **Announcing on the network.** mDNS tells everyone on a café's Wi-Fi that a Symbiot is there. It should announce only while the phone link is on, under a neutral name and not the computer's hostname. (Pairing currently returns `hostname()`, `phone.mjs` 78.)
-- **A relay server breaks the product's promise.** "No accounts" and "nothing leaves your computer" (README, site) stop being true once traffic goes through the company's servers (Decision 1).
+- **A relay server changes the product's promise.** "Nothing leaves your computer" (README, site) stops being true for the phone link once traffic goes through the company's relay (Decision 1). Sealing everything end to end first (task 1) keeps the content private, but the relay still sees when a pair talks and how much, and it's a service the company has to keep up. The README and site must say so (task 9).
 - **Battery.** A WebSocket held open by the Android foreground service (`SymbiotService.java`) costs battery. Polling, plus faster refresh while the app window is open, covers Mode A's "instant" feel for a fraction of the cost.
 - **Termux.** It has no Android discovery API and no camera, so typed pairing (`symbiot phone pair`, `index.mjs` 610-616) has to stay as the fallback.
 
@@ -104,7 +104,7 @@ Existing installs that finished Setup are not sent back through it.
 
 **Task.** When the phone moves between Wi-Fi and mobile data, or the computer sleeps, `pollComputer` (`phone.mjs`) only records an error and waits 2 minutes. Make it reconnect on its own:
 - On a failed poll, retry with backoff (15 s, 30 s, 1 min, then the normal 2 min).
-- Try, in order: the last working URL, the computer's other addresses saved at pairing, mDNS rediscovery (task 3), and the Tailscale address if task 9 is in.
+- Try, in order: the last working URL, the computer's other addresses saved at pairing, mDNS rediscovery (task 3), and the relay (task 9) once it's in.
 - Never drop the pairing because of a network error. Only a sealed 403 means "pair again".
 - In the Android app, poll right away when the network changes (`ConnectivityManager` callback in `SymbiotService.java`) and when the window comes to the front.
 
@@ -136,8 +136,8 @@ The phone saves the latest snapshot in `~/.config/symbiot/computer.json` and sho
 
 ### 8. Queue the phone's changes and send them when the computer is back
 
-**Task.** Let the phone make the few changes chosen in Decision 2 to the computer's state, even while the computer is away.
-- Each change is appended to `~/.config/symbiot/phone-queue.json` as `{ id: <random UUID>, at, op, args }`. Allowed ops are the absolute ones only: `task.add`, `task.setDone` (not toggle; `tasks.mjs` 52 flips), `agent.answer`, plus `pending.approve` only if Decision 2 allows it.
+**Task.** Let the phone make the few changes chosen in Decision 2 (add and tick tasks, answer agents, approve) to the computer's state, even while the computer is away.
+- Each change is appended to `~/.config/symbiot/phone-queue.json` as `{ id: <random UUID>, at, op, args }`. Allowed ops are the absolute ones only: `task.add`, `task.setDone` (not toggle; `tasks.mjs` 52 flips), `agent.answer` and `pending.approve` (Decision 2: the user wants to approve from the phone).
 - The phone applies each change to its cached snapshot at once, so the UI reflects it.
 - When the computer is reachable, the phone sends the queue in order to a new sealed route `/phone/apply`. The computer:
   - applies each op through the existing functions (`addTask`, a new `setTaskDone`, `answerQuestions`),
@@ -145,24 +145,28 @@ The phone saves the latest snapshot in `~/.config/symbiot/computer.json` and sho
   - resolves clashes as "the later change wins" by `at`,
   - replies with a per-op result and a fresh snapshot.
 - Ops that couldn't apply (the task was deleted on the computer) are shown on the phone in plain words, not silently dropped.
+- `pending.approve` carries the exact pending set the phone showed (its task ids and a hash of the diff summary). The computer applies it only if that's still what's pending, so a phone that was offline can't approve work it never saw. Then it runs the same Approve as the button. The computer shows "Approved from <phone name>" on Home and in the Agents tab, and unpairing a phone stops its approvals at once, including queued ones.
 
 Do not use a CRDT library.
 
 **Spec:** §6 (mutation queue and reconnection protocol), §4 (Mode B writes).
 **Files:** `phone.mjs`, `tasks.mjs` (`setTaskDone`), `agents.mjs` (reuse `answerQuestions`), `ui.mjs`, `home.mjs`, tests, README, CHANGELOG.
-**Done when:** tests show that sending the same queue twice applies it once, ops apply in order, and a later change on the computer wins over an earlier phone change. Any op outside the allowlist (for example a route like `agentcmd`) is refused with 403 and never reaches the app API. A task added on the phone with the computer off shows up on the computer after it starts.
+**Done when:** tests show that sending the same queue twice applies it once, ops apply in order, and a later change on the computer wins over an earlier phone change. An approve whose pending set changed since the phone saw it is refused and shown on the phone. An approve from an unpaired phone is refused. Any op outside the allowlist (for example a route like `agentcmd`) is refused with 403 and never reaches the app API. A task added on the phone with the computer off shows up on the computer after it starts.
 
-### 9. Reach the computer away from home through Tailscale
+### 9. Reach the computer away from home through a relay at symbiot.co.za
 
-**Task.** Following Decision 1, make Symbiot work with Tailscale without any server of its own.
-- `lanAddresses` (`phone.mjs` 36) recognises Tailscale addresses (interface `tailscale0` / `utun*` with 100.64.0.0/10) and labels them "works away from home" instead of ranking them last.
-- The QR (task 2) includes them.
-- The phone tries them when the LAN addresses fail (task 5).
-- In Setup's phone step and in the phone droplet, if Tailscale isn't on the computer, explain in two lines what it is and that it's free for personal use, with its download link. Don't install it automatically.
+**Task.** Following Decision 1, the phone reaches the computer through a small relay on the company's domain, `relay.symbiot.co.za`. The relay can't read what passes through it.
+- Both sides connect out to the relay over HTTPS (a WebSocket or long poll). Neither opens a port, so it works behind any router or mobile network.
+- The relay matches a phone with its computer by a pairing id: a hash of the key from task 1, never the token or the hostname. It forwards only the sealed envelopes from task 1, so it never sees a subject, a task or an answer. It keeps nothing beyond a few minutes of undelivered envelopes per pair, size-capped.
+- The relay is its own small program in this repo (`relay/`, not in the npm package's `files`). It has its own tests, rate limits per pairing id, and no accounts.
+- On the computer, the phone link connects to the relay while it's on and a phone is paired. The phone uses the relay only when LAN addresses and mDNS fail (task 5), so at home nothing goes through it.
+- Setup's phone step (task 4) and the phone droplet say in one line that away from home messages pass, sealed, through symbiot.co.za. A setting can switch the relay off, which keeps the phone on Wi-Fi only.
+- README and site: replace "nothing leaves your computer" for the phone link with what's true ("away from home, sealed messages pass through symbiot.co.za, which can't read them").
+- Where the relay runs is the open question in QUESTIONS.md (a free Cloudflare Worker, or a small server). DNS for `relay.symbiot.co.za` is the ops lane's job in the user's domains.co.za account.
 
-**Spec:** §5 (Remote WAN reachability, P2P tunnel e.g. Tailscale).
-**Files:** `phone.mjs`, `ui.mjs`, `home.mjs` (Setup text), tests (`lanAddresses` with a fake `tailscale0`), README, CHANGELOG.
-**Done when:** a test shows a 100.x address on `tailscale0` is returned and labelled. With Tailscale on both devices, the phone gets notifications and the snapshot over mobile data with Wi-Fi off. Without Tailscale, nothing changes for LAN users.
+**Spec:** §5 (Remote WAN reachability), §3 (encrypted link).
+**Files:** new `relay/` (worker or server, with its own tests), `phone.mjs`, `ui.mjs`, `home.mjs` (Setup text), tests, README, site/index.html, CHANGELOG.
+**Done when:** a test runs the relay locally between two test HOMEs. The phone gets notifications and the snapshot through it with the LAN address unreachable. A captured relay message holds no plaintext. A stranger's pairing id gets nothing. On the real phone with Wi-Fi off, notifications arrive over mobile data. With the relay switched off, nothing changes for LAN users.
 
 ### 10. Protect the stored pairing keys
 
@@ -175,19 +179,15 @@ Do not use a CRDT library.
 **Files:** `phone.mjs`, `android/src/co/symbiot/app/Bootstrap.java`, `android/src/co/symbiot/app/SymbiotService.java`, tests, README, CHANGELOG.
 **Done when:** a test shows `config.json` holds no raw phone token after pairing and old raw entries still work once, then are hashed. On the emulator, `run-as` shows no plain token in the app's files, and the app still polls after a reboot.
 
-## Decisions for the user
+## Decisions
+
+The user answered these on 2026-10-09 (`.symbiot/ANSWERS.md`).
 
 ### How should the phone reach the computer away from home?
-Today the phone only works on the same Wi-Fi as the computer.
-- Use Tailscale, a free app installed once on the computer and the phone (recommended). Symbiot runs no servers and pays nothing. Nothing passes through the company, so "nothing leaves your computer" stays true. Each user has to install and sign in to one more app.
-- Run a Symbiot relay server on the internet. It works with no extra app for users. The company pays for hosting every month and must keep the server up and secure. Users' data passes through the company's machines, which changes what the README and site can promise.
+**Through the company's domain.** "we just got a domain, www.symbiot.co.za using domains.co.za so we can log in there and you can sort things out." So task 9 is a relay at `relay.symbiot.co.za` rather than Tailscale. It is blind: everything through it is sealed by task 1, so it can't read anything. The site (`site/`, GitHub Pages) is static and can't carry it. Where the relay itself runs is still open, in `.symbiot/QUESTIONS.md`.
 
 ### What can you do from the phone?
-Today the phone can only receive notifications. Nothing on the computer can be changed from it.
-- Add tasks, tick them off and answer your agents' questions. Approve stays on the computer (recommended). The phone becomes useful away from the desk, and the worst a lost phone can do is add or tick tasks until you unpair it.
-- All of that plus Approve, which merges the work and can publish a release. You can ship from anywhere, but a lost or borrowed phone could release code until it's unpaired.
+**Add and tick tasks, answer agents' questions, and approve.** The user accepted that a lost or stolen phone could merge and release until it's unpaired. Task 8 limits that: an approve applies only to the exact pending work the phone showed, the computer says which phone approved, and unpairing stops a phone's approvals at once.
 
 ### Rebuild on the spec's stack, or keep the current one?
-The spec suggests Electron or Tauri, React Native or Flutter, and SQLite. Symbiot uses its own Node app and JSON files.
-- Keep the current stack and add the spec's features to it (recommended). The tasks above fit in weeks, users update as usual, and nothing breaks.
-- Rebuild both apps on the spec's stack. It would take months with no new features meanwhile, and current users would face a migration. In return there's a more standard base for a future iPhone app.
+**Keep the current stack** and add the spec's features to it, in the 10 tasks above. Nothing that works today gets rewritten.

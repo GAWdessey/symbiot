@@ -493,12 +493,12 @@ async function homeAsk(question, { ask, now = Date.now(), state, images = [] } =
   const h = state || homeState({ now });
   let map = {}; try { map = laneMap(); } catch {}
   const role = "Here they're on Symbiot's home: one liquid surface that shows what only they can do, what's new on what they watch, and the lanes. Answer from what it shows, and act on what they ask.";
-  const r = await converse({ where: "Home", role, context: homeContext(h), question: question + (pics.length ? `\n(The user attached ${pics.length} screenshot${pics.length > 1 ? "s" : ""}: you can see ${pics.length > 1 ? "them" : "it"}.)` : ""), map, now, images: pics.map(({ mime, data, path }) => ({ mime, data, path })), ...(ask ? { ask } : {}),
+  const r = await converse({ where: "Home", role, nav: true, context: homeContext(h), question: question + (pics.length ? `\n(The user attached ${pics.length} screenshot${pics.length > 1 ? "s" : ""}: you can see ${pics.length > 1 ? "them" : "it"}.)` : ""), map, now, images: pics.map(({ mime, data, path }) => ({ mime, data, path })), ...(ask ? { ask } : {}),
     act: {
       agent: (req, known, repo) => (repo ? actIn(req + shotNote, repo, { map, known, title: "Home" }) : actNow(req + shotNote, { title: "Home", known })),
       task: (text, repo) => taskIn(text + shotNote, repo, { map }),
     } });
-  return { answer: r.reply, ...(r.did ? { did: r.did } : {}), steps: r.steps || [] };
+  return { answer: r.reply, spoken: r.spoken, ...(r.did ? { did: r.did } : {}), ...(r.go ? { go: r.go } : {}), steps: r.steps || [] };
 }
 
 // ---- acting on a report, where you read it (reports.mjs reportIdeas) -------------------
@@ -529,7 +529,7 @@ async function reportAsk(id, question, { ask, deps = {} } = {}) {
       agent: (req, known, repo) => ((repo || lane) ? actIn(req, repo || lane, { map, known, title: "Reports" }) : actNow(req, { title: "Reports", known })),
       task: (text, repo) => taskIn(text, repo || lane, { map }),
     } });
-  return { answer: res.reply, ...(res.did ? { did: res.did } : {}), steps: res.steps || [] };
+  return { answer: res.reply, spoken: res.spoken, ...(res.did ? { did: res.did } : {}), steps: res.steps || [] };
 }
 // Approve or Reject on a draft report: its agent is told in ANSWERS.md, and an approved
 // one goes ahead (its agent starts, or takes it once the run there finishes).

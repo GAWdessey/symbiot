@@ -8,6 +8,7 @@ How to read the references:
 - Paths are relative to `/home/garthsghost/orca/projects/symbiot` unless they start with `/`.
 - Line numbers refer to commit `d08c23c`. While this was written, another run had uncommitted edits in the working tree (a marketing "pick tray", `tray.mjs`), which shift some `ui.mjs` line numbers. Those edits change nothing brand-related.
 - `symbiot-desktop` means `/home/garthsghost/orca/projects/symbiot-desktop`.
+- `desktop/` means the desktop app's folder on `main` of this repo (PR #149, merged 2026-10-09, after this report was first written). It isn't on this branch yet; its line numbers are `main`'s. npm's latest is now **0.58.2**.
 
 ---
 
@@ -72,7 +73,7 @@ How to read the references:
 | Identity | Where it is used today | Core colours |
 |---|---|---|
 | **Old "green dot"**: a glowing green status dot on dark teal ink | Base `:root` CSS tokens (`ui.mjs:12`); the header `.dot`, still shown top left in the app (`ui.mjs:387`, `:1056`); the Android launcher and notification icon (`android/res/drawable/ic_symbiot.xml`); the Android native "Starting Symbiot…" page (`android/src/co/symbiot/app/MainActivity.java:247-254`); `symbiot-desktop` on `origin/main` (a plain green disc) and on branch `symbiot/7-tasks-2026-10-05` (green dot with an orbiting companion dot, drawn by `scripts/make-icons.py`) | `#0E1A1F` ink, `#3DDC97` green, `#F4F1EA` bone |
-| **Current "liquid orb"**: a black liquid-metal sphere with a rose rim and an amber glow, in three looks | The Home liquid (WebGL); `icon.svg` / `site/icon.svg` (identical files); `icon.ico`; the window favicon; the Linux app-menu icon; the website hero; the installer worktree's icons | Ferrofluid near-blacks `#030304`–`#3A3D44`, rim `#B0466E`, glow/amber `#F2A541`, bone `#F3F0EA` |
+| **Current "liquid orb"**: a black liquid-metal sphere with a rose rim and an amber glow, in three looks | The Home liquid (WebGL); `icon.svg` / `site/icon.svg` (identical files); `icon.ico`; the window favicon; the Linux app-menu icon; the website hero; the desktop app's icons (`desktop/assets/`) | Ferrofluid near-blacks `#030304`–`#3A3D44`, rim `#B0466E`, glow/amber `#F2A541`, bone `#F3F0EA` |
 
 ### 2.2 Looks: every look and what it changes
 
@@ -528,7 +529,7 @@ Sizes were checked with `file`, `identify`, and a node script that reads the ICO
 | `android/res/drawable/ic_symbiot.xml` | Android VectorDrawable, 108×108 dp | **Old art:** a dark `#0E1A1F` circle (r = 50 dp) with a green `#3DDC97` disc (r = 24 dp). The file's comment reads "Symbiot's green dot on its dark ink, as in the app's header" |
 | `symbiot-desktop/assets/`, branch `symbiot/7-tasks-2026-10-05` (checked out) | `icon.png` 512×512 RGBA (opaque body 412×412 at +50+50). `icon.icns` with PNG entries ic07 128, ic08 256, ic09 512, ic10 1024, ic11 32, ic12 64, ic13 256 and ic14 512; **no 16×16 @1x entry**. `icon.ico`, 7 PNG images, 16–256. `tray.png` 32×32. `trayTemplate.png` 16×16. `trayTemplate@2x.png` 32×32 | **Old art:** a green `#3DDC97` dot with a glow, a green orbit ring at alpha 90, and a bone `#F4F1EA` companion dot at 45° upper right, on a rounded square with an `#15262C → #0E1A1F` gradient and an `#24404A` edge. The tray versions are the same mark without the tile: green, or black for the template |
 | `symbiot-desktop`, `origin/main` | `icon.png` 512×512, `tray.png` 32×32, `trayTemplate.png` 32×32 | **Older still:** a plain green disc |
-| `/home/garthsghost/orca/projects/symbiot/.symbiot/wt-desktop/assets/` (a worktree of `symbiot-desktop` on branch `symbiot/installer`; **uncommitted** files dated 2026-10-09 08:17) | `icon.png` 1024×1024 RGBA (full bleed, transparent corners). `icon.ico`, byte-identical to `symbiot/icon.ico`. `tray.png` 32×32 RGBA (the orb on its tile). `trayTemplate.png` 16×16 and `trayTemplate@2x.png` 32×32, grey with alpha (a solid black disc) | The Ferrofluid orb |
+| `desktop/assets/` on `main` of the `symbiot` repo (the desktop app, moved in from `symbiot-desktop` by PR #149, merged 2026-10-09) | `icon.png` 1024×1024 RGBA (full bleed, transparent corners). `icon.ico`, byte-identical to `symbiot/icon.ico`. `tray.png` 32×32 RGBA (the orb on its tile). `trayTemplate.png` 16×16 and `trayTemplate@2x.png` 32×32, grey with alpha (a solid black disc) | The Ferrofluid orb |
 
 **`icon.svg`, verbatim**
 
@@ -635,16 +636,16 @@ function iconSvg(look = "ferro") {
   - The window is a Chrome or Edge `--app` window.
   - Its icon is the page favicon, `/favicon.svg?look=…`. The code comment says: "the window's own icon (its taskbar entry), the same orb as the app menu's" (`server.mjs:247`).
 - **Tray (npm version):** none. There is no system-tray code in the `symbiot` repo.
-- **Installer app** (the uncommitted `symbiot/installer` worktree):
+- **Installer app** (`desktop/package.json` `build`, on `main` since PR #149):
   - electron-builder uses `win.icon = assets/icon.ico` (the Ferrofluid orb).
   - The installer is an NSIS one-click installer (`oneClick: true`) that makes desktop and Start-menu shortcuts named "Symbiot"; the file is `Symbiot-Setup.exe`.
-  - The tray icon is `assets/tray.png`, 32×32: the orb on its dark tile (`wt-desktop/main.js:41`).
+  - The tray icon is `assets/tray.png`, 32×32: the orb on its dark tile (`desktop/main.js:41`).
 - **symbiot-desktop committed branches:** old green art.
   - The `symbiot/7-tasks` branch uses `win.icon = assets/icon.ico`.
   - `origin/main` uses `icon.png`, a green disc.
 - **Releases:**
-  - No installer release has been published: `api.github.com/repos/GarthGhostai/symbiot-desktop/releases/latest` returns 404.
-  - The site therefore shows "Coming very soon" (`site/index.html:208-216`).
+  - The `publish.yml` desktop job attaches the installers to each release of `GarthGhostai/symbiot`. Release `apk-0.58.2` (the latest, checked 2026-10-09) carries `Symbiot-Setup.exe`, `Symbiot.dmg`, `symbiot.deb` and `Symbiot.AppImage`.
+  - The site's download buttons link to them through `releases/latest/download/<file>` (`site/index.html:164-179` on `main`). The "Coming very soon" text this report first found is gone.
 
 ### 3.2 macOS: `.icns`, Dock, menu bar
 
@@ -667,11 +668,11 @@ function iconSvg(look = "ferro") {
   - `installLauncher` does nothing on macOS: it returns `{ skipped: true }` for anything other than win32 and linux (`desktop.mjs:245-247`).
   - So there is no app bundle and no Dock icon of its own. The Chrome `--app` window shows the favicon.
   - Start at login uses a LaunchAgent, `co.symbiot.app.plist` (`desktop.mjs:117`).
-- **Installer worktree:**
+- **Installer app** (`desktop/package.json`):
   - `mac.icon = assets/icon.png` (the 1024×1024 Ferrofluid orb; electron-builder converts it).
   - It builds a universal DMG named `Symbiot.dmg`, in the productivity category.
   - There is no `.icns` and no `dmg.background`.
-  - The menu bar uses `trayTemplate.png` (16×16) and its @2x (32×32), loaded as a template through the filename (`wt-desktop/main.js:41`). Both are a solid black disc.
+  - The menu bar uses `trayTemplate.png` (16×16) and its @2x (32×32), loaded as a template through the filename (`desktop/main.js:41`). Both are a solid black disc.
 - **symbiot-desktop branch `symbiot/7-tasks`** (old green art):
   - `mac.icon = assets/icon.icns` (sizes listed in 3.0; no 16 px @1x).
   - The tray template is the ring, dot and companion mark in black, with `img.setTemplateImage(true)` (`symbiot-desktop/main.js:272-274`).
@@ -698,7 +699,7 @@ function iconSvg(look = "ferro") {
     - `StartupWMClass=chrome-127.0.0.1__-Default`, which groups the Chrome app window under this icon
   - The icon is **only** `~/.local/share/icons/hicolor/scalable/apps/symbiot.svg`: `icon.svg` in the current look's colours. No PNG sizes are installed.
 - **Autostart entry** (`~/.config/autostart/symbiot.desktop`): `NoDisplay=true`, and no icon (`desktop.mjs:150-153`).
-- **Installer worktree:**
+- **Installer app** (`desktop/package.json`):
   - The AppImage and the `.deb` (`symbiot.deb`) use `linux.icon = assets/icon.png`: 1024×1024, Ferrofluid.
   - The package synopsis is "Your work, handled alongside you".
   - The tray icon is `tray.png`.
@@ -744,7 +745,7 @@ For the DMG, electron-builder takes a `background` image. The default window is 
 
 **What exists today**
 - None of these graphics exist.
-- In the installer worktree, `nsis` is `oneClick: true` and sets no installer icon, header or sidebar.
+- In `desktop/package.json`, `nsis` is `oneClick: true` and sets no installer icon, header or sidebar.
 - `mac` sets no DMG background.
 - No BMP files exist.
 - No Inno Setup or other installer config was found.
@@ -861,6 +862,6 @@ The live site, fetched on 2026-10-09, is byte-identical to `site/index.html`. It
 
 **What this means for a new icon**
 - **The SVG.** The look switching works by exact string replacement of `stop-color` values in `icon.svg` (`desktop.mjs:171-178`). A new SVG must either keep those stop colours or come with an updated `iconSvg()`.
-- **The other icon files.** No script was found that generates `icon.ico` in the `symbiot` repo, or the PNG and tray files in the installer worktree. The only icon script is `symbiot-desktop/scripts/make-icons.py`, and it draws the old green art.
+- **The other icon files.** No script was found that generates `icon.ico` in the `symbiot` repo, or the PNG and tray files in `desktop/assets/`. The only icon script is `symbiot-desktop/scripts/make-icons.py`, and it draws the old green art.
 
 The user's message was cut off here; further section-4 questions will be added when they send them.

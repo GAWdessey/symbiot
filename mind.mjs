@@ -156,20 +156,57 @@ function actNow(request, { title, context, known, run = runHandoff, now = Date.n
 
 // ---- one voice --------------------------------------------------------------------
 const IDENTITY = `You are Symbiot, the one assistant in the user's Symbiot app. The Dashboard's cards, the Tasks list and the rest are only places they talk to you: it's all you, and you remember across them (see "What you know" and "Lately, elsewhere in the app").`;
+// The pages a chat can open (Home's: converse({ nav: true })), as the app names them,
+// with what's on each, so a vague "where are my updates" lands somewhere sensible.
+// "lane:<name>" is a lane's own page (its tasks and agent).
+const PAGES = {
+  home: ["Home", "what only they can do, what's new on what they watch, agents at work"],
+  board: ["Dashboard", "the cards of what they watch (Gmail, GitHub, WhatsApp, LinkedIn…) and what's new on each"],
+  tasks: ["Workdesk", "every lane's tasks and agents: what's running, waiting, done for review, agents' questions"],
+  reports: ["Reports", "what agents wrote up for them to read (audits, findings, plans)"],
+  marketing: ["Marketing", "the marketing lane: drafts of posts to approve, its agent"],
+  week: ["Week", "their week, written up from their real work"],
+  standup: ["Standup", "a standup from yesterday's work"],
+  todo: ["Todo", "TODOs and FIXMEs found in their code"],
+  drift: ["Drift", "uncommitted, unpushed and stale work across repos"],
+  map: ["Map", "their repos as a map"],
+  settings: ["Settings", "the AI, their agent, folders, linked sites, email, voice"],
+  archive: ["Archive", "tasks that were done or dropped"],
+};
+// A "go" from the model, checked: { to, label, why?, alts: [{ to, label }] }, or null.
+// A page or a lane that isn't there is dropped, never made up.
+function goOf(g, lanes = []) {
+  if (!g) return null;
+  const one = (x) => {
+    const t = String(x || "").trim().toLowerCase().replace(/^#/, "");
+    const m = t.match(/^lane:\s*(.+)$/); if (m) { const n = lanes.find((l) => l.toLowerCase() === m[1].trim()); return n ? { to: "lane:" + n, label: n } : null; }
+    const id = PAGES[t] ? t : t === "agents" ? "tasks" : Object.keys(PAGES).find((k) => PAGES[k][0].toLowerCase() === t);
+    if (id) return { to: id, label: PAGES[id][0] };
+    const n = lanes.find((l) => l.toLowerCase() === t); return n ? { to: "lane:" + n, label: n } : null;
+  };
+  const to = one(typeof g === "string" ? g : g.to); if (!to) return null;
+  const why = typeof g === "object" ? String(g.why || "").replace(/\s+/g, " ").trim().slice(0, 200) : "";
+  const alts = (typeof g === "object" && Array.isArray(g.alts) ? g.alts : []).map(one).filter((a) => a && a.to !== to.to).filter((a, i, l) => l.findIndex((b) => b.to === a.to) === i).slice(0, 2);
+  return { ...to, ...(why ? { why } : {}), alts };
+}
+const navRules = () => `
+"go": null, or a page to open now: {"to": "${Object.keys(PAGES).join("|")}|lane:<a lane>", "why": "", "alts": []}. Pages: ${Object.entries(PAGES).map(([k, [n, what]]) => `${k} (${n}: ${what})`).join("; ")}.
+You can open any of these pages: when they ask to go somewhere (go to, take me to, navigate to, open, show me, where's), open it with "go", and never say you can't switch pages. A clear ask ("take me to reports") just goes: "why" empty, "alts" [], the reply a few words ("Opening Reports."). A vague one ("show me that thing from earlier", "where are my updates"): don't ask which, opening a page is easy to undo. Pick the likeliest from what you know, this chat, other chats lately and what Home shows; "why" says in one short line why you picked it, also said in the reply; "alts" has 1-2 other pages they may have meant (these are your other readings, offered as one tap each).`;
 // lanes: the repos "do" can point at; self: Symbiot's own repo among them, where
-// a flaw in Symbiot itself is fixed.
-function rulesFor(lanes = [], self = "") {
+// a flaw in Symbiot itself is fixed; nav: this chat can open pages ("go").
+function rulesFor(lanes = [], self = "", nav = false) {
   return `Reply with JSON only, no markdown fence:
 {"reply": "what you say, plain text, brief, no preamble",
- "do": null or {"agent": "what a coding agent should do now: self-contained, with names, links and ids", "repo": "the lane it's for, or empty"} or {"task": "a task for later", "repo": "the lane it's for, or empty"},
+ "do": null or {"agent": "what a coding agent should do now: self-contained, with names, links and ids", "repo": "the lane it's for, or empty"} or {"task": "a task for later", "repo": "the lane it's for, or empty"},${nav ? `
+ "go": null or {"to": "…", "why": "…", "alts": ["…"]},` : ""}
  "remember": [{"name": "…", "kind": "person|account|site|repo|project|decision|preference", "fact": "…"}]}
 When they ask you to do something (look into it, find out, fix, set up, sign in, close, send, chase), do it, don't explain what you can't do: "agent" starts a coding agent now, with their tools and connectors (MCP, the command line, a browser signed in to their linked sites). With a "repo", it's that project's agent, working in it; empty, an agent for everything outside a repo (this computer, accounts, services). Use "task" for what's for later. Don't ask their permission to hand it over: the agent asks them first, on the Workdesk, before anything hard to undo (closing an account, deleting, paying, sending); say so in your reply when it applies, with what to check first. A question you can answer from what's here: answer it, "do": null.
 Lanes ("repo" is one of these, exactly): ${lanes.length ? lanes.slice(0, 60).join(", ") : "(none found)"}.${lanes.includes(MARKETING) ? ` "${MARKETING}" is a lane of its own for marketing any of their products (posts, demo videos, launches, campaigns, pricing pages' copy): marketing work goes there, starting with the product it's for in brackets, "[Dailify] a launch post".` : ""}${self ? ` Symbiot itself is "${self}": a flaw in how Symbiot works (how it read a page, what a brief or a card said, anything in the app) goes there.` : ""}
 Don't wait to be asked to fix Symbiot. When you notice it got something wrong (you misread a page, a brief or a card misled them, a step made them do an agent's job), say so plainly and, in the same reply, start the fix: "agent"${self ? ` with "repo": "${self}"` : ""}, saying what went wrong, an example, and what it should do instead.
 A short answer (yes, yeah, ok, sure, go, do it, that one, 2) answers what you last said in "This chat so far", never something from elsewhere in the app. If you'd proposed a task or an agent and they agree, do it now in "do", in the lane you named.
 Hash it out first: when they bring an idea rather than a clear ask, sharpen it with them: say what's strong, push back where it's weak, add what's missing, and propose it as a task (naming the lane) once it holds up. "do" stays null until they agree.
-When an ask could mean two or more things (which lane, how much, what done looks like), don't guess: "do" stays null, and the reply gives 2-3 short numbered readings, your pick first, and asks which. A clear ask goes straight through.
-"remember": only lasting facts worth knowing on another page (who someone is, which account is what, a decision, how they like things); [] for anything else.`;
+When an ask could mean two or more things (which lane, how much, what done looks like), don't guess: "do" stays null, and the reply gives 2-3 short numbered readings, your pick first, and asks which. A clear ask goes straight through.${nav ? ` Where to go is the exception: see "go".` : ""}
+"remember": only lasting facts worth knowing on another page (who someone is, which account is what, a decision, how they like things); [] for anything else.${nav ? navRules() : ""}`;
 }
 // Symbiot's own repo among your lanes (its package.json is symbiot's), or "".
 function selfLane(map) {
@@ -200,15 +237,30 @@ function actIn(request, repo, { map = {}, known = "", title, context, run = runH
 // The line under a handover's reply, from what actIn did (see there).
 function handedLine(did) {
   const lane = did.lane, u = did.urgent, un = u && u.unparked ? ` ${lane} was parked; I unparked it for this.` : "";
-  if (did.notStarted) return `\n\n→ Added to ${lane}'s tasks, but its agent didn't start: ${did.notStarted.replace(/\.?$/, ".")}${un} It's on the Workdesk.`;
+  if (did.notStarted) return `\n\nAdded to ${lane}'s tasks, but its agent didn't start: ${did.notStarted.replace(/\.?$/, ".")}${un} It's on the Workdesk.`;
   const parked = u && u.parked.length ? ` Parked till it's done: ${u.parked.join(", ")} (a run already going there finishes first, then they wait). They pick up again in that order once it's done.` : "";
   if (u) {
     const how = did.job ? (u.stopped ? `, which stopped what it was on (its changes stay) and started on this now` : ", which started on it now")
       : did.behind === "urgent" ? ` (it's on other urgent work right now, and takes this next)`
       : u.stopped ? `, which is stopping what it was on (its changes stay) to start on this` : ` (it starts once the run there now finishes)`;
-    return `\n\n→ Urgent, so it goes first: handed to ${lane}'s agent${how}.${un}${parked || (did.job ? " Nothing else was running to park." : "")} It's on the Workdesk.`;
+    return `\n\nUrgent, so it goes first: handed to ${lane}'s agent${how}.${un}${parked || (did.job ? " Nothing else was running to park." : "")} It's on the Workdesk.`;
   }
-  return `\n\n→ Handed to ${lane}'s agent, as a task there${did.queued ? " (it starts once the run there now finishes)" : ", which started on it now"}.${un} It's on the Workdesk.`;
+  return `\n\nHanded to ${lane}'s agent, as a task there${did.queued ? " (it starts once the run there now finishes)" : ", which started on it now"}.${un} It's on the Workdesk.`;
+}
+// The same line, read aloud: a short natural phrase, never the task or the agent's brief
+// (the screen has those), and nothing when the reply already said it ("done, it's
+// queued in symbiot"). Reported 2026-10-09: "right arrow added to symbiote tasks: …".
+const SAID_TASK = /\b(add(ed|ing)?|queued?|put it|noted|on (the|your|its|their) (list|tasks|workdesk)|in (the |your |its )?tasks)\b/i;
+const SAID_AGENT = /\b(hand(ed|ing)? (it |this |that )?(to|over|off)|queued?|on it|started|starting|kicked off|(agent|it)('s| is) (on|working|looking|fixing|doing))\b/i;
+function spokenLine(did, reply = "") {
+  if (!did) return "";
+  if (did.error) return did.kind === "agent" ? "I couldn't hand it to an agent. Why is on screen." : "I couldn't add the task. Why is on screen.";
+  if (did.kind === "task") return SAID_TASK.test(reply) ? "" : did.lane ? `I've added it to ${did.lane}'s tasks.` : "I've added it to your tasks, but not to a project yet.";
+  if (did.notStarted) return `I've added it to ${did.lane}'s tasks, but its agent didn't start. It's on the Workdesk.`;
+  if (SAID_AGENT.test(reply)) return "";
+  if (!did.lane) return "I've handed it to an agent.";
+  if (did.urgent) return `It's urgent, so ${did.lane}'s agent does it first.`;
+  return did.queued ? `I've handed it to the ${did.lane} agent. It starts once its current run finishes.` : `I've handed it to the ${did.lane} agent.`;
 }
 // For later: on the list, in a repo's lane if it names one Symbiot knows.
 function taskIn(text, repo, { map = {}, add = addTask } = {}) {
@@ -227,7 +279,7 @@ function parseReply(raw) {
 // what this page is for; context: what the page shows; history: this chat's
 // own last turns. act: { agent(request) -> result, task(text, repo) -> result },
 // what "do" runs here. Gives { reply, did?, remembered }.
-async function converse({ where, role = "", context = "", history = "", question, act = {}, ask = write, map = null, now = Date.now(), images = [] }) {
+async function converse({ where, role = "", context = "", history = "", question, act = {}, ask = write, map = null, now = Date.now(), images = [], nav = false }) {
   const d = loadMind(), hits = recall(question, now, d), known = recallText(hits), elsewhere = lately(where, d);
   if (!history) history = ownThread(where, d, now);
   // what it did to answer, to show under the reply (as the app shows an agent's work)
@@ -241,27 +293,30 @@ async function converse({ where, role = "", context = "", history = "", question
   let lanes = map; if (!lanes) { try { lanes = laneMap(); } catch { lanes = {}; } }
   // how they talk, from what they've typed into any chat (adapt.mjs: accommodation)
   const voice = styleLine(styleOf(d.log.filter((l) => l.role === "user").map((l) => l.text).concat(question)));
-  const system = `${IDENTITY} ${role}\n\n${rulesFor(Object.keys(lanes), selfLane(lanes))}${voice ? "\n" + voice : ""}`;
+  const system = `${IDENTITY} ${role}\n\n${rulesFor(Object.keys(lanes), selfLane(lanes), nav)}${voice ? "\n" + voice : ""}`;
   const prompt = (known ? `What you know (from across the app):\n${known}\n\n` : "") + (kn.text ? kn.text + "\n\n" : "") + (elsewhere ? `Lately, elsewhere in the app (other chats: a short answer here doesn't reply to these):\n${elsewhere}\n\n` : "") +
     (context ? context + "\n\n" : "") + (history ? `This chat so far:\n${history}\n\n` : "") + `They say (on ${where}): ${question}`;
   const raw = await ask(system, prompt, images.length ? { images } : undefined);
   if (!raw || /^\(?couldn't reach the model/i.test(String(raw))) return { reply: "(couldn't reach the model)", remembered: 0 };
   const j = parseReply(raw);
   let reply = String(j.reply || "").trim().slice(0, 4000) || "(no answer)", did = null;
-  const want = j.do && typeof j.do === "object" ? j.do : null;
+  const said = reply;
+  const want = j.do && typeof j.do === "object" ? j.do : null, go = nav ? goOf(j.go, Object.keys(lanes)) : null;
   // say where it actually went, from what happened, not from what the model meant
   const repo = want ? String(want.repo || "") : "";
   if (want && want.agent && act.agent) {
     did = { kind: "agent", request: String(want.agent).slice(0, HANDOVER_MAX), ...(await act.agent(String(want.agent), known, repo)) };
     reply += did.error ? `\n\n(I couldn't hand it to an agent: ${did.error})`
       : did.lane ? handedLine(did)
-      : "\n\n→ Handed to your agent. It's on the Workdesk, and it asks you there before anything hard to undo.";
+      : "\n\nHanded to your agent. It's on the Workdesk, and it asks you there before anything hard to undo.";
   } else if (want && want.task && act.task) {
     did = { kind: "task", text: String(want.task).slice(0, 300), ...(await act.task(String(want.task), repo)) };
     reply += did.error ? `\n\n(I couldn't add the task: ${did.error})`
-      : did.lane ? `\n\n→ Added to ${did.lane}'s tasks: ${did.text}`
-      : `\n\n→ Added to your tasks, but not to a repo${repo ? ` (there's no lane called ${repo})` : ""}, so no agent will pick it up until it has one: ${did.text}`;
+      : did.lane ? `\n\nAdded to ${did.lane}'s tasks: ${did.text}`
+      : `\n\nAdded to your tasks, but not to a repo${repo ? ` (there's no lane called ${repo})` : ""}, so no agent will pick it up until it has one: ${did.text}`;
   }
+  // what's read aloud: the reply, then the line under it as a short phrase (spokenLine)
+  const line = spokenLine(did, said), spoken = line ? `${said} ${line}` : said;
   // read again: another chat may have written while the model answered
   const d2 = loadMind(), remembered = rememberIn(d2, j.remember, where, now);
   logTurn(where, "user", question, now, d2); logTurn(where, "ai", reply, now, d2);
@@ -269,9 +324,10 @@ async function converse({ where, role = "", context = "", history = "", question
   if (voice) steps.push("matched how you talk");
   if (did && !did.error) steps.push(did.kind === "agent" ? (did.notStarted ? `added a task to ${did.lane}: its agent didn't start` : did.lane ? `handed it to ${did.lane}'s agent` : "handed it to an agent") : did.lane ? `added a task to ${did.lane}` : "added a task");
   if (remembered) steps.push(`remembered ${remembered} new thing${remembered > 1 ? "s" : ""}`);
-  return { reply, ...(did ? { did } : {}), remembered, steps };
+  if (go) steps.push(`opened ${go.label}`);
+  return { reply, spoken, ...(did ? { did } : {}), ...(go ? { go } : {}), remembered, steps };
 }
 // The usual "task" act, for a caller with no lanes of its own to pass.
 const addToTasks = (text, repo) => { let map = {}; try { map = laneMap(); } catch {} return taskIn(text, repo, { map }); };
 
-export { MIND_FILE, loadMind, remember, recall, recallText, lately, mindState, forget, actBrief, actNow, actIn, taskIn, selfLane, rulesFor, parseReply, converse, addToTasks , ownThread };
+export { MIND_FILE, loadMind, remember, recall, recallText, lately, mindState, forget, actBrief, actNow, actIn, taskIn, selfLane, rulesFor, parseReply, converse, spokenLine, goOf, PAGES, addToTasks , ownThread };

@@ -52,14 +52,15 @@ try {
   const { result: { sessionId } } = await send("Target.attachToTarget", { targetId, flatten: true });
   const s = (m, p) => send(m, p, sessionId);
   const js = async (e) => { const r = await s("Runtime.evaluate", { expression: e, returnByValue: true, awaitPromise: true }); return r.result && r.result.exceptionDetails ? "EXC: " + JSON.stringify(r.result.exceptionDetails).slice(0, 300) : r.result && r.result.result ? r.result.result.value : null; };
-  const until = async (e, ms = 15000) => { const t = Date.now(); while (Date.now() - t < ms) { if (await js(e)) return true; await sleep(250); } return false; };
+  const until = async (e, ms = 15000) => { const t = Date.now(); while (Date.now() - t < ms) { if ((await js(e)) === true) return true; await sleep(250); } return false; };
   await s("Page.enable"); await s("Runtime.enable");
   await s("Emulation.setDeviceMetricsOverride", { width: 1590, height: 900, deviceScaleFactor: 1, mobile: false });
   await s("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value: "reduce" }] });
   await s("Page.navigate", { url });
   const BLOB = "[...document.querySelectorAll('#lqdrops .lqblob')].find(function(b){return /Post 1/.test(b.textContent)})";
+  const find = `(function(){if(${BLOB})return true;if(LQ.need&&LQ.need.pages>1)lqNeedPage();return false;})()`; // page through the band to it: setup cards (no Claude Code on CI) come first
   console.log("DRAFTS — typing survives Home refreshing under it");
-  ok("Home shows the question as a blob", await until(`!!(${BLOB})`), await js("JSON.stringify((LQ.home&&LQ.home.you||[]).map(function(y){return y.q}))"));
+  ok("Home shows the question as a blob", await until(find), await js("JSON.stringify((LQ.home&&LQ.home.you||[]).map(function(y){return y.q}))"));
   await js(`(function(){var b=${BLOB};b.querySelector('.bfree').click();})()`);
   await js(`(function(){var i=(${BLOB}).querySelector('.bfx input');i.focus();})()`);
   await s("Input.insertText", { text: "redo it, but keep the first line and" });
@@ -83,7 +84,6 @@ try {
 
   console.log("DRAFTS — a reload brings it back; sending clears it");
   await s("Page.reload"); await sleep(500);
-  const find = `(function(){if(${BLOB})return true;if(LQ.need&&LQ.need.pages>1)lqNeedPage();return false;})()`; // page through the band to it
   ok("after a reload, the card comes back", await until(find));
   const back = JSON.parse(await js(`JSON.stringify((function(){var b=${BLOB},f=b.querySelector('.bfx'),i=f.querySelector('input');return {value:i.value,open:!f.classList.contains('hidden')};})())`));
   ok("with your draft in its box, the box open", back.value === "redo it, Xbut keep the first line and" && back.open, back);

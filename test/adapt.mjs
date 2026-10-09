@@ -155,6 +155,18 @@ try {
   const again = crowd(1600, 1000); lqRelax(again, { w: 1600, h: 1000 }, 800, 470, 90);
   ok("the same data, the same layout (deterministic: nothing jitters from run to run)", JSON.stringify(again) === JSON.stringify(big), "");
 
+  console.log("GOING SOMEWHERE BY ASKING — straight there, no wait for the model (2026-10-09)");
+  {
+    const line = (re) => uiJs.match(re)[0];
+    const { lqNavHit } = new Function([line(/var LQNAMES=\{[^}]*\};/), line(/var LQ_NAV_ALIAS=\{[^}]*\};/), grab("lqNavHit")].join("\n") + "\nreturn { lqNavHit };")();
+    const cases = { "navigate me to reports": "reports", "take me to reports": "reports", "Take me to Reports.": "reports", "can you open settings please": "settings", "go to the workdesk": "tasks", "show me my tasks": "tasks", "open the dashboard": "board", "dashboard": "board", "reports": "reports", "open my week": "week", "take me home": "home", "go back home": "home", "Symbiot, navigate to marketing": "marketing", "open archive": "archive" };
+    const got = Object.fromEntries(Object.keys(cases).map((q) => [q, lqNavHit(q)]));
+    ok("clear asks go straight to their page", Object.keys(cases).every((q) => got[q] === cases[q]), got);
+    const not = ["show me that thing from earlier", "where are my updates", "go for it", "go", "home", "open settings and change my voice", "show me the bug in dailify"];
+    ok("…a vague ask, or more than a page, goes to the model (it picks and says why)", not.every((q) => lqNavHit(q) === ""), not.map((q) => [q, lqNavHit(q)]));
+    ok("the model's pick opens, with its reason and the others on the page it opened", /if\(r\.go&&r\.go\.to\)\{lqNav\(r\.go\.to,r\.go\)/.test(uiJs) && /id="lqwhy"/.test(EMBEDDED_UI), "");
+  }
+
   console.log("HOME'S LAYOUT — agents at work in a band of their own; no label, heading or orb on another (2026-10-08)");
   {
     const line = (re) => uiJs.match(re)[0];

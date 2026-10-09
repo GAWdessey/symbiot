@@ -264,7 +264,7 @@ const calls = [
   ["/api/marketing/draft", "GET"],  // no draft named -> "isn't there", nothing read
   ["/api/marketing/draft/answer", "POST"], // no draft named -> refused, nothing approved, no agent starts
   ["/api/marketing/tray", "GET"],   // the pick tray (isolated HOME -> no trays)
-  ["/api/marketing/tray/blur", "POST"], // no tray named -> refused, nothing written, tray.py not run
+  ["/api/marketing/tray/blur", "POST"], // no tray named -> refused, nothing written, ffmpeg not run
   ["/api/marketing/tray/use", "POST"], // no draft named -> refused, no media line written
   ["/api/watch", "GET"],           // watched pages + what's new (isolated HOME -> none)
   ["/api/watch/add", "POST"],       // no screen or site -> refused, nothing saved

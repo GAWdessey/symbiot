@@ -122,6 +122,10 @@ body.lq-liquid .tabs{display:none}
 body.lq-liquid main{display:none}
 body.lq-liquid.lq-pooled main{display:block;position:fixed;top:64px;left:max(12px,4vw);right:max(12px,4vw);bottom:88px;z-index:5;border-radius:24px;background:var(--ink);border:1px solid rgba(220,228,240,.25);box-shadow:0 30px 80px -30px rgba(0,0,0,.8)}
 #lqsinkrow{display:none}
+#lqwhy{display:none}
+body.lq-liquid.lq-pooled #lqwhy.on{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:0 0 12px;color:#8A919B;font-size:13px;line-height:1.5}
+#lqwhy .lqmb{min-height:34px;padding:5px 13px;font-size:13px}
+body.lq-light #lqwhy{color:#5A6470}
 body.lq-liquid.lq-pooled #lqsinkrow{display:flex;justify-content:space-between;align-items:center;gap:12px;position:sticky;top:0;z-index:2;margin:-8px -6px 10px;padding:6px 6px 10px;border-bottom:1px solid rgba(220,228,240,.12);background:rgba(6,8,11,.9);backdrop-filter:blur(14px)}
 body.lq-liquid.lq-light.lq-pooled #lqsinkrow{background:rgba(246,248,251,.94);border-bottom-color:rgba(20,30,45,.1)}
 /* where you are: the section (or the project) you opened, named large at the top of its panel */
@@ -374,6 +378,9 @@ details.steps summary::-webkit-details-marker{display:none}
 details.steps summary::before{content:'';width:5px;height:5px;border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;transform:rotate(-45deg);transition:transform .2s ease}
 details.steps[open] summary::before{transform:rotate(45deg)}
 details.steps ul{margin:6px 0 0;padding:0 0 0 12px;list-style:none;border-left:1px solid var(--line);display:flex;flex-direction:column;gap:3px}
+.lqmsg .lqalts{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:8px;color:#8A919B;font-size:13px}
+.lqmsg .lqalts .lqmb{min-height:36px;padding:6px 14px;font-size:13px;text-shadow:none}
+body.lq-light .lqmsg .lqalts{color:#5A6470}
 .lqmsg details.steps{color:#8A919B}
 body.lq-light .lqmsg details.steps{color:#5A6470}
 .thinking{background:linear-gradient(90deg,#8C96A6 0%,#FFFFFF 40%,#8C96A6 60%,#8C96A6 100%);background-size:220% 100%;-webkit-background-clip:text;background-clip:text;color:transparent !important;animation:lqshim 2.2s linear infinite}
@@ -1076,7 +1083,7 @@ body.lq-light .btip .bta button:not(.quiet){background:#151A21;color:#FFFFFF}
 <button class="tab" data-tab="settings">Settings</button>
 </div>
 <main>
-<div id="lqsinkrow"><div class="lqwhere"><span id="lqcrumb" class="lqcrumb">Home</span><h2 id="lqtitle" aria-live="polite"></h2><button type="button" class="ghost hidden" id="lqpark"></button></div><div class="lqacts"><span id="lqtools"><button class="ghost hidden" type="button" id="pushtasks" title="Write .symbiot/TASKS.md into each repo for your coding agent">Send to repos</button></span><button class="iconbtn wide" type="button" id="lqsink" title="close it: it sinks back into the liquid (Esc, or right-click)"><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M2 2l8 8M10 2l-8 8" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>Close</button></div></div>
+<div id="lqsinkrow"><div class="lqwhere"><span id="lqcrumb" class="lqcrumb">Home</span><h2 id="lqtitle" aria-live="polite"></h2><button type="button" class="ghost hidden" id="lqpark"></button></div><div class="lqacts"><span id="lqtools"><button class="ghost hidden" type="button" id="pushtasks" title="Write .symbiot/TASKS.md into each repo for your coding agent">Send to repos</button></span><button class="iconbtn wide" type="button" id="lqsink" title="close it: it sinks back into the liquid (Esc, or right-click)"><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M2 2l8 8M10 2l-8 8" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>Close</button></div></div><div id="lqwhy" aria-live="polite"></div>
 <section id="panel-map">
 <div class="profile muted" id="profile">Mapping your work&hellip;</div>
 <div class="maprow">
@@ -2285,7 +2292,7 @@ var at=function(x){var c=x.closest('.mkcap');return {t:ts[+c.getAttribute('data-
 el.querySelectorAll('.mkchip').forEach(function(c){var box=function(){return c.closest('.mkcap').querySelector(".mkbox[data-b='"+c.getAttribute('data-b')+"']");};c.addEventListener('mouseenter',function(){var x=box();if(x)x.classList.add('hl');});c.addEventListener('mouseleave',function(){var x=box();if(x)x.classList.remove('hl');});});
 el.querySelectorAll('.mkbox,.mkchip').forEach(function(b){b.addEventListener('click',function(){var a=at(b),g=mkBoxes(a.c)[+b.getAttribute('data-b')];if(!g||a.el.classList.contains('busy'))return;a.el.classList.add('busy');
 api('/api/marketing/tray/blur',{tray:a.t.rel,name:a.c.name,id:g.ids,on:!g.all}).then(function(r){a.el.classList.remove('busy');if(!r||r.error){mkMsg('err',esc((r&&r.error)||'failed'));return;}
-mkMsg(r.rendered?'ok':'err',r.rendered?(g.all?"Shown: that box isn&#39;t blurred in it now.":"Blurred: that box is blurred in it now."):"Saved, but it isn&#39;t "+(g.all?"shown":"blurred")+" in the picture yet: "+esc(r.note||'tray.py didn&#39;t run'));loadMkTray();}).catch(function(e){a.el.classList.remove('busy');mkMsg('err',esc(String((e&&e.message)||e)));});});});
+mkMsg(r.rendered?'ok':'err',r.rendered?(g.all?"Shown: that box isn&#39;t blurred in it now.":"Blurred: that box is blurred in it now."):"Saved, but it isn&#39;t "+(g.all?"shown":"blurred")+" in the picture yet: "+esc(r.note||'it couldn&#39;t be blurred'));loadMkTray();}).catch(function(e){a.el.classList.remove('busy');mkMsg('err',esc(String((e&&e.message)||e)));});});});
 var useIt=function(x,d){var a=at(x),dr=a.t.drafts[d];if(!dr)return;x.disabled=true;
 api('/api/marketing/tray/use',{rel:dr.rel,file:a.c.use}).then(function(r){x.disabled=false;if(!r||r.error){mkMsg('err',esc((r&&r.error)||'failed'));return;}mkMsg('ok',"&ldquo;"+esc(dr.name)+"&rdquo; now shows "+esc(a.c.caption||a.c.name)+"."+(r.reopened?" It was approved with another, so it asks for your OK again.":""));loadMarketing();}).catch(function(e){x.disabled=false;mkMsg('err',esc(String((e&&e.message)||e)));});};
 el.querySelectorAll('.mkuseb').forEach(function(b){b.addEventListener('click',function(){useIt(b,+b.getAttribute('data-d'));});});
@@ -3082,8 +3089,8 @@ function lqRemember(){if(LQ.back)return;LQ.hist=LQ.hist||[];var s=lqState(),top=
 function lqBack(){var h=LQ.hist||[],s=h.pop(),cur=lqState();if(!s){if(cur.pool)s={scene:cur.scene,pool:null};else if(cur.scene==='work')s={scene:'home',pool:null};else return;}
 LQ.back=true;try{if(s.scene==='work'&&(cur.scene!=='work'||cur.by!==s.by)){LQ.workBy=s.by||'task';lqWork();}else if(s.scene==='home'&&cur.scene==='work')lqHome();
 if(s.pool){if(s.arch)lqArchive();else lqPool(s.pool);}else if(LQ.mode==='pool')lqSink();}finally{LQ.back=false;}}
-function lqPool(shape){if(shape==='map'&&LM.items&&LM.items.length)setTimeout(function(){lmFit();lmStart();},60);lqRemember();LQ.poolShape=shape;LQ.arch=false;tabPicked=true;setTab(shape);var b=document.body;if(b&&b.classList)b.classList.add('lq-pooled');LQ.mode='pool';var m=document.querySelector('main');if(m){m.scrollTop=0;if(m.focus)m.focus();}}
-function lqSink(){lqRemember();LQ.focus=null;var b=document.body;if(b&&b.classList)b.classList.remove('lq-pooled');LQ.mode='aware';lqAct();lqLoad(false);}
+function lqPool(shape){lqWhy(null);if(shape==='map'&&LM.items&&LM.items.length)setTimeout(function(){lmFit();lmStart();},60);lqRemember();LQ.poolShape=shape;LQ.arch=false;tabPicked=true;setTab(shape);var b=document.body;if(b&&b.classList)b.classList.add('lq-pooled');LQ.mode='pool';var m=document.querySelector('main');if(m){m.scrollTop=0;if(m.focus)m.focus();}}
+function lqSink(){lqWhy(null);lqRemember();LQ.focus=null;var b=document.body;if(b&&b.classList)b.classList.remove('lq-pooled');LQ.mode='aware';lqAct();lqLoad(false);}
 function lqAct(){if(AWAY)return;LQ.lastAct=Date.now();if(LQ.mode==='rest'){LQ.mode='aware';lqLoad(true);}}
 function lqTalkMode(on){LQ.talking=on;var b=document.body;if(b&&b.classList)b.classList.toggle('lq-talking',on);}
 // Minimize: the chat shrinks back to its input and Home comes back as it was; what was
@@ -3096,7 +3103,8 @@ var h=!n?'':LQ.talkMin?"<button type='button' class='lqtb-open' aria-expanded='f
 if(!sameHtml(el,h)){var bt=el.querySelector('button');if(bt)bt.addEventListener('click',function(){if(LQ.talkMin)lqChatOpen();else lqChatMin();});}}
 function lqChatMin(){if(!LQ.talk.length||LQ.talkMin)return;LQ.talkMin=true;var i=$('lqask');if(i&&i.blur&&document.activeElement===i)i.blur();lqTalkMode(false);lqTalkBar();lqAct();}
 function lqChatOpen(){LQ.talkMin=false;lqTalkMode(true);lqTalkShow(false);lqAct();var i=$('lqask');if(i&&i.focus)i.focus();}
-function lqTalkShow(wait){var el=$('lqtalk');if(!el)return;var n=LQ.talk.length;el.innerHTML=LQ.talk.map(function(m,i){var age=n-1-i,op=age<2?1:age===2?0.7:age===3?0.45:0.25;return "<div class='lqmsg"+(m.me?' me':'')+"' style='opacity:"+op+"'>"+(m.imgs&&m.imgs.length?"<span class='lqmimgs'>"+m.imgs.map(function(d){return "<img src='"+d+"' alt='your screenshot'>";}).join('')+"</span>":"")+esc(m.text)+stepsHtml(m.steps)+"</div>";}).join('')+(wait?"<div class='lqmsg thinking'>Thinking: recalling what it knows, reading what's here&hellip;</div>":'');if(el.scrollHeight)el.scrollTop=el.scrollHeight;
+function lqTalkShow(wait){var el=$('lqtalk');if(!el)return;var n=LQ.talk.length;el.innerHTML=LQ.talk.map(function(m,i){var age=n-1-i,op=age<2?1:age===2?0.7:age===3?0.45:0.25;return "<div class='lqmsg"+(m.me?' me':'')+"' style='opacity:"+op+"'>"+(m.imgs&&m.imgs.length?"<span class='lqmimgs'>"+m.imgs.map(function(d){return "<img src='"+d+"' alt='your screenshot'>";}).join('')+"</span>":"")+esc(m.text)+lqAltsHtml(m.go)+stepsHtml(m.steps)+"</div>";}).join('')+(wait?"<div class='lqmsg thinking'>Thinking: recalling what it knows, reading what's here&hellip;</div>":'');if(el.scrollHeight)el.scrollTop=el.scrollHeight;
+el.querySelectorAll('[data-go]').forEach(function(b){b.addEventListener('click',function(){lqNav(b.getAttribute('data-go'));});});
 // scrolled up to read back: the whole history shows, clear; back at the bottom it rolls on again
 if(!el.wired&&el.addEventListener){el.wired=true;el.addEventListener('scroll',function(){var up=el.scrollHeight-el.scrollTop-el.clientHeight>24;if(el.classList)el.classList.toggle('back',up);});}lqTalkBar();}
 // Screenshots in the talk: paste one (Ctrl+V) or drop it on the bar; it shows as a
@@ -3136,7 +3144,8 @@ try{r.start();}catch(e){VOICE.on=false;voiceMic(false);}}
 // Speaking, with no voice to choose: the system's own when it has a natural one
 // (Edge on Windows, Macs with Apple's better voices, phones), in your region's accent if it has that too;
 // otherwise Symbiot's own (voice.mjs: Piper on this computer), fetched once in the
-// background the first time, with the system's voice meanwhile. Plain words only.
+// background the first time, with the system's voice meanwhile. Plain words only: the
+// reply's spoken version (mind.mjs spokenLine), and no arrows read out as "right arrow".
 var SPEAK={audio:null,n:0,own:null,asked:false};
 function voiceLang(){return navigator.language||'en-US';}
 function voiceTag(v){return String((v&&v.lang)||'').toLowerCase().split('_').join('-');}
@@ -3148,7 +3157,7 @@ if(!good.length&&/android|iphone|ipad/i.test(navigator.userAgent||''))good=vs; /
 good.sort(function(a,b){return (voiceTag(b)===tag)-(voiceTag(a)===tag);});
 return {best:good[0]||null,any:good[0]||vs[0]||null};}
 function voiceStop(){SPEAK.n++;try{if(window.speechSynthesis)window.speechSynthesis.cancel();}catch(e){}if(SPEAK.audio){try{SPEAK.audio.pause();}catch(e){}SPEAK.audio=null;}}
-function voiceClean(t){var clean=String(t||'').replace(/[*_#>|]+/g,' ').replace(new RegExp(String.fromCharCode(96),'g'),'').replace(/https?:[^ ]+/g,'a link').replace(/ +/g,' ').trim();
+function voiceClean(t){var clean=String(t||'').replace(/\\s*[\\u2190-\\u21ff\\u2794-\\u27bf\\u27f5-\\u27ff]\\s*/g,', ').replace(/(^|[.?!:]), /g,'$1 ').replace(/[*_#>|]+/g,' ').replace(new RegExp(String.fromCharCode(96),'g'),'').replace(/https?:[^ ]+/g,'a link').replace(/ +/g,' ').trim();
 if(clean.length>700){var cut=clean.slice(0,700),at=Math.max(cut.lastIndexOf('. '),cut.lastIndexOf('? '),cut.lastIndexOf('! '));clean=(at>200?cut.slice(0,at+1):cut)+' The rest is on screen.';}
 return clean;}
 function voiceSystem(text,v){if(!window.speechSynthesis||!text)return;try{var u=new SpeechSynthesisUtterance(text);if(v)u.voice=v;u.lang=voiceLang();u.rate=1.02;window.speechSynthesis.cancel();window.speechSynthesis.speak(u);}catch(e){}}
@@ -3168,14 +3177,36 @@ voiceSystem(clean,nat&&nat.any);};
 if(SPEAK.own&&SPEAK.own.state==='ready')go(SPEAK.own);else api('/api/voice?lang='+encodeURIComponent(lang)).then(function(st){SPEAK.own=st;go(st);}).catch(function(){go(null);});}
 // Chrome lists its voices only after a first ask
 try{if(window.speechSynthesis)window.speechSynthesis.getVoices();}catch(e){}
+// Going somewhere by asking: "take me to reports" (or "navigate me to tasks", "open my
+// week") opens it here, with no wait for the model; anything vaguer goes to the model,
+// whose reply can carry a page to open (mind.mjs goOf: { to, why, alts }), and the
+// pages it might have meant instead, a tap each under its reply.
+var LQ_NAV_ALIAS={dashboard:'board',cards:'board',tasks:'tasks',agents:'tasks',workdesk:'tasks',home:'home','home page':'home',archive:'archive'};
+function lqNavHit(q){var low=String(q||'').toLowerCase().replace(/[.!?]+$/,'').replace(/^(hey |ok |okay )?(symbiot,? )?/,'').replace(/^(please |can you |could you |would you )+/,'').replace(/ please$/,'').trim();
+var v=low.match(/^(?:open(?: up)?|show(?: me)?|go(?: back)? to|take me(?: back)?(?: to)?|navigate(?: me)? to|bring up|switch to|jump to|go(?: back)?)(?: the| my)? (.+)$/),t=(v?v[1]:low).replace(/ (page|tab|screen)$/,'').trim();
+if(!v&&t!=='dashboard'&&!LQNAMES[t]&&!Object.keys(LQNAMES).some(function(k){return LQNAMES[k].toLowerCase()===t;}))return '';
+if(v&&t==='home')return 'home';if(LQ_NAV_ALIAS[t]&&(v||t!=='home'))return LQ_NAV_ALIAS[t];
+var hit='';Object.keys(LQNAMES).forEach(function(k){if(!hit&&(LQNAMES[k].toLowerCase()===t||k===t))hit=k;});return hit;}
+// g: the model's go, when it picked the page: its reason and the other pages, shown on the
+// page it opened too (the chat sinks under an open page).
+function lqNav(to,g){to=String(to||'');lqTalkMode(true);
+if(to==='home'){if(LQ.mode==='pool')lqSink();if(LQ.scene==='work')lqHome();return;}
+if(to==='archive'){lqUse('tasks',null,'talk');lqArchive();}
+else if(to.indexOf('lane:')===0)lqOpen({kind:'proj',repo:to.slice(5)});
+else if(LQNAMES[to]){lqUse(to,null,'talk');lqGo(to);}
+else return;
+lqWhy(g&&g.to===to?g:null);}
+function lqAltsHtml(g){return g&&g.alts&&g.alts.length?"<span class='lqalts'>Or: "+g.alts.map(function(a){return "<button type='button' class='lqmb' data-go='"+escQ(a.to)+"'>"+esc(a.label||a.to)+"</button>";}).join('')+"</span>":'';}
+function lqWhy(g){var el=$('lqwhy');if(!el)return;var on=!!(g&&(g.why||(g.alts&&g.alts.length)));if(el.classList)el.classList.toggle('on',on);
+el.innerHTML=on?(g.why?"<span>"+esc(g.why)+"</span>":'')+(g.alts&&g.alts.length?"<span>Or:</span>"+g.alts.map(function(a){return "<button type='button' class='lqmb' data-go='"+escQ(a.to)+"'>"+esc(a.label||a.to)+"</button>";}).join(''):''):'';
+if(on)el.querySelectorAll('[data-go]').forEach(function(b){b.addEventListener('click',function(){lqNav(b.getAttribute('data-go'));});});}
 function lqSay(){var spoke=VOICE.spoke;VOICE.spoke=false;var i=$('lqask');var q=((i&&i.value)||'').trim(),shots=LQ.atts.slice();if(!q&&!shots.length)return;if(!q)q='Take a look at this screenshot.';i.value='';lqGrowAsk();LQ.atts=[];lqAttsShow();lqAct();
-var low=q.toLowerCase().replace(/^(please |can you |could you )/,''),hit='';
-Object.keys(LQNAMES).forEach(function(k){var nm=LQNAMES[k].toLowerCase();if(hit)return;['open ','show ','go to ','take me to '].forEach(function(v){if(low.indexOf(v+nm)===0||low.indexOf(v+'my '+nm)===0)hit=k;});if(low===nm)hit=k;});
-if(hit){lqTalkMode(true);lqUse(hit,null,'talk');lqGo(hit);return;}
+var low=q.toLowerCase().replace(/^(please |can you |could you )/,''),hit=lqNavHit(q);
+if(hit){lqNav(hit);return;}
 if(/^(go|start|go for it|start them|start it)[.! ]*$/.test(low)){lqTalkMode(true);lqGoWork();return;}
 if(/^(home|back)[.! ]*$/.test(low)&&LQ.scene==='work'){lqHome();return;}
 LQ.talkMin=false;lqTalkMode(true);LQ.talk.push({me:true,text:q,imgs:shots.map(function(a){return a.data;})});LQ.talk=LQ.talk.slice(-8);lqTalkShow(true);
-api('/api/home/ask',{question:q,images:shots}).then(function(r){LQ.talk.push({me:false,steps:r.steps||[],text:r.error==='not-connected'?'Connect an AI in Settings to talk to me. Say "open settings".':(r.answer||r.error||'(no answer)')});if(spoke)voiceSpeak(LQ.talk[LQ.talk.length-1].text);LQ.talk=LQ.talk.slice(-8);lqTalkShow(false);LQ.ripple=[0.5,0.47,LQ.t];lqLoad(false);}).catch(function(e){LQ.talk.push({me:false,text:String((e&&e.message)||e)});lqTalkShow(false);});}
+api('/api/home/ask',{question:q,images:shots}).then(function(r){LQ.talk.push({me:false,steps:r.steps||[],go:r.go||null,text:r.error==='not-connected'?'Connect an AI in Settings to talk to me. Say "open settings".':(r.answer||r.error||'(no answer)')});if(spoke)voiceSpeak(r.spoken||LQ.talk[LQ.talk.length-1].text);LQ.talk=LQ.talk.slice(-8);lqTalkShow(false);LQ.ripple=[0.5,0.47,LQ.t];if(r.go&&r.go.to){lqNav(r.go.to,r.go);return;}lqLoad(false);}).catch(function(e){LQ.talk.push({me:false,text:String((e&&e.message)||e)});lqTalkShow(false);});}
 // The physics: each droplet a critically damped spring to its place (no wobble,
 // no overshoot), pushed off its neighbours and the core where they'd overlap.
 function lqStep(){var S0=lqSize();if(S0.w!==LQ.bw||S0.h!==LQ.bh){if(LQ.scene==='work'&&LQ.workData)lqBuildWork();else if(LQ.adapt)lqBuild();}var S=S0,cx=S.w/2,cy=(LQ.scene!=='work'&&LQ.cy)||S.h*0.47,k=0.022,c=2*Math.sqrt(k),th=LQ.theme,still=th.still,rest=LQ.mode==='rest',pool=LQ.mode==='pool',talk=LQ.talking&&!pool;
