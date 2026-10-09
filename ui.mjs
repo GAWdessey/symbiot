@@ -482,7 +482,17 @@ body.lq-liquid .rcard.pcard,body.lq-liquid.lq-light .rcard.pcard{border-left:3px
 .tag.cust{background:transparent;border-color:var(--amber);color:var(--amber)}
 /* Marketing: the product an item markets, a quiet word before it; what needs you, ruled amber; the Add row */
 .mkp{display:inline-block;margin-right:8px;padding-right:8px;border-right:1px solid var(--line);font:600 10.5px/1.4 var(--sans);letter-spacing:.09em;text-transform:uppercase;color:var(--green);vertical-align:1px}
-.mkst{font-size:11px;padding:1px 7px;border-radius:999px;border:1px solid var(--line);color:var(--faint)}.mkst.approved{color:var(--green);border-color:var(--green)}
+.mkst{font-size:11px;padding:1px 7px;border-radius:999px;border:1px solid var(--line);color:var(--faint)}.mkst.approved{color:var(--green);border-color:var(--green)}.mkst.posted{color:var(--green);border-color:var(--green);background:var(--green-dim)}.mkst.superseded{text-decoration:line-through}
+/* the pick tray: a card a capture, its blur boxes on it (solid: blurred; dashed: shown), each a click to switch; Use puts it on a post */
+.mktray{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,380px),1fr));gap:14px;align-items:start}
+.mkcap{display:flex;flex-direction:column;gap:8px;min-width:0;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--ink2)}
+body.lq-liquid .mkcap{border-radius:18px;border-color:rgba(255,255,255,.08);background:rgba(255,255,255,.035)}body.lq-liquid.lq-light .mkcap{border-color:rgba(21,26,33,.08);background:rgba(255,255,255,.75)}
+.mkcap.busy .mkshot{opacity:.6}.mkshot{position:relative;line-height:0;border-radius:8px;overflow:hidden;background:var(--ink3)}.mkshot img,.mkshot video{display:block;width:100%;height:auto}
+.mkbox{all:unset;box-sizing:border-box;position:absolute;border:1.5px dashed var(--amber);border-radius:3px;cursor:pointer;background:rgba(242,165,65,.08)}.mkbox.on{border:1.5px solid var(--green);background:rgba(10,12,14,.28)}
+.mkbox:hover{box-shadow:0 0 0 2px rgba(255,255,255,.55)}.mkbox:focus-visible{outline:2px solid var(--bone);outline-offset:1px}
+.mkcapt{font-size:13px;line-height:1.45;color:var(--text);overflow-wrap:anywhere}.mkcapm{font-size:11.5px;color:var(--faint)}
+.mkuse{display:flex;flex-wrap:wrap;gap:6px;align-items:center}.mkuse button{padding:4px 10px;font-size:12px}#mktray .mkuse select{width:auto;max-width:100%;min-height:0;padding:4px 30px 4px 10px;border-radius:999px;font-size:12px;background-position:right 11px center}
+.mkchips{display:flex;flex-wrap:wrap;gap:5px}.mkchip{all:unset;box-sizing:border-box;cursor:pointer;padding:2px 9px;border-radius:999px;border:1px dashed var(--amber);color:var(--text);font:500 11.5px/1.5 var(--sans)}.mkchip.on{border:1px solid var(--green);color:var(--green)}.mkchip:hover,.mkchip:focus-visible{outline:2px solid var(--bone);outline-offset:1px}.mkshot .mkbox.hl{box-shadow:0 0 0 2px var(--bone)}
 .mkpv{margin:6px 0 14px}.mkpv .mkpvact{margin-top:8px}.mkpv .pchars{font-size:11px;color:var(--faint)}
 .lipost{max-width:552px;background:#fff;color:#191919;border:1px solid #e0dfdc;border-radius:10px;padding:12px 16px 4px;font:14px/1.43 -apple-system,system-ui,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
 .liauth{display:flex;gap:8px;align-items:flex-start;margin-bottom:10px}
@@ -1137,6 +1147,7 @@ body.lq-light .btip .bta button:not(.quiet){background:#151A21;color:#FFFFFF}
 <div id="mkmsg"></div>
 <div id="mkneeds"></div>
 <div id="mktasks"></div>
+<div id="mktray"></div>
 <div id="boardposts"></div>
 <div id="mkreplies"></div>
 <div id="mktest"></div>
@@ -1264,6 +1275,23 @@ var SELWAIT={};function selWait(key,f){SELWAIT[key]=f;}
 if(document.addEventListener)document.addEventListener('selectionchange',function(){var ks=Object.keys(SELWAIT);if(!ks.length)return;var s=window.getSelection&&window.getSelection();if(s&&!s.isCollapsed)return;var w=SELWAIT;SELWAIT={};ks.forEach(function(k){try{w[k]();}catch(e){}});});
 function whenFree(el,key,f){if(selIn(el)){selWait(key,f);return false;}f();return true;}
 function sameHtml(el,h){if(el._h===h)return true;el.innerHTML=h;el._h=h;return false;}
+// As sameHtml, but the card you're typing in (a child of el with data-key, holding
+// the focus) stays the very same node: the rest is rebuilt around it, and it takes
+// its new twin's place and data-i without leaving the page, so its text, focus and
+// cursor survive. Home redrew every card on any change (a count, an agent's step)
+// and wiped a half-typed answer (2026-10-09). With no twin (the card's gone) it's
+// rebuilt as usual: its draft is kept anyway (bdSet). Its content may be a redraw
+// behind, so the next call draws it afresh.
+function keepTyping(el,h){if(el._h===h)return true;
+var f=document.activeElement,k=f&&f!==document.body&&el.contains&&el.contains(f)&&f.closest?f.closest('[data-key]'):null;
+if(!k||k.parentNode!==el){el.innerHTML=h;el._h=h;return false;}
+var t=document.createElement('div');t.innerHTML=h;var key=k.getAttribute('data-key'),twin=null;
+for(var c=t.firstChild;c;c=c.nextSibling)if(c.getAttribute&&c.getAttribute('data-key')===key){twin=c;break;}
+if(!twin){el.innerHTML=h;el._h=h;return false;}
+if(twin.getAttribute('data-i')!==null)k.setAttribute('data-i',twin.getAttribute('data-i'));
+while(el.firstChild&&el.firstChild!==k)el.removeChild(el.firstChild);while(k.nextSibling)el.removeChild(k.nextSibling);
+while(t.firstChild&&t.firstChild!==twin)el.insertBefore(t.firstChild,k);t.removeChild(twin);while(t.firstChild)el.appendChild(t.firstChild);
+el._h='';return false;}
 var current='map',WDJUMP=0;var mapLoaded=false;var driftLoaded=false;
 var COLORS={person:'#3DDC97',repo:'#F4F1EA',lang:'#F2A541',tool:'#6bb3ff',agent:'#c58af9',ai:'#5fe3b0',folder:'#b7a98c'};
 function tabs(){return document.querySelectorAll('.tab');}
@@ -1644,8 +1672,10 @@ if(ss.length>shown)h+="<div class='row'><button class='ghost qmore' title='the a
 return h+"</div>";}
 var IDEASOPEN={};
 function qKeyOf(qe){var box=qe.closest('.aq');var a=box&&agentById(box.getAttribute('data-id'));var q=a&&a.ask.questions[+qe.getAttribute('data-i')];return q?a.path+'|'+q.q:'';}
-function saveDrafts(el){el.querySelectorAll('.aq .q').forEach(function(qe){var k=qKeyOf(qe);if(!k)return;var pick=qe.querySelector('input[type=radio]:checked');QDRAFT[k]={o:pick?pick.value:'',t:qe.querySelector('.qother').value};});}
-function restoreDrafts(el){el.querySelectorAll('.aq .q').forEach(function(qe){var d=QDRAFT[qKeyOf(qe)];if(!d)return;qe.querySelectorAll('input[type=radio]').forEach(function(r){r.checked=!r.disabled&&r.value===d.o;});qe.querySelector('.qother').value=d.t||'';});}
+// the typed answer is kept in localStorage too (bdSet, the same key as its blob on Home): a reload or a restart keeps it
+if(document.addEventListener)document.addEventListener('input',function(ev){var t=ev.target;if(!t||!t.classList||!t.classList.contains('qother')||!t.closest)return;var qe=t.closest('.aq .q'),k=qe&&qKeyOf(qe);if(k)bdSet(k,t.value,null,null,'desk');});
+function saveDrafts(el){el.querySelectorAll('.aq .q').forEach(function(qe){var k=qKeyOf(qe);if(!k)return;var pick=qe.querySelector('input[type=radio]:checked'),t=qe.querySelector('.qother').value;QDRAFT[k]={o:pick?pick.value:'',t:t};if(t||bdAll()[k])bdSet(k,t,null,null,'desk');});}
+function restoreDrafts(el){el.querySelectorAll('.aq .q').forEach(function(qe){var k=qKeyOf(qe),d=QDRAFT[k];if(!d&&k){var b=bdAll()[k];if(b&&b.text)d={o:'',t:b.text};}if(!d)return;qe.querySelectorAll('input[type=radio]').forEach(function(r){r.checked=!r.disabled&&r.value===d.o;});qe.querySelector('.qother').value=d.t||'';});}
 function collectAnswers(box,a){var out=[];box.querySelectorAll('.q').forEach(function(qe){var q=a.ask.questions[+qe.getAttribute('data-i')];if(!q)return;
 var other=(qe.querySelector('.qother').value||'').trim();var pick=qe.querySelector('input[type=radio]:checked');var ans=other||(pick?q.options[+pick.value]:'');if(ans)out.push({q:q.q,a:ans});});return out;}
 function wireAsks(el){el.querySelectorAll('.aq').forEach(function(box){var a=agentById(box.getAttribute('data-id'));if(!a||!a.ask)return;
@@ -1654,6 +1684,7 @@ if(!ans.length){msg.innerHTML="<div class='note err'>Pick an option or type an a
 box.querySelectorAll('button').forEach(function(b){b.disabled=true;});
 api('/api/agents/answer',{path:a.path,answers:ans,rerun:rerun}).then(function(r){
 if(!r||r.error){box.querySelectorAll('button').forEach(function(b){b.disabled=false;});msg.innerHTML="<div class='note err'>"+esc((r&&r.error)||'failed')+"</div>";return;}
+ans.forEach(function(x){var k=a.path+'|'+x.q;delete QDRAFT[k];bdSet(k,'');}); // sent: its drafts go
 msg.innerHTML="<div class='note ok'>&#10003; Saved "+r.saved+" answer"+(r.saved>1?"s":"")+" for <b>"+esc(a.name)+"</b> in .symbiot/ANSWERS.md"+(r.rerun?" &middot; your agent is picking them up now.":".")+(r.yours&&r.yours.length?"<div class='err'><i class=ic-person></i> Still yours to do: "+esc(r.yours.join(' '))+"</div>":"")+(r.note?"<div class='muted'>"+esc(r.note)+"</div>":"")+"</div>";loadAgents();});}
 var s1=box.querySelector('.qsend'),s2=box.querySelector('.qsave');
 if(s1)s1.addEventListener('click',function(){send(true);});if(s2)s2.addEventListener('click',function(){send(false);});
@@ -1674,7 +1705,7 @@ return "<div class='aq'><h4><i class=ic-person></i> "+(ok?"Waits for your OK":"N
 function wireNeeds(el){el.querySelectorAll('.ngo,.nskip').forEach(function(btn){btn.addEventListener('click',function(){var a=agentById(btn.getAttribute('data-id'));if(!a)return;btn.disabled=true;var msg=document.getElementById('agentsmsg');
 api('/api/home/answer',{id:'needs:'+a.id,pick:btn.classList.contains('ngo')?0:1}).then(function(r){msg.innerHTML=r&&!r.error?"<div class='note ok'>"+esc(a.name)+": "+esc(r.said||'Done.')+"</div>":"<div class='note err'>"+esc((r&&r.error)||'failed')+"</div>";loadAgents();}).catch(function(e){btn.disabled=false;msg.innerHTML="<div class='note err'>"+esc(String((e&&e.message)||e))+"</div>";});});});}
 function wireWaits(el){el.querySelectorAll('.wstart').forEach(function(btn){btn.addEventListener('click',function(){var a=agentById(btn.getAttribute('data-id'));if(!a)return;btn.disabled=true;
-api('/api/open',{path:a.path,force:true}).then(function(x){var msg=document.getElementById('agentsmsg');msg.innerHTML=x&&x.opened?"<div class='note ok'>&#10003; Started your agent in <b>"+esc(a.name)+"</b>.</div>":"<div class='note err'>"+esc(a.name)+": "+(x&&x.busy?"an agent is already running there.":"it didn&#39;t start. Check the command in Settings.")+"</div>";loadAgents();}).catch(function(e){btn.disabled=false;document.getElementById('agentsmsg').innerHTML="<div class='note err'>"+esc(String((e&&e.message)||e))+"</div>";});});});}
+api('/api/open',{path:a.path,force:true}).then(function(x){var msg=document.getElementById('agentsmsg');msg.innerHTML=x&&x.opened?"<div class='note ok'>&#10003; Started your agent in <b>"+esc(a.name)+"</b>.</div>":"<div class='note err'>"+esc(a.name)+": "+(x&&x.busy?"an agent is already running there.":x&&x.note?esc(x.note):"it didn&#39;t start. Check the command in Settings.")+"</div>";loadAgents();}).catch(function(e){btn.disabled=false;document.getElementById('agentsmsg').innerHTML="<div class='note err'>"+esc(String((e&&e.message)||e))+"</div>";});});});}
 // What a run left for Symbiot's memory (.symbiot/REMEMBER.json, handback.mjs): nothing goes in until Remember
 function factsHtml(a){var fs=a.remember;if(!fs||!fs.length)return '';
 return "<div class='aq rfacts' data-id='"+esc(a.id)+"'><h4>&#129504; For Symbiot to remember</h4><div class='qc'>This run found "+fs.length+" lasting fact"+(fs.length>1?"s":"")+". Untick any you don&#39;t want, then Remember: every chat can use them from then on.</div>"+
@@ -1690,11 +1721,11 @@ msg.innerHTML=skip?"<div class='note ok'>Skipped what <b>"+esc(a.name)+"</b> fou
 var k=box.querySelector('.rkeep'),s=box.querySelector('.rskip');if(k)k.addEventListener('click',function(){send(false);});if(s)s.addEventListener('click',function(){send(true);});});}
 function answering(){var f=document.activeElement;return !!(f&&f.closest&&f.closest('.aq'));}
 // Handovers (lanes.mjs): what one lane's agent handed to another, and where it stands.
-var LANEWORD={started:'working on it',held:'queued: that lane is busy',done:'done, reported back',error:"couldn't hand over"};
+var LANEWORD={started:'working on it',held:'queued: that lane is busy',blocked:"didn't start",done:'done, reported back',error:"couldn't hand over"};
 function loadLanes(){api('/api/lanes').then(function(d){var el=document.getElementById('laneslist');if(!el||!d)return;var hs=d.handoffs||[];
 var row=function(h){
-var back=h.result||h.error,more=(h.full?"<div>"+esc(h.full)+"</div>":"")+(back?"<div class='tres'>"+esc(back)+"</div>":"");
-return "<div class='task'><span class='t'><b>"+esc(h.from)+"</b> &rarr; <b>"+esc(h.to)+"</b>: "+esc(String(h.text||'').split('**').join(''))+(h.n>1?" <span class='muted'>&times;"+h.n+"</span>":"")+(more?"<details class='tfull'><summary>"+(h.full?"in full":"what came back")+"</summary>"+more+"</details>":"")+"</span><span class='rp'"+(h.status==='error'?" style='color:var(--amber)'":"")+">"+esc(LANEWORD[h.status]||h.status)+"</span></div>";};
+var back=h.result||h.error||(h.note?"It didn't start: "+h.note:''),more=(h.full?"<div>"+esc(h.full)+"</div>":"")+(back?"<div class='tres'>"+esc(back)+"</div>":"");
+return "<div class='task'><span class='t'><b>"+esc(h.from)+"</b> &rarr; <b>"+esc(h.to)+"</b>: "+esc(String(h.text||'').split('**').join(''))+(h.n>1?" <span class='muted'>&times;"+h.n+"</span>":"")+(more?"<details class='tfull'><summary>"+(h.full?"in full":"what came back")+"</summary>"+more+"</details>":"")+"</span><span class='rp'"+(h.status==='error'||h.status==='blocked'?" style='color:var(--amber)'":"")+">"+esc(LANEWORD[h.status]||h.status)+"</span></div>";};
 var seen={},uniq=[];hs.forEach(function(h){var k=h.from+'|'+h.to+'|'+h.status+'|'+h.text;if(seen[k]){seen[k].n++;return;}var c={};for(var x in h)c[x]=h[x];c.n=1;seen[k]=c;uniq.push(c);});
 var live=uniq.filter(function(h){return h.status!=='done';}),fin=uniq.filter(function(h){return h.status==='done';});
 whenFree(el,'lanes',function(){sameHtml(el,(live.length?"<div class='tgroup agg'>Handovers under way <span class='tcount'>"+live.length+"</span></div>"+live.slice(0,12).map(row).join(''):'')+(fin.length?"<details class='agdone'><summary class='tgroup agg'>Finished handovers <span class='tcount'>"+fin.length+"</span></summary>"+fin.slice(0,20).map(row).join('')+"</details>":''));});});}
@@ -1792,7 +1823,7 @@ var n=(r.written||[]).length;var opens=[];
 // one line, its paths on hover: the review cards below it stay in view
 var h="<div class='drift pushed'><div class='dh'><span class='dot-c'></span><span class='dn'>Sent to "+n+" repo"+(n===1?"":"s")+"</span><span class='dd'>"+(r.written||[]).map(function(w){return "<span title='"+esc(w.file).replace(/'/g,'&#39;')+"'>&#10003; <b>"+esc(w.name)+"</b> ("+w.count+" task"+(w.count===1?"":"s")+(w.held?", <i class=ic-pause></i> held till its running agent finishes":"")+")</span>";}).join(" &middot; ")+"</span></div>";
 if(r.unresolved&&r.unresolved.length){var names=r.unresolved.map(function(u){return u.name;}).join(", ");var hasNoRepo=r.unresolved.some(function(u){return u.name==='(no repo)';});h+="<div class='dd' style='margin-top:6px'><i class=ic-warn></i> not sent: "+esc(names)+". "+(hasNoRepo?"Tell Symbiot in the bar at the bottom which project it&#39;s for, so it has somewhere to go.":"That repo isn't in the map &mdash; add its folder in Settings.")+"</div>";}
-if(r.handoff&&r.written&&r.written.length){opens=r.written.map(function(w){return api('/api/open',{path:w.path}).then(function(x){if(x&&x.blocked){var d=document.createElement('div');d.className='dd';d.innerHTML="<i class=ic-pause></i> <b>"+esc(w.name)+"</b>: "+esc(x.note)+" <button class='ghost' style='padding:2px 8px;font-size:12px'>Start it anyway</button>";d.querySelector('button').addEventListener('click',function(){this.disabled=true;api('/api/open',{path:w.path,force:true}).then(function(y){d.innerHTML=y&&y.opened?"&#10003; Started an agent in <b>"+esc(w.name)+"</b>.":"<i class=ic-warn></i> <b>"+esc(w.name)+"</b>: "+(y&&y.busy?"an agent is already running there.":"it didn&#39;t start. Check the command in Settings.");});});o.appendChild(d);}if(x&&x.busy){var d=document.createElement('div');d.className='dd';d.innerHTML="<i class=ic-warn></i> <b>"+esc(w.name)+"</b> already has an agent running, so another wasn&#39;t started. "+(x.auto?"Its new tasks are held, and an agent starts on them when it finishes.":"Its new tasks are held until it finishes. After that, an agent starts on them the next time this tab checks the repo, or send again.");o.appendChild(d);}}).catch(function(){});});h+="<div class='dd'><i class=ic-bot></i> Handed "+n+" repo"+(n===1?"":"s")+" to your agent &mdash; opening the <b>Agents</b> tab to watch it work&hellip;</div>";setTimeout(function(){setTab('agents');},500);}
+if(r.handoff&&r.written&&r.written.length){opens=r.written.map(function(w){return api('/api/open',{path:w.path}).then(function(x){if(x&&x.blocked){var d=document.createElement('div');d.className='dd';d.innerHTML="<i class=ic-pause></i> <b>"+esc(w.name)+"</b>: "+esc(x.note)+" <button class='ghost' style='padding:2px 8px;font-size:12px'>Start it anyway</button>";d.querySelector('button').addEventListener('click',function(){this.disabled=true;api('/api/open',{path:w.path,force:true}).then(function(y){d.innerHTML=y&&y.opened?"&#10003; Started an agent in <b>"+esc(w.name)+"</b>.":"<i class=ic-warn></i> <b>"+esc(w.name)+"</b>: "+(y&&y.busy?"an agent is already running there.":y&&y.note?esc(y.note):"it didn&#39;t start. Check the command in Settings.");});});o.appendChild(d);}if(x&&x.busy){var d=document.createElement('div');d.className='dd';d.innerHTML="<i class=ic-warn></i> <b>"+esc(w.name)+"</b> already has an agent running, so another wasn&#39;t started. "+(x.auto?"Its new tasks are held, and an agent starts on them when it finishes.":"Its new tasks are held until it finishes. After that, an agent starts on them the next time this tab checks the repo, or send again.");o.appendChild(d);}}).catch(function(){});});h+="<div class='dd'><i class=ic-bot></i> Handed "+n+" repo"+(n===1?"":"s")+" to your agent &mdash; opening the <b>Agents</b> tab to watch it work&hellip;</div>";setTimeout(function(){setTab('agents');},500);}
 else{h+="<div class='dd' style='margin-top:8px'>Set an <b>agent command</b> in Settings to auto-run it on send (and watch it on the Workdesk). For now, tell your agent: <b>“Read .symbiot/TASKS.md and implement the unchecked items.”</b></div>";}
 h+="</div>";
 o.innerHTML=h;
@@ -2164,7 +2195,7 @@ postsMsg('ok',"&#10003; Added "+r.added+" of your LinkedIn posts: "+r.total+" in
 // can be drafted, or are (home.mjs marketing).
 var MKT=null;
 function mkMsg(cls,html){var o=$('mkmsg');if(o)o.innerHTML=html?"<div class='note "+cls+"'>"+html+"</div>":'';}
-function loadMarketing(){loadPostsUI();api('/api/marketing').then(function(d){if(d&&!d.error){MKT=d;renderMarketing();renderMkLane();if(POSTS)renderPosts();}});}
+function loadMarketing(){loadPostsUI();loadMkTray();api('/api/marketing').then(function(d){if(d&&!d.error){MKT=d;renderMarketing();renderMkLane();if(POSTS)renderPosts();}});}
 // The Marketing lane (home.mjs marketingState): what needs you there first (its agent's
 // questions, its work waiting for your OK, the week's drafts), then its tasks, each tagged
 // with the product it markets, an Add for a new one, what its agent drafted, and other
@@ -2189,8 +2220,11 @@ var h="<div class='lipost' aria-label='"+escQ(plat)+" preview'><div class='liaut
 +(p.media||[]).map(function(m){return m.kind==='video'?"<video class='limedia' src='"+escQ(mkMediaSrc(m.rel))+"' controls muted playsinline preload='metadata'></video>":"<img class='limedia' src='"+escQ(mkMediaSrc(m.rel))+"' alt='"+escQ(m.name)+"'>";}).join('')
 +"<div class='libar'><span>Like</span><span>Comment</span><span>Repost</span><span>Send</span></div></div>";
 if((p.missing||[]).length)h+="<div class='note err'>It names "+p.missing.map(function(m){return "<code>"+esc(m)+"</code>";}).join(', ')+", which isn&#39;t next to it.</div>";
-var done=p.status==='approved'?"Approved "+agoTxt(p.statusAt)+": its agent "+(p.when?"schedules":"posts")+" it through Symbiot&#39;s browser, with this text.":p.status==='skipped'?"Skipped "+agoTxt(p.statusAt)+": it won&#39;t be posted.":"";
-h+="<div class='row mkpvact'>"+(p.status==='approved'?"":"<button class='act mkok'>Approve"+(p.when?", schedule it":", post it")+"</button>")+(p.status==='skipped'?"":"<button class='ghost mkskip'>Skip</button>")
+var fin=p.status==='posted'||p.status==='superseded',on=p.postedOn==='linkedin'?'LinkedIn':p.postedOn;
+var done=p.status==='posted'?"Posted"+(on?" on "+esc(on):"")+(p.posted?", "+esc(new Date(p.posted).toLocaleString(undefined,{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})):"")+(p.url?" &middot; <a href='"+escQ(p.url)+"' target='_blank' rel='noopener'>see it</a>":"")+". It isn&#39;t approved or posted again"+(p.edited?", though its file changed since":"")+"."
+:p.status==='superseded'?"Superseded"+((p.by||[]).length?" by "+p.by.map(function(b){return "<code>"+esc(b)+"</code>";}).join(', '):"")+": it won&#39;t be posted."
+:p.status==='approved'?"Approved "+agoTxt(p.statusAt)+": its agent "+(p.when?"schedules":"posts")+" it through Symbiot&#39;s browser, with this text.":p.status==='skipped'?"Skipped "+agoTxt(p.statusAt)+": it won&#39;t be posted.":"";
+h+="<div class='row mkpvact'>"+(fin||p.status==='approved'?"":"<button class='act mkok'>Approve"+(p.when?", schedule it":", post it")+"</button>")+(fin||p.status==='skipped'?"":"<button class='ghost mkskip'>Skip</button>")
 +"<span class='muted' style='font-size:12px;flex:1'>"+(done||(p.when?"Its agent schedules it for "+esc(p.when)+" once you approve.":"Its agent posts it once you approve."))+"</span><span class='pchars'>"+p.chars+" / 3000</span></div>";
 h+="<details class='linotes'><summary>Its notes</summary>"+(p.notes?"<div class='linotest'>"+esc(p.notes)+"</div>":"<div class='muted'>None.</div>")+"<button type='button' class='ghost mkfile' title='open the draft in your editor'>Edit the file</button></details>";
 return h;}
@@ -2225,6 +2259,37 @@ el.querySelectorAll('.mkprev').forEach(function(b){b.addEventListener('click',fu
 if(MKPV){var pv=null;el.querySelectorAll('.mkpv').forEach(function(x){if(x.getAttribute('data-rel')===MKPV)pv=x;});if(pv)mkPreview(pv,MKPV);else MKPV='';}
 var g=el.querySelector('.mkgo');if(g)g.addEventListener('click',function(){g.disabled=true;api('/api/marketing/go',{}).then(function(r){if(!r||r.error){g.disabled=false;mkMsg('err',esc((r&&r.error)||'It didn&#39;t start.'));return;}mkMsg('ok',r.queued?"Its agent takes them once the run there now finishes.":"Marketing&#39;s agent started. It&#39;s on the Workdesk, and what it drafts waits here for your OK.");loadMarketing();}).catch(function(e){g.disabled=false;mkMsg('err',esc(String((e&&e.message)||e)));});});
 if(MKLIT){MKLIT=false;var lit=nd.querySelector('.mkneeds');if(lit&&lit.scrollIntoView)lit.scrollIntoView({block:'start'});}}
+// The pick tray (tray.mjs): every capture its agent took of a product, blurred where it
+// shows something private. Its blur boxes sit on it, solid where it's blurred and dashed
+// where it shows; a click switches one (a clip's box at the same place in each moment, at
+// once) and the capture is blurred again. Use puts it on a post (its media: line) in one
+// click: the posts it was taken for each have a button, any other is in the list.
+var MKTRAY=null;
+function loadMkTray(){api('/api/marketing/tray').then(function(d){if(d&&!d.error){MKTRAY=d.trays||[];renderMkTray();}});}
+function mkTraySrc(rel,at){return '/api/marketing/tray/media?rel='+encodeURIComponent(rel)+'&v='+Math.round(at||0)+'&t='+encodeURIComponent(T);}
+// a capture's boxes, one a place: a clip has the same box in each moment it shows there
+function mkBoxes(c){var g={},out=[];(c.regions||[]).forEach(function(r){var k=[r.x,r.y,r.w,r.h].join();if(!g[k]){g[k]={x:r.x,y:r.y,w:r.w,h:r.h,kind:r.kind,ids:[],on:0};out.push(g[k]);}g[k].ids.push(r.id);if(r.on)g[k].on++;});out.forEach(function(b){b.all=b.on===b.ids.length;});return out;}
+var MKKIND={still:'Picture',clip:'Clip',reel:'Reel'};
+function renderMkTray(){var el=$('mktray');if(!el)return;var ts=MKTRAY||[];
+var h=ts.map(function(t,ti){var open=(t.drafts||[]).filter(function(d){return d.status!=='posted'&&d.status!=='superseded';});
+return "<div class='pshead'><span>Pick tray &middot; "+esc(t.product)+"</span><small>"+t.items.length+" capture"+(t.items.length===1?"":"s")+", blurred where "+(t.items.length===1?"it shows":"they show")+" something private. Click a box to blur it or show it; Use puts one on a post.</small></div><div class='mktray'>"
++t.items.map(function(c,ci){var bx=mkBoxes(c),n=bx.filter(function(b){return b.all;}).length;
+var shot=c.show?(c.showKind==='video'?"<video src='"+escQ(mkTraySrc(c.show,c.at))+"' muted loop playsinline controls preload='metadata'></video>":"<img src='"+escQ(mkTraySrc(c.show,c.at))+"' alt='"+escQ(c.caption||c.name)+"' loading='lazy'>"):"<div class='muted' style='padding:20px;line-height:1.4'>Not rendered yet.</div>";
+shot+=bx.map(function(b,bi){var p=function(v){return Math.round(v*10000)/100+'%';};return "<button type='button' class='mkbox"+(b.all?" on":"")+"' data-b='"+bi+"' aria-pressed='"+b.all+"' style='left:"+p(b.x)+";top:"+p(b.y)+";width:"+p(b.w)+";height:"+p(b.h)+"' title='"+escQ(b.kind+(b.all?": blurred. Click to show it":": shown. Click to blur it"))+"' aria-label='"+escQ(b.kind+(b.all?", blurred":", shown"))+"'></button>";}).join('');
+var fr=(c.for||[]).map(function(f){return t.folder+'/'+f;}),mine=open.filter(function(d){return fr.indexOf(d.rel)>=0;}),rest=open.filter(function(d){return fr.indexOf(d.rel)<0;});
+var use=c.use?mine.map(function(d){var di=t.drafts.indexOf(d);return (d.media||[]).indexOf(c.use)>=0?"<span class='mkst approved' title='its picture or video now'>on "+esc(d.name)+"</span>":"<button type='button' class='ghost mkuseb' data-d='"+di+"'>Use for "+esc(d.name)+"</button>";}).join('')
++(rest.length?"<select class='mkusel' aria-label='Use it for another post'><option value=''>"+(mine.length?"Another post":"Use for a post")+"&hellip;</option>"+rest.map(function(d){return "<option value='"+t.drafts.indexOf(d)+"'"+((d.media||[]).indexOf(c.use)>=0?" disabled":"")+">"+esc(d.name)+((d.media||[]).indexOf(c.use)>=0?" (on it)":"")+"</option>";}).join('')+"</select>":""):"";
+return "<div class='mkcap' data-t='"+ti+"' data-c='"+ci+"'><div class='mkshot'>"+shot+"</div><div class='mkcapt'>"+esc(c.caption||c.name)+"</div><div class='mkcapm'>"+esc(MKKIND[c.kind]||c.kind)+(c.screen?" &middot; "+esc(c.screen):"")+(bx.length?" &middot; "+n+" of "+bx.length+" box"+(bx.length===1?"":"es")+" blurred":c.kind==='reel'?" &middot; its clips&#39; blur":" &middot; nothing to blur")+"</div>"+(bx.length?"<div class='mkchips'>"+bx.map(function(b,bi){return "<button type='button' class='mkchip"+(b.all?" on":"")+"' data-b='"+bi+"' aria-pressed='"+b.all+"' title='"+escQ(b.all?"blurred: click to show it":"shown: click to blur it")+"'>"+esc(b.kind)+(b.all?" &middot; blurred":" &middot; shown")+"</button>";}).join('')+"</div>":"")+(use?"<div class='mkuse'>"+use+"</div>":"")+"</div>";}).join('')+"</div>";}).join('');
+if(sameHtml(el,h))return;
+var at=function(x){var c=x.closest('.mkcap');return {t:ts[+c.getAttribute('data-t')],c:ts[+c.getAttribute('data-t')].items[+c.getAttribute('data-c')],el:c};};
+el.querySelectorAll('.mkchip').forEach(function(c){var box=function(){return c.closest('.mkcap').querySelector(".mkbox[data-b='"+c.getAttribute('data-b')+"']");};c.addEventListener('mouseenter',function(){var x=box();if(x)x.classList.add('hl');});c.addEventListener('mouseleave',function(){var x=box();if(x)x.classList.remove('hl');});});
+el.querySelectorAll('.mkbox,.mkchip').forEach(function(b){b.addEventListener('click',function(){var a=at(b),g=mkBoxes(a.c)[+b.getAttribute('data-b')];if(!g||a.el.classList.contains('busy'))return;a.el.classList.add('busy');
+api('/api/marketing/tray/blur',{tray:a.t.rel,name:a.c.name,id:g.ids,on:!g.all}).then(function(r){a.el.classList.remove('busy');if(!r||r.error){mkMsg('err',esc((r&&r.error)||'failed'));return;}
+mkMsg(r.rendered?'ok':'err',r.rendered?(g.all?"Shown: that box isn&#39;t blurred in it now.":"Blurred: that box is blurred in it now."):"Saved, but it isn&#39;t "+(g.all?"shown":"blurred")+" in the picture yet: "+esc(r.note||'tray.py didn&#39;t run'));loadMkTray();}).catch(function(e){a.el.classList.remove('busy');mkMsg('err',esc(String((e&&e.message)||e)));});});});
+var useIt=function(x,d){var a=at(x),dr=a.t.drafts[d];if(!dr)return;x.disabled=true;
+api('/api/marketing/tray/use',{rel:dr.rel,file:a.c.use}).then(function(r){x.disabled=false;if(!r||r.error){mkMsg('err',esc((r&&r.error)||'failed'));return;}mkMsg('ok',"&ldquo;"+esc(dr.name)+"&rdquo; now shows "+esc(a.c.caption||a.c.name)+"."+(r.reopened?" It was approved with another, so it asks for your OK again.":""));loadMarketing();}).catch(function(e){x.disabled=false;mkMsg('err',esc(String((e&&e.message)||e)));});};
+el.querySelectorAll('.mkuseb').forEach(function(b){b.addEventListener('click',function(){useIt(b,+b.getAttribute('data-d'));});});
+el.querySelectorAll('.mkusel').forEach(function(s){s.addEventListener('change',function(){if(s.value!=='')useIt(s,+s.value);});});}
 var MKDAY=function(s){var d=new Date(s+'T00:00:00');return isNaN(d)?s:d.toLocaleDateString(undefined,{day:'numeric',month:'short'});};
 function renderMarketing(){var d=MKT,r=$('mkreplies'),t=$('mktest');if(!d||!r||!t)return;var rs=d.replies||[];
 r.innerHTML="<div class='pshead'><span>Replies</span><small>"+(!d.linkedin?"Link LinkedIn, and comments on and mentions of your posts show here, marked when they may be a customer.":rs.length?"On LinkedIn in the last 30 days. Draft a reply leaves one in the comment box for you to post.":"None on LinkedIn in the last 30 days. Comments on and mentions of your posts show here, marked when they may be a customer.")+"</small></div>"
@@ -2696,7 +2761,7 @@ var tc=document.getElementById('themecolor');if(tc&&tc.setAttribute)tc.setAttrib
 var bd=document.body;if(bd&&bd.classList){bd.classList.toggle('lq-light',th.light);['ferro','glass','pearl'].forEach(function(l){bd.classList.toggle('lq-look-'+l,l===look);});bd.classList.toggle('lq-contrast',th.contrast);bd.classList.toggle('lq-solid',th.solid||th.contrast);bd.classList.toggle('lq-forced',th.forced);}
 LQ.theme=th;return th;}
 function lqSize(){var el=$('liquid');var w=(el&&el.clientWidth)||window.innerWidth||1280,h=(el&&el.clientHeight)||window.innerHeight||800;return {w:w,h:h,s:Math.max(0.55,Math.min(1.15,Math.min(w,h)/860))};}
-function lqLoad(commit){if(LQ.scene==='work'){lqLoadWork();return;}var fresh=LQ.fresh;LQ.fresh=false;Promise.all([api('/api/adapt?from='+encodeURIComponent(LQ.last)+(commit?'&commit=1':'')+(LQ.touch?'&touch=1':'')),api('/api/home'+(fresh?'?fresh=1':''))]).then(function(r){LQ.adapt=r[0]||{};LQ.home=r[1]||{};lqRedraw();}).catch(function(){});}
+function lqLoad(commit){if(LQ.scene==='work'){lqLoadWork();return;}var fresh=LQ.fresh;LQ.fresh=false;Promise.all([api('/api/adapt?from='+encodeURIComponent(LQ.last)+(commit?'&commit=1':'')+(LQ.touch?'&touch=1':'')),api('/api/home'+(fresh?'?fresh=1':''))]).then(function(r){LQ.adapt=r[0]||{};LQ.home=r[1]||{};lqRedraw();if(r[1]&&r[1].you)bdOrphans(r[1].you);}).catch(function(){});}
 // A droplet's own place: a steady nudge in angle and distance from its id, so the
 // layout reads as grown, not ruled, and stays put from one visit to the next.
 // Home, in zones: what needs you in a band across the top (lqNeeds), then the app's
@@ -2716,8 +2781,16 @@ var LQ_BLOBW=250,LQ_NEEDY=128;
 function lqNeeds(h,S){var rank={ask:0,approve:1,setup:2},rk=function(y){return y.urgent?(y.id==='setup:ai'?-3:y.id==='setup:agent'?-2:-1):rank[y.kind]||0;},ys=(h.you||[]).slice().sort(function(a,b){return rk(a)-rk(b)||(a.id<b.id?-1:a.id>b.id?1:0);});
 var nb=lqNextBox(h,S);if(!ys.length)return {items:[],bottom:nb,x:0,page:0,pages:1,count:0};
 var R=Math.round(24*Math.max(0.85,Math.min(1.1,S.s))),unit=3*R+22+LQ_BLOBW,gap=28,cols=Math.max(1,Math.min(3,Math.floor((S.w-24+gap)/(unit+gap)))),pages=Math.max(1,Math.ceil(ys.length/cols));
-LQ.needPage=(LQ.needPage||0)%pages;var shown=ys.slice(LQ.needPage*cols,LQ.needPage*cols+cols),x0=Math.max(12,(S.w-(shown.length*unit+(shown.length-1)*gap))/2);
+LQ.needPage=(LQ.needPage||0)%pages;
+// the card you're typing in stays in view: a new one ahead of it doesn't page it away
+var fa=document.activeElement,tb=fa&&fa.closest?fa.closest('#lqdrops .lqblob[data-key]'):null;if(tb){var tk=tb.getAttribute('data-key');for(var ti=0;ti<ys.length;ti++)if(bdKey(ys[ti])===tk){LQ.needPage=Math.floor(ti/cols);break;}}
+var shown=ys.slice(LQ.needPage*cols,LQ.needPage*cols+cols),x0=Math.max(12,(S.w-(shown.length*unit+(shown.length-1)*gap))/2);
 var tall=(shown.some(function(y){return y.kind==='ask'&&(y.options||[]).length;})?172:116)+(shown.some(function(y){return y.fix==='handover';})?16:0)+(shown.some(function(y){return y.draft;})?150:0);
+// the band is as tall as its tallest card really is: two long answers, the own-words
+// box open and "+4 more questions" made Post 1's card 60px taller than the guess, over
+// the mailbox agent's name in the band below (2026-10-09). lqBlobFit lays out again
+// when a card grows or shrinks.
+LQ.needEst=tall;var mh=lqBlobH();if(mh)tall=Math.max(tall,mh-8);LQ.needTall=tall;
 var items=shown.map(function(y,i){return {id:y.id,kind:'you',blob:true,item:y,shape:y.shape,title:y.title,sub:y.sub,r:R,tx:x0+i*(unit+gap)+R,ty:LQ_NEEDY+R,ax:0,ay:0};});
 return {items:items,bottom:items.length?LQ_NEEDY+tall+20:0,x:x0,page:LQ.needPage,pages:pages,count:ys.length};}
 // The agents at work, a band of their own under the needs-you band (or the header):
@@ -2748,6 +2821,9 @@ el.querySelectorAll('.nxgo').forEach(function(b){b.addEventListener('click',func
 api('/api/home/next',{id:s.id}).then(function(r){if(!r||r.error){b.disabled=false;lqSaid((r&&r.error)||'It didn’t start. Try again.');return;}lqSaid(r.said||'Started.');if(li&&li.classList)li.classList.add('gone');LQ.fresh=true;setTimeout(function(){lqLoad(false);},650);}).catch(function(e){b.disabled=false;lqSaid(String((e&&e.message)||e));});});});}
 if(el.classList)el.classList.add('on');if(el.style){el.style.width=w+'px';el.style.transform='translate('+Math.round((S.w-w)/2)+'px,'+(LQ_NEEDY-30)+'px)';}
 return LQ_NEEDY-30+(el.offsetHeight||(48+Math.ceil(ns.length/(two?2:1))*58))+24;}
+// a blob's top sits 4px above LQ_NEEDY and the band's bottom LQ_NEEDY+tall+20: mh-8 leaves 12px between
+function lqBlobH(){var m=0,el=$('lqdrops');if(el&&el.querySelectorAll)el.querySelectorAll('.lqblob').forEach(function(b){if(b.offsetHeight>m)m=b.offsetHeight;});return m;}
+function lqBlobFit(){if(LQ.needTall==null||LQ.scene==='work')return;var mh=lqBlobH(),want=Math.max(LQ.needEst||0,mh?mh-8:0);if(Math.abs(want-LQ.needTall)>2)lqBuild();}
 function lqNeedPage(){LQ.needPage=(LQ.needPage||0)+1;lqAct();lqBuild();}
 function lqArchive(){lqPool('tasks');LQ.arch=true;if(typeof loadArchived==='function')loadArchived();}
 function lqOrg(id,k){var h=k*977;id=String(id);for(var i=0;i<id.length;i++)h=(h*31+id.charCodeAt(i))|0;return ((h>>>0)%1000)/1000;}
@@ -2873,12 +2949,13 @@ while(out.indexOf('  ')>=0)out=out.split('  ').join(' ');[' :',' ,',' ;',' .'].f
 // handlers read the droplet by its place (data-i) when clicked, not from when drawn.
 function lqLabels(){var el=$('lqdrops');if(!el)return;
 var dropAt=function(b){return LQ.drops[+b.getAttribute('data-i')];};
-var same=sameHtml(el,LQ.drops.map(function(d,i){if(d.blob)return "<div class='lqd lq-you lqblob"+(d.item.urgent?' urgent':'')+"' data-i='"+i+"' role='group' aria-label='"+escQ(String(d.item.name||d.item.title||'')+': '+String(d.item.q||d.item.sub||''))+"'>"+blobBody(d.item,true)+"</div>";
+var same=keepTyping(el,LQ.drops.map(function(d,i){if(d.blob)return "<div class='lqd lq-you lqblob"+(d.item.urgent?' urgent':'')+"' data-i='"+i+"' data-key='"+escQ(bdKey(d.item))+"' role='group' aria-label='"+escQ(String(d.item.name||d.item.title||'')+': '+String(d.item.q||d.item.sub||''))+"'>"+blobBody(d.item,true)+"</div>";
 return "<div class='lqd lq-"+d.kind+(d.band?' lq-band':'')+(d.parked?' lq-parked':'')+(d.ask&&d.kind==='shape'?' lq-lit':'')+(LQ.openTag===d.id?' open':'')+"' data-i='"+i+"'><button type='button' class='lt' title='"+escQ(String(d.title||'').split('**').join('')+(d.sub?' · '+d.sub:''))+"' aria-expanded='"+(LQ.openTag===d.id)+"'><span>"+esc(lqShort(d.title,42))+"</span>"+((d.kind==='proj'||d.kind==='wait'||d.kind==='run')&&d.sub?"<span class='lm'>"+esc(lqShort(d.sub,d.kind==='proj'?40:56))+"</span>":"")+"</button>"+(d.sub?"<small>"+esc(d.sub)+"</small>":"")+"<button type='button' class='lgo'>Open &rsaquo;</button></div>";}).join(''));
 if(!same){LQ.btns=[];LQ.lts=[];el.querySelectorAll('.lqd').forEach(function(b){LQ.btns.push(b);var d=dropAt(b),lt=b.querySelector('.lt'),go=b.querySelector('.lgo');LQ.lts.push(lt);
+if(b._wired)return;b._wired=true; // the blob kept through the redraw (keepTyping) is wired already
 if(lt)lt.addEventListener('click',function(ev){lqOpen(dropAt(b),ev);});
 if(go)go.addEventListener('click',function(ev){LQ.openTag=null;lqOpen(dropAt(b),ev);});
-if(d&&d.blob)wireBlob(b,d.item,{sent:function(){var x=dropAt(b);if(x)x.gone=true;},done:function(){LQ.fresh=true;lqLoad(false);},say:lqSaid});});}
+if(d&&d.blob)wireBlob(b,d.item,{sent:function(){var x=dropAt(b);if(x)x.gone=true;},done:function(){LQ.fresh=true;lqLoad(false);},say:lqSaid,grew:lqBlobFit});});setTimeout(lqBlobFit,0);}
 var nt=$('lqneedt'),nd=LQ.scene!=='work'&&LQ.need;if(nt){var on=!!(nd&&nd.items.length);if(nt.classList)nt.classList.toggle('on',on);
 if(on){if(!sameHtml(nt,"<span>Needs you"+(nd.count>1?" &middot; "+nd.count:"")+"</span><small>only you can do these</small>"+(nd.pages>1?"<button type='button' class='lqmb lqneedpg' style='pointer-events:auto;min-height:32px;padding:4px 12px;font-size:12.5px'>"+(nd.page+1)+" of "+nd.pages+" &rsaquo;</button>":""))){var pg=nt.querySelector('.lqneedpg');if(pg)pg.addEventListener('click',lqNeedPage);}
 if(nt.style)nt.style.transform='translate('+Math.round(nd.x)+'px,'+(LQ_NEEDY-46)+'px)';}}
@@ -2916,6 +2993,20 @@ function lqGo(shape){if(shape==='tasks'||shape==='agents'){lqWorkBy('task');retu
 // A drafted reply as it will look: a LinkedIn message, a WhatsApp bubble or an email, the reply only.
 function draftHtml(d){var where=d.kind==='social'?'LinkedIn':d.kind==='chat'?'WhatsApp':(d.platform||'email');return "<div class='dmsg dm-"+escQ(d.kind||'mail')+"' aria-label='the reply, as it will be sent'><div class='dmto'>"+(d.to?'To '+esc(d.to)+' · ':'')+esc(d.platform||where)+"</div><div class='dmb'>"+esc(d.text||'')+"</div></div>";}
 function blobOpt(o){return String(o||'').replace(/[ ]*[(]recommended[)][ ]*$/i,'');}
+// What you type in a blob's own-words box, kept per question (its folder and the
+// question, else its id) in localStorage as you type: a redraw, a reload or a restart brings it
+// back, with the cursor where it was, and it goes only once the answer is sent. A
+// week-old one is dropped. One whose question went (answered elsewhere) is said in
+// Home's talk with what you wrote (bdOrphans), never dropped silently.
+var BDKEY='symbiot-blobdrafts',BDKEEP=7*86400000;
+function bdKey(y){return y.path&&y.q?String(y.path)+'|'+String(y.q):String(y.id||'')+'|'+String(y.q||y.sub||'');} // the same question on Home, the Workdesk and a project
+function bdAll(){try{var a=JSON.parse(localStorage.getItem(BDKEY)||'{}');return a&&typeof a==='object'?a:{};}catch(e){return {};}}
+function bdGet(y){var d=bdAll()[bdKey(y)];return d&&d.text?d:null;}
+function bdSet(y,text,s,e,src){var a=bdAll(),k=typeof y==='string'?y:bdKey(y),now=Date.now();if(text)a[k]={text:String(text),at:now,s:s,e:e,name:y.name||y.repo||'',q:y.q||'',src:src||'blob'};else delete a[k];
+for(var x in a)if(now-(a[x].at||0)>BDKEEP)delete a[x];try{localStorage.setItem(BDKEY,JSON.stringify(a));}catch(er){}}
+function bdOrphans(you){var a=bdAll(),keys={},ch=false;(you||[]).forEach(function(y){if(y.kind==='ask')keys[bdKey(y)]=1;});
+for(var k in a){var d=a[k];if(keys[k]||d.told||!d.text||d.src==='desk')continue;d.told=1;ch=true;lqSaid('Your answer to '+(d.name||'an agent')+' wasn’t sent: '+(d.q?'“'+lqShort(d.q,70)+'” ':'its question ')+'was answered or closed elsewhere. What you wrote: “'+d.text+'”');}
+if(ch)try{localStorage.setItem(BDKEY,JSON.stringify(a));}catch(e){}}
 function blobBody(y,home){var h='',nm=y.name||y.repo||(y.kind==='setup'?y.title:'')||'';
 h+=home?"<button type='button' class='lt' title='open "+escQ(nm)+", with this lit up'><span>"+esc(lqShort(nm,30))+"</span><i>open &rsaquo;</i></button>":"<div class='nhead'><b>"+esc(nm)+(y.kind==='ask'?" asks":"")+"</b>"+(y.more?"<span class='muted'>+"+y.more+" more on its block in Agents</span>":"")+"</div>";
 if(y.kind!=='ask')return h+"<div class='bq'>"+esc(y.kind==='approve'?String(y.sub||'').replace(/ · only you decide$/,''):String(y.sub||'').charAt(0).toUpperCase()+String(y.sub||'').slice(1)+'.')+"</div><div class='bo'><button type='button' class='nopt rec ngo'><span class='bt'>"+(y.kind==='approve'?'Review and approve':y.id==='setup:inbox'?(y.signin?'Sign in again':'Show me your inbox'):y.id==='setup:ai'?'Connect an AI':y.pick?'Use '+y.pick.name:y.urgent?'Reconnect':'Open Settings')+"</span></button></div>";
@@ -2933,10 +3024,13 @@ var send=function(ans,j){ans=String(ans||'').trim();if(!ans||(!y.path&&!y.fix))r
 (y.fix?api('/api/home/answer',j!=null?{id:y.id,pick:j}:{id:y.id,text:ans}):api('/api/agents/answer',{path:y.path,answers:[{q:y.q,a:ans}],rerun:true})).then(function(r){
 if(!r||r.error){lock(false);say(nm+': '+((r&&r.error)||'the answer didn’t save. Try again on its block on the Workdesk.'),true);return;}
 say(y.fix?nm+': '+(r.said||'Done.'):'Sent to '+(r.lane||nm)+'. '+(r.yours&&r.yours.length?'Still yours to do: '+r.yours.join(' '):r.rerun?'Its agent is picking it up now.':(r.note||'Saved in its ANSWERS.md.')));
-if(o.sent)o.sent();if(box.classList)box.classList.add('gone');setTimeout(function(){if(o.done)o.done();},650);}).catch(function(e){lock(false);say(nm+': '+String((e&&e.message)||e),true);});};
+bdSet(y,'');if(o.sent)o.sent();if(box.classList)box.classList.add('gone');setTimeout(function(){if(o.done)o.done();},650);}).catch(function(e){lock(false);say(nm+': '+String((e&&e.message)||e),true);});};
 box.querySelectorAll('.nopt[data-j]').forEach(function(b){b.addEventListener('click',function(){var j=+b.getAttribute('data-j');send((y.options||[])[j],j);});});
-var fr=box.querySelector('.bfree'),fx=box.querySelector('.bfx');
-if(fr&&fx)fr.addEventListener('click',function(){var shut=fx.classList.toggle('hidden');fr.setAttribute('aria-expanded',shut?'false':'true');var i=fx.querySelector('input');if(!shut&&i&&i.focus)i.focus();});
+var fr=box.querySelector('.bfree'),fx=box.querySelector('.bfx'),fi=fx&&fx.querySelector('input');
+if(fi){var dr=bdGet(y);if(dr&&!fi.value){fi.value=dr.text;if(fx.classList)fx.classList.remove('hidden');if(fr)fr.setAttribute('aria-expanded','true');try{if(dr.s!=null)fi.setSelectionRange(dr.s,dr.e!=null?dr.e:dr.s);}catch(e){}}
+var keep=function(){bdSet(y,fi.value,fi.selectionStart,fi.selectionEnd);};['input','keyup','mouseup','select'].forEach(function(t){fi.addEventListener(t,keep);});}
+if(fr&&fx)fr.addEventListener('click',function(){var shut=fx.classList.toggle('hidden');fr.setAttribute('aria-expanded',shut?'false':'true');var i=fx.querySelector('input');if(!shut&&i&&i.focus)i.focus();if(o.grew)o.grew();});
+if(o.grew&&fi&&fx&&!fx.classList.contains('hidden'))setTimeout(o.grew,0); // a draft brought back opened it
 if(fx)fx.addEventListener('submit',function(ev){if(ev&&ev.preventDefault)ev.preventDefault();var i=fx.querySelector('input');send(i&&i.value);});
 var go=box.querySelector('.ngo');if(go)go.addEventListener('click',function(){if(!y.pick){lqFocus(y);return;}
 // Pick your agent: the one Symbiot found, in one click; Settings has the others
@@ -2960,10 +3054,10 @@ function renderNeeds(){var el=$('needsbox');if(!el)return;var repo=TFILTER.repo;
 var po=$('pushout');if(po&&po.getAttribute('data-needs')!==null&&po.getAttribute('data-needs')!==String(repo||'')){po.innerHTML='';po.removeAttribute('data-needs');}if(!repo||TARCH){el.innerHTML='';return;}
 var ys=((LQ.home&&LQ.home.you)||[]).filter(function(y){return y.repo===repo&&y.kind==='ask';});
 var paint=function(held){if(TFILTER.repo!==repo)return;if(!ys.length&&!held.length){el.innerHTML='';lqLight();return;}
-el.innerHTML="<div class='tgroup' style='color:var(--amber)'>Needs you here <span class='tcount'>"+(ys.length+held.length)+"</span></div>"+
-ys.map(function(y,i){return "<div class='task nitem lqblob' data-k='"+i+"'>"+blobBody(y,false)+"</div>";}).join('')+
-held.map(function(x){return "<div class='task nitem'><div class='nhead'><b>"+esc(x.from)+" &rarr; "+esc(x.to)+"</b><span class='muted'>handed over, "+esc(LANEWORD.held)+"</span></div><div class='bq'>"+esc(x.text)+"</div></div>";}).join('');
-el.querySelectorAll('.nitem[data-k]').forEach(function(box){var y=ys[+box.getAttribute('data-k')];if(!y)return;
+keepTyping(el,"<div class='tgroup' style='color:var(--amber)'>Needs you here <span class='tcount'>"+(ys.length+held.length)+"</span></div>"+
+ys.map(function(y,i){return "<div class='task nitem lqblob' data-k='"+i+"' data-key='"+escQ(bdKey(y))+"'>"+blobBody(y,false)+"</div>";}).join('')+
+held.map(function(x){return "<div class='task nitem'><div class='nhead'><b>"+esc(x.from)+" &rarr; "+esc(x.to)+"</b><span class='muted'>handed over, "+esc(LANEWORD.held)+"</span></div><div class='bq'>"+esc(x.text)+"</div></div>";}).join(''));
+el.querySelectorAll('.nitem[data-k]').forEach(function(box){var y=ys[+box.getAttribute('data-k')];if(!y||box._wired)return;box._wired=true;
 if(y.kind==='ask')wireBlob(box,y,{say:function(t,bad){var o=$('pushout');o.innerHTML="<div class='note "+(bad?'err':'ok')+"'>"+esc(t)+"</div>";o.setAttribute('data-needs',String(repo||''));},done:function(){LQ.home.you=(LQ.home.you||[]).filter(function(x){return x!==y;});LQ.fresh=true;renderNeeds();}});
 else{var rv=box.querySelector('.ngo');if(rv){rv.innerHTML="<span class='bt'>Review it below</span>";rv.addEventListener('click',function(){var rc=null;document.querySelectorAll('#reviewlist .rcard').forEach(function(c){if(c.getAttribute('data-repo')===repo)rc=c;});if(!rc)return;rc.classList.add('lit');if(rc.scrollIntoView)rc.scrollIntoView({block:'center',behavior:'smooth'});var ap=rc.querySelector('.approve');if(ap&&ap.focus)ap.focus({preventScroll:true});});}}});
 lqLight();};

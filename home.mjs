@@ -28,7 +28,7 @@ import { reportsNews, listReports, readReport, decide } from "./reports.mjs";
 import { awaitingState, inboxSight } from "./handback.mjs";
 import { newClashes } from "./checks.mjs";
 import { postsState } from "./post.mjs";
-import { MARKETING, MARKETING_DIR, MARKETING_WORDS, displayName, productNames, productOf, untagged, tagged, draftFiles, setDraftStatus } from "./marketing.mjs";
+import { MARKETING, MARKETING_DIR, MARKETING_WORDS, displayName, productNames, productOf, untagged, tagged, draftFiles, setDraftStatus, postedCmd } from "./marketing.mjs";
 
 const KEEP = 15000; // the slower reads (git per repo awaiting review) are cached this long
 let cached = null;
@@ -223,7 +223,9 @@ function goLane(repo, map, { push = pushTasks, run = runHandoff } = {}) {
   if (!map[repo]) return { error: `${repo} isn't one of your projects any more.` };
   const p = (push || pushTasks)({ repo }); if (!p || !p.written || !p.written.length) return { error: `Nothing of ${repo}'s is waiting to start.` };
   const e = (run || runHandoff)(map[repo]); if (!e) return { error: "The agent didn't start. Check its command in Settings → Handoff." };
-  return e.parked ? { error: `${repo} is parked: unpark it to start its agent.` } : { ok: true, ...(e.busy || e.blocked ? { queued: true } : { job: e.id }) };
+  if (e.parked) return { error: `${repo} is parked: unpark it to start its agent.` };
+  if (e.blocked && !e.busy) return { error: `${repo}'s agent didn't start: ${e.note || "it's waiting on something"}` }; // queued only behind a run that's really going
+  return { ok: true, ...(e.busy ? { queued: true } : { job: e.id }) };
 }
 
 // ---- Marketing: a lane of its own, across products (marketing.mjs) ----------------------
@@ -280,7 +282,7 @@ function marketingDraftAnswer(rel, status, deps = {}) {
   cached = null;
   const d = r.draft, when = d.when ? `, scheduled in ${d.platform}'s own scheduler for ${d.when}` : "";
   if (status === "skipped") { noteAnswer(dir, `Skipped: ${rel}`, "Don't post it. Leave the draft where it is."); return { ok: true, said: "Skipped. Its agent won't post it." }; }
-  noteAnswer(dir, `Approved: ${rel}`, `The user approved its preview. Post it on ${d.platform}${when}, through Symbiot's signed-in browser, with exactly the text under its post (${d.body.length} characters, unchanged)${d.media.length ? ` and ${d.media.join(", ")} attached` : ""}. Then check it's there, and say so in your last message.`);
+  noteAnswer(dir, `Approved: ${rel}`, `The user approved its preview. Post it on ${d.platform}${when}, through Symbiot's signed-in browser, with exactly the text under its post (${d.body.length} characters, unchanged)${d.media.length ? ` and ${d.media.join(", ")} attached` : ""}. Then check it's there, mark it posted (\`${postedCmd(rel)}\`), and say so in your last message.`);
   if ((deps.running || runningHandoff)(dir)) return { ok: true, said: "Approved. Its agent posts it once the run there now finishes." };
   const e = (deps.run || runHandoff)(dir, { force: true });
   return e && e.id && !e.blocked ? { ok: true, said: `Approved. Its agent is ${d.when ? "scheduling" : "posting"} it now.`, rerun: e.id } : { ok: true, said: `Approved. ${(e && e.note) || "Start its agent to post it."}` };

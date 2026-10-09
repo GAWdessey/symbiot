@@ -184,17 +184,61 @@ function inLane(dir, rel) {
 const sigOf = (body) => createHash("sha256").update(String(body || "")).digest("hex").slice(0, 16);
 const STATUS = ".symbiot/drafts.json";
 function draftStatuses(dir = MARKETING_DIR) { try { const d = JSON.parse(readFileSync(join(dir, STATUS), "utf8")); return d && typeof d === "object" ? d : {}; } catch { return {}; } }
-function statusOf(dir, rel, body) { const s = draftStatuses(dir)[rel]; return s && s.sig === sigOf(body) ? s : null; }
-// Approve or skip a draft: kept by its text (a changed post asks again). { ok, status, draft } or { error }.
-function setDraftStatus(rel, status, { dir = MARKETING_DIR, now = Date.now() } = {}) {
-  const f = inLane(dir, rel); if (!f || !/\.md$/i.test(f)) return { error: "That draft isn't there any more." };
-  if (!["approved", "skipped"].includes(status)) return { error: "Approve or skip it." };
-  const d = parseDraft(readFileSync(f, "utf8"));
-  if (!d.body) return { error: "That draft has no post in it yet." };
-  const all = draftStatuses(dir); all[rel] = { status, sig: sigOf(d.body), at: now };
-  try { mkdirSync(join(dir, ".symbiot"), { recursive: true }); writeFileSync(join(dir, STATUS), JSON.stringify(all, null, 2)); } catch (e) { return { error: "Couldn't save it: " + ((e && e.message) || e) }; }
-  return { ok: true, status, draft: d };
+// Posted and superseded are for good: an edit after either doesn't reopen it (approved and
+// skipped are of a text, so a changed post asks again). One its agent marked posted by
+// hand before there was a status for it ({ status: "approved", posted: <ms> }) is posted.
+const FINAL = ["posted", "superseded"];
+const stateOf = (s) => (!s ? "" : s.status === "posted" || s.posted ? "posted" : String(s.status || ""));
+function statusOf(dir, rel, body) {
+  const s = draftStatuses(dir)[rel], st = stateOf(s);
+  return FINAL.includes(st) ? { ...s, status: st, edited: s.sig !== sigOf(body) } : s && s.sig === sigOf(body) ? s : null;
 }
+// a moment as people read it here: local YYYY-MM-DD HH:MM (what --at takes)
+const day = (ms) => { const d = new Date(ms), p = (n) => String(n).padStart(2, "0"); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`; };
+// Why a posted or superseded draft can't be approved, skipped or posted again, in a line.
+function finalSay(s) {
+  if (stateOf(s) === "posted") return `It's posted already${s.postedOn ? ` on ${s.postedOn}` : ""}${s.posted ? `, ${day(s.posted)}` : ""}${s.url ? ` (${s.url})` : ""}: it can't be approved or posted again.`;
+  const by = [].concat(s.by || []);
+  return `It was superseded${by.length ? ` by ${by.join(", ")}` : ""}: ${by.length ? "approve that one" : "approve the one that replaced it"} instead.`;
+}
+// A draft's path in the lane, as given: lane-relative, ./-relative, or absolute inside it.
+function draftRel(p, dir = MARKETING_DIR) {
+  p = String(p || "").trim(); if (!p.startsWith("/")) return p.replace(/^\.\//, "");
+  try { const root = realpathSync(dir), r = relative(root, realpathSync(p)); return r && !r.startsWith("..") ? r : p; } catch { return p; }
+}
+// Approve or skip a draft, mark it posted ({ url, on, at }: its link, where, when; default
+// now on its platform) or superseded ({ by }: the draft or drafts that replace it). Posted
+// and superseded take it off the Marketing orb for good. { ok, status, draft } or { error }.
+function setDraftStatus(rel, status, { dir = MARKETING_DIR, now = Date.now(), url = "", on = "", at = "", by = [] } = {}) {
+  rel = draftRel(rel, dir);
+  const f = inLane(dir, rel); if (!f || !/\.md$/i.test(f)) return { error: "That draft isn't there any more." };
+  if (!["approved", "skipped", ...FINAL].includes(status)) return { error: "Approve or skip it, or mark it posted or superseded." };
+  const d = parseDraft(readFileSync(f, "utf8"));
+  if (!d.body && status !== "superseded") return { error: "That draft has no post in it yet." };
+  const all = draftStatuses(dir), prev = all[rel], was = stateOf(prev);
+  // posted is the end of it; superseded can still be marked posted (what went out, said)
+  if (was === "posted" && status === "posted") {
+    if (!prev.url && /^https?:\/\/\S+$/i.test(String(url || "").trim())) { prev.url = String(url).trim(); try { writeFileSync(join(dir, STATUS), JSON.stringify(all, null, 2)); } catch {} } // its link, said late
+    return { ok: true, status, already: true, draft: d, rel, said: finalSay(prev) };
+  }
+  if (was === "posted" || (was === "superseded" && status !== "posted" && status !== "superseded")) return { error: finalSay(prev) };
+  let entry = { status, sig: sigOf(d.body), at: now };
+  if (status === "posted") {
+    url = String(url || "").trim(); if (url && !/^https?:\/\/\S+$/i.test(url)) return { error: "Its link is the post's web address (https://…)." };
+    const when = at ? (typeof at === "number" ? at : Date.parse(String(at).replace(" ", "T"))) : now; if (!Number.isFinite(when)) return { error: `"${at}" isn't a date (YYYY-MM-DD HH:MM).` };
+    entry = { ...entry, posted: when, postedOn: String(on || d.platform || "").toLowerCase(), ...(url ? { url } : {}) };
+  }
+  if (status === "superseded") {
+    const list = [].concat(by || []).flatMap((x) => String(x || "").split(",")).map((x) => draftRel(x, dir)).filter(Boolean);
+    const bad = list.find((x) => x === rel || !/\.md$/i.test(x) || !inLane(dir, x)); if (bad) return { error: bad === rel ? "A draft can't replace itself." : `${bad} isn't a draft in the lane.` };
+    if (list.length) entry.by = [...new Set(list)];
+  }
+  all[rel] = entry;
+  try { mkdirSync(join(dir, ".symbiot"), { recursive: true }); writeFileSync(join(dir, STATUS), JSON.stringify(all, null, 2)); } catch (e) { return { error: "Couldn't save it: " + ((e && e.message) || e) }; }
+  return { ok: true, status, draft: d, rel };
+}
+// What its agent runs once a post is out (or in the platform's scheduler), so it leaves the orb.
+const postedCmd = (rel) => `node "${CLI}" marketing posted "${rel}" --url <the post's link>`;
 // Everything the Marketing page needs to show a draft as the platform's post: who it's
 // from, the text whole and cut where the feed cuts it, its hashtags, its picture or
 // video (each a file next to it), its notes apart, and whether you approved it.
@@ -204,12 +248,42 @@ function draftPreview(rel, { dir = MARKETING_DIR, cfg } = {}) {
   const media = d.media.map((m) => { const r = join(base, m), ext = m.split(".").pop().toLowerCase(); return inLane(dir, r) && MEDIA_TYPES[ext] ? { rel: r, name: basename(m), kind: MEDIA_TYPES[ext].startsWith("video") ? "video" : "image" } : null; }).filter(Boolean);
   const st = statusOf(dir, rel, d.body);
   return { rel, title: d.title, product: d.product, platform: d.platform, when: d.when, body: d.body, ...seeMore(d.body), hashtags: d.body.match(/#[\p{L}\p{N}_]+/gu) || [], chars: d.body.length,
-    media, missing: d.media.filter((m) => !media.some((x) => x.name === basename(m))), notes: d.notes, format: d.format, author: author({ cfg, dir }), status: st ? st.status : "", statusAt: st ? st.at : 0 };
+    media, missing: d.media.filter((m) => !media.some((x) => x.name === basename(m))), notes: d.notes, format: d.format, author: author({ cfg, dir }), status: st ? st.status : "", statusAt: st ? st.at : 0,
+    ...(st && FINAL.includes(st.status) ? { final: finalSay(st), posted: st.posted || 0, postedOn: st.postedOn || "", url: st.url || "", by: [].concat(st.by || []), edited: !!st.edited } : {}) };
 }
 // A picture or video a draft shows, or the avatar in config.profile: { file, type } or null.
 function laneMedia(rel, { dir = MARKETING_DIR, cfg = loadConfig() } = {}) {
   const f = rel === "avatar" ? String(((cfg && cfg.profile) || {}).avatar || "") : inLane(dir, rel), type = f && MEDIA_TYPES[f.split(".").pop().toLowerCase()];
   return type && existsSync(f) ? { file: f, type } : null;
+}
+// A post's picture or video, picked (the pick tray, tray.mjs): its `media:` line set to the
+// files, by their path in the lane, written next to the draft's own (`media: tray/home.png`);
+// the post itself untouched. Approved before, it asks for your OK again: what you approved
+// showed another picture. Not on one posted or superseded. { ok, media, reopened } or { error }.
+const MEDIA_LINE = /^\s*(?:media|image|video|picture)\s*:/i;
+function setDraftMedia(rel, files, { dir = MARKETING_DIR } = {}) {
+  rel = draftRel(rel, dir);
+  const f = inLane(dir, rel); if (!f || !/\.md$/i.test(f)) return { error: "That draft isn't there any more." };
+  const all = draftStatuses(dir), prev = all[rel]; if (FINAL.includes(stateOf(prev))) return { error: finalSay(prev) };
+  const media = [];
+  for (const m of [].concat(files || []).map((x) => draftRel(x, dir)).filter(Boolean)) {
+    const p = inLane(dir, m), type = p && MEDIA_TYPES[p.split(".").pop().toLowerCase()];
+    if (!type) return { error: `${m} isn't a picture or video in the lane.` };
+    media.push({ name: relative(dirname(f), p), video: type.startsWith("video") });
+  }
+  if (media.length > 1 && media.some((m) => m.video)) return { error: "A post takes one video, or pictures, not both." };
+  const src = readFileSync(f, "utf8"), lines = src.split(/\r?\n/);
+  let end = lines.findIndex((l) => /^##\s/.test(l) || /^\s*-{3,}\s*$/.test(l)); if (end < 0) end = lines.length;
+  const head = lines.slice(0, end), at = head.findIndex((l) => MEDIA_LINE.test(l)), kept = head.filter((l) => !MEDIA_LINE.test(l));
+  // where it goes: where it was, else after the head's last key line (product:, when:…), else the title
+  let i = at >= 0 ? head.slice(0, at).filter((l) => !MEDIA_LINE.test(l)).length : -1;
+  if (i < 0) { kept.forEach((l, k) => { const m = l.match(/^\s*([a-z]+)\s*:/i); if ((m && HEAD_KEYS[m[1].toLowerCase()]) || (/^#\s/.test(l) && i < 0)) i = k + 1; }); if (i < 0) i = 0; }
+  const line = media.length ? `media: ${media.map((m) => m.name).join(", ")}` : "";
+  if (head.filter((l) => MEDIA_LINE.test(l)).join("\n") === line) return { ok: true, rel, media: media.map((m) => m.name), reopened: false, same: true };
+  if (line) kept.splice(i, 0, line);
+  try { writeFileSync(f, [...kept, ...lines.slice(end)].join(src.includes("\r\n") ? "\r\n" : "\n")); } catch (e) { return { error: "Couldn't save it: " + ((e && e.message) || e) }; }
+  const reopened = stateOf(prev) === "approved"; if (reopened) { delete all[rel]; try { writeFileSync(join(dir, STATUS), JSON.stringify(all, null, 2)); } catch {} }
+  return { ok: true, rel, media: media.map((m) => m.name), reopened };
 }
 
 // ---- its brief ----------------------------------------------------------------------------
@@ -226,8 +300,9 @@ function marketingBrief(list = [], { map = {}, names = productNames(map) } = {})
     `- Write each piece as a \`.md\` under \`${DRAFTS}/<product>/\` (\`${DRAFTS}/dailify/launch-post.md\`), a \`# \` title first, then \`product: <Product>\`, so the Marketing page tags it. Its screenshots and clips go next to it.`,
     "- Every post opens with a strong hook (its first line written for reach), says plainly what the product is, and states its end goal. Where the end goal isn't written down, draft one and flag it in QUESTIONS.md for the user to confirm.",
     `- Each draft holds the post apart from your notes: a \`# \` title, then \`product:\`, \`platform:\` (linkedin), \`when:\` (YYYY-MM-DD HH:MM, if it's scheduled) and \`media:\` (its picture or video, next to it) lines, then \`## Post\` with exactly the text that goes out (its line breaks, its hashtags) and nothing else, then \`## Notes\` for your reasoning, sources and anything for the user. Symbiot shows \`## Post\` as the platform's own preview, and what you post is that text, unchanged.`,
-    `- The user's only step is approving each post's preview under Marketing in Symbiot: never ask them to post, schedule, paste or attach anything themselves, and never mark that as a 👤 step. Symbiot's browser is signed in to the platforms they linked (LinkedIn among them): once a post is approved (ANSWERS.md says "Approved: <its file>"), you post it, or schedule it in the platform's own scheduler for its \`when:\`, through that browser (\`node "${CLI}" screens map <the platform's page>\`, then \`screens type\` and \`screens press\`), with the approved text and media, then check it's there.`
-      + " A post not yet approved is a question in QUESTIONS.md with a 🤖 Agent: option (\"🤖 Agent: post it on Tuesday at 08:00, once you approve its preview\"), and what to check first in its context line. Never offer doing it by hand, and never ask them to sign in to or link a platform that's linked: use its session. Only signing in (a platform not linked yet, or a real attempt found its session expired: say so) is the user's: `👤 You (only you: signing in to LinkedIn)`. Never sign in as them, and never post what they haven't approved."];
+    `- The user's only step is approving each post's preview under Marketing in Symbiot: never ask them to post, schedule, paste or attach anything themselves, and never mark that as a 👤 step. Symbiot's browser is signed in to the platforms they linked (LinkedIn among them): once a post is approved (ANSWERS.md says "Approved: <its file>"), you post it, or schedule it in the platform's own scheduler for its \`when:\`, through that browser (\`node "${CLI}" screens map <the platform's page>\`, then \`screens type\` and \`screens press\`, and \`screens upload <id> "<its Add media button>" <file>\` for its pictures or video), with the approved text and media, then check it's there.`
+      + " A post not yet approved is a question in QUESTIONS.md with a 🤖 Agent: option (\"🤖 Agent: post it on Tuesday at 08:00, once you approve its preview\"), and what to check first in its context line. Never offer doing it by hand, and never ask them to sign in to or link a platform that's linked: use its session. Only signing in (a platform not linked yet, or a real attempt found its session expired: say so) is the user's: `👤 You (only you: signing in to LinkedIn)`. Never sign in as them, and never post what they haven't approved.",
+    `- Once a post is out (or in the platform's scheduler), mark it posted with its link: \`node "${CLI}" marketing posted <its file> --url <the post's link>\` (\`--at "YYYY-MM-DD HH:MM"\` for a scheduled one). A post you redo in a new file: mark the old one \`node "${CLI}" marketing superseded <old file> --by <new file>\`. Either takes it off the user's list for good, and Symbiot then refuses to approve or post it again: never edit \`.symbiot/drafts.json\` by hand.`];
 }
 
-export { MARKETING, MARKETING_DIR, displayName, productNames, ensureMarketing, productOf, untagged, tagged, MARKETING_WORDS, draftFiles, marketingBrief, parseDraft, seeMore, SEE_MORE, draftPreview, setDraftStatus, draftStatuses, laneMedia };
+export { MARKETING, MARKETING_DIR, displayName, productNames, ensureMarketing, productOf, untagged, tagged, MARKETING_WORDS, draftFiles, marketingBrief, parseDraft, seeMore, SEE_MORE, draftPreview, setDraftStatus, draftStatuses, laneMedia, draftRel, setDraftMedia, postedCmd, MEDIA_TYPES, inLane, day };

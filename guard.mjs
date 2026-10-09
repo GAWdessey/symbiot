@@ -7,7 +7,8 @@
 //   - push to main/master, or force-push; publish a package
 //   - delete outside the agent's own folder, or wipe a disk
 //   - sudo, or pipe something from the internet into a shell
-//   - read SSH keys or cloud credentials; change Symbiot's own settings
+//   - read SSH keys or cloud credentials, or Symbiot's own keys (secrets.json: your AI's
+//     key and the app's token); change Symbiot's own settings
 //   - open the user's running Symbiot in a browser (a check uses a sandbox copy)
 //   - in a sandboxed repo run (agents.mjs sandboxFor), edit or write a file outside its
 //     repo and your folders (SYMBIOT_WRITES): its commands are held there by the sandbox
@@ -18,7 +19,7 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-const SECRET = [".ssh", ".gnupg", ".aws", ".azure", ".kube", ".docker/config.json", ".config/gcloud", ".config/gh/hosts.yml", ".netrc", ".npmrc", ".pypirc", ".git-credentials"];
+const SECRET = [".ssh", ".gnupg", ".aws", ".azure", ".kube", ".docker/config.json", ".config/gcloud", ".config/gh/hosts.yml", ".netrc", ".npmrc", ".pypirc", ".git-credentials", ".config/symbiot/secrets.json"];
 const under = (p, d) => p === d || p.startsWith(d.endsWith("/") ? d : d + "/");
 const expand = (p, home, cwd) => resolve(cwd, String(p).replace(/^~(?=\/|$)/, home).replace(/^\$HOME(?=\/|$)/, home).replace(/^\$\{HOME\}(?=\/|$)/, home));
 const BROWSER = /\b(google-chrome(-stable)?|chromium(-browser)?|chrome|firefox|msedge|playwright|puppeteer|wkhtmltoimage|cutycapt)\b/i;
@@ -65,7 +66,7 @@ function judgeBash(cmd, { cwd, home, branch }) {
       const own = w[0] === "scp" ? SCP_VALUE : null;
       for (const p of w.slice(1).filter((a, i, all) => !a.startsWith("-") && !(own && own.test(all[i - 1] || "")))) { if (secretPath(expand(p, home, cwd), home)) return { why: "your keys and cloud credentials stay yours" }; }
     }
-    if (/(^|\s)(>|>>|tee|sed\s+-i)\s*\S*\.config\/symbiot\/config\.json/.test(s)) return { why: "Symbiot's own settings are yours to change" };
+    if (/(^|\s)(>|>>|tee|sed\s+-i)\s*\S*\.config\/symbiot\/(config|secrets)\.json/.test(s)) return { why: "Symbiot's own settings are yours to change" };
   }
   if (/\b(curl|wget)\b[^|]*\|\s*(sudo\s+)?(ba|z|da)?sh\b/.test(c)) return { why: "running a script straight from the internet" };
   // a browser on the user's running Symbiot: each page it opened counted as a new window and

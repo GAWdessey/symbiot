@@ -146,6 +146,55 @@ console.log("MARKETING — a draft shown as the post it will be");
   const sk = marketingDraftAnswer("drafts/steve/week-03.md", "skipped", { dir, run: () => { throw new Error("ran"); } });
   ok("Skip: its agent is told not to post it, and nothing starts", sk.ok && /### Skipped: drafts\/steve\/week-03\.md\nDon't post it/.test(readFileSync(join(dir, ".symbiot", "ANSWERS.md"), "utf8")), sk);
   ok("one that isn't there: says so", !!marketingDraftAnswer("drafts/steve/gone.md", "approved", { dir }).error);
+
+  console.log("MARKETING — posted and superseded: off the orb for good");
+  const ap2 = marketingDraftAnswer("drafts/steve/week-02.md", "approved", { dir, running: () => true });
+  ok("Approve tells its agent how to mark it posted once it's out", ap2.ok && /marketing posted "drafts\/steve\/week-02\.md" --url/.test(readFileSync(join(dir, ".symbiot", "ANSWERS.md"), "utf8")));
+  ok("…and the lane's brief says it, and how to mark a redone one superseded", /marketing posted <its file> --url/.test(M.marketingBrief([], { map })) && /marketing superseded <old file> --by <new file>/.test(M.marketingBrief([], { map })) && /never edit `\.symbiot\/drafts\.json` by hand/.test(M.marketingBrief([], { map })));
+  ok("a link that isn't a web address: refused", /web address/.test(M.setDraftStatus("drafts/steve/week-02.md", "posted", { dir, url: "javascript:alert(1)" }).error || ""));
+  ok("a date that isn't one: refused", /isn't a date/.test(M.setDraftStatus("drafts/steve/week-02.md", "posted", { dir, at: "tuesday-ish" }).error || ""));
+  const ps = M.setDraftStatus(join(dir, "drafts/steve/week-02.md"), "posted", { dir, url: "https://www.linkedin.com/feed/update/urn:li:activity:1/", at: "2026-10-13 08:00", now: 5 });
+  const kept = M.draftStatuses(dir)["drafts/steve/week-02.md"];
+  ok("posted: when, where (its platform) and its link kept by marketing.mjs, the draft named by its full path too", ps.ok && ps.rel === "drafts/steve/week-02.md" && kept.status === "posted" && kept.postedOn === "linkedin" && kept.url.startsWith("https://www.linkedin.com/") && kept.posted === Date.parse("2026-10-13T08:00"), kept);
+  const pp = M.draftPreview("drafts/steve/week-02.md", { dir, cfg });
+  ok("…its preview says so, with its link", pp.status === "posted" && pp.url === kept.url && /posted already on linkedin/.test(pp.final), pp);
+  writeFileSync(join(d, "week-02.md"), readFileSync(join(d, "week-02.md"), "utf8").replace("Steve won't.", "Steve never does."));
+  const pe = M.draftPreview("drafts/steve/week-02.md", { dir, cfg });
+  ok("an edit after it's posted doesn't reopen it: still posted (its file changed, said)", pe.status === "posted" && pe.edited === true && M.draftFiles(dir).find((f) => f.rel === "drafts/steve/week-02.md").status === "posted", pe);
+  const again = marketingDraftAnswer("drafts/steve/week-02.md", "approved", { dir, run: () => { throw new Error("ran"); } });
+  ok("Approve on a posted draft: refused, saying it's posted (when, where, its link), and nothing starts", /posted already on linkedin, 2026-10-13 08:00 \(https:\/\/www\.linkedin\.com\/.+\): it can't be approved or posted again/.test(again.error || ""), again);
+  ok("…Skip too", /posted already/.test(marketingDraftAnswer("drafts/steve/week-02.md", "skipped", { dir }).error || ""));
+  const twice = M.setDraftStatus("drafts/steve/week-02.md", "posted", { dir, now: 9 });
+  ok("marked posted twice: the first time stands (its date and link), said", twice.ok && twice.already && M.draftStatuses(dir)["drafts/steve/week-02.md"].posted === kept.posted, twice);
+  ok("…and media can't be changed on it", /posted already/.test(M.setDraftMedia("drafts/steve/week-02.md", ["drafts/steve/card.png"], { dir }).error || ""));
+  // one its agent marked by hand before there was a posted status: { status: "approved", posted }
+  const sf = join(dir, ".symbiot", "drafts.json"), raw = JSON.parse(readFileSync(sf, "utf8"));
+  raw["drafts/steve/week-03.md"] = { status: "approved", sig: "old", at: 1, posted: Date.parse("2026-10-09T07:50"), postedOn: "linkedin" }; writeFileSync(sf, JSON.stringify(raw));
+  ok("one marked posted by hand before ({ status: approved, posted }) is posted, whatever its text now", M.draftPreview("drafts/steve/week-03.md", { dir, cfg }).status === "posted" && !!marketingDraftAnswer("drafts/steve/week-03.md", "approved", { dir }).error);
+  // superseded: a redo replaces the old one
+  writeFileSync(join(d, "week-04.md"), `# Week 4\nproduct: Steve\n\n## Post\nThe old take.\n`);
+  writeFileSync(join(d, "week-04b.md"), `# Week 4, redone\nproduct: Steve\n\n## Post\nThe new take.\n`);
+  ok("superseded by a draft that isn't there: refused", /isn't a draft in the lane/.test(M.setDraftStatus("drafts/steve/week-04.md", "superseded", { dir, by: "drafts/steve/nope.md" }).error || ""));
+  ok("…nor by itself", /can't replace itself/.test(M.setDraftStatus("drafts/steve/week-04.md", "superseded", { dir, by: "drafts/steve/week-04.md" }).error || ""));
+  const sp = M.setDraftStatus("drafts/steve/week-04.md", "superseded", { dir, by: "drafts/steve/week-04b.md" });
+  ok("superseded, naming the draft that replaces it", sp.ok && M.draftStatuses(dir)["drafts/steve/week-04.md"].by.join() === "drafts/steve/week-04b.md");
+  const sa = marketingDraftAnswer("drafts/steve/week-04.md", "approved", { dir, run: () => { throw new Error("ran"); } });
+  ok("…Approve on it: refused, naming the one to approve instead", /superseded by drafts\/steve\/week-04b\.md: approve that one instead/.test(sa.error || ""), sa);
+  ok("…superseded without naming one is fine too (and has no post to need)", M.setDraftStatus("drafts/steve/sneaky.md", "superseded", { dir }).ok);
+  const ms = marketingState({ deps: { repos: () => ({}), tasks: () => [], posts: () => ({ posts: [], done: [] }), agents: () => [], pending: () => [], files: () => M.draftFiles(dir) } });
+  ok("posted and superseded drafts leave the Marketing orb; the redo is there to approve", !ms.needs.some((n) => ["drafts/steve/week-02.md", "drafts/steve/week-03.md", "drafts/steve/week-04.md"].includes(n.rel)) && ms.needs.some((n) => n.rel === "drafts/steve/week-04b.md"), ms.needs.map((n) => n.rel));
+  ok("a status there isn't: refused", !!M.setDraftStatus("drafts/steve/week-04b.md", "maybe", { dir }).error);
+  const cli = (args) => { try { return { out: execFileSync(process.execPath, [join(process.cwd(), "index.mjs"), "marketing", ...args], { encoding: "utf8", env: { ...process.env, HOME } }), code: 0 }; } catch (e) { return { out: String(e.stdout || ""), code: e.status }; } };
+  mkdirSync(join(M.MARKETING_DIR, "drafts", "dailify"), { recursive: true });
+  writeFileSync(join(M.MARKETING_DIR, "drafts", "dailify", "teaser.md"), "# Teaser\nproduct: Dailify\n\n## Post\nSoon.\n");
+  writeFileSync(join(M.MARKETING_DIR, "drafts", "dailify", "teaser-2.md"), "# Teaser, redone\nproduct: Dailify\n\n## Post\nSoon, sooner.\n");
+  const c1 = cli(["posted", "drafts/dailify/teaser-2.md", "--url", "https://www.linkedin.com/feed/update/x/", "--plain"]);
+  ok("the CLI an agent runs: symbiot marketing posted <draft> --url <link>", c1.code === 0 && /posted on linkedin/.test(c1.out) && M.draftStatuses()["drafts/dailify/teaser-2.md"].url === "https://www.linkedin.com/feed/update/x/", c1);
+  const c2 = cli(["superseded", "drafts/dailify/teaser.md", "--by", "drafts/dailify/teaser-2.md", "--plain"]);
+  ok("…symbiot marketing superseded <draft> --by <new draft>", c2.code === 0 && M.draftStatuses()["drafts/dailify/teaser.md"].by[0] === "drafts/dailify/teaser-2.md", c2);
+  const c3 = cli(["superseded", "drafts/dailify/teaser-2.md", "--plain"]);
+  ok("…refusing, with why and a non-zero exit, what it can't do", c3.code === 1 && /posted already/.test(c3.out), c3);
+  ok("…and listing them", /posted\s+drafts\/dailify\/teaser-2\.md/.test(cli(["list", "--plain"]).out));
 }
 
 console.log("MARKETING — LinkedIn linked: no card asks you to sign in or do it by hand");

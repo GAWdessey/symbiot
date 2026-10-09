@@ -460,6 +460,38 @@ try {
   parkLane(pdir, false);
   ok("…unparked, it's gone from the list", !parkedPaths().length, parkedPaths());
   setHandoffCmd("");
+
+  // a run in ~ started with no TASKS.md there, and only cost a session (2026-10-07)
+  console.log("NOTHING TO DO — a folder with no open task, and no answer since its last run, starts no run");
+  const { runningHandoff, writeTasks } = await import("../agents.mjs");
+  const ended = async (p) => { for (let i = 0; i < 100 && runningHandoff(p); i++) await new Promise((r) => setTimeout(r, 50)); };
+  const idir = join(HOME, "projects", "idle"), is = join(idir, ".symbiot"); mkdirSync(is, { recursive: true });
+  setHandoffCmd("true {dir} {prompt}");
+  const n1 = runHandoff(idir, { force: true });
+  ok("no TASKS.md: not started, not even Start it anyway, and the note says why", n1 && n1.blocked && n1.idle && !n1.id && /^Not started: idle has no \.symbiot\/TASKS\.md/.test(n1.note), n1);
+  writeFileSync(join(is, "TASKS.md"), "## Tasks\n- [x] Done already\n");
+  const n2 = runHandoff(idir);
+  ok("every task ticked: not started either", n2 && n2.blocked && n2.idle && /every task .* is ticked/.test(n2.note), n2);
+  writeFileSync(join(is, "agent.log"), `\n=== idle ${new Date(Date.now() - 60000).toISOString()} ===\n$ true\n`);
+  writeFileSync(join(is, "ANSWERS.md"), "# Answers\n\n### Approved: drafts/post.md\nPost it.\n");
+  const n3 = runHandoff(idir, { force: true });
+  ok("…but an answer since its last run started (an approved post) starts one, every task ticked", n3 && n3.id && !n3.blocked, n3);
+  await ended(idir);
+  const n4 = runHandoff(idir, { force: true });
+  ok("…once: after that run, the same answer starts no other", n4 && n4.blocked && n4.idle, n4);
+  const n5 = runHandoff(idir, { force: true, lost: true });
+  ok("restarting a lost conversation goes ahead (its answer is older than the failed resume)", n5 && n5.id && !n5.blocked, n5);
+  await ended(idir);
+  writeTasks(idir, "## Tasks\n- [x] Done already\n- [ ] A new one\n");
+  const n6 = runHandoff(idir);
+  ok("a new task: it starts", n6 && n6.id && !n6.blocked, n6);
+  await ended(idir);
+  // an ops run (drafts/act-*): its TASKS.md is written right before it starts
+  const { actNow } = await import("../mind.mjs");
+  const an = actNow("Check the build on the server");
+  ok("an ops run in a new act-* folder still starts: its brief lands first", an.ok && an.job && /[\\/]drafts[\\/]act-[0-9a-f]+$/.test(an.dir) && /- \[ \]/.test(readFileSync(join(an.dir, ".symbiot", "TASKS.md"), "utf8")), an);
+  await ended(an.dir);
+  setHandoffCmd("");
 } finally {
   rmSync(HOME, { recursive: true, force: true });
 }

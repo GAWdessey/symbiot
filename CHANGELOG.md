@@ -2,6 +2,23 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.58.3 — 2026-10-09
+
+- Fixed urgent requests to a parked project: it is now unparked for the work, and other projects are released if nothing starts.
+- Fixed a stuck urgent hold that kept projects paused for hours; it now clears about two minutes after nothing starts running.
+- Changed agents so they no longer start in a folder with no open tasks or new answers, which avoids wasted sessions.
+- Fixed Symbiot saying an agent was "already on urgent work" when nothing was running.
+- Added a "posted" status for marketing drafts so a posted draft leaves the Marketing orb and can't be posted twice.
+- Added `symbiot screens upload` to attach a picture or video to a page's file field, such as a LinkedIn post.
+- Added a fact-only brand brief for the designer making the Symbiot icon and logo.
+- Changed the LinkedIn reader to capture who sent each message and what each notification is about, not just badge counts.
+- Added a review of the mobile companion spec, with follow-up tasks and open decisions.
+- Added a "superseded" status so a redone marketing post replaces the old one on the Marketing orb.
+- Added the pick tray to the Marketing page, showing captures with switchable blur boxes and one-click media selection.
+- Fixed Home cards erasing what you were typing in "answer in your own words" whenever the page updated.
+- Fixed tall question cards on Home overlapping the working-agents row below them.
+- Changed where Symbiot keeps your AI key and app token so agent runs can no longer read them.
+
 ## 0.58.2
 
 - **A voice that doesn't sound robotic, picked for you.** When Symbiot reads a reply out, it uses your computer's own voice only when that's a modern, natural one (Edge's Natural voices on Windows, Apple's Premium and Enhanced voices, a phone's own). Otherwise, as on Linux, where Chrome only has its older Google voices and espeak, Symbiot speaks with its own voice: Piper, a small open-source speech engine that runs on your computer. The accent follows where you are (British English for South Africa, the UK, Australia and the rest; American for the US and Canada), and both voices are public domain. Nothing to choose, no account, nothing leaves your computer. It downloads once (about 85 MB) the first time it's needed, while the system voice covers that first reply, and then answers sentence by sentence, the first in under a second.

@@ -1250,6 +1250,8 @@ symbiot screens type <id> "Search mail" "invoice" --enter --yes   # type into a 
                                        # (--yes isn't needed on a site under Trusted sites in Settings)
 symbiot screens type <id> To "sam@example.com" --yes   # without --enter: the text stays in the field...
 symbiot screens press <new id> Send --yes  # ...for a press on the screen that just printed
+symbiot screens upload <id> "Add media" ~/clip.mp4 --yes   # put a file in the page's file box: the field,
+                                       # or the button a site hides it behind ("used" says which box)
 symbiot screens scroll <id>            # "more": "below"? scroll down and map the next part (or up, top, bottom)
 symbiot screens whole <id>             # all of that page in one tall screen (or: symbiot screens map <site> --whole)
 symbiot screens show <id>              # a saved screen's blueprint

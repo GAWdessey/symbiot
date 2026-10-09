@@ -229,7 +229,7 @@ try {
   console.log("HANDOFF — one agent per folder: a second send while it runs starts nothing");
   // two identical runs once started on the same repo 6s apart and raced
   const AGENTS = join(dirname(INDEX), "agents.mjs"), busyDir = join(ROOT, "busy");
-  mkdirSync(busyDir, { recursive: true });
+  mkdirSync(join(busyDir, ".symbiot"), { recursive: true }); writeFileSync(join(busyDir, ".symbiot", "TASKS.md"), "- [ ] Fix the reader\n"); // something to do (runHandoff's nothingToDo)
   const bs = spawnSync(process.execPath, ["--input-type=module", "-e", `
     import * as a from ${JSON.stringify(AGENTS)};
     import { existsSync, readFileSync, writeFileSync } from "node:fs";

@@ -12,7 +12,8 @@
 // The ledger, ~/.config/symbiot/lanes.json: { handoffs: [{ id, key, from: { lane,
 // path }, to: { lane, path }, text, at, chain, status, job?, task?, error?,
 // result?, reportedAt? }] }. status: started, held (that lane's agent was busy:
-// it starts when it's free), done (reported back) or error (reported back too).
+// it starts when it's free), blocked (it didn't start, and nothing running there will
+// start it: note says why), done (reported back) or error (reported back too).
 // chain: how many handovers in a row led here; past MAX_CHAIN it stops, so two
 // lanes can't hand the same thing back and forth forever.
 import { join, basename, dirname, resolve, relative } from "node:path";
@@ -50,6 +51,9 @@ function laneTarget(lane, map) {
   const name = Object.keys(map).find((n) => n.toLowerCase() === lane.toLowerCase());
   return name ? { lane: name, path: map[name] } : null;
 }
+// Where a handover to a repo stands once its agent was asked to start (runHandoff's
+// result): started; held behind a run that's really going there; or blocked, with why.
+const startedAs = (r) => r.id && !r.busy && !r.blocked ? { status: "started", job: r.id } : r.busy ? { status: "held", ...(r.id ? { job: r.id } : {}) } : { status: "blocked", note: String(r.note || "its agent didn't start").slice(0, 200) };
 
 // A handover whose text changed while the run doing the earlier version is still
 // going (the LinkedIn auto-poster spec reached ops twice, on top of a run already
@@ -62,7 +66,7 @@ function laneTarget(lane, map) {
 // back, about the same thing (alike), and its run still going (ops) or its task
 // still open (a repo). null when there's none.
 function supersedes(h, from, ledger, { running, tasks }) {
-  return ledger.handoffs.slice().reverse().find((x) => x.from.path === from.path && x.to.lane.toLowerCase() === h.lane.toLowerCase() && !x.reportedAt && (x.status === "started" || x.status === "held") && x.text !== h.text && alike(x.text, h.text)
+  return ledger.handoffs.slice().reverse().find((x) => x.from.path === from.path && x.to.lane.toLowerCase() === h.lane.toLowerCase() && !x.reportedAt && (x.status === "started" || x.status === "held" || x.status === "blocked") && x.text !== h.text && alike(x.text, h.text)
     && (x.to.lane === OPS ? !!x.to.path && !!running(x.to.path) : !!x.task && tasks().some((t) => t.id === x.task && !t.done && !t.archived && !t.review))) || null;
 }
 function resupply(e, text, { now, title, context }) {
@@ -97,7 +101,7 @@ function dispatch(path, { map = laneMap(), act = actNow, run = runHandoff, add =
         if (t.error) { Object.assign(prior, { status: "error", error: t.error, text: h.text, key, was }); started.push(prior); continue; }
         push({ repo: prior.to.lane });
         const r = run(prior.to.path) || {};
-        Object.assign(prior, { text: h.text, key, was, at: now, task: t.id, superseded: (prior.superseded || 0) + 1, status: r.id && !r.busy && !r.blocked ? "started" : "held", ...(r.id ? { job: r.id } : {}) });
+        Object.assign(prior, { text: h.text, key, was, at: now, task: t.id, superseded: (prior.superseded || 0) + 1, ...startedAs(r) });
       }
       started.push(prior); continue;
     }
@@ -116,7 +120,7 @@ function dispatch(path, { map = laneMap(), act = actNow, run = runHandoff, add =
       else {
         push({ repo: to.lane });
         const r = run(to.path) || {};
-        Object.assign(e, { to, task: t.id, status: r.id && !r.busy && !r.blocked ? "started" : "held", ...(r.id ? { job: r.id } : {}) });
+        Object.assign(e, { to, task: t.id, ...startedAs(r) });
       }
     }
     ledger.handoffs.push(e); started.push(e);
@@ -342,7 +346,7 @@ function lanesState() {
   for (const e of loadLedger().handoffs.slice().reverse()) {
     const k = [e.from.lane, e.to.lane, firstLine(e.text).replace(/\s+/g, " ").trim()].join("\n").toLowerCase();
     if (byKey.has(k)) { byKey.get(k).times++; continue; }
-    const row = { id: e.id, from: e.from.lane, to: e.to.lane, text: clipWords(firstLine(e.text), 160), ...(e.text.trim() !== firstLine(e.text).trim() || e.text.length > 160 ? { full: e.text } : {}), at: e.at, status: e.status, ...(e.error ? { error: e.error } : {}), ...(e.result ? { result: e.result } : {}), times: 1 };
+    const row = { id: e.id, from: e.from.lane, to: e.to.lane, text: clipWords(firstLine(e.text), 160), ...(e.text.trim() !== firstLine(e.text).trim() || e.text.length > 160 ? { full: e.text } : {}), at: e.at, status: (e.status === "held" || e.status === "blocked") && e.to.path && lastRunStart(e.to.path) >= e.at ? "started" : e.status, ...(e.status === "blocked" && e.note ? { note: e.note } : {}), ...(e.error ? { error: e.error } : {}), ...(e.result ? { result: e.result } : {}), times: 1 };
     byKey.set(k, row); out.push(row);
   }
   return { handoffs: out.slice(0, 30) };

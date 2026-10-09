@@ -335,6 +335,61 @@ try {
   ok("…kept a while: no second fetch", JSON.stringify(await P.testInstalls(t3, { now: day("2026-10-24"), get: async () => { throw new Error("fetched again"); } })) === "[15,7,null,null]", "");
   ok("…and nothing when npm can't be reached or nothing's started", (await P.testInstalls({ ...t3, packages: ["x"], start: "2026-10-12" }, { get: async () => null })) === null && (await P.testInstalls({ ...t3, rows: t3.rows.map((r) => ({ ...r, started: false })) })) === null, "");
   }
+  // ---- symbiot screens upload: a picture or video into a page's file box ----
+  console.log("UPLOAD — a file into the page's file box (DOM.setFileInputFiles), the box hidden behind a button");
+  {
+    const H = await import("../headless.mjs");
+    const clip = join(HOME, "clip.mp4"); writeFileSync(clip, "not really a video");
+    const fake = ({ box = null, chooser = null } = {}) => {
+      const sent = [];
+      const page = {
+        sent,
+        send: async (method, params = {}) => {
+          sent.push([method, params]);
+          if (method === "Runtime.evaluate" && params.returnByValue) return { result: { value: box } };
+          if (method === "Runtime.evaluate" && params.expression === "window.__symbiotFileBox") return { result: { objectId: "box-1" } };
+          return {};
+        },
+        until: async () => chooser,
+      };
+      return page;
+    };
+    const btn = { label: "Add media", kind: "button", selector: "#media-btn" };
+    let pg = fake({ box: { how: "the only file box on the page", box: 'input[type=file] (takes image/*,video/*)', multiple: false } });
+    const r1 = await H.attachFiles(pg, { x: 10, y: 20 }, btn, [clip]);
+    const set1 = pg.sent.find((m) => m[0] === "DOM.setFileInputFiles");
+    ok("the button's hidden file box gets the file, by its object (DOM.setFileInputFiles)", set1 && set1[1].objectId === "box-1" && JSON.stringify(set1[1].files) === JSON.stringify([clip]), pg.sent);
+    ok("…and it says which box it used", /input\[type=file\].*the only file box on the page/.test(r1.used), r1);
+    ok("…found from the region's selector, else its spot", /#media-btn/.test(pg.sent[0][1].expression) && /elementFromPoint\(10, 20\)/.test(pg.sent[0][1].expression), pg.sent[0]);
+    ok("the page's finder parses", (() => { try { new Function("return " + H.FILE_BOX("#a", { x: 1, y: 2 })); return true; } catch { return false; } })(), "");
+    let threw = ""; try { await H.attachFiles(fake({ box: { how: "x", box: "input[type=file]", multiple: false } }), { x: 1, y: 1 }, btn, [clip, clip]); } catch (e) { threw = e.message; }
+    ok("two files into a box that takes one: refused", /one file at a time/.test(threw), threw);
+    pg = fake({ chooser: { params: { backendNodeId: 42, mode: "selectSingle" } } });
+    const r2 = await H.attachFiles(pg, { x: 5, y: 6 }, btn, [clip]);
+    const names = pg.sent.map((m) => m[0]), set2 = pg.sent.find((m) => m[0] === "DOM.setFileInputFiles");
+    ok("no box on the page yet: it presses the button with the file dialog caught, and fills the box it was for", names.join() === "Runtime.evaluate,Page.setInterceptFileChooserDialog,Input.dispatchMouseEvent,Input.dispatchMouseEvent,Input.dispatchMouseEvent,DOM.setFileInputFiles,Page.setInterceptFileChooserDialog" && set2[1].backendNodeId === 42 && pg.sent[1][1].enabled === true && pg.sent[6][1].enabled === false && /file dialog/.test(r2.used), names);
+    pg = fake({ chooser: null }); threw = "";
+    try { await H.attachFiles(pg, { x: 5, y: 6 }, btn, [clip]); } catch (e) { threw = e.message; }
+    ok("…no dialog either: says so, and stops catching dialogs", /didn't open a file dialog/.test(threw) && pg.sent.at(-1)[0] === "Page.setInterceptFileChooserDialog" && pg.sent.at(-1)[1].enabled === false && !pg.sent.some((m) => m[0] === "DOM.setFileInputFiles"), [threw, pg.sent.map((m) => m[0])]);
+    const here = process.cwd(); process.chdir(HOME);
+    try {
+      const u1 = H.uploadFiles("clip.mp4"), u2 = H.uploadFiles("gone.mp4"), u3 = H.uploadFiles("");
+      ok("a file named from where you are is sent as its absolute path; a missing one, or none, is refused", JSON.stringify(u1.files) === JSON.stringify([clip]) && u2.error === `No file at ${join(HOME, "gone.mp4")}.` && /Give the file/.test(u3.error), [u1, u2, u3]);
+    } finally { process.chdir(here); }
+    // the command: a mapped page, its Add media button a region (no app running here; not
+    // linkedin.com, which the tests above trusted: nothing here may start a browser)
+    const { addPageScreen } = await import("../screens.mjs");
+    const PNG1 = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==", "base64");
+    const sc = addPageScreen("Feed", PNG1, { url: "https://social.example.invalid/feed/", title: "Feed" }, [{ label: "Add media", kind: "button", x: 0, y: 0, w: 1, h: 1, selector: "#media-btn" }]);
+    const screens = (...args) => { try { return { code: 0, out: execFileSync(process.execPath, [INDEX, "screens", ...args], { cwd: HOME, env: { ...process.env, HOME }, encoding: "utf8", timeout: 60000 }) }; } catch (x) { return { code: x.status, out: String(x.stdout || "") }; } };
+    const c1 = screens("upload", sc.id, "media", "gone.mp4");
+    ok("symbiot screens upload: a missing file is refused before any browser starts", c1.code === 1 && JSON.parse(c1.out).error === `No file at ${join(HOME, "gone.mp4")}.`, c1);
+    const c2 = screens("upload", sc.id, "add media", "clip.mp4");
+    ok("…a site you haven't trusted asks for --yes first, like press and type", c2.code === 1 && /^Attaching a file with "Add media" acts on the real site.*Add --yes to go ahead/.test(JSON.parse(c2.out).error), c2);
+    const c3 = screens("upload", sc.id, "Like", "clip.mp4");
+    ok("…a field that isn't on the screen: says so", c3.code === 1 && /No region "Like"/.test(JSON.parse(c3.out).error), c3);
+    ok("…and screens help lists it", /symbiot screens upload <id> <field> <file>/.test(screens("help").out), "");
+  }
 } finally {
   rmSync(HOME, { recursive: true, force: true });
 }

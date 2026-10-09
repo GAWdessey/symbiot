@@ -197,6 +197,7 @@ const calls = [
   ["/api/screens/map", "POST"],     // no site -> refused before a browser starts
   ["/api/screens/press", "POST"],   // not confirmed -> refused, nothing pressed
   ["/api/screens/type", "POST"],    // no id -> "not found", nothing typed
+  ["/api/screens/upload", "POST"],  // no id -> "not found", no browser starts, nothing sent
   ["/api/screens/scroll", "POST"],  // no id -> "not found", no browser starts
   ["/api/screens/whole", "POST"],   // no id -> "not found", no browser starts
   ["/api/screens/trusted", "GET"],  // trusted sites (isolated HOME -> none)
@@ -262,6 +263,9 @@ const calls = [
   ["/api/marketing/open", "POST"],  // no draft named -> refused, nothing opens
   ["/api/marketing/draft", "GET"],  // no draft named -> "isn't there", nothing read
   ["/api/marketing/draft/answer", "POST"], // no draft named -> refused, nothing approved, no agent starts
+  ["/api/marketing/tray", "GET"],   // the pick tray (isolated HOME -> no trays)
+  ["/api/marketing/tray/blur", "POST"], // no tray named -> refused, nothing written, tray.py not run
+  ["/api/marketing/tray/use", "POST"], // no draft named -> refused, no media line written
   ["/api/watch", "GET"],           // watched pages + what's new (isolated HOME -> none)
   ["/api/watch/add", "POST"],       // no screen or site -> refused, nothing saved
   ["/api/watch/every", "POST"],     // no id -> "No watch"

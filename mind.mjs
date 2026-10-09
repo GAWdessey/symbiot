@@ -22,7 +22,7 @@ import { fileURLToPath } from "node:url";
 import { randomBytes } from "node:crypto";
 import { VERSION, CONFIG_DIR, clipWords } from "./core.mjs";
 import { write } from "./ai.mjs";
-import { handoffCmd, runHandoff, isUrgent, urgentFirst } from "./agents.mjs";
+import { handoffCmd, runHandoff, isUrgent, urgentFirst, urgentUndo } from "./agents.mjs";
 import { addTask, pushTasks } from "./tasks.mjs";
 import { laneMap } from "./scan.mjs";
 import { OPS, MARKETING, HANDOVER_MAX, handoverRules, ONLY_YOU, HANDBACK } from "./handover.mjs";
@@ -150,6 +150,7 @@ function actNow(request, { title, context, known, run = runHandoff, now = Date.n
   } catch (e) { return { error: "Couldn't write the brief: " + ((e && e.message) || e) }; }
   const e = run(dir, { force: true });
   if (!e) return { error: "Your agent didn't start. Check its command in Settings → Handoff." };
+  if (e.blocked || e.busy) return { error: `Your agent didn't start: ${e.note || "something held it back"}` }; // never "handed over" when nothing runs
   return { ok: true, job: e.id, dir };
 }
 
@@ -180,14 +181,34 @@ const laneName = (repo, map) => Object.keys(map).find((n) => n.toLowerCase() ===
 // there, the way Send to repos does; anything else, an agent of its own (actNow).
 // Urgent work (agents.mjs isUrgent) goes first: every other lane with work going
 // parks, and the lane's own routine run stops, so this one starts now.
-function actIn(request, repo, { map = {}, known = "", title, context, run = runHandoff, add = addTask, push = pushTasks, ops = actNow, first = urgentFirst, now = Date.now() } = {}) {
+// What it says comes from what happened: job (a run started on it), queued (behind a
+// run that really is going there: behind, "urgent" or "routine") or notStarted (its
+// agent didn't start, and why: the task stays in the lane). An urgent one that didn't
+// start takes back the parking it did (urgentUndo): nothing would end to resume it.
+function actIn(request, repo, { map = {}, known = "", title, context, run = runHandoff, add = addTask, push = pushTasks, ops = actNow, first = urgentFirst, undo = urgentUndo, now = Date.now() } = {}) {
   const lane = laneName(repo, map);
   if (!lane) return { ...ops(request, { title, context, known, now }), lane: "" };
   const t = add(request, lane); if (t && t.error) return { error: t.error };
   const p = push({ repo: lane }); if (!p || !p.written || !p.written.length) return { error: `Couldn't write ${lane}'s tasks for its agent.` };
   const urgent = isUrgent(request) ? first(map[lane], { lanes: map }) : null;
-  const e = run(map[lane]); if (!e) return { error: "The agent didn't start. Check its command in Settings → Handoff." };
-  return { ok: true, lane, task: t.id, ...(e.busy || e.blocked ? { queued: true } : { job: e.id }), ...(urgent ? { urgent } : {}) };
+  const e = run(map[lane]);
+  if (!e || (e.blocked && !e.busy)) { if (urgent) { try { undo(map[lane], urgent); } catch {} urgent.parked = []; } }
+  if (!e) return { error: "The agent didn't start. Check its command in Settings → Handoff.", ...(urgent ? { urgent } : {}) };
+  const state = e.busy ? { queued: true, behind: (urgent && urgent.busy) || "routine" } : e.blocked ? { notStarted: e.note || "its agent didn't start." } : { job: e.id };
+  return { ok: true, lane, task: t.id, ...state, ...(urgent ? { urgent } : {}) };
+}
+// The line under a handover's reply, from what actIn did (see there).
+function handedLine(did) {
+  const lane = did.lane, u = did.urgent, un = u && u.unparked ? ` ${lane} was parked; I unparked it for this.` : "";
+  if (did.notStarted) return `\n\n→ Added to ${lane}'s tasks, but its agent didn't start: ${did.notStarted.replace(/\.?$/, ".")}${un} It's on the Workdesk.`;
+  const parked = u && u.parked.length ? ` Parked till it's done: ${u.parked.join(", ")} (a run already going there finishes first, then they wait). They pick up again in that order once it's done.` : "";
+  if (u) {
+    const how = did.job ? (u.stopped ? `, which stopped what it was on (its changes stay) and started on this now` : ", which started on it now")
+      : did.behind === "urgent" ? ` (it's on other urgent work right now, and takes this next)`
+      : u.stopped ? `, which is stopping what it was on (its changes stay) to start on this` : ` (it starts once the run there now finishes)`;
+    return `\n\n→ Urgent, so it goes first: handed to ${lane}'s agent${how}.${un}${parked || (did.job ? " Nothing else was running to park." : "")} It's on the Workdesk.`;
+  }
+  return `\n\n→ Handed to ${lane}'s agent, as a task there${did.queued ? " (it starts once the run there now finishes)" : ", which started on it now"}.${un} It's on the Workdesk.`;
 }
 // For later: on the list, in a repo's lane if it names one Symbiot knows.
 function taskIn(text, repo, { map = {}, add = addTask } = {}) {
@@ -233,8 +254,7 @@ async function converse({ where, role = "", context = "", history = "", question
   if (want && want.agent && act.agent) {
     did = { kind: "agent", request: String(want.agent).slice(0, HANDOVER_MAX), ...(await act.agent(String(want.agent), known, repo)) };
     reply += did.error ? `\n\n(I couldn't hand it to an agent: ${did.error})`
-      : did.lane && did.urgent ? `\n\n→ Urgent, so it goes first: handed to ${did.lane}'s agent${did.urgent.stopped ? `, which stopped what it was on (its changes stay) to start on this now` : did.queued ? " (it's already on urgent work, and takes this next)" : ""}. ${did.urgent.parked.length ? `Parked till it's done: ${did.urgent.parked.join(", ")} (a run already going there finishes first, then they wait). They pick up again in that order once it's done.` : "Nothing else was running to park."} It's on the Workdesk.`
-      : did.lane ? `\n\n→ Handed to ${did.lane}'s agent, as a task there${did.queued ? " (it starts once the run there now finishes)" : ""}. It's on the Workdesk.`
+      : did.lane ? handedLine(did)
       : "\n\n→ Handed to your agent. It's on the Workdesk, and it asks you there before anything hard to undo.";
   } else if (want && want.task && act.task) {
     did = { kind: "task", text: String(want.task).slice(0, 300), ...(await act.task(String(want.task), repo)) };
@@ -247,7 +267,7 @@ async function converse({ where, role = "", context = "", history = "", question
   logTurn(where, "user", question, now, d2); logTurn(where, "ai", reply, now, d2);
   saveMind(d2);
   if (voice) steps.push("matched how you talk");
-  if (did && !did.error) steps.push(did.kind === "agent" ? (did.lane ? `handed it to ${did.lane}'s agent` : "handed it to an agent") : did.lane ? `added a task to ${did.lane}` : "added a task");
+  if (did && !did.error) steps.push(did.kind === "agent" ? (did.notStarted ? `added a task to ${did.lane}: its agent didn't start` : did.lane ? `handed it to ${did.lane}'s agent` : "handed it to an agent") : did.lane ? `added a task to ${did.lane}` : "added a task");
   if (remembered) steps.push(`remembered ${remembered} new thing${remembered > 1 ? "s" : ""}`);
   return { reply, ...(did ? { did } : {}), remembered, steps };
 }

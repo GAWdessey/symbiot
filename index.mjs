@@ -38,7 +38,7 @@ import { gitDefaultBranch, loadDeploys, driftRepo, computeDrift } from "./drift.
 import { buildTasksMd, taskType, shipChanges, shipWithBump, bumpOffer, learnNpm, releaseNeeded, withReleases, setVersion, syncTasks, pendingReview, unreleased, publishesOnMerge, addTask, approveRepo, approveChanges, sendBack, pushTasks } from "./tasks.mjs";
 import { produce, mailState, setMail, sentMail } from "./writeups.mjs";
 import { loadScreens, screenImage, blueprint } from "./screens.mjs";
-import { mapPage, wholePage, pressRegion, typeRegion, scrollPage, signIn, isTrusted } from "./headless.mjs";
+import { mapPage, wholePage, pressRegion, typeRegion, uploadRegion, uploadFiles, scrollPage, signIn, isTrusted } from "./headless.mjs";
 import { watchState, addWatch, removeWatch, seenWatch, newsSince, markNews, checkWatch, setBrief, draftReply, watchBoard, boardLine, boardChat, boardTalk, clearBoardChat } from "./watch.mjs";
 import { PORT as PHONE_PORT, phoneState, pairComputer, pollComputer, forgetComputer } from "./phone.mjs";
 import { KIND_LABEL as POST_KIND, PATHS as POST_PATHS, draftPosts, postsState, postLog, approvePost, editPost, skipPost, voiceFromLinkedIn, addMedia as addPostMedia, removeMedia as removePostMedia, mediaDir as postMediaDir, pictureOfPage, clipOfPage } from "./post.mjs";
@@ -320,7 +320,7 @@ function screenJson(s) {
   if (!s || s.error) return s;
   const bp = blueprint(s), image = screenImage(s.id), sc = s.page && s.page.scroll;
   const more = sc ? [sc.y > 0 && "above", sc.y < sc.max && "below"].filter(Boolean).join(" and ") : "";
-  return { id: s.id, ...(image ? { image } : {}), ...(s.note ? { note: s.note } : {}), ...(more ? { more } : {}), ...(s.scrolled ? { scrolled: s.scrolled } : {}), ...(s.pressed ? { pressed: s.pressed, found: s.found } : {}), ...(s.typed ? { typed: s.typed, entered: s.entered, found: s.found } : {}), ...(s.kept ? { kept: true } : {}), ...(s.page ? { trusted: isTrusted(s.page.url) } : {}), ...bp, regions: bp.regions.map((r, i) => ({ id: s.regions[i].id, ...r })) };
+  return { id: s.id, ...(image ? { image } : {}), ...(s.note ? { note: s.note } : {}), ...(more ? { more } : {}), ...(s.scrolled ? { scrolled: s.scrolled } : {}), ...(s.pressed ? { pressed: s.pressed, found: s.found } : {}), ...(s.typed ? { typed: s.typed, entered: s.entered, found: s.found } : {}), ...(s.uploaded ? { uploaded: s.uploaded, files: s.files, used: s.used, found: s.found } : {}), ...(s.kept ? { kept: true } : {}), ...(s.page ? { trusted: isTrusted(s.page.url) } : {}), ...bp, regions: bp.regions.map((r, i) => ({ id: s.regions[i].id, ...r })) };
 }
 
 // map, press, type and signin go through the app when it's running, whose hidden
@@ -389,7 +389,7 @@ async function cmdUninstall() {
   if (existsSync(CONFIG_DIR) && !keep) console.log(c.d("(Something wrote to " + CONFIG_DIR + " meanwhile; delete it if you like.)"));
 }
 async function cmdScreens() {
-  const [sub = "list", a1, a2, a3] = argv.slice(1).filter((x, i, all) => !x.startsWith("--") && all[i - 1] !== "--name");
+  const [sub = "list", a1, a2, a3, ...more] = argv.slice(1).filter((x, i, all) => !x.startsWith("--") && all[i - 1] !== "--name");
   const out = (x) => { console.log(JSON.stringify(x, null, 2)); if (x && x.error) process.exitCode = 1; };
   const find = (id) => loadScreens().find((s) => s.id === id);
   if (sub === "list") {
@@ -410,14 +410,17 @@ async function cmdScreens() {
   }
   if (sub === "show") { const s = find(a1); return out(s ? screenJson(s) : { error: "No screen " + (a1 || "") + ". symbiot screens lists them." }); }
   if (sub === "signin") { const r = (await viaApp("/api/screens/signin", { site: a1 })) || await signIn(a1); return out(r.ok ? { ...r, next: "Sign in in the window that opened, close it, then map again." } : r); }
-  if (sub === "press" || sub === "type") {
+  if (sub === "press" || sub === "type" || sub === "upload") {
     const s = find(a1); if (!s) return out({ error: "No screen " + (a1 || "") + ". symbiot screens lists them." });
     const want = String(a2 || "").toLowerCase(), rs = s.regions || [];
     const r = rs.find((x) => x.id === a2) || rs.find((x) => x.label.toLowerCase() === want) || (rs.filter((x) => x.label.toLowerCase().includes(want)).length === 1 && rs.find((x) => x.label.toLowerCase().includes(want)));
     if (!want || !r) return out({ error: `No region "${a2 || ""}" on that screen (give its id, or a label that matches one region).` });
     // a draft reply's agent (SYMBIOT_DRAFT, watch.mjs) never presses Send, or Enter (it sends in a chat)
-    const body = { id: s.id, region: r.id, confirmed: has("yes"), noSend: !!process.env.SYMBIOT_DRAFT, ...(sub === "type" ? { text: a3, enter: has("enter") } : {}) };
-    const done = (await viaApp("/api/screens/" + sub, body)) || (sub === "press" ? await pressRegion(s.id, r.id, { confirmed: body.confirmed, noSend: body.noSend }) : await typeRegion(s.id, r.id, a3, { enter: body.enter, confirmed: body.confirmed, noSend: body.noSend }));
+    // upload: the files resolved and checked here, where a relative path means something
+    const f = sub === "upload" ? uploadFiles([a3, ...more]) : null; if (f && f.error) return out(f);
+    const body = { id: s.id, region: r.id, confirmed: has("yes"), noSend: !!process.env.SYMBIOT_DRAFT, ...(sub === "type" ? { text: a3, enter: has("enter") } : {}), ...(f ? { files: f.files } : {}) };
+    const done = (await viaApp("/api/screens/" + sub, body)) || (sub === "press" ? await pressRegion(s.id, r.id, { confirmed: body.confirmed, noSend: body.noSend }) : sub === "type" ? await typeRegion(s.id, r.id, a3, { enter: body.enter, confirmed: body.confirmed, noSend: body.noSend }) : await uploadRegion(s.id, r.id, f.files, { confirmed: body.confirmed }));
+    if (f && done && /answered 404/.test(done.error || "")) return out({ error: "The Symbiot app that's running is older than this command and can't upload: restart it (symbiot app), then try again." });
     // not a trusted site: say how to go ahead (only you can trust a site, in the app's Settings)
     if (done && done.confirm) return out({ error: `${done.error} Add --yes to go ahead, or list ${done.host} under Trusted sites in Symbiot's Settings.` });
     return out(screenJson(done));
@@ -432,6 +435,11 @@ async function cmdScreens() {
   symbiot screens press <id> <region> [--yes]  press a region there, map where it lands
   symbiot screens type <id> <field> "text" [--enter] [--yes]
                                                type into a field (Enter sends it), map the result
+  symbiot screens upload <id> <field> <file> [<file>…] [--yes]
+                                               put a file in the page's file box (a picture or
+                                               video for a post): <field> is the box, or the
+                                               button it hides behind ("Add media"); says which
+                                               box it used, maps the result
   symbiot screens scroll <id> [down|up|top|bottom]
                                                scroll the page, map what's in the window then
                                                (a map's "more" says there's more below or above)
@@ -439,7 +447,7 @@ async function cmdScreens() {
                                                (where a list scrolls inside the page, like
                                                Gmail's mail, that list opened out)
   symbiot screens signin <site>               sign in once, in Symbiot's browser window
-  --yes is needed unless the page's site is under Trusted sites in the app's Settings.
+  --yes is needed (press, type, upload) unless the page's site is under Trusted sites in the app's Settings.
   While the app runs, these use its hidden browser, which stays open a few minutes:
   press on the screen the last command printed carries on from that page as it is
   (type without --enter, then press the form's button).`);
@@ -785,6 +793,47 @@ async function cmdPost() {
   if (sub !== "help") process.exitCode = 1;
 }
 
+// ---- `symbiot marketing`: a draft of Marketing's lane, marked posted or superseded ----
+// What its agent runs once a post is out, or redone in a new file (marketing.mjs): either
+// takes it off the Marketing orb for good, and it can't be approved or posted again.
+async function cmdMarketing() {
+  const VAL = ["--url", "--on", "--where", "--at", "--by"];
+  const [sub = "help", rel, ...more] = argv.slice(1).filter((x, i, all) => !x.startsWith("--") && !VAL.includes(all[i - 1]));
+  const fail = (msg) => { console.log(c.y(msg)); process.exitCode = 1; };
+  const M = await import("./marketing.mjs");
+  if (sub === "posted" || sub === "superseded") {
+    if (!rel) return fail(`Give the draft:  symbiot marketing ${sub} drafts/<product>/<post>.md`);
+    const r = M.setDraftStatus(rel, sub, { url: flag("url", ""), on: flag("on", flag("where", "")), at: flag("at", ""), by: flag("by", "") });
+    if (r.error) return fail(r.error);
+    if (r.already) { console.log(c.d(r.said)); return; }
+    const s = M.draftStatuses()[r.rel] || {};
+    console.log(`${c.g("✓")} ${r.rel}: ${sub}${s.postedOn ? ` on ${s.postedOn}` : ""}${s.posted ? `, ${M.day(s.posted)}` : ""}${s.url ? ` (${s.url})` : ""}${(s.by || []).length ? ` by ${s.by.join(", ")}` : ""}. It's off the Marketing orb, and can't be approved or posted again.`);
+    return;
+  }
+  if (sub === "media") {
+    if (!rel) return fail("Give the draft and its pictures or video:  symbiot marketing media <draft> <file>…");
+    const r = M.setDraftMedia(rel, more);
+    if (r.error) return fail(r.error);
+    console.log(`${c.g("✓")} ${r.rel}: ${r.media.length ? "media: " + r.media.join(", ") : "no media"}${r.reopened ? c.y("  (it was approved with another: it asks for the user's OK again)") : ""}`); return;
+  }
+  if (sub === "list" || sub === "status") {
+    const fs = M.draftFiles(M.MARKETING_DIR, [], { max: 200 }), all = M.draftStatuses();
+    if (!fs.length) console.log(c.d("No drafts in Marketing's lane yet."));
+    for (const f of fs) { const s = all[f.rel] || {}; console.log(`${(f.status || "waiting").padEnd(10)} ${f.rel}${s.url ? c.d("  " + s.url) : ""}${(s.by || []).length ? c.d("  by " + [].concat(s.by).join(", ")) : ""}`); }
+    return;
+  }
+  console.log(`${c.b("symbiot marketing")} ${c.d("— Marketing's drafts (drafts/<product>/<post>.md in its lane)")}
+  symbiot marketing list                    each draft and its status
+  symbiot marketing posted <draft> [--url <link>] [--on linkedin] [--at "YYYY-MM-DD HH:MM"]
+                                            it's out (or in the platform's scheduler)
+  symbiot marketing superseded <draft> [--by <new draft>[,<another>]]
+                                            a new draft replaces it
+  symbiot marketing media <draft> <file>…   its picture(s) or video, by path in the lane
+  Posted and superseded take a draft off the Marketing orb for good: it can't be
+  approved or posted again.`);
+  if (sub !== "help") process.exitCode = 1;
+}
+
 // ---- `symbiot reports`: what agents wrote up for you (reports.mjs) ---------------
 function cmdReports() {
   const id = argv.slice(1).find((x) => !x.startsWith("--"));
@@ -834,6 +883,9 @@ ${c.b("Experimental")}
   symbiot post                      draft 3 LinkedIn posts from this week's git,
                                     in your voice; never posts by itself
                                     (symbiot post help for more)
+  symbiot marketing posted <draft> --url <link>
+                                    mark a Marketing draft posted (or superseded);
+                                    symbiot marketing help for more
   symbiot screens map <site>        map a web page's buttons in a hidden browser
                                     (symbiot screens help for more)
   symbiot watch add <screen id>     keep track of a mapped page: what's new on it
@@ -885,6 +937,7 @@ async function main() {
   if (cmd === "watch") return cmdWatch();
   if (cmd === "phone") return cmdPhone();
   if (cmd === "post" || cmd === "posts") return cmdPost();
+  if (cmd === "marketing") return cmdMarketing();
   if (cmd === "knowledge" || cmd === "know") return cmdKnowledge();
   if (cmd === "reports" || cmd === "report") return cmdReports();
   if (cmd === "week")return cmdRun("week");
