@@ -43,6 +43,19 @@ nav .btn{padding:8px 16px;font-size:14px}
 .btn.ghost{background:transparent;color:var(--bone);border:1px solid var(--line);box-shadow:none}
 .btn svg{width:18px;height:18px;flex:none}
 
+/* after a download: what to click next */
+dialog.after{max-width:520px;width:calc(100% - 32px);border:1px solid var(--line);border-radius:24px;padding:28px 28px 22px;background:var(--bg2);color:var(--text);box-shadow:0 40px 90px -30px rgba(0,0,0,.8)}
+dialog.after::backdrop{background:rgba(0,0,0,.55);backdrop-filter:blur(4px)}
+dialog.after h3{margin:0 0 6px;font:650 22px/1.25 var(--sans);letter-spacing:-.02em;color:var(--bone)}
+dialog.after .sub2{margin:0 0 18px;font-size:14px;color:var(--faint)}
+dialog.after ol{margin:0;padding:0;list-style:none;display:grid;gap:14px;counter-reset:s}
+dialog.after li{display:grid;grid-template-columns:28px 1fr;gap:12px;align-items:start;font-size:15px;line-height:1.5}
+dialog.after li::before{counter-increment:s;content:counter(s);display:grid;place-items:center;width:28px;height:28px;border-radius:50%;border:1px solid var(--line);font:600 13px var(--sans);color:var(--bone)}
+dialog.after b{color:var(--bone);font-weight:600}
+dialog.after .why{margin:18px 0 0;padding-top:14px;border-top:1px solid var(--line);font-size:13px;color:var(--faint)}
+dialog.after .row{display:flex;justify-content:flex-end;margin-top:18px}
+dialog.after .btn{padding:10px 22px;font-size:15px}
+
 /* hero */
 .hero{position:relative;padding:96px 0 72px;text-align:center}
 .orb{position:relative;width:min(300px,64vw);aspect-ratio:1;margin:0 auto 42px;border-radius:50%;
@@ -195,6 +208,14 @@ footer a{text-decoration:none}footer a:hover{color:var(--bone)}
   </section>
 </main>
 
+<dialog class="after" id="after" aria-labelledby="after-title">
+  <h3 id="after-title">Your download has started</h3>
+  <p class="sub2" id="after-sub"></p>
+  <ol id="after-steps"></ol>
+  <p class="why" id="after-why"></p>
+  <div class="row"><button class="btn" type="button" id="after-ok">Got it</button></div>
+</dialog>
+
 <footer>
   <div class="wrap">
     <span>© 2026 Ghost AI · Symbiot</span>
@@ -237,6 +258,42 @@ footer a{text-decoration:none}footer a:hover{color:var(--bone)}
       });
       primary();
     }).catch(function () {});
+})();
+// After a download: the clicks that come next on this computer, warnings included, so
+// nobody stops at "Windows protected your PC". The download itself carries on.
+(function () {
+  var WHY = "Symbiot is new and not signed with a paid certificate yet, so your computer asks you to confirm it. The installer is built openly from Symbiot\u2019s public code on GitHub.";
+  var GUIDES = {
+    "Symbiot-Setup.exe": { sub: "Three clicks on Windows, then Symbiot opens by itself.", why: WHY, steps: [
+      "If your browser says the file <b>isn\u2019t commonly downloaded</b>, choose <b>Keep</b> (in Edge: the <b>\u2026</b> next to it, then <b>Keep</b>, then <b>Keep anyway</b>).",
+      "Open <b>Symbiot-Setup.exe</b>. When Windows says <b>\u201cWindows protected your PC\u201d</b>, click <b>More info</b>, then <b>Run anyway</b>.",
+      "Symbiot installs, adds itself to the Start menu and your desktop, and opens into setup." ] },
+    "Symbiot.dmg": { sub: "Once on your Mac, then it opens like any other app.", why: WHY + " Your Mac only asks the first time.", steps: [
+      "Open <b>Symbiot.dmg</b> and drag <b>Symbiot</b> into <b>Applications</b>.",
+      "Open Symbiot from Applications. When your Mac says it couldn\u2019t check it, click <b>Done</b>.",
+      "Open <b>System Settings</b> \u2192 <b>Privacy &amp; Security</b>, scroll down and click <b>Open Anyway</b> next to Symbiot, then <b>Open Anyway</b> again. Symbiot opens into setup." ] },
+    "symbiot.deb": { sub: "One step on Ubuntu, Pop!_OS, Debian and Mint.", why: "", steps: [
+      "Open <b>symbiot.deb</b> from your downloads and click <b>Install</b>.",
+      "Symbiot is now in your apps. Open it and it starts with setup." ] },
+    "Symbiot.AppImage": { sub: "For Linux without .deb packages.", why: "AppImages need FUSE. If Symbiot doesn\u2019t start, install your system\u2019s libfuse2 package, or use the .deb on Ubuntu, Pop!_OS, Debian or Mint.", steps: [
+      "Right-click <b>Symbiot.AppImage</b> \u2192 <b>Properties</b> \u2192 <b>Permissions</b>, and tick <b>Allow executing as a program</b>.",
+      "Open it. Symbiot starts with setup." ] }
+  };
+  var dlg = document.getElementById("after");
+  if (!dlg || !dlg.showModal) return;
+  document.getElementById("after-ok").addEventListener("click", function () { dlg.close(); });
+  dlg.addEventListener("click", function (e) { if (e.target === dlg) dlg.close(); });
+  document.addEventListener("click", function (e) {
+    var a = e.target.closest && e.target.closest("a[href]");
+    if (!a) return;
+    var name = (a.getAttribute("href") || "").split("?")[0].split("/").pop();
+    var g = GUIDES[name];
+    if (!g) return;
+    document.getElementById("after-sub").textContent = g.sub;
+    document.getElementById("after-steps").innerHTML = g.steps.map(function (t) { return "<li><span>" + t + "</span></li>"; }).join("");
+    var why = document.getElementById("after-why"); why.textContent = g.why; why.hidden = !g.why;
+    setTimeout(function () { dlg.showModal(); }, 300); // after the browser has started the download
+  });
 })();
 </script>
 </body>
