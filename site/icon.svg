@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <title>Symbiot</title>
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="42%" r="70%">
+      <stop offset="0" stop-color="#1B1D22"/>
+      <stop offset="1" stop-color="#08090B"/>
+    </radialGradient>
+    <radialGradient id="orb" cx="40%" cy="34%" r="66%">
+      <stop offset="0" stop-color="#3A3D44"/>
+      <stop offset="0.45" stop-color="#121317"/>
+      <stop offset="1" stop-color="#030304"/>
+    </radialGradient>
+    <radialGradient id="rim" cx="50%" cy="50%" r="50%">
+      <stop offset="0.86" stop-color="#000" stop-opacity="0"/>
+      <stop offset="0.97" stop-color="#B0466E" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#F2A541" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glow" cx="50%" cy="56%" r="50%">
+      <stop offset="0.55" stop-color="#F2A541" stop-opacity="0.16"/>
+      <stop offset="1" stop-color="#F2A541" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="shine" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.85"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <rect width="256" height="256" rx="58" fill="url(#bg)"/>
+  <circle cx="128" cy="136" r="96" fill="url(#glow)"/>
+  <circle cx="128" cy="128" r="78" fill="url(#orb)"/>
+  <circle cx="128" cy="128" r="78" fill="url(#rim)"/>
+  <ellipse cx="102" cy="92" rx="30" ry="17" transform="rotate(-28 102 92)" fill="url(#shine)"/>
+  <ellipse cx="160" cy="176" rx="22" ry="5" transform="rotate(-30 160 176)" fill="#FFFFFF" opacity="0.12"/>
+</svg>
