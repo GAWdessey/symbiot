@@ -678,7 +678,7 @@ time; **Close** or Esc closes a part. In a text box, or over text you've selecte
 right-click still gives the usual menu. Whatever needs you glows **amber**, here and
 on the Dashboard. Talk to it in the bar at the bottom: "open tasks" opens Tasks,
 "go" in the work view starts what's waiting, anything else goes to the same Symbiot
-as every chat. Paste a screenshot into the bar (Ctrl+V) or drop one on it, and
+as every chat. **Or just say it:** click the mic on the bar and speak; your words appear as you talk, and a pause sends them. When you spoke, Symbiot reads its answer out too (typed, it stays quiet), and talking again cuts it off. It uses the speech recognition built into Chrome and Edge, so there is no key and nothing to pay. Paste a screenshot into the bar (Ctrl+V) or drop one on it, and
 Symbiot sees it with what you say (up to 4, with any AI you've connected that reads
 images); if it hands the work to an agent, the agent gets the screenshot too.
 Once you've said something, the chat has its own bar over the input: **Minimize**

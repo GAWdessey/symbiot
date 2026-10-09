@@ -966,6 +966,15 @@ body.lq-light .onbin{background:rgba(255,255,255,.92);border-color:rgba(21,26,33
 body.lq-light .onbcard,body.lq-light .onbbox,body.lq-light .onbapp{background:rgba(21,26,33,.035);border-color:rgba(21,26,33,.07)}
 body.lq-light .onbdots i{background:rgba(21,26,33,.1)}body.lq-light .onbdots i.on{background:var(--amber)}body.lq-light .onbdots i.past{background:rgba(242,165,65,.5)}body.lq-light .onbrepos span{background:rgba(21,26,33,.06)}body.lq-light .onbbox code{background:rgba(21,26,33,.07)}
 @media(max-width:640px){.onbcards{grid-template-columns:1fr}.onbin{padding:22px 18px}}
+
+/* Talking to Symbiot: the mic on the talk bar, amber while it listens */
+#lqmic{flex:none;width:40px;height:40px;padding:0;display:grid;place-items:center;border-radius:50%;border:0;background:transparent;color:inherit;cursor:pointer;opacity:.72;transition:opacity .15s,background .15s}
+#lqmic:hover,#lqmic:focus-visible{opacity:1;background:rgba(255,255,255,.07)}
+body.lq-light #lqmic:hover,body.lq-light #lqmic:focus-visible{background:rgba(21,26,33,.06)}
+#lqmic.on{opacity:1;background:#F2A541;color:#0A0B0D;animation:lqmicpulse 1.4s ease-in-out infinite}
+@keyframes lqmicpulse{0%,100%{box-shadow:0 0 0 4px rgba(242,165,65,.28)}50%{box-shadow:0 0 0 11px rgba(242,165,65,.05)}}
+@media (prefers-reduced-motion: reduce){#lqmic.on{animation:none;box-shadow:0 0 0 4px rgba(242,165,65,.28)}}
+#lqmic.hidden{display:none}
 /* the Dashboard as a stream: time runs left to right, a current per feed, now on the right */
 .bstream{position:relative;margin-top:10px;border-radius:18px;overflow:hidden;isolation:isolate;background:#08090B;box-shadow:0 0 0 1px rgba(255,255,255,.08)}
 body.lq-light .bstream{background:#EBEEF0;box-shadow:0 0 0 1px rgba(21,26,33,.08)}
@@ -1038,7 +1047,7 @@ body.lq-light .btip .bta button:not(.quiet){background:#151A21;color:#FFFFFF}
 <div id="lqtalk" aria-live="polite"></div>
 <div id="lqtalkbar"></div>
 <div id="lqatts" aria-live="polite"></div>
-<form id="lqform" class="lqglass"><label for="lqask" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)">Talk to Symbiot</label><textarea id="lqask" rows="1" autocomplete="off" placeholder="Talk to Symbiot, or tell it what to do (paste a screenshot to show it)"></textarea><button type="submit" id="lqsend" aria-label="Send"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 13V3M3.5 7.5 8 3l4.5 4.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button></form>
+<form id="lqform" class="lqglass"><label for="lqask" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)">Talk to Symbiot</label><textarea id="lqask" rows="1" autocomplete="off" placeholder="Talk to Symbiot, or tell it what to do (paste a screenshot to show it)"></textarea><button type="button" id="lqmic" class="hidden" aria-label="Talk to Symbiot" aria-pressed="false" title="Talk: click, then speak"><svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></button><button type="submit" id="lqsend" aria-label="Send"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 13V3M3.5 7.5 8 3l4.5 4.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button></form>
 </div>
 
 <div id="updatebar" class="updatebar"></div>
@@ -3004,14 +3013,47 @@ el.querySelectorAll('button').forEach(function(b){b.addEventListener('click',fun
 function lqAttach(file){if(!file||['image/png','image/jpeg','image/webp','image/gif'].indexOf(file.type)<0||file.size>8*1024*1024||LQ.atts.length>=4)return;var r=new FileReader();r.onload=function(){LQ.atts.push({data:String(r.result)});lqAttsShow();};r.readAsDataURL(file);}
 // The talk box wraps and grows with what's typed, to five lines, then scrolls.
 function lqGrowAsk(){var i=$('lqask');if(!i||!i.style)return;i.style.height='auto';var h=Math.min(126,Math.max(44,i.scrollHeight||44));i.style.height=h+'px';if(i.classList)i.classList.toggle('full',(i.scrollHeight||0)>126);var f=$('lqform'),b=document.body;if(f&&f.offsetHeight&&b&&b.style&&b.style.setProperty)b.style.setProperty('--lqfh',f.offsetHeight+'px');}
-function lqSay(){var i=$('lqask');var q=((i&&i.value)||'').trim(),shots=LQ.atts.slice();if(!q&&!shots.length)return;if(!q)q='Take a look at this screenshot.';i.value='';lqGrowAsk();LQ.atts=[];lqAttsShow();lqAct();
+
+// ---- Talking to Symbiot ------------------------------------------------------------
+// The mic on the talk bar: click, speak, and what you say shows in the bar as you say
+// it; a pause sends it, as Enter would. Speech becomes text in the browser itself
+// (Chrome and Edge, no key); where it can't, there's no mic. When you spoke, the
+// answer is read out too (typed, it stays quiet), and talking again cuts it off.
+var VOICE={rec:null,on:false,spoke:false,final:'',base:'',err:'',ph:''};
+function voiceOk(){return !!(window.SpeechRecognition||window.webkitSpeechRecognition);}
+function voiceMic(on){var m=$('lqmic');if(!m)return;m.classList.toggle('on',on);m.setAttribute('aria-pressed',on?'true':'false');m.setAttribute('aria-label',on?'Stop listening':'Talk to Symbiot');var a=$('lqask');if(a){if(on){VOICE.ph=a.getAttribute('placeholder')||'';a.setAttribute('placeholder','Listening… speak, then pause to send');}else if(VOICE.ph)a.setAttribute('placeholder',VOICE.ph);}}
+function voiceSay(t){LQ.talkMin=false;lqTalkMode(true);LQ.talk.push({me:false,text:t});LQ.talk=LQ.talk.slice(-8);lqTalkShow(false);}
+var VOICE_WHY={'not-allowed':'Symbiot couldn’t use your microphone. Allow it for this window (the icon at the top of the window, or your system’s privacy settings), then click the mic again.','service-not-allowed':'Symbiot couldn’t use your microphone. Allow it for this window, then click the mic again.','audio-capture':'No microphone was found. Plug one in, or check it’s switched on, then try again.','network':'Talking needs an internet connection: your browser turns speech into text online.'};
+function voiceToggle(){
+if(VOICE.on){try{VOICE.rec.stop();}catch(e){}return;}
+try{if(window.speechSynthesis)window.speechSynthesis.cancel();}catch(e){}
+var R=window.SpeechRecognition||window.webkitSpeechRecognition;if(!R)return;
+var r;try{r=new R();}catch(e){return;}
+var ask=$('lqask');VOICE.rec=r;VOICE.final='';VOICE.err='';VOICE.base=((ask&&ask.value)||'').trim();
+r.lang=navigator.language||'en-US';r.interimResults=true;r.continuous=false;r.maxAlternatives=1;
+r.onstart=function(){VOICE.on=true;voiceMic(true);lqAct();};
+r.onresult=function(ev){var interim='';for(var i=ev.resultIndex;i<ev.results.length;i++){var t=ev.results[i][0].transcript;if(ev.results[i].isFinal)VOICE.final+=t;else interim+=t;}
+if(ask){ask.value=((VOICE.base?VOICE.base+' ':'')+(VOICE.final+interim)).replace(/ +/g,' ').trim();lqGrowAsk();}};
+r.onerror=function(ev){VOICE.err=(ev&&ev.error)||'';};
+r.onend=function(){VOICE.on=false;voiceMic(false);VOICE.rec=null;var said=((ask&&ask.value)||'').trim(),why=VOICE_WHY[VOICE.err];
+if(why){voiceSay(why);return;}
+if(VOICE.final.trim()&&said){VOICE.spoke=true;lqSay();}};
+try{r.start();}catch(e){VOICE.on=false;voiceMic(false);}}
+// read out: plain words (no markdown marks), up to a few sentences; a voice in your language, a natural one if there is
+function voiceSpeak(t){if(!window.speechSynthesis||!t)return;
+var clean=String(t).replace(/[*_#>|]+/g,' ').replace(new RegExp(String.fromCharCode(96),'g'),'').replace(/https?:[^ ]+/g,'a link').replace(/ +/g,' ').trim();
+if(clean.length>700){var cut=clean.slice(0,700),at=Math.max(cut.lastIndexOf('. '),cut.lastIndexOf('? '),cut.lastIndexOf('! '));clean=(at>200?cut.slice(0,at+1):cut)+' The rest is on screen.';}
+try{var u=new SpeechSynthesisUtterance(clean),lang=(navigator.language||'en').slice(0,2).toLowerCase(),vs=window.speechSynthesis.getVoices().filter(function(v){return (v.lang||'').toLowerCase().indexOf(lang)===0;});
+var best=vs.filter(function(v){return /natural|neural|google|online/i.test(v.name);})[0]||vs[0];if(best)u.voice=best;u.lang=navigator.language||'en-US';u.rate=1.02;
+window.speechSynthesis.cancel();window.speechSynthesis.speak(u);}catch(e){}}
+function lqSay(){var spoke=VOICE.spoke;VOICE.spoke=false;var i=$('lqask');var q=((i&&i.value)||'').trim(),shots=LQ.atts.slice();if(!q&&!shots.length)return;if(!q)q='Take a look at this screenshot.';i.value='';lqGrowAsk();LQ.atts=[];lqAttsShow();lqAct();
 var low=q.toLowerCase().replace(/^(please |can you |could you )/,''),hit='';
 Object.keys(LQNAMES).forEach(function(k){var nm=LQNAMES[k].toLowerCase();if(hit)return;['open ','show ','go to ','take me to '].forEach(function(v){if(low.indexOf(v+nm)===0||low.indexOf(v+'my '+nm)===0)hit=k;});if(low===nm)hit=k;});
 if(hit){lqTalkMode(true);lqUse(hit,null,'talk');lqGo(hit);return;}
 if(/^(go|start|go for it|start them|start it)[.! ]*$/.test(low)){lqTalkMode(true);lqGoWork();return;}
 if(/^(home|back)[.! ]*$/.test(low)&&LQ.scene==='work'){lqHome();return;}
 LQ.talkMin=false;lqTalkMode(true);LQ.talk.push({me:true,text:q,imgs:shots.map(function(a){return a.data;})});LQ.talk=LQ.talk.slice(-8);lqTalkShow(true);
-api('/api/home/ask',{question:q,images:shots}).then(function(r){LQ.talk.push({me:false,steps:r.steps||[],text:r.error==='not-connected'?'Connect an AI in Settings to talk to me. Say "open settings".':(r.answer||r.error||'(no answer)')});LQ.talk=LQ.talk.slice(-8);lqTalkShow(false);LQ.ripple=[0.5,0.47,LQ.t];lqLoad(false);}).catch(function(e){LQ.talk.push({me:false,text:String((e&&e.message)||e)});lqTalkShow(false);});}
+api('/api/home/ask',{question:q,images:shots}).then(function(r){LQ.talk.push({me:false,steps:r.steps||[],text:r.error==='not-connected'?'Connect an AI in Settings to talk to me. Say "open settings".':(r.answer||r.error||'(no answer)')});if(spoke)voiceSpeak(LQ.talk[LQ.talk.length-1].text);LQ.talk=LQ.talk.slice(-8);lqTalkShow(false);LQ.ripple=[0.5,0.47,LQ.t];lqLoad(false);}).catch(function(e){LQ.talk.push({me:false,text:String((e&&e.message)||e)});lqTalkShow(false);});}
 // The physics: each droplet a critically damped spring to its place (no wobble,
 // no overshoot), pushed off its neighbours and the core where they'd overlap.
 function lqStep(){var S0=lqSize();if(S0.w!==LQ.bw||S0.h!==LQ.bh){if(LQ.scene==='work'&&LQ.workData)lqBuildWork();else if(LQ.adapt)lqBuild();}var S=S0,cx=S.w/2,cy=(LQ.scene!=='work'&&LQ.cy)||S.h*0.47,k=0.022,c=2*Math.sqrt(k),th=LQ.theme,still=th.still,rest=LQ.mode==='rest',pool=LQ.mode==='pool',talk=LQ.talking&&!pool;
@@ -3244,6 +3286,7 @@ function lqInit(){var bd=document.body;if(!bd||!bd.classList)return;lqIcon(lqLoo
 if(document.addEventListener){document.addEventListener('contextmenu',function(ev){var b=document.body,t=ev&&ev.target;if(!b||!b.classList||!b.classList.contains('lq-liquid'))return;if(t&&t.closest&&t.closest('input,textarea,select,[contenteditable]'))return;var sel=window.getSelection?String(window.getSelection()):'';if(sel)return;ev.preventDefault();lqBack();});
 document.addEventListener('mouseup',function(ev){var b=document.body;if(ev&&ev.button===3&&b&&b.classList&&b.classList.contains('lq-liquid')){ev.preventDefault();lqBack();}});}
 var L=$('liquid');if(L&&L.addEventListener){L.addEventListener('click',function(ev){var t=ev&&ev.target;if(t&&t.closest&&t.closest('button,input,form,.lqd'))return;var x=ev.clientX,y=ev.clientY,hit=null;LQ.drops.forEach(function(d){if(!hit&&Math.hypot(x-d.x,y-d.y)<=d.cr+8)hit=d;});if(hit)lqOpen(hit,ev);else if(LQ.openTag)lqTag(LQ.openTag);});L.addEventListener('pointermove',function(ev){LQ.pointer=[ev.clientX,ev.clientY];if(ev.pointerType==='touch')LQ.touch=true;lqAct();});L.addEventListener('pointerdown',function(ev){if(ev.pointerType==='touch')LQ.touch=true;lqAct();});}
+var mic=$('lqmic');if(mic&&voiceOk()){mic.classList.remove('hidden');mic.addEventListener('click',function(){voiceToggle();});try{if(window.speechSynthesis)window.speechSynthesis.getVoices();}catch(e){}}
 var f=$('lqform');if(f&&f.addEventListener)f.addEventListener('submit',function(ev){if(ev&&ev.preventDefault)ev.preventDefault();lqSay();});
 var ia=$('lqask');if(ia&&ia.addEventListener){ia.addEventListener('paste',function(ev){var it=(ev.clipboardData&&ev.clipboardData.items)||[],got=false;for(var k=0;k<it.length;k++){if(it[k].kind==='file'&&String(it[k].type).indexOf('image/')===0){lqAttach(it[k].getAsFile());got=true;}}if(got)ev.preventDefault();});
 var fm=$('lqform');if(fm&&fm.addEventListener){fm.addEventListener('dragover',function(ev){ev.preventDefault();if(fm.classList)fm.classList.add('drop');});fm.addEventListener('dragleave',function(){if(fm.classList)fm.classList.remove('drop');});fm.addEventListener('drop',function(ev){ev.preventDefault();if(fm.classList)fm.classList.remove('drop');var fs=(ev.dataTransfer&&ev.dataTransfer.files)||[];for(var k=0;k<fs.length;k++)lqAttach(fs[k]);});}
