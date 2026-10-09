@@ -259,7 +259,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
     // the app's typeface ships in the package (fonts/), so it's there offline
     // the window's own icon (its taskbar entry), the same orb as the app menu's
     if (req.method === "GET" && (u.pathname === "/favicon.svg" || u.pathname === "/favicon.ico")) {
-      try { const b = iconSvg(u.searchParams.get("look") || loadConfig().look || "ferro"); res.writeHead(200, { "content-type": "image/svg+xml", "cache-control": "no-cache" }); res.end(b); }
+      try { const b = iconSvg(u.searchParams.get("look") || loadConfig().look || "ferro", { small: u.searchParams.get("small") === "1" }); res.writeHead(200, { "content-type": "image/svg+xml", "cache-control": "no-cache" }); res.end(b); }
       catch { res.writeHead(404); res.end(); }
       return;
     }
