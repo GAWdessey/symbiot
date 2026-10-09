@@ -1419,6 +1419,16 @@ expects. Symbiot rescales for `xdotool` and for `cliclick` on a Retina screen, b
 it can't read the scale on Wayland, and ydotool's moves follow your pointer
 acceleration, so a click there can land off target.
 
+## Any language
+
+Symbiot uses the language your computer is set to, or any language you name in
+**Settings → Language** ("Afrikaans", "isiZulu", "pt-BR", anything). Chats, your week,
+standups and to-dos are written in it (a chat answers in whatever language you write to
+it in), and the app's own words are translated by your AI the first time you see them
+in that language (about half a minute, with your AI's fastest model), then kept in
+`~/.config/symbiot/i18n/`, so it's instant after that. Your own content (tasks, chats,
+drafts, write-ups, names, code) is never touched.
+
 ## Symbiot Free and Pro
 
 Every install starts with **14 days of Pro**, no key and no card. After that Symbiot

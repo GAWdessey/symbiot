@@ -2,6 +2,7 @@
 // (ui.mjs) and its /api routes, each a thin call into the module that does the
 // work, on 127.0.0.1 only and behind the per-install token. (Watch on your phone
 // listens on your network separately, only for that: phone.mjs.)
+import { languageState, setLanguage, translate, allTranslations } from "./lang.mjs";
 import { licenceState, setKey, clearKey, can, refreshRevoked, FREE } from "./licence.mjs";
 import { claudeSetup, installClaude, signInClaude, sendClaudeCode } from "./claudesetup.mjs";
 import { voiceState, prepareVoice, speak, stopVoices } from "./voice.mjs";
@@ -515,6 +516,11 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       if (u.pathname === "/api/claude/install" && req.method === "POST") return json(res, installClaude());
       if (u.pathname === "/api/claude/signin" && req.method === "POST") return json(res, signInClaude());
       if (u.pathname === "/api/claude/code" && req.method === "POST") { const b = await readBody(req); return json(res, sendClaudeCode(b.code)); }
+      // the language (lang.mjs): the window reports the computer's, Settings can name any; the app's own words, translated once and kept
+      if (u.pathname === "/api/language/set" && req.method === "POST") { const b = await readBody(req); return json(res, setLanguage({ ...(b.auto !== undefined ? { auto: b.auto } : {}), ...(b.chosen !== undefined ? { chosen: b.chosen } : {}) })); }
+      if (u.pathname === "/api/language") return json(res, languageState());
+      if (u.pathname === "/api/i18n/all") return json(res, { map: allTranslations(u.searchParams.get("lang") || languageState().lang) });
+      if (u.pathname === "/api/i18n" && req.method === "POST") { const b = await readBody(req); return json(res, { map: await translate(b.lang || "", Array.isArray(b.strings) ? b.strings.slice(0, 400) : []) }); }
       // Symbiot Free and Pro (licence.mjs): where you stand, a key in or out, a Free project slot freed
       if (u.pathname === "/api/licence") return json(res, licenceView());
       if (u.pathname === "/api/licence/key" && req.method === "POST") { const b = await readBody(req); const r = setKey(b.key); return json(res, r.error ? r : licenceView()); }
