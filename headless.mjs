@@ -832,6 +832,7 @@ async function signIn(input) {
 // is closed first, Symbiot's or a stray one (Linux, Mac).
 let HUB = ""; // the app's address for that page: http://127.0.0.1:<port>/browser?t=<token>
 function setBrowserHub(url) { HUB = String(url || ""); }
+const browserHub = () => HUB.replace(/t=[0-9a-f]+/, "t=…"); // where it opens (the token left out)
 function profilePids({ headless } = {}) {
   if (process.platform === "win32") return [];
   try {
@@ -866,4 +867,4 @@ async function closeSymbiotBrowser() {
   return { closed: open.length };
 }
 
-export { siteUrl, browserArgs, mapPage, wholePage, readPage, readTexts, readLinkedIn, LI_READ, pagePicture, pageClip, CLIP, isSend, pressRegion, typeRegion, uploadRegion, uploadFiles, attachFiles, FILE_BOX, scrollPage, SCROLLS, signIn, keepBrowserOpen, closeBrowser, browserOpen, trustedSites, isTrusted, trustSite, untrustSite, PROFILE , openSymbiotBrowser, closeSymbiotBrowser, setBrowserHub };
+export { siteUrl, browserArgs, mapPage, wholePage, readPage, readTexts, readLinkedIn, LI_READ, pagePicture, pageClip, CLIP, isSend, pressRegion, typeRegion, uploadRegion, uploadFiles, attachFiles, FILE_BOX, scrollPage, SCROLLS, signIn, keepBrowserOpen, closeBrowser, browserOpen, trustedSites, isTrusted, trustSite, untrustSite, PROFILE , openSymbiotBrowser, closeSymbiotBrowser, setBrowserHub , browserHub };
