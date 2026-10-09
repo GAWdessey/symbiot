@@ -2,6 +2,11 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.60.0
+
+- **A release no longer trips on file times.** Linux stamps files with a clock a few milliseconds behind the precise one, so a run that asked a question straight away could look as if it asked before it started, and wasn't noted as waiting on you. Symbiot now allows for that (it also made a test fail on GitHub's machines, which held up 0.59.0).
+- **Symbiot in any language.** It uses your computer's language, or any you name in **Settings → Language** (Afrikaans, isiZulu, Português, 日本語…). Chats, the week, standups and to-dos are written in it, and a chat answers in whatever language you write to it in. The app's own words (every screen, button and message) are translated by your AI the first time they're shown, with its fastest model, in about half a minute, then kept on your computer, so it's instant after that. A small note says it's translating while it does. Your own content (tasks, chats, drafts, write-ups, names, code) is never translated, and drafts stay exactly as they'll be sent.
+
 ## 0.59.0
 
 - **Symbiot Free and Symbiot Pro.** Every install starts with 14 days of Pro. After that, Free keeps the orb, Home, Talk to Symbiot, your week and standups, voice and the Away screen, with one agent at a time, up to 3 projects and one connected inbox or chat. Pro (US$12 a month or US$99 a year) adds any number of agents at once, every project, every inbox and chat, the marketing lane and Approve-and-ship. **Settings → Symbiot Pro** shows where you stand, takes a key and lets you swap one of Free's 3 projects. A limit never stops anything running: the next thing just doesn't start, with a line saying why. Keys are checked offline (signed by Ghost AI; cancelled keys are listed on symbiot.co.za).

@@ -802,6 +802,7 @@ body.lq-liquid #panel-settings{max-width:780px;margin:0 auto;display:flex;flex-d
 body.lq-liquid .sset{border:1px solid rgba(255,255,255,.07);background:rgba(255,255,255,.03);border-radius:18px;padding:18px 20px}
 body.lq-liquid.lq-light .sset{border-color:rgba(21,26,33,.07);background:rgba(255,255,255,.55)}
 body.lq-liquid .sset.hidden,body.lq-liquid #panel-settings.hidden{display:none}
+#i18nnote{position:fixed;left:16px;bottom:16px;z-index:60;max-width:calc(100vw - 32px);padding:8px 14px;border-radius:999px;font-size:13px;background:rgba(10,11,14,.88);color:#ECE9E4;border:1px solid rgba(220,228,240,.18);opacity:0;transition:opacity .4s;pointer-events:none}#i18nnote.on{opacity:1}body.lq-light #i18nnote{background:rgba(255,255,255,.94);color:#151A21;border-color:rgba(20,30,45,.15)}
 .licproj{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px}.licproj .chip{display:inline-flex;align-items:center;gap:8px;padding:4px 6px 4px 12px;border:1px solid var(--line);border-radius:999px;font-size:13px}.licproj .chip button{padding:2px 8px;font-size:12px}
 .ssh{margin:0 0 10px;font:600 16px var(--sans);letter-spacing:-.01em;color:var(--bone);display:flex;align-items:baseline;gap:8px}
 .ssh .muted{font-weight:400;font-size:12.5px}
@@ -1169,6 +1170,7 @@ body.lq-light .btip .bta button:not(.quiet){background:#151A21;color:#FFFFFF}
 </section>
 <section id="panel-settings" class="hidden">
 <div id="firststeps" class="sset hidden" aria-live="polite"></div>
+<div class="sset" id="langset"><h3 class="ssh">Language</h3><div id="langbox"><span class="muted">…</span></div></div>
 <div class="sset" id="licset"><h3 class="ssh">Symbiot Pro</h3><div id="licbox"><span class="muted">Checking…</span></div></div>
 <div class="sset"><h3 class="ssh">Setup</h3><div class="row"><span class="muted" style="flex:1">Walk through setup again: your AI, your work, your agent and your apps.</span><button class="ghost" id="rerunsetup">Run setup again</button></div></div>
 <div class="sset"><h3 class="ssh">Your AI</h3>
@@ -1313,7 +1315,7 @@ var isMap=tab==='map',isSet=tab==='settings',isTasks=tab==='tasks',isDrift=tab==
 $('panel-map').classList.toggle('hidden',!isMap);
 $('panel-board').classList.toggle('hidden',!isBoard);if(isBoard){loadBoard();loadLinks();}
 $('panel-run').classList.toggle('hidden',!isRun);
-$('panel-settings').classList.toggle('hidden',!isSet);if(isSet){loadFirstSteps();licLoad();}
+$('panel-settings').classList.toggle('hidden',!isSet);if(isSet){loadFirstSteps();licLoad();langLoad();}
 $('panel-tasks').classList.toggle('hidden',!isTasks);
 $('panel-drift').classList.toggle('hidden',!isDrift);
 $('panel-reports').classList.toggle('hidden',tab!=='reports');if(tab==='reports')loadReports();
@@ -1330,6 +1332,53 @@ lqTitle();if(isTasks&&TFILTER.repo)loadParked(lqTitle);}
 // takes you to its part, lit up. The block goes once all are done.
 var FSKIP='symbiot-skip-company';
 function fsSkipped(){try{return !!(window.localStorage&&window.localStorage.getItem(FSKIP));}catch(e){return false;}}
+// The app in your language (lang.mjs). Its own words on screen are swapped for their
+// translation (your AI makes each once; they're kept, so it's instant after that).
+// Numbers stay out of what's translated: "3 at work" is "{#} at work". Your content
+// (tasks, chats, drafts, write-ups, names, code, anything typed) is never touched,
+// and new things are translated as they appear.
+var I18N={on:false,lang:'',map:{},want:{},tried:{},timer:0,busy:false,orig:new WeakMap(),attrs:new WeakMap(),dirty:[],raf:0,obs:null};
+var I18N_SKIP="[data-nt],.t,.tfull,.lqmsg,.dmsg,.wkfinal,.wkraw,.rname,.btf,#lqtalk,code,pre,kbd,textarea,script,style,svg";
+var I18N_W=String.fromCharCode(32,9,10,13,160);
+var I18N_WS=new RegExp('['+I18N_W+']+','g'),I18N_EDGE=new RegExp('^(['+I18N_W+']*)([^]*?)(['+I18N_W+']*)$');
+var I18N_NUM=/[0-9]+([.,][0-9]+)?/g;
+function i18nKey(s){return String(s).replace(I18N_WS,' ').trim().replace(I18N_NUM,'{#}');}
+function i18nOk(k){if(!k||k.length>400||!/[A-Za-z]/.test(k))return false;if(/@|:[/][/]|[/][A-Za-z0-9._-]+[/]/.test(k))return false;if(/^[a-z0-9._-]+$/.test(k)&&/[._0-9-]/.test(k))return false;return true;}
+function i18nFill(src,tr){var nums=String(src).match(I18N_NUM)||[],i=0;return tr.replace(/[{]#[}]/g,function(){return nums[i++]||'';});}
+function i18nOne(v){var m=String(v).match(I18N_EDGE),core=m?m[2]:String(v),k=i18nKey(core);if(!i18nOk(k))return null;var tr=I18N.map[k];
+if(tr==null){if(!I18N.tried[k]){I18N.want[k]=1;i18nLater();}return null;}return (m?m[1]:'')+i18nFill(core,tr)+(m?m[3]:'');}
+function i18nSkip(el){return !el||!!(el.closest&&el.closest(I18N_SKIP))||!!el.isContentEditable;}
+function i18nText(n){var o=I18N.orig.get(n),v=n.nodeValue,src=o&&v===o.tr?o.src:v,out=i18nOne(src);if(out!=null&&out!==v){I18N.orig.set(n,{src:src,tr:out});n.nodeValue=out;}}
+function i18nAttrs(el){if(/^(TEXTAREA|INPUT)$/.test(el.tagName||"")?i18nSkip(el.parentElement):i18nSkip(el))return;['placeholder','title','aria-label'].forEach(function(a){if(!el.hasAttribute||!el.hasAttribute(a))return;var rec=I18N.attrs.get(el)||{},cur=el.getAttribute(a),src=rec[a]&&cur===rec[a].tr?rec[a].src:cur,out=i18nOne(src);if(out!=null&&out!==cur){rec[a]={src:src,tr:out};I18N.attrs.set(el,rec);el.setAttribute(a,out);}});}
+function i18nWalk(root){if(!I18N.on||!root)return;
+if(root.nodeType===3){if(!i18nSkip(root.parentElement))i18nText(root);return;}
+if(root.nodeType!==1||!root.isConnected)return;i18nAttrs(root);if(i18nSkip(root))return;root.querySelectorAll('[placeholder],[title],[aria-label]').forEach(i18nAttrs);
+var w=document.createTreeWalker(root,5,{acceptNode:function(n){if(n.nodeType===1)return (n.matches(I18N_SKIP)||n.isContentEditable)?2:3;return 1;}}),t;
+while((t=w.nextNode()))i18nText(t);}
+function i18nLater(){if(I18N.timer)return;I18N.timer=setTimeout(i18nFlush,350);}
+function i18nFlush(){I18N.timer=0;if(I18N.busy){i18nLater();return;}var ks=Object.keys(I18N.want).slice(0,400);if(!ks.length)return;
+ks.forEach(function(k){delete I18N.want[k];I18N.tried[k]=1;});I18N.busy=true;i18nNote(true);
+api('/api/i18n',{lang:I18N.lang,strings:ks}).then(function(r){var m=(r&&r.map)||{};for(var k in m)I18N.map[k]=m[k];I18N.busy=false;i18nWalk(document.body);if(Object.keys(I18N.want).length)i18nLater();else i18nNote(false);}).catch(function(){I18N.busy=false;i18nNote(false);});}
+// the first time in a language there's a lot to translate: say so, quietly, until it's done
+function i18nNote(on){var el=$('i18nnote');if(on&&Object.keys(I18N.map).length<150){if(!el){el=document.createElement('div');el.id='i18nnote';el.setAttribute('data-nt','');el.setAttribute('role','status');document.body.appendChild(el);}el.textContent='Translating Symbiot into '+((LANG&&(LANG.own||LANG.name))||I18N.lang)+'… the first time takes a minute.';el.className='on';}else if(!on&&el){el.className='';}}
+function i18nWatch(){if(I18N.obs||typeof MutationObserver!=='function')return;
+I18N.obs=new MutationObserver(function(ms){ms.forEach(function(m){if(m.type==='childList')m.addedNodes.forEach(function(n){I18N.dirty.push(n);});else I18N.dirty.push(m.target);});
+if(!I18N.raf)I18N.raf=requestAnimationFrame(function(){I18N.raf=0;var d=I18N.dirty;I18N.dirty=[];d.forEach(function(n){i18nWalk(n);});});});
+I18N.obs.observe(document.body,{childList:true,subtree:true,characterData:true,attributes:true,attributeFilter:['placeholder','title','aria-label']});}
+function i18nStart(){api('/api/language/set',{auto:(navigator.languages&&navigator.languages[0])||navigator.language||''}).then(function(st){if(!st||!st.lang)return;I18N.lang=st.lang;LANG=st;
+try{document.documentElement.lang=st.lang;}catch(e){}
+if(st.english)return;I18N.on=true;
+api('/api/i18n/all?lang='+encodeURIComponent(st.lang)).then(function(r){I18N.map=(r&&r.map)||{};i18nWalk(document.body);i18nWatch();}).catch(function(){i18nWatch();});}).catch(function(){});}
+// Settings: the language, your computer's or any you name
+var LANG=null;
+function langLoad(){api('/api/language').then(langRender).catch(function(){});}
+function langRender(st){var el=$('langbox');if(!el||!st)return;LANG=st;
+el.innerHTML="<p>Symbiot is in <b data-nt>"+esc(st.own||st.name)+"</b>"+(st.chosen?'.':', the language your computer uses.')+"</p>"+
+"<div class='row' style='margin-top:8px'><input id='langin' placeholder='Any language: Afrikaans, isiZulu, Português, 日本語…' style='flex:1'><button class='act' id='languse'>Use it</button>"+(st.chosen?"<button class='ghost' id='langauto'>Use my computer’s language</button>":"")+"</div>"+
+"<p class='muted' style='margin-top:8px'>Symbiot writes to you in it, and its own words are translated by your AI the first time you see them, then kept.</p>";
+var go=function(v){api('/api/language/set',{chosen:v}).then(function(){location.reload();}).catch(function(){});};
+var u=$('languse');if(u)u.addEventListener('click',function(){var v=($('langin').value||'').trim();if(v)go(v);});
+var a=$('langauto');if(a)a.addEventListener('click',function(){go('');});}
 // Symbiot Free and Pro (licence.mjs): where you stand, a key in or out, Free's 3 projects.
 function licDate(ms){try{return new Date(ms).toLocaleDateString(undefined,{day:'numeric',month:'long',year:'numeric'});}catch(e){return '';}}
 function licLoad(){api('/api/licence').then(licRender).catch(function(){});}
@@ -3464,7 +3513,7 @@ b.querySelectorAll('[data-check]').forEach(function(x){x.addEventListener('click
 b.querySelectorAll('[data-skip]').forEach(function(x){x.addEventListener('click',function(){api('/api/onboarding/set',{skip:x.getAttribute('data-skip')}).then(function(r){ONB=r;onbRender();});});});
 b.querySelectorAll('[data-unskip]').forEach(function(x){x.addEventListener('click',function(){api('/api/onboarding/set',{unskip:x.getAttribute('data-unskip')}).then(function(r){ONB=r;onbRender();});});});}
 function lqIcon(l){var k=document.querySelector('link[rel=icon]');if(k)k.setAttribute('href','/favicon.svg?look='+encodeURIComponent(l||'ferro'));}
-function lqInit(){var bd=document.body;if(!bd||!bd.classList)return;lqIcon(lqLookGet());lqTheme();bd.classList.add('lq-liquid');
+function lqInit(){var bd=document.body;if(!bd||!bd.classList)return;lqIcon(lqLookGet());lqTheme();try{i18nStart();}catch(e){}bd.classList.add('lq-liquid');
 ['(prefers-color-scheme: light)','(prefers-contrast: more)','(forced-colors: active)','(prefers-reduced-transparency: reduce)','(prefers-reduced-motion: reduce)'].forEach(function(q){try{var mq=window.matchMedia&&window.matchMedia(q);if(mq&&mq.addEventListener)mq.addEventListener('change',lqTheme);else if(mq&&mq.addListener)mq.addListener(lqTheme);}catch(e){}});
 if(document.addEventListener){document.addEventListener('contextmenu',function(ev){var b=document.body,t=ev&&ev.target;if(!b||!b.classList||!b.classList.contains('lq-liquid'))return;if(t&&t.closest&&t.closest('input,textarea,select,[contenteditable]'))return;var sel=window.getSelection?String(window.getSelection()):'';if(sel)return;ev.preventDefault();lqBack();});
 document.addEventListener('mouseup',function(ev){var b=document.body;if(ev&&ev.button===3&&b&&b.classList&&b.classList.contains('lq-liquid')){ev.preventDefault();lqBack();}});}

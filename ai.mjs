@@ -207,8 +207,10 @@ const AI_UI = {
   notConnected: () => console.log("Symbiot needs an AI to write your updates. With a Claude subscription, sign in to Claude Code (run  claude  once) and Symbiot uses it, no key. Otherwise: symbiot login"),
   rejected: (label) => console.log(`Your ${label} credentials were rejected. Reconnect with:  symbiot login --force`),
 };
-async function write(system, prompt, { images = [] } = {}) {
-  const r = resolveProvider();
+// fast: a quick, plain job (translating the app's words): the provider's fastest model
+const FAST_MODEL = { claude: "haiku", anthropic: "claude-haiku-5-5" };
+async function write(system, prompt, { images = [], fast = false } = {}) {
+  const r0 = resolveProvider(), r = fast && r0 && FAST_MODEL[r0.provider] ? { ...r0, model: FAST_MODEL[r0.provider] } : r0;
   if (!r) { AI_UI.notConnected(); return null; }
   const stop = AI_UI.spinner("thinking…");
   try {

@@ -16,6 +16,7 @@
 //   signed in to your linked sites); "task" adds it to your list for later or for a
 //   repo. Anything hard to undo (closing an account, deleting, paying, sending) the
 //   agent asks you about first, in the Agents tab: the brief says so.
+import { languageLine } from "./lang.mjs";
 import { join } from "node:path";
 import { readFileSync, writeFileSync, mkdirSync, chmodSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -293,7 +294,7 @@ async function converse({ where, role = "", context = "", history = "", question
   let lanes = map; if (!lanes) { try { lanes = laneMap(); } catch { lanes = {}; } }
   // how they talk, from what they've typed into any chat (adapt.mjs: accommodation)
   const voice = styleLine(styleOf(d.log.filter((l) => l.role === "user").map((l) => l.text).concat(question)));
-  const system = `${IDENTITY} ${role}\n\n${rulesFor(Object.keys(lanes), selfLane(lanes), nav)}${voice ? "\n" + voice : ""}`;
+  const system = `${IDENTITY} ${role}\n\n${rulesFor(Object.keys(lanes), selfLane(lanes), nav)}${voice ? "\n" + voice : ""}${languageLine()}`;
   const prompt = (known ? `What you know (from across the app):\n${known}\n\n` : "") + (kn.text ? kn.text + "\n\n" : "") + (elsewhere ? `Lately, elsewhere in the app (other chats: a short answer here doesn't reply to these):\n${elsewhere}\n\n` : "") +
     (context ? context + "\n\n" : "") + (history ? `This chat so far:\n${history}\n\n` : "") + `They say (on ${where}): ${question}`;
   const raw = await ask(system, prompt, images.length ? { images } : undefined);

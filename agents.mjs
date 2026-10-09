@@ -711,9 +711,12 @@ function runInputs(path, cmd) {
   for (const f of files) { try { env += f + "\0" + readFileSync(join(path, f), "utf8") + "\0"; } catch {} }
   return { env: digest(env), answers: digest(readSymbiot(path, "ANSWERS.md")), cmd: digest(cmd), open: openTasks(path) };
 }
+const MTIME_SLACK = 50; // ms: a kernel tick is 4-10 ms
 function noteBlocked(path, cmd, startedAt, code) {
   const f = join(path, ".symbiot", BLOCKED);
-  let asked = false; try { asked = statSync(join(path, ".symbiot", "QUESTIONS.md")).mtimeMs >= startedAt; } catch {}
+  // file times come from the kernel's coarse clock, a few ms behind Date.now(): a run that
+  // asks at once can stamp QUESTIONS.md "before" it started; a run before it is far older
+  let asked = false; try { asked = statSync(join(path, ".symbiot", "QUESTIONS.md")).mtimeMs >= startedAt - MTIME_SLACK; } catch {}
   const questions = asked ? agentQuestions(path, "").questions.length : 0, inputs = runInputs(path, cmd);
   try {
     if (code === 0 && questions && inputs.open.length) writeFileSync(f, JSON.stringify({ at: Date.now(), questions, ...inputs }));
