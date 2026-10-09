@@ -802,6 +802,7 @@ body.lq-liquid #panel-settings{max-width:780px;margin:0 auto;display:flex;flex-d
 body.lq-liquid .sset{border:1px solid rgba(255,255,255,.07);background:rgba(255,255,255,.03);border-radius:18px;padding:18px 20px}
 body.lq-liquid.lq-light .sset{border-color:rgba(21,26,33,.07);background:rgba(255,255,255,.55)}
 body.lq-liquid .sset.hidden,body.lq-liquid #panel-settings.hidden{display:none}
+.licproj{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px}.licproj .chip{display:inline-flex;align-items:center;gap:8px;padding:4px 6px 4px 12px;border:1px solid var(--line);border-radius:999px;font-size:13px}.licproj .chip button{padding:2px 8px;font-size:12px}
 .ssh{margin:0 0 10px;font:600 16px var(--sans);letter-spacing:-.01em;color:var(--bone);display:flex;align-items:baseline;gap:8px}
 .ssh .muted{font-weight:400;font-size:12.5px}
 body.lq-liquid .sset > label:not(.check):not(.swl){display:block;font:500 12.5px var(--sans);color:var(--faint);margin:12px 0 6px}
@@ -1168,6 +1169,7 @@ body.lq-light .btip .bta button:not(.quiet){background:#151A21;color:#FFFFFF}
 </section>
 <section id="panel-settings" class="hidden">
 <div id="firststeps" class="sset hidden" aria-live="polite"></div>
+<div class="sset" id="licset"><h3 class="ssh">Symbiot Pro</h3><div id="licbox"><span class="muted">Checking…</span></div></div>
 <div class="sset"><h3 class="ssh">Setup</h3><div class="row"><span class="muted" style="flex:1">Walk through setup again: your AI, your work, your agent and your apps.</span><button class="ghost" id="rerunsetup">Run setup again</button></div></div>
 <div class="sset"><h3 class="ssh">Your AI</h3>
 <label>Which AI should Symbiot write with?</label>
@@ -1311,7 +1313,7 @@ var isMap=tab==='map',isSet=tab==='settings',isTasks=tab==='tasks',isDrift=tab==
 $('panel-map').classList.toggle('hidden',!isMap);
 $('panel-board').classList.toggle('hidden',!isBoard);if(isBoard){loadBoard();loadLinks();}
 $('panel-run').classList.toggle('hidden',!isRun);
-$('panel-settings').classList.toggle('hidden',!isSet);if(isSet)loadFirstSteps();
+$('panel-settings').classList.toggle('hidden',!isSet);if(isSet){loadFirstSteps();licLoad();}
 $('panel-tasks').classList.toggle('hidden',!isTasks);
 $('panel-drift').classList.toggle('hidden',!isDrift);
 $('panel-reports').classList.toggle('hidden',tab!=='reports');if(tab==='reports')loadReports();
@@ -1328,6 +1330,26 @@ lqTitle();if(isTasks&&TFILTER.repo)loadParked(lqTitle);}
 // takes you to its part, lit up. The block goes once all are done.
 var FSKIP='symbiot-skip-company';
 function fsSkipped(){try{return !!(window.localStorage&&window.localStorage.getItem(FSKIP));}catch(e){return false;}}
+// Symbiot Free and Pro (licence.mjs): where you stand, a key in or out, Free's 3 projects.
+function licDate(ms){try{return new Date(ms).toLocaleDateString(undefined,{day:'numeric',month:'long',year:'numeric'});}catch(e){return '';}}
+function licLoad(){api('/api/licence').then(licRender).catch(function(){});}
+function licRender(st,msg){var el=$('licbox');if(!el||!st)return;var h='';
+if(st.plan==='owner')h+="<p>Owner key"+(st.email?' for '+esc(st.email):'')+": everything, including Symbiot working on its own code.</p>";
+else if(st.plan==='pro'){h+="<p><b>Pro</b>"+(st.email?' for '+esc(st.email):'')+(st.expires?', until '+esc(licDate(st.expires)):'')+'.</p>';
+if(st.grace)h+="<p class='onbnote'>Your key has ended. Pro carries on for "+st.grace+" more day"+(st.grace===1?'':'s')+": renew it to keep it.</p>";
+else if(st.renewSoon)h+="<p class='muted'>It ends in "+st.renewSoon+" day"+(st.renewSoon===1?'':'s')+".</p>";}
+else if(st.plan==='trial')h+="<p><b>Pro trial</b>: "+st.trialDaysLeft+" day"+(st.trialDaysLeft===1?'':'s')+" left. After that Symbiot carries on as Free, unless you add a Pro key.</p>";
+else h+="<p><b>Free</b>: one agent at a time, up to "+st.free.projects+" projects and one inbox or chat."+(st.trialEnded?' Your Pro trial has ended.':'')+"</p>";
+if(st.keyProblem)h+="<p class='onbnote'>"+esc(st.keyProblem)+"</p>";
+if(st.plan==='free'||st.plan==='trial'){
+if(st.projects&&st.projects.length)h+="<p class='muted' style='margin-top:10px'>Free’s "+st.free.projects+" projects: the first ones Symbiot worked in.</p><div class='licproj'>"+st.projects.map(function(p,i){return "<span class='chip'>"+esc(p.name)+" <button class='back' data-i='"+i+"' title='Free this slot for another project'>free up</button></span>";}).join(' ')+"</div>";
+h+="<p style='margin-top:12px'>Pro: as many agents at once as you like, every project, every inbox and chat, the marketing lane and Approve-and-ship. "+esc(st.price)+". <a href='"+esc(st.upgrade)+"' target='_blank' rel='noopener'>Get Pro</a></p>";}
+if(st.plan!=='owner'){h+="<div class='row' style='margin-top:10px'>"+(st.plan==='pro'?"<button class='ghost' id='licclear'>Remove this key</button>":"<textarea id='lickey' rows='2' placeholder='Paste your Pro key (it starts SYM1-)' style='flex:1'></textarea><button class='act' id='licsave'>Add key</button>")+"</div>";}
+if(msg)h+="<p class='onbnote' style='margin-top:8px'>"+esc(msg)+"</p>";
+el.innerHTML=h;
+var sv=$('licsave');if(sv)sv.addEventListener('click',function(){var k=($('lickey').value||'').trim();if(!k)return;api('/api/licence/key',{key:k}).then(function(r){if(r&&r.error){licRender(st,r.error);return;}licRender(r,'Thanks: Symbiot Pro is on.');}).catch(function(){});});
+var cl=$('licclear');if(cl)cl.addEventListener('click',function(){api('/api/licence/clear',{}).then(function(r){licRender(r);}).catch(function(){});});
+el.querySelectorAll('.licproj button[data-i]').forEach(function(b){b.addEventListener('click',function(){var p=st.projects[+b.getAttribute('data-i')];if(!p)return;api('/api/licence/project/free',{path:p.path}).then(function(r){licRender(r);}).catch(function(){});});});}
 function loadFirstSteps(){api('/api/firststeps').then(function(f){var el=$('firststeps');if(!el||!f||!f.steps)return;
 var st=f.steps.map(function(s){return s.id==='company'&&!s.done&&fsSkipped()?Object.assign({},s,{done:true,skipped:true}):s;}),next=st.filter(function(s){return !s.done;})[0];
 if(!next){el.innerHTML='';el.classList.add('hidden');return;}el.classList.remove('hidden');

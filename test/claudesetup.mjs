@@ -70,6 +70,16 @@ try {
   ok("…and then it's signed in", await until(() => claudeSetup(true).signedIn), claudeSetup());
   delete process.env.NEEDS_CODE;
 
+  console.log("IN TESTS — never a real sign-in or install");
+  process.env.SYMBIOT_NO_SIGNIN = "1"; rmSync(signed, { force: true }); claudeSetup(true);
+  const before = existsSync(signed), r2 = signInClaude();
+  await sleep(500);
+  ok("with SYMBIOT_NO_SIGNIN, Sign in starts nothing (no browser) and says so", !r2.signingIn && /switched off/.test(r2.signinError || "") && !existsSync(signed) && !before, r2);
+  const saved = process.env.SYMBIOT_CLAUDE_INSTALL_CMD; delete process.env.SYMBIOT_CLAUDE_INSTALL_CMD;
+  const r3 = installClaude();
+  ok("…and Install runs no real installer", !r3.installing && /switched off/.test(r3.installError || ""), r3);
+  process.env.SYMBIOT_CLAUDE_INSTALL_CMD = saved; delete process.env.SYMBIOT_NO_SIGNIN;
+
   console.log("WHEN IT FAILS — it says so, and you can try again");
   rmSync(join(BIN, "claude")); claudeSetup(true);
   process.env.SYMBIOT_CLAUDE_INSTALL_CMD = "echo 'could not reach claude.ai' >&2; exit 3";

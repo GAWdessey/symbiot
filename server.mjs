@@ -2,6 +2,7 @@
 // (ui.mjs) and its /api routes, each a thin call into the module that does the
 // work, on 127.0.0.1 only and behind the per-install token. (Watch on your phone
 // listens on your network separately, only for that: phone.mjs.)
+import { licenceState, setKey, clearKey, can, refreshRevoked, FREE } from "./licence.mjs";
 import { claudeSetup, installClaude, signInClaude, sendClaudeCode } from "./claudesetup.mjs";
 import { voiceState, prepareVoice, speak, stopVoices } from "./voice.mjs";
 import { spawn, spawnSync } from "node:child_process";
@@ -152,6 +153,8 @@ const IN_TERMUX = process.platform === "android" && process.env.SYMBIOT_ANDROID_
 const SANDBOX = !!process.env.SYMBIOT_SANDBOX;
 // the installed app (symbiot-desktop): it updates itself and made its own shortcuts
 const DESKTOP = process.env.SYMBIOT_DESKTOP === "1"; // symbiot app --fresh (sandbox.mjs)
+// the licence as Settings shows it: the plan, and Free's 3 projects
+function licenceView() { const st = licenceState(); const L = loadConfig().licence || {}; return { ...st, projects: (L.projects || []).map((p) => ({ path: p, name: p.split(/[\\/]/).pop() })), free: FREE }; } // symbiot app --fresh (sandbox.mjs)
 const FIRST_RUN = !existsSync(CONFIG_PATH); // no config yet when Symbiot started: a brand-new install
 function openApp(url) {
   try {
@@ -238,6 +241,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
   if (FRESH) { try { const cf = loadConfig(); if (!cf.onboarding) { cf.onboarding = { pending: true, step: "welcome", skipped: [] }; saveConfig(cf); } } catch {} }
   // your projects: kept, and found again off the main thread, so nothing waits on a search
   setScanOptions({ cache: true }); REPO_STATE.onChange = () => { try { homeState({ fresh: true }); } catch {} };
+  if (!SANDBOX) { refreshRevoked().catch(() => {}); setInterval(() => refreshRevoked().catch(() => {}), 6 * 3600 * 1000).unref(); } // cancelled Pro keys, about daily
   { const t0 = Date.now(); refreshRepos().then((l) => console.log(`Found ${l.length} project${l.length === 1 ? "" : "s"} in ${((Date.now() - t0) / 1000).toFixed(1)}s.`)); }
   let UPDATING = null; // an update in flight: { target, attempt, retrying? }
   let NEWEST_WIN = ""; // the Symbiot window opened last: older ones close themselves (one window, not a pile)
@@ -390,14 +394,14 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       }
       // Marketing's own lane (marketing.mjs): a task for it, tagged with its product; another
       // lane's marketing task moved to it; its agent started; a draft its agent wrote, opened
-      if (u.pathname === "/api/marketing/task" && req.method === "POST") { const b = await readBody(req); return json(res, marketingTask(b.text, b.product)); }
-      if (u.pathname === "/api/marketing/move" && req.method === "POST") { const b = await readBody(req); return json(res, moveToMarketing(b.id, b.product)); }
-      if (u.pathname === "/api/marketing/go" && req.method === "POST") return json(res, marketingGo());
+      if (u.pathname === "/api/marketing/task" && req.method === "POST") { { const g = can("marketing"); if (!g.ok) return json(res, { error: g.why, pro: true }); } const b = await readBody(req); return json(res, marketingTask(b.text, b.product)); }
+      if (u.pathname === "/api/marketing/move" && req.method === "POST") { { const g = can("marketing"); if (!g.ok) return json(res, { error: g.why, pro: true }); } const b = await readBody(req); return json(res, moveToMarketing(b.id, b.product)); }
+      if (u.pathname === "/api/marketing/go" && req.method === "POST") { const g = can("marketing"); return json(res, g.ok ? marketingGo() : { error: g.why, pro: true }); }
       // a draft as the post it will be (its preview, notes apart), its picture or video, and
       // your Approve or Skip on it: approved, its agent posts it through Symbiot's browser
       if (u.pathname === "/api/marketing/draft") return json(res, draftPreview(String(u.searchParams.get("rel") || "")));
       if (u.pathname === "/api/marketing/media") { const m = laneMedia(String(u.searchParams.get("rel") || "")); if (!m) { res.writeHead(404); res.end("not found"); return; } res.writeHead(200, { "content-type": m.type, "cache-control": "private, max-age=300" }); res.end(readFileSync(m.file)); return; }
-      if (u.pathname === "/api/marketing/draft/answer" && req.method === "POST") { const b = await readBody(req); return json(res, marketingDraftAnswer(String(b.rel || ""), b.skip ? "skipped" : "approved")); }
+      if (u.pathname === "/api/marketing/draft/answer" && req.method === "POST") { { const g = can("marketing"); if (!g.ok) return json(res, { error: g.why, pro: true }); } const b = await readBody(req); return json(res, marketingDraftAnswer(String(b.rel || ""), b.skip ? "skipped" : "approved")); }
       if (u.pathname === "/api/marketing/open" && req.method === "POST") { const b = await readBody(req), f = join(MARKETING_DIR, String(b.rel || "")); return json(res, f.startsWith(MARKETING_DIR + "/") && existsSync(f) ? { ok: openUrl(f) } : { error: "That draft isn't there any more." }); }
       // the pick tray (tray.mjs): its captures and their blur boxes, a capture (only from inside
       // a tray), a box switched on or off and the capture blurred again, a capture as a post's media
@@ -511,6 +515,11 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       if (u.pathname === "/api/claude/install" && req.method === "POST") return json(res, installClaude());
       if (u.pathname === "/api/claude/signin" && req.method === "POST") return json(res, signInClaude());
       if (u.pathname === "/api/claude/code" && req.method === "POST") { const b = await readBody(req); return json(res, sendClaudeCode(b.code)); }
+      // Symbiot Free and Pro (licence.mjs): where you stand, a key in or out, a Free project slot freed
+      if (u.pathname === "/api/licence") return json(res, licenceView());
+      if (u.pathname === "/api/licence/key" && req.method === "POST") { const b = await readBody(req); const r = setKey(b.key); return json(res, r.error ? r : licenceView()); }
+      if (u.pathname === "/api/licence/clear" && req.method === "POST") { clearKey(); return json(res, licenceView()); }
+      if (u.pathname === "/api/licence/project/free" && req.method === "POST") { const b = await readBody(req); const c = loadConfig(); const L = c.licence || {}; L.projects = (L.projects || []).filter((p) => p !== String(b.path || "")); c.licence = L; saveConfig(c); return json(res, licenceView()); }
       if (u.pathname === "/api/update" && req.method === "POST" && DESKTOP) return json(res, { error: "This Symbiot updates with its app." });
       if (u.pathname === "/api/update" && req.method === "POST") {
         // Install the exact newest version (see updateCmd), then relaunch this

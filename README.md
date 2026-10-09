@@ -1419,6 +1419,32 @@ expects. Symbiot rescales for `xdotool` and for `cliclick` on a Retina screen, b
 it can't read the scale on Wayland, and ydotool's moves follow your pointer
 acceleration, so a click there can land off target.
 
+## Symbiot Free and Pro
+
+Every install starts with **14 days of Pro**, no key and no card. After that Symbiot
+carries on as **Free**:
+
+- the orb, Home and Talk to Symbiot (typed or spoken), your week, your standup and
+  what's on your plate, the Away screen;
+- **one agent at a time**, in **up to 3 projects** (the first 3 it works in; Settings →
+  Symbiot Pro can free a slot for another);
+- **one connected inbox or chat**.
+
+**Pro** (US$12 a month or US$99 a year) adds any number of agents at once, every project,
+every inbox and chat (all your mail, WhatsApp, LinkedIn, calendars), the marketing lane
+and Approve-and-ship. Get it from [symbiot.co.za](https://symbiot.co.za/#pro) and paste
+the key you're sent into **Settings → Symbiot Pro**. A limit never stops anything already
+running: it only keeps the next thing from starting, and says why.
+
+Keys are checked on your computer (they're signed by Ghost AI; there's no account and no
+server). Symbiot never works on its own code (its repo, a fork of it, or its installed
+files), so it can't be asked to take out its own limits.
+
+**Licence.** From 0.59.0 Symbiot is under the [Elastic License 2.0](LICENSE): free to use,
+change and share, but not to get round the licence key, sell it as a hosted service, or
+remove its notices. Versions up to and including 0.58.2 were released under MIT and stay
+under it.
+
 ## Config, development and releasing
 
 Config files, environment variables (`SYMBIOT_MODEL`, `SYMBIOT_PORT`, …), the test

@@ -2,6 +2,12 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.59.0
+
+- **Symbiot Free and Symbiot Pro.** Every install starts with 14 days of Pro. After that, Free keeps the orb, Home, Talk to Symbiot, your week and standups, voice and the Away screen, with one agent at a time, up to 3 projects and one connected inbox or chat. Pro (US$12 a month or US$99 a year) adds any number of agents at once, every project, every inbox and chat, the marketing lane and Approve-and-ship. **Settings → Symbiot Pro** shows where you stand, takes a key and lets you swap one of Free's 3 projects. A limit never stops anything running: the next thing just doesn't start, with a line saying why. Keys are checked offline (signed by Ghost AI; cancelled keys are listed on symbiot.co.za).
+- **Symbiot doesn't work on its own code.** No agent runs in Symbiot's repo or a fork of it, and the guard stops agents editing Symbiot's installed files or its licence files.
+- **Elastic License 2.0** from this version on (0.58.2 and earlier stay MIT).
+- **Tests never sign in or install for real.** The test that presses every button was starting a real Claude sign-in in the browser and running Anthropic's installer; both are now switched off in tests (`SYMBIOT_NO_SIGNIN`).
 ## 0.58.3 — 2026-10-09
 
 - Fixed urgent requests to a parked project: it is now unparked for the work, and other projects are released if nothing starts.

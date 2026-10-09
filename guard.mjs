@@ -25,7 +25,12 @@ const expand = (p, home, cwd) => resolve(cwd, String(p).replace(/^~(?=\/|$)/, ho
 const BROWSER = /\b(google-chrome(-stable)?|chromium(-browser)?|chrome|firefox|msedge|playwright|puppeteer|wkhtmltoimage|cutycapt)\b/i;
 const SCP_VALUE = /^-[346ABCOpqRrTv]*[iFoPSJcl]$/; // an scp option (alone or after flags, -rpi) whose value is the next word
 function secretPath(p, home) { return SECRET.some((s) => under(p, join(home, s))); }
-function symbiotConfig(p, home) { return p === join(home, ".config", "symbiot", "config.json"); }
+function symbiotConfig(p, home) { const d = join(home, ".config", "symbiot"); return p === join(d, "config.json") || p === join(d, "licence-revoked.json"); }
+// Symbiot's own installed files (where this guard runs from): never edited by an agent, so
+// it can't be asked to take out its own limits or rules. Ghost AI's owner key lets its own
+// runs through (SYMBIOT_OWNER, set by Symbiot, not by the agent).
+const SELF = resolve(fileURLToPath(new URL(".", import.meta.url)));
+const selfFile = (p) => !process.env.SYMBIOT_OWNER && under(p, SELF);
 
 // the branch a bare `git push` pushes: the one checked out in cwd
 function currentBranch(cwd) { try { return execFileSync("git", ["-C", cwd, "rev-parse", "--abbrev-ref", "HEAD"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim(); } catch { return ""; } }
@@ -37,6 +42,7 @@ function judgeBash(cmd, { cwd, home, branch }) {
     const s = part.trim(); if (!s) continue;
     const w = s.split(/\s+/);
     if (/^(sudo|su|doas)$/.test(w[0])) return { why: "sudo: only you run things as root" };
+    if (!process.env.SYMBIOT_OWNER && (s.includes(SELF + "/") || s.includes(SELF + " ") || s.endsWith(SELF))) return { why: "Symbiot doesn't edit its own code" };
     if (/^(shutdown|reboot|poweroff|halt)$/.test(w[0])) return { why: "shutting the computer down is yours to do" };
     if (/^(mkfs(\.\w+)?|fdisk|parted|wipefs)$/.test(w[0]) || (/^dd$/.test(w[0]) && /\bof=\/dev\//.test(s))) return { why: "that writes a disk directly" };
     if (/^git$/.test(w[0]) || /^git\s/.test(s)) {
@@ -83,6 +89,7 @@ function judge(tool, input = {}, { cwd = process.cwd(), home = homedir(), branch
   const abs = expand(p, home, cwd);
   if (secretPath(abs, home)) return { why: "your keys and cloud credentials stay yours" };
   if (/^(Edit|Write|MultiEdit|NotebookEdit)$/.test(t) && symbiotConfig(abs, home)) return { why: "Symbiot's own settings are yours to change" };
+  if (/^(Edit|Write|MultiEdit|NotebookEdit)$/.test(t) && selfFile(abs)) return { why: "Symbiot doesn't edit its own code" };
   if (/^(Edit|Write|MultiEdit|NotebookEdit)$/.test(t) && Array.isArray(writes) && writes.length && !writes.some((d) => under(abs, d))) return { why: "this run writes only in its repo and your folders (its sandbox), not " + p };
   return null;
 }
