@@ -21,17 +21,43 @@ async function checkLatest() { try { const r = await fetch(REGISTRY + "/symbiot"
 // ---- config ---------------------------------------------------------------
 const CONFIG_DIR = join(homedir(), ".config", "symbiot");
 const CONFIG_PATH = join(CONFIG_DIR, "config.json");
+// Symbiot's own keys (your AI's API key, the app's token) live apart from its
+// settings, in secrets.json: a run outside the sandbox could `cat` config.json, and
+// with the token call Symbiot's own API and change the agent command, which the
+// membrane never sees. The membrane (guard.mjs) and a run's sandbox (agents.mjs
+// SANDBOX_SECRETS) refuse secrets.json. loadConfig joins the two and saveConfig
+// splits them, so nothing else changes; a config.json from before still reads, and
+// its keys move out on the next save (the app saves once as it starts: moveSecrets).
+const SECRETS_PATH = join(CONFIG_DIR, "secrets.json"), SECRET_KEYS = ["apiKey", "appToken"];
+const isObj = (v) => !!v && typeof v === "object" && !Array.isArray(v);
+function splitSecrets(cfg) {
+  const pub = { ...cfg }, sec = {};
+  for (const k of SECRET_KEYS) if (k in pub) { sec[k] = pub[k]; delete pub[k]; }
+  for (const [k, v] of Object.entries(pub)) if (isObj(v) && "apiKey" in v) { sec[k] = { apiKey: v.apiKey }; pub[k] = { ...v }; delete pub[k].apiKey; } // a provider's: { anthropic: { apiKey, model } }
+  return { pub, sec };
+}
+const readJson = (f) => { try { const o = JSON.parse(readFileSync(f, "utf8")); return isObj(o) ? o : {}; } catch { return {}; } };
 function loadConfig() {
-  try { return JSON.parse(readFileSync(CONFIG_PATH, "utf8")); } catch { return {}; }
+  const cfg = readJson(CONFIG_PATH), sec = readJson(SECRETS_PATH);
+  for (const [k, v] of Object.entries(sec)) {
+    if (SECRET_KEYS.includes(k)) { if (!(k in cfg)) cfg[k] = v; } // one still in config.json is newer (an older Symbiot wrote it)
+    else if (isObj(v) && "apiKey" in v && !(isObj(cfg[k]) && "apiKey" in cfg[k])) cfg[k] = { ...(isObj(cfg[k]) ? cfg[k] : {}), apiKey: v.apiKey };
+  }
+  return cfg;
 }
 function saveConfig(cfg) {
   try {
     mkdirSync(CONFIG_DIR, { recursive: true });
-    writeFileSync(CONFIG_PATH, JSON.stringify(cfg, null, 2) + "\n");
+    const { pub, sec } = splitSecrets(cfg || {});
+    writeFileSync(SECRETS_PATH, JSON.stringify(sec, null, 2) + "\n", { mode: 0o600 }); // first: a key is never only in neither
+    try { chmodSync(SECRETS_PATH, 0o600); } catch {}
+    writeFileSync(CONFIG_PATH, JSON.stringify(pub, null, 2) + "\n");
     try { chmodSync(CONFIG_PATH, 0o600); } catch {}
     return true;
   } catch { return false; }
 }
+// Keys still in config.json (from before secrets.json): moved out. True if any were.
+function moveSecrets() { const raw = readJson(CONFIG_PATH); return Object.keys(splitSecrets(raw).sec).length ? saveConfig(loadConfig()) : false; }
 // ---- tasks: a persistent checklist (~/.config/symbiot/tasks.json) ---------
 const TASKS_PATH = join(CONFIG_DIR, "tasks.json");
 function loadTasks() { try { return JSON.parse(readFileSync(TASKS_PATH, "utf8")); } catch { return []; } }
@@ -180,4 +206,4 @@ function repoState(repoPath) {
   return { branch, dirty, del, mod, add, stale, staleBy, behind };
 }
 
-export { VERSION, LATEST_VERSION, semverGt, REGISTRY, checkLatest, CONFIG_DIR, CONFIG_PATH, loadConfig, saveConfig, loadTasks, saveTasks, TASK_MAX, clipWords, taskWords, sameTask, uniqueTasks, sh, hasCmd, chromeBinary, repoState };
+export { VERSION, LATEST_VERSION, semverGt, REGISTRY, checkLatest, CONFIG_DIR, CONFIG_PATH, SECRETS_PATH, loadConfig, saveConfig, moveSecrets, splitSecrets, loadTasks, saveTasks, TASK_MAX, clipWords, taskWords, sameTask, uniqueTasks, sh, hasCmd, chromeBinary, repoState };

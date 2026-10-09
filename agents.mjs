@@ -190,7 +190,7 @@ function withTrust(tmpl, box = null) {
 // config.agentSandbox: false turns it off.
 const SANDBOX_DIR = join(CONFIG_DIR, "sandbox");
 const SANDBOX_CACHES = [".npm", ".cache"]; // npm's cache and logs; pip, uv, node-gyp, Chrome for Testing
-const SANDBOX_SECRETS = [".ssh", ".gnupg", ".aws", ".azure", ".kube", ".docker", ".config/gcloud", ".config/gh", ".netrc", ".npmrc", ".pypirc", ".git-credentials", ".config/symbiot/config.json"]; // your AI's key and the app's token too
+const SANDBOX_SECRETS = [".ssh", ".gnupg", ".aws", ".azure", ".kube", ".docker", ".config/gcloud", ".config/gh", ".netrc", ".npmrc", ".pypirc", ".git-credentials", ".config/symbiot/config.json", ".config/symbiot/secrets.json"]; // your AI's key and the app's token too
 // Local sockets are allowed (headless Chrome needs one to start, so the browser tests
 // ran in no sandboxed run), but the ones that would be a way out are hidden: Docker's,
 // and your session's (its bus starts commands outside, through systemd-run; X11 and
@@ -264,12 +264,14 @@ function noteSession(path, code, resumed) {
 // A folder whose last run stopped on questions, with nothing changed since
 // that could answer them, gets no run: { blocked, questions, note }
 // (blockedAgain). force starts one anyway (something changed elsewhere).
-function runHandoff(repoPath, { force = false } = {}) {
+// A folder with nothing to work from gets none either, forced or not (nothingToDo).
+function runHandoff(repoPath, { force = false, lost = false } = {}) {
   let tmpl = handoffCmd(); if (!tmpl || !repoPath) return null;
   if (isParked(repoPath)) return { blocked: true, parked: true, questions: 0, note: PARKED_NOTE }; // even forced: that's what parking is for
   let opts = {}; try { opts = JSON.parse(readSymbiot(repoPath, "handoff.json")) || {}; } catch {}
   const busy = runningHandoff(repoPath); if (busy) return { busy: true, id: busy.id || "", pid: busy.pid, auto: !!busy.auto };
   releaseHeldTasks(repoPath); // held for an agent another process started, which has since exited
+  const idle = !lost && nothingToDo(repoPath); if (idle) return { blocked: true, idle: true, questions: 0, note: idle };
   const scoped = withScope(withConnectors(tmpl, repoPath), repoPath), box = isClaudeCmd(scoped) && trustFull() ? sandboxFor(repoPath, scoped) : null; // a repo run's sandbox, on top of the membrane
   tmpl = withStream(withTrust(scoped, box));
   const resume = isClaudeCmd(tmpl) ? resumeFor(repoPath) : null;
@@ -282,7 +284,7 @@ function runHandoff(repoPath, { force = false } = {}) {
   const own = opts.env && typeof opts.env === "object" ? Object.fromEntries(Object.entries(opts.env).map(([k, v]) => [k, String(v)])) : null, boxEnv = sandboxEnv(box);
   const env = own || boxEnv ? { ...(own || {}), ...(boxEnv || {}) } : null;
   const e = track(typeof opts.name === "string" && opts.name ? opts.name.slice(0, 80) : repoPath.split("/").pop(), fillHandoff(runCmd, repoPath, resume ? RESUME_PROMPT : HANDOFF_PROMPT), repoPath, (code) => {
-    if (noteSession(repoPath, code, !!resume) === "lost") { setTimeout(() => { try { runHandoff(repoPath, { force: true }); } catch {} }, 300); return; } // its conversation is gone: start afresh
+    if (noteSession(repoPath, code, !!resume) === "lost") { setTimeout(() => { try { runHandoff(repoPath, { force: true, lost: true }); } catch {} }, 300); return; } // its conversation is gone: start afresh
     try { if (JSON.parse(readFileSync(lock, "utf8")).pid === e.pid) unlinkSync(lock); } catch {}
     noteBlocked(repoPath, tmpl, e.startedAt, code);
     setTimeout(() => { try { autoAllow(repoPath); } catch {} }, 300); // a list it proposed inside your work: turned on, and on it goes
@@ -295,6 +297,27 @@ function runHandoff(repoPath, { force = false } = {}) {
   if (e.pid) try { writeFileSync(lock, JSON.stringify({ pid: e.pid, id: e.id, startedAt: e.startedAt, owner: process.pid })); } catch {}
   noteRun(e);
   return e;
+}
+// ---- nothing to do: no run ----------------------------------------------------
+// A run in ~ started with no .symbiot/TASKS.md there, found nothing to action and
+// only cost a session (2026-10-07). A run needs something to work from: an
+// unticked task, or an answer that came in since the folder's last run started
+// (an approved post or draft, a reply to its question: those carry on with every
+// task ticked, and Marketing's folder may have no TASKS.md at all). Else the note
+// for { blocked, idle }, even forced: Start it anyway would start the same
+// nothing. Briefs are written before their run starts (actNow, draftReply,
+// pushTasks), and a held one lands first (runHandoff), so they count. Only the
+// run that restarts a lost conversation skips this: its answer is older than the
+// failed resume's start.
+const OPEN_TASK = /^\s*(?:[-*+]|\d+[.)])\s*\[ \]/m;
+function nothingToDo(path) {
+  const md = readSymbiot(path, "TASKS.md"); if (OPEN_TASK.test(md)) return "";
+  let answered = 0; try { answered = statSync(join(path, ".symbiot", "ANSWERS.md")).mtimeMs; } catch {}
+  const last = [...readSymbiot(path, "agent.log").matchAll(/^=== .* (\d{4}-\d\d-\d\dT[\d:.]+Z) ===$/gm)].pop();
+  if (answered && answered > (last ? Date.parse(last[1]) || 0 : 0)) return "";
+  const name = path === homedir() ? "~" : path.split(/[\\/]/).filter(Boolean).pop() || path;
+  return md.trim() ? `Not started: every task in ${name}'s .symbiot/TASKS.md is ticked and no answer has come in since its last run, so an agent there would have nothing to do. Send it a task first.`
+    : `Not started: ${name} has no .symbiot/TASKS.md, so an agent there would have nothing to do. Send it a task first.`;
 }
 // ---- a parked lane: its tasks start no runs ----------------------------------
 // A lane blocked on something only the user can give (a token from Meta) ran 27
@@ -321,7 +344,12 @@ function parkLane(path, on) {
 // test stopped halfway would be void), stops the urgent lane's own routine run (its
 // changes stay in the folder, and the next run carries on from them) so the urgent
 // one starts now, and when that run ends, urgentDone unparks those lanes in their
-// old order and starts the ones with work waiting. Lanes you parked stay parked.
+// old order and starts the ones with work waiting. Lanes you parked stay parked,
+// except the urgent lane itself: on 2026-10-09 symbiot was parked, so every urgent
+// handover there parked marketing, started nothing, and still said "it's already on
+// urgent work, and takes this next" while 0 agents worked. Asking for urgent work in
+// a lane is the newest thing you've said about it, so it's unparked for it; and if
+// its run still doesn't start, urgentUndo takes back what urgentFirst did.
 const CAPS_OK = /^(README|TODO|FIXME|HTML|JSON|YAML|HTTP|HTTPS|OAUTH|CHANGELOG|TASKS|ANSWERS|QUESTIONS|HANDOFF|REMEMBER|AWAITING|SKIPPED|LICENSE|CLAUDE|AGENTS|NOTE|ASAP|SAST|UTC|GPU|CPU|RAM|USB|SDK|JDK|API|URL|CSS|DNS|SSH|SMS|PDF|PNG|SVG|MCP|LLM|CLI|ENV|PATH|HOME|WIP|ETA)$/;
 function isUrgent(text) {
   const t = String(text || "");
@@ -338,24 +366,43 @@ function stopRun(path) {
   try { process.kill(-r.pid, "SIGTERM"); } catch { try { process.kill(r.pid, "SIGTERM"); } catch { return false; } } // its own process group (track: detached)
   return true;
 }
-// lanes: the paths to consider ({ name: path }); returns { parked: [names], stopped }
+// lanes: the paths to consider ({ name: path }); returns { parked: [names], parkedPaths,
+// stopped, unparked (it was parked: now it isn't), busy: "urgent" | "routine" | "" (a run
+// there now: one already on urgent work, which this waits for, or one it couldn't stop) }
 function urgentFirst(path, { lanes = null, stop = stopRun, running = runningHandoff } = {}) {
-  if (!path) return { parked: [], stopped: false };
+  if (!path) return { parked: [], parkedPaths: [], stopped: false, unparked: false, busy: "" };
   const u = urgentState() || { at: Date.now(), paths: [], parked: [], runs: [] };
-  if (!u.paths.includes(path)) u.paths.push(path);
-  if (u.parked.includes(path)) { u.parked = u.parked.filter((p) => p !== path); parkLane(path, false); } // urgent itself now
+  if (!u.paths.includes(path)) { u.paths.push(path); u.at = Date.now(); }
+  if (u.parked.includes(path)) u.parked = u.parked.filter((p) => p !== path); // urgent itself now
+  const unparked = isParked(path); if (unparked) parkLane(path, false);
   const all = lanes || Object.fromEntries(loadRuns().map((r) => [String(r.name || r.path.split("/").pop()), r.path]));
-  const parked = [], already = parkedPaths();
+  const parked = [], mine = [], already = parkedPaths();
   for (const [name, p] of Object.entries(all)) {
     if (!p || u.paths.includes(p) || already.includes(p)) continue; // yours stay yours
     if (!running(p) && !readSymbiot(p, HELD)) continue; // nothing going or waiting there
-    parkLane(p, true); u.parked.push(p); parked.push(name);
+    parkLane(p, true); u.parked.push(p); parked.push(name); mine.push(p);
   }
-  // its own lane: a routine run stops so this one starts now; one that's already on urgent work keeps going
-  const busy = running(path), onIt = busy && (u.runs.includes(busy.id) || hasOpenUrgent(readSymbiot(path, "TASKS.md")));
+  // its own lane: a routine run stops so this one starts now; one that's already on urgent
+  // work keeps going, and counts as the urgent run, so its end resumes what was parked
+  const busy = running(path), onIt = !!busy && (u.runs.includes(busy.id) || hasOpenUrgent(readSymbiot(path, "TASKS.md")));
+  if (onIt && busy.id && !u.runs.includes(busy.id)) u.runs.push(busy.id);
   const stopped = !!busy && !onIt && stop(path);
   saveUrgent(u);
-  return { parked, stopped };
+  return { parked, parkedPaths: mine, stopped, unparked, busy: !busy ? "" : onIt ? "urgent" : stopped ? "" : "routine" };
+}
+// The urgent lane's run didn't start (no agent command, a step of yours first, its
+// questions unanswered) and nothing runs there: nothing will end to resume the lanes
+// urgentFirst parked, so they're unparked now, and the lane leaves the urgent record.
+function urgentUndo(path, did, { running = runningHandoff } = {}) {
+  if (!path || !did || running(path)) return false;
+  const u = urgentState(); if (!u) return false;
+  const back = (did.parkedPaths || []).filter((p) => u.parked.includes(p));
+  for (const p of back) if (parkedPaths().includes(p)) parkLane(p, false);
+  u.parked = u.parked.filter((p) => !back.includes(p));
+  u.paths = u.paths.filter((p) => p !== path);
+  saveUrgent(u.paths.length ? u : null);
+  if (!u.paths.length && u.parked.length) resumeParked(u.parked); // parked by an earlier urgent ask that never ran either
+  return true;
 }
 // the urgent lane's run started: when it ends, the parked work resumes (runHandoff's exit)
 function noteUrgentRun(path, id) { const u = urgentState(); if (u && u.paths.includes(path) && id && !u.runs.includes(id)) { u.runs.push(id); saveUrgent(u); } }
@@ -376,11 +423,13 @@ function resumeParked(paths, start = runHandoff) {
   return { unparked: paths, resumed };
 }
 // The app restarted under an urgent run (its exit never came), or it never started:
-// the parked lanes don't wait forever.
-const URGENT_MAX = 6 * 3600 * 1000;
+// the parked lanes don't wait forever. A record with no run going in any urgent lane is
+// over once URGENT_GRACE has passed (a stopped routine run takes a moment to exit, and
+// the urgent one starts then): before, one whose run never started held marketing for 6h.
+const URGENT_MAX = 6 * 3600 * 1000, URGENT_GRACE = 2 * 60 * 1000;
 function urgentSweep({ running = runningHandoff, now = Date.now(), start = runHandoff } = {}) {
   const u = urgentState(); if (!u) return null;
-  const ended = u.runs.length > 0 && !u.paths.some((p) => running(p));
+  const ended = !u.paths.some((p) => running(p)) && (u.runs.length > 0 || now - (u.at || 0) >= URGENT_GRACE);
   if (!ended && now - (u.at || 0) < URGENT_MAX) return null;
   saveUrgent(null);
   return resumeParked(u.parked, start);
@@ -999,7 +1048,7 @@ const HARM_RULE = /^Bash\(\s*(rm|dd|mkfs|chmod|chown|shred|truncate)\b/i;
 const wideRule = (r) => ANY_RULE.test(r) || (HARM_RULE.test(r) && /\*/.test(r));
 // Whatever an agent is allowed, it never edits Symbiot's own settings: that's where
 // what agents may do is kept, so an agent could widen its own permissions there.
-const GUARD = () => { const c = join(homedir(), ".config", "symbiot", "config.json"); return [`Edit(${c})`, `Write(${c})`]; };
+const GUARD = () => { const c = join(homedir(), ".config", "symbiot", "config.json"), s = join(homedir(), ".config", "symbiot", "secrets.json"); return [`Edit(${c})`, `Write(${c})`, `Read(${s})`, `Edit(${s})`, `Write(${s})`]; };
 function installAllowlist(path) {
   let p; try { p = JSON.parse(readFileSync(join(path, ".symbiot", "allowlist.proposed.json"), "utf8")).permissions || {}; } catch { return null; }
   const list = (x) => (Array.isArray(x) ? x.filter((r) => typeof r === "string" && r.trim()).map((r) => r.trim()) : []);
@@ -1190,4 +1239,4 @@ function agentsList() {
   }).concat(earlierRuns());
 }
 
-export { FACTS, factsOf, knownRun, withStream, workOf, HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, connectorsInfo, linkReach, fillHandoff, runHandoff, PARKED_NOTE, parkedPaths, isParked, parkLane, agentMissing, blockedAgain, runningHandoff, loadRuns, earlierRuns, namedFiles, waitingFor, startWaiting, noteUntracked, untrackedBefore, forgetUntracked, writeTasks, droppedTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, pickAgent, findOrcaCli, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, skipIdea, agentQuestions, answerQuestions, agentsList, needsOf, settleNeeds, NEEDS_FOR, readLastWords, readNeeds, parseRead, READ_FILE, autoAllow, autoAllowSweep, allowlistInWork, installAllowlist, inWork, withScope, withTrust, sandboxFor, sandboxEnv, sandboxNeeds, sandboxState, sandboxWrites, SANDBOX_DIR, resumeFor, noteSession, trustFull, GUARD_SETTINGS, isUrgent, urgentFirst, urgentDone, urgentSweep, urgentState };
+export { FACTS, factsOf, knownRun, withStream, workOf, HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, connectorsInfo, linkReach, fillHandoff, runHandoff, nothingToDo, PARKED_NOTE, parkedPaths, isParked, parkLane, agentMissing, blockedAgain, runningHandoff, loadRuns, earlierRuns, namedFiles, waitingFor, startWaiting, noteUntracked, untrackedBefore, forgetUntracked, writeTasks, droppedTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, pickAgent, findOrcaCli, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, skipIdea, agentQuestions, answerQuestions, agentsList, needsOf, settleNeeds, NEEDS_FOR, readLastWords, readNeeds, parseRead, READ_FILE, autoAllow, autoAllowSweep, allowlistInWork, installAllowlist, inWork, withScope, withTrust, sandboxFor, sandboxEnv, sandboxNeeds, sandboxState, sandboxWrites, SANDBOX_DIR, resumeFor, noteSession, trustFull, GUARD_SETTINGS, isUrgent, urgentFirst, urgentUndo, urgentDone, urgentSweep, urgentState };

@@ -30,6 +30,18 @@ try {
   ok("another language: none of ours (the system's voice speaks it)", voiceFor("fr-FR") === null && voiceFor("af-ZA") === null && voiceState("de-DE").state === "none");
   ok("both voices are public domain ones", VOICES.gb.id === "en_GB-cori-medium" && VOICES.us.id === "en_US-ljspeech-medium");
 
+  console.log("WHAT'S READ OUT — plain words, no symbols");
+  {
+    const { EMBEDDED_UI } = await import("../ui.mjs");
+    const uiJs = [...EMBEDDED_UI.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]).join("\n");
+    const grab = (name) => { const i = uiJs.indexOf("function " + name + "("); let depth = 0, j = uiJs.indexOf("{", i); for (; j < uiJs.length; j++) { if (uiJs[j] === "{") depth++; else if (uiJs[j] === "}" && --depth === 0) break; } return uiJs.slice(i, j + 1); };
+    const voiceClean = new Function(grab("voiceClean") + "\nreturn voiceClean;")();
+    const c = voiceClean("Sure.\n\n→ Added to symbiot's tasks: x");
+    ok("an arrow isn't read out as \"right arrow\" (2026-10-09)", !/→/.test(c) && /^Sure\. Added to symbiot's tasks/.test(c), c);
+    ok("…nor one between two words: a pause instead", voiceClean("Settings → Handoff") === "Settings, Handoff", voiceClean("Settings → Handoff"));
+    ok("the answer's spoken version is what's read, when it has one", /voiceSpeak\(r\.spoken\|\|/.test(uiJs), "");
+  }
+
   console.log("WHICH ENGINE — per computer");
   ok("Linux PC", assetFor("linux", "x64") === "piper_linux_x86_64.tar.gz");
   ok("Raspberry Pi / ARM Linux", assetFor("linux", "arm64") === "piper_linux_aarch64.tar.gz");

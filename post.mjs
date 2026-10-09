@@ -33,7 +33,7 @@ import { resolveProvider, write } from "./ai.mjs";
 import { commits, discoveredRepos, laneMap } from "./scan.mjs";
 import { readTexts, pagePicture, pageClip, siteUrl, CLIP } from "./headless.mjs";
 import { runHandoff, runningHandoff } from "./agents.mjs";
-import { MARKETING_DIR, ensureMarketing, setDraftStatus, productOf, productNames } from "./marketing.mjs";
+import { MARKETING_DIR, ensureMarketing, setDraftStatus, productOf, productNames, draftStatuses, postedCmd } from "./marketing.mjs";
 
 const PATHS = { posts: join(CONFIG_DIR, "posts.json"), log: join(CONFIG_DIR, "posts-log.jsonl"), voice: join(CONFIG_DIR, "voice.md"), media: join(CONFIG_DIR, "post-media"), test: join(CONFIG_DIR, "post-test.json") };
 const PLATFORM = "linkedin";
@@ -321,6 +321,8 @@ function handToMarketing(p, { now = Date.now(), paths = PATHS, dir = MARKETING_D
   if (!ensureMarketing(dir)) return { error: "Couldn't make Marketing's folder." };
   if (!names) { try { names = productNames(laneMap()); } catch { names = []; } }
   const product = productOf(p.text, names), folder = (product.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "linkedin"), rel = `drafts/${folder}/post-${p.id}.md`;
+  // posted already (its agent marked it): never written over and handed out a second time
+  const was = draftStatuses(dir)[rel]; if (was && (was.status === "posted" || was.posted)) return { error: `It's posted already (${rel}): it isn't posted twice.` };
   const media = [];
   try {
     mkdirSync(join(dir, "drafts", folder), { recursive: true });
@@ -330,7 +332,7 @@ function handToMarketing(p, { now = Date.now(), paths = PATHS, dir = MARKETING_D
   const st = setDraftStatus(rel, "approved", { dir, now }); if (st.error) return st;
   try {
     const f = join(dir, ".symbiot", "ANSWERS.md"), had = existsSync(f) ? readFileSync(f, "utf8") : "# Answers\n";
-    writeFileSync(f, `${had.replace(/\s*$/, "")}\n\n### Approved: ${rel}\nThe user approved this post under Drafts to post. Post it on LinkedIn now, through Symbiot's signed-in browser, with exactly the text under its post (${p.text.length} characters, unchanged)${media.length ? ` and ${media.join(", ")} attached` : ""}. Then check it's there, and say so in your last message.\n_answered ${new Date(now).toISOString().slice(0, 10)}_\n`);
+    writeFileSync(f, `${had.replace(/\s*$/, "")}\n\n### Approved: ${rel}\nThe user approved this post under Drafts to post. Post it on LinkedIn now, through Symbiot's signed-in browser, with exactly the text under its post (${p.text.length} characters, unchanged)${media.length ? ` and ${media.join(", ")} attached` : ""}. Then check it's there, mark it posted (\`${postedCmd(rel)}\`), and say so in your last message.\n_answered ${new Date(now).toISOString().slice(0, 10)}_\n`);
   } catch (e) { return { error: "Couldn't tell Marketing's agent: " + ((e && e.message) || e) }; }
   if (running(dir)) return { rel, queued: true, said: "Approved. Marketing's agent posts it on LinkedIn once the run there now finishes." };
   const e = run(dir, { force: true });

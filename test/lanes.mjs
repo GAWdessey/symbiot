@@ -110,6 +110,14 @@ try {
   const h3 = loadLedger().handoffs.find((h) => h.to.lane === "GhostAIChat");
   ok("it joins GhostAIChat's tasks, marked who it's from, and goes out like Send to repos", calls.add.slice(-1)[0].repo === "GhostAIChat" && /\(handed over by coral\)/.test(calls.add.slice(-1)[0].after) && calls.push.slice(-1)[0].repo === "GhostAIChat" && t3.started.length === 1, calls.add.slice(-1));
   ok("that lane busy: queued, and not counted done when the busy run ends", h3.status === "held" && (ran(ghost, h3.at - 5000, "an earlier run"), lanesTick(deps()).reported.length === 0), h3.status);
+  // a parked lane (2026-10-09): "queued: that lane is busy" while nothing ran there
+  map.parkedone = lane("parkedone");
+  put(coral, "HANDOFF.md", "### parkedone\nSign the release APK with the upload key.\n");
+  runResult = () => ({ blocked: true, parked: true, note: "Parked: its tasks start no agent runs until you unpark it." });
+  lanesTick(deps());
+  const hb = loadLedger().handoffs.find((h) => /release APK/.test(h.text)), rb = lanesState().handoffs.find((h) => /release APK/.test(h.text));
+  ok("a lane that didn't start: blocked, with why, never held", hb.status === "blocked" && /Parked/.test(hb.note) && rb.status === "blocked" && /Parked/.test(rb.note), [hb, rb]);
+  runResult = () => ({ busy: true });
   ran(ghost, h3.at + 2000, "Built android/app/build/outputs/apk/debug/app-debug.apk.");
   const t4 = lanesTick(deps({ tasks: [{ id: h3.task, review: true }] }));
   ok("its run done and the task ticked: coral hears it's done and waits for review", t4.reported.length === 1 && /Done in GhostAIChat: the task is ticked/.test(read(coral, "ANSWERS.md")) && /app-debug\.apk/.test(read(coral, "ANSWERS.md")), read(coral, "ANSWERS.md").slice(-300));

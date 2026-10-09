@@ -15,7 +15,7 @@ mkdirSync(join(HOME, ".config", "symbiot"), { recursive: true });
 let pass = 0, fail = 0;
 const ok = (n, c, got) => { if (c) { pass++; console.log("  ✓ " + n); } else { fail++; console.log("  ✗ " + n + (got !== undefined ? "  got: " + JSON.stringify(got) : "")); } };
 
-const { MIND_FILE, loadMind, remember, recall, mindState, forget, converse, parseReply, actBrief, actIn, taskIn, selfLane } = await import("../mind.mjs");
+const { MIND_FILE, loadMind, remember, recall, mindState, forget, converse, parseReply, actBrief, actIn, taskIn, selfLane, spokenLine, goOf, rulesFor } = await import("../mind.mjs");
 const said = (j) => async () => JSON.stringify(j);
 
 try {
@@ -85,7 +85,22 @@ try {
   ok("a task goes to the lane it names, whatever its case", taskIn("Fix sender attribution", "Symbiot", { map, add }).lane === "symbiot" && added.slice(-1)[0][1] === "symbiot", added.slice(-1));
   ok("a lane that doesn't exist isn't made up: no repo", taskIn("x", "nonesuch", { map, add }).lane === "" && added.slice(-1)[0][1] === "", added.slice(-1));
   const lt = await converse({ where: "WhatsApp card", question: "fix it", map, act: { task: (t, r) => taskIn(t, r, { map, add }) }, ask: said({ reply: "Done.", do: { task: "Fix WhatsApp sender attribution", repo: "symbiot" }, remember: [] }) });
-  ok("the reply names the lane it really landed in", /→ Added to symbiot's tasks: Fix WhatsApp sender attribution/.test(lt.reply), lt.reply);
+  ok("the reply names the lane it really landed in", /\n\nAdded to symbiot's tasks: Fix WhatsApp sender attribution/.test(lt.reply), lt.reply);
+  ok("…with no arrow: it was only there for show, and voices read it out", !/→/.test(lt.reply), lt.reply);
+
+  console.log("READ ALOUD — the line under a reply is a short phrase, never the task (2026-10-09)");
+  const longTask = "Fix how Symbiot speaks the status line it adds to chat replies, so the arrow and the whole task aren't read out";
+  const sp = await converse({ where: "Home", question: "symbiot reads the arrow out loud, fix it", map, act: { task: (t, r) => taskIn(t, r, { map, add }) }, ask: said({ reply: "Good catch, that sounds awful.", do: { task: longTask, repo: "symbiot" }, remember: [] }) });
+  ok("on screen: the reply, then the status line with the task", /^Good catch, that sounds awful\.\n\nAdded to symbiot's tasks: Fix how Symbiot speaks/.test(sp.reply), sp.reply);
+  ok("spoken: the reply and \"I've added it to symbiot's tasks.\", no arrow, no task text", sp.spoken === "Good catch, that sounds awful. I've added it to symbiot's tasks.", sp.spoken);
+  const dup = await converse({ where: "Home", question: "add it", map, act: { task: (t, r) => taskIn(t, r, { map, add }) }, ask: said({ reply: "done, it's queued in symbiot", do: { task: longTask, repo: "symbiot" }, remember: [] }) });
+  ok("a reply that already says it's queued isn't followed by the same thing again", dup.spoken === "done, it's queued in symbiot" && /Added to symbiot's tasks/.test(dup.reply), [dup.spoken, dup.reply]);
+  const urg = { kind: "agent", lane: "symbiot", job: "j1", urgent: { parked: ["coral"], stopped: true } };
+  ok("urgent, handed over: \"It's urgent, so symbiot's agent does it first.\", not the brief or what was parked", spokenLine(urg, "Right, fixing that now.") === "It's urgent, so symbiot's agent does it first.", spokenLine(urg, "Right, fixing that now."));
+  ok("handed to a lane's agent: a short phrase", spokenLine({ kind: "agent", lane: "symbiot", job: "j1" }, "Sure.") === "I've handed it to the symbiot agent.", "");
+  ok("…and nothing when the reply says it's handed over", spokenLine({ kind: "agent", lane: "symbiot", job: "j1" }, "I've handed it to symbiot's agent.") === "", "");
+  ok("a failure is said, its reason left on screen (it can name settings with arrows)", /couldn't hand it to an agent/.test(spokenLine({ kind: "agent", error: "Check its command in Settings → Handoff." }, "On it.")), "");
+  ok("a plain answer: spoken as it is", (await converse({ where: "Home", question: "hi", ask: said({ reply: "Hi.", do: null, remember: [] }) })).spoken === "Hi.", "");
   const lx = await converse({ where: "WhatsApp card", question: "fix it", map, act: { task: (t, r) => taskIn(t, r, { map, add }) }, ask: said({ reply: "Done.", do: { task: "Fix it", repo: "symbiotapp" }, remember: [] }) });
   ok("a wrong lane is said, not hidden", /not to a repo \(there's no lane called symbiotapp\)/.test(lx.reply), lx.reply);
   const ran2 = [], pushed = [];
@@ -95,6 +110,21 @@ try {
   ok("that lane busy: queued, and said so", aq.ok && aq.queued, aq);
   const ao = actIn("Find a JDK", "", { map, ops: () => ({ ok: true, job: "o1", dir: "/x" }) });
   ok("no lane: an agent of its own (ops)", ao.ok && ao.lane === "" && ao.job === "o1", ao);
+
+  console.log("IT OPENS PAGES — \"navigate me to reports\" goes there (2026-10-09)");
+  const navR = rulesFor(["symbiot"], "symbiot", true), plainR = rulesFor(["symbiot"], "symbiot");
+  ok("Home's chat is told it can open any page, and never to say it can't", /"go": null or/.test(navR) && /never say you can't switch pages/.test(navR) && /reports \(Reports:/.test(navR), navR.slice(-900));
+  ok("…a vague ask: its pick, a line why and 1-2 others, instead of asking which (the 2-3 readings, as taps)", /A vague one/.test(navR) && /"alts" has 1-2 other pages/.test(navR) && /Where to go is the exception/.test(navR), "");
+  ok("…a chat that can't open pages isn't told about \"go\"", !/"go"/.test(plainR), "");
+  const nv = await converse({ where: "Home", nav: true, question: "navigate me to reports", map, ask: said({ reply: "Opening Reports.", do: null, go: { to: "reports", why: "", alts: [] }, remember: [] }) });
+  ok("a clear ask: the reply carries the page, nothing else to pick", nv.go && nv.go.to === "reports" && nv.go.label === "Reports" && !nv.go.why && nv.go.alts.length === 0 && nv.spoken === "Opening Reports.", nv.go);
+  const vg = await converse({ where: "Home", nav: true, question: "where are my updates", map, ask: said({ reply: "Your updates are likely the new mail and GitHub cards.", do: null, go: { to: "Dashboard", why: "3 new on Gmail and GitHub since this morning", alts: ["reports", "lane:Symbiot", "nowhere", "board"] }, remember: [] }) });
+  ok("a vague ask: its pick opens, with why, and only real pages or lanes as the others (no repeats)", vg.go.to === "board" && /3 new on Gmail/.test(vg.go.why) && JSON.stringify(vg.go.alts.map((a) => a.to)) === '["reports","lane:symbiot"]', vg.go);
+  ok("…said under the reply, as a step", vg.steps.includes("opened Dashboard"), vg.steps);
+  ok("a page that isn't there isn't made up", goOf({ to: "inbox" }, ["symbiot"]) === null && goOf({ to: "lane:nope" }, ["symbiot"]) === null, "");
+  ok("agents and Workdesk are one page; a lane by name is its page", goOf({ to: "agents" }).to === "tasks" && goOf({ to: "Workdesk" }).to === "tasks" && goOf("coral", ["coral"]).to === "lane:coral", "");
+  const ng = await converse({ where: "Gmail card", question: "go to reports", map, ask: said({ reply: "ok", do: null, go: { to: "reports" }, remember: [] }) });
+  ok("a chat that can't open pages never carries one", !ng.go, ng);
 
   console.log("THE AGENT'S BRIEF — hard to undo is asked first");
   const br = actBrief("Close AWS account 049056030093", { title: "Gmail", context: "- Mail from AWS", known: "- AWS 049056030093 (account): the Dailify/CallForge AWS account" });

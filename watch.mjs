@@ -25,7 +25,7 @@ import { readFileSync, writeFileSync, mkdirSync, chmodSync, readdirSync, statSyn
 import { execFile } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { VERSION, CONFIG_DIR, loadConfig, saveConfig } from "./core.mjs";
-import { readPage, siteUrl, isTrusted, signIn } from "./headless.mjs";
+import { readPage, readLinkedIn, siteUrl, isTrusted, signIn } from "./headless.mjs";
 import { loadScreens } from "./screens.mjs";
 import { desktopNotify } from "./desktop.mjs";
 import { resolveProvider, write } from "./ai.mjs";
@@ -39,6 +39,7 @@ const WATCH_FILE = join(CONFIG_DIR, "watch.json");
 const EVERY = [5, 15, 30, 60]; // minutes between reads
 // 40 watches: every standard Link (links.mjs) plus a company's own and yours; 1000 news: a
 // busy inbox can't push the rest of the week out before Week is written
+const BRIEF_HOURS = 72; // the longest window the Dashboard shows a card's items for
 const MAX_WATCHES = 40, MAX_SEEN = 1000, MAX_NEWS = 1000, MAX_PER_READ = 25, MAX_BRIEFS = 50;
 
 function loadWatch() {
@@ -191,14 +192,50 @@ function setBrief(on) { const cfg = loadConfig(); if (on) cfg.watchBrief = true;
 // A chat list (chat: true) says in brackets who each chat's last message is from.
 const CHAT_RULE = `This is a chat list (WhatsApp). A chat's line is its name and the start of its last message, and doesn't say who wrote that message: the brackets do. ` +
   `Only a chat with unread messages from them can need the user. One whose last message is the user's own, or has nothing unread, never needs a reply: don't say it does, and never take its message as the contact's. Say "nothing needs you" when none is unread. `;
-async function briefOf(news, name, { chat = false } = {}) {
+// LinkedIn (social: true): a message is the likeliest to need a reply, and the brief
+// once skipped one listed under two notifications (2026-10-09). So every listed item
+// gets a mention, messages first and on their own line.
+const SOCIAL_RULE = `This is LinkedIn: messages and notifications. Mention every item listed, none left out (group alike notifications in one line if you need to). ` +
+  `Messages come first, on a line of their own starting "Messages:", naming who wrote and what they said when that's shown; an unread message usually wants a reply. Then the notifications, by who did what. `;
+async function briefOf(news, name, { chat = false, social = false } = {}) {
   if (!resolveProvider()) return "";
-  const system = `You triage what just arrived on a page someone watches: their email inbox, their chats, or their GitHub notifications. ` +
-    `In at most 3 short lines of plain text, first what needs them (and why, in a few words), then what can wait. ` + (chat ? CHAT_RULE : "") +
+  const system = `You triage what just arrived on a page someone watches: their email inbox, their chats, their LinkedIn or their GitHub notifications. ` +
+    `In at most ${social ? 4 : 3} short lines of plain text, first what needs them (and why, in a few words), then what can wait. ` + (chat ? CHAT_RULE : "") + (social ? SOCIAL_RULE : "") +
     `Name things by sender and subject so they can find them. Use only what's shown; never guess at what a message says beyond it. No preamble, no markdown.`;
-  const text = await write(system, `New on ${name}:\n${news.map((n) => "- " + (chat ? withFrom(n) : n.text)).join("\n")}\n\nWhat needs me, and what can wait?`);
+  const line = (n) => (chat ? withFrom(n) : social && n.li ? `[${n.li === "message" ? "message" : n.type || "notification"}] ${n.text}` : social && /^Messaging\b/i.test(n.text) ? `[message] ${n.text}` : n.text);
+  const text = await write(system, `New on ${name}:\n${news.map((n) => "- " + line(n)).join("\n")}\n\nWhat needs me, and what can wait?`);
   return text && !/^\(?couldn't reach the model/i.test(text) ? text.trim().slice(0, 600) : "";
 }
+
+// ---- LinkedIn: who and what, not only how many ----------------------------------
+// Its top bar's badges ("Messaging, 1 new notification", "Notifications, 2 new
+// notifications") were all Watch read there. A badge that's new is read out from
+// LinkedIn's own lists (headless.mjs readLinkedIn): each unread conversation as
+// "Message from <who>: <its last line>", each unread card in its own words, with
+// who (actor) and what kind (type). None marked unread: the badge's count, newest
+// first. A list that can't be read (the browser busy, signed out) keeps the badge.
+const LI_BADGE = /^(Messaging|Notifications)\b[,:]?\s+(\d+)\s+new\b/i, LI_MSG = "https://www.linkedin.com/messaging/";
+const LI_TYPES = [[/\bcommented\b/i, "comment"], [/\brepl(ied|y)\b/i, "reply"], [/\bmentioned\b/i, "mention"], [/\b(reacted|liked|celebrated|loves?|supports?|finds? .{0,40}(insightful|funny|curious))\b/i, "reaction"],
+  [/\b(reposted|shared)\b/i, "repost"], [/\b(viewed your profile|profile views?|appeared in \d+ searches)\b/i, "profile view"], [/\b(invit\w*|connection request|accepted your)\b/i, "invitation"],
+  [/\bendorsed\b/i, "endorsement"], [/\b(followed you|started following)\b/i, "follow"], [/\bjobs?\b/i, "job"], [/\b(birthday|work anniversary|new position|started a new)\b/i, "milestone"], [/\b(posted|published)\b/i, "post"]];
+function liType(text) { for (const [re, t] of LI_TYPES) if (re.test(String(text || ""))) return t; return "notification"; }
+const liPick = (list, n) => { const un = list.filter((x) => x.unread); return un.length ? un : list.slice(0, Math.max(1, n || 1)); };
+// fresh (what's new this read) with its badges read out; look(kind) reads a list
+async function linkedinDetail(fresh, look = readLinkedIn) {
+  const out = [];
+  for (const it of fresh) {
+    const m = String(it.text || "").match(LI_BADGE); if (!m) { out.push(it); continue; }
+    const kind = /^messaging/i.test(m[1]) ? "messages" : "notifications";
+    let r = null; try { r = await look(kind); } catch {}
+    const got = r && Array.isArray(r.items) && r.items.length ? liPick(r.items, Number(m[2])) : [];
+    if (!got.length) { out.push(it); continue; }
+    for (const g of got) out.push(kind === "messages"
+      ? { text: `Message from ${g.name}${g.preview ? ": " + g.preview : ""}`.slice(0, 300), href: LI_MSG, li: "message", sender: String(g.name).slice(0, 80) }
+      : { text: String(g.text).slice(0, 300), href: g.href || it.href, li: "notification", type: liType(g.text), ...(g.actor ? { actor: String(g.actor).slice(0, 80) } : {}) });
+  }
+  return out;
+}
+const liFields = (it) => (it.li ? { li: it.li, ...(it.sender ? { sender: it.sender } : {}), ...(it.actor ? { actor: it.actor } : {}), ...(it.type ? { type: it.type } : {}) } : {});
 
 // ---- watches -------------------------------------------------------------------
 // A watch whose last read found the sign-in page: it reads nothing until you sign in again.
@@ -669,7 +706,7 @@ async function openChat(id, { open = signIn } = {}) {
 // briefOf (the tests pass their own). Gives the watch, plus `new` (what was new)
 // and `brief`, or `learned` (the first read), or `busy` when the hidden browser
 // is in use (nothing changes: it's read later).
-async function checkWatch(id, { read = readPage, github = readGitHub, notify = desktopNotify, brief = briefOf } = {}) {
+async function checkWatch(id, { read = readPage, github = readGitHub, notify = desktopNotify, brief = briefOf, linkedin = readLinkedIn, now = null } = {}) {
   const w0 = loadWatch().watches.find((x) => x.id === id); if (!w0) return { error: `No watch ${id}.` };
   const page = (isGitHubInbox(w0.url) && await github()) || (await read(w0.url)) || { error: "Nothing came back from the page." };
   if (page.busy) return { ...view(w0), busy: true };
@@ -690,7 +727,13 @@ async function checkWatch(id, { read = readPage, github = readGitHub, notify = d
   delete w.error;
   // read another way than last time (gh, or the page while gh is out): the same
   // things look different, so learn them again rather than announce them all
-  const first = !w.checked || (w.via || "") !== (page.via || ""), { fresh, keys } = newItems(w.seen, items);
+  const first = !w.checked || (w.via || "") !== (page.via || ""), seen0 = w.seen;
+  let { fresh, keys } = newItems(seen0, items);
+  // LinkedIn: a new badge, read out into who and what (and those remembered too, so a message still unread isn't news twice)
+  if (!first && isSocial(w.url) && fresh.some((it) => LI_BADGE.test(String(it.text || "")))) {
+    const told = newItems(seen0, await linkedinDetail(fresh, linkedin));
+    fresh = told.fresh; keys = [...keys, ...told.keys.filter((k) => !keys.includes(k))];
+  }
   if (page.via) w.via = page.via; else delete w.via;
   w.seen = remember(w.seen, keys); w.checked = w.last;
   const chat = isChat(w.url);
@@ -703,7 +746,7 @@ async function checkWatch(id, { read = readPage, github = readGitHub, notify = d
   }
   if (chat) recheckChats(d.news.filter((n) => n.watch === w.id), items);
   const news = first ? [] : fresh.slice(0, MAX_PER_READ).map((it) => ({ id: randomBytes(4).toString("hex"), watch: w.id, name: w.name, ts: w.last, text: it.text.slice(0, 300), ...(it.href ? { href: it.href } : {}),
-    ...(chat ? { from: fromOf(it), ...(it.unread ? { unread: it.unread } : {}) } : {}), ...(readMark && !it.unread ? { read: true } : {}) }));
+    ...(chat ? { from: fromOf(it), ...(it.unread ? { unread: it.unread } : {}) } : {}), ...(readMark && !it.unread ? { read: true } : {}), ...liFields(it) }));
   d.news = [...news, ...d.news].slice(0, MAX_NEWS);
   saveWatch(d);
   if (first) return { ...view(w), learned: keys.length };
@@ -711,7 +754,11 @@ async function checkWatch(id, { read = readPage, github = readGitHub, notify = d
   const needy = news.filter((n) => needsYou(n, w));
   let said = "";
   if (needy.length && briefOn()) {
-    said = await brief(chat ? news : needy, w.name, { chat }).catch(() => ""); // a chat's brief says who each is from; mail you've read isn't news
+    // the brief covers what the card lists (BRIEF_HOURS), not only this read's: the card
+    // showed a message from two days before, and the brief left it out (2026-10-09)
+    const social = isSocial(w.url), since = (now || w.last) - BRIEF_HOURS * 3600000;
+    const listed = social ? d.news.filter((n) => n.watch === w.id && n.ts >= since && unseen(n, w) && needsYou(n, w)).slice(0, MAX_PER_READ) : null;
+    said = await brief(chat ? news : listed || needy, w.name, { chat, social }).catch(() => ""); // a chat's brief says who each is from; mail you've read isn't news
     if (said) { const d2 = loadWatch(); d2.briefs = [{ id: randomBytes(4).toString("hex"), watch: w.id, name: w.name, ts: w.last, count: needy.length, text: said }, ...d2.briefs].slice(0, MAX_BRIEFS); saveWatch(d2); }
   }
   if (needy.length) notify(...newsNotice(needy, w.name, said));
@@ -734,4 +781,4 @@ function startWatches(opts = {}) {
   return () => { clearTimeout(first); clearInterval(every); };
 }
 
-export { replyOf, draftCard, draftCards, draftAnswer, isDraftDir, sendBrief, LINK_ASK, WATCH_FILE, EVERY, GITHUB_INBOX, DRAFTS_DIR, itemsOf, fromOf, chatName, recheckChats, itemKey, newItems, remember, isGitHubInbox, githubItems, readGitHub, setBrief, briefOf, newsNotice, markNews, watchState, addWatch, setEvery, removeWatch, clearNews, seenWatch, newsSince, newsAfter, waitingOn, watchBoard, boardLine, boardChat, boardTalk, clearBoardChat, talkOf, isSignedOut, isMail, isChat, isSocial, draftsUrl, draftBrief, chatBrief, socialBrief, draftReply, openChat, checkWatch, dueWatches, startWatches };
+export { linkedinDetail, liType, replyOf, draftCard, draftCards, draftAnswer, isDraftDir, sendBrief, LINK_ASK, WATCH_FILE, EVERY, GITHUB_INBOX, DRAFTS_DIR, itemsOf, fromOf, chatName, recheckChats, itemKey, newItems, remember, isGitHubInbox, githubItems, readGitHub, setBrief, briefOf, newsNotice, markNews, watchState, addWatch, setEvery, removeWatch, clearNews, seenWatch, newsSince, newsAfter, waitingOn, watchBoard, boardLine, boardChat, boardTalk, clearBoardChat, talkOf, isSignedOut, isMail, isChat, isSocial, draftsUrl, draftBrief, chatBrief, socialBrief, draftReply, openChat, checkWatch, dueWatches, startWatches };

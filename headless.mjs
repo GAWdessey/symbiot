@@ -2,11 +2,12 @@
 // screenshot and map every button, link and field on it by itself, as a screen
 // whose regions are already named (screens.mjs). Nothing to bring to the front,
 // nothing to drag. Each region keeps how to find it again (a CSS selector), so it
-// can be pressed (or a field typed into) in that same hidden browser, which maps
-// the page it lands on: map → press → map is how an agent finds its way around a
-// site. On a site you trust (Settings), that goes ahead without asking. In the
-// app the browser stays open for a few minutes after each action, so the next
-// one carries on from the page as it is (type into a field, then press Send).
+// can be pressed (a field typed into, a file put in a file box) in that same
+// hidden browser, which maps the page it lands on: map → press → map is how an
+// agent finds its way around a site. On a site you trust (Settings), that goes
+// ahead without asking. In the app the browser stays open for a few minutes
+// after each action, so the next one carries on from the page as it is (type
+// into a field, then press Send).
 // A map has what fits in the window: Scroll down maps the next part, and Whole
 // page maps all of it in one tall screenshot: the page, or, where a list scrolls
 // inside it (Gmail's mail), that list opened out to its full length.
@@ -19,8 +20,8 @@
 // site once there (signIn opens it as a normal window) and later maps see it
 // signed in. It's separate from your everyday browser profile.
 import { spawn } from "node:child_process";
-import { join } from "node:path";
-import { mkdirSync, existsSync } from "node:fs";
+import { join, resolve as resolvePath } from "node:path";
+import { mkdirSync, existsSync, statSync } from "node:fs";
 import { CONFIG_DIR, chromeBinary, loadConfig, saveConfig } from "./core.mjs";
 import { loadScreens, addPageScreen, center, stitchPng, stitchListPng } from "./screens.mjs";
 
@@ -499,6 +500,39 @@ function readTexts(input, selector, { scrolls = 3 } = {}) {
   }, false)).catch((e) => ({ error: String((e && e.message) || e) }));
 }
 
+// LinkedIn's own lists, for Watch (watch.mjs linkedinDetail): its top bar's badges
+// say "Messaging, 1 new notification", never who, and the brief could only say
+// "2 new notifications" (2026-10-09). This reads who and what, in the signed-in
+// hidden browser, only looking, like readPage: "messages" (each conversation: who,
+// its last line, when, unread) or "notifications" (each card: its words, who, its
+// link, unread). LinkedIn's class names drift, so each has a fallback: its heading,
+// its first paragraph. { items } or { busy } / { error }.
+const LI_TEXT = "const tx = (r, s) => { const e = r.querySelector(s); return e ? String(e.innerText || e.textContent || '').replace(/\\s+/g, ' ').trim() : ''; };";
+const LI_UNREAD = "const un = (r) => /unread/i.test(String(r.className || '')) || !!r.querySelector('[class*=unread],.notification-badge--show') || /\\bunread\\b/i.test(r.getAttribute('aria-label') || '');";
+const LI_READ = {
+  messages: ["https://www.linkedin.com/messaging/", `(() => { ${LI_TEXT} ${LI_UNREAD}
+    return [...document.querySelectorAll('li.msg-conversation-listitem, li.msg-conversations-container__convo-item')].slice(0, 20).map((r) => ({
+      name: tx(r, '.msg-conversation-listitem__participant-names, .msg-conversation-card__participant-names, h3'),
+      preview: tx(r, '.msg-conversation-card__message-snippet, .msg-conversation-card__message-snippet-body, p').slice(0, 200),
+      time: tx(r, 'time, .msg-conversation-listitem__time-stamp, .msg-conversation-card__time-stamp'), unread: un(r) })).filter((x) => x.name);
+  })()`],
+  notifications: ["https://www.linkedin.com/notifications/", `(() => { ${LI_TEXT} ${LI_UNREAD}
+    return [...document.querySelectorAll('article.nt-card, .nt-card-list article, main article')].slice(0, 20).map((r) => ({
+      text: (tx(r, '.nt-card__text--3-line, .nt-card__headline, .nt-card__text') || String(r.innerText || '').replace(/\\s+/g, ' ').trim()).slice(0, 300),
+      actor: tx(r, '.nt-card__text--3-line strong, .nt-card__headline strong, strong').slice(0, 80),
+      href: String((r.querySelector('a[href*="linkedin.com/"], a[href^="/"]') || {}).href || '').slice(0, 500), unread: un(r) })).filter((x) => x.text);
+  })()`],
+};
+function readLinkedIn(kind) {
+  const it = LI_READ[kind]; if (!it) return Promise.resolve({ error: "messages or notifications" });
+  return oneAtATime(() => browserOpen() ? { busy: true } : withPage(async (page) => {
+    await open(page, it[0]);
+    const at = String((await evaluate(page, "location.href")) || it[0]);
+    if (signInPage(at)) return { login: true, url: at };
+    return { url: at, items: (await evaluate(page, it[1])) || [] };
+  }, false)).catch((e) => ({ error: String((e && e.message) || e) }));
+}
+
 // A picture, or a short clip, of a page, for a post (post.mjs): only on your
 // click, and it only looks, like readPage. The picture is the window at twice its
 // pixels, so it stays sharp in a feed: { png, url, title }. The clip records the
@@ -630,7 +664,7 @@ function actOnRegion(id, regionId, verb, confirmed, check, act) {
   const r = (s.regions || []).find((x) => x.id === regionId); if (!r) return Promise.resolve({ error: "That region is gone. Reload the screen." });
   const bad = check(r); if (bad) return Promise.resolve({ error: bad });
   const host = hostOf(s.page.url);
-  if (!confirmed && !isTrusted(s.page.url)) return Promise.resolve({ error: `${verb === "Type" ? "Typing into" : "Pressing"} "${r.label}" acts on the real site, signed in as you, and ${host} isn't one of your trusted sites.`, confirm: true, host });
+  if (!confirmed && !isTrusted(s.page.url)) return Promise.resolve({ error: `${verb === "Type" ? "Typing into" : verb === "Upload" ? "Attaching a file with" : "Pressing"} "${r.label}" acts on the real site, signed in as you, and ${host} isn't one of your trusted sites.`, confirm: true, host });
   return oneAtATime(() => withPage(async (page, b) => {
     const here = await showScreen(page, b, s);
     // A new tab would leave this one where it was, so a link opens here instead.
@@ -701,6 +735,68 @@ function typeRegion(id, regionId, text, { enter = false, confirmed = false, noSe
   });
 }
 
+// Upload: put a file (or a few) in a page's file box, as picking it in the file
+// dialog would (DevTools' DOM.setFileInputFiles): a picture or video for a LinkedIn
+// post. Sites hide the real <input type=file> behind a button ("Add media"), and a
+// map only has what shows, so the field is usually that button: the box is then
+// the one inside it, its label's, else the nearest one going up from it, and
+// `used` says which. A page that makes its box only once the button is pressed:
+// pressed, with the file dialog caught instead of shown, and the file put in the
+// box that dialog was for. The files are checked (absolute, there) before a
+// browser starts, and off your trusted sites it asks first, like press and type.
+const FILE_BOX = (sel, at) => `(() => {
+  const isBox = (x) => !!x && x.tagName === 'INPUT' && String(x.type).toLowerCase() === 'file', all = [...document.querySelectorAll('input[type=file]')];
+  let e = null; try { e = ${JSON.stringify(sel || "")} && document.querySelector(${JSON.stringify(sel || "")}); } catch (x) {}
+  e = e || document.elementFromPoint(${Number(at.x) || 0}, ${Number(at.y) || 0});
+  let box = null, how = '';
+  if (isBox(e)) { box = e; how = 'the field itself'; }
+  else if (e) {
+    const lab = e.closest('label'), inside = e.querySelector('input[type=file]');
+    if (inside) { box = inside; how = 'the file box inside it'; }
+    else if (lab && isBox(lab.control)) { box = lab.control; how = "its label's file box"; }
+    else for (let n = e.parentElement; n && !box; n = n.parentElement) { const f = n.querySelector('input[type=file]'); if (f) { box = f; how = all.length === 1 ? 'the only file box on the page' : "the nearest of the page's " + all.length + ' file boxes'; } }
+  }
+  if (!box && all.length === 1) { box = all[0]; how = 'the only file box on the page'; }
+  if (!box) return null;
+  window.__symbiotFileBox = box;
+  const name = box.getAttribute('aria-label') || box.name || box.id || '';
+  return { how, box: 'input[type=file]' + (name ? ' "' + name + '"' : '') + (box.accept ? ' (takes ' + box.accept + ')' : ''), multiple: !!box.multiple };
+})()`;
+async function attachFiles(page, at, r, files) {
+  const box = await evaluate(page, FILE_BOX(r.selector, at));
+  if (box) {
+    if (files.length > 1 && !box.multiple) throw new Error(`${box.box} takes one file at a time.`);
+    const { result } = await page.send("Runtime.evaluate", { expression: "window.__symbiotFileBox" });
+    if (!result || !result.objectId) throw new Error("Lost the page's file box. Map the page again.");
+    await page.send("DOM.setFileInputFiles", { files, objectId: result.objectId });
+    await page.send("Runtime.evaluate", { expression: "delete window.__symbiotFileBox" }).catch(() => {});
+    return { used: `${box.box}, ${box.how}` };
+  }
+  // no box on the page yet: press it, and catch the file dialog that opens
+  await page.send("Page.setInterceptFileChooserDialog", { enabled: true });
+  try {
+    const opened = page.until("Page.fileChooserOpened", 5000);
+    await clickAt(page, at);
+    const m = await opened, p = (m && m.params) || {};
+    if (!p.backendNodeId) throw new Error(`No file box on the page, and pressing "${r.label}" didn't open a file dialog. Press it, then upload with what the new map shows.`);
+    if (files.length > 1 && p.mode !== "selectMultiple") throw new Error("That file box takes one file at a time.");
+    await page.send("DOM.setFileInputFiles", { files, backendNodeId: p.backendNodeId });
+    return { used: "the file box the file dialog it opened was for" };
+  } finally { await page.send("Page.setInterceptFileChooserDialog", { enabled: false }).catch(() => {}); }
+}
+// files: a path or a list of them, relative to where you are
+function uploadFiles(files) {
+  const list = (Array.isArray(files) ? files : [files]).filter((f) => f != null && String(f).trim()).map((f) => resolvePath(String(f)));
+  if (!list.length) return { error: "Give the file to upload." };
+  const bad = list.find((f) => { try { return !statSync(f).isFile(); } catch { return true; } });
+  return bad ? { error: `No file at ${bad}.` } : { files: list };
+}
+function uploadRegion(id, regionId, files, { confirmed = false } = {}) {
+  const f = uploadFiles(files);
+  return actOnRegion(id, regionId, "Upload", confirmed, () => f.error || "",
+    async (page, at, r) => ({ uploaded: r.label, files: f.files, ...(await attachFiles(page, at, r, f.files)) }));
+}
+
 // Open the site in Symbiot's browser profile as a normal window, to sign in (or
 // accept cookies) once. Close it before mapping: the profile is shared. The hidden
 // browser is closed first, or the window would open in it, out of sight.
@@ -714,4 +810,4 @@ async function signIn(input) {
   return { ok: true, url };
 }
 
-export { siteUrl, browserArgs, mapPage, wholePage, readPage, readTexts, pagePicture, pageClip, CLIP, isSend, pressRegion, typeRegion, scrollPage, SCROLLS, signIn, keepBrowserOpen, closeBrowser, browserOpen, trustedSites, isTrusted, trustSite, untrustSite, PROFILE };
+export { siteUrl, browserArgs, mapPage, wholePage, readPage, readTexts, readLinkedIn, LI_READ, pagePicture, pageClip, CLIP, isSend, pressRegion, typeRegion, uploadRegion, uploadFiles, attachFiles, FILE_BOX, scrollPage, SCROLLS, signIn, keepBrowserOpen, closeBrowser, browserOpen, trustedSites, isTrusted, trustSite, untrustSite, PROFILE };

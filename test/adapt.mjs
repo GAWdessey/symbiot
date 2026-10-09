@@ -155,6 +155,18 @@ try {
   const again = crowd(1600, 1000); lqRelax(again, { w: 1600, h: 1000 }, 800, 470, 90);
   ok("the same data, the same layout (deterministic: nothing jitters from run to run)", JSON.stringify(again) === JSON.stringify(big), "");
 
+  console.log("GOING SOMEWHERE BY ASKING — straight there, no wait for the model (2026-10-09)");
+  {
+    const line = (re) => uiJs.match(re)[0];
+    const { lqNavHit } = new Function([line(/var LQNAMES=\{[^}]*\};/), line(/var LQ_NAV_ALIAS=\{[^}]*\};/), grab("lqNavHit")].join("\n") + "\nreturn { lqNavHit };")();
+    const cases = { "navigate me to reports": "reports", "take me to reports": "reports", "Take me to Reports.": "reports", "can you open settings please": "settings", "go to the workdesk": "tasks", "show me my tasks": "tasks", "open the dashboard": "board", "dashboard": "board", "reports": "reports", "open my week": "week", "take me home": "home", "go back home": "home", "Symbiot, navigate to marketing": "marketing", "open archive": "archive" };
+    const got = Object.fromEntries(Object.keys(cases).map((q) => [q, lqNavHit(q)]));
+    ok("clear asks go straight to their page", Object.keys(cases).every((q) => got[q] === cases[q]), got);
+    const not = ["show me that thing from earlier", "where are my updates", "go for it", "go", "home", "open settings and change my voice", "show me the bug in dailify"];
+    ok("…a vague ask, or more than a page, goes to the model (it picks and says why)", not.every((q) => lqNavHit(q) === ""), not.map((q) => [q, lqNavHit(q)]));
+    ok("the model's pick opens, with its reason and the others on the page it opened", /if\(r\.go&&r\.go\.to\)\{lqNav\(r\.go\.to,r\.go\)/.test(uiJs) && /id="lqwhy"/.test(EMBEDDED_UI), "");
+  }
+
   console.log("HOME'S LAYOUT — agents at work in a band of their own; no label, heading or orb on another (2026-10-08)");
   {
     const line = (re) => uiJs.match(re)[0];
@@ -459,6 +471,38 @@ try {
   ok("parked: no run starts there, not even Start it anyway", pr && pr.blocked && pr.parked && /Parked/.test(pr.note) && parkedPaths().join() === pdir, pr);
   parkLane(pdir, false);
   ok("…unparked, it's gone from the list", !parkedPaths().length, parkedPaths());
+  setHandoffCmd("");
+
+  // a run in ~ started with no TASKS.md there, and only cost a session (2026-10-07)
+  console.log("NOTHING TO DO — a folder with no open task, and no answer since its last run, starts no run");
+  const { runningHandoff, writeTasks } = await import("../agents.mjs");
+  const ended = async (p) => { for (let i = 0; i < 100 && runningHandoff(p); i++) await new Promise((r) => setTimeout(r, 50)); };
+  const idir = join(HOME, "projects", "idle"), is = join(idir, ".symbiot"); mkdirSync(is, { recursive: true });
+  setHandoffCmd("true {dir} {prompt}");
+  const n1 = runHandoff(idir, { force: true });
+  ok("no TASKS.md: not started, not even Start it anyway, and the note says why", n1 && n1.blocked && n1.idle && !n1.id && /^Not started: idle has no \.symbiot\/TASKS\.md/.test(n1.note), n1);
+  writeFileSync(join(is, "TASKS.md"), "## Tasks\n- [x] Done already\n");
+  const n2 = runHandoff(idir);
+  ok("every task ticked: not started either", n2 && n2.blocked && n2.idle && /every task .* is ticked/.test(n2.note), n2);
+  writeFileSync(join(is, "agent.log"), `\n=== idle ${new Date(Date.now() - 60000).toISOString()} ===\n$ true\n`);
+  writeFileSync(join(is, "ANSWERS.md"), "# Answers\n\n### Approved: drafts/post.md\nPost it.\n");
+  const n3 = runHandoff(idir, { force: true });
+  ok("…but an answer since its last run started (an approved post) starts one, every task ticked", n3 && n3.id && !n3.blocked, n3);
+  await ended(idir);
+  const n4 = runHandoff(idir, { force: true });
+  ok("…once: after that run, the same answer starts no other", n4 && n4.blocked && n4.idle, n4);
+  const n5 = runHandoff(idir, { force: true, lost: true });
+  ok("restarting a lost conversation goes ahead (its answer is older than the failed resume)", n5 && n5.id && !n5.blocked, n5);
+  await ended(idir);
+  writeTasks(idir, "## Tasks\n- [x] Done already\n- [ ] A new one\n");
+  const n6 = runHandoff(idir);
+  ok("a new task: it starts", n6 && n6.id && !n6.blocked, n6);
+  await ended(idir);
+  // an ops run (drafts/act-*): its TASKS.md is written right before it starts
+  const { actNow } = await import("../mind.mjs");
+  const an = actNow("Check the build on the server");
+  ok("an ops run in a new act-* folder still starts: its brief lands first", an.ok && an.job && /[\\/]drafts[\\/]act-[0-9a-f]+$/.test(an.dir) && /- \[ \]/.test(readFileSync(join(an.dir, ".symbiot", "TASKS.md"), "utf8")), an);
+  await ended(an.dir);
   setHandoffCmd("");
 } finally {
   rmSync(HOME, { recursive: true, force: true });
