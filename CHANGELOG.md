@@ -2,6 +2,10 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.58.0
+
+- **Talk to Symbiot instead of typing.** A mic on the talk bar: click it and speak. Your words appear as you say them, and a pause sends them, as Enter would. When you spoke, Symbiot reads its answer out too, in the most natural voice your computer has (typed questions stay quiet), and talking again cuts it off. It uses the speech recognition built into Chrome and Edge: no key, nothing to pay. If the microphone is blocked or missing, it says what to do.
+
 ## 0.57.9
 
 - **On Windows, Symbiot is in the Start menu and on your desktop.** Installing puts a Symbiot shortcut with the orb in both (your real desktop, even when it's in OneDrive), and opens Symbiot right away, into setup. The shortcuts start it through a small hidden script, so no black console window flashes up; `symbiot uninstall` takes them away again. Installing on a Windows desktop now opens Symbiot too, and says so in the terminal.

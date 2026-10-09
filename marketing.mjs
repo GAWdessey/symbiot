@@ -113,7 +113,8 @@ function draftFiles(dir = MARKETING_DIR, names = [], { max = 30 } = {}) {
     }
   };
   walk(root, 0);
-  return out.sort((a, b) => b.at - a.at).slice(0, max);
+  // newest first; two written in the same moment, by name, so the order never depends on timing
+  return out.sort((a, b) => b.at - a.at || String(a.rel || a.file || "").localeCompare(String(b.rel || b.file || ""))).slice(0, max);
 }
 
 // ---- a draft as the post it will be ---------------------------------------------------
