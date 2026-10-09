@@ -751,7 +751,7 @@ function actOnRegion(id, regionId, verb, confirmed, check, act) {
   const r = (s.regions || []).find((x) => x.id === regionId); if (!r) return Promise.resolve({ error: "That region is gone. Reload the screen." });
   const bad = check(r); if (bad) return Promise.resolve({ error: bad });
   const host = hostOf(s.page.url);
-  if (!confirmed && !isTrusted(s.page.url)) return Promise.resolve({ error: `${verb === "Type" ? "Typing into" : verb === "Upload" ? "Attaching a file with" : "Pressing"} "${r.label}" acts on the real site, signed in as you, and ${host} isn't one of your trusted sites.`, confirm: true, host });
+  if (!confirmed && !isTrusted(s.page.url)) return Promise.resolve({ error: `${verb === "Type" ? "Typing into" : verb === "Upload" ? "Attaching a file with" : verb === "Choose" ? "Choosing in" : "Pressing"} "${r.label}" acts on the real site, signed in as you, and ${host} isn't one of your trusted sites.`, confirm: true, host });
   return oneAtATime(() => withPage(async (page, b) => {
     const here = await showScreen(page, b, s);
     // A new tab would leave this one where it was, so a link opens here instead.
@@ -808,6 +808,7 @@ function typeRegion(id, regionId, text, { enter = false, confirmed = false, noSe
   if (noSend) { const s = loadScreens().find((x) => x.id === id); if (s && s.page && CHAT_HOSTS.has(hostOf(s.page.url))) text = text.replace(/\s*[\r\n]+\s*/g, " ").trim(); }
   return actOnRegion(id, regionId, "Type", confirmed, (r) => {
     if (noSend && enter) return "Enter sends in a chat, and this run only drafts: type without --enter, and the reply stays unsent for the user to send.";
+    if (r.kind === "menu") return `"${r.label}" is a menu, not a field: pick its option with Choose (symbiot screens choose <screen> <menu> "option").`;
     if (r.kind !== "field") return `"${r.label}" isn't a field (it's a ${r.kind || "region"}). Type works on a field; use Press for the rest.`;
     if (!text && !enter) return "Give the text to type.";
     if (text.length > MAX_TEXT) return `That's more than ${MAX_TEXT} characters.`;
@@ -819,6 +820,55 @@ function typeRegion(id, regionId, text, { enter = false, confirmed = false, noSe
     if (text) await page.send("Input.insertText", { text });
     if (enter) for (const type of ["keyDown", "keyUp"]) await page.send("Input.dispatchKeyEvent", { type, key: "Enter", code: "Enter", windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13, ...(type === "keyDown" ? { text: "\r" } : {}) });
     return { typed: r.label, entered: !!enter };
+  });
+}
+
+// Choose: pick an option in a menu, as choosing it would. A native <select> (a press only
+// opens it, and typing isn't allowed in one: domains.co.za's DNS record type, 2026-10-09)
+// gets the option set and the page told (input and change), so what depends on it updates
+// (MX turns its Priority box on). A menu of the site's own making (role=combobox) is
+// opened, and its option (role=option) clicked. The option: its label or value, exactly,
+// else the one label that has it in it; none, or more than one, says which there are.
+const CHOOSE_SELECT = (sel, at, want) => `(() => {
+  let e = null; try { e = ${JSON.stringify(sel || "")} && document.querySelector(${JSON.stringify(sel || "")}); } catch (x) {}
+  e = e || document.elementFromPoint(${Number(at.x) || 0}, ${Number(at.y) || 0});
+  const lab = e && e.closest && e.closest('label');
+  const s = !e ? null : e.tagName === 'SELECT' ? e : (e.querySelector && e.querySelector('select')) || (lab && lab.control && lab.control.tagName === 'SELECT' ? lab.control : null);
+  if (!s) return { native: false };
+  const norm = (t) => String(t || '').replace(/\\s+/g, ' ').trim().toLowerCase(), w = norm(${JSON.stringify(String(want || ""))});
+  const opts = [...s.options].map((o) => ({ o, label: norm(o.label || o.text), value: norm(o.value) })), all = opts.map((x) => x.o.label || x.o.text);
+  let hit = opts.filter((x) => x.label === w || x.value === w); if (!hit.length) hit = opts.filter((x) => w && x.label.includes(w));
+  if (hit.length !== 1) return { native: true, problem: hit.length ? 'more' : 'none', options: all };
+  const o = hit[0].o; if (s.disabled || o.disabled) return { native: true, problem: 'off', options: all };
+  Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(s, o.value);
+  s.dispatchEvent(new Event('input', { bubbles: true })); s.dispatchEvent(new Event('change', { bubbles: true }));
+  return { native: true, chose: o.label || o.text, value: s.value };
+})()`;
+const CHOOSE_OPTION = (want) => `(() => {
+  const norm = (t) => String(t || '').replace(/\\s+/g, ' ').trim().toLowerCase(), w = norm(${JSON.stringify(String(want || ""))});
+  const seen = [...document.querySelectorAll('[role=option]')].filter((e) => { const b = e.getBoundingClientRect(); return b.width > 0 && b.height > 0; });
+  const all = seen.map((e) => (e.getAttribute('aria-label') || e.textContent || '').replace(/\\s+/g, ' ').trim());
+  let hit = seen.filter((e, i) => norm(all[i]) === w); if (!hit.length) hit = seen.filter((e, i) => w && norm(all[i]).includes(w));
+  if (hit.length !== 1) return { problem: hit.length ? 'more' : 'none', options: all };
+  hit[0].scrollIntoView({ block: 'center' }); const b = hit[0].getBoundingClientRect();
+  return { at: { x: b.left + b.width / 2, y: b.top + b.height / 2 }, chose: all[seen.indexOf(hit[0])] };
+})()`;
+const chooseSaid = (r, want, x) => x.problem === "off" ? `"${r.label}" is switched off on the page, or that option is: nothing was chosen.`
+  : `${x.problem === "more" ? `More than one option in "${r.label}" matches "${want}"` : `"${r.label}" has no option "${want}"`}. Its options: ${(x.options || []).slice(0, 40).map((o) => `"${o}"`).join(", ") || "none showing"}.`;
+function chooseRegion(id, regionId, option, { confirmed = false } = {}) {
+  const want = String(option == null ? "" : option).trim();
+  return actOnRegion(id, regionId, "Choose", confirmed, (r) => {
+    if (!want) return "Give the option to choose: its label, as the menu shows it.";
+    if (r.kind !== "menu") return `"${r.label}" isn't a menu (it's a ${r.kind || "region"}). Choose works on a menu; use Press or Type for the rest.`;
+    return "";
+  }, async (page, at, r) => {
+    const sel = await evaluate(page, CHOOSE_SELECT(r.selector, at, want));
+    if (sel && sel.native) { if (sel.problem) throw new Error(chooseSaid(r, want, sel)); return { chose: sel.chose, value: sel.value }; }
+    await clickAt(page, at); await sleep(400); // the site's own menu: open it, then its option
+    const o = await evaluate(page, CHOOSE_OPTION(want));
+    if (!o || o.problem) { await page.send("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }).catch(() => {}); throw new Error(chooseSaid(r, want, o || {})); }
+    await clickAt(page, o.at);
+    return { chose: o.chose };
   });
 }
 
@@ -941,4 +991,4 @@ async function closeSymbiotBrowser() {
   return { closed: open.length };
 }
 
-export { siteUrl, browserArgs, mapPage, wholePage, readPage, readTexts, readLinkedIn, LI_READ, pagePicture, pageClip, CLIP, isSend, pressRegion, typeRegion, uploadRegion, uploadFiles, attachFiles, FILE_BOX, scrollPage, SCROLLS, signIn, keepBrowserOpen, closeBrowser, browserOpen, keepSessions, SESSION_KEEP, SESSIONS, loadSessions, trustedSites, isTrusted, trustSite, untrustSite, PROFILE , openSymbiotBrowser, closeSymbiotBrowser, setBrowserHub , browserHub };
+export { siteUrl, browserArgs, mapPage, wholePage, readPage, readTexts, readLinkedIn, LI_READ, pagePicture, pageClip, CLIP, isSend, pressRegion, typeRegion, chooseRegion, uploadRegion, uploadFiles, attachFiles, FILE_BOX, scrollPage, SCROLLS, signIn, keepBrowserOpen, closeBrowser, browserOpen, keepSessions, SESSION_KEEP, SESSIONS, loadSessions, trustedSites, isTrusted, trustSite, untrustSite, PROFILE , openSymbiotBrowser, closeSymbiotBrowser, setBrowserHub , browserHub };

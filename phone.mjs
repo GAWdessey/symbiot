@@ -126,6 +126,26 @@ function lanAddresses(ifs = networkInterfaces()) {
   const rank = (ip) => (/^192\.168\./.test(ip) ? 0 : /^10\./.test(ip) ? 1 : /^172\.(1[6-9]|2\d|3[01])\./.test(ip) ? 2 : 3);
   return out.sort((a, b) => rank(a) - rank(b));
 }
+// What the network announcement (mdns.mjs) gives a device that asks: the address on
+// its own subnet, as it came in on that interface. With no asker (an announcement), or
+// none on its subnet, every address but a VPN's: Tailscale, WireGuard and other tunnels
+// (100.64.0.0/10 is Tailscale's), which a phone on the Wi-Fi can't reach.
+const overlay = (name, ip) => /^(tailscale|ts\d|wg|tun|utun|tap|zt|nordlynx|proton|mullvad)/i.test(name) || /^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./.test(ip);
+const ip4 = (ip) => String(ip).split(".").reduce((n, x) => ((n << 8) | (Number(x) & 255)) >>> 0, 0);
+function mdnsAddresses(asker, ifs = networkInterfaces()) {
+  const all = [];
+  for (const [name, list] of Object.entries(ifs || {})) {
+    if (/^(docker|br-|veth|virbr|vmnet|vboxnet|lxc|lxd|podman|cni|flannel)/i.test(name)) continue;
+    for (const a of list || []) if ((a.family === "IPv4" || a.family === 4) && !a.internal) all.push({ name, ip: a.address, mask: a.netmask || "255.255.255.0" });
+  }
+  const from = String(asker || "").replace(/^::ffff:/i, "");
+  if (/^\d+\.\d+\.\d+\.\d+$/.test(from)) {
+    const same = all.filter((a) => (ip4(a.ip) & ip4(a.mask)) === (ip4(from) & ip4(a.mask)));
+    if (same.length) return same.map((a) => a.ip);
+  }
+  const lan = all.filter((a) => !overlay(a.name, a.ip));
+  return (lan.length ? lan : all).map((a) => a.ip);
+}
 
 let listener = null, listenErr = "", pairing = null; // pairing: { code, until, tries }
 const lastSeen = new Map(); // phone id -> { at, via }
@@ -137,7 +157,7 @@ function linkState() {
   if (pairing && Date.now() > pairing.until) pairing = null;
   const link = pairing && listener ? pairLink(pairing.code, l) : "";
   return { role: "computer", on: l.on, port: l.port, listening: !!listener, ...(listenErr ? { error: listenErr } : {}), addresses: lanAddresses(),
-    ...(l.pub ? { fp: fingerprint(l.pub) } : {}), relay: { on: l.relay, ...relayState() }, found: !!mdns,
+    ...(l.pub ? { fp: fingerprint(l.pub) } : {}), relay: { on: l.relay && relayAllowed(), ...(relayAllowed() ? {} : { off: "SYMBIOT_NO_RELAY" }), ...relayState() }, found: !!mdns,
     phones: l.phones.map((p) => ({ id: p.id, name: p.name, added: p.added, ...(p.legacy || !p.pub ? { old: true } : {}), ...(lastSeen.has(p.id) ? { seen: lastSeen.get(p.id).at, via: lastSeen.get(p.id).via } : p.seen ? { seen: p.seen } : {}) })),
     ...(pairing ? { code: pairing.code, until: pairing.until } : {}), ...(link ? { link, qr: qrSvg(link) } : {}) };
 }
@@ -249,7 +269,7 @@ async function snapshot({ now = Date.now(), fresh = false } = {}) {
   const board = watch ? await tryOr(() => watch.watchBoard(24, now), { cards: [] }) : { cards: [] };
   const seen = (board.cards || []).filter((c) => c.count > 0).slice(0, 8).map((c) => ({ name: plainText(c.name, 60), label: plainText(c.label, 60), count: c.count, items: (c.items || []).filter((i) => i.need !== false).slice(0, 3).map((i) => ({ text: plainText(i.text, 140), ts: i.ts })) }));
   const recent = (readJson(PATHS.applied, {}).approvals || []).filter((a) => now - a.at < 24 * 3600000).slice(-10);
-  const body = { tasks, needs, asks, approves, watch: seen, recent, relay: linkCfg().relay };
+  const body = { tasks, needs, asks, approves, watch: seen, recent, relay: linkCfg().relay && relayAllowed() };
   const snap = { v: sha(JSON.stringify(body)).slice(0, 16), name: hostname(), at: now, ...body };
   snapCache = { at: now, snap };
   return snap;
@@ -326,7 +346,7 @@ let mdns = null;
 function startMdns() {
   if (mdns || process.env.SYMBIOT_NO_MDNS === "1") return;
   const l = linkCfg(), k = linkKeys();
-  mdns = announce({ id: sha(Buffer.from(k.pub, "base64url")).slice(0, 4), port: l.port, fp: fingerprint(k.pub), addresses: () => lanAddresses() }, { onError: () => {} });
+  mdns = announce({ id: sha(Buffer.from(k.pub, "base64url")).slice(0, 4), port: l.port, fp: fingerprint(k.pub), addresses: (asker) => mdnsAddresses(asker) }, { onError: () => {} });
 }
 function stopMdns() { if (mdns) mdns.stop(); mdns = null; }
 
@@ -609,6 +629,6 @@ const phoneState = () => (PHONE ? computerView() : linkState());
 // While the app runs: the computer listens if it's switched on; the phone asks if it's paired.
 function startPhone() { if (PHONE) startComputerPoll(); else startPhoneLink(); }
 
-export { PORT, PHONE, ANDROID_APP, PHONE_OPS, lanAddresses, linkState, newCode, unpairPhone, setRelay, startPhoneLink, stopPhoneLink, setPhoneLink, setPhoneApprove, phoneApprovals, snapshot,
+export { PORT, PHONE, ANDROID_APP, PHONE_OPS, lanAddresses, mdnsAddresses, linkState, newCode, unpairPhone, setRelay, startPhoneLink, stopPhoneLink, setPhoneLink, setPhoneApprove, phoneApprovals, snapshot,
   computerUrl, parsePairLink, pairLink, computerState, computerView, findComputers, pairComputer, forgetComputer, pollComputer, queueChange, dismissNote, startComputerPoll, phoneState, startPhone,
   newKeys, linkKey, fingerprint, seal, unseal, relayOf, answer };

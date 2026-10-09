@@ -67,15 +67,17 @@ function decMessage(buf) {
 }
 
 // ---- the computer: answer while the link is on ------------------------------------------
-// opts: { id (a few hex characters, from the fingerprint), port, fp, addresses: () => [...] }.
+// opts: { id (a few hex characters, from the fingerprint), port, fp, addresses: (asker) => [...] }.
+// addresses gets the asking device's address (none for an announcement), so the answer
+// carries only what that device can reach: RFC 6762 6.2's "the interface it came in on".
 // Gives { stop() } (a goodbye, so phones forget it at once), or null where nothing
 // can listen on 5353 (it's in use without sharing, or there's no network).
 // (socket: a dgram-like factory, for the tests)
 const udp = (o) => createSocket(o);
 function announce({ id, port, fp, addresses }, { onError = () => {}, socket = udp } = {}) {
   const inst = `Symbiot-${id}.${SERVICE}`, host = `symbiot-${id}.local`;
-  const records = (ttl = TTL) => {
-    const ips = addresses();
+  const records = (ttl = TTL, asker) => {
+    const ips = addresses(asker);
     return { answers: [{ name: SERVICE, type: T.PTR, ttl, data: inst }],
       additionals: [{ name: inst, type: T.SRV, ttl, flush: true, data: { port, target: host } }, { name: inst, type: T.TXT, ttl, flush: true, data: { v: 1, fp } },
         ...ips.map((ip) => ({ name: host, type: T.A, ttl, flush: true, data: ip }))] };
@@ -89,7 +91,7 @@ function announce({ id, port, fp, addresses }, { onError = () => {}, socket = ud
     let m; try { m = decMessage(buf); } catch { return; }
     if (m.response || !m.questions.some(ours)) return;
     const legacy = from.port !== PORT; // a one-shot query from any port: answered to it directly (RFC 6762 6.7)
-    const msg = encMessage({ id: legacy ? m.id : 0, response: true, questions: legacy ? m.questions.filter(ours) : [], ...records(legacy ? 10 : TTL) });
+    const msg = encMessage({ id: legacy ? m.id : 0, response: true, questions: legacy ? m.questions.filter(ours) : [], ...records(legacy ? 10 : TTL, from.address) });
     if (legacy || m.questions.some((q) => q.unicast)) send(msg, from.port, from.address); else send(msg);
   });
   sock.bind(PORT, () => {

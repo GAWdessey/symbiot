@@ -2,6 +2,11 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.62.1 — 2026-10-09
+
+- Changed the app's listed author contact email to the new Symbiot address.
+- Added `symbiot screens choose` to pick an option from a website's dropdown menu, so fields that depend on it update too.
+
 ## 0.62.0 — 2026-10-09
 
 - **Your phone shows your computer's work, and you can act on it there.** Pair Symbiot's Android app (or Symbiot in Termux) with your computer and the phone gets a droplet on Home, **On <your computer>**: your tasks, what needs you, your agents' questions, the work waiting for your Approve, and what Watch found (as notifications too). Tick and add tasks, answer an agent and approve from it. "Watch on your phone" is now **Your phone**, in Settings and in Setup.

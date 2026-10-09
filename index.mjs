@@ -38,7 +38,7 @@ import { gitDefaultBranch, loadDeploys, driftRepo, computeDrift } from "./drift.
 import { buildTasksMd, taskType, shipChanges, shipWithBump, bumpOffer, learnNpm, releaseNeeded, withReleases, setVersion, syncTasks, pendingReview, unreleased, publishesOnMerge, addTask, approveRepo, approveChanges, sendBack, pushTasks } from "./tasks.mjs";
 import { produce, mailState, setMail, sentMail } from "./writeups.mjs";
 import { loadScreens, screenImage, blueprint } from "./screens.mjs";
-import { mapPage, wholePage, pressRegion, typeRegion, uploadRegion, uploadFiles, scrollPage, signIn, isTrusted } from "./headless.mjs";
+import { mapPage, wholePage, pressRegion, typeRegion, chooseRegion, uploadRegion, uploadFiles, scrollPage, signIn, isTrusted } from "./headless.mjs";
 import { watchState, addWatch, removeWatch, seenWatch, newsSince, markNews, checkWatch, setBrief, draftReply, watchBoard, boardLine, boardChat, boardTalk, clearBoardChat } from "./watch.mjs";
 import { PORT as PHONE_PORT, phoneState, pairComputer, pollComputer, forgetComputer, parsePairLink } from "./phone.mjs";
 import { qrMatrix } from "./qr.mjs";
@@ -420,7 +420,7 @@ async function cmdScreens() {
   }
   if (sub === "show") { const s = find(a1); return out(s ? screenJson(s) : { error: "No screen " + (a1 || "") + ". symbiot screens lists them." }); }
   if (sub === "signin") { const r = (await viaApp("/api/screens/signin", { site: a1 })) || await signIn(a1); return out(r.ok ? { ...r, next: "Sign in in the window that opened, close it, then map again." } : r); }
-  if (sub === "press" || sub === "type" || sub === "upload") {
+  if (sub === "press" || sub === "type" || sub === "choose" || sub === "upload") {
     const s = find(a1); if (!s) return out({ error: "No screen " + (a1 || "") + ". symbiot screens lists them." });
     const want = String(a2 || "").toLowerCase(), rs = s.regions || [];
     const r = rs.find((x) => x.id === a2) || rs.find((x) => x.label.toLowerCase() === want) || (rs.filter((x) => x.label.toLowerCase().includes(want)).length === 1 && rs.find((x) => x.label.toLowerCase().includes(want)));
@@ -428,9 +428,9 @@ async function cmdScreens() {
     // a draft reply's agent (SYMBIOT_DRAFT, watch.mjs) never presses Send, or Enter (it sends in a chat)
     // upload: the files resolved and checked here, where a relative path means something
     const f = sub === "upload" ? uploadFiles([a3, ...more]) : null; if (f && f.error) return out(f);
-    const body = { id: s.id, region: r.id, confirmed: has("yes"), noSend: !!process.env.SYMBIOT_DRAFT, ...(sub === "type" ? { text: a3, enter: has("enter") } : {}), ...(f ? { files: f.files } : {}) };
-    const done = (await viaApp("/api/screens/" + sub, body)) || (sub === "press" ? await pressRegion(s.id, r.id, { confirmed: body.confirmed, noSend: body.noSend }) : sub === "type" ? await typeRegion(s.id, r.id, a3, { enter: body.enter, confirmed: body.confirmed, noSend: body.noSend }) : await uploadRegion(s.id, r.id, f.files, { confirmed: body.confirmed }));
-    if (f && done && /answered 404/.test(done.error || "")) return out({ error: "The Symbiot app that's running is older than this command and can't upload: restart it (symbiot app), then try again." });
+    const body = { id: s.id, region: r.id, confirmed: has("yes"), noSend: !!process.env.SYMBIOT_DRAFT, ...(sub === "type" ? { text: a3, enter: has("enter") } : {}), ...(sub === "choose" ? { option: a3 } : {}), ...(f ? { files: f.files } : {}) };
+    const done = (await viaApp("/api/screens/" + sub, body)) || (sub === "press" ? await pressRegion(s.id, r.id, { confirmed: body.confirmed, noSend: body.noSend }) : sub === "type" ? await typeRegion(s.id, r.id, a3, { enter: body.enter, confirmed: body.confirmed, noSend: body.noSend }) : sub === "choose" ? await chooseRegion(s.id, r.id, a3, { confirmed: body.confirmed }) : await uploadRegion(s.id, r.id, f.files, { confirmed: body.confirmed }));
+    if ((f || sub === "choose") && done && /answered 404/.test(done.error || "")) return out({ error: `The Symbiot app that's running is older than this command and can't ${f ? "upload" : "choose"}: restart it (symbiot app), then try again.` });
     // not a trusted site: say how to go ahead (only you can trust a site, in the app's Settings)
     if (done && done.confirm) return out({ error: `${done.error} Add --yes to go ahead, or list ${done.host} under Trusted sites in Symbiot's Settings.` });
     return out(screenJson(done));
@@ -445,6 +445,9 @@ async function cmdScreens() {
   symbiot screens press <id> <region> [--yes]  press a region there, map where it lands
   symbiot screens type <id> <field> "text" [--enter] [--yes]
                                                type into a field (Enter sends it), map the result
+  symbiot screens choose <id> <menu> "option" [--yes]
+                                               pick an option in a menu (a dropdown: MX in a
+                                               record type), by its label; map the result
   symbiot screens upload <id> <field> <file> [<file>…] [--yes]
                                                put a file in the page's file box (a picture or
                                                video for a post): <field> is the box, or the

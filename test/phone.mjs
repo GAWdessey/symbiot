@@ -288,9 +288,19 @@ try {
   ok("asked on the network, it answers with its port, addresses and fingerprint, under a neutral name", seenNet.length === 1 && seenNet[0].port === 7392 && seenNet[0].addresses.join() === "192.168.8.50,10.0.0.7" && seenNet[0].fp === on.fp && seenNet[0].name === "Symbiot-1a2b" && !seenNet[0].name.includes(String((await import("node:os")).hostname())), seenNet);
   an.stop(); await sleep(100);
   ok("switched off: it stops answering", (await browse({ socket: fake, timeout: 150 })).length === 0, "");
+  // what it answers with: only what the asker can reach (ops saw avahi pick the Tailscale address)
+  const ifs = { lo: [{ family: "IPv4", address: "127.0.0.1", netmask: "255.0.0.0", internal: true }], wlp2s0: [{ family: "IPv4", address: "192.168.1.21", netmask: "255.255.255.0" }],
+    tailscale0: [{ family: "IPv4", address: "100.78.4.37", netmask: "255.255.255.255" }], wg0: [{ family: "IPv4", address: "10.8.0.2", netmask: "255.255.255.0" }], eth1: [{ family: "IPv4", address: "10.0.5.4", netmask: "255.255.0.0" }] };
+  ok("a phone on the Wi-Fi gets the Wi-Fi address only, not Tailscale's", P.mdnsAddresses("192.168.1.77", ifs).join() === "192.168.1.21", P.mdnsAddresses("192.168.1.77", ifs));
+  ok("…an asker on another network gets that network's address (::ffff: form too)", P.mdnsAddresses("::ffff:10.0.9.9", ifs).join() === "10.0.5.4", P.mdnsAddresses("::ffff:10.0.9.9", ifs));
+  ok("…an announcement, or an asker on no network of ours, gets every address but a VPN's", P.mdnsAddresses(undefined, ifs).join() === "192.168.1.21,10.0.5.4" && P.mdnsAddresses("8.8.8.8", ifs).join() === "192.168.1.21,10.0.5.4", P.mdnsAddresses(undefined, ifs));
+  ok("…and a computer with only a VPN still answers with it", P.mdnsAddresses(undefined, { tailscale0: ifs.tailscale0 }).join() === "100.78.4.37", "");
+  const askers = [], an2 = announce({ id: "3c4d", port: 7392, fp: on.fp, addresses: (who) => { askers.push(who); return who ? ["192.168.8.51"] : ["192.168.8.51", "10.0.0.8"]; } }, { socket: fake });
+  await sleep(20); const seen2 = await browse({ socket: fake, timeout: 200 }); an2.stop(); await sleep(100);
+  ok("…the asker's address reaches that choice, and the answer carries what it chose", askers.includes("127.0.0.1") && seen2.length === 1 && seen2[0].addresses.join() === "192.168.8.51", [askers, seen2]);
   const offSt = await pc.cmd("off");
   ok("nothing is announced while the link is off", offSt.found === false, offSt.found);
-  const real = announce({ id: "9z9z", port: 7999, fp: "testfp", addresses: () => P.lanAddresses() }, { onError: () => {} });
+  const real = announce({ id: "9z9z", port: 7999, fp: "testfp", addresses: (who) => P.mdnsAddresses(who) }, { onError: () => {} });
   const onNet = real ? await browse({ timeout: 1500 }) : [];
   if (real) real.stop();
   if (onNet.some((x) => x.fp === "testfp")) ok("on a real network, a query over multicast finds it", true);

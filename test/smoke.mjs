@@ -197,6 +197,7 @@ const calls = [
   ["/api/screens/map", "POST"],     // no site -> refused before a browser starts
   ["/api/screens/press", "POST"],   // not confirmed -> refused, nothing pressed
   ["/api/screens/type", "POST"],    // no id -> "not found", nothing typed
+  ["/api/screens/choose", "POST"],  // no id -> "not found", nothing chosen
   ["/api/screens/upload", "POST"],  // no id -> "not found", no browser starts, nothing sent
   ["/api/screens/scroll", "POST"],  // no id -> "not found", no browser starts
   ["/api/screens/whole", "POST"],   // no id -> "not found", no browser starts
