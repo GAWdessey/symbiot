@@ -297,6 +297,72 @@ to a GitHub release tagged `apk-<version>`, signed with that same key once it's
 in the repo's `SYMBIOT_KEYSTORE_B64` and `SYMBIOT_KEYSTORE_PASS` secrets (see
 `.github/workflows/publish.yml`).
 
+### Your phone
+
+Your computer's work, on your phone: your tasks, what needs you, your agents'
+questions, the work waiting for your Approve, and what Watch found (as a
+notification too). Experimental.
+
+- **Pair it.** On the computer, Setup's **Your phone** step (or Settings → **Your
+  phone**) switches the link on and shows a QR. Point your phone's camera at it and
+  tap its link: it opens symbiot.co.za/pair, which hands it to Symbiot's app (the
+  part of the link with the code never leaves your phone), and the app pairs. The
+  Android app's own Setup starts with **Your computer** for this, or **No computer:
+  use Symbiot on this phone**. No camera, or Termux? Type the computer's address and
+  the 6-digit code it shows (**Look for it on this network** lists the computers it
+  finds), or `symbiot phone pair <address> <code>` (or the QR's link) in Termux;
+  `symbiot phone code` on the computer prints the QR in the terminal. A code lasts
+  10 minutes and 5 tries.
+- **Sealed.** At pairing the phone and the computer agree a key (X25519, then HKDF),
+  and every request and answer after that is sealed with it (AES-256-GCM) and stamped,
+  so a copy sent again is refused. The QR carries the computer key's fingerprint, so a
+  scan can't pair with a stand-in. The computer keeps only a hash of each phone's
+  token, and its own private key in `secrets.json`, which agent runs can't read. The
+  Android app keeps its token and key sealed by a key in Android's Keystore; in Termux
+  they're in `secrets.json` (readable only by you, 0600).
+- **What a phone can do.** Only this: what's new, a copy of your work, and four
+  changes (add a task, mark one done or not, answer an agent, approve). The computer
+  listens on port 7392 of your network for that alone; the rest of Symbiot stays on
+  `127.0.0.1`, and nothing else is reachable from the phone. An approve goes through
+  only if the work is still exactly what the phone showed, runs the same Approve as
+  the button, and Home and the Workdesk say which phone approved. Unpairing a phone
+  stops it at once, including what it had queued. A firewall on the computer may need
+  to allow the port.
+- **With the computer off.** The phone keeps the last copy (`computer.json`) and shows
+  it, with one line saying the computer is out of reach and when it last heard from
+  it. What you change meanwhile shows at once, marked "waiting to send", and goes in
+  order once the computer is back, each change once. When the computer changed the
+  same thing later, the computer's stays, and the phone says so.
+- **Finding it again.** While the link is on, the computer says it's here on your
+  network (mDNS, as a printer does, under a neutral name, not your computer's), so
+  the phone finds it after a new address; it never unpairs because of a network
+  error. It asks every 2 minutes, sooner after a failed try (15 s, 30 s, a minute),
+  and at once when the phone's network changes or you open the app.
+- **Away from home.** With a phone paired, the computer keeps a line open to a relay
+  at `relay.symbiot.co.za` (it connects out: no port opened on your router). The phone
+  uses it only when it can't reach the computer on your network, so at home nothing
+  goes through it. The relay passes the sealed messages on and can't read them; it
+  stores nothing; it knows a pair only by a hash. It does see when a pair talks, and
+  how much. Untick **Away from home too** in Settings → Your phone to keep it to your
+  Wi-Fi. The relay is in `relay/` (a Cloudflare Worker, or `node relay/server.mjs` on
+  a server of your own, with `SYMBIOT_RELAY=<its address>` on the computer).
+
+In Termux:
+
+```bash
+symbiot phone pair 192.168.1.21:7392 123456   # the computer's address and the code it shows
+symbiot phone pair 'https://symbiot.co.za/pair#a=…'   # or the link its QR holds
+symbiot phone                                 # the computer it's paired with
+symbiot phone check                           # ask it now
+symbiot phone forget                          # stop asking it
+```
+
+On the computer, `symbiot phone` lists where it listens, the phones paired and the
+relay, and `symbiot phone code` opens a new code and prints its QR (while `symbiot
+app` runs there). The phone asks the computer while `symbiot app` runs in Termux, so
+start it after pairing. In Termux, notifications need the Termux:API app and
+`pkg install termux-api`.
+
 ## Hand tasks to your coding agent: `symbiot push`
 
 ```bash
@@ -1098,8 +1164,9 @@ price told two ways) also shows on Home, under Watching, until you open it.
   [experimental](#screens-blueprints-for-screen-automation) Screens takes a
   screenshot only when you click Capture, and opens only the web pages you map
   or Watch (in a browser profile of its own). What it maps and what Watch finds
-  stay on your computer, unless you pair your phone (Watch on your phone) or
-  switch on the brief, which sends what's new to your AI.
+  stay on your computer, unless you pair your phone (Your phone: sealed between
+  the two, and away from home through a relay that can't read it) or switch on
+  the brief, which sends what's new to your AI.
 - **Runs only what you set:** the agent command is yours, and deploy commands are
   read only from your own `~/.config/symbiot/`, never from a repo.
 
@@ -1125,9 +1192,11 @@ can't fully check, so they may change. Everything above works without them.
   Type and Trusted sites work on web pages only.
 - **Watch**: reads your Gmail inbox, but hasn't yet been seen to notify a new
   email on a real one. GitHub through `gh` has been read from a real account,
-  but not yet left running. The brief, Standup's "Waiting on you" line and
-  **Watch on your phone** are new; the phone side hasn't been tried on a real
-  phone yet.
+  but not yet left running. The brief and Standup's "Waiting on you" line are new.
+- **Your phone**: the sealed link, the copy, the queue and the relay are tested
+  between two Symbiots on one computer (`test/phone.mjs`; the relay's Worker was
+  also run through it in Miniflare, Cloudflare's local runtime), but not yet on a
+  real phone, and the relay at relay.symbiot.co.za isn't up yet.
 
 ### Your sent email, without an API: `symbiot mail`
 
@@ -1357,35 +1426,12 @@ from what Watch found: `Waiting on you: 3 emails, 2 GitHub notifications`. Symbi
 counts them itself, so the numbers are right; the AI only sees them to know
 what's next.
 
-**On your phone.** What Watch finds on your computer can show up as a
-notification on your phone, through Symbiot there (the [Android app](#the-android-app-apk),
-or Symbiot in [Termux](#on-your-phone-android-in-termux)). On the computer, tick
-**Watch on your phone** in Settings: it shows the computer's address and a 6-digit
-code, good for 10 minutes. On the phone, in Settings → **Watch on your phone**,
-type both and click **Pair**. From then on, while Symbiot runs on both, the phone
-asks the computer every 2 minutes and notifies what's new there, with its brief.
-They have to be on the same network (or both on a VPN such as Tailscale, whose
-address is listed too). For this, the computer listens on port 7392 of your
-network, and serves only two things there: pairing with that code (5 wrong tries
-and the code is gone), and what's new for a phone that paired (with a token of its
-own; unpair it in Settings). Nothing can be changed from there, and the rest of
-Symbiot stays on `127.0.0.1`. What's new crosses your network unencrypted, so
-switch it on at home, not on a café's Wi-Fi. A firewall on the computer may need
-to allow the port. In Termux, notifications need the Termux:API app and
-`pkg install termux-api`.
-
-In Termux you can pair from the command line too, without the app window:
-
-```bash
-symbiot phone pair 192.168.1.21:7392 123456   # the computer's address and the code it shows
-symbiot phone                                 # the computer it's paired with
-symbiot phone check                           # ask it what's new now
-symbiot phone forget                          # stop asking it
-```
-
-On the computer, `symbiot phone` lists where it listens and the phones paired, and
-`symbiot phone code` opens a new code (while `symbiot app` runs there). The phone
-asks the computer while `symbiot app` runs in Termux, so start it after pairing.
+**On your phone.** Your phone can show your computer's work, through Symbiot
+there (the [Android app](#the-android-app-apk), or Symbiot in
+[Termux](#on-your-phone-android-in-termux)): your tasks, what needs you, your
+agents' questions, the work waiting for your Approve, and what Watch found, which
+also comes as a notification. From the phone you can add and tick tasks, answer
+your agents and approve. See [Your phone](#your-phone) for how it works.
 
 **More than one display?** Symbiot reads how your displays are laid out
 (`cosmic-randr`, `wlr-randr`, `kscreen-doctor` or `xrandr` on Linux, PowerShell on

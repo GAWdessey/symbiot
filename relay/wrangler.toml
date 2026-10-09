@@ -1,0 +1,16 @@
+# symbiot relay on Cloudflare's free plan (relay/README.md). Deploy from this folder:
+#   npx wrangler deploy
+name = "symbiot-relay"
+main = "worker.mjs"
+compatibility_date = "2026-08-01"
+workers_dev = true
+routes = [{ pattern = "relay.symbiot.co.za", custom_domain = true }]
+
+[[durable_objects.bindings]]
+name = "PAIRS"
+class_name = "PairObject"
+
+# SQLite-backed, which the free plan includes
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["PairObject"]

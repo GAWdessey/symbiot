@@ -17,7 +17,7 @@ import { watchBoard, draftReply, draftCards, draftAnswer } from "./watch.mjs";
 import { pendingReview, pushTasks, addTask, taskType } from "./tasks.mjs";
 import { estimate, estimateWords } from "./estimate.mjs";
 import { setHandoffCmd, agentsList, runHandoff, runningHandoff, handoffCmd, loadRuns, connectorsInfo, parkedPaths, agentMissing, settleNeeds, pickAgent, detectHandoffs, linkReach } from "./agents.mjs";
-import { linksState } from "./links.mjs";
+import { linksState, signInAsked } from "./links.mjs";
 import { knowledgeState } from "./knowledge.mjs";
 import { CONFIG_DIR, loadTasks, saveTasks, loadConfig, saveConfig, sameTask } from "./core.mjs";
 import { lanesState, stuckHandovers, allowHandover, skipHandover } from "./lanes.mjs";
@@ -28,6 +28,7 @@ import { reportsNews, listReports, readReport, decide } from "./reports.mjs";
 import { awaitingState, inboxSight } from "./handback.mjs";
 import { newClashes } from "./checks.mjs";
 import { postsState } from "./post.mjs";
+import { PHONE, ANDROID_APP, computerView, phoneApprovals, linkState } from "./phone.mjs";
 import { MARKETING, MARKETING_DIR, MARKETING_WORDS, displayName, productNames, productOf, untagged, tagged, draftFiles, setDraftStatus, postedCmd } from "./marketing.mjs";
 
 const KEEP = 15000; // the slower reads (git per repo awaiting review) are cached this long
@@ -71,7 +72,7 @@ function troubles({ stuck = [], list = [], map = {}, named = displayName, now = 
     if (n && !dropped.has("needs:" + a.id)) {
       const ok = n.kind === "approve";
       out.push({ kind: "ask", fix: "needs", id: "needs:" + a.id, path: a.path, repo, name: nm, title: ok ? `${nm} waits for your OK` : `${nm} needs you`, sub: plain(n.label || n.what, 90),
-        q: n.what + (n.check ? ` Check first: ${n.check}` : ""), options: ok ? ["Go ahead (recommended)", "Skip"] : ["Done it (recommended)", "Skip"], shape: "agents" });
+        q: n.what + (n.check ? ` Check first: ${n.check}` : ""), options: ok ? ["Go ahead (recommended)", "Skip"] : ["Done it (recommended)", "Skip"], ...signInCard([n.label, n.what, n.check]), shape: "agents" });
       continue;
     }
     if (a.status !== "failed" || dropped.has(a.id) || (a.endedAt && now - a.endedAt > FAILED_FOR)) continue;
@@ -354,7 +355,7 @@ function homeState({ now = Date.now(), fresh = false, deps = {} } = {}) {
     if (!q) continue;
     const lane = laneOfPath(a.path, map), repo = lane || (lane === "" ? "" : a.name);
     you.push({ kind: "ask", id: "ask:" + a.path, path: a.path, repo, name: repo ? named(lane ? map[lane] : a.path, repo) : plain(String(a.name || "an agent").replace(/^Agent:\s*/, ""), 60),
-      title: `${a.name} asks`, sub: String(q.q || "").slice(0, 90), q: String(q.q || ""), options: (q.options || []).slice(0, 2), ...(qs.length > 1 ? { more: qs.length - 1 } : {}), shape: "agents" });
+      title: `${a.name} asks`, sub: String(q.q || "").slice(0, 90), q: String(q.q || ""), options: (q.options || []).slice(0, 2), ...(qs.length > 1 ? { more: qs.length - 1 } : {}), ...signInCard([q.q, ...(q.options || []).slice(0, 2)]), shape: "agents" });
   }
   // What stopped and can't go on without you, as a question too: a handover that
   // couldn't start (lanes.mjs stuckHandovers: "Allow this run access to ~/Company?"),
@@ -386,7 +387,7 @@ function homeState({ now = Date.now(), fresh = false, deps = {} } = {}) {
   }
   // nothing waits on you: a few things that can be done next (none while anything does)
   const next = you.length ? [] : nextUp({ now, map, list, named, deps: { board: () => bd, reports: () => rep, ...(deps.next || {}) } });
-  const out = { you: you.slice(0, 6), youCount: you.length, feeds: feeds.slice(0, 6), lanes: hs, working, runs: runs.slice(0, 4), next, marketing: marketing({ list, map, named, pend }), at: now };
+  const out = { you: you.slice(0, 6), youCount: you.length, feeds: feeds.slice(0, 6), lanes: hs, working, runs: runs.slice(0, 4), next, marketing: marketing({ list, map, named, pend }), ...(deps.phone || phoneBits)(now), at: now };
   if (!deps.board) cached = out;
   return out;
 }
@@ -466,7 +467,27 @@ function firstSteps({ deps = {} } = {}) {
     { id: "site", title: "Link one site", done: !!site, sub: site ? `${site.name} linked. ${runs}` : "your mail, chat or code, so Symbiot sees what arrives" },
     { id: "company", title: "A company folder", optional: true, done: folders > 0, sub: folders ? "your chats can quote it, and Symbiot checks where its files disagree" : "documents your chats can quote, and Symbiot checks" },
   ];
+  // your phone: on a computer, pairing the Symbiot app on it (Setup offers it too)
+  if (!PHONE) { const ph = tryOr(deps.phone || linkState, { phones: [] }), n = (ph.phones || []).length;
+    steps.push({ id: "phone", title: "Your phone", optional: true, done: n > 0, sub: n ? `${ph.phones.map((p) => p.name).join(", ")} paired: your tasks and what needs you, there too` : "your tasks, what needs you and agents' questions on your phone, and Approve from there" }); }
   return { steps, done: steps.every((s) => s.done) };
+}
+
+// Your phone (phone.mjs) on Home. On a phone paired with a computer: that computer's
+// droplet, from the copy it keeps (what needs you there, its open tasks, whether it's
+// out of reach and since when, what's waiting to send). On the computer: what was
+// approved from a phone today, so you know it wasn't you at this desk.
+function phoneBits(now = Date.now()) {
+  try {
+    if (!PHONE) {
+      const a = phoneApprovals(now), l = linkState(), phones = l.on ? (l.phones || []).map((p) => ({ name: p.name, ...(p.seen ? { seen: p.seen } : {}), ...(p.via ? { via: p.via } : {}), ...(p.old ? { old: true } : {}) })) : [];
+      return { ...(phones.length ? { phones } : {}), ...(a.length ? { phoneApproved: a.map((x) => ({ repo: x.repo, phone: x.phone, at: x.at, status: x.status, ...(x.pr ? { pr: x.pr } : {}), ...(x.error ? { error: x.error } : {}) })) } : {}) };
+    }
+    const v = computerView(); if (!v.paired) return {};
+    const c = v.copy || {}, asks = (c.asks || []).filter((x) => !x.waiting).length, approves = (c.approves || []).filter((x) => !x.waiting).length;
+    return { computer: { name: v.name, ...(v.old ? { old: true } : {}), ...(v.away ? { away: true } : {}), heard: v.heard || 0, queued: v.queued || 0, asks, approves, needs: (c.needs || []).length,
+      tasks: (c.tasks || []).filter((t) => !t.done).length, notes: (c.notes || []).length, copy: !!v.copy } };
+  } catch { return {}; }
 }
 
 // One line per thing home shows, for the talk's context.
@@ -478,6 +499,8 @@ function homeContext(h) {
     "Recent handovers:", ...(h.lanes.length ? h.lanes.map((l) => `- ${l.from} → ${l.to}: ${l.text} (${l.status}${l.times ? `, handed over ${l.times} times` : ""})`) : ["- none"]),
     ...(h.marketing ? [`Marketing (a lane of its own, for marketing across all their products; "repo": "${MARKETING}"): ${h.marketing.needs ? `${h.marketing.needs} thing${h.marketing.needs > 1 ? "s" : ""} there need${h.marketing.needs > 1 ? "" : "s"} them` : "nothing needs them"}${h.marketing.working ? ", its agent is at work" : ""}.`] : []),
     ...((h.next || []).length ? ["Could be done next (Home suggests these, one tap each):", ...h.next.map((s) => `- ${s.title}: ${s.gain} (${s.time})`)] : []),
+    ...(h.computer ? [`On their computer (${h.computer.name}, this phone keeps a copy${h.computer.away ? `; out of reach, last heard ${new Date(h.computer.heard).toLocaleString()}` : ""}): ${h.computer.asks} agent question${h.computer.asks === 1 ? "" : "s"}, ${h.computer.approves} waiting for Approve, ${h.computer.tasks} open task${h.computer.tasks === 1 ? "" : "s"}${h.computer.queued ? `, ${h.computer.queued} change${h.computer.queued > 1 ? "s" : ""} waiting to send` : ""}. They act on it in its droplet ("On ${h.computer.name}").`] : []),
+    ...((h.phoneApproved || []).length ? ["Approved from their phone today:", ...h.phoneApproved.map((a) => `- ${a.repo} from ${a.phone}: ${a.status}${a.pr ? ` (${a.pr})` : ""}`)] : []),
   ].join("\n");
 }
 
@@ -611,14 +634,14 @@ function workScene({ deps = {}, full = false } = {}) {
       const line = plain(String(t).split(/\n\s*\n/)[0], 220);
       if (line) { p.summary = line; p.state = a.status === "running" ? "at work" : qs.length ? "asks you" : "done"; p.path = a.path; }
     }
-    for (const q of qs) { p.qs = p.qs || []; if (p.qs.length < 3) p.qs.push({ q: q.q, options: (q.options || []).slice(0, 3), path: a.path }); }
+    for (const q of qs) { p.qs = p.qs || []; if (p.qs.length < 3) p.qs.push({ q: q.q, options: (q.options || []).slice(0, 3), path: a.path, ...signInCard([q.q, ...(q.options || []).slice(0, 3)]) }); }
     for (const s of ideas) { p.ideas = p.ideas || []; if (p.ideas.length < 4) p.ideas.push({ text: plain(s.text, 200), full: String(s.text), repo: s.repo || l, path: a.path }); }
   }
   const stuck = deps.stuck || (() => { try { return stuckHandovers(); } catch { return []; } });
   const drafts = deps.drafts || (() => { try { return draftCards(); } catch { return []; } });
   for (const t of troubles({ stuck: stuck(), list: AG, map, named, drafts: drafts() })) {
     const p = at(t.repo || RUNS_LANE); p.asks++; p.qs = p.qs || [];
-    if (p.qs.length < 3) p.qs.unshift({ q: t.q, options: t.options, path: t.path, fix: t.fix, id: t.id, sub: t.sub, ...(t.draft ? { draft: t.draft } : {}) });
+    if (p.qs.length < 3) p.qs.unshift({ q: t.q, options: t.options, path: t.path, fix: t.fix, id: t.id, sub: t.sub, ...(t.draft ? { draft: t.draft } : {}), ...(t.signInTo ? { signInTo: t.signInTo } : {}) });
   }
   for (const p of Object.values(by)) { p.lit = !!(p.asks || p.ready); if (isParked(p.repo)) p.parked = true; }
   const projects = Object.values(by).sort((a, b) => (b.lit ? 1 : 0) - (a.lit ? 1 : 0) || (a.parked ? 1 : 0) - (b.parked ? 1 : 0) || (b.running ? 1 : 0) - (a.running ? 1 : 0) || b.ready - a.ready || b.waiting - a.waiting || b.last - a.last || (a.repo < b.repo ? -1 : 1));
@@ -636,6 +659,9 @@ function workScene({ deps = {}, full = false } = {}) {
 // ended without ticking it, is flagged (`stuck`) rather than started again and again.
 const AUTO_GRACE = 30000, STUCK_AFTER = 5 * 60000, RETRY_AFTER = 5 * 60000, AUTO_FAIL = {}; // lane → { at, note }: a start that didn't take
 const yours = (text) => /^\s*👤/.test(String(text || "")); // "👤 You (only you: …)": the user's step, never an agent's
+// A card that asks you to sign in to a site ("sign in to domains.co.za in Symbiot's browser")
+// carries the site, and shows a button that opens Symbiot's browser window on it (links.mjs).
+function signInCard(texts) { let s = null; try { s = signInAsked(texts.filter(Boolean).join("\n")); } catch {} return s ? { signInTo: s } : {}; }
 const asAgent = (text) => String(text || "").replace(/^\s*🤖\s*/u, "").replace(/^Agent:\s*/i, "").trim();
 const minutes = (ms) => { const m = Math.round(ms / 60000); return m >= 120 ? `${Math.round(m / 60)} hours` : `${m} min`; };
 // What a folder's agent was last handed (agents.mjs handed.json) and when its last run started.
@@ -724,9 +750,17 @@ const goOps = () => startOps(loadTasks().filter((t) => t.repo === RUNS_LANE && !
 // where your work is, your agent, every app you use (connected, or "I don't use it"),
 // your documents, then Home. It's in config.onboarding: { pending, step, skipped: [link
 // ids you don't use] }; a Symbiot that ran before this existed isn't sent through it.
-const ONB_STEPS = ["welcome", "ai", "work", "agent", "apps", "docs", "done"];
+// Your phone has a step of its own (optional): on a computer, pair the app on your phone
+// (after your documents); in the Android app, "Your computer" comes first, and "no
+// computer" carries on with the rest, as Symbiot on the phone alone.
+const ONB_STEPS = ["welcome", "ai", "work", "agent", "apps", "docs", "phone", "done"];
+const ONB_STEPS_PHONE = ["computer", "welcome", "ai", "work", "agent", "apps", "docs", "done"];
+const onbSteps = (app = ANDROID_APP, phone = PHONE) => (app ? ONB_STEPS_PHONE : phone ? ONB_STEPS.filter((s) => s !== "phone") : ONB_STEPS); // (Symbiot in Termux is on the phone already)
+// A new install (`symbiot app` the first time): setup, from its first step, "Your computer"
+// in the Android app (it started at "welcome" there, so a phone paired by its QR showed nothing).
+function startOnboarding() { const cf = loadConfig(); if (!cf.onboarding) { cf.onboarding = { pending: true, step: onbSteps()[0], skipped: [] }; saveConfig(cf); } return cf.onboarding; }
 function onboarding({ fresh = false } = {}) {
-  const cfg = loadConfig(), o = cfg.onboarding || {};
+  const cfg = loadConfig(), o = cfg.onboarding || {}, steps = onbSteps();
   const tryOr = (f, d) => { try { return f(); } catch { return d; } };
   let st = null; try { st = claudeState(fresh); } catch {}
   const r = tryOr(() => resolveProvider(), null);
@@ -736,7 +770,9 @@ function onboarding({ fresh = false } = {}) {
     ...(reach && reach.sites && reach.sites[x.id] ? { agents: !!reach.sites[x.id].ready, connector: reach.sites[x.id].name } : {}) }));
   const det = tryOr(() => detectHandoffs(), { agents: [] }), cmd = tryOr(() => handoffCmd(), "");
   return {
-    pending: !!o.pending, step: ONB_STEPS.includes(o.step) ? o.step : "welcome", steps: ONB_STEPS,
+    pending: !!o.pending, step: steps.includes(o.step) ? o.step : steps[0], steps,
+    phone: tryOr(() => { const p = PHONE ? computerView() : linkState(); return PHONE ? { role: "phone", paired: !!p.paired, name: p.name || "", ...(p.error ? { error: p.error } : {}) }
+      : { role: "computer", on: p.on, listening: p.listening, ...(p.error ? { error: p.error } : {}), code: p.code || "", until: p.until || 0, link: p.link || "", qr: p.qr || "", addresses: p.addresses || [], port: p.port, phones: (p.phones || []).map((x) => x.name) }; }, null),
     ai: { connected: !!r, provider: r ? r.provider : "", line: r ? `${PROVIDERS[r.provider].label}${r.model ? " · " + r.model : ""}` : "", claude: tryOr(() => claudeSetup(), st ? { installed: st.installed, signedIn: st.signedIn } : null) },
     work: { searching: reps.searching, at: reps.at || 0, done: reps.done || 0, total: reps.total || 0, count: reps.list.length, repos: reps.list.slice(0, 60).map((x) => ({ name: x.name, path: x.path })), roots: tryOr(() => scanRoots(), []).map((r) => (r === homedir() ? "~" : r.startsWith(homedir() + "/") ? "~" + r.slice(homedir().length) : r)) },
     agent: { cmd, pick: tryOr(() => pickAgent(), null), agents: (det.agents || []).map((a) => ({ label: a.label, tmpl: a.tmpl })) },
@@ -747,8 +783,8 @@ function onboarding({ fresh = false } = {}) {
 // step: where you are; skip / unskip: an app you do or don't use; skipRest: every app not connected.
 function setOnboarding({ step, skip, unskip, skipRest, done, restart } = {}) {
   const cfg = loadConfig(), o = { ...(cfg.onboarding || {}) }, sk = new Set(o.skipped || []);
-  if (restart) { o.pending = true; o.step = "welcome"; }
-  if (step && ONB_STEPS.includes(step)) o.step = step;
+  if (restart) { o.pending = true; o.step = onbSteps()[0]; }
+  if (step && onbSteps().includes(step)) o.step = step;
   if (skip) sk.add(String(skip)); if (unskip) sk.delete(String(unskip));
   if (skipRest) { try { for (const x of linksState().items) if (x.state === "off") sk.add(x.id); } catch {} }
   o.skipped = [...sk];
@@ -757,4 +793,4 @@ function setOnboarding({ step, skip, unskip, skipRest, done, restart } = {}) {
   return onboarding();
 }
 
-export { reportIdeasAdd, reportAsk, reportDraftAnswer, workTick, waitWhy, AUTO_GRACE, STUCK_AFTER, marketingState, marketingGo, marketingDraftAnswer, marketingTask, moveToMarketing, goLane, homeState, homeContext, homeAsk, homeAnswer, homeNext, nextUp, laneNamed, NEXT_FILE, workScene, workGo, displayName, firstSteps, onboarding, setOnboarding, ONB_STEPS };
+export { reportIdeasAdd, reportAsk, reportDraftAnswer, workTick, waitWhy, AUTO_GRACE, STUCK_AFTER, marketingState, marketingGo, marketingDraftAnswer, marketingTask, moveToMarketing, goLane, homeState, homeContext, homeAsk, homeAnswer, homeNext, nextUp, laneNamed, NEXT_FILE, workScene, workGo, displayName, firstSteps, onboarding, setOnboarding, startOnboarding, ONB_STEPS, ONB_STEPS_PHONE, onbSteps, phoneBits };

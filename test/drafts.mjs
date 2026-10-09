@@ -40,7 +40,7 @@ writeFileSync(join(CFG, "runs.json"), JSON.stringify(RUNS));
 
 const app = spawn(process.execPath, [join(ROOT, "index.mjs"), "app"], { env: { ...sandboxEnv(HOME, process.env, 21000 + (process.pid % 3000)), SYMBIOT_NO_OPEN: "1" }, stdio: ["ignore", "pipe", "pipe"] });
 let chrome = null;
-const finish = async () => { try { if (chrome) chrome.kill("SIGKILL"); } catch {} try { app.kill("SIGTERM"); } catch {} await sleep(300); rmSync(HOME, { recursive: true, force: true }); done(); };
+const finish = async () => { try { if (chrome) chrome.kill("SIGKILL"); } catch {} try { app.kill("SIGTERM"); } catch {} await sleep(300); try { rmSync(HOME, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }); } catch {} done(); }; // chrome's helpers can still be writing its profile
 try {
   let o = "";
   const url = await new Promise((res, rej) => { app.stdout.on("data", (d) => { o += d; const m = o.match(/http:\/\/127\.0\.0\.1:\d+\/\?t=[\w-]+/); if (m) res(m[0]); }); setTimeout(() => rej(new Error("the app gave no address: " + o)), 20000); });

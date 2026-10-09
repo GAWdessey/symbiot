@@ -6,8 +6,10 @@
 //
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync, chmodSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import { execSync } from "node:child_process";
+import net from "node:net";
 
 const HOME = mkdtempSync(join(tmpdir(), "symbiot-onb-"));
 process.env.HOME = HOME; process.env.USERPROFILE = HOME;
@@ -44,7 +46,7 @@ try {
   console.log("SETUP — the steps, where you are, every app decided");
   ok("a Symbiot that ran before setup existed isn't sent through it", onboarding().pending === false, onboarding().pending);
   let o = setOnboarding({ restart: true });
-  ok("started (a new install, or Run setup again): pending, at the welcome", o.pending && o.step === "welcome" && ONB_STEPS.join() === "welcome,ai,work,agent,apps,docs,done", [o.pending, o.step]);
+  ok("started (a new install, or Run setup again): pending, at the welcome", o.pending && o.step === "welcome" && ONB_STEPS.join() === "welcome,ai,work,agent,apps,docs,phone,done" && o.steps.join() === ONB_STEPS.join(), [o.pending, o.step, o.steps]);
   ok("…your AI: the Claude subscription when Claude Code is signed in", o.ai.connected && o.ai.provider === "claude", o.ai);
   ok("…your work: what it found, and where it looks (your home as ~)", o.work.count === 3 && o.work.roots.some((r) => r === "~/work"), o.work);
   ok("…every app listed, none decided yet", o.apps.length > 10 && o.apps.every((a) => a.state === "off" && !a.skipped) && o.decided === false, o.apps.length);
@@ -58,8 +60,28 @@ try {
   ok("\"I don't use the rest\": all decided, so you can go on", o.decided && o.apps.every((a) => a.skipped), o.decided);
   o = setOnboarding({ step: "nowhere" });
   ok("a step that isn't one: ignored", o.step === "apps", o.step);
+  console.log("SETUP — your phone: an optional step on a computer, Your computer first in the phone's app");
+  o = setOnboarding({ step: "phone" });
+  ok("on a computer, Your phone comes after your documents: the link off until you say yes", o.step === "phone" && o.steps.indexOf("phone") === o.steps.indexOf("docs") + 1 && o.phone && o.phone.role === "computer" && o.phone.on === false && !o.phone.qr, o.phone);
+  const { setPhoneLink, stopPhoneLink } = await import("../phone.mjs");
+  const free = await new Promise((r) => { const sv = net.createServer().listen(0, "127.0.0.1", () => { const pt = sv.address().port; sv.close(() => r(pt)); }); });
+  const c0 = JSON.parse(readFileSync(join(CFG, "config.json"), "utf8")); c0.phoneLink = { port: free }; writeFileSync(join(CFG, "config.json"), JSON.stringify(c0));
+  await setPhoneLink(true); o = onboarding();
+  ok("…\"Show the code\" switches it on: the step has the QR, its code and this computer's address", o.phone.on && o.phone.listening && /^\d{6}$/.test(o.phone.code) && /^<svg/.test(o.phone.qr) && /symbiot\.co\.za\/pair#/.test(o.phone.link), { ...o.phone, qr: (o.phone.qr || "").slice(0, 20) });
+  stopPhoneLink();
+  o = setOnboarding({ step: "done" });
+  ok("…\"I don't have the app\" goes on to the end, the phone left unpaired", o.step === "done" && o.phone.phones.length === 0, o.step);
+  const { firstSteps } = await import("../home.mjs");
+  const fsPhone = firstSteps({ deps: { connected: () => true, repos: () => ({}), cmd: () => "", links: () => ({ items: [] }), connectors: () => ({}), knowledge: () => ({ folders: [] }) } }).steps.find((x) => x.id === "phone");
+  const fsPaired = firstSteps({ deps: { phone: () => ({ phones: [{ name: "Pixel" }] }), connected: () => true, repos: () => ({}), cmd: () => "", links: () => ({ items: [] }), connectors: () => ({}), knowledge: () => ({ folders: [] }) } }).steps.find((x) => x.id === "phone");
+  ok("Settings' first steps have Your phone too (optional), for whoever finished setup before", fsPhone && fsPhone.optional && !fsPhone.done && fsPaired.done && /Pixel paired/.test(fsPaired.sub), [fsPhone, fsPaired]);
+  const droid = execSync(`${JSON.stringify(process.execPath)} --input-type=module -e 'const h = await import(${JSON.stringify(join(dirname(fileURLToPath(import.meta.url)), "..", "home.mjs"))}); const c = await import(${JSON.stringify(join(dirname(fileURLToPath(import.meta.url)), "..", "core.mjs"))}); const cf = c.loadConfig(); delete cf.onboarding; c.saveConfig(cf); const first = h.startOnboarding().step; const a = h.setOnboarding({ restart: true }); const b = h.setOnboarding({ step: "phone" }); console.log(JSON.stringify({ first, steps: a.steps, step: a.step, phone: a.phone, after: b.step }));'`, { env: { ...process.env, HOME, USERPROFILE: HOME, SYMBIOT_ANDROID_APP: "1" }, encoding: "utf8" });
+  const dj = JSON.parse(droid.trim().split("\n").pop());
+  ok("in the phone's app, Setup starts at Your computer, a new install's too (and has no Your phone step)", dj.steps.join() === "computer,welcome,ai,work,agent,apps,docs,done" && dj.step === "computer" && dj.first === "computer" && dj.phone.role === "phone" && dj.phone.paired === false && dj.after === "computer", dj);
+  setOnboarding({ restart: true });
   o = setOnboarding({ done: true });
   ok("done: Home is yours", o.pending === false && JSON.parse(readFileSync(join(CFG, "config.json"), "utf8")).onboarding.done > 0, o.pending);
+  ok("a Symbiot that finished setup isn't sent through it again (the new step doesn't reopen it)", onboarding().pending === false, onboarding().pending);
 
   console.log("THE ICON — in your look");
   const f = iconSvg("ferro"), g = iconSvg("glass"), p = iconSvg("pearl");

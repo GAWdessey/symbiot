@@ -86,7 +86,8 @@ document.getElementById("list").addEventListener("click", function (e) {
   }).catch(function () {});
   else say("Sign in to it in the window that opened, then come back here.");
 });
-document.getElementById("go").addEventListener("submit", function (e) { e.preventDefault(); var u = fromInput(document.getElementById("addr").value); if (u) openSite(u); });
+// any site: opened, and kept under Your sites with whether you're signed in (links.mjs addSite)
+document.getElementById("go").addEventListener("submit", function (e) { e.preventDefault(); var u = fromInput(document.getElementById("addr").value); if (!u) return; openSite(u); api("/api/links/site", { site: u, here: true }).then(function (r) { if (r && !r.error) { say("Sign in to it in the window that opened, then come back here. It's under " + ((r.item && r.item.group) || "Your sites") + " now."); load(); } }).catch(function () {}); });
 document.getElementById("done").addEventListener("click", function () { say("Closing, and checking your sites…"); api("/api/browser/done", {}).catch(function () {}); });
 load(); setInterval(load, 5000);
 </script>

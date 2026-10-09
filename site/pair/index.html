@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pair your phone · Symbiot</title>
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#0B0C0E">
+<link rel="icon" type="image/svg+xml" href="../icon.svg">
+<!-- The QR Symbiot shows on your computer (Settings → Your phone) opens this page.
+     What it pairs with (your computer's address, a code good for 10 minutes, its key's
+     fingerprint) is after the #, which a browser never sends anywhere: it stays on
+     your phone, and this page only hands it to Symbiot's app. -->
+<style>
+@font-face{font-family:Geist;src:url("../fonts/Geist-Variable.woff2") format("woff2");font-weight:100 900;font-display:swap}
+:root{--bg:#0B0C0E;--card:rgba(255,255,255,.035);--line:rgba(255,255,255,.08);--text:#C9CDD3;--bone:#F3F0EA;--faint:#8A9099;--amber:#F2A541;--btn:#F3F0EA;--btnText:#0B0C0E;--sans:Geist,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}
+@media (prefers-color-scheme: light){:root{--bg:#F4F2EE;--card:rgba(21,26,33,.035);--line:rgba(21,26,33,.09);--text:#3A414C;--bone:#11151B;--faint:#6B7380;--amber:#B86A0C;--btn:#11151B;--btnText:#F4F2EE}}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:var(--bg);color:var(--text);font:400 16px/1.6 var(--sans);-webkit-font-smoothing:antialiased;padding:24px}
+main{width:min(460px,100%)}
+.brand{display:flex;align-items:center;gap:10px;margin-bottom:26px}.brand img{width:34px;height:34px;border-radius:9px}.brand span{font:600 14px var(--sans);letter-spacing:.32em;color:var(--bone)}
+h1{margin:0 0 8px;font:650 28px/1.15 var(--sans);letter-spacing:-.02em;color:var(--bone)}
+p{margin:0 0 16px}
+.btn{display:block;width:100%;padding:15px 18px;border-radius:14px;border:0;background:var(--btn);color:var(--btnText);font:600 16px var(--sans);text-align:center;text-decoration:none;cursor:pointer}
+.card{margin-top:18px;padding:16px 18px;border-radius:16px;background:var(--card);border:1px solid var(--line);font-size:14.5px}
+.card b{color:var(--bone)}.code{letter-spacing:3px}
+.faint{color:var(--faint);font-size:13.5px}
+.warn{color:var(--amber)}
+a{color:inherit}
+</style>
+</head>
+<body>
+<main>
+  <div class="brand"><img src="../icon.svg" alt=""><span>SYMBIOT</span></div>
+  <div id="go">
+    <h1>Pair your phone</h1>
+    <p>Your computer showed this code. Open it in Symbiot’s app, and the app pairs with your computer: your tasks, what needs you and your agents’ questions, on your phone.</p>
+    <a class="btn" id="open" href="#">Open in Symbiot</a>
+    <div class="card" id="typed"></div>
+    <p class="faint" style="margin-top:16px">No Symbiot on this phone yet? <a id="get" href="https://github.com/GarthGhostai/symbiot/releases/latest/download/symbiot-aarch64.apk">Get the Android app</a>, open it, then scan the code again.</p>
+  </div>
+  <div id="none" hidden>
+    <h1>Pair your phone</h1>
+    <p>This page pairs Symbiot’s app on your phone with Symbiot on your computer. On your computer, open Symbiot → Settings → <b>Your phone</b>, switch it on, and scan the code it shows with your phone’s camera.</p>
+  </div>
+</main>
+<script>
+(function () {
+  var q = String(location.hash || "").replace(/^#/, ""), p = new URLSearchParams(q);
+  var addr = (p.get("a") || "").split(",").filter(Boolean), code = (p.get("c") || "").replace(/\D/g, ""), port = p.get("p") || "7392";
+  if (!addr.length || code.length !== 6) { document.getElementById("go").hidden = true; document.getElementById("none").hidden = false; return; }
+  var android = /android/i.test(navigator.userAgent || "");
+  var app = "symbiot://pair?" + q;
+  var open = document.getElementById("open");
+  // Android: an intent link names the app, and goes to the download if it isn't installed
+  open.href = android ? "intent://pair?" + q + "#Intent;scheme=symbiot;package=co.symbiot.app;S.browser_fallback_url=" + encodeURIComponent(document.getElementById("get").href) + ";end" : app;
+  var t = document.getElementById("typed");
+  t.innerHTML = "Or in the app, under Settings → <b>Your phone</b>, type the address <b></b> and the code <b class='code'></b>. <span class='faint'>It works for 10 minutes after your computer showed it.</span>";
+  var bs = t.querySelectorAll("b"); bs[1].textContent = addr[0] + ":" + port; bs[2].textContent = code;
+  if (!android) { var w = document.createElement("p"); w.className = "warn"; w.style.marginTop = "16px"; w.textContent = "Symbiot’s phone app is for Android. On an iPhone there’s no app yet."; document.getElementById("go").appendChild(w); }
+  if (android) setTimeout(function () { location.href = open.href; }, 250); // most browsers open the app straight away; the button is there if not
+})();
+</script>
+</body>
+</html>

@@ -70,8 +70,15 @@ update check) a fake npm registry:
   printed, the scan time limit, the agent handoff, review → send back → approve →
   ship (including a repo that gitignores `.symbiot/`), agent questions, mail
   ingestion (`symbiot mail` end to end), Watch (pages, GitHub through a stubbed
-  `gh`, the brief), Watch on your phone (pairing and asking over real HTTP on
+  `gh`, the brief), Your phone (pairing and asking over real HTTP on
   127.0.0.1), and the update command.
+- `test/phone.mjs` — Your phone end to end, between two homes (a computer in a
+  child process, the phone in the test): the sealed link (nothing plain on the
+  wire, replays refused), hashed tokens, the Android app's Keystore hand-off,
+  finding the computer again, the copy kept with the computer off, the queue
+  (in order, once, the later change wins, approve only what was shown, unpairing
+  stops it), the relay (`relay/server.mjs`; `SYMBIOT_TEST_RELAY=<url>` runs it
+  against another, such as the Worker in Miniflare), mDNS and the QR read back.
 - `test/paths.mjs` — the paths every release goes through: which repos a scan
   finds and from which folders, and that every view shares them; `week`,
   `standup` and `todo` through the real CLI with the AI stubbed by a fake Ollama

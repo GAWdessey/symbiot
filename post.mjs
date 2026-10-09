@@ -33,7 +33,7 @@ import { resolveProvider, write } from "./ai.mjs";
 import { commits, discoveredRepos, laneMap } from "./scan.mjs";
 import { readTexts, pagePicture, pageClip, siteUrl, CLIP } from "./headless.mjs";
 import { runHandoff, runningHandoff } from "./agents.mjs";
-import { MARKETING_DIR, ensureMarketing, setDraftStatus, productOf, productNames, draftStatuses, postedCmd } from "./marketing.mjs";
+import { MARKETING_DIR, ensureMarketing, setDraftStatus, productOf, productNames, draftStatuses, postedCmd, parseDraft, inLane } from "./marketing.mjs";
 
 const PATHS = { posts: join(CONFIG_DIR, "posts.json"), log: join(CONFIG_DIR, "posts-log.jsonl"), voice: join(CONFIG_DIR, "voice.md"), media: join(CONFIG_DIR, "post-media"), test: join(CONFIG_DIR, "post-test.json") };
 const PLATFORM = "linkedin";
@@ -559,21 +559,38 @@ const CUSTOMER = [
 // first draft; week 1 is the first of them a post went out in (until one has, the one
 // you're in: a week with nothing posted doesn't count), or the day post-test.json's
 // start names, when you've moved it ({ "start": "2026-10-13" }). Each row: posts published, and how many
-// carried a picture or video; replies on LinkedIn (its watched notifications, marked
-// by watch.mjs markNews), the ones that may be a customer and those asking what it
+// carried a picture or video (approved under Drafts to post, or gone out through Marketing:
+// laneOut); replies on LinkedIn (its watched notifications, marked
+// by watch.mjs markNews: comments, replies, mentions and messages, not reactions or a
+// badge's bare count), the ones that may be a customer and those asking what it
 // costs; and npm installs of the packages your posts are about. Profile visits are
 // only in LinkedIn's own analytics. null before there's a first draft.
 const TEST_WEEKS = 4;
+const isReply = (n) => !!n.social && (n.li === "message" || ["comment", "reply", "mention"].includes(n.type) || !!n.customer);
 const dayStart = (ts) => { const d = new Date(ts); d.setHours(0, 0, 0, 0); return d.getTime(); };
 const addDays = (ts, n) => { const d = new Date(ts); d.setDate(d.getDate() + n); return d.getTime(); };
 const ymd = (ts) => { const d = new Date(ts); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
-function testPlan(paths = PATHS, now = Date.now()) {
+// What went out through Marketing's lane: drafts its agent marked posted (when they went
+// out), or approved for a time in the platform's scheduler that has come. Not one handed
+// over from Drafts to post (post-<id>.md): the log has that one, from its approve. [{ ts, media }]
+function laneOut(dir = MARKETING_DIR, now = Date.now()) {
+  const out = [];
+  for (const [rel, s] of Object.entries(draftStatuses(dir))) {
+    if (!s || /(^|\/)post-[0-9a-f]{8}\.md$/i.test(rel)) continue;
+    const ts = Number(s.posted) || (s.status === "approved" && s.scheduled ? Date.parse(String(s.scheduled).replace(" ", "T")) : NaN);
+    if (!Number.isFinite(ts) || ts > now) continue;
+    let media = 0; try { media = parseDraft(readFileSync(inLane(dir, rel), "utf8")).media.length; } catch {} // its file gone: still out
+    out.push({ ts, media });
+  }
+  return out;
+}
+function testPlan(paths = PATHS, now = Date.now(), lane = []) {
   const posts = loadPosts(paths).posts;
   let set = NaN; try { set = Date.parse(String(JSON.parse(readFileSync(paths.test, "utf8")).start || "").slice(0, 10) + "T00:00:00"); } catch {}
-  const first = posts.reduce((m, p) => Math.min(m, Number(p.drafted) || Infinity), Infinity);
+  const first = Math.min(posts.reduce((m, p) => Math.min(m, Number(p.drafted) || Infinity), Infinity), ...lane.map((l) => l.ts));
   if (!set && first === Infinity) return null;
   let start = set ? dayStart(set) : dayStart(first);
-  if (!set) { const out = postLog(paths).filter((l) => l.action === "approved").map((l) => Number(l.ts)).sort((a, b) => a - b)[0], to = out || now; while (addDays(start, 7) <= to) start = addDays(start, 7); }
+  if (!set) { const out = [...postLog(paths).filter((l) => l.action === "approved").map((l) => Number(l.ts)), ...lane.map((l) => l.ts)].sort((a, b) => a - b)[0], to = out || now; while (addDays(start, 7) <= to) start = addDays(start, 7); }
   return { start, weeks: Array.from({ length: TEST_WEEKS }, (_, i) => [addDays(start, 7 * i), addDays(start, 7 * (i + 1))]), posts };
 }
 // The npm packages your posts are about: the repos their git facts came from
@@ -584,12 +601,12 @@ function testPackages(posts, map = {}) {
   for (const r of repos) { if (!map[r]) continue; try { const j = JSON.parse(readFileSync(join(map[r], "package.json"), "utf8")); if (j.name && !j.private && !out.includes(j.name)) out.push(j.name); } catch {} }
   return out.slice(0, 3);
 }
-function testWeeks({ paths = PATHS, now = Date.now(), news = [], installs = null, map = {} } = {}) {
-  const plan = testPlan(paths, now); if (!plan) return null;
-  const log = postLog(paths);
+function testWeeks({ paths = PATHS, now = Date.now(), news = [], installs = null, map = {}, dir = MARKETING_DIR } = {}) {
+  const lane = laneOut(dir, now), plan = testPlan(paths, now, lane); if (!plan) return null;
+  const out = [...postLog(paths).filter((l) => l.action === "approved").map((l) => ({ ts: Number(l.ts), media: (l.media || []).length })), ...lane];
   const rows = plan.weeks.map(([from, to], i) => {
-    const inW = (t) => Number(t) >= from && Number(t) < to, pub = log.filter((l) => l.action === "approved" && inW(l.ts)), rep = news.filter((n) => n.social && inW(n.ts));
-    return { week: i + 1, from: ymd(from), to: ymd(addDays(to, -1)), started: now >= from, over: now >= to, published: pub.length, media: pub.filter((l) => (l.media || []).length).length,
+    const inW = (t) => Number(t) >= from && Number(t) < to, pub = out.filter((o) => inW(o.ts)), rep = news.filter((n) => isReply(n) && inW(n.ts));
+    return { week: i + 1, from: ymd(from), to: ymd(addDays(to, -1)), started: now >= from, over: now >= to, published: pub.length, media: pub.filter((o) => o.media).length,
       replies: rep.length, customers: rep.filter((n) => n.customer).length, pricing: rep.filter((n) => n.customer === "pricing").length, installs: installs && installs[i] != null ? installs[i] : null };
   });
   return { start: ymd(plan.start), end: ymd(addDays(plan.weeks[TEST_WEEKS - 1][1], -1)), rows, packages: testPackages(plan.posts, map), week: rows.filter((r) => r.started).length };
@@ -613,5 +630,5 @@ async function testInstalls(t, { now = Date.now(), get = null } = {}) {
 }
 function maybeCustomer(text) { const s = String(text || ""); const hit = CUSTOMER.find(([, re]) => re.test(s)); return hit ? hit[0] : ""; }
 
-export { TEST_WEEKS, testWeeks, testInstalls, testPackages, PATHS, PLATFORM, SHARE_URL, KINDS, KIND_LABEL, LINKEDIN_ACTIVITY, NO_AI, voiceOf, loadVoice, voiceFromLinkedIn, tagsIn, changelogIn, gatherFacts, factLine, numbersIn, namesIn, checkClaims, parseDrafts, vetDraft, draftPosts, loadPosts, postLog, postsState, editPost, skipPost, approvePost, handToMarketing, copyText, openUrl, maybeCustomer,
+export { TEST_WEEKS, testWeeks, testInstalls, testPackages, laneOut, PATHS, PLATFORM, SHARE_URL, KINDS, KIND_LABEL, LINKEDIN_ACTIVITY, NO_AI, voiceOf, loadVoice, voiceFromLinkedIn, tagsIn, changelogIn, gatherFacts, factLine, numbersIn, namesIn, checkClaims, parseDrafts, vetDraft, draftPosts, loadPosts, postLog, postsState, editPost, skipPost, approvePost, handToMarketing, copyText, openUrl, maybeCustomer,
   mediaType, mediaDir, mediaWords, addMedia, removeMedia, mediaFile, pictureOfPage, clipOfPage, concatList, toVideo, canClip, NO_FFMPEG, localApps, screenFor, picturesFor, listening };

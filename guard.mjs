@@ -31,6 +31,35 @@ function symbiotConfig(p, home) { const d = join(home, ".config", "symbiot"); re
 // runs through (SYMBIOT_OWNER, set by Symbiot, not by the agent).
 const SELF = resolve(fileURLToPath(new URL(".", import.meta.url)));
 const selfFile = (p) => !process.env.SYMBIOT_OWNER && under(p, SELF);
+// A shell command that names Symbiot's files changes them unless it only reads them, runs
+// Symbiot's own CLI (`node <its index.mjs> screens map …`, as TASKS.md tells agents to),
+// sets a variable to the path or prints it, and writes (>, >>, tee) nowhere inside them.
+// Anything else naming them (sed -i, cp, mv, rm, git, npm, cd into them…) is stopped. A
+// command that only named the path was stopped too, and ops couldn't use Screens (2026-10-09).
+const SELF_READ = /^(cat|less|more|head|tail|grep|egrep|fgrep|rg|ls|wc|file|stat|diff|cmp|sha\d*sum|md5sum|readlink|realpath|du|tree|jq|echo|printf|test|\[)$/;
+const SELF_WRAP = /^(timeout|nice|nohup|env|time|command|exec|xargs)$/;
+const unquote = (x) => String(x).replace(/^['"]|['"]$/g, "");
+function changesSelf(part, { home, cwd }) {
+  const mentions = (x) => { const v = unquote(x); return v.includes(SELF) && (v === SELF || v.includes(SELF + "/") || under(expand(v.replace(/^[A-Za-z_][A-Za-z0-9_]*=/, ""), home, cwd), SELF)); };
+  for (const seg of part.split(/\|(?!\|)/)) {
+    const t = seg.trim(); if (!t || !t.includes(SELF)) continue;
+    // where it writes: a redirect's file, or tee's
+    for (const m of t.matchAll(/\d*>>?\s*(?!&)(\S+)/g)) if (mentions(m[1])) return true;
+    let w = t.split(/\s+/), i = 0;
+    while (i < w.length && /^[A-Za-z_][A-Za-z0-9_]*=/.test(w[i])) i++; // VAR=… on its own sets a variable, nothing more
+    if (i < w.length && w[i] === "export") { i++; while (i < w.length && /^[A-Za-z_][A-Za-z0-9_]*=/.test(w[i])) i++; }
+    while (i < w.length && SELF_WRAP.test(w[i])) { i++; while (i < w.length && (w[i].startsWith("-") || /^\d+[smhd]?$/.test(w[i]))) i++; }
+    if (i >= w.length) continue;
+    const cmd = w[i].split("/").pop(), args = w.slice(i + 1);
+    if (cmd === "tee" && args.some((x) => !x.startsWith("-") && mentions(x))) return true;
+    if (SELF_READ.test(cmd)) continue;
+    if (cmd === "find" && !args.some((x) => /^-(delete|exec|execdir|ok|okdir|fprint\w*|fls)$/.test(x))) continue;
+    // node running a script of Symbiot's (not code given inline, which could write anything)
+    if (/^(node|nodejs)$/.test(cmd) && !args.some((x) => /^(-e|--eval|-p|--print)$/.test(x) || /^--(eval|print)=/.test(x))) { const script = args.find((x) => !x.startsWith("-")); if (script && mentions(script) && /\.(m?js|cjs)['"]?$/.test(script)) continue; }
+    return true;
+  }
+  return false;
+}
 
 // the branch a bare `git push` pushes: the one checked out in cwd
 function currentBranch(cwd) { try { return execFileSync("git", ["-C", cwd, "rev-parse", "--abbrev-ref", "HEAD"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim(); } catch { return ""; } }
@@ -42,7 +71,7 @@ function judgeBash(cmd, { cwd, home, branch }) {
     const s = part.trim(); if (!s) continue;
     const w = s.split(/\s+/);
     if (/^(sudo|su|doas)$/.test(w[0])) return { why: "sudo: only you run things as root" };
-    if (!process.env.SYMBIOT_OWNER && (s.includes(SELF + "/") || s.includes(SELF + " ") || s.endsWith(SELF))) return { why: "Symbiot doesn't edit its own code" };
+    if (!process.env.SYMBIOT_OWNER && s.includes(SELF) && changesSelf(s, { home, cwd })) return { why: "Symbiot doesn't edit its own code" };
     if (/^(shutdown|reboot|poweroff|halt)$/.test(w[0])) return { why: "shutting the computer down is yours to do" };
     if (/^(mkfs(\.\w+)?|fdisk|parted|wipefs)$/.test(w[0]) || (/^dd$/.test(w[0]) && /\bof=\/dev\//.test(s))) return { why: "that writes a disk directly" };
     if (/^git$/.test(w[0]) || /^git\s/.test(s)) {

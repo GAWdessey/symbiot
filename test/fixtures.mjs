@@ -1430,7 +1430,7 @@ try {
   ok("symbiot watch draft: needs an id, refuses what isn't an email (exit 1)", dro.cliNoId && dro.cliNoId.code === 1 && /watch new lists them/.test((dro.cliNoId.j || {}).error || "") && dro.cliGh && dro.cliGh.code === 1 && /new email/.test((dro.cliGh.j || {}).error || ""), [dro.cliNoId, dro.cliGh]);
   ok("symbiot watch draft <id>: hands the email to your agent, like the button, and says where its log is", dro.cliDraft && dro.cliDraft.code === 0 && (dro.cliDraft.j || {}).ok && /drafts[/\\]n1$/.test(dro.cliDraft.j.dir || "") && /agent\.log/.test(dro.cliDraft.j.next || ""), dro.cliDraft);
 
-  console.log("WATCH ON YOUR PHONE — pair with a code, then the phone asks what's new (phone.mjs)");
+  console.log("YOUR PHONE — pair with a code, then the phone asks what's new (phone.mjs; the sealed link, the copy and the queue: test/phone.mjs)");
   const lan = lanAddresses({ lo: [{ family: "IPv4", address: "127.0.0.1", internal: true }], docker0: [{ family: "IPv4", address: "172.17.0.1", internal: false }], tailscale0: [{ family: "IPv4", address: "100.64.0.2", internal: false }], wlp2s0: [{ family: "IPv4", address: "192.168.8.50", internal: false }, { family: "IPv6", address: "fe80::1", internal: false }] });
   ok("lanAddresses: your Wi-Fi address first, not Docker's or loopback", lan.join() === "192.168.8.50,100.64.0.2", lan);
   ok("computerUrl: an address as typed, with the port Symbiot uses unless one's given", computerUrl("192.168.8.50") === "http://192.168.8.50:7392" && computerUrl(" 192.168.8.50:8000/ ") === "http://192.168.8.50:8000" && computerUrl("") === "", [computerUrl("192.168.8.50"), computerUrl(" 192.168.8.50:8000/ ")]);
@@ -1451,7 +1451,7 @@ try {
     out.wrong = await p.pairComputer("127.0.0.1:" + port, "000000" === out.on.code ? "111111" : "000000");
     out.bad = await p.pairComputer("", "123456");
     out.paired = await p.pairComputer("127.0.0.1:" + port, out.on.code, { name: "Pixel" });
-    out.reuse = await (await fetch("http://127.0.0.1:" + port + "/phone/pair", { method: "POST", body: JSON.stringify({ code: out.on.code }) })).json();
+    out.reuse = await p.pairComputer("127.0.0.1:" + port, out.on.code, { name: "Pixel" });
     const since = JSON.parse(readFileSync(join(dir, "config.json"), "utf8")).computer.since;
     put([{ id: "a", watch: "w1", name: "Inbox", ts: since + 10, text: "Sam, Contract signed" }, { id: "b", watch: "w1", name: "Inbox", ts: since + 10, text: "Ann, Lunch?" }, { id: "c", watch: "w2", name: "GitHub notifications", ts: since + 5, text: "pat/app · CI failed" }, { id: "o", watch: "w1", name: "Inbox", ts: 1, text: "Old mail" }],
       [{ id: "x", watch: "w1", name: "Inbox", ts: since + 10, count: 2, text: "Needs you: Sam's contract." }]);
@@ -1460,12 +1460,12 @@ try {
     out.stranger = (await fetch("http://127.0.0.1:" + port + "/phone/news?since=0", { headers: { "x-symbiot-phone": "nope" } })).status;
     out.other = (await fetch("http://127.0.0.1:" + port + "/api/tasks")).status;
     out.state = p.linkState();
-    p.newCode(); for (let i = 0; i < 5; i++) await fetch("http://127.0.0.1:" + port + "/phone/pair", { method: "POST", body: JSON.stringify({ code: "abc" }) });
+    p.newCode(); for (let i = 0; i < 5; i++) await p.pairComputer("127.0.0.1:" + port, "999999" === p.linkState().code ? "888888" : "999999");
     out.burnt = p.linkState().code || "";
     p.unpairPhone(out.state.phones[0].id); out.unpaired = await p.pollComputer({ notify: () => {} });
     out.offAgain = await p.setPhoneLink(false);
     out.forgot = p.forgetComputer();
-    console.log(JSON.stringify(out)); process.exit(0);`], { encoding: "utf8", timeout: 60000, env: { ...process.env, HOME: phome, USERPROFILE: phome } });
+    console.log(JSON.stringify(out)); process.exit(0);`], { encoding: "utf8", timeout: 60000, env: { ...process.env, HOME: phome, USERPROFILE: phome, SYMBIOT_NO_RELAY: "1", SYMBIOT_NO_MDNS: "1" } });
   let po = {}; try { po = JSON.parse(px.stdout.trim().split("\n").pop()); } catch {}
   ok("off until you switch it on: nothing listens", po.off && po.off.on === false && po.off.listening === false, po.off || px.stderr.slice(-600));
   ok("switched on: it listens, and shows a 6-digit code at once", po.on && po.on.listening && /^\d{6}$/.test(po.on.code || "") && po.on.until > 0, po.on);
@@ -1476,7 +1476,7 @@ try {
   ok("only a paired phone gets what's new, and nothing else is served there", po.stranger === 403 && po.other === 404, [po.stranger, po.other]);
   ok("the computer lists the phone by name, and when it last asked", po.state && po.state.phones.length === 1 && po.state.phones[0].name === "Pixel" && po.state.phones[0].seen > 0 && !("token" in po.state.phones[0]), po.state && po.state.phones);
   ok("five wrong codes and the code is gone", po.burnt === "", po.burnt);
-  ok("unpaired: the phone is told to pair again", po.unpaired && /isn't paired any more/.test(po.unpaired.error || ""), po.unpaired);
+  ok("unpaired: the phone is told to pair again", po.unpaired && /was unpaired on your computer\. Pair it again/.test(po.unpaired.error || ""), po.unpaired);
   ok("switched off: it stops listening; the phone can forget the computer", po.offAgain && po.offAgain.on === false && po.offAgain.listening === false && po.forgot && po.forgot.paired === false, [po.offAgain, po.forgot]);
   // `symbiot phone` in Termux: the CLI runs as Android (process.platform), its own
   // home, against a computer listening in this script
@@ -1503,7 +1503,7 @@ try {
     out.code = await ph("code");
     out.onPc = await cli(${JSON.stringify(pchome)}, false, "pair", "127.0.0.1:" + port, "123456");
     out.forget = await ph("forget"); out.after = await ph();
-    console.log(JSON.stringify(out)); process.exit(0);`], { encoding: "utf8", timeout: 90000, env: { ...process.env, HOME: pchome, USERPROFILE: pchome } });
+    console.log(JSON.stringify(out)); process.exit(0);`], { encoding: "utf8", timeout: 90000, env: { ...process.env, HOME: pchome, USERPROFILE: pchome, SYMBIOT_NO_RELAY: "1", SYMBIOT_NO_MDNS: "1" } });
   let pco = {}; try { pco = JSON.parse(pc.stdout.trim().split("\n").pop()); } catch {}
   const said = (k) => (pco[k] || {}).out || "";
   ok("symbiot phone (Termux): not paired yet says how to pair", pco.before && pco.before.code === 0 && /Not paired with a computer.*symbiot phone pair <address> <code>/s.test(said("before")), pco.before || pc.stderr.slice(-600));

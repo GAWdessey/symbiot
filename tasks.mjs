@@ -50,7 +50,17 @@ function addTask(text, repo, { after = "" } = {}) {
   const item = { id, text: line, ...(long ? { full } : {}), repo: repo || "", done: false, ts: Date.now() };
   t.unshift(item); saveTasks(t); return item;
 }
-function toggleTask(id) { const t = loadTasks(); const it = t.find((x) => x.id === id); if (it) { it.done = !it.done; saveTasks(t); } return it || { error: "not found" }; }
+function toggleTask(id) { const t = loadTasks(); const it = t.find((x) => x.id === id); if (it) { it.done = !it.done; it.changed = Date.now(); saveTasks(t); } return it || { error: "not found" }; }
+// Done or not, as said (not flipped), for a change that can arrive late or twice
+// (your phone's, phone.mjs): at is when it was made, and a tick here since wins.
+function setTaskDone(id, done, { at = Date.now() } = {}) {
+  const t = loadTasks(), it = t.find((x) => x.id === id);
+  if (!it || it.archived) return { error: "not found" };
+  if (it.done === !!done) return it;
+  if ((Number(it.changed) || 0) > at) return { conflict: true, ...it };
+  it.done = !!done; it.changed = at; saveTasks(t);
+  return it;
+}
 function removeTask(id) { saveTasks(loadTasks().filter((x) => x.id !== id)); return { ok: true }; }
 function restoreTask(id) { const t = loadTasks(); const it = t.find((x) => x.id === id); if (it) { it.archived = false; it.done = false; delete it.archivedAt; if (it.removedBy || it.dropped) { it.kept = true; delete it.removedBy; delete it.merged; delete it.dropped; } saveTasks(t); } return it || { error: "not found" }; }
 // Which task texts the agent checked off in a repo's .symbiot/TASKS.md
@@ -700,4 +710,4 @@ function pushTasks(filter) {
   return { empty: false, written, unresolved, handoff: handoffCmd() };
 }
 
-export { gitFailed, taskPaths, addTask, toggleTask, removeTask, restoreTask, completedInRepo, removalOf, applyRemovals, applyDrops, syncTasks, workingChanges, workingDiff, publishesOnMerge, unreleased, bumpOffer, learnNpm, releaseNeeded, withReleases, setVersion, changelogEntry, changelogSection, noteChangelog, releaseInput, shipWithBump, runSummary, saidFinished, pendingReview, commitSubject, shipChanges, autoMergeRepos, setAutoMerge, approveRepo, approveChanges, sendBack, TASK_ORDER, taskType, buildTasksMd, pushTasks };
+export { gitFailed, taskPaths, addTask, toggleTask, setTaskDone, removeTask, restoreTask, completedInRepo, removalOf, applyRemovals, applyDrops, syncTasks, workingChanges, workingDiff, publishesOnMerge, unreleased, bumpOffer, learnNpm, releaseNeeded, withReleases, setVersion, changelogEntry, changelogSection, noteChangelog, releaseInput, shipWithBump, runSummary, saidFinished, pendingReview, commitSubject, shipChanges, autoMergeRepos, setAutoMerge, approveRepo, approveChanges, sendBack, TASK_ORDER, taskType, buildTasksMd, pushTasks };

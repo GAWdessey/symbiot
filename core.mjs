@@ -28,7 +28,9 @@ const CONFIG_PATH = join(CONFIG_DIR, "config.json");
 // SANDBOX_SECRETS) refuse secrets.json. loadConfig joins the two and saveConfig
 // splits them, so nothing else changes; a config.json from before still reads, and
 // its keys move out on the next save (the app saves once as it starts: moveSecrets).
-const SECRETS_PATH = join(CONFIG_DIR, "secrets.json"), SECRET_KEYS = ["apiKey", "appToken"];
+// The phone link's keys too (phone.mjs): this computer's private key, and on a phone
+// its token and the key it shares with the computer.
+const SECRETS_PATH = join(CONFIG_DIR, "secrets.json"), SECRET_KEYS = ["apiKey", "appToken", "phoneSecret", "computerSecret"];
 const isObj = (v) => !!v && typeof v === "object" && !Array.isArray(v);
 function splitSecrets(cfg) {
   const pub = { ...cfg }, sec = {};
