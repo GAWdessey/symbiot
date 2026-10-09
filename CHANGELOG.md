@@ -2,6 +2,10 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.58.2
+
+- **A voice that doesn't sound robotic, picked for you.** When Symbiot reads a reply out, it uses your computer's own voice only when that's a modern, natural one (Edge's Natural voices on Windows, Apple's Premium and Enhanced voices, a phone's own). Otherwise, as on Linux, where Chrome only has its older Google voices and espeak, Symbiot speaks with its own voice: Piper, a small open-source speech engine that runs on your computer. The accent follows where you are (British English for South Africa, the UK, Australia and the rest; American for the US and Canada), and both voices are public domain. Nothing to choose, no account, nothing leaves your computer. It downloads once (about 85 MB) the first time it's needed, while the system voice covers that first reply, and then answers sentence by sentence, the first in under a second.
+
 ## 0.58.1
 
 - **No more "couldn't reach the model" after an update.** An update restarted Symbiot in whatever folder had started it, and when that folder was later deleted, Claude Code refused to run there: Symbiot thought you'd signed out of Claude and fell back to an old API key that no longer worked. Symbiot now always runs, and asks Claude Code, from your home folder.

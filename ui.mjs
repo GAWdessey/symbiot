@@ -3026,7 +3026,7 @@ function voiceSay(t){LQ.talkMin=false;lqTalkMode(true);LQ.talk.push({me:false,te
 var VOICE_WHY={'not-allowed':'Symbiot couldn’t use your microphone. Allow it for this window (the icon at the top of the window, or your system’s privacy settings), then click the mic again.','service-not-allowed':'Symbiot couldn’t use your microphone. Allow it for this window, then click the mic again.','audio-capture':'No microphone was found. Plug one in, or check it’s switched on, then try again.','network':'Talking needs an internet connection: your browser turns speech into text online.'};
 function voiceToggle(){
 if(VOICE.on){try{VOICE.rec.stop();}catch(e){}return;}
-try{if(window.speechSynthesis)window.speechSynthesis.cancel();}catch(e){}
+voiceStop();
 var R=window.SpeechRecognition||window.webkitSpeechRecognition;if(!R)return;
 var r;try{r=new R();}catch(e){return;}
 var ask=$('lqask');VOICE.rec=r;VOICE.final='';VOICE.err='';VOICE.base=((ask&&ask.value)||'').trim();
@@ -3039,13 +3039,41 @@ r.onend=function(){VOICE.on=false;voiceMic(false);VOICE.rec=null;var said=((ask&
 if(why){voiceSay(why);return;}
 if(VOICE.final.trim()&&said){VOICE.spoke=true;lqSay();}};
 try{r.start();}catch(e){VOICE.on=false;voiceMic(false);}}
-// read out: plain words (no markdown marks), up to a few sentences; a voice in your language, a natural one if there is
-function voiceSpeak(t){if(!window.speechSynthesis||!t)return;
-var clean=String(t).replace(/[*_#>|]+/g,' ').replace(new RegExp(String.fromCharCode(96),'g'),'').replace(/https?:[^ ]+/g,'a link').replace(/ +/g,' ').trim();
+// Speaking, with no voice to choose: the system's own when it has a natural one
+// (Edge on Windows, Macs with Apple's better voices, phones), in your region's accent if it has that too;
+// otherwise Symbiot's own (voice.mjs: Piper on this computer), fetched once in the
+// background the first time, with the system's voice meanwhile. Plain words only.
+var SPEAK={audio:null,n:0,own:null,asked:false};
+function voiceLang(){return navigator.language||'en-US';}
+function voiceTag(v){return String((v&&v.lang)||'').toLowerCase().split('_').join('-');}
+function voiceNatural(){if(!window.speechSynthesis)return null;var tag=voiceLang().toLowerCase().split('_').join('-'),lang=tag.slice(0,2);
+var vs=window.speechSynthesis.getVoices().filter(function(v){return voiceTag(v).indexOf(lang)===0;});
+// modern voices only: Edge's Natural ones, Apple's Premium and Enhanced. Chrome's Google voices and espeak sound robotic.
+var good=vs.filter(function(v){return /natural|neural|enhanced|premium|siri/i.test(v.name||'')&&!/espeak|google/i.test(v.name||'');});
+if(!good.length&&/android|iphone|ipad/i.test(navigator.userAgent||''))good=vs; // a phone's own voices are good ones
+good.sort(function(a,b){return (voiceTag(b)===tag)-(voiceTag(a)===tag);});
+return {best:good[0]||null,any:good[0]||vs[0]||null};}
+function voiceStop(){SPEAK.n++;try{if(window.speechSynthesis)window.speechSynthesis.cancel();}catch(e){}if(SPEAK.audio){try{SPEAK.audio.pause();}catch(e){}SPEAK.audio=null;}}
+function voiceClean(t){var clean=String(t||'').replace(/[*_#>|]+/g,' ').replace(new RegExp(String.fromCharCode(96),'g'),'').replace(/https?:[^ ]+/g,'a link').replace(/ +/g,' ').trim();
 if(clean.length>700){var cut=clean.slice(0,700),at=Math.max(cut.lastIndexOf('. '),cut.lastIndexOf('? '),cut.lastIndexOf('! '));clean=(at>200?cut.slice(0,at+1):cut)+' The rest is on screen.';}
-try{var u=new SpeechSynthesisUtterance(clean),lang=(navigator.language||'en').slice(0,2).toLowerCase(),vs=window.speechSynthesis.getVoices().filter(function(v){return (v.lang||'').toLowerCase().indexOf(lang)===0;});
-var best=vs.filter(function(v){return /natural|neural|google|online/i.test(v.name);})[0]||vs[0];if(best)u.voice=best;u.lang=navigator.language||'en-US';u.rate=1.02;
-window.speechSynthesis.cancel();window.speechSynthesis.speak(u);}catch(e){}}
+return clean;}
+function voiceSystem(text,v){if(!window.speechSynthesis||!text)return;try{var u=new SpeechSynthesisUtterance(text);if(v)u.voice=v;u.lang=voiceLang();u.rate=1.02;window.speechSynthesis.cancel();window.speechSynthesis.speak(u);}catch(e){}}
+// a sentence at a time, so the first is heard while the next is made
+function voiceSentences(t){var out=[],cur='';t.split(' ').forEach(function(w){cur+=(cur?' ':'')+w;var e=w.charAt(w.length-1);if((e==='.'||e==='?'||e==='!')&&cur.length>24){out.push(cur);cur='';}});if(cur)out.push(cur);return out;}
+function voiceOwn(text,lang){var my=SPEAK.n,parts=voiceSentences(text),got=[];
+var make=function(i){if(i>=parts.length||got[i])return;got[i]=fetch('/api/voice/say',{method:'POST',headers:{'x-symbiot-token':T,'content-type':'application/json'},body:JSON.stringify({text:parts[i],lang:lang})}).then(function(r){if((r.headers.get('content-type')||'').indexOf('audio')<0)throw new Error('no audio');return r.blob();});};
+var play=function(i){if(my!==SPEAK.n||i>=parts.length)return;make(i);make(i+1);
+got[i].then(function(b){if(my!==SPEAK.n)return;var a=new Audio(URL.createObjectURL(b));SPEAK.audio=a;a.onended=function(){try{URL.revokeObjectURL(a.src);}catch(e){}play(i+1);};var pl=a.play();if(pl&&pl.catch)pl.catch(function(){});})
+.catch(function(){if(my!==SPEAK.n)return;SPEAK.own=null;var nat=voiceNatural();voiceSystem(parts.slice(i).join(' '),nat&&nat.any);});};
+play(0);}
+function voiceSpeak(t){if(!t)return;voiceStop();var clean=voiceClean(t);if(!clean)return;var nat=voiceNatural();
+if(nat&&nat.best){voiceSystem(clean,nat.best);return;}
+var lang=voiceLang(),go=function(st){if(st&&st.state==='ready'){voiceOwn(clean,lang);return;}
+if(st&&(st.state==='missing'||st.state==='failed')&&!SPEAK.asked){SPEAK.asked=true;api('/api/voice/prepare',{lang:lang}).catch(function(){});}
+voiceSystem(clean,nat&&nat.any);};
+if(SPEAK.own&&SPEAK.own.state==='ready')go(SPEAK.own);else api('/api/voice?lang='+encodeURIComponent(lang)).then(function(st){SPEAK.own=st;go(st);}).catch(function(){go(null);});}
+// Chrome lists its voices only after a first ask
+try{if(window.speechSynthesis)window.speechSynthesis.getVoices();}catch(e){}
 function lqSay(){var spoke=VOICE.spoke;VOICE.spoke=false;var i=$('lqask');var q=((i&&i.value)||'').trim(),shots=LQ.atts.slice();if(!q&&!shots.length)return;if(!q)q='Take a look at this screenshot.';i.value='';lqGrowAsk();LQ.atts=[];lqAttsShow();lqAct();
 var low=q.toLowerCase().replace(/^(please |can you |could you )/,''),hit='';
 Object.keys(LQNAMES).forEach(function(k){var nm=LQNAMES[k].toLowerCase();if(hit)return;['open ','show ','go to ','take me to '].forEach(function(v){if(low.indexOf(v+nm)===0||low.indexOf(v+'my '+nm)===0)hit=k;});if(low===nm)hit=k;});

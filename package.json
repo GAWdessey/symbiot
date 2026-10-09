@@ -1,6 +1,6 @@
 {
   "name": "symbiot",
-  "version": "0.58.1",
+  "version": "0.58.2",
   "description": "Your week, written from your real work. Reads your local git and writes it up with the AI of your choice \u2014 Claude, OpenAI, Gemini, or a local model.",
   "type": "module",
   "bin": {
@@ -50,7 +50,8 @@
     "scanworker.mjs",
     "estimate.mjs",
     "icon.ico",
-    "claudesetup.mjs"
+    "claudesetup.mjs",
+    "voice.mjs"
   ],
   "engines": {
     "node": ">=18"
@@ -83,7 +84,7 @@
     "@anthropic-ai/sdk": "^0.128.0"
   },
   "scripts": {
-    "test": "node test/load.mjs && node test/fixtures.mjs && node test/links.mjs && node test/post.mjs && node test/peek.mjs && node test/mind.mjs && node test/knowledge.mjs && node test/checks.mjs &&node test/lanes.mjs && node test/handback.mjs && node test/autoallow.mjs && node test/guard.mjs && node test/reports.mjs && node test/sandbox.mjs && node test/adapt.mjs && node test/urgent.mjs && node test/work.mjs && node test/mapknn.mjs && node test/away.mjs && node test/subscription.mjs && node test/claudesetup.mjs && node test/launcher.mjs && node test/onboarding.mjs && node test/windows.mjs && node test/marketing.mjs && node test/paths.mjs && node test/smoke.mjs && node test/app.mjs && node test/install.mjs",
+    "test": "node test/load.mjs && node test/fixtures.mjs && node test/links.mjs && node test/post.mjs && node test/peek.mjs && node test/mind.mjs && node test/knowledge.mjs && node test/checks.mjs &&node test/lanes.mjs && node test/handback.mjs && node test/autoallow.mjs && node test/guard.mjs && node test/reports.mjs && node test/sandbox.mjs && node test/adapt.mjs && node test/urgent.mjs && node test/work.mjs && node test/mapknn.mjs && node test/away.mjs && node test/voice.mjs && node test/subscription.mjs && node test/claudesetup.mjs && node test/launcher.mjs && node test/onboarding.mjs && node test/windows.mjs && node test/marketing.mjs && node test/paths.mjs && node test/smoke.mjs && node test/app.mjs && node test/install.mjs",
     "lint": "eslint .",
     "postinstall": "node postinstall.mjs"
   },
