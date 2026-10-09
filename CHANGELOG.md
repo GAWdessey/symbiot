@@ -2,6 +2,10 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.61.1
+
+- **The Symbiot Browser opens on its page, not blank.** 0.61.0 only knew the page's address in the copy of Symbiot that hands over to one already running, so in the running app "Open the Symbiot Browser" opened an empty window. It's set where the app starts serving now, and a test checks it.
+
 ## 0.61.0
 
 - **The Symbiot Browser.** Where you sign in to your sites for Symbiot, now a window of its own, named and marked as Symbiot's, instead of a plain Chrome window that looked like any other. It opens on a page of your sites (Gmail, Outlook, calendars, GitHub, Slack, WhatsApp, Jira, LinkedIn…), each saying whether you're signed in, with a **Sign in** (or **Connect**) button, an address bar for any other site, and **Done**, which closes it and has Symbiot check each site. Open it from **Settings → Links → Open the Symbiot Browser**, or `symbiot browser [site]`; connecting a site anywhere in Symbiot opens it too.

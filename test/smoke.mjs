@@ -402,6 +402,12 @@ try {
   ok("false while the weekly write-up is off, true once it's on", wkOff === "false" && wkOn === "true", [wkOff, wkOn]);
   ok("false when no app answers", wkNoApp === "false", wkNoApp);
 
+  console.log("THE SYMBIOT BROWSER — it opens on its own page, served by this app");
+  const sb = await fetch(base + "/api/browser/open", { method: "POST", headers: H, body: "{}" }).then((r) => r.json(), () => ({}));
+  ok("the app knows the Symbiot Browser's page (/browser on its own port), so it never opens blank", String(sb.page || "").startsWith(base + "/browser?t="), sb);
+  const sbPage = await fetch(base + "/browser").then((r) => r.text(), () => "");
+  ok("…and serves it", /<title>Symbiot Browser<\/title>/.test(sbPage));
+
   console.log("MAIL — a website typed into the mail box points to Trusted sites, and trusts nothing by itself");
   const mailAdd = (add) => fetch(base + "/api/mail/set", { method: "POST", headers: H, body: JSON.stringify({ add }) }).then((r) => r.json(), () => ({}));
   const [mDomain, mUrl, mFile] = [await mailAdd("google.com"), await mailAdd("https://mail.google.com/mail/u/0/"), await mailAdd(join(HOME, "nope", "Sent.mbox"))];
