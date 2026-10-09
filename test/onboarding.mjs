@@ -78,6 +78,21 @@ try {
   const droid = execSync(`${JSON.stringify(process.execPath)} --input-type=module -e 'const h = await import(${JSON.stringify(join(dirname(fileURLToPath(import.meta.url)), "..", "home.mjs"))}); const c = await import(${JSON.stringify(join(dirname(fileURLToPath(import.meta.url)), "..", "core.mjs"))}); const cf = c.loadConfig(); delete cf.onboarding; c.saveConfig(cf); const first = h.startOnboarding().step; const a = h.setOnboarding({ restart: true }); const b = h.setOnboarding({ step: "phone" }); console.log(JSON.stringify({ first, steps: a.steps, step: a.step, phone: a.phone, after: b.step }));'`, { env: { ...process.env, HOME, USERPROFILE: HOME, SYMBIOT_ANDROID_APP: "1" }, encoding: "utf8" });
   const dj = JSON.parse(droid.trim().split("\n").pop());
   ok("in the phone's app, Setup starts at Your computer, a new install's too (and has no Your phone step)", dj.steps.join() === "computer,welcome,ai,work,agent,apps,docs,done" && dj.step === "computer" && dj.first === "computer" && dj.phone.role === "phone" && dj.phone.paired === false && dj.after === "computer", dj);
+  // the phone app installed over an older one: its setup had started at "Meet Symbiot"
+  const { phoneSetupFirst } = await import("../home.mjs");
+  const { loadConfig: lc, saveConfig: sc } = await import("../core.mjs");
+  const setOnb = (x) => { const c = lc(); c.onboarding = x; sc(c); };
+  setOnb({ pending: true, step: "welcome", skipped: [] });
+  let pf = phoneSetupFirst({ app: true, paired: () => false });
+  ok("the phone app over an older one: its unfinished setup goes to Your computer, not on to Claude Code", pf.step === "computer" && pf.computer === true, pf);
+  setOnb({ ...lc().onboarding, step: "welcome" });
+  ok("…once: chose No computer, it stays on Meet Symbiot", phoneSetupFirst({ app: true, paired: () => false }).step === "welcome");
+  setOnb({ pending: true, step: "ai", skipped: [] });
+  ok("a phone already paired keeps its step", phoneSetupFirst({ app: true, paired: () => true }).step === "ai");
+  setOnb({ pending: false, step: "done", skipped: [] });
+  ok("a finished setup isn't reopened", phoneSetupFirst({ app: true, paired: () => false }).pending === false);
+  setOnb({ pending: true, step: "welcome", skipped: [] });
+  ok("on a computer: nothing changes", phoneSetupFirst({ app: false }) === null && lc().onboarding.step === "welcome");
   setOnboarding({ restart: true });
   o = setOnboarding({ done: true });
   ok("done: Home is yours", o.pending === false && JSON.parse(readFileSync(join(CFG, "config.json"), "utf8")).onboarding.done > 0, o.pending);

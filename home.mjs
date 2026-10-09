@@ -758,7 +758,19 @@ const ONB_STEPS_PHONE = ["computer", "welcome", "ai", "work", "agent", "apps", "
 const onbSteps = (app = ANDROID_APP, phone = PHONE) => (app ? ONB_STEPS_PHONE : phone ? ONB_STEPS.filter((s) => s !== "phone") : ONB_STEPS); // (Symbiot in Termux is on the phone already)
 // A new install (`symbiot app` the first time): setup, from its first step, "Your computer"
 // in the Android app (it started at "welcome" there, so a phone paired by its QR showed nothing).
-function startOnboarding() { const cf = loadConfig(); if (!cf.onboarding) { cf.onboarding = { pending: true, step: onbSteps()[0], skipped: [] }; saveConfig(cf); } return cf.onboarding; }
+function startOnboarding() { const cf = loadConfig(); if (!cf.onboarding) { cf.onboarding = { pending: true, step: onbSteps()[0], skipped: [], ...(onbSteps()[0] === "computer" ? { computer: true } : {}) }; saveConfig(cf); } return cf.onboarding; }
+// The phone app over an older one (a phone that had Symbiot before "Your computer"
+// existed): its unfinished setup carried on at "Meet Symbiot", then "Your AI" asked to
+// install Claude Code on the phone. An unfinished setup on a phone that isn't paired
+// goes to "Your computer" first, once (computer: true): "No computer" carries on as before.
+function phoneSetupFirst({ app = ANDROID_APP, paired = () => !!computerView().paired } = {}) {
+  if (!app) return null;
+  const cf = loadConfig(), o = cf.onboarding;
+  if (!o || !o.pending || o.computer) return o || null;
+  let isPaired = false; try { isPaired = paired(); } catch {}
+  if (!isPaired) o.step = "computer";
+  o.computer = true; saveConfig(cf); return o;
+}
 function onboarding({ fresh = false } = {}) {
   const cfg = loadConfig(), o = cfg.onboarding || {}, steps = onbSteps();
   const tryOr = (f, d) => { try { return f(); } catch { return d; } };
@@ -793,4 +805,4 @@ function setOnboarding({ step, skip, unskip, skipRest, done, restart } = {}) {
   return onboarding();
 }
 
-export { reportIdeasAdd, reportAsk, reportDraftAnswer, workTick, waitWhy, AUTO_GRACE, STUCK_AFTER, marketingState, marketingGo, marketingDraftAnswer, marketingTask, moveToMarketing, goLane, homeState, homeContext, homeAsk, homeAnswer, homeNext, nextUp, laneNamed, NEXT_FILE, workScene, workGo, displayName, firstSteps, onboarding, setOnboarding, startOnboarding, ONB_STEPS, ONB_STEPS_PHONE, onbSteps, phoneBits };
+export { reportIdeasAdd, reportAsk, reportDraftAnswer, workTick, waitWhy, AUTO_GRACE, STUCK_AFTER, marketingState, marketingGo, marketingDraftAnswer, marketingTask, moveToMarketing, goLane, homeState, homeContext, homeAsk, homeAnswer, homeNext, nextUp, laneNamed, NEXT_FILE, workScene, workGo, displayName, firstSteps, onboarding, setOnboarding, startOnboarding, ONB_STEPS, ONB_STEPS_PHONE, onbSteps, phoneBits , phoneSetupFirst };

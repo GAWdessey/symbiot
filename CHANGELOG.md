@@ -2,10 +2,15 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
-## 0.62.1 — 2026-10-09
+## 0.62.2 — 2026-10-09
 
-- Changed the app's listed author contact email to the new Symbiot address.
-- Added `symbiot screens choose` to pick an option from a website's dropdown menu, so fields that depend on it update too.
+- **Your phone finds your computer on your Wi-Fi, even with a VPN on.** With Tailscale (or another VPN) running, your computer told the phone on your network it was at the VPN's address, which the phone can't reach, so it couldn't find the computer again after the router handed out new addresses. It now answers each phone with the address on that phone's own network, and never gives out a VPN's.
+- **Agents can pick from a website's dropdown.** `symbiot screens choose <id> <menu> "<option>"` picks an option in a native `<select>` (a DNS record's type, say), and the fields that depend on it update, like the Priority box an MX record turns on.
+- The npm package and the installers now list garth@symbiot.co.za as the author.
+
+## 0.62.1
+
+- **A phone that had Symbiot before goes to "Your computer" first.** Installing the new app over an older one kept the old app's setup, already started at "Meet Symbiot", so the phone went on to "Your AI" and asked to install Claude Code, and never offered to pair with your computer. An unfinished setup on a phone that isn't paired now opens on **Your computer** (scan the QR your computer shows, or type its address and code), once; "No computer" carries on as before. Checked on the Android emulator: 0.59.0, then 0.62.0 over it (the problem), then this over that (fixed).
 
 ## 0.62.0 — 2026-10-09
 
