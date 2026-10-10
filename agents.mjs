@@ -179,6 +179,11 @@ function withTrust(tmpl, box = null) {
   if (!/--settings\b/.test(c)) c += ` --settings ${JSON.stringify(box ? box.file : guardSettings())}`;
   return c;
 }
+function withModel(tmpl, model) {
+  if (!isClaudeCmd(tmpl) || !model) return tmpl;
+  const c = String(tmpl).replace(/\s--model\s+\S+/g, "");
+  return `${c} --model ${model}`;
+}
 // ---- a repo run, sandboxed ----------------------------------------------------------
 // On top of the membrane, a repo run's commands run in Claude Code's own sandbox
 // (bubblewrap on Linux, Seatbelt on macOS): they write only in the repo, the folders
@@ -267,7 +272,7 @@ function noteSession(path, code, resumed) {
 // that could answer them, gets no run: { blocked, questions, note }
 // (blockedAgain). force starts one anyway (something changed elsewhere).
 // A folder with nothing to work from gets none either, forced or not (nothingToDo).
-function runHandoff(repoPath, { force = false, lost = false } = {}) {
+function runHandoff(repoPath, { force = false, lost = false, model = "" } = {}) {
   let tmpl = handoffCmd(); if (!tmpl || !repoPath) return null;
   if (isParked(repoPath)) return { blocked: true, parked: true, questions: 0, note: PARKED_NOTE }; // even forced: that's what parking is for
   const lic = licenceGate(repoPath); if (lic) return lic; // Free's limits, and never Symbiot's own code (licence.mjs); even forced
@@ -277,6 +282,7 @@ function runHandoff(repoPath, { force = false, lost = false } = {}) {
   const idle = !lost && nothingToDo(repoPath); if (idle) return { blocked: true, idle: true, questions: 0, note: idle };
   const scoped = withScope(withConnectors(tmpl, repoPath), repoPath), box = isClaudeCmd(scoped) && trustFull() ? sandboxFor(repoPath, scoped) : null; // a repo run's sandbox, on top of the membrane
   tmpl = withStream(withTrust(scoped, box));
+  if (model) tmpl = withModel(tmpl, model);
   const resume = isClaudeCmd(tmpl) ? resumeFor(repoPath) : null;
   const runCmd = resume ? tmpl + ` --resume ${resume.id}` : tmpl;
   if (!force) { const w = waitingFor(repoPath); if (w) { askedFor(repoPath); return { blocked: true, waiting: true, questions: 0, note: waitNote(w) }; } }
