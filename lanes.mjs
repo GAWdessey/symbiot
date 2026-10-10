@@ -53,7 +53,9 @@ function laneTarget(lane, map) {
 }
 // Where a handover to a repo stands once its agent was asked to start (runHandoff's
 // result): started; held behind a run that's really going there; or blocked, with why.
-const startedAs = (r) => r.id && !r.busy && !r.blocked ? { status: "started", job: r.id } : r.busy ? { status: "held", ...(r.id ? { job: r.id } : {}) } : { status: "blocked", note: String(r.note || "its agent didn't start").slice(0, 200) };
+// self: licenceGate's reason (Symbiot's own code) — unlike parked or a Pro limit, no
+// one will ever unblock it by waiting, so outcome() reports it back right away.
+const startedAs = (r) => r.id && !r.busy && !r.blocked ? { status: "started", job: r.id } : r.busy ? { status: "held", ...(r.id ? { job: r.id } : {}) } : { status: "blocked", note: String(r.note || "its agent didn't start").slice(0, 200), ...(r.self ? { self: true } : {}) };
 
 // A handover whose text changed while the run doing the earlier version is still
 // going (the LinkedIn auto-poster spec reached ops twice, on top of a run already
@@ -155,6 +157,10 @@ function aboutIt(words, text) {
 // user's answer to a question there isn't done: that's in the Agents tab.
 function outcome(e, { tasks = loadTasks(), running = runningHandoff } = {}) {
   if (e.status === "error") return { text: `Couldn't hand it over: ${e.error}` };
+  // Symbiot's own code: no agent will ever start there to clear this, so say so now
+  // rather than waiting forever (a parked lane or a Pro limit can still clear on its
+  // own, so only this, self-marked reason short-circuits the wait below).
+  if (e.status === "blocked" && e.self) return { text: `${e.note} It's on ${e.to.lane}'s own task list now, on the Workdesk for the user to pick up — no agent will start it, so don't hand this over again.` };
   const p = e.to.path; if (!p || running(p)) return null;
   if (lastRunStart(p) < e.at) return null; // its run hasn't started yet (held while that lane was busy)
   if (openQuestions(p) && !/^- \[x\]/im.test(readSym(p, "TASKS.md"))) return null; // waiting on the user, in that lane

@@ -123,6 +123,17 @@ try {
   ok("its run done and the task ticked: coral hears it's done and waits for review", t4.reported.length === 1 && /Done in GhostAIChat: the task is ticked/.test(read(coral, "ANSWERS.md")) && /app-debug\.apk/.test(read(coral, "ANSWERS.md")), read(coral, "ANSWERS.md").slice(-300));
   runResult = () => ({ id: "j" });
 
+  // Symbiot's own code (licence.mjs's self-work gate): unlike parked above, no one
+  // unblocks this by waiting, so it's reported back at once instead of sitting as a
+  // handover that never comes back (coral → symbiot, 2026-10-10: bounced silently)
+  map.symbiot = lane("symbiot");
+  put(coral, "HANDOFF.md", "### symbiot\nFix the thing in symbiot's own code.\n");
+  runResult = () => ({ blocked: true, self: true, note: "Symbiot doesn't work on its own code (Symbiot's repo, a copy of it, or its installed files)." });
+  const tself = lanesTick(deps());
+  const hs = loadLedger().handoffs.find((h) => /thing in symbiot's own code/.test(h.text));
+  ok("blocked on Symbiot's own code: reported back at once, not left waiting on a run that'll never start", tself.reported.length === 1 && hs.status === "done" && /Symbiot doesn't work on its own code/.test(read(coral, "ANSWERS.md")) && /on symbiot's own task list now, on the Workdesk/.test(read(coral, "ANSWERS.md")) && /don't hand this over again/.test(read(coral, "ANSWERS.md")), read(coral, "ANSWERS.md").slice(-400));
+  runResult = () => ({ id: "j" });
+
   console.log("LONG HANDOVERS — nothing cut: an email to draft arrives whole");
   const email = "Draft the email below to Jono, then stop.\n\n" + Array.from({ length: 60 }, (_, i) => `${i + 1}. A shared secret, line ${i + 1}: we'll both use it to sign and verify each request.`).join("\n") + "\n\nGarth";
   put(coral, "HANDOFF.md", "### ops\n" + email + "\n### GhostAIChat\n" + email + "\n");
