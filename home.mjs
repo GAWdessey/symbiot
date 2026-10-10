@@ -277,12 +277,20 @@ function moveToMarketing(id, product = "", { load = loadTasks, save = saveTasks,
 // Approve or Skip on a draft's preview: your only step in a post. Approved, its agent is
 // told in ANSWERS.md to post it (or schedule it for its date) through Symbiot's signed-in
 // browser with exactly the text you saw, and starts; skipped, it's told not to.
+// Change it: what you typed goes to its agent as a redraft of that same file; its card
+// leaves your list until the new version is there, and then asks for your approval again.
 function marketingDraftAnswer(rel, status, deps = {}) {
-  const dir = deps.dir || MARKETING_DIR, r = (deps.set || setDraftStatus)(String(rel || ""), status, { dir });
+  const dir = deps.dir || MARKETING_DIR, ask = String(deps.ask || "").trim(), r = (deps.set || setDraftStatus)(String(rel || ""), status, { dir, ask });
   if (r.error) return r;
   cached = null;
   const d = r.draft, when = d.when ? `, scheduled in ${d.platform}'s own scheduler for ${d.when}` : "";
   if (status === "skipped") { noteAnswer(dir, `Skipped: ${rel}`, "Don't post it. Leave the draft where it is."); return { ok: true, said: "Skipped. Its agent won't post it." }; }
+  if (status === "change") {
+    noteAnswer(dir, `Change: ${r.rel || rel}`, `${ask}\n\n(The user asked for this change on its card under Marketing: draft \`${r.rel || rel}\`, its entry in .symbiot/drafts.json. Redraft that same file, keeping its head lines and its \`## Post\` / \`## Notes\` layout, and redo its picture or video if the change needs it. Don't post it or make a new file: the new version goes back to the user for approval on its own, and say in its notes what you changed.)`);
+    if ((deps.running || runningHandoff)(dir)) return { ok: true, said: "Sent to its agent. It redrafts this once the run there now finishes, and the new version comes back here for your OK." };
+    const e = (deps.run || runHandoff)(dir, { force: true });
+    return e && e.id && !e.blocked ? { ok: true, said: "Sent to its agent, which is redrafting it now. The new version comes back here for your OK.", rerun: e.id } : { ok: true, said: `Sent to its agent. ${(e && e.note) || "Start its agent to redraft it."}` };
+  }
   noteAnswer(dir, `Approved: ${rel}`, `The user approved its preview. Post it on ${d.platform}${when}, through Symbiot's signed-in browser, with exactly the text under its post (${d.body.length} characters, unchanged)${d.media.length ? ` and ${d.media.join(", ")} attached` : ""}. Then check it's there, mark it posted (\`${postedCmd(rel)}\`), and say so in your last message.`);
   if ((deps.running || runningHandoff)(dir)) return { ok: true, said: "Approved. Its agent posts it once the run there now finishes." };
   const e = (deps.run || runHandoff)(dir, { force: true });

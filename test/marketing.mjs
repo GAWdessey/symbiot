@@ -147,6 +147,26 @@ console.log("MARKETING — a draft shown as the post it will be");
   ok("Skip: its agent is told not to post it, and nothing starts", sk.ok && /### Skipped: drafts\/steve\/week-03\.md\nDon't post it/.test(readFileSync(join(dir, ".symbiot", "ANSWERS.md"), "utf8")), sk);
   ok("one that isn't there: says so", !!marketingDraftAnswer("drafts/steve/gone.md", "approved", { dir }).error);
 
+  console.log("MARKETING — Change it, its own platform's preview, a redraft asks again (2026-10-10)");
+  writeFileSync(join(d, "reddit.md"), `# Symbiot on Reddit\n\nproduct: Symbiot\nplatform: reddit\nsubreddit: r/ClaudeAI\nwhen: 2026-10-15 15:00\nmedia: card.png\n\n## Post\nI built a desktop app that hands tasks to Claude Code\n\nThe body.\n\n## Notes\nnone\n`);
+  const rd = M.draftPreview("drafts/steve/reddit.md", { dir, cfg });
+  ok("a reddit draft carries its platform and subreddit, for a Reddit layout", rd.platform === "reddit" && rd.subreddit === "r/ClaudeAI", rd);
+  ok("…a subreddit named only in its notes is found too, written either way", M.parseDraft("# t\nplatform: reddit\n\n## Post\nx\n\n## Notes\nPost to /r/SideProject at 15:00").subreddit === "r/SideProject" && M.parseDraft("# t\nsubreddit: webdev\n\n## Post\nx").subreddit === "r/webdev");
+  ok("Change it with nothing said: refused", /Say what to change/.test(marketingDraftAnswer("drafts/steve/reddit.md", "change", { dir, ask: " " }).error || ""));
+  const ran2 = [];
+  const ch = marketingDraftAnswer("drafts/steve/reddit.md", "change", { dir, ask: "Make the title a question.", running: () => false, run: (p) => (ran2.push(p), { id: "k" }) });
+  const ans2 = readFileSync(join(dir, ".symbiot", "ANSWERS.md"), "utf8");
+  ok("Change it: what you typed goes to its agent for that exact draft, and it starts", ch.ok && ran2.join() === dir && /### Change: drafts\/steve\/reddit\.md\nMake the title a question\./.test(ans2) && /Redraft that same file/.test(ans2), [ch, ans2.slice(-500)]);
+  const rc = M.draftPreview("drafts/steve/reddit.md", { dir, cfg });
+  ok("…its card says a change is asked, with what you asked, and it leaves your list meanwhile", rc.status === "change" && rc.ask === "Make the title a question." && M.draftFiles(dir).find((f) => f.rel === "drafts/steve/reddit.md").status === "change", rc);
+  writeFileSync(join(d, "reddit.md"), readFileSync(join(d, "reddit.md"), "utf8").replace("I built a desktop app that hands tasks to Claude Code", "Would you let an app hand tasks to Claude Code?"));
+  ok("…its agent's new version comes back for your OK", M.draftPreview("drafts/steve/reddit.md", { dir, cfg }).status === "");
+  marketingDraftAnswer("drafts/steve/reddit.md", "approved", { dir, running: () => true });
+  ok("approved, then its picture redrawn: not approved any more", M.draftPreview("drafts/steve/reddit.md", { dir, cfg }).status === "approved" && (writeFileSync(join(d, "card.png"), "png, redrawn"), M.draftPreview("drafts/steve/reddit.md", { dir, cfg }).status === ""));
+  const sf0 = join(dir, ".symbiot", "drafts.json"), raw0 = JSON.parse(readFileSync(sf0, "utf8")); delete raw0["drafts/steve/reddit.md"].msig; writeFileSync(sf0, JSON.stringify(raw0));
+  ok("…an approval from before pictures were fingerprinted holds for its text", M.draftPreview("drafts/steve/reddit.md", { dir, cfg }).status === "approved");
+  writeFileSync(join(d, "card.png"), "png");
+
   console.log("MARKETING — posted and superseded: off the orb for good");
   const ap2 = marketingDraftAnswer("drafts/steve/week-02.md", "approved", { dir, running: () => true });
   ok("Approve tells its agent how to mark it posted once it's out", ap2.ok && /marketing posted "drafts\/steve\/week-02\.md" --url/.test(readFileSync(join(dir, ".symbiot", "ANSWERS.md"), "utf8")));

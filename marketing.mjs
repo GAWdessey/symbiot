@@ -108,7 +108,7 @@ function draftFiles(dir = MARKETING_DIR, names = [], { max = 30 } = {}) {
       const tagLine = (head.match(/^\s*product:\s*(.+)$/im) || [])[1], folder = relative(root, d).split("/")[0] || "";
       const product = (tagLine || "").trim() || names.find((n) => n.toLowerCase() === folder.toLowerCase()) || (folder ? folder.charAt(0).toUpperCase() + folder.slice(1) : "");
       const title = (head.match(/^#\s+(.+)$/m) || [])[1];
-      const rel = relative(dir, p); let st = null; try { st = statusOf(dir, rel, parseDraft(readFileSync(p, "utf8")).body); } catch {}
+      const rel = relative(dir, p); let st = null; try { const d = parseDraft(readFileSync(p, "utf8")); st = statusOf(dir, rel, d.body, mediaSigOf(dir, rel, d.media)); } catch {}
       out.push({ file: p, rel, name: (title || basename(e.name, ".md").replace(/[-_]+/g, " ")).trim().slice(0, 120), product, at, status: st ? st.status : "" });
     }
   };
@@ -126,9 +126,9 @@ function draftFiles(dir = MARKETING_DIR, names = [], { max = 30 } = {}) {
 // two `---` lines, and the rest is notes (with the picture and the date they name).
 const MEDIA_TYPES = { png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif", webp: "image/webp", mp4: "video/mp4", mov: "video/quicktime", webm: "video/webm" };
 const SEE_MORE = 210; // where LinkedIn's feed cuts a post off with "…see more"
-const HEAD_KEYS = { product: "product", platform: "platform", when: "when", schedule: "when", date: "when", media: "media", image: "media", video: "media", picture: "media" };
+const HEAD_KEYS = { product: "product", platform: "platform", when: "when", schedule: "when", date: "when", media: "media", image: "media", video: "media", picture: "media", subreddit: "subreddit", account: "account" };
 function parseDraft(text) {
-  const src = String(text || "").replace(/\r\n/g, "\n"), out = { title: "", product: "", platform: "", when: "", media: [], body: "", notes: "", format: "" };
+  const src = String(text || "").replace(/\r\n/g, "\n"), out = { title: "", product: "", platform: "", when: "", subreddit: "", account: "", media: [], body: "", notes: "", format: "" };
   const lines = src.split("\n"), head = [];
   let i = 0;
   for (; i < lines.length; i++) { const l = lines[i]; if (/^##\s/.test(l) || /^\s*-{3,}\s*$/.test(l)) break; head.push(l); }
@@ -157,6 +157,8 @@ function parseDraft(text) {
   if (!out.media.length) out.media = [...new Set((out.notes.match(/[\w./-]+\.(?:png|jpe?g|gif|webp|mp4|mov|webm)\b/gi) || []))];
   if (!out.when) { const w = out.notes.match(/(\d{4}-\d{2}-\d{2})(?:[ ,T]+(\d{1,2}:\d{2}))?/); if (w) out.when = w[2] ? `${w[1]} ${w[2]}` : w[1]; }
   out.platform = (out.platform || "linkedin").toLowerCase();
+  if (!out.subreddit) out.subreddit = (out.notes.match(/(?:^|[\s(])\/?(r\/[A-Za-z0-9_]{2,21})\b/) || [])[1] || "";
+  out.subreddit = out.subreddit.replace(/^\/?(?:r\/)?/, "r/").replace(/^r\/$/, "");
   return out;
 }
 // The post's text as the feed shows it before "…see more": cut at a word, at most SEE_MORE.
@@ -182,16 +184,38 @@ function inLane(dir, rel) {
 }
 // The text an approval is for: a draft's post changed after you approved it isn't approved.
 const sigOf = (body) => createHash("sha256").update(String(body || "")).digest("hex").slice(0, 16);
+// ...and the picture or video it goes out with: a card redrawn after you approved it isn't
+// approved either. Each file by its name and contents, in order ("missing" for one that isn't
+// there). An approval from before this ({ sig } only) holds for its text alone.
+// A file's hash is kept by path, size and modified time, so listing many drafts doesn't
+// read their pictures and videos again each time.
+const FILE_HASH = new Map();
+function fileHash(f) {
+  const st = statSync(f), key = `${f}:${st.size}:${st.mtimeMs}`;
+  let v = FILE_HASH.get(key);
+  if (!v) { if (FILE_HASH.size > 2000) FILE_HASH.clear(); v = createHash("sha256").update(readFileSync(f)).digest("hex"); FILE_HASH.set(key, v); }
+  return v;
+}
+function mediaSigOf(dir, rel, media) {
+  const h = createHash("sha256"), base = dirname(String(rel || ""));
+  for (const m of [].concat(media || [])) {
+    h.update(basename(m) + "\0");
+    const f = inLane(dir, join(base, m)); try { h.update(f ? fileHash(f) : "missing"); } catch { h.update("missing"); }
+    h.update("\0");
+  }
+  return h.digest("hex").slice(0, 16);
+}
 const STATUS = ".symbiot/drafts.json";
 function draftStatuses(dir = MARKETING_DIR) { try { const d = JSON.parse(readFileSync(join(dir, STATUS), "utf8")); return d && typeof d === "object" ? d : {}; } catch { return {}; } }
 // Posted and superseded are for good: an edit after either doesn't reopen it (approved and
-// skipped are of a text, so a changed post asks again). One its agent marked posted by
+// skipped are of a text, so a changed post asks again; so is "change", your ask for a
+// redraft, which its agent's new version answers). One its agent marked posted by
 // hand before there was a status for it ({ status: "approved", posted: <ms> }) is posted.
 const FINAL = ["posted", "superseded"];
 const stateOf = (s) => (!s ? "" : s.status === "posted" || s.posted ? "posted" : String(s.status || ""));
-function statusOf(dir, rel, body) {
+function statusOf(dir, rel, body, msig) {
   const s = draftStatuses(dir)[rel], st = stateOf(s);
-  return FINAL.includes(st) ? { ...s, status: st, edited: s.sig !== sigOf(body) } : s && s.sig === sigOf(body) ? s : null;
+  return FINAL.includes(st) ? { ...s, status: st, edited: s.sig !== sigOf(body) } : s && s.sig === sigOf(body) && (!s.msig || msig === undefined || s.msig === msig) ? s : null;
 }
 // a moment as people read it here: local YYYY-MM-DD HH:MM (what --at takes)
 const day = (ms) => { const d = new Date(ms), p = (n) => String(n).padStart(2, "0"); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`; };
@@ -206,13 +230,14 @@ function draftRel(p, dir = MARKETING_DIR) {
   p = String(p || "").trim(); if (!p.startsWith("/")) return p.replace(/^\.\//, "");
   try { const root = realpathSync(dir), r = relative(root, realpathSync(p)); return r && !r.startsWith("..") ? r : p; } catch { return p; }
 }
-// Approve or skip a draft, mark it posted ({ url, on, at }: its link, where, when; default
+// Approve or skip a draft, ask for a change to it ({ ask }: what to change), mark it posted ({ url, on, at }: its link, where, when; default
 // now on its platform) or superseded ({ by }: the draft or drafts that replace it). Posted
 // and superseded take it off the Marketing orb for good. { ok, status, draft } or { error }.
-function setDraftStatus(rel, status, { dir = MARKETING_DIR, now = Date.now(), url = "", on = "", at = "", by = [] } = {}) {
+function setDraftStatus(rel, status, { dir = MARKETING_DIR, now = Date.now(), url = "", on = "", at = "", by = [], ask = "" } = {}) {
   rel = draftRel(rel, dir);
   const f = inLane(dir, rel); if (!f || !/\.md$/i.test(f)) return { error: "That draft isn't there any more." };
-  if (!["approved", "skipped", ...FINAL].includes(status)) return { error: "Approve or skip it, or mark it posted or superseded." };
+  if (!["approved", "skipped", "change", ...FINAL].includes(status)) return { error: "Approve or skip it, ask for a change, or mark it posted or superseded." };
+  ask = String(ask || "").trim().slice(0, 4000); if (status === "change" && !ask) return { error: "Say what to change." };
   const d = parseDraft(readFileSync(f, "utf8"));
   if (!d.body && status !== "superseded") return { error: "That draft has no post in it yet." };
   const all = draftStatuses(dir), prev = all[rel], was = stateOf(prev);
@@ -222,7 +247,7 @@ function setDraftStatus(rel, status, { dir = MARKETING_DIR, now = Date.now(), ur
     return { ok: true, status, already: true, draft: d, rel, said: finalSay(prev) };
   }
   if (was === "posted" || (was === "superseded" && status !== "posted" && status !== "superseded")) return { error: finalSay(prev) };
-  let entry = { status, sig: sigOf(d.body), at: now };
+  let entry = { status, sig: sigOf(d.body), msig: mediaSigOf(dir, rel, d.media), at: now, ...(status === "change" ? { ask } : {}) };
   if (status === "posted") {
     url = String(url || "").trim(); if (url && !/^https?:\/\/\S+$/i.test(url)) return { error: "Its link is the post's web address (https://…)." };
     const when = at ? (typeof at === "number" ? at : Date.parse(String(at).replace(" ", "T"))) : now; if (!Number.isFinite(when)) return { error: `"${at}" isn't a date (YYYY-MM-DD HH:MM).` };
@@ -246,8 +271,8 @@ function draftPreview(rel, { dir = MARKETING_DIR, cfg } = {}) {
   const f = inLane(dir, rel); if (!f || !/\.md$/i.test(f)) return { error: "That draft isn't there any more." };
   const d = parseDraft(readFileSync(f, "utf8")), base = relative(realpathSync(dir), dirname(f));
   const media = d.media.map((m) => { const r = join(base, m), ext = m.split(".").pop().toLowerCase(); return inLane(dir, r) && MEDIA_TYPES[ext] ? { rel: r, name: basename(m), kind: MEDIA_TYPES[ext].startsWith("video") ? "video" : "image" } : null; }).filter(Boolean);
-  const st = statusOf(dir, rel, d.body);
-  return { rel, title: d.title, product: d.product, platform: d.platform, when: d.when, body: d.body, ...seeMore(d.body), hashtags: d.body.match(/#[\p{L}\p{N}_]+/gu) || [], chars: d.body.length,
+  const st = statusOf(dir, rel, d.body, mediaSigOf(dir, rel, d.media));
+  return { rel, title: d.title, product: d.product, platform: d.platform, when: d.when, subreddit: d.subreddit, account: d.account, ...(st && st.status === "change" ? { ask: st.ask || "" } : {}), body: d.body, ...seeMore(d.body), hashtags: d.body.match(/#[\p{L}\p{N}_]+/gu) || [], chars: d.body.length,
     media, missing: d.media.filter((m) => !media.some((x) => x.name === basename(m))), notes: d.notes, format: d.format, author: author({ cfg, dir }), status: st ? st.status : "", statusAt: st ? st.at : 0,
     ...(st && FINAL.includes(st.status) ? { final: finalSay(st), posted: st.posted || 0, postedOn: st.postedOn || "", url: st.url || "", by: [].concat(st.by || []), edited: !!st.edited } : {}) };
 }
@@ -305,4 +330,4 @@ function marketingBrief(list = [], { map = {}, names = productNames(map) } = {})
     `- Once a post is out (or in the platform's scheduler), mark it posted with its link: \`node "${CLI}" marketing posted <its file> --url <the post's link>\` (\`--at "YYYY-MM-DD HH:MM"\` for a scheduled one). A post you redo in a new file: mark the old one \`node "${CLI}" marketing superseded <old file> --by <new file>\`. Either takes it off the user's list for good, and Symbiot then refuses to approve or post it again: never edit \`.symbiot/drafts.json\` by hand.`];
 }
 
-export { MARKETING, MARKETING_DIR, displayName, productNames, ensureMarketing, productOf, untagged, tagged, MARKETING_WORDS, draftFiles, marketingBrief, parseDraft, seeMore, SEE_MORE, draftPreview, setDraftStatus, draftStatuses, laneMedia, draftRel, setDraftMedia, postedCmd, MEDIA_TYPES, inLane, day };
+export { sigOf, mediaSigOf, MARKETING, MARKETING_DIR, displayName, productNames, ensureMarketing, productOf, untagged, tagged, MARKETING_WORDS, draftFiles, marketingBrief, parseDraft, seeMore, SEE_MORE, draftPreview, setDraftStatus, draftStatuses, laneMedia, draftRel, setDraftMedia, postedCmd, MEDIA_TYPES, inLane, day };

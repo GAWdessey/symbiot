@@ -35,23 +35,22 @@ try {
   if (!chrome || process.platform === "win32") console.log("  (no Chrome here: the window checks need one)");
   else {
     const H = await import("../headless.mjs");
-    console.log("A WINDOW HAS THE PROFILE — background reads wait");
+    console.log("AN AGENT'S HIDDEN BROWSER HAS THE PROFILE — background reads wait for it");
     mkdirSync(PROFILE, { recursive: true });
-    // stands in for the Symbiot Browser: a Chrome on Symbiot's profile (hidden, so no window shows in tests)
+    // stands in for an agent's script on Symbiot's profile (the poster's hidden Chrome): not a
+    // window anyone can click Done in, so it's waited for, never passed on as "click Done"
     other = spawn(chrome, ["--headless=new", "--user-data-dir=" + PROFILE, "--no-first-run", "about:blank"], { stdio: "ignore" });
     for (let i = 0; i < 50 && !locked(); i++) await sleep(200);
     ok("Chrome holds the profile", locked());
     const before = chromes().length;
-    const r = await H.readPage("https://example.com");
-    ok("a background read says the Symbiot Browser is open, and waits", /Symbiot Browser is open/.test((r && r.error) || ""), r);
-    await sleep(500);
-    ok("…without starting a second Chrome", chromes().length === before, chromes().length - before);
+    const reading = H.readPage("https://example.com");
+    await sleep(2500);
+    ok("…a background read waits, without starting a second Chrome", chromes().length === before, chromes().length - before);
     const done = await H.closeSymbiotBrowser();
     ok("Done closes visible windows only: the hidden one is left alone", done.closed === 0 && other.exitCode === null, done);
     other.kill("SIGKILL"); await new Promise((r) => other.once("exit", r)); other = null;
-    await sleep(300);
-    const r2 = await H.readPage("about:blank");
-    ok("once it's closed, a background read runs again", !/Symbiot Browser is open/.test((r2 && r2.error) || ""), r2 && r2.error);
+    const r = await reading;
+    ok("once it lets go, the read goes ahead, and never says the Symbiot Browser is open", !(r && r.error), r && r.error);
     await H.closeBrowser();
   }
 } finally {

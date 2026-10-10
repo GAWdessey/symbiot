@@ -510,6 +510,12 @@ body.lq-liquid .mkcap{border-radius:18px;border-color:rgba(255,255,255,.08);back
 .limore{background:none;border:0;padding:0 0 0 2px;min-height:0;color:rgba(0,0,0,.6);font:inherit;cursor:pointer}.limore:hover{color:#0a66c2;text-decoration:underline}
 .limedia{display:block;width:calc(100% + 32px);margin:0 -16px 4px;max-height:560px;object-fit:contain;background:#f3f2ef}
 .libar{display:flex;justify-content:space-around;border-top:1px solid #e0dfdc;padding:6px 0;color:rgba(0,0,0,.6);font-weight:600;font-size:13px}
+/* the other platforms' posts, each as its own feed shows it (mkPreviewHtml) */
+.lipost.xpost{border-radius:16px;border-color:#cfd9de;color:#0f1419;padding:12px 16px 4px}.xpost .liav{flex-basis:40px;width:40px;height:40px;background:#0f1419;font-size:15px}.xpost .liwho{flex-direction:row;flex-wrap:wrap;gap:4px;align-items:baseline}.xpost .liwho b{font-weight:700;font-size:15px}.xpost .liwho small{font-size:15px;color:#536471}.xpost .lihash{color:#1d9bf0;font-weight:400}.xpost .limedia{width:100%;margin:0 0 8px;border-radius:16px;border:1px solid #cfd9de}.xpost .libar{border-top:0;justify-content:space-between;font-weight:400;color:#536471}
+.lipost.igpost{border-radius:8px;border-color:#dbdbdb;padding:0;color:#000}.igpost .liauth{padding:10px 12px;margin:0;align-items:center}.igpost .liav{flex-basis:32px;width:32px;height:32px;font-size:12px;background:linear-gradient(45deg,#f09433,#dc2743,#bc1888)}.igpost .limedia{width:100%;margin:0;aspect-ratio:4/5;object-fit:cover;background:#000}.igpost .libar{border-top:0;justify-content:flex-start;gap:16px;padding:8px 12px 4px;font-size:20px;color:#000}.igpost .litext{padding:0 12px 10px;margin:0}.igpost .lihash{color:#00376b;font-weight:400}.ignomedia{padding:60px 16px;text-align:center;background:#fafafa;color:#8e8e8e;font-size:13px}
+.lipost.fbpost{border-radius:8px;border-color:#dddfe2;color:#050505}.fbpost .liav{flex-basis:40px;width:40px;height:40px;background:#1877f2;font-size:15px}.fbpost .liwho small{color:#65676b}.fbpost .lihash{color:#216fdb;font-weight:400}.fbpost .libar{border-top:1px solid #ced0d4;color:#65676b}
+.lipost.rdpost{border-radius:16px;border-color:#edeff1;color:#1c1c1c;padding:12px 16px 4px}.rdpost .liwho{flex-direction:row;gap:6px;align-items:center;font-size:12px}.rdpost .liwho b{font-size:12px;font-weight:700}.rdpost .liwho small{font-size:12px;color:#576f76}.rdpost .rdav{width:24px;height:24px;border-radius:50%;background:#ff4500;color:#fff;display:inline-flex;align-items:center;justify-content:center;font-weight:700;font-size:12px}.rdtitle{font-size:18px;font-weight:600;line-height:1.3;margin:4px 0 8px}.rdpost .lihash{color:#0045ac;font-weight:400}.rdpost .libar{border-top:0;justify-content:flex-start;gap:10px;font-weight:600;font-size:12px;color:#576f76}.rdpost .libar span{background:#eaedef;border-radius:999px;padding:4px 10px}
+.mkchgf{margin-top:8px;flex-wrap:wrap}.mkchgf.hidden{display:none}.mkpv .pchars.err{color:var(--amber)}.mkchgf textarea{flex:1 1 100%;min-height:72px;font:13px/1.45 var(--sans)}.mkasked{margin-top:8px;font-size:12.5px}
 .linotes{margin-top:8px;font-size:12.5px;color:var(--text)}.linotes summary{cursor:pointer;color:var(--faint)}.linotest{white-space:pre-wrap;overflow-wrap:anywhere;margin:6px 0;color:var(--text)}
 .mkneeds{margin-bottom:14px;padding:4px 0 4px 12px;border-left:2px solid var(--amber)}
 .mkneeds.lit{border-radius:0 16px 16px 0}
@@ -2103,7 +2109,10 @@ if(d.error)h+="<div class='note err'>"+esc(d.error)+"</div>";
 h+="<div class='cxg'>"+d.groups.map(function(g){return "<div class='cxc'><div class='cxl'>"+esc(g)+"</div>"+d.items.filter(function(x){return x.group===g;}).map(function(it){var on=it.state!=='off';
 var rc=reachOf(d,it.id),rt=rc?(rc.ready?" Your agent's runs can use it too, through Claude's "+rc.connector.replace(/^claude\.ai\s+/i,'')+" connector.":" Your agent's runs can use it too once you connect "+rc.name+" in claude.ai → Settings → Connectors (only you can sign in there)."):'';
 return "<div class='lnk cx "+escQ(it.state)+"' data-id='"+escQ(it.id)+"'><button type='button' class='lbtn' title='"+escQ(String(it.note||(on?'open '+it.url+' to sign in again':'sign in at '+it.url+' and link it')).replace(/\.?\s*$/,rt?'.':'')+rt)+"'><span class='cxb' aria-hidden='true'></span><span class='cxn'>"+esc(it.name)+"</span>"+(rc?"<i class='ic-plug cxa"+(rc.ready?" ready":"")+"' role='img' aria-label='"+escQ(rc.ready?"agent runs can use it too":"agent runs can use it once connected in claude.ai")+"'></i>":"")+"<span class='cxs'>"+(on?esc(LINKWORD[it.state]||''):'Link')+"</span></button>"+
-(on?"<button type='button' class='lmore' title='check it now' aria-label='Check "+escQ(it.name)+" now'>&#8635;</button><button type='button' class='lrm' title='unlink: stop watching it and stop trusting it'>Unlink</button>":"")+"</div>";}).join('')+"</div>";}).join('')+"</div>";return h;}
+(on?"<button type='button' class='lmore' title='check it now' aria-label='Check "+escQ(it.name)+" now'>&#8635;</button><button type='button' class='lrm' title='unlink: stop watching it and stop trusting it'>Unlink</button>":"")+"</div>";}).join('')+"</div>";}).join('')+"</div>";
+// what a check that couldn't confirm a sign-in found (links.mjs foundNote), in plain sight
+var nn=d.items.filter(function(it){return it.state==='signin'&&it.note;});
+if(nn.length)h+="<div class='note muted'>"+nn.map(function(it){return "<div><b>"+esc(it.name)+"</b>: "+esc(it.note)+"</div>";}).join('')+"</div>";return h;}
 function linksOut(html){var o=document.getElementById('linksmsg');if(o)o.innerHTML=html;var b=document.getElementById('boardmsg');if(b&&LINKS&&!LINKS.linked)b.innerHTML=html;}
 function sbOpen(url){api('/api/browser/open',url?{url:url}:{}).then(function(r){if(r&&r.error)linksOut("<div class='note err'>"+esc(r.error)+"</div>");}).catch(function(){});}
 function renderLinks(){if(!LINKS)return;['links','boardlinks'].forEach(function(id){var el=document.getElementById(id);if(!el)return;
@@ -2397,19 +2406,40 @@ function loadMkTasks(){renderMkLane();}
 var MKPV='';
 function mkTags(t){return String(t||'').split(/(#[A-Za-z0-9_]+)/g).map(function(x,i){return i%2?"<span class='lihash'>"+esc(x)+"</span>":esc(x);}).join('');}
 function mkMediaSrc(rel){return '/api/marketing/media?rel='+encodeURIComponent(rel)+'&t='+encodeURIComponent(T);}
-function mkPreviewHtml(p){var a=p.author||{},plat=p.platform==='linkedin'?'LinkedIn':(p.platform||'post');
-var h="<div class='lipost' aria-label='"+escQ(plat)+" preview'><div class='liauth'>"+(a.avatar?"<img class='liav' src='"+escQ(mkMediaSrc('avatar'))+"' alt=''>":"<span class='liav'>"+esc(a.initials||'')+"</span>")
-+"<div class='liwho'><b>"+esc(a.name||'')+"</b>"+(a.headline?"<small>"+esc(a.headline)+"</small>":"")+"<small>"+(p.when?"Scheduled for "+esc(p.when):"Now")+" &middot; &#127760;</small></div></div>"
-+"<div class='litext'>"+(p.cut?mkTags(p.shown)+"&hellip;<button type='button' class='limore'>see more</button>":mkTags(p.body))+"</div>"
-+(p.media||[]).map(function(m){return m.kind==='video'?"<video class='limedia' src='"+escQ(mkMediaSrc(m.rel))+"' controls muted playsinline preload='metadata'></video>":"<img class='limedia' src='"+escQ(mkMediaSrc(m.rel))+"' alt='"+escQ(m.name)+"'>";}).join('')
-+"<div class='libar'><span>Like</span><span>Comment</span><span>Repost</span><span>Send</span></div></div>";
+// Each draft as its own platform shows it (its platform: line): LinkedIn's post, X's card,
+// Instagram's picture and caption, Facebook's post, Reddit's post with its subreddit and
+// title. A Reddit draft shown as a LinkedIn post can't be judged (Garth, 2026-10-10).
+var MKLIMIT={linkedin:3000,x:280,twitter:280,instagram:2200,facebook:63206,reddit:40000};
+function mkMediaHtml(p,cls){return (p.media||[]).map(function(m){return m.kind==='video'?"<video class='limedia' src='"+escQ(mkMediaSrc(m.rel))+"' controls muted playsinline preload='metadata'></video>":"<img class='limedia' src='"+escQ(mkMediaSrc(m.rel))+"' alt='"+escQ(m.name)+"'>";}).join('');}
+function mkAv(p,a,cls){var who=p.account||p.product||a.name||'';return a.avatar&&!p.account&&!p.product?"<img class='"+cls+"' src='"+escQ(mkMediaSrc('avatar'))+"' alt=''>":"<span class='"+cls+"'>"+esc(String(who).replace(/^@/,'').slice(0,2).toUpperCase())+"</span>";}
+function mkPostHtml(p){var a=p.author||{},pl=p.platform==='twitter'?'x':p.platform,when=p.when?"Scheduled for "+esc(p.when):"Now";
+var who=esc(String(p.account||p.product||a.name||'').replace(/^@/,'')),handle=p.account?'@'+esc(String(p.account).replace(/^@/,'')):'';
+if(pl==='x')return "<div class='lipost xpost' aria-label='X preview'><div class='liauth'>"+mkAv(p,a,'liav')+"<div><div class='liwho'><b>"+who+"</b>"+(handle?"<small>"+handle+"</small>":"")+"<small>&middot; "+when+"</small></div>"
++"<div class='litext'>"+mkTags(p.body)+"</div>"+mkMediaHtml(p)+"<div class='libar'><span>&#128172;</span><span>&#8645;</span><span>&#9825;</span><span>&#128202;</span><span>&#10697;</span></div></div></div></div>";
+if(pl==='instagram')return "<div class='lipost igpost' aria-label='Instagram preview'><div class='liauth'>"+mkAv(p,a,'liav')+"<div class='liwho'><b>"+(handle?esc(String(p.account).replace(/^@/,'')):who)+"</b><small>"+when+"</small></div></div>"
++((p.media||[]).length?mkMediaHtml(p):"<div class='ignomedia'>Instagram needs a picture or video, and this draft has none.</div>")
++"<div class='libar'><span>&#9825;</span><span>&#128172;</span><span>&#10148;</span></div><div class='litext'><b>"+(handle?esc(String(p.account).replace(/^@/,'')):who)+"</b> "+mkTags(p.body)+"</div></div>";
+if(pl==='facebook')return "<div class='lipost fbpost' aria-label='Facebook preview'><div class='liauth'>"+mkAv(p,a,'liav')+"<div class='liwho'><b>"+who+"</b><small>"+when+" &middot; &#127760;</small></div></div>"
++"<div class='litext'>"+mkTags(p.body)+"</div>"+mkMediaHtml(p)+"<div class='libar'><span>Like</span><span>Comment</span><span>Share</span></div></div>";
+if(pl==='reddit'){var b=String(p.body||''),k=b.indexOf('\\n'),title=k<0?b:b.slice(0,k),rest=k<0?'':b.slice(k).replace(/^\\s+/,'');
+return "<div class='lipost rdpost' aria-label='Reddit preview'><div class='liwho'><span class='rdav'>r/</span><b>"+(p.subreddit?esc(p.subreddit):"no subreddit named")+"</b><small>&middot; "+when+"</small></div>"
++"<div class='rdtitle'>"+esc(title)+"</div><div class='litext'>"+mkTags(rest)+"</div>"+mkMediaHtml(p)+"<div class='libar'><span>&#8679; Vote &#8681;</span><span>&#128172; Comment</span><span>Share</span></div></div>";}
+var li=pl==='linkedin',plat=li?'LinkedIn':(p.platform||'post');
+return "<div class='lipost' aria-label='"+escQ(plat)+" preview'><div class='liauth'>"+(a.avatar?"<img class='liav' src='"+escQ(mkMediaSrc('avatar'))+"' alt=''>":"<span class='liav'>"+esc(a.initials||'')+"</span>")
++"<div class='liwho'><b>"+esc(a.name||'')+"</b>"+(a.headline?"<small>"+esc(a.headline)+"</small>":"")+"<small>"+when+" &middot; &#127760;</small></div></div>"
++"<div class='litext'>"+(li&&p.cut?mkTags(p.shown)+"&hellip;<button type='button' class='limore'>see more</button>":mkTags(p.body))+"</div>"
++mkMediaHtml(p)+(li?"<div class='libar'><span>Like</span><span>Comment</span><span>Repost</span><span>Send</span></div>":"")+"</div>";}
+function mkPreviewHtml(p){var h=mkPostHtml(p),lim=MKLIMIT[p.platform]||0;
 if((p.missing||[]).length)h+="<div class='note err'>It names "+p.missing.map(function(m){return "<code>"+esc(m)+"</code>";}).join(', ')+", which isn&#39;t next to it.</div>";
-var fin=p.status==='posted'||p.status==='superseded',on=p.postedOn==='linkedin'?'LinkedIn':p.postedOn;
+var fin=p.status==='posted'||p.status==='superseded',pn={linkedin:'LinkedIn',x:'X',instagram:'Instagram',facebook:'Facebook',reddit:'Reddit'},on=pn[p.postedOn]||p.postedOn;
 var done=p.status==='posted'?"Posted"+(on?" on "+esc(on):"")+(p.posted?", "+esc(new Date(p.posted).toLocaleString(undefined,{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})):"")+(p.url?" &middot; <a href='"+escQ(p.url)+"' target='_blank' rel='noopener'>see it</a>":"")+". It isn&#39;t approved or posted again"+(p.edited?", though its file changed since":"")+"."
 :p.status==='superseded'?"Superseded"+((p.by||[]).length?" by "+p.by.map(function(b){return "<code>"+esc(b)+"</code>";}).join(', '):"")+": it won&#39;t be posted."
-:p.status==='approved'?"Approved "+agoTxt(p.statusAt)+": its agent "+(p.when?"schedules":"posts")+" it through Symbiot&#39;s browser, with this text.":p.status==='skipped'?"Skipped "+agoTxt(p.statusAt)+": it won&#39;t be posted.":"";
-h+="<div class='row mkpvact'>"+(fin||p.status==='approved'?"":"<button class='act mkok'>Approve"+(p.when?", schedule it":", post it")+"</button>")+(fin||p.status==='skipped'?"":"<button class='ghost mkskip'>Skip</button>")
-+"<span class='muted' style='font-size:12px;flex:1'>"+(done||(p.when?"Its agent schedules it for "+esc(p.when)+" once you approve.":"Its agent posts it once you approve."))+"</span><span class='pchars'>"+p.chars+" / 3000</span></div>";
+:p.status==='approved'?"Approved "+agoTxt(p.statusAt)+": its agent "+(p.when?"schedules":"posts")+" it through Symbiot&#39;s browser, with this text.":p.status==='skipped'?"Skipped "+agoTxt(p.statusAt)+": it won&#39;t be posted."
+:p.status==='change'?"You asked for a change "+agoTxt(p.statusAt)+": its agent redrafts it, and the new version comes back here for your OK.":"";
+h+="<div class='row mkpvact'>"+(fin||p.status==='approved'?"":"<button class='act mkok'>Approve"+(p.when?", schedule it":", post it")+"</button>")+(fin?"":"<button class='ghost mkchg' aria-expanded='false'>Change it</button>")+(fin||p.status==='skipped'?"":"<button class='ghost mkskip'>Skip</button>")
++"<span class='muted' style='font-size:12px;flex:1'>"+(done||(p.when?"Its agent schedules it for "+esc(p.when)+" once you approve.":"Its agent posts it once you approve."))+"</span><span class='pchars"+(lim&&p.chars>lim?" err":"")+"'>"+p.chars+(lim?" / "+lim:"")+"</span></div>";
+if(p.status==='change'&&p.ask)h+="<div class='mkasked muted'>What you asked: &ldquo;"+esc(p.ask)+"&rdquo;</div>";
+if(!fin)h+="<form class='row mkchgf hidden'><textarea class='mkchgt' maxlength='4000' placeholder='What should change? Its agent redrafts this same post and brings it back for your OK.' aria-label='What to change'></textarea><button type='submit' class='act'>Send to its agent</button><button type='button' class='ghost mkchgx'>Cancel</button></form>";
 h+="<details class='linotes'><summary>Its notes</summary>"+(p.notes?"<div class='linotest'>"+esc(p.notes)+"</div>":"<div class='muted'>None.</div>")+"<button type='button' class='ghost mkfile' title='open the draft in your editor'>Edit the file</button></details>";
 return h;}
 function mkPreview(box,rel){if(!box.innerHTML)box.innerHTML="<div class='muted'>Loading&hellip;</div>";
@@ -2417,6 +2447,11 @@ api('/api/marketing/draft?rel='+encodeURIComponent(rel)).then(function(p){if(MKP
 box.innerHTML=mkPreviewHtml(p);
 var mo=box.querySelector('.limore');if(mo)mo.addEventListener('click',function(){box.querySelector('.litext').innerHTML=mkTags(p.body);});
 var fl=box.querySelector('.mkfile');if(fl)fl.addEventListener('click',function(){api('/api/marketing/open',{rel:rel}).then(function(r){if(r&&r.error)mkMsg('err',esc(r.error));});});
+var cg=box.querySelector('.mkchg'),cf=box.querySelector('.mkchgf');
+if(cg&&cf){cg.addEventListener('click',function(){var o=cf.classList.toggle('hidden');cg.setAttribute('aria-expanded',String(!o));if(!o)cf.querySelector('textarea').focus();});
+cf.querySelector('.mkchgx').addEventListener('click',function(){cf.classList.add('hidden');cg.setAttribute('aria-expanded','false');});
+cf.addEventListener('submit',function(e){e.preventDefault();var t=cf.querySelector('textarea'),sb=cf.querySelector('button[type=submit]'),v=t.value.trim();if(!v){t.focus();return;}sb.disabled=true;
+api('/api/marketing/draft/answer',{rel:rel,change:v}).then(function(r){if(!r||r.error){sb.disabled=false;mkMsg('err',esc((r&&r.error)||'failed'));return;}mkMsg('ok',esc(r.said||'Sent.'));loadMarketing();mkPreview(box,rel);}).catch(function(e2){sb.disabled=false;mkMsg('err',esc(String((e2&&e2.message)||e2)));});});}
 box.querySelectorAll('.mkok,.mkskip').forEach(function(b){b.addEventListener('click',function(){var skip=b.classList.contains('mkskip');b.disabled=true;
 api('/api/marketing/draft/answer',{rel:rel,skip:skip}).then(function(r){if(!r||r.error){b.disabled=false;mkMsg('err',esc((r&&r.error)||'failed'));return;}mkMsg('ok',esc(r.said||'Done.'));loadMarketing();}).catch(function(e){b.disabled=false;mkMsg('err',esc(String((e&&e.message)||e)));});});});}).catch(function(e){box.innerHTML="<div class='note err'>"+esc(String((e&&e.message)||e))+"</div>";});}
 function renderMkLane(){var L=(MKT&&MKT.lane)||null,nd=$('mkneeds'),el=$('mktasks');if(!nd||!el)return;if(!L){nd.innerHTML='';el.innerHTML='';return;}

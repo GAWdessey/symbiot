@@ -107,6 +107,24 @@ try {
     unlinkSite("linkedin");
   }
 
+  console.log("SIGNED IN BY ITS COOKIE — x.com was asked for four times while its auth_token sat in the profile (2026-10-10)");
+  {
+    const openC = async (url) => ({ ok: true, url });
+    await addSite("x.com", { open: openC });
+    let reads = 0;
+    const r1 = (await checkLink("site-x-com", { cookie: () => ({ host: "x.com", cookie: "auth_token", found: true }), read: async () => { reads++; throw new Error("The Symbiot Browser is open: Symbiot reads your sites once you click Done in it."); } })).item;
+    ok("its session cookie in the profile: signed in, without loading the page", r1.state === "ok" && reads === 0, [r1, reads]);
+    const r2 = (await checkLink("site-x-com", { cookie: () => ({ host: "x.com", cookie: "auth_token", found: false }), read: async () => ({ error: "Timed out" }) })).item;
+    ok("no cookie yet and the page didn't load: says what it found, not just 'sign in'", r2.state === "signin" && /No session cookie \(auth_token\) for x\.com yet/.test(r2.note || ""), r2);
+    const r3 = (await checkLink("site-x-com", { cookie: () => ({ host: "x.com", cookie: "auth_token", found: false }), read: async () => ({ login: true }) })).item;
+    ok("no cookie and its sign-in page: that, and only then, says sign in again", r3.state === "signin" && /showed its sign-in page.*sign in there again/.test(r3.note || ""), r3);
+    const r4 = (await checkLink("site-x-com", { cookie: () => null, read: async () => { throw new Error("Symbiot's browser is busy"); } })).item;
+    ok("a check that couldn't run isn't a sign-out", r4.state === "signin" && /That isn't a sign-out/.test(r4.note || ""), r4);
+    const r5 = (await checkLink("site-x-com", { cookie: () => ({ host: "x.com", cookie: "auth_token", found: true }) })).item;
+    ok("…and the note goes once it's signed in", r5.state === "ok" && !r5.note, r5);
+    unlinkSite("site-x-com");
+  }
+
   console.log("ASKED TO SIGN IN — a card or reply that asks it carries the site, for its Sign in button");
   {
     const zoho = signInAsked("👤 You (only you: a new account): sign up for Zoho Mail's free plan as Symbiot and sign in to domains.co.za in Symbiot's browser");

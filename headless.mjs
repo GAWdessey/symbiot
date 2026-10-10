@@ -21,7 +21,8 @@
 // signed in. It's separate from your everyday browser profile.
 import { spawn, spawnSync } from "node:child_process";
 import { join, resolve as resolvePath } from "node:path";
-import { mkdirSync, existsSync, statSync, readlinkSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, existsSync, statSync, readlinkSync, readFileSync, writeFileSync, copyFileSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { CONFIG_DIR, chromeBinary, loadConfig, saveConfig } from "./core.mjs";
 import { loadScreens, addPageScreen, center, stitchPng, stitchListPng } from "./screens.mjs";
 
@@ -47,9 +48,12 @@ function siteUrl(input) {
 // The browser's flags. The same profile and password store headless and not, so
 // a sign-in made in the window is readable by the hidden browser. The hidden one
 // restores the last session: that's what keeps a site's session-only sign-in (keepSessions).
-function browserArgs(headless, url = "about:blank") {
+// ua: the user agent the hidden browser shows (visibleUA), given here so that a tab the
+// last session restores, which loads before any override can reach it, never shows a
+// site "HeadlessChrome".
+function browserArgs(headless, url = "about:blank", ua = "") {
   return [
-    ...(headless ? ["--headless=new", "--hide-scrollbars", "--mute-audio", "--remote-debugging-pipe", `--window-size=${VIEW.w},${VIEW.h}`, "--restore-last-session"] : ["--new-window"]),
+    ...(headless ? ["--headless=new", "--hide-scrollbars", "--mute-audio", "--remote-debugging-pipe", `--window-size=${VIEW.w},${VIEW.h}`, "--restore-last-session", ...(ua ? ["--user-agent=" + ua] : [])] : ["--new-window"]),
     "--user-data-dir=" + PROFILE, "--no-first-run", "--no-default-browser-check",
     ...(process.platform === "linux" ? ["--password-store=basic"] : process.platform === "darwin" ? ["--use-mock-keychain"] : []),
     url,
@@ -146,6 +150,38 @@ async function closeOthers(c, keep) {
   } catch {}
 }
 
+// Signed in, read from the profile's cookie store: the cookie a site keeps its session in,
+// there and not expired. It needs no browser, so it can't be told "the Symbiot Browser is open",
+// and it's read from a copy taken with its -wal and -journal, so a cookie the window wrote just
+// before Done is in it. X was asked for four times while its auth_token sat there (2026-10-10).
+const SESSION_COOKIE = { "x.com": "auth_token", "twitter.com": "auth_token", "instagram.com": "sessionid", "facebook.com": "c_user", "reddit.com": "reddit_session", "linkedin.com": "li_at" };
+// The site among hosts with a known session cookie: { host, cookie, found } (found: true,
+// false, or null when the store can't be read here), or null if none is known.
+function sessionCookie(hosts, profile = PROFILE) {
+  const host = [].concat(hosts || []).map((h) => String(h).toLowerCase().replace(/^www\./, "")).map((h) => Object.keys(SESSION_COOKIE).find((k) => h === k || h.endsWith("." + k))).find(Boolean);
+  if (!host) return null;
+  const cookie = SESSION_COOKIE[host], db = ["Default/Network/Cookies", "Default/Cookies"].map((f) => join(profile, f)).find((f) => existsSync(f));
+  if (!db) return { host, cookie, found: false };
+  const dir = mkdtempSync(join(tmpdir(), "symbiot-cookies-"));
+  try {
+    for (const ext of ["", "-wal", "-journal"]) if (existsSync(db + ext)) copyFileSync(db + ext, join(dir, "Cookies" + ext));
+    // Chrome's times are microseconds since 1601; 0 is a cookie for the session
+    const sql = `select count(*) from cookies where name='${cookie}' and (host_key='.${host}' or host_key='${host}' or host_key like '%.${host}') and (expires_utc=0 or expires_utc > (strftime('%s','now') + 11644473600) * 1000000);`;
+    const n = countRows(join(dir, "Cookies"), sql);
+    return { host, cookie, found: n === null ? null : n > 0 };
+  } catch { return { host, cookie, found: null }; }
+  finally { try { rmSync(dir, { recursive: true, force: true }); } catch {} }
+}
+// The count a query gives, with whichever SQLite this computer has: Node's own (22.5+), the
+// sqlite3 command, or Python's. null if none.
+function countRows(file, sql) {
+  try { const { DatabaseSync } = process.getBuiltinModule ? process.getBuiltinModule("node:sqlite") || {} : {}; if (DatabaseSync) { const d = new DatabaseSync(file, { readOnly: true }); try { return Number(Object.values(d.prepare(sql).get())[0]) || 0; } finally { d.close(); } } } catch {}
+  for (const [cmd, args] of [["sqlite3", [file, sql]], ["python3", ["-c", "import sqlite3,sys;print(sqlite3.connect(sys.argv[1]).execute(sys.argv[2]).fetchone()[0])", file, sql]], ["python", ["-c", "import sqlite3,sys;print(sqlite3.connect(sys.argv[1]).execute(sys.argv[2]).fetchone()[0])", file, sql]]]) {
+    try { const r = spawnSync(cmd, args, { encoding: "utf8", timeout: 5000 }); if (r.status === 0 && /^\d+\s*$/.test(r.stdout)) return Number(r.stdout); } catch {}
+  }
+  return null;
+}
+
 // One browser at a time: they share a profile, and Chrome locks it.
 let queue = Promise.resolve();
 const oneAtATime = (fn) => { const run = queue.then(fn, fn); queue = run.catch(() => {}); return run; };
@@ -160,17 +196,35 @@ const browserOpen = () => !!(live && !live.c.closed());
 // Don't leave it running when Symbiot exits (a restart, Ctrl+C).
 process.once("exit", () => { if (live && live.proc.exitCode === null) try { live.proc.kill("SIGKILL"); } catch {} });
 
-// Is a visible Chrome (the Symbiot Browser) using Symbiot's profile? Its SingletonLock names the process
-// ("host-1234", Linux and Mac); a lock whose process has gone is a leftover.
+// Who else holds Symbiot's profile: null, or { pid, visible }. Its SingletonLock names the
+// process ("host-1234", Linux and Mac); a lock whose process has gone is a leftover. Only a
+// visible one is the Symbiot Browser, a window you click Done in: a hidden one is an agent's
+// script on the profile (the poster) or another Symbiot's hidden browser, and that's waited
+// for. Garth was sent to click Done in a window that wasn't open, while the poster held it (2026-10-10).
 const OWN = new Set(); // every hidden Chrome this Symbiot started
-function windowOpen() {
+function profileHolder() {
+  let pid;
+  try { const m = /-(\d+)$/.exec(readlinkSync(join(PROFILE, "SingletonLock"))); if (!m) return null; pid = Number(m[1]); } catch { return null; }
+  if (OWN.has(pid)) return null; // our own hidden browser (running, or still closing) isn't a window
+  try { process.kill(pid, 0); } catch { return null; }
+  return { pid, visible: !profilePids({ headless: true }).includes(pid) };
+}
+const HELD = 60000; // the most to wait for another hidden browser to let go of the profile
+// The user agent the hidden browser shows: Chrome's own, without "HeadlessChrome". X signed
+// out two fresh sign-ins within minutes of a restored x.com tab loading as "HeadlessChrome"
+// (2026-10-10). Kept from the browser's last run (UA_FILE), else made from `chrome --version`.
+const UA_FILE = join(CONFIG_DIR, "browser-ua.txt");
+const UA_OK = /^Mozilla\/5\.0 \(.+\) AppleWebKit\/[\d.]+ \(KHTML, like Gecko\) Chrome\/\d/;
+function visibleUA(chrome) {
+  let cached = ""; try { const u = readFileSync(UA_FILE, "utf8").trim(); if (UA_OK.test(u)) cached = u; } catch {}
+  if (process.platform === "win32") return cached; // chrome.exe --version prints nothing
   try {
-    const m = /-(\d+)$/.exec(readlinkSync(join(PROFILE, "SingletonLock")));
-    if (!m) return false;
-    if (OWN.has(Number(m[1]))) return false; // our own hidden browser (running, or still closing) isn't a window
-    process.kill(Number(m[1]), 0);
-    return true;
-  } catch { return false; }
+    const v = /(\d+)\.\d+\.\d+/.exec(spawnSync(chrome, ["--version"], { encoding: "utf8", timeout: 5000 }).stdout || "");
+    if (!v) return cached;
+    // the saved one is only good while it names the Chrome that is installed now
+    if (cached && (/Chrome\/(\d+)\./.exec(cached) || [])[1] === v[1]) return cached;
+    return `Mozilla/5.0 (${process.platform === "darwin" ? "Macintosh; Intel Mac OS X 10_15_7" : "X11; Linux x86_64"}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${v[1]}.0.0.0 Safari/537.36`;
+  } catch { return cached; }
 }
 // Start the hidden browser and open a tab: { proc, c, page: { send, until, idle } }.
 async function launch() {
@@ -181,8 +235,13 @@ async function launch() {
   mkdirSync(PROFILE, { recursive: true, mode: 0o700 });
   // the Symbiot Browser (or a sign-in window) has the profile: a second Chrome would hand
   // over to it and pop an empty window into it, so wait for Done instead
-  if (windowOpen()) throw new Error("The Symbiot Browser is open: Symbiot reads your sites once you click Done in it.");
-  const proc = spawn(chrome, browserArgs(true), { stdio: ["ignore", "ignore", "pipe", "pipe", "pipe"] });
+  for (const end = Date.now() + HELD; ;) {
+    const h = profileHolder(); if (!h) break;
+    if (h.visible) throw new Error("The Symbiot Browser is open: Symbiot reads your sites once you click Done in it.");
+    if (Date.now() > end) throw new Error("Symbiot's browser is busy: an agent's hidden browser has been using it for over a minute. Your sign-ins are fine: try again in a minute (no need to ask anyone to sign in or click Done).");
+    await sleep(1000);
+  }
+  const proc = spawn(chrome, browserArgs(true, "about:blank", visibleUA(chrome)), { stdio: ["ignore", "ignore", "pipe", "pipe", "pipe"] });
   if (proc.pid) OWN.add(proc.pid);
   let err = ""; proc.stderr.on("data", (d) => { err = (err + d).slice(-2000); });
   const failed = new Promise((resolve, reject) => { proc.on("error", reject); }); failed.catch(() => {});
@@ -218,8 +277,14 @@ async function launch() {
       const ss = loadSessions(); if (Object.keys(ss).length) try { await send("Page.addScriptToEvaluateOnNewDocument", { source: sessionFill(ss), worldName: "symbiot-sessions" }); } catch {}
       await send("Emulation.setDeviceMetricsOverride", { width: VIEW.w, height: VIEW.h, deviceScaleFactor: 1, mobile: false });
       // Sites serve "HeadlessChrome" something else (or a block page): look like the browser it is.
-      const { userAgent } = await c.send("Browser.getVersion");
-      if (userAgent) await send("Network.setUserAgentOverride", { userAgent: userAgent.replace(/HeadlessChrome/g, "Chrome") });
+      const { userAgent, product = "" } = await c.send("Browser.getVersion");
+      if (userAgent) {
+        // product is the real version, even when --user-agent gave an older one (Chrome updated since)
+        const major = (/\/(\d+)\./.exec(product) || [])[1];
+        const ua = userAgent.replace(/HeadlessChrome/g, "Chrome").replace(/Chrome\/\d+\.\d+\.\d+\.\d+/, (v) => major ? `Chrome/${major}.0.0.0` : v);
+        await send("Network.setUserAgentOverride", { userAgent: ua });
+        if (UA_OK.test(ua)) try { writeFileSync(UA_FILE, ua + "\n"); } catch {}
+      }
       // every `method` event on this tab, until the function it gives is called
       const on = (method, f) => c.on((m) => { if (m && m.sessionId === sessionId && m.method === method) f(m.params || {}); });
       b.page = { send, until, idle, on };
@@ -941,4 +1006,4 @@ async function closeSymbiotBrowser() {
   return { closed: open.length };
 }
 
-export { siteUrl, browserArgs, mapPage, wholePage, readPage, readTexts, readLinkedIn, LI_READ, pagePicture, pageClip, CLIP, isSend, pressRegion, typeRegion, uploadRegion, uploadFiles, attachFiles, FILE_BOX, scrollPage, SCROLLS, signIn, keepBrowserOpen, closeBrowser, browserOpen, keepSessions, SESSION_KEEP, SESSIONS, loadSessions, trustedSites, isTrusted, trustSite, untrustSite, PROFILE , openSymbiotBrowser, closeSymbiotBrowser, setBrowserHub , browserHub };
+export { siteUrl, browserArgs, mapPage, wholePage, readPage, readTexts, readLinkedIn, LI_READ, pagePicture, pageClip, CLIP, isSend, pressRegion, typeRegion, uploadRegion, uploadFiles, attachFiles, FILE_BOX, scrollPage, SCROLLS, signIn, keepBrowserOpen, closeBrowser, browserOpen, keepSessions, SESSION_KEEP, SESSIONS, loadSessions, trustedSites, isTrusted, trustSite, untrustSite, PROFILE, sessionCookie, SESSION_COOKIE, openSymbiotBrowser, closeSymbiotBrowser, setBrowserHub , browserHub };

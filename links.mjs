@@ -22,7 +22,7 @@ import { can } from "./licence.mjs";
 import { join } from "node:path";
 import { readFileSync } from "node:fs";
 import { CONFIG_DIR, loadConfig, saveConfig } from "./core.mjs";
-import { siteUrl, signIn, readPage, trustedSites, trustSite, untrustSite } from "./headless.mjs";
+import { siteUrl, signIn, readPage, trustedSites, trustSite, untrustSite, sessionCookie } from "./headless.mjs";
 import { watchState, addWatch, removeWatch, checkWatch, GITHUB_INBOX } from "./watch.mjs";
 
 // The standard sites. url is where you sign in and, with watch, the page that's
@@ -88,7 +88,7 @@ function saveLinked(l) { const cfg = loadConfig(); if (Object.keys(l).length) cf
 function stateOf(e, l, watches) {
   if (!l) return { state: "off" };
   const w = l.watch && watches.find((x) => x.id === l.watch);
-  if (!e.watch) return { state: l.ok ? "ok" : "signin", ...(l.checked ? { checked: l.checked } : {}) };
+  if (!e.watch) return { state: l.ok ? "ok" : "signin", ...(l.checked ? { checked: l.checked } : {}), ...(!l.ok && l.note ? { note: l.note } : {}) };
   if (!w) return { state: "error", note: "Its watch was removed. Link it again." };
   // signed out only once it has been read signed in: a read before you've
   // finished signing in in the window is still "sign in"
@@ -130,17 +130,34 @@ async function linkSite(id, { open = signIn } = {}) {
 }
 // Read it now: its watch, or for a site that isn't watched, its page, to see
 // that it's signed in. Gives the item as it stands after.
-async function checkLink(id, { check = checkWatch, read = readPage } = {}) {
+async function checkLink(id, { check = checkWatch, read = readPage, cookie = sessionCookie } = {}) {
   const e = catalog().list.find((x) => x.id === id), l = linked();
   if (!e || !l[id]) return { error: `${e ? e.name : id} isn't linked.` };
   if (l[id].watch) { const r = await check(l[id].watch); if (r && r.busy) return { busy: true, item: linksState().items.find((x) => x.id === id) }; }
   else {
-    const p = await read(e.url, { password: true });
-    if (p && p.busy) return { busy: true, item: linksState().items.find((x) => x.id === id) };
+    // a site whose session cookie is known: signed in when it's in the profile, no page needed
+    const k = cookie(e.hosts);
+    let p = null, note = "";
+    if (!(k && k.found)) {
+      try { p = await read(e.url, { password: true }); } catch (err) { p = { error: String((err && err.message) || err) }; }
+      if (p && p.busy) return { busy: true, item: linksState().items.find((x) => x.id === id) };
+      // not confirmed: say what was found, rather than only "sign in" again
+      if (!p || p.error || p.login) note = foundNote(e, k, p);
+    }
     const l2 = linked(); if (!l2[id]) return { error: `${e.name} isn't linked.` };
-    l2[id] = { ...l2[id], ok: !!(p && !p.error && !p.login), checked: Date.now() }; saveLinked(l2);
+    const ok = !!((k && k.found) || (p && !p.error && !p.login));
+    const { note: _, ...was } = l2[id];
+    l2[id] = { ...was, ok, checked: Date.now(), ...(note ? { note } : {}) }; saveLinked(l2);
   }
   return { ok: true, item: linksState().items.find((x) => x.id === id) };
+}
+// What a check that couldn't confirm a sign-in found, in a line for the site's card.
+function foundNote(e, k, p) {
+  const err = p && p.error ? String(p.error).replace(/\s+/g, " ").slice(0, 160) : "";
+  if (k && k.found === false && p && p.login) return `${e.name} showed its sign-in page, and its session cookie (${k.cookie}) isn't saved: sign in there again.`;
+  if (k && k.found === false) return `No session cookie (${k.cookie}) for ${k.host} yet: the page may still be loading or saving. Symbiot checks again in a moment.${err ? " The page: " + err : ""}`;
+  if (p && p.login) return `${e.name} showed its sign-in page: if you've just signed in, it may still be saving. Symbiot checks again in a moment.`;
+  return `Couldn't check ${e.name} just now${err ? " (" + err + ")" : ""}. That isn't a sign-out: Symbiot checks again in a moment.`;
 }
 // Unlink: stop watching it, and untrust the hosts this link trusted (never ones
 // you trusted yourself). A host another link still uses (Outlook and Outlook
