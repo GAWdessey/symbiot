@@ -248,7 +248,7 @@ are inside it (the same builds Termux installs), and it shows Symbiot full scree
 with its own icon.
 
 - **Install:** on your phone, download `symbiot-aarch64.apk` from the
-  [latest release](https://github.com/GarthGhostai/symbiot/releases/latest)
+  [latest release](https://github.com/GAWdessey/symbiot/releases/latest)
   (or copy `symbiot-<version>-aarch64.apk` over from a computer that built it)
   and open it (allow your browser or file manager to install apps). Android may warn that the
   app was built for an older version of Android. That's on purpose: it's what lets
