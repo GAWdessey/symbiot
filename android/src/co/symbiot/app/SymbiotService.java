@@ -246,7 +246,7 @@ public class SymbiotService extends Service {
     private Notification.Builder builder(String channel) {
         Notification.Builder n = new Notification.Builder(this, channel);
         PendingIntent open = PendingIntent.getActivity(this, 0, new Intent(this, MainActivity.class), PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
-        return n.setSmallIcon(R.drawable.ic_symbiot).setContentIntent(open);
+        return n.setSmallIcon(R.drawable.ic_stat_symbiot).setContentIntent(open);
     }
     private Notification ongoing() {
         PendingIntent stop = PendingIntent.getService(this, 1, new Intent(this, SymbiotService.class).setAction(STOP), PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);

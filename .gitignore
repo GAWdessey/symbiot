@@ -1,7 +1,7 @@
 node_modules
 *.tgz
 .symbiot/
-android/build/
+android/build
 desktop/node_modules/
 desktop/dist/
 relay/.wrangler/

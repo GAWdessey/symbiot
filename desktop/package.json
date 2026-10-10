@@ -62,7 +62,7 @@
           ]
         }
       ],
-      "icon": "assets/icon.png",
+      "icon": "assets/icon-mac.png",
       "category": "public.app-category.productivity",
       "artifactName": "Symbiot.${ext}",
       "identity": "-"

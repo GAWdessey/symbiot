@@ -1,8 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Symbiot's green dot on its dark ink, as in the app's header -->
+<!-- Symbiot's mark: the Ferrofluid orb with the S inside, silver (agents at work) over amber (needs you). -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="108dp" android:height="108dp"
-    android:viewportWidth="108" android:viewportHeight="108">
-    <path android:fillColor="#0E1A1F" android:pathData="M54,4a50,50 0,1 1,0 100a50,50 0,1 1,0 -100z" />
-    <path android:fillColor="#3DDC97" android:pathData="M54,30a24,24 0,1 1,0 48a24,24 0,1 1,0 -48z" />
+    android:width="108dp" android:height="108dp" android:viewportWidth="256" android:viewportHeight="256">
+    <path android:fillColor="#0B0C0F" android:pathData="M 4,128 a 124,124 0 1,0 248,0 a 124,124 0 1,0 -248,0"/>
+    <path android:fillColor="#030303" android:strokeColor="#5C616B" android:strokeWidth="5" android:pathData="M 28,128 a 100,100 0 1,0 200,0 a 100,100 0 1,0 -200,0"/>
+    <path android:strokeColor="#D7DCE3" android:strokeWidth="24" android:strokeLineCap="round" android:pathData="M 155.86 83.41 A 31 31 0 1 0 114.41 124.86"/>
+    <path android:strokeColor="#F2A541" android:strokeWidth="24" android:strokeLineCap="round" android:pathData="M 100.14 172.59 A 31 31 0 1 0 141.59 131.14"/>
 </vector>

@@ -392,6 +392,7 @@ body.lq-light .thinking{background-image:linear-gradient(90deg,#4A5565 0%,#0F172
 body{background:var(--ink);color:var(--text);font-family:var(--sans);font-size:14px;display:flex;flex-direction:column}
 header{padding:16px 18px 10px;display:flex;align-items:center;gap:10px}
 .dot{width:10px;height:10px;border-radius:50%;background:var(--green);box-shadow:0 0 12px var(--green)}
+header .dot{width:22px;height:22px;border-radius:6px;background:center/contain no-repeat url('/favicon.svg?small=1');box-shadow:none}
 .brand{font-weight:700;color:var(--bone);font-size:16px}
 .status{margin-left:auto;font-size:12px;color:var(--faint);text-align:right;max-width:52%}
 .tabs{display:flex;gap:6px;padding:0 14px;border-bottom:1px solid var(--line)}
@@ -1093,7 +1094,7 @@ body.lq-light .btip .bta button:not(.quiet){background:#151A21;color:#FFFFFF}
 <div id="updatebar" class="updatebar"></div>
 <div id="appbar" class="updatebar"></div>
 <div id="whatsnew" class="whatsnew"></div>
-<header><span class="dot"></span><span class="brand">Symbiot</span><span class="ver" id="ver"></span><span id="lqlook" role="radiogroup" aria-label="Look"><button type="button" role="radio" data-look="glass" aria-checked="false">Glass</button><button type="button" role="radio" data-look="ferro" aria-checked="true">Ferrofluid</button><button type="button" role="radio" data-look="pearl" aria-checked="false">Pearl</button></span><span class="status" id="status">...</span></header>
+<header><span class="dot" role="img" aria-label="Symbiot"></span><span class="brand">Symbiot</span><span class="ver" id="ver"></span><span id="lqlook" role="radiogroup" aria-label="Look"><button type="button" role="radio" data-look="glass" aria-checked="false">Glass</button><button type="button" role="radio" data-look="ferro" aria-checked="true">Ferrofluid</button><button type="button" role="radio" data-look="pearl" aria-checked="false">Pearl</button></span><span class="status" id="status">...</span></header>
 <div class="tabs">
 <button class="tab active" data-tab="map">Map</button>
 <button class="tab" data-tab="board" id="boardtab">Dashboard</button>
@@ -3652,7 +3653,7 @@ b.querySelectorAll('[data-link]').forEach(function(x){x.addEventListener('click'
 b.querySelectorAll('[data-check]').forEach(function(x){x.addEventListener('click',function(){x.disabled=true;api('/api/links/check',{id:x.getAttribute('data-check')}).then(function(){onbLoad();});});});
 b.querySelectorAll('[data-skip]').forEach(function(x){x.addEventListener('click',function(){api('/api/onboarding/set',{skip:x.getAttribute('data-skip')}).then(function(r){ONB=r;onbRender();});});});
 b.querySelectorAll('[data-unskip]').forEach(function(x){x.addEventListener('click',function(){api('/api/onboarding/set',{unskip:x.getAttribute('data-unskip')}).then(function(r){ONB=r;onbRender();});});});}
-function lqIcon(l){var k=document.querySelector('link[rel=icon]');if(k)k.setAttribute('href','/favicon.svg?look='+encodeURIComponent(l||'ferro'));}
+function lqIcon(l){var q='/favicon.svg?look='+encodeURIComponent(l||'ferro'),k=document.querySelector('link[rel=icon]');if(k)k.setAttribute('href',q+'&small=1');var d=document.querySelector('header .dot');if(d)d.style.backgroundImage="url('"+q+"&small=1')";document.querySelectorAll('img.onborb').forEach(function(im){im.src=q;});}
 function lqInit(){var bd=document.body;if(!bd||!bd.classList)return;lqIcon(lqLookGet());lqTheme();try{i18nStart();}catch(e){}bd.classList.add('lq-liquid');
 ['(prefers-color-scheme: light)','(prefers-contrast: more)','(forced-colors: active)','(prefers-reduced-transparency: reduce)','(prefers-reduced-motion: reduce)'].forEach(function(q){try{var mq=window.matchMedia&&window.matchMedia(q);if(mq&&mq.addEventListener)mq.addEventListener('change',lqTheme);else if(mq&&mq.addListener)mq.addListener(lqTheme);}catch(e){}});
 if(document.addEventListener){document.addEventListener('contextmenu',function(ev){var b=document.body,t=ev&&ev.target;if(!b||!b.classList||!b.classList.contains('lq-liquid'))return;if(t&&t.closest&&t.closest('input,textarea,select,[contenteditable]'))return;var sel=window.getSelection?String(window.getSelection()):'';if(sel)return;ev.preventDefault();lqBack();});
