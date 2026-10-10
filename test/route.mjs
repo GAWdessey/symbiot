@@ -24,7 +24,7 @@ ok("read is local", JSON.stringify(pickModel({ kind: "read" })) === JSON.stringi
 ok("summary is local", pickModel({ kind: "summary" }).tier === "L");
 ok("classify is local", pickModel({ kind: "classify" }).tier === "L");
 ok("triage is Haiku", pickModel({ kind: "triage" }).model === "claude-haiku-4-5");
-ok("chat is Haiku", pickModel({ kind: "chat" }).tier === "H");
+ok("chat is Sonnet, never Haiku or local", pickModel({ kind: "chat" }).model === "claude-sonnet-5");
 ok("writeup is Sonnet", pickModel({ kind: "writeup" }).model === "claude-sonnet-5");
 ok("post is Sonnet", pickModel({ kind: "post" }).tier === "S");
 let threw = false; try { pickModel({ kind: "bogus" }); } catch { threw = true; } ok("an unknown kind throws rather than guessing", threw);
@@ -82,6 +82,23 @@ ok("pure: calling twice gives the same result", JSON.stringify(pickModel({ path:
   ok("withModel replaces --model=x too", n(b) === 1 && b.endsWith("--model claude-sonnet-5") && !b.includes("haiku"), b);
   ok("withModel adds one when there was none", n(withModel("claude -p x", "claude-fable-5-1")) === 1);
   ok("withModel leaves codex/aider/gemini commands alone", withModel("codex exec x", "claude-opus-5-5") === "codex exec x" && withModel("claude -p x", "") === "claude -p x");
+}
+
+// Chat floor (ai.mjs): Home and Reports chat never go to a local model, whatever the saved provider is.
+{
+  const ai = await import("../ai.mjs");
+  const o = { provider: "ollama", model: "llama3.1:8b" }, h = { provider: "claude", model: "haiku" };
+  const got = ai.aboveFloor(o);
+  ok("chat: a local provider is never what answers (Claude if connected, else nothing)", got === null || got.provider !== "ollama", got);
+  ok("chat: Haiku is lifted to Sonnet", ai.aboveFloor(h).model === "sonnet");
+  ok("chat: Sonnet stays", ai.aboveFloor({ provider: "claude", model: "sonnet" }).model === "sonnet");
+  if (!ai.aboveFloor(null)) ok("chat: with no Claude reachable the reply says so, not a local answer", (await ai.write("s", "p", { floor: "sonnet" })) === ai.NO_CHAT_MODEL);
+  // installing a local model leaves the provider alone
+  const { writeFileSync, readFileSync } = await import("node:fs");
+  writeFileSync(join(CFG, "config.json"), JSON.stringify({ provider: "claude" }));
+  ai.useOllamaModel("llama3.1:8b");
+  const c = JSON.parse(readFileSync(join(CFG, "config.json"), "utf8"));
+  ok("installing a local model leaves cfg.provider unchanged but records the model", c.provider === "claude" && c.ollama.model === "llama3.1:8b", c);
 }
 
 console.log((fail ? "✗" : "✓") + " route: " + pass + " passed, " + fail + " failed");

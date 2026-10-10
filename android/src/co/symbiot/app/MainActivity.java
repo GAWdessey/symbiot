@@ -106,10 +106,28 @@ public class MainActivity extends Activity {
     private boolean take(Intent i) {
         Uri d = i != null && Intent.ACTION_VIEW.equals(i.getAction()) ? i.getData() : null;
         if (d == null) return false;
-        if (PAIR.matcher(d.toString()).matches()) { pair = d.toString(); return false; }
+        if (PAIR.matcher(d.toString()).matches()) { approvePair(d); return false; }
         if (!LINK.matcher(d.toString()).matches()) { Toast.makeText(this, "That isn't a Symbiot link", Toast.LENGTH_SHORT).show(); return false; }
         useExternal(http(d.toString()));
         return true;
+    }
+    // A pairing link, from a camera scan or pushed over USB (adb), is only handed on once the
+    // user taps Approve: "Link to <computer>?". Capped in size, like Orca's pairing input.
+    private static final int PAIR_MAX = 2048;
+    private void approvePair(final Uri d) {
+        final String link = d.toString();
+        if (link.length() > PAIR_MAX) { Toast.makeText(this, "That isn't a Symbiot link", Toast.LENGTH_SHORT).show(); return; }
+        String n = null;
+        try { n = d.getQueryParameter("n"); } catch (Exception e) { /* opaque link: no name */ }
+        n = n == null ? "" : n.replaceAll("[^\\p{L}\\p{N} ._-]", "");
+        if (n.length() > 40) n = n.substring(0, 40);
+        final String name = n.isEmpty() ? "your computer" : n;
+        new AlertDialog.Builder(this)
+            .setTitle("Link to " + name + "?")
+            .setMessage("Approve to pair this phone with Symbiot on " + name + ".")
+            .setPositiveButton("Approve", (dlg, w) -> { pair = link; })
+            .setNegativeButton("Cancel", null)
+            .show();
     }
     private static String http(String link) { return link.replaceFirst("^symbiot://", "http://"); }
 

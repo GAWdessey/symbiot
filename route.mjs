@@ -1,6 +1,6 @@
 // symbiot — Route: which model answers a job, and why. A one-shot call's kind
-// sets its tier outright (read/summary/classify -> local, triage/chat -> Haiku,
-// writeup/post -> Sonnet). An agent run starts on Sonnet and is scored up to
+// sets its tier outright (read/summary/classify -> local, triage -> Haiku,
+// chat/writeup/post -> Sonnet). An agent run starts on Sonnet and is scored up to
 // Opus, with no model call involved, when its brief is long, names more than
 // one repo, uses words like research/investigate/refactor/debug/why/design,
 // its lane's past runs (costs.json) cost $2 or more at the median or fail
@@ -22,7 +22,7 @@ const MIN_SAMPLES = 3, COST_FLOOR = 2, FAIL_FLOOR = 0.5, LONG_BRIEF = 1500;
 const MODEL = { L: "qwen3:8b", H: "claude-haiku-4-5", S: "claude-sonnet-5", O: "claude-opus-5-5" };
 const OVERRIDE_TIER = { opus: "O", sonnet: "S", fable: "O", local: "L", haiku: "H" }; // fable: Opus's tier, Fable's model
 const OVERRIDE_MODEL = { fable: "claude-fable-5-1" }; // other overrides share MODEL[tier]
-const ONE_SHOT_TIER = { read: "L", summary: "L", classify: "L", triage: "H", chat: "H", writeup: "S", post: "S" };
+const ONE_SHOT_TIER = { read: "L", summary: "L", classify: "L", triage: "H", chat: "S", writeup: "S", post: "S" };
 const TIER_LABEL = { L: "local", H: "Haiku", S: "Sonnet", O: "Opus" };
 
 const HARD_WORDS = /\b(research|investigat\w*|refactor\w*|debugg?\w*|why|design\w*)\b/i;

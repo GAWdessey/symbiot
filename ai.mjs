@@ -209,9 +209,21 @@ const AI_UI = {
 };
 // fast: a quick, plain job (translating the app's words): the provider's fastest model
 const FAST_MODEL = { claude: "haiku", anthropic: "claude-haiku-5-5" };
-async function write(system, prompt, { images = [], fast = false } = {}) {
-  const r0 = resolveProvider(), r = fast && r0 && FAST_MODEL[r0.provider] ? { ...r0, model: FAST_MODEL[r0.provider] } : r0;
-  if (!r) { AI_UI.notConnected(); return null; }
+// floor: "sonnet" — chat (Home, Reports) is answered by Sonnet or better, whatever the saved provider
+// is: a local or small model made things up there. Falls back to Claude, then an Anthropic key; with
+// neither, it says so rather than answering from the local model.
+function aboveFloor(r0) {
+  if (r0 && r0.provider === "claude") return /haiku/i.test(r0.model || "") ? { ...r0, model: "sonnet" } : r0;
+  if (r0 && r0.provider === "anthropic") return /haiku/i.test(r0.model || "") ? { ...r0, model: "claude-sonnet-5-5" } : r0;
+  if (r0 && (r0.provider === "openai" || r0.provider === "gemini")) return r0;
+  if (claudeReady()) return { provider: "claude", model: "sonnet", source: "your Claude subscription (Claude Code)" };
+  const cfg = loadConfig(), key = (cfg.anthropic || {}).apiKey || cfg.apiKey || process.env.ANTHROPIC_API_KEY;
+  return key ? { provider: "anthropic", key, model: "claude-sonnet-5-5", source: "saved login" } : null;
+}
+const NO_CHAT_MODEL = "I can't answer here right now: chat needs Claude (Sonnet or better), and Claude isn't connected. Connect it in Settings and ask again.";
+async function write(system, prompt, { images = [], fast = false, floor = "" } = {}) {
+  const r0 = floor ? aboveFloor(resolveProvider()) : resolveProvider(), r = fast && r0 && FAST_MODEL[r0.provider] ? { ...r0, model: FAST_MODEL[r0.provider] } : r0;
+  if (!r) { if (floor) return NO_CHAT_MODEL; AI_UI.notConnected(); return null; }
   const stop = AI_UI.spinner("thinking…");
   try {
     if (r.provider === "claude") return await callClaude(r, system, prompt, images);
@@ -287,7 +299,9 @@ async function ensureOllama() {
   for (let i = 0; i < 16; i++) { await sleep(500); if (await ollamaUp()) return true; }
   return false;
 }
-function useOllamaModel(model) { const cfg = loadConfig(); cfg.provider = "ollama"; cfg.ollama = { baseUrl: "http://localhost:11434", model }; delete cfg.apiKey; saveConfig(cfg); }
+// Installing a local model makes it available (cfg.ollama) for read/summary/classify; it does not
+// become the provider for everything. Only a Symbiot with no other AI connected starts on it.
+function useOllamaModel(model) { const cfg = loadConfig(); cfg.ollama = { baseUrl: "http://localhost:11434", model }; if (!cfg.provider) cfg.provider = "ollama"; saveConfig(cfg); }
 
 // Save a provider connection (used by the web Settings panel); mirrors cmdLogin.
 async function connectProvider(b) {
@@ -315,4 +329,4 @@ async function connectProvider(b) {
   return saveConfig(cfg) ? { ok: true, message: `Connected: ${PROVIDERS[provider].label} · ${model}` } : { ok: false, message: "Couldn't write the config file." };
 }
 
-export { PROVIDERS, AI_UI, resolveProvider, write, validate, connectProvider, detectHardware, recommendModels, hasOllama, ollamaInstall, ensureOllama, useOllamaModel , claudeState, claudeReady, claudeHelp , claudeCommand , claudeSpawn };
+export { PROVIDERS, AI_UI, aboveFloor, NO_CHAT_MODEL, resolveProvider, write, validate, connectProvider, detectHardware, recommendModels, hasOllama, ollamaInstall, ensureOllama, useOllamaModel , claudeState, claudeReady, claudeHelp , claudeCommand , claudeSpawn };

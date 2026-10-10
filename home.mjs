@@ -17,6 +17,7 @@ import { watchBoard, draftReply, draftCards, draftAnswer } from "./watch.mjs";
 import { pendingReview, pushTasks, addTask, taskType } from "./tasks.mjs";
 import { estimate, estimateWords } from "./estimate.mjs";
 import { setHandoffCmd, agentsList, runHandoff, runningHandoff, handoffCmd, loadRuns, connectorsInfo, parkedPaths, agentMissing, settleNeeds, pickAgent, detectHandoffs, linkReach } from "./agents.mjs";
+import { isDone, recordDone, coveredBy } from "./asksdone.mjs";
 import { linksState, signInAsked } from "./links.mjs";
 import { knowledgeState } from "./knowledge.mjs";
 import { CONFIG_DIR, loadTasks, saveTasks, loadConfig, saveConfig, sameTask } from "./core.mjs";
@@ -332,19 +333,20 @@ function homeState({ now = Date.now(), fresh = false, deps = {} } = {}) {
   const marketing = deps.marketing || ((o) => { try { const m = marketingState(o); return m.on ? { needs: m.needCount, working: m.working, waiting: m.waiting } : false; } catch { return false; } });
   const named = deps.name || displayName;
   const rootsSet = deps.rootsSet || (() => { try { const r = loadConfig().scanRoots; return Array.isArray(r) && r.length > 0; } catch { return false; } });
-  const you = [], map = repos() || {};
+  let you = [], map = repos() || {};
   // What Symbiot works through (an AI, your agent, the connectors runs use) shows
   // only when it's missing, and then first (urgent): nothing works without it.
   // First run: what only a new user can do before the rest means anything.
-  if (!connected()) you.push({ kind: "setup", id: "setup:ai", urgent: true, title: "Connect an AI", sub: "Symbiot can't work without one: your Claude subscription (sign in to Claude Code), a key, or a free local model", shape: "settings", focus: "ai" });
-  const gone = agentGone(); if (gone) you.push({ kind: "setup", id: "setup:agent", urgent: true, title: "Your agent is unavailable", sub: `${gone} isn't on this computer any more, so no task can start`, shape: "settings", focus: "agent" });
-  for (const c of signedOut()) you.push({ kind: "setup", id: "setup:conn:" + c.id, urgent: true, title: `Reconnect ${c.name}`, sub: `its Claude connector is signed out, so agent runs can't use ${c.name}`, shape: "settings", focus: "agent" });
+  // (the Android app asks for none of this: the agents run on the computer it pairs with)
+  if (!ANDROID_APP && !connected()) you.push({ kind: "setup", id: "setup:ai", urgent: true, title: "Connect an AI", sub: "Symbiot can't work without one: your Claude subscription (sign in to Claude Code), a key, or a free local model", shape: "settings", focus: "ai" });
+  const gone = ANDROID_APP ? "" : agentGone(); if (gone) you.push({ kind: "setup", id: "setup:agent", urgent: true, title: "Your agent is unavailable", sub: `${gone} isn't on this computer any more, so no task can start`, shape: "settings", focus: "agent" });
+  for (const c of ANDROID_APP ? [] : signedOut()) you.push({ kind: "setup", id: "setup:conn:" + c.id, urgent: true, title: `Reconnect ${c.name}`, sub: `its Claude connector is signed out, so agent runs can't use ${c.name}`, shape: "settings", focus: "agent" });
   you.push(...reposCard({ map, search: search(), confirmed: confirmed(), rootsSet: rootsSet() }));
   // no agent yet: Send to repos and Go would only write TASKS.md files nothing runs, so
   // Home didn't say "All handled" truthfully. Which agent is on this computer is a
   // lookup, not your call: one found is set (change it in Settings), and you're asked
   // only when there's none to set, or you cleared yours.
-  if (!agentCmd()) {
+  if (!ANDROID_APP && !agentCmd()) {
     const p = offer(), off = deps.agentOff ? deps.agentOff() : (() => { try { return !!loadConfig().agentOff; } catch { return false; } })();
     if (p && !off) (deps.setAgent || setHandoffCmd)(p.tmpl);
     else you.push({ kind: "setup", id: "setup:pick", title: "Pick your agent", sub: p ? `${p.name} is on this computer: one click and it takes your tasks` : "no coding agent on this computer yet: install one (Claude Code, Codex, Gemini or Aider) and it takes your tasks", shape: "settings", focus: "agent", ...(p ? { pick: { name: p.name, tmpl: p.tmpl } } : {}) });
@@ -363,7 +365,7 @@ function homeState({ now = Date.now(), fresh = false, deps = {} } = {}) {
     if (!q) continue;
     const lane = laneOfPath(a.path, map), repo = lane || (lane === "" ? "" : a.name);
     you.push({ kind: "ask", id: "ask:" + a.path, path: a.path, repo, name: repo ? named(lane ? map[lane] : a.path, repo) : plain(String(a.name || "an agent").replace(/^Agent:\s*/, ""), 60),
-      title: `${a.name} asks`, sub: String(q.q || "").slice(0, 90), q: String(q.q || ""), options: (q.options || []).slice(0, 2), ...(qs.length > 1 ? { more: qs.length - 1 } : {}), ...signInCard([q.q, ...(q.options || []).slice(0, 2)]), shape: "agents" });
+      title: `${a.name} asks`, sub: String(q.q || "").slice(0, 90), ...plainAsk(a.path, q), options: (q.options || []).slice(0, 2), ...(qs.length > 1 ? { more: qs.length - 1 } : {}), ...signInCard([q.q, ...(q.options || []).slice(0, 2)]), shape: "agents" });
   }
   // What stopped and can't go on without you, as a question too: a handover that
   // couldn't start (lanes.mjs stuckHandovers: "Allow this run access to ~/Company?"),
@@ -394,10 +396,50 @@ function homeState({ now = Date.now(), fresh = false, deps = {} } = {}) {
     runs.push({ id: "run:" + a.path, path: a.path, repo: lane || "", name: lane ? named(map[lane], lane) : plain(String(a.name || "an agent").replace(/^Agent:\s*/, ""), 40), ...runNow(a), started: a.startedAt || 0 });
   }
   // nothing waits on you: a few things that can be done next (none while anything does)
+  you = settleAsks(you);
   const next = you.length ? [] : nextUp({ now, map, list, named, deps: { board: () => bd, reports: () => rep, ...(deps.next || {}) } });
   const out = { you: you.slice(0, 6), youCount: you.length, feeds: feeds.slice(0, 6), lanes: hs, working, runs: runs.slice(0, 4), next, marketing: marketing({ list, map, named, pend }), ...(deps.phone || phoneBits)(now), at: now };
   if (!deps.board) cached = out;
   return out;
+}
+
+// An ask in words for someone who doesn't code: a permission request lists what the agent
+// wants to run, with Allow / Don't allow; any file path left in the question or choices
+// becomes "a file". The answer sent back is still the choice's own text (labels only change what shows).
+const PATHISH = /`?(?:~|\.{0,2})?\/?(?:[\w.-]+\/)+[\w.-]+\.(?:json|md|mjs|js|env|txt|sh)`?|`?\b[\w-]+\.(?:json|mjs)\b`?/g;
+const RULE_WORDS = (r) => { const m = String(r).match(/^(\w+)\((.*)\)$/); if (!m) return String(r); const c = m[2].replace(/:?\*+$/, "").trim(); return m[1] === "Bash" ? `run "${c}"` : m[1] === "Read" ? `read ${c || "files"}` : /^(Edit|Write)$/.test(m[1]) ? `change ${c || "files"}` : `${m[1]} ${c}`.trim(); };
+function plainAsk(path, q) {
+  const text = String(q.q || ""), opts = (q.options || []).slice(0, 2);
+  let ask = text, labels = opts.map((o) => o.replace(PATHISH, "a file"));
+  if (opts.some((o) => /allowlist\.proposed/i.test(o))) {
+    let rules = []; try { const p = JSON.parse(readFileSync(join(path, ".symbiot", "allowlist.proposed.json"), "utf8")).permissions || {}; rules = [...(p.allow || []).map(RULE_WORDS), ...(p.additionalDirectories || []).map((d) => `work in ${d}`)]; } catch {}
+    ask = `${text.replace(PATHISH, "a file")}${rules.length ? ` It wants to: ${rules.slice(0, 6).join("; ")}${rules.length > 6 ? `; and ${rules.length - 6} more` : ""}.` : ""} If you say no, it can't do that part and will tell you what it skipped.`;
+    labels = opts.map((o) => (/allowlist\.proposed/i.test(o) ? "Allow" + (/recommended/i.test(o) ? " (recommended)" : "") : o.replace(PATHISH, "a file")));
+  }
+  return { q: ask.replace(PATHISH, "a file"), ...(labels.some((l, i) => l !== opts[i]) ? { labels } : {}) };
+}
+// Cards the chat says your message answered: only a question that's really on Home counts (the
+// model can't close one by inventing it). Each goes in the shared record, so the card leaves and no agent asks it again.
+function settleFromChat(h, said, answer) {
+  const key = (t) => String(t || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  const shown = ((h && h.you) || []).filter((y) => y.kind === "ask" && y.q);
+  let n = 0;
+  for (const q of said || []) { const y = shown.find((x) => key(x.q) === key(q)); if (y && recordDone(y.q, `answered in chat: ${String(answer || "").slice(0, 120)}`)) n++; }
+  return n;
+}
+// Asks that never belong on Home: "close the Symbiot Browser" is an agent's wait-and-retry, not
+// the user's job; and the same question from several agents is one card, not three.
+const CLOSE_BROWSER = /\b(?:close|quit|shut)\b[^.?]{0,40}\bSymbiot Browser\b|\bSymbiot Browser is open\b|\bclick(?:ing)? Done\b[^.?]{0,30}\b(?:browser|window)\b/i;
+function settleAsks(you) {
+  const seen = new Set();
+  return you.map((y) => { if (y.kind !== "ask") return y; const c = coveredBy(y.q); return c.length ? { ...y, covered: c } : y; }).filter((y) => {
+    if (y.kind !== "ask") return true;
+    if (isDone(y.q)) return false; // already answered, for any agent
+    if (CLOSE_BROWSER.test(`${y.q || ""} ${(y.options || []).join(" ")}`)) return false;
+    const k = String(y.q || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+    if (!k || !seen.has(k)) { seen.add(k); return true; }
+    return false;
+  });
 }
 
 // An answer on a stuck handover's, a waiting run's or a failed run's blob. pick: the
@@ -524,12 +566,14 @@ async function homeAsk(question, { ask, now = Date.now(), state, images = [] } =
   const h = state || homeState({ now });
   let map = {}; try { map = laneMap(); } catch {}
   const role = "Here they're on Symbiot's home: one liquid surface that shows what only they can do, what's new on what they watch, and the lanes. Answer from what it shows, and act on what they ask.";
-  const r = await converse({ where: "Home", role, nav: true, context: homeContext(h), question: question + (pics.length ? `\n(The user attached ${pics.length} screenshot${pics.length > 1 ? "s" : ""}: you can see ${pics.length > 1 ? "them" : "it"}.)` : ""), map, now, images: pics.map(({ mime, data, path }) => ({ mime, data, path })), ...(ask ? { ask } : {}),
+  const r = await converse({ where: "Home", role, nav: true, settle: true, context: homeContext(h), question: question + (pics.length ? `\n(The user attached ${pics.length} screenshot${pics.length > 1 ? "s" : ""}: you can see ${pics.length > 1 ? "them" : "it"}.)` : ""), map, now, images: pics.map(({ mime, data, path }) => ({ mime, data, path })), ...(ask ? { ask } : {}),
     act: {
       agent: (req, known, repo) => (repo ? actIn(req + shotNote, repo, { map, known, title: "Home" }) : actNow(req + shotNote, { title: "Home", known })),
       task: (text, repo) => taskIn(text + shotNote, repo, { map }),
     } });
-  return { answer: r.reply, spoken: r.spoken, ...(r.did ? { did: r.did } : {}), ...(r.go ? { go: r.go } : {}), steps: r.steps || [] };
+  const settled = settleFromChat(h, r.settled, question);
+  if (settled) cached = null;
+  return { answer: r.reply, spoken: r.spoken, ...(settled ? { settled } : {}), ...(r.did ? { did: r.did } : {}), ...(r.go ? { go: r.go } : {}), steps: r.steps || [] };
 }
 
 // ---- acting on a report, where you read it (reports.mjs reportIdeas) -------------------
@@ -780,7 +824,8 @@ const goOps = () => startOps(loadTasks().filter((t) => t.repo === RUNS_LANE && !
 // (after your documents); in the Android app, "Your computer" comes first, and "no
 // computer" carries on with the rest, as Symbiot on the phone alone.
 const ONB_STEPS = ["welcome", "ai", "work", "agent", "apps", "docs", "phone", "done"];
-const ONB_STEPS_PHONE = ["computer", "welcome", "ai", "work", "agent", "apps", "docs", "done"];
+// (the phone only pairs with the computer: Claude Code and the agents run there, so no AI, work, agent, apps or docs step here)
+const ONB_STEPS_PHONE = ["computer", "welcome", "done"];
 const onbSteps = (app = ANDROID_APP, phone = PHONE) => (app ? ONB_STEPS_PHONE : phone ? ONB_STEPS.filter((s) => s !== "phone") : ONB_STEPS); // (Symbiot in Termux is on the phone already)
 // A new install (`symbiot app` the first time): setup, from its first step, "Your computer"
 // in the Android app (it started at "welcome" there, so a phone paired by its QR showed nothing).
@@ -798,20 +843,23 @@ function phoneSetupFirst({ app = ANDROID_APP, paired = () => !!computerView().pa
   o.computer = true; saveConfig(cf); return o;
 }
 function onboarding({ fresh = false } = {}) {
-  const cfg = loadConfig(), o = cfg.onboarding || {}, steps = onbSteps();
+  let cfg = loadConfig(), o = cfg.onboarding || {};
   const tryOr = (f, d) => { try { return f(); } catch { return d; } };
-  let st = null; try { st = claudeState(fresh); } catch {}
+  // the phone app: paired with the computer is all its setup is, so it finishes by itself
+  if (ANDROID_APP && o.pending && o.step !== "welcome" && tryOr(() => !!computerView().paired, false)) { cfg.onboarding = o = { ...o, pending: false, done: Date.now(), step: "done" }; saveConfig(cfg); cached = null; }
+  const steps = onbSteps();
+  let st = null; if (!ANDROID_APP) try { st = claudeState(fresh); } catch {}
   const r = tryOr(() => resolveProvider(), null);
-  const reps = tryOr(() => reposState(), { searching: false, list: [] });
+  const reps = ANDROID_APP ? { searching: false, list: [] } : tryOr(() => reposState(), { searching: false, list: [] });
   const links = tryOr(() => linksState(), { items: [] }), reach = tryOr(() => linkReach(), null), skipped = new Set(o.skipped || []);
   const apps = (links.items || []).map((x) => ({ id: x.id, name: x.name, group: x.group, state: x.state, ...(x.note ? { note: x.note } : {}), skipped: skipped.has(x.id),
     ...(reach && reach.sites && reach.sites[x.id] ? { agents: !!reach.sites[x.id].ready, connector: reach.sites[x.id].name } : {}) }));
-  const det = tryOr(() => detectHandoffs(), { agents: [] }), cmd = tryOr(() => handoffCmd(), "");
+  const det = ANDROID_APP ? { agents: [] } : tryOr(() => detectHandoffs(), { agents: [] }), cmd = ANDROID_APP ? "" : tryOr(() => handoffCmd(), "");
   return {
     pending: !!o.pending, step: steps.includes(o.step) ? o.step : steps[0], steps,
     phone: tryOr(() => { const p = PHONE ? computerView() : linkState(); return PHONE ? { role: "phone", paired: !!p.paired, name: p.name || "", ...(p.error ? { error: p.error } : {}) }
       : { role: "computer", on: p.on, listening: p.listening, ...(p.error ? { error: p.error } : {}), code: p.code || "", until: p.until || 0, link: p.link || "", qr: p.qr || "", addresses: p.addresses || [], port: p.port, phones: (p.phones || []).map((x) => x.name) }; }, null),
-    ai: { connected: !!r, provider: r ? r.provider : "", line: r ? `${PROVIDERS[r.provider].label}${r.model ? " · " + r.model : ""}` : "", claude: tryOr(() => claudeSetup(), st ? { installed: st.installed, signedIn: st.signedIn } : null) },
+    ai: { connected: !!r, provider: r ? r.provider : "", line: r ? `${PROVIDERS[r.provider].label}${r.model ? " · " + r.model : ""}` : "", claude: ANDROID_APP ? null : tryOr(() => claudeSetup(), st ? { installed: st.installed, signedIn: st.signedIn } : null) },
     work: { searching: reps.searching, at: reps.at || 0, done: reps.done || 0, total: reps.total || 0, count: reps.list.length, repos: reps.list.slice(0, 60).map((x) => ({ name: x.name, path: x.path })), roots: tryOr(() => scanRoots(), []).map((r) => (r === homedir() ? "~" : r.startsWith(homedir() + "/") ? "~" + r.slice(homedir().length) : r)) },
     agent: { cmd, pick: tryOr(() => pickAgent(), null), agents: (det.agents || []).map((a) => ({ label: a.label, tmpl: a.tmpl })) },
     apps, groups: links.groups || [], decided: apps.every((a) => a.skipped || a.state !== "off"),
@@ -831,4 +879,4 @@ function setOnboarding({ step, skip, unskip, skipRest, done, restart } = {}) {
   return onboarding();
 }
 
-export { isPeak, reportIdeasAdd, reportAsk, reportDraftAnswer, workTick, waitWhy, AUTO_GRACE, STUCK_AFTER, marketingState, marketingGo, marketingDraftAnswer, marketingTask, moveToMarketing, goLane, homeState, homeContext, homeAsk, homeAnswer, homeNext, nextUp, laneNamed, NEXT_FILE, workScene, workGo, displayName, firstSteps, onboarding, setOnboarding, startOnboarding, ONB_STEPS, ONB_STEPS_PHONE, onbSteps, phoneBits , phoneSetupFirst };
+export { isPeak, reportIdeasAdd, reportAsk, reportDraftAnswer, workTick, waitWhy, AUTO_GRACE, STUCK_AFTER, marketingState, marketingGo, marketingDraftAnswer, marketingTask, moveToMarketing, goLane, homeState, homeContext, homeAsk, homeAnswer, homeNext, nextUp, laneNamed, NEXT_FILE, workScene, workGo, displayName, firstSteps, onboarding, setOnboarding, startOnboarding, ONB_STEPS, ONB_STEPS_PHONE, onbSteps, phoneBits , phoneSetupFirst, settleAsks, plainAsk, settleFromChat };

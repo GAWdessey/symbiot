@@ -24,6 +24,7 @@ import { SCAN, SCAN_TIMEOUT_MS, scanRoots, scanHome, addScanRoot, removeScanRoot
 import { computeDrift } from "./drift.mjs";
 import { addTask, toggleTask, removeTask, restoreTask, syncTasks, taskType, pushTasks, pendingReview, workingDiff, learnNpm, withReleases, releaseInput, approveRepo, approveChanges, sendBack, setAutoMerge } from "./tasks.mjs";
 import { repoReview, repoSuggest, folderSuggest, taskChat, clearTaskChat, mailState, setMail, sentMail, produce, releaseNotes } from "./writeups.mjs";
+import { listSecrets, getSecret, markUsed, deleteSecret } from "./vault.mjs";
 import { loadScreens, screenImage, captureScreen, splitScreen, listMonitors, allowScreenshots, importScreen, setRegions, renameScreen, removeScreen, blueprint, clickRegion } from "./screens.mjs";
 import { mapPage, wholePage, pressRegion, typeRegion, uploadRegion, scrollPage, signIn, keepBrowserOpen, isTrusted, trustedSites, trustSite, untrustSite, openSymbiotBrowser, closeSymbiotBrowser, setBrowserHub, siteUrl, browserHub } from "./headless.mjs";
 import { weeklyState, setWeekly, runWeekly, startWeekly, autostartState, setAutostart, installLauncher, iconSvg, setLauncherLook } from "./desktop.mjs";
@@ -37,7 +38,7 @@ import { adaptState, noteUse } from "./adapt.mjs";
 import { reportIdeasAdd, reportAsk, reportDraftAnswer, homeState, homeAsk, homeAnswer, homeNext, workScene, workGo, workTick, firstSteps, marketingState, marketingGo, marketingDraftAnswer, marketingTask, moveToMarketing, onboarding, setOnboarding, startOnboarding, phoneSetupFirst } from "./home.mjs";
 import { MARKETING_DIR, MARKETING, draftPreview, laneMedia, displayName, setDraftMedia } from "./marketing.mjs";
 import { trays, trayMedia, setBlur, renderCapture } from "./tray.mjs";
-import { listReports, readReport, reportImage, markAllRead } from "./reports.mjs";
+import { listReports, readReport, reportImage, markAllRead, withNeeds } from "./reports.mjs";
 import { phoneState, setPhoneLink, newCode, unpairPhone, setRelay, findComputers, pairComputer, forgetComputer, pollComputer, queueChange, dismissNote, setPhoneApprove, startPhone } from "./phone.mjs";
 import { knowledgeState, addKnowledgeFolder, removeKnowledgeFolder, indexKnowledge, knowledgeTick, searchKnowledge } from "./knowledge.mjs";
 import { runChecks, checksState, markClashesSeen } from "./checks.mjs";
@@ -299,8 +300,8 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
         await learnNpm(ask); return json(res, partly(pendingReview()));
       }
       if (u.pathname === "/api/pending/diff") { const p = laneMap()[u.searchParams.get("repo") || ""]; return json(res, { diff: p ? workingDiff(p) : "" }); }
-      if (u.pathname === "/api/pending/approve" && req.method === "POST") { const b = await readBody(req), repo = String(b.repo || ""); if (b.bump) await learnNpm([laneMap()[repo]]); const notes = await releaseNotes(releaseInput(repo, { bump: b.bump })); return json(res, await approveRepo(repo, { bump: b.bump, notes })); }
-      if (u.pathname === "/api/pending/approve-changes" && req.method === "POST") { const b = await readBody(req), repo = String(b.repo || ""); if (b.bump) await learnNpm([laneMap()[repo]]); const notes = await releaseNotes(releaseInput(repo, { bump: b.bump, tick: b.tick })); return json(res, await approveChanges(repo, { bump: b.bump, tick: b.tick, notes })); }
+      if (u.pathname === "/api/pending/approve" && req.method === "POST") { const b = await readBody(req), repo = String(b.repo || ""); if (b.bump) await learnNpm([laneMap()[repo]]); const notes = await releaseNotes(releaseInput(repo, { bump: b.bump })); return json(res, await approveRepo(repo, { bump: b.bump, notes, confirm: !!b.confirm, allowShared: !!b.allowShared })); }
+      if (u.pathname === "/api/pending/approve-changes" && req.method === "POST") { const b = await readBody(req), repo = String(b.repo || ""); if (b.bump) await learnNpm([laneMap()[repo]]); const notes = await releaseNotes(releaseInput(repo, { bump: b.bump, tick: b.tick })); return json(res, await approveChanges(repo, { bump: b.bump, tick: b.tick, notes, confirm: !!b.confirm, allowShared: !!b.allowShared })); }
       if (u.pathname === "/api/pending/sendback" && req.method === "POST") { const b = await readBody(req); return json(res, sendBack(String(b.id || ""))); }
       if (u.pathname === "/api/automerge" && req.method === "POST") { const b = await readBody(req); return json(res, setAutoMerge(String(b.repo || ""), !!b.on)); }
       if (u.pathname === "/api/tasks/push" && req.method === "POST") { const b = await readBody(req); return json(res, pushTasks(b)); }
@@ -377,6 +378,11 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       if (u.pathname === "/api/screens/trusted") return json(res, { sites: trustedSites() });
       if (u.pathname === "/api/screens/trusted/add" && req.method === "POST") { const b = await readBody(req); return json(res, trustSite(b.site)); }
       if (u.pathname === "/api/screens/trusted/remove" && req.method === "POST") { const b = await readBody(req); return json(res, untrustSite(b.site)); }
+      // Saved secrets (vault.mjs): names and counts for Settings; an agent reads one by name, never a list of values.
+      if (u.pathname === "/api/secrets" || u.pathname === "/api/secrets/list") return json(res, { secrets: listSecrets() });
+      if (u.pathname === "/api/secrets/get" && req.method === "POST") { const b = await readBody(req); return json(res, getSecret(String(b.name || ""), { use: !!b.use })); }
+      if (u.pathname === "/api/secrets/used" && req.method === "POST") { const b = await readBody(req); return json(res, markUsed(String(b.name || ""), String(b.value || ""))); }
+      if (u.pathname === "/api/secrets/delete" && req.method === "POST") { const b = await readBody(req); return json(res, deleteSecret(String(b.name || ""))); }
       if (u.pathname === "/api/screens/signin" && req.method === "POST") { const b = await readBody(req); return json(res, await signIn(b.site)); }
       // What Symbiot remembers across the app (mind.mjs), and forgetting it.
       if (u.pathname === "/api/mind") return json(res, mindState());
@@ -434,7 +440,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       // reads your LinkedIn only on your click (confirmed), never by itself
       if (u.pathname === "/api/posts/voice" && req.method === "POST") { const b = await readBody(req); if (b.confirmed !== true) return json(res, { error: "Reading your LinkedIn posts needs your click." }); return json(res, await voiceFromLinkedIn()); }
       // Reports (reports.mjs): what runs wrote up in their .symbiot/; read by id, never by path.
-      if (u.pathname === "/api/reports") return json(res, { reports: listReports() });
+      if (u.pathname === "/api/reports") return json(res, { reports: withNeeds(listReports()) });
       if (u.pathname === "/api/reports/read") return json(res, readReport(u.searchParams.get("id") || ""));
       // A report's image (an <img> src, so its token is in ?t=): by the report's id and a src it shows, from its allowed folders only.
       if (u.pathname === "/api/reports/image") { const f = reportImage(u.searchParams.get("id") || "", u.searchParams.get("src") || ""); if (f.error) { res.writeHead(404, { "content-type": "text/plain" }); res.end(f.error); return; } res.writeHead(200, { "content-type": f.type, "cache-control": "private, no-cache", "x-content-type-options": "nosniff" }); res.end(readFileSync(f.file)); return; }

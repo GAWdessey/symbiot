@@ -68,6 +68,17 @@ function readReport(id, { list, mark = true, seenFile = SEEN_FILE } = {}) {
   const draft = isDraftReport(r.title, r.name);
   return { ...r, new: false, text, html: mdHtml(text, { id: r.id, base: dirname(r.file), roots: imageRoots(r) }) + (cut ? "<p class='muted'>(cut at 512 KB: open the file for the rest)</p>" : ""), draft, ...(draft ? { decided: decidedOn(r, seenFile) } : { ideas: reportIdeas(text) }) };
 }
+// The list with what each report leaves for the user: `needs` is "draft" (undecided, waits
+// on an Approve or Reject), "ideas" (it ends in next steps), or "" (nothing to act on).
+// Uses reportIdeas, isDraftReport and decidedOn as they are; the text is read per report.
+function withNeeds(list, { seenFile = SEEN_FILE } = {}) {
+  return list.map((r) => {
+    if (isDraftReport(r.title, r.name)) return { ...r, needs: decidedOn(r, seenFile) ? "" : "draft", ideas: 0 };
+    let text = ""; try { text = readFileSync(r.file, "utf8").slice(0, MAX_READ); } catch { /* gone: nothing to act on */ }
+    const n = reportIdeas(text).length;
+    return { ...r, needs: n ? "ideas" : "", ideas: n };
+  });
+}
 // Mark them all read (the list's "Mark all read").
 function markAllRead({ list, seenFile = SEEN_FILE } = {}) {
   const d = loadSeen(seenFile); for (const r of list || listReports()) d.seen[r.id] = r.mtime;
@@ -215,4 +226,4 @@ function decide(r, status, file = SEEN_FILE) { const d = loadSeen(file); d.decid
 // How many reports are new, and the newest one's title (Home's droplet).
 function reportsNews(opts) { const l = listReports(opts).filter((r) => r.new); return { count: l.length, latest: l[0] ? l[0].title : "" }; }
 
-export { SEEN_FILE, NOT_REPORTS, titleOf, listReports, readReport, reportImage, imagePath, markAllRead, reportsNews, mdHtml, reportIdeas, isDraftReport, decidedOn, decide, IDEAS_MAX };
+export { SEEN_FILE, NOT_REPORTS, titleOf, listReports, readReport, reportImage, imagePath, markAllRead, reportsNews, mdHtml, reportIdeas, isDraftReport, decidedOn, decide, withNeeds, IDEAS_MAX };

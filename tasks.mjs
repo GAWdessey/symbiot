@@ -9,8 +9,9 @@ import { readFileSync, writeFileSync, existsSync, readdirSync, mkdirSync, statSy
 import { randomBytes } from "node:crypto";
 import { VERSION, LATEST_VERSION, REGISTRY, semverGt, loadConfig, saveConfig, loadTasks, saveTasks, TASK_MAX, clipWords, taskWords, sameTask, uniqueTasks, sh, hasCmd, repoState } from "./core.mjs";
 import { handoverRules, ONLY_YOU, HANDBACK } from "./handover.mjs";
+import { doneBrief, standingBrief } from "./asksdone.mjs";
 import { userStyleLine } from "./adapt.mjs";
-import { QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, isUrgent, handoffCmd, runningHandoff, untrackedBefore, forgetUntracked, writeTasks, droppedTasks, startHeldTasks, connectorsLine } from "./agents.mjs";
+import { QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, isUrgent, handoffCmd, runningHandoff, untrackedBefore, forgetUntracked, loadRunFiles, forgetRunFiles, writeTasks, droppedTasks, startHeldTasks, connectorsLine } from "./agents.mjs";
 import { gitDefaultBranch } from "./drift.mjs";
 import { readRunLog } from "./work.mjs";
 import { repoPathMap, laneMap, openWork, detectRepo } from "./scan.mjs";
@@ -186,12 +187,25 @@ function parseStatusZ(out) {
 // `git add -A`, and staging the whole tree took in an unignored .env too. With
 // no note of what was there (a run started before Symbiot kept one), it's
 // every change.
-function taskPaths(path, files) {
+//
+// With a record of the runs here (agents.mjs runfiles.json), it's narrower: only
+// the files of runs that ticked a task. A file only an unfinished run touched
+// stays put (held), and one a finished and an unfinished run both touched can't
+// be told apart, so it's listed in `shared` for the caller to ask about. extra:
+// files Approve itself changed (a version bump). No record, every change, as before.
+function taskPaths(path, files, extra = []) {
   const before = untrackedBefore(path), had = before ? new Set(before.files) : null;
   const changed = (f) => { try { return statSync(join(path, f)).mtimeMs >= before.at; } catch { return true; } };
   const mine = (f) => f.st !== "??" || !had || !had.has(f.file) || changed(f.file);
-  const keep = files.filter(mine);
-  return { paths: keep.flatMap((f) => (f.from ? [f.file, f.from] : [f.file])), left: files.length - keep.length };
+  let keep = files.filter(mine), held = [], shared = []; const left = files.length - keep.length;
+  const runs = loadRunFiles(path);
+  if (runs.length) {
+    const done = new Set(runs.filter((r) => r.ticked > 0).flatMap((r) => r.files)), open = new Set(runs.filter((r) => !(r.ticked > 0)).flatMap((r) => r.files)), more = new Set(extra);
+    shared = keep.filter((f) => done.has(f.file) && open.has(f.file)).map((f) => f.file);
+    held = keep.filter((f) => !done.has(f.file) && !more.has(f.file)).map((f) => f.file);
+    keep = keep.filter((f) => done.has(f.file) || more.has(f.file));
+  }
+  return { paths: keep.flatMap((f) => (f.from ? [f.file, f.from] : [f.file])), files: keep.map((f) => f.file), left, held, shared };
 }
 // The full diff the agent left behind: tracked changes + new files, capped.
 function workingDiff(path, cap = 400000) {
@@ -435,6 +449,13 @@ function finishedOffer(path, open) {
   const summary = runSummary(path);
   return uniqueTasks(open.map((x) => x.text)).slice(0, 12).map((text) => { const x = open.find((y) => y.text === text); return { id: x.id, text, finished: saidFinished(summary, text) }; });
 }
+// What Approve would ship out of workingChanges: the files of the runs that finished
+// (taskPaths), so the card's list is the commit's. held: files only an unfinished run
+// touched; shared: ones a finished and an unfinished run both touched (Approve asks).
+function shippable(path, wc) {
+  const own = taskPaths(path, wc.files), keep = new Set(own.files);
+  return { ...wc, files: wc.files.filter((f) => keep.has(f.file)), ...(own.held.length ? { held: own.held } : {}), ...(own.shared.length ? { shared: own.shared } : {}) };
+}
 // Repos with tasks awaiting review, plus repos Symbiot sent tasks to that have
 // uncommitted changes no ticked task covers (untasked: approve them as-is, with
 // `open`, the repo's open tasks, to tick the ones the run finished).
@@ -444,10 +465,10 @@ function pendingReview() {
   const sent = [...new Set(t.filter((x) => x.repo && !x.archived && !by[x.repo]).map((x) => x.repo))];
   const map = Object.keys(by).length || sent.length ? laneMap() : {};
   const am = autoMergeRepos();
-  const out = Object.keys(by).sort().map((repo) => { const path = map[repo] || ""; return { repo, path, tasks: by[repo], autoMerge: am.includes(repo), running: !!(path && runningHandoff(path)), ...(path ? { ...workingChanges(path), unreleased: unreleased(path), bumpOffer: bumpOffer(path), publishesOnMerge: publishesOnMerge(path) } : { branch: "", files: [], stat: "" }) }; });
+  const out = Object.keys(by).sort().map((repo) => { const path = map[repo] || ""; return { repo, path, tasks: by[repo], autoMerge: am.includes(repo), running: !!(path && runningHandoff(path)), ...(path ? { ...shippable(path, workingChanges(path)), unreleased: unreleased(path), bumpOffer: bumpOffer(path), publishesOnMerge: publishesOnMerge(path) } : { branch: "", files: [], stat: "" }) }; });
   for (const repo of sent.sort()) {
     const path = map[repo]; if (!path || !existsSync(join(path, ".symbiot", "TASKS.md"))) continue;
-    const wc = workingChanges(path); if (!wc.files.length) continue;
+    const wc = shippable(path, workingChanges(path)); if (!wc.files.length) continue;
     const open = finishedOffer(path, t.filter((x) => x.repo === repo && !x.done && !x.archived && !x.review));
     out.push({ repo, path, tasks: [], untasked: true, open, autoMerge: am.includes(repo), running: !!runningHandoff(path), ...wc, unreleased: unreleased(path), bumpOffer: bumpOffer(path), publishesOnMerge: publishesOnMerge(path) });
   }
@@ -498,7 +519,13 @@ async function shipChanges(path, texts, opts = {}) {
   if (!st.ok) return { error: gitFailed("git status", st) };
   const ch = { files: parseStatusZ(st.out), branch: git(path, ["rev-parse", "--abbrev-ref", "HEAD"]).out };
   if (!ch.files.length) return { ok: true, nothing: true, note: "No uncommitted changes — approved without a commit." };
-  const { paths, left } = taskPaths(path, ch.files), leftNote = left ? `${left.toLocaleString("en")} untracked file${left === 1 ? " that was" : "s that were"} already there before the agent ran ${left === 1 ? "was" : "were"} left out.` : "";
+  const own = taskPaths(path, ch.files, opts.bumped ? ["package.json", "package-lock.json", "npm-shrinkwrap.json", "CHANGELOG.md"] : []), { paths, left } = own;
+  const heldNote = own.held.length ? `${own.held.length} file${own.held.length === 1 ? "" : "s"} no finished run touched ${own.held.length === 1 ? "was" : "were"} left out (${own.held.slice(0, 4).join(", ")}${own.held.length > 4 ? ", …" : ""}).` : "";
+  // Two runs touched the same file, one finished and one not: whose it is can't be told, so ask.
+  if (own.shared.length && !opts.allowShared) return { ask: true, shared: own.shared, error: `${own.shared.length === 1 ? "A file was" : own.shared.length + " files were"} changed by a finished run and by another run that hasn't finished (${own.shared.slice(0, 4).join(", ")}${own.shared.length > 4 ? ", …" : ""}). Approving would ship the unfinished work too. Approve anyway, or let that run finish first?` };
+  // No task behind these changes: that's a question for the user, not a commit.
+  if (!texts.length && paths.length && !opts.confirm) return { ask: true, untasked: true, files: own.files.slice(0, 50), error: `No ticked task covers these ${own.files.length} file${own.files.length === 1 ? "" : "s"} (${own.files.slice(0, 4).join(", ")}${own.files.length > 4 ? ", …" : ""}). Commit them anyway?` };
+  const leftNote = [heldNote, left ? `${left.toLocaleString("en")} untracked file${left === 1 ? " that was" : "s that were"} already there before the agent ran ${left === 1 ? "was" : "were"} left out.` : ""].filter(Boolean).join(" ");
   if (!paths.length) return { ok: true, nothing: true, note: "No changes from the agent's runs — approved without a commit. " + leftNote };
   if (!ch.branch || ch.branch === "HEAD") return { error: "Detached HEAD — check out a branch first." };
   const base = gitDefaultBranch(path), day = new Date().toISOString().slice(0, 10); let branch = ch.branch, fresh = "";
@@ -533,6 +560,7 @@ async function shipChanges(path, texts, opts = {}) {
   const subject = commitSubject(texts);
   const body = (texts.length ? texts.map((x) => "- " + x).join("\n") : "No ticked task covers these changes.") + (opts.bumped ? `\n\nBumps the version to ${opts.bumped}. ` + (publishesOnMerge(path) ? `It publishes to npm when this merges.` : `After this merges, tag v${opts.bumped} on ${base} to release it.`) : "");
   const cm = git(path, ["commit", "-m", subject, "-m", body]); if (!cm.ok) return { error: "Commit failed: " + (cm.err || cm.out), branch };
+  forgetRunFiles(path, own.files);
   forgetUntracked(path); // committed: the next run notes what's there afresh
   const said = [fresh, leftNote].filter(Boolean).join(" ");
   const out = { ok: true, branch, base, commit: git(path, ["rev-parse", "--short", "HEAD"]).out, subject, ...(said ? { note: said } : {}) };
@@ -649,7 +677,7 @@ function buildTasksMd(name, ctx, list) {
   const keys = Object.keys(byType).sort((a, b) => TASK_ORDER.indexOf(a) - TASK_ORDER.indexOf(b));
   for (const ty of keys) { L.push(`### ${ty}`); for (const t of byType[ty]) L.push(`- [ ] ${t.text}`); L.push(""); }
   L.push("## When you finish an item", "- Tick it here (`- [x]`) as soon as it's done — that's how it reaches review. Ticking doesn't archive it: the user approves it in Symbiot, which commits it on a branch and opens a PR.", "- Leave your changes **uncommitted**, and don't tick anything you didn't finish or couldn't verify.", "- If an item has numbered steps (1), 2), …), say `Step N: …` as you start each one, so Home shows how far along you are.", "- To see Symbiot itself working (its Home, a layout, a card), run a copy of your own: `node index.mjs app --fresh` from this repo, or `symbiot app --fresh`. Never point a browser, a screenshot or a proxy at the user's running Symbiot (127.0.0.1:7391): it's their window and their data.", "- If the user says to drop an item (in ANSWERS.md, say), delete its line here: Symbiot closes it, so it isn't sent again. Don't delete one for any other reason.", "");
-  L.push(...handoverRules(ctx.lanes || [], name), ...HANDBACK);
+  L.push(...handoverRules(ctx.lanes || [], name), ...HANDBACK, ...standingBrief(), ...doneBrief());
   L.push("## If you need a decision, or have ideas", "You may be running unattended, so you can't ask in chat. Write `.symbiot/QUESTIONS.md` instead: Symbiot shows it to the user on your block in its Workdesk, and their answers come back in `.symbiot/ANSWERS.md` (read that first if it exists).",
     `- At most ${QUESTIONS_MAX} questions, under a \`## Questions\` heading. Each is a \`### \` heading, then a line of context, then exactly ${OPTIONS_SHOWN} options as \`- \` bullets, the one you recommend first, marked \`(recommended)\`. Symbiot shows only the first ${OPTIONS_SHOWN}; the user can always answer in their own words.`,
     "- Judge the options before you ask. Most people pick the recommended option without weighing the other, and Symbiot works for a whole company (developers, sales, everyone), not one person, so the choice is really yours. Both options must be good routes to the best solution, never filler or one you wouldn't take. Each says in plain words, with no jargon, what it does and what it changes from then on for the project, the people working on it and the company. Recommend the one that's best for, in this order, the company, the people doing the work, then the task's goal. Base that on evidence you can check here (git history, tests, logs, how it's used, the answers so far), not on what's quickest, and give that evidence in the context line in a sentence.",

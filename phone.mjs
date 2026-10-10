@@ -29,6 +29,7 @@
 //   its Keystore instead and handed in at start: SYMBIOT_COMPUTER_SECRET)  — the phone
 import { createServer } from "node:http";
 import { hostname, networkInterfaces } from "node:os";
+import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 import { readFileSync, writeFileSync, unlinkSync, mkdirSync, statSync } from "node:fs";
 import { randomBytes, randomInt, randomUUID, timingSafeEqual, createHash, generateKeyPairSync, createPublicKey, createPrivateKey, diffieHellman, hkdfSync, createCipheriv, createDecipheriv } from "node:crypto";
@@ -367,6 +368,34 @@ function stopRelay() {
   if (ws) try { ws.close(); } catch {}
 }
 
+// USB: a phone on adb needs nothing scanned. `adb reverse` lets it reach this computer at
+// 127.0.0.1:7392 over the cable, and the pairing link is pushed to the Android app, which
+// asks "Link to <this computer>?": Approve is the only step. Once per plug-in per phone.
+const adbPushed = new Set();
+const adbRun = (args) => execFileSync("adb", args, { encoding: "utf8", timeout: 8000, stdio: ["ignore", "pipe", "ignore"] });
+function adbLink({ run = adbRun, has = () => hasCmd("adb") } = {}) {
+  const l = linkCfg();
+  if (!l.on || !listener || !has()) return [];
+  let serials = [];
+  try { serials = run(["devices"]).split("\n").slice(1).map((x) => x.trim().split(/\s+/)).filter((x) => x[1] === "device").map((x) => x[0]); } catch { return []; }
+  for (const s of [...adbPushed]) if (!serials.includes(s)) adbPushed.delete(s); // unplugged: pushed again next time
+  const did = [];
+  for (const s of serials) {
+    if (adbPushed.has(s)) continue;
+    try {
+      run(["-s", s, "reverse", `tcp:${l.port}`, `tcp:${l.port}`]);
+      if (!pairing || Date.now() > pairing.until) newCode();
+      const link = `symbiot://pair?a=127.0.0.1&p=${l.port}&c=${pairing.code}&k=${fingerprint(linkKeys().pub)}&n=${encodeURIComponent(hostname())}`;
+      run(["-s", s, "shell", "am", "start", "-a", "android.intent.action.VIEW", "-d", `'${link}'`, "co.symbiot.app"]);
+      adbPushed.add(s); did.push(s);
+    } catch {}
+  }
+  return did;
+}
+let adbTimer = null;
+function startAdbLink() { if (adbTimer || PHONE || process.env.SYMBIOT_NO_ADB === "1" || process.env.SYMBIOT_SANDBOX) return; // (tests and sandboxes never touch a real phone)
+  adbLink(); adbTimer = setInterval(() => adbLink(), 30000); adbTimer.unref(); }
+
 // Listen on the network while it's switched on. Gives the state.
 function startPhoneLink() {
   const l = linkCfg();
@@ -378,10 +407,10 @@ function startPhoneLink() {
       listenErr = e && e.code === "EADDRINUSE" ? `Port ${l.port} is in use by something else on this computer.` : `Couldn't listen on port ${l.port}: ${(e && e.message) || e}`;
       listener = null; resolve(linkState());
     });
-    srv.listen(l.port, "0.0.0.0", () => { listener = srv; listenErr = ""; srv.unref(); startMdns(); startRelay(); resolve(linkState()); });
+    srv.listen(l.port, "0.0.0.0", () => { listener = srv; listenErr = ""; srv.unref(); startMdns(); startRelay(); startAdbLink(); resolve(linkState()); });
   });
 }
-function stopPhoneLink() { if (listener) { listener.close(); if (listener.closeAllConnections) listener.closeAllConnections(); } listener = null; pairing = null; stopMdns(); stopRelay(); }
+function stopPhoneLink() { if (listener) { listener.close(); if (listener.closeAllConnections) listener.closeAllConnections(); } listener = null; pairing = null; stopMdns(); stopRelay(); clearInterval(adbTimer); adbTimer = null; adbPushed.clear(); }
 async function setPhoneLink(on) {
   saveLink({ on: !!on });
   if (!on) { stopPhoneLink(); listenErr = ""; return linkState(); }
@@ -609,6 +638,6 @@ const phoneState = () => (PHONE ? computerView() : linkState());
 // While the app runs: the computer listens if it's switched on; the phone asks if it's paired.
 function startPhone() { if (PHONE) startComputerPoll(); else startPhoneLink(); }
 
-export { PORT, PHONE, ANDROID_APP, PHONE_OPS, lanAddresses, linkState, newCode, unpairPhone, setRelay, startPhoneLink, stopPhoneLink, setPhoneLink, setPhoneApprove, phoneApprovals, snapshot,
+export { adbLink, PORT, PHONE, ANDROID_APP, PHONE_OPS, lanAddresses, linkState, newCode, unpairPhone, setRelay, startPhoneLink, stopPhoneLink, setPhoneLink, setPhoneApprove, phoneApprovals, snapshot,
   computerUrl, parsePairLink, pairLink, computerState, computerView, findComputers, pairComputer, forgetComputer, pollComputer, queueChange, dismissNote, startComputerPoll, phoneState, startPhone,
   newKeys, linkKey, fingerprint, seal, unseal, relayOf, answer };

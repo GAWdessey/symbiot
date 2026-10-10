@@ -19,7 +19,7 @@ const ROOT = mkdtempSync(join(tmpdir(), "symbiot-phone-"));
 const PH = join(ROOT, "phone"), PC = join(ROOT, "computer"), CFG = join(PH, ".config", "symbiot"), PCFG = join(PC, ".config", "symbiot");
 mkdirSync(CFG, { recursive: true }); mkdirSync(PCFG, { recursive: true });
 process.env.HOME = PH; process.env.USERPROFILE = PH;
-process.env.SYMBIOT_NO_MDNS = "1"; process.env.SYMBIOT_NO_POLL = "1"; delete process.env.SYMBIOT_ANDROID_APP; delete process.env.SYMBIOT_RELAY; delete process.env.SYMBIOT_NO_RELAY;
+process.env.SYMBIOT_NO_ADB = "1"; process.env.SYMBIOT_NO_MDNS = "1"; process.env.SYMBIOT_NO_POLL = "1"; delete process.env.SYMBIOT_ANDROID_APP; delete process.env.SYMBIOT_RELAY; delete process.env.SYMBIOT_NO_RELAY;
 let pass = 0, fail = 0;
 const ok = (n, c, got) => { if (c) { pass++; console.log("  ✓ " + n); } else { fail++; console.log("  ✗ " + n + (got !== undefined ? "  got: " + JSON.stringify(got).slice(0, 900) : "")); } };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -37,6 +37,8 @@ writeFileSync(join(ROOT, "computer.mjs"), `
   p.setPhoneApprove(async (repo, untasked) => { approved.push({ repo, untasked }); return { ok: true, pr: "https://github.com/me/demo/pull/7" }; });
   const cmds = { on: () => p.setPhoneLink(true), off: () => p.setPhoneLink(false), code: () => p.newCode(), state: () => p.linkState(), unpair: (a) => p.unpairPhone(a.id),
     approved: () => approved, add: (a) => t.addTask(a.text, a.repo || ""), toggle: (a) => t.toggleTask(a.id), tasks: () => JSON.parse(readFileSync(${JSON.stringify(join(PCFG, "tasks.json"))}, "utf8")),
+    adb: () => { const calls = []; const run = (a) => { calls.push(a.join(" ")); return a[0] === "devices" ? "List of devices attached\\nABC123\\tdevice\\nXYZ\\tunauthorized\\n" : ""; };
+      const first = p.adbLink({ run, has: () => true }), again = p.adbLink({ run, has: () => true }); return { first, again, calls }; },
     snapshot: () => p.snapshot({ fresh: true }), loaded: () => typeof w.newsAfter };
   createInterface({ input: process.stdin }).on("line", async (l) => {
     const m = JSON.parse(l);
@@ -325,6 +327,10 @@ try {
   const code5 = (await pc.cmd("code"));
   const fake5 = await P.pairComputer("", "", { link: code5.link.replace(/a=[^&]*/, "a=127.0.0.1").replace(/k=[\w-]+/, "k=AAAAAAAAAAAAAAAAAAAAAA"), name: "Pixel" });
   ok("a link whose key isn't the computer's: refused, nothing sent", /isn't the one whose code you scanned/.test(fake5.error || ""), fake5.error);
+  const ab = await pc.cmd("adb");
+  ok("adbLink: adb reverse, then one am start with the pair link, for each authorised device once (not the unauthorised, not again)",
+    ab.first.join() === "ABC123" && ab.again.length === 0 && ab.calls.filter((c) => /^-s ABC123 reverse tcp:\d+ tcp:\d+$/.test(c)).length === 1 &&
+    ab.calls.filter((c) => /^-s ABC123 shell am start -a android.intent.action.VIEW -d 'symbiot:\/\/pair\?a=127\.0\.0\.1&p=\d+&c=\d{6}&k=[\w-]+&n=[^']+' co.symbiot.app$/.test(c)).length === 1 && !ab.calls.some((c) => /XYZ/.test(c)), ab);
 } finally {
   try { await pc.stop(); } catch {}
   rmSync(ROOT, { recursive: true, force: true });

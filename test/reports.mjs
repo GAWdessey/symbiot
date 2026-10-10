@@ -23,7 +23,7 @@ const R = await import("../reports.mjs");
 const { HANDBACK } = await import("../handover.mjs");
 const { buildTasksMd } = await import("../tasks.mjs");
 const { actBrief } = await import("../mind.mjs");
-const { homeState } = await import("../home.mjs");
+const { homeState, settleAsks, plainAsk, settleFromChat } = await import("../home.mjs");
 const { SHAPES } = await import("../adapt.mjs");
 
 const put = (p, f, t, ago = 0) => { mkdirSync(join(p, ".symbiot"), { recursive: true }); const file = join(p, ".symbiot", f); writeFileSync(file, t); if (ago) { const s = (Date.now() - ago) / 1000; utimesSync(file, s, s); } };
@@ -163,5 +163,49 @@ console.log("REPORTS — each ends with what to do about it");
   ok("Reject: told not to use it, nothing starts", rj.ok && /### Rejected: \.symbiot\/LINKEDIN-POST-PREVIEW\.md\nThe user rejected/.test(readFileSync(join(arg, ".symbiot", "ANSWERS.md"), "utf8")), rj);
 }
 
+console.log("REPORTS — the list says which ones need the user");
+{
+  const d = join(CFG, "drafts", "act-needs0001");
+  put(d, "PLAN.md", "# A plan\n\n## Next steps\n\n- do the first\n- do the second\n");
+  put(d, "FINDINGS.md", "# Findings\n\nNothing to do.\n");
+  put(d, "POST-DRAFT.md", "# Post draft\n\nText.\n");
+  const l = R.withNeeds(R.listReports({ map: { symbiot: repo }, folders: [d], running: () => false }), { seenFile: join(CFG, "seen-needs.json") });
+  const by = (n) => l.find((r) => r.name === n);
+  ok("a report ending in next steps is 'ideas' with a count", by("PLAN.md").needs === "ideas" && by("PLAN.md").ideas === 2, by("PLAN.md"));
+  ok("a report with nothing to act on needs nothing", by("FINDINGS.md").needs === "" && by("FINDINGS.md").ideas === 0);
+  ok("an undecided draft is 'draft'", by("POST-DRAFT.md").needs === "draft");
+  R.decide(by("POST-DRAFT.md"), "approved", join(CFG, "seen-needs.json"));
+  const l2 = R.withNeeds(l, { seenFile: join(CFG, "seen-needs.json") });
+  ok("a decided draft stops needing the user", l2.find((r) => r.name === "POST-DRAFT.md").needs === "");
+}
+
+{
+  const ask = (path, q) => ({ kind: "ask", id: "ask:" + path, q, options: [] });
+  const left = settleAsks([ask("a", "Close the Symbiot Browser so I can carry on?"), ask("b", "Click Done in the browser window"), ask("c", "Which plan are you on?"), ask("d", "Which plan are you on?!"), { kind: "setup", id: "s" }]);
+  const { addRule: ar } = await import("../asksdone.mjs");
+  ar("Main inbox is garthwhite507@gmail.com, never ask which mailbox to clean");
+  const cv = settleAsks([ask("m", "Which mailbox should I clean?")]);
+  ok("a standing rule that looks like it answers an ask is listed on the card, which stays open", cv.length === 1 && cv[0].covered && cv[0].covered.length === 1, JSON.stringify(cv));
+  ok("asks to close the Symbiot Browser never reach Home, and the same question from two agents is one card", left.length === 2 && left[0].path === undefined && left[0].id === "ask:c" && left[1].id === "s", JSON.stringify(left.map((y) => y.id)));
+}
+{
+  const { recordDone } = await import("../asksdone.mjs");
+  const dir = join(HOME, "perm"); mkdirSync(join(dir, ".symbiot"), { recursive: true });
+  writeFileSync(join(dir, ".symbiot", "allowlist.proposed.json"), JSON.stringify({ permissions: { allow: ["Bash(symbiot screens:*)", "Bash(git status)"] } }));
+  const c = plainAsk(dir, { q: "Can I run Symbiot's Screens command?", options: ["👤 You (only you: a permission): allow the list in .symbiot/allowlist.proposed.json (recommended)", "Not now"] });
+  ok("a permission card lists the commands in plain words with Allow, and shows no file path", /symbiot screens/.test(c.q) && /git status/.test(c.q) && c.labels[0] === "Allow (recommended)" && !/\.json|\.symbiot/.test(c.q + c.labels.join()), JSON.stringify(c));
+  recordDone("Sign in to X as Daaymn?", "Done: signed in");
+  ok("an ask the user already answered is not raised again, by any agent", settleAsks([{ kind: "ask", id: "ask:z", q: "Sign in to X as Daaymn" }]).length === 0, "");
+}
+{
+  const { converse } = await import("../mind.mjs");
+  const q = "Sign in to the ghost inbox so I can read it?";
+  const r = await converse({ where: "Home", question: "here is the email: owner key abc", settle: true, map: {}, ask: async (sys) => JSON.stringify({ reply: "Got it.", settled: [q, "A card that isn't there"] }) });
+  ok("Home chat can say a card's question was answered", r.settled && r.settled.length === 2, JSON.stringify(r.settled));
+  const n = settleFromChat({ you: [{ kind: "ask", q, id: "ask:g" }] }, r.settled, "here is the email");
+  ok("…only a question really on Home closes, and it's then recorded so no agent asks it again", n === 1 && settleAsks([{ kind: "ask", id: "ask:g", q }]).length === 0, n);
+  const r2 = await converse({ where: "Reports", question: "hi", map: {}, ask: async () => JSON.stringify({ reply: "Hi", settled: [q] }) });
+  ok("…and other chats can't settle cards", !r2.settled, "");
+}
 console.log(`\n${fail ? "✗" : "✓"} reports: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

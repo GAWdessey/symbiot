@@ -3,13 +3,14 @@
 // tab, and the questions an unattended agent leaves for the user.
 import { MARKETING_DIR } from "./marketing.mjs";
 import { licenceState, isPro, can, canWorkIn } from "./licence.mjs";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { homedir } from "node:os";
 import { join, dirname, resolve, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { readFileSync, writeFileSync, mkdirSync, existsSync, openSync, writeSync, unlinkSync, readdirSync, statSync, renameSync } from "node:fs";
 import { randomBytes, createHash } from "node:crypto";
 import { CONFIG_DIR, loadConfig, saveConfig, loadTasks, TASK_MAX, clipWords, sameTask, taskWords, sh, hasCmd } from "./core.mjs";
+import { recordDone } from "./asksdone.mjs";
 import { parseRun, lastRunText, readRunLog, briefPlan, stepOf, runLine } from "./work.mjs";
 import { noteDuration, noteCost, kindOf } from "./estimate.mjs";
 import { parseFacts, leftToYou, gitWork, agentsGitWork, agentsPosting, linkedAsks, linkedChore, PUSH_OK } from "./handover.mjs";
@@ -197,7 +198,7 @@ function withModel(tmpl, model) {
 // config.agentSandbox: false turns it off.
 const SANDBOX_DIR = join(CONFIG_DIR, "sandbox");
 const SANDBOX_CACHES = [".npm", ".cache"]; // npm's cache and logs; pip, uv, node-gyp, Chrome for Testing
-const SANDBOX_SECRETS = [".ssh", ".gnupg", ".aws", ".azure", ".kube", ".docker", ".config/gcloud", ".config/gh", ".netrc", ".npmrc", ".pypirc", ".git-credentials", ".config/symbiot/config.json", ".config/symbiot/secrets.json"]; // your AI's key and the app's token too
+const SANDBOX_SECRETS = [".ssh", ".gnupg", ".aws", ".azure", ".kube", ".docker", ".config/gcloud", ".config/gh", ".netrc", ".npmrc", ".pypirc", ".git-credentials", ".config/symbiot/config.json", ".config/symbiot/secrets.json", ".config/symbiot/vault.json", ".config/symbiot/vault.key"]; // your AI's key and the app's token too
 // Local sockets are allowed (headless Chrome needs one to start, so the browser tests
 // ran in no sandboxed run), but the ones that would be a way out are hidden: Docker's,
 // and your session's (its bus starts commands outside, through systemd-run; X11 and
@@ -289,6 +290,7 @@ function runHandoff(repoPath, { force = false, lost = false, model = "" } = {}) 
   const blocked = !force && blockedAgain(repoPath, tmpl); if (blocked) return blocked;
   try { unlinkSync(join(repoPath, ".symbiot", WAITING)); } catch {} // the step's done (or this is Start it anyway): this is the run it waited for
   noteUntracked(repoPath);
+  const dirtyBefore = dirtyState(repoPath), ticksBefore = ticksIn(readSymbiot(repoPath, "TASKS.md"));
   const lock = join(repoPath, ".symbiot", LOCK);
   const own = opts.env && typeof opts.env === "object" ? Object.fromEntries(Object.entries(opts.env).map(([k, v]) => [k, String(v)])) : null, boxEnv = sandboxEnv(box);
   const owner = licenceState().plan === "owner" ? { SYMBIOT_OWNER: "1" } : null; // the guard lets only the owner's runs touch Symbiot's own files
@@ -297,6 +299,7 @@ function runHandoff(repoPath, { force = false, lost = false, model = "" } = {}) 
     if (noteSession(repoPath, code, !!resume) === "lost") { setTimeout(() => { try { runHandoff(repoPath, { force: true, lost: true }); } catch {} }, 300); return; } // its conversation is gone: start afresh
     try { if (JSON.parse(readFileSync(lock, "utf8")).pid === e.pid) unlinkSync(lock); } catch {}
     noteBlocked(repoPath, tmpl, e.startedAt, code);
+    try { noteRunFiles(repoPath, e, dirtyBefore, ticksBefore); } catch {} // which files this run touched, for Approve
     setTimeout(() => { try { autoAllow(repoPath); } catch {} }, 300); // a list it proposed inside your work: turned on, and on it goes
     startHeldTasks(repoPath); // tasks sent while it ran land now; start on them as that Send would have
     try { urgentDone(repoPath, e.id); } catch {} // the urgent run's done: the lanes it parked carry on
@@ -770,6 +773,42 @@ function noteUntracked(path) {
     try { mkdirSync(dirname(f), { recursive: true }); writeFileSync(f, JSON.stringify({ at, files })); } catch {}
   });
 }
+// ---- the files each run touched ---------------------------------------------
+// .symbiot/runfiles.json: [{ id, startedAt, endedAt, ticked, files }], one per run
+// that finished here since the last approve. files are the paths whose state
+// (mtime + size) differs after the run from before it (any edit changes both); ticked is how many TASKS.md items it newly ticked. Approve
+// (tasks.mjs taskPaths) stages only the files of runs that ticked something, so
+// two runs sharing a folder don't ship each other's unfinished work.
+const RUNFILES = "runfiles.json";
+function dirtyState(path) {
+  const r = spawnSync("git", ["-C", path, "status", "--porcelain", "-z", "-uall", "--", ".", ":(exclude).symbiot"], { encoding: "utf8", timeout: 30000, maxBuffer: 256 * 1024 * 1024, env: { ...process.env, GIT_TERMINAL_PROMPT: "0" } });
+  if (r.error || r.status !== 0) return null;
+  const parts = String(r.stdout || "").split("\0"), out = {};
+  for (let i = 0; i < parts.length; i++) {
+    const l = parts[i]; if (l.length < 4) continue;
+    if (/^[RC]/.test(l)) i++; // a rename's old path
+    const f = l.slice(3); let sig = "gone"; try { const st = statSync(join(path, f)); sig = st.mtimeMs + ":" + st.size; } catch {}
+    out[f] = sig;
+  }
+  return out;
+}
+const ticksIn = (md) => (String(md || "").match(/^\s*-\s*\[x\]/gim) || []).length;
+function loadRunFiles(path) { try { const a = JSON.parse(readSymbiot(path, RUNFILES)); return Array.isArray(a) ? a.filter((r) => r && Array.isArray(r.files)) : []; } catch { return []; } }
+function saveRunFiles(path, list) { const f = join(path, ".symbiot", RUNFILES); try { if (list.length) { mkdirSync(dirname(f), { recursive: true }); writeFileSync(f, JSON.stringify(list)); } else unlinkSync(f); } catch {} }
+// A run ended: what it changed against the state noted when it began (before, from
+// dirtyState; null when git couldn't say, and then no record is made).
+function noteRunFiles(path, run, before, ticksBefore) {
+  const after = before && dirtyState(path); if (!after) return;
+  const files = new Set(Object.keys(after).filter((f) => before[f] !== after[f]));
+  for (const f of Object.keys(before)) if (!(f in after)) files.add(f); // reverted or committed by the run itself
+  const ticked = Math.max(0, ticksIn(readSymbiot(path, "TASKS.md")) - ticksBefore);
+  saveRunFiles(path, [...loadRunFiles(path).filter((r) => r.id !== run.id), { id: run.id, startedAt: run.startedAt, endedAt: Date.now(), ticked, files: [...files].sort() }]);
+}
+// Approve committed these paths: they're no longer any run's to ship.
+function forgetRunFiles(path, paths) {
+  const gone = new Set(paths);
+  saveRunFiles(path, loadRunFiles(path).map((r) => ({ ...r, files: r.files.filter((f) => !gone.has(f)) })).filter((r) => r.files.length));
+}
 function untrackedBefore(path) { try { const u = JSON.parse(readSymbiot(path, UNTRACKED)); return u && Array.isArray(u.files) && Number.isFinite(u.at) ? u : null; } catch { return null; } }
 function forgetUntracked(path) { try { unlinkSync(join(path, ".symbiot", UNTRACKED)); } catch {} }
 // Send to repos while an agent is still running in the folder doesn't rewrite
@@ -1017,7 +1056,7 @@ function parseQuestions(md, { linked = linkedIds() } = {}) {
     if (b) { if (cur) cur.options.push(clip(b[1])); else if (/\?\s*$/.test(b[1])) questions.push({ q: clip(b[1]), context: "", options: [] }); continue; } // a bullet with no "### question" above it is a question only if it actually ends in "?" — otherwise it's preamble/prose (a file list, etc.)
     if (cur) cur.context = clip((cur.context ? cur.context + " " : "") + l);
   }
-  return { questions: questions.filter((x) => x.q).slice(0, 20).map((x) => ({ ...x, options: agentsPosting(linkedAsks(agentsGitWork(x.options), linked, `${x.q} ${x.context}`), linked).slice(0, 6) })), suggestions: suggestions.filter(Boolean).slice(0, 10) };
+  return { questions: questions.filter((x) => x.q).slice(0, 20).map((x) => ({ ...x, options: agentsPosting(linkedAsks(agentsGitWork(x.options), linked, x.q), linked).slice(0, 6) })), suggestions: suggestions.filter(Boolean).slice(0, 10) };
 }
 // An idea for another project names it first: "[repo: symbiot] Watch GitHub
 // too" is for the symbiot repo's tasks, whichever repo's agent had it (an agent
@@ -1188,6 +1227,7 @@ function answerQuestions(path, answers, opts = {}) {
     mkdirSync(join(path, ".symbiot"), { recursive: true });
     writeFileSync(join(path, ".symbiot", "ANSWERS.md"), prev.replace(/\s*$/, "\n") + rows.map((x) => `\n### ${x.q}\n${x.a}\n_answered ${day}_\n`).join(""));
   } catch (e) { return { error: "Couldn't write ANSWERS.md: " + ((e && e.message) || e) }; }
+  for (const x of rows) recordDone(x.q, x.a);
   const out = { ok: true, saved: rows.length };
   // a "wait until…" answer: the step is the question's 👤 option (what "it" is), and its files are waited on
   const asked = new Map(parseQuestions(readSymbiot(path, "QUESTIONS.md")).questions.map((x) => [qKey(x.q), x]));
@@ -1269,4 +1309,4 @@ function agentsList() {
   }).concat(earlierRuns());
 }
 
-export { FACTS, factsOf, knownRun, withStream, workOf, HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, connectorsInfo, linkReach, fillHandoff, runHandoff, nothingToDo, PARKED_NOTE, parkedPaths, isParked, parkLane, agentMissing, blockedAgain, runningHandoff, loadRuns, earlierRuns, namedFiles, waitingFor, startWaiting, noteUntracked, untrackedBefore, forgetUntracked, writeTasks, droppedTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, pickAgent, findOrcaCli, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, skipIdea, agentQuestions, answerQuestions, agentsList, needsOf, settleNeeds, NEEDS_FOR, readLastWords, readNeeds, parseRead, READ_FILE, autoAllow, autoAllowSweep, allowlistInWork, installAllowlist, inWork, withScope, withTrust, sandboxFor, sandboxEnv, sandboxNeeds, sandboxState, sandboxWrites, SANDBOX_DIR, resumeFor, noteSession, trustFull, GUARD_SETTINGS, isUrgent, urgentFirst, urgentUndo, urgentDone, urgentSweep, urgentState , licenceGate, withModel };
+export { FACTS, factsOf, knownRun, withStream, workOf, HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, connectorsInfo, linkReach, fillHandoff, runHandoff, nothingToDo, PARKED_NOTE, parkedPaths, isParked, parkLane, agentMissing, blockedAgain, runningHandoff, loadRuns, earlierRuns, namedFiles, waitingFor, startWaiting, noteUntracked, untrackedBefore, forgetUntracked, loadRunFiles, forgetRunFiles, writeTasks, droppedTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, pickAgent, findOrcaCli, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, skipIdea, agentQuestions, answerQuestions, agentsList, needsOf, settleNeeds, NEEDS_FOR, readLastWords, readNeeds, parseRead, READ_FILE, autoAllow, autoAllowSweep, allowlistInWork, installAllowlist, inWork, withScope, withTrust, sandboxFor, sandboxEnv, sandboxNeeds, sandboxState, sandboxWrites, SANDBOX_DIR, resumeFor, noteSession, trustFull, GUARD_SETTINGS, isUrgent, urgentFirst, urgentUndo, urgentDone, urgentSweep, urgentState , licenceGate, withModel };

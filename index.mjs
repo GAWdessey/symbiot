@@ -398,6 +398,20 @@ async function cmdUninstall() {
   console.log(r.status === 0 ? c.g("✓ ") + "Symbiot is uninstalled." : c.y("Couldn't remove the program: run  npm uninstall -g symbiot"));
   if (existsSync(CONFIG_DIR) && !keep) console.log(c.d("(Something wrote to " + CONFIG_DIR + " meanwhile; delete it if you like.)"));
 }
+// symbiot secret list | get <name> [--use] | used <name> <value> | delete <name>: what the user
+// handed over (vault.mjs). get prints the next unspent value and nothing else; --use marks a
+// one-use code spent. Through the app when it's running (a run can't read the vault's key).
+async function cmdSecret() {
+  const [sub = "list", name, value] = argv.slice(1).filter((x) => !x.startsWith("--"));
+  const v = await import("./vault.mjs"), via = async (p, b) => (await viaApp(p, b)) || null;
+  if (sub === "list") { const l = (await via("/api/secrets/list", {}))?.secrets || v.listSecrets(); if (!l.length) console.log(c.d("No secrets saved.")); for (const s of l) console.log(`${s.name}  ${c.d(`${s.left} of ${s.count} unused · ${s.where}`)}`); return; }
+  if (!name) { console.error("symbiot secret " + sub + " <name>"); process.exitCode = 1; return; }
+  const r = sub === "get" ? ((await via("/api/secrets/get", { name, use: has("use") })) || v.getSecret(name, { use: has("use") }))
+    : sub === "used" ? ((await via("/api/secrets/used", { name, value })) || v.markUsed(name, String(value || "")))
+    : sub === "delete" ? ((await via("/api/secrets/delete", { name })) || v.deleteSecret(name)) : { error: "symbiot secret list | get <name> [--use] | used <name> <value> | delete <name>" };
+  if (r.error) { console.error(r.error); process.exitCode = 1; return; }
+  console.log(sub === "get" ? r.value : "ok");
+}
 async function cmdScreens() {
   const [sub = "list", a1, a2, a3, ...more] = argv.slice(1).filter((x, i, all) => !x.startsWith("--") && all[i - 1] !== "--name");
   const out = (x) => { console.log(JSON.stringify(x, null, 2)); if (x && x.error) process.exitCode = 1; };
@@ -958,6 +972,7 @@ async function main() {
   if (cmd === "drift") return cmdDrift();
   if (cmd === "push") return cmdPush();
   if (cmd === "mail" || cmd === "email") return cmdMail();
+  if (cmd === "secret" || cmd === "secrets") return cmdSecret();
   if (cmd === "screens" || cmd === "screen") return cmdScreens();
   if (cmd === "watch") return cmdWatch();
   if (cmd === "phone") return cmdPhone();

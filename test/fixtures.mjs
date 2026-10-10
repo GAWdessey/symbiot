@@ -484,7 +484,7 @@ try {
   const r2 = await shipChanges(shipRepo, ["x"], { pr: false });
   ok("nothing to commit -> approved without a commit", r2.ok && r2.nothing && !r2.commit, r2);
   g("switch -q main"); writeFileSync(join(shipRepo, "c.txt"), "c\n");
-  const r3 = await shipChanges(shipRepo, [], { push: false });
+  const r3 = await shipChanges(shipRepo, [], { push: false, confirm: true });
   ok("no task -> its own symbiot/changes-<date> branch and subject", r3.ok && /^symbiot\/changes-\d{4}-\d{2}-\d{2}$/.test(r3.branch) && r3.subject === "symbiot: changes approved without a task", r3);
   // regression: when .symbiot/ is gitignored, `git add . :(exclude).symbiot`
   // warned+exited-1 ("paths are ignored") and falsely aborted the ship.
@@ -542,6 +542,26 @@ try {
   ok("...says what it left out, leaves it untracked, and forgets the note", /2 untracked files that were already there before the agent ran were left out/.test(ru.note || "") && /\?\? \.env/.test(gu("status --porcelain")) && !untrackedBefore(utRepo), [ru, gu("status --porcelain")]);
   ok("git that didn't finish says why in words, not ETIMEDOUT", /^git add timed out after 120 s: this repo has about 170,363 changed or untracked files, probably a venv, node_modules, a dataset or a cache missing from \.gitignore/.test(gitFailed("git add", { timedOut: true, timeout: 120000, err: "" }, 170363)) && gitFailed("git add", { timedOut: false, err: "fatal: x\n" }) === "git add failed: fatal: x", gitFailed("git add", { timedOut: true, timeout: 120000, err: "" }, 170363));
 
+  // Two runs in one repo: Approve ships the finished run's files, not the other run's unfinished ones.
+  const rfRepo = build("ship-runs", `git init -q -b main && git config user.email ci@symbiot.test && git config user.name "Symbiot CI" && echo a > a.txt && echo r > route.txt && echo p > pkg.txt && git add . && git commit -qm init && mkdir .symbiot`);
+  const gr = (a) => execSync("git " + a, { cwd: rfRepo, encoding: "utf8", env: gitEnv }).trim();
+  const runs = (list) => writeFileSync(join(rfRepo, ".symbiot", "runfiles.json"), JSON.stringify(list));
+  writeFileSync(join(rfRepo, "a.txt"), "A\n"); writeFileSync(join(rfRepo, "route.txt"), "wip\n"); writeFileSync(join(rfRepo, "pkg.txt"), "both\n");
+  runs([{ id: "A", ticked: 1, files: ["a.txt"] }, { id: "B", ticked: 0, files: ["route.txt"] }]);
+  const rA = await shipChanges(rfRepo, ["Run A's task"], { push: false });
+  ok("approving run A commits only run A's files (b's unfinished edit stays put, and is said)", rA.ok && gr("show --name-only --format= HEAD") === "a.txt", [rA, gr("show --name-only --format= HEAD")]);
+  ok("...leaving the other run's files uncommitted, named in the note", / M route\.txt/.test(gr("status --porcelain")) && /2 files no finished run touched were left out \(pkg\.txt, route\.txt\)/.test(rA.note || ""), [rA.note, gr("status --porcelain")]);
+  runs([{ id: "A", ticked: 1, files: ["route.txt"] }, { id: "B", ticked: 0, files: ["route.txt"] }]);
+  const rS = await shipChanges(rfRepo, ["Run A's task"], { push: false });
+  ok("a file both a finished and an unfinished run touched stops and asks, with nothing committed", rS.ask && rS.shared.join() === "route.txt" && !rS.ok && gr("log --oneline").split("\n").length === 2, rS);
+  const rS2 = await shipChanges(rfRepo, ["Run A's task"], { push: false, allowShared: true });
+  ok("...and ships it once the user says yes", rS2.ok && gr("show --name-only --format= HEAD") === "route.txt", rS2);
+  writeFileSync(join(rfRepo, "a.txt"), "again\n"); runs([{ id: "C", ticked: 1, files: ["a.txt"] }]);
+  const rN = await shipChanges(rfRepo, [], { push: false });
+  ok("changes with no task behind them are a question, not a commit", rN.ask && rN.untasked && !rN.ok && rN.files.join() === "a.txt" && /M a\.txt/.test(gr("status --porcelain")), rN);
+  const rN2 = await shipChanges(rfRepo, [], { push: false, confirm: true });
+  ok("...committed once confirmed, and the committed files leave the run record", rN2.ok && rN2.subject === "symbiot: changes approved without a task" && !existsSync(join(rfRepo, ".symbiot", "runfiles.json")), [rN2, gr("status --porcelain")]);
+
   console.log("REVIEW — agent ticks -> awaiting review (not archived) -> send back / approve");
   // isolated HOME: the cycle reads and writes Symbiot's real task store
   const home = join(ROOT, "rhome"), proj = join(home, "projects", "revapp");
@@ -574,8 +594,8 @@ try {
     writeFileSync(f.replace("TASKS.md", "agent.log"), "\\n=== old 2026-01-01 ===\\n$ agent\\nOpen task: done.\\n\\n=== symbiot 2026-01-02 ===\\n$ claude -p go\\n- **Skip button**: each idea in the Agents tab has a Skip button now, so you can turn one down.\\n");
     out.untasked = m.pendingReview();
     out.busyUntasked = await busy(async () => ({ pending: m.pendingReview(), ac: await m.approveChanges("revapp", { push: false }) }));
-    out.ac = await m.approveChanges("revapp", { push: false }); out.acTasks = tasks();
-    out.acAgain = await m.approveChanges("revapp", { push: false });
+    out.ac = await m.approveChanges("revapp", { push: false, confirm: true }); out.acTasks = tasks();
+    out.acAgain = await m.approveChanges("revapp", { push: false, confirm: true });
     writeFileSync(${JSON.stringify(join(proj, "c.txt"))}, "skip\\n");
     out.acTick = await m.approveChanges("revapp", { push: false, tick: ["t3", "t1"] }); out.acTickTasks = tasks();
     // tasks held for an agent no Symbiot process is watching: the app's next check starts one
@@ -707,7 +727,7 @@ try {
   const cLog = execSync("git show HEAD:CHANGELOG.md", cEnv);
   ok("bump: the release goes above the last one, in the same commit, each task once and up to its first sentence", csh.ok && csh.bumped === "1.0.1" && new RegExp("^# Changelog\\n\\nIntro\\.\\n\\n## 1\\.0\\.1 — \\d{4}-\\d{2}-\\d{2}\\n\\n- Draft a reply on WhatsApp too, typed into the chat's box and left unsent\\.\\n\\n## 1\\.0\\.0 — 2026-01-01\\n").test(cLog), [csh, cLog]);
   execSync("git checkout -q main && git merge -q --ff-only " + csh.branch + " && git tag v1.0.1", cEnv); writeFileSync(join(clg, "fix.js"), "y\n");
-  const cnt = await shipWithBump(clg, [], { push: false, bump: "patch" });
+  const cnt = await shipWithBump(clg, [], { push: false, bump: "patch", confirm: true });
   ok("changes approved without a task: named by the files they touch", cnt.ok && /## 1\.0\.2 — [\d-]+\n\n- Changes approved without a task, in fix\.js\.\n\n## 1\.0\.1/.test(execSync("git show HEAD:CHANGELOG.md", cEnv)), execSync("git show HEAD:CHANGELOG.md", cEnv).slice(0, 200));
   execSync("git checkout -q main && git merge -q --ff-only " + cnt.branch + " && git tag v1.0.2 && git checkout -q --detach", cEnv); writeFileSync(join(clg, "more.js"), "z\n");
   const before = readFileSync(join(clg, "CHANGELOG.md"), "utf8"), cfl = await shipWithBump(clg, ["Fails"], { push: false, bump: "patch" });
@@ -807,7 +827,8 @@ try {
   const [rq0, rq1, rq2] = relAsk.questions;
   ok("a question needing a release npm doesn't have yet is marked as waiting on npm, with both versions", rq0.release && rq0.release.name === "rel-ask-x" && rq0.release.needs === "1.5.0" && rq0.release.npm === "1.4.0" && rq0.release.installed === "" && rq0.release.waiting === "npm", rq0.release);
   ok("...one npm has is possible now; one naming no version, or in a folder with no package, isn't marked", rq1.release && rq1.release.waiting === "" && !rq2.release, [rq1.release, rq2.release]);
-  const DONEOPT = new Function("return " + (EMBEDDED_UI.match(/var DONEOPT=(\/.*?\/i);/) || [])[1])();
+  ok("Home card: the question and each choice show in full (no line clamp), wrapping instead", !/\.lqblob \.bq\{[^}]*line-clamp/.test(EMBEDDED_UI) && !/\.lqblob \.nopt span\.bt\{[^}]*line-clamp/.test(EMBEDDED_UI) && !/\.lqblob\.rlask \.bq\{[^}]*line-clamp/.test(EMBEDDED_UI));
+  const DONEOPT =new Function("return " + (EMBEDDED_UI.match(/var DONEOPT=(\/.*?\/i);/) || [])[1])();
   ok("the page holds back answers saying it's done or tried, not the others", ["Done both: map my inbox", "Done", "It clicked the right spot on both displays", "It looks right: my projects are on the Map", "Tried it, it missed"].every((s) => DONEOPT.test(s)) && !["Not done yet", "Not tried yet", "Yes: approve it now", "Doner kebab", "Trusted sites still isn't in Settings"].some((s) => DONEOPT.test(s)), DONEOPT);
   ok("TASKS.md tells the agent how to ask", /\.symbiot\/QUESTIONS\.md/.test(md) && /## Suggestions/.test(md) && /\.symbiot\/ANSWERS\.md/.test(md), md.slice(-600));
   ok("the handoff prompt points at QUESTIONS.md, shell-safe", /QUESTIONS\.md/.test(HANDOFF_PROMPT) && !/[`$"\\]/.test(HANDOFF_PROMPT), HANDOFF_PROMPT);
