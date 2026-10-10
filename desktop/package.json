@@ -4,7 +4,7 @@
   "private": true,
   "description": "Symbiot's desktop app: Symbiot installed like any other app, with its own Node and a tray icon.",
   "main": "main.js",
-  "author": "Garth White <garth@ghost-ai.co.za>",
+  "author": "Garth White <garthwhite507@gmail.com>",
   "license": "Elastic-2.0",
   "scripts": {
     "start": "electron .",
@@ -84,7 +84,7 @@
   "homepage": "https://symbiot.co.za",
   "repository": {
     "type": "git",
-    "url": "https://github.com/GarthGhostai/symbiot.git",
+    "url": "https://github.com/GAWdessey/symbiot.git",
     "directory": "desktop"
   }
 }
