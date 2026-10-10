@@ -1,208 +1,36 @@
 name: publish
 
-# Trusted operator: publish to npm automatically when main's package.json
-# version advances — no manual tag, no 2FA/QR, no credential on anyone's machine.
-# The only human gate is the Approve in Symbiot (which opens the PR + bumps the
-# version); once that PR's CI is green it auto-merges, lands on main, and this
-# runs. Publishing is npm Trusted Publishing (OIDC). Filename stays `publish.yml`
-# so the npm trusted-publisher binding (npmjs.com → symbiot) keeps matching.
-#
-# Source of truth is NPM, not a git tag — a v* tag-protection ruleset can block
-# the Action from pushing tags, so we don't depend on them: gate checks whether
-# this version is already on npm (skip if so), and publish is idempotent (a
-# concurrent "already published" counts as success). The record tag is pushed
-# best-effort and never fails the run.
+# DIAGNOSTIC BRANCH ONLY (never merged): asks npm why OIDC trusted publishing refuses
+# this repo, without publishing anything or printing any token.
 on:
-  push:
-    branches: [main]
   workflow_dispatch: {}
 
 permissions:
   contents: read
 
 jobs:
-  gate:
-    runs-on: ubuntu-latest
-    outputs:
-      release: ${{ steps.check.outputs.release }}
-      version: ${{ steps.check.outputs.version }}
-    steps:
-      - uses: actions/checkout@v4
-      - id: check
-        run: |
-          v=$(node -p "require('./package.json').version")
-          echo "version=$v" >> "$GITHUB_OUTPUT"
-          if npm view "symbiot@$v" version >/dev/null 2>&1; then
-            echo "symbiot@$v is already on npm — nothing to publish."
-            echo "release=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "symbiot@$v is a new version — releasing."
-            echo "release=true" >> "$GITHUB_OUTPUT"
-          fi
-
-  test:
-    needs: gate
-    if: needs.gate.outputs.release == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-      - run: npm ci
-      - name: Git identity for tests
-        run: |
-          git config --global user.email "ci@symbiot.local"
-          git config --global user.name "symbiot ci"
-      - name: Test
-        env:
-          SYMBIOT_NO_OPEN: "1"
-        run: npm test
-
-  publish:
-    needs: [gate, test]
-    if: needs.gate.outputs.release == 'true'
+  diag:
     runs-on: ubuntu-latest
     permissions:
-      contents: write # for the best-effort record tag
-      id-token: write # npm OIDC trusted publishing
-    env:
-      VER: ${{ needs.gate.outputs.version }}
+      id-token: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-          registry-url: "https://registry.npmjs.org"
-      - name: Use an npm new enough for OIDC trusted publishing
-        run: npm install -g npm@latest
-      - name: Publish (OIDC — no token), idempotent
+      - name: What GitHub tells npm, and what npm answers
         run: |
-          if npm publish; then
-            echo "published symbiot@$VER"
-          elif npm view "symbiot@$VER" version >/dev/null 2>&1; then
-            echo "symbiot@$VER already on npm (concurrent run) — treating as success."
-          else
-            echo "::error::publish failed and $VER is not on npm"; exit 1
-          fi
-      - name: Record tag (best-effort — ok if a ruleset blocks it)
-        continue-on-error: true
-        run: |
-          git tag "v$VER" || true
-          git push origin "v$VER" || echo "tag push skipped (protected); npm is the source of truth"
-
-  # The Android app, attached to a GitHub release, so a phone can download the
-  # current APK straight from github.com/<repo>/releases/latest. Runs after a
-  # publish, or from "Run workflow" for a version that's already on npm (to add
-  # a missing APK). Never fails the npm release: it runs after it.
-  #
-  # The release's tag is apk-<version>, not v<version>: the v* tag ruleset stops
-  # this workflow's token from creating v* tags. Each APK is signed with the
-  # same key as the ones built on your PC (secrets SYMBIOT_KEYSTORE_B64, the
-  # base64 of ~/.android/symbiot.jks, and SYMBIOT_KEYSTORE_PASS), so one installs
-  # over another. Without the key the job skips with a warning: an APK signed
-  # with a throwaway key couldn't update the app you have.
-  apk:
-    needs: [gate, publish]
-    if: ${{ !cancelled() && needs.gate.result == 'success' && (needs.publish.result == 'success' || (github.event_name == 'workflow_dispatch' && needs.gate.outputs.release == 'false')) }}
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write # create the release, upload the APK
-    env:
-      VER: ${{ needs.gate.outputs.version }}
-      KS_B64: ${{ secrets.SYMBIOT_KEYSTORE_B64 }}
-      SYMBIOT_KEYSTORE_PASS: ${{ secrets.SYMBIOT_KEYSTORE_PASS }}
-      GH_TOKEN: ${{ github.token }}
-    steps:
-      - name: Signing key
-        id: key
-        run: |
-          if [ -z "$KS_B64" ]; then
-            echo "::warning::No SYMBIOT_KEYSTORE_B64 secret, so no APK for $VER (see the apk job's comment in publish.yml)"
-            echo "ok=false" >> "$GITHUB_OUTPUT"; exit 0
-          fi
-          echo "$KS_B64" | base64 -d > "$RUNNER_TEMP/symbiot.jks"
-          echo "SYMBIOT_KEYSTORE=$RUNNER_TEMP/symbiot.jks" >> "$GITHUB_ENV"
-          echo "ok=true" >> "$GITHUB_OUTPUT"
-      - uses: actions/checkout@v4
-        if: steps.key.outputs.ok == 'true'
-      - uses: actions/setup-node@v4
-        if: steps.key.outputs.ok == 'true'
-        with:
-          node-version: "22"
-      - uses: actions/setup-java@v4
-        if: steps.key.outputs.ok == 'true'
-        with:
-          distribution: temurin
-          java-version: "17"
-      - name: Build the APK (aarch64, nearly every phone)
-        if: steps.key.outputs.ok == 'true'
-        run: |
-          bash android/build.sh aarch64
-          # a fixed name too, so releases/latest/download/symbiot-aarch64.apk is
-          # always the current one
-          cp "android/build/symbiot-$VER-aarch64.apk" android/build/symbiot-aarch64.apk
-      - name: Attach it to the release
-        if: steps.key.outputs.ok == 'true'
-        run: |
-          if ! gh release view "apk-$VER" >/dev/null 2>&1; then
-            gh release create "apk-$VER" --target "$GITHUB_SHA" --title "Symbiot $VER" --latest \
-              --notes "Symbiot $VER: \`npm install -g symbiot\`, or on Android install the APK below (see the README's \"The Android app (APK)\")."
-          fi
-          gh release upload "apk-$VER" "android/build/symbiot-$VER-aarch64.apk" android/build/symbiot-aarch64.apk --clobber
-
-  # The desktop app (desktop/): installers for people who'll never open a terminal,
-  # the ones symbiot.co.za offers. Built for every version on a real Windows, Mac and
-  # Linux machine, bundling exactly the symbiot just published, and attached to the
-  # same release as the APK under fixed names. Not signed with a paid certificate yet:
-  # Windows shows SmartScreen's "More info -> Run anyway", and a Mac asks to allow it
-  # in System Settings -> Privacy & Security the first time.
-  desktop:
-    needs: [gate, publish]
-    if: ${{ !cancelled() && needs.gate.result == 'success' && (needs.publish.result == 'success' || (github.event_name == 'workflow_dispatch' && needs.gate.outputs.release == 'false')) }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: windows-latest
-            target: --win
-            files: dist/Symbiot-Setup.exe
-          - os: macos-latest
-            target: --mac
-            files: dist/Symbiot.dmg
-          - os: ubuntu-latest
-            target: --linux
-            files: dist/symbiot.deb dist/Symbiot.AppImage
-    runs-on: ${{ matrix.os }}
-    permissions:
-      contents: write # create the release, upload the installers
-    env:
-      VER: ${{ needs.gate.outputs.version }}
-      GH_TOKEN: ${{ github.token }}
-      CSC_IDENTITY_AUTO_DISCOVERY: "false"
-    defaults:
-      run:
-        shell: bash
-        working-directory: desktop
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-      - name: Wait for npm to serve symbiot@${{ env.VER }}
-        run: |
-          for i in $(seq 1 60); do
-            curl -sfo /dev/null "https://registry.npmjs.org/symbiot/-/symbiot-$VER.tgz" && exit 0
-            sleep 10
-          done
-          echo "::error::symbiot@$VER isn't downloadable from npm"; exit 1
-      - name: This version, bundling exactly this symbiot
-        run: |
-          npm pkg set version="$VER"
-          npm install --no-audit --no-fund --save-exact "symbiot@$VER"
-      - run: npx electron-builder ${{ matrix.target }} --publish never
-      - name: Attach to the release
-        run: |
-          gh release view "apk-$VER" >/dev/null 2>&1 || gh release create "apk-$VER" --target "$GITHUB_SHA" --title "Symbiot $VER" --latest \
-            --notes "Symbiot $VER. Download it for your computer at https://symbiot.co.za, or \`npm install -g symbiot\`." || true
-          gh release upload "apk-$VER" ${{ matrix.files }} --clobber
+          T=$(curl -s -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=npm:registry.npmjs.org" | python3 -c 'import sys,json;print(json.load(sys.stdin)["value"])')
+          echo "--- claims in GitHub's identity token (no signature, no secrets):"
+          python3 - "$T" <<'PY'
+          import sys, json, base64
+          p = sys.argv[1].split(".")[1]; p += "=" * (-len(p) % 4)
+          c = json.loads(base64.urlsafe_b64decode(p))
+          for k in ["iss","aud","repository","repository_owner","repository_id","repository_owner_id","workflow","workflow_ref","job_workflow_ref","ref","event_name","environment","runner_environment"]:
+              print(f"{k}: {c.get(k)}")
+          PY
+          echo "--- npm's answer to the token exchange (any token in it is removed):"
+          curl -s -w '\nHTTP %{http_code}\n' -X POST -H "Authorization: Bearer $T" https://registry.npmjs.org/-/npm/v1/oidc/token/exchange/package/symbiot | python3 -c '
+          import sys, json
+          raw = sys.stdin.read(); body, _, code = raw.rpartition("\nHTTP ")
+          try:
+              j = json.loads(body); j.pop("token", None); print(json.dumps(j))
+          except Exception:
+              print(body[:300])
+          print("HTTP", code.strip())'
