@@ -14,7 +14,7 @@ import { join } from "node:path";
 import { statSync, openSync, readSync, closeSync, readFileSync, writeFileSync } from "node:fs";
 import { CONFIG_DIR } from "./core.mjs";
 
-const FILE = join(CONFIG_DIR, "durations.json"), KEEP = 400, MIN_SAMPLES = 3;
+const FILE = join(CONFIG_DIR, "durations.json"), COSTS = join(CONFIG_DIR, "costs.json"), KEEP = 400, MIN_SAMPLES = 3;
 const kindOf = (cmd) => (/The user has answered|has answered:/i.test(String(cmd || "")) ? "answer" : "brief");
 
 // A log's finished runs: [{ at, kind, ms }]. Read once and then only what's been added
@@ -54,6 +54,15 @@ function loadDurations(file = FILE) { try { const a = JSON.parse(readFileSync(fi
 function noteDuration({ path, cmd, task = "", ms }, file = FILE) {
   if (!path || !(ms > 0)) return;
   const a = loadDurations(file); a.push({ path, kind: kindOf(cmd), task: String(task).slice(0, 200), ms: Math.round(ms), at: Date.now() });
+  try { writeFileSync(file, JSON.stringify(a.slice(-KEEP))); } catch {}
+}
+
+// Every run's spend, finished or failed (route.mjs reads it: path, cost, ok), so what
+// per-task model routing saves can be measured against a baseline.
+function loadCosts(file = COSTS) { return loadDurations(file); }
+function noteCost({ path, cmd, task = "", model = "", cost = null, turns = null, ms = 0, ok = true, modelUsage = null }, file = COSTS) {
+  if (!path || typeof cost !== "number") return;
+  const a = loadCosts(file); a.push({ at: Date.now(), path, kind: kindOf(cmd), task: String(task).slice(0, 200), model: String(model || ""), cost, turns, ms: Math.round(ms) || 0, ok: !!ok, modelUsage });
   try { writeFileSync(file, JSON.stringify(a.slice(-KEEP))); } catch {}
 }
 
@@ -106,4 +115,4 @@ function estimateWords(e) {
   return `${e.left} left${e.queued ? ` · +${e.queued} queued: ${e.total} in all` : ""}`;
 }
 
-export { estimate, estimateWords, sampleSets, noteDuration, loadDurations, runsInLog, laneRuns, kindOf, mins, span };
+export { estimate, estimateWords, sampleSets, noteDuration, noteCost, loadCosts, loadDurations, runsInLog, laneRuns, kindOf, mins, span };

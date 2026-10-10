@@ -239,7 +239,7 @@ function actIn(request, repo, { map = {}, known = "", title, context, run = runH
 // The line under a handover's reply, from what actIn did (see there).
 function handedLine(did) {
   const lane = did.lane, u = did.urgent, un = u && u.unparked ? ` ${lane} was parked; I unparked it for this.` : "";
-  if (did.notStarted) return `\n\nAdded to ${lane}'s tasks, but its agent didn't start: ${did.notStarted.replace(/\.?$/, ".")}${un} It's on the Workdesk.`;
+  if (did.notStarted) return `Added to ${lane}'s tasks on the Workdesk, not started: ${did.notStarted.replace(/\.?$/, ".")}${un}`;
   const parked = u && u.parked.length ? ` Parked till it's done: ${u.parked.join(", ")} (a run already going there finishes first, then they wait). They pick up again in that order once it's done.` : "";
   if (u) {
     const how = did.job ? (u.stopped ? `, which stopped what it was on (its changes stay) and started on this now` : ", which started on it now")
@@ -308,8 +308,11 @@ async function converse({ where, role = "", context = "", history = "", question
   const repo = want ? String(want.repo || "") : "";
   if (want && want.agent && act.agent) {
     did = { kind: "agent", request: String(want.agent).slice(0, HANDOVER_MAX), ...(await act.agent(String(want.agent), known, repo)) };
-    reply += did.error ? `\n\n(I couldn't hand it to an agent: ${did.error})`
-      : did.lane ? handedLine(did)
+    // the model wrote its reply before the hand-off ran: when no agent started, its "on it" is
+    // false, so the reply is replaced by what happened (never "on it" / "making the changes")
+    if (did.error) reply = `I couldn't hand it to an agent: ${did.error}`;
+    else if (did.lane && did.notStarted) reply = handedLine(did);
+    else reply += did.lane ? handedLine(did)
       : "\n\nHanded to your agent. It's on the Workdesk, and it asks you there before anything hard to undo.";
   } else if (want && want.task && act.task) {
     did = { kind: "task", text: String(want.task).slice(0, 300), ...(await act.task(String(want.task), repo)) };
@@ -318,7 +321,7 @@ async function converse({ where, role = "", context = "", history = "", question
       : `\n\nAdded to your tasks, but not to a repo${repo ? ` (there's no lane called ${repo})` : ""}, so no agent will pick it up until it has one: ${did.text}`;
   }
   // what's read aloud: the reply, then the line under it as a short phrase (spokenLine)
-  const line = spokenLine(did, said), spoken = line ? `${said} ${line}` : said;
+  const line = spokenLine(did, said), spoken = did && did.kind === "agent" && (did.error || did.notStarted) ? line : line ? `${said} ${line}` : said; // a claim that no agent started isn't read aloud
   // read again: another chat may have written while the model answered
   const d2 = loadMind(), remembered = rememberIn(d2, j.remember, where, now);
   logTurn(where, "user", question, now, d2); logTurn(where, "ai", reply, now, d2);

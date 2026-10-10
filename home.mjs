@@ -621,6 +621,7 @@ function workScene({ deps = {}, full = false } = {}) {
   const held = {}; for (const a of AG) { if (a.status === "running") continue; const l = laneOf(a), nq = (a.ask && a.ask.questions && a.ask.questions.length) || 0; if (!held[l] && (nq || a.waiting || (a.needs && !a.needs.waiting))) held[l] = { path: a.path, approve: !nq && !a.waiting && a.needs && a.needs.kind === "approve" }; }
   const why = waitWhy({ map, named, running, held, ready: new Set(ready.map((r) => r.repo)), isParked, deps });
   const waiting = open.map((t) => ({ id: "task:" + t.id, text: plain(t.text, 160), repo: t.repo, busy: busy.has(t.repo), ...(isParked(t.repo) ? { parked: true } : {}), ts: Number(t.ts) || 0, why: why(t) })); // the app shortens it for a tag
+  { const nowT = deps.now || Date.now(), st = startable(waiting, nowT); if (peakHeld((deps.config || loadConfig)(), nowT, st.lanes.size + st.ops.length)) for (const x of st.items) if (x.why.kind === "next") x.why = { kind: "peak", peak: true, text: PEAK_TEXT }; }
   // Projects: each lane with work on it, what's going on there in one line's worth
   const by = {}, at = (name) => (by[name] = by[name] || { repo: name, name: name === RUNS_LANE ? "Agent runs" : named(map[name], name), waiting: 0, ready: 0, asks: 0, running: null, last: 0, ...(name === RUNS_LANE ? { runs: 0 } : {}) });
   running.forEach((r) => { const p = at(r.lane); if (r.lane === RUNS_LANE) p.runs++; if (!p.running) p.running = { doing: r.doing, progress: r.progress, ask: r.waiting, ...(r.line ? { line: r.line } : {}), ...(r.eta ? { eta: r.eta } : {}), ...(r.quiet ? { quiet: r.quiet } : {}), ...(r.looping ? { looping: true } : {}) }; p.last = Math.max(p.last, r.started || 0); });
@@ -666,6 +667,26 @@ function workScene({ deps = {}, full = false } = {}) {
 // (workTick). One whose lane is free and has waited past STUCK_AFTER, or whose run
 // ended without ticking it, is flagged (`stuck`) rather than started again and again.
 const AUTO_GRACE = 30000, STUCK_AFTER = 5 * 60000, RETRY_AFTER = 5 * 60000, AUTO_FAIL = {}; // lane → { at, note }: a start that didn't take
+// Peak hours: Anthropic drains the Claude Max 5-hour window faster on weekdays 5–11am Pacific
+// (2–8pm SAST in northern summer), and a batch of agents started together burns it fastest. A
+// batch (two or more starts in one tick) waits for off-peak and goes by itself; one lone start,
+// and the Go button, never wait. config.peakGuard: false turns it off.
+function isPeak(now = Date.now()) {
+  const p = Object.fromEntries(new Intl.DateTimeFormat("en-US", { timeZone: "America/Los_Angeles", weekday: "short", hour: "numeric", hourCycle: "h23" }).formatToParts(new Date(now)).map((x) => [x.type, x.value]));
+  return !/^(Sat|Sun)$/.test(p.weekday) && Number(p.hour) >= 5 && Number(p.hour) < 11;
+}
+const PEAK_TEXT = "Waiting for off-peak hours (weekdays 5–11am Pacific, 2–8pm SAST) to keep your Claude Max window from draining";
+// What a tick would start from the waiting list: the lanes and ops tasks that are next, stuck-and-startable or due a retry.
+function startable(all, now) {
+  const lanes = new Set(), ops = [], items = [];
+  for (const x of all) {
+    if (x.why.kind !== "next" && !(x.why.stuck && !x.why.ended) && !(x.why.failAt && now - x.why.failAt >= RETRY_AFTER)) continue; // a failed start: tried again every few minutes
+    if (now - (x.ts || 0) < AUTO_GRACE) continue;
+    items.push(x); if (x.repo === RUNS_LANE) ops.push(x.id.slice(5)); else lanes.add(x.repo);
+  }
+  return { lanes, ops, items };
+}
+const peakHeld = (cfg, now, n) => cfg.peakGuard !== false && n > 1 && isPeak(now);
 const yours = (text) => /^\s*👤/.test(String(text || "")); // "👤 You (only you: …)": the user's step, never an agent's
 // A card that asks you to sign in to a site ("sign in to domains.co.za in Symbiot's browser")
 // carries the site, and shows a button that opens Symbiot's browser window on it (links.mjs).
@@ -711,12 +732,8 @@ function workTick({ deps = {} } = {}) {
   const out = { started: [], ops: [], failed: [] };
   if ((deps.config || loadConfig)().autoStart === false || !(deps.cmd || handoffCmd)()) return out;
   const now = deps.now || Date.now(), fails = deps.fails || AUTO_FAIL, push = deps.push || pushTasks, run = deps.run || runHandoff;
-  const w = workScene({ deps: { ...deps, fails, now }, full: true }), lanes = new Set(), ops = [];
-  for (const x of w.all) {
-    if (x.why.kind !== "next" && !(x.why.stuck && !x.why.ended) && !(x.why.failAt && now - x.why.failAt >= RETRY_AFTER)) continue; // a failed start: tried again every few minutes
-    if (now - (x.ts || 0) < AUTO_GRACE) continue;
-    if (x.repo === RUNS_LANE) ops.push(x.id.slice(5)); else lanes.add(x.repo);
-  }
+  const w = workScene({ deps: { ...deps, fails, now }, full: true }), { lanes, ops } = startable(w.all, now);
+  if (peakHeld((deps.config || loadConfig)(), now, lanes.size + ops.length)) return out; // a batch waits for off-peak; the next tick tries again
   Object.assign(out, startOps(ops, { ...deps, fails, now }));
   for (const lane of lanes) {
     const p = push({ repo: lane }), wr = p && p.written && p.written[0]; if (!wr) continue;
@@ -742,13 +759,14 @@ function startOps(ids, { tasks = loadTasks, save = saveTasks, act = actNow, fail
 // agent per repo would: briefs written, an agent started in each (or queued
 // behind one already there); a parked project's wait for it to be unparked.
 // { started, queued, repos, parked? } or { error }.
-function workGo({ push = pushTasks, run = runHandoff, ops = goOps } = {}) {
+function workGo({ push = pushTasks, run = runHandoff, ops = goOps, now = Date.now(), config = loadConfig } = {}) {
   const o = ops(), r = push({});
   if (r.empty && !o.ops.length && !o.failed.length) return { started: 0, queued: 0, repos: [], note: "Nothing waiting to start." };
   let started = o.ops.length, queued = 0; const repos = o.ops.length ? ["ops"] : [], parked = [];
   for (const w of r.written || []) { const e = run(w.path); if (e && e.parked) { parked.push(w.name); continue; } if (e && e.id && !e.busy && !e.blocked) started++; else queued++; repos.push(w.name); }
   const unresolved = (r.unresolved || []).map((u) => u.name).filter((n) => n !== RUNS_LANE);
-  return { started, queued, repos, ...(parked.length ? { parked } : {}), ...(unresolved.length ? { unresolved } : {}), ...(o.failed.length ? { note: `The ops tasks didn't start: ${AUTO_FAIL[RUNS_LANE].note}` } : {}) };
+  const peak = started + queued > 1 && config().peakGuard !== false && isPeak(now) ? { note: "Starting during peak hours (weekdays 5–11am Pacific, 2–8pm SAST) uses Claude Max quota faster." } : {};
+  return { started, queued, repos, ...(parked.length ? { parked } : {}), ...(unresolved.length ? { unresolved } : {}), ...peak, ...(o.failed.length ? { note: `The ops tasks didn't start: ${AUTO_FAIL[RUNS_LANE].note}` } : {}) };
 }
 // Go's ops tasks: every one an agent can do, each to a run of its own.
 const goOps = () => startOps(loadTasks().filter((t) => t.repo === RUNS_LANE && !t.done && !t.archived && !t.review && !yours(t.text)).map((t) => t.id));
@@ -813,4 +831,4 @@ function setOnboarding({ step, skip, unskip, skipRest, done, restart } = {}) {
   return onboarding();
 }
 
-export { reportIdeasAdd, reportAsk, reportDraftAnswer, workTick, waitWhy, AUTO_GRACE, STUCK_AFTER, marketingState, marketingGo, marketingDraftAnswer, marketingTask, moveToMarketing, goLane, homeState, homeContext, homeAsk, homeAnswer, homeNext, nextUp, laneNamed, NEXT_FILE, workScene, workGo, displayName, firstSteps, onboarding, setOnboarding, startOnboarding, ONB_STEPS, ONB_STEPS_PHONE, onbSteps, phoneBits , phoneSetupFirst };
+export { isPeak, reportIdeasAdd, reportAsk, reportDraftAnswer, workTick, waitWhy, AUTO_GRACE, STUCK_AFTER, marketingState, marketingGo, marketingDraftAnswer, marketingTask, moveToMarketing, goLane, homeState, homeContext, homeAsk, homeAnswer, homeNext, nextUp, laneNamed, NEXT_FILE, workScene, workGo, displayName, firstSteps, onboarding, setOnboarding, startOnboarding, ONB_STEPS, ONB_STEPS_PHONE, onbSteps, phoneBits , phoneSetupFirst };

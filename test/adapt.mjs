@@ -448,6 +448,21 @@ try {
     const pushed = [], ran = [], acted = [], fails = {};
     const r = workTick({ deps: { ...base, fails, push: ({ repo }) => (pushed.push(repo), { written: [{ name: repo, path: map[repo] }] }), run: (p) => (ran.push(p), { id: "j" }), act: (t) => (acted.push(t), { ok: true, dir: "/runs/act-1" }) } });
     ok("the tick starts the free lane's tasks (one run per lane), not a busy, asking or ended one, nor one just added", r.started.join() === "f" && pushed.join() === "f" && ran.join() === "/f", r);
+    // peak hours: weekdays 5–11am Pacific = 2–8pm SAST (northern summer)
+    {
+      const WED = Date.parse("2026-10-14T13:00:00Z"), SAT = Date.parse("2026-10-17T13:00:00Z"), WED_NIGHT = Date.parse("2026-10-14T19:00:00Z");
+      const batch = (at) => [{ id: "a", text: "One", repo: "symbiot", ts: at - 40000 }, { id: "b", text: "Two", repo: "coral", ts: at - 40000 }, { id: "c", text: "Three", repo: "g", ts: at - 40000 }];
+      const mk = (at, list, cfg = {}) => { const ran = [], b = { repos: () => ({ symbiot: "/s", coral: "/c", g: "/g" }), name: (p, n) => n, pending: () => [], parked: () => [], cmd: () => "claude -p {prompt}", now: at, tasks: () => list, save: () => {}, config: () => cfg, agents: () => [], brief: () => ({ at: 0, tasks: [] }), lastRun: () => 0 };
+        const t = workTick({ deps: { ...b, fails: {}, push: ({ repo }) => ({ written: [{ name: repo, path: "/" + repo }] }), run: (p) => (ran.push(p), { id: "j" }) } });
+        return { t, ran, kind: (id) => (workScene({ deps: { ...b, fails: {} } }).waiting.find((w) => w.id === "task:" + id) || {}).why || {} }; };
+      const w1 = mk(WED, batch(WED)), s1 = mk(SAT, batch(SAT)), n1 = mk(WED_NIGHT, batch(WED_NIGHT)), l1 = mk(WED, batch(WED).slice(0, 1)), o1 = mk(WED, batch(WED), { peakGuard: false });
+      ok("a 3-lane batch on a weekday afternoon (SAST) is held, with its own reason", w1.ran.length === 0 && w1.kind("a").kind === "peak" && /off-peak/.test(w1.kind("a").text), [w1.t, w1.kind("a")]);
+      ok("the same batch on a Saturday, or after 8pm SAST, starts normally", s1.ran.length === 3 && n1.ran.length === 3 && s1.kind("a").kind === "next", [s1.t, n1.t]);
+      ok("a lone lane isn't a batch: it starts at peak too", l1.ran.length === 1, l1.t);
+      ok("config.peakGuard: false turns the gate off", o1.ran.length === 3 && o1.kind("a").kind === "next", o1.t);
+      const g = workGo({ now: WED, config: () => ({}), ops: () => ({ ops: [], failed: [] }), push: () => ({ written: [{ name: "x", path: "/x" }, { name: "y", path: "/y" }] }), run: () => ({ id: "j" }) });
+      ok("Go isn't blocked at peak, but says so", g.started === 2 && /peak hours/.test(g.note || ""), g);
+    }
     ok("…and an ops 🤖 Agent: task as an agent run of its own, without the tag; never a 👤 one", r.ops.join() === "4" && acted.join() === "free space on /mnt/storage" && tasks.find((t) => t.id === "4").done && tasks.find((t) => t.id === "4").act === "/runs/act-1" && !tasks.find((t) => t.id === "5").done, [r, acted]);
     tasks = T(); const f2 = {};
     const r2 = workTick({ deps: { ...base, fails: f2, push: ({ repo }) => ({ written: [{ name: repo, path: map[repo] }] }), run: () => null, act: () => ({ error: "Pick your coding agent first" }) } });

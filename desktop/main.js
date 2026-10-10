@@ -43,7 +43,7 @@ function makeTray() {
   tray.setToolTip("Symbiot");
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: "Open Symbiot", click: openSymbiot },
-    { label: "Report a problem", click: () => shell.openExternal("https://github.com/GarthGhostai/symbiot/issues") },
+    { label: "Report a problem", click: () => shell.openExternal("https://github.com/GAWdessey/symbiot/issues") },
     { type: "separator" },
     { label: "Quit Symbiot", click: async () => { await quitSymbiot(); app.quit(); } },
   ]));

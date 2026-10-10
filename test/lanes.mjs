@@ -74,14 +74,14 @@ try {
   const dailify = join(HOME, "dailify"), other = join(HOME, "proj", "other"), gone = join(HOME, "CallForge AI");
   mkdirSync(dailify, { recursive: true }); mkdirSync(other, { recursive: true });
   const orcaList = { ok: true, result: { repos: [
-    { path: gone, displayName: "dailify", gitRemoteIdentity: { canonicalKey: "github.com/GarthGhostai/dailify" } },
+    { path: gone, displayName: "dailify", gitRemoteIdentity: { canonicalKey: "github.com/GAWdessey/dailify" } },
     { path: coral, displayName: "coral" },
     { path: join(HOME, "old", "nowhere"), displayName: "nowhere" } ] } };
-  const remotes = { [dailify]: "git@github.com:GarthGhostai/Dailify.git", [other]: "https://github.com/GarthGhostai/other.git" };
+  const remotes = { [dailify]: "git@github.com:GAWdessey/Dailify.git", [other]: "https://github.com/GAWdessey/other.git" };
   const orcaCalls = [];
   const fakeOrca = async (cli, args) => { orcaCalls.push(args); return args[1] === "list" ? JSON.stringify(orcaList) : '{"id":"x","ok":true,"result":{}}'; };
   const omap = { dailify, other, coral };
-  ok("remotes compare however they're written", remoteKey("git@github.com:GarthGhostai/Dailify.git") === "github.com/garthghostai/dailify" && remoteKey("https://user@github.com/GarthGhostai/dailify.git/") === "github.com/garthghostai/dailify" && remoteKey("github.com/GarthGhostai/dailify") === "github.com/garthghostai/dailify", "");
+  ok("remotes compare however they're written", remoteKey("git@github.com:GAWdessey/Dailify.git") === "github.com/gawdessey/dailify" && remoteKey("https://user@github.com/GAWdessey/dailify.git/") === "github.com/gawdessey/dailify" && remoteKey("github.com/GAWdessey/dailify") === "github.com/gawdessey/dailify", "");
   const rl = await orcaRelink({ map: omap, cli: "/x/orca-ide", orca: fakeOrca, remoteOf: async (p) => remotes[p] || "" });
   ok("the gone path's repo is found by its GitHub remote, and added again in Orca", rl.moves.length === 1 && rl.moves[0].from === gone && rl.moves[0].to === dailify && rl.moves[0].ok && orcaCalls.some((a) => a.join(" ") === `repo add --path ${dailify} --json`), rl.moves);
   ok("…a folder that still exists, or one with nowhere to go, is left alone", orcaCalls.filter((a) => a[1] === "add").length === 1, orcaCalls);

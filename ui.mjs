@@ -370,7 +370,7 @@ body.lq-light .wkfile .fb i{background:linear-gradient(90deg,#6F7887,#0F1720)}
 .wkfinal{margin-top:10px;font-size:13px;line-height:1.55;white-space:pre-wrap}
 .wkraw summary{cursor:pointer;font-size:12px;color:var(--faint);margin-top:10px}
 .orb{flex:none;display:inline-block;width:14px;height:14px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#FFFFFF 0%,#C9CFD9 30%,#6F7887 70%,#2A2F38 100%);box-shadow:0 0 0 1px rgba(255,255,255,.25)}
-.orb.run{animation:lqpulse 1.6s ease-in-out infinite}.orb.fail{background:radial-gradient(circle at 35% 30%,#FFE1DA 0%,#FF8A75 45%,#7A2A1C 100%)}
+.orb.run{animation:lqpulse 1.6s ease-in-out infinite}.orb.paused{background:radial-gradient(circle at 35% 30%,#FFF1CF 0%,#F2B94B 45%,#7A5A12 100%)}.orb.fail{background:radial-gradient(circle at 35% 30%,#FFE1DA 0%,#FF8A75 45%,#7A2A1C 100%)}
 @keyframes lqpulse{0%,100%{transform:scale(1);box-shadow:0 0 0 1px rgba(255,255,255,.25)}50%{transform:scale(1.18);box-shadow:0 0 14px 2px rgba(255,255,255,.35)}}
 details.steps{margin-top:6px;white-space:normal;font-size:12.5px;color:var(--faint);text-shadow:none}
 details.steps summary{cursor:pointer;list-style:none;display:inline-flex;align-items:center;gap:6px}
@@ -1878,16 +1878,18 @@ el.innerHTML=ap.map(function(a){return "<div class='note "+(a.status==='failed'?
 // Agents, in order: what needs you (a question, a step of yours), what's at work, and
 // what's finished, folded away (open stays open across refreshes).
 var AGDONEOPEN=false;
-function agentGroups(list,fn){var needs=[],run=[],done=[];list.forEach(function(a){if(nQs(a)||a.waiting||a.needs)needs.push(a);else if(a.status==='running')run.push(a);else done.push(a);});
+// ended cleanly with its task list not all ticked, nothing asked of you: it checks again on its next turn
+function agentPaused(a){return a.status==='done'&&!!a.progress&&a.progress.total>0&&a.progress.done<a.progress.total&&!a.waiting&&!a.needs&&!nQs(a);}
+function agentGroups(list,fn){var needs=[],run=[],paused=[],done=[];list.forEach(function(a){if(nQs(a)||a.waiting||a.needs)needs.push(a);else if(a.status==='running')run.push(a);else if(agentPaused(a))paused.push(a);else done.push(a);});
 var g=function(t,xs){return xs.length?"<div class='tgroup agg'>"+t+" <span class='tcount'>"+xs.length+"</span></div>"+xs.map(fn).join(''):'';};
-return g('Needs you',needs)+g('At work',run)+(done.length?"<details class='agdone'"+(AGDONEOPEN?' open':'')+"><summary class='tgroup agg'>Finished <span class='tcount'>"+done.length+"</span></summary>"+done.map(fn).join('')+"</details>":'');}
+return g('Needs you',needs)+g('At work',run)+g('Paused',paused)+(done.length?"<details class='agdone'"+(AGDONEOPEN?' open':'')+"><summary class='tgroup agg'>Finished <span class='tcount'>"+done.length+"</span></summary>"+done.map(fn).join('')+"</details>":'');}
 function agentsDraw(){api('/api/agents').then(function(list){var el=document.getElementById('agentslist');
 if(!list||!list.length){AGENTLIST=[];el.innerHTML="<div class='muted' style='margin-top:12px'>No agents yet. In <b>Tasks</b>, tick ideas and hit <b>Send to repos</b> (with an agent command set in Settings) &mdash; you'll watch it work here.</div>";stopAgentsPoll();return;}
 var anyRunning=list.some(function(a){return a.status==='running';});
 if(answering()||selIn(el)){stopAgentsPoll();if(anyRunning&&current==='tasks')agentsTimer=setTimeout(loadAgents,2000);else selWait('agents',loadAgents);return;} // don't re-render under someone typing an answer, or selecting text to copy
 saveDrafts(el);AGENTLIST=list;
-var agentBlock=function(a){var cls=a.status==='running'?'run':(a.status==='done'?'ok':'fail');
-var st=a.status==='running'?('working &middot; '+fmtE(a.elapsed)):(esc(a.status)+' &middot; '+fmtE(a.elapsed)+(a.exitCode!=null?' &middot; exit '+a.exitCode:''));
+var agentBlock=function(a){var pz=agentPaused(a),cls=a.status==='running'?'run':pz?'paused':(a.status==='done'?'ok':'fail');
+var st=a.status==='running'?('working &middot; '+fmtE(a.elapsed)):pz?('paused &middot; '+a.progress.done+'/'+a.progress.total+' tasks done &middot; will check again &middot; '+fmtE(a.elapsed)):(esc(a.status)+' &middot; '+fmtE(a.elapsed)+(a.exitCode!=null?' &middot; exit '+a.exitCode:''));
 if(a.fromHeld)st+=" &middot; started on the tasks held for the last run";
 if(a.earlier)st+=" &middot; "+(a.status==='running'?"started outside this window":"ran before Symbiot last started");
 if(a.waiting)st+=" &middot; <span style='color:var(--amber)'>waiting on your step</span>";

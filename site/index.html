@@ -127,7 +127,7 @@ footer a{text-decoration:none}footer a:hover{color:var(--bone)}
       <a href="#what">What it does</a>
       <a href="#how">How it works</a>
       <a href="#pro">Pro</a>
-      <a href="https://github.com/GarthGhostai/symbiot">GitHub</a>
+      <a href="https://github.com/GAWdessey/symbiot">GitHub</a>
       <a class="btn" href="#install">Install</a>
     </nav>
   </div>
@@ -255,7 +255,7 @@ footer a{text-decoration:none}footer a:hover{color:var(--bone)}
 <footer>
   <div class="wrap">
     <span>© 2026 Symbiot</span>
-    <span><a href="https://github.com/GarthGhostai/symbiot/blob/main/LICENSE">Elastic License 2.0</a> · <a href="https://github.com/GarthGhostai/symbiot">GitHub</a> · <a href="https://github.com/GarthGhostai/symbiot/blob/main/CHANGELOG.md">What's new</a> · <a href="https://github.com/GarthGhostai/symbiot/issues">Report a problem</a></span>
+    <span><a href="https://github.com/GAWdessey/symbiot/blob/main/LICENSE">Elastic License 2.0</a> · <a href="https://github.com/GAWdessey/symbiot">GitHub</a> · <a href="https://github.com/GAWdessey/symbiot/blob/main/CHANGELOG.md">What's new</a> · <a href="https://github.com/GAWdessey/symbiot/issues">Report a problem</a></span>
   </div>
 </footer>
 
@@ -278,7 +278,7 @@ footer a{text-decoration:none}footer a:hover{color:var(--bone)}
     else { p.href = "#install"; document.getElementById("primary-label").textContent = "Coming very soon for " + names[os]; }
   }
   primary();
-  fetch("https://api.github.com/repos/GarthGhostai/symbiot/releases?per_page=30", { headers: { Accept: "application/vnd.github+json" } })
+  fetch("https://api.github.com/repos/GAWdessey/symbiot/releases?per_page=30", { headers: { Accept: "application/vnd.github+json" } })
     .then(function (r) { return r.ok ? r.json() : null; })
     .then(function (rels) {
       if (!rels) return; // GitHub didn't answer (rate limit): the links to the latest release stay

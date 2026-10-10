@@ -80,11 +80,11 @@
   "license": "Elastic-2.0",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/GarthGhostai/symbiot.git"
+    "url": "git+https://github.com/GAWdessey/symbiot.git"
   },
-  "homepage": "https://github.com/GarthGhostai/symbiot#readme",
+  "homepage": "https://github.com/GAWdessey/symbiot#readme",
   "bugs": {
-    "url": "https://github.com/GarthGhostai/symbiot/issues"
+    "url": "https://github.com/GAWdessey/symbiot/issues"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.128.0"

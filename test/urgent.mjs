@@ -115,13 +115,13 @@ try {
   console.log("URGENT — the reply says only what happened");
   const said = async (did) => (await converse({ where: "Home", question: "fix it now", map: { symbiot }, ask: async () => JSON.stringify({ reply: "On it.", do: { agent: "fix it", repo: "symbiot" } }), act: { agent: async () => ({ lane: "symbiot", ok: true, ...did }) } })).reply;
   const r1 = await said({ notStarted: "Parked: its tasks start no agent runs until you unpark it.", urgent: { parked: [], unparked: false } });
-  ok("didn't start: says so, never 'already on urgent work' or queued", /didn't start: Parked/.test(r1) && !/already on|takes this next|starts once|Parked till/.test(r1), r1);
+  ok("didn't start: says so, never 'already on urgent work' or queued", /not started: Parked/.test(r1) && !/^On it/.test(r1) && !/already on|takes this next|starts once|Parked till/.test(r1), r1);
   const r2 = await said({ job: "j", urgent: { parked: ["marketing"], unparked: true, stopped: false } });
   ok("started: says it started, that it was unparked, and what's parked", /started on it now/.test(r2) && /was parked; I unparked it/.test(r2) && /Parked till it's done: marketing/.test(r2) && !/takes this next/.test(r2), r2);
   const r3 = await said({ queued: true, behind: "urgent", urgent: { parked: [], busy: "urgent" } });
   ok("behind a live urgent run: 'takes this next'", /takes this next/.test(r3), r3);
   const r4 = await said({ notStarted: "Not started: your step comes first." });
-  ok("a routine one that didn't start says so too", /didn't start/.test(r4) && !/starts once|started on it/.test(r4), r4);
+  ok("a routine one that didn't start says so too", /not started/.test(r4) && !/on it/i.test(r4) && !/starts once|started on it/.test(r4), r4);
 } finally {
   rmSync(HOME, { recursive: true, force: true });
 }

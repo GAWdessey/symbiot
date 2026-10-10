@@ -50,7 +50,7 @@ function parseRun(text) {
   const lines = String(text || "").split("\n");
   const events = []; let plain = [];
   for (const l of lines) { if (l.startsWith("{")) { try { events.push(JSON.parse(l)); continue; } catch {} } if (l.trim()) plain.push(l); }
-  const out = { stream: events.length > 0, model: "", steps: [], todos: [], doing: "", said: [], final: "", cost: null, turns: null, tokens: null, tests: null, files: {}, pace: [], errors: 0 };
+  const out = { stream: events.length > 0, model: "", steps: [], todos: [], doing: "", said: [], final: "", cost: null, turns: null, modelUsage: null, tokens: null, tests: null, files: {}, pace: [], errors: 0 };
   if (!out.stream) { out.said = plain.slice(-12).map((l) => short(l, 160)); out.final = plain.slice(-40).join("\n").trim(); return out; }
   const byId = new Map(), tasks = new Map(), talk = []; let thinking = false, moved = 0;
   for (const e of events) {
@@ -59,6 +59,8 @@ function parseRun(text) {
     if (at && (e.type === "assistant" || e.type === "user")) moved = Math.max(moved, at);
     if (e.session_id && !out.session) out.session = String(e.session_id);
     if (e.type === "system" && e.subtype === "init") { out.model = String(e.model || ""); continue; }
+    // a long call's heartbeat (~every 30s): not a move, but how long the step has been going
+    if (e.type === "tool_progress") { const s = byId.get(e.parent_tool_use_id); if (s && s.status === "running" && typeof e.elapsed_time_seconds === "number") s.elapsedS = Math.max(s.elapsedS || 0, e.elapsed_time_seconds); continue; }
     if (e.type === "assistant" && e.message && Array.isArray(e.message.content)) {
       for (const b of e.message.content) {
         if (b.type === "thinking") { thinking = true; continue; }
@@ -92,13 +94,14 @@ function parseRun(text) {
       out.final = String(e.result || "").trim();
       out.cost = typeof e.total_cost_usd === "number" ? e.total_cost_usd : null;
       out.turns = typeof e.num_turns === "number" ? e.num_turns : null;
+      out.modelUsage = e.modelUsage && typeof e.modelUsage === "object" ? e.modelUsage : null; // per model: tokens and costUSD
       const u = e.usage || {}; out.tokens = (u.input_tokens || 0) + (u.output_tokens || 0) + (u.cache_read_input_tokens || 0) + (u.cache_creation_input_tokens || 0) || null;
       if (e.is_error) out.errors++;
     }
   }
   out.todos = [...tasks.values()];
   const now = out.todos.find((t) => t.status === "in_progress"), last = out.steps[out.steps.length - 1];
-  out.doing = out.final ? "" : now ? now.active : last && last.status === "running" ? `${last.verb} ${last.target}`.trim() : thinking ? "Thinking" : "";
+  out.doing = out.final ? "" : now ? now.active : last && last.status === "running" ? `${last.verb} ${last.target}`.trim() + (last.elapsedS >= 120 ? ` · running ${Math.floor(last.elapsedS / 60)}m` : "") : thinking ? "Thinking" : "";
   // pace: steps per minute over the run, up to 24 buckets (a sparkline)
   const times = out.steps.map((s) => s.at).filter(Boolean);
   if (times.length > 1) { const t0 = times[0], span = Math.max(times[times.length - 1] - t0, 60000), n = Math.min(24, Math.max(6, Math.ceil(span / 60000))), w = span / n; out.pace = new Array(n).fill(0); for (const t of times) out.pace[Math.min(n - 1, Math.floor((t - t0) / w))]++; }

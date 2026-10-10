@@ -73,5 +73,16 @@ ok("escalationReason is \"\" when nothing calls for Opus", escalationReason("Fix
 // Deterministic: the same inputs give the same answer.
 ok("pure: calling twice gives the same result", JSON.stringify(pickModel({ path: "/lane/b", task: "Fix the off-by-one in paginate()" })) === JSON.stringify(pickModel({ path: "/lane/b", task: "Fix the off-by-one in paginate()" })));
 
+// withModel (agents.mjs): exactly one --model on a claude command, none on the others.
+{
+  const { withModel } = await import("../agents.mjs");
+  const n = (s) => (s.match(/--model/g) || []).length;
+  const a = withModel('claude -p "{prompt}" --model sonnet --x', "claude-opus-5-5"), b = withModel("claude -p x --model=haiku", "claude-sonnet-5");
+  ok("withModel replaces an existing --model, leaving exactly one", n(a) === 1 && a.endsWith("--model claude-opus-5-5") && !/sonnet\b/.test(a.replace("claude-sonnet", "")), a);
+  ok("withModel replaces --model=x too", n(b) === 1 && b.endsWith("--model claude-sonnet-5") && !b.includes("haiku"), b);
+  ok("withModel adds one when there was none", n(withModel("claude -p x", "claude-fable-5-1")) === 1);
+  ok("withModel leaves codex/aider/gemini commands alone", withModel("codex exec x", "claude-opus-5-5") === "codex exec x" && withModel("claude -p x", "") === "claude -p x");
+}
+
 console.log((fail ? "✗" : "✓") + " route: " + pass + " passed, " + fail + " failed");
 if (fail) process.exit(1);
