@@ -204,6 +204,8 @@ const calls = [
   ["/api/screens/trusted/add", "POST"],    // no site -> refused, nothing saved
   ["/api/screens/trusted/remove", "POST"],
   ["/api/screens/signin", "POST"],  // no site -> refused, no window opens
+  ["/api/agent/parallel", "GET"],   // agents at once in one project (parallel.mjs)
+  ["/api/agent/parallel/set", "POST"],
   ["/api/agent/trust", "GET"],      // whether agents work on their own (default) or ask
   ["/api/agent/trust/set", "POST"], // the Settings switch (in the isolated HOME)
   ["/api/work", "GET"],             // the work scene: who's at work, what's waiting, what's ready

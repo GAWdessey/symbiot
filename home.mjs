@@ -29,6 +29,8 @@ import { reportsNews, listReports, readReport, decide, markIdeas } from "./repor
 import { awaitingState, inboxSight } from "./handback.mjs";
 import { newClashes } from "./checks.mjs";
 import { postsState } from "./post.mjs";
+import { laneCap, verdict, peel, inflight, inflightIds, parallelLane, openTasksOf, laneFacts, dropHeld, startParallel } from "./parallel.mjs";
+import { licenceState, isPro } from "./licence.mjs";
 import { PHONE, ANDROID_APP, computerView, phoneApprovals, linkState } from "./phone.mjs";
 import { MARKETING, MARKETING_DIR, MARKETING_WORDS, displayName, productNames, productOf, untagged, tagged, draftFiles, setDraftStatus, postedCmd } from "./marketing.mjs";
 
@@ -38,7 +40,7 @@ const RUNS = join(CONFIG_DIR, "drafts"); // an ops run's folder (mind.mjs actNow
 const RUNS_LANE = "ops"; // what the work scene calls them all, together
 
 // The lane a folder is: the repo it is (by the scan's map), or an ops run.
-const laneOfPath = (path, map) => Object.keys(map || {}).find((n) => map[n] === path) || (String(path || "").startsWith(RUNS) ? "" : null);
+const laneOfPath = (path, map) => Object.keys(map || {}).find((n) => map[n] === path) || parallelLane(path) || (String(path || "").startsWith(RUNS) ? "" : null);
 
 // A run that failed shows for a day, until you run it again or skip it; one
 // that's been followed by another run in its folder is past.
@@ -220,7 +222,7 @@ function homeNext(id, deps = {}) {
   }
   if (!r || r.error) return { error: (r && r.error) || "It didn't start. Check your agent in Settings." };
   const d = loadNext(deps.file); d.taken[id] = Date.now(); for (const k of Object.keys(d.taken)) if (Date.now() - d.taken[k] > NEXT_KEEP) delete d.taken[k]; saveNext(d, deps.file);
-  const said = s.act === "task" ? `It's a task now${s.repo ? ` in ${s.repo}` : ""}.` : s.act === "drafts" ? `Your agent is drafting ${r.n} repl${r.n > 1 ? "ies" : "y"}. They wait, unsent, for you to check.` : s.act === "retry" ? "Started it as a run of its own. What it does goes back to the agent that asked." : r.queued ? "Its agent takes it once the run there now finishes." : "An agent started on it. It's on the Workdesk.";
+  const said = s.act === "task" ? `It's a task now${s.repo ? ` in ${s.repo}` : ""}.` : s.act === "drafts" ? `Your agent is drafting ${r.n} repl${r.n > 1 ? "ies" : "y"}. They wait, unsent, for you to check.` : s.act === "retry" ? "Started it as a run of its own. What it does goes back to the agent that asked." : r.queued ? "Queued: it starts beside the run there if they don't clash. The Workdesk says what it waits on if they do." : "An agent started on it. It's on the Workdesk.";
   return { ok: true, said };
 }
 // A lane's waiting tasks to its agent, the way Go does for one project.
@@ -669,7 +671,7 @@ function workScene({ deps = {}, full = false } = {}) {
     if (nq) asks[laneOf(a)] = (asks[laneOf(a)] || 0) + nq;
     if (a.status !== "running") continue;
     const w = a.work || {}, todo = (w.todos || []).find((t) => t.status === "in_progress"), pg = a.progress;
-    running.push({ id: "run:" + a.path, path: a.path, name: a.name, lane: laneOf(a), doing: plain(todo ? todo.active : w.doing || "Working on it", 120), progress: pg || null, ...runNow(a), waiting: !!nq, started: a.startedAt || (a.elapsed ? Date.now() - a.elapsed : 0) });
+    running.push({ id: "run:" + a.path, path: a.path, name: a.name, lane: laneOf(a), ...(parallelLane(a.path) ? { par: true } : {}), doing: plain(todo ? todo.active : w.doing || "Working on it", 120), progress: pg || null, ...runNow(a), waiting: !!nq, started: a.startedAt || (a.elapsed ? Date.now() - a.elapsed : 0) });
   }
   const ready = pending().filter((r) => r.path && !r.running && ((r.tasks || []).length || (r.files || []).length)).map((r) => ({ id: "ready:" + r.repo, repo: r.repo, count: (r.tasks || []).length }));
   const busy = new Set(running.map((r) => r.lane)), open = tasks().filter((t) => !t.done && !t.archived && !t.review && t.repo);
@@ -734,13 +736,14 @@ function isPeak(now = Date.now()) {
 const PEAK_TEXT = "Waiting for off-peak hours (weekdays 5–11am Pacific, 2–8pm SAST) to keep your Claude Max window from draining";
 // What a tick would start from the waiting list: the lanes and ops tasks that are next, stuck-and-startable or due a retry.
 function startable(all, now) {
-  const lanes = new Set(), ops = [], items = [];
+  const lanes = new Set(), ops = [], items = [], beside = [];
   for (const x of all) {
+    if (x.why.kind === "beside") { if (now - (x.ts || 0) >= AUTO_GRACE) { items.push(x); beside.push(x); } continue; }
     if (x.why.kind !== "next" && !(x.why.stuck && !x.why.ended) && !(x.why.failAt && now - x.why.failAt >= RETRY_AFTER)) continue; // a failed start: tried again every few minutes
     if (now - (x.ts || 0) < AUTO_GRACE) continue;
     items.push(x); if (x.repo === RUNS_LANE) ops.push(x.id.slice(5)); else lanes.add(x.repo);
   }
-  return { lanes, ops, items };
+  return { lanes, ops, items, beside };
 }
 const peakHeld = (cfg, now, n) => cfg.peakGuard !== false && n > 1 && isPeak(now);
 const yours = (text) => /^\s*👤/.test(String(text || "")); // "👤 You (only you: …)": the user's step, never an agent's
@@ -754,7 +757,7 @@ function briefOf(path) { try { const h = JSON.parse(readFileSync(join(path, ".sy
 function lastRunAt(path) { const r = loadRuns().find((x) => x.path === path); return (r && Number(r.startedAt)) || 0; }
 function waitWhy({ map, named, running, held, ready, isParked, deps = {} }) {
   const brief = deps.brief || briefOf, lastRun = deps.lastRun || lastRunAt, now = deps.now || Date.now();
-  const agentSet = !!(deps.cmd || handoffCmd)(), fails = deps.fails || AUTO_FAIL;
+  const agentSet = !!(deps.cmd || handoffCmd)(), fails = deps.fails || AUTO_FAIL, besideIds = (deps.beside || inflightIds)();
   return (t) => {
     const lane = t.repo, name = lane === RUNS_LANE ? "ops" : named(map[lane], lane), age = now - (Number(t.ts) || now);
     const flag = (text) => ({ kind: "stuck", stuck: true, text });
@@ -767,8 +770,16 @@ function waitWhy({ map, named, running, held, ready, isParked, deps = {} }) {
       return age > STUCK_AFTER ? flag(`Not started after ${minutes(age)}, with nothing in its way`) : { kind: "next", text: "Next: starts as an agent run of its own" };
     }
     const path = map[lane]; if (!path) return { kind: "blocked", noGo: true, text: `Blocked: Symbiot can't find ${name}'s folder` };
-    const b = brief(path), inBrief = b.tasks.some((x) => sameTask(x, t.text)), run = running.find((r) => r.lane === lane);
-    if (run) return inBrief ? { kind: "working", text: `${name}'s agent is on it now` } : { kind: "queued", text: `Queued behind ${name}'s run: ${plain(run.doing, 60).toLowerCase()}`, run: run.doing };
+    const b = brief(path), inBrief = b.tasks.some((x) => sameTask(x, t.text)), run = running.find((r) => r.lane === lane && !r.par), mine = running.filter((r) => r.lane === lane);
+    if (besideIds.has(t.id)) return { kind: "working", text: `Running now in a copy of ${name}'s repo of its own, beside its other agent` };
+    if (run) {
+      if (inBrief) return { kind: "working", text: `${name}'s agent is on it now` };
+      // not in the run's brief: it runs beside it unless it clashes with what's going, or the lane is at its cap
+      const f = (deps.facts || laneFacts)(path), st = (deps.licence || licenceState)();
+      const beside = (deps.parallel || inflight)().filter((m) => m.lane === lane), active = [...(deps.openTasks || openTasksOf)(path).slice(0, 2).map((x) => ({ text: x, who: `${name}'s run` })), ...beside.map((m) => ({ text: m.task, who: "the run beside it" }))];
+      const v = verdict({ text: t.text, name, active, count: Math.max(mine.length, 1 + beside.length), cap: (deps.cap || laneCap)(undefined, st), pro: isPro(st), dirty: f.dirty, git: f.git });
+      return v.ok ? { kind: "beside", text: `Next: starts beside ${name}'s run, in a copy of the repo of its own`, run: run.doing } : { kind: "queued", waitKind: v.kind, text: `Queued behind ${name}'s run: ${plain(run.doing, 60).toLowerCase()}. Why it waits: ${v.text}.${run.eta ? ` Expected wait: ${run.eta}.` : " That run has no time estimate yet."}`, run: run.doing };
+    }
     const h = held[lane];
     if (h) return h.approve ? { kind: "approve", noGo: true, text: `Waiting on your OK for ${name}'s last run, on the Workdesk`, path: h.path } : { kind: "asks", noGo: true, text: `Waiting on your answer to ${name}'s question, on the Workdesk`, path: h.path };
     if (inBrief && ready.has(lane)) return { kind: "approve", noGo: true, text: `Waiting on your OK for ${name}'s work, on the Workdesk`, path };
@@ -785,17 +796,42 @@ function waitWhy({ map, named, running, held, ready, isParked, deps = {} }) {
 // next tick tries again. config.autoStart: false leaves it all to Go.
 // { started: [lanes], ops: [task ids], failed: [lanes] }
 function workTick({ deps = {} } = {}) {
-  const out = { started: [], ops: [], failed: [] };
+  const out = { started: [], ops: [], failed: [], beside: [] };
   if ((deps.config || loadConfig)().autoStart === false || !(deps.cmd || handoffCmd)()) return out;
   const now = deps.now || Date.now(), fails = deps.fails || AUTO_FAIL, push = deps.push || pushTasks, run = deps.run || runHandoff;
-  const w = workScene({ deps: { ...deps, fails, now }, full: true }), { lanes, ops } = startable(w.all, now);
-  if (peakHeld((deps.config || loadConfig)(), now, lanes.size + ops.length)) return out; // a batch waits for off-peak; the next tick tries again
+  const w = workScene({ deps: { ...deps, fails, now }, full: true }), { lanes, ops, beside } = startable(w.all, now);
+  if (peakHeld((deps.config || loadConfig)(), now, lanes.size + ops.length + beside.length)) return out; // a batch waits for off-peak; the next tick tries again
   Object.assign(out, startOps(ops, { ...deps, fails, now }));
+  const map = (deps.repos || (() => { try { return laneMap(); } catch { return {}; } }))() || {}, tasks = (deps.tasks || loadTasks)(), textOf = (x) => { const t = tasks.find((k) => "task:" + k.id === x.id); return t ? { id: t.id, text: t.text } : null; };
+  const startBeside = deps.startParallel || startParallel, st = (deps.licence || licenceState)(), cap = (deps.cap || laneCap)(undefined, st), pro = isPro(st);
+  const go = (lane, it) => { // one task beside the lane's run, in a copy of the repo of its own
+    const r = startBeside(lane, map[lane], it, { addTask: deps.addTask || addTask, now });
+    if (r && r.ok) out.beside.push({ lane, id: it.id }); else if (r && r.error) { fails[lane] = { at: now, note: plain("a copy of the repo for it didn't start: " + r.error, 120) }; out.failed.push(lane); }
+  };
   for (const lane of lanes) {
-    const p = push({ repo: lane }), wr = p && p.written && p.written[0]; if (!wr) continue;
+    const mine = w.all.filter((x) => x.repo === lane && x.why.kind === "next").map(textOf).filter(Boolean);
+    let exclude = [];
+    if (mine.length > 1 && map[lane]) { // several ready at once: the first is the lane's own run, the independent ones go beside it
+      const f = (deps.facts || laneFacts)(map[lane]), sp = peel(mine, { name: displayName(map[lane], lane), cap, pro, dirty: f.dirty, git: f.git });
+      exclude = sp.peeled.map((x) => x.id);
+    }
+    const p = push({ repo: lane, ...(exclude.length ? { exclude } : {}) }), wr = p && p.written && p.written[0]; if (!wr) continue;
     const e = run(wr.path);
-    if (e && e.id && !e.busy && !e.blocked) { delete fails[lane]; out.started.push(lane); }
+    if (e && e.id && !e.busy && !e.blocked) {
+      delete fails[lane]; out.started.push(lane);
+      for (const id of exclude) go(lane, mine.find((x) => x.id === id));
+    }
     else if (!e || (e.blocked && !e.parked)) { fails[lane] = { at: now, note: plain((e && e.note) || "the agent command didn't run", 120) }; out.failed.push(lane); }
+  }
+  // tasks queued at a lane whose agent is at work: start the ones that don't clash beside it
+  const byLane = {}; for (const x of beside) (byLane[x.repo] = byLane[x.repo] || []).push(x);
+  for (const lane of Object.keys(byLane)) {
+    if (!map[lane]) continue;
+    const items = byLane[lane].map(textOf).filter(Boolean), runs = (deps.parallel || inflight)().filter((m) => m.lane === lane);
+    const taken = [...(deps.openTasks || openTasksOf)(map[lane]).slice(0, 2).map((x) => ({ text: x, who: "the lane's run" })), ...runs.map((m) => ({ text: m.task, who: "the run beside it" }))];
+    const f = (deps.facts || laneFacts)(map[lane]), sp = peel(items, { name: displayName(map[lane], lane), taken, count: 1 + runs.length, cap, pro, dirty: f.dirty, git: f.git });
+    for (const it of sp.peeled) go(lane, it);
+    if (sp.peeled.length) { const r = push({ repo: lane }); if (r && r.empty) dropHeld(map[lane]); }
   }
   return out;
 }

@@ -260,10 +260,10 @@ function handedLine(did) {
   if (u) {
     const how = did.job ? (u.stopped ? `, which stopped what it was on (its changes stay) and started on this now` : ", which started on it now")
       : did.behind === "urgent" ? ` (it's on other urgent work right now, and takes this next)`
-      : u.stopped ? `, which is stopping what it was on (its changes stay) to start on this` : ` (it starts once the run there now finishes)`;
+      : u.stopped ? `, which is stopping what it was on (its changes stay) to start on this` : ` (queued: the Workdesk says what it waits on)`;
     return `\n\nUrgent, so it goes first: handed to ${lane}'s agent${how}.${un}${parked || (did.job ? " Nothing else was running to park." : "")} It's on the Workdesk.`;
   }
-  return `\n\nHanded to ${lane}'s agent, as a task there${did.queued ? " (it starts once the run there now finishes)" : ", which started on it now"}.${un} It's on the Workdesk.`;
+  return `\n\nHanded to ${lane}'s agent, as a task there${did.queued ? " (queued: it starts beside the run there if they don't clash, and the Workdesk says what it waits on if they do)" : ", which started on it now"}.${un} It's on the Workdesk.`;
 }
 // The same line, read aloud: a short natural phrase, never the task or the agent's brief
 // (the screen has those), and nothing when the reply already said it ("done, it's
@@ -278,7 +278,7 @@ function spokenLine(did, reply = "") {
   if (SAID_AGENT.test(reply)) return "";
   if (!did.lane) return "I've handed it to an agent.";
   if (did.urgent) return `It's urgent, so ${did.lane}'s agent does it first.`;
-  return did.queued ? `I've handed it to the ${did.lane} agent. It starts once its current run finishes.` : `I've handed it to the ${did.lane} agent.`;
+  return did.queued ? `I've handed it to the ${did.lane} agent. It starts beside the run there if they don't clash; the Workdesk says what it waits on if they do.` : `I've handed it to the ${did.lane} agent.`;
 }
 // For later: on the list, in a repo's lane if it names one Symbiot knows.
 function taskIn(text, repo, { map = {}, add = addTask } = {}) {

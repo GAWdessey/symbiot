@@ -11,6 +11,7 @@ import { VERSION, LATEST_VERSION, REGISTRY, semverGt, loadConfig, saveConfig, lo
 import { handoverRules, ONLY_YOU, HANDBACK } from "./handover.mjs";
 import { doneBrief, standingBrief } from "./asksdone.mjs";
 import { userStyleLine } from "./adapt.mjs";
+import { inflightIds } from "./parallel.mjs";
 import { QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, isUrgent, handoffCmd, runningHandoff, untrackedBefore, forgetUntracked, loadRunFiles, forgetRunFiles, writeTasks, droppedTasks, startHeldTasks, connectorsLine } from "./agents.mjs";
 import { gitDefaultBranch } from "./drift.mjs";
 import { readRunLog } from "./work.mjs";
@@ -709,6 +710,7 @@ function pushTasks(filter) {
   let tasks = all.filter((t) => !t.done && !t.archived && !t.review);
   if (filter && filter.type) tasks = tasks.filter((t) => taskType(t.text) === filter.type);
   if (filter && filter.repo) tasks = tasks.filter((t) => t.repo === filter.repo);
+  { const beside = inflightIds(), skip = new Set((filter && filter.exclude) || []); tasks = tasks.filter((t) => !beside.has(t.id) && !skip.has(t.id)); } // one running beside its lane's agent (parallel.mjs), or peeled off to start there now: not in the lane's own brief
   if (!tasks.length) return { empty: true, written: [], unresolved: [] };
   const groups = {}; for (const t of tasks) { const k = t.repo || ""; (groups[k] = groups[k] || []).push(t); }
   const written = [], unresolved = [], connectors = connectorsLine(); // the same for every repo's run

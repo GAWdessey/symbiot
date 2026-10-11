@@ -22,6 +22,7 @@ import { shSingle, handoffCmd, setHandoffCmd, grantAgent, runHandoff, track, det
 import { PROVIDERS, resolveProvider, connectProvider, detectHardware, recommendModels, hasOllama, ollamaInstall, ensureOllama, useOllamaModel } from "./ai.mjs";
 import { SCAN, SCAN_TIMEOUT_MS, scanRoots, scanHome, addScanRoot, removeScanRoot, buildMap, nodeDetail, repoPathMap, laneMap, setScanOptions, refreshRepos, REPO_STATE, reposState } from "./scan.mjs";
 import { computeDrift } from "./drift.mjs";
+import { laneCap, mergeEnded, DEFAULT_CAP } from "./parallel.mjs";
 import { addTask, toggleTask, removeTask, restoreTask, syncTasks, taskType, pushTasks, pendingReview, workingDiff, learnNpm, withReleases, releaseInput, approveRepo, approveChanges, sendBack, setAutoMerge } from "./tasks.mjs";
 import { repoReview, repoSuggest, folderSuggest, taskChat, clearTaskChat, mailState, setMail, sentMail, produce, releaseNotes } from "./writeups.mjs";
 import { listSecrets, getSecret, markUsed, deleteSecret } from "./vault.mjs";
@@ -321,6 +322,8 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       if (u.pathname === "/api/knowledge/search") return json(res, { hits: searchKnowledge(u.searchParams.get("q") || "", { examples: u.searchParams.get("examples") === "1" }) });
       if (u.pathname === "/api/agentcfg") { const d = detectHandoffs(); return json(res, { cmd: handoffCmd(), agents: d.agents, editors: d.editors, connectors: connectorsInfo() }); }
       if (u.pathname === "/api/agentcmd" && req.method === "POST") { const b = await readBody(req); return json(res, setHandoffCmd(b.cmd)); }
+      if (u.pathname === "/api/agent/parallel") return json(res, { cap: laneCap(), setting: loadConfig().laneParallel || DEFAULT_CAP, max: 8 }); // how many agents may work in one lane at once (parallel.mjs)
+      if (u.pathname === "/api/agent/parallel/set" && req.method === "POST") { const b = await readBody(req), n = Math.floor(Number(b.cap)), cfg = loadConfig(); if (Number.isFinite(n) && n >= 1) cfg.laneParallel = Math.min(8, n); else delete cfg.laneParallel; saveConfig(cfg); return json(res, { cap: laneCap(), setting: loadConfig().laneParallel || DEFAULT_CAP, max: 8 }); }
       if (u.pathname === "/api/agent/trust") return json(res, { full: trustFull(), sandbox: sandboxState() });
       if (u.pathname === "/api/agent/trust/set" && req.method === "POST") { const b = await readBody(req); const cfg = loadConfig(); if (b.full) delete cfg.agentTrust; else cfg.agentTrust = "ask"; saveConfig(cfg); return json(res, { full: trustFull(), sandbox: sandboxState() }); }
       if (u.pathname === "/api/agent/grant" && req.method === "POST") { const b = await readBody(req); return json(res, grantAgent({ tool: b.tool, dir: b.dir })); }
@@ -623,6 +626,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
   setPhoneApprove(async (repo, untasked) => { const notes = await releaseNotes(releaseInput(repo, {})); return untasked ? approveChanges(repo, { tick: [], notes }) : approveRepo(repo, { notes }); });
   startPhone();
   setInterval(() => { try { startWaiting(); } catch {} }, 20000).unref(); // a run that waits for your step starts once the file it names changes
+  setInterval(() => { try { mergeEnded({ addTask }); } catch {} }, 20000).unref(); // runs beside a lane's own that ended (also while Symbiot was down): merged back into the lane
   setInterval(() => { try { workTick(); } catch {} }, 20000).unref(); // a waiting task starts once its lane is free (config.autoStart: false leaves it to Go)
   setInterval(() => { try { lanesTick(); } catch {} }, 20000).unref(); // agents hand work to other lanes, and hear back when it's done
   setTimeout(() => { orcaRelink().catch(() => {}); }, 15000).unref(); // a lane folder a handover renamed, added again in Orca where it is now
