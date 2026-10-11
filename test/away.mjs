@@ -16,7 +16,7 @@ const ok = (n, c, got) => { if (c) { pass++; console.log("  ✓ " + n); } else {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 try {
-  const { parseMonitors, awayQueries, toggleAway, awayOpen, withShortcut, installShortcut, COSMIC_CUSTOM } = await import("../away.mjs");
+  const { parseMonitors, awayQueries, toggleAway, awayOpen, withShortcut, installShortcut, ensureShortcut, COSMIC_CUSTOM } = await import("../away.mjs");
 
   console.log("SCREENS — from xrandr --listmonitors, left to right");
   const two = parseMonitors("Monitors: 2\n 0: +eDP-1 1920/340x1080/190+1600+0  eDP-1\n 1: +HDMI-A-1 1600/440x900/250+0+0  HDMI-A-1\n");
@@ -44,6 +44,13 @@ try {
   ok("not COSMIC: it says how to add it yourself, and writes nothing", installShortcut({ cmd, home: HOME, desktop: "GNOME" }).manual === true, "");
   const r = installShortcut({ cmd, home: HOME, desktop: "COSMIC" });
   ok("COSMIC: written to its custom shortcuts file", r.ok && /key: "grave"\): Spawn/.test(readFileSync(COSMIC_CUSTOM(HOME), "utf8")), r);
+
+  const H2 = mkdtempSync(join(tmpdir(), "symbiot-away2-"));
+  ok("ensure: not COSMIC, nothing written", ensureShortcut({ cmd, home: H2, desktop: "GNOME" }).skipped === "not COSMIC", "");
+  ok("ensure: COSMIC with the slot empty, it installs", ensureShortcut({ cmd, home: H2, desktop: "COSMIC" }).ok === true && /key: "grave"/.test(readFileSync(COSMIC_CUSTOM(H2), "utf8")), "");
+  writeFileSync(COSMIC_CUSTOM(H2), '{\n    (modifiers: [Super], key: "grave"): Spawn("mine"),\n}\n');
+  ok("ensure: a key the user chose is left alone", ensureShortcut({ cmd, home: H2, desktop: "COSMIC" }).skipped && /Spawn\("mine"\)/.test(readFileSync(COSMIC_CUSTOM(H2), "utf8")), "");
+  rmSync(H2, { recursive: true, force: true });
 
   console.log("OPEN AND CLOSE — a window per screen; again, or open: false, closes them");
   const fake = join(HOME, "fake-chrome"), seen = join(HOME, "seen.txt");

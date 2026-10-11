@@ -242,6 +242,8 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
   // an installed Symbiot keeps its app-menu entry pointing at itself (a new Node, a moved
   // install); not a copy run from a checkout or a test
   if (/[\\/]node_modules[\\/]symbiot[\\/]/.test(bin || "") && !SANDBOX && !process.env.SYMBIOT_NO_LAUNCHER) { try { installLauncher({ script: bin }); } catch {} }
+  // Away's Super+` on COSMIC, which was only ever set by `symbiot away --shortcut`
+  if (/[\\/]node_modules[\\/]symbiot[\\/]/.test(bin || "") && !SANDBOX && !process.env.SYMBIOT_NO_LAUNCHER) { import("./away.mjs").then((a) => a.ensureShortcut({ cmd: `${process.execPath} ${bin} away` })).catch(() => {}); }
   // setup's first step: "Your computer" in the Android app, so a phone paired by its QR shows it
   if (FRESH) { try { startOnboarding(); } catch {} }
   try { phoneSetupFirst(); } catch {} // the phone app, over an older one: setup goes to "Your computer" first
