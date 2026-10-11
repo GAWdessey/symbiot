@@ -223,6 +223,9 @@ function rulesFor(lanes = [], self = "", nav = false, settle = false, tasks = []
  "settled": ["the exact question of a 'Only the user can do' card that their message has just answered or made pointless"]` : ""}}
 When they ask you to do something (look into it, find out, fix, set up, sign in, close, send, chase), do it, don't explain what you can't do: "agent" starts a coding agent now, with their tools and connectors (MCP, the command line, a browser signed in to their linked sites). With a "repo", it's that project's agent, working in it; empty, an agent for everything outside a repo (this computer, accounts, services). Use "task" for what's for later. Don't ask their permission to hand it over: the agent asks them first, on the Workdesk, before anything hard to undo (closing an account, deleting, paying, sending); say so in your reply when it applies, with what to check first. A question you can answer from what's here: answer it, "do": null.
 Lanes ("repo" is one of these, exactly): ${lanes.length ? lanes.slice(0, 60).join(", ") : "(none found)"}.${lanes.includes(MARKETING) ? ` "${MARKETING}" is a lane of its own for marketing any of their products (posts, demo videos, launches, campaigns, pricing pages' copy): marketing work goes there, starting with the product it's for in brackets, "[Dailify] a launch post".` : ""}${self ? ` Symbiot itself is "${self}": a flaw in how Symbiot works (how it read a page, what a brief or a card said, anything in the app) goes there.` : ""}
+Only say work is started, sent or queued when your "do" starts or queues it in this same reply; otherwise say what you will do, not that you are doing it. When they point out you got something wrong, open the reply by naming the mistake in a plain sentence ("I got that wrong: …") and give the right answer, never change the subject or hedge.
+Before you say an agent will read a mailbox or a site, check Symbiot can read it: being able to send to an address is not being able to read it. If it can't, say so first in plain words ("I can send there but can't read it: open it on your laptop, or sign in at <exact address>") and don't start an agent that will only come back asking. When a provider matters, an agent looks it up (MX records), never guesses it.
+The people you talk to (Garth and his team) are Symbiot's makers, not outside users: act as they want, and when they ask for a change to Symbiot itself, make it.
 Don't wait to be asked to fix Symbiot. When you notice it got something wrong (you misread a page, a brief or a card misled them, a step made them do an agent's job), say so plainly and, in the same reply, start the fix: "agent"${self ? ` with "repo": "${self}"` : ""}, saying what went wrong, an example, and what it should do instead.
 When they paste a secret (a password, a recovery or 2FA code, a token), Symbiot has already saved it in its vault and shows you "[saved: name]" in its place. Acknowledge it in a few words ("Saved as npm recovery codes."), never refuse it, lecture about pasting it or ask them to delete it, and use it from the vault when a step needs it; ask them for one only when none is saved.
 When only they can sign in to a site (their password, an SMS code), say where, with the site's address: "sign in to www.domains.co.za/client/dashboard in the Symbiot Browser (Settings → Connections → Add a site)", never just "in Symbiot's browser": your reply then carries a Sign in button that opens that window on it.
@@ -292,6 +295,11 @@ function taskIn(text, repo, { map = {}, add = addTask } = {}) {
   return r && r.error ? { error: r.error } : { ok: true, id: r.id, lane };
 }
 
+// A reply that says work is going or done when this turn handed nothing over (no "do"): the
+// model wrote it before anything ran, so Symbiot says what actually happened.
+const CLAIMS_ACTION = /\b(sending (this|it|that) to|(i'?ve|i have|i'?m|i am|i'?ll|i will|let me) (just )?(sent|send|sending|handed|hand|handing|passed|passing|queued|queue|queuing|added|adding|started|starting|kicked off|kicking off|fixed|fixing|on it)|(handed|passed|sent) (it |this |that )?(to|over to|off to) (the |a |an )?\w+|(agent|it)('s| is) (on it|working on|fixing|looking into)|is (now )?(running|underway|in progress))\b/i;
+const unbackedClaim = (reply, did) => !(did && !did.error && !did.notStarted) && CLAIMS_ACTION.test(String(reply || ""));
+const UNBACKED = "\n\nCorrection: nothing was handed to an agent or queued by this reply, so nothing is running on it yet. Say the word and I'll start it.";
 function parseReply(raw) {
   const t = String(raw || "").trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
   const a = t.indexOf("{"), b = t.lastIndexOf("}");
@@ -345,6 +353,7 @@ async function converse({ where, role = "", context = "", history = "", question
       : did.lane ? `\n\nAdded to ${did.lane}'s tasks: ${did.text}`
       : `\n\nAdded to your tasks, but not to a repo${repo ? ` (there's no lane called ${repo})` : ""}, so no agent will pick it up until it has one: ${did.text}`;
   }
+  if (!did && unbackedClaim(reply, did)) reply += UNBACKED;
   // what's read aloud: the reply, then the line under it as a short phrase (spokenLine)
   const line = spokenLine(did, said), spoken = did && did.kind === "agent" && (did.error || did.notStarted) ? line : line ? `${said} ${line}` : said; // a claim that no agent started isn't read aloud
   // read again: another chat may have written while the model answered
@@ -363,4 +372,4 @@ async function converse({ where, role = "", context = "", history = "", question
 // The usual "task" act, for a caller with no lanes of its own to pass.
 const addToTasks = (text, repo) => { let map = {}; try { map = laneMap(); } catch {} return taskIn(text, repo, { map }); };
 
-export { dayLine, dayMark, MIND_FILE, loadMind, remember, recall, recallText, lately, mindState, forget, actBrief, actNow, actIn, taskIn, selfLane, rulesFor, parseReply, converse, spokenLine, goOf, PAGES, addToTasks , ownThread };
+export { dayLine, dayMark, MIND_FILE, loadMind, remember, recall, recallText, lately, mindState, forget, actBrief, actNow, actIn, taskIn, selfLane, rulesFor, parseReply, converse, spokenLine, unbackedClaim, goOf, PAGES, addToTasks , ownThread };

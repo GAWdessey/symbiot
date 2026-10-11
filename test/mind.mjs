@@ -15,10 +15,20 @@ mkdirSync(join(HOME, ".config", "symbiot"), { recursive: true });
 let pass = 0, fail = 0;
 const ok = (n, c, got) => { if (c) { pass++; console.log("  ✓ " + n); } else { fail++; console.log("  ✗ " + n + (got !== undefined ? "  got: " + JSON.stringify(got) : "")); } };
 
-const { MIND_FILE, loadMind, remember, recall, mindState, forget, converse, parseReply, actBrief, actIn, taskIn, selfLane, spokenLine, goOf, rulesFor } = await import("../mind.mjs");
+const { MIND_FILE, loadMind, remember, recall, mindState, forget, converse, parseReply, actBrief, actIn, taskIn, selfLane, spokenLine, unbackedClaim, goOf, rulesFor } = await import("../mind.mjs");
 const said = (j) => async () => JSON.stringify(j);
 
 try {
+  console.log("HONESTY — a reply never claims work that didn't start");
+  const liar = await converse({ where: "Home", question: "fix it", ask: said({ reply: "Sending this to the symbiot lane now.", do: null, remember: [] }) });
+  ok("claimed hand-off with no 'do': corrected", /Correction: nothing was handed/.test(liar.reply), liar.reply);
+  const plain = await converse({ where: "Home", question: "hi", ask: said({ reply: "Hello, how can I help?", do: null, remember: [] }) });
+  ok("plain reply untouched", !/Correction/.test(plain.reply), plain.reply);
+  ok("a started hand-off backs the claim", !unbackedClaim("I'm handing it over", { kind: "agent", job: "j1" }));
+  ok("a not-started hand-off doesn't", unbackedClaim("I've handed it to the agent", { kind: "agent", notStarted: "x" }));
+  ok("rules tell it to check it can read a mailbox before promising to", /being able to send to an address is not being able to read it/.test(rulesFor([], "", false, false, [])));
+  ok("rules treat the user as Symbiot's maker", /Symbiot's makers, not outside users/.test(rulesFor([], "", false, false, [])));
+  ok("rules tell it to name its mistakes", /naming the mistake/.test(rulesFor([], "", false, false, [])));
   console.log("ONE MEMORY — what one page learns, another knows");
   const t0 = Date.now() - 7200000;
   let seenPrompt = "";
