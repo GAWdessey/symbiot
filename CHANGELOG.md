@@ -5,6 +5,7 @@ What each Symbiot release brought, newest first. When Approve bumps the version,
 ## 0.63.3
 
 - **Allow works on a request that takes access away.** When an agent asked to lock itself out of something (a deny rule, with nothing new allowed), Symbiot dropped the request, so clicking Allow did nothing and the agent waited for good. Now it's turned on, without asking you, and the agent carries on.
+- **A script in your project no longer reads as "outside your work".** Running `python3 supabase/scripts/x.py`, or checking a public web address, was taken for a folder elsewhere on your computer, so you got a permission card. Now it turns on by itself. A web request that sends something, and anything about a live project, still asks you.
 
 ## 0.63.2
 

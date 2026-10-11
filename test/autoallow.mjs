@@ -41,6 +41,14 @@ a.autoAllow(run);
 const l2 = JSON.parse(readFileSync(join(run, ".claude", "settings.local.json"), "utf8"));
 ok("a list that only denies is turned on too (it takes access away)", l2.permissions.deny.includes(`Edit(/${HOME}/work/Company/**)`) && a.agentQuestions(run, "").questions.length === 0, l2.permissions.deny);
 
+// Daaymn, 2026-10-11: a script run by its path in the project, and a check of a public URL,
+// were read as folders outside the work (/scripts/…, /dev/null, //host).
+propose(["Bash(python3 supabase/scripts/test_account.py)", "Bash(curl -s -o /dev/null -w * https://example.supabase.co/storage/v1/object/public/x/*)"]);
+ok("a script in the project and a URL check stay inside your work", a.allowlistInWork(run).ok === true, a.allowlistInWork(run));
+propose(["Bash(curl -X POST https://example.com/api -d *)"]);
+ok("...but a curl that sends something goes out, so it asks", /publishes/.test(a.allowlistInWork(run).why || ""), a.allowlistInWork(run));
+ok("...and a question about the live project is never picked for you", a.autoPick({ context: "", q: "Run the seeding on the live Supabase project?", options: ["🤖 Agent: run it (recommended)", "skip"] }) === "", "");
+
 ask("allow the tunnel?");
 propose(["Bash(cloudflared:*)", `Read(${HOME}/.cloudflared/**)`], [join(HOME, ".cloudflared")]);
 const r2 = a.autoAllow(run);
