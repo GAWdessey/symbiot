@@ -753,6 +753,18 @@ function blockedAgain(path, cmd) {
 const LOCK = "agent.pid";
 const LOCK_MAX_AGE = 12 * 3600 * 1000; // older than this, the pid has probably been reused
 const pidAlive = (pid) => { try { process.kill(pid, 0); return true; } catch (err) { return !!err && err.code === "EPERM"; } };
+// A lock's pid that now belongs to a process started after the lock was written was
+// reused: the agent is gone, and a lane held "busy" by it starts nothing (queued tasks
+// stalled with 0 agents working). Linux only (/proc); anywhere else, or unreadable, it
+// counts as the agent.
+function pidReused(pid, startedAt) {
+  try {
+    const stat = readFileSync(`/proc/${pid}/stat`, "utf8"), ticks = Number(stat.slice(stat.lastIndexOf(")") + 2).split(" ")[19]);
+    const btime = Number((readFileSync("/proc/stat", "utf8").match(/^btime (\d+)/m) || [])[1]);
+    if (!Number.isFinite(ticks) || !btime || !Number.isFinite(startedAt)) return false;
+    return (btime + ticks / 100) * 1000 > startedAt + 60000; // a minute's slack for clock ticks and the lock being written after the spawn
+  } catch { return false; }
+}
 // The agent still running in this folder, if any. `auto`: its exit will be
 // seen (this process started it, or its owner — e.g. the app — is still up).
 // `symbiot push --open` returns right after starting one, so it never is.
@@ -761,7 +773,7 @@ function runningHandoff(path) {
   if (e) return { id: e.id, pid: e.pid, startedAt: e.startedAt, auto: true };
   try {
     const l = JSON.parse(readSymbiot(path, LOCK));
-    if (l && Number.isInteger(l.pid) && Date.now() - l.startedAt < LOCK_MAX_AGE && pidAlive(l.pid)) return { ...l, auto: Number.isInteger(l.owner) && pidAlive(l.owner) };
+    if (l && Number.isInteger(l.pid) && Date.now() - l.startedAt < LOCK_MAX_AGE && pidAlive(l.pid) && !pidReused(l.pid, l.startedAt)) return { ...l, auto: Number.isInteger(l.owner) && pidAlive(l.owner) };
   } catch {}
   return null;
 }
@@ -1203,7 +1215,24 @@ function autoAllow(path) {
 }
 // Every run that stopped asking for its list, now: on start and every so often, so
 // asks from before this version clear too.
-function autoAllowSweep() { const out = []; for (const r of loadRuns()) { try { const a = autoAllow(r.path); if (a && a.allowed) out.push(r.path); } catch {} } return out; }
+// A question whose answer the agent already knows isn't the user's: when its own
+// recommended option is a step it takes itself (not 👤), and nothing in the question or
+// that option goes out, costs money, touches an account or a machine, or can't be undone,
+// Symbiot picks it and the agent carries on. Everything else still comes to the user.
+const OUTWARD = /\b(publish\w*|releas\w*|push\w*|merg\w*|send\w*|sent|post\w*|repl\w*|e-?mail\w*|pay\w*|spend\w*|buy\w*|money|bill\w*|cost\w*|delet\w*|remov\w*|uninstall\w*|wip\w*|drop\w*|password\w*|2fa|token\w*|keys?|sign(?:ed|s)?[- ]?in|log(?:ged)?[- ]?in|accounts?|subscription|plan|tunnel\w*|prox\w*|ssh|vm|servers?|restart\w*|stop\w*|kill\w*|broker\w*|trad\w*|bank\w*|npm|deploy\w*|install\w*|phone|whatsapp|linkedin|github\.com)\b|\byour (?:default|settings?|profile)\b/i;
+function autoPick(q) {
+  const rec = (q.options || []).filter((o) => /\(recommended\b/i.test(o));
+  if (rec.length !== 1 || yourStep(rec[0])) return "";
+  return OUTWARD.test(`${q.q} ${q.context || ""} ${rec[0]}`) ? "" : rec[0];
+}
+function autoDecide(path) {
+  if (!path || runningHandoff(path)) return null;
+  const picks = agentQuestions(path, "").questions.map((q) => ({ q: q.q, a: autoPick(q) })).filter((x) => x.a);
+  if (!picks.length) return null;
+  const r = answerQuestions(path, picks.map((x) => ({ q: x.q, a: `${x.a}\n(Symbiot picked your own recommendation: it's yours to do and can be undone, so the user wasn't asked.)` })), { rerun: true });
+  return r && r.ok ? { decided: picks.length } : null;
+}
+function autoAllowSweep() { const out = []; for (const r of loadRuns()) { try { const a = autoAllow(r.path); if (a && a.allowed) out.push(r.path); else if (autoDecide(r.path)) out.push(r.path); } catch {} } return out; }
 // Every agent reaches the owner's knowledge folders from the start; an ops run (no repo
 // of its own) their repos too, the way a person at their desk would.
 function withScope(tmpl, repoPath) {
@@ -1251,6 +1280,10 @@ function answerQuestions(path, answers, opts = {}) {
   // local git work picked as the user's step (typed in, or from a QUESTIONS.md written before this): the agent's, with an OK before a push
   const git = steps.map((s) => s.step).filter(gitWork);
   if (git.length) try { writeFileSync(join(path, ".symbiot", "ANSWERS.md"), readSymbiot(path, "ANSWERS.md").replace(/\s*$/, "\n") + `\n### Symbiot: that git work is yours to do, not the user's\nDo it yourself: ${git.join(" ")}. Check what's staged first, and ${PUSH_OK.replace("your OK", "the user's OK").replace("it pushes", "you push")}: ask in QUESTIONS.md and stop there.\n_${day}_\n`); } catch {}
+  // Allow on a permission card is a 🤖 option naming the proposed list, so it isn't a step of the
+  // user's: the click itself is their go-ahead, and without installing the list here the agent
+  // asked again for the same permission (the click "did nothing").
+  for (const x of rows) if (!yourStep(x.a) && !holdAnswer(x.a) && /allowlist\.proposed\.json/i.test(x.a) && !/^\W*(?:🤖\s*(?:Agent:)?\s*)?(?:don'?t|do not|no|skip|leave)\b/i.test(x.a)) { const g = grantFromStep(x.a, path, notes); if (g) granted.push(...g); }
   let yours = steps.map((s) => s.step).filter(Boolean).filter((st) => !gitWork(st)).filter((st) => { const g = grantFromStep(st, path, notes); if (g) granted.push(...g); return !g; });
   if (granted.length) out.granted = granted;
   // A list too wide to turn on by a click: say which rules, tell the agent to ask for
@@ -1322,4 +1355,4 @@ function agentsList() {
   }).concat(earlierRuns());
 }
 
-export { FACTS, factsOf, knownRun, withStream, workOf, HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, connectorsInfo, linkReach, fillHandoff, runHandoff, nothingToDo, PARKED_NOTE, parkedPaths, isParked, parkLane, agentMissing, blockedAgain, runningHandoff, loadRuns, earlierRuns, namedFiles, waitingFor, startWaiting, noteUntracked, untrackedBefore, forgetUntracked, loadRunFiles, forgetRunFiles, writeTasks, droppedTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, pickAgent, findOrcaCli, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, skipIdea, agentQuestions, answerQuestions, agentsList, needsOf, settleNeeds, NEEDS_FOR, readLastWords, readNeeds, parseRead, READ_FILE, autoAllow, autoAllowSweep, allowlistInWork, installAllowlist, inWork, withScope, withTrust, sandboxFor, sandboxEnv, sandboxNeeds, sandboxState, sandboxWrites, SANDBOX_DIR, resumeFor, noteSession, trustFull, GUARD_SETTINGS, isUrgent, urgentFirst, urgentUndo, urgentDone, urgentSweep, urgentState , licenceGate, withModel, routedModel };
+export { autoPick, autoDecide, FACTS, factsOf, knownRun, withStream, workOf, HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, connectorsInfo, linkReach, fillHandoff, runHandoff, nothingToDo, PARKED_NOTE, parkedPaths, isParked, parkLane, agentMissing, blockedAgain, runningHandoff, loadRuns, earlierRuns, namedFiles, waitingFor, startWaiting, noteUntracked, untrackedBefore, forgetUntracked, loadRunFiles, forgetRunFiles, writeTasks, droppedTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, pickAgent, findOrcaCli, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, skipIdea, agentQuestions, answerQuestions, agentsList, needsOf, settleNeeds, NEEDS_FOR, readLastWords, readNeeds, parseRead, READ_FILE, autoAllow, autoAllowSweep, allowlistInWork, installAllowlist, inWork, withScope, withTrust, sandboxFor, sandboxEnv, sandboxNeeds, sandboxState, sandboxWrites, SANDBOX_DIR, resumeFor, noteSession, trustFull, GUARD_SETTINGS, isUrgent, urgentFirst, urgentUndo, urgentDone, urgentSweep, urgentState , licenceGate, withModel, routedModel };
