@@ -108,8 +108,8 @@ function draftFiles(dir = MARKETING_DIR, names = [], { max = 30 } = {}) {
       const tagLine = (head.match(/^\s*product:\s*(.+)$/im) || [])[1], folder = relative(root, d).split("/")[0] || "";
       const product = (tagLine || "").trim() || names.find((n) => n.toLowerCase() === folder.toLowerCase()) || (folder ? folder.charAt(0).toUpperCase() + folder.slice(1) : "");
       const title = (head.match(/^#\s+(.+)$/m) || [])[1];
-      const rel = relative(dir, p); let st = null; try { const d = parseDraft(readFileSync(p, "utf8")); st = statusOf(dir, rel, d.body, mediaSigOf(dir, rel, d.media)); } catch {}
-      out.push({ file: p, rel, name: (title || basename(e.name, ".md").replace(/[-_]+/g, " ")).trim().slice(0, 120), product, at, status: st ? st.status : "" });
+      const rel = relative(dir, p); let st = null, doc = false; try { const d = parseDraft(readFileSync(p, "utf8")); doc = !d.isPost; if (!doc) st = statusOf(dir, rel, d.body, mediaSigOf(dir, rel, d.media)); } catch {}
+      out.push({ file: p, rel, name: (title || basename(e.name, ".md").replace(/[-_]+/g, " ")).trim().slice(0, 120), product, at, doc, status: st ? st.status : "" });
     }
   };
   walk(root, 0);
@@ -126,9 +126,15 @@ function draftFiles(dir = MARKETING_DIR, names = [], { max = 30 } = {}) {
 // two `---` lines, and the rest is notes (with the picture and the date they name).
 const MEDIA_TYPES = { png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif", webp: "image/webp", mp4: "video/mp4", mov: "video/quicktime", webm: "video/webm" };
 const SEE_MORE = 210; // where LinkedIn's feed cuts a post off with "…see more"
-const HEAD_KEYS = { product: "product", platform: "platform", when: "when", schedule: "when", date: "when", media: "media", image: "media", video: "media", picture: "media", subreddit: "subreddit", account: "account" };
+const HEAD_KEYS = { product: "product", platform: "platform", when: "when", schedule: "when", date: "when", media: "media", image: "media", video: "media", picture: "media", subreddit: "subreddit", account: "account", type: "type", kind: "type" };
+// Only a file that says it is a social post is shown as one, with Approve and post. `type: post` (or social)
+// with a platform below says so; so does a `platform:` line or a `## Post` section (how drafts were
+// written before `type:`). `type:` set to anything else (listing, schedule, plan, brief, script, doc) is a
+// document, whatever else it holds. A file saying neither (a plain note or table) is a document.
+const PLATFORMS = ["linkedin", "x", "twitter", "instagram", "facebook", "reddit"];
+const POST_TYPES = /^(?:social[ -]?)?posts?$|^social$/i;
 function parseDraft(text) {
-  const src = String(text || "").replace(/\r\n/g, "\n"), out = { title: "", product: "", platform: "", when: "", subreddit: "", account: "", media: [], body: "", notes: "", format: "" };
+  const src = String(text || "").replace(/\r\n/g, "\n"), out = { title: "", product: "", platform: "", when: "", subreddit: "", account: "", media: [], body: "", notes: "", format: "", type: "", isPost: false };
   const lines = src.split("\n"), head = [];
   let i = 0;
   for (; i < lines.length; i++) { const l = lines[i]; if (/^##\s/.test(l) || /^\s*-{3,}\s*$/.test(l)) break; head.push(l); }
@@ -156,7 +162,11 @@ function parseDraft(text) {
   // what the notes name: its picture or video (`week-02-card.png`), and when it goes out
   if (!out.media.length) out.media = [...new Set((out.notes.match(/[\w./-]+\.(?:png|jpe?g|gif|webp|mp4|mov|webm)\b/gi) || []))];
   if (!out.when) { const w = out.notes.match(/(\d{4}-\d{2}-\d{2})(?:[ ,T]+(\d{1,2}:\d{2}))?/); if (w) out.when = w[2] ? `${w[1]} ${w[2]}` : w[1]; }
-  out.platform = (out.platform || "linkedin").toLowerCase();
+  const said = String(out.platform || "").toLowerCase().trim();
+  out.type = String(out.type || "").toLowerCase().trim();
+  out.isPost = out.type ? POST_TYPES.test(out.type) && (!said || PLATFORMS.includes(said)) : (said ? PLATFORMS.includes(said) : (out.format === "legacy" || out.format === "sections") && !/^\s*\|?\s*:?-{3,}:?\s*\|/m.test(out.body)); // no platform line: the old layouts, unless the text holds a table (a plan)
+  if (!out.isPost && !out.type && /play|store|listing/.test(said + " " + out.title.toLowerCase())) out.type = "listing";
+  out.platform = (said || "linkedin");
   if (!out.subreddit) out.subreddit = (out.notes.match(/(?:^|[\s(])\/?(r\/[A-Za-z0-9_]{2,21})\b/) || [])[1] || "";
   out.subreddit = out.subreddit.replace(/^\/?(?:r\/)?/, "r/").replace(/^r\/$/, "");
   return out;
@@ -236,10 +246,12 @@ function draftRel(p, dir = MARKETING_DIR) {
 function setDraftStatus(rel, status, { dir = MARKETING_DIR, now = Date.now(), url = "", on = "", at = "", by = [], ask = "" } = {}) {
   rel = draftRel(rel, dir);
   const f = inLane(dir, rel); if (!f || !/\.md$/i.test(f)) return { error: "That draft isn't there any more." };
-  if (!["approved", "skipped", "change", ...FINAL].includes(status)) return { error: "Approve or skip it, ask for a change, or mark it posted or superseded." };
+  if (!["approved", "skipped", "change", "done", ...FINAL].includes(status)) return { error: "Approve or skip it, ask for a change, or mark it posted or superseded." };
   ask = String(ask || "").trim().slice(0, 4000); if (status === "change" && !ask) return { error: "Say what to change." };
   const d = parseDraft(readFileSync(f, "utf8"));
-  if (!d.body && status !== "superseded") return { error: "That draft has no post in it yet." };
+  if (!d.isPost && status !== "done") return { error: "That file is a document (a listing, schedule or plan), not a social post: it isn't approved or posted. Mark it done when you've used it." };
+  if (d.isPost && status === "done") return { error: "A post is approved, skipped or marked posted, not done." };
+  if (!d.body && status !== "superseded" && status !== "done") return { error: "That draft has no post in it yet." };
   const all = draftStatuses(dir), prev = all[rel], was = stateOf(prev);
   // posted is the end of it; superseded can still be marked posted (what went out, said)
   if (was === "posted" && status === "posted") {
@@ -258,6 +270,7 @@ function setDraftStatus(rel, status, { dir = MARKETING_DIR, now = Date.now(), ur
     const bad = list.find((x) => x === rel || !/\.md$/i.test(x) || !inLane(dir, x)); if (bad) return { error: bad === rel ? "A draft can't replace itself." : `${bad} isn't a draft in the lane.` };
     if (list.length) entry.by = [...new Set(list)];
   }
+  if (status === "done") entry = { status, at: now };
   all[rel] = entry;
   try { mkdirSync(join(dir, ".symbiot"), { recursive: true }); writeFileSync(join(dir, STATUS), JSON.stringify(all, null, 2)); } catch (e) { return { error: "Couldn't save it: " + ((e && e.message) || e) }; }
   return { ok: true, status, draft: d, rel };
@@ -271,8 +284,12 @@ function draftPreview(rel, { dir = MARKETING_DIR, cfg } = {}) {
   const f = inLane(dir, rel); if (!f || !/\.md$/i.test(f)) return { error: "That draft isn't there any more." };
   const d = parseDraft(readFileSync(f, "utf8")), base = relative(realpathSync(dir), dirname(f));
   const media = d.media.map((m) => { const r = join(base, m), ext = m.split(".").pop().toLowerCase(); return inLane(dir, r) && MEDIA_TYPES[ext] ? { rel: r, name: basename(m), kind: MEDIA_TYPES[ext].startsWith("video") ? "video" : "image" } : null; }).filter(Boolean);
+  if (!d.isPost) {
+    const st = draftStatuses(dir)[rel];
+    return { rel, isPost: false, type: d.type || "document", title: d.title, product: d.product, text: readFileSync(f, "utf8"), done: !!(st && st.status === "done"), status: st && st.status === "done" ? "done" : "" };
+  }
   const st = statusOf(dir, rel, d.body, mediaSigOf(dir, rel, d.media));
-  return { rel, title: d.title, product: d.product, platform: d.platform, when: d.when, subreddit: d.subreddit, account: d.account, ...(st && st.status === "change" ? { ask: st.ask || "" } : {}), body: d.body, ...seeMore(d.body), hashtags: d.body.match(/#[\p{L}\p{N}_]+/gu) || [], chars: d.body.length,
+  return { rel, isPost: true, title: d.title, product: d.product, platform: d.platform, when: d.when, subreddit: d.subreddit, account: d.account, ...(st && st.status === "change" ? { ask: st.ask || "" } : {}), body: d.body, ...seeMore(d.body), hashtags: d.body.match(/#[\p{L}\p{N}_]+/gu) || [], chars: d.body.length,
     media, missing: d.media.filter((m) => !media.some((x) => x.name === basename(m))), notes: d.notes, format: d.format, author: author({ cfg, dir }), status: st ? st.status : "", statusAt: st ? st.at : 0,
     ...(st && FINAL.includes(st.status) ? { final: finalSay(st), posted: st.posted || 0, postedOn: st.postedOn || "", url: st.url || "", by: [].concat(st.by || []), edited: !!st.edited } : {}) };
 }
@@ -324,6 +341,7 @@ function marketingBrief(list = [], { map = {}, names = productNames(map) } = {})
     ...(where.length ? ["- **Products in these tasks** (read each one's README and docs for what it is and its end goal):", ...where.map((w) => `  - ${w.p}${w.path ? `: \`${w.path}\`` : " (not one of the user's repos here: ask in QUESTIONS.md where it lives, or hand it over)"}`)] : []),
     `- Write each piece as a \`.md\` under \`${DRAFTS}/<product>/\` (\`${DRAFTS}/dailify/launch-post.md\`), a \`# \` title first, then \`product: <Product>\`, so the Marketing page tags it. Its screenshots and clips go next to it.`,
     "- Every post opens with a strong hook (its first line written for reach), says plainly what the product is, and states its end goal. Where the end goal isn't written down, draft one and flag it in QUESTIONS.md for the user to confirm.",
+    "- Say what each file is on a `type:` line right under its title: `type: post` (with `platform:` linkedin, x, instagram, facebook or reddit) only for the exact text of one social post that goes out; anything else is `type: listing` (store copy), `schedule`, `plan`, `brief`, `script` or `doc`. Those show as documents with a Copy button, never with Approve, post it, and the user marks a listing done once used. Write them as plain markdown (tables are fine).",
     `- Each draft holds the post apart from your notes: a \`# \` title, then \`product:\`, \`platform:\` (linkedin), \`when:\` (YYYY-MM-DD HH:MM, if it's scheduled) and \`media:\` (its picture or video, next to it) lines, then \`## Post\` with exactly the text that goes out (its line breaks, its hashtags) and nothing else, then \`## Notes\` for your reasoning, sources and anything for the user. Symbiot shows \`## Post\` as the platform's own preview, and what you post is that text, unchanged.`,
     `- The user's only step is approving each post's preview under Marketing in Symbiot: never ask them to post, schedule, paste or attach anything themselves, and never mark that as a 👤 step. Symbiot's browser is signed in to the platforms they linked (LinkedIn among them): once a post is approved (ANSWERS.md says "Approved: <its file>"), you post it, or schedule it in the platform's own scheduler for its \`when:\`, through that browser (\`node "${CLI}" screens map <the platform's page>\`, then \`screens type\` and \`screens press\`, and \`screens upload <id> "<its Add media button>" <file>\` for its pictures or video), with the approved text and media, then check it's there.`
       + " A post not yet approved is a question in QUESTIONS.md with a 🤖 Agent: option (\"🤖 Agent: post it on Tuesday at 08:00, once you approve its preview\"), and what to check first in its context line. Never offer doing it by hand, and never ask them to sign in to or link a platform that's linked: use its session. Only signing in (a platform not linked yet, or a real attempt found its session expired: say so) is the user's: `👤 You (only you: signing in to LinkedIn)`. Never sign in as them, and never post what they haven't approved.",

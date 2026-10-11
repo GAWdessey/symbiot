@@ -494,6 +494,7 @@ body.lq-liquid .rcard.pcard,body.lq-liquid.lq-light .rcard.pcard{border-left:3px
 .tag.cust{background:transparent;border-color:var(--amber);color:var(--amber)}
 /* Marketing: the product an item markets, a quiet word before it; what needs you, ruled amber; the Add row */
 .mkp{display:inline-block;margin-right:8px;padding-right:8px;border-right:1px solid var(--line);font:600 10.5px/1.4 var(--sans);letter-spacing:.09em;text-transform:uppercase;color:var(--green);vertical-align:1px}
+.mkdoc{border:1px solid #8884;border-radius:8px;padding:10px 14px;font-size:13px;overflow-x:auto}.mkdoc table{border-collapse:collapse}.mkdoc th,.mkdoc td{border:1px solid #8886;padding:3px 8px;text-align:left}.mkdoc h3,.mkdoc h4,.mkdoc h5{margin:10px 0 4px}
 .mkst{font-size:11px;padding:1px 7px;border-radius:999px;border:1px solid var(--line);color:var(--faint)}.mkst.approved{color:var(--green);border-color:var(--green)}.mkst.posted{color:var(--green);border-color:var(--green);background:var(--green-dim)}.mkst.superseded{text-decoration:line-through}
 /* the pick tray: a card a capture, its blur boxes on it (solid: blurred; dashed: shown), each a click to switch; Use puts it on a post */
 .mktray{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,380px),1fr));gap:14px;align-items:start}
@@ -1023,6 +1024,7 @@ body.lq-light .onbdots i{background:rgba(21,26,33,.1)}body.lq-light .onbdots i.o
 #lqmic:hover,#lqmic:focus-visible{opacity:1;background:rgba(255,255,255,.07)}
 body.lq-light #lqmic:hover,body.lq-light #lqmic:focus-visible{background:rgba(21,26,33,.06)}
 #lqmic.on{opacity:1;background:#F2A541;color:#0A0B0D;animation:lqmicpulse 1.4s ease-in-out infinite}
+#lqmic.conv{opacity:1;box-shadow:0 0 0 2px rgba(242,165,65,.55)}
 @keyframes lqmicpulse{0%,100%{box-shadow:0 0 0 4px rgba(242,165,65,.28)}50%{box-shadow:0 0 0 11px rgba(242,165,65,.05)}}
 @media (prefers-reduced-motion: reduce){#lqmic.on{animation:none;box-shadow:0 0 0 4px rgba(242,165,65,.28)}}
 #lqmic.hidden{display:none}
@@ -1663,7 +1665,7 @@ el.innerHTML="<h4>AI review &middot; <span class='rname'>"+esc(name)+"</span></h
 Promise.all([api('/api/review',{path:path}),api('/api/tasks')]).then(function(res){var r=res[0]||{},tasks=res[1]||[];
 if(r.error==='not-connected'){el.innerHTML="<h4>AI review &middot; <span class='rname'>"+esc(name)+"</span></h4><div class='body'>Connect a model in Settings to get a review - Ollama is free and runs locally.</div>"+(r.footer?"<div class='rfoot'>"+esc(r.footer)+"</div>":"");return;}
 var body=r.text||'(no output)';reviewCache[path]={text:body,verdict:r.verdict||"",ideas:r.ideas||[],footer:r.footer};el.innerHTML=reviewHtml(name,body,r.verdict||"",r.ideas||[],tasks,r.footer);wireIdeas();});}
-var ALLTASKS=[];var PENDTASKS=[];var TFILTER={type:'',repo:''};var TARCH=false;
+var ALLTASKS=[];var PENDTASKS=[];var TFILTER={type:'',repo:'',id:''};var TARCH=false;
 var TORDER=['Fixes','Tests & CI','Security','Performance','Refactor','UI/UX','Docs','Features & other'];
 function taskRow(t,arch){return "<div class='task"+(t.done?" done":"")+"' data-id='"+esc(t.id)+"'>"+(arch?"":"<input type='checkbox' class='taskchk' title='mark done (auto-archives on sync)'"+(t.done?" checked":"")+">")+"<span class='t'>"+esc(t.full?t.text.replace(/ Full text: \\x60[^\\x60]*\\x60/,''):t.text)+(t.full?"<details class='tfull'><summary>full text</summary><div>"+esc(t.full)+"</div></details>":"")+"</span>"+(t.repo?"<span class='rp'>"+esc(t.repo)+"</span>":"")+(arch&&t.removedBy?"<span class='rp' title='An approved task "+(t.merged?"merged it into another":"dropped it")+". Restore it to keep it.'>"+(t.merged?"merged":"dropped")+"</span>":"")+(arch&&t.dropped?"<span class='rp' title='An agent deleted it from TASKS.md, as you said to drop it. Restore it to keep it.'>dropped</span>":"")+askBtn(t)+(arch?"<button class='rm restore' title='restore to active'>&#8630;</button>":"<button class='rm' title='remove'>&times;</button>")+"</div>";}
 function wireTaskRows(el){el.querySelectorAll('.task').forEach(function(row){var id=row.getAttribute('data-id');
@@ -1696,6 +1698,7 @@ box.querySelector('.askclear').addEventListener('click',function(){api('/api/tas
 inp.focus();}
 function fchip(dim,val,label){var on=(TFILTER[dim]||'')===val;return "<button class='fchip"+(on?' on':'')+"' data-dim='"+dim+"' data-val='"+esc(val)+"'>"+esc(label)+"</button>";}
 function renderFilter(){var box=document.getElementById('taskfilter');
+if(TFILTER.id&&!TARCH){box.innerHTML="<button class='fchip on' id='alltasks'>&#8592; All tasks</button><span class='fl'>Just this task</span>";document.getElementById('alltasks').addEventListener('click',function(){TFILTER.id='';renderTasks();});return;}
 if(TARCH){box.innerHTML="<button class='fchip on' id='archtoggle'>&#8617; back to active</button>";document.getElementById('archtoggle').addEventListener('click',function(){loadTasks();});return;}
 var types={},repos={};ALLTASKS.forEach(function(t){types[t.type||'Features & other']=1;if(t.repo)repos[t.repo]=1;});
 var fb="<span class='fl'>Type</span>"+fchip('type','','All')+Object.keys(types).sort(function(a,b){return TORDER.indexOf(a)-TORDER.indexOf(b);}).map(function(t){return fchip('type',t,t);}).join('');
@@ -1705,7 +1708,7 @@ box.innerHTML=fb;
 box.querySelectorAll('.fchip[data-dim]').forEach(function(c){c.addEventListener('click',function(){TFILTER[c.getAttribute('data-dim')]=c.getAttribute('data-val');renderTasks();});});
 document.getElementById('archtoggle').addEventListener('click',loadArchived);}
 function renderTasks(){var el=document.getElementById('tasklist');TARCH=false;if(el&&el.classList)el.classList.toggle('onerepo',!!TFILTER.repo);renderFilter();renderNeeds();lqTitle();
-var list=ALLTASKS.filter(function(t){return !t.review&&(!TFILTER.type||(t.type||'Features & other')===TFILTER.type)&&(!TFILTER.repo||t.repo===TFILTER.repo);});
+var list=ALLTASKS.filter(function(t){return !t.review&&(!TFILTER.type||(t.type||'Features & other')===TFILTER.type)&&(!TFILTER.repo||t.repo===TFILTER.repo)&&(!TFILTER.id||t.id===TFILTER.id);});
 if(!list.length){el.innerHTML="<div class='muted' style='margin-top:12px'>"+(ALLTASKS.length?"Nothing matches this filter.":"No tasks queued. Tell Symbiot one in the bar at the bottom, or tick ideas in a repo review on the Map.")+"</div>";return;}
 var groups={};list.forEach(function(t){var ty=t.type||'Features & other';(groups[ty]=groups[ty]||[]).push(t);});
 var keys=Object.keys(groups).sort(function(a,b){var ia=TORDER.indexOf(a),ib=TORDER.indexOf(b);return (ia<0?99:ia)-(ib<0?99:ib);});
@@ -2464,8 +2467,25 @@ if(p.status==='change'&&p.ask)h+="<div class='mkasked muted'>What you asked: &ld
 if(!fin)h+="<form class='row mkchgf hidden'><textarea class='mkchgt' maxlength='4000' placeholder='What should change? Its agent redrafts this same post and brings it back for your OK.' aria-label='What to change'></textarea><button type='submit' class='act'>Send to its agent</button><button type='button' class='ghost mkchgx'>Cancel</button></form>";
 h+="<details class='linotes'><summary>Its notes</summary>"+(p.notes?"<div class='linotest'>"+esc(p.notes)+"</div>":"<div class='muted'>None.</div>")+"<button type='button' class='ghost mkfile' title='open the draft in your editor'>Edit the file</button></details>";
 return h;}
+// A file that isn't a social post (a store listing, schedule, plan, brief, script): shown as a
+// document with its markdown rendered (tables too), Copy, and for a listing Mark done. Never Approve, post it.
+function mkInline(x){return esc(x).split('**').map(function(s,i){return i%2?'<b>'+s+'</b>':s;}).join('');}
+function mkMd(t){var NL=String.fromCharCode(10),L=String(t||'').split(NL),o=[],i=0,cells=function(r){var c=r.trim().split('|');if(c[0]==='')c.shift();if(c.length&&c[c.length-1]==='')c.pop();return c.map(function(x){return x.trim();});};
+while(i<L.length){var tl=L[i].trim(),m;
+if(tl===''){i++;continue;}
+if(tl.charAt(0)==='|'&&i+1<L.length&&L[i+1].trim().charAt(0)==='|'&&L[i+1].indexOf('-')>=0&&L[i+1].replace(/[|:\\-\\s]/g,'')===''){var hd=cells(tl);o.push("<table class='mkdt'><thead><tr>"+hd.map(function(c){return '<th>'+mkInline(c)+'</th>';}).join('')+'</tr></thead><tbody>');i+=2;
+while(i<L.length&&L[i].trim().charAt(0)==='|'){o.push('<tr>'+cells(L[i]).map(function(c){return '<td>'+mkInline(c)+'</td>';}).join('')+'</tr>');i++;}o.push('</tbody></table>');continue;}
+if((m=tl.match(/^(#{1,4})\\s+(.*)$/))){var n=Math.min(m[1].length+2,6);o.push('<h'+n+'>'+mkInline(m[2])+'</h'+n+'>');i++;continue;}
+if(/^[-*]\\s+/.test(tl)){o.push('<ul>');while(i<L.length&&/^[-*]\\s+/.test(L[i].trim())){o.push('<li>'+mkInline(L[i].trim().replace(/^[-*]\\s+/,''))+'</li>');i++;}o.push('</ul>');continue;}
+var para=[];while(i<L.length&&L[i].trim()!==''&&L[i].trim().charAt(0)!=='|'&&!/^(#{1,4}\\s|[-*]\\s)/.test(L[i].trim())){para.push(mkInline(L[i]));i++;}
+if(!para.length){o.push('<p>'+mkInline(L[i])+'</p>');i++;}else o.push('<p>'+para.join('<br>')+'</p>');}
+return o.join('');}
+function mkDocHtml(p){return "<div class='mkdoc' aria-label='document preview'>"+mkMd(p.text)+"</div><div class='row mkpvact'><button class='act mkcopy'>Copy</button>"+(p.type==='listing'&&!p.done?"<button class='ghost mkdone'>Mark done</button>":"")+"<button class='ghost mkfile' title='open the file in your editor'>Edit the file</button><span class='muted' style='font-size:12px;flex:1'>"+(p.done?"Marked done. ":"")+"A "+esc(p.type||'document')+", not a social post: nothing is posted from it.</span></div>";}
 function mkPreview(box,rel){if(!box.innerHTML)box.innerHTML="<div class='muted'>Loading&hellip;</div>";
 api('/api/marketing/draft?rel='+encodeURIComponent(rel)).then(function(p){if(MKPV!==rel)return;if(!p||p.error){box.innerHTML="<div class='note err'>"+esc((p&&p.error)||'failed')+"</div>";return;}
+if(p.isPost===false){box.innerHTML=mkDocHtml(p);var cp=box.querySelector('.mkcopy');if(cp)cp.addEventListener('click',function(){var done=function(){mkMsg('ok','Copied.');};if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(p.text).then(done,function(){mkMsg('err','Couldn&#39;t copy it.');});else mkMsg('err','Couldn&#39;t copy it.');});
+var dn=box.querySelector('.mkdone');if(dn)dn.addEventListener('click',function(){dn.disabled=true;api('/api/marketing/draft/answer',{rel:rel,done:true}).then(function(r){if(!r||r.error){dn.disabled=false;mkMsg('err',esc((r&&r.error)||'failed'));return;}mkMsg('ok','Marked done.');loadMarketing();mkPreview(box,rel);});});
+var fl0=box.querySelector('.mkfile');if(fl0)fl0.addEventListener('click',function(){api('/api/marketing/open',{rel:rel}).then(function(r){if(r&&r.error)mkMsg('err',esc(r.error));});});return;}
 box.innerHTML=mkPreviewHtml(p);
 var mo=box.querySelector('.limore');if(mo)mo.addEventListener('click',function(){box.querySelector('.litext').innerHTML=mkTags(p.body);});
 var fl=box.querySelector('.mkfile');if(fl)fl.addEventListener('click',function(){api('/api/marketing/open',{rel:rel}).then(function(r){if(r&&r.error)mkMsg('err',esc(r.error));});});
@@ -2494,7 +2514,7 @@ var keep=document.activeElement,typed=keep&&keep.closest&&keep.closest('#mktasks
 el.innerHTML=h;if(typed){$('mkprod').value=typed[0]||'';$('mktext').value=typed[1]||'';var f0=$(typed[2]);if(f0&&f0.focus)f0.focus();}
 var fm=el.querySelector('.mkadd');if(fm)fm.addEventListener('submit',function(ev){ev.preventDefault();var t=$('mktext'),pr=$('mkprod'),bt=fm.querySelector('button');if(!t.value.trim()){t.focus();return;}bt.disabled=true;
 api('/api/marketing/task',{text:t.value,product:pr.value}).then(function(r){bt.disabled=false;if(!r||r.error){mkMsg('err',esc((r&&r.error)||'failed'));return;}mkMsg('ok',r.duplicate?"It&#39;s on Marketing&#39;s list already.":"Added to Marketing"+(pr.value?" for "+esc(pr.value):"")+". Start its agent when you&#39;re ready.");t.value='';loadMarketing();}).catch(function(e){bt.disabled=false;mkMsg('err',esc(String((e&&e.message)||e)));});});
-el.querySelectorAll('.mkopen').forEach(function(b){b.addEventListener('click',function(){TFILTER.repo=b.getAttribute('data-repo')||'';TFILTER.type='';lqPool('tasks');if(typeof loadTasks==='function')loadTasks();});});
+el.querySelectorAll('.mkopen').forEach(function(b){b.addEventListener('click',function(){TFILTER.id='';TFILTER.repo=b.getAttribute('data-repo')||'';TFILTER.type='';lqPool('tasks');if(typeof loadTasks==='function')loadTasks();});});
 el.querySelectorAll('.mkmove').forEach(function(b){b.addEventListener('click',function(){var id=b.closest('.task').getAttribute('data-id');b.disabled=true;api('/api/marketing/move',{id:id}).then(function(r){if(!r||r.error){b.disabled=false;mkMsg('err',esc((r&&r.error)||'failed'));return;}mkMsg('ok',"Moved to Marketing: its agent takes it from now on.");loadMarketing();});});});
 el.querySelectorAll('.mkprev').forEach(function(b){b.addEventListener('click',function(){var rel=b.closest('.task').getAttribute('data-rel');MKPV=MKPV===rel?'':rel;renderMkLane();});});
 if(MKPV){var pv=null;el.querySelectorAll('.mkpv').forEach(function(x){if(x.getAttribute('data-rel')===MKPV)pv=x;});if(pv)mkPreview(pv,MKPV);else MKPV='';}
@@ -3240,7 +3260,7 @@ if(d.kind==='archive'){lqArchive();return;}
 if(d.kind==='shape'&&d.shape==='marketing'&&d.ask)MKLIT=true;
 if(d.kind==='you'&&d.item){if(d.x!=null){var S1=lqSize();LQ.ripple=[d.x/S1.w,d.y/S1.h,LQ.t];}lqUse(d.shape||'agents',ev);lqFocus(d.item);return;}
 if(d.kind==='wait'&&d.focus){lqFocus({kind:'proj',repo:d.repo,path:d.focus});return;}
-if(d.kind==='proj'){if(d.lit||d.repo==='ops'){lqFocus({kind:'proj',repo:d.repo});return;}TFILTER.repo=d.repo;TFILTER.type='';lqPool('tasks');if(typeof loadTasks==='function')loadTasks();return;}
+if(d.kind==='proj'){if(d.lit||d.repo==='ops'){lqFocus({kind:'proj',repo:d.repo});return;}TFILTER.id='';TFILTER.repo=d.repo;TFILTER.type='';lqPool('tasks');if(typeof loadTasks==='function')loadTasks();return;}
 // where your files disagree: the checks, lit up in Settings, and these clashes reached you (it dissolves)
 if(d.id==='phones'){lqUse('settings',ev);lqFocus({kind:'setup',focus:'phone'});return;}
 if(d.id==='feed:clash'){api('/api/knowledge/checks/seen',{}).catch(function(){});if(LQ.home)LQ.home.feeds=(LQ.home.feeds||[]).filter(function(f){return f.id!=='feed:clash';});lqUse('settings',ev);loadChecks();lqFocus({kind:'setup',focus:'checks'});return;}
@@ -3312,7 +3332,7 @@ function lqFocus(y){lqAct();y=y||{};LQ.focus={kind:y.kind||'',repo:y.repo||'',pa
 document.querySelectorAll('main .lit').forEach(function(x){x.classList.remove('lit');}); // only what this orb lit stays lit
 if(y.kind==='setup'){lqPool('settings');setTimeout(lqLight,300);return;}
 if(!y.repo||y.repo==='ops'){lqPool('agents');return;}
-TFILTER.repo=y.repo;TFILTER.type='';lqPool('tasks');
+TFILTER.id='';TFILTER.repo=y.repo;TFILTER.type='';lqPool('tasks');
 api('/api/home?fresh=1').then(function(h){if(h&&h.you)LQ.home=h;renderNeeds();}).catch(function(){});}
 // Needs you here: what only you can do in the project the Tasks list is filtered
 // to, at its top, each answerable where it is; its held handovers under them.
@@ -3382,14 +3402,21 @@ function lqGrowAsk(){var i=$('lqask');if(!i||!i.style)return;i.style.height='aut
 // it; a pause sends it, as Enter would. Speech becomes text in the browser itself
 // (Chrome and Edge, no key); where it can't, there's no mic. When you spoke, the
 // answer is read out too (typed, it stays quiet), and talking again cuts it off.
-var VOICE={rec:null,on:false,spoke:false,final:'',base:'',err:'',ph:''};
+var VOICE={rec:null,on:false,spoke:false,final:'',base:'',err:'',ph:'',convo:false,quiet:0,timer:0};
 function voiceOk(){return !!(window.SpeechRecognition||window.webkitSpeechRecognition);}
-function voiceMic(on){var m=$('lqmic');if(!m)return;m.classList.toggle('on',on);m.setAttribute('aria-pressed',on?'true':'false');m.setAttribute('aria-label',on?'Stop listening':'Talk to Symbiot');var a=$('lqask');if(a){if(on){VOICE.ph=a.getAttribute('placeholder')||'';a.setAttribute('placeholder','Listening… speak, then pause to send');}else if(VOICE.ph)a.setAttribute('placeholder',VOICE.ph);}}
+function voiceMic(on){var m=$('lqmic');if(!m)return;m.classList.toggle('on',on);m.setAttribute('aria-pressed',on?'true':'false');m.classList.toggle('conv',!!VOICE.convo&&!on);m.setAttribute('aria-label',on?'Stop listening':VOICE.convo?'End conversation':'Talk to Symbiot');var a=$('lqask');if(a){if(on){VOICE.ph=a.getAttribute('placeholder')||'';a.setAttribute('placeholder',VOICE.convo?'Listening… speak, then pause to send. Say "end conversation" to stop.':'Listening… speak, then pause to send');}else if(VOICE.ph)a.setAttribute('placeholder',VOICE.ph);}}
 function voiceSay(t){LQ.talkMin=false;lqTalkMode(true);LQ.talk.push({me:false,text:t});LQ.talk=LQ.talk.slice(-8);lqTalkShow(false);}
 var VOICE_WHY={'not-allowed':'Symbiot couldn’t use your microphone. Allow it for this window (the icon at the top of the window, or your system’s privacy settings), then click the mic again.','service-not-allowed':'Symbiot couldn’t use your microphone. Allow it for this window, then click the mic again.','audio-capture':'No microphone was found. Plug one in, or check it’s switched on, then try again.','network':'Talking needs an internet connection: your browser turns speech into text online.'};
+// A click starts a conversation: after each spoken answer the mic reopens by itself, until you
+// say "end conversation" (or "stop", "that's all"), click the mic, or stay quiet for two rounds.
 function voiceToggle(){
-if(VOICE.on){try{VOICE.rec.stop();}catch(e){}return;}
-voiceStop();
+if(VOICE.on){VOICE.convo=false;try{VOICE.rec.stop();}catch(e){}return;}
+if(VOICE.convo){voiceEnd();return;}
+VOICE.convo=true;VOICE.quiet=0;voiceStop();voiceListen();}
+function voiceEnd(why){VOICE.convo=false;clearTimeout(VOICE.timer);voiceStop();voiceMic(VOICE.on);if(why)voiceSay(why);}
+function voiceResume(){if(!VOICE.convo||VOICE.on)return;clearTimeout(VOICE.timer);VOICE.timer=setTimeout(function(){if(VOICE.convo&&!VOICE.on)voiceListen();},350);}
+var VOICE_BYE=/^(?:ok(?:ay)?,? |please )?(?:end (?:the )?conversation|stop(?: (?:listening|talking))?|that'?s all|that is all|goodbye|bye)[.! ]*$/i;
+function voiceListen(){
 var R=window.SpeechRecognition||window.webkitSpeechRecognition;if(!R)return;
 var r;try{r=new R();}catch(e){return;}
 var ask=$('lqask');VOICE.rec=r;VOICE.final='';VOICE.err='';VOICE.base=((ask&&ask.value)||'').trim();
@@ -3398,10 +3425,12 @@ r.onstart=function(){VOICE.on=true;voiceMic(true);lqAct();};
 r.onresult=function(ev){var interim='';for(var i=ev.resultIndex;i<ev.results.length;i++){var t=ev.results[i][0].transcript;if(ev.results[i].isFinal)VOICE.final+=t;else interim+=t;}
 if(ask){ask.value=((VOICE.base?VOICE.base+' ':'')+(VOICE.final+interim)).replace(/ +/g,' ').trim();lqGrowAsk();}};
 r.onerror=function(ev){VOICE.err=(ev&&ev.error)||'';};
-r.onend=function(){VOICE.on=false;voiceMic(false);VOICE.rec=null;var said=((ask&&ask.value)||'').trim(),why=VOICE_WHY[VOICE.err];
-if(why){voiceSay(why);return;}
-if(VOICE.final.trim()&&said){VOICE.spoke=true;lqSay();}};
-try{r.start();}catch(e){VOICE.on=false;voiceMic(false);}}
+r.onend=function(){VOICE.on=false;VOICE.rec=null;var said=((ask&&ask.value)||'').trim(),why=VOICE_WHY[VOICE.err];
+if(why){VOICE.convo=false;voiceMic(false);voiceSay(why);return;}
+if(VOICE.final.trim()&&VOICE_BYE.test(VOICE.final.trim())){if(ask){ask.value=VOICE.base;lqGrowAsk();}voiceEnd('Conversation ended.');return;}
+if(VOICE.final.trim()&&said){VOICE.quiet=0;voiceMic(false);VOICE.spoke=true;lqSay();return;}
+voiceMic(false);if(VOICE.convo){if(++VOICE.quiet>=2)voiceEnd('I stopped listening because it went quiet. Click the mic to talk again.');else voiceResume();}};
+try{r.start();}catch(e){VOICE.on=false;VOICE.convo=false;voiceMic(false);}}
 // Speaking, with no voice to choose: the system's own when it has a natural one
 // (Edge on Windows, Macs with Apple's better voices, phones), in your region's accent if it has that too;
 // otherwise Symbiot's own (voice.mjs: Piper on this computer), fetched once in the
@@ -3418,23 +3447,33 @@ if(!good.length&&/android|iphone|ipad/i.test(navigator.userAgent||''))good=vs; /
 good.sort(function(a,b){return (voiceTag(b)===tag)-(voiceTag(a)===tag);});
 return {best:good[0]||null,any:good[0]||vs[0]||null};}
 function voiceStop(){SPEAK.n++;try{if(window.speechSynthesis)window.speechSynthesis.cancel();}catch(e){}if(SPEAK.audio){try{SPEAK.audio.pause();}catch(e){}SPEAK.audio=null;}}
-function voiceClean(t){var clean=String(t||'').replace(/\\s*[\\u2190-\\u21ff\\u2794-\\u27bf\\u27f5-\\u27ff]\\s*/g,', ').replace(/(^|[.?!:]), /g,'$1 ').replace(/[*_#>|]+/g,' ').replace(new RegExp(String.fromCharCode(96),'g'),'').replace(/https?:[^ ]+/g,'a link').replace(/ +/g,' ').trim();
+// How the voices say our names (Piper and the system's own both mangle them), and the things that
+// read badly letter by letter: paths, ids, file names, versions, short-forms.
+var VOICE_SAY=[[/symbiot/gi,'Simbeeot'],[/gawdessey/gi,'Gaw dessy'],[/argena/gi,'Arjena'],[/pedipigeon/gi,'Peddy Pigeon'],[/workdesk/gi,'work desk'],[/daaymn/gi,'Dayman'],[/\\bnpm\\b/gi,'N P M'],[/\\badb\\b/gi,'A D B'],[/\\bPRs?\\b/g,'P R'],[/\\bAPI\\b/g,'A P I'],[/\\bURLs?\\b/g,'U R L'],[/\\bPWA\\b/g,'P W A'],[/\\bCLI\\b/g,'C L I'],[/\\bCI\\b/g,'C I'],[/\\bSSH\\b/g,'S S H'],[/\\bTTS\\b/g,'T T S']];
+function voiceSayable(t){var s=String(t||'');
+s=s.replace(/(^|[\\s(])(?:~|\\.{1,2})?\\/[\\w.~\\-]+(?:\\/[\\w.~\\-]*)+/g,'$1a file path');
+s=s.replace(/\\b[a-z]+-(?=[a-f]*\\d)[0-9a-f]{6,}\\b/g,'an id').replace(/\\b(?=[a-f]*\\d)[0-9a-f]{8,}\\b/g,'an id');
+s=s.replace(/\\b([\\w\\-]+)\\.(?:mjs|cjs|js|json|md|html|css|ts|sh|png|log)\\b/g,'$1 file');
+s=s.replace(/\\bv?(\\d+)\\.(\\d+)\\.(\\d+)\\b/g,'$1 point $2 point $3');
+VOICE_SAY.forEach(function(p){s=s.replace(p[0],p[1]);});
+return s;}
+function voiceClean(t){var clean=voiceSayable(t).replace(/\\s*[\\u2190-\\u21ff\\u2794-\\u27bf\\u27f5-\\u27ff]\\s*/g,', ').replace(/(^|[.?!:]), /g,'$1 ').replace(/[*_#>|]+/g,' ').replace(new RegExp(String.fromCharCode(96),'g'),'').replace(/https?:[^ ]+/g,'a link').replace(/ +/g,' ').trim();
 if(clean.length>700){var cut=clean.slice(0,700),at=Math.max(cut.lastIndexOf('. '),cut.lastIndexOf('? '),cut.lastIndexOf('! '));clean=(at>200?cut.slice(0,at+1):cut)+' The rest is on screen.';}
 return clean;}
-function voiceSystem(text,v){if(!window.speechSynthesis||!text)return;try{var u=new SpeechSynthesisUtterance(text);if(v)u.voice=v;u.lang=voiceLang();u.rate=1.02;window.speechSynthesis.cancel();window.speechSynthesis.speak(u);}catch(e){}}
-// a sentence at a time, so the first is heard while the next is made
-function voiceSentences(t){var out=[],cur='';t.split(' ').forEach(function(w){cur+=(cur?' ':'')+w;var e=w.charAt(w.length-1);if((e==='.'||e==='?'||e==='!')&&cur.length>24){out.push(cur);cur='';}});if(cur)out.push(cur);return out;}
-function voiceOwn(text,lang){var my=SPEAK.n,parts=voiceSentences(text),got=[];
+function voiceSystem(text,v,done){if(!window.speechSynthesis||!text){if(done)done();return;}try{var u=new SpeechSynthesisUtterance(text);if(v)u.voice=v;u.lang=voiceLang();u.rate=1.02;if(done){u.onend=done;u.onerror=done;}window.speechSynthesis.cancel();window.speechSynthesis.speak(u);}catch(e){if(done)done();}}
+// the first sentence alone (heard while the rest is made), then about two at a time: fewer joins to hear
+function voiceSentences(t){var out=[],cur='';t.split(' ').forEach(function(w){cur+=(cur?' ':'')+w;var e=w.charAt(w.length-1);if((e==='.'||e==='?'||e==='!')&&cur.length>(out.length?110:24)){out.push(cur);cur='';}});if(cur)out.push(cur);return out;}
+function voiceOwn(text,lang,done){var my=SPEAK.n,parts=voiceSentences(text),got=[];
 var make=function(i){if(i>=parts.length||got[i])return;got[i]=fetch('/api/voice/say',{method:'POST',headers:{'x-symbiot-token':T,'content-type':'application/json'},body:JSON.stringify({text:parts[i],lang:lang})}).then(function(r){if((r.headers.get('content-type')||'').indexOf('audio')<0)throw new Error('no audio');return r.blob();});};
-var play=function(i){if(my!==SPEAK.n||i>=parts.length)return;make(i);make(i+1);
+var play=function(i){if(my!==SPEAK.n)return;if(i>=parts.length){if(done)done();return;}make(i);make(i+1);
 got[i].then(function(b){if(my!==SPEAK.n)return;var a=new Audio(URL.createObjectURL(b));SPEAK.audio=a;a.onended=function(){try{URL.revokeObjectURL(a.src);}catch(e){}play(i+1);};var pl=a.play();if(pl&&pl.catch)pl.catch(function(){});})
-.catch(function(){if(my!==SPEAK.n)return;SPEAK.own=null;var nat=voiceNatural();voiceSystem(parts.slice(i).join(' '),nat&&nat.any);});};
+.catch(function(){if(my!==SPEAK.n)return;SPEAK.own=null;var nat=voiceNatural();voiceSystem(parts.slice(i).join(' '),nat&&nat.any,done);});};
 play(0);}
-function voiceSpeak(t){if(!t)return;voiceStop();var clean=voiceClean(t);if(!clean)return;var nat=voiceNatural();
-if(nat&&nat.best){voiceSystem(clean,nat.best);return;}
-var lang=voiceLang(),go=function(st){if(st&&st.state==='ready'){voiceOwn(clean,lang);return;}
+function voiceSpeak(t,done){if(!t){if(done)done();return;}voiceStop();var clean=voiceClean(t);if(!clean){if(done)done();return;}var nat=voiceNatural();
+if(nat&&nat.best){voiceSystem(clean,nat.best,done);return;}
+var lang=voiceLang(),go=function(st){if(st&&st.state==='ready'){voiceOwn(clean,lang,done);return;}
 if(st&&(st.state==='missing'||st.state==='failed')&&!SPEAK.asked){SPEAK.asked=true;api('/api/voice/prepare',{lang:lang}).catch(function(){});}
-voiceSystem(clean,nat&&nat.any);};
+voiceSystem(clean,nat&&nat.any,done);};
 if(SPEAK.own&&SPEAK.own.state==='ready')go(SPEAK.own);else api('/api/voice?lang='+encodeURIComponent(lang)).then(function(st){SPEAK.own=st;go(st);}).catch(function(){go(null);});}
 // Chrome lists its voices only after a first ask
 try{if(window.speechSynthesis)window.speechSynthesis.getVoices();}catch(e){}
@@ -3454,6 +3493,7 @@ function lqNav(to,g){to=String(to||'');lqTalkMode(true);
 if(to==='home'){if(LQ.mode==='pool')lqSink();if(LQ.scene==='work')lqHome();return;}
 if(to==='archive'){lqUse('tasks',null,'talk');lqArchive();}
 else if(to.indexOf('lane:')===0)lqOpen({kind:'proj',repo:to.slice(5)});
+else if(to.indexOf('task:')===0){TFILTER.id=to.slice(5);TFILTER.repo='';TFILTER.type='';lqUse('tasks',null,'talk');lqGo('tasks');if(typeof loadTasks==='function')loadTasks();}
 else if(LQNAMES[to]){lqUse(to,null,'talk');lqGo(to);}
 else return;
 lqWhy(g&&g.to===to?g:null);}
@@ -3463,11 +3503,11 @@ el.innerHTML=on?(g.why?"<span>"+esc(g.why)+"</span>":'')+(g.alts&&g.alts.length?
 if(on)el.querySelectorAll('[data-go]').forEach(function(b){b.addEventListener('click',function(){lqNav(b.getAttribute('data-go'));});});}
 function lqSay(){var spoke=VOICE.spoke;VOICE.spoke=false;var i=$('lqask');var q=((i&&i.value)||'').trim(),shots=LQ.atts.slice();if(!q&&!shots.length)return;if(!q)q='Take a look at this screenshot.';i.value='';lqGrowAsk();LQ.atts=[];lqAttsShow();lqAct();
 var low=q.toLowerCase().replace(/^(please |can you |could you )/,''),hit=lqNavHit(q);
-if(hit){lqNav(hit);return;}
+if(hit){lqNav(hit);if(spoke)voiceResume();return;}
 if(/^(go|start|go for it|start them|start it)[.! ]*$/.test(low)){lqTalkMode(true);lqGoWork();return;}
 if(/^(home|back)[.! ]*$/.test(low)&&LQ.scene==='work'){lqHome();return;}
 LQ.talkMin=false;lqTalkMode(true);LQ.talk.push({me:true,text:q,imgs:shots.map(function(a){return a.data;})});LQ.talk=LQ.talk.slice(-8);lqTalkShow(true);
-api('/api/home/ask',{question:q,images:shots}).then(function(r){LQ.talk.push({me:false,steps:r.steps||[],go:r.go||null,signInTo:r.signInTo||null,text:r.error==='not-connected'?'Connect an AI in Settings to talk to me. Say "open settings".':(r.answer||r.error||'(no answer)')});if(spoke)voiceSpeak(r.spoken||LQ.talk[LQ.talk.length-1].text);LQ.talk=LQ.talk.slice(-8);lqTalkShow(false);LQ.ripple=[0.5,0.47,LQ.t];if(r.go&&r.go.to){lqNav(r.go.to,r.go);return;}lqLoad(false);}).catch(function(e){LQ.talk.push({me:false,text:String((e&&e.message)||e)});lqTalkShow(false);});}
+api('/api/home/ask',{question:q,images:shots}).then(function(r){LQ.talk.push({me:false,steps:r.steps||[],go:r.go||null,signInTo:r.signInTo||null,text:r.error==='not-connected'?'Connect an AI in Settings to talk to me. Say "open settings".':(r.answer||r.error||'(no answer)')});if(spoke)voiceSpeak(r.spoken||LQ.talk[LQ.talk.length-1].text,voiceResume);LQ.talk=LQ.talk.slice(-8);lqTalkShow(false);LQ.ripple=[0.5,0.47,LQ.t];if(r.go&&r.go.to){lqNav(r.go.to,r.go);return;}lqLoad(false);}).catch(function(e){LQ.talk.push({me:false,text:String((e&&e.message)||e)});lqTalkShow(false);voiceResume();});}
 // The physics: each droplet a critically damped spring to its place (no wobble,
 // no overshoot), pushed off its neighbours and the core where they'd overlap.
 function lqStep(){var S0=lqSize();if(S0.w!==LQ.bw||S0.h!==LQ.bh){if(LQ.scene==='work'&&LQ.workData)lqBuildWork();else if(LQ.adapt)lqBuild();}var S=S0,cx=S.w/2,cy=(LQ.scene!=='work'&&LQ.cy)||S.h*0.47,k=0.022,c=2*Math.sqrt(k),th=LQ.theme,still=th.still,rest=LQ.mode==='rest',pool=LQ.mode==='pool',talk=LQ.talking&&!pool;

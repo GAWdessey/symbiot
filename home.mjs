@@ -75,7 +75,7 @@ function troubles({ stuck = [], list = [], map = {}, named = displayName, now = 
     if (a.status === "running" || (a.ask && a.ask.questions && a.ask.questions.length)) continue; // at work, or it asked: that's its question
     const lane = laneOfPath(a.path, map), repo = lane || "", nm = repo ? named(map[lane], repo) : plain(String(a.name || "an agent").replace(/^Agent:\s*/, "").replace(/^\W*What['’]s needed:\W*/i, "").replace(/^./, (c) => c.toUpperCase()), 60);
     const n = a.needs;
-    if (n && !dropped.has("needs:" + a.id)) {
+    if (n && !dropped.has("needs:" + a.id) && !isDone(n.what)) {
       const ok = n.kind === "approve";
       out.push({ kind: "ask", fix: "needs", id: "needs:" + a.id, path: a.path, repo, name: nm, title: ok ? `${nm} waits for your OK` : `${nm} needs you`, sub: plain(n.label || n.what, 90),
         q: n.what + (n.check ? ` Check first: ${n.check}` : ""), options: ok ? ["Go ahead (recommended)", "Skip"] : [I_DID_IT, "Skip"], status: "Waiting on you", ...signInCard([n.label, n.what, n.check]), shape: "agents" });
@@ -258,12 +258,12 @@ function marketingState({ deps = {}, list, pend, map, named = displayName } = {}
   for (const p of (posts.posts || []).filter((x) => x.status === "waiting")) needs.push({ kind: "draft", id: "draft:" + p.id, text: plain(firstLine(p.text), 120), product: productOf(p.text, names) });
   // a post its agent drafted that you haven't approved or skipped: approving its preview is
   // the only step a post needs from you, so it's lit here (and on Home's orb), Preview one click away
-  for (const f of files.filter((x) => !x.status)) needs.push({ kind: "post", id: "post:" + f.rel, rel: f.rel, text: plain(f.name, 120), product: f.product });
+  for (const f of files.filter((x) => !x.status && !x.doc)) needs.push({ kind: "post", id: "post:" + f.rel, rel: f.rel, text: plain(f.name, 120), product: f.product });
   const lane = tasks.filter((t) => t.repo === MARKETING).map((t) => ({ id: t.id, text: plain(untagged(t.text), 220), product: productOf(t.text, names), status: t.review ? "review" : working ? "working" : "waiting", ts: t.ts || 0 }));
   const elsewhere = tasks.filter((t) => t.repo !== MARKETING && MARKETING_WORDS.test(t.text)).slice(0, 12).map((t) => ({ id: t.id, text: plain(untagged(t.text), 220), product: productOf(t.text, names), repo: t.repo || "", name: t.repo ? named(map[t.repo], t.repo) : "" }));
   const seen = [...new Set([...lane, ...elsewhere, ...needs, ...files].map((x) => x.product).filter(Boolean))];
   const on = !!(posts.canDraft || (posts.posts || []).length || (posts.done || []).length || lane.length || elsewhere.length || files.length || needs.length || run);
-  return { on, needs, needCount: needs.length, lane, elsewhere, files: files.map(({ rel, name, product, at, status }) => ({ rel, name, product, at, status })), products: [...new Set([...seen, ...names])], working, waiting: lane.filter((t) => t.status === "waiting").length };
+  return { on, needs, needCount: needs.length, lane, elsewhere, files: files.map(({ rel, name, product, at, status, doc }) => ({ rel, name, product, at, status, doc: !!doc })), products: [...new Set([...seen, ...names])], working, waiting: lane.filter((t) => t.status === "waiting").length };
 }
 // A task for Marketing, tagged with the product it markets (the page's Add). The task or { error }.
 function marketingTask(text, product = "", { add = addTask } = {}) {
@@ -289,6 +289,7 @@ function marketingDraftAnswer(rel, status, deps = {}) {
   const dir = deps.dir || MARKETING_DIR, ask = String(deps.ask || "").trim(), r = (deps.set || setDraftStatus)(String(rel || ""), status, { dir, ask });
   if (r.error) return r;
   cached = null;
+  if (status === "done") return { ok: true, said: "Marked done." };
   const d = r.draft, when = d.when ? `, scheduled in ${d.platform}'s own scheduler for ${d.when}` : "";
   if (status === "skipped") { noteAnswer(dir, `Skipped: ${rel}`, "Don't post it. Leave the draft where it is."); return { ok: true, said: "Skipped. Its agent won't post it." }; }
   if (status === "change") {
@@ -488,7 +489,7 @@ function homeAnswer(id, { pick, text = "" } = {}, deps = {}) {
     const said = n.kind === "approve" ? `Go ahead: ${text || "do it as you had it, once you've checked what you flagged"}.` : `Done: the user did it${text ? ` (${text})` : ""}. Check it worked, then carry on.`;
     noteAnswer(a.path, n.what, said);
     const e = (deps.run || runHandoff)(a.path, { force: true });
-    if (e && e.id && !e.blocked) { settle(a.path, n.key); dropped.add(id); }
+    if (e && e.id && !e.blocked) { settle(a.path, n.key); dropped.add(id); if (n.kind !== "approve") recordDone(n.what, said); } // "Done it" is on the shared record: no agent raises it again
     return e && e.id && !e.blocked ? { ok: true, said: n.kind === "approve" ? "Its agent is going ahead." : "Its agent is checking and carrying on.", rerun: e.id } : { error: (e && e.note) || "It didn't start. Check your agent in Settings." };
   }
   return { error: "Answer that one on its block on the Workdesk." };
@@ -572,7 +573,8 @@ async function homeAsk(question, { ask, now = Date.now(), state, images = [] } =
   const h = state || homeState({ now });
   let map = {}; try { map = laneMap(); } catch {}
   const role = "Here they're on Symbiot's home: one liquid surface that shows what only they can do, what's new on what they watch, and the lanes. Answer from what it shows, and act on what they ask.";
-  const r = await converse({ where: "Home", role, nav: true, settle: true, context: homeContext(h), question: question + (pics.length ? `\n(The user attached ${pics.length} screenshot${pics.length > 1 ? "s" : ""}: you can see ${pics.length > 1 ? "them" : "it"}.)` : ""), map, now, images: pics.map(({ mime, data, path }) => ({ mime, data, path })), ...(ask ? { ask } : {}),
+  let open = []; try { open = loadTasks().filter((t) => t && !t.done && !t.archived && !t.review).map((t) => ({ id: t.id, text: t.text, repo: t.repo })); } catch {}
+  const r = await converse({ where: "Home", role, nav: true, settle: true, tasks: open, context: homeContext(h), question: question + (pics.length ? `\n(The user attached ${pics.length} screenshot${pics.length > 1 ? "s" : ""}: you can see ${pics.length > 1 ? "them" : "it"}.)` : ""), map, now, images: pics.map(({ mime, data, path }) => ({ mime, data, path })), ...(ask ? { ask } : {}),
     act: {
       agent: (req, known, repo) => (repo ? actIn(req + shotNote, repo, { map, known, title: "Home" }) : actNow(req + shotNote, { title: "Home", known })),
       task: (text, repo) => taskIn(text + shotNote, repo, { map }),

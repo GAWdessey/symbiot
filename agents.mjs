@@ -526,9 +526,12 @@ function earlierRuns() {
 // folder), a newer run there says something else, or a newer ops run took up the
 // same task. { kind: "approve"|"step", what, check, label, key, waiting? } or null.
 const NEEDS_FOR = 3 * 86400000, SETTLED = join(CONFIG_DIR, "settled.json"), ACT_DIR = join(CONFIG_DIR, "drafts") + "/";
+const ALL_SETTLED = "*";
 const loadSettled = () => { try { const o = JSON.parse(readFileSync(SETTLED, "utf8")); return o && typeof o === "object" && !Array.isArray(o) ? o : {}; } catch { return {}; } };
 function settleNeeds(path, key) {
   const o = loadSettled(); o[path] = String(key || "");
+  // one shared record: an ask you settled stays settled for every agent, not just the folder it came from
+  if (key) o[ALL_SETTLED] = [...new Set([String(key), ...(Array.isArray(o[ALL_SETTLED]) ? o[ALL_SETTLED] : [])])].slice(0, 300);
   try { mkdirSync(CONFIG_DIR, { recursive: true }); writeFileSync(SETTLED, JSON.stringify(o, null, 2), { mode: 0o600 }); } catch {}
 }
 // A streaming run's last words (its final answer), read once per change of its log.
@@ -554,7 +557,8 @@ function needsOf(path, { final = "", waiting = null, end = Date.now(), now = Dat
   // signing in to, linking or doing by hand on a platform that's linked: the agent's, not yours
   if (n.kind !== "approve" && linkedChore(`${n.label} ${n.what} ${n.check}`, linkedIds())) return null;
   const key = digest(n.what);
-  if (loadSettled()[path] === key || takenUp(path, end)) return null;
+  const settled = loadSettled();
+  if (settled[path] === key || (Array.isArray(settled[ALL_SETTLED]) && settled[ALL_SETTLED].includes(key)) || takenUp(path, end)) return null;
   return { ...n, key };
 }
 

@@ -189,10 +189,14 @@ const PAGES = {
 };
 // A "go" from the model, checked: { to, label, why?, alts: [{ to, label }] }, or null.
 // A page or a lane that isn't there is dropped, never made up.
-function goOf(g, lanes = []) {
+// tasks: [{ id, text }] that "task:<id>" may point at; one that isn't on the list is dropped.
+function goOf(g, lanes = [], tasks = []) {
   if (!g) return null;
   const one = (x) => {
-    const t = String(x || "").trim().toLowerCase().replace(/^#/, "");
+    const raw = String(x || "").trim().replace(/^#/, "");
+    const k = raw.match(/^task:\s*(\S+)$/i);
+    if (k) { const y = tasks.find((z) => String(z.id) === k[1]); return y ? { to: "task:" + y.id, label: String(y.text || "that task").replace(/\s+/g, " ").slice(0, 60) } : null; }
+    const t = raw.toLowerCase();
     const m = t.match(/^lane:\s*(.+)$/); if (m) { const n = lanes.find((l) => l.toLowerCase() === m[1].trim()); return n ? { to: "lane:" + n, label: n } : null; }
     const id = PAGES[t] ? t : t === "agents" ? "tasks" : Object.keys(PAGES).find((k) => PAGES[k][0].toLowerCase() === t);
     if (id) return { to: id, label: PAGES[id][0] };
@@ -203,12 +207,13 @@ function goOf(g, lanes = []) {
   const alts = (typeof g === "object" && Array.isArray(g.alts) ? g.alts : []).map(one).filter((a) => a && a.to !== to.to).filter((a, i, l) => l.findIndex((b) => b.to === a.to) === i).slice(0, 2);
   return { ...to, ...(why ? { why } : {}), alts };
 }
-const navRules = () => `
-"go": null, or a page to open now: {"to": "${Object.keys(PAGES).join("|")}|lane:<a lane>", "why": "", "alts": []}. Pages: ${Object.entries(PAGES).map(([k, [n, what]]) => `${k} (${n}: ${what})`).join("; ")}.
-You can open any of these pages: when they ask to go somewhere (go to, take me to, navigate to, open, show me, where's), open it with "go", and never say you can't switch pages. A clear ask ("take me to reports") just goes: "why" empty, "alts" [], the reply a few words ("Opening Reports."). A vague one ("show me that thing from earlier", "where are my updates"): don't ask which, opening a page is easy to undo. Pick the likeliest from what you know, this chat, other chats lately and what Home shows; "why" says in one short line why you picked it, also said in the reply; "alts" has 1-2 other pages they may have meant (these are your other readings, offered as one tap each).`;
+const navRules = (tasks = []) => `
+"go": null, or a page to open now: {"to": "${Object.keys(PAGES).join("|")}|lane:<a lane>${tasks.length ? "|task:<a task id>" : ""}", "why": "", "alts": []}. Pages: ${Object.entries(PAGES).map(([k, [n, what]]) => `${k} (${n}: ${what})`).join("; ")}.
+You can open any of these pages: when they ask to go somewhere (go to, take me to, navigate to, open, show me, where's), open it with "go", and never say you can't switch pages. A clear ask ("take me to reports") just goes: "why" empty, "alts" [], the reply a few words ("Opening Reports."). A vague one ("show me that thing from earlier", "where are my updates"): don't ask which, opening a page is easy to undo. Pick the likeliest from what you know, this chat, other chats lately and what Home shows; "why" says in one short line why you picked it, also said in the reply; "alts" has 1-2 other pages they may have meant (these are your other readings, offered as one tap each).${tasks.length ? `
+To open one task rather than the whole Workdesk ("open that task", "show me the task"), use "task:<id>" with an id from "Open tasks" below: the last task discussed in this chat, or the only one running. If several could be meant, open the likeliest and offer the others in "alts" as task:<id> too.` : ""}`;
 // lanes: the repos "do" can point at; self: Symbiot's own repo among them, where
 // a flaw in Symbiot itself is fixed; nav: this chat can open pages ("go").
-function rulesFor(lanes = [], self = "", nav = false, settle = false) {
+function rulesFor(lanes = [], self = "", nav = false, settle = false, tasks = []) {
   return `Reply with JSON only, no markdown fence:
 {"reply": "what you say, plain text, brief, no preamble",
  "do": null or {"agent": "what a coding agent should do now: self-contained, with names, links and ids", "repo": "the lane it's for, or empty"} or {"task": "a task for later", "repo": "the lane it's for, or empty"},${nav ? `
@@ -223,8 +228,9 @@ When they paste a secret (a password, a recovery or 2FA code, a token), Symbiot 
 When only they can sign in to a site (their password, an SMS code), say where, with the site's address: "sign in to www.domains.co.za/client/dashboard in the Symbiot Browser (Settings → Connections → Add a site)", never just "in Symbiot's browser": your reply then carries a Sign in button that opens that window on it.
 A short answer (yes, yeah, ok, sure, go, do it, that one, 2) answers what you last said in "This chat so far", never something from elsewhere in the app. If you'd proposed a task or an agent and they agree, do it now in "do", in the lane you named.
 Hash it out first: when they bring an idea rather than a clear ask, sharpen it with them: say what's strong, push back where it's weak, add what's missing, and propose it as a task (naming the lane) once it holds up. "do" stays null until they agree.
+When a message is mainly frustration, a feeling or a remark rather than an ask (for example "i got told that deekseek v4 is as good as you so i think that is the only acceptable replacement", or "im sick of this"), answer like a person: acknowledge it plainly in a sentence or two, don't defend yourself or Symbiot, don't list readings or options, and ask one open question in plain words ("what would make it feel right?"). "do" stays null unless they've asked for something. Numbered readings are only for a real task that could mean more than one thing.
 When an ask could mean two or more things (which lane, how much, what done looks like), don't guess: "do" stays null, and the reply gives 2-3 short numbered readings, your pick first, and asks which. A clear ask goes straight through.${nav ? ` Where to go is the exception: see "go".` : ""}
-"rule": only when the user states or agrees a rule agents should follow from now on (e.g. "don't ask which mailbox", "do it yourself, only ask for passwords"); write it as an instruction to an agent, one line. It goes into every agent's brief. Never say what agents will or won't do unless you put it here. [] otherwise.\n${settle ? `"settled": only for a card shown under "Only the user can do" whose question this message really answers (they pasted what it asked for, or said it's done); copy its question exactly. [] otherwise, and never for a card you're unsure of: it closes the card and no agent asks it again.\n` : ""}"remember": only lasting facts worth knowing on another page (who someone is, which account is what, a decision, how they like things); [] for anything else.${nav ? navRules() : ""}`;
+"rule": only when the user states or agrees a rule agents should follow from now on (e.g. "don't ask which mailbox", "do it yourself, only ask for passwords"); write it as an instruction to an agent, one line. It goes into every agent's brief. Never say what agents will or won't do unless you put it here. [] otherwise.\n${settle ? `"settled": only for a card shown under "Only the user can do" whose question this message really answers (they pasted what it asked for, or said it's done); copy its question exactly. [] otherwise, and never for a card you're unsure of: it closes the card and no agent asks it again.\n` : ""}"remember": only lasting facts worth knowing on another page (who someone is, which account is what, a decision, how they like things); [] for anything else.${nav ? navRules(tasks) : ""}`;
 }
 // Symbiot's own repo among your lanes (its package.json is symbiot's), or "".
 function selfLane(map) {
@@ -297,7 +303,7 @@ function parseReply(raw) {
 // what this page is for; context: what the page shows; history: this chat's
 // own last turns. act: { agent(request) -> result, task(text, repo) -> result },
 // what "do" runs here. Gives { reply, did?, remembered }.
-async function converse({ where, role = "", context = "", history = "", question, act = {}, ask = (sys, p, o) => write(sys, p, { ...o, floor: "sonnet" }), map = null, now = Date.now(), images = [], nav = false, settle = false }) {
+async function converse({ where, role = "", context = "", history = "", question, act = {}, ask = (sys, p, o) => write(sys, p, { ...o, floor: "sonnet" }), map = null, now = Date.now(), images = [], nav = false, settle = false, tasks = [] }) {
   // a secret they pasted goes to the vault before anything is stored or sent; the model sees a placeholder
   let kept = []; try { ({ text: question, saved: kept } = captureSecrets(question)); } catch {}
   const d = loadMind(), hits = recall(question, now, d), known = recallText(hits), elsewhere = lately(where, d, undefined, now);
@@ -313,16 +319,16 @@ async function converse({ where, role = "", context = "", history = "", question
   let lanes = map; if (!lanes) { try { lanes = laneMap(); } catch { lanes = {}; } }
   // how they talk, from what they've typed into any chat (adapt.mjs: accommodation)
   const voice = styleLine(styleOf(d.log.filter((l) => l.role === "user").map((l) => l.text).concat(question)));
-  const system = `${IDENTITY} ${role}\n\n${rulesFor(Object.keys(lanes), selfLane(lanes), nav, settle)}${voice ? "\n" + voice : ""}${languageLine()}`;
+  const system = `${IDENTITY} ${role}\n\n${rulesFor(Object.keys(lanes), selfLane(lanes), nav, settle, tasks)}${voice ? "\n" + voice : ""}${languageLine()}`;
   let prompt = `${dayLine(now)}\n\n` + (known ? `What you know (from across the app):\n${known}\n\n` : "") + (kn.text ? kn.text + "\n\n" : "") + (elsewhere ? `Lately, elsewhere in the app (other chats: a short answer here doesn't reply to these):\n${elsewhere}\n\n` : "") +
-    (context ? context + "\n\n" : "") + (history ? `This chat so far:\n${history}\n\n` : "") + `They say (on ${where}): ${question}`;
+    (nav && tasks.length ? `Open tasks (id: task):\n${tasks.slice(0, 40).map((t) => `- ${t.id}: ${String(t.text || "").replace(/\s+/g, " ").slice(0, 90)}${t.repo ? ` [${t.repo}]` : ""}`).join("\n")}\n\n` : "") + (context ? context + "\n\n" : "") + (history ? `This chat so far:\n${history}\n\n` : "") + `They say (on ${where}): ${question}`;
   if (kept.length) prompt += `\n(Symbiot saved what they pasted, under ${kept.map((n) => `"${n}"`).join(", ")}. Say so in a few words, and carry on with what they asked.)`;
   const raw = await ask(system, prompt, images.length ? { images } : undefined);
   if (!raw || /^\(?couldn't reach the model/i.test(String(raw))) return { reply: "(couldn't reach the model)", remembered: 0 };
   const j = parseReply(raw);
   let reply = String(j.reply || "").trim().slice(0, 4000) || "(no answer)", did = null;
   const said = reply;
-  const want = j.do && typeof j.do === "object" ? j.do : null, go = nav ? goOf(j.go, Object.keys(lanes)) : null;
+  const want = j.do && typeof j.do === "object" ? j.do : null, go = nav ? goOf(j.go, Object.keys(lanes), tasks) : null;
   // say where it actually went, from what happened, not from what the model meant
   const repo = want ? String(want.repo || "") : "";
   if (want && want.agent && act.agent) {

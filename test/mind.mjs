@@ -49,6 +49,7 @@ try {
   ok("…the reboot from another chat isn't in the thread, only under elsewhere (marked as not this chat)", !/reboot/.test(thread) && /other chats: a short answer here doesn't reply to these\):\n[\s\S]*reboot/.test(yPrompt), yPrompt.slice(0, 600));
   ok("the rules: a short answer answers this chat, and an agreed proposal is done now", /A short answer \(yes, yeah, ok/.test(ySys) && /If you'd proposed a task or an agent and they agree, do it now/.test(ySys), "");
   ok("…an idea is hashed out first, an ambiguous ask gets 2-3 readings to pick from", /Hash it out first/.test(ySys) && /2-3 short numbered readings, your pick first/.test(ySys), "");
+  ok("…a vent or a feeling gets a person's reply: acknowledged, not defended, one open question, no numbered readings (2026-10-10: \"i typed my last response to a bot\")", /mainly frustration, a feeling or a remark/.test(ySys) && /deekseek v4/.test(ySys) && /don't defend yourself or Symbiot, don't list readings or options, and ask one open question/.test(ySys) && /Numbered readings are only for a real task/.test(ySys), "");
   const long = "x".repeat(1400);
   await converse({ where: "Home", question: long, now: tH + 180000, ask: said({ reply: "ok", do: null, remember: [] }) });
   const { ownThread } = await import("../mind.mjs");
@@ -126,6 +127,9 @@ try {
   ok("a vague ask: its pick opens, with why, and only real pages or lanes as the others (no repeats)", vg.go.to === "board" && /3 new on Gmail/.test(vg.go.why) && JSON.stringify(vg.go.alts.map((a) => a.to)) === '["reports","lane:symbiot"]', vg.go);
   ok("…said under the reply, as a step", vg.steps.includes("opened Dashboard"), vg.steps);
   ok("a page that isn't there isn't made up", goOf({ to: "inbox" }, ["symbiot"]) === null && goOf({ to: "lane:nope" }, ["symbiot"]) === null, "");
+  const open = [{ id: "t1", text: "route the five research units' broker traffic" }];
+  ok("a task by id opens just that task; one that isn't on the list is dropped", goOf({ to: "task:t1", alts: ["task:zz", "tasks"] }, ["symbiot"], open).to === "task:t1" && goOf({ to: "task:t1", alts: ["task:zz", "tasks"] }, ["symbiot"], open).alts.length === 1 && goOf({ to: "task:zz" }, ["symbiot"], open) === null && goOf({ to: "task:t1" }, ["symbiot"]) === null, "");
+  ok("the rules offer task:<id> only when there are tasks to point at", /task:<a task id>/.test(rulesFor(["symbiot"], "symbiot", true, false, open)) && !/task:<a task id>/.test(rulesFor(["symbiot"], "symbiot", true)), "");
   ok("agents and Workdesk are one page; a lane by name is its page", goOf({ to: "agents" }).to === "tasks" && goOf({ to: "Workdesk" }).to === "tasks" && goOf("coral", ["coral"]).to === "lane:coral", "");
   const ng = await converse({ where: "Gmail card", question: "go to reports", map, ask: said({ reply: "ok", do: null, go: { to: "reports" }, remember: [] }) });
   ok("a chat that can't open pages never carries one", !ng.go, ng);

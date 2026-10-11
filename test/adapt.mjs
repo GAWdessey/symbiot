@@ -349,6 +349,9 @@ try {
   const reran5 = [], settled5 = [], nd = { agents: () => [waitsRun()], running: () => false, run: (p, o) => { reran5.push([p, o.force]); return { id: "j5" }; }, settle: (p, k) => settled5.push([p, k]) };
   const g5 = homeAnswer("needs:r5", { pick: 0 }, nd), ans5 = readFileSync(join(jonoDir, ".symbiot", "ANSWERS.md"), "utf8");
   ok("…Go ahead: its agent goes ahead, told so in its ANSWERS.md, and it stops asking", g5.ok && g5.rerun === "j5" && JSON.stringify(reran5) === JSON.stringify([[jonoDir, true]]) && /### The draft isn't sent\. Draft: it's in Gmail, to jono@example\.com\.\nGo ahead: do it as you had it/.test(ans5) && JSON.stringify(settled5) === JSON.stringify([[jonoDir, "k1"]]), [g5, reran5, ans5, settled5]);
+  const stepRun = () => waitsRun({ id: "r10", needs: { kind: "step", what: "Sign in to npmjs.com as garth in the Symbiot Browser.", check: "", label: "", key: "k10" } });
+  homeAnswer("needs:r10", { pick: 0 }, { agents: () => [stepRun()], running: () => false, run: () => ({ id: "j10" }), settle: () => {} });
+  ok("…I've done this on a step is on the shared record: no agent's card asks it again", noNeeds(() => [stepRun()]), "");
   const s5 = homeAnswer("needs:r5", { text: "skip, I sent it" }, nd);
   ok("…Skip (or your words saying no): it stops asking, and no agent starts", s5.ok && /won't ask again/.test(s5.said) && reran5.length === 1 && settled5.length === 2, [s5, reran5, settled5]);
   const pj = ws3({ deps: { repos: () => ({}), pending: () => [], tasks: () => [], parked: () => [], agents: () => [waitsRun({ id: "r8" })], stuck: () => [] } }).projects.find((p) => p.repo === "ops");

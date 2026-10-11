@@ -35,9 +35,23 @@ try {
     const { EMBEDDED_UI } = await import("../ui.mjs");
     const uiJs = [...EMBEDDED_UI.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]).join("\n");
     const grab = (name) => { const i = uiJs.indexOf("function " + name + "("); let depth = 0, j = uiJs.indexOf("{", i); for (; j < uiJs.length; j++) { if (uiJs[j] === "{") depth++; else if (uiJs[j] === "}" && --depth === 0) break; } return uiJs.slice(i, j + 1); };
-    const voiceClean = new Function(grab("voiceClean") + "\nreturn voiceClean;")();
+    const voiceClean = new Function(uiJs.match(/var VOICE_SAY=.*\n/)[0] + grab("voiceSayable") + grab("voiceClean") + "\nreturn voiceClean;")();
     const c = voiceClean("Sure.\n\n→ Added to symbiot's tasks: x");
-    ok("an arrow isn't read out as \"right arrow\" (2026-10-09)", !/→/.test(c) && /^Sure\. Added to symbiot's tasks/.test(c), c);
+    ok("an arrow isn't read out as \"right arrow\" (2026-10-09)", !/→/.test(c) && /^Sure\. Added to Simbeeot's tasks/.test(c), c);
+    const say = (t) => voiceClean(t);
+    ok("our names are respelt so the voice says them right", say("Symbiot and GAWdessey, Argena, PediPigeon, Workdesk") === "Simbeeot and Gaw dessy, Arjena, Peddy Pigeon, work desk", say("Symbiot and GAWdessey, Argena, PediPigeon, Workdesk"));
+    ok("file paths, ids and file names aren't spelt out", say("See ~/.config/symbiot/browser and act-6407ab9b in voice.mjs") === "See a file path and an id in voice file", say("See ~/.config/symbiot/browser and act-6407ab9b in voice.mjs"));
+    ok("a version is said with points; short-forms letter by letter", say("0.63.1 on npm via PR") === "0 point 63 point 1 on N P M via P R", say("0.63.1 on npm via PR"));
+    ok("a plain word that is only a-f letters isn't taken for an id", say("a defaced effaced decade") === "a defaced effaced decade", say("a defaced effaced decade"));
+    ok("a reply with no places or ids reads as it was written", say("Two tasks are running. Nothing needs you.") === "Two tasks are running. Nothing needs you.");
+
+    console.log("CONTINUOUS CONVERSATION — the mic reopens after each spoken reply");
+    ok("a spoken reply hands over to the mic when it ends", /voiceSpeak\(r\.spoken\|\|[^;]*,voiceResume\)/.test(uiJs));
+    const bye = new Function("return " + uiJs.match(/var VOICE_BYE=(\/.*\/i);/)[1] + ";")();
+    ok("\"end conversation\", \"stop\", \"that's all\" end it", ["End conversation", "stop", "that's all.", "okay, stop listening", "Goodbye"].every((p) => bye.test(p)));
+    ok("…but a sentence that merely contains stop doesn't", !bye.test("stop the agent on argena") && !bye.test("that's all the tasks I have"));
+    ok("quiet twice in a row ends it with a note on screen", /\+\+VOICE\.quiet>=2\)voiceEnd\('I stopped listening/.test(uiJs));
+    ok("the mic shows it's listening, and that a conversation is open", /VOICE\.convo\?'Listening…[^']*end conversation/.test(uiJs) && /#lqmic\.conv\{/.test(EMBEDDED_UI));
     ok("…nor one between two words: a pause instead", voiceClean("Settings → Handoff") === "Settings, Handoff", voiceClean("Settings → Handoff"));
     ok("the answer's spoken version is what's read, when it has one", /voiceSpeak\(r\.spoken\|\|/.test(uiJs), "");
   }

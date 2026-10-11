@@ -282,6 +282,10 @@ try {
   ok("…a step only you can take, the same way", nt && nt.kind === "step", nt);
   settleNeeds(actT, nt.key);
   ok("…skipped (or gone ahead), it stops asking, until a newer run there says something else", !needsOn(actT), "");
+  const actT2 = join(CFG, "drafts", "act-tail2");
+  put(actT2, "TASKS.md", "- [ ] Give the WhatsApp module a fixed public URL\n"); streamed(actT2, tAgo, "Running tailscale needs sudo, and only you can do that.\n\nPaste this: `sudo tailscale up`.");
+  noted({ path: actT2, name: "Agent: a fixed URL again", startedAt: tAgo });
+  ok("…and another agent asking the same thing doesn't raise it again", !needsOn(actT2), needsOn(actT2));
   streamed(actT, Date.now(), "The draft to Cale isn't sent: it waits for your OK.");
   ok("…which it then does", needsOn(actT) && needsOn(actT).kind === "approve", needsOn(actT));
   const old = Date.now() - NEEDS_FOR - 60000; utimesSync(join(actT, ".symbiot", "agent.log"), old / 1000, old / 1000);
