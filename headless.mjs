@@ -804,6 +804,27 @@ function scrollPage(id, to = "down") {
   })).catch((e) => ({ error: String((e && e.message) || e) }));
 }
 
+// Where a region is on the page now: by its selector, else at the same spot.
+// A new tab would leave this one where it was, so a link opens here instead.
+async function locateRegion(page, s, r) {
+  const find = `(() => { let e = null; try { e = ${JSON.stringify(r.selector || "")} && document.querySelector(${JSON.stringify(r.selector || "")}); } catch (x) {}
+    if (!e) return null; const a = e.closest('a[target]'); if (a) a.removeAttribute('target');
+    e.scrollIntoView({ block: 'center', inline: 'center' }); const b = e.getBoundingClientRect();
+    return b.width && b.height ? { x: b.left + b.width / 2, y: b.top + b.height / 2 } : null; })()`;
+  const { result } = await page.send("Runtime.evaluate", { expression: find, returnByValue: true });
+  const found = !!(result && result.value);
+  // not found by its selector: the same spot. On a whole-page screen that spot is
+  // on the page, not the window: scroll it into the window first (the list, on
+  // one whose list was opened out, if the spot is in it).
+  let at = found ? result.value : center(r);
+  if (!found && s.page.full) {
+    const y = await evaluate(page, s.page.list ? `(() => { const e = document.querySelector(${JSON.stringify(s.page.list)}); if (!e) return 0;
+      const b = e.getBoundingClientRect(); if (${at.y} < b.top) return 0; e.scrollTop = ${at.y} - b.top - e.clientHeight / 2; return e.scrollTop; })()` : `(scrollTo(0, ${at.y} - innerHeight / 2), scrollY)`);
+    at = { x: at.x, y: at.y - (Number(y) || 0) };
+  }
+  return { at, found };
+}
+
 // Act on a mapped region: find it (by its selector, else at the same spot) and give
 // act(page, at, region) where it is now; then map where that leads, as a new screen.
 // On the screen the open browser last mapped, that's the page as it is now (what
@@ -819,22 +840,7 @@ function actOnRegion(id, regionId, verb, confirmed, check, act) {
   if (!confirmed && !isTrusted(s.page.url)) return Promise.resolve({ error: `${verb === "Type" ? "Typing into" : verb === "Upload" ? "Attaching a file with" : "Pressing"} "${r.label}" acts on the real site, signed in as you, and ${host} isn't one of your trusted sites.`, confirm: true, host });
   return oneAtATime(() => withPage(async (page, b) => {
     const here = await showScreen(page, b, s);
-    // A new tab would leave this one where it was, so a link opens here instead.
-    const find = `(() => { let e = null; try { e = ${JSON.stringify(r.selector || "")} && document.querySelector(${JSON.stringify(r.selector || "")}); } catch (x) {}
-      if (!e) return null; const a = e.closest('a[target]'); if (a) a.removeAttribute('target');
-      e.scrollIntoView({ block: 'center', inline: 'center' }); const b = e.getBoundingClientRect();
-      return b.width && b.height ? { x: b.left + b.width / 2, y: b.top + b.height / 2 } : null; })()`;
-    const { result } = await page.send("Runtime.evaluate", { expression: find, returnByValue: true });
-    const found = !!(result && result.value);
-    // not found by its selector: the same spot. On a whole-page screen that spot is
-    // on the page, not the window: scroll it into the window first (the list, on
-    // one whose list was opened out, if the spot is in it).
-    let at = found ? result.value : center(r);
-    if (!found && s.page.full) {
-      const y = await evaluate(page, s.page.list ? `(() => { const e = document.querySelector(${JSON.stringify(s.page.list)}); if (!e) return 0;
-        const b = e.getBoundingClientRect(); if (${at.y} < b.top) return 0; e.scrollTop = ${at.y} - b.top - e.clientHeight / 2; return e.scrollTop; })()` : `(scrollTo(0, ${at.y} - innerHeight / 2), scrollY)`);
-      at = { x: at.x, y: at.y - (Number(y) || 0) };
-    }
+    const { at, found } = await locateRegion(page, s, r);
     const navigating = page.until("Page.frameStartedLoading", 1500);
     const extra = await act(page, at, r);
     if (await navigating) await page.until("Page.loadEventFired", 30000);
@@ -860,6 +866,13 @@ function pressRegion(id, regionId, { confirmed = false, noSend = false } = {}) {
     async (page, at, r) => { await clickAt(page, at); return { pressed: r.label }; });
 }
 
+const typeInto = async (page, at, text) => {
+  await clickAt(page, at);
+  await page.send("Runtime.evaluate", { expression: `(() => { const e = document.activeElement; if (!e) return;
+    if (typeof e.select === 'function') e.select(); else if (e.isContentEditable) getSelection().selectAllChildren(e); })()` });
+  if (text) await page.send("Input.insertText", { text });
+};
+
 // Type: click into a field, replace what's in it with text, and press Enter if
 // asked (which is how a search or a one-line form is sent). Without Enter, press
 // the form's button next, on the screen this maps, while the browser is still
@@ -878,13 +891,54 @@ function typeRegion(id, regionId, text, { enter = false, confirmed = false, noSe
     if (text.length > MAX_TEXT) return `That's more than ${MAX_TEXT} characters.`;
     return "";
   }, async (page, at, r) => {
-    await clickAt(page, at);
-    await page.send("Runtime.evaluate", { expression: `(() => { const e = document.activeElement; if (!e) return;
-      if (typeof e.select === 'function') e.select(); else if (e.isContentEditable) getSelection().selectAllChildren(e); })()` });
-    if (text) await page.send("Input.insertText", { text });
+    await typeInto(page, at, text);
     if (enter) for (const type of ["keyDown", "keyUp"]) await page.send("Input.dispatchKeyEvent", { type, key: "Enter", code: "Enter", windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13, ...(type === "keyDown" ? { text: "\r" } : {}) });
     return { typed: r.label, entered: !!enter };
   });
+}
+
+// Fill: several fields, then (optionally) one button, in the one browser session, so
+// a form that forgets itself between separate calls (GitHub's transfer, npm and
+// Cloudflare settings) is filled and sent in one go. `fields` is [{ region, text }],
+// all on the one screen; each is found where it is now (the page isn't reloaded
+// between them), typed into, and `press` is clicked last. Maps the result once.
+function fillForm(id, fields, { press = "", confirmed = false, noSend = false } = {}) {
+  const s = loadScreens().find((x) => x.id === id); if (!s) return Promise.resolve({ error: "not found" });
+  if (!s.page || !s.page.url) return Promise.resolve({ error: "Fill works on a mapped page." });
+  if (!Array.isArray(fields) || !fields.length) return Promise.resolve({ error: "Give at least one field to fill." });
+  const host = hostOf(s.page.url), rs = s.regions || [], steps = [];
+  for (const f of fields) {
+    const r = rs.find((x) => x.id === f.region); if (!r) return Promise.resolve({ error: "That region is gone. Reload the screen." });
+    const text = String(f.text == null ? "" : f.text);
+    if (r.kind !== "field") return Promise.resolve({ error: `"${r.label}" isn't a field (it's a ${r.kind || "region"}). Fill works on fields; press the rest with --press.` });
+    if (text.length > MAX_TEXT) return Promise.resolve({ error: `That's more than ${MAX_TEXT} characters.` });
+    steps.push({ r, text: noSend && CHAT_HOSTS.has(host) ? text.replace(/\s*[\r\n]+\s*/g, " ").trim() : text });
+  }
+  let button = null;
+  if (press) {
+    button = rs.find((x) => x.id === press); if (!button) return Promise.resolve({ error: "That region is gone. Reload the screen." });
+    if (noSend && isSend(button, host)) return Promise.resolve({ error: `"${button.label}" sends or posts. This run only drafts: it never presses Send, Post, Comment or Reply. The draft stays for the user to send or post.` });
+  }
+  if (!confirmed && !isTrusted(s.page.url)) return Promise.resolve({ error: `Filling this form acts on the real site, signed in as you, and ${host} isn't one of your trusted sites.`, confirm: true, host });
+  return oneAtATime(() => withPage(async (page, b) => {
+    const here = await showScreen(page, b, s), typed = [];
+    for (const { r, text } of steps) {
+      const { at } = await locateRegion(page, s, r);
+      await typeInto(page, at, text);
+      typed.push(r.label);
+    }
+    let pressed = "";
+    if (button) {
+      const { at } = await locateRegion(page, s, button);
+      const navigating = page.until("Page.frameStartedLoading", 1500);
+      await clickAt(page, at);
+      if (await navigating) await page.until("Page.loadEventFired", 30000);
+      pressed = button.label;
+    }
+    await page.idle();
+    const next = await snapshot(page, "");
+    return next.error ? next : { ...next, typed, pressed, kept: here };
+  })).catch((e) => ({ error: String((e && e.message) || e) }));
 }
 
 // Upload: put a file (or a few) in a page's file box, as picking it in the file
@@ -1019,4 +1073,4 @@ async function closeSymbiotBrowser() {
   return { closed: open.length };
 }
 
-export { siteUrl, browserArgs, mapPage, wholePage, readPage, readTexts, readLinkedIn, LI_READ, pagePicture, pageClip, CLIP, isSend, pressRegion, typeRegion, uploadRegion, uploadFiles, attachFiles, FILE_BOX, scrollPage, SCROLLS, signIn, keepBrowserOpen, closeBrowser, browserOpen, keepSessions, SESSION_KEEP, SESSIONS, loadSessions, trustedSites, isTrusted, trustSite, untrustSite, PROFILE, sessionCookie, SESSION_COOKIE, openSymbiotBrowser, closeSymbiotBrowser, setBrowserHub , browserHub };
+export { siteUrl, browserArgs, mapPage, wholePage, readPage, readTexts, readLinkedIn, LI_READ, pagePicture, pageClip, CLIP, isSend, pressRegion, typeRegion, fillForm, uploadRegion, uploadFiles, attachFiles, FILE_BOX, scrollPage, SCROLLS, signIn, keepBrowserOpen, closeBrowser, browserOpen, keepSessions, SESSION_KEEP, SESSIONS, loadSessions, trustedSites, isTrusted, trustSite, untrustSite, PROFILE, sessionCookie, SESSION_COOKIE, openSymbiotBrowser, closeSymbiotBrowser, setBrowserHub , browserHub };

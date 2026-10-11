@@ -1065,7 +1065,8 @@ try {
     const virt = '<title>Virt</title><body style="margin:0;overflow:hidden"><div id="vl" style="position:absolute;top:0;bottom:0;left:0;right:0;overflow:auto"><div id="sp" style="height:4000px;position:relative"></div></div><script>' +
       'const sp=document.getElementById("sp"),vl=document.getElementById("vl"),els=[];for(let i=0;i<25;i++){const d=document.createElement("div");d.setAttribute("role","row");d.style.cssText="position:absolute;left:0;right:0;height:40px";sp.appendChild(d);els.push(d);}' +
       'function draw(){const f=Math.floor(vl.scrollTop/40);els.forEach((d,i)=>{d.style.top=((f+i)*40)+"px";d.textContent="Item "+(f+i);});}vl.addEventListener("scroll",draw);draw();</script></body>';
-    const srv = createServer((q, r) => { r.writeHead(200, { "content-type": "text/html" }); r.end(q.url === "/chats" ? chats : q.url === "/virt" ? virt : q.url === "/tall" ? tall : q.url === "/long" ? long : q.url === "/pane" ? pane : q.url === "/two" ? "<title>Page two</title><button>Back</button>" : q.url === "/form" ? form : q.url === "/rows" ? inbox() : q.url.startsWith("/search?") ? "<title>Results for " + new URL(q.url, "http://x").searchParams.get("q") + "</title><button>Back</button>" : page); }).listen(0, "127.0.0.1");
+    const form2 = '<title>Form2</title><input id="a" placeholder="Owner"><input id="b" placeholder="Confirm"><button id="go2" onclick="location=\\'/search?q=\\'+encodeURIComponent(document.getElementById(\\'a\\').value+\\'+\\'+document.getElementById(\\'b\\').value)">Save</button>';
+    const srv = createServer((q, r) => { r.writeHead(200, { "content-type": "text/html" }); r.end(q.url === "/chats" ? chats : q.url === "/virt" ? virt : q.url === "/tall" ? tall : q.url === "/long" ? long : q.url === "/pane" ? pane : q.url === "/two" ? "<title>Page two</title><button>Back</button>" : q.url === "/form" ? form : q.url === "/form2" ? form2 : q.url === "/rows" ? inbox() : q.url.startsWith("/search?") ? "<title>Results for " + new URL(q.url, "http://x").searchParams.get("q") + "</title><button>Back</button>" : page); }).listen(0, "127.0.0.1");
     await new Promise((r) => srv.on("listening", r));
     const out = {};
     out.map = await h.mapPage("127.0.0.1:" + srv.address().port, "");
@@ -1105,6 +1106,10 @@ try {
     out.fpress = go ? await h.pressRegion(out.ftype.id, go.id, { confirmed: true }) : null;
     const go0 = (out.fmap.regions || []).find((r) => r.label === "Go");
     out.fold = go0 ? await h.pressRegion(out.fmap.id, go0.id, { confirmed: true }) : null;
+    out.f2map = await h.mapPage("127.0.0.1:" + srv.address().port + "/form2", "");
+    const f2 = (out.f2map.regions || []).filter((r) => r.kind === "field"), f2go = (out.f2map.regions || []).find((r) => r.label === "Save");
+    out.fillBad = await h.fillForm(out.f2map.id, [{ region: f2go.id, text: "x" }], { confirmed: true });
+    out.fill = f2.length === 2 && f2go ? await h.fillForm(out.f2map.id, [{ region: f2[0].id, text: "GAWdessey" }, { region: f2[1].id, text: "GarthGhostai/symbiot" }], { press: f2go.id, confirmed: true }) : { error: "no form" };
     await h.closeBrowser(); out.fclosed = !h.browserOpen();
     // Scroll (still kept open): down, to the bottom, past it; then, closed, an older screen again
     const base = "127.0.0.1:" + srv.address().port;
@@ -1157,6 +1162,7 @@ try {
     ok("the hidden browser closes after each action unless it's kept open", ho.closedAfter === true, ho.closedAfter);
     ok("kept open: typed without Enter, it's still there for a separate button on the screen that mapped", ho.ftype && ho.ftype.found && !ho.ftype.entered && ho.fopen === true && ho.fpress && ho.fpress.kept === true && ho.fpress.name === "Results for kept", [ho.ftype && ho.ftype.error, ho.fopen, ho.fpress && (ho.fpress.error || ho.fpress.name)]);
     ok("kept open: a press on an older screen opens its page again (what was typed there is gone)", ho.fold && !ho.fold.kept && ho.fold.name === "Results for", ho.fold && (ho.fold.error || ho.fold.name));
+    ok("fillForm: only fills fields, and fills several then presses a button in one session, so none is lost", /isn't a field/.test((ho.fillBad || {}).error || "") && ho.fill && ho.fill.typed && ho.fill.typed.length === 2 && ho.fill.pressed === "Save" && ho.fill.name === "Results for GAWdessey+GarthGhostai/symbiot", ho.fill);
     ok("closeBrowser closes it", ho.fclosed === true, ho.fclosed);
     const rl = (x) => ((x || {}).regions || []).map((r) => r.label), sy = (x) => ((x || {}).page || {}).scroll || {};
     ok("mapPage: a page taller than the window says how far down it is (the page itself scrolls: no selector)", sy(hm).y === 0 && sy(hm).max > 1000 && !sy(hm).selector && sy(ho.lmap).max === 2200 && rl(ho.lmap).join() === "Top button", [sy(hm), sy(ho.lmap), rl(ho.lmap)]);

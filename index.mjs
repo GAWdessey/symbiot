@@ -38,7 +38,7 @@ import { gitDefaultBranch, loadDeploys, driftRepo, computeDrift } from "./drift.
 import { buildTasksMd, taskType, shipChanges, shipWithBump, bumpOffer, learnNpm, releaseNeeded, withReleases, setVersion, syncTasks, pendingReview, unreleased, publishesOnMerge, addTask, approveRepo, approveChanges, sendBack, pushTasks } from "./tasks.mjs";
 import { produce, mailState, setMail, sentMail } from "./writeups.mjs";
 import { loadScreens, screenImage, blueprint } from "./screens.mjs";
-import { mapPage, wholePage, pressRegion, typeRegion, uploadRegion, uploadFiles, scrollPage, signIn, isTrusted } from "./headless.mjs";
+import { mapPage, wholePage, pressRegion, typeRegion, fillForm, uploadRegion, uploadFiles, scrollPage, signIn, isTrusted } from "./headless.mjs";
 import { watchState, addWatch, removeWatch, seenWatch, newsSince, markNews, checkWatch, setBrief, draftReply, watchBoard, boardLine, boardChat, boardTalk, clearBoardChat } from "./watch.mjs";
 import { PORT as PHONE_PORT, phoneState, pairComputer, pollComputer, forgetComputer, parsePairLink } from "./phone.mjs";
 import { qrMatrix } from "./qr.mjs";
@@ -427,7 +427,7 @@ async function cmdSecret() {
   console.log(sub === "get" ? r.value : "ok");
 }
 async function cmdScreens() {
-  const [sub = "list", a1, a2, a3, ...more] = argv.slice(1).filter((x, i, all) => !x.startsWith("--") && all[i - 1] !== "--name");
+  const [sub = "list", a1, a2, a3, ...more] = argv.slice(1).filter((x, i, all) => !x.startsWith("--") && all[i - 1] !== "--name" && all[i - 1] !== "--press");
   const out = (x) => { console.log(JSON.stringify(x, null, 2)); if (x && x.error) process.exitCode = 1; };
   const find = (id) => loadScreens().find((s) => s.id === id);
   if (sub === "list") {
@@ -448,6 +448,22 @@ async function cmdScreens() {
   }
   if (sub === "show") { const s = find(a1); return out(s ? screenJson(s) : { error: "No screen " + (a1 || "") + ". symbiot screens lists them." }); }
   if (sub === "signin") { const r = (await viaApp("/api/screens/signin", { site: a1 })) || await signIn(a1); return out(r.ok ? { ...r, next: "Sign in in the window that opened, close it, then map again." } : r); }
+  if (sub === "fill") {
+    const s = find(a1); if (!s) return out({ error: "No screen " + (a1 || "") + ". symbiot screens lists them." });
+    const rs = s.regions || [], pick = (q) => { const want = String(q || "").toLowerCase(); return rs.find((x) => x.id === q) || rs.find((x) => x.label.toLowerCase() === want) || (rs.filter((x) => x.label.toLowerCase().includes(want)).length === 1 && rs.find((x) => x.label.toLowerCase().includes(want))) || null; };
+    const fields = [];
+    for (const pair of [a2, a3, ...more].filter((x) => typeof x === "string" && x.includes("="))) {
+      const k = pair.indexOf("="), r = pick(pair.slice(0, k)); if (!r) return out({ error: `No region "${pair.slice(0, k)}" on that screen (give its id, or a label that matches one region).` });
+      fields.push({ region: r.id, text: pair.slice(k + 1) });
+    }
+    if (!fields.length) return out({ error: 'Give the fields as label="text" pairs.' });
+    const pressQ = flag("press", ""), btn = pressQ ? pick(pressQ) : null; if (pressQ && !btn) return out({ error: `No region "${pressQ}" on that screen to press.` });
+    const body = { id: s.id, fields, press: btn ? btn.id : "", confirmed: has("yes"), noSend: !!process.env.SYMBIOT_DRAFT };
+    const done = (await viaApp("/api/screens/fill", body)) || await fillForm(s.id, fields, { press: body.press, confirmed: body.confirmed, noSend: body.noSend });
+    if (done && /answered 404/.test(done.error || "")) return out({ error: "The Symbiot app that's running is older than this command and can't fill a form: restart it (symbiot app), then try again." });
+    if (done && done.confirm) return out({ error: `${done.error} Add --yes to go ahead, or list ${done.host} under Trusted sites in Symbiot's Settings.` });
+    return out(screenJson(done));
+  }
   if (sub === "press" || sub === "type" || sub === "upload") {
     const s = find(a1); if (!s) return out({ error: "No screen " + (a1 || "") + ". symbiot screens lists them." });
     const want = String(a2 || "").toLowerCase(), rs = s.regions || [];
@@ -473,6 +489,9 @@ async function cmdScreens() {
   symbiot screens press <id> <region> [--yes]  press a region there, map where it lands
   symbiot screens type <id> <field> "text" [--enter] [--yes]
                                                type into a field (Enter sends it), map the result
+  symbiot screens fill <id> label="text" [label="text"…] [--press <button>] [--yes]
+                                               fill several fields and press a button in one browser
+                                               session (a form that forgets itself between calls)
   symbiot screens upload <id> <field> <file> [<file>…] [--yes]
                                                put a file in the page's file box (a picture or
                                                video for a post): <field> is the box, or the

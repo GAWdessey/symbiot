@@ -27,7 +27,7 @@ import { addTask, toggleTask, removeTask, restoreTask, syncTasks, taskType, push
 import { repoReview, repoSuggest, folderSuggest, taskChat, clearTaskChat, mailState, setMail, sentMail, produce, releaseNotes } from "./writeups.mjs";
 import { listSecrets, getSecret, markUsed, deleteSecret } from "./vault.mjs";
 import { loadScreens, screenImage, captureScreen, splitScreen, listMonitors, allowScreenshots, importScreen, setRegions, renameScreen, removeScreen, blueprint, clickRegion } from "./screens.mjs";
-import { mapPage, wholePage, pressRegion, typeRegion, uploadRegion, scrollPage, signIn, keepBrowserOpen, isTrusted, trustedSites, trustSite, untrustSite, openSymbiotBrowser, closeSymbiotBrowser, setBrowserHub, siteUrl, browserHub } from "./headless.mjs";
+import { mapPage, wholePage, pressRegion, typeRegion, fillForm, uploadRegion, scrollPage, signIn, keepBrowserOpen, isTrusted, trustedSites, trustSite, untrustSite, openSymbiotBrowser, closeSymbiotBrowser, setBrowserHub, siteUrl, browserHub } from "./headless.mjs";
 import { weeklyState, setWeekly, runWeekly, startWeekly, autostartState, setAutostart, installLauncher, iconSvg, setLauncherLook } from "./desktop.mjs";
 import { markNews, newsSince, watchState, addWatch, setEvery, removeWatch, clearNews, seenWatch, checkWatch, startWatches, setBrief, draftReply, openChat, watchBoard, boardChat, clearBoardChat } from "./watch.mjs";
 import { linksState, linkSite, checkLink, unlinkSite, addSite, signInAsked } from "./links.mjs";
@@ -378,6 +378,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       if (u.pathname === "/api/screens/whole" && req.method === "POST") { const b = await readBody(req); return json(res, screenOut(await wholePage(String(b.id || "")))); }
       if (u.pathname === "/api/screens/scroll" && req.method === "POST") { const b = await readBody(req); return json(res, screenOut(await scrollPage(String(b.id || ""), String(b.to || "down")))); }
       if (u.pathname === "/api/screens/type" && req.method === "POST") { const b = await readBody(req); return json(res, screenOut(await typeRegion(String(b.id || ""), String(b.region || ""), b.text, { enter: b.enter === true, confirmed: b.confirmed === true, noSend: b.noSend === true }))); }
+      if (u.pathname === "/api/screens/fill" && req.method === "POST") { const b = await readBody(req); return json(res, screenOut(await fillForm(String(b.id || ""), Array.isArray(b.fields) ? b.fields.map((f) => ({ region: String(f.region || ""), text: f.text })) : [], { press: String(b.press || ""), confirmed: b.confirmed === true, noSend: b.noSend === true }))); }
       // upload: a file of yours to the page's file box, asked like press and type
       if (u.pathname === "/api/screens/upload" && req.method === "POST") { const b = await readBody(req); return json(res, screenOut(await uploadRegion(String(b.id || ""), String(b.region || ""), Array.isArray(b.files) ? b.files.map(String) : String(b.files || ""), { confirmed: b.confirmed === true }))); }
       if (u.pathname === "/api/screens/trusted") return json(res, { sites: trustedSites() });
