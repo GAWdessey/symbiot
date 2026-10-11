@@ -11,11 +11,12 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync, openSync, closeSync
 import { randomBytes, createHash } from "node:crypto";
 import { CONFIG_DIR, loadConfig, saveConfig, loadTasks, TASK_MAX, clipWords, sameTask, taskWords, sh, hasCmd } from "./core.mjs";
 import { recordDone } from "./asksdone.mjs";
-import { parseRun, lastRunText, readRunLog, runStarted, briefPlan, stepOf, runLine } from "./work.mjs";
+import { parseRun, lastRunText, readRunLog, runStarted, briefPlan, stepOf, runLine, waitingOn } from "./work.mjs";
 import { noteDuration, noteCost, kindOf } from "./estimate.mjs";
 import { parseFacts, leftToYou, gitWork, agentsGitWork, agentsPosting, linkedAsks, linkedChore, PUSH_OK } from "./handover.mjs";
 import { scanRoots, repoPathMap } from "./scan.mjs";
 import { knowledgeFolders } from "./knowledge.mjs";
+import { pickModel } from "./route.mjs";
 
 const HANDOFFS = []; // live registry of agents Symbiot has handed work to
 // ---- hand a repo (+ its tasks) to the user's agent — generic, settings-based
@@ -180,6 +181,15 @@ function withTrust(tmpl, box = null) {
   if (!/--settings\b/.test(c)) c += ` --settings ${JSON.stringify(box ? box.file : guardSettings())}`;
   return c;
 }
+// The --model for an agent run: pickModel's tier as the CLI alias (sonnet, opus), or its id.
+function routedModel(repoPath, opts = {}, resumed = false) {
+  try {
+    const task = resumed ? RESUME_PROMPT : readSymbiot(repoPath, "TASKS.md").split("\n").filter((l) => /^\s*- \[ \]/.test(l)).join("\n");
+    const override = (task.match(/\[model:\s*(\w+)\s*\]/i) || [])[1] || opts.model || "";
+    const m = pickModel({ task, lane: opts.name || "", path: resolve(repoPath), override });
+    return m.tier === "S" ? "sonnet" : m.tier === "O" && m.model === "claude-opus-5-5" ? "opus" : /^claude-/.test(m.model) ? m.model : "";
+  } catch { return ""; }
+}
 function withModel(tmpl, model) {
   if (!isClaudeCmd(tmpl) || !model) return tmpl;
   const c = String(tmpl).replace(/\s--model(?:=|\s+)\S+/g, "");
@@ -283,8 +293,9 @@ function runHandoff(repoPath, { force = false, lost = false, model = "" } = {}) 
   const idle = !lost && nothingToDo(repoPath); if (idle) return { blocked: true, idle: true, questions: 0, note: idle };
   const scoped = withScope(withConnectors(tmpl, repoPath), repoPath), box = isClaudeCmd(scoped) && trustFull() ? sandboxFor(repoPath, scoped) : null; // a repo run's sandbox, on top of the membrane
   tmpl = withStream(withTrust(scoped, box));
-  if (model) tmpl = withModel(tmpl, model);
   const resume = isClaudeCmd(tmpl) ? resumeFor(repoPath) : null;
+  if (!model && !/\s--model\b/.test(tmpl)) model = routedModel(repoPath, opts, !!resume); // routine runs on Sonnet, hard ones on Opus (route.mjs); a command you set with its own --model is left as-is
+  if (model) tmpl = withModel(tmpl, model);
   const runCmd = resume ? tmpl + ` --resume ${resume.id}` : tmpl;
   if (!force) { const w = waitingFor(repoPath); if (w) { askedFor(repoPath); return { blocked: true, waiting: true, questions: 0, note: waitNote(w) }; } }
   const blocked = !force && blockedAgain(repoPath, tmpl); if (blocked) return blocked;
@@ -1292,7 +1303,7 @@ function workOf(path, log) {
   const done = (md.match(/^\s*-\s*\[x\]/gim) || []).length, total = done + (md.match(/^\s*-\s*\[ \]/gm) || []).length;
   const tail = w.stream ? (w.final || w.said.join("\n\n") || (w.doing ? w.doing + "…" : "")) : String(log).slice(-1200);
   const plan = w.stream ? briefPlan(md) : [], line = w.stream && !w.final ? runLine({ plan, step: stepOf(plan, w.talk), work: w }) : null;
-  const work = w.stream ? { model: w.model, doing: w.doing, moved: w.moved, looping: w.looping, steps: w.steps.slice(-16), todos: w.todos, cost: w.cost, turns: w.turns, tokens: w.tokens, tests: w.tests, files: w.files, pace: w.pace, errors: w.errors, final: w.final.slice(0, 1200), count: w.steps.length } : null;
+  const work = w.stream ? { model: w.model, doing: w.doing, moved: w.moved, looping: w.looping, steps: w.steps.slice(-16), todos: w.todos, cost: w.cost, turns: w.turns, tokens: w.tokens, tests: w.tests, files: w.files, pace: w.pace, errors: w.errors, final: w.final.slice(0, 1200), restOn: waitingOn(w.final), count: w.steps.length } : null;
   // its kind (a brief, or answers) from its command line, and the task it's on: what estimate.mjs compares it with
   if (line) { const c = String(log || "").slice(String(log || "").lastIndexOf("\n=== ")).split("\n")[2] || ""; line.kind = kindOf(c); line.task = firstOpen(md).slice(0, 200); }
   return { tail, work, progress: total ? { done, total } : null, ...(line ? { line } : {}) };
@@ -1309,4 +1320,4 @@ function agentsList() {
   }).concat(earlierRuns());
 }
 
-export { FACTS, factsOf, knownRun, withStream, workOf, HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, connectorsInfo, linkReach, fillHandoff, runHandoff, nothingToDo, PARKED_NOTE, parkedPaths, isParked, parkLane, agentMissing, blockedAgain, runningHandoff, loadRuns, earlierRuns, namedFiles, waitingFor, startWaiting, noteUntracked, untrackedBefore, forgetUntracked, loadRunFiles, forgetRunFiles, writeTasks, droppedTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, pickAgent, findOrcaCli, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, skipIdea, agentQuestions, answerQuestions, agentsList, needsOf, settleNeeds, NEEDS_FOR, readLastWords, readNeeds, parseRead, READ_FILE, autoAllow, autoAllowSweep, allowlistInWork, installAllowlist, inWork, withScope, withTrust, sandboxFor, sandboxEnv, sandboxNeeds, sandboxState, sandboxWrites, SANDBOX_DIR, resumeFor, noteSession, trustFull, GUARD_SETTINGS, isUrgent, urgentFirst, urgentUndo, urgentDone, urgentSweep, urgentState , licenceGate, withModel };
+export { FACTS, factsOf, knownRun, withStream, workOf, HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, connectorsInfo, linkReach, fillHandoff, runHandoff, nothingToDo, PARKED_NOTE, parkedPaths, isParked, parkLane, agentMissing, blockedAgain, runningHandoff, loadRuns, earlierRuns, namedFiles, waitingFor, startWaiting, noteUntracked, untrackedBefore, forgetUntracked, loadRunFiles, forgetRunFiles, writeTasks, droppedTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, pickAgent, findOrcaCli, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, skipIdea, agentQuestions, answerQuestions, agentsList, needsOf, settleNeeds, NEEDS_FOR, readLastWords, readNeeds, parseRead, READ_FILE, autoAllow, autoAllowSweep, allowlistInWork, installAllowlist, inWork, withScope, withTrust, sandboxFor, sandboxEnv, sandboxNeeds, sandboxState, sandboxWrites, SANDBOX_DIR, resumeFor, noteSession, trustFull, GUARD_SETTINGS, isUrgent, urgentFirst, urgentUndo, urgentDone, urgentSweep, urgentState , licenceGate, withModel, routedModel };

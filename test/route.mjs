@@ -82,6 +82,9 @@ ok("pure: calling twice gives the same result", JSON.stringify(pickModel({ path:
   ok("withModel replaces --model=x too", n(b) === 1 && b.endsWith("--model claude-sonnet-5") && !b.includes("haiku"), b);
   ok("withModel adds one when there was none", n(withModel("claude -p x", "claude-fable-5-1")) === 1);
   ok("withModel leaves codex/aider/gemini commands alone", withModel("codex exec x", "claude-opus-5-5") === "codex exec x" && withModel("claude -p x", "") === "claude -p x");
+  const { routedModel } = await import("../agents.mjs");
+  ok("routedModel: a [model: opus] task line picks opus", routedModel("/tmp/nonexistent-repo", { model: "opus" }) === "opus");
+  ok("routedModel: an unreadable repo falls back to a model or \"\", never throws", typeof routedModel("/tmp/nonexistent-repo") === "string");
 }
 
 // Chat floor (ai.mjs): Home and Reports chat never go to a local model, whatever the saved provider is.

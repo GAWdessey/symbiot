@@ -194,6 +194,7 @@ console.log("REPORTS — the list says which ones need the user");
   writeFileSync(join(dir, ".symbiot", "allowlist.proposed.json"), JSON.stringify({ permissions: { allow: ["Bash(symbiot screens:*)", "Bash(git status)"] } }));
   const c = plainAsk(dir, { q: "Can I run Symbiot's Screens command?", options: ["👤 You (only you: a permission): allow the list in .symbiot/allowlist.proposed.json (recommended)", "Not now"] });
   ok("a permission card lists the commands in plain words with Allow, and shows no file path", /symbiot screens/.test(c.q) && /git status/.test(c.q) && c.labels[0] === "Allow (recommended)" && !/\.json|\.symbiot/.test(c.q + c.labels.join()), JSON.stringify(c));
+  ok("a permission card keeps the agent's own question to answer with, since the shown one is reworded", c.asked === "Can I run Symbiot's Screens command?" && c.q !== c.asked, JSON.stringify(c));
   recordDone("Sign in to X as Daaymn?", "Done: signed in");
   ok("an ask the user already answered is not raised again, by any agent", settleAsks([{ kind: "ask", id: "ask:z", q: "Sign in to X as Daaymn" }]).length === 0, "");
 }
@@ -206,6 +207,11 @@ console.log("REPORTS — the list says which ones need the user");
   ok("…only a question really on Home closes, and it's then recorded so no agent asks it again", n === 1 && settleAsks([{ kind: "ask", id: "ask:g", q }]).length === 0, n);
   const r2 = await converse({ where: "Reports", question: "hi", map: {}, ask: async () => JSON.stringify({ reply: "Hi", settled: [q] }) });
   ok("…and other chats can't settle cards", !r2.settled, "");
+}
+{
+  const ui = readFileSync(join(ROOT, "ui.mjs"), "utf8");
+  ok("Reports is split into Unread / Read, to action / Read tabs with counts, Unread first", /REPTAB='unread'/.test(ui) && /Read, to action/.test(ui) && /id='reptabs'/.test(ui), "");
+  ok("an open report's back row sticks to the top while the report scrolls", /#reportslist:has\(#reportback\)\{[^}]*position:sticky;top:0/.test(ui), "");
 }
 console.log(`\n${fail ? "✗" : "✓"} reports: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

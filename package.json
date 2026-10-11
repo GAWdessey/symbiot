@@ -51,6 +51,7 @@
     "icon.svg",
     "scanworker.mjs",
     "estimate.mjs",
+    "route.mjs",
     "icon.ico",
     "claudesetup.mjs",
     "voice.mjs",

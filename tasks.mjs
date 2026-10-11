@@ -662,6 +662,7 @@ function buildTasksMd(name, ctx, list) {
   const L = [];
   L.push(`# Symbiot tasks — ${name}`);
   L.push(`_generated ${new Date().toISOString().slice(0, 10)}${ctx.branch ? ` · branch ${ctx.branch}` : ""} · by symbiot ${VERSION}_`, "");
+  L.push(`Today is ${new Date().toISOString().slice(0, 10)}. Dates inside a task are when it was written: an item dated earlier is from an earlier day, so check it is still current before acting on it.`, "");
   L.push("## Context for an AI agent", `Tasks for the \`${name}\` repo. Get oriented from the signals below before actioning them.`);
   if (ctx.stack) L.push(`- **Stack:** ${ctx.stack}`);
   if (ctx.commits && ctx.commits.length) { L.push("- **Recent commits:**"); for (const c of ctx.commits) L.push(`  - ${c}`); }

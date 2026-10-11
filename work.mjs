@@ -102,6 +102,7 @@ function parseRun(text) {
   out.todos = [...tasks.values()];
   const now = out.todos.find((t) => t.status === "in_progress"), last = out.steps[out.steps.length - 1];
   out.doing = out.final ? "" : now ? now.active : last && last.status === "running" ? `${last.verb} ${last.target}`.trim() + (last.elapsedS >= 120 ? ` · running ${Math.floor(last.elapsedS / 60)}m` : "") : thinking ? "Thinking" : "";
+  out.running = !out.final && last && last.status === "running" && (last.at || last.elapsedS) ? { at: last.at || 0, elapsedS: last.elapsedS || 0 } : null; // the call still going, for a live "running Nm"
   // pace: steps per minute over the run, up to 24 buckets (a sparkline)
   const times = out.steps.map((s) => s.at).filter(Boolean);
   if (times.length > 1) { const t0 = times[0], span = Math.max(times[times.length - 1] - t0, 60000), n = Math.min(24, Math.max(6, Math.ceil(span / 60000))), w = span / n; out.pace = new Array(n).fill(0); for (const t of times) out.pace[Math.min(n - 1, Math.floor((t - t0) / w))]++; }
@@ -174,7 +175,10 @@ const STALL_MS = 20 * 60 * 1000;
 function runLine({ plan = [], step = 0, work = {}, now = Date.now() } = {}) {
   const n = short(nowLine(work), 90), lower = (s) => s.charAt(0).toLowerCase() + s.slice(1);
   const at = step && plan[step - 1] ? `step ${step} of ${plan.length}: ${lower(plan[step - 1].label)}` : plan.length ? `${plan.length} steps in its brief` : "";
-  const line = [at, n && lower(n)].filter(Boolean).join(" · ") || "working on it";
+  // a call still going ticks with the clock, not only when the log grows: elapsed from when it began (or its last heartbeat)
+  const r = work.running, runS = r ? Math.max(r.elapsedS || 0, r.at ? Math.round((now - r.at) / 1000) : 0) : 0;
+  const going = runS >= 60 && !/running \d/.test(n) ? `running ${runS >= 3600 ? Math.floor(runS / 3600) + "h " + Math.floor(runS % 3600 / 60) + "m" : Math.floor(runS / 60) + "m"}` : "";
+  const line = [at, n && lower(n), going].filter(Boolean).join(" · ") || "working on it";
   const quiet = work.moved && now - work.moved > STALL_MS ? Math.round((now - work.moved) / 60000) : 0;
   return { line, ...(step ? { step, of: plan.length } : {}), ...(quiet ? { quiet } : {}), ...(work.looping ? { looping: true } : {}) };
 }
@@ -227,7 +231,15 @@ function lastRunText(log) {
   const s = String(log || ""), at = s.lastIndexOf("\n=== ");
   return at < 0 ? s : s.slice(at).split("\n").slice(3).join("\n");
 }
+// A turn that ended on purpose and is waiting ("nothing new to act on… waiting for marketing's
+// photos"): the sentence of its final answer that says what for, or "". A one-shot run exits
+// after every turn, so a finished process alone can't tell this from a stall (2026-10-10).
+function waitingOn(final) {
+  const ss = String(final || "").replace(/[`*_#>]/g, "").replace(/\s+/g, " ").trim().split(/(?<=[.!?])\s+/);
+  const s = ss.reverse().find((x) => /\b(wait(?:ing)?\s+(?:on|for)|until|will check again|check again|once (?:it|they|the)\b)/i.test(x));
+  return s ? short(s.replace(/[.:]$/, ""), 160) : "";
+}
 // What the agent said last: its final answer, from either kind of log.
 function finalOf(log) { return parseRun(lastRunText(log)).final; }
 
-export { parseRun, lastRunText, finalOf, describe, testsIn, readRunLog, runStarted, briefPlan, stepOf, nowLine, runLine, STALL_MS };
+export { parseRun, lastRunText, finalOf, describe, testsIn, readRunLog, runStarted, briefPlan, stepOf, nowLine, runLine, STALL_MS, waitingOn };

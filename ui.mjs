@@ -397,10 +397,13 @@ header{padding:16px 18px 10px;display:flex;align-items:center;gap:10px}
 .brand{font-weight:700;color:var(--bone);font-size:16px}
 .status{margin-left:auto;font-size:12px;color:var(--faint);text-align:right;max-width:52%}
 .tabs{display:flex;gap:6px;padding:0 14px;border-bottom:1px solid var(--line)}
+.rtabs{display:flex;gap:6px;border-bottom:1px solid var(--line);margin-bottom:8px;overflow-x:auto}
 .tab{padding:9px 14px;border:0;background:none;color:var(--faint);font:inherit;font-weight:600;cursor:pointer;border-bottom:2px solid transparent}
 .tab.active{color:var(--bone);border-bottom-color:var(--green)}
 main{flex:1;overflow:auto;padding:16px 18px}
 .row{display:flex;gap:10px;align-items:center;margin-bottom:12px;flex-wrap:wrap}
+/* an open report: its back-to-all-reports row rides along while the report scrolls under it */
+#reportslist:has(#reportback){position:sticky;top:0;z-index:3;background:var(--ink);padding-bottom:4px}
 button.act{background:var(--green);color:var(--ink);border:0;border-radius:10px;padding:10px 16px;font:inherit;font-weight:700;cursor:pointer}
 button.act:hover{filter:brightness(1.08)}
 button.ghost{background:var(--ink3);color:var(--bone);border:1px solid var(--line);border-radius:10px;padding:9px 14px;font:inherit;font-weight:600;cursor:pointer}
@@ -1897,7 +1900,7 @@ var anyRunning=list.some(function(a){return a.status==='running';});
 if(answering()||selIn(el)){stopAgentsPoll();if(anyRunning&&current==='tasks')agentsTimer=setTimeout(loadAgents,2000);else selWait('agents',loadAgents);return;} // don't re-render under someone typing an answer, or selecting text to copy
 saveDrafts(el);AGENTLIST=list;
 var agentBlock=function(a){var pz=agentPaused(a),cls=a.status==='running'?'run':pz?'paused':(a.status==='done'?'ok':'fail');
-var st=a.status==='running'?('working &middot; '+fmtE(a.elapsed)):pz?('paused &middot; '+a.progress.done+'/'+a.progress.total+' tasks done &middot; will check again &middot; '+fmtE(a.elapsed)):(esc(a.status)+' &middot; '+fmtE(a.elapsed)+(a.exitCode!=null?' &middot; exit '+a.exitCode:''));
+var st=a.status==='running'?('working &middot; '+fmtE(a.elapsed)):pz?('paused &middot; '+a.progress.done+'/'+a.progress.total+' tasks done &middot; turn ended, will check again'+(a.work&&a.work.restOn?' &middot; '+esc(a.work.restOn):'')+' &middot; '+fmtE(a.elapsed)):(esc(a.status)+' &middot; '+fmtE(a.elapsed)+(a.exitCode!=null?' &middot; exit '+a.exitCode:''));
 if(a.fromHeld)st+=" &middot; started on the tasks held for the last run";
 if(a.earlier)st+=" &middot; "+(a.status==='running'?"started outside this window":"ran before Symbiot last started");
 if(a.waiting)st+=" &middot; <span style='color:var(--amber)'>waiting on your step</span>";
@@ -2570,18 +2573,19 @@ return "<div class='task'><span class='t'><b>"+esc(who)+"</b>: "+esc(w.subject)+
 el.querySelectorAll('.astop').forEach(function(btn){btn.addEventListener('click',function(){btn.disabled=true;api('/api/awaiting/stop',{id:btn.getAttribute('data-id')}).then(function(r){if(!r||r.error){btn.disabled=false;boardMsg('err',esc((r&&r.error)||'failed'));return;}loadAwaiting();});});});});}
 // ---- Reports (reports.mjs): what agents wrote up in their .symbiot/, newest first, the
 // unread ones marked. Opening one shows it here, as HTML the app made (escaped first).
-var REPS=[],REPOPEN='';
+var REPS=[],REPOPEN='',REPTAB='unread';
 function kb(n){return n<1024?n+' B':Math.round(n/1024)+' KB';}
 function loadReports(){api('/api/reports').then(function(d){REPS=(d&&d.reports)||[];if(!REPOPEN)renderReports();}).catch(function(e){$('reportslist').innerHTML="<div class='note err'>"+esc(String((e&&e.message)||e))+"</div>";});}
 function renderReports(){var el=$('reportslist');$('reportview').innerHTML='';REPOPEN='';
 if(!REPS.length){el.innerHTML="<div class='muted' style='margin-top:12px'>No reports yet. When an agent writes up findings, an audit or a plan, it leaves it as a .md file in its folder&#39;s .symbiot, and it shows up here.</div>";return;}
-var n=REPS.filter(function(r){return r.new;}).length;
 var row=function(r,i){var where=!r.run||r.run===r.lane?esc(r.lane):r.run.indexOf(r.lane+':')===0?esc(r.run):esc(r.lane)+' &middot; '+esc(r.run);
 return "<div class='task rrow"+(r.new?" rnew":"")+"' data-i='"+i+"' tabindex='0' role='button' title='"+escQ(r.file)+"'><span class='t'><b>"+esc(r.title)+"</b><div class='muted' style='font-size:12px'>"+(r.new?"<span style='color:var(--amber)'>unread</span> &middot; ":"")+(r.needs==='draft'?"<span style='color:var(--amber)'>waiting for your OK</span> &middot; ":r.needs==='ideas'?"<span style='color:var(--amber)'>"+r.ideas+(r.ideas===1?" next step":" next steps")+"</span> &middot; ":"")+where+" &middot; "+esc(r.name)+" &middot; "+kb(r.size)+(r.running?" &middot; <span style='color:var(--amber)'>its agent is still writing</span>":"")+"</div></span><span class='rp'>"+agoTxt(r.mtime)+"</span></div>";};
-var nd=[];REPS.forEach(function(r,i){if(r.needs)nd.push(i);});
-el.innerHTML=(nd.length?"<div class='mkneeds' id='repneeds'><div class='pshead'><span>Next steps / Action required &middot; "+nd.length+"</span><small>reports that wait on you or end in next steps</small></div>"+nd.slice(0,5).map(function(i){return row(REPS[i],i);}).join('')+(nd.length>5?"<div class='muted' style='font-size:12px;margin:4px 0 0'>and "+(nd.length-5)+" more in the list below</div>":"")+"</div>":"")+
-"<div class='tgroup' style='display:flex;align-items:center;gap:8px"+(n?";color:var(--amber)":"")+"'>"+(n?n+' unread':'All read')+" <span class='tcount'>of "+REPS.length+"</span>"+(n?"<button class='ghost' id='reportsseen' style='margin-left:auto;padding:3px 9px;font-size:12px;letter-spacing:0;text-transform:none'>Mark all read</button>":"")+"</div>"+
-REPS.map(row).join('');
+var tabOf=function(r){return r.new?'unread':r.needs?'action':'read';};
+var cnt={unread:0,action:0,read:0};REPS.forEach(function(r){cnt[tabOf(r)]++;});
+var TABS=[['unread','Unread'],['action','Read, to action'],['read','Read']];
+el.innerHTML="<div class='rtabs' id='reptabs' role='tablist'>"+TABS.map(function(t){return "<button class='tab"+(REPTAB===t[0]?" active":"")+"' role='tab' data-t='"+t[0]+"'>"+t[1]+" &middot; "+cnt[t[0]]+"</button>";}).join('')+(cnt.unread?"<button class='ghost' id='reportsseen' style='margin-left:auto;padding:3px 9px;font-size:12px;letter-spacing:0;text-transform:none;align-self:center'>Mark all read</button>":"")+"</div>"+
+(REPS.map(function(r,i){return tabOf(r)===REPTAB?row(r,i):'';}).join('')||"<div class='muted' style='margin-top:12px'>Nothing here.</div>");
+el.querySelectorAll('#reptabs .tab').forEach(function(b){b.addEventListener('click',function(){REPTAB=b.getAttribute('data-t');renderReports();});});
 el.querySelectorAll('.rrow').forEach(function(row){var go=function(){openReport(REPS[+row.getAttribute('data-i')]);};row.addEventListener('click',go);row.addEventListener('keydown',function(ev){if(ev.key==='Enter'||ev.key===' '){ev.preventDefault();go();}});});
 var s=$('reportsseen');if(s)s.addEventListener('click',function(){s.disabled=true;api('/api/reports/seen',{}).then(function(){loadReports();lqLoad(false);});});}
 function openReport(r){if(!r)return;REPOPEN=r.id;var v=$('reportview');$('reportslist').innerHTML="<div class='row' style='margin-top:10px'><button class='ghost' id='reportback'>&larr; All reports</button><span class='muted' style='font-size:12px;overflow-wrap:anywhere'>"+esc(r.file)+"</span></div>";
@@ -3272,7 +3276,7 @@ return h;}
 function wireBlob(box,y,o){o=o||{};var say=o.say||lqSaid,nm=y.name||y.repo||'the agent';
 var lock=function(on){box.querySelectorAll('button,input').forEach(function(b){b.disabled=on;});};
 var send=function(ans,j){ans=String(ans||'').trim();if(!ans||(!y.path&&!y.fix))return;lock(true);
-(y.fix?api('/api/home/answer',j!=null?{id:y.id,pick:j}:{id:y.id,text:ans}):api('/api/agents/answer',{path:y.path,answers:[{q:y.q,a:ans}],rerun:true})).then(function(r){
+(y.fix?api('/api/home/answer',j!=null?{id:y.id,pick:j}:{id:y.id,text:ans}):api('/api/agents/answer',{path:y.path,answers:[{q:y.asked||y.q,a:ans}],rerun:true})).then(function(r){
 if(!r||r.error){lock(false);say(nm+': '+((r&&r.error)||'the answer didn’t save. Try again on its block on the Workdesk.'),true);return;}
 say(y.fix?nm+': '+(r.said||'Done.'):'Sent to '+(r.lane||nm)+'. '+(r.yours&&r.yours.length?'Still yours to do: '+r.yours.join(' '):r.rerun?'Its agent is picking it up now.':(r.note||'Saved in its ANSWERS.md.')));
 bdSet(y,'');if(o.sent)o.sent();if(box.classList)box.classList.add('gone');setTimeout(function(){if(o.done)o.done();},650);}).catch(function(e){lock(false);say(nm+': '+String((e&&e.message)||e),true);});};

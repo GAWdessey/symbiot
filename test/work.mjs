@@ -88,6 +88,8 @@ try {
   const wo = workOf(repo, "\n=== r " + ts(0) + " ===\n$ claude -p …\n" + running);
   ok("its work, how far through TASKS.md it is, and readable text instead of JSON", wo.work && wo.work.doing === "Adding a test" && wo.progress.done === 1 && wo.progress.total === 3 && !/\{"type"/.test(wo.tail), [wo.progress, wo.tail.slice(0, 80)]);
   ok("another agent: no work view, the log's end as before", workOf(repo, "\n=== r x ===\n$ codex\nhello").work === null && /hello/.test(workOf(repo, "\n=== r x ===\n$ codex\nhello").tail), "");
+  const { waitingOn } = await import("../work.mjs");
+  ok("a turn that ended to wait says what for; a plain summary says nothing", waitingOn("Nothing new to act on. Marketing's photos haven't landed, so I'm waiting for them and will check again.") === "Marketing's photos haven't landed, so I'm waiting for them and will check again" && waitingOn("Done. Fixed the login bug.") === "", waitingOn("Nothing new. Waiting on marketing's photos."));
   console.log("HOW FAR ALONG — a run's step in its brief's plan, on Home (steve and argena, 2026-10-08: only 'Agents working: 2')");
   const { briefPlan, stepOf, runLine, STALL_MS } = await import("../work.mjs");
   const brief = "## Tasks\n- [x] old\n- [ ] Argena (v6.7). Do these in order. 1) Device pass on v6.7. Earlier today it got three hotfixes. 2) Look and feel, plus a zoned world. This is Garth's priority, with monsters. 3) Wire the class bible into the game, starting with core class apprenticeships. 4) Symbiot slow loop v0. Monsters use behaviour cards.\n";
@@ -105,6 +107,8 @@ try {
   const longRun = [A([use("g2", "Bash", { command: "pip install x", description: "Install x" })], 0), hb(30), hb(270)].join("\n");
   const lr = parseRun(longRun), fresh = parseRun(A([use("g2", "Bash", { command: "pip install x", description: "Install x" })], 0));
   ok("a long call's heartbeat shows how long it has run in the doing line", /· running 4m$/.test(lr.doing) && lr.moved === parseRun(A([use("g2", "Bash", { command: "pip install x", description: "Install x" })], 0)).moved, lr.doing);
+  const tickCall = parseRun(A([use("g4", "Bash", { command: "sleep 900", description: "Wait" })], 0));
+  ok("a running call ticks in the home line with the clock, with no new log lines", /· running 5m$/.test(runLine({ work: tickCall, now: T + 5 * 60000 + 1000 }).line) && !/running/.test(runLine({ work: tickCall, now: T + 20000 }).line), runLine({ work: tickCall, now: T + 5 * 60000 + 1000 }).line);
   ok("…a step with no heartbeat yet reads as before", fresh.doing && !/running/.test(fresh.doing), fresh.doing);
   ok("…a finished step ignores a late heartbeat", !/running/.test(parseRun([A([use("g3", "Bash", { command: "ls" })], 0), JSON.stringify({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "g3", content: "x" }] } }), JSON.stringify({ type: "tool_progress", parent_tool_use_id: "g3", elapsed_time_seconds: 600 })].join("\n")).doing), "");
   const loop = parseRun([1, 2, 3, 4, 5].map((i) => A([use("l" + i, "Bash", { command: "curl x", description: "Poll the server" })], i)).join("\n"));

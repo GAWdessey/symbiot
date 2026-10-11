@@ -93,11 +93,21 @@ function logTurn(where, role, text, now = Date.now(), d = loadMind()) {
 // people think things through, so it keeps a real conversation: 16 turns, each whole
 // (up to TURN_CHARS), from the last 12 hours.
 const THREAD_TURNS = 16, THREAD_AGE = 12 * 3600000;
-function ownThread(where, d = loadMind(), now = Date.now()) {
-  return d.log.filter((l) => l.where === where && now - (l.ts || 0) < THREAD_AGE).slice(-THREAD_TURNS).map((l) => `${l.role === "user" ? "User" : "You"}: ${l.text}`).join("\n");
+// Which day it is, for anything handed to a model: Symbiot never knew a new day had
+// begun, so "yesterday" and "today" were mixed and old items carried over as current
+// (2026-10-11). The local date, and a mark on anything from an earlier day.
+const dayKey = (t) => { const x = new Date(t); return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, "0")}-${String(x.getDate()).padStart(2, "0")}`; };
+const dayLine = (now = Date.now()) => `Today is ${dayKey(now)} (${new Date(now).toLocaleDateString("en-GB", { weekday: "long" })}), ${new Date(now).toTimeString().slice(0, 5)} local time. Anything marked with an earlier date happened on that day, not today: say so, and don't treat it as current.`;
+function dayMark(ts, now = Date.now()) {
+  if (!ts) return "";
+  const k = dayKey(ts), today = dayKey(now);
+  return k === today ? "" : `[${k === dayKey(now - 86400000) ? "yesterday, " : ""}${k}] `;
 }
-function lately(where, d = loadMind(), n = LOG_LINES) {
-  return d.log.filter((l) => l.where !== where).slice(-n).map((l) => `- [${l.where}] ${l.role === "user" ? "User" : "You"}: ${l.text.slice(0, 200)}`).join("\n");
+function ownThread(where, d = loadMind(), now = Date.now()) {
+  return d.log.filter((l) => l.where === where && now - (l.ts || 0) < THREAD_AGE).slice(-THREAD_TURNS).map((l) => `${dayMark(l.ts, now)}${l.role === "user" ? "User" : "You"}: ${l.text}`).join("\n");
+}
+function lately(where, d = loadMind(), n = LOG_LINES, now = Date.now()) {
+  return d.log.filter((l) => l.where !== where).slice(-n).map((l) => `- ${dayMark(l.ts, now)}[${l.where}] ${l.role === "user" ? "User" : "You"}: ${l.text.slice(0, 200)}`).join("\n");
 }
 function mindState() { const d = loadMind(); return { nodes: d.nodes.sort((a, b) => b.ts - a.ts).map((n) => ({ id: n.id, name: n.name, kind: n.kind, facts: n.facts.map((f) => f.text), ts: n.ts })), log: d.log.length }; }
 function forget(id) {
@@ -114,7 +124,8 @@ function actBrief(request, { title = "Symbiot", context = "", known = "", lanes 
   let names = lanes; if (!names) { try { names = Object.keys(laneMap()); } catch { names = []; } }
   const short = clipWords(request.replace(/\s+/g, " "), 160); // its task line; the whole request is quoted above it
   return `# For your agent: ${title}
-_written by symbiot ${VERSION} · ${new Date(now).toISOString().slice(0, 10)}_
+_written by symbiot ${VERSION} · ${dayKey(now)}_
+${dayLine(now)}
 
 The user asked Symbiot for this:
 
@@ -289,7 +300,7 @@ function parseReply(raw) {
 async function converse({ where, role = "", context = "", history = "", question, act = {}, ask = (sys, p, o) => write(sys, p, { ...o, floor: "sonnet" }), map = null, now = Date.now(), images = [], nav = false, settle = false }) {
   // a secret they pasted goes to the vault before anything is stored or sent; the model sees a placeholder
   let kept = []; try { ({ text: question, saved: kept } = captureSecrets(question)); } catch {}
-  const d = loadMind(), hits = recall(question, now, d), known = recallText(hits), elsewhere = lately(where, d);
+  const d = loadMind(), hits = recall(question, now, d), known = recallText(hits), elsewhere = lately(where, d, undefined, now);
   if (!history) history = ownThread(where, d, now);
   // what it did to answer, to show under the reply (as the app shows an agent's work)
   const steps = [];
@@ -303,7 +314,7 @@ async function converse({ where, role = "", context = "", history = "", question
   // how they talk, from what they've typed into any chat (adapt.mjs: accommodation)
   const voice = styleLine(styleOf(d.log.filter((l) => l.role === "user").map((l) => l.text).concat(question)));
   const system = `${IDENTITY} ${role}\n\n${rulesFor(Object.keys(lanes), selfLane(lanes), nav, settle)}${voice ? "\n" + voice : ""}${languageLine()}`;
-  let prompt = (known ? `What you know (from across the app):\n${known}\n\n` : "") + (kn.text ? kn.text + "\n\n" : "") + (elsewhere ? `Lately, elsewhere in the app (other chats: a short answer here doesn't reply to these):\n${elsewhere}\n\n` : "") +
+  let prompt = `${dayLine(now)}\n\n` + (known ? `What you know (from across the app):\n${known}\n\n` : "") + (kn.text ? kn.text + "\n\n" : "") + (elsewhere ? `Lately, elsewhere in the app (other chats: a short answer here doesn't reply to these):\n${elsewhere}\n\n` : "") +
     (context ? context + "\n\n" : "") + (history ? `This chat so far:\n${history}\n\n` : "") + `They say (on ${where}): ${question}`;
   if (kept.length) prompt += `\n(Symbiot saved what they pasted, under ${kept.map((n) => `"${n}"`).join(", ")}. Say so in a few words, and carry on with what they asked.)`;
   const raw = await ask(system, prompt, images.length ? { images } : undefined);
@@ -346,4 +357,4 @@ async function converse({ where, role = "", context = "", history = "", question
 // The usual "task" act, for a caller with no lanes of its own to pass.
 const addToTasks = (text, repo) => { let map = {}; try { map = laneMap(); } catch {} return taskIn(text, repo, { map }); };
 
-export { MIND_FILE, loadMind, remember, recall, recallText, lately, mindState, forget, actBrief, actNow, actIn, taskIn, selfLane, rulesFor, parseReply, converse, spokenLine, goOf, PAGES, addToTasks , ownThread };
+export { dayLine, dayMark, MIND_FILE, loadMind, remember, recall, recallText, lately, mindState, forget, actBrief, actNow, actIn, taskIn, selfLane, rulesFor, parseReply, converse, spokenLine, goOf, PAGES, addToTasks , ownThread };

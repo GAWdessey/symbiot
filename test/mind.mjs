@@ -54,6 +54,10 @@ try {
   const { ownThread } = await import("../mind.mjs");
   ok("…a long turn on Home is kept whole (thinking out loud isn't clipped)", ownThread("Home", loadMind(), tH + 200000).includes(long), "");
   ok("…and a thread from yesterday isn't brought back", ownThread("Home", loadMind(), tH + 13 * 3600000) === "", "");
+  const { dayLine, dayMark } = await import("../mind.mjs");
+  const noon = new Date(2026, 9, 11, 12, 0).getTime();
+  ok("every prompt says today's date, and marks earlier days as such", /^Today is 2026-10-11 /.test(dayLine(noon)) && /earlier date/.test(dayLine(noon)), dayLine(noon));
+  ok("…an item from today carries no mark, yesterday's says so, older ones carry their date", dayMark(noon - 3600000, noon) === "" && dayMark(noon - 86400000, noon) === "[yesterday, 2026-10-10] " && dayMark(noon - 3 * 86400000, noon) === "[2026-10-08] ", "");
 
   console.log("IT ACTS — your agent now, or a task for later");
   let agentReq = "", agentKnown = "", taskArgs = null;
@@ -136,6 +140,9 @@ try {
   ok("forget one thing", forget(one.id).ok && !mindState().nodes.some((n) => n.name === "Francois Huyzers"), mindState().nodes.map((n) => n.name));
   ok("forget everything, the log too", forget("all").ok && mindState().nodes.length === 0 && loadMind().log.length === 0, mindState());
   ok("an unknown id says so", /Nothing remembered/.test(forget("nope").error || ""), "");
+  { const { homeContext } = await import("../home.mjs"); const now = Date.now(), y = now - 86400000;
+    const c = homeContext({ you: [], feeds: [], working: 1, runs: [{ name: "Old run", line: "going", started: y }], lanes: [{ from: "a", to: "b", text: "x", status: "started", at: y }], at: now });
+    ok("home context dates yesterday's runs and handovers", (c.match(/\[yesterday, /g) || []).length === 2, c); }
 } finally {
   rmSync(HOME, { recursive: true, force: true });
 }
