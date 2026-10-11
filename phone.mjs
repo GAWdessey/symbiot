@@ -185,7 +185,7 @@ async function handle(req, res) {
   }
   // a phone paired before the link was sealed
   if (u.pathname === "/phone/news" && req.method === "GET") return reply(res, 403, { error: OLD_PHONE });
-  const op = (u.pathname.match(/^\/phone\/(news|state|apply)$/) || [])[1];
+  const op = (u.pathname.match(/^\/phone\/(news|state|apply|chat)$/) || [])[1];
   if (op && req.method === "POST") { const r = await answer(await body(req), op, "wifi"); return reply(res, r.status, r.body); }
   reply(res, 404, { error: "not found" });
 }
@@ -221,6 +221,8 @@ const OPS = {
   news: ({ since }) => { const { news, briefs } = newsAfter(since); return { name: hostname(), now: Date.now(), news: news.slice(0, 100), briefs: briefs.slice(0, 20) }; },
   state: async ({ etag }) => { const s = await snapshot(); return etag && etag === s.v ? { status: 304, body: { v: s.v } } : s; },
   apply: async ({ ops }, phone) => applyOps(ops, phone),
+  // A phone has no AI of its own: its Home chat is answered here, by this computer's.
+  chat: async ({ question }) => { const { homeAsk } = await import("./home.mjs"); return homeAsk(String(question || "").slice(0, 2000)); },
 };
 
 // ---- the copy a phone keeps ---------------------------------------------------------------
@@ -577,7 +579,7 @@ async function ask(op, args, { fetchFn = fetch, discover = discoverComputer } = 
   if (!c || !s) return { status: 0, body: { error: OLD_PAIRING } };
   const key = Buffer.from(s.key, "base64url");
   const make = () => ({ v: 1, id: c.id, ...seal(key, { t: s.token, ts: Date.now() + (Number(c.offset) || 0), op, args }, "req:" + c.id) });
-  const wait = op === "apply" ? 30000 : 6000, tried = new Set();
+  const wait = op === "chat" ? 120000 : op === "apply" ? 30000 : 6000, tried = new Set();
   const viaUrl = async (url) => { const env = make(), r = await fetchFn(`${url}/phone/${op}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(env), signal: AbortSignal.timeout(wait) }); return { env, status: r.status, json: await r.json().catch(() => ({})), via: url }; };
   let res = null;
   for (const url of [c.url, ...(c.urls || [])]) { if (!url || tried.has(url)) continue; tried.add(url); try { res = await viaUrl(url); break; } catch {} }
@@ -686,4 +688,4 @@ function startPhone() { if (PHONE) startComputerPoll(); else startPhoneLink(); }
 
 export { adbLink, PORT, PHONE, ANDROID_APP, PHONE_OPS, lanAddresses, linkState, newCode, unpairPhone, setRelay, startPhoneLink, stopPhoneLink, setPhoneLink, freePhonePort, usePhonePort, portHolder, setPhoneApprove, phoneApprovals, snapshot,
   computerUrl, parsePairLink, pairLink, computerState, computerView, findComputers, pairComputer, forgetComputer, pollComputer, queueChange, dismissNote, startComputerPoll, phoneState, startPhone,
-  newKeys, linkKey, fingerprint, seal, unseal, relayOf, answer };
+  newKeys, linkKey, fingerprint, seal, unseal, relayOf, answer, ask };

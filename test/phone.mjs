@@ -188,6 +188,13 @@ try {
   await P.pollComputer({ notify: () => {}, discover: async () => [] });
   ct = await pc.cmd("tasks");
   ok("in order: done, not done, done ends done", ct.find((t) => t.id === "t1").done === true, ct.find((t) => t.id === "t1"));
+  const chat = await P.ask("chat", { question: "hello" });
+  ok("a paired phone's chat reaches the computer's AI over the sealed link (no AI there in this test, so it says so)", chat.sealed === true && chat.status === 200 && chat.body.error === "not-connected", chat);
+  const H = await import(join(SRC, "home.mjs"));
+  const said = await H.phoneChat("hi", { ask: async (op, args) => ({ status: 200, body: { answer: "from the computer " + op + args.question, steps: [] } }) });
+  ok("phoneChat gives back the computer's answer", said.answer === "from the computer chathi", said);
+  const down = await H.phoneChat("hi", { ask: async () => ({ unreachable: true }) });
+  ok("phoneChat: computer off -> says so, no AI-setup prompt", /didn't answer/.test(down.error) && !/Claude Code|connect an AI/i.test(down.error), down);
   const early = Date.now() + (readJ(join(CFG, "config.json")).computer.offset || 0) - 5000;
   await pc.cmd("toggle", { id: "t1" }); // on the computer, now: not done
   writeFileSync(join(CFG, "phone-queue.json"), JSON.stringify([{ id: "44444444-dddd", at: early, op: "task.setDone", args: { id: "t1", done: true } }]));

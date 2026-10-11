@@ -31,7 +31,7 @@ import { newClashes } from "./checks.mjs";
 import { postsState } from "./post.mjs";
 import { laneCap, verdict, peel, inflight, inflightIds, parallelLane, openTasksOf, laneFacts, dropHeld, startParallel } from "./parallel.mjs";
 import { licenceState, isPro } from "./licence.mjs";
-import { PHONE, ANDROID_APP, computerView, phoneApprovals, linkState } from "./phone.mjs";
+import { PHONE, ANDROID_APP, computerView, phoneApprovals, linkState, ask as askComputer } from "./phone.mjs";
 import { MARKETING, MARKETING_DIR, MARKETING_WORDS, displayName, productNames, productOf, untagged, tagged, draftFiles, setDraftStatus, postedCmd } from "./marketing.mjs";
 
 const KEEP = 15000; // the slower reads (git per repo awaiting review) are cached this long
@@ -567,6 +567,7 @@ async function homeAsk(question, { ask, now = Date.now(), state, images = [] } =
   // the screenshots go to the model, and their files with any work it hands an agent
   let pics = []; try { pics = images.map((p) => ({ path: p, mime: /\.png$/i.test(p) ? "image/png" : /\.webp$/i.test(p) ? "image/webp" : /\.gif$/i.test(p) ? "image/gif" : "image/jpeg", data: readFileSync(p).toString("base64") })); } catch {}
   const shotNote = pics.length ? `\n\nScreenshots the user attached (open them with your Read tool): ${pics.map((i) => i.path).join(", ")}` : "";
+  if (!ask && PHONE) return phoneChat(question);
   if (!ask && !resolveProvider()) return phoneNoAi() || { error: "not-connected" };
   const h = state || homeState({ now });
   let map = {}; try { map = laneMap(); } catch {}
@@ -897,6 +898,17 @@ function phoneNoAi() {
   let paired = false; try { paired = !!computerView().paired; } catch {}
   return { error: paired ? "Chat runs on your computer, which has the AI. Ask it there; your tasks and what needs you are here." : "Pair this phone with your computer first: it has the AI, and this phone uses it." };
 }
+// A paired phone's chat is answered by the computer's AI over the sealed link
+// (phone.mjs OPS.chat); unpaired, it says to pair first.
+async function phoneChat(question, deps = {}) {
+  let paired = false; try { paired = !!computerView().paired; } catch {}
+  if (!paired) return phoneNoAi();
+  const r = await (deps.ask || askComputer)("chat", { question });
+  if (r.unreachable) return { error: "Your computer didn't answer. Check it is on, then ask again." };
+  const b = r.body || {};
+  if (r.status !== 200 || b.error) return { error: b.error || (r.status === 504 ? "Your computer took too long to answer." : "Your computer couldn't answer that.") };
+  return { answer: b.answer, spoken: b.spoken, ...(b.did ? { did: b.did } : {}), steps: b.steps || [] };
+}
 function onboarding({ fresh = false } = {}) {
   let cfg = loadConfig(), o = cfg.onboarding || {};
   const tryOr = (f, d) => { try { return f(); } catch { return d; } };
@@ -934,4 +946,4 @@ function setOnboarding({ step, skip, unskip, skipRest, done, restart } = {}) {
   return onboarding();
 }
 
-export { isPeak, reportIdeasAdd, reportIdeasDismiss, reportAsk, reportDraftAnswer, workTick, waitWhy, AUTO_GRACE, STUCK_AFTER, marketingState, marketingGo, marketingDraftAnswer, marketingTask, moveToMarketing, goLane, homeState, homeContext, homeAsk, homeAnswer, homeNext, nextUp, laneNamed, NEXT_FILE, workScene, workGo, displayName, firstSteps, onboarding, setOnboarding, startOnboarding, ONB_STEPS, ONB_STEPS_PHONE, onbSteps, phoneBits , phoneSetupFirst, settleAsks, plainAsk, settleFromChat };
+export { phoneChat, isPeak, reportIdeasAdd, reportIdeasDismiss, reportAsk, reportDraftAnswer, workTick, waitWhy, AUTO_GRACE, STUCK_AFTER, marketingState, marketingGo, marketingDraftAnswer, marketingTask, moveToMarketing, goLane, homeState, homeContext, homeAsk, homeAnswer, homeNext, nextUp, laneNamed, NEXT_FILE, workScene, workGo, displayName, firstSteps, onboarding, setOnboarding, startOnboarding, ONB_STEPS, ONB_STEPS_PHONE, onbSteps, phoneBits , phoneSetupFirst, settleAsks, plainAsk, settleFromChat };
