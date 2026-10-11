@@ -17,7 +17,7 @@ let pass = 0, fail = 0;
 const ok = (n, c, got) => { if (c) { pass++; console.log("  ✓ " + n); } else { fail++; console.log("  ✗ " + n + (got !== undefined ? "  got: " + JSON.stringify(got) : "")); } };
 
 const { dispatch, lanesTick, loadLedger, lanesState, MAX_CHAIN, aboutIt, partlyDone, remoteKey, orcaMoves, orcaRelink, stuckHandovers, allowHandover, skipHandover, namedDirs } = await import("../lanes.mjs");
-const { parseHandoffs, handoverRules, ONLY_YOU, leftToYou, gitWork, agentsGitWork, agentsPosting, linkedAsks, linkedChore } = await import("../handover.mjs");
+const { parseHandoffs, handoverRules, ONLY_YOU, leftToYou, gitWork, agentsGitWork, agentsClicking, agentsPosting, linkedAsks, linkedChore } =await import("../handover.mjs");
 const { buildTasksMd } = await import("../tasks.mjs");
 const { actBrief } = await import("../mind.mjs");
 
@@ -242,6 +242,10 @@ try {
   ok("a failed CI run's \"👤 You: … git add, commit, push\" option is the agent's, with an OK on the Workdesk before the push", /^🤖 Agent: review the diff, then run `git add -A/.test(ci[0]) && /asking for your OK on the Workdesk, with the files, before it pushes \(recommended\)$/.test(ci[0]) && ci[1] === "Leave it for now", ci);
   ok("…dropped when another option already has the agent do it", agentsGitWork(["🤖 Agent: commit and push the fix", "👤 You: commit and push it yourself"]).join("|") === "🤖 Agent: commit and push the fix", "");
   ok("…while a step that needs who you are stays yours", /^👤/.test(agentsGitWork(["👤 You: type your GitHub password when git push asks"])[0]), "");
+  const npm = agentsClicking(["👤 You (only you: your security key): at www.npmjs.com/package/symbiot/access click GitHub Actions, enter owner GAWdessey, repository symbiot, workflow filename publish.yml, environment blank, tick 'Allow npm publish', click 'Set up' (recommended)"]);
+  ok("clicking through a form is the agent's, pausing only for the security key", /^🤖 Agent: at www\.npmjs\.com.*pausing on the Workdesk only for your security key \(recommended\)$/.test(npm[0]), npm[0]);
+  ok("…one tap alone stays yours", /^👤/.test(agentsClicking(["👤 You (only you: your security key): tap it when npm asks"])[0]), "");
+  ok("…and so does a physical step", /^👤/.test(agentsClicking(["👤 You (only you: your phone): plug it in, click Allow, enter the code, tick Always"])[0]), "");
   // the Marketing card (the [Steve] series, 2026-10-08), with LinkedIn linked in Symbiot's browser
   const mk = ["👤 You (only you: your linkedin): schedule all three now in linkedin's scheduler, 08:00 on tue 13, 20 and 27 oct. paste each post's text and attach its card (recommended)", "👤 You (only you: your linkedin): schedule only week 2 now and approve 3 and 4 one at a time"];
   const mp = agentsPosting(mk, ["github", "linkedin"]);

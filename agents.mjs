@@ -13,7 +13,7 @@ import { CONFIG_DIR, loadConfig, saveConfig, loadTasks, TASK_MAX, clipWords, sam
 import { recordDone } from "./asksdone.mjs";
 import { parseRun, lastRunText, readRunLog, runStarted, briefPlan, stepOf, runLine, waitingOn } from "./work.mjs";
 import { noteDuration, noteCost, kindOf } from "./estimate.mjs";
-import { parseFacts, leftToYou, gitWork, agentsGitWork, agentsPosting, linkedAsks, linkedChore, PUSH_OK } from "./handover.mjs";
+import { parseFacts, leftToYou, gitWork, agentsGitWork, agentsClicking, agentsPosting, linkedAsks, linkedChore, PUSH_OK } from "./handover.mjs";
 import { scanRoots, repoPathMap } from "./scan.mjs";
 import { knowledgeFolders } from "./knowledge.mjs";
 import { pickModel } from "./route.mjs";
@@ -1084,7 +1084,7 @@ function parseQuestions(md, { linked = linkedIds() } = {}) {
     if (b) { if (cur) cur.options.push(clip(b[1])); else if (/\?\s*$/.test(b[1])) questions.push({ q: clip(b[1]), context: "", options: [] }); continue; } // a bullet with no "### question" above it is a question only if it actually ends in "?" — otherwise it's preamble/prose (a file list, etc.)
     if (cur) cur.context = clip((cur.context ? cur.context + " " : "") + l);
   }
-  return { questions: questions.filter((x) => x.q).slice(0, 20).map((x) => ({ ...x, options: agentsPosting(linkedAsks(agentsGitWork(x.options), linked, x.q), linked).slice(0, 6) })), suggestions: suggestions.filter(Boolean).slice(0, 10) };
+  return { questions: questions.filter((x) => x.q).slice(0, 20).map((x) => ({ ...x, options: agentsPosting(linkedAsks(agentsClicking(agentsGitWork(x.options)), linked, x.q), linked).slice(0, 6) })), suggestions: suggestions.filter(Boolean).slice(0, 10) };
 }
 // An idea for another project names it first: "[repo: symbiot] Watch GitHub
 // too" is for the symbiot repo's tasks, whichever repo's agent had it (an agent

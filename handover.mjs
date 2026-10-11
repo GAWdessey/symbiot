@@ -81,6 +81,27 @@ function agentsGitWork(options) {
   });
 }
 
+// ---- clicking and typing is an agent's job -----------------------------------------
+// A card read "👤 You (only you: your security key): at www.npmjs.com/package/symbiot/access
+// click GitHub Actions, enter owner GAWdessey, repository symbiot, workflow filename
+// publish.yml, tick 'Allow npm publish', click 'Set up…'" (2026-10-11). Clicking, filling a
+// form and running a command in the signed-in browser is an agent's work; the user's part is
+// the one tap (a security key, a password, an SMS code), which the agent pauses for on the
+// Workdesk. A step with fewer than three such actions, or a physical one (a cable, a phone
+// in hand, being there), stays the user's. Options in, options out.
+const UI_STEP = /\b(?:click|tick|untick|select|choose|fill|enter|paste|type|toggle|press|run `[^`]+`)/gi;
+const PHYSICAL = /\b(?:plug|unplug|usb|cable|in person|in hand|wi-?fi|network|reboot)\b/i;
+const TAP = /\b(security key|passkey|password|2fa(?: code)?|sms code|verification code|one-time code|authenticator)\b/i;
+const clicking = (text) => { const t = String(text || ""); return !PHYSICAL.test(t) && (t.match(UI_STEP) || []).length >= 3; };
+function agentsClicking(options) {
+  return (options || []).map(String).map((o) => {
+    if (!/^\s*👤/.test(o) || !clicking(o)) return o;
+    const rec = /\(recommended\)\s*$/i.test(o), tag = (o.match(/\(only you:\s*([^)]*)\)/i) || [])[1] || "", tap = (TAP.exec(tag) || TAP.exec(o) || [])[1];
+    const body = o.replace(/^\s*👤\s*You(?:\s*\([^)]*\))?\s*:?\s*/i, "").replace(/\s*\(recommended\)\s*$/i, "").replace(/[.\s]+$/, "");
+    return `🤖 Agent: ${body}${tap ? `, pausing on the Workdesk only for your ${tap.toLowerCase()}` : ""}${rec ? " (recommended)" : ""}`;
+  });
+}
+
 // ---- posting on a linked platform is an agent's job -------------------------------
 // A Marketing card offered two options, both "👤 You (only you: your linkedin): schedule
 // all three now in linkedin's scheduler… paste each post's text and attach its card"
@@ -200,4 +221,4 @@ function parseHandoffs(md) {
   return out.map((h) => ({ lane: h.lane, text: h.text.trim().slice(0, HANDOVER_MAX) })).filter((h) => h.lane && h.text);
 }
 
-export { OPS, MARKETING, HANDOVER_MAX, handoverRules, ONLY_YOU, HANDBACK, gitWork, agentsGitWork, PUSH_OK, postsOnLinked, agentsPosting, APPROVE_FIRST, linkedAsks, linkedChore, parseFacts, parseAwaiting, parseHandoffs, leftToYou };
+export { OPS, MARKETING, HANDOVER_MAX, handoverRules, ONLY_YOU, HANDBACK, gitWork, agentsGitWork, agentsClicking, PUSH_OK, postsOnLinked, agentsPosting, APPROVE_FIRST, linkedAsks, linkedChore, parseFacts, parseAwaiting, parseHandoffs, leftToYou };
