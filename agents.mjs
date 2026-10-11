@@ -1164,6 +1164,29 @@ function autoDecide(path) {
   const r = answerQuestions(path, picks.map((x) => ({ q: x.q, a: `${x.a}\n(Symbiot picked your own recommendation: it's yours to do and can be undone, so the user wasn't asked.)` })), { rerun: true });
   return r && r.ok ? { decided: picks.length } : null;
 }
+// A lane whose run has ended with unticked tasks still in TASKS.md starts again by
+// itself, so open work never just sits there. Only while it's getting somewhere: after
+// the first continue, a lane starts again only if more tasks got ticked since the last
+// one, so a lane stuck on its questions doesn't loop. Parked, busy or blocked lanes are left alone.
+const CONTINUED = new Map(); // path -> ticked count when it was last continued
+const CONTINUE_AFTER = 2 * 60000;
+function continueLanes({ now = Date.now(), run = runHandoff, runs = loadRuns } = {}) {
+  const out = [];
+  for (const path of [...new Set(runs().map((r) => r.path).filter(Boolean))]) {
+    try {
+      if (runningHandoff(path) || isParked(path)) continue;
+      const md = readSymbiot(path, "TASKS.md"), open = (md.match(/^\s*(?:[-*+]|\d+[.)])\s*\[ \]/gm) || []).length;
+      if (!open) { CONTINUED.delete(path); continue; }
+      let ended = 0; try { ended = statSync(join(path, ".symbiot", "agent.log")).mtimeMs; } catch { continue; }
+      if (now - ended < CONTINUE_AFTER) continue;
+      const ticked = (md.match(/^\s*(?:[-*+]|\d+[.)])\s*\[[xX]\]/gm) || []).length;
+      if (CONTINUED.has(path) && ticked <= CONTINUED.get(path)) continue;
+      if (blockedAgain(path, handoffCmd())) continue;
+      const e = run(path); if (e && e.id && !e.busy && !e.blocked) { CONTINUED.set(path, ticked); out.push(path); }
+    } catch {}
+  }
+  return out;
+}
 function autoAllowSweep() { const out = []; for (const r of loadRuns()) { try { const a = autoAllow(r.path); if (a && a.allowed) out.push(r.path); else if (autoDecide(r.path)) out.push(r.path); } catch {} } return out; }
 // Every agent reaches the owner's knowledge folders from the start; an ops run (no repo
 // of its own) their repos too, the way a person at their desk would.
@@ -1282,4 +1305,4 @@ function agentsList() {
   }).concat(earlierRuns());
 }
 
-export { autoPick, autoDecide, FACTS, factsOf, knownRun, withStream, workOf, HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, connectorsInfo, linkReach, fillHandoff, runHandoff, nothingToDo, PARKED_NOTE, parkedPaths, isParked, parkLane, agentMissing, blockedAgain, runningHandoff, loadRuns, earlierRuns, namedFiles, waitingFor, startWaiting, noteUntracked, untrackedBefore, forgetUntracked, writeTasks, droppedTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, pickAgent, findOrcaCli, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, skipIdea, agentQuestions, answerQuestions, agentsList, needsOf, settleNeeds, NEEDS_FOR, readLastWords, readNeeds, parseRead, READ_FILE, autoAllow, autoAllowSweep, allowlistInWork, installAllowlist, inWork, withScope, withTrust, sandboxFor, sandboxEnv, sandboxNeeds, sandboxState, sandboxWrites, SANDBOX_DIR, resumeFor, noteSession, trustFull, GUARD_SETTINGS, isUrgent, urgentFirst, urgentUndo, urgentDone, urgentSweep, urgentState , licenceGate };
+export { continueLanes, autoPick, autoDecide, FACTS, factsOf, knownRun, withStream, workOf, HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, connectorsInfo, linkReach, fillHandoff, runHandoff, nothingToDo, PARKED_NOTE, parkedPaths, isParked, parkLane, agentMissing, blockedAgain, runningHandoff, loadRuns, earlierRuns, namedFiles, waitingFor, startWaiting, noteUntracked, untrackedBefore, forgetUntracked, writeTasks, droppedTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, pickAgent, findOrcaCli, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, skipIdea, agentQuestions, answerQuestions, agentsList, needsOf, settleNeeds, NEEDS_FOR, readLastWords, readNeeds, parseRead, READ_FILE, autoAllow, autoAllowSweep, allowlistInWork, installAllowlist, inWork, withScope, withTrust, sandboxFor, sandboxEnv, sandboxNeeds, sandboxState, sandboxWrites, SANDBOX_DIR, resumeFor, noteSession, trustFull, GUARD_SETTINGS, isUrgent, urgentFirst, urgentUndo, urgentDone, urgentSweep, urgentState , licenceGate };
