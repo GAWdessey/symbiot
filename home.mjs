@@ -341,15 +341,15 @@ function homeState({ now = Date.now(), fresh = false, deps = {} } = {}) {
   // only when it's missing, and then first (urgent): nothing works without it.
   // First run: what only a new user can do before the rest means anything.
   // (the Android app asks for none of this: the agents run on the computer it pairs with)
-  if (!ANDROID_APP && !connected()) you.push({ kind: "setup", id: "setup:ai", urgent: true, title: "Connect an AI", sub: "Symbiot can't work without one: your Claude subscription (sign in to Claude Code), a key, or a free local model", shape: "settings", focus: "ai" });
-  const gone = ANDROID_APP ? "" : agentGone(); if (gone) you.push({ kind: "setup", id: "setup:agent", urgent: true, title: "Your agent is unavailable", sub: `${gone} isn't on this computer any more, so no task can start`, shape: "settings", focus: "agent" });
-  for (const c of ANDROID_APP ? [] : signedOut()) you.push({ kind: "setup", id: "setup:conn:" + c.id, urgent: true, title: `Reconnect ${c.name}`, sub: `its Claude connector is signed out, so agent runs can't use ${c.name}`, shape: "settings", focus: "agent" });
+  if (!PHONE && !connected()) you.push({ kind: "setup", id: "setup:ai", urgent: true, title: "Connect an AI", sub: "Symbiot can't work without one: your Claude subscription (sign in to Claude Code), a key, or a free local model", shape: "settings", focus: "ai" });
+  const gone = PHONE ? "" : agentGone(); if (gone) you.push({ kind: "setup", id: "setup:agent", urgent: true, title: "Your agent is unavailable", sub: `${gone} isn't on this computer any more, so no task can start`, shape: "settings", focus: "agent" });
+  for (const c of PHONE ? [] : signedOut()) you.push({ kind: "setup", id: "setup:conn:" + c.id, urgent: true, title: `Reconnect ${c.name}`, sub: `its Claude connector is signed out, so agent runs can't use ${c.name}`, shape: "settings", focus: "agent" });
   you.push(...reposCard({ map, search: search(), confirmed: confirmed(), rootsSet: rootsSet() }));
   // no agent yet: Send to repos and Go would only write TASKS.md files nothing runs, so
   // Home didn't say "All handled" truthfully. Which agent is on this computer is a
   // lookup, not your call: one found is set (change it in Settings), and you're asked
   // only when there's none to set, or you cleared yours.
-  if (!ANDROID_APP && !agentCmd()) {
+  if (!PHONE && !agentCmd()) {
     const p = offer(), off = deps.agentOff ? deps.agentOff() : (() => { try { return !!loadConfig().agentOff; } catch { return false; } })();
     if (p && !off) (deps.setAgent || setHandoffCmd)(p.tmpl);
     else you.push({ kind: "setup", id: "setup:pick", title: "Pick your agent", sub: p ? `${p.name} is on this computer: one click and it takes your tasks` : "no coding agent on this computer yet: install one (Claude Code, Codex, Gemini or Aider) and it takes your tasks", shape: "settings", focus: "agent", ...(p ? { pick: { name: p.name, tmpl: p.tmpl } } : {}) });
@@ -565,7 +565,7 @@ async function homeAsk(question, { ask, now = Date.now(), state, images = [] } =
   // the screenshots go to the model, and their files with any work it hands an agent
   let pics = []; try { pics = images.map((p) => ({ path: p, mime: /\.png$/i.test(p) ? "image/png" : /\.webp$/i.test(p) ? "image/webp" : /\.gif$/i.test(p) ? "image/gif" : "image/jpeg", data: readFileSync(p).toString("base64") })); } catch {}
   const shotNote = pics.length ? `\n\nScreenshots the user attached (open them with your Read tool): ${pics.map((i) => i.path).join(", ")}` : "";
-  if (!ask && !resolveProvider()) return { error: "not-connected" };
+  if (!ask && !resolveProvider()) return phoneNoAi() || { error: "not-connected" };
   const h = state || homeState({ now });
   let map = {}; try { map = laneMap(); } catch {}
   const role = "Here they're on Symbiot's home: one liquid surface that shows what only they can do, what's new on what they watch, and the lanes. Answer from what it shows, and act on what they ask.";
@@ -607,7 +607,7 @@ function reportIdeasDismiss(id, ideas, deps = {}) {
 async function reportAsk(id, question, { ask, deps = {} } = {}) {
   question = String(question || "").trim().slice(0, 2000); if (!question) return { error: "empty" };
   const r = (deps.read || readReport)(id, { mark: false }); if (!r || r.error) return { error: (r && r.error) || "That report isn't there any more." };
-  if (!ask && !resolveProvider()) return { error: "not-connected" };
+  if (!ask && !resolveProvider()) return phoneNoAi() || { error: "not-connected" };
   let map = {}; try { map = laneMap(); } catch {}
   const lane = r.lane && r.lane !== RUNS_LANE && map[r.lane] ? r.lane : "";
   const role = `Here they're reading a report an agent wrote, "${r.title}"${lane ? ` (${lane})` : ""}, under Reports. Answer about it from its text; a task or agent work it leads to goes to ${lane || "the lane it belongs to"} unless they say otherwise.`;
@@ -853,6 +853,13 @@ function phoneSetupFirst({ app = ANDROID_APP, paired = () => !!computerView().pa
   let isPaired = false; try { isPaired = paired(); } catch {}
   if (!isPaired) o.step = "computer";
   o.computer = true; saveConfig(cf); return o;
+}
+// A phone never sets up an AI of its own: it uses the computer's. Until chat is relayed
+// there, say what it can do instead (null on a computer, which does ask to connect one).
+function phoneNoAi() {
+  if (!PHONE) return null;
+  let paired = false; try { paired = !!computerView().paired; } catch {}
+  return { error: paired ? "Chat runs on your computer, which has the AI. Ask it there; your tasks and what needs you are here." : "Pair this phone with your computer first: it has the AI, and this phone uses it." };
 }
 function onboarding({ fresh = false } = {}) {
   let cfg = loadConfig(), o = cfg.onboarding || {};

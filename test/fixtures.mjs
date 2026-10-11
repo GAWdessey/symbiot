@@ -357,6 +357,11 @@ try {
     writeFileSync(s + "QUESTIONS.md", "## Questions\\n### Allow it all?\\n- 👤 You (only you: a permission): allow the list in .symbiot/allowlist.proposed.json\\n");
     out.answer7 = a.answerQuestions(dir, [{ q: "Allow it all?", a: "👤 You (only you: a permission): allow the list in .symbiot/allowlist.proposed.json" }]);
     out.local7 = JSON.parse(readFileSync(dir + "/.claude/settings.local.json", "utf8")); out.answers7 = readFileSync(s + "ANSWERS.md", "utf8");
+    writeFileSync(s + "allowlist.proposed.json", JSON.stringify({ permissions: { allow: ["Bash(ssh -o BatchMode=yes ubuntu@203.0.113.9:*)"] } }));
+    const agentOpt = "🤖 Agent: allow the list in .symbiot/allowlist.proposed.json (recommended)";
+    writeFileSync(s + "QUESTIONS.md", "## Questions\\n### Can I check the VM?\\n- " + agentOpt + "\\n- skip the VM part\\n");
+    out.answer8 = a.answerQuestions(dir, [{ q: "Can I check the VM?", a: agentOpt }]);
+    out.local8 = JSON.parse(readFileSync(dir + "/.claude/settings.local.json", "utf8"));
     a.setHandoffCmd('claude -p "{prompt}" --allowedTools "Bash(node:*)" "Bash(--allowedtools:*)"'); out.flag = a.grantAgent({ tool: "--allowedTools" }); out.flag2 = a.grantAgent({ tool: "dig" });`);
   const ee = ((er2.list || []).find((e) => e.path === erDir)) || {};
   ok("after a restart, a run that stopped on questions is listed, marked earlier, with its questions", ee.earlier === true && ee.status === "done" && ((ee.ask || {}).questions || []).length === 1 && /WA_WABA_ID/.test(ee.tail || ""), ee);
@@ -369,6 +374,7 @@ try {
   ok("...but a step only the user can do (their message) is still theirs", er2.answer5 && JSON.stringify(er2.answer5.yours) === JSON.stringify(["You (only you: your message): paste it into ANSWERS.md"]) && !er2.answer5.granted, er2.answer5);
   ok("an allow list the agent proposed is turned on for its folder only, merged with what's there, when picked (an exact rm path is narrow)", er2.answer6 && er2.answer6.granted && !er2.answer6.yours && JSON.stringify(er2.local6.permissions.allow) === JSON.stringify(["Bash(ls:*)", "Bash(cloudflared:*)", "Bash(dig:*)", "Bash(rm -r /tmp/cf/site)"]) && er2.local6.permissions.deny[0] === "Read(/x/.env)" && er2.local6.permissions.additionalDirectories[0] === "/tmp/cf", [er2.answer6, er2.local6]);
   ok("...and never lets an agent edit Symbiot's own config, where its permissions are kept", er2.local6.permissions.deny.some((r) => /^Edit\(.*\/\.config\/symbiot\/config\.json\)$/.test(r)) && er2.local6.permissions.deny.some((r) => /^Write\(.*\/\.config\/symbiot\/config\.json\)$/.test(r)), er2.local6.permissions.deny);
+  ok("Allow on a card whose option is the agent's own (🤖) turns the list on too, where it used to do nothing", er2.answer8 && (er2.answer8.granted || []).length === 1 && !er2.answer8.yours && er2.local8.permissions.allow.includes("Bash(ssh -o BatchMode=yes ubuntu@203.0.113.9:*)"), [er2.answer8, er2.local8]);
   ok("...but one that would let an agent run anything (a shell, a wildcard rm) isn't turned on: it says which rules, tells the agent to ask for less, and isn't left as the user's step", er2.answer7 && !er2.answer7.granted && !er2.answer7.yours && JSON.stringify(er2.answer7.refused) === JSON.stringify(["Bash(bash:*)", "Bash(rm:*)"]) && /Not turned on: .*Bash\(bash:\*\)/.test(er2.answer7.note || "") && !er2.local7.permissions.allow.includes("Bash(bash:*)") && /Symbiot didn't turn your allow list on/.test(er2.answers7) && /narrower/.test(er2.answers7), [er2.answer7, er2.local7]);
   ok("a flag is never granted as a tool, and an old broken rule (Bash(--allowedtools:*)) is cleaned out", er2.flag && er2.flag.ok && !/--allowedtools:\*/i.test(er2.flag.cmd) && /"Bash\(dig:\*\)"/.test(er2.flag2.cmd) && !/Bash\(-/.test(er2.flag2.cmd), [er2.flag, er2.flag2]);
   ok("a step with no file named waits for Start it now; the 🤖 Agent part isn't the user's step", er2.answer2 && JSON.stringify(er2.answer2.yours) === '["allow gh in Settings."]' && !er2.answer2.waitFiles && er2.held2 && er2.held2.blocked && /Start it now/.test(er2.held2.note || "") && er2.forced && er2.cleared2, [er2.answer2, er2.held2, er2.forced]);
@@ -454,10 +460,17 @@ try {
     writeFileSync(dir + "/.symbiot/agent.pid", JSON.stringify({ pid: ext3.pid, id: "ext3", startedAt: Date.now(), owner: 2147483646 }));
     a.writeTasks(dir, "- [ ] A\\n- [ ] B\\n- [ ] C\\n"); writeFileSync(f, "- [ ] A\\n");
     out.dropped = a.droppedTasks(dir).map((d) => d.text);
+    // a lock whose pid now belongs to a process started long after the lock was written: the agent is gone
+    const ext4 = spawn("sleep", ["1"]), exited4 = new Promise((r) => ext4.on("exit", r));
+    writeFileSync(dir + "/.symbiot/agent.pid", JSON.stringify({ pid: ext4.pid, id: "ext4", startedAt: Date.now() - 3600000, owner: 2147483646 }));
+    out.reusedPid = a.runningHandoff(dir) === null;
+    await exited4; try { unlinkSync(dir + "/.symbiot/agent.pid"); } catch {}
+    writeFileSync(dir + "/.symbiot/agent.pid", JSON.stringify({ pid: ext3.pid, id: "ext3", startedAt: Date.now(), owner: 2147483646 }));
     await exited3; out.dropRelease = a.releaseHeldTasks(dir) && readFileSync(f, "utf8"); out.droppedAfter = a.droppedTasks(dir).map((d) => d.text);
     console.log(JSON.stringify(out));`], { encoding: "utf8", timeout: 30000, env: { ...process.env, HOME: hhome, USERPROFILE: hhome } });
   let hv = {}; try { hv = JSON.parse(hd.stdout.trim().split("\n").pop()); } catch { console.log(hd.stdout, hd.stderr); }
   ok("no agent running -> TASKS.md is written straight away", hv.freeHeld === false, hv);
+  ok("a lock whose pid was reused by a newer process doesn't hold the lane", hv.reusedPid === true, hv);
   ok("agent running -> the new brief is held, its TASKS.md untouched", hv.busyHeld === true && hv.during === "- [ ] A\n- [ ] B\n" && hv.earlyRelease === false, hv);
   ok("the agent's block lists the held tasks' titles", JSON.stringify(hv.shown) === '["A","B","C"]' && hv.shownAfter === null, hv);
   ok("once it exits the held brief lands, keeping the agent's ticks", hv.nextGone && hv.after === "- [x] A\n- [ ] B\n- [ ] C\n", hv.after);

@@ -98,6 +98,11 @@ try {
   ok("done: Home is yours", o.pending === false && JSON.parse(readFileSync(join(CFG, "config.json"), "utf8")).onboarding.done > 0, o.pending);
   ok("a Symbiot that finished setup isn't sent through it again (the new step doesn't reopen it)", onboarding().pending === false, onboarding().pending);
 
+  console.log("A PHONE NEVER ASKS FOR ITS OWN AI");
+  const ph = JSON.parse(execSync(`${JSON.stringify(process.execPath)} --input-type=module -e 'const h = await import(${JSON.stringify(join(dirname(fileURLToPath(import.meta.url)), "..", "home.mjs"))}); const s = h.homeState({}); const a = await h.homeAsk("hi"); console.log(JSON.stringify({ cards: s.you.map((y) => y.id), err: a.error }));'`, { env: { ...process.env, HOME: join(HOME, "nophone"), USERPROFILE: join(HOME, "nophone"), SYMBIOT_AS_PHONE: "1", SYMBIOT_CLAUDE_CMD: "/nonexistent" }, encoding: "utf8" }).trim().split("\n").pop());
+  ok("a phone (Termux too) gets no Connect-an-AI, agent or connector card", !ph.cards.some((id) => /^setup:(ai|agent|conn|pick)/.test(id)), ph.cards);
+  ok("its chat says to pair, not to connect an AI", /Pair this phone/.test(ph.err || ""), ph.err);
+
   console.log("THE ICON — in your look");
   const f = iconSvg("ferro"), g = iconSvg("glass"), p = iconSvg("pearl");
   ok("Ferrofluid is the dark orb", /#1B1D22/.test(f) && /#08090B/.test(f), "");
