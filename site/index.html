@@ -226,7 +226,7 @@ footer a{text-decoration:none}footer a:hover{color:var(--bone)}
           <li>The marketing lane: posts drafted from your real work</li>
           <li>Approve-and-ship: Symbiot opens the pull request and ships it</li>
           <li>Fixes for Pro customers first</li></ul>
-          <a class="btn" href="mailto:sales@symbiot.co.za?subject=Symbiot%20Pro&amp;body=I%27d%20like%20Symbiot%20Pro%20(monthly%20or%20yearly%3F)">Get Pro</a>
+          <a class="btn" id="get-pro" href="mailto:sales@symbiot.co.za?subject=Symbiot%20Pro&amp;body=I%27d%20like%20Symbiot%20Pro%20(monthly%20or%20yearly%3F)">Get Pro</a>
           <p class="alt">Email sales@symbiot.co.za. You'll get a key to paste into Symbiot's Settings.</p></div>
       </div>
     </div>
@@ -259,6 +259,19 @@ footer a{text-decoration:none}footer a:hover{color:var(--bone)}
   </div>
 </footer>
 
+<script>
+// Which channel brought this visitor: the utm_source on the link they arrived by is kept
+// for the visit and written into the Get Pro email, so a Pro sale can be traced to a post.
+(function () {
+  var src = "";
+  try {
+    src = (new URLSearchParams(location.search).get("utm_source") || "").replace(/[^\w.\-]/g, "").slice(0, 40);
+    if (src) sessionStorage.setItem("utm_source", src); else src = sessionStorage.getItem("utm_source") || "";
+  } catch (e) {}
+  var a = document.getElementById("get-pro");
+  if (a && src) a.href += encodeURIComponent("\n\n(source: " + src + ")");
+})();
+</script>
 <script>
 // The downloads: each button gets the newest release that has its installer (a version
 // still being built never leaves a button pointing at nothing); one that no release has
