@@ -137,7 +137,7 @@ function linkState() {
   const l = linkCfg();
   if (pairing && Date.now() > pairing.until) pairing = null;
   const link = pairing && listener ? pairLink(pairing.code, l) : "";
-  return { role: "computer", on: l.on, port: l.port, listening: !!listener, ...(listenErr ? { error: listenErr } : {}), addresses: lanAddresses(),
+  return { role: "computer", on: l.on, port: l.port, listening: !!listener, ...(listenErr ? { error: listenErr } : {}), ...(listenErr && holder ? { holder } : {}), addresses: lanAddresses(),
     ...(l.pub ? { fp: fingerprint(l.pub) } : {}), relay: { on: l.relay, ...relayState() }, found: !!mdns,
     phones: l.phones.map((p) => ({ id: p.id, name: p.name, added: p.added, ...(p.legacy || !p.pub ? { old: true } : {}), ...(lastSeen.has(p.id) ? { seen: lastSeen.get(p.id).at, via: lastSeen.get(p.id).via } : p.seen ? { seen: p.seen } : {}) })),
     ...(pairing ? { code: pairing.code, until: pairing.until } : {}), ...(link ? { link, qr: qrSvg(link) } : {}) };
@@ -396,19 +396,65 @@ let adbTimer = null;
 function startAdbLink() { if (adbTimer || PHONE || process.env.SYMBIOT_NO_ADB === "1" || process.env.SYMBIOT_SANDBOX) return; // (tests and sandboxes never touch a real phone)
   adbLink(); adbTimer = setInterval(() => adbLink(), 30000); adbTimer.unref(); }
 
-// Listen on the network while it's switched on. Gives the state.
+// Who holds a port on this computer: pid, command line, start time. `ss` first, `lsof` as the
+// fallback; null when neither says (or nobody does). A holder running this app's own index.mjs
+// is marked `symbiot` (and this process itself is never offered to be stopped).
+function portHolder(port, run = (cmd, args) => execFileSync(cmd, args, { encoding: "utf8", timeout: 4000, stdio: ["ignore", "pipe", "ignore"] })) {
+  const n = Number(port); if (!(n > 0)) return null;
+  let pid = 0;
+  try { const m = String(run("ss", ["-ltnpH", `sport = :${n}`])).match(/pid=(\d+)/); if (m) pid = Number(m[1]); } catch {}
+  if (!pid) { try { const m = String(run("lsof", ["-nP", "-t", `-iTCP:${n}`, "-sTCP:LISTEN"])).match(/\d+/); if (m) pid = Number(m[0]); } catch {} }
+  if (!pid) return null;
+  let cmd = "", started = "";
+  try {
+    const out = String(run("ps", ["-o", "lstart=,args=", "-p", String(pid)])).trim();
+    const m = out.match(/^(\w{3}\s+\w{3}\s+\d+\s+[\d:]+\s+\d{4})\s+(.*)$/);
+    if (m) { started = m[1]; cmd = m[2]; } else cmd = out;
+  } catch {}
+  return { pid, cmd, started, symbiot: pid !== process.pid && /symbiot/i.test(cmd) && /index\.mjs/.test(cmd) };
+}
+function holderText(port, h) {
+  if (!h) return `Port ${port} is in use by something else on this computer.`;
+  return `Port ${port} is held by ${(h.cmd || "another program").slice(0, 80)} (pid ${h.pid}${h.started ? ", started " + h.started : ""}).`;
+}
+let holder = null, starting = null;
+
+// Listen on the network while it's switched on. Gives the state. (A second call while the
+// first is still binding waits for it, so startPhone and setPhoneLink never bind twice.)
 function startPhoneLink() {
   const l = linkCfg();
   if (!l.on || listener) return Promise.resolve(linkState());
+  if (starting) return starting;
   hashTokens(); linkKeys();
-  return new Promise((resolve) => {
+  starting = new Promise((resolve) => {
+    const done = () => { starting = null; resolve(linkState()); };
     const srv = createServer((req, res) => { handle(req, res).catch(() => { try { reply(res, 500, { error: "failed" }); } catch {} }); });
     srv.on("error", (e) => {
-      listenErr = e && e.code === "EADDRINUSE" ? `Port ${l.port} is in use by something else on this computer.` : `Couldn't listen on port ${l.port}: ${(e && e.message) || e}`;
-      listener = null; resolve(linkState());
+      if (e && e.code === "EADDRINUSE") { holder = portHolder(l.port); listenErr = holderText(l.port, holder); }
+      else { holder = null; listenErr = `Couldn't listen on port ${l.port}: ${(e && e.message) || e}`; }
+      listener = null; done();
     });
-    srv.listen(l.port, "0.0.0.0", () => { listener = srv; listenErr = ""; srv.unref(); startMdns(); startRelay(); startAdbLink(); resolve(linkState()); });
+    srv.listen(l.port, "0.0.0.0", () => { listener = srv; listenErr = ""; holder = null; srv.unref(); startMdns(); startRelay(); startAdbLink(); done(); });
   });
+  return starting;
+}
+// "Free it": stop the other Symbiot process that holds the port (SIGTERM, so it lets go cleanly), then listen again.
+async function freePhonePort() {
+  const port = linkCfg().port, h = portHolder(port);
+  if (!h) return startPhoneLink();
+  if (!h.symbiot) return { ...linkState(), error: holderText(port, h) + " That isn't Symbiot, so it's left alone: use a different port." };
+  try { process.kill(h.pid, "SIGTERM"); } catch {}
+  for (let i = 0; i < 20 && portHolder(port); i++) await new Promise((r) => setTimeout(r, 150));
+  listenErr = ""; holder = null;
+  return startPhoneLink();
+}
+// "Use a different port": saved as phoneLink.port, and it listens there.
+async function usePhonePort(port) {
+  const n = Number(port);
+  if (!Number.isInteger(n) || n < 1024 || n > 65535) return { ...linkState(), error: "Pick a port between 1024 and 65535." };
+  stopPhoneLink(); saveLink({ port: n }); listenErr = ""; holder = null;
+  await startPhoneLink();
+  return listener && !pairing ? newCode() : linkState();
 }
 function stopPhoneLink() { if (listener) { listener.close(); if (listener.closeAllConnections) listener.closeAllConnections(); } listener = null; pairing = null; stopMdns(); stopRelay(); clearInterval(adbTimer); adbTimer = null; adbPushed.clear(); }
 async function setPhoneLink(on) {
@@ -638,6 +684,6 @@ const phoneState = () => (PHONE ? computerView() : linkState());
 // While the app runs: the computer listens if it's switched on; the phone asks if it's paired.
 function startPhone() { if (PHONE) startComputerPoll(); else startPhoneLink(); }
 
-export { adbLink, PORT, PHONE, ANDROID_APP, PHONE_OPS, lanAddresses, linkState, newCode, unpairPhone, setRelay, startPhoneLink, stopPhoneLink, setPhoneLink, setPhoneApprove, phoneApprovals, snapshot,
+export { adbLink, PORT, PHONE, ANDROID_APP, PHONE_OPS, lanAddresses, linkState, newCode, unpairPhone, setRelay, startPhoneLink, stopPhoneLink, setPhoneLink, freePhonePort, usePhonePort, portHolder, setPhoneApprove, phoneApprovals, snapshot,
   computerUrl, parsePairLink, pairLink, computerState, computerView, findComputers, pairComputer, forgetComputer, pollComputer, queueChange, dismissNote, startComputerPoll, phoneState, startPhone,
   newKeys, linkKey, fingerprint, seal, unseal, relayOf, answer };

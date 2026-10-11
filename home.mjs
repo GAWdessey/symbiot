@@ -22,10 +22,10 @@ import { linksState, signInAsked } from "./links.mjs";
 import { knowledgeState } from "./knowledge.mjs";
 import { CONFIG_DIR, loadTasks, saveTasks, loadConfig, saveConfig, sameTask } from "./core.mjs";
 import { lanesState, stuckHandovers, allowHandover, skipHandover } from "./lanes.mjs";
-import { converse, actIn, actNow, taskIn, loadMind } from "./mind.mjs";
+import { converse, actIn, actNow, taskIn, loadMind, dayMark } from "./mind.mjs";
 import { repoPathMap, laneMap, reposState, scanRoots } from "./scan.mjs";
 import { resolveProvider, PROVIDERS, claudeState } from "./ai.mjs";
-import { reportsNews, listReports, readReport, decide } from "./reports.mjs";
+import { reportsNews, listReports, readReport, decide, markIdeas } from "./reports.mjs";
 import { awaitingState, inboxSight } from "./handback.mjs";
 import { newClashes } from "./checks.mjs";
 import { postsState } from "./post.mjs";
@@ -389,7 +389,7 @@ function homeState({ now = Date.now(), fresh = false, deps = {} } = {}) {
   if (clash.length) feeds.unshift({ id: "feed:clash", title: "Where your files disagree", sub: `${clash.length} clash${clash.length > 1 ? "es" : ""} to look at`, latest: plain(clash[0].text, 140), count: clash.length, shape: "settings" });
   const rep = reports();
   if (rep.count) feeds.push({ id: "feed:reports", title: "Reports", sub: `${rep.count} unread`, latest: rep.latest, count: rep.count, shape: "reports" });
-  const hs = ((lanes() || {}).handoffs || []).slice(0, 5).map((h) => ({ from: h.from, to: h.to, text: h.text, status: h.status, ...(h.times > 1 ? { times: h.times } : {}) }));
+  const hs = ((lanes() || {}).handoffs || []).slice(0, 5).map((h) => ({ from: h.from, to: h.to, text: h.text, status: h.status, at: h.at || 0, ...(h.times > 1 ? { times: h.times } : {}) }));
   const working = list.filter((a) => a.status === "running").length;
   // each run at work, in a line: which lane, where it is in its brief, how long it has left, and whether it has gone quiet
   const seenRun = new Set(), runs = [];
@@ -419,7 +419,7 @@ function plainAsk(path, q) {
     ask = `${text.replace(PATHISH, "a file")}${rules.length ? ` It wants to: ${rules.slice(0, 6).join("; ")}${rules.length > 6 ? `; and ${rules.length - 6} more` : ""}.` : ""} If you say no, it can't do that part and will tell you what it skipped.`;
     labels = opts.map((o) => (/allowlist\.proposed/i.test(o) ? "Allow" + (/recommended/i.test(o) ? " (recommended)" : "") : o.replace(PATHISH, "a file")));
   }
-  return { q: ask.replace(PATHISH, "a file"), ...(labels.some((l, i) => l !== opts[i]) ? { labels } : {}) };
+  return { q: ask.replace(PATHISH, "a file"), asked: text, ...(labels.some((l, i) => l !== opts[i]) ? { labels } : {}) };
 }
 // Cards the chat says your message answered: only a question that's really on Home counts (the
 // model can't close one by inventing it). Each goes in the shared record, so the card leaves and no agent asks it again.
@@ -548,8 +548,8 @@ function homeContext(h) {
   return [
     `Only the user can do (${h.you.length}):`, ...h.you.map((y) => `- ${y.title}: ${y.sub}${y.q && y.q !== y.sub ? ` (asks: ${y.q}${(y.options || []).length ? ` ${y.options.join(" / ")}` : ""})` : ""}`),
     `New on what they watch:`, ...(h.feeds.length ? h.feeds.map((f) => `- ${f.title}: ${f.sub}${f.latest ? ` (latest: ${f.latest})` : ""}`) : ["- nothing new"]),
-    `Agents working: ${h.working}.`, ...(h.runs || []).map((r) => `- ${r.name}: ${r.line}${r.eta ? ` (${r.eta})` : ""}${r.quiet ? ` (no progress in ${r.quiet} min)` : ""}${r.looping ? " (repeating the same step)" : ""}`),
-    "Recent handovers:", ...(h.lanes.length ? h.lanes.map((l) => `- ${l.from} → ${l.to}: ${l.text} (${l.status}${l.times ? `, handed over ${l.times} times` : ""})`) : ["- none"]),
+    `Agents working: ${h.working}.`, ...(h.runs || []).map((r) => `- ${dayMark(r.started, h.at)}${r.name}: ${r.line}${r.eta ? ` (${r.eta})` : ""}${r.quiet ? ` (no progress in ${r.quiet} min)` : ""}${r.looping ? " (repeating the same step)" : ""}`),
+    "Recent handovers:", ...(h.lanes.length ? h.lanes.map((l) => `- ${dayMark(l.at, h.at)}${l.from} → ${l.to}: ${l.text} (${l.status}${l.times ? `, handed over ${l.times} times` : ""})`) : ["- none"]),
     ...(h.marketing ? [`Marketing (a lane of its own, for marketing across all their products; "repo": "${MARKETING}"): ${h.marketing.needs ? `${h.marketing.needs} thing${h.marketing.needs > 1 ? "s" : ""} there need${h.marketing.needs > 1 ? "" : "s"} them` : "nothing needs them"}${h.marketing.working ? ", its agent is at work" : ""}.`] : []),
     ...((h.next || []).length ? ["Could be done next (Home suggests these, one tap each):", ...h.next.map((s) => `- ${s.title}: ${s.gain} (${s.time})`)] : []),
     ...(h.computer ? [`On their computer (${h.computer.name}, this phone keeps a copy${h.computer.away ? `; out of reach, last heard ${new Date(h.computer.heard).toLocaleString()}` : ""}): ${h.computer.asks} agent question${h.computer.asks === 1 ? "" : "s"}, ${h.computer.approves} waiting for Approve, ${h.computer.tasks} open task${h.computer.tasks === 1 ? "" : "s"}${h.computer.queued ? `, ${h.computer.queued} change${h.computer.queued > 1 ? "s" : ""} waiting to send` : ""}. They act on it in its droplet ("On ${h.computer.name}").`] : []),
@@ -592,7 +592,16 @@ function reportIdeasAdd(id, ideas, deps = {}) {
   const lane = r.lane || RUNS_LANE, add = deps.add || addTask;
   const added = list.map((t) => add(t, lane, { after: `(from the report "${r.title}", ${r.file})` })).filter((t) => t && !t.error);
   cached = null;
+  if (added.length) (deps.mark || markIdeas)(r, list, "handed");
   return added.length ? { ok: true, added: added.length, lane, said: `${added.length === 1 ? "It's" : `${added.length} are`} on the Workdesk, in ${lane === RUNS_LANE ? "ops" : lane}.` } : { error: "Couldn't add them." };
+}
+// Not worth acting on: the idea leaves the report's open list without going to the Workdesk.
+function reportIdeasDismiss(id, ideas, deps = {}) {
+  const r = reportById(id, deps); if (!r) return { error: "That report isn't there any more." };
+  const list = (Array.isArray(ideas) ? ideas : []).map((x) => String(x || "").trim()).filter(Boolean).slice(0, 8);
+  if (!list.length) return { error: "Pick an idea first." };
+  (deps.mark || markIdeas)(r, list, "dismissed");
+  return { ok: true, said: list.length === 1 ? "Dismissed." : `${list.length} dismissed.` };
 }
 // Ask about the report in place: the same mind as Home's chat, the report in front of it.
 async function reportAsk(id, question, { ask, deps = {} } = {}) {
@@ -882,4 +891,4 @@ function setOnboarding({ step, skip, unskip, skipRest, done, restart } = {}) {
   return onboarding();
 }
 
-export { isPeak, reportIdeasAdd, reportAsk, reportDraftAnswer, workTick, waitWhy, AUTO_GRACE, STUCK_AFTER, marketingState, marketingGo, marketingDraftAnswer, marketingTask, moveToMarketing, goLane, homeState, homeContext, homeAsk, homeAnswer, homeNext, nextUp, laneNamed, NEXT_FILE, workScene, workGo, displayName, firstSteps, onboarding, setOnboarding, startOnboarding, ONB_STEPS, ONB_STEPS_PHONE, onbSteps, phoneBits , phoneSetupFirst, settleAsks, plainAsk, settleFromChat };
+export { isPeak, reportIdeasAdd, reportIdeasDismiss, reportAsk, reportDraftAnswer, workTick, waitWhy, AUTO_GRACE, STUCK_AFTER, marketingState, marketingGo, marketingDraftAnswer, marketingTask, moveToMarketing, goLane, homeState, homeContext, homeAsk, homeAnswer, homeNext, nextUp, laneNamed, NEXT_FILE, workScene, workGo, displayName, firstSteps, onboarding, setOnboarding, startOnboarding, ONB_STEPS, ONB_STEPS_PHONE, onbSteps, phoneBits , phoneSetupFirst, settleAsks, plainAsk, settleFromChat };

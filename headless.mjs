@@ -237,7 +237,7 @@ async function launch() {
   // over to it and pop an empty window into it, so wait for Done instead
   for (const end = Date.now() + HELD; ;) {
     const h = profileHolder(); if (!h) break;
-    if (h.visible) throw new Error("The Symbiot Browser is open: Symbiot reads your sites once you click Done in it.");
+    if (h.visible) throw new Error("The Symbiot Browser is open: Symbiot reads your sites once you click Done in it. Your sign-ins are saved and still count, so this is not a missing sign-in: retry later, and don't ask anyone to sign in again or close the window.");
     if (Date.now() > end) throw new Error("Symbiot's browser is busy: an agent's hidden browser has been using it for over a minute. Your sign-ins are fine: try again in a minute (no need to ask anyone to sign in or click Done).");
     await sleep(1000);
   }

@@ -179,6 +179,25 @@ console.log("REPORTS — the list says which ones need the user");
   ok("a decided draft stops needing the user", l2.find((r) => r.name === "POST-DRAFT.md").needs === "");
 }
 
+console.log("REPORTS — a handed-off or dismissed next step leaves 'Read, to action'");
+{
+  const { reportIdeasAdd, reportIdeasDismiss } = await import("../home.mjs");
+  const d = join(CFG, "drafts", "act-handed001"), sf = join(CFG, "seen-handed.json");
+  put(d, "MOVE-PLAN.md", "# Move plan\n\n## Next steps\n\n- move the repo\n- update the links\n");
+  const l = R.listReports({ map: { symbiot: repo }, folders: [d], running: () => false }), id = l[0].id;
+  const needs = () => R.withNeeds(R.listReports({ map: { symbiot: repo }, folders: [d], running: () => false }), { seenFile: sf })[0];
+  ok("a report with two open next steps needs action", needs().needs === "ideas" && needs().ideas === 2);
+  reportIdeasAdd(id, ["move the repo"], { list: () => l, add: () => ({ id: "t" }), mark: (r, i, st) => R.markIdeas(r, i, st, sf) });
+  ok("handing one over leaves one open, still to action", needs().needs === "ideas" && needs().ideas === 1);
+  const rd = R.readReport(id, { list: l, mark: false, seenFile: sf });
+  ok("…and reading it lists only the open one, with the handed one recorded", rd.ideas.join() === "update the links" && rd.handled["move the repo"] === "handed", rd);
+  reportIdeasDismiss(id, ["update the links"], { list: () => l, mark: (r, i, st) => R.markIdeas(r, i, st, sf) });
+  ok("dismissing the last one drops it to Read", needs().needs === "" && needs().ideas === 0);
+  ok("nothing was handed over when the Workdesk add failed", (reportIdeasAdd(id, ["x"], { list: () => l, add: () => ({ error: "no" }), mark: () => { throw new Error("marked"); } })).error === "Couldn't add them.");
+  put(d, "MOVE-PLAN.md", "# Move plan\n\n## Next steps\n\n- move the repo\n- update the links\n- a new one\n");
+  ok("a rewritten report offers its steps again", needs().needs === "ideas" && needs().ideas === 3);
+}
+
 {
   const ask = (path, q) => ({ kind: "ask", id: "ask:" + path, q, options: [] });
   const left = settleAsks([ask("a", "Close the Symbiot Browser so I can carry on?"), ask("b", "Click Done in the browser window"), ask("c", "Which plan are you on?"), ask("d", "Which plan are you on?!"), { kind: "setup", id: "s" }]);
@@ -211,6 +230,7 @@ console.log("REPORTS — the list says which ones need the user");
 {
   const ui = readFileSync(join(ROOT, "ui.mjs"), "utf8");
   ok("Reports is split into Unread / Read, to action / Read tabs with counts, Unread first", /REPTAB='unread'/.test(ui) && /Read, to action/.test(ui) && /id='reptabs'/.test(ui), "");
+  ok("Approve's overlap question is an in-app note, never window.confirm", !/if\(confirm\(r\.error\)\)/.test(ui) && /askyes/.test(ui), "");
   ok("an open report's back row sticks to the top while the report scrolls", /#reportslist:has\(#reportback\)\{[^}]*position:sticky;top:0/.test(ui), "");
 }
 console.log(`\n${fail ? "✗" : "✓"} reports: ${pass} passed, ${fail} failed`);

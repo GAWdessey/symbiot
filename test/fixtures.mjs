@@ -554,6 +554,7 @@ try {
   runs([{ id: "A", ticked: 1, files: ["route.txt"] }, { id: "B", ticked: 0, files: ["route.txt"] }]);
   const rS = await shipChanges(rfRepo, ["Run A's task"], { push: false });
   ok("a file both a finished and an unfinished run touched stops and asks, with nothing committed", rS.ask && rS.shared.join() === "route.txt" && !rS.ok && gr("log --oneline").split("\n").length === 2, rS);
+  ok("...in plain words, no file names in the question, flagged as waiting", rS.waiting && !/route\.txt/.test(rS.error) && /still working/.test(rS.error), rS.error);
   const rS2 = await shipChanges(rfRepo, ["Run A's task"], { push: false, allowShared: true });
   ok("...and ships it once the user says yes", rS2.ok && gr("show --name-only --format= HEAD") === "route.txt", rS2);
   writeFileSync(join(rfRepo, "a.txt"), "again\n"); runs([{ id: "C", ticked: 1, files: ["a.txt"] }]);

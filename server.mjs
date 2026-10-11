@@ -35,11 +35,11 @@ import { mindState, forget } from "./mind.mjs";
 import { lanesTick, lanesState, partlyDone, orcaRelink } from "./lanes.mjs";
 import { keepFacts, skipFacts, awaitTick, awaitingState, stopWaiting } from "./handback.mjs";
 import { adaptState, noteUse } from "./adapt.mjs";
-import { reportIdeasAdd, reportAsk, reportDraftAnswer, homeState, homeAsk, homeAnswer, homeNext, workScene, workGo, workTick, firstSteps, marketingState, marketingGo, marketingDraftAnswer, marketingTask, moveToMarketing, onboarding, setOnboarding, startOnboarding, phoneSetupFirst } from "./home.mjs";
+import { reportIdeasAdd, reportIdeasDismiss, reportAsk, reportDraftAnswer, homeState, homeAsk, homeAnswer, homeNext, workScene, workGo, workTick, firstSteps, marketingState, marketingGo, marketingDraftAnswer, marketingTask, moveToMarketing, onboarding, setOnboarding, startOnboarding, phoneSetupFirst } from "./home.mjs";
 import { MARKETING_DIR, MARKETING, draftPreview, laneMedia, displayName, setDraftMedia } from "./marketing.mjs";
 import { trays, trayMedia, setBlur, renderCapture } from "./tray.mjs";
 import { listReports, readReport, reportImage, markAllRead, withNeeds } from "./reports.mjs";
-import { phoneState, setPhoneLink, newCode, unpairPhone, setRelay, findComputers, pairComputer, forgetComputer, pollComputer, queueChange, dismissNote, setPhoneApprove, startPhone } from "./phone.mjs";
+import { phoneState, setPhoneLink, freePhonePort, usePhonePort, newCode, unpairPhone, setRelay, findComputers, pairComputer, forgetComputer, pollComputer, queueChange, dismissNote, setPhoneApprove, startPhone } from "./phone.mjs";
 import { knowledgeState, addKnowledgeFolder, removeKnowledgeFolder, indexKnowledge, knowledgeTick, searchKnowledge } from "./knowledge.mjs";
 import { runChecks, checksState, markClashesSeen } from "./checks.mjs";
 
@@ -446,6 +446,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       if (u.pathname === "/api/reports/image") { const f = reportImage(u.searchParams.get("id") || "", u.searchParams.get("src") || ""); if (f.error) { res.writeHead(404, { "content-type": "text/plain" }); res.end(f.error); return; } res.writeHead(200, { "content-type": f.type, "cache-control": "private, no-cache", "x-content-type-options": "nosniff" }); res.end(readFileSync(f.file)); return; }
       if (u.pathname === "/api/reports/seen" && req.method === "POST") return json(res, markAllRead());
       if (u.pathname === "/api/reports/ideas" && req.method === "POST") { const b = await readBody(req); return json(res, reportIdeasAdd(String(b.id || ""), b.ideas)); }
+      if (u.pathname === "/api/reports/dismiss" && req.method === "POST") { const b = await readBody(req); return json(res, reportIdeasDismiss(String(b.id || ""), b.ideas)); }
       if (u.pathname === "/api/reports/ask" && req.method === "POST") { const b = await readBody(req); return json(res, await reportAsk(String(b.id || ""), b.question)); }
       if (u.pathname === "/api/reports/draft" && req.method === "POST") { const b = await readBody(req); return json(res, reportDraftAnswer(String(b.id || ""), !!b.approve)); }
       // Home (home.mjs): the liquid's live data, and its talk; Adapt (adapt.mjs): its
@@ -503,6 +504,8 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       // made on the phone (queued until the computer answers), forget it.
       if (u.pathname === "/api/phone") return json(res, phoneState());
       if (u.pathname === "/api/phone/link" && req.method === "POST") { const b = await readBody(req); return json(res, await setPhoneLink(b.on === true)); }
+      if (u.pathname === "/api/phone/free" && req.method === "POST") return json(res, await freePhonePort());
+      if (u.pathname === "/api/phone/port" && req.method === "POST") { const b = await readBody(req); return json(res, await usePhonePort(b.port)); }
       if (u.pathname === "/api/phone/code" && req.method === "POST") return json(res, newCode());
       if (u.pathname === "/api/phone/unpair" && req.method === "POST") { const b = await readBody(req); return json(res, unpairPhone(String(b.id || ""))); }
       if (u.pathname === "/api/phone/relay" && req.method === "POST") { const b = await readBody(req); return json(res, setRelay(b.on === true)); }

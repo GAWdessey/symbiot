@@ -331,6 +331,19 @@ try {
   ok("adbLink: adb reverse, then one am start with the pair link, for each authorised device once (not the unauthorised, not again)",
     ab.first.join() === "ABC123" && ab.again.length === 0 && ab.calls.filter((c) => /^-s ABC123 reverse tcp:\d+ tcp:\d+$/.test(c)).length === 1 &&
     ab.calls.filter((c) => /^-s ABC123 shell am start -a android.intent.action.VIEW -d 'symbiot:\/\/pair\?a=127\.0\.0\.1&p=\d+&c=\d{6}&k=[\w-]+&n=[^']+' co.symbiot.app$/.test(c)).length === 1 && !ab.calls.some((c) => /XYZ/.test(c)), ab);
+  // a taken port: who holds it, and the way out
+  const fakeRun = (out) => (cmd, args) => { if (!(cmd in out)) throw new Error("no " + cmd); return out[cmd]; };
+  const h1 = P.portHolder(7392, fakeRun({ ss: 'LISTEN 0 511 0.0.0.0:7392 0.0.0.0:* users:(("node",pid=4242,fd=19))\n', ps: "Sun Oct 11 07:00:01 2026 node /home/x/symbiot/index.mjs app\n" }));
+  ok("portHolder: pid, start time and command from ss + ps; another Symbiot is marked so", h1 && h1.pid === 4242 && h1.started === "Sun Oct 11 07:00:01 2026" && /index\.mjs app/.test(h1.cmd) && h1.symbiot === true, h1);
+  const h2 = P.portHolder(7392, fakeRun({ lsof: "5151\n", ps: "Sun Oct 11 07:00:01 2026 python3 -m http.server 7392\n" }));
+  ok("portHolder: lsof when ss isn't there; an unrelated program isn't marked Symbiot", h2 && h2.pid === 5151 && h2.symbiot === false, h2);
+  ok("portHolder: nobody holds it -> null", P.portHolder(7392, fakeRun({ ss: "\n", lsof: "" })) === null);
+  const busy = await new Promise((r) => { const s = createServer().listen(0, "0.0.0.0", () => r(s)); });
+  const bp = busy.address().port, mine = P.portHolder(bp);
+  ok("portHolder on a real listener: this process, never offered to be stopped", mine && mine.pid === process.pid && mine.symbiot === false, mine);
+  busy.close();
+  const bad = await P.usePhonePort(80);
+  ok("a different port: below 1024 is refused", /between 1024 and 65535/.test(bad.error || ""), bad);
 } finally {
   try { await pc.stop(); } catch {}
   rmSync(ROOT, { recursive: true, force: true });
