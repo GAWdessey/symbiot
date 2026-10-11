@@ -185,9 +185,26 @@ function runLine({ plan = [], step = 0, work = {}, now = Date.now() } = {}) {
 // reads the rest; and it's kept until the file changes, so a view that asks again
 // costs nothing. Past RUN_CAP of one run, it's that run's last RUN_CAP.
 const RUN_CAP = 16 * 1024 * 1024, RUN_CACHE = new Map();
+// A running agent's log grows all the time, so a view that asked a moment ago would miss the
+// cache on size and read the whole run again (megabytes, every few seconds, from every tick:
+// ~15% of a core while idle, 2026-10-10). A log that only grew by appending to the same run
+// (no new "=== " header in what was added) costs just the added bytes.
+function appended(file, hit, st) {
+  if (!hit || hit.at < 0 || st.size <= hit.size || hit.text.length + (st.size - hit.size) > RUN_CAP) return null;
+  const back = Math.min(64, hit.size), b = Buffer.alloc(st.size - hit.size + back);
+  let fd; try { fd = openSync(file, "r"); } catch { return null; }
+  try { if (readSync(fd, b, 0, b.length, hit.size - back) !== b.length) return null; } catch { return null; } finally { try { closeSync(fd); } catch {} }
+  if (!b.subarray(0, back).equals(hit.last)) return null; // not the file we read: rewritten, not appended to
+  if (b.indexOf("\n=== ") >= 0) return null; // a new run began: read from its header
+  const add = Buffer.concat([hit.rest, b.subarray(back)]);
+  let keep = 0; for (let i = add.length - 1; i >= Math.max(0, add.length - 3); i--) { const c = add[i]; if ((c & 0xC0) === 0x80) continue; keep = c >= 0xC0 && add.length - i < (c >= 0xF0 ? 4 : c >= 0xE0 ? 3 : 2) ? add.length - i : 0; break; } // a character cut by the end of the read waits for the rest
+  return { text: hit.text + add.subarray(0, add.length - keep).toString("utf8"), rest: add.subarray(add.length - keep), last: b.subarray(-64) };
+}
 function readRunLog(file) {
   let st; try { st = statSync(file); } catch { return ""; }
   const hit = RUN_CACHE.get(file); if (hit && hit.size === st.size && hit.mtime === st.mtimeMs) return hit.text;
+  const more = appended(file, hit, st);
+  if (more) { RUN_CACHE.delete(file); RUN_CACHE.set(file, { size: st.size, mtime: st.mtimeMs, text: more.text, rest: more.rest, last: more.last, at: hit.at }); return more.text; }
   let fd; try { fd = openSync(file, "r"); } catch { return ""; }
   let buf = Buffer.alloc(0), at = -1;
   try {
@@ -198,10 +215,13 @@ function readRunLog(file) {
     }
   } catch { buf = Buffer.alloc(0); } finally { try { closeSync(fd); } catch {} }
   const text = (at >= 0 ? buf.subarray(at) : buf).toString("utf8");
-  RUN_CACHE.delete(file); RUN_CACHE.set(file, { size: st.size, mtime: st.mtimeMs, text });
+  RUN_CACHE.delete(file); RUN_CACHE.set(file, { size: st.size, mtime: st.mtimeMs, text, rest: Buffer.alloc(0), last: buf.subarray(-64), at });
   if (RUN_CACHE.size > 40) RUN_CACHE.delete(RUN_CACHE.keys().next().value);
   return text;
 }
+// When the newest run in a log began (its header's time), or 0: only the header line is looked at,
+// not the megabytes after it.
+function runStarted(log) { const m = /^=== .* (\d{4}-\d\d-\d\dT[\d:.]+Z) ===$/m.exec(String(log || "").slice(0, 2000).replace(/^\n/, "")); return m ? Date.parse(m[1]) || 0 : 0; }
 // The newest run's part of an agent.log (after its header and command line).
 function lastRunText(log) {
   const s = String(log || ""), at = s.lastIndexOf("\n=== ");
@@ -210,4 +230,4 @@ function lastRunText(log) {
 // What the agent said last: its final answer, from either kind of log.
 function finalOf(log) { return parseRun(lastRunText(log)).final; }
 
-export { parseRun, lastRunText, finalOf, describe, testsIn, readRunLog, briefPlan, stepOf, nowLine, runLine, STALL_MS };
+export { parseRun, lastRunText, finalOf, describe, testsIn, readRunLog, runStarted, briefPlan, stepOf, nowLine, runLine, STALL_MS };

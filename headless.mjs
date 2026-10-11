@@ -912,10 +912,19 @@ const FILE_BOX = (sel, at) => `(() => {
   if (!box) return null;
   window.__symbiotFileBox = box;
   const name = box.getAttribute('aria-label') || box.name || box.id || '';
-  return { how, box: 'input[type=file]' + (name ? ' "' + name + '"' : '') + (box.accept ? ' (takes ' + box.accept + ')' : ''), multiple: !!box.multiple };
+  return { how, guess: !(isBox(e) || how === 'the file box inside it' || how === "its label's file box"), box: 'input[type=file]' + (name ? ' "' + name + '"' : '') + (box.accept ? ' (takes ' + box.accept + ')' : ''), multiple: !!box.multiple };
 })()`;
+// The box found is the target's own only when `how` says so. A page-wide guess ("the only /
+// nearest file box") can belong to something else (WhatsApp's sticker input beside "Photos &
+// videos"), so a pressable target is pressed and its own file dialog caught first; the guess
+// is the fallback when pressing opens no dialog.
 async function attachFiles(page, at, r, files) {
   const box = await evaluate(page, FILE_BOX(r.selector, at));
+  const pressable = Number.isFinite(Number(at && at.x)) && Number.isFinite(Number(at && at.y)) && !!at;
+  if (box && box.guess && pressable) {
+    const got = await viaDialog(page, at, r, files, false);
+    if (got) { await page.send("Runtime.evaluate", { expression: "delete window.__symbiotFileBox" }).catch(() => {}); return got; }
+  }
   if (box) {
     if (files.length > 1 && !box.multiple) throw new Error(`${box.box} takes one file at a time.`);
     const { result } = await page.send("Runtime.evaluate", { expression: "window.__symbiotFileBox" });
@@ -924,13 +933,17 @@ async function attachFiles(page, at, r, files) {
     await page.send("Runtime.evaluate", { expression: "delete window.__symbiotFileBox" }).catch(() => {});
     return { used: `${box.box}, ${box.how}` };
   }
-  // no box on the page yet: press it, and catch the file dialog that opens
+  return viaDialog(page, at, r, files, true);
+}
+// press the target and put the files in the box its file dialog was for; null when it opens
+// none and `strict` is off
+async function viaDialog(page, at, r, files, strict) {
   await page.send("Page.setInterceptFileChooserDialog", { enabled: true });
   try {
     const opened = page.until("Page.fileChooserOpened", 5000);
     await clickAt(page, at);
-    const m = await opened, p = (m && m.params) || {};
-    if (!p.backendNodeId) throw new Error(`No file box on the page, and pressing "${r.label}" didn't open a file dialog. Press it, then upload with what the new map shows.`);
+    const m = await opened.catch((e) => { if (strict) throw e; return null; }), p = (m && m.params) || {};
+    if (!p.backendNodeId) { if (!strict) return null; throw new Error(`No file box on the page, and pressing "${r.label}" didn't open a file dialog. Press it, then upload with what the new map shows.`); }
     if (files.length > 1 && p.mode !== "selectMultiple") throw new Error("That file box takes one file at a time.");
     await page.send("DOM.setFileInputFiles", { files, backendNodeId: p.backendNodeId });
     return { used: "the file box the file dialog it opened was for" };

@@ -6,8 +6,8 @@
 // `symbiot app` then finds that running copy and opens its window.
 import { fileURLToPath } from "node:url";
 import { spawn, spawnSync } from "node:child_process";
-import { homedir } from "node:os";
-import { join, dirname } from "node:path";
+import { homedir, tmpdir } from "node:os";
+import { join, dirname, resolve, sep } from "node:path";
 import { readFileSync, writeFileSync, appendFileSync, mkdirSync, existsSync, unlinkSync, readdirSync, statSync, chmodSync, rmdirSync } from "node:fs";
 import { CONFIG_DIR, loadConfig, saveConfig, hasCmd } from "./core.mjs";
 
@@ -243,6 +243,8 @@ function installWindows({ node, script, home, run }) {
 // Writes the entry and icon when they're missing or differ. { written, file } or { skipped }.
 function installLauncher({ node = process.execPath, script, home = homedir(), platform = OS, path = process.env.PATH || "", run = (c, a) => spawnSync(c, a, { encoding: "utf8", windowsHide: true, timeout: 30000 }) } = {}) {
   if (!script) return { skipped: true };
+  // never point the menu at a throwaway copy (an install test's temp prefix, a build folder)
+  if (home === homedir() && resolve(script).startsWith(resolve(tmpdir()) + sep)) return { skipped: true };
   if (platform === "win32") return installWindows({ node, script, home, run });
   if (platform !== "linux") return { skipped: true };
   const file = launcherFile(home), icon = launcherIcon(home), want = launcherContent(node, script, launcherPath(path, node));

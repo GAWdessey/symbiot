@@ -151,6 +151,23 @@ try {
   t0 = Date.now(); readRunLog(join(big, "agent.log")); ok("…asked again, it's kept: no read", Date.now() - t0 < 5, [took, Date.now() - t0]);
   writeFileSync(join(big, "agent.log"), txt + "\n=== r 2026-10-09T09:00:00.000Z ===\n$ claude -p x\n" + JSON.stringify({ type: "result", result: "run 40" }) + "\n");
   ok("…a new run in the file is read fresh", /"run 40"/.test(readRunLog(join(big, "agent.log"))), "");
+  {
+    const { appendFileSync } = await import("node:fs"), { runStarted } = await import("../work.mjs"), lg = join(big, "agent.log");
+    writeFileSync(lg, txt); readRunLog(lg);
+    const base = readRunLog(lg);
+    appendFileSync(lg, "more é"); const snow = "☃".repeat(1000), bytes = Buffer.from(snow);
+    appendFileSync(lg, bytes.subarray(0, 1000)); const cut = readRunLog(lg);
+    appendFileSync(lg, bytes.subarray(1000));
+    const whole = readRunLog(lg);
+    ok("a log that grew by appending: the added text joins the cached run (a character cut by the read waits for its rest)", cut.startsWith(base) && whole === base + "more é" + snow && !/\uFFFD/.test(whole) && whole.length === base.length + 6 + 1000, [whole.length, base.length]);
+    appendFileSync(lg, "\n=== r 2026-10-09T09:30:00.000Z ===\n$ claude -p y\n");
+    const fresh = readRunLog(lg);
+    ok("…and one that began a new run is the new run alone", fresh.startsWith("\n=== r 2026-10-09T09:30") && !/run 39/.test(fresh) && runStarted(fresh) === Date.parse("2026-10-09T09:30:00.000Z"), fresh.slice(0, 50));
+    writeFileSync(lg, "\n=== r 2026-10-09T10:00:00.000Z ===\nfirst\n"); readRunLog(lg);
+    writeFileSync(lg, "\n=== r 2026-10-09T11:00:00.000Z ===\nsecond, and a good deal longer than the one before\n");
+    ok("…a file rewritten longer (not appended to) is read again, not stitched on", /second, and a good deal longer/.test(readRunLog(lg)) && !/\nfirst\n/.test(readRunLog(lg)), readRunLog(lg));
+    ok("…a run's start is read from its header line alone", runStarted("\n=== r 2026-10-09T09:30:00.000Z ===\n$ x\n=== not a header ===") === Date.parse("2026-10-09T09:30:00.000Z") && runStarted("no header") === 0 && runStarted("") === 0, "");
+  }
   writeFileSync(join(big, "agent.log"), "no header at all\n");
   ok("…a log with no header is all of it; no log is empty", readRunLog(join(big, "agent.log")) === "no header at all\n" && readRunLog(join(big, "none.log")) === "", "");
   const { track } = await import("../agents.mjs");
@@ -159,6 +176,14 @@ try {
   track("rot", "echo fresh", rot);
   for (let i = 0; i < 50 && !/fresh\n/.test(rf(join(rot, ".symbiot", "agent.log"), "utf8")); i++) await new Promise((r) => setTimeout(r, 100));
   ok("a log past 8 MB starts afresh at the next run; the old one is kept as agent.log.old", /fresh/.test(rf(join(rot, ".symbiot", "agent.log"), "utf8")) && sf(join(rot, ".symbiot", "agent.log")).size < 4096 && sf(join(rot, ".symbiot", "agent.log.old")).size > 9 * 1024 * 1024, "");
+  {
+    const { readdirSync, readlinkSync } = await import("node:fs"), logFds = () => { try { return readdirSync("/proc/self/fd").filter((f) => { try { return /agent\.log$/.test(readlinkSync("/proc/self/fd/" + f)); } catch { return false; } }).length; } catch { return null; } };
+    const before = logFds();
+    if (before !== null) {
+      for (let i = 0; i < 5; i++) { const d = join(HOME, "fd" + i); mkdirSync(join(d, ".symbiot"), { recursive: true }); track("fd" + i, "echo hi", d); }
+      ok("starting runs doesn't keep their log files open in the app (it leaked one each)", logFds() === before, [before, logFds()]);
+    }
+  }
 } finally {
   rmSync(HOME, { recursive: true, force: true });
 }

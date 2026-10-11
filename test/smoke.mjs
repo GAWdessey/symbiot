@@ -301,6 +301,8 @@ const calls = [
   ["/api/phone/do", "POST"],        // not paired -> refused, nothing queued
   ["/api/phone/note", "POST"],      // no copy -> nothing changes
   ["/api/phone/forget", "POST"],
+  ["/api/secrets", "GET"],          // saved secret names for Settings (isolated HOME -> none; never values)
+  ["/api/secrets/delete", "POST"],  // no name -> "No secret called", nothing removed
   ["/api/desktop", "GET"],         // weekly write-up + start-at-login state
   ["/api/desktop/weekly", "POST"],  // empty body -> schedule unchanged (stays off)
   ["/api/desktop/autostart", "POST"], // empty body -> off: removes nothing outside the isolated HOME
@@ -394,7 +396,8 @@ try {
     ok(`${method} ${path} -> ${status}`, status !== 404 && status !== -1, status);
   }
   const wk = await fetch(base + "/api/desktop/weekly/run", { method: "POST", headers: H, body: JSON.stringify({ notify: false }) }).then((r) => r.json(), () => ({}));
-  ok("POST /api/desktop/weekly/run with notify: false -> runs, no AI connected", wk.error === "not-connected", wk);
+  // with no AI on the machine it says so; with one (this PC has Claude Code) it still runs, and with no repos it needs no AI call
+  ok("POST /api/desktop/weekly/run with notify: false -> runs (or says no AI is connected), no notification", wk.error === "not-connected" || (wk.ok === true && /0 repos/.test(wk.text || "")), wk);
 
   console.log("WEEKLY — isAppRunningWeekly() finds this app and its schedule, with no port or token passed");
   const runningWeekly = (extra = {}) => new Promise((resolve) => {

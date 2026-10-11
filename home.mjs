@@ -43,6 +43,9 @@ const laneOfPath = (path, map) => Object.keys(map || {}).find((n) => map[n] === 
 // A run that failed shows for a day, until you run it again or skip it; one
 // that's been followed by another run in its folder is past.
 const FAILED_FOR = 86400000, dropped = new Set();
+// The button on a card that waits for a step only the user can take. "Done it (recommended)" read as a
+// status (Symbiot already did it); it means "press this once you have", so it says that and isn't recommended.
+const I_DID_IT = "I've done this";
 const firstLine = (t) => String(t || "").split("\n").find((l) => l.trim()) || "";
 // What stopped and can't go on without you, as questions: a handover that couldn't
 // start (lanes.mjs stuckHandovers: "Allow this run access to ~/Company?"), a run
@@ -73,7 +76,7 @@ function troubles({ stuck = [], list = [], map = {}, named = displayName, now = 
     if (n && !dropped.has("needs:" + a.id)) {
       const ok = n.kind === "approve";
       out.push({ kind: "ask", fix: "needs", id: "needs:" + a.id, path: a.path, repo, name: nm, title: ok ? `${nm} waits for your OK` : `${nm} needs you`, sub: plain(n.label || n.what, 90),
-        q: n.what + (n.check ? ` Check first: ${n.check}` : ""), options: ok ? ["Go ahead (recommended)", "Skip"] : ["Done it (recommended)", "Skip"], ...signInCard([n.label, n.what, n.check]), shape: "agents" });
+        q: n.what + (n.check ? ` Check first: ${n.check}` : ""), options: ok ? ["Go ahead (recommended)", "Skip"] : [I_DID_IT, "Skip"], status: "Waiting on you", ...signInCard([n.label, n.what, n.check]), shape: "agents" });
       continue;
     }
     if (a.status !== "failed" || dropped.has(a.id) || (a.endedAt && now - a.endedAt > FAILED_FOR)) continue;

@@ -7,11 +7,11 @@ import { spawn, spawnSync } from "node:child_process";
 import { homedir } from "node:os";
 import { join, dirname, resolve, relative } from "node:path";
 import { fileURLToPath } from "node:url";
-import { readFileSync, writeFileSync, mkdirSync, existsSync, openSync, writeSync, unlinkSync, readdirSync, statSync, renameSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, existsSync, openSync, closeSync, writeSync, unlinkSync, readdirSync, statSync, renameSync } from "node:fs";
 import { randomBytes, createHash } from "node:crypto";
 import { CONFIG_DIR, loadConfig, saveConfig, loadTasks, TASK_MAX, clipWords, sameTask, taskWords, sh, hasCmd } from "./core.mjs";
 import { recordDone } from "./asksdone.mjs";
-import { parseRun, lastRunText, readRunLog, briefPlan, stepOf, runLine } from "./work.mjs";
+import { parseRun, lastRunText, readRunLog, runStarted, briefPlan, stepOf, runLine } from "./work.mjs";
 import { noteDuration, noteCost, kindOf } from "./estimate.mjs";
 import { parseFacts, leftToYou, gitWork, agentsGitWork, agentsPosting, linkedAsks, linkedChore, PUSH_OK } from "./handover.mjs";
 import { scanRoots, repoPathMap } from "./scan.mjs";
@@ -326,8 +326,7 @@ const OPEN_TASK = /^\s*(?:[-*+]|\d+[.)])\s*\[ \]/m;
 function nothingToDo(path) {
   const md = readSymbiot(path, "TASKS.md"); if (OPEN_TASK.test(md)) return "";
   let answered = 0; try { answered = statSync(join(path, ".symbiot", "ANSWERS.md")).mtimeMs; } catch {}
-  const last = [...readSymbiot(path, "agent.log").matchAll(/^=== .* (\d{4}-\d\d-\d\dT[\d:.]+Z) ===$/gm)].pop();
-  if (answered && answered > (last ? Date.parse(last[1]) || 0 : 0)) return "";
+  if (answered && answered > runStarted(readSymbiot(path, "agent.log"))) return "";
   const name = path === homedir() ? "~" : path.split(/[\\/]/).filter(Boolean).pop() || path;
   return md.trim() ? `Not started: every task in ${name}'s .symbiot/TASKS.md is ticked and no answer has come in since its last run, so an agent there would have nothing to do. Send it a task first.`
     : `Not started: ${name} has no .symbiot/TASKS.md, so an agent there would have nothing to do. Send it a task first.`;
@@ -991,6 +990,7 @@ function track(name, cmd, cwd, onExit, env) {
     const task = firstOpen(readSymbiot(cwd, "TASKS.md")); // what it's on, for how long runs like it take (estimate.mjs)
     const child = spawn(cmd, { shell: true, cwd, detached: true, stdio: ["ignore", fd === "ignore" ? "ignore" : fd, fd === "ignore" ? "ignore" : fd], ...(env ? { env: { ...process.env, ...env } } : {}) });
     entry.pid = child.pid;
+    if (fd !== "ignore") try { closeSync(fd); } catch {} // the child has its own copy; ours stayed open for the life of the app (101 of them by 2026-10-10)
     child.on("exit", (code) => { entry.status = code === 0 ? "done" : "failed"; entry.exitCode = code; entry.endedAt = Date.now(); if (code === 0) try { noteDuration({ path: cwd, cmd, task, ms: entry.endedAt - entry.startedAt }); } catch {} try { const r = parseRun(lastRunText(readRunLog(logp))); noteCost({ path: cwd, cmd, task, model: r.model, cost: r.cost, turns: r.turns, ms: entry.endedAt - entry.startedAt, ok: code === 0, modelUsage: r.modelUsage }); } catch {} if (onExit) try { onExit(code); } catch {} });
     child.on("error", () => { entry.status = "failed"; entry.endedAt = Date.now(); });
     child.unref();

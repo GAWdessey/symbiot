@@ -382,6 +382,18 @@ try {
     pg = fake({ chooser: null }); threw = "";
     try { await H.attachFiles(pg, { x: 5, y: 6 }, btn, [clip]); } catch (e) { threw = e.message; }
     ok("…no dialog either: says so, and stops catching dialogs", /didn't open a file dialog/.test(threw) && pg.sent.at(-1)[0] === "Page.setInterceptFileChooserDialog" && pg.sent.at(-1)[1].enabled === false && !pg.sent.some((m) => m[0] === "DOM.setFileInputFiles"), [threw, pg.sent.map((m) => m[0])]);
+    // WhatsApp: a hidden sticker input sits beside a menu item that only makes its own input when pressed
+    const menu = { label: "Photos & videos", kind: "button", selector: "#menu-photos" };
+    pg = fake({ box: { how: "the only file box on the page", guess: true, box: 'input[type=file] (takes image/*)', multiple: false }, chooser: { params: { backendNodeId: 77, mode: "selectMultiple" } } });
+    const r3 = await H.attachFiles(pg, { x: 3, y: 4 }, menu, [clip]);
+    const set3 = pg.sent.filter((m) => m[0] === "DOM.setFileInputFiles");
+    ok("a menu item whose only 'box' is a page-wide guess: its own file dialog is caught, the guessed (sticker) box is left alone", set3.length === 1 && set3[0][1].backendNodeId === 77 && !set3[0][1].objectId && /file dialog/.test(r3.used), pg.sent.map((m) => m[0]));
+    pg = fake({ box: { how: "the only file box on the page", guess: true, box: 'input[type=file]', multiple: false }, chooser: null });
+    const r4 = await H.attachFiles(pg, { x: 3, y: 4 }, menu, [clip]);
+    ok("…pressing it opens no dialog: the guess is the fallback, and dialogs are no longer caught", pg.sent.find((m) => m[0] === "DOM.setFileInputFiles")[1].objectId === "box-1" && /the only file box/.test(r4.used) && pg.sent.filter((m) => m[0] === "Page.setInterceptFileChooserDialog").at(-1)[1].enabled === false, pg.sent.map((m) => m[0]));
+    pg = fake({ box: { how: "the file box inside it", guess: false, box: 'input[type=file]', multiple: false } });
+    await H.attachFiles(pg, { x: 3, y: 4 }, menu, [clip]);
+    ok("a target's own box is used straight away, no pressing", !pg.sent.some((m) => m[0] === "Input.dispatchMouseEvent"), pg.sent.map((m) => m[0]));
     const here = process.cwd(); process.chdir(HOME);
     try {
       const u1 = H.uploadFiles("clip.mp4"), u2 = H.uploadFiles("gone.mp4"), u3 = H.uploadFiles("");

@@ -261,6 +261,8 @@ body.lq-pooled #lqneedt,body.lq-work #lqneedt{display:none}
 .dm-chat{background:#D9FDD3;color:#111B21;margin-left:16px;border-top-right-radius:4px}.dm-chat .dmto{color:#1F7A4C}
 .dm-mail{background:#FFFFFF;color:#202124;border:1px solid #DADCE0}.dm-mail .dmto{color:#5F6368}
 .lqblob .bfor{font-size:11.5px;line-height:1.3;color:#8A919B;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.lqblob .bwait{font-size:11.5px;line-height:1.3;color:#E0B25A;display:flex;align-items:center;gap:5px}
+body.lq-light .lqblob .bwait{color:#8A5A00}
 .lqblob .nopt:focus-visible,.lqblob .bfree:focus-visible,.lqblob .bfx button:focus-visible{outline:2px solid currentColor;outline-offset:2px}
 .lqblob.gone{opacity:0!important;filter:blur(8px);transition:opacity .6s ease,filter .6s ease;pointer-events:none!important}
 body.lq-light .lqd.lqblob{background:rgba(255,255,255,.94);border-color:rgba(154,82,0,.32);box-shadow:0 18px 40px -26px rgba(30,45,60,.5)}
@@ -1822,7 +1824,7 @@ return "<div class='aq'><h4><i class=ic-pause></i> Waiting on your step</h4><div
 // change, or a step only you can do, with what to check first. Answered as on Home.
 function needsHtml(a){var n=a.needs;if(!n||n.waiting)return '';var ok=n.kind==='approve';
 return "<div class='aq'><h4><i class=ic-person></i> "+(ok?"Waits for your OK":"Needs you")+"</h4><div class='qt'>"+esc(n.what)+"</div>"+(n.check?"<div class='qc'><b>Check first:</b> "+esc(n.check)+"</div>":"")
-+"<div class='row'><button class='act ngo' data-id='"+esc(a.id)+"' title='"+(ok?"its agent goes ahead with it":"its agent checks it worked and carries on")+"'>"+(ok?"Go ahead":"Done it")+"</button><button class='ghost nskip' data-id='"+esc(a.id)+"' title='it stops asking'>Skip</button></div></div>";}
++"<div class='row'><button class='act ngo' data-id='"+esc(a.id)+"' title='"+(ok?"its agent goes ahead with it":"its agent checks it worked and carries on")+"'>"+(ok?"Go ahead":"I've done this")+"</button><button class='ghost nskip' data-id='"+esc(a.id)+"' title='it stops asking'>Skip</button></div></div>";}
 function wireNeeds(el){el.querySelectorAll('.ngo,.nskip').forEach(function(btn){btn.addEventListener('click',function(){var a=agentById(btn.getAttribute('data-id'));if(!a)return;btn.disabled=true;var msg=document.getElementById('agentsmsg');
 api('/api/home/answer',{id:'needs:'+a.id,pick:btn.classList.contains('ngo')?0:1}).then(function(r){msg.innerHTML=r&&!r.error?"<div class='note ok'>"+esc(a.name)+": "+esc(r.said||'Done.')+"</div>":"<div class='note err'>"+esc((r&&r.error)||'failed')+"</div>";loadAgents();}).catch(function(e){btn.disabled=false;msg.innerHTML="<div class='note err'>"+esc(String((e&&e.message)||e))+"</div>";});});});}
 function wireWaits(el){el.querySelectorAll('.wstart').forEach(function(btn){btn.addEventListener('click',function(){var a=agentById(btn.getAttribute('data-id'));if(!a)return;btn.disabled=true;
@@ -3258,7 +3260,7 @@ if(ch)try{localStorage.setItem(BDKEY,JSON.stringify(a));}catch(e){}}
 function blobBody(y,home){var h='',nm=y.name||y.repo||(y.kind==='setup'?y.title:'')||'';
 h+=home?"<button type='button' class='lt' title='open "+escQ(nm)+", with this lit up'><span>"+esc(lqShort(nm,30))+"</span><i>open &rsaquo;</i></button>":"<div class='nhead'><b>"+esc(nm)+(y.kind==='ask'?" asks":"")+"</b>"+(y.more?"<span class='muted'>+"+y.more+" more on its block in Agents</span>":"")+"</div>";
 if(y.kind!=='ask')return h+"<div class='bq'>"+esc(y.kind==='approve'?String(y.sub||'').replace(/ · only you decide$/,''):String(y.sub||'').charAt(0).toUpperCase()+String(y.sub||'').slice(1)+'.')+"</div><div class='bo'><button type='button' class='nopt rec ngo'><span class='bt'>"+(y.kind==='approve'?'Review and approve':y.id==='setup:inbox'?(y.signin?'Sign in again':'Show me your inbox'):y.id==='setup:ai'?'Connect an AI':y.pick?'Use '+y.pick.name:y.urgent?'Reconnect':'Open Settings')+"</span></button></div>";
-var os=y.options||[];if(y.draft)h+=draftHtml(y.draft);h+="<div class='bq' title='"+escQ((y.q||'')+(y.why?' ('+y.why+')':''))+"'>"+esc(y.q||y.sub||'')+"</div>"+((y.covered&&y.covered.length)?"<div class='muted bcov'>Already covered? "+y.covered.map(esc).join(' · ')+"</div>":"");
+var os=y.options||[];if(y.draft)h+=draftHtml(y.draft);if(y.status)h+="<div class='bwait'><i class=ic-pause></i> "+esc(y.status)+"</div>";h+="<div class='bq' title='"+escQ((y.q||'')+(y.why?' ('+y.why+')':''))+"'>"+esc(y.q||y.sub||'')+"</div>"+((y.covered&&y.covered.length)?"<div class='muted bcov'>Already covered? "+y.covered.map(esc).join(' · ')+"</div>":"");
 if(y.fix==='handover'&&y.sub)h+="<div class='bfor' title='"+escQ(y.sub)+"'>for: "+esc(y.sub)+"</div>";
 if(y.signInTo)h+="<div class='bo'><button type='button' class='nopt bsign' title='opens "+escQ(y.signInTo.name)+" in the Symbiot Browser: sign in there, then click Done'><span class='bt'>Sign in to "+esc(y.signInTo.name)+" &rsaquo;</span></button></div>";
 if(os.length)h+="<div class='bo'>"+os.map(function(o,j){return "<button type='button' class='nopt"+(j===0&&/[(]recommended[)]/i.test(o)?' rec':'')+"' data-j='"+j+"' title='"+escQ(o)+"'><span class='bt'>"+whoHtml(blobOpt((y.labels&&y.labels[j])||o))+"</span></button>";}).join('')+"</div><button type='button' class='bfree' aria-expanded='false'>"+(y.draft?'Change it':'or answer in your own words')+"</button>";

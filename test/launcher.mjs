@@ -70,6 +70,9 @@ try {
   writeFileSync(f, withShortcut("", "/usr/bin/node /x/symbiot away"));
   ok("…and with only Symbiot's in it, the file goes", removeShortcut(HOME) && !existsSync(f), "");
   ok("nothing of ours there: nothing changes", removeShortcut(HOME) === false, "");
+  // an install test's throwaway prefix must never become the app-menu entry (it vanished and the menu did nothing)
+  const tmpScript = join(tmpdir(), "symbiot-install-x", "prefix", "lib", "node_modules", "symbiot", "index.mjs");
+  ok("a script inside the temp folder is never written as the launcher", installLauncher({ script: tmpScript, platform: "linux" }).skipped === true && !existsSync(launcherFile(HOME)), "");
 } finally {
   rmSync(HOME, { recursive: true, force: true });
 }

@@ -26,7 +26,7 @@ import { runHandoff, runningHandoff, waitingFor, agentQuestions, findOrcaCli, in
 import { addTask, removeTask, pushTasks } from "./tasks.mjs";
 import { actNow, actBrief } from "./mind.mjs";
 import { laneMap } from "./scan.mjs";
-import { parseRun, lastRunText, readRunLog } from "./work.mjs";
+import { parseRun, lastRunText, readRunLog, runStarted } from "./work.mjs";
 import { OPS, parseHandoffs } from "./handover.mjs";
 
 const LEDGER = join(CONFIG_DIR, "lanes.json");
@@ -138,7 +138,7 @@ function lastWords(path) {
   return run.length > TAIL ? "…" + run.slice(-TAIL).replace(/^\S*\s+/, "") : run; // from a word on, not mid-word
 }
 // When the newest run in a folder started (its log header), or 0.
-function lastRunStart(path) { const log = readSym(path, "agent.log"), m = [...log.matchAll(/^=== .* (\d{4}-\d\d-\d\dT[\d:.]+Z) ===$/gm)].pop(); return m ? Date.parse(m[1]) || 0 : 0; }
+function lastRunStart(path) { return runStarted(readSym(path, "agent.log")); }
 const openQuestions = (path) => /^###\s+/m.test(readSym(path, "QUESTIONS.md").split(/^##\s+Suggestions/m)[0]);
 // A repo lane's run does a whole brief, so its last words cover every task in it,
 // not just the one handed over (ops heard about a first-run audit and a posting

@@ -370,7 +370,21 @@ async function cmdOpen() {
   if (p && p.version) { openApp(`http://127.0.0.1:${port}/?t=${cfg.appToken}`); return; }
   let fd = "ignore"; try { mkdirSync(CONFIG_DIR, { recursive: true }); fd = openSync(join(CONFIG_DIR, "app.log"), "a"); } catch {}
   const env = { ...process.env }; delete env.SYMBIOT_NO_OPEN;
-  spawn(process.execPath, [realpathSync(fileURLToPath(import.meta.url)), "app"], { detached: true, stdio: ["ignore", fd, fd], env, windowsHide: true }).unref();
+  const child = spawn(process.execPath, [realpathSync(fileURLToPath(import.meta.url)), "app"], { detached: true, stdio: ["ignore", fd, fd], env, windowsHide: true });
+  child.unref();
+  // launched from a menu there is no terminal: if it doesn't come up, say so on screen
+  if (!process.stdout.isTTY) {
+    let exited = false; child.on("exit", () => { exited = true; });
+    for (let i = 0; i < 30 && !exited; i++) {
+      await new Promise((r) => setTimeout(r, 500));
+      const cfg2 = loadConfig(); if (cfg2.appToken && (await askRunningApp("ping", { port, token: cfg2.appToken, ms: 800 }))?.version) return;
+    }
+    let tail = ""; try { tail = readFileSync(join(CONFIG_DIR, "app.log"), "utf8").trim().split("\n").slice(-3).join(" ").slice(0, 300); } catch {}
+    const msg = "Symbiot didn't start." + (tail ? " " + tail : " Run  symbiot app  in a terminal to see why.");
+    if (process.platform === "linux") spawnSync("notify-send", ["-a", "Symbiot", "Symbiot", msg], { stdio: "ignore" });
+    else if (process.platform === "darwin") spawnSync("osascript", ["-e", `display notification ${JSON.stringify(msg)} with title "Symbiot"`], { stdio: "ignore" });
+    process.exitCode = 1;
+  }
 }
 // symbiot uninstall: everything Symbiot put on this computer, then the program.
 // --keep-data keeps ~/.config/symbiot (settings, tasks, memory); --yes doesn't ask.
