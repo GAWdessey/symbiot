@@ -871,7 +871,27 @@ const typeInto = async (page, at, text) => {
   await page.send("Runtime.evaluate", { expression: `(() => { const e = document.activeElement; if (!e) return;
     if (typeof e.select === 'function') e.select(); else if (e.isContentEditable) getSelection().selectAllChildren(e); })()` });
   if (text) await page.send("Input.insertText", { text });
+  if (text) await settleValue(page, at, text);
 };
+
+// React-controlled fields (GitHub's transfer form) can drop the typed text: the click
+// lands on a label or wrapper so nothing is focused, or React re-renders and resets
+// the value. Read the field back; if it doesn't hold the text, set it the way React
+// listens for (the native value setter, then input and change events) on the field
+// under the click, else the nearest one in its label or box.
+const settleValue = (page, at, text) => page.send("Runtime.evaluate", { expression: `(() => {
+  const want = ${JSON.stringify(text)}, isF = (x) => !!x && (x.tagName === 'INPUT' || x.tagName === 'TEXTAREA' || x.isContentEditable);
+  const val = (x) => x.isContentEditable ? x.innerText : x.value;
+  let e = document.activeElement;
+  if (!isF(e)) { const p = document.elementFromPoint(${Number(at.x) || 0}, ${Number(at.y) || 0}); e = p && (isF(p) ? p : (p.closest('label') || p.parentElement || p).querySelector('input,textarea,[contenteditable=true]')); }
+  if (!isF(e) || (e.tagName === 'INPUT' && /^(checkbox|radio|file|button|submit)$/i.test(e.type))) return;
+  if (val(e) === want) return;
+  e.focus();
+  if (e.isContentEditable) { getSelection().selectAllChildren(e); document.execCommand('insertText', false, want); return; }
+  const set = Object.getOwnPropertyDescriptor(e.tagName === 'INPUT' ? HTMLInputElement.prototype : HTMLTextAreaElement.prototype, 'value').set;
+  set.call(e, want);
+  e.dispatchEvent(new Event('input', { bubbles: true })); e.dispatchEvent(new Event('change', { bubbles: true }));
+})()` });
 
 // Type: click into a field, replace what's in it with text, and press Enter if
 // asked (which is how a search or a one-line form is sent). Without Enter, press
