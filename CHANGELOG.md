@@ -2,6 +2,12 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.63.1
+
+- **Fewer things put on your plate.** A permission an agent needs for your own work (building your app, using your phone over USB, recording its screen) now turns on by itself instead of showing up as a card: a tool installed in `~/.local/bin` and the marketing lane's own folder no longer count as "outside your work".
+- **Your agent's own sensible answer is taken for you.** When an agent asks something and its recommended answer is a step it takes itself and can undo, Symbiot picks it and the agent carries on. Approvals, publishing, sending, money, accounts and other machines still come to you.
+- **Open tasks don't just sit there.** A lane whose run ends with tasks still open starts again by itself, as long as it keeps ticking them off, and a question about one task no longer stops the rest.
+
 ## 0.63.0
 
 - **The Android app is built again.** 0.62.1's release went out without its APK: a link to a build folder on this computer had been committed by mistake, so GitHub's build couldn't make the folder. It's gone, and the ignore rule now covers a link as well as a folder. 0.63.0 carries 0.62.1's phone fix (setup going to **Your computer**).

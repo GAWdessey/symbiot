@@ -32,7 +32,7 @@ const shSingle = (s) => "'" + String(s).replace(/'/g, "'\\''") + "'";
 const escDq = (s) => String(s).replace(/[\\"$`]/g, "\\$&");
 // Plain words only: in the Orca preset this passes through two shells, so no
 // backticks or $ (escDq covers one level).
-const HANDOFF_PROMPT = "Read .symbiot/TASKS.md and implement the unchecked items in this repo. Tick each item [x] in that file as you finish it and leave your changes uncommitted, so they can be reviewed and approved. If you need a decision, or have ideas or options for the user, write them to .symbiot/QUESTIONS.md as TASKS.md explains, and read .symbiot/ANSWERS.md first if it exists. Confirm before anything destructive.";
+const HANDOFF_PROMPT = "Read .symbiot/TASKS.md and implement its unchecked items in this repo, one at a time, urgent ones first: finish the first one completely (built, tested, ticked) before you look at the next, then carry on with the next while you can. An item that is already done in the code, or no longer applies, you tick with a one-line note saying why. Never end a run without finishing or ticking at least one item, and never stop because the list is long: another run picks up where you left off. Tick each item [x] in that file as you finish it and leave your changes uncommitted, so they can be reviewed and approved. If you need a decision, or have ideas or options for the user, write them to .symbiot/QUESTIONS.md as TASKS.md explains, then skip that item and carry on with the next: a question never ends the run while other items can be done. Read .symbiot/ANSWERS.md first if it exists. Confirm before anything destructive.";
 function handoffCmd() { const cfg = loadConfig(); return migrateOrcaCmd(migrateClaudeCmd(cfg.agentCmd)) || (cfg.ide ? `${cfg.ide} {dir}` : ""); } // ide = legacy
 // Save the template ("" clears it). Either way the legacy `ide` key goes.
 function setHandoffCmd(cmd) {
@@ -235,7 +235,7 @@ function sandboxEnv(box, { token = () => (hasCmd("gh") ? sh("gh auth token").tri
 // For Settings → Handoff: { on, ready, missing } (on: repo runs get it).
 function sandboxState() { const n = sandboxNeeds(); return { on: loadConfig().agentSandbox !== false && trustFull(), ready: n.ready, missing: n.missing, ...(n.unsupported ? { unsupported: true } : {}) }; }
 const SESSION = "session.json", RESUME_MAX = 8, RESUME_AGE = 2 * 86400000;
-const RESUME_PROMPT = "The user has answered: read the newest entries in .symbiot/ANSWERS.md and carry on with .symbiot/TASKS.md from where you were. Same rules as before.";
+const RESUME_PROMPT = "The user has answered: read the newest entries in .symbiot/ANSWERS.md and carry on with .symbiot/TASKS.md from where you were: finish the item you were on, then the next. Same rules as before.";
 function sessionOf(path) { try { return JSON.parse(readSymbiot(path, SESSION)) || null; } catch { return null; } }
 // Resume when an answer has come in since its last run, and the conversation is fresh enough
 function resumeFor(path) {
@@ -1104,15 +1104,17 @@ function workRoots() {
 function inWork(p, roots = workRoots()) {
   if (!p) return false;
   p = resolve(String(p).replace(/^~(?=\/|$)/, homedir()).replace(/[/*]+$/, "")) || "/";
-  const drafts = join(CONFIG_DIR, "drafts");
-  if (p === drafts || p.startsWith(drafts + "/")) return true;
+  for (const lane of [join(CONFIG_DIR, "drafts"), join(CONFIG_DIR, "marketing")]) if (p === lane || p.startsWith(lane + "/")) return true;
   if (!roots.some((r) => p === r || p.startsWith(r === "/" ? "/" : r + "/"))) return false;
   const rel = relative(homedir(), p);
   if (!rel.startsWith("..") && rel.split("/")[0].startsWith(".")) return false; // ~/.ssh, ~/.config…
   return true;
 }
 // The paths a rule names: Read(/x/**), Bash(find /x:*), additionalDirectories' /x.
-const rulePaths = (r) => (String(r).match(/(?:~|\/)[^\s:*()"',]*/g) || []).filter((x) => x === "~" || x.length > 1);
+// A Bash rule's own program, when it lives in a bin folder (~/.local/bin/adb), is a tool
+// it runs, not a place it works in: only the paths after it count.
+const BIN_PROGRAM = /^(Bash\(\s*)(?:~|\/)[^\s:()]*\/s?bin\/[^\s:()/]+/;
+const rulePaths = (r) => (String(r).replace(BIN_PROGRAM, "$1").match(/(?:~|\/)[^\s:*()"',]*/g) || []).filter((x) => x === "~" || x.length > 1);
 // Whether a proposed list can be turned on without asking: { ok } or { why }.
 function allowlistInWork(path) {
   let p; try { p = JSON.parse(readFileSync(join(path, ".symbiot", "allowlist.proposed.json"), "utf8")).permissions || {}; } catch { return { why: "no list" }; }
@@ -1145,7 +1147,47 @@ function autoAllow(path) {
 }
 // Every run that stopped asking for its list, now: on start and every so often, so
 // asks from before this version clear too.
-function autoAllowSweep() { const out = []; for (const r of loadRuns()) { try { const a = autoAllow(r.path); if (a && a.allowed) out.push(r.path); } catch {} } return out; }
+// A question whose answer the agent already knows isn't the user's: when its own
+// recommended option is a step it takes itself (not 👤), and nothing in the question or
+// that option is an approval, goes out, costs money, touches an account or a machine, or
+// can't be undone, Symbiot picks it and the agent carries on. Everything else still comes to the user.
+const OUTWARD = /\b(approv\w*|publish\w*|releas\w*|push\w*|merg\w*|send\w*|sent|post\w*|repl\w*|e-?mail\w*|pay\w*|spend\w*|buy\w*|money|bill\w*|cost\w*|delet\w*|remov\w*|uninstall\w*|wip\w*|drop\w*|password\w*|2fa|token\w*|keys?|sign(?:ed|s)?[- ]?in|log(?:ged)?[- ]?in|accounts?|subscription|plan|tunnel\w*|prox\w*|ssh|vm|servers?|restart\w*|stop\w*|kill\w*|broker\w*|trad\w*|bank\w*|npm|deploy\w*|install\w*|phone|whatsapp|linkedin|github\.com)\b|\byour (?:default|settings?|profile)\b/i;
+function autoPick(q) {
+  const rec = (q.options || []).filter((o) => /\(recommended\b/i.test(o));
+  if (rec.length !== 1 || yourStep(rec[0])) return "";
+  return OUTWARD.test(`${q.q} ${q.context || ""} ${rec[0]}`) ? "" : rec[0];
+}
+function autoDecide(path) {
+  if (!path || runningHandoff(path)) return null;
+  const picks = agentQuestions(path, "").questions.map((q) => ({ q: q.q, a: autoPick(q) })).filter((x) => x.a);
+  if (!picks.length) return null;
+  const r = answerQuestions(path, picks.map((x) => ({ q: x.q, a: `${x.a}\n(Symbiot picked your own recommendation: it's yours to do and can be undone, so the user wasn't asked.)` })), { rerun: true });
+  return r && r.ok ? { decided: picks.length } : null;
+}
+// A lane whose run has ended with unticked tasks still in TASKS.md starts again by
+// itself, so open work never just sits there. Only while it's getting somewhere: after
+// the first continue, a lane starts again only if more tasks got ticked since the last
+// one, so a lane stuck on its questions doesn't loop. Parked, busy or blocked lanes are left alone.
+const CONTINUED = new Map(); // path -> ticked count when it was last continued
+const CONTINUE_AFTER = 2 * 60000;
+function continueLanes({ now = Date.now(), run = runHandoff, runs = loadRuns } = {}) {
+  const out = [];
+  for (const path of [...new Set(runs().map((r) => r.path).filter(Boolean))]) {
+    try {
+      if (runningHandoff(path) || isParked(path)) continue;
+      const md = readSymbiot(path, "TASKS.md"), open = (md.match(/^\s*(?:[-*+]|\d+[.)])\s*\[ \]/gm) || []).length;
+      if (!open) { CONTINUED.delete(path); continue; }
+      let ended = 0; try { ended = statSync(join(path, ".symbiot", "agent.log")).mtimeMs; } catch { continue; }
+      if (now - ended < CONTINUE_AFTER) continue;
+      const ticked = (md.match(/^\s*(?:[-*+]|\d+[.)])\s*\[[xX]\]/gm) || []).length;
+      if (CONTINUED.has(path) && ticked <= CONTINUED.get(path)) continue;
+      if (blockedAgain(path, handoffCmd())) continue;
+      const e = run(path); if (e && e.id && !e.busy && !e.blocked) { CONTINUED.set(path, ticked); out.push(path); }
+    } catch {}
+  }
+  return out;
+}
+function autoAllowSweep() { const out = []; for (const r of loadRuns()) { try { const a = autoAllow(r.path); if (a && a.allowed) out.push(r.path); else if (autoDecide(r.path)) out.push(r.path); } catch {} } return out; }
 // Every agent reaches the owner's knowledge folders from the start; an ops run (no repo
 // of its own) their repos too, the way a person at their desk would.
 function withScope(tmpl, repoPath) {
@@ -1263,4 +1305,4 @@ function agentsList() {
   }).concat(earlierRuns());
 }
 
-export { FACTS, factsOf, knownRun, withStream, workOf, HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, connectorsInfo, linkReach, fillHandoff, runHandoff, nothingToDo, PARKED_NOTE, parkedPaths, isParked, parkLane, agentMissing, blockedAgain, runningHandoff, loadRuns, earlierRuns, namedFiles, waitingFor, startWaiting, noteUntracked, untrackedBefore, forgetUntracked, writeTasks, droppedTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, pickAgent, findOrcaCli, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, skipIdea, agentQuestions, answerQuestions, agentsList, needsOf, settleNeeds, NEEDS_FOR, readLastWords, readNeeds, parseRead, READ_FILE, autoAllow, autoAllowSweep, allowlistInWork, installAllowlist, inWork, withScope, withTrust, sandboxFor, sandboxEnv, sandboxNeeds, sandboxState, sandboxWrites, SANDBOX_DIR, resumeFor, noteSession, trustFull, GUARD_SETTINGS, isUrgent, urgentFirst, urgentUndo, urgentDone, urgentSweep, urgentState , licenceGate };
+export { continueLanes, autoPick, autoDecide, FACTS, factsOf, knownRun, withStream, workOf, HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, connectorsInfo, linkReach, fillHandoff, runHandoff, nothingToDo, PARKED_NOTE, parkedPaths, isParked, parkLane, agentMissing, blockedAgain, runningHandoff, loadRuns, earlierRuns, namedFiles, waitingFor, startWaiting, noteUntracked, untrackedBefore, forgetUntracked, writeTasks, droppedTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, pickAgent, findOrcaCli, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, skipIdea, agentQuestions, answerQuestions, agentsList, needsOf, settleNeeds, NEEDS_FOR, readLastWords, readNeeds, parseRead, READ_FILE, autoAllow, autoAllowSweep, allowlistInWork, installAllowlist, inWork, withScope, withTrust, sandboxFor, sandboxEnv, sandboxNeeds, sandboxState, sandboxWrites, SANDBOX_DIR, resumeFor, noteSession, trustFull, GUARD_SETTINGS, isUrgent, urgentFirst, urgentUndo, urgentDone, urgentSweep, urgentState , licenceGate };

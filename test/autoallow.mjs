@@ -41,6 +41,34 @@ propose(["Bash(git push:*)"]);
 ok("...as does one that publishes or reaches another machine", /publishes/.test(a.allowlistInWork(run).why || ""), a.allowlistInWork(run));
 propose(["Bash(bash:*)"]);
 ok("...and one that could run anything", /wide/.test(a.allowlistInWork(run).why || ""), a.allowlistInWork(run));
+// The Daaymn screen-recording list of 2026-10-11: tools in ~/.local/bin and the marketing
+// lane's own folder are not "outside your work", so it goes on without a card.
+propose(["Bash(flutter build apk --debug --dart-define=ALLOW_SCREEN_RECORDING=true)", `Bash(${HOME}/.local/bin/adb:*)`, `Bash(${HOME}/.local/bin/ffmpeg:*)`], [join(HOME, "work", "daaymn"), join(C, "marketing", "automation")]);
+ok("a program run from ~/.local/bin, and the marketing lane's folder, are your work", a.allowlistInWork(run).ok === true, a.allowlistInWork(run));
+propose([`Bash(${HOME}/.local/bin/adb push ${HOME}/.ssh/id_ed25519:*)`]);
+ok("...but a path it hands that program still counts (~/.ssh asks you)", /outside your work: .*\.ssh/.test(a.allowlistInWork(run).why || ""), a.allowlistInWork(run));
+propose([`Bash(${HOME}/.ssh/run.sh:*)`]);
+ok("...and a script that isn't in a bin folder is judged by where it lives", /outside your work: .*\.ssh/.test(a.allowlistInWork(run).why || ""), a.allowlistInWork(run));
+// An agent's own recommendation, when it's a step it takes itself and nothing outward,
+// is picked for the user (agents.mjs autoPick): no card.
+const pick = (q, options) => a.autoPick({ q, context: "", options });
+ok("the agent's own undoable recommendation is picked for you", /can't reproduce/.test(pick("How should I close this task?", ["🤖 Agent: close it as \"can't reproduce\" with these findings (recommended)", "👤 You (only you: a decision): tell me which card you saw"])), "");
+ok("...but not when the recommendation is your step", pick("Phone isn't showing up?", ["👤 You (only you: the phone in your hand): plug it in (recommended)", "🤖 Agent: skip the phone check"]) === "", "");
+ok("...nor when it goes out, touches money, an account or a machine", ["Approve it as it is?", "Publish 0.62.2 now?", "Start the tunnel on your PC again?", "Restart Symbiot to bind the port?", "Switch your default to Sonnet?", "Move the bank alerts back to the inbox?"].every((q) => pick(q, ["🤖 Agent: do it (recommended)", "Leave it"]) === ""), "");
+ok("...nor when there's no single recommendation", pick("Which layout?", ["🤖 Agent: grid", "🤖 Agent: list"]) === "", "");
+// A lane whose run ended with open tasks starts again by itself, while it gets somewhere.
+const lane = join(C, "drafts", "act-lane"); mkdirSync(join(lane, ".symbiot"), { recursive: true });
+writeFileSync(join(lane, ".symbiot", "agent.log"), "=== x ===\n");
+const started = [], go = (p) => { started.push(p); return { id: "r" + started.length }; }, later = Date.now() + 5 * 60000, runs = () => [{ path: lane }];
+writeFileSync(join(lane, ".symbiot", "TASKS.md"), "- [x] one\n- [ ] two\n- [ ] three\n");
+ok("a lane with open tasks and no run going starts again", a.continueLanes({ now: later, run: go, runs }).length === 1, started);
+ok("...but not again while nothing more got ticked (no loop on a stuck lane)", a.continueLanes({ now: later, run: go, runs }).length === 0, started);
+writeFileSync(join(lane, ".symbiot", "TASKS.md"), "- [x] one\n- [x] two\n- [ ] three\n");
+ok("...and again once its last run ticked another", a.continueLanes({ now: later + 1, run: go, runs }).length === 1, started);
+writeFileSync(join(lane, ".symbiot", "TASKS.md"), "- [x] one\n- [x] two\n- [x] three\n");
+ok("...and never when everything's ticked", a.continueLanes({ now: later + 2, run: go, runs }).length === 0, started);
+writeFileSync(join(lane, ".symbiot", "TASKS.md"), "- [ ] four\n");
+ok("...nor within two minutes of its last run", a.continueLanes({ now: Date.now(), run: go, runs }).length === 0, started);
 const cmd = a.withScope('claude -p "{prompt}"', run);
 ok("an agent reaches your knowledge folders from the start", cmd.includes(`--add-dir "${join(HOME, "work", "Company")}"`), cmd);
 
