@@ -3,7 +3,7 @@
 // tab, and the questions an unattended agent leaves for the user.
 import { MARKETING_DIR } from "./marketing.mjs";
 import { licenceState, isPro, can, canWorkIn } from "./licence.mjs";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { homedir } from "node:os";
 import { join, dirname, resolve, relative } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -1115,13 +1115,22 @@ function inWork(p, roots = workRoots()) {
 // it runs, not a place it works in: only the paths after it count.
 const BIN_PROGRAM = /^(Bash\(\s*)(?:~|\/)[^\s:()]*\/s?bin\/[^\s:()/]+/;
 const rulePaths = (r) => (String(r).replace(BIN_PROGRAM, "$1").match(/(?:~|\/)[^\s:*()"',]*/g) || []).filter((x) => x === "~" || x.length > 1);
+// An ssh, scp or rsync rule whose every remote (user@host, user@host:path) is a host this
+// computer already connects to (it's in ~/.ssh/known_hosts) reaches the owner's own
+// machine, not another one: it counts as their work. A wildcard host never does.
+function knownHost(host) { try { return !/[*?]/.test(host) && spawnSync("ssh-keygen", ["-F", host], { encoding: "utf8", timeout: 5000 }).status === 0; } catch { return false; } }
+function toKnownHost(r, known = knownHost) {
+  const m = String(r).match(/^Bash\(\s*(ssh|scp|rsync)\b(.*)\)$/); if (!m) return false;
+  const hosts = m[2].split(/\s+/).filter((t) => t.includes("@") && !t.startsWith("-")).map((t) => t.split("@").pop().split(":")[0]).filter(Boolean);
+  return hosts.length > 0 && hosts.every((h) => known(h));
+}
 // Whether a proposed list can be turned on without asking: { ok } or { why }.
 function allowlistInWork(path) {
   let p; try { p = JSON.parse(readFileSync(join(path, ".symbiot", "allowlist.proposed.json"), "utf8")).permissions || {}; } catch { return { why: "no list" }; }
   const list = (x) => (Array.isArray(x) ? x.filter((r) => typeof r === "string" && r.trim()).map((r) => r.trim()) : []);
   const allow = list(p.allow), dirs = list(p.additionalDirectories), roots = [...workRoots(), path];
   const wide = allow.filter(wideRule); if (wide.length) return { why: "wide: " + wide.join(", ") };
-  const pub = allow.filter((r) => PUBLISH_RULE.test(r)); if (pub.length) return { why: "publishes or reaches another machine: " + pub.join(", ") };
+  const pub = allow.filter((r) => PUBLISH_RULE.test(r) && !toKnownHost(r)); if (pub.length) return { why: "publishes or reaches another machine: " + pub.join(", ") };
   const out = [...dirs, ...allow.flatMap(rulePaths)].filter((x) => !inWork(x, roots));
   if (out.length) return { why: "outside your work: " + [...new Set(out)].slice(0, 3).join(", ") };
   return { ok: true, allow, dirs };
@@ -1136,7 +1145,15 @@ function autoAllow(path) {
   if (!q) return null;
   const mark = join(path, ".symbiot", "autoallow.json"), d = digest(raw); let done = []; try { done = JSON.parse(readFileSync(mark, "utf8")); } catch {}
   if (done.includes(d)) return null;
-  const v = allowlistInWork(path); if (!v.ok) return { asked: true, why: v.why };
+  const v = allowlistInWork(path);
+  if (!v.ok && /^wide: /.test(v.why)) { // the agent's to fix, not the user's: it writes the commands out and asks again
+    try { writeFileSync(mark, JSON.stringify([...done, d].slice(-20))); } catch {}
+    try { writeFileSync(join(path, ".symbiot", "ANSWERS.md"), (readSymbiot(path, "ANSWERS.md") || "# Answers from the user\nAnswers to the questions in QUESTIONS.md, newest last. Follow them; ask again in QUESTIONS.md if one is unclear.\n").replace(/\s*$/, "\n") + `\n### ${q.q}\nSymbiot didn't turn your list on, and didn't pass it to the user: ${v.why.slice(6)} would let you run anything (a script or a shell can hold any command). Write each command out exactly in .symbiot/allowlist.proposed.json instead, with the files and hosts it touches named (for a script, the commands inside it), and ask again.\n_${new Date().toISOString().slice(0, 10)}_\n`); } catch {}
+    try { unlinkSync(join(path, ".symbiot", WAITING)); } catch {}
+    const e = runHandoff(path, { force: true });
+    return { narrower: true, rerun: e && e.id ? e.id : null };
+  }
+  if (!v.ok) return { asked: true, why: v.why };
   const g = installAllowlist(path); if (!g || g.refused) return null;
   try { writeFileSync(mark, JSON.stringify([...done, d].slice(-20))); } catch {}
   const day = new Date().toISOString().slice(0, 10);
@@ -1305,4 +1322,4 @@ function agentsList() {
   }).concat(earlierRuns());
 }
 
-export { continueLanes, autoPick, autoDecide, FACTS, factsOf, knownRun, withStream, workOf, HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, connectorsInfo, linkReach, fillHandoff, runHandoff, nothingToDo, PARKED_NOTE, parkedPaths, isParked, parkLane, agentMissing, blockedAgain, runningHandoff, loadRuns, earlierRuns, namedFiles, waitingFor, startWaiting, noteUntracked, untrackedBefore, forgetUntracked, writeTasks, droppedTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, pickAgent, findOrcaCli, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, skipIdea, agentQuestions, answerQuestions, agentsList, needsOf, settleNeeds, NEEDS_FOR, readLastWords, readNeeds, parseRead, READ_FILE, autoAllow, autoAllowSweep, allowlistInWork, installAllowlist, inWork, withScope, withTrust, sandboxFor, sandboxEnv, sandboxNeeds, sandboxState, sandboxWrites, SANDBOX_DIR, resumeFor, noteSession, trustFull, GUARD_SETTINGS, isUrgent, urgentFirst, urgentUndo, urgentDone, urgentSweep, urgentState , licenceGate };
+export { toKnownHost, continueLanes, autoPick, autoDecide, FACTS, factsOf, knownRun, withStream, workOf, HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, connectorsInfo, linkReach, fillHandoff, runHandoff, nothingToDo, PARKED_NOTE, parkedPaths, isParked, parkLane, agentMissing, blockedAgain, runningHandoff, loadRuns, earlierRuns, namedFiles, waitingFor, startWaiting, noteUntracked, untrackedBefore, forgetUntracked, writeTasks, droppedTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, pickAgent, findOrcaCli, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, skipIdea, agentQuestions, answerQuestions, agentsList, needsOf, settleNeeds, NEEDS_FOR, readLastWords, readNeeds, parseRead, READ_FILE, autoAllow, autoAllowSweep, allowlistInWork, installAllowlist, inWork, withScope, withTrust, sandboxFor, sandboxEnv, sandboxNeeds, sandboxState, sandboxWrites, SANDBOX_DIR, resumeFor, noteSession, trustFull, GUARD_SETTINGS, isUrgent, urgentFirst, urgentUndo, urgentDone, urgentSweep, urgentState , licenceGate };

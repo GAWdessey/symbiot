@@ -69,6 +69,20 @@ writeFileSync(join(lane, ".symbiot", "TASKS.md"), "- [x] one\n- [x] two\n- [x] t
 ok("...and never when everything's ticked", a.continueLanes({ now: later + 2, run: go, runs }).length === 0, started);
 writeFileSync(join(lane, ".symbiot", "TASKS.md"), "- [ ] four\n");
 ok("...nor within two minutes of its last run", a.continueLanes({ now: Date.now(), run: go, runs }).length === 0, started);
+// ssh to a host this computer already knows is the owner's own machine (agents.mjs toKnownHost)
+const known = (h) => h === "92.4.133.97";
+ok("ssh, scp or rsync to a host this computer already knows is your own machine", ["Bash(ssh ubuntu@92.4.133.97:*)", "Bash(scp:* ubuntu@92.4.133.97:*)", "Bash(ssh -o BatchMode=yes ubuntu@92.4.133.97:*)"].every((r) => a.toKnownHost(r, known)), "");
+ok("...but not a host it has never met, a wildcard host, or a push", !a.toKnownHost("Bash(ssh root@other.example:*)", known) && !a.toKnownHost("Bash(ssh ubuntu@*:*)", known) && !a.toKnownHost("Bash(git push:*)", known), "");
+// a list too wide to turn on goes back to the agent, never to the user
+ask("can I run my build script?");
+propose(["Bash(bash /tmp/build.sh)"]);
+const rw = a.autoAllow(run);
+ok("a list too wide to turn on is sent back to the agent to write out, not shown to you", rw && rw.narrower && /write each command out exactly/i.test(readFileSync(join(s, "ANSWERS.md"), "utf8")), rw);
+// what still reaches you reads in plain words with an Allow button
+const { plainAsk } = await import("../home.mjs");
+propose(["Bash(symbiot screens:*)", "Bash(git status)"]);
+const card = plainAsk(run, { q: "Can I run Symbiot's Screens command?", options: ["👤 You (only you: a permission): allow the list in .symbiot/allowlist.proposed.json (recommended)", "Not now"] });
+ok("a permission card lists the commands in plain words with Allow, and shows no file path", /run symbiot/.test(card.q) && /run git/.test(card.q) && card.labels[0] === "Allow (recommended)" && !/\.json|\.symbiot/.test(card.q + card.labels.join()), card);
 const cmd = a.withScope('claude -p "{prompt}"', run);
 ok("an agent reaches your knowledge folders from the start", cmd.includes(`--add-dir "${join(HOME, "work", "Company")}"`), cmd);
 

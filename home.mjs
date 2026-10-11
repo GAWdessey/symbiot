@@ -355,7 +355,7 @@ function homeState({ now = Date.now(), fresh = false, deps = {} } = {}) {
     if (!q) continue;
     const lane = laneOfPath(a.path, map), repo = lane || (lane === "" ? "" : a.name);
     you.push({ kind: "ask", id: "ask:" + a.path, path: a.path, repo, name: repo ? named(lane ? map[lane] : a.path, repo) : plain(String(a.name || "an agent").replace(/^Agent:\s*/, ""), 60),
-      title: `${a.name} asks`, sub: String(q.q || "").slice(0, 90), q: String(q.q || ""), options: (q.options || []).slice(0, 2), ...(qs.length > 1 ? { more: qs.length - 1 } : {}), ...signInCard([q.q, ...(q.options || []).slice(0, 2)]), shape: "agents" });
+      title: `${a.name} asks`, sub: String(q.q || "").slice(0, 90), ...plainAsk(a.path, q), options: (q.options || []).slice(0, 2), ...(qs.length > 1 ? { more: qs.length - 1 } : {}), ...signInCard([q.q, ...(q.options || []).slice(0, 2)]), shape: "agents" });
   }
   // What stopped and can't go on without you, as a question too: a handover that
   // couldn't start (lanes.mjs stuckHandovers: "Allow this run access to ~/Company?"),
@@ -404,6 +404,42 @@ function noteAnswer(path, heading, text) {
   const f = join(path, ".symbiot", "ANSWERS.md"); let had = ""; try { had = readFileSync(f, "utf8"); } catch {}
   try { writeFileSync(f, `${(had || "# Answers\n").replace(/\s*$/, "")}\n\n### ${String(heading).replace(/\s+/g, " ").trim()}\n${text}\n_answered ${new Date().toISOString().slice(0, 10)}_\n`); } catch {}
 }
+// An ask in words for someone who doesn't code: a permission request lists what the agent
+// wants to run, with Allow / Don't allow; any file path left in the question or choices
+// becomes "a file". The answer sent back is still the choice's own text (labels only change what shows).
+const PATHISH = /`?(?:~|\.{0,2})?\/?(?:[\w.-]+\/)+[\w.-]+\.(?:json|md|mjs|js|env|txt|sh)`?|`?\b[\w-]+\.(?:json|mjs)\b`?/g;
+// What a rule lets an agent do, said the way you'd say it to someone who doesn't code.
+const base = (p) => String(p || "").replace(/[/*]+$/, "").split("/").filter(Boolean).pop() || "your files";
+function PLAIN_RULE(r) {
+  const m = String(r).match(/^(\w+)\((.*)\)$/); if (!m) return "work in " + base(r);
+  const [, tool, arg] = m, a = arg.replace(/:?\*+$/, "").trim(), first = a.split(/\s+/)[0].replace(/:\*?$/, "").split("/").pop();
+  if (tool === "Read") return `read files in ${base(a)}`;
+  if (/^(Edit|Write|MultiEdit)$/.test(tool)) return `change files in ${base(a)}`;
+  if (tool !== "Bash") return `use ${tool}`;
+  const host = (a.match(/@([\w.-]+)/) || [])[1];
+  if (/^(ssh|scp|rsync)$/.test(first)) return host ? `connect to the computer at ${host}` : "connect to another computer";
+  if (first === "adb") return "use your phone over the USB cable";
+  if (/^(flutter|gradle|gradlew|godot|xcodebuild)$/.test(first) || /\bbuild\b/.test(a)) return "build the app";
+  if (first === "ffmpeg" || first === "ffprobe") return "make and trim video clips";
+  if (first === "git" && /\bpush\b/.test(a)) return "send code to GitHub";
+  if (/^(npm|yarn|pnpm)$/.test(first) && /\bpublish\b/.test(a)) return "publish a new version";
+  if (/^(bash|sh|zsh)$/.test(first)) return "run a script it wrote";
+  if (/^(python\d*|node)$/.test(first)) return "run code in this project";
+  if (/^(rm|shred)$/.test(first)) return "delete files";
+  if (first === "sudo") return "make changes as administrator";
+  return `run ${first}`;
+}
+function plainAsk(path, q) {
+  const text = String(q.q || ""), opts = (q.options || []).slice(0, 2);
+  let ask = text, labels = opts.map((o) => o.replace(PATHISH, "a file"));
+  if (opts.some((o) => /allowlist\.proposed/i.test(o))) {
+    let rules = []; try { const p = JSON.parse(readFileSync(join(path, ".symbiot", "allowlist.proposed.json"), "utf8")).permissions || {}; rules = [...new Set([...(p.allow || []).map(PLAIN_RULE), ...(p.additionalDirectories || []).map((d) => `work in ${base(d)}`)])]; } catch {}
+    ask = `${text.replace(PATHISH, "a file")}${rules.length ? ` It wants to ${rules.slice(0, 6).join(", ")}${rules.length > 6 ? `, and ${rules.length - 6} more things` : ""}.` : ""} If you say no, it skips that part and tells you what it left out.`;
+    labels = opts.map((o) => (/allowlist\.proposed/i.test(o) ? "Allow" + (/recommended/i.test(o) ? " (recommended)" : "") : o.replace(PATHISH, "a file")));
+  }
+  return { q: ask.replace(PATHISH, "a file"), ...(labels.some((l, i) => l !== opts[i]) ? { labels } : {}) };
+}
+
 function homeAnswer(id, { pick, text = "" } = {}, deps = {}) {
   id = String(id || ""); text = String(text || "").trim().slice(0, 2000);
   const go = text ? !SAYS_NO.test(text) : Number(pick) === 0, ref = id.replace(/^\w+:/, "");
@@ -805,4 +841,4 @@ function setOnboarding({ step, skip, unskip, skipRest, done, restart } = {}) {
   return onboarding();
 }
 
-export { reportIdeasAdd, reportAsk, reportDraftAnswer, workTick, waitWhy, AUTO_GRACE, STUCK_AFTER, marketingState, marketingGo, marketingDraftAnswer, marketingTask, moveToMarketing, goLane, homeState, homeContext, homeAsk, homeAnswer, homeNext, nextUp, laneNamed, NEXT_FILE, workScene, workGo, displayName, firstSteps, onboarding, setOnboarding, startOnboarding, ONB_STEPS, ONB_STEPS_PHONE, onbSteps, phoneBits , phoneSetupFirst };
+export { plainAsk, reportIdeasAdd, reportAsk, reportDraftAnswer, workTick, waitWhy, AUTO_GRACE, STUCK_AFTER, marketingState, marketingGo, marketingDraftAnswer, marketingTask, moveToMarketing, goLane, homeState, homeContext, homeAsk, homeAnswer, homeNext, nextUp, laneNamed, NEXT_FILE, workScene, workGo, displayName, firstSteps, onboarding, setOnboarding, startOnboarding, ONB_STEPS, ONB_STEPS_PHONE, onbSteps, phoneBits , phoneSetupFirst };
