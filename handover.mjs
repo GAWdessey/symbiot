@@ -145,6 +145,25 @@ function agentsPosting(options, linked = []) {
   });
 }
 
+// ---- acting on an email is an agent's job when the mailbox is linked ---------------
+// During the GitHub move a card told Garth to accept GitHub's transfer email himself
+// (2026-10-10), with his Gmail linked. Opening, reading, replying to or following a link in
+// a mail is the agent's work through the mail connector or Symbiot's signed-in browser; the
+// user only gives the yes before anything hard to undo. linked: the linked site ids (gmail,
+// outlook). A password, a code or a physical step stays theirs. Options in, options out.
+const MAIL_STEP = /\b(?:accept|approve|confirm|open|click|follow|check|find|reply|forward|read)\b[^.;:]{0,60}\b(?:e-?mails?|inbox|invit(?:e|ation)s?|transfer request|confirmation link|verification link|link in)\b|\b(?:e-?mail|invitation|inbox)\b[^.;:]{0,40}\b(?:accept|confirm|approve|click|follow)\b/i;
+const mailLinked = (linked = []) => linked.map((x) => String(x).toLowerCase().replace(/[^a-z]/g, "")).some((x) => x === "gmail" || x === "outlook");
+const mailWork = (text, linked = []) => { const t = String(text || ""); return mailLinked(linked) && MAIL_STEP.test(t) && !IDENTITY.test(t) && !PHYSICAL.test(t) && !TAP.test(t); };
+function agentsMail(options, linked = []) {
+  const opts = (options || []).map(String), agentDoes = opts.some((o) => /🤖/.test(o) && mailWork(o, linked));
+  return opts.flatMap((o) => {
+    if (!/^\s*👤/.test(o) || !mailWork(o, linked)) return [o];
+    if (agentDoes) return [];
+    const rec = /\(recommended\)\s*$/i.test(o), body = o.replace(/^\s*👤\s*You(?:\s*\([^)]*\))?\s*:?\s*/i, "").replace(/\s*\(recommended\)\s*$/i, "").replace(/[.\s]+$/, "");
+    return [`🤖 Agent: ${body}, through your linked mailbox, asking for your OK on the Workdesk before anything that can't be undone${rec ? " (recommended)" : ""}`];
+  });
+}
+
 // ---- what's linked is never asked for again ----------------------------------------
 // A Marketing card asked "let a poster on this computer put the steve posts up for
 // you?" with two options, both "👤 You (only you: your linkedin sign-in)": "ok it…" and
@@ -177,7 +196,7 @@ function linkedAsks(options, linked = [], about = "") {
 }
 // A "👤 You" step a run's last words leave (leftToYou) that's signing in, linking or
 // doing by hand what a linked platform's session already does: not the user's.
-const linkedChore = (text, linked = []) => { const t = String(text || ""), p = platformOf(t); return isLinked(p, linked) && !EXPIRED.test(t) && (ASKS_ACCESS.test(t) || BY_HAND.test(t)); };
+const linkedChore = (text, linked = []) => { const t = String(text || ""), p = platformOf(t); return mailWork(t, linked) || isLinked(p, linked) && !EXPIRED.test(t) && (ASKS_ACCESS.test(t) || BY_HAND.test(t)); };
 
 // ---- what a run's last words leave to the user ----------------------------------
 // A run that ends saying something waits on the user ("the draft isn't sent",
@@ -238,4 +257,4 @@ function parseHandoffs(md) {
   return out.map((h) => ({ lane: h.lane, text: h.text.trim().slice(0, HANDOVER_MAX) })).filter((h) => h.lane && h.text);
 }
 
-export { OPS, MARKETING, HANDOVER_MAX, handoverRules, ONLY_YOU, HANDBACK, gitWork, agentsGitWork, agentsClicking, agentsCodeWork, PUSH_OK, postsOnLinked, agentsPosting, APPROVE_FIRST, linkedAsks, linkedChore, parseFacts, parseAwaiting, parseHandoffs, leftToYou };
+export { agentsMail, mailWork, OPS, MARKETING, HANDOVER_MAX, handoverRules, ONLY_YOU, HANDBACK, gitWork, agentsGitWork, agentsClicking, agentsCodeWork, PUSH_OK, postsOnLinked, agentsPosting, APPROVE_FIRST, linkedAsks, linkedChore, parseFacts, parseAwaiting, parseHandoffs, leftToYou };

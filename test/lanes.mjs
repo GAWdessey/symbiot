@@ -250,6 +250,12 @@ try {
   ok("…dropped when another option already has the agent do it", agentsCodeWork(["🤖 Agent: apply the patch", "👤 You: apply the patch yourself"]).join("|") === "🤖 Agent: apply the patch", "");
   ok("…while a password step stays yours", /^👤/.test(agentsCodeWork(["👤 You (only you: your password): type it when the patch tool asks"])[0]), "");
   ok("…and so does a physical step", /^👤/.test(agentsClicking(["👤 You (only you: your phone): plug it in, click Allow, enter the code, tick Always"])[0]), "");
+  // GitHub's transfer email (2026-10-10), with Gmail linked
+  const { agentsMail } = await import("../handover.mjs");
+  const ml = agentsMail(["👤 You (only you: your email): accept GitHub's transfer email for GarthGhostai/symbiot (recommended)", "Leave it"], ["gmail"]);
+  ok("accepting an email is the agent's when the mailbox is linked, asking OK first", /^🤖 Agent: accept GitHub's transfer email.*linked mailbox.*OK on the Workdesk.*\(recommended\)$/.test(ml[0]) && ml[1] === "Leave it", ml);
+  ok("…yours when no mailbox is linked", /^👤/.test(agentsMail(["👤 You: accept GitHub's transfer email"], [])[0]), "");
+  ok("…and a password or code in the mail stays yours", /^👤/.test(agentsMail(["👤 You (only you: an SMS code): open the email and type the code"], ["gmail"])[0]), "");
   // the Marketing card (the [Steve] series, 2026-10-08), with LinkedIn linked in Symbiot's browser
   const mk = ["👤 You (only you: your linkedin): schedule all three now in linkedin's scheduler, 08:00 on tue 13, 20 and 27 oct. paste each post's text and attach its card (recommended)", "👤 You (only you: your linkedin): schedule only week 2 now and approve 3 and 4 one at a time"];
   const mp = agentsPosting(mk, ["github", "linkedin"]);
