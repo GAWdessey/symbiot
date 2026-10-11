@@ -32,7 +32,7 @@ const shSingle = (s) => "'" + String(s).replace(/'/g, "'\\''") + "'";
 const escDq = (s) => String(s).replace(/[\\"$`]/g, "\\$&");
 // Plain words only: in the Orca preset this passes through two shells, so no
 // backticks or $ (escDq covers one level).
-const HANDOFF_PROMPT = "Read .symbiot/TASKS.md and implement the unchecked items in this repo. Tick each item [x] in that file as you finish it and leave your changes uncommitted, so they can be reviewed and approved. If you need a decision, or have ideas or options for the user, write them to .symbiot/QUESTIONS.md as TASKS.md explains, and read .symbiot/ANSWERS.md first if it exists. Confirm before anything destructive.";
+const HANDOFF_PROMPT = "Read .symbiot/TASKS.md and implement the unchecked items in this repo: all of them in this one run, one after another, not just the first. Tick each item [x] in that file as you finish it and leave your changes uncommitted, so they can be reviewed and approved. If you need a decision, or have ideas or options for the user, write them to .symbiot/QUESTIONS.md as TASKS.md explains, then skip that item and carry on with the next: a question never ends the run while other items can be done. Read .symbiot/ANSWERS.md first if it exists. Confirm before anything destructive.";
 function handoffCmd() { const cfg = loadConfig(); return migrateOrcaCmd(migrateClaudeCmd(cfg.agentCmd)) || (cfg.ide ? `${cfg.ide} {dir}` : ""); } // ide = legacy
 // Save the template ("" clears it). Either way the legacy `ide` key goes.
 function setHandoffCmd(cmd) {
@@ -235,7 +235,7 @@ function sandboxEnv(box, { token = () => (hasCmd("gh") ? sh("gh auth token").tri
 // For Settings → Handoff: { on, ready, missing } (on: repo runs get it).
 function sandboxState() { const n = sandboxNeeds(); return { on: loadConfig().agentSandbox !== false && trustFull(), ready: n.ready, missing: n.missing, ...(n.unsupported ? { unsupported: true } : {}) }; }
 const SESSION = "session.json", RESUME_MAX = 8, RESUME_AGE = 2 * 86400000;
-const RESUME_PROMPT = "The user has answered: read the newest entries in .symbiot/ANSWERS.md and carry on with .symbiot/TASKS.md from where you were. Same rules as before.";
+const RESUME_PROMPT = "The user has answered: read the newest entries in .symbiot/ANSWERS.md and carry on with .symbiot/TASKS.md from where you were, through every item left that you can do. Same rules as before.";
 function sessionOf(path) { try { return JSON.parse(readSymbiot(path, SESSION)) || null; } catch { return null; } }
 // Resume when an answer has come in since its last run, and the conversation is fresh enough
 function resumeFor(path) {
