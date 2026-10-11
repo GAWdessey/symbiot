@@ -41,6 +41,14 @@ propose(["Bash(git push:*)"]);
 ok("...as does one that publishes or reaches another machine", /publishes/.test(a.allowlistInWork(run).why || ""), a.allowlistInWork(run));
 propose(["Bash(bash:*)"]);
 ok("...and one that could run anything", /wide/.test(a.allowlistInWork(run).why || ""), a.allowlistInWork(run));
+// The Daaymn screen-recording list of 2026-10-11: tools in ~/.local/bin and the marketing
+// lane's own folder are not "outside your work", so it goes on without a card.
+propose(["Bash(flutter build apk --debug --dart-define=ALLOW_SCREEN_RECORDING=true)", `Bash(${HOME}/.local/bin/adb:*)`, `Bash(${HOME}/.local/bin/ffmpeg:*)`], [join(HOME, "work", "daaymn"), join(C, "marketing", "automation")]);
+ok("a program run from ~/.local/bin, and the marketing lane's folder, are your work", a.allowlistInWork(run).ok === true, a.allowlistInWork(run));
+propose([`Bash(${HOME}/.local/bin/adb push ${HOME}/.ssh/id_ed25519:*)`]);
+ok("...but a path it hands that program still counts (~/.ssh asks you)", /outside your work: .*\.ssh/.test(a.allowlistInWork(run).why || ""), a.allowlistInWork(run));
+propose([`Bash(${HOME}/.ssh/run.sh:*)`]);
+ok("...and a script that isn't in a bin folder is judged by where it lives", /outside your work: .*\.ssh/.test(a.allowlistInWork(run).why || ""), a.allowlistInWork(run));
 const cmd = a.withScope('claude -p "{prompt}"', run);
 ok("an agent reaches your knowledge folders from the start", cmd.includes(`--add-dir "${join(HOME, "work", "Company")}"`), cmd);
 
