@@ -33,6 +33,14 @@ ok("...when the run ends it's turned on for that folder, Symbiot's config still 
 ok("...its question is answered for the user, so it never reaches them", /### still can't reach ~\/Company, allow it\?\nSymbiot turned your list on/.test(answers) && a.agentQuestions(run, "").questions.length === 0, answers);
 ok("...once per proposal: the same list again isn't turned on again (no loops)", (ask("still can't reach ~/Company, allow it?"), a.autoAllow(run)) === null, "");
 
+// Marketing, 2026-10-11: a list that only takes access away (a deny rule, nothing
+// allowed) was dropped, so the click did nothing and the run waited on it for good.
+ask("lock marketing out of symbiot's code?");
+propose([], []); writeFileSync(join(s, "allowlist.proposed.json"), JSON.stringify({ permissions: { allow: [], deny: [`Edit(/${HOME}/work/Company/**)`], additionalDirectories: [] } }));
+a.autoAllow(run);
+const l2 = JSON.parse(readFileSync(join(run, ".claude", "settings.local.json"), "utf8"));
+ok("a list that only denies is turned on too (it takes access away)", l2.permissions.deny.includes(`Edit(/${HOME}/work/Company/**)`) && a.agentQuestions(run, "").questions.length === 0, l2.permissions.deny);
+
 ask("allow the tunnel?");
 propose(["Bash(cloudflared:*)", `Read(${HOME}/.cloudflared/**)`], [join(HOME, ".cloudflared")]);
 const r2 = a.autoAllow(run);

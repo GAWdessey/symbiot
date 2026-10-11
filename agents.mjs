@@ -1077,7 +1077,7 @@ function installAllowlist(path) {
   let p; try { p = JSON.parse(readFileSync(join(path, ".symbiot", "allowlist.proposed.json"), "utf8")).permissions || {}; } catch { return null; }
   const list = (x) => (Array.isArray(x) ? x.filter((r) => typeof r === "string" && r.trim()).map((r) => r.trim()) : []);
   const allow = list(p.allow), deny = list(p.deny), dirs = list(p.additionalDirectories);
-  if (!allow.length && !dirs.length) return null;
+  if (!allow.length && !dirs.length && !deny.length) return null;
   const wide = allow.filter(wideRule);
   if (wide.length) return { refused: wide };
   const f = join(path, ".claude", "settings.local.json");
@@ -1085,7 +1085,8 @@ function installAllowlist(path) {
   const perm = cur.permissions || {}, merge = (a, b) => [...new Set([...list(a), ...b])];
   cur.permissions = { ...perm, allow: merge(perm.allow, allow), deny: merge(perm.deny, [...deny, ...GUARD()]), additionalDirectories: merge(perm.additionalDirectories, dirs) };
   try { mkdirSync(join(path, ".claude"), { recursive: true }); writeFileSync(f, JSON.stringify(cur, null, 2) + "\n", { mode: 0o600 }); } catch { return null; }
-  return [`the allow list for this folder (${allow.length} rule${allow.length === 1 ? "" : "s"})`];
+  const n = allow.length + deny.length;
+  return [`the allow list for this folder (${n} rule${n === 1 ? "" : "s"})`];
 }
 // ---- the owner's work, and allow lists inside it ---------------------------------------
 // What the owner told Symbiot is their work: the folders it scans (Settings → Folders) and
