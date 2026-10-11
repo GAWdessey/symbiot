@@ -102,6 +102,23 @@ function agentsClicking(options) {
   });
 }
 
+// ---- code changes, patches, edits and uploads are an agent's job ------------------
+// A card offered "👤 You (only you: a Symbiot code change)" for the WhatsApp photo-upload
+// patch (2026-10-11); Garth: "i dont know how to do this". Changing code, applying a patch,
+// editing a file or uploading one is an agent's work; the user only approves. A step that
+// needs who they are (a password, a code, signing in) or the body (a cable, a phone) stays theirs.
+const CODE_WORK = /\bcode change|\b(?:apply|run|install)\b[^.;:]{0,40}\bpatch\b|\bpatch(?:es)?\b|\b(?:edit|change|modify|update|fix|rewrite)\b[^.;:]{0,40}\b(?:code|files?|config|source|repo|script)\b|\b(?:upload|attach)\b[^.;:]{0,30}\b(?:files?|images?|photos?)\b|\bpull request\b/i;
+const codeWork = (text) => { const t = String(text || ""); return CODE_WORK.test(t) && !IDENTITY.test(t) && !PHYSICAL.test(t) && !TAP.test(t); };
+function agentsCodeWork(options) {
+  const opts = (options || []).map(String), agentDoes = opts.some((o) => /🤖/.test(o) && codeWork(o));
+  return opts.flatMap((o) => {
+    if (!/^\s*👤/.test(o) || !codeWork(o)) return [o];
+    if (agentDoes) return [];
+    const rec = /\(recommended\)\s*$/i.test(o), body = o.replace(/^\s*👤\s*You(?:\s*\([^)]*\))?\s*:?\s*/i, "").replace(/\s*\(recommended\)\s*$/i, "").replace(/[.\s]+$/, "");
+    return [`🤖 Agent: ${body}, then asking for your OK on the Workdesk${rec ? " (recommended)" : ""}`];
+  });
+}
+
 // ---- posting on a linked platform is an agent's job -------------------------------
 // A Marketing card offered two options, both "👤 You (only you: your linkedin): schedule
 // all three now in linkedin's scheduler… paste each post's text and attach its card"
@@ -221,4 +238,4 @@ function parseHandoffs(md) {
   return out.map((h) => ({ lane: h.lane, text: h.text.trim().slice(0, HANDOVER_MAX) })).filter((h) => h.lane && h.text);
 }
 
-export { OPS, MARKETING, HANDOVER_MAX, handoverRules, ONLY_YOU, HANDBACK, gitWork, agentsGitWork, agentsClicking, PUSH_OK, postsOnLinked, agentsPosting, APPROVE_FIRST, linkedAsks, linkedChore, parseFacts, parseAwaiting, parseHandoffs, leftToYou };
+export { OPS, MARKETING, HANDOVER_MAX, handoverRules, ONLY_YOU, HANDBACK, gitWork, agentsGitWork, agentsClicking, agentsCodeWork, PUSH_OK, postsOnLinked, agentsPosting, APPROVE_FIRST, linkedAsks, linkedChore, parseFacts, parseAwaiting, parseHandoffs, leftToYou };

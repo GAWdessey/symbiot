@@ -84,6 +84,12 @@ try {
   ok("a model that doesn't answer in JSON: its text is the reply, nothing is run", q.reply === "Two emails from Dana." && !q.did, q);
   const bad = await converse({ where: "Gmail card", question: "do it", act: { agent: async () => ({ error: "Pick your coding agent in Settings → Handoff first" }) }, ask: said({ reply: "On it.", do: { agent: "x" }, remember: [] }) });
   ok("an agent that can't start says why, in the reply", /couldn.t hand it to an agent: Pick your coding agent/.test(bad.reply), bad.reply);
+  let tries = 0;
+  const loose = await converse({ where: "Home", question: "do it", act, ask: async () => { tries++; return "It seems like the conversation has reached a point where I created a task."; } });
+  ok("Home: a reply that isn't the JSON format is retried once, then an error, nothing run", tries === 2 && /didn.t answer in the right form/.test(loose.reply) && !loose.did, [tries, loose]);
+  tries = 0;
+  const fixed = await converse({ where: "Home", question: "hi", act, ask: async () => (++tries === 1 ? "plain words" : JSON.stringify({ reply: "Hello.", do: null, remember: [] })) });
+  ok("Home: the retry's JSON answer is used", tries === 2 && fixed.reply === "Hello.", fixed);
   ok("parseReply takes a fenced JSON answer too", parseReply('```json\n{"reply":"hi","do":null}\n```').reply === "hi", "");
 
   console.log("LANES — it knows where work goes, and says where it went");

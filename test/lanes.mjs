@@ -17,7 +17,7 @@ let pass = 0, fail = 0;
 const ok = (n, c, got) => { if (c) { pass++; console.log("  ✓ " + n); } else { fail++; console.log("  ✗ " + n + (got !== undefined ? "  got: " + JSON.stringify(got) : "")); } };
 
 const { dispatch, lanesTick, loadLedger, lanesState, MAX_CHAIN, aboutIt, partlyDone, remoteKey, orcaMoves, orcaRelink, stuckHandovers, allowHandover, skipHandover, namedDirs } = await import("../lanes.mjs");
-const { parseHandoffs, handoverRules, ONLY_YOU, leftToYou, gitWork, agentsGitWork, agentsClicking, agentsPosting, linkedAsks, linkedChore } =await import("../handover.mjs");
+const { parseHandoffs, handoverRules, ONLY_YOU, leftToYou, gitWork, agentsGitWork, agentsClicking, agentsCodeWork, agentsPosting, linkedAsks, linkedChore } =await import("../handover.mjs");
 const { buildTasksMd } = await import("../tasks.mjs");
 const { actBrief } = await import("../mind.mjs");
 
@@ -245,6 +245,10 @@ try {
   const npm = agentsClicking(["👤 You (only you: your security key): at www.npmjs.com/package/symbiot/access click GitHub Actions, enter owner GAWdessey, repository symbiot, workflow filename publish.yml, environment blank, tick 'Allow npm publish', click 'Set up' (recommended)"]);
   ok("clicking through a form is the agent's, pausing only for the security key", /^🤖 Agent: at www\.npmjs\.com.*pausing on the Workdesk only for your security key \(recommended\)$/.test(npm[0]), npm[0]);
   ok("…one tap alone stays yours", /^👤/.test(agentsClicking(["👤 You (only you: your security key): tap it when npm asks"])[0]), "");
+  const cw = agentsCodeWork(["👤 You (only you: a Symbiot code change): apply `.symbiot/whatsapp-photo-upload.patch` in the checkout (recommended)", "Leave it"]);
+  ok("a code change or patch is the agent's, with an OK asked on the Workdesk", /^🤖 Agent: .*patch.*OK on the Workdesk \(recommended\)$/.test(cw[0]) && cw[1] === "Leave it", cw);
+  ok("…dropped when another option already has the agent do it", agentsCodeWork(["🤖 Agent: apply the patch", "👤 You: apply the patch yourself"]).join("|") === "🤖 Agent: apply the patch", "");
+  ok("…while a password step stays yours", /^👤/.test(agentsCodeWork(["👤 You (only you: your password): type it when the patch tool asks"])[0]), "");
   ok("…and so does a physical step", /^👤/.test(agentsClicking(["👤 You (only you: your phone): plug it in, click Allow, enter the code, tick Always"])[0]), "");
   // the Marketing card (the [Steve] series, 2026-10-08), with LinkedIn linked in Symbiot's browser
   const mk = ["👤 You (only you: your linkedin): schedule all three now in linkedin's scheduler, 08:00 on tue 13, 20 and 27 oct. paste each post's text and attach its card (recommended)", "👤 You (only you: your linkedin): schedule only week 2 now and approve 3 and 4 one at a time"];

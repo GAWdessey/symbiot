@@ -304,8 +304,10 @@ function parseReply(raw) {
   const t = String(raw || "").trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
   const a = t.indexOf("{"), b = t.lastIndexOf("}");
   if (a >= 0 && b > a) { try { const j = JSON.parse(t.slice(a, b + 1)); if (j && typeof j.reply === "string") return j; } catch {} }
-  return { reply: t, do: null, remember: [] }; // a model that didn't answer in JSON: its text is the reply
+  return { reply: t, do: null, remember: [], plain: true }; // a model that didn't answer in JSON: its text is the reply
 }
+const JSON_AGAIN = '\n\nYour last answer was not the JSON object the reply format asks for. Answer again as that one JSON object only, with "reply" in it, and no text outside it.';
+const BAD_FORM = "(the model didn't answer in the right form, so nothing was done. Ask again and I'll retry)";
 
 // One turn of any chat. where: the page ("WhatsApp card", "Task: …"); role:
 // what this page is for; context: what the page shows; history: this chat's
@@ -331,9 +333,18 @@ async function converse({ where, role = "", context = "", history = "", question
   let prompt = `${dayLine(now)}\n\n` + (known ? `What you know (from across the app):\n${known}\n\n` : "") + (kn.text ? kn.text + "\n\n" : "") + (elsewhere ? `Lately, elsewhere in the app (other chats: a short answer here doesn't reply to these):\n${elsewhere}\n\n` : "") +
     (nav && tasks.length ? `Open tasks (id: task):\n${tasks.slice(0, 40).map((t) => `- ${t.id}: ${String(t.text || "").replace(/\s+/g, " ").slice(0, 90)}${t.repo ? ` [${t.repo}]` : ""}`).join("\n")}\n\n` : "") + (context ? context + "\n\n" : "") + (history ? `This chat so far:\n${history}\n\n` : "") + `They say (on ${where}): ${question}`;
   if (kept.length) prompt += `\n(Symbiot saved what they pasted, under ${kept.map((n) => `"${n}"`).join(", ")}. Say so in a few words, and carry on with what they asked.)`;
-  const raw = await ask(system, prompt, images.length ? { images } : undefined);
-  if (!raw || /^\(?couldn't reach the model/i.test(String(raw))) return { reply: "(couldn't reach the model)", remembered: 0 };
-  const j = parseReply(raw);
+  const asked = (p) => ask(system, p, images.length ? { images } : undefined);
+  const dead = (r) => !r || /^\(?couldn't reach the model/i.test(String(r));
+  const raw = await asked(prompt);
+  if (dead(raw)) return { reply: "(couldn't reach the model)", remembered: 0 };
+  let j = parseReply(raw);
+  // Home must answer in the reply format: one retry, then an honest error rather than loose text (nothing runs on it)
+  if (j.plain && where === "Home") {
+    const raw2 = await asked(prompt + JSON_AGAIN);
+    if (dead(raw2)) return { reply: "(couldn't reach the model)", remembered: 0 };
+    j = parseReply(raw2);
+    if (j.plain) return { reply: BAD_FORM, remembered: 0, steps: [] };
+  }
   let reply = String(j.reply || "").trim().slice(0, 4000) || "(no answer)", did = null;
   const said = reply;
   const want = j.do && typeof j.do === "object" ? j.do : null, go = nav ? goOf(j.go, Object.keys(lanes), tasks) : null;
