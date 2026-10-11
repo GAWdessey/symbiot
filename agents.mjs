@@ -1104,15 +1104,17 @@ function workRoots() {
 function inWork(p, roots = workRoots()) {
   if (!p) return false;
   p = resolve(String(p).replace(/^~(?=\/|$)/, homedir()).replace(/[/*]+$/, "")) || "/";
-  const drafts = join(CONFIG_DIR, "drafts");
-  if (p === drafts || p.startsWith(drafts + "/")) return true;
+  for (const lane of [join(CONFIG_DIR, "drafts"), join(CONFIG_DIR, "marketing")]) if (p === lane || p.startsWith(lane + "/")) return true;
   if (!roots.some((r) => p === r || p.startsWith(r === "/" ? "/" : r + "/"))) return false;
   const rel = relative(homedir(), p);
   if (!rel.startsWith("..") && rel.split("/")[0].startsWith(".")) return false; // ~/.ssh, ~/.config…
   return true;
 }
 // The paths a rule names: Read(/x/**), Bash(find /x:*), additionalDirectories' /x.
-const rulePaths = (r) => (String(r).match(/(?:~|\/)[^\s:*()"',]*/g) || []).filter((x) => x === "~" || x.length > 1);
+// A Bash rule's own program, when it lives in a bin folder (~/.local/bin/adb), is a tool
+// it runs, not a place it works in: only the paths after it count.
+const BIN_PROGRAM = /^(Bash\(\s*)(?:~|\/)[^\s:()]*\/s?bin\/[^\s:()/]+/;
+const rulePaths = (r) => (String(r).replace(BIN_PROGRAM, "$1").match(/(?:~|\/)[^\s:*()"',]*/g) || []).filter((x) => x === "~" || x.length > 1);
 // Whether a proposed list can be turned on without asking: { ok } or { why }.
 function allowlistInWork(path) {
   let p; try { p = JSON.parse(readFileSync(join(path, ".symbiot", "allowlist.proposed.json"), "utf8")).permissions || {}; } catch { return { why: "no list" }; }
