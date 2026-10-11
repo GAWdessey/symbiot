@@ -2,6 +2,11 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.63.2
+
+- **Permission cards stop landing on you for Symbiot's own plumbing.** An agent connecting to a computer this one already connects to (your own server) no longer asks you, and a request too broad to allow safely goes back to the agent to spell out, not to you.
+- **What still needs you reads in plain words.** A permission card says what it lets the agent do, like "use your phone over the USB cable" or "connect to the computer at 92.4.133.97", with an Allow button. No file names or commands, on the card or when you hover over it.
+
 ## 0.63.1
 
 - **Fewer things put on your plate.** A permission an agent needs for your own work (building your app, using your phone over USB, recording its screen) now turns on by itself instead of showing up as a card: a tool installed in `~/.local/bin` and the marketing lane's own folder no longer count as "outside your work".
