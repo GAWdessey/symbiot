@@ -1263,9 +1263,12 @@ const stepText = (a) => String(a).split("🤖")[0].replace(/^\s*👤\s*(You:)?\s
 function answerQuestions(path, answers, opts = {}) {
   path = String(path || "");
   if (!path || !knownRun(path)) return { error: "No agent has run in that folder." };
-  const open = new Map(agentQuestions(path, "").questions.map((x) => [qKey(x.q), x.q]));
+  const openQs = agentQuestions(path, "").questions, open = new Map(openQs.map((x) => [qKey(x.q), x.q]));
+  // A card can outlive its question (the agent asked again, worded differently): Allow on it is
+  // still a yes to the permission question now open, not a click that finds nothing and says nothing.
+  const permQ = (openQs.find((x) => (x.options || []).some((o) => /allowlist\.proposed\.json/i.test(o)) || /allowlist\.proposed\.json/i.test(x.context || "")) || {}).q;
   const rows = (Array.isArray(answers) ? answers : [])
-    .map((x) => ({ q: open.get(qKey(x && x.q)), a: String((x && x.a) || "").replace(/^\s*#+/gm, "").trim().slice(0, TASK_MAX) }))
+    .map((x) => ({ remap: !open.has(qKey(x && x.q)), q: open.get(qKey(x && x.q)) || (permQ && /allowlist\.proposed\.json|^\W*(?:You|Agent)?:?\s*(?:\([^)]*\)\s*)?allow\b/i.test(String((x && x.a) || "").replace(/^[^\w]*(?:👤|🤖)\s*/u, "")) ? permQ : undefined), a: String((x && x.a) || "").replace(/^\s*#+/gm, "").trim().slice(0, TASK_MAX) }))
     .filter((x) => x.q && x.a);
   if (!rows.length) return { error: "Pick or type at least one answer." };
   const prev = readSymbiot(path, "ANSWERS.md") || "# Answers from the user\nAnswers to the questions in QUESTIONS.md, newest last. Follow them; ask again in QUESTIONS.md if one is unclear.\n";
@@ -1288,7 +1291,7 @@ function answerQuestions(path, answers, opts = {}) {
   // Allow on a permission card is a 🤖 option naming the proposed list, so it isn't a step of the
   // user's: the click itself is their go-ahead, and without installing the list here the agent
   // asked again for the same permission (the click "did nothing").
-  for (const x of rows) if (!yourStep(x.a) && !holdAnswer(x.a) && /allowlist\.proposed\.json/i.test(x.a) && !/^\W*(?:🤖\s*(?:Agent:)?\s*)?(?:don'?t|do not|no|skip|leave)\b/i.test(x.a)) { const g = grantFromStep(x.a, path, notes); if (g) granted.push(...g); }
+  for (const x of rows) if (!yourStep(x.a) && !holdAnswer(x.a) && (/allowlist\.proposed\.json/i.test(x.a) || x.remap) && !/^\W*(?:🤖\s*(?:Agent:)?\s*)?(?:don'?t|do not|no|skip|leave)\b/i.test(x.a)) { const g = grantFromStep(`${x.a} (allowlist.proposed.json)`, path, notes); if (g) granted.push(...g); }
   let yours = steps.map((s) => s.step).filter(Boolean).filter((st) => !gitWork(st)).filter((st) => { const g = grantFromStep(st, path, notes); if (g) granted.push(...g); return !g; });
   if (granted.length) out.granted = granted;
   // A list too wide to turn on by a click: say which rules, tell the agent to ask for

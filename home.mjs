@@ -437,14 +437,22 @@ function settleFromChat(h, said, answer) {
 // the user's job; and the same question from several agents is one card, not three.
 const CLOSE_BROWSER = /\b(?:close|quit|shut)\b[^.?]{0,40}\bSymbiot Browser\b|\bSymbiot Browser is open\b|\bclick(?:ing)? Done\b[^.?]{0,30}\b(?:browser|window)\b/i;
 function settleAsks(you) {
-  const seen = new Set();
+  const seen = new Map();
   return you.map((y) => { if (y.kind !== "ask") return y; const c = coveredBy(y.q); return c.length ? { ...y, covered: c } : y; }).filter((y) => {
     if (y.kind !== "ask") return true;
     if (isDone(y.q)) return false; // already answered, for any agent
     if (CLOSE_BROWSER.test(`${y.q || ""} ${(y.options || []).join(" ")}`)) return false;
     const k = String(y.q || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
-    if (!k || !seen.has(k)) { seen.add(k); return true; }
-    return false;
+    if (!k) return true;
+    // the same human step worded two ways ("Trusted Publisher … security key" twice) is one card
+    const w = new Set(k.split(" ").filter((t) => t.length > 3));
+    for (const [sk, sw] of seen) {
+      if (sk === k) return false;
+      const both = [...w].filter((t) => sw.has(t)).length;
+      if (w.size >= 5 && sw.size >= 5 && both / Math.min(w.size, sw.size) >= 0.8) return false;
+    }
+    seen.set(k, w);
+    return true;
   });
 }
 

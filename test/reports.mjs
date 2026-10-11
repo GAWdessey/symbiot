@@ -205,6 +205,8 @@ console.log("REPORTS — a handed-off or dismissed next step leaves 'Read, to ac
   ar("Main inbox is garthwhite507@gmail.com, never ask which mailbox to clean");
   const cv = settleAsks([ask("m", "Which mailbox should I clean?")]);
   ok("a standing rule that looks like it answers an ask is listed on the card, which stays open", cv.length === 1 && cv[0].covered && cv[0].covered.length === 1, JSON.stringify(cv));
+  const npm = settleAsks([ask("n1", "Tap your security key to save the npm Trusted Publisher for GAWdessey symbiot publish.yml"), ask("n2", "On npm, save the Trusted Publisher (GAWdessey / symbiot / publish.yml) with your security key tap"), ask("n3", "Which plan are you on today?")]);
+  ok("the same human step worded two ways is one card", npm.length === 2 && npm[0].id === "ask:n1" && npm[1].id === "ask:n3", JSON.stringify(npm.map((y) => y.id)));
   ok("asks to close the Symbiot Browser never reach Home, and the same question from two agents is one card", left.length === 2 && left[0].path === undefined && left[0].id === "ask:c" && left[1].id === "s", JSON.stringify(left.map((y) => y.id)));
 }
 {

@@ -3306,11 +3306,12 @@ return h;}
 // continue): saved to its ANSWERS.md, and its agent picks it up. Then it dissolves.
 function wireBlob(box,y,o){o=o||{};var say=o.say||lqSaid,nm=y.name||y.repo||'the agent';
 var lock=function(on){box.querySelectorAll('button,input').forEach(function(b){b.disabled=on;});};
-var send=function(ans,j){ans=String(ans||'').trim();if(!ans||(!y.path&&!y.fix))return;lock(true);
+var oops=function(t){var e=box.querySelector('.berr');if(!e&&box.appendChild&&box.ownerDocument){e=box.ownerDocument.createElement('div');e.className='berr';e.setAttribute('role','alert');e.style.cssText='color:#ff9b8a;font-size:12px;margin-top:6px';box.appendChild(e);}if(e)e.textContent=t;say(t,true);};
+var send=function(ans,j){ans=String(ans||'').trim();if(!ans||(!y.path&&!y.fix)){oops(nm+': that answer can’t be sent from here. Answer on its block on the Workdesk.');return;}var be=box.querySelector('.berr');if(be)be.textContent='';lock(true);
 (y.fix?api('/api/home/answer',j!=null?{id:y.id,pick:j}:{id:y.id,text:ans}):api('/api/agents/answer',{path:y.path,answers:[{q:y.asked||y.q,a:ans}],rerun:true})).then(function(r){
-if(!r||r.error){lock(false);say(nm+': '+((r&&r.error)||'the answer didn’t save. Try again on its block on the Workdesk.'),true);return;}
+if(!r||r.error){lock(false);oops(nm+': '+((r&&r.error)||'the answer didn’t save. Try again on its block on the Workdesk.'));return;}
 say(y.fix?nm+': '+(r.said||'Done.'):'Sent to '+(r.lane||nm)+'. '+(r.yours&&r.yours.length?'Still yours to do: '+r.yours.join(' '):r.rerun?'Its agent is picking it up now.':(r.note||'Saved in its ANSWERS.md.')));
-bdSet(y,'');if(o.sent)o.sent();if(box.classList)box.classList.add('gone');setTimeout(function(){if(o.done)o.done();},650);}).catch(function(e){lock(false);say(nm+': '+String((e&&e.message)||e),true);});};
+bdSet(y,'');if(o.sent)o.sent();if(box.classList)box.classList.add('gone');setTimeout(function(){if(o.done)o.done();},650);}).catch(function(e){lock(false);oops(nm+': '+String((e&&e.message)||e));});};
 box.querySelectorAll('.nopt[data-j]').forEach(function(b){b.addEventListener('click',function(){var j=+b.getAttribute('data-j');send((y.options||[])[j],j);});});
 var bs=box.querySelector('.bsign');if(bs)bs.addEventListener('click',function(){bs.disabled=true;openSignIn(y.signInTo,function(t,ok){bs.disabled=false;say(t,!ok);});});
 var fr=box.querySelector('.bfree'),fx=box.querySelector('.bfx'),fi=fx&&fx.querySelector('input');
