@@ -38,16 +38,16 @@ a{color:var(--bone)}
     m.innerHTML = 'If it doesn’t start, <a href="' + url + '">tap here</a>.' + (app === "android" ? " Then open the download to install it, and open Symbiot." : "");
     location.replace(url);
   };
-  fetch("https://api.github.com/repos/GarthGhostai/symbiot/releases?per_page=30", { headers: { Accept: "application/vnd.github+json" } })
+  fetch("https://api.github.com/repos/GAWdessey/symbiot/releases?per_page=30", { headers: { Accept: "application/vnd.github+json" } })
     .then(function (r) { return r.ok ? r.json() : []; })
     .then(function (rels) {
       for (var i = 0; i < rels.length; i++) {
         var r = rels[i]; if (r.draft || r.prerelease) continue;
         for (var j = 0; j < (r.assets || []).length; j++) if (r.assets[j].name === file) return go(r.assets[j].browser_download_url);
       }
-      go("https://github.com/GarthGhostai/symbiot/releases/latest/download/" + file);
+      go("https://github.com/GAWdessey/symbiot/releases/latest/download/" + file);
     })
-    .catch(function () { go("https://github.com/GarthGhostai/symbiot/releases/latest/download/" + file); });
+    .catch(function () { go("https://github.com/GAWdessey/symbiot/releases/latest/download/" + file); });
 })();
 </script>
 </body>
