@@ -12,6 +12,7 @@ import { randomBytes, createHash } from "node:crypto";
 import { CONFIG_DIR, loadConfig, saveConfig, loadTasks, TASK_MAX, clipWords, sameTask, taskWords, sh, hasCmd } from "./core.mjs";
 import { parseRun, lastRunText, readRunLog, briefPlan, stepOf, runLine } from "./work.mjs";
 import { noteDuration, kindOf } from "./estimate.mjs";
+import { plainAsk } from "./plain.mjs";
 import { parseFacts, leftToYou, gitWork, agentsGitWork, agentsPosting, linkedAsks, linkedChore, PUSH_OK } from "./handover.mjs";
 import { scanRoots, repoPathMap } from "./scan.mjs";
 import { knowledgeFolders } from "./knowledge.mjs";
@@ -1079,6 +1080,13 @@ function skipIdea(path, text) {
   }
   return { ok: true };
 }
+// A question as every screen shows it (plain.mjs): `shown`, its words with no file in them,
+// and `labels`, its choices the same way ("Allow" for an allow list it proposed). q and
+// options stay as the agent wrote them: an answer is saved under the agent's own words.
+function plainly(path, x) {
+  let p = {}; try { p = plainAsk(path, x, { max: x.options.length }); } catch {}
+  return { ...x, ...(p.raw ? { shown: p.q } : {}), ...(p.labels ? { labels: p.labels } : {}) };
+}
 function agentQuestions(path, repo) {
   const p = parseQuestions(readSymbiot(path, "QUESTIONS.md"));
   const done = new Set([...readSymbiot(path, "ANSWERS.md").matchAll(/^###\s+(.+)$/gm)].map((m) => qKey(m[1])));
@@ -1087,7 +1095,7 @@ function agentQuestions(path, repo) {
   const ideas = p.suggestions.map(suggestionTarget).filter(({ text }) => !skipped.some((s) => sameTask(s, text)))
     .map(({ repo: to, text }) => ({ text, repo: to || repo, other: !!to && to !== repo, added: tasks.some((t) => t.repo === (to || repo) && sameTask(t.text, text)) })).filter((s) => !s.added);
   return {
-    questions: open.slice(0, QUESTIONS_MAX).map((x) => ({ ...x, options: x.options.slice(0, OPTIONS_SHOWN) })), answered: p.questions.length - open.length,
+    questions: open.slice(0, QUESTIONS_MAX).map((x) => plainly(path, { ...x, options: x.options.slice(0, OPTIONS_SHOWN) })), answered: p.questions.length - open.length,
     suggestions: ideas, ideasShown: IDEAS_SHOWN,
   };
 }

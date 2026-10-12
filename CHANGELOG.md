@@ -2,6 +2,11 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.63.8
+
+- **No more file names on permission questions, anywhere.** When an agent asked for a permission, Home said it in plain words with an Allow button, but the same question on the Workdesk, on a project's card and on your phone still read "allow the list in .symbiot/allowlist.proposed.json". Every screen now says what the agent wants to do ("connect to the computer at 13.51.104.186") with Allow.
+- **Allow sticks.** Saying Allow along with a few words of your own that sounded like git ("check the deployed commit, git status and served files") was taken for a git chore and handed back to the agent, which can't give itself permission, so it asked you again. A permission is now always turned on as one.
+
 ## 0.63.7 — 2026-10-12
 
 - **`symbiot capture Symbiot` works in one go.** It used to refuse, because your running Symbiot shows your real work, and needed a copy started by hand. It now starts a throwaway Symbiot with a made-up company in it (Acme: its repos, its agents' questions, what arrived, its week, a Marketing draft), captures Home, the Workdesk, the Dashboard, the Week, the Map and Marketing, then stops it and deletes it. Symbiot's own tray can be brought up to date after every release.
