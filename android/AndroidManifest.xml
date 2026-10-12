@@ -47,14 +47,16 @@
                 <data android:scheme="symbiot" android:host="localhost" />
             </intent-filter>
             <!-- pairing with your computer: the link its QR holds (symbiot.co.za/pair, which
-                 the site hands on as symbiot://pair), so the phone's own camera scans it -->
+                 the site hands on as symbiot://pair), so the phone's own camera scans it.
+                 autoVerify: symbiot.co.za/.well-known/assetlinks.json names this app's
+                 release key, so Android opens the link here at once, not the site first -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="symbiot" android:host="pair" />
             </intent-filter>
-            <intent-filter>
+            <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />

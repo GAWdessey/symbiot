@@ -80,6 +80,20 @@ function withNeeds(list, { seenFile = SEEN_FILE } = {}) {
     return { ...r, needs: n ? "ideas" : "", ideas: n };
   });
 }
+// On a phone: its computer's newest reports, from the copy it sent (phone.mjs
+// computerCopy, reportsForPhone), beside the phone's own. Their ids start "pc:", they
+// say where they're from, and one is read from the copy, so it opens offline too.
+// It can't be asked about or ticked into ideas here: that's the computer's (remote).
+function phoneReports(pc) {
+  if (!pc || !pc.copy || !Array.isArray(pc.copy.reports)) return [];
+  return pc.copy.reports.map((r) => ({ id: "pc:" + r.id, title: r.title, name: r.name, lane: r.lane, run: r.run, file: `${pc.from}: ${r.lane ? r.lane + " · " : ""}${r.name}`, folder: "", size: r.size, mtime: r.mtime, new: false, running: false, computer: pc.from }));
+}
+function phoneReport(pc, id) {
+  const r = phoneReports(pc).find((x) => x.id === String(id || "")), raw = r && pc.copy.reports.find((x) => "pc:" + x.id === r.id);
+  if (!r || !raw) return { error: "That report isn't in the copy from your computer any more: it sends its newest few." };
+  const text = String(raw.text || "");
+  return { ...r, remote: true, text, html: mdHtml(text) + (raw.cut ? mdHtml(`_That's its first part: the rest is on ${pc.from}._`) : ""), draft: false, ideas: [] };
+}
 // Mark them all read (the list's "Mark all read").
 function markAllRead({ list, seenFile = SEEN_FILE } = {}) {
   const d = loadSeen(seenFile); for (const r of list || listReports()) d.seen[r.id] = r.mtime;
@@ -236,4 +250,4 @@ function decide(r, status, file = SEEN_FILE) { const d = loadSeen(file); d.decid
 // How many reports are new, and the newest one's title (Home's droplet).
 function reportsNews(opts) { const l = listReports(opts).filter((r) => r.new); return { count: l.length, latest: l[0] ? l[0].title : "" }; }
 
-export { SEEN_FILE, NOT_REPORTS, titleOf, listReports, readReport, reportImage, imagePath, markAllRead, reportsNews, mdHtml, reportIdeas, isDraftReport, decidedOn, decide, withNeeds, IDEAS_MAX, handledIdeas, openIdeas, markIdeas };
+export { SEEN_FILE, NOT_REPORTS, titleOf, listReports, readReport, phoneReports, phoneReport, reportImage, imagePath, markAllRead, reportsNews, mdHtml, reportIdeas, isDraftReport, decidedOn, decide, withNeeds, IDEAS_MAX, handledIdeas, openIdeas, markIdeas };

@@ -1,0 +1,10 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "co.symbiot.app",
+      "sha256_cert_fingerprints": ["2C:4D:32:88:FC:25:EA:3B:52:8B:79:CE:55:A8:61:6C:1A:FE:DA:D5:11:0A:AD:D4:F8:EF:AB:39:37:29:4C:B6"]
+    }
+  }
+]

@@ -14,7 +14,7 @@ import { userStyleLine } from "./adapt.mjs";
 import { inflightIds } from "./parallel.mjs";
 import { QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, isUrgent, handoffCmd, runningHandoff, untrackedBefore, forgetUntracked, loadRunFiles, forgetRunFiles, writeTasks, droppedTasks, startHeldTasks, connectorsLine } from "./agents.mjs";
 import { gitDefaultBranch } from "./drift.mjs";
-import { readRunLog } from "./work.mjs";
+import { readRunLog, briefPlan } from "./work.mjs";
 import { repoPathMap, laneMap, openWork, detectRepo } from "./scan.mjs";
 import { MARKETING_DIR, ensureMarketing, marketingBrief } from "./marketing.mjs";
 
@@ -446,9 +446,35 @@ function saidFinished(summary, text) {
 // The open tasks of a repo whose changes are approved without one: Approve
 // offers to tick them, checked when the last run's summary says it finished them,
 // so finished work doesn't go out again as new tasks on the next send.
-function finishedOffer(path, open) {
+function finishedOffer(path, open, round) {
   const summary = runSummary(path);
-  return uniqueTasks(open.map((x) => x.text)).slice(0, 12).map((text) => { const x = open.find((y) => y.text === text); return { id: x.id, text, finished: saidFinished(summary, text) }; });
+  return uniqueTasks(open.map((x) => x.text)).slice(0, 12).map((text) => { const x = open.find((y) => y.text === text); return round && x.id === round.id ? { id: x.id, text, finished: false, round: true } : { id: x.id, text, finished: saidFinished(summary, text) }; });
+}
+// The open task of these words: most of the shorter one's words in the other (a
+// TASKS.md line is clipped, and "Round done:" names a task in its first words).
+function taskOf(words, open) {
+  const has = keyWords(words); let best = null, top = 0;
+  for (const x of open) {
+    const want = keyWords(x.text); let n = 0; for (const w of want) if (has.has(w)) n++;
+    const r = n / Math.max(1, Math.min(want.size, has.size));
+    if (n >= Math.min(3, want.size) && r >= 0.5 && r > top) { best = x; top = r; }
+  }
+  return best;
+}
+// A task that runs for weeks (a domain move, step by step) stays unticked until its
+// last step, so its finished, tested rounds had no ticked task to go out under, and
+// "nothing to approve" read as "done already" while they sat uncommitted (2026-10-12).
+// The open task uncommitted changes are a round of: the one the last run's summary
+// says "Round done:" for (as the brief asks), else the first unticked item in
+// TASKS.md when it has steps and the run said which step it was on. null: neither.
+const ROUND_DONE = /^\W*round\s+(?:\d+\s+)?(?:done|finished)\s*[:\-–—]\s*(.+)$/gim;
+function roundOf(path, open, summary = runSummary(path)) {
+  if (!open.length) return null;
+  for (const m of String(summary || "").matchAll(ROUND_DONE)) { const x = taskOf(m[1], open); if (x) return { id: x.id, text: x.text }; }
+  let md = ""; try { md = readFileSync(join(path, ".symbiot", "TASKS.md"), "utf8"); } catch {}
+  const first = briefPlan(md).length && /\bstep\s+\d{1,2}\b/i.test(summary) ? md.split("\n").find((l) => /^\s*-\s*\[ \]/.test(l)) : "";
+  const x = first && taskOf(first.replace(/^\s*-\s*\[ \]\s*/, ""), open);
+  return x ? { id: x.id, text: x.text } : null;
 }
 // What Approve would ship out of workingChanges: the files of the runs that finished
 // (taskPaths), so the card's list is the commit's. held: files only an unfinished run
@@ -461,17 +487,30 @@ function shippable(path, wc) {
 // uncommitted changes no ticked task covers (untasked: approve them as-is, with
 // `open`, the repo's open tasks, to tick the ones the run finished).
 // running: an agent is still editing there, so its changes may be half done.
-function pendingReview() {
+// A repo's git side of Review (what changed, what's unreleased), kept REVIEW_FRESH for
+// the screens that only show it (pendingReview({ kept: true }): Home and its 20s
+// tick), which asked git for every repo every few seconds and held the app up
+// (2026-10-12). Approve asks git itself, and forgets what was kept (forgetReview).
+const REVIEW_GIT = new Map(), REVIEW_FRESH = 15000;
+function reviewGit(path, kept) {
+  const had = kept && REVIEW_GIT.get(path);
+  if (had && Date.now() - had.at < REVIEW_FRESH) return had.v;
+  const v = { ...shippable(path, workingChanges(path)), unreleased: unreleased(path), bumpOffer: bumpOffer(path), publishesOnMerge: publishesOnMerge(path) };
+  REVIEW_GIT.set(path, { at: Date.now(), v }); return v;
+}
+const forgetReview = () => REVIEW_GIT.clear();
+function pendingReview({ kept = false } = {}) {
   const t = loadTasks(), by = {}; for (const x of t) if (x.review && !x.done && !x.archived) (by[x.repo] = by[x.repo] || []).push(x);
   const sent = [...new Set(t.filter((x) => x.repo && !x.archived && !by[x.repo]).map((x) => x.repo))];
   const map = Object.keys(by).length || sent.length ? laneMap() : {};
   const am = autoMergeRepos();
-  const out = Object.keys(by).sort().map((repo) => { const path = map[repo] || ""; return { repo, path, tasks: by[repo], autoMerge: am.includes(repo), running: !!(path && runningHandoff(path)), ...(path ? { ...shippable(path, workingChanges(path)), unreleased: unreleased(path), bumpOffer: bumpOffer(path), publishesOnMerge: publishesOnMerge(path) } : { branch: "", files: [], stat: "" }) }; });
+  const out = Object.keys(by).sort().map((repo) => { const path = map[repo] || ""; return { repo, path, tasks: by[repo], autoMerge: am.includes(repo), running: !!(path && runningHandoff(path)), ...(path ? reviewGit(path, kept) : { branch: "", files: [], stat: "" }) }; });
   for (const repo of sent.sort()) {
     const path = map[repo]; if (!path || !existsSync(join(path, ".symbiot", "TASKS.md"))) continue;
-    const wc = shippable(path, workingChanges(path)); if (!wc.files.length) continue;
-    const open = finishedOffer(path, t.filter((x) => x.repo === repo && !x.done && !x.archived && !x.review));
-    out.push({ repo, path, tasks: [], untasked: true, open, autoMerge: am.includes(repo), running: !!runningHandoff(path), ...wc, unreleased: unreleased(path), bumpOffer: bumpOffer(path), publishesOnMerge: publishesOnMerge(path) });
+    const wc = reviewGit(path, kept); if (!wc.files.length) continue;
+    const still = t.filter((x) => x.repo === repo && !x.done && !x.archived && !x.review), round = roundOf(path, still);
+    const open = finishedOffer(path, still, round);
+    out.push({ repo, path, tasks: [], untasked: true, open, ...(round ? { round } : {}), autoMerge: am.includes(repo), running: !!runningHandoff(path), ...wc });
   }
   return out;
 }
@@ -598,6 +637,7 @@ async function shipChanges(path, texts, opts = {}) {
 function autoMergeRepos() { const a = loadConfig().autoMerge; return Array.isArray(a) ? a : []; }
 function setAutoMerge(repo, on) { const cfg = loadConfig(); let a = (Array.isArray(cfg.autoMerge) ? cfg.autoMerge : []).filter((x) => x !== repo); if (on && repo) a.push(repo); if (a.length) cfg.autoMerge = a; else delete cfg.autoMerge; saveConfig(cfg); return { ok: true, repos: cfg.autoMerge || [] }; }
 async function approveRepo(repo, opts = {}) {
+  forgetReview();
   const pro = can("ship"); if (!pro.ok) return { error: pro.why, pro: true }; // Pro (licence.mjs); the work stays on its branch
   const waiting = (t) => t.filter((x) => x.repo === repo && x.review && !x.done && !x.archived);
   const shipped = waiting(loadTasks());
@@ -618,22 +658,28 @@ async function approveRepo(repo, opts = {}) {
 // awaiting review in the repo, this is just Approve. opts.tick: ids of the
 // repo's open tasks the changes finished (the run didn't tick them): they're
 // approved with the changes, as Approve does, so they don't go out again.
+// Changes that are a round of a task still going (roundOf) go out under its name,
+// "A round of: …", and the task stays open, the round noted on it (rounds).
 async function approveChanges(repo, opts = {}) {
+  forgetReview();
   const pro = can("ship"); if (!pro.ok) return { error: pro.why, pro: true };
   if (loadTasks().some((x) => x.repo === repo && x.review && !x.done && !x.archived)) return await approveRepo(repo, opts);
   const path = laneMap()[repo]; if (!path) return { error: "Repo not found: " + (repo || "(no repo)") };
   const busy = stillWorking(repo, path); if (busy) return busy;
   if (!workingChanges(path).files.length) return { error: "No uncommitted changes in " + repo + "." };
   const ids = new Set(Array.isArray(opts.tick) ? opts.tick.map(String) : []);
-  const ticked = (t) => t.filter((x) => ids.has(x.id) && x.repo === repo && !x.done && !x.archived && !x.review);
-  const r = await shipWithBump(path, uniqueTasks(ticked(loadTasks()).map((x) => x.text)), { ...opts, autoMerge: opts.autoMerge !== undefined ? opts.autoMerge : autoMergeRepos().includes(repo) });
+  const open = (t) => t.filter((x) => x.repo === repo && !x.done && !x.archived && !x.review), ticked = (t) => open(t).filter((x) => ids.has(x.id));
+  const t0 = loadTasks(), r0 = roundOf(path, open(t0)), round = r0 && !ids.has(r0.id) ? r0 : null; // ticked: it's finished, not a round
+  const r = await shipWithBump(path, uniqueTasks([...(round ? ["A round of: " + round.text] : []), ...ticked(t0).map((x) => x.text)]), { ...opts, autoMerge: opts.autoMerge !== undefined ? opts.autoMerge : autoMergeRepos().includes(repo) });
   if (r.error) return r;
   // read again: the ship took a while, and the list may have changed meanwhile
   const t = loadTasks(), items = ticked(t), now = Date.now();
   for (const x of items) { x.done = true; x.archived = true; x.archivedAt = now; x.approvedAt = now; for (const k of ["branch", "commit", "pr"]) if (r[k]) x[k] = r[k]; }
+  const going = round && open(t).find((x) => x.id === round.id);
+  if (going && r.commit) going.rounds = [...(going.rounds || []), { at: now, ...Object.fromEntries(["branch", "commit", "pr"].filter((k) => r[k]).map((k) => [k, r[k]])) }].slice(-20);
   const removed = items.length ? applyRemovals(t) : 0;
-  if (items.length) saveTasks(t);
-  return { ...r, approved: items.length, ...(removed ? { removed } : {}) };
+  if (items.length || going) saveTasks(t);
+  return { ...r, approved: items.length, ...(round ? { round: { id: round.id, text: round.text } } : {}), ...(removed ? { removed } : {}) };
 }
 // Not right: reopen it and untick it in TASKS.md so the agent picks it up again.
 function sendBack(id) {
@@ -679,7 +725,7 @@ function buildTasksMd(name, ctx, list) {
   const byType = {}; for (const t of list) { const ty = taskType(t.text); (byType[ty] = byType[ty] || []).push(t); }
   const keys = Object.keys(byType).sort((a, b) => TASK_ORDER.indexOf(a) - TASK_ORDER.indexOf(b));
   for (const ty of keys) { L.push(`### ${ty}`); for (const t of byType[ty]) L.push(`- [ ] ${t.text}`); L.push(""); }
-  L.push("## When you finish an item", "- Tick it here (`- [x]`) as soon as it's done — that's how it reaches review. Ticking doesn't archive it: the user approves it in Symbiot, which commits it on a branch and opens a PR.", "- Leave your changes **uncommitted**, and don't tick anything you didn't finish or couldn't verify.", "- If an item has numbered steps (1), 2), …), say `Step N: …` as you start each one, so Home shows how far along you are.", "- To see Symbiot itself working (its Home, a layout, a card), run a copy of your own: `node index.mjs app --fresh` from this repo, or `symbiot app --fresh`. Never point a browser, a screenshot or a proxy at the user's running Symbiot (127.0.0.1:7391): it's their window and their data.", "- If the user says to drop an item (in ANSWERS.md, say), delete its line here: Symbiot closes it, so it isn't sent again. Don't delete one for any other reason.", "");
+  L.push("## When you finish an item", "- Tick it here (`- [x]`) as soon as it's done — that's how it reaches review. Ticking doesn't archive it: the user approves it in Symbiot, which commits it on a branch and opens a PR.", "- Leave your changes **uncommitted**, and don't tick anything you didn't finish or couldn't verify.", "- If an item has numbered steps (1), 2), …), say `Step N: …` as you start each one, so Home shows how far along you are.", "- An item that runs for days or weeks (a move done step by step) stays unticked until its last step. When a round of it is finished and tested, end your last message with a line `Round done: <the item's first words>`, and Symbiot puts that round up for the user's OK under the item, which stays open.", "- To see Symbiot itself working (its Home, a layout, a card), run a copy of your own: `node index.mjs app --fresh` from this repo, or `symbiot app --fresh`. Never point a browser, a screenshot or a proxy at the user's running Symbiot (127.0.0.1:7391): it's their window and their data.", "- If the user says to drop an item (in ANSWERS.md, say), delete its line here: Symbiot closes it, so it isn't sent again. Don't delete one for any other reason.", "");
   L.push(...handoverRules(ctx.lanes || [], name), ...HANDBACK, ...standingBrief(), ...doneBrief());
   L.push("## If you need a decision, or have ideas", "You may be running unattended, so you can't ask in chat. Write `.symbiot/QUESTIONS.md` instead: Symbiot shows it to the user on your block in its Workdesk, and their answers come back in `.symbiot/ANSWERS.md` (read that first if it exists).",
     `- At most ${QUESTIONS_MAX} questions, under a \`## Questions\` heading. Each is a \`### \` heading, then a line of context, then exactly ${OPTIONS_SHOWN} options as \`- \` bullets, the one you recommend first, marked \`(recommended)\`. Symbiot shows only the first ${OPTIONS_SHOWN}; the user can always answer in their own words.`,
@@ -742,4 +788,4 @@ function pushTasks(filter) {
   return { empty: false, written, unresolved, handoff: handoffCmd() };
 }
 
-export { gitFailed, taskPaths, addTask, toggleTask, setTaskDone, removeTask, restoreTask, completedInRepo, removalOf, applyRemovals, applyDrops, syncTasks, workingChanges, workingDiff, publishesOnMerge, unreleased, bumpOffer, learnNpm, releaseNeeded, withReleases, setVersion, changelogEntry, changelogSection, noteChangelog, releaseInput, shipWithBump, runSummary, saidFinished, pendingReview, commitSubject, shipChanges, autoMergeRepos, setAutoMerge, approveRepo, approveChanges, sendBack, TASK_ORDER, taskType, buildTasksMd, pushTasks };
+export { forgetReview, gitFailed, taskPaths, addTask, toggleTask, setTaskDone, removeTask, restoreTask, completedInRepo, removalOf, applyRemovals, applyDrops, syncTasks, workingChanges, workingDiff, publishesOnMerge, unreleased, bumpOffer, learnNpm, releaseNeeded, withReleases, setVersion, changelogEntry, changelogSection, noteChangelog, releaseInput, shipWithBump, runSummary, saidFinished, pendingReview, commitSubject, shipChanges, autoMergeRepos, setAutoMerge, approveRepo, approveChanges, sendBack, TASK_ORDER, taskType, buildTasksMd, pushTasks };

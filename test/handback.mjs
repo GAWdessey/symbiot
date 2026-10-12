@@ -103,6 +103,15 @@ console.log("AWAITING.json — the reply is watched for, and handed on");
   ok("a reply on disk from someone it went to, Re: the subject, answers it", answers(w, mail("schoemanjono@gmail.com", "Re: " + subject, sent + 1000)));
   ok("…not the same subject from someone else", !answers(w, mail("cale@ghost-ai.co.za", "Re: " + subject, sent + 1000)));
 
+  // the user's own email isn't the reply: ops' "Re: Re: winlove setup" to Jono, and the Gmail rows Watch read (2026-10-12)
+  const wl = { to: ["schoemanjono@gmail.com"], subject: "Re: Re: winlove setup", sent }, mine = ["garth@ghost-ai.co.za", "garthwhite507@gmail.com"];
+  const gm = (text) => ({ id: "n2", watch: "gmail", name: "Inbox - garth@ghost-ai.co.za - ghost-ai Mail", ts: sent + 720000, text });
+  ok("an inbox row whose newest message is the user's own (\"me\" last) isn't the reply", !answers(wl, gm("Cale, Jono, me 5, Fwd: winlove setup, has attachment, Oct 9, Hey Jono, Tested https://www.google.com/url?q=http://winlove.co.za"), mine) && !answers(wl, gm("Cale, me 2, Fwd: winlove setup, has attachment, Oct 1, Hey Jono, Cale passed on the WinLove stuff"), mine) && !answers(wl, gm("me, Fwd: winlove setup, Hey Jono"), mine));
+  ok("…one whose newest message is theirs is", answers(wl, gm("Cale, me, Jono 4, Fwd: winlove setup, has attachment, 3:16 PM, Hi Garth, Codex is currently adding the Lerato and Clay embeds"), mine) && answers(wl, gm("Jonathan Schoeman, Re: winlove setup, here's the access"), mine));
+  ok("…nor a row Watch marks as the user's", !answers(wl, { ...gm("Jono, Fwd: winlove setup"), mine: true }, mine));
+  ok("mail on disk from the user's own address isn't the reply, even when it doesn't say whom it went to", !answers({ ...wl, to: [] }, mail("Garth@ghost-ai.co.za", "Re: winlove setup", sent + 1000), mine) && answers({ ...wl, to: [] }, mail("schoemanjono@gmail.com", "Re: winlove setup", sent + 1000), mine));
+  ok("…and nothing's handed on for it", awaitTick(deps({ news: [gm(`Cale, Jono, me 5, Fwd: ${subject}, Hey Jono`)], mine })).replied.length === 0 && acts.length === 0);
+
   // the two new emails in the inbox are Cale's, on another thread: nothing happens
   const cale = [row("Cale Re: ghost-ai.co.za dns - fixed webhook url for whatsapp module It does have a permanent webhook", sent + 7000000)];
   ok("Cale's emails on another thread don't count as Jono's reply", awaitTick(deps({ news: cale })).replied.length === 0 && acts.length === 0);

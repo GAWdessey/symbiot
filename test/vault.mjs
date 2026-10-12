@@ -33,7 +33,7 @@ try {
 
   console.log("CHAT — acknowledged, redacted, not refused");
   let seen = "";
-  const out = await converse({ where: "Home", question: `recovery code for npm ${A} ${B}`, ask: async (sys, p) => { seen = sys + "\n" + p; return JSON.stringify({ reply: "Saved as npm recovery codes.", do: null, remember: [] }); } });
+  await converse({ where: "Home", question: `recovery code for npm ${A} ${B}`, ask: async (sys, p) => { seen = sys + "\n" + p; return JSON.stringify({ reply: "Saved as npm recovery codes.", do: null, remember: [] }); } });
   ok("the model never sees the codes", !seen.includes(A) && !seen.includes(B) && seen.includes("[saved: npm recovery codes]"));
   ok("the prompt says to acknowledge, not refuse", /never refuse it/.test(seen));
   ok("the stored chat has a placeholder, not the codes", !JSON.stringify(loadMind()).includes(A) && JSON.stringify(loadMind()).includes("[saved: npm recovery codes]"));

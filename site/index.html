@@ -3,13 +3,18 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Symbiot — your work, handled alongside you</title>
-<meta name="description" content="Symbiot watches what you work on and what comes in, hands tasks to your coding agent, and only asks you what only you can do. Runs on your computer, with your Claude subscription.">
+<title>Symbiot — your coding agents work, you only do what only you can do</title>
+<meta name="description" content="Symbiot runs your coding agents (Claude Code, Codex, Gemini CLI, Aider, Cursor) across all your projects, on your computer. They do the work; you only do what only you can do: a decision, a sign-in, your OK.">
 <meta name="theme-color" content="#0B0C0E">
 <link rel="icon" type="image/svg+xml" href="icon.svg">
 <meta property="og:title" content="Symbiot">
-<meta property="og:description" content="Your work, handled alongside you. It watches, it works, and it only asks what only you can do.">
+<meta property="og:description" content="Your coding agents work. You only do what only you can do.">
 <meta property="og:url" content="https://symbiot.co.za/">
+<meta property="og:image" content="https://symbiot.co.za/og.png?v=2">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://symbiot.co.za/og.png?v=2">
 <style>
 @font-face{font-family:Geist;src:url("fonts/Geist-Variable.woff2") format("woff2");font-weight:100 900;font-display:swap}
 :root{
@@ -68,8 +73,13 @@ dialog.after .btn{padding:10px 22px;font-size:15px}
 @media (prefers-color-scheme: light){:root:not([data-theme="dark"]) .dot{background:radial-gradient(circle at 38% 32%,#FFFFFF 0,#ECE7DF 45%,#A99F92 100%);box-shadow:0 0 0 1px rgba(201,164,106,.5)}:root:not([data-theme="dark"]) .dot.amber{box-shadow:0 0 0 1.5px var(--amber),0 0 18px rgba(242,165,65,.35)}}
 @keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-10px)}}
 @media (prefers-reduced-motion: reduce){.orb{animation:none}html{scroll-behavior:auto}}
-h1{margin:0 auto 18px;max-width:820px;font:650 clamp(38px,6vw,64px)/1.05 var(--sans);letter-spacing:-.035em;color:var(--bone)}
+h1{margin:0 auto 18px;max-width:900px;font:650 clamp(34px,5.4vw,58px)/1.08 var(--sans);text-wrap:balance;letter-spacing:-.035em;color:var(--bone)}
 .lead{margin:0 auto 34px;max-width:620px;font-size:clamp(17px,2vw,19px);color:var(--faint)}
+.lead b{color:var(--text);font-weight:600}
+/* the clip under the headline: an agent's question answered, and it carries on */
+.clip{margin:52px auto 0;max-width:960px}
+.clip video{display:block;width:100%;aspect-ratio:16/9;border-radius:18px;border:1px solid var(--line);background:#0B0C0E;box-shadow:0 40px 90px -40px rgba(0,0,0,.8)}
+.clip figcaption{margin-top:12px;font-size:13.5px;color:var(--faint)}
 .cta{display:flex;flex-direction:column;align-items:center;gap:12px}
 .cta small{font-size:13.5px;color:var(--faint)}
 .cta small a{color:var(--text)}
@@ -116,7 +126,10 @@ h2{margin:0 0 14px;font:650 clamp(28px,4vw,40px)/1.15 var(--sans);letter-spacing
 footer{padding:40px 0 56px;border-top:1px solid var(--line);color:var(--faint);font-size:14px}
 footer .wrap{display:flex;flex-wrap:wrap;gap:16px;align-items:center;justify-content:space-between}
 footer a{text-decoration:none}footer a:hover{color:var(--bone)}
-.mobile-note{display:none;margin-top:6px;font-size:14px;color:var(--amber)}
+.phone{display:flex;flex-direction:column;align-items:center;gap:10px;max-width:36ch;text-align:center}
+.cta [hidden]{display:none!important}
+.phone p{margin:0 0 8px;font-size:14px;line-height:1.45;color:var(--faint)}
+.phone .btn{width:100%;justify-content:center;box-sizing:border-box}
 </style>
 </head>
 <body>
@@ -136,16 +149,32 @@ footer a{text-decoration:none}footer a:hover{color:var(--bone)}
 <main id="top">
   <div class="hero wrap">
     <div class="orb" aria-hidden="true"></div>
-    <h1>Your work, handled alongside you.</h1>
-    <p class="lead">Symbiot watches what you work on and what comes in, hands tasks to your coding agent, and only asks you what only you can do.</p>
+    <h1>Your coding agents work.<br>You only do what only you can do.</h1>
+    <p class="lead">Symbiot runs <b>Claude Code</b>, <b>Codex</b>, <b>Gemini CLI</b>, <b>Aider</b> or <b>Cursor</b> across all your projects, on your computer. They do the work and bring it back for your OK. You only see what needs you: a decision, a sign-in, a yes.</p>
     <div class="cta">
       <a class="btn" id="primary" href="#install">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg>
         <span id="primary-label">Install Symbiot</span>
       </a>
       <small id="primary-note">Free · Windows, Mac and Linux · Uses your Claude subscription · <a href="#install">Other downloads</a></small>
-      <p class="mobile-note" id="mobile-note">Symbiot runs on a computer. Open this page on your Windows, Mac or Linux computer to install it.</p>
+      <!-- a phone: the Android app, and this page sent to your computer, where Symbiot runs -->
+      <div class="phone" id="phone" hidden>
+        <a class="btn" id="phone-app" href="/get/?app=android">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="2" width="12" height="20" rx="2.5"/><path d="M11 18h2"/></svg>
+          <span>Get the Android app</span>
+        </a>
+        <p id="phone-app-why">Approve your agents' work from your phone. It pairs with Symbiot on your computer.</p>
+        <button class="btn ghost" type="button" id="send-link">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4z"/></svg>
+          <span>Send me the link for my computer</span>
+        </button>
+        <p id="send-why">Symbiot runs on your Windows, Mac or Linux computer. Send yourself this page and open it there.</p>
+      </div>
     </div>
+    <figure class="clip">
+      <video src="clip-answer.mp4" poster="clip-answer.jpg" autoplay muted loop playsinline preload="metadata" aria-label="Symbiot's Home: three agents each ask a question with two answers; one is picked and that agent carries on"></video>
+      <figcaption>An agent asks, you pick an answer, it carries on. (A made-up company: nothing real on show.)</figcaption>
+    </figure>
   </div>
 
   <section id="what">
@@ -281,7 +310,7 @@ footer a{text-decoration:none}footer a:hover{color:var(--bone)}
   var mobile = /android|iphone|ipad|ipod/i.test(ua) || (navigator.userAgentData && navigator.userAgentData.mobile);
   var os = mobile ? "" : /win/.test(plat) || /windows/i.test(ua) ? "windows" : /mac/.test(plat) || /mac os/i.test(ua) ? "mac" : /linux|x11|cros/.test(plat) || /linux/i.test(ua) ? "linux" : "";
   var names = { windows: "Windows", mac: "Mac", linux: "Linux" };
-  if (mobile) document.getElementById("mobile-note").style.display = "block";
+  if (mobile) phone(/android/i.test(ua));
   var card = os ? document.querySelector('.plat .card[data-os="' + os + '"]') : null;
   if (card) card.classList.add("here");
   function primary() {
@@ -291,6 +320,26 @@ footer a{text-decoration:none}footer a:hover{color:var(--bone)}
     else { p.href = "#install"; document.getElementById("primary-label").textContent = "Coming very soon for " + names[os]; }
   }
   primary();
+  // On a phone there's nothing to install from here but the Android app: that, and a
+  // way to get this page to your computer (your phone's share sheet, else an email to
+  // yourself). An iPhone gets the second only.
+  function phone(android) {
+    var box = document.getElementById("phone");
+    document.getElementById("primary").hidden = true; document.getElementById("primary-note").hidden = true; box.hidden = false;
+    var top = document.querySelector('nav a.btn[href="#install"]'); if (top) { top.href = "#top"; top.textContent = android ? "Get the app" : "Send the link"; }
+    if (!android) {
+      document.getElementById("phone-app").hidden = true;
+      document.getElementById("phone-app-why").textContent = "The phone app is on Android for now.";
+      box.insertBefore(document.getElementById("phone-app-why"), null);
+      document.getElementById("send-link").classList.remove("ghost");
+    }
+    var link = "https://symbiot.co.za/#install", subject = "Symbiot: install it on my computer", body = "Open this on your computer to install Symbiot: " + link;
+    document.getElementById("send-link").addEventListener("click", function () {
+      var mail = function () { location.href = "mailto:?subject=" + encodeURIComponent(subject) + "&body=" + encodeURIComponent(body); };
+      if (navigator.share) navigator.share({ title: subject, text: "Open this on your computer to install Symbiot.", url: link }).catch(function (e) { if (!e || e.name !== "AbortError") mail(); });
+      else mail();
+    });
+  }
   fetch("https://api.github.com/repos/GAWdessey/symbiot/releases?per_page=30", { headers: { Accept: "application/vnd.github+json" } })
     .then(function (r) { return r.ok ? r.json() : null; })
     .then(function (rels) {

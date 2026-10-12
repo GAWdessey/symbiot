@@ -169,6 +169,45 @@ try {
   const stReply = P.unseal(key, JSON.parse(last[1]), "res:" + JSON.parse(last[0]).n);
   ok("unchanged since: the state request costs nothing (304), and the copy is kept", stReply && stReply.s === 304 && readJ(join(CFG, "computer.json")).v === copy.v && readJ(join(CFG, "computer.json")).got > before && wire.length > wire0, stReply);
 
+  console.log("6. YOUR COMPUTER'S REPORTS — read on the phone, from the copy");
+  const rdir = join(PCFG, "drafts", "act-reports", ".symbiot"); mkdirSync(rdir, { recursive: true });
+  writeFileSync(join(rdir, "PRICING-AUDIT.md"), "# Pricing audit\n\nThree plans checked against **what people pay**.\n\n- Free: fine\n- Pro: too cheap\n");
+  writeFileSync(join(rdir, "LONG-PLAN.md"), "# A long plan\n\n" + Array.from({ length: 400 }, (_, i) => `Step ${i + 1}: something to do, written out in full so it takes room.`).join("\n\n") + "\n");
+  for (let i = 0; i < 5; i++) writeFileSync(join(rdir, `OLDER-${i}.md`), `# Older ${i}\n\nold\n`);
+  const t0 = Date.now() - 3600000; for (let i = 0; i < 5; i++) { const f = join(rdir, `OLDER-${i}.md`); (await import("node:fs")).utimesSync(f, new Date(t0 - i * 1000), new Date(t0 - i * 1000)); }
+  await sleep(5200); // the computer's copy is kept 5 s
+  const wireR = wire.length; await P.pollComputer({ fetchFn: tapFetch, notify: () => {}, discover: async () => [] });
+  const withR = readJ(join(CFG, "computer.json"));
+  const reps = (withR && withR.reports) || [];
+  ok("the copy carries the computer's newest reports, 5 at most, newest first", reps.length === P.PHONE_REPORTS && reps[0].title && reps.some((r) => r.title === "Pricing audit") && !reps.some((r) => r.title === "Older 4"), reps.map((r) => r.title));
+  const long = reps.find((r) => r.title === "A long plan");
+  ok("…a long one cut at a paragraph, so the copy fits through the relay; it says so", long && long.cut && long.text.length <= P.REPORT_CAP && /\.$/.test(long.text), long && [long.cut, long.text.length]);
+  ok("…sealed on the way, like the rest", !wire.slice(wireR).some((w) => /Pricing audit|too cheap/.test(w)), "");
+  const RP = await import("../reports.mjs"), pcopy = P.computerCopy(), listed = RP.phoneReports(pcopy);
+  ok("the phone's Reports lists them, from the computer, by its name", listed.length === reps.length && listed.every((r) => r.id.startsWith("pc:") && r.computer === pcopy.from && r.file.startsWith(pcopy.from + ":")), listed.slice(0, 2));
+  const one = RP.phoneReport(pcopy, listed.find((r) => r.title === "Pricing audit").id), cutOne = RP.phoneReport(pcopy, listed.find((r) => r.title === "A long plan").id);
+  ok("…and opens one from the copy, offline too: its text as the page, nothing to ask or tick into ideas there", one.remote && /<b>what people pay<\/b>/.test(one.html) && !one.ideas.length && !one.draft, one && one.html);
+  ok("…a cut one says the rest is on the computer", new RegExp("the rest is on " + pcopy.from).test(cutOne.html || ""), cutOne && (cutOne.html || "").slice(-200));
+  ok("…one no longer in the copy says so", /isn't in the copy/.test(RP.phoneReport(pcopy, "pc:nope").error || ""), "");
+  ok("a computer has no copy: its own Reports stay as they were", RP.phoneReports(null).length === 0, "");
+
+  console.log("6. WHAT NEEDS YOU — told on the phone when it's new, not only shown");
+  const cf = join(CFG, "computer.json"), c0 = readJ(cf);
+  writeFileSync(cf, JSON.stringify({ ...c0, v: "older", approves: [] })); // as if the demo work wasn't waiting at the last look
+  const toldW = []; await P.pollComputer({ notify: (t, b) => toldW.push([t, b]), discover: async () => [] });
+  ok("work newly waiting for your Approve: one notification, saying where and what", toldW.length === 1 && /^1 thing needs you · ./.test(toldW[0][0]) && /^demo: 1 task done, waiting for your Approve$/.test(toldW[0][1]), toldW);
+  const toldW2 = []; await P.pollComputer({ notify: (t, b) => toldW2.push([t, b]), discover: async () => [] });
+  ok("…and not again while it waits", toldW2.length === 0, toldW2);
+  const W = (o) => ({ asks: [], approves: [], needs: [], ...o }), ask1 = { id: "ask:1", name: "symbiot", questions: [{ q: "Push the fix?" }] };
+  ok("the first copy after pairing tells nothing: what already waited isn't news", P.waitingNotice(null, W({ asks: [ask1] })) === null, "");
+  const two = P.waitingNotice(W({}), W({ asks: [ask1], needs: [{ id: "setup:ai", title: "Connect an AI", sub: "Symbiot can't work without one" }] }), "pop-os");
+  ok("an agent's question and a need, new together: one notification with both", two && two[0] === "2 things need you · pop-os" && two[1] === "symbiot asks: Push the fix?\nConnect an AI: Symbiot can't work without one", two);
+  ok("the same agent asking something new tells you again; answered (gone) tells nothing", !!P.waitingNotice(W({ asks: [ask1] }), W({ asks: [{ ...ask1, questions: [{ q: "Release it?" }] }] })) && P.waitingNotice(W({ asks: [ask1] }), W({})) === null, "");
+  const apW = (ids, files) => ({ repo: "demo", tasks: ids.map((id) => ({ id, text: id })), files, sum: ids.join() + files });
+  ok("the waiting work changing a file isn't news, a task more is", P.waitingNotice(W({ approves: [apW(["r1"], 1)] }), W({ approves: [apW(["r1"], 2)] })) === null && /2 tasks done/.test((P.waitingNotice(W({ approves: [apW(["r1"], 1)] }), W({ approves: [apW(["r1", "r2"], 2)] })) || [])[1]), "");
+  const many = P.waitingNotice(W({}), W({ needs: [1, 2, 3, 4, 5, 6].map((i) => ({ id: "n" + i, title: "Need " + i })) }));
+  ok("six at once: four named, the rest counted", many && many[0] === "6 things need you · your computer" && many[1].split("\n").length === 5 && /and 2 more$/.test(many[1]), many);
+
   console.log("8. CHANGES FROM THE PHONE — queued, sent in order, applied once");
   let v = P.queueChange("task.add", { text: "Call the bank" });
   ok("a task added on the phone shows at once, waiting to send", v.copy.tasks[0].text === "Call the bank" && v.copy.tasks[0].waiting && v.queued === 1, v.copy.tasks[0]);
@@ -297,9 +336,19 @@ try {
   ok("asked on the network, it answers with its port, addresses and fingerprint, under a neutral name", seenNet.length === 1 && seenNet[0].port === 7392 && seenNet[0].addresses.join() === "192.168.8.50,10.0.0.7" && seenNet[0].fp === on.fp && seenNet[0].name === "Symbiot-1a2b" && !seenNet[0].name.includes(String((await import("node:os")).hostname())), seenNet);
   an.stop(); await sleep(100);
   ok("switched off: it stops answering", (await browse({ socket: fake, timeout: 150 })).length === 0, "");
+  // what it answers with: only what the asker can reach (ops saw avahi pick the Tailscale address)
+  const ifs = { lo: [{ family: "IPv4", address: "127.0.0.1", netmask: "255.0.0.0", internal: true }], wlp2s0: [{ family: "IPv4", address: "192.168.1.21", netmask: "255.255.255.0" }],
+    tailscale0: [{ family: "IPv4", address: "100.78.4.37", netmask: "255.255.255.255" }], wg0: [{ family: "IPv4", address: "10.8.0.2", netmask: "255.255.255.0" }], eth1: [{ family: "IPv4", address: "10.0.5.4", netmask: "255.255.0.0" }] };
+  ok("a phone on the Wi-Fi gets the Wi-Fi address only, not Tailscale's", P.mdnsAddresses("192.168.1.77", ifs).join() === "192.168.1.21", P.mdnsAddresses("192.168.1.77", ifs));
+  ok("…an asker on another network gets that network's address (::ffff: form too)", P.mdnsAddresses("::ffff:10.0.9.9", ifs).join() === "10.0.5.4", P.mdnsAddresses("::ffff:10.0.9.9", ifs));
+  ok("…an announcement, or an asker on no network of ours, gets every address but a VPN's", P.mdnsAddresses(undefined, ifs).join() === "192.168.1.21,10.0.5.4" && P.mdnsAddresses("8.8.8.8", ifs).join() === "192.168.1.21,10.0.5.4", P.mdnsAddresses(undefined, ifs));
+  ok("…and a computer with only a VPN still answers with it", P.mdnsAddresses(undefined, { tailscale0: ifs.tailscale0 }).join() === "100.78.4.37", "");
+  const askers = [], an2 = announce({ id: "3c4d", port: 7392, fp: on.fp, addresses: (who) => { askers.push(who); return who ? ["192.168.8.51"] : ["192.168.8.51", "10.0.0.8"]; } }, { socket: fake });
+  await sleep(20); const seen2 = await browse({ socket: fake, timeout: 200 }); an2.stop(); await sleep(100);
+  ok("…the asker's address reaches that choice, and the answer carries what it chose", askers.includes("127.0.0.1") && seen2.length === 1 && seen2[0].addresses.join() === "192.168.8.51", [askers, seen2]);
   const offSt = await pc.cmd("off");
   ok("nothing is announced while the link is off", offSt.found === false, offSt.found);
-  const real = announce({ id: "9z9z", port: 7999, fp: "testfp", addresses: () => P.lanAddresses() }, { onError: () => {} });
+  const real = announce({ id: "9z9z", port: 7999, fp: "testfp", addresses: (who) => P.mdnsAddresses(who) }, { onError: () => {} });
   const onNet = real ? await browse({ timeout: 1500 }) : [];
   if (real) real.stop();
   if (onNet.some((x) => x.fp === "testfp")) ok("on a real network, a query over multicast finds it", true);
@@ -351,6 +400,12 @@ try {
   busy.close();
   const bad = await P.usePhonePort(80);
   ok("a different port: below 1024 is refused", /between 1024 and 65535/.test(bad.error || ""), bad);
+  // the site vouches for the app, so a scanned link opens it at once (Android App Links)
+  const links = readJ(join(SRC, "site", ".well-known", "assetlinks.json"), []), man = readFileSync(join(SRC, "android", "AndroidManifest.xml"), "utf8");
+  const vouch = (links || []).find((x) => x.target && x.target.package_name === (man.match(/package="([^"]+)"/) || [])[1]);
+  ok("symbiot.co.za's assetlinks.json names the app and a release key's SHA-256", !!vouch && vouch.relation.includes("delegate_permission/common.handle_all_urls") && vouch.target.sha256_cert_fingerprints.every((f) => /^([0-9A-F]{2}:){31}[0-9A-F]{2}$/.test(f)), vouch);
+  const pairSite = new URL((readFileSync(join(SRC, "phone.mjs"), "utf8").match(/const PAIR_SITE = "([^"]+)"/) || [])[1]), pairHost = pairSite.host;
+  ok("…and the app asks Android to check it, for the host and path the QR's link uses", new RegExp(`<intent-filter android:autoVerify="true">(?:(?!</intent-filter>)[\\s\\S])*android:scheme="https" android:host="${pairHost.replace(/\./g, "\\.")}" android:pathPrefix="${pairSite.pathname}"`).test(man), pairSite.href);
 } finally {
   try { await pc.stop(); } catch {}
   rmSync(ROOT, { recursive: true, force: true });

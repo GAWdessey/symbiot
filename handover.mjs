@@ -19,7 +19,7 @@ const HANDOVER_MAX = 20000;
 function handoverRules(lanes = [], here = "") {
   const mk = lanes.includes(MARKETING) && here !== MARKETING, others = [...new Set(lanes.filter((l) => l && l !== here && l !== MARKETING))].slice(0, MAX_LANES_LISTED);
   return ["## Hand over what's another lane's job",
-    `Each agent has its own lane${here ? `: this one is \`${here}\`` : ""}. When something you need is another lane's job, don't stop, and don't ask the user to do it: hand it over. Write \`.symbiot/HANDOFF.md\` with a \`### \` heading naming the lane, then what's needed, self-contained (names, paths, links, ids) and why. Symbiot starts that lane's agent on it, and its result comes back to you in \`.symbiot/ANSWERS.md\`. Carry on with what doesn't depend on it, and don't tick what does.`,
+    `Each agent has its own lane${here ? `: this one is \`${here}\`` : ""}. When something you need is another lane's job, don't stop, and don't ask the user to do it: hand it over. Write \`.symbiot/HANDOFF.md\` with a \`### \` heading naming the lane, then what's needed, self-contained (names, paths, links, ids) and why. Symbiot starts that lane's agent on it within 20 seconds, then rewrites the file as a list of what went where, so a HANDOFF.md with no \`### \` section means everything in it was sent (the Agents tab shows how far each lane's agent has got). Its result comes back to you in \`.symbiot/ANSWERS.md\`. Carry on with what doesn't depend on it, and don't tick what does.`,
     `- \`${OPS}\`: anything outside a repo: this computer (find or install a tool, a JDK, an SDK), accounts and services (cloud, GitHub, DNS, email), the user's connectors.`,
     ...(mk ? [`- \`${MARKETING}\`: marketing for any product: posts, demo videos and screenshots, launches, landing-page copy, campaigns. It drafts them; the user approves each one's preview, and then it posts or schedules it itself through Symbiot's signed-in browser.`] : []),
     `- A repo, by its folder name, for work that belongs in that project${others.length ? `: ${others.map((l) => `\`${l}\``).join(", ")}` : ""}.`,
@@ -66,7 +66,11 @@ function parseAwaiting(text) {
 // is still theirs.
 const GIT_WORK = /\bgit\s+(?:add|commit|push|pull|fetch|merge|rebase|stash|restore|checkout|switch)\b|\b(?:stage|commit|push|pull)(?:es|ed|ing)?\b(?:[^.;:]{0,60})\b(?:changes?|diff|fix|files?|branch|main|master|origin|upstream|remote|commits?|them|it)\b/i;
 const IDENTITY = /\bpassword\b|\b2fa\b|\btwo-factor\b|\b(?:api )?token\b|\bsign(?:ing)? in\b|\blog ?in\b|\bssh key\b|\bpassphrase\b|\bsudo\b/i;
-const gitWork = (text) => { const t = String(text || ""); return GIT_WORK.test(t) && !IDENTITY.test(t); };
+// A permission is never git work, whatever its words: "allow the list … to check the
+// deployed commit, git status and served files" was taken for a commit, and handed back to
+// an agent that can't give itself permission, which asked again (WinLove, 2026-10-12).
+const PERMISSION = /allowlist\.proposed|only you: a permission/i;
+const gitWork = (text) => { const t = String(text || ""); return GIT_WORK.test(t) && !IDENTITY.test(t) && !PERMISSION.test(t); };
 const PUSH_OK = "asking for your OK on the Workdesk, with the files, before it pushes";
 // A "👤 You: …" option that's local git work, as the agent's: "🤖 Agent: … (asking for
 // your OK … before it pushes)". Dropped instead when another option already has the

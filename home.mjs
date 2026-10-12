@@ -10,19 +10,20 @@
 // how you use them; this is the live data around them. Home's talk goes to the
 // same Symbiot as every chat (mind.mjs converse), told what home shows.
 import { claudeSetup } from "./claudesetup.mjs";
+import { plainAsk } from "./plain.mjs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { watchBoard, draftReply, draftCards, draftAnswer } from "./watch.mjs";
 import { pendingReview, pushTasks, addTask, taskType } from "./tasks.mjs";
 import { estimate, estimateWords } from "./estimate.mjs";
-import { setHandoffCmd, agentsList, runHandoff, runningHandoff, handoffCmd, loadRuns, connectorsInfo, parkedPaths, agentMissing, settleNeeds, pickAgent, detectHandoffs, linkReach } from "./agents.mjs";
+import { setHandoffCmd, agentsList, runHandoff, runningHandoff, handoffCmd, loadRuns, connectorsInfo, parkedPaths, agentMissing, settleNeeds, pickAgent, detectHandoffs, linkReach, unchangedStep } from "./agents.mjs";
 import { isDone, recordDone, coveredBy } from "./asksdone.mjs";
+import { control } from "./control.mjs";
 import { linksState, signInAsked } from "./links.mjs";
 import { knowledgeState } from "./knowledge.mjs";
 import { CONFIG_DIR, loadTasks, saveTasks, loadConfig, saveConfig, sameTask } from "./core.mjs";
-import { lanesState, stuckHandovers, allowHandover, skipHandover } from "./lanes.mjs";
-import { control } from "./control.mjs";
+import { lanesState, stuckHandovers, allowHandover, skipHandover, handingOf, loadLedger, doneSince } from "./lanes.mjs";
 import { converse, actIn, actNow, taskIn, loadMind, dayMark } from "./mind.mjs";
 import { repoPathMap, laneMap, reposState, scanRoots } from "./scan.mjs";
 import { resolveProvider, PROVIDERS, claudeState } from "./ai.mjs";
@@ -318,7 +319,7 @@ function marketingGo(deps = {}) {
 function homeState({ now = Date.now(), fresh = false, deps = {} } = {}) {
   if (!fresh && !deps.board && cached && now - cached.at < KEEP) return cached;
   const board = deps.board || (() => { try { return watchBoard(24, now); } catch { return { cards: [] }; } });
-  const pending = deps.pending || (() => { try { return pendingReview(); } catch { return []; } });
+  const pending = deps.pending || (() => { try { return pendingReview({ kept: true }); } catch { return []; } });
   const agents = deps.agents || (() => { try { return agentsList(); } catch { return []; } });
   const lanes = deps.lanes || (() => { try { return lanesState(); } catch { return { handoffs: [] }; } });
   const reports = deps.reports || (() => { try { return reportsNews(); } catch { return { count: 0 }; } });
@@ -328,6 +329,7 @@ function homeState({ now = Date.now(), fresh = false, deps = {} } = {}) {
   const confirmed = deps.confirmed || (() => { try { return !!loadConfig().reposConfirmed; } catch { return false; } });
   const waits = deps.waits || (() => { try { return awaitingState().waits; } catch { return []; } });
   const clashes = deps.clashes || (() => { try { return newClashes(); } catch { return []; } });
+  let led; const finished = deps.doneSince || ((path, q) => { try { return doneSince(path, q, { ledger: (led = led || loadLedger()), now }); } catch { return null; } });
   // can a reply be noticed? Email on (mail on this computer), or an inbox watched and signed in
   const seesInbox = deps.seesInbox || (() => { try { return inboxSight(); } catch { return true; } });
   // the agent the handoff command runs, gone from this computer; Claude connectors linked here but signed out
@@ -363,7 +365,7 @@ function homeState({ now = Date.now(), fresh = false, deps = {} } = {}) {
     if (!r.path || r.running) continue;
     const n = (r.tasks || []).length, files = (r.files || []).length;
     if (!n && !files) continue;
-    you.push({ kind: "approve", id: "approve:" + r.repo, repo: r.repo, name: named(r.path, r.repo), title: `Approve ${r.repo}`, sub: `${n ? `${n} task${n > 1 ? "s" : ""} done` : "changes without a task"}${files ? ` · ${files} file${files > 1 ? "s" : ""}` : ""} · only you decide`, shape: "tasks" });
+    you.push({ kind: "approve", id: "approve:" + r.repo, repo: r.repo, name: named(r.path, r.repo), title: `Approve ${r.repo}`, sub: `${n ? `${n} task${n > 1 ? "s" : ""} done` : r.round ? `a round of “${plain(r.round.text, 60)}”, still going` : "changes without a task"}${files ? ` · ${files} file${files > 1 ? "s" : ""}` : ""} · only you decide`, shape: "tasks" });
   }
   const list = agents(), seen = new Set();
   for (const a of list) {
@@ -371,8 +373,12 @@ function homeState({ now = Date.now(), fresh = false, deps = {} } = {}) {
     const qs = (a.ask && a.ask.questions) || [], q = qs[0];
     if (!q) continue;
     const lane = laneOfPath(a.path, map), repo = lane || (lane === "" ? "" : a.name);
+    // the work it asks about is done already (another lane took it and ticked it): the card says so, and Close it is first
+    const pa = plainAsk(a.path, q), done = finished(a.path, q.q), opts = (q.options || []).slice(0, 2);
+    const closed = done ? { done, options: [`Close it: ${done.lane} has done this already (${done.text}). Check that it's so, and carry on without asking again. (recommended)`, opts[0]].filter(Boolean),
+      labels: ["Close it: it's done", ...(opts[0] ? [blobLabel(pa.labels ? pa.labels[0] : opts[0])] : [])] } : {};
     you.push({ kind: "ask", id: "ask:" + a.path, path: a.path, repo, name: repo ? named(lane ? map[lane] : a.path, repo) : plain(String(a.name || "an agent").replace(/^Agent:\s*/, ""), 60),
-      title: `${a.name} asks`, sub: String(q.q || "").slice(0, 90), ...plainAsk(a.path, q), options: (q.options || []).slice(0, 2), ...(qs.length > 1 ? { more: qs.length - 1 } : {}), ...signInCard([q.q, ...(q.options || []).slice(0, 2)]), shape: "agents" });
+      title: `${a.name} asks`, sub: String(q.q || "").slice(0, 90), ...pa, options: opts, ...closed, ...(qs.length > 1 ? { more: qs.length - 1 } : {}), ...signInCard([q.q, ...opts]), shape: "agents" });
   }
   // What stopped and can't go on without you, as a question too: a handover that
   // couldn't start (lanes.mjs stuckHandovers: "Allow this run access to ~/Company?"),
@@ -410,21 +416,6 @@ function homeState({ now = Date.now(), fresh = false, deps = {} } = {}) {
   return out;
 }
 
-// An ask in words for someone who doesn't code: a permission request lists what the agent
-// wants to run, with Allow / Don't allow; any file path left in the question or choices
-// becomes "a file". The answer sent back is still the choice's own text (labels only change what shows).
-const PATHISH = /`?(?:~|\.{0,2})?\/?(?:[\w.-]+\/)+[\w.-]+\.(?:json|md|mjs|js|env|txt|sh)`?|`?\b[\w-]+\.(?:json|mjs)\b`?/g;
-const RULE_WORDS = (r) => { const m = String(r).match(/^(\w+)\((.*)\)$/); if (!m) return String(r); const c = m[2].replace(/:?\*+$/, "").trim(); return m[1] === "Bash" ? `run "${c}"` : m[1] === "Read" ? `read ${c || "files"}` : /^(Edit|Write)$/.test(m[1]) ? `change ${c || "files"}` : `${m[1]} ${c}`.trim(); };
-function plainAsk(path, q) {
-  const text = String(q.q || ""), opts = (q.options || []).slice(0, 2);
-  let ask = text, labels = opts.map((o) => o.replace(PATHISH, "a file"));
-  if (opts.some((o) => /allowlist\.proposed/i.test(o))) {
-    let rules = []; try { const p = JSON.parse(readFileSync(join(path, ".symbiot", "allowlist.proposed.json"), "utf8")).permissions || {}; rules = [...(p.allow || []).map(RULE_WORDS), ...(p.additionalDirectories || []).map((d) => `work in ${d}`)]; } catch {}
-    ask = `${text.replace(PATHISH, "a file")}${rules.length ? ` It wants to: ${rules.slice(0, 6).join("; ")}${rules.length > 6 ? `; and ${rules.length - 6} more` : ""}.` : ""} If you say no, it can't do that part and will tell you what it skipped.`;
-    labels = opts.map((o) => (/allowlist\.proposed/i.test(o) ? "Allow" + (/recommended/i.test(o) ? " (recommended)" : "") : o.replace(PATHISH, "a file")));
-  }
-  return { q: ask.replace(PATHISH, "a file"), asked: text, ...(labels.some((l, i) => l !== opts[i]) ? { labels } : {}) };
-}
 // Cards the chat says your message answered: only a question that's really on Home counts (the
 // model can't close one by inventing it). Each goes in the shared record, so the card leaves and no agent asks it again.
 function settleFromChat(h, said, answer) {
@@ -469,6 +460,8 @@ function noteAnswer(path, heading, text) {
   const f = join(path, ".symbiot", "ANSWERS.md"); let had = ""; try { had = readFileSync(f, "utf8"); } catch {}
   try { writeFileSync(f, `${(had || "# Answers\n").replace(/\s*$/, "")}\n\n### ${String(heading).replace(/\s+/g, " ").trim()}\n${text}\n_answered ${new Date().toISOString().slice(0, 10)}_\n`); } catch {}
 }
+// a label without its "(recommended)": a second button isn't the recommended one
+const blobLabel = (l) => String(l || "").replace(/\s*\(recommended\)\s*$/i, "");
 function homeAnswer(id, { pick, text = "" } = {}, deps = {}) {
   id = String(id || ""); text = String(text || "").trim().slice(0, 2000);
   const go = text ? !SAYS_NO.test(text) : Number(pick) === 0, ref = id.replace(/^\w+:/, "");
@@ -495,7 +488,14 @@ function homeAnswer(id, { pick, text = "" } = {}, deps = {}) {
     const settle = deps.settle || settleNeeds;
     if (!go) { settle(a.path, n.key); dropped.add(id); return { ok: true, said: "Skipped. It won't ask again." }; }
     if ((deps.running || runningHandoff)(a.path)) return { ok: true, said: "An agent is already at work there." };
-    const said = n.kind === "approve" ? `Go ahead: ${text || "do it as you had it, once you've checked what you flagged"}.` : `Done: the user did it${text ? ` (${text})` : ""}. Check it worked, then carry on.`;
+    // Done it, on a step that names a file (`.env`): only once that file has changed since
+    // the run asked. In your own words it goes ahead (done some other way), its agent told.
+    const still = n.kind === "approve" ? [] : (deps.unchanged || unchangedStep)(`${n.what} ${n.check || ""}`, a.path, a.endedAt || a.startedAt || 0);
+    const last = still.map((f) => `\`${f.name}\` ${f.at ? `was last changed on ${new Date(f.at).toISOString().slice(0, 10)}` : "isn't there"}`).join(" and ");
+    if (still.length && !text) return { error: `${last.replace(/`/g, "")}, before its agent asked, so it isn't done yet. Make the change and press Done it again, or say how you did it.` };
+    const said = n.kind === "approve" ? `Go ahead: ${text || "do it as you had it, once you've checked what you flagged"}.`
+      : still.length ? `The user says it's done (${text}), but ${last}, before you asked. Check it yourself before relying on it, then carry on.`
+      : `Done: the user did it${text ? ` (${text})` : ""}. Check it worked, then carry on.`;
     noteAnswer(a.path, n.what, said);
     const e = (deps.run || runHandoff)(a.path, { force: true });
     if (e && e.id && !e.blocked) { settle(a.path, n.key); dropped.add(id); if (n.kind !== "approve") recordDone(n.what, said); } // "Done it" is on the shared record: no agent raises it again
@@ -692,7 +692,7 @@ function runNow(a, { now = Date.now(), est = estimate } = {}) {
 // not a sphere each with an id for a name.
 function workScene({ deps = {}, full = false } = {}) {
   const agents = deps.agents || (() => { try { return agentsList(); } catch { return []; } });
-  const pending = deps.pending || (() => { try { return pendingReview(); } catch { return []; } });
+  const pending = deps.pending || (() => { try { return pendingReview({ kept: true }); } catch { return []; } });
   const tasks = deps.tasks || (() => { try { return loadTasks(); } catch { return []; } });
   const map = (deps.repos || (() => { try { return laneMap(); } catch { return {}; } }))() || {};
   const named = deps.name || displayName;
@@ -737,9 +737,12 @@ function workScene({ deps = {}, full = false } = {}) {
       const line = plain(String(t).split(/\n\s*\n/)[0], 220);
       if (line) { p.summary = line; p.state = a.status === "running" ? "at work" : qs.length ? "asks you" : "done"; p.path = a.path; }
     }
-    for (const q of qs) { p.qs = p.qs || []; if (p.qs.length < 3) p.qs.push({ q: q.q, options: (q.options || []).slice(0, 3), path: a.path, ...signInCard([q.q, ...(q.options || []).slice(0, 3)]) }); }
+    for (const q of qs) { p.qs = p.qs || []; if (p.qs.length < 3) p.qs.push({ q: q.shown || q.q, ...(q.shown ? { raw: q.q } : {}), options: (q.options || []).slice(0, 3), ...(q.labels ? { labels: q.labels } : {}), path: a.path, ...signInCard([q.q, ...(q.options || []).slice(0, 3)]) }); }
     for (const s of ideas) { p.ideas = p.ideas || []; if (p.ideas.length < 4) p.ideas.push({ text: plain(s.text, 200), full: String(s.text), repo: s.repo || l, path: a.path }); }
   }
+  // what each lane handed over and hasn't heard back on, with where it stands and how far the run on it has got
+  let led; const handing = deps.handing || ((path) => { try { return handingOf(path, { map, ledger: (led = led || loadLedger()) }); } catch { return []; } });
+  for (const [repo, path] of Object.entries(map)) { const h = handing(path); if (h.length) at(repo).handing = h.slice(0, 3); }
   const stuck = deps.stuck || (() => { try { return stuckHandovers(); } catch { return []; } });
   const drafts = deps.drafts || (() => { try { return draftCards(); } catch { return []; } });
   for (const t of troubles({ stuck: stuck(), list: AG, map, named, drafts: drafts() })) {
@@ -981,4 +984,4 @@ function setOnboarding({ step, skip, unskip, skipRest, done, restart } = {}) {
   return onboarding();
 }
 
-export { handedState, noteHanded, phoneChat, isPeak, reportIdeasAdd, reportIdeasDismiss, reportAsk, reportDraftAnswer, workTick, waitWhy, AUTO_GRACE, STUCK_AFTER, marketingState, marketingGo, marketingDraftAnswer, marketingTask, moveToMarketing, goLane, homeState, homeContext, homeAsk, homeAnswer, homeNext, nextUp, laneNamed, NEXT_FILE, workScene, workGo, displayName, firstSteps, onboarding, setOnboarding, startOnboarding, ONB_STEPS, ONB_STEPS_PHONE, onbSteps, phoneBits , phoneSetupFirst, settleAsks, plainAsk, settleFromChat };
+export { handedState, noteHanded, phoneChat, isPeak, settleAsks, settleFromChat, plainAsk, reportIdeasAdd, reportIdeasDismiss, reportAsk, reportDraftAnswer, workTick, waitWhy, AUTO_GRACE, STUCK_AFTER, marketingState, marketingGo, marketingDraftAnswer, marketingTask, moveToMarketing, goLane, homeState, homeContext, homeAsk, homeAnswer, homeNext, nextUp, laneNamed, NEXT_FILE, workScene, workGo, displayName, firstSteps, onboarding, setOnboarding, startOnboarding, ONB_STEPS, ONB_STEPS_PHONE, onbSteps, phoneBits , phoneSetupFirst };

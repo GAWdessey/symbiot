@@ -31,10 +31,11 @@ const URL_RE = /http:\/\/127\.0\.0\.1:(\d+)\/\?t=([a-f0-9]+)/;
 
 // A fake npm registry: GET /symbiot answers with whatever `registry.latest` is,
 // or a 500 while `registry.down` is set.
-const registry = { latest: "0.0.1", down: false, hits: 0 };
+const registry = { latest: "0.0.1", down: false, hits: 0, tgz404: false, heads: 0 }; // tgz404: npm lists it, its download isn't there yet
 const reg = createServer((req, res) => {
   registry.hits++;
   if (registry.down || !req.url.startsWith("/symbiot")) { res.writeHead(500); res.end("down"); return; }
+  if (/\.tgz$/.test(req.url)) { registry.heads++; res.writeHead(registry.tgz404 ? 404 : 200); res.end(); return; }
   res.writeHead(200, { "content-type": "application/json" });
   res.end(JSON.stringify({ name: "symbiot", "dist-tags": { latest: registry.latest } }));
 });
@@ -121,13 +122,21 @@ try {
   // nothing running. SYMBIOT_UPDATE_CMD swaps the global npm install for a no-op.
   console.log("UPDATE — Update & restart leaves one app serving, on the same address");
   const UP = port();
-  const u = startApp({ SYMBIOT_PORT: String(UP), SYMBIOT_UPDATE_CMD: `${JSON.stringify(process.execPath)} -e 0` }, 20000);
+  const u = startApp({ SYMBIOT_PORT: String(UP), SYMBIOT_UPDATE_CMD: `${JSON.stringify(process.execPath)} -e 0`, SYMBIOT_UPDATE_EVERY: "400" }, 20000);
   const urlU = await u.ready;
   const tokU = (urlU.match(URL_RE) || [])[2];
   const baseU = `http://127.0.0.1:${UP}`;
   const p0 = await ping(baseU, tokU);
-  const upd = await fetch(`${baseU}/api/update`, { method: "POST", headers: { "x-symbiot-token": tokU, "content-type": "application/json" }, body: "{}" }).then((r) => r.json()).catch((e) => ({ error: e.message }));
-  ok("the update starts", upd.started === true, upd);
+  // npm lists it minutes before its download is there (0.59.0, 0.62.0, 0.63.3 gave up on that 404)
+  const updPost = () => fetch(`${baseU}/api/update`, { method: "POST", headers: { "x-symbiot-token": tokU, "content-type": "application/json" }, body: "{}" }).then((r) => r.json()).catch((e) => ({ error: e.message }));
+  registry.tgz404 = true;
+  const upd = await updPost();
+  ok("the update starts, and waits for npm's download instead of failing on its 404", upd.started === true && upd.waiting === true, upd);
+  await new Promise((r) => setTimeout(r, 1000));
+  const pw = await ping(baseU, tokU), upd2 = await updPost();
+  ok("every window sees it waiting (no Update button), and looks again by itself", pw.updating && pw.updating.retrying && pw.updating.attempt >= 2 && registry.heads >= 2 && u.exited() === null, pw);
+  ok("a second click doesn't start a second install over the first", upd2.already === true && upd2.target === upd.target, upd2);
+  registry.tgz404 = false; // the download is there now: it installs and restarts
   let p1 = {};
   for (const t2 = Date.now(); Date.now() - t2 < 20000;) {
     await new Promise((r) => setTimeout(r, 300));
@@ -248,6 +257,58 @@ try {
   ok("an older window you're not in closes itself", away.closed.n === 1, away.closed);
   const inUse = page({ focused: true }); inUse.winOld();
   ok("the window you're in doesn't: it says a newer one is open, and can take over", inUse.closed.n === 0, inUse.closed);
+}
+{
+  console.log("A PHONE'S HOME — paired with your computer: what needs you and its tasks, the rest one tap away");
+  const { EMBEDDED_UI } = await import("../ui.mjs");
+  const uiJs = [...EMBEDDED_UI.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]).join("\n");
+  const grab = (name) => { const i = uiJs.indexOf("function " + name + "("); let depth = 0, j = uiJs.indexOf("{", i); for (; j < uiJs.length; j++) { if (uiJs[j] === "{") depth++; else if (uiJs[j] === "}" && --depth === 0) break; } return uiJs.slice(i, j + 1); };
+  const navLine = (uiJs.match(/^var PH_NAV=.*$/m) || [""])[0];
+  const home = (h) => {
+    const els = {}, el = (id) => (els[id] = els[id] || { id, innerHTML: "", style: {}, querySelectorAll: () => [], contains: () => false, appendChild: () => {} });
+    const cls = new Set(), calls = { labels: 0, load: 0 };
+    const document = { body: { classList: { toggle: (c, on) => (on ? cls.add(c) : cls.delete(c)) } }, querySelector: () => null, createElement: () => el("phyou"), activeElement: null };
+    const run = new Function("document", "$", "LQ", "LQNAMES", "esc", "sameHtml", "lqLabels", "loadComputer", "PCV", `${navLine}\n${grab("lqPhone")}\n${grab("phYou")}\nreturn { on: lqPhone(${JSON.stringify(h)}) };`);
+    const LQ = {}, r = run(document, el, LQ, { settings: "Settings", reports: "Reports", board: "Dashboard", map: "Map", week: "Week", standup: "Standup", marketing: "Marketing", tasks: "Workdesk" }, (x) => String(x), (e, x) => { e.innerHTML = x; return false; }, () => { calls.labels++; }, () => { calls.load++; }, null);
+    return { ...r, cls, calls, LQ, nav: els.phnav ? els.phnav.innerHTML : "", you: els.phyou ? els.phyou.innerHTML : "" };
+  };
+  ok("the page has its phone home to test", !!navLine && grab("lqPhone").length > 50 && grab("phYou").length > 50, navLine);
+  const comp = { name: "pop-os", asks: 1, approves: 1, tasks: 4 };
+  const ph = home({ computer: comp, you: [{ kind: "setup", id: "setup:ai", urgent: true, title: "Connect an AI", sub: "x" }, { kind: "setup", id: "setup:folders", title: "No projects found", sub: "y" }, { kind: "ask", id: "ask:/p", title: "symbiot asks", sub: "Which plan?" }], feeds: [{ id: "feed:reports", count: 2 }] });
+  ok("a paired phone gets the list, not the liquid: no droplets, the computer's view fetched", ph.on === true && ph.cls.has("lq-phone") && ph.LQ.phone === true && Array.isArray(ph.LQ.drops) && ph.LQ.drops.length === 0 && ph.calls.labels === 1 && ph.calls.load === 1, [ph.on, [...ph.cls], ph.calls]);
+  ok("the rest is one row: Settings and Reports first, new reports counted, no empty Workdesk, no Marketing until it's on", /^<button[^>]*data-s='settings'/.test(ph.nav) && /data-s='reports' class='lit'>Reports <b>2<\/b>/.test(ph.nav) && !/data-s='tasks'/.test(ph.nav) && !/marketing/.test(ph.nav), ph.nav);
+  ok("what this phone needs: its question as it is, its setup together in one row, amber when any of it is urgent", /Needs you on this phone &middot; 2/.test(ph.you) && /symbiot asks/.test(ph.you) && /class='phyi urgent'[^>]*><b>2 things to set up<\/b><span>Connect an AI · No projects found/.test(ph.you), ph.you);
+  const mk = home({ computer: comp, you: [], marketing: { needs: 3 } });
+  ok("Marketing once it's on, lit with what needs you there; nothing for the phone itself, no heading", /data-s='marketing' class='lit'>Marketing <b>3<\/b>/.test(mk.nav) && mk.you === "", [mk.nav, mk.you]);
+  const pc = home({ you: [] });
+  ok("a computer (or a phone not paired) keeps the liquid", pc.on === false && !pc.cls.has("lq-phone") && pc.calls.load === 0, [pc.on, [...pc.cls]]);
+  ok("the computer's droplet, opened on a paired phone, is its home", /function lqPool\(shape\)\{if\(shape==='computer'&&LQ\.phone\)\{lqSink\(\);return;\}/.test(uiJs), "");
+}
+{
+  console.log("LOW GPU — the liquid draws seldom when asked, and whenever its window isn't the one in use");
+  const { EMBEDDED_UI } = await import("../ui.mjs");
+  const uiJs = [...EMBEDDED_UI.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]).join("\n");
+  const gl = ({ low = false, focused = true, dpr = 2 } = {}) => {
+    const store = { "symbiot-lowgpu": low ? "1" : "0" }, body = { cls: new Set(), classList: { toggle: (c, on) => (on ? body.cls.add(c) : body.cls.delete(c)) } };
+    const window = { localStorage: { getItem: (k) => store[k] ?? null, setItem: (k, v) => { store[k] = v; } }, devicePixelRatio: dpr, matchMedia: () => ({ matches: false }) };
+    const document = { hasFocus: () => focused, body };
+    const src = uiJs.slice(uiJs.indexOf("var GLSOFT=false"), uiJs.indexOf("function lqGL("));
+    return new Function("window", "document", "$", `${src}\nreturn { glLight, glEvery, glDpr, glLow, low: () => GLLOW };`)(window, document, () => null);
+  };
+  const on = gl({ low: true }), off = gl(), away = gl({ focused: false });
+  ok("Low GPU (kept on this computer): drawn seldom, at half the resolution", on.glLight() && on.glEvery(false) === 12 && on.glDpr(3) === 0.5);
+  ok("without it, in the window you're using: every frame, at the screen's sharpness", !off.glLight() && off.glEvery(false) === 1 && off.glDpr(3) === 2);
+  ok("a window you aren't using draws seldom too, whatever you picked", away.glLight() && away.glEvery(true) === 3);
+  off.glLow(true); ok("the switch turns it on and remembers it", off.low() && off.glLight());
+  ok("the page has the switch, and drops the blur behind the glass with it", /id="lqlow"/.test(EMBEDDED_UI) && /body\.lq-low \*[^{]*\{backdrop-filter:none!important/.test(EMBEDDED_UI));
+}
+{
+  console.log("APPROVE — opens on the project you came for, its button first, its tasks short");
+  const { EMBEDDED_UI } = await import("../ui.mjs");
+  const lp = EMBEDDED_UI.slice(EMBEDDED_UI.indexOf("function loadPending("), EMBEDDED_UI.indexOf("function loadArchived("));
+  ok("in a project, only its card; the others a click away", /r\.repo===repo0/.test(lp) && /Also waiting for your OK/.test(lp) && /PENDALL=true/.test(lp));
+  ok("three tasks shown, one line each, the rest folded", /RTASKS/.test(lp) && /rmore hidden/.test(lp) && /\.rcard \.rtask \.t\{-webkit-line-clamp:1\}/.test(EMBEDDED_UI));
+  ok("the Approve button comes right under the card's head", /h=top\+bsel\+act\+body/.test(lp));
 }
 console.log(`\n${fail ? "✗" : "✓"} app: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

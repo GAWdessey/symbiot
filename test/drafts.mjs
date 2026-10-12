@@ -32,7 +32,7 @@ const asker = (id, name, q, live) => {
   writeFileSync(join(p, ".symbiot", "TASKS.md"), "- [ ] " + name + "\n");
   if (q) writeFileSync(join(p, ".symbiot", "QUESTIONS.md"), `## Questions\n### ${q}\nThe preview is in drafts.\n- 🤖 Agent: approve it as it is (recommended)\n- 🤖 Agent: redo it with a live screenshot\n`);
   writeFileSync(join(p, ".symbiot", "agent.log"), "\n=== x " + new Date(now - 600000).toISOString() + " ===\n$ claude -p\n" + JSON.stringify({ type: "result", subtype: "success", result: "Asked about it." }) + "\n");
-  if (live) writeFileSync(join(p, ".symbiot", "agent.pid"), JSON.stringify({ pid: process.pid, id: "j-" + id, startedAt: now - 300000 })); // an agent at work: the band under the cards
+  if (live) writeFileSync(join(p, ".symbiot", "agent.pid"), JSON.stringify({ pid: process.pid, id: "j-" + id, startedAt: now })); // an agent at work: the band under the cards
   return { path: p, name, startedAt: now - 600000 };
 };
 const RUNS = [asker("act-post1", "Agent: Marketing: Post 1, Symbiot: a first look", "Post 1, Symbiot: a first look: approve its preview?"), asker("act-audit", "Agent: Re-audit ~/Company", "Fix the 39 small problems now?"), asker("act-live", "Agent: Go through the Ghost AI mailbox, spam included", "", true)];
@@ -95,6 +95,49 @@ try {
   await js("localStorage.setItem('symbiot-blobdrafts',JSON.stringify({'/gone|Old question?':{text:'my half answer',at:Date.now(),name:'Old agent',q:'Old question?'}}))");
   await js("lqLoad(false)");
   ok("Home's talk says it wasn't sent, with what you wrote", await until("(LQ.talk||[]).some(function(t){return /wasn.t sent/.test(t.text)&&/my half answer/.test(t.text)})", 8000), await js("JSON.stringify(LQ.talk)"));
+
+  // A permission card's Allow, pressed again and again with nothing happening (whatsapp_module,
+  // 2026-10-12): the card showed the question in plain words and sent those back, which
+  // matched no question, and the error went only to Home's talk.
+  console.log("CLICKS — a card answers at once, once, or says on itself why not");
+  const permQ = "Can I reach sts-prod myself to put the WhatsApp module back?", pathQ = "Which copy of `site/index.md` should I keep?", goneQ = "Should I restart the relay at ~/relay/run.sh now?";
+  const card = (id, q, opts) => { const p = join(CFG, "drafts", id); mkdirSync(join(p, ".symbiot"), { recursive: true }); writeFileSync(join(p, ".symbiot", "QUESTIONS.md"), `## Questions\n### ${q}\nSome context.\n${opts.map((o) => "- " + o).join("\n")}\n`); writeFileSync(join(p, ".symbiot", "agent.log"), "\n=== x " + new Date(now - 600000).toISOString() + " ===\n$ claude -p\n"); return { path: p, name: "Agent: " + id, startedAt: now - 600000 }; };
+  const perm = card("act-perm", permQ, ["👤 You (only you: a permission): allow the list in .symbiot/allowlist.proposed.json (recommended)", "👤 You (only you: starting another lane): ask ops directly"]);
+  writeFileSync(join(perm.path, ".symbiot", "allowlist.proposed.json"), JSON.stringify({ permissions: { allow: ["Bash(ssh sts-prod:*)"] } }));
+  const own = card("act-own", pathQ, ["the old one (recommended)", "the new one"]), gone = card("act-gone", goneQ, ["yes (recommended)", "no"]);
+  // the WinLove card (2026-10-12), word for word: an option picked, nothing typed, and it came back "Pick or type at least one answer."
+  const winQ = "Can I log in to the WinLove server read-only to check what's actually deployed?", winSkip = "skip it, the reply already asks the developer for the commit hash and git status";
+  const win = card("act-win", winQ, ["👤 You (only you: a permission): allow the list in .symbiot/allowlist.proposed.json (recommended)", winSkip]);
+  writeFileSync(join(win.path, ".symbiot", "allowlist.proposed.json"), JSON.stringify({ permissions: { allow: ["Bash(ssh ubuntu@13.51.104.186 git log:*)"] } }));
+  writeFileSync(join(CFG, "runs.json"), JSON.stringify([perm, own, gone, win]));
+  await js("LQ.fresh=true;lqLoad(false)");
+  const blobOf = (re) => `[...document.querySelectorAll('#lqdrops .lqblob')].find(function(b){return ${re}.test(b.textContent)})`;
+  const show = (re) => `(function(){if(${blobOf(re)})return true;if(LQ.need&&LQ.need.pages>1)lqNeedPage();return false;})()`;
+  const answers = (p) => { try { return readFileSync(join(p, ".symbiot", "ANSWERS.md"), "utf8"); } catch { return ""; } };
+  const until2 = async (f, ms = 10000) => { const t = Date.now(); while (Date.now() - t < ms) { if (f()) return true; await sleep(250); } return false; };
+  ok("the permission card is up, in plain words with Allow", await until(show("/reach sts-prod/")) && /Allow/.test(await js(`(${blobOf("/reach sts-prod/")}).querySelector('.nopt').textContent`)), await js("JSON.stringify((LQ.home.you||[]).map(function(y){return y.q}))"));
+  const pressed = JSON.parse(await js(`JSON.stringify((function(){var b=${blobOf("/reach sts-prod/")},o=b.querySelector('.nopt');o.click();o.click();var st=b.querySelector('.bst');return {sending:b.classList.contains('sending'),pressed:o.classList.contains('pressed'),status:st&&st.textContent,disabled:o.disabled};})())`));
+  ok("2) a click shows at once: the button pressed, Sending… on the card, the buttons held", pressed.sending && pressed.pressed && pressed.status === "Sending…" && pressed.disabled, pressed);
+  ok("1) Allow is saved in that agent's ANSWERS.md", await until2(() => answers(perm.path).includes("### " + permQ)), answers(perm.path));
+  await sleep(1200);
+  ok("...once, pressed twice", (answers(perm.path).match(/### Can I reach sts-prod/g) || []).length === 1, answers(perm.path));
+  await js("LQ.fresh=true;lqLoad(false)"); await sleep(1500);
+  ok("...and the card has gone, and stays gone through a redraw", !(await js(`!!(${blobOf("/reach sts-prod/")})`)) && !(await js("(LQ.home.you||[]).some(function(y){return /reach sts-prod/.test(y.raw||y.q||'')})")), await js("JSON.stringify((LQ.home.you||[]).map(function(y){return y.raw||y.q}))"));
+  ok("4) the own-words box's Send works on a card with a file path in it", await until(show("/Which copy/")), await js("JSON.stringify((LQ.home.you||[]).map(function(y){return y.q}))"));
+  await js(`(function(){var b=${blobOf("/Which copy/")};b.querySelector('.bfree').click();var f=b.querySelector('.bfx');f.dispatchEvent(new Event('submit',{cancelable:true}));})()`);
+  ok("...an empty Send says to type first, on the card", (await js(`(${blobOf("/Which copy/")}).querySelector('.bst').textContent`)) === "Type your answer first.", await js(`(${blobOf("/Which copy/")}).querySelector('.bst').textContent`));
+  await js(`(function(){var b=${blobOf("/Which copy/")},i=b.querySelector('.bfx input');i.value='keep the new one';b.querySelector('.bfx').dispatchEvent(new Event('submit',{cancelable:true}));})()`);
+  ok("...and what you typed is saved", await until2(() => /### Which copy of `site\/index\.md` should I keep\?\nkeep the new one/.test(answers(own.path))), answers(own.path));
+  ok("5) the WinLove card is up, in plain words", await until(show("/WinLove server/")), await js("JSON.stringify((LQ.home.you||[]).map(function(y){return y.q}))"));
+  await js(`(function(){var b=${blobOf("/WinLove server/")};b.querySelectorAll('.nopt')[1].click();})()`);
+  ok("...its second option alone, nothing typed, is saved in that agent's ANSWERS.md", await until2(() => answers(win.path).includes(`### ${winQ}\n${winSkip}\n`)), [answers(win.path), await js(`(function(){var b=${blobOf("/WinLove server/")};return b?b.querySelector('.bst').textContent:'gone';})()`)]);
+  ok("...with no error on the card or in Home's talk", !(await js("(LQ.talk||[]).some(function(t){return /Pick or type|isn.t open any more/.test(t.text)})")), await js("JSON.stringify(LQ.talk)"));
+  // the answer refused (here: the page's request answers with the server's error), with the card left up: emptying
+  // its QUESTIONS.md raced Home's own refresh, which took the card away first on a slow machine (CI, 2026-10-12)
+  ok("a card to press is up", await until(show("/restart the relay/")), "");
+  await js(`(function(){var f=window.fetch;window.fetch=function(u,o){if(String(u).indexOf('/api/agents/answer')>=0){window.fetch=f;return Promise.resolve({json:function(){return {error:"That question isn't open any more: its agent changed or closed it."};}});}return f.apply(this,arguments);};(${blobOf("/restart the relay/")}).querySelector('.nopt').click();})()`);
+  ok("2) a click that fails says why on the card itself, and the buttons work again", await until(`(function(){var b=${blobOf("/restart the relay/")},st=b&&b.querySelector('.bst.err');return !!st&&/isn.t open any more/.test(st.textContent)&&!b.querySelector('.nopt').disabled&&!b.classList.contains('sending');})()`, 8000), await js(`(function(){var b=${blobOf("/restart the relay/")};return b?b.querySelector('.bst').outerHTML:'no card';})()`));
+  ok("...and nothing was saved for it", !answers(gone.path).includes("restart the relay"), answers(gone.path));
   ok("no errors on the page", !errors.length, errors);
 } catch (e) { ok("ran", false, String((e && e.stack) || e)); }
 await finish();

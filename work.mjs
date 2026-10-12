@@ -45,12 +45,12 @@ const resultText = (c) => (typeof c === "string" ? c : Array.isArray(c) ? c.map(
 
 // The text of one run's log (everything after its "=== name time ===" header and
 // command line) → { stream, model, steps, todos, doing, said, final, cost, turns,
-// tokens, tests, files, pace, errors }.
+// tokens, ctx (what its last step read: the conversation so far), tests, files, pace, errors }.
 function parseRun(text) {
   const lines = String(text || "").split("\n");
   const events = []; let plain = [];
   for (const l of lines) { if (l.startsWith("{")) { try { events.push(JSON.parse(l)); continue; } catch {} } if (l.trim()) plain.push(l); }
-  const out = { stream: events.length > 0, model: "", steps: [], todos: [], doing: "", said: [], final: "", cost: null, turns: null, modelUsage: null, tokens: null, tests: null, files: {}, pace: [], errors: 0 };
+  const out = { stream: events.length > 0, model: "", steps: [], todos: [], doing: "", said: [], final: "", cost: null, turns: null, modelUsage: null, tokens: null, ctx: null, tests: null, files: {}, pace: [], errors: 0 };
   if (!out.stream) { out.said = plain.slice(-12).map((l) => short(l, 160)); out.final = plain.slice(-40).join("\n").trim(); return out; }
   const byId = new Map(), tasks = new Map(), talk = []; let thinking = false, moved = 0;
   for (const e of events) {
@@ -62,6 +62,7 @@ function parseRun(text) {
     // a long call's heartbeat (~every 30s): not a move, but how long the step has been going
     if (e.type === "tool_progress") { const s = byId.get(e.parent_tool_use_id); if (s && s.status === "running" && typeof e.elapsed_time_seconds === "number") s.elapsedS = Math.max(s.elapsedS || 0, e.elapsed_time_seconds); continue; }
     if (e.type === "assistant" && e.message && Array.isArray(e.message.content)) {
+      const u = e.message.usage; if (u) out.ctx = (u.input_tokens || 0) + (u.cache_read_input_tokens || 0) + (u.cache_creation_input_tokens || 0) + (u.output_tokens || 0) || out.ctx; // what its next step rereads
       for (const b of e.message.content) {
         if (b.type === "thinking") { thinking = true; continue; }
         if (b.type === "text" && b.text && b.text.trim()) { out.said.push(short(b.text, 220)); talk.push(short(b.text, 400)); thinking = false; continue; }

@@ -5,7 +5,7 @@
 //
 //   node test/adapt.mjs
 //
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync, statSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync, statSync, utimesSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -354,6 +354,19 @@ try {
   ok("…I've done this on a step is on the shared record: no agent's card asks it again", noNeeds(() => [stepRun()]), "");
   const s5 = homeAnswer("needs:r5", { text: "skip, I sent it" }, nd);
   ok("…Skip (or your words saying no): it stops asking, and no agent starts", s5.ok && /won't ask again/.test(s5.said) && reran5.length === 1 && settled5.length === 2, [s5, reran5, settled5]);
+  // Done it on a step naming a file: a run was told "Done: the user did it" while the `.env` it named was last changed days before it asked
+  const envDir = join(HOME, "projects", "envlane"), envF = join(envDir, ".env"), envEnd = Date.parse("2026-10-12T05:00:00Z"); mkdirSync(join(envDir, ".symbiot"), { recursive: true });
+  writeFileSync(envF, "A=1\n"); utimesSync(envF, new Date("2026-10-06T09:00:00Z"), new Date("2026-10-06T09:00:00Z"));
+  const envRun = { id: "r10", name: "envlane", path: envDir, status: "done", endedAt: envEnd, ask: { questions: [] }, needs: { kind: "step", what: "Paste your Meta token into `.env` as META_TOKEN.", check: "", label: "", key: "k10" } };
+  const reran10 = [], ed = { agents: () => [envRun], running: () => false, run: (p) => { reran10.push(p); return { id: "j10" }; }, settle: () => {} };
+  const d10 = homeAnswer("needs:r10", { pick: 0 }, ed);
+  ok("…Done it, but the file the step names hasn't changed since the run asked: not done yet, no agent starts, and it says when it last changed", d10.error && /^\.env was last changed on 2026-10-06, before its agent asked/.test(d10.error) && /press Done it again, or say how you did it/.test(d10.error) && reran10.length === 0, d10);
+  const w10 = homeAnswer("needs:r10", { text: "put it in the shell profile instead" }, ed), ans10 = readFileSync(join(envDir, ".symbiot", "ANSWERS.md"), "utf8");
+  ok("…said in your own words (done some other way): its agent starts, told the file hasn't changed so it checks", w10.ok && reran10.length === 1 && /The user says it's done \(put it in the shell profile instead\), but `\.env` was last changed on 2026-10-06, before you asked\. Check it yourself/.test(ans10), [w10, ans10]);
+  utimesSync(envF, new Date(envEnd + 60000), new Date(envEnd + 60000));
+  const c10 = homeAnswer("needs:r10", { pick: 0 }, ed), ans10b = readFileSync(join(envDir, ".symbiot", "ANSWERS.md"), "utf8");
+  ok("…changed after the run asked: Done goes ahead as before", c10.ok && reran10.length === 2 && /Done: the user did it\. Check it worked/.test(ans10b), [c10, ans10b.slice(-200)]);
+  ok("…and a step that names no file goes ahead as before", homeAnswer("needs:r10", { pick: 0 }, { ...ed, agents: () => [{ ...envRun, needs: { ...envRun.needs, what: "Run tailscale up with sudo." } }] }).ok && reran10.length === 3, reran10);
   const pj = ws3({ deps: { repos: () => ({}), pending: () => [], tasks: () => [], parked: () => [], agents: () => [waitsRun({ id: "r8" })], stuck: () => [] } }).projects.find((p) => p.repo === "ops");
   ok("…and on its lane in Tasks: lit, the OK first, answerable there", pj && pj.lit && pj.qs[0].fix === "needs" && pj.qs[0].id === "needs:r8", pj);
   const wsS = ws3({ deps: { repos: () => ({ coral: "/c" }), pending: () => [], tasks: () => [], parked: () => [], agents: () => [failedRun({ id: "r9" })], stuck: () => stuckT } });
@@ -423,6 +436,10 @@ try {
   const ops = wr.projects.find((p) => p.repo === "ops");
   ok("ops runs (act-…) are one lane, Agent runs, not a sphere each named by an id", wr.projects.length === 2 && ops && ops.name === "Agent runs" && ops.runs === 1 && ops.asks === 1 && ops.lit && wr.projects[0] === ops, wr.projects);
   ok("…and a repo is shown by the name people use for it", wr.projects.find((p) => p.repo === "symbiot").name === "Symbiot", wr.projects);
+  const wh = workScene({ deps: { repos: () => ({ whatsapp_module: "/w", coral: "/c" }), pending: () => [], tasks: () => [], agents: () => [],
+    handing: (p) => (p === "/w" ? [{ lane: "ops", text: "set up a WhatsApp test number", gone: false, why: "Not sent yet: ops is still on the earlier version (its run started 5 min ago), and gets this one when that run ends" }] : []) } });
+  const whp = wh.projects.find((p) => p.repo === "whatsapp_module");
+  ok("a lane's handover not sent yet shows on its block, with why (whatsapp_module, 2026-10-12)", whp && whp.handing.length === 1 && /still on the earlier version/.test(whp.handing[0].why) && !wh.projects.some((p) => p.repo === "coral"), wh.projects);
   ok("Go with nothing waiting says so", /Nothing waiting/.test(workGo({ push: () => ({ empty: true }) }).note), "");
 
   console.log("WAITING — each waiting task says why, and starts by itself once its lane is free");
