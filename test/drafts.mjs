@@ -105,7 +105,11 @@ try {
   const perm = card("act-perm", permQ, ["👤 You (only you: a permission): allow the list in .symbiot/allowlist.proposed.json (recommended)", "👤 You (only you: starting another lane): ask ops directly"]);
   writeFileSync(join(perm.path, ".symbiot", "allowlist.proposed.json"), JSON.stringify({ permissions: { allow: ["Bash(ssh sts-prod:*)"] } }));
   const own = card("act-own", pathQ, ["the old one (recommended)", "the new one"]), gone = card("act-gone", goneQ, ["yes (recommended)", "no"]);
-  writeFileSync(join(CFG, "runs.json"), JSON.stringify([perm, own, gone]));
+  // the WinLove card (2026-10-12), word for word: an option picked, nothing typed, and it came back "Pick or type at least one answer."
+  const winQ = "Can I log in to the WinLove server read-only to check what's actually deployed?", winSkip = "skip it, the reply already asks the developer for the commit hash and git status";
+  const win = card("act-win", winQ, ["👤 You (only you: a permission): allow the list in .symbiot/allowlist.proposed.json (recommended)", winSkip]);
+  writeFileSync(join(win.path, ".symbiot", "allowlist.proposed.json"), JSON.stringify({ permissions: { allow: ["Bash(ssh ubuntu@13.51.104.186 git log:*)"] } }));
+  writeFileSync(join(CFG, "runs.json"), JSON.stringify([perm, own, gone, win]));
   await js("LQ.fresh=true;lqLoad(false)");
   const blobOf = (re) => `[...document.querySelectorAll('#lqdrops .lqblob')].find(function(b){return ${re}.test(b.textContent)})`;
   const show = (re) => `(function(){if(${blobOf(re)})return true;if(LQ.need&&LQ.need.pages>1)lqNeedPage();return false;})()`;
@@ -124,6 +128,10 @@ try {
   ok("...an empty Send says to type first, on the card", (await js(`(${blobOf("/Which copy/")}).querySelector('.bst').textContent`)) === "Type your answer first.", await js(`(${blobOf("/Which copy/")}).querySelector('.bst').textContent`));
   await js(`(function(){var b=${blobOf("/Which copy/")},i=b.querySelector('.bfx input');i.value='keep the new one';b.querySelector('.bfx').dispatchEvent(new Event('submit',{cancelable:true}));})()`);
   ok("...and what you typed is saved", await until2(() => /### Which copy of `site\/index\.md` should I keep\?\nkeep the new one/.test(answers(own.path))), answers(own.path));
+  ok("5) the WinLove card is up, in plain words", await until(show("/WinLove server/")), await js("JSON.stringify((LQ.home.you||[]).map(function(y){return y.q}))"));
+  await js(`(function(){var b=${blobOf("/WinLove server/")};b.querySelectorAll('.nopt')[1].click();})()`);
+  ok("...its second option alone, nothing typed, is saved in that agent's ANSWERS.md", await until2(() => answers(win.path).includes(`### ${winQ}\n${winSkip}\n`)), [answers(win.path), await js(`(function(){var b=${blobOf("/WinLove server/")};return b?b.querySelector('.bst').textContent:'gone';})()`)]);
+  ok("...with no error on the card or in Home's talk", !(await js("(LQ.talk||[]).some(function(t){return /Pick or type|isn.t open any more/.test(t.text)})")), await js("JSON.stringify(LQ.talk)"));
   // the answer refused (here: the page's request answers with the server's error), with the card left up: emptying
   // its QUESTIONS.md raced Home's own refresh, which took the card away first on a slow machine (CI, 2026-10-12)
   ok("a card to press is up", await until(show("/restart the relay/")), "");
