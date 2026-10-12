@@ -2,6 +2,18 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.63.10 — 2026-10-12
+
+- Fixed sign-ins made in the Symbiot Browser window, such as domains.co.za's, being lost when `symbiot screens` opened the same site.
+- Fixed allowing an agent to read your ssh keys having no effect; lists Symbiot can't safely open are now refused with an explanation.
+- Fixed `symbiot screens map` missing buttons and fields inside some page components, such as Reddit's comment box and its image button.
+- Fixed `symbiot screens` skipping clickable text like "Send Email OTP instead?" and losing open pop-ups when mapping the whole page or scrolling.
+- Fixed `symbiot screens press` and `type` acting on the page as it is only when the mapped item is there and uncovered.
+- Fixed `symbiot screens press` clicking whatever sat underneath a pop-up instead of the button you mapped in it.
+- Changed the Linux installer's description to "Your coding agents work. You only do what only you can do", matching the site.
+- Added a way to approve finished work on a task that's still in progress.
+- Fixed agent permission questions on Home rejecting a picked option with "Pick or type at least one answer," so choosing an option now sends it.
+
 ## 0.63.9
 
 - **Answering an agent no longer rereads its whole conversation.** Each answer you gave an agent picked its conversation up again, all of it: a one-word "yes" to an agent that had read 195,000 tokens cost 195,000 again, and resumed runs were three quarters of a week's use. Once an agent's conversation is past 60k, your answer now starts it fresh (about 22k), with a note of where it got to in its own words. Short ones still carry on as before.
