@@ -509,6 +509,21 @@ function commitSubject(texts) {
   const s = t.replace(/^\s*(#+|[-*+]|\d+[.)])\s+/, "").replace(/\*\*|__/g, "").replace(/\s+/g, " ").trim() || `${texts.length} approved tasks`;
   return clipWords(s, max) + more;
 }
+// The repo's own tests, run before a PR opens (what CI would run). A repo with no test
+// script, or with its dependencies not installed here, can't be checked: that doesn't block.
+async function repoTests(path) {
+  let test = ""; try { test = String(JSON.parse(readFileSync(join(path, "package.json"), "utf8")).scripts?.test || ""); } catch {}
+  if (!test || /no test specified/.test(test) || !existsSync(join(path, "node_modules"))) return { ok: true };
+  return await new Promise((done) => {
+    let out = "";
+    const p = spawn("npm", ["test", "--silent"], { cwd: path, stdio: ["ignore", "pipe", "pipe"] });
+    const keep = (d) => { out = (out + d).slice(-4000); };
+    p.stdout.on("data", keep); p.stderr.on("data", keep);
+    const timer = setTimeout(() => p.kill(), 15 * 60000);
+    p.on("error", () => { clearTimeout(timer); done({ ok: true }); }); // no npm here: can't check
+    p.on("close", (code) => { clearTimeout(timer); done(code === 0 ? { ok: true } : { ok: false, note: (out.trim().split("\n").filter(Boolean).pop() || "").slice(0, 160) }); });
+  });
+}
 // Sync approved work: off the default branch onto symbiot/<task>, commit the
 // working tree (minus .symbiot/), push, and open a PR with gh. On a branch whose
 // earlier PR already merged, it starts a fresh symbiot/ branch from the default
@@ -568,6 +583,23 @@ async function shipChanges(path, texts, opts = {}) {
   const noted = (note) => ({ ...out, note: (said ? said + " " : "") + note });
   if (opts.push === false) return out;
   if (!git(path, ["remote", "get-url", "origin"]).ok) return noted("No origin remote — committed locally.");
+  // A branch is cut from where the checkout happens to be, which can be far behind
+  // main (PR #179: 29 commits, conflicts in 23 files). So the commit goes on top of
+  // GitHub's main as it is now; if that conflicts, nothing is pushed and no PR opens.
+  git(path, ["fetch", "-q", "origin", base], 60000);
+  const tip = "origin/" + base;
+  if (git(path, ["rev-parse", "-q", "--verify", "refs/remotes/" + tip]).ok && !git(path, ["merge-base", "--is-ancestor", tip, "HEAD"]).ok) {
+    const rb = git(path, ["rebase", tip], 120000);
+    if (!rb.ok) {
+      git(path, ["rebase", "--abort"]);
+      return { ...noted(`Committed, but not pushed: it conflicts with ${base} as GitHub has it now, so no PR was opened. Rebase ${branch} on ${tip}, fix the conflicts, then approve again.`), conflicts: true, behind: true };
+    }
+    out.rebased = tip; out.commit = git(path, ["rev-parse", "--short", "HEAD"]).out;
+  }
+  if (opts.verify !== false) {
+    const v = await (typeof opts.verify === "function" ? opts.verify : repoTests)(path);
+    if (v && v.ok === false) return { ...noted(`Committed, but not pushed: the tests fail on top of ${tip}${v.note ? " (" + v.note + ")" : ""}, so no PR was opened.`), testsFailed: true };
+  }
   let ps = git(path, ["push", "-u", "origin", branch], 120000);
   // refused because origin's branch of that name went another way (an earlier PR of
   // that name, merged): the commit moves to a fresh name and goes up on that
@@ -693,7 +725,7 @@ function buildTasksMd(name, ctx, list) {
   const byType = {}; for (const t of list) { const ty = taskType(t.text); (byType[ty] = byType[ty] || []).push(t); }
   const keys = Object.keys(byType).sort((a, b) => TASK_ORDER.indexOf(a) - TASK_ORDER.indexOf(b));
   for (const ty of keys) { L.push(`### ${ty}`); for (const t of byType[ty]) L.push(`- [ ] ${t.text}`); L.push(""); }
-  L.push("## When you finish an item", "- Tick it here (`- [x]`) as soon as it's done — that's how it reaches review. Ticking doesn't archive it: the user approves it in Symbiot, which commits it on a branch and opens a PR.", "- Leave your changes **uncommitted**, and don't tick anything you didn't finish or couldn't verify.", "- If an item has numbered steps (1), 2), …), say `Step N: …` as you start each one, so Home shows how far along you are.", "- To see Symbiot itself working (its Home, a layout, a card), run a copy of your own: `node index.mjs app --fresh` from this repo, or `symbiot app --fresh`. Never point a browser, a screenshot or a proxy at the user's running Symbiot (127.0.0.1:7391): it's their window and their data.", "- If the user says to drop an item (in ANSWERS.md, say), delete its line here: Symbiot closes it, so it isn't sent again. Don't delete one for any other reason.", "");
+  L.push("## When you finish an item", "- Tick it here (`- [x]`) as soon as it's done — that's how it reaches review. Ticking doesn't archive it: the user approves it in Symbiot, which commits it on a branch and opens a PR.", "- Leave your changes **uncommitted**, and don't tick anything you didn't finish or couldn't verify.", "- If you ever do have to make a branch or a PR yourself, first `git fetch origin`, cut the branch from `origin/<default branch>` (not the local one), run the tests, and open the PR only when they pass and nothing conflicts. If they don't, stop and say so in QUESTIONS.md.","- If an item has numbered steps (1), 2), …), say `Step N: …` as you start each one, so Home shows how far along you are.", "- To see Symbiot itself working (its Home, a layout, a card), run a copy of your own: `node index.mjs app --fresh` from this repo, or `symbiot app --fresh`. Never point a browser, a screenshot or a proxy at the user's running Symbiot (127.0.0.1:7391): it's their window and their data.", "- If the user says to drop an item (in ANSWERS.md, say), delete its line here: Symbiot closes it, so it isn't sent again. Don't delete one for any other reason.", "");
   L.push(...handoverRules(ctx.lanes || [], name), ...HANDBACK, ...standingBrief(), ...doneBrief());
   L.push("## If you need a decision, or have ideas", "You may be running unattended, so you can't ask in chat. Write `.symbiot/QUESTIONS.md` instead: Symbiot shows it to the user on your block in its Workdesk, and their answers come back in `.symbiot/ANSWERS.md` (read that first if it exists).",
     `- At most ${QUESTIONS_MAX} questions, under a \`## Questions\` heading. Each is a \`### \` heading, then a line of context, then exactly ${OPTIONS_SHOWN} options as \`- \` bullets, the one you recommend first, marked \`(recommended)\`. Symbiot shows only the first ${OPTIONS_SHOWN}; the user can always answer in their own words.`,

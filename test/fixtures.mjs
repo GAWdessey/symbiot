@@ -17,7 +17,7 @@ import { releaseNotes, parseNotes } from "../writeups.mjs";
 import { VERSION, sameTask, uniqueTasks } from "../core.mjs";
 import { mailActivity } from "../mail.mjs";
 import { pngSize, pngDecode, splitPng, stitchPng, stitchListPng, captureCmds, clickCmds, portalAppId, monitorCmds, parseCosmicRandr, parseWlrRandr, parseKscreen, parseXrandr, parseLines, tidyMonitors, monitorAreas } from "../screens.mjs";
-import { siteUrl, browserArgs, isTrusted, isSend } from "../headless.mjs";
+import { showScreen, siteUrl, browserArgs, isTrusted, isSend } from "../headless.mjs";
 import { deflateSync, gzipSync } from "node:zlib";
 import { changesSince, whatsNew, tarFile } from "../server.mjs";
 import { weeklyDue, lastSlot, autostartFile, autostartContent, notifyCmd } from "../desktop.mjs";
@@ -543,6 +543,25 @@ try {
   writeFileSync(join(tkRepo, "three.txt"), "3\n");
   const rr = await shipChanges(tkRepo, ["Three"], { pr: false });
   ok("a push refused because origin's branch of that name went another way: it goes up under a fresh name", rr.ok && rr.pushed && rr.branch !== taken + "-9" && /^symbiot\//.test(rr.branch) && gt(`rev-parse origin/${rr.branch}`) === gt("rev-parse HEAD"), rr);
+
+  // PR #179: a branch cut from a checkout far behind main came with conflicts. Now the
+  // commit is rebased on GitHub's main first; a conflict stops before the push.
+  const bhSetup = (name, extra) => build(name, `git init -q -b main && git config user.email ci@symbiot.test && git config user.name "Symbiot CI" && echo a > a.txt && echo z > z.txt && git add . && git commit -qm init
+    git clone -q --bare . ../${name}-remote.git && git remote add origin ../${name}-remote.git && git fetch -q origin && git remote set-head origin main
+    git clone -q ../${name}-remote.git ../${name}-other && git -C ../${name}-other config user.email o@o && git -C ../${name}-other config user.name o && ${extra} && git -C ../${name}-other commit -qam moved && git -C ../${name}-other push -q origin main
+    echo mine > new.txt`);
+  const bhRepo = bhSetup("ship-behind", "echo other > ../ship-behind-other/other.txt && git -C ../ship-behind-other add .");
+  const gb = (a) => execSync("git " + a, { cwd: bhRepo, encoding: "utf8", env: gitEnv }).trim();
+  const rb = await shipChanges(bhRepo, ["Mine"], { pr: false });
+  ok("a stale local main: the commit lands on top of GitHub's main and goes up", rb.ok && rb.pushed && !!rb.rebased && gb("rev-parse HEAD~1") === gb("rev-parse origin/main") && gb(`rev-parse origin/${rb.branch}`) === gb("rev-parse HEAD") && rb.commit === gb("rev-parse --short HEAD"), rb);
+  const cfRepo = bhSetup("ship-conflict", "echo theirs > ../ship-conflict-other/a.txt");
+  writeFileSync(join(cfRepo, "a.txt"), "mine\n");
+  const gc = (a) => execSync("git " + a, { cwd: cfRepo, encoding: "utf8", env: gitEnv }).trim();
+  const rc = await shipChanges(cfRepo, ["Clash"], { pr: false });
+  ok("conflicts with GitHub's main: committed, not pushed, no rebase left half-done", rc.ok && rc.conflicts && !rc.pushed && !existsSync(join(cfRepo, ".git", "rebase-merge")) && gc("status --porcelain").replace(/\?\? .*\n?/g, "") === "" && gc("rev-parse --abbrev-ref HEAD") === rc.branch, rc);
+  const vfRepo = bhSetup("ship-verify", "echo other > ../ship-verify-other/other.txt && git -C ../ship-verify-other add .");
+  const rv = await shipChanges(vfRepo, ["Red"], { pr: false, verify: async () => ({ ok: false, note: "1 test failed" }) });
+  ok("tests failing on top of main: not pushed", rv.ok && rv.testsFailed && !rv.pushed && /1 test failed/.test(rv.note), rv);
 
   // scratch: 170k untracked files (venvs, datasets) timed out `git add -A`
   // (spawnSync ETIMEDOUT), and whole-tree staging took in an unignored .env.
@@ -1403,6 +1422,19 @@ try {
   ok("...a question with no model connected says how to connect one; --clear starts the talk over", bo.cliChatAsk && bo.cliChatAsk.code === 1 && /Connect a model first/.test((bo.cliChatAsk.j || {}).error || "") && bo.cliChatClear && bo.cliChatClear.code === 0 && bo.cliChatClear.j.ok && bo.cliChatAfter === null, [bo.cliChatAsk, bo.cliChatClear, bo.cliChatAfter]);
   ok("talkOf: the talk, as the draft's brief carries it", /^## What the user said about it/.test(bo.talkOf || "") && /\*\*User:\*\* Tell Mom Sunday works/.test(bo.talkOf || ""), bo.talkOf);
   ok("symbiot watch seen <id> does the same from a terminal (and needs an id)", bo.cliSeen && bo.cliSeen.code === 0 && ((bo.afterCli || {}).cards || [])[0].count === 0 && bo.afterCli.total === 60 && bo.cliSeenNoId && bo.cliSeenNoId.code === 1, [bo.cliSeen, bo.cliSeenNoId]);
+
+  console.log("BROWSER — acting from an earlier map of the open page doesn't reload it (unsubscribe toggles were lost)");
+  {
+    let opened = 0;
+    const fake = (href) => ({ send: async (m) => { if (m === "Runtime.evaluate") return { result: { value: href } }; if (m === "Page.navigate") opened++; return {}; }, until: async () => true, idle: async () => {} });
+    const sc = { id: "old", page: { url: "https://x.test/unsub?id=1" } };
+    const h1 = await showScreen(fake("https://x.test/unsub?id=1#top"), { shown: "new" }, sc);
+    ok("an earlier map of the page that is open doesn't reload it", h1 === true && opened === 0, { h1, opened });
+    const h2 = await showScreen(fake("https://x.test/other"), { shown: "new" }, sc);
+    ok("a different address is opened", h2 === false && opened === 1, { h2, opened });
+    const h3 = await showScreen(fake("https://x.test/unsub?id=1"), { shown: "" }, sc);
+    ok("a browser holding no mapped page opens it", h3 === false && opened === 2, { h3, opened });
+  }
 
   console.log("DRAFT A REPLY — a new email handed to your agent, which never sends (watch.mjs, headless.mjs)");
   ok("isSend: Gmail's Send and Schedule send are sends; a row about sending, or Sender info, isn't", isSend({ kind: "button", label: "Send ‪(Ctrl-Enter)‬" }) && isSend({ kind: "menu item", label: "Schedule send" }) && !isSend({ kind: "row", label: "Ann, Please send the invoice" }) && !isSend({ kind: "button", label: "Sender info" }) && !isSend({ kind: "link", label: "Sent" }), "");

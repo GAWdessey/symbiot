@@ -92,6 +92,10 @@ function tagged(text, product) {
 // What counts as marketing in another lane's tasks: posting, launches, campaigns, pricing.
 const MARKETING_WORDS = /\b(marketing|symbiot post|posting|posts? (?:to|on) linkedin|linkedin posts?|social (?:media )?posts?|launch|campaign|audience|newsletter|brand|pricing|4-week test|landing page|drafts to post|demo video)\b/i;
 
+// A task is about marketing by what it says, not by a file or identifier it names: code spans, URLs,
+// paths and file names (marketing.mjs, site/index.html) are dropped before the words are matched.
+const NOT_PROSE = /`[^`]*`|https?:\/\/\S+|[\w.~-]*\/[\w./~-]*|\b[\w-]+\.(?:mjs|cjs|js|ts|tsx|jsx|json|md|html|css|sh|py|java|ya?ml|lock|txt)\b/gi;
+const aboutMarketing = (text) => MARKETING_WORDS.test(String(text || "").replace(NOT_PROSE, " "));
 // ---- what its agent has drafted -------------------------------------------------------
 // drafts/<product>/<name>.md (two levels down at most), newest first: [{ file, name,
 // product, at }]. Its product: the "product:" line at its top, else its folder's name.
@@ -348,4 +352,4 @@ function marketingBrief(list = [], { map = {}, names = productNames(map) } = {})
     `- Once a post is out (or in the platform's scheduler), mark it posted with its link: \`node "${CLI}" marketing posted <its file> --url <the post's link>\` (\`--at "YYYY-MM-DD HH:MM"\` for a scheduled one). A post you redo in a new file: mark the old one \`node "${CLI}" marketing superseded <old file> --by <new file>\`. Either takes it off the user's list for good, and Symbiot then refuses to approve or post it again: never edit \`.symbiot/drafts.json\` by hand.`];
 }
 
-export { sigOf, mediaSigOf, MARKETING, MARKETING_DIR, displayName, productNames, ensureMarketing, productOf, untagged, tagged, MARKETING_WORDS, draftFiles, marketingBrief, parseDraft, seeMore, SEE_MORE, draftPreview, setDraftStatus, draftStatuses, laneMedia, draftRel, setDraftMedia, postedCmd, MEDIA_TYPES, inLane, day };
+export { sigOf, mediaSigOf, MARKETING, MARKETING_DIR, displayName, productNames, ensureMarketing, productOf, untagged, tagged, MARKETING_WORDS, aboutMarketing, draftFiles, marketingBrief, parseDraft, seeMore, SEE_MORE, draftPreview, setDraftStatus, draftStatuses, laneMedia, draftRel, setDraftMedia, postedCmd, MEDIA_TYPES, inLane, day };

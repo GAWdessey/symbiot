@@ -771,7 +771,12 @@ const scrollJs = (to, where = null) => `(() => { ${SCROLLER}
 // mapped it (with what was typed there); else open its address again and scroll
 // to where it was. True if it was still there.
 async function showScreen(page, b, s) {
-  const here = b.shown === s.id && (await page.send("Runtime.evaluate", { expression: "location.href", returnByValue: true })).result?.value === s.page.url;
+  // Already on it: not just the screen last mapped, but any earlier map of the same address.
+  // An agent presses a toggle on one map, gets a new map back, then presses the next toggle
+  // (or Save) from the old one: reloading there threw the unsaved toggles away (unsubscribe
+  // pages "keep losing changes", 2026-10-10). Only a browser that holds a mapped page counts.
+  const bare = (u) => String(u || "").split("#")[0];
+  const here = !!b.shown && bare((await page.send("Runtime.evaluate", { expression: "location.href", returnByValue: true })).result?.value) === bare(s.page.url);
   if (!here) {
     await open(page, s.page.url);
     const sc = s.page.scroll;
@@ -1093,4 +1098,4 @@ async function closeSymbiotBrowser() {
   return { closed: open.length };
 }
 
-export { siteUrl, browserArgs, mapPage, wholePage, readPage, readTexts, readLinkedIn, LI_READ, pagePicture, pageClip, CLIP, isSend, pressRegion, typeRegion, fillForm, uploadRegion, uploadFiles, attachFiles, FILE_BOX, scrollPage, SCROLLS, signIn, keepBrowserOpen, closeBrowser, browserOpen, keepSessions, SESSION_KEEP, SESSIONS, loadSessions, trustedSites, isTrusted, trustSite, untrustSite, PROFILE, sessionCookie, SESSION_COOKIE, openSymbiotBrowser, closeSymbiotBrowser, setBrowserHub , browserHub };
+export { showScreen, siteUrl, browserArgs, mapPage, wholePage, readPage, readTexts, readLinkedIn, LI_READ, pagePicture, pageClip, CLIP, isSend, pressRegion, typeRegion, fillForm, uploadRegion, uploadFiles, attachFiles, FILE_BOX, scrollPage, SCROLLS, signIn, keepBrowserOpen, closeBrowser, browserOpen, keepSessions, SESSION_KEEP, SESSIONS, loadSessions, trustedSites, isTrusted, trustSite, untrustSite, PROFILE, sessionCookie, SESSION_COOKIE, openSymbiotBrowser, closeSymbiotBrowser, setBrowserHub , browserHub };

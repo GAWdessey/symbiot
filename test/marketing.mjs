@@ -83,6 +83,7 @@ const tasks = [
   { id: "b", text: "[Symbiot] A demo video", repo: "marketing", review: true, ts: now },
   { id: "c", text: "Add a pricing page to the Symbiot site", repo: "symbiot", ts: now },
   { id: "d", text: "Fix the login bug", repo: "symbiot", ts: now },
+  { id: "f", text: "Garth pasted GitHub's 'This branch has conflicts that must be resolved' box for a symbiot PR. Conflicting files: CHANGELOG.md, agents.mjs, marketing.mjs, site/index.html, `marketing`", repo: "symbiot", ts: now },
   { id: "e", text: "an old launch", repo: "marketing", done: true, archived: true }];
 const posts = { canDraft: true, posts: [{ id: "p1", status: "waiting", text: "This week Dailify learned to plan your day." }, { id: "p2", status: "approved", text: "x" }], done: [] };
 const agents = [{ path: M.MARKETING_DIR, status: "done", ask: { questions: [{ q: "Dailify's end goal isn't written down. Use this one?", options: ["Use it (recommended)", "I'll write my own"] }] } }];
@@ -95,7 +96,7 @@ const s2 = marketingState({ deps: { repos: () => map, tasks: () => [], posts: ()
 ok("…only the ones not approved or skipped yet", s2.needs.map((n) => n.rel).join() === "c.md" && s2.needCount === 1, s2.needs);
 ok("each tagged: the question and the draft are Dailify's", s.needs[0].product === "Dailify" && s.needs[2].product === "Dailify");
 ok("its tasks, open ones only, each with its product and where it is", s.lane.length === 2 && s.lane[0].product === "Dailify" && s.lane[0].status === "waiting" && s.lane[1].status === "review" && s.lane[0].text === "Write the launch post", s.lane);
-ok("other lanes' tasks about marketing (pricing, not a login bug)", s.elsewhere.length === 1 && s.elsewhere[0].id === "c" && s.elsewhere[0].product === "Symbiot", s.elsewhere);
+ok("other lanes' tasks about marketing (pricing, not a login bug)", s.elsewhere.length === 1 && s.elsewhere[0].id === "c" && !s.elsewhere.some((t) => t.id === "f") && s.elsewhere[0].product === "Symbiot", s.elsewhere);
 ok("what its agent drafted, and the products to pick from", s.files.length === 2 && s.products.includes("Dailify") && s.products.includes("Symbiot"));
 ok("on: Home shows its orb", s.on === true);
 const quiet = marketingState({ deps: { repos: () => ({ symbiot: sym }), tasks: () => [], posts: () => ({ posts: [], done: [] }), agents: () => [], pending: () => [], files: () => [] } });

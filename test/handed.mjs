@@ -40,5 +40,17 @@ try {
 } finally {
   rmSync(HOME, { recursive: true, force: true });
 }
+{
+  const { finishedState } = await import("../home.mjs"), t = Date.now();
+  const f = finishedState({ now: t, list: [
+    { name: "Steve", status: "done", endedAt: t - 3600e3, exitCode: 0, tail: "Pulled and installed;\n  version is 0.63.11.", changed: ["a", "b"], ask: { questions: [{ q: "Which npm account?" }] } },
+    { name: "Old", status: "done", endedAt: t - 3 * 864e5, exitCode: 0, tail: "x" },
+    { name: "Live", status: "running", startedAt: t },
+    { name: "Broke", status: "done", endedAt: t - 60e3, exitCode: 1, tail: "" }] });
+  ok("Home sees agents finished in the last day, newest first, not older or running ones", f.length === 2 && f[0].name === "Broke" && f[1].name === "Steve", f);
+  ok("…with how each ended, what it said last, its questions and files changed", f[0].end === "failed (exit 1)" && f[1].said === "Pulled and installed; version is 0.63.11." && f[1].asks[0] === "Which npm account?" && f[1].changed === 2, f);
+  const c = homeContext({ you: [], feeds: [], working: 0, runs: [], lanes: [], finished: f, at: t });
+  ok("…and the chat's context carries them", /Agents finished in the last 24h[^\n]*\n[\s\S]*- Steve: finished, 2 files changed; asked: Which npm account\?; said: Pulled and installed; version is 0\.63\.11\./.test(c), c);
+}
 console.log(`\n${fail ? "✗" : "✓"} handed: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

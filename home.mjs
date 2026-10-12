@@ -34,7 +34,7 @@ import { postsState } from "./post.mjs";
 import { laneCap, verdict, peel, inflight, inflightIds, parallelLane, openTasksOf, laneFacts, dropHeld, startParallel } from "./parallel.mjs";
 import { licenceState, isPro } from "./licence.mjs";
 import { PHONE, ANDROID_APP, computerView, phoneApprovals, linkState, ask as askComputer } from "./phone.mjs";
-import { MARKETING, MARKETING_DIR, MARKETING_WORDS, displayName, productNames, productOf, untagged, tagged, draftFiles, setDraftStatus, postedCmd } from "./marketing.mjs";
+import { MARKETING, MARKETING_DIR, MARKETING_WORDS, aboutMarketing, displayName, productNames, productOf, untagged, tagged, draftFiles, setDraftStatus, postedCmd } from "./marketing.mjs";
 
 const KEEP = 15000; // the slower reads (git per repo awaiting review) are cached this long
 let cached = null;
@@ -262,7 +262,7 @@ function marketingState({ deps = {}, list, pend, map, named = displayName } = {}
   // the only step a post needs from you, so it's lit here (and on Home's orb), Preview one click away
   for (const f of files.filter((x) => !x.status && !x.doc)) needs.push({ kind: "post", id: "post:" + f.rel, rel: f.rel, text: plain(f.name, 120), product: f.product });
   const lane = tasks.filter((t) => t.repo === MARKETING).map((t) => ({ id: t.id, text: plain(untagged(t.text), 220), product: productOf(t.text, names), status: t.review ? "review" : working ? "working" : "waiting", ts: t.ts || 0 }));
-  const elsewhere = tasks.filter((t) => t.repo !== MARKETING && MARKETING_WORDS.test(t.text)).slice(0, 12).map((t) => ({ id: t.id, text: plain(untagged(t.text), 220), product: productOf(t.text, names), repo: t.repo || "", name: t.repo ? named(map[t.repo], t.repo) : "" }));
+  const elsewhere = tasks.filter((t) => t.repo !== MARKETING && aboutMarketing(t.text)).slice(0, 12).map((t) => ({ id: t.id, text: plain(untagged(t.text), 220), product: productOf(t.text, names), repo: t.repo || "", name: t.repo ? named(map[t.repo], t.repo) : "" }));
   const seen = [...new Set([...lane, ...elsewhere, ...needs, ...files].map((x) => x.product).filter(Boolean))];
   const on = !!(posts.canDraft || (posts.posts || []).length || (posts.done || []).length || lane.length || elsewhere.length || files.length || needs.length || run);
   return { on, needs, needCount: needs.length, lane, elsewhere, files: files.map(({ rel, name, product, at, status, doc }) => ({ rel, name, product, at, status, doc: !!doc })), products: [...new Set([...seen, ...names])], working, waiting: lane.filter((t) => t.status === "waiting").length };
@@ -578,6 +578,16 @@ function handedState({ now = Date.now(), ledger = loadHanded(), tasks = [], list
   });
 }
 
+// What agents finished in the last day and how it ended, so "did the update work?" is answered from
+// their own last words, not guessed.
+function finishedState({ now = Date.now(), list = agentsList(), max = 6 } = {}) {
+  return list.filter((x) => x && x.status !== "running" && x.endedAt && now - x.endedAt < 864e5).sort((a, b) => b.endedAt - a.endedAt).slice(0, max).map((x) => {
+    const end = x.exitCode ? `failed (exit ${x.exitCode})` : "finished", said = String(x.tail || "").replace(/\s+/g, " ").trim().slice(0, 400);
+    const asks = ((x.ask && x.ask.questions) || []).map((q) => String(q.q || q.title || q).slice(0, 80)).slice(0, 3);
+    return { name: x.name, end, at: x.endedAt, said, asks, changed: Array.isArray(x.changed) ? x.changed.length : 0 };
+  });
+}
+
 // One line per thing home shows, for the talk's context.
 function homeContext(h) {
   return [
@@ -585,6 +595,7 @@ function homeContext(h) {
     ...(h.you.some((y) => /^ask:/.test(y.id || "")) ? [`Agents asking (to answer for them, "answer" with these ids): ${h.you.filter((y) => /^ask:/.test(y.id || "")).map((y) => `${y.id} (${String(y.title).slice(0, 40)})`).join("; ")}`] : []),
     `New on what they watch:`, ...(h.feeds.length ? h.feeds.map((f) => `- ${f.title}: ${f.sub}${f.latest ? ` (latest: ${f.latest})` : ""}`) : ["- nothing new"]),
     `Agents working: ${h.working}.`, ...(h.runs || []).map((r) => `- [${r.id}] ${dayMark(r.started, h.at)}${r.name}: ${r.line}${r.eta ? ` (${r.eta})` : ""}${r.quiet ? ` (no progress in ${r.quiet} min)` : ""}${r.looping ? " (repeating the same step)" : ""}`),
+    "Agents finished in the last 24h (their own last words; answer 'did it work?' from these):", ...((h.finished || []).length ? h.finished.map((f) => `- ${dayMark(f.at, h.at)}${f.name}: ${f.end}${f.changed ? `, ${f.changed} file${f.changed > 1 ? "s" : ""} changed` : ""}${f.asks.length ? `; asked: ${f.asks.join(" / ")}` : ""}${f.said ? `; said: ${f.said}` : ""}`) : ["- none"]),
     "Handed off from this chat (last 7 days; say how each stands from this list, never guess):", ...((h.handed || []).length ? h.handed.map((x) => `- ${dayMark(x.at, h.at)}${x.lane}: ${x.text} (${x.status})`) : ["- none"]),
     "Recent handovers:", ...(h.lanes.length ? h.lanes.map((l) => `- ${dayMark(l.at, h.at)}${l.from} → ${l.to}: ${l.text} (${l.status}${l.times ? `, handed over ${l.times} times` : ""})`) : ["- none"]),
     ...(h.marketing ? [`Marketing (a lane of its own, for marketing across all their products; "repo": "${MARKETING}"): ${h.marketing.needs ? `${h.marketing.needs} thing${h.marketing.needs > 1 ? "s" : ""} there need${h.marketing.needs > 1 ? "" : "s"} them` : "nothing needs them"}${h.marketing.working ? ", its agent is at work" : ""}.`] : []),
@@ -607,6 +618,7 @@ async function homeAsk(question, { ask, now = Date.now(), state, images = [] } =
   const h = state || homeState({ now });
   let map = {}; try { map = laneMap(); } catch {}
   if (!h.handed) { try { h.handed = handedState({ now, tasks: loadTasks(), list: agentsList(), map }); } catch { h.handed = []; } }
+  if (!h.finished) { try { h.finished = finishedState({ now }); } catch { h.finished = []; } }
   const role = "Here they're on Symbiot's home: one liquid surface that shows what only they can do, what's new on what they watch, and the lanes. Answer from what it shows, and act on what they ask.";
   let open = []; try { open = loadTasks().filter((t) => t && !t.done && !t.archived && !t.review).map((t) => ({ id: t.id, text: t.text, repo: t.repo })); } catch {}
   const r = await converse({ where: "Home", role, nav: true, settle: true, control: true, tasks: open, context: homeContext(h), question: question + (pics.length ? `\n(The user attached ${pics.length} screenshot${pics.length > 1 ? "s" : ""}: you can see ${pics.length > 1 ? "them" : "it"}.)` : ""), map, now, images: pics.map(({ mime, data, path }) => ({ mime, data, path })), ...(ask ? { ask } : {}),
@@ -984,4 +996,4 @@ function setOnboarding({ step, skip, unskip, skipRest, done, restart } = {}) {
   return onboarding();
 }
 
-export { handedState, noteHanded, phoneChat, isPeak, reportIdeasAdd, reportIdeasDismiss, reportAsk, reportDraftAnswer, workTick, waitWhy, AUTO_GRACE, STUCK_AFTER, marketingState, marketingGo, marketingDraftAnswer, marketingTask, moveToMarketing, goLane, homeState, homeContext, homeAsk, homeAnswer, homeNext, nextUp, laneNamed, NEXT_FILE, workScene, workGo, displayName, firstSteps, onboarding, setOnboarding, startOnboarding, ONB_STEPS, ONB_STEPS_PHONE, onbSteps, phoneBits , phoneSetupFirst, settleAsks, plainAsk, settleFromChat };
+export { finishedState, handedState, noteHanded, phoneChat, isPeak, reportIdeasAdd, reportIdeasDismiss, reportAsk, reportDraftAnswer, workTick, waitWhy, AUTO_GRACE, STUCK_AFTER, marketingState, marketingGo, marketingDraftAnswer, marketingTask, moveToMarketing, goLane, homeState, homeContext, homeAsk, homeAnswer, homeNext, nextUp, laneNamed, NEXT_FILE, workScene, workGo, displayName, firstSteps, onboarding, setOnboarding, startOnboarding, ONB_STEPS, ONB_STEPS_PHONE, onbSteps, phoneBits , phoneSetupFirst, settleAsks, plainAsk, settleFromChat };
