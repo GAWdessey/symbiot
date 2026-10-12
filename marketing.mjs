@@ -126,9 +126,9 @@ function draftFiles(dir = MARKETING_DIR, names = [], { max = 30 } = {}) {
 // two `---` lines, and the rest is notes (with the picture and the date they name).
 const MEDIA_TYPES = { png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif", webp: "image/webp", mp4: "video/mp4", mov: "video/quicktime", webm: "video/webm" };
 const SEE_MORE = 210; // where LinkedIn's feed cuts a post off with "…see more"
-const HEAD_KEYS = { product: "product", platform: "platform", when: "when", schedule: "when", date: "when", media: "media", image: "media", video: "media", picture: "media" };
+const HEAD_KEYS = { product: "product", platform: "platform", when: "when", schedule: "when", date: "when", media: "media", image: "media", video: "media", picture: "media", where: "where", subreddit: "where", community: "where", flair: "flair" };
 function parseDraft(text) {
-  const src = String(text || "").replace(/\r\n/g, "\n"), out = { title: "", product: "", platform: "", when: "", media: [], body: "", notes: "", format: "" };
+  const src = String(text || "").replace(/\r\n/g, "\n"), out = { title: "", product: "", platform: "", when: "", media: [], body: "", notes: "", format: "", where: "", flair: "" };
   const lines = src.split("\n"), head = [];
   let i = 0;
   for (; i < lines.length; i++) { const l = lines[i]; if (/^##\s/.test(l) || /^\s*-{3,}\s*$/.test(l)) break; head.push(l); }
@@ -175,10 +175,12 @@ function author({ cfg = loadConfig(), dir = MARKETING_DIR } = {}) {
   return { name: name || "You", headline: String(p.headline || "").trim(), avatar: !!avatar, initials: (name || "You").split(/\s+/).map((w) => w[0]).join("").slice(0, 2).toUpperCase() };
 }
 // A file of the lane's, by its path there, only if it is there (no ../ out of it).
+// Never in .symbiot/ (the unblurred originals a capture was made from, tray-originals, are
+// there) nor .git/: nothing there is served, previewed or put on a post.
 function inLane(dir, rel) {
   if (!rel || /\0/.test(rel)) return "";
   const f = join(dir, String(rel));
-  try { const real = realpathSync(f), root = realpathSync(dir); return real.startsWith(root + "/") ? real : ""; } catch { return ""; }
+  try { const real = realpathSync(f), root = realpathSync(dir); return real.startsWith(root + "/") && !/^\.(?:symbiot|git)(?:\/|$)/.test(real.slice(root.length + 1)) ? real : ""; } catch { return ""; }
 }
 // The text an approval is for: a draft's post changed after you approved it isn't approved.
 const sigOf = (body) => createHash("sha256").update(String(body || "")).digest("hex").slice(0, 16);
@@ -247,14 +249,40 @@ function draftPreview(rel, { dir = MARKETING_DIR, cfg } = {}) {
   const d = parseDraft(readFileSync(f, "utf8")), base = relative(realpathSync(dir), dirname(f));
   const media = d.media.map((m) => { const r = join(base, m), ext = m.split(".").pop().toLowerCase(); return inLane(dir, r) && MEDIA_TYPES[ext] ? { rel: r, name: basename(m), kind: MEDIA_TYPES[ext].startsWith("video") ? "video" : "image" } : null; }).filter(Boolean);
   const st = statusOf(dir, rel, d.body);
-  return { rel, title: d.title, product: d.product, platform: d.platform, when: d.when, body: d.body, ...seeMore(d.body), hashtags: d.body.match(/#[\p{L}\p{N}_]+/gu) || [], chars: d.body.length,
+  return { rel, title: d.title, product: d.product, platform: d.platform, when: d.when, ...whereOf(d), body: d.body, ...seeMore(d.body), hashtags: d.body.match(/#[\p{L}\p{N}_]+/gu) || [], chars: d.body.length,
     media, missing: d.media.filter((m) => !media.some((x) => x.name === basename(m))), notes: d.notes, format: d.format, author: author({ cfg, dir }), status: st ? st.status : "", statusAt: st ? st.at : 0,
     ...(st && FINAL.includes(st.status) ? { final: finalSay(st), posted: st.posted || 0, postedOn: st.postedOn || "", url: st.url || "", by: [].concat(st.by || []), edited: !!st.edited } : {}) };
+}
+// Where a draft goes, past its platform: a subreddit (its where: or subreddit: line, else
+// the first r/<name> its notes give, as r/ClaudeAI's draft does), and its flair (a flair:
+// line, else 'flair "…"' in its notes). { where, flair, handle? }, each "" when it doesn't
+// say; handle, the u/<name> a Reddit draft's notes say it's posted as.
+function whereOf(d) {
+  const reddit = /reddit/i.test(d.platform || ""), sub = (t) => { const m = String(t || "").match(/(?:^|[^\w/])\/?r\/([A-Za-z0-9_]{2,21})\b/); return m ? `r/${m[1]}` : ""; };
+  const w = String(d.where || "").trim(), where = w ? (reddit && (sub(w) || (/^[A-Za-z0-9_]{2,21}$/.test(w) ? `r/${w}` : ""))) || w : reddit ? sub(d.notes) : "";
+  const fl = d.flair || (reddit ? (String(d.notes || "").match(/\bflair\s*[:]?\s*["“]([^"”\n]{1,64})["”]/i) || [])[1] || "" : "");
+  const handle = reddit ? (String(d.notes || "").match(/(?:^|[^\w/])\/?u\/([A-Za-z0-9_-]{3,20})\b/) || [])[1] || "" : ""; // who it's posted as, where the notes say
+  return { where, flair: String(fl).trim(), ...(handle ? { handle: `u/${handle}` } : {}) };
 }
 // A picture or video a draft shows, or the avatar in config.profile: { file, type } or null.
 function laneMedia(rel, { dir = MARKETING_DIR, cfg = loadConfig() } = {}) {
   const f = rel === "avatar" ? String(((cfg && cfg.profile) || {}).avatar || "") : inLane(dir, rel), type = f && MEDIA_TYPES[f.split(".").pop().toLowerCase()];
   return type && existsSync(f) ? { file: f, type } : null;
+}
+// A capture of a pick tray (tray.mjs) that Symbiot couldn't vouch for alone (a desktop
+// recording, a clip, one whose pictures' text wasn't read) says why in its .blur.json
+// (review) until you've looked it over (reviewed); a reel, until its clips have been. Till
+// then it goes on no post. reviewOf: why, for a capture by name; lookOver: for a file.
+const readJsonFile = (f) => { try { return JSON.parse(readFileSync(f, "utf8")); } catch { return null; } };
+function reviewOf(root, name, kind = "", parts = []) {
+  const one = (n) => { const sp = /^\w[\w.-]{0,100}$/.test(String(n)) ? readJsonFile(join(root, `${n}.blur.json`)) : null; return sp && sp.review && !sp.reviewed ? String(sp.review) : ""; };
+  if (kind === "reel") { const p = (parts || []).find((x) => one(x)); return p ? `Look over its clip ${p} first: ${one(p)}` : ""; }
+  return one(name);
+}
+function lookOver(rel, { dir = MARKETING_DIR } = {}) {
+  const m = String(rel || "").match(/^(drafts\/[^/]+\/tray)\/([^/]+)$/); if (!m) return "";
+  const idx = readJsonFile(join(dir, m[1], "tray.json")) || {}, it = (Array.isArray(idx.items) ? idx.items : []).find((x) => x && Array.isArray(x.files) && x.files.includes(m[2]));
+  return it ? reviewOf(join(dir, m[1]), it.name, it.kind, it.parts) : "";
 }
 // A post's picture or video, picked (the pick tray, tray.mjs): its `media:` line set to the
 // files, by their path in the lane, written next to the draft's own (`media: tray/home.png`);
@@ -269,6 +297,7 @@ function setDraftMedia(rel, files, { dir = MARKETING_DIR } = {}) {
   for (const m of [].concat(files || []).map((x) => draftRel(x, dir)).filter(Boolean)) {
     const p = inLane(dir, m), type = p && MEDIA_TYPES[p.split(".").pop().toLowerCase()];
     if (!type) return { error: `${m} isn't a picture or video in the lane.` };
+    const why = lookOver(m, { dir }); if (why) return { error: `Look it over first, on the Marketing page: ${why}`, review: true };
     media.push({ name: relative(dirname(f), p), video: type.startsWith("video") });
   }
   if (media.length > 1 && media.some((m) => m.video)) return { error: "A post takes one video, or pictures, not both." };
@@ -289,20 +318,24 @@ function setDraftMedia(rel, files, { dir = MARKETING_DIR } = {}) {
 // ---- its brief ----------------------------------------------------------------------------
 // The lines TASKS.md gets for this lane (tasks.mjs buildTasksMd): what it is, the products
 // its tasks name and where each one's code and docs are, and its rules.
-function marketingBrief(list = [], { map = {}, names = productNames(map) } = {}) {
+function marketingBrief(list = [], { map = {}, names = productNames(map), dir = MARKETING_DIR } = {}) {
   const named = [...new Set(list.map((t) => productOf(t.text, names)).filter(Boolean))];
   // its repo: by folder, or by its name as people say it (Dailify is in CallForge AI)
   const pathOf = (p) => { const k = Object.keys(map).find((n) => n !== MARKETING && map[n] && [n, basename(map[n]), displayName(map[n], n)].some((x) => x.toLowerCase() === p.toLowerCase())); return k ? map[k] : ""; };
   const where = named.map((p) => ({ p, path: pathOf(p) }));
+  // a product with no pick tray yet: its first run starts by capturing it (capture.mjs)
+  const trayless = where.filter((w) => w.path && !existsSync(join(dir, DRAFTS, w.p.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, ""), "tray", "tray.json")));
   return ["## This lane: marketing",
     "This lane markets every product the user makes, not one repo's: posts, demo videos and screenshots, launches, landing-page copy, campaigns. This folder is the lane's own (a local git repo, no remote): what you write here is reviewed and approved under Marketing in Symbiot.",
     ...(where.length ? ["- **Products in these tasks** (read each one's README and docs for what it is and its end goal):", ...where.map((w) => `  - ${w.p}${w.path ? `: \`${w.path}\`` : " (not one of the user's repos here: ask in QUESTIONS.md where it lives, or hand it over)"}`)] : []),
+    ...trayless.map((w) => `- **${w.p} has no pick tray yet: start by capturing it.** Run \`node "${CLI}" capture "${w.p}"\` (add \`--url <its address>\` if it isn't running here; start it first with its demo data if it has some; \`--window "<title>"\` for a desktop app). Symbiot opens it in a browser of its own, takes its key screens from its routes and README as pictures and short clips, and blurs anything private before they reach \`${DRAFTS}/<product>/tray/\`. Then build its posts around those.`),
+    `- Pictures and clips of a product come from Symbiot's capture (\`node "${CLI}" capture <product>\`), never a capture script of your own: Symbiot won't run one with the app's access. A post's picture or video is one from its pick tray (\`${DRAFTS}/<product>/tray/\`), blurred, that the user has looked over there; never an unblurred original (\`.symbiot/tray-originals/\`), and never a screenshot you took yourself. Say in the draft's notes which capture you'd use; the user picks it on the Marketing page.`,
     `- Write each piece as a \`.md\` under \`${DRAFTS}/<product>/\` (\`${DRAFTS}/dailify/launch-post.md\`), a \`# \` title first, then \`product: <Product>\`, so the Marketing page tags it. Its screenshots and clips go next to it.`,
     "- Every post opens with a strong hook (its first line written for reach), says plainly what the product is, and states its end goal. Where the end goal isn't written down, draft one and flag it in QUESTIONS.md for the user to confirm.",
     `- Each draft holds the post apart from your notes: a \`# \` title, then \`product:\`, \`platform:\` (linkedin), \`when:\` (YYYY-MM-DD HH:MM, if it's scheduled) and \`media:\` (its picture or video, next to it) lines, then \`## Post\` with exactly the text that goes out (its line breaks, its hashtags) and nothing else, then \`## Notes\` for your reasoning, sources and anything for the user. Symbiot shows \`## Post\` as the platform's own preview, and what you post is that text, unchanged.`,
-    `- The user's only step is approving each post's preview under Marketing in Symbiot: never ask them to post, schedule, paste or attach anything themselves, and never mark that as a 👤 step. Symbiot's browser is signed in to the platforms they linked (LinkedIn among them): once a post is approved (ANSWERS.md says "Approved: <its file>"), you post it, or schedule it in the platform's own scheduler for its \`when:\`, through that browser (\`node "${CLI}" screens map <the platform's page>\`, then \`screens type\` and \`screens press\`, and \`screens upload <id> "<its Add media button>" <file>\` for its pictures or video), with the approved text and media, then check it's there.`
+    `- The user's only step is approving each post's preview under Marketing in Symbiot: never ask them to post, schedule, paste or attach anything themselves, and never mark that as a 👤 step. Symbiot's browser is signed in to the platforms they linked (LinkedIn among them): once a post is approved (ANSWERS.md says "Approved: <its file>"), you post it, or schedule it in the platform's own scheduler for its \`when:\`, through that browser (\`node "${CLI}" screens map <the platform's page>\`, then \`screens type\` and \`screens press\` (to change part of a post already written or scheduled, \`screens type <id> <field> --replace "<old words>" "<new words>"\`: retyping all of it drops its picture), and \`screens upload <id> "<its Add media button>" <file>\` for its pictures or video), with the approved text and media, then check it's there.`
       + " A post not yet approved is a question in QUESTIONS.md with a 🤖 Agent: option (\"🤖 Agent: post it on Tuesday at 08:00, once you approve its preview\"), and what to check first in its context line. Never offer doing it by hand, and never ask them to sign in to or link a platform that's linked: use its session. Only signing in (a platform not linked yet, or a real attempt found its session expired: say so) is the user's: `👤 You (only you: signing in to LinkedIn)`. Never sign in as them, and never post what they haven't approved.",
     `- Once a post is out (or in the platform's scheduler), mark it posted with its link: \`node "${CLI}" marketing posted <its file> --url <the post's link>\` (\`--at "YYYY-MM-DD HH:MM"\` for a scheduled one). A post you redo in a new file: mark the old one \`node "${CLI}" marketing superseded <old file> --by <new file>\`. Either takes it off the user's list for good, and Symbiot then refuses to approve or post it again: never edit \`.symbiot/drafts.json\` by hand.`];
 }
 
-export { MARKETING, MARKETING_DIR, displayName, productNames, ensureMarketing, productOf, untagged, tagged, MARKETING_WORDS, draftFiles, marketingBrief, parseDraft, seeMore, SEE_MORE, draftPreview, setDraftStatus, draftStatuses, laneMedia, draftRel, setDraftMedia, postedCmd, MEDIA_TYPES, inLane, day };
+export { MARKETING, MARKETING_DIR, displayName, productNames, ensureMarketing, productOf, untagged, tagged, MARKETING_WORDS, draftFiles, marketingBrief, parseDraft, seeMore, SEE_MORE, draftPreview, setDraftStatus, draftStatuses, laneMedia, draftRel, setDraftMedia, reviewOf, lookOver, postedCmd, MEDIA_TYPES, inLane, day };

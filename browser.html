@@ -24,6 +24,7 @@ form.go{display:flex;gap:10px}
 form.go input{flex:1;min-width:0;padding:12px 16px;border-radius:999px;border:1px solid var(--line);background:var(--panel);color:var(--bone);font:15px var(--sans)}
 button{font:600 14px var(--sans);border-radius:999px;padding:10px 18px;border:1px solid var(--line);background:transparent;color:var(--bone);cursor:pointer}
 button.main{background:var(--bone);color:var(--bg);border-color:var(--bone)}
+button:disabled{opacity:.6;cursor:progress}
 button:focus-visible,input:focus-visible{outline:2px solid var(--amber);outline-offset:2px}
 h2{margin:6px 0 0;font:600 12px var(--sans);letter-spacing:.14em;text-transform:uppercase;color:var(--faint)}
 .sites{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px}
@@ -36,6 +37,7 @@ h2{margin:6px 0 0;font:600 12px var(--sans);letter-spacing:.14em;text-transform:
 .done{display:flex;align-items:center;gap:16px;flex-wrap:wrap;padding:18px 20px;border-radius:18px;border:1px solid var(--line);background:var(--panel)}
 .done p{margin:0;flex:1;min-width:220px;font-size:14px}
 .msg{min-height:20px;font-size:14px;color:var(--amber)}
+#donemsg{flex-basis:100%;min-height:0}#donemsg:empty{display:none}
 </style>
 </head>
 <body>
@@ -54,13 +56,15 @@ h2{margin:6px 0 0;font:600 12px var(--sans);letter-spacing:.14em;text-transform:
   <div class="done">
     <p><b>Signed in?</b> Click Done: the Symbiot Browser closes and Symbiot checks each site, so the ticks come up in Symbiot within a minute.</p>
     <button class="main" id="done" type="button">Done</button>
+    <div class="msg" id="donemsg" role="status"></div>
   </div>
 </main>
 <script>
 var T = new URLSearchParams(location.search).get("t") || "";
-function api(path, body) { return fetch(path, { method: body ? "POST" : "GET", headers: { "x-symbiot-token": T, "content-type": "application/json" }, body: body ? JSON.stringify(body) : undefined }).then(function (r) { return r.json(); }); }
+function api(path, body) { return fetch(path, { method: body ? "POST" : "GET", headers: { "x-symbiot-token": T, "content-type": "application/json" }, body: body ? JSON.stringify(body) : undefined }).then(function (r) { if (!r.ok) throw new Error("Symbiot answered " + r.status); return r.json(); }); }
 function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
 function say(t) { document.getElementById("msg").textContent = t || ""; }
+function sayDone(t) { document.getElementById("donemsg").textContent = t || ""; } // beside Done, where you clicked
 // a window of this same browser (so the sign-in is Symbiot's), the size of a laptop screen
 function openSite(url) { var w = window.open(url, "_blank", "popup=no,width=1200,height=860"); if (!w) say("Your browser blocked the window: allow pop-ups for this page, then try again."); return w; }
 function fromInput(v) { v = String(v || "").trim(); if (!v) return ""; if (/^https?:\/\//i.test(v)) return v; if (/^[a-z0-9-]+$/i.test(v)) return "https://" + v.toLowerCase() + ".com"; return "https://" + v; }
@@ -76,7 +80,8 @@ function render(d) {
   });
   document.getElementById("list").innerHTML = h;
 }
-function load() { api("/api/links").then(render).catch(function () { say("Symbiot isn't answering. Is it still running?"); }); }
+// hub=1: this page is still here (a reload isn't a close: server.mjs /api/browser/closed)
+function load() { api("/api/links?hub=1").then(render).catch(function () { say("Symbiot isn't answering. Is it still running?"); }); }
 document.getElementById("list").addEventListener("click", function (e) {
   var b = e.target.closest && e.target.closest("button[data-id]"); if (!b) return;
   var url = b.getAttribute("data-url"), id = b.getAttribute("data-id");
@@ -88,7 +93,20 @@ document.getElementById("list").addEventListener("click", function (e) {
 });
 // any site: opened, and kept under Your sites with whether you're signed in (links.mjs addSite)
 document.getElementById("go").addEventListener("submit", function (e) { e.preventDefault(); var u = fromInput(document.getElementById("addr").value); if (!u) return; openSite(u); api("/api/links/site", { site: u, here: true }).then(function (r) { if (r && !r.error) { say("Sign in to it in the window that opened, then come back here. It's under " + ((r.item && r.item.group) || "Your sites") + " now."); load(); } }).catch(function () {}); });
-document.getElementById("done").addEventListener("click", function () { say("Closing, and checking your sites…"); api("/api/browser/done", {}).catch(function () {}); });
+// Done: Symbiot closes this browser (every window of it) and checks each site. Pressed, it
+// says so at once and can't be pressed again meanwhile; if Symbiot can't close it, or isn't
+// answering, it says that rather than nothing happening (2026-10-12).
+var DONE = false, doneBtn = document.getElementById("done");
+doneBtn.addEventListener("click", function () {
+  if (DONE) return; DONE = true; doneBtn.disabled = true; doneBtn.textContent = "Closing…";
+  sayDone("Closing, and checking your sites…");
+  api("/api/browser/done", {}).then(function (r) {
+    // still here: nothing of it was found to close, so this window closes itself
+    setTimeout(function () { window.close(); setTimeout(function () { DONE = false; doneBtn.disabled = false; doneBtn.textContent = "Done"; sayDone("Symbiot is checking your sites. Close this window with its X if it stays open."); }, 800); }, (r && r.closed) ? 3000 : 300);
+  }).catch(function () { DONE = false; doneBtn.disabled = false; doneBtn.textContent = "Done"; sayDone("Symbiot isn't answering, so it couldn't close this or check your sites. Is it still running? Then click Done again."); });
+});
+// Its X: Symbiot hears it as it goes, closes the rest of it and checks each site, as Done does.
+window.addEventListener("pagehide", function () { if (!DONE && navigator.sendBeacon) navigator.sendBeacon("/api/browser/closed?t=" + encodeURIComponent(T), ""); });
 load(); setInterval(load, 5000);
 </script>
 </body>

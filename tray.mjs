@@ -13,7 +13,7 @@ import { join, dirname, basename } from "node:path";
 import { existsSync, readFileSync, writeFileSync, readdirSync, statSync, realpathSync, renameSync, rmSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { spawn, spawnSync } from "node:child_process";
-import { MARKETING_DIR, MEDIA_TYPES, draftFiles, parseDraft, inLane } from "./marketing.mjs";
+import { MARKETING_DIR, MEDIA_TYPES, draftFiles, parseDraft, inLane, reviewOf } from "./marketing.mjs";
 
 const NAME = /^\w[\w.-]{0,100}$/; // a capture's file: no slashes, no dot first
 const IMG = /\.(?:png|jpe?g|gif|webp)$/i, VID = /\.(?:mp4|webm|mov)$/i;
@@ -44,12 +44,15 @@ function trayOf(dir, rel) {
     const use = (it.kind === "still" ? files.find((f) => IMG.test(f)) : files.find((f) => VID.test(f))) || show;
     const spec = NAME.test(`${it.name}.blur.json`) ? readJson(join(root, `${it.name}.blur.json`)) : null;
     const [w, h] = spec && Array.isArray(spec.size) ? spec.size.map(Number) : [0, 0];
-    const regions = spec && Array.isArray(spec.regions) && w > 0 && h > 0 ? spec.regions.filter((r) => r && r.id != null).map((r) => ({ id: r.id, kind: String(r.kind || "box"), hint: String(r.hint || ""), on: !!r.on,
+    const regions = spec && Array.isArray(spec.regions) && w > 0 && h > 0 ? spec.regions.filter((r) => r && r.id != null).map((r) => ({ id: r.id, kind: String(r.kind || "box"), hint: String(r.hint || ""), on: !!r.on, ...(r.hand ? { hand: true } : {}),
       x: r.x / w, y: r.y / h, w: r.w / w, h: r.h / h, ...(r.from != null || r.to != null ? { from: Number(r.from) || 0, to: Number(r.to) || 0 } : {}) })) : [];
     let at = 0; try { at = show ? statSync(join(root, show)).mtimeMs : 0; } catch {}
     return { name: it.name, kind: String(it.kind || (spec && spec.kind) || "still"), caption: String(it.caption || (spec && spec.caption) || ""), screen: String(it.screen || ""), for: (Array.isArray(it.for) ? it.for : []).map(String),
-      show: show ? `${rel}/${show}` : "", showKind: VID.test(show) ? "video" : "image", use: use ? `${rel}/${use}` : "", blur: !!spec, regions, parts: Array.isArray(it.parts) ? it.parts.map(String) : [], at };
+      show: show ? `${rel}/${show}` : "", showKind: VID.test(show) ? "video" : "image", use: use ? `${rel}/${use}` : "", blur: !!spec, regions, parts: Array.isArray(it.parts) ? it.parts.map(String) : [], at,
+      ...(spec && spec.desktop ? { desktop: true } : {}), ...(spec && Array.isArray(spec.size) ? { size: spec.size.map(Number) } : {}) };
   });
+  // to look over before it's used: its own reason, or a reel's from the clips in it
+  for (const it of items) { const why = lookFirst(root, it); if (why) it.review = why; }
   return { rel, folder: dirname(rel), items };
 }
 // Every tray in the lane, each with its product's drafts (not those in the tray) to use a
@@ -74,6 +77,43 @@ function setBlur(tray, name, id, on, { dir = MARKETING_DIR } = {}) {
   for (const r of rs) r.on = !!on;
   try { writeFileSync(f, JSON.stringify(spec, null, 2)); } catch (e) { return { error: "Couldn't save it: " + ((e && e.message) || e) }; }
   return { ok: true, on: !!on, ids };
+}
+// ---- yours: a box drawn, and a capture looked over --------------------------------------
+// A box of your own over a capture (x, y, w, h as fractions of it, as the page draws it),
+// blurred: on a clip, all the way through. { ok, id } or { error }.
+function specOf(dir, tray, name) {
+  if (!isTray(dir, tray) || !NAME.test(String(name || ""))) return { error: "That capture isn't in a tray any more." };
+  const f = join(dir, tray, `${name}.blur.json`), spec = readJson(f);
+  if (!spec || !Array.isArray(spec.regions)) return { error: "That capture has no blur boxes to add to." };
+  return { f, spec };
+}
+const saveSpec = (f, spec) => { try { writeFileSync(f, JSON.stringify(spec, null, 2)); return null; } catch (e) { return { error: "Couldn't save it: " + ((e && e.message) || e) }; } };
+function addBlur(tray, name, box, { dir = MARKETING_DIR } = {}) {
+  const o = specOf(dir, tray, name); if (o.error) return o;
+  const [W, H] = Array.isArray(o.spec.size) ? o.spec.size.map(Number) : [0, 0];
+  if (!(W > 0 && H > 0)) return { error: "Couldn't tell how big the capture is." };
+  const n = (v) => Math.min(1, Math.max(0, Number(v)));
+  const b = box || {}, x = n(b.x), y = n(b.y), w = Math.min(1 - x, n(b.w)), h = Math.min(1 - y, n(b.h));
+  if (![b.x, b.y, b.w, b.h].every((v) => Number.isFinite(Number(v))) || w * W < 4 || h * H < 4) return { error: "Draw the box over what to blur: drag across it." };
+  const id = Math.max(0, ...o.spec.regions.map((r) => Number(r && r.id) || 0)) + 1;
+  o.spec.regions.push({ id, kind: "yours", x: Math.round(x * W), y: Math.round(y * H), w: Math.round(w * W), h: Math.round(h * H), hint: "", on: true, hand: true });
+  return saveSpec(o.f, o.spec) || { ok: true, id };
+}
+// A box you drew, gone. One Symbiot found stays (switch it off instead), so it can go back on.
+function removeBlur(tray, name, id, { dir = MARKETING_DIR } = {}) {
+  const o = specOf(dir, tray, name); if (o.error) return o;
+  const r = o.spec.regions.find((x) => x && String(x.id) === String(id));
+  if (!r) return { error: "That blur box isn't there any more." };
+  if (!r.hand) return { error: "Symbiot found that one: switch it off instead, so it can go back on." };
+  o.spec.regions = o.spec.regions.filter((x) => x !== r);
+  return saveSpec(o.f, o.spec) || { ok: true };
+}
+// A capture to look over before it's used (marketing.mjs reviewOf): its own reason, or a reel's from its clips.
+const lookFirst = (root, it) => reviewOf(root, it.name, it.kind, it.parts);
+function setReviewed(tray, name, { dir = MARKETING_DIR, now = Date.now() } = {}) {
+  const o = specOf(dir, tray, name); if (o.error) return o;
+  o.spec.reviewed = now;
+  return saveSpec(o.f, o.spec) || { ok: true };
 }
 // The capture rendered again from its original with its boxes as they are now, and every
 // reel it's in joined again (a box blurred in a clip is blurred in its reel too). One at a
@@ -151,4 +191,4 @@ function ffmpeg(args, { timeout = 180000 } = {}) {
   });
 }
 
-export { trayDirs, trayMedia, trayOf, trays, setBlur, renderCapture };
+export { trayDirs, trayMedia, trayOf, trays, setBlur, addBlur, removeBlur, setReviewed, renderCapture };

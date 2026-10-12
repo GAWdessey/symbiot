@@ -286,7 +286,8 @@ function runHandoff(repoPath, { force = false, lost = false } = {}) {
   const lock = join(repoPath, ".symbiot", LOCK);
   const own = opts.env && typeof opts.env === "object" ? Object.fromEntries(Object.entries(opts.env).map(([k, v]) => [k, String(v)])) : null, boxEnv = sandboxEnv(box);
   const owner = licenceState().plan === "owner" ? { SYMBIOT_OWNER: "1" } : null; // the guard lets only the owner's runs touch Symbiot's own files
-  const env = own || boxEnv || owner ? { ...(own || {}), ...(boxEnv || {}), ...(owner || {}) } : null;
+  // SYMBIOT_AGENT: which run a `symbiot screens` command comes from, so it gets its own tab in the app's hidden browser
+  const env = { ...(own || {}), ...(boxEnv || {}), ...(owner || {}), SYMBIOT_AGENT: repoPath };
   const e = track(typeof opts.name === "string" && opts.name ? opts.name.slice(0, 80) : repoPath.split("/").pop(), fillHandoff(runCmd, repoPath, resume ? RESUME_PROMPT : HANDOFF_PROMPT), repoPath, (code) => {
     if (noteSession(repoPath, code, !!resume) === "lost") { setTimeout(() => { try { runHandoff(repoPath, { force: true, lost: true }); } catch {} }, 300); return; } // its conversation is gone: start afresh
     try { if (JSON.parse(readFileSync(lock, "utf8")).pid === e.pid) unlinkSync(lock); } catch {}
@@ -661,6 +662,15 @@ function namedFiles(text, dir) {
   return out.filter((f, i) => out.findIndex((g) => g.path === f.path) === i).slice(0, 5);
 }
 const fileSig = (p) => { try { const s = statSync(p); return s.mtimeMs + ":" + s.size; } catch { return "none"; } };
+// A step of yours that names files: the ones it names, if none has changed since
+// `since` (the run that asked ended), each { name, at: its last change, 0 if it
+// isn't there }; [] when it names none or one has changed. Done on its card started
+// a run told "Done: the user did it" while the `.env` it named was last changed on
+// 2026-10-06, days before the run asked.
+function unchangedStep(text, dir, since) {
+  const files = namedFiles(text, dir).map((f) => { let at = 0; try { at = statSync(f.path).mtimeMs; } catch {} return { name: f.name, at }; });
+  return files.length && !files.some((f) => f.at > since) ? files : [];
+}
 // What a folder is waiting on: { step, files: [names], cmd, at, rerun }, or null
 // once a file it names, or the agent command, has changed. Then waiting.json
 // goes, unless a run was asked for: startWaiting needs it to start that one (the
@@ -804,12 +814,18 @@ function droppedTasks(path) {
 // Swap the held brief in, keeping the ticks the agent made meanwhile: a tick
 // is how a task reaches review, so dropping one would lose that task's work.
 // A task the agent deleted meanwhile stays out, and stays deleted in handed.json.
+// A tick with a note after it ("… — Done: the card sent …", as the brief asks for a
+// stale one) is the same task: an exact match lost the Needs-you fix's tick when the
+// marketing handover was held behind its run, and the task came back open (2026-10-12).
+// The agent's own line, note and all, is what lands.
 function releaseHeldTasks(path) {
   const held = readSymbiot(path, HELD); if (!held || runningHandoff(path)) return false;
   const isTick = /^\s*-\s*\[x\]\s*/i, key = (l) => l.replace(/^\s*-\s*\[[ x]\]\s*/i, "").trim().toLowerCase();
-  const ticked = new Set(readSymbiot(path, "TASKS.md").split("\n").filter((l) => isTick.test(l)).map(key));
+  const ticked = readSymbiot(path, "TASKS.md").split("\n").filter((l) => isTick.test(l)).map((l) => ({ k: key(l), line: l }));
+  const noted = (t, k) => t.startsWith(k) && /^\s*(?:—|–|-{1,2}|:|\(|\.\s)/.test(t.slice(k.length));
+  const tickOf = (k) => ticked.find((t) => t.k === k) || ticked.find((t) => noted(t.k, k) || sameTask(t.k, k));
   const gone = droppedTasks(path).map((d) => d.text), isGone = (l) => /^\s*-\s*\[ \]/.test(l) && gone.some((g) => sameTask(g, key(l)));
-  const md = held.split("\n").filter((l) => !isGone(l)).map((l) => /^\s*-\s*\[ \]/.test(l) && ticked.has(key(l)) ? l.replace("[ ]", "[x]") : l).join("\n");
+  const md = held.split("\n").filter((l) => !isGone(l)).map((l) => { const t = /^\s*-\s*\[ \]/.test(l) && tickOf(key(l)); return t ? l.match(/^\s*/)[0] + t.line.trimStart() : l; }).join("\n");
   try { writeFileSync(join(path, ".symbiot", "TASKS.md"), md); unlinkSync(join(path, ".symbiot", HELD)); noteHanded(path, md, gone); return true; } catch { return false; }
 }
 // Land the held brief and, if it leaves anything open, start an agent on it.
@@ -1195,11 +1211,15 @@ function autoAllow(path) {
 // A question whose answer the agent already knows isn't the user's: when its own
 // recommended option is a step it takes itself (not 👤), and nothing in the question or
 // that option is an approval, goes out, costs money, touches an account or a machine, or
-// can't be undone, Symbiot picks it and the agent carries on. Everything else still comes to the user.
+// can't be undone, Symbiot picks it and the agent carries on. Only a pure action, though:
+// an option that says anything before its 🤖 tag ("Yes, it's through. 🤖 Agent: …"), or
+// has no tag at all, states a fact or a choice only the user knows, so it goes to them.
+// Everything else still comes to the user.
+const pureAction = (o) => /^[\s*_]*🤖/u.test(String(o || ""));
 const OUTWARD = /\b(approv\w*|publish\w*|releas\w*|push\w*|merg\w*|send\w*|sent|post\w*|repl\w*|e-?mail\w*|pay\w*|spend\w*|buy\w*|money|bill\w*|cost\w*|delet\w*|remov\w*|uninstall\w*|wip\w*|drop\w*|password\w*|2fa|token\w*|keys?|sign(?:ed|s)?[- ]?in|log(?:ged)?[- ]?in|accounts?|subscription|plan|tunnel\w*|prox\w*|ssh|vm|servers?|restart\w*|stop\w*|kill\w*|broker\w*|trad\w*|bank\w*|npm|deploy\w*|install\w*|phone|whatsapp|linkedin|github\.com|live|production|prod)\b|\byour (?:default|settings?|profile)\b/i;
 function autoPick(q) {
   const rec = (q.options || []).filter((o) => /\(recommended\b/i.test(o));
-  if (rec.length !== 1 || yourStep(rec[0])) return "";
+  if (rec.length !== 1 || yourStep(rec[0]) || !pureAction(rec[0])) return "";
   return OUTWARD.test(`${q.q} ${q.context || ""} ${rec[0]}`) ? "" : rec[0];
 }
 function autoDecide(path) {
@@ -1254,15 +1274,28 @@ function grantFromStep(step, path = "", notes = {}) {
   if (tool && !/^(sudo|rm|dd|mkfs)$/.test(tool)) { const r = grantAgent({ tool }); if (r && r.ok) got.push(tool); }
   return got.length ? got : null;
 }
+// The question an answer is for, from qKey -> question: the same words, or the start of
+// one (a phone shows a long question cut short, ending in "…"), when only one starts so.
+function findQuestion(qs, q) {
+  const k = qKey(q); if (!k) return "";
+  if (qs.has(k)) return qs.get(k);
+  const cut = k.replace(/\s*(…|\.\.\.)$/, ""); if (cut === k || cut.length < 20) return "";
+  const hits = [...qs.keys()].filter((x) => x.startsWith(cut));
+  return hits.length === 1 ? qs.get(hits[0]) : "";
+}
 const stepText = (a) => String(a).split("🤖")[0].replace(/^\s*👤\s*(You:)?\s*/, "").replace(/\s*\(recommended\)\s*$/i, "").trim();
 function answerQuestions(path, answers, opts = {}) {
   path = String(path || "");
   if (!path || !knownRun(path)) return { error: "No agent has run in that folder." };
   const open = new Map(agentQuestions(path, "").questions.map((x) => [qKey(x.q), x.q]));
-  const rows = (Array.isArray(answers) ? answers : [])
-    .map((x) => ({ q: open.get(qKey(x && x.q)), a: String((x && x.a) || "").replace(/^\s*#+/gm, "").trim().slice(0, TASK_MAX) }))
-    .filter((x) => x.q && x.a);
-  if (!rows.length) return { error: "Pick or type at least one answer." };
+  const given = (Array.isArray(answers) ? answers : []).map((x) => ({ q: String((x && x.q) || ""), a: String((x && x.a) || "").replace(/^\s*#+/gm, "").trim().slice(0, TASK_MAX) })).filter((x) => x.a);
+  const rows = given.map((x) => ({ q: findQuestion(open, x.q), a: x.a })).filter((x) => x.q);
+  // pressed twice, or answered on another screen first: it's in ANSWERS.md already, so nothing is added again
+  if (!rows.length && given.length) {
+    const had = new Map([...readSymbiot(path, "ANSWERS.md").matchAll(/^###\s+(.+)$/gm)].map((m) => [qKey(m[1]), m[1]]));
+    if (given.every((x) => findQuestion(had, x.q))) return { ok: true, saved: 0, already: true, note: "That was answered already: its agent has it." };
+  }
+  if (!rows.length) return { error: given.length ? "That question isn't open any more: its agent changed or closed it. Look again on its block on the Workdesk." : "Pick or type at least one answer." };
   const prev = readSymbiot(path, "ANSWERS.md") || "# Answers from the user\nAnswers to the questions in QUESTIONS.md, newest last. Follow them; ask again in QUESTIONS.md if one is unclear.\n";
   const day = new Date().toISOString().slice(0, 10);
   try {
@@ -1350,4 +1383,4 @@ function agentsList() {
   }).concat(earlierRuns());
 }
 
-export { CHANGES, toKnownHost, continueLanes, autoPick, autoDecide, FACTS, factsOf, knownRun, withStream, workOf, HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, connectorsInfo, linkReach, fillHandoff, runHandoff, nothingToDo, PARKED_NOTE, parkedPaths, isParked, parkLane, agentMissing, blockedAgain, runningHandoff, loadRuns, earlierRuns, namedFiles, waitingFor, startWaiting, noteUntracked, untrackedBefore, forgetUntracked, writeTasks, droppedTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, pickAgent, findOrcaCli, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, skipIdea, agentQuestions, answerQuestions, agentsList, needsOf, settleNeeds, NEEDS_FOR, readLastWords, readNeeds, parseRead, READ_FILE, autoAllow, autoAllowSweep, allowlistInWork, installAllowlist, inWork, withScope, withTrust, sandboxFor, sandboxEnv, sandboxNeeds, sandboxState, sandboxWrites, SANDBOX_DIR, resumeFor, noteSession, trustFull, GUARD_SETTINGS, isUrgent, urgentFirst, urgentUndo, urgentDone, urgentSweep, urgentState , licenceGate };
+export { CHANGES, toKnownHost, continueLanes, autoPick, autoDecide, FACTS, factsOf, knownRun, withStream, workOf, HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, connectorsInfo, linkReach, fillHandoff, runHandoff, nothingToDo, PARKED_NOTE, parkedPaths, isParked, parkLane, agentMissing, blockedAgain, runningHandoff, loadRuns, earlierRuns, namedFiles, unchangedStep, waitingFor, startWaiting, noteUntracked, untrackedBefore, forgetUntracked, writeTasks, droppedTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, pickAgent, findOrcaCli, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, skipIdea, agentQuestions, answerQuestions, agentsList, needsOf, settleNeeds, NEEDS_FOR, readLastWords, readNeeds, parseRead, READ_FILE, autoAllow, autoAllowSweep, allowlistInWork, installAllowlist, inWork, withScope, withTrust, sandboxFor, sandboxEnv, sandboxNeeds, sandboxState, sandboxWrites, SANDBOX_DIR, resumeFor, noteSession, trustFull, GUARD_SETTINGS, isUrgent, urgentFirst, urgentUndo, urgentDone, urgentSweep, urgentState , licenceGate };

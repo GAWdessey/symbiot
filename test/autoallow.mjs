@@ -71,6 +71,9 @@ const pick = (q, options) => a.autoPick({ q, context: "", options });
 ok("the agent's own undoable recommendation is picked for you", /can't reproduce/.test(pick("How should I close this task?", ["🤖 Agent: close it as \"can't reproduce\" with these findings (recommended)", "👤 You (only you: a decision): tell me which card you saw"])), "");
 ok("...but not when the recommendation is your step", pick("Phone isn't showing up?", ["👤 You (only you: the phone in your hand): plug it in (recommended)", "🤖 Agent: skip the phone check"]) === "", "");
 ok("...nor when it goes out, touches money, an account or a machine", ["Approve it as it is?", "Publish 0.62.2 now?", "Start the tunnel on your PC again?", "Restart Symbiot to bind the port?", "Switch your default to Sonnet?", "Move the bank alerts back to the inbox?"].every((q) => pick(q, ["🤖 Agent: do it (recommended)", "Leave it"]) === ""), "");
+ok("...nor when it states a fact before its 🤖 tag: only the user knows it", pick("Has the company registration come through?", ["Yes, it's through. 🤖 Agent: carry on with the bank account forms (recommended)", "Not yet. 🤖 Agent: wait for it"]) === "", "");
+ok("...nor when it has no 🤖 tag at all", pick("How did the router restart go?", ["it reconnected by itself (recommended)", "it didn't"]) === "", "");
+ok("...but a bolded 🤖 tag is still an action", /close it/.test(pick("How should I close this task?", ["**🤖 Agent:** close it as \"can't reproduce\" (recommended)", "Leave it open"])), "");
 ok("...nor when there's no single recommendation", pick("Which layout?", ["🤖 Agent: grid", "🤖 Agent: list"]) === "", "");
 // A lane whose run ended with open tasks starts again by itself, while it gets somewhere.
 const lane = join(C, "drafts", "act-lane"); mkdirSync(join(lane, ".symbiot"), { recursive: true });
@@ -101,6 +104,55 @@ const card = plainAsk(run, { q: "Can I run Symbiot's Screens command?", options:
 ok("a permission card lists the commands in plain words with Allow, and shows no file path", /run symbiot/.test(card.q) && /run git/.test(card.q) && card.labels[0] === "Allow (recommended)" && !/\.json|\.symbiot/.test(card.q + card.labels.join()), card);
 const cmd = a.withScope('claude -p "{prompt}"', run);
 ok("an agent reaches your knowledge folders from the start", cmd.includes(`--add-dir "${join(HOME, "work", "Company")}"`), cmd);
+
+// Answering a card on Home (the whatsapp_module Allow pressed again and again with
+// nothing happening, 2026-10-12): the card shows the question in plain words, but its
+// answer is saved under the agent's own words, from a button or typed in.
+console.log("ANSWERING ON HOME — what a card sends is saved, once");
+writeFileSync(join(C, "runs.json"), JSON.stringify([{ path: run, name: "Agent: ops", startedAt: Date.now() }]));
+const permQ = "Can I reach sts-prod myself to put the WhatsApp module back?";
+writeFileSync(join(s, "ANSWERS.md"), "# Answers\n");
+writeFileSync(join(s, "QUESTIONS.md"), `## Questions\n\n### ${permQ}\nBoth handovers died.\n- 👤 You (only you: a permission): allow the list in .symbiot/allowlist.proposed.json (recommended)\n- 👤 You (only you: starting another lane): ask ops directly\n`);
+propose(["Bash(ssh sts-prod:*)", "Bash(scp:*)"]);
+const permCard = plainAsk(run, a.agentQuestions(run, "").questions[0]);
+ok("1) a permission card shows plain words, and keeps the agent's own question to answer it by", permCard.q !== permQ && permCard.raw === permQ, permCard);
+ok("...whose plain words alone matched no question: why Allow did nothing", !!a.answerQuestions(run, [{ q: permCard.q, a: "x" }]).error, "");
+const allow = a.answerQuestions(run, [{ q: permCard.raw || permCard.q, a: "👤 You (only you: a permission): allow the list in .symbiot/allowlist.proposed.json (recommended)" }]);
+const local2 = existsSync(join(run, ".claude", "settings.local.json")) ? JSON.parse(readFileSync(join(run, ".claude", "settings.local.json"), "utf8")) : {};
+ok("...and Allow, sent the way the card sends it, is saved and turns the list on", allow.ok && allow.saved === 1 && (local2.permissions.allow || []).includes("Bash(ssh sts-prod:*)") && a.agentQuestions(run, "").questions.length === 0, [allow, local2]);
+const again = a.answerQuestions(run, [{ q: permCard.raw, a: "👤 You (only you: a permission): allow the list in .symbiot/allowlist.proposed.json (recommended)" }]);
+const count = (t) => (readFileSync(join(s, "ANSWERS.md"), "utf8").match(new RegExp("### " + t.replace(/[?.]/g, "\\$&"), "g")) || []).length;
+ok("2) pressed again, it says it's answered already and adds no second answer", again.ok && again.already && count(permQ) === 1, again);
+const ownQ = "Which folder is ~/work/site/index.md in, the old one or `site/new.md`?";
+writeFileSync(join(s, "QUESTIONS.md"), `## Questions\n\n### ${ownQ}\nTwo copies.\n- the old one (recommended)\n- the new one\n`);
+const ownCard = plainAsk(run, a.agentQuestions(run, "").questions[0]);
+const own = a.answerQuestions(run, [{ q: ownCard.raw || ownCard.q, a: "yes" }]);
+ok("4) your own words, under a question with a file path in it, are saved too", ownCard.raw === ownQ && own.ok && count(ownQ) === 1 && /### Which folder[^\n]*\nyes\n/.test(readFileSync(join(s, "ANSWERS.md"), "utf8")), [ownCard, own]);
+const longQ = "Should I " + "keep the old relay running alongside the new one ".repeat(8) + "until Friday?";
+writeFileSync(join(s, "QUESTIONS.md"), `## Questions\n\n### ${longQ}\n- yes (recommended)\n- no\n`);
+ok("...and a long question a phone shows cut short (…) is still found", a.answerQuestions(run, [{ q: longQ.slice(0, 299) + "…", a: "yes" }]).saved === 1, "");
+// 3) a question about work handed over that's done since: the card says so, Close it first
+const { doneSince } = await import("../lanes.mjs");
+const lane2 = join(HOME, "work", "whatsapp_module"), ops2 = join(C, "drafts", "act-ops2");
+mkdirSync(join(ops2, ".symbiot"), { recursive: true });
+const putBack = "**What's needed:** put the WhatsApp module back on **sts-prod**, with Dailify's number routed to Dailify, then run two checks.\nMore detail.";
+const ledger = { handoffs: [
+  { from: { lane: "whatsapp_module", path: lane2 }, to: { lane: "ops", path: join(C, "drafts", "act-test-number") }, text: "**What's needed:** set up a WhatsApp test number for the WhatsApp module in a new Meta Business", at: Date.now() - 3600000, status: "started" },
+  { from: { lane: "whatsapp_module", path: lane2 }, to: { lane: "ops", path: ops2 }, text: putBack, at: Date.now() - 1800000, status: "done" }] };
+writeFileSync(join(ops2, ".symbiot", "TASKS.md"), "## Tasks\n- [ ] **What's needed:** put the WhatsApp module back on **sts-prod**, with Dailify's number routed to Dailify, then run…\n");
+ok("3) a question about a handover still being worked on stays as it is", doneSince(lane2, permQ, { ledger }) === null, "");
+writeFileSync(join(ops2, ".symbiot", "TASKS.md"), "## Tasks\n- [x] **What's needed:** put the WhatsApp module back on **sts-prod**, with Dailify's number routed to Dailify, then run…\n");
+const dn = doneSince(lane2, permQ, { ledger });
+ok("...once the lane that took it has ticked it, the question is out of date, and says by whom", dn && dn.lane === "ops" && /^put the WhatsApp module back on sts-prod/.test(dn.text), dn);
+ok("...but not a question about other work of that lane's", doneSince(lane2, "Set up a WhatsApp test number for the module?", { ledger }) === null && doneSince(lane2, "Can I restart the WhatsApp module's systemd unit?", { ledger }) === null, "");
+ok("...nor one about a handover from over a week ago", doneSince(lane2, permQ, { ledger, now: Date.now() + 8 * 86400000 }) === null, "");
+const { homeState } = await import("../home.mjs");
+const hsDeps = { repos: () => ({ whatsapp_module: lane2 }), board: () => ({ cards: [] }), pending: () => [], lanes: () => ({ handoffs: [] }), reports: () => ({ count: 0 }), connected: () => true, waits: () => [], clashes: () => [], agentGone: () => "", signedOut: () => [], stuck: () => [], drafts: () => [], agentCmd: () => "claude", marketing: () => false,
+  agents: () => [{ path: lane2, name: "whatsapp_module", status: "done", ask: { questions: [{ q: permQ, context: "", options: ["👤 You (only you: a permission): allow the list in .symbiot/allowlist.proposed.json (recommended)", "ask ops directly"] }] } }] };
+const stale = homeState({ fresh: true, deps: { ...hsDeps, doneSince: (p, q) => doneSince(p, q, { ledger }) } }).you.find((y) => y.kind === "ask");
+ok("...and its card on Home says it's done, with Close it first and the agent's own first choice after it", stale && stale.done && stale.done.lane === "ops" && /^Close it: ops has done this already/.test(stale.options[0]) && stale.labels[0] === "Close it: it's done" && /allowlist\.proposed/.test(stale.options[1]) && stale.labels[1] === "Allow", stale);
+const live = homeState({ fresh: true, deps: { ...hsDeps, doneSince: () => null } }).you.find((y) => y.kind === "ask");
+ok("...while one still open asks as before", live && !live.done && live.labels[0] === "Allow (recommended)" && live.raw === permQ, live);
 
 rmSync(HOME, { recursive: true, force: true });
 console.log((fail ? "✗" : "✓") + " autoallow: " + pass + " passed, " + fail + " failed");

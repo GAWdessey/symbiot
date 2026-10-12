@@ -19,7 +19,7 @@ import { mailActivity } from "../mail.mjs";
 import { pngSize, pngDecode, splitPng, stitchPng, stitchListPng, captureCmds, clickCmds, portalAppId, monitorCmds, parseCosmicRandr, parseWlrRandr, parseKscreen, parseXrandr, parseLines, tidyMonitors, monitorAreas } from "../screens.mjs";
 import { siteUrl, browserArgs, isTrusted, isSend } from "../headless.mjs";
 import { deflateSync, gzipSync } from "node:zlib";
-import { changesSince, whatsNew, tarFile } from "../server.mjs";
+import { changesSince, whatsNew, tarFile, downloadReady, updateOutcome } from "../server.mjs";
 import { weeklyDue, lastSlot, autostartFile, autostartContent, notifyCmd } from "../desktop.mjs";
 import { itemKey, itemsOf, fromOf, chatName as w_chatName, newItems, remember, githubItems, draftsUrl } from "../watch.mjs";
 import { lanAddresses, computerUrl } from "../phone.mjs";
@@ -455,6 +455,13 @@ try {
     a.writeTasks(dir, "- [ ] A\\n- [ ] B\\n- [ ] C\\n"); writeFileSync(f, "- [ ] A\\n");
     out.dropped = a.droppedTasks(dir).map((d) => d.text);
     await exited3; out.dropRelease = a.releaseHeldTasks(dir) && readFileSync(f, "utf8"); out.droppedAfter = a.droppedTasks(dir).map((d) => d.text);
+    // the agent ticks with a note after the task (the Needs-you fix, 2026-10-12): still its tick
+    a.writeTasks(dir, "- [ ] Fix the Needs-you card's Allow button\\n- [ ] Fix the bug\\n");
+    const ext4 = spawn("sleep", ["1"]), exited4 = new Promise((r) => ext4.on("exit", r));
+    writeFileSync(dir + "/.symbiot/agent.pid", JSON.stringify({ pid: ext4.pid, id: "ext4", startedAt: Date.now(), owner: 2147483646 }));
+    a.writeTasks(dir, "- [ ] Fix the Needs-you card's Allow button\\n- [ ] Fix the bug\\n- [ ] Build media capture\\n");
+    writeFileSync(f, "- [x] Fix the Needs-you card's Allow button — Done: it sent the plain-words question\\n- [ ] Fix the bug\\n- [x] Fix the bug in the login form\\n");
+    await exited4; out.notedRelease = a.releaseHeldTasks(dir) && readFileSync(f, "utf8");
     console.log(JSON.stringify(out));`], { encoding: "utf8", timeout: 30000, env: { ...process.env, HOME: hhome, USERPROFILE: hhome } });
   let hv = {}; try { hv = JSON.parse(hd.stdout.trim().split("\n").pop()); } catch { console.log(hd.stdout, hd.stderr); }
   ok("no agent running -> TASKS.md is written straight away", hv.freeHeld === false, hv);
@@ -468,6 +475,7 @@ try {
   ok("...and once it has exited, the next check starts one on the held tasks, once", hv.extStarted && hv.extOnce, hv);
   ok("a task the agent deleted from TASKS.md is seen as dropped", JSON.stringify(hv.dropped) === '["B"]', hv.dropped);
   ok("...the held brief lands without it, and it stays dropped", hv.dropRelease === "- [ ] A\n- [ ] C\n" && JSON.stringify(hv.droppedAfter) === '["B"]', [hv.dropRelease, hv.droppedAfter]);
+  ok("a tick with a note after it is kept, note and all, when the held brief lands", hv.notedRelease === "- [x] Fix the Needs-you card's Allow button — Done: it sent the plain-words question\n- [ ] Fix the bug\n- [ ] Build media capture\n", hv.notedRelease);
 
   console.log("APPROVE — approved work ships: branch off the default, commit (minus .symbiot/), push");
   const gitEnv = { ...process.env, GIT_CONFIG_GLOBAL: join(ROOT, "globalgitconfig"), GIT_CONFIG_SYSTEM: "/dev/null", GIT_TERMINAL_PROMPT: "0" };
@@ -1575,6 +1583,17 @@ try {
   ok("update installs the exact newer version, skipping a stale cache", up.target === "0.34.0" && up.cmd === "npm install -g symbiot@0.34.0 --prefer-online", up);
   ok("never 'updates' to an older npm version (local build ahead)", updateCmd("0.32.0", "0.33.0", "linux").target === "latest", updateCmd("0.32.0", "0.33.0", "linux"));
   ok("windows uses npm i -g", updateCmd("0.34.0", "0.33.0", "win32").cmd === "npm i -g symbiot@0.34.0 --prefer-online", updateCmd("0.34.0", "0.33.0", "win32"));
+  // npm lists a release minutes before its download is there: 0.59.0, 0.62.0 and 0.63.3's
+  // updates gave up on the 404 and sent you to a terminal. The update looks for the download first.
+  const heads = [], npmHead = (status) => async (url, o) => { heads.push([url, o.method]); if (status === "throw") throw new Error("offline"); return { status }; };
+  ok("a download npm doesn't have yet (404) isn't ready: the update waits for it", (await downloadReady("0.63.3", "https://r.test", npmHead(404))) === false && heads[0][0] === "https://r.test/symbiot/-/symbiot-0.63.3.tgz" && heads[0][1] === "HEAD", heads);
+  ok("…once it's there, it is", (await downloadReady("0.63.3", "https://r.test", npmHead(200))) === true, "");
+  ok("offline, or `latest`: no waiting, npm runs and its own error says what's wrong", (await downloadReady("0.63.3", "https://r.test", npmHead("throw"))) === true && (await downloadReady("latest", "https://r.test", npmHead(404))) === true, "");
+  const log404 = "=== symbiot update 2026-10-12T05:02:52.078Z ===\n$ npm install -g symbiot@0.63.3 --prefer-online\nnpm error code E404\nnpm error 404 Not Found - GET https://registry.npmjs.org/symbiot/-/symbiot-0.63.3.tgz - Not found\nnpm error 404\nnpm error 404  'symbiot@https://registry.npmjs.org/symbiot/-/symbiot-0.63.3.tgz' is not in this registry.\nnpm error A complete log of this run can be found in: /x.log\n";
+  const o404 = updateOutcome(log404);
+  ok("npm's 404 for the download: not there yet, and the line saying so", o404.notYet && o404.why === "404 Not Found - GET https://registry.npmjs.org/symbiot/-/symbiot-0.63.3.tgz - Not found", o404);
+  const both = updateOutcome(log404 + "\n=== symbiot update 2026-10-09T11:56:12.223Z ===\n$ npm install -g symbiot@0.61.1 --prefer-online\nnpm error code ENOTEMPTY\nnpm error syscall rename\nnpm error path /h/.npm-global/lib/node_modules/symbiot\nnpm error errno -39\nnpm error ENOTEMPTY: directory not empty, rename 'a' -> 'b'\n");
+  ok("only this update's own lines count: an earlier run's 404 doesn't make another error wait", !both.notYet && both.why === "ENOTEMPTY: directory not empty, rename 'a' -> 'b'", both);
 
   console.log("WHAT'S NEW — the changelog's releases between two versions (server.mjs)");
   const shipped = readFileSync(join(dirname(INDEX), "CHANGELOG.md"), "utf8"), shippedTop = changesSince(shipped, "", "")[0] || {};

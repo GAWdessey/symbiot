@@ -21,7 +21,8 @@
 // signed in. It's separate from your everyday browser profile.
 import { spawn, spawnSync } from "node:child_process";
 import { join, resolve as resolvePath } from "node:path";
-import { mkdirSync, existsSync, statSync, readlinkSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, existsSync, statSync, readlinkSync, readFileSync, writeFileSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { CONFIG_DIR, chromeBinary, loadConfig, saveConfig } from "./core.mjs";
 import { loadScreens, addPageScreen, center, stitchPng, stitchListPng } from "./screens.mjs";
 
@@ -150,30 +151,56 @@ async function closeOthers(c, keep) {
 let queue = Promise.resolve();
 const oneAtATime = (fn) => { const run = queue.then(fn, fn); queue = run.catch(() => {}); return run; };
 
-// The hidden browser, while it's open: { proc, c, page, shown, timer }. shown is
-// the id of the screen last mapped from its page, which is what the page shows
-// now. keepBrowserOpen(ms) keeps it open that long after each action (the app
-// does); with 0, a one-off `symbiot screens` command, it closes after each one.
+// The hidden browser, while it's open: { proc, c, tabs, timer }. Each agent has a tab
+// of its own in it (tabs: who → { page, shown, used }), so two lanes driving it at once
+// (LinkedIn and the Twilio console, 2026-10-12) don't land on each other's page, and a
+// post half-written in one keeps its text and picture between that agent's steps.
+// shown is the id of the screen last mapped from that tab, which is what it shows now.
+// keepBrowserOpen(ms) keeps it open that long after each action (the app does); with 0,
+// a one-off `symbiot screens` command, it closes after each one.
 let live = null, KEEP = 0;
+const MAIN = "symbiot", MAX_TABS = 6;
+// Whose tab: the agent's run folder (SYMBIOT_AGENT, else where the command ran), or Symbiot's own.
+const tabKey = (who) => String(who || "").trim().slice(0, 300) || MAIN;
 function keepBrowserOpen(ms) { KEEP = Math.max(0, Number(ms) || 0); if (!KEEP && live && !live.busy) closeBrowser(); }
 const browserOpen = () => !!(live && !live.c.closed());
 // Don't leave it running when Symbiot exits (a restart, Ctrl+C).
 process.once("exit", () => { if (live && live.proc.exitCode === null) try { live.proc.kill("SIGKILL"); } catch {} });
 
-// Is a visible Chrome (the Symbiot Browser) using Symbiot's profile? Its SingletonLock names the process
-// ("host-1234", Linux and Mac); a lock whose process has gone is a leftover.
+// The Chrome holding Symbiot's profile: its SingletonLock names the process ("host-1234",
+// Linux and Mac), and its own args say whether it's hidden. { pid, headless }, or null
+// when none is (no lock, or a leftover one whose process has gone).
 const OWN = new Set(); // every hidden Chrome this Symbiot started
-function windowOpen() {
-  try {
-    const m = /-(\d+)$/.exec(readlinkSync(join(PROFILE, "SingletonLock")));
-    if (!m) return false;
-    if (OWN.has(Number(m[1]))) return false; // our own hidden browser (running, or still closing) isn't a window
-    process.kill(Number(m[1]), 0);
-    return true;
-  } catch { return false; }
+function argsOf(pid) {
+  try { return readFileSync(`/proc/${pid}/cmdline`, "utf8").split("\0").join(" "); } catch {}
+  try { return spawnSync("ps", ["-ww", "-o", "args=", "-p", String(pid)], { encoding: "utf8", timeout: 5000 }).stdout || ""; } catch { return ""; }
 }
-// Start the hidden browser and open a tab: { proc, c, page: { send, until, idle } }.
-async function launch() {
+function lockHolder() {
+  let pid = 0; try { pid = Number((/-(\d+)$/.exec(readlinkSync(join(PROFILE, "SingletonLock"))) || [])[1]) || 0; } catch {}
+  if (!pid) return null;
+  try { process.kill(pid, 0); } catch { return null; }
+  return { pid, headless: /--headless/.test(argsOf(pid)) };
+}
+// Is a visible Chrome (the Symbiot Browser) using Symbiot's profile? Not our own hidden
+// browser (running, or still closing), and not a hidden one at all: one that isn't ours
+// is a stray (strayGone). Taking any hidden Chrome for a window blocked every map and
+// press while the app ran, with "click Done" in a window that didn't exist (2026-10-12).
+function windowOpen() { const h = lockHolder(); return !!h && !h.headless && !OWN.has(h.pid); }
+// Another Symbiot's hidden browser on the profile (a one-off `symbiot screens`, or an app
+// from before an update that hasn't gone): it closes after its action, so it's given a
+// moment; one still there after that is a stray, and is closed. Gives once it's gone.
+const STRAY_WAIT = Number(process.env.SYMBIOT_STRAY_WAIT) || 10000;
+async function strayGone(wait = STRAY_WAIT) {
+  const stray = () => { const h = lockHolder(); return h && h.headless && !OWN.has(h.pid) ? h.pid : 0; };
+  for (const end = Date.now() + wait; stray() && Date.now() < end;) await sleep(250);
+  const pid = stray(); if (!pid) return;
+  try { process.kill(pid, "SIGTERM"); } catch {}
+  for (let i = 0; i < 20 && stray() === pid; i++) await sleep(250);
+  if (stray() === pid) try { process.kill(pid, "SIGKILL"); } catch {}
+  for (let i = 0; i < 8 && stray() === pid; i++) await sleep(250);
+}
+// Start the hidden browser, with a tab for who: { proc, c, tabs }.
+async function launch(who = MAIN) {
   const chrome = chromeBinary();
   if (!chrome) throw new Error(process.platform === "android" || process.env.SYMBIOT_ANDROID_APP === "1"
     ? "Mapping a page needs a desktop browser (Chrome, Chromium, Edge or Brave), which a phone doesn't have. Map pages from Symbiot on your computer."
@@ -182,11 +209,12 @@ async function launch() {
   // the Symbiot Browser (or a sign-in window) has the profile: a second Chrome would hand
   // over to it and pop an empty window into it, so wait for Done instead
   if (windowOpen()) throw new Error("The Symbiot Browser is open: Symbiot reads your sites once you click Done in it.");
+  await strayGone();
   const proc = spawn(chrome, browserArgs(true), { stdio: ["ignore", "ignore", "pipe", "pipe", "pipe"] });
   if (proc.pid) OWN.add(proc.pid);
   let err = ""; proc.stderr.on("data", (d) => { err = (err + d).slice(-2000); });
   const failed = new Promise((resolve, reject) => { proc.on("error", reject); }); failed.catch(() => {});
-  const c = connect(proc), b = { proc, c, shown: "", timer: null };
+  const c = connect(proc), b = { proc, c, tabs: new Map(), timer: null };
   const kill = setTimeout(() => { try { proc.kill("SIGKILL"); } catch {} }, START);
   try {
     const run = (async () => {
@@ -198,41 +226,57 @@ async function launch() {
         throw new Error("The browser didn't start: " + ((err.trim().split("\n").pop()) || e.message));
       }
       await closeOthers(c, targetId); await keepSessions(c);
-      const { sessionId } = await c.send("Target.attachToTarget", { targetId, flatten: true });
-      const send = (method, params) => c.send(method, params, sessionId);
-      const until = (method, ms) => c.until((m) => m.sessionId === sessionId && m.method === method, ms);
-      // Requests in flight, so "loaded" can wait for a page that fills itself in.
-      const inflight = new Set();
-      c.on((m) => {
-        if (!m || m.sessionId !== sessionId) return;
-        if (m.method === "Network.requestWillBeSent") inflight.add(m.params.requestId);
-        else if (m.method === "Network.loadingFinished" || m.method === "Network.loadingFailed") inflight.delete(m.params.requestId);
-      });
-      // Quiet: no more than one request (a long poll, say) open for 600 ms, or 8 s at most.
-      const idle = async () => {
-        const end = Date.now() + 8000; let calm = 0;
-        await sleep(400);
-        while (Date.now() < end && calm < 600) { await sleep(100); calm = inflight.size <= 1 ? calm + 100 : 0; }
-      };
-      await send("Page.enable"); await send("Network.enable");
-      const ss = loadSessions(); if (Object.keys(ss).length) try { await send("Page.addScriptToEvaluateOnNewDocument", { source: sessionFill(ss), worldName: "symbiot-sessions" }); } catch {}
-      await send("Emulation.setDeviceMetricsOverride", { width: VIEW.w, height: VIEW.h, deviceScaleFactor: 1, mobile: false });
-      // Sites serve "HeadlessChrome" something else (or a block page): look like the browser it is.
-      const { userAgent } = await c.send("Browser.getVersion");
-      if (userAgent) await send("Network.setUserAgentOverride", { userAgent: userAgent.replace(/HeadlessChrome/g, "Chrome") });
-      // every `method` event on this tab, until the function it gives is called
-      const on = (method, f) => c.on((m) => { if (m && m.sessionId === sessionId && m.method === method) f(m.params || {}); });
-      b.page = { send, until, idle, on };
+      await openTab(b, who, targetId);
       return b;
     })();
     return await Promise.race([run, failed]);
   } catch (e) { await shut(b); throw e; }
   finally { clearTimeout(kill); }
 }
+// A tab of its own for who (a new one, or targetId's): { who, targetId, page: { send, until,
+// idle, on }, shown, used }. Past MAX_TABS, the one used longest ago is closed first.
+async function openTab(b, who, targetId) {
+  const c = b.c;
+  if (b.tabs.size >= MAX_TABS) { const old = [...b.tabs.values()].sort((x, y) => x.used - y.used)[0]; if (old) await closeTab(b, old); }
+  if (!targetId) ({ targetId } = await c.send("Target.createTarget", { url: "about:blank" }));
+  const { sessionId } = await c.send("Target.attachToTarget", { targetId, flatten: true });
+  const send = (method, params) => c.send(method, params, sessionId);
+  const until = (method, ms) => c.until((m) => m.sessionId === sessionId && m.method === method, ms);
+  // Requests in flight, so "loaded" can wait for a page that fills itself in.
+  const inflight = new Set();
+  const unhook = c.on((m) => {
+    if (!m || m.sessionId !== sessionId) return;
+    if (m.method === "Network.requestWillBeSent") inflight.add(m.params.requestId);
+    else if (m.method === "Network.loadingFinished" || m.method === "Network.loadingFailed") inflight.delete(m.params.requestId);
+  });
+  // Quiet: no more than one request (a long poll, say) open for 600 ms, or 8 s at most.
+  const idle = async () => {
+    const end = Date.now() + 8000; let calm = 0;
+    await sleep(400);
+    while (Date.now() < end && calm < 600) { await sleep(100); calm = inflight.size <= 1 ? calm + 100 : 0; }
+  };
+  await send("Page.enable"); await send("Network.enable");
+  const ss = loadSessions(); if (Object.keys(ss).length) try { await send("Page.addScriptToEvaluateOnNewDocument", { source: sessionFill(ss), worldName: "symbiot-sessions" }); } catch {}
+  await send("Emulation.setDeviceMetricsOverride", { width: VIEW.w, height: VIEW.h, deviceScaleFactor: 1, mobile: false });
+  // Sites serve "HeadlessChrome" something else (or a block page): look like the browser it is.
+  const { userAgent } = await c.send("Browser.getVersion");
+  if (userAgent) await send("Network.setUserAgentOverride", { userAgent: userAgent.replace(/HeadlessChrome/g, "Chrome") });
+  // every `method` event on this tab, until the function it gives is called
+  const on = (method, f) => c.on((m) => { if (m && m.sessionId === sessionId && m.method === method) f(m.params || {}); });
+  const tab = { who, targetId, page: { send, until, idle, on }, shown: "", used: Date.now(), unhook };
+  b.tabs.set(who, tab);
+  return tab;
+}
+async function closeTab(b, tab) {
+  if (b.tabs.get(tab.who) === tab) b.tabs.delete(tab.who);
+  if (tab.unhook) tab.unhook();
+  try { await Promise.race([b.c.send("Target.closeTarget", { targetId: tab.targetId }), sleep(3000)]); } catch {}
+}
 async function shut(b) {
   if (!b) return;
   clearTimeout(b.timer); if (live === b) live = null;
-  if (!b.c.closed()) { try { if (b.page) { const own = await Promise.race([readSession(b.page.send), sleep(2500)]); if (own) saveSessions([own]); } await Promise.race([keepSessions(b.c), sleep(3000)]); await Promise.race([b.c.send("Browser.close"), sleep(3000)]); } catch {} }
+  const any = b.tabs && [...b.tabs.values()][0];
+  if (!b.c.closed()) { try { if (any) { const own = await Promise.race([readSession(any.page.send), sleep(2500)]); if (own) saveSessions([own]); } await Promise.race([keepSessions(b.c), sleep(3000)]); await Promise.race([b.c.send("Browser.close"), sleep(3000)]); } catch {} }
   // Chrome writes its cookies to disk as it shuts down: killed before that, a sign-in made
   // or kept since it started is lost. Give it a few seconds to finish.
   if (b.proc.exitCode === null) await Promise.race([new Promise((r) => b.proc.once("exit", r)), sleep(5000)]);
@@ -241,21 +285,27 @@ async function shut(b) {
 // Close the hidden browser now (the Sign in window needs its profile).
 function closeBrowser() { return shut(live); }
 
-// Give fn the hidden browser's page (the open one, else a new one), and what it
-// shows (b.shown). After: kept open for KEEP ms, or closed; closed on an error,
-// so the next action starts afresh.
-async function withPage(fn, keep = true) {
+// Give fn who's tab in the hidden browser (the open one, else a new one), and what it
+// shows (tab.shown). After: kept open for KEEP ms, or closed. On an error that tab is
+// closed, so that agent's next action starts afresh, and the other agents' tabs stay
+// as they are; the whole browser only when it's gone.
+async function withPage(fn, keep = true, who = MAIN) {
   if (live && live.c.closed()) await shut(live);
+  who = tabKey(who);
   let b = live;
-  if (b) clearTimeout(b.timer); else b = live = await launch();
+  if (b) clearTimeout(b.timer); else b = live = await launch(who);
   b.busy = true;
   const kill = setTimeout(() => { try { b.proc.kill("SIGKILL"); } catch {} }, TIMEOUT);
+  let tab = null;
   try {
-    const r = await fn(b.page, b);
-    // stay: nothing changed on the page, so it shows what fn left in b.shown
-    if (r && r.stay) delete r.stay; else b.shown = r && r.id && !r.error ? r.id : "";
+    tab = b.tabs.get(who) || await openTab(b, who);
+    tab.used = Date.now();
+    try { await tab.page.send("Page.bringToFront"); } catch {} // a tab behind another doesn't paint
+    const r = await fn(tab.page, tab);
+    // stay: nothing changed on the page, so it shows what fn left in tab.shown
+    if (r && r.stay) delete r.stay; else tab.shown = r && r.id && !r.error ? r.id : "";
     return r;
-  } catch (e) { await shut(b); throw e; }
+  } catch (e) { if (!tab || b.c.closed()) await shut(b); else await closeTab(b, tab); throw e; }
   finally {
     clearTimeout(kill); b.busy = false;
     if (live === b && KEEP && keep && !b.c.closed()) b.timer = setTimeout(() => oneAtATime(() => live === b && !b.busy ? shut(b) : null), KEEP);
@@ -523,7 +573,7 @@ async function snapshotList(page, name) {
 // Map a site: open it in the hidden browser and save what's on it as a screen.
 // whole: all of the page in one tall screen (snapshotWhole); a page whose list
 // scrolls inside it gets the usual map, with a note that says why.
-function mapPage(input, name, { whole = false } = {}) {
+function mapPage(input, name, { whole = false, who = "" } = {}) {
   const url = siteUrl(input);
   if (!url) return Promise.resolve({ error: "Give a site to map: a name (gmail), a host (github.com/pulls) or a web address." });
   return oneAtATime(() => withPage(async (page) => {
@@ -533,12 +583,12 @@ function mapPage(input, name, { whole = false } = {}) {
     if (!s.inside) return s;
     const one = await snapshot(page, name);
     return one.error || one.note ? one : { ...one, note: s.error };
-  })).catch((e) => ({ error: String((e && e.message) || e) }));
+  }, true, who)).catch((e) => ({ error: String((e && e.message) || e) }));
 }
 
 // The whole of a page you've mapped, as one tall screen (snapshotWhole). Only
 // looks, so it never asks first.
-function wholePage(id) {
+function wholePage(id, { who = "" } = {}) {
   const s = loadScreens().find((x) => x.id === id); if (!s) return Promise.resolve({ error: "not found" });
   if (!s.page || !s.page.url) return Promise.resolve({ error: "Whole page works on a mapped page." });
   return oneAtATime(() => withPage(async (page, b) => {
@@ -546,7 +596,7 @@ function wholePage(id) {
     const next = await snapshotWhole(page, s.name.replace(/ ↓ \d+%$/, "").replace(/ \(whole page\)$/, ""));
     if (next.error) { delete next.inside; return next; }
     return { ...next, kept: here };
-  })).catch((e) => ({ error: String((e && e.message) || e) }));
+  }, true, who)).catch((e) => ({ error: String((e && e.message) || e) }));
 }
 
 // Read a site as it is now, without saving a screen: { url, title, items, login }.
@@ -556,7 +606,9 @@ function wholePage(id) {
 // browser open after.
 // password: a page asking for a password counts as a sign-in page too (a site's own login
 // form at an address that doesn't say so), for a check of whether you're signed in.
-const ASKS_PASSWORD = `!![...document.querySelectorAll('input[type=password]')].find((e) => { const b = e.getBoundingClientRect(); return b.width > 0 && b.height > 0; })`;
+// So does a page whose own button or link is just "Log in" or "Sign in": signed out, Reddit's
+// home page has no password box, only its Log In button, and read as signed in.
+const ASKS_PASSWORD = `!![...document.querySelectorAll('input[type=password], a, button, [role=button]')].find((e) => { const b = e.getBoundingClientRect(); if (!(b.width > 0 && b.height > 0)) return false; return e.matches('input') || /^(log ?in|sign ?in)$/i.test(String(e.innerText || e.textContent || '').replace(/\\s+/g, ' ').trim()); })`;
 function readPage(input, { password = false } = {}) {
   const url = siteUrl(input);
   if (!url) return Promise.resolve({ error: "Give a site to read: a name (gmail), a host or a web address." });
@@ -670,6 +722,47 @@ function pageClip(input, seconds = 8) {
   })).catch((e) => ({ error: String((e && e.message) || e) }));
 }
 
+// A browser of its own for a capture (capture.mjs): a fresh profile in a temp folder, so
+// nothing you're signed in to in Symbiot's browser shows in a product's pictures, and it
+// never waits on the Symbiot Browser. fn gets its page ({ send, until, idle, on }); the
+// browser and its profile go after. width × height: the page's size.
+async function scratchPage(fn, { width = 1440, height = 900 } = {}) {
+  const chrome = chromeBinary();
+  if (!chrome) throw new Error("Capturing a product needs Chrome, Chromium, Edge or Brave, and none was found.");
+  const dir = mkdtempSync(join(tmpdir(), "symbiot-capture-"));
+  const proc = spawn(chrome, ["--headless=new", "--hide-scrollbars", "--mute-audio", "--remote-debugging-pipe", `--window-size=${width},${height}`,
+    "--user-data-dir=" + dir, "--no-first-run", "--no-default-browser-check", ...(process.platform === "linux" ? ["--password-store=basic"] : process.platform === "darwin" ? ["--use-mock-keychain"] : []), "about:blank"],
+  { stdio: ["ignore", "ignore", "pipe", "pipe", "pipe"] });
+  let err = ""; proc.stderr.on("data", (d) => { err = (err + d).slice(-2000); });
+  const failed = new Promise((resolve, reject) => { proc.on("error", reject); }); failed.catch(() => {});
+  const c = connect(proc), kill = setTimeout(() => { try { proc.kill("SIGKILL"); } catch {} }, START);
+  try {
+    const page = await Promise.race([failed, (async () => {
+      let targetId; try { ({ targetId } = await c.send("Target.createTarget", { url: "about:blank" })); } catch (e) { throw new Error("The browser didn't start: " + ((err.trim().split("\n").pop()) || e.message)); }
+      const { sessionId } = await c.send("Target.attachToTarget", { targetId, flatten: true });
+      const send = (method, params) => c.send(method, params, sessionId);
+      const until = (method, ms) => c.until((m) => m.sessionId === sessionId && m.method === method, ms);
+      const inflight = new Set();
+      c.on((m) => { if (!m || m.sessionId !== sessionId) return; if (m.method === "Network.requestWillBeSent") inflight.add(m.params.requestId); else if (m.method === "Network.loadingFinished" || m.method === "Network.loadingFailed") inflight.delete(m.params.requestId); });
+      const idle = async () => { const end = Date.now() + 8000; let calm = 0; await sleep(400); while (Date.now() < end && calm < 600) { await sleep(100); calm = inflight.size <= 1 ? calm + 100 : 0; } };
+      const on = (method, f) => c.on((m) => { if (m && m.sessionId === sessionId && m.method === method) f(m.params || {}); });
+      await send("Page.enable"); await send("Network.enable");
+      await send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 1, mobile: false });
+      const { userAgent } = await c.send("Browser.getVersion");
+      if (userAgent) await send("Network.setUserAgentOverride", { userAgent: userAgent.replace(/HeadlessChrome/g, "Chrome") });
+      return { send, until, idle, on };
+    })()]);
+    clearTimeout(kill);
+    return await fn(page);
+  } finally {
+    clearTimeout(kill);
+    try { await Promise.race([c.send("Browser.close"), sleep(3000)]); } catch {}
+    if (proc.exitCode === null) await Promise.race([new Promise((r) => proc.once("exit", r)), sleep(3000)]);
+    if (proc.exitCode === null) try { proc.kill("SIGKILL"); } catch {}
+    try { rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); } catch {}
+  }
+}
+
 // Trusted sites (Settings → Screens): on a page from one of these, press and type
 // go ahead without asking, for you and for agents. Anywhere else each one asks.
 // A host covers its subdomains (google.com covers mail.google.com). Only the app's
@@ -719,7 +812,7 @@ async function showScreen(page, b, s) {
 // is taller than its window, and a map only has what the window shows. Only looks,
 // so it never asks first. At the end already, it says so and maps nothing.
 const SCROLLS = ["down", "up", "top", "bottom"];
-function scrollPage(id, to = "down") {
+function scrollPage(id, to = "down", { who = "" } = {}) {
   to = String(to || "down").toLowerCase();
   if (!SCROLLS.includes(to)) return Promise.resolve({ error: `Scroll ${SCROLLS.join(", ")}: not "${to}".` });
   const s = loadScreens().find((x) => x.id === id); if (!s) return Promise.resolve({ error: "not found" });
@@ -736,7 +829,7 @@ function scrollPage(id, to = "down") {
     const pct = m.max > 0 ? Math.round(m.y / m.max * 100) : 0;
     const next = await snapshot(page, s.name.replace(/ ↓ \d+%$/, "") + (pct ? ` ↓ ${pct}%` : ""));
     return next.error ? next : { ...next, scrolled: to, kept: here };
-  })).catch((e) => ({ error: String((e && e.message) || e) }));
+  }, true, who)).catch((e) => ({ error: String((e && e.message) || e) }));
 }
 
 // Act on a mapped region: find it (by its selector, else at the same spot) and give
@@ -745,13 +838,13 @@ function scrollPage(id, to = "down") {
 // was typed is still there); on any other, its page is opened from its address
 // again. It acts on the real site, signed in as you, so it needs the caller's
 // confirmation unless the page's site is trusted.
-function actOnRegion(id, regionId, verb, confirmed, check, act) {
+function actOnRegion(id, regionId, verb, confirmed, check, act, who = "") {
   const s = loadScreens().find((x) => x.id === id); if (!s) return Promise.resolve({ error: "not found" });
   if (!s.page || !s.page.url) return Promise.resolve({ error: `${verb} works on a mapped page. Use Click here for a screenshot of your screen.` });
   const r = (s.regions || []).find((x) => x.id === regionId); if (!r) return Promise.resolve({ error: "That region is gone. Reload the screen." });
   const bad = check(r); if (bad) return Promise.resolve({ error: bad });
   const host = hostOf(s.page.url);
-  if (!confirmed && !isTrusted(s.page.url)) return Promise.resolve({ error: `${verb === "Type" ? "Typing into" : verb === "Upload" ? "Attaching a file with" : "Pressing"} "${r.label}" acts on the real site, signed in as you, and ${host} isn't one of your trusted sites.`, confirm: true, host });
+  if (!confirmed && !isTrusted(s.page.url)) return Promise.resolve({ error: `${verb === "Type" ? "Typing into" : verb === "Upload" ? "Attaching a file with" : verb === "Choose" ? "Choosing in" : "Pressing"} "${r.label}" acts on the real site, signed in as you, and ${host} isn't one of your trusted sites.`, confirm: true, host });
   return oneAtATime(() => withPage(async (page, b) => {
     const here = await showScreen(page, b, s);
     // A new tab would leave this one where it was, so a link opens here instead.
@@ -772,11 +865,13 @@ function actOnRegion(id, regionId, verb, confirmed, check, act) {
     }
     const navigating = page.until("Page.frameStartedLoading", 1500);
     const extra = await act(page, at, r);
+    // refused on the page, nothing changed: the page stays as it was, so what was typed before is kept
+    if (extra && extra.refused) return { error: extra.refused, stay: true };
     if (await navigating) await page.until("Page.loadEventFired", 30000);
     await page.idle();
     const next = await snapshot(page, ""); // named after the page it landed on
     return next.error ? next : { ...next, ...extra, found, kept: here };
-  })).catch((e) => ({ error: String((e && e.message) || e) }));
+  }, true, who)).catch((e) => ({ error: String((e && e.message) || e) }));
 }
 const clickAt = async (page, at) => { for (const type of ["mouseMoved", "mousePressed", "mouseReleased"]) await page.send("Input.dispatchMouseEvent", { type, x: at.x, y: at.y, button: "left", clickCount: type === "mouseMoved" ? 0 : 1 }); };
 
@@ -789,10 +884,10 @@ const clickAt = async (page, at) => { for (const type of ["mouseMoved", "mousePr
 const MAIL_HOSTS = /^(mail\.google\.com|outlook\.(live|office|office365)\.com)$/;
 const POSTS = /\b(post|reply|comment|submit|publish|share|repost|tweet)\b/i;
 const isSend = (r, host = "") => /^(button|menu item)$/.test(r.kind || "button") && (/\bsend\b/i.test(r.label || "") || (!MAIL_HOSTS.test(host) && POSTS.test(r.label || "")));
-function pressRegion(id, regionId, { confirmed = false, noSend = false } = {}) {
+function pressRegion(id, regionId, { confirmed = false, noSend = false, who = "" } = {}) {
   const s = noSend ? loadScreens().find((x) => x.id === id) : null, host = s && s.page ? hostOf(s.page.url) : "";
   return actOnRegion(id, regionId, "Press", confirmed, (r) => (noSend && isSend(r, host) ? `"${r.label}" sends or posts. This run only drafts: it never presses Send, Post, Comment or Reply. The draft stays for the user to send or post.` : ""),
-    async (page, at, r) => { await clickAt(page, at); return { pressed: r.label }; });
+    async (page, at, r) => { await clickAt(page, at); return { pressed: r.label }; }, who);
 }
 
 // Type: click into a field, replace what's in it with text, and press Enter if
@@ -801,25 +896,106 @@ function pressRegion(id, regionId, { confirmed = false, noSend = false } = {}) {
 // open (the app's): what's typed is still there. Otherwise it's gone by then.
 // noSend (a draft reply's run) refuses Enter, which sends in a chat, and in a
 // WhatsApp chat types line breaks as spaces, in case a new line sends there too.
+// replace: only that part of what's in it is typed over (selected, then typed, as a
+// person would), so the rest stays as it is: retyping all of a scheduled LinkedIn
+// post to change one line dropped its picture (2026-10-12). It has to be there just
+// once; none, or more than once, changes nothing and says so.
 const MAX_TEXT = 2000;
 const CHAT_HOSTS = new Set(["web.whatsapp.com"]);
-function typeRegion(id, regionId, text, { enter = false, confirmed = false, noSend = false } = {}) {
+const SELECT_PART = (old) => `(() => {
+  const e = document.activeElement, w = ${JSON.stringify(String(old || ""))};
+  if (!e) return { problem: 'none' };
+  const count = (t) => { let n = 0, i = -1; while ((i = t.indexOf(w, i + 1)) !== -1) n++; return n; };
+  if (typeof e.setSelectionRange === 'function' && typeof e.value === 'string') {
+    const n = count(e.value); if (n !== 1) return { problem: n ? 'more' : 'none', count: n };
+    const i = e.value.indexOf(w); e.setSelectionRange(i, i + w.length); return { ok: true };
+  }
+  if (!e.isContentEditable) return { problem: 'none' };
+  // a rich editor (LinkedIn's): its text nodes, as one string, and the match mapped back onto them
+  const nodes = [], walk = document.createTreeWalker(e, NodeFilter.SHOW_TEXT); let all = '';
+  for (let x = walk.nextNode(); x; x = walk.nextNode()) { nodes.push([x, all.length]); all += x.data; }
+  const n = count(all); if (n !== 1) return { problem: n ? 'more' : 'none', count: n };
+  const from = all.indexOf(w), to = from + w.length, at = (k, end) => { for (const [x, o] of nodes) if (k < o + x.data.length || (end && k === o + x.data.length)) return [x, k - o]; return null; };
+  const a = at(from, false), b = at(to, true); if (!a || !b) return { problem: 'none' };
+  const r = document.createRange(); r.setStart(a[0], a[1]); r.setEnd(b[0], b[1]);
+  const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); return { ok: true };
+})()`;
+function typeRegion(id, regionId, text, { enter = false, confirmed = false, noSend = false, replace = null, who = "" } = {}) {
+  const part = replace == null ? null : String(replace);
   text = String(text == null ? "" : text);
   if (noSend) { const s = loadScreens().find((x) => x.id === id); if (s && s.page && CHAT_HOSTS.has(hostOf(s.page.url))) text = text.replace(/\s*[\r\n]+\s*/g, " ").trim(); }
   return actOnRegion(id, regionId, "Type", confirmed, (r) => {
     if (noSend && enter) return "Enter sends in a chat, and this run only drafts: type without --enter, and the reply stays unsent for the user to send.";
+    if (r.kind === "menu") return `"${r.label}" is a menu, not a field: pick its option with Choose (symbiot screens choose <screen> <menu> "option").`;
     if (r.kind !== "field") return `"${r.label}" isn't a field (it's a ${r.kind || "region"}). Type works on a field; use Press for the rest.`;
-    if (!text && !enter) return "Give the text to type.";
+    if (part === "") return "Give the words to replace: some of what's in the field now.";
+    if (part == null && !text && !enter) return "Give the text to type.";
     if (text.length > MAX_TEXT) return `That's more than ${MAX_TEXT} characters.`;
     return "";
   }, async (page, at, r) => {
     await clickAt(page, at);
-    await page.send("Runtime.evaluate", { expression: `(() => { const e = document.activeElement; if (!e) return;
+    if (part != null) {
+      const sel = await evaluate(page, SELECT_PART(part));
+      if (!sel || !sel.ok) return { refused: sel && sel.problem === "more" ? `"${part}" is in "${r.label}" ${sel.count} times: give more of it, so it's there just once. Nothing was changed.` : `"${r.label}" doesn't have "${part}" in it (it has to be within one line or paragraph, as it is now). Nothing was changed.` };
+      if (text) await page.send("Input.insertText", { text });
+      else for (const type of ["keyDown", "keyUp"]) await page.send("Input.dispatchKeyEvent", { type, key: "Delete", code: "Delete", windowsVirtualKeyCode: 46, nativeVirtualKeyCode: 46 });
+    } else {
+      await page.send("Runtime.evaluate", { expression: `(() => { const e = document.activeElement; if (!e) return;
       if (typeof e.select === 'function') e.select(); else if (e.isContentEditable) getSelection().selectAllChildren(e); })()` });
-    if (text) await page.send("Input.insertText", { text });
+      if (text) await page.send("Input.insertText", { text });
+    }
     if (enter) for (const type of ["keyDown", "keyUp"]) await page.send("Input.dispatchKeyEvent", { type, key: "Enter", code: "Enter", windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13, ...(type === "keyDown" ? { text: "\r" } : {}) });
-    return { typed: r.label, entered: !!enter };
-  });
+    return { typed: r.label, entered: !!enter, ...(part != null ? { replaced: part } : {}) };
+  }, who);
+}
+
+// Choose: pick an option in a menu, as choosing it would. A native <select> (a press only
+// opens it, and typing isn't allowed in one: domains.co.za's DNS record type, 2026-10-09)
+// gets the option set and the page told (input and change), so what depends on it updates
+// (MX turns its Priority box on). A menu of the site's own making (role=combobox) is
+// opened, and its option (role=option) clicked. The option: its label or value, exactly,
+// else the one label that has it in it; none, or more than one, says which there are.
+const CHOOSE_SELECT = (sel, at, want) => `(() => {
+  let e = null; try { e = ${JSON.stringify(sel || "")} && document.querySelector(${JSON.stringify(sel || "")}); } catch (x) {}
+  e = e || document.elementFromPoint(${Number(at.x) || 0}, ${Number(at.y) || 0});
+  const lab = e && e.closest && e.closest('label');
+  const s = !e ? null : e.tagName === 'SELECT' ? e : (e.querySelector && e.querySelector('select')) || (lab && lab.control && lab.control.tagName === 'SELECT' ? lab.control : null);
+  if (!s) return { native: false };
+  const norm = (t) => String(t || '').replace(/\\s+/g, ' ').trim().toLowerCase(), w = norm(${JSON.stringify(String(want || ""))});
+  const opts = [...s.options].map((o) => ({ o, label: norm(o.label || o.text), value: norm(o.value) })), all = opts.map((x) => x.o.label || x.o.text);
+  let hit = opts.filter((x) => x.label === w || x.value === w); if (!hit.length) hit = opts.filter((x) => w && x.label.includes(w));
+  if (hit.length !== 1) return { native: true, problem: hit.length ? 'more' : 'none', options: all };
+  const o = hit[0].o; if (s.disabled || o.disabled) return { native: true, problem: 'off', options: all };
+  Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(s, o.value);
+  s.dispatchEvent(new Event('input', { bubbles: true })); s.dispatchEvent(new Event('change', { bubbles: true }));
+  return { native: true, chose: o.label || o.text, value: s.value };
+})()`;
+const CHOOSE_OPTION = (want) => `(() => {
+  const norm = (t) => String(t || '').replace(/\\s+/g, ' ').trim().toLowerCase(), w = norm(${JSON.stringify(String(want || ""))});
+  const seen = [...document.querySelectorAll('[role=option]')].filter((e) => { const b = e.getBoundingClientRect(); return b.width > 0 && b.height > 0; });
+  const all = seen.map((e) => (e.getAttribute('aria-label') || e.textContent || '').replace(/\\s+/g, ' ').trim());
+  let hit = seen.filter((e, i) => norm(all[i]) === w); if (!hit.length) hit = seen.filter((e, i) => w && norm(all[i]).includes(w));
+  if (hit.length !== 1) return { problem: hit.length ? 'more' : 'none', options: all };
+  hit[0].scrollIntoView({ block: 'center' }); const b = hit[0].getBoundingClientRect();
+  return { at: { x: b.left + b.width / 2, y: b.top + b.height / 2 }, chose: all[seen.indexOf(hit[0])] };
+})()`;
+const chooseSaid = (r, want, x) => x.problem === "off" ? `"${r.label}" is switched off on the page, or that option is: nothing was chosen.`
+  : `${x.problem === "more" ? `More than one option in "${r.label}" matches "${want}"` : `"${r.label}" has no option "${want}"`}. Its options: ${(x.options || []).slice(0, 40).map((o) => `"${o}"`).join(", ") || "none showing"}.`;
+function chooseRegion(id, regionId, option, { confirmed = false, who = "" } = {}) {
+  const want = String(option == null ? "" : option).trim();
+  return actOnRegion(id, regionId, "Choose", confirmed, (r) => {
+    if (!want) return "Give the option to choose: its label, as the menu shows it.";
+    if (r.kind !== "menu") return `"${r.label}" isn't a menu (it's a ${r.kind || "region"}). Choose works on a menu; use Press or Type for the rest.`;
+    return "";
+  }, async (page, at, r) => {
+    const sel = await evaluate(page, CHOOSE_SELECT(r.selector, at, want));
+    if (sel && sel.native) { if (sel.problem) throw new Error(chooseSaid(r, want, sel)); return { chose: sel.chose, value: sel.value }; }
+    await clickAt(page, at); await sleep(400); // the site's own menu: open it, then its option
+    const o = await evaluate(page, CHOOSE_OPTION(want));
+    if (!o || o.problem) { await page.send("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 }).catch(() => {}); throw new Error(chooseSaid(r, want, o || {})); }
+    await clickAt(page, o.at);
+    return { chose: o.chose };
+  }, who);
 }
 
 // Upload: put a file (or a few) in a page's file box, as picking it in the file
@@ -878,10 +1054,10 @@ function uploadFiles(files) {
   const bad = list.find((f) => { try { return !statSync(f).isFile(); } catch { return true; } });
   return bad ? { error: `No file at ${bad}.` } : { files: list };
 }
-function uploadRegion(id, regionId, files, { confirmed = false } = {}) {
+function uploadRegion(id, regionId, files, { confirmed = false, who = "" } = {}) {
   const f = uploadFiles(files);
   return actOnRegion(id, regionId, "Upload", confirmed, () => f.error || "",
-    async (page, at, r) => ({ uploaded: r.label, files: f.files, ...(await attachFiles(page, at, r, f.files)) }));
+    async (page, at, r) => ({ uploaded: r.label, files: f.files, ...(await attachFiles(page, at, r, f.files)) }), who);
 }
 
 // Open the site in Symbiot's browser profile as a normal window, to sign in (or
@@ -907,7 +1083,9 @@ const browserHub = () => HUB.replace(/t=[0-9a-f]+/, "t=…"); // where it opens 
 function profilePids({ headless } = {}) {
   if (process.platform === "win32") return [];
   try {
-    const out = spawnSync("ps", ["-eo", "pid=,args="], { encoding: "utf8", timeout: 5000 }).stdout || "";
+    // -ww: the whole line, however wide. With COLUMNS set (an app started from a terminal) ps cut
+    // each at 80, the profile's flag went, and Done found no window to close (2026-10-12).
+    const out = spawnSync("ps", ["-ww", "-eo", "pid=,args="], { encoding: "utf8", timeout: 5000 }).stdout || "";
     return out.split("\n").map((l) => l.trim().match(/^(\d+)\s+(.*)$/)).filter(Boolean)
       .filter(([, , a]) => a.includes("--user-data-dir=" + PROFILE) && !/--type=/.test(a) && (headless === undefined || /--headless/.test(a) === headless))
       .map(([, pid]) => Number(pid)).filter((p) => p && p !== process.pid);
@@ -931,14 +1109,37 @@ async function openSymbiotBrowser(url = "") {
     if (url) setTimeout(() => { try { spawn(chrome, [...base, "--new-window", url], { detached: true, stdio: "ignore" }).unref(); } catch {} }, page.length ? 1500 : 0);
     if (!page.length && !url) spawn(chrome, [...base, "--new-window", "about:blank"], { detached: true, stdio: "ignore" }).unref();
   } catch (e) { return { error: String((e && e.message) || e) }; }
+  watchWindow();
   return { ok: true, ...(url ? { url } : {}), browser: true };
 }
 // Done: the Symbiot Browser closes (its sign-ins are saved), so the hidden browser can read with them.
-async function closeSymbiotBrowser() {
-  const open = profilePids({ headless: false });
+// Its windows are the visible Chromes on the profile, and the one holding the profile's lock if
+// it's visible (found even where ps can't list it). One still open after a few seconds (a page
+// holding it up) is closed outright: Done always closes it.
+const windows = () => { const h = lockHolder(); return [...new Set([...profilePids({ headless: false }), ...(h && !h.headless && !OWN.has(h.pid) ? [h.pid] : [])])]; };
+async function closeSymbiotBrowser({ wait = 8000 } = {}) {
+  const open = windows();
   kill(open);
-  for (let i = 0; i < 20 && profilePids({ headless: false }).length; i++) await sleep(250);
-  return { closed: open.length };
+  for (const end = Date.now() + wait; Date.now() < end && windows().length;) await sleep(250);
+  const left = windows(); for (const p of left) try { process.kill(p, "SIGKILL"); } catch {}
+  for (let i = 0; i < 8 && windows().length; i++) await sleep(250);
+  return { closed: open.length, ...(left.length ? { forced: left.length } : {}) };
+}
+// Closed by its X (the last of its windows), or by Done: once no window has the profile any
+// more, the app is told (onBrowserClosed), so it checks your sites just as Done does. Watched
+// from when it opens; a window that never came up (in `start`) tells nothing.
+let CLOSED = null, WATCH = null;
+function onBrowserClosed(f) { CLOSED = typeof f === "function" ? f : null; }
+function watchWindow({ every = 2000, start = 30000 } = {}) {
+  clearInterval(WATCH); if (!CLOSED) return;
+  let seen = false; const t0 = Date.now();
+  WATCH = setInterval(() => {
+    if (windowOpen()) { seen = true; return; }
+    if (!seen && Date.now() - t0 < start) return;
+    clearInterval(WATCH); WATCH = null;
+    if (seen && CLOSED) try { CLOSED(); } catch {}
+  }, every);
+  if (WATCH.unref) WATCH.unref();
 }
 
-export { siteUrl, browserArgs, mapPage, wholePage, readPage, readTexts, readLinkedIn, LI_READ, pagePicture, pageClip, CLIP, isSend, pressRegion, typeRegion, uploadRegion, uploadFiles, attachFiles, FILE_BOX, scrollPage, SCROLLS, signIn, keepBrowserOpen, closeBrowser, browserOpen, keepSessions, SESSION_KEEP, SESSIONS, loadSessions, trustedSites, isTrusted, trustSite, untrustSite, PROFILE , openSymbiotBrowser, closeSymbiotBrowser, setBrowserHub , browserHub };
+export { tabKey, siteUrl, browserArgs, mapPage, wholePage, readPage, readTexts, readLinkedIn, LI_READ, pagePicture, pageClip, CLIP, isSend, pressRegion, typeRegion, chooseRegion, uploadRegion, uploadFiles, attachFiles, FILE_BOX, scrollPage, SCROLLS, signIn, keepBrowserOpen, closeBrowser, browserOpen, keepSessions, SESSION_KEEP, SESSIONS, loadSessions, trustedSites, isTrusted, trustSite, untrustSite, PROFILE , openSymbiotBrowser, closeSymbiotBrowser, onBrowserClosed, scratchPage, open as openPage, evaluate, SCROLLER, watchWindow, windowOpen, lockHolder, setBrowserHub , browserHub };

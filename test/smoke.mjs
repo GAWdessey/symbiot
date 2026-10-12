@@ -197,6 +197,8 @@ const calls = [
   ["/api/screens/map", "POST"],     // no site -> refused before a browser starts
   ["/api/screens/press", "POST"],   // not confirmed -> refused, nothing pressed
   ["/api/screens/type", "POST"],    // no id -> "not found", nothing typed
+  ["/api/screens/choose", "POST"],  // no id -> "not found", nothing chosen
+  ["/api/screens/replace", "POST"], // no id -> "not found", nothing typed
   ["/api/screens/upload", "POST"],  // no id -> "not found", no browser starts, nothing sent
   ["/api/screens/scroll", "POST"],  // no id -> "not found", no browser starts
   ["/api/screens/whole", "POST"],   // no id -> "not found", no browser starts
@@ -215,6 +217,7 @@ const calls = [
   ["/api/claude/code", "POST"],     // no code -> error, nothing sent
   ["/api/browser/open", "POST"],    // the Symbiot Browser (not in tests: SYMBIOT_NO_OPEN)
   ["/api/browser/done", "POST"],    // closes it and checks the sites (not in tests)
+  ["/api/browser/closed", "POST"],  // its page's X: the same, a moment later (not in tests)
   ["/api/language", "GET"],         // the language: the computer's, or one named in Settings
   ["/api/language/set", "POST"],    // the computer's, or one named (no body: nothing changes)
   ["/api/i18n/all", "GET"],         // every translation kept for the language
@@ -277,6 +280,9 @@ const calls = [
   ["/api/marketing/tray", "GET"],   // the pick tray (isolated HOME -> no trays)
   ["/api/marketing/tray/blur", "POST"], // no tray named -> refused, nothing written, ffmpeg not run
   ["/api/marketing/tray/use", "POST"], // no draft named -> refused, no media line written
+  ["/api/marketing/tray/box", "POST"], // no tray named -> refused, no box added, ffmpeg not run
+  ["/api/marketing/tray/reviewed", "POST"], // no tray named -> refused, nothing written
+  ["/api/marketing/capture", "POST"], // no product named -> refused, no browser starts
   ["/api/watch", "GET"],           // watched pages + what's new (isolated HOME -> none)
   ["/api/watch/add", "POST"],       // no screen or site -> refused, nothing saved
   ["/api/watch/every", "POST"],     // no id -> "No watch"
