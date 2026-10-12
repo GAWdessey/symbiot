@@ -16,11 +16,11 @@ import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { watchBoard, draftReply, draftCards, draftAnswer } from "./watch.mjs";
 import { pendingReview, pushTasks, addTask, taskType } from "./tasks.mjs";
 import { estimate, estimateWords } from "./estimate.mjs";
-import { setHandoffCmd, agentsList, runHandoff, runningHandoff, handoffCmd, loadRuns, connectorsInfo, parkedPaths, agentMissing, settleNeeds, pickAgent, detectHandoffs, linkReach } from "./agents.mjs";
+import { setHandoffCmd, agentsList, runHandoff, runningHandoff, handoffCmd, loadRuns, connectorsInfo, parkedPaths, agentMissing, settleNeeds, pickAgent, detectHandoffs, linkReach, unchangedStep } from "./agents.mjs";
 import { linksState, signInAsked } from "./links.mjs";
 import { knowledgeState } from "./knowledge.mjs";
 import { CONFIG_DIR, loadTasks, saveTasks, loadConfig, saveConfig, sameTask } from "./core.mjs";
-import { lanesState, stuckHandovers, allowHandover, skipHandover } from "./lanes.mjs";
+import { lanesState, stuckHandovers, allowHandover, skipHandover, handingOf, loadLedger, doneSince } from "./lanes.mjs";
 import { converse, actIn, actNow, taskIn, loadMind } from "./mind.mjs";
 import { repoPathMap, laneMap, reposState, scanRoots } from "./scan.mjs";
 import { resolveProvider, PROVIDERS, claudeState } from "./ai.mjs";
@@ -312,6 +312,7 @@ function homeState({ now = Date.now(), fresh = false, deps = {} } = {}) {
   const confirmed = deps.confirmed || (() => { try { return !!loadConfig().reposConfirmed; } catch { return false; } });
   const waits = deps.waits || (() => { try { return awaitingState().waits; } catch { return []; } });
   const clashes = deps.clashes || (() => { try { return newClashes(); } catch { return []; } });
+  let led; const finished = deps.doneSince || ((path, q) => { try { return doneSince(path, q, { ledger: (led = led || loadLedger()), now }); } catch { return null; } });
   // can a reply be noticed? Email on (mail on this computer), or an inbox watched and signed in
   const seesInbox = deps.seesInbox || (() => { try { return inboxSight(); } catch { return true; } });
   // the agent the handoff command runs, gone from this computer; Claude connectors linked here but signed out
@@ -354,8 +355,12 @@ function homeState({ now = Date.now(), fresh = false, deps = {} } = {}) {
     const qs = (a.ask && a.ask.questions) || [], q = qs[0];
     if (!q) continue;
     const lane = laneOfPath(a.path, map), repo = lane || (lane === "" ? "" : a.name);
+    // the work it asks about is done already (another lane took it and ticked it): the card says so, and Close it is first
+    const pa = plainAsk(a.path, q), done = finished(a.path, q.q), opts = (q.options || []).slice(0, 2);
+    const closed = done ? { done, options: [`Close it: ${done.lane} has done this already (${done.text}). Check that it's so, and carry on without asking again. (recommended)`, opts[0]].filter(Boolean),
+      labels: ["Close it: it's done", ...(opts[0] ? [blobLabel(pa.labels ? pa.labels[0] : opts[0])] : [])] } : {};
     you.push({ kind: "ask", id: "ask:" + a.path, path: a.path, repo, name: repo ? named(lane ? map[lane] : a.path, repo) : plain(String(a.name || "an agent").replace(/^Agent:\s*/, ""), 60),
-      title: `${a.name} asks`, sub: String(q.q || "").slice(0, 90), ...plainAsk(a.path, q), options: (q.options || []).slice(0, 2), ...(qs.length > 1 ? { more: qs.length - 1 } : {}), ...signInCard([q.q, ...(q.options || []).slice(0, 2)]), shape: "agents" });
+      title: `${a.name} asks`, sub: String(q.q || "").slice(0, 90), ...pa, options: opts, ...closed, ...(qs.length > 1 ? { more: qs.length - 1 } : {}), ...signInCard([q.q, ...opts]), shape: "agents" });
   }
   // What stopped and can't go on without you, as a question too: a handover that
   // couldn't start (lanes.mjs stuckHandovers: "Allow this run access to ~/Company?"),
@@ -429,6 +434,8 @@ function PLAIN_RULE(r) {
   if (first === "sudo") return "make changes as administrator";
   return `run ${first}`;
 }
+// a label without its "(recommended)": a second button isn't the recommended one
+const blobLabel = (l) => String(l || "").replace(/\s*\(recommended\)\s*$/i, "");
 function plainAsk(path, q) {
   const text = String(q.q || ""), opts = (q.options || []).slice(0, 2);
   let ask = text, labels = opts.map((o) => o.replace(PATHISH, "a file"));
@@ -437,7 +444,11 @@ function plainAsk(path, q) {
     ask = `${text.replace(PATHISH, "a file")}${rules.length ? ` It wants to ${rules.slice(0, 6).join(", ")}${rules.length > 6 ? `, and ${rules.length - 6} more things` : ""}.` : ""} If you say no, it skips that part and tells you what it left out.`;
     labels = opts.map((o) => (/allowlist\.proposed/i.test(o) ? "Allow" + (/recommended/i.test(o) ? " (recommended)" : "") : o.replace(PATHISH, "a file")));
   }
-  return { q: ask.replace(PATHISH, "a file"), ...(labels.some((l, i) => l !== opts[i]) ? { labels } : {}) };
+  // raw: the question as the agent wrote it, the key its answer is saved under (agents.mjs
+  // answerQuestions). Sending the plain words back matched nothing, so a permission card's
+  // Allow, and Send under it, did nothing at all (whatsapp_module, 2026-10-12).
+  const shown = ask.replace(PATHISH, "a file");
+  return { q: shown, ...(shown !== text ? { raw: text } : {}), ...(labels.some((l, i) => l !== opts[i]) ? { labels } : {}) };
 }
 
 function homeAnswer(id, { pick, text = "" } = {}, deps = {}) {
@@ -466,7 +477,14 @@ function homeAnswer(id, { pick, text = "" } = {}, deps = {}) {
     const settle = deps.settle || settleNeeds;
     if (!go) { settle(a.path, n.key); dropped.add(id); return { ok: true, said: "Skipped. It won't ask again." }; }
     if ((deps.running || runningHandoff)(a.path)) return { ok: true, said: "An agent is already at work there." };
-    const said = n.kind === "approve" ? `Go ahead: ${text || "do it as you had it, once you've checked what you flagged"}.` : `Done: the user did it${text ? ` (${text})` : ""}. Check it worked, then carry on.`;
+    // Done it, on a step that names a file (`.env`): only once that file has changed since
+    // the run asked. In your own words it goes ahead (done some other way), its agent told.
+    const still = n.kind === "approve" ? [] : (deps.unchanged || unchangedStep)(`${n.what} ${n.check || ""}`, a.path, a.endedAt || a.startedAt || 0);
+    const last = still.map((f) => `\`${f.name}\` ${f.at ? `was last changed on ${new Date(f.at).toISOString().slice(0, 10)}` : "isn't there"}`).join(" and ");
+    if (still.length && !text) return { error: `${last.replace(/`/g, "")}, before its agent asked, so it isn't done yet. Make the change and press Done it again, or say how you did it.` };
+    const said = n.kind === "approve" ? `Go ahead: ${text || "do it as you had it, once you've checked what you flagged"}.`
+      : still.length ? `The user says it's done (${text}), but ${last}, before you asked. Check it yourself before relying on it, then carry on.`
+      : `Done: the user did it${text ? ` (${text})` : ""}. Check it worked, then carry on.`;
     noteAnswer(a.path, n.what, said);
     const e = (deps.run || runHandoff)(a.path, { force: true });
     if (e && e.id && !e.blocked) { settle(a.path, n.key); dropped.add(id); }
@@ -673,6 +691,9 @@ function workScene({ deps = {}, full = false } = {}) {
     for (const q of qs) { p.qs = p.qs || []; if (p.qs.length < 3) p.qs.push({ q: q.q, options: (q.options || []).slice(0, 3), path: a.path, ...signInCard([q.q, ...(q.options || []).slice(0, 3)]) }); }
     for (const s of ideas) { p.ideas = p.ideas || []; if (p.ideas.length < 4) p.ideas.push({ text: plain(s.text, 200), full: String(s.text), repo: s.repo || l, path: a.path }); }
   }
+  // what each lane handed over and hasn't heard back on, with where it stands and how far the run on it has got
+  let led; const handing = deps.handing || ((path) => { try { return handingOf(path, { map, ledger: (led = led || loadLedger()) }); } catch { return []; } });
+  for (const [repo, path] of Object.entries(map)) { const h = handing(path); if (h.length) at(repo).handing = h.slice(0, 3); }
   const stuck = deps.stuck || (() => { try { return stuckHandovers(); } catch { return []; } });
   const drafts = deps.drafts || (() => { try { return draftCards(); } catch { return []; } });
   for (const t of troubles({ stuck: stuck(), list: AG, map, named, drafts: drafts() })) {

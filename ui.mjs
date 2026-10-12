@@ -117,6 +117,8 @@ body.lq-light #lqlook{background:rgba(21,26,33,.05);border-color:rgba(21,26,33,.
 body.lq-light #lqlook button{color:#5A6470}
 body.lq-light #lqlook button[aria-checked='true']{background:#151A21;color:#FFFFFF}
 body.lq-touch #lqlook button{min-height:40px}
+/* a phone's width: the version and the three looks on one line, none cut off. The name and the status line went past the screen's edge there (the status, wrapped, made the header 116px tall), and what the status says is on Home */
+@media (max-width:520px){body.lq-liquid header .brand,body.lq-liquid header .status{display:none}body.lq-liquid header .ver{white-space:nowrap;padding:2px 6px}body.lq-liquid #lqlook{margin-left:6px}#lqlook button{padding:0 8px;font-size:12px}}
 body.lq-liquid header .brand{letter-spacing:.38em;font-weight:500;text-transform:uppercase}
 body.lq-liquid .tabs{display:none}
 body.lq-liquid main{display:none}
@@ -261,6 +263,12 @@ body.lq-pooled #lqneedt,body.lq-work #lqneedt{display:none}
 .dm-chat{background:#D9FDD3;color:#111B21;margin-left:16px;border-top-right-radius:4px}.dm-chat .dmto{color:#1F7A4C}
 .dm-mail{background:#FFFFFF;color:#202124;border:1px solid #DADCE0}.dm-mail .dmto{color:#5F6368}
 .lqblob .bfor{font-size:11.5px;line-height:1.3;color:#8A919B;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+/* the work a question asks about is done already (lanes.mjs doneSince); a click's own feedback: the button pressed, Sending…, or what went wrong */
+.lqblob .bdone{font-size:12px;line-height:1.35;color:#7FD8A6;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow-wrap:anywhere}
+.lqblob .bst{font-size:12px;line-height:1.35;color:#8A919B}.lqblob .bst:empty{display:none}.lqblob .bst.err{color:#F2A541}
+.lqblob .nopt.pressed,.lqblob .bfx button.pressed{opacity:1;box-shadow:inset 0 0 0 2px currentColor}
+.lqblob.sending .nopt:not(.pressed),.lqblob.sending .bfx button:not(.pressed),.lqblob.sending .bfree{opacity:.45;cursor:default}
+.lqblob.sending .nopt:hover{border-color:rgba(255,255,255,.16)}
 .lqblob .nopt:focus-visible,.lqblob .bfree:focus-visible,.lqblob .bfx button:focus-visible{outline:2px solid currentColor;outline-offset:2px}
 .lqblob.gone{opacity:0!important;filter:blur(8px);transition:opacity .6s ease,filter .6s ease;pointer-events:none!important}
 body.lq-light .lqd.lqblob{background:rgba(255,255,255,.94);border-color:rgba(154,82,0,.32);box-shadow:0 18px 40px -26px rgba(30,45,60,.5)}
@@ -269,7 +277,8 @@ body.lq-light .lqblob .nopt{background:#FFFFFF;border-color:rgba(20,30,45,.16);c
 body.lq-light .lqblob .nopt.rec{background:#151A21;color:#FFFFFF;border-color:#151A21}
 body.lq-light .lqblob .bfx input{background:#FFFFFF;border-color:rgba(20,30,45,.18)}
 body.lq-light .lqblob .bfx button{background:#151A21;color:#FFFFFF}
-body.lq-light .lqblob .bfree,body.lq-light .lqd.lqblob .lt i,body.lq-light .lqblob .bmore,body.lq-light .lqblob .bfor{color:#5A6470}
+body.lq-light .lqblob .bfree,body.lq-light .lqd.lqblob .lt i,body.lq-light .lqblob .bmore,body.lq-light .lqblob .bfor,body.lq-light .lqblob .bst{color:#5A6470}
+body.lq-light .lqblob .bdone{color:#1F7A4C}body.lq-light .lqblob .bst.err{color:#9A5200}
 body.lq-look-pearl .lqblob .nopt.rec,body.lq-look-pearl .lqblob .bfx button{background:linear-gradient(180deg,#FFFFFF 0%,#F1F2F5 60%,#E6E9EE 100%);color:#1B1E23;border-color:rgba(0,0,0,.08)}
 body.lq-contrast .lqblob .nopt{border:2px solid currentColor}
 body.lq-touch .lqblob .nopt,body.lq-touch .lqblob .bfx input{min-height:44px}
@@ -500,8 +509,48 @@ body.lq-liquid .mkcap{border-radius:18px;border-color:rgba(255,255,255,.08);back
 .mkbox:hover{box-shadow:0 0 0 2px rgba(255,255,255,.55)}.mkbox:focus-visible{outline:2px solid var(--bone);outline-offset:1px}
 .mkcapt{font-size:13px;line-height:1.45;color:var(--text);overflow-wrap:anywhere}.mkcapm{font-size:11.5px;color:var(--faint)}
 .mkuse{display:flex;flex-wrap:wrap;gap:6px;align-items:center}.mkuse button{padding:4px 10px;font-size:12px}#mktray .mkuse select{width:auto;max-width:100%;min-height:0;padding:4px 30px 4px 10px;border-radius:999px;font-size:12px;background-position:right 11px center}
+/* capturing a product (capture.mjs), a capture to look over first, and a blur box you draw */
+.mkcaprow{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:4px 0 14px}.mkcaprow select,.mkcaprow input{width:auto;min-width:0;min-height:0;padding:6px 12px;border-radius:999px;font-size:13px}.mkcaprow input{flex:1 1 220px}.mkcaprow select{padding-right:30px;background-position:right 11px center}
+.mkcapst{flex-basis:100%;font-size:12.5px;line-height:1.45;color:var(--faint)}.mkcapst:empty{display:none}.mkcapst.err{color:var(--amber)}.mkcapst.ok{color:var(--green)}
+.mkreview{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:8px 10px;border-radius:10px;border:1px solid var(--amber);font-size:12.5px;line-height:1.45;color:var(--text)}.mkreview span{flex:1 1 200px}.mkreview button{padding:4px 10px;font-size:12px}
+.mkcapst2{font-size:12px;color:var(--faint)}.mkcapst2:empty{display:none}.mkcapst2.err{color:var(--amber)}
+.mkdrawpad{display:none;position:absolute;inset:0;cursor:crosshair;touch-action:none;z-index:2}.mkcap.drawing .mkdrawpad{display:block}.mkcap.drawing .mkshot{outline:2px dashed var(--bone);outline-offset:2px}
+.mkdrawn{position:absolute;border:1.5px solid var(--bone);background:rgba(10,12,14,.35);border-radius:3px;pointer-events:none}
+.mkchipx{all:unset;cursor:pointer;margin-left:2px;padding:0 6px;border-radius:999px;font:600 12px/1.5 var(--sans);color:var(--faint)}.mkchipx:hover,.mkchipx:focus-visible{color:var(--bone);outline:2px solid var(--bone);outline-offset:1px}
 .mkchips{display:flex;flex-wrap:wrap;gap:5px}.mkchip{all:unset;box-sizing:border-box;cursor:pointer;padding:2px 9px;border-radius:999px;border:1px dashed var(--amber);color:var(--text);font:500 11.5px/1.5 var(--sans)}.mkchip.on{border:1px solid var(--green);color:var(--green)}.mkchip:hover,.mkchip:focus-visible{outline:2px solid var(--bone);outline-offset:1px}.mkshot .mkbox.hl{box-shadow:0 0 0 2px var(--bone)}
 .mkpv{margin:6px 0 14px}.mkpv .mkpvact{margin-top:8px}.mkpv .pchars{font-size:11px;color:var(--faint)}
+/* a draft opened large (mkBig): its pictures and video near full size, its text in reading type, where it goes; Approve, Edit and Skip on it */
+#mktasks .task[data-rel],#mkneeds .mkneed[data-rel],#boardposts .pcard{cursor:pointer}.mkpv .lipost,.mkpv .rdpost{cursor:zoom-in}
+.mkbig{position:fixed;inset:0;z-index:950;display:flex;align-items:center;justify-content:center;padding:28px;background:rgba(3,4,6,.62);backdrop-filter:blur(6px)}
+.mkbigin{position:relative;display:flex;flex-direction:column;width:min(1240px,100%);max-height:100%;border-radius:22px;background:rgba(10,12,15,.94);border:1px solid rgba(255,255,255,.12);box-shadow:0 0 0 1px rgba(214,222,234,.1),0 40px 90px -30px rgba(0,0,0,.85),inset 0 1px 0 rgba(255,255,255,.06);backdrop-filter:blur(20px) saturate(1.25);color:var(--text);overflow:hidden}
+body.lq-light .mkbig{background:rgba(40,44,52,.38)}body.lq-light .mkbigin{background:rgba(250,250,251,.97);border-color:rgba(21,26,33,.1);box-shadow:0 40px 90px -30px rgba(20,24,30,.45)}
+body.lq-solid .mkbig,body.lq-solid .mkbigin{backdrop-filter:none}
+.mkbighead{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:16px 18px 14px 22px;border-bottom:1px solid var(--line)}
+.mkbighead h2{flex:1 1 260px;margin:0;font:650 19px/1.3 var(--sans);color:var(--bone);letter-spacing:-.01em}
+.mkbigto{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:999px;border:1px solid var(--line);font-size:12.5px;color:var(--text);white-space:nowrap}.mkbigto b{color:var(--bone);font-weight:600}
+.mkbigx{all:unset;box-sizing:border-box;cursor:pointer;width:38px;height:38px;border-radius:999px;display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--line);color:var(--bone);font-size:22px;line-height:1}.mkbigx:hover,.mkbigx:focus-visible{outline:2px solid var(--bone);outline-offset:1px}
+.mkbigbody{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(320px,1fr);gap:24px;padding:20px 22px;overflow:auto;min-height:0}
+.mkbigbody.textonly{grid-template-columns:minmax(0,760px);justify-content:center}
+@media(max-width:920px){.mkbig{padding:10px}.mkbigbody{grid-template-columns:1fr}}
+.mkbigmedia{display:flex;flex-direction:column;gap:10px;min-width:0}
+.mkbigmain{position:relative;border-radius:14px;overflow:hidden;background:rgba(0,0,0,.35);line-height:0;border:1px solid var(--line)}body.lq-light .mkbigmain{background:#eceae6}
+.mkbigmain img,.mkbigmain video{display:block;width:100%;max-height:68vh;object-fit:contain}.mkbigmain img{cursor:zoom-in}
+.mkbigthumbs{display:flex;gap:8px;flex-wrap:wrap}.mkbigthumbs button{all:unset;cursor:pointer;box-sizing:border-box;width:84px;height:56px;border-radius:9px;overflow:hidden;border:2px solid transparent;opacity:.7;background:rgba(0,0,0,.3)}.mkbigthumbs button.on{border-color:var(--bone);opacity:1}.mkbigthumbs button:hover,.mkbigthumbs button:focus-visible{opacity:1;outline:2px solid var(--bone);outline-offset:1px}.mkbigthumbs img,.mkbigthumbs video{width:100%;height:100%;object-fit:cover;pointer-events:none}
+.mkbignone{padding:18px;border-radius:14px;border:1px dashed var(--amber);font-size:14px;line-height:1.5;color:var(--text)}
+.mkbigtext{min-width:0}.mkbigtitle{margin:0 0 10px;font:650 18px/1.4 var(--sans);color:var(--bone)}.mkbigtitle small{display:block;font:500 12px var(--sans);color:var(--faint);margin-bottom:3px;letter-spacing:.02em}
+.mkbigbodyt{white-space:pre-wrap;overflow-wrap:anywhere;font-size:16px;line-height:1.62;color:var(--bone)}.mkbig .lihash{color:#71b7fb}body.lq-light .mkbig .lihash{color:#0a66c2}
+.mkbigbody textarea{display:block;width:100%;min-height:46vh;box-sizing:border-box;background:var(--ink);border:1px solid var(--line);border-radius:12px;padding:12px 14px;color:var(--bone);font:16px/1.6 var(--sans);resize:vertical}.mkbigbody textarea:focus{outline:none;border-color:var(--green)}
+.mkbigmeta{margin-top:12px;font-size:12.5px;color:var(--faint)}.mkbig .linotes{margin-top:12px;font-size:13.5px}
+.mkbigfoot{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:12px 22px 16px;border-top:1px solid var(--line)}.mkbigfoot .mkbigsay{flex:1 1 220px;font-size:13px;color:var(--faint);line-height:1.45}.mkbigfoot .mkbigsay.err{color:var(--amber)}.mkbigfoot .mkbigsay.ok{color:var(--green)}
+/* one picture alone: arrows, or a swipe, between a post's pictures and video */
+.mkzoom{position:fixed;inset:0;z-index:1000;display:flex;align-items:center;justify-content:center;padding:56px 72px;background:rgba(0,0,0,.9);touch-action:pan-y}
+.mkzoom img,.mkzoom video{max-width:100%;max-height:100%;border-radius:8px;object-fit:contain;user-select:none}
+.mkzoom .mkzx,.mkzoom .mkzp,.mkzoom .mkzn{all:unset;box-sizing:border-box;position:absolute;cursor:pointer;width:46px;height:46px;border-radius:999px;display:inline-flex;align-items:center;justify-content:center;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.22);color:#F3F0EA;font-size:24px;line-height:1}
+.mkzoom .mkzx:hover,.mkzoom .mkzp:hover,.mkzoom .mkzn:hover,.mkzoom button:focus-visible{background:rgba(255,255,255,.2);outline:2px solid #F3F0EA;outline-offset:1px}
+.mkzoom .mkzx{top:14px;right:16px}.mkzoom .mkzp{left:14px;top:50%;margin-top:-23px}.mkzoom .mkzn{right:14px;top:50%;margin-top:-23px}
+.mkzoom .mkzc{position:absolute;left:0;right:0;bottom:14px;text-align:center;color:#C9CDD3;font:500 13px var(--sans)}
+@media(max-width:700px){.mkzoom{padding:56px 8px}.mkzoom .mkzp,.mkzoom .mkzn{top:auto;bottom:8px;margin:0}}
+.mkbigb{padding:4px 10px;font-size:12px}.mkshot img{cursor:zoom-in}.mkcap.drawing .mkshot img{cursor:crosshair}
 .lipost{max-width:552px;background:#fff;color:#191919;border:1px solid #e0dfdc;border-radius:10px;padding:12px 16px 4px;font:14px/1.43 -apple-system,system-ui,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
 .liauth{display:flex;gap:8px;align-items:flex-start;margin-bottom:10px}
 .liav{flex:0 0 48px;width:48px;height:48px;border-radius:50%;object-fit:cover;background:#0a66c2;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:600;font-size:17px}
@@ -511,6 +560,15 @@ body.lq-liquid .mkcap{border-radius:18px;border-color:rgba(255,255,255,.08);back
 .limore{background:none;border:0;padding:0 0 0 2px;min-height:0;color:rgba(0,0,0,.6);font:inherit;cursor:pointer}.limore:hover{color:#0a66c2;text-decoration:underline}
 .limedia{display:block;width:calc(100% + 32px);margin:0 -16px 4px;max-height:560px;object-fit:contain;background:#f3f2ef}
 .libar{display:flex;justify-content:space-around;border-top:1px solid #e0dfdc;padding:6px 0;color:rgba(0,0,0,.6);font-weight:600;font-size:13px}
+/* a Reddit draft as Reddit shows it: its subreddit and who posts it, its title, its flair, the body */
+.rdpost{max-width:640px;background:#fff;color:#1c1c1c;border:1px solid #d4d7d9;border-radius:10px;padding:10px 16px 4px;font:14px/1.5 -apple-system,system-ui,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+.rdhead{display:flex;align-items:center;flex-wrap:wrap;gap:6px;font-size:12px;color:#576f76}.rdhead b{color:#1c1c1c;font-weight:700}
+.rdic{flex:none;width:24px;height:24px;border-radius:50%;background:#ff4500;color:#fff;display:inline-flex;align-items:center;justify-content:center;font:700 11px/1 -apple-system,system-ui,sans-serif}
+.rdtitle{margin:8px 0 6px;font-weight:600;font-size:18px;line-height:1.35;color:#1c1c1c;overflow-wrap:anywhere}
+.rdflair{display:inline-block;margin:0 0 8px;padding:1px 9px;border-radius:999px;background:#e5ebee;color:#1c1c1c;font-size:12px;font-weight:600}
+.rdbody{white-space:pre-wrap;overflow-wrap:anywhere;margin:4px 0 8px}.rdbody code{background:#eef1f3;padding:0 4px;border-radius:4px;font:12.5px ui-monospace,SFMono-Regular,Menlo,monospace}
+.rdmedia{display:block;width:100%;max-height:560px;object-fit:contain;background:#0e1113;border-radius:12px;margin:6px 0 8px}
+.rdbar{display:flex;gap:18px;border-top:1px solid #e5ebee;padding:6px 0;color:#576f76;font-weight:600;font-size:12.5px}
 .linotes{margin-top:8px;font-size:12.5px;color:var(--text)}.linotes summary{cursor:pointer;color:var(--faint)}.linotest{white-space:pre-wrap;overflow-wrap:anywhere;margin:6px 0;color:var(--text)}
 .mkneeds{margin-bottom:14px;padding:4px 0 4px 12px;border-left:2px solid var(--amber)}
 .mkneeds.lit{border-radius:0 16px 16px 0}
@@ -525,6 +583,12 @@ body.lq-liquid .mkcap{border-radius:18px;border-color:rgba(255,255,255,.08);back
 .rdoc code{font-size:12.5px;background:var(--ink3);border:1px solid var(--line);border-radius:5px;padding:0 4px}.rdoc pre{background:var(--ink3);border:1px solid var(--line);border-radius:9px;padding:10px 12px;overflow:auto}.rdoc pre code{background:none;border:0;padding:0}
 .rdoc pre.prose{font-family:inherit;white-space:pre-wrap;overflow-wrap:anywhere;overflow:visible}.rdoc pre.prose code{font-family:inherit;font-size:14px;line-height:1.5}
 .rdoc img.rimg{display:block;max-width:min(100%,560px);height:auto;margin:10px 0;border:1px solid var(--line);border-radius:9px;cursor:zoom-in}.rdoc .rimgmiss{display:inline-block;margin:6px 0;padding:6px 10px;border:1px dashed var(--amber);border-radius:8px;color:var(--faint);font-size:13px}
+/* an open report's way back, kept in view under the page's header while the report scrolls (top: repStick) */
+.rbackbar{position:sticky;top:var(--rbtop,0px);z-index:3;display:flex;align-items:center;gap:10px;margin:10px -10px 4px;padding:8px 10px;border-radius:14px;background:rgba(6,8,11,.9);backdrop-filter:blur(14px);box-shadow:0 1px 0 rgba(220,228,240,.12)}
+.rbackbar button{flex:none}.rbackbar .rbpath{flex:1;min-width:0;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;direction:rtl;text-align:left}
+body.lq-light .rbackbar{background:rgba(246,248,251,.95);box-shadow:0 1px 0 rgba(20,30,45,.1)}body.lq-solid .rbackbar{backdrop-filter:none;background:var(--ink)}
+@media(max-width:520px){.rbackbar .rbpath{display:none}}
+body.lq-liquid.lq-pooled:has(#panel-reports:not(.hidden) #rbackbar) #lqsinkrow{background:rgba(6,8,11,.97)}body.lq-liquid.lq-light.lq-pooled:has(#panel-reports:not(.hidden) #rbackbar) #lqsinkrow{background:rgba(246,248,251,.98)}
 .rzoom{position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,.82);display:flex;align-items:center;justify-content:center;cursor:zoom-out;padding:24px}.rzoom img{max-width:100%;max-height:100%;border-radius:8px}
 .rdoc blockquote{margin:8px 0;padding:2px 12px;border-left:3px solid var(--line);color:var(--faint)}.rdoc a{color:var(--green)}
 .rdoc .rtable{overflow-x:auto;margin:10px 0}.rdoc table{border-collapse:collapse;font-size:13px;min-width:100%}.rdoc th,.rdoc td{border:1px solid var(--line);padding:6px 8px;text-align:left;vertical-align:top}.rdoc th{background:var(--ink3);color:var(--bone);font-weight:600}
@@ -969,6 +1033,27 @@ body.lq-light #lqaway .aws b{color:#9A5200}
 .pcq .opts button{text-align:left;white-space:normal;line-height:1.4;height:auto;padding:8px 12px}
 .pcq form{display:flex;gap:8px;margin-top:8px}.pcq form input{flex:1;min-width:0}
 .pcq ul{margin:6px 0 8px;padding-left:18px;font-size:13px;line-height:1.5;color:var(--text)}
+/* Home on a phone paired with your computer (lqPhone): a plain list to act on, no liquid. What needs you and the tasks first, the rest of Symbiot one tap away in a row along the top */
+#phhome{display:none}
+body.lq-phone:not(.lq-work):not(.lq-pooled) #phhome{display:block;position:absolute;left:0;right:0;top:64px;bottom:84px;z-index:3;overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:none;padding:0 16px 24px;color:var(--text);font-family:var(--sans)}
+#phhome::-webkit-scrollbar{display:none}
+body.lq-phone:not(.lq-work):not(.lq-pooled) :is(#lq,#lqdrops,#lqgroups,#lqneedt,#lqnext,#lqcore,#lqorbits,#lqrelay,#lqmore,#lqline,#lqgo){display:none}
+body.lq-phone:not(.lq-work):not(.lq-pooled) #liquid{background:var(--ink)}
+#phnav{position:sticky;top:0;z-index:2;display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;margin:0 -16px;padding:8px 16px 10px;background:var(--ink)}
+#phnav::-webkit-scrollbar{display:none}
+#phnav button{flex:none;display:inline-flex;align-items:center;gap:6px;min-height:34px;padding:6px 13px;border-radius:999px;border:1px solid var(--line);background:var(--ink2);color:var(--text);font:500 13px/1 var(--sans);cursor:pointer}
+#phnav button b{font-weight:600;color:var(--amber)}
+#phnav button.lit{border-color:var(--amber)}
+#phhome #pcline{font-size:12.5px;line-height:1.45;color:var(--faint);margin:4px 0 2px}
+#phhome #pcline b{color:var(--amber)}
+#phhome .pshead{margin:14px 0 8px}
+#phhome .mkneeds{margin-top:10px}
+#phhome .pcadd input{flex:1 1 100%}#phhome .pcadd select{flex:1 1 0}
+#phyou{margin:10px 0 0}
+#phyou .phyi{display:flex;flex-direction:column;align-items:flex-start;gap:2px;width:100%;margin-top:6px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--ink2);color:var(--text);font:inherit;text-align:left;cursor:pointer}
+#phyou .phyi b{font-weight:600;font-size:13.5px}
+#phyou .phyi span{font-size:12.5px;line-height:1.4;color:var(--faint)}
+#phyou .phyi.urgent{border-color:var(--amber)}
 .pcadd{display:flex;gap:8px;margin:8px 0 2px;flex-wrap:wrap}.pcadd input{flex:1;min-width:150px}.pcadd select{flex:0 1 160px;min-width:0}
 .pcfound{display:flex;flex-direction:column;gap:6px;margin-top:8px}
 body.lq-hline:not(.lq-work):not(.lq-pooled):not(.lq-chat):not(.lq-onb) #lqline{display:block;position:absolute;left:50%;top:auto;bottom:100px;transform:translateX(-50%);z-index:3;max-width:calc(100% - 32px);text-align:center;font:400 13.5px/1.4 var(--sans);color:#A1A8B1;text-shadow:0 1px 10px rgba(0,0,0,.7)}
@@ -1074,6 +1159,7 @@ body.lq-light .btip .bta button:not(.quiet){background:#151A21;color:#FFFFFF}
 <canvas id="lq" aria-hidden="true"></canvas>
 <div id="lqorbits"></div>
 <div id="lqline" aria-live="polite"></div>
+<div id="phhome" role="region" aria-label="Home"><nav id="phnav" aria-label="The rest of Symbiot"></nav><div id="phpc"></div></div>
 <div id="lqrelay" aria-label="Your projects: what their agents did, ask and suggest"></div>
 <div id="lqgroups"></div>
 <div id="lqneedt"><span>Needs you</span><small>only you can do these</small></div>
@@ -1829,6 +1915,11 @@ api('/api/agents/remember',skip?{path:a.path,skip:true}:{path:a.path,only:only})
 if(!r||r.error){box.querySelectorAll('button').forEach(function(b){b.disabled=false;});msg.innerHTML="<div class='note err'>"+esc((r&&r.error)||'failed')+"</div>";return;}
 msg.innerHTML=skip?"<div class='note ok'>Skipped what <b>"+esc(a.name)+"</b> found: nothing went into memory.</div>":"<div class='note ok'>&#10003; Remembered "+r.remembered+" new fact"+(r.remembered===1?"":"s")+" from <b>"+esc(r.title||a.name)+"</b>"+(r.remembered<r.of?" (the rest were known already)":"")+".</div>";loadAgents();});}
 var k=box.querySelector('.rkeep'),s=box.querySelector('.rskip');if(k)k.addEventListener('click',function(){send(false);});if(s)s.addEventListener('click',function(){send(true);});});}
+// What this run handed to another lane (lanes.mjs handingOf): whether that lane has it yet, and if not, why; once it has, how far its run has got
+// How far the run on a handover has got: its tasks ticked, and what it's doing now
+function handProg(x){var b=[];if(x.progress)b.push(x.progress.done+' of '+x.progress.total+' ticked');if(x.doing)b.push(x.doing);return b.join(' \u00b7 ');}
+function handHtml(a){var hs=a.handing;if(!hs||!hs.length)return '';
+return "<div class='aq hand'><h4>Handed over</h4>"+hs.map(function(x){var pg=handProg(x);return "<div class='qc'><b>"+esc(x.lane)+"</b>: "+esc(x.text)+"<br><span"+(x.gone?" class='muted'":" style='color:var(--amber)'")+">"+esc(x.why)+"</span>"+(pg?"<br><span class='muted'>"+esc(pg)+"</span>":"")+"</div>";}).join('')+"</div>";}
 function answering(){var f=document.activeElement;return !!(f&&f.closest&&f.closest('.aq'));}
 // Handovers (lanes.mjs): what one lane's agent handed to another, and where it stands.
 var LANEWORD={started:'working on it',held:'queued: that lane is busy',blocked:"didn't start",done:'done, reported back',error:"couldn't hand over"};
@@ -1871,9 +1962,10 @@ function loadAgents(){loadLanes();loadParked(agentsDraw);phoneApprovedNote();}
 function phoneApprovedNote(){var el=$('phoneappr');if(!el)return;var ap=(LQ.home&&LQ.home.phoneApproved)||[];
 el.innerHTML=ap.map(function(a){return "<div class='note "+(a.status==='failed'?'err':'ok')+"'>"+(a.status==='failed'?"Approving <b>"+esc(a.repo)+"</b> from "+esc(a.phone)+" failed: "+esc(a.error||''):(a.status==='approving'?"Approving ":"&#10003; Approved ")+"<b>"+esc(a.repo)+"</b> from "+esc(a.phone)+", "+agoTxt(a.at)+(a.pr?" &middot; <a href='"+escQ(a.pr)+"' target='_blank' rel='noopener'>its PR</a>":""))+"</div>";}).join('');}
 // Agents, in order: what needs you (a question, a step of yours), what's at work, and
-// what's finished, folded away (open stays open across refreshes).
+// what's finished, folded away (open stays open across refreshes). A run whose handover
+// hasn't gone to its lane yet stays out with what's at work, not folded away.
 var AGDONEOPEN=false;
-function agentGroups(list,fn){var needs=[],run=[],done=[];list.forEach(function(a){if(nQs(a)||a.waiting||a.needs)needs.push(a);else if(a.status==='running')run.push(a);else done.push(a);});
+function agentGroups(list,fn){var needs=[],run=[],done=[];list.forEach(function(a){if(nQs(a)||a.waiting||a.needs)needs.push(a);else if(a.status==='running'||(a.handing||[]).some(function(x){return !x.gone;}))run.push(a);else done.push(a);});
 var g=function(t,xs){return xs.length?"<div class='tgroup agg'>"+t+" <span class='tcount'>"+xs.length+"</span></div>"+xs.map(fn).join(''):'';};
 return g('Needs you',needs)+g('At work',run)+(done.length?"<details class='agdone'"+(AGDONEOPEN?' open':'')+"><summary class='tgroup agg'>Finished <span class='tcount'>"+done.length+"</span></summary>"+done.map(fn).join('')+"</details>":'');}
 function agentsDraw(){api('/api/agents').then(function(list){var el=document.getElementById('agentslist');
@@ -1888,6 +1980,7 @@ if(a.earlier)st+=" &middot; "+(a.status==='running'?"started outside this window
 if(a.waiting)st+=" &middot; <span style='color:var(--amber)'>waiting on your step</span>";
 if(nQs(a))st+=" &middot; <span style='color:var(--amber)'>needs your answers</span>";
 if(a.needs&&!a.needs.waiting)st+=" &middot; <span style='color:var(--amber)'>"+(a.needs.kind==='approve'?"waits for your OK":"needs you")+"</span>";
+var hw=(a.handing||[]).filter(function(x){return !x.gone;}).length;if(hw)st+=" &middot; <span style='color:var(--amber)'>"+(hw>1?hw+" handovers":"a handover")+" not sent yet</span>";
 if(a.remember&&a.remember.length)st+=" &middot; <span style='color:var(--amber)'>found "+a.remember.length+" thing"+(a.remember.length>1?"s":"")+" to remember</span>";
 if(a.held!=null){var hn=a.held.length,ht=a.held.map(function(t){return "&bull; "+esc(t).replace(/'/g,'&#39;');}).join('&#10;');
 ht+=(hn?'&#10;&#10;':'')+(a.status==='running'?"Sent while this agent was running. They wait in .symbiot/TASKS.next.md, replace TASKS.md when it finishes (keeping its ticks), and an agent starts on them then.":"They wait in .symbiot/TASKS.next.md for the agent running in this folder to finish. After that, an agent starts on them the next time the Tasks tab checks this repo, or send again.");
@@ -1907,7 +2000,7 @@ if(ch&&(ch.dirty||ch.stat||(ch.commits&&ch.commits.length))){
 }else if(a.status==='done'){
   b+="<div class='changed muted'>No file changes detected (the agent may have only planned or asked).</div>";
 }
-b+=waitHtml(a)+needsHtml(a)+askHtml(a)+factsHtml(a);
+b+=waitHtml(a)+needsHtml(a)+askHtml(a)+handHtml(a)+factsHtml(a);
 b+=a.work?("<details class='wkraw'><summary>what it said, in full</summary><pre class='alogout'>"+esc((a.tail&&a.tail.trim())||'(nothing yet)')+"</pre></details>"):("<pre class='alogout'>"+esc((a.tail&&a.tail.trim())||'(waiting for output…)')+"</pre>");
 return "<div class='agent' data-i='"+list.indexOf(a)+"'>"+b+"</div>";};
 el.innerHTML=agentGroups(list,agentBlock);var dn=el.querySelector('.agdone');if(dn)dn.addEventListener('toggle',function(){AGDONEOPEN=dn.open;});
@@ -2009,7 +2102,7 @@ function phoneSeen(p){return p.old?"<span class='err'>paired before the link was
 function renderPhoneLink(d,msg){if(!d||!d.role)return;var box=$('phonelink'),h='';if(!box)return;
 if(d.role==='phone'){
 if(d.paired&&!d.old){h+="<div class='task'><span class='t'>Paired with <b>"+esc(d.name)+"</b> <span class='muted' style='font-size:12px'>"+esc(d.url||'')+(d.last?" &middot; asked "+agoTxt(d.last)+(d.via==='relay'?" through the relay":""):"")+"</span>"+(d.error?"<br><span class='err' style='font-size:12px'>"+esc(d.error)+"</span>":"")+"</span><button class='ghost' id='pcheck' title='ask your computer now'>Check now</button><button class='rm' id='pforget' title='forget it: its copy here goes too'>&times;</button></div>";
-h+="<div class='note muted'>Its tasks, what needs you and its agents&rsquo; questions are on Home, in <b>On "+esc(d.name)+"</b>: tick, add, answer and approve from there. While Symbiot runs on this phone it asks every 2 minutes (and as soon as this phone&rsquo;s network changes), and shows what Watch found there as a notification.</div>";}
+h+="<div class='note muted'>Its tasks, what needs you and its agents&rsquo; questions are on Home, in <b>On "+esc(d.name)+"</b>: tick, add, answer and approve from there. While Symbiot runs on this phone it asks every 2 minutes (and as soon as this phone&rsquo;s network changes), and tells you, with a notification, what Watch found there and what newly needs you: an agent&rsquo;s question, work waiting for your Approve.</div>";}
 else{if(d.old)h+="<div class='note err'>"+esc(d.error||'')+"</div>";
 h+="<div class='note muted' style='margin-top:2px'>"+(window.SymbiotAndroid?"<b>Scan the code your computer shows:</b> in Symbiot on your computer, open Settings &rarr; <b>Your phone</b> and switch it on. Point this phone&rsquo;s camera at the QR, and tap its link. Or type its address and code here:":"In Symbiot on your computer, open Settings &rarr; <b>Your phone</b> and switch it on: it shows its address and a 6-digit code. Type both here.")+"</div>"+
 "<div class='row'><input id='paddr' placeholder='your computer&rsquo;s address, e.g. 192.168.8.50:7392' style='flex:1'><input id='pcode' placeholder='code' inputmode='numeric' style='flex:0 0 90px'><button class='act' id='ppair'>Pair</button></div>"+
@@ -2057,6 +2150,7 @@ aps.forEach(function(a,i){h+="<div class='pcq' data-ap='"+i+"'><div class='qn'>"
 (a.waiting?"<div class='note' style='margin:0'>Approved here"+W+"</div>":"<div class='row' style='margin:0'><button class='act pcapprove'>Approve</button><span class='muted' style='font-size:12px'>exactly this: if the work changes before your computer gets it, it isn&rsquo;t approved</span></div>")+"</div>";});
 needs.forEach(function(n){h+="<div class='task'><span class='t'>"+esc(n.title)+" <span class='muted' style='font-size:12px'>"+esc(n.sub)+" &middot; on your computer</span></span></div>";});
 h+="</div>";}
+if(LQ.phone)h+="<div class='phyouslot'></div>"; // on a phone's Home: what this phone needs, after what the computer does
 (c.recent||[]).slice(-3).forEach(function(r){h+="<div class='note "+(r.status==='failed'?'err':'ok')+"'>"+(r.status==='approving'?"Approving "+esc(r.repo)+" (from "+esc(r.phone)+")&hellip;":r.status==='failed'?"Approving "+esc(r.repo)+" from "+esc(r.phone)+" failed: "+esc(r.error||''):"&#10003; "+esc(r.repo)+" approved from "+esc(r.phone)+(r.pr?" &middot; <a href='"+escQ(r.pr)+"' target='_blank' rel='noopener'>its PR</a>":""))+"</div>";});
 var open=(c.tasks||[]).filter(function(t){return !t.done;}),done=(c.tasks||[]).filter(function(t){return t.done;}),repos=[];(c.tasks||[]).forEach(function(t){if(t.repo&&repos.indexOf(t.repo)<0)repos.push(t.repo);});
 h+="<div class='pshead' style='margin-top:14px'><span>Tasks &middot; "+open.length+" open</span><small>on "+esc(d.name)+"</small></div>";
@@ -2064,7 +2158,8 @@ h+="<form class='pcadd'><input id='pctask' placeholder='Add a task' maxlength='4
 h+=open.concat(done.slice(0,8)).map(function(t){return "<div class='task"+(t.done?" done":"")+"' data-id='"+escQ(t.id)+"'><input type='checkbox' class='pctick'"+(t.done?" checked":"")+(String(t.id).indexOf('q:')===0?" disabled":"")+" aria-label='done'><span class='t'>"+esc(t.text)+(t.repo?" <span class='rp'>"+esc(t.repo)+"</span>":"")+(t.review?" <span class='muted' style='font-size:11px'>done by its agent, waits for your Approve</span>":"")+(t.waiting?W:"")+"</span></div>";}).join('');
 if((c.watch||[]).length)h+="<div class='pshead' style='margin-top:14px'><span>What Watch found</span><small>on "+esc(d.name)+", today</small></div>"+c.watch.map(function(w){return "<div class='task'><span class='t'><b>"+esc(w.name)+"</b> <span class='muted' style='font-size:12px'>"+esc(w.label)+"</span>"+(w.items||[]).map(function(i){return "<br><span style='font-size:13px'>"+esc(i.text)+"</span>";}).join('')+"</span></div>";}).join('');
 var typed=$('pctask')?[$('pctask').value,$('pcrepo').value,document.activeElement&&document.activeElement.id]:null;
-el.innerHTML=h;if(typed){$('pctask').value=typed[0]||'';$('pcrepo').value=typed[1]||'';if(typed[2]==='pctask')$('pctask').focus();}
+var py=$('phyou');if(py&&el.contains(py))el.parentNode.appendChild(py);
+el.innerHTML=h;var pys=el.querySelector('.phyouslot');if(pys&&py)pys.parentNode.replaceChild(py,pys);if(typed){$('pctask').value=typed[0]||'';$('pcrepo').value=typed[1]||'';if(typed[2]==='pctask')$('pctask').focus();}
 el.querySelectorAll('.pcnote').forEach(function(b){b.addEventListener('click',function(){api('/api/phone/note',{id:b.closest('.task').getAttribute('data-note')}).then(function(x){PCV=x;renderComputer();});});});
 el.querySelectorAll('.pcq[data-ask]').forEach(function(box){var a=asks[+box.getAttribute('data-ask')],q=(a.questions||[])[0]||{};if(a.waiting)return;
 var send=function(t){if(!t)return;pcDo('agent.answer',{path:a.path,answers:[{q:q.q,a:t}]});};
@@ -2338,6 +2433,7 @@ else h+="<div class='row' style='margin-top:10px'><span class='muted' style='fle
 +"<button class='ghost pvoice' title='reads your recent posts on LinkedIn in Symbiot&#39;s signed-in browser into voice.md, which you can read over'>Fill from LinkedIn</button>"
 +"<button class='ghost pdraft'"+(p.voice.count?" title='your AI drafts 3 posts from your last 7 days of commits, release tags and changelog; each must cite what git shows'":" disabled title='add example posts first'")+">Draft this week&#39;s posts</button></div>";
 el.innerHTML=h+"<div id='postsmsg'>"+PMSG+"</div>";
+el.querySelectorAll('.pcard').forEach(function(c){if(c.classList.contains('editing'))return;c.title='open it large';c.addEventListener('click',function(ev){if(ev.target.closest('button,a,input,select,textarea,video,label,summary,details'))return;mkBig({post:c.getAttribute('data-id')},c);});});
 el.querySelectorAll('.pmore').forEach(function(b){b.addEventListener('click',function(){var c=b.closest('.pcard'),on=c.classList.toggle('open');b.setAttribute('aria-expanded',on?'true':'false');b.textContent=on?'Show less':'Read it all';});});
 function post(btn){var id=btn.closest('.pcard').getAttribute('data-id');return p.posts.filter(function(x){return x.id===id;})[0];}
 el.querySelectorAll('.papprove').forEach(function(btn){btn.addEventListener('click',function(){var x=post(btn);if(!x)return;btn.disabled=true;postsMsg('','');
@@ -2398,8 +2494,15 @@ function loadMkTasks(){renderMkLane();}
 var MKPV='';
 function mkTags(t){return String(t||'').split(/(#[A-Za-z0-9_]+)/g).map(function(x,i){return i%2?"<span class='lihash'>"+esc(x)+"</span>":esc(x);}).join('');}
 function mkMediaSrc(rel){return '/api/marketing/media?rel='+encodeURIComponent(rel)+'&t='+encodeURIComponent(T);}
-function mkPreviewHtml(p){var a=p.author||{},plat=p.platform==='linkedin'?'LinkedIn':(p.platform||'post');
-var h="<div class='lipost' aria-label='"+escQ(plat)+" preview'><div class='liauth'>"+(a.avatar?"<img class='liav' src='"+escQ(mkMediaSrc('avatar'))+"' alt=''>":"<span class='liav'>"+esc(a.initials||'')+"</span>")
+// Reddit's markdown, as far as a preview needs it: its text as written, a span in backticks as code.
+function mkRdText(t){var bt=String.fromCharCode(96);return String(t||'').split(bt).map(function(x,i,all){return i%2&&i<all.length-1?"<code>"+esc(x)+"</code>":esc((i%2?bt:'')+x);}).join('');}
+function mkRedditHtml(p){var a=p.author||{},who=p.handle||(a.name?'you ('+a.name+')':'you');
+return "<div class='rdpost' aria-label='Reddit preview'><div class='rdhead'><span class='rdic' aria-hidden='true'>r/</span><b>"+esc(p.where||'Reddit')+"</b><span>&middot; "+(p.when?"scheduled for "+esc(p.when):"now")+" &middot; posted by "+esc(who)+"</span></div>"
++"<div class='rdtitle'>"+esc(p.title||'')+"</div>"+(p.flair?"<span class='rdflair'>"+esc(p.flair)+"</span>":"")
++(p.media||[]).map(function(m){return m.kind==='video'?"<video class='rdmedia' src='"+escQ(mkMediaSrc(m.rel))+"' controls muted playsinline preload='metadata'></video>":"<img class='rdmedia' src='"+escQ(mkMediaSrc(m.rel))+"' alt='"+escQ(m.name)+"'>";}).join('')
++"<div class='rdbody'>"+mkRdText(p.body)+"</div><div class='rdbar'><span>&#8679; Vote &#8681;</span><span>Comments</span><span>Award</span><span>Share</span></div></div>";}
+function mkPreviewHtml(p){var a=p.author||{},plat=p.platform==='linkedin'?'LinkedIn':(p.platform||'post'),reddit=/reddit/i.test(p.platform||'');
+var h=reddit?mkRedditHtml(p):"<div class='lipost' aria-label='"+escQ(plat)+" preview'><div class='liauth'>"+(a.avatar?"<img class='liav' src='"+escQ(mkMediaSrc('avatar'))+"' alt=''>":"<span class='liav'>"+esc(a.initials||'')+"</span>")
 +"<div class='liwho'><b>"+esc(a.name||'')+"</b>"+(a.headline?"<small>"+esc(a.headline)+"</small>":"")+"<small>"+(p.when?"Scheduled for "+esc(p.when):"Now")+" &middot; &#127760;</small></div></div>"
 +"<div class='litext'>"+(p.cut?mkTags(p.shown)+"&hellip;<button type='button' class='limore'>see more</button>":mkTags(p.body))+"</div>"
 +(p.media||[]).map(function(m){return m.kind==='video'?"<video class='limedia' src='"+escQ(mkMediaSrc(m.rel))+"' controls muted playsinline preload='metadata'></video>":"<img class='limedia' src='"+escQ(mkMediaSrc(m.rel))+"' alt='"+escQ(m.name)+"'>";}).join('')
@@ -2410,23 +2513,88 @@ var done=p.status==='posted'?"Posted"+(on?" on "+esc(on):"")+(p.posted?", "+esc(
 :p.status==='superseded'?"Superseded"+((p.by||[]).length?" by "+p.by.map(function(b){return "<code>"+esc(b)+"</code>";}).join(', '):"")+": it won&#39;t be posted."
 :p.status==='approved'?"Approved "+agoTxt(p.statusAt)+": its agent "+(p.when?"schedules":"posts")+" it through Symbiot&#39;s browser, with this text.":p.status==='skipped'?"Skipped "+agoTxt(p.statusAt)+": it won&#39;t be posted.":"";
 h+="<div class='row mkpvact'>"+(fin||p.status==='approved'?"":"<button class='act mkok'>Approve"+(p.when?", schedule it":", post it")+"</button>")+(fin||p.status==='skipped'?"":"<button class='ghost mkskip'>Skip</button>")
-+"<span class='muted' style='font-size:12px;flex:1'>"+(done||(p.when?"Its agent schedules it for "+esc(p.when)+" once you approve.":"Its agent posts it once you approve."))+"</span><span class='pchars'>"+p.chars+" / 3000</span></div>";
++"<span class='muted' style='font-size:12px;flex:1'>"+(done||(p.when?"Its agent schedules it for "+esc(p.when)+" once you approve.":"Its agent posts it once you approve."))+"</span><span class='pchars'>"+(reddit?"title "+String(p.title||'').length+" / 300 &middot; "+p.chars+" / 40000":p.chars+" / 3000")+"</span></div>";
 h+="<details class='linotes'><summary>Its notes</summary>"+(p.notes?"<div class='linotest'>"+esc(p.notes)+"</div>":"<div class='muted'>None.</div>")+"<button type='button' class='ghost mkfile' title='open the draft in your editor'>Edit the file</button></details>";
 return h;}
 function mkPreview(box,rel){if(!box.innerHTML)box.innerHTML="<div class='muted'>Loading&hellip;</div>";
 api('/api/marketing/draft?rel='+encodeURIComponent(rel)).then(function(p){if(MKPV!==rel)return;if(!p||p.error){box.innerHTML="<div class='note err'>"+esc((p&&p.error)||'failed')+"</div>";return;}
 box.innerHTML=mkPreviewHtml(p);
+var lp=box.querySelector('.lipost,.rdpost');if(lp){lp.title='open it large';lp.addEventListener('click',function(ev){if(ev.target.closest('button,a,video'))return;mkBig({rel:rel},lp);});}
 var mo=box.querySelector('.limore');if(mo)mo.addEventListener('click',function(){box.querySelector('.litext').innerHTML=mkTags(p.body);});
 var fl=box.querySelector('.mkfile');if(fl)fl.addEventListener('click',function(){api('/api/marketing/open',{rel:rel}).then(function(r){if(r&&r.error)mkMsg('err',esc(r.error));});});
 box.querySelectorAll('.mkok,.mkskip').forEach(function(b){b.addEventListener('click',function(){var skip=b.classList.contains('mkskip');b.disabled=true;
 api('/api/marketing/draft/answer',{rel:rel,skip:skip}).then(function(r){if(!r||r.error){b.disabled=false;mkMsg('err',esc((r&&r.error)||'failed'));return;}mkMsg('ok',esc(r.said||'Done.'));loadMarketing();}).catch(function(e){b.disabled=false;mkMsg('err',esc(String((e&&e.message)||e)));});});});}).catch(function(e){box.innerHTML="<div class='note err'>"+esc(String((e&&e.message)||e))+"</div>";});}
+// A draft opened large (MKBIG): its pictures and video near full size (a click: one alone,
+// arrows or a swipe between them), its whole text in reading type, which product it's for
+// and where it goes (LinkedIn, r/ClaudeAI), and Approve, Edit and Skip on it, so nothing
+// needs zooming and nothing needs closing first. Esc, its X, or a click outside close it.
+// A lane draft ({rel}: marketing.mjs draftPreview) or a post on the board ({post}: POSTS).
+var MKBIG=null,MKZOOM=null;
+var MKPLAT={linkedin:'LinkedIn',reddit:'Reddit',x:'X',twitter:'X',instagram:'Instagram',facebook:'Facebook',threads:'Threads',mastodon:'Mastodon',bluesky:'Bluesky',youtube:'YouTube',tiktok:'TikTok'};
+function mkPlat(p){p=String(p||'').toLowerCase();return MKPLAT[p]||(p?p.charAt(0).toUpperCase()+p.slice(1):'');}
+function mkBigClose(){var o=$('mkbig');if(o)o.remove();var by=MKBIG&&MKBIG.by;MKBIG=null;if(by&&by.isConnected&&by.focus){try{by.focus({preventScroll:true});}catch(x){}}}
+function mkBig(what,by){MKBIG={rel:what.rel||'',post:what.post||'',by:by||document.activeElement,edit:null,say:'',cls:''};var o=$('mkbig');if(!o){o=document.createElement('div');o.id='mkbig';o.className='mkbig';o.setAttribute('role','dialog');o.setAttribute('aria-modal','true');o.setAttribute('aria-labelledby','mkbigt');document.body.appendChild(o);
+o.addEventListener('pointerdown',function(ev){o.downOut=ev.target===o;});o.addEventListener('click',function(ev){if(ev.target===o&&o.downOut)mkBigClose();});}
+o.innerHTML="<div class='mkbigin'><div class='mkbighead'><h2 id='mkbigt'>Loading&hellip;</h2><button type='button' class='mkbigx' aria-label='Close' title='Close (Esc)'>&times;</button></div></div>";o.querySelector('.mkbigx').addEventListener('click',mkBigClose);o.querySelector('.mkbigx').focus();
+mkBigLoad();}
+function mkBigLoad(){if(!MKBIG)return;var m=MKBIG;
+if(m.post){var x=((POSTS&&POSTS.posts)||[]).filter(function(p){return p.id===m.post;})[0];if(!x){mkBigRender({error:"That draft isn&#39;t waiting any more."});return;}
+mkBigRender({kind:'post',x:x,product:mkPostProduct(x.id),platform:'linkedin',title:((POSTS.labels||{})[x.kind])||x.kind,body:x.text,media:(x.media||[]).map(function(a){return {src:pmediaSrc(x,a),kind:a.kind==='video'?'video':'image',name:a.name||a.kind};}),chars:String(x.text||'').length,limit:3000,meta:"Drafted "+agoTxt(x.drafted)+(x.edited?", edited since":"")});return;}
+api('/api/marketing/draft?rel='+encodeURIComponent(m.rel)).then(function(p){if(MKBIG!==m)return;if(!p||p.error){mkBigRender({error:esc((p&&p.error)||'failed')});return;}
+mkBigRender({kind:'lane',p:p,product:p.product,platform:p.platform,where:p.where,flair:p.flair,handle:p.handle||'',when:p.when,title:p.title,body:p.body,media:(p.media||[]).map(function(a){return {src:mkMediaSrc(a.rel),kind:a.kind,name:a.name};}),missing:p.missing||[],chars:p.chars,limit:/reddit/i.test(p.platform||'')?40000:3000,notes:p.notes,status:p.status,final:p.status==='posted'||p.status==='superseded'});}).catch(function(e){mkBigRender({error:esc(String((e&&e.message)||e))});});}
+function mkBigRender(d){var o=$('mkbig');if(!o||!MKBIG)return;var m=MKBIG;m.d=d;var inn=o.querySelector('.mkbigin');
+if(d.error){inn.innerHTML="<div class='mkbighead'><h2 id='mkbigt'>Draft</h2><button type='button' class='mkbigx' aria-label='Close' title='Close (Esc)'>&times;</button></div><div class='mkbigbody textonly'><div class='note err'>"+d.error+"</div></div>";inn.querySelector('.mkbigx').addEventListener('click',mkBigClose);return;}
+var reddit=/reddit/i.test(d.platform||''),plat=mkPlat(d.platform)||'LinkedIn',to=reddit?esc(d.where||'Reddit'):d.where?plat+' &middot; '+esc(d.where):plat;
+var head="<div class='mkbighead'>"+mkProd(d.product)+"<h2 id='mkbigt'>"+esc(reddit?(d.product?d.product+' on Reddit':'A Reddit post'):d.title||'Draft')+"</h2><span class='mkbigto' title='where it goes'>to <b>"+to+"</b>"+(d.flair?" &middot; flair "+esc(d.flair):"")+(d.handle?" &middot; as "+esc(d.handle):"")+(d.when?" &middot; "+esc(d.when):"")+"</span><button type='button' class='mkbigx' aria-label='Close' title='Close (Esc)'>&times;</button></div>";
+var ms=d.media||[],i=Math.min(m.at||0,Math.max(0,ms.length-1));m.at=i;
+var media=ms.length?"<div class='mkbigmedia'><div class='mkbigmain'>"+(ms[i].kind==='video'?"<video src='"+escQ(ms[i].src)+"' controls playsinline preload='metadata'></video>":"<img src='"+escQ(ms[i].src)+"' alt='"+escQ(ms[i].name||'')+"' title='see it alone (arrows go through them)' tabindex='0'>")+"</div>"
++(ms.length>1?"<div class='mkbigthumbs' role='tablist' aria-label='Its pictures and video'>"+ms.map(function(a,k){return "<button type='button' role='tab' data-k='"+k+"' aria-selected='"+(k===i)+"' class='"+(k===i?'on':'')+"' title='"+escQ(a.name||'')+"'>"+(a.kind==='video'?"<video src='"+escQ(a.src)+"' muted preload='metadata'></video>":"<img src='"+escQ(a.src)+"' alt=''>")+"</button>";}).join('')+"</div>":"")
++((d.missing||[]).length?"<div class='mkbignone'>It also names "+d.missing.map(function(x){return "<code>"+esc(x)+"</code>";}).join(', ')+", which isn&#39;t next to it yet.</div>":"")+"</div>"
+:"";
+var editing=m.edit!=null,text="<div class='mkbigtext'>"+(!ms.length&&(d.missing||[]).length?"<div class='mkbignone' style='margin-bottom:16px'>Its picture or video, <code>"+d.missing.map(esc).join('</code>, <code>')+"</code>, isn&#39;t next to it yet, so it&#39;d go out without it.</div>":"")+(reddit&&d.title?"<p class='mkbigtitle'><small>Its title</small>"+esc(d.title)+"</p>":"")
++(editing?"<label for='mkbigedit' style='position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)'>Its text</label><textarea id='mkbigedit' maxlength='"+(d.limit||3000)+"'>"+esc(m.edit)+"</textarea>":"<div class='mkbigbodyt'>"+(reddit?mkRdText(d.body):mkTags(d.body))+"</div>")
++"<div class='mkbigmeta'>"+(editing?String(m.edit).length:d.chars)+" / "+(d.limit||3000)+" characters"+(d.meta?" &middot; "+esc(d.meta):"")+"</div>"
++(d.kind==='lane'?"<details class='linotes'><summary>Its notes</summary>"+(d.notes?"<div class='linotest'>"+esc(d.notes)+"</div>":"<div class='muted'>None.</div>")+"</details>":(d.x&&d.x.sources&&d.x.sources.length?"<details class='linotes'><summary>From git: "+d.x.sources.length+" thing"+(d.x.sources.length===1?"":"s")+" it says</summary>"+d.x.sources.map(function(s){return "<div class='linotest'>"+esc(s)+"</div>";}).join('')+"</details>":""))+"</div>";
+var st=d.status,done=d.kind==='lane'?(d.final?(st==='posted'?"Posted: it isn&#39;t approved or posted again.":"Superseded: it won&#39;t be posted."):st==='approved'?"Approved: its agent "+(d.when?"schedules":"posts")+" it through Symbiot&#39;s browser, with this text.":st==='skipped'?"Skipped: it won&#39;t be posted.":""):"";
+var act=d.final?"":editing?"<button class='act mkbsave'>Save</button><button class='ghost mkbcancel'>Cancel</button>"
+:(st==='approved'?"":"<button class='act mkbok'>Approve"+(d.kind==='lane'?(d.when?", schedule it":", post it"):"")+"</button>")+(d.kind==='lane'?"<button class='ghost mkbfile' title='open the draft in your editor'>Edit the file</button>":"<button class='ghost mkbedit' title='change its words here'>Edit</button>")+(st==='skipped'?"":"<button class='ghost mkbskip' title='drop this draft: it won&#39;t be posted'>Skip</button>");
+var say=m.say||done||(d.kind==='lane'?(d.when?"Its agent schedules it for "+esc(d.when)+" once you approve.":"Its agent posts it once you approve."):"Approve it and Marketing&#39;s agent posts it on LinkedIn, as it reads here.");
+inn.innerHTML=head+"<div class='mkbigbody"+(media?"":" textonly")+"'>"+media+text+"</div><div class='mkbigfoot'>"+act+"<span class='mkbigsay "+(m.cls||'')+"' role='status'>"+say+"</span></div>";
+inn.querySelector('.mkbigx').addEventListener('click',mkBigClose);
+var mi=inn.querySelector('.mkbigmain img');if(mi){mi.addEventListener('click',function(){mkZoom(ms,m.at,mi);});mi.addEventListener('keydown',function(e){if(e.key==='Enter'||e.key===' '){e.preventDefault();mkZoom(ms,m.at,mi);}});}
+inn.querySelectorAll('.mkbigthumbs button').forEach(function(b){b.addEventListener('click',function(){m.at=+b.getAttribute('data-k');mkBigRender(d);var t=$('mkbig')&&$('mkbig').querySelector(".mkbigthumbs button[data-k='"+m.at+"']");if(t)t.focus();});});
+var said=function(cls,t){m.cls=cls;m.say=t;var e=inn.querySelector('.mkbigsay');if(e){e.className='mkbigsay '+cls;e.innerHTML=t;}};
+var busy=function(b){inn.querySelectorAll('.mkbigfoot button').forEach(function(x){x.disabled=!!b;});};
+inn.querySelectorAll('.mkbok,.mkbskip').forEach(function(b){b.addEventListener('click',function(){var skip=b.classList.contains('mkbskip');busy(true);said('',skip?'Skipping it&hellip;':'Approving it&hellip;');
+if(d.kind==='post'){var cb=document.querySelector("#boardposts .pcard[data-id='"+m.post+"'] "+(skip?'.pskip':'.papprove'));if(!cb){busy(false);said('err',"Couldn&#39;t find it on the page any more.");return;}cb.click();said('ok',skip?"Skipped: it won&#39;t be posted.":"Approved: Marketing&#39;s agent posts it on LinkedIn, as it reads here.");inn.querySelectorAll('.mkbok,.mkbskip,.mkbedit').forEach(function(x){x.remove();});return;}
+api('/api/marketing/draft/answer',{rel:m.rel,skip:skip}).then(function(r){busy(false);if(!r||r.error){said('err',esc((r&&r.error)||'failed'));return;}m.say=esc(r.said||'Done.');m.cls='ok';loadMarketing();mkBigLoad();}).catch(function(e){busy(false);said('err',esc(String((e&&e.message)||e)));});});});
+var fb=inn.querySelector('.mkbfile');if(fb)fb.addEventListener('click',function(){api('/api/marketing/open',{rel:m.rel}).then(function(r){said(r&&r.error?'err':'ok',r&&r.error?esc(r.error):"Opened in your editor. Save it there, and this shows the change when you open it again.");});});
+var eb=inn.querySelector('.mkbedit');if(eb)eb.addEventListener('click',function(){m.edit=d.body||'';m.say='';mkBigRender(d);var t=$('mkbigedit');if(t)t.focus();});
+var ta=inn.querySelector('#mkbigedit');if(ta)ta.addEventListener('input',function(){m.edit=ta.value;var mt=inn.querySelector('.mkbigmeta');if(mt)mt.firstChild.nodeValue=ta.value.length+" / "+(d.limit||3000)+" characters";});
+var cc=inn.querySelector('.mkbcancel');if(cc)cc.addEventListener('click',function(){m.edit=null;mkBigRender(d);});
+var sv=inn.querySelector('.mkbsave');if(sv)sv.addEventListener('click',function(){PEDIT[m.post]=m.edit;renderPosts();var cb=document.querySelector("#boardposts .pcard[data-id='"+m.post+"'] .psave");if(!cb){said('err',"Couldn&#39;t find it on the page any more.");return;}cb.click();m.edit=null;m.say="Saved.";m.cls='ok';setTimeout(mkBigLoad,900);});}
+// One picture (or video) alone, as big as the window: arrows, the buttons or a swipe go
+// through the rest of them; Esc, its X or a click beside it close it.
+function mkZoom(list,i,by){if(!list||!list.length)return;mkZoomClose();var z=document.createElement('div');z.className='mkzoom';z.setAttribute('role','dialog');z.setAttribute('aria-modal','true');z.setAttribute('aria-label','Picture');document.body.appendChild(z);MKZOOM={list:list,i:Math.max(0,Math.min(i||0,list.length-1)),el:z,by:by||document.activeElement};
+var sx=null;z.addEventListener('pointerdown',function(e){sx=e.clientX;z.downOut=e.target===z;});z.addEventListener('pointerup',function(e){if(sx==null)return;var dx=e.clientX-sx;sx=null;if(Math.abs(dx)>50&&MKZOOM&&MKZOOM.list.length>1){mkZoomGo(dx<0?1:-1);z.swiped=true;}});
+z.addEventListener('click',function(e){if(z.swiped){z.swiped=false;return;}if(e.target===z&&z.downOut)mkZoomClose();});mkZoomShow();}
+function mkZoomShow(){var Z=MKZOOM;if(!Z)return;var a=Z.list[Z.i],n=Z.list.length,z=Z.el;
+z.innerHTML=(a.kind==='video'?"<video src='"+escQ(a.src)+"' controls autoplay playsinline></video>":"<img src='"+escQ(a.src)+"' alt='"+escQ(a.name||'')+"' draggable='false'>")+"<button type='button' class='mkzx' aria-label='Close' title='Close (Esc)'>&times;</button>"
++(n>1?"<button type='button' class='mkzp' aria-label='Previous' title='Previous (&larr;)'>&lsaquo;</button><button type='button' class='mkzn' aria-label='Next' title='Next (&rarr;)'>&rsaquo;</button>":"")+"<div class='mkzc'>"+(n>1?(Z.i+1)+" of "+n+(a.name?" &middot; ":""):"")+esc(a.name||'')+"</div>";
+z.querySelector('.mkzx').addEventListener('click',mkZoomClose);var p=z.querySelector('.mkzp'),q=z.querySelector('.mkzn');if(p)p.addEventListener('click',function(){mkZoomGo(-1);});if(q)q.addEventListener('click',function(){mkZoomGo(1);});(q||z.querySelector('.mkzx')).focus();}
+function mkZoomGo(d){var Z=MKZOOM;if(!Z)return;Z.i=(Z.i+d+Z.list.length)%Z.list.length;mkZoomShow();if(MKBIG&&MKBIG.d&&Z.by&&Z.by.closest&&Z.by.closest('#mkbig'))MKBIG.at=Z.i;}
+function mkZoomClose(){var Z=MKZOOM;MKZOOM=null;if(!Z)return;Z.el.remove();if(MKBIG&&MKBIG.d&&Z.by&&Z.by.closest&&Z.by.closest('#mkbig')){mkBigRender(MKBIG.d);var mi=$('mkbig')&&$('mkbig').querySelector('.mkbigmain img');if(mi)mi.focus();}else if(Z.by&&Z.by.isConnected&&Z.by.focus){try{Z.by.focus({preventScroll:true});}catch(x){}}}
+// Esc closes the picture first, then the draft; arrows go through the pictures
+if(document.addEventListener)document.addEventListener('keydown',function(e){if(MKZOOM){if(e.key==='Escape'){e.preventDefault();e.stopPropagation();mkZoomClose();}else if(e.key==='ArrowRight'||e.key==='ArrowLeft'){e.preventDefault();mkZoomGo(e.key==='ArrowRight'?1:-1);}return;}
+if(MKBIG){if(e.key==='Escape'){e.preventDefault();e.stopPropagation();mkBigClose();return;}var d=MKBIG.d,t=e.target;if(d&&(d.media||[]).length>1&&(e.key==='ArrowRight'||e.key==='ArrowLeft')&&!(t&&t.closest&&t.closest('textarea,input,select,video'))){e.preventDefault();MKBIG.at=((MKBIG.at||0)+(e.key==='ArrowRight'?1:-1)+d.media.length)%d.media.length;mkBigRender(d);}}},true);
 function renderMkLane(){var L=(MKT&&MKT.lane)||null,nd=$('mkneeds'),el=$('mktasks');if(!nd||!el)return;if(!L){nd.innerHTML='';el.innerHTML='';return;}
 var ns=L.needs||[],lbl={ask:'Answer',approve:'Review',draft:'Show it',post:'Preview'},kind={ask:'its agent asks',approve:'waits for your OK',draft:'a draft to post',post:'a post to approve'};
-nd.innerHTML=ns.length?"<div class='mkneeds"+(MKLIT?" lit":"")+"'><div class='pshead'><span>Needs you &middot; "+ns.length+"</span><small>only you can do these</small></div>"+ns.map(function(n,i){return "<div class='task mkneed' data-i='"+i+"'><span class='t'>"+mkProd(n.product)+esc(n.text)+" <span class='muted' style='font-size:11px'>"+kind[n.kind]+"</span></span><button class='"+(i?'ghost':'act')+" mkact'>"+lbl[n.kind]+"</button></div>";}).join('')+"</div>":'';
+nd.innerHTML=ns.length?"<div class='mkneeds"+(MKLIT?" lit":"")+"'><div class='pshead'><span>Needs you &middot; "+ns.length+"</span><small>only you can do these</small></div>"+ns.map(function(n,i){return "<div class='task mkneed' data-i='"+i+"'"+(n.kind==='post'?" data-rel='"+escQ(n.rel)+"' title='open it large'":"")+"><span class='t'>"+mkProd(n.product)+esc(n.text)+" <span class='muted' style='font-size:11px'>"+kind[n.kind]+"</span></span><button class='"+(i?'ghost':'act')+" mkact'>"+lbl[n.kind]+"</button></div>";}).join('')+"</div>":'';
 nd.querySelectorAll('.mkact').forEach(function(b){b.addEventListener('click',function(){var n=ns[+b.closest('.mkneed').getAttribute('data-i')];if(!n)return;
-if(n.kind==='post'){MKPV=n.rel;renderMkLane();var pv=null;document.querySelectorAll('#mktasks .mkpv').forEach(function(x){if(x.getAttribute('data-rel')===n.rel)pv=x;});if(pv&&pv.scrollIntoView)pv.scrollIntoView({block:'start',behavior:'smooth'});return;}
+if(n.kind==='post'){mkBig({rel:n.rel},b);return;}
 if(n.kind==='draft'){var c=document.querySelector("#boardposts .pcard[data-id='"+n.id.slice(6)+"']");if(c){document.querySelectorAll('#panel-marketing .lit').forEach(function(x){if(x!==c)x.classList.remove('lit');});c.classList.add('lit');if(c.scrollIntoView)c.scrollIntoView({block:'center',behavior:'smooth'});}return;}
 lqFocus({kind:'proj',repo:'marketing'});});});
+nd.querySelectorAll('.mkneed[data-rel]').forEach(function(r){r.addEventListener('click',function(ev){if(ev.target.closest('button,a,input,select,textarea'))return;mkBig({rel:r.getAttribute('data-rel')},r);});});
 var prods=L.products||[],ln=L.lane||[],els=L.elsewhere||[],fs=L.files||[],st={waiting:'waiting',working:'its agent is at work',review:'done, waits for your OK'};
 var h="<div class='pshead'><span>Marketing lane</span><small>"+(ln.length?ln.length+" task"+(ln.length>1?"s":"")+(L.working?" &middot; its agent is at work":L.waiting?" &middot; "+L.waiting+" waiting for its agent":""):"Its own agent, for every product: tell it what to make, and say which product it&#39;s for.")+"</small></div>"
 +"<form class='row mkadd'><label class='mkl' for='mkprod'>Product</label><input id='mkprod' class='mkprod' list='mkprodlist' autocomplete='off' placeholder='Symbiot, Dailify&hellip;' maxlength='40'><datalist id='mkprodlist'>"+prods.map(function(p){return "<option value='"+escQ(p)+"'>";}).join('')+"</datalist><label class='mkl' for='mktext' style='position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)'>Task</label><input id='mktext' class='mktext' autocomplete='off' placeholder='A launch post, a demo video, a campaign&hellip;' maxlength='4000'><button type='submit' class='act'>Add</button></form>"
@@ -2441,6 +2609,7 @@ api('/api/marketing/task',{text:t.value,product:pr.value}).then(function(r){bt.d
 el.querySelectorAll('.mkopen').forEach(function(b){b.addEventListener('click',function(){TFILTER.repo=b.getAttribute('data-repo')||'';TFILTER.type='';lqPool('tasks');if(typeof loadTasks==='function')loadTasks();});});
 el.querySelectorAll('.mkmove').forEach(function(b){b.addEventListener('click',function(){var id=b.closest('.task').getAttribute('data-id');b.disabled=true;api('/api/marketing/move',{id:id}).then(function(r){if(!r||r.error){b.disabled=false;mkMsg('err',esc((r&&r.error)||'failed'));return;}mkMsg('ok',"Moved to Marketing: its agent takes it from now on.");loadMarketing();});});});
 el.querySelectorAll('.mkprev').forEach(function(b){b.addEventListener('click',function(){var rel=b.closest('.task').getAttribute('data-rel');MKPV=MKPV===rel?'':rel;renderMkLane();});});
+el.querySelectorAll('.task[data-rel]').forEach(function(r){r.title='open it large';r.addEventListener('click',function(ev){if(ev.target.closest('button,a,input,select,textarea'))return;mkBig({rel:r.getAttribute('data-rel')},r);});});
 if(MKPV){var pv=null;el.querySelectorAll('.mkpv').forEach(function(x){if(x.getAttribute('data-rel')===MKPV)pv=x;});if(pv)mkPreview(pv,MKPV);else MKPV='';}
 var g=el.querySelector('.mkgo');if(g)g.addEventListener('click',function(){g.disabled=true;api('/api/marketing/go',{}).then(function(r){if(!r||r.error){g.disabled=false;mkMsg('err',esc((r&&r.error)||'It didn&#39;t start.'));return;}mkMsg('ok',r.queued?"Its agent takes them once the run there now finishes.":"Marketing&#39;s agent started. It&#39;s on the Workdesk, and what it drafts waits here for your OK.");loadMarketing();}).catch(function(e){g.disabled=false;mkMsg('err',esc(String((e&&e.message)||e)));});});
 if(MKLIT){MKLIT=false;var lit=nd.querySelector('.mkneeds');if(lit&&lit.scrollIntoView)lit.scrollIntoView({block:'start'});}}
@@ -2450,11 +2619,17 @@ if(MKLIT){MKLIT=false;var lit=nd.querySelector('.mkneeds');if(lit&&lit.scrollInt
 // once) and the capture is blurred again. Use puts it on a post (its media: line) in one
 // click: the posts it was taken for each have a button, any other is in the list.
 var MKTRAY=null;
-function loadMkTray(){api('/api/marketing/tray').then(function(d){if(d&&!d.error){MKTRAY=d.trays||[];renderMkTray();}});}
+function loadMkTray(){api('/api/marketing/tray').then(function(d){if(d&&!d.error){MKTRAY=d.trays||[];MKPRODUCTS=d.products||[];renderMkTray();}});}
 function mkTraySrc(rel,at){return '/api/marketing/tray/media?rel='+encodeURIComponent(rel)+'&v='+Math.round(at||0)+'&t='+encodeURIComponent(T);}
 // a capture's boxes, one a place: a clip has the same box in each moment it shows there
 function mkBoxes(c){var g={},out=[];(c.regions||[]).forEach(function(r){var k=[r.x,r.y,r.w,r.h].join();if(!g[k]){g[k]={x:r.x,y:r.y,w:r.w,h:r.h,kind:r.kind,ids:[],on:0};out.push(g[k]);}g[k].ids.push(r.id);if(r.on)g[k].on++;});out.forEach(function(b){b.all=b.on===b.ids.length;});return out;}
 var MKKIND={still:'Picture',clip:'Clip',reel:'Reel'};
+// Capture a product: Symbiot takes its key screens itself (capture.mjs), blurred before they reach the tray
+var MKPRODUCTS=[],MKCAPBUSY=false,MKCAP={sel:0,url:'',cls:'',say:''}; // kept through a redraw
+function mkCapRow(){
+return "<div class='pshead'><span>Capture a product</span><small>Symbiot opens it in a browser of its own, takes its key screens as pictures and short clips, and blurs anything private before it reaches the tray: names, emails, numbers, keys, what&#39;s typed in, chats, faces and pictures. No demo video needed.</small></div>"
++"<div class='mkcaprow'>"+(MKPRODUCTS.length?"<select id='mkcapp' aria-label='Product to capture'>"+MKPRODUCTS.map(function(p,i){return "<option value='"+i+"'"+(i===MKCAP.sel?" selected":"")+">"+esc(p.name)+(p.tray?" (has a tray)":"")+"</option>";}).join('')+"</select>":"<input id='mkcapname' placeholder='Its name' aria-label='Product to capture' autocomplete='off' value='"+escQ(MKCAP.name||'')+"' style='flex:0 1 160px'>")
++"<input id='mkcapurl' placeholder='Its address, if not running here' title='Its address, if it isnplaceholder='Its address, if it isn&#39;t running here (http://localhost:3000)' aria-label='Its address'#39;t running here: http://localhost:3000, or where itplaceholder='Its address, if it isn&#39;t running here (http://localhost:3000)' aria-label='Its address'#39;s deployed' aria-label='Its address' autocomplete='off' value='"+escQ(MKCAP.url)+"'><button type='button' class='act' id='mkcapgo'"+(MKCAPBUSY?" disabled":"")+">"+(MKCAPBUSY?"Capturing&hellip;":"Capture")+"</button><div class='mkcapst"+(MKCAP.cls?" "+MKCAP.cls:"")+"' id='mkcapst' role='status'>"+esc(MKCAP.say)+"</div></div>";}
 function renderMkTray(){var el=$('mktray');if(!el)return;var ts=MKTRAY||[];
 var h=ts.map(function(t,ti){var open=(t.drafts||[]).filter(function(d){return d.status!=='posted'&&d.status!=='superseded';});
 return "<div class='pshead'><span>Pick tray &middot; "+esc(t.product)+"</span><small>"+t.items.length+" capture"+(t.items.length===1?"":"s")+", blurred where "+(t.items.length===1?"it shows":"they show")+" something private. Click a box to blur it or show it; Use puts one on a post.</small></div><div class='mktray'>"
@@ -2462,9 +2637,14 @@ return "<div class='pshead'><span>Pick tray &middot; "+esc(t.product)+"</span><s
 var shot=c.show?(c.showKind==='video'?"<video src='"+escQ(mkTraySrc(c.show,c.at))+"' muted loop playsinline controls preload='metadata'></video>":"<img src='"+escQ(mkTraySrc(c.show,c.at))+"' alt='"+escQ(c.caption||c.name)+"' loading='lazy'>"):"<div class='muted' style='padding:20px;line-height:1.4'>Not rendered yet.</div>";
 shot+=bx.map(function(b,bi){var p=function(v){return Math.round(v*10000)/100+'%';};return "<button type='button' class='mkbox"+(b.all?" on":"")+"' data-b='"+bi+"' aria-pressed='"+b.all+"' style='left:"+p(b.x)+";top:"+p(b.y)+";width:"+p(b.w)+";height:"+p(b.h)+"' title='"+escQ(b.kind+(b.all?": blurred. Click to show it":": shown. Click to blur it"))+"' aria-label='"+escQ(b.kind+(b.all?", blurred":", shown"))+"'></button>";}).join('');
 var fr=(c.for||[]).map(function(f){return t.folder+'/'+f;}),mine=open.filter(function(d){return fr.indexOf(d.rel)>=0;}),rest=open.filter(function(d){return fr.indexOf(d.rel)<0;});
-var use=c.use?mine.map(function(d){var di=t.drafts.indexOf(d);return (d.media||[]).indexOf(c.use)>=0?"<span class='mkst approved' title='its picture or video now'>on "+esc(d.name)+"</span>":"<button type='button' class='ghost mkuseb' data-d='"+di+"'>Use for "+esc(d.name)+"</button>";}).join('')
+var look=c.review?"<div class='mkreview'><span>"+esc(c.review)+"</span><button type='button' class='ghost mklooked'>Looked it over</button></div>":"";
+var use=c.review?"":c.use?mine.map(function(d){var di=t.drafts.indexOf(d);return (d.media||[]).indexOf(c.use)>=0?"<span class='mkst approved' title='its picture or video now'>on "+esc(d.name)+"</span>":"<button type='button' class='ghost mkuseb' data-d='"+di+"'>Use for "+esc(d.name)+"</button>";}).join('')
 +(rest.length?"<select class='mkusel' aria-label='Use it for another post'><option value=''>"+(mine.length?"Another post":"Use for a post")+"&hellip;</option>"+rest.map(function(d){return "<option value='"+t.drafts.indexOf(d)+"'"+((d.media||[]).indexOf(c.use)>=0?" disabled":"")+">"+esc(d.name)+((d.media||[]).indexOf(c.use)>=0?" (on it)":"")+"</option>";}).join('')+"</select>":""):"";
-return "<div class='mkcap' data-t='"+ti+"' data-c='"+ci+"'><div class='mkshot'>"+shot+"</div><div class='mkcapt'>"+esc(c.caption||c.name)+"</div><div class='mkcapm'>"+esc(MKKIND[c.kind]||c.kind)+(c.screen?" &middot; "+esc(c.screen):"")+(bx.length?" &middot; "+n+" of "+bx.length+" box"+(bx.length===1?"":"es")+" blurred":c.kind==='reel'?" &middot; its clips&#39; blur":" &middot; nothing to blur")+"</div>"+(bx.length?"<div class='mkchips'>"+bx.map(function(b,bi){return "<button type='button' class='mkchip"+(b.all?" on":"")+"' data-b='"+bi+"' aria-pressed='"+b.all+"' title='"+escQ(b.all?"blurred: click to show it":"shown: click to blur it")+"'>"+esc(b.kind)+(b.all?" &middot; blurred":" &middot; shown")+"</button>";}).join('')+"</div>":"")+(use?"<div class='mkuse'>"+use+"</div>":"")+"</div>";}).join('')+"</div>";}).join('');
+var canDraw=c.blur&&c.kind!=='reel'&&c.show,big=c.show?"<button type='button' class='ghost mkbigb' title='see it large: arrows go through the tray'>Open large</button>":"";
+return "<div class='mkcap' data-t='"+ti+"' data-c='"+ci+"'><div class='mkshot'>"+shot+(canDraw?"<div class='mkdrawpad' aria-hidden='true'></div>":"")+"</div><div class='mkcapt'>"+esc(c.caption||c.name)+"</div><div class='mkcapm'>"+esc(MKKIND[c.kind]||c.kind)+(c.screen?" &middot; "+esc(c.screen):"")+(bx.length?" &middot; "+n+" of "+bx.length+" box"+(bx.length===1?"":"es")+" blurred":c.kind==='reel'?" &middot; its clips&#39; blur":" &middot; nothing to blur")+"</div>"+(bx.length?"<div class='mkchips'>"+bx.map(function(b,bi){var hand=(c.regions||[]).filter(function(r){return r.hand&&[r.x,r.y,r.w,r.h].join()===[b.x,b.y,b.w,b.h].join();})[0];
+return "<span style='display:inline-flex;align-items:center'><button type='button' class='mkchip"+(b.all?" on":"")+"' data-b='"+bi+"' aria-pressed='"+b.all+"' title='"+escQ(b.all?"blurred: click to show it":"shown: click to blur it")+"'>"+esc(b.kind)+(b.all?" &middot; blurred":" &middot; shown")+"</button>"+(hand?"<button type='button' class='mkchipx' data-id='"+escQ(String(hand.id))+"' title='Remove this box you drew' aria-label='Remove this box you drew'>&times;</button>":"")+"</span>";}).join('')+"</div>":"")
++look+(use?"<div class='mkuse'>"+use+"</div>":"")+(canDraw||big?"<div class='mkuse'>"+big+(canDraw?"<button type='button' class='ghost mkdraw' aria-pressed='false' title='Drag across the capture to blur that part too'>Draw a blur box</button><span class='mkcapst2' role='status'></span>":"")+"</div>":"")+"</div>";}).join('')+"</div>";}).join('');
+h=mkCapRow()+h;
 if(sameHtml(el,h))return;
 var at=function(x){var c=x.closest('.mkcap');return {t:ts[+c.getAttribute('data-t')],c:ts[+c.getAttribute('data-t')].items[+c.getAttribute('data-c')],el:c};};
 el.querySelectorAll('.mkchip').forEach(function(c){var box=function(){return c.closest('.mkcap').querySelector(".mkbox[data-b='"+c.getAttribute('data-b')+"']");};c.addEventListener('mouseenter',function(){var x=box();if(x)x.classList.add('hl');});c.addEventListener('mouseleave',function(){var x=box();if(x)x.classList.remove('hl');});});
@@ -2474,7 +2654,37 @@ mkMsg(r.rendered?'ok':'err',r.rendered?(g.all?"Shown: that box isn&#39;t blurred
 var useIt=function(x,d){var a=at(x),dr=a.t.drafts[d];if(!dr)return;x.disabled=true;
 api('/api/marketing/tray/use',{rel:dr.rel,file:a.c.use}).then(function(r){x.disabled=false;if(!r||r.error){mkMsg('err',esc((r&&r.error)||'failed'));return;}mkMsg('ok',"&ldquo;"+esc(dr.name)+"&rdquo; now shows "+esc(a.c.caption||a.c.name)+"."+(r.reopened?" It was approved with another, so it asks for your OK again.":""));loadMarketing();}).catch(function(e){x.disabled=false;mkMsg('err',esc(String((e&&e.message)||e)));});};
 el.querySelectorAll('.mkuseb').forEach(function(b){b.addEventListener('click',function(){useIt(b,+b.getAttribute('data-d'));});});
-el.querySelectorAll('.mkusel').forEach(function(s){s.addEventListener('change',function(){if(s.value!=='')useIt(s,+s.value);});});}
+// a capture large, alone: a click on its picture (not on a box), or Open large; arrows go through its tray
+var zoomAt=function(x){var a=at(x),shown=a.t.items.filter(function(c){return c.show;});mkZoom(shown.map(function(c){return {src:mkTraySrc(c.show,c.at),kind:c.showKind==='video'?'video':'image',name:c.caption||c.name};}),Math.max(0,shown.indexOf(a.c)),x);};
+el.querySelectorAll('.mkshot img').forEach(function(im){im.addEventListener('click',function(){if(!im.closest('.mkcap').classList.contains('drawing'))zoomAt(im);});});
+el.querySelectorAll('.mkbigb').forEach(function(b){b.addEventListener('click',function(){zoomAt(b);});});
+el.querySelectorAll('.mkusel').forEach(function(s){s.addEventListener('change',function(){if(s.value!=='')useIt(s,+s.value);});});
+// looked over: then it can go on a post
+el.querySelectorAll('.mklooked').forEach(function(b){b.addEventListener('click',function(){var a=at(b);b.disabled=true;
+api('/api/marketing/tray/reviewed',{tray:a.t.rel,name:a.c.name}).then(function(r){b.disabled=false;if(!r||r.error){mkMsg('err',esc((r&&r.error)||'failed'));return;}loadMkTray();}).catch(function(){b.disabled=false;});});});
+// a box you drew, removed
+el.querySelectorAll('.mkchipx').forEach(function(b){b.addEventListener('click',function(){var a=at(b);if(a.el.classList.contains('busy'))return;a.el.classList.add('busy');
+api('/api/marketing/tray/box',{tray:a.t.rel,name:a.c.name,remove:b.getAttribute('data-id')}).then(function(r){a.el.classList.remove('busy');if(!r||r.error){mkMsg('err',esc((r&&r.error)||'failed'));return;}loadMkTray();}).catch(function(){a.el.classList.remove('busy');});});});
+// Draw a blur box: drag across the capture; the box is blurred in it (a clip: all the way through)
+el.querySelectorAll('.mkdraw').forEach(function(b){b.addEventListener('click',function(){var card=b.closest('.mkcap'),on=!card.classList.contains('drawing');card.classList.toggle('drawing',on);b.setAttribute('aria-pressed',on?'true':'false');b.textContent=on?'Cancel drawing':'Draw a blur box';
+var st=card.querySelector('.mkcapst2');if(st){st.className='mkcapst2';st.textContent=on?'Drag across what to blur.':'';}});});
+el.querySelectorAll('.mkdrawpad').forEach(function(pad){var card=pad.closest('.mkcap'),shot=card.querySelector('.mkshot'),st=card.querySelector('.mkcapst2'),start=null,box=null;
+var pt=function(e){var r=shot.getBoundingClientRect();return {x:Math.min(1,Math.max(0,(e.clientX-r.left)/r.width)),y:Math.min(1,Math.max(0,(e.clientY-r.top)/r.height))};};
+var place=function(a,c){var x=Math.min(a.x,c.x),y=Math.min(a.y,c.y),w=Math.abs(a.x-c.x),hh=Math.abs(a.y-c.y);box.style.left=(x*100)+'%';box.style.top=(y*100)+'%';box.style.width=(w*100)+'%';box.style.height=(hh*100)+'%';return {x:x,y:y,w:w,h:hh};};
+pad.addEventListener('pointerdown',function(e){e.preventDefault();start=pt(e);box=document.createElement('div');box.className='mkdrawn';shot.appendChild(box);place(start,start);try{pad.setPointerCapture(e.pointerId);}catch(x){}});
+pad.addEventListener('pointermove',function(e){if(start)place(start,pt(e));});
+pad.addEventListener('pointerup',function(e){if(!start)return;var bx=place(start,pt(e));start=null;var a=at(pad);
+if(bx.w<0.01||bx.h<0.01){box.remove();if(st){st.className='mkcapst2 err';st.textContent='Drag across what to blur: that was a click.';}return;}
+card.classList.add('busy');if(st){st.className='mkcapst2';st.textContent='Blurring it…';}
+api('/api/marketing/tray/box',{tray:a.t.rel,name:a.c.name,box:bx}).then(function(r){card.classList.remove('busy');if(!r||r.error){box.remove();if(st){st.className='mkcapst2 err';st.textContent=(r&&r.error)||'failed';}return;}
+mkMsg(r.rendered?'ok':'err',r.rendered?"Blurred: the box you drew is blurred in it now.":"Saved, but it isn&#39;t blurred in it yet: "+esc(r.note||'it couldn&#39;t be blurred'));card.classList.remove('drawing');loadMkTray();}).catch(function(x){card.classList.remove('busy');box.remove();if(st){st.className='mkcapst2 err';st.textContent=String((x&&x.message)||x);}});});});
+// Capture: one product at a time, a minute or two; what it says shows under the button
+var cs=$('mkcapp'),cu=$('mkcapurl'),cn=$('mkcapname');if(cs)cs.addEventListener('change',function(){MKCAP.sel=+cs.value;});if(cn)cn.addEventListener('input',function(){MKCAP.name=cn.value;});if(cu)cu.addEventListener('input',function(){MKCAP.url=cu.value;});
+var say=function(cls,t){MKCAP.cls=cls;MKCAP.say=t;var st=$('mkcapst');if(st){st.className='mkcapst'+(cls?' '+cls:'');st.textContent=t;}};
+var go=$('mkcapgo');if(go)go.addEventListener('click',function(){var p=cs?MKPRODUCTS[+cs.value]:{name:(cn&&cn.value||'').trim()};if(MKCAPBUSY)return;if(!p||!p.name){say('err','Say which product: its name.');return;}MKCAPBUSY=true;go.disabled=true;go.textContent='Capturing…';say('','Capturing '+p.name+': its key screens, a picture each and a few short clips, blurred before they reach the tray. A minute or two.');
+api('/api/marketing/capture',{product:p.name,url:($('mkcapurl').value||'').trim()}).then(function(r){MKCAPBUSY=false;var g=$('mkcapgo');if(g){g.disabled=false;g.textContent='Capture';}
+if(!r||r.error){say('err',(r&&r.error)||'It didn’t capture.');return;}
+say('ok',r.note+(r.skipped||[]).map(function(x){return x.clip?' No clip of '+x.path+': '+x.why+'.':' Skipped '+x.path+': '+x.why+'.';}).join('')+(r.seed?' It has demo data ('+r.seed+'): capture with that loaded, not real data.':''));loadMkTray();}).catch(function(x){MKCAPBUSY=false;var g=$('mkcapgo');if(g){g.disabled=false;g.textContent='Capture';}say('err',String((x&&x.message)||x));});});}
 var MKDAY=function(s){var d=new Date(s+'T00:00:00');return isNaN(d)?s:d.toLocaleDateString(undefined,{day:'numeric',month:'short'});};
 function renderMarketing(){var d=MKT,r=$('mkreplies'),t=$('mktest');if(!d||!r||!t)return;var rs=d.replies||[];
 r.innerHTML="<div class='pshead'><span>Replies</span><small>"+(!d.linkedin?"Link LinkedIn, and comments on and mentions of your posts show here, marked when they may be a customer.":rs.length?"On LinkedIn in the last 30 days. Draft a reply leaves one in the comment box for you to post.":"None on LinkedIn in the last 30 days. Comments on and mentions of your posts show here, marked when they may be a customer.")+"</small></div>"
@@ -2531,14 +2741,20 @@ if(!REPS.length){el.innerHTML="<div class='muted' style='margin-top:12px'>No rep
 var n=REPS.filter(function(r){return r.new;}).length;
 el.innerHTML="<div class='tgroup' style='display:flex;align-items:center;gap:8px"+(n?";color:var(--amber)":"")+"'>"+(n?n+' unread':'All read')+" <span class='tcount'>of "+REPS.length+"</span>"+(n?"<button class='ghost' id='reportsseen' style='margin-left:auto;padding:3px 9px;font-size:12px;letter-spacing:0;text-transform:none'>Mark all read</button>":"")+"</div>"+
 REPS.map(function(r,i){var where=!r.run||r.run===r.lane?esc(r.lane):r.run.indexOf(r.lane+':')===0?esc(r.run):esc(r.lane)+' &middot; '+esc(r.run);
-return "<div class='task rrow"+(r.new?" rnew":"")+"' data-i='"+i+"' tabindex='0' role='button' title='"+escQ(r.file)+"'><span class='t'><b>"+esc(r.title)+"</b><div class='muted' style='font-size:12px'>"+(r.new?"<span style='color:var(--amber)'>unread</span> &middot; ":"")+where+" &middot; "+esc(r.name)+" &middot; "+kb(r.size)+(r.running?" &middot; <span style='color:var(--amber)'>its agent is still writing</span>":"")+"</div></span><span class='rp'>"+agoTxt(r.mtime)+"</span></div>";}).join('');
+return "<div class='task rrow"+(r.new?" rnew":"")+"' data-i='"+i+"' tabindex='0' role='button' title='"+escQ(r.file)+"'><span class='t'><b>"+esc(r.title)+"</b><div class='muted' style='font-size:12px'>"+(r.new?"<span style='color:var(--amber)'>unread</span> &middot; ":"")+where+" &middot; "+esc(r.name)+" &middot; "+kb(r.size)+(r.computer?" &middot; from "+esc(r.computer):"")+(r.running?" &middot; <span style='color:var(--amber)'>its agent is still writing</span>":"")+"</div></span><span class='rp'>"+agoTxt(r.mtime)+"</span></div>";}).join('');
 el.querySelectorAll('.rrow').forEach(function(row){var go=function(){openReport(REPS[+row.getAttribute('data-i')]);};row.addEventListener('click',go);row.addEventListener('keydown',function(ev){if(ev.key==='Enter'||ev.key===' '){ev.preventDefault();go();}});});
 var s=$('reportsseen');if(s)s.addEventListener('click',function(){s.disabled=true;api('/api/reports/seen',{}).then(function(){loadReports();lqLoad(false);});});}
-function openReport(r){if(!r)return;REPOPEN=r.id;var v=$('reportview');$('reportslist').innerHTML="<div class='row' style='margin-top:10px'><button class='ghost' id='reportback'>&larr; All reports</button><span class='muted' style='font-size:12px;overflow-wrap:anywhere'>"+esc(r.file)+"</span></div>";
-$('reportback').addEventListener('click',function(){loadReports();renderReports();});v.innerHTML="<div class='out rdoc muted'>Opening&hellip;</div>";
+// The way back sits at the top of the report itself (#reportview), so it stays in view, under
+// the page's header, however long the report: on a long one the list was a long scroll up away.
+function openReport(r){if(!r)return;REPOPEN=r.id;var w=$('reportview');$('reportslist').innerHTML='';
+w.innerHTML="<div class='rbackbar' id='rbackbar'><button class='ghost' id='reportback'>&larr; All reports</button><span class='muted rbpath' title='"+escQ(r.file)+"'><bdi>"+esc(r.file)+"</bdi></span></div><div id='reportbody'><div class='out rdoc muted'>Opening&hellip;</div></div>";var v=$('reportbody');
+$('reportback').addEventListener('click',function(){loadReports();renderReports();});repStick();
 api('/api/reports/read?id='+encodeURIComponent(r.id)).then(function(d){if(REPOPEN!==r.id)return;if(!d||d.error){v.innerHTML="<div class='note err'>"+esc((d&&d.error)||'failed')+"</div>";return;}
-v.innerHTML="<div class='out rdoc'>"+d.html+"</div>"+repActsHtml(d);repImgs(v);repActsWire(v,d);var m=document.querySelector('main');if(m&&m.scrollTo)m.scrollTo(0,0);lqLoad(false);}).catch(function(e){v.innerHTML="<div class='note err'>"+esc(String((e&&e.message)||e))+"</div>";});}
+v.innerHTML="<div class='out rdoc'>"+d.html+"</div>"+(d.remote?"":repActsHtml(d));repImgs(v);if(!d.remote)repActsWire(v,d);repStick();var m=document.querySelector('main');if(m&&m.scrollTo)m.scrollTo(0,0);lqLoad(false);}).catch(function(e){v.innerHTML="<div class='note err'>"+esc(String((e&&e.message)||e))+"</div>";});}
 $('reportsrefresh').addEventListener('click',function(){REPOPEN='';loadReports();});
+// where the way back sticks: just under the page's own sticky header (#lqsinkrow), whatever its height
+function repStick(){var b=$('rbackbar');if(!b)return;var s=$('lqsinkrow'),cs=s&&getComputedStyle(s),top=cs&&cs.position==='sticky'&&cs.display!=='none'?(parseFloat(cs.top)||0)+s.offsetHeight-1:0;b.style.setProperty('--rbtop',top+'px');}
+if(window.addEventListener)window.addEventListener('resize',repStick);if(window.ResizeObserver&&$('lqsinkrow'))new ResizeObserver(repStick).observe($('lqsinkrow'));
 // Its end: 2-4 ideas drawn from it, ticked straight onto the Workdesk in its lane, and a box
 // to ask about it here (home.mjs reportIdeasAdd, reportAsk); a draft gets Approve / Reject.
 // A report's images: their src carries the token; one that won't load says so; a click enlarges it.
@@ -2773,7 +2989,7 @@ document.getElementById('weeklyhour').addEventListener('change',saveWeekly);
 document.getElementById('weeklynow').addEventListener('click',weeklyNow);
 document.getElementById('autostart').addEventListener('change',saveAutostart);
 (function(){var h='';for(var i=0;i<24;i++)h+="<option value='"+i+"'>"+(i<10?'0':'')+i+":00</option>";document.getElementById('weeklyhour').innerHTML=h;})();
-var SRV_STARTED=null,srvDown=false,updBusy=false;
+var SRV_STARTED=null,srvDown=false,updBusy=false,SRV_UPD=null; // SRV_UPD: the app that was asked to update
 function ubar(){return document.getElementById('updatebar');}
 // One Symbiot window, not a pile: each window has an id, says so the first time it
 // asks, and the server remembers the newest. An older one closes itself, unless it's
@@ -2794,16 +3010,22 @@ function heartbeat(fresh){
     else if(p.started!==SRV_STARTED){location.reload();return;}
     if(srvDown){location.reload();return;}
     if(updBusy||selIn(b))return; // not under text you're selecting in it
+    // An update in flight, from any window: where it is, and no button (a second
+    // click started a second npm install over the first, and they collided).
+    if(p.updating){var w=p.updating,m=Math.max(0,Math.floor((Date.now()-(w.since||Date.now()))/60000));b.className='updatebar show';
+      b.innerHTML=w.retrying?"Updating to "+esc(w.target)+" once npm has its download (a few minutes after a release): looking every "+Math.round((w.every||30000)/1000)+" seconds, for up to "+Math.round((w.wait||1200000)/60000)+" minutes"+(m?" ("+m+" so far)":"")+". Nothing to do.":"Updating to "+esc(w.target)+"&hellip; Symbiot restarts by itself when it&rsquo;s in, and this page reloads.";return;}
+    // The last one didn't go through: what npm said, and Try again (not a terminal).
+    var f=p.updateFailed;
+    if(f&&p.latest&&p.newer&&f.target===p.latest){b.className='updatebar reconnect show';
+      b.innerHTML="The update to "+esc(f.target)+" didn&rsquo;t go through: "+esc(String(f.error||'npm stopped').replace(/[.]$/,''))+". You&rsquo;re still on "+esc(p.version)+". <button id='doupd'>Try again</button>";
+      var ab=document.getElementById('doupd');if(ab)ab.onclick=doUpdate;return;}
     // Loop guard: if we already tried to update to this version and we're still
     // not on it after the restart, the install isn't advancing — stop offering
     // the button (which just loops) and tell them to update manually.
     var tried=null;try{tried=localStorage.getItem('symbiot_update_tried');}catch(e){}
     if(tried){
       if(p.version!==tried){try{localStorage.removeItem('symbiot_update_tried');}catch(e){} } // advanced → success, clear
-      else if(p.retrying){ // npm hasn't finished publishing it: the app is trying again by itself
-        b.className='updatebar show';b.innerHTML="Updating to "+esc(p.retrying.target)+": npm is still publishing it, so Symbiot tries again every 30 seconds (try "+p.retrying.attempt+" of 5). Nothing to do.";return;
-      }
-      else if(p.latest&&p.newer){ // still on the same version → the install didn't advance
+      else if(p.latest&&p.newer&&p.started!==SRV_UPD){ // restarted, still on the same version → the install didn't advance
         b.className='updatebar reconnect show';
         b.innerHTML="Auto-update to "+esc(p.latest)+" didn't take (still on "+esc(p.version)+"). Run <code>npm install -g symbiot@latest</code> in a terminal, then restart.";
         return;
@@ -2833,7 +3055,9 @@ el.className='whatsnew show';el.innerHTML="<div class='row'><b style='flex:1;col
 +cs.map(function(c){return "<div style='margin-top:8px'><b>"+esc(c.version)+"</b>"+(c.date?" <span class='muted'>"+esc(c.date)+"</span>":"")+"<ul style='margin:4px 0 0 18px;padding:0'>"+c.items.slice(0,12).map(function(x){return "<li>"+md(x)+"</li>";}).join('')+(c.items.length>12?"<li class='muted'>&hellip;and "+(c.items.length-12)+" more</li>":"")+"</ul></div>";}).join('');
 $('wnok').onclick=function(){el.className='whatsnew';if(after)api('/api/whatsnew/seen',{});};}
 function loadWhatsNew(){api('/api/whatsnew').then(function(r){if(r&&r.changes&&r.changes.length)showNews(r,"What's new in Symbiot "+r.version,true);});}
-function doUpdate(){updBusy=true;try{localStorage.setItem('symbiot_update_tried',document.getElementById('ver').textContent.replace(/^v/,''));}catch(e){}var b=ubar();b.className='updatebar show';b.textContent='Updating & restarting… this page will reload itself when it is back.';api('/api/update',{});}
+function doUpdate(){updBusy=true;SRV_UPD=SRV_STARTED;try{localStorage.setItem('symbiot_update_tried',document.getElementById('ver').textContent.replace(/^v/,''));}catch(e){}var b=ubar();b.className='updatebar show';b.textContent='Updating & restarting… this page will reload itself when it is back.';
+  // still waiting for npm's download (or already under way): the heartbeat shows where it is
+  api('/api/update',{}).then(function(r){if(r&&(r.waiting||r.already||r.error)){updBusy=false;if(r.error){b.className='updatebar reconnect show';b.textContent=r.error;}}});}
 setInterval(heartbeat,4000);heartbeat(true);
 window.addEventListener('focus',function(){heartbeat(true);}); // re-check for updates when you come back to the window
 
@@ -2854,10 +3078,10 @@ function lqHome(){lqRemember();LQ.scene='home';LQ.relaySig='';var rl=$('lqrelay'
 function lqLineText(w){var nr=(w.running||[]).length,nq=0,ni=0,nk=(w.ready||[]).length,nw=w.waitingCount||0;(w.projects||[]).forEach(function(p){nq+=p.asks||0;ni+=(p.ideas||[]).length;});
 var bits=[];if(nq)bits.push('<b>'+nq+' question'+(nq>1?'s':'')+' for you</b>');if(nk)bits.push('<b>'+nk+' ready for your OK</b>');if(nr)bits.push(nr+' at work');if(nw)bits.push(nw+' waiting');if(ni)bits.push(ni+' suggested task'+(ni>1?'s':''));
 return bits.length?bits.join(' &middot; '):'All quiet: nothing at work, nothing asking you.';}
-function lqRelayList(w){return lqSortLanes((w.projects||[]).filter(function(p){return p.summary||(p.qs&&p.qs.length)||p.ready||(p.ideas&&p.ideas.length);}).slice());}
+function lqRelayList(w){return lqSortLanes((w.projects||[]).filter(function(p){return p.summary||(p.qs&&p.qs.length)||p.ready||(p.ideas&&p.ideas.length)||(p.handing&&p.handing.length);}).slice());}
 function lqRelayOn(){var S=lqSize();return LQ.scene==='work'&&S.w>=900&&lqRelayList(LQ.workData||{}).length>0;}
 function lqRelay(){var el=$('lqrelay'),ln=$('lqline'),w=LQ.workData||{};if(ln)ln.innerHTML=LQ.scene==='work'?lqLineText(w):'';if(!el)return;
-var ps=lqRelayList(w),sig=JSON.stringify(ps.map(function(p){return [p.repo,p.summary,p.state,p.ready,(p.qs||[]).map(function(q){return q.q;}),(p.ideas||[]).map(function(i){return i.full;}),p.parked];}));
+var ps=lqRelayList(w),sig=JSON.stringify(ps.map(function(p){return [p.repo,p.summary,p.state,p.ready,(p.qs||[]).map(function(q){return q.q;}),(p.ideas||[]).map(function(i){return i.full;}),p.parked,(p.handing||[]).map(function(x){return x.why+handProg(x);})];}));
 if(el.contains&&document.activeElement&&el.contains(document.activeElement)&&el.innerHTML)return;if(sig===LQ.relaySig&&el.innerHTML)return;LQ.relaySig=sig;
 if(!ps.length){el.innerHTML='';return;}
 el.innerHTML=ps.map(function(p,i){var nm=p.name||p.repo,q=(p.qs||[])[0],st=p.parked?'parked':(p.qs&&p.qs.length)?'asks you':p.ready?'ready for your OK':p.state||'';
@@ -2865,6 +3089,7 @@ var h="<section class='rly"+((p.qs&&p.qs.length)||p.ready?' lit':'')+"' data-i='
 if(p.summary)h+="<p class='rlsum' title='"+escQ(p.summary)+"'>"+esc(p.summary)+"</p>";
 if(q)h+="<div class='lqblob rlask'>"+blobBody({kind:'ask',name:nm,repo:p.repo,q:q.q,options:q.options,path:q.path,fix:q.fix,id:q.id,sub:q.sub,draft:q.draft,signInTo:q.signInTo,more:Math.max(0,(p.asks||p.qs.length)-1)},false)+"</div>";
 if(p.ready)h+="<button type='button' class='act rlok'>Review and approve</button>";
+if(p.handing&&p.handing.length)h+="<div class='rlk'>Handed over</div>"+p.handing.map(function(x){var pg=handProg(x);return "<p class='rlsum rlhand' title='"+escQ(x.text)+"'><b>"+esc(x.lane)+"</b>: "+esc(x.why)+(pg?" \u00b7 "+esc(pg):"")+"</p>";}).join('');
 if(p.ideas&&p.ideas.length)h+="<div class='rlk'>Extra tasks it suggests</div>"+p.ideas.map(function(d,j){return "<div class='rli' data-j='"+j+"'><span title='"+escQ(d.full)+"'>"+esc(d.text)+"</span><span class='rlia'><button type='button' class='rladd'>+ task</button><button type='button' class='rlskip'>Skip</button></span></div>";}).join('');
 return h+"<div class='rlf'><button type='button' class='rlopen'>Its tasks &rsaquo;</button><button type='button' class='rlag'>Its agents &rsaquo;</button></div></section>";}).join('');
 el.querySelectorAll('.rly').forEach(function(box){var p=ps[+box.getAttribute('data-i')],q=(p.qs||[])[0],nm=p.name||p.repo;
@@ -2910,7 +3135,7 @@ function lqBuildProjects(){var w=LQ.workData||{},S=lqSize(),cx=S.w/2,cy=S.h*0.5,
 var vx=Math.max(0.5,Math.min(S.s*1.3,(S.w/2-90)/400)),vy=Math.max(0.35,Math.min(S.s*0.8,(S.h-cy-230)/400,(cy-160)/400)),rs=Math.min(S.s,(vx+vy)/1.5);
 var all=lqSortLanes((w.projects||[]).slice()),cap=S.w<700?5:7,ps=all.slice(0,cap),rest=all.slice(cap),slots=Math.max(3,ps.length+(rest.length?1:0));
 ps.forEach(function(p,i){var ang=Math.PI+i*2*Math.PI/slots,load=p.waiting+2*p.ready+(p.running?3:0)+2*Math.min(2,p.asks||0);
-var sub=p.asks?p.asks+' question'+(p.asks>1?'s':'')+' for you':p.ready?'ready for your OK':p.runs>1?p.runs+' agents at work':p.running?(p.running.ask?'has a question for you':p.running.quiet||p.running.looping?runWarn(p.running).replace(/ · $/,''):p.running.line?String(p.running.line)+(p.running.eta?' · '+p.running.eta:''):'agent at work: '+String(p.running.doing||'').toLowerCase()):p.waiting+' task'+(p.waiting>1?'s':'')+' waiting';if(p.parked)sub='parked \\u00b7 '+sub;
+var sub=p.asks?p.asks+' question'+(p.asks>1?'s':'')+' for you':p.ready?'ready for your OK':p.runs>1?p.runs+' agents at work':p.running?(p.running.ask?'has a question for you':p.running.quiet||p.running.looping?runWarn(p.running).replace(/ · $/,''):p.running.line?String(p.running.line)+(p.running.eta?' · '+p.running.eta:''):'agent at work: '+String(p.running.doing||'').toLowerCase()):!p.waiting&&p.handing&&p.handing.length?(p.handing.some(function(x){return !x.gone;})?'a handover not sent yet':'handed over to '+p.handing[0].lane):p.waiting+' task'+(p.waiting>1?'s':'')+' waiting';if(p.parked)sub='parked \\u00b7 '+sub;
 list.push({id:'proj:'+p.repo,kind:'proj',repo:p.repo,shape:'tasks',title:p.name||p.repo,sub:sub,orbit:!!p.running,ask:!!p.lit,lit:!!p.lit,parked:!!p.parked,r:(30+7*Math.min(6,load))*rs,tx:cx+Math.cos(ang)*260*vx,ty:cy+Math.sin(ang)*260*vy});});
 if(rest.length){var am=Math.PI+ps.length*2*Math.PI/slots;list.push({id:'moreproj',kind:'more',title:'+'+rest.length+' more',sub:'quieter: '+rest.map(function(p){return p.name||p.repo;}).join(' · '),lanes:rest.map(function(p){return {repo:p.repo,name:p.name||p.repo,lit:!!p.lit};}),r:24*rs,tx:cx+Math.cos(am)*260*vx,ty:cy+Math.sin(am)*260*vy});}
 
@@ -2965,7 +3190,7 @@ function lqParaGo(g){lqAct();if(g==='p'){lqWorkBy('project');return;}if(g==='a'|
 // project, the question, its two answers), as many across as fit, in a steady
 // order (questions, then Approves, then first steps); the rest a page on.
 var LQ_BLOBW=250,LQ_NEEDY=128;
-function lqNeeds(h,S){var rank={ask:0,approve:1,setup:2},rk=function(y){return y.urgent?(y.id==='setup:ai'?-3:y.id==='setup:agent'?-2:-1):rank[y.kind]||0;},ys=(h.you||[]).slice().sort(function(a,b){return rk(a)-rk(b)||(a.id<b.id?-1:a.id>b.id?1:0);});
+function lqNeeds(h,S){var rank={ask:0,approve:1,setup:2},rk=function(y){return y.urgent?(y.id==='setup:ai'?-3:y.id==='setup:agent'?-2:-1):rank[y.kind]||0;},ys=(h.you||[]).filter(function(y){return !blobSent(y);}).sort(function(a,b){return rk(a)-rk(b)||(a.id<b.id?-1:a.id>b.id?1:0);});
 var nb=lqNextBox(h,S);if(!ys.length)return {items:[],bottom:nb,x:0,page:0,pages:1,count:0};
 var R=Math.round(24*Math.max(0.85,Math.min(1.1,S.s))),unit=3*R+22+LQ_BLOBW,gap=28,cols=Math.max(1,Math.min(3,Math.floor((S.w-24+gap)/(unit+gap)))),pages=Math.max(1,Math.ceil(ys.length/cols));
 LQ.needPage=(LQ.needPage||0)%pages;
@@ -3046,7 +3271,40 @@ if(pc&&pc.away)t="<b>"+esc(pc.name)+" is out of reach.</b> Showing what it sent 
 else if(pc&&pc.old)t="<b>Pair this phone with "+esc(pc.name)+" again:</b> the link between them is sealed now.";
 else if(ap)t=ap.status==='failed'?"<b>Approving "+esc(ap.repo)+" from "+esc(ap.phone)+" failed:</b> "+esc(ap.error||''):(ap.status==='approving'?"Approving ":"Approved ")+esc(ap.repo)+" from "+esc(ap.phone)+" at "+esc(pcTime(ap.at))+".";
 if(b&&b.classList)b.classList.toggle('lq-hline',!!t);if(el&&LQ.scene!=='work'&&el.innerHTML!==t)el.innerHTML=t;}
+// Home on a phone paired with your computer: what you act on there, read at a glance.
+// Not the liquid (its groups, orbs and the computer's work behind a droplet: "the UI on
+// the phone is bloated", 2026-10-12), but a plain list: how fresh the computer's copy
+// is, what needs you there (its agents' questions, its Approves) answered in place,
+// then its tasks, to tick or add (the computer's panel, renderComputer, moved here).
+// What this phone itself needs comes after the computer's (renderComputer puts it there): its questions and Approves as
+// they are, its setup together in one, as Settings has it. The rest of Symbiot is a
+// row along the top, one tap each. false when this isn't a paired phone: the liquid.
+var PH_NAV=['settings','reports','board','map','week','standup','marketing']; // not the Workdesk: the computer's tasks are this list, and the phone's own was empty
+function lqPhone(h){var on=!!(h&&h.computer),b=document.body,el=$('phhome'),slot=$('phpc'),pc=$('panel-computer');LQ.phone=on;
+if(b&&b.classList)b.classList.toggle('lq-phone',on);
+// the computer's view lives on Home while this is a paired phone, and in its panel otherwise
+if(slot&&pc){['pcline','pcmsg','pcbody'].forEach(function(id){var n=$(id),to=on?slot:pc;if(n&&n.parentNode!==to)to.appendChild(n);});
+if(!$('phyou')){var py=document.createElement('div');py.id='phyou';slot.appendChild(py);}}
+if(!on||!el)return false;
+// under the header, however tall it is (taller for a finger)
+var hd=document.querySelector('header'),hb=hd&&hd.getBoundingClientRect?Math.round(hd.getBoundingClientRect().bottom):0;if(hb>0&&el.style)el.style.top=hb+'px';
+var rep=((h.feeds||[]).filter(function(f){return f.id==='feed:reports';})[0]||{}).count||0,mk=h.marketing||null;
+var nav=$('phnav');if(nav&&!sameHtml(nav,PH_NAV.filter(function(s){return s!=='marketing'||mk;}).map(function(s){var n=s==='reports'?rep:s==='marketing'?(mk.needs||0):0;return "<button type='button' data-s='"+s+"'"+(n?" class='lit'":"")+">"+esc(LQNAMES[s]||s)+(n?" <b>"+n+"</b>":"")+"</button>";}).join('')))
+nav.querySelectorAll('button').forEach(function(x){x.addEventListener('click',function(ev){var s=x.getAttribute('data-s');lqAct();if(s==='marketing'&&mk&&mk.needs)MKLIT=true;lqUse(s,ev);lqGo(s);});});
+LQ.drops=[];LQ.need=null;LQ.coreText='';lqLabels();
+phYou(h);
+// fresh from the computer now and then, never while you're typing an answer or a task here
+var fa=document.activeElement,typing=fa&&el.contains&&el.contains(fa)&&/^(INPUT|TEXTAREA|SELECT)$/.test(fa.tagName||'');
+if(!typing&&(!PCV||Date.now()-(LQ.pcAt||0)>20000)){LQ.pcAt=Date.now();loadComputer();}
+return true;}
+function phYou(h){var el=$('phyou');if(!el)return;var ys=(h&&h.you)||[],setup=ys.filter(function(y){return y.kind==='setup';}),rest=ys.filter(function(y){return y.kind!=='setup';}),rows=rest.slice();
+if(setup.length)rows.push({kind:'setup',id:'phone:setup',urgent:setup.some(function(y){return y.urgent;}),shape:'settings',focus:setup[0].focus,title:setup.length>1?setup.length+' things to set up':setup[0].title,sub:setup.length>1?setup.map(function(y){return y.title;}).join(' · '):setup[0].sub});
+if(!sameHtml(el,rows.length?"<div class='pshead'><span>Needs you on this phone &middot; "+rows.length+"</span></div>"+rows.map(function(y,i){return "<button type='button' class='phyi"+(y.urgent?' urgent':'')+"' data-i='"+i+"'><b>"+esc(y.title)+"</b><span>"+esc(y.sub||'')+"</span></button>";}).join(''):''))
+el.querySelectorAll('.phyi').forEach(function(x){x.addEventListener('click',function(ev){var y=rows[+x.getAttribute('data-i')];if(y)lqOpen({kind:'you',item:y,shape:y.shape},ev);});});}
 function lqBuild(){var a=LQ.adapt||{},h=LQ.home||{},S=lqSize(),list=[];LQ.bw=S.w;LQ.bh=S.h;
+// the talk box's hint in full where it fits; on a phone it was cut off mid-word
+var ask=$('lqask'),nar=S.w<520;if(ask&&LQ.askNarrow!==nar){LQ.askNarrow=nar;ask.setAttribute('placeholder',nar?'Tell Symbiot what to do':'Talk to Symbiot, or tell it what to do (paste a screenshot to show it)');}
+if(lqPhone(h))return;
 // the band first: everything else sits under it, round a core centred in what's left
 var need=lqNeeds(h,S),band=lqRunBand(h,S,need.bottom),top=band.bottom||need.bottom,cx=S.w/2,cy=top?Math.max(S.h*0.47,(top+60+S.h-200)/2):S.h*0.47;LQ.cy=cy;LQ.top=top;LQ.need=need;
 // Marketing only once posts can be drafted, or are (home.mjs): a new user meets what they watch first
@@ -3199,7 +3457,7 @@ function blobOpt(o){return String(o||'').replace(/[ ]*[(]recommended[)][ ]*$/i,'
 // week-old one is dropped. One whose question went (answered elsewhere) is said in
 // Home's talk with what you wrote (bdOrphans), never dropped silently.
 var BDKEY='symbiot-blobdrafts',BDKEEP=7*86400000;
-function bdKey(y){return y.path&&y.q?String(y.path)+'|'+String(y.q):String(y.id||'')+'|'+String(y.q||y.sub||'');} // the same question on Home, the Workdesk and a project
+function bdKey(y){var q=y.raw||y.q;return y.path&&q?String(y.path)+'|'+String(q):String(y.id||'')+'|'+String(q||y.sub||'');} // the same question on Home, the Workdesk and a project
 function bdAll(){try{var a=JSON.parse(localStorage.getItem(BDKEY)||'{}');return a&&typeof a==='object'?a:{};}catch(e){return {};}}
 function bdGet(y){var d=bdAll()[bdKey(y)];return d&&d.text?d:null;}
 function bdSet(y,text,s,e,src){var a=bdAll(),k=typeof y==='string'?y:bdKey(y),now=Date.now();if(text)a[k]={text:String(text),at:now,s:s,e:e,name:y.name||y.repo||'',q:y.q||'',src:src||'blob'};else delete a[k];
@@ -3212,28 +3470,40 @@ h+=home?"<button type='button' class='lt' title='open "+escQ(nm)+", with this li
 if(y.kind!=='ask')return h+"<div class='bq'>"+esc(y.kind==='approve'?String(y.sub||'').replace(/ · only you decide$/,''):String(y.sub||'').charAt(0).toUpperCase()+String(y.sub||'').slice(1)+'.')+"</div><div class='bo'><button type='button' class='nopt rec ngo'><span class='bt'>"+(y.kind==='approve'?'Review and approve':y.id==='setup:inbox'?(y.signin?'Sign in again':'Show me your inbox'):y.id==='setup:ai'?'Connect an AI':y.pick?'Use '+y.pick.name:y.urgent?'Reconnect':'Open Settings')+"</span></button></div>";
 var os=y.options||[];if(y.draft)h+=draftHtml(y.draft);h+="<div class='bq' title='"+escQ((y.q||'')+(y.why?' ('+y.why+')':''))+"'>"+esc(y.q||y.sub||'')+"</div>";
 if(y.fix==='handover'&&y.sub)h+="<div class='bfor' title='"+escQ(y.sub)+"'>for: "+esc(y.sub)+"</div>";
+if(y.done)h+="<div class='bdone' title='"+escQ(y.done.text)+"'>"+esc(y.done.lane)+" has done this already: "+esc(y.done.text)+"</div>";
 if(y.signInTo)h+="<div class='bo'><button type='button' class='nopt bsign' title='opens "+escQ(y.signInTo.name)+" in the Symbiot Browser: sign in there, then click Done'><span class='bt'>Sign in to "+esc(y.signInTo.name)+" &rsaquo;</span></button></div>";
 if(os.length)h+="<div class='bo'>"+os.map(function(o,j){return "<button type='button' class='nopt"+(j===0&&/[(]recommended[)]/i.test(o)?' rec':'')+"' data-j='"+j+"' title='"+escQ((y.labels&&y.labels[j])||o)+"'><span class='bt'>"+whoHtml(blobOpt((y.labels&&y.labels[j])||o))+"</span></button>";}).join('')+"</div><button type='button' class='bfree' aria-expanded='false'>"+(y.draft?'Change it':'or answer in your own words')+"</button>";
 h+="<form class='bfx"+(os.length?' hidden':'')+"'><input placeholder='"+(y.draft?'what to change':'your answer')+"' aria-label='"+(y.draft?'what to change in the reply':'your answer to '+escQ(nm))+"'><button type='submit'>"+(y.draft?'Redraft':'Send')+"</button></form>";
 if(home&&y.more)h+="<span class='bmore'>+"+y.more+" more question"+(y.more>1?'s':'')+" after this one</span>";
-return h;}
+return h+"<div class='bst' role='status' aria-live='polite'></div>";}
 // Answering in a blob is answering on the agent's block in Agents (Send answers &
 // continue): saved to its ANSWERS.md, and its agent picks it up. Then it dissolves.
-function wireBlob(box,y,o){o=o||{};var say=o.say||lqSaid,nm=y.name||y.repo||'the agent';
+// A click shows at once: the button pressed, Sending… on the card, then the card goes, or
+// says on itself what went wrong (a word in Home's talk alone went unseen: the Allow
+// pressed again and again on 2026-10-12). One answer per question at a time (BLOBBUSY),
+// through a redraw too, and a card answered stays away until Home has heard (BLOBSENT).
+var BLOBBUSY={},BLOBSENT={},BLOBSENT_FOR=120000;
+function blobSent(y){var t=BLOBSENT[bdKey(y)];return !!t&&Date.now()-t<BLOBSENT_FOR;}
+function wireBlob(box,y,o){o=o||{};var say=o.say||lqSaid,nm=y.name||y.repo||'the agent',key=bdKey(y);
 var lock=function(on){box.querySelectorAll('button,input').forEach(function(b){b.disabled=on;});};
-var send=function(ans,j){ans=String(ans||'').trim();if(!ans||(!y.path&&!y.fix))return;lock(true);
-(y.fix?api('/api/home/answer',j!=null?{id:y.id,pick:j}:{id:y.id,text:ans}):api('/api/agents/answer',{path:y.path,answers:[{q:y.q,a:ans}],rerun:true})).then(function(r){
-if(!r||r.error){lock(false);say(nm+': '+((r&&r.error)||'the answer didn’t save. Try again on its block on the Workdesk.'),true);return;}
-say(y.fix?nm+': '+(r.said||'Done.'):'Sent to '+(r.lane||nm)+'. '+(r.yours&&r.yours.length?'Still yours to do: '+r.yours.join(' '):r.rerun?'Its agent is picking it up now.':(r.note||'Saved in its ANSWERS.md.')));
-bdSet(y,'');if(o.sent)o.sent();if(box.classList)box.classList.add('gone');setTimeout(function(){if(o.done)o.done();},650);}).catch(function(e){lock(false);say(nm+': '+String((e&&e.message)||e),true);});};
-box.querySelectorAll('.nopt[data-j]').forEach(function(b){b.addEventListener('click',function(){var j=+b.getAttribute('data-j');send((y.options||[])[j],j);});});
+var st=function(t,bad){var e=box.querySelector('.bst');if(!e)return;e.textContent=t||'';if(e.classList)e.classList.toggle('err',!!bad);if(o.grew)o.grew();};
+var busy=function(on,b){if(box.classList)box.classList.toggle('sending',on);if(box.setAttribute)box.setAttribute('aria-busy',on?'true':'false');box.querySelectorAll('.pressed').forEach(function(x){x.classList.remove('pressed');});if(on&&b&&b.classList)b.classList.add('pressed');lock(on);};
+var send=function(ans,j,b){ans=String(ans||'').trim();if(!ans||(!y.path&&!y.fix)||BLOBBUSY[key])return;BLOBBUSY[key]=1;busy(true,b);st('Sending…');
+var fail=function(t){delete BLOBBUSY[key];busy(false);st(t,true);say(nm+': '+t,true);};
+(y.fix?api('/api/home/answer',j!=null?{id:y.id,pick:j}:{id:y.id,text:ans}):api('/api/agents/answer',{path:y.path,answers:[{q:y.raw||y.q,a:ans}],rerun:true})).then(function(r){
+if(!r||r.error){fail((r&&r.error)||'the answer didn’t save. Try again on its block on the Workdesk.');return;}
+delete BLOBBUSY[key];BLOBSENT[key]=Date.now();st(r.already?'Answered already.':'Sent.');
+say(y.fix?nm+': '+(r.said||'Done.'):r.already?nm+': '+r.note:'Sent to '+(r.lane||nm)+'. '+(r.yours&&r.yours.length?'Still yours to do: '+r.yours.join(' '):r.rerun?'Its agent is picking it up now.':(r.note||'Saved in its ANSWERS.md.')));
+bdSet(y,'');if(o.sent)o.sent();if(box.classList)box.classList.add('gone');setTimeout(function(){if(o.done)o.done();},650);}).catch(function(e){fail(String((e&&e.message)||e));});};
+if(BLOBBUSY[key]){busy(true);st('Sending…');} // drawn again while its answer is on its way
+box.querySelectorAll('.nopt[data-j]').forEach(function(b){b.addEventListener('click',function(){var j=+b.getAttribute('data-j');send((y.options||[])[j],j,b);});});
 var bs=box.querySelector('.bsign');if(bs)bs.addEventListener('click',function(){bs.disabled=true;openSignIn(y.signInTo,function(t,ok){bs.disabled=false;say(t,!ok);});});
 var fr=box.querySelector('.bfree'),fx=box.querySelector('.bfx'),fi=fx&&fx.querySelector('input');
 if(fi){var dr=bdGet(y);if(dr&&!fi.value){fi.value=dr.text;if(fx.classList)fx.classList.remove('hidden');if(fr)fr.setAttribute('aria-expanded','true');try{if(dr.s!=null)fi.setSelectionRange(dr.s,dr.e!=null?dr.e:dr.s);}catch(e){}}
 var keep=function(){bdSet(y,fi.value,fi.selectionStart,fi.selectionEnd);};['input','keyup','mouseup','select'].forEach(function(t){fi.addEventListener(t,keep);});}
 if(fr&&fx)fr.addEventListener('click',function(){var shut=fx.classList.toggle('hidden');fr.setAttribute('aria-expanded',shut?'false':'true');var i=fx.querySelector('input');if(!shut&&i&&i.focus)i.focus();if(o.grew)o.grew();});
 if(o.grew&&fi&&fx&&!fx.classList.contains('hidden'))setTimeout(o.grew,0); // a draft brought back opened it
-if(fx)fx.addEventListener('submit',function(ev){if(ev&&ev.preventDefault)ev.preventDefault();var i=fx.querySelector('input');send(i&&i.value);});
+if(fx)fx.addEventListener('submit',function(ev){if(ev&&ev.preventDefault)ev.preventDefault();var i=fx.querySelector('input');if(!i||!String(i.value||'').trim()){st('Type your answer first.',true);if(i&&i.focus)i.focus();return;}send(i.value,null,fx.querySelector('button'));});
 var go=box.querySelector('.ngo');if(go)go.addEventListener('click',function(){if(!y.pick){lqFocus(y);return;}
 // Pick your agent: the one Symbiot found, in one click; Settings has the others
 lock(true);api('/api/agentcmd',{cmd:y.pick.tmpl}).then(function(r){if(!r||r.error){lock(false);say((r&&r.error)||'It didn’t save. Pick it in Settings.',true);return;}
@@ -3284,7 +3554,7 @@ function lqRemember(){if(LQ.back)return;LQ.hist=LQ.hist||[];var s=lqState(),top=
 function lqBack(){var h=LQ.hist||[],s=h.pop(),cur=lqState();if(!s){if(cur.pool)s={scene:cur.scene,pool:null};else if(cur.scene==='work')s={scene:'home',pool:null};else return;}
 LQ.back=true;try{if(s.scene==='work'&&(cur.scene!=='work'||cur.by!==s.by)){LQ.workBy=s.by||'task';lqWork();}else if(s.scene==='home'&&cur.scene==='work')lqHome();
 if(s.pool){if(s.arch)lqArchive();else lqPool(s.pool);}else if(LQ.mode==='pool')lqSink();}finally{LQ.back=false;}}
-function lqPool(shape){lqWhy(null);if(shape==='map'&&LM.items&&LM.items.length)setTimeout(function(){lmFit();lmStart();},60);lqRemember();LQ.poolShape=shape;LQ.arch=false;tabPicked=true;setTab(shape);var b=document.body;if(b&&b.classList)b.classList.add('lq-pooled');LQ.mode='pool';var m=document.querySelector('main');if(m){m.scrollTop=0;if(m.focus)m.focus();}}
+function lqPool(shape){if(shape==='computer'&&LQ.phone){lqSink();return;}lqWhy(null);if(shape==='map'&&LM.items&&LM.items.length)setTimeout(function(){lmFit();lmStart();},60);lqRemember();LQ.poolShape=shape;LQ.arch=false;tabPicked=true;setTab(shape);var b=document.body;if(b&&b.classList)b.classList.add('lq-pooled');LQ.mode='pool';var m=document.querySelector('main');if(m){m.scrollTop=0;if(m.focus)m.focus();}}
 function lqSink(){lqWhy(null);lqRemember();LQ.focus=null;var b=document.body;if(b&&b.classList)b.classList.remove('lq-pooled');LQ.mode='aware';lqAct();lqLoad(false);}
 function lqAct(){if(AWAY)return;LQ.lastAct=Date.now();if(LQ.mode==='rest'){LQ.mode='aware';lqLoad(true);}}
 function lqTalkMode(on){LQ.talking=on;var b=document.body;if(b&&b.classList)b.classList.toggle('lq-talking',on);}
@@ -3681,7 +3951,7 @@ lqLoad(true);
 // the only clocks: rest when left alone, fresh data now and then, the hour (night)
 setInterval(function(){if(LQ.mode==='aware'&&!LQ.talking&&Date.now()-LQ.lastAct>LQ_REST)LQ.mode='rest';if(LQ.mode!=='pool')lqLoad(false);var h=new Date().getHours(),n=h>=22||h<6;if(n!==LQ.theme.night)lqTheme();},30000);
 var G=lqGL();if(G){try{lqStep();lqDraw(G);}catch(e){}}if(typeof window.requestAnimationFrame!=='function')return;var raf=function(f){return window.requestAnimationFrame(f);};
-function frame(){if(!document.hidden){LQ.frame++;if(LQ.mode!=='pool'||LQ.frame%3===0)lqStep();var every=(GLSOFT||GLSTILL)?glEvery(LQ.mode==='aware'):LQ.mode==='pool'?6:LQ.mode==='rest'?2:1;if(G&&LQ.frame%every===0)lqDraw(G);}raf(frame);} // moves every frame; drawn less at rest, behind a panel, without a GPU
+function frame(){if(!document.hidden){LQ.frame++;if(LQ.mode!=='pool'||LQ.frame%3===0)lqStep();var every=(GLSOFT||GLSTILL)?glEvery(LQ.mode==='aware'):LQ.mode==='pool'?6:LQ.mode==='rest'?2:1;if(G&&LQ.frame%every===0&&!(LQ.phone&&LQ.scene!=='work'&&LQ.mode!=='pool'))lqDraw(G);}raf(frame);} // moves every frame; drawn less at rest, behind a panel, without a GPU; not at all under a phone's Home list
 raf(frame);}
 
 initGraphEvents();syncP();refresh();firstTab();lqInit();onbLoad();var sbo=$('sbopen');if(sbo)sbo.addEventListener('click',function(){sbOpen('');});var rr=$('rerunsetup');if(rr)rr.addEventListener('click',function(){api('/api/onboarding/restart',{}).then(function(){lqSink();onbLoad();});});awayInit();lqDeep();loadWhatsNew();loadAgentCfg();loadScanRoots();loadKnowledge();loadPhone();loadLinks();loadMind();loadTrusted();loadMail();loadScreensUI();loadMonitorsUI();loadDesktop();loadWatchUI();setInterval(function(){whenFree(document.querySelector('main'),'watch',loadWatchUI);},60000);loadPhoneLink();

@@ -245,12 +245,33 @@ const OPS = {
 // ---- the copy a phone keeps ---------------------------------------------------------------
 // Small and in plain words: your open tasks, what needs you, agents' questions, the
 // work waiting for your Approve (with a sum of exactly what's waiting, which an
-// approve from the phone has to match), what Watch found, and what was approved
-// from a phone lately. v changes only when something in it does.
+// approve from the phone has to match), what Watch found, what was approved from a
+// phone lately, and the newest reports (reportsForPhone). v changes only when something
+// in it does.
 let snapCache = null;
 const plainText = (s, n = 280) => { const t = String(s || "").replace(/\s+/g, " ").trim(); return t.length > n ? t.slice(0, n - 1) + "…" : t; };
 const approveSum = (r) => sha(JSON.stringify([(r.tasks || []).map((t) => t.id).sort(), (r.files || []).map((f) => (typeof f === "string" ? f : f.path || f.file || JSON.stringify(f))).sort(), r.stat || ""])).slice(0, 16);
 const askId = (path) => "ask:" + sha(String(path)).slice(0, 12);
+// The newest few of what this computer's agents wrote up (reports.mjs), so the phone's
+// Reports has them too, to read an audit or a plan away from the desk, offline as well.
+// Each is cut at a paragraph past REPORT_CAP: the copy goes through the relay, which
+// takes 256 KB at most, and the rest is here to read.
+const PHONE_REPORTS = 5, REPORT_CAP = 12000;
+function cutReport(text, cap = REPORT_CAP) {
+  const t = String(text || ""); if (t.length <= cap) return { text: t, cut: false };
+  const head = t.slice(0, cap), k = head.lastIndexOf("\n\n");
+  return { text: (k > cap * 0.5 ? head.slice(0, k) : head).replace(/\s+$/, ""), cut: true };
+}
+async function reportsForPhone({ list } = {}) {
+  if (!list) list = (await import("./reports.mjs")).listReports();
+  return list.slice(0, PHONE_REPORTS).map((r) => {
+    let t = ""; try { t = readFileSync(r.file, "utf8"); } catch { return null; }
+    const c = cutReport(t);
+    return { id: r.id, title: plainText(r.title, 140), name: r.name, lane: r.lane || "", run: r.run || "", mtime: r.mtime, size: r.size, text: c.text, ...(c.cut ? { cut: true } : {}) };
+  }).filter(Boolean);
+}
+// On the phone: the copy, and the computer it's from, for its Reports (server.mjs). null on a computer.
+function computerCopy() { const c = loadConfig().computer, copy = c ? loadCopy() : null; return copy ? { copy, from: copy.name || c.name || "your computer" } : null; }
 async function snapshot({ now = Date.now(), fresh = false } = {}) {
   if (!fresh && snapCache && now - snapCache.at < 5000) return snapCache.snap;
   const tryOr = async (f, d) => { try { return await f(); } catch { return d; } };
@@ -269,7 +290,8 @@ async function snapshot({ now = Date.now(), fresh = false } = {}) {
   const board = watch ? await tryOr(() => watch.watchBoard(24, now), { cards: [] }) : { cards: [] };
   const seen = (board.cards || []).filter((c) => c.count > 0).slice(0, 8).map((c) => ({ name: plainText(c.name, 60), label: plainText(c.label, 60), count: c.count, items: (c.items || []).filter((i) => i.need !== false).slice(0, 3).map((i) => ({ text: plainText(i.text, 140), ts: i.ts })) }));
   const recent = (readJson(PATHS.applied, {}).approvals || []).filter((a) => now - a.at < 24 * 3600000).slice(-10);
-  const body = { tasks, needs, asks, approves, watch: seen, recent, relay: linkCfg().relay && relayAllowed() };
+  const reports = await tryOr(() => reportsForPhone(), []);
+  const body = { tasks, needs, asks, approves, watch: seen, recent, reports, relay: linkCfg().relay && relayAllowed() };
   const snap = { v: sha(JSON.stringify(body)).slice(0, 16), name: hostname(), at: now, ...body };
   snapCache = { at: now, snap };
   return snap;
@@ -546,7 +568,7 @@ function computerView() {
   const st = computerState(), copy = loadCopy(), q = loadQueue();
   if (!copy) return { ...st, copy: null };
   const v = JSON.parse(JSON.stringify(copy));
-  for (const k of ["tasks", "needs", "asks", "approves", "watch", "recent", "notes"]) if (!Array.isArray(v[k])) v[k] = [];
+  for (const k of ["tasks", "needs", "asks", "approves", "watch", "recent", "notes", "reports"]) if (!Array.isArray(v[k])) v[k] = [];
   for (const o of q) {
     const a = o.args || {};
     if (o.op === "task.add") v.tasks.unshift({ id: "q:" + o.id, text: plainText(a.text), repo: a.repo || "", done: false, waiting: true });
@@ -572,14 +594,37 @@ function queueChange(op, args = {}) {
   if (process.env.SYMBIOT_NO_POLL !== "1") setTimeout(() => { pollComputer().catch(() => {}); }, 30).unref();
   return computerView();
 }
+// What waits on you there, each by a key that holds while it waits: an agent's
+// questions (by what they ask, so a new question tells you again), work waiting for
+// your Approve (by its tasks: a file more isn't news, a task more is), and Home's
+// other needs. Watch's news is told on its own (newsNotice), so it isn't here.
+function waitingOn(s) {
+  const out = new Map();
+  for (const a of (s && s.asks) || []) { const qs = (a.questions || []).map((q) => q.q); out.set(a.id + ":" + sha(JSON.stringify(qs)).slice(0, 8), `${a.name} asks: ${qs[0] || "a question"}`); }
+  for (const r of (s && s.approves) || []) { const ids = (r.tasks || []).map((t) => t.id).sort(), n = ids.length;
+    out.set("approve:" + r.repo + ":" + sha(JSON.stringify(ids)).slice(0, 8), `${r.repo}: ${n ? `${n} task${n > 1 ? "s" : ""} done` : "changes without a task"}, waiting for your Approve`); }
+  for (const n of (s && s.needs) || []) out.set("need:" + n.id, n.sub ? `${n.title}: ${n.sub}` : n.title);
+  return out;
+}
+// What's newly waiting since the copy before, as one notification (a poll that finds
+// three things buzzes once), or null. Nothing for the first copy after pairing: what
+// was already waiting isn't news. What went (answered, approved) says nothing.
+function waitingNotice(was, now, name = "your computer") {
+  if (!was || !now) return null;
+  const before = waitingOn(was), fresh = [...waitingOn(now)].filter(([k]) => !before.has(k)).map(([, t]) => plainText(t, 160));
+  if (!fresh.length) return null;
+  const more = fresh.length > 4 ? `\nand ${fresh.length - 4} more` : "";
+  return [`${fresh.length === 1 ? "1 thing needs" : `${fresh.length} things need`} you · ${name}`, fresh.slice(0, 4).join("\n") + more];
+}
 function dismissNote(id) { const c = loadCopy(); if (c) saveCopy(c, { notes: (c.notes || []).filter((n) => n.id !== id) }); return computerView(); }
 // Ask the computer: send what was queued here, then what's new (notified, one
-// notification per watch per read), then the copy (unchanged costs nothing).
+// notification per watch per read), then the copy (unchanged costs nothing), and
+// tell what newly waits on you in it (waitingNotice).
 async function pollComputer(opts = {}) { if (polling) return polling; polling = pollOnce(opts).finally(() => { polling = null; schedulePoll(); }); return polling; }
 async function pollOnce({ fetchFn = fetch, notify = desktopNotify, discover } = {}) {
   const c = loadConfig().computer; if (!c) return { ...computerState(), shown: 0 };
   if (!readSecret()) return { ...computerState(), shown: 0 };
-  const via = { fetchFn, ...(discover ? { discover } : {}) };
+  const via = { fetchFn, ...(discover ? { discover } : {}) }, was = loadCopy();
   const away = () => { fails++; pollErr = `Couldn't reach ${c.name}${fails > 1 ? "" : `. It's asked again in ${BACKOFF[0] / 1000} seconds`} (it may be off or asleep${c.relay ? "" : ", or on another network"}).`; return { ...computerState(), shown: 0 }; };
   const refused = (r) => {
     pollErr = (r.body && r.body.error) || `${c.name} answered ${r.status}.`; fails = 0;
@@ -612,7 +657,9 @@ async function pollOnce({ fetchFn = fetch, notify = desktopNotify, discover } = 
   const copy = loadCopy(), st = await ask("state", { etag: (copy && copy.v) || "" }, via);
   if (st.status === 200 && st.body && st.body.v) { saveCopy(st.body); const cfg = loadConfig(); if (cfg.computer && !!cfg.computer.relayOff !== (st.body.relay === false)) { cfg.computer.relayOff = st.body.relay === false; saveConfig(cfg); } }
   else if (st.status === 304 && copy) saveCopy(copy);
-  return { ...computerState(), shown: batches.size };
+  const waiting = waitingNotice(was, loadCopy(), c.name);
+  if (waiting) notify(...waiting);
+  return { ...computerState(), shown: batches.size + (waiting ? 1 : 0) };
 }
 // Every 2 minutes; after a failed ask sooner (15 s, 30 s, a minute), so a phone
 // that changed networks or a computer that woke is back without a wait.
@@ -629,6 +676,6 @@ const phoneState = () => (PHONE ? computerView() : linkState());
 // While the app runs: the computer listens if it's switched on; the phone asks if it's paired.
 function startPhone() { if (PHONE) startComputerPoll(); else startPhoneLink(); }
 
-export { PORT, PHONE, ANDROID_APP, PHONE_OPS, lanAddresses, mdnsAddresses, linkState, newCode, unpairPhone, setRelay, startPhoneLink, stopPhoneLink, setPhoneLink, setPhoneApprove, phoneApprovals, snapshot,
-  computerUrl, parsePairLink, pairLink, computerState, computerView, findComputers, pairComputer, forgetComputer, pollComputer, queueChange, dismissNote, startComputerPoll, phoneState, startPhone,
+export { computerCopy, reportsForPhone, cutReport, PHONE_REPORTS, REPORT_CAP, PORT, PHONE, ANDROID_APP, PHONE_OPS, lanAddresses, mdnsAddresses, linkState, newCode, unpairPhone, setRelay, startPhoneLink, stopPhoneLink, setPhoneLink, setPhoneApprove, phoneApprovals, snapshot,
+  computerUrl, parsePairLink, pairLink, computerState, computerView, waitingNotice, findComputers, pairComputer, forgetComputer, pollComputer, queueChange, dismissNote, startComputerPoll, phoneState, startPhone,
   newKeys, linkKey, fingerprint, seal, unseal, relayOf, answer };

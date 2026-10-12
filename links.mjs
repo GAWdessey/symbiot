@@ -24,6 +24,7 @@ import { readFileSync } from "node:fs";
 import { CONFIG_DIR, loadConfig, saveConfig } from "./core.mjs";
 import { siteUrl, signIn, readPage, trustedSites, trustSite, untrustSite } from "./headless.mjs";
 import { watchState, addWatch, removeWatch, checkWatch, GITHUB_INBOX } from "./watch.mjs";
+import { loadRuns, agentQuestions, answerQuestions } from "./agents.mjs";
 
 // The standard sites. url is where you sign in and, with watch, the page that's
 // read for what's new; hosts are trusted along with it.
@@ -136,11 +137,60 @@ async function checkLink(id, { check = checkWatch, read = readPage } = {}) {
   if (l[id].watch) { const r = await check(l[id].watch); if (r && r.busy) return { busy: true, item: linksState().items.find((x) => x.id === id) }; }
   else {
     const p = await read(e.url, { password: true });
-    if (p && p.busy) return { busy: true, item: linksState().items.find((x) => x.id === id) };
+    if (p && (p.busy || WINDOW_OPEN.test(p.error || ""))) return { busy: true, item: linksState().items.find((x) => x.id === id) };
     const l2 = linked(); if (!l2[id]) return { error: `${e.name} isn't linked.` };
     l2[id] = { ...l2[id], ok: !!(p && !p.error && !p.login), checked: Date.now() }; saveLinked(l2);
   }
   return { ok: true, item: linksState().items.find((x) => x.id === id) };
+}
+const WINDOW_OPEN = /Symbiot Browser is open/;
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+// Once the Symbiot Browser closes (Done, or its X: server.mjs): each linked site not read
+// signed in yet is read now. One the hidden browser can't take yet (an agent's page open in
+// it, or the window not quite gone) is tried again a little later, so a check never just
+// doesn't happen. Gives the items read signed in.
+async function checkSignIns({ check = checkLink, tries = 6, wait = 10000 } = {}) {
+  let todo = linksState().items.filter((x) => x.state !== "off" && x.state !== "ok").map((x) => x.id);
+  const now = [];
+  for (let i = 0; i < tries && todo.length; i++) {
+    if (i) await sleep(wait);
+    const again = [];
+    for (const id of todo) {
+      let r = null; try { r = await check(id); } catch {}
+      const it = r && r.item;
+      if (it && it.state === "ok") now.push(it);
+      else if (r && (r.busy || (it && WINDOW_OPEN.test(it.note || "")))) again.push(id);
+    }
+    todo = again;
+  }
+  return now;
+}
+// A question an agent left asking you to sign in to a site ("sign in to www.reddit.com in the
+// Symbiot Browser, then click Done"), once that site reads signed in: answered for you, and its
+// agent carries on. Before, it sat on Home after the sign-in it asked for was done. Gives
+// [{ path, q }] answered.
+function settleSignIns(items, { paths, ask = agentQuestions, answer = answerQuestions } = {}) {
+  const list = catalog().list, hosts = (items || []).flatMap((x) => { const e = list.find((c) => c.id === x.id); return e ? e.hosts.map((h) => ({ h, name: e.name })) : []; });
+  if (!hosts.length) return [];
+  const on = (site) => { const h = hostOf(siteUrl(site)); return h.includes(".") && hosts.find((x) => h === x.h || h.endsWith("." + x.h) || x.h.endsWith("." + h)); };
+  if (!paths) { try { paths = [...new Set(loadRuns().map((r) => r.path).filter(Boolean))]; } catch { paths = []; } }
+  const done = [];
+  for (const path of paths) {
+    let qs = []; try { qs = ask(path, "").questions || []; } catch {}
+    const rows = qs.map((q) => { const s = signInAsked([q.q, ...(q.options || [])].join("\n")), x = s && on(s.site); return x ? { q: q.q, a: `Done: you're signed in to ${x.name} in the Symbiot Browser now (Symbiot read it signed in just now), so carry on with it.` } : null; }).filter(Boolean);
+    if (!rows.length) continue;
+    let r = null; try { r = answer(path, rows.map((x) => ({ q: x.q, a: x.a })), { rerun: true }); } catch {}
+    if (r && r.ok) done.push(...rows.map((x) => ({ path, q: x.q })));
+  }
+  return done;
+}
+// Done in the Symbiot Browser, its X, or its last window going (server.mjs): the sites are
+// checked, and the questions that settles answered. One at a time, so Done and the window
+// closing because of it are checked once. Gives { signedIn, answered }.
+let CHECKING = null;
+function sitesCheck({ check = checkSignIns, settle = settleSignIns, after = 1500 } = {}) {
+  return CHECKING || (CHECKING = sleep(after).then(() => check()).then((ok) => ({ signedIn: ok, answered: settle(ok) }))
+    .catch(() => ({ signedIn: [], answered: [] })).finally(() => { CHECKING = null; }));
 }
 // Unlink: stop watching it, and untrust the hosts this link trusted (never ones
 // you trusted yourself). A host another link still uses (Outlook and Outlook
@@ -191,4 +241,4 @@ function signInAsked(text) {
   return null;
 }
 
-export { CATALOG, catalog, cleanEntry, linksState, linkSite, checkLink, unlinkSite, addSite, ownSites, signInAsked, OWN };
+export { CATALOG, catalog, cleanEntry, linksState, linkSite, checkLink, checkSignIns, settleSignIns, sitesCheck, unlinkSite, addSite, ownSites, signInAsked, OWN };

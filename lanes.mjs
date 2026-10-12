@@ -14,15 +14,17 @@
 // result?, reportedAt? }] }. status: started, held (that lane's agent was busy:
 // it starts when it's free), blocked (it didn't start, and nothing running there will
 // start it: note says why), done (reported back) or error (reported back too).
-// chain: how many handovers in a row led here; past MAX_CHAIN it stops, so two
-// lanes can't hand the same thing back and forth forever.
+// chain: how many handovers in a row led here; past MAX_CHAIN no agent is started on
+// it, so two lanes can't hand the same thing back and forth forever. To a repo it's
+// still added to that lane's tasks (blocked), for its next run: dropped, ops's
+// User-Agent fix for symbiot was only found in lanes.json (2026-10-12).
 import { join, basename, dirname, resolve, relative } from "node:path";
 import { homedir } from "node:os";
 import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, chmodSync, statSync } from "node:fs";
 import { createHash, randomBytes } from "node:crypto";
 import { execFile } from "node:child_process";
 import { CONFIG_DIR, loadTasks, clipWords } from "./core.mjs";
-import { runHandoff, runningHandoff, waitingFor, agentQuestions, findOrcaCli, installAllowlist, writeTasks } from "./agents.mjs";
+import { runHandoff, runningHandoff, waitingFor, agentQuestions, findOrcaCli, installAllowlist, writeTasks, workOf } from "./agents.mjs";
 import { addTask, removeTask, pushTasks } from "./tasks.mjs";
 import { actNow, actBrief } from "./mind.mjs";
 import { laneMap } from "./scan.mjs";
@@ -86,7 +88,7 @@ function dispatch(path, { map = laneMap(), act = actNow, run = runHandoff, add =
   const from = { lane: laneOf(path, map), path }, parent = ledger.handoffs.filter((h) => h.to.path === path).pop(), chain = (parent ? parent.chain : 0) + 1;
   const started = [];
   for (const h of asked) {
-    const key = createHash("sha1").update(path + "\n" + h.lane.toLowerCase() + "\n" + h.text).digest("hex").slice(0, 16);
+    const key = keyOf(path, h);
     if (ledger.handoffs.some((x) => x.key === key || (x.was || []).includes(key))) continue;
     const prior = supersedes(h, from, ledger, { running, tasks });
     if (prior) {
@@ -106,8 +108,8 @@ function dispatch(path, { map = laneMap(), act = actNow, run = runHandoff, add =
       started.push(prior); continue;
     }
     const e = { id: randomBytes(4).toString("hex"), key, from, to: { lane: h.lane, path: "" }, text: h.text, at: now, chain, status: "started" };
-    const to = laneTarget(h.lane, map);
-    if (chain > MAX_CHAIN) Object.assign(e, { status: "error", error: `${MAX_CHAIN} handovers in a row led here, so this one wasn't started. Do it yourself, or ask the user.` });
+    const to = laneTarget(h.lane, map), looped = chain > MAX_CHAIN;
+    if (looped && (!to || to.lane === OPS || to.lane.toLowerCase() === from.lane.toLowerCase())) Object.assign(e, { status: "error", error: `${MAX_CHAIN} handovers in a row led here, so this one wasn't started. Do it yourself, or ask the user.` });
     else if (!to) Object.assign(e, { status: "error", error: `There's no lane called ${h.lane}. Lanes: ops, or a repo: ${Object.keys(map).slice(0, 30).join(", ")}.` });
     else if (to.lane.toLowerCase() === from.lane.toLowerCase()) Object.assign(e, { status: "error", error: `${to.lane} is your own lane: do it yourself.` });
     else if (to.lane === OPS) {
@@ -119,12 +121,13 @@ function dispatch(path, { map = laneMap(), act = actNow, run = runHandoff, add =
       if (t.error) Object.assign(e, { status: "error", error: t.error });
       else {
         push({ repo: to.lane });
-        const r = run(to.path) || {};
-        Object.assign(e, { to, task: t.id, ...startedAs(r) });
+        if (looped) Object.assign(e, { to, task: t.id, status: "blocked", note: `${MAX_CHAIN} handovers in a row led here, so no agent was started on it: it waits in ${to.lane}'s tasks for its next run` });
+        else { const r = run(to.path) || {}; Object.assign(e, { to, task: t.id, ...startedAs(r) }); }
       }
     }
     ledger.handoffs.push(e); started.push(e);
   }
+  noteSent(path, asked, ledger);
   return started;
 }
 
@@ -179,6 +182,73 @@ function partlyDone(path, { ledger = loadLedger() } = {}) {
   for (const h of parseHandoffs(readSym(path, "HANDOFF.md"))) if (!mine.some((x) => x.to.lane.toLowerCase() === h.lane.toLowerCase() && x.text === h.text)) handed.push({ lane: h.lane, text: clipWords(firstLine(h.text), 90) });
   return questions || handed.length ? { questions, handed: handed.slice(0, 3) } : null;
 }
+// What a folder handed over that hasn't come back yet, each with where it stands,
+// for that lane's block (Agents, Home): the sections of its HANDOFF.md not sent
+// yet, and the ledger's handovers from it, with how far the receiving run has got.
+// whatsapp_module's test-number handover sat from 07:33 (2026-10-12) behind ops's
+// run on its earlier version, and nothing on its block said so, so the user
+// answered as if ops already had it. [{ lane, text, gone, why, doing?, progress? }]:
+// gone, its lane has it (why says how it's going); otherwise why says what it waits on.
+const keyOf = (path, h) => createHash("sha1").update(path + "\n" + h.lane.toLowerCase() + "\n" + h.text).digest("hex").slice(0, 16);
+const findSent = (ledger, key) => ledger.handoffs.slice().reverse().find((x) => x.key === key) || ledger.handoffs.slice().reverse().find((x) => (x.was || []).includes(key));
+// What the run there is doing and how far through its tasks it is.
+function runWork(p) { try { const { work, progress } = workOf(p, readSym(p, "agent.log")); const t = work && (work.todos || []).find((x) => x.status === "in_progress"); return { doing: clipWords(String((t && t.active) || (work && work.doing) || ""), 100), progress }; } catch { return {}; } }
+function handingOf(path, { ledger, map, running = runningHandoff, now = Date.now(), changedAt, work = runWork } = {}) {
+  if (!path) return [];
+  ledger = ledger || loadLedger();
+  const asked = parseHandoffs(readSym(path, "HANDOFF.md"));
+  const mine = ledger.handoffs.filter((x) => x.from.path === path && !x.skipped && now - (x.at || 0) < STUCK_FOR && (x.status === "error" ? !pastIt(x, ledger.handoffs) : !x.reportedAt && x.status !== "done")); // one that couldn't go stays until you Allow or Skip it
+  if (!asked.length && !mine.length) return [];
+  map = map || laneMap();
+  if (changedAt == null) try { changedAt = statSync(join(path, ".symbiot", "HANDOFF.md")).mtimeMs; } catch { changedAt = now; }
+  const scanned = path.startsWith(ACT_DIR) || Object.values(map).includes(path), out = [];
+  const short = (t) => clipWords(firstLine(t).replace(/\*\*/g, ""), 120);
+  for (const h of asked) {
+    if (findSent(ledger, keyOf(path, h))) continue; // sent: the ledger's row says where it stands
+    const age = now - changedAt, row = (why) => out.push({ lane: h.lane, text: short(h.text), gone: false, why });
+    if (!scanned) row("Not sent: Symbiot doesn't have this folder as a lane, so it never reads its HANDOFF.md");
+    else if (age < 60000) row("Not sent yet: Symbiot picks it up within 20 seconds");
+    else row(`Not sent after ${ago(age)}: Symbiot only sends handovers while its app is open`);
+  }
+  for (const e of mine.slice().reverse()) {
+    const row = (gone, why, more = {}) => out.push({ lane: e.to.lane, text: short(e.text), gone, why, ...more });
+    if (e.status === "error") { row(false, `Couldn't hand it over: ${e.error || "it didn't start"}`); continue; }
+    const p = e.to.path, going = !!(p && running(p)), began = p ? lastRunStart(p) : 0;
+    if (began < e.at && going) row(true, e.superseded ? `Sent: ${e.to.lane} is on the earlier version now (its run started ${ago(now - began)} ago), and gets this one when that run ends` : `Sent, and queued: ${e.to.lane}'s agent is busy, and starts on it when that run ends`);
+    else if (began < e.at && e.status === "blocked") row(false, `Sent, but it didn't start: ${e.note || "its agent didn't start"}`);
+    else if (began < e.at) row(true, `Sent: ${e.to.lane}'s agent starts on it when it's free`);
+    else if (going) { const w = work(p) || {}; row(true, "Sent: its agent is on it now", { ...(w.doing ? { doing: w.doing } : {}), ...(w.progress ? { progress: w.progress } : {}) }); }
+    else if (openQuestions(p)) row(true, "Sent: its agent asked you something first");
+    else row(true, "Sent: its run ended, and what it did comes back within 20 seconds");
+  }
+  return out.slice(0, 6);
+}
+const ago = (ms) => { const m = Math.round(ms / 60000); return m < 1 ? "under a minute" : m < 120 ? `${m} min` : `${Math.round(m / 60)} hours`; };
+// Once what's in a HANDOFF.md has gone, the file says so instead of still reading
+// like a handover waiting to go: whatsapp_module's agent saw its file still there
+// and told the user it hadn't been sent, while ops had both its handovers running
+// (2026-10-12). The sections become a dated list of what went where, newest first;
+// a new "### <lane>" section added to it is sent as usual.
+const stamp = (t) => { const d = new Date(t), p = (n) => String(n).padStart(2, "0"); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`; };
+function sentState(e, key) {
+  if (e.status === "error") return `couldn't hand it over: ${String(e.error || "it didn't start").replace(/\.$/, "")}`;
+  if (e.key !== key) return "sent earlier, and replaced since by a newer version";
+  if (e.superseded) return e.to.lane === OPS ? "replaces the version sent earlier: ops's run on that one gets it when it ends" : `replaces the version sent earlier, as a task in ${e.to.lane}`;
+  if (e.status === "held") return `queued in ${e.to.lane}: its agent was busy, and starts on it when that run ends`;
+  if (e.status === "blocked") return `added to ${e.to.lane}'s tasks, but its agent didn't start (${String(e.note || "").replace(/\.$/, "")})`;
+  return `${e.to.lane}'s agent started on it`;
+}
+function noteSent(path, asked, ledger) {
+  const file = join(path, ".symbiot", "HANDOFF.md");
+  const rows = asked.map((h) => { const key = keyOf(path, h), e = findSent(ledger, key); return e ? `- ${stamp(e.at || Date.now())} → **${e.to.lane}**: ${sentState(e, key)}. "${clipWords(firstLine(h.text).replace(/\*\*/g, ""), 100)}"` : null; });
+  if (!rows.length || rows.some((r) => !r)) return false;
+  const had = readSym(path, "HANDOFF.md");
+  if (JSON.stringify(parseHandoffs(had)) !== JSON.stringify(asked)) return false; // its agent is writing to it: next pass
+  const lines = had.split("\n"), at = lines.findIndex((l) => /^##\s+Sent\s*$/.test(l)), before = [];
+  if (at >= 0) for (const l of lines.slice(at + 1)) { if (/^#/.test(l)) break; if (/^- /.test(l)) before.push(l); }
+  const md = `# Handovers: sent\nSymbiot sent what was in this file to its lane, so nothing here waits to go. Each lane's agent works on it (the Agents tab shows how far it has got), and what it did comes back to you in \`.symbiot/ANSWERS.md\`. To hand over something else, or a changed version of one below, add a \`### <lane>\` section to this file: Symbiot sends it within 20 seconds.\n\n## Sent\n${[...rows, ...before].slice(0, 12).join("\n")}\n`;
+  try { writeFileSync(file, md); return true; } catch { return false; }
+}
 // Tell the agent that asked: the result as an answer in its ANSWERS.md, then
 // start it again to carry on (unless it's still running: it reads it next time).
 // Not past a step of the user's it waits on (a key for .env, "don't start another
@@ -230,6 +300,26 @@ function alike(a, b) {
   const x = keyWords(a), y = keyWords(b), [s, l] = x.size <= y.size ? [x, y] : [y, x]; if (s.size < 3) return false;
   let n = 0; for (const w of s) if (l.has(w)) n++;
   return n / s.size >= 0.5;
+}
+// A lane's question about work it handed over, once that work is done: whatsapp_module
+// asked "Can I reach sts-prod myself to put the WhatsApp module back?" after its two
+// handovers to ops stopped, and kept asking on Home after ops had put it back and ticked
+// it (2026-10-12). It's out of date when three quarters of its words (sts-prod counts
+// whole) are in one of this lane's handovers from the last week, the one it's most about,
+// and the lane that took it has ticked it in its TASKS.md. { lane, text } for the card, or null.
+const DONE_WITHIN = 7 * 86400000, ASK_SKIP = new Set(["can", "the", "and", "for", "you", "now", "how", "its", "it's", "myself", "yourself", ...COMMON]);
+const askWords = (s) => new Set(String(s || "").toLowerCase().replace(/[^a-z0-9\s'-]/g, " ").split(/\s+/).map((w) => w.replace(/^[-']+|[-']+$/g, "")).filter((w) => w.length > 2 && !ASK_SKIP.has(w)).map((w) => w.replace(/s$/, "")));
+function doneSince(path, q, { ledger = loadLedger(), now = Date.now(), read = readSym } = {}) {
+  const want = askWords(q); if (!path || want.size < 3) return null;
+  let best = null, top = 0.75; // the handover it's most about, newest first on a tie
+  for (const h of ledger.handoffs.slice().reverse()) {
+    if (h.from.path !== path || h.skipped || h.status === "error" || !h.to.path || now - (h.at || 0) > DONE_WITHIN) continue;
+    const has = askWords(firstLine(h.text)); let n = 0; for (const w of want) if (has.has(w)) n++;
+    if (n / want.size > top || (!best && n / want.size === top)) { best = h; top = n / want.size; }
+  }
+  if (!best) return null;
+  const head = firstLine(best.text), ticked = read(best.to.path, "TASKS.md").split("\n").filter((l) => /^\s*(?:[-*+]|\d+[.)])\s*\[[xX]\]/.test(l));
+  return ticked.some((l) => alike(l, head)) ? { lane: best.to.lane, text: clipWords(head.replace(/\*\*/g, "").replace(/^What['’]s needed:\s*/i, ""), 120) } : null;
 }
 // The folders a handover names that a run would need: ones on this computer, not
 // the asking run's own, not Symbiot's, not your home itself or a hidden one in it
@@ -352,4 +442,4 @@ function lanesState() {
   return { handoffs: out.slice(0, 30) };
 }
 
-export { LEDGER, MAX_CHAIN, loadLedger, laneOf, lastRunStart, dispatch, outcome, report, lanesTick, lanesState, aboutIt, partlyDone, remoteKey, orcaMoves, orcaRelink, stuckHandovers, allowHandover, skipHandover, namedDirs, alike };
+export { LEDGER, MAX_CHAIN, loadLedger, laneOf, lastRunStart, dispatch, outcome, report, handingOf, lanesTick, lanesState, aboutIt, partlyDone, remoteKey, orcaMoves, orcaRelink, stuckHandovers, allowHandover, skipHandover, namedDirs, alike, doneSince };

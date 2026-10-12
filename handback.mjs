@@ -33,7 +33,7 @@ import { remember, actIn } from "./mind.mjs";
 import { newsSince, watchState, isMail, isSignedOut } from "./watch.mjs";
 import { inboxMail } from "./mail.mjs";
 import { desktopNotify } from "./desktop.mjs";
-import { laneMap } from "./scan.mjs";
+import { laneMap, me } from "./scan.mjs";
 
 const AWAIT_FILE = join(CONFIG_DIR, "awaiting.json");
 const RUNS_DIR = join(CONFIG_DIR, "drafts"); // runs of their own (act-…) and drafted replies
@@ -99,20 +99,33 @@ function collectWaits(d, { map, running = runningHandoff, now = Date.now() }) {
 // subject from someone it went to (anyone, when it doesn't say whom). From
 // Watch: an inbox row (sender, subject, preview) that shows its subject, new
 // since it was sent: Gmail lists a thread in the inbox once someone answers.
-function answers(w, m) {
+// Never the user's own mail: not from one of `mine` (their addresses), and not a
+// row whose newest message is theirs. Gmail starts a row with who's on the thread,
+// the newest last ("Cale, Jono, me 5, Fwd: winlove setup, …"), so a thread the user
+// just wrote on lists "me" last. That row started an ops agent on a reply Jono
+// hadn't sent: it was Garth's own email to him (2026-10-12).
+function answers(w, m, mine = []) {
   if (!(m.ts > w.sent)) return false;
   const want = subjectCore(w.subject); if (want.length < 4) return false;
   if (m.subject !== undefined) {
     if (subjectCore(m.subject) !== want) return false;
+    if (m.from && mine.includes(String(m.from.addr || "").toLowerCase())) return false;
     const to = addrs(w); return !to.length || (!!m.from && to.includes(m.from.addr));
   }
-  return String(m.text || "").toLowerCase().replace(/\s+/g, " ").includes(want.slice(0, 80));
+  if (m.mine || m.from === "you") return false;
+  const text = String(m.text || "").toLowerCase().replace(/\s+/g, " "), at = text.indexOf(want.slice(0, 80));
+  return at >= 0 && lastSender(text.slice(0, at)) !== "me";
 }
+// The newest sender in what a row says before its subject ("cale, jono, me 5, fwd: "
+// → "me"): the last name, past the message count and any Re:/Fwd:.
+const lastSender = (lead) => (lead.replace(/(?:\b(?:re|fwd?|aw|sv|antw|wg)\s*(?:\[\d+\])?\s*:\s*)+$/i, "").replace(/[\s,·:;|-]*(?:\(?\d+\)?)?[\s,·:;|-]*$/, "").split(/[\s,·]+/).pop() || "");
+// The user's own addresses: those under Email, and git's.
+const myAddrs = () => { let m = {}; try { m = loadConfig().mail || {}; } catch {} return [...(Array.isArray(m.addresses) ? m.addresses : []), me().email].map((a) => String(a || "").trim().toLowerCase()).filter((a) => a.includes("@")); };
 // The reply to `w` among what came in, oldest first, or null: { ts, from, subject, via }.
-function replyTo(w, { news = [], inbox = [] }) {
-  const mail = inbox.filter((m) => answers(w, m)).sort((a, b) => a.ts - b.ts)[0];
+function replyTo(w, { news = [], inbox = [], mine = [] }) {
+  const mail = inbox.filter((m) => answers(w, m, mine)).sort((a, b) => a.ts - b.ts)[0];
   if (mail) return { ts: mail.ts, from: (mail.from && (mail.from.name || mail.from.addr)) || "", subject: mail.subject, via: "your inbox on this computer" };
-  const n = news.filter((x) => answers(w, x)).sort((a, b) => a.ts - b.ts)[0];
+  const n = news.filter((x) => answers(w, x, mine)).sort((a, b) => a.ts - b.ts)[0];
   return n ? { ts: n.ts, from: "", subject: w.subject, via: `Watch (${n.name || "your inbox"})`, text: clipWords(n.text, 300) } : null;
 }
 
@@ -151,14 +164,15 @@ function handOn(w, r, { map, act = actIn, notify = desktopNotify, now = Date.now
 // One pass, from the app every minute: take in new waits, look for their
 // replies, and hand on the ones that came in. `news`, `inbox`, `act`, `notify`
 // and `running` can be given (the tests do).
-function awaitTick({ map = laneMap(), now = Date.now(), news, inbox, act, notify, running } = {}) {
+function awaitTick({ map = laneMap(), now = Date.now(), news, inbox, mine, act, notify, running } = {}) {
   const d = loadWaits(), added = collectWaits(d, { map, running, now }), open = d.waits.filter((w) => w.status === "waiting");
   const replied = [];
   if (open.length) {
     const since = Math.min(...open.map((w) => w.sent));
     if (!news) { const mailWatch = new Set(watchState().watches.filter((x) => isMail(x.url)).map((x) => x.id)); news = newsSince(Math.max(1, (now - since) / 3600000) + 1, now).filter((n) => mailWatch.has(n.watch)); }
     if (!inbox) { const m = loadConfig().mail || {}; inbox = m.enabled ? inboxMail({ since, sources: Array.isArray(m.sources) ? m.sources : [] }) : []; }
-    for (const w of open) { const r = replyTo(w, { news, inbox }); if (r) { handOn(w, r, { map, act, notify, now }); replied.push(w); } }
+    if (!mine) mine = myAddrs();
+    for (const w of open) { const r = replyTo(w, { news, inbox, mine }); if (r) { handOn(w, r, { map, act, notify, now }); replied.push(w); } }
   }
   if (added.length || replied.length) saveWaits(d);
   return { added, replied };

@@ -8,15 +8,16 @@
 //   - delete outside the agent's own folder, or wipe a disk
 //   - sudo, or pipe something from the internet into a shell
 //   - read SSH keys or cloud credentials, or Symbiot's own keys (secrets.json: your AI's
-//     key and the app's token); change Symbiot's own settings
+//     key and the app's token); change Symbiot's own settings. A public key (~/.ssh/*.pub)
+//     can be read: it's made to be handed out
 //   - open the user's running Symbiot in a browser (a check uses a sandbox copy)
 //   - in a sandboxed repo run (agents.mjs sandboxFor), edit or write a file outside its
 //     repo and your folders (SYMBIOT_WRITES): its commands are held there by the sandbox
 // judge(tool, input, { cwd, home }) → null (go ahead) or { why }.
-import { resolve, join, relative } from "node:path";
+import { resolve, join, relative, dirname, basename } from "node:path";
 import { homedir } from "node:os";
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readFileSync, realpathSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 const SECRET = [".ssh", ".gnupg", ".aws", ".azure", ".kube", ".docker/config.json", ".config/gcloud", ".config/gh/hosts.yml", ".netrc", ".npmrc", ".pypirc", ".git-credentials", ".config/symbiot/secrets.json"];
@@ -25,6 +26,20 @@ const expand = (p, home, cwd) => resolve(cwd, String(p).replace(/^~(?=\/|$)/, ho
 const BROWSER = /\b(google-chrome(-stable)?|chromium(-browser)?|chrome|firefox|msedge|playwright|puppeteer|wkhtmltoimage|cutycapt)\b/i;
 const SCP_VALUE = /^-[346ABCOpqRrTv]*[iFoPSJcl]$/; // an scp option (alone or after flags, -rpi) whose value is the next word
 function secretPath(p, home) { return SECRET.some((s) => under(p, join(home, s))); }
+// A public key is made to be handed out, so reading one goes ahead (the Read tool, or a plain
+// cat or head): a file directly in ~/.ssh named <name>.pub, that's still a .pub there once
+// links are followed (a x.pub pointing at a private key isn't). Writing or copying one, and
+// everything else in ~/.ssh, stays stopped. Ops made a key for the WinLove server and
+// couldn't read its .pub to send to the server's admin (2026-10-12).
+function publicKey(p, home) {
+  const dir = join(home, ".ssh");
+  if (dirname(p) !== dir || !/^[\w.@+-]+\.pub$/.test(basename(p))) return false;
+  try { const real = realpathSync(p); return dirname(real) === realpathSync(dir) && real.endsWith(".pub") && statSync(real).isFile(); } catch { return false; }
+}
+// in a shell, only a path named outright: no glob, variable or quoting trick that could
+// reach a private key too (~/.ssh/*, ~/.ssh/$K)
+const PUB_READ = /^(cat|less|more|head|tail|grep|rg|base64|xxd|strings)$/;
+const PLAIN = /^(~|\$HOME|\$\{HOME\})?[\w.@+\/-]+$/;
 function symbiotConfig(p, home) { const d = join(home, ".config", "symbiot"); return p === join(d, "config.json") || p === join(d, "licence-revoked.json"); }
 // Symbiot's own installed files (where this guard runs from): never edited by an agent, so
 // it can't be asked to take out its own limits or rules. Ghost AI's owner key lets its own
@@ -99,7 +114,10 @@ function judgeBash(cmd, { cwd, home, branch }) {
       // counts: `scp ~/.ssh/id_rsa host:` stays blocked. The argena lane's approved deploy
       // (`scp -i ~/.ssh/oracle_key server/x.py ubuntu@host:…`) was blocked (2026-10-08).
       const own = w[0] === "scp" ? SCP_VALUE : null;
-      for (const p of w.slice(1).filter((a, i, all) => !a.startsWith("-") && !(own && own.test(all[i - 1] || "")))) { if (secretPath(expand(p, home, cwd), home)) return { why: "your keys and cloud credentials stay yours" }; }
+      for (const p of w.slice(1).filter((a, i, all) => !a.startsWith("-") && !(own && own.test(all[i - 1] || "")))) {
+        const abs = expand(unquote(p), home, cwd);
+        if (secretPath(abs, home) && !(PUB_READ.test(w[0]) && PLAIN.test(unquote(p)) && publicKey(abs, home))) return { why: "your keys and cloud credentials stay yours" };
+      }
     }
     if (/(^|\s)(>|>>|tee|sed\s+-i)\s*\S*\.config\/symbiot\/(config|secrets)\.json/.test(s)) return { why: "Symbiot's own settings are yours to change" };
   }
@@ -116,7 +134,7 @@ function judge(tool, input = {}, { cwd = process.cwd(), home = homedir(), branch
   const p = input.file_path || input.path || input.notebook_path;
   if (!p) return null;
   const abs = expand(p, home, cwd);
-  if (secretPath(abs, home)) return { why: "your keys and cloud credentials stay yours" };
+  if (secretPath(abs, home) && !(t === "Read" && publicKey(abs, home))) return { why: "your keys and cloud credentials stay yours" };
   if (/^(Edit|Write|MultiEdit|NotebookEdit)$/.test(t) && symbiotConfig(abs, home)) return { why: "Symbiot's own settings are yours to change" };
   if (/^(Edit|Write|MultiEdit|NotebookEdit)$/.test(t) && selfFile(abs)) return { why: "Symbiot doesn't edit its own code" };
   if (/^(Edit|Write|MultiEdit|NotebookEdit)$/.test(t) && Array.isArray(writes) && writes.length && !writes.some((d) => under(abs, d))) return { why: "this run writes only in its repo and your folders (its sandbox), not " + p };

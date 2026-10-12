@@ -135,7 +135,7 @@ public class SymbiotService extends Service {
         } catch (Exception ignored) {}
     }
 
-    // the weekly write-up's notifications, as desktop.mjs writes them in this app;
+    // notifications (the weekly write-up, Watch's news, what needs you), as desktop.mjs writes them in this app;
     // the link's key to seal, and a look for your computer on the network, when asked
     private void poll(Bootstrap b) {
         LinkKey.take(b);
@@ -241,7 +241,9 @@ public class SymbiotService extends Service {
     static void channels(Context ctx) {
         NotificationManager nm = ctx.getSystemService(NotificationManager.class);
         nm.createNotificationChannel(new NotificationChannel("running", "Symbiot running", NotificationManager.IMPORTANCE_MIN));
-        nm.createNotificationChannel(new NotificationChannel("week", "Weekly write-up", NotificationManager.IMPORTANCE_DEFAULT));
+        // "week" kept as the id (its settings stay yours); named for all it carries now:
+        // the weekly write-up, Watch's news and what needs you on your computer
+        nm.createNotificationChannel(new NotificationChannel("week", "What's new and what needs you", NotificationManager.IMPORTANCE_DEFAULT));
     }
     private Notification.Builder builder(String channel) {
         Notification.Builder n = new Notification.Builder(this, channel);
