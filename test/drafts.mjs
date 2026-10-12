@@ -124,10 +124,12 @@ try {
   ok("...an empty Send says to type first, on the card", (await js(`(${blobOf("/Which copy/")}).querySelector('.bst').textContent`)) === "Type your answer first.", await js(`(${blobOf("/Which copy/")}).querySelector('.bst').textContent`));
   await js(`(function(){var b=${blobOf("/Which copy/")},i=b.querySelector('.bfx input');i.value='keep the new one';b.querySelector('.bfx').dispatchEvent(new Event('submit',{cancelable:true}));})()`);
   ok("...and what you typed is saved", await until2(() => /### Which copy of `site\/index\.md` should I keep\?\nkeep the new one/.test(answers(own.path))), answers(own.path));
-  ok("a card whose question has gone is up", await until(show("/restart the relay/")), "");
-  writeFileSync(join(gone.path, ".symbiot", "QUESTIONS.md"), "## Questions\n");
-  await js(`(${blobOf("/restart the relay/")}).querySelector('.nopt').click()`);
-  ok("2) a click that fails says why on the card itself, and the buttons work again", await until(`(function(){var b=${blobOf("/restart the relay/")},st=b&&b.querySelector('.bst.err');return !!st&&/isn.t open any more/.test(st.textContent)&&!b.querySelector('.nopt').disabled&&!b.classList.contains('sending');})()`, 8000), await js(`(function(){var b=${blobOf("/restart the relay/")};return b&&b.querySelector('.bst').outerHTML;})()`));
+  // the answer refused (here: the page's request answers with the server's error), with the card left up: emptying
+  // its QUESTIONS.md raced Home's own refresh, which took the card away first on a slow machine (CI, 2026-10-12)
+  ok("a card to press is up", await until(show("/restart the relay/")), "");
+  await js(`(function(){var f=window.fetch;window.fetch=function(u,o){if(String(u).indexOf('/api/agents/answer')>=0){window.fetch=f;return Promise.resolve({json:function(){return {error:"That question isn't open any more: its agent changed or closed it."};}});}return f.apply(this,arguments);};(${blobOf("/restart the relay/")}).querySelector('.nopt').click();})()`);
+  ok("2) a click that fails says why on the card itself, and the buttons work again", await until(`(function(){var b=${blobOf("/restart the relay/")},st=b&&b.querySelector('.bst.err');return !!st&&/isn.t open any more/.test(st.textContent)&&!b.querySelector('.nopt').disabled&&!b.classList.contains('sending');})()`, 8000), await js(`(function(){var b=${blobOf("/restart the relay/")};return b?b.querySelector('.bst').outerHTML:'no card';})()`));
+  ok("...and nothing was saved for it", !answers(gone.path).includes("restart the relay"), answers(gone.path));
   ok("no errors on the page", !errors.length, errors);
 } catch (e) { ok("ran", false, String((e && e.stack) || e)); }
 await finish();
