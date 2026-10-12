@@ -2,6 +2,10 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.63.8 — 2026-10-12
+
+- Fixed agent permission questions on Home rejecting a picked option with "Pick or type at least one answer," so choosing an option now sends it.
+
 ## 0.63.7 — 2026-10-12
 
 - **`symbiot capture Symbiot` works in one go.** It used to refuse, because your running Symbiot shows your real work, and needed a copy started by hand. It now starts a throwaway Symbiot with a made-up company in it (Acme: its repos, its agents' questions, what arrived, its week, a Marketing draft), captures Home, the Workdesk, the Dashboard, the Week, the Map and Marketing, then stops it and deletes it. Symbiot's own tray can be brought up to date after every release.

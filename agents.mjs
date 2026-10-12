@@ -1275,13 +1275,17 @@ function grantFromStep(step, path = "", notes = {}) {
   return got.length ? got : null;
 }
 // The question an answer is for, from qKey -> question: the same words, or the start of
-// one (a phone shows a long question cut short, ending in "…"), when only one starts so.
+// one (a phone shows a long question cut short, ending in "…"), when only one starts so,
+// or a card's plain words that start with it (Home's permission card adds "It wants to
+// …" after the question: a page from before 0.63.7 sent those back, and the WinLove
+// Allow and Skip both came back "Pick or type at least one answer", 2026-10-12).
 function findQuestion(qs, q) {
   const k = qKey(q); if (!k) return "";
   if (qs.has(k)) return qs.get(k);
-  const cut = k.replace(/\s*(…|\.\.\.)$/, ""); if (cut === k || cut.length < 20) return "";
-  const hits = [...qs.keys()].filter((x) => x.startsWith(cut));
-  return hits.length === 1 ? qs.get(hits[0]) : "";
+  const cut = k.replace(/\s*(…|\.\.\.)$/, "");
+  if (cut !== k && cut.length >= 20) { const hits = [...qs.keys()].filter((x) => x.startsWith(cut)); if (hits.length === 1) return qs.get(hits[0]); }
+  const said = [...qs.keys()].filter((x) => x.length >= 20 && k.startsWith(x + " "));
+  return said.length === 1 ? qs.get(said[0]) : "";
 }
 const stepText = (a) => String(a).split("🤖")[0].replace(/^\s*👤\s*(You:)?\s*/, "").replace(/\s*\(recommended\)\s*$/i, "").trim();
 function answerQuestions(path, answers, opts = {}) {

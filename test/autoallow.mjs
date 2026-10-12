@@ -116,7 +116,6 @@ writeFileSync(join(s, "QUESTIONS.md"), `## Questions\n\n### ${permQ}\nBoth hando
 propose(["Bash(ssh sts-prod:*)", "Bash(scp:*)"]);
 const permCard = plainAsk(run, a.agentQuestions(run, "").questions[0]);
 ok("1) a permission card shows plain words, and keeps the agent's own question to answer it by", permCard.q !== permQ && permCard.raw === permQ, permCard);
-ok("...whose plain words alone matched no question: why Allow did nothing", !!a.answerQuestions(run, [{ q: permCard.q, a: "x" }]).error, "");
 const allow = a.answerQuestions(run, [{ q: permCard.raw || permCard.q, a: "👤 You (only you: a permission): allow the list in .symbiot/allowlist.proposed.json (recommended)" }]);
 const local2 = existsSync(join(run, ".claude", "settings.local.json")) ? JSON.parse(readFileSync(join(run, ".claude", "settings.local.json"), "utf8")) : {};
 ok("...and Allow, sent the way the card sends it, is saved and turns the list on", allow.ok && allow.saved === 1 && (local2.permissions.allow || []).includes("Bash(ssh sts-prod:*)") && a.agentQuestions(run, "").questions.length === 0, [allow, local2]);
@@ -131,6 +130,24 @@ ok("4) your own words, under a question with a file path in it, are saved too", 
 const longQ = "Should I " + "keep the old relay running alongside the new one ".repeat(8) + "until Friday?";
 writeFileSync(join(s, "QUESTIONS.md"), `## Questions\n\n### ${longQ}\n- yes (recommended)\n- no\n`);
 ok("...and a long question a phone shows cut short (…) is still found", a.answerQuestions(run, [{ q: longQ.slice(0, 299) + "…", a: "yes" }]).saved === 1, "");
+// The WinLove card (2026-10-12), word for word: a permission question with no answer
+// typed, only an option picked. 0.63.6's Home sent the card's plain words back, which
+// matched nothing, and the user was told "Pick or type at least one answer."
+const winQ = "Can I log in to the WinLove server read-only to check what's actually deployed?";
+const winOpts = ["👤 You (only you: a permission): allow the list in .symbiot/allowlist.proposed.json (recommended)", "skip it, the reply already asks the developer for the commit hash and git status"];
+const winMd = `## Questions\n\n### ${winQ}\nThe live site checks are done. What's left is confirming the commit on 13.51.104.186.\n- ${winOpts.join("\n- ")}\n\n### OK to send the drafted reply to the developer?\nIt's at the end of the report.\n- 🤖 Agent: send it (recommended)\n- hold it for now\n`;
+writeFileSync(join(s, "QUESTIONS.md"), winMd);
+propose(["Bash(ssh ubuntu@13.51.104.186 git log:*)"]);
+const winCard = plainAsk(run, a.agentQuestions(run, "").questions[0]);
+ok("5) the WinLove card shows plain words, and keeps the agent's question to answer it by", winCard.q !== winQ && winCard.raw === winQ && winCard.labels[0] === "Allow (recommended)", winCard);
+const skip = a.answerQuestions(run, [{ q: winCard.raw || winCard.q, a: winOpts[1] }]);
+ok("...its second option alone, as the card sends it, is saved", skip.ok && skip.saved === 1 && readFileSync(join(s, "ANSWERS.md"), "utf8").includes(`### ${winQ}\n${winOpts[1]}\n`), skip);
+writeFileSync(join(s, "QUESTIONS.md"), winMd);
+const old = a.answerQuestions(run, [{ q: winCard.q, a: winOpts[1] }]);
+ok("...and the card's plain words, as a page from before the fix sends them, find it too", old.ok && (old.saved === 1 || old.already) && !/Pick or type/.test(old.error || ""), old);
+writeFileSync(join(s, "QUESTIONS.md"), winMd.replace(winQ, "Can I log in to the WinLove server?"));
+ok("...but plain words don't match a shorter question they merely start like", !!a.answerQuestions(run, [{ q: "Can I log in to the WinLove server and also the other one?", a: "yes" }]).error, "");
+ok("an answer with nothing picked or typed still says so", /Pick or type/.test(a.answerQuestions(run, [{ q: winQ, a: " " }]).error || ""), "");
 // 3) a question about work handed over that's done since: the card says so, Close it first
 const { doneSince } = await import("../lanes.mjs");
 const lane2 = join(HOME, "work", "whatsapp_module"), ops2 = join(C, "drafts", "act-ops2");
