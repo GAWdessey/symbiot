@@ -154,6 +154,21 @@ ok("...and its card on Home says it's done, with Close it first and the agent's 
 const live = homeState({ fresh: true, deps: { ...hsDeps, doneSince: () => null } }).you.find((y) => y.kind === "ask");
 ok("...while one still open asks as before", live && !live.done && live.labels[0] === "Allow (recommended)" && live.raw === permQ, live);
 
+// Allow, with words of your own that sound like git (WinLove, 2026-10-12): it's still a
+// permission, turned on, never handed back to the agent as "git work is yours".
+{
+  const srvQ = "Can I log in to the WinLove server read-only to check what's actually deployed?";
+  writeFileSync(join(s, "ANSWERS.md"), "# Answers\n");
+  writeFileSync(join(s, "QUESTIONS.md"), `## Questions\n\n### ${srvQ}\nThe guard blocked the key.\n- 👤 You (only you: a permission): allow the list in .symbiot/allowlist.proposed.json (recommended)\n- skip it\n`);
+  propose(["Bash(ssh -o BatchMode=yes *@13.51.104.186 git -C * log *)", "Bash(ssh -o BatchMode=yes *@13.51.104.186 git -C * status *)"]);
+  const q = a.agentQuestions(run, "").questions[0];
+  ok("every screen gets it in plain words: no file named, the choice says Allow", q.q === srvQ && !/\.json|\.symbiot/.test(q.shown) && /connect to the computer at 13\.51\.104\.186/.test(q.shown) && q.labels[0] === "Allow (recommended)" && q.labels[1] === "skip it", q);
+  const r = a.answerQuestions(run, [{ q: q.q, a: q.options[0] + " Read-only: check the deployed commit, git status and served files." }]);
+  const set = JSON.parse(readFileSync(join(run, ".claude", "settings.local.json"), "utf8"));
+  const ans = readFileSync(join(s, "ANSWERS.md"), "utf8");
+  ok("Allow with words that sound like git turns the list on", r.ok && (set.permissions.allow || []).some((x) => /13\.51\.104\.186 git -C \* log/.test(x)), [r, set.permissions.allow]);
+  ok("...and never tells the agent the permission is its own git work", !/that git work is yours/.test(ans), ans.slice(-400));
+}
 rmSync(HOME, { recursive: true, force: true });
 console.log((fail ? "✗" : "✓") + " autoallow: " + pass + " passed, " + fail + " failed");
 if (fail) process.exit(1);

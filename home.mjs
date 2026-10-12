@@ -10,6 +10,7 @@
 // how you use them; this is the live data around them. Home's talk goes to the
 // same Symbiot as every chat (mind.mjs converse), told what home shows.
 import { claudeSetup } from "./claudesetup.mjs";
+import { plainAsk } from "./plain.mjs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
@@ -409,48 +410,8 @@ function noteAnswer(path, heading, text) {
   const f = join(path, ".symbiot", "ANSWERS.md"); let had = ""; try { had = readFileSync(f, "utf8"); } catch {}
   try { writeFileSync(f, `${(had || "# Answers\n").replace(/\s*$/, "")}\n\n### ${String(heading).replace(/\s+/g, " ").trim()}\n${text}\n_answered ${new Date().toISOString().slice(0, 10)}_\n`); } catch {}
 }
-// An ask in words for someone who doesn't code: a permission request lists what the agent
-// wants to run, with Allow / Don't allow; any file path left in the question or choices
-// becomes "a file". The answer sent back is still the choice's own text (labels only change what shows).
-const PATHISH = /`?(?:~|\.{0,2})?\/?(?:[\w.-]+\/)+[\w.-]+\.(?:json|md|mjs|js|env|txt|sh)`?|`?\b[\w-]+\.(?:json|mjs)\b`?/g;
-// What a rule lets an agent do, said the way you'd say it to someone who doesn't code.
-const base = (p) => String(p || "").replace(/[/*]+$/, "").split("/").filter(Boolean).pop() || "your files";
-function PLAIN_RULE(r) {
-  const m = String(r).match(/^(\w+)\((.*)\)$/); if (!m) return "work in " + base(r);
-  const [, tool, arg] = m, a = arg.replace(/:?\*+$/, "").trim(), first = a.split(/\s+/)[0].replace(/:\*?$/, "").split("/").pop();
-  if (tool === "Read") return `read files in ${base(a)}`;
-  if (/^(Edit|Write|MultiEdit)$/.test(tool)) return `change files in ${base(a)}`;
-  if (tool !== "Bash") return `use ${tool}`;
-  const host = (a.match(/@([\w.-]+)/) || [])[1];
-  if (/^(ssh|scp|rsync)$/.test(first)) return host ? `connect to the computer at ${host}` : "connect to another computer";
-  if (first === "adb") return "use your phone over the USB cable";
-  if (/^(flutter|gradle|gradlew|godot|xcodebuild)$/.test(first) || /\bbuild\b/.test(a)) return "build the app";
-  if (first === "ffmpeg" || first === "ffprobe") return "make and trim video clips";
-  if (first === "git" && /\bpush\b/.test(a)) return "send code to GitHub";
-  if (/^(npm|yarn|pnpm)$/.test(first) && /\bpublish\b/.test(a)) return "publish a new version";
-  if (/^(bash|sh|zsh)$/.test(first)) return "run a script it wrote";
-  if (/^(python\d*|node)$/.test(first)) return "run code in this project";
-  if (/^(rm|shred)$/.test(first)) return "delete files";
-  if (first === "sudo") return "make changes as administrator";
-  return `run ${first}`;
-}
 // a label without its "(recommended)": a second button isn't the recommended one
 const blobLabel = (l) => String(l || "").replace(/\s*\(recommended\)\s*$/i, "");
-function plainAsk(path, q) {
-  const text = String(q.q || ""), opts = (q.options || []).slice(0, 2);
-  let ask = text, labels = opts.map((o) => o.replace(PATHISH, "a file"));
-  if (opts.some((o) => /allowlist\.proposed/i.test(o))) {
-    let rules = []; try { const p = JSON.parse(readFileSync(join(path, ".symbiot", "allowlist.proposed.json"), "utf8")).permissions || {}; rules = [...new Set([...(p.allow || []).map(PLAIN_RULE), ...(p.additionalDirectories || []).map((d) => `work in ${base(d)}`)])]; } catch {}
-    ask = `${text.replace(PATHISH, "a file")}${rules.length ? ` It wants to ${rules.slice(0, 6).join(", ")}${rules.length > 6 ? `, and ${rules.length - 6} more things` : ""}.` : ""} If you say no, it skips that part and tells you what it left out.`;
-    labels = opts.map((o) => (/allowlist\.proposed/i.test(o) ? "Allow" + (/recommended/i.test(o) ? " (recommended)" : "") : o.replace(PATHISH, "a file")));
-  }
-  // raw: the question as the agent wrote it, the key its answer is saved under (agents.mjs
-  // answerQuestions). Sending the plain words back matched nothing, so a permission card's
-  // Allow, and Send under it, did nothing at all (whatsapp_module, 2026-10-12).
-  const shown = ask.replace(PATHISH, "a file");
-  return { q: shown, ...(shown !== text ? { raw: text } : {}), ...(labels.some((l, i) => l !== opts[i]) ? { labels } : {}) };
-}
-
 function homeAnswer(id, { pick, text = "" } = {}, deps = {}) {
   id = String(id || ""); text = String(text || "").trim().slice(0, 2000);
   const go = text ? !SAYS_NO.test(text) : Number(pick) === 0, ref = id.replace(/^\w+:/, "");
@@ -688,7 +649,7 @@ function workScene({ deps = {}, full = false } = {}) {
       const line = plain(String(t).split(/\n\s*\n/)[0], 220);
       if (line) { p.summary = line; p.state = a.status === "running" ? "at work" : qs.length ? "asks you" : "done"; p.path = a.path; }
     }
-    for (const q of qs) { p.qs = p.qs || []; if (p.qs.length < 3) p.qs.push({ q: q.q, options: (q.options || []).slice(0, 3), path: a.path, ...signInCard([q.q, ...(q.options || []).slice(0, 3)]) }); }
+    for (const q of qs) { p.qs = p.qs || []; if (p.qs.length < 3) p.qs.push({ q: q.shown || q.q, ...(q.shown ? { raw: q.q } : {}), options: (q.options || []).slice(0, 3), ...(q.labels ? { labels: q.labels } : {}), path: a.path, ...signInCard([q.q, ...(q.options || []).slice(0, 3)]) }); }
     for (const s of ideas) { p.ideas = p.ideas || []; if (p.ideas.length < 4) p.ideas.push({ text: plain(s.text, 200), full: String(s.text), repo: s.repo || l, path: a.path }); }
   }
   // what each lane handed over and hasn't heard back on, with where it stands and how far the run on it has got

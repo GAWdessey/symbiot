@@ -1,6 +1,6 @@
 {
   "name": "symbiot",
-  "version": "0.63.7",
+  "version": "0.63.8",
   "description": "Your week, written from your real work. Reads your local git and writes it up with the AI of your choice \u2014 Claude, OpenAI, Gemini, or a local model.",
   "type": "module",
   "bin": {
@@ -46,6 +46,7 @@
     "away.mjs",
     "marketing.mjs",
     "tray.mjs",
+    "plain.mjs",
     "capture.mjs",
     "demo.mjs",
     "postinstall.mjs",

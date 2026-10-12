@@ -66,7 +66,11 @@ function parseAwaiting(text) {
 // is still theirs.
 const GIT_WORK = /\bgit\s+(?:add|commit|push|pull|fetch|merge|rebase|stash|restore|checkout|switch)\b|\b(?:stage|commit|push|pull)(?:es|ed|ing)?\b(?:[^.;:]{0,60})\b(?:changes?|diff|fix|files?|branch|main|master|origin|upstream|remote|commits?|them|it)\b/i;
 const IDENTITY = /\bpassword\b|\b2fa\b|\btwo-factor\b|\b(?:api )?token\b|\bsign(?:ing)? in\b|\blog ?in\b|\bssh key\b|\bpassphrase\b|\bsudo\b/i;
-const gitWork = (text) => { const t = String(text || ""); return GIT_WORK.test(t) && !IDENTITY.test(t); };
+// A permission is never git work, whatever its words: "allow the list … to check the
+// deployed commit, git status and served files" was taken for a commit, and handed back to
+// an agent that can't give itself permission, which asked again (WinLove, 2026-10-12).
+const PERMISSION = /allowlist\.proposed|only you: a permission/i;
+const gitWork = (text) => { const t = String(text || ""); return GIT_WORK.test(t) && !IDENTITY.test(t) && !PERMISSION.test(t); };
 const PUSH_OK = "asking for your OK on the Workdesk, with the files, before it pushes";
 // A "👤 You: …" option that's local git work, as the agent's: "🤖 Agent: … (asking for
 // your OK … before it pushes)". Dropped instead when another option already has the
