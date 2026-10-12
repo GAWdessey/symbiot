@@ -3058,9 +3058,10 @@ function heartbeat(fresh){
     var tried=null;try{tried=localStorage.getItem('symbiot_update_tried');}catch(e){}
     if(tried){
       if(p.version!==tried){try{localStorage.removeItem('symbiot_update_tried');}catch(e){} } // advanced → success, clear
-      else if(p.latest&&p.newer&&p.started!==SRV_UPD){ // restarted, still on the same version → the install didn't advance
+      else if(p.latest&&p.newer&&p.started!==SRV_UPD&&!p.relaunched){try{localStorage.removeItem('symbiot_update_tried');}catch(e){} } // restarted some other way (a crash, a reboot) before it could update: offer it again
+      else if(p.latest&&p.newer&&p.started!==SRV_UPD){ // the update's own restart, still on the same version → the install didn't advance
         b.className='updatebar reconnect show';
-        b.innerHTML="Auto-update to "+esc(p.latest)+" didn't take (still on "+esc(p.version)+"). Run <code>npm install -g symbiot@latest</code> in a terminal, then restart.";
+        b.innerHTML="Auto-update to "+esc(p.latest)+" didn't take (still on "+esc(p.version)+"). Run <code>npm install -g symbiot@latest</code> in a terminal: Symbiot restarts onto it by itself within two minutes.";
         return;
       }
     }

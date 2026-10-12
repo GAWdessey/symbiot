@@ -48,7 +48,7 @@ const H = { "x-symbiot-token": token, "content-type": "application/json" };
 // handler grabbing an element that isn't there throws, like in a browser.
 // `storage` seeds the page's localStorage; `handlers: false` only boots the page;
 // `android` stands in for the Android app's window.SymbiotAndroid.
-async function runUi(js, page, { storage = {}, handlers = true, android = null, termux = false, ua = "" } = {}) {
+async function runUi(js, page, { storage = {}, handlers = true, android = null, termux = false, ua = "", ping = null } = {}) {
   const errors = [], hits = [];
   const store = { ...storage };
   const localStorage = { getItem: (k) => (k in store ? store[k] : null), setItem: (k, v) => { store[k] = String(v); }, removeItem: (k) => { delete store[k]; } };
@@ -95,6 +95,7 @@ async function runUi(js, page, { storage = {}, handlers = true, android = null, 
         hits.push({ path: path.split("?")[0], method: opts.method || "GET", status: r.status });
         // a Symbiot running in Termux says so in its ping
         if (termux && path.startsWith("/api/ping")) return new Response(JSON.stringify({ ...(await r.json()), termux: true }), { status: r.status });
+        if (ping && path.startsWith("/api/ping")) return new Response(JSON.stringify({ ...(await r.json()), ...ping }), { status: r.status }); // what this app's ping adds (relaunched: an update restarted it)
         return r;
       })
       .finally(() => { inflight--; });
@@ -359,8 +360,11 @@ try {
     ok(`a newer version on npm (${LATEST}) shows the Update & restart button`, ui.bar.includes(LATEST) && ui.bar.includes("doupd"), ui.bar);
     // the page sets this before it updates; seeing the SAME version after the
     // restart means the install didn't advance — the button would just loop
-    const stuck = await runUi(js, page, { storage: { symbiot_update_tried: version }, handlers: false });
-    ok("after an update that didn't take: no button, tells you how to update by hand", stuck.errors.length === 0 && !stuck.bar.includes("doupd") && /didn't take/.test(stuck.bar) && /npm install -g symbiot@latest/.test(stuck.bar), { errors: stuck.errors, bar: stuck.bar });
+    const stuck = await runUi(js, page, { storage: { symbiot_update_tried: version }, handlers: false, ping: { relaunched: true } });
+    ok("after an update that didn't take: no button, tells you how to update by hand", stuck.errors.length === 0 && !stuck.bar.includes("doupd") && /didn't take/.test(stuck.bar) && /npm install -g symbiot@latest/.test(stuck.bar) && /restarts onto it by itself/.test(stuck.bar), { errors: stuck.errors, bar: stuck.bar });
+    // you pressed Update, and the app crashed (or you restarted the computer) before it could: 2026-10-12
+    const crashed = await runUi(js, page, { storage: { symbiot_update_tried: version }, handlers: false });
+    ok("after a crash or a reboot, not the update's own restart: no false 'didn't take', the button again", crashed.errors.length === 0 && crashed.bar.includes("doupd") && !/didn't take/.test(crashed.bar), crashed.bar);
     const moved = await runUi(js, page, { storage: { symbiot_update_tried: "0.0.1" }, handlers: false });
     ok("after an update that advanced: offers the next one normally", moved.errors.length === 0 && moved.bar.includes("doupd"), moved.bar);
 
