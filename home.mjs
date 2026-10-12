@@ -10,6 +10,7 @@
 // how you use them; this is the live data around them. Home's talk goes to the
 // same Symbiot as every chat (mind.mjs converse), told what home shows.
 import { claudeSetup } from "./claudesetup.mjs";
+import { heldAsks } from "./handover.mjs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
@@ -366,10 +367,12 @@ function homeState({ now = Date.now(), fresh = false, deps = {} } = {}) {
     you.push({ kind: "approve", id: "approve:" + r.repo, repo: r.repo, name: named(r.path, r.repo), title: `Approve ${r.repo}`, sub: `${n ? `${n} task${n > 1 ? "s" : ""} done` : "changes without a task"}${files ? ` · ${files} file${files > 1 ? "s" : ""}` : ""} · only you decide`, shape: "tasks" });
   }
   const list = agents(), seen = new Set();
+  // one agent owns a site: a second one's question about it waits for the owner's (handover.mjs heldAsks)
+  const held = heldAsks(list.filter((a) => a.ask && a.ask.questions && a.ask.questions[0]).map((a) => { const q = a.ask.questions[0]; return { path: a.path, startedAt: a.startedAt, text: [q.q, q.context, ...(q.options || [])].join(" ") }; }));
   for (const a of list) {
     if (seen.has(a.path)) continue; seen.add(a.path);
     const qs = (a.ask && a.ask.questions) || [], q = qs[0];
-    if (!q) continue;
+    if (!q || held[a.path]) continue;
     const lane = laneOfPath(a.path, map), repo = lane || (lane === "" ? "" : a.name);
     you.push({ kind: "ask", id: "ask:" + a.path, path: a.path, repo, name: repo ? named(lane ? map[lane] : a.path, repo) : plain(String(a.name || "an agent").replace(/^Agent:\s*/, ""), 60),
       title: `${a.name} asks`, sub: String(q.q || "").slice(0, 90), ...plainAsk(a.path, q), options: (q.options || []).slice(0, 2), ...(qs.length > 1 ? { more: qs.length - 1 } : {}), ...signInCard([q.q, ...(q.options || []).slice(0, 2)]), shape: "agents" });

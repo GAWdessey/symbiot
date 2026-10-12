@@ -17,7 +17,7 @@ let pass = 0, fail = 0;
 const ok = (n, c, got) => { if (c) { pass++; console.log("  ✓ " + n); } else { fail++; console.log("  ✗ " + n + (got !== undefined ? "  got: " + JSON.stringify(got) : "")); } };
 
 const { dispatch, lanesTick, loadLedger, lanesState, MAX_CHAIN, aboutIt, partlyDone, remoteKey, orcaMoves, orcaRelink, stuckHandovers, allowHandover, skipHandover, namedDirs } = await import("../lanes.mjs");
-const { parseHandoffs, handoverRules, ONLY_YOU, leftToYou, gitWork, agentsGitWork, agentsClicking, agentsCodeWork, agentsPosting, linkedAsks, linkedChore } =await import("../handover.mjs");
+const { parseHandoffs, handoverRules, ONLY_YOU, leftToYou, gitWork, agentsGitWork, agentsClicking, agentsCodeWork, heldAsks, agentsPosting, linkedAsks, linkedChore } =await import("../handover.mjs");
 const { buildTasksMd, mergeWhenGreen } = await import("../tasks.mjs");
 {
   const fake = (buckets, mergeStatus = 0) => { const calls = []; const gh = (a) => { calls.push(a.slice(0, 2).join(" ")); return a[1] === "checks" ? { status: 0, stdout: JSON.stringify(buckets.map((bucket) => ({ bucket }))) } : { status: mergeStatus, stderr: "" }; }; return { gh, calls }; };
@@ -257,6 +257,11 @@ try {
   ok("…dropped when another option already has the agent do it", agentsCodeWork(["🤖 Agent: apply the patch", "👤 You: apply the patch yourself"]).join("|") === "🤖 Agent: apply the patch", "");
   ok("…while a password step stays yours", /^👤/.test(agentsCodeWork(["👤 You (only you: your password): type it when the patch tool asks"])[0]), "");
   ok("…and so does a physical step", /^👤/.test(agentsClicking(["👤 You (only you: your phone): plug it in, click Allow, enter the code, tick Always"])[0]), "");
+  // two agents on the one npm step (2026-10-10): only the first asks
+  const npmAsk = { path: "/a", startedAt: 1, text: "Type your password on www.npmjs.com/package/symbiot/access" }, closeAsk = { path: "/b", startedAt: 2, text: "Close the window so I can open npmjs.com" };
+  const hl = heldAsks([closeAsk, npmAsk, { path: "/c", startedAt: 3, text: "Approve the invoice on xero.com" }]);
+  ok("a second agent's question about the same site is held for the first", hl["/b"] === "/a" && !hl["/a"] && !hl["/c"], JSON.stringify(hl));
+  ok("…and the brief says to read the live page and leave a site to its owner", /read the live page/.test(ONLY_YOU) && /only the owner asks the user anything/.test(ONLY_YOU), "");
   // GitHub's transfer email (2026-10-10), with Gmail linked
   const { agentsMail } = await import("../handover.mjs");
   const ml = agentsMail(["👤 You (only you: your email): accept GitHub's transfer email for GarthGhostai/symbiot (recommended)", "Leave it"], ["gmail"]);
