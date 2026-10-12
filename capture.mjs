@@ -717,7 +717,7 @@ function captureProducts({ map, dir = MARKETING_DIR } = {}) {
 let BUSY = null;
 // Symbiot's own repo (this package, or a clone of it), by its package.json's name.
 const isSymbiotRepo = (path) => { try { return JSON.parse(readFileSync(join(path, "package.json"), "utf8")).name === "symbiot"; } catch { return false; } };
-async function captureProduct({ product, url = "", window: win = "", screens: extra = [], clips = true, seconds = CLIP_SECONDS, map, dir = MARKETING_DIR, apps, render = renderCapture, web = captureWeb, desktop = captureDesktop, demoApp = startDemo, now = Date.now() } = {}) {
+async function captureProduct({ product, url = "", window: win = "", screens: extra = [], clips = true, seconds = CLIP_SECONDS, map, dir = MARKETING_DIR, apps, render = renderCapture, web = captureWeb, desktop = captureDesktop, demoApp = startDemo, ffmpeg = () => hasCmd("ffmpeg"), now = Date.now() } = {}) {
   if (BUSY) return { error: `Already capturing ${BUSY}: one product at a time.` };
   if (!map) { try { map = laneMapNow(); } catch { map = {}; } }
   const repo = productRepo(product, map), name = (repo && repo.name) || String(product || "").trim();
@@ -732,7 +732,7 @@ async function captureProduct({ product, url = "", window: win = "", screens: ex
     url = found && !symbiot ? found.url : "";
     if (!url && !symbiot) return { error: `${name} isn't running here, so there's nothing to capture yet. Start it (${seedScript(repo.path) ? `with its demo data: ${seedScript(repo.path)}, then ` : ""}its dev server), then capture again, or give its address with --url.` };
   }
-  if (!hasCmd("ffmpeg")) return { error: NO_FFMPEG };
+  if (!ffmpeg()) return { error: NO_FFMPEG };
   BUSY = name;
   try {
     if (symbiot) { demo = await demoApp(); if (demo.error) return { error: demo.error }; url = demo.url; }

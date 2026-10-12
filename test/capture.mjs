@@ -137,15 +137,15 @@ console.log("WHERE IT RUNS — given, or found running here; never your own Symb
   ok("not running and no address: says to start it (with its demo data) or give its address", /isn't running here/.test(none.error) && /npm run db:seed/.test(none.error) && /--url/.test(none.error), none);
   // Symbiot itself: never your own app (on 7391, with your work in it), but a copy with made-up work in it, started and stopped for it
   let seen = null, stopped = 0; const demoApp = async () => ({ url: "http://127.0.0.1:9/?t=demo", stop: async () => { stopped++; } });
-  const web = async (o) => { seen = o; return { items: [] }; }, render = async () => ({ ok: true });
-  const own = await C.captureProduct({ product: repo, dir: lane, map: {}, apps: async () => [{ repo: "acme", url: "http://127.0.0.1:7391/", open: "http://127.0.0.1:7391/?t=secret", symbiot: true }], demoApp, web, render });
+  const web = async (o) => { seen = o; return { items: [] }; }, render = async () => ({ ok: true }), ffmpeg = () => true; // recorded by stand-ins: no ffmpeg needed (CI has none)
+  const own = await C.captureProduct({ product: repo, dir: lane, map: {}, apps: async () => [{ repo: "acme", url: "http://127.0.0.1:7391/", open: "http://127.0.0.1:7391/?t=secret", symbiot: true }], demoApp, web, render, ffmpeg });
   ok("Symbiot's own app, with your real work in it: never captured; a copy with made-up work in it is, then stopped", own.ok && seen && seen.url === "http://127.0.0.1:9/?t=demo" && stopped === 1 && /made-up work/.test(own.note), [own, seen && seen.url, stopped]);
   ok("…its screens, each by its #name on its one page, Home first", seen && seen.screens === C.SYMBIOT_SCREENS && seen.screens[0].path === "/" && seen.screens.some((x) => x.path === "#board"), seen && seen.screens);
   const symb = join(HOME, "symbiot-src"); mkdirSync(symb, { recursive: true }); writeFileSync(join(symb, "package.json"), JSON.stringify({ name: "symbiot" }));
-  seen = null; const fromRepo = await C.captureProduct({ product: symb, dir: lane, map: {}, apps: async () => { throw new Error("it doesn't look for a running app"); }, demoApp, web, render });
+  seen = null; const fromRepo = await C.captureProduct({ product: symb, dir: lane, map: {}, apps: async () => { throw new Error("it doesn't look for a running app"); }, demoApp, web, render, ffmpeg });
   ok("…Symbiot's repo itself, with nothing running: the same, in one go", fromRepo.ok && seen && seen.url === "http://127.0.0.1:9/?t=demo" && stopped === 2, [fromRepo, stopped]);
-  const broke = await C.captureProduct({ product: symb, dir: lane, map: {}, demoApp: async () => ({ error: "The made-up Symbiot didn't start: port taken" }), web, render });
-  ok("…the copy didn't start: says so, and the next capture isn't held up", /didn't start/.test(broke.error || "") && (await C.captureProduct({ product: symb, dir: lane, map: {}, demoApp, web, render })).ok, broke);
+  const broke = await C.captureProduct({ product: symb, dir: lane, map: {}, demoApp: async () => ({ error: "The made-up Symbiot didn't start: port taken" }), web, render, ffmpeg });
+  ok("…the copy didn't start: says so, and the next capture isn't held up", /didn't start/.test(broke.error || "") && (await C.captureProduct({ product: symb, dir: lane, map: {}, demoApp, web, render, ffmpeg })).ok, broke);
   ok("a one-page app's screen: its #name on the address, its ?token kept, a fresh load each", C.screenUrl("http://127.0.0.1:9/?t=abc", "#week", 3) === "http://127.0.0.1:9/?t=abc&shot=3#week" && C.screenUrl("http://127.0.0.1:9/?t=abc", "/", 0) === "http://127.0.0.1:9/?t=abc" && C.screenUrl("http://x.test", "/pricing", 1) === "http://x.test/pricing" && C.screenUrl("http://x.test", "#a", 2) === "http://x.test?shot=2#a", "");
   const D = await import("../demo.mjs"), dh = mkdtempSync(join(tmpdir(), "symbiot-demo-test-"));
   try {
@@ -156,7 +156,7 @@ console.log("WHERE IT RUNS — given, or found running here; never your own Symb
     const dcfg = JSON.parse(readFileSync(join(dc, "config.json"), "utf8"));
     ok("…set up already, its key a fake, its agent a stand-in that does nothing, nothing of yours in it", /not-a-real-key/.test(dcfg.apiKey) && /-e ""/.test(dcfg.agentCmd) && dcfg.scanRoots[0] === join(dh, "code") && !JSON.stringify(dcfg).includes(process.env.USER || "\u0000"), dcfg);
   } finally { rmSync(dh, { recursive: true, force: true }); }
-  let got = ""; const found = await C.captureProduct({ product: repo, dir: lane, map: {}, apps: async () => [{ repo: "acme", url: "http://localhost:3000/" }], web: async (o) => { got = o.url; return { items: [] }; }, render: async () => ({ ok: true }) });
+  let got = ""; const found = await C.captureProduct({ product: repo, dir: lane, map: {}, apps: async () => [{ repo: "acme", url: "http://localhost:3000/" }], web: async (o) => { got = o.url; return { items: [] }; }, render: async () => ({ ok: true }), ffmpeg: () => true });
   ok("an app of it running here: captured there", found.ok && got === "http://localhost:3000/", [found, got]);
   ok("not a product here and no address: says so", /isn't one of your projects/.test((await C.captureProduct({ product: "Nope", dir: lane, map: {} })).error), "");
   ok("by its name as people say it, from your projects", C.productRepo("acme", { acme: repo }).path === repo && !C.productRepo("marketing", { marketing: lane }), "");
@@ -239,6 +239,7 @@ console.log("THE LANE'S FIRST RUN — a product with no tray is captured first")
 {
   const tasks = [{ text: "[Acme] write the launch post" }, { text: "[Desk] a post about it" }], map = { acme: join(HOME, "acme"), desk: join(HOME, "desk") };
   mkdirSync(map.desk, { recursive: true });
+  const dt = C.trayPaths("Desk", lane); if (!existsSync(join(dt.root, "tray.json"))) { mkdirSync(dt.root, { recursive: true }); writeFileSync(join(dt.root, "tray.json"), JSON.stringify({ items: [] })); } // made above where ffmpeg is; on CI it isn't
   const b = M.marketingBrief(tasks, { map, names: ["Acme", "Desk"], dir: lane }).join("\n");
   ok("its brief: capture it first, with Symbiot's own command", /\*\*Acme has no pick tray yet: start by capturing it\.\*\* Run `node "[^"]+index\.mjs" capture "Acme"`/.test(b), b.slice(0, 600));
   ok("…not a product that has one", !/Desk has no pick tray/.test(b), "");
