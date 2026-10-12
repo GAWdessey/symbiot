@@ -2,6 +2,11 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.63.4
+
+- **Symbiot no longer freezes as your task list grows.** Every 20 seconds it checks the ideas your agents left against all your tasks, and with a few hundred tasks that took up to 10 seconds a time, until the app stopped answering altogether. The update to 0.63.3 then couldn't restart it. The same check now takes a fraction of a second.
+- **An update keeps trying for 10 minutes.** npm can list a new version a few minutes before its download is ready. Symbiot gave up after 2.5 minutes; now it keeps trying every 30 seconds for 10.
+
 ## 0.63.3
 
 - **Allow works on a request that takes access away.** When an agent asked to lock itself out of something (a deny rule, with nothing new allowed), Symbiot dropped the request, so clicking Allow did nothing and the agent waited for good. Now it's turned on, without asking you, and the agent carries on.

@@ -248,6 +248,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
   if (!SANDBOX) { refreshRevoked().catch(() => {}); setInterval(() => refreshRevoked().catch(() => {}), 6 * 3600 * 1000).unref(); } // cancelled Pro keys, about daily
   { const t0 = Date.now(); refreshRepos().then((l) => console.log(`Found ${l.length} project${l.length === 1 ? "" : "s"} in ${((Date.now() - t0) / 1000).toFixed(1)}s.`)); }
   let UPDATING = null; // an update in flight: { target, attempt, retrying? }
+  const UPDATE_TRIES = 20;
   let NEWEST_WIN = ""; // the Symbiot window opened last: older ones close themselves (one window, not a pile)
   process.on("exit", () => closeAway()); // Away's windows go with the app (a quit, an update's restart)
   const server = createServer(async (req, res) => {
@@ -515,7 +516,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       // a sandbox (symbiot app --fresh) never offers an update: it would replace your real install.
       // A headless browser (an agent's screenshot of Home) never becomes the newest window:
       // that closed the user's real one, again and again (2026-10-08, "symbiot keeps crashing").
-      if (u.pathname === "/api/ping") { if (u.searchParams.get("fresh") === "1" && !SANDBOX) await checkLatest(); const w = u.searchParams.get("w") || ""; if (/^[a-z0-9]{6,20}$/.test(w) && u.searchParams.get("new") === "1" && !headlessAgent(req.headers["user-agent"])) NEWEST_WIN = w; return json(res, { ...(NEWEST_WIN ? { window: NEWEST_WIN } : {}), version: VERSION, started: SERVER_STARTED, latest: LATEST_VERSION, newer: !SANDBOX && !DESKTOP && semverGt(LATEST_VERSION, VERSION), ...(DESKTOP ? { desktop: true } : {}), ...(UPDATING && UPDATING.retrying ? { retrying: UPDATING } : {}), ...(IN_TERMUX ? { termux: true } : {}), ...(SANDBOX ? { sandbox: true } : {}) }); }
+      if (u.pathname === "/api/ping") { if (u.searchParams.get("fresh") === "1" && !SANDBOX) await checkLatest(); const w = u.searchParams.get("w") || ""; if (/^[a-z0-9]{6,20}$/.test(w) && u.searchParams.get("new") === "1" && !headlessAgent(req.headers["user-agent"])) NEWEST_WIN = w; return json(res, { ...(NEWEST_WIN ? { window: NEWEST_WIN } : {}), version: VERSION, started: SERVER_STARTED, latest: LATEST_VERSION, newer: !SANDBOX && !DESKTOP && semverGt(LATEST_VERSION, VERSION), ...(DESKTOP ? { desktop: true } : {}), ...(UPDATING && UPDATING.retrying ? { retrying: { ...UPDATING, of: UPDATE_TRIES } } : {}), ...(IN_TERMUX ? { termux: true } : {}), ...(SANDBOX ? { sandbox: true } : {}) }); }
       // What's new: after an update, since the version you last saw (until you click Got it);
       // ?latest=1, what the update on offer brings, from its package on npm
       if (u.pathname === "/api/whatsnew") {
@@ -552,12 +553,13 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
         const { target, cmd } = updateCmd(LATEST_VERSION, VERSION);
         const inst = process.env.SYMBIOT_UPDATE_CMD || cmd;
         // npm lists a new version a little before its download is there (a 404 for the
-        // .tgz): then it tries again every 30s, up to 5 times, and says so, instead of
-        // giving up and sending you to a terminal.
+        // .tgz): then it tries again every 30s for 10 minutes (UPDATE_TRIES), and says so,
+        // instead of giving up and sending you to a terminal. 5 tries (2.5 minutes) gave up
+        // on 0.63.3, still a 404 four minutes after it was published (2026-10-12).
         const attempt = (n) => track("symbiot update", inst, homedir(), (code) => {
           if (code !== 0) {
             const tail = readRunLog(join(homedir(), ".symbiot", "agent.log")).slice(-3000);
-            if (n < 5 && /E404|ETARGET|notarget|No matching version|is not in this registry/i.test(tail)) { UPDATING = { target, retrying: true, attempt: n + 1, at: Date.now() }; setTimeout(() => attempt(n + 1), 30000).unref(); }
+            if (n < UPDATE_TRIES && /E404|ETARGET|notarget|No matching version|is not in this registry/i.test(tail)) { UPDATING = { target, retrying: true, attempt: n + 1, at: Date.now() }; setTimeout(() => attempt(n + 1), 30000).unref(); }
             else UPDATING = null;
             return;
           }
