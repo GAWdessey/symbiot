@@ -211,14 +211,24 @@ const navRules = (tasks = []) => `
 "go": null, or a page to open now: {"to": "${Object.keys(PAGES).join("|")}|lane:<a lane>${tasks.length ? "|task:<a task id>" : ""}", "why": "", "alts": []}. Pages: ${Object.entries(PAGES).map(([k, [n, what]]) => `${k} (${n}: ${what})`).join("; ")}.
 You can open any of these pages: when they ask to go somewhere (go to, take me to, navigate to, open, show me, where's), open it with "go", and never say you can't switch pages. A clear ask ("take me to reports") just goes: "why" empty, "alts" [], the reply a few words ("Opening Reports."). A vague one ("show me that thing from earlier", "where are my updates"): don't ask which, opening a page is easy to undo. Pick the likeliest from what you know, this chat, other chats lately and what Home shows; "why" says in one short line why you picked it, also said in the reply; "alts" has 1-2 other pages they may have meant (these are your other readings, offered as one tap each).${tasks.length ? `
 To open one task rather than the whole Workdesk ("open that task", "show me the task"), use "task:<id>" with an id from "Open tasks" below: the last task discussed in this chat, or the only one running. If several could be meant, open the likeliest and offer the others in "alts" as task:<id> too.` : ""}`;
+// Home can steer the agents (control.mjs), not only start them
+const CONTROL_RULES = `
+"control": [] or up to 5 of {"op": "stop|cancel|redirect|answer|front|merge", "id": "…", "text": "…", "into": "…"}: you act on agents and tasks yourself, so never tell the user to click a card, stop an agent or answer one for you. The ids are in "Agents" and "Open tasks" below.
+- stop: "id" is an agent ("run:<folder>", or a lane's name). It stops and its lane is paused (the user unpauses it); its changes stay.
+- cancel: "id" is a task id from "Open tasks"; it leaves the list.
+- redirect: "id" is an agent, "text" the new instruction. It stops and its next run reads it first.
+- answer: "id" is "ask:<folder>" from an agent's open question, "text" the answer. Only when the user has already given it in this chat; never guess a password, code or yes to spending or deleting.
+- front: "id" is a task id; it moves to the front of its lane's queue.
+- merge: two agents on the same job: "id" is the duplicate to stop, "into" the one that keeps it.
+Stopping, cancelling, redirecting and reordering can be undone, so do them without asking. Say in your reply what you did, and only once "control" holds it; what is hard to undo (paying, sending, deleting, publishing) stays the agent's own question to the user.`;
 // lanes: the repos "do" can point at; self: Symbiot's own repo among them, where
 // a flaw in Symbiot itself is fixed; nav: this chat can open pages ("go").
-function rulesFor(lanes = [], self = "", nav = false, settle = false, tasks = []) {
+function rulesFor(lanes = [], self = "", nav = false, settle = false, tasks = [], control = false) {
   return `Reply with JSON only, no markdown fence:
 {"reply": "what you say, plain text, brief, no preamble",
  "do": null or {"agent": "what a coding agent should do now: self-contained, with names, links and ids", "repo": "the lane it's for, or empty"} or {"task": "a task for later", "repo": "the lane it's for, or empty"},${nav ? `
  "go": null or {"to": "…", "why": "…", "alts": ["…"]},` : ""}
- "remember": [{"name": "…", "kind": "person|account|site|repo|project|decision|preference", "fact": "…"}],
+${control ? ` "control": [],\n` : ""} "remember": [{"name": "…", "kind": "person|account|site|repo|project|decision|preference", "fact": "…"}],
  "rule": ["a standing rule you and the user have just agreed for every agent"]${settle ? `,
  "settled": ["the exact question of a 'Only the user can do' card that their message has just answered or made pointless"]` : ""}}
 When they ask you to do something (look into it, find out, fix, set up, sign in, close, send, chase), do it, don't explain what you can't do: "agent" starts a coding agent now, with their tools and connectors (MCP, the command line, a browser signed in to their linked sites). With a "repo", it's that project's agent, working in it; empty, an agent for everything outside a repo (this computer, accounts, services). Use "task" for what's for later. Don't ask their permission to hand it over: the agent asks them first, on the Workdesk, before anything hard to undo (closing an account, deleting, paying, sending); say so in your reply when it applies, with what to check first. A question you can answer from what's here: answer it, "do": null.
@@ -233,7 +243,7 @@ A short answer (yes, yeah, ok, sure, go, do it, that one, 2) answers what you la
 Hash it out first: when they bring an idea rather than a clear ask, sharpen it with them: say what's strong, push back where it's weak, add what's missing, and propose it as a task (naming the lane) once it holds up. "do" stays null until they agree.
 When a message is mainly frustration, a feeling or a remark rather than an ask (for example "i got told that deekseek v4 is as good as you so i think that is the only acceptable replacement", or "im sick of this"), answer like a person: acknowledge it plainly in a sentence or two, don't defend yourself or Symbiot, don't list readings or options, and ask one open question in plain words ("what would make it feel right?"). "do" stays null unless they've asked for something. Numbered readings are only for a real task that could mean more than one thing.
 When an ask could mean two or more things (which lane, how much, what done looks like), don't guess: "do" stays null, and the reply gives 2-3 short numbered readings, your pick first, and asks which. A clear ask goes straight through.${nav ? ` Where to go is the exception: see "go".` : ""}
-"rule": only when the user states or agrees a rule agents should follow from now on (e.g. "don't ask which mailbox", "do it yourself, only ask for passwords"); write it as an instruction to an agent, one line. It goes into every agent's brief. Never say what agents will or won't do unless you put it here. [] otherwise.\n${settle ? `"settled": only for a card shown under "Only the user can do" whose question this message really answers (they pasted what it asked for, or said it's done); copy its question exactly. [] otherwise, and never for a card you're unsure of: it closes the card and no agent asks it again.\n` : ""}"remember": only lasting facts worth knowing on another page (who someone is, which account is what, a decision, how they like things); [] for anything else. Whenever they state a lasting preference or tell you how they want things done ("you have full access, don't ask me", "always do X"), put it in "remember" as a preference in that same reply, so they never repeat it. Before you hand them a step, check whether a linked connector, signed-in site or command could do it; if so, start an agent for it and ask them only for a yes before anything hard to undo.${nav ? navRules(tasks) : ""}`;
+"rule": only when the user states or agrees a rule agents should follow from now on (e.g. "don't ask which mailbox", "do it yourself, only ask for passwords"); write it as an instruction to an agent, one line. It goes into every agent's brief. Never say what agents will or won't do unless you put it here. [] otherwise.\n${settle ? `"settled": only for a card shown under "Only the user can do" whose question this message really answers (they pasted what it asked for, or said it's done); copy its question exactly. [] otherwise, and never for a card you're unsure of: it closes the card and no agent asks it again.\n` : ""}"remember": only lasting facts worth knowing on another page (who someone is, which account is what, a decision, how they like things); [] for anything else. Whenever they state a lasting preference or tell you how they want things done ("you have full access, don't ask me", "always do X"), put it in "remember" as a preference in that same reply, so they never repeat it. Before you hand them a step, check whether a linked connector, signed-in site or command could do it; if so, start an agent for it and ask them only for a yes before anything hard to undo.${nav ? navRules(tasks) : ""}${control ? CONTROL_RULES : ""}`;
 }
 // Symbiot's own repo among your lanes (its package.json is symbiot's), or "".
 function selfLane(map) {
@@ -313,7 +323,7 @@ const BAD_FORM = "(the model didn't answer in the right form, so nothing was don
 // what this page is for; context: what the page shows; history: this chat's
 // own last turns. act: { agent(request) -> result, task(text, repo) -> result },
 // what "do" runs here. Gives { reply, did?, remembered }.
-async function converse({ where, role = "", context = "", history = "", question, act = {}, ask = (sys, p, o) => write(sys, p, { ...o, floor: "sonnet" }), map = null, now = Date.now(), images = [], nav = false, settle = false, tasks = [] }) {
+async function converse({ where, role = "", context = "", history = "", question, act = {}, ask = (sys, p, o) => write(sys, p, { ...o, floor: "sonnet" }), map = null, now = Date.now(), images = [], nav = false, settle = false, tasks = [], control = false }) {
   // a secret they pasted goes to the vault before anything is stored or sent; the model sees a placeholder
   let kept = []; try { ({ text: question, saved: kept } = captureSecrets(question)); } catch {}
   const d = loadMind(), hits = recall(question, now, d), known = recallText(hits), elsewhere = lately(where, d, undefined, now);
@@ -329,7 +339,7 @@ async function converse({ where, role = "", context = "", history = "", question
   let lanes = map; if (!lanes) { try { lanes = laneMap(); } catch { lanes = {}; } }
   // how they talk, from what they've typed into any chat (adapt.mjs: accommodation)
   const voice = styleLine(styleOf(d.log.filter((l) => l.role === "user").map((l) => l.text).concat(question)));
-  const system = `${IDENTITY} ${role}\n\n${rulesFor(Object.keys(lanes), selfLane(lanes), nav, settle, tasks)}${voice ? "\n" + voice : ""}${languageLine()}`;
+  const system = `${IDENTITY} ${role}\n\n${rulesFor(Object.keys(lanes), selfLane(lanes), nav, settle, tasks, control)}${voice ? "\n" + voice : ""}${languageLine()}`;
   let prompt = `${dayLine(now)}\n\n` + (known ? `What you know (from across the app):\n${known}\n\n` : "") + (kn.text ? kn.text + "\n\n" : "") + (elsewhere ? `Lately, elsewhere in the app (other chats: a short answer here doesn't reply to these):\n${elsewhere}\n\n` : "") +
     (nav && tasks.length ? `Open tasks (id: task):\n${tasks.slice(0, 40).map((t) => `- ${t.id}: ${String(t.text || "").replace(/\s+/g, " ").slice(0, 90)}${t.repo ? ` [${t.repo}]` : ""}`).join("\n")}\n\n` : "") + (context ? context + "\n\n" : "") + (history ? `This chat so far:\n${history}\n\n` : "") + `They say (on ${where}): ${question}`;
   if (kept.length) prompt += `\n(Symbiot saved what they pasted, under ${kept.map((n) => `"${n}"`).join(", ")}. Say so in a few words, and carry on with what they asked.)`;
@@ -364,7 +374,16 @@ async function converse({ where, role = "", context = "", history = "", question
       : did.lane ? `\n\nAdded to ${did.lane}'s tasks: ${did.text}`
       : `\n\nAdded to your tasks, but not to a repo${repo ? ` (there's no lane called ${repo})` : ""}, so no agent will pick it up until it has one: ${did.text}`;
   }
-  if (!did && unbackedClaim(reply, did)) reply += UNBACKED;
+  // what Home did to agents and tasks (control.mjs): said from what happened, the failures first and plainly
+  let steered = [];
+  if (control && act.control && Array.isArray(j.control) && j.control.length) {
+    steered = await act.control(j.control.filter((x) => x && typeof x === "object").slice(0, 5));
+    const bad = steered.filter((x) => x.error), good = steered.filter((x) => x.ok);
+    if (bad.length) reply = `${bad.map((x) => `I couldn't ${x.op}: ${x.error}`).join(" ")}\n\n${reply}`;
+    if (good.length) reply += `\n\n${good.map((x) => x.said).join(" ")}`;
+    for (const x of good) steps.push(`${x.op}: ${x.said}`.slice(0, 120));
+  }
+  if (!did && !steered.some((x) => x.ok) && unbackedClaim(reply, did)) reply += UNBACKED;
   // what's read aloud: the reply, then the line under it as a short phrase (spokenLine)
   const line = spokenLine(did, said), spoken = did && did.kind === "agent" && (did.error || did.notStarted) ? line : line ? `${said} ${line}` : said; // a claim that no agent started isn't read aloud
   // read again: another chat may have written while the model answered
@@ -378,7 +397,7 @@ async function converse({ where, role = "", context = "", history = "", question
   const rules = (Array.isArray(j.rule) ? j.rule : []).map((x) => String(x || "")).filter((x) => x.trim()).slice(0, 3).filter((x) => addRule(x));
   if (rules.length) steps.push(`saved ${rules.length} standing rule${rules.length > 1 ? "s" : ""} for every agent`);
   const settled = settle && Array.isArray(j.settled) ? j.settled.map((x) => String(x || "").slice(0, 300)).filter(Boolean).slice(0, 6) : [];
-  return { reply, spoken, ...(did ? { did } : {}), ...(go ? { go } : {}), ...(settled.length ? { settled } : {}), remembered, steps };
+  return { reply, spoken, ...(did ? { did } : {}), ...(steered.length ? { control: steered } : {}), ...(go ? { go } : {}), ...(settled.length ? { settled } : {}), remembered, steps };
 }
 // The usual "task" act, for a caller with no lanes of its own to pass.
 const addToTasks = (text, repo) => { let map = {}; try { map = laneMap(); } catch {} return taskIn(text, repo, { map }); };

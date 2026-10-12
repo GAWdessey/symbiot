@@ -218,7 +218,7 @@ function reportIdeas(text, max = IDEAS_MAX) {
   return out;
 }
 // Which of a report's ideas were handed to an agent or dismissed, kept by the report's mtime
-// (a rewritten report offers its ideas again). A report leaves "Read, to action" once none is open.
+// (a rewritten report offers its ideas again). A report leaves "Read, open actions" once none is open.
 function handledIdeas(r, file = SEEN_FILE) { const h = loadSeen(file).handed[r.id]; return h && h.mtime === r.mtime && h.done && typeof h.done === "object" ? h.done : {}; }
 const openIdeas = (r, text, file = SEEN_FILE) => { const done = handledIdeas(r, file); return reportIdeas(text).filter((t) => !done[t]); };
 function markIdeas(r, ideas, status, file = SEEN_FILE) {

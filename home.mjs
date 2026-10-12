@@ -22,6 +22,7 @@ import { linksState, signInAsked } from "./links.mjs";
 import { knowledgeState } from "./knowledge.mjs";
 import { CONFIG_DIR, loadTasks, saveTasks, loadConfig, saveConfig, sameTask } from "./core.mjs";
 import { lanesState, stuckHandovers, allowHandover, skipHandover } from "./lanes.mjs";
+import { control } from "./control.mjs";
 import { converse, actIn, actNow, taskIn, loadMind, dayMark } from "./mind.mjs";
 import { repoPathMap, laneMap, reposState, scanRoots } from "./scan.mjs";
 import { resolveProvider, PROVIDERS, claudeState } from "./ai.mjs";
@@ -578,8 +579,9 @@ function handedState({ now = Date.now(), ledger = loadHanded(), tasks = [], list
 function homeContext(h) {
   return [
     `Only the user can do (${h.you.length}):`, ...h.you.map((y) => `- ${y.title}: ${y.sub}${y.q && y.q !== y.sub ? ` (asks: ${y.q}${(y.options || []).length ? ` ${y.options.join(" / ")}` : ""})` : ""}`),
+    ...(h.you.some((y) => /^ask:/.test(y.id || "")) ? [`Agents asking (to answer for them, "answer" with these ids): ${h.you.filter((y) => /^ask:/.test(y.id || "")).map((y) => `${y.id} (${String(y.title).slice(0, 40)})`).join("; ")}`] : []),
     `New on what they watch:`, ...(h.feeds.length ? h.feeds.map((f) => `- ${f.title}: ${f.sub}${f.latest ? ` (latest: ${f.latest})` : ""}`) : ["- nothing new"]),
-    `Agents working: ${h.working}.`, ...(h.runs || []).map((r) => `- ${dayMark(r.started, h.at)}${r.name}: ${r.line}${r.eta ? ` (${r.eta})` : ""}${r.quiet ? ` (no progress in ${r.quiet} min)` : ""}${r.looping ? " (repeating the same step)" : ""}`),
+    `Agents working: ${h.working}.`, ...(h.runs || []).map((r) => `- [${r.id}] ${dayMark(r.started, h.at)}${r.name}: ${r.line}${r.eta ? ` (${r.eta})` : ""}${r.quiet ? ` (no progress in ${r.quiet} min)` : ""}${r.looping ? " (repeating the same step)" : ""}`),
     "Handed off from this chat (last 7 days; say how each stands from this list, never guess):", ...((h.handed || []).length ? h.handed.map((x) => `- ${dayMark(x.at, h.at)}${x.lane}: ${x.text} (${x.status})`) : ["- none"]),
     "Recent handovers:", ...(h.lanes.length ? h.lanes.map((l) => `- ${dayMark(l.at, h.at)}${l.from} → ${l.to}: ${l.text} (${l.status}${l.times ? `, handed over ${l.times} times` : ""})`) : ["- none"]),
     ...(h.marketing ? [`Marketing (a lane of its own, for marketing across all their products; "repo": "${MARKETING}"): ${h.marketing.needs ? `${h.marketing.needs} thing${h.marketing.needs > 1 ? "s" : ""} there need${h.marketing.needs > 1 ? "" : "s"} them` : "nothing needs them"}${h.marketing.working ? ", its agent is at work" : ""}.`] : []),
@@ -604,10 +606,11 @@ async function homeAsk(question, { ask, now = Date.now(), state, images = [] } =
   if (!h.handed) { try { h.handed = handedState({ now, tasks: loadTasks(), list: agentsList(), map }); } catch { h.handed = []; } }
   const role = "Here they're on Symbiot's home: one liquid surface that shows what only they can do, what's new on what they watch, and the lanes. Answer from what it shows, and act on what they ask.";
   let open = []; try { open = loadTasks().filter((t) => t && !t.done && !t.archived && !t.review).map((t) => ({ id: t.id, text: t.text, repo: t.repo })); } catch {}
-  const r = await converse({ where: "Home", role, nav: true, settle: true, tasks: open, context: homeContext(h), question: question + (pics.length ? `\n(The user attached ${pics.length} screenshot${pics.length > 1 ? "s" : ""}: you can see ${pics.length > 1 ? "them" : "it"}.)` : ""), map, now, images: pics.map(({ mime, data, path }) => ({ mime, data, path })), ...(ask ? { ask } : {}),
+  const r = await converse({ where: "Home", role, nav: true, settle: true, control: true, tasks: open, context: homeContext(h), question: question + (pics.length ? `\n(The user attached ${pics.length} screenshot${pics.length > 1 ? "s" : ""}: you can see ${pics.length > 1 ? "them" : "it"}.)` : ""), map, now, images: pics.map(({ mime, data, path }) => ({ mime, data, path })), ...(ask ? { ask } : {}),
     act: {
       agent: (req, known, repo) => { const d = repo ? actIn(req + shotNote, repo, { map, known, title: "Home" }) : actNow(req + shotNote, { title: "Home", known }); noteHanded(d, req); return d; },
       task: (text, repo) => { const d = taskIn(text + shotNote, repo, { map }); noteHanded(d, text); return d; },
+      control: (ops) => control(ops, { map }),
     } });
   const settled = settleFromChat(h, r.settled, question);
   if (settled) cached = null;

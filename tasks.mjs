@@ -673,7 +673,8 @@ function buildTasksMd(name, ctx, list) {
   if (ctx.about && ctx.about.length) L.push("", ...ctx.about);
   L.push("", "## Tasks");
   // urgent first, whatever kind it is (a crash fix filed under Docs waited behind 5 tasks, 2026-10-08)
-  const urgent = list.filter((t) => isUrgent(t.text)); list = list.filter((t) => !urgent.includes(t));
+  // t.first: Home moved it to the front (control.mjs)
+  const urgent = list.filter((t) => isUrgent(t.text) || t.first); list = list.filter((t) => !urgent.includes(t));
   if (urgent.length) { L.push("### Urgent: do these first", "Stop at a safe point in anything else you're on (your changes stay), do these, then carry on with the rest."); for (const t of urgent) L.push(`- [ ] ${t.text}`); L.push(""); }
   const byType = {}; for (const t of list) { const ty = taskType(t.text); (byType[ty] = byType[ty] || []).push(t); }
   const keys = Object.keys(byType).sort((a, b) => TASK_ORDER.indexOf(a) - TASK_ORDER.indexOf(b));
