@@ -11,6 +11,7 @@
 // same Symbiot as every chat (mind.mjs converse), told what home shows.
 import { claudeSetup } from "./claudesetup.mjs";
 import { plainAsk } from "./plain.mjs";
+import { heldAsks } from "./handover.mjs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
@@ -368,10 +369,12 @@ function homeState({ now = Date.now(), fresh = false, deps = {} } = {}) {
     you.push({ kind: "approve", id: "approve:" + r.repo, repo: r.repo, name: named(r.path, r.repo), title: `Approve ${r.repo}`, sub: `${n ? `${n} task${n > 1 ? "s" : ""} done` : r.round ? `a round of “${plain(r.round.text, 60)}”, still going` : "changes without a task"}${files ? ` · ${files} file${files > 1 ? "s" : ""}` : ""} · only you decide`, shape: "tasks" });
   }
   const list = agents(), seen = new Set();
+  // one agent owns a site: a second one's question about it waits for the owner's (handover.mjs heldAsks)
+  const held = heldAsks(list.filter((a) => a.ask && a.ask.questions && a.ask.questions[0]).map((a) => { const q = a.ask.questions[0]; return { path: a.path, startedAt: a.startedAt, text: [q.q, q.context, ...(q.options || [])].join(" ") }; }));
   for (const a of list) {
     if (seen.has(a.path)) continue; seen.add(a.path);
     const qs = (a.ask && a.ask.questions) || [], q = qs[0];
-    if (!q) continue;
+    if (!q || held[a.path]) continue;
     const lane = laneOfPath(a.path, map), repo = lane || (lane === "" ? "" : a.name);
     // the work it asks about is done already (another lane took it and ticked it): the card says so, and Close it is first
     const pa = plainAsk(a.path, q), done = finished(a.path, q.q), opts = (q.options || []).slice(0, 2);

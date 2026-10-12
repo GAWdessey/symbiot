@@ -17,8 +17,15 @@ let pass = 0, fail = 0;
 const ok = (n, c, got) => { if (c) { pass++; console.log("  ✓ " + n); } else { fail++; console.log("  ✗ " + n + (got !== undefined ? "  got: " + JSON.stringify(got) : "")); } };
 
 const { dispatch, lanesTick, loadLedger, lanesState, MAX_CHAIN, aboutIt, partlyDone, remoteKey, orcaMoves, orcaRelink, stuckHandovers, allowHandover, skipHandover, namedDirs, handingOf } = await import("../lanes.mjs");
-const { parseHandoffs, handoverRules, ONLY_YOU, leftToYou, gitWork, agentsGitWork, agentsClicking, agentsCodeWork, agentsPosting, linkedAsks, linkedChore } = await import("../handover.mjs");
-const { buildTasksMd } = await import("../tasks.mjs");
+const { parseHandoffs, handoverRules, ONLY_YOU, leftToYou, gitWork, agentsGitWork, agentsClicking, agentsCodeWork, heldAsks, agentsPosting, linkedAsks, linkedChore } = await import("../handover.mjs");
+const { buildTasksMd, mergeWhenGreen } = await import("../tasks.mjs");
+{
+  const fake = (buckets, mergeStatus = 0) => { const calls = []; const gh = (a) => { calls.push(a.slice(0, 2).join(" ")); return a[1] === "checks" ? { status: 0, stdout: JSON.stringify(buckets.map((bucket) => ({ bucket }))) } : { status: mergeStatus, stderr: "" }; }; return { gh, calls }; };
+  const g = fake(["pass", "pass"]), f = fake(["pass", "fail"]), p = fake(["pass", "pending"]);
+  const rg = mergeWhenGreen("/tmp", "7", g.gh), rf = mergeWhenGreen("/tmp", "7", f.gh), rp = mergeWhenGreen("/tmp", "7", p.gh);
+  ok("merging from Symbiot: green checks merge past the self-review rule, so no second GitHub account is needed", rg.ok && g.calls.join() === "pr checks,pr merge", [rg, g.calls]);
+  ok("…but a failing or running check never merges", rf.error && !f.calls.includes("pr merge") && rp.pending && !p.calls.includes("pr merge"), [rf, rp]);
+}
 const { actBrief } = await import("../mind.mjs");
 
 // two repo lanes and the ops folder, on disk
@@ -258,6 +265,11 @@ try {
   ok("…dropped when another option already has the agent do it", agentsCodeWork(["🤖 Agent: apply the patch", "👤 You: apply the patch yourself"]).join("|") === "🤖 Agent: apply the patch", "");
   ok("…while a password step stays yours", /^👤/.test(agentsCodeWork(["👤 You (only you: your password): type it when the patch tool asks"])[0]), "");
   ok("…and so does a physical step", /^👤/.test(agentsClicking(["👤 You (only you: your phone): plug it in, click Allow, enter the code, tick Always"])[0]), "");
+  // two agents on the one npm step (2026-10-10): only the first asks
+  const npmAsk = { path: "/a", startedAt: 1, text: "Type your password on www.npmjs.com/package/symbiot/access" }, closeAsk = { path: "/b", startedAt: 2, text: "Close the window so I can open npmjs.com" };
+  const hl = heldAsks([closeAsk, npmAsk, { path: "/c", startedAt: 3, text: "Approve the invoice on xero.com" }]);
+  ok("a second agent's question about the same site is held for the first", hl["/b"] === "/a" && !hl["/a"] && !hl["/c"], JSON.stringify(hl));
+  ok("…and the brief says to read the live page and leave a site to its owner", /read the live page/.test(ONLY_YOU) && /only the owner asks the user anything/.test(ONLY_YOU), "");
   // GitHub's transfer email (2026-10-10), with Gmail linked
   const { agentsMail } = await import("../handover.mjs");
   const ml = agentsMail(["👤 You (only you: your email): accept GitHub's transfer email for GarthGhostai/symbiot (recommended)", "Leave it"], ["gmail"]);
@@ -282,6 +294,7 @@ try {
   ok("…and a platform that isn't linked still asks you to sign in", linkedAsks(pq, ["github"]).join() === pq.join(), "");
   ok("a run's last words asking you to sign in to a linked platform, or make its developer app, aren't left to you", linkedChore("👤 You: create LinkedIn's developer app and sign in to give it the one-time OK to post as you", ["linkedin"]) && !linkedChore("👤 You: create LinkedIn's developer app", ["github"]) && !linkedChore("LinkedIn signed out when it tried: sign in again", ["linkedin"]), "");
   ok("the brief: agents open the Symbiot Browser themselves, on a given address", /symbiot browser <url>/.test(ONLY_YOU) && /never tell the user you can't open it/.test(ONLY_YOU));
+  ok("…but only for a sign-in that really expired: it blocks every `symbiot screens` command until Done, so never to browse or follow an external link", /every `symbiot screens` command, yours and other agents', fails until the user clicks Done/.test(ONLY_YOU) && /only for a sign-in a real attempt showed is expired, never to read, click or browse a page/.test(ONLY_YOU) && /map a link's address directly/.test(ONLY_YOU));
   ok("the brief: sending is not reading; check access first, look up the provider by MX, full plain options", /is not being able to read it/.test(ONLY_YOU) && /dig \+short MX/.test(ONLY_YOU) && /never cut off/.test(ONLY_YOU));
   ok("the brief: prefer the linked browser session over APIs and apps that need the user; never offer it by hand", /Prefer what's already linked: Symbiot's own browser \(`~\/\.config\/symbiot\/browser`\) is signed in to the sites the user linked/.test(ONLY_YOU) && /ask them to sign in only when a real attempt found the session expired/.test(ONLY_YOU) && /never offer doing an agent's job by hand/.test(ONLY_YOU), "");
   ok("the brief: marketing posts once the user approves its preview, it doesn't leave it to them", /`marketing`:[^\n]*approves each one's preview, and then it posts or schedules it itself through Symbiot's signed-in browser/.test(handoverRules(["symbiot", "marketing"], "symbiot").join("\n")), "");

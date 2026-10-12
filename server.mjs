@@ -23,7 +23,7 @@ import { PROVIDERS, resolveProvider, connectProvider, detectHardware, recommendM
 import { SCAN, SCAN_TIMEOUT_MS, scanRoots, scanHome, addScanRoot, removeScanRoot, buildMap, nodeDetail, repoPathMap, laneMap, setScanOptions, refreshRepos, REPO_STATE, reposState } from "./scan.mjs";
 import { computeDrift } from "./drift.mjs";
 import { laneCap, mergeEnded, DEFAULT_CAP } from "./parallel.mjs";
-import { addTask, toggleTask, removeTask, restoreTask, syncTasks, taskType, pushTasks, pendingReview, workingDiff, learnNpm, withReleases, releaseInput, approveRepo, approveChanges, sendBack, setAutoMerge } from "./tasks.mjs";
+import { addTask, toggleTask, removeTask, restoreTask, syncTasks, taskType, pushTasks, pendingReview, workingDiff, learnNpm, withReleases, releaseInput, approveRepo, approveChanges, sendBack, setAutoMerge, mergeWhenGreen } from "./tasks.mjs";
 import { repoReview, repoSuggest, folderSuggest, taskChat, clearTaskChat, mailState, setMail, sentMail, produce, releaseNotes } from "./writeups.mjs";
 import { listSecrets, getSecret, markUsed, deleteSecret } from "./vault.mjs";
 import { loadScreens, screenImage, captureScreen, splitScreen, listMonitors, allowScreenshots, importScreen, setRegions, renameScreen, removeScreen, blueprint, clickRegion } from "./screens.mjs";
@@ -330,6 +330,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
         await learnNpm(ask); return json(res, partly(pendingReview()));
       }
       if (u.pathname === "/api/pending/diff") { const p = laneMap()[u.searchParams.get("repo") || ""]; return json(res, { diff: p ? workingDiff(p) : "" }); }
+      if (u.pathname === "/api/pending/merge" && req.method === "POST") { const b = await readBody(req), path = laneMap()[String(b.repo || "")]; if (!path || !b.pr) return json(res, { error: "Say which repo and PR." }); return json(res, mergeWhenGreen(path, String(b.pr))); }
       if (u.pathname === "/api/pending/approve" && req.method === "POST") { const b = await readBody(req), repo = String(b.repo || ""); if (b.bump) await learnNpm([laneMap()[repo]]); const notes = await releaseNotes(releaseInput(repo, { bump: b.bump })); return json(res, await approveRepo(repo, { bump: b.bump, notes, confirm: !!b.confirm, allowShared: !!b.allowShared })); }
       if (u.pathname === "/api/pending/approve-changes" && req.method === "POST") { const b = await readBody(req), repo = String(b.repo || ""); if (b.bump) await learnNpm([laneMap()[repo]]); const notes = await releaseNotes(releaseInput(repo, { bump: b.bump, tick: b.tick })); return json(res, await approveChanges(repo, { bump: b.bump, tick: b.tick, notes, confirm: !!b.confirm, allowShared: !!b.allowShared })); }
       if (u.pathname === "/api/pending/sendback" && req.method === "POST") { const b = await readBody(req); return json(res, sendBack(String(b.id || ""))); }

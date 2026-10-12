@@ -633,6 +633,20 @@ async function shipChanges(path, texts, opts = {}) {
   }
   return out;
 }
+// Merge an Approve PR from Symbiot itself, once every check has passed. The agent's
+// PRs are opened by the repo owner's account, which GitHub won't let approve its own
+// PR, so a "1 approving review" rule would otherwise send the user to a second account
+// to click Approve. The owner may merge past that rule (--admin); never past a check.
+function mergeWhenGreen(path, ref, gh = (args) => spawnSync("gh", args, { cwd: path, encoding: "utf8", timeout: 60000 })) {
+  if (!hasCmd("gh")) return { error: "Install the GitHub CLI (gh) to merge from Symbiot." };
+  const ck = gh(["pr", "checks", String(ref), "--json", "bucket"]);
+  let buckets; try { buckets = JSON.parse(String(ck.stdout || "[]")).map((c) => c.bucket); } catch { return { error: "Couldn't read the checks: " + String(ck.stderr || "").trim().split("\n").pop() }; }
+  if (buckets.some((b) => b === "fail" || b === "cancel")) return { error: "A check is failing, so it isn't merged. Fix that first." };
+  if (buckets.some((b) => b === "pending")) return { pending: true, error: "Checks are still running. Merge it once they pass." };
+  const m = gh(["pr", "merge", String(ref), "--squash", "--admin", "--delete-branch"]);
+  if (m.status !== 0) return { error: "gh couldn't merge: " + (String(m.stderr || "").trim().split("\n").filter(Boolean).pop() || "unknown error") };
+  return { ok: true, merged: String(ref) };
+}
 // Per-repo opt-in to auto-merge Approve PRs once CI passes (default off).
 function autoMergeRepos() { const a = loadConfig().autoMerge; return Array.isArray(a) ? a : []; }
 function setAutoMerge(repo, on) { const cfg = loadConfig(); let a = (Array.isArray(cfg.autoMerge) ? cfg.autoMerge : []).filter((x) => x !== repo); if (on && repo) a.push(repo); if (a.length) cfg.autoMerge = a; else delete cfg.autoMerge; saveConfig(cfg); return { ok: true, repos: cfg.autoMerge || [] }; }
@@ -788,4 +802,4 @@ function pushTasks(filter) {
   return { empty: false, written, unresolved, handoff: handoffCmd() };
 }
 
-export { forgetReview, gitFailed, taskPaths, addTask, toggleTask, setTaskDone, removeTask, restoreTask, completedInRepo, removalOf, applyRemovals, applyDrops, syncTasks, workingChanges, workingDiff, publishesOnMerge, unreleased, bumpOffer, learnNpm, releaseNeeded, withReleases, setVersion, changelogEntry, changelogSection, noteChangelog, releaseInput, shipWithBump, runSummary, saidFinished, pendingReview, commitSubject, shipChanges, autoMergeRepos, setAutoMerge, approveRepo, approveChanges, sendBack, TASK_ORDER, taskType, buildTasksMd, pushTasks };
+export { mergeWhenGreen, forgetReview, gitFailed, taskPaths, addTask, toggleTask, setTaskDone, removeTask, restoreTask, completedInRepo, removalOf, applyRemovals, applyDrops, syncTasks, workingChanges, workingDiff, publishesOnMerge, unreleased, bumpOffer, learnNpm, releaseNeeded, withReleases, setVersion, changelogEntry, changelogSection, noteChangelog, releaseInput, shipWithBump, runSummary, saidFinished, pendingReview, commitSubject, shipChanges, autoMergeRepos, setAutoMerge, approveRepo, approveChanges, sendBack, TASK_ORDER, taskType, buildTasksMd, pushTasks };
