@@ -2,6 +2,12 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.63.6
+
+- **Approve opens on what you came for.** Clicking Review and approve on Home showed every project's work waiting for review, each task in full, with the Approve button several screens down. Now you see only that project, with its Approve button straight under its name, and its tasks one line each: the first three, with the rest a click away. Click a task to read it all. The other projects waiting on you are one line, with a button to show them.
+- **Low GPU.** A new switch beside Glass, Ferrofluid and Pearl. With it on, Home's liquid draws at half the resolution and only when something changes, and the blur behind the glass panels is off. Your graphics card stops running at full clock all day. Symbiot remembers it on this computer.
+- **A Symbiot window you aren't using rests.** Whether or not Low GPU is on, the liquid now draws only when something changes while you're in another window, instead of redrawing all the time behind your other apps.
+
 ## 0.63.5
 
 - **Home stops stalling on git.** Every few seconds Home asked git, one project after another, what each of your last 60 agent runs changed, and what's waiting for review. The app couldn't do anything else while it waited: 20 seconds in every 45 on a busy day. It now reuses each answer and refreshes it in the background, so Home answers straight away. Approve still checks git fresh, and Home forgets what it kept as soon as you approve.
