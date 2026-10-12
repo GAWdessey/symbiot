@@ -371,7 +371,7 @@ try {
     const set1 = pg.sent.find((m) => m[0] === "DOM.setFileInputFiles");
     ok("the button's hidden file box gets the file, by its object (DOM.setFileInputFiles)", set1 && set1[1].objectId === "box-1" && JSON.stringify(set1[1].files) === JSON.stringify([clip]), pg.sent);
     ok("…and it says which box it used", /input\[type=file\].*the only file box on the page/.test(r1.used), r1);
-    ok("…found from the region's selector, else its spot", /#media-btn/.test(pg.sent[0][1].expression) && /elementFromPoint\(10, 20\)/.test(pg.sent[0][1].expression), pg.sent[0]);
+    ok("…found from the region's selector, else its spot", /#media-btn/.test(pg.sent[0][1].expression) && /deepAt\(10, 20\)/.test(pg.sent[0][1].expression), pg.sent[0]);
     ok("the page's finder parses", (() => { try { new Function("return " + H.FILE_BOX("#a", { x: 1, y: 2 })); return true; } catch { return false; } })(), "");
     let threw = ""; try { await H.attachFiles(fake({ box: { how: "x", box: "input[type=file]", multiple: false } }), { x: 1, y: 1 }, btn, [clip, clip]); } catch (e) { threw = e.message; }
     ok("two files into a box that takes one: refused", /one file at a time/.test(threw), threw);

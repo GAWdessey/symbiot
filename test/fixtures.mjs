@@ -586,6 +586,17 @@ try {
     out.acAgain = await m.approveChanges("revapp", { push: false });
     writeFileSync(${JSON.stringify(join(proj, "c.txt"))}, "skip\\n");
     out.acTick = await m.approveChanges("revapp", { push: false, tick: ["t3", "t1"] }); out.acTickTasks = tasks();
+    // a task that runs for weeks: a finished round of it (unticked) goes out under its name, and the task stays open
+    const moveTask = "Move the shop off the old domain onto the new one. 1) Audit every reference to the old domain. 2) Bring the new domain up alongside it. 3) Switch the webhooks over";
+    const tj = ${JSON.stringify(join(home, ".config", "symbiot", "tasks.json"))}, log = f.replace("TASKS.md", "agent.log"), run = (said) => writeFileSync(log, "\\n=== symbiot 2026-01-03 ===\\n$ claude -p go\\n" + said + "\\n");
+    writeFileSync(tj, JSON.stringify([...tasks(), { id: "t4", text: moveTask, repo: "revapp", done: false, ts: 4 }]));
+    writeFileSync(${JSON.stringify(join(proj, "d.txt"))}, "round\\n");
+    run("Step 2: the new domain serves alongside the old one, tested.\\n\\n**Round done:** Move the shop off the old domain"); out.round = m.pendingReview();
+    const md0 = readFileSync(f, "utf8"); writeFileSync(f, "- [ ] " + moveTask + "\\n- [ ] Open task\\n");
+    run("Step 2: the new domain serves alongside the old one."); out.roundStep = m.pendingReview();
+    run("Fixed a typo in the footer."); out.roundNone = m.pendingReview();
+    writeFileSync(f, md0); run("Round done: Move the shop off the old domain");
+    out.acRound = await m.approveChanges("revapp", { push: false }); out.acRoundTasks = tasks();
     // tasks held for an agent no Symbiot process is watching: the app's next check starts one
     writeFileSync(f.replace("TASKS.md", "TASKS.next.md"), "- [ ] Open task\\n"); m.setHandoffCmd("true");
     out.heldSync = m.syncTasks(); out.heldSync2 = m.syncTasks();
@@ -633,6 +644,11 @@ try {
   const tickMsg = o.acTick && o.acTick.commit ? execSync("git log -1 --format=%B " + o.acTick.commit, { cwd: proj, encoding: "utf8", env: gitEnv }) : "";
   const t3 = (o.acTickTasks || []).find((x) => x.id === "t3"), t2 = (o.acTickTasks || []).find((x) => x.id === "t2");
   ok("approving with ticked tasks approves them with the changes (an already-archived id is ignored), and the commit names them", o.acTick && o.acTick.approved === 1 && t3.done && t3.archived && t3.commit === o.acTick.commit && !t2.done && /^Add a Skip button/.test(tickMsg) && !/without a task/.test(tickMsg), [o.acTick, tickMsg]);
+  const rd = (o.round && o.round[0]) || {}, t4 = (o.acRoundTasks || []).find((x) => x.id === "t4") || {};
+  const roundMsg = o.acRound && o.acRound.commit ? execSync("git log -1 --format=%B " + o.acRound.commit, { cwd: proj, encoding: "utf8", env: gitEnv }) : "";
+  ok("changes a run says are a finished round of a task still going are put up as that round, the task offered as not finished", rd.round && rd.round.id === "t4" && (rd.open || []).find((x) => x.id === "t4").round === true && (rd.open || []).find((x) => x.id === "t4").finished === false, rd);
+  ok("...or the first unticked item with steps, when the run said which step it's on; not when it said nothing of steps", o.roundStep && o.roundStep[0] && o.roundStep[0].round && o.roundStep[0].round.id === "t4" && o.roundNone && o.roundNone[0] && !o.roundNone[0].round, [o.roundStep, o.roundNone]);
+  ok("approving a round commits it under the task's name, and the task stays open with the round noted on it", o.acRound && o.acRound.ok && o.acRound.round && o.acRound.round.id === "t4" && o.acRound.approved === 0 && /^A round of: Move the shop/.test(roundMsg) && !t4.done && !t4.archived && t4.rounds && t4.rounds.length === 1 && t4.rounds[0].commit === o.acRound.commit, [o.acRound, roundMsg, t4]);
   ok("saidFinished: a line with most of the task's words; not one that says it wasn't done", saidFinished("Done:\n- Lanes: the chat hands work to the right repo's agent", "Hand chat work to the right repo's agent (its lane)") && !saidFinished("I didn't hand chat work to the repo's agent: blocked on gh", "Hand chat work to the right repo's agent") && !saidFinished("All tasks were already ticked.", "Hand chat work to the right repo's agent") && !saidFinished("", "Anything"), "");
   ok("checking tasks starts an agent on held tasks whose agent has finished, once", o.heldSync && o.heldSync.started === 1 && o.heldSync2.started === 0, [o.heldSync, o.heldSync2]);
   ok("adding a task already open in the same repo returns it, no duplicate", o.d1 && o.d2 && o.d2.duplicate && o.d2.id === o.d1.id && !o.d1.duplicate, [o.d1, o.d2]);
@@ -1032,7 +1048,17 @@ try {
     const virt = '<title>Virt</title><body style="margin:0;overflow:hidden"><div id="vl" style="position:absolute;top:0;bottom:0;left:0;right:0;overflow:auto"><div id="sp" style="height:4000px;position:relative"></div></div><script>' +
       'const sp=document.getElementById("sp"),vl=document.getElementById("vl"),els=[];for(let i=0;i<25;i++){const d=document.createElement("div");d.setAttribute("role","row");d.style.cssText="position:absolute;left:0;right:0;height:40px";sp.appendChild(d);els.push(d);}' +
       'function draw(){const f=Math.floor(vl.scrollTop/40);els.forEach((d,i)=>{d.style.top=((f+i)*40)+"px";d.textContent="Item "+(f+i);});}vl.addEventListener("scroll",draw);draw();</script></body>';
-    const srv = createServer((q, r) => { r.writeHead(200, { "content-type": "text/html" }); r.end(q.url === "/chats" ? chats : q.url === "/virt" ? virt : q.url === "/tall" ? tall : q.url === "/long" ? long : q.url === "/pane" ? pane : q.url === "/two" ? "<title>Page two</title><button>Back</button>" : q.url === "/form" ? form : q.url === "/rows" ? inbox() : q.url.startsWith("/search?") ? "<title>Results for " + new URL(q.url, "http://x").searchParams.get("q") + "</title><button>Back</button>" : page); }).listen(0, "127.0.0.1");
+    // a box open over the page, as LinkedIn's schedule box is over its composer, with a clock outside it
+    const sched = '<title>Sched</title><body style="margin:0"><div><button aria-label="Clock" onclick="location=\\'/search?q=clock\\'" style="position:absolute;left:10px;top:400px">Clock</button></div>' +
+      '<div style="position:fixed;left:100px;top:50px;width:400px;height:200px;background:#fff"><button role="tab" onclick="location=\\'/search?q=scheduled\\'" style="position:absolute;left:10px;top:10px">Scheduled (8)</button></div></body>';
+    // two dialogs of the same make stacked, as LinkedIn's schedule box opens over its composer: a selector of their
+    // shared structure finds the composer's tab and text box first, under the box's own (2026-10-12)
+    const dlg = (name, at, tab, field) => '<div role="dialog" aria-label="' + name + '" style="position:fixed;' + at + ';background:#fff;border:1px solid #888"><div>' +
+      '<button type="button" role="tab" onclick="location=\\'/search?q=' + tab + '\\'" style="position:absolute;left:10px;top:10px">Scheduled (8)</button>' +
+      '<form action="/typed" style="position:absolute;left:10px;top:200px"><input name="' + field[0] + '" aria-label="' + field[1] + '" value="' + field[2] + '"></form></div></div>';
+    const stack = '<title>Stack</title><body style="margin:0">' + dlg("Create a post", "left:0;top:0;width:700px;height:500px", "clock", ["post", "Text editor", "My post"]) + dlg("Schedule post", "left:150px;top:60px;width:500px;height:300px", "scheduled", ["date", "Date*", ""]) + '</body>';
+    const typed = (u) => "<title>Typed " + [...new URL(u, "http://x").searchParams].map(([k, v]) => k + "=" + v).join("&") + "</title><button>Back</button>";
+    const srv = createServer((q, r) => { r.writeHead(200, { "content-type": "text/html" }); r.end(q.url === "/stack" ? stack : q.url.startsWith("/typed?") ? typed(q.url) : q.url === "/sched" ? sched : q.url === "/chats" ? chats : q.url === "/virt" ? virt : q.url === "/tall" ? tall : q.url === "/long" ? long : q.url === "/pane" ? pane : q.url === "/two" ? "<title>Page two</title><button>Back</button>" : q.url === "/form" ? form : q.url === "/rows" ? inbox() : q.url.startsWith("/search?") ? "<title>Results for " + new URL(q.url, "http://x").searchParams.get("q") + "</title><button>Back</button>" : page); }).listen(0, "127.0.0.1");
     await new Promise((r) => srv.on("listening", r));
     const out = {};
     out.map = await h.mapPage("127.0.0.1:" + srv.address().port, "");
@@ -1100,6 +1126,27 @@ try {
     out.wtall = await h.mapPage(base + "/tall", "", { whole: true });
     const lastBtn = ((out.wmap || {}).regions || []).find((r) => r.label === "Last button");
     out.wpress = lastBtn ? await h.pressRegion(out.wmap.id, lastBtn.id, { confirmed: true }) : null;
+    // a selector that finds something else (the clock, not the tab), or more than the region
+    out.smap = await h.mapPage(base + "/sched", "");
+    const sregs = (out.smap || {}).regions || [], stab = sregs.find((r) => r.label === "Scheduled (8)"), sclock = sregs.find((r) => r.label === "Clock");
+    if (stab && sclock) {
+      s.setRegions(out.smap.id, sregs.map((r) => r.id === stab.id ? { ...r, selector: sclock.selector } : r));
+      out.stab = await h.pressRegion(out.smap.id, stab.id, { confirmed: true });
+      s.setRegions(out.smap.id, sregs.map((r) => r.id === stab.id ? { ...r, selector: "button" } : r));
+      out.stabAll = await h.pressRegion(out.smap.id, stab.id, { confirmed: true });
+      out.sclock = await h.pressRegion(out.smap.id, sclock.id, { confirmed: true });
+    }
+    // the same, with the selectors a structure the two dialogs share would give: each finds the composer's first
+    out.kmap = await h.mapPage(base + "/stack", "");
+    const kregs = (out.kmap || {}).regions || [], kat = (label, inBox) => kregs.find((r) => r.label === label && (r.x >= 150) === inBox);
+    const kbox = kat("Scheduled (8)", true), kclock = kat("Scheduled (8)", false), kdate = kat("Date*", true), ktext = kat("Text editor", false);
+    if (kbox && kclock && kdate && ktext) {
+      s.setRegions(out.kmap.id, kregs.map((r) => ({ ...r, selector: r.kind === "field" ? "div[role=dialog] > div > form > input" : "div[role=dialog] > div > button" })));
+      out.kbox = await h.pressRegion(out.kmap.id, kbox.id, { confirmed: true });
+      out.kclock = await h.pressRegion(out.kmap.id, kclock.id, { confirmed: true });
+      out.kdate = await h.typeRegion(out.kmap.id, kdate.id, "10/21/2026", { enter: true, confirmed: true });
+      out.ktext = await h.typeRegion(out.kmap.id, ktext.id, "Hello", { enter: true, confirmed: true });
+    }
     out.cliWhole = JSON.parse(execFileSync(process.execPath, [${JSON.stringify(INDEX)}, "screens", "show", out.wmap.id], { encoding: "utf8" }));
     await h.closeBrowser();
     srv.close();
@@ -1146,6 +1193,11 @@ try {
     const wt = ho.wtall || {}, wfoot = (wt.regions || []).find((r) => r.label === "Footer button") || {};
     ok("mapPage --whole: a part as tall as the window stays the window's height, a fixed menu is marked once, at the top; a bar stuck to the window's bottom isn't", wt.h === 2300 && rl(wt).join() === "Fixed menu,Footer button" && wfoot.y === 2000 && ((wt.regions || [])[0] || {}).y === 5 && !wt.note, wt.error || [wt.h, rl(wt), wfoot, wt.note]);
     ok("pressRegion on a whole-page screen: finds the button far down, and the window is laptop-sized again", ho.wpress && ho.wpress.found === true && ho.wpress.pressed === "Last button" && ho.wpress.h === 800, ho.wpress && (ho.wpress.error || [ho.wpress.found, ho.wpress.h]));
+    const nm = (x) => x && (x.error || x.name);
+    ok("pressRegion: a selector that finds something else (LinkedIn's tab, its composer's clock) presses what's at the region's spot", ho.stab && ho.stab.name === "Results for scheduled" && ho.stab.found === false, [nm(ho.stab), ho.smap && (ho.smap.error || (ho.smap.regions || []).map((r) => r.label))]);
+    ok("pressRegion: of all a selector finds, the one at the region's spot; the clock is still the clock", ho.stabAll && ho.stabAll.name === "Results for scheduled" && ho.stabAll.found === true && ho.sclock && ho.sclock.name === "Results for clock" && ho.sclock.found === true, [nm(ho.stabAll), nm(ho.sclock)]);
+    ok("pressRegion and typeRegion: of two stacked dialogs a selector finds both of, the one mapped: the box's tab and Date field, not the composer's under it", nm(ho.kbox) === "Results for scheduled" && nm(ho.kclock) === "Results for clock" && nm(ho.kdate) === "Typed date=10/21/2026" && nm(ho.ktext) === "Typed post=Hello",
+      [nm(ho.kbox), nm(ho.kclock), nm(ho.kdate), nm(ho.ktext), ho.kmap && (ho.kmap.error || (ho.kmap.regions || []).map((r) => r.label + "@" + r.x))]);
     const rd = ho.read || {}, rrows = (rd.items || []).filter((r) => r.kind === "row");
     ok("readPage: reads a page's rows, each with all its text, without saving a screen, and closes after", rrows.length === 2 && rrows[0].label.length === 80 && /usual place near the office$/.test(rrows[0].text || "") && ho.readNoScreen && ho.readClosed && rd.login === false, rd.error || [rrows, ho.readNoScreen, ho.readClosed]);
     const crows = ((ho.chats || {}).items || []).filter((r) => r.kind === "row");

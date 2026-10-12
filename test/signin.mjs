@@ -68,6 +68,38 @@ else {
     const other = await h.readPage("http://localhost:" + srv.address().port + "/app");
     ok("…and no other site's page gets it", other && other.title === "signed out", other);
   } finally { srv.close(); await h.closeBrowser(); }
+
+  // A site that ties a sign-in to the browser it was made in (domains.co.za, 2026-10-12): it
+  // keeps the User-Agent and client hints the sign-in came with, and drops the sign-in at
+  // the first request that has others. The tab the window was on when it closed comes back
+  // in the hidden browser's restored session, and loads at once.
+  let bound = null, dropped = "", sawHeadless = false, boundLogins = 0;
+  const who = (q) => (q.headers["user-agent"] || "") + " | " + (q.headers["sec-ch-ua"] || "no client hints");
+  const srv2 = createServer((q, r) => {
+    if (/HeadlessChrome/.test(who(q))) sawHeadless = true;
+    if (q.url === "/favicon.ico") return r.end();
+    const has = /BOUND=xyz/.test(q.headers.cookie || "");
+    if (q.url === "/login" && !boundLogins++) { bound = who(q); r.writeHead(200, { "content-type": "text/html", "set-cookie": "BOUND=xyz; Path=/; HttpOnly" }); return r.end("<title>in</title>"); }
+    if (has && bound && who(q) !== bound && !dropped) dropped = who(q);
+    r.writeHead(200, { "content-type": "text/html" });
+    r.end("<title>" + (has && !dropped ? "in" : "signed out") + "</title><script>document.title += navigator.webdriver ? ' (driven)' : ''</script>");
+  }).listen(0, "127.0.0.1");
+  await new Promise((r) => srv2.on("listening", r));
+  const base2 = "http://127.0.0.1:" + srv2.address().port;
+  try {
+    const ua = h.windowUa(chromeBinary());
+    ok("the window's User-Agent is read from the browser's version, and says Chrome", /^Mozilla\/5\.0 \(.+\) AppleWebKit\/537\.36 \(KHTML, like Gecko\) Chrome\/\d+\.0\.0\.0 Safari\/537\.36/.test(ua), ua);
+    ok("…and the hidden browser starts with it", h.browserArgs(true, "about:blank", ua).includes("--user-agent=" + ua) && !h.browserArgs(false, "https://x.org/", ua).some((x) => /^--user-agent/.test(x)), "");
+    // the window: a real one sends its own User-Agent and client hints, as this does
+    const win = h.browserArgs(true, base2 + "/login", ua).filter((x) => x !== "--restore-last-session");
+    const p = spawn(chromeBinary(), win, { stdio: ["ignore", "ignore", "ignore", "pipe", "pipe"] });
+    await sleep(2500);
+    p.stdio[3].write(JSON.stringify({ id: 1, method: "Browser.close" }) + "\0"); await new Promise((r) => (p.exitCode !== null ? r() : p.on("exit", r)));
+    ok("(the window signed in, with client hints)", bound && !/no client hints|HeadlessChrome/.test(bound), bound);
+    const read = await h.readPage(base2 + "/dashboard");
+    ok("a sign-in tied to the browser survives into the hidden one, restored tab and all", read && read.title === "in" && !dropped, { read, bound, dropped });
+    ok("…which never says HeadlessChrome, nor that it's driven", !sawHeadless && read && !/driven/.test(read.title), { sawHeadless, title: read && read.title });
+  } finally { srv2.close(); await h.closeBrowser(); }
 }
 rmSync(HOME, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
 console.log((fail ? "✗" : "✓") + " signin: " + pass + " passed, " + fail + " failed");

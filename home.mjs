@@ -348,7 +348,7 @@ function homeState({ now = Date.now(), fresh = false, deps = {} } = {}) {
     if (!r.path || r.running) continue;
     const n = (r.tasks || []).length, files = (r.files || []).length;
     if (!n && !files) continue;
-    you.push({ kind: "approve", id: "approve:" + r.repo, repo: r.repo, name: named(r.path, r.repo), title: `Approve ${r.repo}`, sub: `${n ? `${n} task${n > 1 ? "s" : ""} done` : "changes without a task"}${files ? ` · ${files} file${files > 1 ? "s" : ""}` : ""} · only you decide`, shape: "tasks" });
+    you.push({ kind: "approve", id: "approve:" + r.repo, repo: r.repo, name: named(r.path, r.repo), title: `Approve ${r.repo}`, sub: `${n ? `${n} task${n > 1 ? "s" : ""} done` : r.round ? `a round of “${plain(r.round.text, 60)}”, still going` : "changes without a task"}${files ? ` · ${files} file${files > 1 ? "s" : ""}` : ""} · only you decide`, shape: "tasks" });
   }
   const list = agents(), seen = new Set();
   for (const a of list) {

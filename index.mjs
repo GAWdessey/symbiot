@@ -317,11 +317,18 @@ function cmdMail() {
 // for an agent to see what the page says: an email's text isn't a region. `more`
 // says the page goes on past the window ("below", "above", "above and below"):
 // scroll there to map the rest.
+// reopened: why a pop-up that was open, or what was typed, isn't on a screen (which
+// for a field, Type refuses: headless.mjs typeRegion). Without the app, every command
+// has a browser of its own, so it's always so.
+const REOPENED = "The page was opened again from its address, so a pop-up that was open on it, or what was typed, isn't there now.";
+const ALONE = "Symbiot's app isn't running (or this command couldn't reach it), so each command has a browser of its own and opens the page again: start it (symbiot app) and the page stays as it is between commands.";
+const alone = (x) => (x && x.kept === false ? { ...x, alone: true } : x);
 function screenJson(s) {
+  if (s && s.error && s.alone) { const { alone: _, kept: __, ...e } = s; return { ...e, error: e.error + " " + ALONE }; }
   if (!s || s.error) return s;
   const bp = blueprint(s), image = screenImage(s.id), sc = s.page && s.page.scroll;
   const more = sc ? [sc.y > 0 && "above", sc.y < sc.max && "below"].filter(Boolean).join(" and ") : "";
-  return { id: s.id, ...(image ? { image } : {}), ...(s.note ? { note: s.note } : {}), ...(more ? { more } : {}), ...(s.scrolled ? { scrolled: s.scrolled } : {}), ...(s.pressed ? { pressed: s.pressed, found: s.found } : {}), ...(s.typed ? { typed: s.typed, entered: s.entered, found: s.found } : {}), ...(s.uploaded ? { uploaded: s.uploaded, files: s.files, used: s.used, found: s.found } : {}), ...(s.kept ? { kept: true } : {}), ...(s.page ? { trusted: isTrusted(s.page.url) } : {}), ...bp, regions: bp.regions.map((r, i) => ({ id: s.regions[i].id, ...r })) };
+  return { id: s.id, ...(image ? { image } : {}), ...(s.note ? { note: s.note } : {}), ...(more ? { more } : {}), ...(s.scrolled ? { scrolled: s.scrolled } : {}), ...(s.pressed ? { pressed: s.pressed, found: s.found } : {}), ...(s.typed ? { typed: s.typed, entered: s.entered, found: s.found } : {}), ...(s.uploaded ? { uploaded: s.uploaded, files: s.files, used: s.used, found: s.found } : {}), ...(s.kept ? { kept: true } : {}), ...(s.kept === false ? { reopened: REOPENED + (s.alone ? " " + ALONE : "") } : {}), ...(s.page ? { trusted: isTrusted(s.page.url) } : {}), ...bp, regions: bp.regions.map((r, i) => ({ id: s.regions[i].id, ...r })) };
 }
 
 // map, press, type and signin go through the app when it's running, whose hidden
@@ -414,12 +421,12 @@ async function cmdScreens() {
   if (sub === "map") { const body = { site: a1, name: flag("name", ""), whole: has("whole"), who }; return out(screenJson((await viaApp("/api/screens/map", body)) || await mapPage(body.site, body.name, { whole: body.whole, who }))); }
   if (sub === "whole") {
     const s = find(a1); if (!s) return out({ error: "No screen " + (a1 || "") + ". symbiot screens lists them." });
-    return out(screenJson((await viaApp("/api/screens/whole", { id: s.id, who })) || await wholePage(s.id, { who })));
+    return out(screenJson((await viaApp("/api/screens/whole", { id: s.id, who })) || alone(await wholePage(s.id, { who }))));
   }
   if (sub === "scroll") {
     const s = find(a1); if (!s) return out({ error: "No screen " + (a1 || "") + ". symbiot screens lists them." });
     const body = { id: s.id, to: a2 || "down", who };
-    return out(screenJson((await viaApp("/api/screens/scroll", body)) || await scrollPage(body.id, body.to, { who })));
+    return out(screenJson((await viaApp("/api/screens/scroll", body)) || alone(await scrollPage(body.id, body.to, { who }))));
   }
   if (sub === "show") { const s = find(a1); return out(s ? screenJson(s) : { error: "No screen " + (a1 || "") + ". symbiot screens lists them." }); }
   if (sub === "signin") { const r = (await viaApp("/api/screens/signin", { site: a1 })) || await signIn(a1); return out(r.ok ? { ...r, next: "Sign in in the window that opened, close it, then map again." } : r); }
@@ -434,7 +441,7 @@ async function cmdScreens() {
     // type --replace "old" "new": only that part of the field typed over
     const part = sub === "type" && has("replace") ? { replace: String(a3 == null ? "" : a3), text: String(more[0] == null ? "" : more[0]) } : null;
     const body = { id: s.id, region: r.id, confirmed: has("yes"), noSend: !!process.env.SYMBIOT_DRAFT, who, ...(sub === "type" ? (part || { text: a3 }) : {}), ...(sub === "type" ? { enter: has("enter") } : {}), ...(sub === "choose" ? { option: a3 } : {}), ...(f ? { files: f.files } : {}) };
-    const done = (await viaApp("/api/screens/" + (part ? "replace" : sub), body)) || (sub === "press" ? await pressRegion(s.id, r.id, { confirmed: body.confirmed, noSend: body.noSend, who }) : sub === "type" ? await typeRegion(s.id, r.id, body.text, { enter: body.enter, confirmed: body.confirmed, noSend: body.noSend, who, ...(part ? { replace: part.replace } : {}) }) : sub === "choose" ? await chooseRegion(s.id, r.id, a3, { confirmed: body.confirmed, who }) : await uploadRegion(s.id, r.id, f.files, { confirmed: body.confirmed, who }));
+    const done = (await viaApp("/api/screens/" + (part ? "replace" : sub), body)) || alone(sub === "press" ? await pressRegion(s.id, r.id, { confirmed: body.confirmed, noSend: body.noSend, who }) : sub === "type" ? await typeRegion(s.id, r.id, body.text, { enter: body.enter, confirmed: body.confirmed, noSend: body.noSend, who, ...(part ? { replace: part.replace } : {}) }) : sub === "choose" ? await chooseRegion(s.id, r.id, a3, { confirmed: body.confirmed, who }) : await uploadRegion(s.id, r.id, f.files, { confirmed: body.confirmed, who }));
     if ((f || part || sub === "choose") && done && /answered 404/.test(done.error || "")) return out({ error: `The Symbiot app that's running is older than this command and can't ${f ? "upload" : part ? "replace part of a field" : "choose"}: restart it (symbiot app), then try again.` });
     // not a trusted site: say how to go ahead (only you can trust a site, in the app's Settings)
     if (done && done.confirm) return out({ error: `${done.error} Add --yes to go ahead, or list ${done.host} under Trusted sites in Symbiot's Settings.` });
