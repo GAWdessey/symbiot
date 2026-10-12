@@ -2,6 +2,13 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.63.11
+
+- **Symbiot no longer runs out of memory.** A cache of task words kept a link to the whole agent log each word came from, so every version of a busy agent's log stayed in memory. The app grew by about 15 MB a minute while agents worked, and crashed at its 2 GB limit after an hour or two. That's what stopped it mid-update. It now keeps only the words.
+- **The pinned taskbar icon starts Symbiot.** Pinning Symbiot's window to the dock pinned Chrome's name for it, which nothing could start, so with the window closed the icon did nothing and only Chrome's Restore brought it back. Symbiot now installs an entry under that name, and the pin opens Symbiot like the app menu does.
+- **An update installed from a terminal takes by itself.** After `npm install -g symbiot@latest`, the running app stayed on the old version until something restarted it. It now notices within two minutes and restarts onto the new one.
+- **No false "didn't take".** If the app crashed, or you restarted your computer, after you pressed Update but before it could install, the bar said the update didn't take and told you to use a terminal. It now just offers the update again.
+
 ## 0.63.10 — 2026-10-12
 
 - Fixed sign-ins made in the Symbiot Browser window, such as domains.co.za's, being lost when `symbiot screens` opened the same site.

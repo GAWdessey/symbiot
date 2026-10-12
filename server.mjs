@@ -58,6 +58,11 @@ function updateCmd(latest, current, platform = process.platform) {
 // again on a 404) for up to 20 minutes. Only a 404 waits: anything else (offline, say)
 // goes on to npm, whose own error says what's wrong.
 const UPDATE_EVERY = Number(process.env.SYMBIOT_UPDATE_EVERY) || 30000, UPDATE_WAIT = 20 * 60 * 1000;
+// The version installed where this app runs from, and whether to restart onto it:
+// newer than this one, and the same on the last look too.
+const OWN_PKG = fileURLToPath(new URL("./package.json", import.meta.url));
+function installedVersion(file = OWN_PKG) { try { return String(JSON.parse(readFileSync(file, "utf8")).version || ""); } catch { return ""; } }
+const restartOnto = (seen, now, running = VERSION) => !!now && now === seen && semverGt(now, running);
 async function downloadReady(version, registry = REGISTRY, fetchFn = fetch) {
   if (!/^\d+\.\d+\.\d+/.test(String(version))) return true; // "latest": npm picks it, nothing to look at
   try { return (await fetchFn(`${registry}/symbiot/-/symbiot-${encodeURIComponent(version)}.tgz`, { method: "HEAD", signal: AbortSignal.timeout(10000) })).status !== 404; } catch { return true; }
@@ -553,7 +558,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       // a sandbox (symbiot app --fresh) never offers an update: it would replace your real install.
       // A headless browser (an agent's screenshot of Home) never becomes the newest window:
       // that closed the user's real one, again and again (2026-10-08, "symbiot keeps crashing").
-      if (u.pathname === "/api/ping") { if (u.searchParams.get("fresh") === "1" && !SANDBOX) await checkLatest(); const w = u.searchParams.get("w") || ""; if (/^[a-z0-9]{6,20}$/.test(w) && u.searchParams.get("new") === "1" && !headlessAgent(req.headers["user-agent"])) NEWEST_WIN = w; return json(res, { ...(NEWEST_WIN ? { window: NEWEST_WIN } : {}), version: VERSION, started: SERVER_STARTED, latest: LATEST_VERSION, newer: !SANDBOX && !DESKTOP && semverGt(LATEST_VERSION, VERSION), ...(DESKTOP ? { desktop: true } : {}), ...(UPDATING ? { updating: { ...UPDATING, every: UPDATE_EVERY, wait: UPDATE_WAIT } } : {}), ...(UPDATE_FAILED ? { updateFailed: UPDATE_FAILED } : {}), ...(IN_TERMUX ? { termux: true } : {}), ...(SANDBOX ? { sandbox: true } : {}) }); }
+      if (u.pathname === "/api/ping") { if (u.searchParams.get("fresh") === "1" && !SANDBOX) await checkLatest(); const w = u.searchParams.get("w") || ""; if (/^[a-z0-9]{6,20}$/.test(w) && u.searchParams.get("new") === "1" && !headlessAgent(req.headers["user-agent"])) NEWEST_WIN = w; return json(res, { ...(NEWEST_WIN ? { window: NEWEST_WIN } : {}), version: VERSION, started: SERVER_STARTED, latest: LATEST_VERSION, newer: !SANDBOX && !DESKTOP && semverGt(LATEST_VERSION, VERSION), ...(DESKTOP ? { desktop: true } : {}), ...(UPDATING ? { updating: { ...UPDATING, every: UPDATE_EVERY, wait: UPDATE_WAIT } } : {}), ...(UPDATE_FAILED ? { updateFailed: UPDATE_FAILED } : {}), ...(RELAUNCH ? { relaunched: true } : {}), ...(IN_TERMUX ? { termux: true } : {}), ...(SANDBOX ? { sandbox: true } : {}) }); }
       // What's new: after an update, since the version you last saw (until you click Got it);
       // ?latest=1, what the update on offer brings, from its package on npm
       if (u.pathname === "/api/whatsnew") {
@@ -607,9 +612,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
               else { UPDATING = null; UPDATE_FAILED = { target, error: o.why || `npm stopped (exit code ${code}).`, at: Date.now() }; }
               return;
             }
-            server.close(); if (server.closeAllConnections) server.closeAllConnections();
-            try { const ch = spawn(process.execPath, process.argv.slice(1), { detached: true, stdio: "ignore", env: { ...process.env, SYMBIOT_RELAUNCH: "1" }, cwd: homedir() }); ch.unref(); } catch {}
-            setTimeout(() => process.exit(0), 1200);
+            relaunch();
           });
           if (!e) { UPDATING = null; UPDATE_FAILED = { target, error: "Symbiot couldn't start npm.", at: Date.now() }; }
           return e;
@@ -622,6 +625,25 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
     } catch (e) { res.writeHead(500, { "content-type": "application/json" }); res.end(JSON.stringify({ error: String((e && e.message) || e) })); return; }
     res.writeHead(404); res.end("not found");
   });
+  // This same app again (same port+token => same URL), as a relaunch, so it takes over
+  // instead of finding us and bowing out; agents run detached and carry on.
+  let relaunching = false;
+  function relaunch() {
+    if (relaunching) return; relaunching = true; // once: the next look came before this one had exited, and started a second
+    server.close(); if (server.closeAllConnections) server.closeAllConnections();
+    try { const ch = spawn(process.execPath, process.argv.slice(1), { detached: true, stdio: "ignore", env: { ...process.env, SYMBIOT_RELAUNCH: "1" }, cwd: homedir() }); ch.unref(); } catch {}
+    setTimeout(() => process.exit(0), 1200);
+  }
+  // A newer Symbiot installed under this one from outside the app (npm install -g in a
+  // terminal, as the update bar once told you to): it stayed on the old one until
+  // something restarted it, with the new files on disk under the old code (2026-10-12).
+  // Seen the same on two looks a minute apart (npm done writing), it restarts onto it.
+  let installedSeen = "";
+  if (!SANDBOX && !DESKTOP && /[\\/]node_modules[\\/]symbiot[\\/]/.test(OWN_PKG)) setInterval(() => {
+    if (UPDATING || relaunching) return; // the app's own update restarts it
+    const v = installedVersion(), go = restartOnto(installedSeen, v); installedSeen = v;
+    if (go) { console.log(c.d(`  Symbiot ${v} was installed: restarting onto it.`)); relaunch(); }
+  }, Number(process.env.SYMBIOT_INSTALLED_EVERY) || 60000).unref();
   let announced = false, tries = 0, opened = false;
   server.on("listening", () => {
     if (announced) return; announced = true;
@@ -676,4 +698,4 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
   setInterval(() => { try { awaitTick(); } catch {} }, 60000).unref(); // a reply an agent's email waits on: found, and handed on
 }
 
-export { headlessAgent, updateCmd, downloadReady, updateOutcome, changesSince, whatsNew, tarFile, registryChangelog, BROWSER_KEEP, startApp, askRunningApp, isAppRunningWeekly, openApp };
+export { headlessAgent, updateCmd, installedVersion, restartOnto, downloadReady, updateOutcome, changesSince, whatsNew, tarFile, registryChangelog, BROWSER_KEEP, startApp, askRunningApp, isAppRunningWeekly, openApp };

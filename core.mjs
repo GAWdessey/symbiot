@@ -78,7 +78,12 @@ const clipWords = (s, max) => { s = String(s || ""); return s.length > max ? s.s
 // Or nearly the same (nearTask): an agent that suggests a task again rewords
 // it, and TASKS.md listed both.
 // kept per text, like wordsOf's words: sameTask runs for every idea against every task
-const keep = (f, max = 4000) => { const m = new Map(); return (s) => { s = String(s || ""); let v = m.get(s); if (v === undefined) { if (m.size >= max) m.clear(); v = f(s); m.set(s, v); } return v; }; };
+// A text kept is copied first: one cut from an agent's log ("Round done: …", a
+// question) is a view into the whole log in V8, and a 60-character key kept every
+// version of a 6 MB log alive. The app grew to its 2 GB limit and crashed, 90 minutes
+// in (2026-10-12). Copied, a key holds only itself, and so does what's worked out from it.
+const own = (s) => (s.length < 13 ? s : JSON.parse(JSON.stringify(s))); // an exact copy, odd characters too
+const keep = (f, max = 4000) => { const m = new Map(); return (s) => { s = String(s || ""); let v = m.get(s); if (v === undefined) { if (m.size >= max) m.clear(); s = own(s); v = f(s); m.set(s, v); } return v; }; };
 const taskWords = keep((s) => s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim());
 function sameTask(a, b) {
   const x = taskWords(a), y = taskWords(b); if (!x || !y) return false;
@@ -216,4 +221,4 @@ function repoState(repoPath) {
   return { branch, dirty, del, mod, add, stale, staleBy, behind };
 }
 
-export { VERSION, LATEST_VERSION, semverGt, REGISTRY, checkLatest, CONFIG_DIR, CONFIG_PATH, SECRETS_PATH, loadConfig, saveConfig, moveSecrets, splitSecrets, loadTasks, saveTasks, TASK_MAX, clipWords, taskWords, sameTask, uniqueTasks, sh, hasCmd, chromeBinary, repoState };
+export { own, VERSION, LATEST_VERSION, semverGt, REGISTRY, checkLatest, CONFIG_DIR, CONFIG_PATH, SECRETS_PATH, loadConfig, saveConfig, moveSecrets, splitSecrets, loadTasks, saveTasks, TASK_MAX, clipWords, taskWords, sameTask, uniqueTasks, sh, hasCmd, chromeBinary, repoState };
