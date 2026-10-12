@@ -20,8 +20,8 @@
 // site once there (signIn opens it as a normal window) and later maps see it
 // signed in. It's separate from your everyday browser profile.
 import { spawn, spawnSync } from "node:child_process";
-import { join, resolve as resolvePath } from "node:path";
-import { mkdirSync, existsSync, statSync, readlinkSync, readFileSync, writeFileSync, mkdtempSync, rmSync } from "node:fs";
+import { join, dirname, resolve as resolvePath } from "node:path";
+import { mkdirSync, existsSync, statSync, readlinkSync, readFileSync, readdirSync, writeFileSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { CONFIG_DIR, chromeBinary, loadConfig, saveConfig } from "./core.mjs";
 import { loadScreens, addPageScreen, center, stitchPng, stitchListPng } from "./screens.mjs";
@@ -48,13 +48,42 @@ function siteUrl(input) {
 // The browser's flags. The same profile and password store headless and not, so
 // a sign-in made in the window is readable by the hidden browser. The hidden one
 // restores the last session: that's what keeps a site's session-only sign-in (keepSessions).
-function browserArgs(headless, url = "about:blank") {
+// ua: the User-Agent the window sends (windowUa), for the hidden one to send from its
+// first request; and it doesn't say it's driven (navigator.webdriver), as the window doesn't.
+function browserArgs(headless, url = "about:blank", ua = "") {
   return [
-    ...(headless ? ["--headless=new", "--hide-scrollbars", "--mute-audio", "--remote-debugging-pipe", `--window-size=${VIEW.w},${VIEW.h}`, "--restore-last-session"] : ["--new-window"]),
+    ...(headless ? ["--headless=new", "--hide-scrollbars", "--mute-audio", "--remote-debugging-pipe", `--window-size=${VIEW.w},${VIEW.h}`, "--restore-last-session",
+      "--disable-blink-features=AutomationControlled", ...(ua ? ["--user-agent=" + ua] : [])] : ["--new-window"]),
     "--user-data-dir=" + PROFILE, "--no-first-run", "--no-default-browser-check",
     ...(process.platform === "linux" ? ["--password-store=basic"] : process.platform === "darwin" ? ["--use-mock-keychain"] : []),
     url,
   ];
+}
+
+// The User-Agent the Symbiot Browser's window sends: Chrome's reduced one, the same on
+// every computer of a platform but for the version. A hidden Chrome says "HeadlessChrome";
+// told otherwise per tab (Network.setUserAgentOverride) it stops sending client hints
+// (Sec-CH-UA) at all; and the tabs it restores from the last session load before any tab
+// is told. So a site that ties a sign-in to the browser it was made in saw another one and
+// dropped it: the user signed in to domains.co.za in the window, SMS PIN and all, and the
+// next map was signed out (cp.smsportal.com too, 2026-10-12). Given as --user-agent, every
+// request carries it, and the client hints stay the window's. "" when the version can't be
+// read (each tab is told then, as before).
+function reducedUa(version, chrome = "") {
+  const major = parseInt(version, 10); if (!(major > 0)) return "";
+  const os = process.platform === "darwin" ? "Macintosh; Intel Mac OS X 10_15_7" : process.platform === "win32" ? "Windows NT 10.0; Win64; x64" : "X11; Linux x86_64";
+  return `Mozilla/5.0 (${os}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${major}.0.0.0 Safari/537.36` + (/edge/i.test(chrome) ? ` Edg/${major}.0.0.0` : "");
+}
+let uaSeen = null; // { chrome, ua }: read once per browser, put right by launch once it's updated
+function windowUa(chrome) {
+  if (uaSeen && uaSeen.chrome === chrome) return uaSeen.ua;
+  let v = "";
+  try {
+    if (process.platform === "win32") v = readdirSync(dirname(chrome)).filter((d) => /^\d+\.\d+\.\d+\.\d+$/.test(d)).sort((a, b) => parseInt(b, 10) - parseInt(a, 10))[0] || "";
+    else v = (/(\d+)\.\d+\.\d+/.exec(spawnSync(chrome, ["--version"], { encoding: "utf8", timeout: 5000 }).stdout || "") || [])[1] || "";
+  } catch {}
+  uaSeen = { chrome, ua: reducedUa(v, chrome) };
+  return uaSeen.ua;
 }
 
 // A DevTools connection over the browser's pipe: send(method, params, session)
@@ -210,7 +239,8 @@ async function launch(who = MAIN) {
   // over to it and pop an empty window into it, so wait for Done instead
   if (windowOpen()) throw new Error("The Symbiot Browser is open: Symbiot reads your sites once you click Done in it.");
   await strayGone();
-  const proc = spawn(chrome, browserArgs(true), { stdio: ["ignore", "ignore", "pipe", "pipe", "pipe"] });
+  const ua = windowUa(chrome);
+  const proc = spawn(chrome, browserArgs(true, "about:blank", ua), { stdio: ["ignore", "ignore", "pipe", "pipe", "pipe"] });
   if (proc.pid) OWN.add(proc.pid);
   let err = ""; proc.stderr.on("data", (d) => { err = (err + d).slice(-2000); });
   const failed = new Promise((resolve, reject) => { proc.on("error", reject); }); failed.catch(() => {});
@@ -225,6 +255,12 @@ async function launch(who = MAIN) {
         if (existsSync(join(PROFILE, "SingletonLock")) || /existing browser session|ProcessSingleton/i.test(err)) throw new Error("Symbiot's browser is already open, in a window (Sign in) or in another Symbiot: close that, then try again.");
         throw new Error("The browser didn't start: " + ((err.trim().split("\n").pop()) || e.message));
       }
+      // the User-Agent each tab is told (tabUa): none when --user-agent was this Chrome's
+      // (product: "Chrome/154.0.8037.57"); one that fits when it wasn't (Chrome updated since)
+      let product = "", userAgent = ""; try { ({ product = "", userAgent = "" } = await c.send("Browser.getVersion")); } catch {}
+      const fit = reducedUa(String(product).split("/")[1], chrome);
+      if (fit) uaSeen = { chrome, ua: fit };
+      b.tabUa = fit ? (fit === ua ? "" : fit) : ua ? "" : userAgent.replace(/HeadlessChrome/g, "Chrome");
       await closeOthers(c, targetId); await keepSessions(c);
       await openTab(b, who, targetId);
       return b;
@@ -258,9 +294,9 @@ async function openTab(b, who, targetId) {
   await send("Page.enable"); await send("Network.enable");
   const ss = loadSessions(); if (Object.keys(ss).length) try { await send("Page.addScriptToEvaluateOnNewDocument", { source: sessionFill(ss), worldName: "symbiot-sessions" }); } catch {}
   await send("Emulation.setDeviceMetricsOverride", { width: VIEW.w, height: VIEW.h, deviceScaleFactor: 1, mobile: false });
-  // Sites serve "HeadlessChrome" something else (or a block page): look like the browser it is.
-  const { userAgent } = await c.send("Browser.getVersion");
-  if (userAgent) await send("Network.setUserAgentOverride", { userAgent: userAgent.replace(/HeadlessChrome/g, "Chrome") });
+  // Sites serve "HeadlessChrome" something else (or a block page): look like the browser it
+  // is. Mostly done at launch (windowUa); a tab's told only when that couldn't be.
+  if (b.tabUa) await send("Network.setUserAgentOverride", { userAgent: b.tabUa });
   // every `method` event on this tab, until the function it gives is called
   const on = (method, f) => c.on((m) => { if (m && m.sessionId === sessionId && m.method === method) f(m.params || {}); });
   const tab = { who, targetId, page: { send, until, idle, on }, shown: "", used: Date.now(), unhook };
@@ -340,6 +376,58 @@ const SCROLLER = `function scroller() {
   return best;
 }`;
 
+// Runs in the page: querySelectorAll, closest, contains, elementFromPoint and activeElement,
+// through open shadow roots too: a web component's insides. Reddit's comment box, and its
+// picture button and file box, are in shreddit-* and faceplate-* elements' shadow roots, and a
+// map that only read the page's own elements had none of them (2026-10-12). A selector that
+// goes into one has " >>> " where it does: what's before finds the element whose shadow root
+// what's after is looked for in (deepQuery).
+const DEEP = `
+  const upOf = (n) => n.parentElement || (n.parentNode && n.parentNode.host) || null;
+  const SHADOWS = (() => { for (const e of document.querySelectorAll('*')) if (e.shadowRoot) return true; return false; })();
+  const deepAll = (sel, root = document) => {
+    if (!SHADOWS) return [...root.querySelectorAll(sel)];
+    const out = [], walk = (r) => { if (r.shadowRoot) walk(r.shadowRoot); for (const e of r.querySelectorAll('*')) { if (e.matches(sel)) out.push(e); if (e.shadowRoot) walk(e.shadowRoot); } };
+    walk(root); return out;
+  };
+  const deepHas = (r, sel) => { if (r.querySelector(sel)) return true; if (!SHADOWS) return false;
+    if (r.shadowRoot && deepHas(r.shadowRoot, sel)) return true;
+    for (const h of r.querySelectorAll('*')) if (h.shadowRoot && deepHas(h.shadowRoot, sel)) return true;
+    return false; };
+  const deepClosest = (e, sel) => { for (let n = e; n; n = upOf(n)) if (n.nodeType === 1 && n.matches(sel)) return n; return null; };
+  const deepContains = (a, b) => { for (let n = b; n; n = upOf(n)) if (n === a) return true; return false; };
+  const deepAt = (x, y) => { let t = document.elementFromPoint(x, y); while (t && t.shadowRoot) { const i = t.shadowRoot.elementFromPoint(x, y); if (!i || i === t) break; t = i; } return t; };
+  const deepActive = () => { let e = document.activeElement; while (e && e.shadowRoot && e.shadowRoot.activeElement) e = e.shadowRoot.activeElement; return e; };
+  const deepQuery = (sel) => { const parts = String(sel || '').split(' >>> '); let roots = [document];
+    for (let i = 0; i < parts.length; i++) {
+      const found = []; for (const r of roots) { try { found.push(...r.querySelectorAll(parts[i])); } catch (x) {} }
+      if (i === parts.length - 1) return found;
+      roots = found.map((e) => e.shadowRoot).filter(Boolean);
+    }
+    return []; };
+  const deepOne = (sel) => sel ? deepQuery(sel)[0] || null : null;
+`;
+
+// What can be clicked or typed in, as a CSS selector, and (runs in the page, after DEEP)
+// labelOf(e): what a region's label is, as a person would read it.
+const CLICKABLE = 'a[href],button,input:not([type=hidden]),select,textarea,summary,[contenteditable=""],[contenteditable=true],[onclick],' +
+  ['button', 'link', 'tab', 'menuitem', 'menuitemcheckbox', 'menuitemradio', 'option', 'checkbox', 'radio', 'switch', 'combobox', 'textbox', 'searchbox', 'row', 'treeitem'].map((r) => '[role=' + r + ']').join(',');
+const LABEL_OF = `
+  const clean = (s) => String(s || '').replace(/\\s+/g, ' ').trim();
+  const labelOf = (e) => {
+    let s = clean(e.getAttribute('aria-label')); if (s) return s;
+    const by = e.getAttribute('aria-labelledby');
+    if (by) { const root = e.getRootNode(), byId = (id) => (root.getElementById && root.getElementById(id)) || document.getElementById(id);
+      s = clean(by.split(/\\s+/).map((id) => (byId(id) || {}).textContent || '').join(' ')); if (s) return s; }
+    if (e.labels && e.labels[0]) { s = clean(e.labels[0].textContent); if (s) return s; }
+    if (e.tagName === 'INPUT' && /^(button|submit|reset)$/i.test(e.type)) { s = clean(e.value); if (s) return s; }
+    s = clean(e.innerText); if (s) return s;
+    for (const a of ['placeholder', 'title', 'name', 'alt']) { s = clean(e.getAttribute(a)); if (s) return s; }
+    const img = e.querySelector('img[alt],svg title,[aria-label]');
+    return img ? clean(img.getAttribute('alt') || img.getAttribute('aria-label') || img.textContent) : '';
+  };
+`;
+
 // Runs in the page: everything you could click or type in that's on screen now
 // and not covered, as { label, kind, x, y, w, h, selector, href? } in CSS pixels
 // of the viewport (= the screenshot's, at scale 1). Inside a matched button or
@@ -354,15 +442,13 @@ const SCROLLER = `function scroller() {
 // and kept like whole's, each where it is with the list opened out (its y plus
 // how far the list is scrolled), cut to the list's box. part "rest": the rest of
 // the window, what's below the list moved down by `more`.
-const collectJs = (whole, list = null) => `(() => { ${SCROLLER}
-  const SEL = 'a[href],button,input:not([type=hidden]),select,textarea,summary,[contenteditable=""],[contenteditable=true],[onclick],' +
-    ['button','link','tab','menuitem','menuitemcheckbox','menuitemradio','option','checkbox','radio','switch','combobox','textbox','searchbox','row','treeitem'].map((r) => '[role=' + r + ']').join(',');
+const collectJs = (whole, list = null) => `(() => { ${SCROLLER} ${DEEP} ${LABEL_OF}
+  const SEL = ${JSON.stringify(CLICKABLE)};
   const W = innerWidth, H = innerHeight, X = ${whole ? "scrollX" : "0"}, Y = ${whole ? "scrollY" : "0"};
-  const IN = ${JSON.stringify(list)}, LIST = IN ? document.querySelector(IN.selector) : null;
+  const IN = ${JSON.stringify(list)}, LIST = IN ? deepOne(IN.selector) : null;
   const LB = LIST && (() => { const b = LIST.getBoundingClientRect(); return { left: Math.max(0, b.left), top: Math.max(0, b.top), right: Math.min(W, b.right), bottom: Math.min(H, b.bottom) }; })();
   if (IN && !LIST) return { url: location.href, title: document.title, items: [] };
   const kept = ${whole || (list && list.part === "list") ? "(window.__symbiotWhole = window.__symbiotWhole || { out: [], kinds: new Map(), at: new Set() })" : "{ out: [], kinds: new Map(), at: new Set() }"}, out = kept.out, kinds = kept.kinds;
-  const clean = (s) => String(s || '').replace(/\\s+/g, ' ').trim();
   const kindOf = (e) => {
     const t = e.tagName.toLowerCase(), r = (e.getAttribute('role') || '').toLowerCase(), ty = (e.getAttribute('type') || 'text').toLowerCase();
     if (t === 'input') return /^(button|submit|reset|image)$/.test(ty) ? 'button' : /^(checkbox|radio)$/.test(ty) ? ty : 'field';
@@ -376,38 +462,47 @@ const collectJs = (whole, list = null) => `(() => { ${SCROLLER}
     if (t === 'a' || r === 'link') return 'link';
     return 'button';
   };
-  const labelOf = (e) => {
-    let s = clean(e.getAttribute('aria-label')); if (s) return s;
-    const by = e.getAttribute('aria-labelledby');
-    if (by) { s = clean(by.split(/\\s+/).map((id) => (document.getElementById(id) || {}).textContent || '').join(' ')); if (s) return s; }
-    if (e.labels && e.labels[0]) { s = clean(e.labels[0].textContent); if (s) return s; }
-    if (e.tagName === 'INPUT' && /^(button|submit|reset)$/i.test(e.type)) { s = clean(e.value); if (s) return s; }
-    s = clean(e.innerText); if (s) return s;
-    for (const a of ['placeholder', 'title', 'name', 'alt']) { s = clean(e.getAttribute(a)); if (s) return s; }
-    const img = e.querySelector('img[alt],svg title,[aria-label]');
-    return img ? clean(img.getAttribute('alt') || img.getAttribute('aria-label') || img.textContent) : '';
-  };
-  const stuck = (e) => { for (let n = e; n && n !== document.body; n = n.parentElement) if (/^(fixed|sticky)$/.test(getComputedStyle(n).position)) return true; return false; };
-  const unique = (sel) => { try { return document.querySelectorAll(sel).length === 1; } catch (x) { return false; } };
+  const stuck = (e) => { for (let n = e; n && n !== document.body; n = upOf(n)) if (/^(fixed|sticky)$/.test(getComputedStyle(n).position)) return true; return false; };
+  // in a shadow root: the path to its host, " >>> ", then the path in it (deepQuery)
   const cssPath = (e) => {
-    const parts = [];
+    const parts = [], root = e.getRootNode();
+    const unique = (sel) => { try { return root.querySelectorAll(sel).length === 1; } catch (x) { return false; } };
     for (let n = e; n && n.nodeType === 1 && n !== document.documentElement; n = n.parentElement) {
       if (n.id && unique('#' + CSS.escape(n.id))) { parts.unshift('#' + CSS.escape(n.id)); break; }
       let p = n.tagName.toLowerCase();
-      const same = n.parentElement ? [...n.parentElement.children].filter((c) => c.tagName === n.tagName) : [];
+      const par = n.parentElement || n.parentNode, same = par && par.children ? [...par.children].filter((c) => c.tagName === n.tagName) : [];
       if (same.length > 1) p += ':nth-of-type(' + (same.indexOf(n) + 1) + ')';
       parts.unshift(p);
     }
-    return parts.join(' > ');
+    return (root.host ? cssPath(root.host) + ' >>> ' : '') + parts.join(' > ');
   };
-  for (const e of document.querySelectorAll(SEL)) {
+  // What else can be clicked: an element with a click handler of its own (markClicks, or
+  // an onclick), or that the site points at as a link (cursor: pointer set on it, not
+  // passed down from what's around it). domains.co.za's 2FA pop-up has its "Send Email
+  // OTP instead?" as just that, with no link or button role (2026-10-12). Only one that
+  // isn't in a button, link or field and holds none, has a label and is smaller than a
+  // quarter of the window; the outermost, where they nest. Each is a button, to press,
+  // after the buttons, links and fields.
+  const CLK = window.__symbiotClicks || new Set(); window.__symbiotClicks = null;
+  const pointer = (e) => !!e && e.nodeType === 1 && getComputedStyle(e).cursor === 'pointer', took = new Set();
+  for (const e of deepAll('*', document.body)) {
+    if (e instanceof SVGElement && e.tagName.toLowerCase() !== 'svg') continue;
+    if (!(CLK.has(e) || typeof e.onclick === 'function' || (pointer(e) && !pointer(upOf(e))))) continue;
+    const b = e.getBoundingClientRect();
+    if (!b.width || !b.height || b.width * b.height > W * H / 4) continue;
+    if (deepClosest(e, SEL) || deepHas(e, SEL) || (e.tagName === 'LABEL' && e.control)) continue;
+    let inside = false; for (let n = upOf(e); n && !inside; n = upOf(n)) inside = took.has(n);
+    if (inside || !labelOf(e)) continue;
+    took.add(e);
+  }
+  for (const e of [...deepAll(SEL), ...took]) {
     if (out.length >= 200) break;
-    const inList = !!LIST && LIST.contains(e);
+    const inList = !!LIST && deepContains(LIST, e);
     if (IN && inList !== (IN.part === 'list')) continue;
     // in an opened-out list, a row already marked is known by where it is, not by its
     // element: a list that reuses its rows as it scrolls shows other mail in the same one
-    if ((!inList && kinds.has(e)) || e.disabled || e.closest('[aria-hidden=true],[inert]')) continue;
-    const kind = kindOf(e), up = e.parentElement && e.parentElement.closest(SEL);
+    if ((!inList && kinds.has(e)) || e.disabled || deepClosest(e, '[aria-hidden=true],[inert]')) continue;
+    const kind = took.has(e) ? 'button' : kindOf(e), up = upOf(e) && deepClosest(upOf(e), SEL);
     if (up && kinds.get(up) === kind && kind !== 'field') continue;
     const b = e.getBoundingClientRect(), CL = inList ? LB : { left: 0, top: 0, right: W, bottom: H };
     // cut off at the list's bottom: the next part shows all of it (it overlaps), unless this is the
@@ -418,8 +513,8 @@ const collectJs = (whole, list = null) => `(() => { ${SCROLLER}
     const st = getComputedStyle(e);
     if (st.visibility === 'hidden' || st.pointerEvents === 'none' || +st.opacity === 0) continue;
     // on top: what's at its centre is it, or inside it (not a banner over it)
-    const top = document.elementFromPoint((x + x2) / 2, (y + y2) / 2);
-    if (!top || !(top === e || e.contains(top) || top.contains(e))) continue;
+    const top = deepAt((x + x2) / 2, (y + y2) / 2);
+    if (!top || !(top === e || deepContains(e, top) || deepContains(top, e))) continue;
     ${whole ? "if (y >= H - 200 && stuck(e)) continue; // stuck to the window's bottom: left out of the whole page's picture" : ""}
     const full = labelOf(e), at = inList ? Math.round(b.top + LIST.scrollTop) + '|' + kind + '|' + full : '';
     if (at && kept.at.has(at)) { kinds.set(e, kind); continue; }
@@ -447,8 +542,23 @@ const collectJs = (whole, list = null) => `(() => { ${SCROLLER}
 })()`;
 const COLLECT = collectJs(false), COLLECT_WHOLE = collectJs(true);
 
+// The elements with a click handler of their own (the page's addEventListener), for
+// collectJs, as window.__symbiotClicks: the page can't list them itself, Chrome can
+// (DOMDebugger). Best effort: none, on an error.
+const CLICKS = new Set(["click", "mousedown", "mouseup", "pointerdown", "pointerup"]);
+async function markClicks(page) {
+  const objectGroup = "symbiot-clicks";
+  try {
+    const { result } = await page.send("Runtime.evaluate", { expression: "document", objectGroup });
+    const { listeners = [] } = await page.send("DOMDebugger.getEventListeners", { objectId: result.objectId, depth: -1, pierce: true });
+    const ids = [...new Set(listeners.filter((l) => CLICKS.has(l.type) && l.backendNodeId).map((l) => l.backendNodeId))].slice(0, 500);
+    const els = (await Promise.all(ids.map((backendNodeId) => page.send("DOM.resolveNode", { backendNodeId, objectGroup }).then((x) => ({ objectId: x.object.objectId }), () => null)))).filter(Boolean);
+    await page.send("Runtime.callFunctionOn", { objectId: result.objectId, functionDeclaration: "function (...a) { window.__symbiotClicks = new Set(a); }", arguments: els });
+  } catch {} finally { try { await page.send("Runtime.releaseObjectGroup", { objectGroup }); } catch {} }
+}
 // What's on the page now: { url, title, items }.
 async function collect(page, expression = COLLECT) {
+  await markClicks(page);
   const { result, exceptionDetails } = await page.send("Runtime.evaluate", { expression, returnByValue: true });
   if (exceptionDetails) throw new Error("Couldn't read the page: " + ((exceptionDetails.exception && exceptionDetails.exception.description) || exceptionDetails.text));
   return (result && result.value) || { url: "", title: "", items: [] };
@@ -540,7 +650,7 @@ async function snapshotWhole(page, name) {
 // The page itself doesn't move, so the window is as it was after.
 async function snapshotList(page, name) {
   const top = await collect(page), sel = top.scroll && top.scroll.selector;
-  const box = sel && await evaluate(page, `(() => { const e = document.querySelector(${JSON.stringify(sel)}); if (!e) return null;
+  const box = sel && await evaluate(page, `(() => { ${DEEP} const e = deepOne(${JSON.stringify(sel)}); if (!e) return null;
     const b = e.getBoundingClientRect(), x = Math.max(0, Math.round(b.left)), y = Math.max(0, Math.round(b.top));
     return { x, y, w: Math.min(innerWidth, Math.round(b.right)) - x, h: Math.min(innerHeight, Math.round(b.bottom)) - y }; })()`);
   if (!box || box.w < 8 || box.h < 40) return { error: "Couldn't find the list that scrolls on this page. Use Scroll down to map the next part of it.", inside: true };
@@ -592,7 +702,7 @@ function wholePage(id, { who = "" } = {}) {
   const s = loadScreens().find((x) => x.id === id); if (!s) return Promise.resolve({ error: "not found" });
   if (!s.page || !s.page.url) return Promise.resolve({ error: "Whole page works on a mapped page." });
   return oneAtATime(() => withPage(async (page, b) => {
-    const here = await showScreen(page, b, s);
+    const here = await showScreen(page, b, s, { same: true });
     const next = await snapshotWhole(page, s.name.replace(/ ↓ \d+%$/, "").replace(/ \(whole page\)$/, ""));
     if (next.error) { delete next.inside; return next; }
     return { ...next, kept: here };
@@ -786,9 +896,9 @@ function untrustSite(host) {
 // or two stays in view), "top", "bottom", or a y from an earlier map. `where` is
 // what scrolled then: a selector, "" for the page itself, null to find it now.
 // Gives { from, y, max }, or null when nothing scrolls.
-const scrollJs = (to, where = null) => `(() => { ${SCROLLER}
+const scrollJs = (to, where = null) => `(() => { ${SCROLLER} ${DEEP}
   const sel = ${JSON.stringify(where)}, to = ${JSON.stringify(to)};
-  let e = null; try { e = sel === null ? null : sel ? document.querySelector(sel) : document.scrollingElement || document.documentElement; } catch (x) {}
+  let e = null; try { e = sel === null ? null : sel ? deepOne(sel) : document.scrollingElement || document.documentElement; } catch (x) {}
   e = e || scroller(); if (!e) return null;
   const from = e.scrollTop, step = Math.round(Math.min(e.clientHeight, innerHeight) * 0.85);
   e.scrollTo({ top: to === 'down' ? from + step : to === 'up' ? from - step : to === 'top' ? 0 : to === 'bottom' ? e.scrollHeight : +to || 0, behavior: 'instant' });
@@ -797,15 +907,17 @@ const scrollJs = (to, where = null) => `(() => { ${SCROLLER}
 
 // Make the page show what screen s does: it still does if the open browser last
 // mapped it (with what was typed there); else open its address again and scroll
-// to where it was. True if it was still there.
-async function showScreen(page, b, s) {
-  const here = b.shown === s.id && (await page.send("Runtime.evaluate", { expression: "location.href", returnByValue: true })).result?.value === s.page.url;
-  if (!here) {
-    await open(page, s.page.url);
-    const sc = s.page.scroll;
-    if (sc && sc.y) { await page.send("Runtime.evaluate", { expression: scrollJs(sc.y, sc.selector || ""), returnByValue: true }); await page.idle(); }
-  }
-  return here;
+// to where it was. True if it was still there, false if it was opened again.
+// same: a tab at s's address already is left as it is, whatever it mapped last.
+// Whole page and Scroll only look, and opening the page again closes what's open
+// on it (domains.co.za's 2FA pop-up, 2026-10-12) and loses what was typed.
+async function showScreen(page, b, s, { same = false } = {}) {
+  const url = (await page.send("Runtime.evaluate", { expression: "location.href", returnByValue: true })).result?.value;
+  if (url === s.page.url && (same || b.shown === s.id)) return true;
+  await open(page, s.page.url);
+  const sc = s.page.scroll;
+  if (sc && sc.y) { await page.send("Runtime.evaluate", { expression: scrollJs(sc.y, sc.selector || ""), returnByValue: true }); await page.idle(); }
+  return false;
 }
 
 // Scroll a mapped page and map what's in the window then, as a new screen: a site
@@ -818,7 +930,7 @@ function scrollPage(id, to = "down", { who = "" } = {}) {
   const s = loadScreens().find((x) => x.id === id); if (!s) return Promise.resolve({ error: "not found" });
   if (!s.page || !s.page.url) return Promise.resolve({ error: "Scroll works on a mapped page." });
   return oneAtATime(() => withPage(async (page, b) => {
-    const here = await showScreen(page, b, s), sc = s.page.scroll;
+    const here = await showScreen(page, b, s, { same: true }), sc = s.page.scroll;
     const { result } = await page.send("Runtime.evaluate", { expression: scrollJs(to, sc ? sc.selector || "" : null), returnByValue: true });
     const m = result && result.value;
     b.shown = s.id;
@@ -832,11 +944,45 @@ function scrollPage(id, to = "down", { who = "" } = {}) {
   }, true, who)).catch((e) => ({ error: String((e && e.message) || e) }));
 }
 
+// Runs in the page: where to act on region r now, as { x, y, by } in the window,
+// or null (nothing to act on in the window: its spot, c, is). What its selector
+// finds isn't always it: LinkedIn's schedule box opens over the composer, and its
+// "Scheduled (8)" tab's selector found the composer's clock (2026-10-12). So, of
+// what the selector finds: the one at r's spot (on top there); else one with r's
+// label (the page moved, as one opened again can); else whatever can be clicked
+// at r's spot (by: "spot"); else the first it finds. clear: what's there now is
+// it (nothing covers it: a pop-up opened since). On a whole-page screen
+// (full), c is on the page, not the window: what the selector finds is checked
+// against it as far down as it is (the page's and its lists' scrolling), and the
+// spot itself is left to the caller to scroll to.
+// A new tab would leave this one where it was, so a link opens here instead.
+const findRegion = (r, c, full) => `(() => { ${DEEP} ${LABEL_OF}
+  const sel = ${JSON.stringify(r.selector || "")}, want = ${JSON.stringify(r.label || "")}, c = ${JSON.stringify(c)}, full = ${!!full};
+  let all = sel ? deepQuery(sel) : [];
+  all = all.filter((e) => { const b = e.getBoundingClientRect(); return b.width && b.height; });
+  const top = !full && c.x >= 0 && c.y >= 0 && c.x < innerWidth && c.y < innerHeight ? deepAt(c.x, c.y) : null;
+  const down = (e) => { let x = full ? scrollX : 0, y = full ? scrollY : 0; if (full) for (let n = upOf(e); n && n !== document.body; n = upOf(n)) { x += n.scrollLeft || 0; y += n.scrollTop || 0; } return { x, y }; };
+  const atSpot = (e) => { const b = e.getBoundingClientRect(), o = down(e);
+    if (!(c.x >= b.left + o.x - 1 && c.x <= b.right + o.x + 1 && c.y >= b.top + o.y - 1 && c.y <= b.bottom + o.y + 1)) return false;
+    return full || (!!top && (top === e || deepContains(e, top) || deepContains(top, e))); };
+  const go = (e) => { const a = deepClosest(e, 'a[target]'); if (a) a.removeAttribute('target'); };
+  let e = all.find(atSpot) || all.find((x) => labelOf(x).slice(0, 80) === want) || null;
+  const there = !e && top && top !== document.body && top !== document.documentElement && deepClosest(top, ${JSON.stringify(CLICKABLE)});
+  if (there) { go(there); return { x: c.x, y: c.y, by: 'spot' }; }
+  e = e || all[0]; if (!e) return null;
+  go(e); e.scrollIntoView({ block: 'center', inline: 'center' }); const b = e.getBoundingClientRect(), x = b.left + b.width / 2, y = b.top + b.height / 2;
+  const t = b.width && b.height && deepAt(x, y);
+  return b.width && b.height ? { x, y, by: 'selector', clear: !!t && (t === e || deepContains(e, t) || deepContains(t, e)) } : null;
+})()`;
+
 // Act on a mapped region: find it (by its selector, else at the same spot) and give
-// act(page, at, region) where it is now; then map where that leads, as a new screen.
+// act(page, at, region, { found, here }) where it is now (found: by its selector; here:
+// the page wasn't opened again); then map where that leads, as a new screen.
 // On the screen the open browser last mapped, that's the page as it is now (what
-// was typed is still there); on any other, its page is opened from its address
-// again. It acts on the real site, signed in as you, so it needs the caller's
+// was typed is still there). On another of the page it's on (mapped before a pop-up
+// opened, or before Whole page), it's that page as it is too, if the region is on
+// it and nothing covers it; else, and on any other, its page is opened from its
+// address again. It acts on the real site, signed in as you, so it needs the caller's
 // confirmation unless the page's site is trusted.
 function actOnRegion(id, regionId, verb, confirmed, check, act, who = "") {
   const s = loadScreens().find((x) => x.id === id); if (!s) return Promise.resolve({ error: "not found" });
@@ -846,27 +992,24 @@ function actOnRegion(id, regionId, verb, confirmed, check, act, who = "") {
   const host = hostOf(s.page.url);
   if (!confirmed && !isTrusted(s.page.url)) return Promise.resolve({ error: `${verb === "Type" ? "Typing into" : verb === "Upload" ? "Attaching a file with" : verb === "Choose" ? "Choosing in" : "Pressing"} "${r.label}" acts on the real site, signed in as you, and ${host} isn't one of your trusted sites.`, confirm: true, host });
   return oneAtATime(() => withPage(async (page, b) => {
-    const here = await showScreen(page, b, s);
-    // A new tab would leave this one where it was, so a link opens here instead.
-    const find = `(() => { let e = null; try { e = ${JSON.stringify(r.selector || "")} && document.querySelector(${JSON.stringify(r.selector || "")}); } catch (x) {}
-      if (!e) return null; const a = e.closest('a[target]'); if (a) a.removeAttribute('target');
-      e.scrollIntoView({ block: 'center', inline: 'center' }); const b = e.getBoundingClientRect();
-      return b.width && b.height ? { x: b.left + b.width / 2, y: b.top + b.height / 2 } : null; })()`;
-    const { result } = await page.send("Runtime.evaluate", { expression: find, returnByValue: true });
-    const found = !!(result && result.value);
-    // not found by its selector: the same spot. On a whole-page screen that spot is
-    // on the page, not the window: scroll it into the window first (the list, on
-    // one whose list was opened out, if the spot is in it).
-    let at = found ? result.value : center(r);
-    if (!found && s.page.full) {
-      const y = await evaluate(page, s.page.list ? `(() => { const e = document.querySelector(${JSON.stringify(s.page.list)}); if (!e) return 0;
+    const find = async () => (await page.send("Runtime.evaluate", { expression: findRegion(r, center(r), !!s.page.full), returnByValue: true })).result?.value;
+    let here = await showScreen(page, b, s, { same: true }), hit = null;
+    if (here && b.shown !== s.id) { hit = await find(); if (!(hit && hit.by === "selector" && hit.clear)) { hit = null; here = await showScreen(page, b, s); } }
+    hit = hit || await find();
+    const found = !!hit && hit.by === "selector";
+    // not found: the same spot. On a whole-page screen that spot is on the page, not
+    // the window: scroll it into the window first (the list, on one whose list was
+    // opened out, if the spot is in it).
+    let at = hit ? { x: hit.x, y: hit.y } : center(r);
+    if (!hit && s.page.full) {
+      const y = await evaluate(page, s.page.list ? `(() => { ${DEEP} const e = deepOne(${JSON.stringify(s.page.list)}); if (!e) return 0;
         const b = e.getBoundingClientRect(); if (${at.y} < b.top) return 0; e.scrollTop = ${at.y} - b.top - e.clientHeight / 2; return e.scrollTop; })()` : `(scrollTo(0, ${at.y} - innerHeight / 2), scrollY)`);
       at = { x: at.x, y: at.y - (Number(y) || 0) };
     }
     const navigating = page.until("Page.frameStartedLoading", 1500);
-    const extra = await act(page, at, r);
+    const extra = await act(page, at, r, { found, here });
     // refused on the page, nothing changed: the page stays as it was, so what was typed before is kept
-    if (extra && extra.refused) return { error: extra.refused, stay: true };
+    if (extra && extra.refused) { if (!here) b.shown = s.id; return { error: extra.refused, kept: here, stay: true }; }
     if (await navigating) await page.until("Page.loadEventFired", 30000);
     await page.idle();
     const next = await snapshot(page, ""); // named after the page it landed on
@@ -902,8 +1045,8 @@ function pressRegion(id, regionId, { confirmed = false, noSend = false, who = ""
 // once; none, or more than once, changes nothing and says so.
 const MAX_TEXT = 2000;
 const CHAT_HOSTS = new Set(["web.whatsapp.com"]);
-const SELECT_PART = (old) => `(() => {
-  const e = document.activeElement, w = ${JSON.stringify(String(old || ""))};
+const SELECT_PART = (old) => `(() => { ${DEEP}
+  const e = deepActive(), w = ${JSON.stringify(String(old || ""))};
   if (!e) return { problem: 'none' };
   const count = (t) => { let n = 0, i = -1; while ((i = t.indexOf(w, i + 1)) !== -1) n++; return n; };
   if (typeof e.setSelectionRange === 'function' && typeof e.value === 'string') {
@@ -932,7 +1075,10 @@ function typeRegion(id, regionId, text, { enter = false, confirmed = false, noSe
     if (part == null && !text && !enter) return "Give the text to type.";
     if (text.length > MAX_TEXT) return `That's more than ${MAX_TEXT} characters.`;
     return "";
-  }, async (page, at, r) => {
+  }, async (page, at, r, { found, here }) => {
+    // its field gone (a pop-up's, closed by opening the page again), the same spot is
+    // something else: domains.co.za's 2FA PIN went into the page's Email field (2026-10-12)
+    if (!found) return { refused: `"${r.label}" isn't on the page now${here ? "" : " (it was opened again from its address, which closes a pop-up and loses what was typed)"}, so nothing was typed: it would have gone into whatever is in its place. Map the page as it is now, or press what opens that field again first.` };
     await clickAt(page, at);
     if (part != null) {
       const sel = await evaluate(page, SELECT_PART(part));
@@ -940,7 +1086,7 @@ function typeRegion(id, regionId, text, { enter = false, confirmed = false, noSe
       if (text) await page.send("Input.insertText", { text });
       else for (const type of ["keyDown", "keyUp"]) await page.send("Input.dispatchKeyEvent", { type, key: "Delete", code: "Delete", windowsVirtualKeyCode: 46, nativeVirtualKeyCode: 46 });
     } else {
-      await page.send("Runtime.evaluate", { expression: `(() => { const e = document.activeElement; if (!e) return;
+      await page.send("Runtime.evaluate", { expression: `(() => { ${DEEP} const e = deepActive(); if (!e) return;
       if (typeof e.select === 'function') e.select(); else if (e.isContentEditable) getSelection().selectAllChildren(e); })()` });
       if (text) await page.send("Input.insertText", { text });
     }
@@ -955,11 +1101,11 @@ function typeRegion(id, regionId, text, { enter = false, confirmed = false, noSe
 // (MX turns its Priority box on). A menu of the site's own making (role=combobox) is
 // opened, and its option (role=option) clicked. The option: its label or value, exactly,
 // else the one label that has it in it; none, or more than one, says which there are.
-const CHOOSE_SELECT = (sel, at, want) => `(() => {
-  let e = null; try { e = ${JSON.stringify(sel || "")} && document.querySelector(${JSON.stringify(sel || "")}); } catch (x) {}
-  e = e || document.elementFromPoint(${Number(at.x) || 0}, ${Number(at.y) || 0});
-  const lab = e && e.closest && e.closest('label');
-  const s = !e ? null : e.tagName === 'SELECT' ? e : (e.querySelector && e.querySelector('select')) || (lab && lab.control && lab.control.tagName === 'SELECT' ? lab.control : null);
+const CHOOSE_SELECT = (sel, at, want) => `(() => { ${DEEP}
+  let e = deepOne(${JSON.stringify(sel || "")});
+  e = e || deepAt(${Number(at.x) || 0}, ${Number(at.y) || 0});
+  const lab = e && deepClosest(e, 'label');
+  const s = !e ? null : e.tagName === 'SELECT' ? e : deepAll('select', e)[0] || (lab && lab.control && lab.control.tagName === 'SELECT' ? lab.control : null);
   if (!s) return { native: false };
   const norm = (t) => String(t || '').replace(/\\s+/g, ' ').trim().toLowerCase(), w = norm(${JSON.stringify(String(want || ""))});
   const opts = [...s.options].map((o) => ({ o, label: norm(o.label || o.text), value: norm(o.value) })), all = opts.map((x) => x.o.label || x.o.text);
@@ -970,9 +1116,9 @@ const CHOOSE_SELECT = (sel, at, want) => `(() => {
   s.dispatchEvent(new Event('input', { bubbles: true })); s.dispatchEvent(new Event('change', { bubbles: true }));
   return { native: true, chose: o.label || o.text, value: s.value };
 })()`;
-const CHOOSE_OPTION = (want) => `(() => {
+const CHOOSE_OPTION = (want) => `(() => { ${DEEP}
   const norm = (t) => String(t || '').replace(/\\s+/g, ' ').trim().toLowerCase(), w = norm(${JSON.stringify(String(want || ""))});
-  const seen = [...document.querySelectorAll('[role=option]')].filter((e) => { const b = e.getBoundingClientRect(); return b.width > 0 && b.height > 0; });
+  const seen = deepAll('[role=option]').filter((e) => { const b = e.getBoundingClientRect(); return b.width > 0 && b.height > 0; });
   const all = seen.map((e) => (e.getAttribute('aria-label') || e.textContent || '').replace(/\\s+/g, ' ').trim());
   let hit = seen.filter((e, i) => norm(all[i]) === w); if (!hit.length) hit = seen.filter((e, i) => w && norm(all[i]).includes(w));
   if (hit.length !== 1) return { problem: hit.length ? 'more' : 'none', options: all };
@@ -1007,17 +1153,17 @@ function chooseRegion(id, regionId, option, { confirmed = false, who = "" } = {}
 // pressed, with the file dialog caught instead of shown, and the file put in the
 // box that dialog was for. The files are checked (absolute, there) before a
 // browser starts, and off your trusted sites it asks first, like press and type.
-const FILE_BOX = (sel, at) => `(() => {
-  const isBox = (x) => !!x && x.tagName === 'INPUT' && String(x.type).toLowerCase() === 'file', all = [...document.querySelectorAll('input[type=file]')];
-  let e = null; try { e = ${JSON.stringify(sel || "")} && document.querySelector(${JSON.stringify(sel || "")}); } catch (x) {}
-  e = e || document.elementFromPoint(${Number(at.x) || 0}, ${Number(at.y) || 0});
+const FILE_BOX = (sel, at) => `(() => { ${DEEP}
+  const isBox = (x) => !!x && x.tagName === 'INPUT' && String(x.type).toLowerCase() === 'file', all = deepAll('input[type=file]');
+  let e = deepOne(${JSON.stringify(sel || "")});
+  e = e || deepAt(${Number(at.x) || 0}, ${Number(at.y) || 0});
   let box = null, how = '';
   if (isBox(e)) { box = e; how = 'the field itself'; }
   else if (e) {
-    const lab = e.closest('label'), inside = e.querySelector('input[type=file]');
+    const lab = deepClosest(e, 'label'), inside = deepAll('input[type=file]', e)[0];
     if (inside) { box = inside; how = 'the file box inside it'; }
     else if (lab && isBox(lab.control)) { box = lab.control; how = "its label's file box"; }
-    else for (let n = e.parentElement; n && !box; n = n.parentElement) { const f = n.querySelector('input[type=file]'); if (f) { box = f; how = all.length === 1 ? 'the only file box on the page' : "the nearest of the page's " + all.length + ' file boxes'; } }
+    else for (let n = upOf(e); n && !box; n = upOf(n)) { const f = deepAll('input[type=file]', n)[0]; if (f) { box = f; how = all.length === 1 ? 'the only file box on the page' : "the nearest of the page's " + all.length + ' file boxes'; } }
   }
   if (!box && all.length === 1) { box = all[0]; how = 'the only file box on the page'; }
   if (!box) return null;
@@ -1142,4 +1288,4 @@ function watchWindow({ every = 2000, start = 30000 } = {}) {
   if (WATCH.unref) WATCH.unref();
 }
 
-export { tabKey, siteUrl, browserArgs, mapPage, wholePage, readPage, readTexts, readLinkedIn, LI_READ, pagePicture, pageClip, CLIP, isSend, pressRegion, typeRegion, chooseRegion, uploadRegion, uploadFiles, attachFiles, FILE_BOX, scrollPage, SCROLLS, signIn, keepBrowserOpen, closeBrowser, browserOpen, keepSessions, SESSION_KEEP, SESSIONS, loadSessions, trustedSites, isTrusted, trustSite, untrustSite, PROFILE , openSymbiotBrowser, closeSymbiotBrowser, onBrowserClosed, scratchPage, open as openPage, evaluate, SCROLLER, watchWindow, windowOpen, lockHolder, setBrowserHub , browserHub };
+export { tabKey, siteUrl, browserArgs, reducedUa, windowUa, mapPage, wholePage, readPage, readTexts, readLinkedIn, LI_READ, pagePicture, pageClip, CLIP, isSend, pressRegion, typeRegion, chooseRegion, uploadRegion, uploadFiles, attachFiles, FILE_BOX, scrollPage, SCROLLS, signIn, keepBrowserOpen, closeBrowser, browserOpen, keepSessions, SESSION_KEEP, SESSIONS, loadSessions, trustedSites, isTrusted, trustSite, untrustSite, PROFILE , openSymbiotBrowser, closeSymbiotBrowser, onBrowserClosed, scratchPage, open as openPage, evaluate, SCROLLER, watchWindow, windowOpen, lockHolder, setBrowserHub , browserHub };

@@ -75,7 +75,7 @@
       "category": "Utility",
       "icon": "assets/icon.png",
       "artifactName": "Symbiot.${ext}",
-      "synopsis": "Your work, handled alongside you"
+      "synopsis": "Your coding agents work. You only do what only you can do"
     },
     "deb": {
       "artifactName": "symbiot.deb"

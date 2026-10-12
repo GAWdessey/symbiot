@@ -213,12 +213,43 @@ function sandboxWrites(repoPath, tmpl = "") {
   for (const c of SANDBOX_CACHES) out.push(join(homedir(), c));
   return [...new Set(out.filter(Boolean).map((p) => resolve(String(p).replace(/^~(?=\/|$)/, homedir()))))];
 }
+// What a lane's allowed list opens up in its sandbox: a Read rule for a place the sandbox
+// hides from every run (Read(~/.ssh/**), or the ssh agent's socket in /run/user) is
+// re-allowed for that lane (sandbox.filesystem.allowRead, over denyRead), so what the
+// user allowed works: they allowed whatsapp_module's ssh list and nothing changed, as its
+// sandbox still hid ~/.ssh (2026-10-12). Never Symbiot's own keys and settings, nor a
+// socket that's a way out of the sandbox (the session's bus, Docker's, the screen's):
+// in /run/user only an ssh agent's. Read(~/x/**) is the folder ~/x; a path given
+// /x or //x is that path (Symbiot's own rules are written so). { lift, sealed }: the
+// paths to re-allow, and the rules that never are.
+const SSH_AGENT = /\/(gcr\/ssh|keyring\/ssh|ssh-agent[\w.-]*|openssh_agent|gnupg\/S\.gpg-agent\.ssh)$/;
+function sandboxLifts(rules, { home = homedir(), sockets = SANDBOX_SOCKETS(), agentSock = process.env.SSH_AUTH_SOCK || "" } = {}) {
+  const lift = [], sealed = [], own = [join(CONFIG_DIR, "config.json"), join(CONFIG_DIR, "secrets.json")];
+  const under = (p, d) => p === d || p.startsWith(d + "/");
+  for (const r of rules || []) {
+    const m = /^Read\((.+)\)$/.exec(String(r).trim()); if (!m) continue;
+    let p = m[1].trim();
+    if (/^~(\/|$)/.test(p)) p = home + p.slice(1); else if (p.startsWith("/")) p = "/" + p.replace(/^\/+/, ""); else continue;
+    p = p.replace(/\/\*\*$/, "").replace(/\/+$/, "") || "/";
+    const hidden = SANDBOX_SECRETS.some((x) => under(p, join(home, x))), socket = sockets.some((x) => under(p, x));
+    if (!hidden && !socket) continue;
+    const ok = hidden ? !own.some((x) => under(x, p) || under(p, x)) : /^\/run\/user\/\d+\//.test(p) && !/[*?[]/.test(p) && (SSH_AGENT.test(p) || (!!agentSock && p === agentSock));
+    (ok ? lift : sealed).push(ok ? p : String(r).trim());
+  }
+  return { lift: [...new Set(lift)], sealed: [...new Set(sealed)] };
+}
+// The allow rules a repo's own Claude settings give its runs (an allowed list goes in settings.local.json)
+function repoAllows(repoPath) {
+  const out = [];
+  for (const f of ["settings.json", "settings.local.json"]) { try { const d = JSON.parse(readFileSync(join(repoPath, ".claude", f), "utf8")); for (const x of (d.permissions && d.permissions.allow) || []) out.push(String(x)); } catch {} }
+  return out;
+}
 // { file, writes } for a repo run to be sandboxed, else null.
 function sandboxFor(repoPath, tmpl = "", { needs = sandboxNeeds } = {}) {
   if (!sandboxed(repoPath) || !needs().ready) return null;
-  const writes = sandboxWrites(repoPath, tmpl);
+  const writes = sandboxWrites(repoPath, tmpl), { lift } = sandboxLifts(repoAllows(repoPath));
   const s = { ...JSON.parse(readFileSync(guardSettings(), "utf8")), sandbox: { enabled: true, failIfUnavailable: true, autoAllowBashIfSandboxed: true, allowUnsandboxedCommands: false,
-    network: { allowAllUnixSockets: true }, filesystem: { allowWrite: writes, denyRead: [...SANDBOX_SECRETS.map((p) => join(homedir(), p)), ...SANDBOX_SOCKETS()] } } };
+    network: { allowAllUnixSockets: true }, filesystem: { allowWrite: writes, denyRead: [...SANDBOX_SECRETS.map((p) => join(homedir(), p)), ...SANDBOX_SOCKETS()], ...(lift.length ? { allowRead: lift } : {}) } } };
   const file = join(SANDBOX_DIR, digest(resolve(repoPath)) + ".json");
   try { mkdirSync(SANDBOX_DIR, { recursive: true, mode: 0o700 }); writeFileSync(file, JSON.stringify(s, null, 2) + "\n", { mode: 0o600 }); } catch { return null; }
   return { file, writes };
@@ -1119,6 +1150,8 @@ function installAllowlist(path) {
   if (!allow.length && !dirs.length && !deny.length) return null;
   const wide = allow.filter(wideRule);
   if (wide.length) return { refused: wide };
+  const { sealed } = sandboxLifts(allow); // allowed, it'd still be hidden from the run: say so instead
+  if (sealed.length) return { refused: sealed, sealed: true };
   const f = join(path, ".claude", "settings.local.json");
   let cur = {}; try { cur = JSON.parse(readFileSync(f, "utf8")); } catch {}
   const perm = cur.permissions || {}, merge = (a, b) => [...new Set([...list(a), ...b])];
@@ -1265,7 +1298,7 @@ function withScope(tmpl, repoPath) {
 }
 function grantFromStep(step, path = "", notes = {}) {
   const t = String(step || "");
-  if (path && /allowlist\.proposed\.json|settings\.local\.json|press allow|\ballow list\b/i.test(t)) { const g = installAllowlist(path); if (g && g.refused) { notes.refused = g.refused; return null; } if (g) return g; }
+  if (path && /allowlist\.proposed\.json|settings\.local\.json|press allow|\ballow list\b/i.test(t)) { const g = installAllowlist(path); if (g && g.refused) { notes.refused = g.refused; notes.sealed = !!g.sealed; return null; } if (g) return g; }
   if (!/only you: a permission|only you: what (this|the) agent|\b(let|allow) (the )?agents?\b|\ballow (access|reading)\b/i.test(t)) return null;
   const got = [];
   const dir = (t.match(/(~\/[^\s,;)`'"]+|\/(?:home|Users|opt|srv|mnt|media|tmp)\/[^\s,;)`'"]+)/) || [])[1];
@@ -1322,10 +1355,12 @@ function answerQuestions(path, answers, opts = {}) {
   // less, and don't leave it as the user's step (picking it again would do nothing).
   if (notes.refused) {
     const which = notes.refused.slice(0, 3).map((r) => "`" + r + "`").join(", ");
-    try { writeFileSync(join(path, ".symbiot", "ANSWERS.md"), readSymbiot(path, "ANSWERS.md").replace(/\s*$/, "\n") + `\n### Symbiot didn't turn your allow list on\nIt has ${which}, which would let you run anything (a shell, sudo, or a wildcard rm/dd/chmod). Write a narrower .symbiot/allowlist.proposed.json: each such command spelled out exactly, the paths it touches named, and ask again.\n_${day}_\n`); } catch {}
+    try { writeFileSync(join(path, ".symbiot", "ANSWERS.md"), readSymbiot(path, "ANSWERS.md").replace(/\s*$/, "\n") + `\n### Symbiot didn't turn your allow list on\n` + (notes.sealed
+      ? `It has ${which}, which Symbiot never opens to a run's sandbox: its own keys and settings, or a socket that's a way out of the sandbox (the session's bus, Docker's, the screen's). Take those out of .symbiot/allowlist.proposed.json and ask again; if the work needs them, hand it to ops.`
+      : `It has ${which}, which would let you run anything (a shell, sudo, or a wildcard rm/dd/chmod). Write a narrower .symbiot/allowlist.proposed.json: each such command spelled out exactly, the paths it touches named, and ask again.`) + `\n_${day}_\n`); } catch {}
     out.refused = notes.refused;
     yours = yours.filter((st) => !/allowlist\.proposed\.json|settings\.local\.json|press allow|\ballow list\b/i.test(st));
-    out.note = `Not turned on: the list has ${which}, which would let an agent run anything. Your agent has been asked for a narrower one` + (opts.rerun ? " and is starting again." : ".");
+    out.note = `Not turned on: the list has ${which}, which ${notes.sealed ? "Symbiot never opens to an agent's sandbox" : "would let an agent run anything"}. Your agent has been asked for a narrower one` + (opts.rerun ? " and is starting again." : ".");
   }
   if (yours.length) {
     const step = yours.join(" "), files = namedFiles(steps.map((s) => s.named).join(" "), path);
@@ -1387,4 +1422,4 @@ function agentsList() {
   }).concat(earlierRuns());
 }
 
-export { CHANGES, toKnownHost, continueLanes, autoPick, autoDecide, FACTS, factsOf, knownRun, withStream, workOf, HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, connectorsInfo, linkReach, fillHandoff, runHandoff, nothingToDo, PARKED_NOTE, parkedPaths, isParked, parkLane, agentMissing, blockedAgain, runningHandoff, loadRuns, earlierRuns, namedFiles, unchangedStep, waitingFor, startWaiting, noteUntracked, untrackedBefore, forgetUntracked, writeTasks, droppedTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, pickAgent, findOrcaCli, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, skipIdea, agentQuestions, answerQuestions, agentsList, needsOf, settleNeeds, NEEDS_FOR, readLastWords, readNeeds, parseRead, READ_FILE, autoAllow, autoAllowSweep, allowlistInWork, installAllowlist, inWork, withScope, withTrust, sandboxFor, sandboxEnv, sandboxNeeds, sandboxState, sandboxWrites, SANDBOX_DIR, resumeFor, noteSession, trustFull, GUARD_SETTINGS, isUrgent, urgentFirst, urgentUndo, urgentDone, urgentSweep, urgentState , licenceGate };
+export { CHANGES, toKnownHost, continueLanes, autoPick, autoDecide, FACTS, factsOf, knownRun, withStream, workOf, HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, connectorsInfo, linkReach, fillHandoff, runHandoff, nothingToDo, PARKED_NOTE, parkedPaths, isParked, parkLane, agentMissing, blockedAgain, runningHandoff, loadRuns, earlierRuns, namedFiles, unchangedStep, waitingFor, startWaiting, noteUntracked, untrackedBefore, forgetUntracked, writeTasks, droppedTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, pickAgent, findOrcaCli, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, skipIdea, agentQuestions, answerQuestions, agentsList, needsOf, settleNeeds, NEEDS_FOR, readLastWords, readNeeds, parseRead, READ_FILE, autoAllow, autoAllowSweep, allowlistInWork, installAllowlist, inWork, withScope, withTrust, sandboxFor, sandboxLifts, sandboxEnv, sandboxNeeds, sandboxState, sandboxWrites, SANDBOX_DIR, resumeFor, noteSession, trustFull, GUARD_SETTINGS, isUrgent, urgentFirst, urgentUndo, urgentDone, urgentSweep, urgentState , licenceGate };

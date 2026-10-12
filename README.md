@@ -1301,8 +1301,10 @@ agent or script can read it. Screenshots and that file are readable by you only.
 `github.com/pulls` or a full address) and Symbiot opens it in a hidden (headless)
 browser, takes its screenshot and marks every button, link and field on it by
 itself, named from the page (`Compose`, `Search mail`, …) with what each one is
-and a CSS selector to find it again. Nothing to bring to the front, nothing to
-drag. Only what you could click right now counts: anything hidden, below the
+and a CSS selector to find it again. Text a site made clickable without making
+it a link or a button (a sign-in pop-up's "Send Email OTP instead?": its own
+click handler, or the pointing-hand cursor) is marked too, as a button. Nothing
+to bring to the front, nothing to drag. Only what you could click right now counts: anything hidden, below the
 fold or covered by something else is left out. A site is usually taller than
 the window, so a map only has the part that fits: when there's more, the screen
 says so and **Scroll down** (and **Scroll up**) scrolls the page in the hidden
@@ -1325,9 +1327,13 @@ ticked, presses Enter, which is how a search or a one-line form is sent; the
 result is mapped as a new screen too. The hidden browser stays open for five
 minutes after each map, press or type, so a press or type on the screen it just
 mapped carries on from that page as it is: type into a field without Enter, then
-press the form's own button (**Send**, **Next**) on the new screen. On an older
-screen, or once the browser has closed, it opens the page from its address again,
-and anything typed there is gone. Press and
+press the form's own button (**Send**, **Next**) on the new screen. An older
+screen of the page it's on works on the page as it is too, when what you press
+or type into is there and nothing covers it. Otherwise, or once the browser has
+closed, it opens the page from its address again: anything typed there is gone,
+and so is a pop-up that was open, so Type refuses when its field isn't there any
+more rather than type into whatever is in its place. Whole page and Scroll never
+open a page again that the browser is already on. Press and
 Type act on the real site, signed in as you, so they ask first, unless the site
 is under **Trusted sites** in Settings: there, they go ahead without asking, for
 you and for agents. A trusted site covers its subdomains (`google.com` covers
