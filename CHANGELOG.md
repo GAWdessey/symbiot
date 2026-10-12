@@ -2,6 +2,11 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.63.9
+
+- **Answering an agent no longer rereads its whole conversation.** Each answer you gave an agent picked its conversation up again, all of it: a one-word "yes" to an agent that had read 195,000 tokens cost 195,000 again, and resumed runs were three quarters of a week's use. Once an agent's conversation is past 60k, your answer now starts it fresh (about 22k), with a note of where it got to in its own words. Short ones still carry on as before.
+- **See how much an agent carries.** A run on the Workdesk shows its context: what it rereads with every step.
+
 ## 0.63.8
 
 - **No more file names on permission questions, anywhere.** When an agent asked for a permission, Home said it in plain words with an Allow button, but the same question on the Workdesk, on a project's card and on your phone still read "allow the list in .symbiot/allowlist.proposed.json". Every screen now says what the agent wants to do ("connect to the computer at 13.51.104.186") with Allow.
