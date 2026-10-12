@@ -3,7 +3,7 @@
 // tab, and the questions an unattended agent leaves for the user.
 import { MARKETING_DIR } from "./marketing.mjs";
 import { licenceState, isPro, can, canWorkIn } from "./licence.mjs";
-import { spawn, spawnSync } from "node:child_process";
+import { spawn, spawnSync, execFile } from "node:child_process";
 import { homedir } from "node:os";
 import { join, dirname, resolve, relative } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -957,18 +957,41 @@ function track(name, cmd, cwd, onExit, env) {
 // Agent-agnostic "what did it do": read it straight from git, so it works the
 // same whoever the agent was (Claude, Codex/GPT, Aider, Gemini, Cursor…). Shows
 // current working-tree changes + any commits the agent made since it started.
-function agentChanges(path, startedAt) {
-  try {
-    const q = JSON.stringify(path);
-    const porcelain = sh(`git -C ${q} status --porcelain`).trim();
-    // Don't count Symbiot's own .symbiot/ dir (agent.log, TASKS.md) as the agent's work.
+// The answer is kept a while (CHANGES): Home and the Agents tab ask every few seconds
+// for every earlier run (up to 60), and three or four git commands each, one after
+// another, held the whole app up 20s in every 45 (2026-10-12). One older than
+// CHANGES_FRESH is still given while git is asked again in the background, so a
+// screen never waits on git for a run it has seen before.
+const CHANGES = new Map(), CHANGES_FRESH = 15000, CHANGES_MAX = 300;
+const NO_CHANGES = { dirty: 0, stat: "", commits: [] };
+function changesOf(path, startedAt, git) {
+  // Don't count Symbiot's own .symbiot/ dir (agent.log, TASKS.md) as the agent's work.
+  const since = new Date(startedAt || Date.now()).toISOString();
+  const read = ([porcelain, stat, cached, raw]) => {
+    porcelain = porcelain.trim(); raw = raw.trim();
     const dirty = porcelain ? porcelain.split("\n").filter((l) => { const p = l.slice(3); return p !== ".symbiot" && p !== ".symbiot/" && p.indexOf(".symbiot/") !== 0; }).length : 0;
-    const stat = (sh(`git -C ${q} diff --shortstat`).trim() || sh(`git -C ${q} diff --cached --shortstat`).trim()).replace(/^\s+/, "");
-    const since = new Date(startedAt || Date.now()).toISOString();
-    const raw = sh(`git -C ${q} log --since=${JSON.stringify(since)} --pretty=%h\u0001%s`).trim();
     const commits = raw ? raw.split("\n").slice(0, 8).map((l) => { const i = l.indexOf("\u0001"); return { hash: l.slice(0, i), msg: l.slice(i + 1) }; }) : [];
-    return { dirty, stat, commits };
-  } catch { return { dirty: 0, stat: "", commits: [] }; }
+    return { dirty, stat: (stat.trim() || cached.trim()).replace(/^\s+/, ""), commits };
+  };
+  const asks = [["status", "--porcelain"], ["diff", "--shortstat"], ["diff", "--cached", "--shortstat"], ["log", `--since=${since}`, "--pretty=%h\u0001%s"]];
+  const outs = asks.map((a) => git(["-C", path, ...a]));
+  return outs.some((o) => o && typeof o.then === "function") ? Promise.all(outs).then(read) : read(outs);
+}
+const gitNow = (args) => { const r = spawnSync("git", args, { encoding: "utf8", timeout: 6000, killSignal: "SIGKILL", maxBuffer: 32 * 1024 * 1024, stdio: ["ignore", "pipe", "ignore"] }); return r.status === 0 ? String(r.stdout || "") : ""; };
+const gitLater = (args) => new Promise((res) => execFile("git", args, { encoding: "utf8", timeout: 6000, killSignal: "SIGKILL", maxBuffer: 32 * 1024 * 1024 }, (e, out) => res(e ? "" : String(out || ""))));
+function agentChanges(path, startedAt) {
+  const had = CHANGES.get(path), now = Date.now();
+  // the same run: a run's start is only known roughly when it began before a restart
+  if (had && Math.abs(had.startedAt - (startedAt || now)) < 60000) {
+    if (now - had.at > CHANGES_FRESH && !had.busy) {
+      had.busy = true;
+      Promise.resolve(changesOf(path, startedAt, gitLater)).then((v) => { CHANGES.set(path, { at: Date.now(), startedAt: had.startedAt, v }); }, () => { had.busy = false; });
+    }
+    return had.v;
+  }
+  let v = NO_CHANGES; try { v = changesOf(path, startedAt, gitNow); } catch {}
+  if (CHANGES.size >= CHANGES_MAX) CHANGES.clear();
+  CHANGES.set(path, { at: now, startedAt: startedAt || now, v }); return v;
 }
 // ---- agent questions: decisions, options and ideas, from ANY agent ---------
 // A handoff runs unattended (claude -p, codex exec, aider --message, …), so the
@@ -1327,4 +1350,4 @@ function agentsList() {
   }).concat(earlierRuns());
 }
 
-export { toKnownHost, continueLanes, autoPick, autoDecide, FACTS, factsOf, knownRun, withStream, workOf, HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, connectorsInfo, linkReach, fillHandoff, runHandoff, nothingToDo, PARKED_NOTE, parkedPaths, isParked, parkLane, agentMissing, blockedAgain, runningHandoff, loadRuns, earlierRuns, namedFiles, waitingFor, startWaiting, noteUntracked, untrackedBefore, forgetUntracked, writeTasks, droppedTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, pickAgent, findOrcaCli, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, skipIdea, agentQuestions, answerQuestions, agentsList, needsOf, settleNeeds, NEEDS_FOR, readLastWords, readNeeds, parseRead, READ_FILE, autoAllow, autoAllowSweep, allowlistInWork, installAllowlist, inWork, withScope, withTrust, sandboxFor, sandboxEnv, sandboxNeeds, sandboxState, sandboxWrites, SANDBOX_DIR, resumeFor, noteSession, trustFull, GUARD_SETTINGS, isUrgent, urgentFirst, urgentUndo, urgentDone, urgentSweep, urgentState , licenceGate };
+export { CHANGES, toKnownHost, continueLanes, autoPick, autoDecide, FACTS, factsOf, knownRun, withStream, workOf, HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, connectorsInfo, linkReach, fillHandoff, runHandoff, nothingToDo, PARKED_NOTE, parkedPaths, isParked, parkLane, agentMissing, blockedAgain, runningHandoff, loadRuns, earlierRuns, namedFiles, waitingFor, startWaiting, noteUntracked, untrackedBefore, forgetUntracked, writeTasks, droppedTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, pickAgent, findOrcaCli, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, skipIdea, agentQuestions, answerQuestions, agentsList, needsOf, settleNeeds, NEEDS_FOR, readLastWords, readNeeds, parseRead, READ_FILE, autoAllow, autoAllowSweep, allowlistInWork, installAllowlist, inWork, withScope, withTrust, sandboxFor, sandboxEnv, sandboxNeeds, sandboxState, sandboxWrites, SANDBOX_DIR, resumeFor, noteSession, trustFull, GUARD_SETTINGS, isUrgent, urgentFirst, urgentUndo, urgentDone, urgentSweep, urgentState , licenceGate };

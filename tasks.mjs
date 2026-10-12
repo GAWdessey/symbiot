@@ -439,17 +439,29 @@ function finishedOffer(path, open) {
 // uncommitted changes no ticked task covers (untasked: approve them as-is, with
 // `open`, the repo's open tasks, to tick the ones the run finished).
 // running: an agent is still editing there, so its changes may be half done.
-function pendingReview() {
+// A repo's git side of Review (what changed, what's unreleased), kept REVIEW_FRESH for
+// the screens that only show it (pendingReview({ kept: true }): Home and its 20s
+// tick), which asked git for every repo every few seconds and held the app up
+// (2026-10-12). Approve asks git itself, and forgets what was kept (forgetReview).
+const REVIEW_GIT = new Map(), REVIEW_FRESH = 15000;
+function reviewGit(path, kept) {
+  const had = kept && REVIEW_GIT.get(path);
+  if (had && Date.now() - had.at < REVIEW_FRESH) return had.v;
+  const v = { ...workingChanges(path), unreleased: unreleased(path), bumpOffer: bumpOffer(path), publishesOnMerge: publishesOnMerge(path) };
+  REVIEW_GIT.set(path, { at: Date.now(), v }); return v;
+}
+const forgetReview = () => REVIEW_GIT.clear();
+function pendingReview({ kept = false } = {}) {
   const t = loadTasks(), by = {}; for (const x of t) if (x.review && !x.done && !x.archived) (by[x.repo] = by[x.repo] || []).push(x);
   const sent = [...new Set(t.filter((x) => x.repo && !x.archived && !by[x.repo]).map((x) => x.repo))];
   const map = Object.keys(by).length || sent.length ? laneMap() : {};
   const am = autoMergeRepos();
-  const out = Object.keys(by).sort().map((repo) => { const path = map[repo] || ""; return { repo, path, tasks: by[repo], autoMerge: am.includes(repo), running: !!(path && runningHandoff(path)), ...(path ? { ...workingChanges(path), unreleased: unreleased(path), bumpOffer: bumpOffer(path), publishesOnMerge: publishesOnMerge(path) } : { branch: "", files: [], stat: "" }) }; });
+  const out = Object.keys(by).sort().map((repo) => { const path = map[repo] || ""; return { repo, path, tasks: by[repo], autoMerge: am.includes(repo), running: !!(path && runningHandoff(path)), ...(path ? reviewGit(path, kept) : { branch: "", files: [], stat: "" }) }; });
   for (const repo of sent.sort()) {
     const path = map[repo]; if (!path || !existsSync(join(path, ".symbiot", "TASKS.md"))) continue;
-    const wc = workingChanges(path); if (!wc.files.length) continue;
+    const wc = reviewGit(path, kept); if (!wc.files.length) continue;
     const open = finishedOffer(path, t.filter((x) => x.repo === repo && !x.done && !x.archived && !x.review));
-    out.push({ repo, path, tasks: [], untasked: true, open, autoMerge: am.includes(repo), running: !!runningHandoff(path), ...wc, unreleased: unreleased(path), bumpOffer: bumpOffer(path), publishesOnMerge: publishesOnMerge(path) });
+    out.push({ repo, path, tasks: [], untasked: true, open, autoMerge: am.includes(repo), running: !!runningHandoff(path), ...wc });
   }
   return out;
 }
@@ -569,6 +581,7 @@ async function shipChanges(path, texts, opts = {}) {
 function autoMergeRepos() { const a = loadConfig().autoMerge; return Array.isArray(a) ? a : []; }
 function setAutoMerge(repo, on) { const cfg = loadConfig(); let a = (Array.isArray(cfg.autoMerge) ? cfg.autoMerge : []).filter((x) => x !== repo); if (on && repo) a.push(repo); if (a.length) cfg.autoMerge = a; else delete cfg.autoMerge; saveConfig(cfg); return { ok: true, repos: cfg.autoMerge || [] }; }
 async function approveRepo(repo, opts = {}) {
+  forgetReview();
   const pro = can("ship"); if (!pro.ok) return { error: pro.why, pro: true }; // Pro (licence.mjs); the work stays on its branch
   const waiting = (t) => t.filter((x) => x.repo === repo && x.review && !x.done && !x.archived);
   const shipped = waiting(loadTasks());
@@ -590,6 +603,7 @@ async function approveRepo(repo, opts = {}) {
 // repo's open tasks the changes finished (the run didn't tick them): they're
 // approved with the changes, as Approve does, so they don't go out again.
 async function approveChanges(repo, opts = {}) {
+  forgetReview();
   const pro = can("ship"); if (!pro.ok) return { error: pro.why, pro: true };
   if (loadTasks().some((x) => x.repo === repo && x.review && !x.done && !x.archived)) return await approveRepo(repo, opts);
   const path = laneMap()[repo]; if (!path) return { error: "Repo not found: " + (repo || "(no repo)") };
@@ -710,4 +724,4 @@ function pushTasks(filter) {
   return { empty: false, written, unresolved, handoff: handoffCmd() };
 }
 
-export { gitFailed, taskPaths, addTask, toggleTask, setTaskDone, removeTask, restoreTask, completedInRepo, removalOf, applyRemovals, applyDrops, syncTasks, workingChanges, workingDiff, publishesOnMerge, unreleased, bumpOffer, learnNpm, releaseNeeded, withReleases, setVersion, changelogEntry, changelogSection, noteChangelog, releaseInput, shipWithBump, runSummary, saidFinished, pendingReview, commitSubject, shipChanges, autoMergeRepos, setAutoMerge, approveRepo, approveChanges, sendBack, TASK_ORDER, taskType, buildTasksMd, pushTasks };
+export { forgetReview, gitFailed, taskPaths, addTask, toggleTask, setTaskDone, removeTask, restoreTask, completedInRepo, removalOf, applyRemovals, applyDrops, syncTasks, workingChanges, workingDiff, publishesOnMerge, unreleased, bumpOffer, learnNpm, releaseNeeded, withReleases, setVersion, changelogEntry, changelogSection, noteChangelog, releaseInput, shipWithBump, runSummary, saidFinished, pendingReview, commitSubject, shipChanges, autoMergeRepos, setAutoMerge, approveRepo, approveChanges, sendBack, TASK_ORDER, taskType, buildTasksMd, pushTasks };
