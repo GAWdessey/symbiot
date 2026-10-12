@@ -2,6 +2,11 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.63.3
+
+- **Allow works on a request that takes access away.** When an agent asked to lock itself out of something (a deny rule, with nothing new allowed), Symbiot dropped the request, so clicking Allow did nothing and the agent waited for good. Now it's turned on, without asking you, and the agent carries on.
+- **A script in your project no longer reads as "outside your work".** Running `python3 supabase/scripts/x.py`, or checking a public web address, was taken for a folder elsewhere on your computer, so you got a permission card. Now it turns on by itself. A web request that sends something, and anything about a live project, still asks you.
+
 ## 0.63.2
 
 - **Permission cards stop landing on you for Symbiot's own plumbing.** An agent connecting to a computer this one already connects to (your own server) no longer asks you, and a request too broad to allow safely goes back to the agent to spell out, not to you.

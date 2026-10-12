@@ -1077,7 +1077,7 @@ function installAllowlist(path) {
   let p; try { p = JSON.parse(readFileSync(join(path, ".symbiot", "allowlist.proposed.json"), "utf8")).permissions || {}; } catch { return null; }
   const list = (x) => (Array.isArray(x) ? x.filter((r) => typeof r === "string" && r.trim()).map((r) => r.trim()) : []);
   const allow = list(p.allow), deny = list(p.deny), dirs = list(p.additionalDirectories);
-  if (!allow.length && !dirs.length) return null;
+  if (!allow.length && !dirs.length && !deny.length) return null;
   const wide = allow.filter(wideRule);
   if (wide.length) return { refused: wide };
   const f = join(path, ".claude", "settings.local.json");
@@ -1085,7 +1085,8 @@ function installAllowlist(path) {
   const perm = cur.permissions || {}, merge = (a, b) => [...new Set([...list(a), ...b])];
   cur.permissions = { ...perm, allow: merge(perm.allow, allow), deny: merge(perm.deny, [...deny, ...GUARD()]), additionalDirectories: merge(perm.additionalDirectories, dirs) };
   try { mkdirSync(join(path, ".claude"), { recursive: true }); writeFileSync(f, JSON.stringify(cur, null, 2) + "\n", { mode: 0o600 }); } catch { return null; }
-  return [`the allow list for this folder (${allow.length} rule${allow.length === 1 ? "" : "s"})`];
+  const n = allow.length + deny.length;
+  return [`the allow list for this folder (${n} rule${n === 1 ? "" : "s"})`];
 }
 // ---- the owner's work, and allow lists inside it ---------------------------------------
 // What the owner told Symbiot is their work: the folders it scans (Settings → Folders) and
@@ -1114,7 +1115,11 @@ function inWork(p, roots = workRoots()) {
 // A Bash rule's own program, when it lives in a bin folder (~/.local/bin/adb), is a tool
 // it runs, not a place it works in: only the paths after it count.
 const BIN_PROGRAM = /^(Bash\(\s*)(?:~|\/)[^\s:()]*\/s?bin\/[^\s:()/]+/;
-const rulePaths = (r) => (String(r).replace(BIN_PROGRAM, "$1").match(/(?:~|\/)[^\s:*()"',]*/g) || []).filter((x) => x === "~" || x.length > 1);
+// A path starts a word: the "/scripts" in a relative supabase/scripts/x.py is in the lane, and
+// the "//host" in https://host is a site, not a folder. /dev/null is nobody's.
+const rulePaths = (r) => (String(r).replace(BIN_PROGRAM, "$1").match(/(?<=^|[\s(="'])(?:~|\/)[^\s:*()"',]*/g) || []).filter((x) => (x === "~" || x.length > 1) && !/^\/dev\/(null|std(in|out|err))$/.test(x));
+// curl or wget that sends something (a POST, a form, a file) goes out, like a push.
+const SENDS = /^Bash\(\s*(curl|wget)\b.*\s(-X\s*(POST|PUT|PATCH|DELETE)|-d|--data\S*|-F|--form|-T|--upload-file|--post-\w+)\b/i;
 // An ssh, scp or rsync rule whose every remote (user@host, user@host:path) is a host this
 // computer already connects to (it's in ~/.ssh/known_hosts) reaches the owner's own
 // machine, not another one: it counts as their work. A wildcard host never does.
@@ -1130,7 +1135,7 @@ function allowlistInWork(path) {
   const list = (x) => (Array.isArray(x) ? x.filter((r) => typeof r === "string" && r.trim()).map((r) => r.trim()) : []);
   const allow = list(p.allow), dirs = list(p.additionalDirectories), roots = [...workRoots(), path];
   const wide = allow.filter(wideRule); if (wide.length) return { why: "wide: " + wide.join(", ") };
-  const pub = allow.filter((r) => PUBLISH_RULE.test(r) && !toKnownHost(r)); if (pub.length) return { why: "publishes or reaches another machine: " + pub.join(", ") };
+  const pub = allow.filter((r) => (PUBLISH_RULE.test(r) || SENDS.test(r)) && !toKnownHost(r)); if (pub.length) return { why: "publishes or reaches another machine: " + pub.join(", ") };
   const out = [...dirs, ...allow.flatMap(rulePaths)].filter((x) => !inWork(x, roots));
   if (out.length) return { why: "outside your work: " + [...new Set(out)].slice(0, 3).join(", ") };
   return { ok: true, allow, dirs };
@@ -1168,7 +1173,7 @@ function autoAllow(path) {
 // recommended option is a step it takes itself (not 👤), and nothing in the question or
 // that option is an approval, goes out, costs money, touches an account or a machine, or
 // can't be undone, Symbiot picks it and the agent carries on. Everything else still comes to the user.
-const OUTWARD = /\b(approv\w*|publish\w*|releas\w*|push\w*|merg\w*|send\w*|sent|post\w*|repl\w*|e-?mail\w*|pay\w*|spend\w*|buy\w*|money|bill\w*|cost\w*|delet\w*|remov\w*|uninstall\w*|wip\w*|drop\w*|password\w*|2fa|token\w*|keys?|sign(?:ed|s)?[- ]?in|log(?:ged)?[- ]?in|accounts?|subscription|plan|tunnel\w*|prox\w*|ssh|vm|servers?|restart\w*|stop\w*|kill\w*|broker\w*|trad\w*|bank\w*|npm|deploy\w*|install\w*|phone|whatsapp|linkedin|github\.com)\b|\byour (?:default|settings?|profile)\b/i;
+const OUTWARD = /\b(approv\w*|publish\w*|releas\w*|push\w*|merg\w*|send\w*|sent|post\w*|repl\w*|e-?mail\w*|pay\w*|spend\w*|buy\w*|money|bill\w*|cost\w*|delet\w*|remov\w*|uninstall\w*|wip\w*|drop\w*|password\w*|2fa|token\w*|keys?|sign(?:ed|s)?[- ]?in|log(?:ged)?[- ]?in|accounts?|subscription|plan|tunnel\w*|prox\w*|ssh|vm|servers?|restart\w*|stop\w*|kill\w*|broker\w*|trad\w*|bank\w*|npm|deploy\w*|install\w*|phone|whatsapp|linkedin|github\.com|live|production|prod)\b|\byour (?:default|settings?|profile)\b/i;
 function autoPick(q) {
   const rec = (q.options || []).filter((o) => /\(recommended\b/i.test(o));
   if (rec.length !== 1 || yourStep(rec[0])) return "";
