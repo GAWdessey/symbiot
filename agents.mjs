@@ -3,7 +3,7 @@
 // tab, and the questions an unattended agent leaves for the user.
 import { MARKETING_DIR } from "./marketing.mjs";
 import { licenceState, isPro, can, canWorkIn } from "./licence.mjs";
-import { spawn, spawnSync } from "node:child_process";
+import { spawn, spawnSync, execFile } from "node:child_process";
 import { homedir } from "node:os";
 import { join, dirname, resolve, relative } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -973,18 +973,41 @@ function track(name, cmd, cwd, onExit, env) {
 // Agent-agnostic "what did it do": read it straight from git, so it works the
 // same whoever the agent was (Claude, Codex/GPT, Aider, Gemini, Cursor…). Shows
 // current working-tree changes + any commits the agent made since it started.
-function agentChanges(path, startedAt) {
-  try {
-    const q = JSON.stringify(path);
-    const porcelain = sh(`git -C ${q} status --porcelain`).trim();
-    // Don't count Symbiot's own .symbiot/ dir (agent.log, TASKS.md) as the agent's work.
+// The answer is kept a while (CHANGES): Home and the Agents tab ask every few seconds
+// for every earlier run (up to 60), and three or four git commands each, one after
+// another, held the whole app up 20s in every 45 (2026-10-12). One older than
+// CHANGES_FRESH is still given while git is asked again in the background, so a
+// screen never waits on git for a run it has seen before.
+const CHANGES = new Map(), CHANGES_FRESH = 15000, CHANGES_MAX = 300;
+const NO_CHANGES = { dirty: 0, stat: "", commits: [] };
+function changesOf(path, startedAt, git) {
+  // Don't count Symbiot's own .symbiot/ dir (agent.log, TASKS.md) as the agent's work.
+  const since = new Date(startedAt || Date.now()).toISOString();
+  const read = ([porcelain, stat, cached, raw]) => {
+    porcelain = porcelain.trim(); raw = raw.trim();
     const dirty = porcelain ? porcelain.split("\n").filter((l) => { const p = l.slice(3); return p !== ".symbiot" && p !== ".symbiot/" && p.indexOf(".symbiot/") !== 0; }).length : 0;
-    const stat = (sh(`git -C ${q} diff --shortstat`).trim() || sh(`git -C ${q} diff --cached --shortstat`).trim()).replace(/^\s+/, "");
-    const since = new Date(startedAt || Date.now()).toISOString();
-    const raw = sh(`git -C ${q} log --since=${JSON.stringify(since)} --pretty=%h\u0001%s`).trim();
     const commits = raw ? raw.split("\n").slice(0, 8).map((l) => { const i = l.indexOf("\u0001"); return { hash: l.slice(0, i), msg: l.slice(i + 1) }; }) : [];
-    return { dirty, stat, commits };
-  } catch { return { dirty: 0, stat: "", commits: [] }; }
+    return { dirty, stat: (stat.trim() || cached.trim()).replace(/^\s+/, ""), commits };
+  };
+  const asks = [["status", "--porcelain"], ["diff", "--shortstat"], ["diff", "--cached", "--shortstat"], ["log", `--since=${since}`, "--pretty=%h\u0001%s"]];
+  const outs = asks.map((a) => git(["-C", path, ...a]));
+  return outs.some((o) => o && typeof o.then === "function") ? Promise.all(outs).then(read) : read(outs);
+}
+const gitNow = (args) => { const r = spawnSync("git", args, { encoding: "utf8", timeout: 6000, killSignal: "SIGKILL", maxBuffer: 32 * 1024 * 1024, stdio: ["ignore", "pipe", "ignore"] }); return r.status === 0 ? String(r.stdout || "") : ""; };
+const gitLater = (args) => new Promise((res) => execFile("git", args, { encoding: "utf8", timeout: 6000, killSignal: "SIGKILL", maxBuffer: 32 * 1024 * 1024 }, (e, out) => res(e ? "" : String(out || ""))));
+function agentChanges(path, startedAt) {
+  const had = CHANGES.get(path), now = Date.now();
+  // the same run: a run's start is only known roughly when it began before a restart
+  if (had && Math.abs(had.startedAt - (startedAt || now)) < 60000) {
+    if (now - had.at > CHANGES_FRESH && !had.busy) {
+      had.busy = true;
+      Promise.resolve(changesOf(path, startedAt, gitLater)).then((v) => { CHANGES.set(path, { at: Date.now(), startedAt: had.startedAt, v }); }, () => { had.busy = false; });
+    }
+    return had.v;
+  }
+  let v = NO_CHANGES; try { v = changesOf(path, startedAt, gitNow); } catch {}
+  if (CHANGES.size >= CHANGES_MAX) CHANGES.clear();
+  CHANGES.set(path, { at: now, startedAt: startedAt || now, v }); return v;
 }
 // ---- agent questions: decisions, options and ideas, from ANY agent ---------
 // A handoff runs unattended (claude -p, codex exec, aider --message, …), so the
@@ -1093,7 +1116,7 @@ function installAllowlist(path) {
   let p; try { p = JSON.parse(readFileSync(join(path, ".symbiot", "allowlist.proposed.json"), "utf8")).permissions || {}; } catch { return null; }
   const list = (x) => (Array.isArray(x) ? x.filter((r) => typeof r === "string" && r.trim()).map((r) => r.trim()) : []);
   const allow = list(p.allow), deny = list(p.deny), dirs = list(p.additionalDirectories);
-  if (!allow.length && !dirs.length) return null;
+  if (!allow.length && !dirs.length && !deny.length) return null;
   const wide = allow.filter(wideRule);
   if (wide.length) return { refused: wide };
   const f = join(path, ".claude", "settings.local.json");
@@ -1101,7 +1124,8 @@ function installAllowlist(path) {
   const perm = cur.permissions || {}, merge = (a, b) => [...new Set([...list(a), ...b])];
   cur.permissions = { ...perm, allow: merge(perm.allow, allow), deny: merge(perm.deny, [...deny, ...GUARD()]), additionalDirectories: merge(perm.additionalDirectories, dirs) };
   try { mkdirSync(join(path, ".claude"), { recursive: true }); writeFileSync(f, JSON.stringify(cur, null, 2) + "\n", { mode: 0o600 }); } catch { return null; }
-  return [`the allow list for this folder (${allow.length} rule${allow.length === 1 ? "" : "s"})`];
+  const n = allow.length + deny.length;
+  return [`the allow list for this folder (${n} rule${n === 1 ? "" : "s"})`];
 }
 // ---- the owner's work, and allow lists inside it ---------------------------------------
 // What the owner told Symbiot is their work: the folders it scans (Settings → Folders) and
@@ -1130,7 +1154,11 @@ function inWork(p, roots = workRoots()) {
 // A Bash rule's own program, when it lives in a bin folder (~/.local/bin/adb), is a tool
 // it runs, not a place it works in: only the paths after it count.
 const BIN_PROGRAM = /^(Bash\(\s*)(?:~|\/)[^\s:()]*\/s?bin\/[^\s:()/]+/;
-const rulePaths = (r) => (String(r).replace(BIN_PROGRAM, "$1").match(/(?:~|\/)[^\s:*()"',]*/g) || []).filter((x) => x === "~" || x.length > 1);
+// A path starts a word: the "/scripts" in a relative supabase/scripts/x.py is in the lane, and
+// the "//host" in https://host is a site, not a folder. /dev/null is nobody's.
+const rulePaths = (r) => (String(r).replace(BIN_PROGRAM, "$1").match(/(?<=^|[\s(="'])(?:~|\/)[^\s:*()"',]*/g) || []).filter((x) => (x === "~" || x.length > 1) && !/^\/dev\/(null|std(in|out|err))$/.test(x));
+// curl or wget that sends something (a POST, a form, a file) goes out, like a push.
+const SENDS = /^Bash\(\s*(curl|wget)\b.*\s(-X\s*(POST|PUT|PATCH|DELETE)|-d|--data\S*|-F|--form|-T|--upload-file|--post-\w+)\b/i;
 // An ssh, scp or rsync rule whose every remote (user@host, user@host:path) is a host this
 // computer already connects to (it's in ~/.ssh/known_hosts) reaches the owner's own
 // machine, not another one: it counts as their work. A wildcard host never does.
@@ -1146,7 +1174,7 @@ function allowlistInWork(path) {
   const list = (x) => (Array.isArray(x) ? x.filter((r) => typeof r === "string" && r.trim()).map((r) => r.trim()) : []);
   const allow = list(p.allow), dirs = list(p.additionalDirectories), roots = [...workRoots(), path];
   const wide = allow.filter(wideRule); if (wide.length) return { why: "wide: " + wide.join(", ") };
-  const pub = allow.filter((r) => PUBLISH_RULE.test(r) && !toKnownHost(r)); if (pub.length) return { why: "publishes or reaches another machine: " + pub.join(", ") };
+  const pub = allow.filter((r) => (PUBLISH_RULE.test(r) || SENDS.test(r)) && !toKnownHost(r)); if (pub.length) return { why: "publishes or reaches another machine: " + pub.join(", ") };
   const out = [...dirs, ...allow.flatMap(rulePaths)].filter((x) => !inWork(x, roots));
   if (out.length) return { why: "outside your work: " + [...new Set(out)].slice(0, 3).join(", ") };
   return { ok: true, allow, dirs };
@@ -1188,7 +1216,7 @@ function autoAllow(path) {
 // has no tag at all, states a fact or a choice only the user knows, so it goes to them.
 // Everything else still comes to the user.
 const pureAction = (o) => /^[\s*_]*🤖/u.test(String(o || ""));
-const OUTWARD = /\b(approv\w*|publish\w*|releas\w*|push\w*|merg\w*|send\w*|sent|post\w*|repl\w*|e-?mail\w*|pay\w*|spend\w*|buy\w*|money|bill\w*|cost\w*|delet\w*|remov\w*|uninstall\w*|wip\w*|drop\w*|password\w*|2fa|token\w*|keys?|sign(?:ed|s)?[- ]?in|log(?:ged)?[- ]?in|accounts?|subscription|plan|tunnel\w*|prox\w*|ssh|vm|servers?|restart\w*|stop\w*|kill\w*|broker\w*|trad\w*|bank\w*|npm|deploy\w*|install\w*|phone|whatsapp|linkedin|github\.com)\b|\byour (?:default|settings?|profile)\b/i;
+const OUTWARD = /\b(approv\w*|publish\w*|releas\w*|push\w*|merg\w*|send\w*|sent|post\w*|repl\w*|e-?mail\w*|pay\w*|spend\w*|buy\w*|money|bill\w*|cost\w*|delet\w*|remov\w*|uninstall\w*|wip\w*|drop\w*|password\w*|2fa|token\w*|keys?|sign(?:ed|s)?[- ]?in|log(?:ged)?[- ]?in|accounts?|subscription|plan|tunnel\w*|prox\w*|ssh|vm|servers?|restart\w*|stop\w*|kill\w*|broker\w*|trad\w*|bank\w*|npm|deploy\w*|install\w*|phone|whatsapp|linkedin|github\.com|live|production|prod)\b|\byour (?:default|settings?|profile)\b/i;
 function autoPick(q) {
   const rec = (q.options || []).filter((o) => /\(recommended\b/i.test(o));
   if (rec.length !== 1 || yourStep(rec[0]) || !pureAction(rec[0])) return "";
@@ -1355,4 +1383,4 @@ function agentsList() {
   }).concat(earlierRuns());
 }
 
-export { toKnownHost, continueLanes, autoPick, autoDecide, FACTS, factsOf, knownRun, withStream, workOf, HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, connectorsInfo, linkReach, fillHandoff, runHandoff, nothingToDo, PARKED_NOTE, parkedPaths, isParked, parkLane, agentMissing, blockedAgain, runningHandoff, loadRuns, earlierRuns, namedFiles, unchangedStep, waitingFor, startWaiting, noteUntracked, untrackedBefore, forgetUntracked, writeTasks, droppedTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, pickAgent, findOrcaCli, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, skipIdea, agentQuestions, answerQuestions, agentsList, needsOf, settleNeeds, NEEDS_FOR, readLastWords, readNeeds, parseRead, READ_FILE, autoAllow, autoAllowSweep, allowlistInWork, installAllowlist, inWork, withScope, withTrust, sandboxFor, sandboxEnv, sandboxNeeds, sandboxState, sandboxWrites, SANDBOX_DIR, resumeFor, noteSession, trustFull, GUARD_SETTINGS, isUrgent, urgentFirst, urgentUndo, urgentDone, urgentSweep, urgentState , licenceGate };
+export { CHANGES, toKnownHost, continueLanes, autoPick, autoDecide, FACTS, factsOf, knownRun, withStream, workOf, HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, connectorsInfo, linkReach, fillHandoff, runHandoff, nothingToDo, PARKED_NOTE, parkedPaths, isParked, parkLane, agentMissing, blockedAgain, runningHandoff, loadRuns, earlierRuns, namedFiles, unchangedStep, waitingFor, startWaiting, noteUntracked, untrackedBefore, forgetUntracked, writeTasks, droppedTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, pickAgent, findOrcaCli, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, skipIdea, agentQuestions, answerQuestions, agentsList, needsOf, settleNeeds, NEEDS_FOR, readLastWords, readNeeds, parseRead, READ_FILE, autoAllow, autoAllowSweep, allowlistInWork, installAllowlist, inWork, withScope, withTrust, sandboxFor, sandboxEnv, sandboxNeeds, sandboxState, sandboxWrites, SANDBOX_DIR, resumeFor, noteSession, trustFull, GUARD_SETTINGS, isUrgent, urgentFirst, urgentUndo, urgentDone, urgentSweep, urgentState , licenceGate };

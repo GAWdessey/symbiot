@@ -284,5 +284,31 @@ try {
   ok("a computer (or a phone not paired) keeps the liquid", pc.on === false && !pc.cls.has("lq-phone") && pc.calls.load === 0, [pc.on, [...pc.cls]]);
   ok("the computer's droplet, opened on a paired phone, is its home", /function lqPool\(shape\)\{if\(shape==='computer'&&LQ\.phone\)\{lqSink\(\);return;\}/.test(uiJs), "");
 }
+{
+  console.log("LOW GPU — the liquid draws seldom when asked, and whenever its window isn't the one in use");
+  const { EMBEDDED_UI } = await import("../ui.mjs");
+  const uiJs = [...EMBEDDED_UI.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]).join("\n");
+  const gl = ({ low = false, focused = true, dpr = 2 } = {}) => {
+    const store = { "symbiot-lowgpu": low ? "1" : "0" }, body = { cls: new Set(), classList: { toggle: (c, on) => (on ? body.cls.add(c) : body.cls.delete(c)) } };
+    const window = { localStorage: { getItem: (k) => store[k] ?? null, setItem: (k, v) => { store[k] = v; } }, devicePixelRatio: dpr, matchMedia: () => ({ matches: false }) };
+    const document = { hasFocus: () => focused, body };
+    const src = uiJs.slice(uiJs.indexOf("var GLSOFT=false"), uiJs.indexOf("function lqGL("));
+    return new Function("window", "document", "$", `${src}\nreturn { glLight, glEvery, glDpr, glLow, low: () => GLLOW };`)(window, document, () => null);
+  };
+  const on = gl({ low: true }), off = gl(), away = gl({ focused: false });
+  ok("Low GPU (kept on this computer): drawn seldom, at half the resolution", on.glLight() && on.glEvery(false) === 12 && on.glDpr(3) === 0.5);
+  ok("without it, in the window you're using: every frame, at the screen's sharpness", !off.glLight() && off.glEvery(false) === 1 && off.glDpr(3) === 2);
+  ok("a window you aren't using draws seldom too, whatever you picked", away.glLight() && away.glEvery(true) === 3);
+  off.glLow(true); ok("the switch turns it on and remembers it", off.low() && off.glLight());
+  ok("the page has the switch, and drops the blur behind the glass with it", /id="lqlow"/.test(EMBEDDED_UI) && /body\.lq-low \*[^{]*\{backdrop-filter:none!important/.test(EMBEDDED_UI));
+}
+{
+  console.log("APPROVE — opens on the project you came for, its button first, its tasks short");
+  const { EMBEDDED_UI } = await import("../ui.mjs");
+  const lp = EMBEDDED_UI.slice(EMBEDDED_UI.indexOf("function loadPending("), EMBEDDED_UI.indexOf("function loadArchived("));
+  ok("in a project, only its card; the others a click away", /r\.repo===repo0/.test(lp) && /Also waiting for your OK/.test(lp) && /PENDALL=true/.test(lp));
+  ok("three tasks shown, one line each, the rest folded", /RTASKS/.test(lp) && /rmore hidden/.test(lp) && /\.rcard \.rtask \.t\{-webkit-line-clamp:1\}/.test(EMBEDDED_UI));
+  ok("the Approve button comes right under the card's head", /h=top\+bsel\+act\+body/.test(lp));
+}
 console.log(`\n${fail ? "✗" : "✓"} app: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

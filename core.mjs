@@ -77,7 +77,9 @@ const clipWords = (s, max) => { s = String(s || ""); return s.length > max ? s.s
 // in the login form".
 // Or nearly the same (nearTask): an agent that suggests a task again rewords
 // it, and TASKS.md listed both.
-const taskWords = (s) => String(s || "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+// kept per text, like wordsOf's words: sameTask runs for every idea against every task
+const keep = (f, max = 4000) => { const m = new Map(); return (s) => { s = String(s || ""); let v = m.get(s); if (v === undefined) { if (m.size >= max) m.clear(); v = f(s); m.set(s, v); } return v; }; };
+const taskWords = keep((s) => s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim());
 function sameTask(a, b) {
   const x = taskWords(a), y = taskWords(b); if (!x || !y) return false;
   if (x === y) return true;
@@ -93,14 +95,20 @@ function sameTask(a, b) {
 // "Watch WhatsApp…" are two tasks, however alike the rest. A name is a word
 // with a capital that doesn't just start a sentence (Gmail, WhatsApp, WA).
 const NEAR = 0.85, NEAR_WORDS = 12, LEAD_WORDS = 5;
-function wordsOf(s) {
-  s = String(s || "");
+// A word starts a sentence when only spacing and punctuation since the last word
+// end a sentence: only that gap is read, not all the text before it, which made a
+// 4000-character task cost millions of steps. Every 20s each project's ideas are
+// checked against every task (agentQuestions), so the words of a text are kept
+// (keep): 40 ideas against 393 tasks took 10s a tick, and the app stopped
+// answering, its update never restarting it (2026-10-12).
+const wordsOf = keep((s) => {
+  let end = 0;
   return [...s.matchAll(/[\p{L}\p{N}]+/gu)].map((m) => {
-    const w = m[0], before = s.slice(0, m.index);
-    const starts = !before.trim() || /[.!?]["'`)\]]*\s*$/.test(before);
+    const w = m[0], first = end === 0, gap = s.slice(end, m.index); end = m.index + w.length;
+    const starts = (first && !gap.trim()) || /[.!?]["'`)\]]*\s*$/.test(gap);
     return { w: w.toLowerCase(), name: w.length > 1 && /\p{Lu}/u.test(w) && (!starts || /\p{Lu}/u.test(w.slice(1))) };
   });
-}
+});
 // The first sentence's words, when more follows it ("" when it's all one sentence).
 function leadOf(s) { const m = String(s || "").match(/^(.*?[.!?])["'`)\]]*\s+\S/s); return m ? taskWords(m[1]) : ""; }
 function nearTask(a, b) {
@@ -128,7 +136,7 @@ function nearTask(a, b) {
 // "Map the whole page … (not for Gmail)".
 const ASK = 0.6, ASK_WORDS = 8;
 const STOP = new Set(("the and but for from with are was were been its this that these those then than once each his her him she they them their you your yourself can cant not does did have has had will would should could just also there here into onto out about before after when what which who whom how why all any some more most other only own same too very again").split(" "));
-function askWords(s) { return new Set(wordsOf(s).map((x) => x.w).filter((w) => w.length > 2 && !STOP.has(w)).map((w) => w.replace(/(ing|ed|es|s)$/, ""))); }
+const askWords = keep((s) => new Set(wordsOf(s).map((x) => x.w).filter((w) => w.length > 2 && !STOP.has(w)).map((w) => w.replace(/(ing|ed|es|s)$/, ""))));
 function sameAsk(a, b) {
   const x = askWords(a), y = askWords(b); if (Math.min(x.size, y.size) < ASK_WORDS) return false;
   const nx = new Set(wordsOf(a).filter((w) => w.name).map((w) => w.w)), ny = new Set(wordsOf(b).filter((w) => w.name).map((w) => w.w));
