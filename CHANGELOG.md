@@ -2,6 +2,10 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.63.10 — 2026-10-12
+
+- Fixed updates that restart while waiting for their download so they now carry on, and Home explains why when an update doesn't take.
+
 ## 0.63.9 — 2026-10-12
 
 - Fixed sign-ins made in the Symbiot Browser window, such as domains.co.za's, being lost when `symbiot screens` opened the same site.

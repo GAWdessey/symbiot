@@ -3022,7 +3022,8 @@ document.getElementById('weeklyhour').addEventListener('change',saveWeekly);
 document.getElementById('weeklynow').addEventListener('click',weeklyNow);
 document.getElementById('autostart').addEventListener('change',saveAutostart);
 (function(){var h='';for(var i=0;i<24;i++)h+="<option value='"+i+"'>"+(i<10?'0':'')+i+":00</option>";document.getElementById('weeklyhour').innerHTML=h;})();
-var SRV_STARTED=null,srvDown=false,updBusy=false,SRV_UPD=null; // SRV_UPD: the app that was asked to update
+var SRV_STARTED=null,srvDown=false,updBusy=false;
+try{localStorage.removeItem('symbiot_update_tried');}catch(e){} // the old page-side guess (see heartbeat)
 function ubar(){return document.getElementById('updatebar');}
 // One Symbiot window, not a pile: each window has an id, says so the first time it
 // asks, and the server remembers the newest. An older one closes itself, unless it's
@@ -3047,23 +3048,14 @@ function heartbeat(fresh){
     // click started a second npm install over the first, and they collided).
     if(p.updating){var w=p.updating,m=Math.max(0,Math.floor((Date.now()-(w.since||Date.now()))/60000));b.className='updatebar show';
       b.innerHTML=w.retrying?"Updating to "+esc(w.target)+" once npm has its download (a few minutes after a release): looking every "+Math.round((w.every||30000)/1000)+" seconds, for up to "+Math.round((w.wait||1200000)/60000)+" minutes"+(m?" ("+m+" so far)":"")+". Nothing to do.":"Updating to "+esc(w.target)+"&hellip; Symbiot restarts by itself when it&rsquo;s in, and this page reloads.";return;}
-    // The last one didn't go through: what npm said, and Try again (not a terminal).
+    // The last one didn't go through: what npm said, and Try again (not a terminal). One
+    // that installed but came back on the old version is one of these too, with why: the
+    // server keeps where an update got to. The page used to guess that from any restart
+    // after a click, and said "didn't take" with npm never run (2026-10-12).
     var f=p.updateFailed;
     if(f&&p.latest&&p.newer&&f.target===p.latest){b.className='updatebar reconnect show';
       b.innerHTML="The update to "+esc(f.target)+" didn&rsquo;t go through: "+esc(String(f.error||'npm stopped').replace(/[.]$/,''))+". You&rsquo;re still on "+esc(p.version)+". <button id='doupd'>Try again</button>";
       var ab=document.getElementById('doupd');if(ab)ab.onclick=doUpdate;return;}
-    // Loop guard: if we already tried to update to this version and we're still
-    // not on it after the restart, the install isn't advancing — stop offering
-    // the button (which just loops) and tell them to update manually.
-    var tried=null;try{tried=localStorage.getItem('symbiot_update_tried');}catch(e){}
-    if(tried){
-      if(p.version!==tried){try{localStorage.removeItem('symbiot_update_tried');}catch(e){} } // advanced → success, clear
-      else if(p.latest&&p.newer&&p.started!==SRV_UPD){ // restarted, still on the same version → the install didn't advance
-        b.className='updatebar reconnect show';
-        b.innerHTML="Auto-update to "+esc(p.latest)+" didn't take (still on "+esc(p.version)+"). Run <code>npm install -g symbiot@latest</code> in a terminal, then restart.";
-        return;
-      }
-    }
     if(p.latest&&p.newer){
       b.className='updatebar show';
       b.innerHTML="A new Symbiot ("+esc(p.latest)+") is available &mdash; you're on "+esc(p.version)+". <button id='updnew'>What&#39;s new</button> <button id='doupd'>Update &amp; restart</button>";
@@ -3088,7 +3080,7 @@ el.className='whatsnew show';el.innerHTML="<div class='row'><b style='flex:1;col
 +cs.map(function(c){return "<div style='margin-top:8px'><b>"+esc(c.version)+"</b>"+(c.date?" <span class='muted'>"+esc(c.date)+"</span>":"")+"<ul style='margin:4px 0 0 18px;padding:0'>"+c.items.slice(0,12).map(function(x){return "<li>"+md(x)+"</li>";}).join('')+(c.items.length>12?"<li class='muted'>&hellip;and "+(c.items.length-12)+" more</li>":"")+"</ul></div>";}).join('');
 $('wnok').onclick=function(){el.className='whatsnew';if(after)api('/api/whatsnew/seen',{});};}
 function loadWhatsNew(){api('/api/whatsnew').then(function(r){if(r&&r.changes&&r.changes.length)showNews(r,"What's new in Symbiot "+r.version,true);});}
-function doUpdate(){updBusy=true;SRV_UPD=SRV_STARTED;try{localStorage.setItem('symbiot_update_tried',document.getElementById('ver').textContent.replace(/^v/,''));}catch(e){}var b=ubar();b.className='updatebar show';b.textContent='Updating & restarting… this page will reload itself when it is back.';
+function doUpdate(){updBusy=true;var b=ubar();b.className='updatebar show';b.textContent='Updating & restarting… this page will reload itself when it is back.';
   // still waiting for npm's download (or already under way): the heartbeat shows where it is
   api('/api/update',{}).then(function(r){if(r&&(r.waiting||r.already||r.error)){updBusy=false;if(r.error){b.className='updatebar reconnect show';b.textContent=r.error;}}});}
 setInterval(heartbeat,4000);heartbeat(true);

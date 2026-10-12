@@ -9,11 +9,11 @@ import { voiceState, prepareVoice, speak, stopVoices } from "./voice.mjs";
 import { spawn, spawnSync } from "node:child_process";
 import { toggleAway, closeAway } from "./away.mjs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { gunzipSync } from "node:zlib";
 import { readRunLog } from "./work.mjs";
-import { readFileSync, existsSync, mkdirSync, writeFileSync, readdirSync, statSync, unlinkSync } from "node:fs";
+import { readFileSync, existsSync, mkdirSync, writeFileSync, readdirSync, statSync, unlinkSync, realpathSync } from "node:fs";
 import { createServer } from "node:http";
 import { randomBytes } from "node:crypto";
 import { EMBEDDED_UI } from "./ui.mjs";
@@ -68,6 +68,17 @@ function updateOutcome(log) {
   const mine = String(log || "").slice(String(log || "").lastIndexOf("=== symbiot update"));
   const why = (mine.match(/npm (?:error|ERR!) (?!code\b|syscall\b|errno\b|path\b|dest\b|404\s*$|A complete log)([^\n]+)/m) || [])[1] || "";
   return { notYet: /E404|ETARGET|notarget|No matching version|is not in this registry/i.test(mine), why: why.trim().slice(0, 200) };
+}
+
+// An update npm finished, yet Symbiot came back on its old version: why, as far as can be
+// told. npm put it somewhere else than this Symbiot runs from (another prefix: a second
+// node, or sudo's), or the files here didn't change.
+function installedElsewhere(target, { here = fileURLToPath(new URL(".", import.meta.url)), root = () => spawnSync(process.platform === "win32" ? "npm.cmd" : "npm", ["root", "-g"], { encoding: "utf8", timeout: 15000 }).stdout } = {}) {
+  const real = (p) => { try { return realpathSync(p); } catch { return resolve(p); } };
+  let r = ""; try { r = String(root() || "").trim(); } catch {}
+  const mine = real(here).replace(/[\\/]+$/, "");
+  if (r && real(join(r, "symbiot")) !== mine) return `npm installed ${target} in ${join(r, "symbiot")}, but this Symbiot runs from ${mine}. Update the one that runs (or start Symbiot from the new one)`;
+  return `npm said it installed ${target}, but Symbiot restarted on ${VERSION} from the same files (${mine})`;
 }
 
 // ---- what's new: the changelog's releases between two versions -------------------
@@ -268,6 +279,64 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
   { const t0 = Date.now(); refreshRepos().then((l) => console.log(`Found ${l.length} project${l.length === 1 ? "" : "s"} in ${((Date.now() - t0) / 1000).toFixed(1)}s.`)); }
   let UPDATING = null; // an update in flight: { target, attempt, since, retrying? }
   let UPDATE_FAILED = null; // the last one that didn't go through: { target, error, at }
+  // An update, from Update & restart: install the exact newest version (updateCmd), then
+  // relaunch this same app (same port and token, so the same address) and exit; the page's
+  // heartbeat reconnects and reloads. Free the port first and mark the new copy as a
+  // relaunch, so it takes over instead of finding us and bowing out. SYMBIOT_UPDATE_CMD
+  // replaces the install (the tests use a no-op). Not downloadable yet (downloadReady): it
+  // looks again every 30s for up to 20 minutes, and says so. Where it's got to is kept on
+  // disk too (UPDATE_STATE): waiting for npm's download lived only in memory, the app
+  // restarted while it waited for 0.63.9's, npm never ran, and the page took the restart on
+  // the old version for an install that "didn't take" (2026-10-12). So a restart carries on
+  // (resumeUpdate), and one that installed but came back on the old version says why.
+  const UPDATE_STATE = join(CONFIG_DIR, "update.json");
+  const noteUpdate = (o) => { try { if (o) { mkdirSync(CONFIG_DIR, { recursive: true }); writeFileSync(UPDATE_STATE, JSON.stringify(o)); } else if (existsSync(UPDATE_STATE)) unlinkSync(UPDATE_STATE); } catch {} };
+  function startUpdate({ since = Date.now(), latest = LATEST_VERSION } = {}) {
+    const { target, cmd } = updateCmd(latest, VERSION);
+    const inst = process.env.SYMBIOT_UPDATE_CMD || cmd, note = (state, more = {}) => noteUpdate({ target, from: VERSION, since, state, at: Date.now(), ...more });
+    const failed = (error) => { UPDATING = null; UPDATE_FAILED = { target, error, at: Date.now() }; note("failed", { error }); return null; };
+    const again = (n, error) => {
+      if (Date.now() - since + UPDATE_EVERY > UPDATE_WAIT) return failed(error);
+      UPDATING = { target, retrying: true, attempt: n + 1, since, at: Date.now() }; note("waiting");
+      setTimeout(() => attempt(n + 1), UPDATE_EVERY).unref(); return null;
+    };
+    const attempt = async (n) => {
+      if (!(await downloadReady(target))) return again(n, `npm lists ${target}, but its download still wasn't there after 20 minutes.`);
+      note("installing");
+      const e = track("symbiot update", inst, homedir(), (code) => {
+        if (code !== 0) {
+          const o = updateOutcome(readRunLog(join(homedir(), ".symbiot", "agent.log")).slice(-6000));
+          if (o.notYet) again(n, o.why || `npm couldn't find ${target}'s download.`);
+          else failed(o.why || `npm stopped (exit code ${code}).`);
+          return;
+        }
+        note("installed");
+        server.close(); if (server.closeAllConnections) server.closeAllConnections();
+        try { const ch = spawn(process.execPath, process.argv.slice(1), { detached: true, stdio: "ignore", env: { ...process.env, SYMBIOT_RELAUNCH: "1" }, cwd: homedir() }); ch.unref(); } catch {}
+        setTimeout(() => process.exit(0), 1200);
+      });
+      if (!e) failed("Symbiot couldn't start npm.");
+      return e;
+    };
+    UPDATING = { target, attempt: 1, since, at: Date.now() }; UPDATE_FAILED = null; note("waiting");
+    return attempt(1).then((e) => ({ e, target }));
+  }
+  // At start: an update this app (or the one before it) was on. On its version now, it's
+  // done. Still waiting or installing (restarted meanwhile): carried on, within its 20
+  // minutes. Installed, yet this is the old version: what went wrong, not another try.
+  function resumeUpdate() {
+    let u = null; try { u = JSON.parse(readFileSync(UPDATE_STATE, "utf8")); } catch {}
+    if (!u || SANDBOX || DESKTOP) return;
+    if (!/^\d+\.\d+\.\d+/.test(String(u.target)) || !semverGt(u.target, VERSION)) return noteUpdate(null);
+    if (u.state === "failed") { UPDATE_FAILED = { target: u.target, error: u.error || "npm stopped", at: u.at }; return; }
+    if (u.state === "installed") {
+      const error = installedElsewhere(u.target);
+      UPDATE_FAILED = { target: u.target, error, at: Date.now() }; noteUpdate({ ...u, state: "failed", error, at: Date.now() }); return;
+    }
+    if (Date.now() - (Number(u.since) || 0) < UPDATE_WAIT) { startUpdate({ since: Number(u.since), latest: u.target }).catch(() => {}); return; }
+    const error = `Symbiot restarted while it waited for npm's download of ${u.target}, and gave up after 20 minutes`;
+    UPDATE_FAILED = { target: u.target, error, at: Date.now() }; noteUpdate({ ...u, state: "failed", error, at: Date.now() });
+  }
   let HUB_SEEN = 0; // when the Symbiot Browser's own page last asked for the sites (browser.html)
   onBrowserClosed(() => { sitesCheck(); }); // its last window closed by its X: checked, as Done does
   let NEWEST_WIN = ""; // the Symbiot window opened last: older ones close themselves (one window, not a pile)
@@ -581,41 +650,13 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       if (u.pathname === "/api/licence/project/free" && req.method === "POST") { const b = await readBody(req); const c = loadConfig(); const L = c.licence || {}; L.projects = (L.projects || []).filter((p) => p !== String(b.path || "")); c.licence = L; saveConfig(c); return json(res, licenceView()); }
       if (u.pathname === "/api/update" && req.method === "POST" && DESKTOP) return json(res, { error: "This Symbiot updates with its app." });
       if (u.pathname === "/api/update" && req.method === "POST") {
-        // Install the exact newest version (see updateCmd), then relaunch this
-        // same app (same port+token => same URL) and exit. The page's heartbeat
-        // reconnects and reloads. Free the port first and mark the new copy as a
-        // relaunch, so it takes over instead of finding us and bowing out.
-        // SYMBIOT_UPDATE_CMD replaces the install (the tests use a no-op).
+        // Install the newest version and restart (startUpdate).
         if (SANDBOX) return json(res, { error: "This is a sandbox (symbiot app --fresh): update your real Symbiot instead." });
         // One at a time: a second click (another window, or one while it waits) started a
         // second npm install over the first, and they collided (ENOTEMPTY, 0.61.1).
         // (an install still running after 10 minutes has hung: a click starts it afresh)
         if (UPDATING && (UPDATING.retrying || Date.now() - UPDATING.at < 10 * 60 * 1000)) return json(res, { started: true, already: true, target: UPDATING.target });
-        const { target, cmd } = updateCmd(LATEST_VERSION, VERSION);
-        const inst = process.env.SYMBIOT_UPDATE_CMD || cmd, since = Date.now();
-        // not downloadable yet (see downloadReady): look again in 30s, for up to 20 minutes, and say so
-        const again = (n, error) => {
-          if (Date.now() - since + UPDATE_EVERY > UPDATE_WAIT) { UPDATING = null; UPDATE_FAILED = { target, error, at: Date.now() }; return null; }
-          UPDATING = { target, retrying: true, attempt: n + 1, since, at: Date.now() }; setTimeout(() => attempt(n + 1), UPDATE_EVERY).unref(); return null;
-        };
-        const attempt = async (n) => {
-          if (!(await downloadReady(target))) return again(n, `npm lists ${target}, but its download still wasn't there after 20 minutes.`);
-          const e = track("symbiot update", inst, homedir(), (code) => {
-            if (code !== 0) {
-              const o = updateOutcome(readRunLog(join(homedir(), ".symbiot", "agent.log")).slice(-6000));
-              if (o.notYet) again(n, o.why || `npm couldn't find ${target}'s download.`);
-              else { UPDATING = null; UPDATE_FAILED = { target, error: o.why || `npm stopped (exit code ${code}).`, at: Date.now() }; }
-              return;
-            }
-            server.close(); if (server.closeAllConnections) server.closeAllConnections();
-            try { const ch = spawn(process.execPath, process.argv.slice(1), { detached: true, stdio: "ignore", env: { ...process.env, SYMBIOT_RELAUNCH: "1" }, cwd: homedir() }); ch.unref(); } catch {}
-            setTimeout(() => process.exit(0), 1200);
-          });
-          if (!e) { UPDATING = null; UPDATE_FAILED = { target, error: "Symbiot couldn't start npm.", at: Date.now() }; }
-          return e;
-        };
-        UPDATING = { target, attempt: 1, since, at: Date.now() }; UPDATE_FAILED = null;
-        const e = await attempt(1);
+        const { e, target } = await startUpdate();
         return json(res, { started: true, id: e ? e.id : "", target, ...(UPDATING && UPDATING.retrying ? { waiting: true } : {}) });
       }
       if (u.pathname === "/api/quit") { stopVoices(); res.writeHead(200); res.end("bye"); setTimeout(() => process.exit(0), 150); return; }
@@ -625,6 +666,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
   let announced = false, tries = 0, opened = false;
   server.on("listening", () => {
     if (announced) return; announced = true;
+    resumeUpdate();
     const url = `http://127.0.0.1:${server.address().port}/?t=${TOKEN}`;
     setBrowserHub(`http://127.0.0.1:${server.address().port}/browser?t=${TOKEN}`); // the Symbiot Browser opens on its own page, served from here
     const how = opened || RELAUNCH || process.env.SYMBIOT_NO_OPEN === "1" ? "" : openApp(url); opened = true; // only pop a window the first time (never in tests, never after an update)

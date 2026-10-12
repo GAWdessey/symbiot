@@ -8,7 +8,7 @@
 //      asserting none 404 — and fail if the UI calls an endpoint this test
 //      doesn't cover, so a new route can't slip past unexercised;
 //   4. with a newer version on a fake registry, the page offers the update once
-//      and, after an update that didn't take, stops offering it (the 0.28.2 loop).
+//      and only says an update failed when the server does (with why).
 // Runs in an isolated HOME, on a random port, with AI keys stripped and a fake
 // npm registry, so it never touches real config or repos, a running app, npm,
 // or a paid model.
@@ -354,15 +354,14 @@ try {
     const drift = apiCalls.filter(([p, m]) => !(p in NOT_HIT) && !table.has(p + " " + m)).map(([p, m]) => `UI sends ${m} ${p}`);
     ok(`the UI's ${apiCalls.length} api() calls use the methods this test hits`, apiCalls.length > 0 && drift.length === 0, [...new Set(drift)]);
 
-    console.log("UPDATE — the page offers a newer version once, and stops if the update didn't take");
+    console.log("UPDATE — the page offers a newer version, and only the server says an update failed");
     const { version } = await (await fetch(base + "/api/ping", { headers: H })).json();
     ok(`a newer version on npm (${LATEST}) shows the Update & restart button`, ui.bar.includes(LATEST) && ui.bar.includes("doupd"), ui.bar);
-    // the page sets this before it updates; seeing the SAME version after the
-    // restart means the install didn't advance — the button would just loop
+    // the page used to remember a click and, on any restart still on that version, say the
+    // update "didn't take" with npm never run (0.63.9, 2026-10-12): now that's the server's
+    // to say (its updateFailed, with why: test/app.mjs), so the button stays
     const stuck = await runUi(js, page, { storage: { symbiot_update_tried: version }, handlers: false });
-    ok("after an update that didn't take: no button, tells you how to update by hand", stuck.errors.length === 0 && !stuck.bar.includes("doupd") && /didn't take/.test(stuck.bar) && /npm install -g symbiot@latest/.test(stuck.bar), { errors: stuck.errors, bar: stuck.bar });
-    const moved = await runUi(js, page, { storage: { symbiot_update_tried: "0.0.1" }, handlers: false });
-    ok("after an update that advanced: offers the next one normally", moved.errors.length === 0 && moved.bar.includes("doupd"), moved.bar);
+    ok("a page that remembers clicking Update on this version still offers it, and doesn't guess it failed", stuck.errors.length === 0 && stuck.bar.includes("doupd") && !/didn't take/.test(stuck.bar), { errors: stuck.errors, bar: stuck.bar });
 
     console.log("ANDROID APP — Settings offers the Symbiot running in Termux, and back");
     const said = [];
