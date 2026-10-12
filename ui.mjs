@@ -109,6 +109,14 @@ body.lq-look-pearl .lqmsg.me{background:#1B1E23;color:#F4F4F2}
 body.lq-liquid header{position:fixed;top:0;left:0;right:0;z-index:4;background:transparent;pointer-events:none}
 body.lq-liquid header .status,body.lq-liquid header .ver,body.lq-liquid #lqlook{pointer-events:auto}
 #lqlook{display:none}
+#lqlow{display:none}
+body.lq-liquid #lqlow{display:inline-flex;align-items:center;pointer-events:auto;margin-left:8px;min-height:34px;padding:0 12px;border-radius:999px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);color:#8A919B;font:500 12.5px var(--sans);cursor:pointer}
+body.lq-liquid #lqlow[aria-pressed='true']{background:#F3F0EA;color:#0A0B0D;border-color:#F3F0EA}
+#lqlow:focus-visible{outline:2px solid currentColor;outline-offset:2px}
+body.lq-light #lqlow{background:rgba(21,26,33,.05);border-color:rgba(21,26,33,.1);color:#5A6470}
+body.lq-light #lqlow[aria-pressed='true']{background:#151A21;color:#FFFFFF;border-color:#151A21}
+body.lq-touch #lqlow{min-height:40px}
+body.lq-low *,body.lq-low *::before,body.lq-low *::after{backdrop-filter:none!important;-webkit-backdrop-filter:none!important}
 body.lq-liquid #lqlook{display:inline-flex;gap:2px;margin-left:10px;padding:3px;border-radius:999px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1)}
 #lqlook button{min-height:28px;padding:0 12px;border:0;border-radius:999px;background:transparent;color:#8A919B;font:500 12.5px var(--sans);cursor:pointer}
 #lqlook button[aria-checked='true']{background:#F3F0EA;color:#0A0B0D}
@@ -474,6 +482,9 @@ footer{padding:10px 18px;border-top:1px solid var(--line);display:flex}
 .rcard{border:1px solid var(--amber);border-radius:11px;padding:10px 12px;margin-top:8px}
 .rcard .rhead{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}.rcard .rhead .muted{font-size:12px}
 .rcard .row{margin-top:8px}.rcard .task{margin-top:6px}
+.rcard .rtasks{margin-top:10px}.rcard .rtn{font-size:12px}
+.rcard .rtask .t{display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden;cursor:pointer}.rcard .rtask.open .t{display:block}
+#reviewlist .rcard{scroll-margin-top:44px}.rcard .rmorebtn{margin-top:8px}.rothers{margin-top:10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:13px}
 .pcard .ptext{white-space:pre-wrap;overflow-wrap:anywhere;margin-top:8px;color:var(--bone);font-size:13.5px;line-height:1.55}
 .pcard textarea.pedit{display:block;width:100%;min-height:150px;margin-top:8px;background:var(--ink);border:1px solid var(--line);border-radius:9px;padding:10px 12px;color:var(--bone);font:inherit;font-size:13.5px;line-height:1.55;resize:vertical}
 .pcard textarea.pedit:focus{outline:none;border-color:var(--green)}
@@ -902,6 +913,7 @@ body.lq-liquid .pshelf .pcard.editing{grid-column:1/-1}
 .tnhow > summary::before{content:'?';display:inline-grid;place-items:center;width:16px;height:16px;border-radius:50%;border:1px solid currentColor;font-size:10.5px;font-weight:600}
 .tnhow .note{margin-top:6px;max-width:80ch}
 body.lq-liquid #panel-tasks .task .t{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;cursor:pointer}
+body.lq-liquid #panel-tasks .rcard .rtask .t{-webkit-line-clamp:1}
 body.lq-liquid #panel-tasks .task.open .t{display:block;-webkit-line-clamp:unset;overflow:visible}
 #tasklist.onerepo .task .rp,.rcard .task .rp{display:none}
 body.lq-liquid .rcard{border:1px solid rgba(242,165,65,.3);border-radius:20px;padding:16px 18px 14px;background:rgba(255,255,255,.035);box-shadow:none;margin-top:10px}
@@ -1094,7 +1106,7 @@ body.lq-light .btip .bta button:not(.quiet){background:#151A21;color:#FFFFFF}
 <div id="updatebar" class="updatebar"></div>
 <div id="appbar" class="updatebar"></div>
 <div id="whatsnew" class="whatsnew"></div>
-<header><span class="dot" role="img" aria-label="Symbiot"></span><span class="brand">Symbiot</span><span class="ver" id="ver"></span><span id="lqlook" role="radiogroup" aria-label="Look"><button type="button" role="radio" data-look="glass" aria-checked="false">Glass</button><button type="button" role="radio" data-look="ferro" aria-checked="true">Ferrofluid</button><button type="button" role="radio" data-look="pearl" aria-checked="false">Pearl</button></span><span class="status" id="status">...</span></header>
+<header><span class="dot" role="img" aria-label="Symbiot"></span><span class="brand">Symbiot</span><span class="ver" id="ver"></span><span id="lqlook" role="radiogroup" aria-label="Look"><button type="button" role="radio" data-look="glass" aria-checked="false">Glass</button><button type="button" role="radio" data-look="ferro" aria-checked="true">Ferrofluid</button><button type="button" role="radio" data-look="pearl" aria-checked="false">Pearl</button></span><button type="button" id="lqlow" aria-pressed="false" title="Low GPU: Home's liquid drawn at half the resolution and only when something changes, with no blur behind the glass. Easier on your graphics card and battery.">Low GPU</button><span class="status" id="status">...</span></header>
 <div class="tabs">
 <button class="tab active" data-tab="map">Map</button>
 <button class="tab" data-tab="board" id="boardtab">Dashboard</button>
@@ -1703,13 +1715,26 @@ var pendTimer=null,PENDRUN='';
 function pendRunning(list){return (list||[]).filter(function(r){return r.running;}).map(function(r){return r.repo;}).join('\\n');}
 function pendPoll(){if(pendTimer){clearTimeout(pendTimer);pendTimer=null;}if(!PENDRUN||current!=='tasks')return;
 pendTimer=setTimeout(function(){pendTimer=null;if(current!=='tasks')return;api('/api/pending').then(function(list){if(pendRunning(list)===PENDRUN||selIn($('panel-tasks')))pendPoll();else loadTasks();}).catch(pendPoll);},4000);}
-function loadPending(){api('/api/pending').then(function(list){var el=document.getElementById('reviewlist');PENDTASKS=[];PENDRUN=pendRunning(list);pendPoll();
+// Approve opens on what you came for: in a project, only its card (the others are a
+// click away, PENDALL), with its Approve button first and its tasks one line each, three
+// shown (RTASKS). Clicking Review and approve on Home met the whole list: every project's
+// card, every task in full, 3600px before the button (2026-10-12).
+var PENDALL=false,RTASKS=3;
+function loadPending(){var el0=document.getElementById('reviewlist'),fr=TFILTER.repo;
+if(el0&&!el0.innerHTML&&fr&&LQ.focus&&LQ.focus.kind==='approve'&&LQ.focus.repo===fr)el0.innerHTML="<div class='tgroup' style='color:var(--amber)'>Waiting for your OK</div><div class='muted rwait'>Getting "+esc(fr)+"'s changes ready&hellip;</div>";
+api('/api/pending').then(function(list){var el=document.getElementById('reviewlist');PENDTASKS=[];PENDRUN=pendRunning(list);pendPoll();
 if(!list||!list.length){el.innerHTML='';lqLight();return;}
+var repo0=TFILTER.repo,mine=repo0&&!PENDALL?list.filter(function(r){return r.repo===repo0;}):[],others=mine.length?list.filter(function(r){return r.repo!==repo0;}):[];
+if(mine.length)list=mine;else if(repo0&&!PENDALL){el.innerHTML='';lqLight();return;}
 var n=0;list.forEach(function(r){n+=r.tasks.length||1;});
-var h="<div class='tgroup' style='color:var(--amber)'>Awaiting your review <span class='tcount'>"+n+"</span></div>";
-list.forEach(function(r){var ch=r.files.length?(r.files.length+" file"+(r.files.length>1?"s":"")+" changed"+(r.stat?" &middot; "+esc(r.stat):"")):"no uncommitted changes";
+var h="<div class='tgroup' style='color:var(--amber)'>"+(mine.length?"Waiting for your OK":"Awaiting your review <span class='tcount'>"+n+"</span>")+"</div>";
+list.forEach(function(r){var top='';var ch=r.files.length?(r.files.length+" file"+(r.files.length>1?"s":"")+" changed"+(r.stat?" &middot; "+esc(r.stat):"")):"no uncommitted changes";
 h+="<div class='rcard' data-repo='"+esc(r.repo)+"'"+(r.publishesOnMerge?" data-pom='1'":"")+"><div class='rhead'><b>"+esc(r.repo)+"</b><span class='muted'>"+(r.path?"on "+esc(r.branch||'?')+" &middot; "+ch:"repo not found on disk")+"</span></div>";
-r.tasks.forEach(function(t){PENDTASKS.push(t);h+="<div class='task' data-id='"+esc(t.id)+"'><span class='t'>"+esc(t.text)+"</span>"+askBtn(t)+"<button class='rm sendback' title='not right - send back to the agent (unticks it)'>&#8630;</button></div>";});
+top=h;h='';var nt=r.tasks.length;
+if(nt)h+="<div class='rtasks'><div class='muted rtn'>"+nt+" finished task"+(nt>1?"s":"")+" in it"+(nt>RTASKS?", the first "+RTASKS+" below":"")+". Click one to read it all.</div>";
+r.tasks.forEach(function(t,i){PENDTASKS.push(t);if(i===RTASKS)h+="<div class='rmore hidden'>";h+="<div class='task rtask' data-id='"+esc(t.id)+"'><span class='t' title='click to read it all'>"+esc(t.text)+"</span>"+askBtn(t)+"<button class='rm sendback' title='not right - send back to the agent (unticks it)'>&#8630;</button></div>";});
+if(nt>RTASKS)h+="</div><button type='button' class='ghost rmorebtn'>Show the other "+(nt-RTASKS)+"</button>";
+if(nt)h+="</div>";
 // a run that stopped on questions or a handover: partly done, and what it waits on, in plain words
 var pd=r.partly,pq=pd&&pd.questions||0,ph=(pd&&pd.handed)||[];
 if(pd)h+="<div class='partly'><b>Partly done:</b> "+esc([pq?pq+" question"+(pq>1?"s":"")+" for you":"",ph.length?ph.map(function(x){return x.lane+" is on “"+x.text+"”";}).join(', '):""].filter(Boolean).join(', and '))+". "+(r.untasked?"The changes so far can be approved now, or once it's finished.":"")+"</div>";
@@ -1725,9 +1750,15 @@ else if(ur)h+="<div class='muted' style='margin:6px 0'><span class='err'>Unrelea
 // The version is already released (its v* tag exists, or npm has it) and these changes keep it:
 // Approve bumps it in the PR too, a patch unless you pick otherwise.
 var bo=r.bumpOffer;if(bo&&r.files.length)h+="<div class='row' style='margin:6px 0;font-size:12px'><span class='muted'>Version</span><select class='bumpsel' title='bump the version in package.json (and the lockfile) in this PR' style='flex:0 0 auto;width:auto'><option value='patch'>bump to "+esc(bo.patch)+" (patch)</option><option value='minor'>bump to "+esc(bo.minor)+" (minor)</option><option value=''>keep "+esc(bo.version)+"</option></select></div>";
-h+="<div class='row ract'>"+(pq&&r.path?"<button class='act answerq' data-path='"+esc(r.path).replace(/'/g,'&#39;')+"'>Answer its question"+(pq>1?"s":"")+"</button>":"")+"<button class='"+(pd?'ghost':'act')+" approve'"+(pd?" data-partly='1'":"")+(r.path&&!r.running?"":" disabled")+(r.running?" title='the agent is still editing this repo'>"+(r.untasked?"Approve changes without a task":"Approve")+" &middot; agent still working":r.untasked?" data-untasked='1' title='commit on a branch, push and open a PR, without a task'>Approve changes without a task &rarr; PR":" title='commit on a branch, push, open a PR, then archive'>Approve &rarr; "+(r.files.length?"PR":"archive"))+"</button>"+(r.files.length?"<button class='ghost showdiff'>Show diff</button>":"")+"<label title='Queue GitHub auto-merge so this PR lands once its CI checks pass. Needs Allow auto-merge on the repo.' style='margin-left:auto;font-size:12px;color:var(--faint);display:flex;align-items:center;gap:6px'><input type='checkbox' class='amtoggle' style='width:auto'"+(r.autoMerge?" checked":"")+"> auto-merge on green CI</label></div><div class='rdiff hidden'></div></div>";});
+h+="<div class='row ract'>"+(pq&&r.path?"<button class='act answerq' data-path='"+esc(r.path).replace(/'/g,'&#39;')+"'>Answer its question"+(pq>1?"s":"")+"</button>":"")+"<button class='"+(pd?'ghost':'act')+" approve'"+(pd?" data-partly='1'":"")+(r.path&&!r.running?"":" disabled")+(r.running?" title='the agent is still editing this repo'>"+(r.untasked?"Approve changes without a task":"Approve")+" &middot; agent still working":r.untasked?" data-untasked='1' title='commit on a branch, push and open a PR, without a task'>Approve changes without a task &rarr; PR":" title='commit on a branch, push, open a PR, then archive'>Approve &rarr; "+(r.files.length?"PR":"archive"))+"</button>"+(r.files.length?"<button class='ghost showdiff'>Show diff</button>":"")+"<label title='Queue GitHub auto-merge so this PR lands once its CI checks pass. Needs Allow auto-merge on the repo.' style='margin-left:auto;font-size:12px;color:var(--faint);display:flex;align-items:center;gap:6px'><input type='checkbox' class='amtoggle' style='width:auto'"+(r.autoMerge?" checked":"")+"> auto-merge on green CI</label></div><div class='rdiff hidden'></div>";
+var act=h.slice(h.lastIndexOf("<div class='row ract'>")),bump=h.lastIndexOf("<div class='row' style='margin:6px 0;font-size:12px'><span class='muted'>Version</span>"),body=h.slice(0,h.lastIndexOf("<div class='row ract'>"));
+var bsel=bump>=0?body.slice(bump):'';if(bump>=0)body=body.slice(0,bump);
+h=top+bsel+act+body+"</div>";});
+if(others.length)h+="<div class='muted rothers'>Also waiting for your OK: "+others.map(function(r){return esc(r.repo);}).join(', ')+" <button type='button' class='ghost rallbtn'>Show them</button></div>";
 el.innerHTML=h;
+var ra=el.querySelector('.rallbtn');if(ra)ra.addEventListener('click',function(){PENDALL=true;loadPending();});
 el.querySelectorAll('.rcard').forEach(function(card){var repo=card.getAttribute('data-repo');
+var rmb=card.querySelector('.rmorebtn'),rm=card.querySelector('.rmore');if(rmb&&rm)rmb.addEventListener('click',function(){var shut=rm.classList.toggle('hidden');rmb.textContent=shut?'Show the other '+rm.children.length:'Show fewer';});
 card.querySelectorAll('.task').forEach(function(row){wireAsk(row,row.getAttribute('data-id'));});
 card.querySelectorAll('.sendback').forEach(function(b){b.addEventListener('click',function(){api('/api/pending/sendback',{id:b.closest('.task').getAttribute('data-id')}).then(loadTasks);});});
 var amt=card.querySelector('.amtoggle');if(amt)amt.addEventListener('change',function(){api('/api/automerge',{repo:repo,on:amt.checked});});
@@ -3243,7 +3274,7 @@ function lqSaid(t){LQ.talk.push({me:false,text:t});LQ.talk=LQ.talk.slice(-8);lqT
 // repo's questions and its Approve, under "Needs you here" at the top of its
 // tasks, with its held handovers; an ops run's question on its block in Agents;
 // a first step on its part of Settings.
-function lqFocus(y){lqAct();y=y||{};LQ.focus={kind:y.kind||'',repo:y.repo||'',path:y.path||'',focus:y.focus||'',shown:false};
+function lqFocus(y){lqAct();y=y||{};PENDALL=false;LQ.focus={kind:y.kind||'',repo:y.repo||'',path:y.path||'',focus:y.focus||'',shown:false};
 document.querySelectorAll('main .lit').forEach(function(x){x.classList.remove('lit');}); // only what this orb lit stays lit
 if(y.kind==='setup'){lqPool('settings');setTimeout(lqLight,300);return;}
 if(!y.repo||y.repo==='ops'){lqPool('agents');return;}
@@ -3481,9 +3512,18 @@ var LQ_NB=32; // metaballs home can draw: the core, the droplets, the lines to t
 // a third of the resolution, without the breathing, and only when something moved (Home), at most
 // 20 a second while you use it and 5 at rest. glDpr: the pixel ratio a canvas draws at;
 // glEvery: draw 1 frame in n.
-var GLSOFT=false,GLSTILL=false;try{GLSTILL=!!(window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches);}catch(e){}
-function glEvery(busy){return GLSOFT||GLSTILL?(busy?3:12):1;}
-function glDpr(max){return GLSOFT?0.34:Math.min(window.devicePixelRatio||1,max);}
+// Low GPU (GLLOW, the header's switch, kept on this computer): the same, at half the
+// resolution, and no blur behind the glass (body.lq-low). The full liquid kept a graphics
+// card at full clock all day, the window open behind others (2026-10-12). And whatever you
+// pick, a window you aren't using (glFocused) draws the same way, only when something moved.
+var GLSOFT=false,GLSTILL=false,GLLOW=false;try{GLSTILL=!!(window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches);}catch(e){}
+try{GLLOW=!!(window.localStorage&&window.localStorage.getItem('symbiot-lowgpu')==='1');}catch(e){}
+function glFocused(){try{return !document.hasFocus||document.hasFocus();}catch(e){return true;}}
+function glLight(){return GLSOFT||GLSTILL||GLLOW||!glFocused();}
+function glEvery(busy){return glLight()?(busy?3:12):1;}
+function glDpr(max){return GLSOFT?0.34:GLLOW?0.5:Math.min(window.devicePixelRatio||1,max);}
+function glLow(on){GLLOW=!!on;try{if(window.localStorage)window.localStorage.setItem('symbiot-lowgpu',GLLOW?'1':'0');}catch(e){}
+if(document.body&&document.body.classList)document.body.classList.toggle('lq-low',GLLOW);var b=$('lqlow');if(b)b.setAttribute('aria-pressed',GLLOW?'true':'false');}
 function lqGL(c,n){c=c||$('lq');n=n||LQ_NB;if(!c||!c.getContext)return null;var gl=null;try{gl=c.getContext('webgl',{antialias:false,alpha:false});}catch(e){}if(!gl)return null;
 try{var dbg=gl.getExtension('WEBGL_debug_renderer_info'),rn=String(dbg?gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL):gl.getParameter(gl.RENDERER)).toLowerCase();if(['swiftshader','llvmpipe','softpipe','software'].some(function(k){return rn.indexOf(k)>=0;}))GLSOFT=true;}catch(e){}
 function sh(t,src){var o=gl.createShader(t);gl.shaderSource(o,src);gl.compileShader(o);return o;}
@@ -3495,7 +3535,7 @@ var U={};['uRes','uT','uDpr','uB','uRip','uStyle','uContrast','uExposure'].forEa
 return {gl:gl,c:c,U:U,out:new Float32Array(n*4),t0:(window.performance&&performance.now)?performance.now():Date.now()};}
 function lqDraw(G){var gl=G.gl,c=G.c,S=lqSize(),d=glDpr(3),W=Math.max(1,Math.floor(S.w*d)),H=Math.max(1,Math.floor(S.h*d));
 if(c.width!==W||c.height!==H){c.width=W;c.height=H;gl.viewport(0,0,W,H);}
-var now=(window.performance&&performance.now)?performance.now():Date.now(),t=(now-G.t0)/1000,th=LQ.theme,slow=GLSOFT||GLSTILL,still=th.still||slow,o=G.out;LQ.t=t;
+var now=(window.performance&&performance.now)?performance.now():Date.now(),t=(now-G.t0)/1000,th=LQ.theme,slow=glLight(),still=th.still||slow,o=G.out;LQ.t=t;
 for(var i=0;i<o.length;i++)o[i]=0;var NB=o.length/4;
 var put=function(k,x,y,r,a,lv){if(k>NB-1)return;var w=still?0:(k===0?1:lv!=null?lv:0.3);o[k*4]=x/S.w+Math.sin(t*1.3+k*1.7)*0.004*w;o[k*4+1]=y/S.h+Math.cos(t*1.1+k*2.3)*0.005*w;o[k*4+2]=Math.max(0,r)*(1+0.035*Math.sin(t*2.0+k)*w);o[k*4+3]=a||0;};
 put(0,LQ.core.x,LQ.core.y,LQ.core.cr);var k=1,tend=[];
@@ -3510,7 +3550,7 @@ var P=LQ.pointer;if(P&&LQ.mode==='aware'&&!LQ.talking){var best=null,bd=1e9;[LQ.
 // a bulge toward the pointer, its tip always on the orb's edge: reaching further, it hung in the gap as an orb of its own with no label (2026-10-08)
 if(best&&bd<230){var dx=P[0]-best.x,dy=P[1]-best.y,dl=Math.hypot(dx,dy)||1,tr=8+20*(1-Math.max(0,bd)/230),reach=Math.min(dl,best.cr+tr*0.6);put(NB-1,best.x+dx/dl*reach,best.y+dy/dl*reach,tr);}}
 // drawn seldom (no GPU, or less motion asked for): still, and only when something moved
-if(slow){var sig=W+'|'+H+'|'+th.look+th.night+th.contrast;for(var q=0;q<o.length;q++)sig+=','+Math.round(o[q]*400);if(sig===G.sig)return;G.sig=sig;}
+if(slow){var sig=W+'|'+H+'|'+th.look+th.night+th.contrast+GLLOW;for(var q=0;q<o.length;q++)sig+=','+Math.round(o[q]*400);if(sig===G.sig)return;G.sig=sig;}
 var U=G.U;gl.uniform2f(U.uRes,W,H);gl.uniform1f(U.uT,slow?0:t);gl.uniform1f(U.uDpr,d);gl.uniform4fv(U.uB,o);gl.uniform3f(U.uRip,LQ.ripple[0],LQ.ripple[1],still?-10:LQ.ripple[2]);
 gl.uniform1f(U.uStyle,th.look==='glass'?0:th.look==='pearl'?2:1);gl.uniform1f(U.uContrast,th.contrast?1:0);gl.uniform1f(U.uExposure,th.night?0.82:1);
 gl.drawArrays(gl.TRIANGLES,0,3);}
@@ -3673,6 +3713,7 @@ document.addEventListener('pointerdown',function(ev){var t=ev&&ev.target;if(!LQ.
 var co=$('lqcore');if(co&&co.addEventListener)co.addEventListener('click',function(){var i=$('lqask');if(i&&i.focus)i.focus();});
 var sk=$('lqsink');if(sk&&sk.addEventListener)sk.addEventListener('click',lqSink);
 var bk=$('lqback');if(bk&&bk.addEventListener)bk.addEventListener('click',lqHome);
+glLow(GLLOW);var lw=$('lqlow');if(lw&&lw.addEventListener)lw.addEventListener('click',function(){glLow(!GLLOW);});
 var lk=$('lqlook');if(lk&&lk.querySelectorAll){var cur=lqLookGet();lk.querySelectorAll('button').forEach(function(b){b.setAttribute('aria-checked',b.getAttribute('data-look')===cur?'true':'false');b.addEventListener('click',function(){lqLook(b.getAttribute('data-look'));});});}
 var gb=$('lqgo');if(gb&&gb.addEventListener)gb.addEventListener('click',lqGoWork);
 var so=$('lqsort');if(so&&so.querySelectorAll)so.querySelectorAll('button').forEach(function(b){b.setAttribute('aria-checked',b.getAttribute('data-sort')===LANESORT?'true':'false');b.addEventListener('click',function(){lqSort(b.getAttribute('data-sort'));});});
@@ -3681,7 +3722,7 @@ lqLoad(true);
 // the only clocks: rest when left alone, fresh data now and then, the hour (night)
 setInterval(function(){if(LQ.mode==='aware'&&!LQ.talking&&Date.now()-LQ.lastAct>LQ_REST)LQ.mode='rest';if(LQ.mode!=='pool')lqLoad(false);var h=new Date().getHours(),n=h>=22||h<6;if(n!==LQ.theme.night)lqTheme();},30000);
 var G=lqGL();if(G){try{lqStep();lqDraw(G);}catch(e){}}if(typeof window.requestAnimationFrame!=='function')return;var raf=function(f){return window.requestAnimationFrame(f);};
-function frame(){if(!document.hidden){LQ.frame++;if(LQ.mode!=='pool'||LQ.frame%3===0)lqStep();var every=(GLSOFT||GLSTILL)?glEvery(LQ.mode==='aware'):LQ.mode==='pool'?6:LQ.mode==='rest'?2:1;if(G&&LQ.frame%every===0)lqDraw(G);}raf(frame);} // moves every frame; drawn less at rest, behind a panel, without a GPU
+function frame(){if(!document.hidden){LQ.frame++;if(LQ.mode!=='pool'||LQ.frame%3===0)lqStep();var every=glLight()?glEvery(LQ.mode==='aware'):LQ.mode==='pool'?6:LQ.mode==='rest'?2:1;if(G&&LQ.frame%every===0)lqDraw(G);}raf(frame);} // moves every frame; drawn less at rest, behind a panel, without a GPU
 raf(frame);}
 
 initGraphEvents();syncP();refresh();firstTab();lqInit();onbLoad();var sbo=$('sbopen');if(sbo)sbo.addEventListener('click',function(){sbOpen('');});var rr=$('rerunsetup');if(rr)rr.addEventListener('click',function(){api('/api/onboarding/restart',{}).then(function(){lqSink();onbLoad();});});awayInit();lqDeep();loadWhatsNew();loadAgentCfg();loadScanRoots();loadKnowledge();loadPhone();loadLinks();loadMind();loadTrusted();loadMail();loadScreensUI();loadMonitorsUI();loadDesktop();loadWatchUI();setInterval(function(){whenFree(document.querySelector('main'),'watch',loadWatchUI);},60000);loadPhoneLink();
