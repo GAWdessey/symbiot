@@ -10,11 +10,11 @@
 <meta property="og:title" content="Symbiot">
 <meta property="og:description" content="Your coding agents work. You only do what only you can do.">
 <meta property="og:url" content="https://symbiot.co.za/">
-<meta property="og:image" content="https://symbiot.co.za/og.png">
+<meta property="og:image" content="https://symbiot.co.za/og.png?v=2">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:image" content="https://symbiot.co.za/og.png">
+<meta name="twitter:image" content="https://symbiot.co.za/og.png?v=2">
 <style>
 @font-face{font-family:Geist;src:url("fonts/Geist-Variable.woff2") format("woff2");font-weight:100 900;font-display:swap}
 :root{
@@ -140,7 +140,7 @@ footer a{text-decoration:none}footer a:hover{color:var(--bone)}
       <a href="#what">What it does</a>
       <a href="#how">How it works</a>
       <a href="#pro">Pro</a>
-      <a href="https://github.com/GarthGhostai/symbiot">GitHub</a>
+      <a href="https://github.com/GAWdessey/symbiot">GitHub</a>
       <a class="btn" href="#install">Install</a>
     </nav>
   </div>
@@ -284,7 +284,7 @@ footer a{text-decoration:none}footer a:hover{color:var(--bone)}
 <footer>
   <div class="wrap">
     <span>© 2026 Symbiot</span>
-    <span><a href="https://github.com/GarthGhostai/symbiot/blob/main/LICENSE">Elastic License 2.0</a> · <a href="https://github.com/GarthGhostai/symbiot">GitHub</a> · <a href="https://github.com/GarthGhostai/symbiot/blob/main/CHANGELOG.md">What's new</a> · <a href="https://github.com/GarthGhostai/symbiot/issues">Report a problem</a></span>
+    <span><a href="https://github.com/GAWdessey/symbiot/blob/main/LICENSE">Elastic License 2.0</a> · <a href="https://github.com/GAWdessey/symbiot">GitHub</a> · <a href="https://github.com/GAWdessey/symbiot/blob/main/CHANGELOG.md">What's new</a> · <a href="https://github.com/GAWdessey/symbiot/issues">Report a problem</a></span>
   </div>
 </footer>
 
@@ -327,7 +327,7 @@ footer a{text-decoration:none}footer a:hover{color:var(--bone)}
       else mail();
     });
   }
-  fetch("https://api.github.com/repos/GarthGhostai/symbiot/releases?per_page=30", { headers: { Accept: "application/vnd.github+json" } })
+  fetch("https://api.github.com/repos/GAWdessey/symbiot/releases?per_page=30", { headers: { Accept: "application/vnd.github+json" } })
     .then(function (r) { return r.ok ? r.json() : null; })
     .then(function (rels) {
       if (!rels) return; // GitHub didn't answer (rate limit): the links to the latest release stay
