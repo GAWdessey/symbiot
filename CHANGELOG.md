@@ -2,7 +2,7 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
-## 0.63.9 — 2026-10-12
+## 0.63.10 — 2026-10-12
 
 - Fixed sign-ins made in the Symbiot Browser window, such as domains.co.za's, being lost when `symbiot screens` opened the same site.
 - Fixed allowing an agent to read your ssh keys having no effect; lists Symbiot can't safely open are now refused with an explanation.
@@ -13,6 +13,11 @@ What each Symbiot release brought, newest first. When Approve bumps the version,
 - Changed the Linux installer's description to "Your coding agents work. You only do what only you can do", matching the site.
 - Added a way to approve finished work on a task that's still in progress.
 - Fixed agent permission questions on Home rejecting a picked option with "Pick or type at least one answer," so choosing an option now sends it.
+
+## 0.63.9
+
+- **Answering an agent no longer rereads its whole conversation.** Each answer you gave an agent picked its conversation up again, all of it: a one-word "yes" to an agent that had read 195,000 tokens cost 195,000 again, and resumed runs were three quarters of a week's use. Once an agent's conversation is past 60k, your answer now starts it fresh (about 22k), with a note of where it got to in its own words. Short ones still carry on as before.
+- **See how much an agent carries.** A run on the Workdesk shows its context: what it rereads with every step.
 
 ## 0.63.8
 
