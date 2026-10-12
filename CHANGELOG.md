@@ -2,6 +2,10 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.63.5
+
+- **Home stops stalling on git.** Every few seconds Home asked git, one project after another, what each of your last 60 agent runs changed, and what's waiting for review. The app couldn't do anything else while it waited: 20 seconds in every 45 on a busy day. It now reuses each answer and refreshes it in the background, so Home answers straight away. Approve still checks git fresh, and Home forgets what it kept as soon as you approve.
+
 ## 0.63.4
 
 - **Symbiot no longer freezes as your task list grows.** Every 20 seconds it checks the ideas your agents left against all your tasks, and with a few hundred tasks that took up to 10 seconds a time, until the app stopped answering altogether. The update to 0.63.3 then couldn't restart it. The same check now takes a fraction of a second.

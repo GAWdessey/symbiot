@@ -147,6 +147,26 @@ try {
   track("rot", "echo fresh", rot);
   for (let i = 0; i < 50 && !/fresh\n/.test(rf(join(rot, ".symbiot", "agent.log"), "utf8")); i++) await new Promise((r) => setTimeout(r, 100));
   ok("a log past 8 MB starts afresh at the next run; the old one is kept as agent.log.old", /fresh/.test(rf(join(rot, ".symbiot", "agent.log"), "utf8")) && sf(join(rot, ".symbiot", "agent.log")).size < 4096 && sf(join(rot, ".symbiot", "agent.log.old")).size > 9 * 1024 * 1024, "");
+// What a run changed is kept and refreshed in the background: a screen asking again
+// doesn't wait on git, and a new commit still shows up (agents.mjs agentChanges).
+{
+  const { agentChanges, CHANGES } = await import("../agents.mjs");
+  const { execFileSync } = await import("node:child_process");
+  const repo = join(HOME, "changes"); mkdirSync(repo, { recursive: true });
+  const g = (...a) => execFileSync("git", ["-C", repo, "-c", "user.name=t", "-c", "user.email=t@t", ...a], { stdio: "ignore" });
+  g("init", "-q"); writeFileSync(join(repo, "a.txt"), "a\n"); g("add", "."); g("commit", "-qm", "first");
+  const start = Date.now() - 60000;
+  const a = agentChanges(repo, start);
+  ok("a run's commits and changes, read from git", a.commits.length === 1 && a.commits[0].msg === "first" && a.dirty === 0, a);
+  writeFileSync(join(repo, "b.txt"), "b\n"); writeFileSync(join(repo, "a.txt"), "a2\n"); g("add", "b.txt"); g("commit", "-qm", "second");
+  ok("asked again at once: the kept answer, no git", agentChanges(repo, start).commits.length === 1);
+  CHANGES.get(repo).at -= 60000;
+  ok("once it's old: still the kept answer straight away", agentChanges(repo, start).commits.length === 1);
+  for (let i = 0; i < 100 && CHANGES.get(repo).v.commits.length === 1; i++) await new Promise((r) => setTimeout(r, 20));
+  const b = agentChanges(repo, start);
+  ok("…while git is asked in the background: the new commit and the edit show up", b.commits.length === 2 && b.commits[0].msg === "second" && b.dirty === 1 && /1 file changed/.test(b.stat), b);
+  ok("a different run in the same folder isn't given the last one's answer", agentChanges(repo, Date.now() + 3600000).commits.length === 0);
+}
 } finally {
   rmSync(HOME, { recursive: true, force: true });
 }

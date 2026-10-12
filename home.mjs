@@ -302,7 +302,7 @@ function marketingGo(deps = {}) {
 function homeState({ now = Date.now(), fresh = false, deps = {} } = {}) {
   if (!fresh && !deps.board && cached && now - cached.at < KEEP) return cached;
   const board = deps.board || (() => { try { return watchBoard(24, now); } catch { return { cards: [] }; } });
-  const pending = deps.pending || (() => { try { return pendingReview(); } catch { return []; } });
+  const pending = deps.pending || (() => { try { return pendingReview({ kept: true }); } catch { return []; } });
   const agents = deps.agents || (() => { try { return agentsList(); } catch { return []; } });
   const lanes = deps.lanes || (() => { try { return lanesState(); } catch { return { handoffs: [] }; } });
   const reports = deps.reports || (() => { try { return reportsNews(); } catch { return { count: 0 }; } });
@@ -626,7 +626,7 @@ function runNow(a, { now = Date.now(), est = estimate } = {}) {
 // not a sphere each with an id for a name.
 function workScene({ deps = {}, full = false } = {}) {
   const agents = deps.agents || (() => { try { return agentsList(); } catch { return []; } });
-  const pending = deps.pending || (() => { try { return pendingReview(); } catch { return []; } });
+  const pending = deps.pending || (() => { try { return pendingReview({ kept: true }); } catch { return []; } });
   const tasks = deps.tasks || (() => { try { return loadTasks(); } catch { return []; } });
   const map = (deps.repos || (() => { try { return laneMap(); } catch { return {}; } }))() || {};
   const named = deps.name || displayName;
