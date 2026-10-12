@@ -100,8 +100,9 @@ try {
 
   console.log("THE ICON — in your look");
   const f = iconSvg("ferro"), g = iconSvg("glass"), p = iconSvg("pearl");
-  ok("Ferrofluid is the dark orb", /#1B1D22/.test(f) && /#08090B/.test(f), "");
-  ok("Glass and Pearl are light, each its own", /#F4F7FB/.test(g) && /#F7F4EE/.test(p) && g !== p && !/#1B1D22/.test(g), "");
+  ok("Ferrofluid is the dark chrome orb, its S silver over amber", /#030303/.test(f) && /#C9CFD9/.test(f) && /#F2A541/.test(f), "");
+  ok("Glass and Pearl are light, each its own (Glass bends the teal, Pearl mirrors the sky)", /#8FC9CC/.test(g) && /#F5F6F7/.test(p) && g !== p && !/#030303/.test(g), "");
+  ok("the small drawing (a tab, the header) has no reflections", iconSvg("ferro", { small: true }) !== f && !/#FFFCF7/.test(iconSvg("ferro", { small: true })) && /#FFFCF7/.test(f), "");
   ok("a look it doesn't know: the dark orb", iconSvg("neon") === f, "");
 } finally {
   rmSync(HOME, { recursive: true, force: true });

@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Get Symbiot</title>
+<link rel="icon" type="image/svg+xml" href="/icon.svg">
+<meta name="theme-color" content="#0B0C0E">
+<style>
+/* symbiot.co.za/get/?app=android|windows|mac|linux|appimage: the newest Symbiot that
+   has that file, downloaded straight away. A release still being built (or missing a
+   file) is skipped, so this never lands on a "not found". No account needed. */
+:root{--bg:#0B0C0E;--text:#C9CDD3;--bone:#F3F0EA;--faint:#8A9099;color-scheme:dark}
+@media (prefers-color-scheme: light){:root{--bg:#F4F2EE;--text:#3A414C;--bone:#11151B;--faint:#6B7380;color-scheme:light}}
+body{margin:0;min-height:100vh;display:grid;place-items:center;background:var(--bg);color:var(--text);font:16px/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;padding:24px;box-sizing:border-box;text-align:center}
+img{width:72px;height:72px;border-radius:18px}
+h1{margin:16px 0 6px;font-size:24px;color:var(--bone);font-weight:650;letter-spacing:-.02em}
+p{margin:0;color:var(--faint);max-width:40ch}
+a{color:var(--bone)}
+</style>
+</head>
+<body>
+<main>
+  <img src="/icon.svg" alt="">
+  <h1 id="t">Getting Symbiot…</h1>
+  <p id="m">Your download starts in a moment.</p>
+</main>
+<script>
+(function () {
+  var FILES = { android: ["symbiot-aarch64.apk", "Android"], windows: ["Symbiot-Setup.exe", "Windows"], mac: ["Symbiot.dmg", "Mac"], linux: ["symbiot.deb", "Linux"], appimage: ["Symbiot.AppImage", "Linux"] };
+  var app = (new URLSearchParams(location.search).get("app") || "").toLowerCase();
+  if (!FILES[app]) { var ua = navigator.userAgent || ""; app = /android/i.test(ua) ? "android" : /windows/i.test(ua) ? "windows" : /mac os/i.test(ua) ? "mac" : /linux/i.test(ua) ? "linux" : ""; }
+  var t = document.getElementById("t"), m = document.getElementById("m");
+  if (!FILES[app]) { t.textContent = "Get Symbiot"; m.innerHTML = 'Pick your computer on <a href="/#install">symbiot.co.za</a>.'; return; }
+  var file = FILES[app][0];
+  t.textContent = "Getting Symbiot for " + FILES[app][1] + "…";
+  var go = function (url) {
+    m.innerHTML = 'If it doesn’t start, <a href="' + url + '">tap here</a>.' + (app === "android" ? " Then open the download to install it, and open Symbiot." : "");
+    location.replace(url);
+  };
+  fetch("https://api.github.com/repos/GarthGhostai/symbiot/releases?per_page=30", { headers: { Accept: "application/vnd.github+json" } })
+    .then(function (r) { return r.ok ? r.json() : []; })
+    .then(function (rels) {
+      for (var i = 0; i < rels.length; i++) {
+        var r = rels[i]; if (r.draft || r.prerelease) continue;
+        for (var j = 0; j < (r.assets || []).length; j++) if (r.assets[j].name === file) return go(r.assets[j].browser_download_url);
+      }
+      go("https://github.com/GarthGhostai/symbiot/releases/latest/download/" + file);
+    })
+    .catch(function () { go("https://github.com/GarthGhostai/symbiot/releases/latest/download/" + file); });
+})();
+</script>
+</body>
+</html>

@@ -1,7 +1,7 @@
 {
   "name": "symbiot",
-  "version": "0.62.2",
-  "description": "Your week, written from your real work. Reads your local git and writes it up with the AI of your choice \u2014 Claude, OpenAI, Gemini, or a local model.",
+  "version": "0.63.2",
+  "description": "Your week, written from your real work. Reads your local git and writes it up with the AI of your choice — Claude, OpenAI, Gemini, or a local model.",
   "type": "module",
   "bin": {
     "symbiot": "index.mjs"
@@ -57,7 +57,8 @@
     "lang.mjs",
     "browser.html",
     "qr.mjs",
-    "mdns.mjs"
+    "mdns.mjs",
+    "icons"
   ],
   "engines": {
     "node": ">=18"
@@ -80,11 +81,11 @@
   "license": "Elastic-2.0",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/GarthGhostai/symbiot.git"
+    "url": "git+https://github.com/GAWdessey/symbiot.git"
   },
-  "homepage": "https://github.com/GarthGhostai/symbiot#readme",
+  "homepage": "https://github.com/GAWdessey/symbiot#readme",
   "bugs": {
-    "url": "https://github.com/GarthGhostai/symbiot/issues"
+    "url": "https://github.com/GAWdessey/symbiot/issues"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.128.0"

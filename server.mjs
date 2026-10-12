@@ -18,7 +18,7 @@ import { createServer } from "node:http";
 import { randomBytes } from "node:crypto";
 import { EMBEDDED_UI } from "./ui.mjs";
 import { VERSION, LATEST_VERSION, REGISTRY, semverGt, checkLatest, CONFIG_PATH, loadConfig, saveConfig, moveSecrets, loadTasks, hasCmd, chromeBinary, CONFIG_DIR } from "./core.mjs";
-import { shSingle, handoffCmd, setHandoffCmd, grantAgent, runHandoff, track, detectHandoffs, connectorsInfo, linkReach, answerQuestions, skipIdea, agentsList, startWaiting, parkLane, parkedPaths, autoAllowSweep, trustFull, readLastWords, sandboxState } from "./agents.mjs";
+import { shSingle, handoffCmd, setHandoffCmd, grantAgent, runHandoff, track, detectHandoffs, connectorsInfo, linkReach, answerQuestions, skipIdea, agentsList, startWaiting, parkLane, parkedPaths, autoAllowSweep, continueLanes, trustFull, readLastWords, sandboxState } from "./agents.mjs";
 import { PROVIDERS, resolveProvider, connectProvider, detectHardware, recommendModels, hasOllama, ollamaInstall, ensureOllama, useOllamaModel } from "./ai.mjs";
 import { SCAN, SCAN_TIMEOUT_MS, scanRoots, scanHome, addScanRoot, removeScanRoot, buildMap, nodeDetail, repoPathMap, laneMap, setScanOptions, refreshRepos, REPO_STATE, reposState } from "./scan.mjs";
 import { computeDrift } from "./drift.mjs";
@@ -259,7 +259,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
     // the app's typeface ships in the package (fonts/), so it's there offline
     // the window's own icon (its taskbar entry), the same orb as the app menu's
     if (req.method === "GET" && (u.pathname === "/favicon.svg" || u.pathname === "/favicon.ico")) {
-      try { const b = iconSvg(u.searchParams.get("look") || loadConfig().look || "ferro"); res.writeHead(200, { "content-type": "image/svg+xml", "cache-control": "no-cache" }); res.end(b); }
+      try { const b = iconSvg(u.searchParams.get("look") || loadConfig().look || "ferro", { small: u.searchParams.get("small") === "1" }); res.writeHead(200, { "content-type": "image/svg+xml", "cache-control": "no-cache" }); res.end(b); }
       catch { res.writeHead(404); res.end(); }
       return;
     }
@@ -620,6 +620,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
   // an agent's allow list that stays inside your work is turned on by itself, and the agent carries on
   setTimeout(() => { try { autoAllowSweep(); } catch {} }, 4000).unref();
   setInterval(() => { try { autoAllowSweep(); } catch {} }, 20000).unref();
+  setInterval(() => { try { continueLanes(); } catch {} }, 60000).unref(); // a lane with open tasks and no run going starts again, while it gets somewhere
   // a finished run's last words, read by your AI for anything left to you that the patterns missed (agents.mjs readLastWords)
   setInterval(() => { readLastWords().catch(() => {}); }, 60000).unref();
   // knowledge folders: changed files re-read (a stat per file when nothing changed), then checked again for where two files disagree (checks.mjs)
