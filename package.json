@@ -1,6 +1,6 @@
 {
   "name": "symbiot",
-  "version": "0.63.12",
+  "version": "0.64.0",
   "description": "Your week, written from your real work. Reads your local git and writes it up with the AI of your choice \u2014 Claude, OpenAI, Gemini, or a local model.",
   "type": "module",
   "bin": {
@@ -39,6 +39,7 @@
     "post.mjs",
     "reports.mjs",
     "sandbox.mjs",
+    "reach.mjs",
     "README.md",
     "CHANGELOG.md",
     "LICENSE",

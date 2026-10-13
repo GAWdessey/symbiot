@@ -209,6 +209,48 @@ console.log("A DESKTOP APP — its window recorded, read for what's private, to 
   }
 }
 
+console.log("A PRODUCT'S OWN VIDEO — taken as it is, sound and all, its moments read for what's private");
+{
+  ok("its name in the tray is its own: trial.mp4 stays trial.mp4, from an address or a path", C.videoName("https://dailify.co.za/trial.mp4?v=2").file === "trial.mp4" && C.videoName("/x/My Demo.MOV").file === "my-demo.mov" && C.videoName("https://x.co/page") === null, "");
+  const t0 = C.trayPaths("Vid", lane);
+  ok("not a video file: says what to give", /ending \.mp4, \.mov or \.webm/.test((await C.captureFile({ product: "Vid", file: "https://x.co/page.html", t: t0 })).error || ""), "");
+  ok("no file there: says so", /no file at/.test((await C.captureFile({ product: "Vid", file: join(HOME, "nope.mp4"), t: t0 })).error || ""), "");
+  ok("an address that isn't a video: says so, nothing kept", /isn't a video Symbiot can read/.test((await C.captureFile({ product: "Vid", file: "https://x.co/a.mp4", t: t0, fetchFile: async (u, out) => { writeFileSync(out, "<html>"); return { ok: true }; }, probe: () => null })).error || "") && !existsSync(join(t0.orig, "a.mp4")), "");
+  if (hasCmd("python3")) { const py = spawnSync("python3", ["-c", "import sys; compile(sys.stdin.read(), 'faces', 'exec')"], { input: C.FACES_PY, encoding: "utf8" }); ok("the face finder is valid Python", py.status === 0, py.stderr); }
+  ok("no face finder here: none found, and said so", C.faceBoxes(["a.png"], { run: () => ({ stdout: '{"error": "nocascade"}\n' }) }).read === false, "");
+  const fb = C.faceBoxes(["a.png"], { run: () => ({ stdout: '{"ok": true, "faces": {"a.png": [[100, 100, 50, 40]]}}\n' }) });
+  ok("…a face found: boxed with room round it", fb.read && fb.boxes["a.png"][0].kind === "face" && fb.boxes["a.png"][0].x === 90 && fb.boxes["a.png"][0].w === 70 && fb.boxes["a.png"][0].h === 60, fb);
+  if (media) {
+    // a 5-second video with sound, served like a product's site serves its own
+    const src = join(HOME, "trial.mp4"), probe = (f, e) => spawnSync("ffprobe", ["-v", "error", "-show_entries", e, "-of", "csv=p=0", f], { encoding: "utf8" }).stdout.trim();
+    spawnSync("ffmpeg", ["-loglevel", "error", "-y", "-f", "lavfi", "-i", "testsrc=size=320x240:rate=25", "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=44100", "-t", "5", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest", src]);
+    const srv = createServer((q, s) => { if (q.url.startsWith("/trial.mp4")) { s.writeHead(200, { "content-type": "video/mp4" }); s.end(readFileSync(src)); } else { s.writeHead(200, { "content-type": "text/html" }); s.end("<p>hi</p>"); } });
+    await new Promise((r) => srv.listen(0, "127.0.0.1", r)); const base = `http://127.0.0.1:${srv.address().port}`;
+    try {
+      // what's private, in its moments: an email in the 2nd to 3rd, a face from the 4th to the end
+      const ocr = (f) => ({ read: true, boxes: /s000[23]\.png$/.test(f) ? [{ kind: "email", x: 20, y: 30, w: 120, h: 18, hint: "" }] : [] });
+      const faces = (fs) => ({ read: true, boxes: Object.fromEntries(fs.map((f) => [f, /s000[45]\.png$/.test(f) ? [{ kind: "face", x: 200, y: 60, w: 60, h: 70 }] : []])) });
+      const t = C.trayPaths("Vid", lane);
+      const r = await C.captureProduct({ product: "Vid", file: `${base}/trial.mp4`, dir: lane, map: {}, video: (o) => C.captureFile({ ...o, ocr, faces }) });
+      const idx = JSON.parse(readFileSync(join(t.root, "tray.json"), "utf8")), it = idx.items.find((x) => x.name === "trial"), sp = JSON.parse(readFileSync(join(t.root, "trial.blur.json"), "utf8"));
+      ok("fetched into the tray: a clip, its file trial.mp4, its original in tray-originals as it came", r.ok && it && it.kind === "clip" && it.files.join() === "trial.mp4" && it.origin === `${base}/trial.mp4` && readFileSync(join(t.orig, "trial.mp4")).equals(readFileSync(src)), [r, it]);
+      ok("…its moments' boxes, all on, over the time each shows and a sample either side", sp.regions.length === 2 && sp.regions.every((x) => x.on) && sp.regions.find((x) => x.kind === "email").from === 0 && sp.regions.find((x) => x.kind === "email").to === 3 && sp.regions.find((x) => x.kind === "face").from === 2 && sp.regions.find((x) => x.kind === "face").to === 9999, sp.regions);
+      ok("…its size and sound noted, marked to watch through before it's used", sp.size.join() === "320,240" && sp.audio === true && sp.file && /Watch it through/.test(sp.review) && /Watch it through/.test(T.trays({ dir: lane }).find((x) => x.rel === t.rel).items.find((x) => x.name === "trial").review || ""), sp);
+      ok("blurred where its boxes are on: the same size, its sound still in it", existsSync(join(t.root, "trial.mp4")) && probe(join(t.root, "trial.mp4"), "stream=codec_type").split("\n").join() === "video,audio" && probe(join(t.root, "trial.mp4"), "stream=width,height").startsWith("320,240") && !readFileSync(join(t.root, "trial.mp4")).equals(readFileSync(src)), probe(join(t.root, "trial.mp4"), "stream=codec_type"));
+      ok("…no gif and no tour: just the video", !existsSync(join(t.root, "trial.gif")) && !idx.items.some((x) => x.name === "tour"), idx.items.map((x) => x.name));
+      for (const x of sp.regions) T.setBlur(t.rel, "trial", x.id, false, { dir: lane });
+      const off = await T.renderCapture(t.rel, "trial", { dir: lane });
+      ok("every box off: the tray's copy is the file itself, its encoding and sound as they came", off.ok && readFileSync(join(t.root, "trial.mp4")).equals(readFileSync(src)), off);
+      // from a path, a second time: merged by name, not added twice
+      const r2 = await C.captureProduct({ product: "Vid", file: src, dir: lane, map: {}, video: (o) => C.captureFile({ ...o, ocr: () => ({ read: false, boxes: [] }), faces: () => ({ read: false, boxes: {} }) }) });
+      const idx2 = JSON.parse(readFileSync(join(t.root, "tray.json"), "utf8")), sp2 = JSON.parse(readFileSync(join(t.root, "trial.blur.json"), "utf8"));
+      ok("from a path on this computer, again: one trial in the tray, not two", r2.ok && idx2.items.filter((x) => x.name === "trial").length === 1 && !idx2.items.find((x) => x.name === "trial").origin, idx2.items);
+      ok("…no tesseract or face finder: says it couldn't read or look for faces", /tesseract isn't installed/.test(sp2.review) && /OpenCV's face finder/.test(sp2.review), sp2.review);
+      ok("a page's address instead of the video's: says so", /is a page, not a video file/.test((await C.captureProduct({ product: "Vid", file: `${base}/page.mp4`, dir: lane, map: {} })).error || ""), "");
+    } finally { srv.close(); }
+  }
+}
+
 console.log("YOURS — a box you draw, one you remove, a capture looked over before it's used");
 {
   const t = C.trayPaths("Desk", lane), rel = t.rel;

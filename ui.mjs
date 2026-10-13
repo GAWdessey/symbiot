@@ -1827,6 +1827,13 @@ pendTimer=setTimeout(function(){pendTimer=null;if(current!=='tasks')return;api('
 // shown (RTASKS). Clicking Review and approve on Home met the whole list: every project's
 // card, every task in full, 3600px before the button (2026-10-12).
 var PENDALL=false,RTASKS=3;
+// Approved work that didn't get as far as a PR (the server's unsent): why, in words, and
+// a retry, kept on the card until it's sent. dailify's four Approves were committed and
+// never pushed, and the page said "nothing to merge" (2026-10-13).
+var UNSENT_WHY={conflicts:"It clashes with main as GitHub has it now, so it wasn't pushed.",tests:"Its tests failed here, so it wasn't pushed.",push:"It wasn't pushed to GitHub.",pr:"It went up to GitHub, but no PR was opened."};
+function unsentBox(un){var n=un.ahead||0,when=un.at?new Date(un.at).toLocaleString([], {day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}):'';
+return "<div class='note err runsent'><b>Approved"+(when?" "+esc(when):"")+", but not on GitHub yet.</b> "+esc(un.note||UNSENT_WHY[un.why]||UNSENT_WHY.push)+"<div class='muted'>Committed <code>"+esc(un.commit||'')+"</code> on <code>"+esc(un.branch||'')+"</code>"+(n?" &middot; "+n+" commit"+(n>1?"s":"")+" GitHub doesn&rsquo;t have":"")+"</div>"+
+"<div class='row' style='margin-top:6px'><button class='act sendagain' title='rebase on main, test, push and open the PR'>Send again</button>"+(un.why==='tests'?"<button class='ghost sendanyway' title='push and open the PR without running the tests on this computer: CI runs them on the PR'>Send without the tests here</button>":"")+"<button class='ghost leaveunsent' title='stop showing this: it was sent by hand, or isn&rsquo;t wanted'>Leave it</button></div></div>";}
 function loadPending(){var el0=document.getElementById('reviewlist'),fr=TFILTER.repo;
 if(el0&&!el0.innerHTML&&fr&&LQ.focus&&LQ.focus.kind==='approve'&&LQ.focus.repo===fr)el0.innerHTML="<div class='tgroup' style='color:var(--amber)'>Waiting for your OK</div><div class='muted rwait'>Getting "+esc(fr)+"'s changes ready&hellip;</div>";
 api('/api/pending').then(function(list){var el=document.getElementById('reviewlist');PENDTASKS=[];PENDRUN=pendRunning(list);pendPoll();
@@ -1835,8 +1842,11 @@ var repo0=TFILTER.repo,mine=repo0&&!PENDALL?list.filter(function(r){return r.rep
 if(mine.length)list=mine;else if(repo0&&!PENDALL){el.innerHTML='';lqLight();return;}
 var n=0;list.forEach(function(r){n+=r.tasks.length||1;});
 var h="<div class='tgroup' style='color:var(--amber)'>"+(mine.length?"Waiting for your OK":"Awaiting your review <span class='tcount'>"+n+"</span>")+"</div>";
-list.forEach(function(r){var top='';var ch=r.files.length?(r.files.length+" file"+(r.files.length>1?"s":"")+" changed"+(r.stat?" &middot; "+esc(r.stat):"")):"no uncommitted changes";
+list.forEach(function(r){var top='';
+if(r.unsent&&!r.tasks.length&&!r.files.length){h+="<div class='rcard' data-repo='"+esc(r.repo)+"'><div class='rhead'><b>"+esc(r.repo)+"</b><span class='muted'>on "+esc(r.branch||'?')+" &middot; no uncommitted changes</span></div>"+unsentBox(r.unsent)+"</div>";return;}
+var ch=r.files.length?(r.files.length+" file"+(r.files.length>1?"s":"")+" changed"+(r.stat?" &middot; "+esc(r.stat):"")):"no uncommitted changes";
 h+="<div class='rcard' data-repo='"+esc(r.repo)+"'"+(r.publishesOnMerge?" data-pom='1'":"")+"><div class='rhead'><b>"+esc(r.repo)+"</b><span class='muted'>"+(r.path?"on "+esc(r.branch||'?')+" &middot; "+ch:"repo not found on disk")+"</span></div>";
+if(r.unsent)h+=unsentBox(r.unsent);
 top=h;h='';var nt=r.tasks.length;
 if(nt)h+="<div class='rtasks'><div class='muted rtn'>"+nt+" finished task"+(nt>1?"s":"")+" in it"+(nt>RTASKS?", the first "+RTASKS+" below":"")+". Click one to read it all.</div>";
 r.tasks.forEach(function(t,i){PENDTASKS.push(t);if(i===RTASKS)h+="<div class='rmore hidden'>";h+="<div class='task rtask' data-id='"+esc(t.id)+"'><span class='t' title='click to read it all'>"+esc(t.text)+"</span>"+askBtn(t)+"<button class='rm sendback' title='not right - send back to the agent (unticks it)'>&#8630;</button></div>";});
@@ -1870,6 +1880,10 @@ el.querySelectorAll('.rcard').forEach(function(card){var repo=card.getAttribute(
 var rmb=card.querySelector('.rmorebtn'),rm=card.querySelector('.rmore');if(rmb&&rm)rmb.addEventListener('click',function(){var shut=rm.classList.toggle('hidden');rmb.textContent=shut?'Show the other '+rm.children.length:'Show fewer';});
 card.querySelectorAll('.task').forEach(function(row){wireAsk(row,row.getAttribute('data-id'));});
 card.querySelectorAll('.sendback').forEach(function(b){b.addEventListener('click',function(){api('/api/pending/sendback',{id:b.closest('.task').getAttribute('data-id')}).then(loadTasks);});});
+var sa=card.querySelectorAll('.sendagain,.sendanyway');sa.forEach(function(b){b.addEventListener('click',function(){var o=document.getElementById('reviewout');sa.forEach(function(x){x.disabled=true;});b.textContent='Sending...';
+api('/api/pending/send',{repo:repo,untested:b.classList.contains('sendanyway')}).then(function(r){
+o.innerHTML=r&&r.pr?"<div class='note ok'>&#10003; <b>"+esc(repo)+"</b>: sent &middot; <a href='"+esc(r.pr)+"' target='_blank' rel='noopener'>open PR</a>"+(r.note?"<div class='muted'>"+esc(r.note)+"</div>":"")+"</div>":"<div class='note err'>"+esc(repo)+": "+esc((r&&(r.error||r.note))||'failed')+"</div>";loadPending();});});});
+var lv=card.querySelector('.leaveunsent');if(lv)lv.addEventListener('click',function(){lv.disabled=true;api('/api/pending/leave',{repo:repo}).then(loadPending);});
 var amt=card.querySelector('.amtoggle');if(amt)amt.addEventListener('change',function(){api('/api/automerge',{repo:repo,on:amt.checked});});
 var sd=card.querySelector('.showdiff'),pre=card.querySelector('.rdiff');
 if(sd)sd.addEventListener('click',function(){if(!pre.classList.contains('hidden')){pre.classList.add('hidden');sd.textContent='Show diff';return;}
@@ -1886,7 +1900,7 @@ if(r&&r.ask){var ob=document.getElementById('reviewout');ap.disabled=false;apLab
 ob.querySelector('.askyes').addEventListener('click',function(){ap.disabled=true;ap.textContent='Committing & pushing...';ob.innerHTML='';if(r.untasked)yes.confirm=true;else yes.allowShared=true;go();});
 ob.querySelector('.askno').addEventListener('click',function(){ob.innerHTML='';});return;}
 if(!r||r.error){ap.disabled=false;ap.textContent='Approve - retry';o.innerHTML="<div class='note err'>"+esc(repo)+": "+esc((r&&r.error)||'failed')+"</div>";return;}
-var m="&#10003; <b>"+esc(repo)+"</b>: approved "+(r.round?"a round of its task, which stays open"+(r.approved?", and "+r.approved+" finished task"+(r.approved>1?"s":""):""):r.approved?r.approved+" task"+(r.approved>1?"s":""):"changes without a task");
+var m=(r.unsent?"<b>Not on GitHub yet.</b> ":"&#10003; ")+"<b>"+esc(repo)+"</b>: approved "+(r.round?"a round of its task, which stays open"+(r.approved?", and "+r.approved+" finished task"+(r.approved>1?"s":""):""):r.approved?r.approved+" task"+(r.approved>1?"s":""):"changes without a task");
 if(r.commit)m+=" &middot; committed <code>"+esc(r.commit)+"</code> on <code>"+esc(r.branch)+"</code>";
 if(r.pr)m+=" &middot; <a href='"+esc(r.pr)+"' target='_blank' rel='noopener'>open PR</a>";
 if(r.bumped&&card.getAttribute('data-pom'))m+="<div class='muted'>Bumps the version to <b>"+esc(r.bumped)+"</b>. It publishes to npm when the PR merges.</div>";
@@ -1894,7 +1908,7 @@ else if(r.bumped)m+="<div class='muted'>Bumps the version to <b>"+esc(r.bumped)+
 if(r.autoMerge==='queued')m+=" &middot; will auto-merge when CI passes";
 else if(r.autoMerge==='unavailable')m+="<div class='muted'>auto-merge not enabled for this repo on GitHub (Settings &rarr; General &rarr; Allow auto-merge)"+(r.autoMergeErr?": "+esc(r.autoMergeErr):"")+"</div>";
 if(r.note)m+="<div class='muted'>"+esc(r.note)+"</div>";
-o.innerHTML="<div class='note ok'>"+m+"</div>";loadTasks();});}go();});});lqLight();});}
+o.innerHTML="<div class='note "+(r.unsent?"err":"ok")+"'>"+m+(r.unsent?"<div class='muted'>The card below keeps it, with Send again.</div>":"")+"</div>";loadTasks();});}go();});});lqLight();});}
 function loadArchived(){TARCH=true;lqTitle();var nb=$('needsbox');if(nb)nb.innerHTML='';api('/api/tasks?archived=1').then(function(list){ALLTASKS=list;renderFilter();var el=document.getElementById('tasklist');
 if(!list.length){el.innerHTML="<div class='muted' style='margin-top:12px'>Nothing archived yet. Completed tasks land here.</div>";return;}
 var h="<div class='tgroup'>Archived <span class='tcount'>"+list.length+"</span></div>";list.forEach(function(t){h+=taskRow(t,true);});el.innerHTML=h;wireTaskRows(el);});}
@@ -2161,7 +2175,7 @@ function phoneSeen(p){return p.old?"<span class='err'>paired before the link was
 function renderPhoneLink(d,msg){if(!d||!d.role)return;var box=$('phonelink'),h='';if(!box)return;
 if(d.role==='phone'){
 if(d.paired&&!d.old){h+="<div class='task'><span class='t'>Paired with <b>"+esc(d.name)+"</b> <span class='muted' style='font-size:12px'>"+esc(d.url||'')+(d.last?" &middot; asked "+agoTxt(d.last)+(d.via==='relay'?" through the relay":""):"")+"</span>"+(d.error?"<br><span class='err' style='font-size:12px'>"+esc(d.error)+"</span>":"")+"</span><button class='ghost' id='pcheck' title='ask your computer now'>Check now</button><button class='rm' id='pforget' title='forget it: its copy here goes too'>&times;</button></div>";
-h+="<div class='note muted'>Its tasks, what needs you and its agents&rsquo; questions are on Home, in <b>On "+esc(d.name)+"</b>: tick, add, answer and approve from there. While Symbiot runs on this phone it asks every 2 minutes (and as soon as this phone&rsquo;s network changes), and tells you, with a notification, what Watch found there and what newly needs you: an agent&rsquo;s question, work waiting for your Approve.</div>";}
+h+="<div class='note muted'>Its tasks, what needs you and its agents&rsquo; questions are on Home, in <b>On "+esc(d.name)+"</b>: tick, add, answer and approve from there. While Symbiot runs on this phone it asks every 2 minutes"+(d.termux?"":" (and as soon as this phone&rsquo;s network changes)")+", and tells you, with a notification, what Watch found there and what newly needs you: an agent&rsquo;s question, work waiting for your Approve.</div>";}
 else{if(d.old)h+="<div class='note err'>"+esc(d.error||'')+"</div>";
 h+="<div class='note muted' style='margin-top:2px'>"+(window.SymbiotAndroid?"<b>Scan the code your computer shows:</b> in Symbiot on your computer, open Settings &rarr; <b>Your phone</b> and switch it on. Point this phone&rsquo;s camera at the QR, and tap its link. Or type its address and code here:":"In Symbiot on your computer, open Settings &rarr; <b>Your phone</b> and switch it on: it shows its address and a 6-digit code. Type both here.")+"</div>"+
 "<div class='row'><input id='paddr' placeholder='your computer&rsquo;s address, e.g. 192.168.8.50:7392' style='flex:1'><input id='pcode' placeholder='code' inputmode='numeric' style='flex:0 0 90px'><button class='act' id='ppair'>Pair</button></div>"+
@@ -3106,7 +3120,8 @@ document.getElementById('weeklyhour').addEventListener('change',saveWeekly);
 document.getElementById('weeklynow').addEventListener('click',weeklyNow);
 document.getElementById('autostart').addEventListener('change',saveAutostart);
 (function(){var h='';for(var i=0;i<24;i++)h+="<option value='"+i+"'>"+(i<10?'0':'')+i+":00</option>";document.getElementById('weeklyhour').innerHTML=h;})();
-var SRV_STARTED=null,srvDown=false,updBusy=false,SRV_UPD=null; // SRV_UPD: the app that was asked to update
+var SRV_STARTED=null,srvDown=false,updBusy=false;
+try{localStorage.removeItem('symbiot_update_tried');}catch(e){} // the old page-side guess (see heartbeat)
 function ubar(){return document.getElementById('updatebar');}
 // One Symbiot window, not a pile: each window has an id, says so the first time it
 // asks, and the server remembers the newest. An older one closes itself, unless it's
@@ -3130,28 +3145,19 @@ function heartbeat(fresh){
     // An update in flight, from any window: where it is, and no button (a second
     // click started a second npm install over the first, and they collided).
     if(p.updating){var w=p.updating,m=Math.max(0,Math.floor((Date.now()-(w.since||Date.now()))/60000));b.className='updatebar show';
-      b.innerHTML=w.retrying?"Updating to "+esc(w.target)+" once npm has its download (a few minutes after a release): looking every "+Math.round((w.every||30000)/1000)+" seconds, for up to "+Math.round((w.wait||1200000)/60000)+" minutes"+(m?" ("+m+" so far)":"")+". Nothing to do.":"Updating to "+esc(w.target)+"&hellip; Symbiot restarts by itself when it&rsquo;s in, and this page reloads.";return;}
-    // The last one didn't go through: what npm said, and Try again (not a terminal).
+      b.innerHTML=w.retrying?"Updating to "+esc(w.target)+" once npm has its download (a few minutes after a release): looking every "+Math.round((w.every||30000)/1000)+" seconds, for up to "+Math.round((w.wait||1200000)/60000)+" minutes"+(m?" ("+m+" so far)":"")+". Nothing to do.":w.installed&&w.waitFor?esc(w.target)+" is installed. Symbiot restarts on it once nothing&rsquo;s running ("+esc(w.waitFor)+" now), and this page reloads.":"Updating to "+esc(w.target)+"&hellip; Symbiot restarts by itself when it&rsquo;s in, and this page reloads.";return;}
+    // The last one didn't go through: what npm said, and Try again (not a terminal). One
+    // that installed but came back on the old version is one of these too, with why: the
+    // server keeps where an update got to. The page used to guess that from any restart
+    // after a click, and said "didn't take" with npm never run (2026-10-12).
     var f=p.updateFailed;
     if(f&&p.latest&&p.newer&&f.target===p.latest){b.className='updatebar reconnect show';
       b.innerHTML="The update to "+esc(f.target)+" didn&rsquo;t go through: "+esc(String(f.error||'npm stopped').replace(/[.]$/,''))+". You&rsquo;re still on "+esc(p.version)+". <button id='doupd'>Try again</button>";
       var ab=document.getElementById('doupd');if(ab)ab.onclick=doUpdate;return;}
-    // Loop guard: if we already tried to update to this version and we're still
-    // not on it after the restart, the install isn't advancing — stop offering
-    // the button (which just loops) and tell them to update manually.
-    var tried=null;try{tried=localStorage.getItem('symbiot_update_tried');}catch(e){}
-    if(tried){
-      if(p.version!==tried){try{localStorage.removeItem('symbiot_update_tried');}catch(e){} } // advanced → success, clear
-      else if(p.latest&&p.newer&&p.started!==SRV_UPD&&!p.relaunched){try{localStorage.removeItem('symbiot_update_tried');}catch(e){} } // restarted some other way (a crash, a reboot) before it could update: offer it again
-      else if(p.latest&&p.newer&&p.started!==SRV_UPD){ // the update's own restart, still on the same version → the install didn't advance
-        b.className='updatebar reconnect show';
-        b.innerHTML="Auto-update to "+esc(p.latest)+" didn't take (still on "+esc(p.version)+"). Run <code>npm install -g symbiot@latest</code> in a terminal: Symbiot restarts onto it by itself within two minutes.";
-        return;
-      }
-    }
     if(p.latest&&p.newer){
       b.className='updatebar show';
-      b.innerHTML="A new Symbiot ("+esc(p.latest)+") is available &mdash; you're on "+esc(p.version)+". <button id='updnew'>What&#39;s new</button> <button id='doupd'>Update &amp; restart</button>";
+      var au=p.autoUpdate,auw=!au?"":au.why==="busy"?" It updates by itself once nothing&rsquo;s running ("+esc(au.busy||"an agent is working")+" now).":au.why==="download"?" It updates by itself once npm has its download.":" It updates by itself in a minute or two, as nothing&rsquo;s running.";
+      b.innerHTML="A new Symbiot ("+esc(p.latest)+") is available &mdash; you're on "+esc(p.version)+"."+auw+" <button id='updnew'>What&#39;s new</button> <button id='doupd'>Update &amp; restart</button>";
       var btn=document.getElementById('doupd');if(btn)btn.onclick=doUpdate;
       var nb=document.getElementById('updnew');if(nb)nb.onclick=function(){api('/api/whatsnew?latest=1').then(function(r){showNews(r,"What Symbiot "+(r.version||p.latest)+" brings",false);});};
     }else{b.className='updatebar';}
@@ -3173,7 +3179,7 @@ el.className='whatsnew show';el.innerHTML="<div class='row'><b style='flex:1;col
 +cs.map(function(c){return "<div style='margin-top:8px'><b>"+esc(c.version)+"</b>"+(c.date?" <span class='muted'>"+esc(c.date)+"</span>":"")+"<ul style='margin:4px 0 0 18px;padding:0'>"+c.items.slice(0,12).map(function(x){return "<li>"+md(x)+"</li>";}).join('')+(c.items.length>12?"<li class='muted'>&hellip;and "+(c.items.length-12)+" more</li>":"")+"</ul></div>";}).join('');
 $('wnok').onclick=function(){el.className='whatsnew';if(after)api('/api/whatsnew/seen',{});};}
 function loadWhatsNew(){api('/api/whatsnew').then(function(r){if(r&&r.changes&&r.changes.length)showNews(r,"What's new in Symbiot "+r.version,true);});}
-function doUpdate(){updBusy=true;SRV_UPD=SRV_STARTED;try{localStorage.setItem('symbiot_update_tried',document.getElementById('ver').textContent.replace(/^v/,''));}catch(e){}var b=ubar();b.className='updatebar show';b.textContent='Updating & restarting… this page will reload itself when it is back.';
+function doUpdate(){updBusy=true;var b=ubar();b.className='updatebar show';b.textContent='Updating & restarting… this page will reload itself when it is back.';
   // still waiting for npm's download (or already under way): the heartbeat shows where it is
   api('/api/update',{}).then(function(r){if(r&&(r.waiting||r.already||r.error)){updBusy=false;if(r.error){b.className='updatebar reconnect show';b.textContent=r.error;}}});}
 setInterval(heartbeat,4000);heartbeat(true);
@@ -3589,6 +3595,7 @@ if(y.kind!=='ask')return h+"<div class='bq'>"+esc(y.kind==='approve'?String(y.su
 var os=y.options||[];if(y.draft)h+=draftHtml(y.draft);if(y.status)h+="<div class='bwait'><i class=ic-pause></i> "+esc(y.status)+"</div>";if(y.task)h+="<div class='bfor' title='"+escQ(y.task)+"'>for: "+esc(y.task)+"</div>";h+="<div class='bq' title='"+escQ((y.q||'')+(y.why?' ('+y.why+')':''))+"'>"+esc(y.q||y.sub||'')+"</div>"+((y.covered&&y.covered.length)?"<div class='muted bcov'>Already covered? "+y.covered.map(esc).join(' · ')+"</div>":"");
 if(y.fix==='handover'&&y.sub)h+="<div class='bfor' title='"+escQ(y.sub)+"'>for: "+esc(y.sub)+"</div>";
 if(y.done)h+="<div class='bdone' title='"+escQ(y.done.text)+"'>"+esc(y.done.lane)+" has done this already: "+esc(y.done.text)+"</div>";
+if(y.shared)h+="<div class='bdone' title='"+escQ("Your answer to "+y.shared.lane+": "+y.shared.a+" (its agent has it too, and checks whether it settles this)")+"'>Got your answer to "+esc(lqShort(y.shared.lane,40))+": &ldquo;"+esc(lqShort(y.shared.a,80))+"&rdquo;</div>";
 if(y.signInTo)h+="<div class='bo'><button type='button' class='nopt bsign' title='opens "+escQ(y.signInTo.name)+" in the Symbiot Browser: sign in there, then click Done'><span class='bt'>Sign in to "+esc(y.signInTo.name)+" &rsaquo;</span></button></div>";
 if(os.length)h+="<div class='bo'>"+os.map(function(o,j){return "<button type='button' class='nopt"+(j===0&&/[(]recommended[)]/i.test(o)?' rec':'')+"' data-j='"+j+"' title='"+escQ((y.labels&&y.labels[j])||o)+"'><span class='bt'>"+whoHtml(blobOpt((y.labels&&y.labels[j])||o))+"</span></button>";}).join('')+"</div><button type='button' class='bfree' aria-expanded='false'>"+(y.draft?'Change it':'or answer in your own words')+"</button>";
 h+="<form class='bfx"+(os.length?' hidden':'')+"'><input placeholder='"+(y.draft?'what to change':'your answer')+"' aria-label='"+(y.draft?'what to change in the reply':'your answer to '+escQ(nm))+"'><button type='submit'>"+(y.draft?'Redraft':'Send')+"</button></form>";
@@ -3611,7 +3618,7 @@ var fail=function(t){delete BLOBBUSY[key];busy(false);st(t,true);say(nm+': '+t,t
 (y.fix?api('/api/home/answer',j!=null?{id:y.id,pick:j}:{id:y.id,text:ans}):api('/api/agents/answer',{path:y.path,answers:[{q:y.raw||y.q,a:ans}],rerun:true})).then(function(r){
 if(!r||r.error){fail((r&&r.error)||'the answer didn’t save. Try again on its block on the Workdesk.');return;}
 delete BLOBBUSY[key];BLOBSENT[key]=Date.now();st(r.already?'Answered already.':'Sent.');
-say(y.fix?nm+': '+(r.said||'Done.'):r.already?nm+': '+r.note:'Sent to '+(r.lane||nm)+'. '+(r.yours&&r.yours.length?'Still yours to do: '+r.yours.join(' '):r.rerun?'Its agent is picking it up now.':(r.note||'Saved in its ANSWERS.md.')));
+say(y.fix?nm+': '+(r.said||'Done.'):r.already?nm+': '+r.note:'Sent to '+(r.lane||nm)+'. '+((r.also||[]).length?'Also given to '+r.also.join(', ')+', on the same work. ':'')+(r.yours&&r.yours.length?'Still yours to do: '+r.yours.join(' '):r.rerun?'Its agent is picking it up now.':(r.note||'Saved in its ANSWERS.md.')));
 bdSet(y,'');if(o.sent)o.sent();if(box.classList)box.classList.add('gone');setTimeout(function(){if(o.done)o.done();},650);}).catch(function(e){fail(String((e&&e.message)||e));});};
 if(BLOBBUSY[key]){busy(true);st('Sending…');} // drawn again while its answer is on its way
 box.querySelectorAll('.nopt[data-j]').forEach(function(b){b.addEventListener('click',function(){var j=+b.getAttribute('data-j');send((y.options||[])[j],j,b);});});

@@ -215,7 +215,7 @@ async function handle(req, res) {
 // body }: sealed, or plain only when it can't be sealed (no such phone).
 const seenNonces = new Map();
 const sealed = (key, n, s, b) => ({ status: 200, body: seal(key, { s, b }, "res:" + n) });
-async function answer(env, op, via) {
+async function answer(env, op, via, { max = 0 } = {}) {
   env = env && typeof env === "object" ? env : {};
   const l = linkCfg(), p = l.phones.find((x) => x.id === env.id && x.pub && !x.legacy);
   if (!p) {
@@ -230,12 +230,28 @@ async function answer(env, op, via) {
   if (p.token) hashTokens();
   const now = Date.now();
   for (const [n, t] of seenNonces) if (now - t > 2 * SKEW_MS) seenNonces.delete(n);
-  if (Math.abs(now - Number(m.ts)) > SKEW_MS || seenNonces.has(env.n)) return sealed(key, env.n, 409, { error: "That message was old, or came twice, so it was ignored. Check the time on your phone." });
+  if (Math.abs(now - Number(m.ts)) > SKEW_MS || seenNonces.has(env.n)) return sealed(key, env.n, 409, { error: "That message was old, or came twice, so it was ignored. Check the time on your phone.", now }); // now: the phone sets its clock by it, and asks again
   seenNonces.set(env.n, now);
   if ((op && m.op !== op) || !OPS[m.op]) return sealed(key, env.n, 403, { error: "That can't be asked from a phone." });
   lastSeen.set(p.id, { at: now, via: via || "wifi" });
-  try { const r = await OPS[m.op](m.args && typeof m.args === "object" ? m.args : {}, p); return sealed(key, env.n, r.status || 200, r.body !== undefined ? r.body : r); }
+  try { const r = await OPS[m.op](m.args && typeof m.args === "object" ? m.args : {}, p), f = fitRelay(r.status || 200, r.body !== undefined ? r.body : r, max); return sealed(key, env.n, f.status, f.body); }
   catch (e) { return sealed(key, env.n, 500, { error: "It failed on your computer: " + ((e && e.message) || e) }); }
+}
+// An answer through the relay has to fit under its cap (relay/core.mjs LIMITS.body), or
+// the relay dropped it and the phone waited 25 s for nothing (FINE-TUNE item 10). The
+// copy gives up its reports' text first (each says the rest is on the computer), then
+// the reports; anything still too big is refused, saying so. max 0: no cap (your Wi-Fi).
+const RELAY_MAX = 256 * 1024;
+const sealedSize = (status, body) => Math.ceil(Buffer.byteLength(JSON.stringify({ s: status, b: body })) * 4 / 3) + 300; // base64url, and the envelope round it
+function fitRelay(status, body, max) {
+  if (!max || sealedSize(status, body) <= max) return { status, body };
+  if (body && Array.isArray(body.reports)) {
+    const brief = { ...body, reports: body.reports.map((r) => ({ ...r, text: cutReport(r.text, 1500).text, cut: true })) };
+    if (sealedSize(status, brief) <= max) return { status, body: brief };
+    const none = { ...body, reports: [] };
+    if (sealedSize(status, none) <= max) return { status, body: none };
+  }
+  return { status: 413, body: { error: "Your computer's answer was too big to come through the relay. It comes whole on your Wi-Fi." } };
 }
 const OPS = {
   news: ({ since }) => { const { news, briefs } = newsAfter(since); return { name: hostname(), now: Date.now(), news: news.slice(0, 100), briefs: briefs.slice(0, 20) }; },
@@ -325,7 +341,7 @@ async function applyOne(o, phone) {
   if (o.op === "agent.answer") {
     const path = String(a.path || ""), snap = await snapshot({ fresh: true });
     if (!snap.asks.some((x) => x.path === path)) return { error: "That agent isn't asking any more (answered on your computer, or its run moved on)." };
-    const { answerQuestions } = await import("./agents.mjs"), r = answerQuestions(path, Array.isArray(a.answers) ? a.answers.slice(0, 5) : [], { rerun: true });
+    const { answerQuestions } = await import("./agents.mjs"), r = answerQuestions(path, Array.isArray(a.answers) ? a.answers.slice(0, 5) : [], { rerun: true, share: true });
     return r && r.ok ? { ok: true, ...(r.note ? { note: r.note } : {}) } : { error: (r && r.error) || "It couldn't be answered." };
   }
   if (o.op === "pending.approve") {
@@ -354,14 +370,18 @@ async function applyOps(ops, phone) {
     if (!/^[\w-]{8,64}$/.test(id)) { results.push({ id, refused: true, status: 403, error: "That isn't a change Symbiot knows." }); continue; }
     const ap = readJson(PATHS.applied, { ids: {}, approvals: [] }); ap.ids = ap.ids || {};
     if (ap.ids[id]) { results.push({ id, ok: true, again: true }); continue; }
-    const r = PHONE_OPS.includes(o.op) ? await applyOne(o, phone) : { refused: true, status: 403, error: `"${String(o.op || "").slice(0, 40)}" can't be done from a phone.` };
+    // one that throws is reported back as failed, and counts as applied: it used to answer
+    // 500 for the whole batch, which the phone sent again forever, with no news meanwhile
+    let r; try { r = PHONE_OPS.includes(o.op) ? await applyOne(o, phone) : { refused: true, status: 403, error: `"${String(o.op || "").slice(0, 40)}" can't be done from a phone.` }; }
+    catch (e) { r = { failed: true, error: "It failed on your computer: " + plainText((e && e.message) || e, 200) }; }
     const now = readJson(PATHS.applied, { ids: {}, approvals: [] }), ids = { ...(now.ids || {}), [id]: Date.now() };
     const keep = Object.entries(ids).sort((x, y) => y[1] - x[1]).slice(0, 2000); // a month of changes, more than any queue holds
     writeJson(PATHS.applied, { ids: Object.fromEntries(keep), approvals: now.approvals || [] });
     results.push({ id, ...r });
   }
   snapCache = null;
-  return { results, state: await snapshot({ fresh: true }) };
+  let state = null; try { state = await snapshot({ fresh: true }); } catch {} // the phone asks for it again anyway
+  return { results, state };
 }
 // Approved from a phone, lately: Home and the Workdesk say so.
 function phoneApprovals(now = Date.now()) { return (readJson(PATHS.applied, {}).approvals || []).filter((a) => now - a.at < 24 * 3600000); }
@@ -394,7 +414,7 @@ function startRelay() {
     if (m.ready) { relayUp = true; relayErr = ""; relayTries = 0; return; }
     if (m.error) { relayErr = String(m.error).slice(0, 200); return; }
     if (!m.rid) return;
-    const r = await answer(m.body, null, "relay");
+    const r = await answer(m.body, null, "relay", { max: RELAY_MAX });
     try { ws.send(JSON.stringify({ rid: m.rid, s: r.status, b: r.body })); } catch {}
   });
   ws.addEventListener("close", () => { if (relaySock === ws) { relaySock = null; relayUp = false; retryRelay(); } });
@@ -530,19 +550,27 @@ const canNotify = () => ANDROID_APP || process.platform !== "android" || hasCmd(
 // The phone's half of the key, its token too: sealed by the Android app's Keystore
 // there (android-seal.json is how it's handed over, for a few seconds; it comes back
 // in SYMBIOT_COMPUTER_SECRET at the next start), else in secrets.json (0600).
-let memSecret;
+// That variable is read once, as this loads (at start: index.mjs imports it), and taken
+// out of the environment: everything the app starts (agents, git, npm, gh) inherited it,
+// which undid keeping it in the Keystore (FINE-TUNE item 11). Only Symbiot relaunching
+// itself after an update gets it again (relaunchEnv).
+let memSecret, envSecret = null;
+if (ANDROID_APP && "SYMBIOT_COMPUTER_SECRET" in process.env) { try { envSecret = JSON.parse(process.env.SYMBIOT_COMPUTER_SECRET || "null"); } catch {} delete process.env.SYMBIOT_COMPUTER_SECRET; }
 function readSecret() {
   if (ANDROID_APP) {
-    if (memSecret === undefined) { memSecret = readJson(PATHS.seal, null); try { if (!memSecret || !memSecret.token) memSecret = JSON.parse(process.env.SYMBIOT_COMPUTER_SECRET || "null"); } catch { memSecret = null; } }
+    if (memSecret === undefined) { memSecret = readJson(PATHS.seal, null); if (!memSecret || !memSecret.token) memSecret = envSecret; }
     return memSecret && memSecret.token && memSecret.key ? memSecret : null;
   }
   const s = loadConfig().computerSecret; return s && s.token && s.key ? s : null;
 }
 function writeSecret(s) {
-  if (ANDROID_APP) { memSecret = s || null; process.env.SYMBIOT_COMPUTER_SECRET = s ? JSON.stringify(s) : ""; writeJson(PATHS.seal, s || {}); return; }
+  if (ANDROID_APP) { memSecret = s || null; writeJson(PATHS.seal, s || {}); return; }
   const cfg = loadConfig(); if (s) cfg.computerSecret = s; else delete cfg.computerSecret; saveConfig(cfg);
 }
-let pollLast = 0, pollErr = "", pollTimer = null, fails = 0, lastVia = "", polling = null;
+// What Symbiot relaunching itself (server.mjs, after an update) needs in its environment:
+// the link's secret on the Android app, which the app hands in only at the service's start.
+function relaunchEnv() { const s = ANDROID_APP ? readSecret() : null; return s ? { SYMBIOT_COMPUTER_SECRET: JSON.stringify(s) } : {}; }
+let pollLast = 0, pollErr = "", pollTimer = null, fails = 0, lastVia = "", polling = null, route = ""; // route: where the next ask starts (ask)
 const loadQueue = () => { const q = readJson(PATHS.queue, []); return Array.isArray(q) ? q : []; };
 const saveQueue = (q) => (q.length ? writeJson(PATHS.queue, q) : (() => { try { unlinkSync(PATHS.queue); } catch {} return true; })());
 const loadCopy = () => readJson(PATHS.copy, null);
@@ -585,7 +613,7 @@ async function pairComputer(address, code, { fetchFn = fetch, name = hostname(),
       relay: String(m.relay || ""), relayUrl: String(m.relayUrl || ""), since: Number(m.now) || Date.now(), offset: (Number(m.now) || Date.now()) - Date.now(), paired: Date.now() };
     saveConfig(cfg); writeSecret({ token: m.token, key: key.toString("base64url") });
     if (!was || was.fp !== fp) { try { unlinkSync(PATHS.copy); } catch {} saveQueue([]); } // another computer: what was kept for the last one isn't its
-    pollErr = ""; fails = 0; lastVia = ""; startComputerPoll({ soon: true });
+    pollErr = ""; fails = 0; lastVia = ""; route = ""; startComputerPoll({ soon: true });
     return computerState();
   }
   return err(last);
@@ -593,7 +621,7 @@ async function pairComputer(address, code, { fetchFn = fetch, name = hostname(),
 function forgetComputer() {
   const cfg = loadConfig(); delete cfg.computer; delete cfg.computerSecret; saveConfig(cfg); if (ANDROID_APP) writeSecret(null);
   for (const f of [PATHS.copy, PATHS.queue]) try { unlinkSync(f); } catch {}
-  pollErr = ""; pollLast = 0; fails = 0; lastVia = ""; clearTimeout(pollTimer); pollTimer = null;
+  pollErr = ""; pollLast = 0; fails = 0; lastVia = ""; route = ""; clearTimeout(pollTimer); pollTimer = null;
   return computerState();
 }
 // Where the paired computer is now, by its key's fingerprint: the Android app asks
@@ -603,11 +631,15 @@ async function discoverComputer(c) {
   return (await findComputers()).filter((f) => f.fp === c.fp).map((f) => f.url);
 }
 // Every Symbiot saying it's here on this network, for the pairing screen: [{ name, url, fp }].
+const NSD_WAIT = 15000;
 async function findComputers() {
   let found = [];
   if (ANDROID_APP) {
+    // Android's discovery takes 3.5 s, then up to 3 s to resolve each computer found, after the
+    // service sees the ask (it looks every second): one computer took about 9.5 s, past the 8 s
+    // this waited (FINE-TUNE item 7), so it waits 15 s, and the answer is read as soon as it's there
     const asked = Date.now(); writeJson(PATHS.nsdWant, { at: asked });
-    for (let i = 0; i < 16; i++) {
+    for (let i = 0; i < NSD_WAIT / 500; i++) {
       await new Promise((r) => setTimeout(r, 500));
       try { if (statSync(PATHS.nsd).mtimeMs >= asked - 1000) { found = readJson(PATHS.nsd, []); break; } } catch {}
     }
@@ -616,28 +648,89 @@ async function findComputers() {
 }
 // One sealed request to the paired computer, wherever it is: the address that last
 // answered, the others it gave at pairing, wherever it says it is now (mDNS), and
-// only then the relay. { status, body, via } or { unreachable: true }.
-async function ask(op, args, { fetchFn = fetch, discover = discoverComputer } = {}) {
+// only then the relay. Only an answer sealed with the pair's key is the computer's:
+// another device that has its old address now answered a plain 403, read as "isn't
+// paired", and the search stopped there (FINE-TUNE item 4). So an address counts only
+// once its hello shows the key pinned at pairing (isThere), and a plain answer (the
+// computer no longer knows this phone, say) only when no route gives a sealed one.
+// { status, body, via } or { unreachable: true }.
+async function ask(op, args, { fetchFn = fetch, discover = discoverComputer, again = false } = {}) {
   const c = loadConfig().computer, s = readSecret();
   if (!c || !s) return { status: 0, body: { error: OLD_PAIRING } };
   const key = Buffer.from(s.key, "base64url");
   const make = () => ({ v: 1, id: c.id, ...seal(key, { t: s.token, ts: Date.now() + (Number(c.offset) || 0), op, args }, "req:" + c.id) });
-  const wait = op === "chat" ? 120000 : op === "apply" ? 30000 : 6000, tried = new Set();
-  const viaUrl = async (url) => { const env = make(), r = await fetchFn(`${url}/phone/${op}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(env), signal: AbortSignal.timeout(wait) }); return { env, status: r.status, json: await r.json().catch(() => ({})), via: url }; };
-  let res = null;
-  for (const url of [c.url, ...(c.urls || [])]) { if (!url || tried.has(url)) continue; tried.add(url); try { res = await viaUrl(url); break; } catch {} }
-  if (!res) for (const url of await discover(c).catch(() => [])) { if (tried.has(url)) continue; tried.add(url); try { res = await viaUrl(url); break; } catch {} }
-  if (!res && c.relay && !c.relayOff && relayAllowed()) {
+  const wait = op === "chat" ? 120000 : op === "apply" ? APPLY_MS : ASK_MS, tried = new Set();
+  // what came back from one route: { status, body, sealed, via }, sealed only when it unseals
+  const read = (env, status, j, via, sent) => { const m = j && j.n && j.c ? unseal(key, j, "res:" + env.n) : null; if (m && m.b) clockFrom(c, m.b.now, sent); return m ? { status: Number(m.s) || 0, body: m.b || {}, sealed: true, via } : j && j.n && j.c ? { status: 0, body: { error: "Your computer's answer couldn't be read." }, sealed: false, via } : { status, body: j || {}, sealed: false, via }; };
+  const viaUrl = async (url) => { const env = make(), sent = Date.now(), r = await fetchFn(`${url}/phone/${op}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(env), signal: AbortSignal.timeout(wait) }); return read(env, r.status, await r.json().catch(() => ({})), url, sent); };
+  let res = null, plain = null, relayNo = ""; // relayNo: what went wrong at the relay, when it wasn't the computer being away
+  const take = (r) => { if (r.sealed) res = r; else plain = plain || r; return !!res; };
+  // the addresses where it says hello, in order, asked all at once: 3 s at most for the lot
+  const there = async (urls) => { urls = urls.filter((u) => u && !tried.has(u)); urls.forEach((u) => tried.add(u)); const ok = await Promise.all(urls.map((u) => isThere(u, c, fetchFn))); return urls.filter((u, i) => ok[i]); };
+  const lan = async (urls) => { for (const url of await urls) { try { if (take(await viaUrl(url))) return; } catch {} } };
+  const relay = async () => {
+    if (res || !c.relay || c.relayOff || !relayAllowed()) return;
     try {
-      const env = make(), r = await fetchFn(`${String(process.env.SYMBIOT_RELAY || c.relayUrl || relayBase()).replace(/\/+$/, "")}/v1/${c.relay}/ask`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(env), signal: AbortSignal.timeout(wait + 5000) });
-      if (r.status === 200) { const j = await r.json(); res = { env, status: Number(j.s) || 0, json: j.b || {}, via: "relay" }; }
+      const env = make(), sent = Date.now(), r = await fetchFn(`${String(process.env.SYMBIOT_RELAY || c.relayUrl || relayBase()).replace(/\/+$/, "")}/v1/${c.relay}/ask`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(env), signal: AbortSignal.timeout(wait + 5000) });
+      if (r.status === 200) { const j = await r.json(); take(read(env, Number(j.s) || 0, j.b || {}, "relay", sent)); }
+      else relayNo = relayTrouble(r.status, await r.json().catch(() => null), c);
     } catch {}
+  };
+  const saved = [c.url, ...(c.urls || [])];
+  if (route === "relay" && c.relay && !c.relayOff && relayAllowed()) {
+    // away from home last time: the relay first, and the Wi-Fi looked at alongside, so
+    // being away costs no wait on dead addresses (it cost up to 6 of them at 6 s each, then
+    // discovery, before the relay, on every ask; FINE-TUNE item 8). Back home, the next ask goes there.
+    const home = there(saved);
+    await relay();
+    if (!res) { await lan(home); if (!res) await lan(there(await discover(c).catch(() => []))); }
+    else home.then((h) => { if (h.length) route = "wifi"; }, () => {});
+  } else {
+    await lan(there(saved));
+    if (!res) await lan(there(await discover(c).catch(() => [])));
+    await relay();
   }
-  if (!res) return { unreachable: true };
+  if (!res) return plain || { unreachable: true, ...(relayNo ? { relay: relayNo } : {}) };
+  route = res.via === "relay" ? "relay" : "wifi";
   if (res.via !== "relay" && res.via !== c.url) { const cfg = loadConfig(); if (cfg.computer && cfg.computer.id === c.id) { cfg.computer.url = res.via; cfg.computer.urls = [...new Set([res.via, ...(cfg.computer.urls || [])])].slice(0, 6); saveConfig(cfg); } }
-  const j = res.json || {};
-  if (j.n && j.c) { const m = unseal(key, j, "res:" + res.env.n); return m ? { status: Number(m.s) || 0, body: m.b || {}, sealed: true, via: res.via } : { status: 0, body: { error: "Your computer's answer couldn't be read." }, via: res.via }; }
-  return { status: res.status, body: j, sealed: false, via: res.via };
+  // refused as old: the clocks drifted apart since pairing, and the answer gave the computer's; once more by it
+  if (res.status === 409 && !again && Number(res.body.now)) return ask(op, args, { fetchFn, discover, again: true });
+  return res;
+}
+// What the relay's answer says went wrong, in words, or "" when the computer is just
+// away (not connected to it). A busy relay (429, or Cloudflare's own errors) and an answer
+// too big for it read as the computer being "off or asleep" (FINE-TUNE item 10).
+function relayTrouble(status, j, c) {
+  const name = c.name || "your computer", host = (() => { try { return new URL(String(process.env.SYMBIOT_RELAY || c.relayUrl || relayBase())).host; } catch { return "the relay"; } })();
+  if (j && j.away && status === 503) return "";
+  if (j && j.tooBig) return `${name}'s answer was too big for the relay (${host}). It comes whole when this phone is on the same Wi-Fi.`;
+  if (status === 504) return `${name} is connected to the relay but didn't answer in time: it may be busy. It's asked again shortly.`;
+  if (status === 429) return `The relay (${host}) is busy: too many requests from this phone just now. It's asked again shortly.`;
+  if (status === 413) return `What this phone sent was too big for the relay (${host}).`;
+  return `The relay (${host}) isn't working right now (it answered ${status}). Your computer may be fine: it's asked again shortly.`;
+}
+// Whether the paired computer is at an address: its hello, quick, with the key pinned at
+// pairing. The ask itself then gets the time a busy computer needs to answer (news and
+// the copy had 6 s in all, and a slow snapshot read as the computer being away, FINE-TUNE
+// item 9), while an address with nothing there still costs only PROBE_MS. One that
+// answered lately isn't asked again.
+const PROBE_MS = 3000, ASK_MS = 25000, APPLY_MS = 30000, PROBE_KEEP = 60000, probed = new Map(); // url -> when it last said hello as the computer
+async function isThere(url, c, fetchFn) {
+  if (Date.now() - (probed.get(url) || 0) < PROBE_KEEP) return true;
+  try {
+    const r = await fetchFn(`${url}/phone/hello`, { signal: AbortSignal.timeout(PROBE_MS) }), h = r.ok ? await r.json().catch(() => null) : null;
+    if (!h || !h.pub || (c.fp && fingerprint(h.pub) !== c.fp)) { probed.delete(url); return false; }
+  } catch { probed.delete(url); return false; }
+  probed.set(url, Date.now()); return true;
+}
+// The computer's clock, from the now a sealed answer carries (news, a refusal as old),
+// halfway through the ask. The offset was only set at pairing, so once either clock
+// drifted 10 minutes every request was refused (FINE-TUNE item 5). Kept when it moves 2 s.
+function clockFrom(c, now, sent) {
+  now = Number(now); if (!now || !sent) return;
+  const offset = Math.round(now - (sent + Date.now()) / 2);
+  if (Math.abs(offset - (Number(c.offset) || 0)) < 2000) return;
+  const cfg = loadConfig(); if (cfg.computer && cfg.computer.id === c.id) { cfg.computer.offset = offset; saveConfig(cfg); c.offset = offset; }
 }
 // The copy from the computer, with what you changed here that hasn't reached it yet
 // laid over it ("waiting to send"), and what couldn't be applied there.
@@ -695,6 +788,9 @@ function waitingNotice(was, now, name = "your computer") {
   return [`${fresh.length === 1 ? "1 thing needs" : `${fresh.length} things need`} you · ${name}`, fresh.slice(0, 4).join("\n") + more];
 }
 function dismissNote(id) { const c = loadCopy(); if (c) saveCopy(c, { notes: (c.notes || []).filter((n) => n.id !== id) }); return computerView(); }
+// What goes in one apply: the oldest changes, as many as fit well under the relay's cap
+// (50 long tasks sealed came to more than its 256 KB, refused there), the rest next poll.
+function batch(q, max = 120 * 1024) { let n = 0, size = 0; for (const o of q) { size += Buffer.byteLength(JSON.stringify(o)); if (n && size > max) break; n++; } return q.slice(0, Math.min(n, 50)); }
 // Ask the computer: send what was queued here, then what's new (notified, one
 // notification per watch per read), then the copy (unchanged costs nothing), and
 // tell what newly waits on you in it (waitingNotice).
@@ -703,30 +799,38 @@ async function pollOnce({ fetchFn = fetch, notify = desktopNotify, discover } = 
   const c = loadConfig().computer; if (!c) return { ...computerState(), shown: 0 };
   if (!readSecret()) return { ...computerState(), shown: 0 };
   const via = { fetchFn, ...(discover ? { discover } : {}) }, was = loadCopy();
-  const away = () => { fails++; pollErr = `Couldn't reach ${c.name}${fails > 1 ? "" : `. It's asked again in ${BACKOFF[0] / 1000} seconds`} (it may be off or asleep${c.relay ? "" : ", or on another network"}).`; return { ...computerState(), shown: 0 }; };
+  const away = (r = {}) => { fails++; if (r.relay) { pollErr = r.relay; return { ...computerState(), shown: 0 }; } pollErr = `Couldn't reach ${c.name}${fails > 1 ? "" : `. It's asked again in ${BACKOFF[0] / 1000} seconds`} (it may be off or asleep${c.relay ? "" : ", or on another network"}).`; return { ...computerState(), shown: 0 }; };
+  const what = (o) => plainText((o.args && (o.args.text || o.args.repo)) || "", 80);
+  const note = (list) => { const copy = loadCopy(); if (copy && list.length) saveCopy(copy, { notes: [...(copy.notes || []), ...list].slice(-20) }); };
   const refused = (r) => {
     pollErr = (r.body && r.body.error) || `${c.name} answered ${r.status}.`; fails = 0;
-    // unpaired there: an approve it had queued never goes, even if it's paired again later
+    // unpaired there: nothing it had queued ever goes, even if it's paired again later; it
+    // stayed queued, and every poll sent it again and stopped there (FINE-TUNE item 1)
     if (r.sealed && r.body && r.body.unpaired) {
-      const q = loadQueue(), gone = q.filter((o) => o.op === "pending.approve");
-      if (gone.length) { saveQueue(q.filter((o) => o.op !== "pending.approve")); const copy = loadCopy(); if (copy) saveCopy(copy, { notes: [...(copy.notes || []), ...gone.map((o) => ({ id: o.id, op: o.op, what: o.args.repo, error: `Not approved: this phone was unpaired on ${c.name}.`, at: Date.now() }))].slice(-20) }); }
+      const gone = loadQueue();
+      if (gone.length) { saveQueue([]); note(gone.map((o) => ({ id: o.id, op: o.op, what: what(o), error: o.op === "pending.approve" ? `Not approved: this phone was unpaired on ${c.name}.` : `Not sent: this phone was unpaired on ${c.name}.`, at: Date.now() }))); }
     }
     return { ...computerState(), shown: 0 };
   };
-  const q = loadQueue();
-  if (q.length) {
+  let sendErr = "";
+  for (let q = batch(loadQueue()), round = 0; q.length && round < 5; q = sendErr ? [] : batch(loadQueue()), round++) {
     const r = await ask("apply", { ops: q }, via);
-    if (r.unreachable) return away();
-    if (r.status !== 200) return refused(r);
-    const done = new Set((r.body.results || []).map((x) => x.id)), failed = (r.body.results || []).filter((x) => !x.ok && x.error);
-    saveQueue(loadQueue().filter((o) => !done.has(o.id)));
-    const notes = [...((loadCopy() || {}).notes || []), ...failed.map((x) => { const o = q.find((y) => y.id === x.id) || {}; return { id: x.id, op: o.op, what: plainText((o.args && (o.args.text || o.args.repo)) || "", 80), error: x.error, at: Date.now() }; })].slice(-20);
-    if (r.body.state && r.body.state.v) saveCopy(r.body.state, { notes });
+    if (r.unreachable) return away(r);
+    if (r.sealed && r.body && r.body.unpaired) return refused(r);
+    // refused as a whole (a clock off, a fault there): what's queued waits for the next
+    // try, and news and the copy still come, rather than stopping here every poll
+    if (r.status !== 200) sendErr = `Your changes here haven't reached ${c.name} yet: ${String((r.body && r.body.error) || `it answered ${r.status}`).replace(/\.$/, "")}. They're sent again at the next try.`;
+    else {
+      const done = new Set((r.body.results || []).map((x) => x.id)), failed = (r.body.results || []).filter((x) => !x.ok && x.error);
+      saveQueue(loadQueue().filter((o) => !done.has(o.id)));
+      const fresh = failed.map((x) => { const o = q.find((y) => y.id === x.id) || {}; return { id: x.id, op: o.op, what: what(o), error: x.error, at: Date.now() }; });
+      if (r.body.state && r.body.state.v) saveCopy(r.body.state, { notes: [...((loadCopy() || {}).notes || []), ...fresh].slice(-20) }); else note(fresh);
+    }
   }
   const r = await ask("news", { since: c.since || 0 }, via);
-  if (r.unreachable) return away();
+  if (r.unreachable) return away(r);
   if (r.status !== 200) return refused(r);
-  pollErr = ""; fails = 0; pollLast = Date.now(); lastVia = r.via === "relay" ? "relay" : "wifi";
+  pollErr = sendErr; fails = 0; pollLast = Date.now(); lastVia = r.via === "relay" ? "relay" : "wifi";
   const news = Array.isArray(r.body.news) ? r.body.news : [], briefs = Array.isArray(r.body.briefs) ? r.body.briefs : [];
   const batches = new Map();
   for (const n of news) { const k = n.watch + " " + n.ts; if (!batches.has(k)) batches.set(k, []); batches.get(k).push(n); }
@@ -754,4 +858,4 @@ const phoneState = () => (PHONE ? computerView() : linkState());
 // While the app runs: the computer listens if it's switched on; the phone asks if it's paired.
 function startPhone() { if (PHONE) startComputerPoll(); else startPhoneLink(); }
 
-export { computerCopy, reportsForPhone, cutReport, PHONE_REPORTS, REPORT_CAP, PORT, PHONE, ANDROID_APP, PHONE_OPS, lanAddresses, mdnsAddresses, linkState, newCode, unpairPhone, setRelay, startPhoneLink, stopPhoneLink, setPhoneLink, setPhoneApprove, phoneApprovals, snapshot, computerUrl, parsePairLink, pairLink, computerState, computerView, waitingNotice, findComputers, pairComputer, forgetComputer, pollComputer, queueChange, dismissNote, startComputerPoll, phoneState, startPhone, newKeys, linkKey, fingerprint, seal, unseal, relayOf, answer, adbLink, freePhonePort, usePhonePort, portHolder, ask };
+export { computerCopy, reportsForPhone, cutReport, PHONE_REPORTS, REPORT_CAP, PORT, PHONE, ANDROID_APP, PHONE_OPS, lanAddresses, mdnsAddresses, linkState, newCode, unpairPhone, setRelay, startPhoneLink, stopPhoneLink, setPhoneLink, setPhoneApprove, phoneApprovals, snapshot, computerUrl, parsePairLink, pairLink, computerState, computerView, waitingNotice, findComputers, pairComputer, forgetComputer, pollComputer, queueChange, dismissNote, startComputerPoll, phoneState, startPhone, newKeys, linkKey, fingerprint, seal, unseal, relayOf, answer, fitRelay, RELAY_MAX, relaunchEnv, adbLink, freePhonePort, usePhonePort, portHolder, ask };

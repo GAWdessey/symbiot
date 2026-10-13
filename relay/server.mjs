@@ -6,7 +6,7 @@
 import { createServer } from "node:http";
 import { createHash, randomUUID } from "node:crypto";
 import { pathToFileURL } from "node:url";
-import { LIMITS, ID, provesId, limiter } from "./core.mjs";
+import { LIMITS, ID, provesId, limiter, ridOf, TOO_BIG } from "./core.mjs";
 
 // ---- a WebSocket, server side: text frames, ping/pong, close -----------------------------
 function frame(op, data) {
@@ -29,7 +29,7 @@ function upgrade(req, socket, onOpen) {
       const fin = buf[0] & 0x80, op = buf[0] & 0x0f, masked = buf[1] & 0x80;
       let len = buf[1] & 0x7f, off = 2;
       if (len === 126) { if (buf.length < 4) return; len = buf.readUInt16BE(2); off = 4; } else if (len === 127) { if (buf.length < 10) return; len = Number(buf.readBigUInt64BE(2)); off = 10; }
-      if (len > LIMITS.body * 2) return ws.close();
+      if (len > LIMITS.body * 4) return ws.close();
       if (buf.length < off + (masked ? 4 : 0) + len) return;
       const mask = masked ? buf.subarray(off, off + 4) : null; off += masked ? 4 : 0;
       const p = Buffer.from(buf.subarray(off, off + len)); buf = buf.subarray(off + len);
@@ -64,7 +64,7 @@ function startRelay({ port = 0, host = "127.0.0.1", tap = null } = {}) {
       let env; try { env = JSON.parse(body); } catch { return send(res, 400, { error: "not JSON" }); }
       const rid = randomUUID();
       const t = setTimeout(() => { pair.waiting.delete(rid); send(res, 504, { away: true, error: "Your computer didn't answer in time." }); }, LIMITS.wait);
-      pair.waiting.set(rid, (a) => { clearTimeout(t); pair.waiting.delete(rid); send(res, 200, { s: a.s, b: a.b }); });
+      pair.waiting.set(rid, (a) => { clearTimeout(t); pair.waiting.delete(rid); if (a.tooBig) send(res, 502, { tooBig: true, error: TOO_BIG }); else send(res, 200, { s: a.s, b: a.b }); });
       pair.ws.send(JSON.stringify({ rid, body: env }));
     });
   });
@@ -76,6 +76,7 @@ function startRelay({ port = 0, host = "127.0.0.1", tap = null } = {}) {
       let ok = false;
       ws.onmessage = async (t) => {
         if (tap) tap("computer", t);
+        if (ok && t.length > LIMITS.body) { const p = pairs.get(id), rid = ridOf(t); if (p && rid && p.waiting.has(rid)) p.waiting.get(rid)({ tooBig: true }); return; } // as worker.mjs
         let msg; try { msg = JSON.parse(t); } catch { return; }
         if (msg.ping) return ws.send('{"pong":1}');
         if (!ok) {

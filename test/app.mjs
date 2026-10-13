@@ -7,7 +7,9 @@
 //      update only for a HIGHER version — never the one it's on, never an older
 //      one — and a registry error doesn't flip that.
 //   3. UPDATE & RESTART (fixed after 0.39.1): the relaunched copy takes over the same address
-//      instead of finding the old app and exiting (which left nothing running).
+//      instead of finding the old app and exiting (which left nothing running); an update
+//      waiting for npm's download carries on through a restart (0.63.9), and one that came
+//      back on the old version says why.
 //   4. ANDROID APP: with no access to shared storage, the map says so (and asks
 //      for it) instead of reporting "no repos".
 // Isolated HOME, random ports, a local fake registry: never touches real config,
@@ -42,7 +44,7 @@ const reg = createServer((req, res) => {
 await new Promise((r) => reg.listen(0, "127.0.0.1", r));
 
 const PORT = port();
-const env = { ...process.env, HOME, USERPROFILE: HOME, SYMBIOT_NO_OPEN: "1", SYMBIOT_PORT: String(PORT), SYMBIOT_REGISTRY: `http://127.0.0.1:${reg.address().port}` };
+const env = { ...process.env, HOME, USERPROFILE: HOME, SYMBIOT_NO_OPEN: "1", SYMBIOT_NO_AUTO_UPDATE: "1", SYMBIOT_PORT: String(PORT), SYMBIOT_REGISTRY: `http://127.0.0.1:${reg.address().port}` };
 for (const k of ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "OPENAI_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY", "SYMBIOT_MODEL", "SYMBIOT_FORCE_NEW"]) delete env[k];
 
 const children = [];
@@ -148,7 +150,70 @@ try {
   await new Promise((r) => setTimeout(r, 1500)); // a copy that bowed out would be gone by now
   const p2 = await ping(baseU, tokU);
   ok("and it stays up", !!p2.started && p2.started === p1.started, { p1, p2 });
+  // the no-op install changed nothing, so it's back on the same version: it says so, and why,
+  // rather than offering the same update again (the 0.28.2 loop) or leaving the page to guess
+  ok("back on the old version after an install: the update is marked failed, with why", p2.updateFailed && p2.updateFailed.target === upd.target && /installed/.test(p2.updateFailed.error || "") && !p2.updating && p2.version === p0.version, p2);
   try { await fetch(`${baseU}/api/quit`, { headers: { "x-symbiot-token": tokU } }); } catch {}
+  await new Promise((r) => setTimeout(r, 800));
+
+  // On a phone, Termux's Symbiot holds 7391, so the app's own runs on another port; its
+  // relaunch after an update waited for 7391 only and exited, leaving nothing running.
+  console.log("UPDATE — an app on another port (its own taken) relaunches on that port");
+  const HELD = port(), holder = createServer((q, r) => { r.writeHead(404); r.end(); });
+  await new Promise((r) => holder.listen(HELD, "127.0.0.1", r));
+  const o = startApp({ SYMBIOT_PORT: String(HELD), SYMBIOT_UPDATE_CMD: `${JSON.stringify(process.execPath)} -e 0`, SYMBIOT_UPDATE_EVERY: "400" }, 30000);
+  const urlO = await o.ready, [, portO, tokO] = urlO.match(URL_RE) || [], baseO = `http://127.0.0.1:${portO}`;
+  ok("its port taken by something else: it serves on another", !!urlO && Number(portO) !== HELD, o.out());
+  const o0 = await ping(baseO, tokO);
+  await fetch(`${baseO}/api/update`, { method: "POST", headers: { "x-symbiot-token": tokO, "content-type": "application/json" }, body: "{}" }).catch(() => {});
+  let o1 = {};
+  for (const t2 = Date.now(); Date.now() - t2 < 25000;) { await new Promise((r) => setTimeout(r, 300)); o1 = await ping(baseO, tokO); if (o1.started && o1.started !== o0.started && o.exited() !== null) break; }
+  await new Promise((r) => setTimeout(r, 1500));
+  const o2 = await ping(baseO, tokO);
+  ok("after Update & restart a new app serves that same port, and stays up", o.exited() === 0 && !!o1.started && o1.started !== o0.started && o2.started === o1.started, { o0, o1, o2, out: o.out().slice(-400) });
+  try { await fetch(`${baseO}/api/quit`, { headers: { "x-symbiot-token": tokO } }); } catch {}
+  holder.close(); await new Promise((r) => setTimeout(r, 800));
+
+  // 0.63.9 (2026-10-12): Update & restart waited for npm's download, the app restarted
+  // meanwhile, and the wait (kept only in memory) was gone: npm never ran, and the page
+  // said the update "didn't take". Now where it got to is on disk, and a restart carries on.
+  console.log("UPDATE — a restart while it waits for npm's download carries on with the update");
+  const RS = port();
+  const w1 = startApp({ SYMBIOT_PORT: String(RS), SYMBIOT_UPDATE_CMD: `${JSON.stringify(process.execPath)} -e 0`, SYMBIOT_UPDATE_EVERY: "400" }, 20000);
+  const urlW = await w1.ready, tokW = (urlW.match(URL_RE) || [])[2], baseW = `http://127.0.0.1:${RS}`;
+  await ping(baseW, tokW, "?fresh=1");
+  registry.tgz404 = true;
+  const wu = await fetch(`${baseW}/api/update`, { method: "POST", headers: { "x-symbiot-token": tokW, "content-type": "application/json" }, body: "{}" }).then((r) => r.json()).catch((e) => ({ error: e.message }));
+  const wp = await ping(baseW, tokW);
+  ok("(it's waiting for the download)", wu.waiting === true && wp.updating && wp.updating.retrying, { wu, wp });
+  try { await fetch(`${baseW}/api/quit`, { headers: { "x-symbiot-token": tokW } }); } catch {}
+  for (let i = 0; i < 40 && w1.exited() === null; i++) await new Promise((r) => setTimeout(r, 100));
+  const w2 = startApp({ SYMBIOT_PORT: String(RS), SYMBIOT_UPDATE_CMD: `${JSON.stringify(process.execPath)} -e 0`, SYMBIOT_UPDATE_EVERY: "400" }, 20000);
+  const urlW2 = await w2.ready, tokW2 = (urlW2.match(URL_RE) || [])[2];
+  const wq = await ping(baseW, tokW2);
+  ok("the app started again is still waiting for it, from the same start (not a fresh 20 minutes)", wq.updating && wq.updating.retrying && wq.updating.target === wu.target && wq.updating.since === wp.updating.since, wq);
+  registry.tgz404 = false;
+  let wr = {};
+  for (const t3 = Date.now(); Date.now() - t3 < 20000;) { await new Promise((r) => setTimeout(r, 300)); wr = await ping(baseW, tokW2); if (wr.started && wr.started !== wq.started && w2.exited() !== null) break; }
+  ok("…and once the download is there, it installs and restarts by itself", w2.exited() === 0 && !!wr.started && wr.started !== wq.started, { exited: w2.exited(), wr });
+  try { await fetch(`${baseW}/api/quit`, { headers: { "x-symbiot-token": tokW2 } }); } catch {}
+
+  // A release waited for a click on Update & restart, sometimes for hours. With nothing
+  // running, it now installs and restarts by itself, once, and doesn't loop on a no-op install.
+  console.log("UPDATE — with no agent working, Symbiot updates itself");
+  const AU = port();
+  rmSync(join(HOME, ".config", "symbiot", "update.json"), { force: true }); // the update above failed on 0.64.0: that one isn't retried by itself
+  const a1 = startApp({ SYMBIOT_PORT: String(AU), SYMBIOT_NO_AUTO_UPDATE: "", SYMBIOT_UPDATE_CMD: `${JSON.stringify(process.execPath)} -e 0`, SYMBIOT_AUTO_EVERY: "300", SYMBIOT_AUTO_SETTLE: "700" }, 20000);
+  const urlA1 = await a1.ready, tokA1 = (urlA1.match(URL_RE) || [])[2], baseA1 = `http://127.0.0.1:${AU}`;
+  const q0 = await ping(baseA1, tokA1, "?fresh=1");
+  let q1 = {};
+  for (const t4 = Date.now(); Date.now() - t4 < 20000;) { await new Promise((r) => setTimeout(r, 300)); q1 = await ping(baseA1, tokA1); if (q1.started && q1.started !== q0.started && a1.exited() !== null) break; }
+  ok("no click: it installs and restarts by itself, on the same address", a1.exited() === 0 && !!q1.started && q1.started !== q0.started && /Updating to .* by itself: no agent is working/.test(a1.out()), { exited: a1.exited(), q0, q1, out: a1.out().slice(-600) });
+  await new Promise((r) => setTimeout(r, 2500));
+  const q2 = await ping(baseA1, tokA1);
+  ok("…and an install that didn't change the version isn't tried again by itself (no restart loop)", q2.started === q1.started && q2.updateFailed && !q2.updating, q2);
+  try { await fetch(`${baseA1}/api/quit`, { headers: { "x-symbiot-token": tokA1 } }); } catch {}
+  await new Promise((r) => setTimeout(r, 600));
 
   // quit the first app; a fresh `symbiot app` must then start normally
   try { await fetch(`${baseA}/api/quit`, { headers: { "x-symbiot-token": token } }); } catch {}

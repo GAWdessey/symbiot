@@ -23,7 +23,7 @@ import { isDone, recordDone, coveredBy } from "./asksdone.mjs";
 import { linksState, signInAsked } from "./links.mjs";
 import { knowledgeState } from "./knowledge.mjs";
 import { CONFIG_DIR, loadTasks, saveTasks, loadConfig, saveConfig, sameTask } from "./core.mjs";
-import { lanesState, stuckHandovers, allowHandover, skipHandover, handingOf, loadLedger, doneSince } from "./lanes.mjs";
+import { lanesState, stuckHandovers, allowHandover, skipHandover, handingOf, loadLedger, doneSince, sharedTo } from "./lanes.mjs";
 import { control } from "./control.mjs";
 import { converse, actIn, actNow, taskIn, loadMind, dayMark } from "./mind.mjs";
 import { repoPathMap, laneMap, reposState, scanRoots } from "./scan.mjs";
@@ -313,6 +313,8 @@ function marketingGo(deps = {}) {
   return goLane(MARKETING, map, { push: deps.push, run: deps.run });
 }
 
+// Why approved work isn't on GitHub, a few words for its Home card (tasks.mjs unsentCard).
+const UNSENT_SUB = { conflicts: "it clashes with main", tests: "its tests failed here", push: "the push didn't go through", pr: "no PR opened" };
 // { you: [{ kind, id, title, sub, shape, … }], feeds: [{ id, title, sub, count, shape }],
 //   lanes: [{ from, to, text, status, times }], working: n, at }
 // An ask carries what its blob on home needs: the lane (repo, or "" for an ops
@@ -365,6 +367,9 @@ function homeState({ now = Date.now(), fresh = false, deps = {} } = {}) {
   for (const r of pend) {
     if (!r.path || r.running) continue;
     const n = (r.tasks || []).length, files = (r.files || []).length;
+    // approved and committed, but not on GitHub: it waits on a retry (tasks.mjs sendAgain), not an Approve
+    const un = r.unsent && UNSENT_SUB[r.unsent.why];
+    if (!n && !files && un) { you.push({ kind: "approve", id: "approve:" + r.repo, repo: r.repo, name: named(r.path, r.repo), title: `Send ${r.repo}'s approved work`, sub: `approved, but not on GitHub yet: ${un}`, shape: "tasks" }); continue; }
     if (!n && !files) continue;
     you.push({ kind: "approve", id: "approve:" + r.repo, repo: r.repo, name: named(r.path, r.repo), title: `Approve ${r.repo}`, sub: `${n ? `${n} task${n > 1 ? "s" : ""} done` : r.round ? `a round of “${plain(r.round.text, 60)}”, still going` : "changes without a task"}${files ? ` · ${files} file${files > 1 ? "s" : ""}` : ""} · only you decide`, shape: "tasks" });
   }
@@ -380,7 +385,9 @@ function homeState({ now = Date.now(), fresh = false, deps = {} } = {}) {
     const pa = plainAsk(a.path, q), done = finished(a.path, q.q), opts = (q.options || []).slice(0, 2);
     const closed = done ? { done, options: [`Close it: ${done.lane} has done this already (${done.text}). Check that it's so, and carry on without asking again. (recommended)`, opts[0]].filter(Boolean),
       labels: ["Close it: it's done", ...(opts[0] ? [blobLabel(pa.labels ? pa.labels[0] : opts[0])] : [])] } : {};
-    you.push({ kind: "ask", id: "ask:" + a.path, path: a.path, repo, name: repo ? named(lane ? map[lane] : a.path, repo) : plain(String(a.name || "an agent").replace(/^Agent:\s*/, ""), 60),
+    // the user answered another agent on this work: it has that answer, and is checking whether it settles this (lanes.mjs shareAnswer)
+    const sh = sharedTo(a.path), shared = sh && (a.status === "running" || Date.parse(sh.at) > (a.startedAt || 0)) ? { shared: sh } : {}; // and not once it has asked again since
+    you.push({ kind: "ask", id: "ask:" + a.path, path: a.path, repo, ...shared, name: repo ? named(lane ? map[lane] : a.path, repo) : plain(String(a.name || "an agent").replace(/^Agent:\s*/, ""), 60),
       title: `${a.name} asks`, sub: String(q.q || "").slice(0, 90), ...(q.task ? { task: q.task } : {}), ...pa, options: opts, ...closed, ...(qs.length > 1 ? { more: qs.length - 1 } : {}), ...signInCard([q.q, ...opts]), shape: "agents" });
   }
   // What stopped and can't go on without you, as a question too: a handover that

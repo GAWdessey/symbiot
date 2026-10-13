@@ -15,15 +15,34 @@ const MAX_LANES_LISTED = 40;
 const HANDOVER_MAX = 20000;
 
 // The lines a brief gets about lanes. here: this agent's lane; lanes: the others
-// it can hand to (repo folder names).
-function handoverRules(lanes = [], here = "") {
+// it can hand to (repo folder names); reach: what each can reach (reachLines).
+function handoverRules(lanes = [], here = "", reach = null) {
   const mk = lanes.includes(MARKETING) && here !== MARKETING, others = [...new Set(lanes.filter((l) => l && l !== here && l !== MARKETING))].slice(0, MAX_LANES_LISTED);
   return ["## Hand over what's another lane's job",
-    `Each agent has its own lane${here ? `: this one is \`${here}\`` : ""}. When something you need is another lane's job, don't stop, and don't ask the user to do it: hand it over. Write \`.symbiot/HANDOFF.md\` with a \`### \` heading naming the lane, then what's needed, self-contained (names, paths, links, ids) and why. Symbiot starts that lane's agent on it within 20 seconds, then rewrites the file as a list of what went where, so a HANDOFF.md with no \`### \` section means everything in it was sent (the Agents tab shows how far each lane's agent has got). Its result comes back to you in \`.symbiot/ANSWERS.md\`. Carry on with what doesn't depend on it, and don't tick what does.`,
+    `Each agent has its own lane${here ? `: this one is \`${here}\`` : ""}. When something you need is another lane's job, don't stop, and don't ask the user to do it: hand it over. Write \`.symbiot/HANDOFF.md\` with a \`### \` heading naming the lane, then what's needed, self-contained (names, paths, links, ids) and why. Symbiot starts that lane's agent on it within 20 seconds, then rewrites the file as a list of what went where, so a HANDOFF.md with no \`### \` section means everything in it was sent (the Agents tab shows how far each lane's agent has got). Its result comes back to you in \`.symbiot/ANSWERS.md\`. Carry on with what doesn't depend on it, and don't tick what does. To add to something you handed to \`${OPS}\` while its run is still going, name that run (\`act-…\`, from the file's Sent list) in the new section: it goes to that run, which does it next, rather than a second run starting on the same thing alongside it. A section much like one you sent before replaces it, and waits for the run on that one; if it's a different job, start its first line with \`New job:\` and it starts a run of its own.`,
     `- \`${OPS}\`: anything outside a repo: this computer (find or install a tool, a JDK, an SDK), accounts and services (cloud, GitHub, DNS, email), the user's connectors.`,
     ...(mk ? [`- \`${MARKETING}\`: marketing for any product: posts, demo videos and screenshots, launches, landing-page copy, campaigns. It drafts them; the user approves each one's preview, and then it posts or schedules it itself through Symbiot's signed-in browser.`] : []),
     `- A repo, by its folder name, for work that belongs in that project${others.length ? `: ${others.map((l) => `\`${l}\``).join(", ")}` : ""}.`,
+    ...reachLines(reach, here, [here, ...others]),
     ""];
+}
+// What each lane can and can't reach (reach.mjs laneReach: { sandboxed, hosts, keys }),
+// so a job goes to a lane that can do it. Ops handed dailify a change to the live
+// server's .env as "your lane", and dailify can't reach the server: it went back and
+// forth until the handover guard stopped it (13 Oct 2026).
+function reachLines(reach, here = "", lanes = []) {
+  if (!reach) return [];
+  const code = (xs) => xs.map((x) => `\`${x}\``).join(", "), hosts = (reach.hosts || []).slice(0, 8);
+  const servers = hosts.length ? `the servers this computer connects to (${code(hosts)})` : "any server this computer connects to";
+  const repo = here && here !== OPS && here !== MARKETING, keyed = lanes.filter((l) => l && l !== OPS && (reach.keys || {})[l]).slice(0, 12);
+  return ["", "What each lane can reach, so you hand a job to one that can do it:",
+    `- \`${OPS}\`: runs on this computer, outside any sandbox: ${servers} over ssh, accounts and services, and Symbiot's vault (\`symbiot secret\`).`,
+    reach.sandboxed
+      ? `- Every repo lane runs in a sandbox: it writes only in its own folder and reaches no server, so it can't change anything on a live server (its \`.env\`, a restart, a deploy), even for its own project. That's \`${OPS}\`'s: the repo lane does the code and says what to change there.`
+      : `- Repo lanes run on this computer without a sandbox: they reach the same servers as \`${OPS}\`.`,
+    ...(keyed.length ? [`- Keys in a lane's own \`.env\` (on this computer, not the server's): ${keyed.map((l) => `\`${l}\` (${reach.keys[l].join(", ")})`).join("; ")}.`] : []),
+    ...(repo && reach.sandboxed ? [`- Your lane, \`${here}\`, reaches no server. If you're handed a job on one, hand that part to \`${OPS}\`, never back to a repo lane.`] : []),
+    `- Handed a job your lane can't reach? Don't hand it back to the lane that sent it: send it to the lane above that can, saying why, or say in your last message what stopped you.`];
 }
 // The rule for options in QUESTIONS.md: the user gets only what no agent can do,
 // and the option says which kind it is.

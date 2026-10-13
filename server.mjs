@@ -7,33 +7,33 @@ import { licenceState, setKey, clearKey, can, refreshRevoked, FREE } from "./lic
 import { claudeSetup, installClaude, signInClaude, sendClaudeCode } from "./claudesetup.mjs";
 import { voiceState, prepareVoice, speak, stopVoices } from "./voice.mjs";
 import { spawn, spawnSync } from "node:child_process";
-import { toggleAway, closeAway } from "./away.mjs";
+import { toggleAway, closeAway, awayOpen } from "./away.mjs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { gunzipSync } from "node:zlib";
 import { readRunLog } from "./work.mjs";
-import { readFileSync, existsSync, mkdirSync, writeFileSync, readdirSync, statSync, unlinkSync } from "node:fs";
+import { readFileSync, existsSync, mkdirSync, writeFileSync, readdirSync, statSync, unlinkSync, realpathSync } from "node:fs";
 import { createServer } from "node:http";
 import { randomBytes } from "node:crypto";
 import { EMBEDDED_UI } from "./ui.mjs";
 import { VERSION, LATEST_VERSION, REGISTRY, semverGt, checkLatest, CONFIG_PATH, loadConfig, saveConfig, moveSecrets, loadTasks, hasCmd, chromeBinary, CONFIG_DIR } from "./core.mjs";
-import { shSingle, handoffCmd, setHandoffCmd, grantAgent, runHandoff, track, detectHandoffs, connectorsInfo, linkReach, answerQuestions, skipIdea, agentsList, startWaiting, parkLane, parkedPaths, autoAllowSweep, continueLanes, trustFull, readLastWords, sandboxState } from "./agents.mjs";
+import { onAnswered, shSingle, handoffCmd, setHandoffCmd, grantAgent, runHandoff, track, detectHandoffs, connectorsInfo, linkReach, answerQuestions, skipIdea, agentsList, startWaiting, parkLane, parkedPaths, autoAllowSweep, continueLanes, trustFull, readLastWords, sandboxState, HANDOFFS, runningHandoff } from "./agents.mjs";
 import { PROVIDERS, resolveProvider, connectProvider, detectHardware, recommendModels, hasOllama, ollamaInstall, ensureOllama, useOllamaModel } from "./ai.mjs";
 import { SCAN, SCAN_TIMEOUT_MS, scanRoots, scanHome, addScanRoot, removeScanRoot, buildMap, nodeDetail, repoPathMap, laneMap, setScanOptions, refreshRepos, REPO_STATE, reposState } from "./scan.mjs";
 import { computeDrift } from "./drift.mjs";
 import { laneCap, mergeEnded, DEFAULT_CAP } from "./parallel.mjs";
-import { addTask, toggleTask, removeTask, restoreTask, syncTasks, taskType, pushTasks, pendingReview, workingDiff, learnNpm, withReleases, releaseInput, approveRepo, approveChanges, sendBack, setAutoMerge, mergeWhenGreen } from "./tasks.mjs";
+import { addTask, toggleTask, removeTask, restoreTask, syncTasks, taskType, pushTasks, pendingReview, workingDiff, learnNpm, withReleases, releaseInput, approveRepo, approveChanges, sendBack, setAutoMerge, mergeWhenGreen, sendAgain, forgetUnsent } from "./tasks.mjs";
 import { repoReview, repoSuggest, folderSuggest, taskChat, clearTaskChat, mailState, setMail, sentMail, produce, releaseNotes } from "./writeups.mjs";
 import { listSecrets, getSecret, markUsed, deleteSecret } from "./vault.mjs";
 import { loadScreens, screenImage, captureScreen, splitScreen, listMonitors, allowScreenshots, importScreen, setRegions, renameScreen, removeScreen, blueprint, clickRegion } from "./screens.mjs";
-import { mapPage, wholePage, pressRegion, typeRegion, chooseRegion, fillForm, uploadRegion, scrollPage, signIn, keepBrowserOpen, isTrusted, trustedSites, trustSite, untrustSite, openSymbiotBrowser, closeSymbiotBrowser, onBrowserClosed, setBrowserHub, siteUrl, browserHub } from "./headless.mjs";
+import { mapPage, wholePage, pressRegion, typeRegion, chooseRegion, fillForm, uploadRegion, scrollPage, signIn, keepBrowserOpen, isTrusted, trustedSites, trustSite, untrustSite, openSymbiotBrowser, closeSymbiotBrowser, onBrowserClosed, setBrowserHub, siteUrl, browserHub, windowOpen } from "./headless.mjs";
 import { weeklyState, setWeekly, runWeekly, startWeekly, autostartState, setAutostart, installLauncher, iconSvg, setLauncherLook } from "./desktop.mjs";
 import { markNews, newsSince, watchState, addWatch, setEvery, removeWatch, clearNews, seenWatch, checkWatch, startWatches, setBrief, draftReply, openChat, watchBoard, boardChat, clearBoardChat } from "./watch.mjs";
 import { linksState, linkSite, checkLink, unlinkSite, addSite, signInAsked, sitesCheck } from "./links.mjs";
 import { testWeeks, testInstalls, postsState, draftPosts, approvePost, editPost, skipPost, voiceFromLinkedIn, addMedia, removeMedia, mediaFile, mediaDir, pictureOfPage, clipOfPage, openUrl } from "./post.mjs";
 import { mindState, forget } from "./mind.mjs";
-import { lanesTick, lanesState, partlyDone, handingOf, loadLedger, orcaRelink } from "./lanes.mjs";
+import { lanesTick, lanesState, partlyDone, handingOf, loadLedger, orcaRelink, shareAnswer } from "./lanes.mjs";
 import { keepFacts, skipFacts, awaitTick, awaitingState, stopWaiting } from "./handback.mjs";
 import { adaptState, noteUse } from "./adapt.mjs";
 import { reportIdeasAdd, reportIdeasDismiss, reportAsk, reportDraftAnswer, homeState, homeAsk, homeAnswer, homeNext, workScene, workGo, workTick, firstSteps, marketingState, marketingGo, marketingDraftAnswer, marketingTask, moveToMarketing, onboarding, setOnboarding, startOnboarding, phoneSetupFirst } from "./home.mjs";
@@ -41,7 +41,7 @@ import { MARKETING_DIR, MARKETING, draftPreview, laneMedia, displayName, setDraf
 import { trays, trayMedia, setBlur, addBlur, removeBlur, setReviewed, renderCapture } from "./tray.mjs";
 import { captureProduct, captureProducts } from "./capture.mjs";
 import { listReports, readReport, reportImage, markAllRead, phoneReports, phoneReport, withNeeds } from "./reports.mjs";
-import { computerCopy, phoneState, setPhoneLink, freePhonePort, usePhonePort, newCode, unpairPhone, setRelay, findComputers, pairComputer, forgetComputer, pollComputer, queueChange, dismissNote, setPhoneApprove, startPhone } from "./phone.mjs";
+import { computerCopy, relaunchEnv, phoneState, setPhoneLink, freePhonePort, usePhonePort, newCode, unpairPhone, setRelay, findComputers, pairComputer, forgetComputer, pollComputer, queueChange, dismissNote, setPhoneApprove, startPhone } from "./phone.mjs";
 import { knowledgeState, addKnowledgeFolder, removeKnowledgeFolder, indexKnowledge, knowledgeTick, searchKnowledge } from "./knowledge.mjs";
 import { runChecks, checksState, markClashesSeen } from "./checks.mjs";
 
@@ -69,12 +69,51 @@ async function downloadReady(version, registry = REGISTRY, fetchFn = fetch) {
   if (!/^\d+\.\d+\.\d+/.test(String(version))) return true; // "latest": npm picks it, nothing to look at
   try { return (await fetchFn(`${registry}/symbiot/-/symbiot-${encodeURIComponent(version)}.tgz`, { method: "HEAD", signal: AbortSignal.timeout(10000) })).status !== 404; } catch { return true; }
 }
+// Symbiot updates itself: a release waited for a click on Update & restart, so it
+// landed when someone found the card, hours later or not at all. Now, once the new
+// version's download is there and nothing would be cut off by the restart (no agent
+// running, in any lane, since a check a while ago; no sign-in going in the Symbiot
+// Browser; Away not open), it installs and restarts as the click does. One that
+// didn't go through isn't tried again by itself (the card says why, with Try again).
+// Not in a sandbox or the desktop app; "autoUpdate": false in config.json turns it off
+// (SYMBIOT_NO_AUTO_UPDATE=1 too: the tests' apps see a newer version on a fake registry).
+// { go: true } or { why } (what it waits on: "busy" with what, in busy).
+const AUTO_SETTLE = Number(process.env.SYMBIOT_AUTO_SETTLE) || 2 * 60 * 1000; // idle this long first: lanes start runs every 20s
+function autoUpdateDue({ latest, version, sandbox, desktop, off, updating, failed, busy, idleSince, now = Date.now(), settle = AUTO_SETTLE }) {
+  if (sandbox || desktop || off) return { why: "off" };
+  if (!latest || !semverGt(latest, version)) return { why: "current" };
+  if (updating) return { why: "updating" };
+  if (failed && failed.target === latest) return { why: "failed" };
+  if (busy) return { why: "busy", busy };
+  if (!idleSince || now - idleSince < settle) return { why: "settling" };
+  return { go: true };
+}
+// What a restart would cut off right now, in words, or "".
+function restartWouldStop({ handoffs = HANDOFFS, paths = [], running = runningHandoff, browser = windowOpen, away = awayOpen } = {}) {
+  const runs = new Set(handoffs.filter((x) => x.status === "running" && x.name !== "symbiot update").map((x) => x.path));
+  for (const p of paths) { try { if (running(p)) runs.add(p); } catch {} }
+  if (runs.size) return runs.size === 1 ? "an agent is working" : `${runs.size} agents are working`;
+  try { if (browser()) return "the Symbiot Browser is open"; } catch {}
+  try { if (away()) return "Away is open"; } catch {}
+  return "";
+}
 // This update's own lines in agent.log (an earlier run's 404 isn't this one's), and
 // the line that says what went wrong.
 function updateOutcome(log) {
   const mine = String(log || "").slice(String(log || "").lastIndexOf("=== symbiot update"));
   const why = (mine.match(/npm (?:error|ERR!) (?!code\b|syscall\b|errno\b|path\b|dest\b|404\s*$|A complete log)([^\n]+)/m) || [])[1] || "";
   return { notYet: /E404|ETARGET|notarget|No matching version|is not in this registry/i.test(mine), why: why.trim().slice(0, 200) };
+}
+
+// An update npm finished, yet Symbiot came back on its old version: why, as far as can be
+// told. npm put it somewhere else than this Symbiot runs from (another prefix: a second
+// node, or sudo's), or the files here didn't change.
+function installedElsewhere(target, { here = fileURLToPath(new URL(".", import.meta.url)), root = () => spawnSync(process.platform === "win32" ? "npm.cmd" : "npm", ["root", "-g"], { encoding: "utf8", timeout: 15000 }).stdout } = {}) {
+  const real = (p) => { try { return realpathSync(p); } catch { return resolve(p); } };
+  let r = ""; try { r = String(root() || "").trim(); } catch {}
+  const mine = real(here).replace(/[\\/]+$/, "");
+  if (r && real(join(r, "symbiot")) !== mine) return `npm installed ${target} in ${join(r, "symbiot")}, but this Symbiot runs from ${mine}. Update the one that runs (or start Symbiot from the new one)`;
+  return `npm said it installed ${target}, but Symbiot restarted on ${VERSION} from the same files (${mine})`;
 }
 
 // ---- what's new: the changelog's releases between two versions -------------------
@@ -277,6 +316,79 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
   { const t0 = Date.now(); refreshRepos().then((l) => console.log(`Found ${l.length} project${l.length === 1 ? "" : "s"} in ${((Date.now() - t0) / 1000).toFixed(1)}s.`)); }
   let UPDATING = null; // an update in flight: { target, attempt, since, retrying? }
   let UPDATE_FAILED = null; // the last one that didn't go through: { target, error, at }
+  // An update, from Update & restart: install the exact newest version (updateCmd), then
+  // relaunch this same app (same port and token, so the same address) and exit; the page's
+  // heartbeat reconnects and reloads. Free the port first and mark the new copy as a
+  // relaunch, so it takes over instead of finding us and bowing out. SYMBIOT_UPDATE_CMD
+  // replaces the install (the tests use a no-op). Not downloadable yet (downloadReady): it
+  // looks again every 30s for up to 20 minutes, and says so. Where it's got to is kept on
+  // disk too (UPDATE_STATE): waiting for npm's download lived only in memory, the app
+  // restarted while it waited for 0.63.9's, npm never ran, and the page took the restart on
+  // the old version for an install that "didn't take" (2026-10-12). So a restart carries on
+  // (resumeUpdate), and one that installed but came back on the old version says why.
+  const UPDATE_STATE = join(CONFIG_DIR, "update.json");
+  const noteUpdate = (o) => { try { if (o) { mkdirSync(CONFIG_DIR, { recursive: true }); writeFileSync(UPDATE_STATE, JSON.stringify(o)); } else if (existsSync(UPDATE_STATE)) unlinkSync(UPDATE_STATE); } catch {} };
+  function startUpdate({ since = Date.now(), latest = LATEST_VERSION, auto = false } = {}) {
+    const { target, cmd } = updateCmd(latest, VERSION);
+    const inst = process.env.SYMBIOT_UPDATE_CMD || cmd, note = (state, more = {}) => noteUpdate({ target, from: VERSION, since, state, at: Date.now(), ...more });
+    const failed = (error) => { UPDATING = null; UPDATE_FAILED = { target, error, at: Date.now() }; note("failed", { error }); return null; };
+    const again = (n, error) => {
+      if (Date.now() - since + UPDATE_EVERY > UPDATE_WAIT) return failed(error);
+      UPDATING = { target, retrying: true, attempt: n + 1, since, at: Date.now() }; note("waiting");
+      setTimeout(() => attempt(n + 1), UPDATE_EVERY).unref(); return null;
+    };
+    const attempt = async (n) => {
+      if (!(await downloadReady(target))) return again(n, `npm lists ${target}, but its download still wasn't there after 20 minutes.`);
+      note("installing");
+      const e = track("symbiot update", inst, homedir(), (code) => {
+        if (code !== 0) {
+          const o = updateOutcome(readRunLog(join(homedir(), ".symbiot", "agent.log")).slice(-6000));
+          if (o.notYet) again(n, o.why || `npm couldn't find ${target}'s download.`);
+          else failed(o.why || `npm stopped (exit code ${code}).`);
+          return;
+        }
+        note("installed");
+        // on the port it was serving: one that took another (Termux's Symbiot holds 7391 on a phone)
+        // relaunched on 7391, found it busy and exited, so nothing served the app's window (FINE-TUNE item 3)
+        // updating by itself, and an agent started while npm ran: the restart waits for it
+        if (!auto || !workGoing()) return relaunch();
+        UPDATING = { ...UPDATING, installed: true, waitFor: workGoing(), at: Date.now() };
+        const w = setInterval(() => { const b = workGoing(); if (b) { UPDATING = { ...UPDATING, waitFor: b }; return; } clearInterval(w); relaunch(); }, 30000); w.unref();
+      });
+      if (!e) failed("Symbiot couldn't start npm.");
+      return e;
+    };
+    UPDATING = { target, attempt: 1, since, at: Date.now(), ...(auto ? { auto: true } : {}) }; UPDATE_FAILED = null; note("waiting");
+    return attempt(1).then((e) => ({ e, target }));
+  }
+  // At start: an update this app (or the one before it) was on. On its version now, it's
+  // done. Still waiting or installing (restarted meanwhile): carried on, within its 20
+  // minutes. Installed, yet this is the old version: what went wrong, not another try.
+  function resumeUpdate() {
+    let u = null; try { u = JSON.parse(readFileSync(UPDATE_STATE, "utf8")); } catch {}
+    if (!u || SANDBOX || DESKTOP) return;
+    if (!/^\d+\.\d+\.\d+/.test(String(u.target)) || !semverGt(u.target, VERSION)) return noteUpdate(null);
+    if (u.state === "failed") { UPDATE_FAILED = { target: u.target, error: u.error || "npm stopped", at: u.at }; return; }
+    if (u.state === "installed") {
+      const error = installedElsewhere(u.target);
+      UPDATE_FAILED = { target: u.target, error, at: Date.now() }; noteUpdate({ ...u, state: "failed", error, at: Date.now() }); return;
+    }
+    if (Date.now() - (Number(u.since) || 0) < UPDATE_WAIT) { startUpdate({ since: Number(u.since), latest: u.target }).catch(() => {}); return; }
+    const error = `Symbiot restarted while it waited for npm's download of ${u.target}, and gave up after 20 minutes`;
+    UPDATE_FAILED = { target: u.target, error, at: Date.now() }; noteUpdate({ ...u, state: "failed", error, at: Date.now() });
+  }
+  const workGoing = () => { let paths = []; try { paths = Object.values(laneMap() || {}); } catch {} try { const d = join(CONFIG_DIR, "drafts"); paths.push(...readdirSync(d).filter((x) => x.startsWith("act-")).map((x) => join(d, x))); } catch {} return restartWouldStop({ paths }); };
+  let IDLE_SINCE = 0, AUTO = { why: "current" }; // since when nothing would be cut off; what the self-update waits on
+  async function autoUpdateTick() {
+    const busy = workGoing(); IDLE_SINCE = busy ? 0 : IDLE_SINCE || Date.now();
+    AUTO = autoUpdateDue({ latest: LATEST_VERSION, version: VERSION, sandbox: SANDBOX, desktop: DESKTOP, off: loadConfig().autoUpdate === false || process.env.SYMBIOT_NO_AUTO_UPDATE === "1", updating: UPDATING, failed: UPDATE_FAILED, busy, idleSince: IDLE_SINCE });
+    if (!AUTO.go) return;
+    const { target } = updateCmd(LATEST_VERSION, VERSION);
+    if (!(await downloadReady(target))) { AUTO = { why: "download" }; return; } // npm lists it before its download is there: the next tick looks again
+    if (UPDATING || workGoing()) return;
+    console.log(`Updating to ${target} by itself: no agent is working.`);
+    startUpdate({ auto: true }).catch(() => {});
+  }
   let HUB_SEEN = 0; // when the Symbiot Browser's own page last asked for the sites (browser.html)
   onBrowserClosed(() => { sitesCheck(); }); // its last window closed by its X: checked, as Done does
   let NEWEST_WIN = ""; // the Symbiot window opened last: older ones close themselves (one window, not a pile)
@@ -333,6 +445,9 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       if (u.pathname === "/api/pending/merge" && req.method === "POST") { const b = await readBody(req), path = laneMap()[String(b.repo || "")]; if (!path || !b.pr) return json(res, { error: "Say which repo and PR." }); return json(res, mergeWhenGreen(path, String(b.pr))); }
       if (u.pathname === "/api/pending/approve" && req.method === "POST") { const b = await readBody(req), repo = String(b.repo || ""); if (b.bump) await learnNpm([laneMap()[repo]]); const notes = await releaseNotes(releaseInput(repo, { bump: b.bump })); return json(res, await approveRepo(repo, { bump: b.bump, notes, confirm: !!b.confirm, allowShared: !!b.allowShared })); }
       if (u.pathname === "/api/pending/approve-changes" && req.method === "POST") { const b = await readBody(req), repo = String(b.repo || ""); if (b.bump) await learnNpm([laneMap()[repo]]); const notes = await releaseNotes(releaseInput(repo, { bump: b.bump, tick: b.tick })); return json(res, await approveChanges(repo, { bump: b.bump, tick: b.tick, notes, confirm: !!b.confirm, allowShared: !!b.allowShared })); }
+      // approved work that didn't get as far as a PR: sent again (untested: without the tests here), or left
+      if (u.pathname === "/api/pending/send" && req.method === "POST") { const b = await readBody(req); return json(res, await sendAgain(String(b.repo || ""), b.untested ? { verify: false } : {})); }
+      if (u.pathname === "/api/pending/leave" && req.method === "POST") { const b = await readBody(req); return json(res, forgetUnsent(String(b.repo || ""))); }
       if (u.pathname === "/api/pending/sendback" && req.method === "POST") { const b = await readBody(req); return json(res, sendBack(String(b.id || ""))); }
       if (u.pathname === "/api/automerge" && req.method === "POST") { const b = await readBody(req); return json(res, setAutoMerge(String(b.repo || ""), !!b.on)); }
       if (u.pathname === "/api/tasks/push" && req.method === "POST") { const b = await readBody(req); return json(res, pushTasks(b)); }
@@ -372,7 +487,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       }
       // the answer, saved in the folder that asked; it says which lane that is, so "Sent to …"
       // names where it went (a Marketing answer said "Sent to Paperclip Steve")
-      if (u.pathname === "/api/agents/answer" && req.method === "POST") { const b = await readBody(req), path = String(b.path || ""), r = answerQuestions(path, b.answers, { rerun: !!b.rerun }); return json(res, r && r.ok ? { ...r, lane: laneOfFolder(path) } : r); }
+      if (u.pathname === "/api/agents/answer" && req.method === "POST") { const b = await readBody(req), path = String(b.path || ""), r = answerQuestions(path, b.answers, { rerun: !!b.rerun, share: true }); return json(res, r && r.ok ? { ...r, lane: laneOfFolder(path) } : r); }
       if (u.pathname === "/api/agents/skip" && req.method === "POST") { const b = await readBody(req); return json(res, skipIdea(String(b.path || ""), b.text)); }
       // What a run handed back (handback.mjs): facts for memory, kept only on Remember; replies it waits on.
       if (u.pathname === "/api/agents/remember" && req.method === "POST") { const b = await readBody(req); return json(res, b.skip === true ? skipFacts(String(b.path || "")) : keepFacts(String(b.path || ""), { only: Array.isArray(b.only) ? b.only.map(Number) : undefined })); }
@@ -473,7 +588,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       if (u.pathname === "/api/marketing/tray/box" && req.method === "POST") { const b = await readBody(req), r = b.remove != null ? removeBlur(String(b.tray || ""), String(b.name || ""), b.remove) : addBlur(String(b.tray || ""), String(b.name || ""), b.box); if (r.error) return json(res, r); const d = await renderCapture(String(b.tray), String(b.name)); return json(res, { ...r, rendered: !!d.ok, ...(d.error ? { note: d.error } : {}) }); }
       if (u.pathname === "/api/marketing/tray/reviewed" && req.method === "POST") { const b = await readBody(req); return json(res, setReviewed(String(b.tray || ""), String(b.name || ""))); }
       // Symbiot's own capture of a product, for its pick tray (capture.mjs): `symbiot capture`, the lane's first run, or the page's Capture
-      if (u.pathname === "/api/marketing/capture" && req.method === "POST") { const b = await readBody(req); return json(res, await captureProduct({ product: String(b.product || ""), url: String(b.url || ""), window: String(b.window || ""), screens: [].concat(b.screens || []).map(String), clips: b.clips !== false, ...(Number(b.seconds) > 0 ? { seconds: Math.min(20, Number(b.seconds)) } : {}) })); }
+      if (u.pathname === "/api/marketing/capture" && req.method === "POST") { const b = await readBody(req); return json(res, await captureProduct({ product: String(b.product || ""), url: String(b.url || ""), window: String(b.window || ""), file: String(b.file || ""), screens: [].concat(b.screens || []).map(String), clips: b.clips !== false, ...(Number(b.seconds) > 0 ? { seconds: Math.min(20, Number(b.seconds)) } : {}) })); }
       if (u.pathname === "/api/posts/draft" && req.method === "POST") return json(res, await draftPosts());
       if (u.pathname === "/api/posts/approve" && req.method === "POST") { const b = await readBody(req); return json(res, approvePost(String(b.id || ""))); }
       if (u.pathname === "/api/posts/edit" && req.method === "POST") { const b = await readBody(req); return json(res, editPost(String(b.id || ""), b.text)); }
@@ -574,7 +689,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       // a sandbox (symbiot app --fresh) never offers an update: it would replace your real install.
       // A headless browser (an agent's screenshot of Home) never becomes the newest window:
       // that closed the user's real one, again and again (2026-10-08, "symbiot keeps crashing").
-      if (u.pathname === "/api/ping") { if (u.searchParams.get("fresh") === "1" && !SANDBOX) await checkLatest(); const w = u.searchParams.get("w") || ""; if (/^[a-z0-9]{6,20}$/.test(w) && u.searchParams.get("new") === "1" && !headlessAgent(req.headers["user-agent"])) NEWEST_WIN = w; return json(res, { ...(NEWEST_WIN ? { window: NEWEST_WIN } : {}), version: VERSION, started: SERVER_STARTED, latest: LATEST_VERSION, newer: !SANDBOX && !DESKTOP && semverGt(LATEST_VERSION, VERSION), ...(DESKTOP ? { desktop: true } : {}), ...(UPDATING ? { updating: { ...UPDATING, every: UPDATE_EVERY, wait: UPDATE_WAIT } } : {}), ...(UPDATE_FAILED ? { updateFailed: UPDATE_FAILED } : {}), ...(RELAUNCH ? { relaunched: true } : {}), ...(IN_TERMUX ? { termux: true } : {}), ...(SANDBOX ? { sandbox: true } : {}) }); }
+      if (u.pathname === "/api/ping") { if (u.searchParams.get("fresh") === "1" && !SANDBOX) await checkLatest(); const w = u.searchParams.get("w") || ""; if (/^[a-z0-9]{6,20}$/.test(w) && u.searchParams.get("new") === "1" && !headlessAgent(req.headers["user-agent"])) NEWEST_WIN = w; return json(res, { ...(NEWEST_WIN ? { window: NEWEST_WIN } : {}), version: VERSION, started: SERVER_STARTED, latest: LATEST_VERSION, newer: !SANDBOX && !DESKTOP && semverGt(LATEST_VERSION, VERSION), ...(DESKTOP ? { desktop: true } : {}), ...(UPDATING ? { updating: { ...UPDATING, every: UPDATE_EVERY, wait: UPDATE_WAIT } } : {}), ...(AUTO.why === "busy" || AUTO.why === "settling" || AUTO.why === "download" ? { autoUpdate: { why: AUTO.why, ...(AUTO.busy ? { busy: AUTO.busy } : {}) } } : {}), ...(UPDATE_FAILED ? { updateFailed: UPDATE_FAILED } : {}), ...(RELAUNCH ? { relaunched: true } : {}), ...(IN_TERMUX ? { termux: true } : {}), ...(SANDBOX ? { sandbox: true } : {}) }); }
       // What's new: after an update, since the version you last saw (until you click Got it);
       // ?latest=1, what the update on offer brings, from its package on npm
       if (u.pathname === "/api/whatsnew") {
@@ -602,39 +717,13 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       if (u.pathname === "/api/licence/project/free" && req.method === "POST") { const b = await readBody(req); const c = loadConfig(); const L = c.licence || {}; L.projects = (L.projects || []).filter((p) => p !== String(b.path || "")); c.licence = L; saveConfig(c); return json(res, licenceView()); }
       if (u.pathname === "/api/update" && req.method === "POST" && DESKTOP) return json(res, { error: "This Symbiot updates with its app." });
       if (u.pathname === "/api/update" && req.method === "POST") {
-        // Install the exact newest version (see updateCmd), then relaunch this
-        // same app (same port+token => same URL) and exit. The page's heartbeat
-        // reconnects and reloads. Free the port first and mark the new copy as a
-        // relaunch, so it takes over instead of finding us and bowing out.
-        // SYMBIOT_UPDATE_CMD replaces the install (the tests use a no-op).
+        // Install the newest version and restart (startUpdate).
         if (SANDBOX) return json(res, { error: "This is a sandbox (symbiot app --fresh): update your real Symbiot instead." });
         // One at a time: a second click (another window, or one while it waits) started a
         // second npm install over the first, and they collided (ENOTEMPTY, 0.61.1).
         // (an install still running after 10 minutes has hung: a click starts it afresh)
         if (UPDATING && (UPDATING.retrying || Date.now() - UPDATING.at < 10 * 60 * 1000)) return json(res, { started: true, already: true, target: UPDATING.target });
-        const { target, cmd } = updateCmd(LATEST_VERSION, VERSION);
-        const inst = process.env.SYMBIOT_UPDATE_CMD || cmd, since = Date.now();
-        // not downloadable yet (see downloadReady): look again in 30s, for up to 20 minutes, and say so
-        const again = (n, error) => {
-          if (Date.now() - since + UPDATE_EVERY > UPDATE_WAIT) { UPDATING = null; UPDATE_FAILED = { target, error, at: Date.now() }; return null; }
-          UPDATING = { target, retrying: true, attempt: n + 1, since, at: Date.now() }; setTimeout(() => attempt(n + 1), UPDATE_EVERY).unref(); return null;
-        };
-        const attempt = async (n) => {
-          if (!(await downloadReady(target))) return again(n, `npm lists ${target}, but its download still wasn't there after 20 minutes.`);
-          const e = track("symbiot update", inst, homedir(), (code) => {
-            if (code !== 0) {
-              const o = updateOutcome(readRunLog(join(homedir(), ".symbiot", "agent.log")).slice(-6000));
-              if (o.notYet) again(n, o.why || `npm couldn't find ${target}'s download.`);
-              else { UPDATING = null; UPDATE_FAILED = { target, error: o.why || `npm stopped (exit code ${code}).`, at: Date.now() }; }
-              return;
-            }
-            relaunch();
-          });
-          if (!e) { UPDATING = null; UPDATE_FAILED = { target, error: "Symbiot couldn't start npm.", at: Date.now() }; }
-          return e;
-        };
-        UPDATING = { target, attempt: 1, since, at: Date.now() }; UPDATE_FAILED = null;
-        const e = await attempt(1);
+        const { e, target } = await startUpdate();
         return json(res, { started: true, id: e ? e.id : "", target, ...(UPDATING && UPDATING.retrying ? { waiting: true } : {}) });
       }
       if (u.pathname === "/api/quit") { stopVoices(); res.writeHead(200); res.end("bye"); setTimeout(() => process.exit(0), 150); return; }
@@ -642,12 +731,15 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
     res.writeHead(404); res.end("not found");
   });
   // This same app again (same port+token => same URL), as a relaunch, so it takes over
-  // instead of finding us and bowing out; agents run detached and carry on.
+  // instead of finding us and bowing out; agents run detached and carry on. On the port
+  // it was serving: one that took another (Termux's Symbiot holds 7391 on a phone)
+  // relaunched on 7391, found it busy and exited, so nothing served the app's window.
   let relaunching = false;
   function relaunch() {
     if (relaunching) return; relaunching = true; // once: the next look came before this one had exited, and started a second
+    const at = (server.address() || {}).port, own = at && at !== PORT ? { SYMBIOT_PORT: String(at) } : {};
     server.close(); if (server.closeAllConnections) server.closeAllConnections();
-    try { const ch = spawn(process.execPath, process.argv.slice(1), { detached: true, stdio: "ignore", env: { ...process.env, SYMBIOT_RELAUNCH: "1" }, cwd: homedir() }); ch.unref(); } catch {}
+    try { const ch = spawn(process.execPath, process.argv.slice(1), { detached: true, stdio: "ignore", env: { ...process.env, ...relaunchEnv(), ...own, SYMBIOT_RELAUNCH: "1" }, cwd: homedir() }); ch.unref(); } catch {}
     setTimeout(() => process.exit(0), 1200);
   }
   // A newer Symbiot installed under this one from outside the app (npm install -g in a
@@ -663,6 +755,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
   let announced = false, tries = 0, opened = false;
   server.on("listening", () => {
     if (announced) return; announced = true;
+    resumeUpdate();
     const url = `http://127.0.0.1:${server.address().port}/?t=${TOKEN}`;
     setBrowserHub(`http://127.0.0.1:${server.address().port}/browser?t=${TOKEN}`); // the Symbiot Browser opens on its own page, served from here
     const how = opened || RELAUNCH || process.env.SYMBIOT_NO_OPEN === "1" ? "" : openApp(url); opened = true; // only pop a window the first time (never in tests, never after an update)
@@ -692,12 +785,14 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
   });
   server.listen(PORT, "127.0.0.1");
   checkLatest(); setInterval(checkLatest, 2 * 60 * 1000).unref(); // background update check (every 2 min)
+  setInterval(() => { autoUpdateTick().catch(() => {}); }, Number(process.env.SYMBIOT_AUTO_EVERY) || 60000).unref(); // and it updates itself once nothing's working (autoUpdateDue)
   startWeekly(writeup); // the weekly write-up + notification, when switched on in Settings
   startWatches(); // pages you watch (Screens → Watch), read every few minutes
   // Your phone: the computer listens if it's switched on, the phone asks if it's paired.
   // An Approve from a paired phone is this same Approve, release notes and all.
   setPhoneApprove(async (repo, untasked) => { const notes = await releaseNotes(releaseInput(repo, {})); return untasked ? approveChanges(repo, { tick: [], notes }) : approveRepo(repo, { notes }); });
   startPhone();
+  onAnswered((path, rows) => shareAnswer(path, rows)); // an answer to one agent reaches the others on the same work
   setInterval(() => { try { startWaiting(); } catch {} }, 20000).unref(); // a run that waits for your step starts once the file it names changes
   setInterval(() => { try { mergeEnded({ addTask }); } catch {} }, 20000).unref(); // runs beside a lane's own that ended (also while Symbiot was down): merged back into the lane
   setInterval(() => { try { workTick(); } catch {} }, 20000).unref(); // a waiting task starts once its lane is free (config.autoStart: false leaves it to Go)
@@ -715,4 +810,4 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
   setInterval(() => { try { awaitTick(); } catch {} }, 60000).unref(); // a reply an agent's email waits on: found, and handed on
 }
 
-export { headlessAgent, updateCmd, installedVersion, restartOnto, downloadReady, updateOutcome, changesSince, whatsNew, tarFile, registryChangelog, BROWSER_KEEP, startApp, askRunningApp, isAppRunningWeekly, openApp };
+export { headlessAgent, updateCmd, installedVersion, restartOnto, autoUpdateDue, restartWouldStop, downloadReady, updateOutcome, changesSince, whatsNew, tarFile, registryChangelog, BROWSER_KEEP, startApp, askRunningApp, isAppRunningWeekly, openApp };

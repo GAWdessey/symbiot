@@ -16,7 +16,7 @@ mkdirSync(CFG, { recursive: true });
 let pass = 0, fail = 0;
 const ok = (n, c, got) => { if (c) { pass++; console.log("  ✓ " + n); } else { fail++; console.log("  ✗ " + n + (got !== undefined ? "  got: " + JSON.stringify(got) : "")); } };
 
-const { dispatch, lanesTick, loadLedger, lanesState, MAX_CHAIN, aboutIt, partlyDone, remoteKey, orcaMoves, orcaRelink, stuckHandovers, allowHandover, skipHandover, namedDirs, handingOf } = await import("../lanes.mjs");
+const { dispatch, lanesTick, outcome, loadLedger, lanesState, MAX_CHAIN, aboutIt, partlyDone, remoteKey, orcaMoves, orcaRelink, stuckHandovers, allowHandover, skipHandover, namedDirs, handingOf } = await import("../lanes.mjs");
 const { parseHandoffs, handoverRules, ONLY_YOU, leftToYou, gitWork, agentsGitWork, agentsClicking, agentsCodeWork, heldAsks, agentsPosting, linkedAsks, linkedChore } =await import("../handover.mjs");
 const { buildTasksMd, mergeWhenGreen } = await import("../tasks.mjs");
 {
@@ -57,6 +57,34 @@ try {
   const ph = parseHandoffs("# Handoffs\n### ops\nFind a JDK 17 on this machine.\nWhy: the android build needs it.\n### `GhostAIChat`\nBuild the debug APK.\n## Notes\nnot a handover");
   ok("HANDOFF.md parses into lanes and what's needed", ph.length === 2 && ph[0].lane === "ops" && /JDK 17/.test(ph[0].text) && ph[1].lane === "GhostAIChat" && !/not a handover/.test(ph[1].text), ph);
   ok("the rules list a lane once, never the agent's own", handoverRules(["coral", "coral", "x"], "coral").join("\n").match(/`x`/g).length === 1 && !/: `coral`, /.test(handoverRules(["coral", "x"], "coral")[3]), "");
+
+  console.log("WHAT EACH LANE CAN REACH — ops handed dailify a live .env change it couldn't reach (13 Oct 2026)");
+  {
+    const { sshHosts, envProviders, laneReach, unreachable } = await import("../reach.mjs");
+    const ssh = "Host sts-prod\n  HostName 41.76.1.2\n  User garth\nHost *\n  ServerAliveInterval 30\nHost gh github-work\n";
+    ok("the servers this computer connects to come from its ssh config, wildcards left out", sshHosts(ssh).join() === "sts-prod,41.76.1.2,github-work", sshHosts(ssh));
+    ok("…an alias too short to match safely is left out", !sshHosts(ssh).includes("gh"), sshHosts(ssh));
+    const env = "# keys\nGOOGLE_CLIENT_SECRET=x\nexport TWILIO_AUTH_TOKEN=y\nNEXT_PUBLIC_STRIPE_KEY=z\nJWT_SECRET=a\nAPI_KEY=b\nPORT=3000\nMETA_APP_ID=1\n";
+    ok("a lane's .env gives the providers it holds keys for, names only, no generic words", envProviders(env).join() === "GOOGLE,TWILIO,STRIPE", envProviders(env));
+    const r = laneReach({ dailify: "/x/dailify", coral: "/x/coral" }, { sandboxed: true, ssh, read: (f) => (f === "/x/dailify/.env" ? env : "") });
+    ok("laneReach: sandboxed, the hosts, and keys only for lanes that have some", r.sandboxed && r.hosts.includes("sts-prod") && r.keys.dailify.join() === "GOOGLE,TWILIO,STRIPE" && !r.keys.coral, r);
+    const rules = handoverRules(["dailify", "coral"], "dailify", r).join("\n");
+    ok("a repo's brief: ops reaches the servers, every repo lane reaches none, so a live server's .env is ops's", /`ops`: runs on this computer, outside any sandbox: the servers this computer connects to \(`sts-prod`/.test(rules) && /Every repo lane runs in a sandbox: it writes only in its own folder and reaches no server/.test(rules) && /its `\.env`, a restart, a deploy/.test(rules), rules);
+    ok("…its own lane says it reaches no server, and a server job goes to ops, never back to a repo lane", /Your lane, `dailify`, reaches no server\. If you're handed a job on one, hand that part to `ops`, never back to a repo lane/.test(rules), rules);
+    ok("…and which lane's .env holds which keys", /`dailify` \(GOOGLE, TWILIO, STRIPE\)/.test(rules) && !/`coral` \(/.test(rules), rules);
+    const ops = actBrief("Change WHATSAPP_PROVIDER in the prod .env on sts-prod", { lanes: ["dailify"], reach: r });
+    ok("the ops brief says it too, so ops doesn't hand a server job to a repo lane", /reaches no server/.test(ops) && /`sts-prod`/.test(ops) && !/Your lane,/.test(ops), "");
+    const open = handoverRules(["dailify"], "dailify", { ...r, sandboxed: false }).join("\n");
+    ok("sandbox off: repo lanes reach the same servers as ops", /without a sandbox: they reach the same servers as `ops`/.test(open) && !/reaches no server/.test(open), open);
+    ok("no reach known: the rules are as they were", !/can reach/.test(handoverRules(["dailify"], "dailify").join("\n")), "");
+    ok("unreachable: the servers a handover names that a sandboxed repo lane can't reach; none for ops, or unsandboxed", unreachable("Set WHATSAPP_PROVIDER=meta in /srv/dailify/.env on sts-prod and restart", "dailify", r).join() === "sts-prod" && !unreachable("on sts-prod", "ops", r).length && !unreachable("on sts-prod", "dailify", { ...r, sandboxed: false }).length && !unreachable("the sts-production-notes file", "dailify", r).length, "");
+    const before = calls.add.length;
+    put(coral, "HANDOFF.md", "### GhostAIChat\nSwitch WHATSAPP_PROVIDER to meta in the live .env on sts-prod, then restart the service.\n");
+    dispatch(coral, { ...deps(), reach: r });
+    const sent = calls.add.slice(before)[0] || {};
+    ok("a handover to a repo lane naming a server it can't reach: its task says so, and to send that part to ops", sent.repo === "GhostAIChat" && /^\(handed over by coral\) Symbiot: GhostAIChat runs in a sandbox and can't reach sts-prod\. Do the code part here, and hand what has to change on that server to ops/.test(sent.after || ""), sent);
+    put(coral, "HANDOFF.md", "");
+  }
 
   console.log("TO OPS AND BACK — coral needs a JDK; ops finds it; coral carries on");
   put(coral, "HANDOFF.md", "### ops\nFind a JDK 17 on this machine and give its path.\nWhy: GhostAIChat's android build needs one.\n");
@@ -218,6 +246,9 @@ try {
   ok("…that run only is allowed to read, edit and move files there", grant.additionalDirectories.includes(co) && grant.allow.includes(`Edit(/${co}/**)`) && grant.allow.includes("Bash(git mv:*)") && !grant.allow.some((r) => /^Bash\((bash|sudo|rm)/.test(r)), grant);
   const now2 = loadLedger().handoffs.find((h) => h.id === err.id);
   ok("…the handover is started, there, and no longer waits on you", now2.status === "started" && now2.to.path === ops2 && !now2.reportedAt && !stuckHandovers().some((x) => x.id === err.id), now2);
+  const sentNow = read(opsA, "HANDOFF.md"), sentRows = sentNow.split("\n").filter((l) => /^- /.test(l));
+  ok("…and HANDOFF.md's Sent line says it started, as which run, not \"couldn't hand it over\"", sentRows.length === 1 && /→ \*\*ops\*\*: the user let it through, and ops's agent started on it, as run act-allowed\. "Needs a run that can read/.test(sentRows[0]) && !/couldn't hand it over/.test(sentNow), sentNow);
+  ok("…the rest of HANDOFF.md as it was", /^# Handovers: sent/.test(sentNow) && /## Sent/.test(sentNow), sentNow);
   ok("…a second Allow does nothing", !!allowHandover(err.id, { act: () => { throw new Error("ran again"); } }).error, "");
   put(ops2, "TASKS.md", "- [x] Move the registers\n"); ran(ops2, Date.now() + 5, "All 39 registers moved.");
   lanesTick(deps({ tasks: [] }));
@@ -384,10 +415,84 @@ try {
     put(asker, "HANDOFF.md", "### ops\n" + v1 + "\n"); dispatch(asker, sd());
     put(asker, "HANDOFF.md", "### ops\n" + v2 + "\n"); dispatch(asker, sd());
     ok("the earlier run already over: the new version starts as usual", acts.length === 2 && refreshed.length === 0, acts.length);
+    // dailify, 12 Oct 2026: "New job, not a replacement: restart Kea…" queued behind a 40-minute run on the earlier one
+    going = new Set([sOps]); led.handoffs.length = 0; acts.length = 0;
+    put(asker, "HANDOFF.md", "### ops\n" + v1 + "\n"); dispatch(asker, sd());
+    put(asker, "HANDOFF.md", "### ops\nNew job, not a replacement: " + v2 + "\n"); dispatch(asker, sd());
+    ok("a handover that says it's a new job, not a replacement: a run of its own, even when it reads alike", acts.length === 2 && refreshed.length === 0 && led.handoffs.length === 2, { acts, refreshed });
+    going = new Set();
     led.handoffs.length = 0;
     put(asker, "HANDOFF.md", "### coral\n" + v1 + "\n"); dispatch(asker, sd());
     put(asker, "HANDOFF.md", "### coral\n" + v2 + "\n"); const r2 = dispatch(asker, sd({ tasks: [{ id: "t1" }] }));
     ok("a repo lane, its task still open: the old task gives way to the new one, one row", drops[0] === "t1" && adds.length === 2 && adds[1].text === v2 && led.handoffs.length === 1 && led.handoffs[0].task === "t2" && r2[0].status === "held", { drops, adds, led: led.handoffs });
+  }
+
+  console.log("A REPLACEMENT'S SENT LINE — names the run it waits on, and says when that run starts on it");
+  {
+    // dailify, 12 Oct 2026: "ops's run on that one gets it when it ends" named no run and never changed. Its agent
+    // checked an ops run that had ended, decided nothing had started, and sent the Kea brief again
+    const asker = lane("kea-asker"), kOps = join(CFG, "drafts", "act-ca0f866a"); mkdirSync(join(kOps, ".symbiot"), { recursive: true });
+    const kmap = { ...map, "kea-asker": asker }, led = { handoffs: [] }; let going = new Set();
+    const kd = () => ({ map: kmap, ledger: led, now: Date.now(), running: (p) => going.has(p), tasks: () => [], refresh: () => ({ ok: true }),
+      act: () => ({ ok: true, job: "k1", dir: kOps }) });
+    const k1 = "Kea, the site assistant on sts-prod: put the deployed corpus live, then drop her cached answers that quote the old price.";
+    const k2 = "Kea, the site assistant on sts-prod: put the deployed corpus live, then drop her cached answers that quote the old price, and check www.";
+    put(asker, "HANDOFF.md", "### ops\n" + k1 + "\n"); dispatch(asker, kd()); ran(kOps, Date.now() - 1000, "");
+    going = new Set([kOps]); put(asker, "HANDOFF.md", "### ops\n" + k2 + "\n"); dispatch(asker, kd());
+    const waits = read(asker, "HANDOFF.md").split("\n").filter((l) => /^- /.test(l))[0];
+    ok("while the run on the earlier version goes, the Sent line names it", /replaces the version sent earlier: ops's run act-ca0f866a is on that one, and gets this when that run ends\. "Kea/.test(waits), waits);
+    const L0 = loadLedger(); writeFileSync(join(CFG, "lanes.json"), JSON.stringify({ handoffs: [...L0.handoffs, ...led.handoffs] }));
+    lanesTick({ ...deps(), map: {}, running: () => true, run: () => ({ busy: true }) });
+    ok("…nothing changes while that run is still on the earlier version", read(asker, "HANDOFF.md").split("\n").filter((l) => /^- /.test(l))[0] === waits, read(asker, "HANDOFF.md"));
+    const began = Date.now() + 5; ran(kOps, began, "");
+    lanesTick({ ...deps(), map: {}, running: () => true, run: () => ({ busy: true }) });
+    const now3 = read(asker, "HANDOFF.md").split("\n").filter((l) => /^- /.test(l));
+    ok("…once a run there starts on it, the Sent line says so, and when", new RegExp(`replaces the version sent earlier: ops's run act-ca0f866a started on it at ${new Date(began).toTimeString().slice(0, 5)}\\. "Kea`).test(now3[0])&& now3.length === 1 && /^# Handovers: sent/.test(read(asker, "HANDOFF.md")), now3);
+    ok("…and remembers it did", !!loadLedger().handoffs.find((x) => x.to.path === kOps && x.pickedAt === began), "");
+    writeFileSync(join(CFG, "lanes.json"), JSON.stringify(L0));
+  }
+
+  console.log("TWO OPS RUNS ON ONE JOB — an addition goes to the run on it; a new run is told what's going");
+  {
+    // dailify, 12 Oct 2026: "resume the blocked jobs", then "an addition to the 12:51 brief", each a run of its own,
+    // texting the user PINs in turn and overwriting each other's audit sections
+    const dl = lane("dailify"), dmap = { ...map, dailify: dl }, first = join(CFG, "drafts", "act-0a1b2c3d"), other = join(CFG, "drafts", "act-99887766");
+    for (const p of [first, other]) mkdirSync(join(p, ".symbiot"), { recursive: true });
+    writeFileSync(join(other, ".symbiot", "handoff.json"), JSON.stringify({ name: "Agent: **Read-only audit for moving production Dailify…" }));
+    const led = { handoffs: [] }, acts = []; let going = new Set([other]);
+    const dd = (extra = {}) => ({ map: dmap, ledger: led, now: Date.now(), running: (p) => going.has(p), tasks: () => [], dirs: [first, other],
+      act: (text, o) => { acts.push({ text, o }); return { ok: true, job: "d" + acts.length, dir: first }; }, ...extra });
+    const resume = "**Resume the dailify.co.za jobs that were blocked on sign-ins.** The user is signed in to domains.co.za in the Symbiot browser.";
+    put(dl, "HANDOFF.md", "### ops\n" + resume + "\n"); dispatch(dl, dd());
+    const told = acts[0].o.alongside || "";
+    ok("a new ops run while another is going: its brief lists that run, by folder", /^## Other ops runs going now/.test(told) && /`act-99887766` \(~\/\.config\/symbiot\/drafts\/act-99887766\): "Read-only audit for moving production Dailify…"/.test(told), told);
+    ok("…and says not to redo its steps or spoil its sign-in, to add to a shared file without rewriting it, and to check before crediting the user", /don't redo its steps/.test(told) && /new PIN/.test(told) && /never rewrite or delete what another run wrote/.test(told) && /rather than guessing it was the user/.test(told), told);
+    ok("…the brief carries it, above its task", (() => { const b = actBrief("x", { alongside: told }); return b.indexOf("## Other ops runs going now") > 0 && b.indexOf("## Other ops runs going now") < b.indexOf("## Tasks"); })(), "");
+    const sent = read(dl, "HANDOFF.md");
+    ok("HANDOFF.md's Sent line names the run, so a follow-up can name it too", /ops's agent started on it, as run act-0a1b2c3d/.test(sent), sent);
+    going = new Set([first, other]); led.handoffs[0].at = Date.now() - 60000; ran(first, Date.now() - 50000, "");
+    const sudo = "**Addition to run act-0a1b2c3d (resume the blocked jobs): the user has OK'd sudo on sts-prod for these steps.**";
+    put(first, "TASKS.next.md", ""); put(dl, "HANDOFF.md", sent + "\n### ops\n" + sudo + "\n");
+    const s2 = dispatch(dl, dd());
+    ok("an addition naming that run, while it runs: no second run, one ledger row", acts.length === 1 && s2.length === 1 && led.handoffs.length === 1 && led.handoffs[0].added === 1 && led.handoffs[0].text === resume, { acts: acts.length, led: led.handoffs });
+    ok("…it waits in that run's folder for when it ends, and its ANSWERS.md says it adds to the work, not replaces it", /OK'd sudo on sts-prod/.test(read(first, "TASKS.next.md")) && /### More from dailify while you ran/.test(read(first, "ANSWERS.md")) && /doesn't replace it/.test(read(first, "ANSWERS.md")), [read(first, "TASKS.next.md").slice(0, 300), read(first, "ANSWERS.md")]);
+    const sent2 = read(dl, "HANDOFF.md");
+    ok("…the Sent list says where it went, the first line still the run on it", /added to act-0a1b2c3d, the ops run already on what it adds to/.test(sent2.split("\n").filter((l) => /^- /.test(l))[0]) && /started on it, as run act-0a1b2c3d/.test(sent2), sent2);
+    ok("…the block says the run is on it, and does the addition when it's through", /act-0a1b2c3d is on it now, and does what you added/.test(handingOf(dl, { map: dmap, ledger: led, running: (p) => going.has(p), work: () => ({}) })[0].why), handingOf(dl, { map: dmap, ledger: led, running: (p) => going.has(p), work: () => ({}) }));
+    ok("…not picked up again", dispatch(dl, dd()).length === 0 && acts.length === 1, acts.length);
+    const job6 = "**Add to act-0a1b2c3d: run job 6 in DAILIFY-DOMAIN-MOVE-OPS-JOBS.md now.** The user OK'd it.";
+    put(dl, "HANDOFF.md", read(dl, "HANDOFF.md") + "\n### ops\n" + job6 + "\n"); dispatch(dl, dd());
+    const held = read(first, "TASKS.next.md");
+    ok("a second addition before the run ends joins the first, not replaces it", acts.length === 1 && /OK'd sudo on sts-prod/.test(held) && /run job 6/.test(held) && led.handoffs[0].added === 2, held.slice(0, 600));
+    ok("…not reported back when the run that was going ends: the additions haven't run yet", outcome(led.handoffs[0], { running: () => false, tasks: [] }) === null, led.handoffs[0]);
+    going = new Set([first]);
+    const tailEnd = "### ops\nAdd to act-0a1b2c3d: also check www.";
+    put(dl, "HANDOFF.md", tailEnd + "\n"); led.handoffs[0].reportedAt = Date.now();
+    dispatch(dl, dd());
+    ok("a run that already came back takes no additions: the handover starts a run of its own", acts.length === 2, acts.length);
+    led.handoffs.length = 0; acts.length = 0; going = new Set();
+    put(dl, "HANDOFF.md", "### ops\n" + resume + "\n"); dispatch(dl, dd());
+    ok("with no other ops run going, the brief says nothing about others", !acts[0].o.alongside, acts[0].o.alongside);
   }
 
   console.log("A HANDOVER WAITING — the lane's block says whether its lane has it, and if not, why");
@@ -407,14 +512,14 @@ try {
     ok("…a folder Symbiot doesn't have as a lane: says it's never read", /doesn't have this folder as a lane/.test(handingOf(wa, { map, ledger: led, changedAt: Date.now() - 600000 })[0].why), "");
     dispatch(wa, wd()); led.handoffs[0].at = Date.now() - 120000; going = new Set([wOps]); ran(wOps, Date.now() - 60000, "");
     const sent = read(wa, "HANDOFF.md");
-    ok("once it's sent, HANDOFF.md says so: no section left to send, a dated line for what went where", parseHandoffs(sent).length === 0 && /^# Handovers: sent/.test(sent) && /^- \d{4}-\d\d-\d\d \d\d:\d\d → \*\*ops\*\*: ops's agent started on it\. "What's needed: set up Meta's free test number/m.test(sent) && /ANSWERS\.md/.test(sent), sent);
+    ok("once it's sent, HANDOFF.md says so: no section left to send, a dated line for what went where", parseHandoffs(sent).length === 0 && /^# Handovers: sent/.test(sent) && /^- \d{4}-\d\d-\d\d \d\d:\d\d → \*\*ops\*\*: ops's agent started on it, as run act-wa \(name that in a handover that adds to it while it runs\)\. "What's needed: set up Meta's free test number/m.test(sent) && /ANSWERS\.md/.test(sent), sent);
     const on = hv();
     ok("…and the block still shows it, from the ledger, with how far ops's run has got", on.length === 1 && on[0].gone && /^Sent: its agent is on it now/.test(on[0].why) && on[0].doing === "Filling in the app's settings" && on[0].progress.done === 2, on);
     ok("…nothing sent twice: the next pass starts nothing", dispatch(wa, wd()).length === 0 && acts.length === 1, acts.length);
     put(wa, "HANDOFF.md", sent + "\n### ops\n" + v2 + "\n"); dispatch(wa, wd());
     const behind = hv(), sent2 = read(wa, "HANDOFF.md");
     ok("a changed version added under the list: it goes to the run on the earlier one, which gets it when it ends", acts.length === 1 && behind.length === 1 && behind[0].gone && /^Sent: ops is on the earlier version now .* gets this one when that run ends/.test(behind[0].why), behind);
-    ok("…and the list now has both, newest first, and nothing left to send", parseHandoffs(sent2).length === 0 && /replaces the version sent earlier: ops's run on that one gets it when it ends\. "What's needed: set up Meta's free test number for the WhatsApp module in a new VASINC/.test(sent2.split("\n").filter((l) => /^- /.test(l))[0]) && sent2.split("\n").filter((l) => /^- /.test(l)).length === 2, sent2);
+    ok("…and the list now has both, newest first, and nothing left to send", parseHandoffs(sent2).length === 0 && /replaces the version sent earlier: ops's run act-wa is on that one, and gets this when that run ends\. "What's needed: set up Meta's free test number for the WhatsApp module in a new VASINC/.test(sent2.split("\n").filter((l) => /^- /.test(l))[0]) && sent2.split("\n").filter((l) => /^- /.test(l)).length === 2, sent2);
     going = new Set(); led.handoffs[0].at = Date.now(); // the new brief started once the run ended
     ran(wOps, Date.now() + 20, ""); going = new Set([wOps]);
     ok("…once it ends and starts on the new version: sent, on it now", hv()[0].gone && /on it now/.test(hv()[0].why), hv());
@@ -440,6 +545,56 @@ try {
     put(wa, "HANDOFF.md", "");
     led.handoffs.length = 0;
     ok("nothing handed over: nothing", handingOf(wa, { map: wmap, ledger: led }).length === 0, "");
+  }
+  console.log("ONE ANSWER, EVERY AGENT ON THAT WORK — Garth answered evra_avm's data loss three times (13 Oct 2026)");
+  {
+    const { shareAnswer, sharedFor, sharedTo, answerReaches } = await import("../lanes.mjs");
+    const A = await import("../agents.mjs"), { buildTasksMd: brief } = await import("../tasks.mjs");
+    const ask = (p, qs, why = "The evra_avm data, from the read-only checks.") => put(p, "QUESTIONS.md", "## Questions\n" + qs.map((q) => "### " + q + "\n" + why + "\n- 🤖 Agent: do it (recommended)\n- skip it\n").join("\n"));
+    // card 1: evra_platform's read-only investigation; card 2: the ops run it handed sts-prod's checks to, one more question queued
+    const evra = lane("evra_platform"), evraOps = join(CFG, "drafts", "act-evra01"), other = join(CFG, "drafts", "act-evra02"), elsewhere = join(CFG, "drafts", "act-dlfy01"), spent = join(CFG, "drafts", "act-evra03");
+    const q1 = "Send the Supabase ticket about evra_avm now?", q2 = "Check the two shell histories only sudo can read, for an evra_avm dump?", q3 = "Restore from the evra_avm snapshot?";
+    ask(evra, [q1]); put(evra, "TASKS.md", "- [ ] Find out what happened to evra_avm's data\n");
+    ask(evraOps, [q2, "Ask AWS support for the volume's snapshots?"]); put(evraOps, "TASKS.md", "- [ ] Read-only checks on sts-prod (16.28.15.189)\n");
+    ask(other, [q3]); put(other, "TASKS.md", "- [ ] Restore plan\n");
+    ask(elsewhere, ["Move dailify.co.za's DNS now?"], "Its nameservers, for the site."); put(elsewhere, "TASKS.md", "- [ ] DNS\n");
+    put(spent, "TASKS.md", "- [x] evra_avm: list the tables\n"); // finished, nothing open: left alone
+    const eLedger = { handoffs: [{ id: "ev1", key: "ev1", from: { lane: "evra_platform", path: evra }, to: { lane: "ops", path: evraOps }, text: "Read-only checks on sts-prod for the evra_avm dump", at: Date.now() - 3600000, chain: 1, status: "started" }] };
+    const eMap = { ...map, evra_platform: evra }, runsList = [evra, evraOps, other, elsewhere, spent].map((p) => ({ path: p, name: "Agent", startedAt: Date.now() - 600000 }));
+    const started = [], o = { ledger: eLedger, runs: () => runsList, running: () => false, map: eMap, run: (p) => { started.push(p); return { id: "j" + started.length }; }, cfg: { profile: { name: "Garth White" } } };
+    const said = "first check if evra_avm is saved somewhere else";
+    const reach = answerReaches(evra, q1 + "\n" + said, o);
+    ok("an answer to card 1 reaches card 2's agent (a handover links them) and another on evra_avm, not dailify's or a finished one", reach.map((r) => r.path).sort().join() === [evraOps, other].sort().join() && reach.find((r) => r.path === evraOps).why === "handover" && reach.find((r) => r.path === other).why === "evra_avm", reach.map((r) => [r.path, r.why]));
+    const sh = shareAnswer(evra, [{ q: q1, a: said }], o);
+    const opsAns = read(evraOps, "ANSWERS.md");
+    ok("each gets it in its ANSWERS.md: the question, Garth's answer, and to use it and not ask if it settles its own", sh.length === 2 && opsAns.includes(said) && opsAns.includes(q1) && /Garth's answer to evra_platform/.test(opsAns) && /take that question out of QUESTIONS.md/.test(opsAns) && /answered by Garth's reply to evra_platform/.test(opsAns) && /ask only the part that's left/.test(opsAns), opsAns);
+    ok("…with a question open and no run going, each starts on it and decides", started.sort().join() === [evraOps, other].sort().join() && sh.every((r) => r.started), [started, sh]);
+    ok("…the others are left alone", !read(elsewhere, "ANSWERS.md") && !read(spent, "ANSWERS.md"), "");
+    started.length = 0;
+    ok("the same answer again isn't shared twice", shareAnswer(evra, [{ q: q1, a: said }], o).length === 0 && !started.length && read(evraOps, "ANSWERS.md").split(said).length === 2, "");
+    const busyRun = shareAnswer(evra, [{ q: q1, a: "or set up our own supabase" }], { ...o, running: (p) => p === evraOps });
+    ok("an agent at work gets it too, for a question it was about to ask, and isn't started twice", busyRun.some((r) => r.path === evraOps && !r.started) && read(evraOps, "ANSWERS.md").includes("set up our own supabase"), busyRun);
+    const card = sharedTo(evraOps, { cfg: o.cfg });
+    ok("card 2 on Home says Garth answered evra_platform on this, and what", card && card.lane === "evra_platform" && /supabase|evra_avm/.test(card.a) && card.who === "Garth", card);
+    // through the answer itself: Home, the Workdesk and a phone all answer with answerQuestions(…, { share: true })
+    writeFileSync(join(CFG, "runs.json"), JSON.stringify(runsList)); writeFileSync(join(CFG, "lanes.json"), JSON.stringify(eLedger));
+    put(evra, "QUESTIONS.md", "## Questions\n### Which Supabase project holds evra_avm now?\nfor the ticket\n- 🤖 Agent: the old one (recommended)\n- the new one\n");
+    put(evraOps, "QUESTIONS.md", "## Questions\n### " + q2 + "\nfor the evra_avm dump\n- 👤 You (only you: sudo on sts-prod): run that one line\n- skip it\n");
+    A.onAnswered((p, rows) => shareAnswer(p, rows, { run: () => ({ id: "j" }), map: eMap }));
+    const r1 = A.answerQuestions(evra, [{ q: "Which Supabase project holds evra_avm now?", a: "the old one, ap-south-1" }], { share: true });
+    ok("answering card 1 says it went to card 2's agent too", r1.ok && (r1.also || []).includes("ops"), r1);
+    put(evra, "QUESTIONS.md", "## Questions\n### Which region?\nfor the ticket\n- 🤖 Agent: ap-south-1 (recommended)\n- another\n");
+    const r0 = A.answerQuestions(evra, [{ q: "Which region?", a: "ap-south-1 for evra_avm" }], {});
+    ok("…only the user's answers are shared (not Symbiot's own picks)", r0.ok && !r0.also, r0);
+    A.onAnswered(null);
+    // before asking anything new: a run that starts on that work later is told what's answered, and every brief says to check
+    const more = sharedFor(evra, "Check the evra_avm backups on sts-prod", { ledger: eLedger, cfg: o.cfg });
+    ok("a new run on that work is told what Garth already answered there", /What Garth has already answered on this work/.test(more) && more.includes(said) && /don't ask/.test(more), more);
+    calls.act.length = 0; put(evra, "HANDOFF.md", "### ops\nNew job: check the evra_avm backups in S3, read-only.\n");
+    dispatch(evra, { ...deps(), map: eMap, ledger: eLedger });
+    ok("…a handover on it to ops carries it in its brief", calls.act.length === 1 && String(calls.act[0].o.alongside || "").includes(said), calls.act[0] && calls.act[0].o.alongside);
+    ok("and every brief says to read ANSWERS.md again before asking, for answers given to another agent", /Before you ask the user anything, read .\.symbiot\/ANSWERS\.md. again/.test(brief("coral", {}, [{ id: "1", text: "x", repo: "coral" }])) && /what this brief says the user has already answered/.test(actBrief("x", { lanes: [] })), "");
+    writeFileSync(join(CFG, "lanes.json"), JSON.stringify({ handoffs: [] }));
   }
 } finally {
   rmSync(HOME, { recursive: true, force: true });

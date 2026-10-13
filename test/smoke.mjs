@@ -8,7 +8,7 @@
 //      asserting none 404 — and fail if the UI calls an endpoint this test
 //      doesn't cover, so a new route can't slip past unexercised;
 //   4. with a newer version on a fake registry, the page offers the update once
-//      and, after an update that didn't take, stops offering it (the 0.28.2 loop).
+//      and only says an update failed when the server does (with why).
 // Runs in an isolated HOME, on a random port, with AI keys stripped and a fake
 // npm registry, so it never touches real config or repos, a running app, npm,
 // or a paid model.
@@ -29,7 +29,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const LATEST = "999.0.0";
 const reg = createServer((req, res) => { res.writeHead(200, { "content-type": "application/json" }); res.end(JSON.stringify({ "dist-tags": { latest: LATEST } })); });
 await new Promise((r) => reg.listen(0, "127.0.0.1", r));
-const env = { ...process.env, HOME, USERPROFILE: HOME, SYMBIOT_NO_OPEN: "1", SYMBIOT_NO_SIGNIN: "1", SYMBIOT_PORT: String(20000 + Math.floor(Math.random() * 20000)), SYMBIOT_REGISTRY: `http://127.0.0.1:${reg.address().port}` };
+const env = { ...process.env, HOME, USERPROFILE: HOME, SYMBIOT_NO_OPEN: "1", SYMBIOT_NO_SIGNIN: "1", SYMBIOT_NO_AUTO_UPDATE: "1", SYMBIOT_PORT: String(20000 + Math.floor(Math.random() * 20000)), SYMBIOT_REGISTRY: `http://127.0.0.1:${reg.address().port}` };
 for (const k of ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "OPENAI_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY", "SYMBIOT_MODEL"]) delete env[k];
 const child = spawn(process.execPath, [join(HERE, "..", "index.mjs"), "app"], { env, stdio: ["ignore", "pipe", "pipe"] });
 let buf = "";
@@ -176,6 +176,8 @@ const calls = [
   ["/api/pending/diff?repo=x", "GET"],
   ["/api/pending/approve", "POST"], // no repo -> "nothing awaiting review", no git runs
   ["/api/pending/sendback", "POST"],
+  ["/api/pending/send", "POST"],    // no repo -> "repo not found", nothing pushed
+  ["/api/pending/leave", "POST"],   // no repo -> "repo not found", nothing forgotten
   ["/api/automerge", "POST"],       // per-repo auto-merge opt-in toggle
   ["/api/agent/grant", "POST"],     // grant the agent a tool/folder it asked for
   ["/api/agents/answer", "POST"],   // no path -> "no agent has run there", nothing written
@@ -361,18 +363,14 @@ try {
     const drift = apiCalls.filter(([p, m]) => !(p in NOT_HIT) && !table.has(p + " " + m)).map(([p, m]) => `UI sends ${m} ${p}`);
     ok(`the UI's ${apiCalls.length} api() calls use the methods this test hits`, apiCalls.length > 0 && drift.length === 0, [...new Set(drift)]);
 
-    console.log("UPDATE — the page offers a newer version once, and stops if the update didn't take");
+    console.log("UPDATE — the page offers a newer version, and only the server says an update failed");
     const { version } = await (await fetch(base + "/api/ping", { headers: H })).json();
     ok(`a newer version on npm (${LATEST}) shows the Update & restart button`, ui.bar.includes(LATEST) && ui.bar.includes("doupd"), ui.bar);
-    // the page sets this before it updates; seeing the SAME version after the
-    // restart means the install didn't advance — the button would just loop
-    const stuck = await runUi(js, page, { storage: { symbiot_update_tried: version }, handlers: false, ping: { relaunched: true } });
-    ok("after an update that didn't take: no button, tells you how to update by hand", stuck.errors.length === 0 && !stuck.bar.includes("doupd") && /didn't take/.test(stuck.bar) && /npm install -g symbiot@latest/.test(stuck.bar) && /restarts onto it by itself/.test(stuck.bar), { errors: stuck.errors, bar: stuck.bar });
-    // you pressed Update, and the app crashed (or you restarted the computer) before it could: 2026-10-12
-    const crashed = await runUi(js, page, { storage: { symbiot_update_tried: version }, handlers: false });
-    ok("after a crash or a reboot, not the update's own restart: no false 'didn't take', the button again", crashed.errors.length === 0 && crashed.bar.includes("doupd") && !/didn't take/.test(crashed.bar), crashed.bar);
-    const moved = await runUi(js, page, { storage: { symbiot_update_tried: "0.0.1" }, handlers: false });
-    ok("after an update that advanced: offers the next one normally", moved.errors.length === 0 && moved.bar.includes("doupd"), moved.bar);
+    // the page used to remember a click and, on any restart still on that version, say the
+    // update "didn't take" with npm never run (0.63.9, 2026-10-12): now that's the server's
+    // to say (its updateFailed, with why: test/app.mjs), so the button stays
+    const stuck = await runUi(js, page, { storage: { symbiot_update_tried: version }, handlers: false });
+    ok("a page that remembers clicking Update on this version still offers it, and doesn't guess it failed", stuck.errors.length === 0 && stuck.bar.includes("doupd") && !/didn't take/.test(stuck.bar), { errors: stuck.errors, bar: stuck.bar });
 
     console.log("ANDROID APP — Settings offers the Symbiot running in Termux, and back");
     const said = [];

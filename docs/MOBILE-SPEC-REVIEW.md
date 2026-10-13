@@ -1,5 +1,26 @@
 # Mobile companion spec review
 
+## Where it stands now (13 Oct 2026, after 0.63.10)
+
+The review below is as written on 9 Oct, against 0.58.2. All ten of its tasks have shipped since (0.59 to 0.63), so most of its "Gaps" are gone. What's left is the list of fixes in `symbiot-mobile/FINE-TUNE.md`.
+
+| Task | Now |
+|---|---|
+| 1. Encrypt the link | Done. X25519 at pairing, HKDF, then AES-256-GCM on every request and answer, stamped against replay (`phone.mjs` seal/unseal). Unlike this plan, the pairing code isn't mixed into the key: only the QR checks the computer's fingerprint (FINE-TUNE 12). |
+| 2. QR pairing | Done (`qr.mjs`, `site/pair/`, the app opens the QR's link). Typed pairing stays for Termux. |
+| 3. Find it without an address | Done. The computer announces itself by mDNS under a neutral name with its key's fingerprint (`mdns.mjs`); the Android app looks through Android's own discovery, Termux on the network itself. |
+| 4. "Your phone" in Setup | Done: a `phone` step on a computer, a `computer` step first in the Android app (`home.mjs` ONB_STEPS). |
+| 5. Reconnect after a network switch | Done in the Android app (its network callback asks at once). Termux only has the 2-minute poll, sooner after a failure. |
+| 6. A copy on the phone | Done (`computer.json`), with the computer's newest reports too. |
+| 7. Out of reach | Done: one line, with when it last heard from the computer. |
+| 8. Queue and send | Done (`phone-queue.json`): add and tick tasks, answer agents, approve; each applied once by id, the computer's later change wins. Since 13 Oct a change that fails comes back as failed rather than blocking the queue, and unpairing drops the whole queue. |
+| 9. Relay away from home | Done, and live at relay.symbiot.co.za (a Cloudflare Worker, `relay/`). Since 13 Oct the phone goes to it first once it's away, and says when the relay, not the computer, was the trouble. What it can see is in `relay/README.md`. |
+| 10. Protect stored keys | Done: the computer keeps only a hash of each phone's token and its private key in `secrets.json`; the Android app keeps its half sealed by the Keystore. Since 13 Oct that half no longer sits in the environment every agent inherits. |
+
+Still open, from the Gaps and Risks below: no iOS app; the link listens on every network and announces itself wherever it's on (FINE-TUNE 15); no rate limit on pairing attempts (14); re-pairing leaves the old credential valid (13). The decisions at the end stand.
+
+---
+
 Reviewed: *TECHNICAL ARCHITECTURE & SYSTEM SPECIFICATION: Local-First SaaS & Mobile Companion Design*, v1.0.0, a 3-page PDF (`~/Downloads/System Design Specification - Local-First SaaS Companion.pdf`, 2026-10-09). It names no product, so this review reads it against Symbiot as of 0.58.2. Section numbers (§1 to §8) are the spec's own.
 
 What Symbiot has today, in short: the computer runs `symbiot app`, a Node server on 127.0.0.1 behind one per-install token (`server.mjs` 205-209, 258-261). Everything it keeps is JSON files under `~/.config/symbiot/` (`core.mjs` 22, 36: `config.json`, `tasks.json`, `watch.json`, `mind.json` and the rest). The phone is either Symbiot in Termux or the Android app (`android/`), and both run a whole separate Symbiot (Node inside the APK, shown in a WebView). The two meet only through **Watch on your phone** (`phone.mjs`). It's switched on in Settings. The computer listens on port 7392 for a 6-digit pairing code and for "what's new since …". The phone types in the computer's address and the code, then asks every 2 minutes and turns the answer into notifications. It is read-only by design (`phone.mjs` 1-14).

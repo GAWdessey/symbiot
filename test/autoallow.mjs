@@ -186,6 +186,14 @@ ok("...while one still open asks as before", live && !live.done && live.labels[0
   ok("Allow with words that sound like git turns the list on", r.ok && (set.permissions.allow || []).some((x) => /13\.51\.104\.186 git -C \* log/.test(x)), [r, set.permissions.allow]);
   ok("...and never tells the agent the permission is its own git work", !/that git work is yours/.test(ans), ans.slice(-400));
 }
+// An answer that is another open question's option is refused (LinkedIn sign-in, 2026-10-13)
+console.log("ANSWER FROM ANOTHER QUESTION — refused");
+writeFileSync(join(s, "ANSWERS.md"), "# Answers\n");
+writeFileSync(join(s, "QUESTIONS.md"), `## Questions\n\n### Sign in to LinkedIn?\nSigned out.\n- 👤 You: sign in to linkedin.com in the Symbiot Browser\n- skip it\n\n### How should I post the draft?\nReady.\n- post it through Symbiot's browser, already signed in to LinkedIn (recommended)\n- leave it as a draft\n`);
+const stray = a.answerQuestions(run, [{ q: "Sign in to LinkedIn?", a: "post it through Symbiot's browser, already signed in to LinkedIn" }]);
+ok("an option of a different question is not saved under this one", stray.error && !/Sign in to LinkedIn/.test(readFileSync(join(s, "ANSWERS.md"), "utf8")), stray);
+const mine = a.answerQuestions(run, [{ q: "Sign in to LinkedIn?", a: "skip it" }]);
+ok("...while its own option and typed words still are", mine.ok && mine.saved === 1, mine);
 rmSync(HOME, { recursive: true, force: true });
 console.log((fail ? "✗" : "✓") + " autoallow: " + pass + " passed, " + fail + " failed");
 if (fail) process.exit(1);

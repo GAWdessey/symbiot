@@ -2,6 +2,40 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.64.0 — 2026-10-13
+
+- Added `symbiot capture --file` for a product's own video: it goes into the pick tray with its sound, and faces and names get blur boxes.
+- Fixed failed updates so the bar now says why the update failed and offers Try again.
+- Fixed updates so they wait for the download to finish and check it's available before installing.
+- Added a mark in Connections showing which sites agent runs can use too, before you link them.
+- Changed the Dashboard to lead with what you watch, and to show Posts only once it can draft.
+- Fixed Home's right-hand orbs covering zone names on screens 1366 to 1440 pixels wide.
+- Added a "Pick your agent" step on Home's first run, with one click for the agent Symbiot found.
+- Added a prompt asking to see your inbox the first time a run waits on a reply that nothing could notice.
+- Changed Posts to stay hidden until an AI is connected and LinkedIn is linked or your voice is filled in, with one line instead.
+- Added first steps at the top of Settings that tick themselves off as you finish them and disappear once all are done.
+- Changed Approve on a Marketing plan to just mark it accepted, instead of trying to post it.
+- Added sharing of your answers with the other agents on the same work, so they stop asking what you've already answered.
+- Fixed the failing automated checks on a pending improvement, without changing what it does.
+- Changed the phone setup guide to say the relay is live, phones have paired, and what the relay can see.
+- Fixed the phone link's secret being visible to the agents and tools the Android app starts.
+- Changed the phone to say when the relay is busy or an answer is too big, instead of calling the computer asleep.
+- Fixed the phone treating a slow computer as unreachable while loading its latest state.
+- Changed the phone to try the relay first when away from home, switching back to Wi-Fi once the computer answers there.
+- Fixed the Android app's search for your computer on the network running out of time before it finished.
+- Changed the Android app to restart Symbiot by itself after it stops, up to three times, then show "Symbiot keeps stopping".
+- Fixed phone requests failing with "Check the time on your phone" after a clock drifted; the phone now keeps in step.
+- Fixed the phone giving up when another device took the computer's old address; only replies with the computer's key now count.
+- Fixed Update & restart stopping the Android app's Symbiot when Termux's Symbiot was already using the usual port.
+- Fixed "Use the app's own Symbiot" leaving Termux's Symbiot running, so the two no longer both run agents and the weekly write-up.
+- Fixed phone sync stopping for good after one failed change; failures now come back with why, and unpairing drops what's queued.
+- Fixed a replacement handover never starting when the run it replaced had already finished.
+- Changed Approve to open a fresh branch and pull request when the branch's earlier one was already merged.
+- Added automatic updates that install a new version within minutes whenever no agent is working.
+- Fixed a handover you let through still being listed as "couldn't hand it over" after it had started.
+- Changed follow-up handovers so a second run on the same task knows the first exists, instead of duplicating its work.
+- Changed nothing in the app for moving company logins to a new email address; that move happens outside this release.
+
 ## 0.63.12
 
 - **`symbiot screens upload` sends a photo through WhatsApp's "Photos & videos", not the sticker box.** When the only file box found is a page-wide guess ("the only / nearest file box on the page") and the target is a button or menu item, it now presses the target and catches its own file dialog first; the guess is only the fallback.
