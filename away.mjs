@@ -110,6 +110,16 @@ function installShortcut({ cmd, home = homedir(), desktop = process.env.XDG_CURR
   return { ok: true, file: f, replaced: /key:\s*"grave"/.test(had) };
 }
 
+// The app puts the shortcut in by itself on COSMIC: only into an empty Super+` slot,
+// so it never takes a key the user chose.
+function ensureShortcut(opts = {}) {
+  const { home = homedir(), desktop = process.env.XDG_CURRENT_DESKTOP || "" } = opts;
+  if (!/cosmic/i.test(desktop)) return { skipped: "not COSMIC" };
+  let had = ""; try { had = readFileSync(COSMIC_CUSTOM(home), "utf8"); } catch {}
+  if (/key:\s*"grave"/.test(had)) return { skipped: "Super+` is already taken" };
+  return installShortcut(opts);
+}
+
 // Uninstalling: our Super+` line comes out of COSMIC's custom shortcuts; the file
 // goes if nothing else was in it. True when there was one.
 function removeShortcut(home = homedir()) {
@@ -120,4 +130,4 @@ function removeShortcut(home = homedir()) {
   try { if (!rest.replace(/[{}\s]/g, "")) unlinkSync(f); else writeFileSync(f, rest); } catch {}
   return true;
 }
-export { removeShortcut, placeable, grantProfile, parseMonitors, screens, awayQueries, openAway, closeAway, awayOpen, toggleAway, withShortcut, installShortcut, COSMIC_CUSTOM };
+export { removeShortcut, placeable, grantProfile, parseMonitors, screens, awayQueries, openAway, closeAway, awayOpen, toggleAway, withShortcut, installShortcut, ensureShortcut, COSMIC_CUSTOM };

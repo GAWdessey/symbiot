@@ -17,7 +17,7 @@ import { releaseNotes, parseNotes } from "../writeups.mjs";
 import { VERSION, sameTask, uniqueTasks } from "../core.mjs";
 import { mailActivity } from "../mail.mjs";
 import { pngSize, pngDecode, splitPng, stitchPng, stitchListPng, captureCmds, clickCmds, portalAppId, monitorCmds, parseCosmicRandr, parseWlrRandr, parseKscreen, parseXrandr, parseLines, tidyMonitors, monitorAreas } from "../screens.mjs";
-import { siteUrl, browserArgs, isTrusted, isSend } from "../headless.mjs";
+import { showScreen, siteUrl, browserArgs, isTrusted, isSend } from "../headless.mjs";
 import { deflateSync, gzipSync } from "node:zlib";
 import { changesSince, whatsNew, tarFile, downloadReady, updateOutcome } from "../server.mjs";
 import { weeklyDue, lastSlot, autostartFile, autostartContent, notifyCmd } from "../desktop.mjs";
@@ -357,6 +357,16 @@ try {
     writeFileSync(s + "QUESTIONS.md", "## Questions\\n### Allow it all?\\n- 👤 You (only you: a permission): allow the list in .symbiot/allowlist.proposed.json\\n");
     out.answer7 = a.answerQuestions(dir, [{ q: "Allow it all?", a: "👤 You (only you: a permission): allow the list in .symbiot/allowlist.proposed.json" }]);
     out.local7 = JSON.parse(readFileSync(dir + "/.claude/settings.local.json", "utf8")); out.answers7 = readFileSync(s + "ANSWERS.md", "utf8");
+    writeFileSync(s + "allowlist.proposed.json", JSON.stringify({ permissions: { allow: ["Bash(ssh -o BatchMode=yes ubuntu@203.0.113.9:*)"] } }));
+    const agentOpt = "🤖 Agent: allow the list in .symbiot/allowlist.proposed.json (recommended)";
+    writeFileSync(s + "QUESTIONS.md", "## Questions\\n### Can I check the VM?\\n- " + agentOpt + "\\n- skip the VM part\\n");
+    out.answer8 = a.answerQuestions(dir, [{ q: "Can I check the VM?", a: agentOpt }]);
+    out.local8 = JSON.parse(readFileSync(dir + "/.claude/settings.local.json", "utf8"));
+    // a card that outlived its question (reworded since): Allow on it still turns the open permission's list on
+    writeFileSync(s + "allowlist.proposed.json", JSON.stringify({ permissions: { allow: ["Bash(python3 seed.py)"] } }));
+    writeFileSync(s + "QUESTIONS.md", "## Questions\\n### Let this run execute the seeding script?\\n- 👤 You (only you: a permission): allow the list in .symbiot/allowlist.proposed.json\\n- 🤖 Agent: skip it (recommended)\\n");
+    out.answer9 = a.answerQuestions(dir, [{ q: "Run the seeding on the live project?", a: "🤖 Agent: allow the run to execute python3 seed.py (recommended)" }]);
+    out.local9 = JSON.parse(readFileSync(dir + "/.claude/settings.local.json", "utf8"));
     a.setHandoffCmd('claude -p "{prompt}" --allowedTools "Bash(node:*)" "Bash(--allowedtools:*)"'); out.flag = a.grantAgent({ tool: "--allowedTools" }); out.flag2 = a.grantAgent({ tool: "dig" });`);
   const ee = ((er2.list || []).find((e) => e.path === erDir)) || {};
   ok("after a restart, a run that stopped on questions is listed, marked earlier, with its questions", ee.earlier === true && ee.status === "done" && ((ee.ask || {}).questions || []).length === 1 && /WA_WABA_ID/.test(ee.tail || ""), ee);
@@ -369,6 +379,8 @@ try {
   ok("...but a step only the user can do (their message) is still theirs", er2.answer5 && JSON.stringify(er2.answer5.yours) === JSON.stringify(["You (only you: your message): paste it into ANSWERS.md"]) && !er2.answer5.granted, er2.answer5);
   ok("an allow list the agent proposed is turned on for its folder only, merged with what's there, when picked (an exact rm path is narrow)", er2.answer6 && er2.answer6.granted && !er2.answer6.yours && JSON.stringify(er2.local6.permissions.allow) === JSON.stringify(["Bash(ls:*)", "Bash(cloudflared:*)", "Bash(dig:*)", "Bash(rm -r /tmp/cf/site)"]) && er2.local6.permissions.deny[0] === "Read(/x/.env)" && er2.local6.permissions.additionalDirectories[0] === "/tmp/cf", [er2.answer6, er2.local6]);
   ok("...and never lets an agent edit Symbiot's own config, where its permissions are kept", er2.local6.permissions.deny.some((r) => /^Edit\(.*\/\.config\/symbiot\/config\.json\)$/.test(r)) && er2.local6.permissions.deny.some((r) => /^Write\(.*\/\.config\/symbiot\/config\.json\)$/.test(r)), er2.local6.permissions.deny);
+  ok("Allow on a card whose question was reworded since still turns the open permission's list on", er2.answer9 && (er2.answer9.granted || []).length === 1 && er2.local9.permissions.allow.includes("Bash(python3 seed.py)"), [er2.answer9, er2.local9]);
+  ok("Allow on a card whose option is the agent's own (🤖) turns the list on too, where it used to do nothing", er2.answer8 && (er2.answer8.granted || []).length === 1 && !er2.answer8.yours && er2.local8.permissions.allow.includes("Bash(ssh -o BatchMode=yes ubuntu@203.0.113.9:*)"), [er2.answer8, er2.local8]);
   ok("...but one that would let an agent run anything (a shell, a wildcard rm) isn't turned on: it says which rules, tells the agent to ask for less, and isn't left as the user's step", er2.answer7 && !er2.answer7.granted && !er2.answer7.yours && JSON.stringify(er2.answer7.refused) === JSON.stringify(["Bash(bash:*)", "Bash(rm:*)"]) && /Not turned on: .*Bash\(bash:\*\)/.test(er2.answer7.note || "") && !er2.local7.permissions.allow.includes("Bash(bash:*)") && /Symbiot didn't turn your allow list on/.test(er2.answers7) && /narrower/.test(er2.answers7), [er2.answer7, er2.local7]);
   ok("a flag is never granted as a tool, and an old broken rule (Bash(--allowedtools:*)) is cleaned out", er2.flag && er2.flag.ok && !/--allowedtools:\*/i.test(er2.flag.cmd) && /"Bash\(dig:\*\)"/.test(er2.flag2.cmd) && !/Bash\(-/.test(er2.flag2.cmd), [er2.flag, er2.flag2]);
   ok("a step with no file named waits for Start it now; the 🤖 Agent part isn't the user's step", er2.answer2 && JSON.stringify(er2.answer2.yours) === '["allow gh in Settings."]' && !er2.answer2.waitFiles && er2.held2 && er2.held2.blocked && /Start it now/.test(er2.held2.note || "") && er2.forced && er2.cleared2, [er2.answer2, er2.held2, er2.forced]);
@@ -454,17 +466,24 @@ try {
     writeFileSync(dir + "/.symbiot/agent.pid", JSON.stringify({ pid: ext3.pid, id: "ext3", startedAt: Date.now(), owner: 2147483646 }));
     a.writeTasks(dir, "- [ ] A\\n- [ ] B\\n- [ ] C\\n"); writeFileSync(f, "- [ ] A\\n");
     out.dropped = a.droppedTasks(dir).map((d) => d.text);
+    // a lock whose pid now belongs to a process started long after the lock was written: the agent is gone
+    const ext4 = spawn("sleep", ["1"]), exited4 = new Promise((r) => ext4.on("exit", r));
+    writeFileSync(dir + "/.symbiot/agent.pid", JSON.stringify({ pid: ext4.pid, id: "ext4", startedAt: Date.now() - 3600000, owner: 2147483646 }));
+    out.reusedPid = a.runningHandoff(dir) === null;
+    await exited4; try { unlinkSync(dir + "/.symbiot/agent.pid"); } catch {}
+    writeFileSync(dir + "/.symbiot/agent.pid", JSON.stringify({ pid: ext3.pid, id: "ext3", startedAt: Date.now(), owner: 2147483646 }));
     await exited3; out.dropRelease = a.releaseHeldTasks(dir) && readFileSync(f, "utf8"); out.droppedAfter = a.droppedTasks(dir).map((d) => d.text);
     // the agent ticks with a note after the task (the Needs-you fix, 2026-10-12): still its tick
     a.writeTasks(dir, "- [ ] Fix the Needs-you card's Allow button\\n- [ ] Fix the bug\\n");
-    const ext4 = spawn("sleep", ["1"]), exited4 = new Promise((r) => ext4.on("exit", r));
-    writeFileSync(dir + "/.symbiot/agent.pid", JSON.stringify({ pid: ext4.pid, id: "ext4", startedAt: Date.now(), owner: 2147483646 }));
+    const ext5 = spawn("sleep", ["1"]), exited5 = new Promise((r) => ext5.on("exit", r));
+    writeFileSync(dir + "/.symbiot/agent.pid", JSON.stringify({ pid: ext5.pid, id: "ext5", startedAt: Date.now(), owner: 2147483646 }));
     a.writeTasks(dir, "- [ ] Fix the Needs-you card's Allow button\\n- [ ] Fix the bug\\n- [ ] Build media capture\\n");
     writeFileSync(f, "- [x] Fix the Needs-you card's Allow button — Done: it sent the plain-words question\\n- [ ] Fix the bug\\n- [x] Fix the bug in the login form\\n");
-    await exited4; out.notedRelease = a.releaseHeldTasks(dir) && readFileSync(f, "utf8");
+    await exited5; out.notedRelease = a.releaseHeldTasks(dir) && readFileSync(f, "utf8");
     console.log(JSON.stringify(out));`], { encoding: "utf8", timeout: 30000, env: { ...process.env, HOME: hhome, USERPROFILE: hhome } });
   let hv = {}; try { hv = JSON.parse(hd.stdout.trim().split("\n").pop()); } catch { console.log(hd.stdout, hd.stderr); }
   ok("no agent running -> TASKS.md is written straight away", hv.freeHeld === false, hv);
+  ok("a lock whose pid was reused by a newer process doesn't hold the lane", hv.reusedPid === true, hv);
   ok("agent running -> the new brief is held, its TASKS.md untouched", hv.busyHeld === true && hv.during === "- [ ] A\n- [ ] B\n" && hv.earlyRelease === false, hv);
   ok("the agent's block lists the held tasks' titles", JSON.stringify(hv.shown) === '["A","B","C"]' && hv.shownAfter === null, hv);
   ok("once it exits the held brief lands, keeping the agent's ticks", hv.nextGone && hv.after === "- [x] A\n- [ ] B\n- [ ] C\n", hv.after);
@@ -492,7 +511,7 @@ try {
   const r2 = await shipChanges(shipRepo, ["x"], { pr: false });
   ok("nothing to commit -> approved without a commit", r2.ok && r2.nothing && !r2.commit, r2);
   g("switch -q main"); writeFileSync(join(shipRepo, "c.txt"), "c\n");
-  const r3 = await shipChanges(shipRepo, [], { push: false });
+  const r3 = await shipChanges(shipRepo, [], { push: false, confirm: true });
   ok("no task -> its own symbiot/changes-<date> branch and subject", r3.ok && /^symbiot\/changes-\d{4}-\d{2}-\d{2}$/.test(r3.branch) && r3.subject === "symbiot: changes approved without a task", r3);
   // regression: when .symbiot/ is gitignored, `git add . :(exclude).symbiot`
   // warned+exited-1 ("paths are ignored") and falsely aborted the ship.
@@ -533,6 +552,25 @@ try {
   const rr = await shipChanges(tkRepo, ["Three"], { pr: false });
   ok("a push refused because origin's branch of that name went another way: it goes up under a fresh name", rr.ok && rr.pushed && rr.branch !== taken + "-9" && /^symbiot\//.test(rr.branch) && gt(`rev-parse origin/${rr.branch}`) === gt("rev-parse HEAD"), rr);
 
+  // PR #179: a branch cut from a checkout far behind main came with conflicts. Now the
+  // commit is rebased on GitHub's main first; a conflict stops before the push.
+  const bhSetup = (name, extra) => build(name, `git init -q -b main && git config user.email ci@symbiot.test && git config user.name "Symbiot CI" && echo a > a.txt && echo z > z.txt && git add . && git commit -qm init
+    git clone -q --bare . ../${name}-remote.git && git remote add origin ../${name}-remote.git && git fetch -q origin && git remote set-head origin main
+    git clone -q ../${name}-remote.git ../${name}-other && git -C ../${name}-other config user.email o@o && git -C ../${name}-other config user.name o && ${extra} && git -C ../${name}-other commit -qam moved && git -C ../${name}-other push -q origin main
+    echo mine > new.txt`);
+  const bhRepo = bhSetup("ship-behind", "echo other > ../ship-behind-other/other.txt && git -C ../ship-behind-other add .");
+  const gb = (a) => execSync("git " + a, { cwd: bhRepo, encoding: "utf8", env: gitEnv }).trim();
+  const rb = await shipChanges(bhRepo, ["Mine"], { pr: false });
+  ok("a stale local main: the commit lands on top of GitHub's main and goes up", rb.ok && rb.pushed && !!rb.rebased && gb("rev-parse HEAD~1") === gb("rev-parse origin/main") && gb(`rev-parse origin/${rb.branch}`) === gb("rev-parse HEAD") && rb.commit === gb("rev-parse --short HEAD"), rb);
+  const cfRepo = bhSetup("ship-conflict", "echo theirs > ../ship-conflict-other/a.txt");
+  writeFileSync(join(cfRepo, "a.txt"), "mine\n");
+  const gc = (a) => execSync("git " + a, { cwd: cfRepo, encoding: "utf8", env: gitEnv }).trim();
+  const rc = await shipChanges(cfRepo, ["Clash"], { pr: false });
+  ok("conflicts with GitHub's main: committed, not pushed, no rebase left half-done", rc.ok && rc.conflicts && !rc.pushed && !existsSync(join(cfRepo, ".git", "rebase-merge")) && gc("status --porcelain").replace(/\?\? .*\n?/g, "") === "" && gc("rev-parse --abbrev-ref HEAD") === rc.branch, rc);
+  const vfRepo = bhSetup("ship-verify", "echo other > ../ship-verify-other/other.txt && git -C ../ship-verify-other add .");
+  const rv = await shipChanges(vfRepo, ["Red"], { pr: false, verify: async () => ({ ok: false, note: "1 test failed" }) });
+  ok("tests failing on top of main: not pushed", rv.ok && rv.testsFailed && !rv.pushed && /1 test failed/.test(rv.note), rv);
+
   // scratch: 170k untracked files (venvs, datasets) timed out `git add -A`
   // (spawnSync ETIMEDOUT), and whole-tree staging took in an unignored .env.
   // Approve stages just the task's paths: what was untracked before the run stays out.
@@ -549,6 +587,27 @@ try {
   ok("approve stages the run's changes (a [glob]* name taken literally, an old file it edited), not what was there before", ru.ok && gu("show --name-only --format= HEAD").split("\n").sort().join() === "a.txt,new [1]*.txt,old.txt", gu("show --name-only --format= HEAD"));
   ok("...says what it left out, leaves it untracked, and forgets the note", /2 untracked files that were already there before the agent ran were left out/.test(ru.note || "") && /\?\? \.env/.test(gu("status --porcelain")) && !untrackedBefore(utRepo), [ru, gu("status --porcelain")]);
   ok("git that didn't finish says why in words, not ETIMEDOUT", /^git add timed out after 120 s: this repo has about 170,363 changed or untracked files, probably a venv, node_modules, a dataset or a cache missing from \.gitignore/.test(gitFailed("git add", { timedOut: true, timeout: 120000, err: "" }, 170363)) && gitFailed("git add", { timedOut: false, err: "fatal: x\n" }) === "git add failed: fatal: x", gitFailed("git add", { timedOut: true, timeout: 120000, err: "" }, 170363));
+
+  // Two runs in one repo: Approve ships the finished run's files, not the other run's unfinished ones.
+  const rfRepo = build("ship-runs", `git init -q -b main && git config user.email ci@symbiot.test && git config user.name "Symbiot CI" && echo a > a.txt && echo r > route.txt && echo p > pkg.txt && git add . && git commit -qm init && mkdir .symbiot`);
+  const gr = (a) => execSync("git " + a, { cwd: rfRepo, encoding: "utf8", env: gitEnv }).trim();
+  const runs = (list) => writeFileSync(join(rfRepo, ".symbiot", "runfiles.json"), JSON.stringify(list));
+  writeFileSync(join(rfRepo, "a.txt"), "A\n"); writeFileSync(join(rfRepo, "route.txt"), "wip\n"); writeFileSync(join(rfRepo, "pkg.txt"), "both\n");
+  runs([{ id: "A", ticked: 1, files: ["a.txt"] }, { id: "B", ticked: 0, files: ["route.txt"] }]);
+  const rA = await shipChanges(rfRepo, ["Run A's task"], { push: false });
+  ok("approving run A commits only run A's files (b's unfinished edit stays put, and is said)", rA.ok && gr("show --name-only --format= HEAD") === "a.txt", [rA, gr("show --name-only --format= HEAD")]);
+  ok("...leaving the other run's files uncommitted, named in the note", / M route\.txt/.test(gr("status --porcelain")) && /2 files no finished run touched were left out \(pkg\.txt, route\.txt\)/.test(rA.note || ""), [rA.note, gr("status --porcelain")]);
+  runs([{ id: "A", ticked: 1, files: ["route.txt"] }, { id: "B", ticked: 0, files: ["route.txt"] }]);
+  const rS = await shipChanges(rfRepo, ["Run A's task"], { push: false });
+  ok("a file both a finished and an unfinished run touched stops and asks, with nothing committed", rS.ask && rS.shared.join() === "route.txt" && !rS.ok && gr("log --oneline").split("\n").length === 2, rS);
+  ok("...in plain words, no file names in the question, flagged as waiting", rS.waiting && !/route\.txt/.test(rS.error) && /still working/.test(rS.error), rS.error);
+  const rS2 = await shipChanges(rfRepo, ["Run A's task"], { push: false, allowShared: true });
+  ok("...and ships it once the user says yes", rS2.ok && gr("show --name-only --format= HEAD") === "route.txt", rS2);
+  writeFileSync(join(rfRepo, "a.txt"), "again\n"); runs([{ id: "C", ticked: 1, files: ["a.txt"] }]);
+  const rN = await shipChanges(rfRepo, [], { push: false });
+  ok("changes with no task behind them are a question, not a commit", rN.ask && rN.untasked && !rN.ok && rN.files.join() === "a.txt" && /M a\.txt/.test(gr("status --porcelain")), rN);
+  const rN2 = await shipChanges(rfRepo, [], { push: false, confirm: true });
+  ok("...committed once confirmed, and the committed files leave the run record", rN2.ok && rN2.subject === "symbiot: changes approved without a task" && !existsSync(join(rfRepo, ".symbiot", "runfiles.json")), [rN2, gr("status --porcelain")]);
 
   console.log("REVIEW — agent ticks -> awaiting review (not archived) -> send back / approve");
   // isolated HOME: the cycle reads and writes Symbiot's real task store
@@ -582,8 +641,8 @@ try {
     writeFileSync(f.replace("TASKS.md", "agent.log"), "\\n=== old 2026-01-01 ===\\n$ agent\\nOpen task: done.\\n\\n=== symbiot 2026-01-02 ===\\n$ claude -p go\\n- **Skip button**: each idea in the Agents tab has a Skip button now, so you can turn one down.\\n");
     out.untasked = m.pendingReview();
     out.busyUntasked = await busy(async () => ({ pending: m.pendingReview(), ac: await m.approveChanges("revapp", { push: false }) }));
-    out.ac = await m.approveChanges("revapp", { push: false }); out.acTasks = tasks();
-    out.acAgain = await m.approveChanges("revapp", { push: false });
+    out.ac = await m.approveChanges("revapp", { push: false, confirm: true }); out.acTasks = tasks();
+    out.acAgain = await m.approveChanges("revapp", { push: false, confirm: true });
     writeFileSync(${JSON.stringify(join(proj, "c.txt"))}, "skip\\n");
     out.acTick = await m.approveChanges("revapp", { push: false, tick: ["t3", "t1"] }); out.acTickTasks = tasks();
     // a task that runs for weeks: a finished round of it (unticked) goes out under its name, and the task stays open
@@ -731,7 +790,7 @@ try {
   const cLog = execSync("git show HEAD:CHANGELOG.md", cEnv);
   ok("bump: the release goes above the last one, in the same commit, each task once and up to its first sentence", csh.ok && csh.bumped === "1.0.1" && new RegExp("^# Changelog\\n\\nIntro\\.\\n\\n## 1\\.0\\.1 — \\d{4}-\\d{2}-\\d{2}\\n\\n- Draft a reply on WhatsApp too, typed into the chat's box and left unsent\\.\\n\\n## 1\\.0\\.0 — 2026-01-01\\n").test(cLog), [csh, cLog]);
   execSync("git checkout -q main && git merge -q --ff-only " + csh.branch + " && git tag v1.0.1", cEnv); writeFileSync(join(clg, "fix.js"), "y\n");
-  const cnt = await shipWithBump(clg, [], { push: false, bump: "patch" });
+  const cnt = await shipWithBump(clg, [], { push: false, bump: "patch", confirm: true });
   ok("changes approved without a task: named by the files they touch", cnt.ok && /## 1\.0\.2 — [\d-]+\n\n- Changes approved without a task, in fix\.js\.\n\n## 1\.0\.1/.test(execSync("git show HEAD:CHANGELOG.md", cEnv)), execSync("git show HEAD:CHANGELOG.md", cEnv).slice(0, 200));
   execSync("git checkout -q main && git merge -q --ff-only " + cnt.branch + " && git tag v1.0.2 && git checkout -q --detach", cEnv); writeFileSync(join(clg, "more.js"), "z\n");
   const before = readFileSync(join(clg, "CHANGELOG.md"), "utf8"), cfl = await shipWithBump(clg, ["Fails"], { push: false, bump: "patch" });
@@ -831,7 +890,8 @@ try {
   const [rq0, rq1, rq2] = relAsk.questions;
   ok("a question needing a release npm doesn't have yet is marked as waiting on npm, with both versions", rq0.release && rq0.release.name === "rel-ask-x" && rq0.release.needs === "1.5.0" && rq0.release.npm === "1.4.0" && rq0.release.installed === "" && rq0.release.waiting === "npm", rq0.release);
   ok("...one npm has is possible now; one naming no version, or in a folder with no package, isn't marked", rq1.release && rq1.release.waiting === "" && !rq2.release, [rq1.release, rq2.release]);
-  const DONEOPT = new Function("return " + (EMBEDDED_UI.match(/var DONEOPT=(\/.*?\/i);/) || [])[1])();
+  ok("Home card: the question and each choice show in full (no line clamp), wrapping instead", !/\.lqblob \.bq\{[^}]*line-clamp/.test(EMBEDDED_UI) && !/\.lqblob \.nopt span\.bt\{[^}]*line-clamp/.test(EMBEDDED_UI) && !/\.lqblob\.rlask \.bq\{[^}]*line-clamp/.test(EMBEDDED_UI));
+  const DONEOPT =new Function("return " + (EMBEDDED_UI.match(/var DONEOPT=(\/.*?\/i);/) || [])[1])();
   ok("the page holds back answers saying it's done or tried, not the others", ["Done both: map my inbox", "Done", "It clicked the right spot on both displays", "It looks right: my projects are on the Map", "Tried it, it missed"].every((s) => DONEOPT.test(s)) && !["Not done yet", "Not tried yet", "Yes: approve it now", "Doner kebab", "Trusted sites still isn't in Settings"].some((s) => DONEOPT.test(s)), DONEOPT);
   ok("TASKS.md tells the agent how to ask", /\.symbiot\/QUESTIONS\.md/.test(md) && /## Suggestions/.test(md) && /\.symbiot\/ANSWERS\.md/.test(md), md.slice(-600));
   ok("the handoff prompt points at QUESTIONS.md, shell-safe", /QUESTIONS\.md/.test(HANDOFF_PROMPT) && !/[`$"\\]/.test(HANDOFF_PROMPT), HANDOFF_PROMPT);
@@ -1048,6 +1108,7 @@ try {
     const virt = '<title>Virt</title><body style="margin:0;overflow:hidden"><div id="vl" style="position:absolute;top:0;bottom:0;left:0;right:0;overflow:auto"><div id="sp" style="height:4000px;position:relative"></div></div><script>' +
       'const sp=document.getElementById("sp"),vl=document.getElementById("vl"),els=[];for(let i=0;i<25;i++){const d=document.createElement("div");d.setAttribute("role","row");d.style.cssText="position:absolute;left:0;right:0;height:40px";sp.appendChild(d);els.push(d);}' +
       'function draw(){const f=Math.floor(vl.scrollTop/40);els.forEach((d,i)=>{d.style.top=((f+i)*40)+"px";d.textContent="Item "+(f+i);});}vl.addEventListener("scroll",draw);draw();</script></body>';
+    const form2 = '<title>Form2</title><input id="a" placeholder="Owner"><input id="b" placeholder="Confirm"><button id="go2" onclick="location=\\'/search?q=\\'+encodeURIComponent(document.getElementById(\\'a\\').value+\\'+\\'+document.getElementById(\\'b\\').value)">Save</button>';
     // a box open over the page, as LinkedIn's schedule box is over its composer, with a clock outside it
     const sched = '<title>Sched</title><body style="margin:0"><div><button aria-label="Clock" onclick="location=\\'/search?q=clock\\'" style="position:absolute;left:10px;top:400px">Clock</button></div>' +
       '<div style="position:fixed;left:100px;top:50px;width:400px;height:200px;background:#fff"><button role="tab" onclick="location=\\'/search?q=scheduled\\'" style="position:absolute;left:10px;top:10px">Scheduled (8)</button></div></body>';
@@ -1058,7 +1119,7 @@ try {
       '<form action="/typed" style="position:absolute;left:10px;top:200px"><input name="' + field[0] + '" aria-label="' + field[1] + '" value="' + field[2] + '"></form></div></div>';
     const stack = '<title>Stack</title><body style="margin:0">' + dlg("Create a post", "left:0;top:0;width:700px;height:500px", "clock", ["post", "Text editor", "My post"]) + dlg("Schedule post", "left:150px;top:60px;width:500px;height:300px", "scheduled", ["date", "Date*", ""]) + '</body>';
     const typed = (u) => "<title>Typed " + [...new URL(u, "http://x").searchParams].map(([k, v]) => k + "=" + v).join("&") + "</title><button>Back</button>";
-    const srv = createServer((q, r) => { r.writeHead(200, { "content-type": "text/html" }); r.end(q.url === "/stack" ? stack : q.url.startsWith("/typed?") ? typed(q.url) : q.url === "/sched" ? sched : q.url === "/chats" ? chats : q.url === "/virt" ? virt : q.url === "/tall" ? tall : q.url === "/long" ? long : q.url === "/pane" ? pane : q.url === "/two" ? "<title>Page two</title><button>Back</button>" : q.url === "/form" ? form : q.url === "/rows" ? inbox() : q.url.startsWith("/search?") ? "<title>Results for " + new URL(q.url, "http://x").searchParams.get("q") + "</title><button>Back</button>" : page); }).listen(0, "127.0.0.1");
+    const srv = createServer((q, r) => { r.writeHead(200, { "content-type": "text/html" }); r.end(q.url === "/stack" ? stack : q.url.startsWith("/typed?") ? typed(q.url) : q.url === "/sched" ? sched : q.url === "/chats" ? chats : q.url === "/virt" ? virt : q.url === "/tall" ? tall : q.url === "/long" ? long : q.url === "/pane" ? pane : q.url === "/two" ? "<title>Page two</title><button>Back</button>" : q.url === "/form" ? form : q.url === "/form2" ? form2 : q.url === "/rows" ? inbox() : q.url.startsWith("/search?") ? "<title>Results for " + new URL(q.url, "http://x").searchParams.get("q") + "</title><button>Back</button>" : page); }).listen(0, "127.0.0.1");
     await new Promise((r) => srv.on("listening", r));
     const out = {};
     out.map = await h.mapPage("127.0.0.1:" + srv.address().port, "");
@@ -1098,6 +1159,10 @@ try {
     out.fpress = go ? await h.pressRegion(out.ftype.id, go.id, { confirmed: true }) : null;
     const go0 = (out.fmap.regions || []).find((r) => r.label === "Go");
     out.fold = go0 ? await h.pressRegion(out.fmap.id, go0.id, { confirmed: true }) : null;
+    out.f2map = await h.mapPage("127.0.0.1:" + srv.address().port + "/form2", "");
+    const f2 = (out.f2map.regions || []).filter((r) => r.kind === "field"), f2go = (out.f2map.regions || []).find((r) => r.label === "Save");
+    out.fillBad = await h.fillForm(out.f2map.id, [{ region: f2go.id, text: "x" }], { confirmed: true });
+    out.fill = f2.length === 2 && f2go ? await h.fillForm(out.f2map.id, [{ region: f2[0].id, text: "GAWdessey" }, { region: f2[1].id, text: "GarthGhostai/symbiot" }], { press: f2go.id, confirmed: true }) : { error: "no form" };
     await h.closeBrowser(); out.fclosed = !h.browserOpen();
     // Scroll (still kept open): down, to the bottom, past it; then, closed, an older screen again
     const base = "127.0.0.1:" + srv.address().port;
@@ -1171,6 +1236,7 @@ try {
     ok("the hidden browser closes after each action unless it's kept open", ho.closedAfter === true, ho.closedAfter);
     ok("kept open: typed without Enter, it's still there for a separate button on the screen that mapped", ho.ftype && ho.ftype.found && !ho.ftype.entered && ho.fopen === true && ho.fpress && ho.fpress.kept === true && ho.fpress.name === "Results for kept", [ho.ftype && ho.ftype.error, ho.fopen, ho.fpress && (ho.fpress.error || ho.fpress.name)]);
     ok("kept open: a press on an older screen opens its page again (what was typed there is gone)", ho.fold && !ho.fold.kept && ho.fold.name === "Results for", ho.fold && (ho.fold.error || ho.fold.name));
+    ok("fillForm: only fills fields, and fills several then presses a button in one session, so none is lost", /isn't a field/.test((ho.fillBad || {}).error || "") && ho.fill && ho.fill.typed && ho.fill.typed.length === 2 && ho.fill.pressed === "Save" && ho.fill.name === "Results for GAWdessey+GarthGhostai/symbiot", ho.fill);
     ok("closeBrowser closes it", ho.fclosed === true, ho.fclosed);
     const rl = (x) => ((x || {}).regions || []).map((r) => r.label), sy = (x) => ((x || {}).page || {}).scroll || {};
     ok("mapPage: a page taller than the window says how far down it is (the page itself scrolls: no selector)", sy(hm).y === 0 && sy(hm).max > 1000 && !sy(hm).selector && sy(ho.lmap).max === 2200 && rl(ho.lmap).join() === "Top button", [sy(hm), sy(ho.lmap), rl(ho.lmap)]);
@@ -1416,6 +1482,19 @@ try {
   ok("...a question with no model connected says how to connect one; --clear starts the talk over", bo.cliChatAsk && bo.cliChatAsk.code === 1 && /Connect a model first/.test((bo.cliChatAsk.j || {}).error || "") && bo.cliChatClear && bo.cliChatClear.code === 0 && bo.cliChatClear.j.ok && bo.cliChatAfter === null, [bo.cliChatAsk, bo.cliChatClear, bo.cliChatAfter]);
   ok("talkOf: the talk, as the draft's brief carries it", /^## What the user said about it/.test(bo.talkOf || "") && /\*\*User:\*\* Tell Mom Sunday works/.test(bo.talkOf || ""), bo.talkOf);
   ok("symbiot watch seen <id> does the same from a terminal (and needs an id)", bo.cliSeen && bo.cliSeen.code === 0 && ((bo.afterCli || {}).cards || [])[0].count === 0 && bo.afterCli.total === 60 && bo.cliSeenNoId && bo.cliSeenNoId.code === 1, [bo.cliSeen, bo.cliSeenNoId]);
+
+  console.log("BROWSER — acting from an earlier map of the open page doesn't reload it (unsubscribe toggles were lost)");
+  {
+    let opened = 0;
+    const fake = (href) => ({ send: async (m) => { if (m === "Runtime.evaluate") return { result: { value: href } }; if (m === "Page.navigate") opened++; return {}; }, until: async () => true, idle: async () => {} });
+    const sc = { id: "old", page: { url: "https://x.test/unsub?id=1" } };
+    const h1 = await showScreen(fake("https://x.test/unsub?id=1#top"), { shown: "new" }, sc, { same: true }); // as press and type ask it
+    ok("an earlier map of the page that is open doesn't reload it", h1 === true && opened === 0, { h1, opened });
+    const h2 = await showScreen(fake("https://x.test/other"), { shown: "new" }, sc);
+    ok("a different address is opened", h2 === false && opened === 1, { h2, opened });
+    const h3 = await showScreen(fake("https://x.test/unsub?id=1"), { shown: "" }, sc);
+    ok("a browser holding no mapped page opens it", h3 === false && opened === 2, { h3, opened });
+  }
 
   console.log("DRAFT A REPLY — a new email handed to your agent, which never sends (watch.mjs, headless.mjs)");
   ok("isSend: Gmail's Send and Schedule send are sends; a row about sending, or Sender info, isn't", isSend({ kind: "button", label: "Send ‪(Ctrl-Enter)‬" }) && isSend({ kind: "menu item", label: "Schedule send" }) && !isSend({ kind: "row", label: "Ann, Please send the invoice" }) && !isSend({ kind: "button", label: "Sender info" }) && !isSend({ kind: "link", label: "Sent" }), "");

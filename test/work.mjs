@@ -89,6 +89,8 @@ try {
   const wo = workOf(repo, "\n=== r " + ts(0) + " ===\n$ claude -p …\n" + running);
   ok("its work, how far through TASKS.md it is, and readable text instead of JSON", wo.work && wo.work.doing === "Adding a test" && wo.progress.done === 1 && wo.progress.total === 3 && !/\{"type"/.test(wo.tail), [wo.progress, wo.tail.slice(0, 80)]);
   ok("another agent: no work view, the log's end as before", workOf(repo, "\n=== r x ===\n$ codex\nhello").work === null && /hello/.test(workOf(repo, "\n=== r x ===\n$ codex\nhello").tail), "");
+  const { waitingOn } = await import("../work.mjs");
+  ok("a turn that ended to wait says what for; a plain summary says nothing", waitingOn("Nothing new to act on. Marketing's photos haven't landed, so I'm waiting for them and will check again.") === "Marketing's photos haven't landed, so I'm waiting for them and will check again" && waitingOn("Done. Fixed the login bug.") === "", waitingOn("Nothing new. Waiting on marketing's photos."));
   console.log("HOW FAR ALONG — a run's step in its brief's plan, on Home (steve and argena, 2026-10-08: only 'Agents working: 2')");
   const { briefPlan, stepOf, runLine, STALL_MS } = await import("../work.mjs");
   const brief = "## Tasks\n- [x] old\n- [ ] Argena (v6.7). Do these in order. 1) Device pass on v6.7. Earlier today it got three hotfixes. 2) Look and feel, plus a zoned world. This is Garth's priority, with monsters. 3) Wire the class bible into the game, starting with core class apprenticeships. 4) Symbiot slow loop v0. Monsters use behaviour cards.\n";
@@ -102,6 +104,14 @@ try {
   const rl = runLine({ plan, step: stepOf(plan, busy.talk), work: busy, now: T + 60000 });
   ok("Home's line: step N of M, its label, and what it's on now", rl.line === "step 2 of 4: look and feel, plus a zoned world · shooting the monsters, camp and gates" && rl.step === 2 && rl.of === 4 && !rl.quiet, rl);
   ok("…quiet past STALL_MS since its last move (a heartbeat isn't one), with the minutes", runLine({ plan, step: 2, work: busy, now: T + 1000 + STALL_MS + 5 * 60000 }).quiet === 25, runLine({ plan, step: 2, work: busy, now: T + STALL_MS + 5 * 60000 }));
+  const hb = (s) => JSON.stringify({ type: "tool_progress", tool_use_id: "g2-heartbeat-0", tool_name: "Bash", parent_tool_use_id: "g2", elapsed_time_seconds: s, heartbeat: true });
+  const longRun = [A([use("g2", "Bash", { command: "pip install x", description: "Install x" })], 0), hb(30), hb(270)].join("\n");
+  const lr = parseRun(longRun), fresh = parseRun(A([use("g2", "Bash", { command: "pip install x", description: "Install x" })], 0));
+  ok("a long call's heartbeat shows how long it has run in the doing line", /· running 4m$/.test(lr.doing) && lr.moved === parseRun(A([use("g2", "Bash", { command: "pip install x", description: "Install x" })], 0)).moved, lr.doing);
+  const tickCall = parseRun(A([use("g4", "Bash", { command: "sleep 900", description: "Wait" })], 0));
+  ok("a running call ticks in the home line with the clock, with no new log lines", /· running 5m$/.test(runLine({ work: tickCall, now: T + 5 * 60000 + 1000 }).line) && !/running/.test(runLine({ work: tickCall, now: T + 20000 }).line), runLine({ work: tickCall, now: T + 5 * 60000 + 1000 }).line);
+  ok("…a step with no heartbeat yet reads as before", fresh.doing && !/running/.test(fresh.doing), fresh.doing);
+  ok("…a finished step ignores a late heartbeat", !/running/.test(parseRun([A([use("g3", "Bash", { command: "ls" })], 0), JSON.stringify({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "g3", content: "x" }] } }), JSON.stringify({ type: "tool_progress", parent_tool_use_id: "g3", elapsed_time_seconds: 600 })].join("\n")).doing), "");
   const loop = parseRun([1, 2, 3, 4, 5].map((i) => A([use("l" + i, "Bash", { command: "curl x", description: "Poll the server" })], i)).join("\n"));
   ok("…going round: its last steps all the same call", loop.looping === true && runLine({ work: loop, now: T + 6000 }).looping === true && !busy.looping, "");
   ok("…no plan: what it's on, still a line", runLine({ work: busy, now: T }).line === "shooting the monsters, camp and gates", runLine({ work: busy, now: T }).line);
@@ -128,6 +138,12 @@ try {
   ok("…and only what's been added is read next time", JSON.stringify(runsInLog(lg).map((r) => r.kind)) === '["brief","answer"]', runsInLog(lg));
   const df = join(HOME, "durations.json"); noteDuration({ path: "/x", cmd: "claude -p x", task: "Fix it", ms: 5 * M }, df);
   ok("a run Symbiot saw end is kept with its lane, kind and task", loadDurations(df)[0].kind === "brief" && loadDurations(df)[0].task === "Fix it", loadDurations(df));
+  const { noteCost, loadCosts } = await import("../estimate.mjs"), { parseRun: pr } = await import("../work.mjs");
+  const cf = join(HOME, "costs.json"), res = pr(JSON.stringify({ type: "result", result: "ok", total_cost_usd: 0.42, num_turns: 7, modelUsage: { "claude-sonnet-5": { costUSD: 0.42 } } }));
+  ok("a result's per-model usage is kept", res.cost === 0.42 && res.modelUsage && res.modelUsage["claude-sonnet-5"].costUSD === 0.42, res);
+  noteCost({ path: "/x", cmd: "claude -p x", task: "Fix it", model: "claude-sonnet-5", cost: res.cost, turns: res.turns, ms: 5 * M, ok: false, modelUsage: res.modelUsage }, cf);
+  noteCost({ path: "/x", cmd: "claude -p x", cost: null }, cf); // no cost in the log: nothing to record
+  ok("a run's cost is kept, failed ones too, with path, cost and a real boolean ok", loadCosts(cf).length === 1 && loadCosts(cf)[0].path === "/x" && loadCosts(cf)[0].cost === 0.42 && loadCosts(cf)[0].ok === false, loadCosts(cf));
   console.log("A BIG LOG — only the newest run is read, from the end, and kept until the file changes");
   const { readRunLog } = await import("../work.mjs");
   const big = join(HOME, "big", ".symbiot"); mkdirSync(big, { recursive: true });
@@ -140,6 +156,23 @@ try {
   t0 = Date.now(); readRunLog(join(big, "agent.log")); ok("…asked again, it's kept: no read", Date.now() - t0 < 5, [took, Date.now() - t0]);
   writeFileSync(join(big, "agent.log"), txt + "\n=== r 2026-10-09T09:00:00.000Z ===\n$ claude -p x\n" + JSON.stringify({ type: "result", result: "run 40" }) + "\n");
   ok("…a new run in the file is read fresh", /"run 40"/.test(readRunLog(join(big, "agent.log"))), "");
+  {
+    const { appendFileSync } = await import("node:fs"), { runStarted } = await import("../work.mjs"), lg = join(big, "agent.log");
+    writeFileSync(lg, txt); readRunLog(lg);
+    const base = readRunLog(lg);
+    appendFileSync(lg, "more é"); const snow = "☃".repeat(1000), bytes = Buffer.from(snow);
+    appendFileSync(lg, bytes.subarray(0, 1000)); const cut = readRunLog(lg);
+    appendFileSync(lg, bytes.subarray(1000));
+    const whole = readRunLog(lg);
+    ok("a log that grew by appending: the added text joins the cached run (a character cut by the read waits for its rest)", cut.startsWith(base) && whole === base + "more é" + snow && !/\uFFFD/.test(whole) && whole.length === base.length + 6 + 1000, [whole.length, base.length]);
+    appendFileSync(lg, "\n=== r 2026-10-09T09:30:00.000Z ===\n$ claude -p y\n");
+    const fresh = readRunLog(lg);
+    ok("…and one that began a new run is the new run alone", fresh.startsWith("\n=== r 2026-10-09T09:30") && !/run 39/.test(fresh) && runStarted(fresh) === Date.parse("2026-10-09T09:30:00.000Z"), fresh.slice(0, 50));
+    writeFileSync(lg, "\n=== r 2026-10-09T10:00:00.000Z ===\nfirst\n"); readRunLog(lg);
+    writeFileSync(lg, "\n=== r 2026-10-09T11:00:00.000Z ===\nsecond, and a good deal longer than the one before\n");
+    ok("…a file rewritten longer (not appended to) is read again, not stitched on", /second, and a good deal longer/.test(readRunLog(lg)) && !/\nfirst\n/.test(readRunLog(lg)), readRunLog(lg));
+    ok("…a run's start is read from its header line alone", runStarted("\n=== r 2026-10-09T09:30:00.000Z ===\n$ x\n=== not a header ===") === Date.parse("2026-10-09T09:30:00.000Z") && runStarted("no header") === 0 && runStarted("") === 0, "");
+  }
   writeFileSync(join(big, "agent.log"), "no header at all\n");
   ok("…a log with no header is all of it; no log is empty", readRunLog(join(big, "agent.log")) === "no header at all\n" && readRunLog(join(big, "none.log")) === "", "");
   const { track } = await import("../agents.mjs");
@@ -148,6 +181,14 @@ try {
   track("rot", "echo fresh", rot);
   for (let i = 0; i < 50 && !/fresh\n/.test(rf(join(rot, ".symbiot", "agent.log"), "utf8")); i++) await new Promise((r) => setTimeout(r, 100));
   ok("a log past 8 MB starts afresh at the next run; the old one is kept as agent.log.old", /fresh/.test(rf(join(rot, ".symbiot", "agent.log"), "utf8")) && sf(join(rot, ".symbiot", "agent.log")).size < 4096 && sf(join(rot, ".symbiot", "agent.log.old")).size > 9 * 1024 * 1024, "");
+  {
+    const { readdirSync, readlinkSync } = await import("node:fs"), logFds = () => { try { return readdirSync("/proc/self/fd").filter((f) => { try { return /agent\.log$/.test(readlinkSync("/proc/self/fd/" + f)); } catch { return false; } }).length; } catch { return null; } };
+    const before = logFds();
+    if (before !== null) {
+      for (let i = 0; i < 5; i++) { const d = join(HOME, "fd" + i); mkdirSync(join(d, ".symbiot"), { recursive: true }); track("fd" + i, "echo hi", d); }
+      ok("starting runs doesn't keep their log files open in the app (it leaked one each)", logFds() === before, [before, logFds()]);
+    }
+  }
 // What a run changed is kept and refreshed in the background: a screen asking again
 // doesn't wait on git, and a new commit still shows up (agents.mjs agentChanges).
 {

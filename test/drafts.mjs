@@ -32,7 +32,7 @@ const asker = (id, name, q, live) => {
   writeFileSync(join(p, ".symbiot", "TASKS.md"), "- [ ] " + name + "\n");
   if (q) writeFileSync(join(p, ".symbiot", "QUESTIONS.md"), `## Questions\n### ${q}\nThe preview is in drafts.\n- 🤖 Agent: approve it as it is (recommended)\n- 🤖 Agent: redo it with a live screenshot\n`);
   writeFileSync(join(p, ".symbiot", "agent.log"), "\n=== x " + new Date(now - 600000).toISOString() + " ===\n$ claude -p\n" + JSON.stringify({ type: "result", subtype: "success", result: "Asked about it." }) + "\n");
-  if (live) writeFileSync(join(p, ".symbiot", "agent.pid"), JSON.stringify({ pid: process.pid, id: "j-" + id, startedAt: now - 300000 })); // an agent at work: the band under the cards
+  if (live) writeFileSync(join(p, ".symbiot", "agent.pid"), JSON.stringify({ pid: process.pid, id: "j-" + id, startedAt: Date.now() })); // an agent at work: the band under the cards (this process as it, so the lock is newer than it: an older one reads as a pid reused)
   return { path: p, name, startedAt: now - 600000 };
 };
 const RUNS = [asker("act-post1", "Agent: Marketing: Post 1, Symbiot: a first look", "Post 1, Symbiot: a first look: approve its preview?"), asker("act-audit", "Agent: Re-audit ~/Company", "Fix the 39 small problems now?"), asker("act-live", "Agent: Go through the Ghost AI mailbox, spam included", "", true)];

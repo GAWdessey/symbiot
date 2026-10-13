@@ -17,8 +17,15 @@ let pass = 0, fail = 0;
 const ok = (n, c, got) => { if (c) { pass++; console.log("  ✓ " + n); } else { fail++; console.log("  ✗ " + n + (got !== undefined ? "  got: " + JSON.stringify(got) : "")); } };
 
 const { dispatch, lanesTick, loadLedger, lanesState, MAX_CHAIN, aboutIt, partlyDone, remoteKey, orcaMoves, orcaRelink, stuckHandovers, allowHandover, skipHandover, namedDirs, handingOf } = await import("../lanes.mjs");
-const { parseHandoffs, handoverRules, ONLY_YOU, leftToYou, gitWork, agentsGitWork, agentsPosting, linkedAsks, linkedChore } = await import("../handover.mjs");
-const { buildTasksMd } = await import("../tasks.mjs");
+const { parseHandoffs, handoverRules, ONLY_YOU, leftToYou, gitWork, agentsGitWork, agentsClicking, agentsCodeWork, heldAsks, agentsPosting, linkedAsks, linkedChore } =await import("../handover.mjs");
+const { buildTasksMd, mergeWhenGreen } = await import("../tasks.mjs");
+{
+  const fake = (buckets, mergeStatus = 0) => { const calls = []; const gh = (a) => { calls.push(a.slice(0, 2).join(" ")); return a[1] === "checks" ? { status: 0, stdout: JSON.stringify(buckets.map((bucket) => ({ bucket }))) } : { status: mergeStatus, stderr: "" }; }; return { gh, calls }; };
+  const g = fake(["pass", "pass"]), f = fake(["pass", "fail"]), p = fake(["pass", "pending"]);
+  const rg = mergeWhenGreen("/tmp", "7", g.gh), rf = mergeWhenGreen("/tmp", "7", f.gh), rp = mergeWhenGreen("/tmp", "7", p.gh);
+  ok("merging from Symbiot: green checks merge past the self-review rule, so no second GitHub account is needed", rg.ok && g.calls.join() === "pr checks,pr merge", [rg, g.calls]);
+  ok("…but a failing or running check never merges", rf.error && !f.calls.includes("pr merge") && rp.pending && !p.calls.includes("pr merge"), [rf, rp]);
+}
 const { actBrief } = await import("../mind.mjs");
 
 // two repo lanes and the ops folder, on disk
@@ -74,14 +81,14 @@ try {
   const dailify = join(HOME, "dailify"), other = join(HOME, "proj", "other"), gone = join(HOME, "CallForge AI");
   mkdirSync(dailify, { recursive: true }); mkdirSync(other, { recursive: true });
   const orcaList = { ok: true, result: { repos: [
-    { path: gone, displayName: "dailify", gitRemoteIdentity: { canonicalKey: "github.com/GarthGhostai/dailify" } },
+    { path: gone, displayName: "dailify", gitRemoteIdentity: { canonicalKey: "github.com/GAWdessey/dailify" } },
     { path: coral, displayName: "coral" },
     { path: join(HOME, "old", "nowhere"), displayName: "nowhere" } ] } };
-  const remotes = { [dailify]: "git@github.com:GarthGhostai/Dailify.git", [other]: "https://github.com/GarthGhostai/other.git" };
+  const remotes = { [dailify]: "git@github.com:GAWdessey/Dailify.git", [other]: "https://github.com/GAWdessey/other.git" };
   const orcaCalls = [];
   const fakeOrca = async (cli, args) => { orcaCalls.push(args); return args[1] === "list" ? JSON.stringify(orcaList) : '{"id":"x","ok":true,"result":{}}'; };
   const omap = { dailify, other, coral };
-  ok("remotes compare however they're written", remoteKey("git@github.com:GarthGhostai/Dailify.git") === "github.com/garthghostai/dailify" && remoteKey("https://user@github.com/GarthGhostai/dailify.git/") === "github.com/garthghostai/dailify" && remoteKey("github.com/GarthGhostai/dailify") === "github.com/garthghostai/dailify", "");
+  ok("remotes compare however they're written", remoteKey("git@github.com:GAWdessey/Dailify.git") === "github.com/gawdessey/dailify" && remoteKey("https://user@github.com/GAWdessey/dailify.git/") === "github.com/gawdessey/dailify" && remoteKey("github.com/GAWdessey/dailify") === "github.com/gawdessey/dailify", "");
   const rl = await orcaRelink({ map: omap, cli: "/x/orca-ide", orca: fakeOrca, remoteOf: async (p) => remotes[p] || "" });
   ok("the gone path's repo is found by its GitHub remote, and added again in Orca", rl.moves.length === 1 && rl.moves[0].from === gone && rl.moves[0].to === dailify && rl.moves[0].ok && orcaCalls.some((a) => a.join(" ") === `repo add --path ${dailify} --json`), rl.moves);
   ok("…a folder that still exists, or one with nowhere to go, is left alone", orcaCalls.filter((a) => a[1] === "add").length === 1, orcaCalls);
@@ -121,6 +128,17 @@ try {
   ran(ghost, h3.at + 2000, "Built android/app/build/outputs/apk/debug/app-debug.apk.");
   const t4 = lanesTick(deps({ tasks: [{ id: h3.task, review: true }] }));
   ok("its run done and the task ticked: coral hears it's done and waits for review", t4.reported.length === 1 && /Done in GhostAIChat: the task is ticked/.test(read(coral, "ANSWERS.md")) && /app-debug\.apk/.test(read(coral, "ANSWERS.md")), read(coral, "ANSWERS.md").slice(-300));
+  runResult = () => ({ id: "j" });
+
+  // Symbiot's own code (licence.mjs's self-work gate): unlike parked above, no one
+  // unblocks this by waiting, so it's reported back at once instead of sitting as a
+  // handover that never comes back (coral → symbiot, 2026-10-10: bounced silently)
+  map.symbiot = lane("symbiot");
+  put(coral, "HANDOFF.md", "### symbiot\nFix the thing in symbiot's own code.\n");
+  runResult = () => ({ blocked: true, self: true, note: "Symbiot doesn't work on its own code (Symbiot's repo, a copy of it, or its installed files)." });
+  const tself = lanesTick(deps());
+  const hs = loadLedger().handoffs.find((h) => /thing in symbiot's own code/.test(h.text));
+  ok("blocked on Symbiot's own code: reported back at once, not left waiting on a run that'll never start", tself.reported.length === 1 && hs.status === "done" && /Symbiot doesn't work on its own code/.test(read(coral, "ANSWERS.md")) && /on symbiot's own task list now, on the Workdesk/.test(read(coral, "ANSWERS.md")) && /don't hand this over again/.test(read(coral, "ANSWERS.md")), read(coral, "ANSWERS.md").slice(-400));
   runResult = () => ({ id: "j" });
 
   console.log("LONG HANDOVERS — nothing cut: an email to draft arrives whole");
@@ -239,6 +257,25 @@ try {
   ok("a failed CI run's \"👤 You: … git add, commit, push\" option is the agent's, with an OK on the Workdesk before the push", /^🤖 Agent: review the diff, then run `git add -A/.test(ci[0]) && /asking for your OK on the Workdesk, with the files, before it pushes \(recommended\)$/.test(ci[0]) && ci[1] === "Leave it for now", ci);
   ok("…dropped when another option already has the agent do it", agentsGitWork(["🤖 Agent: commit and push the fix", "👤 You: commit and push it yourself"]).join("|") === "🤖 Agent: commit and push the fix", "");
   ok("…while a step that needs who you are stays yours", /^👤/.test(agentsGitWork(["👤 You: type your GitHub password when git push asks"])[0]), "");
+  const npm = agentsClicking(["👤 You (only you: your security key): at www.npmjs.com/package/symbiot/access click GitHub Actions, enter owner GAWdessey, repository symbiot, workflow filename publish.yml, environment blank, tick 'Allow npm publish', click 'Set up' (recommended)"]);
+  ok("clicking through a form is the agent's, pausing only for the security key", /^🤖 Agent: at www\.npmjs\.com.*pausing on the Workdesk only for your security key \(recommended\)$/.test(npm[0]), npm[0]);
+  ok("…one tap alone stays yours", /^👤/.test(agentsClicking(["👤 You (only you: your security key): tap it when npm asks"])[0]), "");
+  const cw = agentsCodeWork(["👤 You (only you: a Symbiot code change): apply `.symbiot/whatsapp-photo-upload.patch` in the checkout (recommended)", "Leave it"]);
+  ok("a code change or patch is the agent's, with an OK asked on the Workdesk", /^🤖 Agent: .*patch.*OK on the Workdesk \(recommended\)$/.test(cw[0]) && cw[1] === "Leave it", cw);
+  ok("…dropped when another option already has the agent do it", agentsCodeWork(["🤖 Agent: apply the patch", "👤 You: apply the patch yourself"]).join("|") === "🤖 Agent: apply the patch", "");
+  ok("…while a password step stays yours", /^👤/.test(agentsCodeWork(["👤 You (only you: your password): type it when the patch tool asks"])[0]), "");
+  ok("…and so does a physical step", /^👤/.test(agentsClicking(["👤 You (only you: your phone): plug it in, click Allow, enter the code, tick Always"])[0]), "");
+  // two agents on the one npm step (2026-10-10): only the first asks
+  const npmAsk = { path: "/a", startedAt: 1, text: "Type your password on www.npmjs.com/package/symbiot/access" }, closeAsk = { path: "/b", startedAt: 2, text: "Close the window so I can open npmjs.com" };
+  const hl = heldAsks([closeAsk, npmAsk, { path: "/c", startedAt: 3, text: "Approve the invoice on xero.com" }]);
+  ok("a second agent's question about the same site is held for the first", hl["/b"] === "/a" && !hl["/a"] && !hl["/c"], JSON.stringify(hl));
+  ok("…and the brief says to read the live page and leave a site to its owner", /read the live page/.test(ONLY_YOU) && /only the owner asks the user anything/.test(ONLY_YOU), "");
+  // GitHub's transfer email (2026-10-10), with Gmail linked
+  const { agentsMail } = await import("../handover.mjs");
+  const ml = agentsMail(["👤 You (only you: your email): accept GitHub's transfer email for GarthGhostai/symbiot (recommended)", "Leave it"], ["gmail"]);
+  ok("accepting an email is the agent's when the mailbox is linked, asking OK first", /^🤖 Agent: accept GitHub's transfer email.*linked mailbox.*OK on the Workdesk.*\(recommended\)$/.test(ml[0]) && ml[1] === "Leave it", ml);
+  ok("…yours when no mailbox is linked", /^👤/.test(agentsMail(["👤 You: accept GitHub's transfer email"], [])[0]), "");
+  ok("…and a password or code in the mail stays yours", /^👤/.test(agentsMail(["👤 You (only you: an SMS code): open the email and type the code"], ["gmail"])[0]), "");
   // the Marketing card (the [Steve] series, 2026-10-08), with LinkedIn linked in Symbiot's browser
   const mk = ["👤 You (only you: your linkedin): schedule all three now in linkedin's scheduler, 08:00 on tue 13, 20 and 27 oct. paste each post's text and attach its card (recommended)", "👤 You (only you: your linkedin): schedule only week 2 now and approve 3 and 4 one at a time"];
   const mp = agentsPosting(mk, ["github", "linkedin"]);
@@ -251,8 +288,14 @@ try {
   ok("a linked platform: no sign-in or link step is yours, and doing it by hand isn't offered", shown.length === 1 && /^🤖 Agent: post it through Symbiot's browser, already signed in to LinkedIn, once you approve its preview on the Workdesk \(recommended\)$/.test(shown[0]) && !shown.some((o) => /👤|only you|by hand|yourself|sign-in/.test(o)), shown);
   ok("…every option by hand: the agent's one is offered instead, never none", linkedAsks(["do it by hand", "👤 You (only you: a browser): paste it in manually"], ["linkedin"], "Post week 2 on LinkedIn?").join() === "🤖 Agent: post it through Symbiot's browser, already signed in to LinkedIn, once you approve its preview on the Workdesk (recommended)", "");
   ok("…signing in again stays yours when a real attempt found the session expired, and says so", /^👤/.test(linkedAsks(["👤 You (only you: your linkedin sign-in): the session expired when it tried to post: sign in again in Symbiot's browser"], ["linkedin"])[0]), "");
+  { const q = ["👤 You (only you: your npm sign-in): sign in to www.npmjs.com/login in the Symbiot Browser", "🤖 Agent: assume 5x and plan agent counts"];
+    ok("an npm sign-in option never takes LinkedIn's buttons, even when the question mentions LinkedIn", linkedAsks(q, ["linkedin"], "Sign in to npm so I can post the release note, like the LinkedIn post?").join() === q.join(), linkedAsks(q, ["linkedin"], "LinkedIn").join());
+    ok("…two questions back to back: the second keeps only its own options", linkedAsks(["Agent: assume 5x"], ["linkedin"], "Which Max plan are you on?").join() === "Agent: assume 5x", ""); }
   ok("…and a platform that isn't linked still asks you to sign in", linkedAsks(pq, ["github"]).join() === pq.join(), "");
   ok("a run's last words asking you to sign in to a linked platform, or make its developer app, aren't left to you", linkedChore("👤 You: create LinkedIn's developer app and sign in to give it the one-time OK to post as you", ["linkedin"]) && !linkedChore("👤 You: create LinkedIn's developer app", ["github"]) && !linkedChore("LinkedIn signed out when it tried: sign in again", ["linkedin"]), "");
+  ok("the brief: agents open the Symbiot Browser themselves, on a given address", /symbiot browser <url>/.test(ONLY_YOU) && /never tell the user you can't open it/.test(ONLY_YOU));
+  ok("…but only for a sign-in that really expired: it blocks every `symbiot screens` command until Done, so never to browse or follow an external link", /every `symbiot screens` command, yours and other agents', fails until the user clicks Done/.test(ONLY_YOU) && /only for a sign-in a real attempt showed is expired, never to read, click or browse a page/.test(ONLY_YOU) && /map a link's address directly/.test(ONLY_YOU));
+  ok("the brief: sending is not reading; check access first, look up the provider by MX, full plain options", /is not being able to read it/.test(ONLY_YOU) && /dig \+short MX/.test(ONLY_YOU) && /never cut off/.test(ONLY_YOU));
   ok("the brief: prefer the linked browser session over APIs and apps that need the user; never offer it by hand", /Prefer what's already linked: Symbiot's own browser \(`~\/\.config\/symbiot\/browser`\) is signed in to the sites the user linked/.test(ONLY_YOU) && /ask them to sign in only when a real attempt found the session expired/.test(ONLY_YOU) && /never offer doing an agent's job by hand/.test(ONLY_YOU), "");
   ok("the brief: marketing posts once the user approves its preview, it doesn't leave it to them", /`marketing`:[^\n]*approves each one's preview, and then it posts or schedules it itself through Symbiot's signed-in browser/.test(handoverRules(["symbiot", "marketing"], "symbiot").join("\n")), "");
   ok("the brief: local git work is never a 👤 step: do it, ask for an OK before a push", /Local git work \(staging, committing, pulling, pushing[^)]*\) is never a 👤 step[^.]*ask only for an OK in QUESTIONS\.md before a push/.test(ONLY_YOU), "");
@@ -276,6 +319,10 @@ try {
   ok("…a step only you can take, the same way", nt && nt.kind === "step", nt);
   settleNeeds(actT, nt.key);
   ok("…skipped (or gone ahead), it stops asking, until a newer run there says something else", !needsOn(actT), "");
+  const actT2 = join(CFG, "drafts", "act-tail2");
+  put(actT2, "TASKS.md", "- [ ] Give the WhatsApp module a fixed public URL\n"); streamed(actT2, tAgo, "Running tailscale needs sudo, and only you can do that.\n\nPaste this: `sudo tailscale up`.");
+  noted({ path: actT2, name: "Agent: a fixed URL again", startedAt: tAgo });
+  ok("…and another agent asking the same thing doesn't raise it again", !needsOn(actT2), needsOn(actT2));
   streamed(actT, Date.now(), "The draft to Cale isn't sent: it waits for your OK.");
   ok("…which it then does", needsOn(actT) && needsOn(actT).kind === "approve", needsOn(actT));
   const old = Date.now() - NEEDS_FOR - 60000; utimesSync(join(actT, ".symbiot", "agent.log"), old / 1000, old / 1000);

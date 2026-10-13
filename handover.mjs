@@ -27,7 +27,7 @@ function handoverRules(lanes = [], here = "") {
 }
 // The rule for options in QUESTIONS.md: the user gets only what no agent can do,
 // and the option says which kind it is.
-const ONLY_YOU = "- Only what no agent can do is the user's: their body (a phone in their hand, a cable, which network they're on), their identity or secrets (signing in, a 2FA code, a token from a provider's console) or a decision that's theirs (closing an account, spending money, sending something in their name). Start such an option with `👤 You (only you: <which>):`, e.g. `👤 You (only you: your Meta token): paste it into .env`. Anything an agent could do, yours or another lane's, is never a 👤 step: do it, or hand it over. Local git work (staging, committing, pulling, pushing, in this repo or another lane's) is never a 👤 step either: do it, or hand it to that repo's lane, and ask only for an OK in QUESTIONS.md before a push, with the files it pushes. Prefer what's already linked: Symbiot's own browser (`~/.config/symbiot/browser`) is signed in to the sites the user linked under Connections, so use that session over any route that needs a new sign-in, an app, a key or their consent (a platform's API, a developer app, OAuth). Check what's linked before you write a 👤 sign-in or link step, ask them to sign in only when a real attempt found the session expired (and say so), and never offer doing an agent's job by hand. When they do have to sign in to a site, name the site's address and the place in the app: `👤 You (only you: your sign-in): sign in to <site, e.g. www.domains.co.za/client/dashboard> in the Symbiot Browser (Settings → Connections → Add a site)`, never just \"in Symbiot's browser\": Symbiot puts a Sign in button on that card, which opens the window there. An option where picking it is enough starts with `🤖 Agent:`. Tag actions only: an option that just reports what the user saw or decides (`it notified me`, `not tried yet`) gets no tag. A permission your run doesn't have (a command, a folder) is never a chore for the user. Write the rules, as narrow as the task needs, to `.symbiot/allowlist.proposed.json` (`{\"permissions\": {\"allow\": [...], \"deny\": [...], \"additionalDirectories\": [...]}}`), ask for it in QUESTIONS.md with the option `👤 You (only you: a permission): allow the list in .symbiot/allowlist.proposed.json` exactly (Symbiot shows the user that option as an Allow button, with your rules in plain words, so write the question itself in plain words and never repeat the file's name in it), and stop. If it stays inside the user's work (the folders they gave Symbiot, not ~/.ssh or ~/.config), asks for nothing wide, and doesn't publish or reach another machine, Symbiot turns it on by itself and runs you again: no question reaches the user. Their knowledge folders are already yours to read. Never ask them to copy files or run claude in a terminal for it. Decide what can be undone yourself, as a trusted colleague would: the approach, names, which of two fixes, how to lay files out; pick, do it, and say what you chose and why in your last message. Ask only about what can't be undone, costs money, goes out in the user's name, or needs who they are, and then give 2–3 options with your pick first, marked (recommended). Their answer comes back into this same conversation, so you'll remember everything when it does. Symbiot's membrane (its guard) stops the few things only the user does (pushing to main, publishing, deleting outside your folder, sudo, their keys); if it stops you, ask, don't work around it. Whatever waits on the user's OK (sending, posting, deleting, paying, closing) or on a step only they can take goes in QUESTIONS.md as a question, with what they should check first in its context line, never only in your last message: they aren't asked about what your last message says.";
+const ONLY_YOU = "- Only what no agent can do is the user's: their body (a phone in their hand, a cable, which network they're on), their identity or secrets (signing in, a 2FA code, a token from a provider's console) or a decision that's theirs (closing an account, spending money, sending something in their name). Start such an option with `👤 You (only you: <which>):`, e.g. `👤 You (only you: your Meta token): paste it into .env`. Anything an agent could do, yours or another lane's, is never a 👤 step: do it, or hand it over. Local git work (staging, committing, pulling, pushing, in this repo or another lane's) is never a 👤 step either: do it, or hand it to that repo's lane, and ask only for an OK in QUESTIONS.md before a push, with the files it pushes. Prefer what's already linked: Symbiot's own browser (`~/.config/symbiot/browser`) is signed in to the sites the user linked under Connections, so use that session (you can open it yourself on any address: `symbiot browser <url>`, or `symbiot screens signin <site>`; never tell the user you can't open it, and only a password or 2FA code is theirs. But that opens a visible window, and while it is open every `symbiot screens` command, yours and other agents', fails until the user clicks Done in it: open it only for a sign-in a real attempt showed is expired, never to read, click or browse a page, and never to open an external link such as an Unsubscribe one. Read and press with `symbiot screens` (it works in a hidden window and keeps your sign-ins), and map a link's address directly instead of pressing it) over any route that needs a new sign-in, an app, a key or their consent (a platform's API, a developer app, OAuth). Check what's linked before you write a 👤 sign-in or link step, ask them to sign in only when a real attempt found the session expired (and say so), and never offer doing an agent's job by hand. When the other option is a way to skip, make it a plain `Skip this part` (say what you will leave out): never one that asks for personal details such as their addresses, numbers or accounts.When they do have to sign in to a site, name the site's address and the place in the app: `👤 You (only you: your sign-in): sign in to <site, e.g. www.domains.co.za/client/dashboard> in the Symbiot Browser (Settings → Connections → Add a site)`, never just \"in Symbiot's browser\": Symbiot puts a Sign in button on that card, which opens the window there. An option where picking it is enough starts with `🤖 Agent:`. Tag actions only: an option that just reports what the user saw or decides (`it notified me`, `not tried yet`) gets no tag. A permission your run doesn't have (a command, a folder) is never a chore for the user. Write the rules, as narrow as the task needs, to `.symbiot/allowlist.proposed.json` (`{\"permissions\": {\"allow\": [...], \"deny\": [...], \"additionalDirectories\": [...]}}`), ask for it in QUESTIONS.md with the option `👤 You (only you: a permission): allow the list in .symbiot/allowlist.proposed.json` exactly (Symbiot shows the user that option as an Allow button, with your rules in plain words, so write the question itself in plain words and never repeat the file's name in it), and stop. If it stays inside the user's work (the folders they gave Symbiot, not ~/.ssh or ~/.config), asks for nothing wide, and doesn't publish or reach another machine, Symbiot turns it on by itself and runs you again: no question reaches the user. Their knowledge folders are already yours to read. Never ask them to copy files or run claude in a terminal for it. Decide what can be undone yourself, as a trusted colleague would: the approach, names, which of two fixes, how to lay files out; pick, do it, and say what you chose and why in your last message. Ask only about what can't be undone, costs money, goes out in the user's name, or needs who they are, and then give 2–3 options with your pick first, marked (recommended). Their answer comes back into this same conversation, so you'll remember everything when it does. Symbiot's membrane (its guard) stops the few things only the user does (pushing to main, publishing, deleting outside your folder, sudo, their keys); if it stops you, ask, don't work around it. Whatever waits on the user's OK (sending, posting, deleting, paying, closing) or on a step only they can take goes in QUESTIONS.md as a question, with what they should check first in its context line, never only in your last message: they aren't asked about what your last message says. Work like a capable clerk, not someone who keeps bugging the boss: decide, do the work with the user's linked accounts, sites and tools, and report after. Before you ask anything, check whether it's already done or answered: the task, ANSWERS.md, what Symbiot knows about them, the key or sign-in or version actually in place (load a real page and look). Never ask again for something they already did or answered. Ask only for passwords or 2FA/SMS codes, a yes before spending money, and a yes before anything hard to undo; put them together in ONE question, never several for the same cause. Never ask them to close the Symbiot Browser: wait and retry, or close it yourself when no sign-in is in progress. Before you write a step for the user on a site, read the live page (`symbiot screens`, a screenshot or its text) and check the step is possible there: a greyed-out field or \"cannot be changed\" means the way is delete and add again, not Edit; write that, with their password or code as their only step. If another running agent is already on that site or step, leave it to that agent or hand over to it: only the owner asks the user anything. Never name a service you haven't confirmed (find a mail provider from the domain's MX records, don't guess). When a step fails or is blocked, find out why and fix or report the cause before you hand anything to them; a tool failing is never a reason to hand them the step. Write every question and option in plain words for someone who doesn't code: no file paths, config names or commands, the exact sign-in address, the reason for asking and what happens if they say no, and never cut an option short. Secrets they've handed over (passwords, recovery codes, tokens) are in Symbiot's vault: `symbiot secret list` shows the names, `symbiot secret get <name>` prints the next unused value (add `--use` to mark a one-use code spent), so ask them for a password or code only when none is saved. Never write a secret into a file, a report, a question or a log. Being able to send to a mailbox or site is not being able to read it: before you promise to read an inbox or a site, or write a card about one, check that Symbiot is signed in to it (Settings → Connections, the linked accounts, the browser session). If it isn't, say so plainly up front (\"I can send there but can't read it yet\") rather than starting an agent that has to ask. Never guess a mail provider: look it up from the domain's MX records (`dig +short MX <domain>`). Write each question and option in full, in plain words, with the exact sign-in address and why, never cut off or in jargon.";
 
 // What a run hands back to Symbiot itself (handback.mjs reads it): facts for
 // memory, and emails that wait on a reply, which Symbiot then watches for; and
@@ -85,6 +85,62 @@ function agentsGitWork(options) {
   });
 }
 
+// ---- clicking and typing is an agent's job -----------------------------------------
+// A card read "👤 You (only you: your security key): at www.npmjs.com/package/symbiot/access
+// click GitHub Actions, enter owner GAWdessey, repository symbiot, workflow filename
+// publish.yml, tick 'Allow npm publish', click 'Set up…'" (2026-10-11). Clicking, filling a
+// form and running a command in the signed-in browser is an agent's work; the user's part is
+// the one tap (a security key, a password, an SMS code), which the agent pauses for on the
+// Workdesk. A step with fewer than three such actions, or a physical one (a cable, a phone
+// in hand, being there), stays the user's. Options in, options out.
+const UI_STEP = /\b(?:click|tick|untick|select|choose|fill|enter|paste|type|toggle|press|run `[^`]+`)/gi;
+const PHYSICAL = /\b(?:plug|unplug|usb|cable|in person|in hand|wi-?fi|network|reboot)\b/i;
+const TAP = /\b(security key|passkey|password|2fa(?: code)?|sms code|verification code|one-time code|authenticator)\b/i;
+const clicking = (text) => { const t = String(text || ""); return !PHYSICAL.test(t) && (t.match(UI_STEP) || []).length >= 3; };
+function agentsClicking(options) {
+  return (options || []).map(String).map((o) => {
+    if (!/^\s*👤/.test(o) || !clicking(o)) return o;
+    const rec = /\(recommended\)\s*$/i.test(o), tag = (o.match(/\(only you:\s*([^)]*)\)/i) || [])[1] || "", tap = (TAP.exec(tag) || TAP.exec(o) || [])[1];
+    const body = o.replace(/^\s*👤\s*You(?:\s*\([^)]*\))?\s*:?\s*/i, "").replace(/\s*\(recommended\)\s*$/i, "").replace(/[.\s]+$/, "");
+    return `🤖 Agent: ${body}${tap ? `, pausing on the Workdesk only for your ${tap.toLowerCase()}` : ""}${rec ? " (recommended)" : ""}`;
+  });
+}
+
+// ---- code changes, patches, edits and uploads are an agent's job ------------------
+// A card offered "👤 You (only you: a Symbiot code change)" for the WhatsApp photo-upload
+// patch (2026-10-11); Garth: "i dont know how to do this". Changing code, applying a patch,
+// editing a file or uploading one is an agent's work; the user only approves. A step that
+// needs who they are (a password, a code, signing in) or the body (a cable, a phone) stays theirs.
+const CODE_WORK = /\bcode change|\b(?:apply|run|install)\b[^.;:]{0,40}\bpatch\b|\bpatch(?:es)?\b|\b(?:edit|change|modify|update|fix|rewrite)\b[^.;:]{0,40}\b(?:code|files?|config|source|repo|script)\b|\b(?:upload|attach)\b[^.;:]{0,30}\b(?:files?|images?|photos?)\b|\bpull request\b/i;
+const codeWork = (text) => { const t = String(text || ""); return CODE_WORK.test(t) && !IDENTITY.test(t) && !PHYSICAL.test(t) && !TAP.test(t); };
+function agentsCodeWork(options) {
+  const opts = (options || []).map(String), agentDoes = opts.some((o) => /🤖/.test(o) && codeWork(o));
+  return opts.flatMap((o) => {
+    if (!/^\s*👤/.test(o) || !codeWork(o)) return [o];
+    if (agentDoes) return [];
+    const rec = /\(recommended\)\s*$/i.test(o), body = o.replace(/^\s*👤\s*You(?:\s*\([^)]*\))?\s*:?\s*/i, "").replace(/\s*\(recommended\)\s*$/i, "").replace(/[.\s]+$/, "");
+    return [`🤖 Agent: ${body}, then asking for your OK on the Workdesk${rec ? " (recommended)" : ""}`];
+  });
+}
+
+// ---- one agent owns a site at a time ----------------------------------------------
+// Two agents ran the same npm step in the one Symbiot Browser window (2026-10-10) and each
+// asked Garth something different (a password, and to close the window). The first agent to
+// ask about a site owns it; a later agent's question about the same site is held, and the
+// owner's stays the one he sees. `asks`: [{ path, startedAt, text }], text = the question and
+// its options. Gives the paths whose ask is held, with who holds it: { path: ownerPath }.
+const SITE = /\b((?:[a-z0-9-]+\.)+(?:com|org|net|io|co\.za|co\.uk|dev|app|ai|gov|edu|za))\b/gi;
+const sitesOf = (text) => [...new Set([...String(text || "").matchAll(SITE)].map((m) => m[1].toLowerCase().replace(/^www\./, "")))];
+function heldAsks(asks) {
+  const held = {}, owner = new Map();
+  for (const a of [...(asks || [])].sort((x, y) => (x.startedAt || 0) - (y.startedAt || 0))) {
+    const mine = sitesOf(a.text).filter((s) => owner.has(s) && owner.get(s) !== a.path);
+    if (mine.length) { held[a.path] = owner.get(mine[0]); continue; }
+    for (const s of sitesOf(a.text)) if (!owner.has(s)) owner.set(s, a.path);
+  }
+  return held;
+}
+
 // ---- posting on a linked platform is an agent's job -------------------------------
 // A Marketing card offered two options, both "👤 You (only you: your linkedin): schedule
 // all three now in linkedin's scheduler… paste each post's text and attach its card"
@@ -111,6 +167,25 @@ function agentsPosting(options, linked = []) {
   });
 }
 
+// ---- acting on an email is an agent's job when the mailbox is linked ---------------
+// During the GitHub move a card told Garth to accept GitHub's transfer email himself
+// (2026-10-10), with his Gmail linked. Opening, reading, replying to or following a link in
+// a mail is the agent's work through the mail connector or Symbiot's signed-in browser; the
+// user only gives the yes before anything hard to undo. linked: the linked site ids (gmail,
+// outlook). A password, a code or a physical step stays theirs. Options in, options out.
+const MAIL_STEP = /\b(?:accept|approve|confirm|open|click|follow|check|find|reply|forward|read)\b[^.;:]{0,60}\b(?:e-?mails?|inbox|invit(?:e|ation)s?|transfer request|confirmation link|verification link|link in)\b|\b(?:e-?mail|invitation|inbox)\b[^.;:]{0,40}\b(?:accept|confirm|approve|click|follow)\b/i;
+const mailLinked = (linked = []) => linked.map((x) => String(x).toLowerCase().replace(/[^a-z]/g, "")).some((x) => x === "gmail" || x === "outlook");
+const mailWork = (text, linked = []) => { const t = String(text || ""); return mailLinked(linked) && MAIL_STEP.test(t) && !IDENTITY.test(t) && !PHYSICAL.test(t) && !TAP.test(t); };
+function agentsMail(options, linked = []) {
+  const opts = (options || []).map(String), agentDoes = opts.some((o) => /🤖/.test(o) && mailWork(o, linked));
+  return opts.flatMap((o) => {
+    if (!/^\s*👤/.test(o) || !mailWork(o, linked)) return [o];
+    if (agentDoes) return [];
+    const rec = /\(recommended\)\s*$/i.test(o), body = o.replace(/^\s*👤\s*You(?:\s*\([^)]*\))?\s*:?\s*/i, "").replace(/\s*\(recommended\)\s*$/i, "").replace(/[.\s]+$/, "");
+    return [`🤖 Agent: ${body}, through your linked mailbox, asking for your OK on the Workdesk before anything that can't be undone${rec ? " (recommended)" : ""}`];
+  });
+}
+
 // ---- what's linked is never asked for again ----------------------------------------
 // A Marketing card asked "let a poster on this computer put the steve posts up for
 // you?" with two options, both "👤 You (only you: your linkedin sign-in)": "ok it…" and
@@ -125,11 +200,14 @@ const EXPIRED = /\bexpired?\b|\bsigned out\b|\blogged out\b/i;
 const LINKED_NAMES = { linkedin: "LinkedIn", x: "X", facebook: "Facebook", instagram: "Instagram", threads: "Threads", bluesky: "Bluesky", mastodon: "Mastodon", youtube: "YouTube", tiktok: "TikTok", reddit: "Reddit" };
 const isLinked = (on, linked) => !!on && linked.map((x) => String(x).toLowerCase().replace(/[^a-z]/g, "")).includes(on);
 const viaLinked = (on) => `🤖 Agent: post it through Symbiot's browser, already signed in to ${LINKED_NAMES[on] || on}, ${APPROVE_FIRST}`;
-// about: the question and its context, for an option that doesn't name the platform.
+// about: the question, for an option that doesn't name the platform. An option that names
+// some other site to sign in to ("sign in to npm") never takes the question's platform: a
+// question that only mentions LinkedIn gave an npm sign-in card LinkedIn's buttons.
+const NAMES_TARGET = /\b(?:sign|log)(?:ging|ed)?[- ]?in\s+(?:to|at|on|into)\s+(?:your\s+|the\s+)?[\w.-]+|\b(?:[a-z0-9-]+\.)+[a-z]{2,}\b/i;
 function linkedAsks(options, linked = [], about = "") {
   const opts = (options || []).map(String), q = platformOf(about); let on = "";
   const out = opts.flatMap((o) => {
-    const p = platformOf(o) || q; if (!isLinked(p, linked) || EXPIRED.test(o)) return [o];
+    const p = platformOf(o) || (NAMES_TARGET.test(o) ? "" : q); if (!isLinked(p, linked) || EXPIRED.test(o)) return [o];
     on = p;
     if (BY_HAND.test(o)) return []; // the agent does it: "do it by hand" is never an option
     if (!/^\s*👤/.test(o) || !ASKS_ACCESS.test(o)) return [o];
@@ -140,7 +218,7 @@ function linkedAsks(options, linked = [], about = "") {
 }
 // A "👤 You" step a run's last words leave (leftToYou) that's signing in, linking or
 // doing by hand what a linked platform's session already does: not the user's.
-const linkedChore = (text, linked = []) => { const t = String(text || ""), p = platformOf(t); return isLinked(p, linked) && !EXPIRED.test(t) && (ASKS_ACCESS.test(t) || BY_HAND.test(t)); };
+const linkedChore = (text, linked = []) => { const t = String(text || ""), p = platformOf(t); return mailWork(t, linked) || isLinked(p, linked) && !EXPIRED.test(t) && (ASKS_ACCESS.test(t) || BY_HAND.test(t)); };
 
 // ---- what a run's last words leave to the user ----------------------------------
 // A run that ends saying something waits on the user ("the draft isn't sent",
@@ -201,4 +279,4 @@ function parseHandoffs(md) {
   return out.map((h) => ({ lane: h.lane, text: h.text.trim().slice(0, HANDOVER_MAX) })).filter((h) => h.lane && h.text);
 }
 
-export { OPS, MARKETING, HANDOVER_MAX, handoverRules, ONLY_YOU, HANDBACK, gitWork, agentsGitWork, PUSH_OK, postsOnLinked, agentsPosting, APPROVE_FIRST, linkedAsks, linkedChore, parseFacts, parseAwaiting, parseHandoffs, leftToYou };
+export { agentsMail, mailWork, OPS, MARKETING, HANDOVER_MAX, handoverRules, ONLY_YOU, HANDBACK, gitWork, agentsGitWork, agentsClicking, agentsCodeWork, heldAsks, sitesOf, PUSH_OK, postsOnLinked, agentsPosting, APPROVE_FIRST, linkedAsks, linkedChore, parseFacts, parseAwaiting, parseHandoffs, leftToYou };

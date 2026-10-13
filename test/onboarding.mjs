@@ -77,7 +77,7 @@ try {
   ok("Settings' first steps have Your phone too (optional), for whoever finished setup before", fsPhone && fsPhone.optional && !fsPhone.done && fsPaired.done && /Pixel paired/.test(fsPaired.sub), [fsPhone, fsPaired]);
   const droid = execSync(`${JSON.stringify(process.execPath)} --input-type=module -e 'const h = await import(${JSON.stringify(join(dirname(fileURLToPath(import.meta.url)), "..", "home.mjs"))}); const c = await import(${JSON.stringify(join(dirname(fileURLToPath(import.meta.url)), "..", "core.mjs"))}); const cf = c.loadConfig(); delete cf.onboarding; c.saveConfig(cf); const first = h.startOnboarding().step; const a = h.setOnboarding({ restart: true }); const b = h.setOnboarding({ step: "phone" }); console.log(JSON.stringify({ first, steps: a.steps, step: a.step, phone: a.phone, after: b.step }));'`, { env: { ...process.env, HOME, USERPROFILE: HOME, SYMBIOT_ANDROID_APP: "1" }, encoding: "utf8" });
   const dj = JSON.parse(droid.trim().split("\n").pop());
-  ok("in the phone's app, Setup starts at Your computer, a new install's too (and has no Your phone step)", dj.steps.join() === "computer,welcome,ai,work,agent,apps,docs,done" && dj.step === "computer" && dj.first === "computer" && dj.phone.role === "phone" && dj.phone.paired === false && dj.after === "computer", dj);
+  ok("in the phone's app, Setup starts at Your computer, a new install's too (and has no Your phone step)", dj.steps.join() === "computer,welcome,done" && !dj.steps.includes("ai") && dj.step === "computer" && dj.first === "computer" && dj.phone.role === "phone" && dj.phone.paired === false && dj.after === "computer", dj);
   // the phone app installed over an older one: its setup had started at "Meet Symbiot"
   const { phoneSetupFirst } = await import("../home.mjs");
   const { loadConfig: lc, saveConfig: sc } = await import("../core.mjs");
@@ -87,8 +87,8 @@ try {
   ok("the phone app over an older one: its unfinished setup goes to Your computer, not on to Claude Code", pf.step === "computer" && pf.computer === true, pf);
   setOnb({ ...lc().onboarding, step: "welcome" });
   ok("…once: chose No computer, it stays on Meet Symbiot", phoneSetupFirst({ app: true, paired: () => false }).step === "welcome");
-  setOnb({ pending: true, step: "ai", skipped: [] });
-  ok("a phone already paired keeps its step", phoneSetupFirst({ app: true, paired: () => true }).step === "ai");
+  setOnb({ pending: true, step: "computer", skipped: [], computer: true });
+  ok("a phone already paired keeps its step", phoneSetupFirst({ app: true, paired: () => true }).step === "computer");
   setOnb({ pending: false, step: "done", skipped: [] });
   ok("a finished setup isn't reopened", phoneSetupFirst({ app: true, paired: () => false }).pending === false);
   setOnb({ pending: true, step: "welcome", skipped: [] });
@@ -97,6 +97,11 @@ try {
   o = setOnboarding({ done: true });
   ok("done: Home is yours", o.pending === false && JSON.parse(readFileSync(join(CFG, "config.json"), "utf8")).onboarding.done > 0, o.pending);
   ok("a Symbiot that finished setup isn't sent through it again (the new step doesn't reopen it)", onboarding().pending === false, onboarding().pending);
+
+  console.log("A PHONE NEVER ASKS FOR ITS OWN AI");
+  const ph = JSON.parse(execSync(`${JSON.stringify(process.execPath)} --input-type=module -e 'const h = await import(${JSON.stringify(join(dirname(fileURLToPath(import.meta.url)), "..", "home.mjs"))}); const s = h.homeState({}); const a = await h.homeAsk("hi"); console.log(JSON.stringify({ cards: s.you.map((y) => y.id), err: a.error }));'`, { env: { ...process.env, HOME: join(HOME, "nophone"), USERPROFILE: join(HOME, "nophone"), SYMBIOT_AS_PHONE: "1", SYMBIOT_CLAUDE_CMD: "/nonexistent" }, encoding: "utf8" }).trim().split("\n").pop());
+  ok("a phone (Termux too) gets no Connect-an-AI, agent or connector card", !ph.cards.some((id) => /^setup:(ai|agent|conn|pick)/.test(id)), ph.cards);
+  ok("its chat says to pair, not to connect an AI", /Pair this phone/.test(ph.err || ""), ph.err);
 
   console.log("THE ICON — in your look");
   const f = iconSvg("ferro"), g = iconSvg("glass"), p = iconSvg("pearl");

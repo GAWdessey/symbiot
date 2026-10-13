@@ -50,7 +50,7 @@ function parseRun(text) {
   const lines = String(text || "").split("\n");
   const events = []; let plain = [];
   for (const l of lines) { if (l.startsWith("{")) { try { events.push(JSON.parse(l)); continue; } catch {} } if (l.trim()) plain.push(l); }
-  const out = { stream: events.length > 0, model: "", steps: [], todos: [], doing: "", said: [], final: "", cost: null, turns: null, tokens: null, ctx: null, tests: null, files: {}, pace: [], errors: 0 };
+  const out = { stream: events.length > 0, model: "", steps: [], todos: [], doing: "", said: [], final: "", cost: null, turns: null, modelUsage: null, tokens: null, ctx: null, tests: null, files: {}, pace: [], errors: 0 };
   if (!out.stream) { out.said = plain.slice(-12).map((l) => short(l, 160)); out.final = plain.slice(-40).join("\n").trim(); return out; }
   const byId = new Map(), tasks = new Map(), talk = []; let thinking = false, moved = 0;
   for (const e of events) {
@@ -59,6 +59,8 @@ function parseRun(text) {
     if (at && (e.type === "assistant" || e.type === "user")) moved = Math.max(moved, at);
     if (e.session_id && !out.session) out.session = String(e.session_id);
     if (e.type === "system" && e.subtype === "init") { out.model = String(e.model || ""); continue; }
+    // a long call's heartbeat (~every 30s): not a move, but how long the step has been going
+    if (e.type === "tool_progress") { const s = byId.get(e.parent_tool_use_id); if (s && s.status === "running" && typeof e.elapsed_time_seconds === "number") s.elapsedS = Math.max(s.elapsedS || 0, e.elapsed_time_seconds); continue; }
     if (e.type === "assistant" && e.message && Array.isArray(e.message.content)) {
       const u = e.message.usage; if (u) out.ctx = (u.input_tokens || 0) + (u.cache_read_input_tokens || 0) + (u.cache_creation_input_tokens || 0) + (u.output_tokens || 0) || out.ctx; // what its next step rereads
       for (const b of e.message.content) {
@@ -93,13 +95,15 @@ function parseRun(text) {
       out.final = String(e.result || "").trim();
       out.cost = typeof e.total_cost_usd === "number" ? e.total_cost_usd : null;
       out.turns = typeof e.num_turns === "number" ? e.num_turns : null;
+      out.modelUsage = e.modelUsage && typeof e.modelUsage === "object" ? e.modelUsage : null; // per model: tokens and costUSD
       const u = e.usage || {}; out.tokens = (u.input_tokens || 0) + (u.output_tokens || 0) + (u.cache_read_input_tokens || 0) + (u.cache_creation_input_tokens || 0) || null;
       if (e.is_error) out.errors++;
     }
   }
   out.todos = [...tasks.values()];
   const now = out.todos.find((t) => t.status === "in_progress"), last = out.steps[out.steps.length - 1];
-  out.doing = out.final ? "" : now ? now.active : last && last.status === "running" ? `${last.verb} ${last.target}`.trim() : thinking ? "Thinking" : "";
+  out.doing = out.final ? "" : now ? now.active : last && last.status === "running" ? `${last.verb} ${last.target}`.trim() + (last.elapsedS >= 120 ? ` · running ${Math.floor(last.elapsedS / 60)}m` : "") : thinking ? "Thinking" : "";
+  out.running = !out.final && last && last.status === "running" && (last.at || last.elapsedS) ? { at: last.at || 0, elapsedS: last.elapsedS || 0 } : null; // the call still going, for a live "running Nm"
   // pace: steps per minute over the run, up to 24 buckets (a sparkline)
   const times = out.steps.map((s) => s.at).filter(Boolean);
   if (times.length > 1) { const t0 = times[0], span = Math.max(times[times.length - 1] - t0, 60000), n = Math.min(24, Math.max(6, Math.ceil(span / 60000))), w = span / n; out.pace = new Array(n).fill(0); for (const t of times) out.pace[Math.min(n - 1, Math.floor((t - t0) / w))]++; }
@@ -172,7 +176,10 @@ const STALL_MS = 20 * 60 * 1000;
 function runLine({ plan = [], step = 0, work = {}, now = Date.now() } = {}) {
   const n = short(nowLine(work), 90), lower = (s) => s.charAt(0).toLowerCase() + s.slice(1);
   const at = step && plan[step - 1] ? `step ${step} of ${plan.length}: ${lower(plan[step - 1].label)}` : plan.length ? `${plan.length} steps in its brief` : "";
-  const line = [at, n && lower(n)].filter(Boolean).join(" · ") || "working on it";
+  // a call still going ticks with the clock, not only when the log grows: elapsed from when it began (or its last heartbeat)
+  const r = work.running, runS = r ? Math.max(r.elapsedS || 0, r.at ? Math.round((now - r.at) / 1000) : 0) : 0;
+  const going = runS >= 60 && !/running \d/.test(n) ? `running ${runS >= 3600 ? Math.floor(runS / 3600) + "h " + Math.floor(runS % 3600 / 60) + "m" : Math.floor(runS / 60) + "m"}` : "";
+  const line = [at, n && lower(n), going].filter(Boolean).join(" · ") || "working on it";
   const quiet = work.moved && now - work.moved > STALL_MS ? Math.round((now - work.moved) / 60000) : 0;
   return { line, ...(step ? { step, of: plan.length } : {}), ...(quiet ? { quiet } : {}), ...(work.looping ? { looping: true } : {}) };
 }
@@ -183,9 +190,26 @@ function runLine({ plan = [], step = 0, work = {}, now = Date.now() } = {}) {
 // reads the rest; and it's kept until the file changes, so a view that asks again
 // costs nothing. Past RUN_CAP of one run, it's that run's last RUN_CAP.
 const RUN_CAP = 16 * 1024 * 1024, RUN_CACHE = new Map();
+// A running agent's log grows all the time, so a view that asked a moment ago would miss the
+// cache on size and read the whole run again (megabytes, every few seconds, from every tick:
+// ~15% of a core while idle, 2026-10-10). A log that only grew by appending to the same run
+// (no new "=== " header in what was added) costs just the added bytes.
+function appended(file, hit, st) {
+  if (!hit || hit.at < 0 || st.size <= hit.size || hit.text.length + (st.size - hit.size) > RUN_CAP) return null;
+  const back = Math.min(64, hit.size), b = Buffer.alloc(st.size - hit.size + back);
+  let fd; try { fd = openSync(file, "r"); } catch { return null; }
+  try { if (readSync(fd, b, 0, b.length, hit.size - back) !== b.length) return null; } catch { return null; } finally { try { closeSync(fd); } catch {} }
+  if (!b.subarray(0, back).equals(hit.last)) return null; // not the file we read: rewritten, not appended to
+  if (b.indexOf("\n=== ") >= 0) return null; // a new run began: read from its header
+  const add = Buffer.concat([hit.rest, b.subarray(back)]);
+  let keep = 0; for (let i = add.length - 1; i >= Math.max(0, add.length - 3); i--) { const c = add[i]; if ((c & 0xC0) === 0x80) continue; keep = c >= 0xC0 && add.length - i < (c >= 0xF0 ? 4 : c >= 0xE0 ? 3 : 2) ? add.length - i : 0; break; } // a character cut by the end of the read waits for the rest
+  return { text: hit.text + add.subarray(0, add.length - keep).toString("utf8"), rest: add.subarray(add.length - keep), last: b.subarray(-64) };
+}
 function readRunLog(file) {
   let st; try { st = statSync(file); } catch { return ""; }
   const hit = RUN_CACHE.get(file); if (hit && hit.size === st.size && hit.mtime === st.mtimeMs) return hit.text;
+  const more = appended(file, hit, st);
+  if (more) { RUN_CACHE.delete(file); RUN_CACHE.set(file, { size: st.size, mtime: st.mtimeMs, text: more.text, rest: more.rest, last: more.last, at: hit.at }); return more.text; }
   let fd; try { fd = openSync(file, "r"); } catch { return ""; }
   let buf = Buffer.alloc(0), at = -1;
   try {
@@ -196,16 +220,27 @@ function readRunLog(file) {
     }
   } catch { buf = Buffer.alloc(0); } finally { try { closeSync(fd); } catch {} }
   const text = (at >= 0 ? buf.subarray(at) : buf).toString("utf8");
-  RUN_CACHE.delete(file); RUN_CACHE.set(file, { size: st.size, mtime: st.mtimeMs, text });
+  RUN_CACHE.delete(file); RUN_CACHE.set(file, { size: st.size, mtime: st.mtimeMs, text, rest: Buffer.alloc(0), last: buf.subarray(-64), at });
   if (RUN_CACHE.size > 40) RUN_CACHE.delete(RUN_CACHE.keys().next().value);
   return text;
 }
+// When the newest run in a log began (its header's time), or 0: only the header line is looked at,
+// not the megabytes after it.
+function runStarted(log) { const m = /^=== .* (\d{4}-\d\d-\d\dT[\d:.]+Z) ===$/m.exec(String(log || "").slice(0, 2000).replace(/^\n/, "")); return m ? Date.parse(m[1]) || 0 : 0; }
 // The newest run's part of an agent.log (after its header and command line).
 function lastRunText(log) {
   const s = String(log || ""), at = s.lastIndexOf("\n=== ");
   return at < 0 ? s : s.slice(at).split("\n").slice(3).join("\n");
 }
+// A turn that ended on purpose and is waiting ("nothing new to act on… waiting for marketing's
+// photos"): the sentence of its final answer that says what for, or "". A one-shot run exits
+// after every turn, so a finished process alone can't tell this from a stall (2026-10-10).
+function waitingOn(final) {
+  const ss = String(final || "").replace(/[`*_#>]/g, "").replace(/\s+/g, " ").trim().split(/(?<=[.!?])\s+/);
+  const s = ss.reverse().find((x) => /\b(wait(?:ing)?\s+(?:on|for)|until|will check again|check again|once (?:it|they|the)\b)/i.test(x));
+  return s ? short(s.replace(/[.:]$/, ""), 160) : "";
+}
 // What the agent said last: its final answer, from either kind of log.
 function finalOf(log) { return parseRun(lastRunText(log)).final; }
 
-export { parseRun, lastRunText, finalOf, describe, testsIn, readRunLog, briefPlan, stepOf, nowLine, runLine, STALL_MS };
+export { parseRun, lastRunText, finalOf, describe, testsIn, readRunLog, runStarted, briefPlan, stepOf, nowLine, runLine, STALL_MS, waitingOn };

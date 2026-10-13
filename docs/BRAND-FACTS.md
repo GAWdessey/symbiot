@@ -644,7 +644,7 @@ function iconSvg(look = "ferro") {
   - The `symbiot/7-tasks` branch uses `win.icon = assets/icon.ico`.
   - `origin/main` uses `icon.png`, a green disc.
 - **Releases:**
-  - The `publish.yml` desktop job attaches the installers to each release of `GarthGhostai/symbiot`. Release `apk-0.58.2` (the latest, checked 2026-10-09) carries `Symbiot-Setup.exe`, `Symbiot.dmg`, `symbiot.deb` and `Symbiot.AppImage`.
+  - The `publish.yml` desktop job attaches the installers to each release of `GAWdessey/symbiot`. Release `apk-0.58.2` (the latest, checked 2026-10-09) carries `Symbiot-Setup.exe`, `Symbiot.dmg`, `symbiot.deb` and `Symbiot.AppImage`.
   - The site's download buttons link to them through `releases/latest/download/<file>` (`site/index.html:164-179` on `main`). The "Coming very soon" text this report first found is gone.
 
 ### 3.2 macOS: `.icns`, Dock, menu bar
@@ -779,7 +779,7 @@ The live site, fetched on 2026-10-09, is byte-identical to `site/index.html`. It
 - The registry metadata (registry.npmjs.org/symbiot) has:
   - the description "Your week, written from your real work…"
   - 12 keywords
-  - the homepage `github.com/GarthGhostai/symbiot#readme`
+  - the homepage `github.com/GAWdessey/symbiot#readme`
   - latest version 0.58.1
 - `README.md` contains no images (no `![` and no `<img`), so the npm page shows no Symbiot artwork.
 

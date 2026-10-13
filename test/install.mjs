@@ -77,7 +77,7 @@ try {
     if (tarball) {
       // A real global install, but into a throwaway prefix. Uses your normal npm
       // cache (HOME is only swapped for running symbiot), so it's fast when warm.
-      const inst = run(npm, ["install", "-g", "--prefix", prefix, "--no-audit", "--no-fund", "--prefer-offline", join(packDir, tarball)], { env: process.env });
+      const inst = run(npm, ["install", "-g", "--prefix", prefix, "--no-audit", "--no-fund", "--prefer-offline", join(packDir, tarball)], { env: { ...process.env, HOME: env.HOME, USERPROFILE: env.USERPROFILE, SYMBIOT_NO_LAUNCHER: "1", SYMBIOT_NO_OPEN: "1", npm_config_cache: process.env.npm_config_cache || join(process.env.HOME || "", ".npm") } });
       ok("npm install -g --prefix <tmp> <tarball> succeeds", inst.status === 0, { status: inst.status, err: inst.stderr });
       const bin = WIN ? join(prefix, "symbiot.cmd") : join(prefix, "bin", "symbiot");
       const help = run(bin, ["help"]);

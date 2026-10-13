@@ -22,10 +22,12 @@ import { shSingle, handoffCmd, setHandoffCmd, grantAgent, runHandoff, track, det
 import { PROVIDERS, resolveProvider, connectProvider, detectHardware, recommendModels, hasOllama, ollamaInstall, ensureOllama, useOllamaModel } from "./ai.mjs";
 import { SCAN, SCAN_TIMEOUT_MS, scanRoots, scanHome, addScanRoot, removeScanRoot, buildMap, nodeDetail, repoPathMap, laneMap, setScanOptions, refreshRepos, REPO_STATE, reposState } from "./scan.mjs";
 import { computeDrift } from "./drift.mjs";
-import { addTask, toggleTask, removeTask, restoreTask, syncTasks, taskType, pushTasks, pendingReview, workingDiff, learnNpm, withReleases, releaseInput, approveRepo, approveChanges, sendBack, setAutoMerge } from "./tasks.mjs";
+import { laneCap, mergeEnded, DEFAULT_CAP } from "./parallel.mjs";
+import { addTask, toggleTask, removeTask, restoreTask, syncTasks, taskType, pushTasks, pendingReview, workingDiff, learnNpm, withReleases, releaseInput, approveRepo, approveChanges, sendBack, setAutoMerge, mergeWhenGreen } from "./tasks.mjs";
 import { repoReview, repoSuggest, folderSuggest, taskChat, clearTaskChat, mailState, setMail, sentMail, produce, releaseNotes } from "./writeups.mjs";
+import { listSecrets, getSecret, markUsed, deleteSecret } from "./vault.mjs";
 import { loadScreens, screenImage, captureScreen, splitScreen, listMonitors, allowScreenshots, importScreen, setRegions, renameScreen, removeScreen, blueprint, clickRegion } from "./screens.mjs";
-import { mapPage, wholePage, pressRegion, typeRegion, chooseRegion, uploadRegion, scrollPage, signIn, keepBrowserOpen, isTrusted, trustedSites, trustSite, untrustSite, openSymbiotBrowser, closeSymbiotBrowser, onBrowserClosed, setBrowserHub, siteUrl, browserHub } from "./headless.mjs";
+import { mapPage, wholePage, pressRegion, typeRegion, chooseRegion, fillForm, uploadRegion, scrollPage, signIn, keepBrowserOpen, isTrusted, trustedSites, trustSite, untrustSite, openSymbiotBrowser, closeSymbiotBrowser, onBrowserClosed, setBrowserHub, siteUrl, browserHub } from "./headless.mjs";
 import { weeklyState, setWeekly, runWeekly, startWeekly, autostartState, setAutostart, installLauncher, iconSvg, setLauncherLook } from "./desktop.mjs";
 import { markNews, newsSince, watchState, addWatch, setEvery, removeWatch, clearNews, seenWatch, checkWatch, startWatches, setBrief, draftReply, openChat, watchBoard, boardChat, clearBoardChat } from "./watch.mjs";
 import { linksState, linkSite, checkLink, unlinkSite, addSite, signInAsked, sitesCheck } from "./links.mjs";
@@ -34,12 +36,12 @@ import { mindState, forget } from "./mind.mjs";
 import { lanesTick, lanesState, partlyDone, handingOf, loadLedger, orcaRelink } from "./lanes.mjs";
 import { keepFacts, skipFacts, awaitTick, awaitingState, stopWaiting } from "./handback.mjs";
 import { adaptState, noteUse } from "./adapt.mjs";
-import { reportIdeasAdd, reportAsk, reportDraftAnswer, homeState, homeAsk, homeAnswer, homeNext, workScene, workGo, workTick, firstSteps, marketingState, marketingGo, marketingDraftAnswer, marketingTask, moveToMarketing, onboarding, setOnboarding, startOnboarding, phoneSetupFirst } from "./home.mjs";
+import { reportIdeasAdd, reportIdeasDismiss, reportAsk, reportDraftAnswer, homeState, homeAsk, homeAnswer, homeNext, workScene, workGo, workTick, firstSteps, marketingState, marketingGo, marketingDraftAnswer, marketingTask, moveToMarketing, onboarding, setOnboarding, startOnboarding, phoneSetupFirst } from "./home.mjs";
 import { MARKETING_DIR, MARKETING, draftPreview, laneMedia, displayName, setDraftMedia } from "./marketing.mjs";
 import { trays, trayMedia, setBlur, addBlur, removeBlur, setReviewed, renderCapture } from "./tray.mjs";
 import { captureProduct, captureProducts } from "./capture.mjs";
-import { listReports, readReport, reportImage, markAllRead, phoneReports, phoneReport } from "./reports.mjs";
-import { computerCopy, phoneState, setPhoneLink, newCode, unpairPhone, setRelay, findComputers, pairComputer, forgetComputer, pollComputer, queueChange, dismissNote, setPhoneApprove, startPhone } from "./phone.mjs";
+import { listReports, readReport, reportImage, markAllRead, phoneReports, phoneReport, withNeeds } from "./reports.mjs";
+import { computerCopy, phoneState, setPhoneLink, freePhonePort, usePhonePort, newCode, unpairPhone, setRelay, findComputers, pairComputer, forgetComputer, pollComputer, queueChange, dismissNote, setPhoneApprove, startPhone } from "./phone.mjs";
 import { knowledgeState, addKnowledgeFolder, removeKnowledgeFolder, indexKnowledge, knowledgeTick, searchKnowledge } from "./knowledge.mjs";
 import { runChecks, checksState, markClashesSeen } from "./checks.mjs";
 
@@ -264,6 +266,8 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
   // an installed Symbiot keeps its app-menu entry pointing at itself (a new Node, a moved
   // install); not a copy run from a checkout or a test
   if (/[\\/]node_modules[\\/]symbiot[\\/]/.test(bin || "") && !SANDBOX && !process.env.SYMBIOT_NO_LAUNCHER) { try { installLauncher({ script: bin }); } catch {} }
+  // Away's Super+` on COSMIC, which was only ever set by `symbiot away --shortcut`
+  if (/[\\/]node_modules[\\/]symbiot[\\/]/.test(bin || "") && !SANDBOX && !process.env.SYMBIOT_NO_LAUNCHER) { import("./away.mjs").then((a) => a.ensureShortcut({ cmd: `${process.execPath} ${bin} away` })).catch(() => {}); }
   // setup's first step: "Your computer" in the Android app, so a phone paired by its QR shows it
   if (FRESH) { try { startOnboarding(); } catch {} }
   try { phoneSetupFirst(); } catch {} // the phone app, over an older one: setup goes to "Your computer" first
@@ -326,8 +330,9 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
         await learnNpm(ask); return json(res, partly(pendingReview()));
       }
       if (u.pathname === "/api/pending/diff") { const p = laneMap()[u.searchParams.get("repo") || ""]; return json(res, { diff: p ? workingDiff(p) : "" }); }
-      if (u.pathname === "/api/pending/approve" && req.method === "POST") { const b = await readBody(req), repo = String(b.repo || ""); if (b.bump) await learnNpm([laneMap()[repo]]); const notes = await releaseNotes(releaseInput(repo, { bump: b.bump })); return json(res, await approveRepo(repo, { bump: b.bump, notes })); }
-      if (u.pathname === "/api/pending/approve-changes" && req.method === "POST") { const b = await readBody(req), repo = String(b.repo || ""); if (b.bump) await learnNpm([laneMap()[repo]]); const notes = await releaseNotes(releaseInput(repo, { bump: b.bump, tick: b.tick })); return json(res, await approveChanges(repo, { bump: b.bump, tick: b.tick, notes })); }
+      if (u.pathname === "/api/pending/merge" && req.method === "POST") { const b = await readBody(req), path = laneMap()[String(b.repo || "")]; if (!path || !b.pr) return json(res, { error: "Say which repo and PR." }); return json(res, mergeWhenGreen(path, String(b.pr))); }
+      if (u.pathname === "/api/pending/approve" && req.method === "POST") { const b = await readBody(req), repo = String(b.repo || ""); if (b.bump) await learnNpm([laneMap()[repo]]); const notes = await releaseNotes(releaseInput(repo, { bump: b.bump })); return json(res, await approveRepo(repo, { bump: b.bump, notes, confirm: !!b.confirm, allowShared: !!b.allowShared })); }
+      if (u.pathname === "/api/pending/approve-changes" && req.method === "POST") { const b = await readBody(req), repo = String(b.repo || ""); if (b.bump) await learnNpm([laneMap()[repo]]); const notes = await releaseNotes(releaseInput(repo, { bump: b.bump, tick: b.tick })); return json(res, await approveChanges(repo, { bump: b.bump, tick: b.tick, notes, confirm: !!b.confirm, allowShared: !!b.allowShared })); }
       if (u.pathname === "/api/pending/sendback" && req.method === "POST") { const b = await readBody(req); return json(res, sendBack(String(b.id || ""))); }
       if (u.pathname === "/api/automerge" && req.method === "POST") { const b = await readBody(req); return json(res, setAutoMerge(String(b.repo || ""), !!b.on)); }
       if (u.pathname === "/api/tasks/push" && req.method === "POST") { const b = await readBody(req); return json(res, pushTasks(b)); }
@@ -347,6 +352,8 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       if (u.pathname === "/api/knowledge/search") return json(res, { hits: searchKnowledge(u.searchParams.get("q") || "", { examples: u.searchParams.get("examples") === "1" }) });
       if (u.pathname === "/api/agentcfg") { const d = detectHandoffs(); return json(res, { cmd: handoffCmd(), agents: d.agents, editors: d.editors, connectors: connectorsInfo() }); }
       if (u.pathname === "/api/agentcmd" && req.method === "POST") { const b = await readBody(req); return json(res, setHandoffCmd(b.cmd)); }
+      if (u.pathname === "/api/agent/parallel") return json(res, { cap: laneCap(), setting: loadConfig().laneParallel || DEFAULT_CAP, max: 8 }); // how many agents may work in one lane at once (parallel.mjs)
+      if (u.pathname === "/api/agent/parallel/set" && req.method === "POST") { const b = await readBody(req), n = Math.floor(Number(b.cap)), cfg = loadConfig(); if (Number.isFinite(n) && n >= 1) cfg.laneParallel = Math.min(8, n); else delete cfg.laneParallel; saveConfig(cfg); return json(res, { cap: laneCap(), setting: loadConfig().laneParallel || DEFAULT_CAP, max: 8 }); }
       if (u.pathname === "/api/agent/trust") return json(res, { full: trustFull(), sandbox: sandboxState() });
       if (u.pathname === "/api/agent/trust/set" && req.method === "POST") { const b = await readBody(req); const cfg = loadConfig(); if (b.full) delete cfg.agentTrust; else cfg.agentTrust = "ask"; saveConfig(cfg); return json(res, { full: trustFull(), sandbox: sandboxState() }); }
       if (u.pathname === "/api/agent/grant" && req.method === "POST") { const b = await readBody(req); return json(res, grantAgent({ tool: b.tool, dir: b.dir })); }
@@ -406,11 +413,17 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       if (u.pathname === "/api/screens/replace" && req.method === "POST") { const b = await readBody(req); return json(res, screenOut(await typeRegion(String(b.id || ""), String(b.region || ""), b.text, { enter: b.enter === true, confirmed: b.confirmed === true, noSend: b.noSend === true, replace: String(b.replace == null ? "" : b.replace), who: String(b.who || "") }))); }
       // choose: an option in a menu (a <select>, or the site's own), asked like press and type
       if (u.pathname === "/api/screens/choose" && req.method === "POST") { const b = await readBody(req); return json(res, screenOut(await chooseRegion(String(b.id || ""), String(b.region || ""), b.option, { confirmed: b.confirmed === true, who: String(b.who || "") }))); }
+      if (u.pathname === "/api/screens/fill" && req.method === "POST") { const b = await readBody(req); return json(res, screenOut(await fillForm(String(b.id || ""), Array.isArray(b.fields) ? b.fields.map((f) => ({ region: String(f.region || ""), text: f.text })) : [], { press: String(b.press || ""), confirmed: b.confirmed === true, noSend: b.noSend === true }))); }
       // upload: a file of yours to the page's file box, asked like press and type
       if (u.pathname === "/api/screens/upload" && req.method === "POST") { const b = await readBody(req); return json(res, screenOut(await uploadRegion(String(b.id || ""), String(b.region || ""), Array.isArray(b.files) ? b.files.map(String) : String(b.files || ""), { confirmed: b.confirmed === true, who: String(b.who || "") }))); }
       if (u.pathname === "/api/screens/trusted") return json(res, { sites: trustedSites() });
       if (u.pathname === "/api/screens/trusted/add" && req.method === "POST") { const b = await readBody(req); return json(res, trustSite(b.site)); }
       if (u.pathname === "/api/screens/trusted/remove" && req.method === "POST") { const b = await readBody(req); return json(res, untrustSite(b.site)); }
+      // Saved secrets (vault.mjs): names and counts for Settings; an agent reads one by name, never a list of values.
+      if (u.pathname === "/api/secrets" || u.pathname === "/api/secrets/list") return json(res, { secrets: listSecrets() });
+      if (u.pathname === "/api/secrets/get" && req.method === "POST") { const b = await readBody(req); return json(res, getSecret(String(b.name || ""), { use: !!b.use })); }
+      if (u.pathname === "/api/secrets/used" && req.method === "POST") { const b = await readBody(req); return json(res, markUsed(String(b.name || ""), String(b.value || ""))); }
+      if (u.pathname === "/api/secrets/delete" && req.method === "POST") { const b = await readBody(req); return json(res, deleteSecret(String(b.name || ""))); }
       if (u.pathname === "/api/screens/signin" && req.method === "POST") { const b = await readBody(req); return json(res, await signIn(b.site)); }
       // What Symbiot remembers across the app (mind.mjs), and forgetting it.
       if (u.pathname === "/api/mind") return json(res, mindState());
@@ -448,7 +461,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       // your Approve or Skip on it: approved, its agent posts it through Symbiot's browser
       if (u.pathname === "/api/marketing/draft") return json(res, draftPreview(String(u.searchParams.get("rel") || "")));
       if (u.pathname === "/api/marketing/media") { const m = laneMedia(String(u.searchParams.get("rel") || "")); if (!m) { res.writeHead(404); res.end("not found"); return; } res.writeHead(200, { "content-type": m.type, "cache-control": "private, max-age=300" }); res.end(readFileSync(m.file)); return; }
-      if (u.pathname === "/api/marketing/draft/answer" && req.method === "POST") { { const g = can("marketing"); if (!g.ok) return json(res, { error: g.why, pro: true }); } const b = await readBody(req); return json(res, marketingDraftAnswer(String(b.rel || ""), b.skip ? "skipped" : "approved")); }
+      if (u.pathname === "/api/marketing/draft/answer" && req.method === "POST") { { const g = can("marketing"); if (!g.ok) return json(res, { error: g.why, pro: true }); } const b = await readBody(req); return json(res, b.change !== undefined ? marketingDraftAnswer(String(b.rel || ""), "change", { ask: String(b.change || "") }) : marketingDraftAnswer(String(b.rel || ""), b.done ? "done" : b.skip ? "skipped" : "approved")); }
       if (u.pathname === "/api/marketing/open" && req.method === "POST") { const b = await readBody(req), f = join(MARKETING_DIR, String(b.rel || "")); return json(res, f.startsWith(MARKETING_DIR + "/") && existsSync(f) ? { ok: openUrl(f) } : { error: "That draft isn't there any more." }); }
       // the pick tray (tray.mjs): its captures and their blur boxes, a capture (only from inside
       // a tray), a box switched on or off and the capture blurred again, a capture as a post's media
@@ -475,12 +488,13 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       if (u.pathname === "/api/posts/voice" && req.method === "POST") { const b = await readBody(req); if (b.confirmed !== true) return json(res, { error: "Reading your LinkedIn posts needs your click." }); return json(res, await voiceFromLinkedIn()); }
       // Reports (reports.mjs): what runs wrote up in their .symbiot/; read by id, never by path.
       // on a phone, its computer's newest reports too (from the copy it keeps)
-      if (u.pathname === "/api/reports") return json(res, { reports: [...listReports(), ...phoneReports(computerCopy())].sort((a, b) => b.mtime - a.mtime) });
+      if (u.pathname === "/api/reports") return json(res, { reports: [...withNeeds(listReports()), ...phoneReports(computerCopy())].sort((a, b) => b.mtime - a.mtime) });
       if (u.pathname === "/api/reports/read") { const id = u.searchParams.get("id") || ""; return json(res, id.startsWith("pc:") ? phoneReport(computerCopy(), id) : readReport(id)); }
       // A report's image (an <img> src, so its token is in ?t=): by the report's id and a src it shows, from its allowed folders only.
       if (u.pathname === "/api/reports/image") { const f = reportImage(u.searchParams.get("id") || "", u.searchParams.get("src") || ""); if (f.error) { res.writeHead(404, { "content-type": "text/plain" }); res.end(f.error); return; } res.writeHead(200, { "content-type": f.type, "cache-control": "private, no-cache", "x-content-type-options": "nosniff" }); res.end(readFileSync(f.file)); return; }
       if (u.pathname === "/api/reports/seen" && req.method === "POST") return json(res, markAllRead());
       if (u.pathname === "/api/reports/ideas" && req.method === "POST") { const b = await readBody(req); return json(res, reportIdeasAdd(String(b.id || ""), b.ideas)); }
+      if (u.pathname === "/api/reports/dismiss" && req.method === "POST") { const b = await readBody(req); return json(res, reportIdeasDismiss(String(b.id || ""), b.ideas)); }
       if (u.pathname === "/api/reports/ask" && req.method === "POST") { const b = await readBody(req); return json(res, await reportAsk(String(b.id || ""), b.question)); }
       if (u.pathname === "/api/reports/draft" && req.method === "POST") { const b = await readBody(req); return json(res, reportDraftAnswer(String(b.id || ""), !!b.approve)); }
       // Home (home.mjs): the liquid's live data, and its talk; Adapt (adapt.mjs): its
@@ -538,6 +552,8 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       // made on the phone (queued until the computer answers), forget it.
       if (u.pathname === "/api/phone") return json(res, phoneState());
       if (u.pathname === "/api/phone/link" && req.method === "POST") { const b = await readBody(req); return json(res, await setPhoneLink(b.on === true)); }
+      if (u.pathname === "/api/phone/free" && req.method === "POST") return json(res, await freePhonePort());
+      if (u.pathname === "/api/phone/port" && req.method === "POST") { const b = await readBody(req); return json(res, await usePhonePort(b.port)); }
       if (u.pathname === "/api/phone/code" && req.method === "POST") return json(res, newCode());
       if (u.pathname === "/api/phone/unpair" && req.method === "POST") { const b = await readBody(req); return json(res, unpairPhone(String(b.id || ""))); }
       if (u.pathname === "/api/phone/relay" && req.method === "POST") { const b = await readBody(req); return json(res, setRelay(b.on === true)); }
@@ -683,6 +699,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
   setPhoneApprove(async (repo, untasked) => { const notes = await releaseNotes(releaseInput(repo, {})); return untasked ? approveChanges(repo, { tick: [], notes }) : approveRepo(repo, { notes }); });
   startPhone();
   setInterval(() => { try { startWaiting(); } catch {} }, 20000).unref(); // a run that waits for your step starts once the file it names changes
+  setInterval(() => { try { mergeEnded({ addTask }); } catch {} }, 20000).unref(); // runs beside a lane's own that ended (also while Symbiot was down): merged back into the lane
   setInterval(() => { try { workTick(); } catch {} }, 20000).unref(); // a waiting task starts once its lane is free (config.autoStart: false leaves it to Go)
   setInterval(() => { try { lanesTick(); } catch {} }, 20000).unref(); // agents hand work to other lanes, and hear back when it's done
   setTimeout(() => { orcaRelink().catch(() => {}); }, 15000).unref(); // a lane folder a handover renamed, added again in Orca where it is now

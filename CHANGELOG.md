@@ -2,6 +2,15 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.63.12
+
+- **`symbiot screens upload` sends a photo through WhatsApp's "Photos & videos", not the sticker box.** When the only file box found is a page-wide guess ("the only / nearest file box on the page") and the target is a button or menu item, it now presses the target and catches its own file dialog first; the guess is only the fallback.
+- **The app-menu entry no longer breaks after the install test.** The test's throwaway install rewrote it to point at a deleted temp folder; the test now uses its own home, and the launcher is never written for a script in the temp folder. Opening from the menu shows a notification if Symbiot doesn't start.
+- **A Home card waiting on a step only you can take no longer reads as done.** It shows "Waiting on you" and the button says "I've done this" (no longer "Done it (recommended)"), with Skip beside it; the Agents tab button says the same.
+- **The smoke test passes on this PC (Node 20 and 22).** It now covers the saved-secrets endpoints and no longer assumes no AI is connected.
+- **The app no longer burns CPU re-reading running agents' logs, and no longer leaks a file handle per run.** A log that only grew (the normal case while an agent works) now costs just the added bytes instead of a re-read of up to 16 MB every 20 seconds per lane; a run's start time is read from its header line alone; and the log file opened to start a run is closed in the app once the run has it (one stayed open per run, 101 by the time it was noticed).
+- Fix where a `### symbiot` handover from the marketing lane lands.
+
 ## 0.63.11
 
 - **Symbiot no longer runs out of memory.** A cache of task words kept a link to the whole agent log each word came from, so every version of a busy agent's log stayed in memory. The app grew by about 15 MB a minute while agents worked, and crashed at its 2 GB limit after an hour or two. That's what stopped it mid-update. It now keeps only the words.

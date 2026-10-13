@@ -21,7 +21,7 @@
 // signed in. It's separate from your everyday browser profile.
 import { spawn, spawnSync } from "node:child_process";
 import { join, dirname, resolve as resolvePath } from "node:path";
-import { mkdirSync, existsSync, statSync, readlinkSync, readFileSync, readdirSync, writeFileSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, existsSync, statSync, readlinkSync, readFileSync, readdirSync, writeFileSync, copyFileSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { CONFIG_DIR, chromeBinary, loadConfig, saveConfig } from "./core.mjs";
 import { loadScreens, addPageScreen, center, stitchPng, stitchListPng } from "./screens.mjs";
@@ -174,6 +174,38 @@ async function closeOthers(c, keep) {
     }
     if (got.some(Boolean)) saveSessions(got.filter(Boolean));
   } catch {}
+}
+
+// Signed in, read from the profile's cookie store: the cookie a site keeps its session in,
+// there and not expired. It needs no browser, so it can't be told "the Symbiot Browser is open",
+// and it's read from a copy taken with its -wal and -journal, so a cookie the window wrote just
+// before Done is in it. X was asked for four times while its auth_token sat there (2026-10-10).
+const SESSION_COOKIE = { "x.com": "auth_token", "twitter.com": "auth_token", "instagram.com": "sessionid", "facebook.com": "c_user", "reddit.com": "reddit_session", "linkedin.com": "li_at" };
+// The site among hosts with a known session cookie: { host, cookie, found } (found: true,
+// false, or null when the store can't be read here), or null if none is known.
+function sessionCookie(hosts, profile = PROFILE) {
+  const host = [].concat(hosts || []).map((h) => String(h).toLowerCase().replace(/^www\./, "")).map((h) => Object.keys(SESSION_COOKIE).find((k) => h === k || h.endsWith("." + k))).find(Boolean);
+  if (!host) return null;
+  const cookie = SESSION_COOKIE[host], db = ["Default/Network/Cookies", "Default/Cookies"].map((f) => join(profile, f)).find((f) => existsSync(f));
+  if (!db) return { host, cookie, found: false };
+  const dir = mkdtempSync(join(tmpdir(), "symbiot-cookies-"));
+  try {
+    for (const ext of ["", "-wal", "-journal"]) if (existsSync(db + ext)) copyFileSync(db + ext, join(dir, "Cookies" + ext));
+    // Chrome's times are microseconds since 1601; 0 is a cookie for the session
+    const sql = `select count(*) from cookies where name='${cookie}' and (host_key='.${host}' or host_key='${host}' or host_key like '%.${host}') and (expires_utc=0 or expires_utc > (strftime('%s','now') + 11644473600) * 1000000);`;
+    const n = countRows(join(dir, "Cookies"), sql);
+    return { host, cookie, found: n === null ? null : n > 0 };
+  } catch { return { host, cookie, found: null }; }
+  finally { try { rmSync(dir, { recursive: true, force: true }); } catch {} }
+}
+// The count a query gives, with whichever SQLite this computer has: Node's own (22.5+), the
+// sqlite3 command, or Python's. null if none.
+function countRows(file, sql) {
+  try { const { DatabaseSync } = process.getBuiltinModule ? process.getBuiltinModule("node:sqlite") || {} : {}; if (DatabaseSync) { const d = new DatabaseSync(file, { readOnly: true }); try { return Number(Object.values(d.prepare(sql).get())[0]) || 0; } finally { d.close(); } } } catch {}
+  for (const [cmd, args] of [["sqlite3", [file, sql]], ["python3", ["-c", "import sqlite3,sys;print(sqlite3.connect(sys.argv[1]).execute(sys.argv[2]).fetchone()[0])", file, sql]], ["python", ["-c", "import sqlite3,sys;print(sqlite3.connect(sys.argv[1]).execute(sys.argv[2]).fetchone()[0])", file, sql]]]) {
+    try { const r = spawnSync(cmd, args, { encoding: "utf8", timeout: 5000 }); if (r.status === 0 && /^\d+\s*$/.test(r.stdout)) return Number(r.stdout); } catch {}
+  }
+  return null;
 }
 
 // One browser at a time: they share a profile, and Chrome locks it.
@@ -912,8 +944,11 @@ const scrollJs = (to, where = null) => `(() => { ${SCROLLER} ${DEEP}
 // Whole page and Scroll only look, and opening the page again closes what's open
 // on it (domains.co.za's 2FA pop-up, 2026-10-12) and loses what was typed.
 async function showScreen(page, b, s, { same = false } = {}) {
+  // its address, but for a #part: an unsubscribe page that had moved to #top was opened again,
+  // and the toggles pressed on it were lost (2026-10-10)
+  const bare = (u) => String(u || "").split("#")[0];
   const url = (await page.send("Runtime.evaluate", { expression: "location.href", returnByValue: true })).result?.value;
-  if (url === s.page.url && (same || b.shown === s.id)) return true;
+  if (bare(url) === bare(s.page.url) && (same || b.shown === s.id)) return true;
   await open(page, s.page.url);
   const sc = s.page.scroll;
   if (sc && sc.y) { await page.send("Runtime.evaluate", { expression: scrollJs(sc.y, sc.selector || ""), returnByValue: true }); await page.idle(); }
@@ -956,6 +991,19 @@ function scrollPage(id, to = "down", { who = "" } = {}) {
 // against it as far down as it is (the page's and its lists' scrolling), and the
 // spot itself is left to the caller to scroll to.
 // A new tab would leave this one where it was, so a link opens here instead.
+// Where to act on region r now (findRegion), else its spot: on a whole-page screen that
+// spot is on the page, not the window, so it's scrolled into the window first. Fill
+// (fillForm) finds each field this way, as Press and Type do.
+async function locateRegion(page, s, r) {
+  const hit = (await page.send("Runtime.evaluate", { expression: findRegion(r, center(r), !!s.page.full), returnByValue: true })).result?.value;
+  let at = hit ? { x: hit.x, y: hit.y } : center(r);
+  if (!hit && s.page.full) {
+    const y = await evaluate(page, s.page.list ? `(() => { ${DEEP} const e = deepOne(${JSON.stringify(s.page.list)}); if (!e) return 0;
+      const b = e.getBoundingClientRect(); if (${at.y} < b.top) return 0; e.scrollTop = ${at.y} - b.top - e.clientHeight / 2; return e.scrollTop; })()` : `(scrollTo(0, ${at.y} - innerHeight / 2), scrollY)`);
+    at = { x: at.x, y: at.y - (Number(y) || 0) };
+  }
+  return { at, found: !!hit && hit.by === "selector" };
+}
 const findRegion = (r, c, full) => `(() => { ${DEEP} ${LABEL_OF}
   const sel = ${JSON.stringify(r.selector || "")}, want = ${JSON.stringify(r.label || "")}, c = ${JSON.stringify(c)}, full = ${!!full};
   let all = sel ? deepQuery(sel) : [];
@@ -1033,6 +1081,33 @@ function pressRegion(id, regionId, { confirmed = false, noSend = false, who = ""
     async (page, at, r) => { await clickAt(page, at); return { pressed: r.label }; }, who);
 }
 
+const typeInto = async (page, at, text) => {
+  await clickAt(page, at);
+  await page.send("Runtime.evaluate", { expression: `(() => { ${DEEP} const e = deepActive(); if (!e) return;
+    if (typeof e.select === 'function') e.select(); else if (e.isContentEditable) getSelection().selectAllChildren(e); })()` });
+  if (text) await page.send("Input.insertText", { text });
+  if (text) await settleValue(page, at, text);
+};
+
+// React-controlled fields (GitHub's transfer form) can drop the typed text: the click
+// lands on a label or wrapper so nothing is focused, or React re-renders and resets
+// the value. Read the field back; if it doesn't hold the text, set it the way React
+// listens for (the native value setter, then input and change events) on the field
+// under the click, else the nearest one in its label or box.
+const settleValue = (page, at, text) => page.send("Runtime.evaluate", { expression: `(() => {
+  const want = ${JSON.stringify(text)}, isF = (x) => !!x && (x.tagName === 'INPUT' || x.tagName === 'TEXTAREA' || x.isContentEditable);
+  const val = (x) => x.isContentEditable ? x.innerText : x.value;
+  let e = document.activeElement;
+  if (!isF(e)) { const p = document.elementFromPoint(${Number(at.x) || 0}, ${Number(at.y) || 0}); e = p && (isF(p) ? p : (p.closest('label') || p.parentElement || p).querySelector('input,textarea,[contenteditable=true]')); }
+  if (!isF(e) || (e.tagName === 'INPUT' && /^(checkbox|radio|file|button|submit)$/i.test(e.type))) return;
+  if (val(e) === want) return;
+  e.focus();
+  if (e.isContentEditable) { getSelection().selectAllChildren(e); document.execCommand('insertText', false, want); return; }
+  const set = Object.getOwnPropertyDescriptor(e.tagName === 'INPUT' ? HTMLInputElement.prototype : HTMLTextAreaElement.prototype, 'value').set;
+  set.call(e, want);
+  e.dispatchEvent(new Event('input', { bubbles: true })); e.dispatchEvent(new Event('change', { bubbles: true }));
+})()` });
+
 // Type: click into a field, replace what's in it with text, and press Enter if
 // asked (which is how a search or a one-line form is sent). Without Enter, press
 // the form's button next, on the screen this maps, while the browser is still
@@ -1089,6 +1164,7 @@ function typeRegion(id, regionId, text, { enter = false, confirmed = false, noSe
       await page.send("Runtime.evaluate", { expression: `(() => { ${DEEP} const e = deepActive(); if (!e) return;
       if (typeof e.select === 'function') e.select(); else if (e.isContentEditable) getSelection().selectAllChildren(e); })()` });
       if (text) await page.send("Input.insertText", { text });
+      if (text) await settleValue(page, at, text);
     }
     if (enter) for (const type of ["keyDown", "keyUp"]) await page.send("Input.dispatchKeyEvent", { type, key: "Enter", code: "Enter", windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13, ...(type === "keyDown" ? { text: "\r" } : {}) });
     return { typed: r.label, entered: !!enter, ...(part != null ? { replaced: part } : {}) };
@@ -1144,6 +1220,50 @@ function chooseRegion(id, regionId, option, { confirmed = false, who = "" } = {}
   }, who);
 }
 
+// Fill: several fields, then (optionally) one button, in the one browser session, so
+// a form that forgets itself between separate calls (GitHub's transfer, npm and
+// Cloudflare settings) is filled and sent in one go. `fields` is [{ region, text }],
+// all on the one screen; each is found where it is now (the page isn't reloaded
+// between them), typed into, and `press` is clicked last. Maps the result once.
+function fillForm(id, fields, { press = "", confirmed = false, noSend = false } = {}) {
+  const s = loadScreens().find((x) => x.id === id); if (!s) return Promise.resolve({ error: "not found" });
+  if (!s.page || !s.page.url) return Promise.resolve({ error: "Fill works on a mapped page." });
+  if (!Array.isArray(fields) || !fields.length) return Promise.resolve({ error: "Give at least one field to fill." });
+  const host = hostOf(s.page.url), rs = s.regions || [], steps = [];
+  for (const f of fields) {
+    const r = rs.find((x) => x.id === f.region); if (!r) return Promise.resolve({ error: "That region is gone. Reload the screen." });
+    const text = String(f.text == null ? "" : f.text);
+    if (r.kind !== "field") return Promise.resolve({ error: `"${r.label}" isn't a field (it's a ${r.kind || "region"}). Fill works on fields; press the rest with --press.` });
+    if (text.length > MAX_TEXT) return Promise.resolve({ error: `That's more than ${MAX_TEXT} characters.` });
+    steps.push({ r, text: noSend && CHAT_HOSTS.has(host) ? text.replace(/\s*[\r\n]+\s*/g, " ").trim() : text });
+  }
+  let button = null;
+  if (press) {
+    button = rs.find((x) => x.id === press); if (!button) return Promise.resolve({ error: "That region is gone. Reload the screen." });
+    if (noSend && isSend(button, host)) return Promise.resolve({ error: `"${button.label}" sends or posts. This run only drafts: it never presses Send, Post, Comment or Reply. The draft stays for the user to send or post.` });
+  }
+  if (!confirmed && !isTrusted(s.page.url)) return Promise.resolve({ error: `Filling this form acts on the real site, signed in as you, and ${host} isn't one of your trusted sites.`, confirm: true, host });
+  return oneAtATime(() => withPage(async (page, b) => {
+    const here = await showScreen(page, b, s), typed = [];
+    for (const { r, text } of steps) {
+      const { at } = await locateRegion(page, s, r);
+      await typeInto(page, at, text);
+      typed.push(r.label);
+    }
+    let pressed = "";
+    if (button) {
+      const { at } = await locateRegion(page, s, button);
+      const navigating = page.until("Page.frameStartedLoading", 1500);
+      await clickAt(page, at);
+      if (await navigating) await page.until("Page.loadEventFired", 30000);
+      pressed = button.label;
+    }
+    await page.idle();
+    const next = await snapshot(page, "");
+    return next.error ? next : { ...next, typed, pressed, kept: here };
+  })).catch((e) => ({ error: String((e && e.message) || e) }));
+}
+
 // Upload: put a file (or a few) in a page's file box, as picking it in the file
 // dialog would (DevTools' DOM.setFileInputFiles): a picture or video for a LinkedIn
 // post. Sites hide the real <input type=file> behind a button ("Add media"), and a
@@ -1169,10 +1289,19 @@ const FILE_BOX = (sel, at) => `(() => { ${DEEP}
   if (!box) return null;
   window.__symbiotFileBox = box;
   const name = box.getAttribute('aria-label') || box.name || box.id || '';
-  return { how, box: 'input[type=file]' + (name ? ' "' + name + '"' : '') + (box.accept ? ' (takes ' + box.accept + ')' : ''), multiple: !!box.multiple };
+  return { how, guess: !(isBox(e) || how === 'the file box inside it' || how === "its label's file box"), box: 'input[type=file]' + (name ? ' "' + name + '"' : '') + (box.accept ? ' (takes ' + box.accept + ')' : ''), multiple: !!box.multiple };
 })()`;
+// The box found is the target's own only when `how` says so. A page-wide guess ("the only /
+// nearest file box") can belong to something else (WhatsApp's sticker input beside "Photos &
+// videos"), so a pressable target is pressed and its own file dialog caught first; the guess
+// is the fallback when pressing opens no dialog.
 async function attachFiles(page, at, r, files) {
   const box = await evaluate(page, FILE_BOX(r.selector, at));
+  const pressable = Number.isFinite(Number(at && at.x)) && Number.isFinite(Number(at && at.y)) && !!at;
+  if (box && box.guess && pressable) {
+    const got = await viaDialog(page, at, r, files, false);
+    if (got) { await page.send("Runtime.evaluate", { expression: "delete window.__symbiotFileBox" }).catch(() => {}); return got; }
+  }
   if (box) {
     if (files.length > 1 && !box.multiple) throw new Error(`${box.box} takes one file at a time.`);
     const { result } = await page.send("Runtime.evaluate", { expression: "window.__symbiotFileBox" });
@@ -1181,13 +1310,17 @@ async function attachFiles(page, at, r, files) {
     await page.send("Runtime.evaluate", { expression: "delete window.__symbiotFileBox" }).catch(() => {});
     return { used: `${box.box}, ${box.how}` };
   }
-  // no box on the page yet: press it, and catch the file dialog that opens
+  return viaDialog(page, at, r, files, true);
+}
+// press the target and put the files in the box its file dialog was for; null when it opens
+// none and `strict` is off
+async function viaDialog(page, at, r, files, strict) {
   await page.send("Page.setInterceptFileChooserDialog", { enabled: true });
   try {
     const opened = page.until("Page.fileChooserOpened", 5000);
     await clickAt(page, at);
-    const m = await opened, p = (m && m.params) || {};
-    if (!p.backendNodeId) throw new Error(`No file box on the page, and pressing "${r.label}" didn't open a file dialog. Press it, then upload with what the new map shows.`);
+    const m = await opened.catch((e) => { if (strict) throw e; return null; }), p = (m && m.params) || {};
+    if (!p.backendNodeId) { if (!strict) return null; throw new Error(`No file box on the page, and pressing "${r.label}" didn't open a file dialog. Press it, then upload with what the new map shows.`); }
     if (files.length > 1 && p.mode !== "selectMultiple") throw new Error("That file box takes one file at a time.");
     await page.send("DOM.setFileInputFiles", { files, backendNodeId: p.backendNodeId });
     return { used: "the file box the file dialog it opened was for" };
@@ -1288,4 +1421,4 @@ function watchWindow({ every = 2000, start = 30000 } = {}) {
   if (WATCH.unref) WATCH.unref();
 }
 
-export { tabKey, siteUrl, browserArgs, reducedUa, windowUa, mapPage, wholePage, readPage, readTexts, readLinkedIn, LI_READ, pagePicture, pageClip, CLIP, isSend, pressRegion, typeRegion, chooseRegion, uploadRegion, uploadFiles, attachFiles, FILE_BOX, scrollPage, SCROLLS, signIn, keepBrowserOpen, closeBrowser, browserOpen, keepSessions, SESSION_KEEP, SESSIONS, loadSessions, trustedSites, isTrusted, trustSite, untrustSite, PROFILE , openSymbiotBrowser, closeSymbiotBrowser, onBrowserClosed, scratchPage, open as openPage, evaluate, SCROLLER, watchWindow, windowOpen, lockHolder, setBrowserHub , browserHub };
+export { showScreen, fillForm, sessionCookie, SESSION_COOKIE, tabKey, siteUrl, browserArgs, reducedUa, windowUa, mapPage, wholePage, readPage, readTexts, readLinkedIn, LI_READ, pagePicture, pageClip, CLIP, isSend, pressRegion, typeRegion, chooseRegion, uploadRegion, uploadFiles, attachFiles, FILE_BOX, scrollPage, SCROLLS, signIn, keepBrowserOpen, closeBrowser, browserOpen, keepSessions, SESSION_KEEP, SESSIONS, loadSessions, trustedSites, isTrusted, trustSite, untrustSite, PROFILE , openSymbiotBrowser, closeSymbiotBrowser, onBrowserClosed, scratchPage, open as openPage, evaluate, SCROLLER, watchWindow, windowOpen, lockHolder, setBrowserHub , browserHub };

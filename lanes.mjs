@@ -28,7 +28,7 @@ import { runHandoff, runningHandoff, waitingFor, agentQuestions, findOrcaCli, in
 import { addTask, removeTask, pushTasks } from "./tasks.mjs";
 import { actNow, actBrief } from "./mind.mjs";
 import { laneMap } from "./scan.mjs";
-import { parseRun, lastRunText, readRunLog } from "./work.mjs";
+import { parseRun, lastRunText, readRunLog, runStarted } from "./work.mjs";
 import { OPS, parseHandoffs } from "./handover.mjs";
 
 const LEDGER = join(CONFIG_DIR, "lanes.json");
@@ -55,7 +55,9 @@ function laneTarget(lane, map) {
 }
 // Where a handover to a repo stands once its agent was asked to start (runHandoff's
 // result): started; held behind a run that's really going there; or blocked, with why.
-const startedAs = (r) => r.id && !r.busy && !r.blocked ? { status: "started", job: r.id } : r.busy ? { status: "held", ...(r.id ? { job: r.id } : {}) } : { status: "blocked", note: String(r.note || "its agent didn't start").slice(0, 200) };
+// self: licenceGate's reason (Symbiot's own code) — unlike parked or a Pro limit, no
+// one will ever unblock it by waiting, so outcome() reports it back right away.
+const startedAs = (r) => r.id && !r.busy && !r.blocked ? { status: "started", job: r.id } : r.busy ? { status: "held", ...(r.id ? { job: r.id } : {}) } : { status: "blocked", note: String(r.note || "its agent didn't start").slice(0, 200), ...(r.self ? { self: true } : {}) };
 
 // A handover whose text changed while the run doing the earlier version is still
 // going (the LinkedIn auto-poster spec reached ops twice, on top of a run already
@@ -139,7 +141,7 @@ function lastWords(path) {
   return run.length > TAIL ? "…" + run.slice(-TAIL).replace(/^\S*\s+/, "") : run; // from a word on, not mid-word
 }
 // When the newest run in a folder started (its log header), or 0.
-function lastRunStart(path) { const log = readSym(path, "agent.log"), m = [...log.matchAll(/^=== .* (\d{4}-\d\d-\d\dT[\d:.]+Z) ===$/gm)].pop(); return m ? Date.parse(m[1]) || 0 : 0; }
+function lastRunStart(path) { return runStarted(readSym(path, "agent.log")); }
 const openQuestions = (path) => /^###\s+/m.test(readSym(path, "QUESTIONS.md").split(/^##\s+Suggestions/m)[0]);
 // A repo lane's run does a whole brief, so its last words cover every task in it,
 // not just the one handed over (ops heard about a first-run audit and a posting
@@ -158,6 +160,10 @@ function aboutIt(words, text) {
 // user's answer to a question there isn't done: that's in the Agents tab.
 function outcome(e, { tasks = loadTasks(), running = runningHandoff } = {}) {
   if (e.status === "error") return { text: `Couldn't hand it over: ${e.error}` };
+  // Symbiot's own code: no agent will ever start there to clear this, so say so now
+  // rather than waiting forever (a parked lane or a Pro limit can still clear on its
+  // own, so only this, self-marked reason short-circuits the wait below).
+  if (e.status === "blocked" && e.self) return { text: `${e.note} It's on ${e.to.lane}'s own task list now, on the Workdesk for the user to pick up — no agent will start it, so don't hand this over again.` };
   const p = e.to.path; if (!p || running(p)) return null;
   if (lastRunStart(p) < e.at) return null; // its run hasn't started yet (held while that lane was busy)
   if (openQuestions(p) && !/^- \[x\]/im.test(readSym(p, "TASKS.md"))) return null; // waiting on the user, in that lane
