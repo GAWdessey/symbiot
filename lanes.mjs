@@ -30,6 +30,7 @@ import { actNow, actBrief } from "./mind.mjs";
 import { laneMap } from "./scan.mjs";
 import { parseRun, lastRunText, readRunLog, runStarted } from "./work.mjs";
 import { OPS, parseHandoffs } from "./handover.mjs";
+import { laneReach, unreachable } from "./reach.mjs";
 
 const LEDGER = join(CONFIG_DIR, "lanes.json");
 const ACT_DIR = join(CONFIG_DIR, "drafts");
@@ -143,10 +144,18 @@ Other ops agents are working right now, each in its own folder. If what you were
 ${going.map((g) => `- \`${g.run}\` (${tilde(g.path)})${g.by ? `, handed over by ${g.by}${g.at ? ` at ${stamp(g.at)}` : ""}` : ""}: "${clipWords(g.what.replace(/\*\*/g, ""), 120)}"`).join("\n")}`;
 }
 
+// What a repo lane's task says after a handover: who sent it, and the servers it names
+// that the lane can't reach from its sandbox, so it does the code and sends the server
+// part to ops rather than back (ops gave dailify a live .env change, 13 Oct 2026).
+function handedBy(from, lane, text, reach) {
+  const far = unreachable(text, lane, reach);
+  return `(handed over by ${from.lane})${far.length ? ` Symbiot: ${lane} runs in a sandbox and can't reach ${far.join(" or ")}. Do the code part here, and hand what has to change on ${far.length > 1 ? "those servers" : "that server"} to ${OPS}, saying what.` : ""}`;
+}
 // Pick up what a folder's agent handed over and start the lanes it named.
 // Each handover is started once (its key: where from, which lane, what).
-function dispatch(path, { map = laneMap(), act = actNow, run = runHandoff, add = addTask, push = pushTasks, drop = removeTask, running = runningHandoff, refresh = resupply, more = extend, tasks = loadTasks, now = Date.now(), ledger = loadLedger(), dirs } = {}) {
+function dispatch(path, { map = laneMap(), act = actNow, run = runHandoff, add = addTask, push = pushTasks, drop = removeTask, running = runningHandoff, refresh = resupply, more = extend, tasks = loadTasks, now = Date.now(), ledger = loadLedger(), dirs, reach } = {}) {
   const asked = parseHandoffs(readSym(path, "HANDOFF.md")); if (!asked.length) return [];
+  const reachOf = () => { if (reach === undefined) { try { reach = laneReach({}); } catch { reach = null; } } return reach; };
   const from = { lane: laneOf(path, map), path }, parent = ledger.handoffs.filter((h) => h.to.path === path).pop(), chain = (parent ? parent.chain : 0) + 1;
   const started = [];
   for (const h of asked) {
@@ -166,7 +175,7 @@ function dispatch(path, { map = laneMap(), act = actNow, run = runHandoff, add =
         Object.assign(prior, { text: h.text, key, was, at: now, superseded: (prior.superseded || 0) + 1 });
       } else {
         drop(prior.task);
-        const t = add(h.text, prior.to.lane, { after: `(handed over by ${from.lane})` });
+        const t = add(h.text, prior.to.lane, { after: handedBy(from, prior.to.lane, h.text, reachOf()) });
         if (t.error) { Object.assign(prior, { status: "error", error: t.error, text: h.text, key, was }); started.push(prior); continue; }
         push({ repo: prior.to.lane });
         const r = run(prior.to.path) || {};
@@ -184,7 +193,7 @@ function dispatch(path, { map = laneMap(), act = actNow, run = runHandoff, add =
       if (r.error) Object.assign(e, { status: "error", error: r.error });
       else Object.assign(e, { to: { lane: OPS, path: r.dir }, job: r.job });
     } else {
-      const t = add(h.text, to.lane, { after: `(handed over by ${from.lane})` }); // whole: a long one links to the rest
+      const t = add(h.text, to.lane, { after: handedBy(from, to.lane, h.text, reachOf()) }); // whole: a long one links to the rest
       if (t.error) Object.assign(e, { status: "error", error: t.error });
       else {
         push({ repo: to.lane });

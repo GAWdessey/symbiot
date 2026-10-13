@@ -9,6 +9,7 @@ import { readFileSync, writeFileSync, existsSync, readdirSync, mkdirSync, statSy
 import { randomBytes } from "node:crypto";
 import { VERSION, LATEST_VERSION, REGISTRY, semverGt, loadConfig, saveConfig, loadTasks, saveTasks, TASK_MAX, clipWords, taskWords, sameTask, uniqueTasks, sh, hasCmd, repoState } from "./core.mjs";
 import { handoverRules, ONLY_YOU, HANDBACK } from "./handover.mjs";
+import { laneReach } from "./reach.mjs";
 import { doneBrief, standingBrief } from "./asksdone.mjs";
 import { userStyleLine } from "./adapt.mjs";
 import { inflightIds } from "./parallel.mjs";
@@ -943,7 +944,7 @@ function buildTasksMd(name, ctx, list) {
   const keys = Object.keys(byType).sort((a, b) => TASK_ORDER.indexOf(a) - TASK_ORDER.indexOf(b));
   for (const ty of keys) { L.push(`### ${ty}`); for (const t of byType[ty]) L.push(`- [ ] ${t.text}`); L.push(""); }
   L.push("## When you finish an item", "- Tick it here (`- [x]`) as soon as it's done — that's how it reaches review. Ticking doesn't archive it: the user approves it in Symbiot, which commits it on a branch and opens a PR.", "- Leave your changes **uncommitted**, and don't tick anything you didn't finish or couldn't verify.", "- If you ever do have to make a branch or a PR yourself, first `git fetch origin`, cut the branch from `origin/<default branch>` (not the local one), run the tests, and open the PR only when they pass and nothing conflicts. If they don't, stop and say so in QUESTIONS.md.", "- If an item has numbered steps (1), 2), …), say `Step N: …` as you start each one, so Home shows how far along you are.", "- An item that runs for days or weeks (a move done step by step) stays unticked until its last step. When a round of it is finished and tested, end your last message with a line `Round done: <the item's first words>`, and Symbiot puts that round up for the user's OK under the item, which stays open.", "- To see Symbiot itself working (its Home, a layout, a card), run a copy of your own: `node index.mjs app --fresh` from this repo, or `symbiot app --fresh`. Never point a browser, a screenshot or a proxy at the user's running Symbiot (127.0.0.1:7391): it's their window and their data.", "- If the user says to drop an item (in ANSWERS.md, say), delete its line here: Symbiot closes it, so it isn't sent again. Don't delete one for any other reason.", "");
-  L.push(...handoverRules(ctx.lanes || [], name), ...HANDBACK, ...standingBrief(), ...doneBrief());
+  L.push(...handoverRules(ctx.lanes || [], name, ctx.reach), ...HANDBACK, ...standingBrief(), ...doneBrief());
   L.push("## If you need a decision, or have ideas", "You may be running unattended, so you can't ask in chat. Write `.symbiot/QUESTIONS.md` instead: Symbiot shows it to the user on your block in its Workdesk, and their answers come back in `.symbiot/ANSWERS.md` (read that first if it exists).",
     "- Before you ask the user anything, read `.symbiot/ANSWERS.md` again, all of it: they may have answered it already, for you or for another agent on the same work (Symbiot copies those in, under a heading naming that agent). If an answer there settles it, use it and don't ask; if it settles part, ask only the part left.",
     `- At most ${QUESTIONS_MAX} questions, under a \`## Questions\` heading. Each is a \`### \` heading, then a line of context, then exactly ${OPTIONS_SHOWN} options as \`- \` bullets, the one you recommend first, marked \`(recommended)\`. Symbiot shows only the first ${OPTIONS_SHOWN}; the user can always answer in their own words.`,
@@ -979,6 +980,7 @@ function pushTasks(filter) {
   if (!tasks.length) return { empty: true, written: [], unresolved: [] };
   const groups = {}; for (const t of tasks) { const k = t.repo || ""; (groups[k] = groups[k] || []).push(t); }
   const written = [], unresolved = [], connectors = connectorsLine(); // the same for every repo's run
+  let reach = null; try { reach = laneReach(byName); } catch {} // what each lane reaches, for the handover rules
   for (const name of Object.keys(groups)) {
     const list = uniqueTasks(groups[name].map((t) => t.text)).map((text) => ({ text })), path = name && byName[name]; // near-duplicates once
     if (!path || (path === MARKETING_DIR && !ensureMarketing(path))) { unresolved.push({ name: name || "(no repo)", count: list.length }); continue; }
@@ -999,7 +1001,7 @@ function pushTasks(filter) {
       // held: an agent is still running there, so it lands when that one exits
       // Marketing's brief says what the lane is, the products its tasks name and where they are
       const about = path === MARKETING_DIR ? marketingBrief(list, { map: byName }) : [];
-      const held = writeTasks(path, buildTasksMd(name, { branch: st.branch, commits, open, drift: risk, stack, lanes: Object.keys(byName), connectors, about }, list));
+      const held = writeTasks(path, buildTasksMd(name, { branch: st.branch, commits, open, drift: risk, stack, lanes: Object.keys(byName), reach, connectors, about }, list));
       written.push({ name, file: join(path, ".symbiot", "TASKS.md"), path, count: list.length, held });
     } catch (e) { unresolved.push({ name, count: list.length, error: String((e && e.message) || e) }); }
   }

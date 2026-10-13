@@ -58,6 +58,34 @@ try {
   ok("HANDOFF.md parses into lanes and what's needed", ph.length === 2 && ph[0].lane === "ops" && /JDK 17/.test(ph[0].text) && ph[1].lane === "GhostAIChat" && !/not a handover/.test(ph[1].text), ph);
   ok("the rules list a lane once, never the agent's own", handoverRules(["coral", "coral", "x"], "coral").join("\n").match(/`x`/g).length === 1 && !/: `coral`, /.test(handoverRules(["coral", "x"], "coral")[3]), "");
 
+  console.log("WHAT EACH LANE CAN REACH — ops handed dailify a live .env change it couldn't reach (13 Oct 2026)");
+  {
+    const { sshHosts, envProviders, laneReach, unreachable } = await import("../reach.mjs");
+    const ssh = "Host sts-prod\n  HostName 41.76.1.2\n  User garth\nHost *\n  ServerAliveInterval 30\nHost gh github-work\n";
+    ok("the servers this computer connects to come from its ssh config, wildcards left out", sshHosts(ssh).join() === "sts-prod,41.76.1.2,github-work", sshHosts(ssh));
+    ok("…an alias too short to match safely is left out", !sshHosts(ssh).includes("gh"), sshHosts(ssh));
+    const env = "# keys\nGOOGLE_CLIENT_SECRET=x\nexport TWILIO_AUTH_TOKEN=y\nNEXT_PUBLIC_STRIPE_KEY=z\nJWT_SECRET=a\nAPI_KEY=b\nPORT=3000\nMETA_APP_ID=1\n";
+    ok("a lane's .env gives the providers it holds keys for, names only, no generic words", envProviders(env).join() === "GOOGLE,TWILIO,STRIPE", envProviders(env));
+    const r = laneReach({ dailify: "/x/dailify", coral: "/x/coral" }, { sandboxed: true, ssh, read: (f) => (f === "/x/dailify/.env" ? env : "") });
+    ok("laneReach: sandboxed, the hosts, and keys only for lanes that have some", r.sandboxed && r.hosts.includes("sts-prod") && r.keys.dailify.join() === "GOOGLE,TWILIO,STRIPE" && !r.keys.coral, r);
+    const rules = handoverRules(["dailify", "coral"], "dailify", r).join("\n");
+    ok("a repo's brief: ops reaches the servers, every repo lane reaches none, so a live server's .env is ops's", /`ops`: runs on this computer, outside any sandbox: the servers this computer connects to \(`sts-prod`/.test(rules) && /Every repo lane runs in a sandbox: it writes only in its own folder and reaches no server/.test(rules) && /its `\.env`, a restart, a deploy/.test(rules), rules);
+    ok("…its own lane says it reaches no server, and a server job goes to ops, never back to a repo lane", /Your lane, `dailify`, reaches no server\. If you're handed a job on one, hand that part to `ops`, never back to a repo lane/.test(rules), rules);
+    ok("…and which lane's .env holds which keys", /`dailify` \(GOOGLE, TWILIO, STRIPE\)/.test(rules) && !/`coral` \(/.test(rules), rules);
+    const ops = actBrief("Change WHATSAPP_PROVIDER in the prod .env on sts-prod", { lanes: ["dailify"], reach: r });
+    ok("the ops brief says it too, so ops doesn't hand a server job to a repo lane", /reaches no server/.test(ops) && /`sts-prod`/.test(ops) && !/Your lane,/.test(ops), "");
+    const open = handoverRules(["dailify"], "dailify", { ...r, sandboxed: false }).join("\n");
+    ok("sandbox off: repo lanes reach the same servers as ops", /without a sandbox: they reach the same servers as `ops`/.test(open) && !/reaches no server/.test(open), open);
+    ok("no reach known: the rules are as they were", !/can reach/.test(handoverRules(["dailify"], "dailify").join("\n")), "");
+    ok("unreachable: the servers a handover names that a sandboxed repo lane can't reach; none for ops, or unsandboxed", unreachable("Set WHATSAPP_PROVIDER=meta in /srv/dailify/.env on sts-prod and restart", "dailify", r).join() === "sts-prod" && !unreachable("on sts-prod", "ops", r).length && !unreachable("on sts-prod", "dailify", { ...r, sandboxed: false }).length && !unreachable("the sts-production-notes file", "dailify", r).length, "");
+    const before = calls.add.length;
+    put(coral, "HANDOFF.md", "### GhostAIChat\nSwitch WHATSAPP_PROVIDER to meta in the live .env on sts-prod, then restart the service.\n");
+    dispatch(coral, { ...deps(), reach: r });
+    const sent = calls.add.slice(before)[0] || {};
+    ok("a handover to a repo lane naming a server it can't reach: its task says so, and to send that part to ops", sent.repo === "GhostAIChat" && /^\(handed over by coral\) Symbiot: GhostAIChat runs in a sandbox and can't reach sts-prod\. Do the code part here, and hand what has to change on that server to ops/.test(sent.after || ""), sent);
+    put(coral, "HANDOFF.md", "");
+  }
+
   console.log("TO OPS AND BACK — coral needs a JDK; ops finds it; coral carries on");
   put(coral, "HANDOFF.md", "### ops\nFind a JDK 17 on this machine and give its path.\nWhy: GhostAIChat's android build needs one.\n");
   const t1 = lanesTick(deps());

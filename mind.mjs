@@ -29,6 +29,7 @@ import { handoffCmd, runHandoff, isUrgent, urgentFirst, urgentUndo } from "./age
 import { addTask, pushTasks } from "./tasks.mjs";
 import { laneMap } from "./scan.mjs";
 import { OPS, MARKETING, HANDOVER_MAX, handoverRules, ONLY_YOU, HANDBACK } from "./handover.mjs";
+import { laneReach } from "./reach.mjs";
 import { styleOf, styleLine, userStyleLine } from "./adapt.mjs";
 import { knowledgeFor } from "./knowledge.mjs";
 
@@ -120,8 +121,9 @@ function forget(id) {
 // ---- acting -----------------------------------------------------------------------
 // The brief for a run of its own: the request, what the page showed, what's
 // known, and the rule that anything hard to undo is asked first.
-function actBrief(request, { title = "Symbiot", context = "", known = "", alongside = "", lanes = null, now = Date.now() } = {}) {
-  let names = lanes; if (!names) { try { names = Object.keys(laneMap()); } catch { names = []; } }
+function actBrief(request, { title = "Symbiot", context = "", known = "", alongside = "", lanes = null, reach, now = Date.now() } = {}) {
+  let names = lanes, map = null; if (!names) { try { map = laneMap(); names = Object.keys(map); } catch { names = []; } }
+  if (reach === undefined) { try { reach = laneReach(map || {}); } catch { reach = null; } } // what each lane reaches: ops is told a repo lane reaches no server
   const short = clipWords(request.replace(/\s+/g, " "), 160); // its task line; the whole request is quoted above it
   return `# For your agent: ${title}
 _written by symbiot ${VERSION} · ${dayKey(now)}_
@@ -143,7 +145,7 @@ This folder isn't a repo; there's nothing to change in it but this file. Use you
 ${ONLY_YOU}
 - When it's done, tick the task (\`- [x]\`) and say what you did in your last message: it's what goes back to whoever asked.
 
-${handoverRules(names, OPS).join("\n")}
+${handoverRules(names, OPS, reach).join("\n")}
 ${HANDBACK.join("\n")}`;
 }
 // How to write to the user, for a brief: their talking style, if it's known.
