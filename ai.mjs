@@ -255,7 +255,7 @@ async function localReady(now = Date.now()) {
   try {
     const tags = await fetch(`${LOCAL_URL}/api/tags`, { signal: AbortSignal.timeout(1500) });
     if (tags.ok && ((await tags.json()).models || []).some((m) => m.name === LOCAL_MODEL)) {
-      ok = !!(await callOllama({ baseUrl: LOCAL_URL, model: LOCAL_MODEL, tuned: true }, "Reply with one word.", "ping"));
+      ok = !!(await callOllama({ baseUrl: LOCAL_URL, model: LOCAL_MODEL, tuned: true, timeout: 20000 }, "Reply with one word.", "ping"));
     }
   } catch {}
   LOCAL_OK = { at: now, ok };
@@ -351,7 +351,7 @@ function recommendModels(hw) {
   const local = [
     { tier: "min", model: "llama3.2:3b", needGB: 6, note: "fast & light — fine for summaries" },
     { tier: "min+", model: "qwen3.5:4b", needGB: 7, note: "newer small model, ~3.3GB download, 256K context, reads images" },
-    { tier: "med", model: "llama3.1:8b", needGB: 10, note: "solid all-rounder" },
+    { tier: "med", model: "qwen3:8b", needGB: 10, note: "solid all-rounder; 8 GB of VRAM fits one resident 8B model" },
     { tier: "med+", model: "qwen3.5:9b", needGB: 11, note: "newer all-rounder, ~6.6GB download, 256K context, reads images" },
     { tier: "max", model: "qwen2.5:14b", needGB: 18, note: "stronger reasoning" },
     { tier: "max", model: "gemma4:26b", needGB: 22, note: "Google mixture-of-experts (4B active, fast for its size), ~16GB download" },

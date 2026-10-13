@@ -233,10 +233,14 @@ function withTrust(tmpl, box = null, repoPath = "") {
   return c;
 }
 // The --model for an agent run: pickModel's tier as the CLI alias (sonnet, opus), or its id.
+// A lane that should always run on one tier: { "lanes": { "steve": { "model": "opus" } } } in lanes.json.
+function laneModel(lane) {
+  try { const m = JSON.parse(readFileSync(join(CONFIG_DIR, "lanes.json"), "utf8")).lanes?.[lane]?.model; return typeof m === "string" ? m : ""; } catch { return ""; }
+}
 function routedModel(repoPath, opts = {}, resumed = false) {
   try {
     const task = resumed ? RESUME_PROMPT : readSymbiot(repoPath, "TASKS.md").split("\n").filter((l) => /^\s*- \[ \]/.test(l)).join("\n");
-    const override = (task.match(/\[model:\s*(\w+)\s*\]/i) || [])[1] || opts.model || "";
+    const override = (task.match(/\[model:\s*(\w+)\s*\]/i) || [])[1] || opts.model || laneModel(opts.name || basename(resolve(repoPath)));
     const m = pickModel({ task, lane: opts.name || "", path: resolve(repoPath), override });
     const alias = { S: "sonnet", O: "opus", H: "haiku" }[m.tier]; // the CLI's alias for the tier's own model; a named one (fable) as its id
     return alias && m.model === MODEL[m.tier] ? alias : /^claude-/.test(m.model) ? m.model : "";
@@ -415,7 +419,7 @@ function runHandoff(repoPath, { force = false, lost = false, model = "", onExit 
   const scoped = runCmdOf(repoPath, tmpl), box = isClaudeCmd(scoped) && trustFull() ? sandboxFor(repoPath, scoped) : null; // a repo run's sandbox, on top of the membrane
   tmpl = withStream(withTrust(scoped, box, repoPath));
   const resume = isClaudeCmd(tmpl) ? resumeFor(repoPath) : null, fresh = tooLong(resume); // too long to resume: a fresh run carries on
-  if (!model && !/\s--model\b/.test(tmpl)) model = routedModel(repoPath, opts, !!resume && !fresh); // routine runs on Sonnet, hard ones on Opus (route.mjs); a command you set with its own --model is left as-is
+  if (!model) model = routedModel(repoPath, opts, !!resume && !fresh); // routine runs on Sonnet, hard ones on Opus (route.mjs); the --model already in your command is only the Auto default, so the pick replaces it
   if (model) tmpl = withModel(tmpl, model);
   const runCmd = resume && !fresh ? tmpl + ` --resume ${resume.id}` : tmpl;
   if (!force) { const w = waitingFor(repoPath); if (w) { askedFor(repoPath); return { blocked: true, waiting: true, questions: 0, note: waitNote(w) }; } }

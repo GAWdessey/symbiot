@@ -3214,7 +3214,7 @@ $('qpop').innerHTML=q.rows.map(function(r){var h="<div class='qrow'><b>"+esc(r.l
 var bn=$('qbanner');if(bn){var t=qPaused();bn.textContent=t;bn.classList.toggle('show',!!t);}
 try{if(LQ.scene==='work')lqRelay();else lqHomeLine(LQ.home||{});}catch(e){}}
 function qLoad(){api('/api/quota').then(function(q){QUOTA=q&&!q.error?q:null;qDraw();}).catch(function(){});}
-function qInit(){var p=$('qpill');if(!p)return;p.addEventListener('click',function(ev){ev.stopPropagation();$('quota').classList.toggle('open');});document.addEventListener('click',function(ev){var b=$('quota');if(b&&!b.contains(ev.target))b.classList.remove('open');});qLoad();setInterval(qLoad,30000);}
+function qInit(){var p=$('qpill');if(!p)return;p.addEventListener('click',function(ev){if(ev&&ev.stopPropagation)ev.stopPropagation();$('quota').classList.toggle('open');});if(document.addEventListener)document.addEventListener('click',function(ev){var b=$('quota');if(b&&ev&&ev.target&&b.contains&&!b.contains(ev.target))b.classList.remove('open');});qLoad();setInterval(qLoad,30000);}
 function lqLineText(w){var nr=(w.running||[]).length,nq=0,ni=0,nk=(w.ready||[]).length,nw=w.waitingCount||0;(w.projects||[]).forEach(function(p){nq+=p.asks||0;ni+=(p.ideas||[]).length;});
 var bits=[];if(nq)bits.push('<b>'+nq+' question'+(nq>1?'s':'')+' for you</b>');if(nk)bits.push('<b>'+nk+' ready for your OK</b>');if(nr)bits.push(nr+' at work');if(nw)bits.push(nw+' waiting');if(ni)bits.push(ni+' suggested task'+(ni>1?'s':''));
 var qp=qPaused();if(qp)bits.unshift('<b>'+esc(qp)+'</b>');return bits.length?bits.join(' &middot; '):'All quiet: nothing at work, nothing asking you.';}
