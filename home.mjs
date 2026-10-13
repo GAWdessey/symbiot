@@ -381,7 +381,7 @@ function homeState({ now = Date.now(), fresh = false, deps = {} } = {}) {
     const closed = done ? { done, options: [`Close it: ${done.lane} has done this already (${done.text}). Check that it's so, and carry on without asking again. (recommended)`, opts[0]].filter(Boolean),
       labels: ["Close it: it's done", ...(opts[0] ? [blobLabel(pa.labels ? pa.labels[0] : opts[0])] : [])] } : {};
     you.push({ kind: "ask", id: "ask:" + a.path, path: a.path, repo, name: repo ? named(lane ? map[lane] : a.path, repo) : plain(String(a.name || "an agent").replace(/^Agent:\s*/, ""), 60),
-      title: `${a.name} asks`, sub: String(q.q || "").slice(0, 90), ...pa, options: opts, ...closed, ...(qs.length > 1 ? { more: qs.length - 1 } : {}), ...signInCard([q.q, ...opts]), shape: "agents" });
+      title: `${a.name} asks`, sub: String(q.q || "").slice(0, 90), ...(q.task ? { task: q.task } : {}), ...pa, options: opts, ...closed, ...(qs.length > 1 ? { more: qs.length - 1 } : {}), ...signInCard([q.q, ...opts]), shape: "agents" });
   }
   // What stopped and can't go on without you, as a question too: a handover that
   // couldn't start (lanes.mjs stuckHandovers: "Allow this run access to ~/Company?"),
@@ -752,7 +752,7 @@ function workScene({ deps = {}, full = false } = {}) {
       const line = plain(String(t).split(/\n\s*\n/)[0], 220);
       if (line) { p.summary = line; p.state = a.status === "running" ? "at work" : qs.length ? "asks you" : "done"; p.path = a.path; }
     }
-    for (const q of qs) { p.qs = p.qs || []; if (p.qs.length < 3) p.qs.push({ q: q.shown || q.q, ...(q.shown ? { raw: q.q } : {}), options: (q.options || []).slice(0, 3), ...(q.labels ? { labels: q.labels } : {}), path: a.path, ...signInCard([q.q, ...(q.options || []).slice(0, 3)]) }); }
+    for (const q of qs) { p.qs = p.qs || []; if (p.qs.length < 3) p.qs.push({ q: q.shown || q.q, ...(q.shown ? { raw: q.q } : {}), ...(q.task ? { task: q.task } : {}), options: (q.options || []).slice(0, 3), ...(q.labels ? { labels: q.labels } : {}), path: a.path, ...signInCard([q.q, ...(q.options || []).slice(0, 3)]) }); }
     for (const s of ideas) { p.ideas = p.ideas || []; if (p.ideas.length < 4) p.ideas.push({ text: plain(s.text, 200), full: String(s.text), repo: s.repo || l, path: a.path }); }
   }
   // what each lane handed over and hasn't heard back on, with where it stands and how far the run on it has got

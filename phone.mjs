@@ -286,7 +286,7 @@ async function snapshot({ now = Date.now(), fresh = false } = {}) {
   const asks = [];
   for (const y of (await tryOr(() => agents.agentsList(), [])).filter((a, i, all) => all.findIndex((b) => b.path === a.path) === i)) {
     const qs = await tryOr(() => agents.agentQuestions(y.path, "").questions, []);
-    if (qs.length) asks.push({ id: askId(y.path), path: y.path, name: plainText(String(y.name || "an agent").replace(/^Agent:\s*/, ""), 60), questions: qs.slice(0, 5).map((q) => ({ q: plainText(q.q, 300), ...(q.shown ? { shown: plainText(q.shown, 400) } : {}), options: (q.options || []).slice(0, 2).map((o) => plainText(o, 200)), ...(q.labels ? { labels: q.labels.slice(0, 2).map((o) => plainText(o, 200)) } : {}) })) });
+    if (qs.length) asks.push({ id: askId(y.path), path: y.path, name: plainText(String(y.name || "an agent").replace(/^Agent:\s*/, ""), 60), questions: qs.slice(0, 5).map((q) => ({ q: plainText(q.q, 300), ...(q.task ? { task: plainText(q.task, 120) } : {}), ...(q.shown ? { shown: plainText(q.shown, 400) } : {}), options: (q.options || []).slice(0, 2).map((o) => plainText(o, 200)), ...(q.labels ? { labels: q.labels.slice(0, 2).map((o) => plainText(o, 200)) } : {}) })) });
   }
   const approves = (await tryOr(() => tasksMod.pendingReview(), [])).filter((r) => r.path && !r.running && ((r.tasks || []).length || (r.files || []).length))
     .map((r) => ({ repo: r.repo, tasks: (r.tasks || []).map((t) => ({ id: t.id, text: plainText(t.text, 200) })), files: (r.files || []).length, stat: plainText(r.stat, 120), ...(r.untasked ? { untasked: true } : {}), sum: approveSum(r) }));
