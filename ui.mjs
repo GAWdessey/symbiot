@@ -898,6 +898,20 @@ body.lq-liquid #panel-settings{max-width:780px;margin:0 auto;display:flex;flex-d
 body.lq-liquid .sset{border:1px solid rgba(255,255,255,.07);background:rgba(255,255,255,.03);border-radius:18px;padding:18px 20px}
 body.lq-liquid.lq-light .sset{border-color:rgba(21,26,33,.07);background:rgba(255,255,255,.55)}
 body.lq-liquid .sset.hidden,body.lq-liquid #panel-settings.hidden{display:none}
+#quota{position:fixed;right:14px;bottom:14px;z-index:70;font:500 12px/1 var(--sans)}
+#quota .qpill{display:flex;align-items:center;gap:7px;padding:8px 12px;border-radius:999px;cursor:pointer;color:#ECE9E4;background:rgba(10,11,14,.88);border:1px solid rgba(220,228,240,.18);backdrop-filter:blur(10px);max-width:calc(100vw - 28px);white-space:nowrap}
+#quota .qdot{width:8px;height:8px;border-radius:50%;background:#46C282;flex:none}
+#quota.near .qpill{border-color:#F2A541;color:#F2A541}#quota.near .qdot{background:#F2A541}
+#quota.hit .qpill{border-color:#E5484D;background:#3A1114;color:#FFD9DA}#quota.hit .qdot{background:#E5484D;animation:qpulse 1.6s infinite}
+@keyframes qpulse{50%{opacity:.35}}
+#quota .qpop{display:none;position:absolute;right:0;bottom:calc(100% + 8px);width:min(340px,calc(100vw - 28px));padding:12px 14px;border-radius:14px;background:rgba(10,11,14,.96);color:#ECE9E4;border:1px solid rgba(220,228,240,.18);box-shadow:0 20px 50px -20px rgba(0,0,0,.8);font-weight:400;line-height:1.4}
+#quota.open .qpop{display:block}
+#quota .qrow{padding:8px 0;border-top:1px solid rgba(220,228,240,.12)}#quota .qrow:first-child{border-top:0;padding-top:0}
+#quota .qrow b{font-weight:600}#quota .qrow small{display:block;color:#A1A8B1;font-size:11.5px}
+#quota .qbar{height:5px;border-radius:3px;background:rgba(220,228,240,.14);margin:4px 0 2px;overflow:hidden}#quota .qbar i{display:block;height:100%;background:#46C282}
+#quota .qbar.near i{background:#F2A541}#quota .qbar.hit i{background:#E5484D}
+body.lq-light #quota .qpill,body.lq-light #quota .qpop{background:rgba(255,255,255,.96);color:#151A21;border-color:rgba(20,30,45,.18)}body.lq-light #quota.hit .qpill{background:#FDECEC;color:#8A1C20}body.lq-light #quota.near .qpill{color:#9A5200}
+#qbanner{display:none;margin:0 0 10px;padding:9px 12px;border-radius:10px;border:1px solid #E5484D;background:rgba(229,72,77,.12);font-size:13px}#qbanner.show{display:block}
 #i18nnote{position:fixed;left:16px;bottom:16px;z-index:60;max-width:calc(100vw - 32px);padding:8px 14px;border-radius:999px;font-size:13px;background:rgba(10,11,14,.88);color:#ECE9E4;border:1px solid rgba(220,228,240,.18);opacity:0;transition:opacity .4s;pointer-events:none}#i18nnote.on{opacity:1}body.lq-light #i18nnote{background:rgba(255,255,255,.94);color:#151A21;border-color:rgba(20,30,45,.15)}
 .licproj{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px}.licproj .chip{display:inline-flex;align-items:center;gap:8px;padding:4px 6px 4px 12px;border:1px solid var(--line);border-radius:999px;font-size:13px}.licproj .chip button{padding:2px 8px;font-size:12px}
 .ssh{margin:0 0 10px;font:600 16px var(--sans);letter-spacing:-.01em;color:var(--bone);display:flex;align-items:baseline;gap:8px}
@@ -1253,6 +1267,7 @@ body.lq-light .btip .bta button:not(.quiet){background:#151A21;color:#FFFFFF}
 </section>
 <section id="panel-tasks" class="hidden">
 <details class="tnhow"><summary>How the Workdesk works</summary><div class="note muted">Everything handed to an agent, in one place: what needs you, work awaiting your review, tasks queued for later, and below them the agents at work, their questions and the handovers between them. To add a task, tell Symbiot in the bar at the bottom: it files it under the right project. To give tasks to your agent, use <b>Send to repos</b> at the top, beside Close &mdash; filter by tag below to choose which. As the agent finishes each one it lands in <b>Awaiting your review</b>: <b>Approve</b> commits it on a branch and opens a PR, <b>&#8630;</b> sends it back. Ticking a task yourself marks it done (it auto-archives). Click <b><i class=ic-chat></i></b> on a task to ask questions about it.</div></details>
+<div id="qbanner" role="status"></div>
 <div id="needsbox"></div>
 <div id="pushout"></div>
 <div id="reviewout"></div>
@@ -1405,6 +1420,7 @@ body.lq-light .btip .bta button:not(.quiet){background:#151A21;color:#FFFFFF}
 </div>
 </section>
 </main>
+<div id="quota" class="hidden" aria-live="polite"><div class="qpop" id="qpop"></div><button class="qpill" type="button" id="qpill" aria-haspopup="true" title="AI usage limits"><span class="qdot"></span><span id="qtext"></span></button></div>
 <footer><button class="iconbtn" type="button" id="quit" style="margin-left:auto" title="Quit" aria-label="Quit"><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M3 3l8 8M11 3l-8 8" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></button></footer>
 <script>
 var T=(function(){var q=new URLSearchParams(location.search),t=q.get('t')||'';try{if(t)sessionStorage.setItem('symbiot_t',t);else t=sessionStorage.getItem('symbiot_t')||'';}catch(e){}if(q.has('t')){q.delete('t');try{history.replaceState(null,'',location.pathname+(q.toString()?'?'+q:'')+location.hash);}catch(e){}}return t;})(); // the token leaves the address bar (history, the window title) and stays in this tab for reloads (15 Oct 2026)
@@ -3175,9 +3191,19 @@ function lqHome(){lqRemember();LQ.scene='home';LQ.relaySig='';var rl=$('lqrelay'
 // what its agent did or is doing, what it asks you (its answers as buttons, as on
 // home), Review and approve when it's ready, and the extra tasks it suggests (+ task
 // or Skip). You needn't open Agents; it's still there for the detail.
+// AI usage limits (quota.mjs): the meter in the corner, its details, and "paused for quota" on Home and the Workdesk.
+var QUOTA=null;
+function qPaused(){return QUOTA&&QUOTA.paused?QUOTA.pausedText:'';}
+function qDraw(){var box=$('quota');if(!box)return;var q=QUOTA;
+if(!q||!q.rows||!q.rows.length){box.classList.add('hidden');}else{box.classList.remove('hidden');box.classList.remove('near','hit');if(q.level==='near'||q.level==='hit')box.classList.add(q.level);$('qtext').textContent=q.text||'AI';
+$('qpop').innerHTML=q.rows.map(function(r){var h="<div class='qrow'><b>"+esc(r.label)+"</b> &middot; "+esc(r.headline||'')+(r.windows||[]).map(function(w){var pc=w.used==null?0:w.used,lv=pc>=100?'hit':pc>=80?'near':'';return "<div class='qbar "+lv+"' title='"+esc(w.label)+"'><i style='width:"+pc+"%'></i></div><small>"+esc(w.label)+": "+(w.used==null?(w.over?'reset, no reading yet':'unknown'):w.used+'% used')+(w.resetText?(w.over?' &middot; reset '+esc(w.resetText):' &middot; resets '+esc(w.resetText)):'')+"</small>";}).join('')+"<small>from "+esc(r.source||'')+"</small></div>";return h;}).join('');}
+var bn=$('qbanner');if(bn){var t=qPaused();bn.textContent=t;bn.classList.toggle('show',!!t);}
+try{if(LQ.scene==='work')lqRelay();else lqHomeLine(LQ.home||{});}catch(e){}}
+function qLoad(){api('/api/quota').then(function(q){QUOTA=q&&!q.error?q:null;qDraw();}).catch(function(){});}
+function qInit(){var p=$('qpill');if(!p)return;p.addEventListener('click',function(ev){ev.stopPropagation();$('quota').classList.toggle('open');});document.addEventListener('click',function(ev){var b=$('quota');if(b&&!b.contains(ev.target))b.classList.remove('open');});qLoad();setInterval(qLoad,30000);}
 function lqLineText(w){var nr=(w.running||[]).length,nq=0,ni=0,nk=(w.ready||[]).length,nw=w.waitingCount||0;(w.projects||[]).forEach(function(p){nq+=p.asks||0;ni+=(p.ideas||[]).length;});
 var bits=[];if(nq)bits.push('<b>'+nq+' question'+(nq>1?'s':'')+' for you</b>');if(nk)bits.push('<b>'+nk+' ready for your OK</b>');if(nr)bits.push(nr+' at work');if(nw)bits.push(nw+' waiting');if(ni)bits.push(ni+' suggested task'+(ni>1?'s':''));
-return bits.length?bits.join(' &middot; '):'All quiet: nothing at work, nothing asking you.';}
+var qp=qPaused();if(qp)bits.unshift('<b>'+esc(qp)+'</b>');return bits.length?bits.join(' &middot; '):'All quiet: nothing at work, nothing asking you.';}
 function lqRelayList(w){return lqSortLanes((w.projects||[]).filter(function(p){return p.summary||(p.qs&&p.qs.length)||p.ready||(p.ideas&&p.ideas.length)||(p.handing&&p.handing.length);}).slice());}
 function lqRelayOn(){var S=lqSize();return LQ.scene==='work'&&S.w>=900&&lqRelayList(LQ.workData||{}).length>0;}
 // A lane's first question as its card: drawn and wired from the one object, so a button it
@@ -3373,7 +3399,7 @@ function lqHomeLine(h){var el=$('lqline'),b=document.body,t='',pc=h.computer,ap=
 if(pc&&pc.away)t="<b>"+esc(pc.name)+" is out of reach.</b> Showing what it sent "+(pc.heard?"at "+esc(pcTime(pc.heard)):"last")+(pc.queued?" · "+pc.queued+" change"+(pc.queued>1?"s":"")+" waiting to send":"")+".";
 else if(pc&&pc.old)t="<b>Pair this phone with "+esc(pc.name)+" again:</b> the link between them is sealed now.";
 else if(ap)t=ap.status==='failed'?"<b>Approving "+esc(ap.repo)+" from "+esc(ap.phone)+" failed:</b> "+esc(ap.error||''):(ap.status==='approving'?"Approving ":"Approved ")+esc(ap.repo)+" from "+esc(ap.phone)+" at "+esc(pcTime(ap.at))+".";
-if(b&&b.classList)b.classList.toggle('lq-hline',!!t);if(el&&LQ.scene!=='work'&&el.innerHTML!==t)el.innerHTML=t;}
+if(!t&&qPaused())t='<b>'+esc(qPaused())+'</b>';if(b&&b.classList)b.classList.toggle('lq-hline',!!t);if(el&&LQ.scene!=='work'&&el.innerHTML!==t)el.innerHTML=t;}
 // Home on a phone paired with your computer: what you act on there, read at a glance.
 // Not the liquid (its groups, orbs and the computer's work behind a droplet: "the UI on
 // the phone is bloated", 2026-10-12), but a plain list: how fresh the computer's copy
@@ -4109,7 +4135,7 @@ var G=lqGL();if(G){try{lqStep();lqDraw(G);}catch(e){}}if(typeof window.requestAn
 function frame(){if(!document.hidden){LQ.frame++;if(LQ.mode!=='pool'||LQ.frame%3===0)lqStep();var every=glLight()?glEvery(LQ.mode==='aware'):LQ.mode==='pool'?6:LQ.mode==='rest'?2:1;if(G&&LQ.frame%every===0&&!(LQ.phone&&LQ.scene!=='work'&&LQ.mode!=='pool'))lqDraw(G);}raf(frame);} // moves every frame; drawn less at rest, behind a panel, without a GPU, with Low GPU or in a window not in use; not at all under a phone's Home list
 raf(frame);}
 
-syncP();refresh();firstTab();lqInit();onbLoad();var sbo=$('sbopen');if(sbo)sbo.addEventListener('click',function(){sbOpen('');});var rr=$('rerunsetup');if(rr)rr.addEventListener('click',function(){api('/api/onboarding/restart',{}).then(function(){lqSink();onbLoad();});});awayInit();lqDeep();loadWhatsNew();loadPhone(); // loadPhone: the Termux note, from the page itself (no request)
+syncP();refresh();firstTab();lqInit();qInit();onbLoad();var sbo=$('sbopen');if(sbo)sbo.addEventListener('click',function(){sbOpen('');});var rr=$('rerunsetup');if(rr)rr.addEventListener('click',function(){api('/api/onboarding/restart',{}).then(function(){lqSink();onbLoad();});});awayInit();lqDeep();loadWhatsNew();loadPhone(); // loadPhone: the Termux note, from the page itself (no request)
 // Screens and Watch (the box under the Map) load when the box opens (Settings': setTab)
 var sbx=$('screensbox');function loadScreensBox(){loadScreensUI();loadMonitorsUI();loadWatchUI();}
 if(sbx&&sbx.addEventListener)sbx.addEventListener('toggle',function(){if(sbx.open)loadScreensBox();});

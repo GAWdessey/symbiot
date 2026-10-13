@@ -6,6 +6,7 @@ import { homedir, totalmem, cpus as oscpus } from "node:os";
 import { join } from "node:path";
 import { existsSync, mkdirSync, writeFileSync, unlinkSync } from "node:fs";
 import { loadConfig, saveConfig, sh, hasCmd, CONFIG_DIR } from "./core.mjs";
+import { noteLimit, noteOk } from "./quota.mjs";
 
 const MAX_TOKENS = 1600, CALL_MS = 120000; // a stalled connection to OpenAI, Gemini or Ollama hung a chat for good (15 Oct 2026): two minutes, then it says so
 
@@ -249,9 +250,11 @@ async function write(system, prompt, { images = [], fast = false, floor = "" } =
     else if (r.provider === "openai") text = await callOpenAI(r, system, prompt, images);
     else if (r.provider === "gemini") text = await callGemini(r, system, prompt, images);
     else if (r.provider === "ollama") text = await callOllama(r, system, prompt, images);
+    if (typeof text === "string") noteOk(r.provider); // it answered: no limit in the way
     return typeof text === "string" ? { text } : { error: `${label} gave no answer.` };
   } catch (err) {
     const m = String(err?.message || err || "");
+    noteLimit(r.provider, err?.message); // a 429 / "usage limit" shows on the usage meter
     if (err?.name === "TimeoutError" || /didn't answer within/.test(m)) return { error: `${label} didn't answer within ${Math.round(CALL_MS / 60000)} minutes. Try again in a minute, or pick another AI in Settings → AI.` };
     if (/\b401\b|\b403\b|invalid|authentication|api key|unauthor/i.test(m)) { AI_UI.rejected(label); return { error: `Your ${label} credentials were rejected. Reconnect in Settings → AI (or  symbiot login --force ).` }; }
     return { error: `Couldn't reach the model: ${m}` };

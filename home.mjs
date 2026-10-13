@@ -847,7 +847,7 @@ function workSceneNow({ deps = {}, full = false } = {}) {
 // folder, no agent, parked, the start failed); or it's next, and starts by itself
 // (workTick). One whose lane is free and has waited past STUCK_AFTER, or whose run
 // ended without ticking it, is flagged (`stuck`) rather than started again and again.
-const AUTO_GRACE = 30000, STUCK_AFTER = 5 * 60000, RETRY_AFTER = 5 * 60000, AUTO_FAIL = {}; // lane → { at, note }: a start that didn't take
+const AUTO_GRACE = 10000, STUCK_AFTER = 5 * 60000, RETRY_AFTER = 5 * 60000, AUTO_FAIL = {}; // lane → { at, note }: a start that didn't take
 // Peak hours: Anthropic drains the Claude Max 5-hour window faster on weekdays 5–11am Pacific
 // (2–8pm SAST in northern summer), and a batch of agents started together burns it fastest. A
 // batch (two or more starts in one tick) waits for off-peak and goes by itself; one lone start,
@@ -915,7 +915,7 @@ function waitWhy({ map, named, running, held, ready, isParked, deps = {} }) {
     return age > STUCK_AFTER ? flag(`Not started after ${minutes(age)}, with nothing in its way`) : { kind: "next", text: `Next: starts on its own, ${name}'s lane is free` };
   };
 }
-// Start what's next by itself, every 20 seconds (server.mjs): a lane's waiting tasks go
+// Start what's next by itself, every 10 seconds and as soon as a run ends (server.mjs): a lane's waiting tasks go
 // to its agent once it's free (lanes in parallel, one run per lane), and an ops task
 // ("🤖 Agent: …") gets an agent run of its own, each in parallel, and leaves the list
 // (its run is on the Workdesk). A task gets AUTO_GRACE first, so a few added together

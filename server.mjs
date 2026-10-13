@@ -18,11 +18,12 @@ import { createServer } from "node:http";
 import { randomBytes, createHash } from "node:crypto";
 import { EMBEDDED_UI } from "./ui.mjs";
 import { VERSION, LATEST_VERSION, REGISTRY, semverGt, checkLatest, CONFIG_PATH, loadConfig, saveConfig, moveSecrets, loadTasks, hasCmd, chromeBinary, CONFIG_DIR, takeAppLock, releaseAppLock } from "./core.mjs";
-import { onAnswered, shSingle, handoffCmd, setHandoffCmd, grantAgent, runHandoff, track, detectHandoffs, connectorsInfo, linkReach, answerQuestions, skipIdea, agentsList, startWaiting, parkLane, parkedPaths, autoAllowSweep, continueLanes, trustFull, readLastWords, sandboxState, HANDOFFS, runningHandoff, runsTick } from "./agents.mjs";
+import { onRunEnd, onAnswered, shSingle, handoffCmd, setHandoffCmd, grantAgent, runHandoff, track, detectHandoffs, connectorsInfo, linkReach, answerQuestions, skipIdea, agentsList, startWaiting, parkLane, parkedPaths, autoAllowSweep, continueLanes, trustFull, readLastWords, sandboxState, HANDOFFS, runningHandoff, runsTick } from "./agents.mjs";
 import { PROVIDERS, resolveProvider, connectProvider, detectHardware, recommendModels, hasOllama, ollamaInstall, ensureOllama, useOllamaModel } from "./ai.mjs";
 import { SCAN, SCAN_TIMEOUT_MS, scanRoots, scanHome, addScanRoot, removeScanRoot, mapNow, nodeDetail, repoPathMap, laneMap, setScanOptions, refreshRepos, REPO_STATE, reposState } from "./scan.mjs";
 import { computeDrift } from "./drift.mjs";
 import { afterShip, markLive } from "./deploy.mjs";
+import { quotaState } from "./quota.mjs";
 import { laneCap, mergeEnded, DEFAULT_CAP } from "./parallel.mjs";
 import { addTask, toggleTask, removeTask, cancelTask, restoreTask, syncTasks, taskType, pushTasks, pendingReview, workingDiff, learnNpm, withReleases, releaseInput, approveRepo, approveChanges, sendBack, setAutoMerge, mergeWhenGreen, sendAgain, forgetUnsent, shippingPaths } from "./tasks.mjs";
 import { repoReview, repoSuggest, folderSuggest, taskChat, clearTaskChat, mailState, setMail, sentMail, produce, releaseNotes } from "./writeups.mjs";
@@ -463,6 +464,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
     }
     try {
       if (u.pathname === "/api/status") { const r = resolveProvider(); return json(res, r ? { connected: true, provider: r.provider, line: `${PROVIDERS[r.provider].label}${r.model ? " · " + r.model : ""}` } : { connected: false }); }
+      if (u.pathname === "/api/quota") { let paths = []; try { paths = Object.values(laneMap() || {}); } catch {} return json(res, quotaState({ providers: PROVIDERS, current: resolveProvider(), paths })); } // the AI usage meter (quota.mjs)
       if (u.pathname === "/api/map") return json(res, await mapNow({ fresh: u.searchParams.get("fresh") === "1" })); // local git only — no AI key needed; the last Map at once, Rescan (fresh=1) waits for a new one
       if (u.pathname === "/api/scan") return json(res, { active: SCAN.active, phase: SCAN.phase, done: SCAN.done, total: SCAN.total, item: SCAN.item, elapsed: SCAN.startedAt ? Date.now() - SCAN.startedAt : 0, timeout: SCAN_TIMEOUT_MS, partial: SCAN.partial });
       if (u.pathname === "/api/models") { const hw = detectHardware(); return json(res, { hardware: hw, rec: recommendModels(hw) }); }
@@ -862,7 +864,8 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
   setInterval(() => { try { runsTick(); } catch {} }, 60000).unref(); // a run silent too long is stopped; one that ended while Symbiot was down gets its exit's bookkeeping (agents.mjs)
   setTimeout(() => { try { runsTick(); } catch {} }, 5000).unref();
   setInterval(() => { try { mergeEnded({ addTask }); } catch {} }, 20000).unref(); // runs beside a lane's own that ended (also while Symbiot was down): merged back into the lane
-  setInterval(() => { try { workTick(); } catch {} }, 20000).unref(); // a waiting task starts once its lane is free (config.autoStart: false leaves it to Go)
+  { let soon = null; onRunEnd(() => { if (soon) return; soon = setTimeout(() => { soon = null; for (const f of [startWaiting, () => mergeEnded({ addTask }), workTick, lanesTick]) try { f(); } catch {} }, 1500); soon.unref(); }); } // a run ended: what waited on it starts within seconds
+  setInterval(() => { try { workTick(); } catch {} }, 10000).unref(); // a waiting task starts once its lane is free (config.autoStart: false leaves it to Go)
   setInterval(() => { try { lanesTick(); } catch {} }, 20000).unref(); // agents hand work to other lanes, and hear back when it's done
   setTimeout(() => { orcaRelink().catch(() => {}); }, 15000).unref(); // a lane folder a handover renamed, added again in Orca where it is now
   // an agent's allow list that stays inside your work is turned on by itself, and the agent carries on
