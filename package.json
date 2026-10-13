@@ -58,6 +58,7 @@
     "estimate.mjs",
     "parallel.mjs",
     "route.mjs",
+    "quota.mjs",
     "icon.ico",
     "claudesetup.mjs",
     "voice.mjs",
@@ -100,7 +101,7 @@
     "@anthropic-ai/sdk": "^0.128.0"
   },
   "scripts": {
-    "test": "node test/load.mjs && node test/fixtures.mjs && node test/links.mjs && node test/signin.mjs && node test/choose.mjs && node test/clickable.mjs && node test/shadow.mjs && node test/replace.mjs && node test/tabs.mjs && node test/post.mjs && node test/peek.mjs && node test/mind.mjs && node test/control.mjs &&node test/knowledge.mjs && node test/checks.mjs &&node test/lanes.mjs && node test/handback.mjs && node test/autoallow.mjs && node test/guard.mjs && node test/reports.mjs && node test/sandbox.mjs && node test/adapt.mjs && node test/urgent.mjs && node test/handed.mjs &&node test/drafts.mjs && node test/linkedin.mjs && node test/secrets.mjs && node test/vault.mjs && node test/standing.mjs && node test/asks.mjs && node test/work.mjs && node test/parallel.mjs && node test/route.mjs && node test/mapknn.mjs && node test/away.mjs && node test/voice.mjs && node test/licence.mjs && node test/lang.mjs && node test/browser.mjs && node test/subscription.mjs && node test/claudesetup.mjs && node test/launcher.mjs && node test/onboarding.mjs && node test/phone.mjs && node test/windows.mjs && node test/marketing.mjs && node test/tray.mjs && node test/capture.mjs && node test/paths.mjs && node test/smoke.mjs && node test/app.mjs && node test/install.mjs",
+    "test": "node test/load.mjs && node test/fixtures.mjs && node test/links.mjs && node test/signin.mjs && node test/choose.mjs && node test/clickable.mjs && node test/shadow.mjs && node test/replace.mjs && node test/tabs.mjs && node test/post.mjs && node test/peek.mjs && node test/mind.mjs && node test/control.mjs &&node test/knowledge.mjs && node test/checks.mjs &&node test/lanes.mjs && node test/handback.mjs && node test/autoallow.mjs && node test/guard.mjs && node test/reports.mjs && node test/sandbox.mjs && node test/adapt.mjs && node test/urgent.mjs && node test/handed.mjs &&node test/drafts.mjs && node test/linkedin.mjs && node test/secrets.mjs && node test/vault.mjs && node test/standing.mjs && node test/asks.mjs && node test/work.mjs && node test/parallel.mjs && node test/route.mjs && node test/mapknn.mjs && node test/away.mjs && node test/voice.mjs && node test/licence.mjs && node test/lang.mjs && node test/browser.mjs && node test/subscription.mjs && node test/claudesetup.mjs && node test/launcher.mjs && node test/onboarding.mjs && node test/phone.mjs && node test/windows.mjs && node test/marketing.mjs && node test/tray.mjs && node test/capture.mjs && node test/paths.mjs && node test/smoke.mjs && node test/app.mjs && node test/install.mjs && node test/quota.mjs",
     "lint": "eslint .",
     "postinstall": "node postinstall.mjs"
   },

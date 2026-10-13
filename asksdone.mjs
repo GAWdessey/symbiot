@@ -35,6 +35,7 @@ const BASE = [
   "Never ask which repo, project or lane you're in, or what a Symbiot page is: your folder's name, its git remote, your lane and this brief say so. Symbiot's pages are Home, Dashboard (board), Workdesk (tasks), Reports, Marketing, Week, Standup, Todo, Drift, Map, Settings and Archive.",
   "When asks are needed, put them in ONE question, never several for the same cause.",
   "Never ask the user to close or click Done in the Symbiot Browser: if it's open, wait and retry on a shared resource, and ask only if they're mid-sign-in. That is never an \"only you\" step.",
+  "On an unsubscribe or settings page: wait for it to settle, press from the page you mapped last, and read the page again to confirm the change saved. If it still won't save, never ask \"what now?\": say in plain words which sender you couldn't unsubscribe from, set up a mail filter for it instead, and carry on.",
 ];
 function standingList() { try { const l = JSON.parse(readFileSync(RULES(), "utf8")); return Array.isArray(l) ? l.filter((x) => x && x.rule) : []; } catch { return []; } }
 function addRule(rule) {

@@ -6,6 +6,7 @@ import { homedir, totalmem, cpus as oscpus } from "node:os";
 import { join } from "node:path";
 import { existsSync, mkdirSync, writeFileSync, unlinkSync } from "node:fs";
 import { loadConfig, saveConfig, sh, hasCmd, CONFIG_DIR } from "./core.mjs";
+import { noteLimit, noteOk } from "./quota.mjs";
 
 const MAX_TOKENS = 1600;
 
@@ -226,13 +227,15 @@ async function write(system, prompt, { images = [], fast = false, floor = "" } =
   if (!r) { if (floor) return NO_CHAT_MODEL; AI_UI.notConnected(); return null; }
   const stop = AI_UI.spinner("thinking…");
   try {
-    if (r.provider === "claude") return await callClaude(r, system, prompt, images);
-    if (r.provider === "anthropic") return await callAnthropic(r, system, prompt, images);
-    if (r.provider === "openai") return await callOpenAI(r, system, prompt, images);
-    if (r.provider === "gemini") return await callGemini(r, system, prompt, images);
-    if (r.provider === "ollama") return await callOllama(r, system, prompt, images);
-    return null;
+    const ans = r.provider === "claude" ? await callClaude(r, system, prompt, images)
+      : r.provider === "anthropic" ? await callAnthropic(r, system, prompt, images)
+      : r.provider === "openai" ? await callOpenAI(r, system, prompt, images)
+      : r.provider === "gemini" ? await callGemini(r, system, prompt, images)
+      : r.provider === "ollama" ? await callOllama(r, system, prompt, images) : null;
+    if (ans != null) noteOk(r.provider); // it answered: no limit in the way
+    return ans;
   } catch (err) {
+    noteLimit(r.provider, err?.message); // a 429 / "usage limit" shows on the usage meter
     if (/\b401\b|\b403\b|invalid|authentication|api key|unauthor/i.test(err?.message || "")) {
       AI_UI.rejected(PROVIDERS[r.provider].label);
       return null;

@@ -106,6 +106,13 @@ try {
     site.close();
     await H.closeBrowser();
   }
+  console.log("AN AGENT'S STEP JUST RAN — a watcher read leaves the page alone");
+  const H = await import("../headless.mjs");
+  H.noteAgentUse();
+  ok("…a watcher read backs off, though the browser has closed", !H.browserOpen() && (await H.readPage("https://example.com")).busy === true);
+  ok("…and so do the text and LinkedIn reads", (await H.readTexts("https://example.com", "p")).busy === true && (await H.readLinkedIn("messages")).busy === true);
+  H.noteAgentUse(Date.now() - H.WATCH_GRACE - 1000);
+  ok("…until the grace window has passed", !H.watcherBusy());
 } finally {
   if (other) try { other.kill("SIGKILL"); } catch {}
   await sleep(300);

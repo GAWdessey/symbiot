@@ -1210,6 +1210,7 @@ try {
     out.closedAfter = !h.browserOpen();
     // Watch: read a page without saving a screen, then see what's new on it
     const nScreens = s.loadScreens().length;
+    h.noteAgentUse(0); // the map above was an agent step, which a watcher read waits out: start the clock over
     out.read = await h.readPage("127.0.0.1:" + srv.address().port + "/rows");
     out.readNoScreen = s.loadScreens().length === nScreens; out.readClosed = !h.browserOpen();
     out.chats = await h.readPage("127.0.0.1:" + srv.address().port + "/chats");
