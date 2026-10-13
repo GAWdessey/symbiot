@@ -2,18 +2,115 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
-## Unreleased
+## 0.63.12
 
 - **`symbiot screens upload` sends a photo through WhatsApp's "Photos & videos", not the sticker box.** When the only file box found is a page-wide guess ("the only / nearest file box on the page") and the target is a button or menu item, it now presses the target and catches its own file dialog first; the guess is only the fallback.
 - **The app-menu entry no longer breaks after the install test.** The test's throwaway install rewrote it to point at a deleted temp folder; the test now uses its own home, and the launcher is never written for a script in the temp folder. Opening from the menu shows a notification if Symbiot doesn't start.
 - **A Home card waiting on a step only you can take no longer reads as done.** It shows "Waiting on you" and the button says "I've done this" (no longer "Done it (recommended)"), with Skip beside it; the Agents tab button says the same.
 - **The smoke test passes on this PC (Node 20 and 22).** It now covers the saved-secrets endpoints and no longer assumes no AI is connected.
 - **The app no longer burns CPU re-reading running agents' logs, and no longer leaks a file handle per run.** A log that only grew (the normal case while an agent works) now costs just the added bytes instead of a re-read of up to 16 MB every 20 seconds per lane; a run's start time is read from its header line alone; and the log file opened to start a run is closed in the app once the run has it (one stayed open per run, 101 by the time it was noticed).
-
-## 0.62.2 — 2026-10-10
-
 - Fix where a `### symbiot` handover from the marketing lane lands.
 
+## 0.63.11
+
+- **Symbiot no longer runs out of memory.** A cache of task words kept a link to the whole agent log each word came from, so every version of a busy agent's log stayed in memory. The app grew by about 15 MB a minute while agents worked, and crashed at its 2 GB limit after an hour or two. That's what stopped it mid-update. It now keeps only the words.
+- **The pinned taskbar icon starts Symbiot.** Pinning Symbiot's window to the dock pinned Chrome's name for it, which nothing could start, so with the window closed the icon did nothing and only Chrome's Restore brought it back. Symbiot now installs an entry under that name, and the pin opens Symbiot like the app menu does.
+- **An update installed from a terminal takes by itself.** After `npm install -g symbiot@latest`, the running app stayed on the old version until something restarted it. It now notices within two minutes and restarts onto the new one.
+- **No false "didn't take".** If the app crashed, or you restarted your computer, after you pressed Update but before it could install, the bar said the update didn't take and told you to use a terminal. It now just offers the update again.
+
+## 0.63.10 — 2026-10-12
+
+- Fixed sign-ins made in the Symbiot Browser window, such as domains.co.za's, being lost when `symbiot screens` opened the same site.
+- Fixed allowing an agent to read your ssh keys having no effect; lists Symbiot can't safely open are now refused with an explanation.
+- Fixed `symbiot screens map` missing buttons and fields inside some page components, such as Reddit's comment box and its image button.
+- Fixed `symbiot screens` skipping clickable text like "Send Email OTP instead?" and losing open pop-ups when mapping the whole page or scrolling.
+- Fixed `symbiot screens press` and `type` acting on the page as it is only when the mapped item is there and uncovered.
+- Fixed `symbiot screens press` clicking whatever sat underneath a pop-up instead of the button you mapped in it.
+- Changed the Linux installer's description to "Your coding agents work. You only do what only you can do", matching the site.
+- Added a way to approve finished work on a task that's still in progress.
+- Fixed agent permission questions on Home rejecting a picked option with "Pick or type at least one answer," so choosing an option now sends it.
+
+## 0.63.9
+
+- **Answering an agent no longer rereads its whole conversation.** Each answer you gave an agent picked its conversation up again, all of it: a one-word "yes" to an agent that had read 195,000 tokens cost 195,000 again, and resumed runs were three quarters of a week's use. Once an agent's conversation is past 60k, your answer now starts it fresh (about 22k), with a note of where it got to in its own words. Short ones still carry on as before.
+- **See how much an agent carries.** A run on the Workdesk shows its context: what it rereads with every step.
+
+## 0.63.8
+
+- **No more file names on permission questions, anywhere.** When an agent asked for a permission, Home said it in plain words with an Allow button, but the same question on the Workdesk, on a project's card and on your phone still read "allow the list in .symbiot/allowlist.proposed.json". Every screen now says what the agent wants to do ("connect to the computer at 13.51.104.186") with Allow.
+- **Allow sticks.** Saying Allow along with a few words of your own that sounded like git ("check the deployed commit, git status and served files") was taken for a git chore and handed back to the agent, which can't give itself permission, so it asked you again. A permission is now always turned on as one.
+
+## 0.63.7 — 2026-10-12
+
+- **`symbiot capture Symbiot` works in one go.** It used to refuse, because your running Symbiot shows your real work, and needed a copy started by hand. It now starts a throwaway Symbiot with a made-up company in it (Acme: its repos, its agents' questions, what arrived, its week, a Marketing draft), captures Home, the Workdesk, the Dashboard, the Week, the Map and Marketing, then stops it and deletes it. Symbiot's own tray can be brought up to date after every release.
+- **Captures no longer blur a page's backdrop.** A drawing behind the whole page (Symbiot's liquid) was taken for a picture that might show faces, so every capture of Symbiot came out blurred end to end. A page's live title isn't taken for a notification either.
+- **Your computer's reports on your phone.** The phone's Reports opened only the phone's own, which was empty. The copy your computer sends the phone now carries its 5 newest reports, so you can read an audit or a plan away from your desk, offline too. Each says which computer it's from. A long one comes in its first part, which says the rest is on your computer.
+- **A Reddit draft previews as a Reddit post.** Marketing showed every draft as a LinkedIn post. A Reddit one now shows as Reddit would: its subreddit, who posts it, its title, its flair, then the body, with `code` set as code. It counts the title against Reddit's 300 characters.
+- **Each agent gets its own tab in Symbiot's hidden browser.** Two agents using `symbiot screens` at once (one on LinkedIn, one in the Twilio console) shared one page, so a scheduled post being written lost its text and picture between steps, and one agent's typing could land on the other's page. Now each agent's next step carries on from its own page, just as it left it.
+- **"← All reports" stays in view on a long report.** It no longer scrolls away with the report: the bar with it, and the report's path where it fits, stays pinned under the Reports header, so the list is one click away from anywhere in it.
+- **A draft post opens large on Marketing.** Click a draft (in Needs you, in what its agent drafted, its preview, or a card on the posts board) and it opens over the page: its pictures and video near full size, its whole text in reading type, which product it's for and where it goes (LinkedIn, or r/ClaudeAI with its flair). Click a picture to see it alone, and go through a post's pictures with the arrow keys or a swipe. Approve, Edit and Skip work right there. Esc, the X or a click outside closes it. The pick tray's captures open large the same way.
+- **A handover the loop guard stops still reaches its lane.** After four handovers in a row, Symbiot doesn't start another agent, so two lanes can't pass the same thing back and forth. It used to drop the handover there, so ops' User-Agent fix for this repo was only found by reading `lanes.json`. It now lands in the receiving repo's tasks for its next run, and the lane that sent it sees why it didn't start.
+- **Agents can change one line of a post without retyping it.** `symbiot screens type <id> <field> --replace "old" "new"` types over only that part of a field, so the rest stays as it is. Retyping a scheduled LinkedIn post to change one word had dropped its picture. If the words aren't there, or are there more than once, nothing changes and it says so.
+- **Symbiot records a desktop app's window under Wayland too.** On COSMIC, GNOME or KDE, a window that isn't running under XWayland used to be out of reach for `symbiot capture --window`. It now goes through your desktop's own screen sharing: you pick the window in its prompt the first time (a notification says which one), and Symbiot remembers it, so later captures of it don't ask.
+- **Your phone finds your computer on your Wi-Fi, even with a VPN on.** With Tailscale (or another VPN) running, your computer told the phone on your network it was at the VPN's address, which the phone can't reach, so it couldn't find the computer again after the router handed out new addresses. It now answers each phone with the address on that phone's own network, and never gives out a VPN's.
+- **Agents can pick from a website's dropdown.** `symbiot screens choose <id> <menu> "<option>"` picks an option in a native `<select>` (a DNS record's type, say), and the fields that depend on it update, like the Priority box an MX record turns on.
+- The npm package and the installers now list garth@symbiot.co.za as the author.
+- **Your phone's Home is what you act on there.** Paired with your computer, it no longer opens on the liquid with your computer's work behind a droplet: it's a plain list, with what needs you there first (its agents' questions to answer, its work to Approve), then its tasks to tick or add, then what Watch found. What the phone itself needs sits under your computer's, its setup in one row. Settings, Reports, the Dashboard and the rest are a row along the top, one tap each. On a phone-sized screen the header fits on one line too: the look switch isn't cut off any more.
+- **Symbiot only answers for you when the answer is purely an action.** A question whose recommended option says something before its agent tag ("Yes, it's through. Agent: …"), or has no tag at all, states a fact only you know, so it comes to you instead of being picked for you.
+- **A handover says where it stands, on the block of the lane that sent it.** Each one shows whether its lane has it yet and, if not, why: not picked up yet, queued behind a busy agent, waiting for the run on its earlier version to end, or couldn't go. Once it's with its lane, you see how far that agent has got (tasks ticked, what it's doing now) until its answer comes back. It shows in the Agents tab and on the project on the Workdesk.
+- **A sent handover no longer looks unsent.** Once everything in a lane's `.symbiot/HANDOFF.md` has gone, Symbiot rewrites the file as a dated list of what went where. whatsapp_module's agent had seen its file still there and told you it hadn't been sent, while ops had both its handovers running.
+- **Answering a question on Home works again, and you see it work.** A card that shows a question in plain words (a permission ask with Allow, or one naming a file) sent those plain words back, which matched no question, so Allow and Send did nothing and the error only showed in Home's talk. Its answer now goes under the agent's own question. A click shows at once (the button pressed, "Sending…"), then the card goes, or says on itself what went wrong. Pressing it again doesn't add a second answer, and a card you've answered doesn't come back while Home catches up. A long question your phone shows cut short is still found too.
+- **A question about work that's since been done says so.** When a lane asks about something it handed over, and the lane that took it has finished it, its card says who did it and puts Close it first. whatsapp_module kept asking whether it could put the WhatsApp module back on sts-prod after ops had already done it.
+- **Done in the Symbiot Browser closes it, every time.** Done could find nothing to close when Symbiot had been started from a terminal, so the window stayed open and no site was checked, however often you pressed it. It now closes every window of it, says at once that it's closing, and tells you if Symbiot isn't answering. Closing it with its X does the same as Done: Symbiot checks each site within a minute. A site the browser can't read yet is tried again a little later, instead of being skipped.
+- **Reddit's sign-in is read right.** Signed out, Reddit's home page has no password box, only a Log In button, so Symbiot couldn't tell the two apart. A page whose own button is just "Log in" or "Sign in" now counts as signed out. Once a site you were asked to sign in to reads signed in, the agent's question about it is answered for you and that agent carries on, so Marketing's "sign in to www.reddit.com" clears by itself.
+- **Agents can use Screens while the app runs.** Every map, press and type failed with "The Symbiot Browser is open: click Done", with no window open: a hidden Chrome on Symbiot's browser profile that the app hadn't started itself was taken for the Symbiot Browser. Symbiot now reads whether the Chrome holding the profile is hidden. A hidden one left by another Symbiot (a one-off command, or an app from before an update) gets a few seconds to finish, then is closed.
+- **Symbiot captures your product for its posts by itself, so you don't need a demo video.** **Capture a product** on the Marketing page, or `symbiot capture <product>`, opens it in a browser of its own, works out its key screens from its routes and README, and takes a picture of each and short clips (MP4 and GIF). A desktop app's window is recorded instead. Marketing's agent does this on a product's first run.
+- **Nothing private reaches the pick tray unblurred.** Before a capture lands there, Symbiot blurs names, emails, phone numbers, addresses, keys and tokens, account and card numbers, what's typed into forms, notifications, chats, avatars and pictures, and text inside pictures. The Marketing page shows each box. Switch any off, or draw your own over anything it missed. A desktop recording says to look it over first, because Symbiot can't see faces in a window, and it can't go on a post until you've clicked **Looked it over**. The unblurred originals are never shown and never posted.
+- Added a check that a step naming a file is done only once that file has actually changed.
+- Changed the update process to wait and retry when a newly listed version can't be downloaded yet.
+- Fixed Symbiot failing to update on Linux.
+- Fixed the reply watcher counting your own sent email as the reply you were waiting for.
+- Fixed the reply watcher firing on inbox rows where the newest message is your own.
+- Changed Symbiot's guard to let agents read public SSH keys, while private keys and everything else there stay blocked.
+- Changed pairing so scanning the code on your computer opens the Android app straight away, without the website first.
+- Changed the phone relay setup for symbiot.co.za to retry once the Cloudflare token has the permissions it needs.
+- Added reaching your computer from your phone away from home through a relay that only passes sealed messages.
+
+## 0.63.6
+
+- **Approve opens on what you came for.** Clicking Review and approve on Home showed every project's work waiting for review, each task in full, with the Approve button several screens down. Now you see only that project, with its Approve button straight under its name, and its tasks one line each: the first three, with the rest a click away. Click a task to read it all. The other projects waiting on you are one line, with a button to show them.
+- **Low GPU.** A new switch beside Glass, Ferrofluid and Pearl. With it on, Home's liquid draws at half the resolution and only when something changes, and the blur behind the glass panels is off. Your graphics card stops running at full clock all day. Symbiot remembers it on this computer.
+- **A Symbiot window you aren't using rests.** Whether or not Low GPU is on, the liquid now draws only when something changes while you're in another window, instead of redrawing all the time behind your other apps.
+
+## 0.63.5
+
+- **Home stops stalling on git.** Every few seconds Home asked git, one project after another, what each of your last 60 agent runs changed, and what's waiting for review. The app couldn't do anything else while it waited: 20 seconds in every 45 on a busy day. It now reuses each answer and refreshes it in the background, so Home answers straight away. Approve still checks git fresh, and Home forgets what it kept as soon as you approve.
+
+## 0.63.4
+
+- **Symbiot no longer freezes as your task list grows.** Every 20 seconds it checks the ideas your agents left against all your tasks, and with a few hundred tasks that took up to 10 seconds a time, until the app stopped answering altogether. The update to 0.63.3 then couldn't restart it. The same check now takes a fraction of a second.
+- **An update keeps trying for 10 minutes.** npm can list a new version a few minutes before its download is ready. Symbiot gave up after 2.5 minutes; now it keeps trying every 30 seconds for 10.
+
+## 0.63.3
+
+- **Allow works on a request that takes access away.** When an agent asked to lock itself out of something (a deny rule, with nothing new allowed), Symbiot dropped the request, so clicking Allow did nothing and the agent waited for good. Now it's turned on, without asking you, and the agent carries on.
+- **A script in your project no longer reads as "outside your work".** Running `python3 supabase/scripts/x.py`, or checking a public web address, was taken for a folder elsewhere on your computer, so you got a permission card. Now it turns on by itself. A web request that sends something, and anything about a live project, still asks you.
+
+## 0.63.2
+
+- **Permission cards stop landing on you for Symbiot's own plumbing.** An agent connecting to a computer this one already connects to (your own server) no longer asks you, and a request too broad to allow safely goes back to the agent to spell out, not to you.
+- **What still needs you reads in plain words.** A permission card says what it lets the agent do, like "use your phone over the USB cable" or "connect to the computer at 92.4.133.97", with an Allow button. No file names or commands, on the card or when you hover over it.
+
+## 0.63.1
+
+- **Fewer things put on your plate.** A permission an agent needs for your own work (building your app, using your phone over USB, recording its screen) now turns on by itself instead of showing up as a card: a tool installed in `~/.local/bin` and the marketing lane's own folder no longer count as "outside your work".
+- **Your agent's own sensible answer is taken for you.** When an agent asks something and its recommended answer is a step it takes itself and can undo, Symbiot picks it and the agent carries on. Approvals, publishing, sending, money, accounts and other machines still come to you.
+- **Open tasks don't just sit there.** A lane whose run ends with tasks still open starts again by itself, as long as it keeps ticking them off, and a question about one task no longer stops the rest.
+
+## 0.63.0
+
+- **The Android app is built again.** 0.62.1's release went out without its APK: a link to a build folder on this computer had been committed by mistake, so GitHub's build couldn't make the folder. It's gone, and the ignore rule now covers a link as well as a folder. 0.63.0 carries 0.62.1's phone fix (setup going to **Your computer**).
+- **Symbiot's new mark.** The app's own orb, lit the way Home lights it, with an S inside in the two colours Symbiot already speaks in: the silver of agents at work above, the amber of "needs you" below. It's everywhere: the app-menu, Start-menu and dock icon (in each look: Ferrofluid's black chrome, Glass's clear droplet, Pearl's mirror), the window and tab icon (a simpler drawing at small sizes), the app's header (the old green dot is gone), setup, the Windows, Mac and Linux installers (the Mac one inside Apple's icon grid), the tray and the Mac menu bar, the Android app and its notifications, and symbiot.co.za, which now has a sharing image for links.
 ## 0.62.1
 
 - **A phone that had Symbiot before goes to "Your computer" first.** Installing the new app over an older one kept the old app's setup, already started at "Meet Symbiot", so the phone went on to "Your AI" and asked to install Claude Code, and never offered to pair with your computer. An unfinished setup on a phone that isn't paired now opens on **Your computer** (scan the QR your computer shows, or type its address and code), once; "No computer" carries on as before. Checked on the Android emulator: 0.59.0, then 0.62.0 over it (the problem), then this over that (fixed).

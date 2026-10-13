@@ -214,8 +214,8 @@ console.log("REPORTS — a handed-off or dismissed next step leaves 'Read, to ac
   const dir = join(HOME, "perm"); mkdirSync(join(dir, ".symbiot"), { recursive: true });
   writeFileSync(join(dir, ".symbiot", "allowlist.proposed.json"), JSON.stringify({ permissions: { allow: ["Bash(symbiot screens:*)", "Bash(git status)"] } }));
   const c = plainAsk(dir, { q: "Can I run Symbiot's Screens command?", options: ["👤 You (only you: a permission): allow the list in .symbiot/allowlist.proposed.json (recommended)", "Not now"] });
-  ok("a permission card lists the commands in plain words with Allow, and shows no file path", /symbiot screens/.test(c.q) && /git status/.test(c.q) && c.labels[0] === "Allow (recommended)" && !/\.json|\.symbiot/.test(c.q + c.labels.join()), JSON.stringify(c));
-  ok("a permission card keeps the agent's own question to answer with, since the shown one is reworded", c.asked === "Can I run Symbiot's Screens command?" && c.q !== c.asked, JSON.stringify(c));
+  ok("a permission card lists the commands in plain words with Allow, and shows no file path", /run symbiot/.test(c.q) && /run git/.test(c.q) && c.labels[0] === "Allow (recommended)" && !/\.json|\.symbiot/.test(c.q + c.labels.join()), JSON.stringify(c));
+  ok("a permission card keeps the agent's own question to answer with, since the shown one is reworded", c.raw === "Can I run Symbiot's Screens command?" && c.q !== c.raw, JSON.stringify(c));
   recordDone("Sign in to X as Daaymn?", "Done: signed in");
   ok("an ask the user already answered is not raised again, by any agent", settleAsks([{ kind: "ask", id: "ask:z", q: "Sign in to X as Daaymn" }]).length === 0, "");
 }

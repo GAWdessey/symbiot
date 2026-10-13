@@ -701,7 +701,7 @@ function iconSvg(look = "ferro") {
 - **Autostart entry** (`~/.config/autostart/symbiot.desktop`): `NoDisplay=true`, and no icon (`desktop.mjs:150-153`).
 - **Installer app** (`desktop/package.json`):
   - The AppImage and the `.deb` (`symbiot.deb`) use `linux.icon = assets/icon.png`: 1024×1024, Ferrofluid.
-  - The package synopsis is "Your work, handled alongside you".
+  - The package synopsis is "Your coding agents work. You only do what only you can do": the site's headline (`site/index.html`), without the full stop a package synopsis leaves off.
   - The tray icon is `tray.png`.
 - **symbiot-desktop committed branches:** `linux.icon = assets/icon.png`, 512 px, green.
 

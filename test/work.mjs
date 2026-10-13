@@ -6,6 +6,7 @@
 //
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 
 const HOME = mkdtempSync(join(tmpdir(), "symbiot-work-"));
@@ -187,6 +188,43 @@ try {
       for (let i = 0; i < 5; i++) { const d = join(HOME, "fd" + i); mkdirSync(join(d, ".symbiot"), { recursive: true }); track("fd" + i, "echo hi", d); }
       ok("starting runs doesn't keep their log files open in the app (it leaked one each)", logFds() === before, [before, logFds()]);
     }
+  }
+// What a run changed is kept and refreshed in the background: a screen asking again
+// doesn't wait on git, and a new commit still shows up (agents.mjs agentChanges).
+{
+  const { agentChanges, CHANGES } = await import("../agents.mjs");
+  const { execFileSync } = await import("node:child_process");
+  const repo = join(HOME, "changes"); mkdirSync(repo, { recursive: true });
+  const g = (...a) => execFileSync("git", ["-C", repo, "-c", "user.name=t", "-c", "user.email=t@t", ...a], { stdio: "ignore" });
+  g("init", "-q"); writeFileSync(join(repo, "a.txt"), "a\n"); g("add", "."); g("commit", "-qm", "first");
+  const start = Date.now() - 60000;
+  const a = agentChanges(repo, start);
+  ok("a run's commits and changes, read from git", a.commits.length === 1 && a.commits[0].msg === "first" && a.dirty === 0, a);
+  writeFileSync(join(repo, "b.txt"), "b\n"); writeFileSync(join(repo, "a.txt"), "a2\n"); g("add", "b.txt"); g("commit", "-qm", "second");
+  ok("asked again at once: the kept answer, no git", agentChanges(repo, start).commits.length === 1);
+  CHANGES.get(repo).at -= 60000;
+  ok("once it's old: still the kept answer straight away", agentChanges(repo, start).commits.length === 1);
+  for (let i = 0; i < 100 && CHANGES.get(repo).v.commits.length === 1; i++) await new Promise((r) => setTimeout(r, 20));
+  const b = agentChanges(repo, start);
+  ok("…while git is asked in the background: the new commit and the edit show up", b.commits.length === 2 && b.commits[0].msg === "second" && b.dirty === 1 && /1 file changed/.test(b.stat), b);
+  ok("a different run in the same folder isn't given the last one's answer", agentChanges(repo, Date.now() + 3600000).commits.length === 0);
+}
+
+  console.log("MEMORY — what's kept from a log doesn't keep the log");
+  { // an agent at work: its log changes by the tick, and each round says what it did ("Round done: …")
+    const dir = join(HOME, "busy"); mkdirSync(join(dir, ".symbiot"), { recursive: true });
+    const r = spawnSync(process.execPath, ["--expose-gc", "--input-type=module", "-e", `
+      const { runSummary } = await import(${JSON.stringify(new URL("../tasks.mjs", import.meta.url).href)});
+      const { taskWords } = await import(${JSON.stringify(new URL("../core.mjs", import.meta.url).href)});
+      const { writeFileSync } = await import("node:fs");
+      const mb = () => { gc(); return process.memoryUsage().heapUsed / 1048576; }, start = mb();
+      for (let i = 0; i < 40; i++) {
+        writeFileSync(${JSON.stringify(join(dir, ".symbiot", "agent.log"))}, "\\n=== busy 2026-10-12T12:00:00.000Z ===\\n$ claude -p x\\n" + ("read a page of the site " + i + "\\n").repeat(80000) + "Round done: fixed the login page for everyone, take " + i + "\\n");
+        const m = runSummary(${JSON.stringify(dir)}).match(/Round done: (.+)/); taskWords(m[1]); // as roundOf does
+      }
+      console.log(JSON.stringify({ grew: Math.round(mb() - start) }));`], { encoding: "utf8" });
+    let out = {}; try { out = JSON.parse(r.stdout.trim().split("\n").pop()); } catch { out = { err: r.stdout + r.stderr }; }
+    ok("40 versions of a 2 MB log, a round's words kept from each: the logs aren't kept with them", out.grew != null && out.grew < 20, out);
   }
 } finally {
   rmSync(HOME, { recursive: true, force: true });

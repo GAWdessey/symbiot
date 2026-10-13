@@ -38,7 +38,7 @@ import { gitDefaultBranch, loadDeploys, driftRepo, computeDrift } from "./drift.
 import { buildTasksMd, taskType, shipChanges, shipWithBump, bumpOffer, learnNpm, releaseNeeded, withReleases, setVersion, syncTasks, pendingReview, unreleased, publishesOnMerge, addTask, approveRepo, approveChanges, sendBack, pushTasks } from "./tasks.mjs";
 import { produce, mailState, setMail, sentMail } from "./writeups.mjs";
 import { loadScreens, screenImage, blueprint } from "./screens.mjs";
-import { mapPage, wholePage, pressRegion, typeRegion, fillForm, uploadRegion, uploadFiles, scrollPage, signIn, isTrusted } from "./headless.mjs";
+import { mapPage, wholePage, pressRegion, typeRegion, chooseRegion, fillForm, uploadRegion, uploadFiles, scrollPage, signIn, isTrusted } from "./headless.mjs";
 import { watchState, addWatch, removeWatch, seenWatch, newsSince, markNews, checkWatch, setBrief, draftReply, watchBoard, boardLine, boardChat, boardTalk, clearBoardChat } from "./watch.mjs";
 import { PORT as PHONE_PORT, phoneState, pairComputer, pollComputer, forgetComputer, parsePairLink } from "./phone.mjs";
 import { qrMatrix } from "./qr.mjs";
@@ -317,11 +317,18 @@ function cmdMail() {
 // for an agent to see what the page says: an email's text isn't a region. `more`
 // says the page goes on past the window ("below", "above", "above and below"):
 // scroll there to map the rest.
+// reopened: why a pop-up that was open, or what was typed, isn't on a screen (which
+// for a field, Type refuses: headless.mjs typeRegion). Without the app, every command
+// has a browser of its own, so it's always so.
+const REOPENED = "The page was opened again from its address, so a pop-up that was open on it, or what was typed, isn't there now.";
+const ALONE = "Symbiot's app isn't running (or this command couldn't reach it), so each command has a browser of its own and opens the page again: start it (symbiot app) and the page stays as it is between commands.";
+const alone = (x) => (x && x.kept === false ? { ...x, alone: true } : x);
 function screenJson(s) {
+  if (s && s.error && s.alone) { const { alone: _, kept: __, ...e } = s; return { ...e, error: e.error + " " + ALONE }; }
   if (!s || s.error) return s;
   const bp = blueprint(s), image = screenImage(s.id), sc = s.page && s.page.scroll;
   const more = sc ? [sc.y > 0 && "above", sc.y < sc.max && "below"].filter(Boolean).join(" and ") : "";
-  return { id: s.id, ...(image ? { image } : {}), ...(s.note ? { note: s.note } : {}), ...(more ? { more } : {}), ...(s.scrolled ? { scrolled: s.scrolled } : {}), ...(s.pressed ? { pressed: s.pressed, found: s.found } : {}), ...(s.typed ? { typed: s.typed, entered: s.entered, found: s.found } : {}), ...(s.uploaded ? { uploaded: s.uploaded, files: s.files, used: s.used, found: s.found } : {}), ...(s.kept ? { kept: true } : {}), ...(s.page ? { trusted: isTrusted(s.page.url) } : {}), ...bp, regions: bp.regions.map((r, i) => ({ id: s.regions[i].id, ...r })) };
+  return { id: s.id, ...(image ? { image } : {}), ...(s.note ? { note: s.note } : {}), ...(more ? { more } : {}), ...(s.scrolled ? { scrolled: s.scrolled } : {}), ...(s.pressed ? { pressed: s.pressed, found: s.found } : {}), ...(s.typed ? { typed: s.typed, entered: s.entered, found: s.found } : {}), ...(s.uploaded ? { uploaded: s.uploaded, files: s.files, used: s.used, found: s.found } : {}), ...(s.kept ? { kept: true } : {}), ...(s.kept === false ? { reopened: REOPENED + (s.alone ? " " + ALONE : "") } : {}), ...(s.page ? { trusted: isTrusted(s.page.url) } : {}), ...bp, regions: bp.regions.map((r, i) => ({ id: s.regions[i].id, ...r })) };
 }
 
 // map, press, type and signin go through the app when it's running, whose hidden
@@ -436,15 +443,18 @@ async function cmdScreens() {
     for (const s of list) console.log(`${s.id}  ${s.name}  ${c.d(`${(s.regions || []).length} regions · ${s.page ? s.page.url : s.w + "×" + s.h + " " + s.via}`)}`);
     return;
   }
-  if (sub === "map") { const body = { site: a1, name: flag("name", ""), whole: has("whole") }; return out(screenJson((await viaApp("/api/screens/map", body)) || await mapPage(body.site, body.name, { whole: body.whole }))); }
+  // whose tab in the app's hidden browser: the agent run's folder (SYMBIOT_AGENT), else here, so
+  // two agents at once each keep their own page (headless.mjs withPage)
+  const who = process.env.SYMBIOT_AGENT || process.cwd();
+  if (sub === "map") { const body = { site: a1, name: flag("name", ""), whole: has("whole"), who }; return out(screenJson((await viaApp("/api/screens/map", body)) || await mapPage(body.site, body.name, { whole: body.whole, who }))); }
   if (sub === "whole") {
     const s = find(a1); if (!s) return out({ error: "No screen " + (a1 || "") + ". symbiot screens lists them." });
-    return out(screenJson((await viaApp("/api/screens/whole", { id: s.id })) || await wholePage(s.id)));
+    return out(screenJson((await viaApp("/api/screens/whole", { id: s.id, who })) || alone(await wholePage(s.id, { who }))));
   }
   if (sub === "scroll") {
     const s = find(a1); if (!s) return out({ error: "No screen " + (a1 || "") + ". symbiot screens lists them." });
-    const body = { id: s.id, to: a2 || "down" };
-    return out(screenJson((await viaApp("/api/screens/scroll", body)) || await scrollPage(body.id, body.to)));
+    const body = { id: s.id, to: a2 || "down", who };
+    return out(screenJson((await viaApp("/api/screens/scroll", body)) || alone(await scrollPage(body.id, body.to, { who }))));
   }
   if (sub === "show") { const s = find(a1); return out(s ? screenJson(s) : { error: "No screen " + (a1 || "") + ". symbiot screens lists them." }); }
   if (sub === "signin") { const r = (await viaApp("/api/screens/signin", { site: a1 })) || await signIn(a1); return out(r.ok ? { ...r, next: "Sign in in the window that opened, close it, then map again." } : r); }
@@ -464,7 +474,7 @@ async function cmdScreens() {
     if (done && done.confirm) return out({ error: `${done.error} Add --yes to go ahead, or list ${done.host} under Trusted sites in Symbiot's Settings.` });
     return out(screenJson(done));
   }
-  if (sub === "press" || sub === "type" || sub === "upload") {
+  if (sub === "press" || sub === "type" || sub === "choose" || sub === "upload") {
     const s = find(a1); if (!s) return out({ error: "No screen " + (a1 || "") + ". symbiot screens lists them." });
     const want = String(a2 || "").toLowerCase(), rs = s.regions || [];
     const r = rs.find((x) => x.id === a2) || rs.find((x) => x.label.toLowerCase() === want) || (rs.filter((x) => x.label.toLowerCase().includes(want)).length === 1 && rs.find((x) => x.label.toLowerCase().includes(want)));
@@ -472,9 +482,11 @@ async function cmdScreens() {
     // a draft reply's agent (SYMBIOT_DRAFT, watch.mjs) never presses Send, or Enter (it sends in a chat)
     // upload: the files resolved and checked here, where a relative path means something
     const f = sub === "upload" ? uploadFiles([a3, ...more]) : null; if (f && f.error) return out(f);
-    const body = { id: s.id, region: r.id, confirmed: has("yes"), noSend: !!process.env.SYMBIOT_DRAFT, ...(sub === "type" ? { text: a3, enter: has("enter") } : {}), ...(f ? { files: f.files } : {}) };
-    const done = (await viaApp("/api/screens/" + sub, body)) || (sub === "press" ? await pressRegion(s.id, r.id, { confirmed: body.confirmed, noSend: body.noSend }) : sub === "type" ? await typeRegion(s.id, r.id, a3, { enter: body.enter, confirmed: body.confirmed, noSend: body.noSend }) : await uploadRegion(s.id, r.id, f.files, { confirmed: body.confirmed }));
-    if (f && done && /answered 404/.test(done.error || "")) return out({ error: "The Symbiot app that's running is older than this command and can't upload: restart it (symbiot app), then try again." });
+    // type --replace "old" "new": only that part of the field typed over
+    const part = sub === "type" && has("replace") ? { replace: String(a3 == null ? "" : a3), text: String(more[0] == null ? "" : more[0]) } : null;
+    const body = { id: s.id, region: r.id, confirmed: has("yes"), noSend: !!process.env.SYMBIOT_DRAFT, who, ...(sub === "type" ? (part || { text: a3 }) : {}), ...(sub === "type" ? { enter: has("enter") } : {}), ...(sub === "choose" ? { option: a3 } : {}), ...(f ? { files: f.files } : {}) };
+    const done = (await viaApp("/api/screens/" + (part ? "replace" : sub), body)) || alone(sub === "press" ? await pressRegion(s.id, r.id, { confirmed: body.confirmed, noSend: body.noSend, who }) : sub === "type" ? await typeRegion(s.id, r.id, body.text, { enter: body.enter, confirmed: body.confirmed, noSend: body.noSend, who, ...(part ? { replace: part.replace } : {}) }) : sub === "choose" ? await chooseRegion(s.id, r.id, a3, { confirmed: body.confirmed, who }) : await uploadRegion(s.id, r.id, f.files, { confirmed: body.confirmed, who }));
+    if ((f || part || sub === "choose") && done && /answered 404/.test(done.error || "")) return out({ error: `The Symbiot app that's running is older than this command and can't ${f ? "upload" : part ? "replace part of a field" : "choose"}: restart it (symbiot app), then try again.` });
     // not a trusted site: say how to go ahead (only you can trust a site, in the app's Settings)
     if (done && done.confirm) return out({ error: `${done.error} Add --yes to go ahead, or list ${done.host} under Trusted sites in Symbiot's Settings.` });
     return out(screenJson(done));
@@ -492,6 +504,12 @@ async function cmdScreens() {
   symbiot screens fill <id> label="text" [label="text"…] [--press <button>] [--yes]
                                                fill several fields and press a button in one browser
                                                session (a form that forgets itself between calls)
+  symbiot screens type <id> <field> --replace "old" "new" [--yes]
+                                               change only that part of what's in the field,
+                                               the rest (a post's picture too) left as it is
+  symbiot screens choose <id> <menu> "option" [--yes]
+                                               pick an option in a menu (a dropdown: MX in a
+                                               record type), by its label; map the result
   symbiot screens upload <id> <field> <file> [<file>…] [--yes]
                                                put a file in the page's file box (a picture or
                                                video for a post): <field> is the box, or the
@@ -506,8 +524,9 @@ async function cmdScreens() {
   symbiot browser [site]                      the Symbiot Browser: sign in to your sites for Symbiot
   symbiot screens signin <site>               sign in once, in the Symbiot Browser
   --yes is needed (press, type, upload) unless the page's site is under Trusted sites in the app's Settings.
-  While the app runs, these use its hidden browser, which stays open a few minutes:
-  press on the screen the last command printed carries on from that page as it is
+  While the app runs, these use its hidden browser, which stays open a few minutes, with
+  a tab for each agent: press on the screen the last command printed carries on from that
+  page as it is
   (type without --enter, then press the form's button).`);
   if (sub !== "help") process.exitCode = 1;
 }
@@ -905,6 +924,44 @@ async function cmdMarketing() {
   if (sub !== "help") process.exitCode = 1;
 }
 
+// ---- `symbiot capture`: a product's pictures and clips, for its pick tray (capture.mjs) ----
+// Run by the app (it has the browser and ffmpeg, and the tray is its), else here. What
+// Marketing's agent runs on a product's first run, instead of capture scripts of its own.
+async function cmdCapture() {
+  const VAL = ["--url", "--window", "--screens", "--seconds"];
+  const [product = "help"] = argv.slice(1).filter((x, i, all) => !x.startsWith("--") && !VAL.includes(all[i - 1]));
+  if (product === "help" || has("help")) {
+    console.log(`${c.b("symbiot capture")} ${c.d("— pictures and short clips of a product, for Marketing's pick tray")}
+  symbiot capture <product> [--url <its address>] [--screens /a,/b] [--seconds 6] [--no-clips]
+                                            a web app: its key screens (from its routes and
+                                            README), each a picture, the first few a clip too
+  symbiot capture <product> --window "<its window's title>" [--seconds 6]
+                                            a desktop app: its window, a picture and a clip
+                                            (under Wayland you pick it in your desktop's
+                                            screen-sharing prompt, the first time only)
+  Its address: --url, else the app of it running here (start it first, with demo data
+  where it has some). Symbiot itself: a copy with made-up work in it, started and
+  stopped for the capture, never your own.
+  Before anything reaches the tray, names, emails, phone numbers,
+  addresses, keys and tokens, account and card numbers, what's typed into forms,
+  notifications, chats, avatars and pictures are found and blurred. Look them over
+  under Marketing: switch a box off, or draw one of your own. The unblurred originals
+  stay in the lane's .symbiot/tray-originals/, never posted.`);
+    if (product !== "help") process.exitCode = 1;
+    return;
+  }
+  const body = { product, url: flag("url", ""), window: flag("window", ""), screens: String(flag("screens", "")).split(",").map((x) => x.trim()).filter(Boolean), clips: !has("no-clips"), ...(Number(flag("seconds", 0)) > 0 ? { seconds: Number(flag("seconds", 0)) } : {}) };
+  console.log(c.d(`Capturing ${product}: a minute or two…`));
+  const r = (await viaApp("/api/marketing/capture", body)) || await (await import("./capture.mjs")).captureProduct(body);
+  if (r.error) { console.log(c.y(r.error)); process.exitCode = 1; return; }
+  console.log(`${c.g("✓")} ${r.note}`);
+  for (const it of r.items || []) console.log(c.d(`  ${r.tray}/${it}`));
+  for (const s of r.skipped || []) console.log(c.y(`  ${s.clip ? "no clip of" : "skipped"} ${s.path}: ${s.why}`));
+  for (const f of r.failed || []) console.log(c.y(`  not blurred yet: ${f}`));
+  if (r.warning) console.log(c.y(r.warning));
+  if (r.seed) console.log(c.d(`  It has demo data (${r.seed}): capture with that loaded, not real data.`));
+}
+
 // ---- `symbiot reports`: what agents wrote up for you (reports.mjs) ---------------
 function cmdReports() {
   const id = argv.slice(1).find((x) => !x.startsWith("--"));
@@ -957,6 +1014,9 @@ ${c.b("Experimental")}
   symbiot marketing posted <draft> --url <link>
                                     mark a Marketing draft posted (or superseded);
                                     symbiot marketing help for more
+  symbiot capture <product>         pictures and clips of a product for Marketing's
+                                    pick tray, blurred where they show anything private
+                                    (symbiot capture help for more)
   symbiot screens map <site>        map a web page's buttons in a hidden browser
                                     (symbiot screens help for more)
   symbiot watch add <screen id>     keep track of a mapped page: what's new on it
@@ -1011,6 +1071,7 @@ async function main() {
   if (cmd === "phone") return cmdPhone();
   if (cmd === "post" || cmd === "posts") return cmdPost();
   if (cmd === "marketing") return cmdMarketing();
+  if (cmd === "capture") return cmdCapture();
   if (cmd === "knowledge" || cmd === "know") return cmdKnowledge();
   if (cmd === "reports" || cmd === "report") return cmdReports();
   if (cmd === "week")return cmdRun("week");

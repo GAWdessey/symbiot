@@ -16,7 +16,7 @@ mkdirSync(CFG, { recursive: true });
 let pass = 0, fail = 0;
 const ok = (n, c, got) => { if (c) { pass++; console.log("  ✓ " + n); } else { fail++; console.log("  ✗ " + n + (got !== undefined ? "  got: " + JSON.stringify(got) : "")); } };
 
-const { dispatch, lanesTick, loadLedger, lanesState, MAX_CHAIN, aboutIt, partlyDone, remoteKey, orcaMoves, orcaRelink, stuckHandovers, allowHandover, skipHandover, namedDirs } = await import("../lanes.mjs");
+const { dispatch, lanesTick, loadLedger, lanesState, MAX_CHAIN, aboutIt, partlyDone, remoteKey, orcaMoves, orcaRelink, stuckHandovers, allowHandover, skipHandover, namedDirs, handingOf } = await import("../lanes.mjs");
 const { parseHandoffs, handoverRules, ONLY_YOU, leftToYou, gitWork, agentsGitWork, agentsClicking, agentsCodeWork, heldAsks, agentsPosting, linkedAsks, linkedChore } =await import("../handover.mjs");
 const { buildTasksMd, mergeWhenGreen } = await import("../tasks.mjs");
 {
@@ -162,9 +162,17 @@ try {
   const L = JSON.parse(readFileSync(join(CFG, "lanes.json"), "utf8")); L.handoffs.push({ id: "p", key: "p", from: { lane: "coral", path: coral }, to: { lane: "ops", path: deep }, text: "x", at: Date.now(), chain: MAX_CHAIN, status: "done", reportedAt: Date.now() });
   writeFileSync(join(CFG, "lanes.json"), JSON.stringify(L));
   put(deep, "HANDOFF.md", "### coral\nAnd back again.\n");
-  lanesTick(deps());
+  const runs6 = calls.run.length; lanesTick(deps());
   const e6 = loadLedger().handoffs.find((h) => h.from.path === deep);
-  ok(`${MAX_CHAIN} handovers in a row: the next one isn't started (no ping-pong)`, e6 && e6.status === "error" && /handovers in a row/.test(e6.error), e6);
+  ok(`${MAX_CHAIN} handovers in a row: the next one isn't started (no ping-pong)`, e6 && e6.status === "blocked" && /handovers in a row/.test(e6.note) && !calls.run.slice(runs6).some((x) => x.p === coral), [e6, calls.run.slice(runs6)]);
+  ok("…but it's in that lane's tasks, for its next run, not dropped", e6 && e6.task && calls.add.slice(-1)[0].text === "And back again." && calls.add.slice(-1)[0].repo === "coral" && calls.push.slice(-1)[0].repo === "coral" && /waits in coral's tasks/.test(e6.note), [e6, calls.add.slice(-1)]);
+  ok("…and the lane that asked sees why on its block", handingOf(deep, { ledger: loadLedger(), map, running: () => false }).some((x) => /didn't start: 4 handovers in a row/.test(x.why)), handingOf(deep, { ledger: loadLedger(), map, running: () => false }));
+  L.handoffs.push({ id: "p2", key: "p2", from: { lane: "coral", path: coral }, to: { lane: "ops", path: deep }, text: "y", at: Date.now(), chain: MAX_CHAIN, status: "done", reportedAt: Date.now() });
+  writeFileSync(join(CFG, "lanes.json"), JSON.stringify({ handoffs: [...loadLedger().handoffs, L.handoffs.at(-1)] }));
+  put(deep, "HANDOFF.md", "### ops\nAnd on to ops.\n");
+  const acts6 = calls.act.length; lanesTick(deps());
+  const e7 = loadLedger().handoffs.find((h) => h.from.path === deep && h.text === "And on to ops.");
+  ok("…to ops, which has no task list: not started, and the agent that asked is told", e7 && e7.status === "error" && /handovers in a row/.test(e7.error) && calls.act.length === acts6, e7);
   ok("the ledger is yours only (0600)", existsSync(join(CFG, "lanes.json")) && (await import("node:fs")).statSync(join(CFG, "lanes.json")).mode % 0o1000 === 0o600, "");
 
   console.log("ONE ROW FOR WHAT READS THE SAME — a run that handed it over twice");
@@ -380,6 +388,58 @@ try {
     put(asker, "HANDOFF.md", "### coral\n" + v1 + "\n"); dispatch(asker, sd());
     put(asker, "HANDOFF.md", "### coral\n" + v2 + "\n"); const r2 = dispatch(asker, sd({ tasks: [{ id: "t1" }] }));
     ok("a repo lane, its task still open: the old task gives way to the new one, one row", drops[0] === "t1" && adds.length === 2 && adds[1].text === v2 && led.handoffs.length === 1 && led.handoffs[0].task === "t2" && r2[0].status === "held", { drops, adds, led: led.handoffs });
+  }
+
+  console.log("A HANDOVER WAITING — the lane's block says whether its lane has it, and if not, why");
+  {
+    // whatsapp_module, 2026-10-12: its rewritten test-number handover sat behind ops's run on the earlier version
+    const wa = lane("whatsapp_module"), wmap = { ...map, whatsapp_module: wa }, wOps = join(CFG, "drafts", "act-wa"); mkdirSync(join(wOps, ".symbiot"), { recursive: true });
+    const led = { handoffs: [] }, acts = []; let going = new Set();
+    const wd = () => ({ map: wmap, ledger: led, now: Date.now(), running: (p) => going.has(p), tasks: () => [],
+      act: (text) => { acts.push(text); return { ok: true, job: "w" + acts.length, dir: wOps }; }, refresh: () => ({ ok: true }) });
+    const hv = (o = {}) => handingOf(wa, { map: wmap, ledger: led, running: (p) => going.has(p), work: () => ({ doing: "Filling in the app's settings", progress: { done: 2, total: 5 } }), ...o });
+    const v1 = "**What's needed:** set up Meta's free test number for the WhatsApp module and put its credentials in .env.";
+    const v2 = "**What's needed:** set up Meta's free test number for the WhatsApp module in a new VASINC account and put its credentials in .env.";
+    put(wa, "HANDOFF.md", "### ops\n" + v1 + "\n");
+    const fresh = hv({ changedAt: Date.now() - 5000 });
+    ok("written seconds ago, not picked up yet: not sent, within 20 seconds", fresh.length === 1 && !fresh[0].gone && /within 20 seconds/.test(fresh[0].why) && fresh[0].lane === "ops" && !/\*\*/.test(fresh[0].text), fresh);
+    ok("…minutes and still not picked up: says Symbiot sends them only while its app is open", /Not sent after 10 min: .*app is open/.test(hv({ changedAt: Date.now() - 600000 })[0].why), hv({ changedAt: Date.now() - 600000 }));
+    ok("…a folder Symbiot doesn't have as a lane: says it's never read", /doesn't have this folder as a lane/.test(handingOf(wa, { map, ledger: led, changedAt: Date.now() - 600000 })[0].why), "");
+    dispatch(wa, wd()); led.handoffs[0].at = Date.now() - 120000; going = new Set([wOps]); ran(wOps, Date.now() - 60000, "");
+    const sent = read(wa, "HANDOFF.md");
+    ok("once it's sent, HANDOFF.md says so: no section left to send, a dated line for what went where", parseHandoffs(sent).length === 0 && /^# Handovers: sent/.test(sent) && /^- \d{4}-\d\d-\d\d \d\d:\d\d → \*\*ops\*\*: ops's agent started on it\. "What's needed: set up Meta's free test number/m.test(sent) && /ANSWERS\.md/.test(sent), sent);
+    const on = hv();
+    ok("…and the block still shows it, from the ledger, with how far ops's run has got", on.length === 1 && on[0].gone && /^Sent: its agent is on it now/.test(on[0].why) && on[0].doing === "Filling in the app's settings" && on[0].progress.done === 2, on);
+    ok("…nothing sent twice: the next pass starts nothing", dispatch(wa, wd()).length === 0 && acts.length === 1, acts.length);
+    put(wa, "HANDOFF.md", sent + "\n### ops\n" + v2 + "\n"); dispatch(wa, wd());
+    const behind = hv(), sent2 = read(wa, "HANDOFF.md");
+    ok("a changed version added under the list: it goes to the run on the earlier one, which gets it when it ends", acts.length === 1 && behind.length === 1 && behind[0].gone && /^Sent: ops is on the earlier version now .* gets this one when that run ends/.test(behind[0].why), behind);
+    ok("…and the list now has both, newest first, and nothing left to send", parseHandoffs(sent2).length === 0 && /replaces the version sent earlier: ops's run on that one gets it when it ends\. "What's needed: set up Meta's free test number for the WhatsApp module in a new VASINC/.test(sent2.split("\n").filter((l) => /^- /.test(l))[0]) && sent2.split("\n").filter((l) => /^- /.test(l)).length === 2, sent2);
+    going = new Set(); led.handoffs[0].at = Date.now(); // the new brief started once the run ended
+    ran(wOps, Date.now() + 20, ""); going = new Set([wOps]);
+    ok("…once it ends and starts on the new version: sent, on it now", hv()[0].gone && /on it now/.test(hv()[0].why), hv());
+    going = new Set(); put(wOps, "QUESTIONS.md", "## Questions\n### The code Meta sent?\nwhy\n- paste it (recommended)\n- not yet\n");
+    ok("…its run ended asking you: sent, and it asked you first", /asked you something first/.test(hv()[0].why), hv());
+    led.handoffs[0].reportedAt = Date.now(); led.handoffs[0].status = "done";
+    ok("…and once it came back: nothing waiting", hv().length === 0, hv());
+    put(wa, "HANDOFF.md", "### payroll\nPay the WhatsApp bill.\n"); dispatch(wa, wd());
+    led.handoffs[led.handoffs.length - 1].reportedAt = Date.now();
+    const bad = hv();
+    ok("a lane that doesn't exist: couldn't hand it over, and why, even once that's gone back to it", bad.length === 1 && !bad[0].gone && /Couldn't hand it over: There's no lane called payroll/.test(bad[0].why), bad);
+    ok("…its file says so too", /→ \*\*payroll\*\*: couldn't hand it over: There's no lane called payroll/.test(read(wa, "HANDOFF.md")), read(wa, "HANDOFF.md"));
+    led.handoffs[led.handoffs.length - 1].skipped = Date.now();
+    ok("…skipped: not shown again", hv().length === 0, hv());
+    put(wa, "HANDOFF.md", "### coral\nAdd the WhatsApp webhook route to coral.\n");
+    dispatch(wa, { ...wd(), add: () => ({ id: "c1" }), push: () => ({}), run: () => ({ busy: true }) }); going = new Set([coral]);
+    const q = hv();
+    ok("a repo lane that's busy: sent, and queued until that run ends", q.length === 1 && q[0].gone && /^Sent, and queued: coral's agent is busy/.test(q[0].why), q);
+    ok("…its file: queued in coral", /→ \*\*coral\*\*: queued in coral: its agent was busy/.test(read(wa, "HANDOFF.md")), read(wa, "HANDOFF.md"));
+    put(wa, "HANDOFF.md", "### ops\nFind a JDK 17.\n### coral\nAdd the WhatsApp webhook route to coral.\n");
+    const half = read(wa, "HANDOFF.md");
+    ok("the file changed by its agent while a pass ran: left as it is, for the next pass", (() => { const ledg = { handoffs: [] }; dispatch(wa, { ...wd(), ledger: ledg, act: () => { put(wa, "HANDOFF.md", half + "### GhostAIChat\nRebuild the APK.\n"); return { ok: true, job: "x", dir: wOps }; }, add: () => ({ id: "c2" }), push: () => ({}), run: () => ({ id: "r" }) }); return parseHandoffs(read(wa, "HANDOFF.md")).length === 3; })(), read(wa, "HANDOFF.md"));
+    put(wa, "HANDOFF.md", "");
+    led.handoffs.length = 0;
+    ok("nothing handed over: nothing", handingOf(wa, { map: wmap, ledger: led }).length === 0, "");
   }
 } finally {
   rmSync(HOME, { recursive: true, force: true });

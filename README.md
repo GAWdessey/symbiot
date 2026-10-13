@@ -300,8 +300,8 @@ in the repo's `SYMBIOT_KEYSTORE_B64` and `SYMBIOT_KEYSTORE_PASS` secrets (see
 ### Your phone
 
 Your computer's work, on your phone: your tasks, what needs you, your agents'
-questions, the work waiting for your Approve, and what Watch found (as a
-notification too). Experimental.
+questions, the work waiting for your Approve, and what Watch found, each as a
+notification too when it's new. Experimental.
 
 - **Pair it.** On the computer, Setup's **Your phone** step (or Settings → **Your
   phone**) switches the link on and shows a QR. Point your phone's camera at it and
@@ -979,6 +979,35 @@ launches or pricing; any agent can hand work to it too, as `marketing`.
   shows as the agent's option ("🤖 Agent: …, once you approve its preview"). Only
   signing in, for a platform that isn't linked or has signed out, is yours. It never
   posts what you haven't approved, and never signs in as you.
+- **Symbiot captures your product itself: no demo video needed.** **Capture a
+  product** on the Marketing page (or `symbiot capture <product>`, which its agent runs
+  on a product's first run) opens it in a browser of its own, with a fresh profile, so
+  nothing you're signed in to shows. It works out the key screens from the product's
+  routes (Next, Nuxt, SvelteKit, Astro, Remix, Express and the like, React and Vue
+  Router, Flask, FastAPI, Django, Rails) and the addresses its README gives, and takes
+  a picture of each and a short clip of the first few (MP4 and GIF, and a tour of them
+  one after another). Its address: the one you give, else the app of it running here;
+  start it with its demo data if it has some. Symbiot itself is captured from a copy
+  with made-up work in it (Acme, a company that doesn't exist), started for the capture
+  and stopped after it, never your own app with your work in it: `symbiot capture
+  Symbiot` brings its tray up to date in one go. A desktop app's window is recorded
+  instead (`--window "<title>"`: an X11 or XWayland window on Linux by its title; a
+  Wayland window (COSMIC, GNOME, KDE) through the desktop's own screen sharing, where
+  you pick it in its prompt once and Symbiot remembers it; by its title on Windows; the
+  screen on a Mac).
+- **What could get you into trouble is blurred before it reaches the tray**: names
+  (the people Symbiot remembers, the product's git authors, the one beside an avatar,
+  a customer's in a table, and any in the lane's `.symbiot/names.json`), emails, phone
+  numbers, street addresses, API keys, tokens and secrets, account, card and IBAN
+  numbers, what's typed into forms, notifications, chats, avatars and pictures (faces),
+  and text inside pictures (read with `tesseract`, where it's installed). A clip moves
+  a window at a time, so what's private is found in each moment it shows. Each
+  capture's boxes are listed on it: switch one off, or **Draw a blur box** over
+  anything it missed (a box you drew can be removed). A desktop recording, where
+  Symbiot can't see faces or pictures, and any capture whose pictures' text couldn't
+  be read, says so, and goes on a post only once you've clicked **Looked it over**.
+  The unblurred originals stay in the lane's `.symbiot/tray-originals/`: never shown,
+  never put on a post.
 - **Its work waits for your OK like any project's** (**Approve** commits it in its
   folder), and its questions reach you like any agent's. Answering one says
   **Sent to Marketing**, the lane it went to.
@@ -1272,8 +1301,10 @@ agent or script can read it. Screenshots and that file are readable by you only.
 `github.com/pulls` or a full address) and Symbiot opens it in a hidden (headless)
 browser, takes its screenshot and marks every button, link and field on it by
 itself, named from the page (`Compose`, `Search mail`, …) with what each one is
-and a CSS selector to find it again. Nothing to bring to the front, nothing to
-drag. Only what you could click right now counts: anything hidden, below the
+and a CSS selector to find it again. Text a site made clickable without making
+it a link or a button (a sign-in pop-up's "Send Email OTP instead?": its own
+click handler, or the pointing-hand cursor) is marked too, as a button. Nothing
+to bring to the front, nothing to drag. Only what you could click right now counts: anything hidden, below the
 fold or covered by something else is left out. A site is usually taller than
 the window, so a map only has the part that fits: when there's more, the screen
 says so and **Scroll down** (and **Scroll up**) scrolls the page in the hidden
@@ -1296,9 +1327,13 @@ ticked, presses Enter, which is how a search or a one-line form is sent; the
 result is mapped as a new screen too. The hidden browser stays open for five
 minutes after each map, press or type, so a press or type on the screen it just
 mapped carries on from that page as it is: type into a field without Enter, then
-press the form's own button (**Send**, **Next**) on the new screen. On an older
-screen, or once the browser has closed, it opens the page from its address again,
-and anything typed there is gone. Press and
+press the form's own button (**Send**, **Next**) on the new screen. An older
+screen of the page it's on works on the page as it is too, when what you press
+or type into is there and nothing covers it. Otherwise, or once the browser has
+closed, it opens the page from its address again: anything typed there is gone,
+and so is a pop-up that was open, so Type refuses when its field isn't there any
+more rather than type into whatever is in its place. Whole page and Scroll never
+open a page again that the browser is already on. Press and
 Type act on the real site, signed in as you, so they ask first, unless the site
 is under **Trusted sites** in Settings: there, they go ahead without asking, for
 you and for agents. A trusted site covers its subdomains (`google.com` covers
@@ -1319,6 +1354,8 @@ symbiot screens type <id> "Search mail" "invoice" --enter --yes   # type into a 
                                        # (--yes isn't needed on a site under Trusted sites in Settings)
 symbiot screens type <id> To "sam@example.com" --yes   # without --enter: the text stays in the field...
 symbiot screens press <new id> Send --yes  # ...for a press on the screen that just printed
+symbiot screens type <id> "Post text" --replace "Monday" "Tuesday" --yes   # change only that part of a field:
+                                       # the rest, a post's picture too, stays as it is
 symbiot screens upload <id> "Add media" ~/clip.mp4 --yes   # put a file in the page's file box: the field,
                                        # or the button a site hides it behind ("used" says which box)
 symbiot screens scroll <id>            # "more": "below"? scroll down and map the next part (or up, top, bottom)
@@ -1429,8 +1466,9 @@ what's next.
 **On your phone.** Your phone can show your computer's work, through Symbiot
 there (the [Android app](#the-android-app-apk), or Symbiot in
 [Termux](#on-your-phone-android-in-termux)): your tasks, what needs you, your
-agents' questions, the work waiting for your Approve, and what Watch found, which
-also comes as a notification. From the phone you can add and tick tasks, answer
+agents' questions, the work waiting for your Approve, and what Watch found. Each
+of those comes as a notification too, when it's new, so nothing waits on you
+until you happen to open the app. From the phone you can add and tick tasks, answer
 your agents and approve. See [Your phone](#your-phone) for how it works.
 
 **More than one display?** Symbiot reads how your displays are laid out
@@ -1472,7 +1510,9 @@ its own browser. **Settings → Links → Open the Symbiot Browser** (or `symbio
 opens it: a window of its own listing your sites, each with whether you're signed in and
 a **Sign in** button, plus an address bar for any other site. Sign in the usual way
 (the site's own login and 2FA; Symbiot never sees a password), then click **Done**: it
-closes and Symbiot checks each site.
+closes and Symbiot checks each site. Closing it with its X does the same. An agent's
+question asking you to sign in to a site is answered for you once that site reads
+signed in, and the agent carries on.
 
 ## Any language
 

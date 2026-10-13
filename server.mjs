@@ -18,7 +18,7 @@ import { createServer } from "node:http";
 import { randomBytes } from "node:crypto";
 import { EMBEDDED_UI } from "./ui.mjs";
 import { VERSION, LATEST_VERSION, REGISTRY, semverGt, checkLatest, CONFIG_PATH, loadConfig, saveConfig, moveSecrets, loadTasks, hasCmd, chromeBinary, CONFIG_DIR } from "./core.mjs";
-import { shSingle, handoffCmd, setHandoffCmd, grantAgent, runHandoff, track, detectHandoffs, connectorsInfo, linkReach, answerQuestions, skipIdea, agentsList, startWaiting, parkLane, parkedPaths, autoAllowSweep, trustFull, readLastWords, sandboxState } from "./agents.mjs";
+import { shSingle, handoffCmd, setHandoffCmd, grantAgent, runHandoff, track, detectHandoffs, connectorsInfo, linkReach, answerQuestions, skipIdea, agentsList, startWaiting, parkLane, parkedPaths, autoAllowSweep, continueLanes, trustFull, readLastWords, sandboxState } from "./agents.mjs";
 import { PROVIDERS, resolveProvider, connectProvider, detectHardware, recommendModels, hasOllama, ollamaInstall, ensureOllama, useOllamaModel } from "./ai.mjs";
 import { SCAN, SCAN_TIMEOUT_MS, scanRoots, scanHome, addScanRoot, removeScanRoot, buildMap, nodeDetail, repoPathMap, laneMap, setScanOptions, refreshRepos, REPO_STATE, reposState } from "./scan.mjs";
 import { computeDrift } from "./drift.mjs";
@@ -27,20 +27,21 @@ import { addTask, toggleTask, removeTask, restoreTask, syncTasks, taskType, push
 import { repoReview, repoSuggest, folderSuggest, taskChat, clearTaskChat, mailState, setMail, sentMail, produce, releaseNotes } from "./writeups.mjs";
 import { listSecrets, getSecret, markUsed, deleteSecret } from "./vault.mjs";
 import { loadScreens, screenImage, captureScreen, splitScreen, listMonitors, allowScreenshots, importScreen, setRegions, renameScreen, removeScreen, blueprint, clickRegion } from "./screens.mjs";
-import { mapPage, wholePage, pressRegion, typeRegion, fillForm, uploadRegion, scrollPage, signIn, keepBrowserOpen, isTrusted, trustedSites, trustSite, untrustSite, openSymbiotBrowser, closeSymbiotBrowser, setBrowserHub, siteUrl, browserHub } from "./headless.mjs";
+import { mapPage, wholePage, pressRegion, typeRegion, chooseRegion, fillForm, uploadRegion, scrollPage, signIn, keepBrowserOpen, isTrusted, trustedSites, trustSite, untrustSite, openSymbiotBrowser, closeSymbiotBrowser, onBrowserClosed, setBrowserHub, siteUrl, browserHub } from "./headless.mjs";
 import { weeklyState, setWeekly, runWeekly, startWeekly, autostartState, setAutostart, installLauncher, iconSvg, setLauncherLook } from "./desktop.mjs";
 import { markNews, newsSince, watchState, addWatch, setEvery, removeWatch, clearNews, seenWatch, checkWatch, startWatches, setBrief, draftReply, openChat, watchBoard, boardChat, clearBoardChat } from "./watch.mjs";
-import { linksState, linkSite, checkLink, unlinkSite, addSite, signInAsked } from "./links.mjs";
+import { linksState, linkSite, checkLink, unlinkSite, addSite, signInAsked, sitesCheck } from "./links.mjs";
 import { testWeeks, testInstalls, postsState, draftPosts, approvePost, editPost, skipPost, voiceFromLinkedIn, addMedia, removeMedia, mediaFile, mediaDir, pictureOfPage, clipOfPage, openUrl } from "./post.mjs";
 import { mindState, forget } from "./mind.mjs";
-import { lanesTick, lanesState, partlyDone, orcaRelink } from "./lanes.mjs";
+import { lanesTick, lanesState, partlyDone, handingOf, loadLedger, orcaRelink } from "./lanes.mjs";
 import { keepFacts, skipFacts, awaitTick, awaitingState, stopWaiting } from "./handback.mjs";
 import { adaptState, noteUse } from "./adapt.mjs";
 import { reportIdeasAdd, reportIdeasDismiss, reportAsk, reportDraftAnswer, homeState, homeAsk, homeAnswer, homeNext, workScene, workGo, workTick, firstSteps, marketingState, marketingGo, marketingDraftAnswer, marketingTask, moveToMarketing, onboarding, setOnboarding, startOnboarding, phoneSetupFirst } from "./home.mjs";
 import { MARKETING_DIR, MARKETING, draftPreview, laneMedia, displayName, setDraftMedia } from "./marketing.mjs";
-import { trays, trayMedia, setBlur, renderCapture } from "./tray.mjs";
-import { listReports, readReport, reportImage, markAllRead, withNeeds } from "./reports.mjs";
-import { phoneState, setPhoneLink, freePhonePort, usePhonePort, newCode, unpairPhone, setRelay, findComputers, pairComputer, forgetComputer, pollComputer, queueChange, dismissNote, setPhoneApprove, startPhone } from "./phone.mjs";
+import { trays, trayMedia, setBlur, addBlur, removeBlur, setReviewed, renderCapture } from "./tray.mjs";
+import { captureProduct, captureProducts } from "./capture.mjs";
+import { listReports, readReport, reportImage, markAllRead, phoneReports, phoneReport, withNeeds } from "./reports.mjs";
+import { computerCopy, phoneState, setPhoneLink, freePhonePort, usePhonePort, newCode, unpairPhone, setRelay, findComputers, pairComputer, forgetComputer, pollComputer, queueChange, dismissNote, setPhoneApprove, startPhone } from "./phone.mjs";
 import { knowledgeState, addKnowledgeFolder, removeKnowledgeFolder, indexKnowledge, knowledgeTick, searchKnowledge } from "./knowledge.mjs";
 import { runChecks, checksState, markClashesSeen } from "./checks.mjs";
 
@@ -51,6 +52,29 @@ import { runChecks, checksState, markClashesSeen } from "./checks.mjs";
 function updateCmd(latest, current, platform = process.platform) {
   const target = latest && semverGt(latest, current) ? latest : "latest";
   return { target, cmd: (platform === "win32" ? "npm i -g " : "npm install -g ") + "symbiot@" + target + " --prefer-online" };
+}
+// npm lists a new version minutes before its download is there: 1 to 5 minutes for
+// most releases, 11 for 0.59.0 (~/.symbiot/agent.log, 0.52.0 to 0.63.3). Five tries 30s
+// apart gave up on 0.59.0, 0.62.0 and 0.63.3 and sent you to a terminal. So the update
+// looks for the download itself before it runs npm, and keeps looking (and trying
+// again on a 404) for up to 20 minutes. Only a 404 waits: anything else (offline, say)
+// goes on to npm, whose own error says what's wrong.
+const UPDATE_EVERY = Number(process.env.SYMBIOT_UPDATE_EVERY) || 30000, UPDATE_WAIT = 20 * 60 * 1000;
+// The version installed where this app runs from, and whether to restart onto it:
+// newer than this one, and the same on the last look too.
+const OWN_PKG = fileURLToPath(new URL("./package.json", import.meta.url));
+function installedVersion(file = OWN_PKG) { try { return String(JSON.parse(readFileSync(file, "utf8")).version || ""); } catch { return ""; } }
+const restartOnto = (seen, now, running = VERSION) => !!now && now === seen && semverGt(now, running);
+async function downloadReady(version, registry = REGISTRY, fetchFn = fetch) {
+  if (!/^\d+\.\d+\.\d+/.test(String(version))) return true; // "latest": npm picks it, nothing to look at
+  try { return (await fetchFn(`${registry}/symbiot/-/symbiot-${encodeURIComponent(version)}.tgz`, { method: "HEAD", signal: AbortSignal.timeout(10000) })).status !== 404; } catch { return true; }
+}
+// This update's own lines in agent.log (an earlier run's 404 isn't this one's), and
+// the line that says what went wrong.
+function updateOutcome(log) {
+  const mine = String(log || "").slice(String(log || "").lastIndexOf("=== symbiot update"));
+  const why = (mine.match(/npm (?:error|ERR!) (?!code\b|syscall\b|errno\b|path\b|dest\b|404\s*$|A complete log)([^\n]+)/m) || [])[1] || "";
+  return { notYet: /E404|ETARGET|notarget|No matching version|is not in this registry/i.test(mine), why: why.trim().slice(0, 200) };
 }
 
 // ---- what's new: the changelog's releases between two versions -------------------
@@ -251,7 +275,10 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
   setScanOptions({ cache: true }); REPO_STATE.onChange = () => { try { homeState({ fresh: true }); } catch {} };
   if (!SANDBOX) { refreshRevoked().catch(() => {}); setInterval(() => refreshRevoked().catch(() => {}), 6 * 3600 * 1000).unref(); } // cancelled Pro keys, about daily
   { const t0 = Date.now(); refreshRepos().then((l) => console.log(`Found ${l.length} project${l.length === 1 ? "" : "s"} in ${((Date.now() - t0) / 1000).toFixed(1)}s.`)); }
-  let UPDATING = null; // an update in flight: { target, attempt, retrying? }
+  let UPDATING = null; // an update in flight: { target, attempt, since, retrying? }
+  let UPDATE_FAILED = null; // the last one that didn't go through: { target, error, at }
+  let HUB_SEEN = 0; // when the Symbiot Browser's own page last asked for the sites (browser.html)
+  onBrowserClosed(() => { sitesCheck(); }); // its last window closed by its X: checked, as Done does
   let NEWEST_WIN = ""; // the Symbiot window opened last: older ones close themselves (one window, not a pile)
   process.on("exit", () => closeAway()); // Away's windows go with the app (a quit, an update's restart)
   const server = createServer(async (req, res) => {
@@ -263,7 +290,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
     // the app's typeface ships in the package (fonts/), so it's there offline
     // the window's own icon (its taskbar entry), the same orb as the app menu's
     if (req.method === "GET" && (u.pathname === "/favicon.svg" || u.pathname === "/favicon.ico")) {
-      try { const b = iconSvg(u.searchParams.get("look") || loadConfig().look || "ferro"); res.writeHead(200, { "content-type": "image/svg+xml", "cache-control": "no-cache" }); res.end(b); }
+      try { const b = iconSvg(u.searchParams.get("look") || loadConfig().look || "ferro", { small: u.searchParams.get("small") === "1" }); res.writeHead(200, { "content-type": "image/svg+xml", "cache-control": "no-cache" }); res.end(b); }
       catch { res.writeHead(404); res.end(); }
       return;
     }
@@ -339,7 +366,10 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
         const e = track("ollama pull " + model, "ollama pull " + shSingle(model), homedir(), (code) => { if (code === 0) useOllamaModel(model); });
         return json(res, { started: true, model, id: e ? e.id : "" });
       }
-      if (u.pathname === "/api/agents") return json(res, await withReleases(agentsList()));
+      if (u.pathname === "/api/agents") { // handing: what it handed to other lanes, on the newest block per folder: where each stands, and how far the run on it has got
+        const seen = new Set(), map = laneMap(), ledger = loadLedger(), list = agentsList().map((a) => { if (!a.path || seen.has(a.path)) return a; seen.add(a.path); let h = []; try { h = handingOf(a.path, { map, ledger }); } catch {} return h.length ? { ...a, handing: h } : a; });
+        return json(res, await withReleases(list));
+      }
       // the answer, saved in the folder that asked; it says which lane that is, so "Sent to …"
       // names where it went (a Marketing answer said "Sent to Paperclip Steve")
       if (u.pathname === "/api/agents/answer" && req.method === "POST") { const b = await readBody(req), path = String(b.path || ""), r = answerQuestions(path, b.answers, { rerun: !!b.rerun }); return json(res, r && r.ok ? { ...r, lane: laneOfFolder(path) } : r); }
@@ -372,16 +402,20 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       // A web page in the hidden browser (headless.mjs): mapped by itself, no
       // screen needed. Press acts on the real site, signed in as you, so it's
       // confirmed like a click; Sign in opens a window the user signs in with.
-      if (u.pathname === "/api/screens/map" && req.method === "POST") { const b = await readBody(req); return json(res, screenOut(await mapPage(b.site, b.name, { whole: b.whole === true }))); }
+      if (u.pathname === "/api/screens/map" && req.method === "POST") { const b = await readBody(req); return json(res, screenOut(await mapPage(b.site, b.name, { whole: b.whole === true, who: String(b.who || "") }))); }
       // press / type: refused unless confirmed, or the page's site is one you trust
-      if (u.pathname === "/api/screens/press" && req.method === "POST") { const b = await readBody(req); return json(res, screenOut(await pressRegion(String(b.id || ""), String(b.region || ""), { confirmed: b.confirmed === true, noSend: b.noSend === true }))); }
+      if (u.pathname === "/api/screens/press" && req.method === "POST") { const b = await readBody(req); return json(res, screenOut(await pressRegion(String(b.id || ""), String(b.region || ""), { confirmed: b.confirmed === true, noSend: b.noSend === true, who: String(b.who || "") }))); }
       // scroll and whole page: they only look, so they never ask
-      if (u.pathname === "/api/screens/whole" && req.method === "POST") { const b = await readBody(req); return json(res, screenOut(await wholePage(String(b.id || "")))); }
-      if (u.pathname === "/api/screens/scroll" && req.method === "POST") { const b = await readBody(req); return json(res, screenOut(await scrollPage(String(b.id || ""), String(b.to || "down")))); }
-      if (u.pathname === "/api/screens/type" && req.method === "POST") { const b = await readBody(req); return json(res, screenOut(await typeRegion(String(b.id || ""), String(b.region || ""), b.text, { enter: b.enter === true, confirmed: b.confirmed === true, noSend: b.noSend === true }))); }
+      if (u.pathname === "/api/screens/whole" && req.method === "POST") { const b = await readBody(req); return json(res, screenOut(await wholePage(String(b.id || ""), { who: String(b.who || "") }))); }
+      if (u.pathname === "/api/screens/scroll" && req.method === "POST") { const b = await readBody(req); return json(res, screenOut(await scrollPage(String(b.id || ""), String(b.to || "down"), { who: String(b.who || "") }))); }
+      if (u.pathname === "/api/screens/type" && req.method === "POST") { const b = await readBody(req); return json(res, screenOut(await typeRegion(String(b.id || ""), String(b.region || ""), b.text, { enter: b.enter === true, confirmed: b.confirmed === true, noSend: b.noSend === true, who: String(b.who || "") }))); }
+      // its own route, so an app from before it answers 404 instead of retyping the whole field
+      if (u.pathname === "/api/screens/replace" && req.method === "POST") { const b = await readBody(req); return json(res, screenOut(await typeRegion(String(b.id || ""), String(b.region || ""), b.text, { enter: b.enter === true, confirmed: b.confirmed === true, noSend: b.noSend === true, replace: String(b.replace == null ? "" : b.replace), who: String(b.who || "") }))); }
+      // choose: an option in a menu (a <select>, or the site's own), asked like press and type
+      if (u.pathname === "/api/screens/choose" && req.method === "POST") { const b = await readBody(req); return json(res, screenOut(await chooseRegion(String(b.id || ""), String(b.region || ""), b.option, { confirmed: b.confirmed === true, who: String(b.who || "") }))); }
       if (u.pathname === "/api/screens/fill" && req.method === "POST") { const b = await readBody(req); return json(res, screenOut(await fillForm(String(b.id || ""), Array.isArray(b.fields) ? b.fields.map((f) => ({ region: String(f.region || ""), text: f.text })) : [], { press: String(b.press || ""), confirmed: b.confirmed === true, noSend: b.noSend === true }))); }
       // upload: a file of yours to the page's file box, asked like press and type
-      if (u.pathname === "/api/screens/upload" && req.method === "POST") { const b = await readBody(req); return json(res, screenOut(await uploadRegion(String(b.id || ""), String(b.region || ""), Array.isArray(b.files) ? b.files.map(String) : String(b.files || ""), { confirmed: b.confirmed === true }))); }
+      if (u.pathname === "/api/screens/upload" && req.method === "POST") { const b = await readBody(req); return json(res, screenOut(await uploadRegion(String(b.id || ""), String(b.region || ""), Array.isArray(b.files) ? b.files.map(String) : String(b.files || ""), { confirmed: b.confirmed === true, who: String(b.who || "") }))); }
       if (u.pathname === "/api/screens/trusted") return json(res, { sites: trustedSites() });
       if (u.pathname === "/api/screens/trusted/add" && req.method === "POST") { const b = await readBody(req); return json(res, trustSite(b.site)); }
       if (u.pathname === "/api/screens/trusted/remove" && req.method === "POST") { const b = await readBody(req); return json(res, untrustSite(b.site)); }
@@ -395,12 +429,13 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       if (u.pathname === "/api/mind") return json(res, mindState());
       if (u.pathname === "/api/mind/forget" && req.method === "POST") { const b = await readBody(req); return json(res, forget(String(b.id || ""))); }
       // Links (links.mjs): one click per standard work site: sign in, trust it, watch it.
-      if (u.pathname === "/api/links") { let reach = null; try { reach = linkReach(); } catch {} return json(res, { ...linksState(), ...(reach ? { reach } : {}) }); } // reach: which sites agent runs can use too (agents.mjs)
+      if (u.pathname === "/api/links") { if (u.searchParams.get("hub") === "1") HUB_SEEN = Date.now(); let reach = null; try { reach = linkReach(); } catch {} return json(res, { ...linksState(), ...(reach ? { reach } : {}) }); } // reach: which sites agent runs can use too (agents.mjs)
       if (u.pathname === "/api/links/link" && req.method === "POST") { const b = await readBody(req); return json(res, await linkSite(String(b.id || ""), b.here ? { open: async (url) => ({ ok: true, url }) } : undefined)); } // here: from the Symbiot Browser, which opens the site itself
       if (u.pathname === "/api/browser/open" && req.method === "POST") { const b = await readBody(req); if (process.env.SYMBIOT_NO_OPEN === "1") return json(res, { ok: false, note: "not opened (SYMBIOT_NO_OPEN)", page: browserHub() }); return json(res, await openSymbiotBrowser(b.url ? siteUrl(String(b.url)) : "")); }
-      if (u.pathname === "/api/browser/done" && req.method === "POST") { if (process.env.SYMBIOT_NO_OPEN === "1") return json(res, { closed: 0 }); const r = await closeSymbiotBrowser(); const recheck = () => { for (const it of linksState().items) if (it.state !== "off" && it.state !== "ok") checkLink(it.id).catch(() => {}); };
-        // and once more a little later: a site may still be saving its sign-in when the window closes
-        setTimeout(recheck, 1500); setTimeout(recheck, 20000); return json(res, { ...r, checking: true }); }
+      // Done: it closes, and every site is checked (links.mjs sitesCheck). Its page's X sends
+      // closed: the same, unless the page is back within a moment (a reload, not a close).
+      if (u.pathname === "/api/browser/done" && req.method === "POST") { if (process.env.SYMBIOT_NO_OPEN === "1") return json(res, { closed: 0 }); const r = await closeSymbiotBrowser(); sitesCheck(); return json(res, { ...r, checking: true }); }
+      if (u.pathname === "/api/browser/closed" && req.method === "POST") { const at = Date.now(); if (process.env.SYMBIOT_NO_OPEN !== "1") setTimeout(() => { if (HUB_SEEN > at) return; closeSymbiotBrowser().catch(() => {}).then(() => sitesCheck()); }, 3000).unref(); return json(res, { ok: true }); }
       // any site, added in Settings → Connections or the Symbiot Browser's address bar, or a card's / reply's "Sign in to <site>": linked and opened to sign in
       if (u.pathname === "/api/links/site" && req.method === "POST") { const b = await readBody(req), here = b.here ? { open: async (url) => ({ ok: true, url }) } : undefined; return json(res, b.id ? await linkSite(String(b.id), here) : await addSite(String(b.site || ""), here)); }
       if (u.pathname === "/api/links/check" && req.method === "POST") { const b = await readBody(req); return json(res, await checkLink(String(b.id || ""))); }
@@ -430,10 +465,15 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       if (u.pathname === "/api/marketing/open" && req.method === "POST") { const b = await readBody(req), f = join(MARKETING_DIR, String(b.rel || "")); return json(res, f.startsWith(MARKETING_DIR + "/") && existsSync(f) ? { ok: openUrl(f) } : { error: "That draft isn't there any more." }); }
       // the pick tray (tray.mjs): its captures and their blur boxes, a capture (only from inside
       // a tray), a box switched on or off and the capture blurred again, a capture as a post's media
-      if (u.pathname === "/api/marketing/tray") return json(res, { trays: trays() });
+      if (u.pathname === "/api/marketing/tray") { let products = []; try { products = captureProducts(); } catch {} return json(res, { trays: trays(), products }); }
       if (u.pathname === "/api/marketing/tray/media") { const m = trayMedia(String(u.searchParams.get("rel") || "")); if (!m) { res.writeHead(404); res.end("not found"); return; } res.writeHead(200, { "content-type": m.type, "cache-control": "private, max-age=86400" }); res.end(readFileSync(m.file)); return; }
       if (u.pathname === "/api/marketing/tray/blur" && req.method === "POST") { const b = await readBody(req), r = setBlur(String(b.tray || ""), String(b.name || ""), b.id, !!b.on); if (r.error) return json(res, r); const d = await renderCapture(String(b.tray), String(b.name)); return json(res, { ...r, rendered: !!d.ok, ...(d.error ? { note: d.error } : {}) }); }
-      if (u.pathname === "/api/marketing/tray/use" && req.method === "POST") { const b = await readBody(req); return json(res, setDraftMedia(String(b.rel || ""), [].concat(b.file || []).map(String))); }
+      if (u.pathname === "/api/marketing/tray/use" && req.method === "POST") { const b = await readBody(req); return json(res, setDraftMedia(String(b.rel || ""), [].concat(b.file || []).map(String))); } // one to look over first is refused there (marketing.mjs lookOver)
+      // a box of your own (drawn on it), one gone, and a capture looked over (tray.mjs); then it's blurred again
+      if (u.pathname === "/api/marketing/tray/box" && req.method === "POST") { const b = await readBody(req), r = b.remove != null ? removeBlur(String(b.tray || ""), String(b.name || ""), b.remove) : addBlur(String(b.tray || ""), String(b.name || ""), b.box); if (r.error) return json(res, r); const d = await renderCapture(String(b.tray), String(b.name)); return json(res, { ...r, rendered: !!d.ok, ...(d.error ? { note: d.error } : {}) }); }
+      if (u.pathname === "/api/marketing/tray/reviewed" && req.method === "POST") { const b = await readBody(req); return json(res, setReviewed(String(b.tray || ""), String(b.name || ""))); }
+      // Symbiot's own capture of a product, for its pick tray (capture.mjs): `symbiot capture`, the lane's first run, or the page's Capture
+      if (u.pathname === "/api/marketing/capture" && req.method === "POST") { const b = await readBody(req); return json(res, await captureProduct({ product: String(b.product || ""), url: String(b.url || ""), window: String(b.window || ""), screens: [].concat(b.screens || []).map(String), clips: b.clips !== false, ...(Number(b.seconds) > 0 ? { seconds: Math.min(20, Number(b.seconds)) } : {}) })); }
       if (u.pathname === "/api/posts/draft" && req.method === "POST") return json(res, await draftPosts());
       if (u.pathname === "/api/posts/approve" && req.method === "POST") { const b = await readBody(req); return json(res, approvePost(String(b.id || ""))); }
       if (u.pathname === "/api/posts/edit" && req.method === "POST") { const b = await readBody(req); return json(res, editPost(String(b.id || ""), b.text)); }
@@ -447,8 +487,9 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       // reads your LinkedIn only on your click (confirmed), never by itself
       if (u.pathname === "/api/posts/voice" && req.method === "POST") { const b = await readBody(req); if (b.confirmed !== true) return json(res, { error: "Reading your LinkedIn posts needs your click." }); return json(res, await voiceFromLinkedIn()); }
       // Reports (reports.mjs): what runs wrote up in their .symbiot/; read by id, never by path.
-      if (u.pathname === "/api/reports") return json(res, { reports: withNeeds(listReports()) });
-      if (u.pathname === "/api/reports/read") return json(res, readReport(u.searchParams.get("id") || ""));
+      // on a phone, its computer's newest reports too (from the copy it keeps)
+      if (u.pathname === "/api/reports") return json(res, { reports: [...withNeeds(listReports()), ...phoneReports(computerCopy())].sort((a, b) => b.mtime - a.mtime) });
+      if (u.pathname === "/api/reports/read") { const id = u.searchParams.get("id") || ""; return json(res, id.startsWith("pc:") ? phoneReport(computerCopy(), id) : readReport(id)); }
       // A report's image (an <img> src, so its token is in ?t=): by the report's id and a src it shows, from its allowed folders only.
       if (u.pathname === "/api/reports/image") { const f = reportImage(u.searchParams.get("id") || "", u.searchParams.get("src") || ""); if (f.error) { res.writeHead(404, { "content-type": "text/plain" }); res.end(f.error); return; } res.writeHead(200, { "content-type": f.type, "cache-control": "private, no-cache", "x-content-type-options": "nosniff" }); res.end(readFileSync(f.file)); return; }
       if (u.pathname === "/api/reports/seen" && req.method === "POST") return json(res, markAllRead());
@@ -533,7 +574,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       // a sandbox (symbiot app --fresh) never offers an update: it would replace your real install.
       // A headless browser (an agent's screenshot of Home) never becomes the newest window:
       // that closed the user's real one, again and again (2026-10-08, "symbiot keeps crashing").
-      if (u.pathname === "/api/ping") { if (u.searchParams.get("fresh") === "1" && !SANDBOX) await checkLatest(); const w = u.searchParams.get("w") || ""; if (/^[a-z0-9]{6,20}$/.test(w) && u.searchParams.get("new") === "1" && !headlessAgent(req.headers["user-agent"])) NEWEST_WIN = w; return json(res, { ...(NEWEST_WIN ? { window: NEWEST_WIN } : {}), version: VERSION, started: SERVER_STARTED, latest: LATEST_VERSION, newer: !SANDBOX && !DESKTOP && semverGt(LATEST_VERSION, VERSION), ...(DESKTOP ? { desktop: true } : {}), ...(UPDATING && UPDATING.retrying ? { retrying: UPDATING } : {}), ...(IN_TERMUX ? { termux: true } : {}), ...(SANDBOX ? { sandbox: true } : {}) }); }
+      if (u.pathname === "/api/ping") { if (u.searchParams.get("fresh") === "1" && !SANDBOX) await checkLatest(); const w = u.searchParams.get("w") || ""; if (/^[a-z0-9]{6,20}$/.test(w) && u.searchParams.get("new") === "1" && !headlessAgent(req.headers["user-agent"])) NEWEST_WIN = w; return json(res, { ...(NEWEST_WIN ? { window: NEWEST_WIN } : {}), version: VERSION, started: SERVER_STARTED, latest: LATEST_VERSION, newer: !SANDBOX && !DESKTOP && semverGt(LATEST_VERSION, VERSION), ...(DESKTOP ? { desktop: true } : {}), ...(UPDATING ? { updating: { ...UPDATING, every: UPDATE_EVERY, wait: UPDATE_WAIT } } : {}), ...(UPDATE_FAILED ? { updateFailed: UPDATE_FAILED } : {}), ...(RELAUNCH ? { relaunched: true } : {}), ...(IN_TERMUX ? { termux: true } : {}), ...(SANDBOX ? { sandbox: true } : {}) }); }
       // What's new: after an update, since the version you last saw (until you click Got it);
       // ?latest=1, what the update on offer brings, from its package on npm
       if (u.pathname === "/api/whatsnew") {
@@ -567,30 +608,58 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
         // relaunch, so it takes over instead of finding us and bowing out.
         // SYMBIOT_UPDATE_CMD replaces the install (the tests use a no-op).
         if (SANDBOX) return json(res, { error: "This is a sandbox (symbiot app --fresh): update your real Symbiot instead." });
+        // One at a time: a second click (another window, or one while it waits) started a
+        // second npm install over the first, and they collided (ENOTEMPTY, 0.61.1).
+        // (an install still running after 10 minutes has hung: a click starts it afresh)
+        if (UPDATING && (UPDATING.retrying || Date.now() - UPDATING.at < 10 * 60 * 1000)) return json(res, { started: true, already: true, target: UPDATING.target });
         const { target, cmd } = updateCmd(LATEST_VERSION, VERSION);
-        const inst = process.env.SYMBIOT_UPDATE_CMD || cmd;
-        // npm lists a new version a little before its download is there (a 404 for the
-        // .tgz): then it tries again every 30s, up to 5 times, and says so, instead of
-        // giving up and sending you to a terminal.
-        const attempt = (n) => track("symbiot update", inst, homedir(), (code) => {
-          if (code !== 0) {
-            const tail = readRunLog(join(homedir(), ".symbiot", "agent.log")).slice(-3000);
-            if (n < 5 && /E404|ETARGET|notarget|No matching version|is not in this registry/i.test(tail)) { UPDATING = { target, retrying: true, attempt: n + 1, at: Date.now() }; setTimeout(() => attempt(n + 1), 30000).unref(); }
-            else UPDATING = null;
-            return;
-          }
-          server.close(); if (server.closeAllConnections) server.closeAllConnections();
-          try { const ch = spawn(process.execPath, process.argv.slice(1), { detached: true, stdio: "ignore", env: { ...process.env, SYMBIOT_RELAUNCH: "1" }, cwd: homedir() }); ch.unref(); } catch {}
-          setTimeout(() => process.exit(0), 1200);
-        });
-        UPDATING = { target, attempt: 1, at: Date.now() };
-        const e = attempt(1);
-        return json(res, { started: true, id: e ? e.id : "", target });
+        const inst = process.env.SYMBIOT_UPDATE_CMD || cmd, since = Date.now();
+        // not downloadable yet (see downloadReady): look again in 30s, for up to 20 minutes, and say so
+        const again = (n, error) => {
+          if (Date.now() - since + UPDATE_EVERY > UPDATE_WAIT) { UPDATING = null; UPDATE_FAILED = { target, error, at: Date.now() }; return null; }
+          UPDATING = { target, retrying: true, attempt: n + 1, since, at: Date.now() }; setTimeout(() => attempt(n + 1), UPDATE_EVERY).unref(); return null;
+        };
+        const attempt = async (n) => {
+          if (!(await downloadReady(target))) return again(n, `npm lists ${target}, but its download still wasn't there after 20 minutes.`);
+          const e = track("symbiot update", inst, homedir(), (code) => {
+            if (code !== 0) {
+              const o = updateOutcome(readRunLog(join(homedir(), ".symbiot", "agent.log")).slice(-6000));
+              if (o.notYet) again(n, o.why || `npm couldn't find ${target}'s download.`);
+              else { UPDATING = null; UPDATE_FAILED = { target, error: o.why || `npm stopped (exit code ${code}).`, at: Date.now() }; }
+              return;
+            }
+            relaunch();
+          });
+          if (!e) { UPDATING = null; UPDATE_FAILED = { target, error: "Symbiot couldn't start npm.", at: Date.now() }; }
+          return e;
+        };
+        UPDATING = { target, attempt: 1, since, at: Date.now() }; UPDATE_FAILED = null;
+        const e = await attempt(1);
+        return json(res, { started: true, id: e ? e.id : "", target, ...(UPDATING && UPDATING.retrying ? { waiting: true } : {}) });
       }
       if (u.pathname === "/api/quit") { stopVoices(); res.writeHead(200); res.end("bye"); setTimeout(() => process.exit(0), 150); return; }
     } catch (e) { res.writeHead(500, { "content-type": "application/json" }); res.end(JSON.stringify({ error: String((e && e.message) || e) })); return; }
     res.writeHead(404); res.end("not found");
   });
+  // This same app again (same port+token => same URL), as a relaunch, so it takes over
+  // instead of finding us and bowing out; agents run detached and carry on.
+  let relaunching = false;
+  function relaunch() {
+    if (relaunching) return; relaunching = true; // once: the next look came before this one had exited, and started a second
+    server.close(); if (server.closeAllConnections) server.closeAllConnections();
+    try { const ch = spawn(process.execPath, process.argv.slice(1), { detached: true, stdio: "ignore", env: { ...process.env, SYMBIOT_RELAUNCH: "1" }, cwd: homedir() }); ch.unref(); } catch {}
+    setTimeout(() => process.exit(0), 1200);
+  }
+  // A newer Symbiot installed under this one from outside the app (npm install -g in a
+  // terminal, as the update bar once told you to): it stayed on the old one until
+  // something restarted it, with the new files on disk under the old code (2026-10-12).
+  // Seen the same on two looks a minute apart (npm done writing), it restarts onto it.
+  let installedSeen = "";
+  if (!SANDBOX && !DESKTOP && /[\\/]node_modules[\\/]symbiot[\\/]/.test(OWN_PKG)) setInterval(() => {
+    if (UPDATING || relaunching) return; // the app's own update restarts it
+    const v = installedVersion(), go = restartOnto(installedSeen, v); installedSeen = v;
+    if (go) { console.log(c.d(`  Symbiot ${v} was installed: restarting onto it.`)); relaunch(); }
+  }, Number(process.env.SYMBIOT_INSTALLED_EVERY) || 60000).unref();
   let announced = false, tries = 0, opened = false;
   server.on("listening", () => {
     if (announced) return; announced = true;
@@ -637,6 +706,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
   // an agent's allow list that stays inside your work is turned on by itself, and the agent carries on
   setTimeout(() => { try { autoAllowSweep(); } catch {} }, 4000).unref();
   setInterval(() => { try { autoAllowSweep(); } catch {} }, 20000).unref();
+  setInterval(() => { try { continueLanes(); } catch {} }, 60000).unref(); // a lane with open tasks and no run going starts again, while it gets somewhere
   // a finished run's last words, read by your AI for anything left to you that the patterns missed (agents.mjs readLastWords)
   setInterval(() => { readLastWords().catch(() => {}); }, 60000).unref();
   // knowledge folders: changed files re-read (a stat per file when nothing changed), then checked again for where two files disagree (checks.mjs)
@@ -645,4 +715,4 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
   setInterval(() => { try { awaitTick(); } catch {} }, 60000).unref(); // a reply an agent's email waits on: found, and handed on
 }
 
-export { headlessAgent, updateCmd, changesSince, whatsNew, tarFile, registryChangelog, BROWSER_KEEP, startApp, askRunningApp, isAppRunningWeekly, openApp };
+export { headlessAgent, updateCmd, installedVersion, restartOnto, downloadReady, updateOutcome, changesSince, whatsNew, tarFile, registryChangelog, BROWSER_KEEP, startApp, askRunningApp, isAppRunningWeekly, openApp };

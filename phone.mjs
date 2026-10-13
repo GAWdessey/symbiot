@@ -127,6 +127,26 @@ function lanAddresses(ifs = networkInterfaces()) {
   const rank = (ip) => (/^192\.168\./.test(ip) ? 0 : /^10\./.test(ip) ? 1 : /^172\.(1[6-9]|2\d|3[01])\./.test(ip) ? 2 : 3);
   return out.sort((a, b) => rank(a) - rank(b));
 }
+// What the network announcement (mdns.mjs) gives a device that asks: the address on
+// its own subnet, as it came in on that interface. With no asker (an announcement), or
+// none on its subnet, every address but a VPN's: Tailscale, WireGuard and other tunnels
+// (100.64.0.0/10 is Tailscale's), which a phone on the Wi-Fi can't reach.
+const overlay = (name, ip) => /^(tailscale|ts\d|wg|tun|utun|tap|zt|nordlynx|proton|mullvad)/i.test(name) || /^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./.test(ip);
+const ip4 = (ip) => String(ip).split(".").reduce((n, x) => ((n << 8) | (Number(x) & 255)) >>> 0, 0);
+function mdnsAddresses(asker, ifs = networkInterfaces()) {
+  const all = [];
+  for (const [name, list] of Object.entries(ifs || {})) {
+    if (/^(docker|br-|veth|virbr|vmnet|vboxnet|lxc|lxd|podman|cni|flannel)/i.test(name)) continue;
+    for (const a of list || []) if ((a.family === "IPv4" || a.family === 4) && !a.internal) all.push({ name, ip: a.address, mask: a.netmask || "255.255.255.0" });
+  }
+  const from = String(asker || "").replace(/^::ffff:/i, "");
+  if (/^\d+\.\d+\.\d+\.\d+$/.test(from)) {
+    const same = all.filter((a) => (ip4(a.ip) & ip4(a.mask)) === (ip4(from) & ip4(a.mask)));
+    if (same.length) return same.map((a) => a.ip);
+  }
+  const lan = all.filter((a) => !overlay(a.name, a.ip));
+  return (lan.length ? lan : all).map((a) => a.ip);
+}
 
 let listener = null, listenErr = "", pairing = null; // pairing: { code, until, tries }
 const lastSeen = new Map(); // phone id -> { at, via }
@@ -138,7 +158,7 @@ function linkState() {
   if (pairing && Date.now() > pairing.until) pairing = null;
   const link = pairing && listener ? pairLink(pairing.code, l) : "";
   return { role: "computer", on: l.on, port: l.port, listening: !!listener, ...(listenErr ? { error: listenErr } : {}), ...(listenErr && holder ? { holder } : {}), addresses: lanAddresses(),
-    ...(l.pub ? { fp: fingerprint(l.pub) } : {}), relay: { on: l.relay, ...relayState() }, found: !!mdns,
+    ...(l.pub ? { fp: fingerprint(l.pub) } : {}), relay: { on: l.relay && relayAllowed(), ...(relayAllowed() ? {} : { off: "SYMBIOT_NO_RELAY" }), ...relayState() }, found: !!mdns,
     phones: l.phones.map((p) => ({ id: p.id, name: p.name, added: p.added, ...(p.legacy || !p.pub ? { old: true } : {}), ...(lastSeen.has(p.id) ? { seen: lastSeen.get(p.id).at, via: lastSeen.get(p.id).via } : p.seen ? { seen: p.seen } : {}) })),
     ...(pairing ? { code: pairing.code, until: pairing.until } : {}), ...(link ? { link, qr: qrSvg(link) } : {}) };
 }
@@ -228,12 +248,33 @@ const OPS = {
 // ---- the copy a phone keeps ---------------------------------------------------------------
 // Small and in plain words: your open tasks, what needs you, agents' questions, the
 // work waiting for your Approve (with a sum of exactly what's waiting, which an
-// approve from the phone has to match), what Watch found, and what was approved
-// from a phone lately. v changes only when something in it does.
+// approve from the phone has to match), what Watch found, what was approved from a
+// phone lately, and the newest reports (reportsForPhone). v changes only when something
+// in it does.
 let snapCache = null;
 const plainText = (s, n = 280) => { const t = String(s || "").replace(/\s+/g, " ").trim(); return t.length > n ? t.slice(0, n - 1) + "…" : t; };
 const approveSum = (r) => sha(JSON.stringify([(r.tasks || []).map((t) => t.id).sort(), (r.files || []).map((f) => (typeof f === "string" ? f : f.path || f.file || JSON.stringify(f))).sort(), r.stat || ""])).slice(0, 16);
 const askId = (path) => "ask:" + sha(String(path)).slice(0, 12);
+// The newest few of what this computer's agents wrote up (reports.mjs), so the phone's
+// Reports has them too, to read an audit or a plan away from the desk, offline as well.
+// Each is cut at a paragraph past REPORT_CAP: the copy goes through the relay, which
+// takes 256 KB at most, and the rest is here to read.
+const PHONE_REPORTS = 5, REPORT_CAP = 12000;
+function cutReport(text, cap = REPORT_CAP) {
+  const t = String(text || ""); if (t.length <= cap) return { text: t, cut: false };
+  const head = t.slice(0, cap), k = head.lastIndexOf("\n\n");
+  return { text: (k > cap * 0.5 ? head.slice(0, k) : head).replace(/\s+$/, ""), cut: true };
+}
+async function reportsForPhone({ list } = {}) {
+  if (!list) list = (await import("./reports.mjs")).listReports();
+  return list.slice(0, PHONE_REPORTS).map((r) => {
+    let t = ""; try { t = readFileSync(r.file, "utf8"); } catch { return null; }
+    const c = cutReport(t);
+    return { id: r.id, title: plainText(r.title, 140), name: r.name, lane: r.lane || "", run: r.run || "", mtime: r.mtime, size: r.size, text: c.text, ...(c.cut ? { cut: true } : {}) };
+  }).filter(Boolean);
+}
+// On the phone: the copy, and the computer it's from, for its Reports (server.mjs). null on a computer.
+function computerCopy() { const c = loadConfig().computer, copy = c ? loadCopy() : null; return copy ? { copy, from: copy.name || c.name || "your computer" } : null; }
 async function snapshot({ now = Date.now(), fresh = false } = {}) {
   if (!fresh && snapCache && now - snapCache.at < 5000) return snapCache.snap;
   const tryOr = async (f, d) => { try { return await f(); } catch { return d; } };
@@ -245,14 +286,15 @@ async function snapshot({ now = Date.now(), fresh = false } = {}) {
   const asks = [];
   for (const y of (await tryOr(() => agents.agentsList(), [])).filter((a, i, all) => all.findIndex((b) => b.path === a.path) === i)) {
     const qs = await tryOr(() => agents.agentQuestions(y.path, "").questions, []);
-    if (qs.length) asks.push({ id: askId(y.path), path: y.path, name: plainText(String(y.name || "an agent").replace(/^Agent:\s*/, ""), 60), questions: qs.slice(0, 5).map((q) => ({ q: plainText(q.q, 300), options: (q.options || []).slice(0, 2).map((o) => plainText(o, 200)) })) });
+    if (qs.length) asks.push({ id: askId(y.path), path: y.path, name: plainText(String(y.name || "an agent").replace(/^Agent:\s*/, ""), 60), questions: qs.slice(0, 5).map((q) => ({ q: plainText(q.q, 300), ...(q.shown ? { shown: plainText(q.shown, 400) } : {}), options: (q.options || []).slice(0, 2).map((o) => plainText(o, 200)), ...(q.labels ? { labels: q.labels.slice(0, 2).map((o) => plainText(o, 200)) } : {}) })) });
   }
   const approves = (await tryOr(() => tasksMod.pendingReview(), [])).filter((r) => r.path && !r.running && ((r.tasks || []).length || (r.files || []).length))
     .map((r) => ({ repo: r.repo, tasks: (r.tasks || []).map((t) => ({ id: t.id, text: plainText(t.text, 200) })), files: (r.files || []).length, stat: plainText(r.stat, 120), ...(r.untasked ? { untasked: true } : {}), sum: approveSum(r) }));
   const board = watch ? await tryOr(() => watch.watchBoard(24, now), { cards: [] }) : { cards: [] };
   const seen = (board.cards || []).filter((c) => c.count > 0).slice(0, 8).map((c) => ({ name: plainText(c.name, 60), label: plainText(c.label, 60), count: c.count, items: (c.items || []).filter((i) => i.need !== false).slice(0, 3).map((i) => ({ text: plainText(i.text, 140), ts: i.ts })) }));
   const recent = (readJson(PATHS.applied, {}).approvals || []).filter((a) => now - a.at < 24 * 3600000).slice(-10);
-  const body = { tasks, needs, asks, approves, watch: seen, recent, relay: linkCfg().relay };
+  const reports = await tryOr(() => reportsForPhone(), []);
+  const body = { tasks, needs, asks, approves, watch: seen, recent, reports, relay: linkCfg().relay && relayAllowed() };
   const snap = { v: sha(JSON.stringify(body)).slice(0, 16), name: hostname(), at: now, ...body };
   snapCache = { at: now, snap };
   return snap;
@@ -329,7 +371,7 @@ let mdns = null;
 function startMdns() {
   if (mdns || process.env.SYMBIOT_NO_MDNS === "1") return;
   const l = linkCfg(), k = linkKeys();
-  mdns = announce({ id: sha(Buffer.from(k.pub, "base64url")).slice(0, 4), port: l.port, fp: fingerprint(k.pub), addresses: () => lanAddresses() }, { onError: () => {} });
+  mdns = announce({ id: sha(Buffer.from(k.pub, "base64url")).slice(0, 4), port: l.port, fp: fingerprint(k.pub), addresses: (asker) => mdnsAddresses(asker) }, { onError: () => {} });
 }
 function stopMdns() { if (mdns) mdns.stop(); mdns = null; }
 
@@ -442,6 +484,7 @@ function startPhoneLink() {
 }
 // "Free it": stop the other Symbiot process that holds the port (SIGTERM, so it lets go cleanly), then listen again.
 async function freePhonePort() {
+  if (!linkCfg().on) return linkState(); // only to let this app's own link listen: never a stop with it off (smoke presses every route)
   const port = linkCfg().port, h = portHolder(port);
   if (!h) return startPhoneLink();
   if (!h.symbiot) return { ...linkState(), error: holderText(port, h) + " That isn't Symbiot, so it's left alone: use a different port." };
@@ -603,7 +646,7 @@ function computerView() {
   const st = computerState(), copy = loadCopy(), q = loadQueue();
   if (!copy) return { ...st, copy: null };
   const v = JSON.parse(JSON.stringify(copy));
-  for (const k of ["tasks", "needs", "asks", "approves", "watch", "recent", "notes"]) if (!Array.isArray(v[k])) v[k] = [];
+  for (const k of ["tasks", "needs", "asks", "approves", "watch", "recent", "notes", "reports"]) if (!Array.isArray(v[k])) v[k] = [];
   for (const o of q) {
     const a = o.args || {};
     if (o.op === "task.add") v.tasks.unshift({ id: "q:" + o.id, text: plainText(a.text), repo: a.repo || "", done: false, waiting: true });
@@ -629,14 +672,37 @@ function queueChange(op, args = {}) {
   if (process.env.SYMBIOT_NO_POLL !== "1") setTimeout(() => { pollComputer().catch(() => {}); }, 30).unref();
   return computerView();
 }
+// What waits on you there, each by a key that holds while it waits: an agent's
+// questions (by what they ask, so a new question tells you again), work waiting for
+// your Approve (by its tasks: a file more isn't news, a task more is), and Home's
+// other needs. Watch's news is told on its own (newsNotice), so it isn't here.
+function waitingOn(s) {
+  const out = new Map();
+  for (const a of (s && s.asks) || []) { const qs = (a.questions || []).map((q) => q.q); out.set(a.id + ":" + sha(JSON.stringify(qs)).slice(0, 8), `${a.name} asks: ${qs[0] || "a question"}`); }
+  for (const r of (s && s.approves) || []) { const ids = (r.tasks || []).map((t) => t.id).sort(), n = ids.length;
+    out.set("approve:" + r.repo + ":" + sha(JSON.stringify(ids)).slice(0, 8), `${r.repo}: ${n ? `${n} task${n > 1 ? "s" : ""} done` : "changes without a task"}, waiting for your Approve`); }
+  for (const n of (s && s.needs) || []) out.set("need:" + n.id, n.sub ? `${n.title}: ${n.sub}` : n.title);
+  return out;
+}
+// What's newly waiting since the copy before, as one notification (a poll that finds
+// three things buzzes once), or null. Nothing for the first copy after pairing: what
+// was already waiting isn't news. What went (answered, approved) says nothing.
+function waitingNotice(was, now, name = "your computer") {
+  if (!was || !now) return null;
+  const before = waitingOn(was), fresh = [...waitingOn(now)].filter(([k]) => !before.has(k)).map(([, t]) => plainText(t, 160));
+  if (!fresh.length) return null;
+  const more = fresh.length > 4 ? `\nand ${fresh.length - 4} more` : "";
+  return [`${fresh.length === 1 ? "1 thing needs" : `${fresh.length} things need`} you · ${name}`, fresh.slice(0, 4).join("\n") + more];
+}
 function dismissNote(id) { const c = loadCopy(); if (c) saveCopy(c, { notes: (c.notes || []).filter((n) => n.id !== id) }); return computerView(); }
 // Ask the computer: send what was queued here, then what's new (notified, one
-// notification per watch per read), then the copy (unchanged costs nothing).
+// notification per watch per read), then the copy (unchanged costs nothing), and
+// tell what newly waits on you in it (waitingNotice).
 async function pollComputer(opts = {}) { if (polling) return polling; polling = pollOnce(opts).finally(() => { polling = null; schedulePoll(); }); return polling; }
 async function pollOnce({ fetchFn = fetch, notify = desktopNotify, discover } = {}) {
   const c = loadConfig().computer; if (!c) return { ...computerState(), shown: 0 };
   if (!readSecret()) return { ...computerState(), shown: 0 };
-  const via = { fetchFn, ...(discover ? { discover } : {}) };
+  const via = { fetchFn, ...(discover ? { discover } : {}) }, was = loadCopy();
   const away = () => { fails++; pollErr = `Couldn't reach ${c.name}${fails > 1 ? "" : `. It's asked again in ${BACKOFF[0] / 1000} seconds`} (it may be off or asleep${c.relay ? "" : ", or on another network"}).`; return { ...computerState(), shown: 0 }; };
   const refused = (r) => {
     pollErr = (r.body && r.body.error) || `${c.name} answered ${r.status}.`; fails = 0;
@@ -669,7 +735,9 @@ async function pollOnce({ fetchFn = fetch, notify = desktopNotify, discover } = 
   const copy = loadCopy(), st = await ask("state", { etag: (copy && copy.v) || "" }, via);
   if (st.status === 200 && st.body && st.body.v) { saveCopy(st.body); const cfg = loadConfig(); if (cfg.computer && !!cfg.computer.relayOff !== (st.body.relay === false)) { cfg.computer.relayOff = st.body.relay === false; saveConfig(cfg); } }
   else if (st.status === 304 && copy) saveCopy(copy);
-  return { ...computerState(), shown: batches.size };
+  const waiting = waitingNotice(was, loadCopy(), c.name);
+  if (waiting) notify(...waiting);
+  return { ...computerState(), shown: batches.size + (waiting ? 1 : 0) };
 }
 // Every 2 minutes; after a failed ask sooner (15 s, 30 s, a minute), so a phone
 // that changed networks or a computer that woke is back without a wait.
@@ -686,6 +754,4 @@ const phoneState = () => (PHONE ? computerView() : linkState());
 // While the app runs: the computer listens if it's switched on; the phone asks if it's paired.
 function startPhone() { if (PHONE) startComputerPoll(); else startPhoneLink(); }
 
-export { adbLink, PORT, PHONE, ANDROID_APP, PHONE_OPS, lanAddresses, linkState, newCode, unpairPhone, setRelay, startPhoneLink, stopPhoneLink, setPhoneLink, freePhonePort, usePhonePort, portHolder, setPhoneApprove, phoneApprovals, snapshot,
-  computerUrl, parsePairLink, pairLink, computerState, computerView, findComputers, pairComputer, forgetComputer, pollComputer, queueChange, dismissNote, startComputerPoll, phoneState, startPhone,
-  newKeys, linkKey, fingerprint, seal, unseal, relayOf, answer, ask };
+export { computerCopy, reportsForPhone, cutReport, PHONE_REPORTS, REPORT_CAP, PORT, PHONE, ANDROID_APP, PHONE_OPS, lanAddresses, mdnsAddresses, linkState, newCode, unpairPhone, setRelay, startPhoneLink, stopPhoneLink, setPhoneLink, setPhoneApprove, phoneApprovals, snapshot, computerUrl, parsePairLink, pairLink, computerState, computerView, waitingNotice, findComputers, pairComputer, forgetComputer, pollComputer, queueChange, dismissNote, startComputerPoll, phoneState, startPhone, newKeys, linkKey, fingerprint, seal, unseal, relayOf, answer, adbLink, freePhonePort, usePhonePort, portHolder, ask };
