@@ -24,6 +24,7 @@ import { join, dirname, resolve as resolvePath } from "node:path";
 import { accessSync, constants as FS, mkdirSync, existsSync, statSync, readlinkSync, readFileSync, readdirSync, writeFileSync, copyFileSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { CONFIG_DIR, chromeBinary, loadConfig, saveConfig } from "./core.mjs";
+import { chromeSession } from "./chromeimport.mjs";
 import { loadScreens, addPageScreen, center, stitchPng, stitchListPng } from "./screens.mjs";
 
 const PROFILE = join(CONFIG_DIR, "browser");
@@ -1552,7 +1553,26 @@ function uploadRegion(id, regionId, files, { confirmed = false, who = "" } = {})
 async function signIn(input) {
   const url = siteUrl(input);
   if (!url) return { error: "Give the site to sign in to: a name (gmail), a host or a web address." };
+  const got = await takeChromeSignIn(url); // already signed in to it in their own Chrome: use that session
+  if (got.ok) return got;
   return openSymbiotBrowser(url);
+}
+// The user's own Chrome sign-in for a site, put into the Symbiot Browser's profile: { ok, imported, from }
+// once the site loads signed in, else { ok: false, reason } and the caller falls back to the Sign in window.
+// `session` and `run` are for tests.
+async function takeChromeSignIn(url, session = chromeSession, run = null) {
+  const host = hostOf(url), s = session(host);
+  if (!s.cookies.length) return { ok: false, reason: s.reason };
+  if (watcherBusy() && !run) return { ok: false, reason: "the browser is busy" };
+  try {
+    const r = await (run || ((fn) => oneAtATime(() => withPage(fn, false))))(async (page, b) => {
+      await b.c.send("Storage.setCookies", { cookies: s.cookies });
+      await open(page, url);
+      return signInPage(String((await evaluate(page, "location.href")) || url));
+    });
+    if (r) return { ok: false, reason: "Chrome's sign-in for this site has expired" };
+    return { ok: true, imported: s.cookies.length, from: s.from, next: "Signed in from your Chrome's sign-in: map the page again." };
+  } catch (e) { return { ok: false, reason: String((e && e.message) || e) }; }
 }
 
 // ---- the Symbiot Browser --------------------------------------------------------
@@ -1673,4 +1693,4 @@ function watchWindow({ every = 2000, start = 30000 } = {}) {
   if (WATCH.unref) WATCH.unref();
 }
 
-export { typeInto, watcherBusy, WATCH_GRACE, noteAgentUse, pipeWindow, saveSessions, showScreen, fillForm, verifyPage, sessionCookie, historyPage, SESSION_COOKIE, tabKey, siteUrl, browserArgs, sandboxProxy, reducedUa, windowUa, mapPage, wholePage, readPage, readTexts, readLinkedIn, LI_READ, pagePicture, pageClip, CLIP, isSend, pressRegion, typeRegion, chooseRegion, uploadRegion, uploadFiles, attachFiles, FILE_BOX, scrollPage, SCROLLS, signIn, keepBrowserOpen, closeBrowser, browserOpen, keepSessions, SESSION_KEEP, SESSIONS, loadSessions, trustedSites, isTrusted, trustSite, untrustSite, PROFILE , openSymbiotBrowser, closeSymbiotBrowser, onBrowserClosed, scratchPage, open as openPage, evaluate, SCROLLER, watchWindow, windowOpen, lockHolder, setBrowserHub , browserHub };
+export { takeChromeSignIn, typeInto, watcherBusy, WATCH_GRACE, noteAgentUse, pipeWindow, saveSessions, showScreen, fillForm, verifyPage, sessionCookie, historyPage, SESSION_COOKIE, tabKey, siteUrl, browserArgs, sandboxProxy, reducedUa, windowUa, mapPage, wholePage, readPage, readTexts, readLinkedIn, LI_READ, pagePicture, pageClip, CLIP, isSend, pressRegion, typeRegion, chooseRegion, uploadRegion, uploadFiles, attachFiles, FILE_BOX, scrollPage, SCROLLS, signIn, keepBrowserOpen, closeBrowser, browserOpen, keepSessions, SESSION_KEEP, SESSIONS, loadSessions, trustedSites, isTrusted, trustSite, untrustSite, PROFILE , openSymbiotBrowser, closeSymbiotBrowser, onBrowserClosed, scratchPage, open as openPage, evaluate, SCROLLER, watchWindow, windowOpen, lockHolder, setBrowserHub , browserHub };

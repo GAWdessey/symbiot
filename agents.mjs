@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 import { readFileSync, writeFileSync, mkdirSync, existsSync, openSync, closeSync, writeSync, unlinkSync, readdirSync, statSync, renameSync, utimesSync, appendFileSync } from "node:fs";
 import { randomBytes, createHash } from "node:crypto";
 import { CONFIG_DIR, loadConfig, saveConfig, loadTasks, TASK_MAX, clipWords, sameTask, taskWords, sh, runOut, hasCmd, readState, writeJsonAtomic } from "./core.mjs";
-import { recordDone } from "./asksdone.mjs";
+import { recordDone, isApprovalAsk, approvalText, approvedBefore, recentTurns, recentTasks } from "./asksdone.mjs";
 import { parseRun, lastRunText, readRunLog, runStarted, briefPlan, stepOf, runLine, waitingOn, waitUntil } from "./work.mjs";
 import { noteDuration, noteCost, kindOf } from "./estimate.mjs";
 import { plainAsk } from "./plain.mjs";
@@ -846,8 +846,14 @@ function takenUp(path, end) {
 const draftRun = (path) => { try { const h = JSON.parse(readSymbiot(path, "handoff.json")) || {}; return !!(h.draft || (h.env && h.env.SYMBIOT_DRAFT)); } catch { return false; } };
 function needsOf(path, { final = "", waiting = null, end = Date.now(), now = Date.now() } = {}) {
   if (now - end > NEEDS_FOR) return null;
-  const n = waiting ? { kind: "step", what: clipWords(String(waiting.step || "").replace(/^\s*👤\s*(You\s*(\([^)]*\))?:)?\s*/, "").trim(), 240), check: "", label: "", waiting: true } : leftToYou(final) || readNeeds(path, final);
+  let n = waiting ? { kind: "step", what: clipWords(String(waiting.step || "").replace(/^\s*👤\s*(You\s*(\([^)]*\))?:)?\s*/, "").trim(), 240), check: "", label: "", waiting: true } : leftToYou(final) || readNeeds(path, final);
   if (!n || !n.what) return null;
+  // an ask for an approval: never when it was already given (chat, a task, an earlier answer), and
+  // otherwise the card carries it (Go ahead), never "press Approve" on a page that has no such button
+  if (n.kind !== "approve" && isApprovalAsk(`${n.label} ${n.what}`)) {
+    if (approvedBefore(n.what, { turns: recentTurns(now), tasks: recentTasks(), answers: readSymbiot(path, "ANSWERS.md") })) return null;
+    n = { ...n, kind: "approve", what: approvalText(n.what), asked: true };
+  }
   if (n.kind === "approve" && draftRun(path)) return null; // a drafted reply: its card shows it and sends it (watch.mjs draftCard)
   // signing in to, linking or doing by hand on a platform that's linked: the agent's, not yours
   if (n.kind !== "approve" && linkedChore(`${n.label} ${n.what} ${n.check}`, linkedIds())) return null;
@@ -922,7 +928,7 @@ async function readPass({ list, ask, connected, now = Date.now(), file = READ_FI
     due.push({ k, final });
   }
   for (const d of due.slice(0, READ_PER_TICK)) {
-    let r = null; try { const said = await ask(READ_SYSTEM, `The run's last message:\n\n${String(d.final).trim().slice(-READ_MAX)}`); r = parseRead(said && typeof said === "object" ? (said.error ? "" : said.text) : said); } catch {}
+    let r = null; try { const said = await ask(READ_SYSTEM, `The run's last message:\n\n${String(d.final).trim().slice(-READ_MAX)}`, { kind: "read", check: parseRead }); r = parseRead(said && typeof said === "object" ? (said.error ? "" : said.text) : said); } catch {}
     store[d.k] = r ? { at: now, ...(r.needs ? { kind: r.kind, what: r.what, check: r.check, label: r.label } : {}) } : { at: now, error: true };
   }
   if (due.length) {

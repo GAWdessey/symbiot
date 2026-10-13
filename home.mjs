@@ -19,7 +19,7 @@ import { watchBoard, draftReply, draftCards, draftAnswer } from "./watch.mjs";
 import { pendingReview, pushTasks, addTask, taskType, releaseNotIn } from "./tasks.mjs";
 import { estimate, estimateWords } from "./estimate.mjs";
 import { grantCard, cardIsPermission, setHandoffCmd, agentsList, runHandoff, runningHandoff, handoffCmd, loadRuns, connectorsInfo, parkedPaths, agentMissing, settleNeeds, pickAgent, detectHandoffs, linkReach, unchangedStep, whereOf, claudePause } from "./agents.mjs";
-import { isDone, recordDone, coveredBy } from "./asksdone.mjs";
+import { isDone, recordDone, coveredBy, doneList } from "./asksdone.mjs";
 import { linksState, signInAsked } from "./links.mjs";
 import { knowledgeState } from "./knowledge.mjs";
 import { CONFIG_DIR, loadTasks, saveTasks, loadConfig, saveConfig, sameTask, isFinding } from "./core.mjs";
@@ -463,12 +463,18 @@ function settleFromChat(h, said, answer) {
 // Asks that never belong on Home: "close the Symbiot Browser" is an agent's wait-and-retry, not
 // the user's job; and the same question from several agents is one card, not three.
 const CLOSE_BROWSER = /\b(?:close|quit|shut)\b[^.?]{0,40}\bSymbiot Browser\b|\bSymbiot Browser is open\b|\bclick(?:ing)? Done\b[^.?]{0,30}\b(?:browser|window)\b/i;
+// Clicking and form-filling is the agent's work (it drives the page itself): a card that hands those
+// steps over, with no security-key tap or code in them, isn't a card for Home.
+const HAND_CLICKS = /\b(?:click|press|tap|hit)\b[^.?]{0,60}\b(?:Edit|Delete|Remove|Save|Done|Submit|Continue|Next|Allow|Confirm|Update|Add|Create|Revoke|Disable|Enable)\b/i;
+const NEEDS_THEM = /\b(?:security key|passkey|hardware key|2fa|sms|one-time|verification code|recovery code|authenticator)\b/i;
 function settleAsks(you) {
   const seen = new Map();
   return you.map((y) => { if (y.kind !== "ask") return y; const c = coveredBy(y.q); return c.length ? { ...y, covered: c } : y; }).filter((y) => {
     if (y.kind !== "ask") return true;
     if (isDone(y.q)) return false; // already answered, for any agent
-    if (CLOSE_BROWSER.test(`${y.q || ""} ${(y.options || []).join(" ")}`)) return false;
+    const said = `${y.q || ""} ${(y.options || []).join(" ")}`;
+    if (CLOSE_BROWSER.test(said)) return false;
+    if (HAND_CLICKS.test(said) && !NEEDS_THEM.test(said)) return false;
     const k = String(y.q || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
     if (!k) return true;
     // the same human step worded two ways ("Trusted Publisher … security key" twice) is one card
@@ -552,7 +558,7 @@ function homeAnswer(id, { pick, text = "" } = {}, deps = {}) {
       : `Done: the user did it${text ? ` (${text})` : ""}. Check it worked, then carry on.`;
     noteAnswer(a.path, n.what, said);
     const e = (deps.run || runHandoff)(a.path, { force: true }), later = afterShip(e);
-    if ((e && e.id && !e.blocked) || later || allowed) { settle(a.path, n.key); dropped.add(id); if (n.kind !== "approve") recordDone(n.what, said, whereOf(a.path).lane); } // "Done it" is on the shared record: no agent raises it again
+    if ((e && e.id && !e.blocked) || later || allowed) { settle(a.path, n.key); dropped.add(id); if (n.kind !== "approve" || n.asked) recordDone(n.what, said, whereOf(a.path).lane); } // "Done it" is on the shared record: no agent raises it again
     if (allowed) return e && e.id && !e.blocked ? { ok: true, said: `Allowed ${allowed.join(", ")} and started its agent.`, rerun: e.id } : { ok: true, said: `Allowed ${allowed.join(", ")}. Its agent didn't start: ${(e && e.note) || "check your agent in Settings"}.` }; // "Done it" is on the shared record: no agent raises it again
     if (later) { (deps.later || runAfterShip)(a.path, deps.run || runHandoff); return { ok: true, said: later }; }
     return e && e.id && !e.blocked ? { ok: true, said: n.kind === "approve" ? "Its agent is going ahead." : "Its agent is checking and carrying on.", rerun: e.id } : { error: (e && e.note) || "It didn't start. Check your agent in Settings." };
@@ -641,6 +647,33 @@ function finishedState({ now = Date.now(), list = agentsList(), max = 6 } = {}) 
   });
 }
 
+// What each agent (running, or finished in the last day) has done, asked and been told, in a few
+// lines apiece, so "why is npm asking again?" is answered from the agent's own record: its last
+// steps and how they ended, the questions it put to Garth, his answers, and its outcome. The
+// full log stays on the Workdesk; this is the digest.
+const answersOf = (path, max = 3) => {
+  let md = ""; try { md = readFileSync(join(path, ".symbiot", "ANSWERS.md"), "utf8"); } catch { return []; }
+  return [...md.matchAll(/^###\s+(.+)\n([\s\S]*?)(?=\n###\s|\n*$)/gm)].map((m) => ({ q: m[1].trim().slice(0, 100), a: m[2].replace(/_answered[^\n]*/g, "").replace(/\s+/g, " ").trim().slice(0, 140) })).filter((x) => x.a).slice(-max);
+};
+function agentDigest({ now = Date.now(), list = agentsList(), map = {}, tasks = [], max = 8 } = {}) {
+  const queued = {}; for (const t of tasks) if (t && !t.done && !t.archived && !t.review && t.repo) queued[t.repo] = (queued[t.repo] || 0) + 1;
+  const seen = new Set(), out = [];
+  for (const x of list) {
+    if (!x || seen.has(x.path)) continue;
+    const running = x.status === "running";
+    if (!running && !(x.endedAt && now - x.endedAt < 864e5)) continue;
+    seen.add(x.path);
+    const lane = Object.keys(map).find((k) => map[k] === x.path) || "";
+    const steps = ((x.work && x.work.steps) || []).slice(-4).map((s) => `${s.verb} ${s.target || ""}`.trim() + (s.status === "error" ? ` (failed${s.note ? ": " + s.note : ""})` : s.status === "running" ? " (in progress)" : ""));
+    let asks = []; try { asks = ((x.ask && x.ask.questions) || []).map((q) => String(q.q || q.title || q).replace(/\s+/g, " ").slice(0, 100)).slice(0, 3); } catch {}
+    out.push({ name: String(x.name || "an agent").replace(/^Agent:\s*/, "").slice(0, 40), lane, running, at: running ? x.startedAt || now : x.endedAt, steps, asks, answers: answersOf(x.path),
+      ...(running ? {} : { outcome: x.exitCode ? `failed (exit ${x.exitCode})` : String(x.tail || "").replace(/\s+/g, " ").trim().slice(0, 300) }), queued: lane ? queued[lane] || 0 : 0 });
+  }
+  return out.sort((a, b) => (b.running - a.running) || b.at - a.at).slice(0, max);
+}
+// The answers Garth gave anywhere, newest last: what he's already done, so nobody asks it twice.
+const garthLedger = (n = 8) => { try { return doneList().slice(-n); } catch { return []; } };
+
 // One line per thing home shows, for the talk's context.
 // Email tasks the user sent themselves (sentmail.mjs): said as sent, never listed as work.
 function sentMailLines(now = Date.now()) {
@@ -656,6 +689,9 @@ function homeContext(h) {
     `Agents working: ${h.working}.`, ...(h.runs || []).map((r) => `- [${r.id}] ${dayMark(r.started, h.at)}${r.name}: ${r.line}${r.eta ? ` (${r.eta})` : ""}${r.quiet ? ` (no progress in ${r.quiet} min)` : ""}${r.looping ? " (repeating the same step)" : ""}`),
     ...sentMailLines(),
     "Agents finished in the last 24h (their own last words; answer 'did it work?' from these):", ...((h.finished || []).length ? h.finished.map((f) => `- ${dayMark(f.at, h.at)}${f.name}: ${f.end}${f.changed ? `, ${f.changed} file${f.changed > 1 ? "s" : ""} changed` : ""}${f.asks.length ? `; asked: ${f.asks.join(" / ")}` : ""}${f.said ? `; said: ${f.said}` : ""}`) : ["- none"]),
+    "What each agent has done, asked and been told (running, or finished in the last 24h; answer 'why is it asking again?' and 'did it work?' from this):", ...((h.digest || []).length ? h.digest.flatMap((d) => [`- ${dayMark(d.at, h.at)}${d.name}${d.lane ? ` [${d.lane}${d.queued ? `, ${d.queued} queued` : ""}]` : ""} (${d.running ? "running" : "finished"})`,
+      ...(d.steps.length ? [`    last steps: ${d.steps.join("; ")}`] : []), ...(d.asks.length ? [`    asked Garth: ${d.asks.join(" / ")}`] : []), ...d.answers.map((a) => `    Garth answered "${a.q}": ${a.a}`), ...(d.outcome ? [`    outcome: ${d.outcome}`] : [])]) : ["- none"]),
+    "Already answered by Garth, anywhere (never ask or tell him to do these again):", ...((h.ledger || []).length ? h.ledger.map((x) => `- ${x.at} ${x.q} → ${x.a}`) : ["- none"]),
     "Handed off from this chat (last 7 days; say how each stands from this list, never guess):", ...((h.handed || []).length ? h.handed.map((x) => `- ${dayMark(x.at, h.at)}${x.lane}: ${x.text} (${x.status})`) : ["- none"]),
     "Recent handovers:", ...(h.lanes.length ? h.lanes.map((l) => `- ${dayMark(l.at, h.at)}${l.from} → ${l.to}: ${l.text} (${l.status}${l.times ? `, handed over ${l.times} times` : ""})`) : ["- none"]),
     ...(h.marketing ? [`Marketing (a lane of its own, for marketing across all their products; "repo": "${MARKETING}"): ${h.marketing.needs ? `${h.marketing.needs} thing${h.marketing.needs > 1 ? "s" : ""} there need${h.marketing.needs > 1 ? "" : "s"} them` : "nothing needs them"}${h.marketing.working ? ", its agent is at work" : ""}.`] : []),
@@ -679,6 +715,8 @@ async function homeAsk(question, { ask, now = Date.now(), state, images = [], ac
   let map = {}; try { map = laneMap(); } catch {}
   if (!h.handed) { try { h.handed = handedState({ now, tasks: loadTasks(), list: agentsList(), map }); } catch { h.handed = []; } }
   if (!h.finished) { try { h.finished = finishedState({ now }); } catch { h.finished = []; } }
+  if (!h.digest) { try { h.digest = agentDigest({ now, map, tasks: loadTasks() }); } catch { h.digest = []; } }
+  if (!h.ledger) h.ledger = garthLedger();
   const role = "Here they're on Symbiot's home: one liquid surface that shows what only they can do, what's new on what they watch, and the lanes. Answer from what it shows, and act on what they ask.";
   let open = []; try { open = loadTasks().filter((t) => t && !t.done && !t.archived && !t.review).map((t) => ({ id: t.id, text: t.text, repo: t.repo })); } catch {}
   const r = await converse({ where: "Home", role, nav: true, settle: true, control: true, tasks: open, context: homeContext(h), question: question + (pics.length ? `\n(The user attached ${pics.length} screenshot${pics.length > 1 ? "s" : ""}: you can see ${pics.length > 1 ? "them" : "it"}.)` : ""), map, now, images: pics.map(({ mime, data, path }) => ({ mime, data, path })), ...(ask ? { ask } : {}),
@@ -1081,4 +1119,4 @@ function setOnboarding({ step, skip, unskip, skipRest, done, restart } = {}) {
   return onboarding();
 }
 
-export { plainAsk, dismissCard, cardKey, loadDismissed, DISMISSED_FILE, reportIdeasAdd, reportAsk, reportDraftAnswer, workTick, waitWhy, AUTO_GRACE, STUCK_AFTER, marketingState, marketingGo, marketingDraftAnswer, marketingTask, moveToMarketing, goLane, homeState, homeContext, homeAsk, homeAnswer, homeNext, nextUp, laneNamed, NEXT_FILE, workScene, forgetWork, workGo, displayName, firstSteps, onboarding, setOnboarding, startOnboarding, ONB_STEPS, ONB_STEPS_PHONE, onbSteps, phoneBits, phoneSetupFirst, finishedState, handedState, noteHanded, phoneChat, isPeak, reportIdeasDismiss, settleAsks, settleFromChat };
+export { agentDigest, garthLedger, plainAsk, dismissCard, cardKey, loadDismissed, DISMISSED_FILE, reportIdeasAdd, reportAsk, reportDraftAnswer, workTick, waitWhy, AUTO_GRACE, STUCK_AFTER, marketingState, marketingGo, marketingDraftAnswer, marketingTask, moveToMarketing, goLane, homeState, homeContext, homeAsk, homeAnswer, homeNext, nextUp, laneNamed, NEXT_FILE, workScene, forgetWork, workGo, displayName, firstSteps, onboarding, setOnboarding, startOnboarding, ONB_STEPS, ONB_STEPS_PHONE, onbSteps, phoneBits, phoneSetupFirst, finishedState, handedState, noteHanded, phoneChat, isPeak, reportIdeasDismiss, settleAsks, settleFromChat };
