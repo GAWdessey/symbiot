@@ -14,12 +14,12 @@
 //   path; it's shown as HTML made here (mdHtml), with everything escaped first.
 //
 // Stored in ~/.config/symbiot/reports.json, yours only: { seen: { id: mtime }, decided, handed:
-// { id: { mtime, done: { idea: "handed" | "dismissed" } } } }.
+// { id: { mtime, done: { idea: "handed" | "dismissed" | "superseded" } } } }.
 import { join, basename, dirname, resolve, extname, sep } from "node:path";
 import { homedir } from "node:os";
-import { readFileSync, readdirSync, statSync, realpathSync } from "node:fs";
+import { readFileSync, readdirSync, statSync, realpathSync, existsSync } from "node:fs";
 import { createHash } from "node:crypto";
-import { CONFIG_DIR, isFinding, readState, writeJsonAtomic } from "./core.mjs";
+import { CONFIG_DIR, isFinding, readState, writeJsonAtomic, loadTasks, sameTask } from "./core.mjs";
 import { runFolders, laneOf, runTitle } from "./handback.mjs";
 import { runningHandoff } from "./agents.mjs";
 import { laneMap } from "./scan.mjs";
@@ -74,11 +74,13 @@ function readReport(id, { list, mark = true, seenFile = SEEN_FILE } = {}) {
 // The list with what each report leaves for the user: `needs` is "draft" (undecided, waits
 // on an Approve or Reject), "ideas" (it ends in next steps), or "" (nothing to act on).
 // Uses reportIdeas, isDraftReport and decidedOn as they are; the text is read per report.
-function withNeeds(list, { seenFile = SEEN_FILE } = {}) {
+function withNeeds(list, { seenFile = SEEN_FILE, tasks } = {}) {
+  try { sweepSuperseded({ list, seenFile, tasks }); } catch { /* the list still shows */ }
+  const ctx = supersedeContext({ list, tasks, file: seenFile });
   return list.map((r) => {
     if (isDraftReport(r.title, r.name)) return { ...r, needs: decidedOn(r, seenFile) ? "" : "draft", ideas: 0 };
     let text = ""; try { text = readFileSync(r.file, "utf8").slice(0, MAX_READ); } catch { /* gone: nothing to act on */ }
-    const n = openIdeas(r, text, seenFile).length;
+    const n = openIdeas(r, text, seenFile, ctx).length;
     return { ...r, needs: n ? "ideas" : "", ideas: n };
   });
 }
@@ -217,6 +219,16 @@ function list(lines, i, out, o) {
 // user's OK (a post preview, say) gets Approve and Reject instead.
 const NEXT_HEAD = /\b(?:next|top \d+|recommend\w*|suggest\w*|ideas?|actions?|action items?|to ?dos?|follow[- ]?ups?|what to do|priorit\w*|fix(?:es)?|plan)\b/i;
 const IDEAS_MAX = 4;
+// A half-sentence lifted off a wrapped line is not an action (2026-10-13): one word, one that
+// carries on from something before it ("and then…", "which…"), one that stops on a joining word
+// or a comma, or one with a bracket or quote left open.
+const CARRIES_ON = /^(?:and|or|but|nor|which|that|who|whose|because|so|then|while|where|when|if|with|without|to|for|of|in|on|by|as|than|including|e\.g\.|i\.e\.)\b/i;
+const STOPS_SHORT = /(?:[,;:(—-]|\b(?:and|or|but|the|a|an|to|of|for|with|in|on|by|as|that|which|from|into|at))$/i;
+function isFragment(t) {
+  if (t.split(" ").length < 2 || CARRIES_ON.test(t) || STOPS_SHORT.test(t)) return true;
+  const open = (c, d) => t.split(c).length - t.split(d).length; // brackets
+  return open("(", ")") > 0 || open("[", "]") > 0 || (t.split("`").length - 1) % 2 === 1;
+}
 const cleanIdea = (s) => String(s).replace(/^\[[ xX]\]\s+/, "").replace(/\[([^\]]+)\]\([^)]*\)/g, "$1").replace(/\*\*|__|`/g, "").replace(/\s+/g, " ").trim().slice(0, 300);
 // The top-level items of its "next" sections ("## Top 3 next", "## Recommendations"…),
 // first sections first, at most IDEAS_MAX, but not the findings among them. None when it has no such section.
@@ -228,7 +240,7 @@ function reportIdeas(text, max = IDEAS_MAX) {
     if (!on) continue;
     const m = l.match(/^(\s*)(?:[-*+]|\d+[.)])\s+(.+)$/); if (!m) continue;
     const ind = m[1].replace(/\t/g, "    ").length; if (base < 0) base = ind; if (ind > base) continue;
-    const t = cleanIdea(m[2]); if (t && !isFinding(t) && !out.some((x) => x.toLowerCase() === t.toLowerCase())) out.push(t); // a fact it found is no next step (core.mjs isFinding)
+    const t = cleanIdea(m[2]); if (t && !isFinding(t) && !isFragment(t) && !out.some((x) => x.toLowerCase() === t.toLowerCase())) out.push(t); // a fact it found is no next step (core.mjs isFinding)
     if (out.length >= max) break;
   }
   return out;
@@ -236,7 +248,68 @@ function reportIdeas(text, max = IDEAS_MAX) {
 // Which of a report's ideas were handed to an agent or dismissed, kept by the report's mtime
 // (a rewritten report offers its ideas again). A report leaves "Read, open actions" once none is open.
 function handledIdeas(r, file = SEEN_FILE) { const h = loadSeen(file).handed[r.id]; return h && h.mtime === r.mtime && h.done && typeof h.done === "object" ? h.done : {}; }
-const openIdeas = (r, text, file = SEEN_FILE) => { const done = handledIdeas(r, file); return reportIdeas(text).filter((t) => !done[t]); };
+const openIdeas = (r, text, file = SEEN_FILE, ctx) => {
+  const done = handledIdeas(r, file), open = reportIdeas(text, 40).filter((t) => !done[t]).slice(0, IDEAS_MAX); // handled ones don't use up the slots
+  if (!open.length) return open;
+  const why = supersededIdeas(r, open, ctx || supersedeContext({ file }));
+  return open.filter((t) => !why.has(t));
+};
+
+// ---- superseded actions ----------------------------------------------------------------
+// An action leaves "Read, open actions" when it no longer needs doing (2026-10-13), by any of:
+//  1. a task made from it (or one that says the same, written after the report) is done,
+//     merged or cancelled: the Workdesk's tasks, archived ones too;
+//  2. a later report in the same lane covers the same thing (the same title, bar dates and numbers);
+//  3. another task is already open for it, or a newer report lists it;
+//  4. its subject is gone: the patch it names isn't there any more.
+// supersededIdeas gives { idea => why } for the ideas it is given; sweepSuperseded writes
+// them down as "superseded" (so the report drops to Read and done on its own) and returns
+// what it cleared. withNeeds and the work tick run it, so it follows every task that
+// finishes and every report that lands.
+const FROM_TAIL = /\s*\(from the report "[^"]*", [^)]*\)\s*$/;
+const topicKey = (title) => String(title || "").toLowerCase().replace(/[\d.:/_-]+/g, " ").replace(/\b(?:report|audit|plan|findings|update|summary)\b/g, " ").replace(/\s+/g, " ").trim();
+function supersedeContext({ list, tasks, file = SEEN_FILE } = {}) {
+  const ctx = { file, _l: list, _t: tasks, _i: new Map() };
+  Object.defineProperties(ctx, {
+    list: { get() { return this._l || (this._l = listReports()); } },
+    tasks: { get() { if (!this._t) { try { this._t = loadTasks(); } catch { this._t = []; } } return this._t; } },
+  });
+  ctx.ideasOf = (r) => { // a report's open ideas, read once
+    if (!ctx._i.has(r.id)) { let t = ""; try { t = readFileSync(r.file, "utf8").slice(0, MAX_READ); } catch {} const done = handledIdeas(r, file); ctx._i.set(r.id, isDraftReport(r.title, r.name) ? [] : reportIdeas(t, 40).filter((x) => !done[x]).slice(0, IDEAS_MAX)); }
+    return ctx._i.get(r.id);
+  };
+  return ctx;
+}
+const newerThan = (a, b) => a.mtime > b.mtime || (a.mtime === b.mtime && a.id < b.id);
+function supersededIdeas(r, ideas, ctx = supersedeContext()) {
+  const out = new Map(), key = topicKey(r.title);
+  const later = key && ctx.list.find((o) => o.id !== r.id && newerThan(o, r) && o.lane === r.lane && topicKey(o.title) === key && !isDraftReport(o.title, o.name));
+  for (const t of ideas) {
+    if (later) { out.set(t, `a later report, "${later.title}", covers the same thing`); continue; }
+    const mine = (x) => String(x.text || "").includes(r.file) || (FROM_TAIL.test(x.text || "") && String(x.text).includes(`"${r.title}"`));
+    const like = ctx.tasks.filter((x) => sameTask(t, String(x.text || "").replace(FROM_TAIL, "")) && (mine(x) || (x.ts || 0) >= r.mtime));
+    const closed = like.find((x) => x.done || x.archived);
+    if (closed) { out.set(t, `a task made from it is ${closed.merged ? "merged" : closed.dropped ? "cancelled" : "done"}`); continue; }
+    if (like.length) { out.set(t, "another task already covers it"); continue; }
+    const twin = ctx.list.find((o) => o.id !== r.id && newerThan(o, r) && !isDraftReport(o.title, o.name) && ctx.ideasOf(o).some((x) => sameTask(t, x)));
+    if (twin) { out.set(t, `a newer report, "${twin.title}", lists it too`); continue; }
+    const m = t.match(/(?:~|\/)[^\s"'`)]*\.(?:patch|diff)\b/);
+    if (m && !existsSync(m[0].replace(/^~/, homedir()))) out.set(t, `${basename(m[0])} is gone, so there is nothing to apply`);
+  }
+  return out;
+}
+// Clear them for good, per report, and say what was cleared: [{ id, title, idea, why }].
+function sweepSuperseded({ list, seenFile = SEEN_FILE, tasks } = {}) {
+  list = list || listReports(); const ctx = supersedeContext({ list, tasks, file: seenFile }), cleared = [];
+  for (const r of list) {
+    if (isDraftReport(r.title, r.name)) continue;
+    const open = ctx.ideasOf(r); if (!open.length) continue;
+    const why = supersededIdeas(r, open, ctx); if (!why.size) continue;
+    markIdeas(r, [...why.keys()], "superseded", seenFile);
+    for (const [idea, w] of why) cleared.push({ id: r.id, title: r.title, idea, why: w });
+  }
+  return cleared;
+}
 function markIdeas(r, ideas, status, file = SEEN_FILE) {
   const d = loadSeen(file), h = d.handed[r.id] && d.handed[r.id].mtime === r.mtime ? d.handed[r.id] : { mtime: r.mtime, done: {} };
   for (const t of ideas) h.done[String(t)] = status;
@@ -252,4 +325,4 @@ function decide(r, status, file = SEEN_FILE) { const d = loadSeen(file); d.decid
 // How many reports are new, and the newest one's title (Home's droplet).
 function reportsNews(opts) { const l = listReports(opts).filter((r) => r.new); return { count: l.length, latest: l[0] ? l[0].title : "" }; }
 
-export { SEEN_FILE, NOT_REPORTS, titleOf, listReports, readReport, phoneReports, phoneReport, reportImage, imagePath, markAllRead, reportsNews, mdHtml, reportIdeas, isDraftReport, decidedOn, decide, withNeeds, IDEAS_MAX, handledIdeas, openIdeas, markIdeas };
+export { supersededIdeas, sweepSuperseded, supersedeContext, SEEN_FILE, NOT_REPORTS, titleOf, listReports, readReport, phoneReports, phoneReport, reportImage, imagePath, markAllRead, reportsNews, mdHtml, reportIdeas, isDraftReport, decidedOn, decide, withNeeds, IDEAS_MAX, handledIdeas, openIdeas, markIdeas };

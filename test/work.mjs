@@ -16,7 +16,7 @@ let pass = 0, fail = 0;
 const ok = (n, c, got) => { if (c) { pass++; console.log("  ✓ " + n); } else { fail++; console.log("  ✗ " + n + (got !== undefined ? "  got: " + JSON.stringify(got) : "")); } };
 
 const { parseRun, lastRunText, finalOf, describe, testsIn } = await import("../work.mjs");
-const { withStream, workOf } = await import("../agents.mjs");
+const { withStream, workOf, runPhase } = await import("../agents.mjs");
 
 const T = Date.UTC(2026, 9, 6, 8, 0, 0), ts = (s) => new Date(T + s * 1000).toISOString();
 const A = (blocks, s) => JSON.stringify({ type: "assistant", message: { content: blocks }, timestamp: ts(s) });
@@ -229,6 +229,18 @@ try {
   }
 } finally {
   rmSync(HOME, { recursive: true, force: true });
+}
+// one state per run in the Agents view
+{
+  const p = (a) => runPhase(a);
+  ok("phase: alive and moving is working", p({ status: "running", line: { line: "x" } }) === "working");
+  ok("phase: alive but quiet is stuck", p({ status: "running", line: { quiet: 25 } }) === "stuck");
+  ok("phase: alive and going round is stuck", p({ status: "running", line: { looping: true } }) === "stuck");
+  ok("phase: exited clean with questions is waiting", p({ status: "done", ask: { questions: [{ q: "a" }] } }) === "waiting");
+  ok("phase: exited clean with a wait is waiting", p({ status: "done", waiting: { step: "x" } }) === "waiting");
+  ok("phase: exited clean with tasks left is paused", p({ status: "done", progress: { done: 1, total: 3 } }) === "paused");
+  ok("phase: exited clean with all done is finished", p({ status: "done", progress: { done: 3, total: 3 } }) === "finished");
+  ok("phase: non-zero exit is failed", p({ status: "failed" }) === "failed");
 }
 console.log(`\n${fail ? "✗" : "✓"} work: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

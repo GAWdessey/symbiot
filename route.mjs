@@ -1,6 +1,6 @@
 // symbiot — Route: which model answers a job, and why. A one-shot call's kind
-// sets its tier outright (read/summary/classify -> local, triage -> Haiku,
-// chat/writeup/post -> Sonnet). An agent run starts on Sonnet and is scored up to
+// sets its tier outright (JOBS below: read/summary/classify -> local, triage/todo/lang
+// -> Haiku, chat/writeup/update/notes/post -> Sonnet). An agent run starts on Sonnet and is scored up to
 // Opus, with no model call involved, when its brief is long, names more than
 // one repo, uses words like research/investigate/refactor/debug/why/design, does
 // something to a key, password or token, pays, publishes or pushes to main, or
@@ -26,7 +26,24 @@ const MIN_SAMPLES = 3, FAIL_FLOOR = 0.5, LONG_BRIEF = 1500;
 const MODEL = { L: MODELS.local.id, H: MODELS.haiku.id, S: MODELS.sonnet.id, O: MODELS.opus.id };
 const OVERRIDE_TIER = { opus: "O", sonnet: "S", fable: "O", local: "L", haiku: "H" }; // fable: Opus's tier, Fable's model
 const OVERRIDE_MODEL = { fable: "claude-fable-5-1" }; // other overrides share MODEL[tier]
-const ONE_SHOT_TIER = { read: "L", summary: "L", classify: "L", triage: "H", chat: "S", writeup: "S", post: "S" };
+// Every one-shot job, its tier and the one-line reason (audit of 2026-10-13: the benchmark in
+// LOCAL-MODEL-ROUTING.md §3 and the 48 agent runs in costs.json, Oct 10-11). Local only where a job
+// has no tools, no images, short input and measured within a hair of Haiku; anything that acts, speaks
+// in the user's name or judges what to build stays on Sonnet; Opus is for agent runs only.
+const JOBS = {
+  read: { tier: "L", why: "last-message reader: JSON, short input, qwen3:8b 5/5 against Haiku 4/5" },
+  summary: { tier: "L", why: "notification/email summary: short, no judgement, qwen3:8b 3/3 like Haiku" },
+  classify: { tier: "L", why: "task to lane: 8/8 on qwen3:8b once each lane has a one-line description" },
+  triage: { tier: "H", why: "what needs them: qwen3:8b 1/3 filed real requests under can-wait, Haiku 3/3" },
+  todo: { tier: "H", why: "summary of open work: the list can run long, past a local model's short context" },
+  lang: { tier: "H", why: "UI translation in batches: not benchmarked local, Haiku is the fastest Claude and enough" },
+  chat: { tier: "S", why: "Home, Reports, card and task chat: can act on agents and tasks, and local models made things up" },
+  writeup: { tier: "S", why: "project review, advice and overview: judges what is worth building, so the quality bar is high" },
+  update: { tier: "S", why: "standup and week update: read by the user as written, prose over commits, mail and arrivals" },
+  notes: { tier: "S", why: "release notes from a diff: must claim nothing the diff doesn't show, long input" },
+  post: { tier: "S", why: "post drafts go out in the user's name, in their voice: never below Sonnet" },
+};
+const ONE_SHOT_TIER = Object.fromEntries(Object.entries(JOBS).map(([k, j]) => [k, j.tier]));
 const TIER_LABEL = { L: "local", H: "Haiku", S: "Sonnet", O: "Opus" };
 
 const HARD_WORDS = /\b(research|investigat\w*|refactor\w*|debugg?\w*|why|design\w*)\b/i;
@@ -88,7 +105,7 @@ function pickModel({ kind = "", task = "", lane = "", path = "", override = "" }
   if (kind) {
     if (!ONE_SHOT_TIER[kind]) throw new Error(`pickModel: unknown kind "${kind}"`);
     const tier = ONE_SHOT_TIER[kind];
-    return { tier, model: MODEL[tier], why: `${kind} is a ${TIER_LABEL[tier]} job` };
+    return { tier, model: MODEL[tier], why: `${TIER_LABEL[tier]}: ${JOBS[kind].why}` };
   }
 
   if (kindOf(task) === "answer") return { tier: "S", model: MODEL.S, why: "Sonnet: answer-resume" };
@@ -100,4 +117,4 @@ function pickModel({ kind = "", task = "", lane = "", path = "", override = "" }
   return { tier: "S", model: MODEL.S, why: `Sonnet: short brief${note}` };
 }
 
-export { pickModel, laneHistory, escalationReason, repoCount, MODEL };
+export { JOBS, pickModel, laneHistory, escalationReason, repoCount, MODEL };

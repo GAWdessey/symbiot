@@ -1686,8 +1686,24 @@ function tidySettings(path) {
   if (JSON.stringify(next) === JSON.stringify(perm)) return false;
   try { writeFileSync(f, JSON.stringify({ ...cur, permissions: next }, null, 2) + "\n", { mode: 0o600 }); return true; } catch { return false; }
 }
-function installAllowlist(path) {
-  let p; try { p = JSON.parse(readFileSync(join(path, ".symbiot", "allowlist.proposed.json"), "utf8")).permissions || {}; } catch { return null; }
+// A permission card that names its commands in backticks ("allow `python3 -I -c` / `py_compile`
+// on `v2/*.py`"): the rules it asks for. A token with a path or a glob is where the commands
+// work, not a command (the glob is never a file to look for); a bare module name (py_compile)
+// runs under the python command before it. Wide rules are left to the caller to refuse.
+const cardIsPermission = (t) => /only you: a permission|\bpermission\b|\ballow\b.*`/i.test(String(t || ""));
+function cardRules(text) {
+  const toks = [...String(text || "").matchAll(/`([^`]+)`/g)].map((m) => m[1].trim()).filter(Boolean);
+  const out = []; let py = "";
+  for (const t of toks) {
+    if (/[/*]/.test(t) || /\.\w{1,4}$/.test(t) || t.startsWith("~")) continue;
+    if (/^python3?\b/.test(t)) { py = t.replace(/\s+-c$/, "").replace(/\s+-m$/, ""); out.push(`Bash(${t}:*)`); continue; }
+    if (/^[a-z_][a-z0-9_]*$/i.test(t) && py && /_/.test(t)) { out.push(`Bash(${py} -m ${t}:*)`); continue; }
+    const r = grantRule(t); if (r && !/^-/.test(t)) out.push(r);
+  }
+  return [...new Set(out)];
+}
+function installAllowlist(path, given = null) {
+  let p = given; if (!p) { try { p = JSON.parse(readFileSync(join(path, ".symbiot", "allowlist.proposed.json"), "utf8")).permissions || {}; } catch { return null; } }
   const list = (x) => (Array.isArray(x) ? x.filter((r) => typeof r === "string" && r.trim()).map((r) => r.trim()) : []);
   const allow = list(p.allow), deny = list(p.deny), dirs = list(p.additionalDirectories);
   if (!allow.length && !dirs.length && !deny.length) return null;
@@ -1798,7 +1814,9 @@ const OUTWARD = /\b(approv\w*|publish\w*|releas\w*|push\w*|merg\w*|send\w*|sent|
 function autoPick(q) {
   const rec = (q.options || []).filter((o) => /\(recommended\b/i.test(o));
   if (rec.length !== 1 || yourStep(rec[0]) || !pureAction(rec[0])) return "";
-  return OUTWARD.test(`${q.q} ${q.context || ""} ${rec[0]}`) ? "" : rec[0];
+  // a file name ("costs.json") is not the thing being decided: only the words around it count
+  const words = `${q.q} ${q.context || ""} ${rec[0]}`.replace(/[\w~./-]*\.(?:json|mjs|md|js|py|txt|env|html|log|ya?ml|toml|patch)\b/gi, " ");
+  return OUTWARD.test(words) ? "" : rec[0];
 }
 function autoDecide(path) {
   if (!path || runningHandoff(path)) return null;
@@ -1883,6 +1901,16 @@ function findQuestion(qs, q) {
 // other agents on the same work. Only the user's own answers (opts.share), not Symbiot's picks.
 let answered = null;
 function onAnswered(fn) { answered = typeof fn === "function" ? fn : null; }
+// Done / Allow on a permission card writes its rules into the folder's allow list itself:
+// { ok, rules } when written, { error } when the card names no command or the rules are too wide.
+function grantCard(path, text) {
+  const rules = cardRules(text);
+  if (!path || !rules.length) return { error: "That card doesn't name a command I can allow." };
+  const g = installAllowlist(path, { allow: rules });
+  if (!g) return { error: "I couldn't write the allow list in that folder." };
+  if (g.refused) return { error: "Not allowed: " + g.refused.join(", ") + " would let an agent run anything." };
+  return { ok: true, rules };
+}
 const stepText = (a) => String(a).split("🤖")[0].replace(/^\s*👤\s*(You:)?\s*/, "").replace(/\s*\(recommended\)\s*$/i, "").trim();
 function answerQuestions(path, answers, opts = {}) {
   path = String(path || "");
@@ -1989,6 +2017,17 @@ function workOf(path, log) {
   if (line) { const c = String(log || "").slice(String(log || "").lastIndexOf("\n=== ")).split("\n")[2] || ""; line.kind = kindOf(c); line.task = firstOpen(md).slice(0, 200); }
   return { tail, work, progress: total ? { done, total } : null, ...(line ? { line } : {}) };
 }
+// One state per run for the Agents view, from what the run shows: working (alive, moving), stuck (alive but
+// quiet or going round), waiting (turn ended cleanly, and something outside it is awaited), paused (turn ended with
+// tasks left: it is checked again), finished, failed.
+function runPhase(a) {
+  if (a.status === "running") return a.line && (a.line.quiet || a.line.looping) ? "stuck" : "working";
+  if (a.status !== "done") return "failed";
+  const asks = Array.isArray(a.ask) ? a.ask.length : a.ask && a.ask.questions ? a.ask.questions.length : 0;
+  if (a.waiting || a.needs || asks) return "waiting";
+  if (a.progress && a.progress.total > 0 && a.progress.done < a.progress.total) return "paused";
+  return "finished";
+}
 function agentsList() {
   const seen = new Set();
   return HANDOFFS.map((e) => {
@@ -1998,7 +2037,7 @@ function agentsList() {
     const waiting = first && e.status !== "running" ? waitingFor(e.path) : null;
     const needs = first && e.status !== "running" ? needsOf(e.path, { final: work ? tail : "", waiting, end: e.endedAt || Date.now() }) : null;
     return { id: e.id, name: e.name, path: e.path, status: e.status, startedAt: e.startedAt, endedAt: e.endedAt, elapsed: (e.endedAt || Date.now()) - e.startedAt, exitCode: e.exitCode, ...(e.down ? { down: e.down } : {}), tail, work, progress, ...(e.status === "running" && line ? { line } : {}), changed: agentChanges(e.path, e.startedAt, e.endedAt || 0), ask: first ? agentQuestions(e.path, e.name) : null, held: first ? heldTasks(e.path) : null, waiting, needs, remember: facts.length ? facts : null, fromHeld: !!e.fromHeld };
-  }).concat(earlierRuns());
+  }).concat(earlierRuns()).map((a) => ({ ...a, phase: runPhase(a) }));
 }
 
-export { onRunEnd, isClaudeCmd, GUARD, tidyRule, tidyRules, tidySettings, pruneRuns, claudePlugins, idlePlugins, runSettings, archiveAnswers, allAnswers, answersDigest, ANSWERS_ARCHIVE, ANSWERS_KEEP, runsTick, RUN_START, HANG_MIN, noteBlocked, userAnswers, CONTINUED_FILE, onAnswered, CHANGES, toKnownHost, continueLanes, autoPick, autoDecide, FACTS, factsOf, knownRun, withStream, workOf, HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, connectorsInfo, linkReach, fillHandoff, runHandoff, nothingToDo, whereOf, whereLine, whereAnswer, askTask, PARKED_NOTE, parkedPaths, isParked, parkLane, agentMissing, blockedAgain, runningHandoff, loadRuns, earlierRuns, namedFiles, unchangedStep, waitingFor, startWaiting, noteUntracked, untrackedBefore, forgetUntracked, writeTasks, droppedTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, pickAgent, findOrcaCli, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, skipIdea, agentQuestions, answerQuestions, agentsList, needsOf, settleNeeds, NEEDS_FOR, readLastWords, readNeeds, parseRead, READ_FILE, autoAllow, autoAllowSweep, allowlistInWork, installAllowlist, inWork, withScope, withTrust, sandboxFor, sandboxLifts, sandboxEnv, sandboxNeeds, sandboxState, sandboxWrites, SANDBOX_DIR, resumeFor, noteSession, tooLong, carryOn, RESUME_CTX, CARRY_PROMPT, trustFull, GUARD_SETTINGS, runCmdOf, claimLock, wideRoot, sandboxDenies, questionFolders, folderState, dirtyState, ANSWERS_SEEN, newAnswers, claudeDownIn, claudePause, noteClaudeDown, resetTime, PAUSE_FILE, startGap, isUrgent, urgentStop, urgentFirst, urgentUndo, urgentDone, urgentSweep, urgentState, licenceGate, stopRun, loadRunFiles, saveRunFiles, forgetRunFiles, withModel, routedModel, onShipping };
+export { grantCard, cardRules, cardIsPermission, runPhase, onRunEnd, isClaudeCmd, GUARD, tidyRule, tidyRules, tidySettings, pruneRuns, claudePlugins, idlePlugins, runSettings, archiveAnswers, allAnswers, answersDigest, ANSWERS_ARCHIVE, ANSWERS_KEEP, runsTick, RUN_START, HANG_MIN, noteBlocked, userAnswers, CONTINUED_FILE, onAnswered, CHANGES, toKnownHost, continueLanes, autoPick, autoDecide, FACTS, factsOf, knownRun, withStream, workOf, HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, connectorsInfo, linkReach, fillHandoff, runHandoff, nothingToDo, whereOf, whereLine, whereAnswer, askTask, PARKED_NOTE, parkedPaths, isParked, parkLane, agentMissing, blockedAgain, runningHandoff, loadRuns, earlierRuns, namedFiles, unchangedStep, waitingFor, startWaiting, noteUntracked, untrackedBefore, forgetUntracked, writeTasks, droppedTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, pickAgent, findOrcaCli, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, skipIdea, agentQuestions, answerQuestions, agentsList, needsOf, settleNeeds, NEEDS_FOR, readLastWords, readNeeds, parseRead, READ_FILE, autoAllow, autoAllowSweep, allowlistInWork, installAllowlist, inWork, withScope, withTrust, sandboxFor, sandboxLifts, sandboxEnv, sandboxNeeds, sandboxState, sandboxWrites, SANDBOX_DIR, resumeFor, noteSession, tooLong, carryOn, RESUME_CTX, CARRY_PROMPT, trustFull, GUARD_SETTINGS, runCmdOf, claimLock, wideRoot, sandboxDenies, questionFolders, folderState, dirtyState, ANSWERS_SEEN, newAnswers, claudeDownIn, claudePause, noteClaudeDown, resetTime, PAUSE_FILE, startGap, isUrgent, urgentStop, urgentFirst, urgentUndo, urgentDone, urgentSweep, urgentState, licenceGate, stopRun, loadRunFiles, saveRunFiles, forgetRunFiles, withModel, routedModel, onShipping };
