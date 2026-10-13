@@ -158,7 +158,6 @@ function quotaState({ providers = {}, current = null, paths = [], now = Date.now
   const worstRow = rows.find((r) => r.level === "hit") || rows.find((r) => r.level === "near") || rows[0] || null;
   const agentRow = rows.find((r) => r.id === "claude");
   const top = agentRow && agentRow.level !== "ok" ? agentRow : (worstRow && worstRow.level !== "ok" ? worstRow : agentRow || worstRow);
-  const hit = rows.filter((r) => r.level === "hit");
   const pct = top && top.windows ? Math.max(0, ...top.windows.filter((w) => !w.over && w.used != null).map((w) => w.used)) : null;
   const text = !top ? "" : top.level === "hit" ? ((top.id === "claude" ? "Claude" : top.label.split(" (")[0]) + " out" + (top.untilText ? " until " + top.untilText : "")) : top.windows && top.windows.length && pct != null && top.windows.some((w) => !w.over) ? (pct + "% used") : top.kind === "local" ? "Local model" : top.id === "claude" ? "Claude ready" : "No limit hit";
   return { level: top ? top.level : "none", text, pct, rows, paused: agentRow ? agentRow.level === "hit" : false,
