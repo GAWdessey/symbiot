@@ -47,7 +47,7 @@ const log = (() => { try { return execFileSync("git", ["-C", M.MARKETING_DIR, "l
 ok("with a first commit, so Approve has a branch to commit on", /a lane of its own/.test(log), log);
 ok("a second call leaves it be", M.ensureMarketing() === M.MARKETING_DIR);
 mkdirSync(join(M.MARKETING_DIR, "drafts", "dailify"), { recursive: true });
-writeFileSync(join(M.MARKETING_DIR, "drafts", "dailify", "launch.md"), "# The Dailify launch post\nproduct: Dailify\n\nHook.\n");
+writeFileSync(join(M.MARKETING_DIR, "drafts", "dailify", "launch.md"), "# The Dailify launch post\nproduct: Dailify\ntype: post\nplatform: linkedin\n\nHook.\n");
 mkdirSync(join(M.MARKETING_DIR, "drafts", "symbiot"), { recursive: true });
 writeFileSync(join(M.MARKETING_DIR, "drafts", "symbiot", "demo-video-script.md"), "No title here.\n");
 const files = M.draftFiles(M.MARKETING_DIR, names);
@@ -83,19 +83,20 @@ const tasks = [
   { id: "b", text: "[Symbiot] A demo video", repo: "marketing", review: true, ts: now },
   { id: "c", text: "Add a pricing page to the Symbiot site", repo: "symbiot", ts: now },
   { id: "d", text: "Fix the login bug", repo: "symbiot", ts: now },
+  { id: "f", text: "Garth pasted GitHub's 'This branch has conflicts that must be resolved' box for a symbiot PR. Conflicting files: CHANGELOG.md, agents.mjs, marketing.mjs, site/index.html, `marketing`", repo: "symbiot", ts: now },
   { id: "e", text: "an old launch", repo: "marketing", done: true, archived: true }];
 const posts = { canDraft: true, posts: [{ id: "p1", status: "waiting", text: "This week Dailify learned to plan your day." }, { id: "p2", status: "approved", text: "x" }], done: [] };
 const agents = [{ path: M.MARKETING_DIR, status: "done", ask: { questions: [{ q: "Dailify's end goal isn't written down. Use this one?", options: ["Use it (recommended)", "I'll write my own"] }] } }];
 const pending = [{ repo: "marketing", path: M.MARKETING_DIR, tasks: [tasks[1]], files: [{ file: "drafts/symbiot/demo.md" }] }];
 const s = marketingState({ deps: { repos: () => map, tasks: () => tasks, posts: () => posts, agents: () => agents, pending: () => pending } });
-ok("what needs you: its agent's question, its work for your OK, the drafts waiting, each post it drafted to approve", s.needCount === 5 && s.needs.map((n) => n.kind).join() === "ask,approve,draft,post,post", s.needs);
+ok("what needs you: its agent's question, its work for your OK, the drafts waiting, each post it drafted to approve", s.needCount === 4 && s.needs.map((n) => n.kind).join() === "ask,approve,draft,post", s.needs);
 const launchPost = s.needs.find((n) => n.kind === "post" && n.rel === "drafts/dailify/launch.md") || {};
 ok("…a post to approve: by its file, so Preview opens it, with its product", launchPost.product === "Dailify" && launchPost.text === "The Dailify launch post", s.needs);
 const s2 = marketingState({ deps: { repos: () => map, tasks: () => [], posts: () => ({ posts: [], done: [] }), agents: () => [], pending: () => [], files: () => [{ rel: "a.md", name: "A", product: "Steve", status: "approved" }, { rel: "b.md", name: "B", product: "Steve", status: "skipped" }, { rel: "c.md", name: "C", product: "Steve", status: "" }] } });
 ok("…only the ones not approved or skipped yet", s2.needs.map((n) => n.rel).join() === "c.md" && s2.needCount === 1, s2.needs);
 ok("each tagged: the question and the draft are Dailify's", s.needs[0].product === "Dailify" && s.needs[2].product === "Dailify");
 ok("its tasks, open ones only, each with its product and where it is", s.lane.length === 2 && s.lane[0].product === "Dailify" && s.lane[0].status === "waiting" && s.lane[1].status === "review" && s.lane[0].text === "Write the launch post", s.lane);
-ok("other lanes' tasks about marketing (pricing, not a login bug)", s.elsewhere.length === 1 && s.elsewhere[0].id === "c" && s.elsewhere[0].product === "Symbiot", s.elsewhere);
+ok("other lanes' tasks about marketing (pricing, not a login bug)", s.elsewhere.length === 1 && s.elsewhere[0].id === "c" && !s.elsewhere.some((t) => t.id === "f") && s.elsewhere[0].product === "Symbiot", s.elsewhere);
 ok("what its agent drafted, and the products to pick from", s.files.length === 2 && s.products.includes("Dailify") && s.products.includes("Symbiot"));
 ok("on: Home shows its orb", s.on === true);
 const quiet = marketingState({ deps: { repos: () => ({ symbiot: sym }), tasks: () => [], posts: () => ({ posts: [], done: [] }), agents: () => [], pending: () => [], files: () => [] } });
@@ -125,7 +126,7 @@ console.log("MARKETING — a draft shown as the post it will be");
   const post = "The best answer my AI gave this month was \"I don't know.\"\n\nI gave Steve a number puzzle he hadn't cracked yet. His reply:\n\n\"I can't work out what you're doing to those numbers yet. I'd be guessing.\"\n\nMost AI tools would give you a confident answer anyway. Steve doesn't.\n\n#AI #Trust #BuildInPublic";
   writeFileSync(join(d, "week-02.md"), `# Week 2\n\nproduct: Steve\nplatform: linkedin\nwhen: 2026-10-13 08:00\nmedia: card.png\n\n## Post\n${post}\n\n## Notes\nWhy this result: it shows doubt. Checked against the never-list.\n`);
   writeFileSync(join(d, "week-03.md"), `# Week 3\n\nproduct: Steve\n\n---\n\n${post}\n\n---\n_Image: \`card.png\` (1200×1200). Schedule for Tue 2026-10-20, 08:00._\n`);
-  writeFileSync(join(d, "sneaky.md"), "# x\nmedia: ../../../outside/secret.png\n\n## Post\nhi\n");
+  writeFileSync(join(d, "sneaky.md"), "# x\nplatform: linkedin\nmedia: ../../../outside/secret.png\n\n## Post\nhi\n");
   const cfg = { profile: { name: "Garth White", headline: "Building Steve" } };
   const p2 = M.draftPreview("drafts/steve/week-02.md", { dir, cfg });
   ok("## Post is the post, to the character: its line breaks and hashtags, nothing of the notes", p2.body === post && !/never-list/.test(p2.body) && p2.notes === "Why this result: it shows doubt. Checked against the never-list.", p2);
@@ -152,6 +153,26 @@ console.log("MARKETING — a draft shown as the post it will be");
   const sk = marketingDraftAnswer("drafts/steve/week-03.md", "skipped", { dir, run: () => { throw new Error("ran"); } });
   ok("Skip: its agent is told not to post it, and nothing starts", sk.ok && /### Skipped: drafts\/steve\/week-03\.md\nDon't post it/.test(readFileSync(join(dir, ".symbiot", "ANSWERS.md"), "utf8")), sk);
   ok("one that isn't there: says so", !!marketingDraftAnswer("drafts/steve/gone.md", "approved", { dir }).error);
+
+  console.log("MARKETING — Change it, its own platform's preview, a redraft asks again (2026-10-10)");
+  writeFileSync(join(d, "reddit.md"), `# Symbiot on Reddit\n\nproduct: Symbiot\nplatform: reddit\nsubreddit: r/ClaudeAI\nwhen: 2026-10-15 15:00\nmedia: card.png\n\n## Post\nI built a desktop app that hands tasks to Claude Code\n\nThe body.\n\n## Notes\nnone\n`);
+  const rd = M.draftPreview("drafts/steve/reddit.md", { dir, cfg });
+  ok("a reddit draft carries its platform and subreddit, for a Reddit layout", rd.platform === "reddit" && rd.where === "r/ClaudeAI", rd);
+  ok("…a subreddit named only in its notes is found too, written either way", M.whereOf(M.parseDraft("# t\nplatform: reddit\n\n## Post\nx\n\n## Notes\nPost to /r/SideProject at 15:00")).where === "r/SideProject" && M.whereOf(M.parseDraft("# t\nplatform: reddit\nsubreddit: webdev\n\n## Post\nx")).where === "r/webdev");
+  ok("Change it with nothing said: refused", /Say what to change/.test(marketingDraftAnswer("drafts/steve/reddit.md", "change", { dir, ask: " " }).error || ""));
+  const ran2 = [];
+  const ch = marketingDraftAnswer("drafts/steve/reddit.md", "change", { dir, ask: "Make the title a question.", running: () => false, run: (p) => (ran2.push(p), { id: "k" }) });
+  const ans2 = readFileSync(join(dir, ".symbiot", "ANSWERS.md"), "utf8");
+  ok("Change it: what you typed goes to its agent for that exact draft, and it starts", ch.ok && ran2.join() === dir && /### Change: drafts\/steve\/reddit\.md\nMake the title a question\./.test(ans2) && /Redraft that same file/.test(ans2), [ch, ans2.slice(-500)]);
+  const rc = M.draftPreview("drafts/steve/reddit.md", { dir, cfg });
+  ok("…its card says a change is asked, with what you asked, and it leaves your list meanwhile", rc.status === "change" && rc.ask === "Make the title a question." && M.draftFiles(dir).find((f) => f.rel === "drafts/steve/reddit.md").status === "change", rc);
+  writeFileSync(join(d, "reddit.md"), readFileSync(join(d, "reddit.md"), "utf8").replace("I built a desktop app that hands tasks to Claude Code", "Would you let an app hand tasks to Claude Code?"));
+  ok("…its agent's new version comes back for your OK", M.draftPreview("drafts/steve/reddit.md", { dir, cfg }).status === "");
+  marketingDraftAnswer("drafts/steve/reddit.md", "approved", { dir, running: () => true });
+  ok("approved, then its picture redrawn: not approved any more", M.draftPreview("drafts/steve/reddit.md", { dir, cfg }).status === "approved" && (writeFileSync(join(d, "card.png"), "png, redrawn"), M.draftPreview("drafts/steve/reddit.md", { dir, cfg }).status === ""));
+  const sf0 = join(dir, ".symbiot", "drafts.json"), raw0 = JSON.parse(readFileSync(sf0, "utf8")); delete raw0["drafts/steve/reddit.md"].msig; writeFileSync(sf0, JSON.stringify(raw0));
+  ok("…an approval from before pictures were fingerprinted holds for its text", M.draftPreview("drafts/steve/reddit.md", { dir, cfg }).status === "approved");
+  writeFileSync(join(d, "card.png"), "png");
 
   console.log("MARKETING — posted and superseded: off the orb for good");
   const ap2 = marketingDraftAnswer("drafts/steve/week-02.md", "approved", { dir, running: () => true });
@@ -214,6 +235,30 @@ console.log("MARKETING — LinkedIn linked: no card asks you to sign in or do it
   ok("the card's options, as Marketing and Home show them: the agent posts through the linked account once you approve; no sign-in, no by hand, nothing \"only you\"", opts.length === 1 && /^🤖 Agent: post it through Symbiot's browser, already signed in to LinkedIn, once you approve its preview/.test(opts[0]) && !opts.some((o) => /👤|only you|sign[- ]?in|by hand|yourself/i.test(o)), opts);
   saveConfig({ ...cfg0, linked: undefined });
   ok("…while LinkedIn isn't linked, signing in is still yours to do", /^👤/.test(parseQuestions(md).questions[0].options[0]), parseQuestions(md).questions[0].options);
+}
+
+// only a file that says it is a social post is one; schedules and store listings are documents
+{
+  const { marketingDraftAnswer } = await import("../home.mjs");
+  const dir = join(HOME, "lane-docs"), d = join(dir, "drafts", "daaymn");
+  mkdirSync(d, { recursive: true });
+  writeFileSync(join(d, "posting-schedule.md"), "# Daaymn posting schedule (SAST)\n\nproduct: Daaymn\n\nOne post a day per platform.\n\n| Day | Instagram | Facebook | X |\n|---|---|---|---|\n| Mon | 08:00 | 09:00 | 10:00 |\n\nhttps://play.google.com/store/apps/details?id=com.daaymn.daaymn\n");
+  writeFileSync(join(d, "play-listing.md"), "# Daaymn Google Play listing\n\nproduct: Daaymn\ntype: listing\n\nTitle (30 max): Daaymn: Dating, Likes That Count\nShort description (80 max): x\n");
+  writeFileSync(join(d, "typed-schedule.md"), "# s\ntype: schedule\nplatform: instagram\n\n## Post\nnot a post\n");
+  writeFileSync(join(d, "ig.md"), "# IG\ntype: post\nplatform: instagram\n\n## Post\nHello world #daaymn\n");
+  const get = (n) => M.draftFiles(dir, []).find((f) => f.rel === "drafts/daaymn/" + n);
+  ok("a schedule saying nothing about being a post is a document", get("posting-schedule.md").doc === true && M.parseDraft("# s\n\n| a |\n").isPost === false);
+  ok("…a store listing typed `listing` too, and `type:` wins over a platform and a ## Post", get("play-listing.md").doc && get("typed-schedule.md").doc);
+  ok("…a `type: post` with a platform is a post", !get("ig.md").doc && M.draftPreview("drafts/daaymn/ig.md", { dir, cfg: {} }).isPost === true);
+  ok("…and one in the old layout (## Post, or --- fenced) still is", M.parseDraft("# t\nplatform: linkedin\n\n## Post\nx\n").isPost && M.parseDraft("# t\n\n---\n\nx\n\n---\nn\n").isPost);
+  ok("…the real schedule's shape (## Post, no platform, a table in it) is a document; a table-free ## Post stays a post", M.parseDraft("# Daaymn posting schedule (SAST)\nproduct: Daaymn\n\n## Post\n\nOne post a day.\n\n| Day | X |\n|-----|---|\n| Mon | 12:30 |\n").isPost === false && M.parseDraft("# t\n\n## Post\nhello\n").isPost === true);
+  const pv = M.draftPreview("drafts/daaymn/posting-schedule.md", { dir, cfg: {} });
+  ok("a document previews as its whole text, with no post card", pv.isPost === false && /\| Mon \|/.test(pv.text) && pv.body === undefined);
+  ok("it isn't on Home's needs-you list as a post to approve; the real post is", marketingState({ map: { marketing: dir }, deps: { repos: () => ({}), tasks: () => [], posts: () => ({ posts: [], done: [] }), agents: () => [], pending: () => [], files: () => M.draftFiles(dir, []) } }).needs.filter((n) => n.kind === "post").map((n) => n.rel).join() === "drafts/daaymn/ig.md");
+  ok("a document can't be approved or posted", !!M.setDraftStatus("drafts/daaymn/posting-schedule.md", "approved", { dir }).error && !!marketingDraftAnswer("drafts/daaymn/play-listing.md", "approved", { dir }).error);
+  ok("…but a listing is marked done", marketingDraftAnswer("drafts/daaymn/play-listing.md", "done", { dir }).ok && M.draftPreview("drafts/daaymn/play-listing.md", { dir, cfg: {} }).done === true);
+  ok("a post can't be 'done'", !!M.setDraftStatus("drafts/daaymn/ig.md", "done", { dir }).error);
+  ok("the agent's brief says to type each file", /`type: post`/.test(M.marketingBrief([]).join("\n")));
 }
 
 console.log(`\n${fail ? "✗" : "✓"} marketing: ${pass} passed, ${fail} failed`);

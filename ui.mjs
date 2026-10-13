@@ -249,11 +249,11 @@ body.lq-pooled #lqneedt,body.lq-work #lqneedt{display:none}
 .lqd.lqblob .lt::before{display:none}
 .lqd.lqblob .lt span{-webkit-line-clamp:1;font-size:13px}
 .lqd.lqblob .lt i{font-style:normal;color:#8A919B;font-weight:500;flex:none}
-.lqblob .bq{font-size:12.5px;line-height:1.35;color:#C9CDD3;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow-wrap:anywhere}
+.lqblob .bq{font-size:12.5px;line-height:1.35;color:#C9CDD3;overflow-wrap:anywhere}
 .lqblob .bo{display:flex;flex-direction:column;gap:5px}
 .lqblob .nopt,.lqblob .bfree,.lqblob .bfx button{all:unset;box-sizing:border-box;cursor:pointer;font:500 12.5px/1.3 var(--sans)}
 .lqblob .nopt{display:block;width:100%;min-height:34px;padding:7px 10px;border-radius:12px;border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.06);color:#ECE9E4}
-.lqblob .nopt span.bt{overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow-wrap:anywhere}
+.lqblob .nopt span.bt{display:block;white-space:normal;overflow-wrap:anywhere}
 .lqblob .nopt.rec{background:#F3F0EA;color:#0A0B0D;border-color:#F3F0EA}
 .lqblob .nopt:hover{border-color:rgba(255,255,255,.45)}
 .lqblob .nopt .who{font-size:11px;padding:0 6px;margin-right:4px;background:transparent;color:inherit;border:1px solid currentColor;opacity:.8}
@@ -271,6 +271,8 @@ body.lq-pooled #lqneedt,body.lq-work #lqneedt{display:none}
 .dm-chat{background:#D9FDD3;color:#111B21;margin-left:16px;border-top-right-radius:4px}.dm-chat .dmto{color:#1F7A4C}
 .dm-mail{background:#FFFFFF;color:#202124;border:1px solid #DADCE0}.dm-mail .dmto{color:#5F6368}
 .lqblob .bfor{font-size:11.5px;line-height:1.3;color:#8A919B;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.lqblob .bwait{font-size:11.5px;line-height:1.3;color:#E0B25A;display:flex;align-items:center;gap:5px}
+body.lq-light .lqblob .bwait{color:#8A5A00}
 /* the work a question asks about is done already (lanes.mjs doneSince); a click's own feedback: the button pressed, Sending…, or what went wrong */
 .lqblob .bdone{font-size:12px;line-height:1.35;color:#7FD8A6;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow-wrap:anywhere}
 .lqblob .bst{font-size:12px;line-height:1.35;color:#8A919B}.lqblob .bst:empty{display:none}.lqblob .bst.err{color:#F2A541}
@@ -387,7 +389,7 @@ body.lq-light .wkfile .fb i{background:linear-gradient(90deg,#6F7887,#0F1720)}
 .wkfinal{margin-top:10px;font-size:13px;line-height:1.55;white-space:pre-wrap}
 .wkraw summary{cursor:pointer;font-size:12px;color:var(--faint);margin-top:10px}
 .orb{flex:none;display:inline-block;width:14px;height:14px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#FFFFFF 0%,#C9CFD9 30%,#6F7887 70%,#2A2F38 100%);box-shadow:0 0 0 1px rgba(255,255,255,.25)}
-.orb.run{animation:lqpulse 1.6s ease-in-out infinite}.orb.fail{background:radial-gradient(circle at 35% 30%,#FFE1DA 0%,#FF8A75 45%,#7A2A1C 100%)}
+.orb.run{animation:lqpulse 1.6s ease-in-out infinite}.orb.paused{background:radial-gradient(circle at 35% 30%,#FFF1CF 0%,#F2B94B 45%,#7A5A12 100%)}.orb.fail{background:radial-gradient(circle at 35% 30%,#FFE1DA 0%,#FF8A75 45%,#7A2A1C 100%)}
 @keyframes lqpulse{0%,100%{transform:scale(1);box-shadow:0 0 0 1px rgba(255,255,255,.25)}50%{transform:scale(1.18);box-shadow:0 0 14px 2px rgba(255,255,255,.35)}}
 details.steps{margin-top:6px;white-space:normal;font-size:12.5px;color:var(--faint);text-shadow:none}
 details.steps summary{cursor:pointer;list-style:none;display:inline-flex;align-items:center;gap:6px}
@@ -413,10 +415,13 @@ header .dot{width:22px;height:22px;border-radius:6px;background:center/contain n
 .brand{font-weight:700;color:var(--bone);font-size:16px}
 .status{margin-left:auto;font-size:12px;color:var(--faint);text-align:right;max-width:52%}
 .tabs{display:flex;gap:6px;padding:0 14px;border-bottom:1px solid var(--line)}
+.rtabs{display:flex;gap:6px;border-bottom:1px solid var(--line);margin-bottom:8px;overflow-x:auto}
 .tab{padding:9px 14px;border:0;background:none;color:var(--faint);font:inherit;font-weight:600;cursor:pointer;border-bottom:2px solid transparent}
 .tab.active{color:var(--bone);border-bottom-color:var(--green)}
 main{flex:1;overflow:auto;padding:16px 18px}
 .row{display:flex;gap:10px;align-items:center;margin-bottom:12px;flex-wrap:wrap}
+/* an open report: its back-to-all-reports row rides along while the report scrolls under it */
+#reportslist:has(#reportback){position:sticky;top:0;z-index:3;background:var(--ink);padding-bottom:4px}
 button.act{background:var(--green);color:var(--ink);border:0;border-radius:10px;padding:10px 16px;font:inherit;font-weight:700;cursor:pointer}
 button.act:hover{filter:brightness(1.08)}
 button.ghost{background:var(--ink3);color:var(--bone);border:1px solid var(--line);border-radius:10px;padding:9px 14px;font:inherit;font-weight:600;cursor:pointer}
@@ -510,6 +515,7 @@ body.lq-liquid .rcard.pcard,body.lq-liquid.lq-light .rcard.pcard{border-left:3px
 .tag.cust{background:transparent;border-color:var(--amber);color:var(--amber)}
 /* Marketing: the product an item markets, a quiet word before it; what needs you, ruled amber; the Add row */
 .mkp{display:inline-block;margin-right:8px;padding-right:8px;border-right:1px solid var(--line);font:600 10.5px/1.4 var(--sans);letter-spacing:.09em;text-transform:uppercase;color:var(--green);vertical-align:1px}
+.mkdoc{border:1px solid #8884;border-radius:8px;padding:10px 14px;font-size:13px;overflow-x:auto}.mkdoc table{border-collapse:collapse}.mkdoc th,.mkdoc td{border:1px solid #8886;padding:3px 8px;text-align:left}.mkdoc h3,.mkdoc h4,.mkdoc h5{margin:10px 0 4px}
 .mkst{font-size:11px;padding:1px 7px;border-radius:999px;border:1px solid var(--line);color:var(--faint)}.mkst.approved{color:var(--green);border-color:var(--green)}.mkst.posted{color:var(--green);border-color:var(--green);background:var(--green-dim)}.mkst.superseded{text-decoration:line-through}
 /* the pick tray: a card a capture, its blur boxes on it (solid: blurred; dashed: shown), each a click to switch; Use puts it on a post */
 .mktray{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,380px),1fr));gap:14px;align-items:start}
@@ -571,6 +577,11 @@ body.lq-solid .mkbig,body.lq-solid .mkbigin{backdrop-filter:none}
 .limore{background:none;border:0;padding:0 0 0 2px;min-height:0;color:rgba(0,0,0,.6);font:inherit;cursor:pointer}.limore:hover{color:#0a66c2;text-decoration:underline}
 .limedia{display:block;width:calc(100% + 32px);margin:0 -16px 4px;max-height:560px;object-fit:contain;background:#f3f2ef}
 .libar{display:flex;justify-content:space-around;border-top:1px solid #e0dfdc;padding:6px 0;color:rgba(0,0,0,.6);font-weight:600;font-size:13px}
+/* the other platforms' posts, each as its own feed shows it (mkPreviewHtml) */
+.lipost.xpost{border-radius:16px;border-color:#cfd9de;color:#0f1419;padding:12px 16px 4px}.xpost .liav{flex-basis:40px;width:40px;height:40px;background:#0f1419;font-size:15px}.xpost .liwho{flex-direction:row;flex-wrap:wrap;gap:4px;align-items:baseline}.xpost .liwho b{font-weight:700;font-size:15px}.xpost .liwho small{font-size:15px;color:#536471}.xpost .lihash{color:#1d9bf0;font-weight:400}.xpost .limedia{width:100%;margin:0 0 8px;border-radius:16px;border:1px solid #cfd9de}.xpost .libar{border-top:0;justify-content:space-between;font-weight:400;color:#536471}
+.lipost.igpost{border-radius:8px;border-color:#dbdbdb;padding:0;color:#000}.igpost .liauth{padding:10px 12px;margin:0;align-items:center}.igpost .liav{flex-basis:32px;width:32px;height:32px;font-size:12px;background:linear-gradient(45deg,#f09433,#dc2743,#bc1888)}.igpost .limedia{width:100%;margin:0;aspect-ratio:4/5;object-fit:cover;background:#000}.igpost .libar{border-top:0;justify-content:flex-start;gap:16px;padding:8px 12px 4px;font-size:20px;color:#000}.igpost .litext{padding:0 12px 10px;margin:0}.igpost .lihash{color:#00376b;font-weight:400}.ignomedia{padding:60px 16px;text-align:center;background:#fafafa;color:#8e8e8e;font-size:13px}
+.lipost.fbpost{border-radius:8px;border-color:#dddfe2;color:#050505}.fbpost .liav{flex-basis:40px;width:40px;height:40px;background:#1877f2;font-size:15px}.fbpost .liwho small{color:#65676b}.fbpost .lihash{color:#216fdb;font-weight:400}.fbpost .libar{border-top:1px solid #ced0d4;color:#65676b}
+.mkchgf{margin-top:8px;flex-wrap:wrap}.mkchgf.hidden{display:none}.mkpv .pchars.err{color:var(--amber)}.mkchgf textarea{flex:1 1 100%;min-height:72px;font:13px/1.45 var(--sans)}.mkasked{margin-top:8px;font-size:12.5px}
 /* a Reddit draft as Reddit shows it: its subreddit and who posts it, its title, its flair, the body */
 .rdpost{max-width:640px;background:#fff;color:#1c1c1c;border:1px solid #d4d7d9;border-radius:10px;padding:10px 16px 4px;font:14px/1.5 -apple-system,system-ui,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
 .rdhead{display:flex;align-items:center;flex-wrap:wrap;gap:6px;font-size:12px;color:#576f76}.rdhead b{color:#1c1c1c;font-weight:700}
@@ -633,6 +644,7 @@ body.lq-liquid.lq-pooled:has(#panel-reports:not(.hidden) #rbackbar) #lqsinkrow{b
 .aq .q{padding:8px 0;border-bottom:1px solid var(--line)}
 .aq .qt{color:var(--bone);font-weight:600;font-size:13.5px}
 .aq .qc{color:var(--faint);font-size:12.5px;margin-top:3px;line-height:1.5}
+.aq .qfor,.pcq .qfor{color:var(--faint);font-size:12px;margin-bottom:3px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
 .aq label.opt{display:flex;gap:8px;align-items:flex-start;margin:6px 0 0;font-size:13px;color:var(--text);cursor:pointer}
 .aq .opt input{width:auto;margin-top:3px;flex:none}
 .who{display:inline-block;font-size:11px;font-weight:700;border-radius:999px;padding:0 7px;margin-right:2px;white-space:nowrap}
@@ -918,7 +930,7 @@ body.lq-light .rly.lit{border-color:rgba(154,82,0,.3)}
 body.lq-light .rlsum{color:#2B3644}
 .lqblob.rlask{position:static;display:flex;flex-direction:column;gap:7px;padding:10px 12px;border-radius:14px;background:rgba(242,165,65,.06);border:1px solid rgba(242,165,65,.22)}
 .lqblob.rlask .nhead{font-size:12px;color:#8A919B}.lqblob.rlask .nhead b{font-weight:600;color:inherit}
-.lqblob.rlask .bq{-webkit-line-clamp:4;font-size:13px}
+.lqblob.rlask .bq{font-size:13px}
 body.lq-light .lqblob.rlask{background:rgba(154,82,0,.05);border-color:rgba(154,82,0,.2)}
 .rly .rlok{align-self:flex-start}
 .rlk{margin-top:2px;font:500 11px var(--sans);letter-spacing:.1em;text-transform:uppercase;color:#8A919B}
@@ -1110,6 +1122,7 @@ body.lq-light .onbdots i{background:rgba(21,26,33,.1)}body.lq-light .onbdots i.o
 #lqmic:hover,#lqmic:focus-visible{opacity:1;background:rgba(255,255,255,.07)}
 body.lq-light #lqmic:hover,body.lq-light #lqmic:focus-visible{background:rgba(21,26,33,.06)}
 #lqmic.on{opacity:1;background:#F2A541;color:#0A0B0D;animation:lqmicpulse 1.4s ease-in-out infinite}
+#lqmic.conv{opacity:1;box-shadow:0 0 0 2px rgba(242,165,65,.55)}
 @keyframes lqmicpulse{0%,100%{box-shadow:0 0 0 4px rgba(242,165,65,.28)}50%{box-shadow:0 0 0 11px rgba(242,165,65,.05)}}
 @media (prefers-reduced-motion: reduce){#lqmic.on{animation:none;box-shadow:0 0 0 4px rgba(242,165,65,.28)}}
 #lqmic.hidden{display:none}
@@ -1341,6 +1354,8 @@ body.lq-light .btip .bta button:not(.quiet){background:#151A21;color:#FFFFFF}
 <input id="agentcmd" type="text" placeholder="e.g.  aider --message &quot;{prompt}&quot; --yes   ·   code {dir}   ·   leave blank to just write the file">
 <div class="note muted">Runs in each repo after tasks are written. Use <b>{dir}</b> = repo path, <b>{prompt}</b> = the task instruction. Works with any agent or editor &mdash; it's your command.</div>
 <label class="check swl" style="margin-top:12px"><input type="checkbox" class="sw" id="agenttrust" checked> <span><b>Symbiosis</b> &middot; agents work on their own. They do the work without stopping to ask permission. <b>The membrane</b> still stops pushing to main, publishing, deleting outside their folder, sudo, reading your keys and changing Symbiot's settings. Off: they ask before anything outside their allow list.</span></label>
+<label class="check" style="margin-top:12px"><span><b>Agents at once in one project</b> &middot; tasks that don't clash run side by side, each in a copy of the repo of its own, and merge back when they finish. </span><input type="number" id="parcap" min="1" max="8" style="width:56px"></label>
+<div class="note muted" id="parnote" style="margin-top:6px"></div>
 <div class="note muted" id="agentsandbox" style="margin-top:6px"></div>
 <div id="agentpresets" style="margin-top:8px"></div>
 <div class="note muted" id="agentconnectors"></div>
@@ -1362,6 +1377,11 @@ body.lq-light .btip .bta button:not(.quiet){background:#151A21;color:#FFFFFF}
 <h3 class="ssh">What Symbiot remembers</h3>
 <div class="note muted" style="margin-top:2px">Every chat in the app is the same Symbiot. What's worth knowing on another page (who someone is, which account is what, what you decided) is kept here, on this computer only, and each chat gets just the parts its question touches.</div>
 <div id="mindlist"></div>
+</div>
+<div class="sset">
+<h3 class="ssh">Secrets</h3>
+<div id="secretslist"></div>
+<div class="note muted">Passwords, recovery codes and tokens you hand over are kept here, not in chat. Only names and counts show: an agent reads one by name when it needs it, and you can delete any of them.</div>
 </div>
 <div class="sset">
 <h3 class="ssh">Trusted sites for Screens <span class="muted">(experimental)</span></h3>
@@ -1744,7 +1764,7 @@ el.innerHTML="<h4>AI review &middot; <span class='rname'>"+esc(name)+"</span></h
 Promise.all([api('/api/review',{path:path}),api('/api/tasks')]).then(function(res){var r=res[0]||{},tasks=res[1]||[];
 if(r.error==='not-connected'){el.innerHTML="<h4>AI review &middot; <span class='rname'>"+esc(name)+"</span></h4><div class='body'>Connect a model in Settings to get a review - Ollama is free and runs locally.</div>"+(r.footer?"<div class='rfoot'>"+esc(r.footer)+"</div>":"");return;}
 var body=r.text||'(no output)';reviewCache[path]={text:body,verdict:r.verdict||"",ideas:r.ideas||[],footer:r.footer};el.innerHTML=reviewHtml(name,body,r.verdict||"",r.ideas||[],tasks,r.footer);wireIdeas();});}
-var ALLTASKS=[];var PENDTASKS=[];var TFILTER={type:'',repo:''};var TARCH=false;
+var ALLTASKS=[];var PENDTASKS=[];var TFILTER={type:'',repo:'',id:''};var TARCH=false;
 var TORDER=['Fixes','Tests & CI','Security','Performance','Refactor','UI/UX','Docs','Features & other'];
 function taskRow(t,arch){return "<div class='task"+(t.done?" done":"")+"' data-id='"+esc(t.id)+"'>"+(arch?"":"<input type='checkbox' class='taskchk' title='mark done (auto-archives on sync)'"+(t.done?" checked":"")+">")+"<span class='t'>"+esc(t.full?t.text.replace(/ Full text: \\x60[^\\x60]*\\x60/,''):t.text)+(t.full?"<details class='tfull'><summary>full text</summary><div>"+esc(t.full)+"</div></details>":"")+"</span>"+(t.repo?"<span class='rp'>"+esc(t.repo)+"</span>":"")+(arch&&t.removedBy?"<span class='rp' title='An approved task "+(t.merged?"merged it into another":"dropped it")+". Restore it to keep it.'>"+(t.merged?"merged":"dropped")+"</span>":"")+(arch&&t.dropped?"<span class='rp' title='An agent deleted it from TASKS.md, as you said to drop it. Restore it to keep it.'>dropped</span>":"")+askBtn(t)+(arch?"<button class='rm restore' title='restore to active'>&#8630;</button>":"<button class='rm' title='remove'>&times;</button>")+"</div>";}
 function wireTaskRows(el){el.querySelectorAll('.task').forEach(function(row){var id=row.getAttribute('data-id');
@@ -1777,6 +1797,7 @@ box.querySelector('.askclear').addEventListener('click',function(){api('/api/tas
 inp.focus();}
 function fchip(dim,val,label){var on=(TFILTER[dim]||'')===val;return "<button class='fchip"+(on?' on':'')+"' data-dim='"+dim+"' data-val='"+esc(val)+"'>"+esc(label)+"</button>";}
 function renderFilter(){var box=document.getElementById('taskfilter');
+if(TFILTER.id&&!TARCH){box.innerHTML="<button class='fchip on' id='alltasks'>&#8592; All tasks</button><span class='fl'>Just this task</span>";document.getElementById('alltasks').addEventListener('click',function(){TFILTER.id='';renderTasks();});return;}
 if(TARCH){box.innerHTML="<button class='fchip on' id='archtoggle'>&#8617; back to active</button>";document.getElementById('archtoggle').addEventListener('click',function(){loadTasks();});return;}
 var types={},repos={};ALLTASKS.forEach(function(t){types[t.type||'Features & other']=1;if(t.repo)repos[t.repo]=1;});
 var fb="<span class='fl'>Type</span>"+fchip('type','','All')+Object.keys(types).sort(function(a,b){return TORDER.indexOf(a)-TORDER.indexOf(b);}).map(function(t){return fchip('type',t,t);}).join('');
@@ -1786,7 +1807,7 @@ box.innerHTML=fb;
 box.querySelectorAll('.fchip[data-dim]').forEach(function(c){c.addEventListener('click',function(){TFILTER[c.getAttribute('data-dim')]=c.getAttribute('data-val');renderTasks();});});
 document.getElementById('archtoggle').addEventListener('click',loadArchived);}
 function renderTasks(){var el=document.getElementById('tasklist');TARCH=false;if(el&&el.classList)el.classList.toggle('onerepo',!!TFILTER.repo);renderFilter();renderNeeds();lqTitle();
-var list=ALLTASKS.filter(function(t){return !t.review&&(!TFILTER.type||(t.type||'Features & other')===TFILTER.type)&&(!TFILTER.repo||t.repo===TFILTER.repo);});
+var list=ALLTASKS.filter(function(t){return !t.review&&(!TFILTER.type||(t.type||'Features & other')===TFILTER.type)&&(!TFILTER.repo||t.repo===TFILTER.repo)&&(!TFILTER.id||t.id===TFILTER.id);});
 if(!list.length){el.innerHTML="<div class='muted' style='margin-top:12px'>"+(ALLTASKS.length?"Nothing matches this filter.":"No tasks queued. Tell Symbiot one in the bar at the bottom, or tick ideas in a repo review on the Map.")+"</div>";return;}
 var groups={};list.forEach(function(t){var ty=t.type||'Features & other';(groups[ty]=groups[ty]||[]).push(t);});
 var keys=Object.keys(groups).sort(function(a,b){var ia=TORDER.indexOf(a),ib=TORDER.indexOf(b);return (ia<0?99:ia)-(ib<0?99:ib);});
@@ -1859,8 +1880,11 @@ var so=ap&&ap.getAttribute('data-partly'),rd=ap&&ap.getAttribute('data-round'); 
 function apLabel(){var n=ticks().length,w=n?", with "+n+" finished task"+(n>1?"s":""):"";if(ap&&!ap.disabled)ap.innerHTML=so?"Approve the changes so far"+w+" &rarr; PR":rd?"Approve this round"+w+" &rarr; PR":n?"Approve changes with "+n+" finished task"+(n>1?"s":"")+" &rarr; PR":"Approve changes without a task &rarr; PR";}
 tk.forEach(function(c){c.addEventListener('change',apLabel);});if(tk.length||so)apLabel();
 var aq=card.querySelector('.answerq');if(aq)aq.addEventListener('click',function(){lqFocus({kind:'ask',repo:repo,path:aq.getAttribute('data-path')});});
-if(ap)ap.addEventListener('click',function(){var tick=ticks();ap.disabled=true;ap.textContent='Committing & pushing...';
-api(ap.getAttribute('data-untasked')?'/api/pending/approve-changes':'/api/pending/approve',{repo:repo,bump:bs?bs.value:'',tick:tick}).then(function(r){var o=document.getElementById('reviewout');
+if(ap)ap.addEventListener('click',function(){var tick=ticks(),yes={};ap.disabled=true;ap.textContent='Committing & pushing...';
+function go(){api(ap.getAttribute('data-untasked')?'/api/pending/approve-changes':'/api/pending/approve',{repo:repo,bump:bs?bs.value:'',tick:tick,confirm:yes.confirm,allowShared:yes.allowShared}).then(function(r){var o=document.getElementById('reviewout');
+if(r&&r.ask){var ob=document.getElementById('reviewout');ap.disabled=false;apLabel();ob.innerHTML="<div class='note'>"+esc(repo)+": "+esc(r.error)+(r.waiting?" Files: "+esc((r.shared||[]).slice(0,4).join(', ')):"")+"<div class='row' style='margin-top:6px'><button class='act askyes'>"+(r.untasked?"Commit them":"Approve anyway")+"</button><button class='ghost askno'>"+(r.waiting?"Wait for it":"Not now")+"</button></div></div>";
+ob.querySelector('.askyes').addEventListener('click',function(){ap.disabled=true;ap.textContent='Committing & pushing...';ob.innerHTML='';if(r.untasked)yes.confirm=true;else yes.allowShared=true;go();});
+ob.querySelector('.askno').addEventListener('click',function(){ob.innerHTML='';});return;}
 if(!r||r.error){ap.disabled=false;ap.textContent='Approve - retry';o.innerHTML="<div class='note err'>"+esc(repo)+": "+esc((r&&r.error)||'failed')+"</div>";return;}
 var m="&#10003; <b>"+esc(repo)+"</b>: approved "+(r.round?"a round of its task, which stays open"+(r.approved?", and "+r.approved+" finished task"+(r.approved>1?"s":""):""):r.approved?r.approved+" task"+(r.approved>1?"s":""):"changes without a task");
 if(r.commit)m+=" &middot; committed <code>"+esc(r.commit)+"</code> on <code>"+esc(r.branch)+"</code>";
@@ -1870,7 +1894,7 @@ else if(r.bumped)m+="<div class='muted'>Bumps the version to <b>"+esc(r.bumped)+
 if(r.autoMerge==='queued')m+=" &middot; will auto-merge when CI passes";
 else if(r.autoMerge==='unavailable')m+="<div class='muted'>auto-merge not enabled for this repo on GitHub (Settings &rarr; General &rarr; Allow auto-merge)"+(r.autoMergeErr?": "+esc(r.autoMergeErr):"")+"</div>";
 if(r.note)m+="<div class='muted'>"+esc(r.note)+"</div>";
-o.innerHTML="<div class='note ok'>"+m+"</div>";loadTasks();});});});lqLight();});}
+o.innerHTML="<div class='note ok'>"+m+"</div>";loadTasks();});}go();});});lqLight();});}
 function loadArchived(){TARCH=true;lqTitle();var nb=$('needsbox');if(nb)nb.innerHTML='';api('/api/tasks?archived=1').then(function(list){ALLTASKS=list;renderFilter();var el=document.getElementById('tasklist');
 if(!list.length){el.innerHTML="<div class='muted' style='margin-top:12px'>Nothing archived yet. Completed tasks land here.</div>";return;}
 var h="<div class='tgroup'>Archived <span class='tcount'>"+list.length+"</span></div>";list.forEach(function(t){h+=taskRow(t,true);});el.innerHTML=h;wireTaskRows(el);});}
@@ -1892,8 +1916,8 @@ function relHtml(rl){return "<div class='qrel"+(rl.waiting?" wait":"")+"'>Needs 
 function askHtml(a){var k=a.ask;if(!k)return '';var qs=k.questions||[],ss=k.suggestions||[];if(!qs.length&&!ss.length)return '';
 var h="<div class='aq' data-id='"+esc(a.id)+"'>";
 if(qs.length){h+="<h4><i class=ic-ask></i> "+qs.length+" question"+(qs.length>1?"s":"")+" for you</h4>";
-qs.forEach(function(q,i){var rl=q.release;h+="<div class='q' data-i='"+i+"'><div class='qt'>"+esc(q.q)+"</div>"+(q.context?"<div class='qc'>"+esc(q.context)+"</div>":"")+(rl?relHtml(rl):"");
-(q.options||[]).forEach(function(o,j){var off=rl&&rl.waiting&&DONEOPT.test(o);h+="<label class='opt"+(off?" off":"")+"'><input type='radio' name='q_"+esc(a.id)+"_"+i+"' value='"+j+"'"+(off?" disabled":"")+"><span>"+whoHtml(o)+(off?" <i>(once "+esc(rl.name+" "+rl.needs)+" is installed)</i>":"")+"</span></label>";});
+qs.forEach(function(q,i){var rl=q.release;h+="<div class='q' data-i='"+i+"'>"+(q.task?"<div class='qfor' title='"+escQ(q.task)+"'>for: "+esc(q.task)+"</div>":"")+"<div class='qt'>"+esc(q.shown||q.q)+"</div>"+(q.context?"<div class='qc'>"+esc(q.context)+"</div>":"")+(rl?relHtml(rl):"");
+(q.options||[]).forEach(function(o,j){var off=rl&&rl.waiting&&DONEOPT.test(o);h+="<label class='opt"+(off?" off":"")+"'><input type='radio' name='q_"+esc(a.id)+"_"+i+"' value='"+j+"'"+(off?" disabled":"")+"><span>"+whoHtml((q.labels&&q.labels[j])||o)+(off?" <i>(once "+esc(rl.name+" "+rl.needs)+" is installed)</i>":"")+"</span></label>";});
 h+="<input class='qother' placeholder='"+((q.options&&q.options.length)?"or answer in your own words":"your answer")+"'></div>";});
 h+="<div class='row'><button class='act qsend' title='save the answers and hand the repo back to your agent'>Send answers &amp; continue</button><button class='ghost qsave' title='save the answers for the next run'>Save only</button></div>";}
 if(ss.length){var shown=IDEASOPEN[a.path]?ss.length:(k.ideasShown||ss.length);h+="<h4><i class=ic-idea></i> Ideas from the agent</h4>";ss.forEach(function(s,i){if(i>=shown)return;h+="<div class='idea'><span style='flex:1'>"+esc(s.text)+(s.other?" <span class='tag' title='this idea is for another project, so + task adds it to that one'>for "+esc(s.repo)+"</span>":"")+"</span>"+(s.added?"<span class='tag'>in Tasks</span>":"<button class='ghost qidea' data-i='"+i+"' style='padding:3px 9px;font-size:12px'>+ task</button><button class='ghost qskip' data-i='"+i+"' title='turn this idea down: the next one moves up, and the agent is told not to suggest it again' style='padding:3px 9px;font-size:12px'>Skip</button>")+"</div>";});
@@ -1930,7 +1954,7 @@ return "<div class='aq'><h4><i class=ic-pause></i> Waiting on your step</h4><div
 // change, or a step only you can do, with what to check first. Answered as on Home.
 function needsHtml(a){var n=a.needs;if(!n||n.waiting)return '';var ok=n.kind==='approve';
 return "<div class='aq'><h4><i class=ic-person></i> "+(ok?"Waits for your OK":"Needs you")+"</h4><div class='qt'>"+esc(n.what)+"</div>"+(n.check?"<div class='qc'><b>Check first:</b> "+esc(n.check)+"</div>":"")
-+"<div class='row'><button class='act ngo' data-id='"+esc(a.id)+"' title='"+(ok?"its agent goes ahead with it":"its agent checks it worked and carries on")+"'>"+(ok?"Go ahead":"Done it")+"</button><button class='ghost nskip' data-id='"+esc(a.id)+"' title='it stops asking'>Skip</button></div></div>";}
++"<div class='row'><button class='act ngo' data-id='"+esc(a.id)+"' title='"+(ok?"its agent goes ahead with it":"its agent checks it worked and carries on")+"'>"+(ok?"Go ahead":"I've done this")+"</button><button class='ghost nskip' data-id='"+esc(a.id)+"' title='it stops asking'>Skip</button></div></div>";}
 function wireNeeds(el){el.querySelectorAll('.ngo,.nskip').forEach(function(btn){btn.addEventListener('click',function(){var a=agentById(btn.getAttribute('data-id'));if(!a)return;btn.disabled=true;var msg=document.getElementById('agentsmsg');
 api('/api/home/answer',{id:'needs:'+a.id,pick:btn.classList.contains('ngo')?0:1}).then(function(r){msg.innerHTML=r&&!r.error?"<div class='note ok'>"+esc(a.name)+": "+esc(r.said||'Done.')+"</div>":"<div class='note err'>"+esc((r&&r.error)||'failed')+"</div>";loadAgents();}).catch(function(e){btn.disabled=false;msg.innerHTML="<div class='note err'>"+esc(String((e&&e.message)||e))+"</div>";});});});}
 function wireWaits(el){el.querySelectorAll('.wstart').forEach(function(btn){btn.addEventListener('click',function(){var a=agentById(btn.getAttribute('data-id'));if(!a)return;btn.disabled=true;
@@ -1973,7 +1997,7 @@ function wkSpark(p){if(!p||p.length<2)return '';var m=Math.max.apply(null,p)||1,
 function workHtml(a){var w=a.work,pg=a.progress,run=a.status==='running',h='';
 if(!w){if(run)h+="<div class='bar'><i></i></div>";if(pg)h+="<div class='wkstats'><span class='wkstat'><b>"+pg.done+"/"+pg.total+"</b> tasks ticked</span></div>";return h;}
 var stats=[];if(w.model)stats.push("<span class='wkstat'>"+esc(w.model.split('[')[0])+"</span>");stats.push("<span class='wkstat'><b>"+w.count+"</b> step"+(w.count===1?'':'s')+"</span>");
-if(w.turns!=null)stats.push("<span class='wkstat'><b>"+w.turns+"</b> turns</span>");if(w.tokens)stats.push("<span class='wkstat'><b>"+(w.tokens>999999?(w.tokens/1e6).toFixed(1)+'M':w.tokens>999?Math.round(w.tokens/1000)+'k':w.tokens)+"</b> tokens</span>");
+if(w.turns!=null)stats.push("<span class='wkstat'><b>"+w.turns+"</b> turns</span>");if(w.tokens)stats.push("<span class='wkstat'><b>"+(w.tokens>999999?(w.tokens/1e6).toFixed(1)+'M':w.tokens>999?Math.round(w.tokens/1000)+'k':w.tokens)+"</b> tokens</span>");if(w.ctx)stats.push("<span class='wkstat' title='What it rereads with every step: the conversation so far. Past 60k, your next answer starts it fresh with a summary instead.'><b>"+(w.ctx>999?Math.round(w.ctx/1000)+'k':w.ctx)+"</b> context</span>");
 if(w.cost!=null)stats.push("<span class='wkstat'><b>$"+w.cost.toFixed(2)+"</b></span>");if(w.tests)stats.push("<span class='wktest"+(w.tests.failed?' bad':'')+"'>"+w.tests.passed+" passed &middot; "+w.tests.failed+" failed</span>");if(w.errors)stats.push("<span class='wktest bad'>"+w.errors+" error"+(w.errors>1?'s':'')+"</span>");
 if(run&&w.doing)h+="<div class='wkdoing'>"+esc(w.doing)+"&hellip;</div>";
 var first=(w.final||'').split(String.fromCharCode(10))[0];if(!run&&first)h+="<div class='wkfinal'>"+esc(first.length>180?first.slice(0,179)+'\u2026':first)+"</div>";
@@ -1998,16 +2022,18 @@ el.innerHTML=ap.map(function(a){return "<div class='note "+(a.status==='failed'?
 // what's finished, folded away (open stays open across refreshes). A run whose handover
 // hasn't gone to its lane yet stays out with what's at work, not folded away.
 var AGDONEOPEN=false;
-function agentGroups(list,fn){var needs=[],run=[],done=[];list.forEach(function(a){if(nQs(a)||a.waiting||a.needs)needs.push(a);else if(a.status==='running'||(a.handing||[]).some(function(x){return !x.gone;}))run.push(a);else done.push(a);});
+// ended cleanly with its task list not all ticked, nothing asked of you: it checks again on its next turn
+function agentPaused(a){return a.status==='done'&&!!a.progress&&a.progress.total>0&&a.progress.done<a.progress.total&&!a.waiting&&!a.needs&&!nQs(a);}
+function agentGroups(list,fn){var needs=[],run=[],paused=[],done=[];list.forEach(function(a){if(nQs(a)||a.waiting||a.needs)needs.push(a);else if(a.status==='running'||(a.handing||[]).some(function(x){return !x.gone;}))run.push(a);else if(agentPaused(a))paused.push(a);else done.push(a);});
 var g=function(t,xs){return xs.length?"<div class='tgroup agg'>"+t+" <span class='tcount'>"+xs.length+"</span></div>"+xs.map(fn).join(''):'';};
-return g('Needs you',needs)+g('At work',run)+(done.length?"<details class='agdone'"+(AGDONEOPEN?' open':'')+"><summary class='tgroup agg'>Finished <span class='tcount'>"+done.length+"</span></summary>"+done.map(fn).join('')+"</details>":'');}
+return g('Needs you',needs)+g('At work',run)+g('Paused',paused)+(done.length?"<details class='agdone'"+(AGDONEOPEN?' open':'')+"><summary class='tgroup agg'>Finished <span class='tcount'>"+done.length+"</span></summary>"+done.map(fn).join('')+"</details>":'');}
 function agentsDraw(){api('/api/agents').then(function(list){var el=document.getElementById('agentslist');
 if(!list||!list.length){AGENTLIST=[];el.innerHTML="<div class='muted' style='margin-top:12px'>No agents yet. In <b>Tasks</b>, tick ideas and hit <b>Send to repos</b> (with an agent command set in Settings) &mdash; you'll watch it work here.</div>";stopAgentsPoll();return;}
 var anyRunning=list.some(function(a){return a.status==='running';});
 if(answering()||selIn(el)){stopAgentsPoll();if(anyRunning&&current==='tasks')agentsTimer=setTimeout(loadAgents,2000);else selWait('agents',loadAgents);return;} // don't re-render under someone typing an answer, or selecting text to copy
 saveDrafts(el);AGENTLIST=list;
-var agentBlock=function(a){var cls=a.status==='running'?'run':(a.status==='done'?'ok':'fail');
-var st=a.status==='running'?('working &middot; '+fmtE(a.elapsed)):(esc(a.status)+' &middot; '+fmtE(a.elapsed)+(a.exitCode!=null?' &middot; exit '+a.exitCode:''));
+var agentBlock=function(a){var pz=agentPaused(a),cls=a.status==='running'?'run':pz?'paused':(a.status==='done'?'ok':'fail');
+var st=a.status==='running'?('working &middot; '+fmtE(a.elapsed)):pz?('paused &middot; '+a.progress.done+'/'+a.progress.total+' tasks done &middot; turn ended, will check again'+(a.work&&a.work.restOn?' &middot; '+esc(a.work.restOn):'')+' &middot; '+fmtE(a.elapsed)):(esc(a.status)+' &middot; '+fmtE(a.elapsed)+(a.exitCode!=null?' &middot; exit '+a.exitCode:''));
 if(a.fromHeld)st+=" &middot; started on the tasks held for the last run";
 if(a.earlier)st+=" &middot; "+(a.status==='running'?"started outside this window":"ran before Symbiot last started");
 if(a.waiting)st+=" &middot; <span style='color:var(--amber)'>waiting on your step</span>";
@@ -2142,7 +2168,7 @@ h+="<div class='note muted' style='margin-top:2px'>"+(window.SymbiotAndroid?"<b>
 "<div class='row' style='margin-top:4px'><button class='ghost' id='pfind'>Look for it on this network</button></div><div id='pfound' class='pcfound'></div>";}
 if(!d.notify)h+="<div class='note err'>Notifications from Termux need the Termux:API app: install it, then run <b>pkg install termux-api</b> in Termux.</div>";}
 else{h+="<label class='check'><input type='checkbox' id='plinkon'"+(d.on?" checked":"")+"> Let the Symbiot app on my phone show my work here, and send back what I do on it</label>";
-if(d.on&&d.error)h+="<div class='note err'>"+esc(d.error)+"</div>";
+if(d.on&&d.error){h+="<div class='note err'>"+esc(d.error)+"</div>";if(d.holder)h+="<div class='row' style='margin-top:4px'>"+(d.holder.symbiot?"<button class='ghost' id='pfree'>Free it</button> ":"")+"<input id='pport' type='number' min='1024' max='65535' value='"+(d.port+1)+"' style='width:90px'> <button class='ghost' id='pusport'>Use a different port</button></div>";}
 else if(d.on&&d.listening){h+=d.code&&d.qr?phoneQr(d,"Settings &rarr; <b>Your phone</b>"):"<div class='row' style='margin-top:4px'><button class='ghost' id='pnewcode'>Pair a phone</button></div>";
 h+=(d.phones||[]).map(function(p){return "<div class='task' data-id='"+escQ(p.id)+"'><span class='t'>"+esc(p.name)+" <span class='muted' style='font-size:12px'>paired "+agoTxt(p.added)+" &middot; "+phoneSeen(p)+"</span></span><button class='rm punpair' title='unpair it: it gets nothing more, and what it queued (an approve too) is refused'>&times;</button></div>";}).join('');
 var rl=d.relay||{};if((d.phones||[]).length)h+="<label class='check'><input type='checkbox' id='prelay'"+(rl.on!==false?" checked":"")+"> Away from home too, through symbiot.co.za</label><div class='note muted' style='margin-top:0'>"+(rl.on===false?"Off: your phone reaches this computer only on your Wi-Fi.":rl.connected?"Connected. Away from home, what your phone and this computer send each other passes through symbiot.co.za, sealed: it can&rsquo;t read it, and keeps none of it. At home nothing goes through it.":"Not connected yet"+(rl.error?": "+esc(rl.error):"")+". Away from home, what they send passes through symbiot.co.za, sealed: it can&rsquo;t read it.")+"</div>";}
@@ -2151,6 +2177,8 @@ if(msg)h+="<div class='note "+(msg.ok?"ok":"err")+"'>"+esc(msg.text)+"</div>";
 box.innerHTML=h;
 var on=$('plinkon');if(on)on.addEventListener('change',function(){on.disabled=true;api('/api/phone/link',{on:on.checked}).then(function(x){renderPhoneLink(x);});});
 var rlb=$('prelay');if(rlb)rlb.addEventListener('change',function(){rlb.disabled=true;api('/api/phone/relay',{on:rlb.checked}).then(function(x){renderPhoneLink(x);});});
+var pf=$('pfree');if(pf)pf.addEventListener('click',function(){pf.disabled=true;api('/api/phone/free',{}).then(function(x){renderPhoneLink(x);});});
+var pu=$('pusport');if(pu)pu.addEventListener('click',function(){pu.disabled=true;api('/api/phone/port',{port:$('pport').value}).then(function(x){renderPhoneLink(x);});});
 var nc=$('pnewcode');if(nc)nc.addEventListener('click',function(){api('/api/phone/code',{}).then(function(x){renderPhoneLink(x);});});
 box.querySelectorAll('.punpair').forEach(function(b){b.addEventListener('click',function(){if(typeof confirm==='function'&&!confirm('Unpair this phone? It gets nothing more from here, and what it queued (an approve too) is refused.'))return;api('/api/phone/unpair',{id:b.closest('.task').getAttribute('data-id')}).then(function(x){renderPhoneLink(x);});});});
 var pp=$('ppair');if(pp)pp.addEventListener('click',function(){var a=$('paddr').value,cd=$('pcode').value;pp.disabled=true;pp.textContent='Pairing...';api('/api/phone/pair',{address:a,code:cd}).then(function(x){renderPhoneLink(x,x&&x.error?{text:x.error}:{ok:true,text:'Paired. What needs you on '+x.name+' is on Home now.'});if(x&&x.error&&$('paddr')){$('paddr').value=a;$('pcode').value=cd;}if(x&&!x.error){LQ.fresh=true;lqLoad(true);}});});
@@ -2177,8 +2205,8 @@ var h='',W="<span class='pcwait'> waiting to send</span>";
 (c.notes||[]).forEach(function(n){h+="<div class='task' data-note='"+escQ(n.id)+"'><span class='t err'>"+esc(n.error)+(n.what?" <span class='muted'>("+esc(n.what)+")</span>":"")+"</span><button class='ghost pcnote'>OK</button></div>";});
 var asks=c.asks||[],aps=c.approves||[],needs=c.needs||[];
 if(asks.length||aps.length||needs.length){h+="<div class='mkneeds lit'><div class='pshead'><span>Needs you &middot; "+(asks.length+aps.length+needs.length)+"</span><small>on "+esc(d.name)+"</small></div>";
-asks.forEach(function(a,i){var q=(a.questions||[])[0]||{};h+="<div class='pcq' data-ask='"+i+"'><div class='qn'>"+esc(a.name)+" asks"+((a.questions||[]).length>1?" &middot; 1 of "+a.questions.length:"")+"</div><div class='qq'>"+esc(q.q||'')+"</div>"+
-(a.waiting?"<div class='note' style='margin:0'>You answered: "+esc((a.answered||[])[0]||'')+W+"</div>":"<div class='opts'>"+(q.options||[]).map(function(o,j){return "<button class='"+(j?'ghost':'act')+" pcopt' data-j='"+j+"'>"+esc(o)+"</button>";}).join('')+"</div><form class='pcown'><input placeholder='Or say it in your own words' maxlength='2000'><button class='ghost' type='submit'>Send</button></form>")+"</div>";});
+asks.forEach(function(a,i){var q=(a.questions||[])[0]||{};h+="<div class='pcq' data-ask='"+i+"'><div class='qn'>"+esc(a.name)+" asks"+((a.questions||[]).length>1?" &middot; 1 of "+a.questions.length:"")+"</div>"+(q.task?"<div class='qfor' title='"+escQ(q.task)+"'>for: "+esc(q.task)+"</div>":"")+"<div class='qq'>"+esc(q.shown||q.q||'')+"</div>"+
+(a.waiting?"<div class='note' style='margin:0'>You answered: "+esc((a.answered||[])[0]||'')+W+"</div>":"<div class='opts'>"+(q.options||[]).map(function(o,j){return "<button class='"+(j?'ghost':'act')+" pcopt' data-j='"+j+"'>"+esc((q.labels&&q.labels[j])||o)+"</button>";}).join('')+"</div><form class='pcown'><input placeholder='Or say it in your own words' maxlength='2000'><button class='ghost' type='submit'>Send</button></form>")+"</div>";});
 aps.forEach(function(a,i){h+="<div class='pcq' data-ap='"+i+"'><div class='qn'>"+esc(a.repo)+" &middot; waiting for your Approve</div><div class='qq'>"+(a.tasks.length?a.tasks.length+" task"+(a.tasks.length>1?"s":"")+" done":"Changes without a task")+" &middot; <span class='muted'>"+esc(a.stat||(a.files+" file"+(a.files===1?"":"s")+" changed"))+"</span></div>"+(a.tasks.length?"<ul>"+a.tasks.map(function(t){return "<li>"+esc(t.text)+"</li>";}).join('')+"</ul>":"")+
 (a.waiting?"<div class='note' style='margin:0'>Approved here"+W+"</div>":"<div class='row' style='margin:0'><button class='act pcapprove'>Approve</button><span class='muted' style='font-size:12px'>exactly this: if the work changes before your computer gets it, it isn&rsquo;t approved</span></div>")+"</div>";});
 needs.forEach(function(n){h+="<div class='task'><span class='t'>"+esc(n.title)+" <span class='muted' style='font-size:12px'>"+esc(n.sub)+" &middot; on your computer</span></span></div>";});
@@ -2232,7 +2260,10 @@ if(d.error)h+="<div class='note err'>"+esc(d.error)+"</div>";
 h+="<div class='cxg'>"+d.groups.map(function(g){return "<div class='cxc'><div class='cxl'>"+esc(g)+"</div>"+d.items.filter(function(x){return x.group===g;}).map(function(it){var on=it.state!=='off';
 var rc=reachOf(d,it.id),rt=rc?(rc.ready?" Your agent's runs can use it too, through Claude's "+rc.connector.replace(/^claude\.ai\s+/i,'')+" connector.":" Your agent's runs can use it too once you connect "+rc.name+" in claude.ai → Settings → Connectors (only you can sign in there)."):'';
 return "<div class='lnk cx "+escQ(it.state)+"' data-id='"+escQ(it.id)+"'><button type='button' class='lbtn' title='"+escQ(String(it.note||(on?'open '+it.url+' to sign in again':'sign in at '+it.url+' and link it')).replace(/\.?\s*$/,rt?'.':'')+rt)+"'><span class='cxb' aria-hidden='true'></span><span class='cxn'>"+esc(it.name)+"</span>"+(rc?"<i class='ic-plug cxa"+(rc.ready?" ready":"")+"' role='img' aria-label='"+escQ(rc.ready?"agent runs can use it too":"agent runs can use it once connected in claude.ai")+"'></i>":"")+"<span class='cxs'>"+(on?esc(LINKWORD[it.state]||''):'Link')+"</span></button>"+
-(on?"<button type='button' class='lmore' title='check it now' aria-label='Check "+escQ(it.name)+" now'>&#8635;</button><button type='button' class='lrm' title='unlink: stop watching it and stop trusting it'>Unlink</button>":"")+"</div>";}).join('')+"</div>";}).join('')+"</div>";return h;}
+(on?"<button type='button' class='lmore' title='check it now' aria-label='Check "+escQ(it.name)+" now'>&#8635;</button><button type='button' class='lrm' title='unlink: stop watching it and stop trusting it'>Unlink</button>":"")+"</div>";}).join('')+"</div>";}).join('')+"</div>";
+// what a check that couldn't confirm a sign-in found (links.mjs foundNote), in plain sight
+var nn=d.items.filter(function(it){return it.state==='signin'&&it.note;});
+if(nn.length)h+="<div class='note muted'>"+nn.map(function(it){return "<div><b>"+esc(it.name)+"</b>: "+esc(it.note)+"</div>";}).join('')+"</div>";return h;}
 function linksOut(html){var o=document.getElementById('linksmsg');if(o)o.innerHTML=html;var b=document.getElementById('boardmsg');if(b&&LINKS&&!LINKS.linked)b.innerHTML=html;}
 function sbOpen(url){api('/api/browser/open',url?{url:url}:{}).then(function(r){if(r&&r.error)linksOut("<div class='note err'>"+esc(r.error)+"</div>");}).catch(function(){});}
 function renderLinks(){if(!LINKS)return;['links','boardlinks'].forEach(function(id){var el=document.getElementById(id);if(!el)return;
@@ -2263,6 +2294,9 @@ function loadTrusted(){api('/api/screens/trusted').then(function(d){var box=docu
 box.innerHTML=sites.length?sites.map(function(h){return "<div class='task' data-h='"+esc(h)+"'><span class='t' style='font-family:ui-monospace,monospace;font-size:12px'>"+esc(h)+"</span><button class='ghost tsign' title='open "+esc(h)+" in the Symbiot Browser, to sign in for agents'>Sign in</button><button class='rm rmtrusted' title='stop trusting it: press and type ask first again'>&times;</button></div>";}).join(""):"<div class='muted' style='font-size:12px'>None yet: Press and Type ask first on every site.</div>";
 box.querySelectorAll('.tsign').forEach(function(btn){btn.addEventListener('click',function(){var h=btn.closest('.task').getAttribute('data-h');openSignIn({site:h},function(t,ok){var n=document.getElementById('trustednote');if(n)n.innerHTML="<span class='"+(ok?'ok':'err')+"'>"+esc(t)+"</span>";});});});
 box.querySelectorAll('.rmtrusted').forEach(function(btn){btn.addEventListener('click',function(){api('/api/screens/trusted/remove',{site:btn.closest('.task').getAttribute('data-h')}).then(function(){loadTrusted();loadScreensUI();});});});});}
+function loadSecrets(){api('/api/secrets').then(function(d){var box=document.getElementById('secretslist');if(!box)return;var s=(d&&d.secrets)||[];
+box.innerHTML=s.length?s.map(function(x){return "<div class='task' data-n='"+esc(x.name)+"'><span class='t'>"+esc(x.name)+"</span><span class='muted' style='font-size:12px'>"+x.left+" of "+x.count+" unused</span><button class='rm rmsecret' title='delete it from this computer'>&times;</button></div>";}).join(""):"<div class='muted' style='font-size:12px'>None saved yet.</div>";
+box.querySelectorAll('.rmsecret').forEach(function(btn){btn.addEventListener('click',function(){var n=btn.closest('.task').getAttribute('data-n');if(typeof confirm==='function'&&!confirm("Delete the secret “"+n+"”? It can't be brought back."))return;api('/api/secrets/delete',{name:n}).then(loadSecrets);});});});}
 function addTrustedUI(){var i=document.getElementById('newtrusted');var v=(i.value||'').trim();if(!v)return;var n=document.getElementById('trustednote');
 api('/api/screens/trusted/add',{site:v}).then(function(r){if(!r||r.error){n.innerHTML="<span class='err'>"+esc((r&&r.error)||'failed')+"</span>";return;}i.value='';loadTrusted();loadScreensUI();});}
 // Email: opt-in, read from mail already on this computer (no API) — see mail.mjs.
@@ -2534,27 +2568,68 @@ return "<div class='rdpost' aria-label='Reddit preview'><div class='rdhead'><spa
 +"<div class='rdtitle'>"+esc(p.title||'')+"</div>"+(p.flair?"<span class='rdflair'>"+esc(p.flair)+"</span>":"")
 +(p.media||[]).map(function(m){return m.kind==='video'?"<video class='rdmedia' src='"+escQ(mkMediaSrc(m.rel))+"' controls muted playsinline preload='metadata'></video>":"<img class='rdmedia' src='"+escQ(mkMediaSrc(m.rel))+"' alt='"+escQ(m.name)+"'>";}).join('')
 +"<div class='rdbody'>"+mkRdText(p.body)+"</div><div class='rdbar'><span>&#8679; Vote &#8681;</span><span>Comments</span><span>Award</span><span>Share</span></div></div>";}
-function mkPreviewHtml(p){var a=p.author||{},plat=p.platform==='linkedin'?'LinkedIn':(p.platform||'post'),reddit=/reddit/i.test(p.platform||'');
-var h=reddit?mkRedditHtml(p):"<div class='lipost' aria-label='"+escQ(plat)+" preview'><div class='liauth'>"+(a.avatar?"<img class='liav' src='"+escQ(mkMediaSrc('avatar'))+"' alt=''>":"<span class='liav'>"+esc(a.initials||'')+"</span>")
-+"<div class='liwho'><b>"+esc(a.name||'')+"</b>"+(a.headline?"<small>"+esc(a.headline)+"</small>":"")+"<small>"+(p.when?"Scheduled for "+esc(p.when):"Now")+" &middot; &#127760;</small></div></div>"
-+"<div class='litext'>"+(p.cut?mkTags(p.shown)+"&hellip;<button type='button' class='limore'>see more</button>":mkTags(p.body))+"</div>"
-+(p.media||[]).map(function(m){return m.kind==='video'?"<video class='limedia' src='"+escQ(mkMediaSrc(m.rel))+"' controls muted playsinline preload='metadata'></video>":"<img class='limedia' src='"+escQ(mkMediaSrc(m.rel))+"' alt='"+escQ(m.name)+"'>";}).join('')
-+"<div class='libar'><span>Like</span><span>Comment</span><span>Repost</span><span>Send</span></div></div>";
+// Each draft as its own platform shows it (its platform: line): LinkedIn's post, X's card,
+// Instagram's picture and caption, Facebook's post, Reddit's post with its subreddit and
+// title. A Reddit draft shown as a LinkedIn post can't be judged (Garth, 2026-10-10).
+var MKLIMIT={linkedin:3000,x:280,twitter:280,instagram:2200,facebook:63206,reddit:40000};
+function mkMediaHtml(p,cls){return (p.media||[]).map(function(m){return m.kind==='video'?"<video class='limedia' src='"+escQ(mkMediaSrc(m.rel))+"' controls muted playsinline preload='metadata'></video>":"<img class='limedia' src='"+escQ(mkMediaSrc(m.rel))+"' alt='"+escQ(m.name)+"'>";}).join('');}
+function mkAv(p,a,cls){var who=p.account||p.product||a.name||'';return a.avatar&&!p.account&&!p.product?"<img class='"+cls+"' src='"+escQ(mkMediaSrc('avatar'))+"' alt=''>":"<span class='"+cls+"'>"+esc(String(who).replace(/^@/,'').slice(0,2).toUpperCase())+"</span>";}
+function mkPostHtml(p){var a=p.author||{},pl=p.platform==='twitter'?'x':p.platform,when=p.when?"Scheduled for "+esc(p.when):"Now";
+var who=esc(String(p.account||p.product||a.name||'').replace(/^@/,'')),handle=p.account?'@'+esc(String(p.account).replace(/^@/,'')):'';
+if(pl==='x')return "<div class='lipost xpost' aria-label='X preview'><div class='liauth'>"+mkAv(p,a,'liav')+"<div><div class='liwho'><b>"+who+"</b>"+(handle?"<small>"+handle+"</small>":"")+"<small>&middot; "+when+"</small></div>"
++"<div class='litext'>"+mkTags(p.body)+"</div>"+mkMediaHtml(p)+"<div class='libar'><span>&#128172;</span><span>&#8645;</span><span>&#9825;</span><span>&#128202;</span><span>&#10697;</span></div></div></div></div>";
+if(pl==='instagram')return "<div class='lipost igpost' aria-label='Instagram preview'><div class='liauth'>"+mkAv(p,a,'liav')+"<div class='liwho'><b>"+(handle?esc(String(p.account).replace(/^@/,'')):who)+"</b><small>"+when+"</small></div></div>"
++((p.media||[]).length?mkMediaHtml(p):"<div class='ignomedia'>Instagram needs a picture or video, and this draft has none.</div>")
++"<div class='libar'><span>&#9825;</span><span>&#128172;</span><span>&#10148;</span></div><div class='litext'><b>"+(handle?esc(String(p.account).replace(/^@/,'')):who)+"</b> "+mkTags(p.body)+"</div></div>";
+if(pl==='facebook')return "<div class='lipost fbpost' aria-label='Facebook preview'><div class='liauth'>"+mkAv(p,a,'liav')+"<div class='liwho'><b>"+who+"</b><small>"+when+" &middot; &#127760;</small></div></div>"
++"<div class='litext'>"+mkTags(p.body)+"</div>"+mkMediaHtml(p)+"<div class='libar'><span>Like</span><span>Comment</span><span>Share</span></div></div>";
+if(pl==='reddit')return mkRedditHtml(p);
+var li=pl==='linkedin',plat=li?'LinkedIn':(p.platform||'post');
+return "<div class='lipost' aria-label='"+escQ(plat)+" preview'><div class='liauth'>"+(a.avatar?"<img class='liav' src='"+escQ(mkMediaSrc('avatar'))+"' alt=''>":"<span class='liav'>"+esc(a.initials||'')+"</span>")
++"<div class='liwho'><b>"+esc(a.name||'')+"</b>"+(a.headline?"<small>"+esc(a.headline)+"</small>":"")+"<small>"+when+" &middot; &#127760;</small></div></div>"
++"<div class='litext'>"+(li&&p.cut?mkTags(p.shown)+"&hellip;<button type='button' class='limore'>see more</button>":mkTags(p.body))+"</div>"
++mkMediaHtml(p)+(li?"<div class='libar'><span>Like</span><span>Comment</span><span>Repost</span><span>Send</span></div>":"")+"</div>";}
+function mkPreviewHtml(p){var h=mkPostHtml(p),lim=MKLIMIT[p.platform]||0,reddit=/reddit/i.test(p.platform||'');
 if((p.missing||[]).length)h+="<div class='note err'>It names "+p.missing.map(function(m){return "<code>"+esc(m)+"</code>";}).join(', ')+", which isn&#39;t next to it.</div>";
-var fin=p.status==='posted'||p.status==='superseded',on=p.postedOn==='linkedin'?'LinkedIn':p.postedOn;
+var fin=p.status==='posted'||p.status==='superseded',pn={linkedin:'LinkedIn',x:'X',instagram:'Instagram',facebook:'Facebook',reddit:'Reddit'},on=pn[p.postedOn]||p.postedOn;
 var done=p.status==='posted'?"Posted"+(on?" on "+esc(on):"")+(p.posted?", "+esc(new Date(p.posted).toLocaleString(undefined,{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})):"")+(p.url?" &middot; <a href='"+escQ(p.url)+"' target='_blank' rel='noopener'>see it</a>":"")+". It isn&#39;t approved or posted again"+(p.edited?", though its file changed since":"")+"."
 :p.status==='superseded'?"Superseded"+((p.by||[]).length?" by "+p.by.map(function(b){return "<code>"+esc(b)+"</code>";}).join(', '):"")+": it won&#39;t be posted."
-:p.status==='approved'?"Approved "+agoTxt(p.statusAt)+": its agent "+(p.when?"schedules":"posts")+" it through Symbiot&#39;s browser, with this text.":p.status==='skipped'?"Skipped "+agoTxt(p.statusAt)+": it won&#39;t be posted.":"";
-h+="<div class='row mkpvact'>"+(fin||p.status==='approved'?"":"<button class='act mkok'>Approve"+(p.when?", schedule it":", post it")+"</button>")+(fin||p.status==='skipped'?"":"<button class='ghost mkskip'>Skip</button>")
-+"<span class='muted' style='font-size:12px;flex:1'>"+(done||(p.when?"Its agent schedules it for "+esc(p.when)+" once you approve.":"Its agent posts it once you approve."))+"</span><span class='pchars'>"+(reddit?"title "+String(p.title||'').length+" / 300 &middot; "+p.chars+" / 40000":p.chars+" / 3000")+"</span></div>";
+:p.status==='approved'?"Approved "+agoTxt(p.statusAt)+": its agent "+(p.when?"schedules":"posts")+" it through Symbiot&#39;s browser, with this text.":p.status==='skipped'?"Skipped "+agoTxt(p.statusAt)+": it won&#39;t be posted."
+:p.status==='change'?"You asked for a change "+agoTxt(p.statusAt)+": its agent redrafts it, and the new version comes back here for your OK.":"";
+h+="<div class='row mkpvact'>"+(fin||p.status==='approved'?"":"<button class='act mkok'>Approve"+(p.when?", schedule it":", post it")+"</button>")+(fin?"":"<button class='ghost mkchg' aria-expanded='false'>Change it</button>")+(fin||p.status==='skipped'?"":"<button class='ghost mkskip'>Skip</button>")
++"<span class='muted' style='font-size:12px;flex:1'>"+(done||(p.when?"Its agent schedules it for "+esc(p.when)+" once you approve.":"Its agent posts it once you approve."))+"</span><span class='pchars"+(lim&&p.chars>lim?" err":"")+"'>"+(reddit?"title "+String(p.title||'').length+" / 300 &middot; ":"")+p.chars+(lim?" / "+lim:"")+"</span></div>";
+if(p.status==='change'&&p.ask)h+="<div class='mkasked muted'>What you asked: &ldquo;"+esc(p.ask)+"&rdquo;</div>";
+if(!fin)h+="<form class='row mkchgf hidden'><textarea class='mkchgt' maxlength='4000' placeholder='What should change? Its agent redrafts this same post and brings it back for your OK.' aria-label='What to change'></textarea><button type='submit' class='act'>Send to its agent</button><button type='button' class='ghost mkchgx'>Cancel</button></form>";
 h+="<details class='linotes'><summary>Its notes</summary>"+(p.notes?"<div class='linotest'>"+esc(p.notes)+"</div>":"<div class='muted'>None.</div>")+"<button type='button' class='ghost mkfile' title='open the draft in your editor'>Edit the file</button></details>";
 return h;}
+// A file that isn't a social post (a store listing, schedule, plan, brief, script): shown as a
+// document with its markdown rendered (tables too), Copy, and for a listing Mark done. Never Approve, post it.
+function mkInline(x){return esc(x).split('**').map(function(s,i){return i%2?'<b>'+s+'</b>':s;}).join('');}
+function mkMd(t){var NL=String.fromCharCode(10),L=String(t||'').split(NL),o=[],i=0,cells=function(r){var c=r.trim().split('|');if(c[0]==='')c.shift();if(c.length&&c[c.length-1]==='')c.pop();return c.map(function(x){return x.trim();});};
+while(i<L.length){var tl=L[i].trim(),m;
+if(tl===''){i++;continue;}
+if(tl.charAt(0)==='|'&&i+1<L.length&&L[i+1].trim().charAt(0)==='|'&&L[i+1].indexOf('-')>=0&&L[i+1].replace(/[|:\\-\\s]/g,'')===''){var hd=cells(tl);o.push("<table class='mkdt'><thead><tr>"+hd.map(function(c){return '<th>'+mkInline(c)+'</th>';}).join('')+'</tr></thead><tbody>');i+=2;
+while(i<L.length&&L[i].trim().charAt(0)==='|'){o.push('<tr>'+cells(L[i]).map(function(c){return '<td>'+mkInline(c)+'</td>';}).join('')+'</tr>');i++;}o.push('</tbody></table>');continue;}
+if((m=tl.match(/^(#{1,4})\\s+(.*)$/))){var n=Math.min(m[1].length+2,6);o.push('<h'+n+'>'+mkInline(m[2])+'</h'+n+'>');i++;continue;}
+if(/^[-*]\\s+/.test(tl)){o.push('<ul>');while(i<L.length&&/^[-*]\\s+/.test(L[i].trim())){o.push('<li>'+mkInline(L[i].trim().replace(/^[-*]\\s+/,''))+'</li>');i++;}o.push('</ul>');continue;}
+var para=[];while(i<L.length&&L[i].trim()!==''&&L[i].trim().charAt(0)!=='|'&&!/^(#{1,4}\\s|[-*]\\s)/.test(L[i].trim())){para.push(mkInline(L[i]));i++;}
+if(!para.length){o.push('<p>'+mkInline(L[i])+'</p>');i++;}else o.push('<p>'+para.join('<br>')+'</p>');}
+return o.join('');}
+function mkDocHtml(p){return "<div class='mkdoc' aria-label='document preview'>"+mkMd(p.text)+"</div><div class='row mkpvact'><button class='act mkcopy'>Copy</button>"+(p.type==='listing'&&!p.done?"<button class='ghost mkdone'>Mark done</button>":"")+"<button class='ghost mkfile' title='open the file in your editor'>Edit the file</button><span class='muted' style='font-size:12px;flex:1'>"+(p.done?"Marked done. ":"")+"A "+esc(p.type||'document')+", not a social post: nothing is posted from it.</span></div>";}
 function mkPreview(box,rel){if(!box.innerHTML)box.innerHTML="<div class='muted'>Loading&hellip;</div>";
 api('/api/marketing/draft?rel='+encodeURIComponent(rel)).then(function(p){if(MKPV!==rel)return;if(!p||p.error){box.innerHTML="<div class='note err'>"+esc((p&&p.error)||'failed')+"</div>";return;}
+if(p.isPost===false){box.innerHTML=mkDocHtml(p);var cp=box.querySelector('.mkcopy');if(cp)cp.addEventListener('click',function(){var done=function(){mkMsg('ok','Copied.');};if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(p.text).then(done,function(){mkMsg('err','Couldn&#39;t copy it.');});else mkMsg('err','Couldn&#39;t copy it.');});
+var dn=box.querySelector('.mkdone');if(dn)dn.addEventListener('click',function(){dn.disabled=true;api('/api/marketing/draft/answer',{rel:rel,done:true}).then(function(r){if(!r||r.error){dn.disabled=false;mkMsg('err',esc((r&&r.error)||'failed'));return;}mkMsg('ok','Marked done.');loadMarketing();mkPreview(box,rel);});});
+var fl0=box.querySelector('.mkfile');if(fl0)fl0.addEventListener('click',function(){api('/api/marketing/open',{rel:rel}).then(function(r){if(r&&r.error)mkMsg('err',esc(r.error));});});return;}
 box.innerHTML=mkPreviewHtml(p);
 var lp=box.querySelector('.lipost,.rdpost');if(lp){lp.title='open it large';lp.addEventListener('click',function(ev){if(ev.target.closest('button,a,video'))return;mkBig({rel:rel},lp);});}
 var mo=box.querySelector('.limore');if(mo)mo.addEventListener('click',function(){box.querySelector('.litext').innerHTML=mkTags(p.body);});
 var fl=box.querySelector('.mkfile');if(fl)fl.addEventListener('click',function(){api('/api/marketing/open',{rel:rel}).then(function(r){if(r&&r.error)mkMsg('err',esc(r.error));});});
+var cg=box.querySelector('.mkchg'),cf=box.querySelector('.mkchgf');
+if(cg&&cf){cg.addEventListener('click',function(){var o=cf.classList.toggle('hidden');cg.setAttribute('aria-expanded',String(!o));if(!o)cf.querySelector('textarea').focus();});
+cf.querySelector('.mkchgx').addEventListener('click',function(){cf.classList.add('hidden');cg.setAttribute('aria-expanded','false');});
+cf.addEventListener('submit',function(e){e.preventDefault();var t=cf.querySelector('textarea'),sb=cf.querySelector('button[type=submit]'),v=t.value.trim();if(!v){t.focus();return;}sb.disabled=true;
+api('/api/marketing/draft/answer',{rel:rel,change:v}).then(function(r){if(!r||r.error){sb.disabled=false;mkMsg('err',esc((r&&r.error)||'failed'));return;}mkMsg('ok',esc(r.said||'Sent.'));loadMarketing();mkPreview(box,rel);}).catch(function(e2){sb.disabled=false;mkMsg('err',esc(String((e2&&e2.message)||e2)));});});}
 box.querySelectorAll('.mkok,.mkskip').forEach(function(b){b.addEventListener('click',function(){var skip=b.classList.contains('mkskip');b.disabled=true;
 api('/api/marketing/draft/answer',{rel:rel,skip:skip}).then(function(r){if(!r||r.error){b.disabled=false;mkMsg('err',esc((r&&r.error)||'failed'));return;}mkMsg('ok',esc(r.said||'Done.'));loadMarketing();}).catch(function(e){b.disabled=false;mkMsg('err',esc(String((e&&e.message)||e)));});});});}).catch(function(e){box.innerHTML="<div class='note err'>"+esc(String((e&&e.message)||e))+"</div>";});}
 // A draft opened large (MKBIG): its pictures and video near full size (a click: one alone,
@@ -2639,7 +2714,7 @@ var keep=document.activeElement,typed=keep&&keep.closest&&keep.closest('#mktasks
 el.innerHTML=h;if(typed){$('mkprod').value=typed[0]||'';$('mktext').value=typed[1]||'';var f0=$(typed[2]);if(f0&&f0.focus)f0.focus();}
 var fm=el.querySelector('.mkadd');if(fm)fm.addEventListener('submit',function(ev){ev.preventDefault();var t=$('mktext'),pr=$('mkprod'),bt=fm.querySelector('button');if(!t.value.trim()){t.focus();return;}bt.disabled=true;
 api('/api/marketing/task',{text:t.value,product:pr.value}).then(function(r){bt.disabled=false;if(!r||r.error){mkMsg('err',esc((r&&r.error)||'failed'));return;}mkMsg('ok',r.duplicate?"It&#39;s on Marketing&#39;s list already.":"Added to Marketing"+(pr.value?" for "+esc(pr.value):"")+". Start its agent when you&#39;re ready.");t.value='';loadMarketing();}).catch(function(e){bt.disabled=false;mkMsg('err',esc(String((e&&e.message)||e)));});});
-el.querySelectorAll('.mkopen').forEach(function(b){b.addEventListener('click',function(){TFILTER.repo=b.getAttribute('data-repo')||'';TFILTER.type='';lqPool('tasks');if(typeof loadTasks==='function')loadTasks();});});
+el.querySelectorAll('.mkopen').forEach(function(b){b.addEventListener('click',function(){TFILTER.id='';TFILTER.repo=b.getAttribute('data-repo')||'';TFILTER.type='';lqPool('tasks');if(typeof loadTasks==='function')loadTasks();});});
 el.querySelectorAll('.mkmove').forEach(function(b){b.addEventListener('click',function(){var id=b.closest('.task').getAttribute('data-id');b.disabled=true;api('/api/marketing/move',{id:id}).then(function(r){if(!r||r.error){b.disabled=false;mkMsg('err',esc((r&&r.error)||'failed'));return;}mkMsg('ok',"Moved to Marketing: its agent takes it from now on.");loadMarketing();});});});
 el.querySelectorAll('.mkprev').forEach(function(b){b.addEventListener('click',function(){var rel=b.closest('.task').getAttribute('data-rel');MKPV=MKPV===rel?'':rel;renderMkLane();});});
 el.querySelectorAll('.task[data-rel]').forEach(function(r){r.title='open it large';r.addEventListener('click',function(ev){if(ev.target.closest('button,a,input,select,textarea'))return;mkBig({rel:r.getAttribute('data-rel')},r);});});
@@ -2766,15 +2841,19 @@ return "<div class='task'><span class='t'><b>"+esc(who)+"</b>: "+esc(w.subject)+
 el.querySelectorAll('.astop').forEach(function(btn){btn.addEventListener('click',function(){btn.disabled=true;api('/api/awaiting/stop',{id:btn.getAttribute('data-id')}).then(function(r){if(!r||r.error){btn.disabled=false;boardMsg('err',esc((r&&r.error)||'failed'));return;}loadAwaiting();});});});});}
 // ---- Reports (reports.mjs): what agents wrote up in their .symbiot/, newest first, the
 // unread ones marked. Opening one shows it here, as HTML the app made (escaped first).
-var REPS=[],REPOPEN='';
+var REPS=[],REPOPEN='',REPTAB='unread';
 function kb(n){return n<1024?n+' B':Math.round(n/1024)+' KB';}
 function loadReports(){api('/api/reports').then(function(d){REPS=(d&&d.reports)||[];if(!REPOPEN)renderReports();}).catch(function(e){$('reportslist').innerHTML="<div class='note err'>"+esc(String((e&&e.message)||e))+"</div>";});}
 function renderReports(){var el=$('reportslist');$('reportview').innerHTML='';REPOPEN='';
 if(!REPS.length){el.innerHTML="<div class='muted' style='margin-top:12px'>No reports yet. When an agent writes up findings, an audit or a plan, it leaves it as a .md file in its folder&#39;s .symbiot, and it shows up here.</div>";return;}
-var n=REPS.filter(function(r){return r.new;}).length;
-el.innerHTML="<div class='tgroup' style='display:flex;align-items:center;gap:8px"+(n?";color:var(--amber)":"")+"'>"+(n?n+' unread':'All read')+" <span class='tcount'>of "+REPS.length+"</span>"+(n?"<button class='ghost' id='reportsseen' style='margin-left:auto;padding:3px 9px;font-size:12px;letter-spacing:0;text-transform:none'>Mark all read</button>":"")+"</div>"+
-REPS.map(function(r,i){var where=!r.run||r.run===r.lane?esc(r.lane):r.run.indexOf(r.lane+':')===0?esc(r.run):esc(r.lane)+' &middot; '+esc(r.run);
-return "<div class='task rrow"+(r.new?" rnew":"")+"' data-i='"+i+"' tabindex='0' role='button' title='"+escQ(r.file)+"'><span class='t'><b>"+esc(r.title)+"</b><div class='muted' style='font-size:12px'>"+(r.new?"<span style='color:var(--amber)'>unread</span> &middot; ":"")+where+" &middot; "+esc(r.name)+" &middot; "+kb(r.size)+(r.computer?" &middot; from "+esc(r.computer):"")+(r.running?" &middot; <span style='color:var(--amber)'>its agent is still writing</span>":"")+"</div></span><span class='rp'>"+agoTxt(r.mtime)+"</span></div>";}).join('');
+var row=function(r,i){var where=!r.run||r.run===r.lane?esc(r.lane):r.run.indexOf(r.lane+':')===0?esc(r.run):esc(r.lane)+' &middot; '+esc(r.run);
+return "<div class='task rrow"+(r.new?" rnew":"")+"' data-i='"+i+"' tabindex='0' role='button' title='"+escQ(r.file)+"'><span class='t'><b>"+esc(r.title)+"</b><div class='muted' style='font-size:12px'>"+(r.new?"<span style='color:var(--amber)'>unread</span> &middot; ":"")+(r.needs==='draft'?"<span style='color:var(--amber)'>waiting for your OK</span> &middot; ":r.needs==='ideas'?"<span style='color:var(--amber)'>"+r.ideas+(r.ideas===1?" next step":" next steps")+"</span> &middot; ":"")+where+" &middot; "+esc(r.name)+" &middot; "+kb(r.size)+(r.computer?" &middot; from "+esc(r.computer):"")+(r.running?" &middot; <span style='color:var(--amber)'>its agent is still writing</span>":"")+"</div></span><span class='rp'>"+agoTxt(r.mtime)+"</span></div>";};
+var tabOf=function(r){return r.new?'unread':r.needs?'action':'read';};
+var cnt={unread:0,action:0,read:0};REPS.forEach(function(r){cnt[tabOf(r)]++;});
+var TABS=[['unread','Unread'],['action','Read, open actions'],['read','Read and done']];
+el.innerHTML="<div class='rtabs' id='reptabs' role='tablist'>"+TABS.map(function(t){return "<button class='tab"+(REPTAB===t[0]?" active":"")+"' role='tab' data-t='"+t[0]+"'>"+t[1]+" &middot; "+cnt[t[0]]+"</button>";}).join('')+(cnt.unread?"<button class='ghost' id='reportsseen' style='margin-left:auto;padding:3px 9px;font-size:12px;letter-spacing:0;text-transform:none;align-self:center'>Mark all read</button>":"")+"</div>"+
+((function(){var by={},order=[];REPS.forEach(function(r,i){if(tabOf(r)!==REPTAB)return;if(!by[r.lane]){by[r.lane]=[];order.push(r.lane);}by[r.lane].push(row(r,i));});return order.map(function(l){return "<div class='tgroup' style='margin-top:14px'>"+esc(l)+" <span class='tcount'>"+by[l].length+"</span></div>"+by[l].join('');}).join('');})()||"<div class='muted' style='margin-top:12px'>Nothing here.</div>");
+el.querySelectorAll('#reptabs .tab').forEach(function(b){b.addEventListener('click',function(){REPTAB=b.getAttribute('data-t');renderReports();});});
 el.querySelectorAll('.rrow').forEach(function(row){var go=function(){openReport(REPS[+row.getAttribute('data-i')]);};row.addEventListener('click',go);row.addEventListener('keydown',function(ev){if(ev.key==='Enter'||ev.key===' '){ev.preventDefault();go();}});});
 var s=$('reportsseen');if(s)s.addEventListener('click',function(){s.disabled=true;api('/api/reports/seen',{}).then(function(){loadReports();lqLoad(false);});});}
 // The way back sits at the top of the report itself (#reportview), so it stays in view, under
@@ -2796,11 +2875,15 @@ im.addEventListener('click',function(){var z=document.createElement('div');z.cla
 im.src=im.getAttribute('data-src')+'&t='+encodeURIComponent(T);});}
 function repActsHtml(d){var lane=d.lane==='ops'?'ops':esc(d.lane||'its lane'),h="<div class='out rdoc repacts'>";
 if(d.draft)h+="<div class='pshead'><span>This is a draft</span><small>"+(d.decided?"you "+esc(d.decided)+" it":"only you decide: its agent goes ahead once you approve")+"</small></div><div class='row'><button class='act repdraft' data-ok='1'>Approve</button><button class='ghost repdraft' data-ok=''>Reject</button></div>";
-else if((d.ideas||[]).length)h+="<div class='pshead'><span>Ideas from it</span><small>tick any to put them on the Workdesk, in "+lane+"</small></div>"+d.ideas.map(function(t,i){return "<label class='task repidea'><input type='checkbox' data-i='"+i+"'"+(i<3?" checked":"")+"> <span class='t'>"+esc(t)+"</span></label>";}).join('')+"<div class='row'><button class='act repadd'>Add to the Workdesk</button></div>";
+else if((d.ideas||[]).length)h+="<div class='pshead'><span>Ideas from it</span><small>tick any to put them on the Workdesk, in "+lane+"</small></div>"+d.ideas.map(function(t,i){return "<div class='task repidea'><label style='display:flex;gap:8px;flex:1'><input type='checkbox' data-i='"+i+"'"+(i<3?" checked":"")+"> <span class='t'>"+esc(t)+"</span></label><button class='act repone' data-i='"+i+"' title='put just this one on the Workdesk, in "+lane+"'>Hand to "+lane+"</button><button class='ghost repno' data-i='"+i+"' title='not worth doing: take it off this list'>Dismiss</button></div>";}).join('')+"<div class='row'><button class='ghost repadd'>Add the ticked ones</button></div>";
+else if(d.handled&&Object.keys(d.handled).length)h+="<div class='muted' style='font-size:12px'>Every next step in it is handed over or dismissed, so it sits under Read.</div>";
+if(!d.draft&&d.handled&&Object.keys(d.handled).length&&(d.ideas||[]).length)h+="<div class='muted' style='font-size:12px;margin-top:6px'>Already dealt with: "+Object.keys(d.handled).map(function(k){return esc(k)+" ("+(d.handled[k]==='handed'?'handed over':'dismissed')+")";}).join('; ')+"</div>";
 h+="<form class='row repask' style='margin-top:12px'><input class='repq' autocomplete='off' maxlength='2000' placeholder='Ask Symbiot about this report&hellip;' style='flex:1'><button type='submit' class='ghost'>Ask</button></form><div class='repmsg'></div></div>";return h;}
 function repActsWire(v,d){var msg=v.querySelector('.repmsg'),say=function(k,t){msg.innerHTML="<div class='note "+k+"'>"+t+"</div>";};
 var add=v.querySelector('.repadd');if(add)add.addEventListener('click',function(){var picks=[];v.querySelectorAll('.repidea input').forEach(function(c){if(c.checked)picks.push(d.ideas[+c.getAttribute('data-i')]);});if(!picks.length){say('err','Tick an idea first.');return;}add.disabled=true;
 api('/api/reports/ideas',{id:d.id,ideas:picks}).then(function(r){add.disabled=false;if(!r||r.error){say('err',esc((r&&r.error)||'failed'));return;}say('ok',esc(r.said));lqLoad(false);}).catch(function(e){add.disabled=false;say('err',esc(String((e&&e.message)||e)));});});
+v.querySelectorAll('.repone,.repno').forEach(function(b){b.addEventListener('click',function(){var t=d.ideas[+b.getAttribute('data-i')],row=b.closest('.repidea'),btns=row.querySelectorAll('button');if(!t)return;btns.forEach(function(x){x.disabled=true;});
+api(b.classList.contains('repone')?'/api/reports/ideas':'/api/reports/dismiss',{id:d.id,ideas:[t]}).then(function(r){if(!r||r.error){btns.forEach(function(x){x.disabled=false;});say('err',esc((r&&r.error)||'failed'));return;}row.style.opacity='.5';row.querySelector('input').checked=false;row.querySelector('input').disabled=true;say('ok',esc(r.said)+' It moves to Read once all its next steps are dealt with.');if(b.classList.contains('repone'))lqLoad(false);}).catch(function(e){btns.forEach(function(x){x.disabled=false;});say('err',esc(String((e&&e.message)||e)));});});});
 v.querySelectorAll('.repdraft').forEach(function(b){b.addEventListener('click',function(){var ok=!!b.getAttribute('data-ok');v.querySelectorAll('.repdraft').forEach(function(x){x.disabled=true;});
 api('/api/reports/draft',{id:d.id,approve:ok}).then(function(r){if(!r||r.error){v.querySelectorAll('.repdraft').forEach(function(x){x.disabled=false;});say('err',esc((r&&r.error)||'failed'));return;}say('ok',esc(r.said));}).catch(function(e){say('err',esc(String((e&&e.message)||e)));});});});
 var f=v.querySelector('.repask');if(f)f.addEventListener('submit',function(ev){ev.preventDefault();var q=f.querySelector('.repq'),bt=f.querySelector('button');if(!q.value.trim()){q.focus();return;}bt.disabled=true;say('muted','Thinking&hellip;');
@@ -2910,6 +2993,7 @@ if(document.addEventListener)document.addEventListener('click',function(ev){var 
 // a repo run's sandbox, under Symbiosis: on, or what this computer still needs for it (agents.mjs sandboxState)
 function sandboxNote(r){var el=$('agentsandbox');if(!el)return;var b=r&&r.sandbox;if(!b||!r.full){el.innerHTML='';return;}
 el.innerHTML=b.ready&&b.on?"<b>Sandboxed</b> &middot; a repo run&rsquo;s commands also write only in its repo, your folders and the npm and download caches, and can&rsquo;t reach your keys or step out of it. Ops runs, whose job is this computer, keep the membrane alone.":b.unsupported||!b.on?'':"<b>Not sandboxed yet</b> &middot; repo runs would also be held to their repo and your folders, but this computer needs "+b.missing.map(function(m){return '<code>'+esc(m)+'</code>';}).join(' and ')+" first (<code>sudo apt install "+esc(b.missing.map(function(m){return m==='bwrap'?'bubblewrap':m;}).join(' '))+"</code>). Until then they have the membrane.";}
+var pcap=$('parcap');if(pcap&&pcap.addEventListener){var pnote=function(r){if(!r)return;pcap.value=r.setting;$('parnote').textContent=r.cap<r.setting?'Symbiot Free runs one agent at a time; Pro runs up to '+r.setting+'.':'';};api('/api/agent/parallel').then(pnote).catch(function(){});pcap.addEventListener('change',function(){api('/api/agent/parallel/set',{cap:Number(pcap.value)}).then(pnote);});}
 var atr=$('agenttrust');if(atr&&atr.addEventListener){api('/api/agent/trust').then(function(r){if(r)atr.checked=!!r.full;sandboxNote(r);}).catch(function(){});atr.addEventListener('change',function(){api('/api/agent/trust/set',{full:atr.checked}).then(function(r){if(r)atr.checked=!!r.full;sandboxNote(r);});});}
 var bw=$('boardwin');if(bw&&bw.querySelectorAll)bw.querySelectorAll('button').forEach(function(b){b.addEventListener('click',function(){BOARDH=+b.getAttribute('data-h')||24;bw.querySelectorAll('button').forEach(function(x){x.setAttribute('aria-checked',x===b?'true':'false');});loadBoard();});});
 // A web page, mapped by itself in the hidden browser (headless.mjs): no capture,
@@ -3112,13 +3196,13 @@ if(!ps.length){el.innerHTML='';return;}
 el.innerHTML=ps.map(function(p,i){var nm=p.name||p.repo,q=(p.qs||[])[0],st=p.parked?'parked':(p.qs&&p.qs.length)?'asks you':p.ready?'ready for your OK':p.state||'';
 var h="<section class='rly"+((p.qs&&p.qs.length)||p.ready?' lit':'')+"' data-i='"+i+"'><div class='rlh'><b>"+esc(nm)+"</b>"+(st?"<span class='rls'>"+esc(st)+"</span>":"")+"</div>";
 if(p.summary)h+="<p class='rlsum' title='"+escQ(p.summary)+"'>"+esc(p.summary)+"</p>";
-if(q)h+="<div class='lqblob rlask'>"+blobBody({kind:'ask',name:nm,repo:p.repo,q:q.q,options:q.options,path:q.path,fix:q.fix,id:q.id,sub:q.sub,draft:q.draft,signInTo:q.signInTo,more:Math.max(0,(p.asks||p.qs.length)-1)},false)+"</div>";
+if(q)h+="<div class='lqblob rlask'>"+blobBody({kind:'ask',name:nm,repo:p.repo,q:q.q,raw:q.raw,task:q.task,labels:q.labels,options:q.options,path:q.path,fix:q.fix,id:q.id,sub:q.sub,draft:q.draft,signInTo:q.signInTo,more:Math.max(0,(p.asks||p.qs.length)-1)},false)+"</div>";
 if(p.ready)h+="<button type='button' class='act rlok'>Review and approve</button>";
 if(p.handing&&p.handing.length)h+="<div class='rlk'>Handed over</div>"+p.handing.map(function(x){var pg=handProg(x);return "<p class='rlsum rlhand' title='"+escQ(x.text)+"'><b>"+esc(x.lane)+"</b>: "+esc(x.why)+(pg?" \u00b7 "+esc(pg):"")+"</p>";}).join('');
 if(p.ideas&&p.ideas.length)h+="<div class='rlk'>Extra tasks it suggests</div>"+p.ideas.map(function(d,j){return "<div class='rli' data-j='"+j+"'><span title='"+escQ(d.full)+"'>"+esc(d.text)+"</span><span class='rlia'><button type='button' class='rladd'>+ task</button><button type='button' class='rlskip'>Skip</button></span></div>";}).join('');
 return h+"<div class='rlf'><button type='button' class='rlopen'>Its tasks &rsaquo;</button><button type='button' class='rlag'>Its agents &rsaquo;</button></div></section>";}).join('');
 el.querySelectorAll('.rly').forEach(function(box){var p=ps[+box.getAttribute('data-i')],q=(p.qs||[])[0],nm=p.name||p.repo;
-var ab=box.querySelector('.rlask');if(ab&&q)wireBlob(ab,{kind:'ask',name:nm,repo:p.repo,q:q.q,options:q.options,path:q.path,fix:q.fix,id:q.id},{done:function(){LQ.relaySig='';lqLoadWork();}});
+var ab=box.querySelector('.rlask');if(ab&&q)wireBlob(ab,{kind:'ask',name:nm,repo:p.repo,q:q.q,raw:q.raw,task:q.task,labels:q.labels,options:q.options,path:q.path,fix:q.fix,id:q.id},{done:function(){LQ.relaySig='';lqLoadWork();}});
 var ok=box.querySelector('.rlok');if(ok)ok.addEventListener('click',function(){lqOpen({kind:'proj',repo:p.repo,lit:true});});
 box.querySelector('.rlopen').addEventListener('click',function(){lqOpen({kind:'proj',repo:p.repo});});
 box.querySelector('.rlag').addEventListener('click',function(){lqPool('agents');});
@@ -3222,7 +3306,7 @@ LQ.needPage=(LQ.needPage||0)%pages;
 // the card you're typing in stays in view: a new one ahead of it doesn't page it away
 var fa=document.activeElement,tb=fa&&fa.closest?fa.closest('#lqdrops .lqblob[data-key]'):null;if(tb){var tk=tb.getAttribute('data-key');for(var ti=0;ti<ys.length;ti++)if(bdKey(ys[ti])===tk){LQ.needPage=Math.floor(ti/cols);break;}}
 var shown=ys.slice(LQ.needPage*cols,LQ.needPage*cols+cols),x0=Math.max(12,(S.w-(shown.length*unit+(shown.length-1)*gap))/2);
-var tall=(shown.some(function(y){return y.kind==='ask'&&(y.options||[]).length;})?172:116)+(shown.some(function(y){return y.fix==='handover';})?16:0)+(shown.some(function(y){return y.draft;})?150:0);
+var tall=(shown.some(function(y){return y.kind==='ask'&&(y.options||[]).length;})?172:116)+(shown.some(function(y){return y.task||y.fix==='handover';})?16:0)+(shown.some(function(y){return y.draft;})?150:0);
 // the band is as tall as its tallest card really is: two long answers, the own-words
 // box open and "+4 more questions" made Post 1's card 60px taller than the guess, over
 // the mailbox agent's name in the band below (2026-10-09). lqBlobFit lays out again
@@ -3458,7 +3542,7 @@ if(d.kind==='archive'){lqArchive();return;}
 if(d.kind==='shape'&&d.shape==='marketing'&&d.ask)MKLIT=true;
 if(d.kind==='you'&&d.item){if(d.x!=null){var S1=lqSize();LQ.ripple=[d.x/S1.w,d.y/S1.h,LQ.t];}lqUse(d.shape||'agents',ev);lqFocus(d.item);return;}
 if(d.kind==='wait'&&d.focus){lqFocus({kind:'proj',repo:d.repo,path:d.focus});return;}
-if(d.kind==='proj'){if(d.lit||d.repo==='ops'){lqFocus({kind:'proj',repo:d.repo});return;}TFILTER.repo=d.repo;TFILTER.type='';lqPool('tasks');if(typeof loadTasks==='function')loadTasks();return;}
+if(d.kind==='proj'){if(d.lit||d.repo==='ops'){lqFocus({kind:'proj',repo:d.repo});return;}TFILTER.id='';TFILTER.repo=d.repo;TFILTER.type='';lqPool('tasks');if(typeof loadTasks==='function')loadTasks();return;}
 // where your files disagree: the checks, lit up in Settings, and these clashes reached you (it dissolves)
 if(d.id==='phones'){lqUse('settings',ev);lqFocus({kind:'setup',focus:'phone'});return;}
 if(d.id==='feed:clash'){api('/api/knowledge/checks/seen',{}).catch(function(){});if(LQ.home)LQ.home.feeds=(LQ.home.feeds||[]).filter(function(f){return f.id!=='feed:clash';});lqUse('settings',ev);loadChecks();lqFocus({kind:'setup',focus:'checks'});return;}
@@ -3493,7 +3577,7 @@ if(ch)try{localStorage.setItem(BDKEY,JSON.stringify(a));}catch(e){}}
 function blobBody(y,home){var h='',nm=y.name||y.repo||(y.kind==='setup'?y.title:'')||'';
 h+=home?"<button type='button' class='lt' title='open "+escQ(nm)+", with this lit up'><span>"+esc(lqShort(nm,30))+"</span><i>open &rsaquo;</i></button>":"<div class='nhead'><b>"+esc(nm)+(y.kind==='ask'?" asks":"")+"</b>"+(y.more?"<span class='muted'>+"+y.more+" more on its block in Agents</span>":"")+"</div>";
 if(y.kind!=='ask')return h+"<div class='bq'>"+esc(y.kind==='approve'?String(y.sub||'').replace(/ · only you decide$/,''):String(y.sub||'').charAt(0).toUpperCase()+String(y.sub||'').slice(1)+'.')+"</div><div class='bo'><button type='button' class='nopt rec ngo'><span class='bt'>"+(y.kind==='approve'?'Review and approve':y.id==='setup:inbox'?(y.signin?'Sign in again':'Show me your inbox'):y.id==='setup:ai'?'Connect an AI':y.pick?'Use '+y.pick.name:y.urgent?'Reconnect':'Open Settings')+"</span></button></div>";
-var os=y.options||[];if(y.draft)h+=draftHtml(y.draft);h+="<div class='bq' title='"+escQ((y.q||'')+(y.why?' ('+y.why+')':''))+"'>"+esc(y.q||y.sub||'')+"</div>";
+var os=y.options||[];if(y.draft)h+=draftHtml(y.draft);if(y.status)h+="<div class='bwait'><i class=ic-pause></i> "+esc(y.status)+"</div>";if(y.task)h+="<div class='bfor' title='"+escQ(y.task)+"'>for: "+esc(y.task)+"</div>";h+="<div class='bq' title='"+escQ((y.q||'')+(y.why?' ('+y.why+')':''))+"'>"+esc(y.q||y.sub||'')+"</div>"+((y.covered&&y.covered.length)?"<div class='muted bcov'>Already covered? "+y.covered.map(esc).join(' · ')+"</div>":"");
 if(y.fix==='handover'&&y.sub)h+="<div class='bfor' title='"+escQ(y.sub)+"'>for: "+esc(y.sub)+"</div>";
 if(y.done)h+="<div class='bdone' title='"+escQ(y.done.text)+"'>"+esc(y.done.lane)+" has done this already: "+esc(y.done.text)+"</div>";
 if(y.signInTo)h+="<div class='bo'><button type='button' class='nopt bsign' title='opens "+escQ(y.signInTo.name)+" in the Symbiot Browser: sign in there, then click Done'><span class='bt'>Sign in to "+esc(y.signInTo.name)+" &rsaquo;</span></button></div>";
@@ -3542,7 +3626,7 @@ function lqFocus(y){lqAct();y=y||{};PENDALL=false;LQ.focus={kind:y.kind||'',repo
 document.querySelectorAll('main .lit').forEach(function(x){x.classList.remove('lit');}); // only what this orb lit stays lit
 if(y.kind==='setup'){lqPool('settings');setTimeout(lqLight,300);return;}
 if(!y.repo||y.repo==='ops'){lqPool('agents');return;}
-TFILTER.repo=y.repo;TFILTER.type='';lqPool('tasks');
+TFILTER.id='';TFILTER.repo=y.repo;TFILTER.type='';lqPool('tasks');
 api('/api/home?fresh=1').then(function(h){if(h&&h.you)LQ.home=h;renderNeeds();}).catch(function(){});}
 // Needs you here: what only you can do in the project the Tasks list is filtered
 // to, at its top, each answerable where it is; its held handovers under them.
@@ -3612,14 +3696,21 @@ function lqGrowAsk(){var i=$('lqask');if(!i||!i.style)return;i.style.height='aut
 // it; a pause sends it, as Enter would. Speech becomes text in the browser itself
 // (Chrome and Edge, no key); where it can't, there's no mic. When you spoke, the
 // answer is read out too (typed, it stays quiet), and talking again cuts it off.
-var VOICE={rec:null,on:false,spoke:false,final:'',base:'',err:'',ph:''};
+var VOICE={rec:null,on:false,spoke:false,final:'',base:'',err:'',ph:'',convo:false,quiet:0,timer:0};
 function voiceOk(){return !!(window.SpeechRecognition||window.webkitSpeechRecognition);}
-function voiceMic(on){var m=$('lqmic');if(!m)return;m.classList.toggle('on',on);m.setAttribute('aria-pressed',on?'true':'false');m.setAttribute('aria-label',on?'Stop listening':'Talk to Symbiot');var a=$('lqask');if(a){if(on){VOICE.ph=a.getAttribute('placeholder')||'';a.setAttribute('placeholder','Listening… speak, then pause to send');}else if(VOICE.ph)a.setAttribute('placeholder',VOICE.ph);}}
+function voiceMic(on){var m=$('lqmic');if(!m)return;m.classList.toggle('on',on);m.setAttribute('aria-pressed',on?'true':'false');m.classList.toggle('conv',!!VOICE.convo&&!on);m.setAttribute('aria-label',on?'Stop listening':VOICE.convo?'End conversation':'Talk to Symbiot');var a=$('lqask');if(a){if(on){VOICE.ph=a.getAttribute('placeholder')||'';a.setAttribute('placeholder',VOICE.convo?'Listening… speak, then pause to send. Say "end conversation" to stop.':'Listening… speak, then pause to send');}else if(VOICE.ph)a.setAttribute('placeholder',VOICE.ph);}}
 function voiceSay(t){LQ.talkMin=false;lqTalkMode(true);LQ.talk.push({me:false,text:t});LQ.talk=LQ.talk.slice(-8);lqTalkShow(false);}
 var VOICE_WHY={'not-allowed':'Symbiot couldn’t use your microphone. Allow it for this window (the icon at the top of the window, or your system’s privacy settings), then click the mic again.','service-not-allowed':'Symbiot couldn’t use your microphone. Allow it for this window, then click the mic again.','audio-capture':'No microphone was found. Plug one in, or check it’s switched on, then try again.','network':'Talking needs an internet connection: your browser turns speech into text online.'};
+// A click starts a conversation: after each spoken answer the mic reopens by itself, until you
+// say "end conversation" (or "stop", "that's all"), click the mic, or stay quiet for two rounds.
 function voiceToggle(){
-if(VOICE.on){try{VOICE.rec.stop();}catch(e){}return;}
-voiceStop();
+if(VOICE.on){VOICE.convo=false;try{VOICE.rec.stop();}catch(e){}return;}
+if(VOICE.convo){voiceEnd();return;}
+VOICE.convo=true;VOICE.quiet=0;voiceStop();voiceListen();}
+function voiceEnd(why){VOICE.convo=false;clearTimeout(VOICE.timer);voiceStop();voiceMic(VOICE.on);if(why)voiceSay(why);}
+function voiceResume(){if(!VOICE.convo||VOICE.on)return;clearTimeout(VOICE.timer);VOICE.timer=setTimeout(function(){if(VOICE.convo&&!VOICE.on)voiceListen();},350);}
+var VOICE_BYE=/^(?:ok(?:ay)?,? |please )?(?:end (?:the )?conversation|stop(?: (?:listening|talking))?|that'?s all|that is all|goodbye|bye)[.! ]*$/i;
+function voiceListen(){
 var R=window.SpeechRecognition||window.webkitSpeechRecognition;if(!R)return;
 var r;try{r=new R();}catch(e){return;}
 var ask=$('lqask');VOICE.rec=r;VOICE.final='';VOICE.err='';VOICE.base=((ask&&ask.value)||'').trim();
@@ -3628,10 +3719,12 @@ r.onstart=function(){VOICE.on=true;voiceMic(true);lqAct();};
 r.onresult=function(ev){var interim='';for(var i=ev.resultIndex;i<ev.results.length;i++){var t=ev.results[i][0].transcript;if(ev.results[i].isFinal)VOICE.final+=t;else interim+=t;}
 if(ask){ask.value=((VOICE.base?VOICE.base+' ':'')+(VOICE.final+interim)).replace(/ +/g,' ').trim();lqGrowAsk();}};
 r.onerror=function(ev){VOICE.err=(ev&&ev.error)||'';};
-r.onend=function(){VOICE.on=false;voiceMic(false);VOICE.rec=null;var said=((ask&&ask.value)||'').trim(),why=VOICE_WHY[VOICE.err];
-if(why){voiceSay(why);return;}
-if(VOICE.final.trim()&&said){VOICE.spoke=true;lqSay();}};
-try{r.start();}catch(e){VOICE.on=false;voiceMic(false);}}
+r.onend=function(){VOICE.on=false;VOICE.rec=null;var said=((ask&&ask.value)||'').trim(),why=VOICE_WHY[VOICE.err];
+if(why){VOICE.convo=false;voiceMic(false);voiceSay(why);return;}
+if(VOICE.final.trim()&&VOICE_BYE.test(VOICE.final.trim())){if(ask){ask.value=VOICE.base;lqGrowAsk();}voiceEnd('Conversation ended.');return;}
+if(VOICE.final.trim()&&said){VOICE.quiet=0;voiceMic(false);VOICE.spoke=true;lqSay();return;}
+voiceMic(false);if(VOICE.convo){if(++VOICE.quiet>=2)voiceEnd('I stopped listening because it went quiet. Click the mic to talk again.');else voiceResume();}};
+try{r.start();}catch(e){VOICE.on=false;VOICE.convo=false;voiceMic(false);}}
 // Speaking, with no voice to choose: the system's own when it has a natural one
 // (Edge on Windows, Macs with Apple's better voices, phones), in your region's accent if it has that too;
 // otherwise Symbiot's own (voice.mjs: Piper on this computer), fetched once in the
@@ -3648,23 +3741,33 @@ if(!good.length&&/android|iphone|ipad/i.test(navigator.userAgent||''))good=vs; /
 good.sort(function(a,b){return (voiceTag(b)===tag)-(voiceTag(a)===tag);});
 return {best:good[0]||null,any:good[0]||vs[0]||null};}
 function voiceStop(){SPEAK.n++;try{if(window.speechSynthesis)window.speechSynthesis.cancel();}catch(e){}if(SPEAK.audio){try{SPEAK.audio.pause();}catch(e){}SPEAK.audio=null;}}
-function voiceClean(t){var clean=String(t||'').replace(/\\s*[\\u2190-\\u21ff\\u2794-\\u27bf\\u27f5-\\u27ff]\\s*/g,', ').replace(/(^|[.?!:]), /g,'$1 ').replace(/[*_#>|]+/g,' ').replace(new RegExp(String.fromCharCode(96),'g'),'').replace(/https?:[^ ]+/g,'a link').replace(/ +/g,' ').trim();
+// How the voices say our names (Piper and the system's own both mangle them), and the things that
+// read badly letter by letter: paths, ids, file names, versions, short-forms.
+var VOICE_SAY=[[/symbiot/gi,'Simbeeot'],[/gawdessey/gi,'Gaw dessy'],[/argena/gi,'Arjena'],[/pedipigeon/gi,'Peddy Pigeon'],[/workdesk/gi,'work desk'],[/daaymn/gi,'Dayman'],[/\\bnpm\\b/gi,'N P M'],[/\\badb\\b/gi,'A D B'],[/\\bPRs?\\b/g,'P R'],[/\\bAPI\\b/g,'A P I'],[/\\bURLs?\\b/g,'U R L'],[/\\bPWA\\b/g,'P W A'],[/\\bCLI\\b/g,'C L I'],[/\\bCI\\b/g,'C I'],[/\\bSSH\\b/g,'S S H'],[/\\bTTS\\b/g,'T T S']];
+function voiceSayable(t){var s=String(t||'');
+s=s.replace(/(^|[\\s(])(?:~|\\.{1,2})?\\/[\\w.~\\-]+(?:\\/[\\w.~\\-]*)+/g,'$1a file path');
+s=s.replace(/\\b[a-z]+-(?=[a-f]*\\d)[0-9a-f]{6,}\\b/g,'an id').replace(/\\b(?=[a-f]*\\d)[0-9a-f]{8,}\\b/g,'an id');
+s=s.replace(/\\b([\\w\\-]+)\\.(?:mjs|cjs|js|json|md|html|css|ts|sh|png|log)\\b/g,'$1 file');
+s=s.replace(/\\bv?(\\d+)\\.(\\d+)\\.(\\d+)\\b/g,'$1 point $2 point $3');
+VOICE_SAY.forEach(function(p){s=s.replace(p[0],p[1]);});
+return s;}
+function voiceClean(t){var clean=voiceSayable(t).replace(/\\s*[\\u2190-\\u21ff\\u2794-\\u27bf\\u27f5-\\u27ff]\\s*/g,', ').replace(/(^|[.?!:]), /g,'$1 ').replace(/[*_#>|]+/g,' ').replace(new RegExp(String.fromCharCode(96),'g'),'').replace(/https?:[^ ]+/g,'a link').replace(/ +/g,' ').trim();
 if(clean.length>700){var cut=clean.slice(0,700),at=Math.max(cut.lastIndexOf('. '),cut.lastIndexOf('? '),cut.lastIndexOf('! '));clean=(at>200?cut.slice(0,at+1):cut)+' The rest is on screen.';}
 return clean;}
-function voiceSystem(text,v){if(!window.speechSynthesis||!text)return;try{var u=new SpeechSynthesisUtterance(text);if(v)u.voice=v;u.lang=voiceLang();u.rate=1.02;window.speechSynthesis.cancel();window.speechSynthesis.speak(u);}catch(e){}}
-// a sentence at a time, so the first is heard while the next is made
-function voiceSentences(t){var out=[],cur='';t.split(' ').forEach(function(w){cur+=(cur?' ':'')+w;var e=w.charAt(w.length-1);if((e==='.'||e==='?'||e==='!')&&cur.length>24){out.push(cur);cur='';}});if(cur)out.push(cur);return out;}
-function voiceOwn(text,lang){var my=SPEAK.n,parts=voiceSentences(text),got=[];
+function voiceSystem(text,v,done){if(!window.speechSynthesis||!text){if(done)done();return;}try{var u=new SpeechSynthesisUtterance(text);if(v)u.voice=v;u.lang=voiceLang();u.rate=1.02;if(done){u.onend=done;u.onerror=done;}window.speechSynthesis.cancel();window.speechSynthesis.speak(u);}catch(e){if(done)done();}}
+// the first sentence alone (heard while the rest is made), then about two at a time: fewer joins to hear
+function voiceSentences(t){var out=[],cur='';t.split(' ').forEach(function(w){cur+=(cur?' ':'')+w;var e=w.charAt(w.length-1);if((e==='.'||e==='?'||e==='!')&&cur.length>(out.length?110:24)){out.push(cur);cur='';}});if(cur)out.push(cur);return out;}
+function voiceOwn(text,lang,done){var my=SPEAK.n,parts=voiceSentences(text),got=[];
 var make=function(i){if(i>=parts.length||got[i])return;got[i]=fetch('/api/voice/say',{method:'POST',headers:{'x-symbiot-token':T,'content-type':'application/json'},body:JSON.stringify({text:parts[i],lang:lang})}).then(function(r){if((r.headers.get('content-type')||'').indexOf('audio')<0)throw new Error('no audio');return r.blob();});};
-var play=function(i){if(my!==SPEAK.n||i>=parts.length)return;make(i);make(i+1);
+var play=function(i){if(my!==SPEAK.n)return;if(i>=parts.length){if(done)done();return;}make(i);make(i+1);
 got[i].then(function(b){if(my!==SPEAK.n)return;var a=new Audio(URL.createObjectURL(b));SPEAK.audio=a;a.onended=function(){try{URL.revokeObjectURL(a.src);}catch(e){}play(i+1);};var pl=a.play();if(pl&&pl.catch)pl.catch(function(){});})
-.catch(function(){if(my!==SPEAK.n)return;SPEAK.own=null;var nat=voiceNatural();voiceSystem(parts.slice(i).join(' '),nat&&nat.any);});};
+.catch(function(){if(my!==SPEAK.n)return;SPEAK.own=null;var nat=voiceNatural();voiceSystem(parts.slice(i).join(' '),nat&&nat.any,done);});};
 play(0);}
-function voiceSpeak(t){if(!t)return;voiceStop();var clean=voiceClean(t);if(!clean)return;var nat=voiceNatural();
-if(nat&&nat.best){voiceSystem(clean,nat.best);return;}
-var lang=voiceLang(),go=function(st){if(st&&st.state==='ready'){voiceOwn(clean,lang);return;}
+function voiceSpeak(t,done){if(!t){if(done)done();return;}voiceStop();var clean=voiceClean(t);if(!clean){if(done)done();return;}var nat=voiceNatural();
+if(nat&&nat.best){voiceSystem(clean,nat.best,done);return;}
+var lang=voiceLang(),go=function(st){if(st&&st.state==='ready'){voiceOwn(clean,lang,done);return;}
 if(st&&(st.state==='missing'||st.state==='failed')&&!SPEAK.asked){SPEAK.asked=true;api('/api/voice/prepare',{lang:lang}).catch(function(){});}
-voiceSystem(clean,nat&&nat.any);};
+voiceSystem(clean,nat&&nat.any,done);};
 if(SPEAK.own&&SPEAK.own.state==='ready')go(SPEAK.own);else api('/api/voice?lang='+encodeURIComponent(lang)).then(function(st){SPEAK.own=st;go(st);}).catch(function(){go(null);});}
 // Chrome lists its voices only after a first ask
 try{if(window.speechSynthesis)window.speechSynthesis.getVoices();}catch(e){}
@@ -3684,6 +3787,7 @@ function lqNav(to,g){to=String(to||'');lqTalkMode(true);
 if(to==='home'){if(LQ.mode==='pool')lqSink();if(LQ.scene==='work')lqHome();return;}
 if(to==='archive'){lqUse('tasks',null,'talk');lqArchive();}
 else if(to.indexOf('lane:')===0)lqOpen({kind:'proj',repo:to.slice(5)});
+else if(to.indexOf('task:')===0){TFILTER.id=to.slice(5);TFILTER.repo='';TFILTER.type='';lqUse('tasks',null,'talk');lqGo('tasks');if(typeof loadTasks==='function')loadTasks();}
 else if(LQNAMES[to]){lqUse(to,null,'talk');lqGo(to);}
 else return;
 lqWhy(g&&g.to===to?g:null);}
@@ -3693,11 +3797,11 @@ el.innerHTML=on?(g.why?"<span>"+esc(g.why)+"</span>":'')+(g.alts&&g.alts.length?
 if(on)el.querySelectorAll('[data-go]').forEach(function(b){b.addEventListener('click',function(){lqNav(b.getAttribute('data-go'));});});}
 function lqSay(){var spoke=VOICE.spoke;VOICE.spoke=false;var i=$('lqask');var q=((i&&i.value)||'').trim(),shots=LQ.atts.slice();if(!q&&!shots.length)return;if(!q)q='Take a look at this screenshot.';i.value='';lqGrowAsk();LQ.atts=[];lqAttsShow();lqAct();
 var low=q.toLowerCase().replace(/^(please |can you |could you )/,''),hit=lqNavHit(q);
-if(hit){lqNav(hit);return;}
+if(hit){lqNav(hit);if(spoke)voiceResume();return;}
 if(/^(go|start|go for it|start them|start it)[.! ]*$/.test(low)){lqTalkMode(true);lqGoWork();return;}
 if(/^(home|back)[.! ]*$/.test(low)&&LQ.scene==='work'){lqHome();return;}
 LQ.talkMin=false;lqTalkMode(true);LQ.talk.push({me:true,text:q,imgs:shots.map(function(a){return a.data;})});LQ.talk=LQ.talk.slice(-8);lqTalkShow(true);
-api('/api/home/ask',{question:q,images:shots}).then(function(r){LQ.talk.push({me:false,steps:r.steps||[],go:r.go||null,signInTo:r.signInTo||null,text:r.error==='not-connected'?'Connect an AI in Settings to talk to me. Say "open settings".':(r.answer||r.error||'(no answer)')});if(spoke)voiceSpeak(r.spoken||LQ.talk[LQ.talk.length-1].text);LQ.talk=LQ.talk.slice(-8);lqTalkShow(false);LQ.ripple=[0.5,0.47,LQ.t];if(r.go&&r.go.to){lqNav(r.go.to,r.go);return;}lqLoad(false);}).catch(function(e){LQ.talk.push({me:false,text:String((e&&e.message)||e)});lqTalkShow(false);});}
+api('/api/home/ask',{question:q,images:shots}).then(function(r){LQ.talk.push({me:false,steps:r.steps||[],go:r.go||null,signInTo:r.signInTo||null,text:r.error==='not-connected'?'Connect an AI in Settings to talk to me. Say "open settings".':(r.answer||r.error||'(no answer)')});if(spoke)voiceSpeak(r.spoken||LQ.talk[LQ.talk.length-1].text,voiceResume);LQ.talk=LQ.talk.slice(-8);lqTalkShow(false);LQ.ripple=[0.5,0.47,LQ.t];if(r.go&&r.go.to){lqNav(r.go.to,r.go);return;}lqLoad(false);}).catch(function(e){LQ.talk.push({me:false,text:String((e&&e.message)||e)});lqTalkShow(false);voiceResume();});}
 // The physics: each droplet a critically damped spring to its place (no wobble,
 // no overshoot), pushed off its neighbours and the core where they'd overlap.
 function lqStep(){var S0=lqSize();if(S0.w!==LQ.bw||S0.h!==LQ.bh){if(LQ.scene==='work'&&LQ.workData)lqBuildWork();else if(LQ.adapt)lqBuild();}var S=S0,cx=S.w/2,cy=(LQ.scene!=='work'&&LQ.cy)||S.h*0.47,k=0.022,c=2*Math.sqrt(k),th=LQ.theme,still=th.still,rest=LQ.mode==='rest',pool=LQ.mode==='pool',talk=LQ.talking&&!pool;
@@ -3881,7 +3985,7 @@ var h='';
 if(o.step==='welcome'){
 h="<img class='onborb' src='/favicon.svg?look="+encodeURIComponent(lqLookGet()||'ferro')+"' alt=''><h2 id='onbt'>Meet Symbiot</h2><p class='onbl'>It works alongside you, so your time goes on what only you can do.</p><div class='onbcards'>"+
 [['It watches','What you work on and what comes in: your projects, your mail, chats and code.'],['It works','It hands tasks to your coding agent, which does them on its own and tells you what it did.'],['It asks','Only what only you can do: a sign-in, a decision, your OK before anything goes out.']].map(function(c){return "<div class='onbcard'><b>"+c[0]+"</b><span>"+c[1]+"</span></div>";}).join('')+
-"</div><p class='onbnote'>Setup takes a few minutes: your AI, your work, your agent and every app you use. Symbiot starts finding your projects meanwhile.</p>"+onbNav(onbStep(-1), 'ai', 'Set it up');}
+"</div><p class='onbnote'>Setup takes a few minutes: your AI, your work, your agent and every app you use. Symbiot starts finding your projects meanwhile.</p>"+(onbStep(1)==='done'?"<div class='onbnav'><button class='back' data-go='"+onbStep(-1)+"'>Back</button><span class='sp'></span><button class='act' id='onbfinish'>Open Symbiot</button></div>":onbNav(onbStep(-1), 'ai', 'Set it up'));}
 else if(o.step==='ai'){var a=o.ai||{},c=a.claude||{};
 h="<h2 id='onbt'>Your AI</h2><p class='onbl'>Symbiot thinks with an AI: it reads what comes in, talks with you and writes for you.</p>";
 if(a.connected)h+="<div class='onbok'><i>✓</i><div>Symbiot is using <b>"+esc(a.line)+"</b>"+(a.provider==='claude'?". It’s the Claude account you’re signed in with in Claude Code: no key, nothing extra to pay.":".")+"</div></div>";
@@ -3989,5 +4093,5 @@ var G=lqGL();if(G){try{lqStep();lqDraw(G);}catch(e){}}if(typeof window.requestAn
 function frame(){if(!document.hidden){LQ.frame++;if(LQ.mode!=='pool'||LQ.frame%3===0)lqStep();var every=glLight()?glEvery(LQ.mode==='aware'):LQ.mode==='pool'?6:LQ.mode==='rest'?2:1;if(G&&LQ.frame%every===0&&!(LQ.phone&&LQ.scene!=='work'&&LQ.mode!=='pool'))lqDraw(G);}raf(frame);} // moves every frame; drawn less at rest, behind a panel, without a GPU, with Low GPU or in a window not in use; not at all under a phone's Home list
 raf(frame);}
 
-initGraphEvents();syncP();refresh();firstTab();lqInit();onbLoad();var sbo=$('sbopen');if(sbo)sbo.addEventListener('click',function(){sbOpen('');});var rr=$('rerunsetup');if(rr)rr.addEventListener('click',function(){api('/api/onboarding/restart',{}).then(function(){lqSink();onbLoad();});});awayInit();lqDeep();loadWhatsNew();loadAgentCfg();loadScanRoots();loadKnowledge();loadPhone();loadLinks();loadMind();loadTrusted();loadMail();loadScreensUI();loadMonitorsUI();loadDesktop();loadWatchUI();setInterval(function(){whenFree(document.querySelector('main'),'watch',loadWatchUI);},60000);loadPhoneLink();
+initGraphEvents();syncP();refresh();firstTab();lqInit();onbLoad();var sbo=$('sbopen');if(sbo)sbo.addEventListener('click',function(){sbOpen('');});var rr=$('rerunsetup');if(rr)rr.addEventListener('click',function(){api('/api/onboarding/restart',{}).then(function(){lqSink();onbLoad();});});awayInit();lqDeep();loadWhatsNew();loadAgentCfg();loadScanRoots();loadKnowledge();loadPhone();loadLinks();loadMind();loadSecrets();loadTrusted();loadMail();loadScreensUI();loadMonitorsUI();loadDesktop();loadWatchUI();setInterval(function(){whenFree(document.querySelector('main'),'watch',loadWatchUI);},60000);loadPhoneLink();
 </script></body></html>`;

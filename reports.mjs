@@ -13,7 +13,8 @@
 // - Reading: only a file this list found can be read, by its id, never by a
 //   path; it's shown as HTML made here (mdHtml), with everything escaped first.
 //
-// Stored in ~/.config/symbiot/reports.json, yours only: { seen: { id: mtime } }.
+// Stored in ~/.config/symbiot/reports.json, yours only: { seen: { id: mtime }, decided, handed:
+// { id: { mtime, done: { idea: "handed" | "dismissed" } } } }.
 import { join, basename, dirname, resolve, extname, sep } from "node:path";
 import { homedir } from "node:os";
 import { readFileSync, writeFileSync, readdirSync, statSync, mkdirSync, chmodSync, realpathSync } from "node:fs";
@@ -28,7 +29,7 @@ const NOT_REPORTS = /^(?:TASKS(?:\.[\w-]+)?|QUESTIONS|ANSWERS|HANDOFF|SKIPPED|CL
 const MAX_READ = 512 * 1024, MAX_LIST = 200;
 const idOf = (file) => createHash("sha1").update(file).digest("hex").slice(0, 12);
 
-function loadSeen(file = SEEN_FILE) { try { const d = JSON.parse(readFileSync(file, "utf8")), obj = (x) => (x && typeof x === "object" ? x : {}); return { seen: obj(d && d.seen), decided: obj(d && d.decided) }; } catch { return { seen: {}, decided: {} }; } }
+function loadSeen(file = SEEN_FILE) { try { const d = JSON.parse(readFileSync(file, "utf8")), obj = (x) => (x && typeof x === "object" ? x : {}); return { seen: obj(d && d.seen), decided: obj(d && d.decided), handed: obj(d && d.handed) }; } catch { return { seen: {}, decided: {}, handed: {} }; } }
 function saveSeen(d, file = SEEN_FILE) { try { mkdirSync(CONFIG_DIR, { recursive: true }); writeFileSync(file, JSON.stringify(d), { mode: 0o600 }); try { chmodSync(file, 0o600); } catch {} return true; } catch { return false; } }
 
 // A report's title: its first "# " heading, without markdown; else its file name.
@@ -66,7 +67,18 @@ function readReport(id, { list, mark = true, seenFile = SEEN_FILE } = {}) {
   const cut = text.length > MAX_READ; if (cut) text = text.slice(0, MAX_READ);
   if (mark) { const d = loadSeen(seenFile); d.seen[r.id] = r.mtime; saveSeen(d, seenFile); }
   const draft = isDraftReport(r.title, r.name);
-  return { ...r, new: false, text, html: mdHtml(text, { id: r.id, base: dirname(r.file), roots: imageRoots(r) }) + (cut ? "<p class='muted'>(cut at 512 KB: open the file for the rest)</p>" : ""), draft, ...(draft ? { decided: decidedOn(r, seenFile) } : { ideas: reportIdeas(text) }) };
+  return { ...r, new: false, text, html: mdHtml(text, { id: r.id, base: dirname(r.file), roots: imageRoots(r) }) + (cut ? "<p class='muted'>(cut at 512 KB: open the file for the rest)</p>" : ""), draft, ...(draft ? { decided: decidedOn(r, seenFile) } : { ideas: openIdeas(r, text, seenFile), handled: handledIdeas(r, seenFile) }) };
+}
+// The list with what each report leaves for the user: `needs` is "draft" (undecided, waits
+// on an Approve or Reject), "ideas" (it ends in next steps), or "" (nothing to act on).
+// Uses reportIdeas, isDraftReport and decidedOn as they are; the text is read per report.
+function withNeeds(list, { seenFile = SEEN_FILE } = {}) {
+  return list.map((r) => {
+    if (isDraftReport(r.title, r.name)) return { ...r, needs: decidedOn(r, seenFile) ? "" : "draft", ideas: 0 };
+    let text = ""; try { text = readFileSync(r.file, "utf8").slice(0, MAX_READ); } catch { /* gone: nothing to act on */ }
+    const n = openIdeas(r, text, seenFile).length;
+    return { ...r, needs: n ? "ideas" : "", ideas: n };
+  });
 }
 // On a phone: its computer's newest reports, from the copy it sent (phone.mjs
 // computerCopy, reportsForPhone), beside the phone's own. Their ids start "pc:", they
@@ -219,6 +231,15 @@ function reportIdeas(text, max = IDEAS_MAX) {
   }
   return out;
 }
+// Which of a report's ideas were handed to an agent or dismissed, kept by the report's mtime
+// (a rewritten report offers its ideas again). A report leaves "Read, open actions" once none is open.
+function handledIdeas(r, file = SEEN_FILE) { const h = loadSeen(file).handed[r.id]; return h && h.mtime === r.mtime && h.done && typeof h.done === "object" ? h.done : {}; }
+const openIdeas = (r, text, file = SEEN_FILE) => { const done = handledIdeas(r, file); return reportIdeas(text).filter((t) => !done[t]); };
+function markIdeas(r, ideas, status, file = SEEN_FILE) {
+  const d = loadSeen(file), h = d.handed[r.id] && d.handed[r.id].mtime === r.mtime ? d.handed[r.id] : { mtime: r.mtime, done: {} };
+  for (const t of ideas) h.done[String(t)] = status;
+  d.handed[r.id] = h; return saveSeen(d, file);
+}
 // A draft waiting on the user's OK (its title or file says draft or preview): Approve and
 // Reject rather than ideas.
 const isDraftReport = (title, name) => /\bdrafts?\b|\bpreviews?\b/i.test(`${title} ${String(name || "").replace(/[-_.]+/g, " ")}`);
@@ -229,4 +250,4 @@ function decide(r, status, file = SEEN_FILE) { const d = loadSeen(file); d.decid
 // How many reports are new, and the newest one's title (Home's droplet).
 function reportsNews(opts) { const l = listReports(opts).filter((r) => r.new); return { count: l.length, latest: l[0] ? l[0].title : "" }; }
 
-export { SEEN_FILE, NOT_REPORTS, titleOf, listReports, readReport, phoneReports, phoneReport, reportImage, imagePath, markAllRead, reportsNews, mdHtml, reportIdeas, isDraftReport, decidedOn, decide, IDEAS_MAX };
+export { SEEN_FILE, NOT_REPORTS, titleOf, listReports, readReport, phoneReports, phoneReport, reportImage, imagePath, markAllRead, reportsNews, mdHtml, reportIdeas, isDraftReport, decidedOn, decide, withNeeds, IDEAS_MAX, handledIdeas, openIdeas, markIdeas };

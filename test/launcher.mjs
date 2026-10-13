@@ -4,10 +4,10 @@
 //
 //   node test/launcher.mjs
 //
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync, existsSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync, existsSync, cpSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const HOME = mkdtempSync(join(tmpdir(), "symbiot-launcher-"));
@@ -17,7 +17,7 @@ let pass = 0, fail = 0;
 const ok = (n, c, got) => { if (c) { pass++; console.log("  ✓ " + n); } else { fail++; console.log("  ✗ " + n + (got !== undefined ? "  got: " + JSON.stringify(got) : "")); } };
 
 try {
-  const { launcherFile, launcherIcon, launcherContent, installLauncher, removeLauncher } = await import("../desktop.mjs");
+  const { launcherFile, windowFile, launcherIcon, launcherContent, installLauncher, removeLauncher } = await import("../desktop.mjs");
   const { removeShortcut, withShortcut, COSMIC_CUSTOM } = await import("../away.mjs");
 
   console.log("THE LAUNCHER — in the app menu, with its icon, no terminal");
@@ -27,6 +27,9 @@ try {
   ok("runs `symbiot open` with your PATH (so agents and git resolve), never in a terminal", /^Exec=env "PATH=\/usr\/bin:\/home\/x\/\.npm-global\/bin" "\/usr\/bin\/node" "\/home\/x\/\.npm-global\/lib\/node_modules\/symbiot\/index\.mjs" open$/m.test(entry) && /^Terminal=false$/m.test(entry), entry);
   ok("named Symbiot, with its icon, and the app's window grouped under it", /^Name=Symbiot$/m.test(entry) && /^Icon=symbiot$/m.test(entry) && /^StartupWMClass=chrome-127\.0\.0\.1__-Default$/m.test(entry), entry);
   ok("the icon is in your icon theme, the orb", existsSync(launcherIcon(HOME)) && /<svg[\s\S]*Symbiot/.test(readFileSync(launcherIcon(HOME), "utf8")), launcherIcon(HOME));
+  const win = existsSync(windowFile(HOME)) ? readFileSync(windowFile(HOME), "utf8") : "";
+  ok("the window's own entry too, by its app id: a pinned window starts Symbiot when it's closed", windowFile(HOME).endsWith("/applications/chrome-127.0.0.1__-Default.desktop") && /^Exec=.* open$/m.test(win) && /^Icon=symbiot$/m.test(win), win);
+  ok("…hidden from the app menu, so Symbiot is there once", /^NoDisplay=true$/m.test(win) && !/NoDisplay/.test(entry), win);
   const again = installLauncher({ node: "/usr/bin/node", script: "/home/x/.npm-global/lib/node_modules/symbiot/index.mjs", home: HOME, platform: "linux", path: "/usr/bin:/home/x/.npm-global/bin" });
   ok("the same again: left alone", again.written === false, again);
   installLauncher({ node: "/opt/node22/bin/node", script: "/home/x/.npm-global/lib/node_modules/symbiot/index.mjs", home: HOME, platform: "linux", path: "/usr/bin" });
@@ -62,14 +65,46 @@ try {
   const h4 = join(HOME, "h4"), nd = spawnSync(process.execPath, [post], { env: { ...env(h4, "true"), DISPLAY: "", WAYLAND_DISPLAY: "", SYMBIOT_NO_OPEN: "" }, encoding: "utf8" });
   ok("no desktop (a server, CI): the entry, and nothing opened", nd.status === 0 && existsSync(launcherFile(h4)) && /in your app menu/.test(nd.stdout) && !/opening now/.test(nd.stdout), nd.stdout);
 
+  console.log("RESTARTS ONTO WHAT'S INSTALLED — npm install -g from a terminal takes without a restart by hand");
+  {
+    // the app as installed (…/node_modules/symbiot), started; then a newer version lands under it
+    const repo = fileURLToPath(new URL("..", import.meta.url)), tree = join(HOME, "g", "lib", "node_modules", "symbiot");
+    const files = JSON.parse(readFileSync(join(repo, "package.json"), "utf8")).files;
+    mkdirSync(tree, { recursive: true });
+    for (const f of [...files, "package.json"]) cpSync(join(repo, f), join(tree, f), { recursive: true });
+    symlinkSync(join(repo, "node_modules"), join(tree, "node_modules"));
+    const port = 20000 + Math.floor(Math.random() * 20000), was = JSON.parse(readFileSync(join(tree, "package.json"), "utf8")).version;
+    const env = { ...process.env, HOME, USERPROFILE: HOME, SYMBIOT_NO_OPEN: "1", SYMBIOT_NO_SIGNIN: "1", SYMBIOT_NO_LAUNCHER: "1", SYMBIOT_PORT: String(port), SYMBIOT_REGISTRY: "http://127.0.0.1:9", SYMBIOT_INSTALLED_EVERY: "300" };
+    const child = spawn(process.execPath, [join(tree, "index.mjs"), "app"], { env, stdio: "ignore" });
+    let tk = ""; const token = () => { if (!tk) { try { tk = JSON.parse(readFileSync(join(HOME, ".config", "symbiot", "secrets.json"), "utf8")).appToken || ""; } catch {} } return tk; };
+    const ping = async () => { try { const r = await fetch(`http://127.0.0.1:${port}/api/ping`, { headers: { "x-symbiot-token": token() } }); return r.status === 403 ? { forbidden: true } : await r.json(); } catch { return null; } };
+    const until = async (f, ms = 30000) => { const t = Date.now(); let v; while (Date.now() - t < ms) { v = await f(); if (v) return v; await new Promise((r) => setTimeout(r, 150)); } return null; };
+    const first = await until(async () => { const p = await ping(); return p && p.version ? p : null; });
+    ok("installed and started, on its version", first && first.version === was, first);
+    const pkg = JSON.parse(readFileSync(join(tree, "package.json"), "utf8")); pkg.version = "99.0.0"; writeFileSync(join(tree, "package.json"), JSON.stringify(pkg, null, 2));
+    const after = await until(async () => { const p = await ping(); return p && p.version === "99.0.0" ? p : null; });
+    ok("a newer one installed under it: it restarts onto it by itself", after && after.started !== first.started && after.relaunched === true, after);
+    ok("…and an app that wasn't relaunched by an update doesn't say so", first && !first.relaunched, first);
+    // the restarted app runs on its own (detached): stop it, and see it gone
+    try { await fetch(`http://127.0.0.1:${port}/api/quit`, { headers: { "x-symbiot-token": token() } }); } catch {}
+    try { child.kill(); } catch {}
+    await new Promise((r) => setTimeout(r, 1500)); // a second start, if any, has had its time
+    const left = () => spawnSync("pgrep", ["-af", tree + "/index.mjs app"], { encoding: "utf8" }).stdout.split("\n").filter((l) => l && !/pgrep/.test(l));
+    const extra = left(); for (const l of extra) { try { process.kill(Number(l.split(" ")[0])); } catch {} }
+    ok("…once: no second app started while the first was exiting", !!(await until(async () => !(await ping()), 10000)) && extra.length === 0, extra);
+  }
+
   console.log("UNINSTALLING — the entry, the icon, and Away's shortcut only");
-  ok("entry and icon gone", removeLauncher(HOME).length === 2 && !existsSync(launcherFile(HOME)) && !existsSync(launcherIcon(HOME)), "");
+  ok("entries and icon gone", removeLauncher(HOME).length === 3 && !existsSync(launcherFile(HOME)) && !existsSync(windowFile(HOME)) && !existsSync(launcherIcon(HOME)), "");
   const f = COSMIC_CUSTOM(HOME); mkdirSync(join(f, ".."), { recursive: true });
   writeFileSync(f, withShortcut('{\n    (modifiers: [Super], key: "t"): Spawn("cosmic-term"),\n}\n', "/usr/bin/node /x/symbiot away"));
   ok("your other shortcuts stay; only Symbiot's goes", removeShortcut(HOME) && /cosmic-term/.test(readFileSync(f, "utf8")) && !/symbiot/.test(readFileSync(f, "utf8")), readFileSync(f, "utf8"));
   writeFileSync(f, withShortcut("", "/usr/bin/node /x/symbiot away"));
   ok("…and with only Symbiot's in it, the file goes", removeShortcut(HOME) && !existsSync(f), "");
   ok("nothing of ours there: nothing changes", removeShortcut(HOME) === false, "");
+  // an install test's throwaway prefix must never become the app-menu entry (it vanished and the menu did nothing)
+  const tmpScript = join(tmpdir(), "symbiot-install-x", "prefix", "lib", "node_modules", "symbiot", "index.mjs");
+  ok("a script inside the temp folder is never written as the launcher", installLauncher({ script: tmpScript, platform: "linux" }).skipped === true && !existsSync(launcherFile(HOME)), "");
 } finally {
   rmSync(HOME, { recursive: true, force: true });
 }

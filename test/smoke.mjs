@@ -48,7 +48,7 @@ const H = { "x-symbiot-token": token, "content-type": "application/json" };
 // handler grabbing an element that isn't there throws, like in a browser.
 // `storage` seeds the page's localStorage; `handlers: false` only boots the page;
 // `android` stands in for the Android app's window.SymbiotAndroid.
-async function runUi(js, page, { storage = {}, handlers = true, android = null, termux = false, ua = "" } = {}) {
+async function runUi(js, page, { storage = {}, handlers = true, android = null, termux = false, ua = "", ping = null } = {}) {
   const errors = [], hits = [];
   const store = { ...storage };
   const localStorage = { getItem: (k) => (k in store ? store[k] : null), setItem: (k, v) => { store[k] = String(v); }, removeItem: (k) => { delete store[k]; } };
@@ -95,6 +95,7 @@ async function runUi(js, page, { storage = {}, handlers = true, android = null, 
         hits.push({ path: path.split("?")[0], method: opts.method || "GET", status: r.status });
         // a Symbiot running in Termux says so in its ping
         if (termux && path.startsWith("/api/ping")) return new Response(JSON.stringify({ ...(await r.json()), termux: true }), { status: r.status });
+        if (ping && path.startsWith("/api/ping")) return new Response(JSON.stringify({ ...(await r.json()), ...ping }), { status: r.status }); // what this app's ping adds (relaunched: an update restarted it)
         return r;
       })
       .finally(() => { inflight--; });
@@ -206,6 +207,8 @@ const calls = [
   ["/api/screens/trusted/add", "POST"],    // no site -> refused, nothing saved
   ["/api/screens/trusted/remove", "POST"],
   ["/api/screens/signin", "POST"],  // no site -> refused, no window opens
+  ["/api/agent/parallel", "GET"],   // agents at once in one project (parallel.mjs)
+  ["/api/agent/parallel/set", "POST"],
   ["/api/agent/trust", "GET"],      // whether agents work on their own (default) or ask
   ["/api/agent/trust/set", "POST"], // the Settings switch (in the isolated HOME)
   ["/api/work", "GET"],             // the work scene: who's at work, what's waiting, what's ready
@@ -299,6 +302,8 @@ const calls = [
   ["/api/phone", "GET"],            // Your phone: this computer's side (off)
   ["/api/phone/link", "POST"],      // empty body -> off: nothing listens on the network
   ["/api/phone/code", "POST"],      // a pairing code, held in memory (nothing listens while off)
+  ["/api/phone/free", "POST"],      // the link off -> nothing is stopped (it frees the port only for this app's own link)
+  ["/api/phone/port", "POST"],      // no port -> refused, nothing saved
   ["/api/phone/unpair", "POST"],    // no id -> nothing changes
   ["/api/phone/relay", "POST"],     // empty body -> the relay off (it isn't on: no phone paired)
   ["/api/phone/pair", "POST"],      // no address -> refused before any request
@@ -307,6 +312,8 @@ const calls = [
   ["/api/phone/do", "POST"],        // not paired -> refused, nothing queued
   ["/api/phone/note", "POST"],      // no copy -> nothing changes
   ["/api/phone/forget", "POST"],
+  ["/api/secrets", "GET"],          // saved secret names for Settings (isolated HOME -> none; never values)
+  ["/api/secrets/delete", "POST"],  // no name -> "No secret called", nothing removed
   ["/api/desktop", "GET"],         // weekly write-up + start-at-login state
   ["/api/desktop/weekly", "POST"],  // empty body -> schedule unchanged (stays off)
   ["/api/desktop/autostart", "POST"], // empty body -> off: removes nothing outside the isolated HOME
@@ -399,7 +406,8 @@ try {
     ok(`${method} ${path} -> ${status}`, status !== 404 && status !== -1, status);
   }
   const wk = await fetch(base + "/api/desktop/weekly/run", { method: "POST", headers: H, body: JSON.stringify({ notify: false }) }).then((r) => r.json(), () => ({}));
-  ok("POST /api/desktop/weekly/run with notify: false -> runs, no AI connected", wk.error === "not-connected", wk);
+  // with no AI on the machine it says so; with one (this PC has Claude Code) it still runs, and with no repos it needs no AI call
+  ok("POST /api/desktop/weekly/run with notify: false -> runs (or says no AI is connected), no notification", wk.error === "not-connected" || (wk.ok === true && /0 repos/.test(wk.text || "")), wk);
 
   console.log("WEEKLY — isAppRunningWeekly() finds this app and its schedule, with no port or token passed");
   const runningWeekly = (extra = {}) => new Promise((resolve) => {

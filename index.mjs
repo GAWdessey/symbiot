@@ -38,7 +38,7 @@ import { gitDefaultBranch, loadDeploys, driftRepo, computeDrift } from "./drift.
 import { buildTasksMd, taskType, shipChanges, shipWithBump, bumpOffer, learnNpm, releaseNeeded, withReleases, setVersion, syncTasks, pendingReview, unreleased, publishesOnMerge, addTask, approveRepo, approveChanges, sendBack, pushTasks } from "./tasks.mjs";
 import { produce, mailState, setMail, sentMail } from "./writeups.mjs";
 import { loadScreens, screenImage, blueprint } from "./screens.mjs";
-import { mapPage, wholePage, pressRegion, typeRegion, chooseRegion, uploadRegion, uploadFiles, scrollPage, signIn, isTrusted } from "./headless.mjs";
+import { mapPage, wholePage, pressRegion, typeRegion, chooseRegion, fillForm, uploadRegion, uploadFiles, scrollPage, signIn, isTrusted } from "./headless.mjs";
 import { watchState, addWatch, removeWatch, seenWatch, newsSince, markNews, checkWatch, setBrief, draftReply, watchBoard, boardLine, boardChat, boardTalk, clearBoardChat } from "./watch.mjs";
 import { PORT as PHONE_PORT, phoneState, pairComputer, pollComputer, forgetComputer, parsePairLink } from "./phone.mjs";
 import { qrMatrix } from "./qr.mjs";
@@ -377,7 +377,21 @@ async function cmdOpen() {
   if (p && p.version) { openApp(`http://127.0.0.1:${port}/?t=${cfg.appToken}`); return; }
   let fd = "ignore"; try { mkdirSync(CONFIG_DIR, { recursive: true }); fd = openSync(join(CONFIG_DIR, "app.log"), "a"); } catch {}
   const env = { ...process.env }; delete env.SYMBIOT_NO_OPEN;
-  spawn(process.execPath, [realpathSync(fileURLToPath(import.meta.url)), "app"], { detached: true, stdio: ["ignore", fd, fd], env, windowsHide: true }).unref();
+  const child = spawn(process.execPath, [realpathSync(fileURLToPath(import.meta.url)), "app"], { detached: true, stdio: ["ignore", fd, fd], env, windowsHide: true });
+  child.unref();
+  // launched from a menu there is no terminal: if it doesn't come up, say so on screen
+  if (!process.stdout.isTTY) {
+    let exited = false; child.on("exit", () => { exited = true; });
+    for (let i = 0; i < 30 && !exited; i++) {
+      await new Promise((r) => setTimeout(r, 500));
+      const cfg2 = loadConfig(); if (cfg2.appToken && (await askRunningApp("ping", { port, token: cfg2.appToken, ms: 800 }))?.version) return;
+    }
+    let tail = ""; try { tail = readFileSync(join(CONFIG_DIR, "app.log"), "utf8").trim().split("\n").slice(-3).join(" ").slice(0, 300); } catch {}
+    const msg = "Symbiot didn't start." + (tail ? " " + tail : " Run  symbiot app  in a terminal to see why.");
+    if (process.platform === "linux") spawnSync("notify-send", ["-a", "Symbiot", "Symbiot", msg], { stdio: "ignore" });
+    else if (process.platform === "darwin") spawnSync("osascript", ["-e", `display notification ${JSON.stringify(msg)} with title "Symbiot"`], { stdio: "ignore" });
+    process.exitCode = 1;
+  }
 }
 // symbiot uninstall: everything Symbiot put on this computer, then the program.
 // --keep-data keeps ~/.config/symbiot (settings, tasks, memory); --yes doesn't ask.
@@ -405,8 +419,22 @@ async function cmdUninstall() {
   console.log(r.status === 0 ? c.g("✓ ") + "Symbiot is uninstalled." : c.y("Couldn't remove the program: run  npm uninstall -g symbiot"));
   if (existsSync(CONFIG_DIR) && !keep) console.log(c.d("(Something wrote to " + CONFIG_DIR + " meanwhile; delete it if you like.)"));
 }
+// symbiot secret list | get <name> [--use] | used <name> <value> | delete <name>: what the user
+// handed over (vault.mjs). get prints the next unspent value and nothing else; --use marks a
+// one-use code spent. Through the app when it's running (a run can't read the vault's key).
+async function cmdSecret() {
+  const [sub = "list", name, value] = argv.slice(1).filter((x) => !x.startsWith("--"));
+  const v = await import("./vault.mjs"), via = async (p, b) => (await viaApp(p, b)) || null;
+  if (sub === "list") { const l = (await via("/api/secrets/list", {}))?.secrets || v.listSecrets(); if (!l.length) console.log(c.d("No secrets saved.")); for (const s of l) console.log(`${s.name}  ${c.d(`${s.left} of ${s.count} unused · ${s.where}`)}`); return; }
+  if (!name) { console.error("symbiot secret " + sub + " <name>"); process.exitCode = 1; return; }
+  const r = sub === "get" ? ((await via("/api/secrets/get", { name, use: has("use") })) || v.getSecret(name, { use: has("use") }))
+    : sub === "used" ? ((await via("/api/secrets/used", { name, value })) || v.markUsed(name, String(value || "")))
+    : sub === "delete" ? ((await via("/api/secrets/delete", { name })) || v.deleteSecret(name)) : { error: "symbiot secret list | get <name> [--use] | used <name> <value> | delete <name>" };
+  if (r.error) { console.error(r.error); process.exitCode = 1; return; }
+  console.log(sub === "get" ? r.value : "ok");
+}
 async function cmdScreens() {
-  const [sub = "list", a1, a2, a3, ...more] = argv.slice(1).filter((x, i, all) => !x.startsWith("--") && all[i - 1] !== "--name");
+  const [sub = "list", a1, a2, a3, ...more] = argv.slice(1).filter((x, i, all) => !x.startsWith("--") && all[i - 1] !== "--name" && all[i - 1] !== "--press");
   const out = (x) => { console.log(JSON.stringify(x, null, 2)); if (x && x.error) process.exitCode = 1; };
   const find = (id) => loadScreens().find((s) => s.id === id);
   if (sub === "list") {
@@ -430,6 +458,22 @@ async function cmdScreens() {
   }
   if (sub === "show") { const s = find(a1); return out(s ? screenJson(s) : { error: "No screen " + (a1 || "") + ". symbiot screens lists them." }); }
   if (sub === "signin") { const r = (await viaApp("/api/screens/signin", { site: a1 })) || await signIn(a1); return out(r.ok ? { ...r, next: "Sign in in the window that opened, close it, then map again." } : r); }
+  if (sub === "fill") {
+    const s = find(a1); if (!s) return out({ error: "No screen " + (a1 || "") + ". symbiot screens lists them." });
+    const rs = s.regions || [], pick = (q) => { const want = String(q || "").toLowerCase(); return rs.find((x) => x.id === q) || rs.find((x) => x.label.toLowerCase() === want) || (rs.filter((x) => x.label.toLowerCase().includes(want)).length === 1 && rs.find((x) => x.label.toLowerCase().includes(want))) || null; };
+    const fields = [];
+    for (const pair of [a2, a3, ...more].filter((x) => typeof x === "string" && x.includes("="))) {
+      const k = pair.indexOf("="), r = pick(pair.slice(0, k)); if (!r) return out({ error: `No region "${pair.slice(0, k)}" on that screen (give its id, or a label that matches one region).` });
+      fields.push({ region: r.id, text: pair.slice(k + 1) });
+    }
+    if (!fields.length) return out({ error: 'Give the fields as label="text" pairs.' });
+    const pressQ = flag("press", ""), btn = pressQ ? pick(pressQ) : null; if (pressQ && !btn) return out({ error: `No region "${pressQ}" on that screen to press.` });
+    const body = { id: s.id, fields, press: btn ? btn.id : "", confirmed: has("yes"), noSend: !!process.env.SYMBIOT_DRAFT };
+    const done = (await viaApp("/api/screens/fill", body)) || await fillForm(s.id, fields, { press: body.press, confirmed: body.confirmed, noSend: body.noSend });
+    if (done && /answered 404/.test(done.error || "")) return out({ error: "The Symbiot app that's running is older than this command and can't fill a form: restart it (symbiot app), then try again." });
+    if (done && done.confirm) return out({ error: `${done.error} Add --yes to go ahead, or list ${done.host} under Trusted sites in Symbiot's Settings.` });
+    return out(screenJson(done));
+  }
   if (sub === "press" || sub === "type" || sub === "choose" || sub === "upload") {
     const s = find(a1); if (!s) return out({ error: "No screen " + (a1 || "") + ". symbiot screens lists them." });
     const want = String(a2 || "").toLowerCase(), rs = s.regions || [];
@@ -457,6 +501,9 @@ async function cmdScreens() {
   symbiot screens press <id> <region> [--yes]  press a region there, map where it lands
   symbiot screens type <id> <field> "text" [--enter] [--yes]
                                                type into a field (Enter sends it), map the result
+  symbiot screens fill <id> label="text" [label="text"…] [--press <button>] [--yes]
+                                               fill several fields and press a button in one browser
+                                               session (a form that forgets itself between calls)
   symbiot screens type <id> <field> --replace "old" "new" [--yes]
                                                change only that part of what's in the field,
                                                the rest (a post's picture too) left as it is
@@ -1023,6 +1070,7 @@ async function main() {
   if (cmd === "drift") return cmdDrift();
   if (cmd === "push") return cmdPush();
   if (cmd === "mail" || cmd === "email") return cmdMail();
+  if (cmd === "secret" || cmd === "secrets") return cmdSecret();
   if (cmd === "screens" || cmd === "screen") return cmdScreens();
   if (cmd === "watch") return cmdWatch();
   if (cmd === "phone") return cmdPhone();

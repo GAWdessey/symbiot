@@ -80,6 +80,39 @@ ok("each resumed run is counted, so a conversation that's gone on long starts fr
 writeFileSync(join(s, "agent.log"), readFileSync(join(s, "agent.log"), "utf8") + "\nNo conversation found with session ID: sess-1\n");
 ok("if its conversation is gone, the session is dropped (and the run starts afresh)", a.noteSession(dir, 1, true) === "lost" && a.resumeFor(dir) === null, "");
 
+console.log("RESUME SMALL — a long conversation isn't reread for a one-word answer");
+// a run whose last step read `ctx` tokens, as Claude's stream reports it
+const sized = (session, ctx, said) => writeFileSync(join(s, "agent.log"), `\n=== proj ${new Date().toISOString()} ===\n$ claude -p x\n` + JSON.stringify({ type: "system", subtype: "init", model: "m", session_id: session }) + "\n" +
+  JSON.stringify({ type: "assistant", session_id: session, message: { content: [{ type: "text", text: "working" }], usage: { input_tokens: 4, cache_read_input_tokens: ctx - 1004, cache_creation_input_tokens: 900, output_tokens: 100 } } }) + "\n" + JSON.stringify({ type: "result", result: said, session_id: session }) + "\n");
+const answer = () => { writeFileSync(join(s, "ANSWERS.md"), "### q\nyes\n"); const t = new Date(Date.now() + 5000); utimesSync(join(s, "ANSWERS.md"), t, t); };
+sized("sess-2", 30000, "Fixed the login."); a.noteSession(dir, 0, false); answer();
+const small = a.resumeFor(dir);
+ok("a run's size is noted with its conversation (what its last step read)", JSON.parse(readFileSync(join(s, "session.json"), "utf8")).ctx === 30000, readFileSync(join(s, "session.json"), "utf8"));
+ok("a small conversation is still resumed when you answer", small && small.id === "sess-2" && !a.tooLong(small), small);
+sized("sess-3", 195000, "Checked the server: it refuses the winlove key for root, ubuntu and admin. Asked which login the key is for."); a.noteSession(dir, 0, false); answer();
+const big = a.resumeFor(dir);
+ok("one past 60k isn't: your answer starts a fresh run instead of rereading 195k", big && a.tooLong(big) && a.RESUME_CTX === 60000, big);
+const p = a.carryOn(dir), carry = readFileSync(join(s, "CARRYON.md"), "utf8");
+ok("…which reads where the last run got to, in its own words, and your answers", p === a.CARRY_PROMPT && /CARRYON\.md/.test(p) && /ANSWERS\.md/.test(p) && carry.includes("refuses the winlove key for root"), [p, carry]);
+ok("…and its prompt survives the shell (no quotes, $ or backticks)", !/["'`$\\]/.test(a.CARRY_PROMPT), a.CARRY_PROMPT);
+writeFileSync(join(s, "session.json"), JSON.stringify({ id: "sess-3", at: Date.now() - 60000, runs: 1 })); answer();
+ok("a conversation noted before this (no size kept) is sized from its log", a.tooLong(a.resumeFor(dir)), a.resumeFor(dir));
+{ // the run itself: a stand-in claude that notes what it was started with
+  const bin = join(HOME, "bin"), args = join(HOME, "args.txt"); mkdirSync(bin, { recursive: true });
+  writeFileSync(join(bin, "claude"), `#!/bin/sh\nprintf '%s\\n' "$@" > ${JSON.stringify(args)}\necho '{"type":"result","result":"done","session_id":"sess-4"}'\n`, { mode: 0o755 });
+  process.env.PATH = bin + ":" + process.env.PATH;
+  writeFileSync(join(HOME, ".config", "symbiot", "config.json"), JSON.stringify({ agentSandbox: false })); a.setHandoffCmd('claude -p "{prompt}"');
+  writeFileSync(join(s, "TASKS.md"), "- [ ] Get into the WinLove server\n");
+  const go = async () => { rmSync(args, { force: true }); const j = a.runHandoff(dir, { force: true }); for (let i = 0; i < 100 && j && j.status === "running"; i++) await new Promise((r) => setTimeout(r, 100)); return readFileSync(args, "utf8"); };
+  writeFileSync(join(s, "session.json"), JSON.stringify({ id: "sess-3", at: Date.now() - 60000, runs: 1, ctx: 195000 })); answer();
+  const bigRun = await go();
+  ok("started for real, the long one runs fresh: no --resume, told to read CARRYON.md", !/--resume/.test(bigRun) && /CARRYON\.md/.test(bigRun), bigRun);
+  writeFileSync(join(s, "session.json"), JSON.stringify({ id: "sess-2", at: Date.now() - 60000, runs: 1, ctx: 30000 })); answer();
+  const smallRun = await go();
+  ok("…and the small one resumes its conversation", /--resume\nsess-2/.test(smallRun) && !/CARRYON/.test(smallRun), smallRun);
+  writeFileSync(join(HOME, ".config", "symbiot", "config.json"), "{}");
+}
+
 console.log("THE SANDBOX — a repo run's commands write only in its repo and your folders");
 const ready = () => ({ ready: true, missing: [] });
 ok("what it needs: bwrap and socat on Linux (socat was missing here), nothing extra on macOS", a.sandboxNeeds({ platform: "linux", has: (c) => c === "bwrap" }).missing.join() === "socat" && a.sandboxNeeds({ platform: "linux", has: () => true }).ready && a.sandboxNeeds({ platform: "darwin", has: () => false }).ready && a.sandboxNeeds({ platform: "win32" }).unsupported, "");

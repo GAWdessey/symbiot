@@ -6,8 +6,8 @@
 // `symbiot app` then finds that running copy and opens its window.
 import { fileURLToPath } from "node:url";
 import { spawn, spawnSync } from "node:child_process";
-import { homedir } from "node:os";
-import { join, dirname } from "node:path";
+import { homedir, tmpdir } from "node:os";
+import { join, dirname, resolve, sep } from "node:path";
 import { readFileSync, writeFileSync, appendFileSync, mkdirSync, existsSync, unlinkSync, readdirSync, statSync, chmodSync, rmdirSync } from "node:fs";
 import { CONFIG_DIR, loadConfig, saveConfig, hasCmd } from "./core.mjs";
 
@@ -159,6 +159,15 @@ function autostartContent(node, script, platform = OS, path = process.env.PATH |
 // start of an installed Symbiot writes it again if it's missing or out of date (a
 // new Node, a moved install), so it never points at something gone.
 const launcherFile = (home = homedir()) => join(home, ".local", "share", "applications", "symbiot.desktop");
+// The window's own entry. Symbiot's window is Chrome's --app window on its address, and
+// on Wayland (COSMIC, GNOME) the dock knows a window by its app id, not StartupWMClass:
+// pinned, it pinned "chrome-127.0.0.1__-Default", an entry that didn't exist, so with
+// the window closed the pin started nothing, and only Chrome's Restore brought it back
+// (2026-10-12). An entry by that name, hidden from the app menu, starts Symbiot as the
+// menu's does, and gives the window Symbiot's icon.
+const WINDOW_ID = "chrome-127.0.0.1__-Default";
+const windowFile = (home = homedir()) => join(home, ".local", "share", "applications", WINDOW_ID + ".desktop");
+const windowContent = (launcher) => launcher.replace("Terminal=false\n", "Terminal=false\nNoDisplay=true\n");
 const launcherIcon = (home = homedir()) => join(home, ".local", "share", "icons", "hicolor", "scalable", "apps", "symbiot.svg");
 // Symbiot's mark in each look (icons/): the Home orb as that look draws it (Ferrofluid's
 // black chrome, Glass's clear droplet, Pearl's mirror), with the S inside in the app's two
@@ -237,6 +246,8 @@ function installWindows({ node, script, home, run }) {
 // Writes the entry and icon when they're missing or differ. { written, file } or { skipped }.
 function installLauncher({ node = process.execPath, script, home = homedir(), platform = OS, path = process.env.PATH || "", run = (c, a) => spawnSync(c, a, { encoding: "utf8", windowsHide: true, timeout: 30000 }) } = {}) {
   if (!script) return { skipped: true };
+  // never point the menu at a throwaway copy (an install test's temp prefix, a build folder)
+  if (home === homedir() && resolve(script).startsWith(resolve(tmpdir()) + sep)) return { skipped: true };
   if (platform === "win32") return installWindows({ node, script, home, run });
   if (platform !== "linux") return { skipped: true };
   const file = launcherFile(home), icon = launcherIcon(home), want = launcherContent(node, script, launcherPath(path, node));
@@ -244,6 +255,8 @@ function installLauncher({ node = process.execPath, script, home = homedir(), pl
   try {
     let had = ""; try { had = readFileSync(file, "utf8"); } catch {}
     if (had !== want) { mkdirSync(join(file, ".."), { recursive: true }); writeFileSync(file, want, { mode: 0o644 }); wrote = true; }
+    let hadWin = ""; try { hadWin = readFileSync(windowFile(home), "utf8"); } catch {}
+    if (hadWin !== windowContent(want)) { writeFileSync(windowFile(home), windowContent(want), { mode: 0o644 }); wrote = true; }
     let hadIcon = ""; try { hadIcon = readFileSync(icon, "utf8"); } catch {}
     const svg = iconSvg(loadConfig().look || "ferro");
     if (hadIcon !== svg) { mkdirSync(join(icon, ".."), { recursive: true }); writeFileSync(icon, svg, { mode: 0o644 }); wrote = true; }
@@ -253,7 +266,7 @@ function installLauncher({ node = process.execPath, script, home = homedir(), pl
 }
 function removeLauncher(home = homedir()) {
   const gone = [], d = winDirs(home);
-  for (const f of [launcherFile(home), launcherIcon(home), d.menu, d.desk, join(d.own, "open.vbs"), join(d.own, "symbiot.ico"), join(d.own, "desktop.txt")]) { try { if (existsSync(f)) { unlinkSync(f); gone.push(f); } } catch {} }
+  for (const f of [launcherFile(home), windowFile(home), launcherIcon(home), d.menu, d.desk, join(d.own, "open.vbs"), join(d.own, "symbiot.ico"), join(d.own, "desktop.txt")]) { try { if (existsSync(f)) { unlinkSync(f); gone.push(f); } } catch {} }
   try { rmdirSync(d.own); } catch {}
   return gone;
 }
@@ -272,4 +285,4 @@ function setAutostart(on, script) {
   } catch (e) { return { ...autostartState(), error: String((e && e.message) || e) }; }
 }
 
-export { winDirs, vbsContent, shortcutPs, iconSvg, setLauncherLook, launcherPath, launcherFile, launcherIcon, launcherContent, installLauncher, removeLauncher, weeklyCfg, lastSlot, weeklyDue, setWeekly, weeklyState, latestWeek, runWeekly, startWeekly, notifyCmd, desktopNotify, autostartFile, autostartContent, autostartState, setAutostart };
+export { winDirs, vbsContent, shortcutPs, iconSvg, setLauncherLook, launcherPath, launcherFile, windowFile, WINDOW_ID, launcherIcon, launcherContent, installLauncher, removeLauncher, weeklyCfg, lastSlot, weeklyDue, setWeekly, weeklyState, latestWeek, runWeekly, startWeekly, notifyCmd, desktopNotify, autostartFile, autostartContent, autostartState, setAutostart };

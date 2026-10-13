@@ -19,7 +19,7 @@ const ROOT = mkdtempSync(join(tmpdir(), "symbiot-phone-"));
 const PH = join(ROOT, "phone"), PC = join(ROOT, "computer"), CFG = join(PH, ".config", "symbiot"), PCFG = join(PC, ".config", "symbiot");
 mkdirSync(CFG, { recursive: true }); mkdirSync(PCFG, { recursive: true });
 process.env.HOME = PH; process.env.USERPROFILE = PH;
-process.env.SYMBIOT_NO_MDNS = "1"; process.env.SYMBIOT_NO_POLL = "1"; delete process.env.SYMBIOT_ANDROID_APP; delete process.env.SYMBIOT_RELAY; delete process.env.SYMBIOT_NO_RELAY;
+process.env.SYMBIOT_NO_ADB = "1"; process.env.SYMBIOT_NO_MDNS = "1"; process.env.SYMBIOT_NO_POLL = "1"; delete process.env.SYMBIOT_ANDROID_APP; delete process.env.SYMBIOT_RELAY; delete process.env.SYMBIOT_NO_RELAY;
 let pass = 0, fail = 0;
 const ok = (n, c, got) => { if (c) { pass++; console.log("  ✓ " + n); } else { fail++; console.log("  ✗ " + n + (got !== undefined ? "  got: " + JSON.stringify(got).slice(0, 900) : "")); } };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -37,6 +37,8 @@ writeFileSync(join(ROOT, "computer.mjs"), `
   p.setPhoneApprove(async (repo, untasked) => { approved.push({ repo, untasked }); return { ok: true, pr: "https://github.com/me/demo/pull/7" }; });
   const cmds = { on: () => p.setPhoneLink(true), off: () => p.setPhoneLink(false), code: () => p.newCode(), state: () => p.linkState(), unpair: (a) => p.unpairPhone(a.id),
     approved: () => approved, add: (a) => t.addTask(a.text, a.repo || ""), toggle: (a) => t.toggleTask(a.id), tasks: () => JSON.parse(readFileSync(${JSON.stringify(join(PCFG, "tasks.json"))}, "utf8")),
+    adb: () => { const calls = []; const run = (a) => { calls.push(a.join(" ")); return a[0] === "devices" ? "List of devices attached\\nABC123\\tdevice\\nXYZ\\tunauthorized\\n" : ""; };
+      const first = p.adbLink({ run, has: () => true }), again = p.adbLink({ run, has: () => true }); return { first, again, calls }; },
     snapshot: () => p.snapshot({ fresh: true }), loaded: () => typeof w.newsAfter };
   createInterface({ input: process.stdin }).on("line", async (l) => {
     const m = JSON.parse(l);
@@ -225,6 +227,13 @@ try {
   await P.pollComputer({ notify: () => {}, discover: async () => [] });
   ct = await pc.cmd("tasks");
   ok("in order: done, not done, done ends done", ct.find((t) => t.id === "t1").done === true, ct.find((t) => t.id === "t1"));
+  const chat = await P.ask("chat", { question: "hello" });
+  ok("a paired phone's chat reaches the computer's AI over the sealed link (no AI there in this test, so it says so)", chat.sealed === true && chat.status === 200 && chat.body.error === "not-connected", chat);
+  const H = await import(join(SRC, "home.mjs"));
+  const said = await H.phoneChat("hi", { ask: async (op, args) => ({ status: 200, body: { answer: "from the computer " + op + args.question, steps: [] } }) });
+  ok("phoneChat gives back the computer's answer", said.answer === "from the computer chathi", said);
+  const down = await H.phoneChat("hi", { ask: async () => ({ unreachable: true }) });
+  ok("phoneChat: computer off -> says so, no AI-setup prompt", /didn't answer/.test(down.error) && !/Claude Code|connect an AI/i.test(down.error), down);
   const early = Date.now() + (readJ(join(CFG, "config.json")).computer.offset || 0) - 5000;
   await pc.cmd("toggle", { id: "t1" }); // on the computer, now: not done
   writeFileSync(join(CFG, "phone-queue.json"), JSON.stringify([{ id: "44444444-dddd", at: early, op: "task.setDone", args: { id: "t1", done: true } }]));
@@ -374,6 +383,23 @@ try {
   const code5 = (await pc.cmd("code"));
   const fake5 = await P.pairComputer("", "", { link: code5.link.replace(/a=[^&]*/, "a=127.0.0.1").replace(/k=[\w-]+/, "k=AAAAAAAAAAAAAAAAAAAAAA"), name: "Pixel" });
   ok("a link whose key isn't the computer's: refused, nothing sent", /isn't the one whose code you scanned/.test(fake5.error || ""), fake5.error);
+  const ab = await pc.cmd("adb");
+  ok("adbLink: adb reverse, then one am start with the pair link, for each authorised device once (not the unauthorised, not again)",
+    ab.first.join() === "ABC123" && ab.again.length === 0 && ab.calls.filter((c) => /^-s ABC123 reverse tcp:\d+ tcp:\d+$/.test(c)).length === 1 &&
+    ab.calls.filter((c) => /^-s ABC123 shell am start -a android.intent.action.VIEW -d 'symbiot:\/\/pair\?a=127\.0\.0\.1&p=\d+&c=\d{6}&k=[\w-]+&n=[^']+' co.symbiot.app$/.test(c)).length === 1 && !ab.calls.some((c) => /XYZ/.test(c)), ab);
+  // a taken port: who holds it, and the way out
+  const fakeRun = (out) => (cmd, args) => { if (!(cmd in out)) throw new Error("no " + cmd); return out[cmd]; };
+  const h1 = P.portHolder(7392, fakeRun({ ss: 'LISTEN 0 511 0.0.0.0:7392 0.0.0.0:* users:(("node",pid=4242,fd=19))\n', ps: "Sun Oct 11 07:00:01 2026 node /home/x/symbiot/index.mjs app\n" }));
+  ok("portHolder: pid, start time and command from ss + ps; another Symbiot is marked so", h1 && h1.pid === 4242 && h1.started === "Sun Oct 11 07:00:01 2026" && /index\.mjs app/.test(h1.cmd) && h1.symbiot === true, h1);
+  const h2 = P.portHolder(7392, fakeRun({ lsof: "5151\n", ps: "Sun Oct 11 07:00:01 2026 python3 -m http.server 7392\n" }));
+  ok("portHolder: lsof when ss isn't there; an unrelated program isn't marked Symbiot", h2 && h2.pid === 5151 && h2.symbiot === false, h2);
+  ok("portHolder: nobody holds it -> null", P.portHolder(7392, fakeRun({ ss: "\n", lsof: "" })) === null);
+  const busy = await new Promise((r) => { const s = createServer().listen(0, "0.0.0.0", () => r(s)); });
+  const bp = busy.address().port, mine = P.portHolder(bp);
+  ok("portHolder on a real listener: this process, never offered to be stopped", mine && mine.pid === process.pid && mine.symbiot === false, mine);
+  busy.close();
+  const bad = await P.usePhonePort(80);
+  ok("a different port: below 1024 is refused", /between 1024 and 65535/.test(bad.error || ""), bad);
   // the site vouches for the app, so a scanned link opens it at once (Android App Links)
   const links = readJ(join(SRC, "site", ".well-known", "assetlinks.json"), []), man = readFileSync(join(SRC, "android", "AndroidManifest.xml"), "utf8");
   const vouch = (links || []).find((x) => x.target && x.target.package_name === (man.match(/package="([^"]+)"/) || [])[1]);

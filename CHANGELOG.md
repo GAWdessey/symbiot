@@ -36,11 +36,23 @@ What each Symbiot release brought, newest first. When Approve bumps the version,
 - Changed follow-up handovers so a second run on the same task knows the first exists, instead of duplicating its work.
 - Changed nothing in the app for moving company logins to a new email address; that move happens outside this release.
 
+## 0.63.12
+
+- **`symbiot screens upload` sends a photo through WhatsApp's "Photos & videos", not the sticker box.** When the only file box found is a page-wide guess ("the only / nearest file box on the page") and the target is a button or menu item, it now presses the target and catches its own file dialog first; the guess is only the fallback.
+- **The app-menu entry no longer breaks after the install test.** The test's throwaway install rewrote it to point at a deleted temp folder; the test now uses its own home, and the launcher is never written for a script in the temp folder. Opening from the menu shows a notification if Symbiot doesn't start.
+- **A Home card waiting on a step only you can take no longer reads as done.** It shows "Waiting on you" and the button says "I've done this" (no longer "Done it (recommended)"), with Skip beside it; the Agents tab button says the same.
+- **The smoke test passes on this PC (Node 20 and 22).** It now covers the saved-secrets endpoints and no longer assumes no AI is connected.
+- **The app no longer burns CPU re-reading running agents' logs, and no longer leaks a file handle per run.** A log that only grew (the normal case while an agent works) now costs just the added bytes instead of a re-read of up to 16 MB every 20 seconds per lane; a run's start time is read from its header line alone; and the log file opened to start a run is closed in the app once the run has it (one stayed open per run, 101 by the time it was noticed).
+- Fix where a `### symbiot` handover from the marketing lane lands.
+
+## 0.63.11
+
+- **Symbiot no longer runs out of memory.** A cache of task words kept a link to the whole agent log each word came from, so every version of a busy agent's log stayed in memory. The app grew by about 15 MB a minute while agents worked, and crashed at its 2 GB limit after an hour or two. That's what stopped it mid-update. It now keeps only the words.
+- **The pinned taskbar icon starts Symbiot.** Pinning Symbiot's window to the dock pinned Chrome's name for it, which nothing could start, so with the window closed the icon did nothing and only Chrome's Restore brought it back. Symbiot now installs an entry under that name, and the pin opens Symbiot like the app menu does.
+- **An update installed from a terminal takes by itself.** After `npm install -g symbiot@latest`, the running app stayed on the old version until something restarted it. It now notices within two minutes and restarts onto the new one.
+- **No false "didn't take".** If the app crashed, or you restarted your computer, after you pressed Update but before it could install, the bar said the update didn't take and told you to use a terminal. It now just offers the update again.
+
 ## 0.63.10 — 2026-10-12
-
-- Fixed updates that restart while waiting for their download so they now carry on, and Home explains why when an update doesn't take.
-
-## 0.63.9 — 2026-10-12
 
 - Fixed sign-ins made in the Symbiot Browser window, such as domains.co.za's, being lost when `symbiot screens` opened the same site.
 - Fixed allowing an agent to read your ssh keys having no effect; lists Symbiot can't safely open are now refused with an explanation.
@@ -48,12 +60,19 @@ What each Symbiot release brought, newest first. When Approve bumps the version,
 - Fixed `symbiot screens` skipping clickable text like "Send Email OTP instead?" and losing open pop-ups when mapping the whole page or scrolling.
 - Fixed `symbiot screens press` and `type` acting on the page as it is only when the mapped item is there and uncovered.
 - Fixed `symbiot screens press` clicking whatever sat underneath a pop-up instead of the button you mapped in it.
-- Changed the Linux installer's description to "Your coding agents work.
+- Changed the Linux installer's description to "Your coding agents work. You only do what only you can do", matching the site.
 - Added a way to approve finished work on a task that's still in progress.
-
-## 0.63.8 — 2026-10-12
-
 - Fixed agent permission questions on Home rejecting a picked option with "Pick or type at least one answer," so choosing an option now sends it.
+
+## 0.63.9
+
+- **Answering an agent no longer rereads its whole conversation.** Each answer you gave an agent picked its conversation up again, all of it: a one-word "yes" to an agent that had read 195,000 tokens cost 195,000 again, and resumed runs were three quarters of a week's use. Once an agent's conversation is past 60k, your answer now starts it fresh (about 22k), with a note of where it got to in its own words. Short ones still carry on as before.
+- **See how much an agent carries.** A run on the Workdesk shows its context: what it rereads with every step.
+
+## 0.63.8
+
+- **No more file names on permission questions, anywhere.** When an agent asked for a permission, Home said it in plain words with an Allow button, but the same question on the Workdesk, on a project's card and on your phone still read "allow the list in .symbiot/allowlist.proposed.json". Every screen now says what the agent wants to do ("connect to the computer at 13.51.104.186") with Allow.
+- **Allow sticks.** Saying Allow along with a few words of your own that sounded like git ("check the deployed commit, git status and served files") was taken for a git chore and handed back to the agent, which can't give itself permission, so it asked you again. A permission is now always turned on as one.
 
 ## 0.63.7 — 2026-10-12
 

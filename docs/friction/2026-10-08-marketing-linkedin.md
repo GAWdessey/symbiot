@@ -2,7 +2,7 @@
 
 What Garth hit using Symbiot on 2026-10-08, mostly its Marketing lane, one case at a time: what it
 showed, why it was wrong, and what it should do instead, with where it's fixed.
-Tracked on GitHub as [#136](https://github.com/GarthGhostai/symbiot/issues/136).
+Tracked on GitHub as [#136](https://github.com/GAWdessey/symbiot/issues/136).
 
 **Principle (Garth's): never turn an agent's job into a step for the user. The user
 approves, the agent does.**

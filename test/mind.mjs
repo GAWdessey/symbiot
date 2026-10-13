@@ -15,10 +15,20 @@ mkdirSync(join(HOME, ".config", "symbiot"), { recursive: true });
 let pass = 0, fail = 0;
 const ok = (n, c, got) => { if (c) { pass++; console.log("  ✓ " + n); } else { fail++; console.log("  ✗ " + n + (got !== undefined ? "  got: " + JSON.stringify(got) : "")); } };
 
-const { MIND_FILE, loadMind, remember, recall, mindState, forget, converse, parseReply, actBrief, actIn, taskIn, selfLane, spokenLine, goOf, rulesFor } = await import("../mind.mjs");
+const { MIND_FILE, loadMind, remember, recall, mindState, forget, converse, parseReply, actBrief, actIn, taskIn, selfLane, spokenLine, unbackedClaim, goOf, rulesFor } = await import("../mind.mjs");
 const said = (j) => async () => JSON.stringify(j);
 
 try {
+  console.log("HONESTY — a reply never claims work that didn't start");
+  const liar = await converse({ where: "Home", question: "fix it", ask: said({ reply: "Sending this to the symbiot lane now.", do: null, remember: [] }) });
+  ok("claimed hand-off with no 'do': corrected", /Correction: nothing was handed/.test(liar.reply), liar.reply);
+  const plain = await converse({ where: "Home", question: "hi", ask: said({ reply: "Hello, how can I help?", do: null, remember: [] }) });
+  ok("plain reply untouched", !/Correction/.test(plain.reply), plain.reply);
+  ok("a started hand-off backs the claim", !unbackedClaim("I'm handing it over", { kind: "agent", job: "j1" }));
+  ok("a not-started hand-off doesn't", unbackedClaim("I've handed it to the agent", { kind: "agent", notStarted: "x" }));
+  ok("rules tell it to check it can read a mailbox before promising to", /being able to send to an address is not being able to read it/.test(rulesFor([], "", false, false, [])));
+  ok("rules treat the user as Symbiot's maker", /Symbiot's makers, not outside users/.test(rulesFor([], "", false, false, [])));
+  ok("rules tell it to name its mistakes", /naming the mistake/.test(rulesFor([], "", false, false, [])));
   console.log("ONE MEMORY — what one page learns, another knows");
   const t0 = Date.now() - 7200000;
   let seenPrompt = "";
@@ -49,11 +59,16 @@ try {
   ok("…the reboot from another chat isn't in the thread, only under elsewhere (marked as not this chat)", !/reboot/.test(thread) && /other chats: a short answer here doesn't reply to these\):\n[\s\S]*reboot/.test(yPrompt), yPrompt.slice(0, 600));
   ok("the rules: a short answer answers this chat, and an agreed proposal is done now", /A short answer \(yes, yeah, ok/.test(ySys) && /If you'd proposed a task or an agent and they agree, do it now/.test(ySys), "");
   ok("…an idea is hashed out first, an ambiguous ask gets 2-3 readings to pick from", /Hash it out first/.test(ySys) && /2-3 short numbered readings, your pick first/.test(ySys), "");
+  ok("…a vent or a feeling gets a person's reply: acknowledged, not defended, one open question, no numbered readings (2026-10-10: \"i typed my last response to a bot\")", /mainly frustration, a feeling or a remark/.test(ySys) && /deekseek v4/.test(ySys) && /don't defend yourself or Symbiot, don't list readings or options, and ask one open question/.test(ySys) && /Numbered readings are only for a real task/.test(ySys), "");
   const long = "x".repeat(1400);
   await converse({ where: "Home", question: long, now: tH + 180000, ask: said({ reply: "ok", do: null, remember: [] }) });
   const { ownThread } = await import("../mind.mjs");
   ok("…a long turn on Home is kept whole (thinking out loud isn't clipped)", ownThread("Home", loadMind(), tH + 200000).includes(long), "");
   ok("…and a thread from yesterday isn't brought back", ownThread("Home", loadMind(), tH + 13 * 3600000) === "", "");
+  const { dayLine, dayMark } = await import("../mind.mjs");
+  const noon = new Date(2026, 9, 11, 12, 0).getTime();
+  ok("every prompt says today's date, and marks earlier days as such", /^Today is 2026-10-11 /.test(dayLine(noon)) && /earlier date/.test(dayLine(noon)), dayLine(noon));
+  ok("…an item from today carries no mark, yesterday's says so, older ones carry their date", dayMark(noon - 3600000, noon) === "" && dayMark(noon - 86400000, noon) === "[yesterday, 2026-10-10] " && dayMark(noon - 3 * 86400000, noon) === "[2026-10-08] ", "");
 
   console.log("IT ACTS — your agent now, or a task for later");
   let agentReq = "", agentKnown = "", taskArgs = null;
@@ -69,6 +84,12 @@ try {
   ok("a model that doesn't answer in JSON: its text is the reply, nothing is run", q.reply === "Two emails from Dana." && !q.did, q);
   const bad = await converse({ where: "Gmail card", question: "do it", act: { agent: async () => ({ error: "Pick your coding agent in Settings → Handoff first" }) }, ask: said({ reply: "On it.", do: { agent: "x" }, remember: [] }) });
   ok("an agent that can't start says why, in the reply", /couldn.t hand it to an agent: Pick your coding agent/.test(bad.reply), bad.reply);
+  let tries = 0;
+  const loose = await converse({ where: "Home", question: "do it", act, ask: async () => { tries++; return "It seems like the conversation has reached a point where I created a task."; } });
+  ok("Home: a reply that isn't the JSON format is retried once, then an error, nothing run", tries === 2 && /didn.t answer in the right form/.test(loose.reply) && !loose.did, [tries, loose]);
+  tries = 0;
+  const fixed = await converse({ where: "Home", question: "hi", act, ask: async () => (++tries === 1 ? "plain words" : JSON.stringify({ reply: "Hello.", do: null, remember: [] })) });
+  ok("Home: the retry's JSON answer is used", tries === 2 && fixed.reply === "Hello.", fixed);
   ok("parseReply takes a fenced JSON answer too", parseReply('```json\n{"reply":"hi","do":null}\n```').reply === "hi", "");
 
   console.log("LANES — it knows where work goes, and says where it went");
@@ -122,6 +143,9 @@ try {
   ok("a vague ask: its pick opens, with why, and only real pages or lanes as the others (no repeats)", vg.go.to === "board" && /3 new on Gmail/.test(vg.go.why) && JSON.stringify(vg.go.alts.map((a) => a.to)) === '["reports","lane:symbiot"]', vg.go);
   ok("…said under the reply, as a step", vg.steps.includes("opened Dashboard"), vg.steps);
   ok("a page that isn't there isn't made up", goOf({ to: "inbox" }, ["symbiot"]) === null && goOf({ to: "lane:nope" }, ["symbiot"]) === null, "");
+  const open = [{ id: "t1", text: "route the five research units' broker traffic" }];
+  ok("a task by id opens just that task; one that isn't on the list is dropped", goOf({ to: "task:t1", alts: ["task:zz", "tasks"] }, ["symbiot"], open).to === "task:t1" && goOf({ to: "task:t1", alts: ["task:zz", "tasks"] }, ["symbiot"], open).alts.length === 1 && goOf({ to: "task:zz" }, ["symbiot"], open) === null && goOf({ to: "task:t1" }, ["symbiot"]) === null, "");
+  ok("the rules offer task:<id> only when there are tasks to point at", /task:<a task id>/.test(rulesFor(["symbiot"], "symbiot", true, false, open)) && !/task:<a task id>/.test(rulesFor(["symbiot"], "symbiot", true)), "");
   ok("agents and Workdesk are one page; a lane by name is its page", goOf({ to: "agents" }).to === "tasks" && goOf({ to: "Workdesk" }).to === "tasks" && goOf("coral", ["coral"]).to === "lane:coral", "");
   const ng = await converse({ where: "Gmail card", question: "go to reports", map, ask: said({ reply: "ok", do: null, go: { to: "reports" }, remember: [] }) });
   ok("a chat that can't open pages never carries one", !ng.go, ng);
@@ -136,6 +160,9 @@ try {
   ok("forget one thing", forget(one.id).ok && !mindState().nodes.some((n) => n.name === "Francois Huyzers"), mindState().nodes.map((n) => n.name));
   ok("forget everything, the log too", forget("all").ok && mindState().nodes.length === 0 && loadMind().log.length === 0, mindState());
   ok("an unknown id says so", /Nothing remembered/.test(forget("nope").error || ""), "");
+  { const { homeContext } = await import("../home.mjs"); const now = Date.now(), y = now - 86400000;
+    const c = homeContext({ you: [], feeds: [], working: 1, runs: [{ name: "Old run", line: "going", started: y }], lanes: [{ from: "a", to: "b", text: "x", status: "started", at: y }], at: now });
+    ok("home context dates yesterday's runs and handovers", (c.match(/\[yesterday, /g) || []).length === 2, c); }
 } finally {
   rmSync(HOME, { recursive: true, force: true });
 }
