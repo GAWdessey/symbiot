@@ -7,7 +7,7 @@
 //                           sealed answer; 503 { away } when no computer holds <id>
 //   GET  /v1/<id>/computer  the computer's line (WebSocket): first { hello: secret },
 //                           then { rid, body } down, { rid, s, b } up
-import { LIMITS, ID, provesId, limiter } from "./core.mjs";
+import { LIMITS, ID, provesId, limiter, ridOf, TOO_BIG } from "./core.mjs";
 
 const json = (status, obj) => new Response(JSON.stringify(obj), { status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
 
@@ -52,10 +52,13 @@ export class PairObject {
     const answer = new Promise((resolve) => { this.waiting.set(rid, resolve); setTimeout(() => resolve(null), LIMITS.wait); });
     try { ws.send(JSON.stringify({ rid, body: env })); } catch { this.waiting.delete(rid); return json(503, { away: true }); }
     const a = await answer; this.waiting.delete(rid);
+    if (a && a.tooBig) return json(502, { tooBig: true, error: TOO_BIG });
     return a ? json(200, { s: a.s, b: a.b }) : json(504, { away: true, error: "Your computer didn't answer in time." });
   }
   async webSocketMessage(ws, msg) {
-    if (typeof msg !== "string" || msg.length > LIMITS.body) return;
+    if (typeof msg !== "string") return;
+    // too big to pass on: the phone is told at once (it was dropped, and the phone waited 25 s for a 504)
+    if (msg.length > LIMITS.body) { const rid = ridOf(msg); if (rid && this.waiting.has(rid)) this.waiting.get(rid)({ tooBig: true }); return; }
     let m; try { m = JSON.parse(msg); } catch { return; }
     const at = ws.deserializeAttachment() || {};
     if (!at.ok) {

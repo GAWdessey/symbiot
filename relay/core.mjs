@@ -33,4 +33,9 @@ function limiter(perMinute = LIMITS.perMinute) {
   return (now = Date.now()) => { const m = Math.floor(now / 60000); if (m !== minute) { minute = m; count = 0; } return ++count <= perMinute; };
 }
 
-export { LIMITS, ID, idOf, provesId, limiter };
+// An answer too big to pass on is still answered, at once: its rid, read from its start
+// (the computer sends {"rid":…} first), so the phone waiting on it is told why.
+const ridOf = (msg) => (String(msg).slice(0, 200).match(/^\{"rid":"([\w-]{1,64})"/) || [])[1] || "";
+const TOO_BIG = "Your computer's answer was too big for the relay (over 256 KB).";
+
+export { LIMITS, ID, idOf, provesId, limiter, ridOf, TOO_BIG };

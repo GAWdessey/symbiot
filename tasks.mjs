@@ -5,7 +5,7 @@
 import { can } from "./licence.mjs";
 import { spawn, spawnSync } from "node:child_process";
 import { join } from "node:path";
-import { readFileSync, writeFileSync, existsSync, readdirSync, mkdirSync, statSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, readdirSync, mkdirSync, statSync, unlinkSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { VERSION, LATEST_VERSION, REGISTRY, semverGt, loadConfig, saveConfig, loadTasks, saveTasks, TASK_MAX, clipWords, taskWords, sameTask, uniqueTasks, sh, hasCmd, repoState } from "./core.mjs";
 import { handoverRules, ONLY_YOU, HANDBACK } from "./handover.mjs";
@@ -502,7 +502,7 @@ const forgetReview = () => REVIEW_GIT.clear();
 function pendingReview({ kept = false } = {}) {
   const t = loadTasks(), by = {}; for (const x of t) if (x.review && !x.done && !x.archived) (by[x.repo] = by[x.repo] || []).push(x);
   const sent = [...new Set(t.filter((x) => x.repo && !x.archived && !by[x.repo]).map((x) => x.repo))];
-  const map = Object.keys(by).length || sent.length ? laneMap() : {};
+  const late = lateUnsent(t), map = Object.keys(by).length || sent.length || late.size ? laneMap() : {};
   const am = autoMergeRepos();
   const out = Object.keys(by).sort().map((repo) => { const path = map[repo] || ""; return { repo, path, tasks: by[repo], autoMerge: am.includes(repo), running: !!(path && runningHandoff(path)), ...(path ? shippable(path, reviewGit(path, kept)) : { branch: "", files: [], stat: "" }) }; });
   for (const repo of sent.sort()) {
@@ -512,7 +512,35 @@ function pendingReview({ kept = false } = {}) {
     const open = finishedOffer(path, still, round);
     out.push({ repo, path, tasks: [], untasked: true, open, ...(round ? { round } : {}), autoMerge: am.includes(repo), running: !!runningHandoff(path), ...wc });
   }
+  // approved and committed, but it never got as far as a PR: its card stays, saying why, with a retry (sendAgain)
+  for (const [repo, path] of Object.entries(map)) {
+    if (!path || (!late.has(repo) && !existsSync(UNSENT(path)))) continue;
+    const un = keptUnsent(path, repo, t, kept); if (!un) continue;
+    const had = out.find((r) => r.repo === repo);
+    if (had) had.unsent = un;
+    else out.push({ repo, path, tasks: [], files: [], branch: un.branch, stat: "", unsent: un, autoMerge: am.includes(repo), running: !!runningHandoff(path) });
+  }
   return out;
+}
+// Repos with tasks approved in the last two weeks that have a commit but no PR: from
+// before Approve kept what didn't go up (readUnsent), so dailify's four show up too.
+const UNSENT_DAYS = 14;
+const lateUnsent = (t, now = Date.now()) => new Set(t.filter((x) => x.repo && x.archived && x.commit && x.branch && !x.pr && !x.unsentLeft && now - (Number(x.approvedAt) || 0) < UNSENT_DAYS * 86400000).map((x) => x.repo));
+// The review card's word on approved work that didn't go up: { at, branch, commit, ahead,
+// why: conflicts | tests | push | pr, note } or null once GitHub has it. Kept like reviewGit.
+function unsentCard(path, repo, t, now = Date.now()) {
+  const rec = readUnsent(path);
+  const old = !rec && t.filter((x) => x.repo === repo && x.archived && x.commit && x.branch && !x.pr && !x.unsentLeft && now - (Number(x.approvedAt) || 0) < UNSENT_DAYS * 86400000).sort((a, b) => (b.approvedAt || 0) - (a.approvedAt || 0))[0];
+  if (!rec && !old) return null;
+  const branch = rec ? rec.branch : old.branch, u = unsentOf(path, branch);
+  if (!u && !(rec && rec.pushed)) return null;
+  if (rec) return { at: rec.at, branch, commit: rec.commit, ahead: u ? u.ahead : 0, why: rec.why || "push", note: rec.note || "" };
+  return { at: old.approvedAt, branch, commit: old.commit, ahead: u.ahead, why: "push", note: `Approved ${new Date(old.approvedAt).toISOString().slice(0, 10)} and committed on ${branch}, but it never went up to GitHub, so no PR was opened.` };
+}
+function keptUnsent(path, repo, t, kept) {
+  const k = "unsent:" + path, had = kept && REVIEW_GIT.get(k);
+  if (had && Date.now() - had.at < REVIEW_FRESH) return had.v;
+  const v = unsentCard(path, repo, t); REVIEW_GIT.set(k, { at: Date.now(), v }); return v;
 }
 // Approving while the agent is still editing would commit its half-done work.
 const stillWorking = (repo, path) => path && runningHandoff(path) ? { error: `The agent is still working in ${repo}. Approve once it finishes.`, running: true } : null;
@@ -522,19 +550,48 @@ const branchSlug = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, "-").re
 // under a different history, so a new PR from the branch carries them twice and
 // can't merge (how #80 got stuck behind #79). Seen two ways: the branch's files
 // are main's though main doesn't hold its commits, or GitHub says a PR from it
-// merged and nothing was committed on it since. Gives the ref to start the next
-// branch from, or "".
-function mergedAlready(path, branch, base) {
+// merged and no PR from it is open. Gives { from: the ref to start the next
+// branch from, after?: the merged PR's head, when commits were made on the branch
+// since (they move too) }, or null.
+// symbiot/drafts-test-race, 12 Oct 2026: #172 merged, then two Approves committed on
+// it. Only a branch with nothing since counted as merged, so both stayed there, the
+// second's PR didn't open, and the page showed #172, merged, as its PR: nothing to merge.
+const ghRun = (path) => (args) => spawnSync("gh", args, { cwd: path, encoding: "utf8", timeout: 60000 });
+function mergedAlready(path, branch, base, { gh = null } = {}) {
   const origin = git(path, ["remote", "get-url", "origin"]);
   if (origin.ok) git(path, ["fetch", "-q", "origin", base], 30000); // best effort: main as GitHub has it
   const ref = git(path, ["rev-parse", "-q", "--verify", "refs/remotes/origin/" + base]).ok ? "origin/" + base : base;
-  if (!git(path, ["rev-parse", "-q", "--verify", ref]).ok) return "";
-  if (!git(path, ["merge-base", "--is-ancestor", "HEAD", ref]).ok && git(path, ["diff", "--quiet", "HEAD", ref, ...NOT_SYMBIOT]).ok) return ref;
-  if (!origin.ok || !/github/i.test(origin.out) || !hasCmd("gh")) return "";
-  const r = spawnSync("gh", ["pr", "list", "--head", branch, "--state", "merged", "--limit", "1", "--json", "headRefOid"], { cwd: path, encoding: "utf8", timeout: 30000 });
-  let head = ""; try { head = String(JSON.parse(r.stdout)[0].headRefOid || ""); } catch {}
-  const since = head && git(path, ["rev-list", "--count", head + "..HEAD"]);
-  return since && since.ok && since.out === "0" ? ref : "";
+  if (!git(path, ["rev-parse", "-q", "--verify", ref]).ok) return null;
+  if (!git(path, ["merge-base", "--is-ancestor", "HEAD", ref]).ok && git(path, ["diff", "--quiet", "HEAD", ref, ...NOT_SYMBIOT]).ok) return { from: ref };
+  if (!gh && (!origin.ok || !/github/i.test(origin.out) || !hasCmd("gh"))) return null;
+  const list = (state) => { const r = (gh || ghRun(path))(["pr", "list", "--head", branch, "--state", state, "--limit", "1", "--json", "headRefOid"]); try { return r.status === 0 ? JSON.parse(r.stdout) : null; } catch { return null; } };
+  const merged = list("merged"), head = String((merged && merged[0] && merged[0].headRefOid) || "");
+  if (!head || !git(path, ["merge-base", "--is-ancestor", head, "HEAD"]).ok) return null;
+  const since = git(path, ["rev-list", "--count", head + "..HEAD"]);
+  if (!since.ok) return null;
+  if (since.out === "0") return { from: ref };
+  const open = list("open"); if (!open || open.length) return null; // one open still takes what's committed here
+  return { from: ref, after: head };
+}
+// Move what was committed on a spent branch since its PR merged (after..HEAD) onto
+// a fresh branch from main, one commit at a time. One whose changes main already has
+// (carried over by hand) comes out empty and is left out. A conflict puts everything
+// back as it was. { ok, earlier: how many of those before the newest moved, dropped } or { error }.
+function carryOver(path, from, after, next) {
+  const back = git(path, ["rev-parse", "--abbrev-ref", "HEAD"]).out, list = git(path, ["rev-list", "--reverse", after + "..HEAD"]);
+  if (!list.ok) return { error: list.err };
+  // a merge of main among them: picked one by one, its conflict fixes would be lost
+  if (git(path, ["rev-list", "--merges", "--count", after + "..HEAD"]).out !== "0") return { error: `a merge of ${from} is among them` };
+  const sw = git(path, ["switch", "-c", next, "--no-track", from]); if (!sw.ok) return { error: sw.err.split("\n")[0] };
+  const all = list.out.split("\n").filter(Boolean); let earlier = 0, dropped = 0;
+  for (const [i, c] of all.entries()) {
+    const cp = git(path, ["cherry-pick", "--keep-redundant-commits", c]); // one that comes out empty still commits, so it's seen and left out
+    if (cp.ok && git(path, ["diff", "--quiet", "HEAD~1", "HEAD"]).ok) { git(path, ["reset", "-q", "--soft", "HEAD~1"]); dropped++; continue; }
+    if (cp.ok) { if (i < all.length - 1) earlier++; continue; }
+    git(path, ["cherry-pick", "--abort"]); git(path, ["switch", "-q", back]); git(path, ["branch", "-q", "-D", next]);
+    return { error: `${c.slice(0, 7)} doesn't apply to ${from}: ${(cp.err || cp.out).split("\n").find((l) => /conflict/i.test(l)) || (cp.err || cp.out).split("\n")[0]}` };
+  }
+  return { ok: true, earlier, dropped };
 }
 // The commit's (and PR's) subject: what was approved, so `git log --oneline`
 // reads as a history ("Watch GitHub too (+2 more)"), not twenty "symbiot: 3
@@ -550,30 +607,77 @@ function commitSubject(texts) {
 }
 // The repo's own tests, run before a PR opens (what CI would run). A repo with no test
 // script, or with its dependencies not installed here, can't be checked: that doesn't block.
-async function repoTests(path) {
+// Nor do tests that only failed reaching a service on this computer that isn't running
+// (dailify's API tests and Postgres on 127.0.0.1:5432, 13 Oct 2026): that's "couldn't
+// test here" (untested), and CI runs them on the PR. opts.cmd/args stand in for npm test.
+async function repoTests(path, { cmd = "npm", args = ["test", "--silent"] } = {}) {
   let test = ""; try { test = String(JSON.parse(readFileSync(join(path, "package.json"), "utf8")).scripts?.test || ""); } catch {}
   if (!test || /no test specified/.test(test) || !existsSync(join(path, "node_modules"))) return { ok: true };
   return await new Promise((done) => {
-    let out = "";
-    const p = spawn("npm", ["test", "--silent"], { cwd: path, stdio: ["ignore", "pipe", "pipe"] });
-    const keep = (d) => { out = (out + d).slice(-4000); };
+    let out = "", refused = "";
+    const p = spawn(cmd, args, { cwd: path, stdio: ["ignore", "pipe", "pipe"] });
+    const keep = (d) => { out = (out + d).slice(-4000); refused = refused || localRefused(String(d)); };
     p.stdout.on("data", keep); p.stderr.on("data", keep);
     const timer = setTimeout(() => p.kill(), 15 * 60000);
     p.on("error", () => { clearTimeout(timer); done({ ok: true }); }); // no npm here: can't check
-    p.on("close", (code) => { clearTimeout(timer); done(code === 0 ? { ok: true } : { ok: false, note: (out.trim().split("\n").filter(Boolean).pop() || "").slice(0, 160) }); });
+    p.on("close", (code) => {
+      clearTimeout(timer);
+      if (code === 0) return done({ ok: true });
+      if (refused) return done({ ok: true, untested: `the tests couldn't run here: they need something on ${refused} that isn't running on this computer, so they weren't checked before the push (CI runs them on the PR)` });
+      done({ ok: false, note: (out.trim().split("\n").filter(Boolean).pop() || "").slice(0, 160) });
+    });
   });
+}
+// The local address a test's connection was refused at ("127.0.0.1:5432"), or "".
+function localRefused(s) {
+  const m = String(s).match(/ECONNREFUSED\s+((?:127\.\d+\.\d+\.\d+|::1|\[::1\]|localhost):\d+)/) || String(s).match(/connect(?:ion)? to (?:server at )?"?((?:127\.\d+\.\d+\.\d+|::1|localhost))"?(?: \([^)]*\))?,? port (\d+) failed: Connection refused/i);
+  return m ? (m[2] ? `${m[1]}:${m[2]}` : m[1]) : "";
+}
+// Approved work committed here that never reached GitHub: commits on this branch that
+// no origin ref has, with something main doesn't. dailify, 13 Oct 2026: four Approves
+// committed on symbiot/4-tasks-2026-10-13 and stopped before the push (its tests needed
+// a database that wasn't running here); the tree was clean after, so each next Approve
+// found "nothing to merge" and the work sat there until ops pushed it by hand (#508).
+// { branch, ahead } or null. Of the branch checked out, or of another one named.
+function unsentOf(path, branch = git(path, ["rev-parse", "--abbrev-ref", "HEAD"]).out) {
+  if (!branch || branch === "HEAD" || !git(path, ["remote", "get-url", "origin"]).ok) return null;
+  const base = gitDefaultBranch(path), tip = "refs/remotes/origin/" + base;
+  if (branch === base || !git(path, ["rev-parse", "-q", "--verify", tip]).ok) return null;
+  const n = git(path, ["rev-list", "--count", branch, "--not", "--remotes=origin"]);
+  if (!n.ok || !(Number(n.out) > 0)) return null;
+  if (git(path, ["diff", "--quiet", tip, branch, ...NOT_SYMBIOT]).ok) return null; // main has all of it already
+  return { branch, ahead: Number(n.out) };
+}
+// What an Approve that didn't get as far as a PR left, in .symbiot/unsent.json (Symbiot's
+// own, never shipped): the branch, why it stopped, and the PR's title and text. The review
+// card keeps saying so, with a retry (sendAgain), until it's sent.
+const UNSENT = (path) => join(path, ".symbiot", "unsent.json");
+function readUnsent(path) { try { const u = JSON.parse(readFileSync(UNSENT(path), "utf8")); return u && u.branch ? u : null; } catch { return null; } }
+function noteUnsent(path, u) {
+  try { if (u) { mkdirSync(join(path, ".symbiot"), { recursive: true }); writeFileSync(UNSENT(path), JSON.stringify(u, null, 1)); } else if (existsSync(UNSENT(path))) unlinkSync(UNSENT(path)); } catch {}
+}
+// A branch name free here and on origin, from stem: an earlier day's "7 tasks" may be
+// merged and gone locally but still there, and pushing onto it is refused.
+function freeBranch(path, stem) {
+  const taken = (b) => git(path, ["rev-parse", "--verify", "-q", "refs/heads/" + b]).ok || git(path, ["rev-parse", "--verify", "-q", "refs/remotes/origin/" + b]).ok;
+  let b = stem; for (let i = 2; taken(b); i++) b = `${stem}-${i}`;
+  return b;
 }
 // Sync approved work: off the default branch onto symbiot/<task>, commit the
 // working tree (minus .symbiot/), push, and open a PR with gh. On a branch whose
 // earlier PR already merged, it starts a fresh symbiot/ branch from the default
 // one instead (mergedAlready). Each step that can't happen (no remote, push
-// rejected, no gh) stops there and says so — the commit is never lost.
+// rejected, no gh) stops there and says so — the commit is never lost, and what
+// didn't go up is kept (noteUnsent) and sent with the next Approve, or Send again.
 // opts.push=false stops after the commit, opts.pr=false after the push.
+// opts.sendOnly: commit nothing, just send what earlier Approves committed.
 async function shipChanges(path, texts, opts = {}) {
+  if (opts.sendOnly) return (await sendUnsent(path, texts, opts)) || { error: "Nothing here is waiting to go up: GitHub has all of it.", none: true };
   const st = await gitAsync(path, ["status", "--porcelain", "-z", "-uall", ...NOT_SYMBIOT], gitTimeout());
   if (!st.ok) return { error: gitFailed("git status", st) };
   const ch = { files: parseStatusZ(st.out), branch: git(path, ["rev-parse", "--abbrev-ref", "HEAD"]).out };
-  if (!ch.files.length) return { ok: true, nothing: true, note: "No uncommitted changes — approved without a commit." };
+  // nothing to commit, but an earlier Approve's commits never went up: those go now
+  if (!ch.files.length) return (await sendUnsent(path, texts, opts)) || { ok: true, nothing: true, note: "No uncommitted changes — approved without a commit." };
   const own = taskPaths(path, ch.files, opts.bumped ? ["package.json", "package-lock.json", "npm-shrinkwrap.json", "CHANGELOG.md"] : []), { paths, left } = own;
   const heldNote = own.held.length ? `${own.held.length} file${own.held.length === 1 ? "" : "s"} no finished run touched ${own.held.length === 1 ? "was" : "were"} left out (${own.held.slice(0, 4).join(", ")}${own.held.length > 4 ? ", …" : ""}).` : "";
   // Two runs touched the same file, one finished and one not: whose it is can't be told, so ask.
@@ -581,23 +685,17 @@ async function shipChanges(path, texts, opts = {}) {
   // No task behind these changes: that's a question for the user, not a commit.
   if (!texts.length && paths.length && !opts.confirm) return { ask: true, untasked: true, files: own.files.slice(0, 50), error: `No ticked task covers these ${own.files.length} file${own.files.length === 1 ? "" : "s"} (${own.files.slice(0, 4).join(", ")}${own.files.length > 4 ? ", …" : ""}). Commit them anyway?` };
   const leftNote = [heldNote, left ? `${left.toLocaleString("en")} untracked file${left === 1 ? " that was" : "s that were"} already there before the agent ran ${left === 1 ? "was" : "were"} left out.` : ""].filter(Boolean).join(" ");
-  if (!paths.length) return { ok: true, nothing: true, note: "No changes from the agent's runs — approved without a commit. " + leftNote };
+  if (!paths.length) return (await sendUnsent(path, texts, opts)) || { ok: true, nothing: true, note: "No changes from the agent's runs — approved without a commit. " + leftNote };
   if (!ch.branch || ch.branch === "HEAD") return { error: "Detached HEAD — check out a branch first." };
-  const base = gitDefaultBranch(path), day = new Date().toISOString().slice(0, 10); let branch = ch.branch, fresh = "";
-  const newBranch = () => {
-    const stem = "symbiot/" + branchSlug(!texts.length ? `changes-${day}` : texts.length === 1 ? texts[0] : `${texts.length}-tasks-${day}`);
-    // a name free here and on origin: an earlier day's "7 tasks" may be merged and gone
-    // locally but still there, and pushing onto it is refused
-    const taken = (b) => git(path, ["rev-parse", "--verify", "-q", "refs/heads/" + b]).ok || git(path, ["rev-parse", "--verify", "-q", "refs/remotes/origin/" + b]).ok;
-    let b = stem; for (let i = 2; taken(b); i++) b = `${stem}-${i}`;
-    return b;
-  };
+  const base = gitDefaultBranch(path), day = new Date().toISOString().slice(0, 10); let branch = ch.branch, fresh = "", carry = null;
+  const newBranch = () => freeBranch(path, "symbiot/" + branchSlug(!texts.length ? `changes-${day}` : texts.length === 1 ? texts[0] : `${texts.length}-tasks-${day}`));
   if (branch === base) {
     branch = newBranch();
     const sw = git(path, ["switch", "-c", branch]); if (!sw.ok) return { error: "Could not create branch: " + sw.err };
   } else {
-    const from = mergedAlready(path, branch, base);
-    if (from) {
+    const spent = mergedAlready(path, branch, base, { gh: opts.gh }), from = spent && !spent.after && spent.from;
+    if (spent && spent.after) carry = spent;
+    else if (from) {
       // The changes come along; if main changed a file they touch, git refuses and they stay put.
       const next = newBranch(), sw = git(path, ["switch", "-c", next, "--no-track", from]);
       fresh = sw.ok ? `${branch}'s earlier PR already merged, so this starts a fresh branch from ${from}.`
@@ -617,27 +715,72 @@ async function shipChanges(path, texts, opts = {}) {
   const cm = git(path, ["commit", "-m", subject, "-m", body]); if (!cm.ok) return { error: "Commit failed: " + (cm.err || cm.out), branch };
   forgetRunFiles(path, own.files);
   forgetUntracked(path); // committed: the next run notes what's there afresh
+  if (carry) {
+    const next = newBranch(), mv = carryOver(path, carry.from, carry.after, next), was = branch;
+    if (mv.ok) branch = next;
+    const earlier = mv.ok ? mv.earlier : 0, gone = mv.ok ? mv.dropped : 0;
+    fresh = mv.ok ? `${was}'s earlier PR already merged, so this starts a fresh branch from ${carry.from}${earlier > 0 ? `, with the ${earlier} commit${earlier === 1 ? "" : "s"} approved on ${was} since that hadn't reached ${base}` : ""}${gone ? ` (${gone} already on ${base} left out)` : ""}.`
+      : `${was}'s earlier PR already merged, but this couldn't move to a fresh branch from ${carry.from} (${mv.error}), so it's on ${was}, with a PR of its own, which may not merge without a hand.`;
+  }
   const said = [fresh, leftNote].filter(Boolean).join(" ");
   const out = { ok: true, branch, base, commit: git(path, ["rev-parse", "--short", "HEAD"]).out, subject, ...(said ? { note: said } : {}) };
+  return await sendBranch(path, { branch, base, subject, body: body + (carry && fresh ? "\n\n" + fresh : ""), out, said, opts, newBranch });
+}
+// Send what earlier Approves committed on this branch and never got up (unsentOf), or
+// open the PR for one that went up without one: rebased, tested, pushed, PR'd as an
+// Approve would. The PR is named as it was (readUnsent), else for texts, else for the
+// branch's last commit. null when nothing is waiting.
+// Only Approve's own: a symbiot/ branch, or the one it noted. Your own branch's
+// commits you haven't pushed are yours to send.
+async function sendUnsent(path, texts, opts) {
+  const rec = readUnsent(path), mineOf = (u) => u && (/^symbiot\//.test(u.branch) || (rec && rec.branch === u.branch)) ? u : null;
+  const u = mineOf(unsentOf(path)) || (rec && rec.pushed ? { branch: rec.branch, ahead: 0, pushed: true } : null);
+  if (!u && rec && unsentOf(path, rec.branch)) return { error: `The approved work is on ${rec.branch}: check that branch out, then send it again.` };
+  if (!u) { if (rec) noteUnsent(path, null); return null; } // gone up another way (pushed by hand)
+  const mine = rec && rec.branch === u.branch ? rec : null, last = (f) => git(path, ["log", "-1", "--format=" + f, u.branch]).out;
+  const subject = (mine && mine.subject) || (texts.length ? commitSubject(texts) : last("%s"));
+  const body = (mine && mine.body) || (texts.length ? texts.map((x) => "- " + x).join("\n") : last("%b"));
+  const said = u.pushed ? `${u.branch} went up earlier without a PR, so this opens it.`
+    : `${u.ahead} commit${u.ahead === 1 ? "" : "s"} approved on ${u.branch} earlier never reached GitHub, so ${u.ahead === 1 ? "it goes" : "they go"} up now.`;
+  const out = { ok: true, resent: true, sentFrom: u.branch, branch: u.branch, base: gitDefaultBranch(path), commit: git(path, ["rev-parse", "--short", u.branch]).out, subject, note: said };
+  const stem = u.branch.replace(/-\d+$/, "");
+  return await sendBranch(path, { branch: u.branch, base: out.base, subject, body, out, said, opts: u.pushed ? { ...opts, verify: false } : opts, newBranch: () => freeBranch(path, stem) });
+}
+// Push and open the PR (pushAndOpen), and keep what didn't get that far (noteUnsent):
+// it's marked unsent, so the page shows it as not done, and the card keeps it with a retry.
+async function sendBranch(path, s) {
+  const r = await pushAndOpen(path, s);
+  if (!r.ok || s.opts.push === false || s.opts.pr === false || r.local) return r;
+  if (r.pr) { noteUnsent(path, null); return r; }
+  const why = r.conflicts ? "conflicts" : r.testsFailed ? "tests" : r.pushed ? "pr" : "push";
+  noteUnsent(path, { at: Date.now(), branch: r.branch, commit: r.commit, subject: s.subject, body: s.body, note: r.note || "", why, ...(r.pushed ? { pushed: true } : {}) });
+  return { ...r, unsent: why };
+}
+async function pushAndOpen(path, { base, subject, body, out, opts, newBranch, said = "" }) {
+  let branch = out.branch;
   const noted = (note) => ({ ...out, note: (said ? said + " " : "") + note });
   if (opts.push === false) return out;
-  if (!git(path, ["remote", "get-url", "origin"]).ok) return noted("No origin remote — committed locally.");
+  if (!git(path, ["remote", "get-url", "origin"]).ok) return { ...noted("No origin remote — committed locally."), local: true };
   // A branch is cut from where the checkout happens to be, which can be far behind
   // main (PR #179: 29 commits, conflicts in 23 files). So the commit goes on top of
   // GitHub's main as it is now; if that conflicts, nothing is pushed and no PR opens.
+  // Not a branch GitHub has already: rewritten under it, its push would be refused (and
+  // a PR open from it would lose the commit to a fresh name). Files of a run still going
+  // stay out of the rebase and come back after it (--autostash).
   git(path, ["fetch", "-q", "origin", base], 60000);
-  const tip = "origin/" + base;
-  if (git(path, ["rev-parse", "-q", "--verify", "refs/remotes/" + tip]).ok && !git(path, ["merge-base", "--is-ancestor", tip, "HEAD"]).ok) {
-    const rb = git(path, ["rebase", tip], 120000);
+  const tip = "origin/" + base, published = git(path, ["rev-parse", "-q", "--verify", "refs/remotes/origin/" + branch]).ok;
+  if (!published && git(path, ["rev-parse", "-q", "--verify", "refs/remotes/" + tip]).ok && !git(path, ["merge-base", "--is-ancestor", tip, branch]).ok) {
+    const rb = git(path, ["rebase", "--autostash", tip, branch], 120000);
     if (!rb.ok) {
       git(path, ["rebase", "--abort"]);
       return { ...noted(`Committed, but not pushed: it conflicts with ${base} as GitHub has it now, so no PR was opened. Rebase ${branch} on ${tip}, fix the conflicts, then approve again.`), conflicts: true, behind: true };
     }
-    out.rebased = tip; out.commit = git(path, ["rev-parse", "--short", "HEAD"]).out;
+    out.rebased = tip; out.commit = git(path, ["rev-parse", "--short", branch]).out;
   }
   if (opts.verify !== false) {
     const v = await (typeof opts.verify === "function" ? opts.verify : repoTests)(path);
     if (v && v.ok === false) return { ...noted(`Committed, but not pushed: the tests fail on top of ${tip}${v.note ? " (" + v.note + ")" : ""}, so no PR was opened.`), testsFailed: true };
+    if (v && v.untested) { said = [said, v.untested[0].toUpperCase() + v.untested.slice(1) + "."].filter(Boolean).join(" "); out.note = said; out.untested = true; }
   }
   let ps = git(path, ["push", "-u", "origin", branch], 120000);
   // refused because origin's branch of that name went another way (an earlier PR of
@@ -649,11 +792,13 @@ async function shipChanges(path, texts, opts = {}) {
   if (!ps.ok) return noted("Committed, but the push failed: " + (ps.err.split("\n").filter(Boolean).pop() || "unknown error"));
   out.pushed = true;
   if (opts.pr === false) return out;
-  if (!hasCmd("gh")) return noted("Pushed. Install the GitHub CLI (gh) to open the PR automatically.");
-  const gh = (args) => spawnSync("gh", args, { cwd: path, encoding: "utf8", timeout: 60000 });
+  if (!opts.gh && !hasCmd("gh")) return noted("Pushed. Install the GitHub CLI (gh) to open the PR automatically.");
+  const gh = opts.gh || ghRun(path);
   const pr = gh(["pr", "create", "--head", branch, "--base", base, "--title", subject, "--body", body + "\n\nApproved in Symbiot."]);
-  const url = (String(pr.stdout || "").match(/https?:\/\/\S+/) || [])[0] || String(gh(["pr", "view", branch, "--json", "url", "-q", ".url"]).stdout || "").trim();
-  if (!url) return noted("Pushed, but gh couldn't open the PR: " + String(pr.stderr || "").trim().split("\n").pop());
+  // one already open from this branch takes the commit; a merged or closed one doesn't
+  const openPr = () => { try { const v = JSON.parse(gh(["pr", "view", branch, "--json", "url,state"]).stdout); return v.state === "OPEN" ? String(v.url || "") : ""; } catch { return ""; } };
+  const url = (String(pr.stdout || "").match(/https?:\/\/\S+/) || [])[0] || openPr();
+  if (!url) return noted("Pushed, but gh couldn't open the PR, so there's nothing to merge yet: " + (String(pr.stderr || "").trim().split("\n").pop() || "it gave no reason") + `. Open one from ${branch} on GitHub.`);
   out.pr = url;
   // Opt-in auto-merge: queue GitHub's native auto-merge, which lands the PR only
   // once its required checks (CI) pass — never immediately on its own if the repo
@@ -696,6 +841,7 @@ async function approveRepo(repo, opts = {}) {
   const ids = new Set(shipped.map((x) => x.id)), t = loadTasks(), items = waiting(t).filter((x) => ids.has(x.id)), now = Date.now();
   for (const x of items) { x.review = false; x.done = true; x.archived = true; x.archivedAt = now; x.approvedAt = now; for (const k of ["branch", "commit", "pr"]) if (r[k]) x[k] = r[k]; }
   const removed = applyRemovals(t);
+  if (r.resent && r.pr) prFor(t, repo, r);
   saveTasks(t);
   return { ...r, approved: items.length, ...(removed ? { removed } : {}) };
 }
@@ -712,7 +858,7 @@ async function approveChanges(repo, opts = {}) {
   if (loadTasks().some((x) => x.repo === repo && x.review && !x.done && !x.archived)) return await approveRepo(repo, opts);
   const path = laneMap()[repo]; if (!path) return { error: "Repo not found: " + (repo || "(no repo)") };
   const busy = stillWorking(repo, path); if (busy) return busy;
-  if (!workingChanges(path).files.length) return { error: "No uncommitted changes in " + repo + "." };
+  if (!workingChanges(path).files.length) { const s = await sendAgain(repo, opts); return s.none ? { error: "No uncommitted changes in " + repo + "." } : s; }
   const ids = new Set(Array.isArray(opts.tick) ? opts.tick.map(String) : []);
   const open = (t) => t.filter((x) => x.repo === repo && !x.done && !x.archived && !x.review), ticked = (t) => open(t).filter((x) => ids.has(x.id));
   const t0 = loadTasks(), r0 = roundOf(path, open(t0)), round = r0 && !ids.has(r0.id) ? r0 : null; // ticked: it's finished, not a round
@@ -727,6 +873,31 @@ async function approveChanges(repo, opts = {}) {
   if (items.length || going) saveTasks(t);
   return { ...r, approved: items.length, ...(round ? { round: { id: round.id, text: round.text } } : {}), ...(removed ? { removed } : {}) };
 }
+// Send again, the review card's retry: what Approves committed in a repo and didn't get
+// as far as a PR (sendUnsent), sent now. opts.verify false: not tested here first (the
+// tests can't run on this computer, and CI runs them on the PR). The tasks approved with
+// it, archived with a commit and no PR, get the PR.
+async function sendAgain(repo, opts = {}) {
+  forgetReview();
+  const pro = can("ship"); if (!pro.ok) return { error: pro.why, pro: true };
+  const path = laneMap()[repo]; if (!path) return { error: "Repo not found: " + (repo || "(no repo)") };
+  const busy = stillWorking(repo, path); if (busy) return busy;
+  if (SHIPPING.has(path)) return { error: "Already approving here: wait for that one to finish." };
+  SHIPPING.add(path); let r;
+  try { r = await shipChanges(path, [], { ...opts, sendOnly: true, autoMerge: opts.autoMerge !== undefined ? opts.autoMerge : autoMergeRepos().includes(repo) }); } finally { SHIPPING.delete(path); }
+  if (!r.pr) return r;
+  const t = loadTasks(), n = prFor(t, repo, r); if (n) saveTasks(t);
+  return { ...r, approved: n };
+}
+// The PR on a repo's archived tasks that went without one, on the branch it was sent
+// from (it may have gone up under a fresh name): how many.
+function prFor(t, repo, r) {
+  let n = 0;
+  for (const x of t) if (x.repo === repo && x.archived && x.commit && !x.pr && (x.branch === r.branch || x.branch === r.sentFrom)) { x.pr = r.pr; x.branch = r.branch; x.commit = r.commit; n++; }
+  return n;
+}
+// Forget approved work that didn't go up: the card's "Leave it" (it's sent by hand, or not wanted).
+function forgetUnsent(repo) { const path = laneMap()[repo]; if (!path) return { error: "Repo not found: " + (repo || "(no repo)") }; noteUnsent(path, null); const t = loadTasks(); let n = 0; for (const x of t) if (x.repo === repo && x.archived && x.commit && !x.pr && !x.unsentLeft) { x.unsentLeft = true; n++; } if (n) saveTasks(t); forgetReview(); return { ok: true }; }
 // Not right: reopen it and untick it in TASKS.md so the agent picks it up again.
 function sendBack(id) {
   const t = loadTasks(); const it = t.find((x) => x.id === id); if (!it) return { error: "not found" };
@@ -774,6 +945,7 @@ function buildTasksMd(name, ctx, list) {
   L.push("## When you finish an item", "- Tick it here (`- [x]`) as soon as it's done — that's how it reaches review. Ticking doesn't archive it: the user approves it in Symbiot, which commits it on a branch and opens a PR.", "- Leave your changes **uncommitted**, and don't tick anything you didn't finish or couldn't verify.", "- If you ever do have to make a branch or a PR yourself, first `git fetch origin`, cut the branch from `origin/<default branch>` (not the local one), run the tests, and open the PR only when they pass and nothing conflicts. If they don't, stop and say so in QUESTIONS.md.", "- If an item has numbered steps (1), 2), …), say `Step N: …` as you start each one, so Home shows how far along you are.", "- An item that runs for days or weeks (a move done step by step) stays unticked until its last step. When a round of it is finished and tested, end your last message with a line `Round done: <the item's first words>`, and Symbiot puts that round up for the user's OK under the item, which stays open.", "- To see Symbiot itself working (its Home, a layout, a card), run a copy of your own: `node index.mjs app --fresh` from this repo, or `symbiot app --fresh`. Never point a browser, a screenshot or a proxy at the user's running Symbiot (127.0.0.1:7391): it's their window and their data.", "- If the user says to drop an item (in ANSWERS.md, say), delete its line here: Symbiot closes it, so it isn't sent again. Don't delete one for any other reason.", "");
   L.push(...handoverRules(ctx.lanes || [], name), ...HANDBACK, ...standingBrief(), ...doneBrief());
   L.push("## If you need a decision, or have ideas", "You may be running unattended, so you can't ask in chat. Write `.symbiot/QUESTIONS.md` instead: Symbiot shows it to the user on your block in its Workdesk, and their answers come back in `.symbiot/ANSWERS.md` (read that first if it exists).",
+    "- Before you ask the user anything, read `.symbiot/ANSWERS.md` again, all of it: they may have answered it already, for you or for another agent on the same work (Symbiot copies those in, under a heading naming that agent). If an answer there settles it, use it and don't ask; if it settles part, ask only the part left.",
     `- At most ${QUESTIONS_MAX} questions, under a \`## Questions\` heading. Each is a \`### \` heading, then a line of context, then exactly ${OPTIONS_SHOWN} options as \`- \` bullets, the one you recommend first, marked \`(recommended)\`. Symbiot shows only the first ${OPTIONS_SHOWN}; the user can always answer in their own words.`,
     "- Judge the options before you ask. Most people pick the recommended option without weighing the other, and Symbiot works for a whole company (developers, sales, everyone), not one person, so the choice is really yours. Both options must be good routes to the best solution, never filler or one you wouldn't take. A skip or no option is a plain \"skip this part\", never a request for the user's personal details (their addresses, accounts or numbers). Each says in plain words, with no jargon, what it does and what it changes from then on for the project, the people working on it and the company. Recommend the one that's best for, in this order, the company, the people doing the work, then the task's goal. Base that on evidence you can check here (git history, tests, logs, how it's used, the answers so far), not on what's quickest, and give that evidence in the context line in a sentence.",
     ONLY_YOU,
@@ -834,4 +1006,4 @@ function pushTasks(filter) {
   return { empty: false, written, unresolved, handoff: handoffCmd() };
 }
 
-export { forgetReview, gitFailed, taskPaths, addTask, toggleTask, setTaskDone, removeTask, restoreTask, completedInRepo, removalOf, applyRemovals, applyDrops, syncTasks, workingChanges, workingDiff, publishesOnMerge, unreleased, bumpOffer, learnNpm, releaseNeeded, withReleases, setVersion, changelogEntry, changelogSection, noteChangelog, releaseInput, shipWithBump, runSummary, saidFinished, pendingReview, commitSubject, shipChanges, autoMergeRepos, setAutoMerge, approveRepo, approveChanges, sendBack, TASK_ORDER, taskType, buildTasksMd, pushTasks, mergeWhenGreen };
+export { sendAgain, forgetUnsent, unsentOf, readUnsent, unsentCard, repoTests, localRefused, forgetReview, gitFailed, taskPaths, addTask, toggleTask, setTaskDone, removeTask, restoreTask, completedInRepo, removalOf, applyRemovals, applyDrops, syncTasks, workingChanges, workingDiff, publishesOnMerge, unreleased, bumpOffer, learnNpm, releaseNeeded, withReleases, setVersion, changelogEntry, changelogSection, noteChangelog, releaseInput, shipWithBump, runSummary, saidFinished, pendingReview, commitSubject, shipChanges, autoMergeRepos, setAutoMerge, approveRepo, approveChanges, sendBack, TASK_ORDER, taskType, buildTasksMd, pushTasks, mergeWhenGreen };

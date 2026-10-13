@@ -38,6 +38,8 @@ const asker = (id, name, q, live) => {
 const RUNS = [asker("act-post1", "Agent: Marketing: Post 1, Symbiot: a first look", "Post 1, Symbiot: a first look: approve its preview?"), asker("act-audit", "Agent: Re-audit ~/Company", "Fix the 39 small problems now?"), asker("act-live", "Agent: Go through the Ghost AI mailbox, spam included", "", true)];
 writeFileSync(join(CFG, "runs.json"), JSON.stringify(RUNS));
 
+// the user answered another agent on the audit's work: its card says so (lanes.mjs shareAnswer)
+writeFileSync(join(CFG, "answers-shared.json"), JSON.stringify([{ key: "k1", at: new Date(now).toISOString(), from: join(CFG, "drafts", "act-post1"), lane: "evra_platform", q: "Send the Supabase ticket about evra_avm now?", a: "first check if evra_avm is saved somewhere else", topics: ["evra_avm"], to: [RUNS[1].path] }]));
 const app = spawn(process.execPath, [join(ROOT, "index.mjs"), "app"], { env: { ...sandboxEnv(HOME, process.env, 21000 + (process.pid % 3000)), SYMBIOT_NO_OPEN: "1" }, stdio: ["ignore", "pipe", "pipe"] });
 let chrome = null;
 const finish = async () => { try { if (chrome) chrome.kill("SIGKILL"); } catch {} try { app.kill("SIGTERM"); } catch {} await sleep(300); try { rmSync(HOME, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }); } catch {} done(); }; // chrome's helpers can still be writing its profile
@@ -60,6 +62,8 @@ try {
   const BLOB = "[...document.querySelectorAll('#lqdrops .lqblob')].find(function(b){return /Post 1/.test(b.textContent)})";
   const find = `(function(){if(${BLOB})return true;if(LQ.need&&LQ.need.pages>1)lqNeedPage();return false;})()`; // page through the band to it: setup cards (no Claude Code on CI) come first
   console.log("DRAFTS — typing survives Home refreshing under it");
+  const audit = "[...document.querySelectorAll('#lqdrops .lqblob')].find(function(b){return /39 small problems/.test(b.textContent)})";
+  ok("a card whose agent got the user's answer to another agent says so, and what", await until(`(function(){var b=${audit};if(!b){if(LQ.need&&LQ.need.pages>1)lqNeedPage();return false;}return /Got your answer to evra_platform/.test(b.textContent)&&/saved somewhere else/.test(b.textContent);})()`), await js(`(function(){var b=${audit};return b?b.textContent:JSON.stringify((LQ.home.you||[]).map(function(y){return y.shared}))})()`));
   ok("Home shows the question as a blob", await until(find), await js("JSON.stringify((LQ.home&&LQ.home.you||[]).map(function(y){return y.q}))"));
   await js(`(function(){var b=${BLOB};b.querySelector('.bfree').click();})()`);
   await js(`(function(){var i=(${BLOB}).querySelector('.bfx input');i.focus();})()`);

@@ -12,7 +12,7 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { authorship, repoState, readmeInfo, houseRules, findAllRepos, driftRepo, buildTasksMd, taskType, EMBEDDED_UI, orcaHandoffCmd, migrateOrcaCmd, fillHandoff, ORCA_CLAUDE_CMD, CLAUDE_CMD, HANDOFF_PROMPT, shipChanges, shipWithBump, bumpOffer, learnNpm, releaseNeeded, withReleases, semverGt, updateCmd, parseQuestions, unreleased, publishesOnMerge } from "../index.mjs";
 import { grantRule, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, linkReach, noteUntracked, untrackedBefore } from "../agents.mjs";
-import { applyRemovals, removalOf, saidFinished, gitFailed } from "../tasks.mjs";
+import { applyRemovals, removalOf, saidFinished, gitFailed, unsentOf, readUnsent, unsentCard, repoTests, localRefused } from "../tasks.mjs";
 import { releaseNotes, parseNotes } from "../writeups.mjs";
 import { VERSION, sameTask, uniqueTasks } from "../core.mjs";
 import { mailActivity } from "../mail.mjs";
@@ -608,6 +608,52 @@ try {
   const vfRepo = bhSetup("ship-verify", "echo other > ../ship-verify-other/other.txt && git -C ../ship-verify-other add .");
   const rv = await shipChanges(vfRepo, ["Red"], { pr: false, verify: async () => ({ ok: false, note: "1 test failed" }) });
   ok("tests failing on top of main: not pushed", rv.ok && rv.testsFailed && !rv.pushed && /1 test failed/.test(rv.note), rv);
+
+  // dailify, 13 Oct 2026: Approve committed on symbiot/4-tasks-2026-10-13, its tests failed for
+  // want of a database here, nothing went up, and with the tree clean every next Approve said
+  // "nothing to merge". Now what didn't go up is kept, and the next Approve (or Send again) sends it.
+  const prGh = ({ create = true } = {}) => { const calls = []; const f = (args) => { calls.push(args); const s = args.join(" ");
+    if (/^pr create/.test(s)) return create ? { status: 0, stdout: "https://github.com/o/r/pull/508\n" } : { status: 1, stdout: "", stderr: "GraphQL: rate limited" };
+    return { status: 1, stdout: "" }; }; f.calls = calls; return f; };
+  const stRepo = bhSetup("ship-stuck", "echo other > ../ship-stuck-other/other.txt && git -C ../ship-stuck-other add .");
+  const gst = (a) => execSync("git " + a, { cwd: stRepo, encoding: "utf8", env: gitEnv }).trim();
+  const st1 = await shipChanges(stRepo, ["Stuck thing"], { gh: prGh(), verify: async () => ({ ok: false, note: "4 failed: connect ECONNREFUSED" }) });
+  ok("stuck: tests failing here, committed and not pushed, marked unsent and kept with why", st1.ok && !st1.pushed && st1.unsent === "tests" && st1.branch === "symbiot/stuck-thing" && readUnsent(stRepo)?.why === "tests" && readUnsent(stRepo)?.subject === "Stuck thing", [st1, readUnsent(stRepo)]);
+  ok("…the branch's commit is seen as not on GitHub, and its card says so", unsentOf(stRepo)?.branch === "symbiot/stuck-thing" && unsentOf(stRepo)?.ahead === 1 && unsentCard(stRepo, "r", [])?.why === "tests", [unsentOf(stRepo), unsentCard(stRepo, "r", [])]);
+  const ghS = prGh(), st2 = await shipChanges(stRepo, ["Stuck thing"], { gh: ghS, verify: async () => ({ ok: true }) });
+  ok("…the next Approve, with nothing uncommitted, sends it instead of 'nothing to merge'", st2.ok && !st2.nothing && st2.resent && st2.pushed && st2.pr === "https://github.com/o/r/pull/508" && gst("rev-parse origin/symbiot/stuck-thing") === gst("rev-parse HEAD"), st2);
+  ok("…under the PR title it was approved with, and then forgets it", ghS.calls.some((c) => c[1] === "create" && c[c.indexOf("--title") + 1] === "Stuck thing") && !readUnsent(stRepo) && !unsentOf(stRepo) && unsentCard(stRepo, "r", []) === null, ghS.calls);
+  const stNone = await shipChanges(stRepo, [], { sendOnly: true, gh: prGh() });
+  ok("…Send again once it's all up: says there's nothing waiting, pushes nothing", stNone.none && /Nothing here is waiting to go up/.test(stNone.error), stNone);
+  // from before Approve kept anything: a commit on a symbiot/ branch, never pushed, and the tasks archived with no PR
+  const rtRepo = bhSetup("ship-stuck-old", "echo other > ../ship-stuck-old-other/other.txt && git -C ../ship-stuck-old-other add .");
+  const gq = (a) => execSync("git " + a, { cwd: rtRepo, encoding: "utf8", env: gitEnv }).trim();
+  gq("switch -q -c symbiot/4-tasks-2026-10-13"); gq("add new.txt"); gq("commit -qm Four-tasks -m body-of-it");
+  const oldTask = [{ repo: "r", archived: true, approvedAt: Date.now() - 3600000, branch: "symbiot/4-tasks-2026-10-13", commit: gq("rev-parse --short HEAD") }];
+  ok("an old stuck Approve (no note kept): its card comes from the archived tasks with a commit and no PR", unsentCard(rtRepo, "r", oldTask)?.why === "push" && /never went up to GitHub/.test(unsentCard(rtRepo, "r", oldTask)?.note), unsentCard(rtRepo, "r", oldTask));
+  const ghO = prGh(), sOld = await shipChanges(rtRepo, [], { sendOnly: true, gh: ghO, verify: async () => ({ ok: true }) });
+  ok("…Send again rebases it on main, pushes it and opens the PR under its commit's subject", sOld.ok && sOld.pushed && sOld.rebased === "origin/main" && sOld.pr && gq("rev-parse HEAD~1") === gq("rev-parse origin/main") && ghO.calls.some((c) => c[1] === "create" && c[c.indexOf("--title") + 1] === "Four-tasks"), [sOld, ghO.calls]);
+  // your own branch with commits you haven't pushed: not Approve's to send
+  const owRepo = bhSetup("ship-own", "echo other > ../ship-own-other/other.txt && git -C ../ship-own-other add .");
+  const gw = (a) => execSync("git " + a, { cwd: owRepo, encoding: "utf8", env: gitEnv }).trim();
+  gw("switch -q -c my-feature"); gw("add new.txt"); gw("commit -qm mine");
+  const ow = await shipChanges(owRepo, ["Nothing new"], { gh: prGh(), verify: async () => ({ ok: true }) });
+  ok("your own (not symbiot/) branch's unpushed commits stay yours: nothing is pushed", ow.nothing && !ow.pushed && !gw("branch -r").includes("my-feature"), ow);
+  // pushed, but gh couldn't open the PR: kept as such, and Send again opens it without pushing or testing again
+  const npRepo = bhSetup("ship-nopr", "echo other > ../ship-nopr-other/other.txt && git -C ../ship-nopr-other add .");
+  const np1 = await shipChanges(npRepo, ["No PR yet"], { gh: prGh({ create: false }), verify: async () => ({ ok: true }) });
+  ok("pushed but no PR: unsent 'pr', kept as pushed", np1.pushed && !np1.pr && np1.unsent === "pr" && readUnsent(npRepo)?.pushed === true && unsentCard(npRepo, "r", [])?.why === "pr", [np1, readUnsent(npRepo)]);
+  let tested = 0; const np2 = await shipChanges(npRepo, [], { sendOnly: true, gh: prGh(), verify: async () => { tested++; return { ok: false }; } });
+  ok("…Send again opens the PR, with no second test run", np2.pr === "https://github.com/o/r/pull/508" && tested === 0 && !readUnsent(npRepo), [np2, tested]);
+  // tests that only failed to reach a database on this computer: "couldn't test here", and it goes up
+  const unRepo = bhSetup("ship-untested", "echo other > ../ship-untested-other/other.txt && git -C ../ship-untested-other add .");
+  const un = await shipChanges(unRepo, ["Needs Postgres"], { gh: prGh(), verify: async () => ({ ok: true, untested: "the tests couldn't run here: they need something on 127.0.0.1:5432 that isn't running on this computer, so they weren't checked before the push (CI runs them on the PR)" }) });
+  ok("tests that couldn't reach a local database: pushed and PR'd, and it says they weren't checked here", un.pushed && un.pr && un.untested && /The tests couldn't run here: they need something on 127\.0\.0\.1:5432/.test(un.note || ""), un);
+  ok("localRefused: a refused local address is found; a remote one, or none, isn't", localRefused("Error: connect ECONNREFUSED 127.0.0.1:5432\n    at TCPConnectWrap") === "127.0.0.1:5432" && localRefused('psql: error: connection to server at "localhost" (::1), port 5432 failed: Connection refused') === "localhost:5432" && localRefused('connection to server at "127.0.0.1", port 5432 failed: Connection refused') === "127.0.0.1:5432" && localRefused("connect ECONNREFUSED 10.0.0.5:5432") === "" && localRefused("AssertionError: 1 !== 2") === "");
+  const tdir = build("ship-tests-here", `echo '{"scripts":{"test":"x"}}' > package.json && mkdir node_modules`);
+  const rRef = await repoTests(tdir, { cmd: process.execPath, args: ["-e", "console.error('FAIL api/users.test.ts\\nError: connect ECONNREFUSED 127.0.0.1:5432'); process.exit(1)"] });
+  const rRed = await repoTests(tdir, { cmd: process.execPath, args: ["-e", "console.error('AssertionError: expected 2 to equal 3'); process.exit(1)"] });
+  ok("repoTests: failing only for want of a local database is 'untested', not failed; a real failure still fails", rRef.ok && /127\.0\.0\.1:5432/.test(rRef.untested || "") && rRed.ok === false && /AssertionError/.test(rRed.note), [rRef, rRed]);
 
   // scratch: 170k untracked files (venvs, datasets) timed out `git add -A`
   // (spawnSync ETIMEDOUT), and whole-tree staging took in an unignored .env.

@@ -135,6 +135,19 @@ try {
   rmSync(join(ADIR, ".config", "symbiot", "android-seal.json"));
   const ap2 = await runA(`const p = await import(${JSON.stringify(join(SRC, "phone.mjs"))}); const r = await p.pollComputer({ notify: () => {}, discover: async () => [] }); console.log(JSON.stringify(r)); process.exit(0);`, { SYMBIOT_COMPUTER_SECRET: JSON.stringify(seal) });
   ok("…and back in SYMBIOT_COMPUTER_SECRET at the next start, it still asks", !ap2.error && ap2.last > 0, ap2);
+  // agents, git, npm and gh inherited it from the environment, which undid keeping it in the Keystore
+  const ap4 = await runA(`const p = await import(${JSON.stringify(join(SRC, "phone.mjs"))}); const { execFileSync } = await import("node:child_process");
+    const child = execFileSync(process.execPath, ["-p", "Object.keys(process.env).includes(\\"SYMBIOT_COMPUTER_SECRET\\")"], { encoding: "utf8" }).trim();
+    const r = await p.pollComputer({ notify: () => {}, discover: async () => [] });
+    console.log(JSON.stringify({ child, mine: "SYMBIOT_COMPUTER_SECRET" in process.env, relaunch: JSON.parse(p.relaunchEnv().SYMBIOT_COMPUTER_SECRET || "{}").token === ${JSON.stringify(seal.token)}, last: r.last, error: r.error })); process.exit(0);`, { SYMBIOT_COMPUTER_SECRET: JSON.stringify(seal) });
+  ok("…read once at start and taken out of the environment: a process it spawns doesn't get it, and it still asks", ap4.child === "false" && ap4.mine === false && ap4.last > 0 && !ap4.error, ap4);
+  ok("…only Symbiot relaunching itself after an update is handed it (relaunchEnv)", ap4.relaunch === true, ap4);
+  // Android's own discovery (the app's service) took about 9.5 s for one computer; Node gave up at 8
+  const nsdFile = join(ADIR, ".config", "symbiot", "android-nsd.json");
+  const ap5 = await runA(`const p = await import(${JSON.stringify(join(SRC, "phone.mjs"))}); const fs = await import("node:fs");
+    setTimeout(() => fs.writeFileSync(${JSON.stringify(nsdFile)}, JSON.stringify([{ name: "Symbiot-1a2b", port: 7392, addresses: ["192.168.8.50"], fp: "abc" }])), 9600);
+    const f = await p.findComputers(); console.log(JSON.stringify({ f })); process.exit(0);`);
+  ok("on the Android app, a computer its discovery finds after 9.6 s is still found", ap5.f && ap5.f.length === 1 && ap5.f[0].url === "http://192.168.8.50:7392" && ap5.f[0].fp === "abc", ap5);
   const ap3 = await runA(`const p = await import(${JSON.stringify(join(SRC, "phone.mjs"))}); console.log(JSON.stringify(p.computerState())); process.exit(0);`);
   ok("…without it (the Keystore's key gone), it says to pair again", ap3.old && /pair/i.test(ap3.error || ""), ap3);
 
@@ -146,6 +159,19 @@ try {
   let asked = null;
   const p6 = await P.pollComputer({ notify: () => {}, discover: async (c) => { asked = c.fp; return [BASE]; } });
   ok("none of them answers: it looks for the computer by its key's fingerprint (mDNS), and keeps the address it found", !p6.error && asked === on.fp && readJ(join(CFG, "config.json")).computer.url === BASE, [p6.error, asked]);
+  // another device has the computer's old address now, and answers anything plain: not the computer, so on to the next route
+  const { createServer: httpServer } = await import("node:http");
+  const strangerSrv = httpServer((req, res) => { req.resume(); req.on("end", () => { res.writeHead(403, { "content-type": "application/json" }); res.end('{"error":"Forbidden"}'); }); });
+  await new Promise((r) => strangerSrv.listen(0, "127.0.0.1", r));
+  const STRANGER = `http://127.0.0.1:${strangerSrv.address().port}`;
+  const cfgS = readJ(join(CFG, "config.json")); cfgS.computer.url = STRANGER; cfgS.computer.urls = [STRANGER]; writeFileSync(join(CFG, "config.json"), JSON.stringify(cfgS));
+  const pS = await P.pollComputer({ notify: () => {}, discover: async () => [BASE] });
+  ok("a stranger at the old address answering a plain 403 isn't taken for the computer: it looks further, finds it, and keeps that address", !pS.error && readJ(join(CFG, "config.json")).computer.url === BASE, [pS.error, readJ(join(CFG, "config.json")).computer.url]);
+  cfgS.computer.url = STRANGER; cfgS.computer.urls = [STRANGER]; writeFileSync(join(CFG, "config.json"), JSON.stringify(cfgS));
+  const pS2 = await P.pollComputer({ notify: () => {}, discover: async () => [] });
+  ok("…and with only the stranger there, the computer is out of reach, not \"isn't paired\", and the stranger's address isn't kept", /Couldn't reach/.test(pS2.error || "") && pS2.paired && readJ(join(CFG, "config.json")).computer.url === STRANGER, [pS2.error]);
+  cfgS.computer.url = BASE; writeFileSync(join(CFG, "config.json"), JSON.stringify(cfgS)); await P.pollComputer({ notify: () => {}, discover: async () => [] }); // back, for what follows
+  strangerSrv.close();
   const cfgOff = readJ(join(CFG, "config.json")); cfgOff.computer.url = "http://127.0.0.1:1"; cfgOff.computer.urls = []; writeFileSync(join(CFG, "config.json"), JSON.stringify(cfgOff));
   const f1 = await P.pollComputer({ notify: () => {}, discover: async () => [] });
   ok("a network error never clears the pairing", f1.paired && !f1.away && readJ(join(CFG, "config.json")).computer.id && readJ(join(CFG, "secrets.json")).computerSecret, f1);
@@ -156,6 +182,18 @@ try {
   writeFileSync(join(CFG, "config.json"), JSON.stringify(cfgNow)); cfgNow.computer.url = BASE; writeFileSync(join(CFG, "config.json"), JSON.stringify(cfgNow));
   const f3 = await P.pollComputer({ notify: () => {}, discover: async () => [] });
   ok("…gone with the next good poll", !f3.away && !f3.error, f3);
+  // news and the copy had 6 s in all, so a busy computer read as away; a dead address still costs only the quick hello
+  const slow = async (url, o = {}) => { if (/\/phone\/news$/.test(url)) { await sleep(6500); if (o.signal && o.signal.aborted) throw new Error("aborted"); } return fetch(url, o); };
+  const cfgSlow = readJ(join(CFG, "config.json")); cfgSlow.computer.urls = ["http://10.255.255.1:7392", BASE]; cfgSlow.computer.url = "http://10.255.255.1:7392"; writeFileSync(join(CFG, "config.json"), JSON.stringify(cfgSlow));
+  const t9 = Date.now(), fS = await P.pollComputer({ fetchFn: slow, notify: () => {}, discover: async () => [] }), took = Date.now() - t9;
+  ok("a computer slow to answer (6.5 s) still answers, after an address with nothing there cost only its quick hello", !fS.error && fS.last >= t9 && took < 6500 + 3000 + 4000, [fS.error, took]);
+  // the offset used to be set once, at pairing: 10 minutes of drift since, and every request was refused as old
+  const cfgClock = readJ(join(CFG, "config.json")); cfgClock.computer.offset = -20 * 60000; writeFileSync(join(CFG, "config.json"), JSON.stringify(cfgClock));
+  const fC = await P.pollComputer({ notify: () => {}, discover: async () => [] }), offC = readJ(join(CFG, "config.json")).computer.offset;
+  ok("the clocks 20 minutes apart since pairing: refused once as old, set by the computer's clock in that answer, and asked again", !fC.error && fC.last && Math.abs(offC) < 2000, [fC.error, offC]);
+  cfgClock.computer.offset = 8000; writeFileSync(join(CFG, "config.json"), JSON.stringify(cfgClock));
+  await P.pollComputer({ notify: () => {}, discover: async () => [] });
+  ok("…and a few seconds' drift is set right by the time each news answer carries", Math.abs(readJ(join(CFG, "config.json")).computer.offset) < 2000, readJ(join(CFG, "config.json")).computer.offset);
 
   console.log("6. THE COPY — your work on the phone, shown with the computer off");
   const copy = readJ(join(CFG, "computer.json"));
@@ -248,6 +286,26 @@ try {
     const env = { v: 1, id: c.id, ...P.seal(k, { t: s.token, ts: Date.now() + (c.offset || 0), op: "agentcmd", args: {} }, "req:" + c.id) };
     const r = await (await fetch(BASE + "/phone/apply", { method: "POST", body: JSON.stringify(env) })).json(); return P.unseal(k, r, "res:" + env.n); })();
   ok("a sealed request for anything but news, state and apply: 403", sealedReply && sealedReply.s === 403, sealedReply);
+  // one change that throws there used to answer 500 for the batch, and the phone sent it again forever, with no news meanwhile
+  const goodTasks = readFileSync(join(PCFG, "tasks.json"), "utf8"), sinceT = readJ(join(CFG, "config.json")).computer.since;
+  writeFileSync(join(PCFG, "tasks.json"), '{"not":"a list"}');
+  writeFileSync(join(PCFG, "watch.json"), JSON.stringify({ watches: [], news: [{ id: "th", watch: "w1", name: "Inbox", ts: sinceT + 20, text: "Kim, Invoice paid" }], briefs: [] }));
+  writeFileSync(join(CFG, "phone-queue.json"), JSON.stringify([{ id: "77777777-aaaa", at: Date.now(), op: "task.setDone", args: { id: "t2", done: false } }]));
+  const toldT = [], pT = await P.pollComputer({ notify: (t, b) => toldT.push([t, b]), discover: async () => [] });
+  v = P.computerView();
+  ok("a change that throws on the computer: reported back as failed, out of the queue, and the news still comes", !v.queued && v.copy.notes.some((n) => n.id === "77777777-aaaa" && /failed on your computer/.test(n.error)) && toldT.some((t) => /Invoice paid/.test(t[1])) && !pT.error, [v.queued, v.copy.notes.slice(-1), toldT, pT.error]);
+  writeFileSync(join(PCFG, "tasks.json"), goodTasks);
+  writeFileSync(join(CFG, "phone-queue.json"), JSON.stringify([{ id: "88888888-aaaa", at: Date.now(), op: "task.add", args: { text: "Pay the rent" } }]));
+  const k500 = Buffer.from(readJ(join(CFG, "secrets.json")).computerSecret.key, "base64url"); // the computer refusing the batch, sealed
+  const no500 = (url, o) => (/\/phone\/apply$/.test(url) ? Promise.resolve(new Response(JSON.stringify(P.seal(k500, { s: 500, b: { error: "Something broke." } }, "res:" + JSON.parse(o.body).n)), { status: 200 })) : fetch(url, o));
+  const p500 = await P.pollComputer({ fetchFn: no500, notify: () => {}, discover: async () => [] });
+  ok("the whole batch refused: it stays queued, the copy still comes, and the phone says the changes haven't gone", P.computerView().queued === 1 && p500.last > pT.last - 1 && /haven't reached .* yet: Something broke/.test(p500.error || "") && !(await pc.cmd("tasks")).some((t) => t.text === "Pay the rent"), p500);
+  const pOk = await P.pollComputer({ notify: () => {}, discover: async () => [] });
+  ok("…and goes at the next try", !pOk.error && !P.computerView().queued && (await pc.cmd("tasks")).some((t) => t.text === "Pay the rent"), pOk);
+  // 50 long tasks queued came to more than the relay takes in one request
+  writeFileSync(join(CFG, "phone-queue.json"), JSON.stringify(Array.from({ length: 60 }, (_, i) => ({ id: `99999999-${String(i).padStart(4, "0")}`, at: Date.now(), op: "task.add", args: { text: `Long task ${i}: ` + `part${i} `.repeat(400) } }))));
+  const sizes = [], pBig = await P.pollComputer({ fetchFn: (url, o) => { if (/\/phone\/apply$/.test(url)) sizes.push(String(o.body).length); return fetch(url, o); }, notify: () => {}, discover: async () => [] });
+  ok("a big queue goes in parts, each under the relay's cap, all in one poll", !pBig.error && !P.computerView().queued && sizes.length > 1 && sizes.every((n) => n < P.RELAY_MAX) && (await pc.cmd("tasks")).filter((t) => /^Long task \d+:/.test(t.text)).length === 60, [pBig.error, P.computerView().queued, sizes]);
 
   console.log("8. APPROVE FROM THE PHONE — only what the phone showed, and never once unpaired");
   const demo = P.computerView().copy.approves.find((a) => a.repo === "demo");
@@ -268,8 +326,10 @@ try {
   const id = (await pc.cmd("state")).phones.find((p) => p.name === "Pixel").id;
   await pc.cmd("unpair", { id });
   P.queueChange("pending.approve", { repo: "demo", sum: fresh.sum });
+  P.queueChange("task.add", { text: "Water the plants" });
   const un = await P.pollComputer({ notify: () => {}, discover: async () => [] });
-  ok("unpaired: its queued approve is refused, sealed, dropped, and the phone is told", (await pc.cmd("approved")).length === 1 && /unpaired/.test(un.error || "") && !P.computerView().queued && P.computerView().copy.notes.some((n) => /Not approved: this phone was unpaired/.test(n.error)), [un.error, P.computerView().queued]);
+  ok("unpaired: its queued approve is refused, sealed, dropped, and the phone is told", (await pc.cmd("approved")).length === 1 && /unpaired/.test(un.error || "") && P.computerView().copy.notes.some((n) => /Not approved: this phone was unpaired/.test(n.error)), [un.error, P.computerView().queued]);
+  ok("…and the rest of what it had queued is dropped too, said so, rather than sent again every poll", !P.computerView().queued && P.computerView().copy.notes.some((n) => /Not sent: this phone was unpaired/.test(n.error) && n.what === "Water the plants") && !(await pc.cmd("tasks")).some((t) => t.text === "Water the plants"), P.computerView().copy.notes.slice(-2));
 
   console.log("8. WITH THE COMPUTER OFF — kept, then sent when it starts");
   const code3 = (await pc.cmd("code")).code;
@@ -315,6 +375,34 @@ try {
   ok("someone else can't take the computer's place on the relay (it must show the secret behind the id)", imp && /isn't this pair's computer/.test(imp.error), imp);
   const still = await P.pollComputer({ notify: () => {}, discover: async () => [] });
   ok("…and the real computer still answers", !still.error && still.via === "relay", still);
+  // away from home, every ask went through each saved address, then discovery, and only then the relay
+  const order = [], rec = (url, o) => { order.push(url.replace(RELAY, "RELAY").replace(/^http:\/\/127\.0\.0\.1:\d+/, "LAN")); return fetch(url, o); };
+  const pA = await P.pollComputer({ fetchFn: rec, notify: () => {}, discover: async () => { order.push("DISCOVER"); return []; } });
+  const firstAsk = order.findIndex((u) => /^RELAY\/v1\/.*\/ask$/.test(u));
+  ok("the last answer came through the relay: the next asks go there first, with no wait on the dead Wi-Fi address or discovery", !pA.error && firstAsk >= 0 && firstAsk <= 1 && !order.includes("DISCOVER") && !order.some((u) => /^LAN\/phone\/(news|state)$/.test(u)), order);
+  const rcHome = readJ(join(CFG, "config.json")); rcHome.computer.url = BASE; writeFileSync(join(CFG, "config.json"), JSON.stringify(rcHome));
+  order.length = 0; await P.pollComputer({ fetchFn: rec, notify: () => {}, discover: async () => [] });
+  ok("…back home, the Wi-Fi it looked at alongside answers, so the next ask goes there", order.indexOf("LAN/phone/state") > order.findIndex((u) => /^RELAY.*\/ask$/.test(u)) && order.findIndex((u) => /^RELAY.*\/ask$/.test(u)) >= 0, order);
+  rcHome.computer.url = "http://127.0.0.1:1"; writeFileSync(join(CFG, "config.json"), JSON.stringify(rcHome));
+  // the relay in trouble read as the computer being off or asleep; an answer too big for it was dropped, and came back a 504 after 25 s
+  const at = (status, body) => (url, o) => (/\/ask$/.test(url) ? Promise.resolve(new Response(JSON.stringify(body), { status })) : fetch(url, o));
+  const relayBusy = await P.pollComputer({ fetchFn: at(429, { error: "Too many requests: wait a minute." }), notify: () => {}, discover: async () => [] });
+  ok("the relay busy (429): the phone says the relay is busy, not that the computer is off", /relay \(.*\) is busy/.test(relayBusy.error || "") && !/off or asleep/.test(relayBusy.error), relayBusy.error);
+  const cfErr = await P.pollComputer({ fetchFn: at(503, { error: "error code: 1015" }), notify: () => {}, discover: async () => [] });
+  ok("…the relay itself failing (not its \"away\"): says so, and that the computer may be fine", /isn't working right now \(it answered 503\)/.test(cfErr.error || ""), cfErr.error);
+  const gone = await P.pollComputer({ fetchFn: at(503, { away: true, error: "Your computer isn't connected to the relay (it may be off, asleep or offline)." }), notify: () => {}, discover: async () => [] });
+  ok("…the computer not connected to it: that one is the computer being away", /off or asleep/.test(gone.error || ""), gone.error);
+  const big = await P.pollComputer({ fetchFn: at(502, { tooBig: true, error: "too big" }), notify: () => {}, discover: async () => [] });
+  ok("…an answer too big for it: says so", /too big for the relay/.test(big.error || ""), big.error);
+  const relay2 = await startRelay({}), R2 = `http://127.0.0.1:${relay2.port}`, fakeId = P.relayOf(P.newKeys().priv);
+  const line = new WebSocket(`${R2.replace("http", "ws")}/v1/${fakeId.id}/computer`);
+  await new Promise((res) => { line.onopen = () => line.send(JSON.stringify({ hello: fakeId.secret })); line.onmessage = (e) => { const m = JSON.parse(e.data); if (m.ready) { line.onmessage = (e2) => { const q = JSON.parse(e2.data); if (q.rid) line.send(JSON.stringify({ rid: q.rid, s: 200, b: { c: "x".repeat(300 * 1024) } })); }; res(); } }; setTimeout(res, 3000); });
+  const t10 = Date.now(), huge = await fetch(`${R2}/v1/${fakeId.id}/ask`, { method: "POST", body: "{}" }), hugeJ = await huge.json();
+  ok("the relay given an answer over its cap tells the phone at once (502, too big), rather than a 504 after 25 s", huge.status === 502 && hugeJ.tooBig && Date.now() - t10 < 5000, [huge.status, hugeJ, Date.now() - t10]);
+  line.close(); relay2.close();
+  const snapBig = { v: "x", tasks: [], reports: Array.from({ length: 5 }, (_, i) => ({ id: "r" + i, title: "R" + i, text: "word ".repeat(12000) })) };
+  const fit = P.fitRelay(200, snapBig, 40 * 1024), fitNone = P.fitRelay(200, snapBig, 4 * 1024), fitNo = P.fitRelay(200, { news: ["y".repeat(300 * 1024)] }, P.RELAY_MAX);
+  ok("the computer keeps what it sends through the relay under its cap: the reports' text cut first, then the reports, else a plain refusal", fit.status === 200 && fit.body.reports.length === 5 && fit.body.reports.every((r) => r.cut && r.text.length <= 1500) && fitNone.status === 200 && !fitNone.body.reports.length && fitNo.status === 413 && /too big/.test(fitNo.body.error) && P.fitRelay(200, snapBig, 0).body === snapBig, [fit.status, fitNone.status, fitNo.status]);
   await pc.stop(); pc = startComputer({ SYMBIOT_NO_RELAY: "0", SYMBIOT_RELAY: RELAY }); await pc.ready;
   const cOff = readJ(join(PCFG, "config.json")); cOff.phoneLink.relay = false; writeFileSync(join(PCFG, "config.json"), JSON.stringify(cOff));
   await pc.cmd("on"); await sleep(400);

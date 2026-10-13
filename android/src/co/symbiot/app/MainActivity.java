@@ -140,10 +140,19 @@ public class MainActivity extends Activity {
         shown = ""; statusShown = "";
         SymbiotService.stop(this);
     }
+    // ...and the other way: quit the Termux Symbiot, then start the app's own. It used to
+    // start the app's own alongside, and both ran the weekly write-up and agents. Once
+    // Termux's has let go of its port (a few seconds at most), the app's own can have it.
     private void useBuiltIn() {
+        String was = external;
         prefs(this).edit().remove("termuxUrl").apply();
         external = null; shown = ""; statusShown = "";
-        SymbiotService.start(this);
+        if (was == null) { SymbiotService.start(this); return; }
+        new Thread(() -> {
+            SymbiotService.quit(was);
+            for (int i = 0; i < 12 && SymbiotService.alive(was); i++) try { Thread.sleep(500); } catch (InterruptedException e) { break; }
+            runOnUiThread(() -> { if (!destroyed && external == null) SymbiotService.start(this); });
+        }, "symbiot-switch").start();
     }
 
     // Is the Termux Symbiot answering? Its port and token are stable, so after a
@@ -264,16 +273,17 @@ public class MainActivity extends Activity {
 
     private String status(String state) {
         boolean down = "stopped".equals(state) || "failed".equals(state);
-        String title = "failed".equals(state) ? "Symbiot couldn't start" : "stopped".equals(state) ? "Symbiot is stopped" : "Starting Symbiot&hellip;";
+        String title = "failed".equals(state) ? (SymbiotService.keptStopping ? "Symbiot keeps stopping" : "Symbiot couldn't start")
+            : "stopped".equals(state) ? "Symbiot is stopped" : "Starting Symbiot&hellip;";
         String log = TextUtils.htmlEncode(SymbiotService.log());
-        return page(title, (down ? "<button onclick='SymbiotAndroid.start()'>Start Symbiot</button>" : "")
+        return page(title, "failed".equals(state) ? "bad" : down ? "off" : "", (down ? "<button onclick='SymbiotAndroid.start()'>Start Symbiot</button>" : "")
             + (hasStorage() ? "" : "<p>Symbiot can't see your shared storage yet, so it can't find the repos there.</p><button class=g onclick='SymbiotAndroid.storage()'>Allow file access</button>")
             + (log.isEmpty() ? "" : "<pre>" + log + "</pre>"));
     }
 
     private String termuxStatus(String st) {
-        if (!"down".equals(st)) return page("Connecting to Symbiot in Termux&hellip;", "");
-        return page("Symbiot in Termux isn't running",
+        if (!"down".equals(st)) return page("Connecting to Symbiot in Termux&hellip;", "", "");
+        return page("Symbiot in Termux isn't running", "off",
             "<p>Start it in Termux with <code>symbiot app</code>. It opens Symbiot here.</p>"
             + (termuxInstalled() ? "<p>Or tap <b>Open Termux</b>: it copies a command that starts it, installing Node and Symbiot there first if they're missing. Paste it in Termux.</p>"
                 + "<button onclick='SymbiotAndroid.openTermux()'>Open Termux</button>" : "")
@@ -281,14 +291,15 @@ public class MainActivity extends Activity {
             + "<p class=m>The app's own Symbiot sees your shared storage, but not Termux's home folder.</p>");
     }
 
-    private static String page(String title, String body) {
+    // dot: "" green (starting or running), "off" grey (stopped), "bad" coral (failed)
+    private static String page(String title, String dot, String body) {
         return "<!doctype html><meta name=viewport content='width=device-width,initial-scale=1'>"
             + "<style>body{background:#0E1A1F;color:#B7C9C4;font:15px -apple-system,Roboto,sans-serif;margin:0;padding:28px 20px}"
-            + "h1{color:#F4F1EA;font-size:20px;display:flex;align-items:center;gap:10px}.dot{width:10px;height:10px;border-radius:50%;background:#3DDC97;box-shadow:0 0 12px #3DDC97}"
+            + "h1{color:#F4F1EA;font-size:20px;display:flex;align-items:center;gap:10px}.dot{width:10px;height:10px;border-radius:50%;background:#3DDC97;box-shadow:0 0 12px #3DDC97}.dot.off{background:#7E9690;box-shadow:none}.dot.bad{background:#FF8A75;box-shadow:0 0 12px #FF8A75}"
             + "pre{white-space:pre-wrap;word-break:break-word;font-size:11.5px;color:#7E9690;background:#15262C;border:1px solid #24404A;border-radius:8px;padding:10px;max-height:60vh;overflow:auto}"
             + "button{font:inherit;font-weight:700;border:0;border-radius:8px;padding:9px 16px;background:#3DDC97;color:#0E1A1F;margin:4px 8px 4px 0}"
             + "button.g{background:#1D333A;color:#F4F1EA}code{color:#F4F1EA;background:#15262C;border-radius:4px;padding:1px 5px;word-break:break-word}.m{font-size:13px;color:#7E9690}</style>"
-            + "<h1><span class=dot></span>" + title + "</h1>" + body;
+            + "<h1><span class='dot " + dot + "'></span>" + title + "</h1>" + body;
     }
 
     // ---- shared storage (where your repos live) ---------------------------------

@@ -212,6 +212,9 @@ try {
   };
   const h = homeState({ deps });
   const first = homeState({ deps: { ...deps, pending: () => [], agents: () => [], connected: () => false, repos: () => ({}) } });
+  // dailify, 13 Oct 2026: approved, committed, never pushed, and the card went with the tasks
+  const stuckHome = homeState({ fresh: true, deps: { ...deps, pending: () => [{ repo: "dailify", path: "/d", tasks: [], files: [], unsent: { why: "tests", branch: "symbiot/4-tasks" } }] } }).you.find((y) => y.id === "approve:dailify");
+  ok("approved work not on GitHub keeps a card on Home, saying why, that opens its review", stuckHome && stuckHome.kind === "approve" && /not on GitHub yet: its tests failed here/.test(stuckHome.sub), stuckHome);
   ok("first run, a finished search found nothing: connect an AI, then the folder your repos are in, both out front and opening Settings", first.you.map((y) => y.id).join() === "setup:ai,setup:folders" && first.you.every((y) => y.shape === "settings"), first.you);
   const looking = homeState({ fresh: true, deps: { ...deps, pending: () => [], agents: () => [], repos: () => ({}), search: () => ({ searching: true, at: 0 }) } });
   ok("…never while it's still looking: where your repos are is found, not asked", !looking.you.some((y) => y.id === "setup:folders"), looking.you);

@@ -23,8 +23,8 @@ import { homedir } from "node:os";
 import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, chmodSync, statSync } from "node:fs";
 import { createHash, randomBytes } from "node:crypto";
 import { execFile } from "node:child_process";
-import { CONFIG_DIR, loadTasks, clipWords } from "./core.mjs";
-import { runHandoff, runningHandoff, waitingFor, agentQuestions, findOrcaCli, installAllowlist, writeTasks, workOf } from "./agents.mjs";
+import { CONFIG_DIR, loadTasks, clipWords, loadConfig } from "./core.mjs";
+import { runHandoff, runningHandoff, waitingFor, agentQuestions, findOrcaCli, installAllowlist, writeTasks, workOf, loadRuns } from "./agents.mjs";
 import { addTask, removeTask, pushTasks } from "./tasks.mjs";
 import { actNow, actBrief } from "./mind.mjs";
 import { laneMap } from "./scan.mjs";
@@ -68,8 +68,12 @@ const startedAs = (r) => r.id && !r.busy && !r.blocked ? { status: "started", jo
 // with a note in its ANSWERS.md saying what changed. A repo: the earlier task
 // gives way to the new one. The earlier row: same asker, same lane, not reported
 // back, about the same thing (alike), and its run still going (ops) or its task
-// still open (a repo). null when there's none.
+// still open (a repo). null when there's none, or when the handover says it's a
+// new job: dailify's "New job, not a replacement: restart Kea…" (12 Oct 2026) was
+// alike enough to queue behind a 40-minute run on the earlier one.
+const NOT_A_REWRITE = /\b(new|separate|another|different) (job|task|handover)\b|\bnot an? (replacement|rewrite|new version)\b|\bdoesn't replace\b/i;
 function supersedes(h, from, ledger, { running, tasks }) {
+  if (NOT_A_REWRITE.test(firstLine(h.text))) return null;
   return ledger.handoffs.slice().reverse().find((x) => x.from.path === from.path && x.to.lane.toLowerCase() === h.lane.toLowerCase() && !x.reportedAt && (x.status === "started" || x.status === "held" || x.status === "blocked") && x.text !== h.text && alike(x.text, h.text)
     && (x.to.lane === OPS ? !!x.to.path && !!running(x.to.path) : !!x.task && tasks().some((t) => t.id === x.task && !t.done && !t.archived && !t.review))) || null;
 }
@@ -83,15 +87,76 @@ function resupply(e, text, { now, title, context }) {
   } catch (err) { return { error: "Couldn't hand the new version to the run already going: " + ((err && err.message) || err) }; }
 }
 
+// Two ops runs worked dailify.co.za's move at once (12 Oct 2026): a brief, then
+// "resume the blocked jobs", then "an addition to the 12:51 brief", then job 6,
+// each a run of its own, since their words were too different to count as one
+// handover rewritten (alike). They took turns texting the user sign-in PINs,
+// overwrote each other's sections of one audit file, and one credited the user
+// with a nameserver switch the other had made. So: a handover to ops that names
+// a run of the same asker that's still going (its folder, act-…, which HANDOFF.md's
+// Sent list gives) is an addition to that run, never a second one. It waits in that
+// run's folder and lands when the run ends, resuming the same conversation (the
+// way a rewritten one does), with a note in its ANSWERS.md. One that names none
+// starts a run of its own, whose brief lists the ops runs already going (opsGoing).
+const runName = (p) => basename(p || ""), HELD = "TASKS.next.md"; // agents.mjs writeTasks's held brief
+function addsTo(h, from, ledger, { running }) {
+  return ledger.handoffs.slice().reverse().find((x) => x.to.lane === OPS && x.from.path === from.path && h.lane.toLowerCase() === OPS && !x.reportedAt && (x.status === "started" || x.status === "held")
+    && /^act-[0-9a-f]+$/.test(runName(x.to.path)) && new RegExp(`\\b${runName(x.to.path)}\\b`).test(h.text) && !!running(x.to.path)) || null;
+}
+// What a brief already waiting in that folder asks (actBrief quotes it), so a second
+// addition before the run ends joins the first rather than replacing it.
+function heldRequest(md) {
+  const lines = String(md || "").split("\n"), at = lines.findIndex((l) => /^The user asked Symbiot for this:/.test(l)); if (at < 0) return "";
+  const out = []; for (const l of lines.slice(at + 1)) { if (/^>/.test(l)) out.push(l.replace(/^> ?/, "")); else if (out.length && l.trim()) break; }
+  return out.join("\n").trim();
+}
+function extend(e, text, { now, title, context, running = runningHandoff }) {
+  const p = e.to.path;
+  try {
+    const before = heldRequest(readSym(p, HELD)), md = actBrief(before ? `${before}\n\n---\n\n${text}` : text, { title, context, now });
+    if (running(p)) writeFileSync(join(p, ".symbiot", HELD), md); else writeTasks(p, md); // its run ended just now: it lands, and lanesTick starts it
+    const file = join(p, ".symbiot", "ANSWERS.md"), had = existsSync(file) ? readFileSync(file, "utf8") : "# Answers\n";
+    writeFileSync(file, `${had.replace(/\s*$/, "")}\n\n### More from ${e.from.lane} while you ran\n${e.from.lane} added to what it handed you: TASKS.md has it. It adds to the work you were on, it doesn't replace it, so carry on from what you've done and do this as well.\n_symbiot (handover) ${new Date(now).toISOString().slice(0, 10)}_\n`);
+    return { ok: true };
+  } catch (err) { return { error: "Couldn't add it to the run already going: " + ((err && err.message) || err) }; }
+}
+// The ops runs going right now, for a new ops run's brief, so it works with them
+// rather than over them: [{ run, path, by?, at?, what }], newest first. From the
+// ledger (who handed it over, when) and the drafts folder (a run started from
+// Home or a chat has no row there).
+function opsGoing({ ledger, running, dirs } = {}) {
+  if (!dirs) { try { dirs = readdirSync(ACT_DIR).filter((d) => d.startsWith("act-")).map((d) => join(ACT_DIR, d)); } catch { dirs = []; } }
+  const out = new Map();
+  for (const x of ledger.handoffs.slice().reverse()) if (x.to.lane === OPS && x.to.path && !x.reportedAt && x.status !== "error" && !out.has(x.to.path) && running(x.to.path)) out.set(x.to.path, { run: runName(x.to.path), path: x.to.path, by: x.from.lane, at: x.at, what: firstLine(x.text) });
+  for (const p of dirs) if (!out.has(p) && running(p)) { let name = ""; try { name = JSON.parse(readSym(p, "handoff.json")).name || ""; } catch {} out.set(p, { run: runName(p), path: p, what: String(name).replace(/^Agent:\s*/, "") }); }
+  return [...out.values()].slice(0, 6);
+}
+function alongsideNote(going) {
+  if (!going.length) return "";
+  return `## Other ops runs going now
+Other ops agents are working right now, each in its own folder. If what you were handed touches what one of them is on (the same site, account, server or file), work with it, not over it:
+- Read its \`.symbiot/\` files first (its TASKS.md, its reports, the end of its agent.log) to see how far it has got, and don't redo its steps. A sign-in it's in the middle of is its own: pressing Sign In again can text the user a new PIN and spoil the one it waits on.
+- A file outside your folder that another run may write too (a lane's report, say): read it again just before you write, add a section of your own headed with your run's folder name, and never rewrite or delete what another run wrote. Better: write your findings in your own \`.symbiot/\`, and name that file in your last message.
+- Something you find done that you didn't do: check that run's log before saying who did it, rather than guessing it was the user.
+- If all of what you were handed is already in hand there, don't do it twice: say so in your last message, naming that run, and tick your task.
+
+${going.map((g) => `- \`${g.run}\` (${tilde(g.path)})${g.by ? `, handed over by ${g.by}${g.at ? ` at ${stamp(g.at)}` : ""}` : ""}: "${clipWords(g.what.replace(/\*\*/g, ""), 120)}"`).join("\n")}`;
+}
+
 // Pick up what a folder's agent handed over and start the lanes it named.
 // Each handover is started once (its key: where from, which lane, what).
-function dispatch(path, { map = laneMap(), act = actNow, run = runHandoff, add = addTask, push = pushTasks, drop = removeTask, running = runningHandoff, refresh = resupply, tasks = loadTasks, now = Date.now(), ledger = loadLedger() } = {}) {
+function dispatch(path, { map = laneMap(), act = actNow, run = runHandoff, add = addTask, push = pushTasks, drop = removeTask, running = runningHandoff, refresh = resupply, more = extend, tasks = loadTasks, now = Date.now(), ledger = loadLedger(), dirs } = {}) {
   const asked = parseHandoffs(readSym(path, "HANDOFF.md")); if (!asked.length) return [];
   const from = { lane: laneOf(path, map), path }, parent = ledger.handoffs.filter((h) => h.to.path === path).pop(), chain = (parent ? parent.chain : 0) + 1;
   const started = [];
   for (const h of asked) {
     const key = keyOf(path, h);
-    if (ledger.handoffs.some((x) => x.key === key || (x.was || []).includes(key))) continue;
+    if (ledger.handoffs.some((x) => x.key === key || (x.was || []).includes(key) || (x.adds || []).includes(key))) continue;
+    const into = addsTo(h, from, ledger, { running });
+    if (into) {
+      const r = more(into, h.text, { now, running, title: `handed over by ${from.lane}`, context: `${from.lane}'s agent (in ${path}) handed this over, and carries on once it's done.` });
+      if (!r.error) { Object.assign(into, { adds: [...(into.adds || []), key], at: now, added: (into.added || 0) + 1 }); started.push(into); continue; }
+    }
     const prior = supersedes(h, from, ledger, { running, tasks });
     if (prior) {
       const was = [...(prior.was || []), prior.key];
@@ -115,7 +180,7 @@ function dispatch(path, { map = laneMap(), act = actNow, run = runHandoff, add =
     else if (!to) Object.assign(e, { status: "error", error: `There's no lane called ${h.lane}. Lanes: ops, or a repo: ${Object.keys(map).slice(0, 30).join(", ")}.` });
     else if (to.lane.toLowerCase() === from.lane.toLowerCase()) Object.assign(e, { status: "error", error: `${to.lane} is your own lane: do it yourself.` });
     else if (to.lane === OPS) {
-      const r = act(h.text, { title: `handed over by ${from.lane}`, context: `${from.lane}'s agent (in ${path}) handed this over, and carries on once it's done.`, now });
+      const r = act(h.text, { title: `handed over by ${from.lane}`, context: `${from.lane}'s agent (in ${path}) handed this over, and carries on once it's done.`, alongside: [alongsideNote(opsGoing({ ledger, running, dirs })), sharedFor(path, h.text, { ledger, now })].filter(Boolean).join("\n\n"), now });
       if (r.error) Object.assign(e, { status: "error", error: r.error });
       else Object.assign(e, { to: { lane: OPS, path: r.dir }, job: r.job });
     } else {
@@ -124,7 +189,7 @@ function dispatch(path, { map = laneMap(), act = actNow, run = runHandoff, add =
       else {
         push({ repo: to.lane });
         if (looped) Object.assign(e, { to, task: t.id, status: "blocked", note: `${MAX_CHAIN} handovers in a row led here, so no agent was started on it: it waits in ${to.lane}'s tasks for its next run` });
-        else { const r = run(to.path) || {}; Object.assign(e, { to, task: t.id, ...startedAs(r) }); }
+        else { noteShared(to.path, sharedFor(path, h.text, { ledger, now })); const r = run(to.path) || {}; Object.assign(e, { to, task: t.id, ...startedAs(r) }); }
       }
     }
     ledger.handoffs.push(e); started.push(e);
@@ -196,7 +261,7 @@ function partlyDone(path, { ledger = loadLedger() } = {}) {
 // answered as if ops already had it. [{ lane, text, gone, why, doing?, progress? }]:
 // gone, its lane has it (why says how it's going); otherwise why says what it waits on.
 const keyOf = (path, h) => createHash("sha1").update(path + "\n" + h.lane.toLowerCase() + "\n" + h.text).digest("hex").slice(0, 16);
-const findSent = (ledger, key) => ledger.handoffs.slice().reverse().find((x) => x.key === key) || ledger.handoffs.slice().reverse().find((x) => (x.was || []).includes(key));
+const findSent = (ledger, key) => ledger.handoffs.slice().reverse().find((x) => x.key === key) || ledger.handoffs.slice().reverse().find((x) => (x.was || []).includes(key) || (x.adds || []).includes(key));
 // What the run there is doing and how far through its tasks it is.
 function runWork(p) { try { const { work, progress } = workOf(p, readSym(p, "agent.log")); const t = work && (work.todos || []).find((x) => x.status === "in_progress"); return { doing: clipWords(String((t && t.active) || (work && work.doing) || ""), 100), progress }; } catch { return {}; } }
 function handingOf(path, { ledger, map, running = runningHandoff, now = Date.now(), changedAt, work = runWork } = {}) {
@@ -220,7 +285,7 @@ function handingOf(path, { ledger, map, running = runningHandoff, now = Date.now
     const row = (gone, why, more = {}) => out.push({ lane: e.to.lane, text: short(e.text), gone, why, ...more });
     if (e.status === "error") { row(false, `Couldn't hand it over: ${e.error || "it didn't start"}`); continue; }
     const p = e.to.path, going = !!(p && running(p)), began = p ? lastRunStart(p) : 0;
-    if (began < e.at && going) row(true, e.superseded ? `Sent: ${e.to.lane} is on the earlier version now (its run started ${ago(now - began)} ago), and gets this one when that run ends` : `Sent, and queued: ${e.to.lane}'s agent is busy, and starts on it when that run ends`);
+    if (began < e.at && going) row(true, e.added ? `Sent: ${runName(p)} is on it now, and does what you added when it's through` : e.superseded ? `Sent: ${e.to.lane} is on the earlier version now (its run started ${ago(now - began)} ago), and gets this one when that run ends` : `Sent, and queued: ${e.to.lane}'s agent is busy, and starts on it when that run ends`);
     else if (began < e.at && e.status === "blocked") row(false, `Sent, but it didn't start: ${e.note || "its agent didn't start"}`);
     else if (began < e.at) row(true, `Sent: ${e.to.lane}'s agent starts on it when it's free`);
     else if (going) { const w = work(p) || {}; row(true, "Sent: its agent is on it now", { ...(w.doing ? { doing: w.doing } : {}), ...(w.progress ? { progress: w.progress } : {}) }); }
@@ -238,15 +303,20 @@ const ago = (ms) => { const m = Math.round(ms / 60000); return m < 1 ? "under a 
 const stamp = (t) => { const d = new Date(t), p = (n) => String(n).padStart(2, "0"); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`; };
 function sentState(e, key) {
   if (e.status === "error") return `couldn't hand it over: ${String(e.error || "it didn't start").replace(/\.$/, "")}`;
+  if ((e.adds || []).includes(key)) return `added to ${runName(e.to.path)}, the ops run already on what it adds to: it does this next, in the same conversation`;
   if (e.key !== key) return "sent earlier, and replaced since by a newer version";
-  if (e.superseded) return e.to.lane === OPS ? "replaces the version sent earlier: ops's run on that one gets it when it ends" : `replaces the version sent earlier, as a task in ${e.to.lane}`;
+  if (e.superseded && e.to.lane === OPS && e.pickedAt) return `replaces the version sent earlier: ops's run ${runName(e.to.path)} started on it at ${stamp(e.pickedAt).slice(11)}`;
+  if (e.superseded) return e.to.lane === OPS ? `replaces the version sent earlier: ops's run ${runName(e.to.path)} is on that one, and gets this when that run ends` : `replaces the version sent earlier, as a task in ${e.to.lane}`;
   if (e.status === "held") return `queued in ${e.to.lane}: its agent was busy, and starts on it when that run ends`;
   if (e.status === "blocked") return `added to ${e.to.lane}'s tasks, but its agent didn't start (${String(e.note || "").replace(/\.$/, "")})`;
-  return `${e.to.lane}'s agent started on it`;
+  if (e.allowedAt) return `the user let it through, and ops's agent started on it, as run ${runName(e.to.path)}`;
+  return e.to.lane === OPS && e.to.path ? `ops's agent started on it, as run ${runName(e.to.path)} (name that in a handover that adds to it while it runs)` : `${e.to.lane}'s agent started on it`;
 }
+const sentLine = (e, key, text) => `- ${stamp(e.at || Date.now())} → **${e.to.lane}**: ${sentState(e, key)}. ${sentWhat(text)}`;
+const sentWhat = (text) => `"${clipWords(firstLine(text).replace(/\*\*/g, ""), 100)}"`;
 function noteSent(path, asked, ledger) {
   const file = join(path, ".symbiot", "HANDOFF.md");
-  const rows = asked.map((h) => { const key = keyOf(path, h), e = findSent(ledger, key); return e ? `- ${stamp(e.at || Date.now())} → **${e.to.lane}**: ${sentState(e, key)}. "${clipWords(firstLine(h.text).replace(/\*\*/g, ""), 100)}"` : null; });
+  const rows = asked.map((h) => { const key = keyOf(path, h), e = findSent(ledger, key); return e ? sentLine(e, key, h.text) : null; });
   if (!rows.length || rows.some((r) => !r)) return false;
   const had = readSym(path, "HANDOFF.md");
   if (JSON.stringify(parseHandoffs(had)) !== JSON.stringify(asked)) return false; // its agent is writing to it: next pass
@@ -277,15 +347,19 @@ function lanesTick({ map = laneMap(), act = actNow, run = runHandoff, running = 
   let acts = []; try { acts = readdirSync(ACT_DIR).filter((d) => d.startsWith("act-")).map((d) => join(ACT_DIR, d)); } catch {}
   const started = [];
   for (const path of [...Object.values(map), ...acts]) if (existsSync(join(path, ".symbiot", "HANDOFF.md"))) started.push(...dispatch(path, { map, act, run, add, push, running, now, ledger, ...(tasks ? { tasks: () => tasks } : {}) }));
-  const t = tasks || loadTasks(), reported = [];
+  const t = tasks || loadTasks(), reported = []; let picked = 0;
   for (const e of ledger.handoffs) {
     // a superseded ops run that ended where nothing started its new brief (another process ran it): start it here
-    if (e.superseded && !e.reportedAt && e.status !== "error" && e.to.lane === OPS && e.to.path && !running(e.to.path) && lastRunStart(e.to.path) < e.at) { const r = run(e.to.path, { force: true }) || {}; if (r.id && !r.busy) e.job = r.id; }
+    if ((e.superseded || e.added) && !e.reportedAt && e.status !== "error" && e.to.lane === OPS && e.to.path && !running(e.to.path) && lastRunStart(e.to.path) < e.at) { const r = run(e.to.path, { force: true }) || {}; if (r.id && !r.busy) e.job = r.id; }
+    // ...and once a run there starts on it, the asker's Sent line says so, naming it: "gets it when
+    // that run ends" stayed put, and dailify's agent, checking another ops run that had ended, thought
+    // nothing had started and sent it again (12 Oct 2026)
+    if (e.superseded && !e.pickedAt && !e.reportedAt && e.status !== "error" && e.to.lane === OPS && e.to.path) { const b = lastRunStart(e.to.path); if (b >= e.at) { e.pickedAt = b; resent(e, (l) => /: replaces the version sent earlier: ops's run /.test(l)); picked++; } }
     if (e.reportedAt || running(e.from.path)) continue; // the one that asked reads it when it's started again, so not mid-run
     const o = outcome(e, { tasks: t, running }); if (!o) continue;
     if (report(e, o, { run, running, now })) { e.reportedAt = now; if (e.status !== "error") e.status = "done"; e.result = o.text; reported.push(e); }
   }
-  if (started.length || reported.length) saveLedger(ledger);
+  if (started.length || reported.length || picked) saveLedger(ledger);
   if (reported.length) relink({ map }).catch(() => {}); // a handover may have renamed a lane's folder
   return { started, reported };
 }
@@ -384,8 +458,20 @@ function allowHandover(id, { note = "", act = actNow, run = runHandoff, now = Da
   if (!r || r.error) return { error: (r && r.error) || "The run didn't start." };
   Object.assign(e, { status: "started", to: { lane: OPS, path: r.dir }, job: r.job, at: now, allowedAt: now });
   delete e.error; delete e.reportedAt; delete e.result;
-  saveLedger(ledger);
+  saveLedger(ledger); resent(e, (l) => /^- .*: couldn't hand it over: /.test(l));
   return { ok: true, job: r.job, dirs };
+}
+// Its Sent line in the asking folder's HANDOFF.md said "couldn't hand it over", and
+// stayed so after Allow (12 Oct 2026): the agent that sent it read that and thought
+// nothing ran, so it asked again. That line now says it started, and as which run.
+// Its Sent line, the one of the lines that match, rewritten to say where it stands now.
+function resent(e, was) {
+  const file = join(e.from.path, ".symbiot", "HANDOFF.md"), what = sentWhat(e.text);
+  try {
+    const had = readFileSync(file, "utf8");
+    const md = had.split("\n").map((l) => was(l) && l.endsWith(what) ? sentLine(e, e.key, e.text) : l).join("\n");
+    if (md !== had) writeFileSync(file, md);
+  } catch {}
 }
 // Skip: it stops asking, and the agent that handed it over reads that you skipped it.
 function skipHandover(id, { now = Date.now() } = {}) {
@@ -448,4 +534,99 @@ function lanesState() {
   return { handoffs: out.slice(0, 30) };
 }
 
-export { LEDGER, MAX_CHAIN, loadLedger, laneOf, lastRunStart, dispatch, outcome, report, handingOf, lanesTick, lanesState, aboutIt, partlyDone, remoteKey, orcaMoves, orcaRelink, stuckHandovers, allowHandover, skipHandover, namedDirs, alike, doneSince };
+// ---- one answer, every agent on that work ------------------------------------------
+// Garth gave the same answer to the same project three times (13 Oct 2026): evra_platform's
+// read-only investigation asked "Send the Supabase ticket about evra_avm now?", the ops run it
+// had handed the sts-prod checks to asked about two shell histories for the same evra_avm dump,
+// and one reply ("first check if evra_avm is saved somewhere else") settled both. So what the
+// user answers one agent (on Home, the Workdesk or a phone: agents.mjs answerQuestions, through
+// onAnswered) is saved for the others on the same work as well: the folders a handover links to
+// it, either way and one more step, and any agent whose open question or task names the same
+// thing (an id such as evra_avm, an address, a domain). Each gets it in its ANSWERS.md and
+// decides whether it settles its own question; one with a question open and no run going starts
+// on it. Kept in SHARED too, so a run that starts on that work later is told (sharedFor).
+const SHARED = join(CONFIG_DIR, "answers-shared.json"), SHARED_KEEP = 200, LINK_DAYS = 14;
+// What names the work: an id with an underscore (evra_avm), an IPv4 address, a domain.
+const TOPIC = /\b(?:[a-z][a-z0-9]*(?:_[a-z0-9]+)+|\d{1,3}(?:\.\d{1,3}){3}|[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:com|co\.za|io|dev|net|org|app|ai))\b/gi;
+const topicsOf = (t) => new Set((String(t || "").match(TOPIC) || []).map((x) => x.toLowerCase()).filter((x) => x.length >= 5));
+function loadShared() { try { const l = JSON.parse(readFileSync(SHARED, "utf8")); return Array.isArray(l) ? l : []; } catch { return []; } }
+const whoAnswers = (cfg = loadConfig()) => String(((cfg && cfg.profile) || {}).name || "").trim().split(/\s+/)[0] || "the user";
+// The folders a handover links to path, either way, and one step on (the run evra_platform
+// handed sts-prod's checks to, and anything that run handed on), within LINK_DAYS.
+function linkedPaths(path, { ledger = loadLedger(), now = Date.now() } = {}) {
+  const edges = ledger.handoffs.filter((x) => x.from && x.to && x.from.path && x.to.path && now - (x.at || 0) < LINK_DAYS * 86400000);
+  const seen = new Set([path]); let edge = [path];
+  for (let step = 0; step < 2; step++) {
+    const next = [];
+    for (const p of edge) for (const x of edges) for (const [a, b] of [[x.from.path, x.to.path], [x.to.path, x.from.path]]) if (a === p && !seen.has(b)) { seen.add(b); next.push(b); }
+    edge = next;
+  }
+  seen.delete(path); return [...seen];
+}
+// An agent folder still on its work: a question open, a run going, or a task unticked.
+function onIt(p, running) {
+  const qs = (() => { try { return agentQuestions(p, "").questions || []; } catch { return []; } })();
+  const open = /^\s*-\s*\[ \]/m.test(readSym(p, "TASKS.md"));
+  return { qs, going: !!running(p), open, live: qs.length > 0 || !!running(p) || open };
+}
+// What an agent folder is about, for topics: its open questions and its open tasks.
+const aboutOf = (p, qs) => [...qs.map((q) => `${q.q} ${q.context || ""}`), ...readSym(p, "TASKS.md").split("\n").filter((l) => /^\s*-\s*\[ \]/.test(l))].join("\n");
+// The other agents an answer at path concerns: [{ path, lane, why: "handover" | topic, qs, going }].
+function answerReaches(path, text, { ledger = loadLedger(), runs = () => loadRuns(), running = runningHandoff, map = laneMap(), now = Date.now() } = {}) {
+  const out = new Map(), topics = topicsOf(text);
+  for (const p of linkedPaths(path, { ledger, now })) { const o = onIt(p, running); if (o.live && existsSync(p)) out.set(p, { path: p, lane: laneOf(p, map), why: "handover", qs: o.qs, going: o.going }); }
+  if (topics.size) for (const p of [...new Set(runs().map((r) => r && r.path).filter(Boolean))]) {
+    if (p === path || out.has(p) || !existsSync(p)) continue;
+    const o = onIt(p, running); if (!o.live) continue;
+    const hit = [...topicsOf(aboutOf(p, o.qs))].find((t) => topics.has(t));
+    if (hit) out.set(p, { path: p, lane: laneOf(p, map), why: hit, qs: o.qs, going: o.going });
+  }
+  return [...out.values()];
+}
+const shareKey = (path, q, a) => createHash("sha1").update(path + "\n" + q + "\n" + a).digest("hex").slice(0, 16);
+// The user answered rows ([{ q, a }]) of the agent at path: each other agent on that work gets
+// them in its ANSWERS.md, with what to do; one with a question open and no run going starts on
+// them. Gives [{ path, lane, why, started? }]. card: the question's words as Home showed them.
+function shareAnswer(path, rows, { run = runHandoff, now = Date.now(), cfg = loadConfig(), ...o } = {}) {
+  rows = (rows || []).filter((x) => x && x.q && String(x.a || "").trim()); if (!rows.length) return [];
+  const map = o.map || laneMap(), from = laneOf(path, map), who = whoAnswers(cfg), list = loadShared();
+  const fresh = rows.filter((x) => !list.some((y) => y.key === shareKey(path, x.q, x.a))); if (!fresh.length) return [];
+  const reach = answerReaches(path, fresh.map((x) => `${x.q}\n${x.a}`).join("\n"), { ...o, map, now });
+  const day = new Date(now).toISOString().slice(0, 10), out = [];
+  for (const r of reach) {
+    const file = join(r.path, ".symbiot", "ANSWERS.md"), had = existsSync(file) ? readFileSync(file, "utf8") : "# Answers from the user\n";
+    const why = r.why === "handover" ? `it's on the same work as you (one of you handed it to the other)` : `it's about ${r.why} too`;
+    const md = fresh.map((x) => `\n### ${who}'s answer to ${from}, on the same work as you\n${who} answered another agent's question, and ${why}:\n> ${clipWords(x.q.replace(/\s+/g, " "), 300)}\n\n${who}'s answer: ${x.a.trim()}\n\nIf it settles a question of yours (one open in .symbiot/QUESTIONS.md, or one you were about to ask), use it and don't ask: take that question out of QUESTIONS.md and say "answered by ${who}'s reply to ${from}: \"${clipWords(x.q.replace(/\s+/g, " "), 80)}\"" in your last message. If it settles only part, ask only the part that's left. If it doesn't bear on yours, carry on as you were.\n_shared by Symbiot ${day}_\n`).join("");
+    try { mkdirSync(join(r.path, ".symbiot"), { recursive: true }); writeFileSync(file, had.replace(/\s*$/, "\n") + md); } catch { continue; }
+    const row = { path: r.path, lane: r.lane, why: r.why };
+    // a question of its own waits on the user: it starts now and decides, rather than waiting to be answered too
+    if (r.qs.length && !r.going) { const e = run(r.path) || {}; if (e.id && !e.busy && !e.blocked) row.started = e.id; }
+    out.push(row);
+  }
+  const at = new Date(now).toISOString();
+  for (const x of fresh) list.push({ key: shareKey(path, x.q, x.a), at, from: path, lane: from, q: clipWords(x.q, 300), a: String(x.a).trim().slice(0, 2000), topics: [...topicsOf(`${x.q}\n${x.a}`)], to: out.map((r) => r.path) });
+  try { mkdirSync(CONFIG_DIR, { recursive: true }); writeFileSync(SHARED, JSON.stringify(list.slice(-SHARED_KEEP), null, 1)); } catch {}
+  return out;
+}
+// A repo lane's run reads them in its ANSWERS.md (its TASKS.md is a brief for many tasks), once.
+function noteShared(p, block) {
+  if (!block || !p) return;
+  const file = join(p, ".symbiot", "ANSWERS.md");
+  try { const had = existsSync(file) ? readFileSync(file, "utf8") : "# Answers from the user\n"; if (had.includes(block.split("\n").slice(2).join("\n"))) return; mkdirSync(join(p, ".symbiot"), { recursive: true }); writeFileSync(file, had.replace(/\s*$/, "\n") + "\n" + block.replace(/^## /, "### ") + "\n"); } catch {}
+}
+// The newest answer shared with the agent at p (shareAnswer), for its card on Home: { lane, a, at, who } or null.
+function sharedTo(p, { now = Date.now(), within = 2 * 86400000, cfg = loadConfig() } = {}) {
+  const x = loadShared().slice().reverse().find((y) => (y.to || []).includes(p) && now - Date.parse(y.at || 0) < within);
+  return x ? { lane: x.lane, a: clipWords(String(x.a).replace(/\s+/g, " "), 200), at: x.at, who: whoAnswers(cfg) } : null;
+}
+// What the user already answered on the work a new run starts on (a handover from path, about
+// text): the answers given at path or a folder linked to it, or naming the same thing. For its
+// brief, so it checks those before asking anything. "" when none.
+function sharedFor(path, text, { ledger = loadLedger(), now = Date.now(), cfg = loadConfig(), max = 6 } = {}) {
+  const near = new Set([path, ...linkedPaths(path, { ledger, now })]), topics = topicsOf(text), who = whoAnswers(cfg);
+  const l = loadShared().filter((x) => now - Date.parse(x.at || 0) < LINK_DAYS * 86400000 && (near.has(x.from) || (x.topics || []).some((t) => topics.has(t)))).slice(-max);
+  if (!l.length) return "";
+  return `## What ${who} has already answered on this work\nBefore you ask ${who} anything, check these: if one settles it, use it and don't ask.\n${l.map((x) => `- ${x.lane} asked "${clipWords(x.q.replace(/\s+/g, " "), 160)}": ${clipWords(x.a.replace(/\s+/g, " "), 300)} (${String(x.at).slice(0, 10)})`).join("\n")}`;
+}
+
+export { shareAnswer, sharedFor, sharedTo, answerReaches, linkedPaths, topicsOf, SHARED, LEDGER, MAX_CHAIN, loadLedger, laneOf, lastRunStart, dispatch, outcome, report, handingOf, lanesTick, lanesState, aboutIt, partlyDone, remoteKey, orcaMoves, orcaRelink, stuckHandovers, allowHandover, skipHandover, namedDirs, alike, doneSince };

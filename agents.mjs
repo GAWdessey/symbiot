@@ -5,7 +5,7 @@ import { MARKETING_DIR } from "./marketing.mjs";
 import { licenceState, isPro, can, canWorkIn } from "./licence.mjs";
 import { spawn, spawnSync, execFile } from "node:child_process";
 import { homedir } from "node:os";
-import { join, dirname, resolve, relative } from "node:path";
+import { join, dirname, resolve, relative, basename } from "node:path";
 import { fileURLToPath } from "node:url";
 import { readFileSync, writeFileSync, mkdirSync, existsSync, openSync, closeSync, writeSync, unlinkSync, readdirSync, statSync, renameSync } from "node:fs";
 import { randomBytes, createHash } from "node:crypto";
@@ -1481,6 +1481,10 @@ function findQuestion(qs, q) {
   const said = [...qs.keys()].filter((x) => x.length >= 20 && k.startsWith(x + " "));
   return said.length === 1 ? qs.get(said[0]) : "";
 }
+// What else an answer from the user reaches (lanes.mjs shareAnswer, set by server.mjs): the
+// other agents on the same work. Only the user's own answers (opts.share), not Symbiot's picks.
+let answered = null;
+function onAnswered(fn) { answered = typeof fn === "function" ? fn : null; }
 const stepText = (a) => String(a).split("🤖")[0].replace(/^\s*👤\s*(You:)?\s*/, "").replace(/\s*\(recommended\)\s*$/i, "").trim();
 function answerQuestions(path, answers, opts = {}) {
   path = String(path || "");
@@ -1491,6 +1495,13 @@ function answerQuestions(path, answers, opts = {}) {
   const permQ = (openQs.find((x) => (x.options || []).some((o) => /allowlist\.proposed\.json/i.test(o)) || /allowlist\.proposed\.json/i.test(x.context || "")) || {}).q;
   const given = (Array.isArray(answers) ? answers : []).map((x) => ({ q: String((x && x.q) || ""), a: String((x && x.a) || "").replace(/^\s*#+/gm, "").trim().slice(0, TASK_MAX) })).filter((x) => x.a);
   const rows = given.map((x) => { const q = findQuestion(open, x.q); return { remap: !q, q: q || (permQ && /allowlist\.proposed\.json|^\W*(?:You|Agent)?:?\s*(?:\([^)]*\)\s*)?allow\b/i.test(x.a.replace(/^[^\w]*(?:👤|🤖)\s*/u, "")) ? permQ : undefined), a: x.a }; }).filter((x) => x.q);
+  // An answer that is word for word an option of a different open question isn't this question's: a
+  // stale card sent the "post it through Symbiot's browser" option under the LinkedIn sign-in question.
+  const optKey = (o) => qKey(stepText(String(o).replace(/^\s*[👤🤖]\s*(?:You|Agent)?[^:]*:\s*/u, "")));
+  const optsOf = (q) => new Set(((openQs.find((x) => qKey(x.q) === qKey(q)) || {}).options || []).map(optKey));
+  const strays = rows.filter((x) => { const mine = optsOf(x.q), k = optKey(x.a); return k && !mine.has(k) && openQs.some((o) => qKey(o.q) !== qKey(x.q) && optsOf(o.q).has(k)); });
+  for (const x of strays) rows.splice(rows.indexOf(x), 1);
+  if (strays.length && !rows.length) return { error: "That answer belongs to a different question, not the one it was sent under. Look at the question again and pick one of its own options." };
   // pressed twice, or answered on another screen first: it's in ANSWERS.md already, so nothing is added again
   if (!rows.length && given.length) {
     const had = new Map([...readSymbiot(path, "ANSWERS.md").matchAll(/^###\s+(.+)$/gm)].map((m) => [qKey(m[1]), m[1]]));
@@ -1505,6 +1516,7 @@ function answerQuestions(path, answers, opts = {}) {
   } catch (e) { return { error: "Couldn't write ANSWERS.md: " + ((e && e.message) || e) }; }
   for (const x of rows) recordDone(x.q, x.a);
   const out = { ok: true, saved: rows.length };
+  if (opts.share && answered) { try { const to = answered(path, rows) || []; if (to.length) out.also = to.map((r) => r.lane || basename(r.path)); } catch {} }
   // a "wait until…" answer: the step is the question's 👤 option (what "it" is), and its files are waited on
   const asked = new Map(parseQuestions(readSymbiot(path, "QUESTIONS.md")).questions.map((x) => [qKey(x.q), x]));
   const youOpts = (q) => ((asked.get(qKey(q)) || {}).options || []).filter(yourStep).map((o) => o.split("🤖")[0]);
@@ -1591,4 +1603,4 @@ function agentsList() {
   }).concat(earlierRuns());
 }
 
-export { CHANGES, toKnownHost, continueLanes, autoPick, autoDecide, FACTS, factsOf, knownRun, withStream, workOf, HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, connectorsInfo, linkReach, fillHandoff, runHandoff, nothingToDo, whereOf, whereLine, whereAnswer, askTask, PARKED_NOTE, parkedPaths, isParked, parkLane, agentMissing, blockedAgain, runningHandoff, loadRuns, earlierRuns, namedFiles, unchangedStep, waitingFor, startWaiting, noteUntracked, untrackedBefore, forgetUntracked, writeTasks, droppedTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, pickAgent, findOrcaCli, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, skipIdea, agentQuestions, answerQuestions, agentsList, needsOf, settleNeeds, NEEDS_FOR, readLastWords, readNeeds, parseRead, READ_FILE, autoAllow, autoAllowSweep, allowlistInWork, installAllowlist, inWork, withScope, withTrust, sandboxFor, sandboxLifts, sandboxEnv, sandboxNeeds, sandboxState, sandboxWrites, SANDBOX_DIR, resumeFor, noteSession, tooLong, carryOn, RESUME_CTX, CARRY_PROMPT, trustFull, GUARD_SETTINGS, isUrgent, urgentFirst, urgentUndo, urgentDone, urgentSweep, urgentState, licenceGate, stopRun, loadRunFiles, saveRunFiles, forgetRunFiles, withModel, routedModel };
+export { onAnswered, CHANGES, toKnownHost, continueLanes, autoPick, autoDecide, FACTS, factsOf, knownRun, withStream, workOf, HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, connectorsInfo, linkReach, fillHandoff, runHandoff, nothingToDo, whereOf, whereLine, whereAnswer, askTask, PARKED_NOTE, parkedPaths, isParked, parkLane, agentMissing, blockedAgain, runningHandoff, loadRuns, earlierRuns, namedFiles, unchangedStep, waitingFor, startWaiting, noteUntracked, untrackedBefore, forgetUntracked, writeTasks, droppedTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, pickAgent, findOrcaCli, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, skipIdea, agentQuestions, answerQuestions, agentsList, needsOf, settleNeeds, NEEDS_FOR, readLastWords, readNeeds, parseRead, READ_FILE, autoAllow, autoAllowSweep, allowlistInWork, installAllowlist, inWork, withScope, withTrust, sandboxFor, sandboxLifts, sandboxEnv, sandboxNeeds, sandboxState, sandboxWrites, SANDBOX_DIR, resumeFor, noteSession, tooLong, carryOn, RESUME_CTX, CARRY_PROMPT, trustFull, GUARD_SETTINGS, isUrgent, urgentFirst, urgentUndo, urgentDone, urgentSweep, urgentState, licenceGate, stopRun, loadRunFiles, saveRunFiles, forgetRunFiles, withModel, routedModel };

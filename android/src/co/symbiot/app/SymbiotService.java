@@ -41,6 +41,7 @@ public class SymbiotService extends Service {
     static final String STOP = "co.symbiot.app.STOP";
     static volatile String url;           // http://127.0.0.1:<port>/?t=<token>, once Symbiot says so
     static volatile String state = "stopped"; // starting | running | stopped | failed
+    static volatile boolean keptStopping;  // failed because it started but kept stopping, not because it couldn't start
     private static final ArrayDeque<String> LOG = new ArrayDeque<>();
     private static final Pattern URL_RE = Pattern.compile("(http://127\\.0\\.0\\.1:\\d+/\\?t=[0-9a-f]+)");
     private static final int ONGOING = 1;
@@ -75,7 +76,7 @@ public class SymbiotService extends Service {
             getSystemService(ConnectivityManager.class).registerDefaultNetworkCallback(net);
         } catch (Exception e) { net = null; }
         if (worker == null || !worker.isAlive()) {
-            state = "starting"; url = null; stopping = false;
+            state = "starting"; url = null; stopping = false; keptStopping = false;
             worker = new Thread(this::run, "symbiot");
             worker.start();
         }
@@ -88,34 +89,30 @@ public class SymbiotService extends Service {
         super.onDestroy();
     }
 
+    // Node dying (a crash, or Android 12+'s phantom-process killer, which the agents it
+    // starts make likelier) is started again by itself, after 2 s, 10 s, then 30 s; a run
+    // that lasted RAN_OK counts as fine again. Past that, or a clean exit (Quit, or
+    // Update & restart's copy gone too), it shows as stopped or failed, with Start.
+    private static final long[] AGAIN_MS = { 2000, 10000, 30000 };
+    private static final long RAN_OK = 5 * 60 * 1000;
+
     private void run() {
         Bootstrap b = new Bootstrap(this);
         try {
             b.install(this, SymbiotService::log);
             if (stopping) throw new InterruptedException("stopped while unpacking");
-            ProcessBuilder pb = new ProcessBuilder(b.node().getAbsolutePath(), b.script().getAbsolutePath(), "app")
-                .directory(b.home).redirectErrorStream(true);
-            pb.environment().putAll(b.env());
-            // the link to your computer, opened from the Keystore for this run only (LinkKey)
-            LinkKey.take(b);
-            String link = LinkKey.open(b);
-            if (link != null) pb.environment().put("SYMBIOT_COMPUTER_SECRET", link);
-            proc = pb.start();
-            Thread out = new Thread(() -> read(proc), "symbiot-out"); out.start();
-            while (!proc.waitFor(3, TimeUnit.SECONDS)) poll(b);
-            int code = proc.exitValue();
-            out.join(2000);
-            log("(symbiot app exited with code " + code + ")");
-            // "Update & restart" starts a fresh copy on the same address and exits
-            // with 0, so only call it stopped once nothing has answered there for a while.
-            long until = System.currentTimeMillis() + 10000;
-            while (code == 0 && !stopping && url != null) {
-                if (alive(url)) { state = "running"; until = System.currentTimeMillis() + 6000; }
-                else if (System.currentTimeMillis() > until) break;
-                poll(b); Thread.sleep(1500);
+            for (int tries = 0; ; ) {
+                long began = System.currentTimeMillis();
+                int code = runOnce(b);
+                if (code == 0 || stopping) { state = "stopped"; break; }
+                if (System.currentTimeMillis() - began > RAN_OK) tries = 0;
+                if (tries >= AGAIN_MS.length) { log("Symbiot stopped " + (tries + 1) + " times in a row, so it's left stopped: tap Start to try again."); keptStopping = true; state = "failed"; break; }
+                long wait = AGAIN_MS[tries++];
+                log("Symbiot stopped (code " + code + "); starting it again in " + (wait / 1000) + " s (" + tries + " of " + AGAIN_MS.length + ").");
+                state = "starting"; url = null;
+                Thread.sleep(wait);
+                if (stopping) { state = "stopped"; break; }
             }
-            poll(b);
-            state = code == 0 || stopping ? "stopped" : "failed";
         } catch (Exception e) {
             log("Couldn't start Symbiot: " + e);
             state = stopping ? "stopped" : "failed";
@@ -123,6 +120,34 @@ public class SymbiotService extends Service {
         url = null;
         stopForeground(true);
         stopSelf();
+    }
+
+    // One run of `symbiot app`: its exit code, once nothing serves its address any more.
+    private int runOnce(Bootstrap b) throws Exception {
+        ProcessBuilder pb = new ProcessBuilder(b.node().getAbsolutePath(), b.script().getAbsolutePath(), "app")
+            .directory(b.home).redirectErrorStream(true);
+        pb.environment().putAll(b.env());
+        // the link to your computer, opened from the Keystore for this run only (LinkKey)
+        LinkKey.take(b);
+        String link = LinkKey.open(b);
+        if (link != null) pb.environment().put("SYMBIOT_COMPUTER_SECRET", link);
+        proc = pb.start();
+        Thread out = new Thread(() -> read(proc), "symbiot-out"); out.start();
+        // every second: a look for your computer (phone.mjs findComputers) waits on this
+        while (!proc.waitFor(1, TimeUnit.SECONDS)) poll(b);
+        int code = proc.exitValue();
+        out.join(2000);
+        log("(symbiot app exited with code " + code + ")");
+        // "Update & restart" starts a fresh copy on the same address and exits
+        // with 0, so only call it stopped once nothing has answered there for a while.
+        long until = System.currentTimeMillis() + 10000;
+        while (code == 0 && !stopping && url != null) {
+            if (alive(url)) { state = "running"; until = System.currentTimeMillis() + 6000; }
+            else if (System.currentTimeMillis() > until) break;
+            poll(b); Thread.sleep(1500);
+        }
+        poll(b);
+        return code;
     }
 
     private void read(Process p) {
@@ -220,15 +245,19 @@ public class SymbiotService extends Service {
         } catch (Exception e) { return false; }
     }
 
+    // Ask the Symbiot at a link to quit (its own /api/quit, behind its token): this app's,
+    // or Termux's when the app switches to its own.
+    static void quit(String u) {
+        try {
+            Matcher m = Pattern.compile("^(http://[^/]+)/\\?t=(\\w+)").matcher(u);
+            if (m.find()) { HttpURLConnection c = (HttpURLConnection) new URL(m.group(1) + "/api/quit").openConnection(); c.setConnectTimeout(2000); c.setReadTimeout(5000); c.setRequestProperty("x-symbiot-token", m.group(2)); c.getResponseCode(); c.disconnect(); }
+        } catch (Exception ignored) {}
+    }
+
     private void stop() {
         stopping = true;
         String u = url;
-        if (u != null) new Thread(() -> {
-            try {
-                Matcher m = Pattern.compile("^(http://[^/]+)/\\?t=(\\w+)").matcher(u);
-                if (m.find()) { HttpURLConnection c = (HttpURLConnection) new URL(m.group(1) + "/api/quit").openConnection(); c.setRequestProperty("x-symbiot-token", m.group(2)); c.getResponseCode(); c.disconnect(); }
-            } catch (Exception ignored) {}
-        }).start();
+        if (u != null) new Thread(() -> quit(u)).start();
         if (proc != null) proc.destroy();
         url = null; state = "stopped";
         stopForeground(true);

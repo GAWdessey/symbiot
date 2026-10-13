@@ -406,6 +406,14 @@ size of the uncommitted change and a **Show diff** button. For each repo:
   without `gh` it pushes and stops. Your commit is never lost. Then the tasks are
   archived with their commit and PR link. With no changes to commit the button
   reads **Approve → archive** and just archives them.
+- **Not on GitHub yet.** Before the push, the commit goes on top of the default
+  branch as GitHub has it, and the repo's tests run. If that conflicts, the tests
+  fail, the push fails or no PR opens, the card stays with the reason and **Send
+  again** (after a test failure, also **Send without the tests here**: CI runs them
+  on the PR). The next Approve sends it too, even with nothing new to commit. Tests
+  that only fail because they can't reach something on this computer that isn't
+  running (a database on `127.0.0.1:5432`, say) don't hold the push back: the card
+  says they weren't checked here. **Leave it** drops the card if you sent it by hand.
 - **↩ (send back)** is for one that isn't right: it reopens the task and unticks it in
   `TASKS.md`, so the next **Send to repos** hands it to the agent again.
 - **Auto-merge when CI passes** (a switch on the card, per repo, off by default)
