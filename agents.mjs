@@ -354,7 +354,7 @@ function runHandoff(repoPath, { force = false, lost = false, model = "", onExit 
   const owner = licenceState().plan === "owner" ? { SYMBIOT_OWNER: "1" } : null; // the guard lets only the owner's runs touch Symbiot's own files
   // SYMBIOT_AGENT: which run a `symbiot screens` command comes from, so it gets its own tab in the app's hidden browser
   const env = { ...(own || {}), ...(boxEnv || {}), ...(owner || {}), SYMBIOT_AGENT: repoPath };
-  const e = track(typeof opts.name === "string" && opts.name ? opts.name.slice(0, 80) : repoPath.split("/").pop(), fillHandoff(runCmd, repoPath, fresh ? carryOn(repoPath) : resume ? RESUME_PROMPT : HANDOFF_PROMPT), repoPath, (code) => {
+  const e = track(typeof opts.name === "string" && opts.name ? opts.name.slice(0, 80) : repoPath.split("/").pop(), fillHandoff(runCmd, repoPath, `${fresh ? carryOn(repoPath) : resume ? RESUME_PROMPT : HANDOFF_PROMPT} ${whereLine(repoPath)}`), repoPath, (code) => {
     if (noteSession(repoPath, code, !!resume && !fresh) === "lost") { setTimeout(() => { try { runHandoff(repoPath, { force: true, lost: true, onExit }); } catch {} }, 300); return; } // its conversation is gone: start afresh
     try { if (JSON.parse(readFileSync(lock, "utf8")).pid === e.pid) unlinkSync(lock); } catch {}
     noteBlocked(repoPath, tmpl, e.startedAt, code);
@@ -384,12 +384,69 @@ function runHandoff(repoPath, { force = false, lost = false, model = "", onExit 
 // failed resume's start.
 const OPEN_TASK = /^\s*(?:[-*+]|\d+[.)])\s*\[ \]/m;
 function nothingToDo(path) {
+  const where = whereOf(path);
+  if (where.gone) return `Not started: ${where.folder} was a copy of the ${where.lane} repo made for one task, and it was removed when that task was merged, so there's nothing left there to work on.`;
   const md = readSymbiot(path, "TASKS.md"); if (OPEN_TASK.test(md)) return "";
   let answered = 0; try { answered = statSync(join(path, ".symbiot", "ANSWERS.md")).mtimeMs; } catch {}
   if (answered && answered > runStarted(readSymbiot(path, "agent.log"))) return "";
   const name = path === homedir() ? "~" : path.split(/[\\/]/).filter(Boolean).pop() || path;
   return md.trim() ? `Not started: every task in ${name}'s .symbiot/TASKS.md is ticked and no answer has come in since its last run, so an agent there would have nothing to do. Send it a task first.`
     : `Not started: ${name} has no .symbiot/TASKS.md, so an agent there would have nothing to do. Send it a task first.`;
+}
+// ---- where a run is: never a question for the user ---------------------------
+// An agent in ~/.config/symbiot/worktrees/symbiot-25fada asked "which repo is this
+// worktree for?", then what "work desk" meant (2026-10-13): the folder's name said
+// symbiot, and the Workdesk is Symbiot's own page. Every run is told where it is
+// (whereLine), and a question about that is answered from the same facts instead of
+// reaching the user (whereAnswer, autoDecide). A copy is parallel.mjs's worktree for
+// one task (its par.json says whose); one with no par.json and no .git was removed
+// after its merge and only an answer recreated its .symbiot (gone).
+const PAGES = "Home, Dashboard (the board), Workdesk (the tasks page: the tasks, agents and questions of every lane), Reports, Marketing, Week, Standup, Todo, Drift, Map, Settings and Archive"; // no apostrophes: whereLine drops them
+const WT_ROOT = join(CONFIG_DIR, "worktrees") + "/";
+const WHERE = new Map();
+function whereOf(path, now = Date.now()) {
+  path = String(path || ""); const c = WHERE.get(path); if (c && now - c.at < 60000) return c;
+  const folder = path.split(/[\\/]/).filter(Boolean).pop() || path;
+  let par = null; try { par = JSON.parse(readSymbiot(path, "par.json")) || null; } catch {}
+  const copy = !!par || path.startsWith(WT_ROOT), git = existsSync(join(path, ".git"));
+  const lane = (par && par.lane) || (path === MARKETING_DIR ? "marketing" : path.startsWith(ACT_DIR) ? "ops" : copy ? folder.replace(/-[0-9a-f]{6}$/i, "") : folder);
+  const repo = (par && par.repo) || (copy ? "" : path);
+  let remote = "";
+  for (const p of [git ? path : "", repo]) if (!remote && p) { const r = spawnSync("git", ["-C", p, "remote", "get-url", "origin"], { encoding: "utf8", timeout: 5000 }); if (r.status === 0) remote = String(r.stdout || "").trim(); }
+  const w = { at: now, folder, lane, repo, remote, copy, git, task: (par && par.task) || "", gone: copy && !par && !git };
+  WHERE.set(path, w); return w;
+}
+// One sentence for the run's prompt. No quotes, $ or backticks: it passes through two shells.
+function whereLine(path) {
+  const w = whereOf(path), safe = (s) => String(s || "").replace(/["'`$\\]/g, "");
+  const what = w.copy ? `a copy of the repo of the ${w.lane} lane${w.repo ? ` (${w.repo})` : ""}, made for one task` : `the ${w.git && w.lane !== "ops" && w.lane !== "marketing" ? "repo" : "folder"} of the ${w.lane} lane`;
+  return safe(`Where you are: this folder is ${w.folder}, ${what}${w.remote ? `, git remote ${w.remote}` : ""}. The pages of Symbiot are ${PAGES}: a page name in a task or an answer means that page. Before you ask the user anything, check what your folder name, git remote, lane and brief already say: never ask which repo or project this is, or what a Symbiot page is.`);
+}
+// A question asking where the run is: which repo, project or lane this folder is for,
+// or what a word the user wrote means when it names a Symbiot page.
+const ASKS_WHERE = /\b(?:which|what)\s+(?:repo(?:sitory)?|project|codebase|lane)\b[^?]*?(?:\bthis\s+(?:worktree|folder|checkout|directory|repo|copy)\b|\b(?:is|are)\s+(?:this|these|it)\s+(?:meant\s+)?for\b|\b(?:am\s+i|are\s+we|i'?m|we'?re)\s+in\b|\bmeans?\b)/i;
+const PAGE_NAMES = "home|dashboard|board|work\\s*desk|tasks|reports|marketing|week|standup|todo|drift|map|settings|archive";
+const PAGE_WORD = new RegExp(`\\bwhat\\s+(?:does|do|did)\\s+["'“‘]?(?:the\\s+)?(?:${PAGE_NAMES})["'”’]?\\s+mean\\b|["'“‘][^"'“”‘’]{0,20}\\b(?:${PAGE_NAMES})\\b[^"'“”‘’]{0,20}["'”’]\\s+means?\\b`, "i");
+function whereAnswer(path, q) {
+  const text = `${(q && q.q) || ""} ${(q && q.context) || ""}`;
+  if (!ASKS_WHERE.test(text) && !PAGE_WORD.test(text)) return "";
+  const w = whereOf(path); if (!w.lane || w.gone) return "";
+  const what = w.copy ? `a copy of the ${w.lane} repo${w.repo ? ` (${w.repo})` : ""}, made for your task` : `the ${w.lane} lane's ${w.git ? "repo" : "folder"}`;
+  return `This folder, ${w.folder}, is ${what}${w.remote ? `; its git remote is ${w.remote}` : ""}. Symbiot's pages are ${PAGES}, so when the user names one (work desk, say) they mean that page. Carry on with your task in ${w.lane} and don't ask this again.\n(Symbiot answered from the folder's name and remote, so the user wasn't asked.)`;
+}
+// The task a question is about, as one plain line for its card: the run's one task
+// (a copy's), else the open task in its brief that shares the most words with the
+// question, else the brief's first open one.
+const taskTitle = (t) => clipWords(String(t || "").replace(/[*_`#>]+/g, "").replace(/\s+/g, " ").trim().split(/(?<=[.!?])\s+/)[0], 90);
+function askTask(path, q) {
+  const w = whereOf(path); if (w.task) return taskTitle(w.task);
+  const all = [...readSymbiot(path, "TASKS.md").matchAll(/^\s*(?:[-*+]|\d+[.)])\s*\[([ xX])\]\s*(.+)$/gm)].map((m) => ({ open: m[1] === " ", text: m[2] }));
+  const pool = all.some((t) => t.open) ? all.filter((t) => t.open) : all;
+  if (!pool.length) { try { return taskTitle((JSON.parse(readSymbiot(path, "handoff.json")) || {}).name || ""); } catch { return ""; } }
+  const qw = new Set(taskWords(`${(q && q.q) || ""} ${(q && q.context) || ""}`).split(" ").filter((x) => x.length > 3));
+  let best = pool[0], top = 0;
+  for (const t of pool) { const n = taskWords(t.text).split(" ").filter((x) => x.length > 3 && qw.has(x)).length; if (n > top) { top = n; best = t; } }
+  return taskTitle(best.text);
 }
 // ---- Symbiot Free and Pro (licence.mjs) -------------------------------------
 // A run that Free doesn't cover doesn't start; it says why, the way a parked lane does.
@@ -1209,12 +1266,13 @@ function plainly(path, x) {
 function agentQuestions(path, repo) {
   const p = parseQuestions(readSymbiot(path, "QUESTIONS.md"));
   const done = new Set([...readSymbiot(path, "ANSWERS.md").matchAll(/^###\s+(.+)$/gm)].map((m) => qKey(m[1])));
-  const open = p.questions.filter((x) => !done.has(qKey(x.q)));
+  const unanswered = p.questions.filter((x) => !done.has(qKey(x.q)));
+  const known = unanswered.map((x) => ({ q: x.q, a: whereAnswer(path, x) })).filter((x) => x.a), open = unanswered.filter((x) => !known.some((k) => k.q === x.q)); // Symbiot answers those itself (autoDecide)
   const tasks = p.suggestions.length ? loadTasks() : [], skipped = p.suggestions.length ? skippedIdeas(path) : [];
   const ideas = p.suggestions.map(suggestionTarget).filter(({ text }) => !skipped.some((s) => sameTask(s, text)))
     .map(({ repo: to, text }) => ({ text, repo: to || repo, other: !!to && to !== repo, added: tasks.some((t) => t.repo === (to || repo) && sameTask(t.text, text)) })).filter((s) => !s.added);
   return {
-    questions: open.slice(0, QUESTIONS_MAX).map((x) => plainly(path, { ...x, options: x.options.slice(0, OPTIONS_SHOWN) })), answered: p.questions.length - open.length,
+    questions: open.slice(0, QUESTIONS_MAX).map((x) => plainly(path, { ...x, options: x.options.slice(0, OPTIONS_SHOWN), task: askTask(path, x) })), answered: p.questions.length - unanswered.length, ...(known.length ? { known } : {}),
     suggestions: ideas, ideasShown: IDEAS_SHOWN,
   };
 }
@@ -1353,7 +1411,14 @@ function autoPick(q) {
 }
 function autoDecide(path) {
   if (!path || runningHandoff(path)) return null;
-  const picks = agentQuestions(path, "").questions.map((q) => ({ q: q.q, a: autoPick(q) })).filter((x) => x.a);
+  const ask = agentQuestions(path, "");
+  if (ask.known) { // where it is: never shown to the user, answered here (whereAnswer)
+    const day = new Date().toISOString().slice(0, 10);
+    try { writeFileSync(join(path, ".symbiot", "ANSWERS.md"), (readSymbiot(path, "ANSWERS.md") || "# Answers from the user\nAnswers to the questions in QUESTIONS.md, newest last. Follow them; ask again in QUESTIONS.md if one is unclear.\n").replace(/\s*$/, "\n") + ask.known.map((x) => `\n### ${x.q}\n${x.a}\n_answered ${day}_\n`).join("")); } catch { return null; }
+    const e = runHandoff(path, { force: true });
+    return { decided: ask.known.length, where: true, rerun: e && e.id ? e.id : null };
+  }
+  const picks = ask.questions.map((q) => ({ q: q.q, a: autoPick(q) })).filter((x) => x.a);
   if (!picks.length) return null;
   const r = answerQuestions(path, picks.map((x) => ({ q: x.q, a: `${x.a}\n(Symbiot picked your own recommendation: it's yours to do and can be undone, so the user wasn't asked.)` })), { rerun: true });
   return r && r.ok ? { decided: picks.length } : null;
@@ -1526,4 +1591,4 @@ function agentsList() {
   }).concat(earlierRuns());
 }
 
-export { CHANGES, toKnownHost, continueLanes, autoPick, autoDecide, FACTS, factsOf, knownRun, withStream, workOf, HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, connectorsInfo, linkReach, fillHandoff, runHandoff, nothingToDo, PARKED_NOTE, parkedPaths, isParked, parkLane, agentMissing, blockedAgain, runningHandoff, loadRuns, earlierRuns, namedFiles, unchangedStep, waitingFor, startWaiting, noteUntracked, untrackedBefore, forgetUntracked, writeTasks, droppedTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, pickAgent, findOrcaCli, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, skipIdea, agentQuestions, answerQuestions, agentsList, needsOf, settleNeeds, NEEDS_FOR, readLastWords, readNeeds, parseRead, READ_FILE, autoAllow, autoAllowSweep, allowlistInWork, installAllowlist, inWork, withScope, withTrust, sandboxFor, sandboxLifts, sandboxEnv, sandboxNeeds, sandboxState, sandboxWrites, SANDBOX_DIR, resumeFor, noteSession, tooLong, carryOn, RESUME_CTX, CARRY_PROMPT, trustFull, GUARD_SETTINGS, isUrgent, urgentFirst, urgentUndo, urgentDone, urgentSweep, urgentState, licenceGate, stopRun, loadRunFiles, saveRunFiles, forgetRunFiles, withModel, routedModel };
+export { CHANGES, toKnownHost, continueLanes, autoPick, autoDecide, FACTS, factsOf, knownRun, withStream, workOf, HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, connectorsInfo, linkReach, fillHandoff, runHandoff, nothingToDo, whereOf, whereLine, whereAnswer, askTask, PARKED_NOTE, parkedPaths, isParked, parkLane, agentMissing, blockedAgain, runningHandoff, loadRuns, earlierRuns, namedFiles, unchangedStep, waitingFor, startWaiting, noteUntracked, untrackedBefore, forgetUntracked, writeTasks, droppedTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, pickAgent, findOrcaCli, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, skipIdea, agentQuestions, answerQuestions, agentsList, needsOf, settleNeeds, NEEDS_FOR, readLastWords, readNeeds, parseRead, READ_FILE, autoAllow, autoAllowSweep, allowlistInWork, installAllowlist, inWork, withScope, withTrust, sandboxFor, sandboxLifts, sandboxEnv, sandboxNeeds, sandboxState, sandboxWrites, SANDBOX_DIR, resumeFor, noteSession, tooLong, carryOn, RESUME_CTX, CARRY_PROMPT, trustFull, GUARD_SETTINGS, isUrgent, urgentFirst, urgentUndo, urgentDone, urgentSweep, urgentState, licenceGate, stopRun, loadRunFiles, saveRunFiles, forgetRunFiles, withModel, routedModel };

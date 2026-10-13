@@ -644,6 +644,7 @@ body.lq-liquid.lq-pooled:has(#panel-reports:not(.hidden) #rbackbar) #lqsinkrow{b
 .aq .q{padding:8px 0;border-bottom:1px solid var(--line)}
 .aq .qt{color:var(--bone);font-weight:600;font-size:13.5px}
 .aq .qc{color:var(--faint);font-size:12.5px;margin-top:3px;line-height:1.5}
+.aq .qfor,.pcq .qfor{color:var(--faint);font-size:12px;margin-bottom:3px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
 .aq label.opt{display:flex;gap:8px;align-items:flex-start;margin:6px 0 0;font-size:13px;color:var(--text);cursor:pointer}
 .aq .opt input{width:auto;margin-top:3px;flex:none}
 .who{display:inline-block;font-size:11px;font-weight:700;border-radius:999px;padding:0 7px;margin-right:2px;white-space:nowrap}
@@ -1915,7 +1916,7 @@ function relHtml(rl){return "<div class='qrel"+(rl.waiting?" wait":"")+"'>Needs 
 function askHtml(a){var k=a.ask;if(!k)return '';var qs=k.questions||[],ss=k.suggestions||[];if(!qs.length&&!ss.length)return '';
 var h="<div class='aq' data-id='"+esc(a.id)+"'>";
 if(qs.length){h+="<h4><i class=ic-ask></i> "+qs.length+" question"+(qs.length>1?"s":"")+" for you</h4>";
-qs.forEach(function(q,i){var rl=q.release;h+="<div class='q' data-i='"+i+"'><div class='qt'>"+esc(q.shown||q.q)+"</div>"+(q.context?"<div class='qc'>"+esc(q.context)+"</div>":"")+(rl?relHtml(rl):"");
+qs.forEach(function(q,i){var rl=q.release;h+="<div class='q' data-i='"+i+"'>"+(q.task?"<div class='qfor' title='"+escQ(q.task)+"'>for: "+esc(q.task)+"</div>":"")+"<div class='qt'>"+esc(q.shown||q.q)+"</div>"+(q.context?"<div class='qc'>"+esc(q.context)+"</div>":"")+(rl?relHtml(rl):"");
 (q.options||[]).forEach(function(o,j){var off=rl&&rl.waiting&&DONEOPT.test(o);h+="<label class='opt"+(off?" off":"")+"'><input type='radio' name='q_"+esc(a.id)+"_"+i+"' value='"+j+"'"+(off?" disabled":"")+"><span>"+whoHtml((q.labels&&q.labels[j])||o)+(off?" <i>(once "+esc(rl.name+" "+rl.needs)+" is installed)</i>":"")+"</span></label>";});
 h+="<input class='qother' placeholder='"+((q.options&&q.options.length)?"or answer in your own words":"your answer")+"'></div>";});
 h+="<div class='row'><button class='act qsend' title='save the answers and hand the repo back to your agent'>Send answers &amp; continue</button><button class='ghost qsave' title='save the answers for the next run'>Save only</button></div>";}
@@ -2204,7 +2205,7 @@ var h='',W="<span class='pcwait'> waiting to send</span>";
 (c.notes||[]).forEach(function(n){h+="<div class='task' data-note='"+escQ(n.id)+"'><span class='t err'>"+esc(n.error)+(n.what?" <span class='muted'>("+esc(n.what)+")</span>":"")+"</span><button class='ghost pcnote'>OK</button></div>";});
 var asks=c.asks||[],aps=c.approves||[],needs=c.needs||[];
 if(asks.length||aps.length||needs.length){h+="<div class='mkneeds lit'><div class='pshead'><span>Needs you &middot; "+(asks.length+aps.length+needs.length)+"</span><small>on "+esc(d.name)+"</small></div>";
-asks.forEach(function(a,i){var q=(a.questions||[])[0]||{};h+="<div class='pcq' data-ask='"+i+"'><div class='qn'>"+esc(a.name)+" asks"+((a.questions||[]).length>1?" &middot; 1 of "+a.questions.length:"")+"</div><div class='qq'>"+esc(q.shown||q.q||'')+"</div>"+
+asks.forEach(function(a,i){var q=(a.questions||[])[0]||{};h+="<div class='pcq' data-ask='"+i+"'><div class='qn'>"+esc(a.name)+" asks"+((a.questions||[]).length>1?" &middot; 1 of "+a.questions.length:"")+"</div>"+(q.task?"<div class='qfor' title='"+escQ(q.task)+"'>for: "+esc(q.task)+"</div>":"")+"<div class='qq'>"+esc(q.shown||q.q||'')+"</div>"+
 (a.waiting?"<div class='note' style='margin:0'>You answered: "+esc((a.answered||[])[0]||'')+W+"</div>":"<div class='opts'>"+(q.options||[]).map(function(o,j){return "<button class='"+(j?'ghost':'act')+" pcopt' data-j='"+j+"'>"+esc((q.labels&&q.labels[j])||o)+"</button>";}).join('')+"</div><form class='pcown'><input placeholder='Or say it in your own words' maxlength='2000'><button class='ghost' type='submit'>Send</button></form>")+"</div>";});
 aps.forEach(function(a,i){h+="<div class='pcq' data-ap='"+i+"'><div class='qn'>"+esc(a.repo)+" &middot; waiting for your Approve</div><div class='qq'>"+(a.tasks.length?a.tasks.length+" task"+(a.tasks.length>1?"s":"")+" done":"Changes without a task")+" &middot; <span class='muted'>"+esc(a.stat||(a.files+" file"+(a.files===1?"":"s")+" changed"))+"</span></div>"+(a.tasks.length?"<ul>"+a.tasks.map(function(t){return "<li>"+esc(t.text)+"</li>";}).join('')+"</ul>":"")+
 (a.waiting?"<div class='note' style='margin:0'>Approved here"+W+"</div>":"<div class='row' style='margin:0'><button class='act pcapprove'>Approve</button><span class='muted' style='font-size:12px'>exactly this: if the work changes before your computer gets it, it isn&rsquo;t approved</span></div>")+"</div>";});
@@ -3204,13 +3205,13 @@ if(!ps.length){el.innerHTML='';return;}
 el.innerHTML=ps.map(function(p,i){var nm=p.name||p.repo,q=(p.qs||[])[0],st=p.parked?'parked':(p.qs&&p.qs.length)?'asks you':p.ready?'ready for your OK':p.state||'';
 var h="<section class='rly"+((p.qs&&p.qs.length)||p.ready?' lit':'')+"' data-i='"+i+"'><div class='rlh'><b>"+esc(nm)+"</b>"+(st?"<span class='rls'>"+esc(st)+"</span>":"")+"</div>";
 if(p.summary)h+="<p class='rlsum' title='"+escQ(p.summary)+"'>"+esc(p.summary)+"</p>";
-if(q)h+="<div class='lqblob rlask'>"+blobBody({kind:'ask',name:nm,repo:p.repo,q:q.q,raw:q.raw,labels:q.labels,options:q.options,path:q.path,fix:q.fix,id:q.id,sub:q.sub,draft:q.draft,signInTo:q.signInTo,more:Math.max(0,(p.asks||p.qs.length)-1)},false)+"</div>";
+if(q)h+="<div class='lqblob rlask'>"+blobBody({kind:'ask',name:nm,repo:p.repo,q:q.q,raw:q.raw,task:q.task,labels:q.labels,options:q.options,path:q.path,fix:q.fix,id:q.id,sub:q.sub,draft:q.draft,signInTo:q.signInTo,more:Math.max(0,(p.asks||p.qs.length)-1)},false)+"</div>";
 if(p.ready)h+="<button type='button' class='act rlok'>Review and approve</button>";
 if(p.handing&&p.handing.length)h+="<div class='rlk'>Handed over</div>"+p.handing.map(function(x){var pg=handProg(x);return "<p class='rlsum rlhand' title='"+escQ(x.text)+"'><b>"+esc(x.lane)+"</b>: "+esc(x.why)+(pg?" \u00b7 "+esc(pg):"")+"</p>";}).join('');
 if(p.ideas&&p.ideas.length)h+="<div class='rlk'>Extra tasks it suggests</div>"+p.ideas.map(function(d,j){return "<div class='rli' data-j='"+j+"'><span title='"+escQ(d.full)+"'>"+esc(d.text)+"</span><span class='rlia'><button type='button' class='rladd'>+ task</button><button type='button' class='rlskip'>Skip</button></span></div>";}).join('');
 return h+"<div class='rlf'><button type='button' class='rlopen'>Its tasks &rsaquo;</button><button type='button' class='rlag'>Its agents &rsaquo;</button></div></section>";}).join('');
 el.querySelectorAll('.rly').forEach(function(box){var p=ps[+box.getAttribute('data-i')],q=(p.qs||[])[0],nm=p.name||p.repo;
-var ab=box.querySelector('.rlask');if(ab&&q)wireBlob(ab,{kind:'ask',name:nm,repo:p.repo,q:q.q,raw:q.raw,labels:q.labels,options:q.options,path:q.path,fix:q.fix,id:q.id},{done:function(){LQ.relaySig='';lqLoadWork();}});
+var ab=box.querySelector('.rlask');if(ab&&q)wireBlob(ab,{kind:'ask',name:nm,repo:p.repo,q:q.q,raw:q.raw,task:q.task,labels:q.labels,options:q.options,path:q.path,fix:q.fix,id:q.id},{done:function(){LQ.relaySig='';lqLoadWork();}});
 var ok=box.querySelector('.rlok');if(ok)ok.addEventListener('click',function(){lqOpen({kind:'proj',repo:p.repo,lit:true});});
 box.querySelector('.rlopen').addEventListener('click',function(){lqOpen({kind:'proj',repo:p.repo});});
 box.querySelector('.rlag').addEventListener('click',function(){lqPool('agents');});
@@ -3314,7 +3315,7 @@ LQ.needPage=(LQ.needPage||0)%pages;
 // the card you're typing in stays in view: a new one ahead of it doesn't page it away
 var fa=document.activeElement,tb=fa&&fa.closest?fa.closest('#lqdrops .lqblob[data-key]'):null;if(tb){var tk=tb.getAttribute('data-key');for(var ti=0;ti<ys.length;ti++)if(bdKey(ys[ti])===tk){LQ.needPage=Math.floor(ti/cols);break;}}
 var shown=ys.slice(LQ.needPage*cols,LQ.needPage*cols+cols),x0=Math.max(12,(S.w-(shown.length*unit+(shown.length-1)*gap))/2);
-var tall=(shown.some(function(y){return y.kind==='ask'&&(y.options||[]).length;})?172:116)+(shown.some(function(y){return y.fix==='handover';})?16:0)+(shown.some(function(y){return y.draft;})?150:0);
+var tall=(shown.some(function(y){return y.kind==='ask'&&(y.options||[]).length;})?172:116)+(shown.some(function(y){return y.task||y.fix==='handover';})?16:0)+(shown.some(function(y){return y.draft;})?150:0);
 // the band is as tall as its tallest card really is: two long answers, the own-words
 // box open and "+4 more questions" made Post 1's card 60px taller than the guess, over
 // the mailbox agent's name in the band below (2026-10-09). lqBlobFit lays out again
@@ -3585,7 +3586,7 @@ if(ch)try{localStorage.setItem(BDKEY,JSON.stringify(a));}catch(e){}}
 function blobBody(y,home){var h='',nm=y.name||y.repo||(y.kind==='setup'?y.title:'')||'';
 h+=home?"<button type='button' class='lt' title='open "+escQ(nm)+", with this lit up'><span>"+esc(lqShort(nm,30))+"</span><i>open &rsaquo;</i></button>":"<div class='nhead'><b>"+esc(nm)+(y.kind==='ask'?" asks":"")+"</b>"+(y.more?"<span class='muted'>+"+y.more+" more on its block in Agents</span>":"")+"</div>";
 if(y.kind!=='ask')return h+"<div class='bq'>"+esc(y.kind==='approve'?String(y.sub||'').replace(/ · only you decide$/,''):String(y.sub||'').charAt(0).toUpperCase()+String(y.sub||'').slice(1)+'.')+"</div><div class='bo'><button type='button' class='nopt rec ngo'><span class='bt'>"+(y.kind==='approve'?'Review and approve':y.id==='setup:inbox'?(y.signin?'Sign in again':'Show me your inbox'):y.id==='setup:ai'?'Connect an AI':y.pick?'Use '+y.pick.name:y.urgent?'Reconnect':'Open Settings')+"</span></button></div>";
-var os=y.options||[];if(y.draft)h+=draftHtml(y.draft);if(y.status)h+="<div class='bwait'><i class=ic-pause></i> "+esc(y.status)+"</div>";h+="<div class='bq' title='"+escQ((y.q||'')+(y.why?' ('+y.why+')':''))+"'>"+esc(y.q||y.sub||'')+"</div>"+((y.covered&&y.covered.length)?"<div class='muted bcov'>Already covered? "+y.covered.map(esc).join(' · ')+"</div>":"");
+var os=y.options||[];if(y.draft)h+=draftHtml(y.draft);if(y.status)h+="<div class='bwait'><i class=ic-pause></i> "+esc(y.status)+"</div>";if(y.task)h+="<div class='bfor' title='"+escQ(y.task)+"'>for: "+esc(y.task)+"</div>";h+="<div class='bq' title='"+escQ((y.q||'')+(y.why?' ('+y.why+')':''))+"'>"+esc(y.q||y.sub||'')+"</div>"+((y.covered&&y.covered.length)?"<div class='muted bcov'>Already covered? "+y.covered.map(esc).join(' · ')+"</div>":"");
 if(y.fix==='handover'&&y.sub)h+="<div class='bfor' title='"+escQ(y.sub)+"'>for: "+esc(y.sub)+"</div>";
 if(y.done)h+="<div class='bdone' title='"+escQ(y.done.text)+"'>"+esc(y.done.lane)+" has done this already: "+esc(y.done.text)+"</div>";
 if(y.signInTo)h+="<div class='bo'><button type='button' class='nopt bsign' title='opens "+escQ(y.signInTo.name)+" in the Symbiot Browser: sign in there, then click Done'><span class='bt'>Sign in to "+esc(y.signInTo.name)+" &rsaquo;</span></button></div>";
