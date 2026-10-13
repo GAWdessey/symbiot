@@ -15,12 +15,21 @@ mkdirSync(CFG, { recursive: true });
 let pass = 0, fail = 0;
 const ok = (n, c, got) => { if (c) { pass++; console.log("  ✓ " + n); } else { fail++; console.log("  ✗ " + n + (got !== undefined ? "  got: " + JSON.stringify(got) : "")); } };
 
-const { pickModel, laneHistory, escalationReason, repoCount } = await import("../route.mjs");
+const { JOBS, pickModel, laneHistory, escalationReason, repoCount } = await import("../route.mjs");
 
 console.log("ROUTE — which model answers a job, and why");
 
 // One-shot jobs: the kind sets the tier outright.
-ok("read is local", JSON.stringify(pickModel({ kind: "read" })) === JSON.stringify({ tier: "L", model: "qwen3:8b", why: "read is a local job" }));
+ok("read is local, with its reason", pickModel({ kind: "read" }).model === "qwen3:8b" && /^local: last-message reader/.test(pickModel({ kind: "read" }).why));
+// The allocation audit (2026-10-13): every one-shot job pinned to its tier, so a move is a visible edit here.
+const PINNED = { read: "L", summary: "L", classify: "L", triage: "H", todo: "H", lang: "H", chat: "S", writeup: "S", update: "S", notes: "S", post: "S" };
+for (const [job, tier] of Object.entries(PINNED)) ok(`job ${job} is pinned to ${tier}, with a reason`, pickModel({ kind: job }).tier === tier && JOBS[job].why.length > 10 && pickModel({ kind: job }).why.endsWith(JOBS[job].why), pickModel({ kind: job }));
+ok("no job is unpinned: every JOBS entry is in the pin list", Object.keys(JOBS).sort().join() === Object.keys(PINNED).sort().join());
+ok("nothing one-shot goes to Opus", Object.keys(JOBS).every((k) => pickModel({ kind: k }).tier !== "O"));
+// Agent runs, by kind of brief.
+ok("an answer-resume stays on Sonnet", pickModel({ task: "Answers: the user said yes, carry on" , kind: "" }).tier === "S");
+ok("a research brief goes to Opus", pickModel({ task: "Investigate why the build fails" }).tier === "O");
+ok("a brief touching publishing goes to Opus", pickModel({ task: "Publish the release to npm" }).tier === "O");
 ok("summary is local", pickModel({ kind: "summary" }).tier === "L");
 ok("classify is local", pickModel({ kind: "classify" }).tier === "L");
 ok("triage is Haiku", pickModel({ kind: "triage" }).model === "claude-haiku-4-5");

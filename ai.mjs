@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { existsSync, mkdirSync, writeFileSync, unlinkSync } from "node:fs";
 import { loadConfig, saveConfig, sh, hasCmd, CONFIG_DIR } from "./core.mjs";
 import { noteLimit, noteOk } from "./quota.mjs";
+import { pickModel } from "./route.mjs";
 
 const MAX_TOKENS = 1600;
 
@@ -191,7 +192,7 @@ async function callGemini(r, system, prompt, images = []) {
 async function callOllama(r, system, prompt, images = []) {
   const res = await fetch(`${r.baseUrl}/api/chat`, {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ model: r.model, stream: false, messages: [{ role: "system", content: system }, { role: "user", content: prompt, ...(images.length ? { images: images.map((i) => i.data) } : {}) }] }),
+    body: JSON.stringify({ model: r.model, stream: false, ...(r.tuned ? { think: false, keep_alive: "15m", options: { temperature: 0, num_ctx: 4096 } } : {}), messages: [{ role: "system", content: system }, { role: "user", content: prompt, ...(images.length ? { images: images.map((i) => i.data) } : {}) }] }),
   });
   const text = await res.text();
   if (!res.ok) {
@@ -271,8 +272,12 @@ function recommendModels(hw) {
   const ram = hw.ramGB || 8;
   const local = [
     { tier: "min", model: "llama3.2:3b", needGB: 6, note: "fast & light — fine for summaries" },
+    { tier: "min+", model: "qwen3.5:4b", needGB: 7, note: "newer small model, ~3.3GB download, 256K context, reads images" },
     { tier: "med", model: "llama3.1:8b", needGB: 10, note: "solid all-rounder" },
+    { tier: "med+", model: "qwen3.5:9b", needGB: 11, note: "newer all-rounder, ~6.6GB download, 256K context, reads images" },
     { tier: "max", model: "qwen2.5:14b", needGB: 18, note: "stronger reasoning" },
+    { tier: "max", model: "gemma4:26b", needGB: 22, note: "Google mixture-of-experts (4B active, fast for its size), ~16GB download" },
+    { tier: "max", model: "qwen3.5:27b", needGB: 24, note: "newer high-quality dense model, ~17GB download" },
   ];
   if (ram >= 40) local.push({ tier: "max+", model: "llama3.1:70b", needGB: 48, note: "top local quality — big machine/GPU" });
   local.forEach((m) => { m.fits = ram >= m.needGB; });

@@ -18,7 +18,7 @@ import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { watchBoard, draftReply, draftCards, draftAnswer } from "./watch.mjs";
 import { pendingReview, pushTasks, addTask, taskType } from "./tasks.mjs";
 import { estimate, estimateWords } from "./estimate.mjs";
-import { setHandoffCmd, agentsList, runHandoff, runningHandoff, handoffCmd, loadRuns, connectorsInfo, parkedPaths, agentMissing, settleNeeds, pickAgent, detectHandoffs, linkReach, unchangedStep } from "./agents.mjs";
+import { grantCard, cardIsPermission, setHandoffCmd, agentsList, runHandoff, runningHandoff, handoffCmd, loadRuns, connectorsInfo, parkedPaths, agentMissing, settleNeeds, pickAgent, detectHandoffs, linkReach, unchangedStep } from "./agents.mjs";
 import { isDone, recordDone, coveredBy } from "./asksdone.mjs";
 import { linksState, signInAsked } from "./links.mjs";
 import { knowledgeState } from "./knowledge.mjs";
@@ -28,7 +28,7 @@ import { control } from "./control.mjs";
 import { converse, actIn, actNow, taskIn, loadMind, dayMark } from "./mind.mjs";
 import { repoPathMap, laneMap, reposState, scanRoots } from "./scan.mjs";
 import { resolveProvider, PROVIDERS, claudeState } from "./ai.mjs";
-import { reportsNews, listReports, readReport, decide, markIdeas } from "./reports.mjs";
+import { reportsNews, listReports, readReport, decide, markIdeas, sweepSuperseded } from "./reports.mjs";
 import { awaitingState, inboxSight } from "./handback.mjs";
 import { newClashes } from "./checks.mjs";
 import { postsState } from "./post.mjs";
@@ -498,17 +498,25 @@ function homeAnswer(id, { pick, text = "" } = {}, deps = {}) {
     const settle = deps.settle || settleNeeds;
     if (!go) { settle(a.path, n.key); dropped.add(id); return { ok: true, said: "Skipped. It won't ask again." }; }
     if ((deps.running || runningHandoff)(a.path)) return { ok: true, said: "An agent is already at work there." };
+    // a permission card is Symbiot's to do, never the user's: Done writes the rules into the lane's allow list
+    let allowed = null;
+    if (n.kind !== "approve" && cardIsPermission(`${n.what} ${n.check}`)) {
+      const g = (deps.grant || grantCard)(a.path, `${n.what} ${n.check}`);
+      if (g.error) return { error: g.error };
+      allowed = g.rules;
+    }
     // Done it, on a step that names a file (`.env`): only once that file has changed since
     // the run asked. In your own words it goes ahead (done some other way), its agent told.
-    const still = n.kind === "approve" ? [] : (deps.unchanged || unchangedStep)(`${n.what} ${n.check || ""}`, a.path, a.endedAt || a.startedAt || 0);
+    const still = allowed || n.kind === "approve" ? [] : (deps.unchanged || unchangedStep)(`${n.what} ${n.check || ""}`, a.path, a.endedAt || a.startedAt || 0);
     const last = still.map((f) => `\`${f.name}\` ${f.at ? `was last changed on ${new Date(f.at).toISOString().slice(0, 10)}` : "isn't there"}`).join(" and ");
     if (still.length && !text) return { error: `${last.replace(/`/g, "")}, before its agent asked, so it isn't done yet. Make the change and press Done it again, or say how you did it.` };
-    const said = n.kind === "approve" ? `Go ahead: ${text || "do it as you had it, once you've checked what you flagged"}.`
+    const said = allowed ? `Allowed ${allowed.join(", ")}: Symbiot wrote it into this folder's allow list. Carry on.` : n.kind === "approve" ? `Go ahead: ${text || "do it as you had it, once you've checked what you flagged"}.`
       : still.length ? `The user says it's done (${text}), but ${last}, before you asked. Check it yourself before relying on it, then carry on.`
       : `Done: the user did it${text ? ` (${text})` : ""}. Check it worked, then carry on.`;
     noteAnswer(a.path, n.what, said);
     const e = (deps.run || runHandoff)(a.path, { force: true });
-    if (e && e.id && !e.blocked) { settle(a.path, n.key); dropped.add(id); if (n.kind !== "approve") recordDone(n.what, said); } // "Done it" is on the shared record: no agent raises it again
+    if ((e && e.id && !e.blocked) || allowed) { settle(a.path, n.key); dropped.add(id); if (n.kind !== "approve") recordDone(n.what, said); }
+    if (allowed) return e && e.id && !e.blocked ? { ok: true, said: `Allowed ${allowed.join(", ")} and started its agent.`, rerun: e.id } : { ok: true, said: `Allowed ${allowed.join(", ")}. Its agent didn't start: ${(e && e.note) || "check your agent in Settings"}.` }; // "Done it" is on the shared record: no agent raises it again
     return e && e.id && !e.blocked ? { ok: true, said: n.kind === "approve" ? "Its agent is going ahead." : "Its agent is checking and carrying on.", rerun: e.id } : { error: (e && e.note) || "It didn't start. Check your agent in Settings." };
   }
   return { error: "Answer that one on its block on the Workdesk." };
@@ -858,6 +866,7 @@ function waitWhy({ map, named, running, held, ready, isParked, deps = {} }) {
 // { started: [lanes], ops: [task ids], failed: [lanes] }
 function workTick({ deps = {} } = {}) {
   const out = { started: [], ops: [], failed: [], beside: [] };
+  try { (deps.sweep || sweepSuperseded)(); } catch { /* reports still list */ } // actions a finished task or a newer report has settled leave Reports
   if ((deps.config || loadConfig)().autoStart === false || !(deps.cmd || handoffCmd)()) return out;
   const now = deps.now || Date.now(), fails = deps.fails || AUTO_FAIL, push = deps.push || pushTasks, run = deps.run || runHandoff;
   const w = workScene({ deps: { ...deps, fails, now }, full: true }), { lanes, ops, beside } = startable(w.all, now);

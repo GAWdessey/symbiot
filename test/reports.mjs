@@ -143,7 +143,7 @@ console.log("REPORTS — each ends with what to do about it");
   const seenFile = join(HOME, "seen-ideas.json");
   const r = R.readReport(list[0].id, { list, seenFile });
   ok("a write-up's end: its own \"Top 3 next\", as ideas, in plain words, nothing from other sections", r.ideas.join("|") === "Fix the login redirect on staging (auth.ts)|Add a test for the export|Ship 0.9 to the beta group" && !r.draft, r.ideas);
-  ok("…at most 4, from \"Recommendations\" or \"Next steps\" too; none when it has no such section", R.reportIdeas("## Next steps\n- a\n- b\n- c\n- d\n- e\n").length === 4 && R.reportIdeas("## Recommendations\n* x\n").join() === "x" && R.reportIdeas("# Plain\n\n- a list\n").length === 0);
+  ok("…at most 4, from \"Recommendations\" or \"Next steps\" too; none when it has no such section", R.reportIdeas("## Next steps\n- fix a\n- fix b\n- fix c\n- fix d\n- fix e\n").length === 4 && R.reportIdeas("## Recommendations\n* ship x\n").join() === "ship x" && R.reportIdeas("# Plain\n\n- a list\n").length === 0);
   const added = [];
   const ia = reportIdeasAdd(list[0].id, [r.ideas[0], r.ideas[2]], { list: () => list, add: (t, lane, o) => (added.push({ t, lane, o }), { id: "x" }) });
   ok("ticked ideas go onto the Workdesk in the report's lane, saying which report they came from", ia.ok && ia.added === 2 && ia.lane === "argena" && added.every((a) => a.lane === "argena" && /from the report "Argena catch-up"/.test(a.o.after)) && added[0].t === "Fix the login redirect on staging (auth.ts)", [ia, added]);
@@ -196,6 +196,32 @@ console.log("REPORTS — a handed-off or dismissed next step leaves 'Read, to ac
   ok("nothing was handed over when the Workdesk add failed", (reportIdeasAdd(id, ["x"], { list: () => l, add: () => ({ error: "no" }), mark: () => { throw new Error("marked"); } })).error === "Couldn't add them.");
   put(d, "MOVE-PLAN.md", "# Move plan\n\n## Next steps\n\n- move the repo\n- update the links\n- a new one\n");
   ok("a rewritten report offers its steps again", needs().needs === "ideas" && needs().ideas === 3);
+}
+
+console.log("REPORTS — superseded actions leave 'Read, open actions' (2026-10-13)");
+{
+  ok("half-sentence fragments are not actions", R.reportIdeas("## Next steps\n- and then restart it\n- which covers the login, and\n- Restart\n- Fix the (broken link\n- Fix the login redirect\n").join("|") === "Fix the login redirect", R.reportIdeas("## Next steps\n- and then restart it\n- Restart\n- Fix the login redirect\n"));
+  const d1 = join(CFG, "drafts", "act-sup00001"), d2 = join(CFG, "drafts", "act-sup00002"), sf = join(CFG, "seen-sup.json");
+  const gone = join(HOME, "no-such", "login.patch");
+  put(d1, "AUDIT.md", `# Symbiot audit\n\n## Next steps\n\n- Add the Pro key email step\n- Apply the patch ${gone}\n- Ship the docs fix\n- Rename the footer link\n- Fix the cache bug\n`, 5000);
+  put(d2, "AUDIT.md", "# Footer follow-up\n\n## Next steps\n\n- Rename the footer link\n", 1000);
+  const l = R.listReports({ map: { symbiot: repo }, folders: [d1, d2], running: () => false }), old = l.find((r) => r.folder === d1);
+  const tasks = [
+    { id: "t1", text: `Add the Pro key email step (from the report "Symbiot audit", ${old.file})`, repo: "symbiot", done: false, archived: true, merged: true, ts: Date.now() },
+    { id: "t2", text: "Fix the cache bug in the proxy layer today", repo: "symbiot", done: false, ts: Date.now() },
+    { id: "t3", text: "Ship the docs fix", repo: "symbiot", done: false, ts: Date.now() },
+  ];
+  const why = R.supersededIdeas(old, R.reportIdeas(readFileSync(old.file, "utf8")), R.supersedeContext({ list: l, tasks, file: sf }));
+  ok("an action whose task was merged is superseded", /merged/.test(why.get("Add the Pro key email step")), [...why]);
+  ok("…one whose patch file is gone", /login\.patch is gone/.test(why.get(`Apply the patch ${gone}`)), [...why]);
+  ok("…one an open task already covers", /another task/.test(why.get("Ship the docs fix")), [...why]);
+  ok("…one a newer report lists too", /newer report/.test(why.get("Rename the footer link")), [...why]);
+  ok("…and one nothing has settled stays open", !why.has("Fix the cache bug"), [...why]);
+  const cleared = R.sweepSuperseded({ list: l, seenFile: sf, tasks });
+  ok("the sweep says what it cleared and why, and the report keeps just the live one", cleared.length === 4 && cleared.every((c) => c.why) && R.withNeeds(l, { seenFile: sf, tasks }).find((r) => r.id === old.id).ideas === 1, cleared);
+  ok("…and records them as superseded", R.handledIdeas(old, sf)["Ship the docs fix"] === "superseded");
+  const same = R.supersededIdeas(old, ["Fix the cache bug"], R.supersedeContext({ list: [...l, { ...old, id: "later", title: "Symbiot audit 2", mtime: old.mtime + 10, file: join(d2, "X.md") }], tasks: [], file: sf }));
+  ok("a later report with the same title in the lane replaces the earlier one", /later report/.test(same.get("Fix the cache bug")), [...same]);
 }
 
 {

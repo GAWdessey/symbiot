@@ -381,7 +381,8 @@ async function converse({ where, role = "", context = "", history = "", question
   if (control && act.control && Array.isArray(j.control) && j.control.length) {
     steered = await act.control(j.control.filter((x) => x && typeof x === "object").slice(0, 5));
     const bad = steered.filter((x) => x.error), good = steered.filter((x) => x.ok);
-    if (bad.length) reply = `${bad.map((x) => `I couldn't ${x.op}: ${x.error}`).join(" ")}\n\n${reply}`;
+    // the reply was written before the actions ran, so any claim in it ("Sorted, I've told…") is dropped when one failed
+    if (bad.length) reply = `${bad.map((x) => `I couldn't ${x.op}: ${x.error}`).join(" ")} None of that went through as you asked, so please don't count it as done.`;
     if (good.length) reply += `\n\n${good.map((x) => x.said).join(" ")}`;
     for (const x of good) steps.push(`${x.op}: ${x.said}`.slice(0, 120));
   }

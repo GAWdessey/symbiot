@@ -69,6 +69,7 @@ ok("...and a script that isn't in a bin folder is judged by where it lives", /ou
 // is picked for the user (agents.mjs autoPick): no card.
 const pick = (q, options) => a.autoPick({ q, context: "", options });
 ok("the agent's own undoable recommendation is picked for you", /can't reproduce/.test(pick("How should I close this task?", ["🤖 Agent: close it as \"can't reproduce\" with these findings (recommended)", "👤 You (only you: a decision): tell me which card you saw"])), "");
+ok("a file name in the question doesn't make it a money question", pick("Start the re-allocation now or wait?", ["🤖 Agent: wait until costs.json covers 7 days (recommended)", "👤 You: start now"]) !== "", "");
 ok("...but not when the recommendation is your step", pick("Phone isn't showing up?", ["👤 You (only you: the phone in your hand): plug it in (recommended)", "🤖 Agent: skip the phone check"]) === "", "");
 ok("...nor when it goes out, touches money, an account or a machine", ["Approve it as it is?", "Publish 0.62.2 now?", "Start the tunnel on your PC again?", "Restart Symbiot to bind the port?", "Switch your default to Sonnet?", "Move the bank alerts back to the inbox?"].every((q) => pick(q, ["🤖 Agent: do it (recommended)", "Leave it"]) === ""), "");
 ok("...nor when it states a fact before its 🤖 tag: only the user knows it", pick("Has the company registration come through?", ["Yes, it's through. 🤖 Agent: carry on with the bank account forms (recommended)", "Not yet. 🤖 Agent: wait for it"]) === "", "");
