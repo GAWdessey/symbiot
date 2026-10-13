@@ -110,6 +110,9 @@ ok("pure: calling twice gives the same result", JSON.stringify(pickModel({ path:
   ok("withModel leaves codex/aider/gemini commands alone", withModel("codex exec x", "claude-opus-5-5") === "codex exec x" && withModel("claude -p x", "") === "claude -p x");
   const { routedModel } = await import("../agents.mjs");
   ok("routedModel: a [model: opus] task line picks opus", routedModel("/tmp/nonexistent-repo", { model: "opus" }) === "opus");
+  writeFileSync(join(CFG, "lanes.json"), JSON.stringify({ lanes: { steve: { model: "opus" } } }));
+  ok("routedModel: a lane's own model in lanes.json always wins over Auto", routedModel("/tmp/steve") === "opus");
+  ok("routedModel: another lane stays on Auto", routedModel("/tmp/other-lane") !== "opus");
   ok("routedModel: an unreadable repo falls back to a model or \"\", never throws", typeof routedModel("/tmp/nonexistent-repo") === "string");
 }
 
@@ -128,6 +131,22 @@ ok("pure: calling twice gives the same result", JSON.stringify(pickModel({ path:
   ai.useOllamaModel("llama3.1:8b");
   const c = JSON.parse(readFileSync(join(CFG, "config.json"), "utf8"));
   ok("installing a local model leaves cfg.provider unchanged but records the model", c.provider === "claude" && c.ollama.model === "llama3.1:8b", c);
+}
+
+// write() routing (ai.mjs routeFor): a job's kind picks the model when Claude is the provider.
+{
+  const ai = await import("../ai.mjs");
+  const cl = { provider: "claude", model: "" }, an = { provider: "anthropic", model: "x", key: "k" }, oa = { provider: "openai", model: "gpt-4o-mini" };
+  ok("triage goes to Haiku", (await ai.routeFor(cl, "triage")).r.model === "haiku");
+  ok("writeup goes to Sonnet", (await ai.routeFor(cl, "writeup")).r.model === "sonnet");
+  ok("the same on an Anthropic key", (await ai.routeFor(an, "post")).r.model === "claude-sonnet-5-5");
+  ok("a provider the user picked (OpenAI) is left alone", (await ai.routeFor(oa, "triage")).r === oa);
+  ok("no kind: unchanged", (await ai.routeFor(cl, "")).r === cl);
+  // Ollama isn't answering on 11434 in the test (or lacks the model): a local job goes straight to Haiku, never waits.
+  const t0 = Date.now(), loc = await ai.routeFor(cl, "read");
+  ok("read falls to Haiku when the local model isn't ready", loc.local ? await ai.localReady() : loc.r.model === "haiku", loc);
+  ok("…and doesn't wait on it", Date.now() - t0 < 25000); // the ping is capped at 20 s, even for a cold model load
+  ok("the tier list offers qwen3:8b, the routed local model", ai.recommendModels({ ramGB: 16 }).local.some((m) => m.model === "qwen3:8b" && m.fits));
 }
 
 console.log((fail ? "✗" : "✓") + " route: " + pass + " passed, " + fail + " failed");

@@ -136,6 +136,7 @@ async function runUi(js, page, { storage = {}, handlers = true, android = null, 
 const calls = [
   ["/", "GET"],
   ["/api/status", "GET"],
+  ["/api/quota", "GET"],        // the AI usage meter in the corner
   ["/api/map", "GET"],
   ["/api/scan", "GET"],          // scan progress the Map polls while loading
   ["/api/node?id=me", "GET"],

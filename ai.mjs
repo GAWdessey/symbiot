@@ -19,7 +19,7 @@ const PROVIDERS = {
   anthropic: { label: "Claude (Anthropic)", env: ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"], keyUrl: "https://console.anthropic.com/settings/keys", keyName: "Anthropic API key (sk-ant-…)", model: "claude-opus-5-5" },
   openai:    { label: "OpenAI (GPT)",       env: ["OPENAI_API_KEY"],                            keyUrl: "https://platform.openai.com/api-keys",       keyName: "OpenAI API key (sk-…)",     model: "gpt-4o-mini" },
   gemini:    { label: "Gemini (Google)",    env: ["GEMINI_API_KEY", "GOOGLE_API_KEY"],          keyUrl: "https://aistudio.google.com/apikey",         keyName: "Google AI API key",         model: "gemini-1.5-flash" },
-  ollama:    { label: "Local model (Ollama)", local: true,                                       keyUrl: "https://ollama.com",                         keyName: null,                        model: "llama3.1" },
+  ollama:    { label: "Local model (Ollama)", local: true,                                       keyUrl: "https://ollama.com",                         keyName: null,                        model: "qwen3:8b" },
 };
 
 // ---- your Claude subscription -------------------------------------------------
@@ -191,7 +191,7 @@ async function callGemini(r, system, prompt, images = []) {
 }
 async function callOllama(r, system, prompt, images = []) {
   const res = await fetch(`${r.baseUrl}/api/chat`, {
-    method: "POST", headers: { "Content-Type": "application/json" },
+    method: "POST", headers: { "Content-Type": "application/json" }, ...(r.tuned ? { signal: AbortSignal.timeout(r.timeout || 60000) } : {}),
     body: JSON.stringify({ model: r.model, stream: false, ...(r.tuned ? { think: false, keep_alive: "15m", options: { temperature: 0, num_ctx: 4096 } } : {}), messages: [{ role: "system", content: system }, { role: "user", content: prompt, ...(images.length ? { images: images.map((i) => i.data) } : {}) }] }),
   });
   const text = await res.text();
@@ -239,7 +239,7 @@ async function localReady(now = Date.now()) {
   try {
     const tags = await fetch(`${LOCAL_URL}/api/tags`, { signal: AbortSignal.timeout(1500) });
     if (tags.ok && ((await tags.json()).models || []).some((m) => m.name === LOCAL_MODEL)) {
-      ok = !!(await callOllama({ baseUrl: LOCAL_URL, model: LOCAL_MODEL, tuned: true }, "Reply with one word.", "ping"));
+      ok = !!(await callOllama({ baseUrl: LOCAL_URL, model: LOCAL_MODEL, tuned: true, timeout: 20000 }, "Reply with one word.", "ping"));
     }
   } catch {}
   LOCAL_OK = { at: now, ok };
@@ -311,7 +311,7 @@ function recommendModels(hw) {
   const local = [
     { tier: "min", model: "llama3.2:3b", needGB: 6, note: "fast & light — fine for summaries" },
     { tier: "min+", model: "qwen3.5:4b", needGB: 7, note: "newer small model, ~3.3GB download, 256K context, reads images" },
-    { tier: "med", model: "llama3.1:8b", needGB: 10, note: "solid all-rounder" },
+    { tier: "med", model: "qwen3:8b", needGB: 10, note: "solid all-rounder; 8 GB of VRAM fits one resident 8B model" },
     { tier: "med+", model: "qwen3.5:9b", needGB: 11, note: "newer all-rounder, ~6.6GB download, 256K context, reads images" },
     { tier: "max", model: "qwen2.5:14b", needGB: 18, note: "stronger reasoning" },
     { tier: "max", model: "gemma4:26b", needGB: 22, note: "Google mixture-of-experts (4B active, fast for its size), ~16GB download" },
