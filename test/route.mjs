@@ -15,7 +15,7 @@ mkdirSync(CFG, { recursive: true });
 let pass = 0, fail = 0;
 const ok = (n, c, got) => { if (c) { pass++; console.log("  ✓ " + n); } else { fail++; console.log("  ✗ " + n + (got !== undefined ? "  got: " + JSON.stringify(got) : "")); } };
 
-const { JOBS, pickModel, laneHistory, escalationReason, repoCount } = await import("../route.mjs");
+const { JOBS, pickModel, laneHistory, escalationReason, repoCount, calibrate, tuning } = await import("../route.mjs");
 
 console.log("ROUTE — which model answers a job, and why");
 
@@ -33,14 +33,14 @@ ok("a brief touching publishing goes to Opus", pickModel({ task: "Publish the re
 ok("summary is local", pickModel({ kind: "summary" }).tier === "L");
 ok("classify is local", pickModel({ kind: "classify" }).tier === "L");
 ok("triage is Haiku", pickModel({ kind: "triage" }).model === "claude-haiku-4-5");
-ok("chat is Sonnet, never Haiku or local", pickModel({ kind: "chat" }).model === "claude-sonnet-5");
-ok("writeup is Sonnet", pickModel({ kind: "writeup" }).model === "claude-sonnet-5");
+ok("chat is Sonnet, never Haiku or local", pickModel({ kind: "chat" }).model === "claude-sonnet-5-5");
+ok("writeup is Sonnet", pickModel({ kind: "writeup" }).model === "claude-sonnet-5-5");
 ok("post is Sonnet", pickModel({ kind: "post" }).tier === "S");
 let threw = false; try { pickModel({ kind: "bogus" }); } catch { threw = true; } ok("an unknown kind throws rather than guessing", threw);
 
 // Override always wins, over kind and over an agent run's own scoring.
 ok("override: opus wins even over kind=read", pickModel({ kind: "read", override: "opus" }).model === "claude-opus-5-5");
-ok("override: sonnet", pickModel({ override: "sonnet" }).model === "claude-sonnet-5");
+ok("override: sonnet", pickModel({ override: "sonnet" }).model === "claude-sonnet-5-5");
 ok("override: local", pickModel({ override: "local" }).model === "qwen3:8b");
 ok("override: haiku", pickModel({ override: "haiku" }).model === "claude-haiku-4-5");
 ok("override: fable sits in Opus's tier but names Fable's model", JSON.stringify({ t: pickModel({ override: "fable" }).tier, m: pickModel({ override: "fable" }).model }) === JSON.stringify({ t: "O", m: "claude-fable-5-1" }));
@@ -74,6 +74,23 @@ ok("a lane whose median is $2 or more escalates", pickModel({ path: "/lane/b", t
 ok("a lane that fails half the time or more escalates, even if cheap", pickModel({ path: "/lane/c", task: "Fix the off-by-one in paginate()" }).why === "Opus: lane fails often");
 ok("two samples isn't enough history to act on", laneHistory("/lane/a", [{ path: "/lane/a", cost: 9, ok: false }, { path: "/lane/a", cost: 9, ok: false }]).samples === 2);
 
+// Re-tuning: calibrate() reads costs.json; routing.json changes a dial with no code change.
+{
+  const cal = calibrate();
+  ok("calibrate: counts runs and finds the lanes with enough history", cal.runs === 9 && cal.lanes.length === 3, cal);
+  ok("calibrate: suggests twice the dearest lane median", cal.suggested.costFloor === 4 && cal.wouldEscalate === 2, cal);
+  ok("calibrate: an empty history suggests the minimum, not nonsense", calibrate([]).suggested.costFloor === 0.5);
+  ok("defaults: $1 cost floor, Sonnet 5.5 id", tuning().costFloor === 1 && tuning().models.S === "claude-sonnet-5-5");
+  writeFileSync(join(CFG, "routing.json"), JSON.stringify({ costFloor: 5, models: { S: "claude-sonnet-x" }, tiers: { triage: "S" } }));
+  ok("routing.json: raising costFloor stops the $2 lane escalating", pickModel({ path: "/lane/b", task: "Fix the off-by-one in paginate()" }).tier === "S");
+  ok("routing.json: a model id and a one-shot tier can be changed", pickModel({ kind: "triage" }).model === "claude-sonnet-x" && pickModel({ kind: "read" }).tier === "L");
+  writeFileSync(join(CFG, "routing.json"), "{ not json");
+  ok("routing.json: a broken file falls back to the defaults", tuning().costFloor === 1);
+  writeFileSync(join(CFG, "routing.json"), JSON.stringify({ costFloor: "lots", longBrief: -1 }));
+  ok("routing.json: nonsense values are ignored", tuning().costFloor === 1 && tuning().longBrief === 1500);
+  writeFileSync(join(CFG, "routing.json"), "{}");
+}
+
 // repoCount and escalationReason are the same pure pieces pickModel is built from.
 ok("repoCount dedupes by directory, not by file", repoCount("/a/b/one.mjs and /a/b/two.mjs") === 1);
 ok("repoCount counts distinct directories", repoCount("/a/b/one.mjs and /c/d/two.mjs") === 2);
@@ -86,9 +103,9 @@ ok("pure: calling twice gives the same result", JSON.stringify(pickModel({ path:
 {
   const { withModel } = await import("../agents.mjs");
   const n = (s) => (s.match(/--model/g) || []).length;
-  const a = withModel('claude -p "{prompt}" --model sonnet --x', "claude-opus-5-5"), b = withModel("claude -p x --model=haiku", "claude-sonnet-5");
+  const a = withModel('claude -p "{prompt}" --model sonnet --x', "claude-opus-5-5"), b = withModel("claude -p x --model=haiku", "claude-sonnet-5-5");
   ok("withModel replaces an existing --model, leaving exactly one", n(a) === 1 && a.endsWith("--model claude-opus-5-5") && !/sonnet\b/.test(a.replace("claude-sonnet", "")), a);
-  ok("withModel replaces --model=x too", n(b) === 1 && b.endsWith("--model claude-sonnet-5") && !b.includes("haiku"), b);
+  ok("withModel replaces --model=x too", n(b) === 1 && b.endsWith("--model claude-sonnet-5-5") && !b.includes("haiku"), b);
   ok("withModel adds one when there was none", n(withModel("claude -p x", "claude-fable-5-1")) === 1);
   ok("withModel leaves codex/aider/gemini commands alone", withModel("codex exec x", "claude-opus-5-5") === "codex exec x" && withModel("claude -p x", "") === "claude -p x");
   const { routedModel } = await import("../agents.mjs");

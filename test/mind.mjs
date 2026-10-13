@@ -28,6 +28,10 @@ try {
   ok("a not-started hand-off doesn't", unbackedClaim("I've handed it to the agent", { kind: "agent", notStarted: "x" }));
   ok("rules tell it to check it can read a mailbox before promising to", /being able to send to an address is not being able to read it/.test(rulesFor([], "", false, false, [])));
   ok("rules treat the user as Symbiot's maker", /Symbiot's makers, not outside users/.test(rulesFor([], "", false, false, [])));
+  const bound = await converse({ where: "Home", question: "ok, always ask me first", ask: said({ reply: "Agreed: from now on every agent will ask you first.", do: null, remember: [] }) });
+  ok("a 'from now on' with no saved rule says plainly it isn't binding", /isn't a standing rule yet/.test(bound.reply), bound.reply);
+  const ruled = await converse({ where: "Home", question: "ok, always ask me first", ask: said({ reply: "Agreed: from now on every agent will ask you first.", do: null, remember: [], rule: ["Always ask Garth first."] }) });
+  ok("…and a saved rule needs no such line", !/isn't a standing rule/.test(ruled.reply) && ruled.steps.some((x) => /saved 1 standing rule/.test(x)), ruled);
   ok("rules tell it to name its mistakes", /naming the mistake/.test(rulesFor([], "", false, false, [])));
   console.log("ONE MEMORY — what one page learns, another knows");
   const t0 = Date.now() - 7200000;

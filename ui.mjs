@@ -1228,7 +1228,7 @@ body.lq-light .btip .bta button:not(.quiet){background:#151A21;color:#FFFFFF}
 <button class="tab" data-tab="standup">Standup</button>
 <button class="tab" data-tab="todo">Todo</button>
 <button class="tab" data-tab="tasks">Workdesk</button>
-<button class="tab" data-tab="reports">Reports</button><button class="tab" data-tab="marketing">Marketing</button>
+<button class="tab" data-tab="reports">Reports</button><button class="tab" data-tab="asks">Questions</button><button class="tab" data-tab="marketing">Marketing</button>
 <button class="tab" data-tab="settings">Settings</button>
 </div>
 <main>
@@ -1299,6 +1299,11 @@ body.lq-light .btip .bta button:not(.quiet){background:#151A21;color:#FFFFFF}
 <div class="row"><span class="muted" style="flex:1">What agents wrote up for you (findings, audits, plans), newest first. They leave each one in a project's .symbiot folder; it shows here as soon as it's written.</span><button class="iconbtn" id="reportsrefresh" title="Refresh" aria-label="Refresh"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M13 8a5 5 0 1 1-1.5-3.6M13 2.5V5h-2.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button></div>
 <div id="reportslist"></div>
 <div id="reportview"></div>
+</section>
+<section id="panel-asks" class="hidden">
+<div class="row"><span class="muted" style="flex:1">What your agents are asking you, and what they suggest doing next, in one place. Answer here and the agent carries on.</span></div>
+<div id="asksmsg"></div>
+<div id="askslist"></div>
 </section>
 <section id="panel-marketing" class="hidden">
 <div class="row"><span class="muted" style="flex:1">Marketing for every product you make, in a lane of its own: its agent drafts posts, demo videos, launches and campaigns, each tagged with the product it&#39;s for. You approve each post&#39;s preview; then its agent posts it, through Symbiot&#39;s signed-in browser, with exactly that text.</span></div>
@@ -1483,6 +1488,7 @@ $('panel-settings').classList.toggle('hidden',!isSet);if(isSet){loadFirstSteps()
 $('panel-tasks').classList.toggle('hidden',!isTasks);
 $('panel-drift').classList.toggle('hidden',!isDrift);
 $('panel-reports').classList.toggle('hidden',tab!=='reports');if(tab==='reports')loadReports();
+$('panel-asks').classList.toggle('hidden',tab!=='asks');if(tab==='asks')loadAsks();
 $('panel-marketing').classList.toggle('hidden',tab!=='marketing');if(tab==='marketing')loadMarketing();
 $('panel-computer').classList.toggle('hidden',tab!=='computer');if(tab==='computer')loadComputer();
 if(isRun){$('what').textContent=tab;wuHead();WUTEXT='';$('out').textContent=WUEMPTY;$('out').classList.add('muted');$('copy').classList.add('hidden');$('outfoot').style.display='none';if(tab==='week')showLatestWeek();}
@@ -1962,13 +1968,13 @@ function restoreDrafts(el){el.querySelectorAll('.aq .q').forEach(function(qe){va
 function collectAnswers(box,a){var out=[];box.querySelectorAll('.q').forEach(function(qe){var q=a.ask.questions[+qe.getAttribute('data-i')];if(!q)return;
 var other=(qe.querySelector('.qother').value||'').trim();var pick=qe.querySelector('input[type=radio]:checked');var ans=other||(pick?q.options[+pick.value]:'');if(ans)out.push({q:q.q,a:ans});});return out;}
 function wireAsks(el){el.querySelectorAll('.aq').forEach(function(box){var a=agentById(box.getAttribute('data-id'));if(!a||!a.ask)return;
-function send(rerun){var msg=document.getElementById('agentsmsg');var ans=collectAnswers(box,a);
+function send(rerun){var msg=document.getElementById(box.closest('#panel-asks')?'asksmsg':'agentsmsg');var ans=collectAnswers(box,a);
 if(!ans.length){msg.innerHTML="<div class='note err'>Pick an option or type an answer first.</div>";return;}
 box.querySelectorAll('button').forEach(function(b){b.disabled=true;});
 api('/api/agents/answer',{path:a.path,answers:ans,rerun:rerun}).then(function(r){
 if(!r||r.error){box.querySelectorAll('button').forEach(function(b){b.disabled=false;});msg.innerHTML="<div class='note err'>"+esc((r&&r.error)||'failed')+"</div>";return;}
 ans.forEach(function(x){var k=a.path+'|'+x.q;delete QDRAFT[k];bdSet(k,'');}); // sent: its drafts go
-msg.innerHTML="<div class='note ok'>&#10003; Saved "+r.saved+" answer"+(r.saved>1?"s":"")+" for <b>"+esc(a.name)+"</b> in .symbiot/ANSWERS.md"+(r.rerun?" &middot; your agent is picking them up now.":".")+(r.yours&&r.yours.length?"<div class='err'><i class=ic-person></i> Still yours to do: "+esc(r.yours.join(' '))+"</div>":"")+(r.note?"<div class='muted'>"+esc(r.note)+"</div>":"")+"</div>";loadAgents();});}
+msg.innerHTML="<div class='note ok'>&#10003; Saved "+r.saved+" answer"+(r.saved>1?"s":"")+" for <b>"+esc(a.name)+"</b> in .symbiot/ANSWERS.md"+(r.rerun?" &middot; your agent is picking them up now.":".")+(r.yours&&r.yours.length?"<div class='err'><i class=ic-person></i> Still yours to do: "+esc(r.yours.join(' '))+"</div>":"")+(r.note?"<div class='muted'>"+esc(r.note)+"</div>":"")+"</div>";loadAgents();if(current==='asks')loadAsks();});}
 var s1=box.querySelector('.qsend'),s2=box.querySelector('.qsave');
 if(s1)s1.addEventListener('click',function(){send(true);});if(s2)s2.addEventListener('click',function(){send(false);});
 var more=box.querySelector('.qmore');if(more)more.addEventListener('click',function(){IDEASOPEN[a.path]=true;loadAgents();});
@@ -2044,6 +2050,12 @@ var todoBox=boxes.length&&(w.todos&&w.todos.length||pg)?boxes.shift():'';
 if(todoBox)h+="<div class='wk'>"+todoBox+"</div>";
 h+="<details class='wkraw'><summary>details: steps, files, cost</summary><div class='wkstats'>"+stats.join('')+"</div>"+(boxes.length?"<div class='wk'>"+boxes.join('')+"</div>":"")+(!run&&w.final?"<div class='wkfinal'>"+esc(w.final)+"</div>":"")+"</details>";
 return h;}
+// The Questions page (next to Reports): every agent's open questions and suggestions, the same cards as on
+// the Workdesk, answered the same way. Not redrawn under someone typing an answer.
+function loadAsks(){api('/api/agents').then(function(list){var el=$('askslist');if(!el||!list)return;if(answering()||selIn(el))return;saveDrafts(el);AGENTLIST=list;
+var xs=list.filter(function(a){return a.ask&&((a.ask.questions||[]).length||(a.ask.suggestions||[]).length);});
+el.innerHTML=xs.length?xs.map(function(a){return "<div class='tgroup agg'>"+esc(a.name)+"</div>"+askHtml(a);}).join(''):"<div class='muted' style='margin-top:12px'>Nothing to answer right now. When an agent has a question or an idea for you, it shows here.</div>";
+wireAsks(el);restoreDrafts(el);});}
 function loadAgents(){loadLanes();loadParked(agentsDraw);phoneApprovedNote();}
 // What was approved from your phone today (phone.mjs), above the agents: it wasn't you at this desk.
 function phoneApprovedNote(){var el=$('phoneappr');if(!el)return;var ap=(LQ.home&&LQ.home.phoneApproved)||[];
@@ -3311,7 +3323,7 @@ LQ.talk.push({me:false,text:t});LQ.talk=LQ.talk.slice(-8);lqTalkShow(false);LQ.r
 // comes out of the core (mass is conserved). Your colours come from the system,
 // live: light or dark, contrast, transparency, forced colours, your accent, night.
 var LQ={drops:[],btns:[],core:{x:0,y:0,cr:0},mode:'aware',last:'',lastAct:Date.now(),talk:[],talking:false,theme:{},ripple:[0.5,0.5,-10],t:0,pointer:null,touch:false,frame:0};
-var LQNAMES={board:'Dashboard',map:'Map',tasks:'Workdesk',agents:'Workdesk',week:'Week',standup:'Standup',todo:'Todo',drift:'Drift',settings:'Settings',reports:'Reports',marketing:'Marketing',computer:'Your computer'};
+var LQNAMES={board:'Dashboard',map:'Map',tasks:'Workdesk',agents:'Workdesk',week:'Week',standup:'Standup',todo:'Todo',drift:'Drift',settings:'Settings',reports:'Reports',asks:'Questions',marketing:'Marketing',computer:'Your computer'};
 var LQ_REST=60000,LQ_MAX=11;
 function lqMM(q){try{return !!(window.matchMedia&&window.matchMedia(q).matches);}catch(e){return false;}}
 function lqLookGet(){var l='';try{l=window.localStorage&&window.localStorage.getItem('symbiot-look')||'';}catch(e){}return l==='glass'||l==='pearl'?l:'ferro';}

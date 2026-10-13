@@ -53,4 +53,38 @@ function coveredBy(q) {
   return standingList().map((x) => ({ r: x.rule, n: [...words(x.rule)].filter((t) => w.has(t)).length })).filter((x) => x.n >= 2).sort((a, b) => b.n - a.n).slice(0, 2).map((x) => x.r);
 }
 const standingBrief = () => ["## Standing rules: they apply to every run", ...BASE.map((x) => `- ${x}`), ...standingList().map((x) => `- ${x.rule}`), ""];
-export { recordDone, isDone, doneList, doneBrief, addRule, standingList, standingBrief, coveredBy };
+
+// ---- approvals: a card that asks for an OK carries it, and never asks for one already given ----
+// An agent once asked the user to "open the two drafts under Marketing and press Approve on each"
+// for documents that have no Approve button, after they had already said yes in Home chat.
+// So an ask for an approval (1) becomes an "approve" card, where Go ahead on the card IS the
+// approval and nothing is pressed elsewhere, and (2) is dropped when chat, a task or an earlier
+// answer already holds that approval.
+const APPROVAL_ASK = /only you: (?:your )?(?:approval|OK)\b|\b(?:press|click|tap|hit)\s+(?:the\s+)?Approve\b|\bapprove (?:each|both|the|these|those|them|it)\b/i;
+const isApprovalAsk = (t) => APPROVAL_ASK.test(String(t || ""));
+// "open the two drafts dated 2026-10-20 under Marketing and press Approve on each; I then…"
+// → "Approve the two drafts dated 2026-10-20; I then…": the card itself is where it's approved.
+const approvalText = (what) => String(what || "").trim().replace(/^(?:open|go to|find)\s+(.*?)(?:\s+(?:under|in|on)\s+(?:the\s+)?[A-Za-z ]{2,24}?)?\s+(?:and\s+)?(?:press|click|tap|hit)\s+(?:the\s+)?Approve(?:\s+(?:on|for)\s+(?:each|both|it|them|all))?/i, "Approve $1");
+const YES = /\b(yes|yeah|yep|yup|ok|okay|sure|go ahead|go for it|do (?:it|this|that|these|those|them)|approved?|looks good|ship it|send it|post it)\b/i;
+const shared = (a, b) => { const wb = words(b); return [...words(a)].filter((t) => wb.has(t)).length; };
+const NEED = 4; // shared content words that make two texts the same subject
+// turns: [{ role, text }] oldest first; tasks: [{ text }]; answers: an ANSWERS.md's text.
+function approvedBefore(what, { turns = [], tasks = [], answers = "" } = {}) {
+  if (!String(what || "").trim()) return false;
+  for (let i = 0; i < turns.length; i++) {
+    const t = turns[i]; if (t.role !== "user" || !YES.test(t.text) || SAYS_NO.test(t.text)) continue;
+    if (shared(what, [turns[i - 2], turns[i - 1], t].filter(Boolean).map((x) => x.text).join(" ")) >= NEED) return true;
+  }
+  for (const t of tasks) if (/\b(?:approved|approval|go-?ahead)\b/i.test(t.text) && /\b(?:user|garth)\b/i.test(t.text) && shared(what, t.text) >= NEED) return true;
+  for (const m of String(answers).split(/^### /m).slice(1)) {
+    const [q, ...rest] = m.split("\n"), a = rest.join(" ").trim();
+    if (shared(what, q) >= NEED && /^(?:Done|Go ahead|🤖|👤)/i.test(a) && !SAYS_NO.test(a)) return true;
+  }
+  return false;
+}
+function recentTurns(now = Date.now(), maxAge = 3 * 86400000) {
+  try { const d = JSON.parse(readFileSync(join(CONFIG_DIR, "mind.json"), "utf8")); return (Array.isArray(d.log) ? d.log : []).filter((l) => now - (l.ts || 0) < maxAge).map((l) => ({ role: l.role, text: String(l.text || "") })); } catch { return []; }
+}
+function recentTasks() { try { const l = JSON.parse(readFileSync(join(CONFIG_DIR, "tasks.json"), "utf8")); return Array.isArray(l) ? l.map((t) => ({ text: String(t.text || "") })) : []; } catch { return []; } }
+
+export { recordDone, isDone, doneList, doneBrief, addRule, standingList, standingBrief, coveredBy, isApprovalAsk, approvalText, approvedBefore, recentTurns, recentTasks };

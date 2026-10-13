@@ -232,6 +232,8 @@ console.log("REPORTS — superseded actions leave 'Read, open actions' (2026-10-
   const cv = settleAsks([ask("m", "Which mailbox should I clean?")]);
   ok("a standing rule that looks like it answers an ask is listed on the card, which stays open", cv.length === 1 && cv[0].covered && cv[0].covered.length === 1, JSON.stringify(cv));
   const npm = settleAsks([ask("n1", "Tap your security key to save the npm Trusted Publisher for GAWdessey symbiot publish.yml"), ask("n2", "On npm, save the Trusted Publisher (GAWdessey / symbiot / publish.yml) with your security key tap"), ask("n3", "Which plan are you on today?")]);
+  const clicks = settleAsks([ask("c1", "Click Edit on the trusted publisher, set owner GAWdessey, and Save"), ask("c2", "Press Delete next to GarthGhostai/symbiot, then click Done"), ask("c3", "Tap your security key, then click Save on npm"), ask("c4", "Which plan are you on?")]);
+  ok("a card that hands the agent's clicks to the user never reaches Home; a key tap or a real question does", clicks.length === 2 && clicks[0].id === "ask:c3" && clicks[1].id === "ask:c4", JSON.stringify(clicks.map((y) => y.id)));
   ok("the same human step worded two ways is one card", npm.length === 2 && npm[0].id === "ask:n1" && npm[1].id === "ask:n3", JSON.stringify(npm.map((y) => y.id)));
   ok("asks to close the Symbiot Browser never reach Home, and the same question from two agents is one card", left.length === 2 && left[0].path === undefined && left[0].id === "ask:c" && left[1].id === "s", JSON.stringify(left.map((y) => y.id)));
 }

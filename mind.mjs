@@ -180,6 +180,7 @@ const PAGES = {
   board: ["Dashboard", "the cards of what they watch (Gmail, GitHub, WhatsApp, LinkedIn…) and what's new on each"],
   tasks: ["Workdesk", "every lane's tasks and agents: what's running, waiting, done for review, agents' questions"],
   reports: ["Reports", "what agents wrote up for them to read (audits, findings, plans)"],
+  asks: ["Questions", "what agents are asking them and suggest next, to answer in one place"],
   marketing: ["Marketing", "the marketing lane: drafts of posts to approve, its agent"],
   week: ["Week", "their week, written up from their real work"],
   standup: ["Standup", "a standup from yesterday's work"],
@@ -311,6 +312,10 @@ function taskIn(text, repo, { map = {}, add = addTask } = {}) {
 // model wrote it before anything ran, so Symbiot says what actually happened.
 const CLAIMS_ACTION = /\b(sending (this|it|that) to|(i'?ve|i have|i'?m|i am|i'?ll|i will|let me) (just )?(sent|send|sending|handed|hand|handing|passed|passing|queued|queue|queuing|added|adding|started|starting|kicked off|kicking off|fixed|fixing|on it)|(handed|passed|sent) (it |this |that )?(to|over to|off to) (the |a |an )?\w+|(agent|it)('s| is) (on it|working on|fixing|looking into)|is (now )?(running|underway|in progress))\b/i;
 const unbackedClaim = (reply, did) => !(did && !did.error && !did.notStarted) && CLAIMS_ACTION.test(String(reply || ""));
+// "From now on every agent will…" is only true once the rule is saved into their briefs.
+const CLAIMS_BINDING = /\b(?:from now on|going forward|every agent|all agents|each agent|agents (?:will|won'?t|now|always|never)|standing rule|always do|never do)\b/i;
+const bindingClaim = (reply, saved) => !saved && CLAIMS_BINDING.test(String(reply || ""));
+const NOT_BINDING = "\n\nTo be plain: that isn't a standing rule yet. I haven't saved it into the agents' briefs, so it doesn't bind them. Say \"make that a rule\" and I will.";
 const UNBACKED = "\n\nCorrection: nothing was handed to an agent or queued by this reply, so nothing is running on it yet. Say the word and I'll start it.";
 function parseReply(raw) {
   const t = String(raw || "").trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
@@ -387,6 +392,8 @@ async function converse({ where, role = "", context = "", history = "", question
     for (const x of good) steps.push(`${x.op}: ${x.said}`.slice(0, 120));
   }
   if (!did && !steered.some((x) => x.ok) && unbackedClaim(reply, did)) reply += UNBACKED;
+  const rules = (Array.isArray(j.rule) ? j.rule : []).map((x) => String(x || "")).filter((x) => x.trim()).slice(0, 3).filter((x) => addRule(x));
+  if (bindingClaim(reply, rules.length)) reply += NOT_BINDING;
   // what's read aloud: the reply, then the line under it as a short phrase (spokenLine)
   const line = spokenLine(did, said), spoken = did && did.kind === "agent" && (did.error || did.notStarted) ? line : line ? `${said} ${line}` : said; // a claim that no agent started isn't read aloud
   // read again: another chat may have written while the model answered
@@ -397,7 +404,6 @@ async function converse({ where, role = "", context = "", history = "", question
   if (did && !did.error) steps.push(did.kind === "agent" ? (did.notStarted ? `added a task to ${did.lane}: its agent didn't start` : did.lane ? `handed it to ${did.lane}'s agent` : "handed it to an agent") : did.lane ? `added a task to ${did.lane}` : "added a task");
   if (remembered) steps.push(`remembered ${remembered} new thing${remembered > 1 ? "s" : ""}`);
   if (go) steps.push(`opened ${go.label}`);
-  const rules = (Array.isArray(j.rule) ? j.rule : []).map((x) => String(x || "")).filter((x) => x.trim()).slice(0, 3).filter((x) => addRule(x));
   if (rules.length) steps.push(`saved ${rules.length} standing rule${rules.length > 1 ? "s" : ""} for every agent`);
   const settled = settle && Array.isArray(j.settled) ? j.settled.map((x) => String(x || "").slice(0, 300)).filter(Boolean).slice(0, 6) : [];
   return { reply, spoken, ...(did ? { did } : {}), ...(steered.length ? { control: steered } : {}), ...(go ? { go } : {}), ...(settled.length ? { settled } : {}), remembered, steps };
@@ -405,4 +411,4 @@ async function converse({ where, role = "", context = "", history = "", question
 // The usual "task" act, for a caller with no lanes of its own to pass.
 const addToTasks = (text, repo) => { let map = {}; try { map = laneMap(); } catch {} return taskIn(text, repo, { map }); };
 
-export { dayLine, dayMark, MIND_FILE, loadMind, remember, recall, recallText, lately, mindState, forget, actBrief, actNow, actIn, taskIn, selfLane, rulesFor, parseReply, converse, spokenLine, unbackedClaim, goOf, PAGES, addToTasks , ownThread };
+export { dayLine, dayMark, MIND_FILE, loadMind, remember, recall, recallText, lately, mindState, forget, actBrief, actNow, actIn, taskIn, selfLane, rulesFor, parseReply, converse, spokenLine, unbackedClaim, bindingClaim, goOf, PAGES, addToTasks , ownThread };

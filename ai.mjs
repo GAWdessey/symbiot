@@ -223,9 +223,47 @@ function aboveFloor(r0) {
   return key ? { provider: "anthropic", key, model: "claude-sonnet-5-5", source: "saved login" } : null;
 }
 const NO_CHAT_MODEL = "I can't answer here right now: chat needs Claude (Sonnet or better), and Claude isn't connected. Connect it in Settings and ask again.";
-async function write(system, prompt, { images = [], fast = false, floor = "" } = {}) {
-  const r0 = floor ? aboveFloor(resolveProvider()) : resolveProvider(), r = fast && r0 && FAST_MODEL[r0.provider] ? { ...r0, model: FAST_MODEL[r0.provider] } : r0;
+// ---- per-job model routing (route.mjs) ------------------------------------
+// A job's kind picks its tier when Claude is the provider (a subscription or an Anthropic
+// key): local qwen3:8b for read/summary/classify, Haiku for triage, Sonnet for write-ups and
+// posts. A provider the user chose themselves (OpenAI, Gemini, Ollama) is left as it is.
+// Nothing ever waits on the local model: Ollama down, the model missing or its answer
+// failing the job's check all go straight to Haiku.
+const LOCAL_MODEL = "qwen3:8b", LOCAL_URL = "http://127.0.0.1:11434", LOCAL_TTL = 300000;
+let LOCAL_OK = { at: 0, ok: false };
+// Health check: Ollama answers a ping from the model (a model that's merely listed but
+// can't run must not count), cached for 5 minutes either way.
+async function localReady(now = Date.now()) {
+  if (now - LOCAL_OK.at < LOCAL_TTL) return LOCAL_OK.ok;
+  let ok = false;
+  try {
+    const tags = await fetch(`${LOCAL_URL}/api/tags`, { signal: AbortSignal.timeout(1500) });
+    if (tags.ok && ((await tags.json()).models || []).some((m) => m.name === LOCAL_MODEL)) {
+      ok = !!(await callOllama({ baseUrl: LOCAL_URL, model: LOCAL_MODEL, tuned: true }, "Reply with one word.", "ping"));
+    }
+  } catch {}
+  LOCAL_OK = { at: now, ok };
+  return ok;
+}
+const TIER_MODEL = { claude: { H: "haiku", S: "sonnet" }, anthropic: { H: "claude-haiku-5-5", S: "claude-sonnet-5-5" } };
+// -> { r, local }: the provider to call for this kind, and whether it's the local tier
+async function routeFor(r0, kind) {
+  if (!kind || !r0 || !TIER_MODEL[r0.provider]) return { r: r0, local: false };
+  let tier; try { tier = pickModel({ kind }).tier; } catch { return { r: r0, local: false }; }
+  if (tier === "L" && await localReady()) return { r: { provider: "ollama", baseUrl: LOCAL_URL, model: LOCAL_MODEL, tuned: true }, local: true };
+  return { r: { ...r0, model: TIER_MODEL[r0.provider][tier === "S" ? "S" : "H"] }, local: false };
+}
+// kind: what the call is for (read, summary, classify, triage, chat, writeup, post). check(text)
+// -> true when a local answer has the shape the caller needs; a miss goes up to Haiku.
+async function write(system, prompt, { images = [], fast = false, floor = "", kind = "", check = null } = {}) {
+  const r0 = floor ? aboveFloor(resolveProvider()) : resolveProvider();
+  const base = fast && r0 && FAST_MODEL[r0.provider] ? { ...r0, model: FAST_MODEL[r0.provider] } : r0;
+  const routed = fast || floor || images.length ? { r: base, local: false } : await routeFor(base, kind), r = routed.r;
   if (!r) { if (floor) return NO_CHAT_MODEL; AI_UI.notConnected(); return null; }
+  if (routed.local) {
+    try { const ans = await callOllama(r, system, prompt); if (ans && (!check || check(ans))) return ans; } catch {}
+    return write(system, prompt, { fast: true }); // a miss, or Ollama gone: Haiku, now
+  }
   const stop = AI_UI.spinner("thinking…");
   try {
     const ans = r.provider === "claude" ? await callClaude(r, system, prompt, images)
@@ -337,4 +375,4 @@ async function connectProvider(b) {
   return saveConfig(cfg) ? { ok: true, message: `Connected: ${PROVIDERS[provider].label} · ${model}` } : { ok: false, message: "Couldn't write the config file." };
 }
 
-export { PROVIDERS, AI_UI, aboveFloor, NO_CHAT_MODEL, resolveProvider, write, validate, connectProvider, detectHardware, recommendModels, hasOllama, ollamaInstall, ensureOllama, useOllamaModel , claudeState, claudeReady, claudeHelp , claudeCommand , claudeSpawn };
+export { localReady, routeFor, PROVIDERS, AI_UI, aboveFloor, NO_CHAT_MODEL, resolveProvider, write, validate, connectProvider, detectHardware, recommendModels, hasOllama, ollamaInstall, ensureOllama, useOllamaModel , claudeState, claudeReady, claudeHelp , claudeCommand , claudeSpawn };
