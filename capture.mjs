@@ -19,9 +19,11 @@
 // the app (index.mjs, server.mjs /api/marketing/capture): the marketing lane's agent
 // calls it on a product's first run (marketing.mjs marketingBrief), instead of writing
 // capture scripts of its own, which Symbiot won't run with the app's access.
-import { join, relative, basename } from "node:path";
-import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync, statSync, mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { join, relative, basename, resolve } from "node:path";
+import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync, statSync, mkdtempSync, rmSync, copyFileSync, renameSync, createWriteStream } from "node:fs";
+import { tmpdir, homedir } from "node:os";
+import { Readable, Transform } from "node:stream";
+import { pipeline } from "node:stream/promises";
 import { spawn, spawnSync } from "node:child_process";
 import { MARKETING_DIR, displayName } from "./marketing.mjs";
 import { MARKETING } from "./handover.mjs";
@@ -691,6 +693,119 @@ async function captureDesktop({ product, window: title, t, names = [], seconds =
   return { items };
 }
 
+// ---- a product's own video ----------------------------------------------------------
+// A video it already has (`--file <its address or path>`: an invite video, a demo), taken
+// as it is, sound and all, not recorded off a screen playing it. Its moments sampled (one
+// a second, at most MAX_SAMPLES), each read with tesseract for names and numbers and
+// looked at for faces (OpenCV, where it's installed), as boxes over the time they show,
+// all switched on. The original goes in tray-originals as it came; the tray's copy is that
+// file again until a box is on, then the picture's blurred and its sound copied across
+// (tray.mjs). Marked to look over: a sample a second can miss what's on for less.
+const VIDEO_FILE = /\.(mp4|mov|webm)$/i, FILE_MAX = 500 * 1024 * 1024, MAX_SAMPLES = 90;
+const FILE_REVIEW = "The product's own video: Symbiot read the words in a moment of it each second and looked for faces, but what shows for less than a second can be missed. Watch it through, and draw a box over anything private, before you use it.";
+const NO_FACES = "OpenCV's face finder isn't here (on Ubuntu: sudo apt install python3-opencv opencv-data), so faces in it weren't looked for.";
+// It fetched to `out`, at most `max` bytes: { ok } or { error }.
+async function download(url, out, { max = FILE_MAX, timeout = 300000 } = {}) {
+  let res; try { res = await fetch(url, { redirect: "follow", signal: AbortSignal.timeout(timeout) }); } catch (e) { return { error: `Couldn't fetch ${url}: ${(e && e.cause && e.cause.code) || (e && e.message) || e}` }; }
+  if (!res.ok) return { error: `${url} answered ${res.status}, not the video.` };
+  if (/^text\/html/i.test(res.headers.get("content-type") || "")) return { error: `${url} is a page, not a video file: give the video's own address (it ends .mp4, .mov or .webm).` };
+  if (Number(res.headers.get("content-length")) > max) return { error: `That video is too big: Symbiot keeps videos up to ${Math.round(max / 1048576)} MB.` };
+  const tmp = `${out}.part`; let n = 0;
+  try {
+    await pipeline(Readable.fromWeb(res.body), new Transform({ transform(c, _, cb) { n += c.length; cb(n > max ? new Error(`That video is too big: Symbiot keeps videos up to ${Math.round(max / 1048576)} MB.`) : null, c); } }), createWriteStream(tmp));
+    renameSync(tmp, out); return { ok: true };
+  } catch (e) { rmSync(tmp, { force: true }); return { error: String((e && e.message) || e) }; }
+}
+// What ffprobe says of it: { w, h, seconds, audio } or null when it's no video.
+function probeVideo(file) {
+  const r = spawnSync("ffprobe", ["-v", "error", "-show_entries", "stream=codec_type,width,height:format=duration", "-of", "json", file], { encoding: "utf8", timeout: 30000 });
+  let o = null; try { o = JSON.parse(r.stdout); } catch { return null; }
+  const ss = (o && Array.isArray(o.streams) ? o.streams : []), v = ss.find((s) => s.codec_type === "video" && s.width > 0);
+  return v ? { w: +v.width, h: +v.height, seconds: Number(o.format && o.format.duration) || 0, audio: ss.some((s) => s.codec_type === "audio") } : null;
+}
+// Faces in pictures, by OpenCV's frontal and profile face finders: { boxes: { file: [box] }, read }.
+const FACES_PY = String.raw`
+import sys, os, json
+try:
+    import cv2
+except Exception:
+    print(json.dumps({"error": "missing"})); sys.exit(0)
+a = json.loads(sys.argv[1])
+dirs = [getattr(getattr(cv2, "data", None), "haarcascades", "")] + a.get("dirs", [])
+finders = []
+for name in ("haarcascade_frontalface_default.xml", "haarcascade_profileface.xml"):
+    for d in dirs:
+        f = os.path.join(d, name) if d else ""
+        if f and os.path.exists(f):
+            c = cv2.CascadeClassifier(f)
+            if not c.empty():
+                finders.append(c); break
+if not finders:
+    print(json.dumps({"error": "nocascade"})); sys.exit(0)
+out = {}
+for f in a["files"]:
+    img = cv2.imread(f, cv2.IMREAD_GRAYSCALE)
+    if img is None:
+        continue
+    img = cv2.equalizeHist(img)
+    found = []
+    for c in finders:
+        for (x, y, w, h) in c.detectMultiScale(img, scaleFactor=1.1, minNeighbors=6, minSize=(28, 28)):
+            found.append([int(x), int(y), int(w), int(h)])
+    out[f] = found
+print(json.dumps({"ok": True, "faces": out}))
+`;
+const FACE_DIRS = () => ["/usr/share/opencv4/haarcascades", "/usr/share/opencv/haarcascades", "/usr/local/share/opencv4/haarcascades", join(CONFIG_DIR, "haarcascades")];
+function faceBoxes(files, { dirs = FACE_DIRS(), run = spawnSync } = {}) {
+  if (!files.length || !hasCmd("python3")) return { boxes: {}, read: false };
+  const r = run("python3", ["-c", FACES_PY, JSON.stringify({ files, dirs })], { encoding: "utf8", timeout: 60000 + files.length * 5000, maxBuffer: 16 * 1024 * 1024 });
+  let o = null; try { o = JSON.parse(String(r.stdout || "").trim().split("\n").pop()); } catch {}
+  if (!o || !o.ok) return { boxes: {}, read: false };
+  // a face with room round it: hair, ears, the chin
+  const boxes = {};
+  for (const [f, fs] of Object.entries(o.faces || {})) boxes[f] = fs.map(([x, y, w, h]) => ({ kind: "face", x: x - w * 0.2, y: y - h * 0.25, w: w * 1.4, h: h * 1.5, hint: "a face" }));
+  return { boxes, read: true };
+}
+// Its name in the tray, from the file's own: trial.mp4 stays trial.mp4.
+function videoName(file) {
+  let p = String(file || "").trim(); if (/^https?:\/\//i.test(p)) { try { p = decodeURIComponent(new URL(p).pathname); } catch { return null; } }
+  const m = basename(p).match(VIDEO_FILE); if (!m) return null;
+  const name = slug(basename(p).slice(0, -m[0].length)) || "video";
+  return { name, file: `${name}.${m[1].toLowerCase()}` };
+}
+async function captureFile({ product, file, t, names = [], fetchFile = download, probe = probeVideo, ocr = ocrBoxes, faces = faceBoxes, now = Date.now() }) {
+  const src = String(file || "").trim(), url = /^https?:\/\//i.test(src), v = videoName(src);
+  if (!v) return { error: `${src || "That"} isn't a video file Symbiot can take: give its address or path, ending .mp4, .mov or .webm.` };
+  const orig = join(t.orig, v.file), path = url ? "" : resolve(src.replace(/^~(?=\/|$)/, homedir()));
+  if (!url && !existsSync(path)) return { error: `There's no file at ${src}.` };
+  mkdirSync(t.orig, { recursive: true });
+  const got = url ? await fetchFile(src, orig) : (() => { try { if (statSync(path).size > FILE_MAX) return { error: `That video is too big: Symbiot keeps videos up to ${Math.round(FILE_MAX / 1048576)} MB.` }; copyFileSync(path, orig); return { ok: true }; } catch (e) { return { error: `Couldn't read ${src}: ${(e && e.message) || e}` }; } })();
+  if (got.error) return { error: got.error };
+  const info = probe(orig);
+  if (!info) { rmSync(orig, { force: true }); return { error: `${src} isn't a video Symbiot can read (ffprobe found no picture in it).` }; }
+  // its moments, a second apart (further for a long one), each read and looked at for faces
+  const rate = info.seconds > MAX_SAMPLES ? MAX_SAMPLES / info.seconds : 1, tmp = mkdtempSync(join(tmpdir(), "symbiot-frames-")), samples = [];
+  let w = info.w, h = info.h, read = true, faced = false;
+  try {
+    const x = spawnSync("ffmpeg", ["-loglevel", "error", "-y", "-i", orig, "-vf", `fps=${rate.toFixed(4)}`, "-frames:v", String(MAX_SAMPLES + 1), join(tmp, "s%04d.png")], { encoding: "utf8", timeout: 300000 });
+    const frames = x.status === 0 ? readdirSync(tmp).filter((f) => /^s\d+\.png$/.test(f)).sort().map((f) => join(tmp, f)) : [];
+    if (!frames.length) return { error: `Couldn't read the moments of ${v.file}: ${String(x.stderr || "").trim().split("\n").pop() || "ffmpeg stopped"}` };
+    // the size it plays at (a phone's video turned upright), as its moments come out
+    const s = sizeOf(frames[0]); if (s) [w, h] = s;
+    const fc = faces(frames); faced = fc.read;
+    for (const [i, f] of frames.entries()) {
+      const o = ocr(f, names); read = read && o.read;
+      samples.push({ t: +(i / rate).toFixed(2), r: [...o.boxes, ...(fc.boxes[f] || [])].map((b) => pad(b, w, h)) });
+    }
+  } finally { rmSync(tmp, { recursive: true, force: true }); }
+  // each box from the sample before it's seen to the one after it goes: nothing between two looks shows unblurred
+  const gap = 1 / rate, regions = tracks(samples, gap * 1.5).map((b) => ({ ...b, from: Math.max(0, +(b.from - gap + 0.4).toFixed(2)), to: b.to === 9999 ? 9999 : +(b.to + gap - 0.4).toFixed(2) }));
+  const caption = `${product}: its video ${v.file}`, review = [FILE_REVIEW, read ? "" : NO_OCR, faced ? "" : NO_FACES].filter(Boolean).join(" ");
+  putInTray(t, { name: v.name, kind: "clip", files: [v.file], screen: "its own video", caption, for: [], blur: `${v.name}.blur.json`, file: true, ...(url ? { origin: src } : {}), captured: now },
+    { source: v.file, kind: "clip", file: true, audio: info.audio, size: [w, h], seconds: +info.seconds.toFixed(2), screen: "its own video", caption, trim: [0, 0], regions: regionsOf(regions), review });
+  return { items: [v.name] };
+}
+
 // ---- one product, end to end --------------------------------------------------------
 // Its repo (by folder, or by its name as people say it), where it runs (the address
 // given, else an app of it listening here: post.mjs localApps), its screens, then each
@@ -717,14 +832,14 @@ function captureProducts({ map, dir = MARKETING_DIR } = {}) {
 let BUSY = null;
 // Symbiot's own repo (this package, or a clone of it), by its package.json's name.
 const isSymbiotRepo = (path) => { try { return JSON.parse(readFileSync(join(path, "package.json"), "utf8")).name === "symbiot"; } catch { return false; } };
-async function captureProduct({ product, url = "", window: win = "", screens: extra = [], clips = true, seconds = CLIP_SECONDS, map, dir = MARKETING_DIR, apps, render = renderCapture, web = captureWeb, desktop = captureDesktop, demoApp = startDemo, ffmpeg = () => hasCmd("ffmpeg"), now = Date.now() } = {}) {
+async function captureProduct({ product, url = "", window: win = "", file = "", screens: extra = [], clips = true, seconds = CLIP_SECONDS, map, dir = MARKETING_DIR, apps, render = renderCapture, web = captureWeb, desktop = captureDesktop, video = captureFile, demoApp = startDemo, ffmpeg = () => hasCmd("ffmpeg"), now = Date.now() } = {}) {
   if (BUSY) return { error: `Already capturing ${BUSY}: one product at a time.` };
   if (!map) { try { map = laneMapNow(); } catch { map = {}; } }
   const repo = productRepo(product, map), name = (repo && repo.name) || String(product || "").trim();
   if (!name) return { error: "Say which product to capture: its name, or its folder." };
   let symbiot = false, demo = null;
-  if (!win && !url) {
-    if (!repo) return { error: `${name} isn't one of your projects here: give its address with --url, or its window with --window.` };
+  if (!win && !url && !file) {
+    if (!repo) return { error: `${name} isn't one of your projects here: give its address with --url, its window with --window, or a video of it with --file.` };
     // Symbiot itself shows your real work: it's captured from a copy with made-up work in it instead
     symbiot = isSymbiotRepo(repo.path);
     const found = symbiot ? null : (await (apps || (await import("./post.mjs")).localApps)([{ name: name, path: repo.path }])).find((a) => a && a.url);
@@ -739,7 +854,8 @@ async function captureProduct({ product, url = "", window: win = "", screens: ex
     const t = trayPaths(name, dir); mkdirSync(t.root, { recursive: true }); mkdirSync(t.orig, { recursive: true });
     const names = [...namesToBlur(repo && repo.path, { dir, product: name }), ...(symbiot ? DEMO_NAMES : [])];
     let r;
-    if (win) r = await desktop({ product: name, window: win, t, names, seconds, clip: clips, now });
+    if (file) r = await video({ product: name, file, t, names, now });
+    else if (win) r = await desktop({ product: name, window: win, t, names, seconds, clip: clips, now });
     else {
       const screens = symbiot ? SYMBIOT_SCREENS : repo ? screensOf(repo.path, { product: name, extra }) : [{ path: "/", name: "home", caption: `${name}: its first screen`, from: "home" }, ...extra.map((p) => ({ path: routeOf(p), name: slug(words(routeOf(p))) || "home", caption: captionFor(routeOf(p), "", name), from: "given" })).filter((s) => s.path && s.path !== "/")];
       // Symbiot's made-up copy: its charts and map are drawings of made-up work, the point of those screens
@@ -751,11 +867,11 @@ async function captureProduct({ product, url = "", window: win = "", screens: ex
     // a reel of the clips, one after another, when there's more than one
     const cl = (r.items || []).filter((x) => x.endsWith("-clip"));
     if (cl.length > 1) { writeFileSync(join(t.root, "tour.reel.json"), JSON.stringify({ parts: cl }, null, 2)); const idx = readJson(join(t.root, "tray.json")); idx.items = [...idx.items.filter((x) => x.name !== "tour"), { name: "tour", kind: "reel", files: ["tour.mp4"], screen: "several", caption: `${name}: a tour, its clips one after another`, for: [], parts: cl, captured: now }]; writeFileSync(join(t.root, "tray.json"), JSON.stringify(idx, null, 2)); if (cl.length) await render(t.rel, cl[cl.length - 1], { dir }); }
-    const seed = repo && !win && !symbiot ? seedScript(repo.path) : "";
+    const seed = repo && !win && !file && !symbiot ? seedScript(repo.path) : "";
     const n = (r.items || []).length, blurred = (r.items || []).reduce((k, it) => k + ((readJson(join(t.root, `${it}.blur.json`)) || {}).regions || []).length, 0);
     return { ok: true, product: name, tray: t.rel, items: r.items || [], skipped: r.skipped || [], ...(failed.length ? { failed } : {}), ...(seed ? { seed } : {}), ...(r.error ? { warning: r.error } : {}),
-      note: `${n} capture${n === 1 ? "" : "s"} of ${name}${symbiot ? ", from a copy with made-up work in it (Acme), not yours," : ""} in its pick tray (Marketing), with ${blurred} blur box${blurred === 1 ? "" : "es"} over what could be private. Look ${n === 1 ? "it" : "them"} over there: switch a box off, or draw one of your own.` };
+      note: `${n} capture${n === 1 ? "" : "s"} of ${name}${symbiot ? ", from a copy with made-up work in it (Acme), not yours," : ""} in its pick tray (Marketing), with ${blurred} blur box${blurred === 1 ? "" : "es"} over what could be private${file ? ", its sound kept" : ""}. Look ${n === 1 ? "it" : "them"} over there: switch a box off, or draw one of your own.` };
   } finally { BUSY = null; if (demo && demo.stop) await demo.stop(); }
 }
 
-export { SYMBIOT_SCREENS, screenUrl, isSymbiotRepo, screensOf, codeRoutes, fileRoute, routeOf, readmePaths, captionFor, seedScript, TEXT_KINDS, textHits, DETECT, tsvBoxes, ocrBoxes, namesToBlur, trayPaths, putInTray, tracks, heldBoxes, captureWeb, captureDesktop, windowOf, recordArgs, portalRecord, PORTAL_PY, productRepo, captureProduct, captureProducts, framesToVideo, NO_OCR, DESKTOP_REVIEW };
+export { SYMBIOT_SCREENS, screenUrl, isSymbiotRepo, screensOf, codeRoutes, fileRoute, routeOf, readmePaths, captionFor, seedScript, TEXT_KINDS, textHits, DETECT, tsvBoxes, ocrBoxes, namesToBlur, trayPaths, putInTray, tracks, heldBoxes, captureWeb, captureDesktop, captureFile, videoName, faceBoxes, FACES_PY, windowOf, recordArgs, portalRecord, PORTAL_PY, productRepo, captureProduct, captureProducts, framesToVideo, NO_OCR, DESKTOP_REVIEW };

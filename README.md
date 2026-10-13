@@ -326,8 +326,10 @@ notification too when it's new. Experimental.
   `127.0.0.1`, and nothing else is reachable from the phone. An approve goes through
   only if the work is still exactly what the phone showed, runs the same Approve as
   the button, and Home and the Workdesk say which phone approved. Unpairing a phone
-  stops it at once, including what it had queued. A firewall on the computer may need
-  to allow the port.
+  stops it at once: what it had queued is refused, and the phone drops it and lists
+  each one as not sent. A change that fails on the computer comes back as failed,
+  with why, and never holds up the rest. A firewall on the computer may need to allow
+  the port.
 - **With the computer off.** The phone keeps the last copy (`computer.json`) and shows
   it, with one line saying the computer is out of reach and when it last heard from
   it. What you change meanwhile shows at once, marked "waiting to send", and goes in
@@ -336,15 +338,21 @@ notification too when it's new. Experimental.
 - **Finding it again.** While the link is on, the computer says it's here on your
   network (mDNS, as a printer does, under a neutral name, not your computer's), so
   the phone finds it after a new address; it never unpairs because of a network
-  error. It asks every 2 minutes, sooner after a failed try (15 s, 30 s, a minute),
-  and at once when the phone's network changes or you open the app.
+  error. An address counts only when what answers there has the computer's key, so
+  another device that took its old address doesn't stop the search. It asks every 2
+  minutes, sooner after a failed try (15 s, 30 s, a minute), and, in the Android app,
+  at once when the phone's network changes or you open the app. Each request is
+  stamped with the computer's clock, which the phone keeps in step from its answers.
 - **Away from home.** With a phone paired, the computer keeps a line open to a relay
   at `relay.symbiot.co.za` (it connects out: no port opened on your router). The phone
   uses it only when it can't reach the computer on your network, so at home nothing
-  goes through it. The relay passes the sealed messages on and can't read them; it
-  stores nothing; it knows a pair only by a hash. It does see when a pair talks, and
-  how much. Untick **Away from home too** in Settings → Your phone to keep it to your
-  Wi-Fi. The relay is in `relay/` (a Cloudflare Worker, or `node relay/server.mjs` on
+  goes through it; once it's away it goes there first, and back to your Wi-Fi as soon
+  as the computer answers there. The relay passes the sealed messages on and can't
+  read them; it stores nothing; it knows a pair only by a hash (`relay/README.md` says
+  what it does see). A message takes 256 KB at most, so the copy sent through it
+  leaves out the long reports' text, and the phone says when the relay, not the
+  computer, was the trouble (busy, or an answer too big). Untick **Away from home too**
+  in Settings → Your phone to keep it to your Wi-Fi. The relay is in `relay/` (a Cloudflare Worker, or `node relay/server.mjs` on
   a server of your own, with `SYMBIOT_RELAY=<its address>` on the computer).
 
 In Termux:
@@ -994,17 +1002,21 @@ launches or pricing; any agent can hand work to it too, as `marketing`.
   instead (`--window "<title>"`: an X11 or XWayland window on Linux by its title; a
   Wayland window (COSMIC, GNOME, KDE) through the desktop's own screen sharing, where
   you pick it in its prompt once and Symbiot remembers it; by its title on Windows; the
-  screen on a Mac).
+  screen on a Mac). A video the product already has (an invite video, a demo) goes in
+  as it is, sound and all (`--file <its address or path>`, an .mp4, .mov or .webm):
+  not a screen recording of it playing.
 - **What could get you into trouble is blurred before it reaches the tray**: names
   (the people Symbiot remembers, the product's git authors, the one beside an avatar,
   a customer's in a table, and any in the lane's `.symbiot/names.json`), emails, phone
   numbers, street addresses, API keys, tokens and secrets, account, card and IBAN
   numbers, what's typed into forms, notifications, chats, avatars and pictures (faces),
   and text inside pictures (read with `tesseract`, where it's installed). A clip moves
-  a window at a time, so what's private is found in each moment it shows. Each
+  a window at a time, so what's private is found in each moment it shows; a product's
+  own video is read a moment a second, its faces found with OpenCV where it's
+  installed, and the tray's copy is the file as it came until a box is on. Each
   capture's boxes are listed on it: switch one off, or **Draw a blur box** over
   anything it missed (a box you drew can be removed). A desktop recording, where
-  Symbiot can't see faces or pictures, and any capture whose pictures' text couldn't
+  Symbiot can't see faces or pictures, a product's own video, and any capture whose pictures' text couldn't
   be read, says so, and goes on a post only once you've clicked **Looked it over**.
   The unblurred originals stay in the lane's `.symbiot/tray-originals/`: never shown,
   never put on a post.
@@ -1224,8 +1236,10 @@ can't fully check, so they may change. Everything above works without them.
   but not yet left running. The brief and Standup's "Waiting on you" line are new.
 - **Your phone**: the sealed link, the copy, the queue and the relay are tested
   between two Symbiots on one computer (`test/phone.mjs`; the relay's Worker was
-  also run through it in Miniflare, Cloudflare's local runtime), but not yet on a
-  real phone, and the relay at relay.symbiot.co.za isn't up yet.
+  also run through it in Miniflare, Cloudflare's local runtime). A real phone has
+  paired with a computer, and the relay at relay.symbiot.co.za is live (checked 13
+  Oct 2026), but the phone has had few days of use, on one phone, and the Android
+  app's Java isn't compiled in CI.
 
 ### Your sent email, without an API: `symbiot mail`
 

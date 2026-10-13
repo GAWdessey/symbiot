@@ -10,7 +10,7 @@
 // did it until 2026-10-09, with the app's access). The unblurred originals stay in the lane's
 // .symbiot/tray-originals/<product>/ and are never served from here.
 import { join, dirname, basename } from "node:path";
-import { existsSync, readFileSync, writeFileSync, readdirSync, statSync, realpathSync, renameSync, rmSync, mkdtempSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync, readdirSync, statSync, realpathSync, renameSync, rmSync, mkdtempSync, copyFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { spawn, spawnSync } from "node:child_process";
 import { MARKETING_DIR, MEDIA_TYPES, draftFiles, parseDraft, inLane, reviewOf } from "./marketing.mjs";
@@ -131,6 +131,7 @@ async function render(dir, tray, name, run, size) {
   const orig = join(dir, ".symbiot", "tray-originals", basename(dirname(root))), src = join(orig, String(spec.source || ""));
   let real = ""; try { real = NAME.test(String(spec.source || "")) && dirname(realpathSync(src)) === realpathSync(orig) ? realpathSync(src) : ""; } catch {}
   if (!real) return { error: "Its unblurred original isn't in the lane's .symbiot/tray-originals: its agent renders it next time." };
+  if (spec.file) return renderFile(root, name, spec, real, run);
   const [w, h] = size(real) || (Array.isArray(spec.size) ? spec.size.map(Number) : []);
   if (!(w > 0 && h > 0)) return { error: "Couldn't tell how big the capture is." };
   const still = spec.kind === "still", fps = Number(spec.fps) || 12, [start, end] = Array.isArray(spec.trim) ? spec.trim.map(Number) : [0, 0];
@@ -146,6 +147,23 @@ async function render(dir, tray, name, run, size) {
   const files = [...outs];
   if (!still) for (const reel of reelsWith(root, name)) { const j = await joinReel(root, reel, run); if (!j.ok) return { error: `Blurred, but its reel ${reel} isn't joined again: ${j.error}` }; files.push(`${reel}.mp4`); }
   return { ok: true, files };
+}
+// A product's own video (capture.mjs captureFile): the file as it came while no box is on
+// and it isn't trimmed; else its picture blurred at its own size and rate, in its own
+// kind of file, and its sound copied across as it is. Its size is the one it plays at
+// (a phone's video turned upright), as its boxes were found. { ok, files } or { error }.
+async function renderFile(root, name, spec, real, run) {
+  const out = String(spec.source), tmp = join(root, `.${out}.render.${out.split(".").pop()}`), on = spec.regions.filter((r) => r && r.on);
+  const [w, h] = Array.isArray(spec.size) ? spec.size.map(Number) : [0, 0], [start, end] = Array.isArray(spec.trim) ? spec.trim.map(Number) : [0, 0];
+  if (!on.length && !(start > 0) && !(end > 0)) { try { copyFileSync(real, tmp); renameSync(tmp, join(root, out)); return { ok: true, files: [out] }; } catch (e) { rmSync(tmp, { force: true }); return { error: "Couldn't copy it into the tray: " + ((e && e.message) || e) }; } }
+  if (!(w > 0 && h > 0)) return { error: "Couldn't tell how big the capture is." };
+  const { graph, out: v } = blurGraph(on, w, h, start || 0, "[0:v]format=rgb24[v0]");
+  const webm = /\.webm$/i.test(out), video = webm ? ["-c:v", "libvpx-vp9", "-b:v", "0", "-crf", "30", "-row-mt", "1"] : ["-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-movflags", "+faststart"];
+  const r = await run(["-loglevel", "error", "-y", ...(start > 0 ? ["-ss", String(start)] : []), ...(end > 0 ? ["-to", String(end)] : []), "-i", real, "-filter_complex", `${graph};${v}format=yuv420p[out]`,
+    "-map", "[out]", "-map", "0:a?", ...video, "-c:a", "copy", tmp]);
+  if (!r.ok) { rmSync(tmp, { force: true }); return r; }
+  renameSync(tmp, join(root, out));
+  return { ok: true, files: [out] };
 }
 // ffmpeg's filters for the boxes switched on: each pixelated (a tenth its size), then blurred,
 // so the text under it can't be read back, as tray.py did. A clip's box is there only in its

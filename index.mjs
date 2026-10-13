@@ -25,7 +25,7 @@
 
 import { spawn, spawnSync } from "node:child_process";
 import { homedir } from "node:os";
-import { join, basename } from "node:path";
+import { join, basename, resolve } from "node:path";
 import { realpathSync, readFileSync, mkdirSync, openSync, rmSync, existsSync } from "node:fs";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
@@ -880,8 +880,10 @@ async function cmdMarketing() {
 // ---- `symbiot capture`: a product's pictures and clips, for its pick tray (capture.mjs) ----
 // Run by the app (it has the browser and ffmpeg, and the tray is its), else here. What
 // Marketing's agent runs on a product's first run, instead of capture scripts of its own.
+// a video's path as said here (the app runs elsewhere), or its address as it is
+const fileArg = (f) => !f || /^https?:\/\//i.test(f) ? f : resolve(String(f).replace(/^~(?=\/|$)/, homedir()));
 async function cmdCapture() {
-  const VAL = ["--url", "--window", "--screens", "--seconds"];
+  const VAL = ["--url", "--window", "--file", "--screens", "--seconds"];
   const [product = "help"] = argv.slice(1).filter((x, i, all) => !x.startsWith("--") && !VAL.includes(all[i - 1]));
   if (product === "help" || has("help")) {
     console.log(`${c.b("symbiot capture")} ${c.d("— pictures and short clips of a product, for Marketing's pick tray")}
@@ -892,6 +894,9 @@ async function cmdCapture() {
                                             a desktop app: its window, a picture and a clip
                                             (under Wayland you pick it in your desktop's
                                             screen-sharing prompt, the first time only)
+  symbiot capture <product> --file <a video's address or path>
+                                            a video it already has (.mp4, .mov, .webm),
+                                            taken as it is, its sound kept
   Its address: --url, else the app of it running here (start it first, with demo data
   where it has some). Symbiot itself: a copy with made-up work in it, started and
   stopped for the capture, never your own.
@@ -903,7 +908,7 @@ async function cmdCapture() {
     if (product !== "help") process.exitCode = 1;
     return;
   }
-  const body = { product, url: flag("url", ""), window: flag("window", ""), screens: String(flag("screens", "")).split(",").map((x) => x.trim()).filter(Boolean), clips: !has("no-clips"), ...(Number(flag("seconds", 0)) > 0 ? { seconds: Number(flag("seconds", 0)) } : {}) };
+  const body = { product, url: flag("url", ""), window: flag("window", ""), file: fileArg(flag("file", "")), screens: String(flag("screens", "")).split(",").map((x) => x.trim()).filter(Boolean), clips: !has("no-clips"), ...(Number(flag("seconds", 0)) > 0 ? { seconds: Number(flag("seconds", 0)) } : {}) };
   console.log(c.d(`Capturing ${product}: a minute or two…`));
   const r = (await viaApp("/api/marketing/capture", body)) || await (await import("./capture.mjs")).captureProduct(body);
   if (r.error) { console.log(c.y(r.error)); process.exitCode = 1; return; }

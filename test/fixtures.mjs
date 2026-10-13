@@ -11,7 +11,7 @@ import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { authorship, repoState, readmeInfo, houseRules, findAllRepos, driftRepo, buildTasksMd, taskType, EMBEDDED_UI, orcaHandoffCmd, migrateOrcaCmd, fillHandoff, ORCA_CLAUDE_CMD, CLAUDE_CMD, HANDOFF_PROMPT, shipChanges, shipWithBump, bumpOffer, learnNpm, releaseNeeded, withReleases, semverGt, updateCmd, parseQuestions, unreleased, publishesOnMerge } from "../index.mjs";
-import { grantRule, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, noteUntracked, untrackedBefore } from "../agents.mjs";
+import { grantRule, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, linkReach, noteUntracked, untrackedBefore } from "../agents.mjs";
 import { applyRemovals, removalOf, saidFinished, gitFailed } from "../tasks.mjs";
 import { releaseNotes, parseNotes } from "../writeups.mjs";
 import { VERSION, sameTask, uniqueTasks } from "../core.mjs";
@@ -19,7 +19,7 @@ import { mailActivity } from "../mail.mjs";
 import { pngSize, pngDecode, splitPng, stitchPng, stitchListPng, captureCmds, clickCmds, portalAppId, monitorCmds, parseCosmicRandr, parseWlrRandr, parseKscreen, parseXrandr, parseLines, tidyMonitors, monitorAreas } from "../screens.mjs";
 import { siteUrl, browserArgs, isTrusted, isSend } from "../headless.mjs";
 import { deflateSync, gzipSync } from "node:zlib";
-import { changesSince, whatsNew, tarFile, downloadReady, updateOutcome } from "../server.mjs";
+import { changesSince, whatsNew, tarFile, downloadReady, updateOutcome, autoUpdateDue, restartWouldStop } from "../server.mjs";
 import { weeklyDue, lastSlot, autostartFile, autostartContent, notifyCmd } from "../desktop.mjs";
 import { itemKey, itemsOf, fromOf, chatName as w_chatName, newItems, remember, githubItems, draftsUrl } from "../watch.mjs";
 import { lanAddresses, computerUrl } from "../phone.mjs";
@@ -273,6 +273,8 @@ try {
   ok("a site linked in Symbiot is allowed its claude.ai connector's tools before Claude records it (Gmail), once each; one with no claude.ai connector adds nothing (Trello)", wlink === CLAUDE_CMD + ' "mcp__claude_ai_Google_Drive" "mcp__my-mail" "mcp__claude_ai_Gmail" "mcp__claude_ai_Notion"', wlink);
   const lc = linkedConnectors(conns, linkedHere);
   ok("linkedConnectors: which sites linked in Symbiot Claude has a connector for (Drive), not ready (Notion), or none (Gmail)", JSON.stringify(lc) === JSON.stringify([{ id: "gmail", name: "Gmail", connector: "", ready: false }, { id: "gdrive", name: "Google Drive", connector: "claude.ai Google Drive", ready: true }, { id: "notion", name: "Notion", connector: "claude.ai Notion", ready: false }]), lc);
+  const lr = linkReach(conns, true);
+  ok("linkReach: before linking, marks sites Claude has a connector for (Drive ready, Notion not), leaves the rest without", lr.claude && lr.sites.gdrive.ready && lr.sites.gdrive.connector === "claude.ai Google Drive" && lr.sites.notion.connector === "claude.ai Notion" && !lr.sites.notion.ready && lr.sites.gmail.connector === "" && !lr.sites.gmail.ready, JSON.stringify(lr));
   const cl = connectorsLine(CLAUDE_CMD, cj, linkedHere);
   ok("a run's brief says which connectors it has, that Gmail (linked only in Symbiot) isn't one, and where to connect it", /this run can use Google Drive \(`mcp__claude_ai_Google_Drive__…` tools\)/.test(cl) && /Gmail and Notion are linked in Symbiot but not ready as a Claude connector, so this run has no tools for them: don't say you checked them/.test(cl) && /claude\.ai → Settings → Connectors/.test(cl) && /watch new/.test(cl) && connectorsLine('codex exec "{prompt}"', cj, linkedHere) === "", cl);
   ok("...and that their tools are allowed if they turn up anyway, as the command allows them", /If `mcp__claude_ai_Gmail__…` or `mcp__claude_ai_Notion__…` tools are here after all, the connector was just connected: they're allowed/.test(cl), cl);
@@ -517,6 +519,42 @@ try {
   writeFileSync(join(sqRepo, "more.txt"), "more\n");
   const rs2 = await shipChanges(sqRepo, ["More"], { push: false });
   ok("a branch with work main doesn't have stays put", rs2.ok && rs2.branch === "symbiot/next-thing" && !rs2.note, rs2);
+  // symbiot/drafts-test-race, 12 Oct 2026: #172 merged, then Approves committed on the branch,
+  // so it never counted as merged again; the next PR didn't open and the page showed #172 as its PR
+  const spentRepo = (name, after) => build(name, `git init -q -b main && git config user.email ci@symbiot.test && git config user.name "Symbiot CI" && echo a > a.txt && git add . && git commit -qm init
+    git clone -q --bare . ../${name}-remote.git && git remote add origin ../${name}-remote.git && git fetch -q origin && git remote set-head origin main
+    git switch -q -c spent && echo b >> a.txt && git commit -qam one && git tag pr172 && git push -q -u origin spent
+    git switch -q main && git merge -q --squash spent && git commit -qm "one (#172)" && echo m > m.txt && git add . && git commit -qm "0.63.8" && git push -q origin main && git switch -q spent
+    ${after}`);
+  const fakeGh = (repo, { create = true, view = "MERGED" } = {}) => { const calls = []; const merged = execSync("git rev-parse pr172", { cwd: repo, encoding: "utf8", env: gitEnv }).trim();
+    const f = (args) => { calls.push(args); const s = args.join(" ");
+      if (/^pr list .*--state merged/.test(s)) return { status: 0, stdout: JSON.stringify([{ headRefOid: merged }]) };
+      if (/^pr list .*--state open/.test(s)) return { status: 0, stdout: "[]" };
+      if (/^pr create/.test(s)) return create ? { status: 0, stdout: "https://github.com/o/r/pull/179\n" } : { status: 1, stdout: "", stderr: "GraphQL: something went wrong" };
+      if (/^pr view/.test(s)) return { status: 0, stdout: JSON.stringify({ url: "https://github.com/o/r/pull/172", state: view }) };
+      return { status: 1, stdout: "" }; };
+    f.calls = calls; return f; };
+  const spA = spentRepo("ship-spent", `echo two > two.txt && git add . && git commit -qm "an approve after the merge" && git push -q && echo three > three.txt`);
+  const gp = (a) => execSync("git " + a, { cwd: spA, encoding: "utf8", env: gitEnv }).trim();
+  const ghA = fakeGh(spA), rsp = await shipChanges(spA, ["Third thing"], { gh: ghA });
+  ok("a branch whose PR merged, with Approves committed on it since: the next starts a fresh branch from main", rsp.ok && rsp.branch === "symbiot/third-thing" && gp("rev-parse HEAD~2") === gp("rev-parse origin/main") && rsp.pushed && rsp.pr === "https://github.com/o/r/pull/179", rsp);
+  ok("…carrying the commit approved since (it never reached main) and the new one, not the merged one", gp("log --format=%s origin/main..HEAD") === "Third thing\nan approve after the merge" && gp("diff --name-only origin/main HEAD") === "three.txt\ntwo.txt", gp("log --format=%s origin/main..HEAD"));
+  ok("…and says so, there and in the PR", /spent's earlier PR already merged, so this starts a fresh branch from origin\/main, with the 1 commit approved on spent since that hadn't reached main\./.test(rsp.note || "") && ghA.calls.some((c) => c[1] === "create" && /with the 1 commit approved on spent/.test(c[c.length - 1])), rsp.note);
+  const spB = spentRepo("ship-spent-carried", `git show main:m.txt > m.txt && git add . && git commit -qm "carried to main by hand" && echo n > n.txt && git add . && git commit -qm "not on main" && echo four > four.txt`);
+  const gb = (a) => execSync("git " + a, { cwd: spB, encoding: "utf8", env: gitEnv }).trim();
+  const rsb = await shipChanges(spB, ["Fourth"], { gh: fakeGh(spB) });
+  ok("…one main already has (carried over by hand) is left out", rsb.ok && rsb.branch === "symbiot/fourth" && gb("log --format=%s origin/main..HEAD") === "Fourth\nnot on main" && /with the 1 commit approved on spent since that hadn't reached main \(1 already on main left out\)\./.test(rsb.note || ""), [rsb, gb("log --format=%s origin/main..HEAD")]);
+  const spC = spentRepo("ship-spent-clash", `echo mine > m.txt && git add . && git commit -qm "clashes with main" && echo five > five.txt`);
+  const gc = (a) => execSync("git " + a, { cwd: spC, encoding: "utf8", env: gitEnv }).trim();
+  const rsc = await shipChanges(spC, ["Fifth"], { gh: fakeGh(spC) });
+  ok("…one that clashes with main: it stays on the branch, as it was, with a PR of its own, and says why", rsc.ok && rsc.branch === "spent" && gc("rev-parse --abbrev-ref HEAD") === "spent" && gc("log -1 --format=%s") === "Fifth" && !/symbiot\/fifth/.test(gc("branch")) && /couldn't move to a fresh branch from origin\/main \(.*conflict/i.test(rsc.note || "") && rsc.pr === "https://github.com/o/r/pull/179" && !existsSync(join(spC, ".git", "CHERRY_PICK_HEAD")), [rsc, gc("branch")]);
+  const spD = spentRepo("ship-spent-nopr", `echo six > six.txt`);
+  const rsd = await shipChanges(spD, ["Sixth"], { gh: fakeGh(spD, { create: false }) });
+  ok("gh couldn't open the PR, and the branch's only PR merged: no PR is claimed, and it says there's nothing to merge yet", rsd.ok && rsd.pushed && !rsd.pr && /gh couldn't open the PR, so there's nothing to merge yet: GraphQL: something went wrong\. Open one from symbiot\/sixth on GitHub\./.test(rsd.note || ""), rsd);
+  const spE = spentRepo("ship-spent-open", `echo seven > seven.txt && git add . && git commit -qm x && git push -q && echo eight > eight.txt`);
+  const ghE = fakeGh(spE, { create: false, view: "OPEN" }), ghE2 = (a) => (/--state open/.test(a.join(" ")) ? { status: 0, stdout: JSON.stringify([{ headRefOid: "x" }]) } : ghE(a));
+  const rse = await shipChanges(spE, ["Eighth"], { gh: ghE2 });
+  ok("a PR from the branch is open again: it stays there, and that PR is the one", rse.ok && rse.branch === "spent" && rse.pr === "https://github.com/o/r/pull/172" && !rse.note, rse);
   // a name already taken on origin (an earlier day's PR of that name, merged), and a
   // local branch of that name that went another way: the push was refused, and the
   // approved work sat in a commit with no PR
@@ -1641,6 +1679,17 @@ try {
   ok("a download npm doesn't have yet (404) isn't ready: the update waits for it", (await downloadReady("0.63.3", "https://r.test", npmHead(404))) === false && heads[0][0] === "https://r.test/symbiot/-/symbiot-0.63.3.tgz" && heads[0][1] === "HEAD", heads);
   ok("…once it's there, it is", (await downloadReady("0.63.3", "https://r.test", npmHead(200))) === true, "");
   ok("offline, or `latest`: no waiting, npm runs and its own error says what's wrong", (await downloadReady("0.63.3", "https://r.test", npmHead("throw"))) === true && (await downloadReady("latest", "https://r.test", npmHead(404))) === true, "");
+  // it updates itself once nothing would be cut off: a release waited hours for a click on Update & restart
+  const due = (o = {}) => autoUpdateDue({ latest: "0.64.0", version: "0.63.10", idleSince: 1000, now: 1000 + 3 * 60000, settle: 2 * 60000, ...o });
+  ok("a newer version, nothing running for a while: it updates by itself", due().go === true, due());
+  ok("…not while an agent works, and says what it waits on", due({ busy: "2 agents are working" }).why === "busy" && due({ busy: "2 agents are working" }).busy === "2 agents are working" && !due({ busy: "x" }).go, due({ busy: "2 agents are working" }));
+  ok("…not straight after the last run ended (lanes start the next within 20s)", due({ now: 1000 + 30000 }).why === "settling" && due({ idleSince: 0 }).why === "settling", due({ now: 1000 + 30000 }));
+  ok("…not when it's current, already updating, or that version already failed (Try again is the user's)", due({ latest: "0.63.10" }).why === "current" && due({ latest: "" }).why === "current" && due({ updating: { target: "0.64.0" } }).why === "updating" && due({ failed: { target: "0.64.0" } }).why === "failed" && due({ failed: { target: "0.63.11" } }).go === true, "");
+  ok("…never in a sandbox, the desktop app, or with autoUpdate off", ["sandbox", "desktop", "off"].every((k) => due({ [k]: true }).why === "off"), "");
+  const rws = (o) => restartWouldStop({ handoffs: [], paths: [], running: () => null, browser: () => false, away: () => false, ...o });
+  ok("what a restart would stop: nothing", rws() === "", rws());
+  ok("…this app's runs and runs another Symbiot started (a lane's lock), each folder once; its own npm install isn't one", rws({ handoffs: [{ status: "running", path: "/a", name: "Agent: x" }, { status: "done", path: "/b" }, { status: "running", path: "/h", name: "symbiot update" }], paths: ["/a", "/c", "/d"], running: (p) => p === "/a" || p === "/c" }) === "2 agents are working" && rws({ paths: ["/c"], running: (p) => p === "/c" }) === "an agent is working", rws({ handoffs: [{ status: "running", path: "/a", name: "Agent: x" }], paths: ["/a", "/c"], running: (p) => p === "/a" || p === "/c" }));
+  ok("…a sign-in in the Symbiot Browser, or Away", rws({ browser: () => true }) === "the Symbiot Browser is open" && rws({ away: () => true }) === "Away is open", "");
   const log404 = "=== symbiot update 2026-10-12T05:02:52.078Z ===\n$ npm install -g symbiot@0.63.3 --prefer-online\nnpm error code E404\nnpm error 404 Not Found - GET https://registry.npmjs.org/symbiot/-/symbiot-0.63.3.tgz - Not found\nnpm error 404\nnpm error 404  'symbiot@https://registry.npmjs.org/symbiot/-/symbiot-0.63.3.tgz' is not in this registry.\nnpm error A complete log of this run can be found in: /x.log\n";
   const o404 = updateOutcome(log404);
   ok("npm's 404 for the download: not there yet, and the line saying so", o404.notYet && o404.why === "404 Not Found - GET https://registry.npmjs.org/symbiot/-/symbiot-0.63.3.tgz - Not found", o404);
