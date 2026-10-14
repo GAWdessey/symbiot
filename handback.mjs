@@ -24,9 +24,9 @@
 // status: waiting, replied (the next step started), stopped (you clicked Stop
 // waiting) or error (the next step couldn't start: it says why).
 import { join, basename } from "node:path";
-import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, renameSync, chmodSync } from "node:fs";
+import { readFileSync, existsSync, readdirSync, renameSync } from "node:fs";
 import { createHash, randomBytes } from "node:crypto";
-import { CONFIG_DIR, loadConfig, loadTasks, saveTasks, sameTask, clipWords } from "./core.mjs";
+import { CONFIG_DIR, loadConfig, loadTasks, saveTasks, sameTask, clipWords, readState, writeJsonAtomic } from "./core.mjs";
 import { OPS, parseAwaiting } from "./handover.mjs";
 import { FACTS, factsOf, knownRun, loadRuns, HANDOFFS, runningHandoff } from "./agents.mjs";
 import { remember, actIn } from "./mind.mjs";
@@ -65,9 +65,9 @@ function skipFacts(path) {
 }
 
 // ---- replies you're waiting on -----------------------------------------------------
-function loadWaits() { try { const d = JSON.parse(readFileSync(AWAIT_FILE, "utf8")); return { waits: Array.isArray(d.waits) ? d.waits : [] }; } catch { return { waits: [] }; } }
+function loadWaits() { try { const d = readState(AWAIT_FILE); return { waits: Array.isArray(d.waits) ? d.waits : [] }; } catch { return { waits: [] }; } }
 // Who you wrote to and about what: yours only (0600).
-function saveWaits(d) { try { mkdirSync(CONFIG_DIR, { recursive: true }); writeFileSync(AWAIT_FILE, JSON.stringify({ waits: d.waits.slice(-MAX_WAITS) }, null, 1), { mode: 0o600 }); try { chmodSync(AWAIT_FILE, 0o600); } catch {} return true; } catch { return false; } }
+function saveWaits(d) { try { writeJsonAtomic(AWAIT_FILE, { waits: d.waits.slice(-MAX_WAITS) }, { indent: 1, mode: 0o600 }); return true; } catch { return false; } }
 const readSym = (path, f) => { try { return readFileSync(join(path, ".symbiot", f), "utf8"); } catch { return ""; } };
 // A subject without its "Re:", "Fwd:" and "AW:" (one or several), and with its spacing and case set aside.
 const subjectCore = (s) => String(s || "").toLowerCase().replace(/^\s*(?:(?:re|fwd?|aw|sv|antw|wg)\s*(?:\[\d+\])?\s*:\s*)+/i, "").replace(/\s+/g, " ").trim();

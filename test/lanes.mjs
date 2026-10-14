@@ -138,6 +138,23 @@ try {
   ok("the result is reported, but coral's run isn't forced past the user's step (it starts once .env changes)", tw.reported.length === 1 && calls.run.length === runsW + 1 && calls.run.slice(-1)[0].o.force === false && /Found it in the export/.test(read(coral, "ANSWERS.md")), [tw.reported.length, calls.run.slice(-1)]);
   rmSync(join(coral, ".symbiot", "waiting.json"));
 
+  console.log("A HANDOVER THAT FINISHED NOTHING — the lane waiting on it isn't forced to start again (14 Oct 2026 audit)");
+  {
+    const { report } = await import("../lanes.mjs"), A = await import("../agents.mjs");
+    const opsRun = join(CFG, "drafts", "act-nofin"); put(opsRun, "TASKS.md", "- [ ] Check the number switch\n"); ran(opsRun, Date.now() - 1000, "The switch isn't live yet.");
+    const e = { from: { lane: "coral", path: coral }, to: { lane: "ops", path: opsRun }, text: "Check the number switch", at: Date.now() - 60000 };
+    const o = outcome(e, { running: () => false, tasks: [] }), runs = [], r = (p, opt) => { runs.push(opt); return { id: "x" }; };
+    ok("ops stopped without finishing: reported, but coral's run isn't forced (blockedAgain decides)", /It stopped without finishing/.test(o.text) && !o.settled && report(e, o, { run: r, running: () => false, waiting: () => null }) && runs[0].force === false, [o, runs]);
+    put(opsRun, "TASKS.md", "- [x] Check the number switch\n");
+    const done = outcome(e, { running: () => false, tasks: [] });
+    ok("…once it's done, it is forced, as before", done.settled && report(e, done, { run: r, running: () => false, waiting: () => null }) && runs[1].force === true, runs);
+    ok("…and a handover that couldn't be made is news too", outcome({ ...e, status: "error", error: "no lane" }, {}).settled, "");
+    const md = "# Answers\n\n### Which port?\n3000\n_answered 2026-10-14_\n";
+    const plusNotes = md + "\n### Handed over to ops: x\nIt stopped without finishing (the ops agent).\n_answered by symbiot (handover) 2026-10-14_\n\n### Garth's answer to ops, on the same work as you\nabout outlook.live.com too\n_shared by Symbiot 2026-10-14 (background)_\n\n### More from coral while you ran\nx\n_symbiot (handover) 2026-10-14_\n";
+    ok("the answers a blocked lane's inputs hash are only the user's: Symbiot's own notes don't count as something new", A.userAnswers(plusNotes) === A.userAnswers(md) && A.userAnswers(md + "\n### Which host?\nlenovo\n_answered 2026-10-14_\n") !== A.userAnswers(md), A.userAnswers(plusNotes));
+    ok("…but an answer shared from a linked lane still counts", A.userAnswers(md + "\n### Garth's answer to ops\nyes\n_shared by Symbiot 2026-10-14_\n") !== A.userAnswers(md), "");
+  }
+
   console.log("TO ANOTHER REPO — coral hands GhostAIChat its part");
   put(coral, "HANDOFF.md", "### GhostAIChat\nBuild the debug APK with the JDK at ~/.gradle/jdks/eclipse_adoptium-17.\n");
   runResult = () => ({ busy: true });
@@ -570,6 +587,12 @@ try {
     ok("each gets it in its ANSWERS.md: the question, Garth's answer, and to use it and not ask if it settles its own", sh.length === 2 && opsAns.includes(said) && opsAns.includes(q1) && /Garth's answer to evra_platform/.test(opsAns) && /take that question out of QUESTIONS.md/.test(opsAns) && /answered by Garth's reply to evra_platform/.test(opsAns) && /ask only the part that's left/.test(opsAns), opsAns);
     ok("…with a question open and no run going, each starts on it and decides", started.sort().join() === [evraOps, other].sort().join() && sh.every((r) => r.started), [started, sh]);
     ok("…the others are left alone", !read(elsewhere, "ANSWERS.md") && !read(spent, "ANSWERS.md"), "");
+    // a lane whose open task names evra_avm, but none of its questions: it gets the answer as background, and isn't started on it
+    const bystander = join(CFG, "drafts", "act-evra04"); ask(bystander, ["Which Cloudflare zone?"], "For the DNS."); put(bystander, "TASKS.md", "- [ ] Move evra_avm's DNS\n");
+    started.length = 0;
+    const bs = shareAnswer(evra, [{ q: q1, a: "evra_avm: check the replica too" }], { ...o, runs: () => [...runsList, { path: bystander }] });
+    ok("an answer that matches only a lane's task, not its question, is background: it gets it, nothing starts there", bs.some((r) => r.path === bystander && !r.started) && !started.includes(bystander) && /_shared by Symbiot [^\n]*\(background\)_/.test(read(bystander, "ANSWERS.md")), [bs, started]);
+    ok("…while a lane whose question it bears on still starts", started.includes(other) && !/\(background\)/.test(read(other, "ANSWERS.md")), started);
     started.length = 0;
     ok("the same answer again isn't shared twice", shareAnswer(evra, [{ q: q1, a: said }], o).length === 0 && !started.length && read(evraOps, "ANSWERS.md").split(said).length === 2, "");
     const busyRun = shareAnswer(evra, [{ q: q1, a: "or set up our own supabase" }], { ...o, running: (p) => p === evraOps });

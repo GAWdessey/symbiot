@@ -24,7 +24,7 @@ import { fileURLToPath } from "node:url";
 import { readFileSync, writeFileSync, mkdirSync, chmodSync, readdirSync, statSync } from "node:fs";
 import { execFile } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { VERSION, CONFIG_DIR, loadConfig, saveConfig } from "./core.mjs";
+import { VERSION, CONFIG_DIR, loadConfig, saveConfig, readState, writeJsonAtomic } from "./core.mjs";
 import { readPage, readLinkedIn, siteUrl, isTrusted, signIn } from "./headless.mjs";
 import { loadScreens } from "./screens.mjs";
 import { desktopNotify } from "./desktop.mjs";
@@ -44,12 +44,12 @@ const MAX_WATCHES = 40, MAX_SEEN = 1000, MAX_NEWS = 1000, MAX_PER_READ = 25, MAX
 
 function loadWatch() {
   const list = (d, k) => (Array.isArray(d[k]) ? d[k] : []);
-  try { const d = JSON.parse(readFileSync(WATCH_FILE, "utf8")); return { watches: list(d, "watches"), news: list(d, "news"), briefs: list(d, "briefs") }; }
+  try { const d = readState(WATCH_FILE); return { watches: list(d, "watches"), news: list(d, "news"), briefs: list(d, "briefs") }; }
   catch { return { watches: [], news: [], briefs: [] }; }
 }
 // What's new can be your mail's senders and subjects, so it's yours only (0600).
 function saveWatch(d) {
-  try { mkdirSync(CONFIG_DIR, { recursive: true }); writeFileSync(WATCH_FILE, JSON.stringify(d, null, 2), { mode: 0o600 }); try { chmodSync(WATCH_FILE, 0o600); } catch {} return true; }
+  try { writeJsonAtomic(WATCH_FILE, d, { mode: 0o600 }); return true; }
   catch { return false; }
 }
 const hostOf = (url) => { try { return new URL(url).hostname.replace(/^www\./, ""); } catch { return ""; } };

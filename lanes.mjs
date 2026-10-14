@@ -20,11 +20,11 @@
 // User-Agent fix for symbiot was only found in lanes.json (2026-10-12).
 import { join, basename, dirname, resolve, relative } from "node:path";
 import { homedir } from "node:os";
-import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, chmodSync, statSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, statSync } from "node:fs";
 import { createHash, randomBytes } from "node:crypto";
 import { execFile } from "node:child_process";
-import { CONFIG_DIR, loadTasks, clipWords, loadConfig } from "./core.mjs";
-import { runHandoff, runningHandoff, waitingFor, agentQuestions, findOrcaCli, installAllowlist, writeTasks, workOf, loadRuns } from "./agents.mjs";
+import { CONFIG_DIR, loadTasks, clipWords, loadConfig, readState, writeJsonAtomic } from "./core.mjs";
+import { runHandoff, runningHandoff, waitingFor, agentQuestions, findOrcaCli, installAllowlist, writeTasks, workOf, loadRuns, allAnswers } from "./agents.mjs";
 import { addTask, removeTask, pushTasks } from "./tasks.mjs";
 import { actNow, actBrief } from "./mind.mjs";
 import { laneMap } from "./scan.mjs";
@@ -36,9 +36,9 @@ const LEDGER = join(CONFIG_DIR, "lanes.json");
 const ACT_DIR = join(CONFIG_DIR, "drafts");
 const MAX_KEEP = 200, MAX_CHAIN = 4, TAIL = 4000;
 
-function loadLedger() { try { const d = JSON.parse(readFileSync(LEDGER, "utf8")); return { handoffs: Array.isArray(d.handoffs) ? d.handoffs : [] }; } catch { return { handoffs: [] }; } }
+function loadLedger() { try { const d = readState(LEDGER); return { handoffs: Array.isArray(d.handoffs) ? d.handoffs : [] }; } catch { return { handoffs: [] }; } }
 // It can name accounts and what's in them: yours only (0600).
-function saveLedger(d) { try { mkdirSync(CONFIG_DIR, { recursive: true }); writeFileSync(LEDGER, JSON.stringify({ handoffs: d.handoffs.slice(-MAX_KEEP) }, null, 1), { mode: 0o600 }); try { chmodSync(LEDGER, 0o600); } catch {} return true; } catch { return false; } }
+function saveLedger(d) { try { writeJsonAtomic(LEDGER, { handoffs: d.handoffs.slice(-MAX_KEEP) }, { indent: 1, mode: 0o600 }); return true; } catch { return false; } }
 const readSym = (path, f) => { if (f === "agent.log") return readRunLog(join(path, ".symbiot", f)); try { return readFileSync(join(path, ".symbiot", f), "utf8"); } catch { return ""; } };
 const firstLine = (t) => String(t || "").split("\n").find((l) => l.trim()) || "";
 
@@ -233,22 +233,22 @@ function aboutIt(words, text) {
 // is ticked or its run ended, and no agent is working there. Waiting on the
 // user's answer to a question there isn't done: that's in the Agents tab.
 function outcome(e, { tasks = loadTasks(), running = runningHandoff } = {}) {
-  if (e.status === "error") return { text: `Couldn't hand it over: ${e.error}` };
+  if (e.status === "error") return { text: `Couldn't hand it over: ${e.error}`, settled: true };
   // Symbiot's own code: no agent will ever start there to clear this, so say so now
   // rather than waiting forever (a parked lane or a Pro limit can still clear on its
   // own, so only this, self-marked reason short-circuits the wait below).
-  if (e.status === "blocked" && e.self) return { text: `${e.note} It's on ${e.to.lane}'s own task list now, on the Workdesk for the user to pick up — no agent will start it, so don't hand this over again.` };
+  if (e.status === "blocked" && e.self) return { text: `${e.note} It's on ${e.to.lane}'s own task list now, on the Workdesk for the user to pick up — no agent will start it, so don't hand this over again.`, settled: true };
   const p = e.to.path; if (!p || running(p)) return null;
   if (lastRunStart(p) < e.at) return null; // its run hasn't started yet (held while that lane was busy)
   if (openQuestions(p) && !/^- \[x\]/im.test(readSym(p, "TASKS.md"))) return null; // waiting on the user, in that lane
   const words = lastWords(p);
   if (e.to.lane === OPS) {
     const ticked = /^- \[x\]/im.test(readSym(p, "TASKS.md"));
-    return { text: `${ticked ? "Done" : "It stopped without finishing"} (the ops agent).${words ? `\n\nWhat it said:\n${words}` : ""}` };
+    return { text: `${ticked ? "Done" : "It stopped without finishing"} (the ops agent).${words ? `\n\nWhat it said:\n${words}` : ""}`, settled: ticked };
   }
   const t = tasks.find((x) => x.id === e.task);
   const done = t && (t.review || t.done || t.archived), about = aboutIt(words, e.text);
-  return { text: `${done ? `Done in ${e.to.lane}: the task is ticked, and its changes wait for the user's review in Symbiot` : `${e.to.lane}'s agent stopped without ticking it`}.${about ? `\n\nWhat it said about this:\n${about}` : words ? `\n\nIts last message was about other work in ${e.to.lane}, not this.` : ""}` };
+  return { text: `${done ? `Done in ${e.to.lane}: the task is ticked, and its changes wait for the user's review in Symbiot` : `${e.to.lane}'s agent stopped without ticking it`}.${about ? `\n\nWhat it said about this:\n${about}` : words ? `\n\nIts last message was about other work in ${e.to.lane}, not this.` : ""}`, settled: !!done };
 }
 // A run that stopped partway: questions to the user still open, or work it
 // handed to another lane that hasn't come back (the ledger, or HANDOFF.md not
@@ -337,7 +337,11 @@ function noteSent(path, asked, ledger) {
 // Tell the agent that asked: the result as an answer in its ANSWERS.md, then
 // start it again to carry on (unless it's still running: it reads it next time).
 // Not past a step of the user's it waits on (a key for .env, "don't start another
-// run until it's in"): that run starts by itself once the step's done.
+// run until it's in"): that run starts by itself once the step's done. Forced only
+// when the handover settled something (done, or it never will be): "it stopped
+// without finishing" gives a lane waiting on it nothing new, and forcing it started
+// that lane again on every such report (the 14 Oct 2026 audit). Unforced, it starts
+// only if its last run wasn't waiting on the same things (agents.mjs blockedAgain).
 function report(e, o, { run = runHandoff, running = runningHandoff, waiting = waitingFor, now = Date.now() } = {}) {
   const p = e.from.path, file = join(p, ".symbiot", "ANSWERS.md");
   try {
@@ -345,7 +349,7 @@ function report(e, o, { run = runHandoff, running = runningHandoff, waiting = wa
     const had = existsSync(file) ? readFileSync(file, "utf8") : "# Answers\nAnswers to your questions, and what other lanes did with what you handed over, newest last.\n";
     writeFileSync(file, `${had.replace(/\s*$/, "")}\n\n### Handed over to ${e.to.lane}: ${clipWords(firstLine(e.text), 120)}\n${o.text}\n_answered by symbiot (handover) ${new Date(now).toISOString().slice(0, 10)}_\n`);
   } catch { return false; }
-  if (!running(p)) run(p, { force: !waiting(p) });
+  if (!running(p)) run(p, { force: !!o.settled && !waiting(p) });
   return true;
 }
 
@@ -558,7 +562,7 @@ const SHARED = join(CONFIG_DIR, "answers-shared.json"), SHARED_KEEP = 200, LINK_
 // What names the work: an id with an underscore (evra_avm), an IPv4 address, a domain.
 const TOPIC = /\b(?:[a-z][a-z0-9]*(?:_[a-z0-9]+)+|\d{1,3}(?:\.\d{1,3}){3}|[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:com|co\.za|io|dev|net|org|app|ai))\b/gi;
 const topicsOf = (t) => new Set((String(t || "").match(TOPIC) || []).map((x) => x.toLowerCase()).filter((x) => x.length >= 5));
-function loadShared() { try { const l = JSON.parse(readFileSync(SHARED, "utf8")); return Array.isArray(l) ? l : []; } catch { return []; } }
+function loadShared() { try { const l = readState(SHARED); return Array.isArray(l) ? l : []; } catch { return []; } }
 const whoAnswers = (cfg = loadConfig()) => String(((cfg && cfg.profile) || {}).name || "").trim().split(/\s+/)[0] || "the user";
 // The folders a handover links to path, either way, and one step on (the run evra_platform
 // handed sts-prod's checks to, and anything that run handed on), within LINK_DAYS.
@@ -579,6 +583,7 @@ function onIt(p, running) {
   return { qs, going: !!running(p), open, live: qs.length > 0 || !!running(p) || open };
 }
 // What an agent folder is about, for topics: its open questions and its open tasks.
+const asksOf = (qs) => qs.map((q) => `${q.q} ${q.context || ""}`).join("\n");
 const aboutOf = (p, qs) => [...qs.map((q) => `${q.q} ${q.context || ""}`), ...readSym(p, "TASKS.md").split("\n").filter((l) => /^\s*-\s*\[ \]/.test(l))].join("\n");
 // The other agents an answer at path concerns: [{ path, lane, why: "handover" | topic, qs, going }].
 function answerReaches(path, text, { ledger = loadLedger(), runs = () => loadRuns(), running = runningHandoff, map = laneMap(), now = Date.now() } = {}) {
@@ -588,14 +593,18 @@ function answerReaches(path, text, { ledger = loadLedger(), runs = () => loadRun
     if (p === path || out.has(p) || !existsSync(p)) continue;
     const o = onIt(p, running); if (!o.live) continue;
     const hit = [...topicsOf(aboutOf(p, o.qs))].find((t) => topics.has(t));
-    if (hit) out.set(p, { path: p, lane: laneOf(p, map), why: hit, qs: o.qs, going: o.going });
+    if (hit) out.set(p, { path: p, lane: laneOf(p, map), why: hit, qs: o.qs, going: o.going, asks: [...topicsOf(asksOf(o.qs))].some((t) => topics.has(t)) });
   }
   return [...out.values()];
 }
 const shareKey = (path, q, a) => createHash("sha1").update(path + "\n" + q + "\n" + a).digest("hex").slice(0, 16);
 // The user answered rows ([{ q, a }]) of the agent at path: each other agent on that work gets
 // them in its ANSWERS.md, with what to do; one with a question open and no run going starts on
-// them. Gives [{ path, lane, why, started? }]. card: the question's words as Home showed them.
+// them, when the answer bears on that question: a handover links them, or a question of its own
+// names the same thing. One that matched only on a task's words gets it as background, starts
+// nothing, and it doesn't count as an answer for it (agents.mjs userAnswers): Garth's Outlook
+// answers to ops reached the symbiot lane "about outlook.live.com too" (14 Oct 2026).
+// Gives [{ path, lane, why, started? }]. card: the question's words as Home showed them.
 function shareAnswer(path, rows, { run = runHandoff, now = Date.now(), cfg = loadConfig(), ...o } = {}) {
   rows = (rows || []).filter((x) => x && x.q && String(x.a || "").trim()); if (!rows.length) return [];
   const map = o.map || laneMap(), from = laneOf(path, map), who = whoAnswers(cfg), list = loadShared();
@@ -604,24 +613,24 @@ function shareAnswer(path, rows, { run = runHandoff, now = Date.now(), cfg = loa
   const day = new Date(now).toISOString().slice(0, 10), out = [];
   for (const r of reach) {
     const file = join(r.path, ".symbiot", "ANSWERS.md"), had = existsSync(file) ? readFileSync(file, "utf8") : "# Answers from the user\n";
-    const why = r.why === "handover" ? `it's on the same work as you (one of you handed it to the other)` : `it's about ${r.why} too`;
-    const md = fresh.map((x) => `\n### ${who}'s answer to ${from}, on the same work as you\n${who} answered another agent's question, and ${why}:\n> ${clipWords(x.q.replace(/\s+/g, " "), 300)}\n\n${who}'s answer: ${x.a.trim()}\n\nIf it settles a question of yours (one open in .symbiot/QUESTIONS.md, or one you were about to ask), use it and don't ask: take that question out of QUESTIONS.md and say "answered by ${who}'s reply to ${from}: \"${clipWords(x.q.replace(/\s+/g, " "), 80)}\"" in your last message. If it settles only part, ask only the part that's left. If it doesn't bear on yours, carry on as you were.\n_shared by Symbiot ${day}_\n`).join("");
+    const why = r.why === "handover" ? `it's on the same work as you (one of you handed it to the other)` : `it's about ${r.why} too`, bears = r.why === "handover" || !!r.asks;
+    const md = fresh.map((x) => `\n### ${who}'s answer to ${from}, on the same work as you\n${who} answered another agent's question, and ${why}:\n> ${clipWords(x.q.replace(/\s+/g, " "), 300)}\n\n${who}'s answer: ${x.a.trim()}\n\nIf it settles a question of yours (one open in .symbiot/QUESTIONS.md, or one you were about to ask), use it and don't ask: take that question out of QUESTIONS.md and say "answered by ${who}'s reply to ${from}: \"${clipWords(x.q.replace(/\s+/g, " "), 80)}\"" in your last message. If it settles only part, ask only the part that's left. If it doesn't bear on yours, carry on as you were.\n_shared by Symbiot ${day}${bears ? "" : " (background)"}_\n`).join("");
     try { mkdirSync(join(r.path, ".symbiot"), { recursive: true }); writeFileSync(file, had.replace(/\s*$/, "\n") + md); } catch { continue; }
     const row = { path: r.path, lane: r.lane, why: r.why };
     // a question of its own waits on the user: it starts now and decides, rather than waiting to be answered too
-    if (r.qs.length && !r.going) { const e = run(r.path) || {}; if (e.id && !e.busy && !e.blocked) row.started = e.id; }
+    if (bears && r.qs.length && !r.going) { const e = run(r.path) || {}; if (e.id && !e.busy && !e.blocked) row.started = e.id; }
     out.push(row);
   }
   const at = new Date(now).toISOString();
   for (const x of fresh) list.push({ key: shareKey(path, x.q, x.a), at, from: path, lane: from, q: clipWords(x.q, 300), a: String(x.a).trim().slice(0, 2000), topics: [...topicsOf(`${x.q}\n${x.a}`)], to: out.map((r) => r.path) });
-  try { mkdirSync(CONFIG_DIR, { recursive: true }); writeFileSync(SHARED, JSON.stringify(list.slice(-SHARED_KEEP), null, 1)); } catch {}
+  try { writeJsonAtomic(SHARED, list.slice(-SHARED_KEEP), { indent: 1 }); } catch {}
   return out;
 }
 // A repo lane's run reads them in its ANSWERS.md (its TASKS.md is a brief for many tasks), once.
 function noteShared(p, block) {
   if (!block || !p) return;
   const file = join(p, ".symbiot", "ANSWERS.md");
-  try { const had = existsSync(file) ? readFileSync(file, "utf8") : "# Answers from the user\n"; if (had.includes(block.split("\n").slice(2).join("\n"))) return; mkdirSync(join(p, ".symbiot"), { recursive: true }); writeFileSync(file, had.replace(/\s*$/, "\n") + "\n" + block.replace(/^## /, "### ") + "\n"); } catch {}
+  try { const had = existsSync(file) ? readFileSync(file, "utf8") : "# Answers from the user\n"; if (allAnswers(p).includes(block.split("\n").slice(2).join("\n"))) return; mkdirSync(join(p, ".symbiot"), { recursive: true }); writeFileSync(file, had.replace(/\s*$/, "\n") + "\n" + block.replace(/^## /, "### ") + "\n"); } catch {}
 }
 // The newest answer shared with the agent at p (shareAnswer), for its card on Home: { lane, a, at, who } or null.
 function sharedTo(p, { now = Date.now(), within = 2 * 86400000, cfg = loadConfig() } = {}) {

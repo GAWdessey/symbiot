@@ -10,18 +10,23 @@ const key = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").tri
 const SAYS_NO = /^\s*(skip|no|nope|don'?t|do not|cancel|leave it|never ?mind|stop)\b/i;
 function doneList() { try { const l = JSON.parse(readFileSync(FILE(), "utf8")); return Array.isArray(l) ? l : []; } catch { return []; } }
 // q: the question, a: what the user answered. A "skip" or "no" isn't a done ask: it may come back.
-function recordDone(q, a) {
+// lane: whose question it was, so a brief lists only its own lane's (doneBrief).
+function recordDone(q, a, lane = "") {
   const k = key(q); if (!k || !String(a || "").trim() || SAYS_NO.test(a)) return false;
   const l = doneList().filter((x) => x.k !== k);
-  l.push({ k, q: String(q).trim().slice(0, 200), a: String(a).trim().slice(0, 200), at: new Date().toISOString().slice(0, 10) });
+  l.push({ k, q: String(q).trim().slice(0, 200), a: String(a).trim().slice(0, 200), at: new Date().toISOString().slice(0, 10), ...(lane ? { lane: String(lane) } : {}) });
   try { mkdirSync(CONFIG_DIR, { recursive: true }); writeFileSync(FILE(), JSON.stringify(l.slice(-KEEP), null, 1)); } catch { return false; }
   return true;
 }
 const isDone = (q) => { const k = key(q); return !!k && doneList().some((x) => x.k === k); };
-// For a brief: what's already answered, so no agent asks it again.
-const doneBrief = (n = 20) => {
-  const l = doneList().slice(-n); if (!l.length) return [];
-  return ["## Already answered: don't ask these again", ...l.map((x) => `- ${x.q} → ${x.a}`), ""];
+// For a brief: what's already answered in this lane, so its agent doesn't ask it again. It
+// was the last 20 from every lane, whole: 4,500 characters of other lanes' answers in every
+// run's brief (the audit, 2026-10-14). Its own answers are in its ANSWERS.md too, so a few,
+// clipped, are enough. Home still checks every lane's (isDone).
+const clip = (s, n) => { s = String(s || "").replace(/\s+/g, " ").trim(); return s.length > n ? s.slice(0, n - 1).replace(/\s+\S*$/, "") + "…" : s; };
+const doneBrief = (lane = "", n = 5) => {
+  const l = doneList().filter((x) => lane && x.lane === lane).slice(-n); if (!l.length) return [];
+  return ["## Already answered: don't ask these again", ...l.map((x) => `- ${clip(x.q, 120)} → ${clip(x.a, 120)}`), ""];
 };
 
 // ---- standing rules: what the user and chat agree, for every agent ----------
@@ -34,6 +39,7 @@ const BASE = [
   "Never name a provider you haven't confirmed (a mailbox's host, a site's login system): check its MX or DNS records first, or ask which it is. Don't build a question's choices on a guess.",
   "Never ask which repo, project or lane you're in, or what a Symbiot page is: your folder's name, its git remote, your lane and this brief say so. Symbiot's pages are Home, Dashboard (board), Workdesk (tasks), Reports, Marketing, Week, Standup, Todo, Drift, Map, Settings and Archive.",
   "When asks are needed, put them in ONE question, never several for the same cause.",
+  "A send or a save is done only when the saved record shows it, never the form you filled: after sending an email or an invite, saving a meeting or adding guests, run `symbiot screens verify <the record's address> --expect \"<a guest, a subject>\"` (it reloads the page fresh) or read Sent Items, and report it only if that finds it. If it doesn't, say it isn't done.",
   "Never ask the user to close or click Done in the Symbiot Browser: if it's open, wait and retry on a shared resource, and ask only if they're mid-sign-in. That is never an \"only you\" step.",
 ];
 function standingList() { try { const l = JSON.parse(readFileSync(RULES(), "utf8")); return Array.isArray(l) ? l.filter((x) => x && x.rule) : []; } catch { return []; } }

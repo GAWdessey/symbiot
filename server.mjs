@@ -13,12 +13,12 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { gunzipSync } from "node:zlib";
 import { readRunLog } from "./work.mjs";
-import { readFileSync, existsSync, mkdirSync, writeFileSync, readdirSync, statSync, unlinkSync, realpathSync } from "node:fs";
+import { readFileSync, existsSync, mkdirSync, writeFileSync, readdirSync, statSync, unlinkSync, realpathSync, appendFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { randomBytes } from "node:crypto";
 import { EMBEDDED_UI } from "./ui.mjs";
-import { VERSION, LATEST_VERSION, REGISTRY, semverGt, checkLatest, CONFIG_PATH, loadConfig, saveConfig, moveSecrets, loadTasks, hasCmd, chromeBinary, CONFIG_DIR } from "./core.mjs";
-import { onAnswered, shSingle, handoffCmd, setHandoffCmd, grantAgent, runHandoff, track, detectHandoffs, connectorsInfo, linkReach, answerQuestions, skipIdea, agentsList, startWaiting, parkLane, parkedPaths, autoAllowSweep, continueLanes, trustFull, readLastWords, sandboxState, HANDOFFS, runningHandoff } from "./agents.mjs";
+import { VERSION, LATEST_VERSION, REGISTRY, semverGt, checkLatest, CONFIG_PATH, loadConfig, saveConfig, moveSecrets, loadTasks, hasCmd, chromeBinary, CONFIG_DIR, takeAppLock, releaseAppLock } from "./core.mjs";
+import { onAnswered, shSingle, handoffCmd, setHandoffCmd, grantAgent, runHandoff, track, detectHandoffs, connectorsInfo, linkReach, answerQuestions, skipIdea, agentsList, startWaiting, parkLane, parkedPaths, autoAllowSweep, continueLanes, trustFull, readLastWords, sandboxState, HANDOFFS, runningHandoff, runsTick } from "./agents.mjs";
 import { PROVIDERS, resolveProvider, connectProvider, detectHardware, recommendModels, hasOllama, ollamaInstall, ensureOllama, useOllamaModel } from "./ai.mjs";
 import { SCAN, SCAN_TIMEOUT_MS, scanRoots, scanHome, addScanRoot, removeScanRoot, buildMap, nodeDetail, repoPathMap, laneMap, setScanOptions, refreshRepos, REPO_STATE, reposState } from "./scan.mjs";
 import { computeDrift } from "./drift.mjs";
@@ -27,7 +27,7 @@ import { addTask, toggleTask, removeTask, restoreTask, syncTasks, taskType, push
 import { repoReview, repoSuggest, folderSuggest, taskChat, clearTaskChat, mailState, setMail, sentMail, produce, releaseNotes } from "./writeups.mjs";
 import { listSecrets, getSecret, markUsed, deleteSecret } from "./vault.mjs";
 import { loadScreens, screenImage, captureScreen, splitScreen, listMonitors, allowScreenshots, importScreen, setRegions, renameScreen, removeScreen, blueprint, clickRegion } from "./screens.mjs";
-import { mapPage, wholePage, pressRegion, typeRegion, chooseRegion, fillForm, uploadRegion, scrollPage, signIn, keepBrowserOpen, isTrusted, trustedSites, trustSite, untrustSite, openSymbiotBrowser, closeSymbiotBrowser, onBrowserClosed, setBrowserHub, siteUrl, browserHub, windowOpen } from "./headless.mjs";
+import { mapPage, wholePage, pressRegion, typeRegion, chooseRegion, fillForm, verifyPage, uploadRegion, scrollPage, signIn, keepBrowserOpen, isTrusted, trustedSites, trustSite, untrustSite, openSymbiotBrowser, closeSymbiotBrowser, onBrowserClosed, setBrowserHub, siteUrl, browserHub, windowOpen } from "./headless.mjs";
 import { weeklyState, setWeekly, runWeekly, startWeekly, autostartState, setAutostart, installLauncher, iconSvg, setLauncherLook } from "./desktop.mjs";
 import { markNews, newsSince, watchState, addWatch, setEvery, removeWatch, clearNews, seenWatch, checkWatch, startWatches, setBrief, draftReply, openChat, watchBoard, boardChat, clearBoardChat } from "./watch.mjs";
 import { linksState, linkSite, checkLink, unlinkSite, addSite, signInAsked, sitesCheck } from "./links.mjs";
@@ -286,9 +286,39 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
   // handing this port over and its window is still open, so finding it here would
   // open a second window and exit, leaving nothing serving either window.
   const RELAUNCH = process.env.SYMBIOT_RELAUNCH === "1"; delete process.env.SYMBIOT_RELAUNCH;
+  // The lock first (core.mjs takeAppLock): an app that holds it is running, answering or
+  // not. A busy one is waited on for longer, and if it still doesn't answer, its window
+  // is opened anyway (it reconnects once the app is free) rather than starting a second.
+  if (!process.env.SYMBIOT_FORCE_NEW) {
+    const h = takeAppLock(PORT, { takeOver: RELAUNCH });
+    if (h) {
+      const p = await askRunningApp("ping", { port: PORT, token: TOKEN, ms: 10000 });
+      const url = `http://127.0.0.1:${PORT}/?t=${TOKEN}`, how = process.env.SYMBIOT_NO_OPEN === "1" ? "" : openApp(url);
+      console.log(`\n${c.g("●")} ${c.b("Symbiot")} is already running (${p && p.version ? "v" + p.version : "pid " + h.pid + ", busy right now"}) at ${c.b(url)}`);
+      console.log(how ? c.d(`  Opened the existing window (${/^[aeiou]/.test(how) ? "an" : "a"} ${how}).`) : c.d("  Open that URL in your browser."));
+      console.log(c.d("  (Not starting a second copy. Set SYMBIOT_FORCE_NEW=1 to force one.)"));
+      return;
+    }
+    process.on("exit", releaseAppLock);
+  }
+  // Node ends the app on an error nothing caught (an unhandled rejection too, since
+  // Node 15), and every agent it was watching lost its exit bookkeeping. One slip in a
+  // background timer isn't worth that: it's logged (~/.config/symbiot/crash.log) and the
+  // app carries on, unless they keep coming (more than 20 in a minute: then it's broken).
+  const slips = [];
+  const slip = (kind) => (err) => {
+    const now = Date.now(); slips.push(now); while (slips.length && now - slips[0] > 60000) slips.shift();
+    const line = `${new Date(now).toISOString()} ${kind}: ${(err && err.stack) || err}\n`;
+    try { process.stderr.write("symbiot: " + line); } catch {}
+    try { mkdirSync(CONFIG_DIR, { recursive: true }); appendFileSync(join(CONFIG_DIR, "crash.log"), line); } catch {}
+    if (slips.length > 20) process.exit(1);
+  };
+  process.on("uncaughtException", slip("uncaught"));
+  process.on("unhandledRejection", slip("unhandled rejection"));
   if (!process.env.SYMBIOT_FORCE_NEW && !RELAUNCH) {
     const p = await askRunningApp("ping", { port: PORT, token: TOKEN });
     if (p && p.version) {
+      releaseAppLock(); // a Symbiot from before the lock
       setBrowserHub(`http://127.0.0.1:${PORT}/browser?t=${TOKEN}`);
       const url = `http://127.0.0.1:${PORT}/?t=${TOKEN}`; const how = process.env.SYMBIOT_NO_OPEN === "1" ? "" : openApp(url);
       console.log(`\n${c.g("●")} ${c.b("Symbiot")} is already running (v${p.version}) at ${c.b(url)}`);
@@ -528,7 +558,8 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       if (u.pathname === "/api/screens/replace" && req.method === "POST") { const b = await readBody(req); return json(res, screenOut(await typeRegion(String(b.id || ""), String(b.region || ""), b.text, { enter: b.enter === true, confirmed: b.confirmed === true, noSend: b.noSend === true, replace: String(b.replace == null ? "" : b.replace), who: String(b.who || "") }))); }
       // choose: an option in a menu (a <select>, or the site's own), asked like press and type
       if (u.pathname === "/api/screens/choose" && req.method === "POST") { const b = await readBody(req); return json(res, screenOut(await chooseRegion(String(b.id || ""), String(b.region || ""), b.option, { confirmed: b.confirmed === true, who: String(b.who || "") }))); }
-      if (u.pathname === "/api/screens/fill" && req.method === "POST") { const b = await readBody(req); return json(res, screenOut(await fillForm(String(b.id || ""), Array.isArray(b.fields) ? b.fields.map((f) => ({ region: String(f.region || ""), text: f.text })) : [], { press: String(b.press || ""), confirmed: b.confirmed === true, noSend: b.noSend === true }))); }
+      if (u.pathname === "/api/screens/fill" && req.method === "POST") { const b = await readBody(req); return json(res, screenOut(await fillForm(String(b.id || ""), Array.isArray(b.fields) ? b.fields.map((f) => ({ region: String(f.region || ""), text: f.text })) : [], { press: String(b.press || ""), confirmed: b.confirmed === true, noSend: b.noSend === true, who: String(b.who || "") }))); }
+      if (u.pathname === "/api/screens/verify" && req.method === "POST") { const b = await readBody(req); return json(res, await verifyPage(String(b.url || ""), Array.isArray(b.expect) ? b.expect : [], { who: String(b.who || "") })); }
       // upload: a file of yours to the page's file box, asked like press and type
       if (u.pathname === "/api/screens/upload" && req.method === "POST") { const b = await readBody(req); return json(res, screenOut(await uploadRegion(String(b.id || ""), String(b.region || ""), Array.isArray(b.files) ? b.files.map(String) : String(b.files || ""), { confirmed: b.confirmed === true, who: String(b.who || "") }))); }
       if (u.pathname === "/api/screens/trusted") return json(res, { sites: trustedSites() });
@@ -780,6 +811,8 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
         console.log(how ? c.d(`  Opened the existing window (${/^[aeiou]/.test(how) ? "an" : "a"} ${how}).`) : c.d("  Open that URL in your browser."));
         process.exit(0);
       }
+      // only this app holds the lock (or SYMBIOT_FORCE_NEW asked for a second): the port is
+      // something else's, so it serves on another (a phone's Termux Symbiot holds 7391)
       try { server.listen(0, "127.0.0.1"); } catch {}
     });
   });
@@ -794,6 +827,8 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
   startPhone();
   onAnswered((path, rows) => shareAnswer(path, rows)); // an answer to one agent reaches the others on the same work
   setInterval(() => { try { startWaiting(); } catch {} }, 20000).unref(); // a run that waits for your step starts once the file it names changes
+  setInterval(() => { try { runsTick(); } catch {} }, 60000).unref(); // a run silent too long is stopped; one that ended while Symbiot was down gets its exit's bookkeeping (agents.mjs)
+  setTimeout(() => { try { runsTick(); } catch {} }, 5000).unref();
   setInterval(() => { try { mergeEnded({ addTask }); } catch {} }, 20000).unref(); // runs beside a lane's own that ended (also while Symbiot was down): merged back into the lane
   setInterval(() => { try { workTick(); } catch {} }, 20000).unref(); // a waiting task starts once its lane is free (config.autoStart: false leaves it to Go)
   setInterval(() => { try { lanesTick(); } catch {} }, 20000).unref(); // agents hand work to other lanes, and hear back when it's done

@@ -2,6 +2,23 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.65.0 — 2026-10-14
+
+- Merged parallel changes for choosing the Opus model based only on a run's active task.
+- Changed model selection to pick Opus based only on the task a run is actively working on, rather than all open tasks.
+- Protected saved tasks and settings from crash corruption, prevented multiple app instances, and automatically stopped hanging agent runs.
+- Reduced the context agents read before starting by archiving older answers, deduplicating brief rules, and loading only needed plugins and connectors.
+- Added a `screens verify` command and updated `screens fill` and agent instructions so sends and saves are verified before marking tasks done.
+- Merged parallel fixes for the browser automation tool.
+- Fixed stuck approval locks so finished or failed approvals always unlock, and stopped showing user action cards for work already handed to ops.
+- Merged parallel changes fixing the browser tool loop on Outlook calendar confirmation modals.
+- Merged parallel changes that prevent waiting agent runs from repeatedly restarting.
+- Fixed the browser tool so clicks opening in-page modals no longer reload the page, and stopped agents from repeating failed actions endlessly.
+- Stopped waiting agent runs from restarting repeatedly when nothing has changed, cutting unnecessary daily spend and usage.
+- Prevented background handover notes from triggering waiting agent lanes to restart when the user has not answered.
+- Recorded when an agent run finishes without making changes or asking questions so it waits until its inputs or tasks change.
+- Fixed the "Sign in to" button on agent request cards so clicking it reliably opens the Symbiot Browser to the requested site.
+
 ## 0.64.2
 
 - **When another AI won't answer, Symbiot says why.** With Gemini set to gemini-4-argon, every chat said "(couldn't reach the model)". Google was answering that the model isn't in its free tier and the key's project has no billing. Symbiot now says that, and what to do: turn billing on, or pick a free model. The same goes for a model that's out of credit, rate-limited, too busy, or doesn't exist, on Gemini and OpenAI.

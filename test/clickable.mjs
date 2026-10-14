@@ -30,7 +30,7 @@ const page = `<!doctype html><title>Sign in</title><body style="margin:0;font:16
 <div style="cursor:pointer;padding:20px;width:300px"><button type="button">Inside a pointer card</button></div>
 <div id="all" style="padding:20px">The page itself listens for clicks.</div>
 <div id="own" style="padding:20px;width:200px">Its own mousedown</div>
-<div id="otpCellModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.4)">
+<div id="otpCellModal" role="dialog" aria-modal="true" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.4)">
   <div style="background:#fff;position:absolute;left:250px;top:250px;width:400px;height:300px;padding:16px">
     <h4>Two-Factor Verification</h4>
     <input id="otpCellPin" placeholder="PIN" style="position:absolute;left:50px;top:50px;width:300px;height:30px">
@@ -72,7 +72,12 @@ else {
     const resent = await h.pressRegion(s2.id, find(s2, /^Resend One-Time PIN$/).id, { confirmed: true });
     ok("…and \"Resend One-Time PIN\" (a bare <a>, its own click handler)", resent && !resent.error && resent.found && resent.name === "resent", resent && { error: resent.error, found: resent.found, name: resent.name });
     const behind = await h.pressRegion(s1.id, find(s1, /^Sign In$/).id, { confirmed: true });
-    ok("an earlier screen's region the pop-up covers: the page is opened again for it, not the pop-up pressed", behind && !behind.error && behind.found && behind.kept === false && find(behind, /^PIN$/, "field"), behind && (behind.error || { kept: behind.kept, labels: labels(behind) }));
+    ok("an earlier screen's region the pop-up covers: refused, the pop-up neither pressed nor closed by opening the page again", behind && /covered by a pop-up/.test(behind.error || ""), behind && (behind.error || labels(behind)));
+    const still = await h.pressRegion(s2.id, find(s2, /^Resend One-Time PIN$/).id, { confirmed: true });
+    ok("…and the pop-up is still open for its own screen's buttons", still && !still.error && still.found && still.kept === true, still && (still.error || still));
+    const rep = [];
+    for (let i = 0; i < 4; i++) rep.push(await h.pressRegion(s2.id, find(s2, /^Verify$/).id, { confirmed: true }));
+    ok("the same press 3 times with the page unchanged: the 4th is refused, not looped", rep.slice(0, 3).every((x) => !x.error) && /times and the page didn't change/.test(rep[3].error || ""), rep.map((x) => x.error || "ok"));
     await h.closeBrowser(); // the browser closed (or another command's own): the page opens again, without the pop-up
     const gone = await h.typeRegion(s2.id, find(s2, /^PIN$/).id, "654321", { confirmed: true });
     ok("…once the page was opened again (the pop-up closed): refused, not typed into Email at the same spot", gone && /isn't on the page now/.test(gone.error || "") && /opened again/.test(gone.error) && gone.kept === false, gone);

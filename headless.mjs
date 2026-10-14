@@ -1048,6 +1048,7 @@ const findRegion = (r, c, full) => `(() => { ${DEEP} ${LABEL_OF}
 // it and nothing covers it; else, and on any other, its page is opened from its
 // address again. It acts on the real site, signed in as you, so it needs the caller's
 // confirmation unless the page's site is trusted.
+const MODAL_OPEN = `[...document.querySelectorAll('[role=dialog],[role=alertdialog],[aria-modal=true],dialog[open]')].some((e) => { const b = e.getBoundingClientRect(); return b.width > 0 && b.height > 0; })`;
 function actOnRegion(id, regionId, verb, confirmed, check, act, who = "") {
   const s = loadScreens().find((x) => x.id === id); if (!s) return Promise.resolve({ error: "not found" });
   if (!s.page || !s.page.url) return Promise.resolve({ error: `${verb} works on a mapped page. Use Click here for a screenshot of your screen.` });
@@ -1058,7 +1059,17 @@ function actOnRegion(id, regionId, verb, confirmed, check, act, who = "") {
   return oneAtATime(() => withPage(async (page, b) => {
     const find = async () => (await page.send("Runtime.evaluate", { expression: findRegion(r, center(r), !!s.page.full), returnByValue: true })).result?.value;
     let here = await showScreen(page, b, s, { same: true }), hit = null;
-    if (here && b.shown !== s.id) { hit = await find(); if (!(hit && hit.by === "selector" && hit.clear)) { hit = null; here = await showScreen(page, b, s); } }
+    // the same action again and again with the page unchanged (Outlook's "send to everyone?" pop-up, 2026-10-14: 2 hours): stop
+    const key = `${verb}|${id}|${regionId}`;
+    if (b.repeat && b.repeat.key === key && b.repeat.n >= 3) return { error: `You've done this ${b.repeat.n} times and the page didn't change. Don't try it again: use another way (Type into the focused field with Enter, a different button on the pop-up, or Whole page to see what's open now) or stop and say what blocks you.`, kept: here, stay: true };
+    if (here && b.shown !== s.id) {
+      hit = await find();
+      if (!(hit && hit.by === "selector" && hit.clear)) {
+        // a pop-up is open over it: opening the page again would close it and lose what it holds
+        if (await evaluate(page, MODAL_OPEN)) return { error: `"${r.label}" is covered by a pop-up that is open on the page now. Opening the page again would close the pop-up, so it wasn't. Press in the pop-up (Whole page maps it as it is), or close it first.`, kept: true, stay: true };
+        hit = null; here = await showScreen(page, b, s);
+      }
+    }
     hit = hit || await find();
     const found = !!hit && hit.by === "selector";
     // not found: the same spot. On a whole-page screen that spot is on the page, not
@@ -1077,7 +1088,10 @@ function actOnRegion(id, regionId, verb, confirmed, check, act, who = "") {
     if (await navigating) await page.until("Page.loadEventFired", 30000);
     await page.idle();
     const next = await snapshot(page, ""); // named after the page it landed on
-    return next.error ? next : { ...next, ...extra, found, kept: here };
+    if (next.error) return next;
+    const sig = ((next.page && next.page.url) || "") + "|" + (next.regions || []).map((x) => x.kind + ":" + x.label).join("|");
+    b.repeat = b.repeat && b.repeat.key === key && b.repeat.sig === sig ? { key, sig, n: b.repeat.n + 1 } : { key, sig, n: 1 };
+    return { ...next, ...extra, found, kept: here };
   }, true, who)).catch((e) => ({ error: String((e && e.message) || e) }));
 }
 const clickAt = async (page, at) => { for (const type of ["mouseMoved", "mousePressed", "mouseReleased"]) await page.send("Input.dispatchMouseEvent", { type, x: at.x, y: at.y, button: "left", clickCount: type === "mouseMoved" ? 0 : 1 }); };
@@ -1241,7 +1255,7 @@ function chooseRegion(id, regionId, option, { confirmed = false, who = "" } = {}
 // Cloudflare settings) is filled and sent in one go. `fields` is [{ region, text }],
 // all on the one screen; each is found where it is now (the page isn't reloaded
 // between them), typed into, and `press` is clicked last. Maps the result once.
-function fillForm(id, fields, { press = "", confirmed = false, noSend = false } = {}) {
+function fillForm(id, fields, { press = "", confirmed = false, noSend = false, who = "" } = {}) {
   const s = loadScreens().find((x) => x.id === id); if (!s) return Promise.resolve({ error: "not found" });
   if (!s.page || !s.page.url) return Promise.resolve({ error: "Fill works on a mapped page." });
   if (!Array.isArray(fields) || !fields.length) return Promise.resolve({ error: "Give at least one field to fill." });
@@ -1261,6 +1275,14 @@ function fillForm(id, fields, { press = "", confirmed = false, noSend = false } 
   if (!confirmed && !isTrusted(s.page.url)) return Promise.resolve({ error: `Filling this form acts on the real site, signed in as you, and ${host} isn't one of your trusted sites.`, confirm: true, host });
   return oneAtATime(() => withPage(async (page, b) => {
     const here = await showScreen(page, b, s), typed = [];
+    // Check every field, and the button, is on the page now before anything is typed: a page
+    // opened again from its address has lost the open form (a pop-up, a meeting's guest chips),
+    // and the remembered spots are then something else. Refused with nothing changed, as Type
+    // does (2026-10-14: a Teams invite was saved with no guests).
+    for (const r of [...steps.map((x) => x.r), ...(button ? [button] : [])]) {
+      const { found } = await locateRegion(page, s, r);
+      if (!found) { if (!here) b.shown = s.id; return { error: `"${r.label}" isn't on the page now${here ? "" : " (it was opened again from its address, which closes a pop-up and loses what was typed)"}, so nothing was filled or pressed: it would have gone into whatever is in its place. Map the page as it is now, or press what opens that form again first.`, kept: here, stay: true }; }
+    }
     for (const { r, text } of steps) {
       const { at } = await locateRegion(page, s, r);
       await typeInto(page, at, text);
@@ -1277,7 +1299,29 @@ function fillForm(id, fields, { press = "", confirmed = false, noSend = false } 
     await page.idle();
     const next = await snapshot(page, "");
     return next.error ? next : { ...next, typed, pressed, kept: here };
-  })).catch((e) => ({ error: String((e && e.message) || e) }));
+  }, true, who)).catch((e) => ({ error: String((e && e.message) || e) }));
+}
+
+// Verify: load an address fresh, in a tab of its own (the cache off, so not the page the
+// agent's tab holds), and say whether each text is on it, in its words or a field's value.
+// For checking a send or a save in the saved record, never the form that was filled: a
+// meeting reopened, the Sent folder. { url, title, found: [{ text, found }], ok }.
+function verifyPage(input, expect, { who = "" } = {}) {
+  const url = siteUrl(input), wants = (Array.isArray(expect) ? expect : [expect]).map((x) => String(x == null ? "" : x).trim()).filter(Boolean);
+  if (!url) return Promise.resolve({ error: "Give the address to check." });
+  if (!wants.length) return Promise.resolve({ error: 'Give what should be there: --expect "text".' });
+  const js = `(() => { ${DEEP} const norm = (t) => String(t || '').replace(/\\s+/g, ' ').toLowerCase();
+    const vals = deepAll('input, textarea, select').map((e) => e.value + ' ' + (e.getAttribute('aria-label') || '')).join(' ');
+    return norm((document.body.innerText || '') + ' ' + vals); })()`;
+  return oneAtATime(() => withPage(async (page, tab) => {
+    await page.send("Network.setCacheDisabled", { cacheDisabled: true });
+    await open(page, url);
+    const text = String((await evaluate(page, js)) || ""), at = String((await evaluate(page, "location.href")) || url);
+    const found = wants.map((w) => ({ text: w, found: text.includes(w.replace(/\s+/g, " ").toLowerCase()) }));
+    const title = String((await evaluate(page, "document.title")) || "");
+    await closeTab(live, tab);
+    return { url: at, title, found, ok: found.every((x) => x.found), login: signInPage(at), stay: true };
+  }, true, "verify:" + (who || MAIN) + ":" + Date.now())).catch((e) => ({ error: String((e && e.message) || e) }));
 }
 
 // Upload: put a file (or a few) in a page's file box, as picking it in the file
@@ -1437,4 +1481,4 @@ function watchWindow({ every = 2000, start = 30000 } = {}) {
   if (WATCH.unref) WATCH.unref();
 }
 
-export { showScreen, fillForm, sessionCookie, SESSION_COOKIE, tabKey, siteUrl, browserArgs, reducedUa, windowUa, mapPage, wholePage, readPage, readTexts, readLinkedIn, LI_READ, pagePicture, pageClip, CLIP, isSend, pressRegion, typeRegion, chooseRegion, uploadRegion, uploadFiles, attachFiles, FILE_BOX, scrollPage, SCROLLS, signIn, keepBrowserOpen, closeBrowser, browserOpen, keepSessions, SESSION_KEEP, SESSIONS, loadSessions, trustedSites, isTrusted, trustSite, untrustSite, PROFILE , openSymbiotBrowser, closeSymbiotBrowser, onBrowserClosed, scratchPage, open as openPage, evaluate, SCROLLER, watchWindow, windowOpen, lockHolder, setBrowserHub , browserHub };
+export { showScreen, fillForm, verifyPage, sessionCookie, SESSION_COOKIE, tabKey, siteUrl, browserArgs, reducedUa, windowUa, mapPage, wholePage, readPage, readTexts, readLinkedIn, LI_READ, pagePicture, pageClip, CLIP, isSend, pressRegion, typeRegion, chooseRegion, uploadRegion, uploadFiles, attachFiles, FILE_BOX, scrollPage, SCROLLS, signIn, keepBrowserOpen, closeBrowser, browserOpen, keepSessions, SESSION_KEEP, SESSIONS, loadSessions, trustedSites, isTrusted, trustSite, untrustSite, PROFILE , openSymbiotBrowser, closeSymbiotBrowser, onBrowserClosed, scratchPage, open as openPage, evaluate, SCROLLER, watchWindow, windowOpen, lockHolder, setBrowserHub , browserHub };

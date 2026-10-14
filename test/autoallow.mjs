@@ -88,6 +88,11 @@ writeFileSync(join(lane, ".symbiot", "TASKS.md"), "- [x] one\n- [x] two\n- [x] t
 ok("...and never when everything's ticked", a.continueLanes({ now: later + 2, run: go, runs }).length === 0, started);
 writeFileSync(join(lane, ".symbiot", "TASKS.md"), "- [ ] four\n");
 ok("...nor within two minutes of its last run", a.continueLanes({ now: Date.now(), run: go, runs }).length === 0, started);
+// kept on disk: an app restart (a fresh module) doesn't hand a stuck lane a free run
+writeFileSync(join(lane, ".symbiot", "TASKS.md"), "- [x] one\n- [ ] two\n");
+ok("continued once more on a new task", a.continueLanes({ now: later + 3, run: go, runs }).length === 1, started);
+const a2 = await import("../agents.mjs?restart=1");
+ok("...and after a restart, still not again while nothing more got ticked", a2.continueLanes({ now: later + 4, run: go, runs }).length === 0 && JSON.parse(readFileSync(a.CONTINUED_FILE, "utf8"))[lane].ticked === 1, readFileSync(a.CONTINUED_FILE, "utf8"));
 // ssh to a host this computer already knows is the owner's own machine (agents.mjs toKnownHost)
 const known = (h) => h === "92.4.133.97";
 ok("ssh, scp or rsync to a host this computer already knows is your own machine", ["Bash(ssh ubuntu@92.4.133.97:*)", "Bash(scp:* ubuntu@92.4.133.97:*)", "Bash(ssh -o BatchMode=yes ubuntu@92.4.133.97:*)"].every((r) => a.toKnownHost(r, known)), "");

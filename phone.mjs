@@ -31,9 +31,9 @@ import { createServer } from "node:http";
 import { hostname, networkInterfaces } from "node:os";
 import { execFileSync } from "node:child_process";
 import { join } from "node:path";
-import { readFileSync, writeFileSync, unlinkSync, mkdirSync, statSync } from "node:fs";
+import { readFileSync, unlinkSync, statSync } from "node:fs";
 import { randomBytes, randomInt, randomUUID, timingSafeEqual, createHash, generateKeyPairSync, createPublicKey, createPrivateKey, diffieHellman, hkdfSync, createCipheriv, createDecipheriv } from "node:crypto";
-import { CONFIG_DIR, loadConfig, saveConfig, hasCmd, loadTasks } from "./core.mjs";
+import { CONFIG_DIR, loadConfig, saveConfig, hasCmd, loadTasks, readState, writeJsonAtomic } from "./core.mjs";
 import { newsAfter, newsNotice } from "./watch.mjs";
 import { desktopNotify } from "./desktop.mjs";
 import { announce, browse } from "./mdns.mjs";
@@ -52,8 +52,8 @@ const same = (a, b) => { const x = Buffer.from(String(a || "")), y = Buffer.from
 const sha = (s) => createHash("sha256").update(s).digest("hex");
 const PATHS = { queue: join(CONFIG_DIR, "phone-queue.json"), copy: join(CONFIG_DIR, "computer.json"), applied: join(CONFIG_DIR, "phone-applied.json"),
   seal: join(CONFIG_DIR, "android-seal.json"), nsdWant: join(CONFIG_DIR, "android-nsd.want"), nsd: join(CONFIG_DIR, "android-nsd.json") };
-const readJson = (f, d) => { try { return JSON.parse(readFileSync(f, "utf8")); } catch { return d; } };
-const writeJson = (f, v) => { try { mkdirSync(CONFIG_DIR, { recursive: true }); writeFileSync(f, JSON.stringify(v), { mode: 0o600 }); return true; } catch { return false; } };
+const readJson = (f, d) => { const v = readState(f); return v === undefined ? d : v; };
+const writeJson = (f, v) => { try { writeJsonAtomic(f, v, { indent: 0, newline: false, mode: 0o600 }); return true; } catch { return false; } };
 
 // ---- sealing --------------------------------------------------------------------------
 const X25519_SPKI = Buffer.from("302a300506032b656e032100", "hex"); // DER head of an X25519 public key; the 32 raw bytes follow
@@ -638,10 +638,11 @@ async function findComputers() {
     // Android's discovery takes 3.5 s, then up to 3 s to resolve each computer found, after the
     // service sees the ask (it looks every second): one computer took about 9.5 s, past the 8 s
     // this waited (FINE-TUNE item 7), so it waits 15 s, and the answer is read as soon as it's there
+    // android-nsd.json is the Android app's to write, not ours: one read mid-write is nothing yet, not a broken file to move aside
     const asked = Date.now(); writeJson(PATHS.nsdWant, { at: asked });
     for (let i = 0; i < NSD_WAIT / 500; i++) {
       await new Promise((r) => setTimeout(r, 500));
-      try { if (statSync(PATHS.nsd).mtimeMs >= asked - 1000) { found = readJson(PATHS.nsd, []); break; } } catch {}
+      try { if (statSync(PATHS.nsd).mtimeMs >= asked - 1000) { found = (() => { try { return JSON.parse(readFileSync(PATHS.nsd, "utf8")); } catch { return []; } })(); break; } } catch {}
     }
   } else found = await browse({ timeout: 2000 }).catch(() => []);
   return (Array.isArray(found) ? found : []).filter((f) => f && f.port).flatMap((f) => (f.addresses || [f.host]).filter(Boolean).map((a) => ({ name: String(f.name || "Symbiot").slice(0, 40), url: computerUrl(`${a}:${f.port}`), fp: String(f.fp || "") }))).filter((f) => f.url);

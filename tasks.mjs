@@ -150,7 +150,8 @@ function gitAsync(repo, args, timeout = 30000, { input = null, env = {} } = {}) 
     const end = (code, e) => { if (done) return; done = true; clearTimeout(t); clearTimeout(kill); resolve({ ok: code === 0 && !timedOut, out: out.replace(/\s+$/, ""), err: String(err || (e && e.message) || "").trim(), timedOut, timeout }); };
     p.stdout.setEncoding("utf8"); p.stderr.setEncoding("utf8");
     p.stdout.on("data", (d) => { out += d; }); p.stderr.on("data", (d) => { err += d; });
-    p.on("error", (e) => end(-1, e)); p.on("close", (code) => end(code));
+    // close waits for every holder of its output; one git left running (an fsmonitor) kept it open
+    p.on("error", (e) => end(-1, e)); p.on("close", (code) => end(code)); p.on("exit", (code) => { setTimeout(() => end(code), 2000).unref(); });
     if (input != null) { p.stdin.on("error", () => {}); p.stdin.end(input); }
   });
 }
@@ -408,11 +409,24 @@ function releaseInput(repo, opts = {}) {
 // is offered one (bumpOffer), noted in its CHANGELOG.md if it keeps one (in
 // opts.notes' words, when given). Both are put back if the ship fails.
 // One ship at a time per folder: Approve no longer holds the app up while git
-// runs, so a second click could start another on the same tree.
-const SHIPPING = new Set();
+// runs, so a second click could start another on the same tree. Each step of a ship
+// ends by itself (git, the tests and gh all have a limit), and the hold is let go
+// however it ends; one older than SHIP_STALE is past any ship, so it's taken over
+// rather than refusing every Approve there until the app restarts (dailify, 14 Oct
+// 2026: its tests never ended). shipStep notes what it's on, for the refusal to say.
+const SHIPPING = new Map(), SHIP_STALE = 30 * 60000;
+function holdShip(path, now = Date.now()) {
+  const was = SHIPPING.get(path);
+  if (was && now - was.at < SHIP_STALE) {
+    const min = Math.floor((now - was.at) / 60000);
+    return { error: `Already approving here (${was.step || "starting"}, ${min < 1 ? "under a minute" : min + " min"} so far): wait for that one to finish.` };
+  }
+  const me = { at: now, step: "" }; SHIPPING.set(path, me);
+  return { release: () => { if (SHIPPING.get(path) === me) SHIPPING.delete(path); } };
+}
+const shipStep = (path, step) => { const h = SHIPPING.get(path); if (h) h.step = step; };
 async function shipWithBump(path, texts, opts) {
-  if (SHIPPING.has(path)) return { error: "Already approving here: wait for that one to finish." };
-  SHIPPING.add(path);
+  const hold = holdShip(path); if (hold.error) return hold;
   try {
     const offer = (opts.bump === "patch" || opts.bump === "minor") && bumpOffer(path);
     if (!offer) return await shipChanges(path, texts, opts);
@@ -421,7 +435,7 @@ async function shipWithBump(path, texts, opts) {
     const r = await shipChanges(path, texts, { ...opts, bumped: to });
     if (r.error) { undo(); undoLog(); return r; }
     return { ...r, bumped: to };
-  } finally { SHIPPING.delete(path); }
+  } finally { hold.release(); }
 }
 // What the last run in a folder said when it finished: agent.log after the last
 // run's "=== name time ===" and "$ command" lines.
@@ -611,22 +625,31 @@ function commitSubject(texts) {
 // Nor do tests that only failed reaching a service on this computer that isn't running
 // (dailify's API tests and Postgres on 127.0.0.1:5432, 13 Oct 2026): that's "couldn't
 // test here" (untested), and CI runs them on the PR. opts.cmd/args stand in for npm test.
-async function repoTests(path, { cmd = "npm", args = ["test", "--silent"] } = {}) {
+// They run as a process group of their own, and end when npm does: a server a test started
+// (dailify's pnpm -r test, 14 Oct 2026) kept their output open after npm exited, so this
+// waited for ever, holding that folder's Approve with it ("Already approving here"). Past
+// the limit, or 2 s after npm exits with the output still held, the whole group is stopped.
+async function repoTests(path, { cmd = "npm", args = ["test", "--silent"], limit = 15 * 60000 } = {}) {
   let test = ""; try { test = String(JSON.parse(readFileSync(join(path, "package.json"), "utf8")).scripts?.test || ""); } catch {}
   if (!test || /no test specified/.test(test) || !existsSync(join(path, "node_modules"))) return { ok: true };
   return await new Promise((done) => {
-    let out = "", refused = "";
-    const p = spawn(cmd, args, { cwd: path, stdio: ["ignore", "pipe", "pipe"] });
+    let out = "", refused = "", code = null, settled = false, drain = null;
+    const p = spawn(cmd, args, { cwd: path, stdio: ["ignore", "pipe", "pipe"], detached: process.platform !== "win32" });
+    const group = (sig) => { try { process.kill(-p.pid, sig); } catch { try { p.kill(sig); } catch {} } };
     const keep = (d) => { out = (out + d).slice(-4000); refused = refused || localRefused(String(d)); };
     p.stdout.on("data", keep); p.stderr.on("data", keep);
-    const timer = setTimeout(() => p.kill(), 15 * 60000);
-    p.on("error", () => { clearTimeout(timer); done({ ok: true }); }); // no npm here: can't check
-    p.on("close", (code) => {
-      clearTimeout(timer);
+    const finish = (over) => {
+      if (settled) return; settled = true; clearTimeout(timer); clearTimeout(drain);
+      if (over || drain) { group("SIGTERM"); setTimeout(() => group("SIGKILL"), 5000).unref(); } // something still holds the output: stop the lot
+      if (over) return done({ ok: false, note: `they were still running after ${Math.round(limit / 60000)} min, so they were stopped` });
       if (code === 0) return done({ ok: true });
       if (refused) return done({ ok: true, untested: `the tests couldn't run here: they need something on ${refused} that isn't running on this computer, so they weren't checked before the push (CI runs them on the PR)` });
       done({ ok: false, note: (out.trim().split("\n").filter(Boolean).pop() || "").slice(0, 160) });
-    });
+    };
+    const timer = setTimeout(() => finish(true), limit);
+    p.on("error", () => { if (settled) return; settled = true; clearTimeout(timer); done({ ok: true }); }); // no npm here: can't check
+    p.on("exit", (c) => { code = c; drain = setTimeout(() => finish(false), 2000); });
+    p.on("close", (c) => { if (code === null) code = c; clearTimeout(drain); drain = null; finish(false); });
   });
 }
 // The local address a test's connection was refused at ("127.0.0.1:5432"), or "".
@@ -674,6 +697,7 @@ function freeBranch(path, stem) {
 // opts.sendOnly: commit nothing, just send what earlier Approves committed.
 async function shipChanges(path, texts, opts = {}) {
   if (opts.sendOnly) return (await sendUnsent(path, texts, opts)) || { error: "Nothing here is waiting to go up: GitHub has all of it.", none: true };
+  shipStep(path, "reading what changed");
   const st = await gitAsync(path, ["status", "--porcelain", "-z", "-uall", ...NOT_SYMBIOT], gitTimeout());
   if (!st.ok) return { error: gitFailed("git status", st) };
   const ch = { files: parseStatusZ(st.out), branch: git(path, ["rev-parse", "--abbrev-ref", "HEAD"]).out };
@@ -708,6 +732,7 @@ async function shipChanges(path, texts, opts = {}) {
   // (170k of them don't fit in an argv) and taken literally (a `[` or `*` in a
   // name isn't a glob). They come from a status that leaves .symbiot out; the
   // reset also covers anything of it staged before.
+  shipStep(path, "committing");
   const add = await gitAsync(path, ["add", "-A", "--pathspec-from-file=-", "--pathspec-file-nul"], gitTimeout(paths.length), { input: paths.join("\0"), env: { GIT_LITERAL_PATHSPECS: "1" } });
   if (!add.ok) return { error: gitFailed("git add", add, paths.length), branch };
   git(path, ["reset", "-q", "--", ".symbiot"]); // never ship Symbiot's own scratch
@@ -768,6 +793,7 @@ async function pushAndOpen(path, { base, subject, body, out, opts, newBranch, sa
   // Not a branch GitHub has already: rewritten under it, its push would be refused (and
   // a PR open from it would lose the commit to a fresh name). Files of a run still going
   // stay out of the rebase and come back after it (--autostash).
+  shipStep(path, "bringing it up to date with " + base);
   git(path, ["fetch", "-q", "origin", base], 60000);
   const tip = "origin/" + base, published = git(path, ["rev-parse", "-q", "--verify", "refs/remotes/origin/" + branch]).ok;
   if (!published && git(path, ["rev-parse", "-q", "--verify", "refs/remotes/" + tip]).ok && !git(path, ["merge-base", "--is-ancestor", tip, branch]).ok) {
@@ -779,10 +805,12 @@ async function pushAndOpen(path, { base, subject, body, out, opts, newBranch, sa
     out.rebased = tip; out.commit = git(path, ["rev-parse", "--short", branch]).out;
   }
   if (opts.verify !== false) {
+    shipStep(path, "running its tests");
     const v = await (typeof opts.verify === "function" ? opts.verify : repoTests)(path);
     if (v && v.ok === false) return { ...noted(`Committed, but not pushed: the tests fail on top of ${tip}${v.note ? " (" + v.note + ")" : ""}, so no PR was opened.`), testsFailed: true };
     if (v && v.untested) { said = [said, v.untested[0].toUpperCase() + v.untested.slice(1) + "."].filter(Boolean).join(" "); out.note = said; out.untested = true; }
   }
+  shipStep(path, "pushing");
   let ps = git(path, ["push", "-u", "origin", branch], 120000);
   // refused because origin's branch of that name went another way (an earlier PR of
   // that name, merged): the commit moves to a fresh name and goes up on that
@@ -883,9 +911,8 @@ async function sendAgain(repo, opts = {}) {
   const pro = can("ship"); if (!pro.ok) return { error: pro.why, pro: true };
   const path = laneMap()[repo]; if (!path) return { error: "Repo not found: " + (repo || "(no repo)") };
   const busy = stillWorking(repo, path); if (busy) return busy;
-  if (SHIPPING.has(path)) return { error: "Already approving here: wait for that one to finish." };
-  SHIPPING.add(path); let r;
-  try { r = await shipChanges(path, [], { ...opts, sendOnly: true, autoMerge: opts.autoMerge !== undefined ? opts.autoMerge : autoMergeRepos().includes(repo) }); } finally { SHIPPING.delete(path); }
+  const hold = holdShip(path); if (hold.error) return hold;
+  let r; try { r = await shipChanges(path, [], { ...opts, sendOnly: true, autoMerge: opts.autoMerge !== undefined ? opts.autoMerge : autoMergeRepos().includes(repo) }); } finally { hold.release(); }
   if (!r.pr) return r;
   const t = loadTasks(), n = prFor(t, repo, r); if (n) saveTasks(t);
   return { ...r, approved: n };
@@ -944,9 +971,9 @@ function buildTasksMd(name, ctx, list) {
   const keys = Object.keys(byType).sort((a, b) => TASK_ORDER.indexOf(a) - TASK_ORDER.indexOf(b));
   for (const ty of keys) { L.push(`### ${ty}`); for (const t of byType[ty]) L.push(`- [ ] ${t.text}`); L.push(""); }
   L.push("## When you finish an item", "- Tick it here (`- [x]`) as soon as it's done — that's how it reaches review. Ticking doesn't archive it: the user approves it in Symbiot, which commits it on a branch and opens a PR.", "- Leave your changes **uncommitted**, and don't tick anything you didn't finish or couldn't verify.", "- If you ever do have to make a branch or a PR yourself, first `git fetch origin`, cut the branch from `origin/<default branch>` (not the local one), run the tests, and open the PR only when they pass and nothing conflicts. If they don't, stop and say so in QUESTIONS.md.", "- If an item has numbered steps (1), 2), …), say `Step N: …` as you start each one, so Home shows how far along you are.", "- An item that runs for days or weeks (a move done step by step) stays unticked until its last step. When a round of it is finished and tested, end your last message with a line `Round done: <the item's first words>`, and Symbiot puts that round up for the user's OK under the item, which stays open.", "- To see Symbiot itself working (its Home, a layout, a card), run a copy of your own: `node index.mjs app --fresh` from this repo, or `symbiot app --fresh`. Never point a browser, a screenshot or a proxy at the user's running Symbiot (127.0.0.1:7391): it's their window and their data.", "- If the user says to drop an item (in ANSWERS.md, say), delete its line here: Symbiot closes it, so it isn't sent again. Don't delete one for any other reason.", "");
-  L.push(...handoverRules(ctx.lanes || [], name, ctx.reach), ...HANDBACK, ...standingBrief(), ...doneBrief());
+  L.push(...handoverRules(ctx.lanes || [], name, ctx.reach), ...HANDBACK, ...standingBrief(), ...doneBrief(name));
   L.push("## If you need a decision, or have ideas", "You may be running unattended, so you can't ask in chat. Write `.symbiot/QUESTIONS.md` instead: Symbiot shows it to the user on your block in its Workdesk, and their answers come back in `.symbiot/ANSWERS.md` (read that first if it exists).",
-    "- Before you ask the user anything, read `.symbiot/ANSWERS.md` again, all of it: they may have answered it already, for you or for another agent on the same work (Symbiot copies those in, under a heading naming that agent). If an answer there settles it, use it and don't ask; if it settles part, ask only the part left.",
+    "- Before you ask the user anything, read `.symbiot/ANSWERS.md` again, all of it (older answers are in `.symbiot/ANSWERS.archive.md`: search it when one may be older than those): they may have answered it already, for you or for another agent on the same work (Symbiot copies those in, under a heading naming that agent). If an answer there settles it, use it and don't ask; if it settles part, ask only the part left.",
     `- At most ${QUESTIONS_MAX} questions, under a \`## Questions\` heading. Each is a \`### \` heading, then a line of context, then exactly ${OPTIONS_SHOWN} options as \`- \` bullets, the one you recommend first, marked \`(recommended)\`. Symbiot shows only the first ${OPTIONS_SHOWN}; the user can always answer in their own words.`,
     "- Judge the options before you ask. Most people pick the recommended option without weighing the other, and Symbiot works for a whole company (developers, sales, everyone), not one person, so the choice is really yours. Both options must be good routes to the best solution, never filler or one you wouldn't take. A skip or no option is a plain \"skip this part\", never a request for the user's personal details (their addresses, accounts or numbers). Each says in plain words, with no jargon, what it does and what it changes from then on for the project, the people working on it and the company. Recommend the one that's best for, in this order, the company, the people doing the work, then the task's goal. Base that on evidence you can check here (git history, tests, logs, how it's used, the answers so far), not on what's quickest, and give that evidence in the context line in a sentence.",
     ONLY_YOU,
@@ -1008,4 +1035,4 @@ function pushTasks(filter) {
   return { empty: false, written, unresolved, handoff: handoffCmd() };
 }
 
-export { sendAgain, forgetUnsent, unsentOf, readUnsent, unsentCard, repoTests, localRefused, forgetReview, gitFailed, taskPaths, addTask, toggleTask, setTaskDone, removeTask, restoreTask, completedInRepo, removalOf, applyRemovals, applyDrops, syncTasks, workingChanges, workingDiff, publishesOnMerge, unreleased, bumpOffer, learnNpm, releaseNeeded, withReleases, setVersion, changelogEntry, changelogSection, noteChangelog, releaseInput, shipWithBump, runSummary, saidFinished, pendingReview, commitSubject, shipChanges, autoMergeRepos, setAutoMerge, approveRepo, approveChanges, sendBack, TASK_ORDER, taskType, buildTasksMd, pushTasks, mergeWhenGreen };
+export { holdShip, SHIP_STALE, sendAgain, forgetUnsent, unsentOf, readUnsent, unsentCard, repoTests, localRefused, forgetReview, gitFailed, taskPaths, addTask, toggleTask, setTaskDone, removeTask, restoreTask, completedInRepo, removalOf, applyRemovals, applyDrops, syncTasks, workingChanges, workingDiff, publishesOnMerge, unreleased, bumpOffer, learnNpm, releaseNeeded, withReleases, setVersion, changelogEntry, changelogSection, noteChangelog, releaseInput, shipWithBump, runSummary, saidFinished, pendingReview, commitSubject, shipChanges, autoMergeRepos, setAutoMerge, approveRepo, approveChanges, sendBack, TASK_ORDER, taskType, buildTasksMd, pushTasks, mergeWhenGreen };

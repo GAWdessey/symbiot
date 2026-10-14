@@ -2300,7 +2300,7 @@ function loadLinks(){api('/api/links').then(function(d){if(d&&d.items){LINKS=d;r
 // added under Connections → Your sites, trusted, checked once you click Done there).
 // From Settings, a trusted site, a card or a reply that asks you to sign in. s: { site } or { id }.
 function signInSaid(nm){return 'Opened the Symbiot Browser with '+nm+'. Sign in there as you normally do, then click Done in the Symbiot Browser: Settings → Connections shows when it’s signed in.';}
-function openSignIn(s,say){if(!s||(!s.site&&!s.id))return;api('/api/links/site',s.id?{id:s.id}:{site:s.site}).then(function(r){var nm=(r&&r.item&&r.item.name)||s.name||s.site||'it';
+function openSignIn(s,say){if(!s||(!s.site&&!s.id)){say('There’s no site to open for this sign-in. Add it in Settings → Connections.',false);return;}api('/api/links/site',s.id?{id:s.id}:{site:s.site}).then(function(r){var nm=(r&&r.item&&r.item.name)||s.name||s.site||'it';
 if(!r||r.error){say(nm+': '+((r&&r.error)||'it didn’t open'),false);return;}say(signInSaid(nm),true);loadLinks();loadTrusted();[20000,60000,120000].forEach(function(ms){setTimeout(loadLinks,ms);});}).catch(function(e){say(String((e&&e.message)||e),false);});}
 function addSiteUI(){var i=document.getElementById('addsite'),v=((i&&i.value)||'').trim();if(!v)return;openSignIn({site:v},function(t,ok){if(ok)i.value='';linksOut("<div class='note "+(ok?'ok':'err')+"'>"+esc(t)+"</div>");});}
 // Trusted sites: where Screens' Press and Type don't ask first (headless.mjs).
@@ -3204,6 +3204,9 @@ var bits=[];if(nq)bits.push('<b>'+nq+' question'+(nq>1?'s':'')+' for you</b>');i
 return bits.length?bits.join(' &middot; '):'All quiet: nothing at work, nothing asking you.';}
 function lqRelayList(w){return lqSortLanes((w.projects||[]).filter(function(p){return p.summary||(p.qs&&p.qs.length)||p.ready||(p.ideas&&p.ideas.length)||(p.handing&&p.handing.length);}).slice());}
 function lqRelayOn(){var S=lqSize();return LQ.scene==='work'&&S.w>=900&&lqRelayList(LQ.workData||{}).length>0;}
+// A lane's first question as its card: drawn and wired from the one object, so a button it
+// draws (Sign in to <site>) is never wired without what it opens (2026-10-14: it did nothing).
+function rlAsk(p,nm,q){return {kind:'ask',name:nm,repo:p.repo,q:q.q,raw:q.raw,task:q.task,labels:q.labels,options:q.options,path:q.path,fix:q.fix,id:q.id,sub:q.sub,draft:q.draft,signInTo:q.signInTo,more:Math.max(0,(p.asks||p.qs.length)-1)};}
 function lqRelay(){var el=$('lqrelay'),ln=$('lqline'),w=LQ.workData||{};if(ln)ln.innerHTML=LQ.scene==='work'?lqLineText(w):'';if(!el)return;
 var ps=lqRelayList(w),sig=JSON.stringify(ps.map(function(p){return [p.repo,p.summary,p.state,p.ready,(p.qs||[]).map(function(q){return q.q;}),(p.ideas||[]).map(function(i){return i.full;}),p.parked,(p.handing||[]).map(function(x){return x.why+handProg(x);})];}));
 if(el.contains&&document.activeElement&&el.contains(document.activeElement)&&el.innerHTML)return;if(sig===LQ.relaySig&&el.innerHTML)return;LQ.relaySig=sig;
@@ -3211,13 +3214,13 @@ if(!ps.length){el.innerHTML='';return;}
 el.innerHTML=ps.map(function(p,i){var nm=p.name||p.repo,q=(p.qs||[])[0],st=p.parked?'parked':(p.qs&&p.qs.length)?'asks you':p.ready?'ready for your OK':p.state||'';
 var h="<section class='rly"+((p.qs&&p.qs.length)||p.ready?' lit':'')+"' data-i='"+i+"'><div class='rlh'><b>"+esc(nm)+"</b>"+(st?"<span class='rls'>"+esc(st)+"</span>":"")+"</div>";
 if(p.summary)h+="<p class='rlsum' title='"+escQ(p.summary)+"'>"+esc(p.summary)+"</p>";
-if(q)h+="<div class='lqblob rlask'>"+blobBody({kind:'ask',name:nm,repo:p.repo,q:q.q,raw:q.raw,task:q.task,labels:q.labels,options:q.options,path:q.path,fix:q.fix,id:q.id,sub:q.sub,draft:q.draft,signInTo:q.signInTo,more:Math.max(0,(p.asks||p.qs.length)-1)},false)+"</div>";
+if(q)h+="<div class='lqblob rlask'>"+blobBody(rlAsk(p,nm,q),false)+"</div>";
 if(p.ready)h+="<button type='button' class='act rlok'>Review and approve</button>";
 if(p.handing&&p.handing.length)h+="<div class='rlk'>Handed over</div>"+p.handing.map(function(x){var pg=handProg(x);return "<p class='rlsum rlhand' title='"+escQ(x.text)+"'><b>"+esc(x.lane)+"</b>: "+esc(x.why)+(pg?" \u00b7 "+esc(pg):"")+"</p>";}).join('');
 if(p.ideas&&p.ideas.length)h+="<div class='rlk'>Extra tasks it suggests</div>"+p.ideas.map(function(d,j){return "<div class='rli' data-j='"+j+"'><span title='"+escQ(d.full)+"'>"+esc(d.text)+"</span><span class='rlia'><button type='button' class='rladd'>+ task</button><button type='button' class='rlskip'>Skip</button></span></div>";}).join('');
 return h+"<div class='rlf'><button type='button' class='rlopen'>Its tasks &rsaquo;</button><button type='button' class='rlag'>Its agents &rsaquo;</button></div></section>";}).join('');
 el.querySelectorAll('.rly').forEach(function(box){var p=ps[+box.getAttribute('data-i')],q=(p.qs||[])[0],nm=p.name||p.repo;
-var ab=box.querySelector('.rlask');if(ab&&q)wireBlob(ab,{kind:'ask',name:nm,repo:p.repo,q:q.q,raw:q.raw,task:q.task,labels:q.labels,options:q.options,path:q.path,fix:q.fix,id:q.id},{done:function(){LQ.relaySig='';lqLoadWork();}});
+var ab=box.querySelector('.rlask');if(ab&&q)wireBlob(ab,rlAsk(p,nm,q),{done:function(){LQ.relaySig='';lqLoadWork();}});
 var ok=box.querySelector('.rlok');if(ok)ok.addEventListener('click',function(){lqOpen({kind:'proj',repo:p.repo,lit:true});});
 box.querySelector('.rlopen').addEventListener('click',function(){lqOpen({kind:'proj',repo:p.repo});});
 box.querySelector('.rlag').addEventListener('click',function(){lqPool('agents');});

@@ -25,7 +25,7 @@ import { runningHandoff } from "./agents.mjs";
 import { laneMap } from "./scan.mjs";
 
 const SEEN_FILE = join(CONFIG_DIR, "reports.json");
-const NOT_REPORTS = /^(?:TASKS(?:\.[\w-]+)?|QUESTIONS|ANSWERS|HANDOFF|SKIPPED|CLAUDE|AGENTS)\.md$|^BRIEF/i; // TASKS.next.md too: the tasks held for after a run
+const NOT_REPORTS = /^(?:TASKS(?:\.[\w-]+)?|QUESTIONS|ANSWERS(?:\.archive)?|HANDOFF|SKIPPED|CLAUDE|AGENTS)\.md$|^BRIEF/i; // TASKS.next.md too: the tasks held for after a run
 const MAX_READ = 512 * 1024, MAX_LIST = 200;
 const idOf = (file) => createHash("sha1").update(file).digest("hex").slice(0, 12);
 
