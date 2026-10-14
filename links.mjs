@@ -22,7 +22,7 @@ import { can } from "./licence.mjs";
 import { join } from "node:path";
 import { readFileSync } from "node:fs";
 import { CONFIG_DIR, loadConfig, saveConfig } from "./core.mjs";
-import { siteUrl, signIn, readPage, trustedSites, trustSite, untrustSite, sessionCookie } from "./headless.mjs";
+import { siteUrl, signIn, readPage, trustedSites, trustSite, untrustSite, sessionCookie, historyPage } from "./headless.mjs";
 import { watchState, addWatch, removeWatch, checkWatch, GITHUB_INBOX } from "./watch.mjs";
 import { loadRuns, agentQuestions, answerQuestions } from "./agents.mjs";
 
@@ -93,9 +93,9 @@ function stateOf(e, l, watches) {
   if (!w) return { state: "error", note: "Its watch was removed. Link it again." };
   // signed out only once it has been read signed in: a read before you've
   // finished signing in in the window is still "sign in"
-  if (w.error && /^Signed out/.test(w.error)) return w.checked ? { state: "signedout", note: "Signed out: click it to sign in again." } : { state: "signin" };
+  if (w.error && /^Signed out/.test(w.error)) return w.checked ? { state: "signedout", note: "Signed out: click it to sign in again." + shownLine(w.shown) } : { state: "signin" };
   if (w.checked) return { state: "ok", checked: w.checked, ...(w.error ? { note: w.error } : {}) };
-  return { state: "signin", ...(w.error && !/in use|busy|already running|Symbiot Browser is open/i.test(w.error) ? { note: w.error } : {}) };
+  return { state: "signin", ...(w.error && !/in use|busy|already running|Symbiot Browser is open/i.test(w.error) ? { note: w.error + shownLine(w.shown) } : {}) };
 }
 function linksState() {
   const c = catalog(), l = linked(), watches = watchState().watches;
@@ -131,7 +131,7 @@ async function linkSite(id, { open = signIn } = {}) {
 }
 // Read it now: its watch, or for a site that isn't watched, its page, to see
 // that it's signed in. Gives the item as it stands after.
-async function checkLink(id, { check = checkWatch, read = readPage, cookie = sessionCookie } = {}) {
+async function checkLink(id, { check = checkWatch, read = readPage, cookie = sessionCookie, history = historyPage } = {}) {
   const e = catalog().list.find((x) => x.id === id), l = linked();
   if (!e || !l[id]) return { error: `${e ? e.name : id} isn't linked.` };
   if (l[id].watch) { const r = await check(l[id].watch); if (r && r.busy) return { busy: true, item: linksState().items.find((x) => x.id === id) }; }
@@ -140,7 +140,10 @@ async function checkLink(id, { check = checkWatch, read = readPage, cookie = ses
     const k = cookie(e.hosts);
     let p = null, note = "";
     if (!(k && k.found)) {
-      try { p = await read(e.url, { password: true }); } catch (err) { p = { error: String((err && err.message) || err) }; }
+      // a site added by its bare name: the page the Symbiot Browser's history shows once signed in
+      // (console.twilio.com for twilio.com), not the home page, which has a Login button either way
+      const bare = e.own && /^https?:\/\/[^/]+\/?$/.test(e.url), page = (bare && history(e.hosts)) || e.url;
+      try { p = await read(page, { password: true }); } catch (err) { p = { error: String((err && err.message) || err) }; }
       if (p && (p.busy || WINDOW_OPEN.test(p.error || ""))) return { busy: true, item: linksState().items.find((x) => x.id === id) };
       // not confirmed: say what was found, rather than only "sign in" again
       if (!p || p.error || p.login) note = foundNote(e, k, p, l[id]);
@@ -161,6 +164,18 @@ async function checkLink(id, { check = checkWatch, read = readPage, cookie = ses
 // for two days (2026-10-14). l: the link (opened: when its sign-in last opened; seen: last read signed in).
 const FRESH = 30 * 60000;
 function foundNote(e, k, p, l = {}, now = Date.now()) {
+  const n = foundNote0(e, k, p, l, now);
+  return p && p.login ? n + shownLine(p) : n;
+}
+// What the window last showed there, so a sign-in the site itself refused ("unknown user
+// details" after Brevo's Sign in with Google, 2026-10-14) isn't mistaken for one Symbiot missed.
+function shownLine(p) {
+  if (!p || (!p.title && !p.url)) return "";
+  let at = ""; try { const u = new URL(p.url); at = u.host + (u.pathname === "/" ? "" : u.pathname); } catch {}
+  const t = String(p.title || "").replace(/\s+/g, " ").trim().slice(0, 100);
+  return ` The window last showed ${t ? "“" + t + "”" : "a page"}${at ? " at " + at : ""}.`;
+}
+function foundNote0(e, k, p, l = {}, now = Date.now()) {
   const err = p && p.error ? String(p.error).replace(/\s+/g, " ").slice(0, 160) : "";
   const fresh = now - Number(l.opened || l.at || 0) < FRESH;
   if (!fresh && p && p.login) return `Signed out of ${e.name}${l.seen ? "" : " (or the sign-in didn't finish)"}: click it to sign in again.`;

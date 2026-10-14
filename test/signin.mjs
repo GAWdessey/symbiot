@@ -24,14 +24,39 @@ const h = await import("../headless.mjs");
 console.log("SIGN-IN — a session-only sign-in outlives the Sign in window");
 ok("every Symbiot browser opens the same profile in it, by name: Chrome's last-used one took over (2026-10-13)", [h.browserArgs(true), h.browserArgs(false, "https://x.org/")].every((a) => a.includes("--profile-directory=Default")) && h.PROFILE_DIR === "Default", h.browserArgs(true));
 ok("the hidden browser restores the last session; the Sign in window doesn't", h.browserArgs(true).includes("--restore-last-session") && !h.browserArgs(false, "https://x.org/").includes("--restore-last-session"), "");
+{
+  const f = join(HOME, "ss-test.json"), o = "https://cp.smsportal.com", now = Date.now();
+  h.saveSessions([{ origin: o, items: { "__auth-token": "T", a: "1" } }, { origin: o, items: { "__auth-token": "", a: "2" } }], now, f);
+  const got = h.loadSessions(now, f)[o];
+  ok("two tabs of one site: the token beats the login tab's empty one, else the later read", got && got.items["__auth-token"] === "T" && got.items.a === "2", got);
+  h.saveSessions([{ origin: o, items: { "__auth-token": "", b: "3" } }], now, f, { merge: true });
+  ok("a tab the last session left, its token empty: what's kept is kept (it may be another tab)", (h.loadSessions(now, f)[o] || {}).items["__auth-token"] === "T" && h.loadSessions(now, f)[o].items.b === "3", h.loadSessions(now, f));
+  h.saveSessions([{ origin: o, items: { "__auth-token": "", b: "3" }, emptied: ["__auth-token"] }], now, f, { merge: true });
+  ok("…but one the window saw signed out there (its token emptied) empties it", h.loadSessions(now, f)[o].items["__auth-token"] === "" && h.loadSessions(now, f)[o].items.b === "3", h.loadSessions(now, f));
+  h.saveSessions([{ origin: o, items: { "__auth-token": "T2" } }], now, f);
+  h.saveSessions([{ origin: o, items: { b: "3" }, emptied: ["__auth-token"] }], now, f, { merge: true });
+  ok("…or dropped", !("__auth-token" in h.loadSessions(now, f)[o].items), h.loadSessions(now, f));
+  h.saveSessions([{ origin: o, items: { "__auth-token": "T3" } }], now, f);
+  h.saveSessions([{ origin: o, items: { "__auth-token": "" } }], now, f);
+  ok("…and the hidden browser's own tab, filled from what's kept, is taken as it is", h.loadSessions(now, f)[o].items["__auth-token"] === "", h.loadSessions(now, f));
+  const big = "x".repeat(40000);
+  for (let i = 0; i < 6; i++) h.saveSessions([{ origin: "https://s" + i + ".example", items: { k: big } }], now + i, f);
+  const kept = Object.keys(h.loadSessions(now + 9, f));
+  ok("too much in all: the sites kept longest ago go, not every sign-in", kept.length >= 3 && !kept.includes("https://s0.example") && kept.includes("https://s5.example"), kept);
+  h.saveSessions([{ origin: "https://huge.example", items: { k: "x".repeat(150000) } }], now + 10, f);
+  ok("…and one too big to be a sign-in isn't kept", !h.loadSessions(now + 11, f)["https://huge.example"] && Object.keys(h.loadSessions(now + 11, f)).includes("https://s5.example"), Object.keys(h.loadSessions(now + 11, f)));
+}
 if (!chromeBinary()) console.log("  - no Chrome here: the rest skipped");
 else {
   // the site: /login signs you in with a session cookie, every page's title says what cookies came
   // (once: a tab the last session left, opened again, mustn't sign in afresh and hide a loss)
   // /ss-login signs you in in sessionStorage instead (once too), and /app's title says what it finds there
   // /quick signs you in with a cookie meant to last a day, and /quick-ss in sessionStorage (once each)
-  let logins = 0, ssLogins = 0, quick = 0, quickSs = 0;
+  // /ss-tab signs you in in sessionStorage as SMS Portal does (once), its login page an empty token; /tab says what it finds
+  let logins = 0, ssLogins = 0, quick = 0, quickSs = 0, tabLogins = 0;
   const srv = createServer((q, r) => {
+    if (q.url === "/ss-tab") { r.writeHead(200, { "content-type": "text/html" }); return r.end("<title>in</title><script>sessionStorage.setItem('__auth-token', " + (!tabLogins++ ? "'tok-tab'" : "''") + ")</script>"); }
+    if (q.url === "/tab") { r.writeHead(200, { "content-type": "text/html" }); return r.end("<title>none</title><script>document.title = sessionStorage.getItem('__auth-token') || 'signed out'</script>"); }
     if (q.url === "/quick-ss") { r.writeHead(200, { "content-type": "text/html" }); return r.end("<title>in</title>" + (!quickSs++ ? "<script>sessionStorage.setItem('token', 'tok-quick')</script>" : "")); }
     r.writeHead(200, { "content-type": "text/html", ...(q.url === "/login" && !logins++ ? { "set-cookie": "PHPSESSID=abc123; Path=/; HttpOnly" } : q.url === "/quick" && !quick++ ? { "set-cookie": "QUICK=q1; Path=/; Max-Age=86400" } : {}) });
     if (q.url === "/ss-login") return r.end("<title>in</title>" + (!ssLogins++ ? "<script>sessionStorage.setItem('token', 'tok-ss')</script>" : ""));
@@ -99,6 +124,22 @@ else {
       ok(`signed in (${what}) and Done at once: the hidden browser has the sign-in, the window having quit cleanly`, done.closed >= 1 && !done.forced && want.test((read && read.title) || ""), { done, read });
       await h.closeBrowser();
     }
+    // SMS Portal keeps its sign-in in the tab's sessionStorage only: you sign in, close its tab
+    // (or its window), and click Done. Gone with the tab, every check read its login page
+    // (2026-10-14). The app's window is read over its pipe while it's open (pipeWindow).
+    const win = spawn(chromeBinary(), ["--ozone-platform=headless", "--remote-debugging-pipe", ...h.browserArgs(false, base + "/ss-tab")], { stdio: ["ignore", "ignore", "ignore", "pipe", "pipe"] });
+    const w = h.pipeWindow(win, { every: 300 });
+    for (let i = 0; i < 40 && ![...w.reads.values()].some((x) => x.items["__auth-token"]); i++) await sleep(150);
+    const { targetInfos = [] } = await w.c.send("Target.getTargets"), signedIn = targetInfos.find((t) => t.type === "page" && t.url.endsWith("/ss-tab"));
+    await w.c.send("Target.createTarget", { url: base + "/ss-tab" }); // its login page in another tab: an empty token
+    await sleep(1200);
+    await w.c.send("Target.closeTarget", { targetId: signedIn.targetId }); // the signed-in tab closed
+    await sleep(600);
+    const doneTab = await h.closeSymbiotBrowser();
+    await Promise.race([new Promise((r) => (win.exitCode !== null || win.signalCode ? r() : win.once("exit", r))), sleep(3000)]);
+    const tab = await h.readPage(base + "/tab");
+    ok("a sign-in kept in a tab's sessionStorage, its tab closed before Done: the hidden browser has it", doneTab.closed >= 1 && tab && tab.title === "tok-tab", { doneTab, tab });
+    await h.closeBrowser();
   } finally { srv.close(); await h.closeBrowser(); }
 
   // A site that ties a sign-in to the browser it was made in (domains.co.za, 2026-10-12): it
