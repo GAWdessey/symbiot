@@ -16,7 +16,7 @@ const PROVIDERS = {
   claude:    { label: "Your Claude subscription (Claude Code)", sub: true, keyUrl: "https://claude.com/claude-code", keyName: null, model: "" },
   anthropic: { label: "Claude (Anthropic)", env: ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"], keyUrl: "https://console.anthropic.com/settings/keys", keyName: "Anthropic API key (sk-ant-…)", model: "claude-opus-5-5" },
   openai:    { label: "OpenAI (GPT)",       env: ["OPENAI_API_KEY"],                            keyUrl: "https://platform.openai.com/api-keys",       keyName: "OpenAI API key (sk-…)",     model: "gpt-4o-mini" },
-  gemini:    { label: "Gemini (Google)",    env: ["GEMINI_API_KEY", "GOOGLE_API_KEY"],          keyUrl: "https://aistudio.google.com/apikey",         keyName: "Google AI API key",         model: "gemini-1.5-flash" },
+  gemini:    { label: "Gemini (Google)",    env: ["GEMINI_API_KEY", "GOOGLE_API_KEY"],          keyUrl: "https://aistudio.google.com/apikey",         keyName: "Google AI API key",         model: "gemini-flash-latest" },
   ollama:    { label: "Local model (Ollama)", local: true,                                       keyUrl: "https://ollama.com",                         keyName: null,                        model: "llama3.1" },
 };
 
@@ -168,7 +168,7 @@ async function callOpenAI(r, system, prompt, images = []) {
     const text = await res.text();
     if (res.ok) return (JSON.parse(text).choices?.[0]?.message?.content || "").trim();
     if (res.status === 400 && tokKey === "max_tokens" && /max_tokens|max_completion_tokens/i.test(text)) continue;
-    throw new Error(`OpenAI ${res.status}: ${text.slice(0, 200)}`);
+    throw new Error(modelTrouble("openai", r.model, res.status, text) || `OpenAI ${res.status}: ${text.slice(0, 200)}`);
   }
   return "";
 }
@@ -183,7 +183,7 @@ async function callGemini(r, system, prompt, images = []) {
     }),
   });
   const text = await res.text();
-  if (!res.ok) throw new Error(`Gemini ${res.status}: ${text.slice(0, 200)}`);
+  if (!res.ok) throw new Error(modelTrouble("gemini", r.model, res.status, text) || `Gemini ${res.status}: ${text.slice(0, 200)}`);
   const parts = JSON.parse(text).candidates?.[0]?.content?.parts || [];
   return parts.map((p) => p.text || "").join("").trim();
 }
@@ -241,6 +241,30 @@ async function write(system, prompt, { images = [], fast = false, floor = "" } =
   } finally { stop(); }
 }
 
+// What a provider's refusal means, in a sentence you can act on, or "" for one this doesn't
+// know. gemini-4-argon on a key with no billing: Google answered 429 "free_tier … limit: 0"
+// to every request, and the chat said only "(couldn't reach the model)" (2026-10-14).
+function modelTrouble(provider, model, status, body = "") {
+  const name = (PROVIDERS[provider] || {}).label || provider, t = String(body || "");
+  if (status === 429 && /free_tier|limit: 0\b/i.test(t)) return `${name} won't run ${model} on this key: it isn't in Google's free tier, and the key's Google project has no billing. Turn billing on for that project (aistudio.google.com, Billing), or pick a free model in Settings → AI, such as gemini-flash-latest.`;
+  if (status === 429 && /insufficient_quota|billing|credit/i.test(t)) return `${name} won't run ${model}: the account is out of credit. Add some on its billing page, or pick another AI in Settings → AI.`;
+  if (status === 429) return `${name} is limiting how fast this key can ask (a rate limit). Try again in a minute.`;
+  if (status === 503 || status === 529 || /overloaded|high demand|UNAVAILABLE/i.test(t)) return `${name} is too busy to answer with ${model} right now. Try again in a minute, or pick another model in Settings → AI.`;
+  if (status === 404 || /not found for API version|is not found|does not exist|model_not_found/i.test(t)) return `${name} has no model called ${model} for this key. Pick another in Settings → AI.`;
+  return "";
+}
+// The model you picked answers on this key: a one-word ask (the model list says only that the
+// key is good). "" when it does (or can't be told here), else why not.
+async function modelCheck(provider, key, model, fetchFn = fetch) {
+  try {
+    if (provider === "gemini") {
+      const res = await fetchFn(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, { method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+        body: JSON.stringify({ contents: [{ role: "user", parts: [{ text: "Say ok" }] }], generationConfig: { maxOutputTokens: 8 } }) });
+      return res.ok ? "" : modelTrouble(provider, model, res.status, await res.text());
+    }
+  } catch {}
+  return "";
+}
 async function validate(provider, { key, baseUrl } = {}) {
   try {
     if (provider === "claude") return claudeReady(true);
@@ -278,8 +302,8 @@ function recommendModels(hw) {
     { provider: "anthropic", tier: "top", model: "claude-opus-5-5", note: "best Claude (default)" },
     { provider: "openai", tier: "cheap", model: "gpt-4o-mini", note: "cheap OpenAI" },
     { provider: "openai", tier: "top", model: "gpt-4o", note: "stronger OpenAI" },
-    { provider: "gemini", tier: "cheap", model: "gemini-1.5-flash", note: "cheap Google" },
-    { provider: "gemini", tier: "top", model: "gemini-1.5-pro", note: "stronger Google" },
+    { provider: "gemini", tier: "cheap", model: "gemini-flash-latest", note: "cheap Google" },
+    { provider: "gemini", tier: "top", model: "gemini-pro-latest", note: "stronger Google" },
   ];
   const best = (local.slice().reverse().find((m) => m.fits) || local[0]).model;
   return { local, paid, best };
@@ -325,8 +349,9 @@ async function connectProvider(b) {
   if (!key) return { ok: false, message: "No key entered." };
   const model = (b.model || "").trim() || PROVIDERS[provider].model;
   if (!(await validate(provider, { key }))) return { ok: false, message: `That key didn't work for ${PROVIDERS[provider].label}.` };
+  const why = await (b.check || modelCheck)(provider, key, model); if (why) return { ok: false, message: "Not connected: " + why };
   cfg.provider = provider; cfg[provider] = { apiKey: key, model }; delete cfg.apiKey;
   return saveConfig(cfg) ? { ok: true, message: `Connected: ${PROVIDERS[provider].label} · ${model}` } : { ok: false, message: "Couldn't write the config file." };
 }
 
-export { PROVIDERS, AI_UI, aboveFloor, NO_CHAT_MODEL, resolveProvider, write, validate, connectProvider, detectHardware, recommendModels, hasOllama, ollamaInstall, ensureOllama, useOllamaModel , claudeState, claudeReady, claudeHelp , claudeCommand , claudeSpawn };
+export { modelTrouble, modelCheck, PROVIDERS, AI_UI, aboveFloor, NO_CHAT_MODEL, resolveProvider, write, validate, connectProvider, detectHardware, recommendModels, hasOllama, ollamaInstall, ensureOllama, useOllamaModel , claudeState, claudeReady, claudeHelp , claudeCommand , claudeSpawn };
