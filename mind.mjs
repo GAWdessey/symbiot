@@ -348,12 +348,14 @@ async function converse({ where, role = "", context = "", history = "", question
   const asked = (p) => ask(system, p, images.length ? { images } : undefined);
   const dead = (r) => !r || /^\(?couldn't reach the model/i.test(String(r));
   const raw = await asked(prompt);
-  if (dead(raw)) return { reply: "(couldn't reach the model)", remembered: 0 };
+  // why, when the provider said (a model with no free quota, a busy one, a limit): what to do about it
+  const deadReply = (r) => (/^Couldn't reach the model: ./.test(String(r || "")) ? String(r).slice(0, 600) : "(couldn't reach the model)");
+  if (dead(raw)) return { reply: deadReply(raw), remembered: 0 };
   let j = parseReply(raw);
   // Home must answer in the reply format: one retry, then an honest error rather than loose text (nothing runs on it)
   if (j.plain && where === "Home") {
     const raw2 = await asked(prompt + JSON_AGAIN);
-    if (dead(raw2)) return { reply: "(couldn't reach the model)", remembered: 0 };
+    if (dead(raw2)) return { reply: deadReply(raw2), remembered: 0 };
     j = parseReply(raw2);
     if (j.plain) return { reply: BAD_FORM, remembered: 0, steps: [] };
   }
