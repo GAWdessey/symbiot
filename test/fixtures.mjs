@@ -673,6 +673,14 @@ try {
   const rRef = await repoTests(tdir, { cmd: process.execPath, args: ["-e", "console.error('FAIL api/users.test.ts\\nError: connect ECONNREFUSED 127.0.0.1:5432'); process.exit(1)"] });
   const rRed = await repoTests(tdir, { cmd: process.execPath, args: ["-e", "console.error('AssertionError: expected 2 to equal 3'); process.exit(1)"] });
   ok("repoTests: failing only for want of a local database is 'untested', not failed; a real failure still fails", rRef.ok && /127\.0\.0\.1:5432/.test(rRef.untested || "") && rRed.ok === false && /AssertionError/.test(rRed.note), [rRef, rRed]);
+  // dailify, 14 Oct 2026: under npm --silent, pnpm -r test printed nothing, so the database it couldn't
+  // reach read as a plain failure; the address can also arrive split across two pieces of output
+  const was = process.env.npm_config_loglevel; process.env.npm_config_loglevel = "silent";
+  const rLoud = await repoTests(tdir, { cmd: process.execPath, args: ["-e", "if (process.env.npm_config_loglevel !== 'silent') console.error('Error: connect ECONNREFUSED 127.0.0.1:5432'); process.exit(1)"] });
+  if (was === undefined) delete process.env.npm_config_loglevel; else process.env.npm_config_loglevel = was;
+  const rSplit = await repoTests(tdir, { cmd: process.execPath, args: ["-e", "process.stderr.write('Error: connect ECONNRE'); setTimeout(() => { process.stderr.write('FUSED 127.0.0.1:5432\\n'); process.exit(1); }, 300)"] });
+  const rWhy = await repoTests(tdir, { cmd: process.execPath, args: ["-e", "console.log('\\x1b[31m Tests  2 failed | 40 passed (42)\\x1b[39m\\napps/api test: Failed\\n/repo/apps/api:\\n ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL  @x/api test: `vitest run`\\nExit status 1\\nnpm error code 1'); process.exit(1)"] });
+  ok("repoTests: an inherited --silent can't hide the refused database, nor a split in the output; a real failure gives its own line, not npm's sign-off", rLoud.ok && rLoud.untested && rSplit.ok && rSplit.untested && rWhy.ok === false && rWhy.note === "Tests  2 failed | 40 passed (42)", [rLoud, rSplit, rWhy]);
   // dailify, 14 Oct 2026: a server its tests started kept their output open after npm exited, so the
   // tests never "ended" and Approve there was refused ("Already approving here") until a restart
   const heldAt = Date.now(), rHeld = await repoTests(tdir, { cmd: process.execPath, args: ["-e", "require('child_process').spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'inherit' }); console.log('ok'); process.exit(0)"] });

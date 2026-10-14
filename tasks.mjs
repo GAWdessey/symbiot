@@ -629,14 +629,19 @@ function commitSubject(texts) {
 // (dailify's pnpm -r test, 14 Oct 2026) kept their output open after npm exited, so this
 // waited for ever, holding that folder's Approve with it ("Already approving here"). Past
 // the limit, or 2 s after npm exits with the output still held, the whole group is stopped.
-async function repoTests(path, { cmd = "npm", args = ["test", "--silent"], limit = 15 * 60000 } = {}) {
+// Not npm test --silent: npm hands its loglevel down, and pnpm -r test under "silent"
+// prints nothing at all (dailify, 14 Oct 2026), so a database that wasn't running read
+// as a plain failure with no reason, and every Approve there stopped before the push.
+async function repoTests(path, { cmd = "npm", args = ["test"], limit = 15 * 60000 } = {}) {
   let test = ""; try { test = String(JSON.parse(readFileSync(join(path, "package.json"), "utf8")).scripts?.test || ""); } catch {}
   if (!test || /no test specified/.test(test) || !existsSync(join(path, "node_modules"))) return { ok: true };
   return await new Promise((done) => {
     let out = "", refused = "", code = null, settled = false, drain = null;
-    const p = spawn(cmd, args, { cwd: path, stdio: ["ignore", "pipe", "pipe"], detached: process.platform !== "win32" });
+    const env = { ...process.env }; delete env.npm_config_loglevel; // Symbiot started under npm --silent passes it on too
+    const p = spawn(cmd, args, { cwd: path, env, stdio: ["ignore", "pipe", "pipe"], detached: process.platform !== "win32" });
     const group = (sig) => { try { process.kill(-p.pid, sig); } catch { try { p.kill(sig); } catch {} } };
-    const keep = (d) => { out = (out + d).slice(-4000); refused = refused || localRefused(String(d)); };
+    // the address is looked for across where one piece of output ends and the next begins
+    const keep = (d) => { refused = refused || localRefused(out.slice(-200) + d); out = (out + d).slice(-4000); };
     p.stdout.on("data", keep); p.stderr.on("data", keep);
     const finish = (over) => {
       if (settled) return; settled = true; clearTimeout(timer); clearTimeout(drain);
@@ -644,13 +649,20 @@ async function repoTests(path, { cmd = "npm", args = ["test", "--silent"], limit
       if (over) return done({ ok: false, note: `they were still running after ${Math.round(limit / 60000)} min, so they were stopped` });
       if (code === 0) return done({ ok: true });
       if (refused) return done({ ok: true, untested: `the tests couldn't run here: they need something on ${refused} that isn't running on this computer, so they weren't checked before the push (CI runs them on the PR)` });
-      done({ ok: false, note: (out.trim().split("\n").filter(Boolean).pop() || "").slice(0, 160) });
+      done({ ok: false, note: failedLine(out) });
     };
     const timer = setTimeout(() => finish(true), limit);
     p.on("error", () => { if (settled) return; settled = true; clearTimeout(timer); done({ ok: true }); }); // no npm here: can't check
     p.on("exit", (c) => { code = c; drain = setTimeout(() => finish(false), 2000); });
     p.on("close", (c) => { if (code === null) code = c; clearTimeout(drain); drain = null; finish(false); });
   });
+}
+// The last line of failing tests' output that says something: not npm's or pnpm's own
+// sign-off ("npm error code 1", "ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL…", "Exit status 1",
+// "apps/api test: Failed"), nor colour codes.
+function failedLine(out) {
+  const said = (l) => l.trim() && !/^\s*(npm (error|ERR!)|ERR_PNPM_|Exit status \d+\s*$|\/\S+:\s*$)/.test(l) && !/^\S+ \S+: Failed\s*$/.test(l.trim());
+  return (String(out).replace(/\x1b\[[0-9;]*m/g, "").split("\n").filter(said).pop() || "").trim().slice(0, 160);
 }
 // The local address a test's connection was refused at ("127.0.0.1:5432"), or "".
 function localRefused(s) {

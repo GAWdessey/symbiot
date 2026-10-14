@@ -2,6 +2,10 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.65.1 — 2026-10-14
+
+- Approve no longer stops before the push when a project's tests only fail because its test database isn't running on this computer (dailify). It pushes, says the tests couldn't run here, and CI checks them on the PR. When tests really fail, it now gives the line that says why.
+
 ## 0.65.0 — 2026-10-14
 
 - Merged parallel changes for choosing the Opus model based only on a run's active task.
