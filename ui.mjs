@@ -1423,7 +1423,7 @@ body.lq-light .btip .bta button:not(.quiet){background:#151A21;color:#FFFFFF}
 var T=new URLSearchParams(window.location.search).get('t')||'';
 function api(path,body){return fetch(path,{method:body?'POST':'GET',headers:{'x-symbiot-token':T,'content-type':'application/json'},body:body?JSON.stringify(body):undefined}).then(function(r){return r.json();});}
 var KEYURL={claude:'https://claude.com/claude-code',anthropic:'https://console.anthropic.com/settings/keys',openai:'https://platform.openai.com/api-keys',gemini:'https://aistudio.google.com/apikey',ollama:'https://ollama.com'};
-var DEFMODEL={claude:'your plan’s default',anthropic:'claude-opus-5-5',openai:'gpt-4o-mini',gemini:'gemini-1.5-flash',ollama:'llama3.1'};
+var DEFMODEL={claude:'your plan’s default',anthropic:'claude-opus-5-5',openai:'gpt-4o-mini',gemini:'gemini-flash-latest',ollama:'llama3.1'};
 function $(id){return document.getElementById(id);}
 // Live updates never pull text out from under your selection. A refresh that would
 // redraw what you're selecting in waits until you let it go (selWait), and a redraw

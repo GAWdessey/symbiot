@@ -76,6 +76,27 @@ try {
   process.env.SIGNED = "1";
   const yes = await connectProvider({ provider: "claude", model: "" });
   ok("signed in: chosen, no key asked", yes.ok && /No key needed/.test(yes.message) && JSON.parse(readFileSync(join(CFG, "config.json"), "utf8")).provider === "claude", yes);
+
+  console.log("ANOTHER AI SAYS NO — why, in words you can act on (gemini-4-argon with no billing, 2026-10-14)");
+  {
+    const { modelTrouble, modelCheck } = await import("../ai.mjs");
+    const { converse } = await import("../mind.mjs");
+    const FREE0 = '{ "error": { "code": 429, "message": "You exceeded your current quota, please check your plan and billing details. * Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_input_token_count, limit: 0, model: gemini-4-argon", "status": "RESOURCE_EXHAUSTED" } }';
+    const real = globalThis.fetch;
+    globalThis.fetch = async (u, o = {}) => (o.method === "POST" ? new Response(FREE0, { status: 429 }) : new Response('{"models":[]}', { status: 200 })); // the key lists models; the model won't answer
+    try {
+      setCfg({ provider: "gemini", gemini: { model: "gemini-4-argon" } }); writeFileSync(join(CFG, "secrets.json"), JSON.stringify({ gemini: { apiKey: "AQ.test" } }));
+      const said = await write("s", "p");
+      ok("a model outside the free tier: it says so, and what to do (billing, or a free model)", /^Couldn't reach the model: Gemini \(Google\) won't run gemini-4-argon on this key: it isn't in Google's free tier/.test(said || "") && /Turn billing on/.test(said) && /gemini-flash-latest/.test(said), said);
+      const chat = await converse({ where: "Home", question: "hi", ask: async () => said, map: {} });
+      ok("…and the chat shows that, not a bare '(couldn't reach the model)'", chat.reply === said, chat.reply);
+      const c = await connectProvider({ provider: "gemini", key: "AQ.test", model: "gemini-4-argon" });
+      ok("connecting it: one word asked first, and not connected, saying why", !c.ok && /^Not connected: Gemini \(Google\) won't run gemini-4-argon/.test(c.message), c);
+    } finally { globalThis.fetch = real; }
+    const busy = modelTrouble("gemini", "gemini-3.8-flash", 503, '{"error":{"message":"This model is currently experiencing high demand."}}'), none = modelTrouble("gemini", "gemini-9", 404, "models/gemini-9 is not found for API version v1beta");
+    ok("a busy model, or none by that name: said so too", /too busy/.test(busy) && /no model called gemini-9/.test(none) && modelTrouble("gemini", "x", 500, "boom") === "", [busy, none]);
+    ok("…and a model that answers connects as before", (await modelCheck("gemini", "k", "gemini-flash-latest", async () => new Response("{}", { status: 200 }))) === "", "");
+  }
 } finally {
   rmSync(HOME, { recursive: true, force: true });
 }

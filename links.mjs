@@ -89,7 +89,7 @@ function saveLinked(l) { const cfg = loadConfig(); if (Object.keys(l).length) cf
 function stateOf(e, l, watches) {
   if (!l) return { state: "off" };
   const w = l.watch && watches.find((x) => x.id === l.watch);
-  if (!e.watch) return { state: l.ok ? "ok" : "signin", ...(l.checked ? { checked: l.checked } : {}), ...(!l.ok && l.note ? { note: l.note } : {}) };
+  if (!e.watch) return { state: l.ok ? "ok" : /^Signed out/.test(l.note || "") ? "signedout" : "signin", ...(l.checked ? { checked: l.checked } : {}), ...(!l.ok && l.note ? { note: l.note } : {}) };
   if (!w) return { state: "error", note: "Its watch was removed. Link it again." };
   // signed out only once it has been read signed in: a read before you've
   // finished signing in in the window is still "sign in"
@@ -124,7 +124,7 @@ async function linkSite(id, { open = signIn } = {}) {
     if (w.error) { for (const h of added) untrustSite(h); return { error: w.error }; }
     watch = w.id;
   }
-  l[id] = { at: (had && had.at) || Date.now(), ...(watch ? { watch } : {}), hosts: [...new Set([...((had && had.hosts) || []), ...added])] };
+  l[id] = { at: (had && had.at) || Date.now(), opened: Date.now(), ...(had && had.seen ? { seen: had.seen } : {}), ...(watch ? { watch } : {}), hosts: [...new Set([...((had && had.hosts) || []), ...added])] };
   saveLinked(l);
   const r = await open(e.url);
   return r.error ? { error: r.error, item: linksState().items.find((x) => x.id === id) } : { ok: true, url: r.url, item: linksState().items.find((x) => x.id === id) };
@@ -143,18 +143,24 @@ async function checkLink(id, { check = checkWatch, read = readPage, cookie = ses
       try { p = await read(e.url, { password: true }); } catch (err) { p = { error: String((err && err.message) || err) }; }
       if (p && (p.busy || WINDOW_OPEN.test(p.error || ""))) return { busy: true, item: linksState().items.find((x) => x.id === id) };
       // not confirmed: say what was found, rather than only "sign in" again
-      if (!p || p.error || p.login) note = foundNote(e, k, p);
+      if (!p || p.error || p.login) note = foundNote(e, k, p, l[id]);
     }
     const l2 = linked(); if (!l2[id]) return { error: `${e.name} isn't linked.` };
     const ok = !!((k && k.found) || (p && !p.error && !p.login));
     const { note: _, ...was } = l2[id];
-    l2[id] = { ...was, ok, checked: Date.now(), ...(note ? { note } : {}) }; saveLinked(l2);
+    l2[id] = { ...was, ok, checked: Date.now(), ...(ok ? { seen: Date.now() } : {}), ...(note ? { note } : {}) }; saveLinked(l2);
   }
   return { ok: true, item: linksState().items.find((x) => x.id === id) };
 }
 // What a check that couldn't confirm a sign-in found, in a line for the site's card.
-function foundNote(e, k, p) {
+// "It may still be saving" is for the half hour after you opened it to sign in; a sign-in
+// page after that is a sign-out, said so: thirteen sites said "checks again in a moment"
+// for two days (2026-10-14). l: the link (opened: when its sign-in last opened; seen: last read signed in).
+const FRESH = 30 * 60000;
+function foundNote(e, k, p, l = {}, now = Date.now()) {
   const err = p && p.error ? String(p.error).replace(/\s+/g, " ").slice(0, 160) : "";
+  const fresh = now - Number(l.opened || l.at || 0) < FRESH;
+  if (!fresh && p && p.login) return `Signed out of ${e.name}${l.seen ? "" : " (or the sign-in didn't finish)"}: click it to sign in again.`;
   if (k && k.found === false && p && p.login) return `${e.name} showed its sign-in page, and its session cookie (${k.cookie}) isn't saved: sign in there again.`;
   if (k && k.found === false) return `No session cookie (${k.cookie}) for ${k.host} yet: the page may still be loading or saving. Symbiot checks again in a moment.${err ? " The page: " + err : ""}`;
   if (p && p.login) return `${e.name} showed its sign-in page: if you've just signed in, it may still be saving. Symbiot checks again in a moment.`;
@@ -258,4 +264,4 @@ function signInAsked(text) {
   return null;
 }
 
-export { CATALOG, catalog, cleanEntry, linksState, linkSite, checkLink, checkSignIns, settleSignIns, sitesCheck, unlinkSite, addSite, ownSites, signInAsked, OWN };
+export { foundNote, CATALOG, catalog, cleanEntry, linksState, linkSite, checkLink, checkSignIns, settleSignIns, sitesCheck, unlinkSite, addSite, ownSites, signInAsked, OWN };

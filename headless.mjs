@@ -27,6 +27,13 @@ import { CONFIG_DIR, chromeBinary, loadConfig, saveConfig } from "./core.mjs";
 import { loadScreens, addPageScreen, center, stitchPng, stitchListPng } from "./screens.mjs";
 
 const PROFILE = join(CONFIG_DIR, "browser");
+// The profile inside it every Symbiot browser opens, named. Chrome opens the one it last
+// used, and a Google sign-in in the window can make a second one ("Sign in to Chrome?"):
+// on 2026-10-13 a "Profile 1" signed in as another Gmail took over, and from then on every
+// check opened it, where none of the sites signed in to the day before were: ten links
+// showed their sign-in page while the sign-ins sat in Default.
+const PROFILE_DIR = "Default";
+export { PROFILE_DIR };
 const VIEW = { w: 1280, h: 800 }; // the page's size: a laptop-sized window
 const TIMEOUT = 90000;            // the most one map, press or type may take
 const START = 30000;              // the most the browser may take to start
@@ -54,7 +61,7 @@ function browserArgs(headless, url = "about:blank", ua = "") {
   return [
     ...(headless ? ["--headless=new", "--hide-scrollbars", "--mute-audio", "--remote-debugging-pipe", `--window-size=${VIEW.w},${VIEW.h}`, "--restore-last-session",
       "--disable-blink-features=AutomationControlled", ...(ua ? ["--user-agent=" + ua] : [])] : ["--new-window"]),
-    "--user-data-dir=" + PROFILE, "--no-first-run", "--no-default-browser-check",
+    "--user-data-dir=" + PROFILE, "--profile-directory=" + PROFILE_DIR, "--no-first-run", "--no-default-browser-check",
     ...(process.platform === "linux" ? ["--password-store=basic"] : process.platform === "darwin" ? ["--use-mock-keychain"] : []),
     url,
   ];
@@ -121,18 +128,27 @@ function connect(proc) {
 // that way (browserArgs), and at once makes each session cookie a cookie that lasts
 // SESSION_KEEP; and again before it closes, for one a site set meanwhile. Twice the user
 // signed in to domains.co.za, SMS PIN and all, and lost it as the window closed (2026-10-09).
-const SESSION_KEEP = 12 * 3600; // seconds
-async function keepSessions(c, now = Date.now()) {
+// The ones it made last are kept going: each start and close puts them SESSION_KEEP ahead
+// again (KEPT lists them). Once made to last, a cookie wasn't a session one any more, so it
+// was never put ahead again, and every such sign-in ended 12 hours after it was made, used
+// or not (2026-10-14). The site's own end to a session still holds: it replaces the cookie.
+const SESSION_KEEP = 14 * 86400; // seconds
+const KEPT = join(PROFILE, "symbiot-kept-cookies.json");
+export { KEPT };
+const keptKey = (k) => `${k.name}|${k.domain}|${k.path || "/"}`;
+async function keepSessions(c, now = Date.now(), file = KEPT) {
   let cookies = []; try { ({ cookies = [] } = await c.send("Storage.getCookies")); } catch { return 0; }
-  let n = 0;
-  for (const k of cookies.filter((x) => x.session)) {
+  let kept = {}; try { kept = JSON.parse(readFileSync(file, "utf8")) || {}; } catch {}
+  let n = 0; const still = {};
+  for (const k of cookies.filter((x) => x.session || kept[keptKey(x)])) {
     const host = String(k.domain || "").replace(/^\./, ""); if (!host) continue;
     const port = k.sourcePort > 0 && k.sourcePort !== 80 && k.sourcePort !== 443 ? ":" + k.sourcePort : "";
     const at = k.domain.startsWith(".") ? { domain: k.domain } : { url: `${k.secure ? "https" : "http"}://${host}${port}${k.path || "/"}` }; // host-only stays host-only
     const p = { name: k.name, value: k.value, path: k.path || "/", secure: !!k.secure, httpOnly: !!k.httpOnly, expires: Math.floor(now / 1000) + SESSION_KEEP, ...at,
       ...(k.sameSite ? { sameSite: k.sameSite } : {}), ...(k.priority ? { priority: k.priority } : {}), ...(k.partitionKey ? { partitionKey: k.partitionKey } : {}) };
-    try { await c.send("Storage.setCookies", { cookies: [p] }); n++; } catch {}
+    try { await c.send("Storage.setCookies", { cookies: [p] }); n++; still[keptKey(k)] = now; } catch {}
   }
+  try { writeFileSync(file, JSON.stringify(still), { mode: 0o600 }); } catch {} // only what's still there: one the site ended drops out
   return n;
 }
 // A sign-in some sites keep in sessionStorage (a tab's own, not a cookie) comes back with
@@ -186,7 +202,7 @@ const SESSION_COOKIE = { "x.com": "auth_token", "twitter.com": "auth_token", "in
 function sessionCookie(hosts, profile = PROFILE) {
   const host = [].concat(hosts || []).map((h) => String(h).toLowerCase().replace(/^www\./, "")).map((h) => Object.keys(SESSION_COOKIE).find((k) => h === k || h.endsWith("." + k))).find(Boolean);
   if (!host) return null;
-  const cookie = SESSION_COOKIE[host], db = ["Default/Network/Cookies", "Default/Cookies"].map((f) => join(profile, f)).find((f) => existsSync(f));
+  const cookie = SESSION_COOKIE[host], db = ["Network/Cookies", "Cookies"].map((f) => join(profile, PROFILE_DIR, f)).find((f) => existsSync(f));
   if (!db) return { host, cookie, found: false };
   const dir = mkdtempSync(join(tmpdir(), "symbiot-cookies-"));
   try {
@@ -1425,7 +1441,7 @@ async function openSymbiotBrowser(url = "") {
   const hidden = profilePids({ headless: true }); if (hidden.length) { kill(hidden); await sleep(800); }
   try {
     mkdirSync(PROFILE, { recursive: true, mode: 0o700 });
-    const base = ["--user-data-dir=" + PROFILE, "--no-first-run", "--no-default-browser-check",
+    const base = ["--user-data-dir=" + PROFILE, "--profile-directory=" + PROFILE_DIR, "--no-first-run", "--no-default-browser-check",
       ...(process.platform === "linux" ? ["--password-store=basic", "--class=SymbiotBrowser"] : process.platform === "darwin" ? ["--use-mock-keychain"] : [])];
     const page = HUB ? ["--app=" + HUB, "--window-size=1040,820"] : [];
     if (page.length) spawn(chrome, [...base, ...page], { detached: true, stdio: "ignore" }).unref();
