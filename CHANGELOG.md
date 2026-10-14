@@ -2,6 +2,12 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.64.2
+
+- **When another AI won't answer, Symbiot says why.** With Gemini set to gemini-4-argon, every chat said "(couldn't reach the model)". Google was answering that the model isn't in its free tier and the key's project has no billing. Symbiot now says that, and what to do: turn billing on, or pick a free model. The same goes for a model that's out of credit, rate-limited, too busy, or doesn't exist, on Gemini and OpenAI.
+- **Connecting checks the model you picked.** Settings used to check only that the key worked, so it connected a model that would never answer. It now asks that model one word first, and if it won't answer, Symbiot isn't connected to it and says why.
+- **Gemini's default model is gemini-flash-latest.** The old default, gemini-1.5-flash, is no longer offered.
+
 ## 0.64.1
 
 - **Sign-ins stay in the profile they were made in.** Symbiot's browser opened whichever Chrome profile was used last. A Google sign-in in its window made a second profile ("Sign in to Chrome?"), and from then on every check and agent opened that one, where none of your earlier sign-ins were: ten linked sites showed their sign-in page while the sign-ins sat in the first profile, and the Gmail card read the other account's inbox. Every Symbiot browser now opens its own first profile, whatever Chrome used last.
