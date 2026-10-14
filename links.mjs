@@ -145,6 +145,9 @@ async function checkLink(id, { check = checkWatch, read = readPage, cookie = ses
       // not confirmed: say what was found, rather than only "sign in" again
       if (!p || p.error || p.login) note = foundNote(e, k, p, l[id]);
     }
+    // a bot check's page is neither the site nor its sign-in: the link stays as it was
+    // (platform.openai.com and console.x.ai showed Cloudflare's, and read as signed in: 2026-10-14)
+    if (p && !p.error && !p.login && BOT_CHECK.test(String(p.title || "").trim())) return { ok: true, wall: true, item: linksState().items.find((x) => x.id === id) };
     const l2 = linked(); if (!l2[id]) return { error: `${e.name} isn't linked.` };
     const ok = !!((k && k.found) || (p && !p.error && !p.login));
     const { note: _, ...was } = l2[id];
@@ -167,6 +170,7 @@ function foundNote(e, k, p, l = {}, now = Date.now()) {
   return `Couldn't check ${e.name} just now${err ? " (" + err + ")" : ""}. That isn't a sign-out: Symbiot checks again in a moment.`;
 }
 const WINDOW_OPEN = /Symbiot Browser is open/;
+const BOT_CHECK = /^(just a moment|attention required|please wait|checking your browser|verifying you are human|access denied|one more step)\b/i;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // Once the Symbiot Browser closes (Done, or its X: server.mjs): each linked site not read
 // signed in yet is read now. One the hidden browser can't take yet (an agent's page open in

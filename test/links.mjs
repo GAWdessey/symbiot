@@ -109,6 +109,13 @@ try {
     const s1 = (await checkLink("site-domains-co-za", { read: async (u, o) => ({ url: "https://www.domains.co.za/login/dashboard", login: !!(o && o.password) }) })).item;
     const s2 = (await checkLink("site-domains-co-za", { read: async () => ({ url: "https://www.domains.co.za/client/dashboard", title: "Welcome Garth" }) })).item;
     ok("checked: still 'sign in' on its login page (or one asking for a password), 'linked' once it shows the dashboard", s1.state === "signin" && s2.state === "ok", [s1.state, s2.state]);
+    // a bot check's page in its place (Cloudflare's, platform.openai.com: 2026-10-14) isn't a sign-in, nor a sign-out
+    const wallRead = async () => ({ url: "https://www.domains.co.za/client/dashboard", title: "Just a moment...", items: [] });
+    const w1 = await checkLink("site-domains-co-za", { read: wallRead });
+    await checkLink("site-domains-co-za", { read: async () => ({ url: "https://www.domains.co.za/login/dashboard", login: true }) });
+    const w2 = await checkLink("site-domains-co-za", { read: wallRead });
+    ok("a bot check's page leaves the link as it was: signed in stays signed in, not signed in isn't made signed in", w1.wall && w1.item.state === "ok" && w2.wall && w2.item.state === "signin", [w1, w2]);
+    await checkLink("site-domains-co-za", { read: async () => ({ url: "https://www.domains.co.za/client/dashboard", title: "Welcome Garth" }) });
     await addSite("domains.co.za", { open: openC });
     ok("added again by its bare name: still one, keeping the page you gave first", ownSites().length === 1 && item("site-domains-co-za").url === "https://www.domains.co.za/client/dashboard", ownSites());
     const li = await addSite("https://www.linkedin.com/feed/", { open: openC });
