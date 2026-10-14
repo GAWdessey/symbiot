@@ -163,11 +163,24 @@ function loadSessions(now = Date.now(), file = SESSIONS) {
   let d = {}; try { d = JSON.parse(readFileSync(file, "utf8")) || {}; } catch {}
   return Object.fromEntries(Object.entries(d).filter(([o, v]) => /^https?:\/\//.test(o) && v && v.items && typeof v.items === "object" && now - Number(v.at) < SESSION_KEEP * 1000));
 }
-function saveSessions(add, now = Date.now(), file = SESSIONS) {
-  const d = { ...loadSessions(now, file) };
-  for (const x of add) if (x && x.origin && x.items) { if (Object.keys(x.items).length) d[x.origin] = { at: now, items: x.items }; else delete d[x.origin]; }
-  let out = JSON.stringify(d); if (out.length > SS_MAX) out = "{}"; // too big to be a sign-in: keep nothing rather than half
-  try { writeFileSync(file, out, { mode: 0o600 }); } catch {}
+// add: tabs' reads, oldest first. Two tabs of one site are one: a value beats an empty one
+// (SMS Portal's login tab has "__auth-token": "", its signed-in one the token), else the later.
+// merge: what's kept is one of them too, as one of these may not be the tab that was signed
+// in (the tabs the last session left; the window's, which aren't filled from what's kept).
+// emptied: the keys a tab was seen to empty or drop (signed out there), so whatever's kept. The
+// hidden browser's own tab is filled from what's kept, so its read is taken as it is.
+function saveSessions(add, now = Date.now(), file = SESSIONS, { merge = false } = {}) {
+  const d = { ...loadSessions(now, file) }, got = {};
+  for (const x of add) if (x && x.origin && x.items) {
+    const was = got[x.origin] || (merge && d[x.origin] ? d[x.origin].items : {});
+    got[x.origin] = { ...was, ...Object.fromEntries(Object.entries(x.items).filter(([k, v]) => v !== "" || !was[k])) };
+    for (const k of x.emptied || []) if (k in x.items) got[x.origin][k] = x.items[k]; else delete got[x.origin][k];
+  }
+  for (const [o, items] of Object.entries(got)) if (Object.keys(items).length && JSON.stringify(items).length <= SS_MAX / 2) d[o] = { at: now, items }; else delete d[o]; // too big to be a sign-in
+  // too much in all: the sites kept longest ago go first, not everything
+  const order = Object.keys(d).sort((a, b) => d[a].at - d[b].at);
+  while (order.length && JSON.stringify(d).length > SS_MAX) delete d[order.shift()];
+  try { writeFileSync(file, JSON.stringify(d), { mode: 0o600 }); } catch {}
 }
 const sessionFill = (d) => `(() => { try { const o = ${JSON.stringify(Object.fromEntries(Object.entries(d).map(([k, v]) => [k, v.items])))}[location.origin]; if (!o || sessionStorage.length) return; for (const k of Object.keys(o)) sessionStorage.setItem(k, String(o[k])); } catch {} })()`;
 // wait: a restored tab may not have its page yet (about:blank a moment longer); our own tab has it
@@ -188,8 +201,45 @@ async function closeOthers(c, keep) {
       if (/^https?:/.test(t.url || "")) try { const { sessionId } = await c.send("Target.attachToTarget", { targetId: t.targetId, flatten: true }); got.push(await readSession((m, p) => c.send(m, p, sessionId), true)); } catch {}
       try { await c.send("Target.closeTarget", { targetId: t.targetId }); } catch {}
     }
-    if (got.some(Boolean)) saveSessions(got.filter(Boolean));
+    if (got.some(Boolean)) saveSessions(got.filter(Boolean), Date.now(), SESSIONS, { merge: true });
   } catch {}
+}
+// The Symbiot Browser's own tabs, read while it's open: a site that keeps its sign-in only in
+// sessionStorage lost it with its tab. SMS Portal keeps its __auth-token there, the tab or its
+// window was closed before Done, and every check read its login page even right after a good
+// sign-in (2026-10-14). So the app opens the window over a pipe of its own (pipeWindow: a pipe,
+// not a port, so nothing else on the computer can drive it), reads each tab's every WIN_EVERY,
+// keeps the last read of each site in each tab, and saves them (saveSessions) at Done, or when
+// it closes by itself. Chrome closes when its pipe does: the app holds updates while the
+// window's open, and a one-off `symbiot screens signin` opens it plain, as before.
+let WIN = null; // { proc, c, reads: Map("targetId origin" → { origin, items, at, had, emptied }), read, save }
+const WIN_EVERY = 2000;
+function pipeWindow(proc, { every = WIN_EVERY } = {}) {
+  const c = connect(proc), attached = new Map(), reads = new Map(), hub = (() => { try { return new URL(HUB).origin; } catch { return ""; } })();
+  let busy = null, dirty = false;
+  const read = () => busy || (busy = (async () => {
+    try {
+      const { targetInfos = [] } = await c.send("Target.getTargets");
+      for (const t of targetInfos) {
+        if (t.type !== "page" || !/^https?:/.test(t.url || "") || (hub && t.url.startsWith(hub + "/"))) continue; // not its own page (browser.html)
+        try {
+          if (!attached.has(t.targetId)) attached.set(t.targetId, (await c.send("Target.attachToTarget", { targetId: t.targetId, flatten: true })).sessionId);
+          const s = await readSession((m, p) => c.send(m, p, attached.get(t.targetId)));
+          if (s && s.origin !== hub) {
+            const key = t.targetId + " " + s.origin, had = new Set((reads.get(key) || {}).had || []);
+            for (const [k, v] of Object.entries(s.items)) if (v !== "") had.add(k);
+            reads.set(key, { ...s, at: Date.now(), had: [...had], emptied: [...had].filter((k) => !s.items[k]) }); dirty = true;
+          }
+        } catch { attached.delete(t.targetId); }
+      }
+    } catch {} finally { busy = null; }
+  })());
+  const save = () => { if (dirty) saveSessions([...reads.values()].sort((a, b) => a.at - b.at), Date.now(), SESSIONS, { merge: true }); dirty = false; };
+  const timer = setInterval(read, every); if (timer.unref) timer.unref();
+  const w = { proc, c, reads, read, save };
+  proc.once("exit", () => { clearInterval(timer); save(); if (WIN === w) WIN = null; });
+  for (const s of [proc.stdio[3], proc.stdio[4]]) if (s && s.unref) s.unref();
+  return (WIN = w);
 }
 
 // Signed in, read from the profile's cookie store: the cookie a site keeps its session in,
@@ -221,6 +271,34 @@ function countRows(file, sql) {
   for (const [cmd, args] of [["sqlite3", [file, sql]], ["python3", ["-c", "import sqlite3,sys;print(sqlite3.connect(sys.argv[1]).execute(sys.argv[2]).fetchone()[0])", file, sql]], ["python", ["-c", "import sqlite3,sys;print(sqlite3.connect(sys.argv[1]).execute(sys.argv[2]).fetchone()[0])", file, sql]]]) {
     try { const r = spawnSync(cmd, args, { encoding: "utf8", timeout: 5000 }); if (r.status === 0 && /^\d+\s*$/.test(r.stdout)) return Number(r.stdout); } catch {}
   }
+  return null;
+}
+
+// The page a site is reached at once signed in, from the profile's history: the latest page
+// on one of hosts (a subdomain too: console.twilio.com for twilio.com) that isn't a sign-in,
+// sign-out or sign-up page. A subdomain wins over the bare host and www, whose home page
+// shows a Login button signed in or not (twilio.com, 2026-10-14). null if there's none, or
+// the history can't be read here. Read from a copy taken with its -wal and -journal.
+const NOT_HOME = /(^|[/._-])(log-?in|log-?out|sign-?in|sign-?out|sign-?up|register|auth|oauth2?|sso|password|forgot|reset|callback)([/._?#-]|$)/i;
+function historyPage(hosts, profile = PROFILE) {
+  const hs = [].concat(hosts || []).map((h) => String(h).toLowerCase().replace(/^www\./, "")).filter((h) => /^[a-z0-9.-]+$/.test(h));
+  const db = join(profile, PROFILE_DIR, "History");
+  if (!hs.length || !existsSync(db)) return null;
+  const dir = mkdtempSync(join(tmpdir(), "symbiot-history-"));
+  try {
+    for (const ext of ["", "-wal", "-journal"]) if (existsSync(db + ext)) copyFileSync(db + ext, join(dir, "History" + ext));
+    const like = hs.map((h) => `url like 'https://${h}/%' or url like 'https://%.${h}/%' or url like 'https://www.${h}/%'`).join(" or ");
+    const rows = queryUrls(join(dir, "History"), `select url from urls where (${like}) order by last_visit_time desc limit 200;`);
+    const ok = (rows || []).filter((u) => { try { const x = new URL(u); return !NOT_HOME.test(x.pathname) && !NOT_HOME.test(x.hostname.split(".")[0]) && !/[?&](redirect|return|next|continue)/i.test(x.search); } catch { return false; } });
+    const bare = (u) => { const h = new URL(u).hostname.toLowerCase(); return hs.includes(h) || hs.includes(h.replace(/^www\./, "")); };
+    return ok.find((u) => !bare(u)) || ok[0] || null;
+  } catch { return null; }
+  finally { try { rmSync(dir, { recursive: true, force: true }); } catch {} }
+}
+// The first column of each row a query gives, with Node's own SQLite or the sqlite3 command; null if neither.
+function queryUrls(file, sql) {
+  try { const { DatabaseSync } = process.getBuiltinModule ? process.getBuiltinModule("node:sqlite") || {} : {}; if (DatabaseSync) { const d = new DatabaseSync(file, { readOnly: true }); try { return d.prepare(sql).all().map((r) => String(Object.values(r)[0])); } finally { d.close(); } } } catch {}
+  try { const r = spawnSync("sqlite3", [file, sql], { encoding: "utf8", timeout: 5000 }); if (r.status === 0) return r.stdout.split("\n").filter(Boolean); } catch {}
   return null;
 }
 
@@ -614,7 +692,7 @@ async function collect(page, expression = COLLECT) {
 // A sign-in page instead of the site.
 function signInPage(url) {
   const host = hostOf(url);
-  return /(^|\.)(accounts\.google|login\.(microsoftonline|live)|signin\.aws|auth0|okta)\./i.test(host + ".") || /\/(log-?in|sign-?in|auth|sso)\b/i.test(String(url || ""));
+  return /(^|\.)(accounts\.google|login\.(microsoftonline|live)|signin\.aws|auth0|okta)\./i.test(host + ".") || /\/(log-?in|sign-?in|sign-?up|auth|sso)\b/i.test(String(url || ""));
 }
 
 // A screenshot and what's on it, saved as a screen named `name`, else for the page.
@@ -766,7 +844,10 @@ function wholePage(id, { who = "" } = {}) {
 // form at an address that doesn't say so), for a check of whether you're signed in.
 // So does a page whose own button or link is just "Log in" or "Sign in": signed out, Reddit's
 // home page has no password box, only its Log In button, and read as signed in.
-const ASKS_PASSWORD = `!![...document.querySelectorAll('input[type=password], a, button, [role=button]')].find((e) => { const b = e.getBoundingClientRect(); if (!(b.width > 0 && b.height > 0)) return false; return e.matches('input') || /^(log ?in|sign ?in)$/i.test(String(e.innerText || e.textContent || '').replace(/\\s+/g, ' ').trim()); })`;
+// So does a sign-up page, by its title or its first heading: console.deepgram.com shows
+// "Create an account" at its own address when you're signed out (2026-10-14).
+const ASKS_PASSWORD = `!![...document.querySelectorAll('input[type=password], a, button, [role=button]')].find((e) => { const b = e.getBoundingClientRect(); if (!(b.width > 0 && b.height > 0)) return false; return e.matches('input') || /^(log ?in|sign ?in)$/i.test(String(e.innerText || e.textContent || '').replace(/\\s+/g, ' ').trim()); })
+  || [document.title, (document.querySelector('h1') || {}).innerText].some((t) => /^\\s*(create (an|your|a free) account|sign ?up|register)\\b/i.test(String(t || '')))`;
 function readPage(input, { password = false } = {}) {
   const url = siteUrl(input);
   if (!url) return Promise.resolve({ error: "Give a site to read: a name (gmail), a host or a web address." });
@@ -1448,9 +1529,13 @@ async function openSymbiotBrowser(url = "") {
     const base = ["--user-data-dir=" + PROFILE, "--profile-directory=" + PROFILE_DIR, "--no-first-run", "--no-default-browser-check",
       ...(process.platform === "linux" ? ["--password-store=basic", "--class=SymbiotBrowser"] : process.platform === "darwin" ? ["--use-mock-keychain"] : [])];
     const page = HUB ? ["--app=" + HUB, "--window-size=1040,820"] : [];
-    if (page.length) spawn(chrome, [...base, ...page], { detached: true, stdio: "ignore" }).unref();
+    // the first to start is the window's browser (the rest hand over to it): the app's, with its
+    // tabs read over a pipe (pipeWindow) unless one's open already
+    const piped = !!HUB && !windowOpen() && process.platform !== "win32";
+    const start = (args) => { const p = spawn(chrome, piped ? ["--remote-debugging-pipe", ...args] : args, { detached: true, stdio: piped ? ["ignore", "ignore", "ignore", "pipe", "pipe"] : "ignore" }); p.on("error", () => {}); if (piped) pipeWindow(p); p.unref(); };
+    if (page.length) start([...base, ...page]);
     if (url) setTimeout(() => { try { spawn(chrome, [...base, "--new-window", url], { detached: true, stdio: "ignore" }).unref(); } catch {} }, page.length ? 1500 : 0);
-    if (!page.length && !url) spawn(chrome, [...base, "--new-window", "about:blank"], { detached: true, stdio: "ignore" }).unref();
+    if (!page.length && !url) start([...base, "--new-window", "about:blank"]);
   } catch (e) { return { error: String((e && e.message) || e) }; }
   watchWindow();
   return { ok: true, ...(url ? { url } : {}), browser: true };
@@ -1461,6 +1546,7 @@ async function openSymbiotBrowser(url = "") {
 // holding it up) is closed outright: Done always closes it.
 const windows = () => { const h = lockHolder(); return [...new Set([...profilePids({ headless: false }), ...(h && !h.headless && !OWN.has(h.pid) ? [h.pid] : [])])]; };
 async function closeSymbiotBrowser({ wait = 8000 } = {}) {
+  if (WIN) { const w = WIN; await Promise.race([w.read(), sleep(3000)]); w.save(); } // its tabs' last sessionStorage, before they go
   const open = windows();
   kill(open);
   for (const end = Date.now() + wait; Date.now() < end && windows().length;) await sleep(250);
@@ -1485,4 +1571,4 @@ function watchWindow({ every = 2000, start = 30000 } = {}) {
   if (WATCH.unref) WATCH.unref();
 }
 
-export { showScreen, fillForm, verifyPage, sessionCookie, SESSION_COOKIE, tabKey, siteUrl, browserArgs, reducedUa, windowUa, mapPage, wholePage, readPage, readTexts, readLinkedIn, LI_READ, pagePicture, pageClip, CLIP, isSend, pressRegion, typeRegion, chooseRegion, uploadRegion, uploadFiles, attachFiles, FILE_BOX, scrollPage, SCROLLS, signIn, keepBrowserOpen, closeBrowser, browserOpen, keepSessions, SESSION_KEEP, SESSIONS, loadSessions, trustedSites, isTrusted, trustSite, untrustSite, PROFILE , openSymbiotBrowser, closeSymbiotBrowser, onBrowserClosed, scratchPage, open as openPage, evaluate, SCROLLER, watchWindow, windowOpen, lockHolder, setBrowserHub , browserHub };
+export { pipeWindow, saveSessions, showScreen, fillForm, verifyPage, sessionCookie, historyPage, SESSION_COOKIE, tabKey, siteUrl, browserArgs, reducedUa, windowUa, mapPage, wholePage, readPage, readTexts, readLinkedIn, LI_READ, pagePicture, pageClip, CLIP, isSend, pressRegion, typeRegion, chooseRegion, uploadRegion, uploadFiles, attachFiles, FILE_BOX, scrollPage, SCROLLS, signIn, keepBrowserOpen, closeBrowser, browserOpen, keepSessions, SESSION_KEEP, SESSIONS, loadSessions, trustedSites, isTrusted, trustSite, untrustSite, PROFILE , openSymbiotBrowser, closeSymbiotBrowser, onBrowserClosed, scratchPage, open as openPage, evaluate, SCROLLER, watchWindow, windowOpen, lockHolder, setBrowserHub , browserHub };

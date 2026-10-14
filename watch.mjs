@@ -241,7 +241,7 @@ const liFields = (it) => (it.li ? { li: it.li, ...(it.sender ? { sender: it.send
 // A watch whose last read found the sign-in page: it reads nothing until you sign in again.
 const SIGNED_OUT = "Signed out of ";
 const isSignedOut = (w) => String((w && w.error) || "").startsWith(SIGNED_OUT);
-const view = (w) => ({ id: w.id, name: w.name, url: w.url, every: w.every, added: w.added, last: w.last || 0, ...(w.checked ? { checked: w.checked } : {}), ...(w.error ? { error: w.error } : {}), ...(w.via ? { via: w.via } : {}), ...(w.cleared ? { cleared: w.cleared } : {}), known: (w.seen || []).length });
+const view = (w) => ({ id: w.id, name: w.name, url: w.url, every: w.every, added: w.added, last: w.last || 0, ...(w.checked ? { checked: w.checked } : {}), ...(w.error ? { error: w.error } : {}), ...(w.shown ? { shown: w.shown } : {}), ...(w.via ? { via: w.via } : {}), ...(w.cleared ? { cleared: w.cleared } : {}), known: (w.seen || []).length });
 // What's new is marked `mail` when it's from an inbox, `chat` from WhatsApp,
 // `social` from LinkedIn's notifications: each can get a drafted reply. A social
 // one that asks how to install it, what it costs or about team use is marked
@@ -715,6 +715,7 @@ async function checkWatch(id, { read = readPage, github = readGitHub, notify = d
   w.last = Date.now();
   // through gh, a list with nothing unread is a good read; a page always lists something
   const items = page.error || page.login ? [] : page.list || itemsOf(page), before = w.error || "";
+  if (page.login) w.shown = { url: String(page.url || "").slice(0, 300), title: String(page.title || "").slice(0, 120) }; else delete w.shown;
   if (page.login) w.error = `${SIGNED_OUT}${hostOf(page.url) || hostOf(w.url)}. Under Screens, type ${hostOf(w.url)} and click Sign in, sign in once and close the window.` + (isGitHubInbox(w.url) ? " Or sign in the GitHub CLI (gh auth login): Symbiot then reads your notifications through it." : "");
   else if (page.error) w.error = page.error;
   else if (!items.length && !page.list) w.error = "Found nothing listed on the page this time.";

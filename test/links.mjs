@@ -94,6 +94,7 @@ try {
     age("notion", 86400000);
     const out = (await checkLink("notion", { read: async () => ({ url: "https://www.notion.so/login", login: true }) })).item;
     ok("a day on, read signed in before: 'Signed out', amber, click it to sign in again", out.state === "signedout" && /^Signed out of Notion: click it to sign in again/.test(out.note), out);
+    ok("…and says what the window last showed there", /The window last showed “Sign in to Notion” at www\.notion\.so\/login/.test((await checkLink("notion", { read: async () => ({ url: "https://www.notion.so/login", title: "Sign in to Notion", login: true }) })).item.note), item("notion"));
     await linkSite("notion", { open }); const again = item("notion");
     ok("…clicked, it opens to sign in, and it's 'sign in' while you do", again.state === "signin" && opened[opened.length - 1] === "https://www.notion.so/", again);
     await checkLink("notion", { read: async () => ({ url: "https://www.notion.so/acme" }) });
@@ -118,6 +119,22 @@ try {
     await checkLink("site-domains-co-za", { read: async () => ({ url: "https://www.domains.co.za/client/dashboard", title: "Welcome Garth" }) });
     await addSite("domains.co.za", { open: openC });
     ok("added again by its bare name: still one, keeping the page you gave first", ownSites().length === 1 && item("site-domains-co-za").url === "https://www.domains.co.za/client/dashboard", ownSites());
+    // a bare name (twilio.com) is checked at the page the browser's history shows once signed in (console.twilio.com)
+    await addSite("twilio.com", { open: openC });
+    const reads = [];
+    const tw = (id) => checkLink(id, { history: () => "https://console.twilio.com/us1/develop", read: async (u) => { reads.push(u); return { url: u, title: "Console" }; } });
+    const t1 = (await tw("site-twilio-com")).item;
+    ok("a bare-name site is read at its history page, not its home page", reads[0] === "https://console.twilio.com/us1/develop" && t1.state === "ok", [reads, t1.state]);
+    await checkLink("site-twilio-com", { history: () => null, read: async (u) => { reads.push(u); return { url: u, login: true }; } });
+    ok("…and at its home page when the history has none", reads[1] === "https://twilio.com/", reads);
+    const { historyPage } = await import("../headless.mjs");
+    const prof = join(HOME, "prof"); mkdirSync(join(prof, "Default"), { recursive: true });
+    let hist = null;
+    try { const { DatabaseSync } = await import("node:sqlite"); const d = new DatabaseSync(join(prof, "Default", "History")); d.exec("create table urls (url text, last_visit_time integer)");
+      for (const [u, t] of [["https://console.twilio.com/login", 9], ["https://www.twilio.com/en-us/pricing", 8], ["https://console.twilio.com/us1/develop", 5], ["https://www.twilio.com/login", 7], ["https://other.com/x", 10]]) d.prepare("insert into urls values (?, ?)").run(u, t);
+      d.close(); hist = historyPage(["twilio.com"], prof); } catch { hist = "skip"; }
+    ok("history: the signed-in subdomain page, skipping login pages, the home site and other sites", hist === "skip" || hist === "https://console.twilio.com/us1/develop", hist);
+    unlinkSite("site-twilio-com");
     const li = await addSite("https://www.linkedin.com/feed/", { open: openC });
     ok("a site that's one of the buttons (linkedin.com) links that button, not a copy", li.ok && li.item && li.item.id === "linkedin" && !ownSites().some((x) => /linkedin/.test(x.id)), li.item);
     ok("not a site: refused, nothing opened", !!(await addSite("two words", { open: openC })).error && !!(await addSite("", { open: openC })).error, "");

@@ -48,7 +48,7 @@ try {
     const up = async (p) => { for (let i = 0; i < 50 && !(locked() && H.lockHolder() && H.lockHolder().pid === p.pid); i++) await sleep(200); return locked(); };
     // a page of its own to read, so a read really starts the hidden browser
     const { createServer } = await import("node:http");
-    const site = createServer((q, res) => { res.writeHead(200, { "content-type": "text/html" }); res.end(q.url === "/out" ? "<title>Reddit</title><header><a href='/'>reddit</a><button>Log In</button></header><p>Hot posts</p>" : q.url === "/in" ? "<title>Reddit</title><header><a href='/'>reddit</a><button>Create</button><a href='/u/me'>u/garth</a></header><p>Log in to see more? Not here.</p>" : "<title>here</title><p>here</p>"); });
+    const site = createServer((q, res) => { res.writeHead(200, { "content-type": "text/html" }); res.end(q.url === "/signup" ? "<title>Create an account</title><h1>Create an account</h1><p>Already have an account? <a href='/'>Log in here</a></p><button>Google</button><button>GitHub</button><input type=email placeholder='you@email.com'>" : q.url === "/team" ? "<title>Deepgram</title><h1>Projects</h1><h2>Create an account for a teammate</h2><button>Invite</button>" : q.url === "/out" ? "<title>Reddit</title><header><a href='/'>reddit</a><button>Log In</button></header><p>Hot posts</p>" : q.url === "/in" ? "<title>Reddit</title><header><a href='/'>reddit</a><button>Create</button><a href='/u/me'>u/garth</a></header><p>Log in to see more? Not here.</p>" : "<title>here</title><p>here</p>"); });
     await new Promise((r) => site.listen(0, "127.0.0.1", r));
     const PAGE = `http://127.0.0.1:${site.address().port}/`;
 
@@ -76,6 +76,9 @@ try {
     const out = await H.readPage(PAGE + "out", { password: true }), inn = await H.readPage(PAGE + "in", { password: true });
     ok("Reddit signed out: its Log In button says so", out && out.login === true, out);
     ok("Reddit signed in: no Log In button, so signed in (words on the page don't count)", inn && !inn.error && inn.login === false, inn);
+    const signup = await H.readPage(PAGE + "signup", { password: true }), team = await H.readPage(PAGE + "team", { password: true });
+    ok("Deepgram signed out shows 'Create an account' at its own address: a sign-up page is signed out (2026-10-14)", signup && signup.login === true, signup);
+    ok("…but a signed-in page that offers to create one further down isn't", team && !team.error && team.login === false, team);
     await H.closeBrowser();
 
     console.log("ITS X — closing it tells Symbiot, which checks the sites as Done does");
