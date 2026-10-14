@@ -29,9 +29,11 @@ else {
   // the site: /login signs you in with a session cookie, every page's title says what cookies came
   // (once: a tab the last session left, opened again, mustn't sign in afresh and hide a loss)
   // /ss-login signs you in in sessionStorage instead (once too), and /app's title says what it finds there
-  let logins = 0, ssLogins = 0;
+  // /quick signs you in with a cookie meant to last a day, and /quick-ss in sessionStorage (once each)
+  let logins = 0, ssLogins = 0, quick = 0, quickSs = 0;
   const srv = createServer((q, r) => {
-    r.writeHead(200, { "content-type": "text/html", ...(q.url === "/login" && !logins++ ? { "set-cookie": "PHPSESSID=abc123; Path=/; HttpOnly" } : {}) });
+    if (q.url === "/quick-ss") { r.writeHead(200, { "content-type": "text/html" }); return r.end("<title>in</title>" + (!quickSs++ ? "<script>sessionStorage.setItem('token', 'tok-quick')</script>" : "")); }
+    r.writeHead(200, { "content-type": "text/html", ...(q.url === "/login" && !logins++ ? { "set-cookie": "PHPSESSID=abc123; Path=/; HttpOnly" } : q.url === "/quick" && !quick++ ? { "set-cookie": "QUICK=q1; Path=/; Max-Age=86400" } : {}) });
     if (q.url === "/ss-login") return r.end("<title>in</title>" + (!ssLogins++ ? "<script>sessionStorage.setItem('token', 'tok-ss')</script>" : ""));
     if (q.url === "/app") return r.end("<title>none</title><script>document.title = sessionStorage.getItem('token') || 'signed out'</script>");
     r.end("<title>" + (q.headers.cookie || "signed out") + "</title><p>hi</p>");
@@ -82,6 +84,21 @@ else {
     ok("…and in its next run too, kept 14 days, in the profile only", ss2 && ss2.title === "tok-ss" && Object.keys(h.loadSessions()).join() === base, [ss2, Object.keys(h.loadSessions())]);
     const other = await h.readPage("http://localhost:" + srv.address().port + "/app");
     ok("…and no other site's page gets it", other && other.title === "signed out", other);
+    // Done pressed straight after signing in, as you do: Done closes the window itself
+    // (closeSymbiotBrowser), not the window's own Quit. With SIGTERM, Chrome quit without
+    // writing the last 30 s of cookies, and the sign-in was gone (domains.co.za, 2026-10-14).
+    await h.closeBrowser();
+    const visible = (url) => spawn(chromeBinary(), ["--ozone-platform=headless", ...h.browserArgs(false, url)], { stdio: "ignore" });
+    for (const [path, page, want, what] of [["/quick", "/inbox", /QUICK=q1/, "a cookie"], ["/quick-ss", "/app", /^tok-quick$/, "sessionStorage"]]) {
+      const win = visible(base + path);
+      for (let i = 0; i < 40 && !h.windowOpen(); i++) await sleep(150);
+      await sleep(1500); // signed in, and Done a moment later
+      const done = await h.closeSymbiotBrowser();
+      await Promise.race([new Promise((r) => (win.exitCode !== null || win.signalCode ? r() : win.once("exit", r))), sleep(3000)]);
+      const read = await h.readPage(base + page);
+      ok(`signed in (${what}) and Done at once: the hidden browser has the sign-in, the window having quit cleanly`, done.closed >= 1 && !done.forced && want.test((read && read.title) || ""), { done, read });
+      await h.closeBrowser();
+    }
   } finally { srv.close(); await h.closeBrowser(); }
 
   // A site that ties a sign-in to the browser it was made in (domains.co.za, 2026-10-12): it

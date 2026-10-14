@@ -271,7 +271,7 @@ async function strayGone(wait = STRAY_WAIT) {
   const stray = () => { const h = lockHolder(); return h && h.headless && !OWN.has(h.pid) ? h.pid : 0; };
   for (const end = Date.now() + wait; stray() && Date.now() < end;) await sleep(250);
   const pid = stray(); if (!pid) return;
-  try { process.kill(pid, "SIGTERM"); } catch {}
+  try { process.kill(pid, "SIGINT"); } catch {} // as Done's (CLOSE): its cookies are written first
   for (let i = 0; i < 20 && stray() === pid; i++) await sleep(250);
   if (stray() === pid) try { process.kill(pid, "SIGKILL"); } catch {}
   for (let i = 0; i < 8 && stray() === pid; i++) await sleep(250);
@@ -1430,7 +1430,11 @@ function profilePids({ headless } = {}) {
       .map(([, pid]) => Number(pid)).filter((p) => p && p !== process.pid);
   } catch { return []; }
 }
-const kill = (pids) => { for (const p of pids) try { process.kill(p, "SIGTERM"); } catch {} };
+// SIGINT, not SIGTERM: Chrome takes SIGTERM as the computer shutting down and exits without
+// writing its cookies, so a sign-in made in the 30 s before Done was lost (domains.co.za and
+// cp.smsportal.com, 2026-10-14). SIGINT closes it as its own Quit does, cookies saved.
+const CLOSE = "SIGINT";
+const kill = (pids) => { for (const p of pids) try { process.kill(p, CLOSE); } catch {} };
 async function openSymbiotBrowser(url = "") {
   const chrome = chromeBinary();
   if (!chrome) return { error: "The Symbiot Browser needs Chrome, Chromium, Edge or Brave on this computer, and none was found." };
