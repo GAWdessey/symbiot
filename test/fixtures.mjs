@@ -12,7 +12,7 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { authorship, repoState, readmeInfo, houseRules, findAllRepos, driftRepo, buildTasksMd, taskType, EMBEDDED_UI, orcaHandoffCmd, migrateOrcaCmd, fillHandoff, ORCA_CLAUDE_CMD, CLAUDE_CMD, HANDOFF_PROMPT, shipChanges, shipWithBump, bumpOffer, learnNpm, releaseNeeded, withReleases, semverGt, updateCmd, parseQuestions, unreleased, publishesOnMerge } from "../index.mjs";
 import { grantRule, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, linkReach, noteUntracked, untrackedBefore } from "../agents.mjs";
-import { applyRemovals, removalOf, saidFinished, gitFailed, unsentOf, readUnsent, unsentCard, repoTests, localRefused } from "../tasks.mjs";
+import { applyRemovals, removalOf, saidFinished, gitFailed, unsentOf, readUnsent, unsentCard, repoTests, localRefused, holdShip, SHIP_STALE } from "../tasks.mjs";
 import { releaseNotes, parseNotes } from "../writeups.mjs";
 import { VERSION, sameTask, uniqueTasks } from "../core.mjs";
 import { mailActivity } from "../mail.mjs";
@@ -310,6 +310,25 @@ try {
   ok("a changed .env, a new answer or a new task starts one", bq.envChanged && bq.again2 && bq.answered && bq.newTask, bq);
   ok("fewer of the same tasks is still blocked; force starts it anyway", bq.fewer && bq.forced, bq);
   ok("a changed agent command starts one, and a run that didn't ask clears the note", bq.otherCmd && bq.cleared, bq);
+  // the 14 Oct 2026 audit: a run that ends "it waits on the dailify lane" asks nothing, so nothing held it, and each trigger started it again
+  const emDir = join(ROOT, "blocked-empty"); mkdirSync(join(emDir, ".symbiot"), { recursive: true });
+  execSync("git init -q && git -c user.email=t@t -c user.name=t commit -q --allow-empty -m init && echo .symbiot > .gitignore && echo a > a.txt", { cwd: emDir });
+  const em = spawnSync(process.execPath, ["--input-type=module", "-e", `
+    import * as a from ${JSON.stringify(AGENTS)};
+    import { writeFileSync, existsSync, readFileSync } from "node:fs";
+    const dir = ${JSON.stringify(emDir)}, s = dir + "/.symbiot/", out = {};
+    const until = async (c) => { for (let i = 0; i < 100 && !c(); i++) await new Promise((r) => setTimeout(r, 100)); };
+    const run = async (o) => { const j = a.runHandoff(dir, o); if (j && j.pid) await until(() => j.status !== "running" && !existsSync(s + "agent.pid")); return j; };
+    writeFileSync(s + "TASKS.md", "- [ ] Load the leads on prod\\n");
+    a.setHandoffCmd("echo it waits on the ops lane"); out.first = !!(await run()).pid;
+    try { out.noted = JSON.parse(readFileSync(s + "blocked.json", "utf8")).empty === true; } catch {}
+    out.again = a.runHandoff(dir);
+    writeFileSync(s + "ANSWERS.md", "### Load it?\\nyes\\n"); a.setHandoffCmd("echo b >> a.txt"); out.answered = !!(await run()).pid; out.changedClears = !existsSync(s + "blocked.json");
+    a.setHandoffCmd("sed -i 's/\\\\[ \\\\]/[x]/' .symbiot/TASKS.md"); writeFileSync(s + "TASKS.md", "- [ ] Load the leads on prod\\n- [ ] Two\\n"); out.ticked = !!(await run()).pid; out.tickClears = !existsSync(s + "blocked.json");
+    console.log(JSON.stringify(out));`], { encoding: "utf8", timeout: 60000, env: { ...process.env, HOME: hhome, USERPROFILE: hhome } });
+  let eq = {}; try { eq = JSON.parse(em.stdout.trim().split("\n").pop()); } catch { console.log(em.stdout, em.stderr); }
+  ok("a run that asks nothing, ticks nothing and changes no file is held too, and says why", eq.first && eq.noted && eq.again && eq.again.blocked && eq.again.empty && /finished nothing and changed no file/.test(eq.again.note), eq);
+  ok("...an answer starts it; a run that changed a file or ticked one isn't held", eq.answered && eq.changedClears && eq.ticked && eq.tickClears, eq);
 
   console.log("HANDOFF — after a restart, a run's questions still show; a step of yours holds the next run");
   const erDir = join(ROOT, "earlier"), erHome = join(ROOT, "erhome"); mkdirSync(join(erDir, ".symbiot"), { recursive: true }); mkdirSync(erHome, { recursive: true });
@@ -654,6 +673,14 @@ try {
   const rRef = await repoTests(tdir, { cmd: process.execPath, args: ["-e", "console.error('FAIL api/users.test.ts\\nError: connect ECONNREFUSED 127.0.0.1:5432'); process.exit(1)"] });
   const rRed = await repoTests(tdir, { cmd: process.execPath, args: ["-e", "console.error('AssertionError: expected 2 to equal 3'); process.exit(1)"] });
   ok("repoTests: failing only for want of a local database is 'untested', not failed; a real failure still fails", rRef.ok && /127\.0\.0\.1:5432/.test(rRef.untested || "") && rRed.ok === false && /AssertionError/.test(rRed.note), [rRef, rRed]);
+  // dailify, 14 Oct 2026: a server its tests started kept their output open after npm exited, so the
+  // tests never "ended" and Approve there was refused ("Already approving here") until a restart
+  const heldAt = Date.now(), rHeld = await repoTests(tdir, { cmd: process.execPath, args: ["-e", "require('child_process').spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'inherit' }); console.log('ok'); process.exit(0)"] });
+  const rOver = await repoTests(tdir, { limit: 1500, cmd: process.execPath, args: ["-e", "setInterval(() => {}, 1000)"] });
+  ok("repoTests: ends when npm does though a server it started holds the output, and stops a run past its limit", rHeld.ok && Date.now() - heldAt < 8000 && rOver.ok === false && /still running after/.test(rOver.note), [rHeld, rOver, Date.now() - heldAt]);
+  const lk = "/tmp/hold-ship-" + process.pid, h1 = holdShip(lk, 1000), h2 = holdShip(lk, 1000 + 60000), h3 = holdShip(lk, 1000 + SHIP_STALE + 1);
+  h1.release(); const h4 = holdShip(lk, 1000 + SHIP_STALE + 2); h3.release(); const h5 = holdShip(lk, 1000 + SHIP_STALE + 3); h5.release();
+  ok("holdShip: a second Approve waits while one runs; a hold older than any ship is taken over, and the old one letting go doesn't free the new", !h1.error && /Already approving here \(starting, 1 min so far\)/.test(h2.error || "") && !h3.error && /Already approving/.test(h4.error || "") && !h5.error, [h2, h4]);
 
   // scratch: 170k untracked files (venvs, datasets) timed out `git add -A`
   // (spawnSync ETIMEDOUT), and whole-tree staging took in an unignored .env.
@@ -1247,6 +1274,13 @@ try {
     const f2 = (out.f2map.regions || []).filter((r) => r.kind === "field"), f2go = (out.f2map.regions || []).find((r) => r.label === "Save");
     out.fillBad = await h.fillForm(out.f2map.id, [{ region: f2go.id, text: "x" }], { confirmed: true });
     out.fill = f2.length === 2 && f2go ? await h.fillForm(out.f2map.id, [{ region: f2[0].id, text: "GAWdessey" }, { region: f2[1].id, text: "GarthGhostai/symbiot" }], { press: f2go.id, confirmed: true }) : { error: "no form" };
+    // a field that isn't on the page now (the form was lost): refused, nothing typed or pressed
+    s.setRegions(out.f2map.id, out.f2map.regions.map((r) => (r.id === f2[0].id ? { ...r, selector: "#not-on-the-page" } : r)));
+    out.fillGone = await h.fillForm(out.f2map.id, [{ region: f2[0].id, text: "x" }], { press: f2go.id, confirmed: true });
+    // verify: the page loaded fresh in a tab of its own, each text looked for
+    out.verifyYes = await h.verifyPage("127.0.0.1:" + srv.address().port + "/form2", ["Save"]);
+    out.verifyNo = await h.verifyPage("127.0.0.1:" + srv.address().port + "/form2", ["Save", "no such guest zzz"]);
+    out.verifyNone = await h.verifyPage("127.0.0.1:" + srv.address().port + "/form2", []);
     await h.closeBrowser(); out.fclosed = !h.browserOpen();
     // Scroll (still kept open): down, to the bottom, past it; then, closed, an older screen again
     const base = "127.0.0.1:" + srv.address().port;
@@ -1321,6 +1355,8 @@ try {
     ok("kept open: typed without Enter, it's still there for a separate button on the screen that mapped", ho.ftype && ho.ftype.found && !ho.ftype.entered && ho.fopen === true && ho.fpress && ho.fpress.kept === true && ho.fpress.name === "Results for kept", [ho.ftype && ho.ftype.error, ho.fopen, ho.fpress && (ho.fpress.error || ho.fpress.name)]);
     ok("kept open: a press on an older screen opens its page again (what was typed there is gone)", ho.fold && !ho.fold.kept && ho.fold.name === "Results for", ho.fold && (ho.fold.error || ho.fold.name));
     ok("fillForm: only fills fields, and fills several then presses a button in one session, so none is lost", /isn't a field/.test((ho.fillBad || {}).error || "") && ho.fill && ho.fill.typed && ho.fill.typed.length === 2 && ho.fill.pressed === "Save" && ho.fill.name === "Results for GAWdessey+GarthGhostai/symbiot", ho.fill);
+    ok("fillForm: a field that isn't on the page now is refused before anything is typed or pressed", /isn't on the page now/.test((ho.fillGone || {}).error || "") && !ho.fillGone.typed && !ho.fillGone.pressed, ho.fillGone);
+    ok("verifyPage: says which texts are on a freshly loaded page, and ok only if all are", ho.verifyYes && ho.verifyYes.ok === true && ho.verifyNo && ho.verifyNo.ok === false && ho.verifyNo.found.map((x) => x.found).join() === "true,false" && /give what/i.test((ho.verifyNone || {}).error || ""), JSON.stringify([ho.verifyYes, ho.verifyNo, ho.verifyNone]));
     ok("closeBrowser closes it", ho.fclosed === true, ho.fclosed);
     const rl = (x) => ((x || {}).regions || []).map((r) => r.label), sy = (x) => ((x || {}).page || {}).scroll || {};
     ok("mapPage: a page taller than the window says how far down it is (the page itself scrolls: no selector)", sy(hm).y === 0 && sy(hm).max > 1000 && !sy(hm).selector && sy(ho.lmap).max === 2200 && rl(ho.lmap).join() === "Top button", [sy(hm), sy(ho.lmap), rl(ho.lmap)]);

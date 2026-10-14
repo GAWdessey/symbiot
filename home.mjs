@@ -18,7 +18,7 @@ import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { watchBoard, draftReply, draftCards, draftAnswer } from "./watch.mjs";
 import { pendingReview, pushTasks, addTask, taskType } from "./tasks.mjs";
 import { estimate, estimateWords } from "./estimate.mjs";
-import { setHandoffCmd, agentsList, runHandoff, runningHandoff, handoffCmd, loadRuns, connectorsInfo, parkedPaths, agentMissing, settleNeeds, pickAgent, detectHandoffs, linkReach, unchangedStep } from "./agents.mjs";
+import { setHandoffCmd, agentsList, runHandoff, runningHandoff, handoffCmd, loadRuns, connectorsInfo, parkedPaths, agentMissing, settleNeeds, pickAgent, detectHandoffs, linkReach, unchangedStep, whereOf } from "./agents.mjs";
 import { isDone, recordDone, coveredBy } from "./asksdone.mjs";
 import { linksState, signInAsked } from "./links.mjs";
 import { knowledgeState } from "./knowledge.mjs";
@@ -32,7 +32,7 @@ import { reportsNews, listReports, readReport, decide, markIdeas } from "./repor
 import { awaitingState, inboxSight } from "./handback.mjs";
 import { newClashes } from "./checks.mjs";
 import { postsState } from "./post.mjs";
-import { laneCap, verdict, peel, inflight, inflightIds, parallelLane, openTasksOf, laneFacts, dropHeld, startParallel } from "./parallel.mjs";
+import { laneCap, verdict, peel, inflight, inflightIds, parallelLane, openTasksOf, laneFacts, dropHeld, startParallel, besideAgain } from "./parallel.mjs";
 import { licenceState, isPro } from "./licence.mjs";
 import { PHONE, ANDROID_APP, computerView, phoneApprovals, linkState, ask as askComputer } from "./phone.mjs";
 import { MARKETING, MARKETING_DIR, aboutMarketing, displayName, productNames, productOf, untagged, tagged, draftFiles, setDraftStatus, postedCmd } from "./marketing.mjs";
@@ -508,7 +508,7 @@ function homeAnswer(id, { pick, text = "" } = {}, deps = {}) {
       : `Done: the user did it${text ? ` (${text})` : ""}. Check it worked, then carry on.`;
     noteAnswer(a.path, n.what, said);
     const e = (deps.run || runHandoff)(a.path, { force: true });
-    if (e && e.id && !e.blocked) { settle(a.path, n.key); dropped.add(id); if (n.kind !== "approve") recordDone(n.what, said); } // "Done it" is on the shared record: no agent raises it again
+    if (e && e.id && !e.blocked) { settle(a.path, n.key); dropped.add(id); if (n.kind !== "approve") recordDone(n.what, said, whereOf(a.path).lane); } // "Done it" is on the shared record: no agent raises it again
     return e && e.id && !e.blocked ? { ok: true, said: n.kind === "approve" ? "Its agent is going ahead." : "Its agent is checking and carrying on.", rerun: e.id } : { error: (e && e.note) || "It didn't start. Check your agent in Settings." };
   }
   return { error: "Answer that one on its block on the Workdesk." };
@@ -835,7 +835,10 @@ function waitWhy({ map, named, running, held, ready, isParked, deps = {} }) {
     if (besideIds.has(t.id)) return { kind: "working", text: `Running now in a copy of ${name}'s repo of its own, beside its other agent` };
     if (run) {
       if (inBrief) return { kind: "working", text: `${name}'s agent is on it now` };
-      // not in the run's brief: it runs beside it unless it clashes with what's going, or the lane is at its cap
+      // not in the run's brief: it runs beside it unless it clashes with what's going, or the lane is at its cap,
+      // or a run beside already stopped on it with nothing changed since (then the lane's own run takes it)
+      const tried = (deps.besideAgain || besideAgain)(path, t.id);
+      if (tried) return { kind: "queued", waitKind: "tried", text: `Queued behind ${name}'s run: ${plain(run.doing, 60).toLowerCase()}. Why it waits: ${tried.note}, so ${name}'s own agent takes it next.`, run: run.doing };
       const f = (deps.facts || laneFacts)(path), st = (deps.licence || licenceState)();
       const beside = (deps.parallel || inflight)().filter((m) => m.lane === lane), active = [...(deps.openTasks || openTasksOf)(path).slice(0, 2).map((x) => ({ text: x, who: `${name}'s run` })), ...beside.map((m) => ({ text: m.task, who: "the run beside it" }))];
       const v = verdict({ text: t.text, name, active, count: Math.max(mine.length, 1 + beside.length), cap: (deps.cap || laneCap)(undefined, st), pro: isPro(st), dirty: f.dirty, git: f.git });
@@ -873,7 +876,7 @@ function workTick({ deps = {} } = {}) {
     const mine = w.all.filter((x) => x.repo === lane && x.why.kind === "next").map(textOf).filter(Boolean);
     let exclude = [];
     if (mine.length > 1 && map[lane]) { // several ready at once: the first is the lane's own run, the independent ones go beside it
-      const f = (deps.facts || laneFacts)(map[lane]), sp = peel(mine, { name: displayName(map[lane], lane), cap, pro, dirty: f.dirty, git: f.git });
+      const f = (deps.facts || laneFacts)(map[lane]), tried = deps.besideAgain || besideAgain, sp = peel(mine.filter((x, i) => !i || !tried(map[lane], x.id)), { name: displayName(map[lane], lane), cap, pro, dirty: f.dirty, git: f.git });
       exclude = sp.peeled.map((x) => x.id);
     }
     const p = push({ repo: lane, ...(exclude.length ? { exclude } : {}) }), wr = p && p.written && p.written[0]; if (!wr) continue;

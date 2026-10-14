@@ -241,6 +241,20 @@ try {
     late.close();
   }
 
+  console.log("INSTANCE — an app too busy to answer still holds its lock: no second app");
+  { // 2026-10-08: the first app took too long to answer the ping, and a second started on a random port
+    const BUSY = port(), holder = spawn(process.execPath, ["-e", "setInterval(() => {}, 1e9)"], { stdio: "ignore" }); children.push(holder);
+    writeFileSync(join(HOME, ".config", "symbiot", `app-${BUSY}.lock`), JSON.stringify({ pid: holder.pid, port: BUSY, at: Date.now() }));
+    const h = startApp({ SYMBIOT_PORT: String(BUSY) }, 20000);
+    const urlH = await h.ready;
+    for (let i = 0; i < 40 && h.exited() === null; i++) await new Promise((r) => setTimeout(r, 250));
+    ok("it says one is running, and exits without serving", !urlH && h.exited() === 0 && /already running \(pid \d+, busy right now\)/.test(h.out()) && !/is running at/.test(h.out()), [h.exited(), h.out()]);
+    holder.kill("SIGKILL"); await new Promise((r) => setTimeout(r, 300));
+    const n = startApp({ SYMBIOT_PORT: String(BUSY) }, 20000), urlN = await n.ready;
+    ok("once that app is gone (a crash), the next start takes its lock over and serves", !!urlN && urlN.includes(`:${BUSY}/`), n.out());
+    if (urlN) { try { await fetch(urlN.replace(/\/\?t=/, "/api/quit?t=")); } catch {} }
+  }
+
   console.log("ANDROID APP — the map says when it can't see shared storage");
   // Without "All files access" the app sees shared storage as an empty folder;
   // that used to read as "no repos", and stayed that way after access was allowed.

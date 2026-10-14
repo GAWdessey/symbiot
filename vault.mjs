@@ -7,11 +7,11 @@ import { existsSync, readFileSync, writeFileSync, chmodSync } from "node:fs";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { randomBytes, createCipheriv, createDecipheriv } from "node:crypto";
-import { CONFIG_DIR, hasCmd } from "./core.mjs";
+import { CONFIG_DIR, hasCmd, readState, writeJsonAtomic } from "./core.mjs";
 
 const INDEX = () => join(CONFIG_DIR, "vault.json"), KEYFILE = () => join(CONFIG_DIR, "vault.key");
-const readIndex = () => { try { return JSON.parse(readFileSync(INDEX(), "utf8")); } catch { return { names: {}, blobs: {} }; } };
-const writeIndex = (x) => { writeFileSync(INDEX(), JSON.stringify(x, null, 2) + "\n", { mode: 0o600 }); try { chmodSync(INDEX(), 0o600); } catch {} };
+const readIndex = () => readState(INDEX()) || { names: {}, blobs: {} };
+const writeIndex = (x) => writeJsonAtomic(INDEX(), x, { mode: 0o600 });
 function key() {
   if (!existsSync(KEYFILE())) { writeFileSync(KEYFILE(), randomBytes(32).toString("base64"), { mode: 0o600 }); try { chmodSync(KEYFILE(), 0o600); } catch {} }
   return Buffer.from(readFileSync(KEYFILE(), "utf8"), "base64");

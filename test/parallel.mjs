@@ -83,6 +83,17 @@ console.log("A RUN BESIDE — its own worktree, merged back");
   const r3 = P.startParallel("repo", repo, { id: "t4", text: "Change b.mjs more" }, { run }), wt3 = ran[2];
   writeFileSync(join(wt3, "b.mjs"), "half\n"); hook(0);
   ok("an unfinished run (nothing ticked) merges nothing", readFileSync(join(repo, "b.mjs"), "utf8") === "b2\n" && r3.ok);
+  // and it isn't started beside again on the same inputs: four such runs left byte-identical patches (14 Oct 2026 audit)
+  const again = P.besideAgain(repo, "t4");
+  ok("…and isn't started beside again while nothing it ran with has changed", again && again.tries === 1 && /stopped without finishing/.test(again.note), again);
+  P.noteTried(repo, "t4", "half-patch");
+  ok("…tries counted, and an identical patch noticed", P.besideAgain(repo, "t4").tries === 2 && JSON.parse(readFileSync(join(repo, ".symbiot", "beside.json"), "utf8")).t4.same === false, readFileSync(join(repo, ".symbiot", "beside.json"), "utf8"));
+  writeFileSync(join(repo, ".symbiot", "ANSWERS.md"), "# Answers\n\n### Handed over to ops: x\nIt stopped without finishing.\n_answered by symbiot (handover) 2026-10-14_\n");
+  ok("…Symbiot's own notes in ANSWERS.md don't count as a change", !!P.besideAgain(repo, "t4"));
+  writeFileSync(join(repo, ".symbiot", "ANSWERS.md"), "# Answers\n\n### Which file?\nb.mjs only\n_answered 2026-10-14_\n");
+  ok("…the user's answer does: it may go beside again", P.besideAgain(repo, "t4") === null);
+  P.noteTried(repo, "t4", "", { done: true });
+  ok("…and a finished one is forgotten", !("t4" in JSON.parse(readFileSync(join(repo, ".symbiot", "beside.json"), "utf8"))));
 }
 function require_ls(d) { return spawnSync("ls", [d], { encoding: "utf8" }).stdout; }
 
@@ -134,6 +145,13 @@ console.log("THE TICK — two independent tasks queued at one lane both run at o
   // one already running beside: that task is "working", not queued
   const sc4 = workScene({ deps: { ...busy, beside: () => new Set(["2"]), fails: {} } });
   ok("a task running in its own copy shows as working", sc4.waiting.find((w) => w.id === "task:2").why.kind === "working");
+  // a run beside already stopped on task 2, nothing changed since: it waits for the lane's own run, saying why
+  const tried = (p, id) => (id === "2" ? { tries: 2, note: "a run beside it stopped without finishing this (2 tries), and nothing it ran with has changed since" } : null);
+  const sc5 = workScene({ deps: { ...busy, besideAgain: tried, fails: {} } }), w2 = sc5.waiting.find((w) => w.id === "task:2").why;
+  ok("a task a run beside already stopped on isn't started beside again: queued for the lane's own run, saying why", w2.kind === "queued" && w2.waitKind === "tried" && /stopped without finishing this \(2 tries\).*own agent takes it next/.test(w2.text) && sc5.waiting.find((w) => w.id === "task:3").why.kind === "beside", w2);
+  const beside6 = [], pushed6 = [];
+  workTick({ deps: { ...base, besideAgain: tried, agents: () => [], fails: {}, push: (x) => (pushed6.push(x), { written: [{ name: x.repo, path: "/s" }] }), run: () => ({ id: "j" }), startParallel: (lane, path, it) => (beside6.push(it.id), { ok: true }) } });
+  ok("…and with the lane idle, it goes in the lane's own brief, not beside it", beside6.join() === "3" && pushed6[0].exclude.join() === "3", [beside6, pushed6]);
 }
 
 rmSync(HOME, { recursive: true, force: true });

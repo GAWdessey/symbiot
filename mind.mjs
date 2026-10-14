@@ -16,14 +16,14 @@
 //   signed in to your linked sites); "task" adds it to your list for later or for a
 //   repo. Anything hard to undo (closing an account, deleting, paying, sending) the
 //   agent asks you about first, in the Agents tab: the brief says so.
-import { addRule } from "./asksdone.mjs";
+import { addRule, standingBrief, doneBrief } from "./asksdone.mjs";
 import { captureSecrets } from "./vault.mjs";
 import { languageLine } from "./lang.mjs";
 import { join } from "node:path";
 import { readFileSync, writeFileSync, mkdirSync, chmodSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { randomBytes } from "node:crypto";
-import { VERSION, CONFIG_DIR, clipWords } from "./core.mjs";
+import { VERSION, CONFIG_DIR, clipWords, readState, writeJsonAtomic } from "./core.mjs";
 import { write } from "./ai.mjs";
 import { handoffCmd, runHandoff, isUrgent, urgentFirst, urgentUndo } from "./agents.mjs";
 import { addTask, pushTasks } from "./tasks.mjs";
@@ -40,12 +40,12 @@ const MAX_NODES = 400, MAX_FACTS = 12, MAX_LOG = 240, RECALL = 8, LOG_LINES = 6,
 
 // ---- memory ---------------------------------------------------------------------
 function loadMind() {
-  try { const d = JSON.parse(readFileSync(MIND_FILE, "utf8")); return { nodes: Array.isArray(d.nodes) ? d.nodes : [], log: Array.isArray(d.log) ? d.log : [] }; }
+  try { const d = readState(MIND_FILE); return { nodes: Array.isArray(d.nodes) ? d.nodes : [], log: Array.isArray(d.log) ? d.log : [] }; }
   catch { return { nodes: [], log: [] }; }
 }
 // It can hold names, accounts and what you said about them: yours only (0600).
 function saveMind(d) {
-  try { mkdirSync(CONFIG_DIR, { recursive: true }); writeFileSync(MIND_FILE, JSON.stringify(d, null, 1), { mode: 0o600 }); try { chmodSync(MIND_FILE, 0o600); } catch {} return true; }
+  try { writeJsonAtomic(MIND_FILE, d, { indent: 1, mode: 0o600 }); return true; }
   catch { return false; }
 }
 const STOP = new Set("the and for you your are was were what with this that from have has had but not can will would could should into about them they their there here when then than just also more some any all its it's i'm i've me my mine our ours how why who which does did done get got want need please look check go make let tell know".split(" "));
@@ -146,7 +146,8 @@ ${ONLY_YOU}
 - When it's done, tick the task (\`- [x]\`) and say what you did in your last message: it's what goes back to whoever asked.
 
 ${handoverRules(names, OPS, reach).join("\n")}
-${HANDBACK.join("\n")}`;
+${HANDBACK.join("\n")}
+${[...standingBrief(), ...doneBrief(OPS)].join("\n")}`;
 }
 // How to write to the user, for a brief: their talking style, if it's known.
 const voiceLine = () => { const v = userStyleLine(); return v ? "\n- Writing to the user (questions, your last message): " + v : ""; };

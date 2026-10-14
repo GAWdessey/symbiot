@@ -160,6 +160,37 @@ try {
     ok("…and nothing when it doesn't ask you to sign in to a site", ["Approve the release?", "Sign in to your Claude account", "edit .symbiot/QUESTIONS.md", "Symbiot's browser is signed in to the sites the user linked"].every((t) => signInAsked(t) === null), "");
   }
 
+  console.log("SIGN IN BUTTON — clicking a card's 'Sign in to <site>' opens the Symbiot Browser on it");
+  {
+    // the page's own code (ui.mjs), with a stand-in for the card's DOM and the app's api: the
+    // lane block's ask card ("Agent runs asks") drew the button but was wired without its site,
+    // so a click did nothing at all (2026-10-14)
+    const { EMBEDDED_UI } = await import("../ui.mjs");
+    const js = [...EMBEDDED_UI.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]).join("\n");
+    const grab = (name) => { const i = js.indexOf("function " + name + "("); let depth = 0, j = js.indexOf("{", i); for (; j < js.length; j++) { if (js[j] === "{") depth++; else if (js[j] === "}" && --depth === 0) break; } return js.slice(i, j + 1); };
+    const calls = [], said = [];
+    const btn = () => ({ disabled: false, on: {}, addEventListener(t, f) { this.on[t] = f; }, classList: { add() {}, remove() {}, toggle() {} } });
+    const box = () => { const b = btn(); return { bsign: b, querySelector: (s) => (s === ".bsign" ? b : null), querySelectorAll: () => [] }; };
+    const F = new Function("api", "lqSaid", "localStorage", ["var BLOBBUSY={},BLOBSENT={};", "function loadLinks(){}function loadTrusted(){}", ...["bdKey", "bdAll", "bdGet", "signInSaid", "openSignIn", "wireBlob", "rlAsk"].map(grab)].join("\n") + "\nreturn { wireBlob, rlAsk, openSignIn };")(
+      (path, body) => { calls.push({ path, body }); return Promise.resolve({ ok: true, item: { name: "outlook.live.com" } }); },
+      (t, bad) => said.push({ t, bad }), { getItem: () => null, setItem() {} });
+    const q = "Outlook is signed out, can you sign back in so I can add Jono to the 11:00 meeting?";
+    const s = signInAsked("👤 You (only you: your Microsoft sign-in): sign in to outlook.live.com in the Symbiot Browser (Settings → Connections → Add a site), then tell me it's done");
+    const p = { repo: "agents", qs: [{ q, options: ["Skip Jono (Jurgen only)"], path: "/x/.symbiot/QUESTIONS.md", signInTo: s }] };
+    const y = F.rlAsk(p, "Agent runs", p.qs[0]), b = box();
+    ok("the lane block's ask card carries the site it asks you to sign in to", y.signInTo && y.signInTo.site === "outlook.live.com", y);
+    F.wireBlob(b, y, {});
+    b.bsign.on.click();
+    await new Promise((r) => setTimeout(r, 0));
+    ok("…and its button opens it: /api/links/site with outlook.live.com", calls.length === 1 && calls[0].path === "/api/links/site" && calls[0].body.site === "outlook.live.com", calls);
+    ok("…says it opened, and the button works again", said.some((x) => /Opened the Symbiot Browser with outlook\.live\.com/.test(x.t)) && !b.bsign.disabled, said);
+    ok("every place that draws a card wires the same object it drew (nothing drawn left unwired)", !/wireBlob\(ab,\{/.test(js) && /blobBody\(rlAsk\(p,nm,q\),false\)/.test(js) && /wireBlob\(ab,rlAsk\(p,nm,q\)/.test(js), "");
+    const b2 = box(); said.length = 0; calls.length = 0;
+    F.wireBlob(b2, { kind: "ask", q, signInTo: {} }, {});
+    b2.bsign.on.click();
+    ok("a button with no site says so, rather than doing nothing", !calls.length && said.length === 1 && said[0].bad && !b2.bsign.disabled, said);
+  }
+
   console.log("WEEK — what arrived on linked sites reaches the write-up");
   const now = Date.now(), day = 86400000;
   writeFileSync(watchFile, JSON.stringify({ watches: [], briefs: [], news: [

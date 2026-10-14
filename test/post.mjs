@@ -297,6 +297,17 @@ try {
   ok("a draft folder's 'ready for you to send' is its card's, never a 'waits for your OK' rerun (that run can't send)", needsOf(dir, { final: said }) === null, needsOf(dir, { final: said }));
   const other = join(HOME, "elsewhere"); mkdirSync(join(other, ".symbiot"), { recursive: true });
   ok("…while any other run's still is", !!needsOf(other, { final: said }), "");
+  { // dailify, 14 Oct 2026: "Ops has to load it on prod, which this lane can't reach." showed as "I've done this", though ops had it
+    const { READ_FILE } = await import("../agents.mjs"), { createHash } = await import("node:crypto");
+    const opsSaid = "The lead list is ready.\n- Ops has to load it on prod, which this lane can't reach.";
+    ok("another lane's job in a run's last words is never a step of yours", needsOf(other, { final: opsSaid }) === null, needsOf(other, { final: opsSaid }));
+    const aiSaid = "The import script is in scripts/leads.mjs; the load itself waits for the ops agent.", key = createHash("sha1").update(other + "\n" + aiSaid).digest("hex").slice(0, 16);
+    writeFileSync(READ_FILE, JSON.stringify({ [key]: { kind: "step", what: "Ops has to load it on prod, which this lane can't reach.", at: Date.now() } }));
+    ok("…nor when your AI read it from the words as one", needsOf(other, { final: aiSaid }) === null, needsOf(other, { final: aiSaid }));
+    writeFileSync(READ_FILE, JSON.stringify({ [key]: { kind: "step", what: "Only you can type the sudo password for the load.", at: Date.now() } }));
+    ok("…while a step only you can take still shows", !!needsOf(other, { final: aiSaid }), "");
+    writeFileSync(READ_FILE, "{}");
+  }
   writeFileSync(join(dir, ".symbiot", "TASKS.md"), "# Draft a reply: LinkedIn\n## Tasks\n- [x] Draft a reply to: x\n\n## The reply\nTo: Sam\nHi\n");
   const dsk = homeAnswer("draft:n1", { pick: 1 }, {});
   ok("Skip: it won't be sent, and the card goes", dsk.ok && W.draftCard(dir) === null && meta().draft.state === "skipped", [dsk, meta()]);

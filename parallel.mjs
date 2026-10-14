@@ -14,9 +14,9 @@
 import { spawnSync } from "node:child_process";
 import { mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, rmSync, copyFileSync, cpSync } from "node:fs";
 import { join } from "node:path";
-import { randomBytes } from "node:crypto";
+import { randomBytes, createHash } from "node:crypto";
 import { CONFIG_DIR, loadConfig } from "./core.mjs";
-import { runHandoff, runningHandoff, loadRunFiles, saveRunFiles } from "./agents.mjs";
+import { runHandoff, runningHandoff, loadRunFiles, saveRunFiles, answersDigest, ANSWERS_ARCHIVE } from "./agents.mjs";
 import { licenceState, isPro } from "./licence.mjs";
 
 const WT_DIR = join(CONFIG_DIR, "worktrees"), DEFAULT_CAP = 3, MAX_CAP = 8;
@@ -132,7 +132,7 @@ function startParallel(lane, path, task, { run = runHandoff, addTask = null, now
     writeFileSync(join(sd, "TASKS.md"), briefFor(path, task.text, branch));
     writeFileSync(join(sd, "handoff.json"), JSON.stringify({ name: `${lane} (beside): ${clip(task.text, 50)}` }));
     writeFileSync(join(sd, "par.json"), JSON.stringify(meta));
-    for (const f of ["ANSWERS.md"]) if (existsSync(join(path, ".symbiot", f))) copyFileSync(join(path, ".symbiot", f), join(sd, f));
+    for (const f of ["ANSWERS.md", ANSWERS_ARCHIVE]) if (existsSync(join(path, ".symbiot", f))) copyFileSync(join(path, ".symbiot", f), join(sd, f));
     if (existsSync(join(path, ".symbiot", "full"))) cpSync(join(path, ".symbiot", "full"), join(sd, "full"), { recursive: true });
   } catch (e) { drop(path, meta); return { error: clip(String((e && e.message) || e), 140) }; }
   const e = run(wt, { onExit: (code) => { try { merge(meta, { addTask, code }); } catch {} } });
@@ -140,6 +140,33 @@ function startParallel(lane, path, task, { run = runHandoff, addTask = null, now
   return { ok: true, id: e.id, wt, parallel: id };
 }
 function drop(repo, m) { git(repo, ["worktree", "remove", "--force", m.wt]); git(repo, ["branch", "-D", m.branch]); try { rmSync(m.wt, { recursive: true, force: true }); } catch {} git(repo, ["worktree", "prune"]); }
+
+// ---- a run beside that ended unfinished ---------------------------------------------
+// Unfinished, its task stayed queued beside the lane's run, so the next 20-second tick
+// started another copy on the same inputs, and it stopped where the last one had: four
+// left byte-identical patches (the 14 Oct 2026 audit). So the lane's .symbiot/beside.json
+// keeps, per task id, how many tries, the last patch's hash and what they ran with (the
+// lane's .env and the user's answers). Until those change it isn't started beside again:
+// it waits for the lane's own run, which has the whole brief (besideAgain).
+const TRIED = "beside.json", hash = (t) => createHash("sha1").update(String(t)).digest("hex").slice(0, 16);
+function besideInputs(repo) {
+  let env = ""; try { for (const f of readdirSync(repo).filter((x) => /^\.env(\..+)?$/.test(x) && !/\.(example|sample|template)$/.test(x)).sort()) env += f + "\0" + readFileSync(join(repo, f), "utf8") + "\0"; } catch {}
+  return hash(env + "\0" + answersDigest(repo)); // the archived answers count too (agents.mjs archiveAnswers)
+}
+function loadTried(repo) { try { const o = JSON.parse(readFileSync(join(repo, ".symbiot", TRIED), "utf8")); return o && typeof o === "object" && !Array.isArray(o) ? o : {}; } catch { return {}; } }
+function noteTried(repo, taskId, patch, { done = false, now = Date.now() } = {}) {
+  if (!taskId) return;
+  const all = loadTried(repo), was = all[taskId];
+  if (done) delete all[taskId];
+  else all[taskId] = { tries: ((was && was.tries) || 0) + 1, patch: hash(patch), same: !!was && was.patch === hash(patch), inputs: besideInputs(repo), at: now };
+  try { mkdirSync(join(repo, ".symbiot"), { recursive: true }); writeFileSync(join(repo, ".symbiot", TRIED), JSON.stringify(all)); } catch {}
+}
+// null, or { tries, note } when a run beside already stopped on this task with nothing it ran with changed since.
+function besideAgain(repo, taskId) {
+  const t = repo && taskId ? loadTried(repo)[taskId] : null;
+  if (!t || t.inputs !== besideInputs(repo)) return null;
+  return { tries: t.tries, note: `a run beside it stopped without finishing this${t.tries > 1 ? ` (${t.tries} tries)` : ""}, and nothing it ran with has changed since` };
+}
 
 // ---- merge back -------------------------------------------------------------------
 const tickedIn = (md) => String(md || "").split("\n").filter((l) => /^\s*-\s*\[x\]/i.test(l)).map((l) => l.replace(/^\s*-\s*\[x\]\s*/i, "").trim());
@@ -156,8 +183,9 @@ function mergeBack(m, { addTask = null, code = 0 } = {}) {
   const patch = git(wt, ["diff", "--cached", "--binary", m.base]).stdout || "";
   let tasksMd = ""; try { tasksMd = readFileSync(join(wt, ".symbiot", "TASKS.md"), "utf8"); } catch {}
   const ticked = tickedIn(tasksMd), done = code === 0 && ticked.length > 0, save = () => { const f = join(repo, ".symbiot", `parallel-${m.id}.patch`); try { mkdirSync(join(repo, ".symbiot"), { recursive: true }); writeFileSync(f, patch); } catch {} return f; };
+  noteTried(repo, m.taskId, patch, { done });
   if (!patch.trim()) { if (done) tickInMain(repo, ticked); drop(repo, m); return { ...out, merged: done, ticked: done }; }
-  if (!done) { out.saved = save(); drop(repo, m); return out; } // unfinished: the task stays open, its changes kept as a patch
+  if (!done) { out.saved = save(); drop(repo, m); return out; } // unfinished: the task stays open, its changes kept as a patch, and isn't started beside again on the same inputs
   const pf = join(wt, ".symbiot", "merge.patch"); writeFileSync(pf, patch);
   const check = git(repo, ["apply", "--check", pf]);
   if (check.status !== 0) { // it doesn't apply cleanly to the folder as it is now: a task for the lane's agent
@@ -192,4 +220,4 @@ function mergeEnded({ merge = mergeBack, addTask = null, running = runningHandof
   return done;
 }
 
-export { laneFacts, dropHeld, WT_DIR, DEFAULT_CAP, laneCap, claims, clash, verdict, peel, inflight, inflightIds, parallelLane, openTasksOf, dirtyFiles, isGit, startParallel, mergeBack, mergeEnded, briefFor, tickInMain, drop };
+export { besideAgain, noteTried, laneFacts, dropHeld, WT_DIR, DEFAULT_CAP, laneCap, claims, clash, verdict, peel, inflight, inflightIds, parallelLane, openTasksOf, dirtyFiles, isGit, startParallel, mergeBack, mergeEnded, briefFor, tickInMain, drop };

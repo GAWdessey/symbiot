@@ -3,8 +3,9 @@
 // repo's working-tree state.
 import { execSync } from "node:child_process";
 import { homedir } from "node:os";
-import { join } from "node:path";
-import { readFileSync, writeFileSync, mkdirSync, chmodSync, existsSync } from "node:fs";
+import { join, dirname } from "node:path";
+import { readFileSync, mkdirSync, chmodSync, existsSync, openSync, writeSync, fsyncSync, closeSync, renameSync, unlinkSync, linkSync, copyFileSync, statSync } from "node:fs";
+import { randomBytes } from "node:crypto";
 import { fileURLToPath } from "node:url";
 
 // ---- version ----------------------------------------------------------------
@@ -17,6 +18,42 @@ function semverGt(a, b) { const p = (v) => String(v || "").replace(/^v/, "").spl
 // SYMBIOT_REGISTRY points the check at another registry (the tests use a fake one)
 const REGISTRY = (process.env.SYMBIOT_REGISTRY || "https://registry.npmjs.org").replace(/\/+$/, "");
 async function checkLatest() { try { const r = await fetch(REGISTRY + "/symbiot"); if (!r.ok) return; const j = await r.json(); LATEST_VERSION = (j["dist-tags"] && j["dist-tags"].latest) || ""; } catch {} }
+
+// ---- state files: written whole or not at all ------------------------------
+// A state file (tasks, settings, memory, what's watched) is written to a temp file
+// beside it, flushed to disk, then renamed over it: a rename is atomic, so a crash
+// or a kill mid-save leaves the old file, never half of the new one. The copy it
+// replaces stays as <file>.bak. Before, a plain write cut short read back as
+// nothing, and the next save wrote that nothing over it: a half-written tasks.json
+// loaded as [] and one new task replaced 600. The app did run out of memory
+// mid-write (2026-10-12).
+function writeAtomic(file, text, { mode } = {}) {
+  mkdirSync(dirname(file), { recursive: true });
+  const tmp = `${file}.${process.pid}-${randomBytes(4).toString("hex")}.tmp`;
+  let fd = null;
+  try {
+    fd = openSync(tmp, "w", mode ?? 0o644);
+    writeSync(fd, text); fsyncSync(fd); closeSync(fd); fd = null;
+    if (mode != null) try { chmodSync(tmp, mode); } catch {}
+    if (existsSync(file)) { try { unlinkSync(file + ".bak"); } catch {} try { linkSync(file, file + ".bak"); } catch { try { copyFileSync(file, file + ".bak"); } catch {} } }
+    renameSync(tmp, file);
+  } catch (e) { if (fd != null) try { closeSync(fd); } catch {} try { unlinkSync(tmp); } catch {} throw e; }
+}
+const writeJsonAtomic = (file, v, o = {}) => writeAtomic(file, JSON.stringify(v, null, o.indent ?? 2) + (o.newline === false ? "" : "\n"), o);
+// What a state file holds, parsed, or undefined when there's none yet. One that
+// doesn't parse (cut short by a crash, or by an older Symbiot's plain write) is never
+// read as empty: it's moved aside to <file>.corrupt-<time>, where no save can reach
+// it, and the .bak from the save before it is put back and read instead.
+function readState(file) {
+  let text; try { text = readFileSync(file, "utf8"); } catch { return undefined; } // none yet
+  try { return JSON.parse(text); } catch {}
+  const aside = `${file}.corrupt-${Date.now()}`;
+  try { renameSync(file, aside); } catch {}
+  let back; try { back = JSON.parse(readFileSync(file + ".bak", "utf8")); } catch {}
+  if (back !== undefined) try { copyFileSync(file + ".bak", file); } catch {}
+  try { process.stderr.write(`symbiot: ${file} didn't read; kept it as ${aside}${back !== undefined ? " and read the copy from the save before" : ""}\n`); } catch {}
+  return back;
+}
 
 // ---- config ---------------------------------------------------------------
 const CONFIG_DIR = join(homedir(), ".config", "symbiot");
@@ -38,7 +75,7 @@ function splitSecrets(cfg) {
   for (const [k, v] of Object.entries(pub)) if (isObj(v) && "apiKey" in v) { sec[k] = { apiKey: v.apiKey }; pub[k] = { ...v }; delete pub[k].apiKey; } // a provider's: { anthropic: { apiKey, model } }
   return { pub, sec };
 }
-const readJson = (f) => { try { const o = JSON.parse(readFileSync(f, "utf8")); return isObj(o) ? o : {}; } catch { return {}; } };
+const readJson = (f) => { const o = readState(f); return isObj(o) ? o : {}; };
 function loadConfig() {
   const cfg = readJson(CONFIG_PATH), sec = readJson(SECRETS_PATH);
   for (const [k, v] of Object.entries(sec)) {
@@ -51,19 +88,54 @@ function saveConfig(cfg) {
   try {
     mkdirSync(CONFIG_DIR, { recursive: true });
     const { pub, sec } = splitSecrets(cfg || {});
-    writeFileSync(SECRETS_PATH, JSON.stringify(sec, null, 2) + "\n", { mode: 0o600 }); // first: a key is never only in neither
-    try { chmodSync(SECRETS_PATH, 0o600); } catch {}
-    writeFileSync(CONFIG_PATH, JSON.stringify(pub, null, 2) + "\n");
-    try { chmodSync(CONFIG_PATH, 0o600); } catch {}
+    writeJsonAtomic(SECRETS_PATH, sec, { mode: 0o600 }); // first: a key is never only in neither
+    writeJsonAtomic(CONFIG_PATH, pub, { mode: 0o600 });
     return true;
   } catch { return false; }
 }
 // Keys still in config.json (from before secrets.json): moved out. True if any were.
 function moveSecrets() { const raw = readJson(CONFIG_PATH); return Object.keys(splitSecrets(raw).sec).length ? saveConfig(loadConfig()) : false; }
+// ---- one app at a time ------------------------------------------------------
+// The app holds ~/.config/symbiot/app-<port>.lock while it runs: { pid, port, at }.
+// The file is made whole and linked into place, which fails if one is there, so of
+// two apps starting at once only one gets it. Before, the only check was a ping:
+// an app too busy to answer in time (pings took up to 7.4 s) wasn't found, and the
+// second started on a random port, both running every timer and saving the same
+// files (2026-10-08). A lock whose pid is gone (a crash, a kill) is taken over.
+// takeAppLock: null once this app holds it, or the live app holding it ({ pid, port }).
+// takeOver (Update & restart): the app holding it is handing over and about to exit.
+const lockPath = (port) => join(CONFIG_DIR, `app-${port}.lock`);
+const lockOf = (file) => { try { const o = JSON.parse(readFileSync(file, "utf8")); return o && Number(o.pid) > 0 ? o : null; } catch { return null; } };
+// a live process, and on Linux still a node one (a pid is reused after a reboot)
+function alive(pid) {
+  try { process.kill(pid, 0); } catch (e) { if (!e || e.code !== "EPERM") return false; }
+  try { return /node|symbiot/i.test(readFileSync(`/proc/${pid}/cmdline`, "utf8")); } catch { return true; }
+}
+let LOCK_HELD = "";
+function takeAppLock(port, { takeOver = false } = {}) {
+  const file = lockPath(port), tmp = `${file}.${process.pid}.tmp`;
+  try { mkdirSync(CONFIG_DIR, { recursive: true }); } catch {}
+  for (let i = 0; i < 3; i++) {
+    try {
+      const fd = openSync(tmp, "w", 0o600); writeSync(fd, JSON.stringify({ pid: process.pid, port, at: Date.now() })); closeSync(fd);
+      try { linkSync(tmp, file); LOCK_HELD = file; return null; }
+      catch (e) { if (e.code !== "EEXIST") { renameSync(tmp, file); LOCK_HELD = file; return null; } } // no hard links here: as good as it gets
+      finally { try { unlinkSync(tmp); } catch {} }
+    } catch { return null; } // can't write here at all: start as before
+    const h = lockOf(file);
+    if (h && h.pid !== process.pid && !takeOver && alive(h.pid)) return h;
+    if (!h) try { if (Date.now() - statSync(file).mtimeMs < 5000) continue; } catch {} // one being made right now: look again
+    try { unlinkSync(file); } catch {}
+  }
+  return null;
+}
+// Let go of it, only while it's still this app's (an app relaunched by an update took it over).
+function releaseAppLock() { if (!LOCK_HELD) return; const h = lockOf(LOCK_HELD); if (h && h.pid === process.pid) try { unlinkSync(LOCK_HELD); } catch {} LOCK_HELD = ""; }
+
 // ---- tasks: a persistent checklist (~/.config/symbiot/tasks.json) ---------
 const TASKS_PATH = join(CONFIG_DIR, "tasks.json");
-function loadTasks() { try { return JSON.parse(readFileSync(TASKS_PATH, "utf8")); } catch { return []; } }
-function saveTasks(t) { try { mkdirSync(CONFIG_DIR, { recursive: true }); writeFileSync(TASKS_PATH, JSON.stringify(t, null, 2)); return true; } catch { return false; } }
+function loadTasks() { const t = readState(TASKS_PATH); return t === undefined ? [] : t; }
+function saveTasks(t) { try { writeJsonAtomic(TASKS_PATH, t, { newline: false }); return true; } catch { return false; } }
 // How much a task holds: one line in TASKS.md, long enough for a handover or a
 // pasted list of steps (1000 cut the Jono email task off mid-sentence). Longer,
 // it keeps its whole text (full) and its line links to that (tasks.mjs addTask).
@@ -221,4 +293,4 @@ function repoState(repoPath) {
   return { branch, dirty, del, mod, add, stale, staleBy, behind };
 }
 
-export { own, VERSION, LATEST_VERSION, semverGt, REGISTRY, checkLatest, CONFIG_DIR, CONFIG_PATH, SECRETS_PATH, loadConfig, saveConfig, moveSecrets, splitSecrets, loadTasks, saveTasks, TASK_MAX, clipWords, taskWords, sameTask, uniqueTasks, sh, hasCmd, chromeBinary, repoState };
+export { own, writeAtomic, writeJsonAtomic, readState, takeAppLock, releaseAppLock, lockPath, VERSION, LATEST_VERSION, semverGt, REGISTRY, checkLatest, CONFIG_DIR, CONFIG_PATH, SECRETS_PATH, loadConfig, saveConfig, moveSecrets, splitSecrets, loadTasks, saveTasks, TASK_MAX, clipWords, taskWords, sameTask, uniqueTasks, sh, hasCmd, chromeBinary, repoState };
