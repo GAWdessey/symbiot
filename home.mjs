@@ -403,6 +403,11 @@ function homeState({ now = Date.now(), fresh = false, deps = {} } = {}) {
       ? { kind: "setup", id: "setup:inbox", signin: true, title: `Sign in to ${sight.signedOut[0]} again`, sub: "it's signed out, so I won't notice their reply", shape: "settings", focus: "links" }
       : { kind: "setup", id: "setup:inbox", title: "Let me see your inbox", sub: "so I notice their reply", shape: "settings", focus: "links" });
   }
+  // Linked sites that have signed out: one card for them all, so it's seen before an agent
+  // finds a sign-in page there (thirteen were, unseen, for two days: 2026-10-14)
+  let outs = []; try { outs = (((deps.links || linksState)() || {}).items || []).filter((x) => x.state === "signedout"); } catch {}
+  if (outs.length && !PHONE) you.push({ kind: "setup", id: "setup:signedout", signin: true, title: outs.length === 1 ? `Sign in to ${outs[0].name} again` : `Sign in again to ${outs.length} sites`,
+    sub: outs.length === 1 ? "it's signed out, so I can't use it for you" : `${outs.slice(0, 3).map((x) => x.name).join(", ")}${outs.length > 3 ? ` and ${outs.length - 3} more` : ""} signed out`, shape: "settings", focus: "links" });
   const bd = board() || {}, feeds = (bd.cards || []).filter((c) => c.count > 0).map((c) => ({ id: "feed:" + c.id, title: c.name, sub: c.label, count: c.count, shape: "board" }));
   // a clash in your files that matters (checks.mjs: high), first under Watching, until you've opened it
   const clash = clashes();

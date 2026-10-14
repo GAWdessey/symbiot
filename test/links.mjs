@@ -86,6 +86,18 @@ try {
   const n0 = item("notion"), n1 = (await checkLink("notion", { read: async () => ({ url: "https://www.notion.so/login", login: true }) })).item, n2 = (await checkLink("notion", { read: async () => ({ url: "https://www.notion.so/acme" }) })).item;
   ok("not watched: 'sign in' until a read finds it signed in", n0.state === "signin" && n1.state === "signin" && n2.state === "ok", [n0.state, n1.state, n2.state]);
   ok("a busy browser (sign-in window open) is said so, not counted", (await checkLink("notion", { read: async () => ({ busy: true }) })).busy === true && item("notion").state === "ok", "");
+  { // a day on, the site shows its sign-in page: that's a sign-out, said so (2026-10-14: "checks again in a moment", for two days)
+    const { loadConfig, saveConfig } = await import("../core.mjs");
+    const age = (id, ms) => { const c = loadConfig(); c.linked[id].opened = Date.now() - ms; c.linked[id].at = Date.now() - ms; saveConfig(c); };
+    const fresh = (await checkLink("notion", { read: async () => ({ url: "https://www.notion.so/login", login: true }) })).item;
+    ok("just opened to sign in, a sign-in page is 'may still be saving'", fresh.state === "signin" && /may still be saving/.test(fresh.note), fresh);
+    age("notion", 86400000);
+    const out = (await checkLink("notion", { read: async () => ({ url: "https://www.notion.so/login", login: true }) })).item;
+    ok("a day on, read signed in before: 'Signed out', amber, click it to sign in again", out.state === "signedout" && /^Signed out of Notion: click it to sign in again/.test(out.note), out);
+    await linkSite("notion", { open }); const again = item("notion");
+    ok("…clicked, it opens to sign in, and it's 'sign in' while you do", again.state === "signin" && opened[opened.length - 1] === "https://www.notion.so/", again);
+    await checkLink("notion", { read: async () => ({ url: "https://www.notion.so/acme" }) });
+  }
 
   console.log("ANY SITE — added in Settings → Connections or the Symbiot Browser, opened to sign in (domains.co.za, 2026-10-09)");
   {

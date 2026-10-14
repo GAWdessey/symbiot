@@ -257,6 +257,12 @@ try {
   ok("…not once an inbox is watched or Email is on, and not with nothing waited on", !homeState({ fresh: true, deps: { ...deps, waits: () => wait, seesInbox: () => true } }).you.some((y) => y.id === "setup:inbox") && !homeState({ fresh: true, deps: { ...deps, waits: () => [{ status: "replied" }], seesInbox: () => false } }).you.some((y) => y.id === "setup:inbox"), "");
   const out = homeState({ fresh: true, deps: { ...deps, waits: () => wait, seesInbox: () => ({ sees: false, signedOut: ["Gmail"] }) } }).you.find((y) => y.id === "setup:inbox");
   ok("…the inbox watched but signed out: it says so, and asks you to sign in again", out && out.signin && out.title === "Sign in to Gmail again" && /signed out, so I won't notice their reply/.test(out.sub) && out.focus === "links", out);
+  { // linked sites that signed out: one card, named
+    const L = (n) => () => ({ items: [{ id: "a", name: "Twilio", state: "signedout" }, { id: "b", name: "Azure", state: "signedout" }, { id: "c", name: "AWS", state: "signedout" }, { id: "d", name: "Brevo", state: "signedout" }, { id: "e", name: "GitHub", state: "ok" }].slice(0, n) });
+    const many = homeState({ fresh: true, deps: { ...deps, links: L(5) } }).you.filter((y) => y.id === "setup:signedout"), one = homeState({ fresh: true, deps: { ...deps, links: L(1) } }).you.find((y) => y.id === "setup:signedout");
+    ok("sites signed out: one card for them all, naming them, to Settings → Connections", many.length === 1 && many[0].title === "Sign in again to 4 sites" && many[0].sub === "Twilio, Azure, AWS and 1 more signed out" && many[0].focus === "links" && many[0].signin, many);
+    ok("…one site: by name; none signed out: no card", one && one.title === "Sign in to Twilio again" && !homeState({ fresh: true, deps: { ...deps, links: () => ({ items: [{ id: "e", name: "GitHub", state: "ok" }] }) } }).you.some((y) => y.id === "setup:signedout"), one);
+  }
   ok("…not when another inbox (or Email) still sees it", !homeState({ fresh: true, deps: { ...deps, waits: () => wait, seesInbox: () => ({ sees: true, signedOut: ["Gmail"] }) } }).you.some((y) => y.id === "setup:inbox"), "");
   ok("no AI: urgent, first, saying Symbiot can't work without one", first.you[0].id === "setup:ai" && first.you[0].urgent && /can't work without one/.test(first.you[0].sub), first.you[0]);
   const down = homeState({ fresh: true, deps: { ...deps, agentGone: () => "claude", signedOut: () => [{ id: "gmail", name: "Gmail", connector: "claude.ai Gmail", ready: false }] } });

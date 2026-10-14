@@ -2,6 +2,12 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.64.1
+
+- **Sign-ins stay in the profile they were made in.** Symbiot's browser opened whichever Chrome profile was used last. A Google sign-in in its window made a second profile ("Sign in to Chrome?"), and from then on every check and agent opened that one, where none of your earlier sign-ins were: ten linked sites showed their sign-in page while the sign-ins sat in the first profile, and the Gmail card read the other account's inbox. Every Symbiot browser now opens its own first profile, whatever Chrome used last.
+- **"This session only" sign-ins don't run out after 12 hours.** A site that signs you in for the session only (domains.co.za, and many consoles) was kept for 12 hours and then lost, used or not. It's now kept for 14 days and renewed every time Symbiot's browser starts, so one in use stays signed in until the site itself ends it.
+- **Signed out says signed out.** A site that showed its sign-in page long after you'd signed in kept saying "it may still be saving, Symbiot checks again in a moment", for days. It now says it's signed out, and Home shows one "Sign in again" card naming the sites.
+
 ## 0.64.0 — 2026-10-13
 
 - Added `symbiot capture --file` for a product's own video: it goes into the pick tray with its sound, and faces and names get blur boxes.

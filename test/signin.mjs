@@ -1,12 +1,12 @@
 // A sign-in kept only in a session cookie (domains.co.za's PHPSESSID, no "remember me")
 // survives the Sign in window closing: the hidden browser restores the last session and
-// keeps each session cookie for 12 hours (headless.mjs keepSessions); one kept in a tab's
+// keeps each session cookie for 14 days, put ahead again at every start (headless.mjs keepSessions); one kept in a tab's
 // sessionStorage comes along too (the restored tab's, filled into the hidden one). Needs a Chromium-
 // family browser (CI has Chrome); without one it says so and passes.
 //
 //   node test/signin.mjs
 //
-import { mkdtempSync, mkdirSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawn } from "node:child_process";
@@ -22,6 +22,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const { chromeBinary } = await import("../core.mjs");
 const h = await import("../headless.mjs");
 console.log("SIGN-IN — a session-only sign-in outlives the Sign in window");
+ok("every Symbiot browser opens the same profile in it, by name: Chrome's last-used one took over (2026-10-13)", [h.browserArgs(true), h.browserArgs(false, "https://x.org/")].every((a) => a.includes("--profile-directory=Default")) && h.PROFILE_DIR === "Default", h.browserArgs(true));
 ok("the hidden browser restores the last session; the Sign in window doesn't", h.browserArgs(true).includes("--restore-last-session") && !h.browserArgs(false, "https://x.org/").includes("--restore-last-session"), "");
 if (!chromeBinary()) console.log("  - no Chrome here: the rest skipped");
 else {
@@ -39,7 +40,7 @@ else {
   const base = "http://127.0.0.1:" + srv.address().port;
   // the Sign in window, as Chrome runs it: Symbiot's profile, no session restore (here headless,
   // with a pipe only to close it as you would and to read its cookies)
-  const windowLike = async (url, look = false) => {
+  const windowLike = async (url, look = false, act = null) => {
     const args = h.browserArgs(true, url).filter((x) => x !== "--restore-last-session");
     const p = spawn(chromeBinary(), args, { stdio: ["ignore", "ignore", "ignore", "pipe", "pipe"] });
     let id = 1, buf = Buffer.alloc(0); const wait = new Map();
@@ -47,6 +48,7 @@ else {
     const send = (method, params = {}) => new Promise((res) => { const i = id++; wait.set(i, res); p.stdio[3].write(JSON.stringify({ id: i, method, params }) + "\0"); });
     await sleep(2500);
     const cookies = look ? ((await send("Storage.getCookies")).cookies || []) : null;
+    if (act) await act(send, cookies);
     await send("Browser.close"); await new Promise((r) => (p.exitCode !== null ? r() : p.on("exit", r)));
     return cookies;
   };
@@ -57,14 +59,27 @@ else {
     const later = await windowLike(base + "/inbox", true); // the window again, for another site
     const c = (later || []).find((x) => x.name === "PHPSESSID");
     const left = c ? c.expires - Date.now() / 1000 : 0;
-    ok("…and so is the next Sign in window: it's kept for 12 hours, no longer a session cookie", c && c.value === "abc123" && !c.session && left > h.SESSION_KEEP - 600 && left <= h.SESSION_KEEP + 5, c);
+    ok("…and so is the next Sign in window: it's kept for 14 days, no longer a session cookie", c && c.value === "abc123" && !c.session && h.SESSION_KEEP === 14 * 86400 && left > h.SESSION_KEEP - 600 && left <= h.SESSION_KEEP + 5, c);
+    // a day or two on, it's nearly run out (it ended 12 hours in, used or not: 2026-10-14)
+    const { name, value, domain, path, secure, httpOnly } = c;
+    await windowLike(base + "/inbox", true, (send) => send("Storage.setCookies", { cookies: [{ name, value, domain, path, secure, httpOnly, expires: Math.floor(Date.now() / 1000) + 3600 }] }));
+    await h.readPage(base + "/inbox"); await h.closeBrowser();
+    const renewed = ((await windowLike(base + "/inbox", true)) || []).find((x) => x.name === "PHPSESSID"), left2 = renewed ? renewed.expires - Date.now() / 1000 : 0;
+    ok("…and put 14 days ahead again each time the hidden browser starts, so a sign-in in use never runs out", renewed && renewed.value === "abc123" && left2 > h.SESSION_KEEP - 600, [renewed, left2]);
     const again = await h.readPage(base + "/inbox");
     ok("…and the hidden browser after that window too", /PHPSESSID=abc123/.test((again && again.title) || ""), again);
+    // a second profile, last used, as a Google sign-in in the window made one (2026-10-13)
+    await h.closeBrowser();
+    const ls = join(h.PROFILE, "Local State"), st = JSON.parse(readFileSync(ls, "utf8"));
+    st.profile = { ...(st.profile || {}), last_used: "Profile 1", last_active_profiles: ["Profile 1"], info_cache: { ...((st.profile || {}).info_cache || {}), "Profile 1": { name: "Someone else" } } };
+    writeFileSync(ls, JSON.stringify(st)); mkdirSync(join(h.PROFILE, "Profile 1"), { recursive: true });
+    const second = await h.readPage(base + "/inbox");
+    ok("Chrome's last-used profile another one: Symbiot still opens its own, signed in", /PHPSESSID=abc123/.test((second && second.title) || ""), second);
     await windowLike(base + "/ss-login"); // a site that signs you in in sessionStorage, and the window closed
     const ss1 = await h.readPage(base + "/app");
     ok("a sign-in kept in sessionStorage: the hidden browser has it after the window closes", ss1 && ss1.title === "tok-ss", ss1);
     const ss2 = await h.readPage(base + "/app");
-    ok("…and in its next run too, kept 12 hours, in the profile only", ss2 && ss2.title === "tok-ss" && Object.keys(h.loadSessions()).join() === base, [ss2, Object.keys(h.loadSessions())]);
+    ok("…and in its next run too, kept 14 days, in the profile only", ss2 && ss2.title === "tok-ss" && Object.keys(h.loadSessions()).join() === base, [ss2, Object.keys(h.loadSessions())]);
     const other = await h.readPage("http://localhost:" + srv.address().port + "/app");
     ok("…and no other site's page gets it", other && other.title === "signed out", other);
   } finally { srv.close(); await h.closeBrowser(); }
