@@ -12,7 +12,7 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { authorship, repoState, readmeInfo, houseRules, findAllRepos, driftRepo, buildTasksMd, taskType, EMBEDDED_UI, orcaHandoffCmd, migrateOrcaCmd, fillHandoff, ORCA_CLAUDE_CMD, CLAUDE_CMD, HANDOFF_PROMPT, shipChanges, shipWithBump, bumpOffer, learnNpm, releaseNeeded, withReleases, semverGt, updateCmd, parseQuestions, unreleased, publishesOnMerge } from "../index.mjs";
 import { grantRule, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, linkReach, noteUntracked, untrackedBefore } from "../agents.mjs";
-import { applyRemovals, removalOf, saidFinished, gitFailed, unsentOf, readUnsent, unsentCard, repoTests, localRefused, holdShip, SHIP_STALE } from "../tasks.mjs";
+import { releaseNotIn, applyRemovals, removalOf, saidFinished, gitFailed, unsentOf, readUnsent, unsentCard, repoTests, localRefused, holdShip, SHIP_STALE } from "../tasks.mjs";
 import { releaseNotes, parseNotes } from "../writeups.mjs";
 import { VERSION, sameTask, uniqueTasks } from "../core.mjs";
 import { mailActivity } from "../mail.mjs";
@@ -1009,6 +1009,12 @@ try {
   const [rq0, rq1, rq2] = relAsk.questions;
   ok("a question needing a release npm doesn't have yet is marked as waiting on npm, with both versions", rq0.release && rq0.release.name === "rel-ask-x" && rq0.release.needs === "1.5.0" && rq0.release.npm === "1.4.0" && rq0.release.installed === "" && rq0.release.waiting === "npm", rq0.release);
   ok("...one npm has is possible now; one naming no version, or in a folder with no package, isn't marked", rq1.release && rq1.release.waiting === "" && !rq2.release, [rq1.release, rq2.release]);
+  // a step on a release, answered done on Home: only once that release is the one running here
+  const ver = JSON.parse(readFileSync(join(dirname(INDEX), "package.json"), "utf8")).version, nextVer = ver.replace(/\d+$/, (n) => +n + 1);
+  const selfRepo = build("release-not-in", `echo '{"name":"symbiot","version":"${ver}"}' > package.json`);
+  const notIn = releaseNotIn(selfRepo, `Once ${nextVer} is installed, sign in at cp.smsportal.com`);
+  ok("releaseNotIn: a step naming a release newer than the one running isn't possible yet, with both versions", notIn && notIn.name === "symbiot" && notIn.needs === nextVer && notIn.installed === ver, notIn);
+  ok("...one naming the running release, or none, or in a folder with no package, is", releaseNotIn(selfRepo, `Once ${ver} is installed, sign in`) === null && releaseNotIn(selfRepo, "Sign in at cp.smsportal.com") === null && releaseNotIn(join(ROOT, "nowhere"), `Once ${nextVer} is installed`) === null, "");
   ok("Home card: the question and each choice show in full (no line clamp), wrapping instead", !/\.lqblob \.bq\{[^}]*line-clamp/.test(EMBEDDED_UI) && !/\.lqblob \.nopt span\.bt\{[^}]*line-clamp/.test(EMBEDDED_UI) && !/\.lqblob\.rlask \.bq\{[^}]*line-clamp/.test(EMBEDDED_UI));
   const DONEOPT =new Function("return " + (EMBEDDED_UI.match(/var DONEOPT=(\/.*?\/i);/) || [])[1])();
   ok("the page holds back answers saying it's done or tried, not the others", ["Done both: map my inbox", "Done", "It clicked the right spot on both displays", "It looks right: my projects are on the Map", "Tried it, it missed"].every((s) => DONEOPT.test(s)) && !["Not done yet", "Not tried yet", "Yes: approve it now", "Doner kebab", "Trusted sites still isn't in Settings"].some((s) => DONEOPT.test(s)), DONEOPT);

@@ -22,6 +22,7 @@ import { onAnswered, shSingle, handoffCmd, setHandoffCmd, grantAgent, runHandoff
 import { PROVIDERS, resolveProvider, connectProvider, detectHardware, recommendModels, hasOllama, ollamaInstall, ensureOllama, useOllamaModel } from "./ai.mjs";
 import { SCAN, SCAN_TIMEOUT_MS, scanRoots, scanHome, addScanRoot, removeScanRoot, buildMap, nodeDetail, repoPathMap, laneMap, setScanOptions, refreshRepos, REPO_STATE, reposState } from "./scan.mjs";
 import { computeDrift } from "./drift.mjs";
+import { afterShip, markLive } from "./deploy.mjs";
 import { laneCap, mergeEnded, DEFAULT_CAP } from "./parallel.mjs";
 import { addTask, toggleTask, removeTask, restoreTask, syncTasks, taskType, pushTasks, pendingReview, workingDiff, learnNpm, withReleases, releaseInput, approveRepo, approveChanges, sendBack, setAutoMerge, mergeWhenGreen, sendAgain, forgetUnsent } from "./tasks.mjs";
 import { repoReview, repoSuggest, folderSuggest, taskChat, clearTaskChat, mailState, setMail, sentMail, produce, releaseNotes } from "./writeups.mjs";
@@ -472,7 +473,8 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
         await learnNpm(ask); return json(res, partly(pendingReview()));
       }
       if (u.pathname === "/api/pending/diff") { const p = laneMap()[u.searchParams.get("repo") || ""]; return json(res, { diff: p ? workingDiff(p) : "" }); }
-      if (u.pathname === "/api/pending/merge" && req.method === "POST") { const b = await readBody(req), path = laneMap()[String(b.repo || "")]; if (!path || !b.pr) return json(res, { error: "Say which repo and PR." }); return json(res, mergeWhenGreen(path, String(b.pr))); }
+      if (u.pathname === "/api/tasks/live" && req.method === "POST") { const b = await readBody(req); return json(res, markLive(String(b.id || ""))); }
+      if (u.pathname === "/api/pending/merge" && req.method === "POST") { const b = await readBody(req), path = laneMap()[String(b.repo || "")]; if (!path || !b.pr) return json(res, { error: "Say which repo and PR." }); { const m = mergeWhenGreen(path, String(b.pr)); if (m.ok) { try { m.live = afterShip(path, String(b.repo), String(b.pr), "merged"); } catch {} } return json(res, m); } }
       if (u.pathname === "/api/pending/approve" && req.method === "POST") { const b = await readBody(req), repo = String(b.repo || ""); if (b.bump) await learnNpm([laneMap()[repo]]); const notes = await releaseNotes(releaseInput(repo, { bump: b.bump })); return json(res, await approveRepo(repo, { bump: b.bump, notes, confirm: !!b.confirm, allowShared: !!b.allowShared })); }
       if (u.pathname === "/api/pending/approve-changes" && req.method === "POST") { const b = await readBody(req), repo = String(b.repo || ""); if (b.bump) await learnNpm([laneMap()[repo]]); const notes = await releaseNotes(releaseInput(repo, { bump: b.bump, tick: b.tick })); return json(res, await approveChanges(repo, { bump: b.bump, tick: b.tick, notes, confirm: !!b.confirm, allowShared: !!b.allowShared })); }
       // approved work that didn't get as far as a PR: sent again (untested: without the tests here), or left

@@ -145,6 +145,7 @@ const calls = [
   ["/api/tasks/toggle", "POST"],
   ["/api/tasks/remove", "POST"],
   ["/api/tasks/restore", "POST"],
+  ["/api/tasks/live", "POST"],
   ["/api/drift?ci=0&fetch=0", "GET"],
   ["/api/models", "GET"],
   ["/api/agentcfg", "GET"],

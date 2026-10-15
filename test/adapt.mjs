@@ -257,11 +257,10 @@ try {
   ok("…not once an inbox is watched or Email is on, and not with nothing waited on", !homeState({ fresh: true, deps: { ...deps, waits: () => wait, seesInbox: () => true } }).you.some((y) => y.id === "setup:inbox") && !homeState({ fresh: true, deps: { ...deps, waits: () => [{ status: "replied" }], seesInbox: () => false } }).you.some((y) => y.id === "setup:inbox"), "");
   const out = homeState({ fresh: true, deps: { ...deps, waits: () => wait, seesInbox: () => ({ sees: false, signedOut: ["Gmail"] }) } }).you.find((y) => y.id === "setup:inbox");
   ok("…the inbox watched but signed out: it says so, and asks you to sign in again", out && out.signin && out.title === "Sign in to Gmail again" && /signed out, so I won't notice their reply/.test(out.sub) && out.focus === "links", out);
-  { // linked sites that signed out: one card, named
-    const L = (n) => () => ({ items: [{ id: "a", name: "Twilio", state: "signedout" }, { id: "b", name: "Azure", state: "signedout" }, { id: "c", name: "AWS", state: "signedout" }, { id: "d", name: "Brevo", state: "signedout" }, { id: "e", name: "GitHub", state: "ok" }].slice(0, n) });
-    const many = homeState({ fresh: true, deps: { ...deps, links: L(5) } }).you.filter((y) => y.id === "setup:signedout"), one = homeState({ fresh: true, deps: { ...deps, links: L(1) } }).you.find((y) => y.id === "setup:signedout");
-    ok("sites signed out: one card for them all, naming them, to Settings → Connections", many.length === 1 && many[0].title === "Sign in again to 4 sites" && many[0].sub === "Twilio, Azure, AWS and 1 more signed out" && many[0].focus === "links" && many[0].signin, many);
-    ok("…one site: by name; none signed out: no card", one && one.title === "Sign in to Twilio again" && !homeState({ fresh: true, deps: { ...deps, links: () => ({ items: [{ id: "e", name: "GitHub", state: "ok" }] }) } }).you.some((y) => y.id === "setup:signedout"), one);
+  { // linked sites that signed out: no standing card (Garth, 2026-10-14); a run that needs one asks for it, with its Sign in button
+    const L = () => ({ items: [{ id: "a", name: "Twilio", state: "signedout" }, { id: "b", name: "Azure", state: "signedout" }, { id: "c", name: "AWS", state: "signedout" }, { id: "d", name: "Brevo", state: "signedout" }, { id: "e", name: "GitHub", state: "ok" }] });
+    const quiet = homeState({ fresh: true, deps: { ...deps, links: L } });
+    ok("sites signed out that nothing is using: no card asking you to sign in to them", !quiet.you.some((y) => y.signin || /^Sign in/.test(y.title || "") || /signed out/.test(y.sub || "")), quiet.you);
   }
   ok("…not when another inbox (or Email) still sees it", !homeState({ fresh: true, deps: { ...deps, waits: () => wait, seesInbox: () => ({ sees: true, signedOut: ["Gmail"] }) } }).you.some((y) => y.id === "setup:inbox"), "");
   ok("no AI: urgent, first, saying Symbiot can't work without one", first.you[0].id === "setup:ai" && first.you[0].urgent && /can't work without one/.test(first.you[0].sub), first.you[0]);
@@ -376,6 +375,11 @@ try {
   const c10 = homeAnswer("needs:r10", { pick: 0 }, ed), ans10b = readFileSync(join(envDir, ".symbiot", "ANSWERS.md"), "utf8");
   ok("…changed after the run asked: Done goes ahead as before", c10.ok && reran10.length === 2 && /Done: the user did it\. Check it worked/.test(ans10b), [c10, ans10b.slice(-200)]);
   ok("…and a step that names no file goes ahead as before", homeAnswer("needs:r10", { pick: 0 }, { ...ed, agents: () => [{ ...envRun, needs: { ...envRun.needs, what: "Run tailscale up with sudo." } }] }).ok && reran10.length === 3, reran10);
+  // Done it on a step that needs a release not installed here: "once 0.65.2 is installed, sign in…" was passed on as done while 0.65.1 ran (2026-10-14)
+  const relRun = { ...envRun, needs: { ...envRun.needs, what: "Once 0.65.2 is installed, sign in at cp.smsportal.com." } }, relOut = { name: "symbiot", needs: "0.65.2", installed: "0.65.1" };
+  const r10 = homeAnswer("needs:r10", { pick: 0 }, { ...ed, agents: () => [relRun], releaseNotIn: () => relOut });
+  ok("…Done it on a step that needs a release not installed here: not done yet, saying which, and no agent starts", r10.error && /needs symbiot 0\.65\.2, and 0\.65\.1 is installed here/.test(r10.error) && reran10.length === 3, r10);
+  ok("…once it's installed, Done goes ahead", homeAnswer("needs:r10", { pick: 0 }, { ...ed, agents: () => [relRun], releaseNotIn: () => null }).ok && reran10.length === 4, reran10);
   const pj = ws3({ deps: { repos: () => ({}), pending: () => [], tasks: () => [], parked: () => [], agents: () => [waitsRun({ id: "r8" })], stuck: () => [] } }).projects.find((p) => p.repo === "ops");
   ok("…and on its lane in Tasks: lit, the OK first, answerable there", pj && pj.lit && pj.qs[0].fix === "needs" && pj.qs[0].id === "needs:r8", pj);
   const wsS = ws3({ deps: { repos: () => ({ coral: "/c" }), pending: () => [], tasks: () => [], parked: () => [], agents: () => [failedRun({ id: "r9" })], stuck: () => stuckT } });

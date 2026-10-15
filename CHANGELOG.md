@@ -2,6 +2,15 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.65.2 — 2026-10-14
+
+- Home no longer keeps a standing "Sign in again to 10 sites" card for every linked site that has signed out. An agent asks for one site, with its Sign in button, only when its job needs it; Settings → Connections still shows which are signed out.
+- SMS Portal stays signed in: the Symbiot Browser's tab storage is now read while the window is open and kept at Done, so a sign-in held only in a tab survives that tab closing.
+- A sign-up page ("Create an account", "Sign up", "Register", a /signup address) reads as signed out, so Deepgram's card no longer says all is well when it isn't.
+- A site added by its bare name (twilio.com) is checked at the page you reach once signed in, and a site that still reads signed out after Done says on its card what the window last showed.
+- An answer sent from a Home card no longer comes back as a draft when the card is redrawn while it sends.
+- "I've done this" on a step that needs a release ("once 0.65.2 is installed, sign in…") waits until that release is installed here, so a sign-in done on the old one isn't taken as done.
+
 ## 0.65.1 — 2026-10-14
 
 - Approve no longer stops before the push when a project's tests only fail because its test database isn't running on this computer (dailify). It pushes, says the tests couldn't run here, and CI checks them on the PR. When tests really fail, it now gives the line that says why.
