@@ -29,6 +29,10 @@ try {
   ok("markUsed spends one by value", markUsed("npm recovery codes", B).left === 0 && getSecret("npm recovery codes").error);
   ok("tokens and password lines are caught", findSecrets("npm_" + "x".repeat(30) + " and password: hunter22x").found.length === 2);
   ok("ordinary text is left alone", captureSecrets("deploy the 0.62.1 build to abc123def").saved.length === 0);
+  const sha = "3f2a9c1b7e4d6a8f0b1c2d3e4f5a6b7c8d9e0f1a", b64 = "QWxhZGRpbjpvcGVuIHNlc2FtZTEyMzQ1Njc4OTBhYmNkZWZn";
+  ok("a git SHA, a long URL and a base64 blob aren't secrets: the words before them don't say so (15 Oct 2026)", findSecrets(`revert ${sha} and look at https://x.test/a/${b64}/b?v=${sha} then paste ${b64} into the form`).found.length === 0, findSecrets(`revert ${sha} ${b64}`).found);
+  ok("…they are when the words before them say token, key or code", findSecrets(`the api key is ${b64}`).found.length === 1 && findSecrets(`recovery code: ${sha}`).found.length === 1 && findSecrets(`tokens: ${A}, ${B}`).found.flatMap((f) => f.values).length === 2, [findSecrets(`the api key is ${b64}`).found, findSecrets(`tokens: ${A}, ${B}`).found]);
+  ok("…but never one inside a URL, even after such a word", findSecrets(`the token page is https://x.test/t/${b64}`).found.length === 0);
   ok("delete removes it", deleteSecret("npm recovery codes").ok && !listSecrets().length);
 
   console.log("CHAT — acknowledged, redacted, not refused");
