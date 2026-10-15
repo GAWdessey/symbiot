@@ -13,7 +13,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { CONFIG_DIR, loadConfig, saveConfig } from "./core.mjs";
-import { write } from "./ai.mjs";
+import { write, textOf } from "./ai.mjs";
 
 const DIR = () => join(CONFIG_DIR, "i18n");
 const BATCH = 40, PARALLEL = 6, MAX_LEN = 400;
@@ -76,7 +76,7 @@ async function translate(lang, strings, { ask = write } = {}) {
         const system = `You translate the interface of Symbiot, a desktop assistant app, from English into ${name}${name !== tag ? ` (${tag})` : ""}. These are its buttons, labels, headings and messages. Translate each one as a native ${name} app would say it: short, plain and natural, the same tone, the same capitalisation style. Keep exactly: every {#} (a number goes there), product and company names (Symbiot, Symbiot Pro, Claude, Claude Code, GitHub, Gmail, WhatsApp, LinkedIn, Ghost AI…), file names, code, commands, keyboard keys, emails and URLs. Answer with only a JSON array of the translations, in the same order, one for each.`;
         let out = null;
         try {
-          const raw = String(await ask(system, JSON.stringify(part), { fast: true }) || "");
+          const raw = textOf(await ask(system, JSON.stringify(part), { fast: true }));
           const a = raw.indexOf("["), b = raw.lastIndexOf("]");
           out = JSON.parse(raw.slice(a, b + 1));
         } catch {}

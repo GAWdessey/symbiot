@@ -11,13 +11,14 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync, openSync, closeSync
 import { randomBytes, createHash } from "node:crypto";
 import { CONFIG_DIR, loadConfig, saveConfig, loadTasks, TASK_MAX, clipWords, sameTask, taskWords, sh, runOut, hasCmd, readState, writeJsonAtomic } from "./core.mjs";
 import { recordDone } from "./asksdone.mjs";
-import { parseRun, lastRunText, readRunLog, runStarted, briefPlan, stepOf, runLine, waitingOn } from "./work.mjs";
+import { parseRun, lastRunText, readRunLog, runStarted, briefPlan, stepOf, runLine, waitingOn, waitUntil } from "./work.mjs";
 import { noteDuration, noteCost, kindOf } from "./estimate.mjs";
 import { plainAsk } from "./plain.mjs";
 import { lanesJob, parseFacts, leftToYou, gitWork, agentsGitWork, agentsClicking, agentsCodeWork, agentsMail, agentsPosting, linkedAsks, linkedChore, PUSH_OK } from "./handover.mjs";
 import { scanRoots, repoPathMap } from "./scan.mjs";
 import { knowledgeFolders } from "./knowledge.mjs";
-import { pickModel } from "./route.mjs";
+import { pickModel, MODEL } from "./route.mjs";
+import { claudeState } from "./ai.mjs";
 
 const HANDOFFS = []; // live registry of agents Symbiot has handed work to
 // ---- hand a repo (+ its tasks) to the user's agent — generic, settings-based
@@ -224,7 +225,8 @@ function routedModel(repoPath, opts = {}, resumed = false) {
     const task = resumed ? RESUME_PROMPT : readSymbiot(repoPath, "TASKS.md").split("\n").filter((l) => /^\s*- \[ \]/.test(l)).join("\n");
     const override = (task.match(/\[model:\s*(\w+)\s*\]/i) || [])[1] || opts.model || "";
     const m = pickModel({ task, lane: opts.name || "", path: resolve(repoPath), override });
-    return m.tier === "S" ? "sonnet" : m.tier === "O" && m.model === "claude-opus-5-5" ? "opus" : /^claude-/.test(m.model) ? m.model : "";
+    const alias = { S: "sonnet", O: "opus", H: "haiku" }[m.tier]; // the CLI's alias for the tier's own model; a named one (fable) as its id
+    return alias && m.model === MODEL[m.tier] ? alias : /^claude-/.test(m.model) ? m.model : "";
   } catch { return ""; }
 }
 function withModel(tmpl, model) {
@@ -258,13 +260,30 @@ function sandboxNeeds({ platform = process.platform, has = hasCmd } = {}) {
   return { ready: !missing.length, missing };
 }
 const sandboxed = (repoPath, cfg = loadConfig()) => cfg.agentSandbox !== false && !!repoPath && !resolve(repoPath).startsWith(CONFIG_DIR + "/");
+// A folder that would open the whole home, or Symbiot's and Claude's own settings, to a
+// run: never a writable one, nor an --add-dir. ~ as a knowledge folder put --add-dir ~
+// on every run, so a run could write its own sandbox file, ~/.claude/settings.json,
+// tasks.json and ~/.bashrc (15 Oct 2026). Such a folder is read-only to runs.
+const CLAUDE_DIR = () => join(homedir(), ".claude");
+const under = (p, d) => p === d || p.startsWith(d + "/");
+function wideRoot(p) {
+  p = resolve(String(p || "").replace(/^~(?=\/|$)/, homedir())); if (!p) return true;
+  return p === "/" || p === homedir() || under(homedir(), p) || under(CONFIG_DIR, p) || under(CLAUDE_DIR(), p);
+}
 function sandboxWrites(repoPath, tmpl = "") {
   const out = [resolve(repoPath)];
   try { for (const k of knowledgeFolders()) out.push(k.path); } catch {}
   for (const m of String(tmpl).matchAll(/--add-dir\s+(?:"([^"]+)"|'([^']+)'|(\S+))/g)) out.push(m[1] || m[2] || m[3]);
   for (const f of ["settings.json", "settings.local.json"]) { try { const d = JSON.parse(readFileSync(join(repoPath, ".claude", f), "utf8")); for (const x of (d.permissions && d.permissions.additionalDirectories) || []) out.push(String(x)); } catch {} }
   for (const c of SANDBOX_CACHES) out.push(join(homedir(), c));
-  return [...new Set(out.filter(Boolean).map((p) => resolve(String(p).replace(/^~(?=\/|$)/, homedir()))))];
+  return [...new Set(out.filter(Boolean).map((p) => resolve(String(p).replace(/^~(?=\/|$)/, homedir()))))].filter((p, i) => !i || !wideRoot(p));
+}
+// Never written by a run's commands, whatever else is open to them: Symbiot's own folder
+// (each thing in it, so a path under it the run was given, screens/, stays writable) and
+// Claude's. The guard holds the Edit and Write tools to the same (SYMBIOT_WRITES).
+function sandboxDenies(writes = []) {
+  const own = []; try { own.push(...readdirSync(CONFIG_DIR).map((n) => join(CONFIG_DIR, n))); } catch { own.push(CONFIG_DIR); }
+  return [...own.filter((p) => !writes.some((w) => under(w, p) || under(p, w))), CLAUDE_DIR(), join(homedir(), ".claude.json")];
 }
 // What a lane's allowed list opens up in its sandbox: a Read rule for a place the sandbox
 // hides from every run (Read(~/.ssh/**), or the ssh agent's socket in /run/user) is
@@ -303,7 +322,7 @@ function sandboxFor(repoPath, tmpl = "", { needs = sandboxNeeds } = {}) {
   const writes = sandboxWrites(repoPath, tmpl), { lift } = sandboxLifts(repoAllows(repoPath));
   const off = idlePlugins(repoPath);
   const s = { ...JSON.parse(readFileSync(guardSettings(), "utf8")), ...(off ? { enabledPlugins: off } : {}), sandbox: { enabled: true, failIfUnavailable: true, autoAllowBashIfSandboxed: true, allowUnsandboxedCommands: false,
-    network: { allowAllUnixSockets: true }, filesystem: { allowWrite: writes, denyRead: [...SANDBOX_SECRETS.map((p) => join(homedir(), p)), ...SANDBOX_SOCKETS()], ...(lift.length ? { allowRead: lift } : {}) } } };
+    network: { allowAllUnixSockets: true }, filesystem: { allowWrite: writes, denyWrite: sandboxDenies(writes), denyRead: [...SANDBOX_SECRETS.map((p) => join(homedir(), p)), ...SANDBOX_SOCKETS()], ...(lift.length ? { allowRead: lift } : {}) } } };
   const file = join(SANDBOX_DIR, digest(resolve(repoPath)) + ".json");
   try { mkdirSync(SANDBOX_DIR, { recursive: true, mode: 0o700 }); writeFileSync(file, JSON.stringify(s, null, 2) + "\n", { mode: 0o600 }); } catch { return null; }
   return { file, writes };
@@ -373,29 +392,37 @@ function runHandoff(repoPath, { force = false, lost = false, model = "", onExit 
   const lic = licenceGate(repoPath); if (lic) return lic; // Free's limits, and never Symbiot's own code (licence.mjs); even forced
   let opts = {}; try { opts = JSON.parse(readSymbiot(repoPath, "handoff.json")) || {}; } catch {}
   const busy = runningHandoff(repoPath); if (busy) return { busy: true, id: busy.id || "", pid: busy.pid, auto: !!busy.auto };
+  const down = claudePause(); if (down) return { blocked: true, down: down.kind, questions: 0, note: down.note }; // Claude itself is down: even forced, the run would end at once
   releaseHeldTasks(repoPath); // held for an agent another process started, which has since exited
   const idle = !lost && nothingToDo(repoPath); if (idle) return { blocked: true, idle: true, questions: 0, note: idle };
-  const scoped = withScope(withConnectors(tmpl, repoPath), repoPath), box = isClaudeCmd(scoped) && trustFull() ? sandboxFor(repoPath, scoped) : null; // a repo run's sandbox, on top of the membrane
+  const scoped = runCmdOf(repoPath, tmpl), box = isClaudeCmd(scoped) && trustFull() ? sandboxFor(repoPath, scoped) : null; // a repo run's sandbox, on top of the membrane
   tmpl = withStream(withTrust(scoped, box, repoPath));
   const resume = isClaudeCmd(tmpl) ? resumeFor(repoPath) : null, fresh = tooLong(resume); // too long to resume: a fresh run carries on
   if (!model && !/\s--model\b/.test(tmpl)) model = routedModel(repoPath, opts, !!resume && !fresh); // routine runs on Sonnet, hard ones on Opus (route.mjs); a command you set with its own --model is left as-is
   if (model) tmpl = withModel(tmpl, model);
   const runCmd = resume && !fresh ? tmpl + ` --resume ${resume.id}` : tmpl;
   if (!force) { const w = waitingFor(repoPath); if (w) { askedFor(repoPath); return { blocked: true, waiting: true, questions: 0, note: waitNote(w) }; } }
-  const blocked = !force && blockedAgain(repoPath, tmpl); if (blocked) return blocked;
+  const blocked = !force && blockedAgain(repoPath, scoped); if (blocked) return blocked;
+  // the folder is this run's from here: the lock is claimed before the slow part (git status on a big
+  // tree), where a second process (symbiot push --open, a second app during an update) got in
+  const lock = join(repoPath, ".symbiot", LOCK);
+  if (!claimLock(lock)) { const b = runningHandoff(repoPath); return b ? { busy: true, id: b.id || "", pid: b.pid, auto: !!b.auto } : null; }
   try { unlinkSync(join(repoPath, ".symbiot", WAITING)); } catch {} // the step's done (or this is Start it anyway): this is the run it waited for
   noteUntracked(repoPath);
   try { archiveAnswers(repoPath); } catch {} // all but the newest answers: in ANSWERS.archive.md, so the run doesn't read them all first
+  noteAnswersSeen(repoPath); // what this run starts with: only an answer newer than this is news (nothingToDo)
   const dirtyBefore = dirtyState(repoPath), ticksBefore = ticksIn(readSymbiot(repoPath, "TASKS.md"));
-  const lock = join(repoPath, ".symbiot", LOCK);
   const own = opts.env && typeof opts.env === "object" ? Object.fromEntries(Object.entries(opts.env).map(([k, v]) => [k, String(v)])) : null, boxEnv = sandboxEnv(box);
   const owner = licenceState().plan === "owner" ? { SYMBIOT_OWNER: "1" } : null; // the guard lets only the owner's runs touch Symbiot's own files
   // SYMBIOT_AGENT: which run a `symbiot screens` command comes from, so it gets its own tab in the app's hidden browser
   const env = { ...(own || {}), ...(boxEnv || {}), ...(owner || {}), SYMBIOT_AGENT: repoPath };
-  const e = track(typeof opts.name === "string" && opts.name ? opts.name.slice(0, 80) : repoPath.split("/").pop(), fillHandoff(runCmd, repoPath, `${fresh ? carryOn(repoPath) : resume ? RESUME_PROMPT : HANDOFF_PROMPT} ${whereLine(repoPath)}`), repoPath, (code) => {
+  const gap = isClaudeCmd(runCmd) && process.platform !== "win32" ? startGap() : 0; // a few seconds between starts (the shell sleeps; the lock is held meanwhile)
+  const full = fillHandoff(runCmd, repoPath, `${fresh ? carryOn(repoPath) : resume ? RESUME_PROMPT : HANDOFF_PROMPT} ${whereLine(repoPath)}`);
+  const e = track(typeof opts.name === "string" && opts.name ? opts.name.slice(0, 80) : repoPath.split("/").pop(), gap ? `sleep ${Math.ceil(gap / 1000)}; ${full}` : full, repoPath, (code) => {
     if (noteSession(repoPath, code, !!resume && !fresh) === "lost") { setTimeout(() => { try { runHandoff(repoPath, { force: true, lost: true, onExit }); } catch {} }, 300); return; } // its conversation is gone: start afresh
     try { if (JSON.parse(readFileSync(lock, "utf8")).pid === e.pid) unlinkSync(lock); } catch {}
-    noteBlocked(repoPath, tmpl, e.startedAt, code, { dirtyBefore, ticksBefore });
+    try { const d = noteClaudeDown(repoPath); if (d) e.down = d; } catch {} // Claude itself was the reason: no start anywhere until it's back
+    noteBlocked(repoPath, scoped, e.startedAt, code, { dirtyBefore, ticksBefore });
     try { noteRunFiles(repoPath, e, dirtyBefore, ticksBefore); } catch {} // which files this run touched, for Approve
     forgetRunStart(repoPath, e.id);
     setTimeout(() => { try { autoAllow(repoPath); } catch {} }, 300); // a list it proposed inside your work: turned on, and on it goes
@@ -403,7 +430,7 @@ function runHandoff(repoPath, { force = false, lost = false, model = "", onExit 
     try { urgentDone(repoPath, e.id); } catch {} // the urgent run's done: the lanes it parked carry on
     if (onExit) try { onExit(code); } catch {} // a run beside the lane's own (parallel.mjs) merges back
   }, env);
-  if (!e) return null;
+  if (!e) { try { if (JSON.parse(readFileSync(lock, "utf8")).claim) unlinkSync(lock); } catch {} return null; } // it didn't start: the claim goes
   e.handoff = true;
   try { if (urgentState()) noteUrgentRun(repoPath, e.id); } catch {}
   if (e.pid) try { writeFileSync(lock, JSON.stringify({ pid: e.pid, id: e.id, startedAt: e.startedAt, owner: process.pid })); } catch {}
@@ -411,6 +438,67 @@ function runHandoff(repoPath, { force = false, lost = false, model = "", onExit 
   noteRun(e);
   return e;
 }
+// ---- Claude itself is down: no run starts until it's back ---------------------
+// A session limit, an expired sign-in or two runs refreshing one token at once ended
+// every run in a second, and the next tick started the same lanes again: 15 relaunches
+// in 3 minutes (9 Oct), 9 in 4 minutes (12 Oct 2026), each a red run on the Workdesk.
+// The run's last line says which (claudeDownIn); paused.json then holds every start
+// until the time the limit named, or until Claude Code is signed in again (asked once
+// a minute), and Home shows one card for it, not one per lane. Starts are also spaced
+// a few seconds apart (startGap): three in one second raced on the token refresh.
+const PAUSE_FILE = join(CONFIG_DIR, "paused.json"), SIGNIN_EVERY = 60000, REFRESH_WAIT = 2 * 60000, LIMIT_FALLBACK = 60 * 60000, AUTH_WAIT = 10 * 60000;
+function claudeDownIn(text, now = Date.now()) {
+  const t = String(text || "");
+  const m = /session limit\b[^\n]*?\bresets?\s+([^\n(]+?)\s*(?:\([^)]*\))?\s*\.?\s*$/im.exec(t);
+  if (m) return { kind: "limit", why: "Claude's session limit is used up", until: resetTime(m[1], now) || now + LIMIT_FALLBACK, resets: m[1].trim() };
+  if (/OAuth session expired|Failed to authenticate|not logged in|run \/login|Invalid authentication|authentication_error|Not authenticated/i.test(t)) return { kind: "auth", why: "Claude Code is signed out", until: 0 };
+  if (/another Claude Code process is refreshing|Failed to refresh OAuth token/i.test(t)) return { kind: "refresh", why: "two runs refreshed Claude's sign-in at once", until: now + REFRESH_WAIT };
+  return null;
+}
+// "8:50am", "3pm", "14:30" → the next time it's that, local time (the limit's zone is the
+// account's, this computer's), a minute past so the first run isn't a second early; 0 unread.
+function resetTime(s, now = Date.now()) {
+  const m = /(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b/i.exec(String(s || "")) || /(\d{1,2}):(\d{2})/.exec(String(s || "")); if (!m) return 0;
+  let h = Number(m[1]); const min = Number(m[2] || 0), ap = (m[3] || "").toLowerCase();
+  if (ap === "pm" && h < 12) h += 12; if (ap === "am" && h === 12) h = 0;
+  if (h > 23 || min > 59) return 0;
+  const d = new Date(now); d.setHours(h, min, 0, 0);
+  if (d.getTime() <= now) d.setDate(d.getDate() + 1);
+  return d.getTime() + 60000;
+}
+const loadPause = () => { try { const p = JSON.parse(readFileSync(PAUSE_FILE, "utf8")); return p && p.kind ? p : null; } catch { return null; } };
+const unpauseRuns = () => { try { unlinkSync(PAUSE_FILE); } catch {} };
+const when = (t) => new Date(t).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+function pauseNote(p) {
+  if (p.kind === "limit") return `Not started: ${p.why} (it resets ${p.resets || "at " + when(p.until)}), so no run starts before ${when(p.until)}: each would stop at once and the next tick would start it again.`;
+  if (p.kind === "auth") return `Not started: ${p.why}, so no run can work. Sign in to Claude Code again (Settings → AI, or run  claude  in a terminal): runs carry on by themselves once you have.`;
+  return `Not started: ${p.why}, so runs wait until ${when(p.until)} and then start a few seconds apart.`;
+}
+let SIGNIN_AT = 0, SIGNED = false;
+// The pause in force, or null: { kind, why, until, note }. An auth pause ends when Claude
+// Code is signed in again; a timed one when its time is up.
+function claudePause({ now = Date.now(), ready = (fresh) => claudeState(fresh).signedIn } = {}) {
+  const p = loadPause(); if (!p) return null;
+  if (p.kind === "auth" && !p.until) {
+    if (now - SIGNIN_AT >= SIGNIN_EVERY) { SIGNIN_AT = now; try { SIGNED = !!ready(true); } catch { SIGNED = false; } }
+    if (SIGNED) { unpauseRuns(); return null; }
+  } else if (!(p.until > now)) { unpauseRuns(); return null; }
+  return { ...p, note: pauseNote(p) };
+}
+// A run just ended: was Claude itself the reason? Then every start pauses. Only a run that
+// did nothing (cost 0, an error): a run that worked and *mentioned* a session limit isn't one.
+// Its kind, for the run's block, or "".
+function noteClaudeDown(path, now = Date.now(), { claude = isClaudeCmd(handoffCmd()) } = {}) {
+  let w = null; try { w = parseRun(lastRunText(readSymbiot(path, "agent.log"))); } catch { return ""; }
+  if (!w || (w.cost || 0) > 0 || !(w.errors > 0 || !w.stream)) return "";
+  const d = claudeDownIn(w.final, now); if (!d) return "";
+  if (d.kind === "auth" && !claude) d.until = now + AUTH_WAIT; // another agent's sign-in: nothing here can tell when it's back
+  const had = loadPause(); if (!had || had.kind !== d.kind || (d.until || 0) > (had.until || 0)) try { writeJsonAtomic(PAUSE_FILE, { ...d, at: now }, { mode: 0o600 }); } catch {}
+  return d.kind;
+}
+const START_GAP = 3000, START_GAP_MAX = 30000; let LAST_START = 0;
+// How long this start waits so starts come a few seconds apart; a batch of ten spreads over half a minute at most.
+function startGap(now = Date.now()) { const at = Math.min(Math.max(now, LAST_START + START_GAP), now + START_GAP_MAX); LAST_START = at; return at - now; }
 // ---- nothing to do: no run ----------------------------------------------------
 // A run in ~ started with no .symbiot/TASKS.md there, found nothing to action and
 // only cost a session (2026-10-07). A run needs something to work from: an
@@ -422,13 +510,24 @@ function runHandoff(repoPath, { force = false, lost = false, model = "", onExit 
 // pushTasks), and a held one lands first (runHandoff), so they count. Only the
 // run that restarts a lost conversation skips this: its answer is older than the
 // failed resume's start.
-const OPEN_TASK = /^\s*(?:[-*+]|\d+[.)])\s*\[ \]/m;
+// Only the user's answers count (userAnswers): a handover's report, a shared answer's
+// background note and Symbiot's own picks all moved ANSWERS.md, and each started a run
+// in a lane with every task ticked (7 of the symbiot lane's 17 runs, $8, 15 Oct 2026).
+// What the last run saw is kept at its start (ANSWERS_SEEN); a folder from before that
+// goes by the file's time, as before.
+const OPEN_TASK = /^\s*(?:[-*+]|\d+[.)])\s*\[ \]/m, ANSWERS_SEEN = "answers-seen.json";
+const noteAnswersSeen = (path) => { try { writeFileSync(join(path, ".symbiot", ANSWERS_SEEN), JSON.stringify({ at: Date.now(), answers: answersDigest(path) })); } catch {} };
+function newAnswers(path) {
+  let seen = null; try { seen = JSON.parse(readSymbiot(path, ANSWERS_SEEN)); } catch {}
+  if (seen && typeof seen.answers === "string") return answersDigest(path) !== seen.answers;
+  let answered = 0; try { answered = statSync(join(path, ".symbiot", "ANSWERS.md")).mtimeMs; } catch {}
+  return !!answered && answered > runStarted(readSymbiot(path, "agent.log"));
+}
 function nothingToDo(path) {
   const where = whereOf(path);
   if (where.gone) return `Not started: ${where.folder} was a copy of the ${where.lane} repo made for one task, and it was removed when that task was merged, so there's nothing left there to work on.`;
   const md = readSymbiot(path, "TASKS.md"); if (OPEN_TASK.test(md)) return "";
-  let answered = 0; try { answered = statSync(join(path, ".symbiot", "ANSWERS.md")).mtimeMs; } catch {}
-  if (answered && answered > runStarted(readSymbiot(path, "agent.log"))) return "";
+  if (newAnswers(path)) return "";
   const name = path === homedir() ? "~" : path.split(/[\\/]/).filter(Boolean).pop() || path;
   return md.trim() ? `Not started: every task in ${name}'s .symbiot/TASKS.md is ticked and no answer has come in since its last run, so an agent there would have nothing to do. Send it a task first.`
     : `Not started: ${name} has no .symbiot/TASKS.md, so an agent there would have nothing to do. Send it a task first.`;
@@ -536,14 +635,15 @@ function parkLane(path, on) {
 // urgent work, and takes this next" while 0 agents worked. Asking for urgent work in
 // a lane is the newest thing you've said about it, so it's unparked for it; and if
 // its run still doesn't start, urgentUndo takes back what urgentFirst did.
-const CAPS_OK = /^(README|TODO|FIXME|HTML|JSON|YAML|HTTP|HTTPS|OAUTH|CHANGELOG|TASKS|ANSWERS|QUESTIONS|HANDOFF|REMEMBER|AWAITING|SKIPPED|LICENSE|CLAUDE|AGENTS|NOTE|ASAP|SAST|UTC|GPU|CPU|RAM|USB|SDK|JDK|API|URL|CSS|DNS|SSH|SMS|PDF|PNG|SVG|MCP|LLM|CLI|ENV|PATH|HOME|WIP|ETA)$/;
-function isUrgent(text) {
-  const t = String(text || "");
-  if (/\burgent\b|\b(asap|right now|drop everything)\b|\b(do (this|it) first|comes? first|goes? first|first thing|takes? priority|before (anything|everything) else)\b/i.test(t)) return true;
-  if (/\bcrash(es|ing|ed)\b|\bkeeps? (closing|quitting|dying)\b|\b(won'?t|doesn'?t|can'?t) (start|open|launch)\b/i.test(t)) return true;
-  // capitals: a word of 4+ letters, not a file's name (TASKS.md) nor a usual acronym
-  return (t.match(/(?<![\w./-])[A-Z]{4,}(?![\w.])/g) || []).some((w) => !CAPS_OK.test(w));
-}
+// No capitals rule: a word in capitals (SMTP, CORS, UUID, NGINX, IMAP, GDPR) made a
+// routine task urgent, which parked every other lane and killed the lane's own run
+// mid-edit (15 Oct 2026). Only words that say so count; and only the strongest of
+// them (urgentStop: "urgent", a crash, "drop everything") stop a run already going.
+const URGENT_SAID = /\burgent(?:ly)?\b|\b(asap|right now|drop everything)\b|\bcrash(es|ing|ed)\b|\bkeeps? (closing|quitting|dying)\b|\b(won'?t|doesn'?t|can'?t) (start|open|launch)\b/i;
+const URGENT_FIRST = /\b(do (this|it) first|comes? first|goes? first|first thing|takes? priority|before (anything|everything) else)\b/i;
+function isUrgent(text) { const t = String(text || ""); return URGENT_SAID.test(t) || URGENT_FIRST.test(t); }
+// Said outright, not just "first": the one case a lane's routine run is stopped for it.
+const urgentStop = (text) => URGENT_SAID.test(String(text || ""));
 const urgentState = () => { const u = loadConfig().urgent; return u && Array.isArray(u.paths) && u.paths.length ? u : null; };
 function saveUrgent(u) { const cfg = loadConfig(); if (u) cfg.urgent = u; else delete cfg.urgent; saveConfig(cfg); }
 const hasOpenUrgent = (md) => String(md || "").split("\n").some((l) => /^\s*-\s*\[ \]/.test(l) && isUrgent(l));
@@ -554,8 +654,9 @@ function stopRun(path) {
 }
 // lanes: the paths to consider ({ name: path }); returns { parked: [names], parkedPaths,
 // stopped, unparked (it was parked: now it isn't), busy: "urgent" | "routine" | "" (a run
-// there now: one already on urgent work, which this waits for, or one it couldn't stop) }
-function urgentFirst(path, { lanes = null, stop = stopRun, running = runningHandoff } = {}) {
+// there now: one already on urgent work, which this waits for, or one it couldn't stop) }.
+// halt: false leaves a routine run there to finish (the ask said "first", not "urgent").
+function urgentFirst(path, { lanes = null, stop = stopRun, running = runningHandoff, halt = true } = {}) {
   if (!path) return { parked: [], parkedPaths: [], stopped: false, unparked: false, busy: "" };
   const u = urgentState() || { at: Date.now(), paths: [], parked: [], runs: [] };
   if (!u.paths.includes(path)) { u.paths.push(path); u.at = Date.now(); }
@@ -572,7 +673,7 @@ function urgentFirst(path, { lanes = null, stop = stopRun, running = runningHand
   // work keeps going, and counts as the urgent run, so its end resumes what was parked
   const busy = running(path), onIt = !!busy && (u.runs.includes(busy.id) || hasOpenUrgent(readSymbiot(path, "TASKS.md")));
   if (onIt && busy.id && !u.runs.includes(busy.id)) u.runs.push(busy.id);
-  const stopped = !!busy && !onIt && stop(path);
+  const stopped = !!busy && !onIt && halt && stop(path);
   saveUrgent(u);
   return { parked, parkedPaths: mine, stopped, unparked, busy: !busy ? "" : onIt ? "urgent" : stopped ? "" : "routine" };
 }
@@ -642,13 +743,39 @@ function noteRun(e) {
   const list = [{ path: e.path, name: e.name, startedAt: e.startedAt }, ...loadRuns().filter((r) => r.path !== e.path)].slice(0, RUNS_MAX);
   try { writeJsonAtomic(RUNS_FILE, list, { mode: 0o600 }); } catch {}
 }
-const knownRun = (path) => HANDOFFS.some((e) => e.path === path) || loadRuns().some((r) => r.path === path);
+const knownRun = (path) => HANDOFFS.some((e) => e.path === path) || loadRuns().some((r) => r.path === path) || (String(path || "").startsWith(ACT_DIR) && existsSync(join(path, ".symbiot", "QUESTIONS.md"))); // an ops folder with a question is one to answer, however old
+// ---- questions from every ops folder, not just the 60 newest runs -------------------
+// runs.json keeps the 60 newest folders, about two days of runs, so an ops run's open
+// question dropped off the Workdesk unanswered after that (31 folders' worth, 15 Oct
+// 2026). The drafts folder is listed every QF_EVERY; a folder's questions are read
+// again only when its QUESTIONS.md or ANSWERS.md changed, and one with a question still
+// open is listed like a run: { path, name, startedAt }.
+const QF_EVERY = 30000, QF_MAX_AGE = 30 * 86400000, QF = { at: 0, list: [], seen: new Map() };
+const runNameOf = (path) => { try { const h = JSON.parse(readSymbiot(path, "handoff.json")) || {}; return String(h.name || "").slice(0, 80) || basename(path); } catch { return basename(path); } };
+function questionFolders(now = Date.now()) {
+  if (now - QF.at < QF_EVERY) return QF.list;
+  QF.at = now; const out = [], live = new Set();
+  let dirs = []; try { dirs = readdirSync(ACT_DIR).filter((d) => d.startsWith("act-")); } catch {}
+  for (const d of dirs) {
+    const path = join(ACT_DIR, d); let st; try { st = statSync(join(path, ".symbiot", "QUESTIONS.md")); } catch { continue; }
+    if (now - st.mtimeMs > QF_MAX_AGE) continue;
+    live.add(path);
+    let am = 0; try { am = statSync(join(path, ".symbiot", "ANSWERS.md")).mtimeMs; } catch {}
+    const key = `${st.mtimeMs}:${st.size}:${am}`, had = QF.seen.get(path);
+    const row = had && had.key === key ? had : { key, open: (() => { try { return agentQuestions(path, "").questions.length > 0; } catch { return false; } })(), name: runNameOf(path), startedAt: runStarted(readSymbiot(path, "agent.log")) || st.mtimeMs };
+    QF.seen.set(path, row);
+    if (row.open) out.push({ path, name: row.name, startedAt: row.startedAt });
+  }
+  for (const p of QF.seen.keys()) if (!live.has(p)) QF.seen.delete(p);
+  QF.list = out; return out;
+}
 // The Agents tab's block for a run another process (or this app before a
 // restart) started: as agentsList gives one, marked `earlier`. Its end is when
-// its log last changed; its exit code isn't known.
+// its log last changed; its exit code isn't known. Then every ops folder with a
+// question still open that runs.json has forgotten (questionFolders).
 function earlierRuns() {
-  const tracked = new Set(HANDOFFS.map((e) => e.path)), out = [];
-  for (const r of loadRuns()) {
+  const tracked = new Set(HANDOFFS.map((e) => e.path)), out = [], runs = loadRuns(), listed = new Set(runs.map((r) => r.path));
+  for (const r of [...runs, ...questionFolders().filter((q) => !listed.has(q.path))]) {
     if (tracked.has(r.path) || !existsSync(join(r.path, ".symbiot"))) continue;
     const busy = runningHandoff(r.path), ask = agentQuestions(r.path, r.name), wait = waitingFor(r.path), facts = busy ? [] : factsOf(r.path);
     const log = join(r.path, ".symbiot", "agent.log"), startedAt = (busy && busy.startedAt) || Number(r.startedAt) || Date.now();
@@ -656,7 +783,7 @@ function earlierRuns() {
     const needs = busy ? null : needsOf(r.path, { final: lastFinal(r.path), waiting: wait, end });
     if (!busy && !ask.questions.length && !wait && !facts.length && !needs) continue;
     let tail = "", work = null, progress = null, line = null; try { ({ tail, work, progress, line } = workOf(r.path, readRunLog(log))); } catch {}
-    out.push({ id: "earlier-" + digest(r.path).slice(0, 8), name: String(r.name || r.path.split("/").pop()), path: r.path, status: busy ? "running" : "done", earlier: true, startedAt, endedAt: busy ? null : end, elapsed: Math.max(0, end - startedAt), exitCode: null, tail, work, progress, ...(busy && line ? { line } : {}), changed: agentChanges(r.path, startedAt), ask, held: heldTasks(r.path), waiting: wait, needs, remember: facts.length ? facts : null, fromHeld: false });
+    out.push({ id: "earlier-" + digest(r.path).slice(0, 8), name: String(r.name || r.path.split("/").pop()), path: r.path, status: busy ? "running" : "done", earlier: true, startedAt, endedAt: busy ? null : end, elapsed: Math.max(0, end - startedAt), exitCode: null, tail, work, progress, ...(busy && line ? { line } : {}), changed: agentChanges(r.path, startedAt, busy ? 0 : end), ask, held: heldTasks(r.path), waiting: wait, needs, remember: facts.length ? facts : null, fromHeld: false });
   }
   return out;
 }
@@ -772,7 +899,7 @@ async function readPass({ list, ask, connected, now = Date.now(), file = READ_FI
     due.push({ k, final });
   }
   for (const d of due.slice(0, READ_PER_TICK)) {
-    let r = null; try { r = parseRead(await ask(READ_SYSTEM, `The run's last message:\n\n${String(d.final).trim().slice(-READ_MAX)}`)); } catch {}
+    let r = null; try { const said = await ask(READ_SYSTEM, `The run's last message:\n\n${String(d.final).trim().slice(-READ_MAX)}`); r = parseRead(said && typeof said === "object" ? (said.error ? "" : said.text) : said); } catch {}
     store[d.k] = r ? { at: now, ...(r.needs ? { kind: r.kind, what: r.what, check: r.check, label: r.label } : {}) } : { at: now, error: true };
   }
   if (due.length) {
@@ -814,8 +941,12 @@ function askedFor(path) {
 }
 // A step in Settings → Handoff: the note names the command as what it waits on.
 const settingsStep = (s) => /\bsettings\b|\ballow\b|\bgrant|connector/i.test(String(s || ""));
-// The command the folder's next run would get, connectors and all (runHandoff).
-const runCmd = (path) => digest(withConnectors(handoffCmd(), path));
+// The command the folder's next run would get, connectors and folders and all, before
+// its model and stream flags (runHandoff adds those): what blocked.json and waiting.json
+// are keyed on. noteBlocked hashed the whole command and blockedAgain the bare template,
+// so they never matched and continueLanes' "don't loop" guard was dead (15 Oct 2026).
+const runCmdOf = (path, tmpl = handoffCmd()) => withScope(withConnectors(tmpl, path), path);
+const runCmd = (path) => digest(runCmdOf(path));
 // The files a step names, in backticks: `.env`, `~/.termux/termux.properties`,
 // `.claude/settings.json`. Not a command (`npm test`), a site (`web.whatsapp.com`,
 // unless there's a file by that name) or a path that can't be one here.
@@ -945,18 +1076,23 @@ function noteBlocked(path, cmd, startedAt, code, { dirtyBefore = null, ticksBefo
   // came up empty: no new tick, and git says no file changed (unknown either way: not held)
   const empty = !questions && code === 0 && inputs.open.length > 0 && ticksBefore != null && ticksIn(readSymbiot(path, "TASKS.md")) <= ticksBefore
     && !!dirtyBefore && (() => { const after = dirtyState(path); return !!after && JSON.stringify(after) === JSON.stringify(dirtyBefore); })();
+  // an empty run that said when to look again ("at 08:50", "once the switch is live": work.mjs
+  // waitUntil) is held until then, and not a moment less; one that didn't, until something changes
+  let until = 0; if (empty) try { until = waitUntil(parseRun(lastRunText(readSymbiot(path, "agent.log"))).final); } catch {}
   try {
-    if (code === 0 && (questions || empty) && inputs.open.length) writeFileSync(f, JSON.stringify({ at: Date.now(), questions, ...(empty ? { empty: true } : {}), ...inputs }));
+    if (code === 0 && (questions || empty) && inputs.open.length) writeFileSync(f, JSON.stringify({ at: Date.now(), questions, ...(empty ? { empty: true } : {}), ...(until ? { until } : {}), ...inputs }));
     else unlinkSync(f);
   } catch {}
 }
-function blockedAgain(path, cmd) {
+const atWhen = (t) => new Date(t).toLocaleString([], { weekday: "short", hour: "numeric", minute: "2-digit" });
+function blockedAgain(path, cmd, { now = Date.now() } = {}) {
   let b = null; try { b = JSON.parse(readSymbiot(path, BLOCKED)); } catch {}
   if (!b || !Array.isArray(b.open)) return null;
-  const now = runInputs(path, cmd), was = new Set(b.open);
-  if (now.env !== b.env || now.answers !== b.answers || now.cmd !== b.cmd || !now.open.length || now.open.some((t) => !was.has(t))) return null;
+  if (b.until && now >= b.until) return null; // the time it said to look again has come
+  const cur = runInputs(path, cmd), was = new Set(b.open);
+  if (cur.env !== b.env || cur.answers !== b.answers || cur.cmd !== b.cmd || !cur.open.length || cur.open.some((t) => !was.has(t))) return null;
   const n = b.questions || 0, them = n === 1 ? "it" : "them";
-  if (b.empty) return { blocked: true, questions: 0, empty: true, note: "Not started: the last run here finished nothing and changed no file, and nothing it could act on has changed since (.env, your answers, its tasks), so another run would stop in the same place. It starts again when one of those changes, or when work it handed to another lane is done." };
+  if (b.empty) return { blocked: true, questions: 0, empty: true, ...(b.until ? { until: b.until } : {}), note: `Not started: the last run here finished nothing and changed no file, and nothing it could act on has changed since (.env, your answers, its tasks), so another run would stop in the same place. It starts again ${b.until ? `at ${atWhen(b.until)}, when it said to look again, or earlier ` : ""}when one of those changes, or when work it handed to another lane is done.` };
   return { blocked: true, questions: n, note: `Not started: the last run here stopped on ${n} question${n === 1 ? "" : "s"}, and .env and ANSWERS.md haven't changed since, so another run would only ask again. Answer ${them} or change .env, then send again.` };
 }
 const LOCK = "agent.pid";
@@ -969,7 +1105,21 @@ function lockBeat(path, l) {
   for (const f of [LOCK, "agent.log"]) try { t = Math.max(t, statSync(join(path, ".symbiot", f)).mtimeMs); } catch {}
   return t;
 }
-const pidAlive = (pid) => { try { process.kill(pid, 0); return true; } catch (err) { return !!err && err.code === "EPERM"; } };
+const pidAlive = (pid) => { try { return Number.isInteger(pid) && pid > 0 && (process.kill(pid, 0) || true); } catch (err) { return !!err && err.code === "EPERM"; } };
+// Claim a folder for a run about to start: the lock written first ({ claim, owner, startedAt },
+// wx: never over a live one), replaced by the run's pid once it's spawned. A claim whose owner
+// is gone, or older than CLAIM_MAX, is stale and taken over. true when it's ours.
+const CLAIM_MAX = 60000;
+function claimLock(lock, now = Date.now()) {
+  for (let i = 0; i < 2; i++) {
+    let fd = null; try { mkdirSync(dirname(lock), { recursive: true }); fd = openSync(lock, "wx"); writeSync(fd, JSON.stringify({ claim: true, owner: process.pid, startedAt: now })); closeSync(fd); return true; } catch (e) { if (fd != null) try { closeSync(fd); } catch {} if (!e || e.code !== "EEXIST") return false; }
+    let l = null; try { l = JSON.parse(readFileSync(lock, "utf8")); } catch {}
+    const live = l && (l.claim ? pidAlive(l.owner) && now - (l.startedAt || 0) < CLAIM_MAX : Number.isInteger(l.pid) && pidAlive(l.pid) && !pidReused(l.pid, l.startedAt) && now - lockBeat(dirname(dirname(lock)), l) < LOCK_MAX_AGE);
+    if (live) return false;
+    try { unlinkSync(lock); } catch {}
+  }
+  return false;
+}
 // A lock's pid that now belongs to a process started after the lock was written was
 // reused: the agent is gone, and a lane held "busy" by it starts nothing (queued tasks
 // stalled with 0 agents working). Linux only (/proc); anywhere else, or unreadable, it
@@ -990,6 +1140,7 @@ function runningHandoff(path) {
   if (e) return { id: e.id, pid: e.pid, startedAt: e.startedAt, auto: true };
   try {
     const l = JSON.parse(readSymbiot(path, LOCK));
+    if (l && l.claim) return pidAlive(l.owner) && Date.now() - (l.startedAt || 0) < CLAIM_MAX ? { id: "", pid: null, startedAt: l.startedAt, auto: true, claim: true } : null; // about to start (claimLock)
     if (l && Number.isInteger(l.pid) && Date.now() - lockBeat(path, l) < LOCK_MAX_AGE && pidAlive(l.pid) && !pidReused(l.pid, l.startedAt)) return { ...l, auto: Number.isInteger(l.owner) && pidAlive(l.owner) };
   } catch {}
   return null;
@@ -1022,6 +1173,7 @@ function runsTick({ now = Date.now(), kill = (p, sig) => process.kill(p, sig), h
   const paths = new Set([...mine.keys(), ...loadRuns().map((r) => r.path)]);
   for (const path of paths) {
     let l = null; try { l = JSON.parse(readSymbiot(path, LOCK)); } catch {}
+    if (l && l.claim) { if (!(pidAlive(l.owner) && now - (l.startedAt || 0) < CLAIM_MAX)) try { unlinkSync(join(path, ".symbiot", LOCK)); } catch {} continue; } // a start under way, or a claim its process never followed up
     const pid = l && Number.isInteger(l.pid) ? l.pid : (mine.get(path) || {}).pid;
     const live = Number.isInteger(pid) && pidAlive(pid) && !(l && pidReused(pid, l.startedAt));
     if (live) {
@@ -1075,9 +1227,31 @@ function noteUntracked(path) {
 // (tasks.mjs taskPaths) stages only the files of runs that ticked something, so
 // two runs sharing a folder don't ship each other's unfinished work.
 const RUNFILES = "runfiles.json";
+// Not a git repo (an ops folder, marketing's): what's in the folder instead, by name and
+// state, Symbiot's own bookkeeping aside, so a run there that changed nothing is held
+// the same way. Before, only git could say, and every ops run that came up empty was
+// started again on every trigger (one ran 10 times for $21, 15 Oct 2026).
+const OWN_FILES = new Set(["agent.log", "agent.log.old", "agent.pid", "run-start.json", "session.json", "blocked.json", "runfiles.json", "untracked.json", "handed.json", "waiting.json", "autoallow.json", "answers-seen.json", "handoff.json", "par.json"]);
+const FOLDER_MAX = 2000, FOLDER_DEPTH = 3;
+function folderState(path) {
+  const out = {}; let n = 0;
+  const walk = (dir, rel, depth) => {
+    let names = []; try { names = readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    for (const d of names) {
+      if (n++ > FOLDER_MAX) return;
+      const name = d.name, r = rel ? rel + "/" + name : name;
+      if (rel === ".symbiot" && OWN_FILES.has(name)) continue;
+      if (!rel && (name === ".git" || name === "node_modules")) continue;
+      if (d.isDirectory()) { if (depth < FOLDER_DEPTH) walk(join(dir, name), r, depth + 1); continue; }
+      try { const st = statSync(join(dir, name)); out[r] = st.mtimeMs + ":" + st.size; } catch {}
+    }
+  };
+  walk(path, "", 0);
+  return out;
+}
 function dirtyState(path) {
   const r = spawnSync("git", ["-C", path, "status", "--porcelain", "-z", "-uall", "--", ".", ":(exclude).symbiot"], { encoding: "utf8", timeout: 30000, maxBuffer: 256 * 1024 * 1024, env: { ...process.env, GIT_TERMINAL_PROMPT: "0" } });
-  if (r.error || r.status !== 0) return null;
+  if (r.error || r.status !== 0) return existsSync(join(path, ".git")) ? null : folderState(path);
   const parts = String(r.stdout || "").split("\0"), out = {};
   for (let i = 0; i < parts.length; i++) {
     const l = parts[i]; if (l.length < 4) continue;
@@ -1326,11 +1500,12 @@ function changesOf(path, startedAt, git) {
 }
 const gitNow = (args) => { const r = spawnSync("git", args, { encoding: "utf8", timeout: 6000, killSignal: "SIGKILL", maxBuffer: 32 * 1024 * 1024, stdio: ["ignore", "pipe", "ignore"] }); return r.status === 0 ? String(r.stdout || "") : ""; };
 const gitLater = (args) => new Promise((res) => execFile("git", args, { encoding: "utf8", timeout: 6000, killSignal: "SIGKILL", maxBuffer: 32 * 1024 * 1024 }, (e, out) => res(e ? "" : String(out || ""))));
-function agentChanges(path, startedAt) {
+// endedAt: the run is over, so what git said after it ended stands; it isn't asked again every CHANGES_FRESH.
+function agentChanges(path, startedAt, endedAt = 0) {
   const had = CHANGES.get(path), now = Date.now();
   // the same run: a run's start is only known roughly when it began before a restart
   if (had && Math.abs(had.startedAt - (startedAt || now)) < 60000) {
-    if (now - had.at > CHANGES_FRESH && !had.busy) {
+    if (now - had.at > CHANGES_FRESH && !had.busy && !(endedAt && had.at >= endedAt + 2000)) {
       had.busy = true;
       Promise.resolve(changesOf(path, startedAt, gitLater)).then((v) => { CHANGES.set(path, { at: Date.now(), startedAt: had.startedAt, v }); }, () => { had.busy = false; });
     }
@@ -1476,11 +1651,13 @@ function installAllowlist(path) {
 // that stays inside this work, asks for nothing wide, and doesn't publish or reach another
 // machine is turned on by itself when its run ends (autoAllow): no question for the user.
 const PUBLISH_RULE = /^Bash\(\s*(git push|git\s+-C\s+\S+\s+push|npm publish|yarn publish|pnpm publish|aws|gcloud|az|kubectl|docker|podman|terraform|ssh|scp|sftp|rsync|ftp|heroku|vercel|netlify|fly|flyctl)\b/i;
+// Not ~ itself (nor / or a parent of it): with ~ as a knowledge folder, inWork said yes to
+// ~/Downloads and ~/x.sh, and an allow list reaching anywhere in home turned itself on.
 function workRoots() {
   const roots = new Set();
   try { for (const r of scanRoots()) roots.add(r); } catch {}
   try { for (const k of knowledgeFolders()) roots.add(k.path); } catch {}
-  return [...roots].filter(Boolean).map((r) => r.replace(/\/+$/, "") || "/");
+  return [...roots].filter(Boolean).map((r) => r.replace(/\/+$/, "") || "/").filter((r) => !wideRoot(r));
 }
 function inWork(p, roots = workRoots()) {
   if (!p) return false;
@@ -1598,9 +1775,9 @@ function continueLanes({ now = Date.now(), run = runHandoff, runs = loadRuns } =
       let ended = 0; try { ended = statSync(join(path, ".symbiot", "agent.log")).mtimeMs; } catch { continue; }
       if (now - ended < CONTINUE_AFTER) continue;
       const ticked = (md.match(/^\s*(?:[-*+]|\d+[.)])\s*\[[xX]\]/gm) || []).length;
-      const tasks = openTasks(path), last = seen[path];
-      if (last && ticked <= last.ticked && tasks.every((t) => (last.open || []).includes(t))) continue;
-      if (blockedAgain(path, handoffCmd())) continue;
+      const tasks = openTasks(path), last = seen[path], had = (t) => (last.open || []).some((o) => o === t || sameTask(o, t)); // an agent rewords a task; it's the same task (15 Oct 2026)
+      if (last && ticked <= last.ticked && tasks.every(had)) continue;
+      if (blockedAgain(path, runCmdOf(path))) continue;
       const e = run(path); if (e && e.id && !e.busy && !e.blocked) { seen[path] = { ticked, open: tasks }; out.push(path); }
     } catch {}
   }
@@ -1615,7 +1792,7 @@ function withScope(tmpl, repoPath) {
   const dirs = new Set(); try { for (const k of knowledgeFolders()) dirs.add(k.path); } catch {}
   if (/\/drafts\/act-[^/]+$/.test(String(repoPath || ""))) { try { for (const p of Object.values(repoPathMap() || {})) dirs.add(p); } catch {} }
   dirs.delete(repoPath);
-  let cmd = tmpl; for (const d of dirs) if (d && !cmd.includes(`--add-dir "${d}"`)) cmd += ` --add-dir "${d}"`;
+  let cmd = tmpl; for (const d of dirs) if (d && !wideRoot(d) && !cmd.includes(`--add-dir "${d}"`)) cmd += ` --add-dir "${d}"`; // --add-dir is read and write: never ~ (wideRoot)
   return cmd;
 }
 function grantFromStep(step, path = "", notes = {}) {
@@ -1760,8 +1937,8 @@ function agentsList() {
     const facts = first && e.status !== "running" ? factsOf(e.path) : [];
     const waiting = first && e.status !== "running" ? waitingFor(e.path) : null;
     const needs = first && e.status !== "running" ? needsOf(e.path, { final: work ? tail : "", waiting, end: e.endedAt || Date.now() }) : null;
-    return { id: e.id, name: e.name, path: e.path, status: e.status, startedAt: e.startedAt, endedAt: e.endedAt, elapsed: (e.endedAt || Date.now()) - e.startedAt, exitCode: e.exitCode, tail, work, progress, ...(e.status === "running" && line ? { line } : {}), changed: agentChanges(e.path, e.startedAt), ask: first ? agentQuestions(e.path, e.name) : null, held: first ? heldTasks(e.path) : null, waiting, needs, remember: facts.length ? facts : null, fromHeld: !!e.fromHeld };
+    return { id: e.id, name: e.name, path: e.path, status: e.status, startedAt: e.startedAt, endedAt: e.endedAt, elapsed: (e.endedAt || Date.now()) - e.startedAt, exitCode: e.exitCode, ...(e.down ? { down: e.down } : {}), tail, work, progress, ...(e.status === "running" && line ? { line } : {}), changed: agentChanges(e.path, e.startedAt, e.endedAt || 0), ask: first ? agentQuestions(e.path, e.name) : null, held: first ? heldTasks(e.path) : null, waiting, needs, remember: facts.length ? facts : null, fromHeld: !!e.fromHeld };
   }).concat(earlierRuns());
 }
 
-export { claudePlugins, idlePlugins, runSettings, archiveAnswers, allAnswers, answersDigest, ANSWERS_ARCHIVE, ANSWERS_KEEP, runsTick, RUN_START, HANG_MIN, noteBlocked, userAnswers, CONTINUED_FILE, onAnswered, CHANGES, toKnownHost, continueLanes, autoPick, autoDecide, FACTS, factsOf, knownRun, withStream, workOf, HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, connectorsInfo, linkReach, fillHandoff, runHandoff, nothingToDo, whereOf, whereLine, whereAnswer, askTask, PARKED_NOTE, parkedPaths, isParked, parkLane, agentMissing, blockedAgain, runningHandoff, loadRuns, earlierRuns, namedFiles, unchangedStep, waitingFor, startWaiting, noteUntracked, untrackedBefore, forgetUntracked, writeTasks, droppedTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, pickAgent, findOrcaCli, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, skipIdea, agentQuestions, answerQuestions, agentsList, needsOf, settleNeeds, NEEDS_FOR, readLastWords, readNeeds, parseRead, READ_FILE, autoAllow, autoAllowSweep, allowlistInWork, installAllowlist, inWork, withScope, withTrust, sandboxFor, sandboxLifts, sandboxEnv, sandboxNeeds, sandboxState, sandboxWrites, SANDBOX_DIR, resumeFor, noteSession, tooLong, carryOn, RESUME_CTX, CARRY_PROMPT, trustFull, GUARD_SETTINGS, isUrgent, urgentFirst, urgentUndo, urgentDone, urgentSweep, urgentState, licenceGate, stopRun, loadRunFiles, saveRunFiles, forgetRunFiles, withModel, routedModel };
+export { claudePlugins, idlePlugins, runSettings, archiveAnswers, allAnswers, answersDigest, ANSWERS_ARCHIVE, ANSWERS_KEEP, runsTick, RUN_START, HANG_MIN, noteBlocked, userAnswers, CONTINUED_FILE, onAnswered, CHANGES, toKnownHost, continueLanes, autoPick, autoDecide, FACTS, factsOf, knownRun, withStream, workOf, HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, connectorsInfo, linkReach, fillHandoff, runHandoff, nothingToDo, whereOf, whereLine, whereAnswer, askTask, PARKED_NOTE, parkedPaths, isParked, parkLane, agentMissing, blockedAgain, runningHandoff, loadRuns, earlierRuns, namedFiles, unchangedStep, waitingFor, startWaiting, noteUntracked, untrackedBefore, forgetUntracked, writeTasks, droppedTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, pickAgent, findOrcaCli, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, skipIdea, agentQuestions, answerQuestions, agentsList, needsOf, settleNeeds, NEEDS_FOR, readLastWords, readNeeds, parseRead, READ_FILE, autoAllow, autoAllowSweep, allowlistInWork, installAllowlist, inWork, withScope, withTrust, sandboxFor, sandboxLifts, sandboxEnv, sandboxNeeds, sandboxState, sandboxWrites, SANDBOX_DIR, resumeFor, noteSession, tooLong, carryOn, RESUME_CTX, CARRY_PROMPT, trustFull, GUARD_SETTINGS, runCmdOf, claimLock, wideRoot, sandboxDenies, questionFolders, folderState, dirtyState, ANSWERS_SEEN, newAnswers, claudeDownIn, claudePause, noteClaudeDown, resetTime, PAUSE_FILE, startGap, isUrgent, urgentStop, urgentFirst, urgentUndo, urgentDone, urgentSweep, urgentState, licenceGate, stopRun, loadRunFiles, saveRunFiles, forgetRunFiles, withModel, routedModel };
