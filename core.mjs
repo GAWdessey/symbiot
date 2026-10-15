@@ -1,7 +1,7 @@
 // Shared basics for every module: Symbiot's version (and npm's newest), its
-// config and task files, the one shell helper (never throws, never hangs) and a
-// repo's working-tree state.
-import { execSync } from "node:child_process";
+// config and task files, the helpers that run programs (never throw, never hang) and
+// a repo's working-tree state.
+import { execSync, execFileSync } from "node:child_process";
 import { homedir } from "node:os";
 import { join, dirname } from "node:path";
 import { readFileSync, mkdirSync, chmodSync, existsSync, openSync, writeSync, fsyncSync, closeSync, renameSync, unlinkSync, linkSync, copyFileSync, statSync } from "node:fs";
@@ -263,12 +263,33 @@ function uniqueTasks(texts) {
 }
 
 // ---- shell + git ----------------------------------------------------------
+// sh is for fixed command lines only. Anything with a path, branch, email or other
+// outside text in it goes through runOut/gitOut: they hand the program its arguments
+// as they are, with no shell between, so a folder (or a commit's author email) named
+// `a$(touch ~/x)` is only a name. Quoted with JSON.stringify for sh, it ran.
 function sh(cmd) {
   try { return execSync(cmd, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], maxBuffer: 32 * 1024 * 1024, timeout: 6000, killSignal: "SIGKILL" }); }
   catch { return ""; } // timeout or error -> empty, never hang the scan
 }
+const RUN_OPTS = { encoding: "utf8", maxBuffer: 32 * 1024 * 1024, timeout: 6000, killSignal: "SIGKILL", windowsHide: true };
+// A program's output, or "" when it fails, exits non-zero or takes over 6 s (like sh).
+function runOut(file, args = [], { cwd, timeout = 6000 } = {}) {
+  try { return execFileSync(file, args, { ...RUN_OPTS, cwd, timeout, stdio: ["ignore", "pipe", "ignore"] }); }
+  catch { return ""; }
+}
+// Whether it exited 0 (what `cmd && echo Y` was for).
+function runOk(file, args = [], { cwd, timeout = 6000 } = {}) {
+  try { execFileSync(file, args, { ...RUN_OPTS, cwd, timeout, stdio: "ignore" }); return true; }
+  catch { return false; }
+}
+// git in a folder: gitOut(path, ["log", "-1"]).
+const gitOut = (path, args, opts) => runOut("git", ["-C", String(path), ...args], opts);
+const gitOk = (path, args, opts) => runOk("git", ["-C", String(path), ...args], opts);
 // "Is this command available?": command -v on posix, where on win.
-function hasCmd(cmd) { try { return !!sh(process.platform === "win32" ? `where ${cmd}` : `command -v ${cmd}`).trim(); } catch { return false; } }
+// (the name goes in as an argument, never into the command line; the shell by its own
+// path, as execSync finds it, so a PATH without /bin still answers)
+const POSIX_SH = process.platform === "android" ? "/system/bin/sh" : "/bin/sh";
+function hasCmd(cmd) { return !!(process.platform === "win32" ? runOut("where", [String(cmd)]) : runOut(POSIX_SH, ["-c", 'command -v -- "$1"', "sh", String(cmd)])).trim(); }
 // A Chromium-family browser, per OS: the app's chrome-less --app window, and
 // Screens' hidden (headless) browser.
 function chromeBinary() {
@@ -292,21 +313,21 @@ function chromeBinary() {
 }
 // Working-tree state, incl. detecting a stale/old checkout (not new work).
 function repoState(repoPath) {
-  const branch = sh(`git -C ${JSON.stringify(repoPath)} rev-parse --abbrev-ref HEAD 2>/dev/null`).trim();
-  const porcelain = sh(`git -C ${JSON.stringify(repoPath)} status --porcelain 2>/dev/null`).split("\n").filter(Boolean);
+  const branch = gitOut(repoPath, ["rev-parse", "--abbrev-ref", "HEAD"]).trim();
+  const porcelain = gitOut(repoPath, ["status", "--porcelain"]).split("\n").filter(Boolean);
   let del = 0, mod = 0, add = 0;
   for (const l of porcelain) { const x = l.slice(0, 2); if (/\?\?/.test(x)) add++; else if (x.includes("D")) del++; else if (x.includes("A")) add++; else mod++; }
   const dirty = porcelain.length;
   let stale = false, staleBy = 0;
   if (dirty) {
     for (const k of [3, 5, 10, 20, 40, 80, 160, 320]) {
-      if (!sh(`git -C ${JSON.stringify(repoPath)} rev-parse HEAD~${k} 2>/dev/null`).trim()) break;
-      if (sh(`git -C ${JSON.stringify(repoPath)} diff --quiet HEAD~${k} 2>/dev/null && echo EQ`).trim() === "EQ") { stale = true; staleBy = k; break; }
+      if (!gitOut(repoPath, ["rev-parse", `HEAD~${k}`]).trim()) break;
+      if (gitOk(repoPath, ["diff", "--quiet", `HEAD~${k}`])) { stale = true; staleBy = k; break; }
     }
     if (!stale && del >= 20 && del > mod && add === 0) stale = true; // mostly deletions = an old snapshot
   }
-  const behind = Number(sh(`git -C ${JSON.stringify(repoPath)} rev-list --count HEAD..@{u} 2>/dev/null`).trim()) || 0;
+  const behind = Number(gitOut(repoPath, ["rev-list", "--count", "HEAD..@{u}"]).trim()) || 0;
   return { branch, dirty, del, mod, add, stale, staleBy, behind };
 }
 
-export { own, writeAtomic, writeJsonAtomic, readState, takeAppLock, releaseAppLock, lockPath, VERSION, LATEST_VERSION, semverGt, REGISTRY, checkLatest, CONFIG_DIR, CONFIG_PATH, SECRETS_PATH, loadConfig, saveConfig, moveSecrets, splitSecrets, loadTasks, saveTasks, TASK_MAX, clipWords, taskWords, sameTask, isFinding, uniqueTasks, sh, hasCmd, chromeBinary, repoState };
+export { own, writeAtomic, writeJsonAtomic, readState, takeAppLock, releaseAppLock, lockPath, VERSION, LATEST_VERSION, semverGt, REGISTRY, checkLatest, CONFIG_DIR, CONFIG_PATH, SECRETS_PATH, loadConfig, saveConfig, moveSecrets, splitSecrets, loadTasks, saveTasks, TASK_MAX, clipWords, taskWords, sameTask, isFinding, uniqueTasks, sh, runOut, runOk, gitOut, gitOk, hasCmd, chromeBinary, repoState };
