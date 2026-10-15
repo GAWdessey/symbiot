@@ -295,8 +295,8 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
     if (h) {
       const p = await askRunningApp("ping", { port: PORT, token: TOKEN, ms: 10000 });
       const url = `http://127.0.0.1:${PORT}/?t=${TOKEN}`, how = process.env.SYMBIOT_NO_OPEN === "1" ? "" : openApp(url);
-      console.log(`\n${c.g("●")} ${c.b("Symbiot")} is already running (${p && p.version ? "v" + p.version : "pid " + h.pid + ", busy right now"}) at ${c.b(url)}`);
-      console.log(how ? c.d(`  Opened the existing window (${/^[aeiou]/.test(how) ? "an" : "a"} ${how}).`) : c.d("  Open that URL in your browser."));
+      console.log(`\n${c.g("●")} ${c.b("Symbiot")} is already running (${p && p.version ? "v" + p.version : "pid " + h.pid + ", busy right now"}) at ${c.b(url.split("?")[0])}`); // never the token: this goes to app.log and the journal (15 Oct 2026)
+      console.log(how ? c.d(`  Opened the existing window (${/^[aeiou]/.test(how) ? "an" : "a"} ${how}).`) : c.d("  Open it with:  symbiot open"));
       console.log(c.d("  (Not starting a second copy. Set SYMBIOT_FORCE_NEW=1 to force one.)"));
       return;
     }
@@ -322,8 +322,8 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       releaseAppLock(); // a Symbiot from before the lock
       setBrowserHub(`http://127.0.0.1:${PORT}/browser?t=${TOKEN}`);
       const url = `http://127.0.0.1:${PORT}/?t=${TOKEN}`; const how = process.env.SYMBIOT_NO_OPEN === "1" ? "" : openApp(url);
-      console.log(`\n${c.g("●")} ${c.b("Symbiot")} is already running (v${p.version}) at ${c.b(url)}`);
-      console.log(how ? c.d(`  Opened the existing window (${/^[aeiou]/.test(how) ? "an" : "a"} ${how}).`) : c.d("  Open that URL in your browser."));
+      console.log(`\n${c.g("●")} ${c.b("Symbiot")} is already running (v${p.version}) at ${c.b(url.split("?")[0])}`);
+      console.log(how ? c.d(`  Opened the existing window (${/^[aeiou]/.test(how) ? "an" : "a"} ${how}).`) : c.d("  Open it with:  symbiot open"));
       console.log(c.d("  (Not starting a second copy. Set SYMBIOT_FORCE_NEW=1 to force one.)"));
       return;
     }
@@ -809,8 +809,8 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
     const url = `http://127.0.0.1:${server.address().port}/?t=${TOKEN}`;
     setBrowserHub(`http://127.0.0.1:${server.address().port}/browser?t=${TOKEN}`); // the Symbiot Browser opens on its own page, served from here
     const how = opened || RELAUNCH || process.env.SYMBIOT_NO_OPEN === "1" ? "" : openApp(url); opened = true; // only pop a window the first time (never in tests, never after an update)
-    console.log(`\n${c.g("●")} ${c.b("Symbiot")} is running at ${c.b(url)}`);
-    console.log(RELAUNCH ? c.d("  Restarted after an update; the open window reloads itself.") : how ? c.d(`  Opened in ${/^[aeiou]/.test(how) ? "an" : "a"} ${how}.`) : c.d("  Open that URL in your browser."));
+    console.log(`\n${c.g("●")} ${c.b("Symbiot")} is running at ${c.b(url.split("?")[0])}`);
+    console.log(RELAUNCH ? c.d("  Restarted after an update; the open window reloads itself.") : how ? c.d(`  Opened in ${/^[aeiou]/.test(how) ? "an" : "a"} ${how}.`) : c.d("  Open it with:  symbiot open"));
     console.log(c.d("  Leave this running; press Ctrl+C to stop (or click the X in the window's top corner)."));
   });
   server.on("error", (e) => {
@@ -826,8 +826,8 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
     else (process.env.SYMBIOT_FORCE_NEW ? Promise.resolve(null) : askRunningApp("ping", { port: PORT, token: TOKEN, ms: 2500 })).then((p) => {
       if (p && p.version) {
         const url = `http://127.0.0.1:${PORT}/?t=${TOKEN}`, how = process.env.SYMBIOT_NO_OPEN === "1" ? "" : openApp(url);
-        console.log(`\n${c.g("●")} ${c.b("Symbiot")} is already running (v${p.version}) at ${c.b(url)}`);
-        console.log(how ? c.d(`  Opened the existing window (${/^[aeiou]/.test(how) ? "an" : "a"} ${how}).`) : c.d("  Open that URL in your browser."));
+        console.log(`\n${c.g("●")} ${c.b("Symbiot")} is already running (v${p.version}) at ${c.b(url.split("?")[0])}`);
+        console.log(how ? c.d(`  Opened the existing window (${/^[aeiou]/.test(how) ? "an" : "a"} ${how}).`) : c.d("  Open it with:  symbiot open"));
         process.exit(0);
       }
       // only this app holds the lock (or SYMBIOT_FORCE_NEW asked for a second): the port is
@@ -861,6 +861,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
   // knowledge folders: changed files re-read (a stat per file when nothing changed), then checked again for where two files disagree (checks.mjs)
   const knowTick = () => { try { const r = knowledgeTick(); if (r && (r.read || r.removed || !checksState().at)) runChecks(); } catch {} };
   setTimeout(knowTick, 5000).unref(); setInterval(knowTick, 3 * 60 * 1000).unref();
+  import("./sweep.mjs").then((s) => s.startSweep()).catch(() => {}); // the daily sweep of finished run folders, old page maps, leftovers (sweep.mjs)
   setInterval(() => { try { awaitTick(); } catch {} }, 60000).unref(); // a reply an agent's email waits on: found, and handed on
 }
 

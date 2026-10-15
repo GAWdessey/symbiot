@@ -134,6 +134,24 @@ try {
   const kpart = seen.split("This chat so far:")[0]; // Home's own thread (its earlier answers) comes after
   ok("…and a chat says none rather than an example", /waiting on Garth White, [^\n]*:\n- none/.test(kpart) && !/Bluegum/.test(kpart), kpart.slice(0, 600));
 
+  console.log("NOT DOCUMENTS — a repo inside the folder, build output, the home folder itself (15 Oct 2026)");
+  mkdirSync(join(CO, "tools", "app", ".git"), { recursive: true }); put("tools/app/README.md", "# An app\n\nIts own docs, the lane's.\n");
+  put("build/notes.md", "# Build output\n\nGenerated.\n"); put("venv-py/README.md", "# venv\n"); put("tools/loose.md", "# Loose note\n\nKept: it isn't in a repo.\n");
+  const walked = K.walk(CO).map((p) => p.slice(CO.length + 1));
+  ok("a git repo inside the folder, build/ and venv* are skipped; a loose file beside them is read", !walked.some((p) => /^tools\/app\/|^build\/|^venv-py\//.test(p)) && walked.includes("tools/loose.md"), walked);
+  ok("the folder itself being a repo doesn't empty it", (mkdirSync(join(CO, ".git"), { recursive: true }), K.walk(CO).length === walked.length));
+  rmSync(join(CO, ".git"), { recursive: true, force: true });
+  const capped = K.walk(CO, 2);
+  ok("past the cap it says so (capped), rather than silently reading whichever came first", capped.length === 2 && capped.capped === true && !K.walk(CO).capped);
+  put("../loose-at-home.md", "# At home\n\nA loose document.\n");
+  const shallow = K.walk(HOME, 5000, { shallow: true }).map((p) => p.slice(HOME.length + 1));
+  ok("read shallow (a home folder), only the files at its top are seen", shallow.includes("loose-at-home.md") && !shallow.some((p) => p.includes("/")), shallow);
+  const home = K.addKnowledgeFolder("~");
+  ok("the home folder is refused as a knowledge folder, saying which to add instead", /home folder/.test(home.error || "") && /~\/Company/.test(home.error || "") && !K.knowledgeFolders().some((f) => f.path === HOME), home);
+  ok("…and one already in the config (from before) is read shallow, not walked whole", K.shallowFolder(HOME) && K.shallowFolder(join(HOME, "..")) && !K.shallowFolder(CO) && K.knowledgeFolders({ knowledgeFolders: [HOME, CO] }).map((f) => !!f.shallow).join() === "true,false");
+  ok("a folder holding a scan root is shallow too", K.shallowFolder(join(HOME, "work"), [join(HOME, "work", "repos")]) && !K.shallowFolder(join(HOME, "work", "docs"), [join(HOME, "work", "repos")]));
+  ok("Settings sees capped and shallow per folder", (() => { const r = K.indexKnowledge({ folders: [{ path: CO, examples: [], shallow: true }] }); const st = K.knowledgeState(); return Array.isArray(r.capped) && typeof st.folders[0].files === "number"; })());
+
   console.log("REMOVE");
   const rm = K.removeKnowledgeFolder("~/Co"), r5 = K.indexKnowledge();
   ok("removing a folder drops its files from the index", rm.ok && !loadConfig().knowledgeFolders && r5.files === 0 && !K.searchKnowledge("wifi").length, r5);

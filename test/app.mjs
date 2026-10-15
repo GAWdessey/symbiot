@@ -19,7 +19,7 @@
 //
 import { spawn, spawnSync } from "node:child_process";
 import { createServer } from "node:http";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -30,6 +30,8 @@ let pass = 0, fail = 0;
 const ok = (n, c, got) => { if (c) { pass++; console.log("  ✓ " + n); } else { fail++; console.log("  ✗ " + n + (got !== undefined ? "  got: " + JSON.stringify(got).slice(0, 600) : "")); } };
 const port = () => 20000 + Math.floor(Math.random() * 20000);
 const URL_RE = /http:\/\/127\.0\.0\.1:(\d+)\/\?t=([a-f0-9]+)/;
+// The app prints its address without the token (it'd land in app.log and the journal, 15 Oct 2026): the token is read from the test's own secrets.json.
+const tokenOf = (home = HOME) => { for (const f of ["secrets.json", "config.json"]) try { const t = JSON.parse(readFileSync(join(home, ".config", "symbiot", f), "utf8")).appToken; if (t) return t; } catch {} return ""; };
 
 // A fake npm registry: GET /symbiot answers with whatever `registry.latest` is,
 // or a 500 while `registry.down` is set.
@@ -57,7 +59,7 @@ function startApp(extraEnv = {}, ms = 15000) {
   child.stdout.on("data", (d) => { out += d; }); child.stderr.on("data", (d) => { out += d; });
   const ready = new Promise((resolve) => {
     const t = setTimeout(() => resolve(""), ms);
-    child.stdout.on("data", () => { const m = out.match(URL_RE); if (m && /is running at/.test(out)) { clearTimeout(t); resolve(m[0]); } });
+    child.stdout.on("data", () => { const m = out.match(/is running at http:\/\/127\.0\.0\.1:(\d+)\//); if (m) { clearTimeout(t); resolve(`http://127.0.0.1:${m[1]}/?t=${tokenOf(extraEnv.HOME)}`); } });
     child.on("exit", (code) => { exited = code; clearTimeout(t); resolve(""); });
   });
   return { child, ready, out: () => out, exited: () => exited };
@@ -77,7 +79,7 @@ try {
   const t0 = Date.now();
   const b = spawnSync(process.execPath, [INDEX, "app"], { env, encoding: "utf8", timeout: 20000 });
   ok("second app exits cleanly and promptly", b.status === 0 && Date.now() - t0 < 10000, { status: b.status, ms: Date.now() - t0, err: b.stderr });
-  ok("it says it's already running, at the same address", /already running/.test(b.stdout) && b.stdout.includes(urlA), b.stdout);
+  ok("it says it's already running, at the same address, and never prints the token (what it prints lands in app.log)", /already running/.test(b.stdout) && b.stdout.includes(urlA.split("?")[0]) && !/\?t=/.test(b.stdout) && !b.stdout.includes(token), b.stdout);
   ok("it never starts a server of its own", !/is running at/.test(b.stdout), b.stdout);
   const after = await ping(baseA, token);
   ok("the first app is still the one serving (same start time)", !!before.started && after.started === before.started, { before, after });

@@ -288,7 +288,7 @@ try {
   ok("a sealed request for anything but news, state and apply: 403", sealedReply && sealedReply.s === 403, sealedReply);
   // one change that throws there used to answer 500 for the batch, and the phone sent it again forever, with no news meanwhile
   const goodTasks = readFileSync(join(PCFG, "tasks.json"), "utf8"), sinceT = readJ(join(CFG, "config.json")).computer.since;
-  writeFileSync(join(PCFG, "tasks.json"), '{"not":"a list"}');
+  writeFileSync(join(PCFG, "tasks.json"), "[null]"); // a list (an object in its place heals from the .bak now, core.mjs readState), with an entry that makes the tick throw
   writeFileSync(join(PCFG, "watch.json"), JSON.stringify({ watches: [], news: [{ id: "th", watch: "w1", name: "Inbox", ts: sinceT + 20, text: "Kim, Invoice paid" }], briefs: [] }));
   writeFileSync(join(CFG, "phone-queue.json"), JSON.stringify([{ id: "77777777-aaaa", at: Date.now(), op: "task.setDone", args: { id: "t2", done: false } }]));
   const toldT = [], pT = await P.pollComputer({ notify: (t, b) => toldT.push([t, b]), discover: async () => [] });
@@ -402,6 +402,8 @@ try {
   line.close(); relay2.close();
   const snapBig = { v: "x", tasks: [], reports: Array.from({ length: 5 }, (_, i) => ({ id: "r" + i, title: "R" + i, text: "word ".repeat(12000) })) };
   const fit = P.fitRelay(200, snapBig, 40 * 1024), fitNone = P.fitRelay(200, snapBig, 4 * 1024), fitNo = P.fitRelay(200, { news: ["y".repeat(300 * 1024)] }, P.RELAY_MAX);
+  const applied = P.fitRelay(200, { results: [{ id: "a", ok: true }], state: snapBig }, 40 * 1024), appliedBare = P.fitRelay(200, { results: [{ id: "a", ok: true }], state: { ...snapBig, tasks: Array.from({ length: 400 }, (_, i) => ({ id: "t" + i, text: "x".repeat(200) })) } }, 4 * 1024);
+  ok("an apply's answer is trimmed the same way (its copy is under state), and at worst the results go alone: the phone never gets 413 for changes that landed", applied.status === 200 && applied.body.results[0].ok && applied.body.state.reports.every((r) => r.cut) && appliedBare.status === 200 && appliedBare.body.results[0].ok && appliedBare.body.state === null, [applied.status, appliedBare.status, appliedBare.body]);
   ok("the computer keeps what it sends through the relay under its cap: the reports' text cut first, then the reports, else a plain refusal", fit.status === 200 && fit.body.reports.length === 5 && fit.body.reports.every((r) => r.cut && r.text.length <= 1500) && fitNone.status === 200 && !fitNone.body.reports.length && fitNo.status === 413 && /too big/.test(fitNo.body.error) && P.fitRelay(200, snapBig, 0).body === snapBig, [fit.status, fitNone.status, fitNo.status]);
   await pc.stop(); pc = startComputer({ SYMBIOT_NO_RELAY: "0", SYMBIOT_RELAY: RELAY }); await pc.ready;
   const cOff = readJ(join(PCFG, "config.json")); cOff.phoneLink.relay = false; writeFileSync(join(PCFG, "config.json"), JSON.stringify(cOff));
@@ -465,6 +467,8 @@ try {
   const lanLink = on.link.replace(/a=[^&]*/, "a=192.168.8.50"); // (this test's computer may have no network address of its own)
   const parsed = [P.parsePairLink(lanLink), P.parsePairLink(texts[2]), P.parsePairLink("https://evil.example/pair#a=1.2.3.4&p=1&c=123456&k=x"), P.parsePairLink("symbiot://pair?a=1.2.3.4&c=12")];
   ok("a scanned link: the site's or the app's own form; anything else isn't one", parsed[0] && parsed[0].code === on.code && parsed[0].fp === on.fp && parsed[1].addresses.join() === "192.168.8.50,10.0.0.7" && parsed[1].port === 7392 && !parsed[2] && !parsed[3], parsed);
+  const pub = P.parsePairLink("symbiot://pair?a=8.8.8.8,evil.example.com,192.168.1.9,fe80::1,my-pc.local&p=7392&c=004211&k=x"), pubOnly = P.parsePairLink("symbiot://pair?a=8.8.8.8,symbiot.co.za&p=7392&c=004211&k=x");
+  ok("a pair link keeps only addresses on your own network (a web page can fire one): public ones are dropped, and with none left it isn't a link", pub && pub.addresses.join() === "192.168.1.9,fe80::1,my-pc.local" && pubOnly === null, [pub, pubOnly]);
   const scanned = (await pc.cmd("on"));
   const viaLink = await P.pairComputer("", "", { link: scanned.link.replace(/a=[^&]*/, "a=10.255.255.1,127.0.0.1"), name: "Pixel" });
   ok("pairing by its link tries each address until one answers", viaLink.paired && !viaLink.error, viaLink);

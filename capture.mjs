@@ -30,6 +30,7 @@ import { MARKETING } from "./handover.mjs";
 import { scratchPage, openPage, evaluate, SCROLLER as SCROLLER_JS } from "./headless.mjs";
 import { renderCapture } from "./tray.mjs";
 import { CONFIG_DIR, hasCmd } from "./core.mjs";
+import { loadMind } from "./mind.mjs";
 import { desktopNotify } from "./desktop.mjs";
 import { laneMap as laneMapNow } from "./scan.mjs";
 import { startDemo, DEMO_NAMES } from "./demo.mjs";
@@ -329,7 +330,7 @@ function tsvBoxes(tsv, names = [], scale = 1) {
 const NOT_NAMES = new Set(["admin", "user", "users", "team", "home", "support", "info", "hello", "root", "github", "symbiot", "bot", "dependabot", "renovate"]);
 function namesToBlur(root, { dir = MARKETING_DIR, product = "", mind } = {}) {
   const raw = new Set();
-  if (!mind) mind = readJson(join(CONFIG_DIR, "mind.json"));
+  if (!mind) mind = loadMind(); // through mind.mjs: a corrupt save reads its .bak, not as nobody to blur (15 Oct 2026)
   for (const n of (mind && Array.isArray(mind.nodes) ? mind.nodes : [])) if (n && n.kind === "person" && n.name) raw.add(String(n.name));
   if (root) {
     const r = spawnSync("git", ["-C", root, "log", "-500", "--format=%an"], { encoding: "utf8", timeout: 15000 });

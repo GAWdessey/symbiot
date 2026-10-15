@@ -17,9 +17,9 @@
 // { id: { mtime, done: { idea: "handed" | "dismissed" } } } }.
 import { join, basename, dirname, resolve, extname, sep } from "node:path";
 import { homedir } from "node:os";
-import { readFileSync, writeFileSync, readdirSync, statSync, mkdirSync, chmodSync, realpathSync } from "node:fs";
+import { readFileSync, readdirSync, statSync, realpathSync } from "node:fs";
 import { createHash } from "node:crypto";
-import { CONFIG_DIR, isFinding } from "./core.mjs";
+import { CONFIG_DIR, isFinding, readState, writeJsonAtomic } from "./core.mjs";
 import { runFolders, laneOf, runTitle } from "./handback.mjs";
 import { runningHandoff } from "./agents.mjs";
 import { laneMap } from "./scan.mjs";
@@ -29,8 +29,10 @@ const NOT_REPORTS = /^(?:TASKS(?:\.[\w-]+)?|QUESTIONS|ANSWERS(?:\.archive)?|HAND
 const MAX_READ = 512 * 1024, MAX_LIST = 200;
 const idOf = (file) => createHash("sha1").update(file).digest("hex").slice(0, 12);
 
-function loadSeen(file = SEEN_FILE) { try { const d = JSON.parse(readFileSync(file, "utf8")), obj = (x) => (x && typeof x === "object" ? x : {}); return { seen: obj(d && d.seen), decided: obj(d && d.decided), handed: obj(d && d.handed) }; } catch { return { seen: {}, decided: {}, handed: {} }; } }
-function saveSeen(d, file = SEEN_FILE) { try { mkdirSync(CONFIG_DIR, { recursive: true }); writeFileSync(file, JSON.stringify(d), { mode: 0o600 }); try { chmodSync(file, 0o600); } catch {} return true; } catch { return false; } }
+const obj = (x) => (x && typeof x === "object" && !Array.isArray(x) ? x : {});
+function loadSeen(file = SEEN_FILE) { const d = readState(file, (v) => !!v && typeof v === "object" && !Array.isArray(v)); return { seen: obj(d && d.seen), decided: obj(d && d.decided), handed: obj(d && d.handed) }; }
+// Whole or not at all (writeJsonAtomic): torn, it read as "nothing seen", and every report came back unread (15 Oct 2026).
+function saveSeen(d, file = SEEN_FILE) { try { writeJsonAtomic(file, d, { indent: 0, mode: 0o600 }); return true; } catch { return false; } }
 
 // A report's title: its first "# " heading, without markdown; else its file name.
 function titleOf(text, name) {
