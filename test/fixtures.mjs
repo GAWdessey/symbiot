@@ -289,7 +289,7 @@ try {
   const blkDir = join(ROOT, "blocked"); mkdirSync(join(blkDir, ".symbiot"), { recursive: true });
   const bk = spawnSync(process.execPath, ["--input-type=module", "-e", `
     import * as a from ${JSON.stringify(AGENTS)};
-    import { writeFileSync, existsSync } from "node:fs";
+    import { writeFileSync, existsSync, readFileSync } from "node:fs";
     const dir = ${JSON.stringify(blkDir)}, s = dir + "/.symbiot/", out = {};
     const until = async (c) => { for (let i = 0; i < 100 && !c(); i++) await new Promise((r) => setTimeout(r, 100)); };
     const run = async (o) => { const j = a.runHandoff(dir, o); if (j && j.pid) await until(() => j.status !== "running" && !existsSync(s + "agent.pid")); return j; };
@@ -304,14 +304,14 @@ try {
     writeFileSync(s + "TASKS.md", "- [ ] Set WA_WABA_ID\\n- [ ] A new task\\n"); out.newTask = !!(await run()).pid;
     writeFileSync(s + "TASKS.md", "- [ ] Set WA_WABA_ID\\n"); out.fewer = !!a.runHandoff(dir).blocked;
     out.forced = !!(await run({ force: true })).pid;
-    a.setHandoffCmd("true"); out.otherCmd = !!(await run()).pid; out.cleared = !existsSync(s + "blocked.json");
+    a.setHandoffCmd("true"); out.otherCmd = !!(await run()).pid; out.cleared = (() => { try { return !JSON.parse(readFileSync(s + "blocked.json", "utf8")).questions; } catch { return !existsSync(s + "blocked.json"); } })(); // its question note is gone (a run that finished nothing is held as empty instead, 15 Oct 2026)
     console.log(JSON.stringify(out));`], { encoding: "utf8", timeout: 60000, env: { ...process.env, HOME: hhome, USERPROFILE: hhome } });
   let bq = {}; try { bq = JSON.parse(bk.stdout.trim().split("\n").pop()); } catch { console.log(bk.stdout, bk.stderr); }
   ok("a run that asks and leaves its task open is noted as blocked", bq.first && bq.noted, bq);
   ok("...so the next send starts nothing, and says why", bq.again && bq.again.blocked && bq.again.questions === 1 && /\.env and ANSWERS\.md haven't changed/.test(bq.again.note), bq.again);
   ok("a changed .env, a new answer or a new task starts one", bq.envChanged && bq.again2 && bq.answered && bq.newTask, bq);
   ok("fewer of the same tasks is still blocked; force starts it anyway", bq.fewer && bq.forced, bq);
-  ok("a changed agent command starts one, and a run that didn't ask clears the note", bq.otherCmd && bq.cleared, bq);
+  ok("a changed agent command starts one, and a run that didn't ask clears its question note", bq.otherCmd && bq.cleared, bq);
   // the 14 Oct 2026 audit: a run that ends "it waits on the dailify lane" asks nothing, so nothing held it, and each trigger started it again
   const emDir = join(ROOT, "blocked-empty"); mkdirSync(join(emDir, ".symbiot"), { recursive: true });
   execSync("git init -q && git -c user.email=t@t -c user.name=t commit -q --allow-empty -m init && echo .symbiot > .gitignore && echo a > a.txt", { cwd: emDir });

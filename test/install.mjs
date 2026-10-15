@@ -46,7 +46,7 @@ async function servesUi(bin) {
     if (!url) { console.log("    app output: " + out.trim().slice(0, 600)); return false; }
     const page = await (await fetch(url.replace(/\?t=.*/, ""))).text();
     try { await fetch(url.replace(/\/\?t=/, "/api/quit?t=")); } catch {}
-    return /<script>[\s\S]+<\/script>/.test(page) && /data-tab="map"/.test(page);
+    return /<script>[\s\S]+<\/script>/.test(page) && /id="lq"/.test(page); // the liquid home (the old tab bar is gone, 15 Oct 2026)
   } catch (e) { console.log("    " + e.message); return false; }
   finally { try { child.kill("SIGKILL"); } catch {} }
 }
