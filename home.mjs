@@ -32,6 +32,7 @@ import { reportsNews, listReports, readReport, decide, markIdeas } from "./repor
 import { awaitingState, inboxSight } from "./handback.mjs";
 import { newClashes } from "./checks.mjs";
 import { postsState } from "./post.mjs";
+import { sentLine } from "./sentmail.mjs";
 import { laneCap, verdict, peel, inflight, inflightIds, parallelLane, openTasksOf, laneFacts, dropHeld, startParallel, besideAgain } from "./parallel.mjs";
 import { licenceState, isPro } from "./licence.mjs";
 import { PHONE, ANDROID_APP, computerView, phoneApprovals, linkState, ask as askComputer } from "./phone.mjs";
@@ -622,12 +623,19 @@ function finishedState({ now = Date.now(), list = agentsList(), max = 6 } = {}) 
 }
 
 // One line per thing home shows, for the talk's context.
+// Email tasks the user sent themselves (sentmail.mjs): said as sent, never listed as work.
+function sentMailLines(now = Date.now()) {
+  let t = []; try { t = loadTasks() || []; } catch {}
+  const sent = t.filter((x) => x && x.sent && now - (x.sent.at || 0) < 7 * DAY);
+  return sent.length ? ["Emails the user already sent (not work to do; say they are waiting on a reply):", ...sent.map((x) => `- ${plain(x.text, 90)}: ${sentLine(x, now)}`)] : [];
+}
 function homeContext(h) {
   return [
     `Only the user can do (${h.you.length}):`, ...h.you.map((y) => `- ${y.title}: ${y.sub}${y.q && y.q !== y.sub ? ` (asks: ${y.q}${(y.options || []).length ? ` ${y.options.join(" / ")}` : ""})` : ""}`),
     ...(h.you.some((y) => /^ask:/.test(y.id || "")) ? [`Agents asking (to answer for them, "answer" with these ids): ${h.you.filter((y) => /^ask:/.test(y.id || "")).map((y) => `${y.id} (${String(y.title).slice(0, 40)})`).join("; ")}`] : []),
     `New on what they watch:`, ...(h.feeds.length ? h.feeds.map((f) => `- ${f.title}: ${f.sub}${f.latest ? ` (latest: ${f.latest})` : ""}`) : ["- nothing new"]),
     `Agents working: ${h.working}.`, ...(h.runs || []).map((r) => `- [${r.id}] ${dayMark(r.started, h.at)}${r.name}: ${r.line}${r.eta ? ` (${r.eta})` : ""}${r.quiet ? ` (no progress in ${r.quiet} min)` : ""}${r.looping ? " (repeating the same step)" : ""}`),
+    ...sentMailLines(),
     "Agents finished in the last 24h (their own last words; answer 'did it work?' from these):", ...((h.finished || []).length ? h.finished.map((f) => `- ${dayMark(f.at, h.at)}${f.name}: ${f.end}${f.changed ? `, ${f.changed} file${f.changed > 1 ? "s" : ""} changed` : ""}${f.asks.length ? `; asked: ${f.asks.join(" / ")}` : ""}${f.said ? `; said: ${f.said}` : ""}`) : ["- none"]),
     "Handed off from this chat (last 7 days; say how each stands from this list, never guess):", ...((h.handed || []).length ? h.handed.map((x) => `- ${dayMark(x.at, h.at)}${x.lane}: ${x.text} (${x.status})`) : ["- none"]),
     "Recent handovers:", ...(h.lanes.length ? h.lanes.map((l) => `- ${dayMark(l.at, h.at)}${l.from} → ${l.to}: ${l.text} (${l.status}${l.times ? `, handed over ${l.times} times` : ""})`) : ["- none"]),
