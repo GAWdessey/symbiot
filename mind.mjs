@@ -25,7 +25,7 @@ import { fileURLToPath } from "node:url";
 import { randomBytes } from "node:crypto";
 import { VERSION, CONFIG_DIR, clipWords, readState, writeJsonAtomic } from "./core.mjs";
 import { write } from "./ai.mjs";
-import { handoffCmd, runHandoff, isUrgent, urgentFirst, urgentUndo } from "./agents.mjs";
+import { handoffCmd, runHandoff, isUrgent, urgentStop, urgentFirst, urgentUndo } from "./agents.mjs";
 import { addTask, pushTasks } from "./tasks.mjs";
 import { laneMap } from "./scan.mjs";
 import { OPS, MARKETING, HANDOVER_MAX, handoverRules, ONLY_YOU, HANDBACK } from "./handover.mjs";
@@ -267,7 +267,7 @@ function actIn(request, repo, { map = {}, known = "", title, context, run = runH
   if (!lane) return { ...ops(request, { title, context, known, now }), lane: "" };
   const t = add(request, lane); if (t && t.error) return { error: t.error };
   const p = push({ repo: lane }); if (!p || !p.written || !p.written.length) return { error: `Couldn't write ${lane}'s tasks for its agent.` };
-  const urgent = isUrgent(request) ? first(map[lane], { lanes: map }) : null;
+  const urgent = isUrgent(request) ? first(map[lane], { lanes: map, halt: urgentStop(request) }) : null; // "first" queues it; only "urgent" or a crash stops the run going there
   const e = run(map[lane]);
   if (!e || (e.blocked && !e.busy)) { if (urgent) { try { undo(map[lane], urgent); } catch {} urgent.parked = []; } }
   if (!e) return { error: "The agent didn't start. Check its command in Settings → Handoff.", ...(urgent ? { urgent } : {}) };

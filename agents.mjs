@@ -537,14 +537,15 @@ function parkLane(path, on) {
 // urgent work, and takes this next" while 0 agents worked. Asking for urgent work in
 // a lane is the newest thing you've said about it, so it's unparked for it; and if
 // its run still doesn't start, urgentUndo takes back what urgentFirst did.
-const CAPS_OK = /^(README|TODO|FIXME|HTML|JSON|YAML|HTTP|HTTPS|OAUTH|CHANGELOG|TASKS|ANSWERS|QUESTIONS|HANDOFF|REMEMBER|AWAITING|SKIPPED|LICENSE|CLAUDE|AGENTS|NOTE|ASAP|SAST|UTC|GPU|CPU|RAM|USB|SDK|JDK|API|URL|CSS|DNS|SSH|SMS|PDF|PNG|SVG|MCP|LLM|CLI|ENV|PATH|HOME|WIP|ETA)$/;
-function isUrgent(text) {
-  const t = String(text || "");
-  if (/\burgent\b|\b(asap|right now|drop everything)\b|\b(do (this|it) first|comes? first|goes? first|first thing|takes? priority|before (anything|everything) else)\b/i.test(t)) return true;
-  if (/\bcrash(es|ing|ed)\b|\bkeeps? (closing|quitting|dying)\b|\b(won'?t|doesn'?t|can'?t) (start|open|launch)\b/i.test(t)) return true;
-  // capitals: a word of 4+ letters, not a file's name (TASKS.md) nor a usual acronym
-  return (t.match(/(?<![\w./-])[A-Z]{4,}(?![\w.])/g) || []).some((w) => !CAPS_OK.test(w));
-}
+// No capitals rule: a word in capitals (SMTP, CORS, UUID, NGINX, IMAP, GDPR) made a
+// routine task urgent, which parked every other lane and killed the lane's own run
+// mid-edit (15 Oct 2026). Only words that say so count; and only the strongest of
+// them (urgentStop: "urgent", a crash, "drop everything") stop a run already going.
+const URGENT_SAID = /\burgent(?:ly)?\b|\b(asap|right now|drop everything)\b|\bcrash(es|ing|ed)\b|\bkeeps? (closing|quitting|dying)\b|\b(won'?t|doesn'?t|can'?t) (start|open|launch)\b/i;
+const URGENT_FIRST = /\b(do (this|it) first|comes? first|goes? first|first thing|takes? priority|before (anything|everything) else)\b/i;
+function isUrgent(text) { const t = String(text || ""); return URGENT_SAID.test(t) || URGENT_FIRST.test(t); }
+// Said outright, not just "first": the one case a lane's routine run is stopped for it.
+const urgentStop = (text) => URGENT_SAID.test(String(text || ""));
 const urgentState = () => { const u = loadConfig().urgent; return u && Array.isArray(u.paths) && u.paths.length ? u : null; };
 function saveUrgent(u) { const cfg = loadConfig(); if (u) cfg.urgent = u; else delete cfg.urgent; saveConfig(cfg); }
 const hasOpenUrgent = (md) => String(md || "").split("\n").some((l) => /^\s*-\s*\[ \]/.test(l) && isUrgent(l));
@@ -555,8 +556,9 @@ function stopRun(path) {
 }
 // lanes: the paths to consider ({ name: path }); returns { parked: [names], parkedPaths,
 // stopped, unparked (it was parked: now it isn't), busy: "urgent" | "routine" | "" (a run
-// there now: one already on urgent work, which this waits for, or one it couldn't stop) }
-function urgentFirst(path, { lanes = null, stop = stopRun, running = runningHandoff } = {}) {
+// there now: one already on urgent work, which this waits for, or one it couldn't stop) }.
+// halt: false leaves a routine run there to finish (the ask said "first", not "urgent").
+function urgentFirst(path, { lanes = null, stop = stopRun, running = runningHandoff, halt = true } = {}) {
   if (!path) return { parked: [], parkedPaths: [], stopped: false, unparked: false, busy: "" };
   const u = urgentState() || { at: Date.now(), paths: [], parked: [], runs: [] };
   if (!u.paths.includes(path)) { u.paths.push(path); u.at = Date.now(); }
@@ -573,7 +575,7 @@ function urgentFirst(path, { lanes = null, stop = stopRun, running = runningHand
   // work keeps going, and counts as the urgent run, so its end resumes what was parked
   const busy = running(path), onIt = !!busy && (u.runs.includes(busy.id) || hasOpenUrgent(readSymbiot(path, "TASKS.md")));
   if (onIt && busy.id && !u.runs.includes(busy.id)) u.runs.push(busy.id);
-  const stopped = !!busy && !onIt && stop(path);
+  const stopped = !!busy && !onIt && halt && stop(path);
   saveUrgent(u);
   return { parked, parkedPaths: mine, stopped, unparked, busy: !busy ? "" : onIt ? "urgent" : stopped ? "" : "routine" };
 }
@@ -1765,4 +1767,4 @@ function agentsList() {
   }).concat(earlierRuns());
 }
 
-export { claudePlugins, idlePlugins, runSettings, archiveAnswers, allAnswers, answersDigest, ANSWERS_ARCHIVE, ANSWERS_KEEP, runsTick, RUN_START, HANG_MIN, noteBlocked, userAnswers, CONTINUED_FILE, onAnswered, CHANGES, toKnownHost, continueLanes, autoPick, autoDecide, FACTS, factsOf, knownRun, withStream, workOf, HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, connectorsInfo, linkReach, fillHandoff, runHandoff, nothingToDo, whereOf, whereLine, whereAnswer, askTask, PARKED_NOTE, parkedPaths, isParked, parkLane, agentMissing, blockedAgain, runningHandoff, loadRuns, earlierRuns, namedFiles, unchangedStep, waitingFor, startWaiting, noteUntracked, untrackedBefore, forgetUntracked, writeTasks, droppedTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, pickAgent, findOrcaCli, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, skipIdea, agentQuestions, answerQuestions, agentsList, needsOf, settleNeeds, NEEDS_FOR, readLastWords, readNeeds, parseRead, READ_FILE, autoAllow, autoAllowSweep, allowlistInWork, installAllowlist, inWork, withScope, withTrust, sandboxFor, sandboxLifts, sandboxEnv, sandboxNeeds, sandboxState, sandboxWrites, SANDBOX_DIR, resumeFor, noteSession, tooLong, carryOn, RESUME_CTX, CARRY_PROMPT, trustFull, GUARD_SETTINGS, isUrgent, urgentFirst, urgentUndo, urgentDone, urgentSweep, urgentState, licenceGate, stopRun, loadRunFiles, saveRunFiles, forgetRunFiles, withModel, routedModel };
+export { claudePlugins, idlePlugins, runSettings, archiveAnswers, allAnswers, answersDigest, ANSWERS_ARCHIVE, ANSWERS_KEEP, runsTick, RUN_START, HANG_MIN, noteBlocked, userAnswers, CONTINUED_FILE, onAnswered, CHANGES, toKnownHost, continueLanes, autoPick, autoDecide, FACTS, factsOf, knownRun, withStream, workOf, HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, connectorsInfo, linkReach, fillHandoff, runHandoff, nothingToDo, whereOf, whereLine, whereAnswer, askTask, PARKED_NOTE, parkedPaths, isParked, parkLane, agentMissing, blockedAgain, runningHandoff, loadRuns, earlierRuns, namedFiles, unchangedStep, waitingFor, startWaiting, noteUntracked, untrackedBefore, forgetUntracked, writeTasks, droppedTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, pickAgent, findOrcaCli, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, skipIdea, agentQuestions, answerQuestions, agentsList, needsOf, settleNeeds, NEEDS_FOR, readLastWords, readNeeds, parseRead, READ_FILE, autoAllow, autoAllowSweep, allowlistInWork, installAllowlist, inWork, withScope, withTrust, sandboxFor, sandboxLifts, sandboxEnv, sandboxNeeds, sandboxState, sandboxWrites, SANDBOX_DIR, resumeFor, noteSession, tooLong, carryOn, RESUME_CTX, CARRY_PROMPT, trustFull, GUARD_SETTINGS, isUrgent, urgentStop, urgentFirst, urgentUndo, urgentDone, urgentSweep, urgentState, licenceGate, stopRun, loadRunFiles, saveRunFiles, forgetRunFiles, withModel, routedModel };
