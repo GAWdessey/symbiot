@@ -1,0 +1,25 @@
+// An email task the user already sent is closed, with a fake Sent match (sentmail.mjs).
+import { emailJob, sentMatch, settleSent, sentLine, sentTick } from "../sentmail.mjs";
+let pass = 0, fail = 0;
+const ok = (c, m) => { if (c) pass++; else { fail++; console.log("✗", m); } };
+const TEXT = "Draft an email from Garth to Cale Morris, cc Jono (schoemanjono@gmail.com), about First Step";
+const job = emailJob(TEXT);
+ok(job && job.names[0] === "cale morris" && job.addrs[0] === "schoemanjono@gmail.com" && job.topic === "first step", "reads who and what: " + JSON.stringify(job));
+ok(emailJob("Fix the flaky test in test/app.mjs") === null, "a code task isn't an email task");
+ok(emailJob("Send the Dailify invoices to the printer") === null, "no email word, not an email task");
+const mk = () => [{ id: "a", text: TEXT, ts: 1000, done: false }, { id: "b", text: "Fix a bug", ts: 1000, done: false }];
+const row = { ts: 5000, to: ["Cale Morris"], subject: "First Step", via: "mail" };
+ok(sentMatch(job, { ts: 1000 }, row), "a sent mail to Cale about First Step matches");
+ok(!sentMatch(job, { ts: 1000 }, { ...row, subject: "Lunch" }), "another topic doesn't");
+ok(!sentMatch(job, { ts: 1000 }, { ...row, to: ["Ann"] }), "another person doesn't");
+ok(!sentMatch(job, { ts: 900000 }, row), "mail from before the task doesn't");
+let saved = null, tasks = mk();
+const done = settleSent([row], { load: () => tasks, save: (t) => { saved = t; }, now: 9000 });
+ok(done.length === 1 && tasks[0].done && tasks[0].sent.subject === "First Step" && !tasks[1].done && saved, "the sent task is closed, the other left");
+ok(/^sent on 1970-01-01, waiting on reply$/.test(sentLine(tasks[0])) || /^sent on 19/.test(sentLine(tasks[0])), "says sent, waiting on reply: " + sentLine(tasks[0]));
+ok(settleSent([row], { load: () => tasks, save() { fail++; } }).length === 0, "closed once, not again");
+tasks = mk(); saved = null;
+const got = await sentTick({ load: () => tasks, save: (t) => { saved = t; }, read: async () => ({}), watches: [], rows: async () => [{ text: "To: Cale Morris First Step - hi", subject: "To: Cale Morris First Step - hi", to: [], via: "Gmail Sent" }] });
+ok(got.length === 1 && tasks[0].sent.via === "Gmail Sent", "a Gmail Sent row closes it");
+console.log(`sentmail: ${pass} passed, ${fail} failed`);
+process.exit(fail ? 1 : 0);

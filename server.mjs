@@ -35,6 +35,7 @@ import { linksState, linkSite, checkLink, unlinkSite, addSite, signInAsked, site
 import { testWeeks, testInstalls, postsState, draftPosts, approvePost, editPost, skipPost, voiceFromLinkedIn, addMedia, removeMedia, mediaFile, mediaDir, pictureOfPage, clipOfPage, openUrl } from "./post.mjs";
 import { mindState, forget } from "./mind.mjs";
 import { lanesTick, lanesState, partlyDone, handingOf, loadLedger, orcaRelink, shareAnswer } from "./lanes.mjs";
+import { sentTick } from "./sentmail.mjs";
 import { keepFacts, skipFacts, awaitTick, awaitingState, stopWaiting } from "./handback.mjs";
 import { adaptState, noteUse } from "./adapt.mjs";
 import { dismissCard, reportIdeasAdd, reportIdeasDismiss, reportAsk, reportDraftAnswer, homeState, homeAsk, homeAnswer, homeNext, workScene, forgetWork, workGo, workTick, firstSteps, marketingState, marketingGo, marketingDraftAnswer, marketingTask, moveToMarketing, onboarding, setOnboarding, startOnboarding, phoneSetupFirst } from "./home.mjs";
@@ -863,7 +864,8 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
   const knowTick = () => { try { const r = knowledgeTick(); if (r && (r.read || r.removed || !checksState().at)) runChecks(); } catch {} };
   setTimeout(knowTick, 5000).unref(); setInterval(knowTick, 3 * 60 * 1000).unref();
   import("./sweep.mjs").then((s) => s.startSweep()).catch(() => {}); // the daily sweep of finished run folders, old page maps, leftovers (sweep.mjs)
-  setInterval(() => { try { awaitTick(); } catch {} }, 60000).unref(); // a reply an agent's email waits on: found, and handed on
+  setInterval(() => { try { awaitTick(); } catch {} }, 60000).unref();
+  setInterval(() => { sentTick().catch(() => {}); }, 120000).unref(); // an email task the user already sent: closed, with where it went (sentmail.mjs) // a reply an agent's email waits on: found, and handed on
 }
 
 export { headlessAgent, updateCmd, installedVersion, restartOnto, autoUpdateDue, restartWouldStop, downloadReady, updateOutcome, changesSince, whatsNew, tarFile, registryChangelog, BROWSER_KEEP, startApp, askRunningApp, isAppRunningWeekly, openApp };
