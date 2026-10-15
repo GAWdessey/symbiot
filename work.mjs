@@ -46,7 +46,18 @@ const resultText = (c) => (typeof c === "string" ? c : Array.isArray(c) ? c.map(
 // The text of one run's log (everything after its "=== name time ===" header and
 // command line) → { stream, model, steps, todos, doing, said, final, cost, turns,
 // tokens, ctx (what its last step read: the conversation so far), tests, files, pace, errors }.
+// Kept by its text (PARSED): every view (Agents, Home, the Workdesk, the lanes) parsed
+// every run again on every poll, 5–8 ms for a 1 MB run and hundreds for a big one, times
+// up to 90 runs (15 Oct 2026). The same text gives the same object: read it, don't change it.
+const PARSED = new Map(), PARSED_MAX = 40;
 function parseRun(text) {
+  const key = String(text ?? ""), hit = PARSED.get(key);
+  if (hit) { PARSED.delete(key); PARSED.set(key, hit); return hit; }
+  const out = parseRunText(key);
+  PARSED.set(key, out); if (PARSED.size > PARSED_MAX) PARSED.delete(PARSED.keys().next().value);
+  return out;
+}
+function parseRunText(text) {
   const lines = String(text || "").split("\n");
   const events = []; let plain = [];
   for (const l of lines) { if (l.startsWith("{")) { try { events.push(JSON.parse(l)); continue; } catch {} } if (l.trim()) plain.push(l); }

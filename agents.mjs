@@ -395,20 +395,23 @@ function runHandoff(repoPath, { force = false, lost = false, model = "", onExit 
   const down = claudePause(); if (down) return { blocked: true, down: down.kind, questions: 0, note: down.note }; // Claude itself is down: even forced, the run would end at once
   releaseHeldTasks(repoPath); // held for an agent another process started, which has since exited
   const idle = !lost && nothingToDo(repoPath); if (idle) return { blocked: true, idle: true, questions: 0, note: idle };
-  const scoped = withScope(withConnectors(tmpl, repoPath), repoPath), box = isClaudeCmd(scoped) && trustFull() ? sandboxFor(repoPath, scoped) : null; // a repo run's sandbox, on top of the membrane
+  const scoped = runCmdOf(repoPath, tmpl), box = isClaudeCmd(scoped) && trustFull() ? sandboxFor(repoPath, scoped) : null; // a repo run's sandbox, on top of the membrane
   tmpl = withStream(withTrust(scoped, box, repoPath));
   const resume = isClaudeCmd(tmpl) ? resumeFor(repoPath) : null, fresh = tooLong(resume); // too long to resume: a fresh run carries on
   if (!model && !/\s--model\b/.test(tmpl)) model = routedModel(repoPath, opts, !!resume && !fresh); // routine runs on Sonnet, hard ones on Opus (route.mjs); a command you set with its own --model is left as-is
   if (model) tmpl = withModel(tmpl, model);
   const runCmd = resume && !fresh ? tmpl + ` --resume ${resume.id}` : tmpl;
   if (!force) { const w = waitingFor(repoPath); if (w) { askedFor(repoPath); return { blocked: true, waiting: true, questions: 0, note: waitNote(w) }; } }
-  const blocked = !force && blockedAgain(repoPath, tmpl); if (blocked) return blocked;
+  const blocked = !force && blockedAgain(repoPath, scoped); if (blocked) return blocked;
+  // the folder is this run's from here: the lock is claimed before the slow part (git status on a big
+  // tree), where a second process (symbiot push --open, a second app during an update) got in
+  const lock = join(repoPath, ".symbiot", LOCK);
+  if (!claimLock(lock)) { const b = runningHandoff(repoPath); return b ? { busy: true, id: b.id || "", pid: b.pid, auto: !!b.auto } : null; }
   try { unlinkSync(join(repoPath, ".symbiot", WAITING)); } catch {} // the step's done (or this is Start it anyway): this is the run it waited for
   noteUntracked(repoPath);
   try { archiveAnswers(repoPath); } catch {} // all but the newest answers: in ANSWERS.archive.md, so the run doesn't read them all first
   noteAnswersSeen(repoPath); // what this run starts with: only an answer newer than this is news (nothingToDo)
   const dirtyBefore = dirtyState(repoPath), ticksBefore = ticksIn(readSymbiot(repoPath, "TASKS.md"));
-  const lock = join(repoPath, ".symbiot", LOCK);
   const own = opts.env && typeof opts.env === "object" ? Object.fromEntries(Object.entries(opts.env).map(([k, v]) => [k, String(v)])) : null, boxEnv = sandboxEnv(box);
   const owner = licenceState().plan === "owner" ? { SYMBIOT_OWNER: "1" } : null; // the guard lets only the owner's runs touch Symbiot's own files
   // SYMBIOT_AGENT: which run a `symbiot screens` command comes from, so it gets its own tab in the app's hidden browser
@@ -419,7 +422,7 @@ function runHandoff(repoPath, { force = false, lost = false, model = "", onExit 
     if (noteSession(repoPath, code, !!resume && !fresh) === "lost") { setTimeout(() => { try { runHandoff(repoPath, { force: true, lost: true, onExit }); } catch {} }, 300); return; } // its conversation is gone: start afresh
     try { if (JSON.parse(readFileSync(lock, "utf8")).pid === e.pid) unlinkSync(lock); } catch {}
     try { const d = noteClaudeDown(repoPath); if (d) e.down = d; } catch {} // Claude itself was the reason: no start anywhere until it's back
-    noteBlocked(repoPath, tmpl, e.startedAt, code, { dirtyBefore, ticksBefore });
+    noteBlocked(repoPath, scoped, e.startedAt, code, { dirtyBefore, ticksBefore });
     try { noteRunFiles(repoPath, e, dirtyBefore, ticksBefore); } catch {} // which files this run touched, for Approve
     forgetRunStart(repoPath, e.id);
     setTimeout(() => { try { autoAllow(repoPath); } catch {} }, 300); // a list it proposed inside your work: turned on, and on it goes
@@ -427,7 +430,7 @@ function runHandoff(repoPath, { force = false, lost = false, model = "", onExit 
     try { urgentDone(repoPath, e.id); } catch {} // the urgent run's done: the lanes it parked carry on
     if (onExit) try { onExit(code); } catch {} // a run beside the lane's own (parallel.mjs) merges back
   }, env);
-  if (!e) return null;
+  if (!e) { try { if (JSON.parse(readFileSync(lock, "utf8")).claim) unlinkSync(lock); } catch {} return null; } // it didn't start: the claim goes
   e.handoff = true;
   try { if (urgentState()) noteUrgentRun(repoPath, e.id); } catch {}
   if (e.pid) try { writeFileSync(lock, JSON.stringify({ pid: e.pid, id: e.id, startedAt: e.startedAt, owner: process.pid })); } catch {}
@@ -780,7 +783,7 @@ function earlierRuns() {
     const needs = busy ? null : needsOf(r.path, { final: lastFinal(r.path), waiting: wait, end });
     if (!busy && !ask.questions.length && !wait && !facts.length && !needs) continue;
     let tail = "", work = null, progress = null, line = null; try { ({ tail, work, progress, line } = workOf(r.path, readRunLog(log))); } catch {}
-    out.push({ id: "earlier-" + digest(r.path).slice(0, 8), name: String(r.name || r.path.split("/").pop()), path: r.path, status: busy ? "running" : "done", earlier: true, startedAt, endedAt: busy ? null : end, elapsed: Math.max(0, end - startedAt), exitCode: null, tail, work, progress, ...(busy && line ? { line } : {}), changed: agentChanges(r.path, startedAt), ask, held: heldTasks(r.path), waiting: wait, needs, remember: facts.length ? facts : null, fromHeld: false });
+    out.push({ id: "earlier-" + digest(r.path).slice(0, 8), name: String(r.name || r.path.split("/").pop()), path: r.path, status: busy ? "running" : "done", earlier: true, startedAt, endedAt: busy ? null : end, elapsed: Math.max(0, end - startedAt), exitCode: null, tail, work, progress, ...(busy && line ? { line } : {}), changed: agentChanges(r.path, startedAt, busy ? 0 : end), ask, held: heldTasks(r.path), waiting: wait, needs, remember: facts.length ? facts : null, fromHeld: false });
   }
   return out;
 }
@@ -938,8 +941,12 @@ function askedFor(path) {
 }
 // A step in Settings → Handoff: the note names the command as what it waits on.
 const settingsStep = (s) => /\bsettings\b|\ballow\b|\bgrant|connector/i.test(String(s || ""));
-// The command the folder's next run would get, connectors and all (runHandoff).
-const runCmd = (path) => digest(withConnectors(handoffCmd(), path));
+// The command the folder's next run would get, connectors and folders and all, before
+// its model and stream flags (runHandoff adds those): what blocked.json and waiting.json
+// are keyed on. noteBlocked hashed the whole command and blockedAgain the bare template,
+// so they never matched and continueLanes' "don't loop" guard was dead (15 Oct 2026).
+const runCmdOf = (path, tmpl = handoffCmd()) => withScope(withConnectors(tmpl, path), path);
+const runCmd = (path) => digest(runCmdOf(path));
 // The files a step names, in backticks: `.env`, `~/.termux/termux.properties`,
 // `.claude/settings.json`. Not a command (`npm test`), a site (`web.whatsapp.com`,
 // unless there's a file by that name) or a path that can't be one here.
@@ -1098,7 +1105,21 @@ function lockBeat(path, l) {
   for (const f of [LOCK, "agent.log"]) try { t = Math.max(t, statSync(join(path, ".symbiot", f)).mtimeMs); } catch {}
   return t;
 }
-const pidAlive = (pid) => { try { process.kill(pid, 0); return true; } catch (err) { return !!err && err.code === "EPERM"; } };
+const pidAlive = (pid) => { try { return Number.isInteger(pid) && pid > 0 && (process.kill(pid, 0) || true); } catch (err) { return !!err && err.code === "EPERM"; } };
+// Claim a folder for a run about to start: the lock written first ({ claim, owner, startedAt },
+// wx: never over a live one), replaced by the run's pid once it's spawned. A claim whose owner
+// is gone, or older than CLAIM_MAX, is stale and taken over. true when it's ours.
+const CLAIM_MAX = 60000;
+function claimLock(lock, now = Date.now()) {
+  for (let i = 0; i < 2; i++) {
+    let fd = null; try { mkdirSync(dirname(lock), { recursive: true }); fd = openSync(lock, "wx"); writeSync(fd, JSON.stringify({ claim: true, owner: process.pid, startedAt: now })); closeSync(fd); return true; } catch (e) { if (fd != null) try { closeSync(fd); } catch {} if (!e || e.code !== "EEXIST") return false; }
+    let l = null; try { l = JSON.parse(readFileSync(lock, "utf8")); } catch {}
+    const live = l && (l.claim ? pidAlive(l.owner) && now - (l.startedAt || 0) < CLAIM_MAX : Number.isInteger(l.pid) && pidAlive(l.pid) && !pidReused(l.pid, l.startedAt) && now - lockBeat(dirname(dirname(lock)), l) < LOCK_MAX_AGE);
+    if (live) return false;
+    try { unlinkSync(lock); } catch {}
+  }
+  return false;
+}
 // A lock's pid that now belongs to a process started after the lock was written was
 // reused: the agent is gone, and a lane held "busy" by it starts nothing (queued tasks
 // stalled with 0 agents working). Linux only (/proc); anywhere else, or unreadable, it
@@ -1119,6 +1140,7 @@ function runningHandoff(path) {
   if (e) return { id: e.id, pid: e.pid, startedAt: e.startedAt, auto: true };
   try {
     const l = JSON.parse(readSymbiot(path, LOCK));
+    if (l && l.claim) return pidAlive(l.owner) && Date.now() - (l.startedAt || 0) < CLAIM_MAX ? { id: "", pid: null, startedAt: l.startedAt, auto: true, claim: true } : null; // about to start (claimLock)
     if (l && Number.isInteger(l.pid) && Date.now() - lockBeat(path, l) < LOCK_MAX_AGE && pidAlive(l.pid) && !pidReused(l.pid, l.startedAt)) return { ...l, auto: Number.isInteger(l.owner) && pidAlive(l.owner) };
   } catch {}
   return null;
@@ -1151,6 +1173,7 @@ function runsTick({ now = Date.now(), kill = (p, sig) => process.kill(p, sig), h
   const paths = new Set([...mine.keys(), ...loadRuns().map((r) => r.path)]);
   for (const path of paths) {
     let l = null; try { l = JSON.parse(readSymbiot(path, LOCK)); } catch {}
+    if (l && l.claim) { if (!(pidAlive(l.owner) && now - (l.startedAt || 0) < CLAIM_MAX)) try { unlinkSync(join(path, ".symbiot", LOCK)); } catch {} continue; } // a start under way, or a claim its process never followed up
     const pid = l && Number.isInteger(l.pid) ? l.pid : (mine.get(path) || {}).pid;
     const live = Number.isInteger(pid) && pidAlive(pid) && !(l && pidReused(pid, l.startedAt));
     if (live) {
@@ -1477,11 +1500,12 @@ function changesOf(path, startedAt, git) {
 }
 const gitNow = (args) => { const r = spawnSync("git", args, { encoding: "utf8", timeout: 6000, killSignal: "SIGKILL", maxBuffer: 32 * 1024 * 1024, stdio: ["ignore", "pipe", "ignore"] }); return r.status === 0 ? String(r.stdout || "") : ""; };
 const gitLater = (args) => new Promise((res) => execFile("git", args, { encoding: "utf8", timeout: 6000, killSignal: "SIGKILL", maxBuffer: 32 * 1024 * 1024 }, (e, out) => res(e ? "" : String(out || ""))));
-function agentChanges(path, startedAt) {
+// endedAt: the run is over, so what git said after it ended stands; it isn't asked again every CHANGES_FRESH.
+function agentChanges(path, startedAt, endedAt = 0) {
   const had = CHANGES.get(path), now = Date.now();
   // the same run: a run's start is only known roughly when it began before a restart
   if (had && Math.abs(had.startedAt - (startedAt || now)) < 60000) {
-    if (now - had.at > CHANGES_FRESH && !had.busy) {
+    if (now - had.at > CHANGES_FRESH && !had.busy && !(endedAt && had.at >= endedAt + 2000)) {
       had.busy = true;
       Promise.resolve(changesOf(path, startedAt, gitLater)).then((v) => { CHANGES.set(path, { at: Date.now(), startedAt: had.startedAt, v }); }, () => { had.busy = false; });
     }
@@ -1753,7 +1777,7 @@ function continueLanes({ now = Date.now(), run = runHandoff, runs = loadRuns } =
       const ticked = (md.match(/^\s*(?:[-*+]|\d+[.)])\s*\[[xX]\]/gm) || []).length;
       const tasks = openTasks(path), last = seen[path], had = (t) => (last.open || []).some((o) => o === t || sameTask(o, t)); // an agent rewords a task; it's the same task (15 Oct 2026)
       if (last && ticked <= last.ticked && tasks.every(had)) continue;
-      if (blockedAgain(path, handoffCmd())) continue;
+      if (blockedAgain(path, runCmdOf(path))) continue;
       const e = run(path); if (e && e.id && !e.busy && !e.blocked) { seen[path] = { ticked, open: tasks }; out.push(path); }
     } catch {}
   }
@@ -1913,8 +1937,8 @@ function agentsList() {
     const facts = first && e.status !== "running" ? factsOf(e.path) : [];
     const waiting = first && e.status !== "running" ? waitingFor(e.path) : null;
     const needs = first && e.status !== "running" ? needsOf(e.path, { final: work ? tail : "", waiting, end: e.endedAt || Date.now() }) : null;
-    return { id: e.id, name: e.name, path: e.path, status: e.status, startedAt: e.startedAt, endedAt: e.endedAt, elapsed: (e.endedAt || Date.now()) - e.startedAt, exitCode: e.exitCode, ...(e.down ? { down: e.down } : {}), tail, work, progress, ...(e.status === "running" && line ? { line } : {}), changed: agentChanges(e.path, e.startedAt), ask: first ? agentQuestions(e.path, e.name) : null, held: first ? heldTasks(e.path) : null, waiting, needs, remember: facts.length ? facts : null, fromHeld: !!e.fromHeld };
+    return { id: e.id, name: e.name, path: e.path, status: e.status, startedAt: e.startedAt, endedAt: e.endedAt, elapsed: (e.endedAt || Date.now()) - e.startedAt, exitCode: e.exitCode, ...(e.down ? { down: e.down } : {}), tail, work, progress, ...(e.status === "running" && line ? { line } : {}), changed: agentChanges(e.path, e.startedAt, e.endedAt || 0), ask: first ? agentQuestions(e.path, e.name) : null, held: first ? heldTasks(e.path) : null, waiting, needs, remember: facts.length ? facts : null, fromHeld: !!e.fromHeld };
   }).concat(earlierRuns());
 }
 
-export { claudePlugins, idlePlugins, runSettings, archiveAnswers, allAnswers, answersDigest, ANSWERS_ARCHIVE, ANSWERS_KEEP, runsTick, RUN_START, HANG_MIN, noteBlocked, userAnswers, CONTINUED_FILE, onAnswered, CHANGES, toKnownHost, continueLanes, autoPick, autoDecide, FACTS, factsOf, knownRun, withStream, workOf, HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, connectorsInfo, linkReach, fillHandoff, runHandoff, nothingToDo, whereOf, whereLine, whereAnswer, askTask, PARKED_NOTE, parkedPaths, isParked, parkLane, agentMissing, blockedAgain, runningHandoff, loadRuns, earlierRuns, namedFiles, unchangedStep, waitingFor, startWaiting, noteUntracked, untrackedBefore, forgetUntracked, writeTasks, droppedTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, pickAgent, findOrcaCli, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, skipIdea, agentQuestions, answerQuestions, agentsList, needsOf, settleNeeds, NEEDS_FOR, readLastWords, readNeeds, parseRead, READ_FILE, autoAllow, autoAllowSweep, allowlistInWork, installAllowlist, inWork, withScope, withTrust, sandboxFor, sandboxLifts, sandboxEnv, sandboxNeeds, sandboxState, sandboxWrites, SANDBOX_DIR, resumeFor, noteSession, tooLong, carryOn, RESUME_CTX, CARRY_PROMPT, trustFull, GUARD_SETTINGS, wideRoot, sandboxDenies, questionFolders, folderState, dirtyState, ANSWERS_SEEN, newAnswers, claudeDownIn, claudePause, noteClaudeDown, resetTime, PAUSE_FILE, startGap, isUrgent, urgentStop, urgentFirst, urgentUndo, urgentDone, urgentSweep, urgentState, licenceGate, stopRun, loadRunFiles, saveRunFiles, forgetRunFiles, withModel, routedModel };
+export { claudePlugins, idlePlugins, runSettings, archiveAnswers, allAnswers, answersDigest, ANSWERS_ARCHIVE, ANSWERS_KEEP, runsTick, RUN_START, HANG_MIN, noteBlocked, userAnswers, CONTINUED_FILE, onAnswered, CHANGES, toKnownHost, continueLanes, autoPick, autoDecide, FACTS, factsOf, knownRun, withStream, workOf, HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, connectorsInfo, linkReach, fillHandoff, runHandoff, nothingToDo, whereOf, whereLine, whereAnswer, askTask, PARKED_NOTE, parkedPaths, isParked, parkLane, agentMissing, blockedAgain, runningHandoff, loadRuns, earlierRuns, namedFiles, unchangedStep, waitingFor, startWaiting, noteUntracked, untrackedBefore, forgetUntracked, writeTasks, droppedTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, pickAgent, findOrcaCli, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, skipIdea, agentQuestions, answerQuestions, agentsList, needsOf, settleNeeds, NEEDS_FOR, readLastWords, readNeeds, parseRead, READ_FILE, autoAllow, autoAllowSweep, allowlistInWork, installAllowlist, inWork, withScope, withTrust, sandboxFor, sandboxLifts, sandboxEnv, sandboxNeeds, sandboxState, sandboxWrites, SANDBOX_DIR, resumeFor, noteSession, tooLong, carryOn, RESUME_CTX, CARRY_PROMPT, trustFull, GUARD_SETTINGS, runCmdOf, claimLock, wideRoot, sandboxDenies, questionFolders, folderState, dirtyState, ANSWERS_SEEN, newAnswers, claudeDownIn, claudePause, noteClaudeDown, resetTime, PAUSE_FILE, startGap, isUrgent, urgentStop, urgentFirst, urgentUndo, urgentDone, urgentSweep, urgentState, licenceGate, stopRun, loadRunFiles, saveRunFiles, forgetRunFiles, withModel, routedModel };

@@ -156,6 +156,20 @@ try {
   const scoped = a.withScope('claude -p "{prompt}"', lane);
   ok("--add-dir (read and write) gets ~/Company but never ~", scoped.includes(`--add-dir "${join(HOME, "Company")}"`) && !scoped.includes(`--add-dir "${HOME}"`), scoped);
   ok("inWork: ~/Company is the user's work; ~/Downloads and ~/x.sh aren't, with ~ as a knowledge folder", a.inWork(join(HOME, "Company", "notes.md")) && !a.inWork(join(HOME, "Downloads")) && !a.inWork(join(HOME, "x.sh")) && !a.inWork(join(HOME, ".claude", "settings.json")));
+
+  console.log("6) ONE AGENT PER FOLDER — the folder is claimed before the slow part; held-back runs stay held from every path");
+  const lk = join(lane, ".symbiot", "agent.pid");
+  ok("a claim takes the folder: runningHandoff says busy, runHandoff starts nothing", a.claimLock(lk) && (a.runningHandoff(lane) || {}).claim === true && a.runHandoff(lane, { force: true }).busy === true, a.runningHandoff(lane));
+  ok("…and can't be claimed twice", !a.claimLock(lk));
+  writeFileSync(lk, JSON.stringify({ claim: true, owner: 2147483646, startedAt: Date.now() }));
+  ok("a claim whose process is gone is stale: taken over", a.claimLock(lk) && JSON.parse(readFileSync(lk, "utf8")).owner === process.pid);
+  writeFileSync(lk, JSON.stringify({ claim: true, owner: process.pid, startedAt: Date.now() - 120000 }));
+  ok("…as is one older than a minute (its start never followed)", a.runningHandoff(lane) === null && a.claimLock(lk));
+  rmSync(lk, { force: true });
+  put(lane, "TASKS.md", "## Tasks\n- [ ] Fix the reader\n"); put(lane, "QUESTIONS.md", "## Questions\n### Which reader?\n- a\n- b\n");
+  writeFileSync(join(lane, ".symbiot", "QUESTIONS.md"), read(lane, "QUESTIONS.md"));
+  a.noteBlocked(lane, a.runCmdOf(lane), Date.now() - 60000, 0, { dirtyBefore: {}, ticksBefore: 0 });
+  ok("a run held on its questions is held by continueLanes too: both hash the same command (the guard was dead before)", !!a.blockedAgain(lane, a.runCmdOf(lane)) && a.continueLanes({ now: Date.now() + 10 * 60000, run: () => { throw new Error("started"); }, runs: () => [{ path: lane, name: "coral", startedAt: 1 }] }).length === 0);
 } finally {
   rmSync(HOME, { recursive: true, force: true });
 }
