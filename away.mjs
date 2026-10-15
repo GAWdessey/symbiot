@@ -14,7 +14,7 @@
 // Any key or click, or Super+` again, closes every window. Not a lock: Super+Esc
 // locks the computer.
 import { spawn, spawnSync } from "node:child_process";
-import { mkdirSync, readFileSync, writeFileSync, existsSync, unlinkSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync, existsSync, unlinkSync, renameSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { CONFIG_DIR, chromeBinary } from "./core.mjs";
@@ -52,11 +52,16 @@ function closeAway() {
 // The two permissions an Away window needs, for the app's address only, in the
 // window's own profile: the screens (window_placement) and fullscreen without a
 // click (automatic_fullscreen). Chrome keeps them when it writes the file back.
+// Written only when a grant is missing, and whole or not at all (a temp file renamed
+// over it): Chrome rewrites the same file as a window closes, and a plain write
+// racing it left a broken profile that Chrome reset, grants and all (15 Oct 2026).
 function grantProfile(dir, origin) {
   const f = join(dir, "Default", "Preferences"); let p = {}; try { p = JSON.parse(readFileSync(f, "utf8")) || {}; } catch {}
   const ex = (((p.profile ||= {}).content_settings ||= {}).exceptions ||= {});
-  for (const k of ["window_placement", "automatic_fullscreen"]) (ex[k] ||= {})[`${origin},*`] = { setting: 1 };
-  try { mkdirSync(join(dir, "Default"), { recursive: true }); writeFileSync(f, JSON.stringify(p)); } catch {}
+  let missing = false;
+  for (const k of ["window_placement", "automatic_fullscreen"]) { const e = (ex[k] ||= {}); if (!e[`${origin},*`] || e[`${origin},*`].setting !== 1) { e[`${origin},*`] = { setting: 1 }; missing = true; } }
+  if (!missing) return;
+  try { mkdirSync(join(dir, "Default"), { recursive: true }); const tmp = `${f}.${process.pid}.tmp`; writeFileSync(tmp, JSON.stringify(p)); renameSync(tmp, f); } catch {}
 }
 // Opens a window per screen on the app's url (http://127.0.0.1:port/?t=token), the
 // i-th told it's for screen i (si). Each has a profile of its own under Symbiot's

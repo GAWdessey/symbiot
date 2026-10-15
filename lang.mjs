@@ -10,9 +10,9 @@
 //     after that. Your content (tasks, chats, drafts, names, code) is never touched.
 // Numbers are kept out of what's translated ("3 at work" and "5 at work" are one
 // string, "{#} at work"), so a page's counts changing costs nothing.
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { CONFIG_DIR, loadConfig, saveConfig } from "./core.mjs";
+import { CONFIG_DIR, loadConfig, saveConfig, readState, writeJsonAtomic } from "./core.mjs";
 import { write } from "./ai.mjs";
 
 const DIR = () => join(CONFIG_DIR, "i18n");
@@ -53,8 +53,10 @@ function languageLine(st = languageState()) {
 
 // ---- the app's own words ----------------------------------------------------
 const fileFor = (lang) => join(DIR(), lang.replace(/[^A-Za-z0-9_-]/g, "_") + ".json");
-function cached(lang) { try { return JSON.parse(readFileSync(fileFor(lang), "utf8")); } catch { return {}; } }
-function saveCache(lang, map) { mkdirSync(DIR(), { recursive: true }); writeFileSync(fileFor(lang), JSON.stringify(map)); }
+const isObj = (v) => !!v && typeof v === "object" && !Array.isArray(v);
+function cached(lang) { return readState(fileFor(lang), isObj) || {}; }
+// Whole or not at all (writeJsonAtomic): torn, the language read as untranslated, and the AI was paid for it all again (15 Oct 2026).
+function saveCache(lang, map) { writeJsonAtomic(fileFor(lang), map, { indent: 0 }); }
 const holes = (s) => (String(s).match(/\{#\}/g) || []).length;
 
 const BUSY = new Map(); // lang -> the translation in progress, so two windows don't pay twice
@@ -96,6 +98,6 @@ async function translate(lang, strings, { ask = write } = {}) {
   return res;
 }
 function allTranslations(lang) { const tag = normalise(lang); return isEnglish(tag) ? {} : cached(tag); }
-function forgetTranslations(lang) { const f = fileFor(normalise(lang)); if (existsSync(f)) writeFileSync(f, "{}"); return true; }
+function forgetTranslations(lang) { const f = fileFor(normalise(lang)); if (existsSync(f)) writeJsonAtomic(f, {}, { indent: 0 }); return true; }
 
 export { languageState, setLanguage, languageLine, languageName, normalise, isEnglish, translate, allTranslations, forgetTranslations };
