@@ -125,10 +125,9 @@ body.lq-light #lqlook{background:rgba(21,26,33,.05);border-color:rgba(21,26,33,.
 body.lq-light #lqlook button{color:#5A6470}
 body.lq-light #lqlook button[aria-checked='true']{background:#151A21;color:#FFFFFF}
 body.lq-touch #lqlook button{min-height:40px}
-/* a phone's width: the version and the three looks on one line, none cut off. The name and the status line went past the screen's edge there (the status, wrapped, made the header 116px tall), and what the status says is on Home */
-@media (max-width:520px){body.lq-liquid header .brand,body.lq-liquid header .status{display:none}body.lq-liquid header .ver{white-space:nowrap;padding:2px 6px}body.lq-liquid #lqlook{margin-left:6px}#lqlook button{padding:0 8px;font-size:12px}}
+/* a phone's width: the version and the three looks on one line, none cut off. The name and the status line went past the screen's edge there (the status, wrapped, made the header 116px tall), and what the status says is on Home. Low GPU goes too: it ran off the edge, under an open panel's Close (15 Oct 2026) */
+@media (max-width:520px){body.lq-liquid header .brand,body.lq-liquid header .status,body.lq-liquid #lqlow{display:none}body.lq-liquid header .ver{white-space:nowrap;padding:2px 6px}body.lq-liquid #lqlook{margin-left:6px}#lqlook button{padding:0 8px;font-size:12px}}
 body.lq-liquid header .brand{letter-spacing:.38em;font-weight:500;text-transform:uppercase}
-body.lq-liquid .tabs{display:none}
 body.lq-liquid main{display:none}
 body.lq-liquid.lq-pooled main{display:block;position:fixed;top:64px;left:max(12px,4vw);right:max(12px,4vw);bottom:88px;z-index:5;border-radius:24px;background:var(--ink);border:1px solid rgba(220,228,240,.25);box-shadow:0 30px 80px -30px rgba(0,0,0,.8)}
 #lqsinkrow{display:none}
@@ -148,6 +147,8 @@ body.lq-liquid.lq-light.lq-pooled #lqsinkrow{background:rgba(246,248,251,.94);bo
 /* what the open panel does to itself (its Refresh) sits beside Close */
 .lqacts,#lqtools{display:flex;align-items:center;gap:8px;flex:0 0 auto}#lqtools:empty,#lqtools:not(:has(>:not(.hidden))){display:none}
 #pushtasks{padding:7px 14px;font-size:13px}
+/* a phone's width: the panel's buttons drop under its name, rather than the name breaking mid-word (Workd/esk) to share the line with them (15 Oct 2026) */
+@media (max-width:520px){body.lq-liquid.lq-pooled #lqsinkrow{flex-wrap:wrap}.lqwhere{flex:1 1 auto}.lqacts{margin-left:auto}#lqtitle{font-size:21px;overflow-wrap:break-word}}
 #lqscene{display:none}
 body.lq-work:not(.lq-pooled) #lqscene{display:block;position:absolute;left:50%;top:50px;transform:translateX(-50%);z-index:3;margin:0;font:650 24px/1.15 var(--sans);letter-spacing:-.02em;color:#F3F0EA;text-shadow:0 1px 12px rgba(0,0,0,.6);pointer-events:none;white-space:nowrap}
 body.lq-light.lq-work #lqscene{color:#151A21;text-shadow:0 1px 10px rgba(255,255,255,.8)}
@@ -426,7 +427,6 @@ header{padding:16px 18px 10px;display:flex;align-items:center;gap:10px}
 header .dot{width:22px;height:22px;border-radius:6px;background:center/contain no-repeat url('/favicon.svg?small=1');box-shadow:none}
 .brand{font-weight:700;color:var(--bone);font-size:16px}
 .status{margin-left:auto;font-size:12px;color:var(--faint);text-align:right;max-width:52%}
-.tabs{display:flex;gap:6px;padding:0 14px;border-bottom:1px solid var(--line)}
 .rtabs{display:flex;gap:6px;border-bottom:1px solid var(--line);margin-bottom:8px;overflow-x:auto}
 .tab{padding:9px 14px;border:0;background:none;color:var(--faint);font:inherit;font-weight:600;cursor:pointer;border-bottom:2px solid transparent}
 .tab.active{color:var(--bone);border-bottom-color:var(--green)}
@@ -462,18 +462,12 @@ footer{padding:10px 18px;border-top:1px solid var(--line);display:flex}
 .profile{font-size:13px;margin-bottom:8px;line-height:1.5;overflow-wrap:anywhere}
 .profile b{color:var(--bone)}
 .maprow{display:flex;gap:12px;align-items:stretch}
-#graph{flex:1;width:100%;height:62vh;min-height:340px;background:var(--ink2);border:1px solid var(--line);border-radius:12px;touch-action:none;cursor:grab}
-#graph:active{cursor:grabbing}
-#graph text{font-family:var(--sans);fill:var(--text);font-size:11px;pointer-events:none}
-#graph .lbl-me{fill:var(--bone);font-weight:700;font-size:13px}
 .detail{width:290px;flex:none;background:var(--ink2);border:1px solid var(--line);border-radius:12px;padding:14px;overflow:auto;max-height:62vh}
 .detail h3{margin:0 0 4px;color:var(--bone);font-size:15px}
 .detail .k{font-size:12px;color:var(--faint);margin-top:8px}
 .detail ul{margin:6px 0 0;padding-left:18px}.detail li{margin:2px 0}
 .detail .chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
 .tag{display:inline-flex;font-size:11px;padding:4px 9px;border-radius:999px;background:var(--green-dim);border:1px solid #2a6b52;color:var(--green)}
-.mapbar{margin-top:8px;font-size:12.5px;color:var(--text);background:var(--ink3);border:1px solid var(--line);border-radius:9px;padding:9px 12px;min-height:18px;font-family:ui-monospace,Menlo,Consolas,monospace}
-.mapbar b{color:var(--bone)}
 .review{margin-top:12px;background:var(--ink2);border:1px solid var(--line);border-radius:12px;padding:16px;min-height:120px}
 .review h4{margin:0 0 8px;color:var(--green);font-size:11px;letter-spacing:.15em;text-transform:uppercase;font-weight:700}
 .review .body{color:var(--text);line-height:1.65;font-size:14px;white-space:pre-wrap}
@@ -608,7 +602,9 @@ body.lq-solid .mkbig,body.lq-solid .mkbigin{backdrop-filter:none}
 .mkneeds.lit{border-radius:0 16px 16px 0}
 #panel-marketing .pcard.lit{border-radius:11px}
 .mkadd{flex-wrap:wrap;margin:8px 0 6px}.mkadd .mkl{font-size:12px;color:var(--faint)}.mkadd .mkprod{flex:0 0 160px;width:160px}.mkadd .mktext{flex:1;min-width:220px}
-@media (max-width:600px){.mkadd .mkprod{flex:1 1 100%;width:auto}}
+@media (max-width:600px){.mkadd .mkprod{flex:1 1 100%;width:auto}.mkadd .mktext{min-width:0}}
+/* a phone's width: the capture row's fields take the full line rather than scrolling the panel sideways (15 Oct 2026) */
+@media (max-width:520px){.mkcaprow select,.mkcaprow input{flex:1 1 100%!important;max-width:100%}.mkcaprow button{flex:1 1 auto}}
 .rrow{cursor:pointer}.rrow:hover,.rrow:focus-visible{border-color:var(--green)}.rrow.rnew{border-left:3px solid var(--amber)}
 .repacts{margin-top:10px}.repidea{cursor:pointer;align-items:flex-start;gap:8px}.repidea input{margin-top:3px}
 .out.rdoc{white-space:normal;line-height:1.55;font-size:14px;padding:18px 22px;overflow-wrap:anywhere}
@@ -672,9 +668,9 @@ label.check input{width:auto}
 .bar > i{display:block;height:100%;width:35%;background:var(--green);border-radius:2px;animation:slide 1.3s ease-in-out infinite}
 @keyframes slide{0%{margin-left:-35%}100%{margin-left:100%}}
 .out2{white-space:pre-wrap;background:var(--ink);border:1px solid var(--line);border-radius:9px;padding:10px;margin-top:10px;font-size:13px;line-height:1.55;color:var(--bone)}
+.mapbar{margin-top:8px;font-size:12.5px;color:var(--text);background:var(--ink3);border:1px solid var(--line);border-radius:9px;padding:9px 12px;min-height:18px;font-family:ui-monospace,Menlo,Consolas,monospace}
+.mapbar b{color:var(--bone)}
 .legend{display:flex;gap:14px;align-items:center;margin-top:10px;font-size:12px;color:var(--faint);flex-wrap:wrap}
-.lg{display:inline-flex;gap:6px;align-items:center}
-.lg i{width:10px;height:10px;border-radius:50%;display:inline-block}
 .scrwrap{position:relative;margin-top:10px;border:1px solid var(--line);border-radius:10px;overflow:hidden;cursor:crosshair;user-select:none;touch-action:none;background:var(--ink2)}
 .scrwrap img{display:block;width:100%;height:auto;pointer-events:none}
 .scrbox{position:absolute;border:2px solid var(--green);background:rgba(61,220,151,.12);pointer-events:none}
@@ -743,7 +739,6 @@ body.lq-liquid .bcard .bbrief{border-left:2px solid var(--line);background:trans
 
 /* the Map, in the liquid */
 #lmap,#lmtools{display:none}
-body.lq-liquid #graph,body.lq-liquid #mapbar,body.lq-liquid .legend .lg,body.lq-liquid .legend > .muted{display:none}
 body.lq-liquid #lmap{display:block;position:relative;flex:1;min-width:0;height:64vh;min-height:420px;border-radius:18px;overflow:hidden;isolation:isolate;background:#08090B;box-shadow:0 0 0 1px rgba(255,255,255,.08);touch-action:none;cursor:grab}
 body.lq-liquid #lmap:active{cursor:grabbing}
 body.lq-liquid.lq-light #lmap{background:#EBEEF0;box-shadow:0 0 0 1px rgba(21,26,33,.08)}
@@ -972,7 +967,7 @@ body.lq-light .bwthread{border-top-color:rgba(184,106,12,.45)}
 /* drafts to post: a shelf of cards */
 .pshead{display:flex;flex-direction:column;gap:2px;margin:24px 0 10px}
 .pshead span{font:600 15px var(--sans);color:var(--bone)}
-.pshead small{font-size:12.5px;color:var(--faint)}
+.pshead small{font-size:12.5px;color:var(--faint);overflow-wrap:anywhere} /* a folder path in it wraps rather than widening the panel on a phone (15 Oct 2026) */
 /* Marketing's 4-week test: a row a week; the week you're in marked, the ones to come faint */
 .mkwrap{overflow-x:auto}.mktab{width:100%;border-collapse:collapse;font-size:13px}
 .mktab th{font:500 11px var(--sans);letter-spacing:.08em;text-transform:uppercase;color:var(--faint);text-align:left;padding:6px 10px 8px 0;border-bottom:1px solid var(--line);white-space:nowrap}
@@ -1189,7 +1184,7 @@ body.lq-light .btip .bta button:not(.quiet){background:#151A21;color:#FFFFFF}
 .bcard .tchat{border-top:1px solid var(--line);border-radius:9px;margin-top:8px}
 .bcard .bbrief{white-space:pre-line;margin:8px 0;padding:8px 10px;border-left:3px solid var(--green);background:var(--ink3);border-radius:0 8px 8px 0;font-size:13px;color:var(--bone)}
 @media(max-width:760px){.maprow{flex-direction:column}.detail{width:auto;max-height:none}}
-@media(max-width:600px){#screenname,#pagesite{flex:1 1 100%!important}.tabs{overflow-x:auto;scrollbar-width:none;padding:0 8px;gap:0}.tabs::-webkit-scrollbar{display:none}.tab{flex:none;padding:9px 11px}header{padding:12px 14px 8px}main{padding:12px}}
+@media(max-width:600px){#screenname,#pagesite{flex:1 1 100%!important}.tab{flex:none;padding:9px 11px}header{padding:12px 14px 8px}main{padding:12px}}
 </style></head><body>
 <div id="onb" class="onb hidden" role="dialog" aria-modal="true" aria-labelledby="onbt"><div class="onbin"><div class="onbdots" id="onbdots"></div><div id="onbbody"></div></div></div>
 <div id="liquid" aria-label="Symbiot">
@@ -1218,37 +1213,16 @@ body.lq-light .btip .bta button:not(.quiet){background:#151A21;color:#FFFFFF}
 <div id="appbar" class="updatebar"></div>
 <div id="whatsnew" class="whatsnew"></div>
 <header><span class="dot" role="img" aria-label="Symbiot"></span><span class="brand">Symbiot</span><span class="ver" id="ver"></span><span id="lqlook" role="radiogroup" aria-label="Look"><button type="button" role="radio" data-look="glass" aria-checked="false">Glass</button><button type="button" role="radio" data-look="ferro" aria-checked="true">Ferrofluid</button><button type="button" role="radio" data-look="pearl" aria-checked="false">Pearl</button></span><button type="button" id="lqlow" aria-pressed="false" title="Low GPU: Home's liquid drawn at half the resolution and only when something changes, with no blur behind the glass. Easier on your graphics card and battery.">Low GPU</button><span class="status" id="status">...</span></header>
-<div class="tabs">
-<button class="tab active" data-tab="map">Map</button>
-<button class="tab" data-tab="board" id="boardtab">Dashboard</button>
-<button class="tab" data-tab="drift">Drift</button>
-<button class="tab" data-tab="week">Week</button>
-<button class="tab" data-tab="standup">Standup</button>
-<button class="tab" data-tab="todo">Todo</button>
-<button class="tab" data-tab="tasks">Workdesk</button>
-<button class="tab" data-tab="reports">Reports</button><button class="tab" data-tab="marketing">Marketing</button>
-<button class="tab" data-tab="settings">Settings</button>
-</div>
 <main>
 <div id="lqsinkrow"><div class="lqwhere"><span id="lqcrumb" class="lqcrumb">Home</span><h2 id="lqtitle" aria-live="polite"></h2><button type="button" class="ghost hidden" id="lqpark"></button></div><div class="lqacts"><span id="lqtools"><button class="ghost hidden" type="button" id="pushtasks" title="Write .symbiot/TASKS.md into each repo for your coding agent">Send to repos</button></span><button class="iconbtn wide" type="button" id="lqsink" title="close it: it sinks back into the liquid (Esc, or right-click)"><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M2 2l8 8M10 2l-8 8" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>Close</button></div></div><div id="lqwhy" aria-live="polite"></div>
 <section id="panel-map">
 <div class="profile muted" id="profile">Mapping your work&hellip;</div>
 <div class="maprow">
 <div id="lmap" class="lmap"><canvas id="lmc" aria-hidden="true"></canvas><svg id="lmlines" aria-hidden="true"></svg><div id="lmov"></div><div id="lmtip" class="lmtip" role="status" aria-live="polite"></div><div class="lmzoom"><button type="button" class="iconbtn" id="lmin" aria-label="Zoom in">+</button><button type="button" class="iconbtn" id="lmout" aria-label="Zoom out">&minus;</button><button type="button" class="iconbtn" id="lmfit" aria-label="Fit the map" title="Fit the map"><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M1 5V1h4M13 5V1H9M1 9v4h4M13 9v4H9" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button></div></div>
-<svg id="graph" viewBox="0 0 960 620" preserveAspectRatio="xMidYMid meet"></svg>
 <aside id="detail" class="detail hidden"></aside>
 </div>
 <div id="lmtools" class="lmtools"></div>
-<div id="mapbar" class="mapbar">Hover a node for a summary &middot; click for details &middot; drag to move</div>
 <div class="legend">
-<span class="lg"><i style="background:var(--green)"></i>you</span>
-<span class="lg"><i style="background:var(--bone)"></i>repos</span>
-<span class="lg"><i style="background:var(--amber)"></i>languages</span>
-<span class="lg"><i style="background:#6bb3ff"></i>tools</span>
-<span class="lg"><i style="background:#c58af9"></i>agents</span>
-<span class="lg"><i style="background:#5fe3b0"></i>AI</span>
-<span class="lg"><i style="background:#b7a98c"></i>folders (no git)</span>
-<span class="muted" style="margin-left:8px">scroll to zoom &middot; drag to pan &middot; click a node</span>
 <button class="ghost" id="remap" style="margin-left:auto">Rescan</button>
 </div>
 <div id="review" class="review hidden"></div>
@@ -1434,6 +1408,8 @@ body.lq-light .btip .bta button:not(.quiet){background:#151A21;color:#FFFFFF}
 <script>
 var T=new URLSearchParams(window.location.search).get('t')||'';
 function api(path,body){return fetch(path,{method:body?'POST':'GET',headers:{'x-symbiot-token':T,'content-type':'application/json'},body:body?JSON.stringify(body):undefined}).then(function(r){return r.json();});}
+// a GET that gives up after ms (the heartbeat: a stalled server is told apart from a lost one)
+function apiIn(ms,path){return fetch(path,{headers:{'x-symbiot-token':T},signal:typeof AbortSignal!=='undefined'&&AbortSignal.timeout?AbortSignal.timeout(ms):undefined}).then(function(r){return r.json();});}
 var KEYURL={claude:'https://claude.com/claude-code',anthropic:'https://console.anthropic.com/settings/keys',openai:'https://platform.openai.com/api-keys',gemini:'https://aistudio.google.com/apikey',ollama:'https://ollama.com'};
 var DEFMODEL={claude:'your plan’s default',anthropic:'claude-opus-5-5',openai:'gpt-4o-mini',gemini:'gemini-flash-latest',ollama:'llama3.1'};
 function $(id){return document.getElementById(id);}
@@ -1464,18 +1440,18 @@ while(el.firstChild&&el.firstChild!==k)el.removeChild(el.firstChild);while(k.nex
 while(t.firstChild&&t.firstChild!==twin)el.insertBefore(t.firstChild,k);t.removeChild(twin);while(t.firstChild)el.appendChild(t.firstChild);
 el._h='';return false;}
 var current='map',WDJUMP=0;var mapLoaded=false;var driftLoaded=false;
-var COLORS={person:'#3DDC97',repo:'#F4F1EA',lang:'#F2A541',tool:'#6bb3ff',agent:'#c58af9',ai:'#5fe3b0',folder:'#b7a98c'};
-function tabs(){return document.querySelectorAll('.tab');}
 // Opened as Agents (its agents, a run's question): the Workdesk, at its agents, once
 // the tasks above them and the agents are drawn; not if you've moved, or something's lit.
 function wdJump(){if(!WDJUMP||current!=='tasks')return;if(Date.now()-WDJUMP>5000){WDJUMP=0;return;}var wa=$('panel-agents');if(document.querySelector('main .lit'))return;if(wa&&wa.scrollIntoView)wa.scrollIntoView({block:'start'});}
 (function(){var m=document.querySelector('main');if(m&&m.addEventListener)['wheel','pointerdown','keydown','touchstart'].forEach(function(e){m.addEventListener(e,function(){WDJUMP=0;},{passive:true});});})();
-function setTab(tab){WDJUMP=0;if(tab==='agents'){tab='tasks';WDJUMP=Date.now();}current=tab;tabs().forEach(function(t){t.classList.toggle('active',t.dataset.tab===tab);});
+// Settings' and the phone's data load when their panel opens, not with the page: it fired
+// ~22 requests for panels not on screen on every open, one listing the displays (15 Oct 2026)
+function setTab(tab){WDJUMP=0;if(tab==='agents'){tab='tasks';WDJUMP=Date.now();}current=tab;
 var isMap=tab==='map',isSet=tab==='settings',isTasks=tab==='tasks',isDrift=tab==='drift',isBoard=tab==='board',isRun=(tab==='week'||tab==='standup'||tab==='todo');
 $('panel-map').classList.toggle('hidden',!isMap);
 $('panel-board').classList.toggle('hidden',!isBoard);if(isBoard){loadBoard();loadLinks();}
 $('panel-run').classList.toggle('hidden',!isRun);
-$('panel-settings').classList.toggle('hidden',!isSet);if(isSet){loadFirstSteps();licLoad();langLoad();}
+$('panel-settings').classList.toggle('hidden',!isSet);if(isSet){loadFirstSteps();licLoad();langLoad();loadAgentCfg();loadScanRoots();loadKnowledge();loadLinks();loadMind();loadSecrets();loadTrusted();loadMail();loadDesktop();loadPhoneLink();}
 $('panel-tasks').classList.toggle('hidden',!isTasks);
 $('panel-drift').classList.toggle('hidden',!isDrift);
 $('panel-reports').classList.toggle('hidden',tab!=='reports');if(tab==='reports')loadReports();
@@ -1554,7 +1530,7 @@ else h+="<p><b>Free</b>: one agent at a time, up to "+st.free.projects+" project
 if(st.keyProblem)h+="<p class='onbnote'>"+esc(st.keyProblem)+"</p>";
 if(st.plan==='free'||st.plan==='trial'){
 if(st.projects&&st.projects.length)h+="<p class='muted' style='margin-top:10px'>Free’s "+st.free.projects+" projects: the first ones Symbiot worked in.</p><div class='licproj'>"+st.projects.map(function(p,i){return "<span class='chip'>"+esc(p.name)+" <button class='back' data-i='"+i+"' title='Free this slot for another project'>free up</button></span>";}).join(' ')+"</div>";
-h+="<p style='margin-top:12px'>Pro: as many agents at once as you like, every project, every inbox and chat, the marketing lane and Approve-and-ship. "+esc(st.price)+". <a href='"+esc(st.upgrade)+"' target='_blank' rel='noopener'>Get Pro</a></p>";}
+h+="<p style='margin-top:12px'>Pro: as many agents at once as you like, every project, every inbox and chat, the marketing lane and Approve-and-ship. "+esc(st.price)+". <a href='"+esc(okUrl(st.upgrade))+"' target='_blank' rel='noopener'>Get Pro</a></p>";}
 if(st.plan!=='owner'){h+="<div class='row' style='margin-top:10px'>"+(st.plan==='pro'?"<button class='ghost' id='licclear'>Remove this key</button>":"<textarea id='lickey' rows='2' placeholder='Paste your Pro key (it starts SYM1-)' style='flex:1'></textarea><button class='act' id='licsave'>Add key</button>")+"</div>";}
 if(msg)h+="<p class='onbnote' style='margin-top:8px'>"+esc(msg)+"</p>";
 el.innerHTML=h;
@@ -1569,13 +1545,13 @@ el.querySelectorAll('.fsgo').forEach(function(b){b.addEventListener('click',func
 document.querySelectorAll('#panel-settings .lit').forEach(function(x){x.classList.remove('lit');});s.classList.add('lit');if(s.scrollIntoView)s.scrollIntoView({block:'start',behavior:'smooth'});var c=s.querySelector('select,input,button');if(c&&c.focus){try{c.focus({preventScroll:true});}catch(e){c.focus();}}});});
 el.querySelectorAll('.fsskip').forEach(function(sk){sk.addEventListener('click',function(){try{if(window.localStorage)window.localStorage.setItem(fsKey(sk.getAttribute('data-id')),'1');}catch(e){}loadFirstSteps();});});});}
 var fsTimer=null;(function(){var ps=$('panel-settings');if(ps&&ps.addEventListener){var again=function(){if(fsTimer)clearTimeout(fsTimer);fsTimer=setTimeout(function(){if(current==='settings')whenFree($('firststeps'),'firststeps',loadFirstSteps);},1800);};ps.addEventListener('click',again);ps.addEventListener('change',again);}})();
-var tabPicked=false;tabs().forEach(function(t){t.addEventListener('click',function(){tabPicked=true;setTab(t.dataset.tab);});});
+var tabPicked=false;
 // Watching a page (your inbox, GitHub)? The app opens on the Dashboard instead of
 // the Map, unless you've picked a tab already. The Map still loads behind it.
 // A link to a screen (#reports, #board…) opens on it: how symbiot post's picture of
 // "the new Reports view" shows that view, not home.
 function lqDeep(){var h=String(location.hash||'').slice(1);if(!h||!LQNAMES[h])return;setTimeout(function(){tabPicked=true;lqPool(h);},400);}
-function firstTab(){api('/api/watch/board').then(function(b){if(b&&b.cards&&b.cards.length&&!tabPicked&&current==='map')setTab('board');}).catch(function(){});}
+function firstTab(){api('/api/watch/board').then(function(b){if(b&&b.cards&&b.cards.length&&!tabPicked&&current==='map')lqPool('board');}).catch(function(){});} // lqPool: setTab alone showed nothing in the liquid (main stays hidden until pooled) and left current wrong (15 Oct 2026)
 // The AI in use isn't shown while it works (it's noise); only when none is
 // connected, as an urgent line that opens its part of Settings. Home has it out
 // front too, with the agent and the connectors runs use (home.mjs).
@@ -1588,7 +1564,7 @@ $('status').addEventListener('click',function(){var b=document.body;if(b&&b.clas
 // tasks, with Park (lqParkBtn). The work scene says which it is too.
 var PARKED={repos:[],paths:[]};
 function lqProjName(repo){var L=typeof LQ!=='undefined'?LQ:{},w=(L.workData&&L.workData.projects)||[],y=(L.home&&L.home.you)||[],p=w.filter(function(x){return x.repo===repo;})[0]||y.filter(function(x){return x.repo===repo&&x.name;})[0];return (p&&p.name)||repo;}
-function lqTitle(){var t=$('lqtitle'),c=$('lqcrumb');tabs().forEach(function(x){x.setAttribute('aria-current',x.dataset.tab===current?'page':'false');});if(!t)return;
+function lqTitle(){var t=$('lqtitle'),c=$('lqcrumb');if(!t)return;
 var tf=typeof TFILTER!=='undefined'&&TFILTER||{},arch=typeof TARCH!=='undefined'&&TARCH,proj=current==='tasks'&&!arch&&tf.repo?tf.repo:'',names=typeof LQNAMES!=='undefined'?LQNAMES:{},name=current==='tasks'&&arch?'Archive':(names[current]||current);
 if(proj)name=lqProjName(proj);var parked=!!proj&&PARKED.repos.indexOf(proj)>=0;
 if(c)c.textContent=proj?'Projects':'Home';t.innerHTML=esc(name)+(parked?"<span class='lqpk'>parked</span>":'');
@@ -1616,23 +1592,14 @@ $('save').addEventListener('click',function(){var p=$('provider').value;$('saveM
 var cfg={provider:p,model:$('model').value.trim()};if(p==='ollama')cfg.baseUrl=$('baseUrl').value.trim();else cfg.key=$('key').value.trim();
 api('/api/connect',cfg).then(function(r){$('saveMsg').textContent=r.message||(r.ok?'Connected.':'Could not connect.');$('saveMsg').className='note '+(r.ok?'ok':'err');if(r.ok){$('key').value='';refresh();}});});
 $('quit').addEventListener('click',function(){api('/api/quit');document.body.innerHTML='<div style=\\'padding:40px;color:#7E9690;font-family:sans-serif\\'>Symbiot stopped. You can close this window.</div>';});
-var GRAPH=null,sel=null,view={k:1,x:0,y:0},GW=960,GH=620;
-function esc(s){return String(s).replace(/[&<>]/g,function(ch){return ch==='&'?'&amp;':ch==='<'?'&lt;':'&gt;';});}
+var GRAPH=null;
+// Text into HTML, quotes too: a message's subject landed in aria-label='…' and a quote in it closed the attribute (15 Oct 2026)
+function esc(s){return String(s).replace(/[&<>"']/g,function(ch){return ch==='&'?'&amp;':ch==='<'?'&lt;':ch==='>'?'&gt;':ch==='"'?'&quot;':'&#39;';});}
+// A link out of what an agent or a site said: only a web address, never javascript: or the like
+function okUrl(u){u=String(u||'');return /^https?:\\/\\//i.test(u)?u:'';}
 // An agent's option, with its who-acts markers as badges: 👤 You (you do this
 // step) and 🤖 Agent (picking it is enough; the next run does it). Escaped first.
 function whoHtml(o){return esc(o).replace(/👤[ ]*(You:|You(?=[ ]))?/g,"<span class='who you'><i class=ic-person></i> You</span> ").replace(/🤖[ ]*(Agent:|Agent(?=[ ]))?/g,"<span class='who agent'><i class=ic-bot></i> Agent</span> ");}
-function layout(nodes,edges){var idx={};nodes.forEach(function(n){n.x=GW/2+(Math.random()-0.5)*GW*0.8;n.y=GH/2+(Math.random()-0.5)*GH*0.8;n.vx=0;n.vy=0;idx[n.id]=n;});
-for(var it=0;it<340;it++){for(var i=0;i<nodes.length;i++)for(var j=i+1;j<nodes.length;j++){var a=nodes[i],b=nodes[j];var dx=a.x-b.x,dy=a.y-b.y;var d2=dx*dx+dy*dy+0.01;var d=Math.sqrt(d2);var f=4600/d2;a.vx+=f*dx/d;a.vy+=f*dy/d;b.vx-=f*dx/d;b.vy-=f*dy/d;}
-edges.forEach(function(e){var a=idx[e.source],b=idx[e.target];if(!a||!b)return;var dx=b.x-a.x,dy=b.y-a.y;var d=Math.sqrt(dx*dx+dy*dy)+0.01;var f=(d-115)*0.03;a.vx+=f*dx/d;a.vy+=f*dy/d;b.vx-=f*dx/d;b.vy-=f*dy/d;});
-nodes.forEach(function(n){n.vx+=(GW/2-n.x)*0.002;n.vy+=(GH/2-n.y)*0.002;n.x+=Math.max(-9,Math.min(9,n.vx));n.y+=Math.max(-9,Math.min(9,n.vy));n.vx*=0.86;n.vy*=0.86;n.x=Math.max(30,Math.min(GW-30,n.x));n.y=Math.max(24,Math.min(GH-28,n.y));});}}
-function nbrs(id){var s={};s[id]=1;GRAPH.edges.forEach(function(e){if(e.source===id)s[e.target]=1;if(e.target===id)s[e.source]=1;});return s;}
-function render(){if(!GRAPH)return;var idx={};GRAPH.nodes.forEach(function(n){idx[n.id]=n;});var nb=sel?nbrs(sel):null;
-var s="<defs><radialGradient id='lqsilver' cx='35%' cy='30%' r='75%'><stop offset='0%' stop-color='#FFFFFF'/><stop offset='35%' stop-color='#C9CFD9'/><stop offset='75%' stop-color='#6F7887'/><stop offset='100%' stop-color='#2A2F38'/></radialGradient></defs><g id='vp' transform='translate("+view.x.toFixed(1)+","+view.y.toFixed(1)+") scale("+view.k.toFixed(3)+")'>";
-GRAPH.edges.forEach(function(e){var a=idx[e.source],b=idx[e.target];if(!a||!b)return;var op=nb?((nb[e.source]&&nb[e.target])?0.75:0.06):0.45;s+="<line x1='"+a.x.toFixed(1)+"' y1='"+a.y.toFixed(1)+"' x2='"+b.x.toFixed(1)+"' y2='"+b.y.toFixed(1)+"' stroke='"+(LQ.theme&&LQ.theme.light?'#8E97A6':'#5C6878')+"' stroke-width='1' opacity='"+op+"'/>";});
-GRAPH.nodes.forEach(function(n){var r=Math.max(5,Math.sqrt(n.weight)*2);var col=COLORS[n.type]||"#888";var op=nb?(nb[n.id]?1:0.14):0.95;var title=esc(n.label)+(n.meta?(" - "+(n.meta.commits||0)+" commits"):"");
-s+="<g class='node' data-id='"+esc(n.id)+"' opacity='"+op+"'><circle cx='"+n.x.toFixed(1)+"' cy='"+n.y.toFixed(1)+"' r='"+r.toFixed(1)+"' fill='url(#lqsilver)' stroke='"+col+"' stroke-width='"+(n.id===sel?2.5:1.2)+"'"+(n.id===sel?" stroke-opacity='1'":" stroke-opacity='0.7'")+"><title>"+title+"</title></circle>";
-var cls=n.type==="person"?"lbl-me":"";s+="<text x='"+n.x.toFixed(1)+"' y='"+(n.y+r+12).toFixed(1)+"' text-anchor='middle' class='"+cls+"'>"+esc(n.label)+"</text></g>";});
-document.getElementById("graph").innerHTML=s+"</g>";}
 
 // ---- the Map, in the liquid -------------------------------------------------------
 // Your repos and project folders as droplets in the look, in lanes by kind: what
@@ -1739,8 +1706,6 @@ function profileLine(g){var repos=g.nodes.filter(function(n){return n.type==="re
 if(g.stats.noStorage)return "Symbiot can't see your phone's files yet, so it can't find your projects. Android calls this <b>All files access</b>."+(window.SymbiotAndroid?" <button class='act' id='allowfiles'>Allow file access</button>":"");
 if(!repos.length)return "No git repositories found under "+esc(base)+" yet."+(g.stats.android?" Projects in Termux's home folder (<code>~</code>) are private to Termux, so no other app can see them."+(phoneTermux().installed?" Symbiot running in Termux can, and this app can show it: <button class='act' id='usetermux'>Open Termux</button> copies the command that starts it. Paste it there, and Termux opens it here. Or keep":" Keep")+" your projects in shared storage: in Termux, run <code>termux-setup-storage</code> and work under <code>~/storage/shared</code>.":"");var langs=g.nodes.filter(function(n){return n.type==="lang";}).map(function(n){return n.label;});var top=repos.slice().sort(function(a,b){return (b.meta.commits||0)-(a.meta.commits||0);})[0];var more=(g.stats.roots||[]).filter(function(r){return r!==base;}).length;var s="Scanned <b>"+esc(base)+"</b>"+(more?" and "+more+" more folder"+(more>1?"s":""):"")+" &middot;<b>"+g.stats.repos+"</b> repos &middot; <b>"+g.stats.commits+"</b> of your commits &middot; <b>"+(g.stats.files||0)+"</b> files &middot; ";s+=langs.length?("mostly <b>"+esc(langs.slice(0,3).join(", "))+"</b>"):"no languages detected";if(top)s+=" &middot; most active: <b>"+esc(top.label)+"</b>";return s;}
 function nodeById(id){for(var i=0;i<GRAPH.nodes.length;i++)if(GRAPH.nodes[i].id===id)return GRAPH.nodes[i];return null;}
-function summarize(n){if(!n)return "";if(n.type==='repo'){var m=n.meta||{};var bits=[m.commits+' commits'];if(m.branch)bits.push('branch '+m.branch);if(m.last)bits.push('last '+m.last);if(typeof m.files==='number')bits.push(m.files+' files');if(m.langs&&m.langs.length)bits.push(m.langs.join(', '));if(m.tools&&m.tools.length)bits.push(m.tools.join(', '));return "<b>"+esc(n.label)+"</b>  "+esc(m.path||'')+"  —  "+esc(bits.join('  ·  '));}if(n.type==='lang')return "<b>"+esc(n.label)+"</b>  —  language (click to see repos)";if(n.type==='tool')return "<b>"+esc(n.label)+"</b>  —  tool (click to see repos)";if(n.type==='person')return "<b>"+esc(n.label)+"</b>  —  you";return "<b>"+esc(n.label)+"</b>";}
-function updateBar(id){var bar=document.getElementById('mapbar');if(!bar)return;var n=id?nodeById(id):(sel?nodeById(sel):null);bar.innerHTML=n?summarize(n):"Hover a node for a summary &middot; click for details &middot; drag to move";}
 function hideDetail(){document.getElementById('detail').classList.add('hidden');}
 function ago(sec){if(!sec)return'';var s=Math.floor(Date.now()/1000)-sec;if(s<3600)return Math.max(1,Math.floor(s/60))+'m ago';if(s<86400)return Math.floor(s/3600)+'h ago';return Math.floor(s/86400)+'d ago';}
 function agentBadge(d){if(!d.agents||!d.agents.length)return'';return d.agents.map(function(a){return "<div style='margin-top:8px;font-size:12px;color:var(--bone);background:var(--green-dim);border:1px solid #2a6b52;border-radius:8px;padding:6px 9px'>&#9889; worked via <b>"+esc(a.agent)+"</b>"+(a.last?" &middot; "+ago(a.last):"")+"</div>";}).join('');}
@@ -1897,7 +1862,7 @@ card.querySelectorAll('.task').forEach(function(row){wireAsk(row,row.getAttribut
 card.querySelectorAll('.sendback').forEach(function(b){b.addEventListener('click',function(){api('/api/pending/sendback',{id:b.closest('.task').getAttribute('data-id')}).then(loadTasks);});});
 var sa=card.querySelectorAll('.sendagain,.sendanyway');sa.forEach(function(b){b.addEventListener('click',function(){var o=document.getElementById('reviewout');sa.forEach(function(x){x.disabled=true;});b.textContent='Sending...';
 api('/api/pending/send',{repo:repo,untested:b.classList.contains('sendanyway')}).then(function(r){
-o.innerHTML=r&&r.pr?"<div class='note ok'>&#10003; <b>"+esc(repo)+"</b>: sent &middot; <a href='"+esc(r.pr)+"' target='_blank' rel='noopener'>open PR</a>"+(r.note?"<div class='muted'>"+esc(r.note)+"</div>":"")+"</div>":"<div class='note err'>"+esc(repo)+": "+esc((r&&(r.error||r.note))||'failed')+"</div>";loadPending();});});});
+o.innerHTML=r&&r.pr?"<div class='note ok'>&#10003; <b>"+esc(repo)+"</b>: sent &middot; <a href='"+esc(okUrl(r.pr))+"' target='_blank' rel='noopener'>open PR</a>"+(r.note?"<div class='muted'>"+esc(r.note)+"</div>":"")+"</div>":"<div class='note err'>"+esc(repo)+": "+esc((r&&(r.error||r.note))||'failed')+"</div>";loadPending();});});});
 var lv=card.querySelector('.leaveunsent');if(lv)lv.addEventListener('click',function(){lv.disabled=true;api('/api/pending/leave',{repo:repo}).then(loadPending);});
 var amt=card.querySelector('.amtoggle');if(amt)amt.addEventListener('change',function(){api('/api/automerge',{repo:repo,on:amt.checked});});
 var sd=card.querySelector('.showdiff'),pre=card.querySelector('.rdiff');
@@ -1917,7 +1882,7 @@ ob.querySelector('.askno').addEventListener('click',function(){ob.innerHTML='';}
 if(!r||r.error){ap.disabled=false;ap.textContent='Approve - retry';o.innerHTML="<div class='note err'>"+esc(repo)+": "+esc((r&&r.error)||'failed')+"</div>";return;}
 var m=(r.unsent?"<b>Not on GitHub yet.</b> ":"&#10003; ")+"<b>"+esc(repo)+"</b>: approved "+(r.round?"a round of its task, which stays open"+(r.approved?", and "+r.approved+" finished task"+(r.approved>1?"s":""):""):r.approved?r.approved+" task"+(r.approved>1?"s":""):"changes without a task");
 if(r.commit)m+=" &middot; committed <code>"+esc(r.commit)+"</code> on <code>"+esc(r.branch)+"</code>";
-if(r.pr)m+=" &middot; <a href='"+esc(r.pr)+"' target='_blank' rel='noopener'>open PR</a>";
+if(r.pr)m+=" &middot; <a href='"+esc(okUrl(r.pr))+"' target='_blank' rel='noopener'>open PR</a>";
 if(r.bumped&&card.getAttribute('data-pom'))m+="<div class='muted'>Bumps the version to <b>"+esc(r.bumped)+"</b>. It publishes to npm when the PR merges.</div>";
 else if(r.bumped)m+="<div class='muted'>Bumps the version to <b>"+esc(r.bumped)+"</b>. After the PR merges, run <code>git pull &amp;&amp; git tag v"+esc(r.bumped)+" &amp;&amp; git push origin --tags</code> on <code>"+esc(r.base||'main')+"</code> to release it.</div>";
 if(r.autoMerge==='queued')m+=" &middot; will auto-merge when CI passes";
@@ -2047,7 +2012,7 @@ return h;}
 function loadAgents(){loadLanes();loadParked(agentsDraw);phoneApprovedNote();}
 // What was approved from your phone today (phone.mjs), above the agents: it wasn't you at this desk.
 function phoneApprovedNote(){var el=$('phoneappr');if(!el)return;var ap=(LQ.home&&LQ.home.phoneApproved)||[];
-el.innerHTML=ap.map(function(a){return "<div class='note "+(a.status==='failed'?'err':'ok')+"'>"+(a.status==='failed'?"Approving <b>"+esc(a.repo)+"</b> from "+esc(a.phone)+" failed: "+esc(a.error||''):(a.status==='approving'?"Approving ":"&#10003; Approved ")+"<b>"+esc(a.repo)+"</b> from "+esc(a.phone)+", "+agoTxt(a.at)+(a.pr?" &middot; <a href='"+escQ(a.pr)+"' target='_blank' rel='noopener'>its PR</a>":""))+"</div>";}).join('');}
+el.innerHTML=ap.map(function(a){return "<div class='note "+(a.status==='failed'?'err':'ok')+"'>"+(a.status==='failed'?"Approving <b>"+esc(a.repo)+"</b> from "+esc(a.phone)+" failed: "+esc(a.error||''):(a.status==='approving'?"Approving ":"&#10003; Approved ")+"<b>"+esc(a.repo)+"</b> from "+esc(a.phone)+", "+agoTxt(a.at)+(a.pr?" &middot; <a href='"+esc(okUrl(a.pr))+"' target='_blank' rel='noopener'>its PR</a>":""))+"</div>";}).join('');}
 // Agents, in order: what needs you (a question, a step of yours), what's at work, and
 // what's finished, folded away (open stays open across refreshes). A run whose handover
 // hasn't gone to its lane yet stays out with what's at work, not folded away.
@@ -2057,10 +2022,12 @@ function agentPaused(a){return a.status==='done'&&!!a.progress&&a.progress.total
 function agentGroups(list,fn){var needs=[],run=[],paused=[],done=[];list.forEach(function(a){if(nQs(a)||a.waiting||a.needs)needs.push(a);else if(a.status==='running'||(a.handing||[]).some(function(x){return !x.gone;}))run.push(a);else if(agentPaused(a))paused.push(a);else done.push(a);});
 var g=function(t,xs){return xs.length?"<div class='tgroup agg'>"+t+" <span class='tcount'>"+xs.length+"</span></div>"+xs.map(fn).join(''):'';};
 return g('Needs you',needs)+g('At work',run)+g('Paused',paused)+(done.length?"<details class='agdone'"+(AGDONEOPEN?' open':'')+"><summary class='tgroup agg'>Finished <span class='tcount'>"+done.length+"</span></summary>"+done.map(fn).join('')+"</details>":'');}
+// Polled every 8 s while a run is going (was 2 s: three requests each, which the server took
+// longer than that to answer, so the agent's own calls queued behind the page watching it, 15 Oct 2026)
 function agentsDraw(){api('/api/agents').then(function(list){var el=document.getElementById('agentslist');
 if(!list||!list.length){AGENTLIST=[];el.innerHTML="<div class='muted' style='margin-top:12px'>No agents yet. In <b>Tasks</b>, tick ideas and hit <b>Send to repos</b> (with an agent command set in Settings) &mdash; you'll watch it work here.</div>";stopAgentsPoll();return;}
 var anyRunning=list.some(function(a){return a.status==='running';});
-if(answering()||selIn(el)){stopAgentsPoll();if(anyRunning&&current==='tasks')agentsTimer=setTimeout(loadAgents,2000);else selWait('agents',loadAgents);return;} // don't re-render under someone typing an answer, or selecting text to copy
+if(answering()||selIn(el)){stopAgentsPoll();if(anyRunning&&current==='tasks')agentsTimer=setTimeout(loadAgents,8000);else selWait('agents',loadAgents);return;} // don't re-render under someone typing an answer, or selecting text to copy
 saveDrafts(el);AGENTLIST=list;
 var agentBlock=function(a){var pz=agentPaused(a),cls=a.status==='running'?'run':pz?'paused':(a.status==='done'?'ok':'fail');
 var st=a.status==='running'?('working &middot; '+fmtE(a.elapsed)):pz?('paused &middot; '+a.progress.done+'/'+a.progress.total+' tasks done &middot; turn ended, will check again'+(a.work&&a.work.restOn?' &middot; '+esc(a.work.restOn):'')+' &middot; '+fmtE(a.elapsed)):(esc(a.status)+' &middot; '+fmtE(a.elapsed)+(a.exitCode!=null?' &middot; exit '+a.exitCode:''));
@@ -2097,7 +2064,7 @@ el.querySelectorAll('.alogout').forEach(function(p){p.scrollTop=p.scrollHeight;}
 restoreDrafts(el);wireAsks(el);wireWaits(el);wireNeeds(el);wireFacts(el);lqLight();
 wdJump();
 el.querySelectorAll('.apark').forEach(function(btn){btn.addEventListener('click',function(){var g=AGENTLIST[+btn.closest('.agent').getAttribute('data-i')];if(!g)return;btn.disabled=true;lqPark('',btn.getAttribute('data-on')==='1',function(err){btn.disabled=false;$('agentsmsg').innerHTML=err?"<div class='note err'>"+esc(err)+"</div>":'';loadAgents();},g.path);});});
-stopAgentsPoll();if(anyRunning&&current==='tasks')agentsTimer=setTimeout(loadAgents,2000);});}
+stopAgentsPoll();if(anyRunning&&current==='tasks')agentsTimer=setTimeout(loadAgents,8000);});}
 function loadDrift(){var out=document.getElementById('driftout');out.innerHTML="<div class='muted' style='margin-top:12px'>Reading your repos&hellip;</div>";
 var ci=document.getElementById('driftci').checked?'1':'0';var ft=document.getElementById('driftfetch').checked?'1':'0';
 api('/api/drift?ci='+ci+'&fetch='+ft).then(function(d){driftLoaded=true;var repos=d.repos||[];var risky=repos.filter(function(r){return r.flags.some(function(f){return f.level==='warn';});});
@@ -2108,7 +2075,7 @@ r.flags.forEach(function(f){h+="<li class='"+esc(f.level)+"'>"+esc(f.text)+(f.ev
 h+="</ul></div>";});
 var clean=repos.filter(function(r){return !r.flags.length;}).map(function(r){return r.name;});
 if(clean.length)h+="<div class='muted' style='margin-top:10px'>clean: "+esc(clean.join(", "))+"</div>";
-if(!repos.length)h+="<div class='muted'>No repos found under "+esc(d.base||"your home folder")+".</div>";
+if(!repos.length)h+="<div class='muted' style='overflow-wrap:anywhere'>No repos found under "+esc(d.base||"your home folder")+".</div>"; // a long path wraps rather than widening the panel on a phone
 out.innerHTML=h;});}
 function pushTasksUI(){var o=document.getElementById('pushout');var btn=document.getElementById('pushtasks');btn.disabled=true;
 o.innerHTML="<div class='muted' style='margin-top:10px'><span class='dot-c' style='background:var(--amber)'></span> Writing .symbiot/TASKS.md into your repos&hellip;</div>";
@@ -2242,7 +2209,7 @@ aps.forEach(function(a,i){h+="<div class='pcq' data-ap='"+i+"'><div class='qn'>"
 needs.forEach(function(n){h+="<div class='task'><span class='t'>"+esc(n.title)+" <span class='muted' style='font-size:12px'>"+esc(n.sub)+" &middot; on your computer</span></span></div>";});
 h+="</div>";}
 if(LQ.phone)h+="<div class='phyouslot'></div>"; // on a phone's Home: what this phone needs, after what the computer does
-(c.recent||[]).slice(-3).forEach(function(r){h+="<div class='note "+(r.status==='failed'?'err':'ok')+"'>"+(r.status==='approving'?"Approving "+esc(r.repo)+" (from "+esc(r.phone)+")&hellip;":r.status==='failed'?"Approving "+esc(r.repo)+" from "+esc(r.phone)+" failed: "+esc(r.error||''):"&#10003; "+esc(r.repo)+" approved from "+esc(r.phone)+(r.pr?" &middot; <a href='"+escQ(r.pr)+"' target='_blank' rel='noopener'>its PR</a>":""))+"</div>";});
+(c.recent||[]).slice(-3).forEach(function(r){h+="<div class='note "+(r.status==='failed'?'err':'ok')+"'>"+(r.status==='approving'?"Approving "+esc(r.repo)+" (from "+esc(r.phone)+")&hellip;":r.status==='failed'?"Approving "+esc(r.repo)+" from "+esc(r.phone)+" failed: "+esc(r.error||''):"&#10003; "+esc(r.repo)+" approved from "+esc(r.phone)+(r.pr?" &middot; <a href='"+esc(okUrl(r.pr))+"' target='_blank' rel='noopener'>its PR</a>":""))+"</div>";});
 var open=(c.tasks||[]).filter(function(t){return !t.done;}),done=(c.tasks||[]).filter(function(t){return t.done;}),repos=[];(c.tasks||[]).forEach(function(t){if(t.repo&&repos.indexOf(t.repo)<0)repos.push(t.repo);});
 h+="<div class='pshead' style='margin-top:14px'><span>Tasks &middot; "+open.length+" open</span><small>on "+esc(d.name)+"</small></div>";
 h+="<form class='pcadd'><input id='pctask' placeholder='Add a task' maxlength='4000' autocomplete='off'><select id='pcrepo' aria-label='Which project'><option value=''>No project</option>"+repos.sort().map(function(r){return "<option value='"+escQ(r)+"'>"+esc(r)+"</option>";}).join('')+"</select><button class='act' type='submit'>Add</button></form>";
@@ -2275,7 +2242,7 @@ el.querySelectorAll('button').forEach(function(b){b.addEventListener('click',fun
 // in Settings, and on the Dashboard until something is linked.
 var LINKS=null;
 var LINKWORD={ok:'linked',signin:'sign in, then close it',signedout:'signed out',error:'needs a fix'};
-function escQ(t){return esc(t).replace(/'/g,'&#39;');}
+function escQ(t){return esc(t);} // esc escapes quotes itself now; kept for its callers
 // Connections: a column per kind of site; each site a bead in the look: solid when
 // linked, amber when it wants you to sign in, hollow when it isn't linked. Link,
 // check (↻) and Unlink show on hover (always on touch).
@@ -2352,29 +2319,19 @@ o.innerHTML="<div class='out2'><b>"+r.count+"</b> sent in the last 7 days &mdash
 function setupLocalUI(){var o=document.getElementById('setupout');o.innerHTML="Setting up a local model&hellip;";
 api('/api/setup-local',{}).then(function(r){if(r.error==='not-installed'){var i=r.install||{};o.innerHTML="Ollama isn't installed. Run this once, then click again:<div class='out2'>"+esc(i.cmd||'')+"</div><div class='muted' style='font-size:11px'>or download: "+esc(i.alt||'https://ollama.com/download')+"</div>";return;}
 o.innerHTML="Pulling <b>"+esc(r.model)+"</b> &mdash; watch it on the <b>Workdesk</b>. Symbiot switches to it automatically when the download finishes.";setTimeout(function(){setTab('agents');},700);}).catch(function(e){o.innerHTML="<span class='err'>Setup failed: "+esc(String((e&&e.message)||e))+"</span>";});}
-function selectNode(id){sel=id;render();updateBar(id);var n=nodeById(id);api('/api/node?id='+encodeURIComponent(id)).then(showDetail);
+function selectNode(id){var n=nodeById(id);api('/api/node?id='+encodeURIComponent(id)).then(showDetail);
 if(n&&n.type==='repo'&&n.meta&&n.meta.path){loadReview(n.label,n.meta.path);}else{hideReview();}}
-function screenToGraph(el,ev){var rc=el.getBoundingClientRect();var mx=(ev.clientX-rc.left)/rc.width*GW;var my=(ev.clientY-rc.top)/rc.height*GH;return {x:(mx-view.x)/view.k,y:(my-view.y)/view.k};}
-function initGraphEvents(){var el=document.getElementById('graph');var mode=null,moved=0,sx=0,sy=0,ox=0,oy=0,downId=null,dnode=null;
-function nodeAt(ev){var t=ev.target;var g=t&&t.closest?t.closest('.node'):null;return g?g.getAttribute('data-id'):null;}
-el.addEventListener('wheel',function(ev){ev.preventDefault();if(!GRAPH)return;var rc=el.getBoundingClientRect();var mx=(ev.clientX-rc.left)/rc.width*GW;var my=(ev.clientY-rc.top)/rc.height*GH;var nk=Math.max(0.3,Math.min(4,view.k*(ev.deltaY<0?1.12:0.89)));view.x=mx-(mx-view.x)*(nk/view.k);view.y=my-(my-view.y)*(nk/view.k);view.k=nk;render();},{passive:false});
-el.addEventListener('pointerdown',function(ev){if(!GRAPH)return;moved=0;sx=ev.clientX;sy=ev.clientY;ox=view.x;oy=view.y;downId=nodeAt(ev);if(downId){mode='node';dnode=nodeById(downId);}else{mode='pan';}try{el.setPointerCapture(ev.pointerId);}catch(e){}});
-el.addEventListener('pointermove',function(ev){
-if(!mode){updateBar(nodeAt(ev));return;}
-var dx=ev.clientX-sx,dy=ev.clientY-sy;moved+=Math.abs(dx)+Math.abs(dy);if(moved<4)return;
-if(mode==='node'&&dnode){var p=screenToGraph(el,ev);dnode.x=p.x;dnode.y=p.y;render();}
-else if(mode==='pan'){var rc=el.getBoundingClientRect();view.x=ox+dx/rc.width*GW;view.y=oy+dy/rc.height*GH;render();}});
-el.addEventListener('pointerup',function(ev){var id=downId,wasClick=moved<6;mode=null;dnode=null;downId=null;
-if(id){selectNode(id);}else if(wasClick){sel=null;hideDetail();hideReview();render();updateBar(null);}});
-el.addEventListener('mouseleave',function(){if(!mode)updateBar(null);}); }
 function scanLine(s){return 'Mapping your work… '+s.phase+(s.total?' '+s.done+'/'+s.total:'')+(s.item?' · '+s.item:'')+' · '+Math.round((s.elapsed||0)/1000)+'s';}
-function loadMap(){var p=document.getElementById("profile");p.textContent="Mapping your work...";document.getElementById("graph").innerHTML="";sel=null;hideDetail();hideReview();var done=false;
+// fresh (Rescan): a new scan; else the last Map at once, the server scanning again behind it when it's old (scan.mjs mapNow)
+function loadMap(fresh){var p=document.getElementById("profile");p.textContent="Mapping your work...";hideDetail();hideReview();var done=false;
 function poll(){if(done)return;api('/api/scan').then(function(s){if(done)return;if(s&&s.active&&s.phase)p.textContent=scanLine(s);setTimeout(poll,600);}).catch(function(){});}
 setTimeout(poll,400);
-api("/api/map").then(function(g){done=true;mapLoaded=true;if(!g.nodes||!g.nodes.length){p.textContent="No git repositories found under your home folder.";return;}GRAPH=g;layout(g.nodes,g.edges);lmBuild(g);view={k:1,x:0,y:0};p.innerHTML=profileLine(g)+(g.stats&&g.stats.partial?" &middot; <span class='err'>partial &mdash; the scan hit its time limit</span>":"");var af=$('allowfiles');if(af)af.addEventListener('click',function(){SymbiotAndroid.storage();});var ut=$('usetermux');if(ut)ut.addEventListener('click',function(){SymbiotAndroid.openTermux();});render();});}
+api("/api/map"+(fresh===true?"?fresh=1":"")).then(function(g){done=true;mapLoaded=true;if(!g.nodes||!g.nodes.length){p.textContent="No git repositories found under your home folder.";return;}GRAPH=g;lmBuild(g);p.innerHTML=profileLine(g)+(g.stats&&g.stats.partial?" &middot; <span class='err'>partial &mdash; the scan hit its time limit</span>":"");var af=$('allowfiles');if(af)af.addEventListener('click',function(){SymbiotAndroid.storage();});var ut=$('usetermux');if(ut)ut.addEventListener('click',function(){SymbiotAndroid.openTermux();});});}
 // The Android app calls this when you come back having allowed file access, so
 // the map rescans instead of staying empty.
-window.symbiotStorageGranted=function(){if(current==='map')loadMap();else mapLoaded=false;};
+window.symbiotStorageGranted=function(){if(current==='map')loadMap(true);else mapLoaded=false;};
+// Opens a screen by name, as the tab bar did before the liquid: the Android app, tests
+window.symbiotOpen=function(name){lqPool(name);};
 // Screens: a screenshot plus named regions, the blueprint (screens.mjs). Drag on
 // the image to mark a region; coordinates are the screenshot's own pixels.
 // Names stay out of attributes (esc() doesn't escape quotes): rows carry indexes.
@@ -2582,7 +2539,6 @@ function loadMarketing(){loadPostsUI();loadMkTray();api('/api/marketing').then(f
 var MKLIT=false;
 function mkProd(p){return p?"<span class='mkp'>"+esc(p)+"</span>":"";}
 function mkPostProduct(id){var ns=(MKT&&MKT.lane&&MKT.lane.needs)||[];for(var i=0;i<ns.length;i++)if(ns[i].id==='draft:'+id)return ns[i].product||'';return '';}
-function loadMkTasks(){renderMkLane();}
 // A draft its agent wrote, as the platform will show it (marketing.mjs draftPreview): who
 // it's from, its text with its own line breaks, cut where the feed cuts it ("…see more"),
 // its hashtags, its picture or video; Approve and Skip beside it; its agent's notes apart,
@@ -2622,7 +2578,7 @@ return "<div class='lipost' aria-label='"+escQ(plat)+" preview'><div class='liau
 function mkPreviewHtml(p){var h=mkPostHtml(p),lim=MKLIMIT[p.platform]||0,reddit=/reddit/i.test(p.platform||'');
 if((p.missing||[]).length)h+="<div class='note err'>It names "+p.missing.map(function(m){return "<code>"+esc(m)+"</code>";}).join(', ')+", which isn&#39;t next to it.</div>";
 var fin=p.status==='posted'||p.status==='superseded',pn={linkedin:'LinkedIn',x:'X',instagram:'Instagram',facebook:'Facebook',reddit:'Reddit'},on=pn[p.postedOn]||p.postedOn;
-var done=p.status==='posted'?"Posted"+(on?" on "+esc(on):"")+(p.posted?", "+esc(new Date(p.posted).toLocaleString(undefined,{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})):"")+(p.url?" &middot; <a href='"+escQ(p.url)+"' target='_blank' rel='noopener'>see it</a>":"")+". It isn&#39;t approved or posted again"+(p.edited?", though its file changed since":"")+"."
+var done=p.status==='posted'?"Posted"+(on?" on "+esc(on):"")+(p.posted?", "+esc(new Date(p.posted).toLocaleString(undefined,{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})):"")+(p.url?" &middot; <a href='"+esc(okUrl(p.url))+"' target='_blank' rel='noopener'>see it</a>":"")+". It isn&#39;t approved or posted again"+(p.edited?", though its file changed since":"")+"."
 :p.status==='superseded'?"Superseded"+((p.by||[]).length?" by "+p.by.map(function(b){return "<code>"+esc(b)+"</code>";}).join(', '):"")+": it won&#39;t be posted."
 :p.status==='approved'?"Approved "+agoTxt(p.statusAt)+": its agent "+(p.when?"schedules":"posts")+" it through Symbiot&#39;s browser, with this text.":p.status==='skipped'?"Skipped "+agoTxt(p.statusAt)+": it won&#39;t be posted."
 :p.status==='change'?"You asked for a change "+agoTxt(p.statusAt)+": its agent redrafts it, and the new version comes back here for your OK.":"";
@@ -3099,7 +3055,7 @@ h+="<div class='muted' style='margin-top:6px'>Best fit: <b>"+esc(rec.best)+"</b>
 h+="<div class='ideas'><h4>Paid models &middot; bring an API key</h4>";
 rec.paid.forEach(function(p){h+="<div class='idea'><span><b>"+esc(p.provider)+"</b> &middot; "+esc(p.tier)+" &middot; <code>"+esc(p.model)+"</code> <span class='muted'>&middot; "+esc(p.note)+"</span></span></div>";});
 h+="</div>";out.innerHTML=h;});}
-document.getElementById('remap').addEventListener('click',loadMap);
+document.getElementById('remap').addEventListener('click',function(){loadMap(true);});
 document.getElementById('recbtn').addEventListener('click',loadRec);
 document.getElementById('setuplocal').addEventListener('click',setupLocalUI);
 document.getElementById('addroot').addEventListener('click',addRootUI);
@@ -3148,9 +3104,11 @@ function winHeadless(){var n=window.navigator||{};return !!n.webdriver||/Headles
 var WIN_ID=/[?&]away=1(&|$)/.test(location.search||'')||winHeadless()?'':Math.random().toString(36).slice(2,12),WIN_NEW=true; // read from the address: AWAY is set further down
 function winTakeOver(){WIN_NEW=true;var o=$('winold');if(o)o.remove();heartbeat(false);}
 function winOld(){if(!(document.hasFocus&&document.hasFocus()))try{window.close();}catch(e){}setTimeout(function(){if($('winold')||!document.body)return;var o=document.createElement('div');o.id='winold';o.className='updatebar reconnect show';o.innerHTML="Symbiot is open in a newer window. <button class='ghost' id='wintake'>Use this one</button>";document.body.appendChild(o);var t=$('wintake');if(t)t.onclick=winTakeOver;},400);}
+// A ping that gets no answer within 5 s says so in the bar (Symbiot is busy…) rather than
+// nothing: a stalled server looked like dead buttons (15 Oct 2026). Not a lost server: no reload.
 function heartbeat(fresh){
   var q=[];if(fresh)q.push('fresh=1');if(WIN_ID){q.push('w='+WIN_ID);if(WIN_NEW)q.push('new=1');}
-  api('/api/ping'+(q.length?'?'+q.join('&'):'')).then(function(p){
+  apiIn(5000,'/api/ping'+(q.length?'?'+q.join('&'):'')).then(function(p){
     if(WIN_ID){WIN_NEW=false;if(p&&p.window&&p.window!==WIN_ID){if(!$('winold'))winOld();return;}}
     var b=ubar();
     var ve=document.getElementById('ver');if(ve&&p.version){ve.textContent='v'+p.version+(p.sandbox?' · sandbox':'');if(p.sandbox){ve.title='A brand-new Symbiot to try first run in (symbiot app --fresh): its own empty home, none of your data, accounts or memory. It is deleted when you quit.';ve.style.color='var(--amber)';}}
@@ -3177,7 +3135,8 @@ function heartbeat(fresh){
       var btn=document.getElementById('doupd');if(btn)btn.onclick=doUpdate;
       var nb=document.getElementById('updnew');if(nb)nb.onclick=function(){api('/api/whatsnew?latest=1').then(function(r){showNews(r,"What Symbiot "+(r.version||p.latest)+" brings",false);});};
     }else{b.className='updatebar';}
-  }).catch(function(){srvDown=true;var b=ubar();b.className='updatebar reconnect show';b.textContent='Reconnecting to Symbiot…';});
+  }).catch(function(e){var b=ubar();if(e&&e.name==='TimeoutError'){if(!srvDown&&!updBusy){b.className='updatebar show';b.textContent='Symbiot is busy… (no answer for 5 seconds; it catches up by itself)';}return;}
+    srvDown=true;b.className='updatebar reconnect show';b.textContent='Reconnecting to Symbiot…';});
 }
 // Symbiot in Termux, open in the phone's browser: offer Symbiot's Android app,
 // which shows this same Symbiot full screen (Chrome hands an intent:// link to it)
@@ -4144,5 +4103,9 @@ var G=lqGL();if(G){try{lqStep();lqDraw(G);}catch(e){}}if(typeof window.requestAn
 function frame(){if(!document.hidden){LQ.frame++;if(LQ.mode!=='pool'||LQ.frame%3===0)lqStep();var every=glLight()?glEvery(LQ.mode==='aware'):LQ.mode==='pool'?6:LQ.mode==='rest'?2:1;if(G&&LQ.frame%every===0&&!(LQ.phone&&LQ.scene!=='work'&&LQ.mode!=='pool'))lqDraw(G);}raf(frame);} // moves every frame; drawn less at rest, behind a panel, without a GPU, with Low GPU or in a window not in use; not at all under a phone's Home list
 raf(frame);}
 
-initGraphEvents();syncP();refresh();firstTab();lqInit();onbLoad();var sbo=$('sbopen');if(sbo)sbo.addEventListener('click',function(){sbOpen('');});var rr=$('rerunsetup');if(rr)rr.addEventListener('click',function(){api('/api/onboarding/restart',{}).then(function(){lqSink();onbLoad();});});awayInit();lqDeep();loadWhatsNew();loadAgentCfg();loadScanRoots();loadKnowledge();loadPhone();loadLinks();loadMind();loadSecrets();loadTrusted();loadMail();loadScreensUI();loadMonitorsUI();loadDesktop();loadWatchUI();setInterval(function(){whenFree(document.querySelector('main'),'watch',loadWatchUI);},60000);loadPhoneLink();
+syncP();refresh();firstTab();lqInit();onbLoad();var sbo=$('sbopen');if(sbo)sbo.addEventListener('click',function(){sbOpen('');});var rr=$('rerunsetup');if(rr)rr.addEventListener('click',function(){api('/api/onboarding/restart',{}).then(function(){lqSink();onbLoad();});});awayInit();lqDeep();loadWhatsNew();loadPhone(); // loadPhone: the Termux note, from the page itself (no request)
+// Screens and Watch (the box under the Map) load when the box opens (Settings': setTab)
+var sbx=$('screensbox');function loadScreensBox(){loadScreensUI();loadMonitorsUI();loadWatchUI();}
+if(sbx&&sbx.addEventListener)sbx.addEventListener('toggle',function(){if(sbx.open)loadScreensBox();});
+setInterval(function(){if(current==='map'&&sbx&&sbx.open)whenFree(document.querySelector('main'),'watch',loadWatchUI);},60000);
 </script></body></html>`;

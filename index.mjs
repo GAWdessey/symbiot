@@ -29,7 +29,6 @@ import { join, basename, resolve } from "node:path";
 import { realpathSync, readFileSync, mkdirSync, openSync, rmSync, existsSync } from "node:fs";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
-import { EMBEDDED_UI } from "./ui.mjs";
 import { VERSION, CONFIG_PATH, CONFIG_DIR, loadConfig, saveConfig, repoState, semverGt } from "./core.mjs";
 import { HANDOFF_PROMPT, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, fillHandoff, runHandoff, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, parseQuestions, agentQuestions } from "./agents.mjs";
 import { AI_UI, PROVIDERS, resolveProvider, validate, detectHardware, recommendModels, hasOllama, ollamaInstall, ensureOllama, useOllamaModel, claudeState, connectProvider } from "./ai.mjs";
@@ -38,12 +37,14 @@ import { gitDefaultBranch, loadDeploys, driftRepo, computeDrift } from "./drift.
 import { buildTasksMd, taskType, shipChanges, shipWithBump, bumpOffer, learnNpm, releaseNeeded, withReleases, setVersion, syncTasks, pendingReview, unreleased, publishesOnMerge, addTask, approveRepo, approveChanges, sendBack, pushTasks } from "./tasks.mjs";
 import { produce, mailState, setMail, sentMail } from "./writeups.mjs";
 import { loadScreens, screenImage, blueprint } from "./screens.mjs";
-import { mapPage, wholePage, pressRegion, typeRegion, chooseRegion, fillForm, verifyPage, uploadRegion, uploadFiles, scrollPage, signIn, isTrusted } from "./headless.mjs";
 import { watchState, addWatch, removeWatch, seenWatch, newsSince, markNews, checkWatch, setBrief, draftReply, watchBoard, boardLine, boardChat, boardTalk, clearBoardChat } from "./watch.mjs";
 import { PORT as PHONE_PORT, phoneState, pairComputer, pollComputer, forgetComputer, parsePairLink } from "./phone.mjs";
 import { qrMatrix } from "./qr.mjs";
 import { KIND_LABEL as POST_KIND, PATHS as POST_PATHS, draftPosts, postsState, postLog, approvePost, editPost, skipPost, voiceFromLinkedIn, addMedia as addPostMedia, removeMedia as removePostMedia, mediaDir as postMediaDir, pictureOfPage, clipOfPage } from "./post.mjs";
-import { startApp, updateCmd, isAppRunningWeekly, askRunningApp, openApp } from "./server.mjs";
+// The app (server.mjs, with the page in ui.mjs) and Screens' browser driver (headless.mjs) load
+// only for the commands that run them: every other command (help, push, drift…) was loading the
+// 605 KB page and the whole app to start (15 Oct 2026)
+let H = null; // headless.mjs, loaded by cmdScreens
 import { listReports, readReport } from "./reports.mjs";
 import { runSandbox } from "./sandbox.mjs";
 import { knowledgeState, addKnowledgeFolder, removeKnowledgeFolder, indexKnowledge, searchKnowledge, waitingOn, ownerOf, myName, setMyName, itemLine, caseLine } from "./knowledge.mjs";
@@ -203,6 +204,7 @@ async function cmdApp() {
     return;
   }
   SERVING = true; setScanOptions({ quiet: true });
+  const { startApp } = await import("./server.mjs");
   return startApp({ bin: realpathSync(fileURLToPath(import.meta.url)), since: SINCE_WEEK, all: has("all"), c });
 }
 
@@ -328,7 +330,7 @@ function screenJson(s) {
   if (!s || s.error) return s;
   const bp = blueprint(s), image = screenImage(s.id), sc = s.page && s.page.scroll;
   const more = sc ? [sc.y > 0 && "above", sc.y < sc.max && "below"].filter(Boolean).join(" and ") : "";
-  return { id: s.id, ...(image ? { image } : {}), ...(s.note ? { note: s.note } : {}), ...(more ? { more } : {}), ...(s.scrolled ? { scrolled: s.scrolled } : {}), ...(s.pressed ? { pressed: s.pressed, found: s.found } : {}), ...(s.typed ? { typed: s.typed, entered: s.entered, found: s.found } : {}), ...(s.uploaded ? { uploaded: s.uploaded, files: s.files, used: s.used, found: s.found } : {}), ...(s.kept ? { kept: true } : {}), ...(s.kept === false ? { reopened: REOPENED + (s.alone ? " " + ALONE : "") } : {}), ...(s.page ? { trusted: isTrusted(s.page.url) } : {}), ...bp, regions: bp.regions.map((r, i) => ({ id: s.regions[i].id, ...r })) };
+  return { id: s.id, ...(image ? { image } : {}), ...(s.note ? { note: s.note } : {}), ...(more ? { more } : {}), ...(s.scrolled ? { scrolled: s.scrolled } : {}), ...(s.pressed ? { pressed: s.pressed, found: s.found } : {}), ...(s.typed ? { typed: s.typed, entered: s.entered, found: s.found } : {}), ...(s.uploaded ? { uploaded: s.uploaded, files: s.files, used: s.used, found: s.found } : {}), ...(s.kept ? { kept: true } : {}), ...(s.kept === false ? { reopened: REOPENED + (s.alone ? " " + ALONE : "") } : {}), ...(s.page ? { trusted: H.isTrusted(s.page.url) } : {}), ...bp, regions: bp.regions.map((r, i) => ({ id: s.regions[i].id, ...r })) };
 }
 
 // map, press, type and signin go through the app when it's running, whose hidden
@@ -372,6 +374,7 @@ async function cmdBrowser() {
 // running: it starts in the background (no terminal; what it prints goes to
 // ~/.config/symbiot/app.log) and opens its own window.
 async function cmdOpen() {
+  const { askRunningApp, openApp } = await import("./server.mjs");
   const cfg = loadConfig(), port = Number(process.env.SYMBIOT_PORT || cfg.appPort) || 7391;
   const p = cfg.appToken ? await askRunningApp("ping", { port, token: cfg.appToken, ms: 1500 }) : null;
   if (p && p.version) { openApp(`http://127.0.0.1:${port}/?t=${cfg.appToken}`); return; }
@@ -408,7 +411,7 @@ async function cmdUninstall() {
   }
   const { removeLauncher, setAutostart } = await import("./desktop.mjs");
   const { removeShortcut } = await import("./away.mjs");
-  await askRunningApp("quit", { ms: 2000 });
+  await (await import("./server.mjs")).askRunningApp("quit", { ms: 2000 });
   try { setAutostart(false); } catch {}
   removeLauncher(); removeShortcut();
   try { rmSync(join(homedir(), ".symbiot"), { recursive: true, force: true }); } catch {}
@@ -435,6 +438,7 @@ async function cmdSecret() {
 }
 async function cmdScreens() {
   const [sub = "list", a1, a2, a3, ...more] = argv.slice(1).filter((x, i, all) => !x.startsWith("--") && all[i - 1] !== "--name" && all[i - 1] !== "--press" && all[i - 1] !== "--expect");
+  H = await import("./headless.mjs");
   const out = (x) => { console.log(JSON.stringify(x, null, 2)); if (x && x.error) process.exitCode = 1; };
   const find = (id) => loadScreens().find((s) => s.id === id);
   if (sub === "list") {
@@ -446,23 +450,23 @@ async function cmdScreens() {
   // whose tab in the app's hidden browser: the agent run's folder (SYMBIOT_AGENT), else here, so
   // two agents at once each keep their own page (headless.mjs withPage)
   const who = process.env.SYMBIOT_AGENT || process.cwd();
-  if (sub === "map") { const body = { site: a1, name: flag("name", ""), whole: has("whole"), who }; return out(screenJson((await viaApp("/api/screens/map", body)) || await mapPage(body.site, body.name, { whole: body.whole, who }))); }
+  if (sub === "map") { const body = { site: a1, name: flag("name", ""), whole: has("whole"), who }; return out(screenJson((await viaApp("/api/screens/map", body)) || await H.mapPage(body.site, body.name, { whole: body.whole, who }))); }
   if (sub === "whole") {
     const s = find(a1); if (!s) return out({ error: "No screen " + (a1 || "") + ". symbiot screens lists them." });
-    return out(screenJson((await viaApp("/api/screens/whole", { id: s.id, who })) || alone(await wholePage(s.id, { who }))));
+    return out(screenJson((await viaApp("/api/screens/whole", { id: s.id, who })) || alone(await H.wholePage(s.id, { who }))));
   }
   if (sub === "scroll") {
     const s = find(a1); if (!s) return out({ error: "No screen " + (a1 || "") + ". symbiot screens lists them." });
     const body = { id: s.id, to: a2 || "down", who };
-    return out(screenJson((await viaApp("/api/screens/scroll", body)) || alone(await scrollPage(body.id, body.to, { who }))));
+    return out(screenJson((await viaApp("/api/screens/scroll", body)) || alone(await H.scrollPage(body.id, body.to, { who }))));
   }
   if (sub === "show") { const s = find(a1); return out(s ? screenJson(s) : { error: "No screen " + (a1 || "") + ". symbiot screens lists them." }); }
-  if (sub === "signin") { const r = (await viaApp("/api/screens/signin", { site: a1 })) || await signIn(a1); return out(r.ok ? { ...r, next: "Sign in in the window that opened, close it, then map again." } : r); }
+  if (sub === "signin") { const r = (await viaApp("/api/screens/signin", { site: a1 })) || await H.signIn(a1); return out(r.ok ? { ...r, next: "Sign in in the window that opened, close it, then map again." } : r); }
   // verify: load the saved record fresh, in a tab of its own, and say whether the text is there
   if (sub === "verify") {
     const expect = argv.flatMap((x, i, all) => (x === "--expect" && all[i + 1] != null ? [all[i + 1]] : []));
     const body = { url: a1, expect, who };
-    const done = (await viaApp("/api/screens/verify", body)) || await verifyPage(a1, expect, { who });
+    const done = (await viaApp("/api/screens/verify", body)) || await H.verifyPage(a1, expect, { who });
     if (done && /answered 404/.test(done.error || "")) return out({ error: "The Symbiot app that's running is older than this command and can't verify a page: restart it (symbiot app), then try again." });
     return out(done && !done.error && !done.ok ? { ...done, next: "Not all of it is there: the send or save did not happen (or the page isn't signed in). Don't report it as done." } : done);
   }
@@ -477,7 +481,7 @@ async function cmdScreens() {
     if (!fields.length) return out({ error: 'Give the fields as label="text" pairs.' });
     const pressQ = flag("press", ""), btn = pressQ ? pick(pressQ) : null; if (pressQ && !btn) return out({ error: `No region "${pressQ}" on that screen to press.` });
     const body = { id: s.id, fields, press: btn ? btn.id : "", confirmed: has("yes"), noSend: !!process.env.SYMBIOT_DRAFT, who };
-    const done = (await viaApp("/api/screens/fill", body)) || await fillForm(s.id, fields, { press: body.press, confirmed: body.confirmed, noSend: body.noSend, who });
+    const done = (await viaApp("/api/screens/fill", body)) || await H.fillForm(s.id, fields, { press: body.press, confirmed: body.confirmed, noSend: body.noSend, who });
     if (done && /answered 404/.test(done.error || "")) return out({ error: "The Symbiot app that's running is older than this command and can't fill a form: restart it (symbiot app), then try again." });
     if (done && done.confirm) return out({ error: `${done.error} Add --yes to go ahead, or list ${done.host} under Trusted sites in Symbiot's Settings.` });
     return out(screenJson(done));
@@ -489,11 +493,11 @@ async function cmdScreens() {
     if (!want || !r) return out({ error: `No region "${a2 || ""}" on that screen (give its id, or a label that matches one region).` });
     // a draft reply's agent (SYMBIOT_DRAFT, watch.mjs) never presses Send, or Enter (it sends in a chat)
     // upload: the files resolved and checked here, where a relative path means something
-    const f = sub === "upload" ? uploadFiles([a3, ...more]) : null; if (f && f.error) return out(f);
+    const f = sub === "upload" ? H.uploadFiles([a3, ...more]) : null; if (f && f.error) return out(f);
     // type --replace "old" "new": only that part of the field typed over
     const part = sub === "type" && has("replace") ? { replace: String(a3 == null ? "" : a3), text: String(more[0] == null ? "" : more[0]) } : null;
     const body = { id: s.id, region: r.id, confirmed: has("yes"), noSend: !!process.env.SYMBIOT_DRAFT, who, ...(sub === "type" ? (part || { text: a3 }) : {}), ...(sub === "type" ? { enter: has("enter") } : {}), ...(sub === "choose" ? { option: a3 } : {}), ...(f ? { files: f.files } : {}) };
-    const done = (await viaApp("/api/screens/" + (part ? "replace" : sub), body)) || alone(sub === "press" ? await pressRegion(s.id, r.id, { confirmed: body.confirmed, noSend: body.noSend, who }) : sub === "type" ? await typeRegion(s.id, r.id, body.text, { enter: body.enter, confirmed: body.confirmed, noSend: body.noSend, who, ...(part ? { replace: part.replace } : {}) }) : sub === "choose" ? await chooseRegion(s.id, r.id, a3, { confirmed: body.confirmed, who }) : await uploadRegion(s.id, r.id, f.files, { confirmed: body.confirmed, who }));
+    const done = (await viaApp("/api/screens/" + (part ? "replace" : sub), body)) || alone(sub === "press" ? await H.pressRegion(s.id, r.id, { confirmed: body.confirmed, noSend: body.noSend, who }) : sub === "type" ? await H.typeRegion(s.id, r.id, body.text, { enter: body.enter, confirmed: body.confirmed, noSend: body.noSend, who, ...(part ? { replace: part.replace } : {}) }) : sub === "choose" ? await H.chooseRegion(s.id, r.id, a3, { confirmed: body.confirmed, who }) : await H.uploadRegion(s.id, r.id, f.files, { confirmed: body.confirmed, who }));
     if ((f || part || sub === "choose") && done && /answered 404/.test(done.error || "")) return out({ error: `The Symbiot app that's running is older than this command and can't ${f ? "upload" : part ? "replace part of a field" : "choose"}: restart it (symbiot app), then try again.` });
     // not a trusted site: say how to go ahead (only you can trust a site, in the app's Settings)
     if (done && done.confirm) return out({ error: `${done.error} Add --yes to go ahead, or list ${done.host} under Trusted sites in Symbiot's Settings.` });
@@ -1106,5 +1110,5 @@ const isMain = (() => {
 })();
 if (isMain) main();
 
-export { authorship, repoState, readmeInfo, repoShape, houseRules, findAllRepos, buildMap, reportFooter, detectHardware, recommendModels, computeDrift, driftRepo, gitDefaultBranch, buildTasksMd, taskType, EMBEDDED_UI, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, fillHandoff, handoffCmd, setHandoffCmd, ORCA_CLAUDE_CMD, CLAUDE_CMD, HANDOFF_PROMPT, shipChanges, shipWithBump, bumpOffer, learnNpm, releaseNeeded, withReleases, setVersion, syncTasks, pendingReview, unreleased, publishesOnMerge, addTask, approveRepo, approveChanges, sendBack, pushTasks, semverGt, updateCmd, parseQuestions, agentQuestions, isAppRunningWeekly };
+export { authorship, repoState, readmeInfo, repoShape, houseRules, findAllRepos, buildMap, reportFooter, detectHardware, recommendModels, computeDrift, driftRepo, gitDefaultBranch, buildTasksMd, taskType, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, fillHandoff, handoffCmd, setHandoffCmd, ORCA_CLAUDE_CMD, CLAUDE_CMD, HANDOFF_PROMPT, shipChanges, shipWithBump, bumpOffer, learnNpm, releaseNeeded, withReleases, setVersion, syncTasks, pendingReview, unreleased, publishesOnMerge, addTask, approveRepo, approveChanges, sendBack, pushTasks, semverGt, parseQuestions, agentQuestions };
 
