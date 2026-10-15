@@ -2,6 +2,10 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.66.1 — 2026-10-15
+
+- Give `symbiot screens` the lane sandbox's network proxy when it starts its hidden browser.
+
 ## 0.65.2 — 2026-10-14
 
 - Home no longer keeps a standing "Sign in again to 10 sites" card for every linked site that has signed out. An agent asks for one site, with its Sign in button, only when its job needs it; Settings → Connections still shows which are signed out.
