@@ -22,9 +22,9 @@
 // are never used as facts. The last result is kept in ~/.config/symbiot/checks.json
 // (yours only, like the index) for the app to show.
 import { join, relative, extname, sep, basename } from "node:path";
-import { readFileSync, writeFileSync, mkdirSync, chmodSync, statSync } from "node:fs";
-import { CONFIG_DIR } from "./core.mjs";
-import { READ, MAX_BYTES, walk, cite, knowledgeFolders, isExample, frontMatter, csvRows } from "./knowledge.mjs";
+import { readFileSync, statSync } from "node:fs";
+import { CONFIG_DIR, readState, writeJsonAtomic } from "./core.mjs";
+import { READ, MAX_BYTES, walk, cite, knowledgeFolders, isExample, frontMatter, csvRows, loadIndex } from "./knowledge.mjs";
 
 const CHECKS_FILE = join(CONFIG_DIR, "checks.json");
 const DAY = 86400000, MAX_CLASHES = 500;
@@ -122,16 +122,25 @@ function mdParts(body) {
 }
 // The files of a knowledge folder: [{ path, rel, root, ext, text, example }]. The
 // same walk, file types and example rules as the index (knowledge.mjs).
-function loadFiles(folders) {
+// The files to check, with their text. A folder the knowledge index knows is taken
+// from it: the same files, no second walk of the disk (the index's pieces don't keep
+// the lines, and the CSV rows, the facts are read from, so the text is read again).
+// A folder it doesn't know yet (a test's, the CLI's) is walked.
+function loadFiles(folders, { index = loadIndex() } = {}) {
   const out = [], seen = new Set();
-  for (const f of folders) for (const abs of walk(f.path)) {
-    const ext = extname(abs).toLowerCase(); if (!READ.has(ext) || seen.has(abs)) continue;
-    let st; try { st = statSync(abs); } catch { continue; }
-    if (st.size > MAX_BYTES) continue;
+  const take = (abs, f, known) => {
+    const ext = extname(abs).toLowerCase(); if (!READ.has(ext) || seen.has(abs)) return;
+    let st; try { st = statSync(abs); } catch { return; }
+    if (st.size > MAX_BYTES) return;
     seen.add(abs);
-    let text = ""; try { text = readFileSync(abs, "utf8"); } catch { continue; }
+    let text = ""; try { text = readFileSync(abs, "utf8"); } catch { return; }
     const rel = relative(f.path, abs).split(sep).join("/"), fm = ext === ".csv" ? { meta: null } : frontMatter(text);
-    out.push({ path: abs, rel, root: f.path, ext, text, example: isExample(rel, f.examples || []) || !!(fm.meta && /^(true|yes|1)$/i.test(String(fm.meta.example || ""))) });
+    out.push({ path: abs, rel, root: f.path, ext, text, example: known ? !!known.example : isExample(rel, f.examples || []) || !!(fm.meta && /^(true|yes|1)$/i.test(String(fm.meta.example || ""))) });
+  };
+  for (const f of folders) {
+    const known = Object.entries((index && index.files) || {}).filter(([, x]) => x && x.root === f.path);
+    if (known.length) { for (const [abs, x] of known) take(abs, f, x); continue; }
+    for (const abs of walk(f.path, undefined, { shallow: !!f.shallow })) take(abs, f, null);
   }
   return out;
 }
@@ -619,12 +628,12 @@ function sameCell(a, b, ref) {
 // clashes, keep the result for checksState. { clashes, counts, files, at, ms }.
 function runChecks({ folders, now = Date.now(), file = CHECKS_FILE, save = true } = {}) {
   const t0 = Date.now();
-  folders = (folders || knowledgeFolders()).map((f) => (typeof f === "string" ? { path: f, examples: ["templates/"] } : { path: f.path, examples: f.examples || ["templates/"] }));
+  folders = (folders || knowledgeFolders()).map((f) => (typeof f === "string" ? { path: f, examples: ["templates/"] } : { path: f.path, examples: f.examples || ["templates/"], ...(f.shallow ? { shallow: true } : {}) }));
   const files = loadFiles(folders), facts = extractFacts(files, { now });
   const clashes = findClashes(facts).map((c) => ({ ...c, files: c.files.map(cite) }));
   const counts = { files: files.length, examples: files.filter((f) => f.example).length, people: facts.people.length, commitments: facts.commitments.length, leave: facts.leave.length, holidays: new Set(facts.holidays.map((h) => h.date)).size, customers: new Set(facts.customers.map((c) => c.key)).size, customerFacts: facts.customers.length, records: facts.records.length };
   const res = { clashes, counts, officeDays: facts.officeDays ? facts.officeDays.days : [], folders: folders.map((f) => cite(f.path)), at: now, ms: Date.now() - t0 };
-  if (save) { try { mkdirSync(join(file, ".."), { recursive: true }); writeFileSync(file, JSON.stringify(res), { mode: 0o600 }); try { chmodSync(file, 0o600); } catch {} } catch {} }
+  if (save) { try { writeJsonAtomic(file, res, { indent: 0, mode: 0o600 }); } catch {} }
   return res;
 }
 // Things the office-day rule covers, from any line or row that names one with a
@@ -644,8 +653,8 @@ function eventsOf(files, ref) {
 }
 // What the app shows: the last run, or { at: 0 } before the first.
 function checksState({ file = CHECKS_FILE } = {}) {
-  try { const d = JSON.parse(readFileSync(file, "utf8")); return { at: d.at || 0, clashes: d.clashes || [], counts: d.counts || {}, officeDays: d.officeDays || [], folders: d.folders || [], ms: d.ms || 0 }; }
-  catch { return { at: 0, clashes: [], counts: {}, officeDays: [], folders: [], ms: 0 }; }
+  const d = readState(file, (v) => !!v && typeof v === "object" && !Array.isArray(v));
+  return d ? { at: d.at || 0, clashes: d.clashes || [], counts: d.counts || {}, officeDays: d.officeDays || [], folders: d.folders || [], ms: d.ms || 0 } : { at: 0, clashes: [], counts: {}, officeDays: [], folders: [], ms: 0 };
 }
 // Home's "Where your files disagree" droplet: the high clashes (a deadline on
 // someone's leave or a holiday, a renewal or price told two ways) you haven't
@@ -653,14 +662,14 @@ function checksState({ file = CHECKS_FILE } = {}) {
 // clash reaches you once; a new one, or one that changes, comes back.
 const SEEN_FILE = join(CONFIG_DIR, "checks-seen.json");
 const clashKey = (c) => c.kind + "|" + c.text;
-function seenClashes({ file = SEEN_FILE } = {}) { try { const d = JSON.parse(readFileSync(file, "utf8")); return Array.isArray(d) ? d : []; } catch { return []; } }
+function seenClashes({ file = SEEN_FILE } = {}) { return readState(file, Array.isArray) || []; }
 function newClashes({ state = checksState(), seen = seenClashes() } = {}) {
   const s = new Set(seen);
   return (state.clashes || []).filter((c) => c.severity === "high" && !s.has(clashKey(c)));
 }
 function markClashesSeen({ state = checksState(), file = SEEN_FILE } = {}) {
   const keys = [...new Set([...seenClashes({ file }), ...(state.clashes || []).filter((c) => c.severity === "high").map(clashKey)])].slice(-MAX_CLASHES);
-  try { mkdirSync(join(file, ".."), { recursive: true }); writeFileSync(file, JSON.stringify(keys), { mode: 0o600 }); return { ok: true }; } catch { return { error: "Couldn't write " + file + "." }; }
+  try { writeJsonAtomic(file, keys, { indent: 0, mode: 0o600 }); return { ok: true }; } catch { return { error: "Couldn't write " + file + "." }; }
 }
 
 export { CHECKS_FILE, parseDates, timeOf, loadFiles, extractFacts, findClashes, runChecks, checksState, newClashes, markClashesSeen, seenClashes };
