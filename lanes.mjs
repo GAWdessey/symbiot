@@ -20,7 +20,7 @@
 // User-Agent fix for symbiot was only found in lanes.json (2026-10-12).
 import { join, basename, dirname, resolve, relative } from "node:path";
 import { homedir } from "node:os";
-import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, statSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, statSync, utimesSync } from "node:fs";
 import { createHash, randomBytes } from "node:crypto";
 import { execFile } from "node:child_process";
 import { CONFIG_DIR, loadTasks, clipWords, loadConfig, readState, writeJsonAtomic } from "./core.mjs";
@@ -560,8 +560,17 @@ function lanesState() {
 // on it. Kept in SHARED too, so a run that starts on that work later is told (sharedFor).
 const SHARED = join(CONFIG_DIR, "answers-shared.json"), SHARED_KEEP = 200, LINK_DAYS = 14;
 // What names the work: an id with an underscore (evra_avm), an IPv4 address, a domain.
-const TOPIC = /\b(?:[a-z][a-z0-9]*(?:_[a-z0-9]+)+|\d{1,3}(?:\.\d{1,3}){3}|[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:com|co\.za|io|dev|net|org|app|ai))\b/gi;
-const topicsOf = (t) => new Set((String(t || "").match(TOPIC) || []).map((x) => x.toLowerCase()).filter((x) => x.length >= 5));
+// Not the domain of an email address, nor a host every agent names (gmail.com, claude.ai,
+// github.com) or the user's own: on those one answer reached six lanes (15 Oct 2026).
+const TOPIC = /(?<![@\w.-])(?:[a-z][a-z0-9]*(?:_[a-z0-9]+)+|\d{1,3}(?:\.\d{1,3}){3}|[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:com|co\.za|io|dev|net|org|app|ai))\b/gi;
+const COMMON_HOSTS = new Set(["gmail.com", "googlemail.com", "outlook.com", "outlook.live.com", "hotmail.com", "live.com", "yahoo.com", "icloud.com", "proton.me", "protonmail.com", "claude.ai", "claude.com", "anthropic.com", "platform.claude.com", "console.anthropic.com", "github.com", "gitlab.com", "google.com", "accounts.google.com", "microsoft.com", "login.microsoftonline.com", "teams.microsoft.com", "openai.com", "platform.openai.com", "npmjs.com", "www.npmjs.com", "localhost", "example.com", "whatsapp.com", "web.whatsapp.com", "linkedin.com", "www.linkedin.com", "facebook.com", "business.facebook.com", "x.com", "twitter.com", "reddit.com", "www.reddit.com"]);
+// The user's own domains: their email addresses' and their company's (config.profile, config.mail), and any linked site's
+function ownHosts(cfg = loadConfig()) {
+  const out = new Set(), add = (s) => { for (const m of String(s || "").toLowerCase().matchAll(/@([a-z0-9.-]+\.[a-z]{2,})|\b((?:www\.)?[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:com|co\.za|io|dev|net|org|app|ai))\b/g)) { const h = m[1] || m[2]; if (h) { out.add(h); out.add(h.replace(/^www\./, "")); } } };
+  try { const p = (cfg && cfg.profile) || {}; add(p.email); add(p.domain); add(p.company); add(p.site); for (const e of (cfg && cfg.mail && cfg.mail.addresses) || []) add(e); } catch {}
+  return out;
+}
+const topicsOf = (t, own = ownHosts()) => new Set((String(t || "").match(TOPIC) || []).map((x) => x.toLowerCase()).filter((x) => x.length >= 5 && !COMMON_HOSTS.has(x) && !own.has(x) && !own.has(x.replace(/^www\./, ""))));
 function loadShared() { try { const l = readState(SHARED); return Array.isArray(l) ? l : []; } catch { return []; } }
 const whoAnswers = (cfg = loadConfig()) => String(((cfg && cfg.profile) || {}).name || "").trim().split(/\s+/)[0] || "the user";
 // The folders a handover links to path, either way, and one step on (the run evra_platform
@@ -615,7 +624,8 @@ function shareAnswer(path, rows, { run = runHandoff, now = Date.now(), cfg = loa
     const file = join(r.path, ".symbiot", "ANSWERS.md"), had = existsSync(file) ? readFileSync(file, "utf8") : "# Answers from the user\n";
     const why = r.why === "handover" ? `it's on the same work as you (one of you handed it to the other)` : `it's about ${r.why} too`, bears = r.why === "handover" || !!r.asks;
     const md = fresh.map((x) => `\n### ${who}'s answer to ${from}, on the same work as you\n${who} answered another agent's question, and ${why}:\n> ${clipWords(x.q.replace(/\s+/g, " "), 300)}\n\n${who}'s answer: ${x.a.trim()}\n\nIf it settles a question of yours (one open in .symbiot/QUESTIONS.md, or one you were about to ask), use it and don't ask: take that question out of QUESTIONS.md and say "answered by ${who}'s reply to ${from}: \"${clipWords(x.q.replace(/\s+/g, " "), 80)}\"" in your last message. If it settles only part, ask only the part that's left. If it doesn't bear on yours, carry on as you were.\n_shared by Symbiot ${day}${bears ? "" : " (background)"}_\n`).join("");
-    try { mkdirSync(join(r.path, ".symbiot"), { recursive: true }); writeFileSync(file, had.replace(/\s*$/, "\n") + md); } catch { continue; }
+    // background: the file's time stays, so the note isn't "an answer since the last run" to nothingToDo or resumeFor
+    try { mkdirSync(join(r.path, ".symbiot"), { recursive: true }); let st = null; try { st = statSync(file); } catch {} writeFileSync(file, had.replace(/\s*$/, "\n") + md); if (!bears && st) utimesSync(file, st.atime, st.mtime); } catch { continue; }
     const row = { path: r.path, lane: r.lane, why: r.why };
     // a question of its own waits on the user: it starts now and decides, rather than waiting to be answered too
     if (bears && r.qs.length && !r.going) { const e = run(r.path) || {}; if (e.id && !e.busy && !e.blocked) row.started = e.id; }
@@ -647,4 +657,4 @@ function sharedFor(path, text, { ledger = loadLedger(), now = Date.now(), cfg = 
   return `## What ${who} has already answered on this work\nBefore you ask ${who} anything, check these: if one settles it, use it and don't ask.\n${l.map((x) => `- ${x.lane} asked "${clipWords(x.q.replace(/\s+/g, " "), 160)}": ${clipWords(x.a.replace(/\s+/g, " "), 300)} (${String(x.at).slice(0, 10)})`).join("\n")}`;
 }
 
-export { shareAnswer, sharedFor, sharedTo, answerReaches, linkedPaths, topicsOf, SHARED, LEDGER, MAX_CHAIN, loadLedger, laneOf, lastRunStart, dispatch, outcome, report, handingOf, lanesTick, lanesState, aboutIt, partlyDone, remoteKey, orcaMoves, orcaRelink, stuckHandovers, allowHandover, skipHandover, namedDirs, alike, doneSince };
+export { shareAnswer, sharedFor, sharedTo, answerReaches, linkedPaths, topicsOf, ownHosts, COMMON_HOSTS, SHARED, LEDGER, MAX_CHAIN, loadLedger, laneOf, lastRunStart, dispatch, outcome, report, handingOf, lanesTick, lanesState, aboutIt, partlyDone, remoteKey, orcaMoves, orcaRelink, stuckHandovers, allowHandover, skipHandover, namedDirs, alike, doneSince };

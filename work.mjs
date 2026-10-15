@@ -237,10 +237,32 @@ function lastRunText(log) {
 // after every turn, so a finished process alone can't tell this from a stall (2026-10-10).
 function waitingOn(final) {
   const ss = String(final || "").replace(/[`*_#>]/g, "").replace(/\s+/g, " ").trim().split(/(?<=[.!?])\s+/);
-  const s = ss.reverse().find((x) => /\b(wait(?:ing)?\s+(?:on|for)|until|will check again|check again|once (?:it|they|the)\b)/i.test(x));
+  const s = ss.reverse().find((x) => /\b(wait(?:ing)?\s+(?:on|for)|until|will check again|check again|once (?:it|they|the|that)\b|nothing (?:to do|due) (?:yet|until|before)|not (?:yet )?due|next (?:check|run|post)\b|due (?:on|at|in)\b|(?:look|try) again (?:at|on|in|after|tomorrow)\b)/i.test(x));
   return s ? short(s.replace(/[.:]$/, ""), 160) : "";
 }
 // What the agent said last: its final answer, from either kind of log.
 function finalOf(log) { return parseRun(lastRunText(log)).final; }
+// When a run that waits says to look again, as a time: "at 08:50", "by 9am", "tomorrow",
+// "on 15 Oct", "before week 1 ends on 15 October", "in 2 hours", "next week", "2026-10-17";
+// or, for a wait with no time ("once the number switch is live"), RECHECK from now. 0 when
+// it isn't waiting at all. A time-gated task was checked by a full run every few minutes
+// (27 and 19 runs in two days, 15 Oct 2026): this is what the next run is held until.
+const RECHECK = 4 * 3600000, DAY = 86400000, DAYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"], MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+function waitUntil(final, now = Date.now()) {
+  const w = waitingOn(final); if (!w) return 0;
+  const t = w.toLowerCase(), day = (d) => { d.setHours(8, 0, 0, 0); return d.getTime(); }, future = (ms) => (ms > now ? ms : 0);
+  let m;
+  if ((m = /\b(\d{4})-(\d\d)-(\d\d)\b/.exec(t))) return future(day(new Date(+m[1], +m[2] - 1, +m[3])));
+  if ((m = /\b(\d{1,2})(?:st|nd|rd|th)?\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\w*\b/.exec(t)) || (m = /\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\w*\s+(\d{1,2})(?:st|nd|rd|th)?\b/.exec(t))) {
+    const [d, mo] = /^\d/.test(m[1]) ? [+m[1], MONTHS.indexOf(m[2])] : [+m[2], MONTHS.indexOf(m[1])], y = new Date(now).getFullYear(), at = day(new Date(y, mo, d));
+    return future(at) || future(day(new Date(y + 1, mo, d)));
+  }
+  if ((m = /\bin\s+(\d+|an?)\s+(minute|hour|day|week)s?\b/.exec(t))) { const n = /^\d/.test(m[1]) ? +m[1] : 1; return now + n * { minute: 60000, hour: 3600000, day: DAY, week: 7 * DAY }[m[2]]; }
+  if ((m = /\b(?:at|by|until|after|around)\s+(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)\b/.exec(t)) && /\d(:\d\d|\s*(am|pm))/.test(m[1])) { const hm = /(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/.exec(m[1]); let h = +hm[1]; const mi = +(hm[2] || 0); if (hm[3] === "pm" && h < 12) h += 12; if (hm[3] === "am" && h === 12) h = 0; const d = new Date(now); d.setHours(h, mi, 0, 0); if (d.getTime() <= now) d.setDate(d.getDate() + 1); return d.getTime() + 60000; }
+  if (/\btomorrow\b/.test(t)) return day(new Date(now + DAY));
+  if ((m = /\b(?:on|next|this)\s+(sun|mon|tue|wed|thu|fri|sat)\w*\b/.exec(t))) { const d = new Date(now), n = (DAYS.indexOf(m[1]) - d.getDay() + 7) % 7 || 7; return day(new Date(now + n * DAY)); }
+  if (/\bnext (week|month)\b/.test(t)) return now + (/\bmonth\b/.test(t) ? 30 : 7) * DAY;
+  return now + RECHECK;
+}
 
-export { parseRun, lastRunText, finalOf, describe, testsIn, readRunLog, runStarted, briefPlan, stepOf, nowLine, runLine, STALL_MS, waitingOn };
+export { parseRun, lastRunText, finalOf, describe, testsIn, readRunLog, runStarted, briefPlan, stepOf, nowLine, runLine, STALL_MS, waitingOn, waitUntil, RECHECK };

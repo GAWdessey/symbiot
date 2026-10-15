@@ -8,7 +8,7 @@
 //
 //   node test/sched.mjs
 //
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync, existsSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync, existsSync, statSync, utimesSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -65,6 +65,70 @@ try {
   const card = (hs.you || []).find((c) => c.id === "setup:claude");
   ok("Home shows one card for it", card && /Claude is out/.test(card.title) && /session limit/.test(card.sub), (hs.you || []).map((c) => c.id));
   rmSync(a.PAUSE_FILE, { force: true });
+
+  console.log("2) POINTLESS RUNS — a time-gated task waits for its time; notes aren't answers; empty ops runs are held; a reworded task is the same task");
+  const { waitUntil, RECHECK } = await import("../work.mjs");
+  const t = Date.parse("2026-10-14T06:15:00"), at = (ms) => { const d = new Date(ms); return `${d.getDate()} Oct ${d.getHours()}:${String(d.getMinutes()).padStart(2, "0")}`; }; // local time, as the run's own clock
+  ok("\"at 08:50\" is 08:50 today", at(waitUntil("Nothing to do yet: the templates are still pending. I'll check again at 08:50.", t)) === "14 Oct 8:51", at(waitUntil("check again at 08:50", t)));
+  ok("\"until week 1 closes tomorrow, 15 Oct\" is the 15th", at(waitUntil("Nothing is due until week 1 closes tomorrow, 15 Oct.", t)) === "15 Oct 8:00", at(waitUntil("Nothing is due until week 1 closes tomorrow, 15 Oct.", t)));
+  ok("\"before week 1 ends on 15 October\" too", at(waitUntil("Waiting for the clip, once it's closed, before week 1 ends on 15 October.", t)) === "15 Oct 8:00");
+  ok("\"in 2 hours\"", waitUntil("The switch is pending; I'll check again in 2 hours.", t) === t + 7200000);
+  ok("\"once X is live\" with no time is a recheck in a few hours, not every few minutes", waitUntil("Nothing to do until the WhatsApp number switch is live; waiting on Meta.", t) === t + RECHECK);
+  ok("a run that isn't waiting gives no time", waitUntil("Done: fixed the reader and ticked the task.", t) === 0);
+
+  // the lane's tasks are all ticked: a handover's report isn't news, the user's answer is
+  put(lane, "TASKS.md", "## Tasks\n- [x] Fix the reader\n");
+  put(lane, "ANSWERS.md", "# Answers\n");
+  writeFileSync(join(lane, ".symbiot", a.ANSWERS_SEEN), JSON.stringify({ at: Date.now(), answers: a.answersDigest(lane) }));
+  ok("every task ticked, nothing answered: nothing to do", /every task in coral's .symbiot\/TASKS.md is ticked and no answer has come in/.test(a.nothingToDo(lane)), a.nothingToDo(lane));
+  put(lane, "ANSWERS.md", read(lane, "ANSWERS.md") + "\n### Handed over to ops: restart the relay\nDone (the ops agent).\n_answered by symbiot (handover) 2026-10-15_\n");
+  ok("a handover's report back isn't an answer: still nothing to do", !!a.nothingToDo(lane) && !a.newAnswers(lane));
+  put(lane, "ANSWERS.md", read(lane, "ANSWERS.md") + "\n### Garth's answer to ops, on the same work as you\nbackground\n_shared by Symbiot 2026-10-15 (background)_\n");
+  ok("nor a shared answer in the background", !!a.nothingToDo(lane));
+  put(lane, "ANSWERS.md", read(lane, "ANSWERS.md") + "\n### Which relay?\nThe SMTP one.\n_answered 2026-10-15_\n");
+  ok("the user's own answer is", a.nothingToDo(lane) === "" && a.newAnswers(lane));
+
+  // an ops folder (no git): a run that changed nothing is held, until the time it named
+  const ops = join(C, "drafts", "act-abc123"); mkdirSync(ops, { recursive: true });
+  put(ops, "TASKS.md", "## Tasks\n- [ ] Once production Dailify's WhatsApp number switch is live, move the templates\n");
+  put(ops, "agent.log", logOf('claude -p "x"', "Nothing to do yet: the number switch isn't live. I'll check again at 08:50.", { ok: true, cost: 0.2 }));
+  const before = a.dirtyState(ops), ticks = 0;
+  ok("a folder with no git still has a state to compare (its files, Symbiot's bookkeeping aside)", before && Object.keys(before).join() === ".symbiot/TASKS.md", before);
+  a.noteBlocked(ops, 'claude -p "x"', Date.now() - 60000, 0, { dirtyBefore: before, ticksBefore: ticks });
+  const b1 = JSON.parse(read(ops, "blocked.json") || "null");
+  ok("an empty ops run is held, with when it said to look again", b1 && b1.empty && b1.until > Date.now() && new Date(b1.until).getHours() === 8, b1);
+  const held = a.blockedAgain(ops, 'claude -p "x"');
+  ok("…so the next trigger starts nothing, and the note says when it will", held && held.empty && /It starts again at .*8:51/.test(held.note), held);
+  ok("…until that time comes", a.blockedAgain(ops, 'claude -p "x"', { now: b1.until + 1 }) === null);
+  put(ops, "REPORT.md", "# What I found\n");
+  ok("a run that wrote a report isn't empty", a.noteBlocked(ops, 'claude -p "x"', Date.now() - 60000, 0, { dirtyBefore: before, ticksBefore: ticks }) === undefined && !existsSync(join(ops, ".symbiot", "blocked.json")));
+
+  // continueLanes: the agent reworded the open task; it's the same task, not a new one
+  const lane2 = join(HOME, "work", "steve"); mkdirSync(join(lane2, ".symbiot"), { recursive: true });
+  put(lane2, "TASKS.md", "## Tasks\n- [ ] Add the weekly digest email, with a test\n");
+  put(lane2, "agent.log", "=== steve 2026-10-15T05:00:00.000Z ===\n$ x\n");
+  const runs = () => [{ path: lane2, name: "steve", startedAt: 1 }], started = [];
+  const go = (p) => { started.push(p); return { id: "j" + started.length }; };
+  const later = Date.now() + 10 * 60000;
+  ok("a lane with an open task starts again", a.continueLanes({ now: later, run: go, runs }).length === 1, started);
+  put(lane2, "TASKS.md", "## Tasks\n- [ ] Add the weekly digest email, with a test — in progress: the template is done, the send is next\n");
+  ok("…not again when its agent only reworded the task", a.continueLanes({ now: later + 1, run: go, runs }).length === 0, started);
+  put(lane2, "TASKS.md", "## Tasks\n- [ ] Add the weekly digest email, with a test\n- [ ] Fix the sign-in page on phones\n");
+  ok("…but again on a task it didn't have", a.continueLanes({ now: later + 2, run: go, runs }).length === 1, started);
+
+  console.log("3) ANSWER FAN-OUT — mail domains and everyone's hosts aren't topics; a background share doesn't look like an answer");
+  const { topicsOf, ownHosts, shareAnswer } = await import("../lanes.mjs");
+  const tp = topicsOf("mail garth@gmail.com about claude.ai, github.com and evra_avm on dailify.co.za and 10.0.0.12", ownHosts({ profile: { email: "garth@ghost-ai.co.za" } }));
+  ok("an id, a domain and an address are topics; an email's domain, claude.ai and github.com aren't", [...tp].sort().join(" ") === "10.0.0.12 dailify.co.za evra_avm", [...tp]);
+  ok("the user's own domain isn't one either", !topicsOf("the ghost-ai.co.za mailbox", ownHosts({ profile: { email: "garth@ghost-ai.co.za" } })).size && ownHosts({ profile: { email: "garth@ghost-ai.co.za" } }).has("ghost-ai.co.za"));
+  const asker = join(HOME, "work", "evra"), bystander = join(HOME, "work", "voxi");
+  for (const d of [asker, bystander]) mkdirSync(join(d, ".symbiot"), { recursive: true });
+  put(asker, "QUESTIONS.md", "## Questions\n### Send the Supabase ticket about evra_avm now?\n- yes\n- no\n");
+  put(bystander, "TASKS.md", "## Tasks\n- [ ] Tidy the evra_avm export script\n"); put(bystander, "ANSWERS.md", "# Answers\n");
+  const old = Date.now() - 3600000; utimesSync(join(bystander, ".symbiot", "ANSWERS.md"), new Date(old), new Date(old));
+  const sh = shareAnswer(asker, [{ q: "Send the Supabase ticket about evra_avm now?", a: "first check if evra_avm is saved somewhere else" }], { run: () => ({ id: "no" }), map: { evra: asker, voxi: bystander }, runs: () => [{ path: asker }, { path: bystander }], running: () => null, ledger: { handoffs: [] }, cfg: {} });
+  ok("a lane matched only on a task's words gets the answer as background, and starts nothing", sh.length === 1 && sh[0].path === bystander && !sh[0].started && /\(background\)/.test(read(bystander, "ANSWERS.md")), sh);
+  ok("…and its ANSWERS.md keeps its time, so it isn't an answer since the last run", Math.abs(statSync(join(bystander, ".symbiot", "ANSWERS.md")).mtimeMs - old) < 1000, statSync(join(bystander, ".symbiot", "ANSWERS.md")).mtimeMs - old);
 } finally {
   rmSync(HOME, { recursive: true, force: true });
 }
