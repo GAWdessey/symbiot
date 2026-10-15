@@ -180,6 +180,7 @@ function body(req, max = 256 * 1024) {
   return new Promise((resolve) => {
     let d = ""; req.on("data", (ch) => { d += ch; if (d.length > max) req.destroy(); });
     req.on("end", () => { try { resolve(d ? JSON.parse(d) : {}); } catch { resolve({}); } });
+    req.on("close", () => resolve({})); // destroyed (too big, or the sender went): never a handler that waits for ever (15 Oct 2026)
   });
 }
 const NOT_PAIRED = "This phone isn't paired with this computer. Pair it again: in Symbiot on your computer, Settings → Your phone.";
@@ -198,8 +199,13 @@ async function handle(req, res) {
       return reply(res, 403, { error: pairing ? "That code isn't right. Check it on your computer." : "That code was wrong too many times. Click New code on your computer." });
     }
     pairing = null;
-    const l = linkCfg(), token = randomBytes(24).toString("hex"), p = { id: randomBytes(4).toString("hex"), name: String(m.name || "Phone").replace(/\s+/g, " ").trim().slice(0, 40) || "Phone", hash: sha(token), pub: String(b.pub), added: Date.now() };
-    saveLink({ phones: [...l.phones, p].slice(-5) });
+    // the same phone paired again (its install id, inst) replaces its old entry: the old
+    // token and key stop working, rather than two "Phone" entries both valid (15 Oct 2026)
+    const inst = /^[\w-]{8,64}$/.test(String(m.inst || "")) ? String(m.inst) : "";
+    const l = linkCfg(), token = randomBytes(24).toString("hex"), p = { id: randomBytes(4).toString("hex"), name: String(m.name || "Phone").replace(/\s+/g, " ").trim().slice(0, 40) || "Phone", hash: sha(token), pub: String(b.pub), added: Date.now(), ...(inst ? { inst } : {}) };
+    const old = inst ? l.phones.filter((x) => x.inst === inst) : [];
+    for (const x of old) lastSeen.delete(x.id);
+    saveLink({ phones: [...l.phones.filter((x) => !old.includes(x)), p].slice(-5), gone: [...l.gone, ...old.filter((x) => x.pub).map((x) => ({ id: x.id, pub: x.pub, at: Date.now() }))].slice(-10) });
     keys.set(p.pub, key); startRelay();
     return reply(res, 200, seal(key, { token, id: p.id, name: hostname(), now: Date.now(), port: l.port, addresses: lanAddresses().slice(0, 3), relay: relayOf(k.priv).id, relayUrl: relayBase() }, "pair:" + b.n));
   }
@@ -213,7 +219,13 @@ async function handle(req, res) {
 // A sealed request, from your Wi-Fi or through the relay: who sent it (its token,
 // checked against the hash kept), that it's fresh, and what it asks. Gives { status,
 // body }: sealed, or plain only when it can't be sealed (no such phone).
+// Nonces seen, kept in phone-applied.json for the ops that act (apply, chat): in memory
+// only, a sealed chat replayed after a restart ran again (15 Oct 2026). news and state
+// change nothing, so theirs are memory-only.
 const seenNonces = new Map();
+const ACTS = new Set(["apply", "chat"]);
+function loadNonces(now = Date.now()) { for (const [n, t] of Object.entries(readJson(PATHS.applied, {}).nonces || {})) if (now - t <= 2 * SKEW_MS) seenNonces.set(n, t); }
+function keepNonce(n, now) { const ap = readJson(PATHS.applied, { ids: {}, approvals: [] }), nonces = { ...(ap.nonces || {}), [n]: now }; for (const [k, t] of Object.entries(nonces)) if (now - t > 2 * SKEW_MS) delete nonces[k]; writeJson(PATHS.applied, { ...ap, nonces }); }
 const sealed = (key, n, s, b) => ({ status: 200, body: seal(key, { s, b }, "res:" + n) });
 async function answer(env, op, via, { max = 0 } = {}) {
   env = env && typeof env === "object" ? env : {};
@@ -233,6 +245,7 @@ async function answer(env, op, via, { max = 0 } = {}) {
   if (Math.abs(now - Number(m.ts)) > SKEW_MS || seenNonces.has(env.n)) return sealed(key, env.n, 409, { error: "That message was old, or came twice, so it was ignored. Check the time on your phone.", now }); // now: the phone sets its clock by it, and asks again
   seenNonces.set(env.n, now);
   if ((op && m.op !== op) || !OPS[m.op]) return sealed(key, env.n, 403, { error: "That can't be asked from a phone." });
+  if (ACTS.has(m.op)) try { keepNonce(env.n, now); } catch {}
   lastSeen.set(p.id, { at: now, via: via || "wifi" });
   try { const r = await OPS[m.op](m.args && typeof m.args === "object" ? m.args : {}, p), f = fitRelay(r.status || 200, r.body !== undefined ? r.body : r, max); return sealed(key, env.n, f.status, f.body); }
   catch (e) { return sealed(key, env.n, 500, { error: "It failed on your computer: " + ((e && e.message) || e) }); }
@@ -243,13 +256,19 @@ async function answer(env, op, via, { max = 0 } = {}) {
 // the reports; anything still too big is refused, saying so. max 0: no cap (your Wi-Fi).
 const RELAY_MAX = 256 * 1024;
 const sealedSize = (status, body) => Math.ceil(Buffer.byteLength(JSON.stringify({ s: status, b: body })) * 4 / 3) + 300; // base64url, and the envelope round it
+// An apply's answer carries the copy under `state`: trimmed the same way, else the
+// changes landed here but the phone got 413, kept them queued and sent them again on
+// every poll, 413 each time (15 Oct 2026).
 function fitRelay(status, body, max) {
   if (!max || sealedSize(status, body) <= max) return { status, body };
-  if (body && Array.isArray(body.reports)) {
-    const brief = { ...body, reports: body.reports.map((r) => ({ ...r, text: cutReport(r.text, 1500).text, cut: true })) };
+  const copy = body && Array.isArray(body.reports) ? body : body && body.state && Array.isArray(body.state.reports) ? body.state : null;
+  if (copy) {
+    const wrap = (c) => (copy === body ? c : { ...body, state: c });
+    const brief = wrap({ ...copy, reports: copy.reports.map((r) => ({ ...r, text: cutReport(r.text, 1500).text, cut: true })) });
     if (sealedSize(status, brief) <= max) return { status, body: brief };
-    const none = { ...body, reports: [] };
+    const none = wrap({ ...copy, reports: [] });
     if (sealedSize(status, none) <= max) return { status, body: none };
+    if (copy !== body) { const bare = { ...body, state: null }; if (sealedSize(status, bare) <= max) return { status, body: bare }; } // the results alone: the phone asks for the copy next
   }
   return { status: 413, body: { error: "Your computer's answer was too big to come through the relay. It comes whole on your Wi-Fi." } };
 }
@@ -258,8 +277,12 @@ const OPS = {
   state: async ({ etag }) => { const s = await snapshot(); return etag && etag === s.v ? { status: 304, body: { v: s.v } } : s; },
   apply: async ({ ops }, phone) => applyOps(ops, phone),
   // A phone has no AI of its own: its Home chat is answered here, by this computer's.
-  chat: async ({ question }) => { const { homeAsk } = await import("./home.mjs"); return homeAsk(String(question || "").slice(0, 2000)); },
+  // It answers and adds tasks, and that's all: from a phone (a stolen one, a replayed
+  // message) nothing starts an agent or stops, redirects or answers a run (15 Oct 2026).
+  // The README's "what a phone can do" holds: what's new, a copy, and the four changes.
+  chat: async ({ question }) => { const { homeAsk } = await import("./home.mjs"); return homeAsk(String(question || "").slice(0, 2000), { acts: PHONE_ACTS }); },
 };
+const PHONE_ACTS = { agent: () => ({ error: "nothing starts from a phone. Add it as a task here, and it starts from your computer." }), control: undefined };
 
 // ---- the copy a phone keeps ---------------------------------------------------------------
 // Small and in plain words: your open tasks, what needs you, agents' questions, the
@@ -351,7 +374,7 @@ async function applyOne(o, phone) {
     if (now.running) return { error: `The agent is still working in ${repo}. Approve once it finishes.` };
     if (approveSum(now) !== String(a.sum || "")) return { refused: true, error: `The work in ${repo} changed since your phone showed it, so it wasn't approved. Look at what's there now, then approve that.` };
     const ap = readJson(PATHS.applied, { ids: {}, approvals: [] }), entry = { id: o.id, repo, phone: phone.name, at: Date.now(), status: "approving" };
-    ap.approvals = [...(ap.approvals || []), entry].slice(-30); writeJson(PATHS.applied, { ids: ap.ids || {}, approvals: ap.approvals });
+    ap.approvals = [...(ap.approvals || []), entry].slice(-30); writeJson(PATHS.applied, { ...ap, ids: ap.ids || {}, approvals: ap.approvals });
     // Approve takes a while (a branch, a push, a PR): it carries on here, and the copy says how it went
     Promise.resolve().then(() => (approveHook || defaultApprove)(repo, !!now.untasked)).then((r) => r || {}, (e) => ({ error: String((e && e.message) || e) })).then((r) => {
       const cur = readJson(PATHS.applied, { ids: {}, approvals: [] }), x = (cur.approvals || []).find((y) => y.id === o.id);
@@ -376,7 +399,7 @@ async function applyOps(ops, phone) {
     catch (e) { r = { failed: true, error: "It failed on your computer: " + plainText((e && e.message) || e, 200) }; }
     const now = readJson(PATHS.applied, { ids: {}, approvals: [] }), ids = { ...(now.ids || {}), [id]: Date.now() };
     const keep = Object.entries(ids).sort((x, y) => y[1] - x[1]).slice(0, 2000); // a month of changes, more than any queue holds
-    writeJson(PATHS.applied, { ids: Object.fromEntries(keep), approvals: now.approvals || [] });
+    writeJson(PATHS.applied, { ...now, ids: Object.fromEntries(keep), approvals: now.approvals || [] });
     results.push({ id, ...r });
   }
   snapCache = null;
@@ -489,7 +512,7 @@ function startPhoneLink() {
   const l = linkCfg();
   if (!l.on || listener) return Promise.resolve(linkState());
   if (starting) return starting;
-  hashTokens(); linkKeys();
+  hashTokens(); linkKeys(); try { loadNonces(); } catch {}
   starting = new Promise((resolve) => {
     const done = () => { starting = null; resolve(linkState()); };
     const srv = createServer((req, res) => { handle(req, res).catch(() => { try { reply(res, 500, { error: "failed" }); } catch {} }); });
@@ -537,12 +560,25 @@ function computerUrl(input) {
   if (!/^https?:\/\//i.test(s)) s = "http://" + s;
   try { const u = new URL(s); if (!u.hostname) return ""; if (!u.port) u.port = String(PORT); return `${u.protocol}//${u.host}`; } catch { return ""; }
 }
+// This phone's install id, made once and sent at pairing, so pairing the same phone
+// again replaces its old entry on the computer (not a secret: config.json).
+function phoneInst() { const cfg = loadConfig(); if (!/^[\w-]{8,64}$/.test(String(cfg.phoneInst || ""))) { cfg.phoneInst = randomBytes(8).toString("hex"); saveConfig(cfg); } return cfg.phoneInst; }
 // A scanned pairing link: the site's (https://symbiot.co.za/pair#a=…) or the app's
 // own (symbiot://pair?a=…). { addresses, port, code, fp } or null.
+// Only an address on your own network (or this device): a web page can fire the
+// app's symbiot://pair link, and with a public host in it the phone would pair with a
+// stranger's computer, dropping its own (15 Oct 2026). A hostname (no dots, or .local)
+// is fine: it only resolves on the network you're on.
+function localAddress(a) {
+  const v4 = a.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (v4) { const [x, y] = [Number(v4[1]), Number(v4[2])]; return x === 10 || x === 127 || (x === 192 && y === 168) || (x === 172 && y >= 16 && y <= 31) || (x === 169 && y === 254) || (x === 100 && y >= 64 && y <= 127); }
+  if (a.includes(":")) return /^(::1|fe[89ab][0-9a-f]:|f[cd][0-9a-f]{2}:)/i.test(a);
+  return /^[a-z0-9-]+(\.local)?$/i.test(a);
+}
 function parsePairLink(s) {
   s = String(s || "").trim();
   const m = s.match(/^(?:https:\/\/(?:www\.)?symbiot\.co\.za\/pair\/?[#?]|symbiot:\/\/pair\/?\?)(.*)$/i); if (!m) return null;
-  const q = new URLSearchParams(m[1].replace(/^[#?]/, "")), addresses = String(q.get("a") || "").split(",").map((a) => a.trim()).filter((a) => /^[\w.:-]+$/.test(a)).slice(0, 5);
+  const q = new URLSearchParams(m[1].replace(/^[#?]/, "")), addresses = String(q.get("a") || "").split(",").map((a) => a.trim()).filter((a) => /^[\w.:-]+$/.test(a) && localAddress(a)).slice(0, 5);
   const port = Number(q.get("p")) || PORT, code = String(q.get("c") || "").replace(/\D/g, ""), fp = String(q.get("k") || "");
   return addresses.length && /^\d{6}$/.test(code) ? { addresses, port, code, fp } : null;
 }
@@ -586,10 +622,13 @@ const OLD_COMPUTER = "Symbiot on your computer is older than this phone's. Updat
 const cantReach = (url) => `Couldn't reach ${url}. Is Symbiot running there, with Your phone switched on, and is this phone on the same Wi-Fi? A firewall on the computer may need to allow port ${new URL(url).port}.`;
 // Pair with the address and code typed in, or a scanned link (opts.link), which
 // gives both and the key to expect; each address in it is tried until one answers.
-async function pairComputer(address, code, { fetchFn = fetch, name = hostname(), link = "" } = {}) {
+// replace: pair with another computer than the one linked (its copy and queue go);
+// without it, that's refused and said, since a link in a web page can ask for it.
+async function pairComputer(address, code, { fetchFn = fetch, name = hostname(), link = "", replace = false } = {}) {
   const err = (e) => ({ ...computerState(), error: e });
   const p = link ? parsePairLink(link) : null;
   if (link && !p) return err("That isn't a pairing code from Symbiot. On your computer, open Settings → Your phone and scan the code it shows.");
+  const linked = loadConfig().computer, inst = phoneInst();
   const urls = p ? p.addresses.map((a) => computerUrl(`${a}:${p.port}`)).filter(Boolean) : [computerUrl(address)].filter(Boolean);
   if (!urls.length) return err("Type your computer's address, as Symbiot shows it there (like 192.168.8.50:7392).");
   code = p ? p.code : String(code || "").replace(/\s/g, "");
@@ -600,7 +639,8 @@ async function pairComputer(address, code, { fetchFn = fetch, name = hostname(),
     try { const r = await fetchFn(url + "/phone/hello", { signal: AbortSignal.timeout(5000) }); h = r.ok ? await r.json().catch(() => null) : null; if (!h || !h.pub) { last = OLD_COMPUTER; continue; } }
     catch { last = cantReach(url); continue; }
     if (p && p.fp && fingerprint(h.pub) !== p.fp) { last = `The computer at ${url} isn't the one whose code you scanned. Scan it again on your computer.`; continue; }
-    const mine = newKeys(), key = linkKey(mine.priv, h.pub, mine.pub, h.pub), env = { v: 1, pub: mine.pub, ...seal(key, { code, name: name === "localhost" ? "Phone" : name }, "pair") };
+    if (linked && linked.fp && linked.fp !== fingerprint(h.pub) && !replace) return err(`This phone is linked to ${linked.name || "another computer"}. Pairing with the computer at ${url} replaces that link, and the copy of its work kept here: forget ${linked.name || "it"} first (Your computer → Forget), then pair again.`);
+    const mine = newKeys(), key = linkKey(mine.priv, h.pub, mine.pub, h.pub), env = { v: 1, pub: mine.pub, ...seal(key, { code, name: name === "localhost" ? "Phone" : name, inst }, "pair") };
     let r, j;
     try { r = await fetchFn(url + "/phone/pair", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(env), signal: AbortSignal.timeout(8000) }); j = await r.json().catch(() => ({})); }
     catch { last = cantReach(url); continue; }

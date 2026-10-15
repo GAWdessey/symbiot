@@ -638,7 +638,7 @@ function homeContext(h) {
 }
 
 // Home's talk: the same Symbiot, acting in the right lane (mind.mjs actIn/actNow).
-async function homeAsk(question, { ask, now = Date.now(), state, images = [] } = {}) {
+async function homeAsk(question, { ask, now = Date.now(), state, images = [], acts = {} } = {}) {
   question = String(question || "").trim().slice(0, 2000);
   if (!question && images.length) question = "Take a look at this screenshot.";
   if (!question) return { error: "empty" };
@@ -658,6 +658,7 @@ async function homeAsk(question, { ask, now = Date.now(), state, images = [] } =
       agent: (req, known, repo) => { const d = repo ? actIn(req + shotNote, repo, { map, known, title: "Home" }) : actNow(req + shotNote, { title: "Home", known }); noteHanded(d, req); return d; },
       task: (text, repo) => { const d = taskIn(text + shotNote, repo, { map }); noteHanded(d, text); return d; },
       control: (ops) => control(ops, { map }),
+      ...acts, // a phone's chat (phone.mjs OPS.chat) overrides these: it answers and adds tasks, but starts and steers nothing (15 Oct 2026)
     } });
   const settled = settleFromChat(h, r.settled, question);
   if (settled) cached = null;
