@@ -1505,18 +1505,22 @@ const gitNow = (args) => { const r = spawnSync("git", args, { encoding: "utf8", 
 const gitLater = (args) => new Promise((res) => execFile("git", args, { encoding: "utf8", timeout: 6000, killSignal: "SIGKILL", maxBuffer: 32 * 1024 * 1024 }, (e, out) => res(e ? "" : String(out || ""))));
 // endedAt: the run is over, so what git said after it ended stands; it isn't asked again every CHANGES_FRESH.
 function agentChanges(path, startedAt, endedAt = 0) {
-  const had = CHANGES.get(path), now = Date.now();
+  const now = Date.now(), runs = CHANGES.get(path) || [];
   // the same run: a run's start is only known roughly when it began before a restart
-  if (had && Math.abs(had.startedAt - (startedAt || now)) < 60000) {
+  const had = runs.find((r) => Math.abs(r.startedAt - (startedAt || now)) < 60000);
+  if (had) {
     if (now - had.at > CHANGES_FRESH && !had.busy && !(endedAt && had.at >= endedAt + 2000)) {
       had.busy = true;
-      Promise.resolve(changesOf(path, startedAt, gitLater)).then((v) => { CHANGES.set(path, { at: Date.now(), startedAt: had.startedAt, v }); }, () => { had.busy = false; });
+      Promise.resolve(changesOf(path, startedAt, gitLater)).then((v) => { Object.assign(had, { at: Date.now(), v, busy: false }); }, () => { had.busy = false; });
     }
     return had.v;
   }
   let v = NO_CHANGES; try { v = changesOf(path, startedAt, gitNow); } catch {}
   if (CHANGES.size >= CHANGES_MAX) CHANGES.clear();
-  CHANGES.set(path, { at: now, startedAt: startedAt || now, v }); return v;
+  // Each run in a folder keeps its own answer. Kept by folder alone, two runs in one
+  // folder replaced each other's, so every poll asked git again for both, in the
+  // foreground: 2s for each Agents or Workdesk poll, and the app stalled (15 Oct).
+  CHANGES.set(path, [...runs.slice(-11), { at: now, startedAt: startedAt || now, v }]); return v;
 }
 // ---- agent questions: decisions, options and ideas, from ANY agent ---------
 // A handoff runs unattended (claude -p, codex exec, aider --message, …), so the

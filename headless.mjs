@@ -58,13 +58,43 @@ function siteUrl(input) {
 // ua: the User-Agent the window sends (windowUa), for the hidden one to send from its
 // first request; and it doesn't say it's driven (navigator.webdriver), as the window doesn't.
 function browserArgs(headless, url = "about:blank", ua = "") {
+  const proxy = headless ? sandboxProxy() : null;
   return [
     ...(headless ? ["--headless=new", "--hide-scrollbars", "--mute-audio", "--remote-debugging-pipe", `--window-size=${VIEW.w},${VIEW.h}`, "--restore-last-session",
-      "--disable-blink-features=AutomationControlled", ...(ua ? ["--user-agent=" + ua] : [])] : ["--new-window"]),
+      "--disable-blink-features=AutomationControlled", ...(ua ? ["--user-agent=" + ua] : []),
+      ...(proxy ? ["--proxy-server=" + proxy.server, ...(proxy.bypass ? ["--proxy-bypass-list=" + proxy.bypass] : [])] : [])] : ["--new-window"]),
     "--user-data-dir=" + PROFILE, "--profile-directory=" + PROFILE_DIR, "--no-first-run", "--no-default-browser-check",
     ...(process.platform === "linux" ? ["--password-store=basic"] : process.platform === "darwin" ? ["--use-mock-keychain"] : []),
     url,
   ];
+}
+
+// The proxy a lane's sandbox gives its commands (HTTPS_PROXY and friends): Chrome ignores
+// those variables and, with no network of its own in there, failed every page with
+// net::ERR_INTERNET_DISCONNECTED (whatsapp_module, 2026-10-15). { server, bypass, user,
+// pass } for an http(s) proxy, or null (outside a sandbox there is none, and the browser
+// goes direct as before). Chrome takes no credentials in --proxy-server, so they're kept
+// apart: the tab answers the proxy's sign-in itself (proxyAuth).
+function sandboxProxy(env = process.env) {
+  const raw = ["HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy", "ALL_PROXY", "all_proxy"].map((k) => env[k]).find((v) => v && /^https?:\/\//i.test(v));
+  if (!raw) return null;
+  let u; try { u = new URL(raw); } catch { return null; }
+  const bypass = String(env.NO_PROXY || env.no_proxy || "").split(",").map((x) => x.trim()).filter(Boolean).join(";");
+  return { server: u.protocol + "//" + u.host, bypass, user: decodeURIComponent(u.username), pass: decodeURIComponent(u.password) };
+}
+// Answer the proxy's sign-in on a tab (CDP: Fetch with handleAuthRequests, which needs a
+// pattern, so every request pauses and is let straight through).
+async function proxyAuth(c, sessionId, send) {
+  const p = sandboxProxy(); if (!p || !p.user) return () => {};
+  const unhook = c.on((m) => {
+    if (!m || m.sessionId !== sessionId) return;
+    if (m.method === "Fetch.requestPaused") { send("Fetch.continueRequest", { requestId: m.params.requestId }).catch(() => {}); return; }
+    if (m.method !== "Fetch.authRequired") return;
+    const proxy = m.params.authChallenge && m.params.authChallenge.source === "Proxy";
+    send("Fetch.continueWithAuth", { requestId: m.params.requestId, authChallengeResponse: proxy ? { response: "ProvideCredentials", username: p.user, password: p.pass } : { response: "CancelAuth" } }).catch(() => {});
+  });
+  await send("Fetch.enable", { handleAuthRequests: true, patterns: [{ urlPattern: "*" }] });
+  return unhook;
 }
 
 // The User-Agent the Symbiot Browser's window sends: Chrome's reduced one, the same on
@@ -406,7 +436,7 @@ async function openTab(b, who, targetId) {
   const until = (method, ms) => c.until((m) => m.sessionId === sessionId && m.method === method, ms);
   // Requests in flight, so "loaded" can wait for a page that fills itself in.
   const inflight = new Set();
-  const unhook = c.on((m) => {
+  const unhookNet = c.on((m) => {
     if (!m || m.sessionId !== sessionId) return;
     if (m.method === "Network.requestWillBeSent") inflight.add(m.params.requestId);
     else if (m.method === "Network.loadingFinished" || m.method === "Network.loadingFailed") inflight.delete(m.params.requestId);
@@ -417,7 +447,7 @@ async function openTab(b, who, targetId) {
     await sleep(400);
     while (Date.now() < end && calm < 600) { await sleep(100); calm = inflight.size <= 1 ? calm + 100 : 0; }
   };
-  await send("Page.enable"); await send("Network.enable");
+  await send("Page.enable"); await send("Network.enable"); const unauth = await proxyAuth(c, sessionId, send);
   const ss = loadSessions(); if (Object.keys(ss).length) try { await send("Page.addScriptToEvaluateOnNewDocument", { source: sessionFill(ss), worldName: "symbiot-sessions" }); } catch {}
   await send("Emulation.setDeviceMetricsOverride", { width: VIEW.w, height: VIEW.h, deviceScaleFactor: 1, mobile: false });
   // Sites serve "HeadlessChrome" something else (or a block page): look like the browser it
@@ -425,7 +455,7 @@ async function openTab(b, who, targetId) {
   if (b.tabUa) await send("Network.setUserAgentOverride", { userAgent: b.tabUa });
   // every `method` event on this tab, until the function it gives is called
   const on = (method, f) => c.on((m) => { if (m && m.sessionId === sessionId && m.method === method) f(m.params || {}); });
-  const tab = { who, targetId, page: { send, until, idle, on }, shown: "", used: Date.now(), unhook };
+  const tab = { who, targetId, page: { send, until, idle, on }, shown: "", used: Date.now(), unhook: () => { unhookNet(); unauth(); } };
   b.tabs.set(who, tab);
   return tab;
 }
@@ -1571,4 +1601,4 @@ function watchWindow({ every = 2000, start = 30000 } = {}) {
   if (WATCH.unref) WATCH.unref();
 }
 
-export { pipeWindow, saveSessions, showScreen, fillForm, verifyPage, sessionCookie, historyPage, SESSION_COOKIE, tabKey, siteUrl, browserArgs, reducedUa, windowUa, mapPage, wholePage, readPage, readTexts, readLinkedIn, LI_READ, pagePicture, pageClip, CLIP, isSend, pressRegion, typeRegion, chooseRegion, uploadRegion, uploadFiles, attachFiles, FILE_BOX, scrollPage, SCROLLS, signIn, keepBrowserOpen, closeBrowser, browserOpen, keepSessions, SESSION_KEEP, SESSIONS, loadSessions, trustedSites, isTrusted, trustSite, untrustSite, PROFILE , openSymbiotBrowser, closeSymbiotBrowser, onBrowserClosed, scratchPage, open as openPage, evaluate, SCROLLER, watchWindow, windowOpen, lockHolder, setBrowserHub , browserHub };
+export { pipeWindow, saveSessions, showScreen, fillForm, verifyPage, sessionCookie, historyPage, SESSION_COOKIE, tabKey, siteUrl, browserArgs, sandboxProxy, reducedUa, windowUa, mapPage, wholePage, readPage, readTexts, readLinkedIn, LI_READ, pagePicture, pageClip, CLIP, isSend, pressRegion, typeRegion, chooseRegion, uploadRegion, uploadFiles, attachFiles, FILE_BOX, scrollPage, SCROLLS, signIn, keepBrowserOpen, closeBrowser, browserOpen, keepSessions, SESSION_KEEP, SESSIONS, loadSessions, trustedSites, isTrusted, trustSite, untrustSite, PROFILE , openSymbiotBrowser, closeSymbiotBrowser, onBrowserClosed, scratchPage, open as openPage, evaluate, SCROLLER, watchWindow, windowOpen, lockHolder, setBrowserHub , browserHub };

@@ -202,12 +202,13 @@ try {
   ok("a run's commits and changes, read from git", a.commits.length === 1 && a.commits[0].msg === "first" && a.dirty === 0, a);
   writeFileSync(join(repo, "b.txt"), "b\n"); writeFileSync(join(repo, "a.txt"), "a2\n"); g("add", "b.txt"); g("commit", "-qm", "second");
   ok("asked again at once: the kept answer, no git", agentChanges(repo, start).commits.length === 1);
-  CHANGES.get(repo).at -= 60000;
+  CHANGES.get(repo)[0].at -= 60000;
   ok("once it's old: still the kept answer straight away", agentChanges(repo, start).commits.length === 1);
-  for (let i = 0; i < 100 && CHANGES.get(repo).v.commits.length === 1; i++) await new Promise((r) => setTimeout(r, 20));
+  for (let i = 0; i < 100 && CHANGES.get(repo)[0].v.commits.length === 1; i++) await new Promise((r) => setTimeout(r, 20));
   const b = agentChanges(repo, start);
   ok("…while git is asked in the background: the new commit and the edit show up", b.commits.length === 2 && b.commits[0].msg === "second" && b.dirty === 1 && /1 file changed/.test(b.stat), b);
   ok("a different run in the same folder isn't given the last one's answer", agentChanges(repo, Date.now() + 3600000).commits.length === 0);
+  ok("…and the first run's answer is still kept, not asked of git again (they replaced each other: 2s a poll, 15 Oct)", CHANGES.get(repo).length === 2 && agentChanges(repo, start) === CHANGES.get(repo)[0].v);
 }
 
   console.log("MEMORY — what's kept from a log doesn't keep the log");

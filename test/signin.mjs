@@ -23,6 +23,12 @@ const { chromeBinary } = await import("../core.mjs");
 const h = await import("../headless.mjs");
 console.log("SIGN-IN — a session-only sign-in outlives the Sign in window");
 ok("every Symbiot browser opens the same profile in it, by name: Chrome's last-used one took over (2026-10-13)", [h.browserArgs(true), h.browserArgs(false, "https://x.org/")].every((a) => a.includes("--profile-directory=Default")) && h.PROFILE_DIR === "Default", h.browserArgs(true));
+{
+  const env = { HTTPS_PROXY: "http://u%40x:p%3Aw@localhost:3128", NO_PROXY: "localhost,10.0.0.0/8" };
+  const px = h.sandboxProxy(env);
+  ok("in a lane sandbox the hidden browser is given the sandbox's proxy, credentials kept apart (it had no network: ERR_INTERNET_DISCONNECTED, 2026-10-15)", px && px.server === "http://localhost:3128" && px.user === "u@x" && px.pass === "p:w" && px.bypass === "localhost;10.0.0.0/8", px);
+  ok("no proxy variable, no proxy flag; the Sign in window never gets one", h.sandboxProxy({}) === null && h.sandboxProxy({ ALL_PROXY: "socks5h://a:b@localhost:1080" }) === null && !h.browserArgs(false, "https://x.org/").some((x) => /proxy-server/.test(x)), "");
+}
 ok("the hidden browser restores the last session; the Sign in window doesn't", h.browserArgs(true).includes("--restore-last-session") && !h.browserArgs(false, "https://x.org/").includes("--restore-last-session"), "");
 {
   const f = join(HOME, "ss-test.json"), o = "https://cp.smsportal.com", now = Date.now();

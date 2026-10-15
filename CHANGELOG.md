@@ -2,6 +2,11 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.66.1 — 2026-10-15
+
+- `symbiot screens` works inside a lane's sandbox: its hidden browser now goes through the sandbox's network proxy. Before, every page failed with "no internet".
+- The app no longer stalls for about 2 seconds every few seconds once a folder has had more than one run. The Workdesk and agents list were asking git about those runs again on every refresh.
+
 ## 0.66.0 — 2026-10-15
 
 Fixes from a full audit of Symbiot: freezes, wasted runs, Approve, runs beside the lane, and security.
