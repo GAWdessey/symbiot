@@ -229,6 +229,57 @@ console.log("REPORTS — a handed-off or dismissed next step leaves 'Read, to ac
   const r2 = await converse({ where: "Reports", question: "hi", map: {}, ask: async () => JSON.stringify({ reply: "Hi", settled: [q] }) });
   ok("…and other chats can't settle cards", !r2.settled, "");
 }
+console.log("FINDINGS AND REMOVING — a fact a report found isn't filed as a job; any card or task goes in one click, with Undo");
+{
+  const { isFinding } = await import("../core.mjs");
+  const facts = ["Google is already fully on dailify.co.za. The only OAuth client lists only https://dailify.co.za.",
+    "API_EXTERNAL_URL is https://dailify.fshub.dev, not supabase.seekerai.dev. That's the value in the running container.",
+    "The 14 WhatsApp templates are already approved, not pending. All 14 show Approved in Twilio. (from the report \"Dailify domain move: ops audit (read only)\", /x/AUDIT.md)"];
+  ok("the three dailify findings of 15 Oct read as findings", facts.every(isFinding), facts.filter((f) => !isFinding(f)));
+  const jobs = ["Fix the sign-in page on Safari.", "Login is not working on mobile.", "Sign-in is still broken on Safari.", "Paystack's live webhook is empty, not set: that's for the dailify lane to check.",
+    "Reconnect Garth's calendar: it is already expiring.", "Is the live key from another Paystack business?", "Don't start a handoff where an agent is already running.", "When the reply is already in, hand it on."];
+  ok("…and jobs, bug reports and questions don't", !jobs.some(isFinding), jobs.filter(isFinding));
+  const ideas = R.reportIdeas("# Audit\n\n## Four things that change the plan\n\n- Google is already fully on dailify.co.za.\n- API_EXTERNAL_URL is https://dailify.fshub.dev, not supabase.seekerai.dev.\n- Reconnect Garth's own calendar once.\n");
+  ok("a report's next steps leave its findings out", ideas.join("|") === "Reconnect Garth's own calendar once.", ideas);
+  const { reportIdeasAdd } = await import("../home.mjs");
+  const d = join(CFG, "drafts", "act-finding01"); put(d, "AUDIT.md", "# Audit\n\n## Next\n\n- Reconnect the calendar\n");
+  const l = R.listReports({ map: {}, folders: [d], running: () => false }), got = [];
+  const r = reportIdeasAdd(l[0].id, ["Reconnect the calendar", facts[0]], { list: () => l, add: (t, lane, o) => (got.push(o), { id: "x" + got.length, ...(o.finding ? { done: true, finding: "a finding" } : {}) }), mark: () => {} });
+  ok("an older ticked finding goes in ticked as done, and the answer says so", !got[0].finding && got[1].finding === true && /One is a finding, not a job/.test(r.said) && /It's on the Workdesk/.test(r.said), r);
+
+  const T = await import("../tasks.mjs"), { loadTasks } = await import("../core.mjs");
+  const by = (id) => loadTasks().find((x) => x.id === id);
+  const f = T.addTask(facts[1], "dailify", { after: '(from the report "Dailify domain move: ops audit (read only)", /x/AUDIT.md)' });
+  const job = T.addTask("Reconnect Garth's calendar (from the report \"Audit\", /x/A.md)", "dailify");
+  T.syncTasks();
+  ok("sync ticks a finding filed from a report as done, saying why, into the Archive", by(f.id).done && by(f.id).archived && /a finding, not a job/.test(by(f.id).finding), by(f.id));
+  ok("…and leaves a job from the same report open", !by(job.id).done && !by(job.id).archived);
+  T.restoreTask(f.id); T.syncTasks();
+  ok("a finding you restore stays open: you said there's something to do", !by(f.id).done && !by(f.id).archived && by(f.id).kept, by(f.id));
+  const c = T.cancelTask(job.id);
+  ok("Remove cancels a task: archived, marked removed, not deleted", c.ok && by(job.id).archived && by(job.id).cancelled, by(job.id));
+  T.restoreTask(job.id);
+  ok("…and Undo brings it back open, as it was", !by(job.id).archived && !by(job.id).cancelled && !by(job.id).done, by(job.id));
+  ok("removing a task that's gone says so", !!T.cancelTask("nope").error);
+
+  const H = await import("../home.mjs");
+  const stub = { board: () => ({ cards: [] }), agents: () => [], lanes: () => ({ handoffs: [] }), reports: () => ({ count: 0 }), connected: () => true, agentCmd: () => "claude", repos: () => ({}), confirmed: () => true, rootsSet: () => true, signedOut: () => [], agentGone: () => "", waits: () => [], clashes: () => [], stuck: () => [], drafts: () => [],
+    pending: () => [{ path: "/code/dailify", repo: "dailify", tasks: [{ text: "a" }], files: ["x"] }] };
+  const card = () => H.homeState({ fresh: true, deps: stub }).you.find((y) => y.id === "approve:dailify");
+  ok("an Approve card is on Home", !!card());
+  const key = H.cardKey(card());
+  ok("Dismiss takes it off Home", H.dismissCard(key).ok && !card());
+  ok("…Undo brings it back", H.dismissCard(key, { undo: true }).ok && !!card());
+  H.dismissCard(key);
+  const more = { ...stub, pending: () => [{ path: "/code/dailify", repo: "dailify", tasks: [{ text: "a" }, { text: "b" }], files: ["x"] }] };
+  ok("a changed card (another task done) shows again", !!H.homeState({ fresh: true, deps: more }).you.find((y) => y.id === "approve:dailify"));
+  ok("…and the card's key is the app's (bdKey): path and question for a question, else id and what it says", H.cardKey({ path: "/p", q: "Q?", raw: "Raw?" }) === "/p|Raw?" && H.cardKey({ id: "setup:x", sub: "s" }) === "setup:x|s");
+  ok("dismissing nothing says so", !!H.dismissCard("").error);
+  const ui = readFileSync(join(ROOT, "ui.mjs"), "utf8");
+  ok("every card has its × (blobBody), wired to dismiss with Undo", /class='bx'/.test(ui) && /api\('\/api\/home\/dismiss',\{key:key\}\)/.test(ui) && /lqUndo\('Dismissed: '/.test(ui) && /undo:true/.test(ui));
+  ok("a task's × on the Workdesk cancels it with Undo, never deletes it", /api\('\/api\/tasks\/cancel',\{id:id\}\)/.test(ui) && /lqUndo\('Removed: '/.test(ui) && !/rm\.addEventListener\('click',function\(\)\{api\('\/api\/tasks\/remove'/.test(ui));
+  ok("a waiting task on Home's work scene has Remove too", /class='lrm'/.test(ui) && /api\('\/api\/tasks\/cancel',\{id:tid\}\)/.test(ui));
+}
 {
   const ui = readFileSync(join(ROOT, "ui.mjs"), "utf8");
   ok("Reports is split into Unread / Read, open actions / Read and done tabs with counts, Unread first, grouped by lane", /REPTAB='unread'/.test(ui) && /Read, open actions/.test(ui) && /Read and done/.test(ui) && /id='reptabs'/.test(ui) && /by\[r\.lane\]/.test(ui), "");

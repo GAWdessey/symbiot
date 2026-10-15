@@ -190,7 +190,10 @@ try {
   for (let i = 0; i < 40 && w1.exited() === null; i++) await new Promise((r) => setTimeout(r, 100));
   const w2 = startApp({ SYMBIOT_PORT: String(RS), SYMBIOT_UPDATE_CMD: `${JSON.stringify(process.execPath)} -e 0`, SYMBIOT_UPDATE_EVERY: "400" }, 20000);
   const urlW2 = await w2.ready, tokW2 = (urlW2.match(URL_RE) || [])[2];
-  const wq = await ping(baseW, tokW2);
+  // the first look at npm's download runs as it starts: on a slow runner (CI) a single ping
+  // could land before it's marked waiting, so look for a few seconds, like the loops around it
+  let wq = {};
+  for (const t3 = Date.now(); Date.now() - t3 < 5000;) { wq = await ping(baseW, tokW2); if (wq.updating && wq.updating.retrying) break; await new Promise((r) => setTimeout(r, 200)); }
   ok("the app started again is still waiting for it, from the same start (not a fresh 20 minutes)", wq.updating && wq.updating.retrying && wq.updating.target === wu.target && wq.updating.since === wp.updating.since, wq);
   registry.tgz404 = false;
   let wr = {};
