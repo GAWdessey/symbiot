@@ -13,7 +13,7 @@ import { laneReach } from "./reach.mjs";
 import { doneBrief, standingBrief } from "./asksdone.mjs";
 import { userStyleLine } from "./adapt.mjs";
 import { inflightIds } from "./parallel.mjs";
-import { QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, isUrgent, handoffCmd, runningHandoff, untrackedBefore, forgetUntracked, loadRunFiles, forgetRunFiles, writeTasks, droppedTasks, startHeldTasks, connectorsLine } from "./agents.mjs";
+import { QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, isUrgent, handoffCmd, runHandoff, runningHandoff, onShipping, untrackedBefore, forgetUntracked, loadRunFiles, forgetRunFiles, writeTasks, droppedTasks, startHeldTasks, connectorsLine } from "./agents.mjs";
 import { gitDefaultBranch } from "./drift.mjs";
 import { readRunLog, briefPlan } from "./work.mjs";
 import { repoPathMap, laneMap, openWork, detectRepo } from "./scan.mjs";
@@ -182,10 +182,18 @@ const NOT_SYMBIOT = ["--", ".", ":(exclude).symbiot"]; // .symbiot/ is Symbiot's
 function workingChanges(path) {
   const st = git(path, ["status", "--porcelain", "-uall", ...NOT_SYMBIOT]);
   const files = st.out ? st.out.split("\n").map((l) => ({ st: l.slice(0, 2).trim(), file: l.slice(3) })) : [];
-  const short = git(path, ["diff", "--shortstat", "HEAD", ...NOT_SYMBIOT]).out, n = (re) => +((short.match(re) || [])[1] || 0);
-  const ins = n(/(\d+) insertion/), del = n(/(\d+) deletion/), fresh = files.filter((f) => f.st === "??").length;
-  const stat = [ins && `+${ins}`, del && `−${del}`, fresh && `${fresh} new`].filter(Boolean).join(" ");
-  return { branch: git(path, ["rev-parse", "--abbrev-ref", "HEAD"]).out, files, stat };
+  return { branch: git(path, ["rev-parse", "--abbrev-ref", "HEAD"]).out, files, stat: statOf(git(path, ["diff", "--shortstat", "HEAD", ...NOT_SYMBIOT]).out, files) };
+}
+function statOf(short, files) {
+  const n = (re) => +((short.match(re) || [])[1] || 0), ins = n(/(\d+) insertion/), del = n(/(\d+) deletion/), fresh = files.filter((f) => f.st === "??").length;
+  return [ins && `+${ins}`, del && `−${del}`, fresh && `${fresh} new`].filter(Boolean).join(" ");
+}
+// The same off the main thread: the review card's refresh (reviewGit) and Approve's
+// own look at the tree. A status that takes a minute no longer freezes the app.
+async function workingChangesAsync(path) {
+  const st = await gitAsync(path, ["status", "--porcelain", "-z", "-uall", ...NOT_SYMBIOT], gitTimeout());
+  const files = st.ok ? parseStatusZ(st.out) : [], short = (await gitAsync(path, ["diff", "--shortstat", "HEAD", ...NOT_SYMBIOT])).out;
+  return { branch: git(path, ["rev-parse", "--abbrev-ref", "HEAD"]).out, files, stat: statOf(short, files), ...(st.ok ? {} : { error: gitFailed("git status", st) }) };
 }
 // `git status --porcelain -z`: [{ st, file, from }], from being a rename's old path.
 function parseStatusZ(out) {
@@ -206,11 +214,13 @@ function parseStatusZ(out) {
 // no note of what was there (a run started before Symbiot kept one), it's
 // every change.
 //
-// With a record of the runs here (agents.mjs runfiles.json), it's narrower: only
-// the files of runs that ticked a task. A file only an unfinished run touched
-// stays put (held), and one a finished and an unfinished run both touched can't
-// be told apart, so it's listed in `shared` for the caller to ask about. extra:
-// files Approve itself changed (a version bump). No record, every change, as before.
+// With a record of the runs here (agents.mjs runfiles.json), it's narrower: the
+// files of runs that have ended, ticked or not. Only a run still going holds its
+// files back (held): "unfinished" used to mean "ended without a tick", which hid
+// a run's untasked fix and its finished rounds from Approve for good once any
+// run had ended (15 Oct 2026). A file a finished and a running run both touched
+// can't be told apart, so it's listed in `shared` for the caller to ask about.
+// extra: files Approve itself changed (a version bump). No record, every change.
 function taskPaths(path, files, extra = []) {
   const before = untrackedBefore(path), had = before ? new Set(before.files) : null;
   const changed = (f) => { try { return statSync(join(path, f)).mtimeMs >= before.at; } catch { return true; } };
@@ -218,7 +228,8 @@ function taskPaths(path, files, extra = []) {
   let keep = files.filter(mine), held = [], shared = []; const left = files.length - keep.length;
   const runs = loadRunFiles(path);
   if (runs.length) {
-    const done = new Set(runs.filter((r) => r.ticked > 0).flatMap((r) => r.files)), open = new Set(runs.filter((r) => !(r.ticked > 0)).flatMap((r) => r.files)), more = new Set(extra);
+    const live = runningHandoff(path), going = (r) => !!(live && live.id && r.id === live.id);
+    const done = new Set(runs.filter((r) => !going(r)).flatMap((r) => r.files)), open = new Set(runs.filter(going).flatMap((r) => r.files)), more = new Set(extra);
     shared = keep.filter((f) => done.has(f.file) && open.has(f.file)).map((f) => f.file);
     held = keep.filter((f) => !done.has(f.file) && !more.has(f.file)).map((f) => f.file);
     keep = keep.filter((f) => done.has(f.file) || more.has(f.file));
@@ -277,13 +288,25 @@ function unreleased(path) {
 // Approve can bump the version in the PR itself: offered when the committed
 // version is already released and these changes don't change it. Released: its
 // v* tag exists, or npm has it (a repo that publishes on merge may have no tag,
-// or one its release couldn't push). { version, patch, minor } or null.
+// or one its release couldn't push). { version, patch, minor, taken? } or null.
+// The offer counts from the highest version anywhere ahead: origin's default
+// branch (a bump merged, not yet pulled here) and origin's open symbiot/ branches
+// (a bump PR still open). Two batches cut from main were both offered 1.2.4: the
+// second published nothing and its PR clashed in package.json and CHANGELOG.md
+// (#122, 15 Oct 2026). taken: those versions and where, for the card to say.
 function bumpOffer(path) {
   const ver = (s) => { try { return String(JSON.parse(s).version || ""); } catch { return ""; } };
-  const was = ver(git(path, ["show", "HEAD:package.json"]).out), m = was.match(/^(\d+)\.(\d+)\.(\d+)$/); if (!m) return null;
+  const was = ver(git(path, ["show", "HEAD:package.json"]).out); if (!/^\d+\.\d+\.\d+$/.test(was)) return null;
   let now = ""; try { now = ver(readFileSync(join(path, "package.json"), "utf8")); } catch {}
   if (now !== was || !(git(path, ["rev-parse", "-q", "--verify", "refs/tags/v" + was]).ok || onNpm(path))) return null;
-  return { version: was, patch: `${m[1]}.${m[2]}.${+m[3] + 1}`, minor: `${m[1]}.${+m[2] + 1}.0` };
+  let top = was; const taken = [];
+  const refs = ["refs/remotes/origin/" + gitDefaultBranch(path), ...git(path, ["for-each-ref", "--format=%(refname)", "--count=50", "refs/remotes/origin/symbiot/"]).out.split("\n").filter(Boolean)];
+  for (const ref of refs) {
+    const v = ver(git(path, ["show", ref + ":package.json"]).out); if (!/^\d+\.\d+\.\d+$/.test(v) || !semverGt(v, was)) continue;
+    taken.push(`${v} on ${ref.replace(/^refs\/remotes\//, "")}`); if (semverGt(v, top)) top = v;
+  }
+  const m = top.match(/^(\d+)\.(\d+)\.(\d+)$/);
+  return { version: was, patch: `${m[1]}.${m[2]}.${+m[3] + 1}`, minor: `${m[1]}.${+m[2] + 1}.0`, ...(taken.length ? { taken } : {}) };
 }
 // Whether npm has the committed version, as learnNpm last found ("name@version" →
 // { yes, at }). bumpOffer only reads this; learnNpm asks the registry first.
@@ -426,8 +449,8 @@ function releaseInput(repo, opts = {}) {
   const t = loadTasks(), ids = new Set(Array.isArray(opts.tick) ? opts.tick.map(String) : []);
   const review = t.filter((x) => x.repo === repo && x.review && !x.done && !x.archived);
   const items = review.length ? review : t.filter((x) => ids.has(x.id) && x.repo === repo && !x.done && !x.archived && !x.review);
-  const files = workingChanges(path).files.map((f) => f.file).filter((f) => !NOT_OWN.test(f));
-  const texts = uniqueTasks(items.map((x) => x.text));
+  const files = reviewGit(path).files.map((f) => f.file).filter((f) => !NOT_OWN.test(f)); // what the card showed; the ship reads the tree itself
+  const texts = uniqueTasks(noFullLinks(items.map((x) => x.text)));
   return texts.length || files.length ? { path, texts, files, diff: workingDiff(path, 30000) } : null;
 }
 // Ship with the version bumped when opts.bump is "patch" or "minor" and the repo
@@ -438,8 +461,13 @@ function releaseInput(repo, opts = {}) {
 // ends by itself (git, the tests and gh all have a limit), and the hold is let go
 // however it ends; one older than SHIP_STALE is past any ship, so it's taken over
 // rather than refusing every Approve there until the app restarts (dailify, 14 Oct
-// 2026: its tests never ended). shipStep notes what it's on, for the refusal to say.
-const SHIPPING = new Map(), SHIP_STALE = 30 * 60000;
+// 2026: its tests never ended). SHIP_STALE is past the sum of the steps' limits
+// (status 10 + add 10 + tests 15 + rebase 4 + push 4 + gh 2 min): at 30 a slow ship
+// was taken over and two ran on one checkout. shipStep notes what it's on, for the
+// refusal to say. shipping(path): what's shipping there, for a run not to start on
+// the tree meanwhile (agents.mjs runHandoff) and a restart not to cut it off
+// (server.mjs restartWouldStop).
+const SHIPPING = new Map(), SHIP_STALE = 60 * 60000;
 function holdShip(path, now = Date.now()) {
   const was = SHIPPING.get(path);
   if (was && now - was.at < SHIP_STALE) {
@@ -450,16 +478,26 @@ function holdShip(path, now = Date.now()) {
   return { release: () => { if (SHIPPING.get(path) === me) SHIPPING.delete(path); } };
 }
 const shipStep = (path, step) => { const h = SHIPPING.get(path); if (h) h.step = step; };
+const shipping = (path) => { const h = SHIPPING.get(path); return h && Date.now() - h.at < SHIP_STALE ? { step: h.step || "starting", since: h.at } : null; };
+const shippingPaths = () => [...SHIPPING.keys()].filter((p) => shipping(p));
+onShipping(shipping); // a run never starts on a tree Approve is committing, rebasing or testing (agents.mjs runHandoff)
+// A long task's line ends with a link to its full text in .symbiot/full/ (addTask),
+// which never ships: not in a commit or PR body.
+const noFullLinks = (texts) => texts.map((t) => String(t).replace(/ Full text: `\.symbiot\/full\/[0-9a-f]+\.md`/g, ""));
 async function shipWithBump(path, texts, opts) {
   const hold = holdShip(path); if (hold.error) return hold;
+  let undo = () => {}, undoLog = () => {}; const head = git(path, ["rev-parse", "HEAD"]).out;
   try {
     const offer = (opts.bump === "patch" || opts.bump === "minor") && bumpOffer(path);
     if (!offer) return await shipChanges(path, texts, opts);
-    const to = offer[opts.bump], files = workingChanges(path).files.map((f) => f.file);
-    const undo = setVersion(path, to), undoLog = noteChangelog(path, to, texts, files, opts.notes);
+    const to = offer[opts.bump], files = (await workingChangesAsync(path)).files.map((f) => f.file);
+    undo = setVersion(path, to); undoLog = noteChangelog(path, to, noFullLinks(texts), files, opts.notes);
     const r = await shipChanges(path, texts, { ...opts, bumped: to });
     if (r.error) { undo(); undoLog(); return r; }
     return { ...r, bumped: to };
+  } catch (e) {
+    if (git(path, ["rev-parse", "HEAD"]).out === head) { undo(); undoLog(); } // not committed: a throw used to leave the bump in the tree, uncommitted and no run's to ship
+    return { error: "Approve failed: " + String((e && e.message) || e) };
   } finally { hold.release(); }
 }
 // What the last run in a folder said when it finished: agent.log after the last
@@ -527,38 +565,46 @@ function shippable(path, wc) {
 // uncommitted changes no ticked task covers (untasked: approve them as-is, with
 // `open`, the repo's open tasks, to tick the ones the run finished).
 // running: an agent is still editing there, so its changes may be half done.
-// A repo's git side of Review (what changed, what's unreleased), kept REVIEW_FRESH for
-// the screens that only show it (pendingReview({ kept: true }): Home and its 20s
-// tick), which asked git for every repo every few seconds and held the app up
-// (2026-10-12). Approve asks git itself, and forgets what was kept (forgetReview).
+// A repo's git side of Review (what changed, what's unreleased), kept REVIEW_FRESH:
+// the Tasks tab polls /api/pending every 4 s and Home ticks every 20 s, and asking
+// git for every repo on each poll held the app up ~2 s a call (2026-10-12, measured
+// again 15 Oct 2026). The first look at a repo asks git there and then; after that
+// a poll gets what was kept, and once it's older than REVIEW_FRESH a refresh runs
+// in the background (gitAsync), one at a time per repo. Approve asks git itself,
+// and forgets what was kept (forgetReview) so the card after it is fresh.
 const REVIEW_GIT = new Map(), REVIEW_FRESH = 15000;
-function reviewGit(path, kept) {
-  const had = kept && REVIEW_GIT.get(path);
+const reviewOf = (path, wc) => ({ ...wc, unreleased: unreleased(path), bumpOffer: bumpOffer(path), publishesOnMerge: publishesOnMerge(path) });
+function reviewGit(path) {
+  const had = REVIEW_GIT.get(path);
   if (had && Date.now() - had.at < REVIEW_FRESH) return had.v;
-  const v = { ...workingChanges(path), unreleased: unreleased(path), bumpOffer: bumpOffer(path), publishesOnMerge: publishesOnMerge(path) };
-  REVIEW_GIT.set(path, { at: Date.now(), v }); return v;
+  if (had) { refreshReview(path, had); return had.v; }
+  const v = reviewOf(path, workingChanges(path)); REVIEW_GIT.set(path, { at: Date.now(), v }); return v;
+}
+function refreshReview(path, had) {
+  if (had.busy) return; had.busy = true;
+  workingChangesAsync(path).then((wc) => { if (REVIEW_GIT.get(path) === had) REVIEW_GIT.set(path, { at: Date.now(), v: reviewOf(path, wc) }); }).catch(() => {}).finally(() => { had.busy = false; }); // forgotten meanwhile (an Approve): dropped
 }
 const forgetReview = () => REVIEW_GIT.clear();
-function pendingReview({ kept = false } = {}) {
+function pendingReview() {
   const t = loadTasks(), by = {}; for (const x of t) if (x.review && !x.done && !x.archived) (by[x.repo] = by[x.repo] || []).push(x);
   const sent = [...new Set(t.filter((x) => x.repo && !x.archived && !by[x.repo]).map((x) => x.repo))];
   const late = lateUnsent(t), map = Object.keys(by).length || sent.length || late.size ? laneMap() : {};
-  const am = autoMergeRepos();
-  const out = Object.keys(by).sort().map((repo) => { const path = map[repo] || ""; return { repo, path, tasks: by[repo], autoMerge: am.includes(repo), running: !!(path && runningHandoff(path)), ...(path ? shippable(path, reviewGit(path, kept)) : { branch: "", files: [], stat: "" }) }; });
+  const am = autoMergeRepos(), state = (repo, path) => ({ autoMerge: am.includes(repo), running: !!(path && runningHandoff(path)), ...(path && shipping(path) ? { shipping: shipping(path) } : {}) });
+  const out = Object.keys(by).sort().map((repo) => { const path = map[repo] || ""; return { repo, path, tasks: by[repo], ...state(repo, path), ...(path ? shippable(path, reviewGit(path)) : { branch: "", files: [], stat: "" }) }; });
   for (const repo of sent.sort()) {
     const path = map[repo]; if (!path || !existsSync(join(path, ".symbiot", "TASKS.md"))) continue;
-    const wc = shippable(path, reviewGit(path, kept)); if (!wc.files.length) continue;
+    const wc = shippable(path, reviewGit(path)); if (!wc.files.length) continue;
     const still = t.filter((x) => x.repo === repo && !x.done && !x.archived && !x.review), round = roundOf(path, still);
     const open = finishedOffer(path, still, round);
-    out.push({ repo, path, tasks: [], untasked: true, open, ...(round ? { round } : {}), autoMerge: am.includes(repo), running: !!runningHandoff(path), ...wc });
+    out.push({ repo, path, tasks: [], untasked: true, open, ...(round ? { round } : {}), ...state(repo, path), ...wc });
   }
   // approved and committed, but it never got as far as a PR: its card stays, saying why, with a retry (sendAgain)
   for (const [repo, path] of Object.entries(map)) {
     if (!path || (!late.has(repo) && !existsSync(UNSENT(path)))) continue;
-    const un = keptUnsent(path, repo, t, kept); if (!un) continue;
+    const un = keptUnsent(path, repo, t); if (!un) continue;
     const had = out.find((r) => r.repo === repo);
     if (had) had.unsent = un;
-    else out.push({ repo, path, tasks: [], files: [], branch: un.branch, stat: "", unsent: un, autoMerge: am.includes(repo), running: !!runningHandoff(path) });
+    else out.push({ repo, path, tasks: [], files: [], branch: un.branch, stat: "", unsent: un, ...state(repo, path) });
   }
   return out;
 }
@@ -574,11 +620,12 @@ function unsentCard(path, repo, t, now = Date.now()) {
   if (!rec && !old) return null;
   const branch = rec ? rec.branch : old.branch, u = unsentOf(path, branch);
   if (!u && !(rec && rec.pushed)) return null;
-  if (rec) return { at: rec.at, branch, commit: rec.commit, ahead: u ? u.ahead : 0, why: rec.why || "push", note: rec.note || "" };
+  if (rec) return { at: rec.at, branch, commit: rec.commit, ahead: u ? u.ahead : 0, why: rec.why || "push", note: rec.note || "", ...(rec.fix ? { fix: rec.fix } : {}) };
   return { at: old.approvedAt, branch, commit: old.commit, ahead: u.ahead, why: "push", note: `Approved ${new Date(old.approvedAt).toISOString().slice(0, 10)} and committed on ${branch}, but it never went up to GitHub, so no PR was opened.` };
 }
-function keptUnsent(path, repo, t, kept) {
-  const k = "unsent:" + path, had = kept && REVIEW_GIT.get(k);
+// Kept like reviewGit; its git is a few quick reads, so it's asked again on the spot once stale.
+function keptUnsent(path, repo, t) {
+  const k = "unsent:" + path, had = REVIEW_GIT.get(k);
   if (had && Date.now() - had.at < REVIEW_FRESH) return had.v;
   const v = unsentCard(path, repo, t); REVIEW_GIT.set(k, { at: Date.now(), v }); return v;
 }
@@ -596,21 +643,34 @@ const branchSlug = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, "-").re
 // symbiot/drafts-test-race, 12 Oct 2026: #172 merged, then two Approves committed on
 // it. Only a branch with nothing since counted as merged, so both stayed there, the
 // second's PR didn't open, and the page showed #172, merged, as its PR: nothing to merge.
-const ghRun = (path) => (args) => spawnSync("gh", args, { cwd: path, encoding: "utf8", timeout: 60000 });
-function mergedAlready(path, branch, base, { gh = null } = {}) {
+// gh in the background, like gitAsync: the ship's `pr create`/`pr merge` held the app
+// up for up to a minute each. The same { status, stdout, stderr } as spawnSync gave.
+const ghRun = (path) => (args) => new Promise((resolve) => {
+  let stdout = "", stderr = "", done = false; const p = spawn("gh", args, { cwd: path, env: { ...process.env, GIT_TERMINAL_PROMPT: "0" }, stdio: ["ignore", "pipe", "pipe"] });
+  const t = setTimeout(() => { try { p.kill("SIGTERM"); } catch {} }, 60000), end = (status, e) => { if (done) return; done = true; clearTimeout(t); resolve({ status, stdout, stderr: stderr || (e ? String(e.message) : "") }); };
+  p.stdout.setEncoding("utf8"); p.stderr.setEncoding("utf8"); p.stdout.on("data", (d) => { stdout += d; }); p.stderr.on("data", (d) => { stderr += d; });
+  p.on("error", (e) => end(-1, e)); p.on("close", (code) => end(code));
+});
+// origin's default branch as GitHub has it now, fetched once per ship (net.fetched):
+// two fetches, both sync, froze the app for 90 s before "push failed" offline.
+async function fetchBase(path, base, net) {
+  if (net.fetched || !git(path, ["remote", "get-url", "origin"]).ok) return;
+  net.fetched = true; await gitAsync(path, ["fetch", "-q", "origin", base], 60000); // best effort
+}
+async function mergedAlready(path, branch, base, { gh = null, net = {} } = {}) {
   const origin = git(path, ["remote", "get-url", "origin"]);
-  if (origin.ok) git(path, ["fetch", "-q", "origin", base], 30000); // best effort: main as GitHub has it
+  await fetchBase(path, base, net);
   const ref = git(path, ["rev-parse", "-q", "--verify", "refs/remotes/origin/" + base]).ok ? "origin/" + base : base;
   if (!git(path, ["rev-parse", "-q", "--verify", ref]).ok) return null;
   if (!git(path, ["merge-base", "--is-ancestor", "HEAD", ref]).ok && git(path, ["diff", "--quiet", "HEAD", ref, ...NOT_SYMBIOT]).ok) return { from: ref };
   if (!gh && (!origin.ok || !/github/i.test(origin.out) || !hasCmd("gh"))) return null;
-  const list = (state) => { const r = (gh || ghRun(path))(["pr", "list", "--head", branch, "--state", state, "--limit", "1", "--json", "headRefOid"]); try { return r.status === 0 ? JSON.parse(r.stdout) : null; } catch { return null; } };
-  const merged = list("merged"), head = String((merged && merged[0] && merged[0].headRefOid) || "");
+  const list = async (state) => { const r = await (gh || ghRun(path))(["pr", "list", "--head", branch, "--state", state, "--limit", "1", "--json", "headRefOid"]); try { return r.status === 0 ? JSON.parse(r.stdout) : null; } catch { return null; } };
+  const merged = await list("merged"), head = String((merged && merged[0] && merged[0].headRefOid) || "");
   if (!head || !git(path, ["merge-base", "--is-ancestor", head, "HEAD"]).ok) return null;
   const since = git(path, ["rev-list", "--count", head + "..HEAD"]);
   if (!since.ok) return null;
   if (since.out === "0") return { from: ref };
-  const open = list("open"); if (!open || open.length) return null; // one open still takes what's committed here
+  const open = await list("open"); if (!open || open.length) return null; // one open still takes what's committed here
   return { from: ref, after: head };
 }
 // Move what was committed on a spent branch since its PR merged (after..HEAD) onto
@@ -733,49 +793,60 @@ function freeBranch(path, stem) {
 // opts.push=false stops after the commit, opts.pr=false after the push.
 // opts.sendOnly: commit nothing, just send what earlier Approves committed.
 async function shipChanges(path, texts, opts = {}) {
-  if (opts.sendOnly) return (await sendUnsent(path, texts, opts)) || { error: "Nothing here is waiting to go up: GitHub has all of it.", none: true };
+  texts = noFullLinks(texts); const net = { fetched: false };
+  if (opts.sendOnly) return (await sendUnsent(path, texts, opts, net)) || { error: "Nothing here is waiting to go up: GitHub has all of it.", none: true };
   shipStep(path, "reading what changed");
   const st = await gitAsync(path, ["status", "--porcelain", "-z", "-uall", ...NOT_SYMBIOT], gitTimeout());
   if (!st.ok) return { error: gitFailed("git status", st) };
   const ch = { files: parseStatusZ(st.out), branch: git(path, ["rev-parse", "--abbrev-ref", "HEAD"]).out };
   // nothing to commit, but an earlier Approve's commits never went up: those go now
-  if (!ch.files.length) return (await sendUnsent(path, texts, opts)) || { ok: true, nothing: true, note: "No uncommitted changes — approved without a commit." };
+  if (!ch.files.length) return (await sendUnsent(path, texts, opts, net)) || { ok: true, nothing: true, note: "No uncommitted changes — approved without a commit." };
   const own = taskPaths(path, ch.files, opts.bumped ? ["package.json", "package-lock.json", "npm-shrinkwrap.json", "CHANGELOG.md"] : []), { paths, left } = own;
-  const heldNote = own.held.length ? `${own.held.length} file${own.held.length === 1 ? "" : "s"} no finished run touched ${own.held.length === 1 ? "was" : "were"} left out (${own.held.slice(0, 4).join(", ")}${own.held.length > 4 ? ", …" : ""}).` : "";
+  const heldNote = own.held.length ? `${own.held.length} file${own.held.length === 1 ? "" : "s"} not from a finished run (yours, or a run still going) ${own.held.length === 1 ? "was" : "were"} left out (${own.held.slice(0, 4).join(", ")}${own.held.length > 4 ? ", …" : ""}).` : "";
   // Two runs touched the same file, one finished and one not: whose it is can't be told, so ask.
   if (own.shared.length && !opts.allowShared) return { ask: true, waiting: true, shared: own.shared, error: `Another run is still working on ${own.shared.length === 1 ? "a file" : own.shared.length + " files"} this one finished. Approving now would send its unfinished work too. Wait for it to finish, or approve anyway?` };
   // No task behind these changes: that's a question for the user, not a commit.
   if (!texts.length && paths.length && !opts.confirm) return { ask: true, untasked: true, files: own.files.slice(0, 50), error: `No ticked task covers these ${own.files.length} file${own.files.length === 1 ? "" : "s"} (${own.files.slice(0, 4).join(", ")}${own.files.length > 4 ? ", …" : ""}). Commit them anyway?` };
   const leftNote = [heldNote, left ? `${left.toLocaleString("en")} untracked file${left === 1 ? " that was" : "s that were"} already there before the agent ran ${left === 1 ? "was" : "were"} left out.` : ""].filter(Boolean).join(" ");
-  if (!paths.length) return (await sendUnsent(path, texts, opts)) || { ok: true, nothing: true, note: "No changes from the agent's runs — approved without a commit. " + leftNote };
+  if (!paths.length) return (await sendUnsent(path, texts, opts, net)) || { ok: true, nothing: true, note: "No changes from the agent's runs — approved without a commit. " + leftNote };
   if (!ch.branch || ch.branch === "HEAD") return { error: "Detached HEAD — check out a branch first." };
   const base = gitDefaultBranch(path), day = new Date().toISOString().slice(0, 10); let branch = ch.branch, fresh = "", carry = null;
   const newBranch = () => freeBranch(path, "symbiot/" + branchSlug(!texts.length ? `changes-${day}` : texts.length === 1 ? texts[0] : `${texts.length}-tasks-${day}`));
+  // A branch made here and then nothing committed on it: the checkout goes back to
+  // where it was and the branch goes, else every Approve after found itself on an
+  // empty symbiot/ branch with files staged (15 Oct 2026).
+  const made = { from: ch.branch, branch: "" }, failed = (error) => { if (made.branch) { git(path, ["switch", "-q", made.from]); git(path, ["branch", "-q", "-D", made.branch]); } return { error, branch: made.branch ? made.from : branch }; };
   if (branch === base) {
     branch = newBranch();
     const sw = git(path, ["switch", "-c", branch]); if (!sw.ok) return { error: "Could not create branch: " + sw.err };
+    made.branch = branch;
   } else {
-    const spent = mergedAlready(path, branch, base, { gh: opts.gh }), from = spent && !spent.after && spent.from;
+    const spent = await mergedAlready(path, branch, base, { gh: opts.gh, net }), from = spent && !spent.after && spent.from;
     if (spent && spent.after) carry = spent;
     else if (from) {
       // The changes come along; if main changed a file they touch, git refuses and they stay put.
       const next = newBranch(), sw = git(path, ["switch", "-c", next, "--no-track", from]);
       fresh = sw.ok ? `${branch}'s earlier PR already merged, so this starts a fresh branch from ${from}.`
         : `${branch}'s earlier PR already merged, but these changes couldn't move to a fresh branch from ${from} (${sw.err.split("\n")[0]}), so they're on ${branch}, and its PR may not merge.`;
-      if (sw.ok) branch = next;
+      if (sw.ok) { branch = next; made.branch = next; }
     }
   }
   // Stage just the task's paths (taskPaths), in the background, given on stdin
   // (170k of them don't fit in an argv) and taken literally (a `[` or `*` in a
   // name isn't a glob). They come from a status that leaves .symbiot out; the
-  // reset also covers anything of it staged before.
+  // reset also covers anything of it staged before. The commit takes those paths
+  // only (--only): a plain commit took the whole index, so a .env you or the agent
+  // had staged earlier shipped while the note said it was left out (15 Oct 2026).
+  // Anything else staged stays staged.
   shipStep(path, "committing");
-  const add = await gitAsync(path, ["add", "-A", "--pathspec-from-file=-", "--pathspec-file-nul"], gitTimeout(paths.length), { input: paths.join("\0"), env: { GIT_LITERAL_PATHSPECS: "1" } });
-  if (!add.ok) return { error: gitFailed("git add", add, paths.length), branch };
+  const only = { input: paths.join("\0"), env: { GIT_LITERAL_PATHSPECS: "1" } };
+  const add = await gitAsync(path, ["add", "-A", "--pathspec-from-file=-", "--pathspec-file-nul"], gitTimeout(paths.length), only);
+  if (!add.ok) return failed(gitFailed("git add", add, paths.length));
   git(path, ["reset", "-q", "--", ".symbiot"]); // never ship Symbiot's own scratch
   const subject = commitSubject(texts);
   const body = (texts.length ? texts.map((x) => "- " + x).join("\n") : "No ticked task covers these changes.") + (opts.bumped ? `\n\nBumps the version to ${opts.bumped}. ` + (publishesOnMerge(path) ? `It publishes to npm when this merges.` : `After this merges, tag v${opts.bumped} on ${base} to release it.`) : "");
-  const cm = git(path, ["commit", "-m", subject, "-m", body]); if (!cm.ok) return { error: "Commit failed: " + (cm.err || cm.out), branch };
+  const cm = await gitAsync(path, ["commit", "-q", "--only", "--pathspec-from-file=-", "--pathspec-file-nul", "-m", subject, "-m", body], gitTimeout(paths.length), only);
+  if (!cm.ok) return failed("Commit failed: " + (cm.timedOut ? gitFailed("git commit", cm, paths.length) : cm.err || cm.out));
   forgetRunFiles(path, own.files);
   forgetUntracked(path); // committed: the next run notes what's there afresh
   if (carry) {
@@ -787,7 +858,7 @@ async function shipChanges(path, texts, opts = {}) {
   }
   const said = [fresh, leftNote].filter(Boolean).join(" ");
   const out = { ok: true, branch, base, commit: git(path, ["rev-parse", "--short", "HEAD"]).out, subject, ...(said ? { note: said } : {}) };
-  return await sendBranch(path, { branch, base, subject, body: body + (carry && fresh ? "\n\n" + fresh : ""), out, said, opts, newBranch });
+  return await sendBranch(path, { branch, base, subject, body: body + (carry && fresh ? "\n\n" + fresh : ""), out, said, opts, newBranch, net });
 }
 // Send what earlier Approves committed on this branch and never got up (unsentOf), or
 // open the PR for one that went up without one: rebased, tested, pushed, PR'd as an
@@ -795,7 +866,7 @@ async function shipChanges(path, texts, opts = {}) {
 // branch's last commit. null when nothing is waiting.
 // Only Approve's own: a symbiot/ branch, or the one it noted. Your own branch's
 // commits you haven't pushed are yours to send.
-async function sendUnsent(path, texts, opts) {
+async function sendUnsent(path, texts, opts, net = {}) {
   const rec = readUnsent(path), mineOf = (u) => u && (/^symbiot\//.test(u.branch) || (rec && rec.branch === u.branch)) ? u : null;
   const u = mineOf(unsentOf(path)) || (rec && rec.pushed ? { branch: rec.branch, ahead: 0, pushed: true } : null);
   if (!u && rec && unsentOf(path, rec.branch)) return { error: `The approved work is on ${rec.branch}: check that branch out, then send it again.` };
@@ -807,40 +878,83 @@ async function sendUnsent(path, texts, opts) {
     : `${u.ahead} commit${u.ahead === 1 ? "" : "s"} approved on ${u.branch} earlier never reached GitHub, so ${u.ahead === 1 ? "it goes" : "they go"} up now.`;
   const out = { ok: true, resent: true, sentFrom: u.branch, branch: u.branch, base: gitDefaultBranch(path), commit: git(path, ["rev-parse", "--short", u.branch]).out, subject, note: said };
   const stem = u.branch.replace(/-\d+$/, "");
-  return await sendBranch(path, { branch: u.branch, base: out.base, subject, body, out, said, opts: u.pushed ? { ...opts, verify: false } : opts, newBranch: () => freeBranch(path, stem) });
+  return await sendBranch(path, { branch: u.branch, base: out.base, subject, body, out, said, opts: u.pushed ? { ...opts, verify: false } : opts, newBranch: () => freeBranch(path, stem), net, fix: mine && mine.fix });
 }
 // Push and open the PR (pushAndOpen), and keep what didn't get that far (noteUnsent):
 // it's marked unsent, so the page shows it as not done, and the card keeps it with a retry.
+// A clash with main is the agent's to sort out, not yours: a task for it goes on the
+// lane (rebaseTask), and the caller starts the run once this ship lets go of the folder
+// (startFix). "Rebase it by hand, then approve again" was a dead end against Symbiot's
+// own rule that local git work is never a 👤 step (15 Oct 2026).
 async function sendBranch(path, s) {
   const r = await pushAndOpen(path, s);
   if (!r.ok || s.opts.push === false || s.opts.pr === false || r.local) return r;
   if (r.pr) { noteUnsent(path, null); return r; }
   const why = r.conflicts ? "conflicts" : r.testsFailed ? "tests" : r.pushed ? "pr" : "push";
-  noteUnsent(path, { at: Date.now(), branch: r.branch, commit: r.commit, subject: s.subject, body: s.body, note: r.note || "", why, ...(r.pushed ? { pushed: true } : {}) });
-  return { ...r, unsent: why };
+  let fix = s.fix || null, fresh = false; // fresh: added (or found open again) now, so the caller starts the run; one carried from an earlier try isn't restarted
+  if (why === "conflicts" && s.opts.repo) {
+    const t = addTask(rebaseTask(r.branch, s.base), s.opts.repo);
+    if (!t.error) { fix = { id: t.id, text: t.text }; fresh = true; r.note = (r.note || "") + (t.duplicate ? " The agent's task to rebase it is still open, so it starts on it again." : " Symbiot added a task for the agent to rebase it, and starts it now."); }
+  }
+  noteUnsent(path, { at: Date.now(), branch: r.branch, commit: r.commit, subject: s.subject, body: s.body, note: r.note || "", why, ...(r.pushed ? { pushed: true } : {}), ...(fix ? { fix } : {}) });
+  return { ...r, unsent: why, ...(fix ? { fix: fresh ? { ...fix, fresh: true } : fix } : {}) };
 }
-async function pushAndOpen(path, { base, subject, body, out, opts, newBranch, said = "" }) {
+const rebaseTask = (branch, base) => `Rebase ${branch} onto origin/${base} (git fetch origin ${base}, then git rebase origin/${base} ${branch}). Resolve each conflict so this branch's change and ${base}'s both land, git rebase --continue until it's done, run the tests, then tick this item. Don't push and don't commit anything else: Symbiot pushes it and opens the PR when you tick.`;
+// The lane's run on that task, once the ship has let go of the folder (runHandoff
+// refuses while one ships). { started } or why not, on r.fix.
+function startFix(path, repo, r) {
+  if (!r || !r.fix || !r.fix.fresh || !repo) return r;
+  delete r.fix.fresh; pushTasks({ repo }); // the task into the lane's brief
+  const e = runHandoff(path) || {};
+  r.fix = { ...r.fix, ...(e.pid && !e.busy ? { started: true, run: e.id } : e.busy ? { started: false, note: "An agent is already running there: it gets the task when that run ends." } : { started: false, note: e.note || "No agent command is set, so the task waits in the lane." }) };
+  return r;
+}
+// The branch on top of origin/<base> as it is now (fetched once per ship), before
+// the tests and the push. A branch is cut from where the checkout happens to be,
+// which can be far behind main (PR #179: 29 commits, conflicts in 23 files). Not a
+// branch GitHub has already: rewritten under it, its push would be refused (and a
+// PR open from it would lose the commit to a fresh name).
+// A clean checkout rebases in place. One with uncommitted tracked changes (files of
+// a run still going, or your own) never does: `rebase --autostash` could fail to put
+// them back and left conflict markers in the tree, the run's edit in a stash and
+// Approve saying all was well (15 Oct 2026). Instead the branch is rebased in a
+// throwaway worktree (.symbiot/ship-wt) and the checkout moved to the result with
+// `reset --keep`, which refuses, and nothing changes, when one of those files was
+// changed on main too: that counts as a conflict, for the agent to resolve.
+// { ok } once the branch is on the tip (rebased: tip when it moved), or { conflicts }.
+async function syncBranch(path, branch, base) {
+  const tip = "origin/" + base;
+  if (git(path, ["rev-parse", "-q", "--verify", "refs/remotes/origin/" + branch]).ok || !git(path, ["rev-parse", "-q", "--verify", "refs/remotes/" + tip]).ok || git(path, ["merge-base", "--is-ancestor", tip, branch]).ok) return { ok: true };
+  const dirty = (await gitAsync(path, ["status", "--porcelain", "-z", "-uno", ...NOT_SYMBIOT], gitTimeout())).out.length > 0;
+  const unmerged = () => git(path, ["diff", "--name-only", "--diff-filter=U"]).out.split("\n").filter(Boolean);
+  const conflicts = (note = "") => ({ conflicts: true, note });
+  if (!dirty) {
+    const rb = await gitAsync(path, ["rebase", tip, branch], 120000);
+    if (!rb.ok || unmerged().length || /resulted in conflicts/i.test(rb.err)) { await gitAsync(path, ["rebase", "--abort"]); return conflicts(); }
+    return { ok: true, rebased: tip };
+  }
+  const wt = join(path, ".symbiot", "ship-wt"), drop = async () => { await gitAsync(path, ["worktree", "remove", "--force", wt], 60000); git(path, ["worktree", "prune"]); };
+  if (existsSync(wt)) await drop(); // one a crashed ship left
+  const add = await gitAsync(path, ["worktree", "add", "-q", "--detach", wt, branch], 120000);
+  if (!add.ok) return conflicts(`it couldn't be brought up to date beside the uncommitted changes here (${add.err.split("\n").filter(Boolean).pop() || "git worktree add failed"})`);
+  const rb = await gitAsync(wt, ["rebase", tip], 120000), moved = rb.ok ? git(wt, ["rev-parse", "HEAD"]).out : "";
+  if (!rb.ok) await gitAsync(wt, ["rebase", "--abort"]);
+  await drop();
+  if (!moved) return conflicts();
+  const keep = git(path, ["reset", "-q", "--keep", moved]); // the branch is checked out: this moves it, keeping the uncommitted files
+  if (!keep.ok) return conflicts(`${base} changed a file that's also changed, uncommitted, here (${keep.err.split("\n").find((l) => /not uptodate|would be overwritten/i.test(l)) || keep.err.split("\n")[0]})`);
+  return { ok: true, rebased: tip };
+}
+async function pushAndOpen(path, { base, subject, body, out, opts, newBranch, said = "", net = {} }) {
   let branch = out.branch;
   const noted = (note) => ({ ...out, note: (said ? said + " " : "") + note });
   if (opts.push === false) return out;
   if (!git(path, ["remote", "get-url", "origin"]).ok) return { ...noted("No origin remote — committed locally."), local: true };
-  // A branch is cut from where the checkout happens to be, which can be far behind
-  // main (PR #179: 29 commits, conflicts in 23 files). So the commit goes on top of
-  // GitHub's main as it is now; if that conflicts, nothing is pushed and no PR opens.
-  // Not a branch GitHub has already: rewritten under it, its push would be refused (and
-  // a PR open from it would lose the commit to a fresh name). Files of a run still going
-  // stay out of the rebase and come back after it (--autostash).
   shipStep(path, "bringing it up to date with " + base);
-  git(path, ["fetch", "-q", "origin", base], 60000);
-  const tip = "origin/" + base, published = git(path, ["rev-parse", "-q", "--verify", "refs/remotes/origin/" + branch]).ok;
-  if (!published && git(path, ["rev-parse", "-q", "--verify", "refs/remotes/" + tip]).ok && !git(path, ["merge-base", "--is-ancestor", tip, branch]).ok) {
-    const rb = git(path, ["rebase", "--autostash", tip, branch], 120000);
-    if (!rb.ok) {
-      git(path, ["rebase", "--abort"]);
-      return { ...noted(`Committed, but not pushed: it conflicts with ${base} as GitHub has it now, so no PR was opened. Rebase ${branch} on ${tip}, fix the conflicts, then approve again.`), conflicts: true, behind: true };
-    }
-    out.rebased = tip; out.commit = git(path, ["rev-parse", "--short", branch]).out;
-  }
+  await fetchBase(path, base, net);
+  const tip = "origin/" + base, sync = await syncBranch(path, branch, base);
+  if (sync.conflicts) return { ...noted(`Committed, but not pushed: it conflicts with ${base} as GitHub has it now${sync.note ? ": " + sync.note : ""}, so no PR was opened.`), conflicts: true, behind: true };
+  if (sync.rebased) { out.rebased = sync.rebased; out.commit = git(path, ["rev-parse", "--short", branch]).out; }
   if (opts.verify !== false) {
     shipStep(path, "running its tests");
     const v = await (typeof opts.verify === "function" ? opts.verify : repoTests)(path);
@@ -848,29 +962,33 @@ async function pushAndOpen(path, { base, subject, body, out, opts, newBranch, sa
     if (v && v.untested) { said = [said, v.untested[0].toUpperCase() + v.untested.slice(1) + "."].filter(Boolean).join(" "); out.note = said; out.untested = true; }
   }
   shipStep(path, "pushing");
-  let ps = git(path, ["push", "-u", "origin", branch], 120000);
+  let ps = await gitAsync(path, ["push", "-u", "origin", branch], 120000);
   // refused because origin's branch of that name went another way (an earlier PR of
-  // that name, merged): the commit moves to a fresh name and goes up on that
+  // that name, merged): the commit moves to a fresh name and goes up on that. Only
+  // Approve's own symbiot/ branches: your `feat` whose origin copy moved on (a
+  // colleague pushed) was renamed away from under you (15 Oct 2026).
   if (!ps.ok && /rejected|non-fast-forward|fetch first/i.test(ps.err)) {
+    if (!/^symbiot\//.test(branch)) return noted(`Committed, but not pushed: origin/${branch} has moved on since this checkout, so the push was refused. Pull it first, or hand that to the agent.`);
     const next = newBranch();
-    if (git(path, ["branch", "-m", branch, next]).ok) { branch = next; out.branch = next; ps = git(path, ["push", "-u", "origin", branch], 120000); }
+    if (git(path, ["branch", "-m", branch, next]).ok) { branch = next; out.branch = next; ps = await gitAsync(path, ["push", "-u", "origin", branch], 120000); }
   }
   if (!ps.ok) return noted("Committed, but the push failed: " + (ps.err.split("\n").filter(Boolean).pop() || "unknown error"));
   out.pushed = true;
   if (opts.pr === false) return out;
   if (!opts.gh && !hasCmd("gh")) return noted("Pushed. Install the GitHub CLI (gh) to open the PR automatically.");
-  const gh = opts.gh || ghRun(path);
-  const pr = gh(["pr", "create", "--head", branch, "--base", base, "--title", subject, "--body", body + "\n\nApproved in Symbiot."]);
+  const gh = opts.gh || ghRun(path); // a test's stand-in answers at once; await takes both
+  shipStep(path, "opening the PR");
+  const pr = await gh(["pr", "create", "--head", branch, "--base", base, "--title", subject, "--body", body + "\n\nApproved in Symbiot."]);
   // one already open from this branch takes the commit; a merged or closed one doesn't
-  const openPr = () => { try { const v = JSON.parse(gh(["pr", "view", branch, "--json", "url,state"]).stdout); return v.state === "OPEN" ? String(v.url || "") : ""; } catch { return ""; } };
-  const url = (String(pr.stdout || "").match(/https?:\/\/\S+/) || [])[0] || openPr();
+  const openPr = async () => { try { const v = JSON.parse((await gh(["pr", "view", branch, "--json", "url,state"])).stdout); return v.state === "OPEN" ? String(v.url || "") : ""; } catch { return ""; } };
+  const url = (String(pr.stdout || "").match(/https?:\/\/\S+/) || [])[0] || await openPr();
   if (!url) return noted("Pushed, but gh couldn't open the PR, so there's nothing to merge yet: " + (String(pr.stderr || "").trim().split("\n").pop() || "it gave no reason") + `. Open one from ${branch} on GitHub.`);
   out.pr = url;
   // Opt-in auto-merge: queue GitHub's native auto-merge, which lands the PR only
   // once its required checks (CI) pass — never immediately on its own if the repo
   // has branch protection. Needs 'Allow auto-merge' on the repo; if off, we say so.
   if (opts.autoMerge) {
-    const am = gh(["pr", "merge", branch, "--auto", "--squash", "--delete-branch"]);
+    const am = await gh(["pr", "merge", branch, "--auto", "--squash", "--delete-branch"]);
     if (am.status === 0) out.autoMerge = "queued";
     else { out.autoMerge = "unavailable"; out.autoMergeErr = String(am.stderr || "").trim().split("\n").filter(Boolean).pop() || "gh pr merge failed"; }
   }
@@ -907,13 +1025,13 @@ async function approveRepo(repo, opts = {}) {
   if (!shipped.length) return { error: "Nothing awaiting review for " + (repo || "(no repo)") + "." };
   const path = laneMap()[repo]; if (!path) return { error: "Repo not found: " + repo };
   const busy = stillWorking(repo, path); if (busy) return busy;
-  const r = await shipWithBump(path, uniqueTasks(shipped.map((x) => x.text)), { ...opts, autoMerge: opts.autoMerge !== undefined ? opts.autoMerge : autoMergeRepos().includes(repo) });
+  const r = startFix(path, repo, await shipWithBump(path, uniqueTasks(shipped.map((x) => x.text)), { ...opts, repo, autoMerge: opts.autoMerge !== undefined ? opts.autoMerge : autoMergeRepos().includes(repo) }));
   if (r.error) return r;
   // read again: the ship took a while, and the list may have changed meanwhile
   const ids = new Set(shipped.map((x) => x.id)), t = loadTasks(), items = waiting(t).filter((x) => ids.has(x.id)), now = Date.now();
   for (const x of items) { x.review = false; x.done = true; x.archived = true; x.archivedAt = now; x.approvedAt = now; for (const k of ["branch", "commit", "pr"]) if (r[k]) x[k] = r[k]; }
   const removed = applyRemovals(t);
-  if (r.resent && r.pr) prFor(t, repo, r);
+  if (r.pr) prFor(t, repo, r); // earlier Approves' tasks on this branch get the PR too, resent or carried up with these (147 sat with a commit and no PR, 15 Oct 2026)
   saveTasks(t);
   return { ...r, approved: items.length, ...liveOf(path, repo, r), ...(removed ? { removed } : {}) };
 }
@@ -930,19 +1048,19 @@ async function approveChanges(repo, opts = {}) {
   if (loadTasks().some((x) => x.repo === repo && x.review && !x.done && !x.archived)) return await approveRepo(repo, opts);
   const path = laneMap()[repo]; if (!path) return { error: "Repo not found: " + (repo || "(no repo)") };
   const busy = stillWorking(repo, path); if (busy) return busy;
-  if (!workingChanges(path).files.length) { const s = await sendAgain(repo, opts); return s.none ? { error: "No uncommitted changes in " + repo + "." } : s; }
+  if (!(await workingChangesAsync(path)).files.length) { const s = await sendAgain(repo, opts); return s.none ? { error: "No uncommitted changes in " + repo + "." } : s; }
   const ids = new Set(Array.isArray(opts.tick) ? opts.tick.map(String) : []);
   const open = (t) => t.filter((x) => x.repo === repo && !x.done && !x.archived && !x.review), ticked = (t) => open(t).filter((x) => ids.has(x.id));
   const t0 = loadTasks(), r0 = roundOf(path, open(t0)), round = r0 && !ids.has(r0.id) ? r0 : null; // ticked: it's finished, not a round
-  const r = await shipWithBump(path, uniqueTasks([...(round ? ["A round of: " + round.text] : []), ...ticked(t0).map((x) => x.text)]), { ...opts, autoMerge: opts.autoMerge !== undefined ? opts.autoMerge : autoMergeRepos().includes(repo) });
+  const r = startFix(path, repo, await shipWithBump(path, uniqueTasks([...(round ? ["A round of: " + round.text] : []), ...ticked(t0).map((x) => x.text)]), { ...opts, repo, autoMerge: opts.autoMerge !== undefined ? opts.autoMerge : autoMergeRepos().includes(repo) }));
   if (r.error) return r;
   // read again: the ship took a while, and the list may have changed meanwhile
   const t = loadTasks(), items = ticked(t), now = Date.now();
   for (const x of items) { x.done = true; x.archived = true; x.archivedAt = now; x.approvedAt = now; for (const k of ["branch", "commit", "pr"]) if (r[k]) x[k] = r[k]; }
   const going = round && open(t).find((x) => x.id === round.id);
   if (going && r.commit) going.rounds = [...(going.rounds || []), { at: now, ...Object.fromEntries(["branch", "commit", "pr"].filter((k) => r[k]).map((k) => [k, r[k]])) }].slice(-20);
-  const removed = items.length ? applyRemovals(t) : 0;
-  if (items.length || going) saveTasks(t);
+  const removed = items.length ? applyRemovals(t) : 0, carried = r.pr ? prFor(t, repo, r) : 0;
+  if (items.length || going || carried) saveTasks(t);
   return { ...r, approved: items.length, ...liveOf(path, repo, r), ...(round ? { round: { id: round.id, text: round.text } } : {}), ...(removed ? { removed } : {}) };
 }
 // Send again, the review card's retry: what Approves committed in a repo and didn't get
@@ -955,8 +1073,8 @@ async function sendAgain(repo, opts = {}) {
   const path = laneMap()[repo]; if (!path) return { error: "Repo not found: " + (repo || "(no repo)") };
   const busy = stillWorking(repo, path); if (busy) return busy;
   const hold = holdShip(path); if (hold.error) return hold;
-  let r; try { r = await shipChanges(path, [], { ...opts, sendOnly: true, autoMerge: opts.autoMerge !== undefined ? opts.autoMerge : autoMergeRepos().includes(repo) }); } finally { hold.release(); }
-  if (!r.pr) return r;
+  let r; try { r = await shipChanges(path, [], { ...opts, repo, sendOnly: true, autoMerge: opts.autoMerge !== undefined ? opts.autoMerge : autoMergeRepos().includes(repo) }); } finally { hold.release(); }
+  if (!r.pr) return startFix(path, repo, r);
   const t = loadTasks(), n = prFor(t, repo, r); if (n) saveTasks(t);
   return { ...r, approved: n };
 }
@@ -1078,4 +1196,4 @@ function pushTasks(filter) {
   return { empty: false, written, unresolved, handoff: handoffCmd() };
 }
 
-export { holdShip, SHIP_STALE, sendAgain, forgetUnsent, unsentOf, readUnsent, unsentCard, repoTests, localRefused, forgetReview, gitFailed, taskPaths, addTask, toggleTask, setTaskDone, removeTask, cancelTask, restoreTask, FINDING_NOTE, completedInRepo, removalOf, applyRemovals, applyDrops, syncTasks, workingChanges, workingDiff, publishesOnMerge, unreleased, bumpOffer, learnNpm, releaseNeeded, releaseNotIn, withReleases, setVersion, changelogEntry, changelogSection, noteChangelog, releaseInput, shipWithBump, runSummary, saidFinished, pendingReview, commitSubject, shipChanges, autoMergeRepos, setAutoMerge, approveRepo, approveChanges, sendBack, TASK_ORDER, taskType, buildTasksMd, pushTasks, mergeWhenGreen };
+export { holdShip, SHIP_STALE, shipping, shippingPaths, workingChangesAsync, rebaseTask, sendAgain, forgetUnsent, unsentOf, readUnsent, unsentCard, repoTests, localRefused, forgetReview, gitFailed, taskPaths, addTask, toggleTask, setTaskDone, removeTask, cancelTask, restoreTask, FINDING_NOTE, completedInRepo, removalOf, applyRemovals, applyDrops, syncTasks, workingChanges, workingDiff, publishesOnMerge, unreleased, bumpOffer, learnNpm, releaseNeeded, releaseNotIn, withReleases, setVersion, changelogEntry, changelogSection, noteChangelog, releaseInput, shipWithBump, runSummary, saidFinished, pendingReview, commitSubject, shipChanges, autoMergeRepos, setAutoMerge, approveRepo, approveChanges, sendBack, TASK_ORDER, taskType, buildTasksMd, pushTasks, mergeWhenGreen };

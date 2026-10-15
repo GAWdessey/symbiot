@@ -24,7 +24,7 @@ import { SCAN, SCAN_TIMEOUT_MS, scanRoots, scanHome, addScanRoot, removeScanRoot
 import { computeDrift } from "./drift.mjs";
 import { afterShip, markLive } from "./deploy.mjs";
 import { laneCap, mergeEnded, DEFAULT_CAP } from "./parallel.mjs";
-import { addTask, toggleTask, removeTask, cancelTask, restoreTask, syncTasks, taskType, pushTasks, pendingReview, workingDiff, learnNpm, withReleases, releaseInput, approveRepo, approveChanges, sendBack, setAutoMerge, mergeWhenGreen, sendAgain, forgetUnsent } from "./tasks.mjs";
+import { addTask, toggleTask, removeTask, cancelTask, restoreTask, syncTasks, taskType, pushTasks, pendingReview, workingDiff, learnNpm, withReleases, releaseInput, approveRepo, approveChanges, sendBack, setAutoMerge, mergeWhenGreen, sendAgain, forgetUnsent, shippingPaths } from "./tasks.mjs";
 import { repoReview, repoSuggest, folderSuggest, taskChat, clearTaskChat, mailState, setMail, sentMail, produce, releaseNotes } from "./writeups.mjs";
 import { listSecrets, getSecret, markUsed, deleteSecret } from "./vault.mjs";
 import { loadScreens, screenImage, captureScreen, splitScreen, listMonitors, allowScreenshots, importScreen, setRegions, renameScreen, removeScreen, blueprint, clickRegion } from "./screens.mjs";
@@ -90,10 +90,11 @@ function autoUpdateDue({ latest, version, sandbox, desktop, off, updating, faile
   return { go: true };
 }
 // What a restart would cut off right now, in words, or "".
-function restartWouldStop({ handoffs = HANDOFFS, paths = [], running = runningHandoff, browser = windowOpen, away = awayOpen } = {}) {
+function restartWouldStop({ handoffs = HANDOFFS, paths = [], running = runningHandoff, browser = windowOpen, away = awayOpen, ships = shippingPaths } = {}) {
   const runs = new Set(handoffs.filter((x) => x.status === "running" && x.name !== "symbiot update").map((x) => x.path));
   for (const p of paths) { try { if (running(p)) runs.add(p); } catch {} }
   if (runs.size) return runs.size === 1 ? "an agent is working" : `${runs.size} agents are working`;
+  try { if (ships().length) return "an Approve is still shipping"; } catch {} // a relaunch mid-ship lost its bookkeeping: tasks stayed in review with a clean tree (15 Oct 2026)
   try { if (browser()) return "the Symbiot Browser is open"; } catch {}
   try { if (away()) return "Away is open"; } catch {}
   return "";
