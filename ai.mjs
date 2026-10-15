@@ -156,7 +156,7 @@ function callClaude(r, system, prompt, images = []) {
 async function callAnthropic(r, system, prompt, images = []) {
   const client = new Anthropic(r.key ? { apiKey: r.key } : {});
   const content = images.length ? [...images.map((i) => ({ type: "image", source: { type: "base64", media_type: i.mime, data: i.data } })), { type: "text", text: prompt }] : prompt;
-  const base = { model: r.model, max_tokens: MAX_TOKENS, system, messages: [{ role: "user", content }] };
+  const base = { model: r.model, max_tokens: MAX_TOKENS, system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }], messages: [{ role: "user", content }] }; // the rules are the same from turn to turn: cached
   let res;
   try { res = await client.messages.create({ ...base, output_config: { effort: "low" } }); }
   catch (e) {

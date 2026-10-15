@@ -170,6 +170,16 @@ try {
   writeFileSync(join(lane, ".symbiot", "QUESTIONS.md"), read(lane, "QUESTIONS.md"));
   a.noteBlocked(lane, a.runCmdOf(lane), Date.now() - 60000, 0, { dirtyBefore: {}, ticksBefore: 0 });
   ok("a run held on its questions is held by continueLanes too: both hash the same command (the guard was dead before)", !!a.blockedAgain(lane, a.runCmdOf(lane)) && a.continueLanes({ now: Date.now() + 10 * 60000, run: () => { throw new Error("started"); }, runs: () => [{ path: lane, name: "coral", startedAt: 1 }] }).length === 0);
+
+  console.log("7) SPEND — costs are saved safely, and rolled up per day so a week's spend is visible");
+  const { noteCost, loadCostDays } = await import("../estimate.mjs");
+  const cf = join(C, "costs-test.json"), df = join(C, "costs-test-days.json"), day1 = Date.parse("2026-10-13T10:00:00"), day2 = day1 + 86400000;
+  noteCost({ path: lane, cmd: "claude -p x", task: "Fix it", model: "claude-sonnet-5-5", cost: 0.4, turns: 5, ms: 60000, ok: true, now: day1 }, cf, df);
+  noteCost({ path: join(C, "drafts", "act-0a1b2c"), cmd: "claude -p x", task: "Ops", model: "claude-opus-5-5", cost: 2.5, turns: 9, ms: 120000, ok: false, now: day1 }, cf, df);
+  noteCost({ path: lane, cmd: "The user has answered: x", task: "Fix it", model: "claude-sonnet-5-5", cost: 0.3, turns: 2, ms: 30000, ok: true, now: day2 }, cf, df);
+  const days = loadCostDays(df), k1 = Object.keys(days)[0];
+  ok("each day: runs, spend, time, failures, by model, by lane (an ops folder is \"ops\") and by kind", Object.keys(days).length === 2 && days[k1].n === 2 && days[k1].cost === 2.9 && days[k1].failed === 1 && days[k1].byModel["claude-opus-5-5"].cost === 2.5 && days[k1].byLane.ops.n === 1 && days[k1].byLane.coral.n === 1 && days[Object.keys(days)[1]].byKind.answer.n === 1, days);
+  ok("…written atomically and yours only (0600)", (statSync(cf).mode & 0o777) === 0o600 && (statSync(df).mode & 0o777) === 0o600 && existsSync(cf + ".bak"), (statSync(cf).mode & 0o777).toString(8));
 } finally {
   rmSync(HOME, { recursive: true, force: true });
 }

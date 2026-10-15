@@ -141,6 +141,7 @@ This folder isn't a repo; there's nothing to change in it but this file. Use you
 
 - **Anything hard to undo you only ask about:** closing or deleting an account, deleting data, paying or buying, sending something to someone. Find out what it would affect first (what's running, what it costs, what's in it), then stop and ask in \`.symbiot/QUESTIONS.md\` with what you found, and don't go ahead until ANSWERS.md says to.
 - Is part of it a repo's work? Hand it over (below) rather than doing it from here.
+- Keys and credentials: Symbiot's membrane blocks reading the user's key files (\`~/.ssh\`, \`~/.aws\`, \`~/.config/gh\`, cloud credential files, another folder's \`.env\`) and every \`sudo\`, so don't try them. A secret you need: \`symbiot secret list\`, then \`symbiot secret get <name>\`; one that isn't there, ask the user for it in QUESTIONS.md as a \`👤\` step naming what it's for (they paste it into the vault, never into a file).
 - Need the user? Only for what no agent can do: ask in \`.symbiot/QUESTIONS.md\` (a \`## Questions\` heading, a \`### \` heading per question, then 2–4 options as \`- \` bullets). Before you ask, read \`.symbiot/ANSWERS.md\` and what this brief says the user has already answered on this work: if one of those settles it, use it and don't ask.${voiceLine()}
 ${ONLY_YOU}
 - When it's done, tick the task (\`- [x]\`) and say what you did in your last message: it's what goes back to whoever asked.
@@ -342,10 +343,12 @@ async function converse({ where, role = "", context = "", history = "", question
   let lanes = map; if (!lanes) { try { lanes = laneMap(); } catch { lanes = {}; } }
   // how they talk, from what they've typed into any chat (adapt.mjs: accommodation)
   const voice = styleLine(styleOf(d.log.filter((l) => l.role === "user").map((l) => l.text).concat(question)));
-  const system = `${IDENTITY} ${role}\n\n${rulesFor(Object.keys(lanes), selfLane(lanes), nav, settle, tasks, control)}${voice ? "\n" + voice : ""}${languageLine()}`;
+  // the system prompt holds what's the same from turn to turn (prompt caching keys on its start); how they talk (voice) changes as they type, so it goes last, in the prompt
+  const system = `${IDENTITY} ${role}\n\n${rulesFor(Object.keys(lanes), selfLane(lanes), nav, settle, tasks, control)}${languageLine()}`;
   let prompt = `${dayLine(now)}\n\n` + (known ? `What you know (from across the app):\n${known}\n\n` : "") + (kn.text ? kn.text + "\n\n" : "") + (elsewhere ? `Lately, elsewhere in the app (other chats: a short answer here doesn't reply to these):\n${elsewhere}\n\n` : "") +
     (nav && tasks.length ? `Open tasks (id: task):\n${tasks.slice(0, 40).map((t) => `- ${t.id}: ${String(t.text || "").replace(/\s+/g, " ").slice(0, 90)}${t.repo ? ` [${t.repo}]` : ""}`).join("\n")}\n\n` : "") + (context ? context + "\n\n" : "") + (history ? `This chat so far:\n${history}\n\n` : "") + `They say (on ${where}): ${question}`;
   if (kept.length) prompt += `\n(Symbiot saved what they pasted, under ${kept.map((n) => `"${n}"`).join(", ")}. Say so in a few words, and carry on with what they asked.)`;
+  if (voice) prompt += `\n\n${voice}`;
   const asked = (p) => ask(system, p, images.length ? { images } : undefined);
   // write() says { text } or { error } (a stub may still say a string); a dead answer's reply is the
   // reason, in the provider's words (a model with no free quota, a busy one, a limit), and what to do
