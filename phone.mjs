@@ -368,7 +368,8 @@ async function applyOne(o, phone) {
     return r && r.ok ? { ok: true, ...(r.note ? { note: r.note } : {}) } : { error: (r && r.error) || "It couldn't be answered." };
   }
   if (o.op === "pending.approve") {
-    const repo = String(a.repo || ""), { pendingReview } = await import("./tasks.mjs");
+    const repo = String(a.repo || ""), { pendingReview, forgetReview } = await import("./tasks.mjs");
+    forgetReview(); // what the phone approves is checked against the tree as it is now, not the cards' cached view (15 Oct 2026)
     const now = pendingReview().find((r) => r.repo === repo && r.path && ((r.tasks || []).length || (r.files || []).length));
     if (!now) return { error: `Nothing in ${repo} is waiting for your Approve any more.` };
     if (now.running) return { error: `The agent is still working in ${repo}. Approve once it finishes.` };
