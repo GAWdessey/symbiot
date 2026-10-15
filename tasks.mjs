@@ -17,6 +17,7 @@ import { QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, isUrgent, handoffCmd, runnin
 import { gitDefaultBranch } from "./drift.mjs";
 import { readRunLog, briefPlan } from "./work.mjs";
 import { repoPathMap, laneMap, openWork, detectRepo } from "./scan.mjs";
+import { afterShip } from "./deploy.mjs";
 import { MARKETING_DIR, ensureMarketing, marketingBrief } from "./marketing.mjs";
 
 // ---- tasks: a persistent checklist (stored by core.mjs) -------------------
@@ -317,6 +318,16 @@ function installedVersion(name) {
   if (name === "symbiot") return VERSION;
   const root = process.platform === "win32" ? join(process.execPath, "..", "node_modules") : join(process.execPath, "..", "..", "lib", "node_modules");
   try { return String(JSON.parse(readFileSync(join(root, name, "package.json"), "utf8")).version || ""); } catch { return ""; }
+}
+// A step that needs a release ("once 0.65.2 is installed, sign in…") can't have been done
+// before that release is in here: Home's "I've done this" on one passed on "Done: the user
+// did it" while 0.65.1 still ran, and the sign-in it was for was lost (2026-10-14).
+// { name, needs, installed }, or null when it's in (or names no release, or isn't installed).
+function releaseNotIn(path, text) {
+  let pkg = {}; try { pkg = JSON.parse(readFileSync(join(path, "package.json"), "utf8")) || {}; } catch {}
+  if (typeof pkg.name !== "string" || !pkg.name || pkg.private || !/^\d+\.\d+\.\d+/.test(String(pkg.version || ""))) return null;
+  const needs = releaseNeeded(text, pkg.version), installed = needs ? installedVersion(pkg.name) : "";
+  return installed && semverGt(needs, installed) ? { name: pkg.name, needs, installed } : null;
 }
 // The newest version on npm ("" if unknown), asked again after 5 minutes.
 const NPM_LATEST = new Map();
@@ -865,6 +876,12 @@ function mergeWhenGreen(path, ref, gh = (args) => spawnSync("gh", args, { cwd: p
   if (m.status !== 0) return { error: "gh couldn't merge: " + (String(m.stderr || "").trim().split("\n").filter(Boolean).pop() || "unknown error") };
   return { ok: true, merged: String(ref) };
 }
+// Whether an approved change is live: { live: { state, text, target?, asked? } }, "not merged yet" at
+// this point, or merged and waiting on its deploy when auto-merge is queued (deploy.mjs).
+function liveOf(path, repo, r) {
+  if (!r.pr) return {};
+  try { return { live: afterShip(path, repo, r.pr, "approved", { ask: r.autoMerge === "queued" }) }; } catch { return {}; }
+}
 // Per-repo opt-in to auto-merge Approve PRs once CI passes (default off).
 function autoMergeRepos() { const a = loadConfig().autoMerge; return Array.isArray(a) ? a : []; }
 function setAutoMerge(repo, on) { const cfg = loadConfig(); let a = (Array.isArray(cfg.autoMerge) ? cfg.autoMerge : []).filter((x) => x !== repo); if (on && repo) a.push(repo); if (a.length) cfg.autoMerge = a; else delete cfg.autoMerge; saveConfig(cfg); return { ok: true, repos: cfg.autoMerge || [] }; }
@@ -884,7 +901,7 @@ async function approveRepo(repo, opts = {}) {
   const removed = applyRemovals(t);
   if (r.resent && r.pr) prFor(t, repo, r);
   saveTasks(t);
-  return { ...r, approved: items.length, ...(removed ? { removed } : {}) };
+  return { ...r, approved: items.length, ...liveOf(path, repo, r), ...(removed ? { removed } : {}) };
 }
 // "Approve changes without a task": ship the uncommitted changes even though no
 // ticked task is behind them (a fix the agent made but didn't tick). If tasks are
@@ -912,7 +929,7 @@ async function approveChanges(repo, opts = {}) {
   if (going && r.commit) going.rounds = [...(going.rounds || []), { at: now, ...Object.fromEntries(["branch", "commit", "pr"].filter((k) => r[k]).map((k) => [k, r[k]])) }].slice(-20);
   const removed = items.length ? applyRemovals(t) : 0;
   if (items.length || going) saveTasks(t);
-  return { ...r, approved: items.length, ...(round ? { round: { id: round.id, text: round.text } } : {}), ...(removed ? { removed } : {}) };
+  return { ...r, approved: items.length, ...liveOf(path, repo, r), ...(round ? { round: { id: round.id, text: round.text } } : {}), ...(removed ? { removed } : {}) };
 }
 // Send again, the review card's retry: what Approves committed in a repo and didn't get
 // as far as a PR (sendUnsent), sent now. opts.verify false: not tested here first (the
@@ -1047,4 +1064,4 @@ function pushTasks(filter) {
   return { empty: false, written, unresolved, handoff: handoffCmd() };
 }
 
-export { holdShip, SHIP_STALE, sendAgain, forgetUnsent, unsentOf, readUnsent, unsentCard, repoTests, localRefused, forgetReview, gitFailed, taskPaths, addTask, toggleTask, setTaskDone, removeTask, restoreTask, completedInRepo, removalOf, applyRemovals, applyDrops, syncTasks, workingChanges, workingDiff, publishesOnMerge, unreleased, bumpOffer, learnNpm, releaseNeeded, withReleases, setVersion, changelogEntry, changelogSection, noteChangelog, releaseInput, shipWithBump, runSummary, saidFinished, pendingReview, commitSubject, shipChanges, autoMergeRepos, setAutoMerge, approveRepo, approveChanges, sendBack, TASK_ORDER, taskType, buildTasksMd, pushTasks, mergeWhenGreen };
+export { holdShip, SHIP_STALE, sendAgain, forgetUnsent, unsentOf, readUnsent, unsentCard, repoTests, localRefused, forgetReview, gitFailed, taskPaths, addTask, toggleTask, setTaskDone, removeTask, restoreTask, completedInRepo, removalOf, applyRemovals, applyDrops, syncTasks, workingChanges, workingDiff, publishesOnMerge, unreleased, bumpOffer, learnNpm, releaseNeeded, releaseNotIn, withReleases, setVersion, changelogEntry, changelogSection, noteChangelog, releaseInput, shipWithBump, runSummary, saidFinished, pendingReview, commitSubject, shipChanges, autoMergeRepos, setAutoMerge, approveRepo, approveChanges, sendBack, TASK_ORDER, taskType, buildTasksMd, pushTasks, mergeWhenGreen };
