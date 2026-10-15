@@ -740,7 +740,19 @@ function runNow(a, { now = Date.now(), est = estimate } = {}) {
 // first (a question, an Approve), then what's at work, ready, waiting, and the
 // most recent. Ops runs (act-…: no repo of their own) are one "Agent runs" lane,
 // not a sphere each with an id for a name.
+// Kept WORK_KEEP (like homeState's KEEP): the Workdesk and the phone ask for it every
+// few seconds, and each build read every run's log and git for every lane (15 Oct 2026).
+// Only the plain call is kept; one with deps (a tick's fails and now, a test's stubs) is built.
+const WORK_KEEP = 8000; let workKept = null;
+const forgetWork = () => { workKept = null; }; // after anything you do (a POST): the next look is built afresh
 function workScene({ deps = {}, full = false } = {}) {
+  const plain = !Object.keys(deps).length;
+  if (plain && workKept && Date.now() - workKept.at < WORK_KEEP) return full ? workKept.v : workKept.lean;
+  const v = workSceneNow({ deps, full: true }), { all: _all, ...lean } = v;
+  if (plain) workKept = { at: Date.now(), v, lean };
+  return full ? v : lean;
+}
+function workSceneNow({ deps = {}, full = false } = {}) {
   const agents = deps.agents || (() => { try { return agentsList(); } catch { return []; } });
   const pending = deps.pending || (() => { try { return pendingReview({ kept: true }); } catch { return []; } });
   const tasks = deps.tasks || (() => { try { return loadTasks(); } catch { return []; } });
@@ -1038,4 +1050,4 @@ function setOnboarding({ step, skip, unskip, skipRest, done, restart } = {}) {
   return onboarding();
 }
 
-export { plainAsk, dismissCard, cardKey, loadDismissed, DISMISSED_FILE, reportIdeasAdd, reportAsk, reportDraftAnswer, workTick, waitWhy, AUTO_GRACE, STUCK_AFTER, marketingState, marketingGo, marketingDraftAnswer, marketingTask, moveToMarketing, goLane, homeState, homeContext, homeAsk, homeAnswer, homeNext, nextUp, laneNamed, NEXT_FILE, workScene, workGo, displayName, firstSteps, onboarding, setOnboarding, startOnboarding, ONB_STEPS, ONB_STEPS_PHONE, onbSteps, phoneBits, phoneSetupFirst, finishedState, handedState, noteHanded, phoneChat, isPeak, reportIdeasDismiss, settleAsks, settleFromChat };
+export { plainAsk, dismissCard, cardKey, loadDismissed, DISMISSED_FILE, reportIdeasAdd, reportAsk, reportDraftAnswer, workTick, waitWhy, AUTO_GRACE, STUCK_AFTER, marketingState, marketingGo, marketingDraftAnswer, marketingTask, moveToMarketing, goLane, homeState, homeContext, homeAsk, homeAnswer, homeNext, nextUp, laneNamed, NEXT_FILE, workScene, forgetWork, workGo, displayName, firstSteps, onboarding, setOnboarding, startOnboarding, ONB_STEPS, ONB_STEPS_PHONE, onbSteps, phoneBits, phoneSetupFirst, finishedState, handedState, noteHanded, phoneChat, isPeak, reportIdeasDismiss, settleAsks, settleFromChat };

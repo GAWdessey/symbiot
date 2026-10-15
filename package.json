@@ -56,6 +56,7 @@
     "postinstall.mjs",
     "icon.svg",
     "scanworker.mjs",
+    "mapworker.mjs",
     "estimate.mjs",
     "parallel.mjs",
     "route.mjs",
