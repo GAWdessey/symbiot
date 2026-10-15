@@ -7,7 +7,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { join } from "node:path";
 import { readFileSync, writeFileSync, existsSync, readdirSync, mkdirSync, statSync, unlinkSync } from "node:fs";
 import { randomBytes } from "node:crypto";
-import { VERSION, LATEST_VERSION, REGISTRY, semverGt, loadConfig, saveConfig, loadTasks, saveTasks, TASK_MAX, clipWords, taskWords, sameTask, uniqueTasks, gitOut, hasCmd, repoState } from "./core.mjs";
+import { VERSION, LATEST_VERSION, REGISTRY, semverGt, loadConfig, saveConfig, loadTasks, saveTasks, TASK_MAX, clipWords, taskWords, sameTask, isFinding, uniqueTasks, gitOut, hasCmd, repoState } from "./core.mjs";
 import { handoverRules, ONLY_YOU, HANDBACK } from "./handover.mjs";
 import { laneReach } from "./reach.mjs";
 import { doneBrief, standingBrief } from "./asksdone.mjs";
@@ -34,7 +34,7 @@ function leadOf(text) {
   const m = text.slice(0, LEAD_MAX + 1).match(/^.*[.!?](?=\s)/s);
   return m && m[0].length >= LEAD_MAX / 3 ? m[0] + " …" : clipWords(text, LEAD_MAX);
 }
-function addTask(text, repo, { after = "" } = {}) {
+function addTask(text, repo, { after = "", finding = false } = {}) {
   const raw = String(text || "").trim(), tail = String(after || "").trim();
   text = raw.replace(/\s+/g, " ");
   if (!text) return { error: "empty" };
@@ -51,7 +51,8 @@ function addTask(text, repo, { after = "" } = {}) {
     saveTasks(t); return { ...dup, duplicate: true, reworded: true };
   }
   if (dup) return { ...dup, duplicate: true };
-  const item = { id, text: line, ...(long ? { full } : {}), repo: repo || "", done: false, ts: Date.now() };
+  // a finding (core.mjs isFinding) goes in ticked, saying why: on the record, but not a job
+  const item = { id, text: line, ...(long ? { full } : {}), repo: repo || "", done: !!finding, ...(finding ? { finding: FINDING_NOTE } : {}), ts: Date.now() };
   t.unshift(item); saveTasks(t); return item;
 }
 function toggleTask(id) { const t = loadTasks(); const it = t.find((x) => x.id === id); if (it) { it.done = !it.done; it.changed = Date.now(); saveTasks(t); } return it || { error: "not found" }; }
@@ -66,7 +67,17 @@ function setTaskDone(id, done, { at = Date.now() } = {}) {
   return it;
 }
 function removeTask(id) { saveTasks(loadTasks().filter((x) => x.id !== id)); return { ok: true }; }
-function restoreTask(id) { const t = loadTasks(); const it = t.find((x) => x.id === id); if (it) { it.archived = false; it.done = false; delete it.archivedAt; if (it.removedBy || it.dropped) { it.kept = true; delete it.removedBy; delete it.merged; delete it.dropped; } saveTasks(t); } return it || { error: "not found" }; }
+// Remove, on Home or the Workdesk: the task is cancelled, not deleted. It goes to the Archive
+// marked removed, so Undo (or Restore there) brings it back as it was (Garth, 2026-10-15:
+// "there is no way to remove an unwanted task"). Its repo's next TASKS.md leaves it out.
+function cancelTask(id) {
+  const t = loadTasks(), it = t.find((x) => x.id === id);
+  if (!it) return { error: "That task isn't there any more." };
+  if (it.archived) return { ok: true, id, already: true };
+  it.archived = true; it.cancelled = true; it.archivedAt = Date.now(); saveTasks(t);
+  return { ok: true, id, text: it.text };
+}
+function restoreTask(id) { const t = loadTasks(); const it = t.find((x) => x.id === id); if (it) { it.archived = false; it.done = false; delete it.archivedAt; delete it.cancelled; if (it.finding) { it.kept = true; delete it.finding; } if (it.removedBy || it.dropped) { it.kept = true; delete it.removedBy; delete it.merged; delete it.dropped; } saveTasks(t); } return it || { error: "not found" }; }
 // Which task texts the agent checked off in a repo's .symbiot/TASKS.md
 function completedInRepo(repoPath) {
   try { return readFileSync(join(repoPath, ".symbiot", "TASKS.md"), "utf8").split("\n").filter((l) => /^\s*-\s*\[x\]/i.test(l)).map((l) => l.replace(/^\s*-\s*\[x\]\s*/i, "").trim().toLowerCase()); }
@@ -122,6 +133,7 @@ function applyDrops(t, map) {
 // (sendBack: unticked, open again). Only a task the USER ticks archives directly.
 // Tasks held for an agent that has since finished land here too, and an agent
 // starts on what's still open in them (one `push --open` started can't do that).
+const FROM_REPORT = /\(from the report "/, FINDING_NOTE = "a finding, not a job: it says what's so, with nothing to do";
 function syncTasks() {
   const t = loadTasks(); const map = laneMap(); let review = 0, archived = 0, started = 0; const checkedByRepo = {};
   const dropped = applyDrops(t, map);
@@ -130,6 +142,8 @@ function syncTasks() {
     if (!(x.repo in checkedByRepo)) { const p = map[x.repo]; if (p && startHeldTasks(p)) started++; checkedByRepo[x.repo] = p ? completedInRepo(p) : []; }
     if (checkedByRepo[x.repo].some((c) => sameTask(c, x.text))) { x.review = true; x.reviewAt = Date.now(); review++; }
   }
+  // a finding filed as a task from a report (core.mjs isFinding) has nothing to do: ticked, saying so
+  for (const x of t) if (!x.done && !x.archived && !x.review && !x.kept && FROM_REPORT.test(x.text) && isFinding(x.text)) { x.done = true; x.finding = FINDING_NOTE; x.changed = Date.now(); }
   for (const x of t) { if (x.done && !x.archived) { x.archived = true; x.archivedAt = Date.now(); archived++; } }
   const removed = applyRemovals(t);
   saveTasks(t);
@@ -1064,4 +1078,4 @@ function pushTasks(filter) {
   return { empty: false, written, unresolved, handoff: handoffCmd() };
 }
 
-export { holdShip, SHIP_STALE, sendAgain, forgetUnsent, unsentOf, readUnsent, unsentCard, repoTests, localRefused, forgetReview, gitFailed, taskPaths, addTask, toggleTask, setTaskDone, removeTask, restoreTask, completedInRepo, removalOf, applyRemovals, applyDrops, syncTasks, workingChanges, workingDiff, publishesOnMerge, unreleased, bumpOffer, learnNpm, releaseNeeded, releaseNotIn, withReleases, setVersion, changelogEntry, changelogSection, noteChangelog, releaseInput, shipWithBump, runSummary, saidFinished, pendingReview, commitSubject, shipChanges, autoMergeRepos, setAutoMerge, approveRepo, approveChanges, sendBack, TASK_ORDER, taskType, buildTasksMd, pushTasks, mergeWhenGreen };
+export { holdShip, SHIP_STALE, sendAgain, forgetUnsent, unsentOf, readUnsent, unsentCard, repoTests, localRefused, forgetReview, gitFailed, taskPaths, addTask, toggleTask, setTaskDone, removeTask, cancelTask, restoreTask, FINDING_NOTE, completedInRepo, removalOf, applyRemovals, applyDrops, syncTasks, workingChanges, workingDiff, publishesOnMerge, unreleased, bumpOffer, learnNpm, releaseNeeded, releaseNotIn, withReleases, setVersion, changelogEntry, changelogSection, noteChangelog, releaseInput, shipWithBump, runSummary, saidFinished, pendingReview, commitSubject, shipChanges, autoMergeRepos, setAutoMerge, approveRepo, approveChanges, sendBack, TASK_ORDER, taskType, buildTasksMd, pushTasks, mergeWhenGreen };

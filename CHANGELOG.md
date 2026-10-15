@@ -15,6 +15,10 @@ What each Symbiot release brought, newest first. When Approve bumps the version,
 - A site added by its bare name (twilio.com) is checked at the page you reach once signed in, and a site that still reads signed out after Done says on its card what the window last showed.
 - An answer sent from a Home card no longer comes back as a draft when the card is redrawn while it sends.
 - "I've done this" on a step that needs a release ("once 0.65.2 is installed, sign in…") waits until that release is installed here, so a sign-in done on the old one isn't taken as done.
+- Every card under "Needs you" (on Home, on the Workdesk and in a project) has a × that dismisses it in one click, with Undo. A new question from the same agent, or a changed Approve, still shows.
+- Removing a task on the Workdesk, or with the × next to a waiting task on Home's work view, now cancels it into the Archive (marked "removed") instead of deleting it, with Undo. Restore in the Archive brings it back later too.
+- A report's next steps no longer offer findings ("…is already approved, not pending") as tasks. Findings already filed from a report are ticked as done, marked "finding" in the Archive, so they leave the Workdesk by themselves.
+- After a restart while an update waits for npm's download, the page says it's still waiting straight away, rather than only after its first look comes back. A test that sometimes failed on GitHub over this (and held this release back) now waits for it.
 
 ## 0.65.1 — 2026-10-14
 

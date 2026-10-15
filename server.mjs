@@ -24,7 +24,7 @@ import { SCAN, SCAN_TIMEOUT_MS, scanRoots, scanHome, addScanRoot, removeScanRoot
 import { computeDrift } from "./drift.mjs";
 import { afterShip, markLive } from "./deploy.mjs";
 import { laneCap, mergeEnded, DEFAULT_CAP } from "./parallel.mjs";
-import { addTask, toggleTask, removeTask, restoreTask, syncTasks, taskType, pushTasks, pendingReview, workingDiff, learnNpm, withReleases, releaseInput, approveRepo, approveChanges, sendBack, setAutoMerge, mergeWhenGreen, sendAgain, forgetUnsent } from "./tasks.mjs";
+import { addTask, toggleTask, removeTask, cancelTask, restoreTask, syncTasks, taskType, pushTasks, pendingReview, workingDiff, learnNpm, withReleases, releaseInput, approveRepo, approveChanges, sendBack, setAutoMerge, mergeWhenGreen, sendAgain, forgetUnsent } from "./tasks.mjs";
 import { repoReview, repoSuggest, folderSuggest, taskChat, clearTaskChat, mailState, setMail, sentMail, produce, releaseNotes } from "./writeups.mjs";
 import { listSecrets, getSecret, markUsed, deleteSecret } from "./vault.mjs";
 import { loadScreens, screenImage, captureScreen, splitScreen, listMonitors, allowScreenshots, importScreen, setRegions, renameScreen, removeScreen, blueprint, clickRegion } from "./screens.mjs";
@@ -37,7 +37,7 @@ import { mindState, forget } from "./mind.mjs";
 import { lanesTick, lanesState, partlyDone, handingOf, loadLedger, orcaRelink, shareAnswer } from "./lanes.mjs";
 import { keepFacts, skipFacts, awaitTick, awaitingState, stopWaiting } from "./handback.mjs";
 import { adaptState, noteUse } from "./adapt.mjs";
-import { reportIdeasAdd, reportIdeasDismiss, reportAsk, reportDraftAnswer, homeState, homeAsk, homeAnswer, homeNext, workScene, workGo, workTick, firstSteps, marketingState, marketingGo, marketingDraftAnswer, marketingTask, moveToMarketing, onboarding, setOnboarding, startOnboarding, phoneSetupFirst } from "./home.mjs";
+import { dismissCard, reportIdeasAdd, reportIdeasDismiss, reportAsk, reportDraftAnswer, homeState, homeAsk, homeAnswer, homeNext, workScene, workGo, workTick, firstSteps, marketingState, marketingGo, marketingDraftAnswer, marketingTask, moveToMarketing, onboarding, setOnboarding, startOnboarding, phoneSetupFirst } from "./home.mjs";
 import { MARKETING_DIR, MARKETING, draftPreview, laneMedia, displayName, setDraftMedia } from "./marketing.mjs";
 import { trays, trayMedia, setBlur, addBlur, removeBlur, setReviewed, renderCapture } from "./tray.mjs";
 import { captureProduct, captureProducts } from "./capture.mjs";
@@ -359,13 +359,13 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
   // (resumeUpdate), and one that installed but came back on the old version says why.
   const UPDATE_STATE = join(CONFIG_DIR, "update.json");
   const noteUpdate = (o) => { try { if (o) { mkdirSync(CONFIG_DIR, { recursive: true }); writeFileSync(UPDATE_STATE, JSON.stringify(o)); } else if (existsSync(UPDATE_STATE)) unlinkSync(UPDATE_STATE); } catch {} };
-  function startUpdate({ since = Date.now(), latest = LATEST_VERSION, auto = false } = {}) {
+  function startUpdate({ since = Date.now(), latest = LATEST_VERSION, auto = false, retrying = false } = {}) {
     const { target, cmd } = updateCmd(latest, VERSION);
     const inst = process.env.SYMBIOT_UPDATE_CMD || cmd, note = (state, more = {}) => noteUpdate({ target, from: VERSION, since, state, at: Date.now(), ...more });
     const failed = (error) => { UPDATING = null; UPDATE_FAILED = { target, error, at: Date.now() }; note("failed", { error }); return null; };
     const again = (n, error) => {
       if (Date.now() - since + UPDATE_EVERY > UPDATE_WAIT) return failed(error);
-      UPDATING = { target, retrying: true, attempt: n + 1, since, at: Date.now() }; note("waiting");
+      UPDATING = { target, retrying: true, attempt: n + 1, since, at: Date.now() }; note("waiting", { retrying: true });
       setTimeout(() => attempt(n + 1), UPDATE_EVERY).unref(); return null;
     };
     const attempt = async (n) => {
@@ -389,7 +389,10 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       if (!e) failed("Symbiot couldn't start npm.");
       return e;
     };
-    UPDATING = { target, attempt: 1, since, at: Date.now(), ...(auto ? { auto: true } : {}) }; UPDATE_FAILED = null; note("waiting");
+    // resumed after a restart that came while it waited for npm's download: it still is, so the
+    // page says so straight away, not only once the first look comes back (CI caught it between)
+    const r = retrying ? { retrying: true } : {};
+    UPDATING = { target, ...r, attempt: 1, since, at: Date.now(), ...(auto ? { auto: true } : {}) }; UPDATE_FAILED = null; note("waiting", r);
     return attempt(1).then((e) => ({ e, target }));
   }
   // At start: an update this app (or the one before it) was on. On its version now, it's
@@ -404,7 +407,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       const error = installedElsewhere(u.target);
       UPDATE_FAILED = { target: u.target, error, at: Date.now() }; noteUpdate({ ...u, state: "failed", error, at: Date.now() }); return;
     }
-    if (Date.now() - (Number(u.since) || 0) < UPDATE_WAIT) { startUpdate({ since: Number(u.since), latest: u.target }).catch(() => {}); return; }
+    if (Date.now() - (Number(u.since) || 0) < UPDATE_WAIT) { startUpdate({ since: Number(u.since), latest: u.target, retrying: !!u.retrying }).catch(() => {}); return; }
     const error = `Symbiot restarted while it waited for npm's download of ${u.target}, and gave up after 20 minutes`;
     UPDATE_FAILED = { target: u.target, error, at: Date.now() }; noteUpdate({ ...u, state: "failed", error, at: Date.now() });
   }
@@ -459,6 +462,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       if (u.pathname === "/api/tasks/add" && req.method === "POST") { const b = await readBody(req); return json(res, addTask(b.text, b.repo)); }
       if (u.pathname === "/api/tasks/toggle" && req.method === "POST") { const b = await readBody(req); return json(res, toggleTask(String(b.id || ""))); }
       if (u.pathname === "/api/tasks/remove" && req.method === "POST") { const b = await readBody(req); return json(res, removeTask(String(b.id || ""))); }
+      if (u.pathname === "/api/tasks/cancel" && req.method === "POST") { const b = await readBody(req); return json(res, cancelTask(String(b.id || ""))); }
       if (u.pathname === "/api/tasks/restore" && req.method === "POST") { const b = await readBody(req); return json(res, restoreTask(String(b.id || ""))); }
       if (u.pathname === "/api/tasks/sync" && req.method === "POST") return json(res, syncTasks());
       if (u.pathname === "/api/tasks/chat" && req.method === "POST") { const b = await readBody(req); return json(res, await taskChat(String(b.id || ""), b.question)); }
@@ -657,6 +661,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       if (u.pathname === "/api/onboarding/restart" && req.method === "POST") return json(res, setOnboarding({ restart: true }));
       if (u.pathname === "/api/look" && req.method === "POST") { const b = await readBody(req), look = ["ferro", "glass", "pearl"].includes(b.look) ? b.look : "ferro"; const cf = loadConfig(); if (cf.look !== look) { cf.look = look; saveConfig(cf); } return json(res, { look, launcher: setLauncherLook(look) }); }
       if (u.pathname === "/api/firststeps") return json(res, firstSteps()); // Settings' first steps: what's set up, in order
+      if (u.pathname === "/api/home/dismiss" && req.method === "POST") { const b = await readBody(req); return json(res, dismissCard(b.key, { undo: !!b.undo })); }
       if (u.pathname === "/api/home/answer" && req.method === "POST") { const b = await readBody(req); return json(res, homeAnswer(b.id, { pick: b.pick, text: b.text })); }
       if (u.pathname === "/api/away" && req.method === "POST") { const b = await readBody(req); return json(res, toggleAway(`http://127.0.0.1:${server.address().port}/?t=${TOKEN}`, b.open)); }
       if (u.pathname === "/api/home/next" && req.method === "POST") { const b = await readBody(req); return json(res, homeNext(b.id)); }

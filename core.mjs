@@ -163,6 +163,22 @@ function sameTask(a, b) {
   const [s, l] = x.length < y.length ? [x, y] : [y, x];
   return (s.split(" ").length >= 8 && l.startsWith(s + " ")) || nearTask(a, b) || sameAsk(a, b) || spelledOut(a, b);
 }
+// A finding, not a job: what a report found, said as a fact. Three ticked from an audit's
+// "Four things that change the plan" ("Google is already fully on dailify.co.za",
+// "API_EXTERNAL_URL is https://dailify.fshub.dev, not supabase.seekerai.dev", "The 14
+// WhatsApp templates are already approved, not pending") sat on the Workdesk as tasks
+// with nothing to do (Garth, 2026-10-15). Its first sentence settles it: one that says
+// what to do (it starts with a verb, or says should, needs to, for dailify to check) or
+// asks is a job; one that says something is so already, or is this and not that, a finding.
+const JOB_VERB = /^(?:when|if|once|only|never|always|don['’]?t|do not|avoid|pick|choose|allow|prefer|limit|cap|raise|lower|mark|tick|close|open|clear|save|store|read|watch|notify|warn|say|offer|add|fix|check|ask|make|move|set|update|remove|delete|drop|send|run|write|test|verify|confirm|reconnect|sign|deploy|rename|hand|create|build|ship|approve|change|replace|switch|migrate|investigate|look|find|review|decide|get|put|call|email|reply|follow|schedule|book|pay|renew|rotate|reword|bump|merge|split|turn|enable|disable|stop|start|restart|keep|use|let|try|clean|document|draft|post|publish|install|upgrade|connect|link|map|wire|show|hide|give|tell|retry|re-?[a-z]+)\b/i;
+const JOB_SAYS = /\b(?:should|must|needs? to|needed to|has to|have to|ought to|todo|to do|next step|worth|consider|recommend\w*|for (?:the )?[\w-]+(?: lane)? to)\b|👤|🤖|\?\s*$/iu;
+const FACT_SAYS = /\balready\b|\b(?:is|are|was|were)\b[^;]*?,\s*not\b|\b(?:nothing|no change|no action) (?:to do|needed|is needed)\b/i;
+function isFinding(text) {
+  const s = String(text || "").replace(/\s*\(from the report ".*$/s, "").replace(/[`*_]/g, "").trim();
+  const first = (s.match(/^.*?[.!?](?=\s|$)/s) || [s])[0];
+  if (!first || JOB_VERB.test(first) || JOB_SAYS.test(s)) return false;
+  return FACT_SAYS.test(first);
+}
 // Nearly the same task, two ways:
 // - nearly all the same words in the same order, 12+ words each ("…nothing
 //   recorded since 2026-08-03" and "…since 2026-08-04")
@@ -314,4 +330,4 @@ function repoState(repoPath) {
   return { branch, dirty, del, mod, add, stale, staleBy, behind };
 }
 
-export { own, writeAtomic, writeJsonAtomic, readState, takeAppLock, releaseAppLock, lockPath, VERSION, LATEST_VERSION, semverGt, REGISTRY, checkLatest, CONFIG_DIR, CONFIG_PATH, SECRETS_PATH, loadConfig, saveConfig, moveSecrets, splitSecrets, loadTasks, saveTasks, TASK_MAX, clipWords, taskWords, sameTask, uniqueTasks, sh, runOut, runOk, gitOut, gitOk, hasCmd, chromeBinary, repoState };
+export { own, writeAtomic, writeJsonAtomic, readState, takeAppLock, releaseAppLock, lockPath, VERSION, LATEST_VERSION, semverGt, REGISTRY, checkLatest, CONFIG_DIR, CONFIG_PATH, SECRETS_PATH, loadConfig, saveConfig, moveSecrets, splitSecrets, loadTasks, saveTasks, TASK_MAX, clipWords, taskWords, sameTask, isFinding, uniqueTasks, sh, runOut, runOk, gitOut, gitOk, hasCmd, chromeBinary, repoState };

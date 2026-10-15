@@ -144,6 +144,7 @@ const calls = [
   ["/api/tasks/add", "POST"],
   ["/api/tasks/toggle", "POST"],
   ["/api/tasks/remove", "POST"],
+  ["/api/tasks/cancel", "POST"],   // no id -> "isn't there any more", nothing changes
   ["/api/tasks/restore", "POST"],
   ["/api/tasks/live", "POST"],
   ["/api/drift?ci=0&fetch=0", "GET"],
@@ -242,6 +243,7 @@ const calls = [
   ["/api/look", "POST"],            // the look: the app menu's icon follows
   ["/api/away", "POST"],            // open: false closes Away (nothing open: nothing to do)
   ["/api/home/ask", "POST"],        // no question -> "empty", no model call
+  ["/api/home/dismiss", "POST"],    // no key -> "Which card?", nothing saved
   ["/api/home/answer", "POST"],     // no id -> "answer it on its block", nothing starts
   ["/api/home/next", "POST"],       // no id -> "that suggestion isn't here any more", nothing starts
   ["/api/firststeps", "GET"],       // Settings' first steps (isolated HOME -> none done)
