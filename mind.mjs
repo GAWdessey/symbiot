@@ -24,7 +24,7 @@ import { readFileSync, writeFileSync, mkdirSync, chmodSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { randomBytes } from "node:crypto";
 import { VERSION, CONFIG_DIR, clipWords, readState, writeJsonAtomic } from "./core.mjs";
-import { write } from "./ai.mjs";
+import { write, textOf } from "./ai.mjs";
 import { handoffCmd, runHandoff, isUrgent, urgentStop, urgentFirst, urgentUndo } from "./agents.mjs";
 import { addTask, pushTasks } from "./tasks.mjs";
 import { laneMap } from "./scan.mjs";
@@ -347,17 +347,18 @@ async function converse({ where, role = "", context = "", history = "", question
     (nav && tasks.length ? `Open tasks (id: task):\n${tasks.slice(0, 40).map((t) => `- ${t.id}: ${String(t.text || "").replace(/\s+/g, " ").slice(0, 90)}${t.repo ? ` [${t.repo}]` : ""}`).join("\n")}\n\n` : "") + (context ? context + "\n\n" : "") + (history ? `This chat so far:\n${history}\n\n` : "") + `They say (on ${where}): ${question}`;
   if (kept.length) prompt += `\n(Symbiot saved what they pasted, under ${kept.map((n) => `"${n}"`).join(", ")}. Say so in a few words, and carry on with what they asked.)`;
   const asked = (p) => ask(system, p, images.length ? { images } : undefined);
-  const dead = (r) => !r || /^\(?couldn't reach the model/i.test(String(r));
+  // write() says { text } or { error } (a stub may still say a string); a dead answer's reply is the
+  // reason, in the provider's words (a model with no free quota, a busy one, a limit), and what to do
+  const dead = (r) => !textOf(r) || /^\(?couldn't reach the model/i.test(textOf(r));
+  const deadReply = (r) => (r && typeof r === "object" && r.error ? String(r.error).slice(0, 600) : /^Couldn't reach the model: ./.test(textOf(r)) ? textOf(r).slice(0, 600) : "(couldn't reach the model)");
   const raw = await asked(prompt);
-  // why, when the provider said (a model with no free quota, a busy one, a limit): what to do about it
-  const deadReply = (r) => (/^Couldn't reach the model: ./.test(String(r || "")) ? String(r).slice(0, 600) : "(couldn't reach the model)");
   if (dead(raw)) return { reply: deadReply(raw), remembered: 0 };
-  let j = parseReply(raw);
+  let j = parseReply(textOf(raw));
   // Home must answer in the reply format: one retry, then an honest error rather than loose text (nothing runs on it)
   if (j.plain && where === "Home") {
     const raw2 = await asked(prompt + JSON_AGAIN);
     if (dead(raw2)) return { reply: deadReply(raw2), remembered: 0 };
-    j = parseReply(raw2);
+    j = parseReply(textOf(raw2));
     if (j.plain) return { reply: BAD_FORM, remembered: 0, steps: [] };
   }
   let reply = String(j.reply || "").trim().slice(0, 4000) || "(no answer)", did = null;

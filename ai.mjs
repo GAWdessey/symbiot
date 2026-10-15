@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { existsSync, mkdirSync, writeFileSync, unlinkSync } from "node:fs";
 import { loadConfig, saveConfig, sh, hasCmd, CONFIG_DIR } from "./core.mjs";
 
-const MAX_TOKENS = 1600;
+const MAX_TOKENS = 1600, CALL_MS = 120000; // a stalled connection to OpenAI, Gemini or Ollama hung a chat for good (15 Oct 2026): two minutes, then it says so
 
 // The one table of Claude model ids (route.mjs, FAST_MODEL, aboveFloor, recommendModels
 // all read it): four places each had their own, and two were a generation behind
@@ -146,7 +146,7 @@ function callClaude(r, system, prompt, images = []) {
       let j = null; try { j = JSON.parse(out.trim().split("\n").filter(Boolean).pop() || "{}"); } catch {}
       if (j && j.is_error === false && typeof j.result === "string") { resolve(j.result.trim()); return; }
       const why = (j && j.result) || err.trim().split("\n").pop() || out.trim().slice(0, 200) || "no answer";
-      CLAUDE_SEEN = null; // signed out since? ask again next time
+      if (/log(?:ged)? ?in|sign(?:ed)? ?in|authenticat|OAuth|expired|credential|not connected/i.test(String(why))) CLAUDE_SEEN = null; // signed out since? ask again next time; not on a timeout or a model-side error (that cost `claude auth status` on every chat turn)
       reject(new Error(`Claude Code: ${String(why).slice(0, 300)}`));
     });
     ch.stdin.end(input);
@@ -172,7 +172,7 @@ async function callOpenAI(r, system, prompt, images = []) {
   // Newer models want max_completion_tokens instead of max_tokens; try both.
   for (const tokKey of ["max_tokens", "max_completion_tokens"]) {
     const res = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
+      method: "POST", signal: AbortSignal.timeout(CALL_MS),
       headers: { Authorization: `Bearer ${r.key}`, "Content-Type": "application/json" },
       body: JSON.stringify({ model: r.model, [tokKey]: MAX_TOKENS, messages }),
     });
@@ -186,7 +186,7 @@ async function callOpenAI(r, system, prompt, images = []) {
 async function callGemini(r, system, prompt, images = []) {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(r.model)}:generateContent?key=${encodeURIComponent(r.key)}`;
   const res = await fetch(url, {
-    method: "POST", headers: { "Content-Type": "application/json" },
+    method: "POST", headers: { "Content-Type": "application/json" }, signal: AbortSignal.timeout(CALL_MS),
     body: JSON.stringify({
       systemInstruction: { parts: [{ text: system }] },
       contents: [{ role: "user", parts: [{ text: prompt }, ...images.map((i) => ({ inline_data: { mime_type: i.mime, data: i.data } }))] }],
@@ -200,7 +200,7 @@ async function callGemini(r, system, prompt, images = []) {
 }
 async function callOllama(r, system, prompt, images = []) {
   const res = await fetch(`${r.baseUrl}/api/chat`, {
-    method: "POST", headers: { "Content-Type": "application/json" },
+    method: "POST", headers: { "Content-Type": "application/json" }, signal: AbortSignal.timeout(CALL_MS),
     body: JSON.stringify({ model: r.model, stream: false, messages: [{ role: "system", content: system }, { role: "user", content: prompt, ...(images.length ? { images: images.map((i) => i.data) } : {}) }] }),
   });
   const text = await res.text();
@@ -232,23 +232,29 @@ function aboveFloor(r0) {
   return key ? { provider: "anthropic", key, model: MODELS.sonnet.id, source: "saved login" } : null;
 }
 const NO_CHAT_MODEL = "I can't answer here right now: chat needs Claude (Sonnet or better), and Claude isn't connected. Connect it in Settings and ask again.";
+const NOT_CONNECTED = "No AI is connected. With a Claude subscription, sign in to Claude Code (run  claude  once) and Symbiot uses it, no key; otherwise connect one in Settings → AI (or  symbiot login ).";
+// { text } when the model answered, else { error }: a sentence that says what happened and
+// what to do. Never a bare string: the write-ups took "Couldn't reach the model: …" for the
+// week's text, and a rejected key went to the server's log while every chat said only
+// "(couldn't reach the model)" (15 Oct 2026). textOf reads either, for a stub standing in.
+const textOf = (r) => (r && typeof r === "object" ? (r.error ? "" : String(r.text ?? "")) : r == null ? "" : String(r));
 async function write(system, prompt, { images = [], fast = false, floor = "" } = {}) {
   const r0 = floor ? aboveFloor(resolveProvider()) : resolveProvider(), r = fast && r0 && FAST_MODEL[r0.provider] ? { ...r0, model: FAST_MODEL[r0.provider] } : r0;
-  if (!r) { if (floor) return NO_CHAT_MODEL; AI_UI.notConnected(); return null; }
-  const stop = AI_UI.spinner("thinking…");
+  if (!r) { if (floor) return { error: NO_CHAT_MODEL }; AI_UI.notConnected(); return { error: NOT_CONNECTED }; }
+  const label = (PROVIDERS[r.provider] || {}).label || r.provider, stop = AI_UI.spinner("thinking…");
   try {
-    if (r.provider === "claude") return await callClaude(r, system, prompt, images);
-    if (r.provider === "anthropic") return await callAnthropic(r, system, prompt, images);
-    if (r.provider === "openai") return await callOpenAI(r, system, prompt, images);
-    if (r.provider === "gemini") return await callGemini(r, system, prompt, images);
-    if (r.provider === "ollama") return await callOllama(r, system, prompt, images);
-    return null;
+    let text = null;
+    if (r.provider === "claude") text = await callClaude(r, system, prompt, images);
+    else if (r.provider === "anthropic") text = await callAnthropic(r, system, prompt, images);
+    else if (r.provider === "openai") text = await callOpenAI(r, system, prompt, images);
+    else if (r.provider === "gemini") text = await callGemini(r, system, prompt, images);
+    else if (r.provider === "ollama") text = await callOllama(r, system, prompt, images);
+    return typeof text === "string" ? { text } : { error: `${label} gave no answer.` };
   } catch (err) {
-    if (/\b401\b|\b403\b|invalid|authentication|api key|unauthor/i.test(err?.message || "")) {
-      AI_UI.rejected(PROVIDERS[r.provider].label);
-      return null;
-    }
-    return `Couldn't reach the model: ${err?.message || err}`;
+    const m = String(err?.message || err || "");
+    if (err?.name === "TimeoutError" || /didn't answer within/.test(m)) return { error: `${label} didn't answer within ${Math.round(CALL_MS / 60000)} minutes. Try again in a minute, or pick another AI in Settings → AI.` };
+    if (/\b401\b|\b403\b|invalid|authentication|api key|unauthor/i.test(m)) { AI_UI.rejected(label); return { error: `Your ${label} credentials were rejected. Reconnect in Settings → AI (or  symbiot login --force ).` }; }
+    return { error: `Couldn't reach the model: ${m}` };
   } finally { stop(); }
 }
 
@@ -366,4 +372,4 @@ async function connectProvider(b) {
   return saveConfig(cfg) ? { ok: true, message: `Connected: ${PROVIDERS[provider].label} · ${model}` } : { ok: false, message: "Couldn't write the config file." };
 }
 
-export { MODELS, modelTrouble, modelCheck, PROVIDERS, AI_UI, aboveFloor, NO_CHAT_MODEL, resolveProvider, write, validate, connectProvider, detectHardware, recommendModels, hasOllama, ollamaInstall, ensureOllama, useOllamaModel , claudeState, claudeReady, claudeHelp , claudeCommand , claudeSpawn };
+export { MODELS, modelTrouble, modelCheck, PROVIDERS, AI_UI, aboveFloor, NO_CHAT_MODEL, NOT_CONNECTED, textOf, resolveProvider, write, validate, connectProvider, detectHardware, recommendModels, hasOllama, ollamaInstall, ensureOllama, useOllamaModel , claudeState, claudeReady, claudeHelp , claudeCommand , claudeSpawn };

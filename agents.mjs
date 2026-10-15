@@ -899,7 +899,7 @@ async function readPass({ list, ask, connected, now = Date.now(), file = READ_FI
     due.push({ k, final });
   }
   for (const d of due.slice(0, READ_PER_TICK)) {
-    let r = null; try { r = parseRead(await ask(READ_SYSTEM, `The run's last message:\n\n${String(d.final).trim().slice(-READ_MAX)}`)); } catch {}
+    let r = null; try { const said = await ask(READ_SYSTEM, `The run's last message:\n\n${String(d.final).trim().slice(-READ_MAX)}`); r = parseRead(said && typeof said === "object" ? (said.error ? "" : said.text) : said); } catch {}
     store[d.k] = r ? { at: now, ...(r.needs ? { kind: r.kind, what: r.what, check: r.check, label: r.label } : {}) } : { at: now, error: true };
   }
   if (due.length) {

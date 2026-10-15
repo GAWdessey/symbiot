@@ -107,7 +107,7 @@ ok("pure: calling twice gives the same result", JSON.stringify(pickModel({ path:
   ok("chat: a local provider is never what answers (Claude if connected, else nothing)", got === null || got.provider !== "ollama", got);
   ok("chat: Haiku is lifted to Sonnet", ai.aboveFloor(h).model === "sonnet");
   ok("chat: Sonnet stays", ai.aboveFloor({ provider: "claude", model: "sonnet" }).model === "sonnet");
-  if (!ai.aboveFloor(null)) ok("chat: with no Claude reachable the reply says so, not a local answer", (await ai.write("s", "p", { floor: "sonnet" })) === ai.NO_CHAT_MODEL);
+  if (!ai.aboveFloor(null)) ok("chat: with no Claude reachable the reply says so, not a local answer", (await ai.write("s", "p", { floor: "sonnet" })).error === ai.NO_CHAT_MODEL);
   // installing a local model leaves the provider alone
   const { writeFileSync, readFileSync } = await import("node:fs");
   writeFileSync(join(CFG, "config.json"), JSON.stringify({ provider: "claude" }));

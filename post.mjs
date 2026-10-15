@@ -29,7 +29,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { connect } from "node:net";
 import { CONFIG_DIR, sh, hasCmd, loadConfig } from "./core.mjs";
-import { resolveProvider, write } from "./ai.mjs";
+import { resolveProvider, write, textOf } from "./ai.mjs";
 import { commits, discoveredRepos, laneMap } from "./scan.mjs";
 import { readTexts, pagePicture, pageClip, siteUrl, CLIP } from "./headless.mjs";
 import { runHandoff, runningHandoff } from "./agents.mjs";
@@ -217,7 +217,7 @@ async function draftPosts({ ask = write, now = Date.now(), days = 7, repos, gh, 
   const listed = facts.map(factLine).join("\n");
   const prompt = `Example posts of mine (my voice; not facts about this week):\n\n${voice.slice(0, 10).map((v, i) => `Example ${i + 1}:\n${v}`).join("\n\n")}\n\n` +
     `This week's facts (the only things you may claim), numbered:\n${listed}\n\nDraft the 3 posts.`;
-  const said = async (sys, p) => { const raw = await ask(sys, p); return !raw || /^\(?couldn't reach the model/i.test(raw) ? null : raw; };
+  const said = async (sys, p) => { const raw = textOf(await ask(sys, p)); return !raw || /^\(?couldn't reach the model/i.test(raw) ? null : raw; };
   // One try: the 3 drafts, then once more for any that's missing or claims what git
   // doesn't show, told what was wrong. null when the AI didn't answer.
   const attempt = async () => {
