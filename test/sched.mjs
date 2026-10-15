@@ -129,6 +129,33 @@ try {
   const sh = shareAnswer(asker, [{ q: "Send the Supabase ticket about evra_avm now?", a: "first check if evra_avm is saved somewhere else" }], { run: () => ({ id: "no" }), map: { evra: asker, voxi: bystander }, runs: () => [{ path: asker }, { path: bystander }], running: () => null, ledger: { handoffs: [] }, cfg: {} });
   ok("a lane matched only on a task's words gets the answer as background, and starts nothing", sh.length === 1 && sh[0].path === bystander && !sh[0].started && /\(background\)/.test(read(bystander, "ANSWERS.md")), sh);
   ok("…and its ANSWERS.md keeps its time, so it isn't an answer since the last run", Math.abs(statSync(join(bystander, ".symbiot", "ANSWERS.md")).mtimeMs - old) < 1000, statSync(join(bystander, ".symbiot", "ANSWERS.md")).mtimeMs - old);
+
+  console.log("4) QUESTIONS THAT VANISHED — every ops folder with an open question is listed, not just the 60 newest runs");
+  const oldOps = join(C, "drafts", "act-old12345"); mkdirSync(join(oldOps, ".symbiot"), { recursive: true });
+  put(oldOps, "handoff.json", JSON.stringify({ name: "Agent: submit the Google app for verification" }));
+  put(oldOps, "TASKS.md", "## Tasks\n- [ ] Submit the Google app for verification\n");
+  put(oldOps, "QUESTIONS.md", "## Questions\n### Which Google account owns the app?\nIt needs the owner.\n- 👤 You (only you: your account): say which\n- Skip this part\n");
+  put(oldOps, "agent.log", logOf('claude -p "x"', "Asked in QUESTIONS.md which account owns the app.", { ok: true, cost: 0.1, at: new Date(Date.now() - 5 * 86400000) }));
+  const answeredOps = join(C, "drafts", "act-done6789"); mkdirSync(join(answeredOps, ".symbiot"), { recursive: true });
+  put(answeredOps, "QUESTIONS.md", "## Questions\n### Send it now?\n- yes\n- no\n"); put(answeredOps, "ANSWERS.md", "# Answers\n### Send it now?\nyes\n_answered 2026-10-10_\n");
+  const qf = a.questionFolders(Date.now() + 60000); // past the 30 s the list is kept (Home listed it in 1)
+  ok("a folder with a question still open is found, named, dated from its run; an answered one isn't", qf.length === 1 && qf[0].path === oldOps && /Google app/.test(qf[0].name) && qf[0].startedAt > 0, qf);
+  const er = a.earlierRuns().find((r) => r.path === oldOps);
+  ok("…and listed like a run from before the app started, question and all", er && er.earlier && er.ask.questions.length === 1 && /Which Google account/.test(er.ask.questions[0].q), er && er.ask);
+  ok("…so it can be answered", a.knownRun(oldOps) && a.answerQuestions(oldOps, [{ q: "Which Google account owns the app?", a: "the ops one" }]).ok);
+  ok("the listing is cached (reread every 30 s, a folder only when its files changed)", a.questionFolders(Date.now() + 60001) === qf);
+
+  console.log("5) THE SANDBOX — ~ as a knowledge folder never opens all of home, nor Symbiot's or Claude's settings");
+  writeFileSync(join(C, "config.json"), JSON.stringify({ scanRoots: [join(HOME, "work")], agentCmd: 'claude -p "{prompt}"', knowledgeFolders: [{ path: HOME }, { path: join(HOME, "Company") }] }));
+  mkdirSync(join(HOME, "Company"), { recursive: true }); mkdirSync(join(HOME, "Downloads"), { recursive: true });
+  ok("wideRoot: ~, /, ~/.config and ~/.claude are wide; a project folder or ~/Company isn't", a.wideRoot(HOME) && a.wideRoot("/") && a.wideRoot(join(HOME, ".config")) && a.wideRoot(join(HOME, ".claude")) && !a.wideRoot(join(HOME, "Company")) && !a.wideRoot(lane));
+  const W = a.sandboxWrites(lane, `claude -p "x" --add-dir "${HOME}"`);
+  ok("a run's writable folders: its repo, ~/Company and the caches, never ~", W[0] === lane && W.includes(join(HOME, "Company")) && !W.includes(HOME), W);
+  const D = a.sandboxDenies([lane, join(C, "screens")]);
+  ok("its commands can't write Symbiot's own files (config, tasks, the sandbox folder) nor Claude's, while screens/ it was given stays open", D.includes(join(C, "config.json")) && D.includes(join(HOME, ".claude")) && D.includes(join(HOME, ".claude.json")) && !D.includes(join(C, "screens")) && !D.some((d) => d === C), D);
+  const scoped = a.withScope('claude -p "{prompt}"', lane);
+  ok("--add-dir (read and write) gets ~/Company but never ~", scoped.includes(`--add-dir "${join(HOME, "Company")}"`) && !scoped.includes(`--add-dir "${HOME}"`), scoped);
+  ok("inWork: ~/Company is the user's work; ~/Downloads and ~/x.sh aren't, with ~ as a knowledge folder", a.inWork(join(HOME, "Company", "notes.md")) && !a.inWork(join(HOME, "Downloads")) && !a.inWork(join(HOME, "x.sh")) && !a.inWork(join(HOME, ".claude", "settings.json")));
 } finally {
   rmSync(HOME, { recursive: true, force: true });
 }

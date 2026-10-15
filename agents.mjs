@@ -260,13 +260,30 @@ function sandboxNeeds({ platform = process.platform, has = hasCmd } = {}) {
   return { ready: !missing.length, missing };
 }
 const sandboxed = (repoPath, cfg = loadConfig()) => cfg.agentSandbox !== false && !!repoPath && !resolve(repoPath).startsWith(CONFIG_DIR + "/");
+// A folder that would open the whole home, or Symbiot's and Claude's own settings, to a
+// run: never a writable one, nor an --add-dir. ~ as a knowledge folder put --add-dir ~
+// on every run, so a run could write its own sandbox file, ~/.claude/settings.json,
+// tasks.json and ~/.bashrc (15 Oct 2026). Such a folder is read-only to runs.
+const CLAUDE_DIR = () => join(homedir(), ".claude");
+const under = (p, d) => p === d || p.startsWith(d + "/");
+function wideRoot(p) {
+  p = resolve(String(p || "").replace(/^~(?=\/|$)/, homedir())); if (!p) return true;
+  return p === "/" || p === homedir() || under(homedir(), p) || under(CONFIG_DIR, p) || under(CLAUDE_DIR(), p);
+}
 function sandboxWrites(repoPath, tmpl = "") {
   const out = [resolve(repoPath)];
   try { for (const k of knowledgeFolders()) out.push(k.path); } catch {}
   for (const m of String(tmpl).matchAll(/--add-dir\s+(?:"([^"]+)"|'([^']+)'|(\S+))/g)) out.push(m[1] || m[2] || m[3]);
   for (const f of ["settings.json", "settings.local.json"]) { try { const d = JSON.parse(readFileSync(join(repoPath, ".claude", f), "utf8")); for (const x of (d.permissions && d.permissions.additionalDirectories) || []) out.push(String(x)); } catch {} }
   for (const c of SANDBOX_CACHES) out.push(join(homedir(), c));
-  return [...new Set(out.filter(Boolean).map((p) => resolve(String(p).replace(/^~(?=\/|$)/, homedir()))))];
+  return [...new Set(out.filter(Boolean).map((p) => resolve(String(p).replace(/^~(?=\/|$)/, homedir()))))].filter((p, i) => !i || !wideRoot(p));
+}
+// Never written by a run's commands, whatever else is open to them: Symbiot's own folder
+// (each thing in it, so a path under it the run was given, screens/, stays writable) and
+// Claude's. The guard holds the Edit and Write tools to the same (SYMBIOT_WRITES).
+function sandboxDenies(writes = []) {
+  const own = []; try { own.push(...readdirSync(CONFIG_DIR).map((n) => join(CONFIG_DIR, n))); } catch { own.push(CONFIG_DIR); }
+  return [...own.filter((p) => !writes.some((w) => under(w, p) || under(p, w))), CLAUDE_DIR(), join(homedir(), ".claude.json")];
 }
 // What a lane's allowed list opens up in its sandbox: a Read rule for a place the sandbox
 // hides from every run (Read(~/.ssh/**), or the ssh agent's socket in /run/user) is
@@ -305,7 +322,7 @@ function sandboxFor(repoPath, tmpl = "", { needs = sandboxNeeds } = {}) {
   const writes = sandboxWrites(repoPath, tmpl), { lift } = sandboxLifts(repoAllows(repoPath));
   const off = idlePlugins(repoPath);
   const s = { ...JSON.parse(readFileSync(guardSettings(), "utf8")), ...(off ? { enabledPlugins: off } : {}), sandbox: { enabled: true, failIfUnavailable: true, autoAllowBashIfSandboxed: true, allowUnsandboxedCommands: false,
-    network: { allowAllUnixSockets: true }, filesystem: { allowWrite: writes, denyRead: [...SANDBOX_SECRETS.map((p) => join(homedir(), p)), ...SANDBOX_SOCKETS()], ...(lift.length ? { allowRead: lift } : {}) } } };
+    network: { allowAllUnixSockets: true }, filesystem: { allowWrite: writes, denyWrite: sandboxDenies(writes), denyRead: [...SANDBOX_SECRETS.map((p) => join(homedir(), p)), ...SANDBOX_SOCKETS()], ...(lift.length ? { allowRead: lift } : {}) } } };
   const file = join(SANDBOX_DIR, digest(resolve(repoPath)) + ".json");
   try { mkdirSync(SANDBOX_DIR, { recursive: true, mode: 0o700 }); writeFileSync(file, JSON.stringify(s, null, 2) + "\n", { mode: 0o600 }); } catch { return null; }
   return { file, writes };
@@ -723,13 +740,39 @@ function noteRun(e) {
   const list = [{ path: e.path, name: e.name, startedAt: e.startedAt }, ...loadRuns().filter((r) => r.path !== e.path)].slice(0, RUNS_MAX);
   try { writeJsonAtomic(RUNS_FILE, list, { mode: 0o600 }); } catch {}
 }
-const knownRun = (path) => HANDOFFS.some((e) => e.path === path) || loadRuns().some((r) => r.path === path);
+const knownRun = (path) => HANDOFFS.some((e) => e.path === path) || loadRuns().some((r) => r.path === path) || (String(path || "").startsWith(ACT_DIR) && existsSync(join(path, ".symbiot", "QUESTIONS.md"))); // an ops folder with a question is one to answer, however old
+// ---- questions from every ops folder, not just the 60 newest runs -------------------
+// runs.json keeps the 60 newest folders, about two days of runs, so an ops run's open
+// question dropped off the Workdesk unanswered after that (31 folders' worth, 15 Oct
+// 2026). The drafts folder is listed every QF_EVERY; a folder's questions are read
+// again only when its QUESTIONS.md or ANSWERS.md changed, and one with a question still
+// open is listed like a run: { path, name, startedAt }.
+const QF_EVERY = 30000, QF_MAX_AGE = 30 * 86400000, QF = { at: 0, list: [], seen: new Map() };
+const runNameOf = (path) => { try { const h = JSON.parse(readSymbiot(path, "handoff.json")) || {}; return String(h.name || "").slice(0, 80) || basename(path); } catch { return basename(path); } };
+function questionFolders(now = Date.now()) {
+  if (now - QF.at < QF_EVERY) return QF.list;
+  QF.at = now; const out = [], live = new Set();
+  let dirs = []; try { dirs = readdirSync(ACT_DIR).filter((d) => d.startsWith("act-")); } catch {}
+  for (const d of dirs) {
+    const path = join(ACT_DIR, d); let st; try { st = statSync(join(path, ".symbiot", "QUESTIONS.md")); } catch { continue; }
+    if (now - st.mtimeMs > QF_MAX_AGE) continue;
+    live.add(path);
+    let am = 0; try { am = statSync(join(path, ".symbiot", "ANSWERS.md")).mtimeMs; } catch {}
+    const key = `${st.mtimeMs}:${st.size}:${am}`, had = QF.seen.get(path);
+    const row = had && had.key === key ? had : { key, open: (() => { try { return agentQuestions(path, "").questions.length > 0; } catch { return false; } })(), name: runNameOf(path), startedAt: runStarted(readSymbiot(path, "agent.log")) || st.mtimeMs };
+    QF.seen.set(path, row);
+    if (row.open) out.push({ path, name: row.name, startedAt: row.startedAt });
+  }
+  for (const p of QF.seen.keys()) if (!live.has(p)) QF.seen.delete(p);
+  QF.list = out; return out;
+}
 // The Agents tab's block for a run another process (or this app before a
 // restart) started: as agentsList gives one, marked `earlier`. Its end is when
-// its log last changed; its exit code isn't known.
+// its log last changed; its exit code isn't known. Then every ops folder with a
+// question still open that runs.json has forgotten (questionFolders).
 function earlierRuns() {
-  const tracked = new Set(HANDOFFS.map((e) => e.path)), out = [];
-  for (const r of loadRuns()) {
+  const tracked = new Set(HANDOFFS.map((e) => e.path)), out = [], runs = loadRuns(), listed = new Set(runs.map((r) => r.path));
+  for (const r of [...runs, ...questionFolders().filter((q) => !listed.has(q.path))]) {
     if (tracked.has(r.path) || !existsSync(join(r.path, ".symbiot"))) continue;
     const busy = runningHandoff(r.path), ask = agentQuestions(r.path, r.name), wait = waitingFor(r.path), facts = busy ? [] : factsOf(r.path);
     const log = join(r.path, ".symbiot", "agent.log"), startedAt = (busy && busy.startedAt) || Number(r.startedAt) || Date.now();
@@ -1584,11 +1627,13 @@ function installAllowlist(path) {
 // that stays inside this work, asks for nothing wide, and doesn't publish or reach another
 // machine is turned on by itself when its run ends (autoAllow): no question for the user.
 const PUBLISH_RULE = /^Bash\(\s*(git push|git\s+-C\s+\S+\s+push|npm publish|yarn publish|pnpm publish|aws|gcloud|az|kubectl|docker|podman|terraform|ssh|scp|sftp|rsync|ftp|heroku|vercel|netlify|fly|flyctl)\b/i;
+// Not ~ itself (nor / or a parent of it): with ~ as a knowledge folder, inWork said yes to
+// ~/Downloads and ~/x.sh, and an allow list reaching anywhere in home turned itself on.
 function workRoots() {
   const roots = new Set();
   try { for (const r of scanRoots()) roots.add(r); } catch {}
   try { for (const k of knowledgeFolders()) roots.add(k.path); } catch {}
-  return [...roots].filter(Boolean).map((r) => r.replace(/\/+$/, "") || "/");
+  return [...roots].filter(Boolean).map((r) => r.replace(/\/+$/, "") || "/").filter((r) => !wideRoot(r));
 }
 function inWork(p, roots = workRoots()) {
   if (!p) return false;
@@ -1723,7 +1768,7 @@ function withScope(tmpl, repoPath) {
   const dirs = new Set(); try { for (const k of knowledgeFolders()) dirs.add(k.path); } catch {}
   if (/\/drafts\/act-[^/]+$/.test(String(repoPath || ""))) { try { for (const p of Object.values(repoPathMap() || {})) dirs.add(p); } catch {} }
   dirs.delete(repoPath);
-  let cmd = tmpl; for (const d of dirs) if (d && !cmd.includes(`--add-dir "${d}"`)) cmd += ` --add-dir "${d}"`;
+  let cmd = tmpl; for (const d of dirs) if (d && !wideRoot(d) && !cmd.includes(`--add-dir "${d}"`)) cmd += ` --add-dir "${d}"`; // --add-dir is read and write: never ~ (wideRoot)
   return cmd;
 }
 function grantFromStep(step, path = "", notes = {}) {
@@ -1872,4 +1917,4 @@ function agentsList() {
   }).concat(earlierRuns());
 }
 
-export { claudePlugins, idlePlugins, runSettings, archiveAnswers, allAnswers, answersDigest, ANSWERS_ARCHIVE, ANSWERS_KEEP, runsTick, RUN_START, HANG_MIN, noteBlocked, userAnswers, CONTINUED_FILE, onAnswered, CHANGES, toKnownHost, continueLanes, autoPick, autoDecide, FACTS, factsOf, knownRun, withStream, workOf, HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, connectorsInfo, linkReach, fillHandoff, runHandoff, nothingToDo, whereOf, whereLine, whereAnswer, askTask, PARKED_NOTE, parkedPaths, isParked, parkLane, agentMissing, blockedAgain, runningHandoff, loadRuns, earlierRuns, namedFiles, unchangedStep, waitingFor, startWaiting, noteUntracked, untrackedBefore, forgetUntracked, writeTasks, droppedTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, pickAgent, findOrcaCli, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, skipIdea, agentQuestions, answerQuestions, agentsList, needsOf, settleNeeds, NEEDS_FOR, readLastWords, readNeeds, parseRead, READ_FILE, autoAllow, autoAllowSweep, allowlistInWork, installAllowlist, inWork, withScope, withTrust, sandboxFor, sandboxLifts, sandboxEnv, sandboxNeeds, sandboxState, sandboxWrites, SANDBOX_DIR, resumeFor, noteSession, tooLong, carryOn, RESUME_CTX, CARRY_PROMPT, trustFull, GUARD_SETTINGS, folderState, dirtyState, ANSWERS_SEEN, newAnswers, claudeDownIn, claudePause, noteClaudeDown, resetTime, PAUSE_FILE, startGap, isUrgent, urgentStop, urgentFirst, urgentUndo, urgentDone, urgentSweep, urgentState, licenceGate, stopRun, loadRunFiles, saveRunFiles, forgetRunFiles, withModel, routedModel };
+export { claudePlugins, idlePlugins, runSettings, archiveAnswers, allAnswers, answersDigest, ANSWERS_ARCHIVE, ANSWERS_KEEP, runsTick, RUN_START, HANG_MIN, noteBlocked, userAnswers, CONTINUED_FILE, onAnswered, CHANGES, toKnownHost, continueLanes, autoPick, autoDecide, FACTS, factsOf, knownRun, withStream, workOf, HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, connectorsInfo, linkReach, fillHandoff, runHandoff, nothingToDo, whereOf, whereLine, whereAnswer, askTask, PARKED_NOTE, parkedPaths, isParked, parkLane, agentMissing, blockedAgain, runningHandoff, loadRuns, earlierRuns, namedFiles, unchangedStep, waitingFor, startWaiting, noteUntracked, untrackedBefore, forgetUntracked, writeTasks, droppedTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, pickAgent, findOrcaCli, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, skipIdea, agentQuestions, answerQuestions, agentsList, needsOf, settleNeeds, NEEDS_FOR, readLastWords, readNeeds, parseRead, READ_FILE, autoAllow, autoAllowSweep, allowlistInWork, installAllowlist, inWork, withScope, withTrust, sandboxFor, sandboxLifts, sandboxEnv, sandboxNeeds, sandboxState, sandboxWrites, SANDBOX_DIR, resumeFor, noteSession, tooLong, carryOn, RESUME_CTX, CARRY_PROMPT, trustFull, GUARD_SETTINGS, wideRoot, sandboxDenies, questionFolders, folderState, dirtyState, ANSWERS_SEEN, newAnswers, claudeDownIn, claudePause, noteClaudeDown, resetTime, PAUSE_FILE, startGap, isUrgent, urgentStop, urgentFirst, urgentUndo, urgentDone, urgentSweep, urgentState, licenceGate, stopRun, loadRunFiles, saveRunFiles, forgetRunFiles, withModel, routedModel };

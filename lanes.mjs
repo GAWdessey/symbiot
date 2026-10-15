@@ -151,12 +151,26 @@ function handedBy(from, lane, text, reach) {
   const far = unreachable(text, lane, reach);
   return `(handed over by ${from.lane})${far.length ? ` Symbiot: ${lane} runs in a sandbox and can't reach ${far.join(" or ")}. Do the code part here, and hand what has to change on ${far.length > 1 ? "those servers" : "that server"} to ${OPS}, saying what.` : ""}`;
 }
+// The handover that led to this run, if one did: a row into this folder whose words are in
+// the folder's brief (an ops brief quotes it; a repo's task line is it, reworded at most).
+// Before, the last row ever into the folder was the parent, so a lane that had once taken a
+// handover had every later one counted as the same chain, and ordinary requests were
+// refused as loops or parked for the next run (46 of 155 rows at 4 or more, 15 Oct 2026).
+function parentOf(path, ledger, md) {
+  const lines = String(md || "").split("\n").map((l) => l.replace(/^\s*(?:>\s?|-\s*\[[ xX]\]\s*)/, "").trim()).filter(Boolean);
+  for (const h of ledger.handoffs.slice().reverse()) {
+    if (h.to.path !== path || h.status === "error") continue;
+    const head = firstLine(h.text).trim(), cut = head.slice(0, 80);
+    if (lines.some((l) => (cut.length >= 12 ? l.includes(cut) : l === head) || alike(l, head))) return h;
+  }
+  return null;
+}
 // Pick up what a folder's agent handed over and start the lanes it named.
 // Each handover is started once (its key: where from, which lane, what).
 function dispatch(path, { map = laneMap(), act = actNow, run = runHandoff, add = addTask, push = pushTasks, drop = removeTask, running = runningHandoff, refresh = resupply, more = extend, tasks = loadTasks, now = Date.now(), ledger = loadLedger(), dirs, reach } = {}) {
   const asked = parseHandoffs(readSym(path, "HANDOFF.md")); if (!asked.length) return [];
   const reachOf = () => { if (reach === undefined) { try { reach = laneReach({}); } catch { reach = null; } } return reach; };
-  const from = { lane: laneOf(path, map), path }, parent = ledger.handoffs.filter((h) => h.to.path === path).pop(), chain = (parent ? parent.chain : 0) + 1;
+  const from = { lane: laneOf(path, map), path }, parent = parentOf(path, ledger, readSym(path, "TASKS.md")), chain = (parent ? parent.chain : 0) + 1;
   const started = [];
   for (const h of asked) {
     const key = keyOf(path, h);
@@ -657,4 +671,4 @@ function sharedFor(path, text, { ledger = loadLedger(), now = Date.now(), cfg = 
   return `## What ${who} has already answered on this work\nBefore you ask ${who} anything, check these: if one settles it, use it and don't ask.\n${l.map((x) => `- ${x.lane} asked "${clipWords(x.q.replace(/\s+/g, " "), 160)}": ${clipWords(x.a.replace(/\s+/g, " "), 300)} (${String(x.at).slice(0, 10)})`).join("\n")}`;
 }
 
-export { shareAnswer, sharedFor, sharedTo, answerReaches, linkedPaths, topicsOf, ownHosts, COMMON_HOSTS, SHARED, LEDGER, MAX_CHAIN, loadLedger, laneOf, lastRunStart, dispatch, outcome, report, handingOf, lanesTick, lanesState, aboutIt, partlyDone, remoteKey, orcaMoves, orcaRelink, stuckHandovers, allowHandover, skipHandover, namedDirs, alike, doneSince };
+export { shareAnswer, sharedFor, sharedTo, answerReaches, linkedPaths, topicsOf, ownHosts, COMMON_HOSTS, parentOf, SHARED, LEDGER, MAX_CHAIN, loadLedger, laneOf, lastRunStart, dispatch, outcome, report, handingOf, lanesTick, lanesState, aboutIt, partlyDone, remoteKey, orcaMoves, orcaRelink, stuckHandovers, allowHandover, skipHandover, namedDirs, alike, doneSince };
