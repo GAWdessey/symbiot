@@ -14,6 +14,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const WIN = process.platform === "win32";
+const tokenIn = (home) => { for (const f of ["secrets.json", "config.json"]) try { const t = JSON.parse(readFileSync(join(home, ".config", "symbiot", f), "utf8")).appToken; if (t) return t; } catch {} return ""; };
 const HOME = mkdtempSync(join(tmpdir(), "symbiot-win-"));
 process.env.HOME = HOME; process.env.USERPROFILE = HOME; process.env.SYMBIOT_NO_OPEN = "1"; process.env.SYMBIOT_NO_LAUNCHER = "1";
 delete process.env.SYMBIOT_CLAUDE_CMD;
@@ -44,7 +45,7 @@ let app = null;
 try {
   console.log("IT LOADS — every module, and the CLI");
   const pkg = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8"));
-  const mods = pkg.files.filter((f) => f.endsWith(".mjs") && !["postinstall.mjs", "scanworker.mjs", "index.mjs"].includes(f));
+  const mods = pkg.files.filter((f) => f.endsWith(".mjs") && !["postinstall.mjs", "index.mjs"].includes(f) && !/worker\.mjs$/.test(f));
   const failed = [];
   for (const m of mods) { try { await import("../" + m); } catch (e) { failed.push(m + ": " + e.message); } }
   ok(`all ${mods.length} modules load`, !failed.length, failed);
@@ -61,7 +62,7 @@ try {
   const longSys = "Symbiot's rules. ".repeat(1500) + "END-OF-RULES";
   const a = await write(longSys, 'Say "hi" (with quotes & an ampersand)');
   const got = existsSync(seen) ? JSON.parse(readFileSync(seen, "utf8")) : {};
-  ok("it answers", a === "hi from claude", a);
+  ok("it answers", (a && a.text) === "hi from claude", a); // write() gives { text } or { error } (15 Oct 2026)
   ok(`instructions of ${longSys.length} characters arrive whole (too long for a Windows command line)`, got.sysLen === longSys.length && got.sysEnd === "END-OF-RULES", got.sysLen);
   ok("…and the prompt, quotes and & included, arrives as typed", got.stdin === 'Say "hi" (with quotes & an ampersand)', got.stdin);
   ok("…with no tools and none of your settings (empty arguments survive the quoting)", got.args && got.args[got.args.indexOf("--tools") + 1] === "" && got.args[got.args.indexOf("--setting-sources") + 1] === "", got.args);
@@ -70,8 +71,8 @@ try {
   const port = 21000 + Math.floor(Math.random() * 3000);
   app = spawn(process.execPath, [CLI, "app"], { env: { ...process.env, SYMBIOT_PORT: String(port), SYMBIOT_FORCE_NEW: "1" }, stdio: ["ignore", "pipe", "pipe"] });
   let out = ""; app.stdout.on("data", (d) => { out += d; }); app.stderr.on("data", (d) => { out += d; });
-  for (let i = 0; i < 60 && !/t=[a-f0-9]+/.test(out); i++) await sleep(500);
-  const token = (out.match(/t=([a-f0-9]+)/) || [])[1];
+  for (let i = 0; i < 60 && !/is running at/.test(out); i++) await sleep(500);
+  const token = /is running at/.test(out) ? tokenIn(HOME) : ""; // printed without its token now (15 Oct 2026)
   ok("it starts and prints its address", !!token, out.slice(0, 300));
   const H = { "x-symbiot-token": token || "" }, base = `http://127.0.0.1:${port}`;
   const page = await (await fetch(`${base}/?t=${token}`)).text();

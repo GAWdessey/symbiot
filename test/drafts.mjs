@@ -22,6 +22,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const done = () => { console.log(`\n${fail ? "✗" : "✓"} drafts: ${pass} passed, ${fail} failed`); process.exit(fail ? 1 : 0); };
 if (!chromeBinary()) { console.log("  - no Chrome here: skipped"); done(); }
 
+const tokenIn = (home) => { for (const f of ["secrets.json", "config.json"]) try { const t = JSON.parse(readFileSync(join(home, ".config", "symbiot", f), "utf8")).appToken; if (t) return t; } catch {} return ""; }; // the address is printed without its token now (15 Oct 2026)
 const HOME = realpathSync(mkdtempSync(join(tmpdir(), "symbiot-drafts-"))), CFG = join(HOME, ".config", "symbiot"), now = Date.now();
 mkdirSync(CFG, { recursive: true });
 const VERSION = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8")).version;
@@ -45,7 +46,7 @@ let chrome = null;
 const finish = async () => { try { if (chrome) chrome.kill("SIGKILL"); } catch {} try { app.kill("SIGTERM"); } catch {} await sleep(300); try { rmSync(HOME, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }); } catch {} done(); }; // chrome's helpers can still be writing its profile
 try {
   let o = "";
-  const url = await new Promise((res, rej) => { app.stdout.on("data", (d) => { o += d; const m = o.match(/http:\/\/127\.0\.0\.1:\d+\/\?t=[\w-]+/); if (m) res(m[0]); }); setTimeout(() => rej(new Error("the app gave no address: " + o)), 20000); });
+  const url = await new Promise((res, rej) => { app.stdout.on("data", (d) => { o += d; const m = o.match(/is running at (http:\/\/127\.0\.0\.1:\d+\/)/); if (m) res(m[1] + "?t=" + tokenIn(HOME)); }); setTimeout(() => rej(new Error("the app gave no address: " + o)), 20000); });
   chrome = spawn(chromeBinary(), ["--headless=new", "--remote-debugging-pipe", "--user-data-dir=" + join(HOME, "chrome"), "--no-first-run", "--no-sandbox", "about:blank"], { stdio: ["ignore", "ignore", "ignore", "pipe", "pipe"] });
   let next = 1, buf = Buffer.alloc(0); const wait = new Map(), errors = [];
   chrome.stdio[4].on("data", (c) => { buf = Buffer.concat([buf, c]); for (let e; (e = buf.indexOf(0)) >= 0; buf = buf.subarray(e + 1)) { const m = JSON.parse(buf.subarray(0, e).toString()); if (m.id && wait.has(m.id)) { wait.get(m.id)(m); wait.delete(m.id); } else if (m.method === "Runtime.exceptionThrown") errors.push(m.params.exceptionDetails.exception ? m.params.exceptionDetails.exception.description : m.params.exceptionDetails.text); } });

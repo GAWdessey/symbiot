@@ -1,7 +1,7 @@
 // Shared basics for every module: Symbiot's version (and npm's newest), its
-// config and task files, the one shell helper (never throws, never hangs) and a
-// repo's working-tree state.
-import { execSync } from "node:child_process";
+// config and task files, the helpers that run programs (never throw, never hang) and
+// a repo's working-tree state.
+import { execSync, execFileSync } from "node:child_process";
 import { homedir } from "node:os";
 import { join, dirname } from "node:path";
 import { readFileSync, mkdirSync, chmodSync, existsSync, openSync, writeSync, fsyncSync, closeSync, renameSync, unlinkSync, linkSync, copyFileSync, statSync } from "node:fs";
@@ -27,14 +27,23 @@ async function checkLatest() { try { const r = await fetch(REGISTRY + "/symbiot"
 // nothing, and the next save wrote that nothing over it: a half-written tasks.json
 // loaded as [] and one new task replaced 600. The app did run out of memory
 // mid-write (2026-10-12).
-function writeAtomic(file, text, { mode } = {}) {
-  mkdirSync(dirname(file), { recursive: true });
+// Yours only (0600) unless told otherwise: a state file holds task texts, chats and
+// names, and tasks.json, asks-done.json and costs.json were 0644 (15 Oct 2026).
+// The folder itself is 0700 (privateDir), once per process.
+let DIR_DONE = false;
+function privateDir(dir) {
+  try { mkdirSync(dir, { recursive: true, mode: 0o700 }); } catch {}
+  try { if (statSync(dir).mode & 0o077) chmodSync(dir, 0o700); } catch {}
+}
+function writeAtomic(file, text, { mode = 0o600 } = {}) {
+  const dir = dirname(file);
+  if (!DIR_DONE && dir === CONFIG_DIR) { DIR_DONE = true; privateDir(dir); } else mkdirSync(dir, { recursive: true });
   const tmp = `${file}.${process.pid}-${randomBytes(4).toString("hex")}.tmp`;
   let fd = null;
   try {
-    fd = openSync(tmp, "w", mode ?? 0o644);
+    fd = openSync(tmp, "w", mode);
     writeSync(fd, text); fsyncSync(fd); closeSync(fd); fd = null;
-    if (mode != null) try { chmodSync(tmp, mode); } catch {}
+    try { chmodSync(tmp, mode); } catch {} // the mode covers a tmp file the umask narrowed
     if (existsSync(file)) { try { unlinkSync(file + ".bak"); } catch {} try { linkSync(file, file + ".bak"); } catch { try { copyFileSync(file, file + ".bak"); } catch {} } }
     renameSync(tmp, file);
   } catch (e) { if (fd != null) try { closeSync(fd); } catch {} try { unlinkSync(tmp); } catch {} throw e; }
@@ -44,12 +53,16 @@ const writeJsonAtomic = (file, v, o = {}) => writeAtomic(file, JSON.stringify(v,
 // doesn't parse (cut short by a crash, or by an older Symbiot's plain write) is never
 // read as empty: it's moved aside to <file>.corrupt-<time>, where no save can reach
 // it, and the .bak from the save before it is put back and read instead.
-function readState(file) {
+// isValid: the shape it must have (Array.isArray for tasks.json). One that parses as
+// the wrong thing (null, [] for config.json) was read as fine, and loadTasks gave null
+// to callers that .filter it (15 Oct 2026); now it's set aside like a torn one.
+function readState(file, isValid = null) {
   let text; try { text = readFileSync(file, "utf8"); } catch { return undefined; } // none yet
-  try { return JSON.parse(text); } catch {}
+  const parse = (s) => { let v; try { v = JSON.parse(s); } catch { return undefined; } return !isValid || isValid(v) ? v : undefined; };
+  const v = parse(text); if (v !== undefined) return v;
   const aside = `${file}.corrupt-${Date.now()}`;
   try { renameSync(file, aside); } catch {}
-  let back; try { back = JSON.parse(readFileSync(file + ".bak", "utf8")); } catch {}
+  let back; try { back = parse(readFileSync(file + ".bak", "utf8")); } catch {}
   if (back !== undefined) try { copyFileSync(file + ".bak", file); } catch {}
   try { process.stderr.write(`symbiot: ${file} didn't read; kept it as ${aside}${back !== undefined ? " and read the copy from the save before" : ""}\n`); } catch {}
   return back;
@@ -75,7 +88,7 @@ function splitSecrets(cfg) {
   for (const [k, v] of Object.entries(pub)) if (isObj(v) && "apiKey" in v) { sec[k] = { apiKey: v.apiKey }; pub[k] = { ...v }; delete pub[k].apiKey; } // a provider's: { anthropic: { apiKey, model } }
   return { pub, sec };
 }
-const readJson = (f) => { const o = readState(f); return isObj(o) ? o : {}; };
+const readJson = (f) => { const o = readState(f, isObj); return isObj(o) ? o : {}; };
 function loadConfig() {
   const cfg = readJson(CONFIG_PATH), sec = readJson(SECRETS_PATH);
   for (const [k, v] of Object.entries(sec)) {
@@ -134,8 +147,19 @@ function releaseAppLock() { if (!LOCK_HELD) return; const h = lockOf(LOCK_HELD);
 
 // ---- tasks: a persistent checklist (~/.config/symbiot/tasks.json) ---------
 const TASKS_PATH = join(CONFIG_DIR, "tasks.json");
-function loadTasks() { const t = readState(TASKS_PATH); return t === undefined ? [] : t; }
-function saveTasks(t) { try { writeJsonAtomic(TASKS_PATH, t, { newline: false }); return true; } catch { return false; } }
+// tasks.json is parsed once per version of the file, not once per caller: 41 calls a
+// tick parsed 550 KB each (4 ms a call, 15 Oct 2026). The copy kept is never handed
+// out: callers change what they get and save it, so each gets a copy of its own
+// (0.3 ms: the strings are shared, only the objects are new).
+const copyOf = (v) => { if (Array.isArray(v)) { const o = new Array(v.length); for (let i = 0; i < v.length; i++) o[i] = copyOf(v[i]); return o; } if (v && typeof v === "object") { const o = {}; for (const k in v) o[k] = copyOf(v[k]); return o; } return v; };
+let TASKS_MEMO = null; // { key, tasks }
+const tasksKey = () => { try { const s = statSync(TASKS_PATH); return `${s.ino}:${s.size}:${s.mtimeMs}`; } catch { return ""; } };
+function loadTasks() {
+  const key = tasksKey(); if (!key) { TASKS_MEMO = null; return []; }
+  if (!TASKS_MEMO || TASKS_MEMO.key !== key) { const t = readState(TASKS_PATH, Array.isArray); TASKS_MEMO = { key: tasksKey(), tasks: t === undefined ? [] : t }; } // the key again: a restore from .bak is a new file
+  return copyOf(TASKS_MEMO.tasks);
+}
+function saveTasks(t) { try { writeJsonAtomic(TASKS_PATH, t, { newline: false }); TASKS_MEMO = { key: tasksKey(), tasks: copyOf(t) }; return true; } catch { return false; } }
 // How much a task holds: one line in TASKS.md, long enough for a handover or a
 // pasted list of steps (1000 cut the Jono email task off mid-sentence). Longer,
 // it keeps its whole text (full) and its line links to that (tasks.mjs addTask).
@@ -263,12 +287,33 @@ function uniqueTasks(texts) {
 }
 
 // ---- shell + git ----------------------------------------------------------
+// sh is for fixed command lines only. Anything with a path, branch, email or other
+// outside text in it goes through runOut/gitOut: they hand the program its arguments
+// as they are, with no shell between, so a folder (or a commit's author email) named
+// `a$(touch ~/x)` is only a name. Quoted with JSON.stringify for sh, it ran.
 function sh(cmd) {
   try { return execSync(cmd, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], maxBuffer: 32 * 1024 * 1024, timeout: 6000, killSignal: "SIGKILL" }); }
   catch { return ""; } // timeout or error -> empty, never hang the scan
 }
+const RUN_OPTS = { encoding: "utf8", maxBuffer: 32 * 1024 * 1024, timeout: 6000, killSignal: "SIGKILL", windowsHide: true };
+// A program's output, or "" when it fails, exits non-zero or takes over 6 s (like sh).
+function runOut(file, args = [], { cwd, timeout = 6000 } = {}) {
+  try { return execFileSync(file, args, { ...RUN_OPTS, cwd, timeout, stdio: ["ignore", "pipe", "ignore"] }); }
+  catch { return ""; }
+}
+// Whether it exited 0 (what `cmd && echo Y` was for).
+function runOk(file, args = [], { cwd, timeout = 6000 } = {}) {
+  try { execFileSync(file, args, { ...RUN_OPTS, cwd, timeout, stdio: "ignore" }); return true; }
+  catch { return false; }
+}
+// git in a folder: gitOut(path, ["log", "-1"]).
+const gitOut = (path, args, opts) => runOut("git", ["-C", String(path), ...args], opts);
+const gitOk = (path, args, opts) => runOk("git", ["-C", String(path), ...args], opts);
 // "Is this command available?": command -v on posix, where on win.
-function hasCmd(cmd) { try { return !!sh(process.platform === "win32" ? `where ${cmd}` : `command -v ${cmd}`).trim(); } catch { return false; } }
+// (the name goes in as an argument, never into the command line; the shell by its own
+// path, as execSync finds it, so a PATH without /bin still answers)
+const POSIX_SH = process.platform === "android" ? "/system/bin/sh" : "/bin/sh";
+function hasCmd(cmd) { return !!(process.platform === "win32" ? runOut("where", [String(cmd)]) : runOut(POSIX_SH, ["-c", 'command -v -- "$1"', "sh", String(cmd)])).trim(); }
 // A Chromium-family browser, per OS: the app's chrome-less --app window, and
 // Screens' hidden (headless) browser.
 function chromeBinary() {
@@ -292,21 +337,21 @@ function chromeBinary() {
 }
 // Working-tree state, incl. detecting a stale/old checkout (not new work).
 function repoState(repoPath) {
-  const branch = sh(`git -C ${JSON.stringify(repoPath)} rev-parse --abbrev-ref HEAD 2>/dev/null`).trim();
-  const porcelain = sh(`git -C ${JSON.stringify(repoPath)} status --porcelain 2>/dev/null`).split("\n").filter(Boolean);
+  const branch = gitOut(repoPath, ["rev-parse", "--abbrev-ref", "HEAD"]).trim();
+  const porcelain = gitOut(repoPath, ["status", "--porcelain"]).split("\n").filter(Boolean);
   let del = 0, mod = 0, add = 0;
   for (const l of porcelain) { const x = l.slice(0, 2); if (/\?\?/.test(x)) add++; else if (x.includes("D")) del++; else if (x.includes("A")) add++; else mod++; }
   const dirty = porcelain.length;
   let stale = false, staleBy = 0;
   if (dirty) {
     for (const k of [3, 5, 10, 20, 40, 80, 160, 320]) {
-      if (!sh(`git -C ${JSON.stringify(repoPath)} rev-parse HEAD~${k} 2>/dev/null`).trim()) break;
-      if (sh(`git -C ${JSON.stringify(repoPath)} diff --quiet HEAD~${k} 2>/dev/null && echo EQ`).trim() === "EQ") { stale = true; staleBy = k; break; }
+      if (!gitOut(repoPath, ["rev-parse", `HEAD~${k}`]).trim()) break;
+      if (gitOk(repoPath, ["diff", "--quiet", `HEAD~${k}`])) { stale = true; staleBy = k; break; }
     }
     if (!stale && del >= 20 && del > mod && add === 0) stale = true; // mostly deletions = an old snapshot
   }
-  const behind = Number(sh(`git -C ${JSON.stringify(repoPath)} rev-list --count HEAD..@{u} 2>/dev/null`).trim()) || 0;
+  const behind = Number(gitOut(repoPath, ["rev-list", "--count", "HEAD..@{u}"]).trim()) || 0;
   return { branch, dirty, del, mod, add, stale, staleBy, behind };
 }
 
-export { own, writeAtomic, writeJsonAtomic, readState, takeAppLock, releaseAppLock, lockPath, VERSION, LATEST_VERSION, semverGt, REGISTRY, checkLatest, CONFIG_DIR, CONFIG_PATH, SECRETS_PATH, loadConfig, saveConfig, moveSecrets, splitSecrets, loadTasks, saveTasks, TASK_MAX, clipWords, taskWords, sameTask, isFinding, uniqueTasks, sh, hasCmd, chromeBinary, repoState };
+export { own, writeAtomic, writeJsonAtomic, readState, privateDir, alive, takeAppLock, releaseAppLock, lockPath, VERSION, LATEST_VERSION, semverGt, REGISTRY, checkLatest, CONFIG_DIR, CONFIG_PATH, SECRETS_PATH, loadConfig, saveConfig, moveSecrets, splitSecrets, loadTasks, saveTasks, TASK_MAX, clipWords, taskWords, sameTask, isFinding, uniqueTasks, sh, runOut, runOk, gitOut, gitOk, hasCmd, chromeBinary, repoState };

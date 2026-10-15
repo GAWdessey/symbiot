@@ -26,10 +26,13 @@ const map = { symbiot, steve, argena, quiet, mine };
 
 try {
   console.log("URGENT — what counts");
-  for (const t of ["symiot keep crashing", "still crashing", "URGENT, do this first: the app", "Symbiot won't start since the update", "that is what SHOULD happen", "fix the login, it comes first", "this takes priority over the layout"])
+  for (const t of ["symiot keep crashing", "still crashing", "URGENT, do this first: the app", "Symbiot won't start since the update", "fix the login, it comes first", "this takes priority over the layout"])
     ok(`urgent: "${t}"`, isUrgent(t), t);
-  for (const t of ["Fix the Home page layout. It's broken in the running app", "Read .symbiot/TASKS.md and ANSWERS.md first", "Update the README and CHANGELOG", "Add an API key field", "run the tests in a way that can't crash him"])
+  // no capitals rule: SMTP made a task urgent and killed the lane's run mid-edit (15 Oct 2026)
+  for (const t of ["Fix the Home page layout. It's broken in the running app", "Read .symbiot/TASKS.md and ANSWERS.md first", "Update the README and CHANGELOG", "Add an API key field", "run the tests in a way that can't crash him", "that is what SHOULD happen", "Fix the SMTP relay", "Add CORS headers", "Store a UUID per device", "Set up NGINX", "add a GDPR notice"])
     ok(`routine: "${t}"`, !isUrgent(t), t);
+  const { urgentStop } = await import("../agents.mjs");
+  ok("only an outright urgent/crash stops a run already going; \"comes first\" queues it", urgentStop("URGENT: fix it") && urgentStop("symbiot keeps crashing") && !urgentStop("fix the login, it comes first") && !urgentStop("this takes priority over the layout"), "");
 
   console.log("URGENT — the brief puts it on top, whatever kind it is");
   const md = buildTasksMd("symbiot", {}, [{ text: "Fix the Home page layout" }, { text: "Add a Docs page for the changelog" }, { text: "URGENT, do this first. Symbiot keeps crashing; update the docs after" }]);

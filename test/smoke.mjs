@@ -14,7 +14,7 @@
 // or a paid model.
 import { spawn } from "node:child_process";
 import { createServer } from "node:http";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -35,7 +35,9 @@ const child = spawn(process.execPath, [join(HERE, "..", "index.mjs"), "app"], { 
 let buf = "";
 const url = await new Promise((resolve, reject) => {
   const t = setTimeout(() => reject(new Error("app did not start in time")), 8000);
-  child.stdout.on("data", (d) => { buf += d; const m = buf.match(/http:\/\/127\.0\.0\.1:\d+\/\?t=[a-f0-9]+/); if (m) { clearTimeout(t); resolve(m[0]); } });
+  // the address is printed without the token (it'd land in app.log, 15 Oct 2026): the token comes from this test HOME's secrets.json
+  const tokenOf = () => { for (const f of ["secrets.json", "config.json"]) try { const tk = JSON.parse(readFileSync(join(HOME, ".config", "symbiot", f), "utf8")).appToken; if (tk) return tk; } catch {} return ""; };
+  child.stdout.on("data", (d) => { buf += d; const m = buf.match(/is running at http:\/\/127\.0\.0\.1:(\d+)\//); if (m) { clearTimeout(t); resolve(`http://127.0.0.1:${m[1]}/?t=${tokenOf()}`); } });
   child.on("exit", () => { clearTimeout(t); reject(new Error("app exited: " + buf)); });
 });
 const base = url.replace(/\/\?t=.*/, "");
@@ -77,11 +79,12 @@ async function runUi(js, page, { storage = {}, handlers = true, android = null, 
     };
   };
   const exists = (id) => ids.has(id) || rendered.some((h) => h.includes(`id='${id}'`) || h.includes(`id="${id}"`));
-  const tabs = [...markup.matchAll(/data-tab="([^"]+)"/g)].map((m) => makeEl("tab:" + m[1], { dataset: { tab: m[1] } }));
+  // every screen the liquid opens (lqPool, via window.symbiotOpen), as the tab bar listed them before the liquid
+  const tabs = ["map", "board", "drift", "week", "standup", "todo", "tasks", "reports", "marketing", "computer", "settings"];
   const document = {
     body: makeEl("body"),
     getElementById(id) { return exists(id) ? (els[id] = els[id] || makeEl(id)) : null; },
-    querySelectorAll(sel) { return sel === ".tab" ? tabs : []; },
+    querySelectorAll() { return []; },
     querySelector() { return null; },
   };
   const location = { host: "127.0.0.1:7391", search: "?t=" + token, reload() {} };
@@ -116,7 +119,8 @@ async function runUi(js, page, { storage = {}, handlers = true, android = null, 
   await settle();
   const bar = els.updatebar ? els.updatebar.innerHTML : "";
   if (!handlers) { process.off("unhandledRejection", onRejection); return { errors, hits, tabs: tabs.length, bar, els, store }; }
-  for (const t of tabs) await fire("tab " + t.dataset.tab, t, "click");
+  for (const name of tabs) { try { window.symbiotOpen(name); } catch (e) { errors.push(`open ${name}: ${e.message}`); } await settle(); }
+  if (els.screensbox) { els.screensbox.open = true; await fire("screensbox", els.screensbox, "toggle"); } // the Screens box under the Map: its data loads as it opens
   // Every handler the page wired up, except Quit (stops the server), the
   // local-model setup (starts a download; its route is hit directly below),
   // screen capture (takes a real screenshot) and "Write it now" (pops a real
@@ -416,7 +420,7 @@ try {
 
   console.log("WEEKLY — isAppRunningWeekly() finds this app and its schedule, with no port or token passed");
   const runningWeekly = (extra = {}) => new Promise((resolve) => {
-    const p = spawn(process.execPath, ["--input-type=module", "-e", `import { isAppRunningWeekly } from ${JSON.stringify(join(HERE, "..", "index.mjs"))}; console.log(JSON.stringify(await isAppRunningWeekly()));`], { env: { ...env, ...extra }, stdio: ["ignore", "pipe", "pipe"] });
+    const p = spawn(process.execPath, ["--input-type=module", "-e", `import { isAppRunningWeekly } from ${JSON.stringify(join(HERE, "..", "server.mjs"))}; console.log(JSON.stringify(await isAppRunningWeekly()));`], { env: { ...env, ...extra }, stdio: ["ignore", "pipe", "pipe"] });
     let out = ""; p.stdout.on("data", (d) => (out += d)); p.on("exit", () => resolve(out.trim()));
   });
   const setWk = (on) => fetch(base + "/api/desktop/weekly", { method: "POST", headers: H, body: JSON.stringify({ on }) });

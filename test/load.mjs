@@ -53,7 +53,7 @@ for (const s of scripts) { try { new Function(s); } catch (e) { parseErrors.push
 ok(`page JS parses (${scripts.length} script block)`, scripts.length > 0 && parseErrors.length === 0, parseErrors);
 let main = null;
 try { main = await import(pathToFileURL(join(PKG, "index.mjs")).href); } catch (e) { console.log("    import error: " + e.message); }
-ok("index.mjs imports and serves that same page", !!main && main.EMBEDDED_UI === page);
+ok("index.mjs imports, without the page (the app loads it when it starts: symbiot help needn't)", !!main && !("EMBEDDED_UI" in main));
 
 console.log(`\n${fail ? "✗" : "✓"} load: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

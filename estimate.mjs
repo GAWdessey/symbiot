@@ -10,11 +10,16 @@
 // one that takes a brief, and is never mixed with it. What's queued in the lane adds
 // its own runs to the total.
 
-import { join } from "node:path";
-import { statSync, openSync, readSync, closeSync, readFileSync, writeFileSync } from "node:fs";
-import { CONFIG_DIR } from "./core.mjs";
+import { join, basename, dirname } from "node:path";
+import { statSync, openSync, readSync, closeSync, readFileSync } from "node:fs";
+import { CONFIG_DIR, writeJsonAtomic } from "./core.mjs";
 
-const FILE = join(CONFIG_DIR, "durations.json"), COSTS = join(CONFIG_DIR, "costs.json"), KEEP = 400, MIN_SAMPLES = 3;
+// 400 rows is the routing window (route.mjs), about two days of runs; the spend beyond that
+// lives in a per-day roll-up (costs-days.json, DAYS_KEEP days). Both written atomically,
+// yours only (0600): each row carries the task's words, and a plain write cut short read
+// back as nothing (15 Oct 2026).
+const FILE = join(CONFIG_DIR, "durations.json"), COSTS = join(CONFIG_DIR, "costs.json"), DAYS = join(CONFIG_DIR, "costs-days.json"), KEEP = 400, MIN_SAMPLES = 3, DAYS_KEEP = 90;
+const save = (file, v) => { try { writeJsonAtomic(file, v, { mode: 0o600, indent: 0 }); } catch {} };
 const kindOf = (cmd) => (/The user has answered|has answered:/i.test(String(cmd || "")) ? "answer" : "brief");
 
 // A log's finished runs: [{ at, kind, ms }]. Read once and then only what's been added
@@ -54,16 +59,32 @@ function loadDurations(file = FILE) { try { const a = JSON.parse(readFileSync(fi
 function noteDuration({ path, cmd, task = "", ms }, file = FILE) {
   if (!path || !(ms > 0)) return;
   const a = loadDurations(file); a.push({ path, kind: kindOf(cmd), task: String(task).slice(0, 200), ms: Math.round(ms), at: Date.now() });
-  try { writeFileSync(file, JSON.stringify(a.slice(-KEEP))); } catch {}
+  save(file, a.slice(-KEEP));
 }
 
 // Every run's spend, finished or failed (route.mjs reads it: path, cost, ok), so what
 // per-task model routing saves can be measured against a baseline.
 function loadCosts(file = COSTS) { return loadDurations(file); }
-function noteCost({ path, cmd, task = "", model = "", cost = null, turns = null, ms = 0, ok = true, modelUsage = null }, file = COSTS) {
+function noteCost({ path, cmd, task = "", model = "", cost = null, turns = null, ms = 0, ok = true, modelUsage = null, now = Date.now() }, file = COSTS, days = file === COSTS ? DAYS : join(dirname(file), basename(file, ".json") + "-days.json")) {
   if (!path || typeof cost !== "number") return;
-  const a = loadCosts(file); a.push({ at: Date.now(), path, kind: kindOf(cmd), task: String(task).slice(0, 200), model: String(model || ""), cost, turns, ms: Math.round(ms) || 0, ok: !!ok, modelUsage });
-  try { writeFileSync(file, JSON.stringify(a.slice(-KEEP))); } catch {}
+  const row = { at: now, path, kind: kindOf(cmd), task: String(task).slice(0, 200), model: String(model || ""), cost, turns, ms: Math.round(ms) || 0, ok: !!ok, modelUsage };
+  const a = loadCosts(file); a.push(row);
+  save(file, a.slice(-KEEP));
+  rollDay(row, days);
+}
+// The day's totals (local date): runs, spend, time, and the same by model and by lane (the
+// folder's name; an ops run's folder is one "ops"), kept DAYS_KEEP days.
+const dayKey = (t) => { const d = new Date(t), p = (n) => String(n).padStart(2, "0"); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`; };
+const laneOf = (path) => (/\/drafts\/act-[0-9a-f]+$/.test(path) ? "ops" : basename(path));
+function loadCostDays(file = DAYS) { try { const o = JSON.parse(readFileSync(file, "utf8")); return o && typeof o === "object" && !Array.isArray(o) ? o : {}; } catch { return {}; } }
+function rollDay(row, file = DAYS) {
+  const o = loadCostDays(file), k = dayKey(row.at), d = o[k] || { n: 0, cost: 0, ms: 0, failed: 0, byModel: {}, byLane: {}, byKind: {} };
+  const add = (m, key) => { const x = m[key] || { n: 0, cost: 0 }; x.n++; x.cost = Math.round((x.cost + row.cost) * 10000) / 10000; m[key] = x; };
+  d.n++; d.cost = Math.round((d.cost + row.cost) * 10000) / 10000; d.ms += row.ms; if (!row.ok) d.failed++;
+  add(d.byModel, row.model || "?"); add(d.byLane, laneOf(row.path)); add(d.byKind, row.kind);
+  o[k] = d;
+  const keep = Object.keys(o).sort().slice(-DAYS_KEEP), kept = {}; for (const x of keep) kept[x] = o[x];
+  save(file, kept);
 }
 
 const q = (xs, p) => { const s = [...xs].sort((a, b) => a - b), i = (s.length - 1) * p, lo = Math.floor(i); return s[lo] + (s[Math.ceil(i)] - s[lo]) * (i - lo); };
@@ -115,4 +136,4 @@ function estimateWords(e) {
   return `${e.left} left${e.queued ? ` · +${e.queued} queued: ${e.total} in all` : ""}`;
 }
 
-export { estimate, estimateWords, sampleSets, noteDuration, noteCost, loadCosts, loadDurations, runsInLog, laneRuns, kindOf, mins, span };
+export { estimate, estimateWords, sampleSets, noteDuration, noteCost, loadCosts, loadCostDays, rollDay, loadDurations, runsInLog, laneRuns, kindOf, mins, span };

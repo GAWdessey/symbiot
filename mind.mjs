@@ -24,8 +24,8 @@ import { readFileSync, writeFileSync, mkdirSync, chmodSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { randomBytes } from "node:crypto";
 import { VERSION, CONFIG_DIR, clipWords, readState, writeJsonAtomic } from "./core.mjs";
-import { write } from "./ai.mjs";
-import { handoffCmd, runHandoff, isUrgent, urgentFirst, urgentUndo } from "./agents.mjs";
+import { write, textOf } from "./ai.mjs";
+import { handoffCmd, runHandoff, isUrgent, urgentStop, urgentFirst, urgentUndo } from "./agents.mjs";
 import { addTask, pushTasks } from "./tasks.mjs";
 import { laneMap } from "./scan.mjs";
 import { OPS, MARKETING, HANDOVER_MAX, handoverRules, ONLY_YOU, HANDBACK } from "./handover.mjs";
@@ -141,6 +141,7 @@ This folder isn't a repo; there's nothing to change in it but this file. Use you
 
 - **Anything hard to undo you only ask about:** closing or deleting an account, deleting data, paying or buying, sending something to someone. Find out what it would affect first (what's running, what it costs, what's in it), then stop and ask in \`.symbiot/QUESTIONS.md\` with what you found, and don't go ahead until ANSWERS.md says to.
 - Is part of it a repo's work? Hand it over (below) rather than doing it from here.
+- Keys and credentials: Symbiot's membrane blocks reading the user's key files (\`~/.ssh\`, \`~/.aws\`, \`~/.config/gh\`, cloud credential files, another folder's \`.env\`) and every \`sudo\`, so don't try them. A secret you need: \`symbiot secret list\`, then \`symbiot secret get <name>\`; one that isn't there, ask the user for it in QUESTIONS.md as a \`👤\` step naming what it's for (they paste it into the vault, never into a file).
 - Need the user? Only for what no agent can do: ask in \`.symbiot/QUESTIONS.md\` (a \`## Questions\` heading, a \`### \` heading per question, then 2–4 options as \`- \` bullets). Before you ask, read \`.symbiot/ANSWERS.md\` and what this brief says the user has already answered on this work: if one of those settles it, use it and don't ask.${voiceLine()}
 ${ONLY_YOU}
 - When it's done, tick the task (\`- [x]\`) and say what you did in your last message: it's what goes back to whoever asked.
@@ -267,7 +268,7 @@ function actIn(request, repo, { map = {}, known = "", title, context, run = runH
   if (!lane) return { ...ops(request, { title, context, known, now }), lane: "" };
   const t = add(request, lane); if (t && t.error) return { error: t.error };
   const p = push({ repo: lane }); if (!p || !p.written || !p.written.length) return { error: `Couldn't write ${lane}'s tasks for its agent.` };
-  const urgent = isUrgent(request) ? first(map[lane], { lanes: map }) : null;
+  const urgent = isUrgent(request) ? first(map[lane], { lanes: map, halt: urgentStop(request) }) : null; // "first" queues it; only "urgent" or a crash stops the run going there
   const e = run(map[lane]);
   if (!e || (e.blocked && !e.busy)) { if (urgent) { try { undo(map[lane], urgent); } catch {} urgent.parked = []; } }
   if (!e) return { error: "The agent didn't start. Check its command in Settings → Handoff.", ...(urgent ? { urgent } : {}) };
@@ -342,22 +343,25 @@ async function converse({ where, role = "", context = "", history = "", question
   let lanes = map; if (!lanes) { try { lanes = laneMap(); } catch { lanes = {}; } }
   // how they talk, from what they've typed into any chat (adapt.mjs: accommodation)
   const voice = styleLine(styleOf(d.log.filter((l) => l.role === "user").map((l) => l.text).concat(question)));
-  const system = `${IDENTITY} ${role}\n\n${rulesFor(Object.keys(lanes), selfLane(lanes), nav, settle, tasks, control)}${voice ? "\n" + voice : ""}${languageLine()}`;
+  // the system prompt holds what's the same from turn to turn (prompt caching keys on its start); how they talk (voice) changes as they type, so it goes last, in the prompt
+  const system = `${IDENTITY} ${role}\n\n${rulesFor(Object.keys(lanes), selfLane(lanes), nav, settle, tasks, control)}${languageLine()}`;
   let prompt = `${dayLine(now)}\n\n` + (known ? `What you know (from across the app):\n${known}\n\n` : "") + (kn.text ? kn.text + "\n\n" : "") + (elsewhere ? `Lately, elsewhere in the app (other chats: a short answer here doesn't reply to these):\n${elsewhere}\n\n` : "") +
     (nav && tasks.length ? `Open tasks (id: task):\n${tasks.slice(0, 40).map((t) => `- ${t.id}: ${String(t.text || "").replace(/\s+/g, " ").slice(0, 90)}${t.repo ? ` [${t.repo}]` : ""}`).join("\n")}\n\n` : "") + (context ? context + "\n\n" : "") + (history ? `This chat so far:\n${history}\n\n` : "") + `They say (on ${where}): ${question}`;
   if (kept.length) prompt += `\n(Symbiot saved what they pasted, under ${kept.map((n) => `"${n}"`).join(", ")}. Say so in a few words, and carry on with what they asked.)`;
+  if (voice) prompt += `\n\n${voice}`;
   const asked = (p) => ask(system, p, images.length ? { images } : undefined);
-  const dead = (r) => !r || /^\(?couldn't reach the model/i.test(String(r));
+  // write() says { text } or { error } (a stub may still say a string); a dead answer's reply is the
+  // reason, in the provider's words (a model with no free quota, a busy one, a limit), and what to do
+  const dead = (r) => !textOf(r) || /^\(?couldn't reach the model/i.test(textOf(r));
+  const deadReply = (r) => (r && typeof r === "object" && r.error ? String(r.error).slice(0, 600) : /^Couldn't reach the model: ./.test(textOf(r)) ? textOf(r).slice(0, 600) : "(couldn't reach the model)");
   const raw = await asked(prompt);
-  // why, when the provider said (a model with no free quota, a busy one, a limit): what to do about it
-  const deadReply = (r) => (/^Couldn't reach the model: ./.test(String(r || "")) ? String(r).slice(0, 600) : "(couldn't reach the model)");
   if (dead(raw)) return { reply: deadReply(raw), remembered: 0 };
-  let j = parseReply(raw);
+  let j = parseReply(textOf(raw));
   // Home must answer in the reply format: one retry, then an honest error rather than loose text (nothing runs on it)
   if (j.plain && where === "Home") {
     const raw2 = await asked(prompt + JSON_AGAIN);
     if (dead(raw2)) return { reply: deadReply(raw2), remembered: 0 };
-    j = parseReply(raw2);
+    j = parseReply(textOf(raw2));
     if (j.plain) return { reply: BAD_FORM, remembered: 0, steps: [] };
   }
   let reply = String(j.reply || "").trim().slice(0, 4000) || "(no answer)", did = null;

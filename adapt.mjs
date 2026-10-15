@@ -34,8 +34,8 @@
 //
 // Stored in ~/.config/symbiot/adapt.json, yours only.
 import { join } from "node:path";
-import { readFileSync, writeFileSync, mkdirSync, chmodSync } from "node:fs";
-import { CONFIG_DIR } from "./core.mjs";
+import { readFileSync } from "node:fs";
+import { CONFIG_DIR, readState, writeJsonAtomic } from "./core.mjs";
 
 const ADAPT_FILE = join(CONFIG_DIR, "adapt.json");
 const MIND_FILE = join(CONFIG_DIR, "mind.json");
@@ -51,12 +51,11 @@ const FITTS = { a: 0.1, b: 0.15 };       // seconds; only ratios matter here
 const SHAPES = ["board", "map", "tasks", "agents", "week", "standup", "todo", "drift", "settings", "reports", "marketing"];
 
 function loadAdapt(file = ADAPT_FILE) {
-  try { const d = JSON.parse(readFileSync(file, "utf8")); return { shapes: d.shapes || {}, trans: d.trans || {}, hours: d.hours || {}, modes: d.modes || {}, slots: d.slots || {}, shown: d.shown || null, events: d.events || 0 }; }
-  catch { return { shapes: {}, trans: {}, hours: {}, modes: {}, slots: {}, shown: null, events: 0 }; }
+  const d = readState(file, (v) => !!v && typeof v === "object" && !Array.isArray(v)) || {};
+  return { shapes: d.shapes || {}, trans: d.trans || {}, hours: d.hours || {}, modes: d.modes || {}, slots: d.slots || {}, shown: d.shown || null, events: d.events || 0 };
 }
-function saveAdapt(d, file = ADAPT_FILE) {
-  try { mkdirSync(CONFIG_DIR, { recursive: true }); writeFileSync(file, JSON.stringify(d), { mode: 0o600 }); try { chmodSync(file, 0o600); } catch {} return true; } catch { return false; }
-}
+// Whole or not at all (writeJsonAtomic): torn, it read as a fresh model, and the home surface forgot your habits (15 Oct 2026).
+function saveAdapt(d, file = ADAPT_FILE) { try { writeJsonAtomic(file, d, { indent: 0, mode: 0o600 }); return true; } catch { return false; } }
 
 // ---- frecency ---------------------------------------------------------------------
 const decayed = (rec, now) => (rec ? rec.s * Math.pow(2, -(now - rec.t) / HALF_LIFE) : 0);

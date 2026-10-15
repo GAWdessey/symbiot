@@ -23,17 +23,17 @@ console.log("ROUTE — which model answers a job, and why");
 ok("read is local", JSON.stringify(pickModel({ kind: "read" })) === JSON.stringify({ tier: "L", model: "qwen3:8b", why: "read is a local job" }));
 ok("summary is local", pickModel({ kind: "summary" }).tier === "L");
 ok("classify is local", pickModel({ kind: "classify" }).tier === "L");
-ok("triage is Haiku", pickModel({ kind: "triage" }).model === "claude-haiku-4-5");
-ok("chat is Sonnet, never Haiku or local", pickModel({ kind: "chat" }).model === "claude-sonnet-5");
-ok("writeup is Sonnet", pickModel({ kind: "writeup" }).model === "claude-sonnet-5");
+ok("triage is Haiku 5.5 (not 4.5, at 10× the price)", pickModel({ kind: "triage" }).model === "claude-haiku-5-5");
+ok("chat is Sonnet, never Haiku or local", pickModel({ kind: "chat" }).model === "claude-sonnet-5-5");
+ok("writeup is Sonnet", pickModel({ kind: "writeup" }).model === "claude-sonnet-5-5");
 ok("post is Sonnet", pickModel({ kind: "post" }).tier === "S");
 let threw = false; try { pickModel({ kind: "bogus" }); } catch { threw = true; } ok("an unknown kind throws rather than guessing", threw);
 
 // Override always wins, over kind and over an agent run's own scoring.
 ok("override: opus wins even over kind=read", pickModel({ kind: "read", override: "opus" }).model === "claude-opus-5-5");
-ok("override: sonnet", pickModel({ override: "sonnet" }).model === "claude-sonnet-5");
+ok("override: sonnet", pickModel({ override: "sonnet" }).model === "claude-sonnet-5-5");
 ok("override: local", pickModel({ override: "local" }).model === "qwen3:8b");
-ok("override: haiku", pickModel({ override: "haiku" }).model === "claude-haiku-4-5");
+ok("override: haiku", pickModel({ override: "haiku" }).model === "claude-haiku-5-5");
 ok("override: fable sits in Opus's tier but names Fable's model", JSON.stringify({ t: pickModel({ override: "fable" }).tier, m: pickModel({ override: "fable" }).model }) === JSON.stringify({ t: "O", m: "claude-fable-5-1" }));
 ok("override: auto is no override — falls through to the brief's own scoring", pickModel({ override: "auto", task: "fix a typo" }).tier === "S");
 ok("override: empty is no override", pickModel({ override: "", task: "fix a typo" }).tier === "S");
@@ -52,6 +52,11 @@ ok("two files in the same repo don't count as several", pickModel({ task: "Move 
 ok("research/refactor/debug-style words escalate", pickModel({ task: "Investigate why the lane keeps failing" }).why === "Opus: research/refactor/debug-style work");
 ok("touching keys escalates", pickModel({ task: "Rotate the API key in .env" }).why === "Opus: touches keys, money or publishing");
 ok("a push to main escalates", pickModel({ task: "push to main once CI is green" }).why === "Opus: touches keys, money or publishing");
+// A secret named, not acted on, is no reason for Opus (the noun alone sent "rename the csrf token field" there, 15 Oct 2026).
+ok("naming a token field stays on Sonnet", pickModel({ task: "rename the csrf token field in the form" }).tier === "S");
+ok("a secret in a sentence stays on Sonnet", pickModel({ task: "the password page layout is off on phones" }).tier === "S");
+ok("storing a token escalates", pickModel({ task: "store the Meta token in .env" }).why === "Opus: touches keys, money or publishing");
+ok("release notes don't escalate; publishing does", pickModel({ task: "tidy the release notes" }).tier === "S" && pickModel({ task: "publish 0.66 to npm" }).tier === "O");
 
 // Lane history (costs.json): too little history reads as none.
 ok("no costs.json yet: no history, no escalation from it", JSON.stringify(laneHistory("/x")) === JSON.stringify({ median: 0, failRate: 0, samples: 0 }));
@@ -61,7 +66,11 @@ writeFileSync(join(CFG, "costs.json"), JSON.stringify([
   { path: "/lane/c", cost: 0.1, ok: false }, { path: "/lane/c", cost: 0.1, ok: false }, { path: "/lane/c", cost: 0.1, ok: true },
 ]));
 ok("a cheap, reliable lane's median shows up without escalating", pickModel({ path: "/lane/a", task: "Fix the off-by-one in paginate()" }).why === "Sonnet: short brief, lane median $0.80");
-ok("a lane whose median is $2 or more escalates", pickModel({ path: "/lane/b", task: "Fix the off-by-one in paginate()" }).why === "Opus: lane median $2.00");
+// No cost ratchet: a lane whose runs cost $2 at the median stays on Sonnet (the symbiot lane ran Opus 16 times in 17 on this rule, 15 Oct 2026),
+// and its Opus runs don't feed the median it reports.
+ok("a lane whose median is $2 or more stays on Sonnet", pickModel({ path: "/lane/b", task: "Fix the off-by-one in paginate()" }).why === "Sonnet: short brief, lane median $2.00");
+ok("the median is from the lane's Sonnet runs only", laneHistory("/lane/d", [{ path: "/lane/d", cost: 9, ok: true, model: "claude-opus-5-5" }, { path: "/lane/d", cost: 0.4, ok: true, model: "claude-sonnet-5-5" }, { path: "/lane/d", cost: 0.6, ok: true, model: "claude-sonnet-5-5" }]).median === 0.5);
+ok("runs that never got going (a session limit, an expired sign-in: cost 0) aren't failures of the lane", laneHistory("/lane/e", [{ path: "/lane/e", cost: 0, ok: false }, { path: "/lane/e", cost: 0, ok: false }, { path: "/lane/e", cost: 0, ok: false }, { path: "/lane/e", cost: 0.3, ok: true, turns: 4 }]).samples === 1);
 ok("a lane that fails half the time or more escalates, even if cheap", pickModel({ path: "/lane/c", task: "Fix the off-by-one in paginate()" }).why === "Opus: lane fails often");
 ok("two samples isn't enough history to act on", laneHistory("/lane/a", [{ path: "/lane/a", cost: 9, ok: false }, { path: "/lane/a", cost: 9, ok: false }]).samples === 2);
 
@@ -77,13 +86,16 @@ ok("pure: calling twice gives the same result", JSON.stringify(pickModel({ path:
 {
   const { withModel } = await import("../agents.mjs");
   const n = (s) => (s.match(/--model/g) || []).length;
-  const a = withModel('claude -p "{prompt}" --model sonnet --x', "claude-opus-5-5"), b = withModel("claude -p x --model=haiku", "claude-sonnet-5");
+  const a = withModel('claude -p "{prompt}" --model sonnet --x', "claude-opus-5-5"), b = withModel("claude -p x --model=haiku", "claude-sonnet-5-5");
   ok("withModel replaces an existing --model, leaving exactly one", n(a) === 1 && a.endsWith("--model claude-opus-5-5") && !/sonnet\b/.test(a.replace("claude-sonnet", "")), a);
-  ok("withModel replaces --model=x too", n(b) === 1 && b.endsWith("--model claude-sonnet-5") && !b.includes("haiku"), b);
+  ok("withModel replaces --model=x too", n(b) === 1 && b.endsWith("--model claude-sonnet-5-5") && !b.includes("haiku"), b);
   ok("withModel adds one when there was none", n(withModel("claude -p x", "claude-fable-5-1")) === 1);
   ok("withModel leaves codex/aider/gemini commands alone", withModel("codex exec x", "claude-opus-5-5") === "codex exec x" && withModel("claude -p x", "") === "claude -p x");
   const { routedModel } = await import("../agents.mjs");
   ok("routedModel: a [model: opus] task line picks opus", routedModel("/tmp/nonexistent-repo", { model: "opus" }) === "opus");
+  ok("routedModel: haiku and sonnet go by their CLI alias too, fable by its id", routedModel("/tmp/nonexistent-repo", { model: "haiku" }) === "haiku" && routedModel("/tmp/nonexistent-repo", { model: "sonnet" }) === "sonnet" && routedModel("/tmp/nonexistent-repo", { model: "fable" }) === "claude-fable-5-1");
+  const ai0 = await import("../ai.mjs");
+  ok("one model table: route, the fast model and the API-key default agree, and the default is Sonnet", ai0.MODELS.haiku.id === "claude-haiku-5-5" && ai0.PROVIDERS.anthropic.model === ai0.MODELS.sonnet.id && ai0.recommendModels({ ramGB: 8 }).paid.every((p) => p.provider !== "anthropic" || Object.values(ai0.MODELS).some((m) => m.id === p.model)));
   ok("routedModel: an unreadable repo falls back to a model or \"\", never throws", typeof routedModel("/tmp/nonexistent-repo") === "string");
 }
 
@@ -95,7 +107,7 @@ ok("pure: calling twice gives the same result", JSON.stringify(pickModel({ path:
   ok("chat: a local provider is never what answers (Claude if connected, else nothing)", got === null || got.provider !== "ollama", got);
   ok("chat: Haiku is lifted to Sonnet", ai.aboveFloor(h).model === "sonnet");
   ok("chat: Sonnet stays", ai.aboveFloor({ provider: "claude", model: "sonnet" }).model === "sonnet");
-  if (!ai.aboveFloor(null)) ok("chat: with no Claude reachable the reply says so, not a local answer", (await ai.write("s", "p", { floor: "sonnet" })) === ai.NO_CHAT_MODEL);
+  if (!ai.aboveFloor(null)) ok("chat: with no Claude reachable the reply says so, not a local answer", (await ai.write("s", "p", { floor: "sonnet" })).error === ai.NO_CHAT_MODEL);
   // installing a local model leaves the provider alone
   const { writeFileSync, readFileSync } = await import("node:fs");
   writeFileSync(join(CFG, "config.json"), JSON.stringify({ provider: "claude" }));

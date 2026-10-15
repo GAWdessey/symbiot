@@ -204,20 +204,28 @@ try {
   ok("a lane that doesn't exist: the agent hears which lanes do", t5.reported.some((e) => e.to.lane === "payroll") && /There's no lane called payroll\. Lanes: ops, or a repo: coral, GhostAIChat/.test(a5), a5.slice(-400));
   ok("its own lane: told to do it itself", /coral is your own lane: do it yourself/.test(a5), "");
   const deep = join(CFG, "drafts", "act-deep"); mkdirSync(join(deep, ".symbiot"), { recursive: true });
-  const L = JSON.parse(readFileSync(join(CFG, "lanes.json"), "utf8")); L.handoffs.push({ id: "p", key: "p", from: { lane: "coral", path: coral }, to: { lane: "ops", path: deep }, text: "x", at: Date.now(), chain: MAX_CHAIN, status: "done", reportedAt: Date.now() });
+  // the chain counts through the handover this run is on (its brief quotes it), not every row ever into the folder
+  const L = JSON.parse(readFileSync(join(CFG, "lanes.json"), "utf8")); L.handoffs.push({ id: "p", key: "p", from: { lane: "coral", path: coral }, to: { lane: "ops", path: deep }, text: "Restart the relay on sts-prod and say what you saw.", at: Date.now(), chain: MAX_CHAIN, status: "done", reportedAt: Date.now() });
   writeFileSync(join(CFG, "lanes.json"), JSON.stringify(L));
+  put(deep, "TASKS.md", "The user asked Symbiot for this:\n\n> Restart the relay on sts-prod and say what you saw.\n\n## Tasks\n- [ ] Restart the relay on sts-prod and say what you saw.\n");
   put(deep, "HANDOFF.md", "### coral\nAnd back again.\n");
   const runs6 = calls.run.length; lanesTick(deps());
   const e6 = loadLedger().handoffs.find((h) => h.from.path === deep);
   ok(`${MAX_CHAIN} handovers in a row: the next one isn't started (no ping-pong)`, e6 && e6.status === "blocked" && /handovers in a row/.test(e6.note) && !calls.run.slice(runs6).some((x) => x.p === coral), [e6, calls.run.slice(runs6)]);
   ok("…but it's in that lane's tasks, for its next run, not dropped", e6 && e6.task && calls.add.slice(-1)[0].text === "And back again." && calls.add.slice(-1)[0].repo === "coral" && calls.push.slice(-1)[0].repo === "coral" && /waits in coral's tasks/.test(e6.note), [e6, calls.add.slice(-1)]);
   ok("…and the lane that asked sees why on its block", handingOf(deep, { ledger: loadLedger(), map, running: () => false }).some((x) => /didn't start: 4 handovers in a row/.test(x.why)), handingOf(deep, { ledger: loadLedger(), map, running: () => false }));
-  L.handoffs.push({ id: "p2", key: "p2", from: { lane: "coral", path: coral }, to: { lane: "ops", path: deep }, text: "y", at: Date.now(), chain: MAX_CHAIN, status: "done", reportedAt: Date.now() });
+  L.handoffs.push({ id: "p2", key: "p2", from: { lane: "coral", path: coral }, to: { lane: "ops", path: deep }, text: "Restart the relay on sts-prod and say what you saw.", at: Date.now(), chain: MAX_CHAIN, status: "done", reportedAt: Date.now() });
   writeFileSync(join(CFG, "lanes.json"), JSON.stringify({ handoffs: [...loadLedger().handoffs, L.handoffs.at(-1)] }));
   put(deep, "HANDOFF.md", "### ops\nAnd on to ops.\n");
   const acts6 = calls.act.length; lanesTick(deps());
   const e7 = loadLedger().handoffs.find((h) => h.from.path === deep && h.text === "And on to ops.");
   ok("…to ops, which has no task list: not started, and the agent that asked is told", e7 && e7.status === "error" && /handovers in a row/.test(e7.error) && calls.act.length === acts6, e7);
+  // a later, unrelated job in that folder starts a chain of its own (the old rows into it aren't its parent)
+  put(deep, "TASKS.md", "The user asked Symbiot for this:\n\n> Renew the SSL certificate for coral.example.com before it lapses.\n\n## Tasks\n- [ ] Renew the SSL certificate for coral.example.com before it lapses.\n");
+  put(deep, "HANDOFF.md", "### GhostAIChat\nAdd the renewed certificate's date to the status page.\n");
+  const runs7 = calls.run.length; lanesTick(deps());
+  const e8 = loadLedger().handoffs.find((h) => h.from.path === deep && /renewed certificate/.test(h.text));
+  ok("a new job in a folder that once took a long chain starts fresh: chain 1, and its lane is started", e8 && e8.chain === 1 && e8.status !== "error" && e8.status !== "blocked" && calls.run.length > runs7, e8);
   ok("the ledger is yours only (0600)", existsSync(join(CFG, "lanes.json")) && (await import("node:fs")).statSync(join(CFG, "lanes.json")).mode % 0o1000 === 0o600, "");
 
   console.log("ONE ROW FOR WHAT READS THE SAME — a run that handed it over twice");

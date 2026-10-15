@@ -53,7 +53,7 @@ try {
   process.env.SIGNED = "1"; setCfg({}); claudeState(true);
   const a = await write("You are Symbiot.", "Say hello.");
   const c = JSON.parse(readFileSync(calls, "utf8"));
-  ok("its answer is the reply", a === "hello from your subscription", a);
+  ok("its answer is the reply", a.text === "hello from your subscription", a);
   ok("run as claude -p with Symbiot's system prompt (from a file), the prompt on stdin, JSON out", c.args[0] === "-p" && c.args.includes("--output-format") && c.args.includes("--system-prompt-file") && c.sys === "You are Symbiot." && c.stdin === "Say hello.", c);
   ok("…the file is gone afterwards (it holds Symbiot's instructions)", !existsSync(c.args[c.args.indexOf("--system-prompt-file") + 1]), "");
   ok("…no tools, none of your settings, plugins or servers, no session kept", c.args[c.args.indexOf("--tools") + 1] === "" && c.args[c.args.indexOf("--setting-sources") + 1] === "" && c.args.includes("--strict-mcp-config") && c.args.includes("--no-session-persistence"), c.args);
@@ -66,7 +66,7 @@ try {
   ok("a model you picked is passed on", JSON.parse(readFileSync(calls, "utf8")).args.join(" ").includes("--model sonnet"), JSON.parse(readFileSync(calls, "utf8")).args);
   process.env.FAIL = "1";
   const f = await write("s", "p");
-  ok("when it can't answer, it says why (a limit, signed out)", /Couldn't reach the model: Claude Code: Your usage limit is reached/.test(f || ""), f);
+  ok("when it can't answer, it says why (a limit, signed out)", /Couldn't reach the model: Claude Code: Your usage limit is reached/.test(f.error || ""), f);
   delete process.env.FAIL;
 
   console.log("CONNECTING IT — Settings and symbiot login");
@@ -87,9 +87,10 @@ try {
     try {
       setCfg({ provider: "gemini", gemini: { model: "gemini-4-argon" } }); writeFileSync(join(CFG, "secrets.json"), JSON.stringify({ gemini: { apiKey: "AQ.test" } }));
       const said = await write("s", "p");
-      ok("a model outside the free tier: it says so, and what to do (billing, or a free model)", /^Couldn't reach the model: Gemini \(Google\) won't run gemini-4-argon on this key: it isn't in Google's free tier/.test(said || "") && /Turn billing on/.test(said) && /gemini-flash-latest/.test(said), said);
+      ok("write() says { error }, never a string that reads as an answer", said && typeof said === "object" && !("text" in said) && typeof said.error === "string", said);
+      ok("a model outside the free tier: it says so, and what to do (billing, or a free model)", /^Couldn't reach the model: Gemini \(Google\) won't run gemini-4-argon on this key: it isn't in Google's free tier/.test(said.error || "") && /Turn billing on/.test(said.error) && /gemini-flash-latest/.test(said.error), said);
       const chat = await converse({ where: "Home", question: "hi", ask: async () => said, map: {} });
-      ok("…and the chat shows that, not a bare '(couldn't reach the model)'", chat.reply === said, chat.reply);
+      ok("…and the chat shows that, not a bare '(couldn't reach the model)'", chat.reply === said.error, chat.reply);
       const c = await connectProvider({ provider: "gemini", key: "AQ.test", model: "gemini-4-argon" });
       ok("connecting it: one word asked first, and not connected, saying why", !c.ok && /^Not connected: Gemini \(Google\) won't run gemini-4-argon/.test(c.message), c);
     } finally { globalThis.fetch = real; }

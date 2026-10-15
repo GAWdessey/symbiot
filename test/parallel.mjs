@@ -4,7 +4,7 @@
 //
 //   node test/parallel.mjs
 //
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync, existsSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync, existsSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -93,24 +93,140 @@ console.log("A RUN BESIDE — its own worktree, merged back");
   writeFileSync(join(repo, ".symbiot", "ANSWERS.md"), "# Answers\n\n### Which file?\nb.mjs only\n_answered 2026-10-14_\n");
   ok("…the user's answer does: it may go beside again", P.besideAgain(repo, "t4") === null);
   P.noteTried(repo, "t4", "", { done: true });
-  ok("…and a finished one is forgotten", !("t4" in JSON.parse(readFileSync(join(repo, ".symbiot", "beside.json"), "utf8"))));
+  ok("…and a finished one is on record as merged, so no second copy starts on it while its tick lands", P.besideAgain(repo, "t4").kind === "merged" && JSON.parse(readFileSync(join(repo, ".symbiot", "beside.json"), "utf8")).t4.merged === true);
 }
 function require_ls(d) { return spawnSync("ls", [d], { encoding: "utf8" }).stdout; }
 
-console.log("A CONFLICT — handed to the lane's agent as a task");
+console.log("A CONFLICT — the task stays open, naming the patch, for the lane's own run (no merge task, no tick, no second copy)");
 {
   const repo = join(HOME, "repo2"); mkdirSync(repo, { recursive: true });
   sh(repo, "init", "-q", "-b", "main"); writeFileSync(join(repo, "a.mjs"), "a1\n"); sh(repo, "add", "-A"); sh(repo, "commit", "-qm", "init");
   mkdirSync(join(repo, ".symbiot"), { recursive: true }); writeFileSync(join(repo, ".symbiot", "TASKS.md"), "## Tasks\n- [ ] Rework a.mjs\n");
+  const TASKS = join(HOME, ".config", "symbiot", "tasks.json"), tasks = () => JSON.parse(readFileSync(TASKS, "utf8"));
+  writeFileSync(TASKS, JSON.stringify([{ id: "t9", text: "Rework a.mjs", repo: "repo2", ts: 1 }, { id: "t10", text: "Tidy b.mjs", repo: "repo2", ts: 1 }]));
   let hook; const added = [];
   const run = (wt, o) => { hook = o.onExit; return { id: "r" }; };
   const r = P.startParallel("repo2", repo, { id: "t9", text: "Rework a.mjs" }, { run, addTask: (text, lane) => added.push({ text, lane }) });
+  const started = JSON.parse(readFileSync(join(repo, ".symbiot", "beside.json"), "utf8")).t9;
+  ok("on record from the start: beside.json says which copy is on it", r.ok && started && started.wt === P.inflight()[0].wt && P.besideAgain(repo, "t9").kind === "working", started);
   const wt = P.inflight().find((m) => m.taskId === "t9").wt;
   writeFileSync(join(wt, "a.mjs"), "beside\n"); writeFileSync(join(wt, ".symbiot", "TASKS.md"), "## Tasks\n- [x] Rework a.mjs\n");
   writeFileSync(join(repo, "a.mjs"), "main\n");
   hook(0);
-  ok("the lane's agent gets a task to merge it, naming the saved changes", r.ok && added.length === 1 && added[0].lane === "repo2" && /Merge a finished task's changes into repo2/.test(added[0].text) && /parallel-[0-9a-f]+\.patch/.test(added[0].text), added);
-  ok("the lane's file is as it was, and the patch holds the other side", readFileSync(join(repo, "a.mjs"), "utf8") === "main\n" && P.inflight().length === 0);
+  const t9 = tasks().find((t) => t.id === "t9"), patch = (t9.text.match(/\.symbiot\/parallel-[0-9a-f]+\.patch/) || [])[0];
+  ok("no merge task: the task itself stays open, naming the patch and what to do with it", added.length === 0 && !t9.review && patch && t9.patch === patch && /merge them by hand/.test(t9.text) && existsSync(join(repo, patch)), t9);
+  ok("nothing was ticked in the lane's brief, and the lane's file is as it was", /- \[ \] Rework a\.mjs/.test(readFileSync(join(repo, ".symbiot", "TASKS.md"), "utf8")) && readFileSync(join(repo, "a.mjs"), "utf8") === "main\n" && P.inflight().length === 0);
+  const again = P.besideAgain(repo, "t9");
+  ok("…and the record holds: it isn't started beside again, it says why, whatever the inputs", again && again.kind === "conflict" && /clash with the main folder's/.test(again.note), again);
+  ok("a task that names a patch, or a merge task, never goes beside", P.verdict({ text: t9.text, name: "repo2", pro: true, git: true, cap: 3 }).kind === "merge" && P.verdict({ text: "Merge a finished task's changes into repo2: \"x\" was done in a copy", name: "repo2", pro: true, git: true, cap: 3 }).kind === "merge" && !!P.startParallel("repo2", repo, { id: "t9", text: t9.text }, { run }).error);
+  // a second clash on the same task replaces the note instead of nesting one in another
+  P.attachPatch({ id: "ffffff", lane: "repo2", repo, task: t9.text, taskId: "t9" }, join(repo, ".symbiot", "parallel-ffffff.patch"));
+  const t9b = tasks().find((t) => t.id === "t9");
+  ok("a second clash on it names the new patch in place of the old: never nested", (t9b.text.match(/parallel-/g) || []).length === 1 && /parallel-ffffff\.patch/.test(t9b.text) && t9b.text.startsWith("Rework a.mjs — "), t9b.text);
+  // an older task not in tasks.json: a merge task once, with the innermost task's words
+  const r2 = P.startParallel("repo2", repo, { id: "zz", text: "Merge a finished task's changes into repo2: \"Tidy c.mjs\" was done in a copy of the repo, and its changes clash" }, { run });
+  ok("…and a merge task is never started beside", !!r2.error);
+  P.attachPatch({ id: "aaaaaa", lane: "repo2", repo, task: "Merge a finished task's changes into repo2: \"Tidy c.mjs\" was done in a copy of the repo, and its changes clash with newer ones in the main folder. They're saved as x.", taskId: "zz" }, join(repo, ".symbiot", "parallel-aaaaaa.patch"), { addTask: (text, lane) => added.push({ text, lane }) });
+  ok("a task Symbiot has no record of gets one merge task, naming the real task, not a merge task's", added.length === 1 && /into repo2: "Tidy c\.mjs" was done/.test(added[0].text) && !/Merge a finished.*Merge a finished/.test(added[0].text), added);
+  // merged cleanly: the task goes to review at once, not on the next push
+  writeFileSync(TASKS, JSON.stringify([{ id: "t10", text: "Tidy b.mjs", repo: "repo2", ts: 1 }]));
+  P.startParallel("repo2", repo, { id: "t10", text: "Tidy b.mjs" }, { run });
+  const wt2 = P.inflight().find((m) => m.taskId === "t10").wt;
+  writeFileSync(join(wt2, "b.mjs"), "b\n"); writeFileSync(join(wt2, ".symbiot", "TASKS.md"), "## Tasks\n- [x] Tidy b.mjs\n");
+  hook(0);
+  ok("merged: the task is in review in tasks.json at once, so the next tick can't peel it again", tasks().find((t) => t.id === "t10").review === true && readFileSync(join(repo, "b.mjs"), "utf8") === "b\n");
+}
+
+console.log("THE BASE — a copy starts from the lane's tree as it is, uncommitted work and all");
+{
+  const repo = join(HOME, "repo3"); mkdirSync(repo, { recursive: true });
+  sh(repo, "init", "-q", "-b", "main"); writeFileSync(join(repo, "a.mjs"), "a1\n"); writeFileSync(join(repo, "b.mjs"), "b1\n"); writeFileSync(join(repo, ".gitignore"), "ignored.txt\n"); sh(repo, "add", "-A"); sh(repo, "commit", "-qm", "init");
+  mkdirSync(join(repo, ".symbiot"), { recursive: true }); writeFileSync(join(repo, ".symbiot", "TASKS.md"), "## Tasks\n- [ ] Change b.mjs\n");
+  writeFileSync(join(repo, "a.mjs"), "a-dirty\n"); writeFileSync(join(repo, "u.mjs"), "untracked\n"); writeFileSync(join(repo, "ignored.txt"), "no\n"); // the lane's own run's work, not yet approved
+  let hook; const run = (wt, o) => { hook = o.onExit; return { id: "r" }; };
+  const r = P.startParallel("repo3", repo, { id: "b1", text: "Change b.mjs" }, { run }), wt = P.inflight()[0].wt;
+  ok("the copy has the lane's uncommitted edit and its new file, not an ignored one; the lane's index is untouched", r.ok && readFileSync(join(wt, "a.mjs"), "utf8") === "a-dirty\n" && readFileSync(join(wt, "u.mjs"), "utf8") === "untracked\n" && !existsSync(join(wt, "ignored.txt")) && sh(repo, "status", "--porcelain", "--", ".", ":(exclude).symbiot").stdout.trim() === "M a.mjs\n?? u.mjs", sh(repo, "status", "--porcelain").stdout);
+  writeFileSync(join(wt, "b.mjs"), "b2\n"); writeFileSync(join(wt, ".symbiot", "TASKS.md"), "## Tasks\n- [x] Change b.mjs\n");
+  hook(0);
+  ok("merged back without a clash: only its own change comes over, the lane's dirty work stays as it was", readFileSync(join(repo, "b.mjs"), "utf8") === "b2\n" && readFileSync(join(repo, "a.mjs"), "utf8") === "a-dirty\n" && readFileSync(join(repo, "u.mjs"), "utf8") === "untracked\n" && !existsSync(join(repo, ".symbiot", "parallel-" + P.inflight().length)) && !readdirSync(join(repo, ".symbiot")).some((f) => /\.patch$/.test(f)), readdirSync(join(repo, ".symbiot")));
+  ok("a clean tree starts from HEAD itself", P.snapshot(repo, sh(repo, "rev-parse", "HEAD").stdout.trim(), []).dirty === false);
+}
+
+console.log("WHAT A COPY LEAVES — handovers, questions, waits, facts and reports land in the lane before the copy goes");
+{
+  const repo = join(HOME, "repo4"); mkdirSync(repo, { recursive: true });
+  sh(repo, "init", "-q", "-b", "main"); writeFileSync(join(repo, "a.mjs"), "a1\n"); sh(repo, "add", "-A"); sh(repo, "commit", "-qm", "init");
+  mkdirSync(join(repo, ".symbiot"), { recursive: true }); writeFileSync(join(repo, ".symbiot", "TASKS.md"), "## Tasks\n- [ ] Remove the trial account on production\n"); writeFileSync(join(repo, ".symbiot", "REPORT.md"), "# Older\n");
+  writeFileSync(join(repo, ".symbiot", "ANSWERS.md"), "# Answers\n\n### Which account?\nthe trial one\n_answered 2026-10-15_\n");
+  let hook; const run = (wt, o) => { hook = o.onExit; return { id: "r" }; };
+  P.startParallel("repo4", repo, { id: "p1", text: "Remove the trial account on production" }, { run });
+  const wt = P.inflight()[0].wt, sd = join(wt, ".symbiot");
+  writeFileSync(join(sd, "HANDOFF.md"), "# Handovers\n\n### ops\nNew job: remove the trial account on sts-prod (ssh root@prod, `rm -rf /srv/trial`).\n");
+  writeFileSync(join(sd, "QUESTIONS.md"), "# Questions\n\n## Questions\n### Which account?\nanswered in the copy\n- a\n### Delete its backups too?\nThey hold 2 GB.\n- Yes\n- Keep them\n\n## Suggestions\n### Add a trial flag\n");
+  writeFileSync(join(sd, "ANSWERS.md"), readFileSync(join(sd, "ANSWERS.md"), "utf8") + "\n### Which account?\nthe trial one\n_answered 2026-10-15_\n"); // the copy's answers started as the lane's
+  writeFileSync(join(sd, "AWAITING.json"), JSON.stringify([{ to: "host@prod.example", subject: "Trial removal", asked: "confirm", next: "tick" }]));
+  writeFileSync(join(sd, "REMEMBER.json"), JSON.stringify([{ name: "sts-prod", kind: "thing", fact: "production Dailify runs on sts-prod" }]));
+  writeFileSync(join(sd, "REPORT.md"), "# Trial removal\nWhat I found.\n"); writeFileSync(join(sd, "PLAN.md"), "# Plan\nSteps.\n");
+  hook(0); // nothing changed in the code, nothing ticked: it handed over and asked instead
+  const L = (f) => { try { return readFileSync(join(repo, ".symbiot", f), "utf8"); } catch { return ""; } };
+  ok("the handover is in the lane's HANDOFF.md as a section to send, marked with the task", /### ops\nNew job: remove the trial account on sts-prod/.test(L("HANDOFF.md")) && /from a run beside repo4 on "Remove the trial account/.test(L("HANDOFF.md")), L("HANDOFF.md"));
+  ok("its open question is in the lane's QUESTIONS.md with its context and options; the answered one isn't; the idea comes too", /### Delete its backups too\?\nThey hold 2 GB\.\n- Yes\n- Keep them/.test(L("QUESTIONS.md")) && !/### Which account\?/.test(L("QUESTIONS.md")) && /## Suggestions\n### Add a trial flag/.test(L("QUESTIONS.md")), L("QUESTIONS.md"));
+  ok("the email it waits on and the fact it found join the lane's lists, the wait marked with the task", JSON.parse(L("AWAITING.json"))[0].task === "Remove the trial account on production" && JSON.parse(L("REMEMBER.json"))[0].name === "sts-prod", [L("AWAITING.json"), L("REMEMBER.json")]);
+  ok("its reports are kept, a clashing name set apart, each saying which run wrote it", /^# Plan\n_\(from a run beside repo4/.test(L("PLAN.md")) && L("REPORT.md") === "# Older\n" && readdirSync(join(repo, ".symbiot")).some((f) => /^REPORT-[0-9a-f]{6}\.md$/.test(f)), readdirSync(join(repo, ".symbiot")));
+  const again = P.besideAgain(repo, "p1");
+  ok("an empty patch that handed over counts as handed over, not unfinished: no retry on the same inputs or any others", again && again.kind === "handed" && /handed this to another lane/.test(again.note) && !existsSync(wt), again);
+  // asked only
+  writeFileSync(join(repo, ".symbiot", "TASKS.md"), "## Tasks\n- [ ] Rename the trial plan\n");
+  P.startParallel("repo4", repo, { id: "p2", text: "Rename the trial plan" }, { run });
+  writeFileSync(join(P.inflight()[0].wt, ".symbiot", "QUESTIONS.md"), "### To what?\n- Starter\n- Free\n");
+  hook(0);
+  ok("one that only asked counts as asking", P.besideAgain(repo, "p2").kind === "asked" && /### To what\?\n- Starter/.test(L("QUESTIONS.md")), P.besideAgain(repo, "p2"));
+}
+
+console.log("RESTARTS — a tick alone isn't success, and a running lane's brief isn't rewritten");
+{
+  const repo = join(HOME, "repo5"); mkdirSync(repo, { recursive: true });
+  sh(repo, "init", "-q", "-b", "main"); writeFileSync(join(repo, "a.mjs"), "a1\n"); sh(repo, "add", "-A"); sh(repo, "commit", "-qm", "init");
+  mkdirSync(join(repo, ".symbiot"), { recursive: true }); writeFileSync(join(repo, ".symbiot", "TASKS.md"), "## Tasks\n- [ ] Change a.mjs\n");
+  const run = () => ({ id: "r" });
+  P.startParallel("repo5", repo, { id: "k1", text: "Change a.mjs" }, { run });
+  const wt = P.inflight()[0].wt;
+  writeFileSync(join(wt, "a.mjs"), "half\n"); writeFileSync(join(wt, ".symbiot", "TASKS.md"), "## Tasks\n- [x] Change a.mjs\n");
+  writeFileSync(join(wt, ".symbiot", "agent.log"), '{"type":"system","subtype":"init"}\n{"type":"assistant"}\n=== stopped by Symbiot 2026-10-15T08:00:00Z: no output for 45 minutes, so it was taken for hung ===\n');
+  ok("the log says how it ended: stopped by the hang guard", P.exitOf(wt) === 1);
+  const done = P.mergeEnded({ running: () => null, sweeping: false });
+  ok("ended while Symbiot was down, ticked but killed: not merged, its changes kept as a patch, the task open", done.length === 1 && !done[0].merged && done[0].saved && readFileSync(join(repo, "a.mjs"), "utf8") === "a1\n" && /- \[ \] Change a\.mjs/.test(readFileSync(join(repo, ".symbiot", "TASKS.md"), "utf8")), done);
+  const logs = (t) => { mkdirSync(join(repo, "x", ".symbiot"), { recursive: true }); writeFileSync(join(repo, "x", ".symbiot", "agent.log"), t); return P.exitOf(join(repo, "x")); };
+  ok("a result event says 0 or 1; a stream cut off is 1; no stream says nothing", logs('{"type":"result","is_error":false}\n') === 0 && logs('{"type":"result","is_error":true}\n') === 1 && logs('{"type":"assistant"}\n') === 1 && logs("plain text\n") === null && logs('{"type":"result"}\n=== stopped by Symbiot x ===\n') === 1);
+  // the lane's own agent is running: the tick goes into the held brief, never into the TASKS.md it works from
+  const running = () => ({ pid: 1 });
+  writeFileSync(join(repo, ".symbiot", "TASKS.md"), "## Tasks\n- [ ] Other work\n");
+  ok("nothing held: TASKS.md is left alone", P.tickInMain(repo, ["Change a.mjs"], { running }) === false && readFileSync(join(repo, ".symbiot", "TASKS.md"), "utf8") === "## Tasks\n- [ ] Other work\n");
+  writeFileSync(join(repo, ".symbiot", "TASKS.next.md"), "## Tasks\n- [ ] Change a.mjs\n- [ ] Other work\n");
+  ok("a held brief: the tick lands there, for agents.mjs releaseHeldTasks to swap in", P.tickInMain(repo, ["Change a.mjs"], { running }) === true && /- \[x\] Change a\.mjs/.test(readFileSync(join(repo, ".symbiot", "TASKS.next.md"), "utf8")) && !/\[x\]/.test(readFileSync(join(repo, ".symbiot", "TASKS.md"), "utf8")));
+}
+
+console.log("CLEANUP — nothing runs on from a deleted copy, and what piles up is pruned");
+{
+  const wt = join(HOME, "wt-x"), proc = join(HOME, "proc"); mkdirSync(join(wt, "sub"), { recursive: true });
+  for (const [pid, cwd, argv] of [[11, join(wt, "sub"), "node\0app.mjs"], [12, HOME, `node\0${join(wt, "index.mjs")}\0app`], [13, HOME, "node\0other.mjs"], [14, join(HOME, "wt-xy"), "sh"]]) { mkdirSync(join(proc, String(pid)), { recursive: true }); spawnSync("ln", ["-s", cwd, join(proc, String(pid), "cwd")]); writeFileSync(join(proc, String(pid), "cmdline"), argv); }
+  const told = []; const got = P.killUnder(wt, { kill: (p, s) => told.push(p + ":" + s), proc, later: false });
+  ok("every process with its folder or its command under the copy is told to stop; others, and a folder with a longer name, aren't", got.sort().join() === "11,12" && told.join() === "11:SIGTERM,12:SIGTERM", [got, told]);
+  // patches: handled or a week old go; one an open task names stays
+  const repo = join(HOME, "repo6", ".symbiot"); mkdirSync(repo, { recursive: true });
+  const NOW = Date.now(), old = (f, ms) => { const t = new Date(NOW - ms); spawnSync("touch", ["-d", t.toISOString(), f]); };
+  for (const f of ["parallel-aaa111.patch", "parallel-bbb222.patch", "parallel-ccc333.patch", "parallel-ddd444.patch"]) writeFileSync(join(repo, f), "x");
+  old(join(repo, "parallel-aaa111.patch"), 8 * 86400000); old(join(repo, "parallel-bbb222.patch"), 2 * 3600000); old(join(repo, "parallel-ccc333.patch"), 2 * 3600000);
+  writeFileSync(join(repo, "beside.json"), JSON.stringify({ o: { tries: 1, at: NOW - 8 * 86400000 }, n: { conflict: true, at: NOW } }));
+  const gone = P.prunePatches(join(HOME, "repo6"), NOW, { tasks: [{ id: "1", text: "Merge … saved as .symbiot/parallel-ccc333.patch", repo: "r" }, { id: "2", text: "x", patch: ".symbiot/parallel-aaa111.patch", done: true }] });
+  ok("a week-old patch goes even when named; one no open task names goes after an hour; a named one and a fresh one stay", gone.sort().join() === "parallel-aaa111.patch,parallel-bbb222.patch" && existsSync(join(repo, "parallel-ccc333.patch")) && existsSync(join(repo, "parallel-ddd444.patch")), gone);
+  ok("…and week-old beside.json records with them", Object.keys(JSON.parse(readFileSync(join(repo, "beside.json"), "utf8"))).join() === "n");
+  // orphan worktree folders: no par.json and not a worktree, older than an hour
+  const dir = join(HOME, "wts"); mkdirSync(join(dir, "lane-aaaaaa", ".symbiot"), { recursive: true }); mkdirSync(join(dir, "lane-bbbbbb", ".symbiot"), { recursive: true }); mkdirSync(join(dir, "lane-cccccc", ".symbiot"), { recursive: true });
+  writeFileSync(join(dir, "lane-cccccc", ".symbiot", "par.json"), JSON.stringify({ id: "cccccc" }));
+  old(join(dir, "lane-aaaaaa"), 2 * 3600000); old(join(dir, "lane-cccccc"), 2 * 3600000);
+  const orphans = P.pruneOrphans(NOW, dir);
+  ok("an old folder with no par.json goes; a fresh one and a copy still in flight stay", orphans.length === 1 && /lane-aaaaaa$/.test(orphans[0]) && existsSync(join(dir, "lane-bbbbbb")) && existsSync(join(dir, "lane-cccccc")), orphans);
 }
 
 console.log("THE TICK — two independent tasks queued at one lane both run at once");

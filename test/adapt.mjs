@@ -400,7 +400,7 @@ try {
   let sys = "", prm = "";
   const hr = await homeAsk("what needs me?", { state: h, ask: async (s2, p2) => { sys = s2; prm = p2; return JSON.stringify({ reply: "The symbiot Approve and whatsapp_module's question.", do: null, remember: [] }); } });
   ok("home's talk is the same Symbiot, told what home shows", hr.answer === "The symbiot Approve and whatsapp_module's question." && /You are Symbiot, the one assistant/.test(sys) && /Approve symbiot/.test(prm) && /whatsapp_module asks/.test(prm), hr);
-  ok("…and in their style", /Match how they talk/.test(sys), "");
+  ok("…and in their style (the voice line ends the prompt: the system prompt stays the same from turn to turn, for caching)", /Match how they talk/.test(prm) && !/Match how they talk/.test(sys), prm.slice(-200));
   ok("an empty question isn't sent", (await homeAsk("  ")).error === "empty", "");
   // a screenshot dropped into the talk: the model gets the picture, and the words say so
   const shot = join(HOME, "shot.png"); writeFileSync(shot, Buffer.from("89504e470d0a1a0a", "hex"));

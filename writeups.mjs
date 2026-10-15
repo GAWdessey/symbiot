@@ -4,11 +4,11 @@
 import { languageLine } from "./lang.mjs";
 import { join } from "node:path";
 import { readFileSync, existsSync } from "node:fs";
-import { VERSION, loadConfig, saveConfig, loadTasks, saveTasks, sh, repoState } from "./core.mjs";
-import { resolveProvider, write } from "./ai.mjs";
+import { VERSION, loadConfig, saveConfig, loadTasks, saveTasks, gitOut, repoState } from "./core.mjs";
+import { resolveProvider, write, textOf } from "./ai.mjs";
 import { detectMailSources, mailActivity } from "./mail.mjs";
 import { waitingOn, newsSince } from "./watch.mjs";
-import { me, authorship, authorArgs, readmeInfo, repoShape, houseRules, reportFooter, expandRoot, commits, openWork, detectFolder, laneMap, discoveredRepos } from "./scan.mjs";
+import { me, authorship, authorArgs, folderFiles, readmeInfo, repoShape, houseRules, reportFooter, expandRoot, commits, openWork, detectFolder, laneMap, discoveredRepos } from "./scan.mjs";
 import { taskType, workingChanges, workingDiff, changelogEntry } from "./tasks.mjs";
 import { converse, actNow, actIn, taskIn } from "./mind.mjs";
 
@@ -23,13 +23,13 @@ async function repoReview(path) {
   if (!path) return { error: "no repo" };
   const name = path.split("/").pop();
   const auth = authorship(path), state = repoState(path), rd = readmeInfo(path), shape = repoShape(path), rules = houseRules(path);
-  const commits = sh(`git -C ${JSON.stringify(path)} log ${authorArgs(auth.emails)} --format='%ad %s' --date=short -50 2>/dev/null`).trim()
-    || sh(`git -C ${JSON.stringify(path)} log --format='%ad %s' --date=short -50 2>/dev/null`).trim();
+  const commits = gitOut(path, ["log", ...authorArgs(auth.emails), "--format=%ad %s", "--date=short", "-50"]).trim()
+    || gitOut(path, ["log", "--format=%ad %s", "--date=short", "-50"]).trim();
   const footer = reportFooter(path, auth, state, rd);
   // Cheap maturity gauge, so the model can be told to show restraint instead of
   // always inventing new features (over-engineering is a failure, not a win).
-  const testFiles = Number(sh(`git -C ${JSON.stringify(path)} ls-files 2>/dev/null | grep -icE '(^|/)(tests?|spec|__tests__)/|\\.(test|spec)\\.'`).trim()) || 0;
-  const churn = Number(sh(`git -C ${JSON.stringify(path)} log --since='14 days ago' --oneline 2>/dev/null | wc -l`).trim()) || 0;
+  const testFiles = gitOut(path, ["ls-files"]).split("\n").filter((f) => /(^|\/)(tests?|spec|__tests__)\/|\.(test|spec)\./i.test(f)).length;
+  const churn = gitOut(path, ["log", "--since=14 days ago", "--oneline"]).split("\n").filter(Boolean).length;
   const posture = state.stale ? "the checkout is a stale snapshot — the priority is getting current, not new work"
     : (testFiles === 0 && shape.total > 40) ? "a real codebase with NO test files — favour tests/stabilising over new features"
     : (churn >= 25) ? "very rapid churn lately — likely over-iterating; be conservative, prefer consolidation/finishing over new features"
@@ -51,8 +51,8 @@ async function repoReview(path) {
     (rules ? `Conventions this team has chosen — do NOT advise against these:\n${rules}\n\n` : "") +
     (state.stale ? `Working tree: STALE (≈ ${state.staleBy ? "HEAD~" + state.staleBy : "older"}); its "changes" are the gap to an old snapshot, not new work.\n\n` : "") +
     `Return the JSON. Remember: fewer, higher-value ideas beat a long list; a "don't add — stabilise" verdict with 0–2 ideas is a valid answer.`;
-  const raw = await write(system + languageLine(), prompt);
-  if (!raw) return { text: "(couldn't reach the model)", ideas: [], verdict: "", footer };
+  const r = await write(system + languageLine(), prompt), raw = textOf(r);
+  if (!raw) return { text: failed(r), error: failed(r), ideas: [], verdict: "", footer };
   const j = extractJson(raw);
   if (j && (j.review || j.ideas || j.verdict)) return {
     text: String(j.review || "").trim() || raw,
@@ -62,6 +62,8 @@ async function repoReview(path) {
   };
   return { text: raw, ideas: [], verdict: "", footer };
 }
+// What a write-up says when the model didn't answer: write()'s reason, never a bare "(couldn't reach the model)"
+const failed = (r) => `Couldn't write it: ${(r && typeof r === "object" && r.error) || "the model didn't answer"}`;
 function extractJson(s) {
   if (!s) return null;
   let t = String(s).trim().replace(/^```(?:json)?/i, "").replace(/```$/,"").trim();
@@ -81,8 +83,8 @@ async function repoSuggest(path) {
   if (!path) return { error: "no repo" };
   const name = path.split("/").pop();
   const auth = authorship(path), state = repoState(path), rd = readmeInfo(path), rules = houseRules(path);
-  const recent = sh(`git -C ${JSON.stringify(path)} log ${authorArgs(auth.emails)} --format='%ad %s' --date=short -50 2>/dev/null`).trim()
-    || sh(`git -C ${JSON.stringify(path)} log --format='%ad %s' --date=short -50 2>/dev/null`).trim();
+  const recent = gitOut(path, ["log", ...authorArgs(auth.emails), "--format=%ad %s", "--date=short", "-50"]).trim()
+    || gitOut(path, ["log", "--format=%ad %s", "--date=short", "-50"]).trim();
   const open = openWork([{ path, name }]);
   const footer = reportFooter(path, auth, state, rd);
   const system =
@@ -95,8 +97,8 @@ async function repoSuggest(path) {
     `Project: ${name} (branch ${state.branch}, ${auth.total} commits, ${auth.mineCount} yours${auth.filterDropped ? " — filter dropped" : ""}).\n\n` +
     `Recent commits:\n${recent || "(none)"}\n\nOpen / unfinished:\n${open.length ? open.map((o) => "- " + o).join("\n") : "(none found)"}\n\n` +
     (rules ? `Conventions — do NOT advise against these:\n${rules}\n\n` : "") + `Give the advice.`;
-  const text = await write(system + languageLine(), prompt);
-  return { text: text || "(couldn't reach the model)", footer };
+  const r = await write(system + languageLine(), prompt), text = textOf(r);
+  return { text: text || failed(r), ...(text ? {} : { error: failed(r) }), footer };
 }
 // Overview + suggestions for a NON-git project folder (no commits to read), from
 // its file tree, manifest and README. The folder-node equivalent of repoSuggest.
@@ -104,7 +106,7 @@ async function folderSuggest(path) {
   if (!resolveProvider()) return { error: "not-connected" };
   if (!path) return { error: "no path" };
   const det = detectFolder(path);
-  const files = sh(`find ${JSON.stringify(path)} -maxdepth 2 \\( -name node_modules -o -name .git \\) -prune -o -type f -print 2>/dev/null | head -200`).split("\n").filter(Boolean);
+  const files = folderFiles(path, 200);
   const rels = files.map((f) => f.slice(path.length + 1));
   const pick = (names) => { for (const n of names) { const hit = files.find((f) => f.split("/").pop().toLowerCase() === n); if (hit) { try { return readFileSync(hit, "utf8").slice(0, 2000); } catch {} } } return ""; };
   const manifest = pick(["package.json", "requirements.txt", "pyproject.toml", "go.mod", "cargo.toml", "pom.xml", "composer.json", "gemfile", "pubspec.yaml"]);
@@ -118,9 +120,9 @@ async function folderSuggest(path) {
   const prompt =
     `Folder: ${det.name}\nStack: ${stack}\nFiles (${det.files}):\n${rels.slice(0, 120).join("\n")}\n\n` +
     (manifest ? `Manifest:\n${manifest}\n\n` : "") + (readme ? `README excerpt:\n${readme}\n\n` : "") + `Write the overview and suggestions.`;
-  const text = await write(system + languageLine(), prompt);
+  const r = await write(system + languageLine(), prompt), text = textOf(r);
   const footer = `symbiot ${VERSION} · folder · ${det.files} files · ${stack} · not a git repo`;
-  return { text: text || "(couldn't reach the model)", footer };
+  return { text: text || failed(r), ...(text ? {} : { error: failed(r) }), footer };
 }
 // Ask questions about a task: a short Q&A thread kept on the task itself
 // (task.chat), grounded in the repo/folder it belongs to — and, once an agent
@@ -136,7 +138,7 @@ async function taskChat(id, question) {
   const ctx = [];
   if (path) {
     const isGit = existsSync(join(path, ".git"));
-    if (isGit) ctx.push(`Recent commits:\n${sh(`git -C ${JSON.stringify(path)} log --format='%ad %s' --date=short -15 2>/dev/null`).trim() || "(none)"}`);
+    if (isGit) ctx.push(`Recent commits:\n${gitOut(path, ["log", "--format=%ad %s", "--date=short", "-15"]).trim() || "(none)"}`);
     else { const det = detectFolder(path); ctx.push(`Project folder (not a git repo) · ${det.files} files · ${[...det.langs, ...det.tools].join(", ") || "unknown stack"}`); }
     const rd = readmeInfo(path); if (rd.excerpt) ctx.push(`README excerpt:\n${rd.excerpt.slice(0, 1500)}`);
     const rules = houseRules(path); if (rules) ctx.push(`Conventions — do NOT advise against these:\n${rules}`);
@@ -229,15 +231,15 @@ async function produce(cmd, { since = 7, all: everyone = false } = {}) {
       `You summarise what's still on a developer's plate from their TODO markers and uncommitted work. ` +
       `Group by project, lead with what looks most in-flight (uncommitted work) then the to-dos. ` +
       `Be concise and concrete. No preamble.`;
-    const text = await write(system + languageLine(), `Open work:\n${open.map((o) => `- ${o}`).join("\n")}\n\nWhat's still on my plate?`);
-    return { text: text || "(couldn't reach the model)", sub: `${open.length} open items · todo`, footer: `symbiot ${VERSION} · ${repos.length} repos scanned · ${open.length} open items` };
+    const r = await write(system + languageLine(), `Open work:\n${open.map((o) => `- ${o}`).join("\n")}\n\nWhat's still on my plate?`), text = textOf(r);
+    return { text: text || failed(r), ...(text ? {} : { error: failed(r) }), sub: `${open.length} open items · todo`, footer: `symbiot ${VERSION} · ${repos.length} repos scanned · ${open.length} open items` };
   }
   const label = cmd === "standup" ? "standup" : "week";
   const days = cmd === "standup" ? 2 : since;
   const who = me();
   // Discover the Map's repo set, then keep only those with commits in the window.
   const all = discoveredRepos();
-  const repos = all.filter((r) => sh(`git -C ${JSON.stringify(r.path)} log --since="${days} days ago" --oneline -1 2>/dev/null`).trim());
+  const repos = all.filter((r) => gitOut(r.path, ["log", `--since=${days} days ago`, "--oneline", "-1"]).trim());
   const mail = sentMail(days); // [] unless email is switched on
   const waiting = label === "standup" ? waitingOn(WAITING_HOURS) : [], line = waitingLine(waiting);
   const waitNote = waiting.length ? " · " + waiting.map((g) => g.label).join(", ") + " waiting" : "";
@@ -266,9 +268,9 @@ async function produce(cmd, { since = 7, all: everyone = false } = {}) {
     (waiting.length ? `Waiting on me (new since yesterday):\n${waiting.map((g) => `- ${g.label}:\n${g.items.slice(0, 10).map((t) => `  - ${t.slice(0, 160)}`).join("\n")}`).join("\n")}\n\n` : "") +
     `Write the ${label === "standup" ? "standup" : "update"}.`;
 
-  const text = await write(system + languageLine(), prompt);
+  const r = await write(system + languageLine(), prompt), text = textOf(r);
   const mailNote = (mail.length ? ` · ${mail.length} sent email${mail.length === 1 ? "" : "s"}` : "") + (arrivedN ? ` · ${arrivedN} from linked sites` : "");
-  return { text: text ? withWaiting(text, line) : "(couldn't reach the model)", sub: `${cs.length} commits across ${new Set(cs.map((x) => x.repo)).size} repos${mailNote}${waitNote} · ${label}`, footer: `symbiot ${VERSION} · ${all.length} repos (same as the Map) · ${repos.length} active · ${cs.length} commits in last ${days}d${mailNote}` };
+  return { text: text ? withWaiting(text, line) : failed(r), ...(text ? {} : { error: failed(r) }), sub: `${cs.length} commits across ${new Set(cs.map((x) => x.repo)).size} repos${mailNote}${waitNote} · ${label}`, footer: `symbiot ${VERSION} · ${all.length} repos (same as the Map) · ${repos.length} active · ${cs.length} commits in last ${days}d${mailNote}` };
 }
 
 // ---- release notes: Approve's changelog entries, in your AI's words ------------
