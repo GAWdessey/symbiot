@@ -865,9 +865,10 @@ function waitWhy({ map, named, running, held, ready, isParked, deps = {} }) {
     if (run) {
       if (inBrief) return { kind: "working", text: `${name}'s agent is on it now` };
       // not in the run's brief: it runs beside it unless it clashes with what's going, or the lane is at its cap,
-      // or a run beside already stopped on it with nothing changed since (then the lane's own run takes it)
+      // or a run beside already stopped on it with nothing changed since, got it done, left its patch, handed
+      // it over or asked (parallel.mjs besideAgain; then the lane's own run takes it, never a second copy)
       const tried = (deps.besideAgain || besideAgain)(path, t.id);
-      if (tried) return { kind: "queued", waitKind: "tried", text: `Queued behind ${name}'s run: ${plain(run.doing, 60).toLowerCase()}. Why it waits: ${tried.note}, so ${name}'s own agent takes it next.`, run: run.doing };
+      if (tried) return { kind: "queued", waitKind: tried.kind || "tried", text: `Queued behind ${name}'s run: ${plain(run.doing, 60).toLowerCase()}. Why it waits: ${tried.note}, so ${name}'s own agent takes it next.`, run: run.doing };
       const f = (deps.facts || laneFacts)(path), st = (deps.licence || licenceState)();
       const beside = (deps.parallel || inflight)().filter((m) => m.lane === lane), active = [...(deps.openTasks || openTasksOf)(path).slice(0, 2).map((x) => ({ text: x, who: `${name}'s run` })), ...beside.map((m) => ({ text: m.task, who: "the run beside it" }))];
       const v = verdict({ text: t.text, name, active, count: Math.max(mine.length, 1 + beside.length), cap: (deps.cap || laneCap)(undefined, st), pro: isPro(st), dirty: f.dirty, git: f.git });
