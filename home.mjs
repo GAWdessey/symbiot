@@ -22,7 +22,7 @@ import { setHandoffCmd, agentsList, runHandoff, runningHandoff, handoffCmd, load
 import { isDone, recordDone, coveredBy } from "./asksdone.mjs";
 import { linksState, signInAsked } from "./links.mjs";
 import { knowledgeState } from "./knowledge.mjs";
-import { CONFIG_DIR, loadTasks, saveTasks, loadConfig, saveConfig, sameTask } from "./core.mjs";
+import { CONFIG_DIR, loadTasks, saveTasks, loadConfig, saveConfig, sameTask, isFinding } from "./core.mjs";
 import { lanesState, stuckHandovers, allowHandover, skipHandover, handingOf, loadLedger, doneSince, sharedTo } from "./lanes.mjs";
 import { control } from "./control.mjs";
 import { converse, actIn, actNow, taskIn, loadMind, dayMark } from "./mind.mjs";
@@ -319,6 +319,24 @@ const UNSENT_SUB = { conflicts: "it clashes with main", tests: "its tests failed
 //   lanes: [{ from, to, text, status, times }], working: n, at }
 // An ask carries what its blob on home needs: the lane (repo, or "" for an ops
 // run), its name as people say it, the question and its first two options.
+// Dismissed, on Home or the Workdesk: a card you don't want there (Garth, 2026-10-15: no way
+// to clear an unwanted one). Kept by what the card says (cardKey, the app's bdKey: the same
+// question on Home, the Workdesk and a project), so a new question from the same agent, or
+// a changed Approve, still shows. Undo takes it back. A month on, it's forgotten.
+const DISMISSED_FILE = join(CONFIG_DIR, "home-dismissed.json"), DISMISSED_KEEP = 30 * DAY;
+const cardKey = (y) => { const q = (y && (y.raw || y.q)) || ""; return y && y.path && q ? `${y.path}|${q}` : `${(y && y.id) || ""}|${(y && (y.q || y.sub)) || ""}`; };
+function loadDismissed(file = DISMISSED_FILE) { try { const d = JSON.parse(readFileSync(file, "utf8")); return d && typeof d === "object" && !Array.isArray(d) ? d : {}; } catch { return {}; } }
+function dismissCard(key, { undo = false, file = DISMISSED_FILE, now = Date.now() } = {}) {
+  key = String(key || "").slice(0, 2000); if (!key || key === "|") return { error: "Which card?" };
+  const d = loadDismissed(file);
+  for (const k of Object.keys(d)) if (!(now - Number(d[k]) < DISMISSED_KEEP)) delete d[k];
+  if (undo) delete d[key]; else d[key] = now;
+  try { mkdirSync(CONFIG_DIR, { recursive: true }); writeFileSync(file, JSON.stringify(d), { mode: 0o600 }); } catch { return { error: "It couldn't be saved." }; }
+  cached = null;
+  return { ok: true, said: undo ? "It's back." : "Dismissed." };
+}
+const undismissed = (list, gone) => list.filter((y) => !gone[cardKey(y)]);
+
 function homeState({ now = Date.now(), fresh = false, deps = {} } = {}) {
   if (!fresh && !deps.board && cached && now - cached.at < KEEP) return cached;
   const board = deps.board || (() => { try { return watchBoard(24, now); } catch { return { cards: [] }; } });
@@ -423,7 +441,7 @@ function homeState({ now = Date.now(), fresh = false, deps = {} } = {}) {
     runs.push({ id: "run:" + a.path, path: a.path, repo: lane || "", name: lane ? named(map[lane], lane) : plain(String(a.name || "an agent").replace(/^Agent:\s*/, ""), 40), ...runNow(a), started: a.startedAt || 0 });
   }
   // nothing waits on you: a few things that can be done next (none while anything does)
-  you = settleAsks(you);
+  you = undismissed(settleAsks(you), (deps.dismissed || loadDismissed)());
   const next = you.length ? [] : nextUp({ now, map, list, named, deps: { board: () => bd, reports: () => rep, ...(deps.next || {}) } });
   const out = { you: you.slice(0, 6), youCount: you.length, feeds: feeds.slice(0, 6), lanes: hs, working, runs: runs.slice(0, 4), next, marketing: marketing({ list, map, named, pend }), ...(deps.phone || phoneBits)(now), at: now };
   if (!deps.board) cached = out;
@@ -657,10 +675,13 @@ function reportIdeasAdd(id, ideas, deps = {}) {
   const list = (Array.isArray(ideas) ? ideas : []).map((x) => String(x || "").trim()).filter(Boolean).slice(0, 8);
   if (!list.length) return { error: "Tick an idea first." };
   const lane = r.lane || RUNS_LANE, add = deps.add || addTask;
-  const added = list.map((t) => add(t, lane, { after: `(from the report "${r.title}", ${r.file})` })).filter((t) => t && !t.error);
+  // a finding ticked from it ("…is already approved, not pending") goes in done, saying so: it isn't a job
+  const added = list.map((t) => add(t, lane, { after: `(from the report "${r.title}", ${r.file})`, ...(isFinding(t) ? { finding: true } : {}) })).filter((t) => t && !t.error);
   cached = null;
   if (added.length) (deps.mark || markIdeas)(r, list, "handed");
-  return added.length ? { ok: true, added: added.length, lane, said: `${added.length === 1 ? "It's" : `${added.length} are`} on the Workdesk, in ${lane === RUNS_LANE ? "ops" : lane}.` } : { error: "Couldn't add them." };
+  const facts = added.filter((t) => t.finding).length, jobs = added.length - facts, where = lane === RUNS_LANE ? "ops" : lane;
+  const said = [jobs ? `${jobs === 1 ? "It's" : `${jobs} are`} on the Workdesk, in ${where}.` : "", facts ? `${facts === 1 ? "One is a finding" : `${facts} are findings`}, not a job, so ${facts === 1 ? "it's" : "they're"} ticked as done, in the Archive.` : ""].filter(Boolean).join(" ");
+  return added.length ? { ok: true, added: added.length, lane, said } : { error: "Couldn't add them." };
 }
 // Not worth acting on: the idea leaves the report's open list without going to the Workdesk.
 function reportIdeasDismiss(id, ideas, deps = {}) {
@@ -755,6 +776,7 @@ function workScene({ deps = {}, full = false } = {}) {
   // latest run did or is doing in a line, its open questions with their answers,
   // and the extra tasks its agents suggested, each with the folder that asked.
   const DAY = 86400000, now = Date.now(), seenR = new Set();
+  const gone = (deps.dismissed || loadDismissed)();
   for (const a of AG) {
     if (seenR.has(a.path)) continue; seenR.add(a.path);
     const l = laneOf(a), qs = (a.ask && a.ask.questions) || [], ideas = ((a.ask && a.ask.suggestions) || []).filter((s) => s && s.text && !s.added);
@@ -766,7 +788,7 @@ function workScene({ deps = {}, full = false } = {}) {
       const line = plain(String(t).split(/\n\s*\n/)[0], 220);
       if (line) { p.summary = line; p.state = a.status === "running" ? "at work" : qs.length ? "asks you" : "done"; p.path = a.path; }
     }
-    for (const q of qs) { p.qs = p.qs || []; if (p.qs.length < 3) p.qs.push({ q: q.shown || q.q, ...(q.shown ? { raw: q.q } : {}), ...(q.task ? { task: q.task } : {}), options: (q.options || []).slice(0, 3), ...(q.labels ? { labels: q.labels } : {}), path: a.path, ...signInCard([q.q, ...(q.options || []).slice(0, 3)]) }); }
+    for (const q of qs) { p.qs = p.qs || []; const c = { q: q.shown || q.q, ...(q.shown ? { raw: q.q } : {}), ...(q.task ? { task: q.task } : {}), options: (q.options || []).slice(0, 3), ...(q.labels ? { labels: q.labels } : {}), path: a.path, ...signInCard([q.q, ...(q.options || []).slice(0, 3)]) }; if (gone[cardKey(c)]) { p.asks = Math.max(0, p.asks - 1); continue; } if (p.qs.length < 3) p.qs.push(c); } // one dismissed (dismissCard) stays off the relay too
     for (const s of ideas) { p.ideas = p.ideas || []; if (p.ideas.length < 4) p.ideas.push({ text: plain(s.text, 200), full: String(s.text), repo: s.repo || l, path: a.path }); }
   }
   // what each lane handed over and hasn't heard back on, with where it stands and how far the run on it has got
@@ -1016,4 +1038,4 @@ function setOnboarding({ step, skip, unskip, skipRest, done, restart } = {}) {
   return onboarding();
 }
 
-export { plainAsk, reportIdeasAdd, reportAsk, reportDraftAnswer, workTick, waitWhy, AUTO_GRACE, STUCK_AFTER, marketingState, marketingGo, marketingDraftAnswer, marketingTask, moveToMarketing, goLane, homeState, homeContext, homeAsk, homeAnswer, homeNext, nextUp, laneNamed, NEXT_FILE, workScene, workGo, displayName, firstSteps, onboarding, setOnboarding, startOnboarding, ONB_STEPS, ONB_STEPS_PHONE, onbSteps, phoneBits, phoneSetupFirst, finishedState, handedState, noteHanded, phoneChat, isPeak, reportIdeasDismiss, settleAsks, settleFromChat };
+export { plainAsk, dismissCard, cardKey, loadDismissed, DISMISSED_FILE, reportIdeasAdd, reportAsk, reportDraftAnswer, workTick, waitWhy, AUTO_GRACE, STUCK_AFTER, marketingState, marketingGo, marketingDraftAnswer, marketingTask, moveToMarketing, goLane, homeState, homeContext, homeAsk, homeAnswer, homeNext, nextUp, laneNamed, NEXT_FILE, workScene, workGo, displayName, firstSteps, onboarding, setOnboarding, startOnboarding, ONB_STEPS, ONB_STEPS_PHONE, onbSteps, phoneBits, phoneSetupFirst, finishedState, handedState, noteHanded, phoneChat, isPeak, reportIdeasDismiss, settleAsks, settleFromChat };

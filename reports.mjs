@@ -19,7 +19,7 @@ import { join, basename, dirname, resolve, extname, sep } from "node:path";
 import { homedir } from "node:os";
 import { readFileSync, writeFileSync, readdirSync, statSync, mkdirSync, chmodSync, realpathSync } from "node:fs";
 import { createHash } from "node:crypto";
-import { CONFIG_DIR } from "./core.mjs";
+import { CONFIG_DIR, isFinding } from "./core.mjs";
 import { runFolders, laneOf, runTitle } from "./handback.mjs";
 import { runningHandoff } from "./agents.mjs";
 import { laneMap } from "./scan.mjs";
@@ -217,7 +217,7 @@ const NEXT_HEAD = /\b(?:next|top \d+|recommend\w*|suggest\w*|ideas?|actions?|act
 const IDEAS_MAX = 4;
 const cleanIdea = (s) => String(s).replace(/^\[[ xX]\]\s+/, "").replace(/\[([^\]]+)\]\([^)]*\)/g, "$1").replace(/\*\*|__|`/g, "").replace(/\s+/g, " ").trim().slice(0, 300);
 // The top-level items of its "next" sections ("## Top 3 next", "## Recommendations"…),
-// first sections first, at most IDEAS_MAX. None when it has no such section.
+// first sections first, at most IDEAS_MAX, but not the findings among them. None when it has no such section.
 function reportIdeas(text, max = IDEAS_MAX) {
   const out = []; let on = false, base = -1;
   for (const l of String(text || "").replace(/\r\n?/g, "\n").split("\n")) {
@@ -226,7 +226,7 @@ function reportIdeas(text, max = IDEAS_MAX) {
     if (!on) continue;
     const m = l.match(/^(\s*)(?:[-*+]|\d+[.)])\s+(.+)$/); if (!m) continue;
     const ind = m[1].replace(/\t/g, "    ").length; if (base < 0) base = ind; if (ind > base) continue;
-    const t = cleanIdea(m[2]); if (t && !out.some((x) => x.toLowerCase() === t.toLowerCase())) out.push(t);
+    const t = cleanIdea(m[2]); if (t && !isFinding(t) && !out.some((x) => x.toLowerCase() === t.toLowerCase())) out.push(t); // a fact it found is no next step (core.mjs isFinding)
     if (out.length >= max) break;
   }
   return out;
