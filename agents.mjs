@@ -18,6 +18,7 @@ import { lanesJob, parseFacts, leftToYou, gitWork, agentsGitWork, agentsClicking
 import { scanRoots, repoPathMap } from "./scan.mjs";
 import { knowledgeFolders } from "./knowledge.mjs";
 import { pickModel, MODEL } from "./route.mjs";
+import { claudeState } from "./ai.mjs";
 
 const HANDOFFS = []; // live registry of agents Symbiot has handed work to
 // ---- hand a repo (+ its tasks) to the user's agent — generic, settings-based
@@ -374,6 +375,7 @@ function runHandoff(repoPath, { force = false, lost = false, model = "", onExit 
   const lic = licenceGate(repoPath); if (lic) return lic; // Free's limits, and never Symbiot's own code (licence.mjs); even forced
   let opts = {}; try { opts = JSON.parse(readSymbiot(repoPath, "handoff.json")) || {}; } catch {}
   const busy = runningHandoff(repoPath); if (busy) return { busy: true, id: busy.id || "", pid: busy.pid, auto: !!busy.auto };
+  const down = claudePause(); if (down) return { blocked: true, down: down.kind, questions: 0, note: down.note }; // Claude itself is down: even forced, the run would end at once
   releaseHeldTasks(repoPath); // held for an agent another process started, which has since exited
   const idle = !lost && nothingToDo(repoPath); if (idle) return { blocked: true, idle: true, questions: 0, note: idle };
   const scoped = withScope(withConnectors(tmpl, repoPath), repoPath), box = isClaudeCmd(scoped) && trustFull() ? sandboxFor(repoPath, scoped) : null; // a repo run's sandbox, on top of the membrane
@@ -393,9 +395,12 @@ function runHandoff(repoPath, { force = false, lost = false, model = "", onExit 
   const owner = licenceState().plan === "owner" ? { SYMBIOT_OWNER: "1" } : null; // the guard lets only the owner's runs touch Symbiot's own files
   // SYMBIOT_AGENT: which run a `symbiot screens` command comes from, so it gets its own tab in the app's hidden browser
   const env = { ...(own || {}), ...(boxEnv || {}), ...(owner || {}), SYMBIOT_AGENT: repoPath };
-  const e = track(typeof opts.name === "string" && opts.name ? opts.name.slice(0, 80) : repoPath.split("/").pop(), fillHandoff(runCmd, repoPath, `${fresh ? carryOn(repoPath) : resume ? RESUME_PROMPT : HANDOFF_PROMPT} ${whereLine(repoPath)}`), repoPath, (code) => {
+  const gap = isClaudeCmd(runCmd) && process.platform !== "win32" ? startGap() : 0; // a few seconds between starts (the shell sleeps; the lock is held meanwhile)
+  const full = fillHandoff(runCmd, repoPath, `${fresh ? carryOn(repoPath) : resume ? RESUME_PROMPT : HANDOFF_PROMPT} ${whereLine(repoPath)}`);
+  const e = track(typeof opts.name === "string" && opts.name ? opts.name.slice(0, 80) : repoPath.split("/").pop(), gap ? `sleep ${Math.ceil(gap / 1000)}; ${full}` : full, repoPath, (code) => {
     if (noteSession(repoPath, code, !!resume && !fresh) === "lost") { setTimeout(() => { try { runHandoff(repoPath, { force: true, lost: true, onExit }); } catch {} }, 300); return; } // its conversation is gone: start afresh
     try { if (JSON.parse(readFileSync(lock, "utf8")).pid === e.pid) unlinkSync(lock); } catch {}
+    try { const d = noteClaudeDown(repoPath); if (d) e.down = d; } catch {} // Claude itself was the reason: no start anywhere until it's back
     noteBlocked(repoPath, tmpl, e.startedAt, code, { dirtyBefore, ticksBefore });
     try { noteRunFiles(repoPath, e, dirtyBefore, ticksBefore); } catch {} // which files this run touched, for Approve
     forgetRunStart(repoPath, e.id);
@@ -412,6 +417,67 @@ function runHandoff(repoPath, { force = false, lost = false, model = "", onExit 
   noteRun(e);
   return e;
 }
+// ---- Claude itself is down: no run starts until it's back ---------------------
+// A session limit, an expired sign-in or two runs refreshing one token at once ended
+// every run in a second, and the next tick started the same lanes again: 15 relaunches
+// in 3 minutes (9 Oct), 9 in 4 minutes (12 Oct 2026), each a red run on the Workdesk.
+// The run's last line says which (claudeDownIn); paused.json then holds every start
+// until the time the limit named, or until Claude Code is signed in again (asked once
+// a minute), and Home shows one card for it, not one per lane. Starts are also spaced
+// a few seconds apart (startGap): three in one second raced on the token refresh.
+const PAUSE_FILE = join(CONFIG_DIR, "paused.json"), SIGNIN_EVERY = 60000, REFRESH_WAIT = 2 * 60000, LIMIT_FALLBACK = 60 * 60000, AUTH_WAIT = 10 * 60000;
+function claudeDownIn(text, now = Date.now()) {
+  const t = String(text || "");
+  const m = /session limit\b[^\n]*?\bresets?\s+([^\n(]+?)\s*(?:\([^)]*\))?\s*\.?\s*$/im.exec(t);
+  if (m) return { kind: "limit", why: "Claude's session limit is used up", until: resetTime(m[1], now) || now + LIMIT_FALLBACK, resets: m[1].trim() };
+  if (/OAuth session expired|Failed to authenticate|not logged in|run \/login|Invalid authentication|authentication_error|Not authenticated/i.test(t)) return { kind: "auth", why: "Claude Code is signed out", until: 0 };
+  if (/another Claude Code process is refreshing|Failed to refresh OAuth token/i.test(t)) return { kind: "refresh", why: "two runs refreshed Claude's sign-in at once", until: now + REFRESH_WAIT };
+  return null;
+}
+// "8:50am", "3pm", "14:30" → the next time it's that, local time (the limit's zone is the
+// account's, this computer's), a minute past so the first run isn't a second early; 0 unread.
+function resetTime(s, now = Date.now()) {
+  const m = /(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b/i.exec(String(s || "")) || /(\d{1,2}):(\d{2})/.exec(String(s || "")); if (!m) return 0;
+  let h = Number(m[1]); const min = Number(m[2] || 0), ap = (m[3] || "").toLowerCase();
+  if (ap === "pm" && h < 12) h += 12; if (ap === "am" && h === 12) h = 0;
+  if (h > 23 || min > 59) return 0;
+  const d = new Date(now); d.setHours(h, min, 0, 0);
+  if (d.getTime() <= now) d.setDate(d.getDate() + 1);
+  return d.getTime() + 60000;
+}
+const loadPause = () => { try { const p = JSON.parse(readFileSync(PAUSE_FILE, "utf8")); return p && p.kind ? p : null; } catch { return null; } };
+const unpauseRuns = () => { try { unlinkSync(PAUSE_FILE); } catch {} };
+const when = (t) => new Date(t).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+function pauseNote(p) {
+  if (p.kind === "limit") return `Not started: ${p.why} (it resets ${p.resets || "at " + when(p.until)}), so no run starts before ${when(p.until)}: each would stop at once and the next tick would start it again.`;
+  if (p.kind === "auth") return `Not started: ${p.why}, so no run can work. Sign in to Claude Code again (Settings → AI, or run  claude  in a terminal): runs carry on by themselves once you have.`;
+  return `Not started: ${p.why}, so runs wait until ${when(p.until)} and then start a few seconds apart.`;
+}
+let SIGNIN_AT = 0, SIGNED = false;
+// The pause in force, or null: { kind, why, until, note }. An auth pause ends when Claude
+// Code is signed in again; a timed one when its time is up.
+function claudePause({ now = Date.now(), ready = (fresh) => claudeState(fresh).signedIn } = {}) {
+  const p = loadPause(); if (!p) return null;
+  if (p.kind === "auth" && !p.until) {
+    if (now - SIGNIN_AT >= SIGNIN_EVERY) { SIGNIN_AT = now; try { SIGNED = !!ready(true); } catch { SIGNED = false; } }
+    if (SIGNED) { unpauseRuns(); return null; }
+  } else if (!(p.until > now)) { unpauseRuns(); return null; }
+  return { ...p, note: pauseNote(p) };
+}
+// A run just ended: was Claude itself the reason? Then every start pauses. Only a run that
+// did nothing (cost 0, an error): a run that worked and *mentioned* a session limit isn't one.
+// Its kind, for the run's block, or "".
+function noteClaudeDown(path, now = Date.now(), { claude = isClaudeCmd(handoffCmd()) } = {}) {
+  let w = null; try { w = parseRun(lastRunText(readSymbiot(path, "agent.log"))); } catch { return ""; }
+  if (!w || (w.cost || 0) > 0 || !(w.errors > 0 || !w.stream)) return "";
+  const d = claudeDownIn(w.final, now); if (!d) return "";
+  if (d.kind === "auth" && !claude) d.until = now + AUTH_WAIT; // another agent's sign-in: nothing here can tell when it's back
+  const had = loadPause(); if (!had || had.kind !== d.kind || (d.until || 0) > (had.until || 0)) try { writeJsonAtomic(PAUSE_FILE, { ...d, at: now }, { mode: 0o600 }); } catch {}
+  return d.kind;
+}
+const START_GAP = 3000, START_GAP_MAX = 30000; let LAST_START = 0;
+// How long this start waits so starts come a few seconds apart; a batch of ten spreads over half a minute at most.
+function startGap(now = Date.now()) { const at = Math.min(Math.max(now, LAST_START + START_GAP), now + START_GAP_MAX); LAST_START = at; return at - now; }
 // ---- nothing to do: no run ----------------------------------------------------
 // A run in ~ started with no .symbiot/TASKS.md there, found nothing to action and
 // only cost a session (2026-10-07). A run needs something to work from: an
@@ -1763,8 +1829,8 @@ function agentsList() {
     const facts = first && e.status !== "running" ? factsOf(e.path) : [];
     const waiting = first && e.status !== "running" ? waitingFor(e.path) : null;
     const needs = first && e.status !== "running" ? needsOf(e.path, { final: work ? tail : "", waiting, end: e.endedAt || Date.now() }) : null;
-    return { id: e.id, name: e.name, path: e.path, status: e.status, startedAt: e.startedAt, endedAt: e.endedAt, elapsed: (e.endedAt || Date.now()) - e.startedAt, exitCode: e.exitCode, tail, work, progress, ...(e.status === "running" && line ? { line } : {}), changed: agentChanges(e.path, e.startedAt), ask: first ? agentQuestions(e.path, e.name) : null, held: first ? heldTasks(e.path) : null, waiting, needs, remember: facts.length ? facts : null, fromHeld: !!e.fromHeld };
+    return { id: e.id, name: e.name, path: e.path, status: e.status, startedAt: e.startedAt, endedAt: e.endedAt, elapsed: (e.endedAt || Date.now()) - e.startedAt, exitCode: e.exitCode, ...(e.down ? { down: e.down } : {}), tail, work, progress, ...(e.status === "running" && line ? { line } : {}), changed: agentChanges(e.path, e.startedAt), ask: first ? agentQuestions(e.path, e.name) : null, held: first ? heldTasks(e.path) : null, waiting, needs, remember: facts.length ? facts : null, fromHeld: !!e.fromHeld };
   }).concat(earlierRuns());
 }
 
-export { claudePlugins, idlePlugins, runSettings, archiveAnswers, allAnswers, answersDigest, ANSWERS_ARCHIVE, ANSWERS_KEEP, runsTick, RUN_START, HANG_MIN, noteBlocked, userAnswers, CONTINUED_FILE, onAnswered, CHANGES, toKnownHost, continueLanes, autoPick, autoDecide, FACTS, factsOf, knownRun, withStream, workOf, HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, connectorsInfo, linkReach, fillHandoff, runHandoff, nothingToDo, whereOf, whereLine, whereAnswer, askTask, PARKED_NOTE, parkedPaths, isParked, parkLane, agentMissing, blockedAgain, runningHandoff, loadRuns, earlierRuns, namedFiles, unchangedStep, waitingFor, startWaiting, noteUntracked, untrackedBefore, forgetUntracked, writeTasks, droppedTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, pickAgent, findOrcaCli, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, skipIdea, agentQuestions, answerQuestions, agentsList, needsOf, settleNeeds, NEEDS_FOR, readLastWords, readNeeds, parseRead, READ_FILE, autoAllow, autoAllowSweep, allowlistInWork, installAllowlist, inWork, withScope, withTrust, sandboxFor, sandboxLifts, sandboxEnv, sandboxNeeds, sandboxState, sandboxWrites, SANDBOX_DIR, resumeFor, noteSession, tooLong, carryOn, RESUME_CTX, CARRY_PROMPT, trustFull, GUARD_SETTINGS, isUrgent, urgentStop, urgentFirst, urgentUndo, urgentDone, urgentSweep, urgentState, licenceGate, stopRun, loadRunFiles, saveRunFiles, forgetRunFiles, withModel, routedModel };
+export { claudePlugins, idlePlugins, runSettings, archiveAnswers, allAnswers, answersDigest, ANSWERS_ARCHIVE, ANSWERS_KEEP, runsTick, RUN_START, HANG_MIN, noteBlocked, userAnswers, CONTINUED_FILE, onAnswered, CHANGES, toKnownHost, continueLanes, autoPick, autoDecide, FACTS, factsOf, knownRun, withStream, workOf, HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, connectorsInfo, linkReach, fillHandoff, runHandoff, nothingToDo, whereOf, whereLine, whereAnswer, askTask, PARKED_NOTE, parkedPaths, isParked, parkLane, agentMissing, blockedAgain, runningHandoff, loadRuns, earlierRuns, namedFiles, unchangedStep, waitingFor, startWaiting, noteUntracked, untrackedBefore, forgetUntracked, writeTasks, droppedTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, pickAgent, findOrcaCli, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, skipIdea, agentQuestions, answerQuestions, agentsList, needsOf, settleNeeds, NEEDS_FOR, readLastWords, readNeeds, parseRead, READ_FILE, autoAllow, autoAllowSweep, allowlistInWork, installAllowlist, inWork, withScope, withTrust, sandboxFor, sandboxLifts, sandboxEnv, sandboxNeeds, sandboxState, sandboxWrites, SANDBOX_DIR, resumeFor, noteSession, tooLong, carryOn, RESUME_CTX, CARRY_PROMPT, trustFull, GUARD_SETTINGS, claudeDownIn, claudePause, noteClaudeDown, resetTime, PAUSE_FILE, startGap, isUrgent, urgentStop, urgentFirst, urgentUndo, urgentDone, urgentSweep, urgentState, licenceGate, stopRun, loadRunFiles, saveRunFiles, forgetRunFiles, withModel, routedModel };
