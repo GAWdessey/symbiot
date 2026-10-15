@@ -967,7 +967,7 @@ body.lq-light .bwthread{border-top-color:rgba(184,106,12,.45)}
 /* drafts to post: a shelf of cards */
 .pshead{display:flex;flex-direction:column;gap:2px;margin:24px 0 10px}
 .pshead span{font:600 15px var(--sans);color:var(--bone)}
-.pshead small{font-size:12.5px;color:var(--faint)}
+.pshead small{font-size:12.5px;color:var(--faint);overflow-wrap:anywhere} /* a folder path in it wraps rather than widening the panel on a phone (15 Oct 2026) */
 /* Marketing's 4-week test: a row a week; the week you're in marked, the ones to come faint */
 .mkwrap{overflow-x:auto}.mktab{width:100%;border-collapse:collapse;font-size:13px}
 .mktab th{font:500 11px var(--sans);letter-spacing:.08em;text-transform:uppercase;color:var(--faint);text-align:left;padding:6px 10px 8px 0;border-bottom:1px solid var(--line);white-space:nowrap}

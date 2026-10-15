@@ -507,10 +507,11 @@ async function buildMapInWorker() {
 }
 function keepMap(out) { LAST_MAP = out; MAP_AT = Date.now(); MAP_STALE = false; PATHS = null; return out; }
 // The Map as the app serves it: the last one at once, built again in the background
-// when the repo list changed or it's older than MAP_FRESH; with fresh (Rescan), or
-// none built yet, the next build.
+// when the repo list changed or it's older than MAP_FRESH; with fresh (Rescan), none
+// built yet, or one that stopped at its deadline or saw no storage (Android), the next build.
 async function mapNow({ fresh = false } = {}) {
-  if (!fresh && LAST_MAP) { if (MAP_STALE || Date.now() - MAP_AT > MAP_FRESH) buildMap().catch(() => {}); return LAST_MAP; }
+  const st = LAST_MAP && LAST_MAP.stats, whole = st && !st.partial && !st.noStorage;
+  if (!fresh && whole) { if (MAP_STALE || Date.now() - MAP_AT > MAP_FRESH) buildMap().catch(() => {}); return LAST_MAP; }
   return buildMap();
 }
 const lastMap = () => LAST_MAP;
