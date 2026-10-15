@@ -14,7 +14,7 @@
 // or a paid model.
 import { spawn } from "node:child_process";
 import { createServer } from "node:http";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -35,7 +35,9 @@ const child = spawn(process.execPath, [join(HERE, "..", "index.mjs"), "app"], { 
 let buf = "";
 const url = await new Promise((resolve, reject) => {
   const t = setTimeout(() => reject(new Error("app did not start in time")), 8000);
-  child.stdout.on("data", (d) => { buf += d; const m = buf.match(/http:\/\/127\.0\.0\.1:\d+\/\?t=[a-f0-9]+/); if (m) { clearTimeout(t); resolve(m[0]); } });
+  // the address is printed without the token (it'd land in app.log, 15 Oct 2026): the token comes from this test HOME's secrets.json
+  const tokenOf = () => { for (const f of ["secrets.json", "config.json"]) try { const tk = JSON.parse(readFileSync(join(HOME, ".config", "symbiot", f), "utf8")).appToken; if (tk) return tk; } catch {} return ""; };
+  child.stdout.on("data", (d) => { buf += d; const m = buf.match(/is running at http:\/\/127\.0\.0\.1:(\d+)\//); if (m) { clearTimeout(t); resolve(`http://127.0.0.1:${m[1]}/?t=${tokenOf()}`); } });
   child.on("exit", () => { clearTimeout(t); reject(new Error("app exited: " + buf)); });
 });
 const base = url.replace(/\/\?t=.*/, "");

@@ -26,7 +26,7 @@
 import { spawn, spawnSync } from "node:child_process";
 import { homedir } from "node:os";
 import { join, basename, resolve } from "node:path";
-import { realpathSync, readFileSync, mkdirSync, openSync, rmSync, existsSync } from "node:fs";
+import { realpathSync, readFileSync, mkdirSync, openSync, rmSync, existsSync, statSync, renameSync, chmodSync } from "node:fs";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 import { EMBEDDED_UI } from "./ui.mjs";
@@ -203,7 +203,17 @@ async function cmdApp() {
     return;
   }
   SERVING = true; setScanOptions({ quiet: true });
+  if (process.env.SYMBIOT_STAMP_LOG === "1") stampLog();
   return startApp({ bin: realpathSync(fileURLToPath(import.meta.url)), since: SINCE_WEEK, all: has("all"), c });
+}
+// Started by `symbiot open`, what the app prints goes to app.log, which had no times on
+// its lines (15 Oct 2026): each line it writes gets the time first.
+function stampLog() {
+  const stamp = () => new Date().toISOString().replace("T", " ").slice(0, 19) + " ";
+  for (const s of [process.stdout, process.stderr]) {
+    const write = s.write.bind(s); let atStart = true;
+    s.write = (chunk, ...rest) => { let t = Buffer.isBuffer(chunk) ? chunk.toString("utf8") : String(chunk); if (!t) return write(chunk, ...rest); if (atStart) t = stamp() + t; t = t.replace(/\n(?=[^\n])/g, "\n" + stamp()); atStart = t.endsWith("\n"); return write(t, ...rest); };
+  }
 }
 
 function saveAndReport(cfg, what) {
@@ -375,8 +385,9 @@ async function cmdOpen() {
   const cfg = loadConfig(), port = Number(process.env.SYMBIOT_PORT || cfg.appPort) || 7391;
   const p = cfg.appToken ? await askRunningApp("ping", { port, token: cfg.appToken, ms: 1500 }) : null;
   if (p && p.version) { openApp(`http://127.0.0.1:${port}/?t=${cfg.appToken}`); return; }
-  let fd = "ignore"; try { mkdirSync(CONFIG_DIR, { recursive: true }); fd = openSync(join(CONFIG_DIR, "app.log"), "a"); } catch {}
-  const env = { ...process.env }; delete env.SYMBIOT_NO_OPEN;
+  // app.log is yours only (0600; it was 0664) and rotated at 2 MB; the app stamps each line (SYMBIOT_STAMP_LOG) (15 Oct 2026)
+  let fd = "ignore"; try { mkdirSync(CONFIG_DIR, { recursive: true }); const log = join(CONFIG_DIR, "app.log"); try { if (statSync(log).size > 2 * 1024 * 1024) renameSync(log, log + ".1"); } catch {} fd = openSync(log, "a", 0o600); try { chmodSync(log, 0o600); } catch {} } catch {}
+  const env = { ...process.env, SYMBIOT_STAMP_LOG: "1" }; delete env.SYMBIOT_NO_OPEN;
   const child = spawn(process.execPath, [realpathSync(fileURLToPath(import.meta.url)), "app"], { detached: true, stdio: ["ignore", fd, fd], env, windowsHide: true });
   child.unref();
   // launched from a menu there is no terminal: if it doesn't come up, say so on screen

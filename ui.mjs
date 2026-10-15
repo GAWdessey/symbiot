@@ -1432,7 +1432,7 @@ body.lq-light .btip .bta button:not(.quiet){background:#151A21;color:#FFFFFF}
 </main>
 <footer><button class="iconbtn" type="button" id="quit" style="margin-left:auto" title="Quit" aria-label="Quit"><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M3 3l8 8M11 3l-8 8" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></button></footer>
 <script>
-var T=new URLSearchParams(window.location.search).get('t')||'';
+var T=(function(){var q=new URLSearchParams(location.search),t=q.get('t')||'';try{if(t)sessionStorage.setItem('symbiot_t',t);else t=sessionStorage.getItem('symbiot_t')||'';}catch(e){}if(q.has('t')){q.delete('t');try{history.replaceState(null,'',location.pathname+(q.toString()?'?'+q:'')+location.hash);}catch(e){}}return t;})(); // the token leaves the address bar (history, the window title) and stays in this tab for reloads (15 Oct 2026)
 function api(path,body){return fetch(path,{method:body?'POST':'GET',headers:{'x-symbiot-token':T,'content-type':'application/json'},body:body?JSON.stringify(body):undefined}).then(function(r){return r.json();});}
 var KEYURL={claude:'https://claude.com/claude-code',anthropic:'https://console.anthropic.com/settings/keys',openai:'https://platform.openai.com/api-keys',gemini:'https://aistudio.google.com/apikey',ollama:'https://ollama.com'};
 var DEFMODEL={claude:'your plan’s default',anthropic:'claude-opus-5-5',openai:'gpt-4o-mini',gemini:'gemini-flash-latest',ollama:'llama3.1'};
@@ -3183,7 +3183,7 @@ function heartbeat(fresh){
 // which shows this same Symbiot full screen (Chrome hands an intent:// link to it)
 function appBar(p){var b=$('appbar');if(!b||!p.termux||window.SymbiotAndroid||typeof navigator==='undefined'||!/Android/i.test(navigator.userAgent||''))return;
   try{if(localStorage.getItem('symbiot_appbar_off'))return;}catch(e){}
-  var go=('intent://'+location.host+'/'+location.search+'#Intent;scheme=symbiot;package=co.symbiot.app;end').replace(/'/g,'%27');
+  var go=('intent://'+location.host+'/?t='+encodeURIComponent(T)+'#Intent;scheme=symbiot;package=co.symbiot.app;end').replace(/'/g,'%27'); // the token is no longer in the address (T above)
   b.className='updatebar show';b.innerHTML="Got Symbiot's Android app? It shows this Symbiot full screen. <a class='b' href='"+esc(go)+"'>Open in the app</a> <button id='appbaroff'>Hide</button>";
   $('appbaroff').onclick=function(){b.className='updatebar';try{localStorage.setItem('symbiot_appbar_off','1');}catch(e){}};}
 // What's new (server.mjs whatsNew, from CHANGELOG.md): what an update brings, from its package on npm, and
