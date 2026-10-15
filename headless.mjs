@@ -611,7 +611,7 @@ const collectJs = (whole, list = null) => `(() => { ${SCROLLER} ${DEEP} ${LABEL_
   // after the buttons, links and fields.
   const CLK = window.__symbiotClicks || new Set(); window.__symbiotClicks = null;
   const pointer = (e) => !!e && e.nodeType === 1 && getComputedStyle(e).cursor === 'pointer', took = new Set();
-  for (const e of deepAll('*', document.body)) {
+  for (const e of deepAll('*', document.body || document.documentElement)) {
     if (e instanceof SVGElement && e.tagName.toLowerCase() !== 'svg') continue;
     if (!(CLK.has(e) || typeof e.onclick === 'function' || (pointer(e) && !pointer(upOf(e))))) continue;
     const b = e.getBoundingClientRect();
