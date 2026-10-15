@@ -1,22 +1,23 @@
 // One shared record of the questions the user has answered, for every agent and Home:
 // an ask that's in it isn't raised again (Home drops it) and each agent's brief lists it.
 import { join } from "node:path";
-import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
-import { CONFIG_DIR } from "./core.mjs";
+import { CONFIG_DIR, readState, writeJsonAtomic } from "./core.mjs";
 
 const FILE = () => join(CONFIG_DIR, "asks-done.json");
 const KEEP = 200;
 const key = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 const SAYS_NO = /^\s*(skip|no|nope|don'?t|do not|cancel|leave it|never ?mind|stop)\b/i;
-function doneList() { try { const l = JSON.parse(readFileSync(FILE(), "utf8")); return Array.isArray(l) ? l : []; } catch { return []; } }
+// Both files are written whole or not at all, yours only (writeJsonAtomic): a plain
+// write cut short read as "nothing answered", and every agent asked again (15 Oct 2026).
+const save = (file, list) => { try { writeJsonAtomic(file, list, { indent: 1, mode: 0o600 }); return true; } catch { return false; } };
+function doneList() { return readState(FILE(), Array.isArray) || []; }
 // q: the question, a: what the user answered. A "skip" or "no" isn't a done ask: it may come back.
 // lane: whose question it was, so a brief lists only its own lane's (doneBrief).
 function recordDone(q, a, lane = "") {
   const k = key(q); if (!k || !String(a || "").trim() || SAYS_NO.test(a)) return false;
   const l = doneList().filter((x) => x.k !== k);
   l.push({ k, q: String(q).trim().slice(0, 200), a: String(a).trim().slice(0, 200), at: new Date().toISOString().slice(0, 10), ...(lane ? { lane: String(lane) } : {}) });
-  try { mkdirSync(CONFIG_DIR, { recursive: true }); writeFileSync(FILE(), JSON.stringify(l.slice(-KEEP), null, 1)); } catch { return false; }
-  return true;
+  return save(FILE(), l.slice(-KEEP));
 }
 const isDone = (q) => { const k = key(q); return !!k && doneList().some((x) => x.k === k); };
 // For a brief: what's already answered in this lane, so its agent doesn't ask it again. It
@@ -42,12 +43,11 @@ const BASE = [
   "A send or a save is done only when the saved record shows it, never the form you filled: after sending an email or an invite, saving a meeting or adding guests, run `symbiot screens verify <the record's address> --expect \"<a guest, a subject>\"` (it reloads the page fresh) or read Sent Items, and report it only if that finds it. If it doesn't, say it isn't done.",
   "Never ask the user to close or click Done in the Symbiot Browser: if it's open, wait and retry on a shared resource, and ask only if they're mid-sign-in. That is never an \"only you\" step.",
 ];
-function standingList() { try { const l = JSON.parse(readFileSync(RULES(), "utf8")); return Array.isArray(l) ? l.filter((x) => x && x.rule) : []; } catch { return []; } }
+function standingList() { return (readState(RULES(), Array.isArray) || []).filter((x) => x && x.rule); }
 function addRule(rule) {
   const r = String(rule || "").replace(/\s+/g, " ").trim().slice(0, 300); if (!r) return false;
   const l = standingList().filter((x) => key(x.rule) !== key(r)); l.push({ rule: r, at: new Date().toISOString().slice(0, 10) });
-  try { mkdirSync(CONFIG_DIR, { recursive: true }); writeFileSync(RULES(), JSON.stringify(l.slice(-50), null, 1)); } catch { return false; }
-  return true;
+  return save(RULES(), l.slice(-50));
 }
 // Rules agreed with the user that look like they answer this question (shared words): only
 // listed on the card as "already covered?" for the user to confirm, never closed on a fuzzy match.

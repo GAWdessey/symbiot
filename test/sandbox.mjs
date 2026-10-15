@@ -12,6 +12,7 @@ import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
+const tokenIn = (home) => { for (const f of ["secrets.json", "config.json"]) try { const t = JSON.parse(readFileSync(join(home, ".config", "symbiot", f), "utf8")).appToken; if (t) return t; } catch {} return ""; }; // the address is printed without its token now (15 Oct 2026)
 const HOME = mkdtempSync(join(tmpdir(), "symbiot-sandbox-test-"));
 process.env.HOME = HOME; process.env.USERPROFILE = HOME;
 let pass = 0, fail = 0;
@@ -39,7 +40,7 @@ console.log("SYMBIOT APP --FRESH — a brand-new Symbiot, gone when it quits");
   const tmpBefore = new Set(readdirSync(tmpdir()).filter((d) => d.startsWith("symbiot-fresh-")));
   const app = spawn(process.execPath, [join(ROOT, "index.mjs"), "app", "--fresh", "--plain"], { env: { ...process.env, HOME, USERPROFILE: HOME, SYMBIOT_NO_OPEN: "1", ANTHROPIC_API_KEY: "sk-env" }, stdio: ["ignore", "pipe", "pipe"] });
   let out = ""; app.stdout.on("data", (d) => { out += d; }); app.stderr.on("data", (d) => { out += d; });
-  const url = await new Promise((res) => { const t = setTimeout(() => res(""), 30000); const iv = setInterval(() => { const m = out.match(/http:\/\/127\.0\.0\.1:(\d+)\/\?t=[\w-]+/); if (m) { clearTimeout(t); clearInterval(iv); res(m[0]); } }, 100); });
+  const url = await new Promise((res) => { const t = setTimeout(() => res(""), 30000); const iv = setInterval(() => { const m = out.match(/is running at (http:\/\/127\.0\.0\.1:\d+\/)/), fresh = (out.match(/own empty home at (\S+?)\.\n/) || [])[1]; if (m && fresh) { clearTimeout(t); clearInterval(iv); res(m[1] + "?t=" + tokenIn(fresh)); } }, 100); });
   ok("it starts, and says it's a sandbox with its own empty home", !!url && /Sandbox: a brand-new Symbiot/.test(out), out.slice(0, 400));
   const home = (out.match(/own empty home at (\S+?)\.\n/) || [])[1] || "";
   ok("that home is a new folder under the temp folder", !!home && home.includes("symbiot-fresh-") && existsSync(home), home);

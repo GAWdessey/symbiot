@@ -11,20 +11,20 @@ import { toggleAway, closeAway, awayOpen } from "./away.mjs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { gunzipSync } from "node:zlib";
+import { gunzipSync, gzipSync } from "node:zlib";
 import { readRunLog } from "./work.mjs";
 import { readFileSync, existsSync, mkdirSync, writeFileSync, readdirSync, statSync, unlinkSync, realpathSync, appendFileSync } from "node:fs";
 import { createServer } from "node:http";
-import { randomBytes } from "node:crypto";
+import { randomBytes, createHash } from "node:crypto";
 import { EMBEDDED_UI } from "./ui.mjs";
 import { VERSION, LATEST_VERSION, REGISTRY, semverGt, checkLatest, CONFIG_PATH, loadConfig, saveConfig, moveSecrets, loadTasks, hasCmd, chromeBinary, CONFIG_DIR, takeAppLock, releaseAppLock } from "./core.mjs";
 import { onAnswered, shSingle, handoffCmd, setHandoffCmd, grantAgent, runHandoff, track, detectHandoffs, connectorsInfo, linkReach, answerQuestions, skipIdea, agentsList, startWaiting, parkLane, parkedPaths, autoAllowSweep, continueLanes, trustFull, readLastWords, sandboxState, HANDOFFS, runningHandoff, runsTick } from "./agents.mjs";
 import { PROVIDERS, resolveProvider, connectProvider, detectHardware, recommendModels, hasOllama, ollamaInstall, ensureOllama, useOllamaModel } from "./ai.mjs";
-import { SCAN, SCAN_TIMEOUT_MS, scanRoots, scanHome, addScanRoot, removeScanRoot, buildMap, nodeDetail, repoPathMap, laneMap, setScanOptions, refreshRepos, REPO_STATE, reposState } from "./scan.mjs";
+import { SCAN, SCAN_TIMEOUT_MS, scanRoots, scanHome, addScanRoot, removeScanRoot, mapNow, nodeDetail, repoPathMap, laneMap, setScanOptions, refreshRepos, REPO_STATE, reposState } from "./scan.mjs";
 import { computeDrift } from "./drift.mjs";
 import { afterShip, markLive } from "./deploy.mjs";
 import { laneCap, mergeEnded, DEFAULT_CAP } from "./parallel.mjs";
-import { addTask, toggleTask, removeTask, cancelTask, restoreTask, syncTasks, taskType, pushTasks, pendingReview, workingDiff, learnNpm, withReleases, releaseInput, approveRepo, approveChanges, sendBack, setAutoMerge, mergeWhenGreen, sendAgain, forgetUnsent } from "./tasks.mjs";
+import { addTask, toggleTask, removeTask, cancelTask, restoreTask, syncTasks, taskType, pushTasks, pendingReview, workingDiff, learnNpm, withReleases, releaseInput, approveRepo, approveChanges, sendBack, setAutoMerge, mergeWhenGreen, sendAgain, forgetUnsent, shippingPaths } from "./tasks.mjs";
 import { repoReview, repoSuggest, folderSuggest, taskChat, clearTaskChat, mailState, setMail, sentMail, produce, releaseNotes } from "./writeups.mjs";
 import { listSecrets, getSecret, markUsed, deleteSecret } from "./vault.mjs";
 import { loadScreens, screenImage, captureScreen, splitScreen, listMonitors, allowScreenshots, importScreen, setRegions, renameScreen, removeScreen, blueprint, clickRegion } from "./screens.mjs";
@@ -37,7 +37,7 @@ import { mindState, forget } from "./mind.mjs";
 import { lanesTick, lanesState, partlyDone, handingOf, loadLedger, orcaRelink, shareAnswer } from "./lanes.mjs";
 import { keepFacts, skipFacts, awaitTick, awaitingState, stopWaiting } from "./handback.mjs";
 import { adaptState, noteUse } from "./adapt.mjs";
-import { dismissCard, reportIdeasAdd, reportIdeasDismiss, reportAsk, reportDraftAnswer, homeState, homeAsk, homeAnswer, homeNext, workScene, workGo, workTick, firstSteps, marketingState, marketingGo, marketingDraftAnswer, marketingTask, moveToMarketing, onboarding, setOnboarding, startOnboarding, phoneSetupFirst } from "./home.mjs";
+import { dismissCard, reportIdeasAdd, reportIdeasDismiss, reportAsk, reportDraftAnswer, homeState, homeAsk, homeAnswer, homeNext, workScene, forgetWork, workGo, workTick, firstSteps, marketingState, marketingGo, marketingDraftAnswer, marketingTask, moveToMarketing, onboarding, setOnboarding, startOnboarding, phoneSetupFirst } from "./home.mjs";
 import { MARKETING_DIR, MARKETING, draftPreview, laneMedia, displayName, setDraftMedia } from "./marketing.mjs";
 import { trays, trayMedia, setBlur, addBlur, removeBlur, setReviewed, renderCapture } from "./tray.mjs";
 import { captureProduct, captureProducts } from "./capture.mjs";
@@ -90,10 +90,11 @@ function autoUpdateDue({ latest, version, sandbox, desktop, off, updating, faile
   return { go: true };
 }
 // What a restart would cut off right now, in words, or "".
-function restartWouldStop({ handoffs = HANDOFFS, paths = [], running = runningHandoff, browser = windowOpen, away = awayOpen } = {}) {
+function restartWouldStop({ handoffs = HANDOFFS, paths = [], running = runningHandoff, browser = windowOpen, away = awayOpen, ships = shippingPaths } = {}) {
   const runs = new Set(handoffs.filter((x) => x.status === "running" && x.name !== "symbiot update").map((x) => x.path));
   for (const p of paths) { try { if (running(p)) runs.add(p); } catch {} }
   if (runs.size) return runs.size === 1 ? "an agent is working" : `${runs.size} agents are working`;
+  try { if (ships().length) return "an Approve is still shipping"; } catch {} // a relaunch mid-ship lost its bookkeeping: tasks stayed in review with a clean tree (15 Oct 2026)
   try { if (browser()) return "the Symbiot Browser is open"; } catch {}
   try { if (away()) return "Away is open"; } catch {}
   return "";
@@ -295,8 +296,8 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
     if (h) {
       const p = await askRunningApp("ping", { port: PORT, token: TOKEN, ms: 10000 });
       const url = `http://127.0.0.1:${PORT}/?t=${TOKEN}`, how = process.env.SYMBIOT_NO_OPEN === "1" ? "" : openApp(url);
-      console.log(`\n${c.g("●")} ${c.b("Symbiot")} is already running (${p && p.version ? "v" + p.version : "pid " + h.pid + ", busy right now"}) at ${c.b(url)}`);
-      console.log(how ? c.d(`  Opened the existing window (${/^[aeiou]/.test(how) ? "an" : "a"} ${how}).`) : c.d("  Open that URL in your browser."));
+      console.log(`\n${c.g("●")} ${c.b("Symbiot")} is already running (${p && p.version ? "v" + p.version : "pid " + h.pid + ", busy right now"}) at ${c.b(url.split("?")[0])}`); // never the token: this goes to app.log and the journal (15 Oct 2026)
+      console.log(how ? c.d(`  Opened the existing window (${/^[aeiou]/.test(how) ? "an" : "a"} ${how}).`) : c.d("  Open it with:  symbiot open"));
       console.log(c.d("  (Not starting a second copy. Set SYMBIOT_FORCE_NEW=1 to force one.)"));
       return;
     }
@@ -322,8 +323,8 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       releaseAppLock(); // a Symbiot from before the lock
       setBrowserHub(`http://127.0.0.1:${PORT}/browser?t=${TOKEN}`);
       const url = `http://127.0.0.1:${PORT}/?t=${TOKEN}`; const how = process.env.SYMBIOT_NO_OPEN === "1" ? "" : openApp(url);
-      console.log(`\n${c.g("●")} ${c.b("Symbiot")} is already running (v${p.version}) at ${c.b(url)}`);
-      console.log(how ? c.d(`  Opened the existing window (${/^[aeiou]/.test(how) ? "an" : "a"} ${how}).`) : c.d("  Open that URL in your browser."));
+      console.log(`\n${c.g("●")} ${c.b("Symbiot")} is already running (v${p.version}) at ${c.b(url.split("?")[0])}`);
+      console.log(how ? c.d(`  Opened the existing window (${/^[aeiou]/.test(how) ? "an" : "a"} ${how}).`) : c.d("  Open it with:  symbiot open"));
       console.log(c.d("  (Not starting a second copy. Set SYMBIOT_FORCE_NEW=1 to force one.)"));
       return;
     }
@@ -332,6 +333,12 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
   // so an agent can type into a field and then press a separate button there.
   keepBrowserOpen(BROWSER_KEEP);
   const json = (res, obj) => { res.writeHead(200, { "content-type": "application/json" }); res.end(JSON.stringify(obj)); };
+  // The big answers the page polls (agents, lanes, home, work) carry an ETag: the browser
+  // sends it back, and when nothing changed gets a 304 (no body to send, parse or draw) (15 Oct 2026)
+  const jsonTag = (req, res, obj) => { const body = JSON.stringify(obj), tag = `"${createHash("sha1").update(body).digest("hex").slice(0, 16)}"`; if (req.headers["if-none-match"] === tag) { res.writeHead(304, { etag: tag }); res.end(); return; } res.writeHead(200, { "content-type": "application/json", etag: tag, "cache-control": "no-cache" }); res.end(body); };
+  // The page, once: gzip'd (605 KB -> ~177 KB on the wire) with a strong ETag, so a window
+  // that has it (it reloads itself after every update and restart) gets a 304 (15 Oct 2026)
+  const PAGE = Buffer.from(EMBEDDED_UI), PAGE_GZ = gzipSync(PAGE), PAGE_TAG = `"${createHash("sha1").update(PAGE).digest("hex").slice(0, 20)}"`;
   const screenOut =(s) => (s && s.id ? { ...s, blueprint: blueprint(s), ...(s.page ? { trusted: isTrusted(s.page.url) } : {}) } : s && s.screens ? { ...s, screens: s.screens.map(screenOut) } : s);
   // an installed Symbiot keeps its app-menu entry pointing at itself (a new Node, a moved
   // install); not a copy run from a checkout or a test
@@ -428,9 +435,13 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
   let NEWEST_WIN = ""; // the Symbiot window opened last: older ones close themselves (one window, not a pile)
   process.on("exit", () => closeAway()); // Away's windows go with the app (a quit, an update's restart)
   const server = createServer(async (req, res) => {
-    const t0 = Date.now(); res.on("finish", () => { const ms = Date.now() - t0; if (ms > 1500) console.log(`slow: ${String(req.url || "").split("?")[0]} took ${(ms / 1000).toFixed(1)}s`); });
+    const t0 = Date.now(); res.on("finish", () => { const ms = Date.now() - t0; if (ms > 1500) console.log(`slow: ${String(req.url || "").split("?")[0]} took ${(ms / 1000).toFixed(1)}s`); if (req.method === "POST") { try { forgetWork(); } catch {} } }); // something you did: the next work scene is built afresh, not the kept one
     const u = new URL(req.url, "http://127.0.0.1");
-    if (req.method === "GET" && u.pathname === "/") { res.writeHead(200, { "content-type": "text/html; charset=utf-8" }); res.end(EMBEDDED_UI); return; }
+    if (req.method === "GET" && u.pathname === "/") {
+      if (req.headers["if-none-match"] === PAGE_TAG) { res.writeHead(304, { etag: PAGE_TAG }); res.end(); return; }
+      const gz = /\bgzip\b/.test(String(req.headers["accept-encoding"] || ""));
+      res.writeHead(200, { "content-type": "text/html; charset=utf-8", etag: PAGE_TAG, "cache-control": "no-cache", vary: "accept-encoding", ...(gz ? { "content-encoding": "gzip" } : {}) }); res.end(gz ? PAGE_GZ : PAGE); return;
+    }
     // the Symbiot Browser's own page (headless.mjs openSymbiotBrowser): like /, it gets its token in ?t=
     if (req.method === "GET" && u.pathname === "/browser") { try { res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" }); res.end(readFileSync(new URL("./browser.html", import.meta.url))); } catch { res.writeHead(404); res.end(); } return; }
     // the app's typeface ships in the package (fonts/), so it's there offline
@@ -451,7 +462,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
     }
     try {
       if (u.pathname === "/api/status") { const r = resolveProvider(); return json(res, r ? { connected: true, provider: r.provider, line: `${PROVIDERS[r.provider].label}${r.model ? " · " + r.model : ""}` } : { connected: false }); }
-      if (u.pathname === "/api/map") return json(res, await buildMap()); // local git only — no AI key needed
+      if (u.pathname === "/api/map") return json(res, await mapNow({ fresh: u.searchParams.get("fresh") === "1" })); // local git only — no AI key needed; the last Map at once, Rescan (fresh=1) waits for a new one
       if (u.pathname === "/api/scan") return json(res, { active: SCAN.active, phase: SCAN.phase, done: SCAN.done, total: SCAN.total, item: SCAN.item, elapsed: SCAN.startedAt ? Date.now() - SCAN.startedAt : 0, timeout: SCAN_TIMEOUT_MS, partial: SCAN.partial });
       if (u.pathname === "/api/models") { const hw = detectHardware(); return json(res, { hardware: hw, rec: recommendModels(hw) }); }
       if (u.pathname === "/api/drift") return json(res, computeDrift({ ci: u.searchParams.get("ci") === "1", fetch: u.searchParams.get("fetch") === "1" }));
@@ -472,9 +483,11 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
         // merge, what's unreleased: ask, then recount (answers are cached)
         // partly: what a run that stopped partway still waits on (its questions, a handover)
         const partly = (l) => l.map((r) => { const p = r.path ? partlyDone(r.path) : null; return p ? { ...r, partly: p } : r; });
-        const list = pendingReview(), ask = list.filter((r) => r.path && (!r.bumpOffer || r.publishesOnMerge)).map((r) => r.path);
+        // kept: the Workdesk polls this every 4 s while a run is going, and asked git for every
+        // repo each time (736 slow answers in a journal); Approve asks git itself (15 Oct 2026)
+        const list = pendingReview({ kept: true }), ask = list.filter((r) => r.path && (!r.bumpOffer || r.publishesOnMerge)).map((r) => r.path);
         if (!ask.length) return json(res, partly(list));
-        await learnNpm(ask); return json(res, partly(pendingReview()));
+        await learnNpm(ask); return json(res, partly(pendingReview({ kept: true })));
       }
       if (u.pathname === "/api/pending/diff") { const p = laneMap()[u.searchParams.get("repo") || ""]; return json(res, { diff: p ? workingDiff(p) : "" }); }
       if (u.pathname === "/api/tasks/live" && req.method === "POST") { const b = await readBody(req); return json(res, markLive(String(b.id || ""))); }
@@ -519,7 +532,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       }
       if (u.pathname === "/api/agents") { // handing: what it handed to other lanes, on the newest block per folder: where each stands, and how far the run on it has got
         const seen = new Set(), map = laneMap(), ledger = loadLedger(), list = agentsList().map((a) => { if (!a.path || seen.has(a.path)) return a; seen.add(a.path); let h = []; try { h = handingOf(a.path, { map, ledger }); } catch {} return h.length ? { ...a, handing: h } : a; });
-        return json(res, await withReleases(list));
+        return jsonTag(req, res, await withReleases(list));
       }
       // the answer, saved in the folder that asked; it says which lane that is, so "Sent to …"
       // names where it went (a Marketing answer said "Sent to Paperclip Steve")
@@ -651,9 +664,9 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       if (u.pathname === "/api/reports/draft" && req.method === "POST") { const b = await readBody(req); return json(res, reportDraftAnswer(String(b.id || ""), !!b.approve)); }
       // Home (home.mjs): the liquid's live data, and its talk; Adapt (adapt.mjs): its
       // shape from how you use it (commit=1 when it wakes from rest, never mid-gesture).
-      if (u.pathname === "/api/home") return json(res, homeState({ fresh: u.searchParams.get("fresh") === "1" }));
+      if (u.pathname === "/api/home") return jsonTag(req, res, homeState({ fresh: u.searchParams.get("fresh") === "1" }));
       // the work scene: what agents are doing, what's waiting, what's ready; Go starts what's waiting
-      if (u.pathname === "/api/work") return json(res, workScene());
+      if (u.pathname === "/api/work") return jsonTag(req, res, workScene());
       if (u.pathname === "/api/work/go" && req.method === "POST") return json(res, workGo());
       if (u.pathname === "/api/onboarding") return json(res, onboarding({ fresh: u.searchParams.get("fresh") === "1" }));
       if (u.pathname === "/api/onboarding/set" && req.method === "POST") { const b = await readBody(req); return json(res, setOnboarding({ step: b.step, skip: b.skip, unskip: b.unskip, skipRest: !!b.skipRest })); }
@@ -677,7 +690,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       if (u.pathname === "/api/adapt") return json(res, adaptState({ from: String(u.searchParams.get("from") || ""), commit: u.searchParams.get("commit") === "1", ...(u.searchParams.has("touch") ? { touch: u.searchParams.get("touch") === "1" } : {}) }));
       if (u.pathname === "/api/adapt/use" && req.method === "POST") { const b = await readBody(req); return json(res, noteUse(b)); }
       // Lanes (lanes.mjs): work agents handed to each other, and where it stands.
-      if (u.pathname === "/api/lanes") return json(res, lanesState());
+      if (u.pathname === "/api/lanes") return jsonTag(req, res, lanesState());
       // a parked project (lane) starts no agent runs until it's unparked (agents.mjs parkLane)
       if (u.pathname === "/api/lanes/parked") { const map = laneMap(), ps = parkedPaths(); return json(res, { repos: Object.keys(map).filter((n) => ps.includes(map[n])), paths: ps }); }
       if (u.pathname === "/api/lanes/park" && req.method === "POST") { const b = await readBody(req), map = laneMap(), p = Object.values(map).includes(String(b.path || "")) ? String(b.path) : map[String(b.repo || "")]; if (!p) return json(res, { error: "That project isn't on this computer." }); return json(res, parkLane(p, b.on !== false)); }
@@ -797,8 +810,8 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
     const url = `http://127.0.0.1:${server.address().port}/?t=${TOKEN}`;
     setBrowserHub(`http://127.0.0.1:${server.address().port}/browser?t=${TOKEN}`); // the Symbiot Browser opens on its own page, served from here
     const how = opened || RELAUNCH || process.env.SYMBIOT_NO_OPEN === "1" ? "" : openApp(url); opened = true; // only pop a window the first time (never in tests, never after an update)
-    console.log(`\n${c.g("●")} ${c.b("Symbiot")} is running at ${c.b(url)}`);
-    console.log(RELAUNCH ? c.d("  Restarted after an update; the open window reloads itself.") : how ? c.d(`  Opened in ${/^[aeiou]/.test(how) ? "an" : "a"} ${how}.`) : c.d("  Open that URL in your browser."));
+    console.log(`\n${c.g("●")} ${c.b("Symbiot")} is running at ${c.b(url.split("?")[0])}`);
+    console.log(RELAUNCH ? c.d("  Restarted after an update; the open window reloads itself.") : how ? c.d(`  Opened in ${/^[aeiou]/.test(how) ? "an" : "a"} ${how}.`) : c.d("  Open it with:  symbiot open"));
     console.log(c.d("  Leave this running; press Ctrl+C to stop (or click the X in the window's top corner)."));
   });
   server.on("error", (e) => {
@@ -814,8 +827,8 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
     else (process.env.SYMBIOT_FORCE_NEW ? Promise.resolve(null) : askRunningApp("ping", { port: PORT, token: TOKEN, ms: 2500 })).then((p) => {
       if (p && p.version) {
         const url = `http://127.0.0.1:${PORT}/?t=${TOKEN}`, how = process.env.SYMBIOT_NO_OPEN === "1" ? "" : openApp(url);
-        console.log(`\n${c.g("●")} ${c.b("Symbiot")} is already running (v${p.version}) at ${c.b(url)}`);
-        console.log(how ? c.d(`  Opened the existing window (${/^[aeiou]/.test(how) ? "an" : "a"} ${how}).`) : c.d("  Open that URL in your browser."));
+        console.log(`\n${c.g("●")} ${c.b("Symbiot")} is already running (v${p.version}) at ${c.b(url.split("?")[0])}`);
+        console.log(how ? c.d(`  Opened the existing window (${/^[aeiou]/.test(how) ? "an" : "a"} ${how}).`) : c.d("  Open it with:  symbiot open"));
         process.exit(0);
       }
       // only this app holds the lock (or SYMBIOT_FORCE_NEW asked for a second): the port is
@@ -849,6 +862,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
   // knowledge folders: changed files re-read (a stat per file when nothing changed), then checked again for where two files disagree (checks.mjs)
   const knowTick = () => { try { const r = knowledgeTick(); if (r && (r.read || r.removed || !checksState().at)) runChecks(); } catch {} };
   setTimeout(knowTick, 5000).unref(); setInterval(knowTick, 3 * 60 * 1000).unref();
+  import("./sweep.mjs").then((s) => s.startSweep()).catch(() => {}); // the daily sweep of finished run folders, old page maps, leftovers (sweep.mjs)
   setInterval(() => { try { awaitTick(); } catch {} }, 60000).unref(); // a reply an agent's email waits on: found, and handed on
 }
 

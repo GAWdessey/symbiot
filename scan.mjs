@@ -2,7 +2,7 @@
 // distros), finding repos and project folders without hanging, the facts each
 // one gives (who you are in it, its commits, open work, README, rules), the
 // Map's graph, and the one repo set every view shares.
-import { Worker } from "node:worker_threads";
+import { Worker, isMainThread } from "node:worker_threads";
 import { spawnSync } from "node:child_process";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -16,11 +16,15 @@ import { MARKETING, MARKETING_DIR } from "./marketing.mjs";
 const MAX_COMMITS = 140;
 
 let LAST_MAP = null;  // cached graph so node clicks don't rescan
+// When it was built, and whether the repo list changed since (the app then serves it
+// as it is and builds the next one in the background: mapNow, 15 Oct 2026)
+let MAP_AT = 0, MAP_STALE = false;
+const MAP_FRESH = 10 * 60 * 1000;
 // How this process scans: dir (--dir, one folder this run instead of the scan
 // folders), quiet (the app: no progress line) and plain (no colour). Set by
 // index.mjs from its flags.
 const OPTS = { dir: "", quiet: false, plain: false, cache: false };
-function setScanOptions(o) { Object.assign(OPTS, o); }
+function setScanOptions(o) { Object.assign(OPTS, o); PATHS = null; }
 const paint = (code) => (s) => OPTS.plain ? s : `\x1b[38;5;${code}m${s}\x1b[0m`;
 const green = paint(42), faint = paint(66), amber = paint(179);
 
@@ -309,7 +313,7 @@ function refreshRepos({ worker = true } = {}) {
     // last one found that still exist, rather than lose lanes (and ask the user where
     // their repos are) because a disk was slow this time.
     if (partial && REPO_CACHE) { const have = new Set(list.map((r) => r.path)); list = [...list, ...REPO_CACHE.list.filter((r) => r && !have.has(r.path) && existsSync(join(r.path, ".git")))]; }
-    REPO_CACHE = { at: Date.now(), list }; REPO_STATE.at = REPO_CACHE.at; REPO_STATE.searching = false; REPO_JOB = null; LAST_MAP = null;
+    REPO_CACHE = { at: Date.now(), list }; REPO_STATE.at = REPO_CACHE.at; REPO_STATE.searching = false; REPO_JOB = null; MAP_STALE = true;
     try { mkdirSync(join(repoFile(), ".."), { recursive: true }); writeFileSync(repoFile(), JSON.stringify(REPO_CACHE), { mode: 0o600 }); } catch {}
     try { if (REPO_STATE.onChange) REPO_STATE.onChange(REPO_CACHE.list); } catch {}
     return REPO_CACHE.list;
@@ -329,7 +333,7 @@ const reposState = () => ({ searching: REPO_STATE.searching, done: REPO_STATE.do
 function findAllRepos(base) {
   if (!base && OPTS.cache) {
     const c = loadRepoCache();
-    if (!c || Date.now() - c.at > REPO_FRESH) refreshRepos();
+    if (!c || (isMainThread && Date.now() - c.at > REPO_FRESH)) refreshRepos(); // the Map's worker reads the list as it is: the app's own refresh finds them again
     return c ? c.list : [];
   }
   const own = scanBegin();
@@ -485,9 +489,12 @@ function readClaudeProjects(base, rootfs, out) {
 // Async only to YIELD between repos, so the app server can answer /api/scan
 // (progress) mid-scan; the git calls themselves stay synchronous. Concurrent
 // callers (e.g. Rescan while a scan runs) share the one in-flight build.
+// The app builds it in a worker thread (mapworker.mjs): a git call per repo and a
+// read of Claude Code's history held the whole app for 10-16 s on every Map open,
+// so the page's heartbeat, the phone and agents' API calls all waited (15 Oct 2026).
 let MAP_BUILD = null;
 function buildMap() {
-  if (!MAP_BUILD) MAP_BUILD = buildMapNow().finally(() => { MAP_BUILD = null; });
+  if (!MAP_BUILD) MAP_BUILD = (OPTS.cache && isMainThread ? buildMapInWorker() : buildMapNow()).finally(() => { MAP_BUILD = null; });
   return MAP_BUILD;
 }
 const yieldTick = () => new Promise((r) => setImmediate(r));
@@ -495,6 +502,29 @@ async function buildMapNow() {
   const own = scanBegin();
   try { return await buildMapScan(); } finally { scanEnd(own); }
 }
+async function buildMapInWorker() {
+  if (REPO_STATE.searching || !loadRepoCache()) await refreshRepos(); // the first search, not an empty Map
+  const own = scanBegin(); // SCAN here is what /api/scan shows: the worker sends its progress
+  try {
+    const out = await new Promise((resolve) => {
+      let w; try { w = new Worker(new URL("./mapworker.mjs", import.meta.url), { workerData: { opts: { dir: OPTS.dir, cache: true } } }); } catch { resolve(null); return; }
+      let got = null;
+      w.on("message", (m) => { if (m && m.progress) Object.assign(SCAN, m.progress); if (m && m.map) got = m.map; });
+      w.on("error", () => {}); w.on("exit", () => resolve(got));
+    });
+    return out ? keepMap(out) : await buildMapScan(); // no worker (it failed to start, or threw): built here, as before
+  } finally { scanEnd(own); }
+}
+function keepMap(out) { LAST_MAP = out; MAP_AT = Date.now(); MAP_STALE = false; PATHS = null; return out; }
+// The Map as the app serves it: the last one at once, built again in the background
+// when the repo list changed or it's older than MAP_FRESH; with fresh (Rescan), none
+// built yet, or one that stopped at its deadline or saw no storage (Android), the next build.
+async function mapNow({ fresh = false } = {}) {
+  const st = LAST_MAP && LAST_MAP.stats, whole = st && !st.partial && !st.noStorage;
+  if (!fresh && whole) { if (MAP_STALE || Date.now() - MAP_AT > MAP_FRESH) buildMap().catch(() => {}); return LAST_MAP; }
+  return buildMap();
+}
+const lastMap = () => LAST_MAP;
 async function buildMapScan() {
   const who = me();
   if (OPTS.cache && (REPO_STATE.searching || !loadRepoCache())) await refreshRepos(); // the first search, not an empty Map
@@ -587,8 +617,7 @@ async function buildMapScan() {
     android: process.env.SYMBIOT_ANDROID_APP === "1",
     noStorage: storageBlocked(),
   } };
-  LAST_MAP = out;
-  return out;
+  return keepMap(out);
 }
 // Local detail for a clicked node (no AI).
 async function nodeDetail(id) {
@@ -622,11 +651,18 @@ async function nodeDetail(id) {
 
 // Each repo or project folder's name -> its path, from the Map's last scan (or
 // a fresh one): how a task's repo name finds its folder.
+// Kept between calls while the Map and the repo list stay the same: it's read several
+// times per request and by every 20 s tick (laneMap), and a copy goes out each time,
+// since callers add to it (15 Oct 2026). The CLI (no repo cache) still searches.
+let PATHS = null;
 function repoPathMap() {
+  const map = LAST_MAP && !MAP_STALE && LAST_MAP.nodes ? LAST_MAP : null, key = map ? MAP_AT : OPTS.cache ? REPO_STATE.at : 0;
+  if (PATHS && key && PATHS.key === key && PATHS.map === map) return { ...PATHS.byName };
   const byName = {};
-  const src = (LAST_MAP && LAST_MAP.nodes) ? LAST_MAP.nodes.filter((n) => n.type === "repo" || n.type === "folder").map((n) => ({ name: n.label, path: n.meta && n.meta.path })) : findAllRepos();
+  const src = map ? map.nodes.filter((n) => n.type === "repo" || n.type === "folder").map((n) => ({ name: n.label, path: n.meta && n.meta.path })) : findAllRepos();
   for (const r of src) if (r.path && !byName[r.name]) byName[r.name] = r.path;
-  return byName;
+  if (key) PATHS = { key, map, byName };
+  return { ...byName };
 }
 
 // The lanes a task can go to: every repo and project folder, and Marketing, a lane of
@@ -637,8 +673,8 @@ function laneMap() { const m = repoPathMap(); if (!Object.keys(m).some((n) => n.
 // The SAME repo set the Map uses — reuse its cached scan when present, else do
 // the identical discovery. So week/standup/todo/drift all agree with the Map.
 function discoveredRepos() {
-  if (LAST_MAP && LAST_MAP.nodes) return LAST_MAP.nodes.filter((n) => n.type === "repo" && n.meta && n.meta.path).map((n) => ({ path: n.meta.path, name: n.label, recency: 0 }));
+  if (LAST_MAP && !MAP_STALE && LAST_MAP.nodes) return LAST_MAP.nodes.filter((n) => n.type === "repo" && n.meta && n.meta.path).map((n) => ({ path: n.meta.path, name: n.label, recency: 0 }));
   return findAllRepos();
 }
 
-export { refreshRepos, reposState, REPO_STATE, laneMap, SCAN, SCAN_TIMEOUT_MS, setScanOptions, scanBegin, scanPhase, scanTick, scanExpired, scanEnd, me, authorship, authorArgs, folderFiles, readmeInfo, repoShape, houseRules, reportFooter, expandRoot, scanHome, scanBase, storageBlocked, prootDistros, prootHomes, scanRoots, addScanRoot, removeScanRoot, commits, openWork, findAllRepos, detectRepo, findProjectFolders, detectFolder, claudeProjects, buildMap, nodeDetail, repoPathMap, discoveredRepos };
+export { refreshRepos, reposState, REPO_STATE, laneMap, SCAN, SCAN_TIMEOUT_MS, setScanOptions, scanBegin, scanPhase, scanTick, scanExpired, scanEnd, me, authorship, authorArgs, folderFiles, readmeInfo, repoShape, houseRules, reportFooter, expandRoot, scanHome, scanBase, storageBlocked, prootDistros, prootHomes, scanRoots, addScanRoot, removeScanRoot, commits, openWork, findAllRepos, detectRepo, findProjectFolders, detectFolder, claudeProjects, buildMap, mapNow, lastMap, nodeDetail, repoPathMap, discoveredRepos };

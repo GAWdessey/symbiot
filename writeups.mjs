@@ -5,7 +5,7 @@ import { languageLine } from "./lang.mjs";
 import { join } from "node:path";
 import { readFileSync, existsSync } from "node:fs";
 import { VERSION, loadConfig, saveConfig, loadTasks, saveTasks, gitOut, repoState } from "./core.mjs";
-import { resolveProvider, write } from "./ai.mjs";
+import { resolveProvider, write, textOf } from "./ai.mjs";
 import { detectMailSources, mailActivity } from "./mail.mjs";
 import { waitingOn, newsSince } from "./watch.mjs";
 import { me, authorship, authorArgs, folderFiles, readmeInfo, repoShape, houseRules, reportFooter, expandRoot, commits, openWork, detectFolder, laneMap, discoveredRepos } from "./scan.mjs";
@@ -51,8 +51,8 @@ async function repoReview(path) {
     (rules ? `Conventions this team has chosen — do NOT advise against these:\n${rules}\n\n` : "") +
     (state.stale ? `Working tree: STALE (≈ ${state.staleBy ? "HEAD~" + state.staleBy : "older"}); its "changes" are the gap to an old snapshot, not new work.\n\n` : "") +
     `Return the JSON. Remember: fewer, higher-value ideas beat a long list; a "don't add — stabilise" verdict with 0–2 ideas is a valid answer.`;
-  const raw = await write(system + languageLine(), prompt);
-  if (!raw) return { text: "(couldn't reach the model)", ideas: [], verdict: "", footer };
+  const r = await write(system + languageLine(), prompt), raw = textOf(r);
+  if (!raw) return { text: failed(r), error: failed(r), ideas: [], verdict: "", footer };
   const j = extractJson(raw);
   if (j && (j.review || j.ideas || j.verdict)) return {
     text: String(j.review || "").trim() || raw,
@@ -62,6 +62,8 @@ async function repoReview(path) {
   };
   return { text: raw, ideas: [], verdict: "", footer };
 }
+// What a write-up says when the model didn't answer: write()'s reason, never a bare "(couldn't reach the model)"
+const failed = (r) => `Couldn't write it: ${(r && typeof r === "object" && r.error) || "the model didn't answer"}`;
 function extractJson(s) {
   if (!s) return null;
   let t = String(s).trim().replace(/^```(?:json)?/i, "").replace(/```$/,"").trim();
@@ -95,8 +97,8 @@ async function repoSuggest(path) {
     `Project: ${name} (branch ${state.branch}, ${auth.total} commits, ${auth.mineCount} yours${auth.filterDropped ? " — filter dropped" : ""}).\n\n` +
     `Recent commits:\n${recent || "(none)"}\n\nOpen / unfinished:\n${open.length ? open.map((o) => "- " + o).join("\n") : "(none found)"}\n\n` +
     (rules ? `Conventions — do NOT advise against these:\n${rules}\n\n` : "") + `Give the advice.`;
-  const text = await write(system + languageLine(), prompt);
-  return { text: text || "(couldn't reach the model)", footer };
+  const r = await write(system + languageLine(), prompt), text = textOf(r);
+  return { text: text || failed(r), ...(text ? {} : { error: failed(r) }), footer };
 }
 // Overview + suggestions for a NON-git project folder (no commits to read), from
 // its file tree, manifest and README. The folder-node equivalent of repoSuggest.
@@ -118,9 +120,9 @@ async function folderSuggest(path) {
   const prompt =
     `Folder: ${det.name}\nStack: ${stack}\nFiles (${det.files}):\n${rels.slice(0, 120).join("\n")}\n\n` +
     (manifest ? `Manifest:\n${manifest}\n\n` : "") + (readme ? `README excerpt:\n${readme}\n\n` : "") + `Write the overview and suggestions.`;
-  const text = await write(system + languageLine(), prompt);
+  const r = await write(system + languageLine(), prompt), text = textOf(r);
   const footer = `symbiot ${VERSION} · folder · ${det.files} files · ${stack} · not a git repo`;
-  return { text: text || "(couldn't reach the model)", footer };
+  return { text: text || failed(r), ...(text ? {} : { error: failed(r) }), footer };
 }
 // Ask questions about a task: a short Q&A thread kept on the task itself
 // (task.chat), grounded in the repo/folder it belongs to — and, once an agent
@@ -229,8 +231,8 @@ async function produce(cmd, { since = 7, all: everyone = false } = {}) {
       `You summarise what's still on a developer's plate from their TODO markers and uncommitted work. ` +
       `Group by project, lead with what looks most in-flight (uncommitted work) then the to-dos. ` +
       `Be concise and concrete. No preamble.`;
-    const text = await write(system + languageLine(), `Open work:\n${open.map((o) => `- ${o}`).join("\n")}\n\nWhat's still on my plate?`);
-    return { text: text || "(couldn't reach the model)", sub: `${open.length} open items · todo`, footer: `symbiot ${VERSION} · ${repos.length} repos scanned · ${open.length} open items` };
+    const r = await write(system + languageLine(), `Open work:\n${open.map((o) => `- ${o}`).join("\n")}\n\nWhat's still on my plate?`), text = textOf(r);
+    return { text: text || failed(r), ...(text ? {} : { error: failed(r) }), sub: `${open.length} open items · todo`, footer: `symbiot ${VERSION} · ${repos.length} repos scanned · ${open.length} open items` };
   }
   const label = cmd === "standup" ? "standup" : "week";
   const days = cmd === "standup" ? 2 : since;
@@ -266,9 +268,9 @@ async function produce(cmd, { since = 7, all: everyone = false } = {}) {
     (waiting.length ? `Waiting on me (new since yesterday):\n${waiting.map((g) => `- ${g.label}:\n${g.items.slice(0, 10).map((t) => `  - ${t.slice(0, 160)}`).join("\n")}`).join("\n")}\n\n` : "") +
     `Write the ${label === "standup" ? "standup" : "update"}.`;
 
-  const text = await write(system + languageLine(), prompt);
+  const r = await write(system + languageLine(), prompt), text = textOf(r);
   const mailNote = (mail.length ? ` · ${mail.length} sent email${mail.length === 1 ? "" : "s"}` : "") + (arrivedN ? ` · ${arrivedN} from linked sites` : "");
-  return { text: text ? withWaiting(text, line) : "(couldn't reach the model)", sub: `${cs.length} commits across ${new Set(cs.map((x) => x.repo)).size} repos${mailNote}${waitNote} · ${label}`, footer: `symbiot ${VERSION} · ${all.length} repos (same as the Map) · ${repos.length} active · ${cs.length} commits in last ${days}d${mailNote}` };
+  return { text: text ? withWaiting(text, line) : failed(r), ...(text ? {} : { error: failed(r) }), sub: `${cs.length} commits across ${new Set(cs.map((x) => x.repo)).size} repos${mailNote}${waitNote} · ${label}`, footer: `symbiot ${VERSION} · ${all.length} repos (same as the Map) · ${repos.length} active · ${cs.length} commits in last ${days}d${mailNote}` };
 }
 
 // ---- release notes: Approve's changelog entries, in your AI's words ------------

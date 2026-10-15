@@ -2,6 +2,46 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.66.0 — 2026-10-15
+
+Fixes from a full audit of Symbiot: freezes, wasted runs, Approve, runs beside the lane, and security.
+
+**Fewer pointless runs, less spend**
+- A lane no longer switches to Opus for good once its usual run costs $2 or more. Opus is chosen by what the task asks for, and API-key write-ups use Sonnet.
+- A word in capitals (SMTP, CORS, UUID) no longer marks a task urgent, so it no longer stops the run in progress.
+- When Claude's session limit is hit or its sign-in runs out, every run waits until it's back, with one "Sign in to Claude again" card. Before, lanes were relaunched every few seconds.
+- A task that waits for a time or an event ("at 08:50", "once the switch is live") isn't started again until then.
+- Only your own answers start a lane again, not handover reports or Symbiot's notes. A reworded task counts as the same task.
+- An answer goes only to lanes whose question it answers, no longer to every lane that mentions gmail.com or claude.ai.
+- Spend is kept as a daily total for 90 days, not just the last 400 runs.
+
+**Runs beside the lane**
+- A run beside the lane that clashes with your changes leaves its task open, with the patch attached. Before, it ticked the task and started "Merge a finished task's changes…" tasks that clashed again and nested.
+- Handovers, questions, waits and facts from a run beside the lane are kept when its copy is removed. The task is marked done as soon as it merges, so it isn't started again 20 seconds later.
+- The copy starts from your current work, not from the last commit.
+
+**Approve**
+- Approve commits only the files it lists. Anything else you had staged stays staged.
+- It never rebases over unsaved work. A clash stops it cleanly, and an agent is given the job of resolving it.
+- It never renames a branch of your own, and cleans up after a commit that fails.
+- No run starts and no update restarts the app while Approve is shipping. Git runs in the background, so the app keeps answering.
+- The version offered skips one that an open PR already uses.
+
+**Freezes**
+- The Map is built in the background, and opening it again is instant.
+- The page is sent compressed, and unchanged data isn't sent again. The Workdesk asks for updates every 8 seconds instead of every 2.
+- Knowledge indexing and checks run in the background.
+
+**Safety and housekeeping**
+- Runs can no longer write anywhere in your home folder, your Symbiot settings or ~/.claude. Knowledge in your home folder is read only at the top level.
+- The app's token is no longer printed into app.log. Saved state is written safely and is private to you.
+- A daily clean-up removes old finished drafts, old screenshots, leftover temp files and patches.
+- A phone's chat can't start agents, pairing links only accept local addresses, and an update no longer opens a second window.
+- Fixed text from a web page or email being able to break out of the page's markup.
+- Commit SHAs and long URLs you paste are no longer saved as secrets.
+- Model errors say what went wrong, and calls to OpenAI, Gemini and Ollama time out.
+- Phone width: the Low GPU button, Drift, Marketing and the Workdesk header fit.
+
 ## 0.65.3 — 2026-10-15
 
 - Security: a folder, branch or commit author's email with `$(…)`, backticks or quotes in its name could run as a command when Symbiot read the repo (the scan, Map, drift, week and post write-ups). git, gh and find are now handed their arguments directly, with no shell in between, so a name is only ever a name.

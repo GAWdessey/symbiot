@@ -66,7 +66,7 @@ async function runWeekly(produce, { notify: on = true } = {}) {
   const cfg = loadConfig(); cfg.weekly = { ...weeklyCfg(cfg), last: Date.now() }; saveConfig(cfg);
   const r = await produce("week");
   if (r.error === "not-connected") { notify("Time for your weekly update. Connect an AI in Symbiot's Settings and it writes it for you."); return { error: r.error }; }
-  if (/^\(?couldn't reach the model/i.test(String(r.text || ""))) { notify("Couldn't write your week: the model didn't answer. Try the Week tab."); return { ...r, error: r.text }; }
+  if (r.error || /^\(?couldn't (?:reach the model|write it)/i.test(String(r.text || ""))) { notify("Couldn't write your week: the model didn't answer. Try the Week tab."); return { ...r, error: r.error || r.text }; }
   const file = join(WEEKS_DIR, localDay() + ".md");
   try { mkdirSync(WEEKS_DIR, { recursive: true }); writeFileSync(file, String(r.text || "").trim() + (r.footer ? FOOT + r.footer : "") + "\n"); }
   catch (e) { return { ...r, error: "Couldn't save the write-up: " + ((e && e.message) || e) }; }

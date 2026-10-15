@@ -28,7 +28,7 @@ import { VERSION, CONFIG_DIR, loadConfig, saveConfig, readState, writeJsonAtomic
 import { readPage, readLinkedIn, siteUrl, isTrusted, signIn } from "./headless.mjs";
 import { loadScreens } from "./screens.mjs";
 import { desktopNotify } from "./desktop.mjs";
-import { resolveProvider, write } from "./ai.mjs";
+import { resolveProvider, write, textOf } from "./ai.mjs";
 import { handoffCmd, runHandoff, runningHandoff } from "./agents.mjs";
 import { linksIn, peekLinks, peekLine } from "./peek.mjs";
 import { converse, actNow, actIn, taskIn } from "./mind.mjs";
@@ -203,8 +203,8 @@ async function briefOf(news, name, { chat = false, social = false } = {}) {
     `In at most ${social ? 4 : 3} short lines of plain text, first what needs them (and why, in a few words), then what can wait. ` + (chat ? CHAT_RULE : "") + (social ? SOCIAL_RULE : "") +
     `Name things by sender and subject so they can find them. Use only what's shown; never guess at what a message says beyond it. No preamble, no markdown.`;
   const line = (n) => (chat ? withFrom(n) : social && n.li ? `[${n.li === "message" ? "message" : n.type || "notification"}] ${n.text}` : social && /^Messaging\b/i.test(n.text) ? `[message] ${n.text}` : n.text);
-  const text = await write(system, `New on ${name}:\n${news.map((n) => "- " + line(n)).join("\n")}\n\nWhat needs me, and what can wait?`);
-  return text && !/^\(?couldn't reach the model/i.test(text) ? text.trim().slice(0, 600) : "";
+  const text = textOf(await write(system, `New on ${name}:\n${news.map((n) => "- " + line(n)).join("\n")}\n\nWhat needs me, and what can wait?`));
+  return text ? text.trim().slice(0, 600) : ""; // the model didn't answer: no brief, rather than its error as one
 }
 
 // ---- LinkedIn: who and what, not only how many ----------------------------------

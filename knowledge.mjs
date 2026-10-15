@@ -16,9 +16,10 @@
 //   waiting on me" and "who owns X" without the model guessing.
 import { join, relative, extname, sep, basename } from "node:path";
 import { homedir } from "node:os";
-import { readFileSync, writeFileSync, mkdirSync, chmodSync, readdirSync, statSync } from "node:fs";
-import { CONFIG_DIR, loadConfig, saveConfig, clipWords } from "./core.mjs";
-import { expandRoot, me } from "./scan.mjs";
+import { readFileSync, readdirSync, statSync } from "node:fs";
+import { Worker } from "node:worker_threads";
+import { CONFIG_DIR, loadConfig, saveConfig, clipWords, readState, writeJsonAtomic } from "./core.mjs";
+import { expandRoot, scanRoots, me } from "./scan.mjs";
 
 const KNOW_FILE = join(CONFIG_DIR, "knowledge.json");
 const READ = new Set([".md", ".markdown", ".csv", ".txt"]);
@@ -30,9 +31,17 @@ const MAX_FILES = 5000, MAX_BYTES = 512 * 1024, MAX_PIECES = 400, PIECE = 900, E
 // "templates/, active/" or a list: each a folder (ends in /) or a file name.
 const examplePaths = (s) => (Array.isArray(s) ? s : String(s == null ? "" : s).split(/[,\n]/)).map((x) => String(x).trim().replace(/\\/g, "/")).filter(Boolean).map((x) => (x.endsWith("/") || /\.[a-z0-9]+$/i.test(x) ? x : x + "/"));
 const trimSlash = (p) => p.replace(/(.)[/\\]+$/, "$1");
+const within = (p, root) => p === root || p.startsWith(root + sep);
+// Your home folder, or one that holds your project folders (a scan root), isn't a
+// folder of documents: it was walked whole, and the index was 59 % phone-app READMEs,
+// Android build output and venvs, at its file cap (15 Oct 2026). Such a folder is
+// read shallow: only the documents lying loose at its top. Set in config as it is
+// (the home folder is still a knowledge folder for some), it's just read that way.
+function shallowFolder(p, roots = scanRoots()) { const h = homedir(); return within(h, p) || roots.some((r) => within(trimSlash(expandRoot(r)), p)); }
 function knowledgeFolders(cfg = loadConfig()) {
+  let roots = null; const rootsOf = () => (roots ||= scanRoots());
   return (Array.isArray(cfg.knowledgeFolders) ? cfg.knowledgeFolders : []).map((f) => (typeof f === "string" ? { path: f } : f)).filter((f) => f && f.path)
-    .map((f) => ({ path: trimSlash(expandRoot(f.path)), examples: Array.isArray(f.examples) ? examplePaths(f.examples) : DEFAULT_EXAMPLES }));
+    .map((f) => { const path = trimSlash(expandRoot(f.path)); return { path, examples: Array.isArray(f.examples) ? examplePaths(f.examples) : DEFAULT_EXAMPLES, ...(shallowFolder(path, rootsOf()) ? { shallow: true } : {}) }; });
 }
 // Add a folder (or change its examples: adding it again replaces them). examples
 // left out or blank: templates/; "none": nothing in it is an example.
@@ -40,6 +49,7 @@ function addKnowledgeFolder(p, examples) {
   p = trimSlash(expandRoot(p)); if (!p) return { error: "Give a folder." };
   let st; try { st = statSync(p); } catch { return { error: "folder not found: " + p }; }
   if (!st.isDirectory()) return { error: "not a folder: " + p };
+  if (within(homedir(), p)) return { error: `${p} is your home folder (or holds it): that's everything on this computer, not a folder of documents. Add the folder your documents are in, like ~/Company.` };
   const ex = examples === undefined || examples === null || String(examples).trim() === "" ? DEFAULT_EXAMPLES : /^none$/i.test(String(examples).trim()) ? [] : examplePaths(examples);
   const cfg = loadConfig(), list = knowledgeFolders(cfg).filter((f) => f.path !== p);
   cfg.knowledgeFolders = [...list, { path: p, examples: ex }];
@@ -136,35 +146,49 @@ function readOne(abs, ext) {
   const kase = /^readme\.(md|markdown)$/i.test(basename(abs)) ? caseOf(body, pieces) : null;
   return { title: title.slice(0, 200), ...(meta ? { meta: m } : {}), auto: !!(meta && /^(true|yes|1)$/i.test(String(meta.example || ""))), ...(kase ? { case: kase } : {}), pieces: pieces.slice(0, MAX_PIECES) };
 }
-// Every file under a folder: hidden folders and node_modules skipped, symlinks not followed.
-function walk(dir, max = MAX_FILES) {
-  const out = [], stack = [dir];
-  while (stack.length && out.length < max) {
+// Every file under a folder, symlinks not followed. Skipped: hidden folders, and what
+// isn't documents (a git repo inside the folder, build output, a venv). shallow: only
+// the files at its top (a home folder). capped: the folder has more than MAX_FILES
+// files, so which are in depends on their order, and Settings says so.
+const SKIP_DIR = /^(node_modules|build|dist|target|__pycache__|venv.*|\.venv.*)$/i;
+function walk(dir, max = MAX_FILES, { shallow = false } = {}) {
+  const out = [], stack = [dir]; let capped = false;
+  while (stack.length) {
     const d = stack.pop(); let es; try { es = readdirSync(d, { withFileTypes: true }); } catch { continue; }
-    for (const e of es) { if (e.name.startsWith(".") || e.name === "node_modules") continue; const p = join(d, e.name); if (e.isDirectory()) stack.push(p); else if (e.isFile()) out.push(p); }
+    if (d !== dir && es.some((e) => e.name === ".git")) continue; // a repo: its docs are the lane's, not yours
+    for (const e of es) {
+      if (e.name.startsWith(".") || SKIP_DIR.test(e.name)) continue;
+      const p = join(d, e.name);
+      if (e.isDirectory()) { if (!shallow) stack.push(p); } else if (e.isFile()) { if (out.length >= max) { capped = true; break; } out.push(p); }
+    }
+    if (capped) break;
   }
-  return out.sort();
+  out.sort(); out.capped = capped; return out;
 }
 
 // ---- the index ----------------------------------------------------------------------
+const isObj = (v) => !!v && typeof v === "object" && !Array.isArray(v);
 function loadIndex(file = KNOW_FILE) {
-  try { const d = JSON.parse(readFileSync(file, "utf8")); return { files: d.files && typeof d.files === "object" ? d.files : {}, notRead: d.notRead || {}, at: d.at || 0 }; }
-  catch { return { files: {}, notRead: {}, at: 0 }; }
+  const d = readState(file, isObj);
+  return d ? { files: isObj(d.files) ? d.files : {}, notRead: d.notRead || {}, capped: isObj(d.capped) ? d.capped : {}, at: d.at || 0 } : { files: {}, notRead: {}, capped: {}, at: 0 };
 }
-// What's in your documents is yours only (0600), like mind.json.
+// What's in your documents is yours only (0600), like mind.json. Written whole or not
+// at all (writeJsonAtomic): a plain write of 6 MB torn by a crash read as an empty
+// index, and every file was read again (15 Oct 2026).
 function saveIndex(d, file = KNOW_FILE) {
-  try { mkdirSync(join(file, ".."), { recursive: true }); writeFileSync(file, JSON.stringify(d), { mode: 0o600 }); try { chmodSync(file, 0o600); } catch {} CACHE = null; return true; }
+  try { writeJsonAtomic(file, d, { indent: 0, mode: 0o600 }); CACHE = null; return true; }
   catch { return false; }
 }
 // Bring the index up to date: only files that are new or changed (size or mtime)
 // are read; files gone (or in a folder you removed) are dropped. Cheap enough to
 // run every few minutes: a stat per file when nothing changed. full: read all.
 function indexKnowledge({ folders = knowledgeFolders(), file = KNOW_FILE, now = Date.now(), full = false } = {}) {
-  const idx = loadIndex(file), seen = new Set(), notRead = {};
+  const idx = loadIndex(file), seen = new Set(), notRead = {}, capped = {};
   let read = 0, kept = 0, failed = 0, changed = false;
   for (const f of folders) {
-    const nr = notRead[f.path] = {};
-    for (const abs of walk(f.path)) {
+    const nr = notRead[f.path] = {}, list = walk(f.path, MAX_FILES, { shallow: !!f.shallow });
+    if (list.capped) capped[f.path] = true;
+    for (const abs of list) {
       const ext = extname(abs).toLowerCase();
       if (LATER.has(ext)) { nr[ext.slice(1)] = (nr[ext.slice(1)] || 0) + 1; continue; }
       if (!READ.has(ext) || seen.has(abs)) continue;
@@ -183,12 +207,26 @@ function indexKnowledge({ folders = knowledgeFolders(), file = KNOW_FILE, now = 
   }
   let removed = 0;
   for (const abs of Object.keys(idx.files)) if (!seen.has(abs)) { delete idx.files[abs]; removed++; changed = true; }
-  if (JSON.stringify(notRead) !== JSON.stringify(idx.notRead)) changed = true;
-  if (changed) saveIndex({ files: idx.files, notRead, at: now }, file);
-  return { read, kept, removed, failed, files: Object.keys(idx.files).length };
+  if (JSON.stringify(notRead) !== JSON.stringify(idx.notRead) || JSON.stringify(capped) !== JSON.stringify(idx.capped)) changed = true;
+  if (changed) saveIndex({ files: idx.files, notRead, capped, at: now }, file);
+  return { read, kept, removed, failed, files: Object.keys(idx.files).length, capped: Object.keys(capped) };
 }
-// Re-index on the app's timer, when there are folders to read.
-function knowledgeTick() { const folders = knowledgeFolders(); return folders.length ? indexKnowledge({ folders }) : null; }
+// Re-index on the app's timer, when there are folders to read: in a worker thread
+// (knowworker.mjs), which then checks the folders for where two files disagree
+// (checks.mjs runChecks). On the app's own thread the two took 0.1 s with nothing
+// changed and 2 s after a change, every 3 minutes, and the app stopped answering
+// meanwhile (15 Oct 2026). null at once; knowledgeJob() is the run going, for tests.
+let KNOW_JOB = null;
+function knowledgeTick({ checks = true } = {}) {
+  if (!knowledgeFolders().length || KNOW_JOB) return null;
+  KNOW_JOB = new Promise((resolve) => {
+    const end = (r) => { KNOW_JOB = null; CACHE = null; resolve(r || null); };
+    let w; try { w = new Worker(new URL("./knowworker.mjs", import.meta.url), { workerData: { checks } }); } catch { end(null); return; }
+    w.unref(); let got = null; w.once("message", (m) => { got = m; }); w.once("error", () => {}); w.once("exit", () => end(got));
+  });
+  return null;
+}
+const knowledgeJob = () => KNOW_JOB;
 
 // The index once per change of the file, with its pieces tokenized for search.
 let CACHE = null;
@@ -353,9 +391,10 @@ function knowledgeState({ file = KNOW_FILE, cfg = loadConfig() } = {}) {
     folders: knowledgeFolders(cfg).map((f) => {
       const fs = files.filter((x) => x.root === f.path), real = fs.filter((x) => !x.example);
       return { path: f.path, cite: cite(f.path), examples: f.examples, files: fs.length, exampleFiles: fs.length - real.length, pieces: fs.reduce((t, x) => t + (x.pieces || []).length, 0),
-        cases: real.filter((x) => x.case).length, items: real.filter((x) => x.meta && (x.meta.owner || x.meta.status) && !DONE.test(String(x.meta.status || "").trim())).length, notRead: (c.idx.notRead || {})[f.path] || {} };
+        cases: real.filter((x) => x.case).length, items: real.filter((x) => x.meta && (x.meta.owner || x.meta.status) && !DONE.test(String(x.meta.status || "").trim())).length, notRead: (c.idx.notRead || {})[f.path] || {},
+        ...(f.shallow ? { shallow: true } : {}), ...((c.idx.capped || {})[f.path] ? { capped: true } : {}) }; // shallow: only its top-level documents are read (a home folder); capped: it has more files than are read
     }),
   };
 }
 
-export { KNOW_FILE, DEFAULT_EXAMPLES, READ, MAX_BYTES, walk, cite, knowledgeFolders, addKnowledgeFolder, removeKnowledgeFolder, isExample, frontMatter, csvRows, indexKnowledge, knowledgeTick, searchKnowledge, myName, setMyName, namesYou, waitingOn, ownerOf, knowledgeFor, knowledgeState, itemLine, caseLine };
+export { KNOW_FILE, DEFAULT_EXAMPLES, READ, MAX_BYTES, MAX_FILES, walk, cite, knowledgeFolders, shallowFolder, addKnowledgeFolder, removeKnowledgeFolder, isExample, frontMatter, csvRows, loadIndex, indexKnowledge, knowledgeTick, knowledgeJob, searchKnowledge, myName, setMyName, namesYou, waitingOn, ownerOf, knowledgeFor, knowledgeState, itemLine, caseLine };

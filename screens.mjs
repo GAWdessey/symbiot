@@ -16,14 +16,16 @@ import { join } from "node:path";
 import { readFileSync, writeFileSync, mkdirSync, existsSync, unlinkSync, readdirSync, renameSync, rmSync, chmodSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { inflateSync, deflateSync } from "node:zlib";
-import { CONFIG_DIR, hasCmd } from "./core.mjs";
+import { CONFIG_DIR, hasCmd, readState, writeJsonAtomic } from "./core.mjs";
 
 const SCREENS_DIR = join(CONFIG_DIR, "screens");
 const INDEX = join(SCREENS_DIR, "screens.json");
 const MAX_REGIONS = 200;
 const MAX_IMAGE = 40 * 1024 * 1024;
-function loadScreens() { try { const a = JSON.parse(readFileSync(INDEX, "utf8")); return Array.isArray(a) ? a : []; } catch { return []; } }
-function saveScreens(a) { mkdirSync(SCREENS_DIR, { recursive: true }); writePrivate(INDEX, JSON.stringify(a, null, 2)); }
+function loadScreens() { return readState(INDEX, Array.isArray) || []; }
+// Whole or not at all (writeJsonAtomic): 16 MB rewritten plainly on every map, and a
+// crash mid-write read as no screens, which the next map then saved over (15 Oct 2026).
+function saveScreens(a) { mkdirSync(SCREENS_DIR, { recursive: true, mode: 0o700 }); writeJsonAtomic(INDEX, a, { mode: 0o600 }); }
 // A screenshot can show anything that was on screen, so Symbiot's are readable
 // by you only (0600), the way the desktop's own screenshot tool saves its images.
 // `mode` only applies to a new file; the chmod covers one that was already there.

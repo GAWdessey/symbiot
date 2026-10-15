@@ -37,14 +37,16 @@ async function servesUi(bin) {
   try {
     const url = await new Promise((resolve) => {
       const t = setTimeout(() => resolve(""), 15000);
-      const onData = (d) => { out += d; const m = out.match(/http:\/\/127\.0\.0\.1:\d+\/\?t=[a-f0-9]+/); if (m) { clearTimeout(t); resolve(m[0]); } };
+      // the address is printed without the token (it'd land in app.log, 15 Oct 2026): the token comes from the test HOME's secrets.json
+      const tokenOf = () => { for (const f of ["secrets.json", "config.json"]) try { const tk = JSON.parse(readFileSync(join(appEnv.HOME, ".config", "symbiot", f), "utf8")).appToken; if (tk) return tk; } catch {} return ""; };
+      const onData = (d) => { out += d; const m = out.match(/is running at http:\/\/127\.0\.0\.1:(\d+)\//); if (m) { clearTimeout(t); resolve(`http://127.0.0.1:${m[1]}/?t=${tokenOf()}`); } };
       child.stdout.on("data", onData); child.stderr.on("data", (d) => { out += d; });
       child.on("exit", () => { clearTimeout(t); resolve(""); });
     });
     if (!url) { console.log("    app output: " + out.trim().slice(0, 600)); return false; }
     const page = await (await fetch(url.replace(/\?t=.*/, ""))).text();
     try { await fetch(url.replace(/\/\?t=/, "/api/quit?t=")); } catch {}
-    return /<script>[\s\S]+<\/script>/.test(page) && /data-tab="map"/.test(page);
+    return /<script>[\s\S]+<\/script>/.test(page) && /id="lq"/.test(page); // the liquid home (the old tab bar is gone, 15 Oct 2026)
   } catch (e) { console.log("    " + e.message); return false; }
   finally { try { child.kill("SIGKILL"); } catch {} }
 }

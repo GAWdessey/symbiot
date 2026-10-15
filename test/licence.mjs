@@ -49,7 +49,7 @@ try {
   reset({});
   const t0 = Date.now(); let st = L.licenceState(t0);
   ok("first run: a trial, 14 days left", st.plan === "trial" && st.trialDaysLeft === 14, st);
-  ok("…and the clock is saved", loadConfig().licence.trialStart === t0);
+  ok("…and a read never writes config.json: the app's start-up saves the clock (startTrial), once", !(loadConfig().licence || {}).trialStart && L.startTrial(t0) === true && loadConfig().licence.trialStart === t0 && L.startTrial(t0 + DAY) === false && loadConfig().licence.trialStart === t0);
   ok("day 10: 4 days left", L.licenceState(t0 + 10 * DAY).trialDaysLeft === 4);
   st = L.licenceState(t0 + 15 * DAY);
   ok("day 15: Free, and it says the trial ended", st.plan === "free" && st.trialEnded === true, st);

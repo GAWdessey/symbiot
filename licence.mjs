@@ -19,11 +19,11 @@
 //
 // SYMBIOT_LICENCE_PUBLIC_KEY replaces the public key (tests sign with their own).
 import { createPublicKey, verify as edVerify } from "node:crypto";
-import { existsSync, readFileSync, writeFileSync, realpathSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { join, dirname, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
-import { CONFIG_DIR, loadConfig, saveConfig } from "./core.mjs";
+import { CONFIG_DIR, loadConfig, saveConfig, readState, writeJsonAtomic } from "./core.mjs";
 
 const PUBLIC_KEY = `-----BEGIN PUBLIC KEY-----
 MCowBQYDK2VwAyEAGLISPmrOCX+t/KVY/u99rmFhjbXFbvRCGw1tStG1t8A=
@@ -53,23 +53,33 @@ function readKey(text) {
 
 // Cancelled keys, from symbiot.co.za, refreshed at most once a day; a failed fetch keeps the last list.
 const REVOKED_FILE = () => join(CONFIG_DIR, "licence-revoked.json");
-function revokedIds() { try { return new Set(JSON.parse(readFileSync(REVOKED_FILE(), "utf8")).ids || []); } catch { return new Set(); } }
+const revokedList = () => readState(REVOKED_FILE(), (v) => !!v && typeof v === "object" && !Array.isArray(v)) || {};
+function revokedIds() { try { return new Set(revokedList().ids || []); } catch { return new Set(); } }
 async function refreshRevoked(now = Date.now()) {
   try {
-    const cur = existsSync(REVOKED_FILE()) ? JSON.parse(readFileSync(REVOKED_FILE(), "utf8")) : {};
+    const cur = revokedList();
     if (cur.at && now - cur.at < DAY) return false;
     const r = await fetch(process.env.SYMBIOT_REVOKED_URL || REVOKED_URL, { signal: AbortSignal.timeout(8000) });
     if (!r.ok) return false;
     const j = await r.json();
-    writeFileSync(REVOKED_FILE(), JSON.stringify({ at: now, ids: Array.isArray(j.ids) ? j.ids.map(String) : [] }));
+    writeJsonAtomic(REVOKED_FILE(), { at: now, ids: Array.isArray(j.ids) ? j.ids.map(String) : [] }, { indent: 0 });
     return true;
   } catch { return false; }
 }
 
-// Where you stand: { plan: "pro" | "owner" | "trial" | "free", ... }. Starts the trial clock on first sight.
+// The trial clock starts the first time Symbiot runs. Only the app writes it (startTrial,
+// from its start-up sweep): licenceState used to save config.json as a side effect of
+// every read, from the CLI and run helpers too, racing the app's own saves (15 Oct 2026).
+// Read before it's written, the trial counts from now, unsaved.
+function startTrial(now = Date.now()) {
+  const cfg = loadConfig(), L = cfg.licence || {};
+  if (L.trialStart) return false;
+  cfg.licence = { ...L, trialStart: now }; return saveConfig(cfg);
+}
+// Where you stand: { plan: "pro" | "owner" | "trial" | "free", ... }.
 function licenceState(now = Date.now(), cfg = loadConfig()) {
   const L = cfg.licence || {};
-  if (!L.trialStart) { L.trialStart = now; cfg.licence = L; try { saveConfig(cfg); } catch {} }
+  if (!L.trialStart) L.trialStart = now;
   const base = { limits: FREE, price: PRICE, upgrade: UPGRADE_URL };
   if (L.key) {
     const k = readKey(L.key);
@@ -141,4 +151,4 @@ function canWorkIn(dir, st = licenceState()) {
   return { ok: false, self: true, why: SELF_WHY };
 }
 
-export { readKey, licenceState, isPro, setKey, clearKey, can, refreshRevoked, isSymbiotCode, canWorkIn, FREE, PRICE, TRIAL_DAYS, SELF_WHY, HERE as SYMBIOT_HOME };
+export { readKey, licenceState, startTrial, isPro, setKey, clearKey, can, refreshRevoked, isSymbiotCode, canWorkIn, FREE, PRICE, TRIAL_DAYS, SELF_WHY, HERE as SYMBIOT_HOME };

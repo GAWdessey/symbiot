@@ -56,6 +56,25 @@ try {
   ok("with no good copy at all it starts empty, but keeps the broken file aside", none.length === 0 && aside(TASKS).length === 2, readdirSync(CFG));
   ok("a file that's just not there yet is no corruption", readState(join(CFG, "nothing.json")) === undefined && !readdirSync(CFG).some((n) => n.startsWith("nothing.json")));
 
+  console.log("THE WRONG SHAPE — parses, but isn't what the file holds (15 Oct 2026)");
+  saveTasks([{ text: "one", done: false }]); saveTasks([{ text: "one", done: false }, { text: "two", done: false }]);
+  writeFileSync(TASKS, "{\"not\":\"a list\"}");
+  const shaped = loadTasks();
+  ok("tasks.json holding an object reads the .bak list, and the object is kept aside", shaped.length === 1 && shaped[0].text === "one" && aside(TASKS).length === 3, [shaped, aside(TASKS).length]);
+  writeFileSync(join(CFG, "shape.json"), "[1]");
+  ok("readState with a shape check refuses the shape, not the parse, and sets the file aside", readState(join(CFG, "shape.json"), (v) => v === 42) === undefined && readState(join(CFG, "shape.json")) === undefined && aside(join(CFG, "shape.json")).length === 1);
+  if (process.platform !== "win32") ok("every state file is yours only (0600) by default, tasks.json too", (statSync(TASKS).mode & 0o777) === 0o600 && (statSync(CFG).mode & 0o777) === 0o700, [(statSync(TASKS).mode & 0o777).toString(8), (statSync(CFG).mode & 0o777).toString(8)]);
+
+  console.log("ONE PARSE PER VERSION — tasks.json is read once, and each caller gets its own copy");
+  saveTasks(Array.from({ length: 50 }, (_, i) => ({ id: "m" + i, text: "task " + i, done: false, chat: [{ me: true, text: "hi" }] })));
+  const a = loadTasks(), b = loadTasks();
+  a[0].text = "changed"; a[0].chat.push({ me: false, text: "there" }); a.push({ id: "x" });
+  ok("a change to one caller's copy never reaches another's", b[0].text === "task 0" && b[0].chat.length === 1 && loadTasks().length === 50 && loadTasks()[0].text === "task 0", [b[0], loadTasks().length]);
+  saveTasks(a);
+  ok("…and a save is what the next read gives", loadTasks().length === 51 && loadTasks()[0].text === "changed" && loadTasks()[0].chat.length === 2);
+  writeFileSync(TASKS, JSON.stringify([{ id: "fromcli", text: "another process wrote this", done: false }]));
+  ok("a write by another process (a new version of the file) is read, not the copy kept", loadTasks().length === 1 && loadTasks()[0].id === "fromcli", loadTasks());
+
   console.log("SETTINGS — a broken config.json doesn't wipe them");
   saveConfig({ agentCmd: "claude -p", parked: ["/a"], appToken: "tok" });
   saveConfig({ ...loadConfig(), weekly: { on: true } });

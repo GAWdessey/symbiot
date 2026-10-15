@@ -80,10 +80,18 @@ function deleteSecret(name) {
 // ---- spotting a secret in what someone typed ------------------------------------------
 const PATTERNS = [
   ["token", /\b(?:npm_[A-Za-z0-9]{20,}|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9_-]{20,}|xox[baprs]-[A-Za-z0-9-]{10,}|AKIA[0-9A-Z]{16})\b/g],
-  ["codes", /\b[0-9a-f]{32,}\b/gi],
+  ["codes", /\b[0-9a-f]{32,}\b/gi, "cue"],
   ["password", /\b(?:password|passwd|pwd|pass|passcode|pin)\s*(?:is|=|:)\s*(\S{4,})/gi],
-  ["token", /\b[A-Za-z0-9+/_-]{40,}={0,2}(?=\s|$)/g],
+  ["token", /\b[A-Za-z0-9+/_-]{40,}={0,2}(?=\s|$)/g, "cue"],
 ];
+// The two shapes with no prefix of their own (a run of hex, a long run of base64
+// characters) are secrets only when the words before them say so: a pasted commit
+// SHA, a long URL path or a base64 blob were swallowed into the vault, and "revert
+// abc123…" reached the model as "revert [saved: token]" (15 Oct 2026). Never a value
+// inside a URL.
+const CUE = /\b(?:tokens?|passwords?|passwd|pwd|pass(?:codes?|phrases?)?|secrets?|api[ _-]?keys?|keys?|codes?|recovery|backup|otp|pins?|credentials?)\b[^.\n]{0,40}?(?:[\s,;:]*[A-Za-z0-9+/_=-]{32,})*[\s,;:]*$/i; // the cue, a few words, then only values before this one (a list of codes)
+const cued = (text, at) => CUE.test(text.slice(Math.max(0, at - 800), at));
+const inUrl = (text, at) => /(?:[a-z][a-z0-9+.-]*:\/\/|www\.)\S*$/i.test(text.slice(Math.max(0, at - 2000), at));
 // What the secret is, from the words before it ("recovery codes for npm: …" -> "npm recovery codes").
 function labelFor(text, at, kind) {
   const before = text.slice(0, at).replace(/\s+/g, " ").trim().split(/[.!?\n]/).pop() || "";
@@ -97,10 +105,11 @@ function labelFor(text, at, kind) {
 // Replace every secret in text with [secret hidden]; give what was found, grouped by name.
 function findSecrets(text, mark = () => "[secret hidden]") {
   text = String(text || ""); const hits = [];
-  for (const [kind, re] of PATTERNS) for (const m of text.matchAll(re)) {
+  for (const [kind, re, need] of PATTERNS) for (const m of text.matchAll(re)) {
     const value = m[1] || m[0];
     if (kind !== "password" && !/^(npm_|gh[pousr]_|github_pat_|sk-|xox|AKIA)/.test(value) && (new Set(value).size < 8 || !/\d/.test(value) || !/[a-z]/i.test(value))) continue; // aaaa… or a run of words isn't a secret
     const at = m.index + m[0].lastIndexOf(value);
+    if (need === "cue" && (!cued(text, at) || inUrl(text, at))) continue;
     if (hits.some((h) => at < h.end && at + value.length > h.at)) continue;
     hits.push({ kind, value, at, end: at + value.length });
   }
