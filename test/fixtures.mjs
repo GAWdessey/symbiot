@@ -14,7 +14,7 @@ import { authorship, repoState, readmeInfo, houseRules, findAllRepos, driftRepo,
 import { EMBEDDED_UI } from "../ui.mjs";
 import { updateCmd } from "../server.mjs";
 import { grantRule, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, linkReach, noteUntracked, untrackedBefore } from "../agents.mjs";
-import { releaseNotIn, applyRemovals, removalOf, saidFinished, gitFailed, unsentOf, readUnsent, unsentCard, repoTests, localRefused, holdShip, SHIP_STALE } from "../tasks.mjs";
+import { releaseNotIn, applyRemovals, removalOf, saidFinished, gitFailed, unsentOf, readUnsent, unsentCard, repoTests, localRefused, holdShip, SHIP_STALE, shipping, shippingPaths, rebaseTask } from "../tasks.mjs";
 import { releaseNotes, parseNotes } from "../writeups.mjs";
 import { VERSION, sameTask, uniqueTasks } from "../core.mjs";
 import { mailActivity } from "../mail.mjs";
@@ -541,9 +541,10 @@ try {
   const giRepo = build("ship-gi", `git init -q -b main && git config user.email ci@symbiot.test && git config user.name "Symbiot CI"
     printf '.symbiot/\\n' > .gitignore && echo a > a.txt && git add . && git commit -qm init
     echo b >> a.txt && echo new > new.txt && mkdir .symbiot && echo log > .symbiot/agent.log`);
-  const rg = await shipChanges(giRepo, ["Do a thing"], { push: false });
+  const rg = await shipChanges(giRepo, ["Do a thing Full text: `.symbiot/full/0123456789ab.md`"], { push: false });
   const gg = (a) => execSync("git " + a, { cwd: giRepo, encoding: "utf8", env: gitEnv }).trim();
   ok("ships even when .symbiot/ is gitignored (no false 'git add failed')", rg.ok && !!rg.commit, rg);
+  ok("a long task's link to .symbiot/full/ (which never ships) stays out of the commit", rg.subject === "Do a thing" && !/symbiot\/full/.test(gg("log -1 --format=%B")), gg("log -1 --format=%B"));
   ok("commit excludes .symbiot/ (gitignored case)", !gg("show --name-only --format= HEAD").split("\n").includes(".symbiot"), gg("show --name-only --format= HEAD"));
   // a branch whose earlier PR was squash-merged: main has its changes under another
   // history, so a new PR from it can't merge. The next approve starts afresh from main.
@@ -629,6 +630,29 @@ try {
   const vfRepo = bhSetup("ship-verify", "echo other > ../ship-verify-other/other.txt && git -C ../ship-verify-other add .");
   const rv = await shipChanges(vfRepo, ["Red"], { pr: false, verify: async () => ({ ok: false, note: "1 test failed" }) });
   ok("tests failing on top of main: not pushed", rv.ok && rv.testsFailed && !rv.pushed && /1 test failed/.test(rv.note), rv);
+  ok("rebaseTask: the agent's task on a clash says what to do and what not to", /^Rebase symbiot\/x onto origin\/main \(git fetch origin main, then git rebase origin\/main symbiot\/x\)\./.test(rebaseTask("symbiot/x", "main")) && /Don't push/.test(rebaseTask("symbiot/x", "main")), rebaseTask("symbiot/x", "main"));
+  // a checkout with uncommitted changes the commit leaves out (a run still going, or yours) is never
+  // rebased in place: `--autostash` could fail to put them back and left conflict markers and a stash
+  // nobody knew about (15 Oct 2026). The branch is rebased in a throwaway worktree instead.
+  const dtRepo = bhSetup("ship-dirty", "echo other > ../ship-dirty-other/other.txt && git -C ../ship-dirty-other add .");
+  const gdt = (a) => execSync("git " + a, { cwd: dtRepo, encoding: "utf8", env: gitEnv }).trim();
+  mkdirSync(join(dtRepo, ".symbiot")); writeFileSync(join(dtRepo, ".symbiot", "runfiles.json"), JSON.stringify([{ id: "R", ticked: 1, files: ["new.txt"] }])); writeFileSync(join(dtRepo, "a.txt"), "held edit\n");
+  const rdt = await shipChanges(dtRepo, ["Mine"], { pr: false });
+  ok("a dirty checkout: the branch is rebased beside it (a worktree), the checkout moved to the result, the held edit kept, no stash", rdt.ok && rdt.pushed && rdt.rebased === "origin/main" && gdt("rev-parse HEAD~1") === gdt("rev-parse origin/main") && readFileSync(join(dtRepo, "a.txt"), "utf8") === "held edit\n" && gdt("stash list") === "" && !existsSync(join(dtRepo, ".symbiot", "ship-wt")) && !existsSync(join(dtRepo, ".git", "rebase-merge")) && gdt("show --name-only --format= HEAD") === "new.txt", [rdt, gdt("status --porcelain"), gdt("log --oneline -3")]);
+  const dcRepo = bhSetup("ship-dirty-clash", "echo theirs > ../ship-dirty-clash-other/a.txt");
+  const gdc = (a) => execSync("git " + a, { cwd: dcRepo, encoding: "utf8", env: gitEnv }).trim();
+  mkdirSync(join(dcRepo, ".symbiot")); writeFileSync(join(dcRepo, ".symbiot", "runfiles.json"), JSON.stringify([{ id: "R", ticked: 1, files: ["new.txt"] }])); writeFileSync(join(dcRepo, "a.txt"), "held edit\n");
+  const rdc = await shipChanges(dcRepo, ["Mine"], { pr: false });
+  ok("...and when main changed a held file too, nothing moves: a conflict, said in words, the tree as it was, no markers", rdc.ok && rdc.conflicts && !rdc.pushed && /main changed a file that's also changed, uncommitted, here/.test(rdc.note || "") && readFileSync(join(dcRepo, "a.txt"), "utf8") === "held edit\n" && gdc("stash list") === "" && !existsSync(join(dcRepo, ".symbiot", "ship-wt")) && gdc("rev-parse --abbrev-ref HEAD") === rdc.branch && gdc("diff --name-only --diff-filter=U") === "", [rdc, gdc("status --porcelain")]);
+  // your own branch whose origin copy moved on (a colleague pushed): the push is refused, and it was renamed away from under you
+  const ownRepo = build("ship-ownbranch", `git init -q -b main && git config user.email ci@symbiot.test && git config user.name "Symbiot CI" && echo a > a.txt && git add . && git commit -qm init
+    git clone -q --bare . ../ship-ownbranch-remote.git && git remote add origin ../ship-ownbranch-remote.git && git fetch -q origin && git remote set-head origin main
+    git switch -q -c feat && git push -q -u origin feat
+    git clone -q ../ship-ownbranch-remote.git ../ship-ownbranch-other && git -C ../ship-ownbranch-other config user.email o@o && git -C ../ship-ownbranch-other config user.name o && git -C ../ship-ownbranch-other switch -q feat && echo c > ../ship-ownbranch-other/c.txt && git -C ../ship-ownbranch-other add . && git -C ../ship-ownbranch-other commit -qm colleague && git -C ../ship-ownbranch-other push -q origin feat
+    echo mine > new.txt`);
+  const gob = (a) => execSync("git " + a, { cwd: ownRepo, encoding: "utf8", env: gitEnv }).trim();
+  const rob = await shipChanges(ownRepo, ["On feat"], { pr: false });
+  ok("a branch of your own isn't renamed when its push is refused: it stays feat, committed, and says origin/feat moved on", rob.ok && !rob.pushed && rob.branch === "feat" && gob("rev-parse --abbrev-ref HEAD") === "feat" && gob("branch").split("\n").every((b) => !/symbiot\//.test(b)) && /origin\/feat has moved on/.test(rob.note || ""), [rob, gob("branch")]);
 
   // dailify, 13 Oct 2026: Approve committed on symbiot/4-tasks-2026-10-13, its tests failed for
   // want of a database here, nothing went up, and with the tree clean every next Approve said
@@ -691,6 +715,8 @@ try {
   const lk = "/tmp/hold-ship-" + process.pid, h1 = holdShip(lk, 1000), h2 = holdShip(lk, 1000 + 60000), h3 = holdShip(lk, 1000 + SHIP_STALE + 1);
   h1.release(); const h4 = holdShip(lk, 1000 + SHIP_STALE + 2); h3.release(); const h5 = holdShip(lk, 1000 + SHIP_STALE + 3); h5.release();
   ok("holdShip: a second Approve waits while one runs; a hold older than any ship is taken over, and the old one letting go doesn't free the new", !h1.error && /Already approving here \(starting, 1 min so far\)/.test(h2.error || "") && !h3.error && /Already approving/.test(h4.error || "") && !h5.error, [h2, h4]);
+  const h6 = holdShip(lk), shipOn = shipping(lk), pathsOn = shippingPaths(); h6.release();
+  ok("shipping(path): what's shipping there while the hold is on (for runHandoff and restartWouldStop), nothing after", shipOn && shipOn.step === "starting" && pathsOn.includes(lk) && shipping(lk) === null && !shippingPaths().includes(lk) && SHIP_STALE >= 45 * 60000, [shipOn, pathsOn]);
 
   // scratch: 170k untracked files (venvs, datasets) timed out `git add -A`
   // (spawnSync ETIMEDOUT), and whole-tree staging took in an unignored .env.
@@ -709,26 +735,39 @@ try {
   ok("...says what it left out, leaves it untracked, and forgets the note", /2 untracked files that were already there before the agent ran were left out/.test(ru.note || "") && /\?\? \.env/.test(gu("status --porcelain")) && !untrackedBefore(utRepo), [ru, gu("status --porcelain")]);
   ok("git that didn't finish says why in words, not ETIMEDOUT", /^git add timed out after 120 s: this repo has about 170,363 changed or untracked files, probably a venv, node_modules, a dataset or a cache missing from \.gitignore/.test(gitFailed("git add", { timedOut: true, timeout: 120000, err: "" }, 170363)) && gitFailed("git add", { timedOut: false, err: "fatal: x\n" }) === "git add failed: fatal: x", gitFailed("git add", { timedOut: true, timeout: 120000, err: "" }, 170363));
 
-  // Two runs in one repo: Approve ships the finished run's files, not the other run's unfinished ones.
+  // Two runs in one repo: Approve ships the files of runs that have ended, ticked or not,
+  // and holds only a run still going (its lock, with a live pid) and what no run touched.
   const rfRepo = build("ship-runs", `git init -q -b main && git config user.email ci@symbiot.test && git config user.name "Symbiot CI" && echo a > a.txt && echo r > route.txt && echo p > pkg.txt && git add . && git commit -qm init && mkdir .symbiot`);
   const gr = (a) => execSync("git " + a, { cwd: rfRepo, encoding: "utf8", env: gitEnv }).trim();
   const runs = (list) => writeFileSync(join(rfRepo, ".symbiot", "runfiles.json"), JSON.stringify(list));
+  const lockB = join(rfRepo, ".symbiot", "agent.pid"), going = async (fn) => { writeFileSync(lockB, JSON.stringify({ pid: process.pid, id: "B", startedAt: Date.now() })); try { return await fn(); } finally { rmSync(lockB, { force: true }); } };
   writeFileSync(join(rfRepo, "a.txt"), "A\n"); writeFileSync(join(rfRepo, "route.txt"), "wip\n"); writeFileSync(join(rfRepo, "pkg.txt"), "both\n");
   runs([{ id: "A", ticked: 1, files: ["a.txt"] }, { id: "B", ticked: 0, files: ["route.txt"] }]);
   const rA = await shipChanges(rfRepo, ["Run A's task"], { push: false });
-  ok("approving run A commits only run A's files (b's unfinished edit stays put, and is said)", rA.ok && gr("show --name-only --format= HEAD") === "a.txt", [rA, gr("show --name-only --format= HEAD")]);
-  ok("...leaving the other run's files uncommitted, named in the note", / M route\.txt/.test(gr("status --porcelain")) && /2 files no finished run touched were left out \(pkg\.txt, route\.txt\)/.test(rA.note || ""), [rA.note, gr("status --porcelain")]);
-  runs([{ id: "A", ticked: 1, files: ["route.txt"] }, { id: "B", ticked: 0, files: ["route.txt"] }]);
-  const rS = await shipChanges(rfRepo, ["Run A's task"], { push: false });
-  ok("a file both a finished and an unfinished run touched stops and asks, with nothing committed", rS.ask && rS.shared.join() === "route.txt" && !rS.ok && gr("log --oneline").split("\n").length === 2, rS);
+  ok("a run that ended without a tick is finished too: its files ship with the ticked run's; a file no run touched stays put, and is said", rA.ok && gr("show --name-only --format= HEAD") === "a.txt\nroute.txt" && /\bM pkg\.txt/.test(gr("status --porcelain")) && /1 file not from a finished run \(yours, or a run still going\) was left out \(pkg\.txt\)/.test(rA.note || ""), [rA, gr("show --name-only --format= HEAD"), gr("status --porcelain")]);
+  writeFileSync(join(rfRepo, "route.txt"), "wip2\n"); runs([{ id: "A", ticked: 1, files: ["route.txt"] }, { id: "B", ticked: 0, files: ["route.txt"] }]);
+  const rS = await going(() => shipChanges(rfRepo, ["Run A's task"], { push: false }));
+  ok("a file both a finished run and one still going touched stops and asks, with nothing committed", rS.ask && rS.shared.join() === "route.txt" && !rS.ok && gr("log --oneline").split("\n").length === 2, rS);
   ok("...in plain words, no file names in the question, flagged as waiting", rS.waiting && !/route\.txt/.test(rS.error) && /still working/.test(rS.error), rS.error);
-  const rS2 = await shipChanges(rfRepo, ["Run A's task"], { push: false, allowShared: true });
+  const rS2 = await going(() => shipChanges(rfRepo, ["Run A's task"], { push: false, allowShared: true }));
   ok("...and ships it once the user says yes", rS2.ok && gr("show --name-only --format= HEAD") === "route.txt", rS2);
+  runs([{ id: "B", ticked: 0, files: ["pkg.txt"] }]);
+  const rH = await going(() => shipChanges(rfRepo, ["Held"], { push: false }));
+  ok("a run still going holds its files: nothing of its goes out", rH.ok && rH.nothing && /1 file not from a finished run .* left out \(pkg\.txt\)/.test(rH.note || "") && /\bM pkg\.txt/.test(gr("status --porcelain")), [rH, gr("status --porcelain")]);
   writeFileSync(join(rfRepo, "a.txt"), "again\n"); runs([{ id: "C", ticked: 1, files: ["a.txt"] }]);
   const rN = await shipChanges(rfRepo, [], { push: false });
   ok("changes with no task behind them are a question, not a commit", rN.ask && rN.untasked && !rN.ok && rN.files.join() === "a.txt" && /M a\.txt/.test(gr("status --porcelain")), rN);
   const rN2 = await shipChanges(rfRepo, [], { push: false, confirm: true });
   ok("...committed once confirmed, and the committed files leave the run record", rN2.ok && rN2.subject === "symbiot: changes approved without a task" && !existsSync(join(rfRepo, ".symbiot", "runfiles.json")), [rN2, gr("status --porcelain")]);
+  // a .env you (or the agent) staged earlier rode into the commit while the note said it was left out (15 Oct 2026)
+  gr("switch -q main"); writeFileSync(join(rfRepo, "a.txt"), "staged-case\n"); writeFileSync(join(rfRepo, "prod.env"), "SECRET=1\n"); gr("add prod.env"); runs([{ id: "D", ticked: 1, files: ["a.txt"] }]);
+  const rI = await shipChanges(rfRepo, ["Only mine"], { push: false });
+  ok("a file staged earlier that no run touched isn't committed: the commit takes Approve's paths only, and it stays staged", rI.ok && gr("show --name-only --format= HEAD") === "a.txt" && /^A  prod\.env$/m.test(gr("status --porcelain")) && /prod\.env/.test(rI.note || ""), [rI, gr("show --name-only --format= HEAD"), gr("status --porcelain")]);
+  // a commit that fails after the branch was made: the checkout goes back and the branch goes
+  gr("switch -q main"); gr("reset -q"); writeFileSync(join(rfRepo, "a.txt"), "hooked\n"); runs([{ id: "E", ticked: 1, files: ["a.txt"] }]);
+  mkdirSync(join(rfRepo, ".git", "hooks"), { recursive: true }); writeFileSync(join(rfRepo, ".git", "hooks", "pre-commit"), "#!/bin/sh\nexit 1\n", { mode: 0o755 });
+  const rF = await shipChanges(rfRepo, ["Hooked"], { push: false }); rmSync(join(rfRepo, ".git", "hooks", "pre-commit"));
+  ok("a failed commit leaves no empty symbiot/ branch behind: back on main, the branch deleted, the change still there", rF.error && /Commit failed/.test(rF.error) && gr("rev-parse --abbrev-ref HEAD") === "main" && !/symbiot\/hooked/.test(gr("branch")) && readFileSync(join(rfRepo, "a.txt"), "utf8") === "hooked\n", [rF, gr("branch")]);
 
   console.log("REVIEW — agent ticks -> awaiting review (not archived) -> send back / approve");
   // isolated HOME: the cycle reads and writes Symbiot's real task store
@@ -801,6 +840,13 @@ try {
     try { out.longBrief = readFileSync(f.replace("TASKS.md", "TASKS.next.md"), "utf8"); } catch { out.longBrief = readFileSync(f, "utf8"); } // held: the stand-in agent started above may still run
     try { out.longFull = readFileSync(f.replace("TASKS.md", "full/" + out.long.id + ".md"), "utf8"); } catch {}
     out.longAgain = m.addTask(longText, "revapp", { after: "(handed over by ops)" });
+    // a clash with main: the rebase is the agent's task, added and started at once, not yours
+    const { execSync } = await import("node:child_process"); const sh = (c) => execSync(c, { cwd: ${JSON.stringify(proj)}, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+    sh("git init -q --bare -b main ../revapp-remote.git && git remote add origin ../revapp-remote.git && git push -q origin main && git fetch -q origin && git remote set-head origin main");
+    sh("git clone -q --branch main ../revapp-remote.git ../revapp-other && git -C ../revapp-other config user.email o@o && git -C ../revapp-other config user.name o && echo theirs > ../revapp-other/a.txt && git -C ../revapp-other commit -qam moved && git -C ../revapp-other push -q origin main");
+    writeFileSync(${JSON.stringify(join(proj, "a.txt"))}, "mine\\n");
+    for (let i = 0; i < 100 && (m.pendingReview().find((r) => r.repo === "revapp") || {}).running; i++) await new Promise((r) => setTimeout(r, 100)); // the stand-in runs above end on the next turns
+    out.clash = await m.approveChanges("revapp", { confirm: true }); out.clashTasks = tasks().filter((x) => /^Rebase symbiot\\//.test(x.text)); out.clashMd = readFileSync(f, "utf8"); out.clashCard = m.pendingReview().find((r) => r.repo === "revapp");
     console.log(JSON.stringify(out));`;
   mkdirSync(join(home, ".config", "symbiot"), { recursive: true });
   writeFileSync(join(home, ".config", "symbiot", "tasks.json"), JSON.stringify([{ id: "t1", text: "Fix the bug", repo: "revapp", done: false, ts: 1 }]));
@@ -835,6 +881,9 @@ try {
   ok("the same text in another repo, or once the first is done, is a new task", o.d3 && !o.d3.duplicate && o.d3.id !== o.d1.id && o.d4 && !o.d4.duplicate && o.d4.id !== o.d1.id && o.dCount === 3, [o.d3, o.d4, o.dCount]);
   ok("the same task with different punctuation is a duplicate, kept in its first words", o.n2 && o.n2.duplicate && o.n2.id === o.n1.id && !o.n2.reworded && o.n2.text === o.n1.text, [o.n1, o.n2]);
   ok("the same task with a clause more is a duplicate that takes the longer words, and not back", o.e2 && o.e2.duplicate && o.e2.reworded && o.e2.id === o.e1.id && /Also/.test(o.e2.text) && o.e3 && o.e3.duplicate && /Also/.test(o.e3.text) && o.nCount === 2, [o.e2, o.e3, o.nCount]);
+  const clsh = o.clash || {}, clTask = (o.clashTasks || [])[0];
+  ok("a clash with main on Approve: committed, not pushed, and the rebase becomes the agent's task on that lane, in its brief, started at once", clsh.ok && clsh.unsent === "conflicts" && clsh.fix && clsh.fix.started === true && clTask && !clTask.done && clTask.id === clsh.fix.id && clsh.branch && clTask.text.startsWith("Rebase " + clsh.branch + " onto origin/main") && (o.clashMd || "").includes("- [ ] Rebase " + clsh.branch + " onto origin/main") && /added a task for the agent to rebase it, and starts it now/.test(clsh.note || ""), [clsh.fix, clsh.unsent, clsh.branch, clsh.note, clTask && clTask.text.slice(0, 60), (o.clashMd || "").split("\n").filter((l) => /^- \[/.test(l))]);
+  ok("...and the review card keeps that task on its unsent note", o.clashCard && o.clashCard.unsent && o.clashCard.unsent.why === "conflicts" && o.clashCard.unsent.fix && o.clashCard.unsent.fix.id === clsh.fix.id, o.clashCard);
   ok("a short task with more words on the end is still its own task", o.short2 && !o.short2.duplicate && o.short2.id !== o.short1.id, [o.short1, o.short2]);
   ok("an agent's tick on the old wording still sends the reworded task to review", o.eAfter && o.eAfter.review === true, o.eAfter);
   const lg = o.long || {};
@@ -897,8 +946,20 @@ try {
   const nl2 = await learnNpm([nbm], npmAt), nb2 = bumpOffer(nbm); npmReg.close();
   ok("no v* tag: offered once npm has the committed version (a repo that publishes on merge)", nb0 === null && nl1 === true && nb1 && nb1.version === "1.2.3" && nb1.minor === "1.3.0", [nb0, nl1, nb1]);
   ok("no v* tag: not offered for a version npm doesn't have", nl2 === false && nb2 === null, [nl2, nb2]);
+  const thr = build("release-throw", `git init -q -b main && git config user.email t@x.co && git config user.name T && echo '{"name":"x","version":"1.0.0"}' > package.json && git add . && git commit -qm init && git tag v1.0.0
+    git clone -q --bare . ../release-throw-remote.git && git remote add origin ../release-throw-remote.git && git fetch -q origin && git remote set-head origin main && echo a > a.txt`);
+  const bth = await shipWithBump(thr, ["Throws"], { pr: false, bump: "patch", verify: async () => { throw new Error("boom"); } });
+  ok("a throw inside the ship is an error, not a crash; a bump committed already stays committed (the tree isn't un-bumped under it)", bth.error === "Approve failed: boom" && /"1\.0\.1"/.test(execSync("git show HEAD:package.json", { cwd: thr, env: gitEnv, encoding: "utf8" })) && /"1\.0\.1"/.test(readFileSync(join(thr, "package.json"), "utf8")), [bth, readFileSync(join(thr, "package.json"), "utf8")]);
   ok("a ship that fails puts the version back", bfl.error && /Detached HEAD/.test(bfl.error) && /"2\.4\.0"/.test(readFileSync(join(bmp, "package.json"), "utf8")) && /"2\.4\.0"/.test(readFileSync(join(bmp, "package-lock.json"), "utf8")), [bfl, readFileSync(join(bmp, "package.json"), "utf8")]);
   ok("a repo with no CHANGELOG.md doesn't get one", !existsSync(join(bmp, "CHANGELOG.md")), "");
+  // two batches cut from main were both offered the same version: the second published nothing (#122)
+  const bop = build("release-bump-open", `git init -q -b main && git config user.email t@x.co && git config user.name T && echo '{"name":"x","version":"1.2.3"}' > package.json && git add . && git commit -qm init && git tag v1.2.3
+    git clone -q --bare . ../release-bump-open-remote.git && git remote add origin ../release-bump-open-remote.git && git fetch -q origin && git remote set-head origin main
+    git switch -q -c symbiot/one && echo '{"name":"x","version":"1.2.4"}' > package.json && git commit -qam bump && git push -q -u origin symbiot/one && git switch -q main`);
+  const bo1 = bumpOffer(bop);
+  execSync(`git switch -q -c tmp && echo '{"name":"x","version":"1.2.6"}' > package.json && git commit -qam merged && git push -q origin tmp:main && git switch -q main && git branch -q -D tmp && git fetch -q origin`, { cwd: bop, env: gitEnv });
+  const bo2 = bumpOffer(bop);
+  ok("the bump offer counts from the highest version on origin: an open symbiot/ branch's bump PR, then a merged bump not pulled here, and says which", bo1 && bo1.version === "1.2.3" && bo1.patch === "1.2.5" && bo1.minor === "1.3.0" && JSON.stringify(bo1.taken) === '["1.2.4 on origin/symbiot/one"]' && bo2 && bo2.patch === "1.2.7" && bo2.minor === "1.3.0" && bo2.taken.length === 2, [bo1, bo2]);
 
   console.log("CHANGELOG — Approve's bump writes the release into a repo's CHANGELOG.md");
   const clg = build("release-log", `git init -q -b main && git config user.email t@x.co && git config user.name T
@@ -1863,8 +1924,9 @@ try {
   ok("…not straight after the last run ended (lanes start the next within 20s)", due({ now: 1000 + 30000 }).why === "settling" && due({ idleSince: 0 }).why === "settling", due({ now: 1000 + 30000 }));
   ok("…not when it's current, already updating, or that version already failed (Try again is the user's)", due({ latest: "0.63.10" }).why === "current" && due({ latest: "" }).why === "current" && due({ updating: { target: "0.64.0" } }).why === "updating" && due({ failed: { target: "0.64.0" } }).why === "failed" && due({ failed: { target: "0.63.11" } }).go === true, "");
   ok("…never in a sandbox, the desktop app, or with autoUpdate off", ["sandbox", "desktop", "off"].every((k) => due({ [k]: true }).why === "off"), "");
-  const rws = (o) => restartWouldStop({ handoffs: [], paths: [], running: () => null, browser: () => false, away: () => false, ...o });
+  const rws = (o) => restartWouldStop({ handoffs: [], paths: [], running: () => null, browser: () => false, away: () => false, ships: () => [], ...o });
   ok("what a restart would stop: nothing", rws() === "", rws());
+  ok("…an Approve still shipping (its git and npm children would outlive the app, its bookkeeping never run)", rws({ ships: () => ["/a"] }) === "an Approve is still shipping", rws({ ships: () => ["/a"] }));
   ok("…this app's runs and runs another Symbiot started (a lane's lock), each folder once; its own npm install isn't one", rws({ handoffs: [{ status: "running", path: "/a", name: "Agent: x" }, { status: "done", path: "/b" }, { status: "running", path: "/h", name: "symbiot update" }], paths: ["/a", "/c", "/d"], running: (p) => p === "/a" || p === "/c" }) === "2 agents are working" && rws({ paths: ["/c"], running: (p) => p === "/c" }) === "an agent is working", rws({ handoffs: [{ status: "running", path: "/a", name: "Agent: x" }], paths: ["/a", "/c"], running: (p) => p === "/a" || p === "/c" }));
   ok("…a sign-in in the Symbiot Browser, or Away", rws({ browser: () => true }) === "the Symbiot Browser is open" && rws({ away: () => true }) === "Away is open", "");
   const log404 = "=== symbiot update 2026-10-12T05:02:52.078Z ===\n$ npm install -g symbiot@0.63.3 --prefer-online\nnpm error code E404\nnpm error 404 Not Found - GET https://registry.npmjs.org/symbiot/-/symbiot-0.63.3.tgz - Not found\nnpm error 404\nnpm error 404  'symbiot@https://registry.npmjs.org/symbiot/-/symbiot-0.63.3.tgz' is not in this registry.\nnpm error A complete log of this run can be found in: /x.log\n";
