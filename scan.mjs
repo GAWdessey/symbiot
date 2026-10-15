@@ -6,8 +6,8 @@ import { Worker } from "node:worker_threads";
 import { spawnSync } from "node:child_process";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { readFileSync, existsSync, statSync, readdirSync, writeFileSync, mkdirSync } from "node:fs";
-import { VERSION, loadConfig, saveConfig, sh, repoState } from "./core.mjs";
+import { readFileSync, existsSync, statSync, readdirSync, writeFileSync, mkdirSync, openSync, readSync, closeSync } from "node:fs";
+import { VERSION, loadConfig, saveConfig, sh, runOut, gitOut, repoState } from "./core.mjs";
 import { detectHandoffs } from "./agents.mjs";
 import { PROVIDERS, resolveProvider } from "./ai.mjs";
 import { mapKnn } from "./mapknn.mjs";
@@ -91,14 +91,14 @@ function me() {
 function authorship(repoPath) {
   const gName = sh("git config --global user.name 2>/dev/null").trim();
   const gEmail = sh("git config --global user.email 2>/dev/null").trim();
-  const rEmail = sh(`git -C ${JSON.stringify(repoPath)} config user.email 2>/dev/null`).trim();
-  const rName = sh(`git -C ${JSON.stringify(repoPath)} config user.name 2>/dev/null`).trim();
-  const total = Number(sh(`git -C ${JSON.stringify(repoPath)} rev-list --count HEAD 2>/dev/null`).trim()) || 0;
-  const rows = sh(`git -C ${JSON.stringify(repoPath)} log --format='%ae|%an' 2>/dev/null | sort | uniq -c | sort -rn | head -60`)
-    .split("\n").map((l) => l.trim()).filter(Boolean).map((l) => {
-      const m = l.match(/^(\d+)\s+(.*)$/); if (!m) return null;
-      const parts = m[2].split("|"); return { count: Number(m[1]), email: parts[0], name: parts.slice(1).join("|") };
-    }).filter(Boolean);
+  const rEmail = gitOut(repoPath, ["config", "user.email"]).trim();
+  const rName = gitOut(repoPath, ["config", "user.name"]).trim();
+  const total = Number(gitOut(repoPath, ["rev-list", "--count", "HEAD"]).trim()) || 0;
+  // each author (email|name) with their commit count, most first, top 60
+  const tally = new Map();
+  for (const l of gitOut(repoPath, ["log", "--format=%ae|%an"]).split("\n")) if (l.trim()) tally.set(l.trim(), (tally.get(l.trim()) || 0) + 1);
+  const rows = [...tally].sort((a, b) => b[1] - a[1]).slice(0, 60)
+    .map(([who, count]) => { const parts = who.split("|"); return { count, email: parts[0], name: parts.slice(1).join("|") }; });
   const myEmails = new Set([rEmail, gEmail].filter(Boolean));
   const myNames = new Set([gName, rName].filter(Boolean).map((n) => n.toLowerCase()));
   const nameKeys = new Set([...myNames].map((n) => n.replace(/\s+/g, "")));
@@ -116,18 +116,19 @@ function authorship(repoPath) {
   const emails = filterDropped ? rows.map((r) => r.email) : [...mine];
   return { emails, mineCount, total, filterDropped, names: [...new Set(rows.filter((r) => mine.has(r.email)).map((r) => r.email))] };
 }
-function authorArgs(emails) { return (emails || []).filter(Boolean).map((e) => `--author=${JSON.stringify(e)}`).join(" "); }
+// git log arguments that keep these authors' commits (an array, for gitOut)
+function authorArgs(emails) { return (emails || []).filter(Boolean).map((e) => `--author=${e}`); }
 
 function readmeInfo(repoPath) {
   for (const f of ["README.md", "README.MD", "Readme.md", "readme.md", "README.txt", "README"]) {
     try {
       const p = join(repoPath, f);
       if (existsSync(p)) {
-        const hash = sh(`git -C ${JSON.stringify(repoPath)} log -1 --format=%H -- ${JSON.stringify(f)} 2>/dev/null`).trim();
+        const hash = gitOut(repoPath, ["log", "-1", "--format=%H", "--", f]).trim();
         return {
           file: f, excerpt: readFileSync(p, "utf8").slice(0, 2500),
-          lastDate: sh(`git -C ${JSON.stringify(repoPath)} log -1 --format=%cd --date=short -- ${JSON.stringify(f)} 2>/dev/null`).trim(),
-          commitsAgo: hash ? (Number(sh(`git -C ${JSON.stringify(repoPath)} rev-list --count ${hash}..HEAD 2>/dev/null`).trim()) || 0) : 0,
+          lastDate: gitOut(repoPath, ["log", "-1", "--format=%cd", "--date=short", "--", f]).trim(),
+          commitsAgo: hash ? (Number(gitOut(repoPath, ["rev-list", "--count", `${hash}..HEAD`]).trim()) || 0) : 0,
         };
       }
     } catch {}
@@ -135,7 +136,7 @@ function readmeInfo(repoPath) {
   return { file: null, excerpt: "", lastDate: "", commitsAgo: 0 };
 }
 function repoShape(repoPath) {
-  const files = sh(`git -C ${JSON.stringify(repoPath)} ls-files 2>/dev/null | head -4000`).split("\n").filter(Boolean);
+  const files = gitOut(repoPath, ["ls-files"]).split("\n").filter(Boolean).slice(0, 4000);
   const top = {}; const docs = []; const manifests = [];
   for (const f of files) {
     const seg = f.includes("/") ? f.split("/")[0] : "(root)";
@@ -233,11 +234,8 @@ function commits(repos, sinceExpr, mineOnly = true) {
     // Match ALL of your identities in this repo (per-repo email, global email,
     // GitHub noreply login, matching name), with a fallback when almost nothing
     // matches an active repo. No filter with --all.
-    const authorArg = mineOnly ? authorArgs(authorship(r.path).emails) : "";
-    const raw = sh(
-      `git -C ${JSON.stringify(r.path)} log --since=${JSON.stringify(sinceExpr)} ${authorArg} ` +
-      `--no-merges --date=short --name-only --pretty=format:'@@@%H|%ad|%s' -n 60`,
-    );
+    const authorArg = mineOnly ? authorArgs(authorship(r.path).emails) : [];
+    const raw = gitOut(r.path, ["log", `--since=${sinceExpr}`, ...authorArg, "--no-merges", "--date=short", "--name-only", "--pretty=format:@@@%H|%ad|%s", "-n", "60"]);
     let cur = null;
     const flush = () => {
       if (cur && !seen.has(cur.h)) { seen.add(cur.h); all.push({ ...cur, repo: r.name }); }
@@ -256,11 +254,8 @@ function commits(repos, sinceExpr, mineOnly = true) {
 function openWork(repos) {
   const items = [];
   for (const r of repos) {
-    const todos = sh(
-      `git -C ${JSON.stringify(r.path)} grep -nEI '(TODO|FIXME|HACK)[:( ]' -- ` +
-      `'*.ts' '*.tsx' '*.js' '*.py' '*.go' '*.rs' '*.java' '*.sql' '*.vue' 2>/dev/null | head -8`,
-    );
-    for (const l of todos.split("\n").filter(Boolean)) {
+    const todos = gitOut(r.path, ["grep", "-nEI", "(TODO|FIXME|HACK)[:( ]", "--", "*.ts", "*.tsx", "*.js", "*.py", "*.go", "*.rs", "*.java", "*.sql", "*.vue"]);
+    for (const l of todos.split("\n").filter(Boolean).slice(0, 8)) {
       const m = l.match(/^([^:]+):(\d+):(.*)$/);
       if (m) items.push(`${r.name}: ${m[3].replace(/^[\s/*#-]+/, "").trim().slice(0, 120)} (${m[1]}:${m[2]})`);
     }
@@ -350,7 +345,7 @@ function findAllRepos(base) {
         if (scanExpired()) break;
         const repo = g.replace(/\/\.git$/, ""); scanTick(repo.split("/").pop());
         if (seen.has(repo)) continue; seen.add(repo);
-        const last = Number(sh(`git -C ${JSON.stringify(repo)} log -1 --format=%ct 2>/dev/null`).trim()) || 0;
+        const last = Number(gitOut(repo, ["log", "-1", "--format=%ct"]).trim()) || 0;
         if (last) repos.push({ path: repo, name: repo.split("/").pop(), recency: last });
       }
     }
@@ -361,7 +356,7 @@ function findAllRepos(base) {
     // (Not deadline-bound: it's what makes the result correct, and it's cheap.)
     const byCommon = {};
     for (const r of repos) {
-      const cd = sh(`git -C ${JSON.stringify(r.path)} rev-parse --git-common-dir 2>/dev/null`).trim() || join(r.path, ".git");
+      const cd = gitOut(r.path, ["rev-parse", "--git-common-dir"]).trim() || join(r.path, ".git");
       const key = cd.startsWith("/") ? cd : join(r.path, cd);
       const g = byCommon[key] || (byCommon[key] = { main: null, trees: [] });
       if (key === join(r.path, ".git")) g.main = r; else g.trees.push(r);
@@ -384,7 +379,7 @@ function aboutText(path) {
   return t.slice(0, 4000);
 }
 function detectRepo(r) {
-  const files = sh(`git -C ${JSON.stringify(r.path)} ls-files 2>/dev/null | head -3000`).split("\n").filter(Boolean);
+  const files = gitOut(r.path, ["ls-files"]).split("\n").filter(Boolean).slice(0, 3000);
   const count = {}; const tools = new Set();
   for (const f of files) {
     const base = f.split("/").pop();
@@ -393,13 +388,13 @@ function detectRepo(r) {
     if (EXT_LANG[ext]) count[EXT_LANG[ext]] = (count[EXT_LANG[ext]] || 0) + 1;
   }
   const langs = Object.entries(count).sort((a, b) => b[1] - a[1]).map((x) => x[0]);
-  const email = sh(`git -C ${JSON.stringify(r.path)} config user.email`).trim();
-  const mine = Number(sh(`git -C ${JSON.stringify(r.path)} log ${email ? `--author=${JSON.stringify(email)}` : ""} --oneline 2>/dev/null | wc -l`).trim()) || 0;
-  const branch = sh(`git -C ${JSON.stringify(r.path)} rev-parse --abbrev-ref HEAD 2>/dev/null`).trim();
-  const last = sh(`git -C ${JSON.stringify(r.path)} log -1 --format=%cd --date=short 2>/dev/null`).trim();
+  const email = gitOut(r.path, ["config", "user.email"]).trim(), byMe = email ? [`--author=${email}`] : [];
+  const mine = gitOut(r.path, ["log", ...byMe, "--oneline"]).split("\n").filter(Boolean).length;
+  const branch = gitOut(r.path, ["rev-parse", "--abbrev-ref", "HEAD"]).trim();
+  const last = gitOut(r.path, ["log", "-1", "--format=%cd", "--date=short"]).trim();
   // for the Map's neighbours (mapknn.mjs): your commits per week, 12 weeks, oldest first; and what it's about
   const weeks = Array(12).fill(0), now = Date.now();
-  for (const t of sh(`git -C ${JSON.stringify(r.path)} log ${email ? `--author=${JSON.stringify(email)}` : ""} --since=84.days --format=%ct 2>/dev/null`).split("\n").filter(Boolean)) { const w = Math.floor((now - Number(t) * 1000) / (7 * 86400000)); if (w >= 0 && w < 12) weeks[11 - w]++; }
+  for (const t of gitOut(r.path, ["log", ...byMe, "--since=84.days", "--format=%ct"]).split("\n").filter(Boolean)) { const w = Math.floor((now - Number(t) * 1000) / (7 * 86400000)); if (w >= 0 && w < 12) weeks[11 - w]++; }
   return { ...r, langs, tools: [...tools], mine, files: files.length, branch, last, weeks, text: aboutText(r.path) };
 }
 // Non-git PROJECT folders inside your scan roots (you added them = consent):
@@ -410,13 +405,17 @@ function findProjectFolders(root) {
   const dirs = new Set(); for (const m of manifests) dirs.add(m.replace(/\/[^/]+$/, ""));
   const out = [];
   for (const d of dirs) {
-    if (sh(`git -C ${JSON.stringify(d)} rev-parse --is-inside-work-tree 2>/dev/null`).trim() === "true") continue; // inside a repo already
+    if (gitOut(d, ["rev-parse", "--is-inside-work-tree"]).trim() === "true") continue; // inside a repo already
     out.push(d); if (out.length >= 24) break;
   }
   return out;
 }
+// A folder's files two levels down, past node_modules and .git (up to limit).
+function folderFiles(path, limit) {
+  return runOut("find", [path, "-maxdepth", "2", "(", "-name", "node_modules", "-o", "-name", ".git", ")", "-prune", "-o", "-type", "f", "-print"]).split("\n").filter(Boolean).slice(0, limit);
+}
 function detectFolder(path) {
-  const files = sh(`find ${JSON.stringify(path)} -maxdepth 2 \\( -name node_modules -o -name .git \\) -prune -o -type f -print 2>/dev/null | head -2000`).split("\n").filter(Boolean);
+  const files = folderFiles(path, 2000);
   const count = {}; const tools = new Set();
   for (const f of files) { const base = f.split("/").pop(); if (MANIFEST_TOOL[base]) tools.add(MANIFEST_TOOL[base]); const ext = (base.includes(".") ? base.split(".").pop() : "").toLowerCase(); if (EXT_LANG[ext]) count[EXT_LANG[ext]] = (count[EXT_LANG[ext]] || 0) + 1; }
   return { path, name: path.split("/").pop(), langs: Object.entries(count).sort((a, b) => b[1] - a[1]).map((x) => x[0]), tools: [...tools], files: files.length };
@@ -435,10 +434,22 @@ function detectFolder(path) {
 // signal there yet; add them here when there is.)
 const claudeEnc = (p) => String(p || "").replace(/[^a-zA-Z0-9]/g, "-");
 function sessionCwd(file) {
-  const head = sh(`head -c 262144 ${JSON.stringify(file)} 2>/dev/null`);
+  let head = "";
+  try { const fd = openSync(file, "r"), buf = Buffer.alloc(262144); try { head = buf.toString("utf8", 0, readSync(fd, buf, 0, buf.length, 0)); } finally { closeSync(fd); } } catch {}
   const m = head.match(/"cwd":"((?:[^"\\]|\\.)*)"/);
   if (!m) return "";
   try { return JSON.parse(`"${m[1]}"`); } catch { return ""; }
+}
+// The newest *.jsonl session in a Claude Code project folder: { file, mtimeMs } or null.
+function newestSession(dir) {
+  let best = null;
+  try {
+    for (const f of readdirSync(dir)) {
+      if (!f.endsWith(".jsonl")) continue;
+      try { const st = statSync(join(dir, f)); if (st.isFile() && (!best || st.mtimeMs > best.mtimeMs)) best = { file: join(dir, f), mtimeMs: st.mtimeMs }; } catch {}
+    }
+  } catch {}
+  return best;
 }
 const agentKey = (rootfs, enc) => (rootfs ? rootfs + "\0" : "") + enc;
 // The keys a project folder's history could be under: its path, and its path as
@@ -456,14 +467,13 @@ function claudeProjects() {
 }
 function readClaudeProjects(base, rootfs, out) {
   let dirs = [];
-  try { dirs = sh(`ls -1 ${JSON.stringify(base)} 2>/dev/null`).split("\n").filter(Boolean); } catch {}
+  try { dirs = readdirSync(base).sort(); } catch {}
   for (const enc of dirs) {
     let last = 0, path = "";
-    const newest = sh(`find ${JSON.stringify(join(base, enc))} -maxdepth 1 -name '*.jsonl' -printf '%T@ %p\\n' 2>/dev/null | sort -rn | head -1`).trim();
+    const newest = newestSession(join(base, enc));
     if (newest) {
-      const sp = newest.indexOf(" ");
-      last = parseInt(newest.slice(0, sp), 10) || 0;
-      const cwd = sessionCwd(newest.slice(sp + 1));
+      last = Math.floor(newest.mtimeMs / 1000);
+      const cwd = sessionCwd(newest.file);
       if (cwd && (claudeEnc(cwd) === enc || cwd.replace(/\//g, "-") === enc)) path = cwd; // only trust a cwd that matches this dir
     }
     if (!last) { try { last = Math.floor(statSync(join(base, enc)).mtimeMs / 1000); } catch {} }
@@ -588,9 +598,9 @@ async function nodeDetail(id) {
     const path = id.slice(5); const n = map.nodes.find((x) => x.id === id); const m = (n && n.meta) || {};
     return {
       type: "repo", label: n ? n.label : path.split("/").pop(), path,
-      branch: sh(`git -C ${JSON.stringify(path)} rev-parse --abbrev-ref HEAD 2>/dev/null`).trim(),
-      dirty: sh(`git -C ${JSON.stringify(path)} status --porcelain 2>/dev/null`).split("\n").filter(Boolean).length,
-      last: sh(`git -C ${JSON.stringify(path)} log -1 --format=%cd --date=short 2>/dev/null`).trim(),
+      branch: gitOut(path, ["rev-parse", "--abbrev-ref", "HEAD"]).trim(),
+      dirty: gitOut(path, ["status", "--porcelain"]).split("\n").filter(Boolean).length,
+      last: gitOut(path, ["log", "-1", "--format=%cd", "--date=short"]).trim(),
       commits: m.commits || 0, langs: m.langs || [], tools: m.tools || [], agents: m.agents || [],
     };
   }
@@ -631,4 +641,4 @@ function discoveredRepos() {
   return findAllRepos();
 }
 
-export { refreshRepos, reposState, REPO_STATE, laneMap, SCAN, SCAN_TIMEOUT_MS, setScanOptions, scanBegin, scanPhase, scanTick, scanExpired, scanEnd, me, authorship, authorArgs, readmeInfo, repoShape, houseRules, reportFooter, expandRoot, scanHome, scanBase, storageBlocked, prootDistros, prootHomes, scanRoots, addScanRoot, removeScanRoot, commits, openWork, findAllRepos, detectRepo, findProjectFolders, detectFolder, claudeProjects, buildMap, nodeDetail, repoPathMap, discoveredRepos };
+export { refreshRepos, reposState, REPO_STATE, laneMap, SCAN, SCAN_TIMEOUT_MS, setScanOptions, scanBegin, scanPhase, scanTick, scanExpired, scanEnd, me, authorship, authorArgs, folderFiles, readmeInfo, repoShape, houseRules, reportFooter, expandRoot, scanHome, scanBase, storageBlocked, prootDistros, prootHomes, scanRoots, addScanRoot, removeScanRoot, commits, openWork, findAllRepos, detectRepo, findProjectFolders, detectFolder, claudeProjects, buildMap, nodeDetail, repoPathMap, discoveredRepos };

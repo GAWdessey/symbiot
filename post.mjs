@@ -28,7 +28,7 @@ import { readFileSync, writeFileSync, appendFileSync, mkdirSync, chmodSync, exis
 import { spawn, spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { connect } from "node:net";
-import { CONFIG_DIR, sh, hasCmd, loadConfig } from "./core.mjs";
+import { CONFIG_DIR, sh, runOut, gitOut, hasCmd, loadConfig } from "./core.mjs";
 import { resolveProvider, write } from "./ai.mjs";
 import { commits, discoveredRepos, laneMap } from "./scan.mjs";
 import { readTexts, pagePicture, pageClip, siteUrl, CLIP } from "./headless.mjs";
@@ -42,7 +42,6 @@ const SHARE_URL = "https://www.linkedin.com/feed/?shareActive=true";
 const KINDS = ["shipped", "learned", "long"];
 const KIND_LABEL = { shipped: "Shipped", learned: "Learned / fixed", long: "Longer post" };
 const MAX_FACTS = 120, MAX_TEXT = 3000, KEEP = 200; // LinkedIn takes 3000 characters a post
-const q = (s) => JSON.stringify(String(s));
 
 const NO_AI = "Symbiot needs an AI to draft your posts, and none is connected. Connect one with  symbiot login  (or Settings in the app), then run  symbiot post  again. Nothing was drafted, saved or logged.";
 const noVoice = (file) => `Symbiot drafts posts in your voice, from examples of your own posts, and has none yet. Either link LinkedIn (Marketing → Link LinkedIn, sign in once) and click Fill from LinkedIn (or run  symbiot post voice --linkedin), or paste 5–10 posts you wrote into ${file}, with a line of --- between each. Nothing was drafted.`;
@@ -78,13 +77,13 @@ async function voiceFromLinkedIn({ read = readTexts, paths = PATHS, max = 10 } =
 // ---- the facts: what git shows for the week ---------------------------------------
 // Release tags made in the window: [{ tag, date }].
 function tagsIn(path, since) {
-  return sh(`git -C ${q(path)} for-each-ref refs/tags --sort=-creatordate --count=12 --format='%(refname:short)|%(creatordate:short)' 2>/dev/null`)
+  return gitOut(path, ["for-each-ref", "refs/tags", "--sort=-creatordate", "--count=12", "--format=%(refname:short)|%(creatordate:short)"])
     .split("\n").map((l) => l.split("|")).filter((x) => x[0] && x[1] && x[1] >= since).map(([tag, date]) => ({ tag, date }));
 }
 // gh's releases in the window, when gh is there and signed in: [{ tag, name, date }].
 function ghReleasesIn(path, since) {
-  if (!/github\.com/.test(sh(`git -C ${q(path)} remote get-url origin 2>/dev/null`))) return [];
-  try { return JSON.parse(sh(`cd ${q(path)} && gh release list --limit 10 --json tagName,name,publishedAt 2>/dev/null`) || "[]").map((r) => ({ tag: r.tagName, name: r.name || "", date: String(r.publishedAt || "").slice(0, 10) })).filter((r) => r.tag && r.date >= since); } catch { return []; }
+  if (!/github\.com/.test(gitOut(path, ["remote", "get-url", "origin"]))) return [];
+  try { return JSON.parse(runOut("gh", ["release", "list", "--limit", "10", "--json", "tagName,name,publishedAt"], { cwd: path }) || "[]").map((r) => ({ tag: r.tagName, name: r.name || "", date: String(r.publishedAt || "").slice(0, 10) })).filter((r) => r.tag && r.date >= since); } catch { return []; }
 }
 // CHANGELOG.md's sections whose heading has a date in the window, each bullet a
 // line: [{ version, date, text }]. "## 0.46.1 — 2026-10-06" or "## [1.2.0] - 2026-10-01".
@@ -115,7 +114,7 @@ function gatherFacts({ days = 7, now = Date.now(), repos, gh } = {}) {
     for (const g of ghr) add(rel, { repo: r.name, date: g.date, kind: "release", text: `released ${g.tag}${g.name && g.name !== g.tag ? ` "${g.name}"` : ""}` });
     for (const t of tags) add(rel, { repo: r.name, date: t.date, kind: "release", text: `released ${t.tag}` });
     for (const n of notes) add(log, { repo: r.name, date: n.date, kind: "changelog", text: `${n.version ? n.version + ": " : ""}${n.text}` });
-    if (sh(`git -C ${q(r.path)} log --since=${q(sinceIso)} --oneline -1 2>/dev/null`).trim()) active.push(r);
+    if (gitOut(r.path, ["log", `--since=${sinceIso}`, "--oneline", "-1"]).trim()) active.push(r);
   }
   let cs = commits(active, sinceIso, true); if (!cs.length) cs = commits(active, sinceIso, false);
   const work = []; for (const c of cs) add(work, { repo: c.repo, date: c.date, kind: "commit", text: c.subject.slice(0, 300) });

@@ -7,7 +7,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { join } from "node:path";
 import { readFileSync, writeFileSync, existsSync, readdirSync, mkdirSync, statSync, unlinkSync } from "node:fs";
 import { randomBytes } from "node:crypto";
-import { VERSION, LATEST_VERSION, REGISTRY, semverGt, loadConfig, saveConfig, loadTasks, saveTasks, TASK_MAX, clipWords, taskWords, sameTask, uniqueTasks, sh, hasCmd, repoState } from "./core.mjs";
+import { VERSION, LATEST_VERSION, REGISTRY, semverGt, loadConfig, saveConfig, loadTasks, saveTasks, TASK_MAX, clipWords, taskWords, sameTask, uniqueTasks, gitOut, hasCmd, repoState } from "./core.mjs";
 import { handoverRules, ONLY_YOU, HANDBACK } from "./handover.mjs";
 import { laneReach } from "./reach.mjs";
 import { doneBrief, standingBrief } from "./asksdone.mjs";
@@ -1044,7 +1044,7 @@ function pushTasks(filter) {
       // Cheap, per-repo signals only — no full drift scan (that can be very slow
       // on big repos and would block the request).
       const st = repoState(path);
-      const commits = sh(`git -C ${JSON.stringify(path)} log --format='%s' -10 2>/dev/null`).split("\n").filter(Boolean);
+      const commits = gitOut(path, ["log", "--format=%s", "-10"]).split("\n").filter(Boolean);
       const open = openWork([{ path, name }]).slice(0, 12);
       const det = detectRepo({ path, name, recency: 0 });
       const stack = [...det.langs.slice(0, 4), ...det.tools].join(", ");

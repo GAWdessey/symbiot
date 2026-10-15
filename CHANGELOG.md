@@ -2,6 +2,11 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.65.3 — 2026-10-15
+
+- Security: a folder, branch or commit author's email with `$(…)`, backticks or quotes in its name could run as a command when Symbiot read the repo (the scan, Map, drift, week and post write-ups). git, gh and find are now handed their arguments directly, with no shell in between, so a name is only ever a name.
+- Also ships 0.65.2, whose release didn't reach npm.
+
 ## 0.65.2 — 2026-10-14
 
 - Home no longer keeps a standing "Sign in again to 10 sites" card for every linked site that has signed out. An agent asks for one site, with its Sign in button, only when its job needs it; Settings → Connections still shows which are signed out.

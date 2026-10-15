@@ -4,11 +4,11 @@
 import { languageLine } from "./lang.mjs";
 import { join } from "node:path";
 import { readFileSync, existsSync } from "node:fs";
-import { VERSION, loadConfig, saveConfig, loadTasks, saveTasks, sh, repoState } from "./core.mjs";
+import { VERSION, loadConfig, saveConfig, loadTasks, saveTasks, gitOut, repoState } from "./core.mjs";
 import { resolveProvider, write } from "./ai.mjs";
 import { detectMailSources, mailActivity } from "./mail.mjs";
 import { waitingOn, newsSince } from "./watch.mjs";
-import { me, authorship, authorArgs, readmeInfo, repoShape, houseRules, reportFooter, expandRoot, commits, openWork, detectFolder, laneMap, discoveredRepos } from "./scan.mjs";
+import { me, authorship, authorArgs, folderFiles, readmeInfo, repoShape, houseRules, reportFooter, expandRoot, commits, openWork, detectFolder, laneMap, discoveredRepos } from "./scan.mjs";
 import { taskType, workingChanges, workingDiff, changelogEntry } from "./tasks.mjs";
 import { converse, actNow, actIn, taskIn } from "./mind.mjs";
 
@@ -23,13 +23,13 @@ async function repoReview(path) {
   if (!path) return { error: "no repo" };
   const name = path.split("/").pop();
   const auth = authorship(path), state = repoState(path), rd = readmeInfo(path), shape = repoShape(path), rules = houseRules(path);
-  const commits = sh(`git -C ${JSON.stringify(path)} log ${authorArgs(auth.emails)} --format='%ad %s' --date=short -50 2>/dev/null`).trim()
-    || sh(`git -C ${JSON.stringify(path)} log --format='%ad %s' --date=short -50 2>/dev/null`).trim();
+  const commits = gitOut(path, ["log", ...authorArgs(auth.emails), "--format=%ad %s", "--date=short", "-50"]).trim()
+    || gitOut(path, ["log", "--format=%ad %s", "--date=short", "-50"]).trim();
   const footer = reportFooter(path, auth, state, rd);
   // Cheap maturity gauge, so the model can be told to show restraint instead of
   // always inventing new features (over-engineering is a failure, not a win).
-  const testFiles = Number(sh(`git -C ${JSON.stringify(path)} ls-files 2>/dev/null | grep -icE '(^|/)(tests?|spec|__tests__)/|\\.(test|spec)\\.'`).trim()) || 0;
-  const churn = Number(sh(`git -C ${JSON.stringify(path)} log --since='14 days ago' --oneline 2>/dev/null | wc -l`).trim()) || 0;
+  const testFiles = gitOut(path, ["ls-files"]).split("\n").filter((f) => /(^|\/)(tests?|spec|__tests__)\/|\.(test|spec)\./i.test(f)).length;
+  const churn = gitOut(path, ["log", "--since=14 days ago", "--oneline"]).split("\n").filter(Boolean).length;
   const posture = state.stale ? "the checkout is a stale snapshot — the priority is getting current, not new work"
     : (testFiles === 0 && shape.total > 40) ? "a real codebase with NO test files — favour tests/stabilising over new features"
     : (churn >= 25) ? "very rapid churn lately — likely over-iterating; be conservative, prefer consolidation/finishing over new features"
@@ -81,8 +81,8 @@ async function repoSuggest(path) {
   if (!path) return { error: "no repo" };
   const name = path.split("/").pop();
   const auth = authorship(path), state = repoState(path), rd = readmeInfo(path), rules = houseRules(path);
-  const recent = sh(`git -C ${JSON.stringify(path)} log ${authorArgs(auth.emails)} --format='%ad %s' --date=short -50 2>/dev/null`).trim()
-    || sh(`git -C ${JSON.stringify(path)} log --format='%ad %s' --date=short -50 2>/dev/null`).trim();
+  const recent = gitOut(path, ["log", ...authorArgs(auth.emails), "--format=%ad %s", "--date=short", "-50"]).trim()
+    || gitOut(path, ["log", "--format=%ad %s", "--date=short", "-50"]).trim();
   const open = openWork([{ path, name }]);
   const footer = reportFooter(path, auth, state, rd);
   const system =
@@ -104,7 +104,7 @@ async function folderSuggest(path) {
   if (!resolveProvider()) return { error: "not-connected" };
   if (!path) return { error: "no path" };
   const det = detectFolder(path);
-  const files = sh(`find ${JSON.stringify(path)} -maxdepth 2 \\( -name node_modules -o -name .git \\) -prune -o -type f -print 2>/dev/null | head -200`).split("\n").filter(Boolean);
+  const files = folderFiles(path, 200);
   const rels = files.map((f) => f.slice(path.length + 1));
   const pick = (names) => { for (const n of names) { const hit = files.find((f) => f.split("/").pop().toLowerCase() === n); if (hit) { try { return readFileSync(hit, "utf8").slice(0, 2000); } catch {} } } return ""; };
   const manifest = pick(["package.json", "requirements.txt", "pyproject.toml", "go.mod", "cargo.toml", "pom.xml", "composer.json", "gemfile", "pubspec.yaml"]);
@@ -136,7 +136,7 @@ async function taskChat(id, question) {
   const ctx = [];
   if (path) {
     const isGit = existsSync(join(path, ".git"));
-    if (isGit) ctx.push(`Recent commits:\n${sh(`git -C ${JSON.stringify(path)} log --format='%ad %s' --date=short -15 2>/dev/null`).trim() || "(none)"}`);
+    if (isGit) ctx.push(`Recent commits:\n${gitOut(path, ["log", "--format=%ad %s", "--date=short", "-15"]).trim() || "(none)"}`);
     else { const det = detectFolder(path); ctx.push(`Project folder (not a git repo) · ${det.files} files · ${[...det.langs, ...det.tools].join(", ") || "unknown stack"}`); }
     const rd = readmeInfo(path); if (rd.excerpt) ctx.push(`README excerpt:\n${rd.excerpt.slice(0, 1500)}`);
     const rules = houseRules(path); if (rules) ctx.push(`Conventions — do NOT advise against these:\n${rules}`);
@@ -237,7 +237,7 @@ async function produce(cmd, { since = 7, all: everyone = false } = {}) {
   const who = me();
   // Discover the Map's repo set, then keep only those with commits in the window.
   const all = discoveredRepos();
-  const repos = all.filter((r) => sh(`git -C ${JSON.stringify(r.path)} log --since="${days} days ago" --oneline -1 2>/dev/null`).trim());
+  const repos = all.filter((r) => gitOut(r.path, ["log", `--since=${days} days ago`, "--oneline", "-1"]).trim());
   const mail = sentMail(days); // [] unless email is switched on
   const waiting = label === "standup" ? waitingOn(WAITING_HOURS) : [], line = waitingLine(waiting);
   const waitNote = waiting.length ? " · " + waiting.map((g) => g.label).join(", ") + " waiting" : "";
