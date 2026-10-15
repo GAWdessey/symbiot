@@ -9,12 +9,23 @@ import { loadConfig, saveConfig, sh, hasCmd, CONFIG_DIR } from "./core.mjs";
 
 const MAX_TOKENS = 1600;
 
+// The one table of Claude model ids (route.mjs, FAST_MODEL, aboveFloor, recommendModels
+// all read it): four places each had their own, and two were a generation behind
+// (claude-haiku-4-5 at 10× Haiku 5.5's price, 15 Oct 2026). alias: what Claude Code's
+// --model takes for it. An API key's default is Sonnet: a week summary needs no Opus.
+const MODELS = {
+  haiku:  { id: "claude-haiku-5-5",  alias: "haiku" },
+  sonnet: { id: "claude-sonnet-5-5", alias: "sonnet" },
+  opus:   { id: "claude-opus-5-5",   alias: "opus" },
+  local:  { id: "qwen3:8b" },
+};
+
 // The providers Symbiot can write with. Models are sensible defaults; override
 // per provider at login, or globally with SYMBIOT_MODEL.
 const PROVIDERS = {
   // your Claude subscription (Pro or Max), through Claude Code signed in on this computer: no key
   claude:    { label: "Your Claude subscription (Claude Code)", sub: true, keyUrl: "https://claude.com/claude-code", keyName: null, model: "" },
-  anthropic: { label: "Claude (Anthropic)", env: ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"], keyUrl: "https://console.anthropic.com/settings/keys", keyName: "Anthropic API key (sk-ant-…)", model: "claude-opus-5-5" },
+  anthropic: { label: "Claude (Anthropic)", env: ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"], keyUrl: "https://console.anthropic.com/settings/keys", keyName: "Anthropic API key (sk-ant-…)", model: MODELS.sonnet.id },
   openai:    { label: "OpenAI (GPT)",       env: ["OPENAI_API_KEY"],                            keyUrl: "https://platform.openai.com/api-keys",       keyName: "OpenAI API key (sk-…)",     model: "gpt-4o-mini" },
   gemini:    { label: "Gemini (Google)",    env: ["GEMINI_API_KEY", "GOOGLE_API_KEY"],          keyUrl: "https://aistudio.google.com/apikey",         keyName: "Google AI API key",         model: "gemini-flash-latest" },
   ollama:    { label: "Local model (Ollama)", local: true,                                       keyUrl: "https://ollama.com",                         keyName: null,                        model: "llama3.1" },
@@ -208,17 +219,17 @@ const AI_UI = {
   rejected: (label) => console.log(`Your ${label} credentials were rejected. Reconnect with:  symbiot login --force`),
 };
 // fast: a quick, plain job (translating the app's words): the provider's fastest model
-const FAST_MODEL = { claude: "haiku", anthropic: "claude-haiku-5-5" };
+const FAST_MODEL = { claude: MODELS.haiku.alias, anthropic: MODELS.haiku.id };
 // floor: "sonnet" — chat (Home, Reports) is answered by Sonnet or better, whatever the saved provider
 // is: a local or small model made things up there. Falls back to Claude, then an Anthropic key; with
 // neither, it says so rather than answering from the local model.
 function aboveFloor(r0) {
-  if (r0 && r0.provider === "claude") return /haiku/i.test(r0.model || "") ? { ...r0, model: "sonnet" } : r0;
-  if (r0 && r0.provider === "anthropic") return /haiku/i.test(r0.model || "") ? { ...r0, model: "claude-sonnet-5-5" } : r0;
+  if (r0 && r0.provider === "claude") return /haiku/i.test(r0.model || "") ? { ...r0, model: MODELS.sonnet.alias } : r0;
+  if (r0 && r0.provider === "anthropic") return /haiku/i.test(r0.model || "") ? { ...r0, model: MODELS.sonnet.id } : r0;
   if (r0 && (r0.provider === "openai" || r0.provider === "gemini")) return r0;
-  if (claudeReady()) return { provider: "claude", model: "sonnet", source: "your Claude subscription (Claude Code)" };
+  if (claudeReady()) return { provider: "claude", model: MODELS.sonnet.alias, source: "your Claude subscription (Claude Code)" };
   const cfg = loadConfig(), key = (cfg.anthropic || {}).apiKey || cfg.apiKey || process.env.ANTHROPIC_API_KEY;
-  return key ? { provider: "anthropic", key, model: "claude-sonnet-5-5", source: "saved login" } : null;
+  return key ? { provider: "anthropic", key, model: MODELS.sonnet.id, source: "saved login" } : null;
 }
 const NO_CHAT_MODEL = "I can't answer here right now: chat needs Claude (Sonnet or better), and Claude isn't connected. Connect it in Settings and ask again.";
 async function write(system, prompt, { images = [], fast = false, floor = "" } = {}) {
@@ -298,8 +309,9 @@ function recommendModels(hw) {
   if (ram >= 40) local.push({ tier: "max+", model: "llama3.1:70b", needGB: 48, note: "top local quality — big machine/GPU" });
   local.forEach((m) => { m.fits = ram >= m.needGB; });
   const paid = [
-    { provider: "anthropic", tier: "cheap", model: "claude-haiku-4-5", note: "cheapest Claude" },
-    { provider: "anthropic", tier: "top", model: "claude-opus-5-5", note: "best Claude (default)" },
+    { provider: "anthropic", tier: "cheap", model: MODELS.haiku.id, note: "cheapest Claude" },
+    { provider: "anthropic", tier: "mid", model: MODELS.sonnet.id, note: "Claude for most work (default)" },
+    { provider: "anthropic", tier: "top", model: MODELS.opus.id, note: "best Claude" },
     { provider: "openai", tier: "cheap", model: "gpt-4o-mini", note: "cheap OpenAI" },
     { provider: "openai", tier: "top", model: "gpt-4o", note: "stronger OpenAI" },
     { provider: "gemini", tier: "cheap", model: "gemini-flash-latest", note: "cheap Google" },
@@ -354,4 +366,4 @@ async function connectProvider(b) {
   return saveConfig(cfg) ? { ok: true, message: `Connected: ${PROVIDERS[provider].label} · ${model}` } : { ok: false, message: "Couldn't write the config file." };
 }
 
-export { modelTrouble, modelCheck, PROVIDERS, AI_UI, aboveFloor, NO_CHAT_MODEL, resolveProvider, write, validate, connectProvider, detectHardware, recommendModels, hasOllama, ollamaInstall, ensureOllama, useOllamaModel , claudeState, claudeReady, claudeHelp , claudeCommand , claudeSpawn };
+export { MODELS, modelTrouble, modelCheck, PROVIDERS, AI_UI, aboveFloor, NO_CHAT_MODEL, resolveProvider, write, validate, connectProvider, detectHardware, recommendModels, hasOllama, ollamaInstall, ensureOllama, useOllamaModel , claudeState, claudeReady, claudeHelp , claudeCommand , claudeSpawn };

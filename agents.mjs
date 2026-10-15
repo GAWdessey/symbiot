@@ -17,7 +17,7 @@ import { plainAsk } from "./plain.mjs";
 import { lanesJob, parseFacts, leftToYou, gitWork, agentsGitWork, agentsClicking, agentsCodeWork, agentsMail, agentsPosting, linkedAsks, linkedChore, PUSH_OK } from "./handover.mjs";
 import { scanRoots, repoPathMap } from "./scan.mjs";
 import { knowledgeFolders } from "./knowledge.mjs";
-import { pickModel } from "./route.mjs";
+import { pickModel, MODEL } from "./route.mjs";
 
 const HANDOFFS = []; // live registry of agents Symbiot has handed work to
 // ---- hand a repo (+ its tasks) to the user's agent — generic, settings-based
@@ -224,7 +224,8 @@ function routedModel(repoPath, opts = {}, resumed = false) {
     const task = resumed ? RESUME_PROMPT : readSymbiot(repoPath, "TASKS.md").split("\n").filter((l) => /^\s*- \[ \]/.test(l)).join("\n");
     const override = (task.match(/\[model:\s*(\w+)\s*\]/i) || [])[1] || opts.model || "";
     const m = pickModel({ task, lane: opts.name || "", path: resolve(repoPath), override });
-    return m.tier === "S" ? "sonnet" : m.tier === "O" && m.model === "claude-opus-5-5" ? "opus" : /^claude-/.test(m.model) ? m.model : "";
+    const alias = { S: "sonnet", O: "opus", H: "haiku" }[m.tier]; // the CLI's alias for the tier's own model; a named one (fable) as its id
+    return alias && m.model === MODEL[m.tier] ? alias : /^claude-/.test(m.model) ? m.model : "";
   } catch { return ""; }
 }
 function withModel(tmpl, model) {
