@@ -326,6 +326,7 @@ body.lq-light #lqnext .nxpg{border-color:rgba(20,30,45,.16);color:#2B3644}
 #lqnext .nxt b{font-weight:600;font-size:13px;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow-wrap:anywhere}
 #lqnext .nxt span{font-size:12px;color:#9AA1AB;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow-wrap:anywhere}
 #lqnext .nxgo{all:unset;box-sizing:border-box;cursor:pointer;flex:none;min-height:32px;padding:6px 12px;border-radius:12px;background:#F3F0EA;color:#0A0B0D;font:600 12.5px var(--sans);white-space:nowrap}
+#lqnext .nxerr{flex-basis:100%;margin-top:6px;font-size:12px;color:#E8A87C}
 #lqnext .nxgo:disabled{opacity:.5;cursor:default}
 #lqnext .nxx:focus-visible,#lqnext .nxgo:focus-visible{outline:2px solid currentColor;outline-offset:2px}
 body.lq-light #lqnext{background:rgba(255,255,255,.94);border-color:rgba(20,30,45,.12);box-shadow:0 18px 40px -26px rgba(30,45,60,.5);color:#151A21}
@@ -3332,7 +3333,7 @@ if(!sameHtml(el,"<div class='nxh'><span>What could be done next</span><small>one
 var x=el.querySelector('.nxx');if(x)x.addEventListener('click',function(){var sig=((LQ.home&&LQ.home.next)||[]).map(function(s){return s.id;}).join('|');try{if(window.localStorage)window.localStorage.setItem('symbiot-next-off',sig);}catch(e){}lqAct();lqBuild();});
 var pg=el.querySelector('.nxpg');if(pg)pg.addEventListener('click',function(){LQ.nextPage=(LQ.nextPage||0)+1;lqAct();lqBuild();});
 el.querySelectorAll('.nxgo').forEach(function(b){b.addEventListener('click',function(){var s=(LQ.nextList||[])[+b.getAttribute('data-i')],li=b.closest?b.closest('li'):null;if(!s)return;lqAct();b.disabled=true;
-api('/api/home/next',{id:s.id}).then(function(r){if(!r||r.error){b.disabled=false;lqSaid((r&&r.error)||'It didn’t start. Try again.');return;}lqSaid(r.said||'Started.');if(li&&li.classList)li.classList.add('gone');LQ.fresh=true;setTimeout(function(){lqLoad(false);},650);}).catch(function(e){b.disabled=false;lqSaid(String((e&&e.message)||e));});});});}
+api('/api/home/next',{id:s.id}).then(function(r){if(!r||r.error){b.disabled=false;var em=(r&&r.error)||'It didn’t start. Try again.';lqSaid(em);var nt=li&&li.querySelector?li.querySelector('.nxerr'):null;if(!nt&&li&&li.appendChild&&document.createElement){nt=document.createElement('div');nt.className='nxerr';li.appendChild(nt);}if(nt)nt.textContent=em;LQ.fresh=true;setTimeout(function(){lqLoad(false);},650);return;}lqSaid(r.said||'Started.');if(li&&li.classList)li.classList.add('gone');LQ.fresh=true;setTimeout(function(){lqLoad(false);},650);}).catch(function(e){b.disabled=false;lqSaid(String((e&&e.message)||e));});});});}
 if(el.classList)el.classList.add('on');if(el.style){el.style.width=w+'px';el.style.transform='translate('+Math.round((S.w-w)/2)+'px,'+(LQ_NEEDY-30)+'px)';}
 return LQ_NEEDY-30+(el.offsetHeight||(48+Math.ceil(ns.length/(two?2:1))*58))+24;}
 // a blob's top sits 4px above LQ_NEEDY and the band's bottom LQ_NEEDY+tall+20: mh-8 leaves 12px between
