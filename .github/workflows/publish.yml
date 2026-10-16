@@ -190,9 +190,12 @@ jobs:
         with:
           node-version: "22"
       - name: Wait for npm to serve symbiot@${{ env.VER }}
+        # npm's CDN keeps a 404 for 5 minutes (max-age=300), so asking the same address again
+        # got the 404 a first ask cached for 10 minutes on: the Linux job gave up first on
+        # 0.66.2 and 0.66.3, 10 s before the others got it. A new query each time skips it.
         run: |
-          for i in $(seq 1 60); do
-            curl -sfo /dev/null "https://registry.npmjs.org/symbiot/-/symbiot-$VER.tgz" && exit 0
+          for i in $(seq 1 180); do
+            curl -sfo /dev/null "https://registry.npmjs.org/symbiot/-/symbiot-$VER.tgz?try=$i-$RANDOM" && exit 0
             sleep 10
           done
           echo "::error::symbiot@$VER isn't downloadable from npm"; exit 1
