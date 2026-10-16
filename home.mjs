@@ -496,6 +496,14 @@ function noteAnswer(path, heading, text) {
 }
 // a label without its "(recommended)": a second button isn't the recommended one
 const blobLabel = (l) => String(l || "").replace(/\s*\(recommended\)\s*$/i, "");
+// A run that couldn't start because Approve is putting that lane's changes in (agents.mjs shipHold),
+// not a broken agent: the answer's saved (ANSWERS.md), so its next run starts from it.
+const afterShip = (e) => (e && e.shipping ? `Saved. Approve is still putting this lane's changes in (${e.step || "starting"}), so its agent picks this up once that's done.` : "");
+// …and started then: tried every 10 s until Approve lets go of the folder (10 minutes at most)
+function runAfterShip(path, run = runHandoff) {
+  let n = 0; const t = setInterval(() => { let e = null; try { e = run(path, { force: true }); } catch {} if (!(e && e.shipping) || ++n >= 60) clearInterval(t); }, 10000);
+  if (t.unref) t.unref();
+}
 function homeAnswer(id, { pick, text = "" } = {}, deps = {}) {
   id = String(id || ""); text = String(text || "").trim().slice(0, 2000);
   const go = text ? !SAYS_NO.test(text) : Number(pick) === 0, ref = id.replace(/^\w+:/, "");
@@ -511,6 +519,7 @@ function homeAnswer(id, { pick, text = "" } = {}, deps = {}) {
     if ((deps.running || runningHandoff)(a.path)) return { ok: true, said: "An agent is already at work there." };
     if (text) noteAnswer(a.path, "Your last run stopped with an error", text);
     const e = (deps.run || runHandoff)(a.path, { force: true }); dropped.add(ref);
+    if (afterShip(e)) { (deps.later || runAfterShip)(a.path, deps.run || runHandoff); return { ok: true, said: "Approve is still putting this lane's changes in, so it runs again once that's done." }; }
     return e && e.id && !e.blocked ? { ok: true, said: "Running it again.", rerun: e.id } : { error: (e && e.note) || "It didn't start. Check your agent in Settings." };
   }
   if (id.startsWith("repos:")) return reposAnswer({ pick, text }, deps);
@@ -534,8 +543,9 @@ function homeAnswer(id, { pick, text = "" } = {}, deps = {}) {
       : still.length ? `The user says it's done (${text}), but ${last}, before you asked. Check it yourself before relying on it, then carry on.`
       : `Done: the user did it${text ? ` (${text})` : ""}. Check it worked, then carry on.`;
     noteAnswer(a.path, n.what, said);
-    const e = (deps.run || runHandoff)(a.path, { force: true });
-    if (e && e.id && !e.blocked) { settle(a.path, n.key); dropped.add(id); if (n.kind !== "approve") recordDone(n.what, said, whereOf(a.path).lane); } // "Done it" is on the shared record: no agent raises it again
+    const e = (deps.run || runHandoff)(a.path, { force: true }), later = afterShip(e);
+    if ((e && e.id && !e.blocked) || later) { settle(a.path, n.key); dropped.add(id); if (n.kind !== "approve") recordDone(n.what, said, whereOf(a.path).lane); } // "Done it" is on the shared record: no agent raises it again
+    if (later) { (deps.later || runAfterShip)(a.path, deps.run || runHandoff); return { ok: true, said: later }; }
     return e && e.id && !e.blocked ? { ok: true, said: n.kind === "approve" ? "Its agent is going ahead." : "Its agent is checking and carrying on.", rerun: e.id } : { error: (e && e.note) || "It didn't start. Check your agent in Settings." };
   }
   return { error: "Answer that one on its block on the Workdesk." };

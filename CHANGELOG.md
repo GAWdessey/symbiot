@@ -2,6 +2,10 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.66.4 — 2026-10-16
+
+- Answering a card ("I've done this", Go ahead, Run it again) while Approve is still committing, testing or pushing that lane no longer says "It didn't start. Check your agent in Settings." It says Approve is busy, keeps your answer, and starts the lane's agent once Approve is done.
+
 ## 0.66.3 — 2026-10-16
 
 - Changes approved without a task, in handover.mjs, headless.mjs, index.mjs, lanes.mjs, mind.mjs, reach.mjs and 5 more.

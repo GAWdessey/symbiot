@@ -362,6 +362,12 @@ try {
   ok("…I've done this on a step is on the shared record: no agent's card asks it again", noNeeds(() => [stepRun()]), "");
   const s5 = homeAnswer("needs:r5", { text: "skip, I sent it" }, nd);
   ok("…Skip (or your words saying no): it stops asking, and no agent starts", s5.ok && /won't ask again/.test(s5.said) && reran5.length === 1 && settled5.length === 2, [s5, reran5, settled5]);
+  // answered while Approve was committing and testing that lane: "It didn't start. Check your agent in Settings." (dailify, 16 Oct 2026)
+  const later11 = [], settled11 = [], shipRun = waitsRun({ id: "r11", needs: { kind: "approve", what: "Send the test invite.", check: "", label: "", key: "k11" } });
+  const sh11 = homeAnswer("needs:r11", { pick: 0 }, { agents: () => [shipRun], running: () => false, run: () => ({ busy: true, shipping: true, step: "running its tests", id: "" }), settle: (p, k) => settled11.push(k), later: (p) => later11.push(p) });
+  ok("…answered while Approve puts that lane's changes in: saved, it says so (not \"check your agent\"), stops asking, and its agent starts once Approve is done", sh11.ok && /Approve is still putting this lane's changes in \(running its tests\)/.test(sh11.said) && !/Settings/.test(sh11.said) && settled11.join() === "k11" && later11.join() === jonoDir, [sh11, settled11, later11]);
+  const laterF = [], shF = homeAnswer("failed:r1", { pick: 0 }, { agents: () => [failedRun()], running: () => false, run: () => ({ busy: true, shipping: true, step: "pushing", id: "" }), later: (p) => laterF.push(p) });
+  ok("…and Run it again on a failed run, the same", shF.ok && /runs again once that's done/.test(shF.said) && laterF.join() === "/c", [shF, laterF]);
   // Done it on a step naming a file: a run was told "Done: the user did it" while the `.env` it named was last changed days before it asked
   const envDir = join(HOME, "projects", "envlane"), envF = join(envDir, ".env"), envEnd = Date.parse("2026-10-12T05:00:00Z"); mkdirSync(join(envDir, ".symbiot"), { recursive: true });
   writeFileSync(envF, "A=1\n"); utimesSync(envF, new Date("2026-10-06T09:00:00Z"), new Date("2026-10-06T09:00:00Z"));
