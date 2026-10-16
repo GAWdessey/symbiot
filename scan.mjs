@@ -351,7 +351,7 @@ function findAllRepos(base) {
         const repo = g.replace(/\/\.git$/, ""); scanTick(repo.split("/").pop());
         if (seen.has(repo)) continue; seen.add(repo);
         const last = Number(sh(`git -C ${JSON.stringify(repo)} log -1 --format=%ct 2>/dev/null`).trim()) || 0;
-        if (last) repos.push({ path: repo, name: repo.split("/").pop(), recency: last });
+        if (last) repos.push({ path: repo, name: repo.split("/").pop(), recency: last, about: aboutLine(repo) });
       }
     }
     // Group worktrees by shared git dir: the main checkout is always a lane (it's
@@ -382,6 +382,29 @@ function aboutText(path) {
   try { const p = JSON.parse(readFileSync(join(path, "package.json"), "utf8")); t += " " + (p.description || "") + " " + (Array.isArray(p.keywords) ? p.keywords.join(" ") : ""); } catch {}
   for (const f of ["README.md", "readme.md", "README"]) { try { t += " " + readFileSync(join(path, f), "utf8").slice(0, 3000); break; } catch {} }
   return t.slice(0, 4000);
+}
+// One line on what a project is, for prompts that list lanes (a bare name like
+// GuitarHero says nothing to a model): its package description, else the first
+// prose paragraph of its README. "" when it has neither.
+function aboutLine(path) {
+  const clean = (s) => String(s || "").replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/<[^>]*>|[`*_#>]/g, "").replace(/\s+/g, " ").trim();
+  const cut = (s) => (s.length > 110 ? s.slice(0, 107).replace(/\s+\S*$/, "") + "…" : s);
+  try { const d = clean(JSON.parse(readFileSync(join(path, "package.json"), "utf8")).description); if (d) return cut(d); } catch {}
+  for (const f of ["README.md", "readme.md", "README"]) {
+    let t; try { t = readFileSync(join(path, f), "utf8").slice(0, 4000); } catch { continue; }
+    for (const para of t.split(/\n\s*\n/)) {
+      const lines = para.split("\n").filter((l) => !/^\s*(#|!\[|\[!\[|<|\||---|===|```)/.test(l));
+      const s = clean(lines.join(" "));
+      if (s.length >= 20 && /[a-z]/i.test(s)) return cut(s);
+    }
+  }
+  return "";
+}
+// { lane: line } from the kept repo list (repos.json), for the lanes that have one.
+function laneAbouts() {
+  const c = loadRepoCache(), out = {};
+  for (const r of (c && c.list) || []) if (r && r.name && r.about) out[r.name] = r.about;
+  return out;
 }
 function detectRepo(r) {
   const files = sh(`git -C ${JSON.stringify(r.path)} ls-files 2>/dev/null | head -3000`).split("\n").filter(Boolean);
@@ -631,4 +654,4 @@ function discoveredRepos() {
   return findAllRepos();
 }
 
-export { refreshRepos, reposState, REPO_STATE, laneMap, SCAN, SCAN_TIMEOUT_MS, setScanOptions, scanBegin, scanPhase, scanTick, scanExpired, scanEnd, me, authorship, authorArgs, readmeInfo, repoShape, houseRules, reportFooter, expandRoot, scanHome, scanBase, storageBlocked, prootDistros, prootHomes, scanRoots, addScanRoot, removeScanRoot, commits, openWork, findAllRepos, detectRepo, findProjectFolders, detectFolder, claudeProjects, buildMap, nodeDetail, repoPathMap, discoveredRepos };
+export { aboutLine, laneAbouts, refreshRepos, reposState, REPO_STATE, laneMap, SCAN, SCAN_TIMEOUT_MS, setScanOptions, scanBegin, scanPhase, scanTick, scanExpired, scanEnd, me, authorship, authorArgs, readmeInfo, repoShape, houseRules, reportFooter, expandRoot, scanHome, scanBase, storageBlocked, prootDistros, prootHomes, scanRoots, addScanRoot, removeScanRoot, commits, openWork, findAllRepos, detectRepo, findProjectFolders, detectFolder, claudeProjects, buildMap, nodeDetail, repoPathMap, discoveredRepos };

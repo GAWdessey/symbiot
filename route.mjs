@@ -70,8 +70,8 @@ const median = (xs) => { const s = [...xs].sort((a, b) => a - b), i = (s.length 
 // from costs.json. Too few samples (or no file yet) reads as "no history".
 function laneHistory(path, costs = load(COSTS_FILE), MIN_SAMPLES = tuning().minSamples) {
   const own = path ? costs.filter((c) => c.path === path) : [];
-  if (own.length < MIN_SAMPLES) return { median: 0, failRate: 0, samples: own.length };
-  return { median: median(own.map((c) => c.cost || 0)), failRate: own.filter((c) => c.ok === false).length / own.length, samples: own.length };
+  if (own.length < MIN_SAMPLES) return { median: 0, failRate: 0, escalated: 0, samples: own.length };
+  return { median: median(own.map((c) => c.cost || 0)), failRate: own.filter((c) => c.ok === false).length / own.length, escalated: own.filter((c) => c.escalatedFrom).length / own.length, samples: own.length };
 }
 
 // How many different project directories a brief names — one repo's work
@@ -91,6 +91,7 @@ function escalationReason(task, history, t = tuning()) {
   if (HARD_WORDS.test(text)) return "research/refactor/debug-style work";
   if (history.samples >= MIN_SAMPLES && history.median >= COST_FLOOR) return `lane median $${history.median.toFixed(2)}`;
   if (history.samples >= MIN_SAMPLES && history.failRate >= FAIL_FLOOR) return "lane fails often";
+  if (history.samples >= MIN_SAMPLES && history.escalated >= FAIL_FLOOR) return "lane keeps escalating";
   return "";
 }
 

@@ -253,6 +253,15 @@ async function routeFor(r0, kind) {
   if (tier === "L" && await localReady()) return { r: { provider: "ollama", baseUrl: LOCAL_URL, model: LOCAL_MODEL, tuned: true }, local: true };
   return { r: { ...r0, model: TIER_MODEL[r0.provider][tier === "S" ? "S" : "H"] }, local: false };
 }
+// The check a local answer of each kind gets when the caller passes none, so a malformed
+// one always falls up to Haiku (read has its own, parseRead, from its call site). A
+// summary is prose that isn't empty, a leaked <think> block or a runaway; a classify
+// answer is a short label, not a paragraph.
+const NOISE = /<\/?think>|^\s*(?:sure|certainly|okay|ok)[,!:]/i;
+const KIND_CHECK = {
+  summary: (t) => { const x = String(t || "").trim(); return x.length >= 3 && x.length <= 4000 && !NOISE.test(x); },
+  classify: (t) => { const x = String(t || "").trim(); return x.length >= 1 && x.length <= 200 && !/\n\s*\n/.test(x) && !NOISE.test(x); },
+};
 // kind: what the call is for (read, summary, classify, triage, chat, writeup, post). check(text)
 // -> true when a local answer has the shape the caller needs; a miss goes up to Haiku.
 async function write(system, prompt, { images = [], fast = false, floor = "", kind = "", check = null } = {}) {
@@ -261,7 +270,7 @@ async function write(system, prompt, { images = [], fast = false, floor = "", ki
   const routed = fast || floor || images.length ? { r: base, local: false } : await routeFor(base, kind), r = routed.r;
   if (!r) { if (floor) return NO_CHAT_MODEL; AI_UI.notConnected(); return null; }
   if (routed.local) {
-    try { const ans = await callOllama(r, system, prompt); if (ans && (!check || check(ans))) return ans; } catch {}
+    try { const ans = await callOllama(r, system, prompt), ck = check || KIND_CHECK[kind]; if (ans && (!ck || ck(ans))) return ans; } catch {}
     return write(system, prompt, { fast: true }); // a miss, or Ollama gone: Haiku, now
   }
   const stop = AI_UI.spinner("thinking…");
@@ -375,4 +384,4 @@ async function connectProvider(b) {
   return saveConfig(cfg) ? { ok: true, message: `Connected: ${PROVIDERS[provider].label} · ${model}` } : { ok: false, message: "Couldn't write the config file." };
 }
 
-export { localReady, routeFor, PROVIDERS, AI_UI, aboveFloor, NO_CHAT_MODEL, resolveProvider, write, validate, connectProvider, detectHardware, recommendModels, hasOllama, ollamaInstall, ensureOllama, useOllamaModel , claudeState, claudeReady, claudeHelp , claudeCommand , claudeSpawn };
+export { localReady, routeFor, KIND_CHECK, PROVIDERS, AI_UI, aboveFloor, NO_CHAT_MODEL, resolveProvider, write, validate, connectProvider, detectHardware, recommendModels, hasOllama, ollamaInstall, ensureOllama, useOllamaModel , claudeState, claudeReady, claudeHelp , claudeCommand , claudeSpawn };

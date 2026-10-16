@@ -63,7 +63,7 @@ ok("touching keys escalates", pickModel({ task: "Rotate the API key in .env" }).
 ok("a push to main escalates", pickModel({ task: "push to main once CI is green" }).why === "Opus: touches keys, money or publishing");
 
 // Lane history (costs.json): too little history reads as none.
-ok("no costs.json yet: no history, no escalation from it", JSON.stringify(laneHistory("/x")) === JSON.stringify({ median: 0, failRate: 0, samples: 0 }));
+ok("no costs.json yet: no history, no escalation from it", JSON.stringify(laneHistory("/x")) === JSON.stringify({ median: 0, failRate: 0, escalated: 0, samples: 0 }));
 writeFileSync(join(CFG, "costs.json"), JSON.stringify([
   { path: "/lane/a", cost: 0.5, ok: true }, { path: "/lane/a", cost: 0.8, ok: true }, { path: "/lane/a", cost: 1.1, ok: true },
   { path: "/lane/b", cost: 1, ok: true }, { path: "/lane/b", cost: 2, ok: true }, { path: "/lane/b", cost: 3, ok: true },
@@ -146,7 +146,31 @@ ok("pure: calling twice gives the same result", JSON.stringify(pickModel({ path:
   const t0 = Date.now(), loc = await ai.routeFor(cl, "read");
   ok("read falls to Haiku when the local model isn't ready", loc.local ? await ai.localReady() : loc.r.model === "haiku", loc);
   ok("…and doesn't wait on it", Date.now() - t0 < 25000); // the ping is capped at 20 s, even for a cold model load
+  const kc = ai.KIND_CHECK;
+  ok("summary: prose passes; empty, a leaked <think> block or a runaway falls up", kc.summary("The build passed and two tasks were ticked.") && !kc.summary("") && !kc.summary("<think>hmm</think> done") && !kc.summary("x".repeat(5000)));
+  ok("classify: a short label passes; a paragraph or chatter falls up", kc.classify("urgent") && !kc.classify("") && !kc.classify("Sure, it is urgent.") && !kc.classify("urgent\n\nBecause the user said so.") && !kc.classify("x".repeat(300)));
+  ok("read has no default (its call site passes parseRead)", kc.read === undefined);
   ok("the tier list offers qwen3:8b, the routed local model", ai.recommendModels({ ramGB: 16 }).local.some((m) => m.model === "qwen3:8b" && m.fits));
+  const { CASES, bench } = await import("../bench/cheap.mjs");
+  ok("bench:cheap has the 31 graded cases", CASES.length === 31 && new Set(CASES.map((c) => c.id)).size === 31, CASES.length);
+  const lane = CASES.find((c) => c.id === "lane4");
+  ok("a case grades a right answer and a wrong one", lane.check('{"lane":"GuitarHero"}')[0] && !lane.check('{"lane":"symbiot"}')[0]);
+  const nr = await bench({ url: "http://127.0.0.1:1" });
+  ok("a model that can't be pinged is NOT RUN, never a 0% score", nr.ran === false && nr.passed === undefined, nr);
+}
+
+// A lane that keeps escalating starts on Opus; escalation() only lifts a Sonnet pick, once.
+{
+  const runs = (n, esc) => Array.from({ length: n }, (_, i) => ({ path: "/x", cost: 0.3, ok: true, ...(i < esc ? { escalatedFrom: "sonnet" } : {}) }));
+  ok("a lane that escalated half its runs starts on Opus", escalationReason("fix a typo", laneHistory("/x", runs(4, 2), 3), tuning()) === "lane keeps escalating");
+  ok("one escalation in four does not", escalationReason("fix a typo", laneHistory("/x", runs(4, 1), 3), tuning()) === "");
+  const { escalation } = await import("../agents.mjs");
+  const before = { dirtyBefore: null, ticksBefore: 0, askedBefore: "" };
+  ok("a failed Sonnet run goes up to Opus, with a note", escalation("/nonexistent", "sonnet", 1, before)?.model === "opus" && /ended in an error/.test(escalation("/nonexistent", "sonnet", 1, before).note));
+  ok("…only once", escalation("/nonexistent", "sonnet", 1, before, "sonnet") === null);
+  ok("an Opus run goes no higher", escalation("/nonexistent", "opus", 1, before) === null);
+  ok("another agent's run (no model) is left alone", escalation("/nonexistent", "", 1, before) === null);
+  ok("a clean exit with unknown changes is not called empty", escalation("/nonexistent", "sonnet", 0, before) === null);
 }
 
 console.log((fail ? "✗" : "✓") + " route: " + pass + " passed, " + fail + " failed");

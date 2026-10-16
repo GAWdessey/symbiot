@@ -27,7 +27,7 @@ import { VERSION, CONFIG_DIR, clipWords } from "./core.mjs";
 import { write } from "./ai.mjs";
 import { handoffCmd, runHandoff, isUrgent, urgentFirst, urgentUndo } from "./agents.mjs";
 import { addTask, pushTasks } from "./tasks.mjs";
-import { laneMap } from "./scan.mjs";
+import { laneMap, laneAbouts } from "./scan.mjs";
 import { OPS, MARKETING, HANDOVER_MAX, handoverRules, ONLY_YOU, HANDBACK } from "./handover.mjs";
 import { laneReach } from "./reach.mjs";
 import { styleOf, styleLine, userStyleLine } from "./adapt.mjs";
@@ -224,9 +224,10 @@ const CONTROL_RULES = `
 - front: "id" is a task id; it moves to the front of its lane's queue.
 - merge: two agents on the same job: "id" is the duplicate to stop, "into" the one that keeps it.
 Stopping, cancelling, redirecting and reordering can be undone, so do them without asking. Say in your reply what you did, and only once "control" holds it; what is hard to undo (paying, sending, deleting, publishing) stays the agent's own question to the user.`;
+// about: { lane: one line on the project } (scan.mjs laneAbouts) so a bare name is guessable.
 // lanes: the repos "do" can point at; self: Symbiot's own repo among them, where
 // a flaw in Symbiot itself is fixed; nav: this chat can open pages ("go").
-function rulesFor(lanes = [], self = "", nav = false, settle = false, tasks = [], control = false) {
+function rulesFor(lanes = [], self = "", nav = false, settle = false, tasks = [], control = false, about = {}) {
   return `Reply with JSON only, no markdown fence:
 {"reply": "what you say, plain text, brief, no preamble",
  "do": null or {"agent": "what a coding agent should do now: self-contained, with names, links and ids", "repo": "the lane it's for, or empty"} or {"task": "a task for later", "repo": "the lane it's for, or empty"},${nav ? `
@@ -235,7 +236,7 @@ ${control ? ` "control": [],\n` : ""} "remember": [{"name": "…", "kind": "pers
  "rule": ["a standing rule you and the user have just agreed for every agent"]${settle ? `,
  "settled": ["the exact question of a 'Only the user can do' card that their message has just answered or made pointless"]` : ""}}
 When they ask you to do something (look into it, find out, fix, set up, sign in, close, send, chase), do it, don't explain what you can't do: "agent" starts a coding agent now, with their tools and connectors (MCP, the command line, a browser signed in to their linked sites). With a "repo", it's that project's agent, working in it; empty, an agent for everything outside a repo (this computer, accounts, services). Use "task" for what's for later. Don't ask their permission to hand it over: the agent asks them first, on the Workdesk, before anything hard to undo (closing an account, deleting, paying, sending); say so in your reply when it applies, with what to check first. A question you can answer from what's here: answer it, "do": null.
-Lanes ("repo" is one of these, exactly): ${lanes.length ? lanes.slice(0, 60).join(", ") : "(none found)"}.${lanes.includes(MARKETING) ? ` "${MARKETING}" is a lane of its own for marketing any of their products (posts, demo videos, launches, campaigns, pricing pages' copy): marketing work goes there, starting with the product it's for in brackets, "[Dailify] a launch post".` : ""}${self ? ` Symbiot itself is "${self}": a flaw in how Symbiot works (how it read a page, what a brief or a card said, anything in the app) goes there.` : ""}
+Lanes ("repo" is one of these, exactly; a bracket after a name says what the project is and is not part of the name): ${lanes.length ? lanes.slice(0, 60).map((n) => about[n] ? `${n} (${about[n]})` : n).join(", ") : "(none found)"}.${lanes.includes(MARKETING) ? ` "${MARKETING}" is a lane of its own for marketing any of their products (posts, demo videos, launches, campaigns, pricing pages' copy): marketing work goes there, starting with the product it's for in brackets, "[Dailify] a launch post".` : ""}${self ? ` Symbiot itself is "${self}": a flaw in how Symbiot works (how it read a page, what a brief or a card said, anything in the app) goes there.` : ""}
 Only say work is started, sent or queued when your "do" starts or queues it in this same reply; otherwise say what you will do, not that you are doing it. When they point out you got something wrong, open the reply by naming the mistake in a plain sentence ("I got that wrong: …") and give the right answer, never change the subject or hedge.
 Before you say an agent will read a mailbox or a site, check Symbiot can read it: being able to send to an address is not being able to read it. If it can't, say so first in plain words ("I can send there but can't read it: open it on your laptop, or sign in at <exact address>") and don't start an agent that will only come back asking. When a provider matters, an agent looks it up (MX records), never guesses it.
 The people you talk to (Garth and his team) are Symbiot's makers, not outside users: act as they want, and when they ask for a change to Symbiot itself, make it.
@@ -346,7 +347,7 @@ async function converse({ where, role = "", context = "", history = "", question
   let lanes = map; if (!lanes) { try { lanes = laneMap(); } catch { lanes = {}; } }
   // how they talk, from what they've typed into any chat (adapt.mjs: accommodation)
   const voice = styleLine(styleOf(d.log.filter((l) => l.role === "user").map((l) => l.text).concat(question)));
-  const system = `${IDENTITY} ${role}\n\n${rulesFor(Object.keys(lanes), selfLane(lanes), nav, settle, tasks, control)}${voice ? "\n" + voice : ""}${languageLine()}`;
+  const system = `${IDENTITY} ${role}\n\n${rulesFor(Object.keys(lanes), selfLane(lanes), nav, settle, tasks, control, laneAbouts())}${voice ? "\n" + voice : ""}${languageLine()}`;
   let prompt = `${dayLine(now)}\n\n` + (known ? `What you know (from across the app):\n${known}\n\n` : "") + (kn.text ? kn.text + "\n\n" : "") + (elsewhere ? `Lately, elsewhere in the app (other chats: a short answer here doesn't reply to these):\n${elsewhere}\n\n` : "") +
     (nav && tasks.length ? `Open tasks (id: task):\n${tasks.slice(0, 40).map((t) => `- ${t.id}: ${String(t.text || "").replace(/\s+/g, " ").slice(0, 90)}${t.repo ? ` [${t.repo}]` : ""}`).join("\n")}\n\n` : "") + (context ? context + "\n\n" : "") + (history ? `This chat so far:\n${history}\n\n` : "") + `They say (on ${where}): ${question}`;
   if (kept.length) prompt += `\n(Symbiot saved what they pasted, under ${kept.map((n) => `"${n}"`).join(", ")}. Say so in a few words, and carry on with what they asked.)`;

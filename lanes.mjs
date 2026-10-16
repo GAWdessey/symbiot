@@ -25,7 +25,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { execFile } from "node:child_process";
 import { CONFIG_DIR, loadTasks, clipWords, loadConfig } from "./core.mjs";
 import { runHandoff, runningHandoff, waitingFor, agentQuestions, findOrcaCli, installAllowlist, writeTasks, workOf, loadRuns } from "./agents.mjs";
-import { addTask, removeTask, pushTasks } from "./tasks.mjs";
+import { addTask, removeTask, pushTasks, pendingReview, approveChanges, workingDiff, setHandedLookup } from "./tasks.mjs";
 import { actNow, actBrief } from "./mind.mjs";
 import { laneMap } from "./scan.mjs";
 import { parseRun, lastRunText, readRunLog, runStarted } from "./work.mjs";
@@ -638,4 +638,46 @@ function sharedFor(path, text, { ledger = loadLedger(), now = Date.now(), cfg = 
   return `## What ${who} has already answered on this work\nBefore you ask ${who} anything, check these: if one settles it, use it and don't ask.\n${l.map((x) => `- ${x.lane} asked "${clipWords(x.q.replace(/\s+/g, " "), 160)}": ${clipWords(x.a.replace(/\s+/g, " "), 300)} (${String(x.at).slice(0, 10)})`).join("\n")}`;
 }
 
-export { shareAnswer, sharedFor, sharedTo, answerReaches, linkedPaths, topicsOf, SHARED, LEDGER, MAX_CHAIN, loadLedger, laneOf, lastRunStart, dispatch, outcome, report, handingOf, lanesTick, lanesState, aboutIt, partlyDone, remoteKey, orcaMoves, orcaRelink, stuckHandovers, allowHandover, skipHandover, namedDirs, alike, doneSince };
+// Changes made in a lane's folder for a job that lane handed over (daaymn's handoff to ops, which
+// edits daaymn's folder) are tied to that handoff, not shown as "changes without a task" for the
+// user to approve. Once the receiving runs are over they go up as a PR on their own, with
+// auto-merge on green CI, unless they look like they hold a secret: those wait for the user.
+const HANDED_FOR = 7 * 86400000, HELD_AGAIN = 30 * 60000;
+const SECRET_FILE = /(^|\/)(\.env(\..*)?|.*\.(pem|key|jks|keystore|p12|pfx)|id_(rsa|dsa|ecdsa|ed25519)|\.npmrc|\.netrc|key\.properties|.*credentials.*\.json|.*service[-_]?account.*\.json)$/i;
+const SECRET_TEXT = [/-----BEGIN [A-Z ]*PRIVATE KEY-----/, /\bAKIA[0-9A-Z]{16}\b/, /\bgh[pousr]_[A-Za-z0-9]{30,}/, /\bgithub_pat_[A-Za-z0-9_]{30,}/, /\bsk-[A-Za-z0-9_-]{20,}/, /\bAIza[0-9A-Za-z_-]{35}/, /\bxox[abprs]-[A-Za-z0-9-]{10,}/, /\beyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/, /^\+(?!.*(?:getenv|process\.env|ENV\[|environ|properties\.get)).*\b(?:password|passwd|secret|token|api[_-]?key|private[_-]?key|storepass|keypass)\w*\s*[:=]\s*["']?(?![\s"'$<{(]|\w*(?:null|none|example|changeme|xxx|your))[^\s"']{8,}/im];
+// Why a set of changes shouldn't go up unseen, or "" when nothing looks like a secret.
+function secretIn(files, diff) {
+  const f = (files || []).find((x) => SECRET_FILE.test(x.file)); if (f) return `${f.file} looks like a key or credentials file`;
+  return SECRET_TEXT.some((re) => re.test(String(diff || ""))) ? "the changes contain something that looks like a key, token or password" : "";
+}
+const HELD_HANDED = new Map(); // path -> { sig, why, at }: what was held back or failed, so it isn't tried every 20 s
+const sigOf = (files) => (files || []).map((x) => x.st + x.file).sort().join("|");
+function handedFor(path, { ledger = loadLedger(), now = Date.now() } = {}) {
+  return ledger.handoffs.filter((x) => x.from && x.from.path === path && x.status !== "error" && !x.skipped && now - (x.at || 0) < HANDED_FOR);
+}
+// The handoff behind a lane's pending changes: { text, to, held? }, or null when none of its own made them.
+function handedLookup(path, wc, { ledger, now = Date.now() } = {}) {
+  const rows = handedFor(path, { ledger, now }); if (!rows.length) return null;
+  const last = rows[rows.length - 1], h = HELD_HANDED.get(path), held = h && h.sig === sigOf(wc && wc.files) ? h.why : "";
+  return { text: clipWords(String(last.text || "").split("\n")[0], 120), to: last.to.lane, ...(held ? { held } : {}) };
+}
+setHandedLookup((path, wc) => handedLookup(path, wc));
+// One pass (the app runs it every 20 seconds): ship the lanes' handed-over changes. Returns what it did.
+async function shipHanded({ review = pendingReview, ship = approveChanges, diff = workingDiff, running = runningHandoff, ledger = loadLedger(), now = Date.now() } = {}) {
+  const done = [];
+  for (const r of review({ kept: true })) {
+    if (!r.untasked || !r.path || r.running || r.unsent || !(r.files || []).length || r.round) continue;
+    const rows = handedFor(r.path, { ledger, now }); if (!rows.length) continue;
+    if (rows.some((x) => x.to.path && running(x.to.path)) || running(r.path)) continue; // the run that made them isn't over
+    const sig = sigOf(r.files), had = HELD_HANDED.get(r.path);
+    if (had && had.sig === sig && now - had.at < HELD_AGAIN) continue;
+    const why = secretIn(r.files, diff(r.path));
+    if (why) { HELD_HANDED.set(r.path, { sig, why: `${why}: check it before it goes up`, at: now }); done.push({ repo: r.repo, held: why }); continue; }
+    const res = await ship(r.repo, { autoMerge: true });
+    if (res.error) { HELD_HANDED.set(r.path, { sig, why: `it didn't go up by itself: ${res.error}`, at: now }); done.push({ repo: r.repo, error: res.error }); }
+    else { HELD_HANDED.delete(r.path); done.push({ repo: r.repo, pr: res.pr || "", commit: res.commit || "" }); }
+  }
+  return done;
+}
+
+export { handedFor, handedLookup, secretIn, shipHanded, HELD_HANDED, shareAnswer, sharedFor, sharedTo, answerReaches, linkedPaths, topicsOf, SHARED, LEDGER, MAX_CHAIN, loadLedger, laneOf, lastRunStart, dispatch, outcome, report, handingOf, lanesTick, lanesState, aboutIt, partlyDone, remoteKey, orcaMoves, orcaRelink, stuckHandovers, allowHandover, skipHandover, namedDirs, alike, doneSince };

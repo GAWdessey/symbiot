@@ -60,9 +60,9 @@ function noteDuration({ path, cmd, task = "", ms }, file = FILE) {
 // Every run's spend, finished or failed (route.mjs reads it: path, cost, ok), so what
 // per-task model routing saves can be measured against a baseline.
 function loadCosts(file = COSTS) { return loadDurations(file); }
-function noteCost({ path, cmd, task = "", model = "", cost = null, turns = null, ms = 0, ok = true, modelUsage = null }, file = COSTS) {
+function noteCost({ path, cmd, task = "", model = "", cost = null, turns = null, ms = 0, ok = true, modelUsage = null, escalatedFrom = "" }, file = COSTS) {
   if (!path || typeof cost !== "number") return;
-  const a = loadCosts(file); a.push({ at: Date.now(), path, kind: kindOf(cmd), task: String(task).slice(0, 200), model: String(model || ""), cost, turns, ms: Math.round(ms) || 0, ok: !!ok, modelUsage });
+  const a = loadCosts(file); a.push({ at: Date.now(), path, kind: kindOf(cmd), task: String(task).slice(0, 200), model: String(model || ""), cost, turns, ms: Math.round(ms) || 0, ok: !!ok, modelUsage, ...(escalatedFrom ? { escalatedFrom } : {}) });
   try { writeFileSync(file, JSON.stringify(a.slice(-KEEP))); } catch {}
 }
 

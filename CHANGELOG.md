@@ -2,6 +2,23 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.66.7 — 2026-10-16
+
+- New job: make `symbiot screens` able to press radio buttons (and fill the fields they reveal) on Google Cloud Console, so the daaymn lane can save an Android app restriction on an API key.
+- Garth is tired of Home asking him to approve agents' code changes.
+- Make the Reports page in the Symbiot app (~/projects/symbiot, GitHub GAWdessey/symbiot) easier to use.
+- Do not add to recommendModels in ai.mjs. It lists Ollama tags, and Colibri is not Ollama.
+- Keep the routing as is (local small model, then Haiku, Sonnet, Opus).
+- Revisit only if Garth gets 64 GB+ RAM and a fast NVMe: then an overnight batch tier could make sense (1-3 tok/s).
+- Fix how Symbiot's Marketing page sorts drafts into posts and documents (~/projects/symbiot, GitHub GAWdessey/symbiot).
+- Local one-shot answers are checked only by a per-call `check` (the last-message reader uses `parseRead`); add a check for each other local kind (`summary`, `classify`) when those call sites get wired, so a malformed…
+- In the Symbiot app (~/projects/symbiot, GitHub GAWdessey/symbiot), clean up the Reports page's 'Read, with open actions' tab now, then fix why it still needs cleaning.
+- Research a claim Garth saw on Instagram: a post with a pixelated hummingbird image, captioned that someone figured out how to run a 274 GB model on a PC without a GPU.
+- Fix in Symbiot: the marketing report 'Symbiot launch posts: last link and claim check' (/home/odessey/.config/symbiot/marketing/.symbiot/LINK-CHECK.md, 2026-10-13) tells Garth to 'approve both drafts under Marketing',…
+- It is the only thing stopping an agent (or a bad instruction it picked up from a web page or email) from switching off Symbiot's own guard on a customer's computer.
+- Update Garth's installed Symbiot app to the latest code.
+- **Task: build per-task model routing (local → Haiku → Sonnet → Opus) for Symbiot.** Garth approved this (ANSWERS.md, 2026-10-10): "hand over all of section 6 to the symbiot lane (recommended)".
+
 ## 0.64.0 — 2026-10-13
 
 - Added `symbiot capture --file` for a product's own video: it goes into the pick tray with its sound, and faces and names get blur boxes.

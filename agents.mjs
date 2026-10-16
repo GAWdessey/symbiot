@@ -196,6 +196,19 @@ function routedModel(repoPath, opts = {}, resumed = false) {
     return m.tier === "S" ? "sonnet" : m.tier === "O" && m.model === "claude-opus-5-5" ? "opus" : /^claude-/.test(m.model) ? m.model : "";
   } catch { return ""; }
 }
+// Symbiot's own commands on its shared browser are never a question for the user: every
+// Claude run may use them, in any lane, without a card on Home (2026-10-16: daaymn's agent
+// asked for `symbiot screens` and `symbiot press`). The wrapper script counts as Claude too.
+const OWN_TOOLS = ["Bash(symbiot screens:*)", "Bash(symbiot press:*)"];
+const claudeLike = (cmd) => /^\s*(?:\S*\/)?claude[\w-]*(\s|$)/.test(String(cmd || ""));
+// --add-dir takes a folder: one pointing at a file (a key, ~/.ssh/oracle_key) made runs fail on it.
+const isDir = (d) => { try { return statSync(String(d).replace(/^~(?=\/|$)/, homedir())).isDirectory(); } catch { return true; } }; // unknown: leave it
+const noFileDirs = (cmd) => String(cmd).replace(/\s--add-dir\s+(?:"([^"]+)"|'([^']+)'|(\S+))/g, (m, a, b, c) => (isDir(a || b || c) ? m : ""));
+function withOwnTools(tmpl) {
+  if (!claudeLike(tmpl)) return tmpl;
+  let cmd = noFileDirs(tmpl); for (const t of OWN_TOOLS) cmd = allowTool(cmd, t);
+  return cmd;
+}
 function withModel(tmpl, model) {
   if (!isClaudeCmd(tmpl) || !model) return tmpl;
   const c = String(tmpl).replace(/\s--model(?:=|\s+)\S+/g, "");
@@ -335,7 +348,7 @@ function noteSession(path, code, resumed) {
 // that could answer them, gets no run: { blocked, questions, note }
 // (blockedAgain). force starts one anyway (something changed elsewhere).
 // A folder with nothing to work from gets none either, forced or not (nothingToDo).
-function runHandoff(repoPath, { force = false, lost = false, model = "", onExit = null } = {}) {
+function runHandoff(repoPath, { force = false, lost = false, model = "", onExit = null, escalatedFrom = "", note = "" } = {}) {
   let tmpl = handoffCmd(); if (!tmpl || !repoPath) return null;
   if (isParked(repoPath)) return { blocked: true, parked: true, questions: 0, note: PARKED_NOTE }; // even forced: that's what parking is for
   const lic = licenceGate(repoPath); if (lic) return lic; // Free's limits, and never Symbiot's own code (licence.mjs); even forced
@@ -344,7 +357,7 @@ function runHandoff(repoPath, { force = false, lost = false, model = "", onExit 
   releaseHeldTasks(repoPath); // held for an agent another process started, which has since exited
   const idle = !lost && nothingToDo(repoPath); if (idle) return { blocked: true, idle: true, questions: 0, note: idle };
   const scoped = withScope(withConnectors(tmpl, repoPath), repoPath), box = isClaudeCmd(scoped) && trustFull() ? sandboxFor(repoPath, scoped) : null; // a repo run's sandbox, on top of the membrane
-  tmpl = withStream(withTrust(scoped, box));
+  tmpl = withStream(withTrust(withOwnTools(scoped), box));
   const resume = isClaudeCmd(tmpl) ? resumeFor(repoPath) : null, fresh = tooLong(resume); // too long to resume: a fresh run carries on
   if (!model) model = routedModel(repoPath, opts, !!resume && !fresh); // routine runs on Sonnet, hard ones on Opus (route.mjs); the --model already in your command is only the Auto default, so the pick replaces it
   if (model) tmpl = withModel(tmpl, model);
@@ -353,13 +366,13 @@ function runHandoff(repoPath, { force = false, lost = false, model = "", onExit 
   const blocked = !force && blockedAgain(repoPath, tmpl); if (blocked) return blocked;
   try { unlinkSync(join(repoPath, ".symbiot", WAITING)); } catch {} // the step's done (or this is Start it anyway): this is the run it waited for
   noteUntracked(repoPath);
-  const dirtyBefore = dirtyState(repoPath), ticksBefore = ticksIn(readSymbiot(repoPath, "TASKS.md"));
+  const dirtyBefore = dirtyState(repoPath), ticksBefore = ticksIn(readSymbiot(repoPath, "TASKS.md")), askedBefore = readSymbiot(repoPath, "QUESTIONS.md");
   const lock = join(repoPath, ".symbiot", LOCK);
   const own = opts.env && typeof opts.env === "object" ? Object.fromEntries(Object.entries(opts.env).map(([k, v]) => [k, String(v)])) : null, boxEnv = sandboxEnv(box);
   const owner = licenceState().plan === "owner" ? { SYMBIOT_OWNER: "1" } : null; // the guard lets only the owner's runs touch Symbiot's own files
   // SYMBIOT_AGENT: which run a `symbiot screens` command comes from, so it gets its own tab in the app's hidden browser
   const env = { ...(own || {}), ...(boxEnv || {}), ...(owner || {}), SYMBIOT_AGENT: repoPath };
-  const e = track(typeof opts.name === "string" && opts.name ? opts.name.slice(0, 80) : repoPath.split("/").pop(), fillHandoff(runCmd, repoPath, `${fresh ? carryOn(repoPath) : resume ? RESUME_PROMPT : HANDOFF_PROMPT} ${whereLine(repoPath)}`), repoPath, (code) => {
+  const e = track(typeof opts.name === "string" && opts.name ? opts.name.slice(0, 80) : repoPath.split("/").pop(), fillHandoff(runCmd, repoPath, `${fresh ? carryOn(repoPath) : resume ? RESUME_PROMPT : HANDOFF_PROMPT} ${whereLine(repoPath)}${note ? " " + note : ""}`), repoPath, (code) => {
     if (noteSession(repoPath, code, !!resume && !fresh) === "lost") { setTimeout(() => { try { runHandoff(repoPath, { force: true, lost: true, onExit }); } catch {} }, 300); return; } // its conversation is gone: start afresh
     try { if (JSON.parse(readFileSync(lock, "utf8")).pid === e.pid) unlinkSync(lock); } catch {}
     noteBlocked(repoPath, tmpl, e.startedAt, code);
@@ -367,14 +380,31 @@ function runHandoff(repoPath, { force = false, lost = false, model = "", onExit 
     setTimeout(() => { try { autoAllow(repoPath); } catch {} }, 300); // a list it proposed inside your work: turned on, and on it goes
     startHeldTasks(repoPath); // tasks sent while it ran land now; start on them as that Send would have
     try { urgentDone(repoPath, e.id); } catch {} // the urgent run's done: the lanes it parked carry on
+    const up = (() => { try { return escalation(repoPath, model, code, { dirtyBefore, ticksBefore, askedBefore }, escalatedFrom); } catch { return null; } })();
+    if (up) { setTimeout(() => { try { runHandoff(repoPath, { force: true, model: up.model, escalatedFrom: up.from, note: up.note, onExit }); } catch {} }, 300); return; } // it failed or did nothing: the same task, one tier up
     if (onExit) try { onExit(code); } catch {} // a run beside the lane's own (parallel.mjs) merges back
   }, env);
   if (!e) return null;
   e.handoff = true;
+  if (escalatedFrom) e.escalatedFrom = escalatedFrom; // costs.json logs it, so a lane that keeps escalating starts on Opus (route.mjs)
   try { if (urgentState()) noteUrgentRun(repoPath, e.id); } catch {}
   if (e.pid) try { writeFileSync(lock, JSON.stringify({ pid: e.pid, id: e.id, startedAt: e.startedAt, owner: process.pid })); } catch {}
   noteRun(e);
   return e;
+}
+// A Sonnet run that ended in an error (or its turn cap), or produced nothing (no
+// change, no tick, no question), is run again once on Opus, told what the first
+// attempt did. { model, from, note } or null: Opus (or an explicit pick) goes no higher.
+function escalation(repoPath, model, code, before, already = "") {
+  if (already || model !== "sonnet") return null; // only a Sonnet pick goes up: Opus, an explicit pick or another agent's own model stays
+  let run = {}; try { run = parseRun(lastRunText(readSymbiot(repoPath, "agent.log"))); } catch {}
+  const failed = code !== 0 || run.errors > 0;
+  const dirty = failed ? null : dirtyState(repoPath);
+  const nothing = !failed && before.dirtyBefore && dirty && JSON.stringify(dirty) === JSON.stringify(before.dirtyBefore) && ticksIn(readSymbiot(repoPath, "TASKS.md")) === before.ticksBefore && readSymbiot(repoPath, "QUESTIONS.md") === before.askedBefore;
+  if (!failed && !nothing) return null;
+  const said = String(run.final || "").trim().replace(/\s+/g, " ").slice(-300);
+  const note = `The last attempt, on a smaller model, ${failed ? "ended in an error" : "produced nothing"}${said ? `: ${said}` : ""}. Start from the same task and take a different approach.`;
+  return { model: "opus", from: "sonnet", note: note.replace(/["'$`\\]/g, "") }; // no quotes, $ or backticks: it may pass through two shells
 }
 // ---- nothing to do: no run ----------------------------------------------------
 // A run in ~ started with no .symbiot/TASKS.md there, found nothing to action and
@@ -986,7 +1016,7 @@ const HANDED = "handed.json", BOX = /^\s*-\s*\[[ x]\]\s*/i;
 function briefTasks(md) {
   const lines = String(md || "").split("\n"), at = lines.findIndex((l) => /^##\s+Tasks\s*$/.test(l));
   const end = at < 0 ? lines.length : lines.findIndex((l, i) => i > at && /^##\s/.test(l));
-  return lines.slice(at + 1, end < 0 ? lines.length : end).filter((l) => BOX.test(l)).map((l) => l.replace(BOX, "").trim()).filter(Boolean);
+  return lines.slice(at + 1, end < 0 ? lines.length : end).filter((l) => BOX.test(l)).map((l) => l.replace(BOX, "").replace(/\s*\[model:\s*\w+\s*\]/gi, "").trim()).filter(Boolean);
 }
 function noteHanded(path, md, also = []) {
   try { writeFileSync(join(path, ".symbiot", HANDED), JSON.stringify({ at: Date.now(), tasks: [...briefTasks(md), ...also] })); } catch {}
@@ -1152,7 +1182,7 @@ function track(name, cmd, cwd, onExit, env) {
     const child = spawn(cmd, { shell: true, cwd, detached: true, stdio: ["ignore", fd === "ignore" ? "ignore" : fd, fd === "ignore" ? "ignore" : fd], ...(env ? { env: { ...process.env, ...env } } : {}) });
     entry.pid = child.pid;
     if (fd !== "ignore") try { closeSync(fd); } catch {} // the child has its own copy; ours stayed open for the life of the app (101 of them by 2026-10-10)
-    child.on("exit", (code) => { entry.status = code === 0 ? "done" : "failed"; entry.exitCode = code; entry.endedAt = Date.now(); if (code === 0) try { noteDuration({ path: cwd, cmd, task, ms: entry.endedAt - entry.startedAt }); } catch {} try { const r = parseRun(lastRunText(readRunLog(logp))); noteCost({ path: cwd, cmd, task, model: r.model, cost: r.cost, turns: r.turns, ms: entry.endedAt - entry.startedAt, ok: code === 0, modelUsage: r.modelUsage }); } catch {} if (onExit) try { onExit(code); } catch {} for (const f of END_HOOKS) try { f(entry); } catch {} });
+    child.on("exit", (code) => { entry.status = code === 0 ? "done" : "failed"; entry.exitCode = code; entry.endedAt = Date.now(); if (code === 0) try { noteDuration({ path: cwd, cmd, task, ms: entry.endedAt - entry.startedAt }); } catch {} try { const r = parseRun(lastRunText(readRunLog(logp))); noteCost({ path: cwd, cmd, task, model: r.model, cost: r.cost, turns: r.turns, ms: entry.endedAt - entry.startedAt, ok: code === 0, modelUsage: r.modelUsage, escalatedFrom: entry.escalatedFrom }); } catch {} if (onExit) try { onExit(code); } catch {} for (const f of END_HOOKS) try { f(entry); } catch {} });
     child.on("error", () => { entry.status = "failed"; entry.endedAt = Date.now(); });
     child.unref();
     HANDOFFS.unshift(entry);
@@ -1309,7 +1339,7 @@ const HARM_RULE = /^Bash\(\s*(rm|dd|mkfs|chmod|chown|shred|truncate)\b/i;
 const wideRule = (r) => ANY_RULE.test(r) || (HARM_RULE.test(r) && /\*/.test(r));
 // Whatever an agent is allowed, it never edits Symbiot's own settings: that's where
 // what agents may do is kept, so an agent could widen its own permissions there.
-const GUARD = () => { const c = join(homedir(), ".config", "symbiot", "config.json"), s = join(homedir(), ".config", "symbiot", "secrets.json"); return [`Edit(${c})`, `Write(${c})`, `Read(${s})`, `Edit(${s})`, `Write(${s})`]; };
+const GUARD = () => { const c = join(homedir(), ".config", "symbiot", "config.json"), s = join(homedir(), ".config", "symbiot", "secrets.json"); return [`Edit(${c})`, `Read(${s})`, `Edit(${s})`]; }; // Edit rules cover every file-editing tool; a Write(…) rule matches nothing and Claude refuses the settings file over it
 // A permission card that names its commands in backticks ("allow `python3 -I -c` / `py_compile`
 // on `v2/*.py`"): the rules it asks for. A token with a path or a glob is where the commands
 // work, not a command (the glob is never a file to look for); a bare module name (py_compile)
@@ -1338,7 +1368,8 @@ function installAllowlist(path, given = null) {
   const f = join(path, ".claude", "settings.local.json");
   let cur = {}; try { cur = JSON.parse(readFileSync(f, "utf8")); } catch {}
   const perm = cur.permissions || {}, merge = (a, b) => [...new Set([...list(a), ...b])];
-  cur.permissions = { ...perm, allow: merge(perm.allow, allow), deny: merge(perm.deny, [...deny, ...GUARD()]), additionalDirectories: merge(perm.additionalDirectories, dirs) };
+  const edit = (a) => a.map((r) => r.replace(/^Write\(/, "Edit(")); // Write(path) isn't a file rule: Edit(path) is, and covers writing
+  cur.permissions = { ...perm, allow: merge(edit(list(perm.allow)), edit(allow)), deny: merge(edit(list(perm.deny)), edit([...deny, ...GUARD()])), additionalDirectories: merge(perm.additionalDirectories, dirs.filter(isDir)) };
   try { mkdirSync(join(path, ".claude"), { recursive: true }); writeFileSync(f, JSON.stringify(cur, null, 2) + "\n", { mode: 0o600 }); } catch { return null; }
   const n = allow.length + deny.length;
   return [`the allow list for this folder (${n} rule${n === 1 ? "" : "s"})`];
@@ -1655,4 +1686,4 @@ function agentsList() {
   }).concat(earlierRuns()).map((a) => ({ ...a, phase: runPhase(a) }));
 }
 
-export { grantCard, cardRules, cardIsPermission, runPhase, onRunEnd, onAnswered, CHANGES, toKnownHost, continueLanes, autoPick, autoDecide, FACTS, factsOf, knownRun, withStream, workOf, HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, connectorsInfo, linkReach, fillHandoff, runHandoff, nothingToDo, whereOf, whereLine, whereAnswer, askTask, PARKED_NOTE, parkedPaths, isParked, parkLane, agentMissing, blockedAgain, runningHandoff, loadRuns, earlierRuns, namedFiles, unchangedStep, waitingFor, startWaiting, noteUntracked, untrackedBefore, forgetUntracked, writeTasks, droppedTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, pickAgent, findOrcaCli, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, skipIdea, agentQuestions, answerQuestions, agentsList, needsOf, settleNeeds, NEEDS_FOR, readLastWords, readNeeds, parseRead, READ_FILE, autoAllow, autoAllowSweep, allowlistInWork, installAllowlist, inWork, withScope, withTrust, sandboxFor, sandboxLifts, sandboxEnv, sandboxNeeds, sandboxState, sandboxWrites, SANDBOX_DIR, resumeFor, noteSession, tooLong, carryOn, RESUME_CTX, CARRY_PROMPT, trustFull, GUARD_SETTINGS, isUrgent, urgentFirst, urgentUndo, urgentDone, urgentSweep, urgentState, licenceGate, stopRun, loadRunFiles, saveRunFiles, forgetRunFiles, withModel, routedModel };
+export { withOwnTools, grantCard, cardRules, cardIsPermission, runPhase, onRunEnd, onAnswered, CHANGES, toKnownHost, continueLanes, autoPick, autoDecide, FACTS, factsOf, knownRun, withStream, workOf, HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, connectorsInfo, linkReach, fillHandoff, runHandoff, nothingToDo, whereOf, whereLine, whereAnswer, askTask, PARKED_NOTE, parkedPaths, isParked, parkLane, agentMissing, blockedAgain, runningHandoff, loadRuns, earlierRuns, namedFiles, unchangedStep, waitingFor, startWaiting, noteUntracked, untrackedBefore, forgetUntracked, writeTasks, droppedTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, pickAgent, findOrcaCli, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, skipIdea, agentQuestions, answerQuestions, agentsList, needsOf, settleNeeds, NEEDS_FOR, readLastWords, readNeeds, parseRead, READ_FILE, autoAllow, autoAllowSweep, allowlistInWork, installAllowlist, inWork, withScope, withTrust, sandboxFor, sandboxLifts, sandboxEnv, sandboxNeeds, sandboxState, sandboxWrites, SANDBOX_DIR, resumeFor, noteSession, tooLong, carryOn, RESUME_CTX, CARRY_PROMPT, trustFull, GUARD_SETTINGS, isUrgent, urgentFirst, urgentUndo, urgentDone, urgentSweep, urgentState, licenceGate, stopRun, loadRunFiles, saveRunFiles, forgetRunFiles, withModel, routedModel, escalation };
