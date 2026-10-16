@@ -96,6 +96,26 @@ try {
     ok("a window that never came up tells nothing", told === 1, told);
     H.onBrowserClosed(null);
 
+    console.log("SIGN IN WITH AN AGENT'S READ WAITING — the window opens, not handed to a hidden copy");
+    // A card's "Sign in to twilio.com" did nothing (16 Oct; the same since the 12th): it let go of
+    // the one-at-a-time queue before its window had the profile, an agent's read waiting behind it
+    // started the hidden browser in the gap, and Chrome handed the window to that, out of sight.
+    process.env.SYMBIOT_BROWSER_ARGS = "--ozone-platform=headless"; // a window, with no screen
+    const opening = H.openSymbiotBrowser(PAGE), waiting = H.readPage(PAGE);
+    const o = await opening, w = await waiting;
+    const shown = () => chromes().filter((a) => !/--headless/.test(a)).length;
+    ok("Sign in opens a window that has the profile", o && o.ok && H.windowOpen() && shown() >= 1, [o, H.lockHolder(), chromes().length]);
+    ok("…and the read behind it waits for Done instead of taking the profile", /Symbiot Browser is open/.test((w && w.error) || ""), w);
+    await H.closeSymbiotBrowser();
+    ok("…and Done closes it", !H.windowOpen(), H.lockHolder());
+    other = hidden(); await up(other); // a lane's own `symbiot screens` (another Symbiot) has the profile
+    const o2 = await H.openSymbiotBrowser(PAGE);
+    await Promise.race([gone(other), sleep(3000)]);
+    ok("another Symbiot's hidden browser on the profile is closed, and the window still opens", o2 && o2.ok && H.windowOpen() && (other.exitCode !== null || !!other.signalCode), [o2, H.lockHolder()]);
+    other = null;
+    await H.closeSymbiotBrowser();
+    delete process.env.SYMBIOT_BROWSER_ARGS;
+
     console.log("ANOTHER SYMBIOT'S HIDDEN BROWSER — not a window, and it doesn't block");
     other = hidden();
     await up(other);

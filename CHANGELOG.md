@@ -2,6 +2,11 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.66.3 — 2026-10-16
+
+- "Sign in to <site>" on a card opens the Symbiot Browser every time. Before, an agent using Symbiot's hidden browser at that moment could take the window, which then opened out of sight, so the click seemed to do nothing. If the window really can't open, the card now says why.
+- The card says "Opening…" as soon as you click, and then whether it opened, on the card itself instead of only in Home's chat.
+
 ## 0.66.2 — 2026-10-16
 
 - When a question's answer comes back, check it's one of that question's own options: the LinkedIn sign-in question came back with an option from a different question while LinkedIn was still signed out.
