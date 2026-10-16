@@ -2,6 +2,11 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.66.2 — 2026-10-16
+
+- When a question's answer comes back, check it's one of that question's own options: the LinkedIn sign-in question came back with an option from a different question while LinkedIn was still signed out.
+- When `symbiot screens` runs inside a lane's sandbox, where the browser profile is read-only, say so instead of "Symbiot's browser is already open".
+
 ## 0.66.1 — 2026-10-15
 
 - `symbiot screens` works inside a lane's sandbox: its hidden browser now goes through the sandbox's network proxy. Before, every page failed with "no internet".

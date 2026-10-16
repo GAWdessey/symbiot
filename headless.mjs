@@ -21,7 +21,7 @@
 // signed in. It's separate from your everyday browser profile.
 import { spawn, spawnSync } from "node:child_process";
 import { join, dirname, resolve as resolvePath } from "node:path";
-import { mkdirSync, existsSync, statSync, readlinkSync, readFileSync, readdirSync, writeFileSync, copyFileSync, mkdtempSync, rmSync } from "node:fs";
+import { accessSync, constants as FS, mkdirSync, existsSync, statSync, readlinkSync, readFileSync, readdirSync, writeFileSync, copyFileSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { CONFIG_DIR, chromeBinary, loadConfig, saveConfig } from "./core.mjs";
 import { loadScreens, addPageScreen, center, stitchPng, stitchListPng } from "./screens.mjs";
@@ -33,6 +33,15 @@ const PROFILE = join(CONFIG_DIR, "browser");
 // check opened it, where none of the sites signed in to the day before were: ten links
 // showed their sign-in page while the sign-ins sat in Default.
 const PROFILE_DIR = "Default";
+// A sandboxed shell (a lane's run) may see the browser folder read-only: Chrome can't start
+// there, and that is not "already open". Say so, with the way out.
+function profileReadOnly() {
+  try { mkdirSync(PROFILE, { recursive: true }); accessSync(PROFILE, FS.W_OK); return ""; }
+  catch (e) {
+    if (!/EROFS|EACCES|EPERM/.test(String(e.code))) return "";
+    return "Symbiot's browser folder (" + PROFILE + ") is read-only from here, so the browser can't start: this shell is sandboxed. Allow writing to that folder for this shell, or run the symbiot screens command outside the sandbox.";
+  }
+}
 export { PROFILE_DIR };
 const VIEW = { w: 1280, h: 800 }; // the page's size: a laptop-sized window
 const TIMEOUT = 90000;            // the most one map, press or type may take
@@ -395,6 +404,8 @@ async function launch(who = MAIN) {
   // over to it and pop an empty window into it, so wait for Done instead
   if (windowOpen()) throw new Error("The Symbiot Browser is open: Symbiot reads your sites once you click Done in it.");
   await strayGone();
+  const locked = profileReadOnly();
+  if (locked) throw new Error(locked);
   const ua = windowUa(chrome);
   const proc = spawn(chrome, browserArgs(true, "about:blank", ua), { stdio: ["ignore", "ignore", "pipe", "pipe", "pipe"] });
   if (proc.pid) OWN.add(proc.pid);
@@ -408,6 +419,7 @@ async function launch(who = MAIN) {
       try { ({ targetId } = await c.send("Target.createTarget", { url: "about:blank" })); }
       catch (e) {
         // A second Chrome on a profile that's open hands over to the first and exits.
+        const ro = profileReadOnly(); if (ro) throw new Error(ro);
         if (existsSync(join(PROFILE, "SingletonLock")) || /existing browser session|ProcessSingleton/i.test(err)) throw new Error("Symbiot's browser is already open, in a window (Sign in) or in another Symbiot: close that, then try again.");
         throw new Error("The browser didn't start: " + ((err.trim().split("\n").pop()) || e.message));
       }
