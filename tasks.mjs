@@ -34,7 +34,13 @@ function leadOf(text) {
   const m = text.slice(0, LEAD_MAX + 1).match(/^.*[.!?](?=\s)/s);
   return m && m[0].length >= LEAD_MAX / 3 ? m[0] + " …" : clipWords(text, LEAD_MAX);
 }
+// A task given an ops run's folder name as its lane (act-304032d6: an ops report's ideas took the
+// folder's name) belongs to ops: no lane has that name, so it sat "Blocked: Symbiot can't find its
+// folder" (16 Oct 2026). syncTasks puts one already on the list right too.
+const OPS_FOLDER = /^act-[0-9a-f]{6,}$/i;
+const laneOfRepo = (repo) => (OPS_FOLDER.test(String(repo || "")) ? "ops" : repo || "");
 function addTask(text, repo, { after = "", finding = false } = {}) {
+  repo = laneOfRepo(repo);
   const raw = String(text || "").trim(), tail = String(after || "").trim();
   text = raw.replace(/\s+/g, " ");
   if (!text) return { error: "empty" };
@@ -136,6 +142,7 @@ function applyDrops(t, map) {
 const FROM_REPORT = /\(from the report "/, FINDING_NOTE = "a finding, not a job: it says what's so, with nothing to do";
 function syncTasks() {
   const t = loadTasks(); const map = laneMap(); let review = 0, archived = 0, started = 0; const checkedByRepo = {};
+  for (const x of t) if (x && !x.archived && OPS_FOLDER.test(String(x.repo || ""))) x.repo = "ops"; // an ops folder's name as a lane: ops (addTask)
   const dropped = applyDrops(t, map);
   for (const x of t) {
     if (x.archived || x.done || x.review || !x.repo) continue;

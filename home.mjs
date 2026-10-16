@@ -199,8 +199,8 @@ function nextUp({ now = Date.now(), map = {}, list = [], named = displayName, de
 // its task, and stays away a week. { ok, said } or { error }.
 function homeNext(id, deps = {}) {
   id = String(id || ""); cached = null;
-  const h = deps.state || homeState({ fresh: true }), s = (h.next || []).find((x) => x.id === id);
-  if (!s) return { error: (h.you || []).length ? "Something needs you first: it's at the top of Home." : "That suggestion isn't here any more." };
+  const h = deps.state || homeState({ fresh: true }), s = (h.next || []).find((x) => x.id === id) || (h.nextAll || []).find((x) => x.id === id);
+  if (!s) return { error: "That suggestion isn't here any more." }; // a tap on a card that was on screen when something started needing you still goes ahead (nextAll)
   const map = (deps.repos || (() => { try { return laneMap(); } catch { return {}; } }))() || {};
   const run = deps.run || runHandoff, ref = id.split(":").slice(2).join(":");
   let r;
@@ -444,8 +444,9 @@ function homeState({ now = Date.now(), fresh = false, deps = {} } = {}) {
   }
   // nothing waits on you: a few things that can be done next (none while anything does)
   you = undismissed(settleAsks(you), (deps.dismissed || loadDismissed)());
-  const next = you.length ? [] : nextUp({ now, map, list, named, deps: { board: () => bd, reports: () => rep, ...(deps.next || {}) } });
-  const out = { you: you.slice(0, 6), youCount: you.length, feeds: feeds.slice(0, 6), lanes: hs, working, runs: runs.slice(0, 4), next, marketing: marketing({ list, map, named, pend }), ...(deps.phone || phoneBits)(now), at: now };
+  const nextAll = nextUp({ now, map, list, named, deps: { board: () => bd, reports: () => rep, ...(deps.next || {}) } });
+  const next = you.length ? [] : nextAll; // not shown while something needs you, but a tap on one already on screen still works (homeNext)
+  const out = { you: you.slice(0, 6), youCount: you.length, feeds: feeds.slice(0, 6), lanes: hs, working, runs: runs.slice(0, 4), next, nextAll, marketing: marketing({ list, map, named, pend }), ...(deps.phone || phoneBits)(now), at: now };
   if (!deps.board) cached = out;
   return out;
 }

@@ -154,7 +154,9 @@ console.log("WHERE IT RUNS — given, or found running here; never your own Symb
     ok("the made-up Symbiot: Acme's repos with their git, by a made-up person", log.length === 6 && log.every((l) => l.startsWith("Sam Rivera ")) && Object.keys(D.DEMO_REPOS).every((r) => existsSync(join(dh, "code", r, ".git"))), log);
     ok("…four agents asking, tasks, what arrived, its week and a Marketing draft", /Refund the duplicate charge/.test(readFileSync(join(dh, "code", "billing-api", ".symbiot", "QUESTIONS.md"), "utf8")) && JSON.parse(readFileSync(join(dc, "tasks.json"), "utf8")).length === 10 && JSON.parse(readFileSync(join(dc, "watch.json"), "utf8")).news.length === 9 && existsSync(join(dc, "marketing", "drafts", "storefront", "guest-checkout.md")), "");
     const dcfg = JSON.parse(readFileSync(join(dc, "config.json"), "utf8"));
-    ok("…set up already, its key a fake, its agent a stand-in that does nothing, nothing of yours in it", /not-a-real-key/.test(dcfg.apiKey) && /-e ""/.test(dcfg.agentCmd) && dcfg.scanRoots[0] === join(dh, "code") && !JSON.stringify(dcfg).includes(process.env.USER || "\u0000"), dcfg);
+    // the stand-in runs on this test's own node (demo.mjs: process.execPath), which nvm keeps under your home: not "yours" in the config
+    const yours = JSON.stringify({ ...dcfg, agentCmd: dcfg.agentCmd.replace(process.execPath, "node") }).includes(process.env.USER || "\u0000");
+    ok("…set up already, its key a fake, its agent a stand-in that does nothing, nothing of yours in it", /not-a-real-key/.test(dcfg.apiKey) && /-e ""/.test(dcfg.agentCmd) && dcfg.scanRoots[0] === join(dh, "code") && !yours, dcfg);
   } finally { rmSync(dh, { recursive: true, force: true }); }
   let got = ""; const found = await C.captureProduct({ product: repo, dir: lane, map: {}, apps: async () => [{ repo: "acme", url: "http://localhost:3000/" }], web: async (o) => { got = o.url; return { items: [] }; }, render: async () => ({ ok: true }), ffmpeg: () => true });
   ok("an app of it running here: captured there", found.ok && got === "http://localhost:3000/", [found, got]);
