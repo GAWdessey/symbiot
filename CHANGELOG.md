@@ -2,6 +2,14 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.66.7 — 2026-10-16
+
+- Symbiot now recognises Claude Code under any command name, so wrappers like claude-fallback get the guard, connectors, model routing and live steps they were silently missing.
+- Deny rules for the config and secrets files now take effect, and each lane's existing settings are migrated.
+- Dead "running" entries are swept, so real runs are no longer pushed out of the list.
+- A handover to a mistyped lane goes to the nearest lane, or to ops with a plain message.
+- Home's "What could be done next" card now starts the task when tapped even if something needs you, and shows any error on the card.
+
 ## 0.66.6 — 2026-10-16
 
 - Meta part, by the dailify lane itself: still waits on 0.66.4. npm and the installed app are on 0.66.3; the release run's copy (symbiot-825733) has 0.66.4 ready and had its "Ok to publish Symbiot 0.66.4 now?" answered…
