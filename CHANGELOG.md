@@ -2,6 +2,10 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.66.5 — 2026-10-16
+
+- Answering a card ("I've done this", Go ahead, Run it again) while Approve is still committing, testing or pushing that lane no longer says "It didn't start. Check your agent in Settings." It says Approve is busy, keeps your answer, and starts the lane's agent once Approve is done.
+
 ## 0.66.4 — 2026-10-16
 
 - Every lane can use the Symbiot Browser's signed-in sites now (WhatsApp Manager, SMS Portal, WhatsApp Web and the rest). A lane runs in a sandbox and couldn't reach the browser, so it said "this lane can't reach Meta" without trying. The app now opens a private door just for reading those pages, and lanes use it by themselves.
