@@ -84,6 +84,18 @@ try {
   const after = await ping(baseA, token);
   ok("the first app is still the one serving (same start time)", !!before.started && after.started === before.started, { before, after });
 
+  console.log("SCREENS DOOR — a sandboxed lane has no port, token or browser profile: the app's socket takes /api/screens and nothing else");
+  {
+    const { request } = await import("node:http");
+    const sock = join(HOME, ".config", "symbiot", "screens", "app.sock");
+    const viaSock = (path, method = "GET") => new Promise((done) => { const rq = request({ socketPath: sock, path, method }, (res) => { let t = ""; res.on("data", (d) => { t += d; }); res.on("end", () => done({ status: res.statusCode, body: t })); }); rq.on("error", (e) => done({ error: e.code })); rq.end(); });
+    await new Promise((r) => setTimeout(r, 300));
+    const pg = await viaSock("/api/ping"), sc = await viaSock("/api/screens"), other = await viaSock("/api/tasks"), cfg = await viaSock("/api/config");
+    ok("the app listens on a socket in the screens folder, and it pings with no token", pg.status === 200 && !!JSON.parse(pg.body || "{}").version, pg);
+    ok("…it lists the screens with no token", sc.status === 200 && Array.isArray(JSON.parse(sc.body || "null")), sc);
+    ok("…and anything else (tasks, settings) is refused", other.status === 403 && cfg.status === 403, { other, cfg });
+  }
+
   console.log("ONE WINDOW — a headless browser never becomes the newest window (2026-10-08: agents' screenshots of Home closed Garth's window, 'symbiot keeps crashing')");
   const pingUa = async (q, ua) => (await fetch(`${baseA}/api/ping${q}`, { headers: { "x-symbiot-token": token, ...(ua ? { "user-agent": ua } : {}) } })).json();
   const mine = await pingUa("?w=realwin01&new=1", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/141.0.0.0 Safari/537.36");

@@ -26,7 +26,7 @@ function handoverRules(lanes = [], here = "", reach = null) {
     ...reachLines(reach, here, [here, ...others]),
     ""];
 }
-// What each lane can and can't reach (reach.mjs laneReach: { sandboxed, hosts, keys }),
+// What each lane can and can't reach (reach.mjs laneReach: { sandboxed, hosts, keys, sites }),
 // so a job goes to a lane that can do it. Ops handed dailify a change to the live
 // server's .env as "your lane", and dailify can't reach the server: it went back and
 // forth until the handover guard stopped it (13 Oct 2026).
@@ -40,6 +40,7 @@ function reachLines(reach, here = "", lanes = []) {
     reach.sandboxed
       ? `- Every repo lane runs in a sandbox: it writes only in its own folder and reaches no server, so it can't change anything on a live server (its \`.env\`, a restart, a deploy), even for its own project. That's \`${OPS}\`'s: the repo lane does the code and says what to change there.`
       : `- Repo lanes run on this computer without a sandbox: they reach the same servers as \`${OPS}\`.`,
+    `- Websites are every lane's, not just \`${OPS}\`'s: Symbiot's browser is signed in to the sites the user linked${(reach.sites || []).length ? ` (${code((reach.sites || []).slice(0, 8))}, and more under Settings → Connections)` : " (Settings → Connections)"}, and \`symbiot screens\` reads and presses them from a sandboxed lane too (\`symbiot screens map <address>\`, then \`symbiot screens show <id>\`). A status check in Meta's WhatsApp Manager, Twilio's console or SMS Portal is yours to do: try it before you say your lane can't reach a site, and hand it to \`${OPS}\` only if a real attempt failed.`,
     ...(keyed.length ? [`- Keys in a lane's own \`.env\` (on this computer, not the server's): ${keyed.map((l) => `\`${l}\` (${reach.keys[l].join(", ")})`).join("; ")}.`] : []),
     ...(repo && reach.sandboxed ? [`- Your lane, \`${here}\`, reaches no server. If you're handed a job on one, hand that part to \`${OPS}\`, never back to a repo lane.`] : []),
     `- Handed a job your lane can't reach? Don't hand it back to the lane that sent it: send it to the lane above that can, saying why, or say in your last message what stopped you.`];

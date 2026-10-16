@@ -60,7 +60,7 @@ try {
 
   console.log("WHAT EACH LANE CAN REACH — ops handed dailify a live .env change it couldn't reach (13 Oct 2026)");
   {
-    const { sshHosts, envProviders, laneReach, unreachable } = await import("../reach.mjs");
+    const { sshHosts, envProviders, laneReach, unreachable, serverOnly } = await import("../reach.mjs");
     const ssh = "Host sts-prod\n  HostName 41.76.1.2\n  User garth\nHost *\n  ServerAliveInterval 30\nHost gh github-work\n";
     ok("the servers this computer connects to come from its ssh config, wildcards left out", sshHosts(ssh).join() === "sts-prod,41.76.1.2,github-work", sshHosts(ssh));
     ok("…an alias too short to match safely is left out", !sshHosts(ssh).includes("gh"), sshHosts(ssh));
@@ -68,6 +68,9 @@ try {
     ok("a lane's .env gives the providers it holds keys for, names only, no generic words", envProviders(env).join() === "GOOGLE,TWILIO,STRIPE", envProviders(env));
     const r = laneReach({ dailify: "/x/dailify", coral: "/x/coral" }, { sandboxed: true, ssh, read: (f) => (f === "/x/dailify/.env" ? env : "") });
     ok("laneReach: sandboxed, the hosts, and keys only for lanes that have some", r.sandboxed && r.hosts.includes("sts-prod") && r.keys.dailify.join() === "GOOGLE,TWILIO,STRIPE" && !r.keys.coral, r);
+    const rs = laneReach({}, { sandboxed: true, ssh: "", screens: () => [{ page: { url: "https://business.facebook.com/x?a=1" } }, { page: { url: "https://www.console.twilio.com/" } }, { page: { url: "http://127.0.0.1:7391/" } }, {}] });
+    ok("laneReach: the sites Symbiot's browser has mapped, the app's own address left out", rs.sites.join() === "business.facebook.com,console.twilio.com", rs);
+    ok("a repo's brief: websites are every lane's, via symbiot screens, so a Meta or Twilio check isn't handed away untried", /Websites are every lane's[^\n]*business\.facebook\.com[^\n]*symbiot screens[^\n]*try it before you say your lane can't reach a site/.test(handoverRules(["dailify"], "dailify", rs).join("\n")), handoverRules(["dailify"], "dailify", rs).join("\n"));
     const rules = handoverRules(["dailify", "coral"], "dailify", r).join("\n");
     ok("a repo's brief: ops reaches the servers, every repo lane reaches none, so a live server's .env is ops's", /`ops`: runs on this computer, outside any sandbox: the servers this computer connects to \(`sts-prod`/.test(rules) && /Every repo lane runs in a sandbox: it writes only in its own folder and reaches no server/.test(rules) && /its `\.env`, a restart, a deploy/.test(rules), rules);
     ok("…its own lane says it reaches no server, and a server job goes to ops, never back to a repo lane", /Your lane, `dailify`, reaches no server\. If you're handed a job on one, hand that part to `ops`, never back to a repo lane/.test(rules), rules);
@@ -78,11 +81,19 @@ try {
     ok("sandbox off: repo lanes reach the same servers as ops", /without a sandbox: they reach the same servers as `ops`/.test(open) && !/reaches no server/.test(open), open);
     ok("no reach known: the rules are as they were", !/can reach/.test(handoverRules(["dailify"], "dailify").join("\n")), "");
     ok("unreachable: the servers a handover names that a sandboxed repo lane can't reach; none for ops, or unsandboxed", unreachable("Set WHATSAPP_PROVIDER=meta in /srv/dailify/.env on sts-prod and restart", "dailify", r).join() === "sts-prod" && !unreachable("on sts-prod", "ops", r).length && !unreachable("on sts-prod", "dailify", { ...r, sandboxed: false }).length && !unreachable("the sts-production-notes file", "dailify", r).length, "");
+    ok("serverOnly: a job that's all on a server the lane can't reach (a deploy, a restart, a check there), none with code in it, none for ops or unsandboxed", serverOnly("Put the dailify fix for Garth's two WhatsApp complaints live on sts-prod", "dailify", r).join() === "sts-prod" && serverOnly("Read-only: check the relay's logs on sts-prod", "dailify", r).length === 1 && !serverOnly("Fix the bug in the invite flow, then deploy it to sts-prod", "dailify", r).length && !serverOnly("Add a WHATSAPP_PROVIDER switch to the code, then set it in the live .env on sts-prod", "dailify", r).length && !serverOnly("Put it live on sts-prod", "ops", r).length && !serverOnly("Put it live on sts-prod", "dailify", { ...r, sandboxed: false }).length && !serverOnly("Check the Meta template's status", "dailify", r).length, "");
     const before = calls.add.length;
-    put(coral, "HANDOFF.md", "### GhostAIChat\nSwitch WHATSAPP_PROVIDER to meta in the live .env on sts-prod, then restart the service.\n");
+    put(coral, "HANDOFF.md", "### GhostAIChat\nAdd a WHATSAPP_PROVIDER switch to the code, then set it to meta in the live .env on sts-prod and restart the service.\n");
     dispatch(coral, { ...deps(), reach: r });
     const sent = calls.add.slice(before)[0] || {};
     ok("a handover to a repo lane naming a server it can't reach: its task says so, and to send that part to ops", sent.repo === "GhostAIChat" && /^\(handed over by coral\) Symbiot: GhostAIChat runs in a sandbox and can't reach sts-prod\. Do the code part here, and hand what has to change on that server to ops/.test(sent.after || ""), sent);
+    // all of it on the server: it goes to ops, which can, rather than to a lane that can only hand it on (16 Oct 2026)
+    const adds = calls.add.length, acts = calls.act.length;
+    put(coral, "HANDOFF.md", "### GhostAIChat\nSwitch WHATSAPP_PROVIDER to meta in the live .env on sts-prod, then restart the service.\n");
+    const [rr] = dispatch(coral, { ...deps(), reach: r });
+    ok("…all of it on that server: Symbiot sends it to ops instead, and ops hears why", rr && rr.to.lane === "ops" && rr.rerouted && rr.rerouted.from === "GhostAIChat" && calls.add.length === adds && calls.act.length === acts + 1 && /It was for GhostAIChat, but GhostAIChat runs in a sandbox and can't reach sts-prod/.test(calls.act.at(-1).o.context), [rr, calls.act.at(-1) && calls.act.at(-1).o.context]);
+    ok("…and the lane that asked reads where it went in its HANDOFF.md", /→ \*\*ops\*\*: sent to ops instead of GhostAIChat \(GhostAIChat runs in a sandbox and can't reach sts-prod\), and ops's agent started on it/.test(read(coral, "HANDOFF.md")), read(coral, "HANDOFF.md"));
+    { const L0 = loadLedger(); L0.handoffs = L0.handoffs.filter((h) => !h.rerouted); writeFileSync(join(CFG, "lanes.json"), JSON.stringify(L0)); calls.act.length = acts; }
     put(coral, "HANDOFF.md", "");
   }
 
@@ -208,18 +219,37 @@ try {
   const L = JSON.parse(readFileSync(join(CFG, "lanes.json"), "utf8")); L.handoffs.push({ id: "p", key: "p", from: { lane: "coral", path: coral }, to: { lane: "ops", path: deep }, text: "Restart the relay on sts-prod and say what you saw.", at: Date.now(), chain: MAX_CHAIN, status: "done", reportedAt: Date.now() });
   writeFileSync(join(CFG, "lanes.json"), JSON.stringify(L));
   put(deep, "TASKS.md", "The user asked Symbiot for this:\n\n> Restart the relay on sts-prod and say what you saw.\n\n## Tasks\n- [ ] Restart the relay on sts-prod and say what you saw.\n");
-  put(deep, "HANDOFF.md", "### coral\nAnd back again.\n");
+  put(deep, "HANDOFF.md", "### coral\nRestart the relay on sts-prod again, and say what you saw.\n");
   const runs6 = calls.run.length; lanesTick(deps());
   const e6 = loadLedger().handoffs.find((h) => h.from.path === deep);
   ok(`${MAX_CHAIN} handovers in a row: the next one isn't started (no ping-pong)`, e6 && e6.status === "blocked" && /handovers in a row/.test(e6.note) && !calls.run.slice(runs6).some((x) => x.p === coral), [e6, calls.run.slice(runs6)]);
-  ok("…but it's in that lane's tasks, for its next run, not dropped", e6 && e6.task && calls.add.slice(-1)[0].text === "And back again." && calls.add.slice(-1)[0].repo === "coral" && calls.push.slice(-1)[0].repo === "coral" && /waits in coral's tasks/.test(e6.note), [e6, calls.add.slice(-1)]);
+  ok("…but it's in that lane's tasks, for its next run, not dropped", e6 && e6.task && calls.add.slice(-1)[0].text === "Restart the relay on sts-prod again, and say what you saw." && calls.add.slice(-1)[0].repo === "coral" && calls.push.slice(-1)[0].repo === "coral" && /waits in coral's tasks/.test(e6.note), [e6, calls.add.slice(-1)]);
   ok("…and the lane that asked sees why on its block", handingOf(deep, { ledger: loadLedger(), map, running: () => false }).some((x) => /didn't start: 4 handovers in a row/.test(x.why)), handingOf(deep, { ledger: loadLedger(), map, running: () => false }));
   L.handoffs.push({ id: "p2", key: "p2", from: { lane: "coral", path: coral }, to: { lane: "ops", path: deep }, text: "Restart the relay on sts-prod and say what you saw.", at: Date.now(), chain: MAX_CHAIN, status: "done", reportedAt: Date.now() });
   writeFileSync(join(CFG, "lanes.json"), JSON.stringify({ handoffs: [...loadLedger().handoffs, L.handoffs.at(-1)] }));
-  put(deep, "HANDOFF.md", "### ops\nAnd on to ops.\n");
+  put(deep, "HANDOFF.md", "### ops\nOps: restart the relay on sts-prod once more and say what you saw.\n");
   const acts6 = calls.act.length; lanesTick(deps());
-  const e7 = loadLedger().handoffs.find((h) => h.from.path === deep && h.text === "And on to ops.");
-  ok("…to ops, which has no task list: not started, and the agent that asked is told", e7 && e7.status === "error" && /handovers in a row/.test(e7.error) && calls.act.length === acts6, e7);
+  const e7 = loadLedger().handoffs.find((h) => h.from.path === deep && /restart the relay on sts-prod once more/.test(h.text));
+  {
+    // a lane's own open task that merely shares words with a brief line isn't the handover it is "on" (16 Oct 2026)
+    const { parentOf } = await import("../lanes.mjs");
+    const led = { handoffs: [{ id: "q", key: "q", from: { lane: "ops", path: deep }, to: { lane: "coral", path: coral }, text: "Garth can't merge the one-tap yes link change into main: coral conflicts uncommitted please resolve", at: 1, chain: 7, status: "done" }] };
+    const brief = "# Tasks\n- **Open markers:**\n  - coral: 2 uncommitted conflicts main\n\n## Tasks\n- [ ] Report the Meta template status of coral broker invite, read only.\n\n## When you finish an item\n- Tick it.\n";
+    ok("a lane's own task, and brief lines that share a few words, are not a handover's chain", parentOf(coral, led, brief) === null, parentOf(coral, led, brief));
+    ok("…but the handover's own task line still is", parentOf(coral, led, brief.replace("Report the Meta template status of coral broker invite, read only.", led.handoffs[0].text)) === led.handoffs[0], "");
+  }
+  ok("…to ops, which has no task list: not started, and the agent that asked is told, and where it waits", e7 && e7.status === "error" && /handovers in a row[^.]*the same job coming round again/.test(e7.error) && /on Home for the user to start or skip/.test(e7.error) && calls.act.length === acts6, e7);
+  {
+    // past MAX_CHAIN, a different job is new work, not a loop: it starts (dailify's deploy to ops errored at chain 8, 16 Oct 2026)
+    put(deep, "HANDOFF.md", "### GhostAIChat\nNew job: add the JDK 21 path to the Android build's settings.\n");
+    const runs8 = calls.run.length; lanesTick(deps());
+    const e9 = loadLedger().handoffs.find((h) => h.from.path === deep && /JDK 21/.test(h.text));
+    ok("past the chain limit, a different job still starts, and names the handover it came from", e9 && e9.chain === MAX_CHAIN + 1 && e9.status !== "error" && e9.status !== "blocked" && e9.parent === "p2" && calls.run.slice(runs8).some((x) => x.p === e9.to.path), e9);
+    const { ancestry, loops } = await import("../lanes.mjs");
+    const led = { handoffs: [{ id: "a1", text: "Restart the relay on sts-prod.", chain: 1 }, { id: "a2", parent: "a1", text: "Fix the relay's crash in the code.", chain: 2 }, { id: "a3", parent: "a2", text: "Put the relay fix live.", chain: 3 }] };
+    ok("ancestry: the handovers a chain came through, newest first", ancestry(led.handoffs[2], led).map((h) => h.id).join() === "a3,a2,a1", ancestry(led.handoffs[2], led).map((h) => h.id));
+    ok("loops: only past the limit, and the same job coming round again; past three times the limit, anything", !loops("New job: restart the relay on sts-prod", MAX_CHAIN, ancestry(led.handoffs[2], led)) && loops("New job: restart the relay on sts-prod", MAX_CHAIN + 1, ancestry(led.handoffs[2], led)) && !loops("Renew the SSL certificate for coral.example.com", MAX_CHAIN + 1, ancestry(led.handoffs[2], led)) && loops("Renew the SSL certificate for coral.example.com", MAX_CHAIN * 3 + 1, []), "");
+  }
   // a later, unrelated job in that folder starts a chain of its own (the old rows into it aren't its parent)
   put(deep, "TASKS.md", "The user asked Symbiot for this:\n\n> Renew the SSL certificate for coral.example.com before it lapses.\n\n## Tasks\n- [ ] Renew the SSL certificate for coral.example.com before it lapses.\n");
   put(deep, "HANDOFF.md", "### GhostAIChat\nAdd the renewed certificate's date to the status page.\n");

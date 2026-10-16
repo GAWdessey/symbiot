@@ -39,7 +39,7 @@ function profileReadOnly() {
   try { mkdirSync(PROFILE, { recursive: true }); accessSync(PROFILE, FS.W_OK); return ""; }
   catch (e) {
     if (!/EROFS|EACCES|EPERM/.test(String(e.code))) return "";
-    return "Symbiot's browser folder (" + PROFILE + ") is read-only from here, so the browser can't start: this shell is sandboxed. Allow writing to that folder for this shell, or run the symbiot screens command outside the sandbox.";
+    return "Symbiot's browser folder (" + PROFILE + ") is read-only from here, so the browser can't start: this shell is sandboxed, and the Symbiot app isn't answering on its screens socket (is it running, with this update installed? Restart it). Otherwise allow writing to that folder for this shell, or run the symbiot screens command outside the sandbox.";
   }
 }
 export { PROFILE_DIR };

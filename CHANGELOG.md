@@ -2,6 +2,10 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.66.3 — 2026-10-16
+
+- Changes approved without a task, in handover.mjs, headless.mjs, index.mjs, lanes.mjs, mind.mjs, reach.mjs and 5 more.
+
 ## 0.66.2 — 2026-10-16
 
 - When a question's answer comes back, check it's one of that question's own options: the LinkedIn sign-in question came back with an option from a different question while LinkedIn was still signed out.

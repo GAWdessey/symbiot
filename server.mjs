@@ -9,11 +9,11 @@ import { voiceState, prepareVoice, speak, stopVoices } from "./voice.mjs";
 import { spawn, spawnSync } from "node:child_process";
 import { toggleAway, closeAway, awayOpen } from "./away.mjs";
 import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { join, resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { gunzipSync, gzipSync } from "node:zlib";
 import { readRunLog } from "./work.mjs";
-import { readFileSync, existsSync, mkdirSync, writeFileSync, readdirSync, statSync, unlinkSync, realpathSync, appendFileSync } from "node:fs";
+import { readFileSync, existsSync, mkdirSync, writeFileSync, readdirSync, statSync, unlinkSync, realpathSync, appendFileSync, rmSync, chmodSync } from "node:fs";
 import { createServer } from "node:http";
 import { randomBytes, createHash } from "node:crypto";
 import { EMBEDDED_UI } from "./ui.mjs";
@@ -27,7 +27,7 @@ import { laneCap, mergeEnded, DEFAULT_CAP } from "./parallel.mjs";
 import { addTask, toggleTask, removeTask, cancelTask, restoreTask, syncTasks, taskType, pushTasks, pendingReview, workingDiff, learnNpm, withReleases, releaseInput, approveRepo, approveChanges, sendBack, setAutoMerge, mergeWhenGreen, sendAgain, forgetUnsent, shippingPaths } from "./tasks.mjs";
 import { repoReview, repoSuggest, folderSuggest, taskChat, clearTaskChat, mailState, setMail, sentMail, produce, releaseNotes } from "./writeups.mjs";
 import { listSecrets, getSecret, markUsed, deleteSecret } from "./vault.mjs";
-import { loadScreens, screenImage, captureScreen, splitScreen, listMonitors, allowScreenshots, importScreen, setRegions, renameScreen, removeScreen, blueprint, clickRegion } from "./screens.mjs";
+import { SCREENS_SOCK, screensGate, loadScreens, screenImage, captureScreen, splitScreen, listMonitors, allowScreenshots, importScreen, setRegions, renameScreen, removeScreen, blueprint, clickRegion } from "./screens.mjs";
 import { mapPage, wholePage, pressRegion, typeRegion, chooseRegion, fillForm, verifyPage, uploadRegion, scrollPage, signIn, keepBrowserOpen, isTrusted, trustedSites, trustSite, untrustSite, openSymbiotBrowser, closeSymbiotBrowser, onBrowserClosed, setBrowserHub, siteUrl, browserHub, windowOpen } from "./headless.mjs";
 import { weeklyState, setWeekly, runWeekly, startWeekly, autostartState, setAutostart, installLauncher, iconSvg, setLauncherLook } from "./desktop.mjs";
 import { markNews, newsSince, watchState, addWatch, setEvery, removeWatch, clearNews, seenWatch, checkWatch, startWatches, setBrief, draftReply, openChat, watchBoard, boardChat, clearBoardChat } from "./watch.mjs";
@@ -838,6 +838,17 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
     });
   });
   server.listen(PORT, "127.0.0.1");
+  // the sandboxed lanes' way to `symbiot screens` (screens.mjs SCREENS_SOCK): the same handler, with the token added, for the screens routes and the ping only
+  if (!SANDBOX || process.env.SYMBIOT_SCREENS_SOCK) {
+    const gate = createServer((req, res) => {
+      let p = ""; try { p = new URL(req.url, "http://x").pathname; } catch {}
+      if (!screensGate(p)) { res.writeHead(403); res.end("forbidden"); return; }
+      req.headers["x-symbiot-token"] = TOKEN; server.emit("request", req, res);
+    });
+    gate.on("error", () => {});
+    try { mkdirSync(dirname(SCREENS_SOCK), { recursive: true, mode: 0o700 }); rmSync(SCREENS_SOCK, { force: true }); gate.listen(SCREENS_SOCK, () => { try { chmodSync(SCREENS_SOCK, 0o600); } catch {} }); } catch {}
+    process.on("exit", () => { try { rmSync(SCREENS_SOCK, { force: true }); } catch {} });
+  }
   checkLatest(); setInterval(checkLatest, 2 * 60 * 1000).unref(); // background update check (every 2 min)
   setInterval(() => { autoUpdateTick().catch(() => {}); }, Number(process.env.SYMBIOT_AUTO_EVERY) || 60000).unref(); // and it updates itself once nothing's working (autoUpdateDue)
   startWeekly(writeup); // the weekly write-up + notification, when switched on in Settings

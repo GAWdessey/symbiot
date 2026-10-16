@@ -131,6 +131,17 @@ try {
   ok("that lane busy: queued, and said so", aq.ok && aq.queued, aq);
   const ao = actIn("Find a JDK", "", { map, ops: () => ({ ok: true, job: "o1", dir: "/x" }) });
   ok("no lane: an agent of its own (ops)", ao.ok && ao.lane === "" && ao.job === "o1", ao);
+  {
+    // a job all on a server the lane can't reach goes to an agent outside a repo; one with code in it stays, told to hand the server part on (16 Oct 2026)
+    const reach = { sandboxed: true, hosts: ["sts-prod"], keys: {}, sites: [] }, opsCalls = [], added = [];
+    const addR = (t, r, o) => { added.push({ t, r, after: o && o.after }); return { id: "t" + added.length }; };
+    const live = actIn("Put the dailify fix for Garth's two WhatsApp complaints live on sts-prod", "symbiot", { map, reach, add: addR, push: () => ({ written: [{}] }), run: () => ({ id: "j" }), ops: (req, o) => { opsCalls.push(o); return { ok: true, job: "o2", dir: "/y" }; } });
+    ok("a job all on a server the lane can't reach: an agent outside a repo takes it, told why, not the lane", live.ok && live.lane === "" && live.job === "o2" && live.rerouted && live.rerouted.from === "symbiot" && !added.length && /meant for symbiot's agent, but symbiot runs in a sandbox and can't reach sts-prod/.test(opsCalls[0].context), [live, opsCalls]);
+    const code = actIn("Fix the bug in the invite flow, then deploy it to sts-prod", "symbiot", { map, reach, add: addR, push: () => ({ written: [{}] }), run: () => ({ id: "j" }), ops: () => { throw new Error("not ops"); } });
+    ok("…with code in it: the lane's task, saying to hand the server part to ops", code.ok && code.lane === "symbiot" && /can't reach sts-prod\. Do the code part here, and hand what has to change on that server to ops/.test(added[0].after), added);
+    const ln = await converse({ where: "Home", question: "put it live", map, act: { agent: () => live }, ask: said({ reply: "Sure.", do: { agent: "Put it live on sts-prod", repo: "symbiot" }, remember: [] }) });
+    ok("…and the reply says where it went and why", /Handed to your agent, not symbiot's: symbiot runs in a sandbox and can't reach sts-prod/.test(ln.reply), ln.reply);
+  }
 
   console.log("IT OPENS PAGES — \"navigate me to reports\" goes there (2026-10-09)");
   const navR = rulesFor(["symbiot"], "symbiot", true), plainR = rulesFor(["symbiot"], "symbiot");

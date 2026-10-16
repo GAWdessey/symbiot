@@ -20,6 +20,12 @@ import { CONFIG_DIR, hasCmd, readState, writeJsonAtomic } from "./core.mjs";
 
 const SCREENS_DIR = join(CONFIG_DIR, "screens");
 const INDEX = join(SCREENS_DIR, "screens.json");
+// The app's door for a sandboxed lane: a run can't reach the app's port (its sandbox has its own
+// network), can't read its token and can't write the browser's profile, so `symbiot screens` found
+// no way to Meta's WhatsApp Manager or Twilio and the dailify lane said "no browser" (16 Oct 2026).
+// The app listens on this socket in the one folder every lane may write, for /api/screens and /api/ping only.
+const SCREENS_SOCK = join(SCREENS_DIR, "app.sock");
+const screensGate = (path) => path === "/api/ping" || path === "/api/screens" || String(path).startsWith("/api/screens/");
 const MAX_REGIONS = 200;
 const MAX_IMAGE = 40 * 1024 * 1024;
 function loadScreens() { return readState(INDEX, Array.isArray) || []; }
@@ -488,4 +494,4 @@ function clickRegion(id, regionId) {
   return { error: `No click tool found. Install ${want}.` };
 }
 
-export { loadScreens, screenImage, pngSize, pngDecode, splitPng, stitchPng, stitchListPng, captureCmds, monitorCmds, parseCosmicRandr, parseWlrRandr, parseKscreen, parseXrandr, parseLines, tidyMonitors, monitorAreas, listMonitors, portalAppId, allowScreenshots, captureScreen, splitScreen, importScreen, setRegions, addPageScreen, renameScreen, removeScreen, blueprint, center, clickCmds, clickRegion };
+export { SCREENS_SOCK, screensGate, loadScreens, screenImage, pngSize, pngDecode, splitPng, stitchPng, stitchListPng, captureCmds, monitorCmds, parseCosmicRandr, parseWlrRandr, parseKscreen, parseXrandr, parseLines, tidyMonitors, monitorAreas, listMonitors, portalAppId, allowScreenshots, captureScreen, splitScreen, importScreen, setRegions, addPageScreen, renameScreen, removeScreen, blueprint, center, clickCmds, clickRegion };
