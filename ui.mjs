@@ -3615,7 +3615,12 @@ var bx=box.querySelector('.bx');if(bx)bx.addEventListener('click',function(){if(
 bdSet(y,'');BLOBSENT[key]=Date.now();if(o.sent)o.sent();if(box.classList)box.classList.add('gone');setTimeout(function(){if(o.done)o.done();},650);
 lqUndo('Dismissed: '+lqShort(y.kind==='ask'?(y.q||y.sub||nm):(y.title||y.sub||nm),70),function(){delete BLOBSENT[key];return api('/api/home/dismiss',{key:key,undo:true});});}).catch(function(e){bx.disabled=false;st(String((e&&e.message)||e),true);});});
 box.querySelectorAll('.nopt[data-j]').forEach(function(b){b.addEventListener('click',function(){var j=+b.getAttribute('data-j');send((y.options||[])[j],j,b);});});
-var bs=box.querySelector('.bsign');if(bs)bs.addEventListener('click',function(){bs.disabled=true;openSignIn(y.signInTo,function(t,ok){bs.disabled=false;say(t,!ok);});});
+// Sign in says so at once on the card itself, and keeps the focus there while it opens. A disabled
+// button let go of it, Home redrew the card plain meanwhile, and what it said went only to Home's
+// chat, hidden when that's down: the click seemed to do nothing (2026-10-16).
+var bs=box.querySelector('.bsign');if(bs)bs.addEventListener('click',function(){if(bs._busy)return;bs._busy=true;var sn=y.signInTo.name||y.signInTo.site||'the site';
+st('Opening '+sn+' in the Symbiot Browser… a few seconds, longer if an agent is using it.');try{bs.focus();}catch(e){}
+openSignIn(y.signInTo,function(t,ok){bs._busy=false;st(t,!ok);say(t,!ok);});});
 var fr=box.querySelector('.bfree'),fx=box.querySelector('.bfx'),fi=fx&&fx.querySelector('input');
 if(fi){var dr=bdGet(y);if(dr&&!fi.value){fi.value=dr.text;if(fx.classList)fx.classList.remove('hidden');if(fr)fr.setAttribute('aria-expanded','true');try{if(dr.s!=null)fi.setSelectionRange(dr.s,dr.e!=null?dr.e:dr.s);}catch(e){}}
 // keep: a box drawn again while its answer went fires late events, which mustn't bring back the draft Send cleared

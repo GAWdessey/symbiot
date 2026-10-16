@@ -1558,29 +1558,65 @@ function profilePids({ headless } = {}) {
 // cp.smsportal.com, 2026-10-14). SIGINT closes it as its own Quit does, cookies saved.
 const CLOSE = "SIGINT";
 const kill = (pids) => { for (const p of pids) try { process.kill(p, CLOSE); } catch {} };
+// It all happens inside the one-at-a-time queue, which is held until a window has the profile.
+// Let go any sooner and an agent's read waiting behind it started the hidden browser in the
+// gap: Chrome handed the window to that hidden copy, out of sight, and Sign in on a card
+// seemed to do nothing (twilio.com, 2026-10-16, and on and off since the 12th). Still no
+// window after that (another Symbiot's hidden browser took the profile meanwhile): it's
+// closed and the window asked once more, else the error says so; never an "ok" for nothing.
+const WINDOW_UP = Number(process.env.SYMBIOT_WINDOW_UP) || 15000;
+// Has a window got the profile? Polled while the Chrome just started runs: true once one
+// has, false once that Chrome has ended (handed over) and none has, or after `wait`.
+async function windowUp(p, wait = WINDOW_UP) {
+  for (const end = Date.now() + wait; Date.now() < end; await sleep(200)) {
+    if (windowOpen()) return true;
+    if (p && (p.exitCode !== null || p.signalCode)) { await sleep(300); return windowOpen(); }
+  }
+  return windowOpen();
+}
 async function openSymbiotBrowser(url = "") {
   const chrome = chromeBinary();
   if (!chrome) return { error: "The Symbiot Browser needs Chrome, Chromium, Edge or Brave on this computer, and none was found." };
-  // the hidden browser starts and closes once first (not when a window's open already: it'd
-  // hand over to it): a session sign-in from the last window is kept (keepSessions) before
-  // this one, which doesn't restore the last session, drops it
-  await oneAtATime(async () => { await closeBrowser(); if (process.platform !== "win32" && existsSync(PROFILE) && !profilePids({ headless: false }).length) try { await shut(await launch()); } catch {} });
-  const hidden = profilePids({ headless: true }); if (hidden.length) { kill(hidden); await sleep(800); }
-  try {
-    mkdirSync(PROFILE, { recursive: true, mode: 0o700 });
+  return oneAtATime(async () => {
+    const wasOpen = windowOpen();
+    // the hidden browser starts and closes once first (not when a window's open already: it'd
+    // hand over to it): a session sign-in from the last window is kept (keepSessions) before
+    // this one, which doesn't restore the last session, drops it
+    await closeBrowser();
+    if (process.platform !== "win32" && existsSync(PROFILE) && !wasOpen) try { await shut(await launch()); } catch {}
+    try { mkdirSync(PROFILE, { recursive: true, mode: 0o700 }); } catch (e) { return { error: String((e && e.message) || e) }; }
     const base = ["--user-data-dir=" + PROFILE, "--profile-directory=" + PROFILE_DIR, "--no-first-run", "--no-default-browser-check",
-      ...(process.platform === "linux" ? ["--password-store=basic", "--class=SymbiotBrowser"] : process.platform === "darwin" ? ["--use-mock-keychain"] : [])];
+      ...(process.platform === "linux" ? ["--password-store=basic", "--class=SymbiotBrowser"] : process.platform === "darwin" ? ["--use-mock-keychain"] : []),
+      ...String(process.env.SYMBIOT_BROWSER_ARGS || "").split(/\s+/).filter(Boolean)]; // tests: a window with no screen
     const page = HUB ? ["--app=" + HUB, "--window-size=1040,820"] : [];
     // the first to start is the window's browser (the rest hand over to it): the app's, with its
     // tabs read over a pipe (pipeWindow) unless one's open already
-    const piped = !!HUB && !windowOpen() && process.platform !== "win32";
-    const start = (args) => { const p = spawn(chrome, piped ? ["--remote-debugging-pipe", ...args] : args, { detached: true, stdio: piped ? ["ignore", "ignore", "ignore", "pipe", "pipe"] : "ignore" }); p.on("error", () => {}); if (piped) pipeWindow(p); p.unref(); };
-    if (page.length) start([...base, ...page]);
-    if (url) setTimeout(() => { try { spawn(chrome, [...base, "--new-window", url], { detached: true, stdio: "ignore" }).unref(); } catch {} }, page.length ? 1500 : 0);
-    if (!page.length && !url) start([...base, "--new-window", "about:blank"]);
-  } catch (e) { return { error: String((e && e.message) || e) }; }
-  watchWindow();
-  return { ok: true, ...(url ? { url } : {}), browser: true };
+    const start = (args) => {
+      const piped = !!HUB && !windowOpen() && process.platform !== "win32";
+      const p = spawn(chrome, piped ? ["--remote-debugging-pipe", ...args] : args, { detached: true, stdio: piped ? ["ignore", "ignore", "ignore", "pipe", "pipe"] : "ignore" });
+      p.on("error", () => {}); if (piped) pipeWindow(p); p.unref(); return p;
+    };
+    // Windows has no lock to read: started, and taken as open
+    if (process.platform === "win32") {
+      try { if (page.length) start([...base, ...page]); if (url || !page.length) start([...base, "--new-window", url || "about:blank"]); }
+      catch (e) { return { error: String((e && e.message) || e) }; }
+      watchWindow(); return { ok: true, ...(url ? { url } : {}), browser: true };
+    }
+    let up = wasOpen && windowOpen();
+    for (let i = 0; i < 2 && !up; i++) {
+      // a hidden copy on the profile (Symbiot's, or another Symbiot's) would be handed the window
+      const hidden = profilePids({ headless: true }); if (hidden.length) kill(hidden);
+      for (let j = 0; j < 20 && lockHolder() && lockHolder().headless; j++) await sleep(200);
+      const h = lockHolder(); if (h && h.headless) try { process.kill(h.pid, "SIGKILL"); await sleep(300); } catch {}
+      let p; try { p = start([...base, ...(page.length ? page : ["--new-window", url || "about:blank"])]); } catch (e) { return { error: String((e && e.message) || e) }; }
+      up = await windowUp(p);
+    }
+    if (!up) return { error: "The Symbiot Browser didn't open: another copy of Chrome kept Symbiot's browser profile. Try Sign in again in a minute, or close Symbiot's other windows first." };
+    // the site, in a window of its own beside the page: handed to the window that's up
+    if (url && (page.length || wasOpen)) try { spawn(chrome, [...base, "--new-window", url], { detached: true, stdio: "ignore" }).on("error", () => {}).unref(); } catch {}
+    watchWindow();
+    return { ok: true, ...(url ? { url } : {}), browser: true };
+  });
 }
 // Done: the Symbiot Browser closes (its sign-ins are saved), so the hidden browser can read with them.
 // Its windows are the visible Chromes on the profile, and the one holding the profile's lock if
