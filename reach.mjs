@@ -13,7 +13,11 @@
 //   Twilio, SMS Portal…). `symbiot screens` reaches them from a sandboxed run too (it asks
 //   the app, or runs through the sandbox's proxy), so EVERY lane reads them: the dailify
 //   lane said "this lane can't reach Meta or Twilio" without trying it (16 Oct 2026).
-// { sandboxed, hosts: [alias], keys: { lane: [provider] }, sites: [hostname] }
+// - APIs: a linked site whose own API a lane's key opens (SMSPORTAL for cp.smsportal.com).
+//   Some sites end a browser sign-in by themselves: SMS Portal logs out after about an hour
+//   unused ("You have been logged out due to inactivity"), so every check found it signed
+//   out and the user was asked to sign in every few days (16 Oct 2026). Its key never runs out.
+// { sandboxed, hosts: [alias], keys: { lane: [provider] }, sites: [hostname], apis: [{ host, lane, provider }] }
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { readFileSync } from "node:fs";
@@ -60,11 +64,31 @@ function mappedSites(list) {
   for (const s of Array.isArray(list) ? list : []) { let h = ""; try { h = new URL(String(s && s.page && s.page.url)).hostname.replace(/^www\./, ""); } catch {} if (h && !/^(localhost|127\.|\[)/.test(h)) n.set(h, (n.get(h) || 0) + 1); }
   return [...n].sort((a, b) => b[1] - a[1]).map((x) => x[0]).slice(0, 10);
 }
-function laneReach(map = {}, { sandboxed = reposSandboxed(), ssh = readOr(join(homedir(), ".ssh", "config")), read = readOr, screens = () => loadScreens() } = {}) {
+// The user's linked sites (Settings → Connections, config.sites): their hostnames.
+function linkedHosts(cfg = loadConfig()) {
+  return [...new Set((Array.isArray(cfg && cfg.sites) ? cfg.sites : []).flatMap((x) => [].concat((x && x.hosts) || [])).map((h) => String(h).toLowerCase().replace(/^www\./, "")).filter(Boolean))];
+}
+// A site whose own API a lane's key opens: a provider named by one of the host's labels
+// (SMSPORTAL: cp.smsportal.com, TWILIO: console.twilio.com). Not a company whose domain
+// holds many products: a GOOGLE maps key opens neither Gmail nor the Cloud console.
+const BROAD = new Set(["GOOGLE", "MICROSOFT", "META", "FACEBOOK", "AMAZON", "APPLE", "LIVE", "OFFICE"]);
+function keyedSites(keys = {}, hosts = []) {
+  const out = [];
+  for (const host of [...new Set(hosts)]) {
+    const labels = host.toLowerCase().split(".").slice(0, -1);
+    for (const [lane, provs] of Object.entries(keys || {})) for (const p of provs || []) {
+      if (p.length < 4 || BROAD.has(p) || !labels.includes(p.toLowerCase())) continue;
+      if (!out.some((x) => x.host === host && x.lane === lane)) out.push({ host, lane, provider: p });
+    }
+  }
+  return out.slice(0, 12);
+}
+function laneReach(map = {}, { sandboxed = reposSandboxed(), ssh = readOr(join(homedir(), ".ssh", "config")), read = readOr, screens = () => loadScreens(), linked = () => linkedHosts() } = {}) {
   const keys = {};
   for (const [lane, path] of Object.entries(map || {})) { if (!path) continue; const k = laneKeys(path, read); if (k.length) keys[lane] = k; }
   let sites = []; try { sites = mappedSites(screens()); } catch {}
-  return { sandboxed: !!sandboxed, hosts: sshHosts(ssh), keys, sites };
+  let own = []; try { own = linked(); } catch {}
+  return { sandboxed: !!sandboxed, hosts: sshHosts(ssh), keys, sites, apis: keyedSites(keys, [...sites, ...own]) };
 }
 // The servers a handover names that the lane it goes to can't reach: [] for ops, or
 // with the sandbox off.
@@ -84,4 +108,4 @@ function serverOnly(text, lane, reach) {
   return far.length && SERVER_WORK.test(t) && !CODE_WORK.test(t) ? far : [];
 }
 
-export { mappedSites, laneReach, sshHosts, envProviders, laneKeys, reposSandboxed, unreachable, serverOnly };
+export { mappedSites, laneReach, keyedSites, linkedHosts, sshHosts, envProviders, laneKeys, reposSandboxed, unreachable, serverOnly };

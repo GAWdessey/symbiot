@@ -467,7 +467,8 @@ async function cmdScreens() {
   H = await import("./headless.mjs");
   const out = (x) => { console.log(JSON.stringify(x, null, 2)); if (x && x.error) process.exitCode = 1; };
   const find = (id) => loadScreens().find((s) => s.id === id);
-  if (sub === "list") {
+  // --help is a flag, so it's filtered out of sub above: without this it listed the screens
+  if (sub === "list" && !has("help")) {
     const list = loadScreens();
     if (!list.length) console.log(c.d("No screens yet. Map a web page with  symbiot screens map <site>,  or capture one in the app."));
     for (const s of list) console.log(`${s.id}  ${s.name}  ${c.d(`${(s.regions || []).length} regions · ${s.page ? s.page.url : s.w + "×" + s.h + " " + s.via}`)}`);
