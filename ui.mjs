@@ -2633,7 +2633,7 @@ return "<div class='hnpost' aria-label='Hacker News preview'><div class='hnbar'>
 // Each draft as its own platform shows it (its platform: line): LinkedIn's post, X's card,
 // Instagram's picture and caption, Facebook's post, Reddit's post with its subreddit and
 // title. A Reddit draft shown as a LinkedIn post can't be judged (Garth, 2026-10-10).
-var MKLIMIT={linkedin:3000,x:280,twitter:280,instagram:2200,facebook:63206,reddit:40000};
+var MKLIMIT={linkedin:3000,x:280,twitter:280,instagram:2200,facebook:63206,reddit:40000,hackernews:40000,blog:100000};
 function mkMediaHtml(p,cls){return (p.media||[]).map(function(m){return m.kind==='video'?"<video class='limedia' src='"+escQ(mkMediaSrc(m.rel))+"' controls muted playsinline preload='metadata'></video>":"<img class='limedia' src='"+escQ(mkMediaSrc(m.rel))+"' alt='"+escQ(m.name)+"'>";}).join('');}
 function mkAv(p,a,cls){var who=p.account||p.product||a.name||'';return a.avatar&&!p.account&&!p.product?"<img class='"+cls+"' src='"+escQ(mkMediaSrc('avatar'))+"' alt=''>":"<span class='"+cls+"'>"+esc(String(who).replace(/^@/,'').slice(0,2).toUpperCase())+"</span>";}
 function mkPostHtml(p){var a=p.author||{},pl=p.platform==='twitter'?'x':p.platform,when=p.when?"Scheduled for "+esc(p.when):"Now";
