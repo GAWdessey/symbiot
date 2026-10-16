@@ -2,6 +2,14 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.66.6 — 2026-10-16
+
+- Meta part, by the dailify lane itself: still waits on 0.66.4. npm and the installed app are on 0.66.3; the release run's copy (symbiot-825733) has 0.66.4 ready and had its "Ok to publish Symbiot 0.66.4 now?" answered…
+- Twilio part of the test (d): done by ops, by the API (run act-2ae1923d, read only, 12:41 on 16 Oct).
+- Find out why SMS Portal's sign-in keeps dropping out of Symbiot's browser.
+- Deploy the new Symbiot release (Garth asked, Fri 16 Oct 2026).
+- Fix a Symbiot flaw: project lane agents can't use Garth's connections, and handovers to ops keep erroring, so jobs stall or bounce.
+
 ## 0.66.5 — 2026-10-16
 
 - Answering a card ("I've done this", Go ahead, Run it again) while Approve is still committing, testing or pushing that lane no longer says "It didn't start. Check your agent in Settings." It says Approve is busy, keeps your answer, and starts the lane's agent once Approve is done.

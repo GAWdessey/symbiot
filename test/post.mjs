@@ -423,6 +423,7 @@ try {
     const c3 = screens("upload", sc.id, "Like", "clip.mp4");
     ok("…a field that isn't on the screen: says so", c3.code === 1 && /No region "Like"/.test(JSON.parse(c3.out).error), c3);
     ok("…and screens help lists it", /symbiot screens upload <id> <field> <file>/.test(screens("help").out), "");
+    ok("…and so does screens --help, rather than listing the screens", /symbiot screens press <id> <region>/.test(screens("--help").out) && !screens("--help").out.includes(sc.id), "");
   }
 } finally {
   rmSync(HOME, { recursive: true, force: true });

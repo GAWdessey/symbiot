@@ -75,6 +75,16 @@ try {
     ok("a repo's brief: ops reaches the servers, every repo lane reaches none, so a live server's .env is ops's", /`ops`: runs on this computer, outside any sandbox: the servers this computer connects to \(`sts-prod`/.test(rules) && /Every repo lane runs in a sandbox: it writes only in its own folder and reaches no server/.test(rules) && /its `\.env`, a restart, a deploy/.test(rules), rules);
     ok("…its own lane says it reaches no server, and a server job goes to ops, never back to a repo lane", /Your lane, `dailify`, reaches no server\. If you're handed a job on one, hand that part to `ops`, never back to a repo lane/.test(rules), rules);
     ok("…and which lane's .env holds which keys", /`dailify` \(GOOGLE, TWILIO, STRIPE\)/.test(rules) && !/`coral` \(/.test(rules), rules);
+    // SMS Portal logs a browser sign-in out after about an hour unused, and sms_module's .env holds its API key (16 Oct 2026)
+    const { keyedSites } = await import("../reach.mjs");
+    const ks = keyedSites({ sms_module: ["SMSPORTAL", "SMS"], dailify: ["GOOGLE", "TWILIO"] }, ["cp.smsportal.com", "console.twilio.com", "mail.google.com", "console.cloud.google.com", "smsportalx.com"]);
+    ok("keyedSites: a linked site whose own API a lane's key opens, by a label of its host; not a short name, nor a company of many products (GOOGLE)", JSON.stringify(ks) === JSON.stringify([{ host: "cp.smsportal.com", lane: "sms_module", provider: "SMSPORTAL" }, { host: "console.twilio.com", lane: "dailify", provider: "TWILIO" }]), ks);
+    const ra = laneReach({ sms_module: "/x/sms" }, { sandboxed: true, ssh: "", read: (f) => (f === "/x/sms/.env" ? "SMSPORTAL_CLIENT_ID=a\nSMSPORTAL_API_SECRET=b\n" : ""), screens: () => [], linked: () => ["cp.smsportal.com"] });
+    ok("laneReach: the linked sites a lane's key opens", JSON.stringify(ra.apis) === JSON.stringify([{ host: "cp.smsportal.com", lane: "sms_module", provider: "SMSPORTAL" }]), ra);
+    const apiRules = handoverRules(["sms_module"], "symbiot", ra).join("\n");
+    ok("…and the brief sends a check there through that API, not another sign-in for the user", /cp\.smsportal\.com \(`sms_module`'s SMSPORTAL\)[^\n]*goes through that API[^\n]*don't ask the user to sign in again/.test(apiRules), apiRules);
+    ok("…none when no key opens a linked site", !/own API one of those keys opens/.test(rules), "");
+    ok("…and no blank line inside the reach list", !/\n\n/.test(apiRules.split("What each lane can reach")[1] || "\n\n"), apiRules);
     const ops = actBrief("Change WHATSAPP_PROVIDER in the prod .env on sts-prod", { lanes: ["dailify"], reach: r });
     ok("the ops brief says it too, so ops doesn't hand a server job to a repo lane", /reaches no server/.test(ops) && /`sts-prod`/.test(ops) && !/Your lane,/.test(ops), "");
     const open = handoverRules(["dailify"], "dailify", { ...r, sandboxed: false }).join("\n");
