@@ -200,6 +200,17 @@ const stray = a.answerQuestions(run, [{ q: "Sign in to LinkedIn?", a: "post it t
 ok("an option of a different question is not saved under this one", stray.error && !/Sign in to LinkedIn/.test(readFileSync(join(s, "ANSWERS.md"), "utf8")), stray);
 const mine = a.answerQuestions(run, [{ q: "Sign in to LinkedIn?", a: "skip it" }]);
 ok("...while its own option and typed words still are", mine.ok && mine.saved === 1, mine);
+
+console.log("OWN COMMANDS AND RULE FORMS — no card for Symbiot's browser, no settings Claude refuses");
+const key = join(HOME, "oracle_key"); writeFileSync(key, "x");
+const owned = a.withOwnTools(`${C}/claude-fallback -p "{prompt}" --allowedTools "Bash(node:*)" --add-dir "${key}" --add-dir "${HOME}/work"`);
+ok("every Claude run may use symbiot screens and symbiot press, in any lane", owned.includes('"Bash(symbiot screens:*)"') && owned.includes('"Bash(symbiot press:*)"') && owned.includes('"Bash(node:*)"'), owned);
+ok("an --add-dir that is a file is dropped, a folder stays", !owned.includes(key) && owned.includes(`--add-dir "${HOME}/work"`), owned);
+ok("a command that is not Claude is left alone", a.withOwnTools("codex exec x") === "codex exec x", "");
+const w = join(HOME, "work", "lane"); mkdirSync(w, { recursive: true });
+a.installAllowlist(w, { allow: ["Write(/x/**)"], deny: ["Write(/y)"], additionalDirectories: [key] });
+const set = JSON.parse(readFileSync(join(w, ".claude", "settings.local.json"), "utf8")).permissions;
+ok("Write(path) rules are written as Edit(path), the guard too, and a file is no additional directory", ![...set.allow, ...set.deny].some((r) => r.startsWith("Write(")) && set.allow.includes("Edit(/x/**)") && set.deny.includes("Edit(/y)") && set.deny.some((r) => r.endsWith("config.json)")) && !set.additionalDirectories.includes(key), set);
 rmSync(HOME, { recursive: true, force: true });
 console.log((fail ? "✗" : "✓") + " autoallow: " + pass + " passed, " + fail + " failed");
 if (fail) process.exit(1);

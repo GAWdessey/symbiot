@@ -148,6 +148,7 @@ const calls = [
   ["/api/tasks/push", "POST"],   // the button's call — the 0.10.2 bug
   ["/api/tasks/add", "POST"],
   ["/api/tasks/toggle", "POST"],
+  ["/api/tasks/model", "POST"],
   ["/api/tasks/remove", "POST"],
   ["/api/tasks/cancel", "POST"],   // no id -> "isn't there any more", nothing changes
   ["/api/tasks/restore", "POST"],
@@ -281,6 +282,7 @@ const calls = [
   ["/api/reports/read", "GET"],     // no id -> "No report by that id"
   ["/api/reports/seen", "POST"],    // mark all read (none)
   ["/api/reports/ideas", "POST"],   // no report named -> refused, nothing added
+  ["/api/reports/dismiss", "POST"], // no report named -> refused, nothing marked
   ["/api/reports/draft", "POST"],   // no report named -> refused, no agent starts
   ["/api/reports/ask", "POST"],     // no question -> refused, no model asked
   ["/api/marketing", "GET"],        // Marketing: replies and the 4-week test (isolated HOME -> no test yet)

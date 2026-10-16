@@ -224,6 +224,25 @@ console.log("REPORTS — superseded actions leave 'Read, open actions' (2026-10-
   ok("a later report with the same title in the lane replaces the earlier one", /later report/.test(same.get("Fix the cache bug")), [...same]);
 }
 
+console.log("REPORTS — what is not an action never sits in 'Read, open actions' (2026-10-16)");
+{
+  ok("an archive of answers is not a report", /^(?:ANSWERS(?:\.archive)?)\.md$/.test("ANSWERS.archive.md") && R.NOT_REPORTS.test("ANSWERS.archive.md") && !R.NOT_REPORTS.test("ANSWERS-REVIEW.md"));
+  ok("a report's title never opens an actions section", R.reportIdeas("# Recommended local models refresh\n\n- qwen3.5:4b is 3.3 GB\n- qwen3.5:9b is 6.6 GB\n").length === 0);
+  ok("the record of what was fixed is not a to-do list, 'Next 3 fixes' is", R.reportIdeas("## The fix\n\n- Changed the scorer to match whole words\n\n## Battery scorer fix\n\n- Plurals now match\n\n## The date-boundary flaw (top priority)\n\n- The prompt carried no date at all\n").length === 0 && R.reportIdeas("## Next 3 fixes, in order\n\n- Stop the pruner retiring learned skills\n").length === 1);
+  ok("a bullet that says to leave things be, or what is already so, is not an action", R.reportIdeas("## Recommendation\n\n- Do not add Colibri to the model list\n- Keep the routing as is\n- Revisit only if Garth gets 64 GB of RAM\n- Ticked: the two sign-in items\n- Media hashing is now cached by path\n- Add the Colibri note to the docs\n").join("|") === "Add the Colibri note to the docs");
+  ok("a plan that is to be done still counts", R.reportIdeas("## 6. Implementation plan (a task for the symbiot lane)\n\n- Escalate a failed run to the next tier up\n").length === 1);
+  // the real case: the launch-posts report's action, worded differently from the task that covers it
+  const idea = "Give the two Symbiot launch drafts an Approve button under Marketing, then approve both";
+  const task = { id: "87af67989d55", text: "Fix in Symbiot: the marketing report 'Symbiot launch posts: last link and claim check' tells Garth to 'approve both drafts under Marketing', but no approval card or button exists for them. The two drafts are the blog post and the Show HN launch drafts", repo: "symbiot", done: false, ts: Date.now() };
+  const rep = { id: "lc", title: "Symbiot launch posts: last link and claim check", name: "LINK-CHECK.md", file: "/x/LINK-CHECK.md", lane: "marketing", mtime: Date.now() - 1000 };
+  const w = R.supersededIdeas(rep, [idea, "Rotate the signing key"], R.supersedeContext({ list: [rep], tasks: [task], file: join(CFG, "seen-wide.json") }));
+  ok("a task worded differently still covers an action about the same thing", /another task/.test(w.get(idea)) && !w.has("Rotate the signing key"), [...w]);
+  const done = R.supersededIdeas(rep, [idea], R.supersedeContext({ list: [rep], tasks: [{ ...task, done: true, archived: true }], file: join(CFG, "seen-wide.json") }));
+  ok("…and a done one clears it as done", /done/.test(done.get(idea)), [...done]);
+  const old = R.supersededIdeas({ ...rep, mtime: Date.now() + 5000 }, [idea], R.supersedeContext({ list: [rep], tasks: [task], file: join(CFG, "seen-wide.json") }));
+  ok("a task written before the report does not clear it", !old.has(idea), [...old]);
+}
+
 {
   const ask = (path, q) => ({ kind: "ask", id: "ask:" + path, q, options: [] });
   const left = settleAsks([ask("a", "Close the Symbiot Browser so I can carry on?"), ask("b", "Click Done in the browser window"), ask("c", "Which plan are you on?"), ask("d", "Which plan are you on?!"), { kind: "setup", id: "s" }]);
@@ -313,6 +332,24 @@ console.log("FINDINGS AND REMOVING — a fact a report found isn't filed as a jo
   ok("Reports is split into Unread / Read, open actions / Read and done tabs with counts, Unread first, grouped by lane", /REPTAB='unread'/.test(ui) && /Read, open actions/.test(ui) && /Read and done/.test(ui) && /id='reptabs'/.test(ui) && /by\[r\.lane\]/.test(ui), "");
   ok("Approve's overlap question is an in-app note, never window.confirm", !/if\(confirm\(r\.error\)\)/.test(ui) && /askyes/.test(ui), "");
   ok("an open report's back row sticks to the top while the report scrolls", /#reportslist:has\(#reportback\)\{[^}]*position:sticky;top:0/.test(ui), "");
+}
+
+console.log("REPORTS — usable rows (2026-10-16): honest 'still writing', readable source, steps and buttons on the row");
+{
+  const old = join(run, ".symbiot", "COMPANY.md"), days = (Date.now() - 4 * 864e5) / 1000;
+  utimesSync(old, days, days);
+  writeFileSync(join(run, ".symbiot", "TASKS.md"), "# For your agent: Home\n\nThe user asked Symbiot for this:\n\n> Research for Garth: can Symbiot run its cheaper agent work on local models, combined with picking a model per task by cost? Don't edit code.\n");
+  const l = R.listReports({ map, folders, running: (p) => p === run });
+  ok("a 4-day-old report is not 'still writing' even while its folder has a run going", l.find((r) => r.name === "COMPANY.md").running === false && l.find((r) => r.name === "COMPANY-AUDIT.md").running === true, l.map((r) => [r.name, r.running]));
+  ok("an ops report shows what the run was for, not its act id", /^Research for Garth: can Symbiot run/.test(l[0].source) && l[0].source.length <= 80 && l.find((r) => r.lane === "symbiot").source === "", l.map((r) => r.source));
+  const w = R.withNeeds(R.listReports({ map, folders, running: none }), { seenFile: join(CFG, "seen-rows.json"), tasks: [] });
+  ok("a report with next steps carries them on its row", w.every((r) => Array.isArray(r.steps) && r.steps.length === r.ideas), w.map((r) => [r.name, r.ideas, r.steps]));
+  const ui = readFileSync(join(ROOT, "ui.mjs"), "utf8");
+  ok("each row offers Hand to agent, Done and Drop per step, Hand all per report, and Approve on a draft", /rsgo/.test(ui) && /rsdone/.test(ui) && /rsdrop/.test(ui) && /Hand all to agents/.test(ui) && /rsapprove/.test(ui) && /r\.source\?/.test(ui));
+  const r0 = w.find((r) => r.steps.length) || w[0];
+  R.markIdeas(r0, r0.steps.length ? r0.steps : ["x"], "done", join(CFG, "seen-rows.json"));
+  const w2 = R.withNeeds(R.listReports({ map, folders, running: none }), { seenFile: join(CFG, "seen-rows.json"), tasks: [] }).find((r) => r.id === r0.id);
+  ok("a report whose steps are all done moves to Read and done by itself", w2.needs === "" && w2.steps.length === 0, w2);
 }
 console.log(`\n${fail ? "✗" : "✓"} reports: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

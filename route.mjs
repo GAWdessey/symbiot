@@ -60,13 +60,13 @@ const onOpus = (c) => /opus/i.test(String(c.model || ""));
 const ran = (c) => (c.cost || 0) > 0 || (c.turns || 0) > 1;
 
 // A lane's own track record from costs.json: the median cost of its Sonnet runs (Opus
-// runs would pull it up and keep it there) and the share of its runs that failed. Too
-// few samples (or no file yet) reads as "no history".
+// runs would pull it up and keep it there), the share of its runs that failed and the
+// share that had to go up a model. Too few samples (or no file yet) reads as "no history".
 function laneHistory(path, costs = load(COSTS_FILE)) {
   const own = path ? costs.filter((c) => c.path === path && ran(c)) : [];
-  if (own.length < MIN_SAMPLES) return { median: 0, failRate: 0, samples: own.length };
+  if (own.length < MIN_SAMPLES) return { median: 0, failRate: 0, escalated: 0, samples: own.length };
   const sonnet = own.filter((c) => !onOpus(c));
-  return { median: sonnet.length ? median(sonnet.map((c) => c.cost || 0)) : 0, failRate: own.filter((c) => c.ok === false).length / own.length, samples: own.length };
+  return { median: sonnet.length ? median(sonnet.map((c) => c.cost || 0)) : 0, failRate: own.filter((c) => c.ok === false).length / own.length, escalated: own.filter((c) => c.escalatedFrom).length / own.length, samples: own.length };
 }
 
 // How many different project directories a brief names — one repo's work
@@ -84,6 +84,7 @@ function escalationReason(task, history) {
   if (repoCount(text) > 1) return "names several repos";
   if (HARD_WORDS.test(text)) return "research/refactor/debug-style work";
   if (history.samples >= MIN_SAMPLES && history.failRate >= FAIL_FLOOR) return "lane fails often";
+  if (history.samples >= MIN_SAMPLES && history.escalated >= FAIL_FLOOR) return "lane keeps escalating";
   return "";
 }
 

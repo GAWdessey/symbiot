@@ -286,7 +286,7 @@ function pipeWindow(proc, { every = WIN_EVERY } = {}) {
 // there and not expired. It needs no browser, so it can't be told "the Symbiot Browser is open",
 // and it's read from a copy taken with its -wal and -journal, so a cookie the window wrote just
 // before Done is in it. X was asked for four times while its auth_token sat there (2026-10-10).
-const SESSION_COOKIE = { "x.com": "auth_token", "twitter.com": "auth_token", "instagram.com": "sessionid", "facebook.com": "c_user", "reddit.com": "reddit_session", "linkedin.com": "li_at" };
+const SESSION_COOKIE = { "x.com": "auth_token", "twitter.com": "auth_token", "instagram.com": "sessionid", "facebook.com": "c_user", "reddit.com": "reddit_session", "linkedin.com": "li_at", "news.ycombinator.com": "user" };
 // The site among hosts with a known session cookie: { host, cookie, found } (found: true,
 // false, or null when the store can't be read here), or null if none is known.
 function sessionCookie(hosts, profile = PROFILE) {
@@ -690,7 +690,10 @@ const collectJs = (whole, list = null) => `(() => { ${SCROLLER} ${DEEP} ${LABEL_
     const x = Math.max(CL.left, b.left), y = Math.max(CL.top, b.top), x2 = Math.min(CL.right, b.right), y2 = Math.min(CL.bottom, b.bottom);
     if (x2 - x < 4 || y2 - y < 4) continue;
     const st = getComputedStyle(e);
-    if (st.visibility === 'hidden' || st.pointerEvents === 'none' || +st.opacity === 0) continue;
+    // a radio or checkbox drawn by the site (Angular Material's, Google Cloud Console's) keeps the real
+    // input over its circle at opacity 0: it is the thing to press, so it stays
+    const bare = e.tagName === 'INPUT' && /^(checkbox|radio)$/i.test(e.type);
+    if (st.visibility === 'hidden' || st.pointerEvents === 'none' || (+st.opacity === 0 && !bare)) continue;
     // on top: what's at its centre is it, or inside it (not a banner over it)
     const top = deepAt((x + x2) / 2, (y + y2) / 2);
     if (!top || !(top === e || deepContains(e, top) || deepContains(top, e))) continue;

@@ -61,6 +61,16 @@ function addTask(text, repo, { after = "", finding = false } = {}) {
   const item = { id, text: line, ...(long ? { full } : {}), repo: repo || "", done: !!finding, ...(finding ? { finding: FINDING_NOTE } : {}), ts: Date.now() };
   t.unshift(item); saveTasks(t); return item;
 }
+// The model picker on a task card: auto (nothing) or one of MODEL_PICKS. The brief's line for
+// the task ends [model: x], which pickModel's override reads (agents.mjs routedModel).
+const MODEL_PICKS = ["local", "haiku", "sonnet", "opus", "fable"], MODEL_TAG = /\s*\[model:\s*\w+\s*\]/gi;
+function setTaskModel(id, model) {
+  const m = String(model || "").toLowerCase(), t = loadTasks(), it = t.find((x) => x.id === id);
+  if (!it) return { error: "not found" };
+  if (m && m !== "auto" && !MODEL_PICKS.includes(m)) return { error: "unknown model" };
+  if (m && m !== "auto") it.model = m; else delete it.model;
+  saveTasks(t); return it;
+}
 function toggleTask(id) { const t = loadTasks(); const it = t.find((x) => x.id === id); if (it) { it.done = !it.done; it.changed = Date.now(); saveTasks(t); } return it || { error: "not found" }; }
 // Done or not, as said (not flipped), for a change that can arrive late or twice
 // (your phone's, phone.mjs): at is when it was made, and a tick here since wins.
@@ -86,7 +96,7 @@ function cancelTask(id) {
 function restoreTask(id) { const t = loadTasks(); const it = t.find((x) => x.id === id); if (it) { it.archived = false; it.done = false; delete it.archivedAt; delete it.cancelled; if (it.finding) { it.kept = true; delete it.finding; } if (it.removedBy || it.dropped) { it.kept = true; delete it.removedBy; delete it.merged; delete it.dropped; } saveTasks(t); } return it || { error: "not found" }; }
 // Which task texts the agent checked off in a repo's .symbiot/TASKS.md
 function completedInRepo(repoPath) {
-  try { return readFileSync(join(repoPath, ".symbiot", "TASKS.md"), "utf8").split("\n").filter((l) => /^\s*-\s*\[x\]/i.test(l)).map((l) => l.replace(/^\s*-\s*\[x\]\s*/i, "").trim().toLowerCase()); }
+  try { return readFileSync(join(repoPath, ".symbiot", "TASKS.md"), "utf8").split("\n").filter((l) => /^\s*-\s*\[x\]/i.test(l)).map((l) => l.replace(/^\s*-\s*\[x\]\s*/i, "").replace(MODEL_TAG, "").trim().toLowerCase()); }
   catch { return []; }
 }
 
@@ -592,6 +602,11 @@ function refreshReview(path, had) {
   workingChangesAsync(path).then((wc) => { if (REVIEW_GIT.get(path) === had) REVIEW_GIT.set(path, { at: Date.now(), v: reviewOf(path, wc) }); }).catch(() => {}).finally(() => { had.busy = false; }); // forgotten meanwhile (an Approve): dropped
 }
 const forgetReview = () => REVIEW_GIT.clear();
+// Changes an agent made in a lane's folder for a job that lane handed over (daaymn's handoff to
+// ops, which edits daaymn's folder) aren't "changes without a task": lanes.mjs sets this to name
+// the handoff behind them ({ text, to, held? } or null), so they go up by themselves (shipHanded).
+let HANDED_LOOKUP = () => null;
+const setHandedLookup = (f) => { HANDED_LOOKUP = typeof f === "function" ? f : () => null; };
 function pendingReview() {
   const t = loadTasks(), by = {}; for (const x of t) if (x.review && !x.done && !x.archived) (by[x.repo] = by[x.repo] || []).push(x);
   const sent = [...new Set(t.filter((x) => x.repo && !x.archived && !by[x.repo]).map((x) => x.repo))];
@@ -603,7 +618,8 @@ function pendingReview() {
     const wc = shippable(path, reviewGit(path)); if (!wc.files.length) continue;
     const still = t.filter((x) => x.repo === repo && !x.done && !x.archived && !x.review), round = roundOf(path, still);
     const open = finishedOffer(path, still, round);
-    out.push({ repo, path, tasks: [], untasked: true, open, ...(round ? { round } : {}), ...state(repo, path), ...wc });
+    const handed = (() => { try { return HANDED_LOOKUP(path, wc); } catch { return null; } })();
+    out.push({ repo, path, tasks: [], untasked: true, open, ...(round ? { round } : {}), ...(handed ? { handed } : {}), ...state(repo, path), ...wc });
   }
   // approved and committed, but it never got as far as a PR: its card stays, saying why, with a retry (sendAgain)
   for (const [repo, path] of Object.entries(map)) {
@@ -1178,7 +1194,8 @@ function pushTasks(filter) {
   const written = [], unresolved = [], connectors = connectorsLine(); // the same for every repo's run
   let reach = null; try { reach = laneReach(byName); } catch {} // what each lane reaches, for the handover rules
   for (const name of Object.keys(groups)) {
-    const list = uniqueTasks(groups[name].map((t) => t.text)).map((text) => ({ text })), path = name && byName[name]; // near-duplicates once
+    const picked = new Map(groups[name].filter((t) => t.model).map((t) => [t.text, t.model]));
+    const list = uniqueTasks(groups[name].map((t) => t.text)).map((text) => ({ text: picked.has(text) && !/\[model:/i.test(text) ? `${text} [model: ${picked.get(text)}]` : text })), path = name && byName[name]; // near-duplicates once
     if (!path || (path === MARKETING_DIR && !ensureMarketing(path))) { unresolved.push({ name: name || "(no repo)", count: list.length }); continue; }
     try {
       // Cheap, per-repo signals only — no full drift scan (that can be very slow
@@ -1204,4 +1221,4 @@ function pushTasks(filter) {
   return { empty: false, written, unresolved, handoff: handoffCmd() };
 }
 
-export { holdShip, SHIP_STALE, shipping, shippingPaths, workingChangesAsync, rebaseTask, sendAgain, forgetUnsent, unsentOf, readUnsent, unsentCard, repoTests, localRefused, forgetReview, gitFailed, taskPaths, addTask, toggleTask, setTaskDone, removeTask, cancelTask, restoreTask, FINDING_NOTE, completedInRepo, removalOf, applyRemovals, applyDrops, syncTasks, workingChanges, workingDiff, publishesOnMerge, unreleased, bumpOffer, learnNpm, releaseNeeded, releaseNotIn, withReleases, setVersion, changelogEntry, changelogSection, noteChangelog, releaseInput, shipWithBump, runSummary, saidFinished, pendingReview, commitSubject, shipChanges, autoMergeRepos, setAutoMerge, approveRepo, approveChanges, sendBack, TASK_ORDER, taskType, buildTasksMd, pushTasks, mergeWhenGreen };
+export { setHandedLookup, setTaskModel, MODEL_PICKS, holdShip, SHIP_STALE, shipping, shippingPaths, workingChangesAsync, rebaseTask, sendAgain, forgetUnsent, unsentOf, readUnsent, unsentCard, repoTests, localRefused, forgetReview, gitFailed, taskPaths, addTask, toggleTask, setTaskDone, removeTask, cancelTask, restoreTask, FINDING_NOTE, completedInRepo, removalOf, applyRemovals, applyDrops, syncTasks, workingChanges, workingDiff, publishesOnMerge, unreleased, bumpOffer, learnNpm, releaseNeeded, releaseNotIn, withReleases, setVersion, changelogEntry, changelogSection, noteChangelog, releaseInput, shipWithBump, runSummary, saidFinished, pendingReview, commitSubject, shipChanges, autoMergeRepos, setAutoMerge, approveRepo, approveChanges, sendBack, TASK_ORDER, taskType, buildTasksMd, pushTasks, mergeWhenGreen };

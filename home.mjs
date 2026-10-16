@@ -262,7 +262,7 @@ function marketingState({ deps = {}, list, pend, map, named = displayName } = {}
   for (const p of (posts.posts || []).filter((x) => x.status === "waiting")) needs.push({ kind: "draft", id: "draft:" + p.id, text: plain(firstLine(p.text), 120), product: productOf(p.text, names) });
   // a post its agent drafted that you haven't approved or skipped: approving its preview is
   // the only step a post needs from you, so it's lit here (and on Home's orb), Preview one click away
-  for (const f of files.filter((x) => !x.status && !x.doc)) needs.push({ kind: "post", id: "post:" + f.rel, rel: f.rel, text: plain(f.name, 120), product: f.product });
+  for (const f of files.filter((x) => !x.status && !x.doc)) needs.push({ kind: "post", id: "post:" + f.rel, rel: f.rel, text: plain(f.name, 120) + (f.reopened && f.reopened.was === "approved" ? " (edited since you approved it: approve again)" : ""), product: f.product, ...(f.reopened ? { reopened: true } : {}) });
   const lane = tasks.filter((t) => t.repo === MARKETING).map((t) => ({ id: t.id, text: plain(untagged(t.text), 220), product: productOf(t.text, names), status: t.review ? "review" : working ? "working" : "waiting", ts: t.ts || 0 }));
   const elsewhere = tasks.filter((t) => t.repo !== MARKETING && aboutMarketing(t.text)).slice(0, 12).map((t) => ({ id: t.id, text: plain(untagged(t.text), 220), product: productOf(t.text, names), repo: t.repo || "", name: t.repo ? named(map[t.repo], t.repo) : "" }));
   const seen = [...new Set([...lane, ...elsewhere, ...needs, ...files].map((x) => x.product).filter(Boolean))];
@@ -302,6 +302,10 @@ function marketingDraftAnswer(rel, status, deps = {}) {
     const e = (deps.run || runHandoff)(dir, { force: true });
     return e && e.id && !e.blocked ? { ok: true, said: "Sent to its agent, which is redrafting it now. The new version comes back here for your OK.", rerun: e.id } : { ok: true, said: `Sent to its agent. ${(e && e.note) || "Start its agent to redraft it."}` };
   }
+  if (d.platform === "hackernews") {
+    const lines = d.body.split("\n"), url = ((d.comment || "").match(/https?:\/\/[^\s)>`]+/) || [])[0] || "", site = url.replace(/\?.*$/, "");
+    noteAnswer(dir, `Approved: ${rel}`, `The user approved its preview. Submit it to Hacker News${d.when ? ` at ${d.when} (SAST)` : " now"} yourself, from the user's account, through Symbiot's signed-in browser (\`screens map https://news.ycombinator.com/submit\`, then \`screens type\` and \`screens press\`): title "${lines[0].trim()}", URL ${site}. Leave the text box empty, and right after it is up add one first comment on the new item: the rest of the post (the lines under its title) and then the \`## First comment\` section, both exactly as in the draft (\`${rel}\`), unchanged. It is never a step for the user: if the browser isn't signed in to news.ycombinator.com, the card already carries a Sign in button, so read the page first and ask only if a real attempt found the session expired. Then check the item and the comment are there, mark it posted (\`${postedCmd(rel)}\`), and say so in your last message.`);
+  } else
   noteAnswer(dir, `Approved: ${rel}`, `The user approved its preview. Post it on ${d.platform}${when}, through Symbiot's signed-in browser, with exactly the text under its post (${d.body.length} characters, unchanged)${d.media.length ? ` and ${d.media.join(", ")} attached` : ""}. Then check it's there, mark it posted (\`${postedCmd(rel)}\`), and say so in your last message.`);
   if ((deps.running || runningHandoff)(dir)) return { ok: true, said: "Approved. Its agent posts it once the run there now finishes." };
   const e = (deps.run || runHandoff)(dir, { force: true });
@@ -391,7 +395,8 @@ function homeState({ now = Date.now(), fresh = false, deps = {} } = {}) {
     const un = r.unsent && UNSENT_SUB[r.unsent.why];
     if (!n && !files && un) { you.push({ kind: "approve", id: "approve:" + r.repo, repo: r.repo, name: named(r.path, r.repo), title: `Send ${r.repo}'s approved work`, sub: `approved, but not on GitHub yet: ${un}`, shape: "tasks" }); continue; }
     if (!n && !files) continue;
-    you.push({ kind: "approve", id: "approve:" + r.repo, repo: r.repo, name: named(r.path, r.repo), title: `Approve ${r.repo}`, sub: `${n ? `${n} task${n > 1 ? "s" : ""} done` : r.round ? `a round of “${plain(r.round.text, 60)}”, still going` : "changes without a task"}${files ? ` · ${files} file${files > 1 ? "s" : ""}` : ""} · only you decide`, shape: "tasks" });
+    if (!n && r.handed && !r.handed.held) continue; // made for a job this lane handed over: it goes up by itself (lanes.mjs shipHanded)
+    you.push({ kind: "approve", id: "approve:" + r.repo, repo: r.repo, name: named(r.path, r.repo), title: `Approve ${r.repo}`, sub: `${n ? `${n} task${n > 1 ? "s" : ""} done` : r.round ? `a round of “${plain(r.round.text, 60)}”, still going` : r.handed ? `changes for “${plain(r.handed.text, 60)}” (handed to ${r.handed.to}): ${plain(r.handed.held, 100)}` : "changes without a task"}${files ? ` · ${files} file${files > 1 ? "s" : ""}` : ""} · only you decide`, shape: "tasks" });
   }
   const list = agents(), seen = new Set();
   // one agent owns a site: a second one's question about it waits for the owner's (handover.mjs heldAsks)
@@ -751,12 +756,12 @@ function reportIdeasAdd(id, ideas, deps = {}) {
   return added.length ? { ok: true, added: added.length, lane, said } : { error: "Couldn't add them." };
 }
 // Not worth acting on: the idea leaves the report's open list without going to the Workdesk.
-function reportIdeasDismiss(id, ideas, deps = {}) {
+function reportIdeasDismiss(id, ideas, deps = {}, done = false) {
   const r = reportById(id, deps); if (!r) return { error: "That report isn't there any more." };
   const list = (Array.isArray(ideas) ? ideas : []).map((x) => String(x || "").trim()).filter(Boolean).slice(0, 8);
   if (!list.length) return { error: "Pick an idea first." };
-  (deps.mark || markIdeas)(r, list, "dismissed");
-  return { ok: true, said: list.length === 1 ? "Dismissed." : `${list.length} dismissed.` };
+  (deps.mark || markIdeas)(r, list, done ? "done" : "dismissed");
+  return { ok: true, said: done ? "Marked done." : list.length === 1 ? "Dismissed." : `${list.length} dismissed.` };
 }
 // Ask about the report in place: the same mind as Home's chat, the report in front of it.
 async function reportAsk(id, question, { ask, deps = {} } = {}) {
