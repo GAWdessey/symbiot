@@ -30,7 +30,7 @@ import { actNow, actBrief } from "./mind.mjs";
 import { laneMap } from "./scan.mjs";
 import { parseRun, lastRunText, readRunLog, runStarted } from "./work.mjs";
 import { OPS, parseHandoffs } from "./handover.mjs";
-import { laneReach, unreachable } from "./reach.mjs";
+import { laneReach, unreachable, serverOnly } from "./reach.mjs";
 
 const LEDGER = join(CONFIG_DIR, "lanes.json");
 const ACT_DIR = join(CONFIG_DIR, "drafts");
@@ -155,22 +155,45 @@ function handedBy(from, lane, text, reach) {
 // the folder's brief (an ops brief quotes it; a repo's task line is it, reworded at most).
 // Before, the last row ever into the folder was the parent, so a lane that had once taken a
 // handover had every later one counted as the same chain, and ordinary requests were
-// refused as loops or parked for the next run (46 of 155 rows at 4 or more, 15 Oct 2026).
+// refused as loops or parked for the next run (46 of 155 rows at 4 or more, 15 Oct 2026). A loose
+// word match counted too: dailify's own Meta-template task looked like a handover about a Meta
+// template, took its chain (7) and every handover after it to ops errored (16 Oct 2026): it has to
+// be nearly the same words.
 function parentOf(path, ledger, md) {
-  const lines = String(md || "").split("\n").map((l) => l.replace(/^\s*(?:>\s?|-\s*\[[ xX]\]\s*)/, "").trim()).filter(Boolean);
+  md = String(md || "");
+  const tasks = /^## Tasks\s*$/m.test(md) ? md.split(/^## Tasks\s*$/m)[1].split(/^## /m)[0].split("\n").filter((l) => /^\s*-\s*\[ \]/.test(l)).join("\n") : md; // a lane's open tasks only: its brief's other lines (recent commits, "dailify: 2 uncommitted") matched a handover by chance
+  const lines = tasks.split("\n").map((l) => l.replace(/^\s*(?:>\s?|-\s*\[[ xX]\]\s*)/, "").trim()).filter(Boolean);
   for (const h of ledger.handoffs.slice().reverse()) {
     if (h.to.path !== path || h.status === "error") continue;
     const head = firstLine(h.text).trim(), cut = head.slice(0, 80);
-    if (lines.some((l) => (cut.length >= 12 ? l.includes(cut) : l === head) || alike(l, head))) return h;
+    if (lines.some((l) => (cut.length >= 12 ? l.includes(cut) : l === head) || alike(l, head, 0.85, 4))) return h;
   }
   return null;
 }
+// The handovers a chain came through, newest first: the parent, its parent… (rows from
+// before 16 Oct 2026 don't name theirs, so the line stops there).
+function ancestry(parent, ledger, most = 20) {
+  const out = []; let h = parent;
+  while (h && out.length < most && !out.includes(h)) { out.push(h); h = h.parent ? ledger.handoffs.find((x) => x.id === h.parent) : null; }
+  return out;
+}
+// Past MAX_CHAIN a handover is a loop only when it's the same job coming round again (most
+// of its words in one the chain came through), or past three times that. A long job two lanes
+// work on together is new work at each step (dailify does the code, ops puts it live, ops finds
+// the next thing, dailify fixes it): counting every step stalled it (16 Oct 2026).
+function loops(text, chain, line) {
+  if (chain <= MAX_CHAIN) return false;
+  if (chain > MAX_CHAIN * 3) return true;
+  const head = firstLine(text).replace(/^New job:\s*/i, "");
+  return line.some((a) => alike(firstLine(a.text).replace(/^New job:\s*/i, ""), head));
+}
+const LOOP_SAID = (n) => `${n} handovers in a row led here, and this one is the same job coming round again, so it wasn't started. Do it yourself if you can; if not, it's on Home for the user to start or skip.`;
 // Pick up what a folder's agent handed over and start the lanes it named.
 // Each handover is started once (its key: where from, which lane, what).
 function dispatch(path, { map = laneMap(), act = actNow, run = runHandoff, add = addTask, push = pushTasks, drop = removeTask, running = runningHandoff, refresh = resupply, more = extend, tasks = loadTasks, now = Date.now(), ledger = loadLedger(), dirs, reach } = {}) {
   const asked = parseHandoffs(readSym(path, "HANDOFF.md")); if (!asked.length) return [];
   const reachOf = () => { if (reach === undefined) { try { reach = laneReach({}); } catch { reach = null; } } return reach; };
-  const from = { lane: laneOf(path, map), path }, parent = parentOf(path, ledger, readSym(path, "TASKS.md")), chain = (parent ? parent.chain : 0) + 1;
+  const from = { lane: laneOf(path, map), path }, parent = parentOf(path, ledger, readSym(path, "TASKS.md")), chain = (parent ? parent.chain : 0) + 1, line = ancestry(parent, ledger);
   const started = [];
   for (const h of asked) {
     const key = keyOf(path, h);
@@ -197,13 +220,16 @@ function dispatch(path, { map = laneMap(), act = actNow, run = runHandoff, add =
       }
       started.push(prior); continue;
     }
-    const e = { id: randomBytes(4).toString("hex"), key, from, to: { lane: h.lane, path: "" }, text: h.text, at: now, chain, status: "started" };
-    const to = laneTarget(h.lane, map), looped = chain > MAX_CHAIN;
-    if (looped && (!to || to.lane === OPS || to.lane.toLowerCase() === from.lane.toLowerCase())) Object.assign(e, { status: "error", error: `${MAX_CHAIN} handovers in a row led here, so this one wasn't started. Do it yourself, or ask the user.` });
+    const e = { id: randomBytes(4).toString("hex"), key, from, to: { lane: h.lane, path: "" }, text: h.text, at: now, chain, ...(parent ? { parent: parent.id } : {}), status: "started" };
+    let to = laneTarget(h.lane, map); const looped = loops(h.text, chain, line);
+    // a job that's all on a server the lane can't reach goes to ops, which can, rather than to a lane that can only hand it on
+    const far = to && to.lane !== OPS && to.lane.toLowerCase() !== from.lane.toLowerCase() ? serverOnly(h.text, to.lane, reachOf()) : [];
+    if (far.length && !looped) { e.rerouted = { from: to.lane, why: `${to.lane} runs in a sandbox and can't reach ${far.join(" or ")}` }; to = { lane: OPS, path: "" }; e.to = { ...to }; }
+    if (looped && (!to || to.lane === OPS || to.lane.toLowerCase() === from.lane.toLowerCase())) Object.assign(e, { status: "error", error: LOOP_SAID(MAX_CHAIN) });
     else if (!to) Object.assign(e, { status: "error", error: `There's no lane called ${h.lane}. Lanes: ops, or a repo: ${Object.keys(map).slice(0, 30).join(", ")}.` });
     else if (to.lane.toLowerCase() === from.lane.toLowerCase()) Object.assign(e, { status: "error", error: `${to.lane} is your own lane: do it yourself.` });
     else if (to.lane === OPS) {
-      const r = act(h.text, { title: `handed over by ${from.lane}`, context: `${from.lane}'s agent (in ${path}) handed this over, and carries on once it's done.`, alongside: [alongsideNote(opsGoing({ ledger, running, dirs })), sharedFor(path, h.text, { ledger, now })].filter(Boolean).join("\n\n"), now });
+      const r = act(h.text, { title: `handed over by ${from.lane}`, context: `${from.lane}'s agent (in ${path}) handed this over, and carries on once it's done.${e.rerouted ? ` It was for ${e.rerouted.from}, but ${e.rerouted.why}, so Symbiot sent it to you: do it here, and if there's code to change in ${e.rerouted.from}, hand that part to ${e.rerouted.from}.` : ""}`, alongside: [alongsideNote(opsGoing({ ledger, running, dirs })), sharedFor(path, h.text, { ledger, now })].filter(Boolean).join("\n\n"), now });
       if (r.error) Object.assign(e, { status: "error", error: r.error });
       else Object.assign(e, { to: { lane: OPS, path: r.dir }, job: r.job });
     } else {
@@ -211,7 +237,7 @@ function dispatch(path, { map = laneMap(), act = actNow, run = runHandoff, add =
       if (t.error) Object.assign(e, { status: "error", error: t.error });
       else {
         push({ repo: to.lane });
-        if (looped) Object.assign(e, { to, task: t.id, status: "blocked", note: `${MAX_CHAIN} handovers in a row led here, so no agent was started on it: it waits in ${to.lane}'s tasks for its next run` });
+        if (looped) Object.assign(e, { to, task: t.id, status: "blocked", note: `${MAX_CHAIN} handovers in a row led here and this is the same job coming round again, so no agent was started on it: it waits in ${to.lane}'s tasks for its next run` });
         else { noteShared(to.path, sharedFor(path, h.text, { ledger, now })); const r = run(to.path) || {}; Object.assign(e, { to, task: t.id, ...startedAs(r) }); }
       }
     }
@@ -333,6 +359,7 @@ function sentState(e, key) {
   if (e.status === "held") return `queued in ${e.to.lane}: its agent was busy, and starts on it when that run ends`;
   if (e.status === "blocked") return `added to ${e.to.lane}'s tasks, but its agent didn't start (${String(e.note || "").replace(/\.$/, "")})`;
   if (e.allowedAt) return `the user let it through, and ops's agent started on it, as run ${runName(e.to.path)}`;
+  if (e.rerouted && e.to.lane === OPS && e.to.path) return `sent to ops instead of ${e.rerouted.from} (${e.rerouted.why}), and ops's agent started on it, as run ${runName(e.to.path)}`;
   return e.to.lane === OPS && e.to.path ? `ops's agent started on it, as run ${runName(e.to.path)} (name that in a handover that adds to it while it runs)` : `${e.to.lane}'s agent started on it`;
 }
 const sentLine = (e, key, text) => `- ${stamp(e.at || Date.now())} → **${e.to.lane}**: ${sentState(e, key)}. ${sentWhat(text)}`;
@@ -403,10 +430,10 @@ function lanesTick({ map = laneMap(), act = actNow, run = runHandoff, running = 
 const STUCK_FOR = 3 * 86400000;
 const tilde = (p) => { const h = homedir(); return p === h ? "~" : p.startsWith(h + "/") ? "~" + p.slice(h.length) : p; };
 // Two handovers about the same thing: most of the shorter one's words in the other.
-function alike(a, b) {
-  const x = keyWords(a), y = keyWords(b), [s, l] = x.size <= y.size ? [x, y] : [y, x]; if (s.size < 3) return false;
+function alike(a, b, share = 0.5, least = 3) {
+  const x = keyWords(a), y = keyWords(b), [s, l] = x.size <= y.size ? [x, y] : [y, x]; if (s.size < least) return false;
   let n = 0; for (const w of s) if (l.has(w)) n++;
-  return n / s.size >= 0.5;
+  return n / s.size >= share;
 }
 // A lane's question about work it handed over, once that work is done: whatsapp_module
 // asked "Can I reach sts-prod myself to put the WhatsApp module back?" after its two
@@ -671,4 +698,4 @@ function sharedFor(path, text, { ledger = loadLedger(), now = Date.now(), cfg = 
   return `## What ${who} has already answered on this work\nBefore you ask ${who} anything, check these: if one settles it, use it and don't ask.\n${l.map((x) => `- ${x.lane} asked "${clipWords(x.q.replace(/\s+/g, " "), 160)}": ${clipWords(x.a.replace(/\s+/g, " "), 300)} (${String(x.at).slice(0, 10)})`).join("\n")}`;
 }
 
-export { shareAnswer, sharedFor, sharedTo, answerReaches, linkedPaths, topicsOf, ownHosts, COMMON_HOSTS, parentOf, SHARED, LEDGER, MAX_CHAIN, loadLedger, laneOf, lastRunStart, dispatch, outcome, report, handingOf, lanesTick, lanesState, aboutIt, partlyDone, remoteKey, orcaMoves, orcaRelink, stuckHandovers, allowHandover, skipHandover, namedDirs, alike, doneSince };
+export { ancestry, loops, shareAnswer, sharedFor, sharedTo, answerReaches, linkedPaths, topicsOf, ownHosts, COMMON_HOSTS, parentOf, SHARED, LEDGER, MAX_CHAIN, loadLedger, laneOf, lastRunStart, dispatch, outcome, report, handingOf, lanesTick, lanesState, aboutIt, partlyDone, remoteKey, orcaMoves, orcaRelink, stuckHandovers, allowHandover, skipHandover, namedDirs, alike, doneSince };

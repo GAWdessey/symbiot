@@ -28,6 +28,7 @@ import { homedir } from "node:os";
 import { join, basename, resolve } from "node:path";
 import { realpathSync, readFileSync, mkdirSync, openSync, rmSync, existsSync, statSync, renameSync, chmodSync } from "node:fs";
 import { createInterface } from "node:readline";
+import { request as httpRequest } from "node:http";
 import { fileURLToPath } from "node:url";
 import { VERSION, CONFIG_PATH, CONFIG_DIR, loadConfig, saveConfig, repoState, semverGt } from "./core.mjs";
 import { HANDOFF_PROMPT, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, fillHandoff, runHandoff, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, parseQuestions, agentQuestions } from "./agents.mjs";
@@ -36,7 +37,7 @@ import { setScanOptions, scanBase, authorship, readmeInfo, repoShape, houseRules
 import { gitDefaultBranch, loadDeploys, driftRepo, computeDrift } from "./drift.mjs";
 import { buildTasksMd, taskType, shipChanges, shipWithBump, bumpOffer, learnNpm, releaseNeeded, withReleases, setVersion, syncTasks, pendingReview, unreleased, publishesOnMerge, addTask, approveRepo, approveChanges, sendBack, pushTasks } from "./tasks.mjs";
 import { produce, mailState, setMail, sentMail } from "./writeups.mjs";
-import { loadScreens, screenImage, blueprint } from "./screens.mjs";
+import { loadScreens, screenImage, blueprint, SCREENS_SOCK, screensGate } from "./screens.mjs";
 import { watchState, addWatch, removeWatch, seenWatch, newsSince, markNews, checkWatch, setBrief, draftReply, watchBoard, boardLine, boardChat, boardTalk, clearBoardChat } from "./watch.mjs";
 import { PORT as PHONE_PORT, phoneState, pairComputer, pollComputer, forgetComputer, parsePairLink } from "./phone.mjs";
 import { qrMatrix } from "./qr.mjs";
@@ -348,7 +349,21 @@ function screenJson(s) {
 // button. null when the app isn't running (then the command runs here, and its
 // browser closes after it). Once the app has the request, its answer is the
 // answer, even a failed one: running it here as well could press twice.
+// The app's screens door (screens.mjs SCREENS_SOCK): how a sandboxed lane reaches it, without the
+// app's token or port. null when nobody listens there.
+function viaSock(path, body) {
+  return new Promise((done) => {
+    const data = JSON.stringify(body || {});
+    const req = httpRequest({ socketPath: SCREENS_SOCK, path, method: "POST", headers: { "content-type": "application/json", "content-length": Buffer.byteLength(data) }, timeout: 5 * 60 * 1000 }, (res) => {
+      let t = ""; res.setEncoding("utf8"); res.on("data", (d) => { t += d; });
+      res.on("end", () => { try { done(res.statusCode < 300 ? JSON.parse(t) : { error: `Symbiot's app answered ${res.statusCode}.` }); } catch { done(null); } });
+    });
+    req.on("error", () => done(null)); req.on("timeout", () => { req.destroy(); done({ error: "Symbiot's app didn't answer in time." }); });
+    req.end(data);
+  });
+}
 async function viaApp(path, body) {
+  if (screensGate(path) && path !== "/api/ping" && existsSync(SCREENS_SOCK)) { const r = await viaSock(path, body); if (r) return r; }
   const cfg = loadConfig(); if (!cfg.appToken) return null;
   const base = `http://127.0.0.1:${Number(process.env.SYMBIOT_PORT || cfg.appPort) || 7391}`, headers = { "x-symbiot-token": cfg.appToken };
   try { const p = await fetch(base + "/api/ping", { headers, signal: AbortSignal.timeout(1500) }); if (!p.ok || !(await p.json()).version) return null; } catch { return null; }

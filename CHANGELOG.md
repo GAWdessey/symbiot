@@ -4,8 +4,7 @@ What each Symbiot release brought, newest first. When Approve bumps the version,
 
 ## 0.66.3 — 2026-10-16
 
-- "Sign in to <site>" on a card opens the Symbiot Browser every time. Before, an agent using Symbiot's hidden browser at that moment could take the window, which then opened out of sight, so the click seemed to do nothing. If the window really can't open, the card now says why.
-- The card says "Opening…" as soon as you click, and then whether it opened, on the card itself instead of only in Home's chat.
+- Changes approved without a task, in handover.mjs, headless.mjs, index.mjs, lanes.mjs, mind.mjs, reach.mjs and 5 more.
 
 ## 0.66.2 — 2026-10-16
 

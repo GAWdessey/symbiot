@@ -9,11 +9,16 @@
 //   so with the sandbox on a repo lane reaches none; with it off, the same as ops.
 // - Keys: the providers a lane's own .env files hold keys for (names, never values).
 //   The live server's .env is on the server: only a lane that reaches it can change it.
-// { sandboxed, hosts: [alias], keys: { lane: [provider] } }
+// - Sites: the web pages Symbiot's signed-in browser has mapped (Meta's WhatsApp Manager,
+//   Twilio, SMS Portal…). `symbiot screens` reaches them from a sandboxed run too (it asks
+//   the app, or runs through the sandbox's proxy), so EVERY lane reads them: the dailify
+//   lane said "this lane can't reach Meta or Twilio" without trying it (16 Oct 2026).
+// { sandboxed, hosts: [alias], keys: { lane: [provider] }, sites: [hostname] }
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { readFileSync } from "node:fs";
 import { loadConfig } from "./core.mjs";
+import { loadScreens } from "./screens.mjs";
 import { handoffCmd, sandboxNeeds, trustFull } from "./agents.mjs";
 
 const readOr = (f) => { try { return readFileSync(f, "utf8"); } catch { return ""; } };
@@ -50,10 +55,16 @@ function reposSandboxed({ cfg = loadConfig(), cmd = handoffCmd(), needs = sandbo
   return /^\s*claude\b/.test(String(cmd || "")) && trustFull(cfg) && cfg.agentSandbox !== false && needs().ready;
 }
 // map: { lane: path }, the repo lanes (scan.mjs laneMap).
-function laneReach(map = {}, { sandboxed = reposSandboxed(), ssh = readOr(join(homedir(), ".ssh", "config")), read = readOr } = {}) {
+function mappedSites(list) {
+  const n = new Map();
+  for (const s of Array.isArray(list) ? list : []) { let h = ""; try { h = new URL(String(s && s.page && s.page.url)).hostname.replace(/^www\./, ""); } catch {} if (h && !/^(localhost|127\.|\[)/.test(h)) n.set(h, (n.get(h) || 0) + 1); }
+  return [...n].sort((a, b) => b[1] - a[1]).map((x) => x[0]).slice(0, 10);
+}
+function laneReach(map = {}, { sandboxed = reposSandboxed(), ssh = readOr(join(homedir(), ".ssh", "config")), read = readOr, screens = () => loadScreens() } = {}) {
   const keys = {};
   for (const [lane, path] of Object.entries(map || {})) { if (!path) continue; const k = laneKeys(path, read); if (k.length) keys[lane] = k; }
-  return { sandboxed: !!sandboxed, hosts: sshHosts(ssh), keys };
+  let sites = []; try { sites = mappedSites(screens()); } catch {}
+  return { sandboxed: !!sandboxed, hosts: sshHosts(ssh), keys, sites };
 }
 // The servers a handover names that the lane it goes to can't reach: [] for ops, or
 // with the sandbox off.
@@ -62,5 +73,15 @@ function unreachable(text, lane, reach) {
   const t = String(text || "");
   return (reach.hosts || []).filter((h) => new RegExp(`(?<![\\w.-])${h.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\w-])`, "i").test(t));
 }
+// A job that's all on a server the lane can't reach, with no code in it for the lane to
+// write (put it live on sts-prod, a restart, a status check there): the servers, so Symbiot
+// sends it to ops itself, or []. "Put the dailify fix live on sts-prod" went to the dailify
+// lane, which could only hand it on, and that handover errored: the job stalled (16 Oct 2026).
+const SERVER_WORK = /\b(deploy\w*|restart\w*|reload\w*|live|status|logs?|check\w*|read[- ]only|ssh|server|pm2|systemctl|docker|nginx|migrat\w*)\b|\.env\b/i;
+const CODE_WORK = /\b(code|commit\w*|branch\w*|pull request|PR|refactor\w*|implement\w*|tests?|bug\w*|patch\w*|repo|function|component|endpoint)\b/i;
+function serverOnly(text, lane, reach) {
+  const far = unreachable(text, lane, reach), t = String(text || "");
+  return far.length && SERVER_WORK.test(t) && !CODE_WORK.test(t) ? far : [];
+}
 
-export { laneReach, sshHosts, envProviders, laneKeys, reposSandboxed, unreachable };
+export { mappedSites, laneReach, sshHosts, envProviders, laneKeys, reposSandboxed, unreachable, serverOnly };

@@ -29,7 +29,7 @@ import { handoffCmd, runHandoff, isUrgent, urgentStop, urgentFirst, urgentUndo }
 import { addTask, pushTasks } from "./tasks.mjs";
 import { laneMap } from "./scan.mjs";
 import { OPS, MARKETING, HANDOVER_MAX, handoverRules, ONLY_YOU, HANDBACK } from "./handover.mjs";
-import { laneReach } from "./reach.mjs";
+import { laneReach, unreachable, serverOnly } from "./reach.mjs";
 import { styleOf, styleLine, userStyleLine } from "./adapt.mjs";
 import { knowledgeFor } from "./knowledge.mjs";
 
@@ -263,10 +263,20 @@ const laneName = (repo, map) => Object.keys(map).find((n) => n.toLowerCase() ===
 // run that really is going there: behind, "urgent" or "routine") or notStarted (its
 // agent didn't start, and why: the task stays in the lane). An urgent one that didn't
 // start takes back the parking it did (urgentUndo): nothing would end to resume it.
-function actIn(request, repo, { map = {}, known = "", title, context, run = runHandoff, add = addTask, push = pushTasks, ops = actNow, first = urgentFirst, undo = urgentUndo, now = Date.now() } = {}) {
+// A job that's all on a server the lane can't reach (reach.mjs serverOnly: put it live on
+// sts-prod, a check there) goes to an agent outside a repo instead, which can; one with code
+// in it goes to the lane, told to hand the server part to ops (16 Oct 2026).
+function actIn(request, repo, { map = {}, known = "", title, context, run = runHandoff, add = addTask, push = pushTasks, ops = actNow, first = urgentFirst, undo = urgentUndo, reach, now = Date.now() } = {}) {
   const lane = laneName(repo, map);
   if (!lane) return { ...ops(request, { title, context, known, now }), lane: "" };
-  const t = add(request, lane); if (t && t.error) return { error: t.error };
+  if (reach === undefined) { try { reach = laneReach(map); } catch { reach = null; } }
+  const far = serverOnly(request, lane, reach);
+  if (far.length) {
+    const why = `${lane} runs in a sandbox and can't reach ${far.join(" or ")}`;
+    return { ...ops(request, { title, context: [context, `This was meant for ${lane}'s agent, but ${why}, so it's yours: do it here, and if there's code to change in ${lane}, hand that part to ${lane}.`].filter(Boolean).join("\n\n"), known, now }), lane: "", rerouted: { from: lane, why } };
+  }
+  const near = unreachable(request, lane, reach);
+  const t = add(request, lane, near.length ? { after: `Symbiot: ${lane} runs in a sandbox and can't reach ${near.join(" or ")}. Do the code part here, and hand what has to change on ${near.length > 1 ? "those servers" : "that server"} to ops, saying what.` } : undefined); if (t && t.error) return { error: t.error };
   const p = push({ repo: lane }); if (!p || !p.written || !p.written.length) return { error: `Couldn't write ${lane}'s tasks for its agent.` };
   const urgent = isUrgent(request) ? first(map[lane], { lanes: map, halt: urgentStop(request) }) : null; // "first" queues it; only "urgent" or a crash stops the run going there
   const e = run(map[lane]);
@@ -376,7 +386,7 @@ async function converse({ where, role = "", context = "", history = "", question
     if (did.error) reply = `I couldn't hand it to an agent: ${did.error}`;
     else if (did.lane && did.notStarted) reply = handedLine(did);
     else reply += did.lane ? handedLine(did)
-      : "\n\nHanded to your agent. It's on the Workdesk, and it asks you there before anything hard to undo.";
+      : `\n\nHanded to your agent${did.rerouted ? `, not ${did.rerouted.from}'s: ${did.rerouted.why}` : ""}. It's on the Workdesk, and it asks you there before anything hard to undo.`;
   } else if (want && want.task && act.task) {
     did = { kind: "task", text: String(want.task).slice(0, 300), ...(await act.task(String(want.task), repo)) };
     reply += did.error ? `\n\n(I couldn't add the task: ${did.error})`
