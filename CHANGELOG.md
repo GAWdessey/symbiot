@@ -2,9 +2,18 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.66.4 — 2026-10-16
+
+- Every lane can use the Symbiot Browser's signed-in sites now (WhatsApp Manager, SMS Portal, WhatsApp Web and the rest). A lane runs in a sandbox and couldn't reach the browser, so it said "this lane can't reach Meta" without trying. The app now opens a private door just for reading those pages, and lanes use it by themselves.
+- Each lane's brief lists the sites Symbiot's browser is signed in to, and tells it to try them before saying it can't.
+- Handovers to ops no longer stop with "4 handovers in a row" for no reason: a lane's own task was being counted as part of an earlier chain. A long job between two lanes now carries on, and only the same job coming back round is stopped, with a note saying so.
+- A job that's all on a server a lane can't reach, like putting a fix live on sts-prod, goes straight to ops instead of stalling in that lane, and you're told why.
+- The Linux downloads (.deb and AppImage) are built again. For 0.66.2 and 0.66.3 the Linux build gave up waiting for npm 10 seconds too soon, so symbiot.co.za/get/?app=linux and ?app=appimage still gave out 0.66.1.
+
 ## 0.66.3 — 2026-10-16
 
-- Changes approved without a task, in handover.mjs, headless.mjs, index.mjs, lanes.mjs, mind.mjs, reach.mjs and 5 more.
+- "Sign in to <site>" on a card opens the Symbiot Browser every time. Before, an agent using Symbiot's hidden browser at that moment could take the window, which then opened out of sight, so the click seemed to do nothing. If the window really can't open, the card now says why.
+- The card says "Opening…" as soon as you click, and then whether it opened, on the card itself instead of only in Home's chat.
 
 ## 0.66.2 — 2026-10-16
 
