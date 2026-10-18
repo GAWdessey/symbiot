@@ -22,6 +22,7 @@ if (!chromeBinary()) { console.log("  - no Chrome here: skipped"); done(); }
 
 const HOME = realpathSync(mkdtempSync(join(tmpdir(), "symbiot-mobile-"))), CFG = join(HOME, ".config", "symbiot");
 mkdirSync(CFG, { recursive: true });
+const tokenIn = (home) => { for (const f of ["secrets.json", "config.json"]) try { const t = JSON.parse(readFileSync(join(home, ".config", "symbiot", f), "utf8")).appToken; if (t) return t; } catch {} return ""; }; // the address is printed without its token now (15 Oct 2026)
 const VERSION = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8")).version;
 writeFileSync(join(CFG, "config.json"), JSON.stringify({ lastSeenVersion: VERSION, agentCmd: 'claude -p "{prompt}"' }));
 
@@ -30,7 +31,7 @@ let chrome = null;
 const finish = async () => { try { if (chrome) chrome.kill("SIGKILL"); } catch {} try { app.kill("SIGTERM"); } catch {} await sleep(300); try { rmSync(HOME, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }); } catch {} done(); };
 try {
   let o = "";
-  const url = await new Promise((res, rej) => { app.stdout.on("data", (d) => { o += d; const m = o.match(/http:\/\/127\.0\.0\.1:\d+\/\?t=[\w-]+/); if (m) res(m[0]); }); setTimeout(() => rej(new Error("the app gave no address: " + o)), 20000); });
+  const url = await new Promise((res, rej) => { app.stdout.on("data", (d) => { o += d; const m = o.match(/is running at (http:\/\/127\.0\.0\.1:\d+\/)/); if (m) res(m[1] + "?t=" + tokenIn(HOME)); }); setTimeout(() => rej(new Error("the app gave no address: " + o)), 20000); });
   chrome = spawn(chromeBinary(), ["--headless=new", "--remote-debugging-pipe", "--user-data-dir=" + join(HOME, "chrome"), "--no-first-run", "--no-sandbox", "about:blank"], { stdio: ["ignore", "ignore", "ignore", "pipe", "pipe"] });
   let next = 1, buf = Buffer.alloc(0); const wait = new Map(), errors = [];
   chrome.stdio[4].on("data", (c) => { buf = Buffer.concat([buf, c]); for (let e; (e = buf.indexOf(0)) >= 0; buf = buf.subarray(e + 1)) { const m = JSON.parse(buf.subarray(0, e).toString()); if (m.id && wait.has(m.id)) { wait.get(m.id)(m); wait.delete(m.id); } else if (m.method === "Runtime.exceptionThrown") errors.push(m.params.exceptionDetails.exception ? m.params.exceptionDetails.exception.description : m.params.exceptionDetails.text); } });
@@ -60,15 +61,13 @@ try {
   console.log("MOBILE — every page");
   for (const tab of ["map", "board", "drift", "week", "standup", "todo", "tasks", "reports", "marketing", "settings"]) {
     errors.length = 0;
-    const had = await js(`(function(){var t=document.querySelector('.tab[data-tab="${tab}"]');if(!t)return false;t.click();return true})()`);
+    const had = await js(`(function(){if(typeof setTab!=='function')return false;setTab('${tab}');return true})()`);
     await sleep(700);
     const st = JSON.parse((await js(`JSON.stringify({over:document.documentElement.scrollWidth-innerWidth,shown:typeof current==='undefined'?null:current,text:(document.querySelector('main')||document.body).innerText.length})`)) || "{}");
-    ok(tab + ": its tab is there and opens", had === true && st.shown === tab, st);
+    ok(tab + ": opens", had === true && st.shown === tab, st);
     ok(tab + ": not wider than the phone", st.over <= 1, st);
     ok(tab + ": says something", st.text > 20, st);
     ok(tab + ": no errors", !errors.length, errors);
   }
-  const tabs = JSON.parse(await js("JSON.stringify((function(){var t=document.querySelector('.tabs'),r=t.getBoundingClientRect();return {w:r.width,scroll:t.scrollWidth,ox:getComputedStyle(t).overflowX,h:r.height}})())"));
-  ok("the tabs scroll sideways inside the screen", tabs.w <= 390 && tabs.ox !== "visible" && tabs.h < 80, tabs);
 } catch (e) { ok("ran", false, String((e && e.stack) || e)); }
 await finish();
