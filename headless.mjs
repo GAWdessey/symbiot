@@ -560,7 +560,10 @@ const collectJs = (whole, list = null) => `(() => { ${SCROLLER} ${DEEP} ${LABEL_
     if (st.visibility === 'hidden' || st.pointerEvents === 'none' || (+st.opacity === 0 && !bare)) continue;
     // on top: what's at its centre is it, or inside it (not a banner over it)
     const top = deepAt((x + x2) / 2, (y + y2) / 2);
-    if (!top || !(top === e || deepContains(e, top) || deepContains(top, e))) continue;
+    // a site-drawn radio or checkbox has its own touch-target span over the input: a hit in the same
+    // radio host or label (Angular Material's mat-radio-button) is the control itself, not a banner
+    const host = bare && deepClosest(e, 'mat-radio-button,mat-checkbox,label,[role=radio],[role=checkbox]');
+    if (!top || !(top === e || deepContains(e, top) || deepContains(top, e) || (host && deepContains(host, top)))) continue;
     ${whole ? "if (y >= H - 200 && stuck(e)) continue; // stuck to the window's bottom: left out of the whole page's picture" : ""}
     const full = labelOf(e), at = inList ? Math.round(b.top + LIST.scrollTop) + '|' + kind + '|' + full : '';
     if (at && kept.at.has(at)) { kinds.set(e, kind); continue; }
