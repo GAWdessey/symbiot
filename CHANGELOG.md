@@ -2,6 +2,12 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.66.8 — 2026-10-18
+
+- Third attempt: `symbiot screens map --whole` still skips the Application restrictions radios (None / Websites / IP addresses / Android apps / iOS apps) on Google Cloud Console's API key page, even at symbiot commit…
+- 👤 You (only you: your PayPal and mail setup): paste the PayPal button or checkout link and say what sends the key email (PayPal receipt, a script, a mail service), and the next run wires `utm_source` through it…
+- Where is the PayPal button, and what sends the Pro key email?
+
 ## 0.66.7 — 2026-10-16
 
 - New job: make `symbiot screens` able to press radio buttons (and fill the fields they reveal) on Google Cloud Console, so the daaymn lane can save an Android app restriction on an API key.
