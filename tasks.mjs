@@ -709,9 +709,15 @@ async function mergedAlready(path, branch, base, { gh = null, net = {} } = {}) {
   if (!git(path, ["rev-parse", "-q", "--verify", ref]).ok) return null;
   if (!git(path, ["merge-base", "--is-ancestor", "HEAD", ref]).ok && git(path, ["diff", "--quiet", "HEAD", ref, ...NOT_SYMBIOT]).ok) return { from: ref };
   if (!gh && (!origin.ok || !/github/i.test(origin.out) || !hasCmd("gh"))) return null;
-  const list = async (state) => { const r = await (gh || ghRun(path))(["pr", "list", "--head", branch, "--state", state, "--limit", "1", "--json", "headRefOid"]); try { return r.status === 0 ? JSON.parse(r.stdout) : null; } catch { return null; } };
+  const list = async (state) => { const r = await (gh || ghRun(path))(["pr", "list", "--head", branch, "--state", state, "--limit", "1", "--json", "headRefOid,number"]); try { return r.status === 0 ? JSON.parse(r.stdout) : null; } catch { return null; } };
   const merged = await list("merged"), head = String((merged && merged[0] && merged[0].headRefOid) || "");
-  if (!head || !git(path, ["merge-base", "--is-ancestor", head, "HEAD"]).ok) return null;
+  if (!head) return null;
+  // The merged PR's last commit may have gone up from elsewhere (another checkout, a fix made
+  // on GitHub), so it isn't here: fetched, by the branch or the PR's own ref. Without it, this
+  // branch passed for live and the next PR carried the merged one's commits again (#208 to #209, 19 Oct 2026).
+  const have = () => git(path, ["cat-file", "-e", head + "^{commit}"]).ok;
+  for (const r of [branch, `pull/${merged[0].number}/head`]) { if (have()) break; await gitAsync(path, ["fetch", "-q", "origin", r], 60000); }
+  if (!have()) return null;
   const since = git(path, ["rev-list", "--count", head + "..HEAD"]);
   if (!since.ok) return null;
   if (since.out === "0") return { from: ref };
@@ -749,6 +755,18 @@ function commitSubject(texts) {
   const t = String(texts[0]).split("\n").find((l) => l.trim()) || "";
   const s = t.replace(/^\s*(#+|[-*+]|\d+[.)])\s+/, "").replace(/\*\*|__/g, "").replace(/\s+/g, " ").trim() || `${texts.length} approved tasks`;
   return clipWords(s, max) + more;
+}
+// What the commit and the PR say, on a public repo anyone can read: the approved
+// tasks' first sentences, bar any that name what's yours (outward.mjs, as the release
+// notes) so the full task text, with its paths, servers and run ids, stays in Symbiot
+// (0.66.6's commit and PR #202 carried it). Gives { subject, body }.
+const PRIVATE_LEFT = "Tasks with private details are kept in Symbiot, not here.";
+function commitText(texts, deny = [], notes = null) {
+  if (!texts.length) return { subject: commitSubject(texts), body: "No ticked task covers these changes." };
+  const entries = notes && notes.length ? [...new Set(notes)] : uniqueTasks(texts.map(changelogEntry));
+  const kept = entries.filter((e) => !leaksIn(e, deny).length), left = entries.length - kept.length;
+  const subject = kept.length ? commitSubject([kept[0], ...kept.slice(1)]) : "Small fixes and improvements" + (texts.length > 1 ? ` (+${texts.length - 1} more)` : "");
+  return { subject, body: [kept.map((x) => "- " + x).join("\n"), left ? PRIVATE_LEFT : ""].filter(Boolean).join("\n\n") };
 }
 // The repo's own tests, run before a PR opens (what CI would run). A repo with no test
 // script, or with its dependencies not installed here, can't be checked: that doesn't block.
@@ -888,8 +906,8 @@ async function shipChanges(path, texts, opts = {}) {
   const add = await gitAsync(path, ["add", "-A", "--pathspec-from-file=-", "--pathspec-file-nul"], gitTimeout(paths.length), only);
   if (!add.ok) return failed(gitFailed("git add", add, paths.length));
   git(path, ["reset", "-q", "--", ".symbiot"]); // never ship Symbiot's own scratch
-  const subject = commitSubject(texts);
-  const body = (texts.length ? texts.map((x) => "- " + x).join("\n") : "No ticked task covers these changes.") + (opts.bumped ? `\n\nBumps the version to ${opts.bumped}. ` + (publishesOnMerge(path) ? `It publishes to npm when this merges.` : `After this merges, tag v${opts.bumped} on ${base} to release it.`) : "");
+  const { subject, body: said0 } = commitText(texts, opts.deny || [], opts.notes);
+  const body = said0 + (opts.bumped ? `\n\nBumps the version to ${opts.bumped}. ` + (publishesOnMerge(path) ? `It publishes to npm when this merges.` : `After this merges, tag v${opts.bumped} on ${base} to release it.`) : "");
   const cm = await gitAsync(path, ["commit", "-q", "--only", "--pathspec-from-file=-", "--pathspec-file-nul", "-m", subject, "-m", body], gitTimeout(paths.length), only);
   if (!cm.ok) return failed("Commit failed: " + (cm.timedOut ? gitFailed("git commit", cm, paths.length) : cm.err || cm.out));
   forgetRunFiles(path, own.files);
@@ -917,8 +935,9 @@ async function sendUnsent(path, texts, opts, net = {}) {
   if (!u && rec && unsentOf(path, rec.branch)) return { error: `The approved work is on ${rec.branch}: check that branch out, then send it again.` };
   if (!u) { if (rec) noteUnsent(path, null); return null; } // gone up another way (pushed by hand)
   const mine = rec && rec.branch === u.branch ? rec : null, last = (f) => git(path, ["log", "-1", "--format=" + f, u.branch]).out;
-  const subject = (mine && mine.subject) || (texts.length ? commitSubject(texts) : last("%s"));
-  const body = (mine && mine.body) || (texts.length ? texts.map((x) => "- " + x).join("\n") : last("%b"));
+  const ct = texts.length ? commitText(texts, opts.deny || [], opts.notes) : null;
+  const subject = (mine && mine.subject) || (ct ? ct.subject : last("%s"));
+  const body = (mine && mine.body) || (ct ? ct.body : last("%b"));
   const said = u.pushed ? `${u.branch} went up earlier without a PR, so this opens it.`
     : `${u.ahead} commit${u.ahead === 1 ? "" : "s"} approved on ${u.branch} earlier never reached GitHub, so ${u.ahead === 1 ? "it goes" : "they go"} up now.`;
   const out = { ok: true, resent: true, sentFrom: u.branch, branch: u.branch, base: gitDefaultBranch(path), commit: git(path, ["rev-parse", "--short", u.branch]).out, subject, note: said };
@@ -1243,4 +1262,4 @@ function pushTasks(filter) {
   return { empty: false, written, unresolved, handoff: handoffCmd() };
 }
 
-export { setHandedLookup, setTaskModel, MODEL_PICKS, holdShip, SHIP_STALE, shipping, shippingPaths, workingChangesAsync, rebaseTask, sendAgain, forgetUnsent, unsentOf, readUnsent, unsentCard, repoTests, localRefused, forgetReview, gitFailed, taskPaths, addTask, toggleTask, setTaskDone, removeTask, cancelTask, restoreTask, FINDING_NOTE, completedInRepo, removalOf, applyRemovals, applyDrops, syncTasks, workingChanges, workingDiff, publishesOnMerge, unreleased, bumpOffer, learnNpm, releaseNeeded, releaseNotIn, withReleases, setVersion, changelogEntry, changelogSection, noteChangelog, releaseInput, shipWithBump, runSummary, saidFinished, pendingReview, commitSubject, shipChanges, autoMergeRepos, setAutoMerge, approveRepo, approveChanges, sendBack, TASK_ORDER, taskType, buildTasksMd, pushTasks, mergeWhenGreen, changelogItems, changelogLeaks };
+export { setHandedLookup, setTaskModel, MODEL_PICKS, holdShip, SHIP_STALE, shipping, shippingPaths, workingChangesAsync, rebaseTask, sendAgain, forgetUnsent, unsentOf, readUnsent, unsentCard, repoTests, localRefused, forgetReview, gitFailed, taskPaths, addTask, toggleTask, setTaskDone, removeTask, cancelTask, restoreTask, FINDING_NOTE, completedInRepo, removalOf, applyRemovals, applyDrops, syncTasks, workingChanges, workingDiff, publishesOnMerge, unreleased, bumpOffer, learnNpm, releaseNeeded, releaseNotIn, withReleases, setVersion, changelogEntry, changelogSection, noteChangelog, releaseInput, shipWithBump, runSummary, saidFinished, pendingReview, commitSubject, shipChanges, autoMergeRepos, setAutoMerge, approveRepo, approveChanges, sendBack, TASK_ORDER, taskType, buildTasksMd, pushTasks, mergeWhenGreen, changelogItems, changelogLeaks, commitText };

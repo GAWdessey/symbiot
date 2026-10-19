@@ -19,7 +19,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { commitSubject } from "../tasks.mjs";
+import { commitSubject, commitText } from "../tasks.mjs";
 
 const PKG = join(dirname(fileURLToPath(import.meta.url)), "..");
 const INDEX = join(PKG, "index.mjs");
@@ -246,6 +246,9 @@ try {
   const long = commitSubject(["## Next steps  1. **Add the `v*` tag-protection rule from #71.** #77 and #78 made publishing hands-off", "b"]);
   ok("pasted markdown is dropped and it fits 72 characters, cut at a word", long === "Next steps 1. Add the `v*` tag-protection rule from #71. #77… (+1 more)" && long.length <= 72, long);
   ok("no task: says so", commitSubject([]) === "symbiot: changes approved without a task", commitSubject([]));
+  const priv = commitText(["Deploy it on /home/garth/app and check sts-prod, run act-2ae1923d", "Fix the login bug that signs people out early. More detail here."], [{ term: "sts-prod", why: "a server you connect to" }]);
+  ok("commit text: a task naming private things stays out, the rest goes", priv.subject === "Fix the login bug that signs people out early." && !/act-|sts-prod|garth/.test(priv.subject + priv.body) && /kept in Symbiot/.test(priv.body), JSON.stringify(priv));
+  ok("commit text: nothing public gives a generic subject", commitText(["Check sts-prod"], [{ term: "sts-prod", why: "x" }]).subject === "Small fixes and improvements");
 } finally {
   ollama.close();
   rmSync(ROOT, { recursive: true, force: true });

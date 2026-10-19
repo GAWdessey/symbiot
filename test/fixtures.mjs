@@ -23,7 +23,7 @@ import { showScreen, siteUrl, browserArgs, isTrusted, isSend } from "../headless
 import { deflateSync, gzipSync } from "node:zlib";
 import { changesSince, whatsNew, tarFile, downloadReady, updateOutcome, autoUpdateDue, restartWouldStop } from "../server.mjs";
 import { weeklyDue, lastSlot, autostartFile, autostartContent, notifyCmd } from "../desktop.mjs";
-import { itemKey, itemsOf, fromOf, chatName as w_chatName, newItems, remember, githubItems, draftsUrl } from "../watch.mjs";
+import { itemKey, itemsOf, fromOf, needsYou, automatedMail, chatName as w_chatName, newItems, remember, githubItems, draftsUrl } from "../watch.mjs";
 import { lanAddresses, computerUrl } from "../phone.mjs";
 
 const INDEX = join(dirname(fileURLToPath(import.meta.url)), "..", "index.mjs");
@@ -596,6 +596,20 @@ try {
   const ghE = fakeGh(spE, { create: false, view: "OPEN" }), ghE2 = (a) => (/--state open/.test(a.join(" ")) ? { status: 0, stdout: JSON.stringify([{ headRefOid: "x" }]) } : ghE(a));
   const rse = await shipChanges(spE, ["Eighth"], { gh: ghE2 });
   ok("a PR from the branch is open again: it stays there, and that PR is the one", rse.ok && rse.branch === "spent" && rse.pr === "https://github.com/o/r/pull/172" && !rse.note, rse);
+  // #208 to #209, 19 Oct 2026: the PR's last commit went up from another checkout, so this one never had it,
+  // the branch passed for live, and the next Approve's PR carried #208's commits again and conflicted
+  const spF = build("ship-spent-elsewhere", `git init -q -b main && git config user.email ci@symbiot.test && git config user.name "Symbiot CI" && echo a > a.txt && git add . && git commit -qm init
+    git clone -q --bare . ../ship-spent-elsewhere-remote.git && git remote add origin ../ship-spent-elsewhere-remote.git && git fetch -q origin && git remote set-head origin main
+    git switch -q -c spent && echo b >> a.txt && git commit -qam one && git push -q -u origin spent
+    git clone -q -b spent ../ship-spent-elsewhere-remote.git ../ship-spent-elsewhere-other
+    cd ../ship-spent-elsewhere-other && git config user.email ci@symbiot.test && git config user.name "Symbiot CI" && echo fix > fix.txt && git add . && git commit -qm "fixed elsewhere" && git push -q origin spent && git rev-parse HEAD > ../ship-spent-elsewhere-head
+    git switch -q main && git merge -q --squash spent && git commit -qm "one (#208)" && git push -q origin main
+    cd ../ship-spent-elsewhere && echo nine > nine.txt`);
+  const gf = (a) => execSync("git " + a, { cwd: spF, encoding: "utf8", env: gitEnv }).trim(), headF = readFileSync(join(ROOT, "ship-spent-elsewhere-head"), "utf8").trim();
+  const ghF = (a) => { const s = a.join(" "); if (/^pr list .*--state merged/.test(s)) return { status: 0, stdout: JSON.stringify([{ headRefOid: headF, number: 208 }]) }; if (/^pr list .*--state open/.test(s)) return { status: 0, stdout: "[]" }; return { status: 1, stdout: "" }; };
+  ok("(the merged PR's last commit isn't in this checkout)", execSync(`git cat-file -t ${headF} 2>/dev/null || echo missing`, { cwd: spF, encoding: "utf8", env: gitEnv, shell: "/bin/bash" }).trim() === "missing", headF);
+  const rsf = await shipChanges(spF, ["Ninth"], { gh: ghF, pr: false });
+  ok("…its PR merged with a commit pushed from elsewhere: the next Approve still starts a fresh branch from main, with only the new change", rsf.ok && rsf.branch === "symbiot/ninth" && gf("rev-parse HEAD~1") === gf("rev-parse origin/main") && gf("diff --name-only origin/main HEAD") === "nine.txt" && /already merged/.test(rsf.note || ""), [rsf, gf("log --oneline -3")]);
   // a name already taken on origin (an earlier day's PR of that name, merged), and a
   // local branch of that name that went another way: the push was refused, and the
   // approved work sat in a commit with no PR
@@ -979,7 +993,7 @@ try {
   ok("a ship that fails puts CHANGELOG.md back too", cfl.error && readFileSync(join(clg, "CHANGELOG.md"), "utf8") === before, cfl);
   execSync("git checkout -q main", cEnv);
   const cai = await shipWithBump(clg, ["i want the reply drafted on whatsapp too"], { push: false, bump: "patch", notes: ["Added Draft a reply for WhatsApp chats."] });
-  ok("bump with notes (your AI's words): the changelog takes them; the commit keeps the task's own", cai.ok && /## 1\.0\.3 — [\d-]+\n\n- Added Draft a reply for WhatsApp chats\.\n\n## 1\.0\.2/.test(execSync("git show HEAD:CHANGELOG.md", cEnv)) && /- i want the reply drafted on whatsapp too/.test(execSync("git log -1 --format=%B", cEnv)), cai);
+  ok("bump with notes (your AI's words): the changelog takes them; the commit says the same, not the task's own wording", cai.ok && /## 1\.0\.3 — [\d-]+\n\n- Added Draft a reply for WhatsApp chats\.\n\n## 1\.0\.2/.test(execSync("git show HEAD:CHANGELOG.md", cEnv)) && (m => /- Added Draft a reply for WhatsApp chats\./.test(m) && !/i want the reply drafted/.test(m))(execSync("git log -1 --format=%B", cEnv)), cai);
 
   console.log("RELEASE NOTES — your AI words Approve's changelog entries (writeups.mjs)");
   let asked = "";
@@ -1581,6 +1595,11 @@ try {
   ok("waitingOn: what's new since yesterday per page, as \"2 GitHub notifications\"", (go.waiting || []).length === 1 && go.waiting[0].label === "2 GitHub notifications" && go.waiting[0].items.length === 2, go.waiting);
   ok("newsAfter: only what's newer, with its brief (what the phone asks for)", go.after && go.after.news.length === 1 && go.after.briefs.length === 1 && go.none.news.length === 0, go.after);
 
+  console.log("WATCH MAIL — automated mail isn't asking you anything (watch.mjs needsYou)");
+  const mailW = { url: "https://mail.google.com/mail/u/1/#inbox" };
+  ok("a GitHub Actions CI failure doesn't need a reply", !needsYou({ text: "GitHub [GarthGhostai/symbiot] Run failed: CI - symbiot/5-tasks (dbf6eff) Oct 19", unread: 1 }, mailW) && automatedMail("noreply@vercel.com Your receipt") && automatedMail("Daily newsletter - unsubscribe"), "");
+  ok("a real person's question still does", needsYou({ text: "Cale Morris Can you send the First Step quote by Friday? Oct 19", unread: 1 }, mailW) && !automatedMail("Cale Morris Can you send the First Step quote by Friday?"), "");
+
   console.log("WATCH WHATSAPP — a chat preview doesn't say who wrote it: only unread messages are from them (watch.mjs fromOf)");
   ok("fromOf: unread is theirs; ticks, \"You:\" or \"(You)\" are yours; a preview with none of these is unknown, never theirs", fromOf({ text: "Ann 08:10 See you then", unread: 2 }) === "them" && fromOf({ text: "Ann 08:10 See you then", mine: true }) === "you" && fromOf({ text: "Team 08:00 You: on my way" }) === "you" && fromOf({ text: "Garth (You) 07:55 note to self" }) === "you" && fromOf({ text: "Tee Gee 08:15 I was thinking about you and your value" }) === "unknown", "");
   const cits = itemsOf({ items: [{ kind: "row", label: "Ann 08:10 See you then 2", unread: 2 }, { kind: "row", label: "Bob 08:00 Done", mine: true }] });
@@ -1630,7 +1649,7 @@ try {
   // on WhatsApp, two chats with unread messages from them, and one whose preview is what you sent (nothing unread)
   const bnews = [{ id: "e1", watch: "m", name: "Inbox", ts: bnow - H1, text: "Sam, Contract" }, { id: "c1", watch: "c", name: "WhatsApp", ts: bnow - 2 * H1, text: "Mom: call me", from: "them", unread: 1 }, { id: "c2", watch: "c", name: "WhatsApp", ts: bnow - 3 * H1, text: "Team: standup moved", from: "them", unread: 2 },
     { id: "c3", watch: "c", name: "WhatsApp", ts: bnow - 2.5 * H1, text: "Tee Gee 08:15 I was thinking about you and your value", from: "unknown" },
-    { id: "e0", watch: "m", name: "Inbox", ts: bnow - 50 * H1, text: "Old newsletter" }, ...Array.from({ length: 60 }, (_, i) => ({ id: "g" + i, watch: "g", name: "GitHub notifications", ts: bnow - 10 * 60000 - i, text: "pat/app · CI failed " + i }))];
+    { id: "e0", watch: "m", name: "Inbox", ts: bnow - 50 * H1, text: "Sam, Old quote" }, ...Array.from({ length: 60 }, (_, i) => ({ id: "g" + i, watch: "g", name: "GitHub notifications", ts: bnow - 10 * 60000 - i, text: "pat/app · CI failed " + i }))];
   writeFileSync(join(bhome, ".config", "symbiot", "watch.json"), JSON.stringify({ watches: [bw("m", "Inbox", "https://mail.google.com/mail/u/0/#inbox"), bw("g", "GitHub notifications", "https://github.com/notifications"), bw("c", "WhatsApp", "https://web.whatsapp.com/"), bw("j", "Jira", "https://acme.atlassian.net/jira")],
     news: [...bnews].sort((a, b) => b.ts - a.ts), briefs: [{ watch: "c", name: "WhatsApp", ts: bnow - 2 * H1, count: 2, text: "Your mom wants a call." }] }));
   const bx = spawnSync(process.execPath, ["--input-type=module", "-e", `

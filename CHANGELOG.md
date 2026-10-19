@@ -2,6 +2,12 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one), for anyone who installs the app: what changed in it, never whose work it was (no projects, people, accounts, services, run ids or task wording of the person who made it). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.66.10 — 2026-10-19
+
+- **No more offers to answer mail that can't be answered.** Home no longer offers to draft a reply to no-reply senders, GitHub and CI notifications, receipts, alerts or newsletters. Before, a single CI failure email showed up as "draft a response for 1 email".
+- **Commit messages and pull requests stay free of private details.** Approve titles a commit and its PR from the tasks' first sentences and leaves out any that name your projects, people, servers, home folder or run ids. Those stay in Symbiot. The same check already guards the release notes.
+- **Approve starts a fresh branch once a branch's PR has merged**, even when that PR's last commit was pushed from somewhere else, such as another checkout or a fix made on GitHub. Before, Approve treated the branch as still live, so the next PR carried the merged PR's commits again and conflicted with main.
+
 ## 0.66.9 — 2026-10-19
 
 - **A usage meter for your AI.** A corner indicator shows how much of Claude's 5-hour and weekly limits the agents have used, read from Claude Code's own rate-limit report, with the reset time. When a limit is hit it turns red, says when Claude is back, and pauses the agents until then.
