@@ -2,6 +2,7 @@
 // an ask that's in it isn't raised again (Home drops it) and each agent's brief lists it.
 import { join } from "node:path";
 import { CONFIG_DIR, readState, writeJsonAtomic } from "./core.mjs";
+import { signInDone, browserBrief } from "./browserfails.mjs";
 
 const FILE = () => join(CONFIG_DIR, "asks-done.json");
 const KEEP = 200;
@@ -17,6 +18,7 @@ function recordDone(q, a, lane = "") {
   const k = key(q); if (!k || !String(a || "").trim() || SAYS_NO.test(a)) return false;
   const l = doneList().filter((x) => x.k !== k);
   l.push({ k, q: String(q).trim().slice(0, 200), a: String(a).trim().slice(0, 200), at: new Date().toISOString().slice(0, 10), ...(lane ? { lane: String(lane) } : {}) });
+  try { signInDone(`${q}\n${a}`); } catch {} // a sign-in asked again after this: the browser didn't hold it (browserfails.mjs)
   return save(FILE(), l.slice(-KEEP));
 }
 const isDone = (q) => { const k = key(q); return !!k && doneList().some((x) => x.k === k); };
@@ -57,5 +59,5 @@ function coveredBy(q) {
   const w = words(q); if (!w.size) return [];
   return standingList().map((x) => ({ r: x.rule, n: [...words(x.rule)].filter((t) => w.has(t)).length })).filter((x) => x.n >= 2).sort((a, b) => b.n - a.n).slice(0, 2).map((x) => x.r);
 }
-const standingBrief = () => ["## Standing rules: they apply to every run", ...BASE.map((x) => `- ${x}`), ...standingList().map((x) => `- ${x.rule}`), ""];
+const standingBrief = () => ["## Standing rules: they apply to every run", ...BASE.map((x) => `- ${x}`), ...browserBrief(), ...standingList().map((x) => `- ${x.rule}`), ""];
 export { recordDone, isDone, doneList, doneBrief, addRule, standingList, standingBrief, coveredBy };

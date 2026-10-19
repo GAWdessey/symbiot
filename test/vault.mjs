@@ -3,7 +3,7 @@
 //
 //   node test/vault.mjs
 //
-import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -12,7 +12,7 @@ process.env.HOME = HOME; process.env.USERPROFILE = HOME; process.env.SYMBIOT_VAU
 const CFG = join(HOME, ".config", "symbiot"); mkdirSync(CFG, { recursive: true });
 let pass = 0, fail = 0;
 const ok = (n, c, got) => { if (c) { pass++; console.log("  ✓ " + n); } else { fail++; console.log("  ✗ " + n + (got !== undefined ? "  got: " + JSON.stringify(got).slice(0, 400) : "")); } };
-const { captureSecrets, findSecrets, listSecrets, getSecret, markUsed, deleteSecret } = await import("../vault.mjs");
+const { captureSecrets, findSecrets, listSecrets, getSecret, markUsed, deleteSecret, scrubStored } = await import("../vault.mjs");
 const { converse, loadMind } = await import("../mind.mjs");
 const A = "0123456789abcdef".repeat(4), B = "fedcba9876543210".repeat(4);
 
@@ -42,5 +42,30 @@ try {
   ok("the prompt says to acknowledge, not refuse", /never refuse it/.test(seen));
   ok("the stored chat has a placeholder, not the codes", !JSON.stringify(loadMind()).includes(A) && JSON.stringify(loadMind()).includes("[saved: npm recovery codes]"));
   ok("the secret is in the vault", getSecret("npm recovery codes").value === A);
+
+  console.log("A PASSWORD WITH NO \"password:\" BEFORE IT (19 Oct 2026)");
+  // made up, in the shape of the one that got through: a word-like string, mixed case, digits, symbols, right after an email
+  const PW = "Brisk7Otter!92", said = `i signed up to lemon squeezy with jane@example.com ${PW}`;
+  const c1 = captureSecrets(said);
+  ok("right after an email: saved, named for the site and the account", c1.text === "i signed up to lemon squeezy with jane@example.com [saved: lemon squeezy password (jane@example.com)]" && getSecret("lemon squeezy password (jane@example.com)").value === PW, c1);
+  ok("after \"password\" or \"pw\" with no \"is\" or colon", findSecrets(`my lemon squeezy password ${PW} ok`).found.length === 1 && findSecrets("pw: Kq83mnzz").found.length === 1 && findSecrets(`the pw ${PW}`).found.length === 1);
+  ok("mixed into a sentence about an account, mid-sentence", findSecrets(`login for acme.io is jane@example.com and Tq9#vbn2Lp, thanks`).found.map((f) => f.name).join() === "acme.io password (jane@example.com)" && /and \[secret hidden\], thanks$/.test(findSecrets(`login for acme.io is jane@example.com and Tq9#vbn2Lp, thanks`).text));
+  ok("…but a version, a date, a time or an ordinary word after an email isn't one", ["upgrade to Python3.12 and Node-22 then email jane@example.com tomorrow", "meet jane@example.com 10:30am", "send jane@example.com 2026-10-19 notes", "signed in to GitHub-Actions2 fine", "ask jane@example.com about the v0.66.9-beta build"].every((t) => !findSecrets(t).found.length), ["meet jane@example.com 10:30am", "signed in to GitHub-Actions2 fine"].map((t) => findSecrets(t).found));
+  let seen2 = "";
+  const { homeAsk } = await import("../home.mjs");
+  await homeAsk(said.replace(PW, "Wren5Harbor#31"), { state: { you: [], feeds: [], lanes: [], runs: [] }, ask: async (sys, p) => { seen2 = sys + "\n" + p; return JSON.stringify({ reply: "Saved.", do: null, remember: [] }); } });
+  ok("on Home: the model and the stored chat never see it, and the reply says it was saved", !seen2.includes("Wren5Harbor#31") && /saved what they pasted, under "lemon squeezy password \(jane@example\.com\)"/.test(seen2) && !JSON.stringify(loadMind()).includes("Wren5Harbor#31"), seen2.slice(-300));
+
+  console.log("STORED BEFORE IT WAS CAUGHT — scrubbed once");
+  const old = "Gale4Fjord$88", mf = join(CFG, "mind.json"), m = JSON.parse(readFileSync(mf, "utf8"));
+  m.log.push({ ts: 1, where: "Home", role: "user", text: `i signed up to lemon squeezy with jane@example.com ${old}` }, { ts: 2, where: "Home", role: "assistant", text: `Noted: jane@example.com / ${old}.` });
+  writeFileSync(mf, JSON.stringify(m));
+  writeFileSync(join(CFG, "asks-done.json"), JSON.stringify([{ k: "x", q: "Sign up to Lemon Squeezy?", a: `answered in chat: i signed up to lemon squeezy with jane@example.com ${old}` }]));
+  const run = join(CFG, "drafts", "act-1", ".symbiot"); mkdirSync(run, { recursive: true }); writeFileSync(join(run, "agent.log"), JSON.stringify({ text: `password ${old} "quoted"` }) + "\n");
+  const sc = scrubStored({ force: true });
+  const left = ["mind.json", "asks-done.json", join("drafts", "act-1", ".symbiot", "agent.log")].filter((f) => readFileSync(join(CFG, f), "utf8").includes(old));
+  ok("the old password goes to the vault, and every stored copy (the chat, its reply, the answered record, a run's log) becomes [saved: …]", !left.length && sc.found.includes("lemon squeezy password (jane@example.com)") && getSecret("lemon squeezy password (jane@example.com)").ok && sc.files.length === 3 && readFileSync(mf, "utf8").includes("[saved: lemon squeezy password (jane@example.com)]"), { sc, left });
+  ok("…the files it rewrote still read", !!JSON.parse(readFileSync(mf, "utf8")).log && JSON.parse(readFileSync(join(run, "agent.log"), "utf8").trim()).text.includes("[saved:"));
+  ok("…and once done, it doesn't run again at start", scrubStored().skipped === true);
 } finally { rmSync(HOME, { recursive: true, force: true }); }
 console.log(`\n${pass} passed, ${fail} failed`); process.exit(fail ? 1 : 0);

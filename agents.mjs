@@ -14,6 +14,7 @@ import { recordDone } from "./asksdone.mjs";
 import { parseRun, lastRunText, readRunLog, runStarted, briefPlan, stepOf, runLine, waitingOn, waitUntil } from "./work.mjs";
 import { noteDuration, noteCost, kindOf } from "./estimate.mjs";
 import { plainAsk } from "./plain.mjs";
+import { apiOptions, blockedSignIn, apiRoute } from "./browserfails.mjs";
 import { lanesJob, parseFacts, leftToYou, gitWork, agentsGitWork, agentsClicking, agentsCodeWork, agentsMail, agentsPosting, linkedAsks, linkedChore, PUSH_OK } from "./handover.mjs";
 import { scanRoots, repoPathMap } from "./scan.mjs";
 import { knowledgeFolders } from "./knowledge.mjs";
@@ -846,8 +847,12 @@ function takenUp(path, end) {
 const draftRun = (path) => { try { const h = JSON.parse(readSymbiot(path, "handoff.json")) || {}; return !!(h.draft || (h.env && h.env.SYMBIOT_DRAFT)); } catch { return false; } };
 function needsOf(path, { final = "", waiting = null, end = Date.now(), now = Date.now() } = {}) {
   if (now - end > NEEDS_FOR) return null;
-  const n = waiting ? { kind: "step", what: clipWords(String(waiting.step || "").replace(/^\s*👤\s*(You\s*(\([^)]*\))?:)?\s*/, "").trim(), 240), check: "", label: "", waiting: true } : leftToYou(final) || readNeeds(path, final);
+  let n = waiting ? { kind: "step", what: clipWords(String(waiting.step || "").replace(/^\s*👤\s*(You\s*(\([^)]*\))?:)?\s*/, "").trim(), 240), check: "", label: "", waiting: true } : leftToYou(final) || readNeeds(path, final);
   if (!n || !n.what) return null;
+  // a sign-in the Symbiot Browser can't hold (Twilio's, or one you did when asked and its run
+  // still couldn't read): never yours to do again, but its agent's, through the site's API (browserfails.mjs)
+  const nb = n.kind !== "approve" && blockedSignIn(`${n.label} ${n.what} ${n.check}`, end);
+  if (nb) n = { kind: "approve", what: `The browser can't hold this sign-in: ${nb.host} (${nb.why}). Go ahead, and its agent reads it through ${nb.route} instead.`, check: "", label: `${nb.name}: its API, not the browser`, api: nb.host, say: apiRoute(nb) };
   if (n.kind === "approve" && draftRun(path)) return null; // a drafted reply: its card shows it and sends it (watch.mjs draftCard)
   // signing in to, linking or doing by hand on a platform that's linked: the agent's, not yours
   if (n.kind !== "approve" && linkedChore(`${n.label} ${n.what} ${n.check}`, linkedIds())) return null;
@@ -1586,7 +1591,7 @@ function parseQuestions(md, { linked = linkedIds() } = {}) {
     if (b) { if (cur) cur.options.push(clip(b[1])); else if (/\?\s*$/.test(b[1])) questions.push({ q: clip(b[1]), context: "", options: [] }); continue; } // a bullet with no "### question" above it is a question only if it actually ends in "?" — otherwise it's preamble/prose (a file list, etc.)
     if (cur) cur.context = clip((cur.context ? cur.context + " " : "") + l);
   }
-  return { questions: questions.filter((x) => x.q).slice(0, 20).map((x) => ({ ...x, options: agentsPosting(linkedAsks(agentsMail(agentsCodeWork(agentsClicking(agentsGitWork(x.options))), linked), linked, x.q), linked).slice(0, 6) })), suggestions: suggestions.filter(Boolean).slice(0, 10) };
+  return { questions: questions.filter((x) => x.q).slice(0, 20).map((x) => ({ ...x, options: apiOptions(agentsPosting(linkedAsks(agentsMail(agentsCodeWork(agentsClicking(agentsGitWork(x.options))), linked), linked, x.q), linked)).slice(0, 6) })), suggestions: suggestions.filter(Boolean).slice(0, 10) };
 }
 // An idea for another project names it first: "[repo: symbiot] Watch GitHub
 // too" is for the symbiot repo's tasks, whichever repo's agent had it (an agent
