@@ -69,6 +69,7 @@ ok("...and a script that isn't in a bin folder is judged by where it lives", /ou
 // is picked for the user (agents.mjs autoPick): no card.
 const pick = (q, options) => a.autoPick({ q, context: "", options });
 ok("the agent's own undoable recommendation is picked for you", /can't reproduce/.test(pick("How should I close this task?", ["🤖 Agent: close it as \"can't reproduce\" with these findings (recommended)", "👤 You (only you: a decision): tell me which card you saw"])), "");
+ok("a file name in the question doesn't make it a money question", pick("Start the re-allocation now or wait?", ["🤖 Agent: wait until costs.json covers 7 days (recommended)", "👤 You: start now"]) !== "", "");
 ok("...but not when the recommendation is your step", pick("Phone isn't showing up?", ["👤 You (only you: the phone in your hand): plug it in (recommended)", "🤖 Agent: skip the phone check"]) === "", "");
 ok("...nor when it goes out, touches money, an account or a machine", ["Approve it as it is?", "Publish 0.62.2 now?", "Start the tunnel on your PC again?", "Restart Symbiot to bind the port?", "Switch your default to Sonnet?", "Move the bank alerts back to the inbox?"].every((q) => pick(q, ["🤖 Agent: do it (recommended)", "Leave it"]) === ""), "");
 ok("...nor when it states a fact before its 🤖 tag: only the user knows it", pick("Has the company registration come through?", ["Yes, it's through. 🤖 Agent: carry on with the bank account forms (recommended)", "Not yet. 🤖 Agent: wait for it"]) === "", "");
@@ -199,6 +200,17 @@ const stray = a.answerQuestions(run, [{ q: "Sign in to LinkedIn?", a: "post it t
 ok("an option of a different question is not saved under this one", stray.error && !/Sign in to LinkedIn/.test(readFileSync(join(s, "ANSWERS.md"), "utf8")), stray);
 const mine = a.answerQuestions(run, [{ q: "Sign in to LinkedIn?", a: "skip it" }]);
 ok("...while its own option and typed words still are", mine.ok && mine.saved === 1, mine);
+
+console.log("OWN COMMANDS AND RULE FORMS — no card for Symbiot's browser, no settings Claude refuses");
+const key = join(HOME, "oracle_key"); writeFileSync(key, "x");
+const owned = a.withOwnTools(`${C}/claude-fallback -p "{prompt}" --allowedTools "Bash(node:*)" --add-dir "${key}" --add-dir "${HOME}/work"`);
+ok("every Claude run may use symbiot screens and symbiot press, in any lane", owned.includes('"Bash(symbiot screens:*)"') && owned.includes('"Bash(symbiot press:*)"') && owned.includes('"Bash(node:*)"'), owned);
+ok("an --add-dir that is a file is dropped, a folder stays", !owned.includes(key) && owned.includes(`--add-dir "${HOME}/work"`), owned);
+ok("a command that is not Claude is left alone", a.withOwnTools("codex exec x") === "codex exec x", "");
+const w = join(HOME, "work", "lane"); mkdirSync(w, { recursive: true });
+a.installAllowlist(w, { allow: ["Write(/x/**)"], deny: ["Write(/y)"], additionalDirectories: [key] });
+const set = JSON.parse(readFileSync(join(w, ".claude", "settings.local.json"), "utf8")).permissions;
+ok("Write(path) rules are written as Edit(path), the guard too, and a file is no additional directory", ![...set.allow, ...set.deny].some((r) => r.startsWith("Write(")) && set.allow.includes("Edit(/x/**)") && set.deny.includes("Edit(/y)") && set.deny.some((r) => r.endsWith("config.json)")) && !set.additionalDirectories.includes(key), set);
 rmSync(HOME, { recursive: true, force: true });
 console.log((fail ? "✗" : "✓") + " autoallow: " + pass + " passed, " + fail + " failed");
 if (fail) process.exit(1);

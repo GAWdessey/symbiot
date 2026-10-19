@@ -6,6 +6,7 @@ import { homedir, totalmem, cpus as oscpus } from "node:os";
 import { join } from "node:path";
 import { existsSync, mkdirSync, writeFileSync, unlinkSync } from "node:fs";
 import { loadConfig, saveConfig, sh, hasCmd, CONFIG_DIR } from "./core.mjs";
+import { noteLimit, noteOk } from "./quota.mjs";
 
 const MAX_TOKENS = 1600, CALL_MS = 120000; // a stalled connection to OpenAI, Gemini or Ollama hung a chat for good (15 Oct 2026): two minutes, then it says so
 
@@ -201,7 +202,7 @@ async function callGemini(r, system, prompt, images = []) {
 async function callOllama(r, system, prompt, images = []) {
   const res = await fetch(`${r.baseUrl}/api/chat`, {
     method: "POST", headers: { "Content-Type": "application/json" }, signal: AbortSignal.timeout(CALL_MS),
-    body: JSON.stringify({ model: r.model, stream: false, messages: [{ role: "system", content: system }, { role: "user", content: prompt, ...(images.length ? { images: images.map((i) => i.data) } : {}) }] }),
+    body: JSON.stringify({ model: r.model, stream: false, ...(r.tuned ? { think: false, keep_alive: "15m", options: { temperature: 0, num_ctx: 4096 } } : {}), messages: [{ role: "system", content: system }, { role: "user", content: prompt, ...(images.length ? { images: images.map((i) => i.data) } : {}) }] }),
   });
   const text = await res.text();
   if (!res.ok) {
@@ -238,9 +239,56 @@ const NOT_CONNECTED = "No AI is connected. With a Claude subscription, sign in t
 // week's text, and a rejected key went to the server's log while every chat said only
 // "(couldn't reach the model)" (15 Oct 2026). textOf reads either, for a stub standing in.
 const textOf = (r) => (r && typeof r === "object" ? (r.error ? "" : String(r.text ?? "")) : r == null ? "" : String(r));
-async function write(system, prompt, { images = [], fast = false, floor = "" } = {}) {
-  const r0 = floor ? aboveFloor(resolveProvider()) : resolveProvider(), r = fast && r0 && FAST_MODEL[r0.provider] ? { ...r0, model: FAST_MODEL[r0.provider] } : r0;
+// ---- per-job model routing (route.mjs) ------------------------------------
+// A job's kind picks its tier when Claude is the provider (a subscription or an Anthropic
+// key): local qwen3:8b for read/summary/classify, Haiku for triage, Sonnet for write-ups and
+// posts. A provider the user chose themselves (OpenAI, Gemini, Ollama) is left as it is.
+// Nothing ever waits on the local model: Ollama down, the model missing or its answer
+// failing the job's check all go straight to Haiku.
+const LOCAL_MODEL = MODELS.local.id, LOCAL_URL = "http://127.0.0.1:11434", LOCAL_TTL = 300000;
+let LOCAL_OK = { at: 0, ok: false };
+// Health check: Ollama answers a ping from the model (a model that's merely listed but
+// can't run must not count), cached for 5 minutes either way.
+async function localReady(now = Date.now()) {
+  if (now - LOCAL_OK.at < LOCAL_TTL) return LOCAL_OK.ok;
+  let ok = false;
+  try {
+    const tags = await fetch(`${LOCAL_URL}/api/tags`, { signal: AbortSignal.timeout(1500) });
+    if (tags.ok && ((await tags.json()).models || []).some((m) => m.name === LOCAL_MODEL)) {
+      ok = !!(await callOllama({ baseUrl: LOCAL_URL, model: LOCAL_MODEL, tuned: true, timeout: 20000 }, "Reply with one word.", "ping"));
+    }
+  } catch {}
+  LOCAL_OK = { at: now, ok };
+  return ok;
+}
+const TIER_MODEL = { claude: { H: MODELS.haiku.alias, S: MODELS.sonnet.alias }, anthropic: { H: MODELS.haiku.id, S: MODELS.sonnet.id } };
+// -> { r, local }: the provider to call for this kind, and whether it's the local tier
+async function routeFor(r0, kind) {
+  if (!kind || !r0 || !TIER_MODEL[r0.provider]) return { r: r0, local: false };
+  let tier; try { tier = (await import("./route.mjs")).pickModel({ kind }).tier; } catch { return { r: r0, local: false }; }
+  if (tier === "L" && await localReady()) return { r: { provider: "ollama", baseUrl: LOCAL_URL, model: LOCAL_MODEL, tuned: true }, local: true };
+  return { r: { ...r0, model: TIER_MODEL[r0.provider][tier === "S" ? "S" : "H"] }, local: false };
+}
+// The check a local answer of each kind gets when the caller passes none, so a malformed
+// one always falls up to Haiku (read has its own, parseRead, from its call site). A
+// summary is prose that isn't empty, a leaked <think> block or a runaway; a classify
+// answer is a short label, not a paragraph.
+const NOISE = /<\/?think>|^\s*(?:sure|certainly|okay|ok)[,!:]/i;
+const KIND_CHECK = {
+  summary: (t) => { const x = String(t || "").trim(); return x.length >= 3 && x.length <= 4000 && !NOISE.test(x); },
+  classify: (t) => { const x = String(t || "").trim(); return x.length >= 1 && x.length <= 200 && !/\n\s*\n/.test(x) && !NOISE.test(x); },
+};
+// kind: what the call is for (read, summary, classify, triage, chat, writeup, post). check(text)
+// -> true when a local answer has the shape the caller needs; a miss goes up to Haiku.
+async function write(system, prompt, { images = [], fast = false, floor = "", kind = "", check = null } = {}) {
+  const r0 = floor ? aboveFloor(resolveProvider()) : resolveProvider();
+  const base = fast && r0 && FAST_MODEL[r0.provider] ? { ...r0, model: FAST_MODEL[r0.provider] } : r0;
+  const routed = fast || floor || images.length ? { r: base, local: false } : await routeFor(base, kind), r = routed.r;
   if (!r) { if (floor) return { error: NO_CHAT_MODEL }; AI_UI.notConnected(); return { error: NOT_CONNECTED }; }
+  if (routed.local) {
+    try { const ans = await callOllama(r, system, prompt), ck = check || KIND_CHECK[kind]; if (typeof ans === "string" && ans && (!ck || ck(ans))) return { text: ans }; } catch {}
+    return write(system, prompt, { fast: true }); // a miss, or Ollama gone: Haiku, now
+  }
   const label = (PROVIDERS[r.provider] || {}).label || r.provider, stop = AI_UI.spinner("thinking…");
   try {
     let text = null;
@@ -249,9 +297,11 @@ async function write(system, prompt, { images = [], fast = false, floor = "" } =
     else if (r.provider === "openai") text = await callOpenAI(r, system, prompt, images);
     else if (r.provider === "gemini") text = await callGemini(r, system, prompt, images);
     else if (r.provider === "ollama") text = await callOllama(r, system, prompt, images);
+    if (typeof text === "string") noteOk(r.provider); // it answered: no limit in the way
     return typeof text === "string" ? { text } : { error: `${label} gave no answer.` };
   } catch (err) {
     const m = String(err?.message || err || "");
+    noteLimit(r.provider, err?.message); // a 429 / "usage limit" shows on the usage meter
     if (err?.name === "TimeoutError" || /didn't answer within/.test(m)) return { error: `${label} didn't answer within ${Math.round(CALL_MS / 60000)} minutes. Try again in a minute, or pick another AI in Settings → AI.` };
     if (/\b401\b|\b403\b|invalid|authentication|api key|unauthor/i.test(m)) { AI_UI.rejected(label); return { error: `Your ${label} credentials were rejected. Reconnect in Settings → AI (or  symbiot login --force ).` }; }
     return { error: `Couldn't reach the model: ${m}` };
@@ -309,8 +359,12 @@ function recommendModels(hw) {
   const ram = hw.ramGB || 8;
   const local = [
     { tier: "min", model: "llama3.2:3b", needGB: 6, note: "fast & light — fine for summaries" },
-    { tier: "med", model: "llama3.1:8b", needGB: 10, note: "solid all-rounder" },
+    { tier: "min+", model: "qwen3.5:4b", needGB: 7, note: "newer small model, ~3.3GB download, 256K context, reads images" },
+    { tier: "med", model: "qwen3:8b", needGB: 10, note: "solid all-rounder; 8 GB of VRAM fits one resident 8B model" },
+    { tier: "med+", model: "qwen3.5:9b", needGB: 11, note: "newer all-rounder, ~6.6GB download, 256K context, reads images" },
     { tier: "max", model: "qwen2.5:14b", needGB: 18, note: "stronger reasoning" },
+    { tier: "max", model: "gemma4:26b", needGB: 22, note: "Google mixture-of-experts (4B active, fast for its size), ~16GB download" },
+    { tier: "max", model: "qwen3.5:27b", needGB: 24, note: "newer high-quality dense model, ~17GB download" },
   ];
   if (ram >= 40) local.push({ tier: "max+", model: "llama3.1:70b", needGB: 48, note: "top local quality — big machine/GPU" });
   local.forEach((m) => { m.fits = ram >= m.needGB; });
@@ -372,4 +426,4 @@ async function connectProvider(b) {
   return saveConfig(cfg) ? { ok: true, message: `Connected: ${PROVIDERS[provider].label} · ${model}` } : { ok: false, message: "Couldn't write the config file." };
 }
 
-export { MODELS, modelTrouble, modelCheck, PROVIDERS, AI_UI, aboveFloor, NO_CHAT_MODEL, NOT_CONNECTED, textOf, resolveProvider, write, validate, connectProvider, detectHardware, recommendModels, hasOllama, ollamaInstall, ensureOllama, useOllamaModel , claudeState, claudeReady, claudeHelp , claudeCommand , claudeSpawn };
+export { localReady, routeFor, KIND_CHECK, MODELS, modelTrouble, modelCheck, PROVIDERS, AI_UI, aboveFloor, NO_CHAT_MODEL, NOT_CONNECTED, textOf, resolveProvider, write, validate, connectProvider, detectHardware, recommendModels, hasOllama, ollamaInstall, ensureOllama, useOllamaModel , claudeState, claudeReady, claudeHelp , claudeCommand , claudeSpawn };

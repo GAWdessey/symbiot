@@ -65,9 +65,9 @@ function noteDuration({ path, cmd, task = "", ms }, file = FILE) {
 // Every run's spend, finished or failed (route.mjs reads it: path, cost, ok), so what
 // per-task model routing saves can be measured against a baseline.
 function loadCosts(file = COSTS) { return loadDurations(file); }
-function noteCost({ path, cmd, task = "", model = "", cost = null, turns = null, ms = 0, ok = true, modelUsage = null, now = Date.now() }, file = COSTS, days = file === COSTS ? DAYS : join(dirname(file), basename(file, ".json") + "-days.json")) {
+function noteCost({ path, cmd, task = "", model = "", cost = null, turns = null, ms = 0, ok = true, modelUsage = null, escalatedFrom = "", now = Date.now() }, file = COSTS, days = file === COSTS ? DAYS : join(dirname(file), basename(file, ".json") + "-days.json")) {
   if (!path || typeof cost !== "number") return;
-  const row = { at: now, path, kind: kindOf(cmd), task: String(task).slice(0, 200), model: String(model || ""), cost, turns, ms: Math.round(ms) || 0, ok: !!ok, modelUsage };
+  const row = { at: now, path, kind: kindOf(cmd), task: String(task).slice(0, 200), model: String(model || ""), cost, turns, ms: Math.round(ms) || 0, ok: !!ok, modelUsage, ...(escalatedFrom ? { escalatedFrom } : {}) };
   const a = loadCosts(file); a.push(row);
   save(file, a.slice(-KEEP));
   rollDay(row, days);

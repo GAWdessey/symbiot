@@ -143,7 +143,7 @@ console.log("REPORTS — each ends with what to do about it");
   const seenFile = join(HOME, "seen-ideas.json");
   const r = R.readReport(list[0].id, { list, seenFile });
   ok("a write-up's end: its own \"Top 3 next\", as ideas, in plain words, nothing from other sections", r.ideas.join("|") === "Fix the login redirect on staging (auth.ts)|Add a test for the export|Ship 0.9 to the beta group" && !r.draft, r.ideas);
-  ok("…at most 4, from \"Recommendations\" or \"Next steps\" too; none when it has no such section", R.reportIdeas("## Next steps\n- a\n- b\n- c\n- d\n- e\n").length === 4 && R.reportIdeas("## Recommendations\n* x\n").join() === "x" && R.reportIdeas("# Plain\n\n- a list\n").length === 0);
+  ok("…at most 4, from \"Recommendations\" or \"Next steps\" too; none when it has no such section", R.reportIdeas("## Next steps\n- fix a\n- fix b\n- fix c\n- fix d\n- fix e\n").length === 4 && R.reportIdeas("## Recommendations\n* ship x\n").join() === "ship x" && R.reportIdeas("# Plain\n\n- a list\n").length === 0);
   const added = [];
   const ia = reportIdeasAdd(list[0].id, [r.ideas[0], r.ideas[2]], { list: () => list, add: (t, lane, o) => (added.push({ t, lane, o }), { id: "x" }) });
   ok("ticked ideas go onto the Workdesk in the report's lane, saying which report they came from", ia.ok && ia.added === 2 && ia.lane === "argena" && added.every((a) => a.lane === "argena" && /from the report "Argena catch-up"/.test(a.o.after)) && added[0].t === "Fix the login redirect on staging (auth.ts)", [ia, added]);
@@ -198,6 +198,51 @@ console.log("REPORTS — a handed-off or dismissed next step leaves 'Read, to ac
   ok("a rewritten report offers its steps again", needs().needs === "ideas" && needs().ideas === 3);
 }
 
+console.log("REPORTS — superseded actions leave 'Read, open actions' (2026-10-13)");
+{
+  ok("half-sentence fragments are not actions", R.reportIdeas("## Next steps\n- and then restart it\n- which covers the login, and\n- Restart\n- Fix the (broken link\n- Fix the login redirect\n").join("|") === "Fix the login redirect", R.reportIdeas("## Next steps\n- and then restart it\n- Restart\n- Fix the login redirect\n"));
+  const d1 = join(CFG, "drafts", "act-sup00001"), d2 = join(CFG, "drafts", "act-sup00002"), sf = join(CFG, "seen-sup.json");
+  const gone = join(HOME, "no-such", "login.patch");
+  put(d1, "AUDIT.md", `# Symbiot audit\n\n## Next steps\n\n- Add the Pro key email step\n- Apply the patch ${gone}\n- Ship the docs fix\n- Rename the footer link\n- Fix the cache bug\n`, 5000);
+  put(d2, "AUDIT.md", "# Footer follow-up\n\n## Next steps\n\n- Rename the footer link\n", 1000);
+  const l = R.listReports({ map: { symbiot: repo }, folders: [d1, d2], running: () => false }), old = l.find((r) => r.folder === d1);
+  const tasks = [
+    { id: "t1", text: `Add the Pro key email step (from the report "Symbiot audit", ${old.file})`, repo: "symbiot", done: false, archived: true, merged: true, ts: Date.now() },
+    { id: "t2", text: "Fix the cache bug in the proxy layer today", repo: "symbiot", done: false, ts: Date.now() },
+    { id: "t3", text: "Ship the docs fix", repo: "symbiot", done: false, ts: Date.now() },
+  ];
+  const why = R.supersededIdeas(old, R.reportIdeas(readFileSync(old.file, "utf8")), R.supersedeContext({ list: l, tasks, file: sf }));
+  ok("an action whose task was merged is superseded", /merged/.test(why.get("Add the Pro key email step")), [...why]);
+  ok("…one whose patch file is gone", /login\.patch is gone/.test(why.get(`Apply the patch ${gone}`)), [...why]);
+  ok("…one an open task already covers", /another task/.test(why.get("Ship the docs fix")), [...why]);
+  ok("…one a newer report lists too", /newer report/.test(why.get("Rename the footer link")), [...why]);
+  ok("…and one nothing has settled stays open", !why.has("Fix the cache bug"), [...why]);
+  const cleared = R.sweepSuperseded({ list: l, seenFile: sf, tasks });
+  ok("the sweep says what it cleared and why, and the report keeps just the live one", cleared.length === 4 && cleared.every((c) => c.why) && R.withNeeds(l, { seenFile: sf, tasks }).find((r) => r.id === old.id).ideas === 1, cleared);
+  ok("…and records them as superseded", R.handledIdeas(old, sf)["Ship the docs fix"] === "superseded");
+  const same = R.supersededIdeas(old, ["Fix the cache bug"], R.supersedeContext({ list: [...l, { ...old, id: "later", title: "Symbiot audit 2", mtime: old.mtime + 10, file: join(d2, "X.md") }], tasks: [], file: sf }));
+  ok("a later report with the same title in the lane replaces the earlier one", /later report/.test(same.get("Fix the cache bug")), [...same]);
+}
+
+console.log("REPORTS — what is not an action never sits in 'Read, open actions' (2026-10-16)");
+{
+  ok("an archive of answers is not a report", /^(?:ANSWERS(?:\.archive)?)\.md$/.test("ANSWERS.archive.md") && R.NOT_REPORTS.test("ANSWERS.archive.md") && !R.NOT_REPORTS.test("ANSWERS-REVIEW.md"));
+  ok("a report's title never opens an actions section", R.reportIdeas("# Recommended local models refresh\n\n- qwen3.5:4b is 3.3 GB\n- qwen3.5:9b is 6.6 GB\n").length === 0);
+  ok("the record of what was fixed is not a to-do list, 'Next 3 fixes' is", R.reportIdeas("## The fix\n\n- Changed the scorer to match whole words\n\n## Battery scorer fix\n\n- Plurals now match\n\n## The date-boundary flaw (top priority)\n\n- The prompt carried no date at all\n").length === 0 && R.reportIdeas("## Next 3 fixes, in order\n\n- Stop the pruner retiring learned skills\n").length === 1);
+  ok("a bullet that says to leave things be, or what is already so, is not an action", R.reportIdeas("## Recommendation\n\n- Do not add Colibri to the model list\n- Keep the routing as is\n- Revisit only if Garth gets 64 GB of RAM\n- Ticked: the two sign-in items\n- Media hashing is now cached by path\n- Add the Colibri note to the docs\n").join("|") === "Add the Colibri note to the docs");
+  ok("a plan that is to be done still counts", R.reportIdeas("## 6. Implementation plan (a task for the symbiot lane)\n\n- Escalate a failed run to the next tier up\n").length === 1);
+  // the real case: the launch-posts report's action, worded differently from the task that covers it
+  const idea = "Give the two Symbiot launch drafts an Approve button under Marketing, then approve both";
+  const task = { id: "87af67989d55", text: "Fix in Symbiot: the marketing report 'Symbiot launch posts: last link and claim check' tells Garth to 'approve both drafts under Marketing', but no approval card or button exists for them. The two drafts are the blog post and the Show HN launch drafts", repo: "symbiot", done: false, ts: Date.now() };
+  const rep = { id: "lc", title: "Symbiot launch posts: last link and claim check", name: "LINK-CHECK.md", file: "/x/LINK-CHECK.md", lane: "marketing", mtime: Date.now() - 1000 };
+  const w = R.supersededIdeas(rep, [idea, "Rotate the signing key"], R.supersedeContext({ list: [rep], tasks: [task], file: join(CFG, "seen-wide.json") }));
+  ok("a task worded differently still covers an action about the same thing", /another task/.test(w.get(idea)) && !w.has("Rotate the signing key"), [...w]);
+  const done = R.supersededIdeas(rep, [idea], R.supersedeContext({ list: [rep], tasks: [{ ...task, done: true, archived: true }], file: join(CFG, "seen-wide.json") }));
+  ok("…and a done one clears it as done", /done/.test(done.get(idea)), [...done]);
+  const old = R.supersededIdeas({ ...rep, mtime: Date.now() + 5000 }, [idea], R.supersedeContext({ list: [rep], tasks: [task], file: join(CFG, "seen-wide.json") }));
+  ok("a task written before the report does not clear it", !old.has(idea), [...old]);
+}
+
 {
   const ask = (path, q) => ({ kind: "ask", id: "ask:" + path, q, options: [] });
   const left = settleAsks([ask("a", "Close the Symbiot Browser so I can carry on?"), ask("b", "Click Done in the browser window"), ask("c", "Which plan are you on?"), ask("d", "Which plan are you on?!"), { kind: "setup", id: "s" }]);
@@ -206,6 +251,8 @@ console.log("REPORTS — a handed-off or dismissed next step leaves 'Read, to ac
   const cv = settleAsks([ask("m", "Which mailbox should I clean?")]);
   ok("a standing rule that looks like it answers an ask is listed on the card, which stays open", cv.length === 1 && cv[0].covered && cv[0].covered.length === 1, JSON.stringify(cv));
   const npm = settleAsks([ask("n1", "Tap your security key to save the npm Trusted Publisher for GAWdessey symbiot publish.yml"), ask("n2", "On npm, save the Trusted Publisher (GAWdessey / symbiot / publish.yml) with your security key tap"), ask("n3", "Which plan are you on today?")]);
+  const clicks = settleAsks([ask("c1", "Click Edit on the trusted publisher, set owner GAWdessey, and Save"), ask("c2", "Press Delete next to GarthGhostai/symbiot, then click Done"), ask("c3", "Tap your security key, then click Save on npm"), ask("c4", "Which plan are you on?")]);
+  ok("a card that hands the agent's clicks to the user never reaches Home; a key tap or a real question does", clicks.length === 2 && clicks[0].id === "ask:c3" && clicks[1].id === "ask:c4", JSON.stringify(clicks.map((y) => y.id)));
   ok("the same human step worded two ways is one card", npm.length === 2 && npm[0].id === "ask:n1" && npm[1].id === "ask:n3", JSON.stringify(npm.map((y) => y.id)));
   ok("asks to close the Symbiot Browser never reach Home, and the same question from two agents is one card", left.length === 2 && left[0].path === undefined && left[0].id === "ask:c" && left[1].id === "s", JSON.stringify(left.map((y) => y.id)));
 }
@@ -239,7 +286,7 @@ console.log("FINDINGS AND REMOVING — a fact a report found isn't filed as a jo
   const jobs = ["Fix the sign-in page on Safari.", "Login is not working on mobile.", "Sign-in is still broken on Safari.", "Paystack's live webhook is empty, not set: that's for the dailify lane to check.",
     "Reconnect Garth's calendar: it is already expiring.", "Is the live key from another Paystack business?", "Don't start a handoff where an agent is already running.", "When the reply is already in, hand it on."];
   ok("…and jobs, bug reports and questions don't", !jobs.some(isFinding), jobs.filter(isFinding));
-  const ideas = R.reportIdeas("# Audit\n\n## Four things that change the plan\n\n- Google is already fully on dailify.co.za.\n- API_EXTERNAL_URL is https://dailify.fshub.dev, not supabase.seekerai.dev.\n- Reconnect Garth's own calendar once.\n");
+  const ideas = R.reportIdeas("# Audit\n\n## Next steps\n\n- Google is already fully on dailify.co.za.\n- API_EXTERNAL_URL is https://dailify.fshub.dev, not supabase.seekerai.dev.\n- Reconnect Garth's own calendar once.\n");
   ok("a report's next steps leave its findings out", ideas.join("|") === "Reconnect Garth's own calendar once.", ideas);
   const { reportIdeasAdd } = await import("../home.mjs");
   const d = join(CFG, "drafts", "act-finding01"); put(d, "AUDIT.md", "# Audit\n\n## Next\n\n- Reconnect the calendar\n");
@@ -285,6 +332,24 @@ console.log("FINDINGS AND REMOVING — a fact a report found isn't filed as a jo
   ok("Reports is split into Unread / Read, open actions / Read and done tabs with counts, Unread first, grouped by lane", /REPTAB='unread'/.test(ui) && /Read, open actions/.test(ui) && /Read and done/.test(ui) && /id='reptabs'/.test(ui) && /by\[r\.lane\]/.test(ui), "");
   ok("Approve's overlap question is an in-app note, never window.confirm", !/if\(confirm\(r\.error\)\)/.test(ui) && /askyes/.test(ui), "");
   ok("an open report's back row sticks to the top while the report scrolls", /#reportslist:has\(#reportback\)\{[^}]*position:sticky;top:0/.test(ui), "");
+}
+
+console.log("REPORTS — usable rows (2026-10-16): honest 'still writing', readable source, steps and buttons on the row");
+{
+  const old = join(run, ".symbiot", "COMPANY.md"), days = (Date.now() - 4 * 864e5) / 1000;
+  utimesSync(old, days, days);
+  writeFileSync(join(run, ".symbiot", "TASKS.md"), "# For your agent: Home\n\nThe user asked Symbiot for this:\n\n> Research for Garth: can Symbiot run its cheaper agent work on local models, combined with picking a model per task by cost? Don't edit code.\n");
+  const l = R.listReports({ map, folders, running: (p) => p === run });
+  ok("a 4-day-old report is not 'still writing' even while its folder has a run going", l.find((r) => r.name === "COMPANY.md").running === false && l.find((r) => r.name === "COMPANY-AUDIT.md").running === true, l.map((r) => [r.name, r.running]));
+  ok("an ops report shows what the run was for, not its act id", /^Research for Garth: can Symbiot run/.test(l[0].source) && l[0].source.length <= 80 && l.find((r) => r.lane === "symbiot").source === "", l.map((r) => r.source));
+  const w = R.withNeeds(R.listReports({ map, folders, running: none }), { seenFile: join(CFG, "seen-rows.json"), tasks: [] });
+  ok("a report with next steps carries them on its row", w.every((r) => Array.isArray(r.steps) && r.steps.length === r.ideas), w.map((r) => [r.name, r.ideas, r.steps]));
+  const ui = readFileSync(join(ROOT, "ui.mjs"), "utf8");
+  ok("each row offers Hand to agent, Done and Drop per step, Hand all per report, and Approve on a draft", /rsgo/.test(ui) && /rsdone/.test(ui) && /rsdrop/.test(ui) && /Hand all to agents/.test(ui) && /rsapprove/.test(ui) && /r\.source\?/.test(ui));
+  const r0 = w.find((r) => r.steps.length) || w[0];
+  R.markIdeas(r0, r0.steps.length ? r0.steps : ["x"], "done", join(CFG, "seen-rows.json"));
+  const w2 = R.withNeeds(R.listReports({ map, folders, running: none }), { seenFile: join(CFG, "seen-rows.json"), tasks: [] }).find((r) => r.id === r0.id);
+  ok("a report whose steps are all done moves to Read and done by itself", w2.needs === "" && w2.steps.length === 0, w2);
 }
 console.log(`\n${fail ? "✗" : "✓"} reports: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

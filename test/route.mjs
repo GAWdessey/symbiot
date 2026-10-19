@@ -15,12 +15,21 @@ mkdirSync(CFG, { recursive: true });
 let pass = 0, fail = 0;
 const ok = (n, c, got) => { if (c) { pass++; console.log("  ✓ " + n); } else { fail++; console.log("  ✗ " + n + (got !== undefined ? "  got: " + JSON.stringify(got) : "")); } };
 
-const { pickModel, laneHistory, escalationReason, repoCount } = await import("../route.mjs");
+const { JOBS, pickModel, laneHistory, escalationReason, repoCount } = await import("../route.mjs");
 
 console.log("ROUTE — which model answers a job, and why");
 
 // One-shot jobs: the kind sets the tier outright.
-ok("read is local", JSON.stringify(pickModel({ kind: "read" })) === JSON.stringify({ tier: "L", model: "qwen3:8b", why: "read is a local job" }));
+ok("read is local, with its reason", pickModel({ kind: "read" }).model === "qwen3:8b" && /^local: last-message reader/.test(pickModel({ kind: "read" }).why));
+// The allocation audit (2026-10-13): every one-shot job pinned to its tier, so a move is a visible edit here.
+const PINNED = { read: "L", summary: "L", classify: "L", triage: "H", todo: "H", lang: "H", chat: "S", writeup: "S", update: "S", notes: "S", post: "S" };
+for (const [job, tier] of Object.entries(PINNED)) ok(`job ${job} is pinned to ${tier}, with a reason`, pickModel({ kind: job }).tier === tier && JOBS[job].why.length > 10 && pickModel({ kind: job }).why.endsWith(JOBS[job].why), pickModel({ kind: job }));
+ok("no job is unpinned: every JOBS entry is in the pin list", Object.keys(JOBS).sort().join() === Object.keys(PINNED).sort().join());
+ok("nothing one-shot goes to Opus", Object.keys(JOBS).every((k) => pickModel({ kind: k }).tier !== "O"));
+// Agent runs, by kind of brief.
+ok("an answer-resume stays on Sonnet", pickModel({ task: "Answers: the user said yes, carry on" , kind: "" }).tier === "S");
+ok("a research brief goes to Opus", pickModel({ task: "Investigate why the build fails" }).tier === "O");
+ok("a brief touching publishing goes to Opus", pickModel({ task: "Publish the release to npm" }).tier === "O");
 ok("summary is local", pickModel({ kind: "summary" }).tier === "L");
 ok("classify is local", pickModel({ kind: "classify" }).tier === "L");
 ok("triage is Haiku 5.5 (not 4.5, at 10× the price)", pickModel({ kind: "triage" }).model === "claude-haiku-5-5");
@@ -59,7 +68,7 @@ ok("storing a token escalates", pickModel({ task: "store the Meta token in .env"
 ok("release notes don't escalate; publishing does", pickModel({ task: "tidy the release notes" }).tier === "S" && pickModel({ task: "publish 0.66 to npm" }).tier === "O");
 
 // Lane history (costs.json): too little history reads as none.
-ok("no costs.json yet: no history, no escalation from it", JSON.stringify(laneHistory("/x")) === JSON.stringify({ median: 0, failRate: 0, samples: 0 }));
+ok("no costs.json yet: no history, no escalation from it", JSON.stringify(laneHistory("/x")) === JSON.stringify({ median: 0, failRate: 0, escalated: 0, samples: 0 }));
 writeFileSync(join(CFG, "costs.json"), JSON.stringify([
   { path: "/lane/a", cost: 0.5, ok: true }, { path: "/lane/a", cost: 0.8, ok: true }, { path: "/lane/a", cost: 1.1, ok: true },
   { path: "/lane/b", cost: 1, ok: true }, { path: "/lane/b", cost: 2, ok: true }, { path: "/lane/b", cost: 3, ok: true },
@@ -94,6 +103,9 @@ ok("pure: calling twice gives the same result", JSON.stringify(pickModel({ path:
   const { routedModel } = await import("../agents.mjs");
   ok("routedModel: a [model: opus] task line picks opus", routedModel("/tmp/nonexistent-repo", { model: "opus" }) === "opus");
   ok("routedModel: haiku and sonnet go by their CLI alias too, fable by its id", routedModel("/tmp/nonexistent-repo", { model: "haiku" }) === "haiku" && routedModel("/tmp/nonexistent-repo", { model: "sonnet" }) === "sonnet" && routedModel("/tmp/nonexistent-repo", { model: "fable" }) === "claude-fable-5-1");
+  writeFileSync(join(CFG, "lanes.json"), JSON.stringify({ lanes: { steve: { model: "opus" } } }));
+  ok("routedModel: a lane's own model in lanes.json always wins over Auto", routedModel("/tmp/steve") === "opus");
+  ok("routedModel: another lane stays on Auto", routedModel("/tmp/other-lane") !== "opus");
   const ai0 = await import("../ai.mjs");
   ok("one model table: route, the fast model and the API-key default agree, and the default is Sonnet", ai0.MODELS.haiku.id === "claude-haiku-5-5" && ai0.PROVIDERS.anthropic.model === ai0.MODELS.sonnet.id && ai0.recommendModels({ ramGB: 8 }).paid.every((p) => p.provider !== "anthropic" || Object.values(ai0.MODELS).some((m) => m.id === p.model)));
   ok("routedModel: an unreadable repo falls back to a model or \"\", never throws", typeof routedModel("/tmp/nonexistent-repo") === "string");
@@ -114,6 +126,40 @@ ok("pure: calling twice gives the same result", JSON.stringify(pickModel({ path:
   ai.useOllamaModel("llama3.1:8b");
   const c = JSON.parse(readFileSync(join(CFG, "config.json"), "utf8"));
   ok("installing a local model leaves cfg.provider unchanged but records the model", c.provider === "claude" && c.ollama.model === "llama3.1:8b", c);
+}
+
+// write() routing (ai.mjs routeFor): a job's kind picks the model when Claude is the provider.
+{
+  const ai = await import("../ai.mjs");
+  const cl = { provider: "claude", model: "" }, an = { provider: "anthropic", model: "x", key: "k" }, oa = { provider: "openai", model: "gpt-4o-mini" };
+  ok("triage goes to Haiku", (await ai.routeFor(cl, "triage")).r.model === "haiku");
+  ok("writeup goes to Sonnet", (await ai.routeFor(cl, "writeup")).r.model === "sonnet");
+  ok("the same on an Anthropic key", (await ai.routeFor(an, "post")).r.model === "claude-sonnet-5-5");
+  ok("a provider the user picked (OpenAI) is left alone", (await ai.routeFor(oa, "triage")).r === oa);
+  ok("no kind: unchanged", (await ai.routeFor(cl, "")).r === cl);
+  // Ollama isn't answering on 11434 in the test (or lacks the model): a local job goes straight to Haiku, never waits.
+  const t0 = Date.now(), loc = await ai.routeFor(cl, "read");
+  ok("read falls to Haiku when the local model isn't ready", loc.local ? await ai.localReady() : loc.r.model === "haiku", loc);
+  ok("…and doesn't wait on it", Date.now() - t0 < 25000); // the ping is capped at 20 s, even for a cold model load
+  const kc = ai.KIND_CHECK;
+  ok("summary: prose passes; empty, a leaked <think> block or a runaway falls up", kc.summary("The build passed and two tasks were ticked.") && !kc.summary("") && !kc.summary("<think>hmm</think> done") && !kc.summary("x".repeat(5000)));
+  ok("classify: a short label passes; a paragraph or chatter falls up", kc.classify("urgent") && !kc.classify("") && !kc.classify("Sure, it is urgent.") && !kc.classify("urgent\n\nBecause the user said so.") && !kc.classify("x".repeat(300)));
+  ok("read has no default (its call site passes parseRead)", kc.read === undefined);
+  ok("the tier list offers qwen3:8b, the routed local model", ai.recommendModels({ ramGB: 16 }).local.some((m) => m.model === "qwen3:8b" && m.fits));
+}
+
+// A lane that keeps escalating starts on Opus; escalation() only lifts a Sonnet pick, once.
+{
+  const runs = (n, esc) => Array.from({ length: n }, (_, i) => ({ path: "/x", cost: 0.3, ok: true, ...(i < esc ? { escalatedFrom: "sonnet" } : {}) }));
+  ok("a lane that escalated half its runs starts on Opus", escalationReason("fix a typo", laneHistory("/x", runs(4, 2))) === "lane keeps escalating");
+  ok("one escalation in four does not", escalationReason("fix a typo", laneHistory("/x", runs(4, 1))) === "");
+  const { escalation } = await import("../agents.mjs");
+  const before = { dirtyBefore: null, ticksBefore: 0, askedBefore: "" };
+  ok("a failed Sonnet run goes up to Opus, with a note", escalation("/nonexistent", "sonnet", 1, before)?.model === "opus" && /ended in an error/.test(escalation("/nonexistent", "sonnet", 1, before).note));
+  ok("…only once", escalation("/nonexistent", "sonnet", 1, before, "sonnet") === null);
+  ok("an Opus run goes no higher", escalation("/nonexistent", "opus", 1, before) === null);
+  ok("another agent's run (no model) is left alone", escalation("/nonexistent", "", 1, before) === null);
+  ok("a clean exit with unknown changes is not called empty", escalation("/nonexistent", "sonnet", 0, before) === null);
 }
 
 console.log((fail ? "✗" : "✓") + " route: " + pass + " passed, " + fail + " failed");

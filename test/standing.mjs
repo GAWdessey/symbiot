@@ -15,6 +15,7 @@ try {
   const b0 = standingBrief().join("\n");
   ok("clerk rule is always in the brief", /capable clerk/.test(b0) && /ONE question/.test(b0), b0);
   ok("never asks to close the Symbiot Browser", /Never ask the user to close/.test(b0));
+  ok("an unsubscribe that won't save names the sender and falls back to a mail filter, never \"what now?\"", /couldn't unsubscribe from/.test(b0) && /mail filter/.test(b0) && /confirm the change saved/.test(b0));
   ok("never guesses a provider: checks the MX records first", /Never name a provider you haven't confirmed/.test(b0) && /MX/.test(b0));
   ok("a chat rule is saved and appears in the brief", addRule("Main inbox is garthwhite507@gmail.com, don't ask which mailbox") && /which mailbox/.test(standingBrief().join("\n")));
   addRule("main inbox is garthwhite507@gmail.com  don't ask which mailbox!");

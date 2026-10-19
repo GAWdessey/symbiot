@@ -27,7 +27,7 @@ import { VERSION, CONFIG_DIR, clipWords, readState, writeJsonAtomic } from "./co
 import { write, textOf } from "./ai.mjs";
 import { handoffCmd, runHandoff, isUrgent, urgentStop, urgentFirst, urgentUndo } from "./agents.mjs";
 import { addTask, pushTasks } from "./tasks.mjs";
-import { laneMap } from "./scan.mjs";
+import { laneMap, laneAbouts } from "./scan.mjs";
 import { OPS, MARKETING, HANDOVER_MAX, handoverRules, ONLY_YOU, HANDBACK } from "./handover.mjs";
 import { laneReach, unreachable, serverOnly } from "./reach.mjs";
 import { styleOf, styleLine, userStyleLine } from "./adapt.mjs";
@@ -182,6 +182,7 @@ const PAGES = {
   board: ["Dashboard", "the cards of what they watch (Gmail, GitHub, WhatsApp, LinkedIn…) and what's new on each"],
   tasks: ["Workdesk", "every lane's tasks and agents: what's running, waiting, done for review, agents' questions"],
   reports: ["Reports", "what agents wrote up for them to read (audits, findings, plans)"],
+  asks: ["Questions", "what agents are asking them and suggest next, to answer in one place"],
   marketing: ["Marketing", "the marketing lane: drafts of posts to approve, its agent"],
   week: ["Week", "their week, written up from their real work"],
   standup: ["Standup", "a standup from yesterday's work"],
@@ -225,9 +226,10 @@ const CONTROL_RULES = `
 - front: "id" is a task id; it moves to the front of its lane's queue.
 - merge: two agents on the same job: "id" is the duplicate to stop, "into" the one that keeps it.
 Stopping, cancelling, redirecting and reordering can be undone, so do them without asking. Say in your reply what you did, and only once "control" holds it; what is hard to undo (paying, sending, deleting, publishing) stays the agent's own question to the user.`;
+// about: { lane: one line on the project } (scan.mjs laneAbouts) so a bare name is guessable.
 // lanes: the repos "do" can point at; self: Symbiot's own repo among them, where
 // a flaw in Symbiot itself is fixed; nav: this chat can open pages ("go").
-function rulesFor(lanes = [], self = "", nav = false, settle = false, tasks = [], control = false) {
+function rulesFor(lanes = [], self = "", nav = false, settle = false, tasks = [], control = false, about = {}) {
   return `Reply with JSON only, no markdown fence:
 {"reply": "what you say, plain text, brief, no preamble",
  "do": null or {"agent": "what a coding agent should do now: self-contained, with names, links and ids", "repo": "the lane it's for, or empty"} or {"task": "a task for later", "repo": "the lane it's for, or empty"},${nav ? `
@@ -236,7 +238,7 @@ ${control ? ` "control": [],\n` : ""} "remember": [{"name": "…", "kind": "pers
  "rule": ["a standing rule you and the user have just agreed for every agent"]${settle ? `,
  "settled": ["the exact question of a 'Only the user can do' card that their message has just answered or made pointless"]` : ""}}
 When they ask you to do something (look into it, find out, fix, set up, sign in, close, send, chase), do it, don't explain what you can't do: "agent" starts a coding agent now, with their tools and connectors (MCP, the command line, a browser signed in to their linked sites). With a "repo", it's that project's agent, working in it; empty, an agent for everything outside a repo (this computer, accounts, services). Use "task" for what's for later. Don't ask their permission to hand it over: the agent asks them first, on the Workdesk, before anything hard to undo (closing an account, deleting, paying, sending); say so in your reply when it applies, with what to check first. A question you can answer from what's here: answer it, "do": null.
-Lanes ("repo" is one of these, exactly): ${lanes.length ? lanes.slice(0, 60).join(", ") : "(none found)"}.${lanes.includes(MARKETING) ? ` "${MARKETING}" is a lane of its own for marketing any of their products (posts, demo videos, launches, campaigns, pricing pages' copy): marketing work goes there, starting with the product it's for in brackets, "[Dailify] a launch post".` : ""}${self ? ` Symbiot itself is "${self}": a flaw in how Symbiot works (how it read a page, what a brief or a card said, anything in the app) goes there.` : ""}
+Lanes ("repo" is one of these, exactly; a bracket after a name says what the project is and is not part of the name): ${lanes.length ? lanes.slice(0, 60).map((n) => about[n] ? `${n} (${about[n]})` : n).join(", ") : "(none found)"}.${lanes.includes(MARKETING) ? ` "${MARKETING}" is a lane of its own for marketing any of their products (posts, demo videos, launches, campaigns, pricing pages' copy): marketing work goes there, starting with the product it's for in brackets, "[Dailify] a launch post".` : ""}${self ? ` Symbiot itself is "${self}": a flaw in how Symbiot works (how it read a page, what a brief or a card said, anything in the app) goes there.` : ""}
 Only say work is started, sent or queued when your "do" starts or queues it in this same reply; otherwise say what you will do, not that you are doing it. When they point out you got something wrong, open the reply by naming the mistake in a plain sentence ("I got that wrong: …") and give the right answer, never change the subject or hedge.
 Before you say an agent will read a mailbox or a site, check Symbiot can read it: being able to send to an address is not being able to read it. If it can't, say so first in plain words ("I can send there but can't read it: open it on your laptop, or sign in at <exact address>") and don't start an agent that will only come back asking. When a provider matters, an agent looks it up (MX records), never guesses it.
 The people you talk to (Garth and his team) are Symbiot's makers, not outside users: act as they want, and when they ask for a change to Symbiot itself, make it.
@@ -323,6 +325,10 @@ function taskIn(text, repo, { map = {}, add = addTask } = {}) {
 // model wrote it before anything ran, so Symbiot says what actually happened.
 const CLAIMS_ACTION = /\b(sending (this|it|that) to|(i'?ve|i have|i'?m|i am|i'?ll|i will|let me) (just )?(sent|send|sending|handed|hand|handing|passed|passing|queued|queue|queuing|added|adding|started|starting|kicked off|kicking off|fixed|fixing|on it)|(handed|passed|sent) (it |this |that )?(to|over to|off to) (the |a |an )?\w+|(agent|it)('s| is) (on it|working on|fixing|looking into)|is (now )?(running|underway|in progress))\b/i;
 const unbackedClaim = (reply, did) => !(did && !did.error && !did.notStarted) && CLAIMS_ACTION.test(String(reply || ""));
+// "From now on every agent will…" is only true once the rule is saved into their briefs.
+const CLAIMS_BINDING = /\b(?:from now on|going forward|every agent|all agents|each agent|agents (?:will|won'?t|now|always|never)|standing rule|always do|never do)\b/i;
+const bindingClaim = (reply, saved) => !saved && CLAIMS_BINDING.test(String(reply || ""));
+const NOT_BINDING = "\n\nTo be plain: that isn't a standing rule yet. I haven't saved it into the agents' briefs, so it doesn't bind them. Say \"make that a rule\" and I will.";
 const UNBACKED = "\n\nCorrection: nothing was handed to an agent or queued by this reply, so nothing is running on it yet. Say the word and I'll start it.";
 function parseReply(raw) {
   const t = String(raw || "").trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
@@ -354,7 +360,7 @@ async function converse({ where, role = "", context = "", history = "", question
   // how they talk, from what they've typed into any chat (adapt.mjs: accommodation)
   const voice = styleLine(styleOf(d.log.filter((l) => l.role === "user").map((l) => l.text).concat(question)));
   // the system prompt holds what's the same from turn to turn (prompt caching keys on its start); how they talk (voice) changes as they type, so it goes last, in the prompt
-  const system = `${IDENTITY} ${role}\n\n${rulesFor(Object.keys(lanes), selfLane(lanes), nav, settle, tasks, control)}${languageLine()}`;
+  const system = `${IDENTITY} ${role}\n\n${rulesFor(Object.keys(lanes), selfLane(lanes), nav, settle, tasks, control, laneAbouts())}${languageLine()}`;
   let prompt = `${dayLine(now)}\n\n` + (known ? `What you know (from across the app):\n${known}\n\n` : "") + (kn.text ? kn.text + "\n\n" : "") + (elsewhere ? `Lately, elsewhere in the app (other chats: a short answer here doesn't reply to these):\n${elsewhere}\n\n` : "") +
     (nav && tasks.length ? `Open tasks (id: task):\n${tasks.slice(0, 40).map((t) => `- ${t.id}: ${String(t.text || "").replace(/\s+/g, " ").slice(0, 90)}${t.repo ? ` [${t.repo}]` : ""}`).join("\n")}\n\n` : "") + (context ? context + "\n\n" : "") + (history ? `This chat so far:\n${history}\n\n` : "") + `They say (on ${where}): ${question}`;
   if (kept.length) prompt += `\n(Symbiot saved what they pasted, under ${kept.map((n) => `"${n}"`).join(", ")}. Say so in a few words, and carry on with what they asked.)`;
@@ -398,11 +404,14 @@ async function converse({ where, role = "", context = "", history = "", question
   if (control && act.control && Array.isArray(j.control) && j.control.length) {
     steered = await act.control(j.control.filter((x) => x && typeof x === "object").slice(0, 5));
     const bad = steered.filter((x) => x.error), good = steered.filter((x) => x.ok);
-    if (bad.length) reply = `${bad.map((x) => `I couldn't ${x.op}: ${x.error}`).join(" ")}\n\n${reply}`;
+    // the reply was written before the actions ran, so any claim in it ("Sorted, I've told…") is dropped when one failed
+    if (bad.length) reply = `${bad.map((x) => `I couldn't ${x.op}: ${x.error}`).join(" ")} None of that went through as you asked, so please don't count it as done.`;
     if (good.length) reply += `\n\n${good.map((x) => x.said).join(" ")}`;
     for (const x of good) steps.push(`${x.op}: ${x.said}`.slice(0, 120));
   }
   if (!did && !steered.some((x) => x.ok) && unbackedClaim(reply, did)) reply += UNBACKED;
+  const rules = (Array.isArray(j.rule) ? j.rule : []).map((x) => String(x || "")).filter((x) => x.trim()).slice(0, 3).filter((x) => addRule(x));
+  if (bindingClaim(reply, rules.length)) reply += NOT_BINDING;
   // what's read aloud: the reply, then the line under it as a short phrase (spokenLine)
   const line = spokenLine(did, said), spoken = did && did.kind === "agent" && (did.error || did.notStarted) ? line : line ? `${said} ${line}` : said; // a claim that no agent started isn't read aloud
   // read again: another chat may have written while the model answered
@@ -413,7 +422,6 @@ async function converse({ where, role = "", context = "", history = "", question
   if (did && !did.error) steps.push(did.kind === "agent" ? (did.notStarted ? `added a task to ${did.lane}: its agent didn't start` : did.lane ? `handed it to ${did.lane}'s agent` : "handed it to an agent") : did.lane ? `added a task to ${did.lane}` : "added a task");
   if (remembered) steps.push(`remembered ${remembered} new thing${remembered > 1 ? "s" : ""}`);
   if (go) steps.push(`opened ${go.label}`);
-  const rules = (Array.isArray(j.rule) ? j.rule : []).map((x) => String(x || "")).filter((x) => x.trim()).slice(0, 3).filter((x) => addRule(x));
   if (rules.length) steps.push(`saved ${rules.length} standing rule${rules.length > 1 ? "s" : ""} for every agent`);
   const settled = settle && Array.isArray(j.settled) ? j.settled.map((x) => String(x || "").slice(0, 300)).filter(Boolean).slice(0, 6) : [];
   return { reply, spoken, ...(did ? { did } : {}), ...(steered.length ? { control: steered } : {}), ...(go ? { go } : {}), ...(settled.length ? { settled } : {}), remembered, steps };
@@ -421,4 +429,4 @@ async function converse({ where, role = "", context = "", history = "", question
 // The usual "task" act, for a caller with no lanes of its own to pass.
 const addToTasks = (text, repo) => { let map = {}; try { map = laneMap(); } catch {} return taskIn(text, repo, { map }); };
 
-export { dayLine, dayMark, MIND_FILE, loadMind, remember, recall, recallText, lately, mindState, forget, actBrief, actNow, actIn, taskIn, selfLane, rulesFor, parseReply, converse, spokenLine, unbackedClaim, goOf, PAGES, addToTasks , ownThread };
+export { dayLine, dayMark, MIND_FILE, loadMind, remember, recall, recallText, lately, mindState, forget, actBrief, actNow, actIn, taskIn, selfLane, rulesFor, parseReply, converse, spokenLine, unbackedClaim, bindingClaim, goOf, PAGES, addToTasks , ownThread };

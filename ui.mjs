@@ -542,6 +542,8 @@ body.lq-liquid .mkcap{border-radius:18px;border-color:rgba(255,255,255,.08);back
 .mkdrawn{position:absolute;border:1.5px solid var(--bone);background:rgba(10,12,14,.35);border-radius:3px;pointer-events:none}
 .mkchipx{all:unset;cursor:pointer;margin-left:2px;padding:0 6px;border-radius:999px;font:600 12px/1.5 var(--sans);color:var(--faint)}.mkchipx:hover,.mkchipx:focus-visible{color:var(--bone);outline:2px solid var(--bone);outline-offset:1px}
 .mkchips{display:flex;flex-wrap:wrap;gap:5px}.mkchip{all:unset;box-sizing:border-box;cursor:pointer;padding:2px 9px;border-radius:999px;border:1px dashed var(--amber);color:var(--text);font:500 11.5px/1.5 var(--sans)}.mkchip.on{border:1px solid var(--green);color:var(--green)}.mkchip:hover,.mkchip:focus-visible{outline:2px solid var(--bone);outline-offset:1px}.mkshot .mkbox.hl{box-shadow:0 0 0 2px var(--bone)}
+.blogpost{max-width:680px;background:#fff;color:#1c1c1c;border:1px solid #e0dfdc;border-radius:10px;padding:18px 22px;font:16px/1.6 Georgia,"Times New Roman",serif}.blogmeta{font:12px system-ui,sans-serif;color:#767676;text-transform:uppercase;letter-spacing:.04em}.blogh{margin:6px 0 12px;font:700 26px/1.25 Georgia,serif;color:#111}.blogbody p{margin:0 0 12px}.blogbody ul{margin:0 0 12px;padding-left:22px}.blogbody a{color:#0b5fa5}
+.hnpost{max-width:680px;background:#f6f6ef;color:#000;border:1px solid #d9d9cf;border-radius:6px;padding:0 0 10px;font:14px/1.45 Verdana,Geneva,sans-serif}.hnbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;background:#ff6600;padding:4px 8px;border-radius:6px 6px 0 0;font-size:13px}.hnbar span{font-size:11px}.hny{border:1px solid #fff;color:#fff;padding:0 5px}.hnrow{display:flex;gap:12px;padding:8px 10px 0}.hnk{flex:0 0 96px;color:#828282;font-size:12px}.hnt{font-weight:700}.hnu{color:#828282}.hnc{flex:1;min-width:0}.hnc p{margin:0 0 9px}.hnc ul{margin:0 0 9px;padding-left:20px}.hnc a{color:#000;text-decoration:underline}
 .mkpv{margin:6px 0 14px}.mkpv .mkpvact{margin-top:8px}.mkpv .pchars{font-size:11px;color:var(--faint)}
 /* a draft opened large (mkBig): its pictures and video near full size, its text in reading type, where it goes; Approve, Edit and Skip on it */
 #mktasks .task[data-rel],#mkneeds .mkneed[data-rel],#boardposts .pcard{cursor:pointer}.mkpv .lipost,.mkpv .rdpost{cursor:zoom-in}
@@ -898,6 +900,20 @@ body.lq-liquid #panel-settings{max-width:780px;margin:0 auto;display:flex;flex-d
 body.lq-liquid .sset{border:1px solid rgba(255,255,255,.07);background:rgba(255,255,255,.03);border-radius:18px;padding:18px 20px}
 body.lq-liquid.lq-light .sset{border-color:rgba(21,26,33,.07);background:rgba(255,255,255,.55)}
 body.lq-liquid .sset.hidden,body.lq-liquid #panel-settings.hidden{display:none}
+#quota{position:fixed;right:14px;bottom:14px;z-index:70;font:500 12px/1 var(--sans)}
+#quota .qpill{display:flex;align-items:center;gap:7px;padding:8px 12px;border-radius:999px;cursor:pointer;color:#ECE9E4;background:rgba(10,11,14,.88);border:1px solid rgba(220,228,240,.18);backdrop-filter:blur(10px);max-width:calc(100vw - 28px);white-space:nowrap}
+#quota .qdot{width:8px;height:8px;border-radius:50%;background:#46C282;flex:none}
+#quota.near .qpill{border-color:#F2A541;color:#F2A541}#quota.near .qdot{background:#F2A541}
+#quota.hit .qpill{border-color:#E5484D;background:#3A1114;color:#FFD9DA}#quota.hit .qdot{background:#E5484D;animation:qpulse 1.6s infinite}
+@keyframes qpulse{50%{opacity:.35}}
+#quota .qpop{display:none;position:absolute;right:0;bottom:calc(100% + 8px);width:min(340px,calc(100vw - 28px));padding:12px 14px;border-radius:14px;background:rgba(10,11,14,.96);color:#ECE9E4;border:1px solid rgba(220,228,240,.18);box-shadow:0 20px 50px -20px rgba(0,0,0,.8);font-weight:400;line-height:1.4}
+#quota.open .qpop{display:block}
+#quota .qrow{padding:8px 0;border-top:1px solid rgba(220,228,240,.12)}#quota .qrow:first-child{border-top:0;padding-top:0}
+#quota .qrow b{font-weight:600}#quota .qrow small{display:block;color:#A1A8B1;font-size:11.5px}
+#quota .qbar{height:5px;border-radius:3px;background:rgba(220,228,240,.14);margin:4px 0 2px;overflow:hidden}#quota .qbar i{display:block;height:100%;background:#46C282}
+#quota .qbar.near i{background:#F2A541}#quota .qbar.hit i{background:#E5484D}
+body.lq-light #quota .qpill,body.lq-light #quota .qpop{background:rgba(255,255,255,.96);color:#151A21;border-color:rgba(20,30,45,.18)}body.lq-light #quota.hit .qpill{background:#FDECEC;color:#8A1C20}body.lq-light #quota.near .qpill{color:#9A5200}
+#qbanner{display:none;margin:0 0 10px;padding:9px 12px;border-radius:10px;border:1px solid #E5484D;background:rgba(229,72,77,.12);font-size:13px}#qbanner.show{display:block}
 #i18nnote{position:fixed;left:16px;bottom:16px;z-index:60;max-width:calc(100vw - 32px);padding:8px 14px;border-radius:999px;font-size:13px;background:rgba(10,11,14,.88);color:#ECE9E4;border:1px solid rgba(220,228,240,.18);opacity:0;transition:opacity .4s;pointer-events:none}#i18nnote.on{opacity:1}body.lq-light #i18nnote{background:rgba(255,255,255,.94);color:#151A21;border-color:rgba(20,30,45,.15)}
 .licproj{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px}.licproj .chip{display:inline-flex;align-items:center;gap:8px;padding:4px 6px 4px 12px;border:1px solid var(--line);border-radius:999px;font-size:13px}.licproj .chip button{padding:2px 8px;font-size:12px}
 .ssh{margin:0 0 10px;font:600 16px var(--sans);letter-spacing:-.01em;color:var(--bone);display:flex;align-items:baseline;gap:8px}
@@ -1253,6 +1269,7 @@ body.lq-light .btip .bta button:not(.quiet){background:#151A21;color:#FFFFFF}
 </section>
 <section id="panel-tasks" class="hidden">
 <details class="tnhow"><summary>How the Workdesk works</summary><div class="note muted">Everything handed to an agent, in one place: what needs you, work awaiting your review, tasks queued for later, and below them the agents at work, their questions and the handovers between them. To add a task, tell Symbiot in the bar at the bottom: it files it under the right project. To give tasks to your agent, use <b>Send to repos</b> at the top, beside Close &mdash; filter by tag below to choose which. As the agent finishes each one it lands in <b>Awaiting your review</b>: <b>Approve</b> commits it on a branch and opens a PR, <b>&#8630;</b> sends it back. Ticking a task yourself marks it done (it auto-archives). Click <b><i class=ic-chat></i></b> on a task to ask questions about it.</div></details>
+<div id="qbanner" role="status"></div>
 <div id="needsbox"></div>
 <div id="pushout"></div>
 <div id="reviewout"></div>
@@ -1271,6 +1288,11 @@ body.lq-light .btip .bta button:not(.quiet){background:#151A21;color:#FFFFFF}
 <div class="row"><span class="muted" style="flex:1">What agents wrote up for you (findings, audits, plans), newest first. They leave each one in a project's .symbiot folder; it shows here as soon as it's written.</span><button class="iconbtn" id="reportsrefresh" title="Refresh" aria-label="Refresh"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M13 8a5 5 0 1 1-1.5-3.6M13 2.5V5h-2.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button></div>
 <div id="reportslist"></div>
 <div id="reportview"></div>
+</section>
+<section id="panel-asks" class="hidden">
+<div class="row"><span class="muted" style="flex:1">What your agents are asking you, and what they suggest doing next, in one place. Answer here and the agent carries on.</span></div>
+<div id="asksmsg"></div>
+<div id="askslist"></div>
 </section>
 <section id="panel-marketing" class="hidden">
 <div class="row"><span class="muted" style="flex:1">Marketing for every product you make, in a lane of its own: its agent drafts posts, demo videos, launches and campaigns, each tagged with the product it&#39;s for. You approve each post&#39;s preview; then its agent posts it, through Symbiot&#39;s signed-in browser, with exactly that text.</span></div>
@@ -1405,6 +1427,7 @@ body.lq-light .btip .bta button:not(.quiet){background:#151A21;color:#FFFFFF}
 </div>
 </section>
 </main>
+<div id="quota" class="hidden" aria-live="polite"><div class="qpop" id="qpop"></div><button class="qpill" type="button" id="qpill" aria-haspopup="true" title="AI usage limits"><span class="qdot"></span><span id="qtext"></span></button></div>
 <footer><button class="iconbtn" type="button" id="quit" style="margin-left:auto" title="Quit" aria-label="Quit"><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M3 3l8 8M11 3l-8 8" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></button></footer>
 <script>
 var T=(function(){var q=new URLSearchParams(location.search),t=q.get('t')||'';try{if(t)sessionStorage.setItem('symbiot_t',t);else t=sessionStorage.getItem('symbiot_t')||'';}catch(e){}if(q.has('t')){q.delete('t');try{history.replaceState(null,'',location.pathname+(q.toString()?'?'+q:'')+location.hash);}catch(e){}}return t;})(); // the token leaves the address bar (history, the window title) and stays in this tab for reloads (15 Oct 2026)
@@ -1456,6 +1479,7 @@ $('panel-settings').classList.toggle('hidden',!isSet);if(isSet){loadFirstSteps()
 $('panel-tasks').classList.toggle('hidden',!isTasks);
 $('panel-drift').classList.toggle('hidden',!isDrift);
 $('panel-reports').classList.toggle('hidden',tab!=='reports');if(tab==='reports')loadReports();
+$('panel-asks').classList.toggle('hidden',tab!=='asks');if(tab==='asks')loadAsks();
 $('panel-marketing').classList.toggle('hidden',tab!=='marketing');if(tab==='marketing')loadMarketing();
 $('panel-computer').classList.toggle('hidden',tab!=='computer');if(tab==='computer')loadComputer();
 if(isRun){$('what').textContent=tab;wuHead();WUTEXT='';$('out').textContent=WUEMPTY;$('out').classList.add('muted');$('copy').classList.add('hidden');$('outfoot').style.display='none';if(tab==='week')showLatestWeek();}
@@ -1745,11 +1769,13 @@ var body=r.text||'(no output)';reviewCache[path]={text:body,verdict:r.verdict||"
 var ALLTASKS=[];var PENDTASKS=[];var TFILTER={type:'',repo:'',id:''};var TARCH=false;
 var TORDER=['Fixes','Tests & CI','Security','Performance','Refactor','UI/UX','Docs','Features & other'];
 function liveBadge(t){return t.liveState==='pending'?"<span class='rp' title='"+esc(t.liveNote||'')+"'>merged, not live</span><button class='ghost markLive' title='Deployed and checked on the live site: mark it live'>live</button>":t.liveState==='live'?"<span class='rp' title='"+esc(t.liveNote||'')+"'>live</span>":"";}
-function taskRow(t,arch){return "<div class='task"+(t.done?" done":"")+"' data-id='"+esc(t.id)+"'>"+(arch?"":"<input type='checkbox' class='taskchk' title='mark done (auto-archives on sync)'"+(t.done?" checked":"")+">")+"<span class='t'>"+esc(t.full?t.text.replace(/ Full text: \\x60[^\\x60]*\\x60/,''):t.text)+(t.full?"<details class='tfull'><summary>full text</summary><div>"+esc(t.full)+"</div></details>":"")+"</span>"+(t.repo?"<span class='rp'>"+esc(t.repo)+"</span>":"")+(arch&&t.removedBy?"<span class='rp' title='An approved task "+(t.merged?"merged it into another":"dropped it")+". Restore it to keep it.'>"+(t.merged?"merged":"dropped")+"</span>":"")+(arch&&t.dropped?"<span class='rp' title='An agent deleted it from TASKS.md, as you said to drop it. Restore it to keep it.'>dropped</span>":"")+(arch&&t.cancelled?"<span class='rp' title='You removed it. Restore it to bring it back.'>removed</span>":"")+(arch&&t.finding?"<span class='rp' title='"+escQ('Ticked by itself: '+t.finding+'. Restore it if there is something to do.')+"'>finding</span>":"")+liveBadge(t)+askBtn(t)+(arch?"<button class='rm restore' title='restore to active'>&#8630;</button>":"<button class='rm' title='Remove: it goes to the Archive (Undo brings it back)' aria-label='Remove this task'>&times;</button>")+"</div>";}
+function taskRow(t,arch){return "<div class='task"+(t.done?" done":"")+"' data-id='"+esc(t.id)+"'>"+(arch?"":"<input type='checkbox' class='taskchk' title='mark done (auto-archives on sync)'"+(t.done?" checked":"")+">")+"<span class='t'>"+esc(t.full?t.text.replace(/ Full text: \\x60[^\\x60]*\\x60/,''):t.text)+(t.full?"<details class='tfull'><summary>full text</summary><div>"+esc(t.full)+"</div></details>":"")+"</span>"+(t.repo?"<span class='rp'>"+esc(t.repo)+"</span>":"")+(arch&&t.removedBy?"<span class='rp' title='An approved task "+(t.merged?"merged it into another":"dropped it")+". Restore it to keep it.'>"+(t.merged?"merged":"dropped")+"</span>":"")+(arch&&t.dropped?"<span class='rp' title='An agent deleted it from TASKS.md, as you said to drop it. Restore it to keep it.'>dropped</span>":"")+(arch&&t.cancelled?"<span class='rp' title='You removed it. Restore it to bring it back.'>removed</span>":"")+(arch&&t.finding?"<span class='rp' title='"+escQ('Ticked by itself: '+t.finding+'. Restore it if there is something to do.')+"'>finding</span>":"")+liveBadge(t)+(arch||t.done?"":modelPick(t))+askBtn(t)+(arch?"<button class='rm restore' title='restore to active'>&#8630;</button>":"<button class='rm' title='Remove: it goes to the Archive (Undo brings it back)' aria-label='Remove this task'>&times;</button>")+"</div>";}
+function modelPick(t){var o=[['','Auto'],['local','Local'],['haiku','Haiku'],['sonnet','Sonnet'],['opus','Opus'],['fable','Fable']];return "<select class='tmodel' title='Which model runs this task. Auto picks one by the task and its lane.' aria-label='Model'>"+o.map(function(x){return "<option value='"+x[0]+"'"+((t.model||'')===x[0]?" selected":"")+">"+x[1]+"</option>";}).join('')+"</select>";}
 function wireTaskRows(el){el.querySelectorAll('.task').forEach(function(row){var id=row.getAttribute('data-id');
 var cb=row.querySelector('.taskchk');if(cb)cb.addEventListener('change',function(){api('/api/tasks/toggle',{id:id}).then(function(){row.classList.toggle('done');});});
 wireAsk(row,id);
 var ml=row.querySelector('.markLive');if(ml)ml.addEventListener('click',function(){api('/api/tasks/live',{id:id}).then(function(){(ALLTASKS.find(function(x){return x.id===id;})||{}).liveState='live';loadArchived();});});
+var mp=row.querySelector('.tmodel');if(mp)mp.addEventListener('change',function(){api('/api/tasks/model',{id:id,model:mp.value});var t=taskById(id);if(t){if(mp.value)t.model=mp.value;else delete t.model;}});
 var rm=row.querySelector('.rm');if(rm&&rm.classList.contains('restore'))rm.addEventListener('click',function(){api('/api/tasks/restore',{id:id}).then(loadArchived);});
 else if(rm)rm.addEventListener('click',function(){rm.disabled=true;api('/api/tasks/cancel',{id:id}).then(function(r){if(!r||r.error){rm.disabled=false;lqSaid((r&&r.error)||'It didn’t go. Try again.',true);return;}var nx=row.nextElementSibling;if(nx&&nx.classList.contains('tchat'))nx.remove();row.remove();ALLTASKS=ALLTASKS.filter(function(x){return x.id!==id;});LQ.fresh=true;
 var tx=row.querySelector('.t');lqUndo('Removed: '+lqShort(tx?tx.textContent:'the task',70),function(){return api('/api/tasks/restore',{id:id});});}).catch(function(e){rm.disabled=false;lqSaid(String((e&&e.message)||e),true);});});});}
@@ -1928,13 +1954,13 @@ function restoreDrafts(el){el.querySelectorAll('.aq .q').forEach(function(qe){va
 function collectAnswers(box,a){var out=[];box.querySelectorAll('.q').forEach(function(qe){var q=a.ask.questions[+qe.getAttribute('data-i')];if(!q)return;
 var other=(qe.querySelector('.qother').value||'').trim();var pick=qe.querySelector('input[type=radio]:checked');var ans=other||(pick?q.options[+pick.value]:'');if(ans)out.push({q:q.q,a:ans});});return out;}
 function wireAsks(el){el.querySelectorAll('.aq').forEach(function(box){var a=agentById(box.getAttribute('data-id'));if(!a||!a.ask)return;
-function send(rerun){var msg=document.getElementById('agentsmsg');var ans=collectAnswers(box,a);
+function send(rerun){var msg=document.getElementById(box.closest('#panel-asks')?'asksmsg':'agentsmsg');var ans=collectAnswers(box,a);
 if(!ans.length){msg.innerHTML="<div class='note err'>Pick an option or type an answer first.</div>";return;}
 box.querySelectorAll('button').forEach(function(b){b.disabled=true;});
 api('/api/agents/answer',{path:a.path,answers:ans,rerun:rerun}).then(function(r){
 if(!r||r.error){box.querySelectorAll('button').forEach(function(b){b.disabled=false;});msg.innerHTML="<div class='note err'>"+esc((r&&r.error)||'failed')+"</div>";return;}
 ans.forEach(function(x){var k=a.path+'|'+x.q;delete QDRAFT[k];bdSet(k,'');}); // sent: its drafts go
-msg.innerHTML="<div class='note ok'>&#10003; Saved "+r.saved+" answer"+(r.saved>1?"s":"")+" for <b>"+esc(a.name)+"</b> in .symbiot/ANSWERS.md"+(r.rerun?" &middot; your agent is picking them up now.":".")+(r.yours&&r.yours.length?"<div class='err'><i class=ic-person></i> Still yours to do: "+esc(r.yours.join(' '))+"</div>":"")+(r.note?"<div class='muted'>"+esc(r.note)+"</div>":"")+"</div>";loadAgents();});}
+msg.innerHTML="<div class='note ok'>&#10003; Saved "+r.saved+" answer"+(r.saved>1?"s":"")+" for <b>"+esc(a.name)+"</b> in .symbiot/ANSWERS.md"+(r.rerun?" &middot; your agent is picking them up now.":".")+(r.yours&&r.yours.length?"<div class='err'><i class=ic-person></i> Still yours to do: "+esc(r.yours.join(' '))+"</div>":"")+(r.note?"<div class='muted'>"+esc(r.note)+"</div>":"")+"</div>";loadAgents();if(current==='asks')loadAsks();});}
 var s1=box.querySelector('.qsend'),s2=box.querySelector('.qsave');
 if(s1)s1.addEventListener('click',function(){send(true);});if(s2)s2.addEventListener('click',function(){send(false);});
 var more=box.querySelector('.qmore');if(more)more.addEventListener('click',function(){IDEASOPEN[a.path]=true;loadAgents();});
@@ -2010,6 +2036,12 @@ var todoBox=boxes.length&&(w.todos&&w.todos.length||pg)?boxes.shift():'';
 if(todoBox)h+="<div class='wk'>"+todoBox+"</div>";
 h+="<details class='wkraw'><summary>details: steps, files, cost</summary><div class='wkstats'>"+stats.join('')+"</div>"+(boxes.length?"<div class='wk'>"+boxes.join('')+"</div>":"")+(!run&&w.final?"<div class='wkfinal'>"+esc(w.final)+"</div>":"")+"</details>";
 return h;}
+// The Questions page (next to Reports): every agent's open questions and suggestions, the same cards as on
+// the Workdesk, answered the same way. Not redrawn under someone typing an answer.
+function loadAsks(){api('/api/agents').then(function(list){var el=$('askslist');if(!el||!list)return;if(answering()||selIn(el))return;saveDrafts(el);AGENTLIST=list;
+var xs=list.filter(function(a){return a.ask&&((a.ask.questions||[]).length||(a.ask.suggestions||[]).length);});
+el.innerHTML=xs.length?xs.map(function(a){return "<div class='tgroup agg'>"+esc(a.name)+"</div>"+askHtml(a);}).join(''):"<div class='muted' style='margin-top:12px'>Nothing to answer right now. When an agent has a question or an idea for you, it shows here.</div>";
+wireAsks(el);restoreDrafts(el);});}
 function loadAgents(){loadLanes();loadParked(agentsDraw);phoneApprovedNote();}
 // What was approved from your phone today (phone.mjs), above the agents: it wasn't you at this desk.
 function phoneApprovedNote(){var el=$('phoneappr');if(!el)return;var ap=(LQ.home&&LQ.home.phoneApproved)||[];
@@ -2032,6 +2064,8 @@ if(answering()||selIn(el)){stopAgentsPoll();if(anyRunning&&current==='tasks')age
 saveDrafts(el);AGENTLIST=list;
 var agentBlock=function(a){var pz=agentPaused(a),cls=a.status==='running'?'run':pz?'paused':(a.status==='done'?'ok':'fail');
 var st=a.status==='running'?('working &middot; '+fmtE(a.elapsed)):pz?('paused &middot; '+a.progress.done+'/'+a.progress.total+' tasks done &middot; turn ended, will check again'+(a.work&&a.work.restOn?' &middot; '+esc(a.work.restOn):'')+' &middot; '+fmtE(a.elapsed)):(esc(a.status)+' &middot; '+fmtE(a.elapsed)+(a.exitCode!=null?' &middot; exit '+a.exitCode:''));
+if(a.phase==='stuck')st+=" &middot; <span style='color:var(--amber)'>may be stuck: "+(a.line&&a.line.looping?"going round in circles":"no move for "+((a.line&&a.line.quiet)||'?')+" min")+"</span>";
+else if(a.phase==='waiting')st+=" &middot; turn ended, waiting on something outside it";
 if(a.fromHeld)st+=" &middot; started on the tasks held for the last run";
 if(a.earlier)st+=" &middot; "+(a.status==='running'?"started outside this window":"ran before Symbiot last started");
 if(a.waiting)st+=" &middot; <span style='color:var(--amber)'>waiting on your step</span>";
@@ -2530,7 +2564,7 @@ postsMsg('ok',"&#10003; Added "+r.added+" of your LinkedIn posts: "+r.total+" in
 // Off the Dashboard, which shows only what you watch. Its orb shows on Home once posts
 // can be drafted, or are (home.mjs marketing).
 var MKT=null;
-function mkMsg(cls,html){var o=$('mkmsg');if(o)o.innerHTML=html?"<div class='note "+cls+"'>"+html+"</div>":'';}
+function mkMsg(cls,html){var o=$('mkmsg')||document.querySelector('#reportbody .repmsg');if(o)o.innerHTML=html?"<div class='note "+cls+"'>"+html+"</div>":'';}
 function loadMarketing(){loadPostsUI();loadMkTray();api('/api/marketing').then(function(d){if(d&&!d.error){MKT=d;renderMarketing();renderMkLane();if(POSTS)renderPosts();}});}
 // The Marketing lane (home.mjs marketingState): what needs you there first (its agent's
 // questions, its work waiting for your OK, the week's drafts), then its tasks, each tagged
@@ -2555,10 +2589,23 @@ return "<div class='rdpost' aria-label='Reddit preview'><div class='rdhead'><spa
 +"<div class='rdtitle'>"+esc(p.title||'')+"</div>"+(p.flair?"<span class='rdflair'>"+esc(p.flair)+"</span>":"")
 +(p.media||[]).map(function(m){return m.kind==='video'?"<video class='rdmedia' src='"+escQ(mkMediaSrc(m.rel))+"' controls muted playsinline preload='metadata'></video>":"<img class='rdmedia' src='"+escQ(mkMediaSrc(m.rel))+"' alt='"+escQ(m.name)+"'>";}).join('')
 +"<div class='rdbody'>"+mkRdText(p.body)+"</div><div class='rdbar'><span>&#8679; Vote &#8681;</span><span>Comments</span><span>Award</span><span>Share</span></div></div>";}
+// Paragraphs and bullets as a blog or a comment lays them out: blank-line paragraphs, "- " lists,
+// bare links made clickable. Everything is escaped first.
+function mkProse(t){var NL=String.fromCharCode(10),out=[],li=[],flush=function(){if(li.length){out.push('<ul>'+li.join('')+'</ul>');li=[];}},lk=function(s){return esc(s).replace(/(https?:\\/\\/[^\\s<]+[^\\s<.,;:!?)])/g,function(u){return "<a href='"+u+"' target='_blank' rel='noopener'>"+u+"</a>";});};
+String(t||'').split(NL+NL).forEach(function(blk){var ls=blk.split(NL),para=[];ls.forEach(function(l){var m=l.match(/^\\s*[-*]\\s+(.*)$/);if(m){if(para.length){out.push('<p>'+para.join('<br>')+'</p>');para=[];}li.push('<li>'+lk(m[1])+'</li>');}else{flush();if(l.trim())para.push(lk(l));}});flush();if(para.length)out.push('<p>'+para.join('<br>')+'</p>');});return out.join('');}
+// A blog post, whole (never cut at a "see more"): its first line is the headline.
+function mkBlogHtml(p){var NL=String.fromCharCode(10),ls=String(p.body||'').split(NL),head=ls[0],rest=ls.slice(1).join(NL).replace(/^\\s+/,'');
+return "<div class='blogpost' aria-label='blog post preview'><div class='blogmeta'>"+esc(p.product||'Blog')+" &middot; "+(p.when?"scheduled for "+esc(p.when):"now")+"</div><h2 class='blogh'>"+esc(head)+"</h2><div class='blogbody'>"+mkProse(rest)+"</div>"+mkMediaHtml(p)+"</div>";}
+// A Show HN as Hacker News's submit page will get it: the title, the site's address, and the
+// first comment (the post's text, then its First comment section) that goes under the new item.
+function mkHnHtml(p){var h=p.hn||{},NL=String.fromCharCode(10),first=[h.text,p.comment].filter(Boolean).join(NL+NL);
+return "<div class='hnpost' aria-label='Hacker News preview'><div class='hnbar'><b class='hny'>Y</b><b>Submit</b><span>"+(p.when?"scheduled for "+esc(p.when)+" (SAST)":"now")+" &middot; from your Hacker News account, through Symbiot&#39;s browser</span></div>"
++"<div class='hnrow'><span class='hnk'>title</span><span class='hnt'>"+esc(h.title||'')+"</span></div><div class='hnrow'><span class='hnk'>url</span><span class='hnu'>"+esc(h.url||'(no link found in the first comment)')+"</span></div>"
++"<div class='hnrow'><span class='hnk'>first comment</span><div class='hnc'>"+mkProse(first)+"</div></div></div>";}
 // Each draft as its own platform shows it (its platform: line): LinkedIn's post, X's card,
 // Instagram's picture and caption, Facebook's post, Reddit's post with its subreddit and
 // title. A Reddit draft shown as a LinkedIn post can't be judged (Garth, 2026-10-10).
-var MKLIMIT={linkedin:3000,x:280,twitter:280,instagram:2200,facebook:63206,reddit:40000};
+var MKLIMIT={linkedin:3000,x:280,twitter:280,instagram:2200,facebook:63206,reddit:40000,hackernews:40000,blog:100000};
 function mkMediaHtml(p,cls){return (p.media||[]).map(function(m){return m.kind==='video'?"<video class='limedia' src='"+escQ(mkMediaSrc(m.rel))+"' controls muted playsinline preload='metadata'></video>":"<img class='limedia' src='"+escQ(mkMediaSrc(m.rel))+"' alt='"+escQ(m.name)+"'>";}).join('');}
 function mkAv(p,a,cls){var who=p.account||p.product||a.name||'';return a.avatar&&!p.account&&!p.product?"<img class='"+cls+"' src='"+escQ(mkMediaSrc('avatar'))+"' alt=''>":"<span class='"+cls+"'>"+esc(String(who).replace(/^@/,'').slice(0,2).toUpperCase())+"</span>";}
 function mkPostHtml(p){var a=p.author||{},pl=p.platform==='twitter'?'x':p.platform,when=p.when?"Scheduled for "+esc(p.when):"Now";
@@ -2571,19 +2618,23 @@ if(pl==='instagram')return "<div class='lipost igpost' aria-label='Instagram pre
 if(pl==='facebook')return "<div class='lipost fbpost' aria-label='Facebook preview'><div class='liauth'>"+mkAv(p,a,'liav')+"<div class='liwho'><b>"+who+"</b><small>"+when+" &middot; &#127760;</small></div></div>"
 +"<div class='litext'>"+mkTags(p.body)+"</div>"+mkMediaHtml(p)+"<div class='libar'><span>Like</span><span>Comment</span><span>Share</span></div></div>";
 if(pl==='reddit')return mkRedditHtml(p);
+if(pl==='hackernews'&&p.hn)return mkHnHtml(p);
+if(pl==='blog')return mkBlogHtml(p);
 var li=pl==='linkedin',plat=li?'LinkedIn':(p.platform||'post');
 return "<div class='lipost' aria-label='"+escQ(plat)+" preview'><div class='liauth'>"+(a.avatar?"<img class='liav' src='"+escQ(mkMediaSrc('avatar'))+"' alt=''>":"<span class='liav'>"+esc(a.initials||'')+"</span>")
 +"<div class='liwho'><b>"+esc(a.name||'')+"</b>"+(a.headline?"<small>"+esc(a.headline)+"</small>":"")+"<small>"+when+" &middot; &#127760;</small></div></div>"
 +"<div class='litext'>"+(li&&p.cut?mkTags(p.shown)+"&hellip;<button type='button' class='limore'>see more</button>":mkTags(p.body))+"</div>"
 +mkMediaHtml(p)+(li?"<div class='libar'><span>Like</span><span>Comment</span><span>Repost</span><span>Send</span></div>":"")+"</div>";}
 function mkPreviewHtml(p){var h=mkPostHtml(p),lim=MKLIMIT[p.platform]||0,reddit=/reddit/i.test(p.platform||'');
+if(p.reopened)h="<div class='note err'>Edited since you "+esc(p.reopened.was==='approved'?'approved':p.reopened.was==='skipped'?'rejected':'asked for a change to')+" it "+agoTxt(p.reopened.at)+": that answer no longer holds, so it needs your OK again.</div>"+h;
+if(p.hn&&!p.hn.signedIn&&p.status!=='posted'&&p.status!=='superseded')h+="<div class='note err'>Symbiot&#39;s browser isn&#39;t signed in to "+esc(p.hn.host)+", which its agent needs to submit this. <button type='button' class='act mksign'>Sign in to "+esc(p.hn.name)+"</button></div>";
 if((p.missing||[]).length)h+="<div class='note err'>It names "+p.missing.map(function(m){return "<code>"+esc(m)+"</code>";}).join(', ')+", which isn&#39;t next to it.</div>";
-var fin=p.status==='posted'||p.status==='superseded',pn={linkedin:'LinkedIn',x:'X',instagram:'Instagram',facebook:'Facebook',reddit:'Reddit'},on=pn[p.postedOn]||p.postedOn;
+var fin=p.status==='posted'||p.status==='superseded',pn={linkedin:'LinkedIn',x:'X',instagram:'Instagram',facebook:'Facebook',reddit:'Reddit',hackernews:'Hacker News',blog:'the blog'},on=pn[p.postedOn]||p.postedOn;
 var done=p.status==='posted'?"Posted"+(on?" on "+esc(on):"")+(p.posted?", "+esc(new Date(p.posted).toLocaleString(undefined,{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})):"")+(p.url?" &middot; <a href='"+esc(okUrl(p.url))+"' target='_blank' rel='noopener'>see it</a>":"")+". It isn&#39;t approved or posted again"+(p.edited?", though its file changed since":"")+"."
 :p.status==='superseded'?"Superseded"+((p.by||[]).length?" by "+p.by.map(function(b){return "<code>"+esc(b)+"</code>";}).join(', '):"")+": it won&#39;t be posted."
-:p.status==='approved'?"Approved "+agoTxt(p.statusAt)+": its agent "+(p.when?"schedules":"posts")+" it through Symbiot&#39;s browser, with this text.":p.status==='skipped'?"Skipped "+agoTxt(p.statusAt)+": it won&#39;t be posted."
+:p.status==='approved'?"Approved "+agoTxt(p.statusAt)+": its agent "+(p.when?"schedules":"posts")+" it through Symbiot&#39;s browser, with this text.":p.status==='skipped'?"Rejected "+agoTxt(p.statusAt)+": it won&#39;t be posted."
 :p.status==='change'?"You asked for a change "+agoTxt(p.statusAt)+": its agent redrafts it, and the new version comes back here for your OK.":"";
-h+="<div class='row mkpvact'>"+(fin||p.status==='approved'?"":"<button class='act mkok'>Approve"+(p.when?", schedule it":", post it")+"</button>")+(fin?"":"<button class='ghost mkchg' aria-expanded='false'>Change it</button>")+(fin||p.status==='skipped'?"":"<button class='ghost mkskip'>Skip</button>")
+h+="<div class='row mkpvact'>"+(fin||p.status==='approved'?"":"<button class='act mkok'>Approve"+(p.when?", schedule it":", post it")+"</button>")+(fin?"":"<button class='ghost mkchg' aria-expanded='false'>Change it</button>")+(fin||p.status==='skipped'?"":"<button class='ghost mkskip'>Reject</button>")
 +"<span class='muted' style='font-size:12px;flex:1'>"+(done||(p.when?"Its agent schedules it for "+esc(p.when)+" once you approve.":"Its agent posts it once you approve."))+"</span><span class='pchars"+(lim&&p.chars>lim?" err":"")+"'>"+(reddit?"title "+String(p.title||'').length+" / 300 &middot; ":"")+p.chars+(lim?" / "+lim:"")+"</span></div>";
 if(p.status==='change'&&p.ask)h+="<div class='mkasked muted'>What you asked: &ldquo;"+esc(p.ask)+"&rdquo;</div>";
 if(!fin)h+="<form class='row mkchgf hidden'><textarea class='mkchgt' maxlength='4000' placeholder='What should change? Its agent redrafts this same post and brings it back for your OK.' aria-label='What to change'></textarea><button type='submit' class='act'>Send to its agent</button><button type='button' class='ghost mkchgx'>Cancel</button></form>";
@@ -2604,7 +2655,7 @@ if(!para.length){o.push('<p>'+mkInline(L[i])+'</p>');i++;}else o.push('<p>'+para
 return o.join('');}
 function mkDocHtml(p){return "<div class='mkdoc' aria-label='document preview'>"+mkMd(p.text)+"</div><div class='row mkpvact'><button class='act mkcopy'>Copy</button>"+(p.type==='listing'&&!p.done?"<button class='ghost mkdone'>Mark done</button>":"")+"<button class='ghost mkfile' title='open the file in your editor'>Edit the file</button><span class='muted' style='font-size:12px;flex:1'>"+(p.done?"Marked done. ":"")+"A "+esc(p.type||'document')+", not a social post: nothing is posted from it.</span></div>";}
 function mkPreview(box,rel){if(!box.innerHTML)box.innerHTML="<div class='muted'>Loading&hellip;</div>";
-api('/api/marketing/draft?rel='+encodeURIComponent(rel)).then(function(p){if(MKPV!==rel)return;if(!p||p.error){box.innerHTML="<div class='note err'>"+esc((p&&p.error)||'failed')+"</div>";return;}
+api('/api/marketing/draft?rel='+encodeURIComponent(rel)).then(function(p){if(MKPV!==rel&&!box.classList.contains('repcard'))return;if(!p||p.error){box.innerHTML="<div class='note err'>"+esc((p&&p.error)||'failed')+"</div>";return;}
 if(p.isPost===false){box.innerHTML=mkDocHtml(p);var cp=box.querySelector('.mkcopy');if(cp)cp.addEventListener('click',function(){var done=function(){mkMsg('ok','Copied.');};if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(p.text).then(done,function(){mkMsg('err','Couldn&#39;t copy it.');});else mkMsg('err','Couldn&#39;t copy it.');});
 var dn=box.querySelector('.mkdone');if(dn)dn.addEventListener('click',function(){dn.disabled=true;api('/api/marketing/draft/answer',{rel:rel,done:true}).then(function(r){if(!r||r.error){dn.disabled=false;mkMsg('err',esc((r&&r.error)||'failed'));return;}mkMsg('ok','Marked done.');loadMarketing();mkPreview(box,rel);});});
 var fl0=box.querySelector('.mkfile');if(fl0)fl0.addEventListener('click',function(){api('/api/marketing/open',{rel:rel}).then(function(r){if(r&&r.error)mkMsg('err',esc(r.error));});});return;}
@@ -2612,20 +2663,21 @@ box.innerHTML=mkPreviewHtml(p);
 var lp=box.querySelector('.lipost,.rdpost');if(lp){lp.title='open it large';lp.addEventListener('click',function(ev){if(ev.target.closest('button,a,video'))return;mkBig({rel:rel},lp);});}
 var mo=box.querySelector('.limore');if(mo)mo.addEventListener('click',function(){box.querySelector('.litext').innerHTML=mkTags(p.body);});
 var fl=box.querySelector('.mkfile');if(fl)fl.addEventListener('click',function(){api('/api/marketing/open',{rel:rel}).then(function(r){if(r&&r.error)mkMsg('err',esc(r.error));});});
+var sg=box.querySelector('.mksign');if(sg&&p.hn)sg.addEventListener('click',function(){sg.disabled=true;openSignIn({site:p.hn.host,name:p.hn.name},function(t,ok){sg.disabled=false;mkMsg(ok?'ok':'err',esc(t));});});
 var cg=box.querySelector('.mkchg'),cf=box.querySelector('.mkchgf');
 if(cg&&cf){cg.addEventListener('click',function(){var o=cf.classList.toggle('hidden');cg.setAttribute('aria-expanded',String(!o));if(!o)cf.querySelector('textarea').focus();});
 cf.querySelector('.mkchgx').addEventListener('click',function(){cf.classList.add('hidden');cg.setAttribute('aria-expanded','false');});
 cf.addEventListener('submit',function(e){e.preventDefault();var t=cf.querySelector('textarea'),sb=cf.querySelector('button[type=submit]'),v=t.value.trim();if(!v){t.focus();return;}sb.disabled=true;
 api('/api/marketing/draft/answer',{rel:rel,change:v}).then(function(r){if(!r||r.error){sb.disabled=false;mkMsg('err',esc((r&&r.error)||'failed'));return;}mkMsg('ok',esc(r.said||'Sent.'));loadMarketing();mkPreview(box,rel);}).catch(function(e2){sb.disabled=false;mkMsg('err',esc(String((e2&&e2.message)||e2)));});});}
 box.querySelectorAll('.mkok,.mkskip').forEach(function(b){b.addEventListener('click',function(){var skip=b.classList.contains('mkskip');b.disabled=true;
-api('/api/marketing/draft/answer',{rel:rel,skip:skip}).then(function(r){if(!r||r.error){b.disabled=false;mkMsg('err',esc((r&&r.error)||'failed'));return;}mkMsg('ok',esc(r.said||'Done.'));loadMarketing();}).catch(function(e){b.disabled=false;mkMsg('err',esc(String((e&&e.message)||e)));});});});}).catch(function(e){box.innerHTML="<div class='note err'>"+esc(String((e&&e.message)||e))+"</div>";});}
+api('/api/marketing/draft/answer',{rel:rel,skip:skip}).then(function(r){if(!r||r.error){b.disabled=false;mkMsg('err',esc((r&&r.error)||'failed'));return;}mkMsg('ok',esc(r.said||'Done.'));loadMarketing();if(box.classList.contains('repcard'))mkPreview(box,rel);}).catch(function(e){b.disabled=false;mkMsg('err',esc(String((e&&e.message)||e)));});});});}).catch(function(e){box.innerHTML="<div class='note err'>"+esc(String((e&&e.message)||e))+"</div>";});}
 // A draft opened large (MKBIG): its pictures and video near full size (a click: one alone,
 // arrows or a swipe between them), its whole text in reading type, which product it's for
 // and where it goes (LinkedIn, r/ClaudeAI), and Approve, Edit and Skip on it, so nothing
 // needs zooming and nothing needs closing first. Esc, its X, or a click outside close it.
 // A lane draft ({rel}: marketing.mjs draftPreview) or a post on the board ({post}: POSTS).
 var MKBIG=null,MKZOOM=null;
-var MKPLAT={linkedin:'LinkedIn',reddit:'Reddit',x:'X',twitter:'X',instagram:'Instagram',facebook:'Facebook',threads:'Threads',mastodon:'Mastodon',bluesky:'Bluesky',youtube:'YouTube',tiktok:'TikTok'};
+var MKPLAT={hackernews:'Hacker News',blog:'Blog',linkedin:'LinkedIn',reddit:'Reddit',x:'X',twitter:'X',instagram:'Instagram',facebook:'Facebook',threads:'Threads',mastodon:'Mastodon',bluesky:'Bluesky',youtube:'YouTube',tiktok:'TikTok'};
 function mkPlat(p){p=String(p||'').toLowerCase();return MKPLAT[p]||(p?p.charAt(0).toUpperCase()+p.slice(1):'');}
 function mkBigClose(){var o=$('mkbig');if(o)o.remove();var by=MKBIG&&MKBIG.by;MKBIG=null;if(by&&by.isConnected&&by.focus){try{by.focus({preventScroll:true});}catch(x){}}}
 function mkBig(what,by){MKBIG={rel:what.rel||'',post:what.post||'',by:by||document.activeElement,edit:null,say:'',cls:''};var o=$('mkbig');if(!o){o=document.createElement('div');o.id='mkbig';o.className='mkbig';o.setAttribute('role','dialog');o.setAttribute('aria-modal','true');o.setAttribute('aria-labelledby','mkbigt');document.body.appendChild(o);
@@ -2833,7 +2885,12 @@ function kb(n){return n<1024?n+' B':Math.round(n/1024)+' KB';}
 function loadReports(){api('/api/reports').then(function(d){REPS=(d&&d.reports)||[];if(!REPOPEN)renderReports();}).catch(function(e){$('reportslist').innerHTML="<div class='note err'>"+esc(String((e&&e.message)||e))+"</div>";});}
 function renderReports(){var el=$('reportslist');$('reportview').innerHTML='';REPOPEN='';
 if(!REPS.length){el.innerHTML="<div class='muted' style='margin-top:12px'>No reports yet. When an agent writes up findings, an audit or a plan, it leaves it as a .md file in its folder&#39;s .symbiot, and it shows up here.</div>";return;}
-var row=function(r,i){var where=!r.run||r.run===r.lane?esc(r.lane):r.run.indexOf(r.lane+':')===0?esc(r.run):esc(r.lane)+' &middot; '+esc(r.run);
+var row=function(r,i){var where=r.source?esc(r.lane)+' &middot; '+esc(r.source):!r.run||r.run===r.lane?esc(r.lane):r.run.indexOf(r.lane+':')===0?esc(r.run):esc(r.lane)+' &middot; '+esc(r.run);
+var steps=(r.steps||[]).map(function(t,j){return "<div class='task repidea rstep' data-i='"+i+"' data-s='"+j+"'><span class='t'>"+esc(t)+"</span><button class='act rsgo' title='hand just this step to "+escQ(r.lane)+"&#39;s agent'>Hand to agent</button><button class='ghost rsdone' title='already done: take it off this list'>Done</button><button class='ghost rsdrop' title='not worth doing: take it off this list'>Drop</button></div>";}).join('');
+var ok=r.draft&&r.needs==='draft'&&!r.computer?"<div class='row' style='margin:2px 0 6px 12px'><button class='act rsapprove' data-i='"+i+"'>Approve</button></div>":'';
+var all=(r.steps||[]).length>1?"<div class='row' style='margin:2px 0 6px'><button class='ghost rsall' data-i='"+i+"'>Hand all to agents</button></div>":'';
+return "<div class='rwrap'>"+rowHtml(r,i,where)+(r.computer?'':ok+(steps?"<div class='rsteps' style='margin-left:12px'>"+steps+all+"</div>":''))+"<div class='rsmsg muted' style='font-size:12px;margin-left:12px'></div></div>";};
+var rowHtml=function(r,i,where){
 return "<div class='task rrow"+(r.new?" rnew":"")+"' data-i='"+i+"' tabindex='0' role='button' title='"+escQ(r.file)+"'><span class='t'><b>"+esc(r.title)+"</b><div class='muted' style='font-size:12px'>"+(r.new?"<span style='color:var(--amber)'>unread</span> &middot; ":"")+(r.needs==='draft'?"<span style='color:var(--amber)'>waiting for your OK</span> &middot; ":r.needs==='ideas'?"<span style='color:var(--amber)'>"+r.ideas+(r.ideas===1?" next step":" next steps")+"</span> &middot; ":"")+where+" &middot; "+esc(r.name)+" &middot; "+kb(r.size)+(r.computer?" &middot; from "+esc(r.computer):"")+(r.running?" &middot; <span style='color:var(--amber)'>its agent is still writing</span>":"")+"</div></span><span class='rp'>"+agoTxt(r.mtime)+"</span></div>";};
 var tabOf=function(r){return r.new?'unread':r.needs?'action':'read';};
 var cnt={unread:0,action:0,read:0};REPS.forEach(function(r){cnt[tabOf(r)]++;});
@@ -2842,7 +2899,19 @@ el.innerHTML="<div class='rtabs' id='reptabs' role='tablist'>"+TABS.map(function
 ((function(){var by={},order=[];REPS.forEach(function(r,i){if(tabOf(r)!==REPTAB)return;if(!by[r.lane]){by[r.lane]=[];order.push(r.lane);}by[r.lane].push(row(r,i));});return order.map(function(l){return "<div class='tgroup' style='margin-top:14px'>"+esc(l)+" <span class='tcount'>"+by[l].length+"</span></div>"+by[l].join('');}).join('');})()||"<div class='muted' style='margin-top:12px'>Nothing here.</div>");
 el.querySelectorAll('#reptabs .tab').forEach(function(b){b.addEventListener('click',function(){REPTAB=b.getAttribute('data-t');renderReports();});});
 el.querySelectorAll('.rrow').forEach(function(row){var go=function(){openReport(REPS[+row.getAttribute('data-i')]);};row.addEventListener('click',go);row.addEventListener('keydown',function(ev){if(ev.key==='Enter'||ev.key===' '){ev.preventDefault();go();}});});
+el.querySelectorAll('.rwrap button').forEach(function(b){b.addEventListener('click',function(ev){ev.stopPropagation();repRowAct(b);});});
 var s=$('reportsseen');if(s)s.addEventListener('click',function(){s.disabled=true;api('/api/reports/seen',{}).then(function(){loadReports();lqLoad(false);});});}
+// A step's buttons, on its row: Hand to agent (its lane's Workdesk), Done, Drop; Hand all; and Approve on a draft.
+// The row drops what was dealt with at once; a report with no step left moves to Read and done by itself.
+function repRowAct(b){var w=b.closest('.rwrap'),msg=w.querySelector('.rsmsg'),r=REPS[+b.getAttribute('data-i')||+(b.closest('[data-i]')||{getAttribute:function(){return -1;}}).getAttribute('data-i')];if(!r)return;
+var say=function(t,bad){msg.innerHTML=bad?"<span style='color:var(--red,#e66)'>"+esc(t)+"</span>":esc(t);};
+var btns=w.querySelectorAll('button');btns.forEach(function(x){x.disabled=true;});var fail=function(e){btns.forEach(function(x){x.disabled=false;});say(String((e&&e.error)||(e&&e.message)||e||'failed'),true);};
+var cls=b.className,step=b.closest('.rstep'),t=step?r.steps[+step.getAttribute('data-s')]:null,call,left;
+if(/rsapprove/.test(cls)){api('/api/reports/draft',{id:r.id,approve:true}).then(function(x){if(!x||x.error)return fail(x);r.needs='';r.steps=[];renderReports();lqLoad(false);}).catch(fail);return;}
+if(/rsall/.test(cls)){call=api('/api/reports/ideas',{id:r.id,ideas:r.steps});left=[];}
+else if(/rsgo/.test(cls)){call=api('/api/reports/ideas',{id:r.id,ideas:[t]});left=r.steps.filter(function(x){return x!==t;});}
+else{call=api('/api/reports/dismiss',{id:r.id,ideas:[t],done:/rsdone/.test(cls)});left=r.steps.filter(function(x){return x!==t;});}
+call.then(function(x){if(!x||x.error)return fail(x);r.steps=left;r.ideas=left.length;if(!left.length&&r.needs==='ideas')r.needs='';renderReports();lqLoad(false);}).catch(fail);}
 // The way back sits at the top of the report itself (#reportview), so it stays in view, under
 // the page's header, however long the report: on a long one the list was a long scroll up away.
 function openReport(r){if(!r)return;REPOPEN=r.id;var w=$('reportview');$('reportslist').innerHTML='';
@@ -2861,12 +2930,14 @@ function repImgs(v){v.querySelectorAll('img.rimg').forEach(function(im){im.addEv
 im.addEventListener('click',function(){var z=document.createElement('div');z.className='rzoom';var b=document.createElement('img');b.src=im.src;b.alt=im.alt;z.appendChild(b);z.addEventListener('click',function(){z.remove();});document.addEventListener('keydown',function k(e){if(e.key==='Escape'){z.remove();document.removeEventListener('keydown',k);}});document.body.appendChild(z);});
 im.src=im.getAttribute('data-src')+'&t='+encodeURIComponent(T);});}
 function repActsHtml(d){var lane=d.lane==='ops'?'ops':esc(d.lane||'its lane'),h="<div class='out rdoc repacts'>";
+if((d.cards||[]).length)h+="<div class='pshead'><span>"+(d.cards.length>1?'Drafts':'Draft')+" in this report, for your OK</span><small>exactly as "+(d.cards.length>1?'they':'it')+" will look when posted</small></div>"+d.cards.map(function(rel){return "<div class='mkpv repcard' data-rel='"+escQ(rel)+"'></div>";}).join('');
 if(d.draft)h+="<div class='pshead'><span>This is a draft</span><small>"+(d.decided?"you "+esc(d.decided)+" it":"only you decide: its agent goes ahead once you approve")+"</small></div><div class='row'><button class='act repdraft' data-ok='1'>Approve</button><button class='ghost repdraft' data-ok=''>Reject</button></div>";
 else if((d.ideas||[]).length)h+="<div class='pshead'><span>Ideas from it</span><small>tick any to put them on the Workdesk, in "+lane+"</small></div>"+d.ideas.map(function(t,i){return "<div class='task repidea'><label style='display:flex;gap:8px;flex:1'><input type='checkbox' data-i='"+i+"'"+(i<3?" checked":"")+"> <span class='t'>"+esc(t)+"</span></label><button class='act repone' data-i='"+i+"' title='put just this one on the Workdesk, in "+lane+"'>Hand to "+lane+"</button><button class='ghost repno' data-i='"+i+"' title='not worth doing: take it off this list'>Dismiss</button></div>";}).join('')+"<div class='row'><button class='ghost repadd'>Add the ticked ones</button></div>";
-else if(d.handled&&Object.keys(d.handled).length)h+="<div class='muted' style='font-size:12px'>Every next step in it is handed over or dismissed, so it sits under Read.</div>";
-if(!d.draft&&d.handled&&Object.keys(d.handled).length&&(d.ideas||[]).length)h+="<div class='muted' style='font-size:12px;margin-top:6px'>Already dealt with: "+Object.keys(d.handled).map(function(k){return esc(k)+" ("+(d.handled[k]==='handed'?'handed over':'dismissed')+")";}).join('; ')+"</div>";
+else if(d.handled&&Object.keys(d.handled).length)h+="<div class='muted' style='font-size:12px'>Every next step in it is handed over, done, dropped or superseded, so it sits under Read.</div>";
+if(!d.draft&&d.handled&&Object.keys(d.handled).length&&(d.ideas||[]).length)h+="<div class='muted' style='font-size:12px;margin-top:6px'>Already dealt with: "+Object.keys(d.handled).map(function(k){return esc(k)+" ("+(d.handled[k]==='handed'?'handed over':d.handled[k]==='superseded'?'superseded':d.handled[k]==='done'?'done':'dismissed')+")";}).join('; ')+"</div>";
 h+="<form class='row repask' style='margin-top:12px'><input class='repq' autocomplete='off' maxlength='2000' placeholder='Ask Symbiot about this report&hellip;' style='flex:1'><button type='submit' class='ghost'>Ask</button></form><div class='repmsg'></div></div>";return h;}
 function repActsWire(v,d){var msg=v.querySelector('.repmsg'),say=function(k,t){msg.innerHTML="<div class='note "+k+"'>"+t+"</div>";};
+v.querySelectorAll('.repcard').forEach(function(b){mkPreview(b,b.getAttribute('data-rel'));});
 var add=v.querySelector('.repadd');if(add)add.addEventListener('click',function(){var picks=[];v.querySelectorAll('.repidea input').forEach(function(c){if(c.checked)picks.push(d.ideas[+c.getAttribute('data-i')]);});if(!picks.length){say('err','Tick an idea first.');return;}add.disabled=true;
 api('/api/reports/ideas',{id:d.id,ideas:picks}).then(function(r){add.disabled=false;if(!r||r.error){say('err',esc((r&&r.error)||'failed'));return;}say('ok',esc(r.said));lqLoad(false);}).catch(function(e){add.disabled=false;say('err',esc(String((e&&e.message)||e)));});});
 v.querySelectorAll('.repone,.repno').forEach(function(b){b.addEventListener('click',function(){var t=d.ideas[+b.getAttribute('data-i')],row=b.closest('.repidea'),btns=row.querySelectorAll('button');if(!t)return;btns.forEach(function(x){x.disabled=true;});
@@ -3175,9 +3246,19 @@ function lqHome(){lqRemember();LQ.scene='home';LQ.relaySig='';var rl=$('lqrelay'
 // what its agent did or is doing, what it asks you (its answers as buttons, as on
 // home), Review and approve when it's ready, and the extra tasks it suggests (+ task
 // or Skip). You needn't open Agents; it's still there for the detail.
+// AI usage limits (quota.mjs): the meter in the corner, its details, and "paused for quota" on Home and the Workdesk.
+var QUOTA=null;
+function qPaused(){return QUOTA&&QUOTA.paused?QUOTA.pausedText:'';}
+function qDraw(){var box=$('quota');if(!box)return;var q=QUOTA;
+if(!q||!q.rows||!q.rows.length){box.classList.add('hidden');}else{box.classList.remove('hidden');box.classList.remove('near','hit');if(q.level==='near'||q.level==='hit')box.classList.add(q.level);$('qtext').textContent=q.text||'AI';
+$('qpop').innerHTML=q.rows.map(function(r){var h="<div class='qrow'><b>"+esc(r.label)+"</b> &middot; "+esc(r.headline||'')+(r.windows||[]).map(function(w){var pc=w.used==null?0:w.used,lv=pc>=100?'hit':pc>=80?'near':'';return "<div class='qbar "+lv+"' title='"+esc(w.label)+"'><i style='width:"+pc+"%'></i></div><small>"+esc(w.label)+": "+(w.used==null?(w.over?'reset, no reading yet':'unknown'):w.used+'% used')+(w.resetText?(w.over?' &middot; reset '+esc(w.resetText):' &middot; resets '+esc(w.resetText)):'')+"</small>";}).join('')+"<small>from "+esc(r.source||'')+"</small></div>";return h;}).join('');}
+var bn=$('qbanner');if(bn){var t=qPaused();bn.textContent=t;bn.classList.toggle('show',!!t);}
+try{if(LQ.scene==='work')lqRelay();else lqHomeLine(LQ.home||{});}catch(e){}}
+function qLoad(){api('/api/quota').then(function(q){QUOTA=q&&!q.error?q:null;qDraw();}).catch(function(){});}
+function qInit(){var p=$('qpill');if(!p)return;p.addEventListener('click',function(ev){if(ev&&ev.stopPropagation)ev.stopPropagation();$('quota').classList.toggle('open');});if(document.addEventListener)document.addEventListener('click',function(ev){var b=$('quota');if(b&&ev&&ev.target&&b.contains&&!b.contains(ev.target))b.classList.remove('open');});qLoad();setInterval(qLoad,30000);}
 function lqLineText(w){var nr=(w.running||[]).length,nq=0,ni=0,nk=(w.ready||[]).length,nw=w.waitingCount||0;(w.projects||[]).forEach(function(p){nq+=p.asks||0;ni+=(p.ideas||[]).length;});
 var bits=[];if(nq)bits.push('<b>'+nq+' question'+(nq>1?'s':'')+' for you</b>');if(nk)bits.push('<b>'+nk+' ready for your OK</b>');if(nr)bits.push(nr+' at work');if(nw)bits.push(nw+' waiting');if(ni)bits.push(ni+' suggested task'+(ni>1?'s':''));
-return bits.length?bits.join(' &middot; '):'All quiet: nothing at work, nothing asking you.';}
+var qp=qPaused();if(qp)bits.unshift('<b>'+esc(qp)+'</b>');return bits.length?bits.join(' &middot; '):'All quiet: nothing at work, nothing asking you.';}
 function lqRelayList(w){return lqSortLanes((w.projects||[]).filter(function(p){return p.summary||(p.qs&&p.qs.length)||p.ready||(p.ideas&&p.ideas.length)||(p.handing&&p.handing.length);}).slice());}
 function lqRelayOn(){var S=lqSize();return LQ.scene==='work'&&S.w>=900&&lqRelayList(LQ.workData||{}).length>0;}
 // A lane's first question as its card: drawn and wired from the one object, so a button it
@@ -3262,7 +3343,7 @@ LQ.talk.push({me:false,text:t});LQ.talk=LQ.talk.slice(-8);lqTalkShow(false);LQ.r
 // comes out of the core (mass is conserved). Your colours come from the system,
 // live: light or dark, contrast, transparency, forced colours, your accent, night.
 var LQ={drops:[],btns:[],core:{x:0,y:0,cr:0},mode:'aware',last:'',lastAct:Date.now(),talk:[],talking:false,theme:{},ripple:[0.5,0.5,-10],t:0,pointer:null,touch:false,frame:0};
-var LQNAMES={board:'Dashboard',map:'Map',tasks:'Workdesk',agents:'Workdesk',week:'Week',standup:'Standup',todo:'Todo',drift:'Drift',settings:'Settings',reports:'Reports',marketing:'Marketing',computer:'Your computer'};
+var LQNAMES={board:'Dashboard',map:'Map',tasks:'Workdesk',agents:'Workdesk',week:'Week',standup:'Standup',todo:'Todo',drift:'Drift',settings:'Settings',reports:'Reports',asks:'Questions',marketing:'Marketing',computer:'Your computer'};
 var LQ_REST=60000,LQ_MAX=11;
 function lqMM(q){try{return !!(window.matchMedia&&window.matchMedia(q).matches);}catch(e){return false;}}
 function lqLookGet(){var l='';try{l=window.localStorage&&window.localStorage.getItem('symbiot-look')||'';}catch(e){}return l==='glass'||l==='pearl'?l:'ferro';}
@@ -3374,7 +3455,7 @@ function lqHomeLine(h){var el=$('lqline'),b=document.body,t='',pc=h.computer,ap=
 if(pc&&pc.away)t="<b>"+esc(pc.name)+" is out of reach.</b> Showing what it sent "+(pc.heard?"at "+esc(pcTime(pc.heard)):"last")+(pc.queued?" · "+pc.queued+" change"+(pc.queued>1?"s":"")+" waiting to send":"")+".";
 else if(pc&&pc.old)t="<b>Pair this phone with "+esc(pc.name)+" again:</b> the link between them is sealed now.";
 else if(ap)t=ap.status==='failed'?"<b>Approving "+esc(ap.repo)+" from "+esc(ap.phone)+" failed:</b> "+esc(ap.error||''):(ap.status==='approving'?"Approving ":"Approved ")+esc(ap.repo)+" from "+esc(ap.phone)+" at "+esc(pcTime(ap.at))+".";
-if(b&&b.classList)b.classList.toggle('lq-hline',!!t);if(el&&LQ.scene!=='work'&&el.innerHTML!==t)el.innerHTML=t;}
+if(!t&&qPaused())t='<b>'+esc(qPaused())+'</b>';if(b&&b.classList)b.classList.toggle('lq-hline',!!t);if(el&&LQ.scene!=='work'&&el.innerHTML!==t)el.innerHTML=t;}
 // Home on a phone paired with your computer: what you act on there, read at a glance.
 // Not the liquid (its groups, orbs and the computer's work behind a droplet: "the UI on
 // the phone is bloated", 2026-10-12), but a plain list: how fresh the computer's copy
@@ -4116,7 +4197,7 @@ var G=lqGL();if(G){try{lqStep();lqDraw(G);}catch(e){}}if(typeof window.requestAn
 function frame(){if(!document.hidden){LQ.frame++;if(LQ.mode!=='pool'||LQ.frame%3===0)lqStep();var every=glLight()?glEvery(LQ.mode==='aware'):LQ.mode==='pool'?6:LQ.mode==='rest'?2:1;if(G&&LQ.frame%every===0&&!(LQ.phone&&LQ.scene!=='work'&&LQ.mode!=='pool'))lqDraw(G);}raf(frame);} // moves every frame; drawn less at rest, behind a panel, without a GPU, with Low GPU or in a window not in use; not at all under a phone's Home list
 raf(frame);}
 
-syncP();refresh();firstTab();lqInit();onbLoad();var sbo=$('sbopen');if(sbo)sbo.addEventListener('click',function(){sbOpen('');});var rr=$('rerunsetup');if(rr)rr.addEventListener('click',function(){api('/api/onboarding/restart',{}).then(function(){lqSink();onbLoad();});});awayInit();lqDeep();loadWhatsNew();loadPhone(); // loadPhone: the Termux note, from the page itself (no request)
+syncP();refresh();firstTab();lqInit();qInit();onbLoad();var sbo=$('sbopen');if(sbo)sbo.addEventListener('click',function(){sbOpen('');});var rr=$('rerunsetup');if(rr)rr.addEventListener('click',function(){api('/api/onboarding/restart',{}).then(function(){lqSink();onbLoad();});});awayInit();lqDeep();loadWhatsNew();loadPhone(); // loadPhone: the Termux note, from the page itself (no request)
 // Screens and Watch (the box under the Map) load when the box opens (Settings': setTab)
 var sbx=$('screensbox');function loadScreensBox(){loadScreensUI();loadMonitorsUI();loadWatchUI();}
 if(sbx&&sbx.addEventListener)sbx.addEventListener('toggle',function(){if(sbx.open)loadScreensBox();});

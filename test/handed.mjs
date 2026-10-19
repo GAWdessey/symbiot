@@ -4,7 +4,7 @@
 //
 //   node test/handed.mjs
 //
-import { mkdtempSync, rmSync, readFileSync } from "node:fs";
+import { mkdtempSync, rmSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -37,6 +37,20 @@ try {
   const ctx = homeContext({ you: [], feeds: [], working: 0, runs: [], lanes: [], handed: st, at: now });
   ok("Home's talk lists them", /Handed off from this chat[\s\S]*- symbiot: fix the card \(never started[^\n]*\n- daaymn: photos \(done\)/.test(ctx), ctx);
   ok("none says none", /Handed off from this chat[^\n]*\n- none/.test(homeContext({ you: [], feeds: [], working: 0, runs: [], lanes: [], at: now })));
+  console.log("DIGEST — what Home sees of each agent: steps, the question, the answer, the result, and no second ask");
+  const { agentDigest, garthLedger } = await import("../home.mjs"), { recordDone, isDone } = await import("../asksdone.mjs");
+  const dir = join(HOME, "dummy"); mkdirSync(join(dir, ".symbiot"), { recursive: true });
+  const asked = "Which npm account owns the package?";
+  writeFileSync(join(dir, ".symbiot", "ANSWERS.md"), `# Answers\n\n### ${asked}\nGAWdessey\n_answered 2026-10-13_\n`);
+  const dl = [{ name: "Agent: npm", path: dir, status: "running", startedAt: now - 6e4, work: { steps: [{ verb: "Ran", target: "npm whoami", status: "done" }, { verb: "Ran", target: "npm publish", status: "error", note: "403 forbidden" }] }, ask: { questions: [{ q: asked }] } },
+    { name: "Agent: done", path: join(HOME, "d2"), status: "done", endedAt: now - 3600e3, exitCode: 0, tail: "Installed version 0.64.0." }];
+  const dg = agentDigest({ now, list: dl, map: { symbiot: dir }, tasks: [{ repo: "symbiot", text: "a" }, { repo: "symbiot", text: "b", done: true }] });
+  ok("running agent: lane, queue, steps with failures, question and Garth's answer", dg[0].lane === "symbiot" && dg[0].queued === 1 && dg[0].steps[1] === "Ran npm publish (failed: 403 forbidden)" && dg[0].asks[0] === asked && dg[0].answers[0].a === "GAWdessey", dg[0]);
+  ok("finished agent: its outcome", dg[1].outcome === "Installed version 0.64.0." && !dg[1].running, dg[1]);
+  recordDone(asked, "GAWdessey");
+  const cx = homeContext({ you: [], feeds: [], working: 0, runs: [], lanes: [], digest: dg, ledger: garthLedger(), at: now });
+  ok("Home's talk carries step, question, answer, result and the ledger", /last steps: [^\n]*failed: 403[\s\S]*asked Garth: Which npm[\s\S]*Garth answered "Which npm account[^"]*": GAWdessey[\s\S]*outcome: Installed version 0\.64\.0\.[\s\S]*Already answered by Garth[^\n]*\n- [\d-]+ Which npm account[^\n]*→ GAWdessey/.test(cx), cx);
+  ok("an ask he already answered is suppressed", isDone(asked) && isDone("which npm account owns the package"));
 } finally {
   rmSync(HOME, { recursive: true, force: true });
 }

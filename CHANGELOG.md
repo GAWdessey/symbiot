@@ -2,6 +2,20 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one), for anyone who installs the app: what changed in it, never whose work it was (no projects, people, accounts, services, run ids or task wording of the person who made it). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.66.9 — 2026-10-19
+
+- **A usage meter for your AI.** A corner indicator shows how much of Claude's 5-hour and weekly limits the agents have used, read from Claude Code's own rate-limit report, with the reset time. When a limit is hit it turns red, says when Claude is back, and pauses the agents until then.
+- **Changes a lane makes for another lane ship by themselves.** When one lane hands work to another and that work changes code, Approve no longer has to come from you each time. Symbiot ships it and links it to the handover. It still waits for you when the change holds a secret: a keystore, a `.env` file, a private key or a password.
+- **`symbiot screens` can press radio buttons**, including Angular Material ones, and fill in the fields they reveal. Before, a choice like "Android apps" on a cloud console's settings page wasn't on the map at all.
+- **Pick the model for a task, or leave it on Auto.** A task can be set to a local model, Haiku, Sonnet, Opus or Fable. On Auto, a routine job runs on a smaller model. A run on Sonnet that ends in an error, or does nothing, is tried again once on Opus.
+- **Marketing sorts drafts properly.** A blog post or Hacker News submission is a post with its own card and Approve, not a document. Approving a Show HN has its agent submit it from your account with its first comment. If you change the post after approving it, it asks again.
+- **A report that asks you to approve drafts shows those drafts' cards**, so there's something to press. The Reports page's "Read, open actions" tab no longer fills with lines that ask for nothing, or with actions a later task already covers.
+- **Your Chrome sign-ins carry over.** An agent that hits a sign-in page on a site you're already signed in to in your everyday Chrome uses that session, instead of asking you to sign in again. Nothing is written to Chrome's profile, and nothing leaves your computer.
+- A command-line tool's login (gh, gcloud, wrangler…) for a site that's signed in in the Symbiot Browser is started by the agent, not handed to you.
+- **Permission cards, per-run phases and per-lane models.** A permission you grant on a card holds for that lane. Each run shows which phase it's in. A lane can keep its own model in `lanes.json`.
+- An agent asking for your OK now gets a card with Go ahead on it. Before, its card told you to press a button somewhere else.
+- Verification codes typed into one-box-per-character fields are now spread one character per box.
+
 ## 0.66.8 — 2026-10-19
 
 - **Release notes say what changed in the app, not whose work it came from.** Approve used to copy a task's own wording into the release notes, so names of projects, people, accounts, servers, run ids and dated requests could reach everyone who updates. Each line is now checked before it goes in. A line that names something private, or a task that changed nothing in the app, is left out, and Approve says what it left out and why. A release note an agent wrote into `CHANGELOG.md` by hand is checked the same way before it merges.

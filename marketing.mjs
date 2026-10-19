@@ -112,8 +112,8 @@ function draftFiles(dir = MARKETING_DIR, names = [], { max = 30 } = {}) {
       const tagLine = (head.match(/^\s*product:\s*(.+)$/im) || [])[1], folder = relative(root, d).split("/")[0] || "";
       const product = (tagLine || "").trim() || names.find((n) => n.toLowerCase() === folder.toLowerCase()) || (folder ? folder.charAt(0).toUpperCase() + folder.slice(1) : "");
       const title = (head.match(/^#\s+(.+)$/m) || [])[1];
-      const rel = relative(dir, p); let st = null, doc = false; try { const d = parseDraft(readFileSync(p, "utf8")); doc = !d.isPost; if (!doc) st = statusOf(dir, rel, d.body, mediaSigOf(dir, rel, d.media)); } catch {}
-      out.push({ file: p, rel, name: (title || basename(e.name, ".md").replace(/[-_]+/g, " ")).trim().slice(0, 120), product, at, doc, status: st ? st.status : "" });
+      const rel = relative(dir, p); let st = null, doc = false, reopened = null; try { const d = parseDraft(readFileSync(p, "utf8")); doc = !d.isPost; if (!doc) { const ms = mediaSigOf(dir, rel, d.media); st = statusOf(dir, rel, textOf(d), ms); if (!st) reopened = reopenedOf(dir, rel, textOf(d), ms); } } catch {}
+      out.push({ file: p, rel, name: (title || basename(e.name, ".md").replace(/[-_]+/g, " ")).trim().slice(0, 120), product, at, doc, status: st ? st.status : "", ...(reopened ? { reopened } : {}) });
     }
   };
   walk(root, 0);
@@ -135,10 +135,18 @@ const HEAD_KEYS = { product: "product", platform: "platform", when: "when", sche
 // with a platform below says so; so does a `platform:` line or a `## Post` section (how drafts were
 // written before `type:`). `type:` set to anything else (listing, schedule, plan, brief, script, doc) is a
 // document, whatever else it holds. A file saying neither (a plain note or table) is a document.
-const PLATFORMS = ["linkedin", "x", "twitter", "instagram", "facebook", "reddit"];
+// Blog and Hacker News were missing (2026-10-16): drafts for them were read as documents, with no
+// Approve at all, and a report told the user to approve them "under Marketing". A platform a draft
+// names that isn't listed here makes it a document, so every place a post can go is listed.
+const PLATFORMS = ["linkedin", "x", "twitter", "instagram", "facebook", "reddit", "blog", "hackernews", "producthunt", "threads", "bluesky", "mastodon", "medium", "substack", "devto"];
+const PLATFORM_ALIAS = { hn: "hackernews", "hacker news": "hackernews", "hacker-news": "hackernews", "show hn": "hackernews", "news.ycombinator.com": "hackernews", "product hunt": "producthunt", "dev.to": "devto", "blog post": "blog" };
+// Any other named platform (tiktok, facebook groups, youtube…) is a post too; only a platform line that
+// names a place for documents is not: a site page, a store listing, a plan or a schedule.
+const DOC_PLATFORMS = /^(?:web|website|site|landing|landing[ -]?page|page|store|play|play[ -]?store|app[ -]?store|listing|plan|schedule|doc|docs|document|brief|script|notes?)$/;
+const isPlatform = (p) => PLATFORMS.includes(p) || (/^[a-z][a-z0-9 ._+-]{0,40}$/.test(p) && !DOC_PLATFORMS.test(p));
 const POST_TYPES = /^(?:social[ -]?)?posts?$|^social$/i;
 function parseDraft(text) {
-  const src = String(text || "").replace(/\r\n/g, "\n"), out = { title: "", product: "", platform: "", when: "", media: [], body: "", notes: "", format: "", where: "", flair: "", account: "", type: "", isPost: false };
+  const src = String(text || "").replace(/\r\n/g, "\n"), out = { title: "", product: "", platform: "", when: "", media: [], body: "", notes: "", format: "", where: "", flair: "", account: "", type: "", comment: "", isPost: false };
   const lines = src.split("\n"), head = [];
   let i = 0;
   for (; i < lines.length; i++) { const l = lines[i]; if (/^##\s/.test(l) || /^\s*-{3,}\s*$/.test(l)) break; head.push(l); }
@@ -154,6 +162,7 @@ function parseDraft(text) {
     for (const part of rest.split(/^(?=##\s)/m)) {
       const m = part.match(/^##[ \t]+([^\n]+?)[ \t]*(?:\n|$)([\s\S]*)$/); if (!m) continue;
       if (/^(?:the\s+)?post$/i.test(m[1]) && !out.body) out.body = m[2].replace(/^\n+|\s+$/g, "");
+      else if (/^first[ -]comment$/i.test(m[1]) && !out.comment) out.comment = m[2].replace(/^\n+|\s+$/g, ""); // goes out with the post (Show HN), so it's approved with it
       else if (m[2].trim()) notes.push(/^notes?$/i.test(m[1]) ? m[2].trim() : `${m[1]}\n${m[2].trim()}`);
     }
     out.notes = notes.join("\n\n");
@@ -166,9 +175,9 @@ function parseDraft(text) {
   // what the notes name: its picture or video (`week-02-card.png`), and when it goes out
   if (!out.media.length) out.media = [...new Set((out.notes.match(/[\w./-]+\.(?:png|jpe?g|gif|webp|mp4|mov|webm)\b/gi) || []))];
   if (!out.when) { const w = out.notes.match(/(\d{4}-\d{2}-\d{2})(?:[ ,T]+(\d{1,2}:\d{2}))?/); if (w) out.when = w[2] ? `${w[1]} ${w[2]}` : w[1]; }
-  const said = String(out.platform || "").toLowerCase().trim();
+  let said = String(out.platform || "").toLowerCase().trim(); said = PLATFORM_ALIAS[said] || said;
   out.type = String(out.type || "").toLowerCase().trim();
-  out.isPost = out.type ? POST_TYPES.test(out.type) && (!said || PLATFORMS.includes(said)) : (said ? PLATFORMS.includes(said) : (out.format === "legacy" || out.format === "sections") && !/^\s*\|?\s*:?-{3,}:?\s*\|/m.test(out.body)); // no platform line: the old layouts, unless the text holds a table (a plan)
+  out.isPost = out.type ? POST_TYPES.test(out.type) && (!said || isPlatform(said)) : (said ? isPlatform(said) && !!out.body.trim() : (out.format === "legacy" || out.format === "sections") && !/^\s*\|?\s*:?-{3,}:?\s*\|/m.test(out.body)); // no platform line: the old layouts, unless the text holds a table (a plan)
   if (!out.isPost && !out.type && /play|store|listing/.test(said + " " + out.title.toLowerCase())) out.type = "listing";
   out.platform = (said || "linkedin");
   return out;
@@ -197,6 +206,8 @@ function inLane(dir, rel) {
   try { const real = realpathSync(f), root = realpathSync(dir); return real.startsWith(root + "/") && !/^\.(?:symbiot|git)(?:\/|$)/.test(real.slice(root.length + 1)) ? real : ""; } catch { return ""; }
 }
 // The text an approval is for: a draft's post changed after you approved it isn't approved.
+// ...all of it: a Show HN goes out with its first comment, so that is approved with it.
+const textOf = (d) => (d.comment ? `${d.body}\n\0first comment\0\n${d.comment}` : d.body);
 const sigOf = (body) => createHash("sha256").update(String(body || "")).digest("hex").slice(0, 16);
 // ...and the picture or video it goes out with: a card redrawn after you approved it isn't
 // approved either. Each file by its name and contents, in order ("missing" for one that isn't
@@ -231,6 +242,14 @@ function statusOf(dir, rel, body, msig) {
   const s = draftStatuses(dir)[rel], st = stateOf(s);
   return FINAL.includes(st) ? { ...s, status: st, edited: s.sig !== sigOf(body) } : s && s.sig === sigOf(body) && (!s.msig || msig === undefined || s.msig === msig) ? s : null;
 }
+// A draft that was approved (or skipped, or sent back for a change) and whose text or picture
+// has changed since: its old answer no longer holds, so it asks again. { was, at } or null.
+// Said on its card ("edited since you approved it") so it isn't taken for a new draft.
+function reopenedOf(dir, rel, body, msig) {
+  const s = draftStatuses(dir)[rel], st = stateOf(s);
+  if (!s || !st || FINAL.includes(st) || st === "done") return null;
+  return s.sig === sigOf(body) && (!s.msig || msig === undefined || s.msig === msig) ? null : { was: st, at: s.at || 0 };
+}
 // a moment as people read it here: local YYYY-MM-DD HH:MM (what --at takes)
 const day = (ms) => { const d = new Date(ms), p = (n) => String(n).padStart(2, "0"); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`; };
 // Why a posted or superseded draft can't be approved, skipped or posted again, in a line.
@@ -263,7 +282,7 @@ function setDraftStatus(rel, status, { dir = MARKETING_DIR, now = Date.now(), ur
     return { ok: true, status, already: true, draft: d, rel, said: finalSay(prev) };
   }
   if (was === "posted" || (was === "superseded" && status !== "posted" && status !== "superseded")) return { error: finalSay(prev) };
-  let entry = { status, sig: sigOf(d.body), msig: mediaSigOf(dir, rel, d.media), at: now, ...(status === "change" ? { ask } : {}) };
+  let entry = { status, sig: sigOf(textOf(d)), msig: mediaSigOf(dir, rel, d.media), at: now, ...(status === "change" ? { ask } : {}) };
   if (status === "posted") {
     url = String(url || "").trim(); if (url && !/^https?:\/\/\S+$/i.test(url)) return { error: "Its link is the post's web address (https://…)." };
     const when = at ? (typeof at === "number" ? at : Date.parse(String(at).replace(" ", "T"))) : now; if (!Number.isFinite(when)) return { error: `"${at}" isn't a date (YYYY-MM-DD HH:MM).` };
@@ -284,7 +303,18 @@ const postedCmd = (rel) => `node "${CLI}" marketing posted "${rel}" --url <the p
 // Everything the Marketing page needs to show a draft as the platform's post: who it's
 // from, the text whole and cut where the feed cuts it, its hashtags, its picture or
 // video (each a file next to it), its notes apart, and whether you approved it.
-function draftPreview(rel, { dir = MARKETING_DIR, cfg } = {}) {
+// A Show HN draft's submission as the card shows it: its title is the post's first line, its text
+// the rest, its URL the site (the first comment's link without its tracking), and whether the
+// Symbiot Browser is signed in to news.ycombinator.com (cookie: headless.mjs sessionCookie,
+// given by the caller since this file stays low level). Not known to be signed out → no button.
+const HN_HOST = "news.ycombinator.com";
+function hnOf(d, cookie) {
+  const lines = d.body.split("\n"), title = lines[0].replace(/^\s*#+\s*/, "").trim(), text = lines.slice(1).join("\n").replace(/^\n+/, "");
+  const url = ((d.comment.match(/https?:\/\/[^\s)>`]+/) || [])[0] || "").replace(/\?.*$/, "");
+  let c = null; try { c = cookie ? cookie([HN_HOST]) : null; } catch {}
+  return { hn: { title, text, url, host: HN_HOST, name: "Hacker News", signedIn: !c || c.found !== false } };
+}
+function draftPreview(rel, { dir = MARKETING_DIR, cfg, cookie } = {}) {
   const f = inLane(dir, rel); if (!f || !/\.md$/i.test(f)) return { error: "That draft isn't there any more." };
   const d = parseDraft(readFileSync(f, "utf8")), base = relative(realpathSync(dir), dirname(f));
   const media = d.media.map((m) => { const r = join(base, m), ext = m.split(".").pop().toLowerCase(); return inLane(dir, r) && MEDIA_TYPES[ext] ? { rel: r, name: basename(m), kind: MEDIA_TYPES[ext].startsWith("video") ? "video" : "image" } : null; }).filter(Boolean);
@@ -292,8 +322,8 @@ function draftPreview(rel, { dir = MARKETING_DIR, cfg } = {}) {
     const st = draftStatuses(dir)[rel];
     return { rel, isPost: false, type: d.type || "document", title: d.title, product: d.product, text: readFileSync(f, "utf8"), done: !!(st && st.status === "done"), status: st && st.status === "done" ? "done" : "" };
   }
-  const st = statusOf(dir, rel, d.body, mediaSigOf(dir, rel, d.media));
-  return { rel, isPost: true, title: d.title, product: d.product, platform: d.platform, when: d.when, ...whereOf(d), account: d.account, ...(st && st.status === "change" ? { ask: st.ask || "" } : {}), body: d.body, ...seeMore(d.body), hashtags: d.body.match(/#[\p{L}\p{N}_]+/gu) || [], chars: d.body.length,
+  const msig = mediaSigOf(dir, rel, d.media), st = statusOf(dir, rel, textOf(d), msig), reopened = st ? null : reopenedOf(dir, rel, textOf(d), msig);
+  return { rel, isPost: true, ...(reopened ? { reopened } : {}), ...(d.comment ? { comment: d.comment } : {}), ...(d.platform === "hackernews" ? hnOf(d, cookie) : {}), title: d.title, product: d.product, platform: d.platform, when: d.when, ...whereOf(d), account: d.account, ...(st && st.status === "change" ? { ask: st.ask || "" } : {}), body: d.body, ...seeMore(d.body), hashtags: d.body.match(/#[\p{L}\p{N}_]+/gu) || [], chars: d.body.length,
     media, missing: d.media.filter((m) => !media.some((x) => x.name === basename(m))), notes: d.notes, format: d.format, author: author({ cfg, dir }), status: st ? st.status : "", statusAt: st ? st.at : 0,
     ...(st && FINAL.includes(st.status) ? { final: finalSay(st), posted: st.posted || 0, postedOn: st.postedOn || "", url: st.url || "", by: [].concat(st.by || []), edited: !!st.edited } : {}) };
 }
@@ -376,10 +406,12 @@ function marketingBrief(list = [], { map = {}, names = productNames(map), dir = 
     `- Pictures and clips of a product come from Symbiot's capture (\`node "${CLI}" capture <product>\`; a video it already has, sound and all: \`--file <its address or path>\`), never a capture script of your own: Symbiot won't run one with the app's access. A post's picture or video is one from its pick tray (\`${DRAFTS}/<product>/tray/\`), blurred, that the user has looked over there; never an unblurred original (\`.symbiot/tray-originals/\`), and never a screenshot you took yourself. Say in the draft's notes which capture you'd use; the user picks it on the Marketing page.`,
     `- Write each piece as a \`.md\` under \`${DRAFTS}/<product>/\` (\`${DRAFTS}/dailify/launch-post.md\`), a \`# \` title first, then \`product: <Product>\`, so the Marketing page tags it. Its screenshots and clips go next to it.`,
     "- Every post opens with a strong hook (its first line written for reach), says plainly what the product is, and states its end goal. Where the end goal isn't written down, draft one and flag it in QUESTIONS.md for the user to confirm.",
-    "- Say what each file is on a `type:` line right under its title: `type: post` (with `platform:` linkedin, x, instagram, facebook or reddit) only for the exact text of one social post that goes out; anything else is `type: listing` (store copy), `schedule`, `plan`, `brief`, `script` or `doc`. Those show as documents with a Copy button, never with Approve, post it, and the user marks a listing done once used. Write them as plain markdown (tables are fine).",
+    "- Say what each file is on a `type:` line right under its title: `type: post` (with `platform:` linkedin, x, instagram, facebook, reddit, blog or hackernews) only for the exact text of one social post that goes out; anything else is `type: listing` (store copy), `schedule`, `plan`, `brief`, `script` or `doc`. Those show as documents with a Copy button, never with Approve, post it, and the user marks a listing done once used. Write them as plain markdown (tables are fine).",
     `- Each draft holds the post apart from your notes: a \`# \` title, then \`product:\`, \`platform:\` (linkedin), \`when:\` (YYYY-MM-DD HH:MM, if it's scheduled) and \`media:\` (its picture or video, next to it) lines, then \`## Post\` with exactly the text that goes out (its line breaks, its hashtags) and nothing else, then \`## Notes\` for your reasoning, sources and anything for the user. Symbiot shows \`## Post\` as the platform's own preview, and what you post is that text, unchanged.`,
     `- The user's only step is approving each post's preview under Marketing in Symbiot: never ask them to post, schedule, paste or attach anything themselves, and never mark that as a 👤 step. Symbiot's browser is signed in to the platforms they linked (LinkedIn among them): once a post is approved (ANSWERS.md says "Approved: <its file>"), you post it, or schedule it in the platform's own scheduler for its \`when:\`, through that browser (\`node "${CLI}" screens map <the platform's page>\`, then \`screens type\` and \`screens press\` (to change part of a post already written or scheduled, \`screens type <id> <field> --replace "<old words>" "<new words>"\`: retyping all of it drops its picture), and \`screens upload <id> "<its Add media button>" <file>\` for its pictures or video), with the approved text and media, then check it's there.`
       + " A post not yet approved is a question in QUESTIONS.md with a 🤖 Agent: option (\"🤖 Agent: post it on Tuesday at 08:00, once you approve its preview\"), and what to check first in its context line. Never offer doing it by hand, and never ask them to sign in to or link a platform that's linked: use its session. Only signing in (a platform not linked yet, or a real attempt found its session expired: say so) is the user's: `👤 You (only you: signing in to LinkedIn)`. Never sign in as them, and never post what they haven't approved.",
+    "- A Show HN is `platform: hackernews`: `## Post` is its title (first line) and any text, `## First comment` the comment that goes under it, and both are approved with the draft. Once approved, you submit it at its `when:` from the user's account through Symbiot's browser (news.ycombinator.com/submit: the title, the URL of the product's site, then the first comment on the new item). Never write \"submit by hand\" in a draft, note or report. If the browser isn't signed in to news.ycombinator.com, its card carries the Sign in button; you don't ask for it.",
+    "- A report, note or question that needs the user's approval of a draft names the draft's file (`drafts/<product>/<file>.md`) and says nothing about where to go or what to press: Symbiot puts that draft's own card, with Approve, Reject and Change, inside the report. And never hand the user a step a connector or a signed-in site could do (posting, scheduling, submitting, sending, filling a form, checking a page): do it through Symbiot's browser or the connector, and report that it's done.",
     `- Once a post is out (or in the platform's scheduler), mark it posted with its link: \`node "${CLI}" marketing posted <its file> --url <the post's link>\` (\`--at "YYYY-MM-DD HH:MM"\` for a scheduled one). A post you redo in a new file: mark the old one \`node "${CLI}" marketing superseded <old file> --by <new file>\`. Either takes it off the user's list for good, and Symbiot then refuses to approve or post it again: never edit \`.symbiot/drafts.json\` by hand.`];
 }
 
