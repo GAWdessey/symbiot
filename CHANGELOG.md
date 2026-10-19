@@ -4,8 +4,7 @@ What each Symbiot release brought, newest first. When Approve bumps the version,
 
 ## 0.66.8 — 2026-10-19
 
-- Research job for Symbiot (~/symbiot, GarthGhostai/symbiot, https://github.com/GarthGhostai/symbiot.git), Mon 19 Oct 2026.
-- Fix a Symbiot flaw: public release notes leak the maker's private work.
+- **Release notes say what changed in the app, not whose work it came from.** Approve used to copy a task's own wording into the release notes, so names of projects, people, accounts, servers, run ids and dated requests could reach everyone who updates. Each line is now checked before it goes in. A line that names something private, or a task that changed nothing in the app, is left out, and Approve says what it left out and why. A release note an agent wrote into `CHANGELOG.md` by hand is checked the same way before it merges.
 
 ## 0.66.7 — 2026-10-16
 
