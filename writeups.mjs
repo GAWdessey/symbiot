@@ -276,31 +276,42 @@ async function produce(cmd, { since = 7, all: everyone = false } = {}) {
 // ---- release notes: Approve's changelog entries, in your AI's words ------------
 // Each approved task as a short note ("Added…", "Fixed…") from the task and the
 // diff (input from tasks.mjs releaseInput); changes with no task, from the diff
-// alone. null keeps the tasks' own words: no AI connected, no answer in time, or
-// an answer that isn't one note per task.
+// alone. They're public: everyone who installs the app reads them when it offers
+// an update, so they say what changed in the app for an outside user, never whose
+// work it was (input.deny: your lanes, people, accounts and providers, outward.mjs),
+// and a task that changed nothing in the app ("deploy the release", "find out
+// why…") is skipped. null keeps the tasks' own words, checked the same way (tasks.mjs
+// changelogItems): no AI connected, no answer in time, or no notes in it.
 const NOTES_WAIT_MS = 60000;
 async function releaseNotes(input, ask = write) {
   if (!input || (ask === write && !resolveProvider())) return null;
-  const { texts, files, diff } = input, n = texts.length;
+  const { texts, files, diff } = input, n = texts.length, deny = (input.deny || []).map((d) => d.term).slice(0, 120);
   const system =
-    `You write release notes for a changelog that everyone who updates the app reads, not only the developer. ` +
-    `Each note is one plain sentence under 25 words, starting with a past-tense verb (Added, Fixed, Changed, Removed…), saying what changed for the people who use it. ` +
-    `Use the task for what was wanted and the diff for what was actually done; claim nothing the diff doesn't show. ` +
-    `No file or function names unless a user types them (a command, a setting), no jargon, no names of people. ` +
+    `You write release notes for a product's public changelog. Everyone who installs it reads them in its update panel, so write for an outside user, not for the person whose work it was. ` +
+    `Each note is one plain sentence under 25 words, starting with a past-tense verb (Added, Fixed, Changed, Removed…), saying what changed in the product for the people who use it, in general terms ("Lane agents can now use all your linked connections", "Sign-ins in the built-in browser hold better"). ` +
+    `Use the task for what was wanted and the diff for what was actually done; claim nothing the diff doesn't show, and don't copy the task's wording. ` +
+    `Never name the maker's own products, projects, lanes, clients, people, accounts, servers or the services they use, nor run ids, dates or who asked; ` +
+    `no file or function names unless a user types them (a command, a setting), no jargon. ` +
+    `A task that changed nothing in the product (deploying or publishing it, finding out why something happens, a test or a check, another team's part of a job) gets the line "- skip". ` +
     `Answer with the notes only, one per line, each starting with "- ".`;
   const prompt = (n ? `Tasks approved in this release:\n${texts.map((t, i) => `${i + 1}. ${t}`).join("\n")}\n\n` : "") +
     `Files changed: ${files.join(", ") || "(none)"}\n\nDiff:\n${diff || "(none)"}\n\n` +
-    (n ? `Write exactly ${n} note${n === 1 ? "" : "s"}, one per task, in the same order.` : `No task covers these changes. Write 1 to 3 notes saying what they do.`);
+    (deny.length ? `These names are private to the maker: never use them, or anything that points to them: ${deny.join(", ")}.\n\n` : "") +
+    (n ? `Write exactly ${n} line${n === 1 ? "" : "s"}, one per task, in the same order: a note, or "- skip".` : `No task covers these changes. Write 1 to 3 notes saying what they do.`);
   let out = null;
   try { out = await Promise.race([ask(system, prompt), new Promise((r) => setTimeout(r, NOTES_WAIT_MS, null).unref())]); } catch { return null; }
   return parseNotes(out, n);
 }
-// The "- " lines of the AI's answer, as changelog entries: exactly n of them, or
-// 1 to 3 when no task was approved; null otherwise.
+// The "- " lines of the AI's answer, as changelog entries, its "- skip" lines left
+// out: 1 to n lines (a note per task, or fewer when it merged two: never the tasks'
+// own words back for that), or 1 to 3 when no task was approved; null otherwise.
+// [] is every task skipped: nothing in them changed the app.
+const SKIP = /^\(?skip(ped)?\)?\.?$/i;
 function parseNotes(out, n) {
-  const notes = String(out || "").split("\n").map((l) => l.match(/^\s*(?:[-*•]|\d+[.)])\s+(.+)/)).filter(Boolean)
-    .map((m) => changelogEntry(m[1].replace(/^\*\*(.+)\*\*$/, "$1").replace(/^["“](.+)["”]$/, "$1"))).filter(Boolean);
-  return (n ? notes.length === n : notes.length >= 1 && notes.length <= 3) ? notes : null;
+  const lines = String(out || "").split("\n").map((l) => l.match(/^\s*(?:[-*•]|\d+[.)])\s+(.+)/)).filter(Boolean)
+    .map((m) => m[1].replace(/^\*\*(.+)\*\*$/, "$1").replace(/^["“](.+)["”]$/, "$1").trim()).filter(Boolean);
+  const notes = lines.filter((l) => !SKIP.test(l)).map(changelogEntry).filter(Boolean);
+  return (n ? lines.length >= 1 && lines.length <= n : notes.length >= 1 && notes.length <= 3) ? notes : null;
 }
 
 export { repoReview, repoSuggest, folderSuggest, taskChat, clearTaskChat, mailState, setMail, sentMail, arrivedOn, produce, releaseNotes, parseNotes };

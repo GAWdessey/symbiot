@@ -15,6 +15,7 @@ import { userStyleLine } from "./adapt.mjs";
 import { inflightIds } from "./parallel.mjs";
 import { QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, isUrgent, handoffCmd, runHandoff, runningHandoff, onShipping, untrackedBefore, forgetUntracked, loadRunFiles, forgetRunFiles, writeTasks, droppedTasks, startHeldTasks, connectorsLine } from "./agents.mjs";
 import { gitDefaultBranch } from "./drift.mjs";
+import { publicItems, leaksIn } from "./outward.mjs";
 import { readRunLog, briefPlan } from "./work.mjs";
 import { repoPathMap, laneMap, openWork, detectRepo } from "./scan.mjs";
 import { afterShip } from "./deploy.mjs";
@@ -422,7 +423,10 @@ function setVersion(path, to) {
 // task are named by the files they touch. With an AI connected, Approve has it
 // word them as release notes first (writeups.mjs releaseNotes): opts.notes, one
 // per task. Symbiot ships its own, and the app shows it as what's new in an
-// update (server.mjs changesSince).
+// update (server.mjs changesSince), so they're read by everyone who installs it:
+// a line that names what's yours (a lane, a person, an account, a provider, a run
+// id: outward.mjs, against opts.deny), or a task that changed nothing in the app
+// (deploying it, finding out why), stays out (0.66.6 went out in the tasks' words).
 const ENTRY_MAX = 220;
 const NOT_OWN = /(^|\/)(package(-lock)?\.json|npm-shrinkwrap\.json|CHANGELOG\.md)$/;
 function changelogEntry(text) {
@@ -430,19 +434,35 @@ function changelogEntry(text) {
   const m = s.match(/^(.{40,}?(?<!\be\.g|\bi\.e|\betc|\bvs)[.!?])\s+(?=[^a-z])/); if (m && m[1].length <= ENTRY_MAX) s = m[1]; // not at "e.g. `x`" or "e.g. when"
   return clipWords(s, ENTRY_MAX);
 }
-function changelogSection(version, texts, files = [], day = new Date().toISOString().slice(0, 10), notes = null) {
+const NOTHING_PUBLIC = "Small fixes and improvements.";
+// The lines a release gets ({ items }) and those left out, with why ({ dropped }).
+// notes: [] is your AI saying none of it changed the app.
+function changelogItems(texts, files = [], notes = null, deny = []) {
   const own = files.filter((f) => !NOT_OWN.test(f));
-  const items = notes && notes.length ? [...new Set(notes)] : texts.length ? uniqueTasks(texts.map(changelogEntry))
-    : [own.length ? `Changes approved without a task, in ${own.slice(0, 6).join(", ")}${own.length > 6 ? ` and ${own.length - 6} more` : ""}.` : "Version bump only."];
+  if (notes == null && !texts.length) return { items: [own.length ? `Changes approved without a task, in ${own.slice(0, 6).join(", ")}${own.length > 6 ? ` and ${own.length - 6} more` : ""}.` : "Version bump only."], dropped: [] };
+  const { kept, dropped } = publicItems(notes ? [...new Set(notes)] : uniqueTasks(texts.map(changelogEntry)), deny);
+  return { items: kept.length ? kept : [NOTHING_PUBLIC], dropped };
+}
+function changelogSection(version, texts, files = [], day = new Date().toISOString().slice(0, 10), notes = null, deny = []) {
+  const { items } = changelogItems(texts, files, notes, deny);
   return `## ${version} — ${day}\n\n${items.map((x) => "- " + x).join("\n")}\n`;
 }
+// The release lines this change adds to CHANGELOG.md by hand (an agent's, not
+// Approve's) that can't go out: Approve says so, rather than ship them unseen.
+function changelogLeaks(path, deny = []) {
+  const d = git(path, ["diff", "HEAD", "--unified=0", "--", "CHANGELOG.md"]); if (!d.ok || !d.out) return [];
+  return d.out.split("\n").filter((l) => /^\+\s*[-*]\s+/.test(l)).map((l) => l.replace(/^\+\s*[-*]\s+/, ""))
+    .map((line) => ({ line, why: leaksIn(line, deny) })).filter((x) => x.why.length);
+}
+const leftOutNote = (dropped) => dropped.length ? `Left out of the release notes, as private or not a change to the app: ${dropped.map((x) => `"${clipWords(x.text, 60)}" (${x.why})`).join("; ")}.` : "";
+const leakNote = (leaks) => leaks.length ? `Check the release notes before this merges, everyone who installs it reads them: ${leaks.map((x) => `"${clipWords(x.line, 60)}" names ${x.why.map((w) => `"${w.term}" (${w.why})`).join(", ")}`).join("; ")}.` : "";
 // Put the section in above the newest one (after the file's own heading and
 // intro), once per version. Gives back a function that restores the file.
-function noteChangelog(path, version, texts, files, notes) {
+function noteChangelog(path, version, texts, files, notes, deny = []) {
   const file = join(path, "CHANGELOG.md"); let text = "";
   try { text = readFileSync(file, "utf8"); } catch { return () => {}; }
   if (new RegExp(`^##\\s+\\[?v?${version.replace(/\./g, "\\.")}\\b`, "m").test(text)) return () => {};
-  const at = text.search(/^## /m), sec = changelogSection(version, texts, files, undefined, notes) + "\n";
+  const at = text.search(/^## /m), sec = changelogSection(version, texts, files, undefined, notes, deny) + "\n";
   try { writeFileSync(file, at < 0 ? text.replace(/\s*$/, "\n\n") + sec : text.slice(0, at) + sec + text.slice(at)); } catch { return () => {}; }
   return () => { try { writeFileSync(file, text); } catch {} };
 }
@@ -495,13 +515,15 @@ async function shipWithBump(path, texts, opts) {
   const hold = holdShip(path); if (hold.error) return hold;
   let undo = () => {}, undoLog = () => {}; const head = git(path, ["rev-parse", "HEAD"]).out;
   try {
-    const offer = (opts.bump === "patch" || opts.bump === "minor") && bumpOffer(path);
-    if (!offer) return await shipChanges(path, texts, opts);
+    const offer = (opts.bump === "patch" || opts.bump === "minor") && bumpOffer(path), deny = opts.deny || [];
+    if (!offer) { const leaks = leakNote(changelogLeaks(path, deny)), r = await shipChanges(path, texts, opts); return r.error || !leaks ? r : { ...r, note: [r.note, leaks].filter(Boolean).join(" ") }; }
     const to = offer[opts.bump], files = (await workingChangesAsync(path)).files.map((f) => f.file);
-    undo = setVersion(path, to); undoLog = noteChangelog(path, to, noFullLinks(texts), files, opts.notes);
+    const { items, dropped } = changelogItems(noFullLinks(texts), files, opts.notes, deny), leaks = leakNote(changelogLeaks(path, deny));
+    undo = setVersion(path, to); undoLog = noteChangelog(path, to, noFullLinks(texts), files, items, deny);
     const r = await shipChanges(path, texts, { ...opts, bumped: to });
     if (r.error) { undo(); undoLog(); return r; }
-    return { ...r, bumped: to };
+    const note = [r.note, leftOutNote(dropped), leaks].filter(Boolean).join(" ");
+    return { ...r, bumped: to, ...(note ? { note } : {}), ...(dropped.length ? { notesLeftOut: dropped } : {}) };
   } catch (e) {
     if (git(path, ["rev-parse", "HEAD"]).out === head) { undo(); undoLog(); } // not committed: a throw used to leave the bump in the tree, uncommitted and no run's to ship
     return { error: "Approve failed: " + String((e && e.message) || e) };
@@ -1203,4 +1225,4 @@ function pushTasks(filter) {
   return { empty: false, written, unresolved, handoff: handoffCmd() };
 }
 
-export { holdShip, SHIP_STALE, shipping, shippingPaths, workingChangesAsync, rebaseTask, sendAgain, forgetUnsent, unsentOf, readUnsent, unsentCard, repoTests, localRefused, forgetReview, gitFailed, taskPaths, addTask, toggleTask, setTaskDone, removeTask, cancelTask, restoreTask, FINDING_NOTE, completedInRepo, removalOf, applyRemovals, applyDrops, syncTasks, workingChanges, workingDiff, publishesOnMerge, unreleased, bumpOffer, learnNpm, releaseNeeded, releaseNotIn, withReleases, setVersion, changelogEntry, changelogSection, noteChangelog, releaseInput, shipWithBump, runSummary, saidFinished, pendingReview, commitSubject, shipChanges, autoMergeRepos, setAutoMerge, approveRepo, approveChanges, sendBack, TASK_ORDER, taskType, buildTasksMd, pushTasks, mergeWhenGreen };
+export { holdShip, SHIP_STALE, shipping, shippingPaths, workingChangesAsync, rebaseTask, sendAgain, forgetUnsent, unsentOf, readUnsent, unsentCard, repoTests, localRefused, forgetReview, gitFailed, taskPaths, addTask, toggleTask, setTaskDone, removeTask, cancelTask, restoreTask, FINDING_NOTE, completedInRepo, removalOf, applyRemovals, applyDrops, syncTasks, workingChanges, workingDiff, publishesOnMerge, unreleased, bumpOffer, learnNpm, releaseNeeded, releaseNotIn, withReleases, setVersion, changelogEntry, changelogItems, changelogSection, changelogLeaks, noteChangelog, releaseInput, shipWithBump, runSummary, saidFinished, pendingReview, commitSubject, shipChanges, autoMergeRepos, setAutoMerge, approveRepo, approveChanges, sendBack, TASK_ORDER, taskType, buildTasksMd, pushTasks, mergeWhenGreen };

@@ -207,7 +207,7 @@ try {
     const calls = [], said = [];
     const btn = () => ({ disabled: false, on: {}, addEventListener(t, f) { this.on[t] = f; }, classList: { add() {}, remove() {}, toggle() {} } });
     const box = () => { const b = btn(), st = { textContent: "", bad: false, classList: { toggle(c, on) { if (c === "err") st.bad = !!on; } } }; b.focus = () => { b.focused = true; }; return { bsign: b, bst: st, querySelector: (s) => (s === ".bsign" ? b : s === ".bst" ? st : null), querySelectorAll: () => [] }; };
-    const F = new Function("api", "lqSaid", "localStorage", ["var BLOBBUSY={},BLOBSENT={};", "function loadLinks(){}function loadTrusted(){}", ...["bdKey", "bdAll", "bdGet", "signInSaid", "openSignIn", "wireBlob", "rlAsk"].map(grab)].join("\n") + "\nreturn { wireBlob, rlAsk, openSignIn };")(
+    const F = new Function("api", "lqSaid", "localStorage", ["var BLOBBUSY={},BLOBSENT={},BLOBFAIL={},BLOBFAIL_FOR=60000;", "function loadLinks(){}function loadTrusted(){}", ...["bdKey", "blobFailed", "bdAll", "bdGet", "signInSaid", "openSignIn", "wireBlob", "rlAsk"].map(grab)].join("\n") + "\nreturn { wireBlob, rlAsk, openSignIn };")(
       (path, body) => { calls.push({ path, body }); return Promise.resolve({ ok: true, item: { name: "outlook.live.com" } }); },
       (t, bad) => said.push({ t, bad }), { getItem: () => null, setItem() {} });
     const q = "Outlook is signed out, can you sign back in so I can add Jono to the 11:00 meeting?";
@@ -232,7 +232,7 @@ try {
     b2.bsign.on.click();
     ok("a button with no site says so, rather than doing nothing", !calls.length && said.length === 1 && said[0].bad && !b2.bsign.disabled && b2.bst.bad && /no site to open/.test(b2.bst.textContent), [said, b2.bst]);
     const b3 = box(); said.length = 0; calls.length = 0;
-    const G = new Function("api", "lqSaid", "localStorage", ["var BLOBBUSY={},BLOBSENT={};", "function loadLinks(){}function loadTrusted(){}", ...["bdKey", "bdAll", "bdGet", "signInSaid", "openSignIn", "wireBlob"].map(grab)].join("\n") + "\nreturn { wireBlob };")(
+    const G = new Function("api", "lqSaid", "localStorage", ["var BLOBBUSY={},BLOBSENT={},BLOBFAIL={},BLOBFAIL_FOR=60000;", "function loadLinks(){}function loadTrusted(){}", ...["bdKey", "blobFailed", "bdAll", "bdGet", "signInSaid", "openSignIn", "wireBlob"].map(grab)].join("\n") + "\nreturn { wireBlob };")(
       () => Promise.resolve({ error: "The Symbiot Browser didn't open: another copy of Chrome kept Symbiot's browser profile." }), (t, bad) => said.push({ t, bad }), { getItem: () => null, setItem() {} });
     G.wireBlob(b3, y, {}); b3.bsign.on.click(); await new Promise((r) => setTimeout(r, 0));
     ok("when it couldn't open, the card says why, as an error", b3.bst.bad && /didn't open/.test(b3.bst.textContent) && said.some((x) => x.bad), [b3.bst, said]);
