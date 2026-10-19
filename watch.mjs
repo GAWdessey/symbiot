@@ -83,7 +83,19 @@ function fromOf(it) {
 // What needs you on a watch: on a chat, only the chats with unread messages from
 // them (a news item from before this was known has no `from`, so it doesn't count);
 // in your inbox, not mail you've read (read: on your phone, say).
-const needsYou = (n, w) => !n.read && (!isChat(w.url) || n.from === "them");
+// Mail nobody can answer isn't asking anything of you: no-reply senders, GitHub and CI
+// notifications, receipts, alerts, newsletters. An inbox row has only its sender,
+// subject and snippet (not the List-Unsubscribe or Auto-Submitted headers), so the
+// words say it. GitHub mail is just you and Symbiot, so it's never work.
+const AUTOMATED_MAIL = [
+  /\b(?:no[-_. ]?reply|do[-_. ]?not[-_. ]?reply|mailer-daemon|postmaster|bounce[sd]?@)/i,
+  /\bnotifications?@/i,
+  /^\W*(?:unread\W+)?(?:github|gitlab|bitbucket|dependabot|circleci|travis ci|vercel|netlify|sentry|codecov)\b/i,
+  /\bgithub actions\b|\b(?:run|build|workflow|pipeline|deploy(?:ment)?) (?:failed|failure)\b|\[[\w.-]+\/[\w.-]+\]/i,
+  /\b(?:receipt|your invoice|order confirmation|your order|newsletter|unsubscribe|verification code|security alert|password reset|auto-?reply|out of office)\b/i,
+];
+const automatedMail = (text) => AUTOMATED_MAIL.some((re) => re.test(String(text || "")));
+const needsYou = (n, w) => !n.read && (!isChat(w.url) || n.from === "them") && !(isMail(w.url) && automatedMail(n.text));
 // Whether an inbox marks its unread rows, so a row without the mark has been read:
 // Gmail does; another once a read has seen it mark one (w.marksUnread). Until then
 // every new email counts, as before.
@@ -782,4 +794,4 @@ function startWatches(opts = {}) {
   return () => { clearTimeout(first); clearInterval(every); };
 }
 
-export { linkedinDetail, liType, replyOf, draftCard, draftCards, draftAnswer, isDraftDir, sendBrief, LINK_ASK, WATCH_FILE, EVERY, GITHUB_INBOX, DRAFTS_DIR, itemsOf, fromOf, chatName, recheckChats, itemKey, newItems, remember, isGitHubInbox, githubItems, readGitHub, setBrief, briefOf, newsNotice, markNews, watchState, addWatch, setEvery, removeWatch, clearNews, seenWatch, newsSince, newsAfter, waitingOn, watchBoard, boardLine, boardChat, boardTalk, clearBoardChat, talkOf, isSignedOut, isMail, isChat, isSocial, draftsUrl, draftBrief, chatBrief, socialBrief, draftReply, openChat, checkWatch, dueWatches, startWatches };
+export { linkedinDetail, liType, replyOf, draftCard, draftCards, draftAnswer, isDraftDir, sendBrief, LINK_ASK, WATCH_FILE, EVERY, GITHUB_INBOX, DRAFTS_DIR, itemsOf, fromOf, needsYou, automatedMail, chatName, recheckChats, itemKey, newItems, remember, isGitHubInbox, githubItems, readGitHub, setBrief, briefOf, newsNotice, markNews, watchState, addWatch, setEvery, removeWatch, clearNews, seenWatch, newsSince, newsAfter, waitingOn, watchBoard, boardLine, boardChat, boardTalk, clearBoardChat, talkOf, isSignedOut, isMail, isChat, isSocial, draftsUrl, draftBrief, chatBrief, socialBrief, draftReply, openChat, checkWatch, dueWatches, startWatches };

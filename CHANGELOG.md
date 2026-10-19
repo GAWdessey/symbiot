@@ -2,6 +2,11 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one), for anyone who installs the app: what changed in it, never whose work it was (no projects, people, accounts, services, run ids or task wording of the person who made it). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.66.9 — 2026-10-19
+
+- Fix a Symbiot flaw: Symbiot offers to draft replies to emails that don't need one.
+- Keep Approve's commit and pull request text free of private details too.
+
 ## 0.66.8 — 2026-10-19
 
 - **Release notes say what changed in the app, not whose work it came from.** Approve used to copy a task's own wording into the release notes, so names of projects, people, accounts, servers, run ids and dated requests could reach everyone who updates. Each line is now checked before it goes in. A line that names something private, or a task that changed nothing in the app, is left out, and Approve says what it left out and why. A release note an agent wrote into `CHANGELOG.md` by hand is checked the same way before it merges.
