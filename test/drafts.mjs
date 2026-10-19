@@ -141,8 +141,11 @@ try {
   // its QUESTIONS.md raced Home's own refresh, which took the card away first on a slow machine (CI, 2026-10-12)
   ok("a card to press is up", await until(show("/restart the relay/")), "");
   await js(`(function(){var f=window.fetch;window.fetch=function(u,o){if(String(u).indexOf('/api/agents/answer')>=0){window.fetch=f;return Promise.resolve({json:function(){return {error:"That question isn't open any more: its agent changed or closed it."};}});}return f.apply(this,arguments);};(${blobOf("/restart the relay/")}).querySelector('.nopt').click();})()`);
-  ok("2) a click that fails says why on the card itself, and the buttons work again", await until(`(function(){var b=${blobOf("/restart the relay/")},st=b&&b.querySelector('.bst.err');return !!st&&/isn.t open any more/.test(st.textContent)&&!b.querySelector('.nopt').disabled&&!b.classList.contains('sending');})()`, 8000), await js(`(function(){var b=${blobOf("/restart the relay/")};return b?b.querySelector('.bst').outerHTML:'no card';})()`));
+  ok("2) a click that fails says why on the card itself, and the buttons work again", await until(`(function(){var b=${blobOf("/restart the relay/")},st=b&&b.querySelector('.bst.err');return !!st&&/isn.t open any more/.test(st.textContent)&&!b.querySelector('.nopt').disabled&&!b.classList.contains('sending');})()`, 8000), await js(`(function(){var b=${blobOf("/restart the relay/")};return b?b.querySelector('.bst').outerHTML:'no card: '+JSON.stringify({page:LQ.needPage,you:(LQ.home.you||[]).map(function(y){return y.q})});})()`));
   ok("...and nothing was saved for it", !answers(gone.path).includes("restart the relay"), answers(gone.path));
+  // a redraw on another page doesn't take it away, nor what it said (CI, 0.66.4 publish, 2026-10-16: "no card")
+  await js("LQ.needPage=(LQ.needPage||0)+1;LQ.fresh=true;lqLoad(false)"); await sleep(1500);
+  ok("...and through a redraw it's still in view, saying why", await until(`(function(){var b=${blobOf("/restart the relay/")},st=b&&b.querySelector('.bst.err');return !!st&&/isn.t open any more/.test(st.textContent);})()`, 8000), await js(`(function(){var b=${blobOf("/restart the relay/")};return b?b.querySelector('.bst').outerHTML:'no card: '+JSON.stringify({page:LQ.needPage,you:(LQ.home.you||[]).map(function(y){return y.q})});})()`));
   ok("no errors on the page", !errors.length, errors);
 } catch (e) { ok("ran", false, String((e && e.stack) || e)); }
 await finish();

@@ -1,6 +1,11 @@
 # Changelog
 
-What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
+What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one), for anyone who installs the app: what changed in it, never whose work it was (no projects, people, accounts, services, run ids or task wording of the person who made it). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
+
+## 0.66.8 — 2026-10-19
+
+- Research job for Symbiot (~/symbiot, GarthGhostai/symbiot, https://github.com/GarthGhostai/symbiot.git), Mon 19 Oct 2026.
+- Fix a Symbiot flaw: public release notes leak the maker's private work.
 
 ## 0.66.7 — 2026-10-16
 
@@ -12,11 +17,8 @@ What each Symbiot release brought, newest first. When Approve bumps the version,
 
 ## 0.66.6 — 2026-10-16
 
-- Meta part, by the dailify lane itself: still waits on 0.66.4. npm and the installed app are on 0.66.3; the release run's copy (symbiot-825733) has 0.66.4 ready and had its "Ok to publish Symbiot 0.66.4 now?" answered…
-- Twilio part of the test (d): done by ops, by the API (run act-2ae1923d, read only, 12:41 on 16 Oct).
-- Find out why SMS Portal's sign-in keeps dropping out of Symbiot's browser.
-- Deploy the new Symbiot release (Garth asked, Fri 16 Oct 2026).
-- Fix a Symbiot flaw: project lane agents can't use Garth's connections, and handovers to ops keep erroring, so jobs stall or bounce.
+- When a site signs itself out of the Symbiot Browser after a while, agents now use that site's own API through a key one of your projects already holds, instead of asking you to sign in again.
+- `symbiot screens --help` shows how to use the command, instead of listing your saved pages.
 
 ## 0.66.5 — 2026-10-16
 
@@ -24,10 +26,10 @@ What each Symbiot release brought, newest first. When Approve bumps the version,
 
 ## 0.66.4 — 2026-10-16
 
-- Every lane can use the Symbiot Browser's signed-in sites now (WhatsApp Manager, SMS Portal, WhatsApp Web and the rest). A lane runs in a sandbox and couldn't reach the browser, so it said "this lane can't reach Meta" without trying. The app now opens a private door just for reading those pages, and lanes use it by themselves.
+- Every lane can use the Symbiot Browser's signed-in sites now (WhatsApp Web and the rest). A lane runs in a sandbox and couldn't reach the browser, so it said it couldn't reach a site without trying. The app now opens a private door just for reading those pages, and lanes use it by themselves.
 - Each lane's brief lists the sites Symbiot's browser is signed in to, and tells it to try them before saying it can't.
 - Handovers to ops no longer stop with "4 handovers in a row" for no reason: a lane's own task was being counted as part of an earlier chain. A long job between two lanes now carries on, and only the same job coming back round is stopped, with a note saying so.
-- A job that's all on a server a lane can't reach, like putting a fix live on sts-prod, goes straight to ops instead of stalling in that lane, and you're told why.
+- A job that's all on a server a lane can't reach, like putting a fix live on your server, goes straight to ops instead of stalling in that lane, and you're told why.
 - The Linux downloads (.deb and AppImage) are built again. For 0.66.2 and 0.66.3 the Linux build gave up waiting for npm 10 seconds too soon, so symbiot.co.za/get/?app=linux and ?app=appimage still gave out 0.66.1.
 
 ## 0.66.3 — 2026-10-16
@@ -93,9 +95,9 @@ Fixes from a full audit of Symbiot: freezes, wasted runs, Approve, runs beside t
 ## 0.65.2 — 2026-10-14
 
 - Home no longer keeps a standing "Sign in again to 10 sites" card for every linked site that has signed out. An agent asks for one site, with its Sign in button, only when its job needs it; Settings → Connections still shows which are signed out.
-- SMS Portal stays signed in: the Symbiot Browser's tab storage is now read while the window is open and kept at Done, so a sign-in held only in a tab survives that tab closing.
-- A sign-up page ("Create an account", "Sign up", "Register", a /signup address) reads as signed out, so Deepgram's card no longer says all is well when it isn't.
-- A site added by its bare name (twilio.com) is checked at the page you reach once signed in, and a site that still reads signed out after Done says on its card what the window last showed.
+- Sites that keep a sign-in only in an open tab stay signed in: the Symbiot Browser's tab storage is now read while the window is open and kept at Done, so a sign-in held only in a tab survives that tab closing.
+- A sign-up page ("Create an account", "Sign up", "Register", a /signup address) reads as signed out, so a site's card no longer says all is well when it isn't.
+- A site added by its bare name (example.com) is checked at the page you reach once signed in, and a site that still reads signed out after Done says on its card what the window last showed.
 - An answer sent from a Home card no longer comes back as a draft when the card is redrawn while it sends.
 - "I've done this" on a step that needs a release ("once 0.65.2 is installed, sign in…") waits until that release is installed here, so a sign-in done on the old one isn't taken as done.
 - Every card under "Needs you" (on Home, on the Workdesk and in a project) has a × that dismisses it in one click, with Undo. A new question from the same agent, or a changed Approve, still shows.
@@ -105,7 +107,7 @@ Fixes from a full audit of Symbiot: freezes, wasted runs, Approve, runs beside t
 
 ## 0.65.1 — 2026-10-14
 
-- Approve no longer stops before the push when a project's tests only fail because its test database isn't running on this computer (dailify). It pushes, says the tests couldn't run here, and CI checks them on the PR. When tests really fail, it now gives the line that says why.
+- Approve no longer stops before the push when a project's tests only fail because its test database isn't running on this computer. It pushes, says the tests couldn't run here, and CI checks them on the PR. When tests really fail, it now gives the line that says why.
 
 ## 0.65.0 — 2026-10-14
 
@@ -133,7 +135,7 @@ Fixes from a full audit of Symbiot: freezes, wasted runs, Approve, runs beside t
 ## 0.64.1
 
 - **Sign-ins stay in the profile they were made in.** Symbiot's browser opened whichever Chrome profile was used last. A Google sign-in in its window made a second profile ("Sign in to Chrome?"), and from then on every check and agent opened that one, where none of your earlier sign-ins were: ten linked sites showed their sign-in page while the sign-ins sat in the first profile, and the Gmail card read the other account's inbox. Every Symbiot browser now opens its own first profile, whatever Chrome used last.
-- **"This session only" sign-ins don't run out after 12 hours.** A site that signs you in for the session only (domains.co.za, and many consoles) was kept for 12 hours and then lost, used or not. It's now kept for 14 days and renewed every time Symbiot's browser starts, so one in use stays signed in until the site itself ends it.
+- **"This session only" sign-ins don't run out after 12 hours.** A site that signs you in for the session only (many registrars and consoles) was kept for 12 hours and then lost, used or not. It's now kept for 14 days and renewed every time Symbiot's browser starts, so one in use stays signed in until the site itself ends it.
 - **Signed out says signed out.** A site that showed its sign-in page long after you'd signed in kept saying "it may still be saving, Symbiot checks again in a moment", for days. It now says it's signed out, and Home shows one "Sign in again" card naming the sites.
 
 ## 0.64.0 — 2026-10-13
@@ -188,7 +190,7 @@ Fixes from a full audit of Symbiot: freezes, wasted runs, Approve, runs beside t
 
 ## 0.63.10 — 2026-10-12
 
-- Fixed sign-ins made in the Symbiot Browser window, such as domains.co.za's, being lost when `symbiot screens` opened the same site.
+- Fixed sign-ins made in the Symbiot Browser window, such as a registrar's, being lost when `symbiot screens` opened the same site.
 - Fixed allowing an agent to read your ssh keys having no effect; lists Symbiot can't safely open are now refused with an explanation.
 - Fixed `symbiot screens map` missing buttons and fields inside some page components, such as Reddit's comment box and its image button.
 - Fixed `symbiot screens` skipping clickable text like "Send Email OTP instead?" and losing open pop-ups when mapping the whole page or scrolling.
@@ -205,7 +207,7 @@ Fixes from a full audit of Symbiot: freezes, wasted runs, Approve, runs beside t
 
 ## 0.63.8
 
-- **No more file names on permission questions, anywhere.** When an agent asked for a permission, Home said it in plain words with an Allow button, but the same question on the Workdesk, on a project's card and on your phone still read "allow the list in .symbiot/allowlist.proposed.json". Every screen now says what the agent wants to do ("connect to the computer at 13.51.104.186") with Allow.
+- **No more file names on permission questions, anywhere.** When an agent asked for a permission, Home said it in plain words with an Allow button, but the same question on the Workdesk, on a project's card and on your phone still read "allow the list in .symbiot/allowlist.proposed.json". Every screen now says what the agent wants to do ("connect to the computer at 203.0.113.10") with Allow.
 - **Allow sticks.** Saying Allow along with a few words of your own that sounded like git ("check the deployed commit, git status and served files") was taken for a git chore and handed back to the agent, which can't give itself permission, so it asked you again. A permission is now always turned on as one.
 
 ## 0.63.7 — 2026-10-12
@@ -214,7 +216,7 @@ Fixes from a full audit of Symbiot: freezes, wasted runs, Approve, runs beside t
 - **Captures no longer blur a page's backdrop.** A drawing behind the whole page (Symbiot's liquid) was taken for a picture that might show faces, so every capture of Symbiot came out blurred end to end. A page's live title isn't taken for a notification either.
 - **Your computer's reports on your phone.** The phone's Reports opened only the phone's own, which was empty. The copy your computer sends the phone now carries its 5 newest reports, so you can read an audit or a plan away from your desk, offline too. Each says which computer it's from. A long one comes in its first part, which says the rest is on your computer.
 - **A Reddit draft previews as a Reddit post.** Marketing showed every draft as a LinkedIn post. A Reddit one now shows as Reddit would: its subreddit, who posts it, its title, its flair, then the body, with `code` set as code. It counts the title against Reddit's 300 characters.
-- **Each agent gets its own tab in Symbiot's hidden browser.** Two agents using `symbiot screens` at once (one on LinkedIn, one in the Twilio console) shared one page, so a scheduled post being written lost its text and picture between steps, and one agent's typing could land on the other's page. Now each agent's next step carries on from its own page, just as it left it.
+- **Each agent gets its own tab in Symbiot's hidden browser.** Two agents using `symbiot screens` at once (one on LinkedIn, one in another site's console) shared one page, so a scheduled post being written lost its text and picture between steps, and one agent's typing could land on the other's page. Now each agent's next step carries on from its own page, just as it left it.
 - **"← All reports" stays in view on a long report.** It no longer scrolls away with the report: the bar with it, and the report's path where it fits, stays pinned under the Reports header, so the list is one click away from anywhere in it.
 - **A draft post opens large on Marketing.** Click a draft (in Needs you, in what its agent drafted, its preview, or a card on the posts board) and it opens over the page: its pictures and video near full size, its whole text in reading type, which product it's for and where it goes (LinkedIn, or r/ClaudeAI with its flair). Click a picture to see it alone, and go through a post's pictures with the arrow keys or a swipe. Approve, Edit and Skip work right there. Esc, the X or a click outside closes it. The pick tray's captures open large the same way.
 - **A handover the loop guard stops still reaches its lane.** After four handovers in a row, Symbiot doesn't start another agent, so two lanes can't pass the same thing back and forth. It used to drop the handover there, so ops' User-Agent fix for this repo was only found by reading `lanes.json`. It now lands in the receiving repo's tasks for its next run, and the lane that sent it sees why it didn't start.
@@ -222,13 +224,13 @@ Fixes from a full audit of Symbiot: freezes, wasted runs, Approve, runs beside t
 - **Symbiot records a desktop app's window under Wayland too.** On COSMIC, GNOME or KDE, a window that isn't running under XWayland used to be out of reach for `symbiot capture --window`. It now goes through your desktop's own screen sharing: you pick the window in its prompt the first time (a notification says which one), and Symbiot remembers it, so later captures of it don't ask.
 - **Your phone finds your computer on your Wi-Fi, even with a VPN on.** With Tailscale (or another VPN) running, your computer told the phone on your network it was at the VPN's address, which the phone can't reach, so it couldn't find the computer again after the router handed out new addresses. It now answers each phone with the address on that phone's own network, and never gives out a VPN's.
 - **Agents can pick from a website's dropdown.** `symbiot screens choose <id> <menu> "<option>"` picks an option in a native `<select>` (a DNS record's type, say), and the fields that depend on it update, like the Priority box an MX record turns on.
-- The npm package and the installers now list garth@symbiot.co.za as the author.
+- The npm package and the installers now list Symbiot's own address as the author.
 - **Your phone's Home is what you act on there.** Paired with your computer, it no longer opens on the liquid with your computer's work behind a droplet: it's a plain list, with what needs you there first (its agents' questions to answer, its work to Approve), then its tasks to tick or add, then what Watch found. What the phone itself needs sits under your computer's, its setup in one row. Settings, Reports, the Dashboard and the rest are a row along the top, one tap each. On a phone-sized screen the header fits on one line too: the look switch isn't cut off any more.
 - **Symbiot only answers for you when the answer is purely an action.** A question whose recommended option says something before its agent tag ("Yes, it's through. Agent: …"), or has no tag at all, states a fact only you know, so it comes to you instead of being picked for you.
 - **A handover says where it stands, on the block of the lane that sent it.** Each one shows whether its lane has it yet and, if not, why: not picked up yet, queued behind a busy agent, waiting for the run on its earlier version to end, or couldn't go. Once it's with its lane, you see how far that agent has got (tasks ticked, what it's doing now) until its answer comes back. It shows in the Agents tab and on the project on the Workdesk.
-- **A sent handover no longer looks unsent.** Once everything in a lane's `.symbiot/HANDOFF.md` has gone, Symbiot rewrites the file as a dated list of what went where. whatsapp_module's agent had seen its file still there and told you it hadn't been sent, while ops had both its handovers running.
+- **A sent handover no longer looks unsent.** Once everything in a lane's `.symbiot/HANDOFF.md` has gone, Symbiot rewrites the file as a dated list of what went where. One lane's agent had seen its file still there and told you it hadn't been sent, while ops had both its handovers running.
 - **Answering a question on Home works again, and you see it work.** A card that shows a question in plain words (a permission ask with Allow, or one naming a file) sent those plain words back, which matched no question, so Allow and Send did nothing and the error only showed in Home's talk. Its answer now goes under the agent's own question. A click shows at once (the button pressed, "Sending…"), then the card goes, or says on itself what went wrong. Pressing it again doesn't add a second answer, and a card you've answered doesn't come back while Home catches up. A long question your phone shows cut short is still found too.
-- **A question about work that's since been done says so.** When a lane asks about something it handed over, and the lane that took it has finished it, its card says who did it and puts Close it first. whatsapp_module kept asking whether it could put the WhatsApp module back on sts-prod after ops had already done it.
+- **A question about work that's since been done says so.** When a lane asks about something it handed over, and the lane that took it has finished it, its card says who did it and puts Close it first. A lane kept asking whether it could put its service back on the server after ops had already done it.
 - **Done in the Symbiot Browser closes it, every time.** Done could find nothing to close when Symbiot had been started from a terminal, so the window stayed open and no site was checked, however often you pressed it. It now closes every window of it, says at once that it's closing, and tells you if Symbiot isn't answering. Closing it with its X does the same as Done: Symbiot checks each site within a minute. A site the browser can't read yet is tried again a little later, instead of being skipped.
 - **Reddit's sign-in is read right.** Signed out, Reddit's home page has no password box, only a Log In button, so Symbiot couldn't tell the two apart. A page whose own button is just "Log in" or "Sign in" now counts as signed out. Once a site you were asked to sign in to reads signed in, the agent's question about it is answered for you and that agent carries on, so Marketing's "sign in to www.reddit.com" clears by itself.
 - **Agents can use Screens while the app runs.** Every map, press and type failed with "The Symbiot Browser is open: click Done", with no window open: a hidden Chrome on Symbiot's browser profile that the app hadn't started itself was taken for the Symbiot Browser. Symbiot now reads whether the Chrome holding the profile is hidden. A hidden one left by another Symbiot (a one-off command, or an app from before an update) gets a few seconds to finish, then is closed.
@@ -241,7 +243,7 @@ Fixes from a full audit of Symbiot: freezes, wasted runs, Approve, runs beside t
 - Fixed the reply watcher firing on inbox rows where the newest message is your own.
 - Changed Symbiot's guard to let agents read public SSH keys, while private keys and everything else there stay blocked.
 - Changed pairing so scanning the code on your computer opens the Android app straight away, without the website first.
-- Changed the phone relay setup for symbiot.co.za to retry once the Cloudflare token has the permissions it needs.
+- Changed the phone relay setup for symbiot.co.za to retry once its DNS token has the permissions it needs.
 - Added reaching your computer from your phone away from home through a relay that only passes sealed messages.
 
 ## 0.63.6
@@ -262,12 +264,12 @@ Fixes from a full audit of Symbiot: freezes, wasted runs, Approve, runs beside t
 ## 0.63.3
 
 - **Allow works on a request that takes access away.** When an agent asked to lock itself out of something (a deny rule, with nothing new allowed), Symbiot dropped the request, so clicking Allow did nothing and the agent waited for good. Now it's turned on, without asking you, and the agent carries on.
-- **A script in your project no longer reads as "outside your work".** Running `python3 supabase/scripts/x.py`, or checking a public web address, was taken for a folder elsewhere on your computer, so you got a permission card. Now it turns on by itself. A web request that sends something, and anything about a live project, still asks you.
+- **A script in your project no longer reads as "outside your work".** Running `python3 scripts/x.py`, or checking a public web address, was taken for a folder elsewhere on your computer, so you got a permission card. Now it turns on by itself. A web request that sends something, and anything about a live project, still asks you.
 
 ## 0.63.2
 
 - **Permission cards stop landing on you for Symbiot's own plumbing.** An agent connecting to a computer this one already connects to (your own server) no longer asks you, and a request too broad to allow safely goes back to the agent to spell out, not to you.
-- **What still needs you reads in plain words.** A permission card says what it lets the agent do, like "use your phone over the USB cable" or "connect to the computer at 92.4.133.97", with an Allow button. No file names or commands, on the card or when you hover over it.
+- **What still needs you reads in plain words.** A permission card says what it lets the agent do, like "use your phone over the USB cable" or "connect to the computer at 203.0.113.10", with an Allow button. No file names or commands, on the card or when you hover over it.
 
 ## 0.63.1
 
@@ -295,11 +297,11 @@ Fixes from a full audit of Symbiot: freezes, wasted runs, Approve, runs beside t
 - **Approve from your phone, safely.** An approve goes through only if the work is still exactly what the phone showed; it runs the same Approve as the button, and Home and the Workdesk say which phone approved. Unpairing a phone stops it at once, including what it had queued. A phone can do these few things only; nothing else on your computer is reachable from it.
 - **Away from home, through symbiot.co.za.** With a phone paired, your computer keeps a line open to a relay at relay.symbiot.co.za, which passes the sealed messages on and can't read them or keep them. At home nothing goes through it, and **Away from home too** in Settings switches it off. The relay is in the repo (`relay/`); it goes live once it's deployed.
 - **Keys kept safer.** Your computer keeps only a hash of each phone's token (a copied config can't pose as your phone) and its own key in `secrets.json`, out of agents' reach. The Android app keeps its key sealed by Android's Keystore.
-- **A sign-in stays signed in.** Sites that keep your login only until the browser closes (domains.co.za's, with its SMS PIN) lost it the moment you were done signing in. Symbiot now keeps those sign-ins for 12 hours, and lets Chrome finish saving them before it closes.
+- **A sign-in stays signed in.** Sites that keep your login only until the browser closes (some registrars', with an SMS PIN) lost it the moment you were done signing in. Symbiot now keeps those sign-ins for 12 hours, and lets Chrome finish saving them before it closes.
 - **A sign-in kept in a tab comes along too.** Some sites keep you signed in in the tab's own storage (sessionStorage) rather than a cookie. Symbiot now carries that over from the Symbiot Browser, site by site, for 12 hours, and no other site's page can see it.
 - **Setup on the phone starts at "Your computer".** A new install of the Android app opened on "Meet Symbiot", so a phone paired by scanning the QR showed nothing, not even an error. It now starts at "Your computer", and a pairing link that arrives during setup shows there, paired or why not.
-- **Sign in to any site, from where you are.** Settings → Connections has **Add a site**: type the page you see once signed in (www.domains.co.za/client/dashboard), and the Symbiot Browser opens on it straight away. The site appears under **Your sites** (here and in the Symbiot Browser, whose address bar adds a site the same way), turns green once you've signed in and clicked Done, and agents can use it. Each trusted site has a **Sign in** button too.
-- **A card or a reply that asks you to sign in has the button for it.** "Sign in to domains.co.za" opens the Symbiot Browser on it, instead of a pointer to "Symbiot's browser" with no way to find it. Agents and Talk to Symbiot now name the site and where to sign in.
+- **Sign in to any site, from where you are.** Settings → Connections has **Add a site**: type the page you see once signed in (www.example.com/dashboard), and the Symbiot Browser opens on it straight away. The site appears under **Your sites** (here and in the Symbiot Browser, whose address bar adds a site the same way), turns green once you've signed in and clicked Done, and agents can use it. Each trusted site has a **Sign in** button too.
+- **A card or a reply that asks you to sign in has the button for it.** "Sign in to example.com" opens the Symbiot Browser on it, instead of a pointer to "Symbiot's browser" with no way to find it. Agents and Talk to Symbiot now name the site and where to sign in.
 - Agents can run `symbiot screens` from where Symbiot is installed again: the guard stopped any command that only mentioned its folder. Changing Symbiot's own files is still stopped.
 - symbiot.co.za's footer says © 2026 Symbiot.
 - The 4-week posting test counts posts that went out through Marketing too (marked posted, or their scheduled time on LinkedIn passed), and its replies are comments, replies, mentions and messages, not reactions or a bare badge count.
@@ -321,7 +323,7 @@ Fixes from a full audit of Symbiot: freezes, wasted runs, Approve, runs beside t
 
 ## 0.59.0
 
-- **Symbiot Free and Symbiot Pro.** Every install starts with 14 days of Pro. After that, Free keeps the orb, Home, Talk to Symbiot, your week and standups, voice and the Away screen, with one agent at a time, up to 3 projects and one connected inbox or chat. Pro (US$12 a month or US$99 a year) adds any number of agents at once, every project, every inbox and chat, the marketing lane and Approve-and-ship. **Settings → Symbiot Pro** shows where you stand, takes a key and lets you swap one of Free's 3 projects. A limit never stops anything running: the next thing just doesn't start, with a line saying why. Keys are checked offline (signed by Ghost AI; cancelled keys are listed on symbiot.co.za).
+- **Symbiot Free and Symbiot Pro.** Every install starts with 14 days of Pro. After that, Free keeps the orb, Home, Talk to Symbiot, your week and standups, voice and the Away screen, with one agent at a time, up to 3 projects and one connected inbox or chat. Pro (US$12 a month or US$99 a year) adds any number of agents at once, every project, every inbox and chat, the marketing lane and Approve-and-ship. **Settings → Symbiot Pro** shows where you stand, takes a key and lets you swap one of Free's 3 projects. A limit never stops anything running: the next thing just doesn't start, with a line saying why. Keys are checked offline (signed by Symbiot; cancelled keys are listed on symbiot.co.za).
 - **Symbiot doesn't work on its own code.** No agent runs in Symbiot's repo or a fork of it, and the guard stops agents editing Symbiot's installed files or its licence files.
 - **Elastic License 2.0** from this version on (0.58.2 and earlier stay MIT).
 - **Tests never sign in or install for real.** The test that presses every button was starting a real Claude sign-in in the browser and running Anthropic's installer; both are now switched off in tests (`SYMBIOT_NO_SIGNIN`).
@@ -381,7 +383,7 @@ Fixes from a full audit of Symbiot: freezes, wasted runs, Approve, runs beside t
 - **What's linked is never asked for again.** With LinkedIn signed in in Symbiot's browser, no card asks you to sign in, link it, make a developer app or do it by hand: those options become the agent's ("post it through Symbiot's browser, already signed in to LinkedIn, once you approve its preview"). It asks you to sign in again only when a real attempt found the session expired, and says so. Every agent's brief now says to prefer the linked session over an API or app that needs you.
 - **A post to approve, lit.** Every draft Marketing's agent wrote that you haven't approved or skipped shows under Marketing's **Needs you** as "a post to approve", with **Preview** one click away, and lights Marketing's orb on Home.
 - **Reports end with what to do about them.** A report's own "Top 3 next" (or next steps, recommendations) shows at its end as up to 4 ideas you tick straight onto the Workdesk, in that report's lane, with a box to ask Symbiot about the report right there. A draft report (a post preview, say) gets **Approve** and **Reject** instead.
-- **"Sent to" names the right lane.** Answering a Marketing question said "Sent to Paperclip Steve". It now names the lane the answer was saved in, and an answer's note no longer lingers under another project's cards.
+- **"Sent to" names the right lane.** Answering a Marketing question named the agent rather than the lane. It now names the lane the answer was saved in, and an answer's note no longer lingers under another project's cards.
 - **Approve stages only the task's own files**, runs git in the background with a longer timeout, and says plainly what went wrong instead of `ETIMEDOUT`.
 
 ## 0.57.5
@@ -547,7 +549,7 @@ Fixes from a full audit of Symbiot: freezes, wasted runs, Approve, runs beside t
 
 ## 0.51.1
 
-- **Allowing an agent's list works when the list is fine.** An exact command such as `rm -r ~/dailify/site` no longer counts as dangerous; only Bash with no command, a shell, sudo, or a wildcard `rm`/`dd`/`chmod` does. Before, one such rule refused the whole list, silently, and the agent asked you again and again.
+- **Allowing an agent's list works when the list is fine.** An exact command such as `rm -r ~/myapp/site` no longer counts as dangerous; only Bash with no command, a shell, sudo, or a wildcard `rm`/`dd`/`chmod` does. Before, one such rule refused the whole list, silently, and the agent asked you again and again.
 - **When a list is too wide, you're told why.** The note names the rules, the agent is asked for a narrower list, and it starts again, instead of waiting on a click that can't work.
 - **An agent can never edit Symbiot's own settings.** Every list Symbiot turns on also blocks editing `config.json`, where what agents may do is kept.
 
@@ -680,7 +682,7 @@ What your agents built on the symbiot repo yesterday, merged with everything sin
 
 - Don't start an agent run when `.env` and ANSWERS.md haven't changed since the last run that blocked on them.
 - Connectors a user links in Symbiot (mail, Drive) never reach agent runs, because `--allowedTools` lists only `Bash(...)` entries.
-- Tasks that were approved as merged or dropped (the duplicate `WA_WABA_ID` task, gosolr's own number) reappear when TASKS.md is regenerated.
+- Tasks that were approved as merged or dropped (a duplicate task, say) reappear when TASKS.md is regenerated.
 - Add `mcp__claude_ai_Google_Drive__search_files` (and a mail connector, if there is one) to `--allowedTools` when a task asks the agent to check your messages.
 
 ## 0.41.5 — 2026-10-05
@@ -726,7 +728,7 @@ What your agents built on the symbiot repo yesterday, merged with everything sin
 - Continue the ui.mjs split (#50) by pulling the server routes and the scan code out of index.mjs into their own modules, so each piece can be tested on its own.
 - Review the batches of 'symbiot: N approved tasks' and 'changes approved without a task' commits (#64–#83) for half-finished or overlapping features (email tracking, Watch, Screens, proot history).
 - Add tests for the core paths that auto-publish on every merge now exercises: git scan and repo-set selection, the week/standup/todo prompts with a stubbed AI, and the tasks.json/TASKS.md round-trip with auto-archive.
-- Let a suggestion name its target repo, so Symbiot app ideas from a coral run go to the symbiot project's tasks, not coral's
+- Let a suggestion name its target repo, so Symbiot app ideas from another project's run go to the symbiot project's tasks, not that project's
 
 ## 0.40.5 — 2026-10-05
 

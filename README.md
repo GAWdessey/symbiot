@@ -425,8 +425,15 @@ When Approve bumps the version and the repo keeps a `CHANGELOG.md`, it writes th
 release there too ("## 0.45.0 — 2026-10-06" and what was approved), in the same
 commit. With an AI connected, it words each approved task as a short release note
 ("Added…", "Fixed…") from the task and its diff, since everyone who updates reads
-these; the commit and PR keep the task's own words. With no AI, or no usable
-answer within a minute, the changelog keeps the task's own words too.
+these; the commit and PR keep the task's own words. The notes say what changed in
+the app, in general terms: a task that changed nothing in it (deploying a release,
+finding out why something happens) is left out, and so is any line that names
+what's yours alone: your other projects, the people, accounts, services and
+servers in Symbiot's memory and your projects' keys, run ids, email and IP
+addresses, or who asked when. Approve's result says what it left out, and why. With
+no AI, or no usable answer within a minute, the changelog keeps the task's own
+words, checked the same way. A release an agent wrote into `CHANGELOG.md` by hand
+is checked too: Approve says which lines to look at before it merges.
 
 Tasks waiting for review aren't re-sent to the agent, and while the repo's agent
 is still running, Approve waits ("agent still working"), so half-done work isn't
@@ -1200,8 +1207,9 @@ price told two ways) also shows on Home, under Watching, until you open it.
   sends the subjects and recipient names of mail you sent. When you ask about a
   task (💬) the agent has finished, it sends the first 6 KB of the agent's diff,
   which can include a new file's contents. An Approve that bumps the version of
-  a repo with a `CHANGELOG.md` sends the approved tasks and the first 30 KB of
-  their diff, to word the release notes. Standup sends up to 10 of what's new
+  a repo with a `CHANGELOG.md` sends the approved tasks, the first 30 KB of
+  their diff and the names to keep out of the notes (your projects, and the
+  people, accounts and services in Symbiot's memory), to word the release notes. Standup sends up to 10 of what's new
   on each page you [Watch](#screens-blueprints-for-screen-automation) since
   yesterday, and the brief (if you switch it on) sends each batch of it: for
   Gmail, that's the sender, subject and one-line preview. Otherwise it does

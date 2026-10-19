@@ -32,6 +32,9 @@ jobs:
         # installed `symbiot` bin fails here, not after it's on npm
         env:
           SYMBIOT_NO_OPEN: "1"
+          # names the release notes must never say (the maker's projects, people,
+          # providers), kept out of the public repo: test/outward.mjs checks CHANGELOG.md
+          SYMBIOT_PRIVATE_TERMS: ${{ secrets.SYMBIOT_PRIVATE_TERMS }}
         run: npm test
 
   windows:
