@@ -18,7 +18,9 @@ try {
   const c = s.rows.find((r) => r.id === "claude");
   ok("a run's report: both windows, as percent, with reset times", s.level === "ok" && c.windows.length === 2 && c.windows[0].used === 30 && c.windows[1].used === 10 && c.windows[0].resetText, s);
   ok("not paused when there's room", s.paused === false && s.pausedText === "");
-  ok("a local model has no quota", s.rows.find((r) => r.id === "ollama").kind === "local");
+  // set up (here: the current one), not read from this computer's config.json, which CI doesn't have
+  const loc = quotaState({ providers: { claude: { label: "Claude" }, ollama: { label: "Local", local: true } }, current: { provider: "ollama" }, paths: [dir], now }).rows.find((r) => r.id === "ollama");
+  ok("a local model has no quota", loc && loc.kind === "local", loc);
   s = run([ev("allowed_warning", 0.85, 0.1, now - 5000)]);
   ok("near the limit: amber", s.level === "near" && /85%/.test(s.text), s);
   s = run([ev("allowed", 0.9, 0.1, now - 9000), ev("rejected", 1, 0.17, now - 5000)]);
