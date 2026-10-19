@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Symbiot for small businesses: websites, ordering, bookings and AI that works for you</title>
+<meta name="description" content="Symbiot builds online ordering, bookings, AI customer replies and custom apps for South African small businesses. Fixed prices, local support, WhatsApp us.">
+<meta property="og:title" content="Symbiot for small businesses">
+<meta property="og:description" content="Online ordering, bookings and AI customer replies for small businesses. Fixed prices from R2,500.">
+<meta property="og:image" content="https://symbiot.co.za/og.png">
+<link rel="icon" type="image/svg+xml" href="https://symbiot.co.za/icon.svg">
+<style>
+@font-face{font-family:Geist;src:url("https://symbiot.co.za/fonts/Geist-Variable.woff2") format("woff2");font-weight:100 900;font-display:swap}
+:root{--bg:#0B0C0E;--bg2:#121418;--card:rgba(255,255,255,.035);--line:rgba(255,255,255,.08);--text:#C9CDD3;--bone:#F3F0EA;--faint:#8A9099;--amber:#F2A541;--btn:#F3F0EA;--btnText:#0B0C0E;--sans:Geist,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}
+@media (prefers-color-scheme: light){:root{--bg:#F4F2EE;--bg2:#EBE8E2;--card:rgba(21,26,33,.035);--line:rgba(21,26,33,.09);--text:#3A414C;--bone:#11151B;--faint:#6B7380;--amber:#B86A0C;--btn:#11151B;--btnText:#FFFFFF}}
+*{box-sizing:border-box}html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--text);font:400 16px/1.6 var(--sans);-webkit-font-smoothing:antialiased}
+a{color:inherit}.wrap{width:min(1080px,calc(100% - 32px));margin:0 auto}
+header{position:sticky;top:0;z-index:10;backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);background:color-mix(in srgb,var(--bg) 80%,transparent);border-bottom:1px solid var(--line)}
+header .wrap{display:flex;align-items:center;gap:14px;height:64px}
+.brand{display:flex;align-items:center;gap:10px;text-decoration:none}.brand img{width:30px;height:30px;border-radius:8px}
+.brand span{font:600 14px var(--sans);letter-spacing:.32em;color:var(--bone)}
+nav{margin-left:auto;display:flex;gap:22px;align-items:center}nav a{text-decoration:none;font-size:14px;color:var(--faint)}
+@media(max-width:640px){nav a:not(.btn){display:none}}
+.btn{display:inline-flex;align-items:center;gap:10px;padding:14px 26px;border-radius:999px;background:var(--btn);color:var(--btnText);font:600 16px var(--sans);text-decoration:none;border:0}
+.btn.small{padding:8px 16px;font-size:14px}.btn.ghost{background:transparent;color:var(--bone);border:1px solid var(--line)}
+.btn.wa{background:#25D366;color:#06210f}
+.hero{padding:88px 0 56px;text-align:center}
+.kick{display:inline-block;font-size:13px;letter-spacing:.2em;text-transform:uppercase;color:var(--amber);margin-bottom:18px}
+h1{margin:0 auto;max-width:820px;font:700 clamp(34px,6vw,58px)/1.08 var(--sans);letter-spacing:-.035em;color:var(--bone)}
+.lead{max-width:640px;margin:22px auto 30px;font-size:18px;color:var(--text)}
+.cta{display:flex;gap:12px;justify-content:center;flex-wrap:wrap}
+.note{margin-top:14px;font-size:14px;color:var(--faint)}
+section{padding:56px 0;border-top:1px solid var(--line)}
+h2{margin:0 0 8px;font:650 clamp(26px,4vw,36px)/1.15 var(--sans);letter-spacing:-.025em;color:var(--bone)}
+.sub{margin:0 0 30px;color:var(--faint);max-width:640px}
+.grid{display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(260px,1fr))}
+.card{background:var(--card);border:1px solid var(--line);border-radius:22px;padding:24px}
+.card h3{margin:0 0 6px;font:650 20px/1.3 var(--sans);color:var(--bone)}
+.card p{margin:0 0 14px;font-size:15px}
+.price{font:700 30px var(--sans);color:var(--bone);letter-spacing:-.02em}.price small{font-size:14px;font-weight:500;color:var(--faint)}
+.card ul{margin:14px 0 0;padding:0;list-style:none;display:grid;gap:8px;font-size:15px}
+.card li::before{content:"✓";color:var(--amber);font-weight:700;margin-right:9px}
+.card.pick{border-color:color-mix(in srgb,var(--amber) 55%,var(--line))}
+.tag{display:inline-block;font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--amber);margin-bottom:10px}
+.ex a{display:inline-block;margin-top:4px;font-weight:600;color:var(--amber);text-decoration:none}
+.steps{counter-reset:s;display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}
+.steps .card::before{counter-increment:s;content:counter(s);display:grid;place-items:center;width:34px;height:34px;border-radius:50%;border:1px solid var(--line);font-weight:650;color:var(--bone);margin-bottom:12px}
+.faq details{border-bottom:1px solid var(--line);padding:16px 0}.faq summary{cursor:pointer;font-weight:600;color:var(--bone)}.faq p{margin:10px 0 0}
+.final{text-align:center}
+footer{padding:28px 0 40px;border-top:1px solid var(--line);font-size:14px;color:var(--faint)}
+footer .wrap{display:flex;gap:18px;flex-wrap:wrap;justify-content:space-between}
+</style>
+</head>
+<body>
+<header><div class="wrap">
+  <a class="brand" href="#"><img src="https://symbiot.co.za/icon.svg" alt=""><span>SYMBIOT</span></a>
+  <nav><a href="#packages">Packages</a><a href="#work">Our work</a><a href="#how">How it works</a><a class="btn small wa" href="https://wa.me/27615484462?text=Hi%20Symbiot%2C%20I%27d%20like%20to%20chat%20about%20my%20business">WhatsApp us</a></nav>
+</div></header>
+
+<div class="hero"><div class="wrap">
+  <span class="kick">Symbiot for small businesses</span>
+  <h1>Your business, online and working for you, even while you sleep.</h1>
+  <p class="lead">We build online ordering, bookings, AI that answers your customers, and custom apps for South African small businesses. Fixed prices, no jargon, and a real person on WhatsApp when you need help.</p>
+  <div class="cta">
+    <a class="btn wa" href="https://wa.me/27615484462?text=Hi%20Symbiot%2C%20I%27d%20like%20to%20chat%20about%20my%20business">Chat to us on WhatsApp</a>
+    <a class="btn ghost" href="#packages">See prices</a>
+  </div>
+  <p class="note">Based in Johannesburg · Fixed quotes before we start · You own what we build</p>
+</div></div>
+
+<section id="packages"><div class="wrap">
+  <h2>Pick what your business needs.</h2>
+  <p class="sub">Clear prices up front. Every package includes setup, training and the first month of support.</p>
+  <div class="grid">
+    <div class="card">
+      <span class="tag">Sell more</span>
+      <h3>Online shop &amp; WhatsApp ordering</h3>
+      <p>Customers browse your products and order from their phone. You get the order on WhatsApp, ready to pack.</p>
+      <div class="price">R2,500 <small>once-off</small></div>
+      <ul><li>Your own shop page with your products and prices</li><li>Orders sent straight to your WhatsApp</li><li>EFT, PayShap or card payment instructions</li><li>Works on any phone, no app to download</li></ul>
+    </div>
+    <div class="card pick">
+      <span class="tag">Most popular</span>
+      <h3>Bookings &amp; AI front desk</h3>
+      <p>Customers book themselves in, get reminders, and get instant answers to common questions, day or night.</p>
+      <div class="price">R4,500 <small>once-off</small></div>
+      <ul><li>Online booking with your hours and services</li><li>AI that answers FAQs in your business's voice</li><li>Booking reminders so fewer no-shows</li><li>A weekly summary of bookings and enquiries</li></ul>
+    </div>
+    <div class="card">
+      <span class="tag">Built for you</span>
+      <h3>Custom app or tool</h3>
+      <p>A job-card system, stock tracker, delivery app, quote builder: whatever your business runs on paper or spreadsheets today.</p>
+      <div class="price">from R8,000 <small>quoted up front</small></div>
+      <ul><li>Built around how you actually work</li><li>Android app or web app</li><li>Can connect to what you already use</li><li>We quote a fixed price before we start</li></ul>
+    </div>
+  </div>
+  <div class="card" style="margin-top:16px">
+    <h3>Keep it running: R500–R1,000 a month</h3>
+    <p style="margin:0">Hosting, updates, small changes and WhatsApp support. Cancel any time. Price depends on the package.</p>
+  </div>
+</div></section>
+
+<section id="work"><div class="wrap">
+  <h2>Things we've built that are live right now.</h2>
+  <p class="sub">Open them on your phone and try them.</p>
+  <div class="grid ex">
+    <div class="card"><span class="tag">Online shop</span><h3>Lighthouse Craft &amp; Design</h3><p>A woodwork storefront with deposit payments and WhatsApp ordering for a local maker.</p><a href="https://lighthouse.garthwhite.duckdns.org/" target="_blank" rel="noopener">Open the shop →</a></div>
+    <div class="card"><span class="tag">Custom app</span><h3>Stride walking app</h3><p>A simple daily walking tracker built for an older user: big buttons, no clutter.</p><a href="https://walk.garthwhite.duckdns.org/" target="_blank" rel="noopener">Try Stride →</a></div>
+    <div class="card"><span class="tag">AI + camera</span><h3>SteadyFit</h3><p>Guided chair exercises for seniors that uses the phone's camera to follow along.</p><a href="https://steady.garthwhite.duckdns.org/" target="_blank" rel="noopener">Try SteadyFit →</a></div>
+  </div>
+  <p class="note" style="text-align:left">Also built: a live ordering and delivery system with a driver app for a Johannesburg retailer, and a dating app on Google Play.</p>
+</div></section>
+
+<section id="how"><div class="wrap">
+  <h2>How it works</h2>
+  <p class="sub">No long meetings, no tech talk.</p>
+  <div class="steps">
+    <div class="card"><h3>Tell us on WhatsApp</h3><p>What you sell, what takes up your time, what you wish customers could do themselves.</p></div>
+    <div class="card"><h3>Get a fixed quote</h3><p>We reply with the package or a fixed price. 50% deposit to start, the rest when you're happy.</p></div>
+    <div class="card"><h3>Try it early</h3><p>You get a working version on your phone within days and tell us what to change.</p></div>
+    <div class="card"><h3>Go live</h3><p>We launch it, show you how it works, and stay on WhatsApp for support.</p></div>
+  </div>
+</div></section>
+
+<section class="faq"><div class="wrap">
+  <h2>Questions</h2>
+  <details><summary>Do I need to be good with computers?</summary><p>No. If you can use WhatsApp, you can run what we build. We show you everything.</p></details>
+  <details><summary>How long does it take?</summary><p>Online shops and bookings are usually live within 1–2 weeks. Custom apps depend on size; we give you a date with the quote.</p></details>
+  <details><summary>Who owns it?</summary><p>You do. Your domain, your customer list, your content.</p></details>
+  <details><summary>What if I want changes later?</summary><p>Small changes are included in the monthly support. Bigger additions get a fixed quote first.</p></details>
+</div></section>
+
+<section class="final"><div class="wrap">
+  <h2>Tell us what your business needs.</h2>
+  <p class="sub" style="margin:8px auto 24px">One message is all it takes. No obligation.</p>
+  <a class="btn wa" href="https://wa.me/27615484462?text=Hi%20Symbiot%2C%20I%27d%20like%20to%20chat%20about%20my%20business">Chat to us on WhatsApp</a>
+</div></section>
+
+<footer><div class="wrap"><span>© 2026 Symbiot · Johannesburg, South Africa</span><span><a href="mailto:sales@symbiot.co.za">sales@symbiot.co.za</a></span></div></footer>
+</body>
+</html>
