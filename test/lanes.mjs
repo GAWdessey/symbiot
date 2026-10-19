@@ -220,9 +220,9 @@ try {
 
   console.log("NOT DONE BY HAND — mistakes go back to the agent, not to the user");
   put(coral, "HANDOFF.md", "### payroll\nRun payroll.\n### coral\nDo my own thing.\n");
-  const t5 = lanesTick(deps());
-  const a5 = read(coral, "ANSWERS.md");
-  ok("a lane that doesn't exist: the agent hears which lanes do", t5.reported.some((e) => e.to.lane === "payroll") && /There's no lane called payroll\. Lanes: ops, or a repo: coral, GhostAIChat/.test(a5), a5.slice(-400));
+  const acts5 = calls.act.length; lanesTick(deps());
+  const a5 = read(coral, "ANSWERS.md"), pay5 = loadLedger().handoffs.find((h) => h.from.path === coral && /Run payroll/.test(h.text));
+  ok("a lane that doesn't exist: ops takes it, told the name and which lanes do (16 Oct 2026)", pay5 && pay5.status !== "error" && pay5.to.lane === "ops" && pay5.rerouted && pay5.rerouted.noLane && pay5.rerouted.from === "payroll" && calls.act.length === acts5 + 1 && /doesn't exist \(payroll\)[^\n]*coral, GhostAIChat/.test(calls.act.at(-1).o.context), [pay5, calls.act.at(-1) && calls.act.at(-1).o.context]);
   ok("its own lane: told to do it itself", /coral is your own lane: do it yourself/.test(a5), "");
   const deep = join(CFG, "drafts", "act-deep"); mkdirSync(join(deep, ".symbiot"), { recursive: true });
   // the chain counts through the handover this run is on (its brief quotes it), not every row ever into the folder
@@ -318,10 +318,12 @@ try {
   put(ops2, "TASKS.md", "- [x] Move the registers\n"); ran(ops2, Date.now() + 5, "All 39 registers moved.");
   lanesTick(deps({ tasks: [] }));
   ok("…and when it's done, the run that asked hears it, like any handover", /Handed over to ops: Needs a run that can read[\s\S]*Done \(the ops agent\)[\s\S]*All 39 registers moved/.test(read(opsA, "ANSWERS.md")), read(opsA, "ANSWERS.md").slice(-300));
-  const nowhere = loadLedger().handoffs.find((h) => h.to.lane === "payroll");
-  const sp = stuckHandovers().find((x) => x.id === nowhere.id);
-  ok("a lane that doesn't exist: start it as a run of its own?", sp && /^coral's handover didn't start \(There's no lane called payroll\)\. Start it as a run of its own\?$/.test(sp.q) && sp.options[0] === "Start it (recommended)", sp);
-  ok("Skip: it stops asking, and its agent reads that you skipped it", skipHandover(nowhere.id).ok && !stuckHandovers().some((x) => x.id === nowhere.id) && /Handed over to payroll: Run payroll\.\nThe user skipped it/.test(read(coral, "ANSWERS.md")), read(coral, "ANSWERS.md").slice(-200));
+  // from ops itself there's nowhere to send a lane that doesn't exist: an error, and a card to start it as a run of its own
+  const pay = join(CFG, "drafts", "act-pay"); mkdirSync(join(pay, ".symbiot"), { recursive: true }); put(pay, "HANDOFF.md", "### payroll\nRun payroll.\n"); lanesTick(deps());
+  const nowhere = loadLedger().handoffs.find((h) => h.from.path === pay && h.to.lane === "payroll");
+  const sp = nowhere && stuckHandovers().find((x) => x.id === nowhere.id);
+  ok("a lane that doesn't exist, from ops: start it as a run of its own?", sp && /^ops's handover didn't start \(There's no lane called payroll\)\. Start it as a run of its own\?$/.test(sp.q) && sp.options[0] === "Start it (recommended)", sp || nowhere);
+  ok("Skip: it stops asking, and its agent reads that you skipped it", skipHandover(nowhere.id).ok && !stuckHandovers().some((x) => x.id === nowhere.id) && /Handed over to payroll: Run payroll\.\nThe user skipped it/.test(read(pay, "ANSWERS.md")), read(pay, "ANSWERS.md").slice(-200));
   const L4 = JSON.parse(readFileSync(join(CFG, "lanes.json"), "utf8")), t0 = Date.now() - 60000;
   L4.handoffs.push({ id: "e-old", key: "e-old", from: { lane: "coral", path: coral }, to: { lane: "ops", path: "" }, text: "Renew the SSL certificate for coral.example.com before it lapses.", at: Date.now() - 4 * 86400000, chain: 1, status: "error", error: "x" },
     { id: "e-done", key: "e-done", from: { lane: "coral", path: coral }, to: { lane: "coral", path: "" }, text: "Rotate the staging database password and update the vault entry.", at: t0, chain: 1, status: "error", error: "coral is your own lane: do it yourself." },
@@ -592,13 +594,12 @@ try {
     ok("…its run ended asking you: sent, and it asked you first", /asked you something first/.test(hv()[0].why), hv());
     led.handoffs[0].reportedAt = Date.now(); led.handoffs[0].status = "done";
     ok("…and once it came back: nothing waiting", hv().length === 0, hv());
-    put(wa, "HANDOFF.md", "### payroll\nPay the WhatsApp bill.\n"); dispatch(wa, wd());
-    led.handoffs[led.handoffs.length - 1].reportedAt = Date.now();
-    const bad = hv();
-    ok("a lane that doesn't exist: couldn't hand it over, and why, even once that's gone back to it", bad.length === 1 && !bad[0].gone && /Couldn't hand it over: There's no lane called payroll/.test(bad[0].why), bad);
-    ok("…its file says so too", /→ \*\*payroll\*\*: couldn't hand it over: There's no lane called payroll/.test(read(wa, "HANDOFF.md")), read(wa, "HANDOFF.md"));
-    led.handoffs[led.handoffs.length - 1].skipped = Date.now();
-    ok("…skipped: not shown again", hv().length === 0, hv());
+    put(wa, "HANDOFF.md", "### payroll\nPay the WhatsApp bill.\n"); const acts0 = acts.length; dispatch(wa, wd());
+    const rr = led.handoffs[led.handoffs.length - 1], bad = hv();
+    ok("a lane that doesn't exist: ops takes it, told the name, and the block shows it sent to ops", acts.length === acts0 + 1 && rr.to.lane === "ops" && rr.rerouted && rr.rerouted.noLane && bad.length === 1 && bad[0].gone && bad[0].lane === "ops", [rr, bad]);
+    ok("…its file says so too", /→ \*\*ops\*\*: sent to ops instead of payroll \(there's no lane called payroll\)/.test(read(wa, "HANDOFF.md")), read(wa, "HANDOFF.md"));
+    rr.reportedAt = Date.now(); rr.status = "done";
+    ok("…and once it came back: nothing waiting", hv().length === 0, hv());
     put(wa, "HANDOFF.md", "### coral\nAdd the WhatsApp webhook route to coral.\n");
     dispatch(wa, { ...wd(), add: () => ({ id: "c1" }), push: () => ({}), run: () => ({ busy: true }) }); going = new Set([coral]);
     const q = hv();

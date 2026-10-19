@@ -67,7 +67,17 @@ function allowTool(cmd, t) {
   if (/--allowedTools\b/.test(cmd)) return cmd.replace(/(--allowedTools\s+(?:"[^"]*"\s*)+)/, (m) => m.trimEnd() + ` "${t}" `);
   return cmd + ` --allowedTools "${t}"`;
 }
-const isClaudeCmd = (cmd) => /^\s*claude\b/.test(String(cmd || ""));
+// Claude Code, by whatever name it's run as: `claude`, a path to it, or a wrapper named after
+// it (~/.config/symbiot/claude-fallback, which reruns the task on another model when a limit
+// stops it). The saved command here began with that wrapper's path, and nothing below took it
+// for Claude: no membrane, no sandbox, no connectors, no model routing, no --resume, no stream,
+// and every run went in acceptEdits mode, asking the user for each command it lacked (16 Oct
+// 2026). The first word that isn't VAR=value, by its last path part. Never a flag inside the
+// command: the Orca preset carries `claude … --allowedTools` inside its own --command.
+function isClaudeCmd(cmd) {
+  const bin = String(cmd || "").trim().split(/\s+/).find((w) => !/^[A-Za-z_][A-Za-z0-9_]*=/.test(w)) || "";
+  return /^claude(?:[-_.][\w.-]*)?$/i.test(bin.replace(/^["']|["']$/g, "").split(/[\\/]/).pop() || "");
+}
 function grantAgent({ tool, dir } = {}) {
   const cfg = loadConfig(); let cmd = (cfg.agentCmd || CLAUDE_CMD).trim();
   if (!isClaudeCmd(cmd)) return { error: "Grants apply to the Claude agent command. Pick a Claude preset first, or edit the command directly." };
@@ -172,7 +182,10 @@ const GUARD_HOOK = fileURLToPath(new URL("./guard.mjs", import.meta.url));
 const GUARD_SETTINGS = join(CONFIG_DIR, "agent-guard.json");
 const trustFull = (cfg = loadConfig()) => cfg.agentTrust !== "ask";
 function guardSettings() {
-  const s = { hooks: { PreToolUse: [{ matcher: "Bash|Read|Edit|Write|MultiEdit|NotebookEdit|Grep|Glob", hooks: [{ type: "command", command: `node ${JSON.stringify(GUARD_HOOK)}` }] }] } };
+  // Symbiot's own settings and keys denied here too (GUARD, as Claude Code reads a rule): a deny
+  // holds in every mode, bypassPermissions included, and a run gets it whether or not its folder
+  // has a settings.local.json
+  const s = { permissions: { deny: GUARD() }, hooks: { PreToolUse: [{ matcher: "Bash|Read|Edit|Write|MultiEdit|NotebookEdit|Grep|Glob", hooks: [{ type: "command", command: `node ${JSON.stringify(GUARD_HOOK)}` }] }] } };
   try { mkdirSync(CONFIG_DIR, { recursive: true }); writeFileSync(GUARD_SETTINGS, JSON.stringify(s, null, 2) + "\n", { mode: 0o600 }); } catch {}
   return GUARD_SETTINGS;
 }
@@ -398,6 +411,7 @@ function runHandoff(repoPath, { force = false, lost = false, model = "", onExit 
   const down = claudePause(); if (down) return { blocked: true, down: down.kind, questions: 0, note: down.note }; // Claude itself is down: even forced, the run would end at once
   releaseHeldTasks(repoPath); // held for an agent another process started, which has since exited
   const idle = !lost && nothingToDo(repoPath); if (idle) return { blocked: true, idle: true, questions: 0, note: idle };
+  try { tidySettings(repoPath); } catch {} // its allow list as Claude Code reads one (Write → Edit, //absolute), before the sandbox reads it
   const scoped = runCmdOf(repoPath, tmpl), box = isClaudeCmd(scoped) && trustFull() ? sandboxFor(repoPath, scoped) : null; // a repo run's sandbox, on top of the membrane
   tmpl = withStream(withTrust(scoped, box, repoPath));
   const resume = isClaudeCmd(tmpl) ? resumeFor(repoPath) : null, fresh = tooLong(resume); // too long to resume: a fresh run carries on
@@ -742,8 +756,14 @@ function agentMissing(tmpl = handoffCmd()) {
 // have questions open, a step of yours to wait for, or a run still going.
 const RUNS_FILE = join(CONFIG_DIR, "runs.json"), RUNS_MAX = 60;
 function loadRuns() { try { const a = readState(RUNS_FILE); return Array.isArray(a) ? a.filter((r) => r && typeof r.path === "string" && r.path) : []; } catch { return []; } }
+// An entry whose folder is gone, with no run alive in it (a copy of a repo made for one task,
+// removed once it merged: parallel.mjs), is dropped: 49 of the 60 named folders that no longer
+// existed, and had pushed the lanes themselves off the list, so their "carry on" checks and
+// their answers ("No agent has run in that folder") stopped (16 Oct 2026). Gone AND not
+// running: a run this app started keeps its place while it's alive, folder or no folder.
+function pruneRuns(list) { return (list || []).filter((r) => existsSync(r.path) || !!runningHandoff(r.path)); }
 function noteRun(e) {
-  const list = [{ path: e.path, name: e.name, startedAt: e.startedAt }, ...loadRuns().filter((r) => r.path !== e.path)].slice(0, RUNS_MAX);
+  const list = [{ path: e.path, name: e.name, startedAt: e.startedAt }, ...pruneRuns(loadRuns().filter((r) => r.path !== e.path))].slice(0, RUNS_MAX);
   try { writeJsonAtomic(RUNS_FILE, list, { mode: 0o600 }); } catch {}
 }
 const knownRun = (path) => HANDOFFS.some((e) => e.path === path) || loadRuns().some((r) => r.path === path) || (String(path || "").startsWith(ACT_DIR) && existsSync(join(path, ".symbiot", "QUESTIONS.md"))); // an ops folder with a question is one to answer, however old
@@ -1203,6 +1223,9 @@ function runsTick({ now = Date.now(), kill = (p, sig) => process.kill(p, sig), h
     try { startHeldTasks(path); } catch {}
     out.recovered.push(path);
   }
+  // and the list itself: entries whose folder is gone with nothing running in it (pruneRuns)
+  const runs = loadRuns(), kept = pruneRuns(runs);
+  if (kept.length !== runs.length) { try { writeJsonAtomic(RUNS_FILE, kept, { mode: 0o600 }); out.pruned = runs.length - kept.length; } catch {} }
   return out;
 }
 // ---- the untracked files that were there before the agent ran ---------------
@@ -1632,7 +1655,35 @@ const HARM_RULE = /^Bash\(\s*(rm|dd|mkfs|chmod|chown|shred|truncate)\b/i;
 const wideRule = (r) => ANY_RULE.test(r) || (HARM_RULE.test(r) && /\*/.test(r));
 // Whatever an agent is allowed, it never edits Symbiot's own settings: that's where
 // what agents may do is kept, so an agent could widen its own permissions there.
-const GUARD = () => { const c = join(homedir(), ".config", "symbiot", "config.json"), s = join(homedir(), ".config", "symbiot", "secrets.json"); return [`Edit(${c})`, `Write(${c})`, `Read(${s})`, `Edit(${s})`, `Write(${s})`]; };
+// As Claude Code reads a file rule: Edit(path) governs Edit, Write and NotebookEdit (a
+// Write(path) rule is accepted and never consulted, and it said so on every run: 184 times in
+// one log), and a path with one leading slash is relative to the settings file's folder, so
+// Edit(/home/…/config.json) guarded nothing. Absolute is //path. A Read(path) that's denied
+// blocks writes there too (16 Oct 2026).
+const absRule = (tool, p) => `${tool}(//${String(p).replace(/^\/+/, "")})`;
+const GUARD = () => { const c = join(homedir(), ".config", "symbiot", "config.json"), s = join(homedir(), ".config", "symbiot", "secrets.json"); return [absRule("Edit", c), absRule("Read", s), absRule("Edit", s)]; };
+// Every file rule Symbiot writes, and every one already in a lane's settings.local.json, in
+// those forms: Write, MultiEdit and NotebookEdit → Edit, Glob → Read, and a single-slash path
+// that can only be absolute (/home, /mnt, /tmp, /opt, /srv, /Users, /var, /etc, /usr…) → //.
+const ABS_ROOT = /^\/(?:home|Users|mnt|media|tmp|opt|srv|var|etc|usr|root|private|Volumes|data)(?=\/|$)/;
+function tidyRule(r) {
+  const m = /^(Read|Edit|Write|MultiEdit|NotebookEdit|Glob)\((.+)\)$/s.exec(String(r || "").trim()); if (!m) return String(r || "").trim();
+  const tool = m[1] === "Read" || m[1] === "Glob" ? "Read" : "Edit"; let p = m[2].trim();
+  if (/^\/(?!\/)/.test(p) && ABS_ROOT.test(p)) p = "/" + p;
+  return `${tool}(${p})`;
+}
+const tidyRules = (list) => [...new Set((Array.isArray(list) ? list : []).filter((r) => typeof r === "string" && r.trim()).map(tidyRule))];
+// A lane's settings.local.json put in those forms, with Symbiot's own deny rules current where
+// it had written them: the warnings stop, and the rules hold. True when the file changed.
+function tidySettings(path) {
+  const f = join(String(path || ""), ".claude", "settings.local.json"); let cur; try { cur = JSON.parse(readFileSync(f, "utf8")); } catch { return false; }
+  const perm = cur && cur.permissions; if (!perm || typeof perm !== "object" || Array.isArray(perm)) return false;
+  const next = { ...perm };
+  for (const k of ["allow", "deny", "ask"]) if (Array.isArray(perm[k])) next[k] = tidyRules(perm[k]);
+  if (Array.isArray(perm.deny) && perm.deny.some((r) => /\.config\/symbiot\/(?:config|secrets)\.json\)$/.test(String(r)))) next.deny = [...new Set([...next.deny, ...GUARD()])];
+  if (JSON.stringify(next) === JSON.stringify(perm)) return false;
+  try { writeFileSync(f, JSON.stringify({ ...cur, permissions: next }, null, 2) + "\n", { mode: 0o600 }); return true; } catch { return false; }
+}
 function installAllowlist(path) {
   let p; try { p = JSON.parse(readFileSync(join(path, ".symbiot", "allowlist.proposed.json"), "utf8")).permissions || {}; } catch { return null; }
   const list = (x) => (Array.isArray(x) ? x.filter((r) => typeof r === "string" && r.trim()).map((r) => r.trim()) : []);
@@ -1645,7 +1696,7 @@ function installAllowlist(path) {
   const f = join(path, ".claude", "settings.local.json");
   let cur = {}; try { cur = JSON.parse(readFileSync(f, "utf8")); } catch {}
   const perm = cur.permissions || {}, merge = (a, b) => [...new Set([...list(a), ...b])];
-  cur.permissions = { ...perm, allow: merge(perm.allow, allow), deny: merge(perm.deny, [...deny, ...GUARD()]), additionalDirectories: merge(perm.additionalDirectories, dirs) };
+  cur.permissions = { ...perm, allow: tidyRules(merge(perm.allow, allow)), deny: tidyRules(merge(perm.deny, [...deny, ...GUARD()])), additionalDirectories: merge(perm.additionalDirectories, dirs) };
   try { mkdirSync(join(path, ".claude"), { recursive: true }); writeFileSync(f, JSON.stringify(cur, null, 2) + "\n", { mode: 0o600 }); } catch { return null; }
   const n = allow.length + deny.length;
   return [`the allow list for this folder (${n} rule${n === 1 ? "" : "s"})`];
@@ -1791,7 +1842,7 @@ function continueLanes({ now = Date.now(), run = runHandoff, runs = loadRuns } =
   if (JSON.stringify(seen) !== was) saveContinued(seen);
   return out;
 }
-function autoAllowSweep() { const out = []; for (const r of loadRuns()) { try { const a = autoAllow(r.path); if (a && a.allowed) out.push(r.path); else if (autoDecide(r.path)) out.push(r.path); } catch {} } return out; }
+function autoAllowSweep() { const out = []; for (const r of loadRuns()) { try { tidySettings(r.path); } catch {} try { const a = autoAllow(r.path); if (a && a.allowed) out.push(r.path); else if (autoDecide(r.path)) out.push(r.path); } catch {} } return out; }
 // Every agent reaches the owner's knowledge folders from the start; an ops run (no repo
 // of its own) their repos too, the way a person at their desk would.
 function withScope(tmpl, repoPath) {
@@ -1922,7 +1973,7 @@ function heldTasks(path) {
 // output format of its own; anything else (an Orca tab, another agent) as it is.
 function withStream(cmd) {
   const c = String(cmd || "");
-  if (!/^\s*claude\b/.test(c) || !/\s-p\b|\s--print\b/.test(c) || /--output-format\b/.test(c)) return c;
+  if (!isClaudeCmd(c) || !/\s-p\b|\s--print\b/.test(c) || /--output-format\b/.test(c)) return c;
   return c + " --output-format stream-json --verbose";
 }
 const firstOpen = (md) => { const l = String(md || "").split("\n").find((x) => /^\s*-\s*\[ \]/.test(x)); return l ? l.replace(/^\s*-\s*\[ \]\s*/, "").trim() : ""; };
@@ -1948,4 +1999,4 @@ function agentsList() {
   }).concat(earlierRuns());
 }
 
-export { claudePlugins, idlePlugins, runSettings, archiveAnswers, allAnswers, answersDigest, ANSWERS_ARCHIVE, ANSWERS_KEEP, runsTick, RUN_START, HANG_MIN, noteBlocked, userAnswers, CONTINUED_FILE, onAnswered, CHANGES, toKnownHost, continueLanes, autoPick, autoDecide, FACTS, factsOf, knownRun, withStream, workOf, HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, connectorsInfo, linkReach, fillHandoff, runHandoff, nothingToDo, whereOf, whereLine, whereAnswer, askTask, PARKED_NOTE, parkedPaths, isParked, parkLane, agentMissing, blockedAgain, runningHandoff, loadRuns, earlierRuns, namedFiles, unchangedStep, waitingFor, startWaiting, noteUntracked, untrackedBefore, forgetUntracked, writeTasks, droppedTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, pickAgent, findOrcaCli, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, skipIdea, agentQuestions, answerQuestions, agentsList, needsOf, settleNeeds, NEEDS_FOR, readLastWords, readNeeds, parseRead, READ_FILE, autoAllow, autoAllowSweep, allowlistInWork, installAllowlist, inWork, withScope, withTrust, sandboxFor, sandboxLifts, sandboxEnv, sandboxNeeds, sandboxState, sandboxWrites, SANDBOX_DIR, resumeFor, noteSession, tooLong, carryOn, RESUME_CTX, CARRY_PROMPT, trustFull, GUARD_SETTINGS, runCmdOf, claimLock, wideRoot, sandboxDenies, questionFolders, folderState, dirtyState, ANSWERS_SEEN, newAnswers, claudeDownIn, claudePause, noteClaudeDown, resetTime, PAUSE_FILE, startGap, isUrgent, urgentStop, urgentFirst, urgentUndo, urgentDone, urgentSweep, urgentState, licenceGate, stopRun, loadRunFiles, saveRunFiles, forgetRunFiles, withModel, routedModel, onShipping };
+export { isClaudeCmd, GUARD, tidyRule, tidyRules, tidySettings, pruneRuns, claudePlugins, idlePlugins, runSettings, archiveAnswers, allAnswers, answersDigest, ANSWERS_ARCHIVE, ANSWERS_KEEP, runsTick, RUN_START, HANG_MIN, noteBlocked, userAnswers, CONTINUED_FILE, onAnswered, CHANGES, toKnownHost, continueLanes, autoPick, autoDecide, FACTS, factsOf, knownRun, withStream, workOf, HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, connectorsInfo, linkReach, fillHandoff, runHandoff, nothingToDo, whereOf, whereLine, whereAnswer, askTask, PARKED_NOTE, parkedPaths, isParked, parkLane, agentMissing, blockedAgain, runningHandoff, loadRuns, earlierRuns, namedFiles, unchangedStep, waitingFor, startWaiting, noteUntracked, untrackedBefore, forgetUntracked, writeTasks, droppedTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, pickAgent, findOrcaCli, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, skipIdea, agentQuestions, answerQuestions, agentsList, needsOf, settleNeeds, NEEDS_FOR, readLastWords, readNeeds, parseRead, READ_FILE, autoAllow, autoAllowSweep, allowlistInWork, installAllowlist, inWork, withScope, withTrust, sandboxFor, sandboxLifts, sandboxEnv, sandboxNeeds, sandboxState, sandboxWrites, SANDBOX_DIR, resumeFor, noteSession, tooLong, carryOn, RESUME_CTX, CARRY_PROMPT, trustFull, GUARD_SETTINGS, runCmdOf, claimLock, wideRoot, sandboxDenies, questionFolders, folderState, dirtyState, ANSWERS_SEEN, newAnswers, claudeDownIn, claudePause, noteClaudeDown, resetTime, PAUSE_FILE, startGap, isUrgent, urgentStop, urgentFirst, urgentUndo, urgentDone, urgentSweep, urgentState, licenceGate, stopRun, loadRunFiles, saveRunFiles, forgetRunFiles, withModel, routedModel, onShipping };

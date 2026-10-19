@@ -23,7 +23,7 @@ import { homedir } from "node:os";
 import { readFileSync } from "node:fs";
 import { loadConfig } from "./core.mjs";
 import { loadScreens } from "./screens.mjs";
-import { handoffCmd, sandboxNeeds, trustFull } from "./agents.mjs";
+import { handoffCmd, sandboxNeeds, trustFull, isClaudeCmd } from "./agents.mjs";
 
 const readOr = (f) => { try { return readFileSync(f, "utf8"); } catch { return ""; } };
 // The hosts in an ssh config (`Host a b`, `HostName x`): aliases, then the names
@@ -56,7 +56,7 @@ function laneKeys(path, read = readOr) { return [...new Set(ENV_FILES.flatMap((f
 // Whether a repo run is sandboxed: runHandoff sandboxes it when the agent is Claude
 // Code, trusted to work alone, the sandbox isn't turned off and it can run here.
 function reposSandboxed({ cfg = loadConfig(), cmd = handoffCmd(), needs = sandboxNeeds } = {}) {
-  return /^\s*claude\b/.test(String(cmd || "")) && trustFull(cfg) && cfg.agentSandbox !== false && needs().ready;
+  return isClaudeCmd(cmd) && trustFull(cfg) && cfg.agentSandbox !== false && needs().ready;
 }
 // map: { lane: path }, the repo lanes (scan.mjs laneMap).
 function mappedSites(list) {

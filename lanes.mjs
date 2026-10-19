@@ -48,10 +48,29 @@ function laneOf(path, map) {
   const hit = Object.entries(map).find(([, p]) => p === path);
   return hit ? hit[0] : basename(path);
 }
-// The lane a handover names, as a folder: a repo (any case), or ops. null if none.
+// The lane a handover names, as a folder: a repo (any case), or ops. A name that's nearly a
+// lane's (a typo, a word more or less: "symbio", "steve lane", "Daaymn-app") is that lane
+// (nearLane), when only one fits. null when none does: dispatch sends it to ops, told the name,
+// rather than erroring (one errored and sat for 8 days, 16 Oct 2026).
+const slug = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+function editDistance(a, b) {
+  const m = a.length, n = b.length; if (!m || !n) return m + n;
+  let prev = Array.from({ length: n + 1 }, (_, j) => j);
+  for (let i = 1; i <= m; i++) { const cur = [i]; for (let j = 1; j <= n; j++) cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)); prev = cur; }
+  return prev[n];
+}
+function nearLane(lane, names) {
+  const k = slug(lane); if (!k) return "";
+  const exact = names.find((n) => slug(n) === k); if (exact) return exact;
+  const within = names.filter((n) => { const s = slug(n); return s.length >= 4 && (k.includes(s) || (k.length >= 4 && s.includes(k))); });
+  if (within.length === 1) return within[0];
+  if (within.length > 1) return "";
+  const close = names.filter((n) => { const s = slug(n); return s.length >= 5 && k.length >= 5 && editDistance(k, s) <= Math.max(1, Math.floor(Math.min(k.length, s.length) / 5)); });
+  return close.length === 1 ? close[0] : "";
+}
 function laneTarget(lane, map) {
   if (lane.toLowerCase() === OPS) return { lane: OPS, path: "" };
-  const name = Object.keys(map).find((n) => n.toLowerCase() === lane.toLowerCase());
+  const name = Object.keys(map).find((n) => n.toLowerCase() === lane.toLowerCase()) || nearLane(lane, Object.keys(map));
   return name ? { lane: name, path: map[name] } : null;
 }
 // Where a handover to a repo stands once its agent was asked to start (runHandoff's
@@ -222,14 +241,18 @@ function dispatch(path, { map = laneMap(), act = actNow, run = runHandoff, add =
     }
     const e = { id: randomBytes(4).toString("hex"), key, from, to: { lane: h.lane, path: "" }, text: h.text, at: now, chain, ...(parent ? { parent: parent.id } : {}), status: "started" };
     let to = laneTarget(h.lane, map); const looped = loops(h.text, chain, line);
+    // a lane that doesn't exist (a name nearLane couldn't place, a folder that's no lane): ops takes it,
+    // told the name, rather than an error that sits (16 Oct 2026); from ops itself, it's ops's own to place
+    if (!to && from.lane !== OPS) { e.rerouted = { from: h.lane, why: `there's no lane called ${h.lane}`, noLane: true }; to = { lane: OPS, path: "" }; e.to = { ...to }; }
     // a job that's all on a server the lane can't reach goes to ops, which can, rather than to a lane that can only hand it on
     const far = to && to.lane !== OPS && to.lane.toLowerCase() !== from.lane.toLowerCase() ? serverOnly(h.text, to.lane, reachOf()) : [];
     if (far.length && !looped) { e.rerouted = { from: to.lane, why: `${to.lane} runs in a sandbox and can't reach ${far.join(" or ")}` }; to = { lane: OPS, path: "" }; e.to = { ...to }; }
     if (looped && (!to || to.lane === OPS || to.lane.toLowerCase() === from.lane.toLowerCase())) Object.assign(e, { status: "error", error: LOOP_SAID(MAX_CHAIN) });
-    else if (!to) Object.assign(e, { status: "error", error: `There's no lane called ${h.lane}. Lanes: ops, or a repo: ${Object.keys(map).slice(0, 30).join(", ")}.` });
+    else if (!to) Object.assign(e, { status: "error", error: `There's no lane called ${h.lane}. You are ops, the lane that takes whatever no repo lane does: do it yourself. Lanes: ops, or a repo: ${Object.keys(map).slice(0, 30).join(", ")}.` });
     else if (to.lane.toLowerCase() === from.lane.toLowerCase()) Object.assign(e, { status: "error", error: `${to.lane} is your own lane: do it yourself.` });
     else if (to.lane === OPS) {
-      const r = act(h.text, { title: `handed over by ${from.lane}`, context: `${from.lane}'s agent (in ${path}) handed this over, and carries on once it's done.${e.rerouted ? ` It was for ${e.rerouted.from}, but ${e.rerouted.why}, so Symbiot sent it to you: do it here, and if there's code to change in ${e.rerouted.from}, hand that part to ${e.rerouted.from}.` : ""}`, alongside: [alongsideNote(opsGoing({ ledger, running, dirs })), sharedFor(path, h.text, { ledger, now })].filter(Boolean).join("\n\n"), now });
+      const why = !e.rerouted ? "" : e.rerouted.noLane ? ` It named a lane that doesn't exist (${e.rerouted.from}), so Symbiot sent it to you: work out where that work belongs (a folder on this computer, or a repo lane by another name: ${Object.keys(map).slice(0, 30).join(", ")}) and do it, or hand it to the right lane by its real name.` : ` It was for ${e.rerouted.from}, but ${e.rerouted.why}, so Symbiot sent it to you: do it here, and if there's code to change in ${e.rerouted.from}, hand that part to ${e.rerouted.from}.`;
+      const r = act(h.text, { title: `handed over by ${from.lane}`, context: `${from.lane}'s agent (in ${path}) handed this over, and carries on once it's done.${why}`, alongside: [alongsideNote(opsGoing({ ledger, running, dirs })), sharedFor(path, h.text, { ledger, now })].filter(Boolean).join("\n\n"), now });
       if (r.error) Object.assign(e, { status: "error", error: r.error });
       else Object.assign(e, { to: { lane: OPS, path: r.dir }, job: r.job });
     } else {
@@ -394,6 +417,23 @@ function report(e, o, { run = runHandoff, running = runningHandoff, waiting = wa
   return true;
 }
 
+// A handover with no outcome for STALE_AFTER: its run never began, its folder is gone, or its
+// lane is waiting on the user (an unanswered question there). The asker is told so, once, rather
+// than waiting forever (two "started" rows sat 8 days on ops questions nobody had answered,
+// 16 Oct 2026). Not settled: the asker's next run starts only if it has something new to go
+// on (agents.mjs blockedAgain), and the row stays open for the real outcome when it comes.
+const STALE_AFTER = 3 * 86400000;
+const openQuestionTitles = (p) => { try { return (agentQuestions(p, "").questions || []).map((x) => x.q); } catch { return []; } };
+function staleOutcome(e, { now = Date.now(), running = runningHandoff } = {}) {
+  if (!(e.status === "started" || e.status === "held") || e.reportedAt || now - (e.at || 0) < STALE_AFTER) return null;
+  const p = e.to.path; if (!p || running(p)) return null;
+  const days = Math.round((now - e.at) / 86400000);
+  if (!existsSync(p)) return { text: `Not done: the folder ${e.to.lane}'s run had (${p}) is gone, and nothing ran on it in ${days} days. If it still matters, hand it over again.`, settled: false };
+  if (lastRunStart(p) < e.at) return { text: `Not done: no run has started on it in ${e.to.lane} in ${days} days${e.note ? ` (${e.note})` : ""}. If it still matters, hand it over again, or do what you can of it yourself.`, settled: false };
+  const q = openQuestionTitles(p);
+  if (q.length) return { text: `Not done yet: ${e.to.lane}'s agent asked the user ${days} days ago and has no answer: "${clipWords(q[0], 160)}". It carries on once they answer (the question is on the Workdesk). Carry on with what doesn't depend on it.`, settled: false };
+  return null;
+}
 // One pass: start what's been handed over, from every lane, then report back
 // what's done. The app runs it every 20 seconds.
 function lanesTick({ map = laneMap(), act = actNow, run = runHandoff, running = runningHandoff, add = addTask, push = pushTasks, tasks, now = Date.now(), relink = orcaRelink } = {}) {
@@ -410,7 +450,9 @@ function lanesTick({ map = laneMap(), act = actNow, run = runHandoff, running = 
     // nothing had started and sent it again (12 Oct 2026)
     if (e.superseded && !e.pickedAt && !e.reportedAt && e.status !== "error" && e.to.lane === OPS && e.to.path) { const b = lastRunStart(e.to.path); if (b >= e.at) { e.pickedAt = b; resent(e, (l) => /: replaces the version sent earlier: ops's run /.test(l)); picked++; } }
     if (e.reportedAt || running(e.from.path)) continue; // the one that asked reads it when it's started again, so not mid-run
-    const o = outcome(e, { tasks: t, running }); if (!o) continue;
+    const o = outcome(e, { tasks: t, running });
+    // nothing to report yet, for days: the asker is told where it stands, once (staleOutcome), and the row stays open for the real outcome
+    if (!o) { const s = !e.stale && staleOutcome(e, { now, running }); if (s && report(e, s, { run, running, now })) { e.stale = now; e.result = s.text; reported.push(e); } continue; }
     if (report(e, o, { run, running, now })) { e.reportedAt = now; if (e.status !== "error") e.status = "done"; e.result = o.text; reported.push(e); }
   }
   if (started.length || reported.length || picked) saveLedger(ledger);
@@ -493,7 +535,8 @@ function stuckHandovers({ ledger = loadLedger(), now = Date.now(), dirsOf = name
 }
 // The rules a run gets for the folders you allowed it: read, edit and move files
 // there (git mv too), nothing wide.
-const dirRules = (dirs) => dirs.flatMap((d) => [`Read(/${d}/**)`, `Edit(/${d}/**)`, `Write(/${d}/**)`]).concat(dirs.length ? ["Bash(mv:*)", "Bash(git mv:*)", "Bash(mkdir:*)", "Bash(ls:*)", "Bash(find:*)"] : []);
+// (Edit(path) covers Write; a Write(path) rule is never consulted, and //path is absolute: agents.mjs GUARD)
+const dirRules = (dirs) => dirs.flatMap((d) => [`Read(/${d}/**)`, `Edit(/${d}/**)`]).concat(dirs.length ? ["Bash(mv:*)", "Bash(git mv:*)", "Bash(mkdir:*)", "Bash(ls:*)", "Bash(find:*)"] : []);
 function grantDirs(dir, dirs) {
   if (!dirs.length) return null;
   try { writeFileSync(join(dir, ".symbiot", "allowlist.proposed.json"), JSON.stringify({ permissions: { allow: dirRules(dirs), additionalDirectories: dirs } }, null, 2) + "\n"); } catch { return null; }
@@ -698,4 +741,4 @@ function sharedFor(path, text, { ledger = loadLedger(), now = Date.now(), cfg = 
   return `## What ${who} has already answered on this work\nBefore you ask ${who} anything, check these: if one settles it, use it and don't ask.\n${l.map((x) => `- ${x.lane} asked "${clipWords(x.q.replace(/\s+/g, " "), 160)}": ${clipWords(x.a.replace(/\s+/g, " "), 300)} (${String(x.at).slice(0, 10)})`).join("\n")}`;
 }
 
-export { ancestry, loops, shareAnswer, sharedFor, sharedTo, answerReaches, linkedPaths, topicsOf, ownHosts, COMMON_HOSTS, parentOf, SHARED, LEDGER, MAX_CHAIN, loadLedger, laneOf, lastRunStart, dispatch, outcome, report, handingOf, lanesTick, lanesState, aboutIt, partlyDone, remoteKey, orcaMoves, orcaRelink, stuckHandovers, allowHandover, skipHandover, namedDirs, alike, doneSince };
+export { nearLane, laneTarget, staleOutcome, STALE_AFTER, ancestry, loops, shareAnswer, sharedFor, sharedTo, answerReaches, linkedPaths, topicsOf, ownHosts, COMMON_HOSTS, parentOf, SHARED, LEDGER, MAX_CHAIN, loadLedger, laneOf, lastRunStart, dispatch, outcome, report, handingOf, lanesTick, lanesState, aboutIt, partlyDone, remoteKey, orcaMoves, orcaRelink, stuckHandovers, allowHandover, skipHandover, namedDirs, alike, doneSince };
