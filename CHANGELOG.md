@@ -6,6 +6,7 @@ What each Symbiot release brought, newest first. When Approve bumps the version,
 
 - **No more offers to answer mail that can't be answered.** Home no longer offers to draft a reply to no-reply senders, GitHub and CI notifications, receipts, alerts or newsletters. Before, a single CI failure email showed up as "draft a response for 1 email".
 - **Commit messages and pull requests stay free of private details.** Approve titles a commit and its PR from the tasks' first sentences and leaves out any that name your projects, people, servers, home folder or run ids. Those stay in Symbiot. The same check already guards the release notes.
+- **Approve starts a fresh branch once a branch's PR has merged**, even when that PR's last commit was pushed from somewhere else, such as another checkout or a fix made on GitHub. Before, Approve treated the branch as still live, so the next PR carried the merged PR's commits again and conflicted with main.
 
 ## 0.66.9 — 2026-10-19
 
