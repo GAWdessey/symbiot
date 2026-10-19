@@ -286,7 +286,7 @@ console.log("FINDINGS AND REMOVING — a fact a report found isn't filed as a jo
   const jobs = ["Fix the sign-in page on Safari.", "Login is not working on mobile.", "Sign-in is still broken on Safari.", "Paystack's live webhook is empty, not set: that's for the dailify lane to check.",
     "Reconnect Garth's calendar: it is already expiring.", "Is the live key from another Paystack business?", "Don't start a handoff where an agent is already running.", "When the reply is already in, hand it on."];
   ok("…and jobs, bug reports and questions don't", !jobs.some(isFinding), jobs.filter(isFinding));
-  const ideas = R.reportIdeas("# Audit\n\n## Four things that change the plan\n\n- Google is already fully on dailify.co.za.\n- API_EXTERNAL_URL is https://dailify.fshub.dev, not supabase.seekerai.dev.\n- Reconnect Garth's own calendar once.\n");
+  const ideas = R.reportIdeas("# Audit\n\n## Next steps\n\n- Google is already fully on dailify.co.za.\n- API_EXTERNAL_URL is https://dailify.fshub.dev, not supabase.seekerai.dev.\n- Reconnect Garth's own calendar once.\n");
   ok("a report's next steps leave its findings out", ideas.join("|") === "Reconnect Garth's own calendar once.", ideas);
   const { reportIdeasAdd } = await import("../home.mjs");
   const d = join(CFG, "drafts", "act-finding01"); put(d, "AUDIT.md", "# Audit\n\n## Next\n\n- Reconnect the calendar\n");
