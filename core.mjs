@@ -197,10 +197,19 @@ function sameTask(a, b) {
 const JOB_VERB = /^(?:when|if|once|only|never|always|don['’]?t|do not|avoid|pick|choose|allow|prefer|limit|cap|raise|lower|mark|tick|close|open|clear|save|store|read|watch|notify|warn|say|offer|add|fix|check|ask|make|move|set|update|remove|delete|drop|send|run|write|test|verify|confirm|reconnect|sign|deploy|rename|hand|create|build|ship|approve|change|replace|switch|migrate|investigate|look|find|review|decide|get|put|call|email|reply|follow|schedule|book|pay|renew|rotate|reword|bump|merge|split|turn|enable|disable|stop|start|restart|keep|use|let|try|clean|document|draft|post|publish|install|upgrade|connect|link|map|wire|show|hide|give|tell|retry|re-?[a-z]+)\b/i;
 const JOB_SAYS = /\b(?:should|must|needs? to|needed to|has to|have to|ought to|todo|to do|next step|worth|consider|recommend\w*|for (?:the )?[\w-]+(?: lane)? to)\b|👤|🤖|\?\s*$/iu;
 const FACT_SAYS = /\balready\b|\b(?:is|are|was|were)\b[^;]*?,\s*not\b|\b(?:nothing|no change|no action) (?:to do|needed|is needed)\b/i;
+// A progress record is one too: a report's "Still to do" keeps the log of a job as it
+// went ("Meta part, by the dailify lane itself: done (16 Oct, about 15:00).", "…(update,
+// 14:50): the work is out, in 0.66.5…", "Earlier note, kept for the record: …"), and two
+// such lines sat on the Workdesk as jobs (2026-10-19). A label, then done (fixed,
+// shipped…) or an "(update…)" on it, says how it went; it's still a job when any of its
+// sentences gives an order ("Step 1: done. Add the rest.") or says what's needed (JOB_SAYS).
+const STATUS_SAYS = /^[^:.!?]{1,100}?:\s*(?:done|fixed|finished|shipped|released|resolved|closed|merged|completed?)(?=\s*(?:[.,;(—–]|-\s|(?:by|in|on|at|and|for)\b|$))|^[^:.!?]{1,100}?\((?:update|later|earlier)\b[^)]*\):|^(?:earlier|older|old) note\b[^:]*:|\bkept for the record\b/i;
 function isFinding(text) {
   const s = String(text || "").replace(/\s*\(from the report ".*$/s, "").replace(/[`*_]/g, "").trim();
   const first = (s.match(/^.*?[.!?](?=\s|$)/s) || [s])[0];
-  if (!first || JOB_VERB.test(first) || JOB_SAYS.test(s)) return false;
+  if (!first || JOB_SAYS.test(s)) return false;
+  if (STATUS_SAYS.test(first)) return !s.split(/(?<=[.!?])\s+/).slice(1).some((x) => JOB_VERB.test(x));
+  if (JOB_VERB.test(first)) return false;
   return FACT_SAYS.test(first);
 }
 // Nearly the same task, two ways:

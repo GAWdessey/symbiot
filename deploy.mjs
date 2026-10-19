@@ -57,13 +57,13 @@ const same = (a, b) => { const x = String(a || "").match(/(\d+)\/?$/), y = Strin
 // Put the question on the Workdesk: appended to the lane's QUESTIONS.md, so the user's answer
 // goes back to that lane's agent, who hands the deploy to ops (a repo lane reaches no server).
 // Raised once per PR, and not again once it was answered. Gives true when it wrote one.
-function deployAsk(path, repo, pr, target) {
+function deployAsk(path, repo, pr, target, stage = "merged") {
   if (!path || !target) return false;
   const q = askOf(repo, pr, target), f = join(path, ".symbiot", "QUESTIONS.md");
   if (isDone(q) || read(f).includes(q) || read(join(path, ".symbiot", "ANSWERS.md")).includes("### " + q)) return false;
   const body = [
     `### ${q}`,
-    `The change is merged but not live until it is deployed${target.auto ? "; CI does that itself, so this is the check that it reached the site" : ""}. Deploying to production is your yes. Check first that the PR's tests passed${target.url ? ` and that ${target.url} still works` : ""}.`,
+    `${stage === "merged" ? "The change is merged but" : "The PR isn't merged yet (it merges by itself once its checks pass, if it can), and the change is"} not live until it is deployed${target.auto ? "; CI does that itself, so this is the check that it reached the site" : ""}. Deploying to production is your yes. Check first that the PR's tests passed${target.url ? ` and that ${target.url} still works` : ""}.`,
     `- 🤖 Agent: hand the deploy to ops, then have it check the change on ${target.url || "the live site"} and report back (recommended)`,
     `- Skip this part: leave it merged and not live for now`,
     "",
@@ -88,7 +88,7 @@ function markTasks(repo, pr, live) {
 function afterShip(path, repo, pr, stage, { ask = true } = {}) {
   const target = deployTarget(path, repo), live = liveNote(target, stage);
   if (pr) markTasks(repo, pr, live);
-  const asked = ask && target && pr ? deployAsk(path, repo, pr, target) : false;
+  const asked = ask && target && pr ? deployAsk(path, repo, pr, target, stage) : false; // stage: an Approve that queued the merge isn't merged yet (PR #209 was asked about as merged, 19 Oct 2026)
   return { ...live, ...(target ? { target: where(target) } : {}), ...(asked ? { asked: true } : {}) };
 }
 // Checked on the live site: the tasks of a PR (or the one task) are live now.

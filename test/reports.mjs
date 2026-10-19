@@ -286,6 +286,17 @@ console.log("FINDINGS AND REMOVING — a fact a report found isn't filed as a jo
   const jobs = ["Fix the sign-in page on Safari.", "Login is not working on mobile.", "Sign-in is still broken on Safari.", "Paystack's live webhook is empty, not set: that's for the dailify lane to check.",
     "Reconnect Garth's calendar: it is already expiring.", "Is the live key from another Paystack business?", "Don't start a handoff where an agent is already running.", "When the reply is already in, hand it on."];
   ok("…and jobs, bug reports and questions don't", !jobs.some(isFinding), jobs.filter(isFinding));
+  // the two lines of a report's progress log that sat on the Workdesk as jobs (19 Oct), as filed (clipped) and whole
+  const lane = "(from the report \"What each lane can reach, and why lanes stalled (16 Oct 2026)\", /x/LANE-REACH.md)";
+  const logged = ["Meta part, by the dailify lane itself: done (16 Oct, about 15:00). The dailify lane read it from its own sandbox, with no errors and no help from ops. It ran symbiot screens map on WhatsApp Manager's message templates, pressed only the account picker to switch from GoSolr to Dailify, and read the li " + lane,
+    "Meta part, by the dailify lane itself (update, 14:50): the lane-reach work is out, in 0.66.5 (it includes 0.66.4, which never reached npm because 0.66.5 landed first). The app updated itself at 14:45, and its screens socket is up. From the symbiot lane's own sandbox, symbiot screens map https://busi " + lane,
+    "**Meta part, by the dailify lane itself: done (16 Oct, about 15:00).** The dailify lane read it from its own sandbox. `dailify_broker_trial_invite_v3` is **In review**, Marketing, English, no rejection reason.",
+    "Twilio part of the test (d): done by ops, by the API (run act-2ae1923d, read only, 12:41 on 16 Oct).",
+    "Earlier note, kept for the record: still waits on 0.66.4. npm and the installed app are on 0.66.3."];
+  ok("a report's progress log (done, an update, a note kept for the record) reads as findings", logged.every(isFinding), logged.filter((f) => !isFinding(f)));
+  const stillJobs = ["Step 1: done. Add the rest of the templates.", "Login: done button doesn't respond on mobile.", "Meta part (update, 14:50): it's out, but the dailify lane still needs to read the template.",
+    "Fix the invite: done for Twilio. Check Meta next.", "Deploy: done (16 Oct). Should ops restart the worker?"];
+  ok("…but one that still gives an order, needs something or asks stays a job", !stillJobs.some(isFinding), stillJobs.filter(isFinding));
   const ideas = R.reportIdeas("# Audit\n\n## Next steps\n\n- Google is already fully on dailify.co.za.\n- API_EXTERNAL_URL is https://dailify.fshub.dev, not supabase.seekerai.dev.\n- Reconnect Garth's own calendar once.\n");
   ok("a report's next steps leave its findings out", ideas.join("|") === "Reconnect Garth's own calendar once.", ideas);
   const { reportIdeasAdd } = await import("../home.mjs");

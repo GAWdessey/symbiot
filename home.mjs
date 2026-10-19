@@ -20,6 +20,7 @@ import { pendingReview, pushTasks, addTask, taskType, releaseNotIn } from "./tas
 import { estimate, estimateWords } from "./estimate.mjs";
 import { grantCard, cardIsPermission, setHandoffCmd, agentsList, runHandoff, runningHandoff, handoffCmd, loadRuns, connectorsInfo, parkedPaths, agentMissing, settleNeeds, pickAgent, detectHandoffs, linkReach, unchangedStep, whereOf, claudePause } from "./agents.mjs";
 import { isDone, recordDone, coveredBy, doneList } from "./asksdone.mjs";
+import { captureSecrets } from "./vault.mjs";
 import { linksState, signInAsked } from "./links.mjs";
 import { knowledgeState } from "./knowledge.mjs";
 import { CONFIG_DIR, loadTasks, saveTasks, loadConfig, saveConfig, sameTask, isFinding } from "./core.mjs";
@@ -82,7 +83,7 @@ function troubles({ stuck = [], list = [], map = {}, named = displayName, now = 
     if (n && !dropped.has("needs:" + a.id) && !isDone(n.what)) {
       const ok = n.kind === "approve";
       out.push({ kind: "ask", fix: "needs", id: "needs:" + a.id, path: a.path, repo, name: nm, title: ok ? `${nm} waits for your OK` : `${nm} needs you`, sub: plain(n.label || n.what, 90),
-        q: n.what + (n.check ? ` Check first: ${n.check}` : ""), options: ok ? ["Go ahead (recommended)", "Skip"] : [I_DID_IT, "Skip"], status: "Waiting on you", ...signInCard([n.label, n.what, n.check]), shape: "agents" });
+        q: n.what + (n.check ? ` Check first: ${n.check}` : ""), options: ok ? ["Go ahead (recommended)", "Skip"] : [I_DID_IT, "Skip"], status: "Waiting on you", ...(n.api ? { api: n.api } : signInCard([n.label, n.what, n.check])), shape: "agents" });
       continue;
     }
     if (a.status !== "failed" || dropped.has(a.id) || a.down || (a.endedAt && now - a.endedAt > FAILED_FOR)) continue; // down: Claude itself was out, and Home has one card for that
@@ -257,7 +258,7 @@ function marketingState({ deps = {}, list, pend, map, named = displayName } = {}
   list = list || tryOr(deps.agents || agentsList, []) || [];
   const run = list.find((a) => a.path === dir), qs = (run && run.ask && run.ask.questions) || [], working = !!(run && run.status === "running");
   const needs = qs.map((q, i) => ({ kind: "ask", id: "ask:" + i, text: plain(q.q, 160), options: (q.options || []).slice(0, 2), product: productOf(q.q, names) }));
-  const ready = (pend || tryOr(deps.pending || pendingReview, []) || []).find((r) => r.repo === MARKETING && r.path && !r.running && ((r.tasks || []).length || (r.files || []).length));
+  const ready = (pend || tryOr(deps.pending || pendingReview, []) || []).find((r) => r.repo === MARKETING && r.path && !r.running && !r.shipping && ((r.tasks || []).length || (r.files || []).length));
   if (ready) { const n = (ready.tasks || []).length, f = (ready.files || []).length; needs.push({ kind: "approve", id: "approve", text: `${n ? `${n} piece${n > 1 ? "s" : ""} of marketing done` : "Marketing's agent changed things without a task"}${f ? ` · ${f} file${f > 1 ? "s" : ""}` : ""}: only you decide`, count: n || f }); }
   for (const p of (posts.posts || []).filter((x) => x.status === "waiting")) needs.push({ kind: "draft", id: "draft:" + p.id, text: plain(firstLine(p.text), 120), product: productOf(p.text, names) });
   // a post its agent drafted that you haven't approved or skipped: approving its preview is
@@ -389,7 +390,11 @@ function homeState({ now = Date.now(), fresh = false, deps = {} } = {}) {
   }
   const pend = pending();
   for (const r of pend) {
-    if (!r.path || r.running) continue;
+    // an Approve already putting it in (tasks.mjs shipping) isn't yours to do again: its
+    // card stayed "2 tasks done · only you decide" for the 18 min symbiot's took (its tests),
+    // and pressing it met "Already approving here" (19 Oct 2026). It shows on the project
+    // meanwhile (workScene's shipping), and comes back here only if it didn't get up (unsent).
+    if (!r.path || r.running || r.shipping) continue;
     const n = (r.tasks || []).length, files = (r.files || []).length;
     // approved and committed, but not on GitHub: it waits on a retry (tasks.mjs sendAgain), not an Approve
     const un = r.unsent && UNSENT_SUB[r.unsent.why];
@@ -558,7 +563,9 @@ function homeAnswer(id, { pick, text = "" } = {}, deps = {}) {
     // Done it, on a step that needs a release ("once 0.65.2 is installed, sign in…"): only once it's installed here (tasks.mjs releaseNotIn)
     const rel = n.kind === "approve" || allowed ? null : (deps.releaseNotIn || releaseNotIn)(a.path, `${n.what} ${n.check || ""}`);
     if (rel && !text) return { error: `This step needs ${rel.name} ${rel.needs}, and ${rel.installed} is installed here, so it isn't done yet. Update, do it again, then press Done it.` };
-    const said = allowed ? `Allowed ${allowed.join(", ")}: Symbiot wrote it into this folder's allow list. Carry on.` : n.kind === "approve" ? `Go ahead: ${text || "do it as you had it, once you've checked what you flagged"}.`
+    const said = allowed ? `Allowed ${allowed.join(", ")}: Symbiot wrote it into this folder's allow list. Carry on.`
+      : n.say ? `${n.say}${text ? ` The user adds: ${text}` : ""}` // a sign-in the browser can't hold: its agent takes the API route (browserfails.mjs)
+      : n.kind === "approve" ? `Go ahead: ${text || "do it as you had it, once you've checked what you flagged"}.`
       : still.length ? `The user says it's done (${text}), but ${last}, before you asked. Check it yourself before relying on it, then carry on.`
       : `Done: the user did it${text ? ` (${text})` : ""}. Check it worked, then carry on.`;
     noteAnswer(a.path, n.what, said);
@@ -566,7 +573,7 @@ function homeAnswer(id, { pick, text = "" } = {}, deps = {}) {
     if ((e && e.id && !e.blocked) || later || allowed) { settle(a.path, n.key); dropped.add(id); if (n.kind !== "approve" || n.asked) recordDone(n.what, said, whereOf(a.path).lane); } // "Done it" is on the shared record: no agent raises it again
     if (allowed) return e && e.id && !e.blocked ? { ok: true, said: `Allowed ${allowed.join(", ")} and started its agent.`, rerun: e.id } : { ok: true, said: `Allowed ${allowed.join(", ")}. Its agent didn't start: ${(e && e.note) || "check your agent in Settings"}.` }; // "Done it" is on the shared record: no agent raises it again
     if (later) { (deps.later || runAfterShip)(a.path, deps.run || runHandoff); return { ok: true, said: later }; }
-    return e && e.id && !e.blocked ? { ok: true, said: n.kind === "approve" ? "Its agent is going ahead." : "Its agent is checking and carrying on.", rerun: e.id } : { error: (e && e.note) || "It didn't start. Check your agent in Settings." };
+    return e && e.id && !e.blocked ? { ok: true, said: n.api ? `The browser can't hold the ${n.api} sign-in, so I won't ask you again: its agent is switching to its API.` : n.kind === "approve" ? "Its agent is going ahead." : "Its agent is checking and carrying on.", rerun: e.id } : { error: (e && e.note) || "It didn't start. Check your agent in Settings." };
   }
   return { error: "Answer that one on its block on the Workdesk." };
 }
@@ -709,6 +716,8 @@ function homeContext(h) {
 // Home's talk: the same Symbiot, acting in the right lane (mind.mjs actIn/actNow).
 async function homeAsk(question, { ask, now = Date.now(), state, images = [], acts = {} } = {}) {
   question = String(question || "").trim().slice(0, 2000);
+  // a secret in it goes to the vault first: what's settled, handed or logged from here on has only "[saved: …]" (19 Oct 2026: a card closed by chat kept the password whole)
+  try { question = captureSecrets(question).text; } catch {}
   if (!question && images.length) question = "Take a look at this screenshot.";
   if (!question) return { error: "empty" };
   // the screenshots go to the model, and their files with any work it hands an agent
@@ -843,7 +852,7 @@ function workSceneNow({ deps = {}, full = false } = {}) {
     const w = a.work || {}, todo = (w.todos || []).find((t) => t.status === "in_progress"), pg = a.progress;
     running.push({ id: "run:" + a.path, path: a.path, name: a.name, lane: laneOf(a), ...(parallelLane(a.path) ? { par: true } : {}), doing: plain(todo ? todo.active : w.doing || "Working on it", 120), progress: pg || null, ...runNow(a), waiting: !!nq, started: a.startedAt || (a.elapsed ? Date.now() - a.elapsed : 0) });
   }
-  const ready = pending().filter((r) => r.path && !r.running && ((r.tasks || []).length || (r.files || []).length)).map((r) => ({ id: "ready:" + r.repo, repo: r.repo, count: (r.tasks || []).length }));
+  const pend = pending(), ready = pend.filter((r) => r.path && !r.running && !r.shipping && ((r.tasks || []).length || (r.files || []).length)).map((r) => ({ id: "ready:" + r.repo, repo: r.repo, count: (r.tasks || []).length }));
   const busy = new Set(running.map((r) => r.lane)), open = tasks().filter((t) => !t.done && !t.archived && !t.review && t.repo);
   // why each one waits, in plain words: on it now, queued behind a run, waiting on you, blocked, or next
   const held = {}; for (const a of AG) { if (a.status === "running") continue; const l = laneOf(a), nq = (a.ask && a.ask.questions && a.ask.questions.length) || 0; if (!held[l] && (nq || a.waiting || (a.needs && !a.needs.waiting))) held[l] = { path: a.path, approve: !nq && !a.waiting && a.needs && a.needs.kind === "approve" }; }
@@ -854,6 +863,7 @@ function workSceneNow({ deps = {}, full = false } = {}) {
   const by = {}, at = (name) => (by[name] = by[name] || { repo: name, name: name === RUNS_LANE ? "Agent runs" : named(map[name], name), waiting: 0, ready: 0, asks: 0, running: null, last: 0, ...(name === RUNS_LANE ? { runs: 0 } : {}) });
   running.forEach((r) => { const p = at(r.lane); if (r.lane === RUNS_LANE) p.runs++; if (!p.running) p.running = { doing: r.doing, progress: r.progress, ask: r.waiting, ...(r.line ? { line: r.line } : {}), ...(r.eta ? { eta: r.eta } : {}), ...(r.quiet ? { quiet: r.quiet } : {}), ...(r.looping ? { looping: true } : {}) }; p.last = Math.max(p.last, r.started || 0); });
   ready.forEach((r) => { at(r.repo).ready = r.count || 1; });
+  pend.forEach((r) => { if (r.shipping) at(r.repo).shipping = r.shipping.step || "starting"; }); // Approve at work there: says so, not "ready for your OK"
   open.forEach((t) => { const p = at(t.repo); p.waiting++; p.last = Math.max(p.last, Number(t.ts) || 0); });
   Object.keys(asks).forEach((l) => { at(l).asks = asks[l]; });
   // The relay (the Tasks screen, so you needn't open Agents): per project, what its

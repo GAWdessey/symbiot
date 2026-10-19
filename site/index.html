@@ -97,6 +97,8 @@ h2{margin:0 0 14px;font:650 clamp(28px,4vw,40px)/1.15 var(--sans);letter-spacing
 .dot{width:38px;height:38px;border-radius:50%;margin-bottom:18px;background:radial-gradient(circle at 38% 32%,#55595F 0,#16171B 45%,#050506 80%);box-shadow:0 0 0 1px rgba(176,70,110,.4)}
 .dot.amber{box-shadow:0 0 0 1.5px var(--amber),0 0 18px rgba(242,165,65,.35)}
 .num{font:600 13px var(--sans);color:var(--amber);letter-spacing:.08em;margin-bottom:10px}
+.fine{margin:24px 0 0;font-size:13.5px;color:var(--faint)}
+.fine a{color:var(--text)}
 
 /* install */
 .plat{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
@@ -120,6 +122,9 @@ h2{margin:0 0 14px;font:650 clamp(28px,4vw,40px)/1.15 var(--sans);letter-spacing
 .plans li{margin:6px 0}
 .plans .card.pro{border-color:color-mix(in srgb,var(--amber) 45%,var(--line))}
 .plans .btn{align-self:flex-start;margin-top:auto}
+.plans .buy{display:flex;flex-wrap:wrap;gap:10px;margin-top:auto}
+.plans .buy .btn{margin-top:0}
+.plans .buy+.alt{font-size:13.5px;color:var(--faint)}
 .need li{margin:6px 0}
 .need ul{margin:0;padding-left:18px;color:var(--faint);font-size:15px}
 
@@ -235,6 +240,20 @@ footer a{text-decoration:none}footer a:hover{color:var(--bone)}
     </div>
   </section>
 
+  <section id="from-phone">
+    <div class="wrap">
+      <p class="kicker">From your phone</p>
+      <h2>Say yes from anywhere.</h2>
+      <p class="sub">Your agents keep working while you're out. When one needs you, your phone tells you, and one tap sends the work on its way.</p>
+      <div class="grid3">
+        <div class="card"><div class="num">01</div><h3>An agent finishes</h3><p>It has done the work in your project and wants your OK, or it has a question only you can answer.</p></div>
+        <div class="card"><div class="num">02</div><h3>Your phone buzzes</h3><p>Symbiot's Android app shows what changed and what it's asking, in plain words. It's sealed between your phone and your computer, at home or away.</p></div>
+        <div class="card"><div class="num">03</div><h3>You approve, the pull request opens</h3><p>Tap Approve and your computer opens the pull request and ships it. Not yet? Answer in your own words and the agent carries on.</p></div>
+      </div>
+      <p class="fine">Approve-and-ship is part of Pro. The phone app is on Android for now: <a href="/get/?app=android">Get the phone app</a>.</p>
+    </div>
+  </section>
+
   <section id="pro">
     <div class="wrap">
       <p class="kicker">Free and Pro</p>
@@ -248,12 +267,13 @@ footer a{text-decoration:none}footer a:hover{color:var(--bone)}
           <li>One connected inbox or chat</li>
           <li>The Away screen</li></ul>
           <a class="btn ghost" href="#install">Install Symbiot</a></div>
-        <div class="card pro"><h3>Pro</h3><p class="price">US$12 <small>a month, or US$99 a year</small></p><ul>
+        <!-- The checkout links: both set (https), and the card shows a pay button for each in place of Get Pro by email. Empty, it stays as it is. -->
+        <div class="card pro" data-checkout-monthly="" data-checkout-yearly=""><h3>Pro</h3><p class="price">US$12 <small>a month, or US$99 a year</small></p><ul>
           <li>Everything in Free</li>
           <li>As many agents at once as you like, in every project</li>
           <li>Every inbox and chat: all your mail, WhatsApp, LinkedIn and your calendars</li>
           <li>The marketing lane: posts drafted from your real work</li>
-          <li>Approve-and-ship: Symbiot opens the pull request and ships it</li>
+          <li>Approve-and-ship, from your computer or your phone: Symbiot opens the pull request and ships it</li>
           <li>Fixes for Pro customers first</li></ul>
           <a class="btn" id="get-pro" href="mailto:sales@symbiot.co.za?subject=Symbiot%20Pro&amp;body=I%27d%20like%20Symbiot%20Pro%20(monthly%20or%20yearly%3F)">Get Pro</a>
           <p class="alt">Email sales@symbiot.co.za. You'll get a key to paste into Symbiot's Settings.</p></div>
@@ -290,7 +310,8 @@ footer a{text-decoration:none}footer a:hover{color:var(--bone)}
 
 <script>
 // Which channel brought this visitor: the utm_source on the link they arrived by is kept
-// for the visit and written into the Get Pro email, so a Pro sale can be traced to a post.
+// for the visit and written into the Get Pro email (or the checkout's custom data), so a
+// Pro sale can be traced to a post.
 (function () {
   var src = "";
   try {
@@ -299,6 +320,17 @@ footer a{text-decoration:none}footer a:hover{color:var(--bone)}
   } catch (e) {}
   var a = document.getElementById("get-pro");
   if (a && src) a.href += encodeURIComponent("\n\n(source: " + src + ")");
+  // Pay on the site, once the store's checkout links are set on the card: never a dead button.
+  var card = document.querySelector(".plans .card.pro"), https = /^https:\/\/[^\s"<>]+$/;
+  var m = card && card.getAttribute("data-checkout-monthly"), y = card && card.getAttribute("data-checkout-yearly");
+  if (!a || !https.test(m || "") || !https.test(y || "")) return;
+  var tag = function (u) { return src ? u + (u.indexOf("?") < 0 ? "?" : "&") + "checkout%5Bcustom%5D%5Butm_source%5D=" + encodeURIComponent(src) : u; };
+  var buy = document.createElement("div"); buy.className = "buy";
+  [["Pro monthly, US$12", m], ["Pro yearly, US$99", y]].forEach(function (b) { var l = document.createElement("a"); l.className = "btn"; l.href = tag(b[1]); l.textContent = b[0]; buy.appendChild(l); });
+  var alt = a.nextElementSibling, note = document.createElement("p"); note.className = "alt";
+  note.appendChild(document.createTextNode("Your key arrives by email in a minute, to paste into Symbiot's Settings. Or "));
+  var mail = document.createElement("a"); mail.href = a.href; mail.textContent = "email sales@symbiot.co.za"; note.appendChild(mail); note.appendChild(document.createTextNode("."));
+  a.replaceWith(buy); if (alt && alt.className === "alt") alt.replaceWith(note); else buy.after(note);
 })();
 </script>
 <script>

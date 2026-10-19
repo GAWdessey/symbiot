@@ -247,6 +247,9 @@ console.log("THE TICK — two independent tasks queued at one lane both run at o
   // a clash with what's running: held, and the card says what for
   const clashing = { ...busy, openTasks: () => ["Rework phone.mjs pairing"] };
   const sc = workScene({ deps: { ...clashing, fails: {} } }), why = (id) => sc.waiting.find((w) => w.id === "task:" + id).why;
+  // an Approve putting a lane's work in: the project says so, and it isn't "ready for your OK" (symbiot, 19 Oct 2026)
+  const shipSc = workScene({ deps: { ...clashing, fails: {}, pending: () => [{ repo: "symbiot", path: "/s", tasks: [{}, {}], files: [], shipping: { step: "running its tests", since: 1 } }] } }), shipP = shipSc.projects.find((p) => p.repo === "symbiot");
+  ok("an Approve under way: the project says what it's on, and nothing waits on your OK", !shipSc.ready.length && shipP && shipP.shipping === "running its tests" && !shipP.ready, { ready: shipSc.ready, shipP });
   ok("a clash: queued, naming what it waits on and the run", why("1").kind === "queued" && /both need phone\.mjs, and "Rework phone\.mjs pairing" has it now/.test(why("1").text) && /Queued behind symbiot's run: working/.test(why("1").text), why("1"));
   ok("…while the independent ones are next, beside the run", why("2").kind === "beside" && why("3").kind === "beside", [why("2"), why("3")]);
   const full = workScene({ deps: { ...clashing, parallel: () => [{ lane: "symbiot", task: "Fix core.mjs", taskId: "9" }, { lane: "symbiot", task: "Fix route.mjs", taskId: "8" }], fails: {} } });

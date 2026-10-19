@@ -327,7 +327,7 @@ async function snapshot({ now = Date.now(), fresh = false } = {}) {
     const qs = await tryOr(() => agents.agentQuestions(y.path, "").questions, []);
     if (qs.length) asks.push({ id: askId(y.path), path: y.path, name: plainText(String(y.name || "an agent").replace(/^Agent:\s*/, ""), 60), questions: qs.slice(0, 5).map((q) => ({ q: plainText(q.q, 300), ...(q.task ? { task: plainText(q.task, 120) } : {}), ...(q.shown ? { shown: plainText(q.shown, 400) } : {}), options: (q.options || []).slice(0, 2).map((o) => plainText(o, 200)), ...(q.labels ? { labels: q.labels.slice(0, 2).map((o) => plainText(o, 200)) } : {}) })) });
   }
-  const approves = (await tryOr(() => tasksMod.pendingReview(), [])).filter((r) => r.path && !r.running && ((r.tasks || []).length || (r.files || []).length))
+  const approves = (await tryOr(() => tasksMod.pendingReview(), [])).filter((r) => r.path && !r.running && !r.shipping && ((r.tasks || []).length || (r.files || []).length))
     .map((r) => ({ repo: r.repo, tasks: (r.tasks || []).map((t) => ({ id: t.id, text: plainText(t.text, 200) })), files: (r.files || []).length, stat: plainText(r.stat, 120), ...(r.untasked ? { untasked: true } : {}), sum: approveSum(r) }));
   const board = watch ? await tryOr(() => watch.watchBoard(24, now), { cards: [] }) : { cards: [] };
   const seen = (board.cards || []).filter((c) => c.count > 0).slice(0, 8).map((c) => ({ name: plainText(c.name, 60), label: plainText(c.label, 60), count: c.count, items: (c.items || []).filter((i) => i.need !== false).slice(0, 3).map((i) => ({ text: plainText(i.text, 140), ts: i.ts })) }));
@@ -373,6 +373,7 @@ async function applyOne(o, phone) {
     const now = pendingReview().find((r) => r.repo === repo && r.path && ((r.tasks || []).length || (r.files || []).length));
     if (!now) return { error: `Nothing in ${repo} is waiting for your Approve any more.` };
     if (now.running) return { error: `The agent is still working in ${repo}. Approve once it finishes.` };
+    if (now.shipping) return { error: `${repo} is already being approved (${now.shipping.step || "starting"}): it finishes by itself.` };
     if (approveSum(now) !== String(a.sum || "")) return { refused: true, error: `The work in ${repo} changed since your phone showed it, so it wasn't approved. Look at what's there now, then approve that.` };
     const ap = readJson(PATHS.applied, { ids: {}, approvals: [] }), entry = { id: o.id, repo, phone: phone.name, at: Date.now(), status: "approving" };
     ap.approvals = [...(ap.approvals || []), entry].slice(-30); writeJson(PATHS.applied, { ...ap, ids: ap.ids || {}, approvals: ap.approvals });
