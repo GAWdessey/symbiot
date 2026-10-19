@@ -57,6 +57,9 @@ jobs:
       - name: Test
         env:
           SYMBIOT_NO_OPEN: "1"
+          # names the release notes must never say (the maker's projects, people,
+          # providers), kept out of the public repo: test/outward.mjs checks CHANGELOG.md
+          SYMBIOT_PRIVATE_TERMS: ${{ secrets.SYMBIOT_PRIVATE_TERMS }}
         run: npm test
 
   publish:
@@ -199,10 +202,17 @@ jobs:
             sleep 10
           done
           echo "::error::symbiot@$VER isn't downloadable from npm"; exit 1
+      # The package's version list is cached the same way, apart from its tarball: on 0.66.5
+      # the tarball came through and then npm install said "No matching version found for
+      # symbiot@0.66.5" on Linux and Mac (ETARGET). So it's tried again until that list has it.
       - name: This version, bundling exactly this symbiot
         run: |
           npm pkg set version="$VER"
-          npm install --no-audit --no-fund --save-exact "symbiot@$VER"
+          for i in $(seq 1 40); do
+            npm install --no-audit --no-fund --prefer-online --save-exact "symbiot@$VER" && exit 0
+            sleep 15
+          done
+          echo "::error::npm still doesn't list symbiot@$VER"; exit 1
       - run: npx electron-builder ${{ matrix.target }} --publish never
       - name: Attach to the release
         run: |

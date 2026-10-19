@@ -27,6 +27,7 @@ import { quotaState } from "./quota.mjs";
 import { laneCap, mergeEnded, DEFAULT_CAP } from "./parallel.mjs";
 import { addTask, setTaskModel, toggleTask, removeTask, cancelTask, restoreTask, syncTasks, taskType, pushTasks, pendingReview, workingDiff, learnNpm, withReleases, releaseInput, approveRepo, approveChanges, sendBack, setAutoMerge, mergeWhenGreen, sendAgain, forgetUnsent, shippingPaths } from "./tasks.mjs";
 import { repoReview, repoSuggest, folderSuggest, taskChat, clearTaskChat, mailState, setMail, sentMail, produce, releaseNotes } from "./writeups.mjs";
+import { denyList } from "./outward.mjs";
 import { listSecrets, getSecret, markUsed, deleteSecret } from "./vault.mjs";
 import { SCREENS_SOCK, screensGate, loadScreens, screenImage, captureScreen, splitScreen, listMonitors, allowScreenshots, importScreen, setRegions, renameScreen, removeScreen, blueprint, clickRegion } from "./screens.mjs";
 import { sessionCookie, mapPage, wholePage, pressRegion, typeRegion, chooseRegion, fillForm, verifyPage, uploadRegion, scrollPage, signIn, keepBrowserOpen, isTrusted, trustedSites, trustSite, untrustSite, openSymbiotBrowser, closeSymbiotBrowser, onBrowserClosed, setBrowserHub, siteUrl, browserHub, windowOpen } from "./headless.mjs";
@@ -120,6 +121,14 @@ function installedElsewhere(target, { here = fileURLToPath(new URL(".", import.m
   return `npm said it installed ${target}, but Symbiot restarted on ${VERSION} from the same files (${mine})`;
 }
 
+// What Approve writes in a release's notes: your AI's words, and what's yours alone
+// (your lanes, people, accounts, providers: outward.mjs), which stays out of them,
+// and is checked in a CHANGELOG.md an agent wrote by hand too.
+async function notesFor(repo, opts) {
+  let deny = []; try { deny = await denyList(repo); } catch {}
+  const input = releaseInput(repo, opts);
+  return { notes: input ? await releaseNotes({ ...input, deny }) : null, deny };
+}
 // ---- what's new: the changelog's releases between two versions -------------------
 // CHANGELOG.md's "## 0.45.0 — 2026-10-06" sections newer than `from` and up to
 // `to`, newest first: [{ version, date, items }]. It ships with Symbiot, so after an
@@ -496,8 +505,8 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       if (u.pathname === "/api/pending/diff") { const p = laneMap()[u.searchParams.get("repo") || ""]; return json(res, { diff: p ? workingDiff(p) : "" }); }
       if (u.pathname === "/api/tasks/live" && req.method === "POST") { const b = await readBody(req); return json(res, markLive(String(b.id || ""))); }
       if (u.pathname === "/api/pending/merge" && req.method === "POST") { const b = await readBody(req), path = laneMap()[String(b.repo || "")]; if (!path || !b.pr) return json(res, { error: "Say which repo and PR." }); { const m = mergeWhenGreen(path, String(b.pr)); if (m.ok) { try { m.live = afterShip(path, String(b.repo), String(b.pr), "merged"); } catch {} } return json(res, m); } }
-      if (u.pathname === "/api/pending/approve" && req.method === "POST") { const b = await readBody(req), repo = String(b.repo || ""); if (b.bump) await learnNpm([laneMap()[repo]]); const notes = await releaseNotes(releaseInput(repo, { bump: b.bump })); return json(res, await approveRepo(repo, { bump: b.bump, notes, confirm: !!b.confirm, allowShared: !!b.allowShared })); }
-      if (u.pathname === "/api/pending/approve-changes" && req.method === "POST") { const b = await readBody(req), repo = String(b.repo || ""); if (b.bump) await learnNpm([laneMap()[repo]]); const notes = await releaseNotes(releaseInput(repo, { bump: b.bump, tick: b.tick })); return json(res, await approveChanges(repo, { bump: b.bump, tick: b.tick, notes, confirm: !!b.confirm, allowShared: !!b.allowShared })); }
+      if (u.pathname === "/api/pending/approve" && req.method === "POST") { const b = await readBody(req), repo = String(b.repo || ""); if (b.bump) await learnNpm([laneMap()[repo]]); const { notes, deny } = await notesFor(repo, { bump: b.bump }); return json(res, await approveRepo(repo, { bump: b.bump, notes, deny, confirm: !!b.confirm, allowShared: !!b.allowShared })); }
+      if (u.pathname === "/api/pending/approve-changes" && req.method === "POST") { const b = await readBody(req), repo = String(b.repo || ""); if (b.bump) await learnNpm([laneMap()[repo]]); const { notes, deny } = await notesFor(repo, { bump: b.bump, tick: b.tick }); return json(res, await approveChanges(repo, { bump: b.bump, tick: b.tick, notes, deny, confirm: !!b.confirm, allowShared: !!b.allowShared })); }
       // approved work that didn't get as far as a PR: sent again (untested: without the tests here), or left
       if (u.pathname === "/api/pending/send" && req.method === "POST") { const b = await readBody(req); return json(res, await sendAgain(String(b.repo || ""), b.untested ? { verify: false } : {})); }
       if (u.pathname === "/api/pending/leave" && req.method === "POST") { const b = await readBody(req); return json(res, forgetUnsent(String(b.repo || ""))); }
@@ -858,7 +867,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
   startWatches(); // pages you watch (Screens → Watch), read every few minutes
   // Your phone: the computer listens if it's switched on, the phone asks if it's paired.
   // An Approve from a paired phone is this same Approve, release notes and all.
-  setPhoneApprove(async (repo, untasked) => { const notes = await releaseNotes(releaseInput(repo, {})); return untasked ? approveChanges(repo, { tick: [], notes }) : approveRepo(repo, { notes }); });
+  setPhoneApprove(async (repo, untasked) => { const { notes, deny } = await notesFor(repo, {}); return untasked ? approveChanges(repo, { tick: [], notes, deny }) : approveRepo(repo, { notes, deny }); });
   startPhone();
   onAnswered((path, rows) => shareAnswer(path, rows)); // an answer to one agent reaches the others on the same work
   setInterval(() => { try { startWaiting(); } catch {} }, 20000).unref(); // a run that waits for your step starts once the file it names changes

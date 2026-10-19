@@ -3380,6 +3380,7 @@ var R=Math.round(24*Math.max(0.85,Math.min(1.1,S.s))),unit=3*R+22+LQ_BLOBW,gap=2
 LQ.needPage=(LQ.needPage||0)%pages;
 // the card you're typing in stays in view: a new one ahead of it doesn't page it away
 var fa=document.activeElement,tb=fa&&fa.closest?fa.closest('#lqdrops .lqblob[data-key]'):null;if(tb){var tk=tb.getAttribute('data-key');for(var ti=0;ti<ys.length;ti++)if(bdKey(ys[ti])===tk){LQ.needPage=Math.floor(ti/cols);break;}}
+else for(var hi=0;hi<ys.length;hi++)if(blobHeld(bdKey(ys[hi]))){LQ.needPage=Math.floor(hi/cols);break;} // one you pressed, sending or saying why it didn't
 var shown=ys.slice(LQ.needPage*cols,LQ.needPage*cols+cols),x0=Math.max(12,(S.w-(shown.length*unit+(shown.length-1)*gap))/2);
 var tall=(shown.some(function(y){return y.kind==='ask'&&(y.options||[]).length;})?172:116)+(shown.some(function(y){return y.task||y.fix==='handover';})?16:0)+(shown.some(function(y){return y.draft;})?150:0);
 // the band is as tall as its tallest card really is: two long answers, the own-words
@@ -3678,20 +3679,26 @@ return h+"<div class='bst' role='status' aria-live='polite'></div>";}
 // says on itself what went wrong (a word in Home's talk alone went unseen: the Allow
 // pressed again and again on 2026-10-12). One answer per question at a time (BLOBBUSY),
 // through a redraw too, and a card answered stays away until Home has heard (BLOBSENT).
-var BLOBBUSY={},BLOBSENT={},BLOBSENT_FOR=120000;
+// What a click that failed said stays on its card through a redraw for a minute (BLOBFAIL),
+// and that card, or one sending, stays on the page shown (blobHeld): pressing lets go of the
+// focus, so a refresh paged it away with what it said (CI, 0.66.4 publish, 2026-10-16).
+var BLOBBUSY={},BLOBSENT={},BLOBSENT_FOR=120000,BLOBFAIL={},BLOBFAIL_FOR=60000;
+function blobFailed(k){var x=BLOBFAIL[k];return x&&Date.now()-x.at<BLOBFAIL_FOR?x.t:'';}
+function blobHeld(k){return !!BLOBBUSY[k]||!!blobFailed(k);}
 function blobSent(y){var t=BLOBSENT[bdKey(y)];return !!t&&Date.now()-t<BLOBSENT_FOR;}
 function wireBlob(box,y,o){o=o||{};var say=o.say||lqSaid,nm=y.name||y.repo||'the agent',key=bdKey(y);
 var lock=function(on){box.querySelectorAll('button,input').forEach(function(b){b.disabled=on;});};
 var st=function(t,bad){var e=box.querySelector('.bst');if(!e)return;e.textContent=t||'';if(e.classList)e.classList.toggle('err',!!bad);if(o.grew)o.grew();};
 var busy=function(on,b){if(box.classList)box.classList.toggle('sending',on);if(box.setAttribute)box.setAttribute('aria-busy',on?'true':'false');box.querySelectorAll('.pressed').forEach(function(x){x.classList.remove('pressed');});if(on&&b&&b.classList)b.classList.add('pressed');lock(on);};
-var send=function(ans,j,b){ans=String(ans||'').trim();if(!ans||(!y.path&&!y.fix)||BLOBBUSY[key])return;BLOBBUSY[key]=1;busy(true,b);st('Sending…');
-var fail=function(t){delete BLOBBUSY[key];busy(false);st(t,true);say(nm+': '+t,true);};
+var send=function(ans,j,b){ans=String(ans||'').trim();if(!ans||(!y.path&&!y.fix)||BLOBBUSY[key])return;BLOBBUSY[key]=1;delete BLOBFAIL[key];busy(true,b);st('Sending…');
+var fail=function(t){delete BLOBBUSY[key];BLOBFAIL[key]={t:t,at:Date.now()};busy(false);st(t,true);say(nm+': '+t,true);};
 (y.fix?api('/api/home/answer',j!=null?{id:y.id,pick:j}:{id:y.id,text:ans}):api('/api/agents/answer',{path:y.path,answers:[{q:y.raw||y.q,a:ans}],rerun:true})).then(function(r){
 if(!r||r.error){fail((r&&r.error)||'the answer didn’t save. Try again on its block on the Workdesk.');return;}
 delete BLOBBUSY[key];BLOBSENT[key]=Date.now();st(r.already?'Answered already.':'Sent.');
 say(y.fix?nm+': '+(r.said||'Done.'):r.already?nm+': '+r.note:'Sent to '+(r.lane||nm)+'. '+((r.also||[]).length?'Also given to '+r.also.join(', ')+', on the same work. ':'')+(r.yours&&r.yours.length?'Still yours to do: '+r.yours.join(' '):r.rerun?'Its agent is picking it up now.':(r.note||'Saved in its ANSWERS.md.')));
 bdSet(y,'');if(o.sent)o.sent();if(box.classList)box.classList.add('gone');setTimeout(function(){if(o.done)o.done();},650);}).catch(function(e){fail(String((e&&e.message)||e));});};
 if(BLOBBUSY[key]){busy(true);st('Sending…');} // drawn again while its answer is on its way
+else if(blobFailed(key))st(blobFailed(key),true);
 // Dismiss: the card goes from Home, the Workdesk and its project (home.mjs dismissCard), its draft with it; Undo brings it back
 var bx=box.querySelector('.bx');if(bx)bx.addEventListener('click',function(){if(BLOBBUSY[key])return;bx.disabled=true;api('/api/home/dismiss',{key:key}).then(function(r){if(!r||r.error){bx.disabled=false;st((r&&r.error)||'It didn’t go. Try again.',true);return;}
 bdSet(y,'');BLOBSENT[key]=Date.now();if(o.sent)o.sent();if(box.classList)box.classList.add('gone');setTimeout(function(){if(o.done)o.done();},650);
