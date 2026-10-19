@@ -709,9 +709,15 @@ async function mergedAlready(path, branch, base, { gh = null, net = {} } = {}) {
   if (!git(path, ["rev-parse", "-q", "--verify", ref]).ok) return null;
   if (!git(path, ["merge-base", "--is-ancestor", "HEAD", ref]).ok && git(path, ["diff", "--quiet", "HEAD", ref, ...NOT_SYMBIOT]).ok) return { from: ref };
   if (!gh && (!origin.ok || !/github/i.test(origin.out) || !hasCmd("gh"))) return null;
-  const list = async (state) => { const r = await (gh || ghRun(path))(["pr", "list", "--head", branch, "--state", state, "--limit", "1", "--json", "headRefOid"]); try { return r.status === 0 ? JSON.parse(r.stdout) : null; } catch { return null; } };
+  const list = async (state) => { const r = await (gh || ghRun(path))(["pr", "list", "--head", branch, "--state", state, "--limit", "1", "--json", "headRefOid,number"]); try { return r.status === 0 ? JSON.parse(r.stdout) : null; } catch { return null; } };
   const merged = await list("merged"), head = String((merged && merged[0] && merged[0].headRefOid) || "");
-  if (!head || !git(path, ["merge-base", "--is-ancestor", head, "HEAD"]).ok) return null;
+  if (!head) return null;
+  // The merged PR's last commit may have gone up from elsewhere (another checkout, a fix made
+  // on GitHub), so it isn't here: fetched, by the branch or the PR's own ref. Without it, this
+  // branch passed for live and the next PR carried the merged one's commits again (#208 to #209, 19 Oct 2026).
+  const have = () => git(path, ["cat-file", "-e", head + "^{commit}"]).ok;
+  for (const r of [branch, `pull/${merged[0].number}/head`]) { if (have()) break; await gitAsync(path, ["fetch", "-q", "origin", r], 60000); }
+  if (!have()) return null;
   const since = git(path, ["rev-list", "--count", head + "..HEAD"]);
   if (!since.ok) return null;
   if (since.out === "0") return { from: ref };

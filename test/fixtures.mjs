@@ -596,6 +596,20 @@ try {
   const ghE = fakeGh(spE, { create: false, view: "OPEN" }), ghE2 = (a) => (/--state open/.test(a.join(" ")) ? { status: 0, stdout: JSON.stringify([{ headRefOid: "x" }]) } : ghE(a));
   const rse = await shipChanges(spE, ["Eighth"], { gh: ghE2 });
   ok("a PR from the branch is open again: it stays there, and that PR is the one", rse.ok && rse.branch === "spent" && rse.pr === "https://github.com/o/r/pull/172" && !rse.note, rse);
+  // #208 to #209, 19 Oct 2026: the PR's last commit went up from another checkout, so this one never had it,
+  // the branch passed for live, and the next Approve's PR carried #208's commits again and conflicted
+  const spF = build("ship-spent-elsewhere", `git init -q -b main && git config user.email ci@symbiot.test && git config user.name "Symbiot CI" && echo a > a.txt && git add . && git commit -qm init
+    git clone -q --bare . ../ship-spent-elsewhere-remote.git && git remote add origin ../ship-spent-elsewhere-remote.git && git fetch -q origin && git remote set-head origin main
+    git switch -q -c spent && echo b >> a.txt && git commit -qam one && git push -q -u origin spent
+    git clone -q -b spent ../ship-spent-elsewhere-remote.git ../ship-spent-elsewhere-other
+    cd ../ship-spent-elsewhere-other && git config user.email ci@symbiot.test && git config user.name "Symbiot CI" && echo fix > fix.txt && git add . && git commit -qm "fixed elsewhere" && git push -q origin spent && git rev-parse HEAD > ../ship-spent-elsewhere-head
+    git switch -q main && git merge -q --squash spent && git commit -qm "one (#208)" && git push -q origin main
+    cd ../ship-spent-elsewhere && echo nine > nine.txt`);
+  const gf = (a) => execSync("git " + a, { cwd: spF, encoding: "utf8", env: gitEnv }).trim(), headF = readFileSync(join(ROOT, "ship-spent-elsewhere-head"), "utf8").trim();
+  const ghF = (a) => { const s = a.join(" "); if (/^pr list .*--state merged/.test(s)) return { status: 0, stdout: JSON.stringify([{ headRefOid: headF, number: 208 }]) }; if (/^pr list .*--state open/.test(s)) return { status: 0, stdout: "[]" }; return { status: 1, stdout: "" }; };
+  ok("(the merged PR's last commit isn't in this checkout)", execSync(`git cat-file -t ${headF} 2>/dev/null || echo missing`, { cwd: spF, encoding: "utf8", env: gitEnv, shell: "/bin/bash" }).trim() === "missing", headF);
+  const rsf = await shipChanges(spF, ["Ninth"], { gh: ghF, pr: false });
+  ok("…its PR merged with a commit pushed from elsewhere: the next Approve still starts a fresh branch from main, with only the new change", rsf.ok && rsf.branch === "symbiot/ninth" && gf("rev-parse HEAD~1") === gf("rev-parse origin/main") && gf("diff --name-only origin/main HEAD") === "nine.txt" && /already merged/.test(rsf.note || ""), [rsf, gf("log --oneline -3")]);
   // a name already taken on origin (an earlier day's PR of that name, merged), and a
   // local branch of that name that went another way: the push was refused, and the
   // approved work sat in a commit with no PR
