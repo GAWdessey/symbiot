@@ -237,6 +237,13 @@ try {
   ok("…none on this computer: it opens Settings, with no one-click pick", pk2 && !pk2.pick && /^no coding agent on this computer yet/.test(pk2.sub), pk2);
   ok("…and not once an agent is picked", !h.you.some((y) => y.id === "setup:pick"), "");
   ok("only you: an Approve that's waiting (not one still being worked on) and an agent's question", h.you.length === 2 && h.you[0].title === "Approve symbiot" && /2 tasks done · 3 files · only you decide/.test(h.you[0].sub) && h.you[1].title === "whatsapp_module asks" && h.you[1].shape === "agents", h.you);
+  // symbiot, 19 Oct 2026: Approve committed at 08:12 and its tests ran till 08:30; all that time Home's card read
+  // "2 tasks done · only you decide", and pressing it met "Already approving here"
+  const shipping = { repo: "symbiot", path: "/x", tasks: [{}, {}], files: [], shipping: { step: "running its tests", since: Date.now() - 9 * 60000 } };
+  const shipHome = homeState({ fresh: true, deps: { ...deps, pending: () => [shipping] } });
+  ok("…not an Approve that's already being put in: nothing there for you to press", !shipHome.you.some((y) => y.kind === "approve"), shipHome.you);
+  const shipFail = homeState({ fresh: true, deps: { ...deps, pending: () => [{ ...shipping, tasks: [], shipping: undefined, unsent: { why: "tests", branch: "symbiot/5-tasks" } }] } }).you.find((y) => y.id === "approve:symbiot");
+  ok("…and once it ends without getting up, its card is back, saying why", shipFail && /not on GitHub yet/.test(shipFail.sub), shipFail);
   const asks = homeState({ fresh: true, deps: { ...deps, pending: () => [], agents: () => [{ name: "ops", path: "/o", status: "done", ask: { questions: [{ q: "Where should the garth@symbiot.co.za mailbox live?", options: ["👤 You (only you: a new account): sign up for Zoho Mail's free plan as Symbiot and sign in to domains.co.za in Symbiot's browser (recommended)", "🤖 Agent: wait"] }] } }, { name: "coral", path: "/c", status: "done", ask: { questions: [{ q: "Paste the new Meta token?" }] } }] } }).you;
   const zc = asks.find((y) => y.title === "ops asks"), other = asks.find((y) => y.title === "coral asks");
   ok("a card that asks you to sign in to a site carries it, for its Sign in button (the 'mythical browser', 2026-10-09); one that doesn't, doesn't", zc && zc.signInTo && zc.signInTo.site === "domains.co.za" && other && !other.signInTo, [zc && zc.signInTo, other && other.signInTo]);

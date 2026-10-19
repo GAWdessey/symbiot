@@ -19,6 +19,7 @@
 //
 // What's linked is config.linked: { <id>: { at, watch?, hosts: [trusted by the link] } }.
 import { can } from "./licence.mjs";
+import { blockedSignIn } from "./browserfails.mjs";
 import { join } from "node:path";
 import { readFileSync } from "node:fs";
 import { CONFIG_DIR, loadConfig, saveConfig } from "./core.mjs";
@@ -273,6 +274,7 @@ async function addSite(input, opts = {}) {
 const ASKS_SIGNIN = /\b(?:sign(?:ed)?[ -]?in|log[ -]?in)(?:\s+again)?(?:\s+(?:to|at|on|into))?\s+(?:your\s+|the\s+)?/gi;
 function signInAsked(text) {
   const t = String(text || "");
+  if (blockedSignIn(t)) return null; // a site the Symbiot Browser can't hold a sign-in for gets no Sign in button (browserfails.mjs)
   for (const m of t.matchAll(ASKS_SIGNIN)) {
     const rest = t.slice(m.index + m[0].length, m.index + m[0].length + 80);
     const d = rest.match(/^(?:https?:\/\/)?((?:[a-z0-9-]+\.)+[a-z]{2,})(\/[^\s"'`)]*)?/i);

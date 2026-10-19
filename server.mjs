@@ -28,7 +28,7 @@ import { laneCap, mergeEnded, DEFAULT_CAP } from "./parallel.mjs";
 import { addTask, setTaskModel, toggleTask, removeTask, cancelTask, restoreTask, syncTasks, taskType, pushTasks, pendingReview, workingDiff, learnNpm, withReleases, releaseInput, approveRepo, approveChanges, sendBack, setAutoMerge, mergeWhenGreen, sendAgain, forgetUnsent, shippingPaths } from "./tasks.mjs";
 import { repoReview, repoSuggest, folderSuggest, taskChat, clearTaskChat, mailState, setMail, sentMail, produce, releaseNotes } from "./writeups.mjs";
 import { denyList } from "./outward.mjs";
-import { listSecrets, getSecret, markUsed, deleteSecret } from "./vault.mjs";
+import { listSecrets, getSecret, markUsed, deleteSecret, scrubStored } from "./vault.mjs";
 import { SCREENS_SOCK, screensGate, loadScreens, screenImage, captureScreen, splitScreen, listMonitors, allowScreenshots, importScreen, setRegions, renameScreen, removeScreen, blueprint, clickRegion } from "./screens.mjs";
 import { sessionCookie, mapPage, wholePage, pressRegion, typeRegion, chooseRegion, fillForm, verifyPage, uploadRegion, scrollPage, signIn, keepBrowserOpen, isTrusted, trustedSites, trustSite, untrustSite, openSymbiotBrowser, closeSymbiotBrowser, onBrowserClosed, setBrowserHub, siteUrl, browserHub, windowOpen } from "./headless.mjs";
 import { weeklyState, setWeekly, runWeekly, startWeekly, autostartState, setAutostart, installLauncher, iconSvg, setLauncherLook } from "./desktop.mjs";
@@ -288,6 +288,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
   // Stable token + port so the URL survives a restart — the open tab can
   // reconnect and auto-reload itself instead of you closing and reopening it.
   try { moveSecrets(); } catch {} // keys from before secrets.json: out of config.json, where a run could read them
+  if (!SANDBOX) try { scrubStored(); } catch {} // a secret the chat kept before the detector knew its shape: vaulted, and blanked where it was stored (vault.mjs)
   const cfg0 = loadConfig();
   let TOKEN = cfg0.appToken;
   if (!TOKEN) { TOKEN = randomBytes(16).toString("hex"); try { saveConfig({ ...loadConfig(), appToken: TOKEN }); } catch {} }
@@ -602,6 +603,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       if (u.pathname === "/api/secrets/get" && req.method === "POST") { const b = await readBody(req); return json(res, getSecret(String(b.name || ""), { use: !!b.use })); }
       if (u.pathname === "/api/secrets/used" && req.method === "POST") { const b = await readBody(req); return json(res, markUsed(String(b.name || ""), String(b.value || ""))); }
       if (u.pathname === "/api/secrets/delete" && req.method === "POST") { const b = await readBody(req); return json(res, deleteSecret(String(b.name || ""))); }
+      if (u.pathname === "/api/secrets/scrub" && req.method === "POST") { const r = scrubStored({ force: true }); return json(res, { found: r.found || [], files: (r.files || []).map((f) => f.replace(CONFIG_DIR + "/", "")) }); }
       if (u.pathname === "/api/screens/signin" && req.method === "POST") { const b = await readBody(req); return json(res, await signIn(b.site)); }
       // What Symbiot remembers across the app (mind.mjs), and forgetting it.
       if (u.pathname === "/api/mind") return json(res, mindState());

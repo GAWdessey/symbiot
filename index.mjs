@@ -449,17 +449,19 @@ async function cmdUninstall() {
   console.log(r.status === 0 ? c.g("✓ ") + "Symbiot is uninstalled." : c.y("Couldn't remove the program: run  npm uninstall -g symbiot"));
   if (existsSync(CONFIG_DIR) && !keep) console.log(c.d("(Something wrote to " + CONFIG_DIR + " meanwhile; delete it if you like.)"));
 }
-// symbiot secret list | get <name> [--use] | used <name> <value> | delete <name>: what the user
+// symbiot secret list | get <name> [--use] | used <name> <value> | delete <name> | scrub: what the user
 // handed over (vault.mjs). get prints the next unspent value and nothing else; --use marks a
 // one-use code spent. Through the app when it's running (a run can't read the vault's key).
 async function cmdSecret() {
   const [sub = "list", name, value] = argv.slice(1).filter((x) => !x.startsWith("--"));
   const v = await import("./vault.mjs"), via = async (p, b) => (await viaApp(p, b)) || null;
   if (sub === "list") { const l = (await via("/api/secrets/list", {}))?.secrets || v.listSecrets(); if (!l.length) console.log(c.d("No secrets saved.")); for (const s of l) console.log(`${s.name}  ${c.d(`${s.left} of ${s.count} unused · ${s.where}`)}`); return; }
+  // scrub: read the chat history again for secrets stored before they were caught, vault them and blank every copy (names and files only, never a value)
+  if (sub === "scrub") { const r = (await via("/api/secrets/scrub", {})) || v.scrubStored({ force: true }); if (r.error) { console.error(r.error); process.exitCode = 1; return; } console.log(r.found && r.found.length ? `Saved ${r.found.join(", ")}; blanked in ${r.files.length} file${r.files.length === 1 ? "" : "s"}.` : "Nothing found."); return; }
   if (!name) { console.error("symbiot secret " + sub + " <name>"); process.exitCode = 1; return; }
   const r = sub === "get" ? ((await via("/api/secrets/get", { name, use: has("use") })) || v.getSecret(name, { use: has("use") }))
     : sub === "used" ? ((await via("/api/secrets/used", { name, value })) || v.markUsed(name, String(value || "")))
-    : sub === "delete" ? ((await via("/api/secrets/delete", { name })) || v.deleteSecret(name)) : { error: "symbiot secret list | get <name> [--use] | used <name> <value> | delete <name>" };
+    : sub === "delete" ? ((await via("/api/secrets/delete", { name })) || v.deleteSecret(name)) : { error: "symbiot secret list | get <name> [--use] | used <name> <value> | delete <name> | scrub" };
   if (r.error) { console.error(r.error); process.exitCode = 1; return; }
   console.log(sub === "get" ? r.value : "ok");
 }

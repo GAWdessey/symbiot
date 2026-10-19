@@ -2,6 +2,14 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one), for anyone who installs the app: what changed in it, never whose work it was (no projects, people, accounts, services, run ids or task wording of the person who made it). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.66.11 — 2026-10-19
+
+- **No more asks to sign in to a site in Symbiot's browser just so an agent can read it.** Agents use the site's API, its command line or a connector instead, and ask you only for a key they can't find. Sites whose sign-ins that browser can't hold get no Sign in button. A sign-in you already did that still doesn't work isn't asked about again: Home says the browser can't hold it and the agent takes the API route.
+- **A password typed in chat without "password:" in front of it is caught too**, for example right after an email address, and kept in Symbiot's vault instead of the chat history. `symbiot secret scrub` goes through what was stored before and does the same.
+- **Approving shows on the card while it runs**, and the phone can't start a second approve of the same work. A branch that's already on GitHub is checked against main before more goes up on it, so a clash is caught before the pull request opens. The deploy question says when the merge is only queued, not done.
+- **A report's progress log stays out of the Workdesk.** Lines that only say how a job went ("…: done", "(update, 14:50): …") are kept as findings, not filed as new jobs.
+- **The website has a "From your phone" section**: approving work from your phone, in three steps, with the Android app link.
+
 ## 0.66.10 — 2026-10-19
 
 - **No more offers to answer mail that can't be answered.** Home no longer offers to draft a reply to no-reply senders, GitHub and CI notifications, receipts, alerts or newsletters. Before, a single CI failure email showed up as "draft a response for 1 email".

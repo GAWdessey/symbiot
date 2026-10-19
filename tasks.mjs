@@ -180,7 +180,7 @@ function gitAsync(repo, args, timeout = 30000, { input = null, env = {} } = {}) 
     let out = "", err = "", timedOut = false, done = false, kill = null;
     const p = spawn("git", ["-C", repo, ...args], { env: { ...process.env, GIT_TERMINAL_PROMPT: "0", ...env }, stdio: [input == null ? "ignore" : "pipe", "pipe", "pipe"] });
     const t = setTimeout(() => { timedOut = true; p.kill("SIGTERM"); kill = setTimeout(() => p.kill("SIGKILL"), 5000); }, timeout);
-    const end = (code, e) => { if (done) return; done = true; clearTimeout(t); clearTimeout(kill); resolve({ ok: code === 0 && !timedOut, out: out.replace(/\s+$/, ""), err: String(err || (e && e.message) || "").trim(), timedOut, timeout }); };
+    const end = (code, e) => { if (done) return; done = true; clearTimeout(t); clearTimeout(kill); resolve({ ok: code === 0 && !timedOut, code, out: out.replace(/\s+$/, ""), err: String(err || (e && e.message) || "").trim(), timedOut, timeout }); };
     p.stdout.setEncoding("utf8"); p.stderr.setEncoding("utf8");
     p.stdout.on("data", (d) => { out += d; }); p.stderr.on("data", (d) => { err += d; });
     // close waits for every holder of its output; one git left running (an fsmonitor) kept it open
@@ -890,7 +890,7 @@ async function shipChanges(path, texts, opts = {}) {
       // The changes come along; if main changed a file they touch, git refuses and they stay put.
       const next = newBranch(), sw = git(path, ["switch", "-c", next, "--no-track", from]);
       fresh = sw.ok ? `${branch}'s earlier PR already merged, so this starts a fresh branch from ${from}.`
-        : `${branch}'s earlier PR already merged, but these changes couldn't move to a fresh branch from ${from} (${sw.err.split("\n")[0]}), so they're on ${branch}, and its PR may not merge.`;
+        : `${branch}'s earlier PR already merged, but these changes couldn't move to a fresh branch from ${from} (${sw.err.split("\n")[0]}), so they stay on ${branch} (it's checked against ${from} before it goes up).`;
       if (sw.ok) { branch = next; made.branch = next; }
     }
   }
@@ -917,7 +917,7 @@ async function shipChanges(path, texts, opts = {}) {
     if (mv.ok) branch = next;
     const earlier = mv.ok ? mv.earlier : 0, gone = mv.ok ? mv.dropped : 0;
     fresh = mv.ok ? `${was}'s earlier PR already merged, so this starts a fresh branch from ${carry.from}${earlier > 0 ? `, with the ${earlier} commit${earlier === 1 ? "" : "s"} approved on ${was} since that hadn't reached ${base}` : ""}${gone ? ` (${gone} already on ${base} left out)` : ""}.`
-      : `${was}'s earlier PR already merged, but this couldn't move to a fresh branch from ${carry.from} (${mv.error}), so it's on ${was}, with a PR of its own, which may not merge without a hand.`;
+      : `${was}'s earlier PR already merged, but this couldn't move to a fresh branch from ${carry.from} (${mv.error}), so it stays on ${was} (it's checked against ${carry.from} before it goes up).`;
   }
   const said = [fresh, leftNote].filter(Boolean).join(" ");
   const out = { ok: true, branch, base, commit: git(path, ["rev-parse", "--short", "HEAD"]).out, subject, ...(said ? { note: said } : {}) };
@@ -985,10 +985,19 @@ function startFix(path, repo, r) {
 // throwaway worktree (.symbiot/ship-wt) and the checkout moved to the result with
 // `reset --keep`, which refuses, and nothing changes, when one of those files was
 // changed on main too: that counts as a conflict, for the agent to resolve.
+// One GitHub has already isn't rewritten, but it's checked against the tip (merge-tree,
+// which touches nothing): symbiot/5-tasks-2026-10-16, 19 Oct 2026, went up again on
+// top of a merged PR's branch and its PR #209 opened clashing with main in package.json,
+// CHANGELOG.md and tasks.mjs, while the card said it was done. A clash counts as one
+// here (the agent's to resolve); git too old to tell (no --write-tree) lets it go up.
 // { ok } once the branch is on the tip (rebased: tip when it moved), or { conflicts }.
 async function syncBranch(path, branch, base) {
   const tip = "origin/" + base;
-  if (git(path, ["rev-parse", "-q", "--verify", "refs/remotes/origin/" + branch]).ok || !git(path, ["rev-parse", "-q", "--verify", "refs/remotes/" + tip]).ok || git(path, ["merge-base", "--is-ancestor", tip, branch]).ok) return { ok: true };
+  if (!git(path, ["rev-parse", "-q", "--verify", "refs/remotes/" + tip]).ok || git(path, ["merge-base", "--is-ancestor", tip, branch]).ok) return { ok: true };
+  if (git(path, ["rev-parse", "-q", "--verify", "refs/remotes/origin/" + branch]).ok) {
+    const mt = await gitAsync(path, ["merge-tree", "--write-tree", "--name-only", "--no-messages", tip, branch], 120000), files = mt.out.split("\n").slice(1).filter(Boolean);
+    return mt.code === 1 ? { conflicts: true, note: `${base} changed the same lines since ${branch} went up (${files.slice(0, 4).join(", ")}${files.length > 4 ? ", …" : ""})` } : { ok: true };
+  }
   const dirty = (await gitAsync(path, ["status", "--porcelain", "-z", "-uno", ...NOT_SYMBIOT], gitTimeout())).out.length > 0;
   const unmerged = () => git(path, ["diff", "--name-only", "--diff-filter=U"]).out.split("\n").filter(Boolean);
   const conflicts = (note = "") => ({ conflicts: true, note });

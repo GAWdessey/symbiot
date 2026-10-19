@@ -46,5 +46,7 @@ ok("only that PR's task is marked not live", loadTasks().find((x) => x.id === "t
 ok("asked once", D.afterShip(path, "dailify", pr, "merged").asked === undefined);
 D.markLive("t1");
 ok("checked on the live site: live", loadTasks().find((x) => x.id === "t1").liveState === "live");
+const queued = D.afterShip(path, "dailify", "https://github.com/x/dailify/pull/9", "approved"), q9 = readFileSync(join(path, ".symbiot", "QUESTIONS.md"), "utf8").split("### ").find((x) => /PR #9/.test(x)) || "";
+ok("an Approve that only queued the merge: asked, but not told it's merged (PR #209, 19 Oct 2026)", queued.asked && /isn't merged yet/.test(q9) && !/is merged/.test(q9), q9);
 ok("a lane with no target raises nothing", !D.afterShip(lane("bare2", { "README.md": "x" }), "bare2", pr, "merged").asked);
 console.log(`\n${pass} passed, ${fail} failed`); process.exit(fail ? 1 : 0);
