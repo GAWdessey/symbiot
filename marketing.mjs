@@ -170,6 +170,7 @@ function parseDraft(text) {
   out.type = String(out.type || "").toLowerCase().trim();
   out.isPost = out.type ? POST_TYPES.test(out.type) && (!said || PLATFORMS.includes(said)) : (said ? PLATFORMS.includes(said) : (out.format === "legacy" || out.format === "sections") && !/^\s*\|?\s*:?-{3,}:?\s*\|/m.test(out.body)); // no platform line: the old layouts, unless the text holds a table (a plan)
   if (!out.isPost && !out.type && /play|store|listing/.test(said + " " + out.title.toLowerCase())) out.type = "listing";
+  if (!out.isPost && !out.type && /^(?:plan|content[ -]?plan|schedule|calendar)$/.test(said)) out.type = "plan"; // `platform: plan`: a plan to agree to, with nowhere to post
   out.platform = (said || "linkedin");
   return out;
 }

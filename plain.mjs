@@ -30,6 +30,11 @@ function PLAIN_RULE(r) {
   if (first === "sudo") return "make changes as administrator";
   return `run ${first}`;
 }
+const ONE_VERBS = /^(send|post|publish|start|run|go|deploy|merge|approve|book|pay|place|call|schedule|ship|submit|reply|share|launch|release|push|retry|restart|continue|confirm|accept|delete|remove|cancel|unsubscribe|install|update|order|buy|sign|open|add|apply|archive|close)$/i;
+function oneButton(o) {
+  const w = String(o || "").replace(/^\s*(?:🤖|👤)\s*(?:Agent|You(?:\s*\([^)]*\))?)?\s*:?\s*/u, "").replace(/\s*\(recommended\)\s*$/i, "").trim().split(/\s+/)[0] || "";
+  return ONE_VERBS.test(w) ? w.charAt(0).toUpperCase() + w.slice(1).toLowerCase() : "Go ahead";
+}
 function plainAsk(path, q, { max = 2 } = {}) {
   const text = String(q.q || ""), opts = (q.options || []).slice(0, max);
   let ask = text, labels = opts.map((o) => o.replace(PATHISH, "a file"));
@@ -38,6 +43,9 @@ function plainAsk(path, q, { max = 2 } = {}) {
     ask = `${text.replace(PATHISH, "a file")}${rules.length ? ` It wants to ${rules.slice(0, 6).join(", ")}${rules.length > 6 ? `, and ${rules.length - 6} more things` : ""}.` : ""} If you say no, it skips that part and tells you what it left out.`;
     labels = opts.map((o) => (/allowlist\.proposed/i.test(o) ? "Allow" + (/recommended/i.test(o) ? " (recommended)" : "") : o.replace(PATHISH, "a file")));
   }
+  // One option is one button, named for what it does: "🤖 Agent: send it to Jono now" is Send, so a
+  // card that waits only on the go-ahead ("nothing goes out until you tap Send") reads as that (19 Oct 2026).
+  if (opts.length === 1 && !(q.options || [])[1]) labels = [oneButton(opts[0])];
   // raw: the question as the agent wrote it, the key its answer is saved under (agents.mjs
   // answerQuestions). Sending the plain words back matched nothing, so a permission card's
   // Allow, and Send under it, did nothing at all (whatsapp_module, 2026-10-12).

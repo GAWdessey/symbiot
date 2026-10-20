@@ -48,13 +48,18 @@ function readKey(text) {
     p = JSON.parse(unb64u(m[1]).toString("utf8"));
   } catch { return { ok: false, why: "That key is damaged. Copy it again, all of it." }; }
   if (!p || p.v !== 1 || !["pro", "owner"].includes(p.p) || !p.id) return { ok: false, why: "That key is for something this version of Symbiot doesn't know." };
-  return { ok: true, key: t, id: String(p.id), plan: p.p, email: String(p.e || ""), name: String(p.n || ""), issued: Number(p.i) || 0, expires: Number(p.x) || 0 };
+  return { ok: true, key: t, id: String(p.id), plan: p.p, email: String(p.e || ""), name: String(p.n || ""), issued: Number(p.i) || 0, expires: Number(p.x) || 0, ...(p.r ? { renews: String(p.r) } : {}) };
 }
 
 // Cancelled keys, from symbiot.co.za, refreshed at most once a day; a failed fetch keeps the last list.
+// The same file carries `ends`: key id → the date a subscription's key ends (its subscription was
+// cancelled or lapsed). A subscription's key has no end of its own, so a monthly customer pastes
+// one key once and never again: each month's payment needs nothing on their side.
 const REVOKED_FILE = () => join(CONFIG_DIR, "licence-revoked.json");
 const revokedList = () => readState(REVOKED_FILE(), (v) => !!v && typeof v === "object" && !Array.isArray(v)) || {};
 function revokedIds() { try { return new Set(revokedList().ids || []); } catch { return new Set(); } }
+const endsOf = (e) => Object.fromEntries(Object.entries(e && typeof e === "object" && !Array.isArray(e) ? e : {}).filter(([, t]) => Number(t) > 0).map(([k, t]) => [String(k), Number(t)]));
+function keyEnds() { try { return endsOf(revokedList().ends); } catch { return {}; } }
 async function refreshRevoked(now = Date.now()) {
   try {
     const cur = revokedList();
@@ -62,7 +67,7 @@ async function refreshRevoked(now = Date.now()) {
     const r = await fetch(process.env.SYMBIOT_REVOKED_URL || REVOKED_URL, { signal: AbortSignal.timeout(8000) });
     if (!r.ok) return false;
     const j = await r.json();
-    writeJsonAtomic(REVOKED_FILE(), { at: now, ids: Array.isArray(j.ids) ? j.ids.map(String) : [] }, { indent: 0 });
+    writeJsonAtomic(REVOKED_FILE(), { at: now, ids: Array.isArray(j.ids) ? j.ids.map(String) : [], ends: endsOf(j.ends) }, { indent: 0 });
     return true;
   } catch { return false; }
 }
@@ -85,8 +90,9 @@ function licenceState(now = Date.now(), cfg = loadConfig()) {
     const k = readKey(L.key);
     if (k.ok && revokedIds().has(k.id)) return { ...base, plan: "free", keyProblem: "This key has been cancelled. If that's a mistake, reply to the email it came in." };
     if (k.ok) {
-      const left = k.expires ? k.expires - now : Infinity;
-      const who = { email: k.email, name: k.name, keyId: k.id, ...(k.expires ? { expires: k.expires } : {}) };
+      const end = keyEnds()[k.id], expires = end && (!k.expires || end < k.expires) ? end : k.expires; // a subscription's key ends with it
+      const left = expires ? expires - now : Infinity;
+      const who = { email: k.email, name: k.name, keyId: k.id, ...(expires ? { expires } : {}), ...(k.renews && !end ? { renews: k.renews } : {}) };
       if (left > 0) return { ...base, plan: k.plan, ...who, ...(left < 14 * DAY ? { renewSoon: Math.ceil(left / DAY) } : {}) };
       if (left > -GRACE_DAYS * DAY) return { ...base, plan: k.plan, ...who, grace: Math.ceil((left + GRACE_DAYS * DAY) / DAY) };
       return { ...base, plan: "free", ...who, keyProblem: "Your Pro key has ended. Renew it to keep Pro." };

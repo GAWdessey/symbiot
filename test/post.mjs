@@ -129,9 +129,9 @@ try {
   ok("nothing handed over before an approval", runs.length === 0, runs);
   const ap = P.approvePost(a.id, { hand });
   const apMd = readFileSync(join(MK, ap.handed.rel || "x"), "utf8"), apAns = readFileSync(join(MK, ".symbiot", "ANSWERS.md"), "utf8");
-  ok("Approve hands the post to Marketing's agent and starts it, once: nothing for you to copy or paste", ap.ok && ap.handed.job === "mj1" && runs.length === 1 && runs[0].d === MK && runs[0].o2.force && /posting it on LinkedIn now/.test(ap.note) && !/paste|yourself/i.test(ap.note) && ap.copied === undefined && ap.share === undefined, ap);
+  ok("Approve hands the post to Marketing's agent and starts it, once: nothing for you to copy or paste", ap.ok && ap.handed.job === "mj1" && runs.length === 1 && runs[0].d === MK && runs[0].o2.force && /scheduling it for the next free day on LinkedIn/.test(ap.note) && !/posting it on LinkedIn now/.test(ap.note) && !/paste|yourself/i.test(ap.note) && ap.copied === undefined && ap.share === undefined, ap);
   ok("…as an approved draft in its lane, the text exactly as approved", /^## Post\n/m.test(apMd) && apMd.includes("## Post\n" + ap.post.text + "\n\n## Notes") && /platform: linkedin/.test(apMd) && JSON.parse(readFileSync(join(MK, ".symbiot", "drafts.json"), "utf8"))[ap.handed.rel].status === "approved", apMd);
-  ok("…and its agent is told to post it through the signed-in browser and check it's there", apAns.includes(`### Approved: ${ap.handed.rel}`) && /signed-in browser/.test(apAns) && /check it's there/.test(apAns), apAns);
+  ok("…and its agent is told to schedule it for the next free day (one a day), not post it now, through the signed-in browser, and check it's there", apAns.includes(`### Approved: ${ap.handed.rel}`) && /signed-in browser/.test(apAns) && /schedule it on LinkedIn for the next free day/.test(apAns) && /at most one post a day/.test(apAns) && !/Post it on LinkedIn now/.test(apAns) && /check it's in the scheduled posts/.test(apAns), apAns);
   ok("an approved post can't be approved, edited or skipped again", /approved already/.test(P.approvePost(a.id, { hand }).error) && /approved already/.test(P.editPost(a.id, "x").error) && /approved already/.test(P.skipPost(a.id).error) && runs.length === 1, "");
   ok("one that isn't there hands nothing over", P.approvePost("nope", { hand }).error && runs.length === 1, "");
   const busy = P.handToMarketing({ id: "zz", kind: "shipped", text: "Demo shipped a thing.", media: [] }, { dir: MK, names: ["Demo"], run: () => { throw new Error("must not start"); }, running: () => true });
@@ -197,7 +197,7 @@ try {
   } else ok("toVideo: without ffmpeg a clip says to install it", /ffmpeg/.test(P.NO_FFMPEG), "");
   const am = P.approvePost(m1.id, { hand });
   const amMd = readFileSync(join(MK, am.handed.rel), "utf8"), amMedia = (amMd.match(/^media: (.+)$/m) || [])[1] || "";
-  ok("Approve hands the post's pictures over with it, next to it in Marketing's lane, and its agent attaches them", am.ok && amMedia.split(", ").length === 2 && amMedia.split(", ").every((f) => existsSync(join(MK, am.handed.rel, "..", f))) && readFileSync(join(MK, ".symbiot", "ANSWERS.md"), "utf8").includes(amMedia + " attached"), amMd);
+  ok("Approve hands the post's pictures over with it, next to it in Marketing's lane, and its agent attaches them", am.ok && amMedia.split(", ").length === 2 && amMedia.split(", ").every((f) => existsSync(join(MK, am.handed.rel, "..", f))) && readFileSync(join(MK, ".symbiot", "ANSWERS.md"), "utf8").includes("attach " + amMedia), amMd);
   ok("…and logs what it carried", (P.postLog().slice(-1)[0].media || []).length === 2, P.postLog().slice(-1)[0]);
   ok("a draft with a video: its one file goes over with it", (() => { const x = P.approvePost(m2.id, { hand }); return x.ok && /^media: [^,\n]+$/m.test(readFileSync(join(MK, x.handed.rel), "utf8")); })(), "");
   const clip3 = P.loadPosts().posts.find((x) => x.id === m3.id).media[0];

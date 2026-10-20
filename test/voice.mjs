@@ -52,6 +52,7 @@ try {
     ok("…but a sentence that merely contains stop doesn't", !bye.test("stop the agent on argena") && !bye.test("that's all the tasks I have"));
     ok("quiet twice in a row ends it with a note on screen", /\+\+VOICE\.quiet>=2\)voiceEnd\('I stopped listening/.test(uiJs));
     ok("the mic shows it's listening, and that a conversation is open", /VOICE\.convo\?'Listening…[^']*end conversation/.test(uiJs) && /#lqmic\.conv\{/.test(EMBEDDED_UI));
+    ok("every lit (ember) droplet on Home says what it's for: a label of its own, a fallback when it has no sub", /d\.kind==='run'\|\|d\.ask\)&&\(d\.sub\|\|d\.ask\)\?"<span class='lm'>"\+esc\(lqShort\(d\.sub\|\|'needs a look'/.test(uiJs));
     ok("…nor one between two words: a pause instead", voiceClean("Settings → Handoff") === "Settings, Handoff", voiceClean("Settings → Handoff"));
     ok("the answer's spoken version is what's read, when it has one", /voiceSpeak\(r\.spoken\|\|/.test(uiJs), "");
   }

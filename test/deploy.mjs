@@ -49,4 +49,14 @@ ok("checked on the live site: live", loadTasks().find((x) => x.id === "t1").live
 const queued = D.afterShip(path, "dailify", "https://github.com/x/dailify/pull/9", "approved"), q9 = readFileSync(join(path, ".symbiot", "QUESTIONS.md"), "utf8").split("### ").find((x) => /PR #9/.test(x)) || "";
 ok("an Approve that only queued the merge: asked, but not told it's merged (PR #209, 19 Oct 2026)", queued.asked && /isn't merged yet/.test(q9) && !/is merged/.test(q9), q9);
 ok("a lane with no target raises nothing", !D.afterShip(lane("bare2", { "README.md": "x" }), "bare2", pr, "merged").asked);
+// a website workflow that runs only for the site's own files (symbiot's pages.yml: PRs #202 and #209 changed none)
+const PAGES = "on:\n  push:\n    branches: [main]\n    paths: [\"site/**\", \".github/workflows/pages.yml\"]\n  workflow_dispatch:\njobs:\n  deploy:\n    steps:\n      - uses: actions/deploy-pages@v4\n";
+const site = lane("site", { ".github/workflows/pages.yml": PAGES }), sitePr = "https://github.com/x/site/pull/209";
+ok("a workflow's paths are what it deploys for", JSON.stringify(D.deployTarget(site, "site").paths) === JSON.stringify(["site/**", ".github/workflows/pages.yml"]), D.deployTarget(site, "site"));
+const code = D.afterShip(site, "site", sitePr, "merged", { files: ["agents.mjs", "test/x.mjs"] });
+ok("a PR that changed none of them: no deploy question, and it says there's nothing to deploy", !code.asked && code.state === "none" && /None of its files/.test(code.text) && !/Deploy site/.test((() => { try { return readFileSync(join(site, ".symbiot", "QUESTIONS.md"), "utf8"); } catch { return ""; } })()), code);
+const page = D.afterShip(site, "site", "https://github.com/x/site/pull/211", "merged", { files: ["agents.mjs", "site/index.html"] });
+ok("…one that changed a site file is asked about, as before", page.asked && page.state === "pending", page);
+ok("…and when GitHub can't say which files, it's asked as before", D.afterShip(site, "site", "https://github.com/x/site/pull/212", "merged", { files: null }).asked === true);
+ok("the PR's files come from gh", JSON.stringify(D.prFiles(site, 5, () => ({ status: 0, stdout: JSON.stringify({ files: [{ path: "a.mjs" }, { path: "site/i.html" }] }) }))) === '["a.mjs","site/i.html"]' && D.prFiles(site, 5, () => ({ status: 1, stdout: "" })) === null);
 console.log(`\n${pass} passed, ${fail} failed`); process.exit(fail ? 1 : 0);

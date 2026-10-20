@@ -153,6 +153,9 @@ console.log("MARKETING — a draft shown as the post it will be");
   const sk = marketingDraftAnswer("drafts/steve/week-03.md", "skipped", { dir, run: () => { throw new Error("ran"); } });
   ok("Skip: its agent is told not to post it, and nothing starts", sk.ok && /### Skipped: drafts\/steve\/week-03\.md\nDon't post it/.test(readFileSync(join(dir, ".symbiot", "ANSWERS.md"), "utf8")), sk);
   ok("one that isn't there: says so", !!marketingDraftAnswer("drafts/steve/gone.md", "approved", { dir }).error);
+  writeFileSync(join(d, "00-plan.md"), "# Steve: 2-week content plan\nproduct: Steve\nplatform: plan\n\n## Plan\nTwo posts a week on LinkedIn.\n");
+  const before = readFileSync(join(dir, ".symbiot", "ANSWERS.md"), "utf8"), pl = marketingDraftAnswer("drafts/steve/00-plan.md", "approved", { dir, run: () => { throw new Error("ran"); } });
+  ok("a plan (platform: plan): Approve just marks it accepted: no \"Post it on plan\", nothing starts", pl.ok && pl.accepted && readFileSync(join(dir, ".symbiot", "ANSWERS.md"), "utf8") === before && M.draftPreview("drafts/steve/00-plan.md", { dir, cfg }).done && M.draftPreview("drafts/steve/00-plan.md", { dir, cfg }).type === "plan", [pl, M.draftPreview("drafts/steve/00-plan.md", { dir, cfg }).type]);
 
   console.log("MARKETING — Change it, its own platform's preview, a redraft asks again (2026-10-10)");
   writeFileSync(join(d, "reddit.md"), `# Symbiot on Reddit\n\nproduct: Symbiot\nplatform: reddit\nsubreddit: r/ClaudeAI\nwhen: 2026-10-15 15:00\nmedia: card.png\n\n## Post\nI built a desktop app that hands tasks to Claude Code\n\nThe body.\n\n## Notes\nnone\n`);

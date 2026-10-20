@@ -80,6 +80,7 @@ function deleteSecret(name) {
 // ---- spotting a secret in what someone typed ------------------------------------------
 const PATTERNS = [
   ["token", /\b(?:npm_[A-Za-z0-9]{20,}|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9_-]{20,}|xox[baprs]-[A-Za-z0-9-]{10,}|AKIA[0-9A-Z]{16})\b/g],
+  ["token", /\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}(?:\.[A-Za-z0-9_-]{8,})?/g], // a JWT (a Lemon Squeezy key): dots, so the long-run shape below never matched it (19 Oct 2026)
   ["codes", /\b[0-9a-f]{32,}\b/gi, "cue"],
   ["password", /\b(?:password|passwd|pwd|pass|passcode|pin)\s*(?:is|=|:)\s*(\S{4,})/gi],
   ["token", /\b[A-Za-z0-9+/_-]{40,}={0,2}(?=\s|$)/g, "cue"],
@@ -102,7 +103,13 @@ const EMAIL = /[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+/;
 const kinds = (v) => [/[a-z]/, /[A-Z]/, /\d/, /[^A-Za-z0-9]/].filter((r) => r.test(v)).length;
 const NOT_PW = /[\\/]|^(?:https?:|www\.)|^\d{1,4}[-/:.]\d|^v?\d+\.\d+|^[#@]|^[`'"([{<]|[)\]}>]$/;
 const NAMEISH = /^[A-Za-z]+(?:[-_][A-Za-z]+)*[-_]?v?\d+(?:\.\d+)*[a-z]?$/; // a name and a number: Python3.12, Node-22, GitHub-Actions2
-const pwShaped = (v, min = 3) => v.length >= 6 && v.length <= 64 && kinds(v) >= min && /\d|[^A-Za-z0-9]/.test(v) && /[A-Za-z]/.test(v) && !EMAIL.test(v) && !NOT_PW.test(v) && (min < 3 || !NAMEISH.test(v));
+// A word with an apostrophe ("Symbiot's", "don't") or an id shaped like a UUID never is: "Symbiot's"
+// in a sentence about an account was vaulted as a password and blanked from every stored copy of the
+// chat and tasks, and an Azure subscription id as a twitter password (19 Oct 2026). One in the middle
+// of a sentence (min 3) has a digit too.
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i, WORDY = /^[A-Za-z]+(?:['’][A-Za-z]{1,3})?[.,;:!?]*$/;
+const notPassword = (v) => WORDY.test(v) || UUID.test(v);
+const pwShaped = (v, min = 3) => v.length >= 6 && v.length <= 64 && kinds(v) >= min && /\d|[^A-Za-z0-9]/.test(v) && /[A-Za-z]/.test(v) && !EMAIL.test(v) && !NOT_PW.test(v) && !notPassword(v) && (min < 3 || (!NAMEISH.test(v) && /\d/.test(v)));
 const ACCOUNT = /\b(?:sign(?:ed|ing)?[ -]?(?:up|in)|log(?:ged|ging)?[ -]?in|login|account|registered|password|passwd|pw|creds|credentials)\b/i;
 const sentenceAt = (text, at) => { const a = Math.max(text.lastIndexOf("\n", at - 1), ...[". ", "! ", "? "].map((p) => text.lastIndexOf(p, at - 1))); const b = text.slice(at).search(/[.!?](?:\s|$)|\n/); return text.slice(a + 1, b < 0 ? text.length : at + b); };
 const trimPw = (v) => v.replace(/[.,;:'")\]]+$/, "");
@@ -136,11 +143,29 @@ function labelFor(text, at, kind) {
   const site = (before.match(KNOWN_SITE) || [])[1];
   if (/recovery|backup/.test(before) && /code/.test(before)) return `${site ? site.toLowerCase() + " " : ""}recovery codes`;
   if (kind === "password") { const s = sentenceAt(text, at), where = siteOf(s), who = (s.match(EMAIL) || [])[0]; return `${where ? where + " " : ""}password${who ? ` (${who.toLowerCase()})` : ""}`; }
-  const tail = w.filter((x) => !["here", "is", "are", "my", "the", "for", "this", "heres", "here's", "its", "it's"].includes(x)).slice(-4).join(" ");
+  const tail = w.filter((x) => !["here", "is", "are", "my", "the", "for", "this", "heres", "here's", "its", "it's"].includes(x)).slice(-5).join(" ");
   return tail || (kind === "codes" ? "codes" : "token");
 }
+// A key pasted on its own says nothing of what it's for: it was saved as "token" (19 Oct 2026,
+// a Lemon Squeezy key pasted on Home right after Symbiot asked for it). The chat just before
+// it, and the steps waiting on the user to paste something, name the service: the last one
+// they mention ("your Lemon Squeezy sign-in", "app.lemonsqueezy.com"), "" when none does.
+const NOT_SERVICE = new Set(["settings", "home", "the", "your", "you", "api", "symbiot", "agent", "only", "workdesk", "then", "make", "paste", "under", "in", "a", "my", "this", "it", "test", "live", "new", "chrome"]);
+function serviceOf(context) {
+  const c = String(context || ""), hits = [];
+  for (const m of c.matchAll(/\b([A-Z][A-Za-z0-9]+(?:\s+[A-Z][A-Za-z0-9]+)?)(?:'s)?\s+(?:(?:[Tt]est[- ]mode|[Aa]uth|[Aa]ccess|[Ss]ecret|[Ll]ive)\s+)?(?:[Aa][Pp][Ii][ _-]?[Kk]eys?|[Kk]eys?|[Tt]okens?|[Ss]ign-?in|[Aa]ccount|[Ss]tore|[Dd]ashboard|[Ss]ecret)\b/g)) {
+    const w = m[1].split(/\s+/).filter((x) => !NOT_SERVICE.has(x.toLowerCase()));
+    if (w.length && /^[A-Z]/.test(w[0])) hits.push([m.index, w.join(" ").toLowerCase()]);
+  }
+  for (const m of c.matchAll(/\b(?:https?:\/\/)?(?:www\.|app\.|api\.|dashboard\.|console\.)?([a-z0-9-]{3,})\.(?:com|io|co|net|org|app|dev|ai)\b/gi)) if (!/^(symbiot|example|gmail|github)$/i.test(m[1])) hits.push([m.index, m[1].toLowerCase()]);
+  hits.sort((a, b) => a[0] - b[0]);
+  const last = hits.length ? hits[hits.length - 1][1] : "", spaced = hits.find((h) => h[1].includes(" ") && h[1].replace(/\s+/g, "") === last);
+  return spaced ? spaced[1] : last; // "lemonsqueezy" (its address) as the chat wrote it: "lemon squeezy"
+}
+const BARE = new Set(["token", "codes"]);
 // Replace every secret in text with [secret hidden]; give what was found, grouped by name.
-function findSecrets(text, mark = () => "[secret hidden]") {
+// context: the chat before it, for a name when the text itself gives none (serviceOf).
+function findSecrets(text, mark = () => "[secret hidden]", { context = "" } = {}) {
   text = String(text || ""); const hits = [];
   for (const [kind, re, need] of PATTERNS) for (const m of text.matchAll(re)) {
     const value = m[1] || m[0];
@@ -156,8 +181,10 @@ function findSecrets(text, mark = () => "[secret hidden]") {
   }
   hits.sort((a, b) => a.at - b.at);
   let out = "", pos = 0; const groups = new Map();
+  const svc = context ? serviceOf(context) : "", mode = /\btest[- ]mode\b/i.test(`${context} ${text}`) ? " (test mode)" : "";
   for (const h of hits) {
-    const name = labelFor(text, h.at, h.kind);
+    let name = labelFor(text, h.at, h.kind);
+    if (svc && BARE.has(name)) name = `${svc} ${h.kind === "codes" ? "codes" : "api key"}${mode}`;
     if (!groups.has(name)) groups.set(name, []);
     groups.get(name).push(h.value);
     out += text.slice(pos, h.at) + mark(name); pos = h.end;
@@ -167,10 +194,13 @@ function findSecrets(text, mark = () => "[secret hidden]") {
 }
 // A chat message in: its secrets saved, and the text safe to store or send, with a placeholder
 // "[saved: name]" where they were. A message with no secret comes back as it was.
-function captureSecrets(text) {
-  const failed = new Set(), { found } = findSecrets(text); if (!found.length) return { text: String(text || ""), saved: [] };
+// context may be a function: it's only worked out when there's a secret to name.
+function captureSecrets(text, { context = "" } = {}) {
+  if (!findSecrets(text).found.length) return { text: String(text || ""), saved: [] };
+  if (typeof context === "function") { try { context = String(context() || ""); } catch { context = ""; } }
+  const failed = new Set(), { found } = findSecrets(text, undefined, { context });
   const saved = []; for (const f of found) { if (saveSecret(f.name, f.values).ok) saved.push(f.name); else failed.add(f.name); }
-  return { text: findSecrets(text, (n) => (failed.has(n) ? "[not saved]" : `[saved: ${n}]`)).text, saved };
+  return { text: findSecrets(text, (n) => (failed.has(n) ? "[not saved]" : `[saved: ${n}]`), { context }).text, saved };
 }
 
 // ---- secrets stored before they were caught ------------------------------------------
@@ -180,18 +210,26 @@ function captureSecrets(text) {
 // of runs a chat started (drafts/act-…). Once per change to the detector (SCRUB_V), the
 // user's own chat turns are read again: what's found goes to the vault, and every copy of it
 // in those files becomes "[saved: name]". { found: [name], files: [file] } or { skipped }.
-const SCRUB_V = 1, SCRUB_MARK = () => join(CONFIG_DIR, "scrubbed.json");
+const SCRUB_V = 2, SCRUB_MARK = () => join(CONFIG_DIR, "scrubbed.json");
+// ...and each lane a run has worked in (runs.json): a task quoting the key went into its brief and its run's log.
 function storedFiles() {
-  const top = ["mind.json", "asks-done.json", "tasks.json", "tasks.json.bak", "lastwords.json"].map((f) => join(CONFIG_DIR, f));
-  let runs = []; try { runs = readdirSync(join(CONFIG_DIR, "drafts")).flatMap((d) => ["TASKS.md", "ANSWERS.md", "agent.log", "agent.log.old", "handed.json", "handoff.json"].map((f) => join(CONFIG_DIR, "drafts", d, ".symbiot", f))); } catch {}
-  return [...top, ...runs].filter((f) => existsSync(f));
+  const top = ["mind.json", "mind.json.bak", "asks-done.json", "tasks.json", "tasks.json.bak", "lastwords.json", "home-handed.json", "lanes.json", "lanes.json.bak"].map((f) => join(CONFIG_DIR, f));
+  const RUN = ["TASKS.md", "ANSWERS.md", "ANSWERS.archive.md", "agent.log", "agent.log.old", "handed.json", "handoff.json"];
+  let runs = []; try { runs = readdirSync(join(CONFIG_DIR, "drafts")).flatMap((d) => RUN.map((f) => join(CONFIG_DIR, "drafts", d, ".symbiot", f))); } catch {}
+  let lanes = []; try { lanes = (readState(join(CONFIG_DIR, "runs.json"), Array.isArray) || []).map((r) => r && r.path).filter((p) => typeof p === "string" && p).flatMap((p) => RUN.map((f) => join(p, ".symbiot", f))); } catch {}
+  return [...new Set([...top, ...runs, ...lanes])].filter((f) => existsSync(f));
 }
+// A piece of a saved secret quoted on its own ("a key beginning 'eyJ0…' and ending '…pu3l'", in a
+// task written about it) is blanked too: any run of 32 or more key characters found inside one.
+const PIECE = /[A-Za-z0-9_.+/=-]{32,}/g;
 function scrubStored({ force = false } = {}) {
   if (!force && ((readState(SCRUB_MARK()) || {}).v || 0) >= SCRUB_V) return { skipped: true };
   const mind = readState(join(CONFIG_DIR, "mind.json")) || {}, done = readState(join(CONFIG_DIR, "asks-done.json"), Array.isArray) || [];
-  const said = [...(Array.isArray(mind.log) ? mind.log : []).filter((l) => l && l.role === "user").map((l) => String(l.text || "")), ...done.map((x) => String((x && x.a) || "")).filter((a) => /^answered in chat:/.test(a))];
+  const log = Array.isArray(mind.log) ? mind.log : [];
+  const said = [...log.map((l, i) => (l && l.role === "user" ? { t: String(l.text || ""), context: log.slice(Math.max(0, i - 6), i).map((x) => String((x && x.text) || "")).join("\n") } : null)).filter(Boolean),
+    ...done.map((x) => String((x && x.a) || "")).filter((a) => /^answered in chat:/.test(a)).map((t) => ({ t, context: "" }))];
   const byName = new Map();
-  for (const t of said) for (const f of findSecrets(t).found) byName.set(f.name, [...new Set([...(byName.get(f.name) || []), ...f.values])]);
+  for (const { t, context } of said) for (const f of findSecrets(t, undefined, { context }).found) byName.set(f.name, [...new Set([...(byName.get(f.name) || []), ...f.values])]);
   const swap = [];
   for (const [name, values] of byName) if (saveSecret(name, values).ok) for (const v of values) swap.push([v, `[saved: ${name.replace(/["\\]/g, "")}]`]);
   swap.sort((a, b) => b[0].length - a[0].length);
@@ -200,10 +238,53 @@ function scrubStored({ force = false } = {}) {
     let raw; try { raw = readFileSync(f, "utf8"); } catch { continue; }
     let out = raw;
     for (const [v, mark] of swap) for (const form of new Set([v, JSON.stringify(v).slice(1, -1)])) out = out.split(form).join(mark);
+    out = out.replace(PIECE, (run) => { const hit = swap.find(([v]) => v.length > run.length && v.includes(run)); return hit ? hit[1] : run; });
     if (out !== raw) { try { writeAtomic(f, out); files.push(f); } catch {} }
   }
   try { writeJsonAtomic(SCRUB_MARK(), { v: SCRUB_V, at: Date.now(), found: byName.size }, { mode: 0o600 }); } catch {}
   return { found: [...byName.keys()], files };
 }
 
-export { saveSecret, listSecrets, getSecret, markUsed, deleteSecret, findSecrets, captureSecrets, scrubStored, SCRUB_V };
+// Words the detector took for secrets before it knew better (notPassword): each goes back where
+// "[saved: name]" stands for it, and leaves the vault. A name holding only one value, and that one
+// a word, is put back everywhere; one that also holds real values only loses the word (its marks
+// can't be told apart, so they stay). Once per REPAIR_V, at start. { restored: [name], files, dropped }.
+const REPAIR_V = 1, REPAIR_MARK = () => join(CONFIG_DIR, "repaired.json");
+function repairFalseSaves({ force = false } = {}) {
+  if (!force && ((readState(REPAIR_MARK()) || {}).v || 0) >= REPAIR_V) return { skipped: true };
+  const back = [], dropped = [];
+  for (const name of Object.keys(readIndex().names)) {
+    const cur = load(name); if (!cur || !Array.isArray(cur.values)) continue;
+    const bad = cur.values.filter((x) => notPassword(String(x.v || "").trim())); if (!bad.length) continue;
+    if (bad.length === cur.values.length && bad.length === 1) { back.push([`[saved: ${name.replace(/["\\]/g, "")}]`, String(bad[0].v).trim(), name]); deleteSecret(name); }
+    else { store(name, { ...cur, values: cur.values.filter((x) => !bad.includes(x)) }); dropped.push(name); }
+  }
+  const files = [];
+  for (const f of back.length ? storedFiles() : []) {
+    let raw; try { raw = readFileSync(f, "utf8"); } catch { continue; }
+    let out = raw; for (const [mark, word] of back) { out = out.split(mark).join(word); out = out.split(JSON.stringify(mark).slice(1, -1)).join(JSON.stringify(word).slice(1, -1)); }
+    if (out !== raw) { try { writeAtomic(f, out); files.push(f); } catch {} }
+  }
+  try { writeJsonAtomic(REPAIR_MARK(), { v: REPAIR_V, at: Date.now(), restored: back.length }, { mode: 0o600 }); } catch {}
+  return { restored: back.map((b) => b[2]), files, dropped };
+}
+
+// A step waiting on a key, token or password the user was to paste is met once a secret
+// whose name shares the step's service words (everything but "key", "test"…) was saved after
+// the wait began: "Lemon Squeezy test API key" meets "make a key … paste it on Home".
+const GENERIC = new Set(["key", "keys", "api", "test", "live", "token", "tokens", "password", "secret", "code", "codes", "login", "account"]);
+// The secret's name, or "" when none meets it.
+function meetsStep(step, since) {
+  const text = String(step || "").toLowerCase();
+  if (!/\b(?:key|token|password|secret|paste|code)s?\b/.test(text)) return "";
+  const pw = /\bpass(?:word|code)?s?\b/.test(text), key = /\b(?:api|keys?|tokens?)\b/.test(text);
+  const hit = Object.entries(readIndex().names).find(([name, m]) => {
+    if (!(m.ts > since)) return false;
+    const isPw = /\bpass(?:word|code)\b/i.test(name); if (isPw ? key && !pw : pw && !key) return false; // a password doesn't meet a step asking for a key, nor a key one asking for a password
+    const w = name.toLowerCase().replace(/\(.*?\)/g, " ").split(/[^a-z0-9]+/).filter((x) => x.length > 1 && !GENERIC.has(x));
+    return w.length > 0 && w.every((x) => text.includes(x));
+  });
+  return hit ? hit[0] : "";
+}
+
+export { repairFalseSaves, meetsStep, serviceOf, saveSecret, listSecrets, getSecret, markUsed, deleteSecret, findSecrets, captureSecrets, scrubStored, SCRUB_V };

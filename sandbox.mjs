@@ -41,7 +41,7 @@ function runSandbox({ bin, args = [], keep = false, log = console.log, port = PO
   log(`Sandbox: a brand-new Symbiot, with its own empty home at ${home}.`);
   log("No AI connected, no memory, no linked accounts, no lanes, none of your repos. Nothing of yours is read or changed.");
   log(keep ? "That folder stays when you quit (--keep)." : "Quit it (the X in its top corner, or Ctrl+C here) and that folder is deleted.");
-  const child = spawn(process.execPath, [bin, "app", ...args], { env: sandboxEnv(home, process.env, port), stdio: "inherit" });
+  const child = spawn(process.execPath, [bin, "app", ...args], { env: { ...sandboxEnv(home, process.env, port), SYMBIOT_FIRST_RUN: "1" }, stdio: "inherit" }); // first run's setup, as someone new sees it
   const stop = () => {}; // Ctrl+C reaches the app too; wait for it to quit, then clean up
   process.on("SIGINT", stop); process.on("SIGTERM", () => child.kill("SIGTERM"));
   return new Promise((resolve) => child.on("exit", (code) => {

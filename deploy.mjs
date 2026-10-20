@@ -5,6 +5,7 @@
 // scripts and CI), liveNote says plainly what state a change is in, and deployAsk puts the
 // "deploy it?" question on the Workdesk, because a deploy to production is the user's yes.
 import { join } from "node:path";
+import { spawnSync } from "node:child_process";
 import { readFileSync, readdirSync, existsSync, writeFileSync, mkdirSync } from "node:fs";
 import { loadConfig, loadTasks, saveTasks } from "./core.mjs";
 import { isDone } from "./asksdone.mjs";
@@ -33,13 +34,28 @@ function deployTarget(path, repo = "") {
   for (const f of files) {
     const t = read(join(wf, f));
     if (!/deploy/i.test(f) && !/\b(?:ssh|rsync|scp|kubectl|helm|flyctl|vercel|netlify|gcloud\s+(?:app|run)|aws\s+(?:s3\s+sync|ecs|deploy)|docker\s+push)\b|\bdeploy\b/i.test(t)) continue;
-    return { how: `the ${f} workflow`, url: home, auto: PUSH_MAIN.test(t), source: ".github/workflows/" + f };
+    const paths = pushPaths(t);
+    return { how: `the ${f} workflow`, url: home, auto: PUSH_MAIN.test(t), source: ".github/workflows/" + f, ...(paths.length ? { paths } : {}) };
   }
   for (const [f, name] of Object.entries(SITE_FILES)) if (existsSync(join(path, f))) return { how: name, url: home, auto: false, source: f };
   return null;
 }
 
 const where = (t) => t.how + (t.url ? ` (${t.url})` : "");
+// The files a workflow deploys for: its push trigger's `paths:` ([] when it has none, so every
+// change counts). symbiot's pages.yml runs only for site/**, so asking "deploy it?" about PRs
+// #202 and #209, which changed no site file, asked about a deploy that never happens (19 Oct 2026).
+function pushPaths(yml) {
+  const m = String(yml || "").match(/^[ \t]*push:[^\n]*\n((?:[ \t]+[^\n]*\n?|[ \t]*\n)*)/m); if (!m) return [];
+  const p = m[1].match(/^[ \t]*paths:[ \t]*(\[[^\]]*\]|\n(?:[ \t]*-[^\n]*\n?)+)/m); if (!p) return [];
+  return [...p[1].matchAll(/["']([^"']+)["']|-\s*([^\s#"'][^\s#]*)/g)].map((x) => x[1] || x[2]).filter((g) => g && !g.startsWith("!"));
+}
+const globRe = (g) => new RegExp("^" + g.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*\*\/?/g, "\u0000").replace(/\*/g, "[^/]*").replace(/\?/g, "[^/]").replace(/\u0000/g, ".*") + "$");
+const reaches = (target, files) => !target.paths || !Array.isArray(files) || files.some((f) => target.paths.some((g) => globRe(g).test(f)));
+// A PR's changed files, from GitHub (null when gh can't say: then it's asked as before).
+function prFiles(path, pr, gh = (args) => spawnSync("gh", args, { cwd: path, encoding: "utf8", timeout: 30000 })) {
+  try { const r = gh(["pr", "view", String(pr), "--json", "files"]); if (r.status !== 0) return null; const f = (JSON.parse(String(r.stdout || "{}")).files || []).map((x) => x && x.path).filter(Boolean); return f.length ? f : null; } catch { return null; }
+}
 // The plain sentence for a change: stage "approved" (PR open, may be queued to merge) or "merged".
 // state is what the task keeps: "none" nothing to deploy, "pending" not live yet.
 function liveNote(target, stage = "merged") {
@@ -85,8 +101,10 @@ function markTasks(repo, pr, live) {
   return n;
 }
 // After a merge, or an Approve that queued one: the note, the tasks marked, the question raised.
-function afterShip(path, repo, pr, stage, { ask = true } = {}) {
-  const target = deployTarget(path, repo), live = liveNote(target, stage);
+function afterShip(path, repo, pr, stage, { ask = true, files } = {}) {
+  let target = deployTarget(path, repo);
+  if (target && target.paths && pr) { if (files === undefined) files = prFiles(path, pr); if (!reaches(target, files)) target = null; } // none of its files are ones the deploy runs for
+  const live = target || !files ? liveNote(target, stage) : { state: "none", text: `${stage === "merged" ? "Merged." : "Nothing to deploy once the PR merges:"} None of its files are ones the site's deploy runs for, so nothing goes to the site.` };
   if (pr) markTasks(repo, pr, live);
   const asked = ask && target && pr ? deployAsk(path, repo, pr, target, stage) : false; // stage: an Approve that queued the merge isn't merged yet (PR #209 was asked about as merged, 19 Oct 2026)
   return { ...live, ...(target ? { target: where(target) } : {}), ...(asked ? { asked: true } : {}) };
@@ -98,4 +116,4 @@ function markLive(id) {
   return { ok: true };
 }
 
-export { deployTarget, liveNote, deployAsk, markTasks, afterShip, markLive, askOf };
+export { deployTarget, liveNote, deployAsk, markTasks, afterShip, markLive, askOf, pushPaths, prFiles };
