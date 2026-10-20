@@ -18,7 +18,7 @@ import { readFileSync, writeFileSync, mkdirSync, statSync } from "node:fs";
 import { watchBoard, draftReply, draftCards, draftAnswer } from "./watch.mjs";
 import { pendingReview, pushTasks, addTask, taskType, releaseNotIn } from "./tasks.mjs";
 import { estimate, estimateWords } from "./estimate.mjs";
-import { grantCard, cardIsPermission, onCardGone, setHandoffCmd, agentsList, runHandoff, runningHandoff, handoffCmd, loadRuns, connectorsInfo, parkedPaths, agentMissing, settleNeeds, pickAgent, detectHandoffs, linkReach, unchangedStep, whereOf, claudePause, parkLane } from "./agents.mjs";
+import { heldAsk, grantCard, cardIsPermission, onCardGone, setHandoffCmd, agentsList, runHandoff, runningHandoff, handoffCmd, loadRuns, connectorsInfo, parkedPaths, agentMissing, settleNeeds, pickAgent, detectHandoffs, linkReach, unchangedStep, whereOf, claudePause, parkLane } from "./agents.mjs";
 import { stallCards, loadStall, saveStall } from "./stall.mjs";
 import { isDone, recordDone, coveredBy, doneList } from "./asksdone.mjs";
 import { captureSecrets } from "./vault.mjs";
@@ -444,6 +444,8 @@ function homeState({ now = Date.now(), fresh = false, deps = {} } = {}) {
     if (seen.has(a.path)) continue; seen.add(a.path);
     const qs = (a.ask && a.ask.questions) || [], q = qs[0];
     if (!q || held[a.path]) continue;
+    // asking the user to paste or save a secret Symbiot holds already: answered with where it is, never a card
+    if (a.status !== "running") { let h = ""; try { h = (deps.heldAsk || heldAsk)(a.path, q); } catch {} if (h) continue; }
     const lane = laneOfPath(a.path, map), repo = lane || (lane === "" ? "" : a.name);
     // the work it asks about is done already (another lane took it and ticked it): the card says so, and Close it is first
     const pa = plainAsk(a.path, q), done = finished(a.path, q.q), opts = (q.options || []).slice(0, 2);
@@ -558,6 +560,7 @@ function runAfterShip(path, run = runHandoff) {
 }
 function homeAnswer(id, { pick, text = "" } = {}, deps = {}) {
   id = String(id || ""); text = String(text || "").trim().slice(0, 2000);
+  try { text = captureSecrets(text).text; } catch {} // a secret typed on a card goes to the vault; ANSWERS.md and the record get "[saved: …]"
   const go = text ? !SAYS_NO.test(text) : Number(pick) === 0, ref = id.replace(/^\w+:/, "");
   cached = null;
   if (id.startsWith("stuck:")) {

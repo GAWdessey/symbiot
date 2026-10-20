@@ -37,7 +37,7 @@ import { setScanOptions, scanBase, authorship, readmeInfo, repoShape, houseRules
 import { gitDefaultBranch, loadDeploys, driftRepo, computeDrift } from "./drift.mjs";
 import { buildTasksMd, taskType, shipChanges, shipWithBump, bumpOffer, learnNpm, releaseNeeded, withReleases, setVersion, syncTasks, pendingReview, unreleased, publishesOnMerge, addTask, approveRepo, approveChanges, sendBack, pushTasks } from "./tasks.mjs";
 import { produce, mailState, setMail, sentMail } from "./writeups.mjs";
-import { loadScreens, screenImage, blueprint, SCREENS_SOCK, screensGate } from "./screens.mjs";
+import { loadScreens, screenImage, blueprint, SCREENS_SOCK, sockGate } from "./screens.mjs";
 import { watchState, addWatch, removeWatch, seenWatch, newsSince, markNews, checkWatch, setBrief, draftReply, watchBoard, boardLine, boardChat, boardTalk, clearBoardChat } from "./watch.mjs";
 import { PORT as PHONE_PORT, phoneState, pairComputer, pollComputer, forgetComputer, parsePairLink } from "./phone.mjs";
 import { qrMatrix } from "./qr.mjs";
@@ -364,7 +364,7 @@ function viaSock(path, body) {
   });
 }
 async function viaApp(path, body) {
-  if (screensGate(path) && path !== "/api/ping" && existsSync(SCREENS_SOCK)) { const r = await viaSock(path, body); if (r) return r; }
+  if (sockGate(path) && path !== "/api/ping" && existsSync(SCREENS_SOCK)) { const r = await viaSock(path, body); if (r) return r; }
   const cfg = loadConfig(); if (!cfg.appToken) return null;
   const base = `http://127.0.0.1:${Number(process.env.SYMBIOT_PORT || cfg.appPort) || 7391}`, headers = { "x-symbiot-token": cfg.appToken };
   try { const p = await fetch(base + "/api/ping", { headers, signal: AbortSignal.timeout(1500) }); if (!p.ok || !(await p.json()).version) return null; } catch { return null; }
@@ -453,15 +453,34 @@ async function cmdUninstall() {
 // handed over (vault.mjs). get prints the next unspent value and nothing else; --use marks a
 // one-use code spent. Through the app when it's running (a run can't read the vault's key).
 async function cmdSecret() {
-  const [sub = "list", name, value] = argv.slice(1).filter((x) => !x.startsWith("--"));
+  const [sub = "list", name, value] = argv.slice(1).filter((x, i, all) => !x.startsWith("--") && all[i - 1] !== "--from");
   const v = await import("./vault.mjs"), via = async (p, b) => (await viaApp(p, b)) || null;
-  if (sub === "list") { const l = (await via("/api/secrets/list", {}))?.secrets || v.listSecrets(); if (!l.length) console.log(c.d("No secrets saved.")); for (const s of l) console.log(`${s.name}  ${c.d(`${s.left} of ${s.count} unused · ${s.where}`)}`); return; }
+  // a sandboxed run can't read vault.json: say so, never "No secrets saved" (an agent took that as "never handed over")
+  const SEALED = "This run is in Symbiot's sandbox, which can't read the vault. Hand the step that needs the secret to ops (.symbiot/HANDOFF.md, a ### ops section naming the secret): ops reads it with symbiot secret get.";
+  if (sub === "list") { const r = await via("/api/secrets/list", {}), l = r?.secrets || v.listSecrets(); if (!r && v.vaultSealed()) { console.log(c.y(SEALED)); return; } if (!l.length) console.log(c.d("No secrets saved.")); for (const s of l) console.log(`${s.name}  ${c.d(`${s.left} of ${s.count} unused · ${s.where}`)}`); return; }
+  // add: an agent saves a secret it was handed (a token in an answer, a file a user pointed to), from stdin or --from <file>,
+  // never as an argument (that lands in the run's log). It goes through the app when one runs: the only way in from the sandbox.
+  if (sub === "add") {
+    if (!name) { console.error('symbiot secret add "<name>" < file   (or --from <file>: the one secret found in it)'); process.exitCode = 1; return; }
+    let vals = [];
+    if (flag("from", "")) {
+      let t = ""; try { t = readFileSync(flag("from", ""), "utf8"); } catch (e) { console.error(`Couldn't read ${flag("from", "")}: ${e.code || e.message}`); process.exitCode = 1; return; }
+      const f = v.findSecrets(t).found; if (f.length !== 1) { console.error(f.length ? `That file holds ${f.length} different secrets; pipe the one you mean in instead.` : "No secret found in that file."); process.exitCode = 1; return; }
+      vals = f[0].values;
+    } else if (process.stdin.isTTY) { console.error('Pipe the value in: … | symbiot secret add "<name>"'); process.exitCode = 1; return; }
+    else { const t = readFileSync(0, "utf8").trim(); vals = t ? [t] : []; }
+    if (!vals.length) { console.error("Nothing to save."); process.exitCode = 1; return; }
+    const r = (await via("/api/secrets/add", { name, values: vals })) || (v.vaultSealed() ? { error: SEALED.replace("Hand the step that needs the secret to ops", "Open Symbiot's app (its socket lets a run add one), or hand it to ops") } : v.saveSecret(name, vals));
+    if (r.error) { console.error(r.error); process.exitCode = 1; return; }
+    console.log(`Saved as "${r.name}" (${r.count} value${r.count === 1 ? "" : "s"}).`); return;
+  }
   // scrub: read the chat history again for secrets stored before they were caught, vault them and blank every copy (names and files only, never a value)
   if (sub === "scrub") { const r = (await via("/api/secrets/scrub", {})) || v.scrubStored({ force: true }); if (r.error) { console.error(r.error); process.exitCode = 1; return; } console.log(r.found && r.found.length ? `Saved ${r.found.join(", ")}; blanked in ${r.files.length} file${r.files.length === 1 ? "" : "s"}.` : "Nothing found."); return; }
   if (!name) { console.error("symbiot secret " + sub + " <name>"); process.exitCode = 1; return; }
+  if (sub === "get" && v.vaultSealed() && !(await via("/api/ping", {}))) { console.error(SEALED); process.exitCode = 1; return; }
   const r = sub === "get" ? ((await via("/api/secrets/get", { name, use: has("use") })) || v.getSecret(name, { use: has("use") }))
     : sub === "used" ? ((await via("/api/secrets/used", { name, value })) || v.markUsed(name, String(value || "")))
-    : sub === "delete" ? ((await via("/api/secrets/delete", { name })) || v.deleteSecret(name)) : { error: "symbiot secret list | get <name> [--use] | used <name> <value> | delete <name> | scrub" };
+    : sub === "delete" ? ((await via("/api/secrets/delete", { name })) || v.deleteSecret(name)) : { error: "symbiot secret list | add <name> (value on stdin, or --from <file>) | get <name> [--use] | used <name> <value> | delete <name> | scrub" };
   if (r.error) { console.error(r.error); process.exitCode = 1; return; }
   console.log(sub === "get" ? r.value : "ok");
 }

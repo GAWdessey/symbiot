@@ -28,8 +28,8 @@ import { laneCap, mergeEnded, DEFAULT_CAP } from "./parallel.mjs";
 import { addTask, setTaskModel, toggleTask, removeTask, cancelTask, restoreTask, syncTasks, taskType, pushTasks, pendingReview, workingDiff, learnNpm, withReleases, releaseInput, approveRepo, approveChanges, sendBack, setAutoMerge, mergeWhenGreen, sendAgain, forgetUnsent, shippingPaths } from "./tasks.mjs";
 import { repoReview, repoSuggest, folderSuggest, taskChat, clearTaskChat, mailState, setMail, sentMail, produce, releaseNotes } from "./writeups.mjs";
 import { denyList } from "./outward.mjs";
-import { listSecrets, getSecret, markUsed, deleteSecret, scrubStored, repairFalseSaves } from "./vault.mjs";
-import { SCREENS_SOCK, screensGate, loadScreens, screenImage, captureScreen, splitScreen, listMonitors, allowScreenshots, importScreen, setRegions, renameScreen, removeScreen, blueprint, clickRegion } from "./screens.mjs";
+import { listSecrets, getSecret, saveSecret, markUsed, deleteSecret, scrubStored, repairFalseSaves } from "./vault.mjs";
+import { SCREENS_SOCK, sockGate, loadScreens, screenImage, captureScreen, splitScreen, listMonitors, allowScreenshots, importScreen, setRegions, renameScreen, removeScreen, blueprint, clickRegion } from "./screens.mjs";
 import { sessionCookie, mapPage, wholePage, pressRegion, typeRegion, chooseRegion, fillForm, verifyPage, uploadRegion, scrollPage, signIn, keepBrowserOpen, isTrusted, trustedSites, trustSite, untrustSite, openSymbiotBrowser, closeSymbiotBrowser, onBrowserClosed, setBrowserHub, siteUrl, browserHub, windowOpen } from "./headless.mjs";
 import { weeklyState, setWeekly, runWeekly, startWeekly, autostartState, setAutostart, installLauncher, iconSvg, setLauncherLook } from "./desktop.mjs";
 import { markNews, newsSince, watchState, addWatch, setEvery, removeWatch, clearNews, seenWatch, checkWatch, startWatches, setBrief, draftReply, openChat, watchBoard, boardChat, clearBoardChat } from "./watch.mjs";
@@ -603,6 +603,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       if (u.pathname === "/api/screens/trusted/remove" && req.method === "POST") { const b = await readBody(req); return json(res, untrustSite(b.site)); }
       // Saved secrets (vault.mjs): names and counts for Settings; an agent reads one by name, never a list of values.
       if (u.pathname === "/api/secrets" || u.pathname === "/api/secrets/list") return json(res, { secrets: listSecrets() });
+      if (u.pathname === "/api/secrets/add" && req.method === "POST") { const b = await readBody(req); return json(res, saveSecret(String(b.name || ""), Array.isArray(b.values) ? b.values.slice(0, 50) : [])); }
       if (u.pathname === "/api/secrets/get" && req.method === "POST") { const b = await readBody(req); return json(res, getSecret(String(b.name || ""), { use: !!b.use })); }
       if (u.pathname === "/api/secrets/used" && req.method === "POST") { const b = await readBody(req); return json(res, markUsed(String(b.name || ""), String(b.value || ""))); }
       if (u.pathname === "/api/secrets/delete" && req.method === "POST") { const b = await readBody(req); return json(res, deleteSecret(String(b.name || ""))); }
@@ -855,11 +856,11 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
     });
   });
   server.listen(PORT, "127.0.0.1");
-  // the sandboxed lanes' way to `symbiot screens` (screens.mjs SCREENS_SOCK): the same handler, with the token added, for the screens routes and the ping only
+  // the sandboxed lanes' way to `symbiot screens` (screens.mjs SCREENS_SOCK): the same handler, with the token added, for the screens routes, the ping, and adding to the vault (sockGate)
   if (!SANDBOX || process.env.SYMBIOT_SCREENS_SOCK) {
     const gate = createServer((req, res) => {
       let p = ""; try { p = new URL(req.url, "http://x").pathname; } catch {}
-      if (!screensGate(p)) { res.writeHead(403); res.end("forbidden"); return; }
+      if (!sockGate(p)) { res.writeHead(403); res.end("forbidden"); return; }
       req.headers["x-symbiot-token"] = TOKEN; server.emit("request", req, res);
     });
     gate.on("error", () => {});
