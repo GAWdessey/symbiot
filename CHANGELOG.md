@@ -4,7 +4,7 @@ What each Symbiot release brought, newest first. When Approve bumps the version,
 
 ## 0.66.14 — 2026-10-20
 
-- **Agents can read sites in your own Chrome.** With the Claude extension in your Chrome, each agent run can open, read and close tabs of its own there, signed in as you. Sites see a person's browser there, so ones that block Symbiot's browser, like Cloudflare's dashboard, read fine. Agents try the site's API first, then your Chrome, then Symbiot's browser.
+- **Agents can read sites in your own Chrome.** With the Claude extension in your Chrome, each agent run can open, read and close tabs of its own there, signed in as you. Sites see a person's browser there, so sites that block Symbiot's browser read fine there. Agents try the site's API first, then your Chrome, then Symbiot's browser.
 - **Reading only.** Agents work in their own tab group, never in your tabs, and can't click, type, send or pay in your Chrome. Anything like that still goes through Symbiot's browser, which asks you first. Each site also needs your Allow in the Claude extension, and an agent asks you for that rather than for a sign-in. Set `chromeAgents` to false to turn it off.
 
 ## 0.66.13 — 2026-10-20
