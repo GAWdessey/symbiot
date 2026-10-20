@@ -125,6 +125,8 @@ try {
   ok("behind a live urgent run: 'takes this next'", /takes this next/.test(r3), r3);
   const r4 = await said({ notStarted: "Not started: your step comes first." });
   ok("a routine one that didn't start says so too", /not started/.test(r4) && !/on it/i.test(r4) && !/starts once|started on it/.test(r4), r4);
+  const keep = (await converse({ where: "Home", question: "here's the key", map: { symbiot }, ask: async () => JSON.stringify({ reply: "Saved it to the vault as \"lemon squeezy api key\".", do: { agent: "wire checkout", repo: "symbiot" } }), act: { agent: async () => ({ lane: "symbiot", ok: true, notStarted: "Not started: your step comes first." }) } })).reply;
+  ok("…keeping what the reply said when it claimed nothing (19 Oct 2026: a saved key's reply became the canned not-started line)", /^Saved it to the vault/.test(keep) && /not started/.test(keep), keep);
 } finally {
   rmSync(HOME, { recursive: true, force: true });
 }

@@ -267,8 +267,8 @@ footer a{text-decoration:none}footer a:hover{color:var(--bone)}
           <li>One connected inbox or chat</li>
           <li>The Away screen</li></ul>
           <a class="btn ghost" href="#install">Install Symbiot</a></div>
-        <!-- The checkout links: both set (https), and the card shows a pay button for each in place of Get Pro by email. Empty, it stays as it is. -->
-        <div class="card pro" data-checkout-monthly="" data-checkout-yearly=""><h3>Pro</h3><p class="price">US$12 <small>a month, or US$99 a year</small></p><ul>
+        <!-- The checkout links: each one set (https) is a pay button in place of Get Pro by email; none set, it stays as it is. data-checkout-test="1" while the store is in test mode: the card says so, and buying stays by email. -->
+        <div class="card pro" data-checkout-monthly="https://symbiot.lemonsqueezy.com/checkout/buy/001d8900-af18-4239-85c2-ffd712cc7d48" data-checkout-yearly="https://symbiot.lemonsqueezy.com/checkout/buy/83ab4234-8959-4d39-bd5b-324b2e577382" data-checkout-test="1"><h3>Pro</h3><p class="price">US$12 <small>a month, or US$99 a year</small></p><ul>
           <li>Everything in Free</li>
           <li>As many agents at once as you like, in every project</li>
           <li>Every inbox and chat: all your mail, WhatsApp, LinkedIn and your calendars</li>
@@ -322,13 +322,15 @@ footer a{text-decoration:none}footer a:hover{color:var(--bone)}
   if (a && src) a.href += encodeURIComponent("\n\n(source: " + src + ")");
   // Pay on the site, once the store's checkout links are set on the card: never a dead button.
   var card = document.querySelector(".plans .card.pro"), https = /^https:\/\/[^\s"<>]+$/;
-  var m = card && card.getAttribute("data-checkout-monthly"), y = card && card.getAttribute("data-checkout-yearly");
-  if (!a || !https.test(m || "") || !https.test(y || "")) return;
+  var m = card && card.getAttribute("data-checkout-monthly"), y = card && card.getAttribute("data-checkout-yearly"), test = card && card.getAttribute("data-checkout-test") === "1";
+  var links = [["Pro monthly, US$12", m], ["Pro yearly, US$99", y]].filter(function (b) { return https.test(b[1] || ""); });
+  if (!a || !links.length) return;
   var tag = function (u) { return src ? u + (u.indexOf("?") < 0 ? "?" : "&") + "checkout%5Bcustom%5D%5Butm_source%5D=" + encodeURIComponent(src) : u; };
   var buy = document.createElement("div"); buy.className = "buy";
-  [["Pro monthly, US$12", m], ["Pro yearly, US$99", y]].forEach(function (b) { var l = document.createElement("a"); l.className = "btn"; l.href = tag(b[1]); l.textContent = b[0]; buy.appendChild(l); });
+  links.forEach(function (b) { var l = document.createElement("a"); l.className = "btn"; l.href = tag(b[1]); l.textContent = b[0] + (test ? " (test)" : ""); buy.appendChild(l); });
   var alt = a.nextElementSibling, note = document.createElement("p"); note.className = "alt";
-  note.appendChild(document.createTextNode("Your key arrives by email in a minute, to paste into Symbiot's Settings. Or "));
+  // in test mode no card is charged and no key goes out, so buying is still by email
+  note.appendChild(document.createTextNode(test ? "Payments here are in test mode for now: no card is charged and no key is sent. To buy Pro, " : "Your key arrives by email in a minute, to paste into Symbiot's Settings. Or "));
   var mail = document.createElement("a"); mail.href = a.href; mail.textContent = "email sales@symbiot.co.za"; note.appendChild(mail); note.appendChild(document.createTextNode("."));
   a.replaceWith(buy); if (alt && alt.className === "alt") alt.replaceWith(note); else buy.after(note);
 })();

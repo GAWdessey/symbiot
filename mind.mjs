@@ -345,7 +345,7 @@ const BAD_FORM = "(the model didn't answer in the right form, so nothing was don
 // what "do" runs here. Gives { reply, did?, remembered }.
 async function converse({ where, role = "", context = "", history = "", question, act = {}, ask = (sys, p, o) => write(sys, p, { ...o, floor: "sonnet" }), map = null, now = Date.now(), images = [], nav = false, settle = false, tasks = [], control = false }) {
   // a secret they pasted goes to the vault before anything is stored or sent; the model sees a placeholder
-  let kept = []; try { ({ text: question, saved: kept } = captureSecrets(question)); } catch {}
+  let kept = []; try { ({ text: question, saved: kept } = captureSecrets(question, { context: () => [history, ...(loadMind().log || []).slice(-6).map((l) => String((l && l.text) || ""))].join("\n") })); } catch {}
   kept = [...new Set([...kept, ...[...String(question).matchAll(/\[saved: ([^\]]+)\]/g)].map((m) => m[1])])]; // or saved already, by the page it came from (home.mjs homeAsk)
   const d = loadMind(), hits = recall(question, now, d), known = recallText(hits), elsewhere = lately(where, d, undefined, now);
   if (!history) history = ownThread(where, d, now);
@@ -391,7 +391,9 @@ async function converse({ where, role = "", context = "", history = "", question
     // the model wrote its reply before the hand-off ran: when no agent started, its "on it" is
     // false, so the reply is replaced by what happened (never "on it" / "making the changes")
     if (did.error) reply = `I couldn't hand it to an agent: ${did.error}`;
-    else if (did.lane && did.notStarted) reply = handedLine(did);
+    // ...but only an "on it": the rest of what it said stays, with the line under it. A pasted key's
+    // "Saved, thanks" was replaced by "your step comes first…" three times running (19 Oct 2026)
+    else if (did.lane && did.notStarted) reply = CLAIMS_ACTION.test(reply) || /^\W*(?:on it|doing it|will do|starting( now)?)\b/i.test(reply) ? handedLine(did) : `${reply}\n\n${handedLine(did)}`;
     else reply += did.lane ? handedLine(did)
       : `\n\nHanded to your agent${did.rerouted ? `, not ${did.rerouted.from}'s: ${did.rerouted.why}` : ""}. It's on the Workdesk, and it asks you there before anything hard to undo.`;
   } else if (want && want.task && act.task) {

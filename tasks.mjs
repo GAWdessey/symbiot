@@ -17,6 +17,7 @@ import { QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, isUrgent, handoffCmd, runHan
 import { gitDefaultBranch } from "./drift.mjs";
 import { publicItems, leaksIn } from "./outward.mjs";
 import { readRunLog, briefPlan } from "./work.mjs";
+import { changesBy, originLine } from "./origin.mjs";
 import { repoPathMap, laneMap, openWork, detectRepo } from "./scan.mjs";
 import { afterShip } from "./deploy.mjs";
 import { MARKETING_DIR, ensureMarketing, marketingBrief } from "./marketing.mjs";
@@ -629,19 +630,36 @@ const forgetReview = () => REVIEW_GIT.clear();
 // the handoff behind them ({ text, to, held? } or null), so they go up by themselves (shipHanded).
 let HANDED_LOOKUP = () => null;
 const setHandedLookup = (f) => { HANDED_LOOKUP = typeof f === "function" ? f : () => null; };
+// Where a card's changes came from (origin.mjs): an agent still making them, in this checkout
+// or from a folder of its own, or the run that left them. Kept like reviewGit.
+function originOf(path, files) {
+  const k = "origin:" + path, had = REVIEW_GIT.get(k);
+  if (had && Date.now() - had.at < REVIEW_FRESH) return had.v;
+  let v = {}; try { v = changesBy(path, files); } catch {}
+  REVIEW_GIT.set(k, { at: Date.now(), v }); return v;
+}
 function pendingReview() {
   const t = loadTasks(), by = {}; for (const x of t) if (x.review && !x.done && !x.archived) (by[x.repo] = by[x.repo] || []).push(x);
   const sent = [...new Set(t.filter((x) => x.repo && !x.archived && !by[x.repo]).map((x) => x.repo))];
   const late = lateUnsent(t), map = Object.keys(by).length || sent.length || late.size ? laneMap() : {};
-  const am = autoMergeRepos(), state = (repo, path) => ({ autoMerge: am.includes(repo), running: !!(path && runningHandoff(path)), ...(path && shipping(path) ? { shipping: shipping(path) } : {}) });
-  const out = Object.keys(by).sort().map((repo) => { const path = map[repo] || ""; return { repo, path, tasks: by[repo], ...state(repo, path), ...(path ? shippable(path, reviewGit(path)) : { branch: "", files: [], stat: "" }) }; });
+  // running: an agent is still editing the checkout, its own run or one working there from a
+  // folder of its own (origin.mjs atWork): the card says who, and offers no Approve meanwhile
+  const am = autoMergeRepos(), state = (repo, path, files = []) => {
+    const o = path && files.length ? originOf(path, files) : {}, at = o.atWork;
+    return { autoMerge: am.includes(repo), running: !!(path && (runningHandoff(path) || at)), ...(at ? { atWork: at, origin: originLine(o) } : {}), ...(path && shipping(path) ? { shipping: shipping(path) } : {}) };
+  };
+  const out = Object.keys(by).sort().map((repo) => { const path = map[repo] || "", wc = path ? shippable(path, reviewGit(path)) : { branch: "", files: [], stat: "" }; return { repo, path, tasks: by[repo], ...state(repo, path, wc.files), ...wc }; });
   for (const repo of sent.sort()) {
     const path = map[repo]; if (!path || !existsSync(join(path, ".symbiot", "TASKS.md"))) continue;
     const wc = shippable(path, reviewGit(path)); if (!wc.files.length) continue;
     const still = t.filter((x) => x.repo === repo && !x.done && !x.archived && !x.review), round = roundOf(path, still);
-    const open = finishedOffer(path, still, round);
+    const open = finishedOffer(path, still, round), st = state(repo, path, wc.files);
     const handed = (() => { try { return HANDED_LOOKUP(path, wc); } catch { return null; } })();
-    out.push({ repo, path, tasks: [], untasked: true, open, ...(round ? { round } : {}), ...(handed ? { handed } : {}), ...state(repo, path), ...wc });
+    // leftover: no ticked task, no finished round, and no run saying it finished one. Still the
+    // Workdesk's to approve or leave, with a line on where it came from (origin), but not waiting
+    // on the user: Home's ember balls and "Only the user can do" leave it out (home.mjs)
+    const leftover = !round && !open.some((x) => x.finished);
+    out.push({ repo, path, tasks: [], untasked: true, open, ...(round ? { round } : {}), ...(handed ? { handed } : {}), ...(leftover ? { leftover: true } : {}), ...st, ...(st.atWork ? {} : { origin: originLine(originOf(path, wc.files), { open: open.some((x) => !x.round) }) }), ...wc });
   }
   // approved and committed, but it never got as far as a PR: its card stays, saying why, with a retry (sendAgain)
   for (const [repo, path] of Object.entries(map)) {
@@ -675,7 +693,14 @@ function keptUnsent(path, repo, t) {
   const v = unsentCard(path, repo, t); REVIEW_GIT.set(k, { at: Date.now(), v }); return v;
 }
 // Approving while the agent is still editing would commit its half-done work.
-const stillWorking = (repo, path) => path && runningHandoff(path) ? { error: `The agent is still working in ${repo}. Approve once it finishes.`, running: true } : null;
+// an agent editing the checkout from a folder of its own counts too (origin.mjs): its edits were
+// offered for Approve half done while it ran (act-c6a0236a in symbiot, 19 Oct 2026)
+const stillWorking = (repo, path) => {
+  if (!path) return null;
+  if (runningHandoff(path)) return { error: `The agent is still working in ${repo}. Approve once it finishes.`, running: true };
+  let o = {}; try { o = changesBy(path, []); } catch {}
+  return o.atWork ? { error: originLine(o), running: true } : null;
+};
 const branchSlug = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40).replace(/-+$/, "") || "tasks";
 // Whether everything committed on this branch is on the default branch already,
 // because an earlier PR from it merged. Squash-merged, main has the same changes
@@ -1208,7 +1233,7 @@ function buildTasksMd(name, ctx, list) {
   L.push(...handoverRules(ctx.lanes || [], name, ctx.reach), ...HANDBACK, ...standingBrief(), ...doneBrief(name));
   L.push("## If you need a decision, or have ideas", "You may be running unattended, so you can't ask in chat. Write `.symbiot/QUESTIONS.md` instead: Symbiot shows it to the user on your block in its Workdesk, and their answers come back in `.symbiot/ANSWERS.md` (read that first if it exists).",
     "- Before you ask the user anything, read `.symbiot/ANSWERS.md` again, all of it (older answers are in `.symbiot/ANSWERS.archive.md`: search it when one may be older than those): they may have answered it already, for you or for another agent on the same work (Symbiot copies those in, under a heading naming that agent). If an answer there settles it, use it and don't ask; if it settles part, ask only the part left.",
-    `- At most ${QUESTIONS_MAX} questions, under a \`## Questions\` heading. Each is a \`### \` heading, then a line of context, then exactly ${OPTIONS_SHOWN} options as \`- \` bullets, the one you recommend first, marked \`(recommended)\`. Symbiot shows only the first ${OPTIONS_SHOWN}; the user can always answer in their own words.`,
+    `- At most ${QUESTIONS_MAX} questions, under a \`## Questions\` heading. Each is a \`### \` heading, then a line of context, then exactly ${OPTIONS_SHOWN} options as \`- \` bullets, the one you recommend first, marked \`(recommended)\`. Symbiot shows only the first ${OPTIONS_SHOWN}; the user can always answer in their own words. When the only thing left is the user's go-ahead (it's all ready and nothing goes out until they say so), give one option instead, starting with what it does (\`- 🤖 Agent: send it to … now\`): it shows as a single button named for it (Send), and tapping it starts your next run.`,
     "- Judge the options before you ask. Most people pick the recommended option without weighing the other, and Symbiot works for a whole company (developers, sales, everyone), not one person, so the choice is really yours. Both options must be good routes to the best solution, never filler or one you wouldn't take. A skip or no option is a plain \"skip this part\", never a request for the user's personal details (their addresses, accounts or numbers). Each says in plain words, with no jargon, what it does and what it changes from then on for the project, the people working on it and the company. Recommend the one that's best for, in this order, the company, the people doing the work, then the task's goal. Base that on evidence you can check here (git history, tests, logs, how it's used, the answers so far), not on what's quickest, and give that evidence in the context line in a sentence.",
     "- Write each question for someone who doesn't code: no file names, commands or config names (say what the thing is for), and say in plain words what is being decided, what each option means, and which you recommend and why. If the call is low-risk and easy to undo (a setting that can be re-tuned, a layout, a name, which of two fixes), don't ask: take your recommended option, say what you chose in your last message, and keep it easy to change later.",
     ONLY_YOU,

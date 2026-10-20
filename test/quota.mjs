@@ -1,8 +1,12 @@
 // quota.mjs: the AI usage meter — read from the rate-limit reports in agent logs.
-import { quotaState, isLimitError, resetIn, infosIn } from "../quota.mjs";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+// Isolated HOME: quota.mjs also reads the agent logs under ~/.config/symbiot (drafts, worktrees), and
+// on a computer that runs agents those held its real usage, so a test expecting none saw 85% (20 Oct 2026)
+const HOME = mkdtempSync(join(tmpdir(), "quota-home-"));
+process.env.HOME = HOME; process.env.USERPROFILE = HOME;
+const { quotaState, isLimitError, resetIn, infosIn } = await import("../quota.mjs");
 
 let pass = 0, fail = 0;
 const ok = (name, cond, extra) => { if (cond) { pass++; console.log("  ✓ " + name); } else { fail++; console.log("  ✗ " + name, extra === undefined ? "" : JSON.stringify(extra)); } };
@@ -37,6 +41,6 @@ try {
   const t = resetIn("You've hit your limit · resets 7pm", now);
   ok("'resets 7pm' becomes the next 19:00", new Date(t).getHours() === 19 && t > now, t);
   ok("'resets in 2 hours' and the old |epoch form", resetIn("resets in 2 hours", now) === now + 7200000 && resetIn("usage limit reached|1760000000", now) === 1760000000000);
-} finally { rmSync(dir, { recursive: true, force: true }); }
+} finally { rmSync(dir, { recursive: true, force: true }); rmSync(HOME, { recursive: true, force: true }); }
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

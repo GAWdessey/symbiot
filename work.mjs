@@ -63,13 +63,16 @@ function parseRunText(text) {
   for (const l of lines) { if (l.startsWith("{")) { try { events.push(JSON.parse(l)); continue; } catch {} } if (l.trim()) plain.push(l); }
   const out = { stream: events.length > 0, model: "", steps: [], todos: [], doing: "", said: [], final: "", cost: null, turns: null, modelUsage: null, tokens: null, ctx: null, tests: null, files: {}, pace: [], errors: 0 };
   if (!out.stream) { out.said = plain.slice(-12).map((l) => short(l, 160)); out.final = plain.slice(-40).join("\n").trim(); return out; }
-  const byId = new Map(), tasks = new Map(), talk = []; let thinking = false, moved = 0;
+  const byId = new Map(), tasks = new Map(), talk = [], bg = new Set(); let thinking = false, moved = 0;
   for (const e of events) {
     const at = e.timestamp ? Date.parse(e.timestamp) : null;
     // a move: something it said or did, or a step coming back; not a heartbeat
     if (at && (e.type === "assistant" || e.type === "user")) moved = Math.max(moved, at);
     if (e.session_id && !out.session) out.session = String(e.session_id);
     if (e.type === "system" && e.subtype === "init") { out.model = String(e.model || ""); continue; }
+    // a command it left running in the background (a test suite it waits on): not a stall while it runs
+    if (e.type === "system" && e.subtype === "task_started" && e.is_backgrounded && e.task_id) { bg.add(e.task_id); continue; }
+    if (e.type === "system" && e.subtype === "task_notification" && e.task_id) { bg.delete(e.task_id); continue; }
     // a long call's heartbeat (~every 30s): not a move, but how long the step has been going
     if (e.type === "tool_progress") { const s = byId.get(e.parent_tool_use_id); if (s && s.status === "running" && typeof e.elapsed_time_seconds === "number") s.elapsedS = Math.max(s.elapsedS || 0, e.elapsed_time_seconds); continue; }
     if (e.type === "assistant" && e.message && Array.isArray(e.message.content)) {
@@ -120,7 +123,7 @@ function parseRunText(text) {
   if (times.length > 1) { const t0 = times[0], span = Math.max(times[times.length - 1] - t0, 60000), n = Math.min(24, Math.max(6, Math.ceil(span / 60000))), w = span / n; out.pace = new Array(n).fill(0); for (const t of times) out.pace[Math.min(n - 1, Math.floor((t - t0) / w))]++; }
   out.steps = out.steps.slice(-MAX_STEPS).map(({ at, ...s }) => ({ ...s, ...(at ? { at } : {}) }));
   out.said = out.said.slice(-6);
-  out.talk = talk.slice(-120); out.moved = moved || null;
+  out.talk = talk.slice(-120); out.moved = moved || null; out.bg = bg.size;
   // going round: its last LOOP steps all the same call
   const tail = out.steps.slice(-LOOP), k = (x) => x.verb + " " + x.target;
   out.looping = tail.length === LOOP && !out.final && tail.every((x) => k(x) === k(tail[0]));

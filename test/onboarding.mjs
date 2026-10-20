@@ -50,6 +50,11 @@ try {
   ok("…your AI: the Claude subscription when Claude Code is signed in", o.ai.connected && o.ai.provider === "claude", o.ai);
   ok("…your work: what it found, and where it looks (your home as ~)", o.work.count === 3 && o.work.roots.some((r) => r === "~/work"), o.work);
   ok("…every app listed, none decided yet", o.apps.length > 10 && o.apps.every((a) => a.state === "off" && !a.skipped) && o.decided === false, o.apps.length);
+  const { loadConfig } = await import("../core.mjs");
+  setOnboarding({ step: "work" }); setOnboarding({ step: "ai" });
+  ok("Back from \"Found 3 projects. Is that all of them?\" isn't a yes", !loadConfig().reposConfirmed, loadConfig().reposConfirmed);
+  setOnboarding({ step: "work" }); setOnboarding({ step: "agent" });
+  ok("…Continue is: Home doesn't ask about the projects again (19 Oct 2026, round 2 of the first-run review)", !!(loadConfig().reposConfirmed && loadConfig().reposConfirmed.setup), loadConfig().reposConfirmed);
   o = setOnboarding({ step: "apps" });
   ok("where you are is kept (closing it resumes there)", onboarding().step === "apps", onboarding().step);
   o = setOnboarding({ skip: "gmail" });
@@ -109,6 +114,19 @@ try {
   ok("Glass and Pearl are light, each its own (Glass bends the teal, Pearl mirrors the sky)", /#8FC9CC/.test(g) && /#F5F6F7/.test(p) && g !== p && !/#030303/.test(g), "");
   ok("the small drawing (a tab, the header) has no reflections", iconSvg("ferro", { small: true }) !== f && !/#FFFCF7/.test(iconSvg("ferro", { small: true })) && /#FFFCF7/.test(f), "");
   ok("a look it doesn't know: the dark orb", iconSvg("neon") === f, "");
+
+  console.log("FIRST RUN COVERS SETTINGS — each section is set up in a step, or says why it waits");
+  const { FIRST_RUN, ONB_STEPS: STEPS } = await import("../home.mjs");
+  const ui = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "ui.mjs"), "utf8");
+  const sections = [...ui.matchAll(/<h3 class="ssh"[^>]*>([^<]+)</g)].map((m) => m[1].replace(/&mdash;/g, "—").replace(/&amp;/g, "&").trim());
+  const missing = sections.filter((h) => !(h in FIRST_RUN)), wrong = Object.entries(FIRST_RUN).filter(([, v]) => !STEPS.includes(v) && !/^later: \S/.test(v));
+  ok(`every section of Settings (${sections.length}) is in FIRST_RUN: a setup step, or "later: why" (add a new one there)`, sections.length >= 10 && !missing.length, missing);
+  ok("…each naming a real step or saying why it waits", !wrong.length, wrong);
+  ok("…and none listed that Settings no longer has", Object.keys(FIRST_RUN).every((k) => sections.includes(k)), Object.keys(FIRST_RUN).filter((k) => !sections.includes(k)));
+  ok("your apps can wait like your AI can: Set up later beside a Continue that waits for every app, saying where to connect the rest", /onbNav\('agent','docs','Continue',!!o\.decided,'Set up later','Connect the rest any time in Settings, under Connections'\)/.test(ui), "");
+  ok("the last step says what 'done' covers: the Pro trial, the vault and the looks", /Pro: free for /.test(ui) && /goes into Symbiot’s vault/.test(ui) && /Pick a look at the top/.test(ui));
+  ok("setup knows where you stand with Pro", onboarding().pro && onboarding().pro.plan === "trial" && onboarding().pro.trialDaysLeft > 0, onboarding().pro);
+  ok("…and where to buy it: the site's Pro card, linked from the trial line (its pay buttons went up on 19 Oct 2026)", onboarding().pro.upgrade === "https://symbiot.co.za/#pro" && /then Free unless you add a key \(Settings → Symbiot Pro\)'\+\(o\.pro\.upgrade\?"\. <a href='"\+esc\(okUrl\(o\.pro\.upgrade\)\)\+"' target='_blank' rel='noopener'>Get Pro<\/a>"/.test(ui), onboarding().pro);
 } finally {
   rmSync(HOME, { recursive: true, force: true });
 }

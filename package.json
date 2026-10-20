@@ -1,6 +1,6 @@
 {
   "name": "symbiot",
-  "version": "0.66.11",
+  "version": "0.66.12",
   "description": "Your week, written from your real work. Reads your local git and writes it up with the AI of your choice — Claude, OpenAI, Gemini, or a local model.",
   "type": "module",
   "bin": {
@@ -12,6 +12,7 @@
     "ai.mjs",
     "scan.mjs",
     "tasks.mjs",
+    "origin.mjs",
     "deploy.mjs",
     "asksdone.mjs",
     "browserfails.mjs",
@@ -30,6 +31,7 @@
     "peek.mjs",
     "mind.mjs",
     "control.mjs",
+    "stall.mjs",
     "handover.mjs",
     "lanes.mjs",
     "adapt.mjs",
@@ -109,7 +111,7 @@
     "@anthropic-ai/sdk": "^0.128.0"
   },
   "scripts": {
-    "test": "node test/load.mjs && node test/reliability.mjs && node test/outward.mjs && node test/noshell.mjs && node test/fixtures.mjs && node test/links.mjs && node test/signin.mjs && node test/choose.mjs && node test/clickable.mjs && node test/radio.mjs && node test/shadow.mjs && node test/replace.mjs && node test/tabs.mjs && node test/post.mjs && node test/peek.mjs && node test/mind.mjs && node test/sentmail.mjs && node test/control.mjs && node test/knowledge.mjs && node test/checks.mjs && node test/lanes.mjs && node test/handback.mjs && node test/autoallow.mjs && node test/guard.mjs && node test/reports.mjs && node test/sandbox.mjs && node test/adapt.mjs && node test/urgent.mjs && node test/handed.mjs && node test/drafts.mjs && node test/linkedin.mjs && node test/secrets.mjs && node test/vault.mjs && node test/browserfails.mjs && node test/sales.mjs && node test/durable.mjs && node test/sweep.mjs && node test/brief.mjs && node test/standing.mjs && node test/shiphanded.mjs && node test/taskmodel.mjs && node test/asks.mjs && node test/deploy.mjs && node test/work.mjs && node test/parallel.mjs && node test/route.mjs && node test/sched.mjs && node test/mapknn.mjs && node test/away.mjs && node test/voice.mjs && node test/licence.mjs && node test/lang.mjs && node test/browser.mjs && node test/subscription.mjs && node test/claudesetup.mjs && node test/launcher.mjs && node test/onboarding.mjs && node test/phone.mjs && node test/windows.mjs && node test/marketing.mjs && node test/tray.mjs && node test/capture.mjs && node test/paths.mjs && node test/smoke.mjs && node test/app.mjs && node test/install.mjs && node test/quota.mjs && node test/chromeimport.mjs && node test/approval.mjs && node test/mobile.mjs && node test/code-boxes.mjs",
+    "test": "node test/load.mjs && node test/reliability.mjs && node test/outward.mjs && node test/noshell.mjs && node test/fixtures.mjs && node test/links.mjs && node test/signin.mjs && node test/choose.mjs && node test/clickable.mjs && node test/radio.mjs && node test/shadow.mjs && node test/replace.mjs && node test/tabs.mjs && node test/post.mjs && node test/peek.mjs && node test/mind.mjs && node test/sentmail.mjs && node test/control.mjs && node test/knowledge.mjs && node test/checks.mjs && node test/lanes.mjs && node test/handback.mjs && node test/autoallow.mjs && node test/guard.mjs && node test/reports.mjs && node test/sandbox.mjs && node test/adapt.mjs && node test/urgent.mjs && node test/handed.mjs && node test/drafts.mjs && node test/linkedin.mjs && node test/secrets.mjs && node test/vault.mjs && node test/embers.mjs && node test/browserfails.mjs && node test/sales.mjs && node test/durable.mjs && node test/stall.mjs && node test/sweep.mjs && node test/brief.mjs && node test/standing.mjs && node test/shiphanded.mjs && node test/taskmodel.mjs && node test/asks.mjs && node test/deploy.mjs && node test/work.mjs && node test/parallel.mjs && node test/route.mjs && node test/sched.mjs && node test/mapknn.mjs && node test/away.mjs && node test/voice.mjs && node test/licence.mjs && node test/lang.mjs && node test/browser.mjs && node test/subscription.mjs && node test/claudesetup.mjs && node test/launcher.mjs && node test/onboarding.mjs && node test/phone.mjs && node test/windows.mjs && node test/marketing.mjs && node test/tray.mjs && node test/capture.mjs && node test/paths.mjs && node test/smoke.mjs && node test/app.mjs && node test/install.mjs && node test/quota.mjs && node test/chromeimport.mjs && node test/approval.mjs && node test/mobile.mjs && node test/code-boxes.mjs && node test/origin.mjs",
     "lint": "eslint .",
     "postinstall": "node postinstall.mjs"
   },

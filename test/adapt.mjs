@@ -342,7 +342,12 @@ try {
   const dn4 = nextUp({ map: {}, deps: nx({ mind: () => dec("The user wants the weekly report emailed", DAYS(30)) }) });
   ok("…not once a task took it on (even a done one), not a fact about how things are, not an old one", !dn2.length && !dn3.length && !dn4.length, [dn2, dn3, dn4]);
   ok("…and no suggestions at all while anything waits on you", homeState({ fresh: true, deps: { ...deps, next: busyNext } }).next.length === 0, "");
-  ok("…nor with nothing to suggest", homeState({ fresh: true, deps: { ...calm, next: nx() } }).next.length === 0, "");
+  ok("…nor with nothing to suggest", homeState({ fresh: true, deps: { ...calm, next: nx({ tasks: () => [{ id: "x", text: "Done one", repo: "coral", done: true }] }) } }).next.length === 0, "");
+  // someone new: projects found, no task yet anywhere (first-run review, 19 Oct 2026: Home said "Nothing needs you" and showed none of them)
+  const firstNx = homeState({ fresh: true, deps: { ...calm, next: nx({ touched: (d) => (d === "/c" ? 2 : 1) }) } }).next;
+  ok("someone new, projects but not one task: their agent looks over the one worked on last, and suggests what to do first", firstNx.length === 1 && firstNx[0].id === "next:first:coral" && firstNx[0].act === "first" && /^Have your agent look over coral and suggest what to do first$/.test(firstNx[0].title) && /changes nothing/.test(firstNx[0].gain) && firstNx[0].label, firstNx);
+  const firstOff = [nextUp({ map: { marketing: "/m", ops: "/o" }, deps: nx() }), nextUp({ map: { coral: "/c" }, deps: nx({ taken: () => ({ "next:first:coral": Date.now() }) }) }), nextUp({ map: { coral: "/c" }, deps: nx({ reports: () => ({ count: 2 }) }) }).filter((x) => x.act === "first")];
+  ok("…not for the marketing or ops lanes, not again once taken, and not beside anything else to do", firstOff.every((x) => !x.length), firstOff);
   ok("Home's talk knows them", /^Could be done next \(Home suggests these, one tap each\):\n- Triage the 8 unread reports: clears the backlog/m.test(homeContext(hx)), "");
   // one tap: it starts the agent, or makes the task, and stays away a week
   const did = [], nfile = join(HOME, "next-test.json");
@@ -357,6 +362,8 @@ try {
   ok("Retry: the handover runs on its own, and goes back to the agent that asked", tt.ok && JSON.stringify(did) === JSON.stringify([["allow", "h1"]]) && /goes back to the agent that asked/.test(tt.said), [tt, did]);
   did.length = 0; const td = tap("next:drafts:w9");
   ok("Draft replies: the newest 3 that need one, each drafted and left unsent", td.ok && JSON.stringify(did) === JSON.stringify([["draft", "n1"], ["draft", "n2"], ["draft", "n4"]]) && /drafting 3 replies.*unsent/.test(td.said), [td, did]);
+  did.length = 0; const tf = homeNext("next:first:coral", { state: { next: firstNx, nextAll: firstNx }, file: nfile, repos: () => ({ coral: "/c" }), task: (text, repo) => { did.push(["task", repo, text]); return { ok: true }; }, run: (p) => { did.push(["run", p]); return { id: "j" }; }, push: (f) => { did.push(["push", f.repo]); return { written: [{ path: "/c" }] }; } });
+  ok("Look it over: a task in that project saying change nothing and leave ideas as Suggestions, then its agent starts", tf.ok && did[0][0] === "task" && did[0][1] === "coral" && /Change no files/.test(did[0][2]) && /## Suggestions/.test(did[0][2]) && JSON.stringify(did.slice(1)) === JSON.stringify([["push", "coral"], ["run", "/c"]]) && /looking over coral\. Its ideas show on the Workdesk/.test(tf.said), [tf, did]);
   const taken = JSON.parse(readFileSync(nfile, "utf8")).taken;
   ok("…each one taken stays away a week", ["next:reports", "next:go:coral", "next:float:t3", "next:retry:h1", "next:drafts:w9"].every((k) => taken[k] > 0) && nextUp({ map: { coral: "/c" }, deps: nx({ taken: () => taken, reports: () => ({ count: 8 }), tasks: () => [{ id: "t1", text: "x", repo: "coral", ts: DAYS(9) }] }) }).length === 0, taken);
   const te = tap("next:go:coral", { push: () => ({ written: [] }) }), tn = tap("next:nope");

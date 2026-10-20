@@ -108,6 +108,10 @@ const { plainAsk } = await import("../home.mjs");
 propose(["Bash(symbiot screens:*)", "Bash(git status)"]);
 const card = plainAsk(run, { q: "Can I run Symbiot's Screens command?", options: ["👤 You (only you: a permission): allow the list in .symbiot/allowlist.proposed.json (recommended)", "Not now"] });
 ok("a permission card lists the commands in plain words with Allow, and shows no file path", /run symbiot/.test(card.q) && /run git/.test(card.q) && card.labels[0] === "Allow (recommended)" && !/\.json|\.symbiot/.test(card.q + card.labels.join()), card);
+// one option: one button, named for what it does (19 Oct 2026: "nothing goes out until Garth taps Send")
+const one = plainAsk(run, { q: "Send the test message to Jono now?", options: ["🤖 Agent: send it to Jono now (recommended)"] });
+ok("a card with one option is one button, named for what it does", one.labels && one.labels.join() === "Send", one);
+ok("…\"Go ahead\" when its first word isn't an action, and two options keep their own words", plainAsk(run, { q: "x?", options: ["🤖 Agent: the next run carries on with it"] }).labels.join() === "Go ahead" && !plainAsk(run, { q: "x?", options: ["🤖 Agent: send it", "Skip"] }).labels);
 const cmd = a.withScope('claude -p "{prompt}"', run);
 ok("an agent reaches your knowledge folders from the start", cmd.includes(`--add-dir "${join(HOME, "work", "Company")}"`), cmd);
 

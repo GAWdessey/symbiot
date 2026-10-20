@@ -30,6 +30,8 @@ try {
   const by = (id) => (st.find((x) => x.id === id) || {}).status;
   ok("done", by("t1") === "done", st);
   ok("never started says why", /^never started: its agent didn't start$/.test(by("t2")), by("t2"));
+  const later = handedState({ now, ledger: JSON.parse(readFileSync(path, "utf8")), tasks, list: [...list, { path: map.symbiot, status: "done", startedAt: now + 60000, ask: { questions: [] } }], map }).find((x) => x.id === "t2");
+  ok("…but not once a run in its lane has started since (19 Oct 2026: still \"never started\" after the gate cleared)", later.status === "its agent has picked it up since", later);
   ok("in review", by("t3") === "done, waiting for their OK", by("t3"));
   ok("older than 7 days drops", !by("t4"));
   ok("waiting on an answer beats running", by("t5") === "waiting on their answer", by("t5"));

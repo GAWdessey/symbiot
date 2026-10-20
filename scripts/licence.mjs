@@ -27,19 +27,21 @@ const fail = (m) => { console.error(m); process.exit(1); };
 
 // A signed key, logged in issued.jsonl. Months (0: no end date) plus days of grace, counted
 // from `from` (a payment's date; now by default). ref (a payment's id) is kept in the log,
-// not in the key. Throws when there's no signing key.
-function issueKey({ email, name = "", plan = "pro", months = plan === "owner" ? 0 : 12, days = 0, from = Date.now(), ref = "" } = {}) {
+// not in the key. renews ("monthly" or "yearly"): a subscription's key, with no end date of
+// its own; it ends when its subscription does, on the date the key step publishes in
+// site/licences/revoked.json (scripts/sales.mjs). Throws when there's no signing key.
+function issueKey({ email, name = "", plan = "pro", months = plan === "owner" ? 0 : 12, days = 0, from = Date.now(), ref = "", renews = "" } = {}) {
   if (!email || !/@/.test(email)) throw new Error("An email is needed");
   if (!["pro", "owner"].includes(plan)) throw new Error("The plan is pro or owner");
   const keyFile = join(DIR(), "signing-key.pem"); if (!existsSync(keyFile)) throw new Error(`No signing key at ${keyFile}`);
   const now = Date.now(), id = b64u(randomBytes(9));
   const expires = months > 0 || days > 0 ? new Date(from).setUTCMonth(new Date(from).getUTCMonth() + months) + days * 86400000 : 0;
-  const payload = { v: 1, id, p: plan, e: email, ...(name ? { n: name } : {}), i: now, x: expires };
+  const payload = { v: 1, id, p: plan, e: email, ...(name ? { n: name } : {}), i: now, x: expires, ...(renews ? { r: String(renews) } : {}) };
   const body = b64u(JSON.stringify(payload));
   const key = `SYM1-${body}.${b64u(sign(null, Buffer.from(body), createPrivateKey(readFileSync(keyFile))))}`;
   mkdirSync(DIR(), { recursive: true });
   appendFileSync(join(DIR(), "issued.jsonl"), JSON.stringify({ ...payload, key, ...(ref ? { ref } : {}) }) + "\n", { mode: 0o600 });
-  return { id, plan, email, expires, key };
+  return { id, plan, email, expires, key, ...(renews ? { renews: String(renews) } : {}) };
 }
 function issue() {
   const email = arg("email"); if (!email || !/@/.test(email)) fail("--email is needed");

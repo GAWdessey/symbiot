@@ -10,7 +10,8 @@ import { fileURLToPath } from "node:url";
 import { readFileSync, writeFileSync, mkdirSync, existsSync, openSync, closeSync, writeSync, unlinkSync, readdirSync, statSync, renameSync, utimesSync, appendFileSync } from "node:fs";
 import { randomBytes, createHash } from "node:crypto";
 import { CONFIG_DIR, loadConfig, saveConfig, loadTasks, TASK_MAX, clipWords, sameTask, taskWords, sh, runOut, hasCmd, readState, writeJsonAtomic } from "./core.mjs";
-import { recordDone, isApprovalAsk, approvalText, approvedBefore, recentTurns, recentTasks } from "./asksdone.mjs";
+import { meetsStep } from "./vault.mjs";
+import { recordDone, isDone, isApprovalAsk, approvalText, approvedBefore, recentTurns, recentTasks } from "./asksdone.mjs";
 import { parseRun, lastRunText, readRunLog, runStarted, briefPlan, stepOf, runLine, waitingOn, waitUntil } from "./work.mjs";
 import { noteDuration, noteCost, kindOf } from "./estimate.mjs";
 import { plainAsk } from "./plain.mjs";
@@ -20,6 +21,7 @@ import { scanRoots, repoPathMap } from "./scan.mjs";
 import { knowledgeFolders } from "./knowledge.mjs";
 import { pickModel, MODEL } from "./route.mjs";
 import { claudeState } from "./ai.mjs";
+import { stalledFor, onStall, loadStall, saveStall, clearStall, STALL_MIN, STALL_PROMPT_TAIL } from "./stall.mjs";
 
 const HANDOFFS = []; // live registry of agents Symbiot has handed work to
 // ---- hand a repo (+ its tasks) to the user's agent — generic, settings-based
@@ -378,7 +380,7 @@ const tooLong = (s) => !!s && (s.ctx || 0) > RESUME_CTX;
 const CARRY_PROMPT = HANDOFF_PROMPT + " The user has just answered your questions: the newest entries in .symbiot/ANSWERS.md. This is a fresh start because the conversation of the last run had grown too long to carry on, so read .symbiot/CARRYON.md first: where that run got to, in its own words. Do not redo what it says is done."; // no quotes, $ or backticks: like HANDOFF_PROMPT it may pass through two shells
 // The last run's own account of where it got to, for the fresh run that carries on.
 function carryOn(path) {
-  let said = ""; try { said = parseRun(lastRunText(readSymbiot(path, "agent.log"))).final || ""; } catch {}
+  let said = ""; try { const w = parseRun(lastRunText(readSymbiot(path, "agent.log"))); said = w.final || (w.talk || []).slice(-3).join("\n\n"); } catch {} // stopped before it summed up: the last things it said
   try { writeFileSync(join(path, ".symbiot", CARRYON), `# Where the last run got to\n\nIts conversation had grown too long to resume, so this run starts fresh. What it said at the end:\n\n${said.slice(0, 6000) || "(it didn't say)"}\n`); } catch {}
   return CARRY_PROMPT;
 }
@@ -418,7 +420,7 @@ function noteSession(path, code, resumed) {
 // A folder with nothing to work from gets none either, forced or not (nothingToDo).
 // What's shipping in a folder, as tasks.mjs shipping says (set through onShipping, so this module needn't import tasks.mjs).
 let shipHold = () => null; const onShipping = (fn) => { shipHold = fn; };
-function runHandoff(repoPath, { force = false, lost = false, model = "", onExit = null, escalatedFrom = "", note = "" } = {}) {
+function runHandoff(repoPath, { force = false, lost = false, model = "", onExit = null, escalatedFrom = "", note = "", stalled = false } = {}) {
   let tmpl = handoffCmd(); if (!tmpl || !repoPath) return null;
   if (isParked(repoPath)) return { blocked: true, parked: true, questions: 0, note: PARKED_NOTE }; // even forced: that's what parking is for
   const lic = licenceGate(repoPath); if (lic) return lic; // Free's limits, and never Symbiot's own code (licence.mjs); even forced
@@ -431,7 +433,7 @@ function runHandoff(repoPath, { force = false, lost = false, model = "", onExit 
   try { tidySettings(repoPath); } catch {} // its allow list as Claude Code reads one (Write → Edit, //absolute), before the sandbox reads it
   const scoped = runCmdOf(repoPath, tmpl), box = isClaudeCmd(scoped) && trustFull() ? sandboxFor(repoPath, scoped) : null; // a repo run's sandbox, on top of the membrane
   tmpl = withStream(withTrust(withOwnTools(scoped), box, repoPath));
-  const resume = isClaudeCmd(tmpl) ? resumeFor(repoPath) : null, fresh = tooLong(resume); // too long to resume: a fresh run carries on
+  const resume = isClaudeCmd(tmpl) && !stalled ? resumeFor(repoPath) : null, fresh = tooLong(resume); // too long to resume: a fresh run carries on; one that stalled starts fresh, from its note (stall.mjs)
   if (!model) model = routedModel(repoPath, opts, !!resume && !fresh); // routine runs on Sonnet, hard ones on Opus (route.mjs); the --model already in your command is only the Auto default, so the pick replaces it
   if (model) tmpl = withModel(tmpl, model);
   const runCmd = resume && !fresh ? tmpl + ` --resume ${resume.id}` : tmpl;
@@ -451,7 +453,7 @@ function runHandoff(repoPath, { force = false, lost = false, model = "", onExit 
   // SYMBIOT_AGENT: which run a `symbiot screens` command comes from, so it gets its own tab in the app's hidden browser
   const env = { ...(own || {}), ...(boxEnv || {}), ...(owner || {}), SYMBIOT_AGENT: repoPath };
   const gap = isClaudeCmd(runCmd) && process.platform !== "win32" ? startGap() : 0; // a few seconds between starts (the shell sleeps; the lock is held meanwhile)
-  const full = fillHandoff(runCmd, repoPath, `${fresh ? carryOn(repoPath) : resume ? RESUME_PROMPT : HANDOFF_PROMPT} ${whereLine(repoPath)}${note ? " " + note : ""}`);
+  const full = fillHandoff(runCmd, repoPath, `${stalled ? HANDOFF_PROMPT + STALL_PROMPT_TAIL : fresh ? carryOn(repoPath) : resume ? RESUME_PROMPT : HANDOFF_PROMPT} ${whereLine(repoPath)}${note ? " " + note : ""}`);
   const e = track(typeof opts.name === "string" && opts.name ? opts.name.slice(0, 80) : repoPath.split("/").pop(), gap ? `sleep ${Math.ceil(gap / 1000)}; ${full}` : full, repoPath, (code) => {
     if (noteSession(repoPath, code, !!resume && !fresh) === "lost") { setTimeout(() => { try { runHandoff(repoPath, { force: true, lost: true, onExit }); } catch {} }, 300); return; } // its conversation is gone: start afresh
     try { if (JSON.parse(readFileSync(lock, "utf8")).pid === e.pid) unlinkSync(lock); } catch {}
@@ -459,6 +461,7 @@ function runHandoff(repoPath, { force = false, lost = false, model = "", onExit 
     noteBlocked(repoPath, scoped, e.startedAt, code, { dirtyBefore, ticksBefore });
     try { noteRunFiles(repoPath, e, dirtyBefore, ticksBefore); } catch {} // which files this run touched, for Approve
     forgetRunStart(repoPath, e.id);
+    if (code === 0) { const st = loadStall(repoPath); if (st && !st.card && !st.restart) clearStall(repoPath); } // it got past it: a stall after this is a first again
     setTimeout(() => { try { autoAllow(repoPath); } catch {} }, 300); // a list it proposed inside your work: turned on, and on it goes
     startHeldTasks(repoPath); // tasks sent while it ran land now; start on them as that Send would have
     try { urgentDone(repoPath, e.id); } catch {} // the urgent run's done: the lanes it parked carry on
@@ -1007,7 +1010,9 @@ function askedFor(path) {
   try { const w = JSON.parse(readFileSync(f, "utf8")); if (w && !w.rerun) writeFileSync(f, JSON.stringify({ ...w, rerun: true })); } catch {}
 }
 // A step in Settings → Handoff: the note names the command as what it waits on.
-const settingsStep = (s) => /\bsettings\b|\ballow\b|\bgrant|connector/i.test(String(s || ""));
+// Not a site's own settings: "at app.lemonsqueezy.com … under Settings → API make a key" told the
+// user the agent waited on its command in Settings → Handoff (19 Oct 2026).
+const settingsStep = (s) => { s = String(s || ""); return /\bSettings\s*→\s*(?:Handoff|Connections)\b|\ballow\b|\bgrant|connector/i.test(s) || (/\bsettings\b/i.test(s) && !/\b[a-z0-9-]+\.(?:com|co|io|net|org|app|dev|ai)\b/i.test(s)); };
 // The command the folder's next run would get, connectors and folders and all, before
 // its model and stream flags (runHandoff adds those): what blocked.json and waiting.json
 // are keyed on. noteBlocked hashed the whole command and blockedAgain the bare template,
@@ -1045,11 +1050,29 @@ function unchangedStep(text, dir, since) {
 // Agents tab asks this every few seconds, and used to lose it first), and the
 // run deletes it as it starts. cmd: the step is one in Settings, so the note says
 // the command counts.
+// A step with no card left to act on holds nothing back: Skip on its card (settled), Done
+// recorded for it, its card dismissed (home.mjs, through onCardGone), past NEEDS_FOR, or
+// not yours after all (needsOf null). The symbiot lane sat behind "your step comes first"
+// with no card on Home, and every task in it lit as waiting on you (19 Oct 2026).
+let cardGone = () => false; const onCardGone = (fn) => { cardGone = fn; };
+function pastedStep(path, step, name) {
+  const what = String(step).replace(/^\s*👤\s*(You\s*(\([^)]*\))?:)?\s*/, "").trim(), head = `### ${clipWords(what, 200)}`;
+  const said = `Done: the user pasted it on Home, and it's in Symbiot's vault as "${name}". Read it with \`symbiot secret get "${name}"\` and use it only from there: never write it into a file, a report or a log.`;
+  try { const had = readSymbiot(path, "ANSWERS.md"); if (!had.includes(said)) writeFileSync(join(path, ".symbiot", "ANSWERS.md"), `${(had || "# Answers\n").replace(/\s*$/, "")}\n\n${head}\n${said}\n_answered ${new Date().toISOString().slice(0, 10)}_\n`); } catch {}
+  try { recordDone(clipWords(what, 240), said, whereOf(path).lane); } catch {}
+}
+function stepGone(path, w) {
+  const n = needsOf(path, { waiting: w, end: w.at || Date.now() });
+  return !n || isDone(n.what) || !!cardGone(path, n.what);
+}
 function waitingFor(path) {
   let w = null; try { w = JSON.parse(readSymbiot(path, WAITING)); } catch {}
   if (!w || typeof w.step !== "string") return null;
   const files = Array.isArray(w.files) ? w.files : [];
-  if (files.some((f) => f && fileSig(f.path) !== f.sig) || (w.cmd && runCmd(path) !== w.cmd)) { if (!w.rerun) try { unlinkSync(join(path, ".symbiot", WAITING)); } catch {} return null; }
+  // ...and one asking for a key or password you've since pasted (saved to the vault after it began) is done:
+  // its agent is told where the key is, and the step is on the shared record, so nobody asks for it again
+  const met = meetsStep(w.step, w.at || 0); if (met) pastedStep(path, w.step, met);
+  if (files.some((f) => f && fileSig(f.path) !== f.sig) || (w.cmd && runCmd(path) !== w.cmd) || met || stepGone(path, w)) { if (!w.rerun) try { unlinkSync(join(path, ".symbiot", WAITING)); } catch {} return null; }
   return { step: w.step, files: files.map((f) => f.name), cmd: !!w.cmd && settingsStep(w.step), at: w.at || 0, rerun: !!w.rerun };
 }
 // "`.env` or the agent command in Settings → Handoff", what a wait ends on ("" if neither).
@@ -1234,8 +1257,10 @@ function forgetRunStart(path, id) { try { const f = join(path, ".symbiot", RUN_S
 const hangMs = () => (Number(loadConfig().runHangMinutes) || HANG_MIN) * 60000;
 const STOPPING = new Map(); // pid -> when it was told to stop
 function stopGroup(pid, kill) { try { kill(-pid, "SIGTERM"); } catch { try { kill(pid, "SIGTERM"); } catch {} } }
-function runsTick({ now = Date.now(), kill = (p, sig) => process.kill(p, sig), hang = hangMs() } = {}) {
-  const out = { stopped: [], killed: [], recovered: [] };
+const stallMs = () => (Number(loadConfig().runStallMinutes) || STALL_MIN) * 60000;
+const WORKTREES = join(CONFIG_DIR, "worktrees"); // a run beside the lane's own (parallel.mjs): its exit merges it back, the lane takes the rest
+function runsTick({ now = Date.now(), kill = (p, sig) => process.kill(p, sig), hang = hangMs(), stall = stallMs(), start = (p) => runHandoff(p, { force: true, stalled: true }), park = parkLane } = {}) {
+  const out = { stopped: [], killed: [], recovered: [], stalled: [], restarted: [] };
   const mine = new Map(HANDOFFS.filter((e) => e.handoff && e.status === "running").map((e) => [e.path, e]));
   const paths = new Set([...mine.keys(), ...loadRuns().map((r) => r.path)]);
   for (const path of paths) {
@@ -1247,6 +1272,15 @@ function runsTick({ now = Date.now(), kill = (p, sig) => process.kill(p, sig), h
       let quiet = 0; try { quiet = now - Math.max(statSync(join(path, ".symbiot", "agent.log")).mtimeMs, Number((l || mine.get(path) || {}).startedAt) || 0); } catch {}
       const told = STOPPING.get(pid);
       if (told) { if (now - told > 15000) { try { kill(-pid, "SIGKILL"); } catch { try { kill(pid, "SIGKILL"); } catch {} } out.killed.push(path); } continue; }
+      // no new step for too long, while its log may still grow (thinking, a call's heartbeat): stall.mjs
+      let w = null; try { w = parseRun(lastRunText(readRunLog(join(path, ".symbiot", "agent.log")))); } catch {}
+      const stuck = stalledFor(w, { now, startedAt: Number((l || mine.get(path) || {}).startedAt) || 0, stallMs: stall, hangMs: hang });
+      if (stuck) {
+        const rec = onStall(path, { work: w, tasksMd: readSymbiot(path, "TASKS.md"), run: String((l || mine.get(path) || {}).id || ""), quiet: stuck, now });
+        if (rec.card) try { park(path, true); } catch {} // stalled again: nothing starts it until you say (Home's card)
+        STOPPING.set(pid, now); stopGroup(pid, kill); out.stopped.push(path); out.stalled.push(path);
+        continue;
+      }
       if (quiet > hang) {
         STOPPING.set(pid, now); stopGroup(pid, kill); out.stopped.push(path);
         try { appendFileSync(join(path, ".symbiot", "agent.log"), `\n=== stopped by Symbiot ${new Date(now).toISOString()}: no output for ${Math.round(quiet / 60000)} minutes, so it was taken for hung ===\n`); } catch {}
@@ -1266,6 +1300,16 @@ function runsTick({ now = Date.now(), kill = (p, sig) => process.kill(p, sig), h
     try { autoAllow(path); } catch {}
     try { startHeldTasks(path); } catch {}
     out.recovered.push(path);
+  }
+  // a run stopped for stalling the first time: started again once, fresh, with the note on where it stuck
+  for (const path of paths) {
+    const rec = loadStall(path); if (!rec || !rec.restart) continue;
+    const busy = runningHandoff(path);
+    if (busy) { if (busy.id && busy.id !== rec.run) saveStall(path, { ...rec, restart: false, restarted: now, rerun: busy.id }); continue; } // the stalled one still stopping, or something else started it (its note's in ANSWERS.md)
+    let e = null; if (!path.startsWith(WORKTREES + "/")) try { e = start(path); } catch {}
+    if (e && e.shipping) continue; // Approve is putting the lane's changes in: next minute
+    saveStall(path, { ...rec, restart: false, restarted: now, ...(e && e.id ? { rerun: e.id } : {}) });
+    if (e && e.id && !e.blocked) out.restarted.push(path);
   }
   // and the list itself: entries whose folder is gone with nothing running in it (pruneRuns)
   const runs = loadRuns(), kept = pruneRuns(runs);
@@ -2084,4 +2128,4 @@ function agentsList() {
   }).concat(earlierRuns()).map((a) => ({ ...a, phase: runPhase(a) }));
 }
 
-export { withOwnTools, escalation, grantCard, cardRules, cardIsPermission, runPhase, onRunEnd, isClaudeCmd, GUARD, tidyRule, tidyRules, tidySettings, pruneRuns, claudePlugins, idlePlugins, runSettings, archiveAnswers, allAnswers, answersDigest, ANSWERS_ARCHIVE, ANSWERS_KEEP, runsTick, RUN_START, HANG_MIN, noteBlocked, userAnswers, CONTINUED_FILE, onAnswered, CHANGES, toKnownHost, continueLanes, autoPick, autoDecide, FACTS, factsOf, knownRun, withStream, workOf, HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, connectorsInfo, linkReach, fillHandoff, runHandoff, nothingToDo, whereOf, whereLine, whereAnswer, askTask, PARKED_NOTE, parkedPaths, isParked, parkLane, agentMissing, blockedAgain, runningHandoff, loadRuns, earlierRuns, namedFiles, unchangedStep, waitingFor, startWaiting, noteUntracked, untrackedBefore, forgetUntracked, writeTasks, droppedTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, pickAgent, findOrcaCli, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, skipIdea, agentQuestions, answerQuestions, agentsList, needsOf, settleNeeds, NEEDS_FOR, readLastWords, readNeeds, parseRead, READ_FILE, autoAllow, autoAllowSweep, allowlistInWork, installAllowlist, inWork, withScope, withTrust, sandboxFor, sandboxLifts, sandboxEnv, sandboxNeeds, sandboxState, sandboxWrites, SANDBOX_DIR, resumeFor, noteSession, tooLong, carryOn, RESUME_CTX, CARRY_PROMPT, trustFull, GUARD_SETTINGS, runCmdOf, claimLock, wideRoot, sandboxDenies, questionFolders, folderState, dirtyState, ANSWERS_SEEN, newAnswers, claudeDownIn, claudePause, noteClaudeDown, resetTime, PAUSE_FILE, startGap, isUrgent, urgentStop, urgentFirst, urgentUndo, urgentDone, urgentSweep, urgentState, licenceGate, stopRun, loadRunFiles, saveRunFiles, forgetRunFiles, withModel, routedModel, onShipping };
+export { onCardGone, withOwnTools, escalation, grantCard, cardRules, cardIsPermission, runPhase, onRunEnd, isClaudeCmd, GUARD, tidyRule, tidyRules, tidySettings, pruneRuns, claudePlugins, idlePlugins, runSettings, archiveAnswers, allAnswers, answersDigest, ANSWERS_ARCHIVE, ANSWERS_KEEP, runsTick, RUN_START, HANG_MIN, noteBlocked, userAnswers, CONTINUED_FILE, onAnswered, CHANGES, toKnownHost, continueLanes, autoPick, autoDecide, FACTS, factsOf, knownRun, withStream, workOf, HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, connectorsInfo, linkReach, fillHandoff, runHandoff, nothingToDo, whereOf, whereLine, whereAnswer, askTask, PARKED_NOTE, parkedPaths, isParked, parkLane, agentMissing, blockedAgain, runningHandoff, loadRuns, earlierRuns, namedFiles, unchangedStep, waitingFor, startWaiting, noteUntracked, untrackedBefore, forgetUntracked, writeTasks, droppedTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, pickAgent, findOrcaCli, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, skipIdea, agentQuestions, answerQuestions, agentsList, needsOf, settleNeeds, NEEDS_FOR, readLastWords, readNeeds, parseRead, READ_FILE, autoAllow, autoAllowSweep, allowlistInWork, installAllowlist, inWork, withScope, withTrust, sandboxFor, sandboxLifts, sandboxEnv, sandboxNeeds, sandboxState, sandboxWrites, SANDBOX_DIR, resumeFor, noteSession, tooLong, carryOn, RESUME_CTX, CARRY_PROMPT, trustFull, GUARD_SETTINGS, runCmdOf, claimLock, wideRoot, sandboxDenies, questionFolders, folderState, dirtyState, ANSWERS_SEEN, newAnswers, claudeDownIn, claudePause, noteClaudeDown, resetTime, PAUSE_FILE, startGap, isUrgent, urgentStop, urgentFirst, urgentUndo, urgentDone, urgentSweep, urgentState, licenceGate, stopRun, loadRunFiles, saveRunFiles, forgetRunFiles, withModel, routedModel, onShipping };
