@@ -5,7 +5,7 @@
 // the hidden browser as cookies. Nothing is written to Chrome's own profile, and nothing leaves this computer.
 import { spawnSync } from "node:child_process";
 import { createDecipheriv, createHash, pbkdf2Sync } from "node:crypto";
-import { existsSync, copyFileSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, copyFileSync, mkdtempSync, rmSync, readFileSync, readdirSync } from "node:fs";
 import { tmpdir, homedir } from "node:os";
 import { join } from "node:path";
 
@@ -22,13 +22,17 @@ function sources(home = homedir(), platform = process.platform) {
   return [];
 }
 
+const LIBSECRET = "import gi,sys;gi.require_version('Secret','1');from gi.repository import Secret;s=Secret.Schema.new('chrome_libsecret_os_crypt_password_v2',Secret.SchemaFlags.DONT_MATCH_NAME,{'application':Secret.SchemaAttributeType.STRING});v=Secret.password_lookup_sync(s,{'application':sys.argv[1]},None);sys.exit(1) if not v else sys.stdout.write(v)";
 // The key Chrome encrypts cookies with: from the system keyring when it has one (v11), else the
 // fixed password Chrome uses without one (v10).
 function keyFor(src, version, platform = process.platform, run = spawnSync) {
   let pass = "peanuts";
   if (version === "v11" && platform === "linux") {
-    const r = run("secret-tool", ["lookup", "application", src.app], { encoding: "utf8", timeout: 5000 });
-    if (r.status !== 0 || !r.stdout) return null;
+    // secret-tool, else Python's libsecret binding (PyGObject): secret-tool isn't installed on a
+    // stock Pop!_OS, and no sign-in ever came across there (2026-10-20)
+    const tries = [["secret-tool", ["lookup", "application", src.app]], ["python3", ["-I", "-c", LIBSECRET, src.app]]];
+    const r = tries.map(([cmd, args]) => { try { return run(cmd, args, { encoding: "utf8", timeout: 5000 }); } catch { return {}; } }).find((x) => x && x.status === 0 && x.stdout);
+    if (!r) return null;
     pass = r.stdout.replace(/\n$/, "");
   } else if (platform === "darwin") {
     const r = run("security", ["find-generic-password", "-w", "-s", src.service, "-a", src.account], { encoding: "utf8", timeout: 5000 });
@@ -82,9 +86,24 @@ function toCookie(r, value, now = Date.now()) {
   return c;
 }
 
+// The one profile agents act as: the one chosen (config.chromeProfile, by folder or by the name
+// Chrome shows; "Default", Chrome's first, when unset), not whichever has a sign-in. The user's
+// personal profile (Profile 6, another Google account) isn't who agents act as, and the list
+// stopped at Profile 3 before (2026-10-20). Local State names every profile; a browser without
+// the chosen one gives its last used.
+function profilesOf(dir, chosen = "Default") {
+  let info = {}, last = "";
+  try { const p = JSON.parse(readFileSync(join(dir, "Local State"), "utf8")).profile || {}; info = p.info_cache || {}; last = p.last_used || ""; } catch {}
+  let found = []; try { found = readdirSync(dir).filter((n) => /^(Default|Profile \d+)$/.test(n)); } catch {}
+  const names = [...new Set([...Object.keys(info), ...found])].filter((n) => existsSync(join(dir, n)));
+  const want = String(chosen || "Default"), byName = names.find((n) => info[n] && String(info[n].name || "").toLowerCase() === want.toLowerCase());
+  const pick = names.includes(want) ? want : byName || (names.includes(last) ? last : names[0]);
+  return pick ? [{ dir: pick, name: (info[pick] && info[pick].name) || pick }] : [];
+}
+
 const AUTH = /sess|auth|token|sid$|^sid|login|logged|user|jwt|c_user|li_at|^xs$|^sso/i;
 // The signed-in cookies for a site from the user's own Chrome: { cookies, from } or { cookies: [], reason }.
-// opts (tests): home, platform, run, rows.
+// opts: profile (config.chromeProfile); and for tests home, platform, run, rows.
 function chromeSession(host, opts = {}) {
   const platform = opts.platform || process.platform, now = Date.now();
   const hosts = hostsOf(host);
@@ -92,8 +111,7 @@ function chromeSession(host, opts = {}) {
   let found = false;
   for (const src of sources(opts.home, platform)) {
     if (!existsSync(src.dir)) continue;
-    const profiles = ["Default", "Profile 1", "Profile 2", "Profile 3"].filter((p) => existsSync(join(src.dir, p)));
-    for (const p of profiles) {
+    for (const { dir: p, name } of profilesOf(src.dir, opts.profile)) {
       const db = ["Network/Cookies", "Cookies"].map((f) => join(src.dir, p, f)).find((f) => existsSync(f));
       if (!db) continue;
       const dir = mkdtempSync(join(tmpdir(), "symbiot-chrome-"));
@@ -116,7 +134,7 @@ function chromeSession(host, opts = {}) {
           cookies.push(toCookie(r, value, now));
         }
         // only a cookie that looks like a sign-in counts: a site's tracking cookies alone are not one
-        if (cookies.some((c) => AUTH.test(c.name))) return { cookies, from: `${src.dir.split("/").pop()}/${p}` };
+        if (cookies.some((c) => AUTH.test(c.name))) return { cookies, from: `${src.dir.split("/").pop()}/${p}`, profile: name };
         found = true;
       } finally { try { rmSync(dir, { recursive: true, force: true }); } catch {} }
     }
@@ -124,4 +142,4 @@ function chromeSession(host, opts = {}) {
   return { cookies: [], reason: found ? "Chrome has no sign-in for this site" : "no Chrome profile found on this computer" };
 }
 
-export { chromeSession, hostsOf, decrypt, keyFor, toCookie, sources };
+export { chromeSession, hostsOf, decrypt, keyFor, toCookie, sources, profilesOf };

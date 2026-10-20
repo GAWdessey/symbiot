@@ -529,11 +529,29 @@ async function withPage(fn, keep = true, who = MAIN) {
 }
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-async function open(page, url) {
+// A login wall on a site the user linked (Settings → Connections) or trusted: their own Chrome's
+// sign-in for it (the profile agents act as, config.chromeProfile) is put in and the page opened
+// again, before anything asks them to sign in. Once a site per CHROME_AGAIN, so a sign-in Chrome
+// doesn't have isn't read for on every page (2026-10-20). chrome: false is takeChromeSignIn's own check.
+const CHROME_TRIED = new Map(), CHROME_AGAIN = 10 * 60000;
+async function open(page, url, { chrome = true, session = chromeSession } = {}) {
   const loaded = page.until("Page.loadEventFired", 30000);
   const r = await page.send("Page.navigate", { url });
   if (r.errorText) throw new Error(`Couldn't open ${url} (${r.errorText}).`);
   await loaded; await page.idle();
+  const host = chrome ? hostOf(url) : "";
+  if (!host || !linkedSite(host) || !signInPage(String((await evaluate(page, "location.href")) || ""))) return;
+  if (Date.now() - (CHROME_TRIED.get(host) || 0) < CHROME_AGAIN) return;
+  CHROME_TRIED.set(host, Date.now());
+  const s = session(host, { profile: loadConfig().chromeProfile });
+  if (!s.cookies.length) return;
+  try { await page.send("Network.setCookies", { cookies: s.cookies }); } catch { return; }
+  await open(page, url, { chrome: false });
+}
+// A site in Settings → Connections (config.sites) or trusted, or a subdomain of one.
+function linkedSite(host, cfg = loadConfig()) {
+  const hs = [...(Array.isArray(cfg.sites) ? cfg.sites : []).flatMap((x) => [].concat((x && x.hosts) || [])), ...trustedSites()].map((h) => String(h).toLowerCase().replace(/^www\./, "")).filter(Boolean);
+  return hs.some((t) => host === t || host.endsWith("." + t));
 }
 
 // Runs in the page: scroller() is what scrolls it, as a mouse wheel would find it.
@@ -1567,13 +1585,13 @@ async function signIn(input) {
 // once the site loads signed in, else { ok: false, reason } and the caller falls back to the Sign in window.
 // `session` and `run` are for tests.
 async function takeChromeSignIn(url, session = chromeSession, run = null) {
-  const host = hostOf(url), s = session(host);
+  const host = hostOf(url), s = session(host, { profile: loadConfig().chromeProfile });
   if (!s.cookies.length) return { ok: false, reason: s.reason };
   if (watcherBusy() && !run) return { ok: false, reason: "the browser is busy" };
   try {
     const r = await (run || ((fn) => oneAtATime(() => withPage(fn, false))))(async (page, b) => {
       await b.c.send("Storage.setCookies", { cookies: s.cookies });
-      await open(page, url);
+      await open(page, url, { chrome: false });
       return signInPage(String((await evaluate(page, "location.href")) || url));
     });
     if (r) return { ok: false, reason: "Chrome's sign-in for this site has expired" };
@@ -1699,4 +1717,4 @@ function watchWindow({ every = 2000, start = 30000 } = {}) {
   if (WATCH.unref) WATCH.unref();
 }
 
-export { takeChromeSignIn, typeInto, watcherBusy, WATCH_GRACE, noteAgentUse, pipeWindow, saveSessions, showScreen, fillForm, verifyPage, sessionCookie, historyPage, SESSION_COOKIE, tabKey, siteUrl, browserArgs, sandboxProxy, reducedUa, windowUa, mapPage, wholePage, readPage, readTexts, readLinkedIn, LI_READ, pagePicture, pageClip, CLIP, isSend, pressRegion, typeRegion, chooseRegion, uploadRegion, uploadFiles, attachFiles, FILE_BOX, scrollPage, SCROLLS, signIn, keepBrowserOpen, closeBrowser, browserOpen, keepSessions, SESSION_KEEP, SESSIONS, loadSessions, trustedSites, isTrusted, trustSite, untrustSite, PROFILE , openSymbiotBrowser, closeSymbiotBrowser, onBrowserClosed, scratchPage, open as openPage, evaluate, SCROLLER, watchWindow, windowOpen, lockHolder, setBrowserHub , browserHub };
+export { takeChromeSignIn, open as openSite, linkedSite, CHROME_TRIED, typeInto, watcherBusy, WATCH_GRACE, noteAgentUse, pipeWindow, saveSessions, showScreen, fillForm, verifyPage, sessionCookie, historyPage, SESSION_COOKIE, tabKey, siteUrl, browserArgs, sandboxProxy, reducedUa, windowUa, mapPage, wholePage, readPage, readTexts, readLinkedIn, LI_READ, pagePicture, pageClip, CLIP, isSend, pressRegion, typeRegion, chooseRegion, uploadRegion, uploadFiles, attachFiles, FILE_BOX, scrollPage, SCROLLS, signIn, keepBrowserOpen, closeBrowser, browserOpen, keepSessions, SESSION_KEEP, SESSIONS, loadSessions, trustedSites, isTrusted, trustSite, untrustSite, PROFILE , openSymbiotBrowser, closeSymbiotBrowser, onBrowserClosed, scratchPage, open as openPage, evaluate, SCROLLER, watchWindow, windowOpen, lockHolder, setBrowserHub , browserHub };

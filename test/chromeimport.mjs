@@ -4,7 +4,7 @@
 //
 //   node test/chromeimport.mjs
 //
-import { mkdtempSync, mkdirSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync, copyFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createCipheriv, createHash, pbkdf2Sync } from "node:crypto";
@@ -16,8 +16,8 @@ mkdirSync(join(HOME, ".config", "symbiot"), { recursive: true });
 let pass = 0, fail = 0;
 const ok = (n, c, got) => { if (c) { pass++; console.log("  ✓ " + n); } else { fail++; console.log("  ✗ " + n + (got !== undefined ? "  got: " + JSON.stringify(got) : "")); } };
 
-const { chromeSession, hostsOf, decrypt } = await import("../chromeimport.mjs");
-const { takeChromeSignIn } = await import("../headless.mjs");
+const { chromeSession, hostsOf, decrypt, profilesOf, keyFor } = await import("../chromeimport.mjs");
+const { takeChromeSignIn, openSite, CHROME_TRIED } = await import("../headless.mjs");
 
 ok("hostsOf walks up to the registrable host", JSON.stringify(hostsOf("www.mail.example.com")) === '["mail.example.com","example.com"]', hostsOf("www.mail.example.com"));
 
@@ -69,6 +69,36 @@ r = await takeChromeSignIn("https://www.example.com/", chromeSession, (fn) => fn
 ok("a sign-in the site no longer accepts falls back to the window", r.ok === false && /expired/.test(r.reason), r);
 r = await takeChromeSignIn("https://nothing.org/", chromeSession, async () => { throw new Error("must not start a browser"); });
 ok("no Chrome sign-in: no browser is started", r.ok === false, r);
+
+// Chrome's keyring key without secret-tool (not on a stock Pop!_OS): Python's libsecret binding (2026-10-20)
+const asked = [], k11 = keyFor({ app: "chrome" }, "v11", "linux", (cmd) => { asked.push(cmd); return cmd === "secret-tool" ? { status: 127, stdout: "" } : { status: 0, stdout: "keyringpass" }; });
+ok("no secret-tool: the key comes from libsecret through Python", asked.join(",") === "secret-tool,python3" && k11 && k11.equals(pbkdf2Sync("keyringpass", "saltysalt", 1, 16, "sha1")), asked);
+ok("...and with neither, no key (nothing is taken)", keyFor({ app: "chrome" }, "v11", "linux", () => ({ status: 1, stdout: "" })) === null);
+
+// the profile agents act as (2026-10-20): Chrome's Local State names them all, "Default" (Work here) unless
+// config.chromeProfile says otherwise, and never a sign-in from the personal profile when Work has none
+const CH = join(HOME, ".config/google-chrome");
+mkdirSync(join(CH, "Profile 6", "Network"), { recursive: true });
+writeFileSync(join(CH, "Local State"), JSON.stringify({ profile: { last_used: "Profile 6", info_cache: { Default: { name: "Work" }, "Profile 6": { name: "Garth" } } } }));
+ok("Default (Work) is the profile, even when the personal one was used last", JSON.stringify(profilesOf(CH)) === '[{"dir":"Default","name":"Work"}]', profilesOf(CH));
+ok("a profile is chosen by the name Chrome shows, past Profile 3", profilesOf(CH, "Garth")[0].dir === "Profile 6", profilesOf(CH, "Garth"));
+copyFileSync(join(prof, "Cookies"), join(CH, "Profile 6", "Network", "Cookies"));
+const madeP = spawnSync("python3", ["-I", "-c", "import sqlite3,sys;c=sqlite3.connect(sys.argv[1]);c.execute(\"delete from cookies where host_key='.example.com'\");c.commit()", join(prof, "Cookies")], { encoding: "utf8" });
+ok("(Work's sign-in for example.com taken away)", madeP.status === 0, madeP.stderr);
+ok("only the personal profile signed in: nothing is taken", chromeSession("example.com").cookies.length === 0, chromeSession("example.com"));
+const g = chromeSession("example.com", { profile: "Garth" });
+ok("...unless it's the one chosen, and it says which", g.cookies.length === 2 && g.profile === "Garth" && /Profile 6/.test(g.from), g);
+
+// a page that lands on a login wall on a linked site takes the Chrome sign-in and opens again, once
+writeFileSync(join(HOME, ".config", "symbiot", "config.json"), JSON.stringify({ sites: [{ hosts: ["example.com"] }], chromeProfile: "Garth" }));
+const wall = () => { const calls = []; let signed = false; return { calls, page: { until: async () => ({}), idle: async () => {},
+  send: async (m, p) => { calls.push(m); if (m === "Network.setCookies") signed = p.cookies.length > 0; return m === "Runtime.evaluate" ? { result: { value: signed ? "https://www.example.com/home" : "https://www.example.com/login" } } : {}; } } }; };
+let w = wall(); await openSite(w.page, "https://www.example.com/");
+ok("a login wall on a linked site: Chrome's sign-in goes in and the page opens again", w.calls.includes("Network.setCookies") && w.calls.filter((m) => m === "Page.navigate").length === 2, w.calls);
+w = wall(); await openSite(w.page, "https://www.example.com/");
+ok("...once in ten minutes, not on every page", !w.calls.includes("Network.setCookies"), w.calls);
+CHROME_TRIED.clear(); w = wall(); await openSite(w.page, "https://other.example.org/");
+ok("a site that isn't linked never gets one", !w.calls.includes("Network.setCookies") && w.calls.filter((m) => m === "Page.navigate").length === 1, w.calls);
 
 rmSync(HOME, { recursive: true, force: true });
 console.log(`\n${pass} passed, ${fail} failed`);
