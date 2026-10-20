@@ -20,7 +20,7 @@ import { pendingReview, pushTasks, addTask, taskType, releaseNotIn } from "./tas
 import { estimate, estimateWords } from "./estimate.mjs";
 import { heldAsk, grantCard, cardIsPermission, onCardGone, setHandoffCmd, agentsList, runHandoff, runningHandoff, handoffCmd, loadRuns, connectorsInfo, parkedPaths, agentMissing, settleNeeds, pickAgent, detectHandoffs, linkReach, unchangedStep, whereOf, claudePause, parkLane } from "./agents.mjs";
 import { stallCards, loadStall, saveStall } from "./stall.mjs";
-import { isDone, recordDone, coveredBy, doneList } from "./asksdone.mjs";
+import { isDone, recordDone, coveredBy, doneList, asksBack, askBackNote, heldBy, reportsSince } from "./asksdone.mjs";
 import { captureSecrets } from "./vault.mjs";
 import { linksState, signInAsked } from "./links.mjs";
 import { knowledgeState } from "./knowledge.mjs";
@@ -91,7 +91,7 @@ function troubles({ stuck = [], list = [], map = {}, named = displayName, now = 
     if (a.status === "running" || (a.ask && a.ask.questions && a.ask.questions.length)) continue; // at work, or it asked: that's its question
     const lane = laneOfPath(a.path, map), repo = lane || "", nm = repo ? named(map[lane], repo) : plain(String(a.name || "an agent").replace(/^Agent:\s*/, "").replace(/^\W*What['’]s needed:\W*/i, "").replace(/^./, (c) => c.toUpperCase()), 60);
     const n = a.needs;
-    if (n && !dropped.has("needs:" + a.id) && !isDone(n.what)) {
+    if (n && !dropped.has("needs:" + a.id) && !isDone(n.what) && !heldNeeds(n.what, a.path, lane)) {
       const ok = n.kind === "approve";
       out.push({ kind: "ask", fix: "needs", id: "needs:" + a.id, path: a.path, repo, name: nm, title: ok ? `${nm} waits for your OK` : `${nm} needs you`, sub: plain(n.label || n.what, 90),
         q: n.what + (n.check ? ` Check first: ${n.check}` : ""), options: ok ? ["Go ahead (recommended)", "Skip"] : [I_DID_IT, "Skip"], status: "Waiting on you", ...(n.api ? { api: n.api } : signInCard([n.label, n.what, n.check])), shape: "agents" });
@@ -543,6 +543,11 @@ function settleAsks(you) {
 // "go ahead" or "done" in its ANSWERS.md (skipped, it doesn't ask again); a failed
 // run starts again in its folder, with your words in its ANSWERS.md. { ok, said } or { error }.
 const SAYS_NO = /^\s*(skip|no|nope|don'?t|do not|cancel|leave it|never ?mind|stop)\b/i;
+// A "needs you" card on a subject the user asked back about and hasn't read the write-up of yet
+// (asksdone.mjs heldBy): its run was told what they asked for, so the card isn't raised again.
+function heldNeeds(what, path, lane) {
+  try { return !!heldBy(what, { lane, readSince: (ts, l) => reportsSince(l && l !== lane ? laneMap()[l] || path : path, ts).some((r) => r.read) }); } catch { return false; }
+}
 // An answer, in the folder's ANSWERS.md, for the run that picks it up.
 function noteAnswer(path, heading, text) {
   const f = join(path, ".symbiot", "ANSWERS.md"); let had = ""; try { had = readFileSync(f, "utf8"); } catch {}
@@ -605,6 +610,15 @@ function homeAnswer(id, { pick, text = "" } = {}, deps = {}) {
       const g = (deps.grant || grantCard)(a.path, `${n.what} ${n.check}`);
       if (g.error) return { error: g.error };
       allowed = g.rules;
+    }
+    // your own words that ask back ("put it in reports so i can read it") aren't "done": its agent does what you asked first
+    if (text && n.kind !== "approve" && !allowed && asksBack(text)) {
+      const r = reportsSince(a.path, (a.startedAt || a.endedAt || Date.now()) - 60000).find((x) => !x.read);
+      noteAnswer(a.path, n.what, `The user hasn't done this step. ${askBackNote(text)}`);
+      const e = (deps.run || runHandoff)(a.path, { force: true }), later = afterShip(e);
+      settle(a.path, n.key); dropped.add(id); recordDone(n.what, text, whereOf(a.path).lane, { back: true });
+      if (later) (deps.later || runAfterShip)(a.path, deps.run || runHandoff);
+      return { ok: true, said: `${r ? `It's written already: Reports → "${r.title}". ` : ""}${later || (e && e.id && !e.blocked ? "Its agent is writing that up for Reports before anything else, and won't ask about this again until you've read it." : "Saved: its next run writes that up for Reports first.")}`, ...(e && e.id ? { rerun: e.id } : {}), ...(r ? { report: r.title } : {}) };
     }
     // Done it, on a step that names a file (`.env`): only once that file has changed since
     // the run asked. In your own words it goes ahead (done some other way), its agent told.

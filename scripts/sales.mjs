@@ -9,10 +9,11 @@
 //                                     emails go out from now on (the held ones on the next poll).
 //                                     Their yes in this lane's answers does the same by itself.
 //   node scripts/sales.mjs config [--store <id>] [--monthly <variant id>] [--yearly <variant id>]
+//                                 [--provider lemonsqueezy|paddle] [--sandbox true|false]  (Paddle: --monthly/--yearly are price ids)
 //                                 [--from <address>] [--secret <vault name>] [--own <address,address>]
 //
 // A poll reads paid orders and subscription renewals from the payment provider (one adapter,
-// scripts/pay/: Lemon Squeezy now), with its API key from Symbiot's vault. Each payment not
+// scripts/pay/: Paddle or Lemon Squeezy), with its API key from Symbiot's vault. Each payment not
 // handled yet gets a key the way scripts/licence.mjs issue does, and an email saying how to
 // paste it into Settings. A subscription's key renews with it: it has no end date of its own,
 // so a renewal needs no new key and no paste (twelve pastes a year was a reason to cancel).
@@ -257,9 +258,13 @@ function claudeMailer({ timeout = 240000 } = {}) {
 }
 
 async function adapterFor(state) {
-  if (state.provider !== "lemonsqueezy") throw new Error(`No adapter for ${state.provider}`);
+  if (state.provider !== "lemonsqueezy" && state.provider !== "paddle") throw new Error(`No adapter for ${state.provider}`);
   const { getSecret } = await import("../vault.mjs");
   const s = getSecret(state.secret); if (!s.ok) throw new Error(`The provider's API key isn't in the vault (symbiot secret add ${state.secret}): ${s.error}`);
+  if (state.provider === "paddle") {
+    const { paddle } = await import("./pay/paddle.mjs");
+    return paddle({ apiKey: s.value.trim(), sandbox: !!state.sandbox, plans: state.plans });
+  }
   const { lemonSqueezy } = await import("./pay/lemonsqueezy.mjs");
   return lemonSqueezy({ apiKey: s.value.trim(), storeId: state.storeId, plans: state.plans });
 }
@@ -273,6 +278,8 @@ function status() {
 }
 function config() {
   const s = loadState(), arg = (n) => { const i = process.argv.indexOf("--" + n); return i > 0 ? process.argv[i + 1] : undefined; };
+  if (arg("provider")) s.provider = arg("provider");
+  if (arg("sandbox") !== undefined) s.sandbox = /^(1|true|yes|on)$/i.test(arg("sandbox"));
   if (arg("store") !== undefined) s.storeId = arg("store");
   if (arg("monthly")) s.plans[arg("monthly")] = "monthly";
   if (arg("yearly")) s.plans[arg("yearly")] = "yearly";
@@ -280,7 +287,7 @@ function config() {
   if (arg("secret")) s.secret = arg("secret");
   if (arg("own") !== undefined) s.own = String(arg("own")).split(/[,\s]+/).map((e) => e.trim().toLowerCase()).filter((e) => /@/.test(e));
   saveState(s);
-  console.log(JSON.stringify({ provider: s.provider, secret: s.secret, storeId: s.storeId, plans: s.plans, from: s.from, own: s.own, live: s.live }, null, 2));
+  console.log(JSON.stringify({ provider: s.provider, secret: s.secret, storeId: s.storeId, sandbox: !!s.sandbox, plans: s.plans, from: s.from, own: s.own, live: s.live }, null, 2));
 }
 
 export { poll, keyEmail, claudeMailer, loadState, publishEnd, GRACE_DAYS };

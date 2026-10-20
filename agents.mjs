@@ -11,13 +11,13 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync, openSync, closeSync
 import { randomBytes, createHash } from "node:crypto";
 import { CONFIG_DIR, loadConfig, saveConfig, loadTasks, TASK_MAX, clipWords, sameTask, taskWords, sh, runOut, hasCmd, readState, writeJsonAtomic } from "./core.mjs";
 import { meetsStep, captureSecrets, heldFor } from "./vault.mjs";
-import { recordDone, isDone, isApprovalAsk, approvalText, approvedBefore, recentTurns, recentTasks } from "./asksdone.mjs";
+import { recordDone, isDone, isApprovalAsk, approvalText, approvedBefore, recentTurns, recentTasks, asksBack, askBackNote, heldBy, reportsSince } from "./asksdone.mjs";
 import { parseRun, lastRunText, readRunLog, runStarted, briefPlan, stepOf, runLine, waitingOn, waitUntil } from "./work.mjs";
 import { noteDuration, noteCost, kindOf } from "./estimate.mjs";
 import { plainAsk } from "./plain.mjs";
 import { apiOptions, blockedSignIn, apiRoute, realChrome, CHROME_READ } from "./browserfails.mjs";
 import { lanesJob, parseFacts, leftToYou, gitWork, agentsGitWork, agentsClicking, agentsCodeWork, agentsMail, agentsPosting, linkedAsks, linkedChore, PUSH_OK } from "./handover.mjs";
-import { scanRoots, repoPathMap } from "./scan.mjs";
+import { scanRoots, repoPathMap, laneMap } from "./scan.mjs";
 import { knowledgeFolders } from "./knowledge.mjs";
 import { pickModel, MODEL } from "./route.mjs";
 import { claudeState } from "./ai.mjs";
@@ -633,6 +633,22 @@ function whereAnswer(path, q) {
   const w = whereOf(path); if (!w.lane || w.gone) return "";
   const what = w.copy ? `a copy of the ${w.lane} repo${w.repo ? ` (${w.repo})` : ""}, made for your task` : `the ${w.lane} lane's ${w.git ? "repo" : "folder"}`;
   return `This folder, ${w.folder}, is ${what}${w.remote ? `; its git remote is ${w.remote}` : ""}. Symbiot's pages are ${PAGES}, so when the user names one (work desk, say) they mean that page. Carry on with your task in ${w.lane} and don't ask this again.\n(Symbiot answered from the folder's name and remote, so the user wasn't asked.)`;
+}
+// A question that repeats one the user has answered (asksdone.mjs heldBy): answered from that
+// answer, so it never reaches them again in new words. A subject they asked back about (explain
+// it, put it in Reports) stays held until they've opened a report written after they asked.
+const REPEAT_TAG = "(Symbiot answered from the user's earlier answer, so they weren't asked again.)";
+function laneFolder(lane, path) { if (!lane || lane === whereOf(path).lane) return path; try { return laneMap()[lane] || path; } catch { return path; } }
+const readSinceFor = (path) => (ts, lane) => reportsSince(laneFolder(lane, path), ts).some((r) => r.read);
+function repeatAnswer(path, q) {
+  const text = String((q && q.q) || ""); if (!text) return "";
+  const x = heldBy(text, { lane: whereOf(path).lane, readSince: readSinceFor(path) }); if (!x) return "";
+  const wrote = x.back ? reportsSince(laneFolder(x.lane, path), x.ts || 0)[0] : null;
+  return x.back
+    ? `You, or another agent on this, asked this already ("${clipWords(x.q, 160)}", ${x.at}), and the user asked back: "${clipWords(x.a, 200)}". They haven't read an answer to that yet. ` +
+      (wrote ? `"${wrote.title}" is in Reports (.symbiot/${basename(wrote.file)}): if it answers them, say so in your last message, naming it; if not, write what's missing into it first. ` : `Write it up for them now, before anything else: a .md in .symbiot/ named for what it is, starting with a # title, so it shows under Reports, and name it in your last message. `) +
+      `Don't ask about this again, in any words, until they've read it.\n${REPEAT_TAG}`
+    : `You, or another agent, asked this already ("${clipWords(x.q, 160)}", ${x.at}), and the user answered: "${clipWords(x.a, 200)}". Act on that answer and don't ask it again, in any words.\n${REPEAT_TAG}`;
 }
 // The task a question is about, as one plain line for its card: the run's one task
 // (a copy's), else the open task in its brief that shares the most words with the
@@ -1727,7 +1743,7 @@ function agentQuestions(path, repo) {
   const p = parseQuestions(readSymbiot(path, "QUESTIONS.md"));
   const done = new Set([...allAnswers(path).matchAll(/^###\s+(.+)$/gm)].map((m) => qKey(m[1])));
   const unanswered = p.questions.filter((x) => !done.has(qKey(x.q)));
-  const known = unanswered.map((x) => ({ q: x.q, a: whereAnswer(path, x) })).filter((x) => x.a), open = unanswered.filter((x) => !known.some((k) => k.q === x.q)); // Symbiot answers those itself (autoDecide)
+  const known = unanswered.map((x) => ({ q: x.q, a: whereAnswer(path, x) || repeatAnswer(path, x) })).filter((x) => x.a), open = unanswered.filter((x) => !known.some((k) => k.q === x.q)); // Symbiot answers those itself (autoDecide)
   const tasks = p.suggestions.length ? loadTasks() : [], skipped = p.suggestions.length ? skippedIdeas(path) : [];
   const ideas = p.suggestions.map(suggestionTarget).filter(({ text }) => !skipped.some((s) => sameTask(s, text)))
     .map(({ repo: to, text }) => ({ text, repo: to || repo, other: !!to && to !== repo, added: tasks.some((t) => t.repo === (to || repo) && sameTask(t.text, text)) })).filter((s) => !s.added);
@@ -1917,12 +1933,16 @@ function autoPick(q) {
   const words = `${q.q} ${q.context || ""} ${rec[0]}`.replace(/[\w~./-]*\.(?:json|mjs|md|js|py|txt|env|html|log|ya?ml|toml|patch)\b/gi, " ");
   return OUTWARD.test(words) ? "" : rec[0];
 }
+const REPEATS_RERUN = 3; // repeats answered from the record before a rewording stops starting a run
 function autoDecide(path) {
   if (!path || runningHandoff(path)) return null;
   const ask = agentQuestions(path, "");
   if (ask.known) { // where it is: never shown to the user, answered here (whereAnswer)
     const day = new Date().toISOString().slice(0, 10);
-    try { writeFileSync(join(path, ".symbiot", "ANSWERS.md"), (readSymbiot(path, "ANSWERS.md") || "# Answers from the user\nAnswers to the questions in QUESTIONS.md, newest last. Follow them; ask again in QUESTIONS.md if one is unclear.\n").replace(/\s*$/, "\n") + ask.known.map((x) => `\n### ${x.q}\n${x.a}\n_answered ${day}_\n`).join("")); } catch { return null; }
+    const had = readSymbiot(path, "ANSWERS.md");
+    try { writeFileSync(join(path, ".symbiot", "ANSWERS.md"), (had || "# Answers from the user\nAnswers to the questions in QUESTIONS.md, newest last. Follow them; ask again in QUESTIONS.md if one is unclear.\n").replace(/\s*$/, "\n") + ask.known.map((x) => `\n### ${x.q}\n${x.a}\n_answered ${day}_\n`).join("")); } catch { return null; }
+    // a run that keeps rewording the same question gets its answer, but no new run each time it does
+    if (ask.known.every((x) => x.a.includes(REPEAT_TAG)) && had.split(REPEAT_TAG).length > REPEATS_RERUN) return { decided: ask.known.length, where: true, rerun: null };
     const e = runHandoff(path, { force: true });
     return { decided: ask.known.length, where: true, rerun: e && e.id ? e.id : null };
   }
@@ -2037,14 +2057,18 @@ function answerQuestions(path, answers, opts = {}) {
   // shared record and other lanes get "[saved: name]" (20 Oct 2026: a Cloudflare token stayed whole in saved answers)
   const vaulted = [];
   for (const x of rows) { try { const c = captureSecrets(x.a, { context: x.q }); if (c.saved.length) { x.a = `${c.text}\n(${c.saved.map((n) => `"${n}"`).join(", ")} ${c.saved.length > 1 ? "are" : "is"} in Symbiot's vault: ${VAULT_READ})`; vaulted.push(...c.saved); } } catch {} }
+  // a reply that asks back (explain it, put it in Reports, a question of their own) isn't an answer: the run does what they asked first
+  for (const x of rows) { const opts = (openQs.find((o) => qKey(o.q) === qKey(x.q)) || {}).options || []; if (asksBack(x.a, opts)) { x.back = x.a; x.a = `${x.a}\n\n${askBackNote(x.a)}`; } }
   const prev = readSymbiot(path, "ANSWERS.md") || "# Answers from the user\nAnswers to the questions in QUESTIONS.md, newest last. Follow them; ask again in QUESTIONS.md if one is unclear.\n";
   const day = new Date().toISOString().slice(0, 10);
   try {
     mkdirSync(join(path, ".symbiot"), { recursive: true });
     writeFileSync(join(path, ".symbiot", "ANSWERS.md"), prev.replace(/\s*$/, "\n") + rows.map((x) => `\n### ${x.q}\n${x.a}\n_answered ${day}_\n`).join(""));
   } catch (e) { return { error: "Couldn't write ANSWERS.md: " + ((e && e.message) || e) }; }
-  { const lane = whereOf(path).lane; for (const x of rows) recordDone(x.q, x.a, lane); }
+  { const lane = whereOf(path).lane; for (const x of rows) recordDone(x.q, x.back || x.a, lane, { back: !!x.back }); }
   const out = { ok: true, saved: rows.length, ...(vaulted.length ? { vaulted } : {}) };
+  // asked for something to read that's already written, since the question: say where it is
+  if (rows.some((x) => x.back)) { let since = 0; try { since = statSync(join(path, ".symbiot", "QUESTIONS.md")).mtimeMs - 86400000; } catch {} const r = reportsSince(path, since).find((x) => !x.read); if (r) out.report = r.title; }
   if (opts.share && answered) { try { const to = answered(path, rows) || []; if (to.length) out.also = to.map((r) => r.lane || basename(r.path)); } catch {} }
   // a "wait until…" answer: the step is the question's 👤 option (what "it" is), and its files are waited on
   const asked = new Map(parseQuestions(readSymbiot(path, "QUESTIONS.md")).questions.map((x) => [qKey(x.q), x]));
