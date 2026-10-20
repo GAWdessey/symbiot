@@ -26,6 +26,8 @@ const INDEX = join(SCREENS_DIR, "screens.json");
 // The app listens on this socket in the one folder every lane may write, for /api/screens and /api/ping only.
 const SCREENS_SOCK = join(SCREENS_DIR, "app.sock");
 const screensGate = (path) => path === "/api/ping" || path === "/api/screens" || String(path).startsWith("/api/screens/");
+// ...and what a sandboxed run may do with the vault through that socket: see its names and add to it, never read a value
+const sockGate = (path) => screensGate(path) || path === "/api/secrets/list" || path === "/api/secrets/add";
 const MAX_REGIONS = 200;
 const MAX_IMAGE = 40 * 1024 * 1024;
 function loadScreens() { return readState(INDEX, Array.isArray) || []; }
@@ -494,4 +496,4 @@ function clickRegion(id, regionId) {
   return { error: `No click tool found. Install ${want}.` };
 }
 
-export { SCREENS_SOCK, screensGate, loadScreens, screenImage, pngSize, pngDecode, splitPng, stitchPng, stitchListPng, captureCmds, monitorCmds, parseCosmicRandr, parseWlrRandr, parseKscreen, parseXrandr, parseLines, tidyMonitors, monitorAreas, listMonitors, portalAppId, allowScreenshots, captureScreen, splitScreen, importScreen, setRegions, addPageScreen, renameScreen, removeScreen, blueprint, center, clickCmds, clickRegion };
+export { SCREENS_SOCK, screensGate, sockGate, loadScreens, screenImage, pngSize, pngDecode, splitPng, stitchPng, stitchListPng, captureCmds, monitorCmds, parseCosmicRandr, parseWlrRandr, parseKscreen, parseXrandr, parseLines, tidyMonitors, monitorAreas, listMonitors, portalAppId, allowScreenshots, captureScreen, splitScreen, importScreen, setRegions, addPageScreen, renameScreen, removeScreen, blueprint, center, clickCmds, clickRegion };

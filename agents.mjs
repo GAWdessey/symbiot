@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 import { readFileSync, writeFileSync, mkdirSync, existsSync, openSync, closeSync, writeSync, unlinkSync, readdirSync, statSync, renameSync, utimesSync, appendFileSync } from "node:fs";
 import { randomBytes, createHash } from "node:crypto";
 import { CONFIG_DIR, loadConfig, saveConfig, loadTasks, TASK_MAX, clipWords, sameTask, taskWords, sh, runOut, hasCmd, readState, writeJsonAtomic } from "./core.mjs";
-import { meetsStep } from "./vault.mjs";
+import { meetsStep, captureSecrets, heldFor } from "./vault.mjs";
 import { recordDone, isDone, isApprovalAsk, approvalText, approvedBefore, recentTurns, recentTasks } from "./asksdone.mjs";
 import { parseRun, lastRunText, readRunLog, runStarted, briefPlan, stepOf, runLine, waitingOn, waitUntil } from "./work.mjs";
 import { noteDuration, noteCost, kindOf } from "./estimate.mjs";
@@ -900,6 +900,8 @@ function needsOf(path, { final = "", waiting = null, end = Date.now(), now = Dat
   if (n.kind !== "approve" && linkedChore(`${n.label} ${n.what} ${n.check}`, linkedIds())) return null;
   // another lane's job (ops on a server, marketing posting): it went to that lane, not to you
   if (!n.waiting && lanesJob(`${n.label} ${n.what}`)) return null;
+  // pasting or saving a secret the vault already holds: never the user's (its agent is told where it is)
+  if (n.kind !== "approve") { const h = heldFor(`${n.label} ${n.what} ${n.check}`); if (h) { pastedStep(path, n.what, h, { held: true }); return null; } }
   const key = digest(n.what);
   const settled = loadSettled();
   if (settled[path] === key || (Array.isArray(settled[ALL_SETTLED]) && settled[ALL_SETTLED].includes(key)) || takenUp(path, end)) return null;
@@ -1055,9 +1057,11 @@ function unchangedStep(text, dir, since) {
 // not yours after all (needsOf null). The symbiot lane sat behind "your step comes first"
 // with no card on Home, and every task in it lit as waiting on you (19 Oct 2026).
 let cardGone = () => false; const onCardGone = (fn) => { cardGone = fn; };
-function pastedStep(path, step, name) {
+// How a run gets a secret from the vault: a sandboxed one can't read it, so it hands the step to ops.
+const VAULT_READ = "read it with `symbiot secret get \"<name>\"` and use it only from there, never in a file, a report or a log. A sandboxed run can't read the vault: hand the step that uses it to ops";
+function pastedStep(path, step, name, { held = false } = {}) {
   const what = String(step).replace(/^\s*👤\s*(You\s*(\([^)]*\))?:)?\s*/, "").trim(), head = `### ${clipWords(what, 200)}`;
-  const said = `Done: the user pasted it on Home, and it's in Symbiot's vault as "${name}". Read it with \`symbiot secret get "${name}"\` and use it only from there: never write it into a file, a report or a log.`;
+  const said = `${held ? "Not the user's step: Symbiot already holds it" : "Done: the user pasted it on Home, and it's"} in Symbiot's vault as "${name}". ${VAULT_READ.replace("<name>", name).replace(/^./, (c) => c.toUpperCase())}. Never ask the user to paste or save it again.`;
   try { const had = readSymbiot(path, "ANSWERS.md"); if (!had.includes(said)) writeFileSync(join(path, ".symbiot", "ANSWERS.md"), `${(had || "# Answers\n").replace(/\s*$/, "")}\n\n${head}\n${said}\n_answered ${new Date().toISOString().slice(0, 10)}_\n`); } catch {}
   try { recordDone(clipWords(what, 240), said, whereOf(path).lane); } catch {}
 }
@@ -1071,8 +1075,8 @@ function waitingFor(path) {
   const files = Array.isArray(w.files) ? w.files : [];
   // ...and one asking for a key or password you've since pasted (saved to the vault after it began) is done:
   // its agent is told where the key is, and the step is on the shared record, so nobody asks for it again
-  const met = meetsStep(w.step, w.at || 0); if (met) pastedStep(path, w.step, met);
-  if (files.some((f) => f && fileSig(f.path) !== f.sig) || (w.cmd && runCmd(path) !== w.cmd) || met || stepGone(path, w)) { if (!w.rerun) try { unlinkSync(join(path, ".symbiot", WAITING)); } catch {} return null; }
+  const met = meetsStep(w.step, w.at || 0), held = !met && heldFor(w.step); if (met || held) pastedStep(path, w.step, met || held, { held: !!held });
+  if (files.some((f) => f && fileSig(f.path) !== f.sig) || (w.cmd && runCmd(path) !== w.cmd) || met || held || stepGone(path, w)) { if (!w.rerun) try { unlinkSync(join(path, ".symbiot", WAITING)); } catch {} return null; }
   return { step: w.step, files: files.map((f) => f.name), cmd: !!w.cmd && settingsStep(w.step), at: w.at || 0, rerun: !!w.rerun };
 }
 // "`.env` or the agent command in Settings → Handoff", what a wait ends on ("" if neither).
@@ -2022,6 +2026,10 @@ function answerQuestions(path, answers, opts = {}) {
     if (given.every((x) => findQuestion(had, x.q))) return { ok: true, saved: 0, already: true, note: "That was answered already: its agent has it." };
   }
   if (!rows.length) return { error: given.length ? "That question isn't open any more: its agent changed or closed it. Look again on its block on the Workdesk." : "Pick or type at least one answer." };
+  // a secret in an answer (a token in a pasted curl) goes to the vault, named from the question it answers; ANSWERS.md, the
+  // shared record and other lanes get "[saved: name]" (20 Oct 2026: a Cloudflare token stayed whole in saved answers)
+  const vaulted = [];
+  for (const x of rows) { try { const c = captureSecrets(x.a, { context: x.q }); if (c.saved.length) { x.a = `${c.text}\n(${c.saved.map((n) => `"${n}"`).join(", ")} ${c.saved.length > 1 ? "are" : "is"} in Symbiot's vault: ${VAULT_READ})`; vaulted.push(...c.saved); } } catch {} }
   const prev = readSymbiot(path, "ANSWERS.md") || "# Answers from the user\nAnswers to the questions in QUESTIONS.md, newest last. Follow them; ask again in QUESTIONS.md if one is unclear.\n";
   const day = new Date().toISOString().slice(0, 10);
   try {
@@ -2029,7 +2037,7 @@ function answerQuestions(path, answers, opts = {}) {
     writeFileSync(join(path, ".symbiot", "ANSWERS.md"), prev.replace(/\s*$/, "\n") + rows.map((x) => `\n### ${x.q}\n${x.a}\n_answered ${day}_\n`).join(""));
   } catch (e) { return { error: "Couldn't write ANSWERS.md: " + ((e && e.message) || e) }; }
   { const lane = whereOf(path).lane; for (const x of rows) recordDone(x.q, x.a, lane); }
-  const out = { ok: true, saved: rows.length };
+  const out = { ok: true, saved: rows.length, ...(vaulted.length ? { vaulted } : {}) };
   if (opts.share && answered) { try { const to = answered(path, rows) || []; if (to.length) out.also = to.map((r) => r.lane || basename(r.path)); } catch {} }
   // a "wait until…" answer: the step is the question's 👤 option (what "it" is), and its files are waited on
   const asked = new Map(parseQuestions(readSymbiot(path, "QUESTIONS.md")).questions.map((x) => [qKey(x.q), x]));
@@ -2068,6 +2076,15 @@ function answerQuestions(path, answers, opts = {}) {
   if (opts.rerun) { const e = runHandoff(path); if (e && e.busy) out.note = "Answers saved. An agent is still running in that folder, so another wasn't started. Send them again once it finishes."; else if (e && e.blocked) out.note = "Answers saved. " + e.note; else if (e) out.rerun = e.id; else out.note = "Answers saved. Set an agent command in Settings to have the agent pick them up automatically."; }
   if (out.granted) out.note = "Allowed " + out.granted.join(", ") + " for your agents" + (opts.rerun ? ", and carried on. " : ". ") + (out.note || "");
   return out;
+}
+// An agent's question whose recommended answer is the user pasting or saving a secret the vault
+// already holds: answered here, for the user, with where it is, and its agent started again. The
+// name, or "" when the question isn't one (Home shows its card then).
+function heldAsk(path, q, deps = {}) {
+  const opt = ((q && q.options) || [])[0] || "", h = (deps.held || heldFor)(`${(q && q.q) || ""} ${/^\s*👤/.test(opt) ? opt : ""}`);
+  if (!h) return "";
+  const r = (deps.answer || answerQuestions)(path, [{ q: q.q, a: `Symbiot already holds it, in its vault as "${h}": ${VAULT_READ.replace("<name>", h)}. Never ask the user to paste or save it again.` }], { rerun: true });
+  return r && r.ok ? h : "";
 }
 // What a run left for Symbiot's memory (.symbiot/REMEMBER.json, handback.mjs):
 // shown on its block with Remember and Skip once it has stopped. [] when none.
@@ -2128,4 +2145,4 @@ function agentsList() {
   }).concat(earlierRuns()).map((a) => ({ ...a, phase: runPhase(a) }));
 }
 
-export { onCardGone, withOwnTools, escalation, grantCard, cardRules, cardIsPermission, runPhase, onRunEnd, isClaudeCmd, GUARD, tidyRule, tidyRules, tidySettings, pruneRuns, claudePlugins, idlePlugins, runSettings, archiveAnswers, allAnswers, answersDigest, ANSWERS_ARCHIVE, ANSWERS_KEEP, runsTick, RUN_START, HANG_MIN, noteBlocked, userAnswers, CONTINUED_FILE, onAnswered, CHANGES, toKnownHost, continueLanes, autoPick, autoDecide, FACTS, factsOf, knownRun, withStream, workOf, HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, connectorsInfo, linkReach, fillHandoff, runHandoff, nothingToDo, whereOf, whereLine, whereAnswer, askTask, PARKED_NOTE, parkedPaths, isParked, parkLane, agentMissing, blockedAgain, runningHandoff, loadRuns, earlierRuns, namedFiles, unchangedStep, waitingFor, startWaiting, noteUntracked, untrackedBefore, forgetUntracked, writeTasks, droppedTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, pickAgent, findOrcaCli, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, skipIdea, agentQuestions, answerQuestions, agentsList, needsOf, settleNeeds, NEEDS_FOR, readLastWords, readNeeds, parseRead, READ_FILE, autoAllow, autoAllowSweep, allowlistInWork, installAllowlist, inWork, withScope, withTrust, sandboxFor, sandboxLifts, sandboxEnv, sandboxNeeds, sandboxState, sandboxWrites, SANDBOX_DIR, resumeFor, noteSession, tooLong, carryOn, RESUME_CTX, CARRY_PROMPT, trustFull, GUARD_SETTINGS, runCmdOf, claimLock, wideRoot, sandboxDenies, questionFolders, folderState, dirtyState, ANSWERS_SEEN, newAnswers, claudeDownIn, claudePause, noteClaudeDown, resetTime, PAUSE_FILE, startGap, isUrgent, urgentStop, urgentFirst, urgentUndo, urgentDone, urgentSweep, urgentState, licenceGate, stopRun, loadRunFiles, saveRunFiles, forgetRunFiles, withModel, routedModel, onShipping };
+export { heldAsk, onCardGone, withOwnTools, escalation, grantCard, cardRules, cardIsPermission, runPhase, onRunEnd, isClaudeCmd, GUARD, tidyRule, tidyRules, tidySettings, pruneRuns, claudePlugins, idlePlugins, runSettings, archiveAnswers, allAnswers, answersDigest, ANSWERS_ARCHIVE, ANSWERS_KEEP, runsTick, RUN_START, HANG_MIN, noteBlocked, userAnswers, CONTINUED_FILE, onAnswered, CHANGES, toKnownHost, continueLanes, autoPick, autoDecide, FACTS, factsOf, knownRun, withStream, workOf, HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, connectorsInfo, linkReach, fillHandoff, runHandoff, nothingToDo, whereOf, whereLine, whereAnswer, askTask, PARKED_NOTE, parkedPaths, isParked, parkLane, agentMissing, blockedAgain, runningHandoff, loadRuns, earlierRuns, namedFiles, unchangedStep, waitingFor, startWaiting, noteUntracked, untrackedBefore, forgetUntracked, writeTasks, droppedTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, pickAgent, findOrcaCli, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, skipIdea, agentQuestions, answerQuestions, agentsList, needsOf, settleNeeds, NEEDS_FOR, readLastWords, readNeeds, parseRead, READ_FILE, autoAllow, autoAllowSweep, allowlistInWork, installAllowlist, inWork, withScope, withTrust, sandboxFor, sandboxLifts, sandboxEnv, sandboxNeeds, sandboxState, sandboxWrites, SANDBOX_DIR, resumeFor, noteSession, tooLong, carryOn, RESUME_CTX, CARRY_PROMPT, trustFull, GUARD_SETTINGS, runCmdOf, claimLock, wideRoot, sandboxDenies, questionFolders, folderState, dirtyState, ANSWERS_SEEN, newAnswers, claudeDownIn, claudePause, noteClaudeDown, resetTime, PAUSE_FILE, startGap, isUrgent, urgentStop, urgentFirst, urgentUndo, urgentDone, urgentSweep, urgentState, licenceGate, stopRun, loadRunFiles, saveRunFiles, forgetRunFiles, withModel, routedModel, onShipping };
