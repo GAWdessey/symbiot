@@ -4,7 +4,7 @@
 //
 //   node test/browserfails.mjs
 //
-import { mkdtempSync, mkdirSync, rmSync, readFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 const HOME = mkdtempSync(join(tmpdir(), "symbiot-browserfails-"));
@@ -14,7 +14,7 @@ const ok = (n, c, got) => { if (c) { pass++; console.log("  ✓ " + n); } else {
 const B = await import("../browserfails.mjs");
 const { recordDone, standingBrief } = await import("../asksdone.mjs");
 const { signInAsked } = await import("../links.mjs");
-const { needsOf, parseQuestions } = await import("../agents.mjs");
+const { needsOf, parseQuestions, withOwnTools } = await import("../agents.mjs");
 const { homeAnswer } = await import("../home.mjs");
 try {
   console.log("KNOWN SITES — never a browser sign-in ask");
@@ -52,5 +52,18 @@ try {
   ok("…asked again after it: the browser can't hold this sign-in, so it isn't the user's again", again && again.kind === "approve" && again.api === "app.example-sms.co.za" && /can't hold this sign-in/.test(again.what), again);
   ok("…and the site is learned: every brief lists it, and no ask for it reaches the user from now on", B.failingSites().some((e) => e.host === "app.example-sms.co.za") && /app\.example-sms\.co\.za/.test(standingBrief().join("\n")) && !!B.blockedSignIn("log in to app.example-sms.co.za"));
   ok("…a skip isn't a done (it may come back)", recordDone("Sign in to www.domains.co.za", "skip") === false && B.blockedSignIn("Sign in to www.domains.co.za", Date.now() + 1000) === null);
+
+  console.log("THE USER'S OWN CHROME — to read, never to click (2026-10-20)");
+  ok("no Claude in Chrome on this computer: not offered", B.realChrome({ cfg: {}, platform: "linux" }) === false && !B.browserBrief(false).includes(B.CHROME_BRIEF));
+  const hosts = join(HOME, ".config/google-chrome/NativeMessagingHosts"); mkdirSync(hosts, { recursive: true });
+  writeFileSync(join(hosts, "com.anthropic.claude_code_browser_extension.json"), "{}");
+  ok("its native host registered in Chrome: offered", B.realChrome({ cfg: {}, platform: "linux" }) === true);
+  ok("…unless chromeAgents is off", B.realChrome({ cfg: { chromeAgents: false }, platform: "linux" }) === false);
+  const cbrief = B.browserBrief(true).join("\n");
+  ok("the brief gives the order (API, their Chrome, then symbiot screens), own tabs only, and reading only", /API, CLI or a connector first; then their Chrome; then `symbiot screens`/.test(cbrief) && /own tab group/.test(cbrief) && /only open, read and close/.test(cbrief), cbrief);
+  const cmd = 'claude -p "{prompt}" --permission-mode acceptEdits --allowedTools "Bash(npm test:*)"', run = withOwnTools(cmd, true);
+  ok("a run gets --chrome and the tools that open, read and close its tabs", /^claude --chrome -p /.test(run) && B.CHROME_READ.every((t) => run.includes(`"${t}"`)), run);
+  ok("…none that click, type, fill or take the screen", !/claude-in-chrome__(computer|form_input|javascript_tool|file_upload|upload_image)/.test(run), run);
+  ok("…and nothing when it's off or the command says --no-chrome", withOwnTools(cmd, false).indexOf("chrome") < 0 && !/--chrome/.test(withOwnTools(cmd.replace("claude -p", "claude --no-chrome -p"), true)));
 } finally { rmSync(HOME, { recursive: true, force: true }); }
 console.log(`\n${pass} passed, ${fail} failed`); process.exit(fail ? 1 : 0);

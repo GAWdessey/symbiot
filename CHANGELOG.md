@@ -2,6 +2,11 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one), for anyone who installs the app: what changed in it, never whose work it was (no projects, people, accounts, services, run ids or task wording of the person who made it). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.66.14 — 2026-10-20
+
+- **Agents can read sites in your own Chrome.** With the Claude extension in your Chrome, each agent run can open, read and close tabs of its own there, signed in as you. Sites see a person's browser there, so ones that block Symbiot's browser, like Cloudflare's dashboard, read fine. Agents try the site's API first, then your Chrome, then Symbiot's browser.
+- **Reading only.** Agents work in their own tab group, never in your tabs, and can't click, type, send or pay in your Chrome. Anything like that still goes through Symbiot's browser, which asks you first. Each site also needs your Allow in the Claude extension, and an agent asks you for that rather than for a sign-in. Set `chromeAgents` to false to turn it off.
+
 ## 0.66.13 — 2026-10-20
 
 - **Your own Chrome's sign-ins now carry over on Linux without anything extra installed.** Symbiot reads Chrome's key from the system keyring through Python when `secret-tool` isn't there. Before, nothing ever came across on a stock Pop!_OS or Ubuntu.

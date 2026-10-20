@@ -11,7 +11,9 @@
 // Every brief lists them (browserBrief), and Home turns a sign-in card for one into
 // "the browser can't hold this sign-in", where Go ahead sends its agent the API route.
 import { join } from "node:path";
-import { CONFIG_DIR, readState, writeJsonAtomic } from "./core.mjs";
+import { existsSync } from "node:fs";
+import { homedir } from "node:os";
+import { CONFIG_DIR, readState, writeJsonAtomic, loadConfig } from "./core.mjs";
 
 const KNOWN = [
   { host: "twilio.com", name: "Twilio", names: /^twilio/i, why: "its login fails Cloudflare's human check there",
@@ -80,8 +82,27 @@ function apiOptions(options) {
 // What the asking agent is told instead of the user being asked.
 const apiRoute = (e) => `The Symbiot Browser can't hold the sign-in to ${e.host} (${e.why}), so don't ask the user to sign in there again. Use ${e.route} instead. Look for the key in the project's env, the vault (\`symbiot secret list\`) or, through ops, the server's secrets, and ask the user only for a key that isn't anywhere.`;
 // For every brief: the sites never to ask a browser sign-in for, and the way round each.
-function browserBrief() {
-  return [`- Never ask the user to sign in to a site in the Symbiot Browser to read or check something there: first try the site's API, its CLI or a connector, with keys from the project's env, the vault or (through \`ops\`) the server's secrets, and ask only for a key you can't find anywhere. The Symbiot Browser can't hold a sign-in to ${failingSites().map((e) => `${e.host} (use ${e.route})`).join("; ")}: an ask to sign in to one of them there never reaches the user.`];
+// The user's own Chrome, to read (2026-10-20). Claude in Chrome's extension, in their everyday
+// Chrome with its native host registered, lets a Claude run (claude --chrome) open, read and close
+// tabs of its own there, signed in as the user, where sites see a person's browser: from a
+// sandboxed lane, Cloudflare's dashboard and GitHub read signed in with no human check. Reading
+// only: the tools that click, type, fill or take the screen aren't allowed, so nothing is sent,
+// posted or paid as the user from there. Each site also needs the user's own Allow in the
+// extension. config.chromeAgents: false turns it off.
+const CHROME_READ = ["tabs_context_mcp", "tabs_create_mcp", "navigate", "get_page_text", "read_page", "find", "tabs_close_mcp"].map((t) => "mcp__claude-in-chrome__" + t);
+const CHROME_HOST = "com.anthropic.claude_code_browser_extension.json";
+function chromeHostDirs(home = homedir(), platform = process.platform) {
+  if (platform === "linux") return [".config/google-chrome", ".config/chromium", ".config/BraveSoftware/Brave-Browser", ".config/microsoft-edge"].map((d) => join(home, d, "NativeMessagingHosts"));
+  if (platform === "darwin") return ["Google/Chrome", "Chromium", "BraveSoftware/Brave-Browser", "Microsoft Edge"].map((d) => join(home, "Library/Application Support", d, "NativeMessagingHosts"));
+  return []; // Windows registers it in the registry: not read here yet
+}
+function realChrome({ cfg = loadConfig(), home, platform } = {}) {
+  if (cfg && cfg.chromeAgents === false) return false;
+  return chromeHostDirs(home, platform).some((d) => existsSync(join(d, CHROME_HOST)));
+}
+const CHROME_BRIEF = "- The user's own Chrome is yours to READ, through the Claude in Chrome tools (mcp__claude-in-chrome__*): it's signed in as them, and sites see a person's browser there, so a site that blocks the Symbiot Browser or isn't signed in there (Cloudflare's dashboard, a cloud console) reads fine. The order: the site's API, CLI or a connector first; then their Chrome; then `symbiot screens`. Work only in your own tab group (tabs_context_mcp with createIfEmpty, then tabs_create_mcp), never in their tabs, and close yours when done. There you can only open, read and close: a click, a typed word, a send or a payment goes through `symbiot screens`, which asks the user first, or a question. If it says Claude needs permission for a site, ask the user to allow that one site in the Claude extension (give its address), not to sign in.";
+function browserBrief(ready = realChrome()) {
+  return [...(ready ? [CHROME_BRIEF] : []), `- Never ask the user to sign in to a site in the Symbiot Browser to read or check something there: first try the site's API, its CLI or a connector, with keys from the project's env, the vault or (through \`ops\`) the server's secrets, and ask only for a key you can't find anywhere. The Symbiot Browser can't hold a sign-in to ${failingSites().map((e) => `${e.host} (use ${e.route})`).join("; ")}: an ask to sign in to one of them there never reaches the user.`];
 }
 
-export { KNOWN, failingSites, signInSite, blockedSignIn, signInDone, apiOptions, apiRoute, browserBrief };
+export { KNOWN, failingSites, signInSite, blockedSignIn, signInDone, apiOptions, apiRoute, browserBrief, realChrome, chromeHostDirs, CHROME_READ, CHROME_BRIEF };

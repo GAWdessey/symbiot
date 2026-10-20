@@ -15,7 +15,7 @@ import { recordDone, isDone, isApprovalAsk, approvalText, approvedBefore, recent
 import { parseRun, lastRunText, readRunLog, runStarted, briefPlan, stepOf, runLine, waitingOn, waitUntil } from "./work.mjs";
 import { noteDuration, noteCost, kindOf } from "./estimate.mjs";
 import { plainAsk } from "./plain.mjs";
-import { apiOptions, blockedSignIn, apiRoute } from "./browserfails.mjs";
+import { apiOptions, blockedSignIn, apiRoute, realChrome, CHROME_READ } from "./browserfails.mjs";
 import { lanesJob, parseFacts, leftToYou, gitWork, agentsGitWork, agentsClicking, agentsCodeWork, agentsMail, agentsPosting, linkedAsks, linkedChore, PUSH_OK } from "./handover.mjs";
 import { scanRoots, repoPathMap } from "./scan.mjs";
 import { knowledgeFolders } from "./knowledge.mjs";
@@ -256,9 +256,16 @@ const OWN_TOOLS = ["Bash(symbiot screens:*)", "Bash(symbiot press:*)"];
 // --add-dir takes a folder: one pointing at a file (a key, ~/.ssh/oracle_key) made runs fail on it.
 const isDir = (d) => { try { return statSync(String(d).replace(/^~(?=\/|$)/, homedir())).isDirectory(); } catch { return true; } }; // unknown: leave it
 const noFileDirs = (cmd) => String(cmd).replace(/\s--add-dir\s+(?:"([^"]+)"|'([^']+)'|(\S+))/g, (m, a, b, c) => (isDir(a || b || c) ? m : ""));
-function withOwnTools(tmpl) {
+// With the user's own Chrome ready (browserfails.mjs realChrome), a run also gets --chrome and
+// the tools that open, read and close its own tabs there, none that click or type (2026-10-20).
+// The flag goes right after `claude`, so a preset that wraps it (Orca's --command) passes it on.
+function withOwnTools(tmpl, chrome = realChrome()) {
   if (!isClaudeCmd(tmpl)) return tmpl;
   let cmd = noFileDirs(tmpl); for (const t of OWN_TOOLS) cmd = allowTool(cmd, t);
+  if (chrome && !/\s--(?:no-)?chrome\b/.test(cmd) && /(^|[\s/"'])claude(?=\s)/.test(cmd)) {
+    cmd = cmd.replace(/(^|[\s/"'])claude(?=\s)/, "$1claude --chrome");
+    for (const t of CHROME_READ) cmd = allowTool(cmd, t);
+  }
   return cmd;
 }
 function withModel(tmpl, model) {
