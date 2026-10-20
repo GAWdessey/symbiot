@@ -297,6 +297,17 @@ try {
   homeAnswer("failed:r1", { pick: 1 }, fd);
   ok("…Skip: it stops asking", noFail(() => [failedRun()]), "");
   ok("…and an agent's own question is answered on its block, as before", !!homeAnswer("ask:/w", { pick: 0 }).error, "");
+  // a permission card: Done writes the rules into the lane's allow list, a glob is never a file to look for
+  const lane = join(HOME, "steve-lane"); mkdirSync(lane, { recursive: true });
+  const permCard = { id: "pc1", path: lane, needs: { kind: "step", key: "k1", what: "👤 You (only you: a permission): allow `python3 -I -c` / `py_compile` on `v2/*.py`", check: "" } };
+  const pran = [], settled = [], pd = { agents: () => [permCard], running: () => false, run: (p, o) => { pran.push(p); return { id: "j3" }; }, settle: (p, k) => settled.push(k) };
+  const pa = homeAnswer("needs:pc1", { pick: 0 }, pd);
+  const sl = JSON.parse(readFileSync(join(lane, ".claude", "settings.local.json"), "utf8")).permissions.allow;
+  ok("Done on a permission card writes the allow rules itself (the glob v2/*.py isn't a rule or a file)", pa.ok && sl.includes("Bash(python3 -I -c:*)") && sl.includes("Bash(python3 -I -m py_compile:*)") && !sl.some((r) => /v2/.test(r)), [pa, sl]);
+  ok("…closes the card and starts the agent, with no \"make the change yourself\"", settled[0] === "k1" && pran[0] === lane && !/make the change/i.test(pa.said), [settled, pran, pa]);
+  const wideCard = { id: "pc2", path: lane, needs: { kind: "step", key: "k2", what: "👤 You (only you: a permission): allow `bash`", check: "" } };
+  const wa = homeAnswer("needs:pc2", { pick: 0 }, { ...pd, agents: () => [wideCard] });
+  ok("a permission too wide to write is refused plainly, and the card stays", !!wa.error && settled.length === 1, wa);
 
   // Next up: with nothing waiting on you, a few things that CAN be done next, each with its gain and one tap
   const { homeNext, nextUp, laneNamed, NEXT_FILE } = await import("../home.mjs");

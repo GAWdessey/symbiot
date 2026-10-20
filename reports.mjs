@@ -14,25 +14,37 @@
 //   path; it's shown as HTML made here (mdHtml), with everything escaped first.
 //
 // Stored in ~/.config/symbiot/reports.json, yours only: { seen: { id: mtime }, decided, handed:
-// { id: { mtime, done: { idea: "handed" | "dismissed" } } } }.
+// { id: { mtime, done: { idea: "handed" | "dismissed" | "superseded" } } } }.
 import { join, basename, dirname, resolve, extname, sep } from "node:path";
 import { homedir } from "node:os";
-import { readFileSync, readdirSync, statSync, realpathSync } from "node:fs";
+import { readFileSync, readdirSync, statSync, realpathSync, existsSync } from "node:fs";
 import { createHash } from "node:crypto";
-import { CONFIG_DIR, isFinding, readState, writeJsonAtomic } from "./core.mjs";
+import { CONFIG_DIR, isFinding, readState, writeJsonAtomic, loadTasks, sameTask } from "./core.mjs";
 import { runFolders, laneOf, runTitle } from "./handback.mjs";
 import { runningHandoff } from "./agents.mjs";
 import { laneMap } from "./scan.mjs";
+import { MARKETING_DIR, draftFiles, draftStatuses, draftPreview, parseDraft, inLane } from "./marketing.mjs";
 
 const SEEN_FILE = join(CONFIG_DIR, "reports.json");
 const NOT_REPORTS = /^(?:TASKS(?:\.[\w-]+)?|QUESTIONS|ANSWERS(?:\.archive)?|HANDOFF|SKIPPED|CLAUDE|AGENTS)\.md$|^BRIEF/i; // TASKS.next.md too: the tasks held for after a run
 const MAX_READ = 512 * 1024, MAX_LIST = 200;
+const WRITING_FOR = 15 * 60 * 1000; // a run is "still writing" a report only if the file changed in the last 15 minutes
 const idOf = (file) => createHash("sha1").update(file).digest("hex").slice(0, 12);
 
 const obj = (x) => (x && typeof x === "object" && !Array.isArray(x) ? x : {});
 function loadSeen(file = SEEN_FILE) { const d = readState(file, (v) => !!v && typeof v === "object" && !Array.isArray(v)); return { seen: obj(d && d.seen), decided: obj(d && d.decided), handed: obj(d && d.handed) }; }
 // Whole or not at all (writeJsonAtomic): torn, it read as "nothing seen", and every report came back unread (15 Oct 2026).
 function saveSeen(d, file = SEEN_FILE) { try { writeJsonAtomic(file, d, { indent: 0, mode: 0o600 }); return true; } catch { return false; } }
+
+// What an ops run (a folder called act-xxxxxxxx) was for, in words: the first line of the request
+// quoted at the top of its TASKS.md. "" for any other folder (its lane's name says enough).
+function sourceOf(folder) {
+  if (!/^act-[0-9a-f]+$/.test(basename(folder))) return "";
+  let t = ""; try { t = readFileSync(join(folder, ".symbiot", "TASKS.md"), "utf8").slice(0, 3000); } catch { return ""; }
+  const q = t.match(/^>\s*(.+)$/m); if (!q) return "";
+  const s = q[1].replace(/\s+/g, " ").trim();
+  return s.length > 80 ? s.slice(0, 77).replace(/\s+\S*$/, "") + "…" : s;
+}
 
 // A report's title: its first "# " heading, without markdown; else its file name.
 function titleOf(text, name) {
@@ -55,7 +67,7 @@ function listReports({ map, folders, running = runningHandoff, seen } = {}) {
       if (!st.isFile() || !st.size) continue;
       let head = ""; try { head = readFileSync(file, "utf8").slice(0, 4000); } catch { continue; }
       const id = idOf(file), mtime = Math.round(st.mtimeMs);
-      out.push({ id, title: titleOf(head, name), name, file, folder, lane: map ? laneOf(folder, map) : basename(folder), run: runTitle(folder), size: st.size, mtime, new: s[id] !== mtime, running: !!running(folder) });
+      out.push({ id, title: titleOf(head, name), name, file, folder, lane: map ? laneOf(folder, map) : basename(folder), run: runTitle(folder), size: st.size, mtime, new: s[id] !== mtime, running: Date.now() - mtime < WRITING_FOR && !!running(folder), source: sourceOf(folder) });
     }
   }
   return out.sort((a, b) => b.mtime - a.mtime).slice(0, MAX_LIST);
@@ -68,18 +80,21 @@ function readReport(id, { list, mark = true, seenFile = SEEN_FILE } = {}) {
   let text = ""; try { text = readFileSync(r.file, "utf8"); } catch (e) { return { error: `Couldn't read ${r.file}: ${e.message}` }; }
   const cut = text.length > MAX_READ; if (cut) text = text.slice(0, MAX_READ);
   if (mark) { const d = loadSeen(seenFile); d.seen[r.id] = r.mtime; saveSeen(d, seenFile); }
-  const draft = isDraftReport(r.title, r.name);
-  return { ...r, new: false, text, html: mdHtml(text, { id: r.id, base: dirname(r.file), roots: imageRoots(r) }) + (cut ? "<p class='muted'>(cut at 512 KB: open the file for the rest)</p>" : ""), draft, ...(draft ? { decided: decidedOn(r, seenFile) } : { ideas: openIdeas(r, text, seenFile), handled: handledIdeas(r, seenFile) }) };
+  const draft = isDraftReport(r.title, r.name), cards = draftCardsIn(text, { lane: r.folder === MARKETING_DIR });
+  return { ...r, new: false, ...(cards.length ? { cards } : {}), text, html: mdHtml(text, { id: r.id, base: dirname(r.file), roots: imageRoots(r) }) + (cut ? "<p class='muted'>(cut at 512 KB: open the file for the rest)</p>" : ""), draft, ...(draft ? { decided: decidedOn(r, seenFile) } : { ideas: openIdeas(r, text, seenFile), handled: handledIdeas(r, seenFile) }) };
 }
 // The list with what each report leaves for the user: `needs` is "draft" (undecided, waits
 // on an Approve or Reject), "ideas" (it ends in next steps), or "" (nothing to act on).
 // Uses reportIdeas, isDraftReport and decidedOn as they are; the text is read per report.
-function withNeeds(list, { seenFile = SEEN_FILE } = {}) {
+function withNeeds(list, { seenFile = SEEN_FILE, tasks } = {}) {
+  try { sweepSuperseded({ list, seenFile, tasks }); } catch { /* the list still shows */ }
+  const ctx = supersedeContext({ list, tasks, file: seenFile });
   return list.map((r) => {
-    if (isDraftReport(r.title, r.name)) return { ...r, needs: decidedOn(r, seenFile) ? "" : "draft", ideas: 0 };
+    if (isDraftReport(r.title, r.name)) return { ...r, needs: decidedOn(r, seenFile) ? "" : "draft", ideas: 0, steps: [], draft: true };
     let text = ""; try { text = readFileSync(r.file, "utf8").slice(0, MAX_READ); } catch { /* gone: nothing to act on */ }
-    const n = openIdeas(r, text, seenFile).length;
-    return { ...r, needs: n ? "ideas" : "", ideas: n };
+    const steps = openIdeas(r, text, seenFile, ctx), n = steps.length;
+    if (draftCardsIn(text, { lane: r.folder === MARKETING_DIR }).some((rel) => { const p = draftPreview(rel); return p && p.isPost && (!p.status || p.status === "change"); })) return { ...r, needs: "draft", ideas: n, steps }; // a draft in it waits for an answer (never answered, or edited since)
+    return { ...r, needs: n ? "ideas" : "", ideas: n, steps };
   });
 }
 // On a phone: its computer's newest reports, from the copy it sent (phone.mjs
@@ -215,20 +230,36 @@ function list(lines, i, out, o) {
 // offers 2-4 ideas drawn from it, each one tick from the Workdesk in its lane, and a
 // box to ask about it in place (home.mjs reportIdeasAdd, reportAsk). A draft for the
 // user's OK (a post preview, say) gets Approve and Reject instead.
-const NEXT_HEAD = /\b(?:next|top \d+|recommend\w*|suggest\w*|ideas?|actions?|action items?|to ?dos?|follow[- ]?ups?|what to do|priorit\w*|fix(?:es)?|plan)\b/i;
+// "fix" and "plan" alone head the record of what was done ("The fix", "Battery scorer fix") as often as
+// what is left, so they count only with a qualifier; a heading that says what was done or wrong
+// (DONE_HEAD) never counts. The report's own title (its `# ` line) never counts (2026-10-16).
+const NEXT_HEAD = /\b(?:next|top \d+|recommend\w*|suggest\w*|ideas?|actions?|action items?|to ?dos?|follow[- ]?ups?|what to do|priorit\w*|(?:implementation|rollout|migration|action|fix) plan|fixes? (?:to make|needed|left|still)|still to fix)\b/i;
+const DONE_HEAD = /\b(?:done|fixed|changed|ticked|shipped|completed|flaws?|causes?)\b/i;
+// A bullet that asks for nothing: it says to leave things be, or reports what is already so.
+const NOT_ACTION = /^(?:paused\b|hold\b|do not|don'?t|never|keep\b|leave\b|no action|nothing (?:to|more)|no [\w ]{0,40}(?:so far|yet)|revisit only if|ticked:|release:)|\b(?:is|are|was|were) now\b|\bhas been\b|\bhad actually\b|\bnot worth\b|\bnothing more for you\b|\bin progress\)/i;
 const IDEAS_MAX = 4;
+// A half-sentence lifted off a wrapped line is not an action (2026-10-13): one word, one that
+// carries on from something before it ("and then…", "which…"), one that stops on a joining word
+// or a comma, or one with a bracket or quote left open.
+const CARRIES_ON = /^(?:and|or|but|nor|which|that|who|whose|because|so|then|while|where|when|if|with|without|to|for|of|in|on|by|as|than|including|e\.g\.|i\.e\.)\b/i;
+const STOPS_SHORT = /(?:[,;:(—-]|\b(?:and|or|but|the|a|an|to|of|for|with|in|on|by|as|that|which|from|into|at))$/i;
+function isFragment(t) {
+  if (t.split(" ").length < 2 || CARRIES_ON.test(t) || STOPS_SHORT.test(t)) return true;
+  const open = (c, d) => t.split(c).length - t.split(d).length; // brackets
+  return open("(", ")") > 0 || open("[", "]") > 0 || (t.split("`").length - 1) % 2 === 1;
+}
 const cleanIdea = (s) => String(s).replace(/^\[[ xX]\]\s+/, "").replace(/\[([^\]]+)\]\([^)]*\)/g, "$1").replace(/\*\*|__|`/g, "").replace(/\s+/g, " ").trim().slice(0, 300);
 // The top-level items of its "next" sections ("## Top 3 next", "## Recommendations"…),
 // first sections first, at most IDEAS_MAX, but not the findings among them. None when it has no such section.
 function reportIdeas(text, max = IDEAS_MAX) {
   const out = []; let on = false, base = -1;
   for (const l of String(text || "").replace(/\r\n?/g, "\n").split("\n")) {
-    const h = l.match(/^#{1,6}\s+(.*)$/) || l.match(/^\s*\*\*([^*]+)\*\*:?\s*$/);
-    if (h) { on = NEXT_HEAD.test(h[1]); base = -1; continue; }
+    const h = l.match(/^(#{1,6})\s+(.*)$/) || l.match(/^\s*()\*\*([^*]+)\*\*:?\s*$/);
+    if (h) { on = h[1].length !== 1 && NEXT_HEAD.test(h[2]) && !DONE_HEAD.test(h[2]); base = -1; continue; }
     if (!on) continue;
     const m = l.match(/^(\s*)(?:[-*+]|\d+[.)])\s+(.+)$/); if (!m) continue;
     const ind = m[1].replace(/\t/g, "    ").length; if (base < 0) base = ind; if (ind > base) continue;
-    const t = cleanIdea(m[2]); if (t && !isFinding(t) && !out.some((x) => x.toLowerCase() === t.toLowerCase())) out.push(t); // a fact it found is no next step (core.mjs isFinding)
+      const t = cleanIdea(m[2]); if (t && !isFinding(t) && !isFragment(t) && !NOT_ACTION.test(t) && !out.some((x) => x.toLowerCase() === t.toLowerCase())) out.push(t); // a fact it found is no next step (core.mjs isFinding)
     if (out.length >= max) break;
   }
   return out;
@@ -236,11 +267,106 @@ function reportIdeas(text, max = IDEAS_MAX) {
 // Which of a report's ideas were handed to an agent or dismissed, kept by the report's mtime
 // (a rewritten report offers its ideas again). A report leaves "Read, open actions" once none is open.
 function handledIdeas(r, file = SEEN_FILE) { const h = loadSeen(file).handed[r.id]; return h && h.mtime === r.mtime && h.done && typeof h.done === "object" ? h.done : {}; }
-const openIdeas = (r, text, file = SEEN_FILE) => { const done = handledIdeas(r, file); return reportIdeas(text).filter((t) => !done[t]); };
+const openIdeas = (r, text, file = SEEN_FILE, ctx) => {
+  const done = handledIdeas(r, file), open = reportIdeas(text, 40).filter((t) => !done[t]).slice(0, IDEAS_MAX); // handled ones don't use up the slots
+  if (!open.length) return open;
+  const why = supersededIdeas(r, open, ctx || supersedeContext({ file }));
+  return open.filter((t) => !why.has(t));
+};
+
+// ---- superseded actions ----------------------------------------------------------------
+// An action leaves "Read, open actions" when it no longer needs doing (2026-10-13), by any of:
+//  1. a task made from it (or one that says the same, written after the report) is done,
+//     merged or cancelled: the Workdesk's tasks, archived ones too;
+//  2. a later report in the same lane covers the same thing (the same title, bar dates and numbers);
+//  3. another task is already open for it, or a newer report lists it;
+//  4. its subject is gone: the patch it names isn't there any more.
+// supersededIdeas gives { idea => why } for the ideas it is given; sweepSuperseded writes
+// them down as "superseded" (so the report drops to Read and done on its own) and returns
+// what it cleared. withNeeds and the work tick run it, so it follows every task that
+// finishes and every report that lands.
+const FROM_TAIL = /\s*\(from the report "[^"]*", [^)]*\)\s*$/;
+const topicKey = (title) => String(title || "").toLowerCase().replace(/[\d.:/_-]+/g, " ").replace(/\b(?:report|audit|plan|findings|update|summary)\b/g, " ").replace(/\s+/g, " ").trim();
+function supersedeContext({ list, tasks, file = SEEN_FILE } = {}) {
+  const ctx = { file, _l: list, _t: tasks, _i: new Map() };
+  Object.defineProperties(ctx, {
+    list: { get() { return this._l || (this._l = listReports()); } },
+    tasks: { get() { if (!this._t) { try { this._t = loadTasks(); } catch { this._t = []; } } return this._t; } },
+  });
+  ctx.ideasOf = (r) => { // a report's open ideas, read once
+    if (!ctx._i.has(r.id)) { let t = ""; try { t = readFileSync(r.file, "utf8").slice(0, MAX_READ); } catch {} const done = handledIdeas(r, file); ctx._i.set(r.id, isDraftReport(r.title, r.name) ? [] : reportIdeas(t, 40).filter((x) => !done[x]).slice(0, IDEAS_MAX)); }
+    return ctx._i.get(r.id);
+  };
+  return ctx;
+}
+// Words that say what an action is about (not the glue), for judging that a task covers it when
+// the two are worded differently (sameTask only matches the same sentence, near enough).
+const GLUE = new Set("the and for with that this from into onto then than when what which will would should could must have has been being are was were not but all any can its it's our your their there here also only just more most some such each both before after about under over out off per via".split(" "));
+const subjectWords = (s) => new Set(String(s || "").toLowerCase().replace(FROM_TAIL, "").split(/[^\p{L}\p{N}]+/u).filter((w) => w.length > 3 && !GLUE.has(w)));
+// 70% of an action's subject words (it needs 4+) in a task written after the report.
+function coversIdea(idea, taskText) {
+  const a = subjectWords(idea); if (a.size < 4) return false;
+  const b = subjectWords(taskText); let n = 0; for (const w of a) if (b.has(w)) n++;
+  return n / a.size >= 0.7;
+}
+const newerThan = (a, b) => a.mtime > b.mtime || (a.mtime === b.mtime && a.id < b.id);
+function supersededIdeas(r, ideas, ctx = supersedeContext()) {
+  const out = new Map(), key = topicKey(r.title);
+  const later = key && ctx.list.find((o) => o.id !== r.id && newerThan(o, r) && o.lane === r.lane && topicKey(o.title) === key && !isDraftReport(o.title, o.name));
+  for (const t of ideas) {
+    if (later) { out.set(t, `a later report, "${later.title}", covers the same thing`); continue; }
+    const mine = (x) => String(x.text || "").includes(r.file) || (FROM_TAIL.test(x.text || "") && String(x.text).includes(`"${r.title}"`));
+    const like = ctx.tasks.filter((x) => sameTask(t, String(x.text || "").replace(FROM_TAIL, "")) && (mine(x) || (x.ts || 0) >= r.mtime));
+    const closed = like.find((x) => x.done || x.archived);
+    if (closed) { out.set(t, `a task made from it is ${closed.merged ? "merged" : closed.dropped ? "cancelled" : "done"}`); continue; }
+    if (like.length) { out.set(t, "another task already covers it"); continue; }
+    const wide = ctx.tasks.filter((x) => (x.ts || 0) >= r.mtime && coversIdea(t, x.text)); // worded differently: judged by what it is about
+    const wideClosed = wide.find((x) => x.done || x.archived);
+    if (wideClosed) { out.set(t, `a task about the same thing is ${wideClosed.merged ? "merged" : wideClosed.dropped ? "cancelled" : "done"}`); continue; }
+    if (wide.length) { out.set(t, "another task already covers it"); continue; }
+    const twin = ctx.list.find((o) => o.id !== r.id && newerThan(o, r) && !isDraftReport(o.title, o.name) && ctx.ideasOf(o).some((x) => sameTask(t, x)));
+    if (twin) { out.set(t, `a newer report, "${twin.title}", lists it too`); continue; }
+    const m = t.match(/(?:~|\/)[^\s"'`)]*\.(?:patch|diff)\b/);
+    if (m && !existsSync(m[0].replace(/^~/, homedir()))) out.set(t, `${basename(m[0])} is gone, so there is nothing to apply`);
+  }
+  return out;
+}
+// Clear them for good, per report, and say what was cleared: [{ id, title, idea, why }].
+function sweepSuperseded({ list, seenFile = SEEN_FILE, tasks } = {}) {
+  list = list || listReports(); const ctx = supersedeContext({ list, tasks, file: seenFile }), cleared = [];
+  for (const r of list) {
+    if (isDraftReport(r.title, r.name)) continue;
+    const open = ctx.ideasOf(r); if (!open.length) continue;
+    const why = supersededIdeas(r, open, ctx); if (!why.size) continue;
+    markIdeas(r, [...why.keys()], "superseded", seenFile);
+    for (const [idea, w] of why) cleared.push({ id: r.id, title: r.title, idea, why: w });
+  }
+  return cleared;
+}
 function markIdeas(r, ideas, status, file = SEEN_FILE) {
   const d = loadSeen(file), h = d.handed[r.id] && d.handed[r.id].mtime === r.mtime ? d.handed[r.id] : { mtime: r.mtime, done: {} };
   for (const t of ideas) h.done[String(t)] = status;
   d.handed[r.id] = h; return saveSeen(d, file);
+}
+// The Marketing drafts a report is about, as their own cards (Garth, 2026-10-16: a report said
+// "approve both drafts under Marketing" and there was nothing to press). A report that names a
+// draft's file (drafts/<product>/<file>.md), or a marketing-lane report that asks for approval and
+// names a waiting draft's date, carries that draft's card (ui.mjs mkPreview: the post as it will
+// look, with Approve, Reject and Change). Posts not yet posted or superseded only: [rel].
+function draftCardsIn(text, { dir = MARKETING_DIR, lane = false } = {}) {
+  const t = String(text || ""), out = [], st = draftStatuses(dir), live = (rel) => { const s = st[rel]; return !(s && (s.status === "posted" || s.posted || s.status === "superseded")); };
+  const add = (rel) => { if (rel && !out.includes(rel) && live(rel)) out.push(rel); };
+  for (const m of t.matchAll(/\bdrafts\/[\w.-]+\/[\w.-]+\.md\b/g)) { const f = inLane(dir, m[0]); if (f) { try { if (parseDraft(readFileSync(f, "utf8")).isPost) add(m[0]); } catch { /* unreadable: no card */ } } }
+  if (lane && /\bapprov/i.test(t)) {
+    const dates = new Set(t.match(/\b\d{4}-\d{2}-\d{2}\b/g) || []);
+    for (const f of draftFiles(dir, [], { max: 200 })) {
+      if (f.doc || f.status || !f.rel) continue; // waiting for an answer only
+      let d; try { d = parseDraft(readFileSync(f.file, "utf8")); } catch { continue; }
+      const day = (d.when.match(/^\d{4}-\d{2}-\d{2}/) || [])[0];
+      if (day && dates.has(day) && d.product && new RegExp("\\b" + d.product.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\b", "i").test(t)) add(f.rel);
+    }
+  }
+  return out;
 }
 // A draft waiting on the user's OK (its title or file says draft or preview): Approve and
 // Reject rather than ideas.
@@ -252,4 +378,4 @@ function decide(r, status, file = SEEN_FILE) { const d = loadSeen(file); d.decid
 // How many reports are new, and the newest one's title (Home's droplet).
 function reportsNews(opts) { const l = listReports(opts).filter((r) => r.new); return { count: l.length, latest: l[0] ? l[0].title : "" }; }
 
-export { SEEN_FILE, NOT_REPORTS, titleOf, listReports, readReport, phoneReports, phoneReport, reportImage, imagePath, markAllRead, reportsNews, mdHtml, reportIdeas, isDraftReport, decidedOn, decide, withNeeds, IDEAS_MAX, handledIdeas, openIdeas, markIdeas };
+export { draftCardsIn, supersededIdeas, sweepSuperseded, supersedeContext, SEEN_FILE, NOT_REPORTS, titleOf, listReports, readReport, phoneReports, phoneReport, reportImage, imagePath, markAllRead, reportsNews, mdHtml, reportIdeas, isDraftReport, decidedOn, decide, withNeeds, IDEAS_MAX, handledIdeas, openIdeas, markIdeas };

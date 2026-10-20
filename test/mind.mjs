@@ -16,6 +16,8 @@ let pass = 0, fail = 0;
 const ok = (n, c, got) => { if (c) { pass++; console.log("  ✓ " + n); } else { fail++; console.log("  ✗ " + n + (got !== undefined ? "  got: " + JSON.stringify(got) : "")); } };
 
 const { MIND_FILE, loadMind, remember, recall, mindState, forget, converse, parseReply, actBrief, actIn, taskIn, selfLane, spokenLine, unbackedClaim, goOf, rulesFor } = await import("../mind.mjs");
+const { aboutLine } = await import("../scan.mjs");
+const { writeFileSync } = await import("node:fs");
 const said = (j) => async () => JSON.stringify(j);
 
 try {
@@ -27,7 +29,19 @@ try {
   ok("a started hand-off backs the claim", !unbackedClaim("I'm handing it over", { kind: "agent", job: "j1" }));
   ok("a not-started hand-off doesn't", unbackedClaim("I've handed it to the agent", { kind: "agent", notStarted: "x" }));
   ok("rules tell it to check it can read a mailbox before promising to", /being able to send to an address is not being able to read it/.test(rulesFor([], "", false, false, [])));
+  const lr = rulesFor(["GuitarHero", "steve"], "", false, false, [], false, { GuitarHero: "A rhythm game" });
+  ok("a lane with a description shows it in brackets, one without stays bare", /GuitarHero \(A rhythm game\), steve\./.test(lr), lr.match(/Lanes[^\n]*/)[0]);
+  const ad = join(HOME, "about1"), ar = join(HOME, "about2"); mkdirSync(ad); mkdirSync(ar);
+  writeFileSync(join(ad, "package.json"), JSON.stringify({ description: "Drives the thing" }));
+  writeFileSync(join(ar, "README.md"), "# Title\n\n![badge](x.svg)\n\nA **rhythm game** for [guitars](http://x) that you play.\nSecond line.\n\nOther para.");
+  ok("aboutLine: package description first", aboutLine(ad) === "Drives the thing", aboutLine(ad));
+  ok("aboutLine: else the README's first prose paragraph, markup stripped", aboutLine(ar) === "A rhythm game for guitars that you play. Second line.", aboutLine(ar));
+  ok("aboutLine: nothing to read gives empty", aboutLine(join(HOME, "nope")) === "");
   ok("rules treat the user as Symbiot's maker", /Symbiot's makers, not outside users/.test(rulesFor([], "", false, false, [])));
+  const bound = await converse({ where: "Home", question: "ok, always ask me first", ask: said({ reply: "Agreed: from now on every agent will ask you first.", do: null, remember: [] }) });
+  ok("a 'from now on' with no saved rule says plainly it isn't binding", /isn't a standing rule yet/.test(bound.reply), bound.reply);
+  const ruled = await converse({ where: "Home", question: "ok, always ask me first", ask: said({ reply: "Agreed: from now on every agent will ask you first.", do: null, remember: [], rule: ["Always ask Garth first."] }) });
+  ok("…and a saved rule needs no such line", !/isn't a standing rule/.test(ruled.reply) && ruled.steps.some((x) => /saved 1 standing rule/.test(x)), ruled);
   ok("rules tell it to name its mistakes", /naming the mistake/.test(rulesFor([], "", false, false, [])));
   console.log("ONE MEMORY — what one page learns, another knows");
   const t0 = Date.now() - 7200000;
@@ -99,7 +113,7 @@ try {
   ok("Symbiot's own lane is the repo whose package is symbiot", selfLane(map) === "symbiot" && selfLane({ coral: map.coral }) === "", "");
   let rulesSeen = "";
   await converse({ where: "WhatsApp card", question: "that line was mine, not hers", map, act, ask: async (sys) => { rulesSeen = sys; return JSON.stringify({ reply: "ok", do: null, remember: [] }); } });
-  ok("the chat is told the lanes and that Symbiot's flaws go to symbiot", /Lanes \("repo" is one of these, exactly\): symbiot, coral/.test(rulesSeen) && /Symbiot itself is "symbiot"/.test(rulesSeen), rulesSeen.slice(-700));
+  ok("the chat is told the lanes and that Symbiot's flaws go to symbiot", /Lanes \("repo" is one of these, exactly; [^)]*\): symbiot, coral/.test(rulesSeen) && /Symbiot itself is "symbiot"/.test(rulesSeen), rulesSeen.slice(-700));
   ok("…and not to wait to be asked: spot a flaw, start the fix in the same reply", /Don't wait to be asked to fix Symbiot/.test(rulesSeen) && /"agent" with "repo": "symbiot"/.test(rulesSeen), "");
   const added = [];
   const add = (t, r) => { added.push([t, r]); return { id: "t" + added.length }; };

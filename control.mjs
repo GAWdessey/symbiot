@@ -67,7 +67,9 @@ function control(ops, deps = {}) {
     if (op === "answer") {
       const path = pathOf(o.id, map); if (!path) return { error: "I don't know which agent that is." };
       if (!text) return { error: "there's no answer to give." };
-      const q = questions(path)[0]; if (!q) return { error: "that agent isn't asking anything right now." };
+      const q = questions(path)[0];
+      // not asking anything: the answer isn't lost, it's left as a note its next run reads first
+      if (!q) { noteTo(path, "From Home: an answer it hadn't asked for", text); return { error: "that agent isn't asking anything right now, so nothing was answered. I left your words as a note its next run reads first." }; }
       const r = answer(path, [{ q: q.q, a: text }]);
       return r && r.ok ? { ok: true, said: `Answered "${clip(q.q)}" for you.` } : { error: (r && r.error) || "the answer didn't go through." };
     }

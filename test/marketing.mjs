@@ -264,5 +264,44 @@ console.log("MARKETING — LinkedIn linked: no card asks you to sign in or do it
   ok("the agent's brief says to type each file", /`type: post`/.test(M.marketingBrief([]).join("\n")));
 }
 
+{
+  ok("any other named platform (tiktok, facebook groups) is a post too, but a site page, a store or a post with no text stays a document", M.parseDraft("# t\nplatform: tiktok\n\n## Post\nhi\n").isPost === true && M.parseDraft("# t\nplatform: facebook groups\n\n## Post\nHi group.\n").isPost === true && M.parseDraft("# t\nplatform: web\n\n## Post\nCopy for the site.\n").isPost === false && M.parseDraft("# p\nplatform: play store\n\n## Post\nx\n").isPost === false && M.parseDraft("# p\nplatform: hackernews\n").isPost === false);
+  console.log("MARKETING — blog and Show HN drafts get an approval card; an edit after approval asks again (2026-10-16)");
+  const dir = join(HOME, "lane-launch"), d = join(dir, "drafts", "symbiot"); mkdirSync(d, { recursive: true });
+  const hn = (link) => `# Symbiot hackernews 2026-10-20\n\nproduct: Symbiot\nplatform: hackernews\nwhen: 2026-10-20 15:00\n\n## Post\n\nShow HN: Symbiot – a desktop app\n\nI built it for people who use Claude Code.\n\n## First comment\n\nLink: ${link}\nInstall: npm install -g symbiot\n\n## Notes\n\n- submit by hand? no.\n`;
+  writeFileSync(join(d, "2026-10-20-hackernews.md"), hn("https://symbiot.co.za/?utm_source=hackernews"));
+  writeFileSync(join(d, "2026-10-20-launch-post.md"), "# Launch post\n\nproduct: Symbiot\nplatform: blog\nwhen: 2026-10-20 08:00\n\n## Post\n\nSymbiot: one orb\n\nIf you already use a coding agent.\n\n- Free to use\n\n## Notes\n\nn\n");
+  const { marketingDraftAnswer } = await import("../home.mjs");
+  const H = "drafts/symbiot/2026-10-20-hackernews.md", B = "drafts/symbiot/2026-10-20-launch-post.md";
+  ok("a blog or Hacker News draft is a post, not a document (they had no Approve at all)", M.parseDraft(readFileSync(join(d, "2026-10-20-launch-post.md"), "utf8")).isPost && M.parseDraft(readFileSync(join(d, "2026-10-20-hackernews.md"), "utf8")).isPost);
+  ok("…also under the names people write (hn, Hacker News)", M.parseDraft("# t\nplatform: HN\n\n## Post\nx").platform === "hackernews" && M.parseDraft("# t\nplatform: Hacker News\n\n## Post\nx").isPost);
+  ok("…and a place for documents (a landing page, a store listing) is still a document", !M.parseDraft("# t\nplatform: landing page\n\n## Post\nx").isPost);
+  const hp = M.draftPreview(H, { dir, cfg: {} }), bp = M.draftPreview(B, { dir, cfg: {} });
+  ok("both lit as posts to approve on the Marketing orb, each by its file", marketingState({ map: { marketing: dir }, deps: { repos: () => ({}), tasks: () => [], posts: () => ({ posts: [], done: [] }), agents: () => [], pending: () => [], files: () => M.draftFiles(dir, []) } }).needs.filter((n) => n.kind === "post").map((n) => n.rel).sort().join() === [H, B].join());
+  ok("the Show HN card: title, the site's address without tracking, the first comment", hp.hn && hp.hn.title === "Show HN: Symbiot – a desktop app" && hp.hn.url === "https://symbiot.co.za/" && /npm install/.test(hp.comment) && hp.hn.signedIn === true, hp.hn);
+  ok("…and a Sign in to Hacker News when the browser is known to be signed out of it", M.draftPreview(H, { dir, cfg: {}, cookie: (h) => ({ host: h[0], cookie: "user", found: false }) }).hn.signedIn === false && M.draftPreview(H, { dir, cfg: {}, cookie: () => ({ found: null }) }).hn.signedIn === true);
+  ok("the blog card is the whole post, its headline first", bp.platform === "blog" && /^Symbiot: one orb/.test(bp.body) && /Free to use/.test(bp.body));
+  const ran = [];
+  const ap = marketingDraftAnswer(H, "approved", { dir, running: () => false, run: (p) => (ran.push(p), { id: "j" }) });
+  const ans = readFileSync(join(dir, ".symbiot", "ANSWERS.md"), "utf8");
+  ok("approving the Show HN tells its agent to submit it itself, from the user's account: title, URL, first comment; never by hand", ap.ok && ran.join() === dir && /Submit it to Hacker News at 2026-10-20 15:00/.test(ans) && /URL https:\/\/symbiot\.co\.za\/(?!\?)/.test(ans) && /first comment/.test(ans) && /never a step for the user/.test(ans), ans.slice(0, 600));
+  ok("…and approves it with its first comment: a changed comment asks again", M.draftPreview(H, { dir, cfg: {} }).status === "approved" && (writeFileSync(join(d, "2026-10-20-hackernews.md"), hn("https://symbiot.co.za/?utm_source=hn2")), M.draftPreview(H, { dir, cfg: {} }).status === ""));
+  const re = M.draftPreview(H, { dir, cfg: {} });
+  ok("…its card says it was edited after you approved it", re.reopened && re.reopened.was === "approved", re.reopened);
+  const need = marketingState({ map: { marketing: dir }, deps: { repos: () => ({}), tasks: () => [], posts: () => ({ posts: [], done: [] }), agents: () => [], pending: () => [], files: () => M.draftFiles(dir, []) } }).needs.find((n) => n.rel === H);
+  ok("…and is back on the orb at once, saying so", need && /edited since you approved it/.test(need.text), need);
+  ok("a draft never answered isn't said to be edited", !M.draftPreview(B, { dir, cfg: {} }).reopened);
+  const { draftCardsIn, readReport } = await import("../reports.mjs");
+  const rep = "# Symbiot launch posts: last link and claim check\n\n| Post | Link |\n|---|---|\n| Blog post, 2026-10-20 08:00 | x |\n| Show HN, 2026-10-20 15:00 | y |\n\nTitle and text are in `drafts/symbiot/2026-10-20-hackernews.md`.\n\nApprove both drafts.\n";
+  ok("a report naming a draft's file carries that draft's card", draftCardsIn(rep, { dir }).join() === H, draftCardsIn(rep, { dir }));
+  ok("…a marketing report asking for approval, with a waiting draft's product and date in it, carries both cards", draftCardsIn(rep, { dir, lane: true }).sort().join() === [H, B].join(), draftCardsIn(rep, { dir, lane: true }));
+  ok("…a report that doesn't ask for approval, or names no waiting draft, carries none", draftCardsIn(rep.replace(/Approve both drafts\./, "All fine."), { dir, lane: true }).join() === H && draftCardsIn("# Notes about Steve 2026-10-20\napprove it", { dir, lane: true }).length === 0);
+  mkdirSync(join(dir, ".symbiot"), { recursive: true }); writeFileSync(join(dir, ".symbiot", "LINK-CHECK.md"), rep);
+  mkdirSync(join(M.MARKETING_DIR, "drafts", "symbiot"), { recursive: true }); writeFileSync(join(M.MARKETING_DIR, H), readFileSync(join(dir, H), "utf8")); // the lane's own, where a report's path points
+  const rr = readReport("x", { list: [{ id: "x", title: "t", name: "LINK-CHECK.md", file: join(dir, ".symbiot", "LINK-CHECK.md"), folder: dir, mtime: 1 }], mark: false });
+  ok("an opened report hands the UI those cards, to render with Approve, Reject and Change", Array.isArray(rr.cards) && rr.cards.join() === H, rr.cards);
+  ok("the brief: Show HN is submitted by the agent, no hand-offs a signed-in site could do", /never write \\?"submit by hand\\?"/i.test(M.marketingBrief([]).join("\n")) && /hands the user a step a connector or a signed-in site could do|never hand the user a step a connector or a signed-in site could do/i.test(M.marketingBrief([]).join("\n")));
+}
+
 console.log(`\n${fail ? "✗" : "✓"} marketing: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

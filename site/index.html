@@ -177,7 +177,7 @@ footer a{text-decoration:none}footer a:hover{color:var(--bone)}
       </div>
     </div>
     <figure class="clip">
-      <video src="clip-answer.mp4" poster="clip-answer.jpg" autoplay muted loop playsinline preload="metadata" aria-label="Symbiot's Home: three agents each ask a question with two answers; one is picked and that agent carries on"></video>
+      <video id="clip" poster="clip-answer.jpg" muted loop playsinline preload="metadata" aria-label="Symbiot's Home: three agents each ask a question with two answers; one is picked and that agent carries on"><source src="clip-answer.webm" type="video/webm"><source src="clip-answer.mp4" type="video/mp4"></video>
       <figcaption>An agent asks, you pick an answer, it carries on. (A made-up company: nothing real on show.)</figcaption>
     </figure>
   </div>
@@ -304,7 +304,7 @@ footer a{text-decoration:none}footer a:hover{color:var(--bone)}
 <footer>
   <div class="wrap">
     <span>© 2026 Symbiot</span>
-    <span><a href="https://github.com/GAWdessey/symbiot/blob/main/LICENSE">Elastic License 2.0</a> · <a href="https://github.com/GAWdessey/symbiot">GitHub</a> · <a href="https://github.com/GAWdessey/symbiot/blob/main/CHANGELOG.md">What's new</a> · <a href="https://github.com/GAWdessey/symbiot/issues">Report a problem</a></span>
+    <span><a href="https://github.com/GAWdessey/symbiot/blob/main/LICENSE">Elastic License 2.0</a> · <a href="https://github.com/GAWdessey/symbiot">GitHub</a> · <a href="https://github.com/GAWdessey/symbiot/blob/main/CHANGELOG.md">What's new</a> · <a href="https://github.com/GAWdessey/symbiot/issues">Report a problem</a> · <a href="/blog/">Blog</a></span>
   </div>
 </footer>
 
@@ -426,6 +426,17 @@ footer a{text-decoration:none}footer a:hover{color:var(--bone)}
     var why = document.getElementById("after-why"); why.textContent = g.why; why.hidden = !g.why;
     setTimeout(function () { dlg.showModal(); }, 300); // after the browser has started the download
   });
+})();
+</script>
+<script>
+// Play the demo clip only while it is on screen, and not at all under reduced motion.
+(function () {
+  var v = document.getElementById("clip");
+  if (!v || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  if (!("IntersectionObserver" in window)) { v.autoplay = true; return; }
+  new IntersectionObserver(function (es) {
+    es.forEach(function (e) { if (e.isIntersecting) v.play().catch(function () {}); else v.pause(); });
+  }, { threshold: 0.25 }).observe(v);
 })();
 </script>
 </body>

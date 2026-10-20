@@ -63,6 +63,16 @@ function addTask(text, repo, { after = "", finding = false } = {}) {
   const item = { id, text: line, ...(long ? { full } : {}), repo: repo || "", done: !!finding, ...(finding ? { finding: FINDING_NOTE } : {}), ts: Date.now() };
   t.unshift(item); saveTasks(t); return item;
 }
+// The model picker on a task card: auto (nothing) or one of MODEL_PICKS. The brief's line for
+// the task ends [model: x], which pickModel's override reads (agents.mjs routedModel).
+const MODEL_PICKS = ["local", "haiku", "sonnet", "opus", "fable"], MODEL_TAG = /\s*\[model:\s*\w+\s*\]/gi;
+function setTaskModel(id, model) {
+  const m = String(model || "").toLowerCase(), t = loadTasks(), it = t.find((x) => x.id === id);
+  if (!it) return { error: "not found" };
+  if (m && m !== "auto" && !MODEL_PICKS.includes(m)) return { error: "unknown model" };
+  if (m && m !== "auto") it.model = m; else delete it.model;
+  saveTasks(t); return it;
+}
 function toggleTask(id) { const t = loadTasks(); const it = t.find((x) => x.id === id); if (it) { it.done = !it.done; it.changed = Date.now(); saveTasks(t); } return it || { error: "not found" }; }
 // Done or not, as said (not flipped), for a change that can arrive late or twice
 // (your phone's, phone.mjs): at is when it was made, and a tick here since wins.
@@ -88,7 +98,7 @@ function cancelTask(id) {
 function restoreTask(id) { const t = loadTasks(); const it = t.find((x) => x.id === id); if (it) { it.archived = false; it.done = false; delete it.archivedAt; delete it.cancelled; if (it.finding) { it.kept = true; delete it.finding; } if (it.removedBy || it.dropped) { it.kept = true; delete it.removedBy; delete it.merged; delete it.dropped; } saveTasks(t); } return it || { error: "not found" }; }
 // Which task texts the agent checked off in a repo's .symbiot/TASKS.md
 function completedInRepo(repoPath) {
-  try { return readFileSync(join(repoPath, ".symbiot", "TASKS.md"), "utf8").split("\n").filter((l) => /^\s*-\s*\[x\]/i.test(l)).map((l) => l.replace(/^\s*-\s*\[x\]\s*/i, "").trim().toLowerCase()); }
+  try { return readFileSync(join(repoPath, ".symbiot", "TASKS.md"), "utf8").split("\n").filter((l) => /^\s*-\s*\[x\]/i.test(l)).map((l) => l.replace(/^\s*-\s*\[x\]\s*/i, "").replace(MODEL_TAG, "").trim().toLowerCase()); }
   catch { return []; }
 }
 
@@ -615,6 +625,11 @@ function refreshReview(path, had) {
   workingChangesAsync(path).then((wc) => { if (REVIEW_GIT.get(path) === had) REVIEW_GIT.set(path, { at: Date.now(), v: reviewOf(path, wc) }); }).catch(() => {}).finally(() => { had.busy = false; }); // forgotten meanwhile (an Approve): dropped
 }
 const forgetReview = () => REVIEW_GIT.clear();
+// Changes an agent made in a lane's folder for a job that lane handed over (daaymn's handoff to
+// ops, which edits daaymn's folder) aren't "changes without a task": lanes.mjs sets this to name
+// the handoff behind them ({ text, to, held? } or null), so they go up by themselves (shipHanded).
+let HANDED_LOOKUP = () => null;
+const setHandedLookup = (f) => { HANDED_LOOKUP = typeof f === "function" ? f : () => null; };
 // Where a card's changes came from (origin.mjs): an agent still making them, in this checkout
 // or from a folder of its own, or the run that left them. Kept like reviewGit.
 function originOf(path, files) {
@@ -639,11 +654,12 @@ function pendingReview() {
     const wc = shippable(path, reviewGit(path)); if (!wc.files.length) continue;
     const still = t.filter((x) => x.repo === repo && !x.done && !x.archived && !x.review), round = roundOf(path, still);
     const open = finishedOffer(path, still, round), st = state(repo, path, wc.files);
+    const handed = (() => { try { return HANDED_LOOKUP(path, wc); } catch { return null; } })();
     // leftover: no ticked task, no finished round, and no run saying it finished one. Still the
     // Workdesk's to approve or leave, with a line on where it came from (origin), but not waiting
     // on the user: Home's ember balls and "Only the user can do" leave it out (home.mjs)
     const leftover = !round && !open.some((x) => x.finished);
-    out.push({ repo, path, tasks: [], untasked: true, open, ...(round ? { round } : {}), ...(leftover ? { leftover: true } : {}), ...st, ...(st.atWork ? {} : { origin: originLine(originOf(path, wc.files), { open: open.some((x) => !x.round) }) }), ...wc });
+    out.push({ repo, path, tasks: [], untasked: true, open, ...(round ? { round } : {}), ...(handed ? { handed } : {}), ...(leftover ? { leftover: true } : {}), ...st, ...(st.atWork ? {} : { origin: originLine(originOf(path, wc.files), { open: open.some((x) => !x.round) }) }), ...wc });
   }
   // approved and committed, but it never got as far as a PR: its card stays, saying why, with a retry (sendAgain)
   for (const [repo, path] of Object.entries(map)) {
@@ -718,9 +734,15 @@ async function mergedAlready(path, branch, base, { gh = null, net = {} } = {}) {
   if (!git(path, ["rev-parse", "-q", "--verify", ref]).ok) return null;
   if (!git(path, ["merge-base", "--is-ancestor", "HEAD", ref]).ok && git(path, ["diff", "--quiet", "HEAD", ref, ...NOT_SYMBIOT]).ok) return { from: ref };
   if (!gh && (!origin.ok || !/github/i.test(origin.out) || !hasCmd("gh"))) return null;
-  const list = async (state) => { const r = await (gh || ghRun(path))(["pr", "list", "--head", branch, "--state", state, "--limit", "1", "--json", "headRefOid"]); try { return r.status === 0 ? JSON.parse(r.stdout) : null; } catch { return null; } };
+  const list = async (state) => { const r = await (gh || ghRun(path))(["pr", "list", "--head", branch, "--state", state, "--limit", "1", "--json", "headRefOid,number"]); try { return r.status === 0 ? JSON.parse(r.stdout) : null; } catch { return null; } };
   const merged = await list("merged"), head = String((merged && merged[0] && merged[0].headRefOid) || "");
-  if (!head || !git(path, ["merge-base", "--is-ancestor", head, "HEAD"]).ok) return null;
+  if (!head) return null;
+  // The merged PR's last commit may have gone up from elsewhere (another checkout, a fix made
+  // on GitHub), so it isn't here: fetched, by the branch or the PR's own ref. Without it, this
+  // branch passed for live and the next PR carried the merged one's commits again (#208 to #209, 19 Oct 2026).
+  const have = () => git(path, ["cat-file", "-e", head + "^{commit}"]).ok;
+  for (const r of [branch, `pull/${merged[0].number}/head`]) { if (have()) break; await gitAsync(path, ["fetch", "-q", "origin", r], 60000); }
+  if (!have()) return null;
   const since = git(path, ["rev-list", "--count", head + "..HEAD"]);
   if (!since.ok) return null;
   if (since.out === "0") return { from: ref };
@@ -1213,6 +1235,7 @@ function buildTasksMd(name, ctx, list) {
     "- Before you ask the user anything, read `.symbiot/ANSWERS.md` again, all of it (older answers are in `.symbiot/ANSWERS.archive.md`: search it when one may be older than those): they may have answered it already, for you or for another agent on the same work (Symbiot copies those in, under a heading naming that agent). If an answer there settles it, use it and don't ask; if it settles part, ask only the part left.",
     `- At most ${QUESTIONS_MAX} questions, under a \`## Questions\` heading. Each is a \`### \` heading, then a line of context, then exactly ${OPTIONS_SHOWN} options as \`- \` bullets, the one you recommend first, marked \`(recommended)\`. Symbiot shows only the first ${OPTIONS_SHOWN}; the user can always answer in their own words. When the only thing left is the user's go-ahead (it's all ready and nothing goes out until they say so), give one option instead, starting with what it does (\`- 🤖 Agent: send it to … now\`): it shows as a single button named for it (Send), and tapping it starts your next run.`,
     "- Judge the options before you ask. Most people pick the recommended option without weighing the other, and Symbiot works for a whole company (developers, sales, everyone), not one person, so the choice is really yours. Both options must be good routes to the best solution, never filler or one you wouldn't take. A skip or no option is a plain \"skip this part\", never a request for the user's personal details (their addresses, accounts or numbers). Each says in plain words, with no jargon, what it does and what it changes from then on for the project, the people working on it and the company. Recommend the one that's best for, in this order, the company, the people doing the work, then the task's goal. Base that on evidence you can check here (git history, tests, logs, how it's used, the answers so far), not on what's quickest, and give that evidence in the context line in a sentence.",
+    "- Write each question for someone who doesn't code: no file names, commands or config names (say what the thing is for), and say in plain words what is being decided, what each option means, and which you recommend and why. If the call is low-risk and easy to undo (a setting that can be re-tuned, a layout, a name, which of two fixes), don't ask: take your recommended option, say what you chose in your last message, and keep it easy to change later.",
     ONLY_YOU,
     ...(userStyleLine() ? ["- Writing to the user (questions, options, your last message): " + userStyleLine()] : []),
     "- A `👤 You:` answer holds the next run back until the user's step is done. If their step changes a file, name the file in backticks (`.env`, `~/.termux/termux.properties`): the next run starts once it changes.",
@@ -1246,7 +1269,8 @@ function pushTasks(filter) {
   const written = [], unresolved = [], connectors = connectorsLine(); // the same for every repo's run
   let reach = null; try { reach = laneReach(byName); } catch {} // what each lane reaches, for the handover rules
   for (const name of Object.keys(groups)) {
-    const list = uniqueTasks(groups[name].map((t) => t.text)).map((text) => ({ text })), path = name && byName[name]; // near-duplicates once
+    const picked = new Map(groups[name].filter((t) => t.model).map((t) => [t.text, t.model]));
+    const list = uniqueTasks(groups[name].map((t) => t.text)).map((text) => ({ text: picked.has(text) && !/\[model:/i.test(text) ? `${text} [model: ${picked.get(text)}]` : text })), path = name && byName[name]; // near-duplicates once
     if (!path || (path === MARKETING_DIR && !ensureMarketing(path))) { unresolved.push({ name: name || "(no repo)", count: list.length }); continue; }
     try {
       // Cheap, per-repo signals only — no full drift scan (that can be very slow
@@ -1272,4 +1296,4 @@ function pushTasks(filter) {
   return { empty: false, written, unresolved, handoff: handoffCmd() };
 }
 
-export { holdShip, SHIP_STALE, shipping, shippingPaths, workingChangesAsync, rebaseTask, sendAgain, forgetUnsent, unsentOf, readUnsent, unsentCard, repoTests, localRefused, forgetReview, gitFailed, taskPaths, addTask, toggleTask, setTaskDone, removeTask, cancelTask, restoreTask, FINDING_NOTE, completedInRepo, removalOf, applyRemovals, applyDrops, syncTasks, workingChanges, workingDiff, publishesOnMerge, unreleased, bumpOffer, learnNpm, releaseNeeded, releaseNotIn, withReleases, setVersion, changelogEntry, changelogItems, changelogSection, changelogLeaks, noteChangelog, releaseInput, shipWithBump, runSummary, saidFinished, pendingReview, commitSubject, shipChanges, commitText, autoMergeRepos, setAutoMerge, approveRepo, approveChanges, sendBack, TASK_ORDER, taskType, buildTasksMd, pushTasks, mergeWhenGreen };
+export { setHandedLookup, setTaskModel, MODEL_PICKS, holdShip, SHIP_STALE, shipping, shippingPaths, workingChangesAsync, rebaseTask, sendAgain, forgetUnsent, unsentOf, readUnsent, unsentCard, repoTests, localRefused, forgetReview, gitFailed, taskPaths, addTask, toggleTask, setTaskDone, removeTask, cancelTask, restoreTask, FINDING_NOTE, completedInRepo, removalOf, applyRemovals, applyDrops, syncTasks, workingChanges, workingDiff, publishesOnMerge, unreleased, bumpOffer, learnNpm, releaseNeeded, releaseNotIn, withReleases, setVersion, changelogEntry, changelogSection, noteChangelog, releaseInput, shipWithBump, runSummary, saidFinished, pendingReview, commitSubject, shipChanges, autoMergeRepos, setAutoMerge, approveRepo, approveChanges, sendBack, TASK_ORDER, taskType, buildTasksMd, pushTasks, mergeWhenGreen, changelogItems, changelogLeaks, commitText };

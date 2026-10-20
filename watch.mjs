@@ -215,7 +215,7 @@ async function briefOf(news, name, { chat = false, social = false } = {}) {
     `In at most ${social ? 4 : 3} short lines of plain text, first what needs them (and why, in a few words), then what can wait. ` + (chat ? CHAT_RULE : "") + (social ? SOCIAL_RULE : "") +
     `Name things by sender and subject so they can find them. Use only what's shown; never guess at what a message says beyond it. No preamble, no markdown.`;
   const line = (n) => (chat ? withFrom(n) : social && n.li ? `[${n.li === "message" ? "message" : n.type || "notification"}] ${n.text}` : social && /^Messaging\b/i.test(n.text) ? `[message] ${n.text}` : n.text);
-  const text = textOf(await write(system, `New on ${name}:\n${news.map((n) => "- " + line(n)).join("\n")}\n\nWhat needs me, and what can wait?`));
+  const text = textOf(await write(system, `New on ${name}:\n${news.map((n) => "- " + line(n)).join("\n")}\n\nWhat needs me, and what can wait?`, { kind: "triage" }));
   return text ? text.trim().slice(0, 600) : ""; // the model didn't answer: no brief, rather than its error as one
 }
 

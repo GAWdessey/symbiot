@@ -54,6 +54,9 @@ try {
   writeFileSync(TASKS, ""); writeFileSync(TASKS + ".bak", "{broken");
   const none = loadTasks();
   ok("with no good copy at all it starts empty, but keeps the broken file aside", none.length === 0 && aside(TASKS).length === 2, readdirSync(CFG));
+  // two set aside in the same millisecond each keep a copy (CI, 2026-10-19: the second took the first's place)
+  { const f = join(CFG, "twice.json"), now = Date.now; Date.now = () => 1000; try { for (let i = 0; i < 2; i++) { writeFileSync(f, "{torn " + i); readState(f); } } finally { Date.now = now; }
+    ok("two broken copies set aside in the same millisecond are both kept", aside(f).length === 2, aside(f)); }
   ok("a file that's just not there yet is no corruption", readState(join(CFG, "nothing.json")) === undefined && !readdirSync(CFG).some((n) => n.startsWith("nothing.json")));
 
   console.log("THE WRONG SHAPE — parses, but isn't what the file holds (15 Oct 2026)");

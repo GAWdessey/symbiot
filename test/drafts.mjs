@@ -113,7 +113,9 @@ try {
   // the WinLove card (2026-10-12), word for word: an option picked, nothing typed, and it came back "Pick or type at least one answer."
   const winQ = "Can I log in to the WinLove server read-only to check what's actually deployed?", winSkip = "skip it, the reply already asks the developer for the commit hash and git status";
   const win = card("act-win", winQ, ["👤 You (only you: a permission): allow the list in .symbiot/allowlist.proposed.json (recommended)", winSkip]);
-  writeFileSync(join(win.path, ".symbiot", "allowlist.proposed.json"), JSON.stringify({ permissions: { allow: ["Bash(ssh ubuntu@13.51.104.186 git log:*)"] } }));
+  // a host no computer knows (TEST-NET-3): ssh-keygen -F reads the real ~/.ssh, not the sandbox's, and on a PC that
+  // knows the server autoAllow answered the card by itself before it was pressed (2026-10-19)
+  writeFileSync(join(win.path, ".symbiot", "allowlist.proposed.json"), JSON.stringify({ permissions: { allow: ["Bash(ssh ubuntu@203.0.113.7 git log:*)"] } }));
   writeFileSync(join(CFG, "runs.json"), JSON.stringify([perm, own, gone, win]));
   await js("LQ.fresh=true;lqLoad(false)");
   const blobOf = (re) => `[...document.querySelectorAll('#lqdrops .lqblob')].find(function(b){return ${re}.test(b.textContent)})`;
@@ -146,6 +148,10 @@ try {
   // a redraw on another page doesn't take it away, nor what it said (CI, 0.66.4 publish, 2026-10-16: "no card")
   await js("LQ.needPage=(LQ.needPage||0)+1;LQ.fresh=true;lqLoad(false)"); await sleep(1500);
   ok("...and through a redraw it's still in view, saying why", await until(`(function(){var b=${blobOf("/restart the relay/")},st=b&&b.querySelector('.bst.err');return !!st&&/isn.t open any more/.test(st.textContent);})()`, 8000), await js(`(function(){var b=${blobOf("/restart the relay/")};return b?b.querySelector('.bst').outerHTML:'no card: '+JSON.stringify({page:LQ.needPage,you:(LQ.home.you||[]).map(function(y){return y.q})});})()`));
+  // a card that grows each time it's laid out (a held card's "Sending…" calls grew as it's drawn) lays the band out
+  // once, not again from inside: it ran out of stack on CI (0.66.10 publish, 2026-10-19)
+  const fits = await js("(function(){var b=lqBuild,t=LQ.needTall,n=0;window.lqBuild=function(){n++;if(n>40)throw new Error('laid out '+n+' times');LQ.needTall=-100;lqBlobFit();};try{LQ.needTall=-100;lqBlobFit();return n;}catch(e){return String(e);}finally{window.lqBuild=b;LQ.needTall=t;}})()");
+  ok("a card that grows as it's laid out lays the band out once, not again from inside", fits === 1, fits);
   ok("no errors on the page", !errors.length, errors);
 } catch (e) { ok("ran", false, String((e && e.stack) || e)); }
 await finish();

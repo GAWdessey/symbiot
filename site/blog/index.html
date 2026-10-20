@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Symbiot: one orb that knows what needs you</title>
+<meta name="description" content="Symbiot is a desktop app that hands tasks to your coding agent, checks what it did and writes the update nobody reads. You come in only for a sign-in, a decision or your OK.">
+<meta name="theme-color" content="#0B0C0E">
+<link rel="icon" type="image/svg+xml" href="/icon.svg">
+<meta property="og:title" content="Symbiot: one orb that knows what needs you">
+<meta property="og:description" content="Your coding agents work. You only do what only you can do.">
+<meta property="og:url" content="https://symbiot.co.za/blog/">
+<meta property="og:image" content="https://symbiot.co.za/og.png?v=2">
+<style>
+@font-face{font-family:Geist;src:url("/fonts/Geist-Variable.woff2") format("woff2");font-weight:100 900;font-display:swap}
+:root{--bg:#0B0C0E;--line:rgba(255,255,255,.08);--text:#C9CDD3;--bone:#F3F0EA;--faint:#8A9099;--amber:#F2A541;--sans:Geist,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;color-scheme:dark}
+@media (prefers-color-scheme: light){:root{--bg:#F4F2EE;--line:rgba(21,26,33,.09);--text:#3A414C;--bone:#11151B;--faint:#6B7380;--amber:#B86A0C;color-scheme:light}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:400 17px/1.7 var(--sans);-webkit-font-smoothing:antialiased}
+.wrap{width:min(680px,calc(100% - 32px));margin:0 auto}
+header{border-bottom:1px solid var(--line)}
+header .wrap{display:flex;align-items:center;gap:14px;height:64px}
+.brand{display:flex;align-items:center;gap:10px;text-decoration:none}
+.brand img{width:30px;height:30px;border-radius:8px}
+.brand span{font:600 14px var(--sans);letter-spacing:.32em;color:var(--bone)}
+header a.back{margin-left:auto;font-size:14px;color:var(--faint);text-decoration:none}
+header a.back:hover{color:var(--bone)}
+article{padding:56px 0 72px}
+.date{font-size:14px;color:var(--faint);margin:0 0 10px}
+h1{margin:0 0 28px;font:650 clamp(30px,5vw,42px)/1.15 var(--sans);letter-spacing:-.025em;color:var(--bone)}
+p{margin:0 0 20px}
+ul{margin:0 0 24px;padding-left:22px}
+li{margin-bottom:10px}
+a{color:var(--bone)}
+.cta{display:inline-block;margin-top:8px;padding:12px 24px;border-radius:999px;background:var(--bone);color:var(--bg);font-weight:600;text-decoration:none}
+footer{border-top:1px solid var(--line);padding:22px 0;font-size:14px;color:var(--faint)}
+footer a{color:var(--faint)}
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <a class="brand" href="/" aria-label="Symbiot home"><img src="/icon.svg" alt=""><span>SYMBIOT</span></a>
+    <a class="back" href="/">symbiot.co.za</a>
+  </div>
+</header>
+<main class="wrap">
+<article>
+  <p class="date"><time datetime="2026-10-20">20 October 2026</time></p>
+  <h1>Symbiot: one orb that knows what needs you</h1>
+  <p>If you already use a coding agent like Claude Code, you still spend your day deciding what to hand it, checking what it did and writing the update nobody reads.</p>
+  <p>Symbiot is a desktop app that does that part. It watches your projects, mail and chats, hands tasks to your coding agent, and the agent does them inside the right project and tells you what it did. You come in only for a sign-in, a decision or your OK. When something needs you, the orb glows amber.</p>
+  <ul>
+    <li>Nothing is pushed, published or deleted behind your back. It asks first.</li>
+    <li>Your weekly update, standup and to-do list are written from your real git activity, not memory.</li>
+    <li>Works with your Claude subscription (no API key), or OpenAI, Gemini or a local model via Ollama.</li>
+    <li>Windows, Mac and Linux, or <code>npm install -g symbiot</code>.</li>
+    <li>Free to use (one agent at a time, up to 3 projects, one connected inbox). Every install starts with 14 days of Pro, no key or card. Pro is US$12 a month or US$99 a year.</li>
+    <li>Licence keys are checked on your computer: no account, no server.</li>
+    <li>Source-available under the Elastic License 2.0.</li>
+  </ul>
+  <a class="cta" href="/?utm_source=blog&amp;utm_medium=launch-post&amp;utm_campaign=launch">Get Symbiot</a>
+</article>
+</main>
+<footer>
+  <div class="wrap">© 2026 Symbiot · <a href="https://github.com/GAWdessey/symbiot">GitHub</a></div>
+</footer>
+</body>
+</html>

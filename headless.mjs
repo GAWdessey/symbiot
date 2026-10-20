@@ -24,6 +24,7 @@ import { join, dirname, resolve as resolvePath } from "node:path";
 import { accessSync, constants as FS, mkdirSync, existsSync, statSync, readlinkSync, readFileSync, readdirSync, writeFileSync, copyFileSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { CONFIG_DIR, chromeBinary, loadConfig, saveConfig } from "./core.mjs";
+import { chromeSession } from "./chromeimport.mjs";
 import { loadScreens, addPageScreen, center, stitchPng, stitchListPng } from "./screens.mjs";
 
 const PROFILE = join(CONFIG_DIR, "browser");
@@ -285,7 +286,7 @@ function pipeWindow(proc, { every = WIN_EVERY } = {}) {
 // there and not expired. It needs no browser, so it can't be told "the Symbiot Browser is open",
 // and it's read from a copy taken with its -wal and -journal, so a cookie the window wrote just
 // before Done is in it. X was asked for four times while its auth_token sat there (2026-10-10).
-const SESSION_COOKIE = { "x.com": "auth_token", "twitter.com": "auth_token", "instagram.com": "sessionid", "facebook.com": "c_user", "reddit.com": "reddit_session", "linkedin.com": "li_at" };
+const SESSION_COOKIE = { "x.com": "auth_token", "twitter.com": "auth_token", "instagram.com": "sessionid", "facebook.com": "c_user", "reddit.com": "reddit_session", "linkedin.com": "li_at", "news.ycombinator.com": "user" };
 // The site among hosts with a known session cookie: { host, cookie, found } (found: true,
 // false, or null when the store can't be read here), or null if none is known.
 function sessionCookie(hosts, profile = PROFILE) {
@@ -358,6 +359,15 @@ const MAIN = "symbiot", MAX_TABS = 6;
 const tabKey = (who) => String(who || "").trim().slice(0, 300) || MAIN;
 function keepBrowserOpen(ms) { KEEP = Math.max(0, Number(ms) || 0); if (!KEEP && live && !live.busy) closeBrowser(); }
 const browserOpen = () => !!(live && !live.c.closed());
+// When an agent's step (a map, press, type) last used the browser. A watcher read
+// (readPage, readTexts, readLinkedIn) backs off for WATCH_GRACE after it, even once the
+// browser has closed, so it can't take the page between two slow steps of one sequence
+// and leave the next step on a fresh page (2026-10-13).
+const WATCH_GRACE = 10 * 60 * 1000;
+let lastAgentUse = 0;
+const agentRecent = () => Date.now() - lastAgentUse < WATCH_GRACE;
+const noteAgentUse = (t = Date.now()) => { lastAgentUse = t; };
+const watcherBusy = () => browserOpen() || agentRecent();
 // Don't leave it running when Symbiot exits (a restart, Ctrl+C).
 process.once("exit", () => { if (live && live.proc.exitCode === null) try { live.proc.kill("SIGKILL"); } catch {} });
 
@@ -494,6 +504,7 @@ function closeBrowser() { return shut(live); }
 // closed, so that agent's next action starts afresh, and the other agents' tabs stay
 // as they are; the whole browser only when it's gone.
 async function withPage(fn, keep = true, who = MAIN) {
+  if (keep) lastAgentUse = Date.now();
   if (live && live.c.closed()) await shut(live);
   who = tabKey(who);
   let b = live;
@@ -679,10 +690,16 @@ const collectJs = (whole, list = null) => `(() => { ${SCROLLER} ${DEEP} ${LABEL_
     const x = Math.max(CL.left, b.left), y = Math.max(CL.top, b.top), x2 = Math.min(CL.right, b.right), y2 = Math.min(CL.bottom, b.bottom);
     if (x2 - x < 4 || y2 - y < 4) continue;
     const st = getComputedStyle(e);
-    if (st.visibility === 'hidden' || st.pointerEvents === 'none' || +st.opacity === 0) continue;
+    // a radio or checkbox drawn by the site (Angular Material's, Google Cloud Console's) keeps the real
+    // input over its circle at opacity 0: it is the thing to press, so it stays
+    const bare = e.tagName === 'INPUT' && /^(checkbox|radio)$/i.test(e.type);
+    if (st.visibility === 'hidden' || st.pointerEvents === 'none' || (+st.opacity === 0 && !bare)) continue;
     // on top: what's at its centre is it, or inside it (not a banner over it)
     const top = deepAt((x + x2) / 2, (y + y2) / 2);
-    if (!top || !(top === e || deepContains(e, top) || deepContains(top, e))) continue;
+    // a site-drawn radio or checkbox has its own touch-target span over the input: a hit in the same
+    // radio host or label (Angular Material's mat-radio-button) is the control itself, not a banner
+    const host = bare && deepClosest(e, 'mat-radio-button,mat-checkbox,label,[role=radio],[role=checkbox]');
+    if (!top || !(top === e || deepContains(e, top) || deepContains(top, e) || (host && deepContains(host, top)))) continue;
     ${whole ? "if (y >= H - 200 && stuck(e)) continue; // stuck to the window's bottom: left out of the whole page's picture" : ""}
     const full = labelOf(e), at = inList ? Math.round(b.top + LIST.scrollTop) + '|' + kind + '|' + full : '';
     if (at && kept.at.has(at)) { kinds.set(e, kind); continue; }
@@ -893,7 +910,7 @@ const ASKS_PASSWORD = `!![...document.querySelectorAll('input[type=password], a,
 function readPage(input, { password = false } = {}) {
   const url = siteUrl(input);
   if (!url) return Promise.resolve({ error: "Give a site to read: a name (gmail), a host or a web address." });
-  return oneAtATime(() => browserOpen() ? { busy: true } : withPage(async (page) => {
+  return oneAtATime(() => watcherBusy() ? { busy: true } : withPage(async (page) => {
     await open(page, url);
     const info = await collect(page);
     let pw = false; if (password) try { pw = !!((await page.send("Runtime.evaluate", { expression: ASKS_PASSWORD, returnByValue: true })).result || {}).value; } catch {}
@@ -908,7 +925,7 @@ function readTexts(input, selector, { scrolls = 3 } = {}) {
   const url = siteUrl(input);
   if (!url) return Promise.resolve({ error: "Give a site to read: a name (gmail), a host or a web address." });
   const js = `(() => [...document.querySelectorAll(${JSON.stringify(String(selector || "body"))})].map((e) => String(e.innerText || '').trim()).filter(Boolean))()`;
-  return oneAtATime(() => browserOpen() ? { busy: true } : withPage(async (page) => {
+  return oneAtATime(() => watcherBusy() ? { busy: true } : withPage(async (page) => {
     await open(page, url);
     const texts = [];
     for (let i = 0; i <= scrolls; i++) {
@@ -945,7 +962,7 @@ const LI_READ = {
 };
 function readLinkedIn(kind) {
   const it = LI_READ[kind]; if (!it) return Promise.resolve({ error: "messages or notifications" });
-  return oneAtATime(() => browserOpen() ? { busy: true } : withPage(async (page) => {
+  return oneAtATime(() => watcherBusy() ? { busy: true } : withPage(async (page) => {
     await open(page, it[0]);
     const at = String((await evaluate(page, "location.href")) || it[0]);
     if (signInPage(at)) return { login: true, url: at };
@@ -1238,9 +1255,23 @@ const typeInto = async (page, at, text) => {
   await clickAt(page, at);
   await page.send("Runtime.evaluate", { expression: `(() => { ${DEEP} const e = deepActive(); if (!e) return;
     if (typeof e.select === 'function') e.select(); else if (e.isContentEditable) getSelection().selectAllChildren(e); })()` });
+  // A one-time code split into one-character boxes (GitHub's device page: 8 boxes
+  // and a hidden one holding the "-") takes it all at once, a character a box,
+  // the separator box kept: typed into the first box alone, the code was cut to
+  // one character, and box by box the hidden "-" box stayed empty ("not_found").
+  if (text.length > 1 && await spreadCode(page, text)) return;
   if (text) await page.send("Input.insertText", { text });
   if (text) await settleValue(page, at, text);
 };
+const spreadCode = async (page, text) => (await page.send("Runtime.evaluate", { returnByValue: true, expression: `(() => {
+  const a = document.activeElement; if (!a || a.tagName !== 'INPUT' || a.maxLength !== 1) return false;
+  const row = [...(a.form || document).querySelectorAll('input')].filter((e) => e.type === 'text' || e.type === 'tel' || e.type === 'number');
+  const boxes = row.slice(row.indexOf(a)); let t = ${JSON.stringify(text)};
+  const set = (e, v) => { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(e, v); e.dispatchEvent(new Event('input', { bubbles: true })); e.dispatchEvent(new Event('change', { bubbles: true })); };
+  for (const e of boxes) { if (!t) break;
+    if (e.maxLength !== 1 || e.value === '-') { const sep = /^[-\\s]/.test(t) ? t[0] : ''; if (sep) t = t.slice(1); if (sep || !e.value) set(e, sep || '-'); continue; }
+    t = t.replace(/^[-\\s]+/, ''); if (!t) break; set(e, t[0]); t = t.slice(1); }
+  return true; })()` })).result?.value === true;
 
 // React-controlled fields (GitHub's transfer form) can drop the typed text: the click
 // lands on a label or wrapper so nothing is focused, or React re-renders and resets
@@ -1528,7 +1559,26 @@ function uploadRegion(id, regionId, files, { confirmed = false, who = "" } = {})
 async function signIn(input) {
   const url = siteUrl(input);
   if (!url) return { error: "Give the site to sign in to: a name (gmail), a host or a web address." };
+  const got = await takeChromeSignIn(url); // already signed in to it in their own Chrome: use that session
+  if (got.ok) return got;
   return openSymbiotBrowser(url);
+}
+// The user's own Chrome sign-in for a site, put into the Symbiot Browser's profile: { ok, imported, from }
+// once the site loads signed in, else { ok: false, reason } and the caller falls back to the Sign in window.
+// `session` and `run` are for tests.
+async function takeChromeSignIn(url, session = chromeSession, run = null) {
+  const host = hostOf(url), s = session(host);
+  if (!s.cookies.length) return { ok: false, reason: s.reason };
+  if (watcherBusy() && !run) return { ok: false, reason: "the browser is busy" };
+  try {
+    const r = await (run || ((fn) => oneAtATime(() => withPage(fn, false))))(async (page, b) => {
+      await b.c.send("Storage.setCookies", { cookies: s.cookies });
+      await open(page, url);
+      return signInPage(String((await evaluate(page, "location.href")) || url));
+    });
+    if (r) return { ok: false, reason: "Chrome's sign-in for this site has expired" };
+    return { ok: true, imported: s.cookies.length, from: s.from, next: "Signed in from your Chrome's sign-in: map the page again." };
+  } catch (e) { return { ok: false, reason: String((e && e.message) || e) }; }
 }
 
 // ---- the Symbiot Browser --------------------------------------------------------
@@ -1649,4 +1699,4 @@ function watchWindow({ every = 2000, start = 30000 } = {}) {
   if (WATCH.unref) WATCH.unref();
 }
 
-export { pipeWindow, saveSessions, showScreen, fillForm, verifyPage, sessionCookie, historyPage, SESSION_COOKIE, tabKey, siteUrl, browserArgs, sandboxProxy, reducedUa, windowUa, mapPage, wholePage, readPage, readTexts, readLinkedIn, LI_READ, pagePicture, pageClip, CLIP, isSend, pressRegion, typeRegion, chooseRegion, uploadRegion, uploadFiles, attachFiles, FILE_BOX, scrollPage, SCROLLS, signIn, keepBrowserOpen, closeBrowser, browserOpen, keepSessions, SESSION_KEEP, SESSIONS, loadSessions, trustedSites, isTrusted, trustSite, untrustSite, PROFILE , openSymbiotBrowser, closeSymbiotBrowser, onBrowserClosed, scratchPage, open as openPage, evaluate, SCROLLER, watchWindow, windowOpen, lockHolder, setBrowserHub , browserHub };
+export { takeChromeSignIn, typeInto, watcherBusy, WATCH_GRACE, noteAgentUse, pipeWindow, saveSessions, showScreen, fillForm, verifyPage, sessionCookie, historyPage, SESSION_COOKIE, tabKey, siteUrl, browserArgs, sandboxProxy, reducedUa, windowUa, mapPage, wholePage, readPage, readTexts, readLinkedIn, LI_READ, pagePicture, pageClip, CLIP, isSend, pressRegion, typeRegion, chooseRegion, uploadRegion, uploadFiles, attachFiles, FILE_BOX, scrollPage, SCROLLS, signIn, keepBrowserOpen, closeBrowser, browserOpen, keepSessions, SESSION_KEEP, SESSIONS, loadSessions, trustedSites, isTrusted, trustSite, untrustSite, PROFILE , openSymbiotBrowser, closeSymbiotBrowser, onBrowserClosed, scratchPage, open as openPage, evaluate, SCROLLER, watchWindow, windowOpen, lockHolder, setBrowserHub , browserHub };

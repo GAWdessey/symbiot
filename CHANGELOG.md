@@ -2,14 +2,49 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one), for anyone who installs the app: what changed in it, never whose work it was (no projects, people, accounts, services, run ids or task wording of the person who made it). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.66.12 — 2026-10-20
+
+- **A stalled agent is dealt with for you.** When a run makes no progress for much longer than it usually takes, Symbiot stops it and starts it once more from a note saying where it got stuck, keeping its changes. If it stalls again, Home shows one urgent card naming the agent and the step it stuck on, instead of a quiet "no progress" label.
+- **Changes with no ticked task say where they came from.** While an agent is still editing a checkout, the Workdesk shows it at work instead of offering its half-done changes for approval. Changes left behind say which run left them and when, and they no longer count as waiting on you on Home.
+- **A step that's already settled no longer holds its project back.** One whose card you skipped or dismissed, or that asked for a key you've since pasted, stops counting as waiting on you, and its agent is told where the key is.
+- **Someone new gets a first step on Home.** With projects found but no tasks yet, Home offers to have their agent look over the project they worked on last and suggest what to do first, changing nothing.
+- **Ordinary words are no longer taken for passwords.** A word with an apostrophe or an id shaped like a UUID stays in your chat and tasks instead of being moved into the vault, and ones moved that way before are put back where they were. Keys made of dot-separated parts are caught as keys.
+- **A card can have a single button**, such as Send, when all it waits on is your go-ahead.
+- **Approving a content plan in Marketing marks it agreed**, instead of asking an agent to post it somewhere.
+- An approved post with no time of its own goes on the next free day, keeping to one post a day, instead of going out at once.
+- "Deploy it?" is asked only when a change touches the files the deploy actually runs for.
+- **A Pro subscription's key lasts as long as the subscription**, so a monthly customer pastes it once instead of every month.
+- `symbiot app --fresh` walks through first-run setup the way someone new sees it.
+
 ## 0.66.11 — 2026-10-19
 
-- Add a "From your phone" section to [saved: password] site (`site/index.html`, live at https://symbiot.co.za), between the Install section and the Free and Pro section (`#pro`).
+- **No more asks to sign in to a site in Symbiot's browser just so an agent can read it.** Agents use the site's API, its command line or a connector instead, and ask you only for a key they can't find. Sites whose sign-ins that browser can't hold get no Sign in button. A sign-in you already did that still doesn't work isn't asked about again: Home says the browser can't hold it and the agent takes the API route.
+- **A password typed in chat without "password:" in front of it is caught too**, for example right after an email address, and kept in Symbiot's vault instead of the chat history. `symbiot secret scrub` goes through what was stored before and does the same.
+- **Approving shows on the card while it runs**, and the phone can't start a second approve of the same work. A branch that's already on GitHub is checked against main before more goes up on it, so a clash is caught before the pull request opens. The deploy question says when the merge is only queued, not done.
+- **A report's progress log stays out of the Workdesk.** Lines that only say how a job went ("…: done", "(update, 14:50): …") are kept as findings, not filed as new jobs.
+- **The website has a "From your phone" section**: approving work from your phone, in three steps, with the Android app link.
+
+## 0.66.10 — 2026-10-19
+
+- **No more offers to answer mail that can't be answered.** Home no longer offers to draft a reply to no-reply senders, GitHub and CI notifications, receipts, alerts or newsletters. Before, a single CI failure email showed up as "draft a response for 1 email".
+- **Commit messages and pull requests stay free of private details.** Approve titles a commit and its PR from the tasks' first sentences and leaves out any that name your projects, people, servers, home folder or run ids. Those stay in Symbiot. The same check already guards the release notes.
+- **Approve starts a fresh branch once a branch's PR has merged**, even when that PR's last commit was pushed from somewhere else, such as another checkout or a fix made on GitHub. Before, Approve treated the branch as still live, so the next PR carried the merged PR's commits again and conflicted with main.
+- **Home no longer locks up when a card you've answered is drawn again while it's still sending.** The card's "Sending…" made Home redo its layout from inside the layout itself, over and over, until the page stopped responding.
+- **A damaged settings or task file is always kept for you.** Two set aside in the same moment could overwrite each other; each now gets a name of its own.
 
 ## 0.66.9 — 2026-10-19
 
-- Fix a Symbiot flaw: Symbiot offers to draft replies to emails that don't need one.
-- Keep Approve's commit and pull request text free of private details too.
+- **A usage meter for your AI.** A corner indicator shows how much of Claude's 5-hour and weekly limits the agents have used, read from Claude Code's own rate-limit report, with the reset time. When a limit is hit it turns red, says when Claude is back, and pauses the agents until then.
+- **Changes a lane makes for another lane ship by themselves.** When one lane hands work to another and that work changes code, Approve no longer has to come from you each time. Symbiot ships it and links it to the handover. It still waits for you when the change holds a secret: a keystore, a `.env` file, a private key or a password.
+- **`symbiot screens` can press radio buttons**, including Angular Material ones, and fill in the fields they reveal. Before, a choice like "Android apps" on a cloud console's settings page wasn't on the map at all.
+- **Pick the model for a task, or leave it on Auto.** A task can be set to a local model, Haiku, Sonnet, Opus or Fable. On Auto, a routine job runs on a smaller model. A run on Sonnet that ends in an error, or does nothing, is tried again once on Opus.
+- **Marketing sorts drafts properly.** A blog post or Hacker News submission is a post with its own card and Approve, not a document. Approving a Show HN has its agent submit it from your account with its first comment. If you change the post after approving it, it asks again.
+- **A report that asks you to approve drafts shows those drafts' cards**, so there's something to press. The Reports page's "Read, open actions" tab no longer fills with lines that ask for nothing, or with actions a later task already covers.
+- **Your Chrome sign-ins carry over.** An agent that hits a sign-in page on a site you're already signed in to in your everyday Chrome uses that session, instead of asking you to sign in again. Nothing is written to Chrome's profile, and nothing leaves your computer.
+- A command-line tool's login (gh, gcloud, wrangler…) for a site that's signed in in the Symbiot Browser is started by the agent, not handed to you.
+- **Permission cards, per-run phases and per-lane models.** A permission you grant on a card holds for that lane. Each run shows which phase it's in. A lane can keep its own model in `lanes.json`.
+- An agent asking for your OK now gets a card with Go ahead on it. Before, its card told you to press a button somewhere else.
+- Verification codes typed into one-box-per-character fields are now spread one character per box.
 
 ## 0.66.8 — 2026-10-19
 

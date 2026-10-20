@@ -141,7 +141,8 @@ const SINCE_WEEK = Number(flag("since", "7"));
 const BASE = scanBase();
 
 async function cmdSetupLocal() {
-  const model = flag("model", null) || recommendModels(detectHardware()).best;
+  // qwen3:8b: the model the per-job routing (route.mjs) was benchmarked on; 8 GB of VRAM fits one resident 8B model
+  const model = flag("model", null) || "qwen3:8b";
   if (!hasOllama()) {
     const inst = ollamaInstall();
     console.log("\n" + c.y("Ollama isn't installed") + c.d(" — the free, private local-model runner.") + "\n");
