@@ -3424,7 +3424,10 @@ if(el.classList)el.classList.add('on');if(el.style){el.style.width=w+'px';el.sty
 return LQ_NEEDY-30+(el.offsetHeight||(48+Math.ceil(ns.length/(two?2:1))*58))+24;}
 // a blob's top sits 4px above LQ_NEEDY and the band's bottom LQ_NEEDY+tall+20: mh-8 leaves 12px between
 function lqBlobH(){var m=0,el=$('lqdrops');if(el&&el.querySelectorAll)el.querySelectorAll('.lqblob').forEach(function(b){if(b.offsetHeight>m)m=b.offsetHeight;});return m;}
-function lqBlobFit(){if(LQ.needTall==null||LQ.scene==='work')return;var mh=lqBlobH(),want=Math.max(LQ.needEst||0,mh?mh-8:0);if(Math.abs(want-LQ.needTall)>2)lqBuild();}
+// Not from inside its own lay-out: a held card says "Sending…" again as it's drawn, its
+// grew came back here and the band laid out over and over until the stack ran out (CI,
+// 0.66.10 publish, 2026-10-19). The setTimeout at the end of lqLabels measures it after.
+function lqBlobFit(){if(LQ.needTall==null||LQ.scene==='work'||LQ.fitting)return;var mh=lqBlobH(),want=Math.max(LQ.needEst||0,mh?mh-8:0);if(Math.abs(want-LQ.needTall)>2){LQ.fitting=true;try{lqBuild();}finally{LQ.fitting=false;}}}
 function lqNeedPage(){LQ.needPage=(LQ.needPage||0)+1;lqAct();lqBuild();}
 function lqArchive(){lqPool('tasks');LQ.arch=true;if(typeof loadArchived==='function')loadArchived();}
 function lqOrg(id,k){var h=k*977;id=String(id);for(var i=0;i<id.length;i++)h=(h*31+id.charCodeAt(i))|0;return ((h>>>0)%1000)/1000;}

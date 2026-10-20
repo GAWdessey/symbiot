@@ -60,7 +60,8 @@ function readState(file, isValid = null) {
   let text; try { text = readFileSync(file, "utf8"); } catch { return undefined; } // none yet
   const parse = (s) => { let v; try { v = JSON.parse(s); } catch { return undefined; } return !isValid || isValid(v) ? v : undefined; };
   const v = parse(text); if (v !== undefined) return v;
-  const aside = `${file}.corrupt-${Date.now()}`;
+  // a name of its own: two set aside in the same millisecond, the second one took the first's place (CI, 2026-10-19)
+  let aside = `${file}.corrupt-${Date.now()}`; for (let n = 2; existsSync(aside); n++) aside = `${file}.corrupt-${Date.now()}-${n}`;
   try { renameSync(file, aside); } catch {}
   let back; try { back = parse(readFileSync(file + ".bak", "utf8")); } catch {}
   if (back !== undefined) try { copyFileSync(file + ".bak", file); } catch {}
