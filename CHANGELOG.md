@@ -2,6 +2,12 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one), for anyone who installs the app: what changed in it, never whose work it was (no projects, people, accounts, services, run ids or task wording of the person who made it). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.66.13 — 2026-10-20
+
+- **Your own Chrome's sign-ins now carry over on Linux without anything extra installed.** Symbiot reads Chrome's key from the system keyring through Python when `secret-tool` isn't there. Before, nothing ever came across on a stock Pop!_OS or Ubuntu.
+- **Agents stop at fewer sign-in pages.** When a page on one of your linked sites lands on its login page, Symbiot first takes your Chrome's sign-in for that site and opens it again. It asks you only if that doesn't work. It tries once per site every ten minutes, and never for a site you haven't linked.
+- **One Chrome profile, the one agents act as.** Symbiot takes sign-ins only from Chrome's first profile, or the one set in `chromeProfile` (by folder or by the name Chrome shows), never from whichever profile happens to have one. Profiles past the fourth are found too.
+
 ## 0.66.12 — 2026-10-20
 
 - **A stalled agent is dealt with for you.** When a run makes no progress for much longer than it usually takes, Symbiot stops it and starts it once more from a note saying where it got stuck, keeping its changes. If it stalls again, Home shows one urgent card naming the agent and the step it stuck on, instead of a quiet "no progress" label.
