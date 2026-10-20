@@ -59,4 +59,59 @@ const page = D.afterShip(site, "site", "https://github.com/x/site/pull/211", "me
 ok("…one that changed a site file is asked about, as before", page.asked && page.state === "pending", page);
 ok("…and when GitHub can't say which files, it's asked as before", D.afterShip(site, "site", "https://github.com/x/site/pull/212", "merged", { files: null }).asked === true);
 ok("the PR's files come from gh", JSON.stringify(D.prFiles(site, 5, () => ({ status: 0, stdout: JSON.stringify({ files: [{ path: "a.mjs" }, { path: "site/i.html" }] }) }))) === '["a.mjs","site/i.html"]' && D.prFiles(site, 5, () => ({ status: 1, stdout: "" })) === null);
+
+{
+// 20 Oct 2026 review, proposal 4: 98 deploy tasks in 11 days, ops improvising the same ssh deploy each time
+console.log("A RUNBOOK — the command, a live check, a standing yes, live only after a real check");
+ok("a runbook needs its exact command", D.setRunbook("dl", { where: "sts-prod" }).error && /--how/.test(D.setRunbook("dl", { where: "sts-prod" }).error));
+ok("…and a standing yes needs a live check first", /live check/.test(D.setRunbook("dl", { where: "sts-prod", how: "ssh sts-prod ~/dl/deploy.sh", policy: "always" }, { user: true }).error || ""));
+const rb = D.setRunbook("dl", { where: "sts-prod", how: "ssh sts-prod ~/dl/deploy.sh", url: "https://dl.example", check: "https://dl.example/health", expect: "ok" });
+ok("written once, it asks before each deploy until you say otherwise", rb.ok && rb.runbook.policy === "ask" && D.runbookOf("dl").how === "ssh sts-prod ~/dl/deploy.sh" && loadConfig().deploy.dl.check === "https://dl.example/health", rb);
+const dl = lane("dl", { "package.json": "{}" }), PR = "https://github.com/x/dl/pull/30";
+saveTasks([...loadTasks(), { id: "d1", text: "fix the invite", repo: "dl", archived: true, done: true, pr: PR, approvedAt: Date.now() }]);
+const ask = D.onMerged(dl, "dl", PR);
+const qs = readFileSync(join(dl, ".symbiot", "QUESTIONS.md"), "utf8");
+ok("merged, with policy ask: \"Deploy it?\", offering to deploy after every merge from now on", (await ask).asked && /### Deploy dl \(PR #30\) to sts-prod/.test(qs) && /deploy it now with its runbook, and after every merge from now on, each checked on https:\/\/dl\.example\/health \(recommended\)/.test(qs) && /and ask again next time/.test(qs), qs);
+const acts = [], act = (brief, o) => { acts.push({ brief, o }); return { ok: true, dir: join(HOME, ".config", "symbiot", "drafts", "act-dep" + acts.length) }; };
+const ans = await D.onDeployAnswer("dl", "Deploy dl (PR #30) to sts-prod (https://dl.example)?", "🤖 Agent: deploy it now with its runbook, and after every merge from now on, each checked on https://dl.example/health", { act });
+ok("…the standing yes: deployed now, and from then on", ans.ok && D.runbookOf("dl").policy === "always" && acts.length === 1, [ans, D.runbookOf("dl")]);
+ok("…handed to ops with the runbook's command as written, for the lane it's for", /on sts-prod, run `ssh sts-prod ~\/dl\/deploy\.sh`/.test(acts[0].brief) && /Don't improvise/.test(acts[0].brief) && acts[0].o.lane === "dl", acts[0]);
+ok("…and the tasks say it's deploying, not live", loadTasks().find((t) => t.id === "d1").liveState === "pending", loadTasks().find((t) => t.id === "d1"));
+ok("the same deploy isn't started twice", (await D.startDeploy("dl", PR, { act })).already && acts.length === 1);
+const run0 = await D.deployTick({ running: () => true, fetchFn: async () => { throw new Error("not yet"); } });
+ok("while its run goes, nothing is checked", run0.find((x) => x.repo === "dl").state === "running");
+const fetched = [];
+await D.deployTick({ running: () => false, fetchFn: async (u) => { fetched.push(u); return { ok: true, status: 200, text: async () => "status: ok" }; } });
+const t1 = loadTasks().find((t) => t.id === "d1");
+ok("its run ended: Symbiot checks the live address itself, and only then is it live", fetched.join() === "https://dl.example/health" && t1.liveState === "live" && /checked on https:\/\/dl\.example\/health/.test(t1.liveNote), [fetched, t1]);
+saveTasks([...loadTasks(), { id: "d2", text: "fix the menu", repo: "dl", archived: true, done: true, pr: "https://github.com/x/dl/pull/31", approvedAt: Date.now() }]);
+const st = await D.onMerged(dl, "dl", "https://github.com/x/dl/pull/31", { act });
+ok("with the standing yes, the next merge is deployed with no question", st.ok && acts.length === 2 && !/PR #31/.test(readFileSync(join(dl, ".symbiot", "QUESTIONS.md"), "utf8")), st);
+await D.deployTick({ running: () => false, fetchFn: async () => ({ ok: true, status: 200, text: async () => "maintenance" }) });
+const t2 = loadTasks().find((t) => t.id === "d2");
+ok("a check that answers without what it should: not live, and it says why", t2.liveState === "failed" && /without "ok"/.test(t2.liveNote), t2);
+// a standing yes is the user's only: an agent (the CLI ops runs) can't give it, nor keep it past a change
+const yes = () => D.setRunbook("dl", { policy: "always" }, { user: true });
+const self = D.setRunbook("dl", { policy: "ask" }) && D.setRunbook("dl", { policy: "always" });
+ok("anyone but the user setting deploy-after-every-merge is refused, and it still asks", /user's to switch on/.test(self.error || "") && D.runbookOf("dl").policy === "ask", [self, D.runbookOf("dl")]);
+yes(); const how = D.setRunbook("dl", { how: "ssh sts-prod ~/dl/deploy2.sh" });
+ok("a new deploy command on a runbook with the standing yes: back to asking", how.ok && how.dropped && D.runbookOf("dl").policy === "ask" && D.runbookOf("dl").how === "ssh sts-prod ~/dl/deploy2.sh", how);
+yes(); const where = D.setRunbook("dl", { where: "lenovo" });
+ok("…and so is a new host", where.dropped && D.runbookOf("dl").policy === "ask", where);
+yes(); const same = D.setRunbook("dl", { where: "lenovo", how: "ssh sts-prod ~/dl/deploy2.sh", expect: "ok" });
+ok("…while the same command on the same host, or another live check word, keeps it", same.ok && !same.dropped && D.runbookOf("dl").policy === "always", same);
+const both = D.setRunbook("dl", { how: "ssh sts-prod ~/dl/deploy.sh", where: "sts-prod", policy: "always" }, { user: true });
+ok("the user's own yes with a new command keeps it on", both.ok && D.runbookOf("dl").policy === "always" && D.runbookOf("dl").where === "sts-prod", both);
+{
+  const { spawnSync: sp } = await import("node:child_process");
+  D.setRunbook("dl", { policy: "ask" });
+  const set = sp(process.execPath, [new URL("../index.mjs", import.meta.url).pathname, "deploy", "set", "dl", "--policy", "always"], { encoding: "utf8", env: { ...process.env, HOME, SYMBIOT_NO_APP: "1" } });
+  ok("symbiot deploy set --policy always is refused, and changes nothing", set.status === 1 && /user's to switch on/.test(set.stderr) && D.runbookOf("dl").policy === "ask", [set.status, set.stderr]);
+}
+D.setRunbook("dl", { policy: "never" });
+ok("policy never: a merge asks nothing and deploys nothing", (await D.onMerged(dl, "dl", "https://github.com/x/dl/pull/32", { act })).skipped === "never" && acts.length === 2);
+const { spawnSync } = await import("node:child_process");
+const cli = spawnSync(process.execPath, [new URL("../index.mjs", import.meta.url).pathname, "deploy"], { encoding: "utf8", env: { ...process.env, HOME, SYMBIOT_NO_APP: "1" } });
+ok("symbiot deploy lists it, in a line", /dl: on sts-prod, `ssh sts-prod ~\/dl\/deploy\.sh` · live https:\/\/dl\.example · check https:\/\/dl\.example\/health for "ok" · never deploys/.test(cli.stdout), cli.stdout + cli.stderr);
+}
 console.log(`\n${pass} passed, ${fail} failed`); process.exit(fail ? 1 : 0);

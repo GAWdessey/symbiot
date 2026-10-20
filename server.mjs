@@ -17,35 +17,36 @@ import { readFileSync, existsSync, mkdirSync, writeFileSync, readdirSync, statSy
 import { createServer } from "node:http";
 import { randomBytes, createHash } from "node:crypto";
 import { EMBEDDED_UI } from "./ui.mjs";
-import { VERSION, LATEST_VERSION, REGISTRY, semverGt, checkLatest, CONFIG_PATH, loadConfig, saveConfig, moveSecrets, loadTasks, hasCmd, chromeBinary, CONFIG_DIR, takeAppLock, releaseAppLock } from "./core.mjs";
-import { onRunEnd, onAnswered, shSingle, handoffCmd, setHandoffCmd, grantAgent, runHandoff, track, detectHandoffs, connectorsInfo, linkReach, answerQuestions, skipIdea, agentsList, startWaiting, parkLane, parkedPaths, autoAllowSweep, continueLanes, trustFull, readLastWords, sandboxState, HANDOFFS, runningHandoff, runsTick } from "./agents.mjs";
+import { VERSION, LATEST_VERSION, REGISTRY, semverGt, checkLatest, CONFIG_PATH, loadConfig, saveConfig, moveSecrets, loadTasks, hasCmd, chromeBinary, CONFIG_DIR, takeAppLock, releaseAppLock, writeJsonAtomic } from "./core.mjs";
+import { onRunEnd, onAnswered, shSingle, handoffCmd, setHandoffCmd, grantAgent, runHandoff, track, detectHandoffs, connectorsInfo, linkReach, answerQuestions, skipIdea, agentsNow, startWaiting, parkLane, parkedPaths, autoAllowSweep, continueLanes, trustFull, readLastWords, sandboxState, HANDOFFS, runningHandoff, runsTick } from "./agents.mjs";
 import { PROVIDERS, resolveProvider, connectProvider, detectHardware, recommendModels, hasOllama, ollamaInstall, ensureOllama, useOllamaModel } from "./ai.mjs";
 import { SCAN, SCAN_TIMEOUT_MS, scanRoots, scanHome, addScanRoot, removeScanRoot, mapNow, nodeDetail, repoPathMap, laneMap, setScanOptions, refreshRepos, REPO_STATE, reposState } from "./scan.mjs";
 import { computeDrift } from "./drift.mjs";
-import { afterShip, markLive } from "./deploy.mjs";
+import { afterShip, markLive, deployTick } from "./deploy.mjs";
 import { quotaState } from "./quota.mjs";
 import { laneCap, mergeEnded, DEFAULT_CAP } from "./parallel.mjs";
-import { addTask, setTaskModel, toggleTask, removeTask, cancelTask, restoreTask, syncTasks, taskType, pushTasks, pendingReview, workingDiff, learnNpm, withReleases, releaseInput, approveRepo, approveChanges, sendBack, setAutoMerge, mergeWhenGreen, sendAgain, forgetUnsent, shippingPaths } from "./tasks.mjs";
+import { addTask, setTaskModel, toggleTask, removeTask, cancelTask, restoreTask, syncTasks, taskType, pushTasks, pendingReview, workingDiff, learnNpm, withReleases, releaseInput, approveRepo, approveChanges, sendBack, setAutoMerge, mergeWhenGreen, shipJob, shipJobOf, sendAgain, forgetUnsent, shippingPaths } from "./tasks.mjs";
 import { repoReview, repoSuggest, folderSuggest, taskChat, clearTaskChat, mailState, setMail, sentMail, produce, releaseNotes } from "./writeups.mjs";
 import { denyList } from "./outward.mjs";
 import { listSecrets, getSecret, saveSecret, markUsed, deleteSecret, scrubStored, repairFalseSaves } from "./vault.mjs";
 import { SCREENS_SOCK, sockGate, loadScreens, screenImage, captureScreen, splitScreen, listMonitors, allowScreenshots, importScreen, setRegions, renameScreen, removeScreen, blueprint, clickRegion } from "./screens.mjs";
 import { sessionCookie, mapPage, wholePage, pressRegion, typeRegion, chooseRegion, fillForm, verifyPage, uploadRegion, scrollPage, signIn, keepBrowserOpen, isTrusted, trustedSites, trustSite, untrustSite, openSymbiotBrowser, closeSymbiotBrowser, onBrowserClosed, setBrowserHub, siteUrl, browserHub, windowOpen } from "./headless.mjs";
-import { weeklyState, setWeekly, runWeekly, startWeekly, autostartState, setAutostart, installLauncher, iconSvg, setLauncherLook } from "./desktop.mjs";
+import { weeklyState, setWeekly, runWeekly, startWeekly, autostartState, setAutostart, installLauncher, iconSvg, setLauncherLook, desktopNotify } from "./desktop.mjs";
 import { markNews, newsSince, watchState, addWatch, setEvery, removeWatch, clearNews, seenWatch, checkWatch, startWatches, setBrief, draftReply, openChat, watchBoard, boardChat, clearBoardChat } from "./watch.mjs";
-import { linksState, linkSite, checkLink, unlinkSite, addSite, signInAsked, sitesCheck } from "./links.mjs";
+import { setLinkAct, linksState, linkSite, checkLink, unlinkSite, addSite, signInAsked, sitesCheck } from "./links.mjs";
 import { testWeeks, testInstalls, postsState, draftPosts, approvePost, editPost, skipPost, voiceFromLinkedIn, addMedia, removeMedia, mediaFile, mediaDir, pictureOfPage, clipOfPage, openUrl } from "./post.mjs";
 import { mindState, forget } from "./mind.mjs";
-import { lanesTick, shipHanded, lanesState, partlyDone, handingOf, loadLedger, orcaRelink, shareAnswer } from "./lanes.mjs";
+import { lanesTick, shipHanded, lanesState, partlyDone, handingOf, loadLedger, orcaRelink, shareAnswer, projectOf } from "./lanes.mjs";
+import { archivedTasks } from "./sweep.mjs";
 import { sentTick } from "./sentmail.mjs";
 import { keepFacts, skipFacts, awaitTick, awaitingState, stopWaiting } from "./handback.mjs";
 import { adaptState, noteUse } from "./adapt.mjs";
-import { dismissCard, reportIdeasAdd, reportIdeasDismiss, reportAsk, reportDraftAnswer, homeState, homeAsk, homeAnswer, homeNext, workScene, forgetWork, workGo, workTick, firstSteps, marketingState, marketingGo, marketingDraftAnswer, marketingTask, moveToMarketing, onboarding, setOnboarding, startOnboarding, phoneSetupFirst } from "./home.mjs";
+import { dismissCard, reportIdeasAdd, reportIdeasDismiss, reportAsk, reportDraftAnswer, homeState, homeTick, homeAsk, homeAnswer, homeNext, workScene, forgetWork, workGo, workTick, firstSteps, marketingState, marketingGo, marketingDraftAnswer, marketingTask, moveToMarketing, onboarding, setOnboarding, startOnboarding, phoneSetupFirst } from "./home.mjs";
 import { MARKETING_DIR, MARKETING, draftPreview, laneMedia, displayName, setDraftMedia } from "./marketing.mjs";
 import { trays, trayMedia, setBlur, addBlur, removeBlur, setReviewed, renderCapture } from "./tray.mjs";
 import { captureProduct, captureProducts } from "./capture.mjs";
 import { listReports, readReport, reportImage, markAllRead, phoneReports, phoneReport, withNeeds } from "./reports.mjs";
-import { computerCopy, relaunchEnv, phoneState, setPhoneLink, freePhonePort, usePhonePort, newCode, unpairPhone, setRelay, findComputers, pairComputer, forgetComputer, pollComputer, queueChange, dismissNote, setPhoneApprove, startPhone } from "./phone.mjs";
+import { heardCode, setCodeRelay, computerCopy, relaunchEnv, phoneState, setPhoneLink, freePhonePort, usePhonePort, newCode, unpairPhone, setRelay, findComputers, pairComputer, forgetComputer, pollComputer, queueChange, dismissNote, setPhoneApprove, startPhone } from "./phone.mjs";
 import { knowledgeState, addKnowledgeFolder, removeKnowledgeFolder, indexKnowledge, knowledgeTick, searchKnowledge } from "./knowledge.mjs";
 import { runChecks, checksState, markClashesSeen } from "./checks.mjs";
 
@@ -290,8 +291,9 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
   // Stable token + port so the URL survives a restart — the open tab can
   // reconnect and auto-reload itself instead of you closing and reopening it.
   try { moveSecrets(); } catch {} // keys from before secrets.json: out of config.json, where a run could read them
-  if (!SANDBOX) try { repairFalseSaves(); } catch {} // a word taken for a password ("Symbiot's"): back where it was, out of the vault (vault.mjs)
-  if (!SANDBOX) try { scrubStored(); } catch {} // a secret the chat kept before the detector knew its shape: vaulted, and blanked where it was stored (vault.mjs)
+  // a word taken for a password ("Symbiot's"): back where it was, out of the vault, a file at a time (vault.mjs);
+  // then a secret the chat kept before the detector knew its shape: vaulted, and blanked where it was stored
+  if (!SANDBOX) Promise.resolve().then(() => repairFalseSaves({ soon: true })).catch(() => {}).then(() => { try { scrubStored(); } catch {} });
   const cfg0 = loadConfig();
   let TOKEN = cfg0.appToken;
   if (!TOKEN) { TOKEN = randomBytes(16).toString("hex"); try { saveConfig({ ...loadConfig(), appToken: TOKEN }); } catch {} }
@@ -380,7 +382,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
   // the old version for an install that "didn't take" (2026-10-12). So a restart carries on
   // (resumeUpdate), and one that installed but came back on the old version says why.
   const UPDATE_STATE = join(CONFIG_DIR, "update.json");
-  const noteUpdate = (o) => { try { if (o) { mkdirSync(CONFIG_DIR, { recursive: true }); writeFileSync(UPDATE_STATE, JSON.stringify(o)); } else if (existsSync(UPDATE_STATE)) unlinkSync(UPDATE_STATE); } catch {} };
+  const noteUpdate = (o) => { try { if (o) { writeJsonAtomic(UPDATE_STATE, o, { indent: 0 }); } else if (existsSync(UPDATE_STATE)) unlinkSync(UPDATE_STATE); } catch {} };
   function startUpdate({ since = Date.now(), latest = LATEST_VERSION, auto = false, retrying = false } = {}) {
     const { target, cmd } = updateCmd(latest, VERSION);
     const inst = process.env.SYMBIOT_UPDATE_CMD || cmd, note = (state, more = {}) => noteUpdate({ target, from: VERSION, since, state, at: Date.now(), ...more });
@@ -450,7 +452,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
   let NEWEST_WIN = ""; // the Symbiot window opened last: older ones close themselves (one window, not a pile)
   process.on("exit", () => closeAway()); // Away's windows go with the app (a quit, an update's restart)
   const server = createServer(async (req, res) => {
-    const t0 = Date.now(); res.on("finish", () => { const ms = Date.now() - t0; if (ms > 1500) console.log(`slow: ${String(req.url || "").split("?")[0]} took ${(ms / 1000).toFixed(1)}s`); if (req.method === "POST") { try { forgetWork(); } catch {} } }); // something you did: the next work scene is built afresh, not the kept one
+    const t0 = Date.now(); res.on("finish", () => { const ms = Date.now() - t0; if (ms > 1500) console.log(`slow: ${String(req.url || "").split("?")[0]} took ${(ms / 1000).toFixed(1)}s`); if (req.method === "POST" && !/^\/api\/screens\//.test(String(req.url || ""))) { try { forgetWork(); } catch {} } }); // something you did: the next work scene is built afresh, not the kept one (an agent reading or pressing a page through Screens changes no work: a POST every few seconds kept the scene from ever being kept)
     const u = new URL(req.url, "http://127.0.0.1");
     if (req.method === "GET" && u.pathname === "/") {
       if (req.headers["if-none-match"] === PAGE_TAG) { res.writeHead(304, { etag: PAGE_TAG }); res.end(); return; }
@@ -485,7 +487,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       if (u.pathname === "/api/node") return json(res, await nodeDetail(u.searchParams.get("id") || "")); // local
       if (u.pathname === "/api/suggest" && req.method === "POST") { const b = await readBody(req); const p = String(b.path || ""); const isRepo = p && existsSync(join(p, ".git")); return json(res, await (isRepo ? repoSuggest(p) : folderSuggest(p))); }
       if (u.pathname === "/api/review" && req.method === "POST") { const b = await readBody(req); return json(res, await repoReview(String(b.path || ""))); }
-      if (u.pathname === "/api/tasks" && req.method !== "POST") { const arch = u.searchParams.get("archived") === "1"; return json(res, loadTasks().filter((x) => !!x.archived === arch).map((t) => ({ ...t, type: taskType(t.text) }))); }
+      if (u.pathname === "/api/tasks" && req.method !== "POST") { const arch = u.searchParams.get("archived") === "1"; return json(res, [...loadTasks().filter((x) => !!x.archived === arch), ...(arch ? archivedTasks() : [])].map((t) => ({ ...t, type: taskType(t.text) }))); } // the Archive: tasks.json's archived, then what the sweep moved out (sweep.mjs)
       if (u.pathname === "/api/tasks/add" && req.method === "POST") { const b = await readBody(req); return json(res, addTask(b.text, b.repo)); }
       if (u.pathname === "/api/tasks/toggle" && req.method === "POST") { const b = await readBody(req); return json(res, toggleTask(String(b.id || ""))); }
       if (u.pathname === "/api/tasks/model" && req.method === "POST") { const b = await readBody(req); return json(res, setTaskModel(String(b.id || ""), b.model)); }
@@ -508,9 +510,11 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       }
       if (u.pathname === "/api/pending/diff") { const p = laneMap()[u.searchParams.get("repo") || ""]; return json(res, { diff: p ? workingDiff(p) : "" }); }
       if (u.pathname === "/api/tasks/live" && req.method === "POST") { const b = await readBody(req); return json(res, markLive(String(b.id || ""))); }
-      if (u.pathname === "/api/pending/merge" && req.method === "POST") { const b = await readBody(req), path = laneMap()[String(b.repo || "")]; if (!path || !b.pr) return json(res, { error: "Say which repo and PR." }); { const m = mergeWhenGreen(path, String(b.pr)); if (m.ok) { try { m.live = afterShip(path, String(b.repo), String(b.pr), "merged"); } catch {} } return json(res, m); } }
-      if (u.pathname === "/api/pending/approve" && req.method === "POST") { const b = await readBody(req), repo = String(b.repo || ""); if (b.bump) await learnNpm([laneMap()[repo]]); const { notes, deny } = await notesFor(repo, { bump: b.bump }); return json(res, await approveRepo(repo, { bump: b.bump, notes, deny, confirm: !!b.confirm, allowShared: !!b.allowShared })); }
-      if (u.pathname === "/api/pending/approve-changes" && req.method === "POST") { const b = await readBody(req), repo = String(b.repo || ""); if (b.bump) await learnNpm([laneMap()[repo]]); const { notes, deny } = await notesFor(repo, { bump: b.bump, tick: b.tick }); return json(res, await approveChanges(repo, { bump: b.bump, tick: b.tick, notes, deny, confirm: !!b.confirm, allowShared: !!b.allowShared })); }
+      if (u.pathname === "/api/pending/merge" && req.method === "POST") { const b = await readBody(req), path = laneMap()[String(b.repo || "")]; if (!path || !b.pr) return json(res, { error: "Say which repo and PR." }); { const m = await mergeWhenGreen(path, String(b.pr)); if (m.ok) { try { m.live = afterShip(path, String(b.repo), String(b.pr), "merged"); } catch {} } return json(res, m); } }
+      if (u.pathname === "/api/pending/approve" && req.method === "POST") { const b = await readBody(req), repo = String(b.repo || ""); return json(res, await shipJob(repo, async () => { if (b.bump) await learnNpm([laneMap()[repo]]); const { notes, deny } = await notesFor(repo, { bump: b.bump }); return approveRepo(repo, { bump: b.bump, notes, deny, confirm: !!b.confirm, allowShared: !!b.allowShared }); })); }
+      if (u.pathname === "/api/pending/approve-changes" && req.method === "POST") { const b = await readBody(req), repo = String(b.repo || ""); return json(res, await shipJob(repo, async () => { if (b.bump) await learnNpm([laneMap()[repo]]); const { notes, deny } = await notesFor(repo, { bump: b.bump, tick: b.tick }); return approveChanges(repo, { bump: b.bump, tick: b.tick, notes, deny, confirm: !!b.confirm, allowShared: !!b.allowShared }); })); }
+      // an Approve that outlasted its request (shipJob): how it's going, then how it went
+      if (u.pathname === "/api/pending/job") return json(res, shipJobOf(u.searchParams.get("repo") || ""));
       // approved work that didn't get as far as a PR: sent again (untested: without the tests here), or left
       if (u.pathname === "/api/pending/send" && req.method === "POST") { const b = await readBody(req); return json(res, await sendAgain(String(b.repo || ""), b.untested ? { verify: false } : {})); }
       if (u.pathname === "/api/pending/leave" && req.method === "POST") { const b = await readBody(req); return json(res, forgetUnsent(String(b.repo || ""))); }
@@ -548,7 +552,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
         return json(res, { started: true, model, id: e ? e.id : "" });
       }
       if (u.pathname === "/api/agents") { // handing: what it handed to other lanes, on the newest block per folder: where each stands, and how far the run on it has got
-        const seen = new Set(), map = laneMap(), ledger = loadLedger(), list = agentsList().map((a) => { if (!a.path || seen.has(a.path)) return a; seen.add(a.path); let h = []; try { h = handingOf(a.path, { map, ledger }); } catch {} return h.length ? { ...a, handing: h } : a; });
+        const seen = new Set(), map = laneMap(), ledger = loadLedger(), list = agentsNow().map((a) => { let pj = ""; try { pj = projectOf(a.path, { map, ledger }); } catch {} a = { ...a, project: pj }; if (!a.path || seen.has(a.path)) return a; seen.add(a.path); let h = []; try { h = handingOf(a.path, { map, ledger }); } catch {} return h.length ? { ...a, handing: h } : a; });
         return jsonTag(req, res, await withReleases(list));
       }
       // the answer, saved in the folder that asked; it says which lane that is, so "Sent to …"
@@ -623,6 +627,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       // any site, added in Settings → Connections or the Symbiot Browser's address bar, or a card's / reply's "Sign in to <site>": linked and opened to sign in
       if (u.pathname === "/api/links/site" && req.method === "POST") { const b = await readBody(req), here = b.here ? { open: async (url) => ({ ok: true, url }) } : undefined; return json(res, b.id ? await linkSite(String(b.id), here) : await addSite(String(b.site || ""), here)); }
       if (u.pathname === "/api/links/check" && req.method === "POST") { const b = await readBody(req); return json(res, await checkLink(String(b.id || ""))); }
+      if (u.pathname === "/api/links/act" && req.method === "POST") { const b = await readBody(req); return json(res, setLinkAct(String(b.id || ""), b.on === true)); } // agents may act on it in your own Chrome (chromegate.mjs)
       if (u.pathname === "/api/links/unlink" && req.method === "POST") { const b = await readBody(req); return json(res, unlinkSite(String(b.id || ""))); }
       // Posts (post.mjs): the week's drafts, waiting on you. Approve is your yes: Marketing's
       // agent posts it through Symbiot's signed-in browser.
@@ -745,6 +750,8 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       if (u.pathname === "/api/phone/pair" && req.method === "POST") { const b = await readBody(req); return json(res, await pairComputer(b.address, b.code, { link: String(b.link || "") })); }
       if (u.pathname === "/api/phone/check" && req.method === "POST") return json(res, await pollComputer());
       if (u.pathname === "/api/phone/find") return json(res, { found: await findComputers() });
+      if (u.pathname === "/api/phone/heard" && req.method === "POST") { const b = await readBody(req); return json(res, heardCode({ app: String(b.app || "").slice(0, 120), title: String(b.title || "").slice(0, 200), text: String(b.text || "").slice(0, 600) })); }
+      if (u.pathname === "/api/phone/codes" && req.method === "POST") { const b = await readBody(req); return json(res, setCodeRelay(String(b.key || ""), b.on === true)); }
       if (u.pathname === "/api/phone/do" && req.method === "POST") { const b = await readBody(req); return json(res, queueChange(String(b.op || ""), b.args || {})); }
       if (u.pathname === "/api/phone/note" && req.method === "POST") { const b = await readBody(req); return json(res, dismissNote(String(b.id || ""))); }
       if (u.pathname === "/api/phone/forget" && req.method === "POST") return json(res, forgetComputer());
@@ -881,9 +888,10 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
   setTimeout(() => { try { runsTick(); } catch {} }, 5000).unref();
   setInterval(() => { try { mergeEnded({ addTask }); } catch {} }, 20000).unref(); // runs beside a lane's own that ended (also while Symbiot was down): merged back into the lane
   { let soon = null; onRunEnd(() => { if (soon) return; soon = setTimeout(() => { soon = null; for (const f of [startWaiting, () => mergeEnded({ addTask }), workTick, lanesTick]) try { f(); } catch {} }, 1500); soon.unref(); }); } // a run ended: what waited on it starts within seconds
-  setInterval(() => { try { workTick(); } catch {} }, 10000).unref(); // a waiting task starts once its lane is free (config.autoStart: false leaves it to Go)
+  setInterval(() => { homeTick(); try { workTick(); } catch {} }, 10000).unref(); // a waiting task starts once its lane is free (config.autoStart: false leaves it to Go); Home, then the work scene that reads its cards: what the routes read
   { let busy = false; setInterval(() => { if (busy) return; busy = true; shipHanded().catch(() => {}).finally(() => { busy = false; }); }, 20000).unref(); } // changes made for a handed-over job go up by themselves
   setInterval(() => { try { lanesTick(); } catch {} }, 20000).unref(); // agents hand work to other lanes, and hear back when it's done
+  { let busy = false; setInterval(() => { if (busy) return; busy = true; deployTick({ running: (p) => !!runningHandoff(p), notify: desktopNotify }).catch(() => {}).finally(() => { busy = false; }); }, 60000).unref(); } // a runbook's deploy is live once its check answers (deploy.mjs)
   setTimeout(() => { orcaRelink().catch(() => {}); }, 15000).unref(); // a lane folder a handover renamed, added again in Orca where it is now
   // an agent's allow list that stays inside your work is turned on by itself, and the agent carries on
   setTimeout(() => { try { autoAllowSweep(); } catch {} }, 4000).unref();

@@ -75,7 +75,10 @@ try {
   const md = readFileSync(join(repo, "CHANGELOG.md"), "utf8");
   writeFileSync(join(repo, "CHANGELOG.md"), md.replace("## 1.0.2", "## 1.0.3 — 2026-10-17\n\n- Fixed the dailify invite for Jono.\n\n## 1.0.2")); writeFileSync(join(repo, "c.js"), "z\n");
   const r3 = await t.shipWithBump(repo, [], { push: false, deny, confirm: true });
-  ok("a release an agent wrote by hand: Approve flags the line that names what's yours", r3.ok && /Check the release notes before this merges/.test(r3.note || "") && /dailify/.test(r3.note) && /Jono/.test(r3.note), r3);
+  // 20 Oct 2026 review, Q10: a flag didn't stop it; CI's outward check failed on such a line in 3 of 13 runs
+  const shipped = r3.ok ? execSync(`git show ${r3.commit || "HEAD"}:CHANGELOG.md`, env) : "";
+  ok("a release an agent wrote by hand: Approve takes out the line that names what's yours, and says so", r3.ok && /Taken out of the release notes/.test(r3.note || "") && /dailify/.test(r3.note) && /Jono/.test(r3.note), r3);
+  ok("…the commit has the plain line in its place, once, and the rest as it was", !/Jono/.test(shipped) && /## 1\.0\.3 — 2026-10-17\n\n- Small fixes and improvements\.\n\n## 1\.0\.2/.test(shipped) && /- First release/.test(shipped) && !o.checkChangelog(shipped).length, shipped.slice(0, 300));
 
   console.log("YOUR AI'S NOTES — written for an outside user, the internal ones skipped");
   let sys = "", asked = "";

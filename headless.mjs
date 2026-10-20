@@ -21,10 +21,11 @@
 // signed in. It's separate from your everyday browser profile.
 import { spawn, spawnSync } from "node:child_process";
 import { join, dirname, resolve as resolvePath } from "node:path";
-import { accessSync, constants as FS, mkdirSync, existsSync, statSync, readlinkSync, readFileSync, readdirSync, writeFileSync, copyFileSync, mkdtempSync, rmSync } from "node:fs";
+import { accessSync, constants as FS, mkdirSync, existsSync, statSync, readlinkSync, readFileSync, readdirSync, writeFileSync, copyFileSync, cpSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { CONFIG_DIR, chromeBinary, loadConfig, saveConfig } from "./core.mjs";
 import { chromeSession } from "./chromeimport.mjs";
+import { isSend } from "./sends.mjs";
 import { loadScreens, addPageScreen, center, stitchPng, stitchListPng } from "./screens.mjs";
 
 const PROFILE = join(CONFIG_DIR, "browser");
@@ -67,13 +68,14 @@ function siteUrl(input) {
 // restores the last session: that's what keeps a site's session-only sign-in (keepSessions).
 // ua: the User-Agent the window sends (windowUa), for the hidden one to send from its
 // first request; and it doesn't say it's driven (navigator.webdriver), as the window doesn't.
-function browserArgs(headless, url = "about:blank", ua = "") {
+function browserArgs(headless, url = "about:blank", ua = "", profile = PROFILE) {
   const proxy = headless ? sandboxProxy() : null;
   return [
     ...(headless ? ["--headless=new", "--hide-scrollbars", "--mute-audio", "--remote-debugging-pipe", `--window-size=${VIEW.w},${VIEW.h}`, "--restore-last-session",
       "--disable-blink-features=AutomationControlled", ...(ua ? ["--user-agent=" + ua] : []),
-      ...(proxy ? ["--proxy-server=" + proxy.server, ...(proxy.bypass ? ["--proxy-bypass-list=" + proxy.bypass] : [])] : [])] : ["--new-window"]),
-    "--user-data-dir=" + PROFILE, "--profile-directory=" + PROFILE_DIR, "--no-first-run", "--no-default-browser-check",
+      ...(proxy ? ["--proxy-server=" + proxy.server, ...(proxy.bypass ? ["--proxy-bypass-list=" + proxy.bypass] : [])] : []),
+      ...String(process.env.SYMBIOT_HEADLESS_ARGS || "").split(/\s+/).filter(Boolean)] : ["--new-window"]), // tests: as SYMBIOT_BROWSER_ARGS is the window's
+    "--user-data-dir=" + profile, "--profile-directory=" + PROFILE_DIR, "--no-first-run", "--no-default-browser-check",
     ...(process.platform === "linux" ? ["--password-store=basic"] : process.platform === "darwin" ? ["--use-mock-keychain"] : []),
     url,
   ];
@@ -252,9 +254,10 @@ async function closeOthers(c, keep) {
 // keeps the last read of each site in each tab, and saves them (saveSessions) at Done, or when
 // it closes by itself. Chrome closes when its pipe does: the app holds updates while the
 // window's open, and a one-off `symbiot screens signin` opens it plain, as before.
+const BROWSER_IDLE_MIN = 20; // config.browserIdleMin changes it
 let WIN = null; // { proc, c, reads: Map("targetId origin" → { origin, items, at, had, emptied }), read, save }
 const WIN_EVERY = 2000;
-function pipeWindow(proc, { every = WIN_EVERY } = {}) {
+function pipeWindow(proc, { every = WIN_EVERY, idle = 0 } = {}) {
   const c = connect(proc), attached = new Map(), reads = new Map(), hub = (() => { try { return new URL(HUB).origin; } catch { return ""; } })();
   let busy = null, dirty = false;
   const read = () => busy || (busy = (async () => {
@@ -275,7 +278,12 @@ function pipeWindow(proc, { every = WIN_EVERY } = {}) {
     } catch {} finally { busy = null; }
   })());
   const save = () => { if (dirty) saveSessions([...reads.values()].sort((a, b) => a.at - b.at), Date.now(), SESSIONS, { merge: true }); dirty = false; };
-  const timer = setInterval(read, every); if (timer.unref) timer.unref();
+  // idle: no tab has changed page (address or title) for idleMs, so it's left open, not in use: it
+  // closes as Done does (its sign-ins saved first), and the agents read with the profile again
+  let sig = "", moved = Date.now();
+  const look = async () => { try { const { targetInfos = [] } = await c.send("Target.getTargets"); const now = targetInfos.filter((t) => t.type === "page").map((t) => t.url + " " + t.title).sort().join("\n"); if (now !== sig) { sig = now; moved = Date.now(); } } catch {} };
+  const idleMs = idle || Math.max(60000, (Number(loadConfig().browserIdleMin) || BROWSER_IDLE_MIN) * 60000);
+  const timer = setInterval(() => { read(); look().then(() => { if (Date.now() - moved > idleMs && WIN === w) closeSymbiotBrowser().catch(() => {}); }); }, every); if (timer.unref) timer.unref();
   const w = { proc, c, reads, read, save };
   proc.once("exit", () => { clearInterval(timer); save(); if (WIN === w) WIN = null; });
   for (const s of [proc.stdio[3], proc.stdio[4]]) if (s && s.unref) s.unref();
@@ -403,6 +411,27 @@ async function strayGone(wait = STRAY_WAIT) {
   if (stray() === pid) try { process.kill(pid, "SIGKILL"); } catch {}
   for (let i = 0; i < 8 && stray() === pid; i++) await sleep(250);
 }
+// ---- while the Symbiot Browser is open (review of 20 Oct 2026, finding 4) ----------------
+// Every agent's read failed with "The Symbiot Browser is open" while the window was up (313 times
+// since 16 Oct), and nothing closed a window left open. Now the hidden browser reads from a copy of
+// the profile's sign-ins (its cookies, local storage, state) while the window has the profile; the
+// window closes itself after BROWSER_IDLE with no tab changing page (its sign-ins saved first, as
+// Done does); and when it opened is kept (OPEN_FILE) for Home and for any error to say.
+const SNAP = join(CONFIG_DIR, "browser-snapshot"), OPEN_FILE = join(CONFIG_DIR, "browser-open.json");
+const SNAP_FILES = ["Cookies", "Cookies-journal", "Network", "Local Storage", "Preferences", "Secure Preferences", "Web Data", "Web Data-journal"];
+function snapProfile(from = PROFILE, to = SNAP) {
+  rmSync(to, { recursive: true, force: true }); mkdirSync(join(to, PROFILE_DIR), { recursive: true, mode: 0o700 });
+  try { copyFileSync(join(from, "Local State"), join(to, "Local State")); } catch {}
+  for (const f of SNAP_FILES) { const src = join(from, PROFILE_DIR, f); if (!existsSync(src)) continue; try { cpSync(src, join(to, PROFILE_DIR, f), { recursive: true, force: true, filter: (x) => !/(?:^|[/\\])(?:LOCK|Singleton\w*)$/.test(x) }); } catch {} }
+  return to;
+}
+// When the Symbiot Browser opened, or 0 when it isn't open.
+function windowSince() {
+  if (!windowOpen()) return 0;
+  try { return Number(JSON.parse(readFileSync(OPEN_FILE, "utf8")).since) || 0; } catch { return 0; }
+}
+const noteOpen = (on) => { try { if (on) writeFileSync(OPEN_FILE, JSON.stringify({ since: Date.now() }), { mode: 0o600 }); else rmSync(OPEN_FILE, { force: true }); } catch {} };
+const atClock = (t) => new Date(t).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 // Start the hidden browser, with a tab for who: { proc, c, tabs }.
 async function launch(who = MAIN) {
   const chrome = chromeBinary();
@@ -411,17 +440,22 @@ async function launch(who = MAIN) {
     : "Mapping a page needs Chrome, Chromium, Edge or Brave, and none was found.");
   mkdirSync(PROFILE, { recursive: true, mode: 0o700 });
   // the Symbiot Browser (or a sign-in window) has the profile: a second Chrome would hand
-  // over to it and pop an empty window into it, so wait for Done instead
-  if (windowOpen()) throw new Error("The Symbiot Browser is open: Symbiot reads your sites once you click Done in it.");
-  await strayGone();
+  // over to it and pop an empty window into it: the hidden browser reads from a copy of its sign-ins
+  let profile = PROFILE;
+  if (windowOpen()) {
+    const since = windowSince(), when = since ? ` (open since ${atClock(since)})` : "";
+    if (loadConfig().browserSnapshot === false) throw new Error(`The Symbiot Browser is open${when}: Symbiot reads your sites once you click Done in it.`);
+    try { profile = snapProfile(); } catch (e) { throw new Error(`The Symbiot Browser is open${when}, and a copy of its sign-ins couldn't be made to read with meanwhile: ${String((e && e.message) || e)}`); }
+  }
+  if (profile === PROFILE) await strayGone();
   const locked = profileReadOnly();
   if (locked) throw new Error(locked);
   const ua = windowUa(chrome);
-  const proc = spawn(chrome, browserArgs(true, "about:blank", ua), { stdio: ["ignore", "ignore", "pipe", "pipe", "pipe"] });
+  const proc = spawn(chrome, browserArgs(true, "about:blank", ua, profile), { stdio: ["ignore", "ignore", "pipe", "pipe", "pipe"] });
   if (proc.pid) OWN.add(proc.pid);
   let err = ""; proc.stderr.on("data", (d) => { err = (err + d).slice(-2000); });
   const failed = new Promise((resolve, reject) => { proc.on("error", reject); }); failed.catch(() => {});
-  const c = connect(proc), b = { proc, c, tabs: new Map(), timer: null };
+  const c = connect(proc), b = { proc, c, tabs: new Map(), timer: null, ...(profile !== PROFILE ? { snap: true } : {}) };
   const kill = setTimeout(() => { try { proc.kill("SIGKILL"); } catch {} }, START);
   try {
     const run = (async () => {
@@ -505,7 +539,7 @@ function closeBrowser() { return shut(live); }
 // as they are; the whole browser only when it's gone.
 async function withPage(fn, keep = true, who = MAIN) {
   if (keep) lastAgentUse = Date.now();
-  if (live && live.c.closed()) await shut(live);
+  if (live && (live.c.closed() || (live.snap && !windowOpen()))) await shut(live); // the window closed: back to the profile itself
   who = tabKey(who);
   let b = live;
   if (b) clearTimeout(b.timer); else b = live = await launch(who);
@@ -1259,10 +1293,8 @@ const clickAt = async (page, at) => { for (const type of ["mouseMoved", "mousePr
 // row whose subject says "send" is still pressed. Off your mail (`host`), on a
 // social site, it refuses what posts too: LinkedIn's Post, Comment and Reply
 // (which both opens a reply box and submits one: the label can't tell them apart),
-// Submit, Publish, Share, Repost. In your mail, Reply only opens a reply.
-const MAIL_HOSTS = /^(mail\.google\.com|outlook\.(live|office|office365)\.com)$/;
-const POSTS = /\b(post|reply|comment|submit|publish|share|repost|tweet)\b/i;
-const isSend = (r, host = "") => /^(button|menu item)$/.test(r.kind || "button") && (/\bsend\b/i.test(r.label || "") || (!MAIL_HOSTS.test(host) && POSTS.test(r.label || "")));
+// Submit, Publish, Share, Repost. In your mail, Reply only opens a reply. That's isSend
+// (sends.mjs), the same rule the membrane holds an agent's actions in the user's own Chrome to.
 function pressRegion(id, regionId, { confirmed = false, noSend = false, who = "" } = {}) {
   const s = noSend ? loadScreens().find((x) => x.id === id) : null, host = s && s.page ? hostOf(s.page.url) : "";
   return actOnRegion(id, regionId, "Press", confirmed, (r) => (noSend && isSend(r, host) ? `"${r.label}" sends or posts. This run only drafts: it never presses Send, Post, Comment or Reply. The draft stays for the user to send or post.` : ""),
@@ -1682,6 +1714,7 @@ async function openSymbiotBrowser(url = "") {
     if (!up) return { error: "The Symbiot Browser didn't open: another copy of Chrome kept Symbiot's browser profile. Try Sign in again in a minute, or close Symbiot's other windows first." };
     // the site, in a window of its own beside the page: handed to the window that's up
     if (url && (page.length || wasOpen)) try { spawn(chrome, [...base, "--new-window", url], { detached: true, stdio: "ignore" }).on("error", () => {}).unref(); } catch {}
+    if (!wasOpen) noteOpen(true);
     watchWindow();
     return { ok: true, ...(url ? { url } : {}), browser: true };
   });
@@ -1711,10 +1744,10 @@ function watchWindow({ every = 2000, start = 30000 } = {}) {
   WATCH = setInterval(() => {
     if (windowOpen()) { seen = true; return; }
     if (!seen && Date.now() - t0 < start) return;
-    clearInterval(WATCH); WATCH = null;
+    clearInterval(WATCH); WATCH = null; noteOpen(false);
     if (seen && CLOSED) try { CLOSED(); } catch {}
   }, every);
   if (WATCH.unref) WATCH.unref();
 }
 
-export { takeChromeSignIn, open as openSite, linkedSite, CHROME_TRIED, typeInto, watcherBusy, WATCH_GRACE, noteAgentUse, pipeWindow, saveSessions, showScreen, fillForm, verifyPage, sessionCookie, historyPage, SESSION_COOKIE, tabKey, siteUrl, browserArgs, sandboxProxy, reducedUa, windowUa, mapPage, wholePage, readPage, readTexts, readLinkedIn, LI_READ, pagePicture, pageClip, CLIP, isSend, pressRegion, typeRegion, chooseRegion, uploadRegion, uploadFiles, attachFiles, FILE_BOX, scrollPage, SCROLLS, signIn, keepBrowserOpen, closeBrowser, browserOpen, keepSessions, SESSION_KEEP, SESSIONS, loadSessions, trustedSites, isTrusted, trustSite, untrustSite, PROFILE , openSymbiotBrowser, closeSymbiotBrowser, onBrowserClosed, scratchPage, open as openPage, evaluate, SCROLLER, watchWindow, windowOpen, lockHolder, setBrowserHub , browserHub };
+export { windowSince, snapProfile, SNAP, BROWSER_IDLE_MIN, takeChromeSignIn, open as openSite, linkedSite, CHROME_TRIED, typeInto, watcherBusy, WATCH_GRACE, noteAgentUse, pipeWindow, saveSessions, showScreen, fillForm, verifyPage, sessionCookie, historyPage, SESSION_COOKIE, tabKey, siteUrl, browserArgs, sandboxProxy, reducedUa, windowUa, mapPage, wholePage, readPage, readTexts, readLinkedIn, LI_READ, pagePicture, pageClip, CLIP, isSend, pressRegion, typeRegion, chooseRegion, uploadRegion, uploadFiles, attachFiles, FILE_BOX, scrollPage, SCROLLS, signIn, keepBrowserOpen, closeBrowser, browserOpen, keepSessions, SESSION_KEEP, SESSIONS, loadSessions, trustedSites, isTrusted, trustSite, untrustSite, PROFILE , openSymbiotBrowser, closeSymbiotBrowser, onBrowserClosed, scratchPage, open as openPage, evaluate, SCROLLER, watchWindow, windowOpen, lockHolder, setBrowserHub , browserHub };

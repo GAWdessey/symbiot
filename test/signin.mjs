@@ -119,7 +119,7 @@ else {
     // (closeSymbiotBrowser), not the window's own Quit. With SIGTERM, Chrome quit without
     // writing the last 30 s of cookies, and the sign-in was gone (domains.co.za, 2026-10-14).
     await h.closeBrowser();
-    const visible = (url) => spawn(chromeBinary(), ["--ozone-platform=headless", ...h.browserArgs(false, url)], { stdio: "ignore" });
+    const visible = (url) => spawn(chromeBinary(), [...(process.env.SYMBIOT_TEST_NO_SANDBOX ? ["--no-sandbox"] : []), "--ozone-platform=headless", ...h.browserArgs(false, url)], { stdio: "ignore" });
     for (const [path, page, want, what] of [["/quick", "/inbox", /QUICK=q1/, "a cookie"], ["/quick-ss", "/app", /^tok-quick$/, "sessionStorage"]]) {
       const win = visible(base + path);
       for (let i = 0; i < 40 && !h.windowOpen(); i++) await sleep(150);
@@ -133,7 +133,7 @@ else {
     // SMS Portal keeps its sign-in in the tab's sessionStorage only: you sign in, close its tab
     // (or its window), and click Done. Gone with the tab, every check read its login page
     // (2026-10-14). The app's window is read over its pipe while it's open (pipeWindow).
-    const win = spawn(chromeBinary(), ["--ozone-platform=headless", "--remote-debugging-pipe", ...h.browserArgs(false, base + "/ss-tab")], { stdio: ["ignore", "ignore", "ignore", "pipe", "pipe"] });
+    const win = spawn(chromeBinary(), [...(process.env.SYMBIOT_TEST_NO_SANDBOX ? ["--no-sandbox"] : []), "--ozone-platform=headless", "--remote-debugging-pipe", ...h.browserArgs(false, base + "/ss-tab")], { stdio: ["ignore", "ignore", "ignore", "pipe", "pipe"] });
     const w = h.pipeWindow(win, { every: 300 });
     for (let i = 0; i < 40 && ![...w.reads.values()].some((x) => x.items["__auth-token"]); i++) await sleep(150);
     const { targetInfos = [] } = await w.c.send("Target.getTargets"), signedIn = targetInfos.find((t) => t.type === "page" && t.url.endsWith("/ss-tab"));

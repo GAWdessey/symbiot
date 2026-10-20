@@ -330,5 +330,8 @@ public class MainActivity extends Activity {
         @JavascriptInterface public String termux() { return "{\"installed\":" + termuxInstalled() + ",\"on\":" + (external != null) + "}"; }
         @JavascriptInterface public void openTermux() { ui.post(MainActivity.this::openTermux); }
         @JavascriptInterface public void builtIn() { ui.post(MainActivity.this::useBuiltIn); }
+        // codes a site texts you (CodeListener): {"allowed": Notification access is on}, and Android's switch for it
+        @JavascriptInterface public String codes() { return "{\"allowed\":" + CodeListener.allowed(MainActivity.this) + "}"; }
+        @JavascriptInterface public void allowCodes() { ui.post(() -> { try { startActivity(new Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)); } catch (Exception ignored) {} }); }
     }
 }

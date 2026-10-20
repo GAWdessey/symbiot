@@ -250,7 +250,13 @@ body.lq-pooled #lqneedt,body.lq-work #lqneedt{display:none}
 .lqd.lqblob .lt::before{display:none}
 .lqd.lqblob .lt span{-webkit-line-clamp:1;font-size:13px}
 .lqd.lqblob .lt i{font-style:normal;color:#8A919B;font-weight:500;flex:none}
-.lqblob .bq{font-size:12.5px;line-height:1.35;color:#C9CDD3;overflow-wrap:anywhere}
+.lqblob .bq{font-size:12.5px;line-height:1.35;color:#C9CDD3;overflow-wrap:anywhere;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;overflow:hidden;cursor:pointer}
+.lqblob .bq.open{display:block;-webkit-line-clamp:unset;line-clamp:none}
+.lqblob .bq code,.agent .dd code,.q .qc code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.92em;background:rgba(127,127,127,.16);border-radius:4px;padding:0 4px}
+.lqblob .bq code.bcode,.q .qc code.bcode{display:block;white-space:pre-wrap;margin:4px 0;padding:6px 8px;border-radius:7px}
+.bproj{display:inline-block;flex:none;font:500 10.5px/1.5 var(--sans);letter-spacing:.02em;padding:0 7px;margin-right:6px;border-radius:999px;border:1px solid var(--line);color:var(--faint);max-width:9em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:middle}
+.lqd.lqblob .lt .bproj{-webkit-line-clamp:unset;font-size:10.5px}
+.bproj.none{font-style:italic}
 .lqblob .bo{display:flex;flex-direction:column;gap:5px}
 .lqblob .nopt,.lqblob .bfree,.lqblob .bfx button{all:unset;box-sizing:border-box;cursor:pointer;font:500 12.5px/1.3 var(--sans)}
 .lqblob .nopt{display:block;width:100%;min-height:34px;padding:7px 10px;border-radius:12px;border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.06);color:#ECE9E4}
@@ -479,6 +485,7 @@ footer{padding:10px 18px;border-top:1px solid var(--line);display:flex}
 .ideas h4{margin:0 0 6px;color:var(--amber);font-size:11px;letter-spacing:.14em;text-transform:uppercase;font-weight:700}
 .idea{display:flex;align-items:flex-start;gap:9px;padding:5px 0;font-size:13.5px;color:var(--text)}
 .idea input{margin-top:3px;flex:none;width:15px;height:15px;cursor:pointer}
+.ideasent summary{cursor:pointer;font-size:12px;color:var(--faint);margin-top:8px}
 .task{display:flex;align-items:center;gap:10px;padding:9px 11px;border:1px solid var(--line);border-radius:9px;margin-top:8px;background:var(--ink2)}
 .task input[type=checkbox]{width:16px;height:16px;flex:none;cursor:pointer}
 .task .t{flex:1;min-width:0;overflow-wrap:anywhere}.task.done .t{color:var(--faint);text-decoration:line-through}
@@ -630,6 +637,7 @@ body.lq-liquid.lq-pooled:has(#panel-reports:not(.hidden) #rbackbar) #lqsinkrow{b
 .drift .dh,.agent .dh{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .drift .dn,.agent .dn{color:var(--bone);font-weight:600}
 .drift .dd,.agent .dd{color:var(--faint);font-size:12px}
+.agent .adet{font-size:12px;margin:2px 0 4px}.agent .adet summary{cursor:pointer;color:var(--faint);list-style:none;display:inline}.agent .adet summary::-webkit-details-marker{display:none}.agent .adet[open] summary{margin-right:6px}.agent .adet>div{display:inline}
 .drift ul{margin:8px 0 0;padding:0;list-style:none}
 .drift li{padding:3px 0;font-size:13.5px}
 .drift li.warn{color:var(--amber)}
@@ -731,6 +739,8 @@ body.lq-light .cx.ok .cxb{box-shadow:0 1px 2px rgba(0,0,0,.25);background:radial
 .cx .lmore,.cx .lrm{display:none;border:0;background:transparent;color:var(--faint);font:500 12px var(--sans);padding:4px 6px;border-radius:8px;cursor:pointer}
 .cx .lmore:hover{color:var(--bone)}.cx .lrm:hover{color:var(--amber)}
 .cx:hover .lmore,.cx:hover .lrm,.cx:focus-within .lmore,.cx:focus-within .lrm,body.lq-touch .cx .lmore,body.lq-touch .cx .lrm{display:inline-flex}
+.cx .lact{display:none;border:1px solid var(--line);background:transparent;color:var(--faint);font:500 11px var(--sans);padding:2px 8px;border-radius:999px;cursor:pointer}
+.cx:hover .lact,.cx:focus-within .lact,body.lq-touch .cx .lact,.cx .lact.on{display:inline-flex}.cx .lact.on{color:var(--amber);border-color:var(--amber)}.cx .lact:hover{color:var(--bone)}
 /* the card list, quiet */
 body.lq-liquid .board .bcard{background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.08);border-radius:16px;box-shadow:none}
 body.lq-liquid.lq-light .board .bcard{background:rgba(255,255,255,.6);border-color:rgba(21,26,33,.08)}
@@ -961,6 +971,9 @@ body.lq-light .lqblob.rlask{background:rgba(154,82,0,.05);border-color:rgba(154,
 .rli{display:flex;align-items:flex-start;gap:10px;padding:6px 0;border-top:1px solid rgba(255,255,255,.06);font-size:13px;line-height:1.4;color:#C9CDD3;transition:opacity .3s ease}
 .rli > span:first-child{flex:1;min-width:0}
 .rli.gone{opacity:0}
+.rlfrom{font-size:11px;color:#8A919B;white-space:nowrap}
+.rlsent{font-size:12px;color:#8A919B}
+body.lq-light .rlsent{color:#5B6573}
 body.lq-light .rli{border-top-color:rgba(21,26,33,.07);color:#2B3644}
 .rlia{flex:none;display:flex;gap:2px}
 .rlia button,.rlf button{all:unset;box-sizing:border-box;cursor:pointer;padding:3px 7px;border-radius:8px;font:500 12px var(--sans);color:#8A919B}
@@ -1076,6 +1089,10 @@ body.lq-light #lqaway .aws b{color:#9A5200}
 .pcwait{font-size:11px;color:var(--amber);white-space:nowrap}
 .pcq{padding:12px 13px;border:1px solid var(--line);border-radius:12px;margin-top:8px;background:var(--ink2)}
 .pcq .qn{font-size:12px;color:var(--faint)}
+.pcbubble{white-space:pre-wrap;word-break:break-word;font-size:14px;line-height:1.4;margin:8px 0 6px;padding:9px 11px;border-radius:12px 12px 12px 3px;background:var(--ink);border:1px solid var(--line);max-height:260px;overflow:auto}
+.pcchips{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 6px}.pcchips span{font-size:12px;padding:4px 10px;border-radius:999px;border:1px solid var(--line);color:var(--faint)}
+.pcown[hidden]{display:none}
+.pccode{font-size:12px;color:var(--faint);margin-top:8px}.pccode .ghost{font-size:12px;padding:5px 10px}
 .pcq .qq{font-size:13.5px;line-height:1.5;color:var(--text);margin:4px 0 8px;overflow-wrap:anywhere}
 .pcq .opts{display:flex;flex-direction:column;gap:6px;align-items:stretch}
 .pcq .opts button{text-align:left;white-space:normal;line-height:1.4;height:auto;padding:8px 12px}
@@ -1577,7 +1594,7 @@ var tabPicked=false;
 // A link to a screen (#reports, #board…) opens on it: how symbiot post's picture of
 // "the new Reports view" shows that view, not home.
 function lqDeep(){var h=String(location.hash||'').slice(1);if(!h||!LQNAMES[h])return;setTimeout(function(){tabPicked=true;lqPool(h);},400);}
-function firstTab(){api('/api/watch/board').then(function(b){if(b&&b.cards&&b.cards.length&&!tabPicked&&current==='map')lqPool('board');}).catch(function(){});} // lqPool: setTab alone showed nothing in the liquid (main stays hidden until pooled) and left current wrong (15 Oct 2026)
+function firstTab(){api('/api/watch/board').then(function(b){var own=((b&&b.cards)||[]).filter(function(c){return c.source!=='status'||c.count;});if(own.length&&!tabPicked&&current==='map')lqPool('board');}).catch(function(){});} // Symbiot's own Status watch, with nothing new, doesn't make the Dashboard the first page // lqPool: setTab alone showed nothing in the liquid (main stays hidden until pooled) and left current wrong (15 Oct 2026)
 // The AI in use isn't shown while it works (it's noise); only when none is
 // connected, as an urgent line that opens its part of Settings. Home has it out
 // front too, with the agent and the connectors runs use (home.mjs).
@@ -1769,7 +1786,7 @@ if(r.error==='not-connected'){el.innerHTML="<h4>AI review &middot; <span class='
 var body=r.text||'(no output)';reviewCache[path]={text:body,verdict:r.verdict||"",ideas:r.ideas||[],footer:r.footer};el.innerHTML=reviewHtml(name,body,r.verdict||"",r.ideas||[],tasks,r.footer);wireIdeas();});}
 var ALLTASKS=[];var PENDTASKS=[];var TFILTER={type:'',repo:'',id:''};var TARCH=false;
 var TORDER=['Fixes','Tests & CI','Security','Performance','Refactor','UI/UX','Docs','Features & other'];
-function liveBadge(t){return t.liveState==='pending'?"<span class='rp' title='"+esc(t.liveNote||'')+"'>merged, not live</span><button class='ghost markLive' title='Deployed and checked on the live site: mark it live'>live</button>":t.liveState==='live'?"<span class='rp' title='"+esc(t.liveNote||'')+"'>live</span>":"";}
+function liveBadge(t){return t.liveState==='pending'?"<span class='rp' title='"+esc(t.liveNote||'')+"'>merged, not live</span><button class='ghost markLive' title='Deployed and checked on the live site: mark it live'>live</button>":t.liveState==='live'?"<span class='rp' title='"+esc(t.liveNote||'')+"'>live</span>":t.liveState==='failed'?"<span class='rp' style='color:var(--amber)' title='"+esc(t.liveNote||'')+"'>deploy not live</span><button class='ghost markLive' title='Deployed and checked on the live site: mark it live'>live</button>":"";}
 function taskRow(t,arch){return "<div class='task"+(t.done?" done":"")+"' data-id='"+esc(t.id)+"'>"+(arch?"":"<input type='checkbox' class='taskchk' title='mark done (auto-archives on sync)'"+(t.done?" checked":"")+">")+"<span class='t'>"+esc(t.full?t.text.replace(/ Full text: \\x60[^\\x60]*\\x60/,''):t.text)+(t.full?"<details class='tfull'><summary>full text</summary><div>"+esc(t.full)+"</div></details>":"")+"</span>"+(t.repo?"<span class='rp'>"+esc(t.repo)+"</span>":"")+(arch&&t.removedBy?"<span class='rp' title='An approved task "+(t.merged?"merged it into another":"dropped it")+". Restore it to keep it.'>"+(t.merged?"merged":"dropped")+"</span>":"")+(arch&&t.dropped?"<span class='rp' title='An agent deleted it from TASKS.md, as you said to drop it. Restore it to keep it.'>dropped</span>":"")+(arch&&t.cancelled?"<span class='rp' title='You removed it. Restore it to bring it back.'>removed</span>":"")+(arch&&t.finding?"<span class='rp' title='"+escQ('Ticked by itself: '+t.finding+'. Restore it if there is something to do.')+"'>finding</span>":"")+liveBadge(t)+(arch||t.done?"":modelPick(t))+askBtn(t)+(arch?"<button class='rm restore' title='restore to active'>&#8630;</button>":"<button class='rm' title='Remove: it goes to the Archive (Undo brings it back)' aria-label='Remove this task'>&times;</button>")+"</div>";}
 function modelPick(t){var o=[['','Auto'],['local','Local'],['haiku','Haiku'],['sonnet','Sonnet'],['opus','Opus'],['fable','Fable']];return "<select class='tmodel' title='Which model runs this task. Auto picks one by the task and its lane.' aria-label='Model'>"+o.map(function(x){return "<option value='"+x[0]+"'"+((t.model||'')===x[0]?" selected":"")+">"+x[1]+"</option>";}).join('')+"</select>";}
 function wireTaskRows(el){el.querySelectorAll('.task').forEach(function(row){var id=row.getAttribute('data-id');
@@ -1912,7 +1929,9 @@ function apLabel(){var n=ticks().length,w=n?", with "+n+" finished task"+(n>1?"s
 tk.forEach(function(c){c.addEventListener('change',apLabel);});if(tk.length||so)apLabel();
 var aq=card.querySelector('.answerq');if(aq)aq.addEventListener('click',function(){lqFocus({kind:'ask',repo:repo,path:aq.getAttribute('data-path')});});
 if(ap)ap.addEventListener('click',function(){var tick=ticks(),yes={};ap.disabled=true;ap.textContent='Committing & pushing...';
-function go(){api(ap.getAttribute('data-untasked')?'/api/pending/approve-changes':'/api/pending/approve',{repo:repo,bump:bs?bs.value:'',tick:tick,confirm:yes.confirm,allowShared:yes.allowShared}).then(function(r){var o=document.getElementById('reviewout');
+function go(){api(ap.getAttribute('data-untasked')?'/api/pending/approve-changes':'/api/pending/approve',{repo:repo,bump:bs?bs.value:'',tick:tick,confirm:yes.confirm,allowShared:yes.allowShared}).then(done);}
+// a ship that outlasts its request goes on as a job (tasks.mjs shipJob): asked how it's going until it's done
+function done(r){if(r&&r.job){setTimeout(function(){api('/api/pending/job?repo='+encodeURIComponent(repo)).then(function(j){if(j&&j.done)return done(j.result);if(j&&j.working){ap.textContent='Approving'+(j.step?': '+j.step:'')+'...';return done({job:repo});}ap.disabled=false;apLabel();loadTasks();});},3000);return;}var o=document.getElementById('reviewout');
 if(r&&r.ask){var ob=document.getElementById('reviewout');ap.disabled=false;apLabel();ob.innerHTML="<div class='note'>"+esc(repo)+": "+esc(r.error)+(r.waiting?" Files: "+esc((r.shared||[]).slice(0,4).join(', ')):"")+"<div class='row' style='margin-top:6px'><button class='act askyes'>"+(r.untasked?"Commit them":"Approve anyway")+"</button><button class='ghost askno'>"+(r.waiting?"Wait for it":"Not now")+"</button></div></div>";
 ob.querySelector('.askyes').addEventListener('click',function(){ap.disabled=true;ap.textContent='Committing & pushing...';ob.innerHTML='';if(r.untasked)yes.confirm=true;else yes.allowShared=true;go();});
 ob.querySelector('.askno').addEventListener('click',function(){ob.innerHTML='';});return;}
@@ -1926,7 +1945,7 @@ if(r.autoMerge==='queued')m+=" &middot; will auto-merge when CI passes";
 else if(r.autoMerge==='unavailable')m+="<div class='muted'>auto-merge not enabled for this repo on GitHub (Settings &rarr; General &rarr; Allow auto-merge)"+(r.autoMergeErr?": "+esc(r.autoMergeErr):"")+"</div>";
 if(r.live&&r.live.text)m+="<div class='muted'><b>"+(r.live.state==='pending'?"Not live yet.":"Live.")+"</b> "+esc(r.live.text)+(r.live.asked?" The question to deploy it is waiting on the Workdesk.":"")+"</div>";
 if(r.note)m+="<div class='muted'>"+esc(r.note)+"</div>";
-o.innerHTML="<div class='note "+(r.unsent?"err":"ok")+"'>"+m+(r.unsent?"<div class='muted'>The card below keeps it, with Send again.</div>":"")+"</div>";loadTasks();});}go();});});lqLight();});}
+o.innerHTML="<div class='note "+(r.unsent?"err":"ok")+"'>"+m+(r.unsent?"<div class='muted'>The card below keeps it, with Send again.</div>":"")+"</div>";loadTasks();}go();});});lqLight();});}
 function loadArchived(){TARCH=true;lqTitle();var nb=$('needsbox');if(nb)nb.innerHTML='';api('/api/tasks?archived=1').then(function(list){ALLTASKS=list;renderFilter();var el=document.getElementById('tasklist');
 if(!list.length){el.innerHTML="<div class='muted' style='margin-top:12px'>Nothing archived yet. Completed tasks land here.</div>";return;}
 var h="<div class='tgroup'>Archived <span class='tcount'>"+list.length+"</span></div>";list.forEach(function(t){h+=taskRow(t,true);});el.innerHTML=h;wireTaskRows(el);});}
@@ -1945,16 +1964,20 @@ function nQs(a){return (a.ask&&a.ask.questions)?a.ask.questions.length:0;}
 var DONEOPT=/^(done|did (it|both|that)|i('ve| have)? (did|done|tried)|tried it|it (worked|works|clicked|looks|landed|opened)|looks right)([^a-z]|$)/i;
 function relHtml(rl){return "<div class='qrel"+(rl.waiting?" wait":"")+"'>Needs "+esc(rl.name+" "+rl.needs)+" &middot; installed: "+esc(rl.installed||'none')+" &middot; on npm: "+esc(rl.npm||'unknown')+
 (rl.waiting==='npm'?" &middot; not published yet, so this can't be done yet":rl.waiting==='install'?" &middot; "+(rl.name==='symbiot'?"update Symbiot first":"install it first"):"")+"</div>";}
-function askHtml(a){var k=a.ask;if(!k)return '';var qs=k.questions||[],ss=k.suggestions||[];if(!qs.length&&!ss.length)return '';
+function askHtml(a){var k=a.ask;if(!k)return '';var qs=k.questions||[],ss=k.suggestions||[],aw=k.away||[];if(!qs.length&&!ss.length&&!aw.length)return '';
 var h="<div class='aq' data-id='"+esc(a.id)+"'>";
 if(qs.length){h+="<h4><i class=ic-ask></i> "+qs.length+" question"+(qs.length>1?"s":"")+" for you</h4>";
-qs.forEach(function(q,i){var rl=q.release;h+="<div class='q' data-i='"+i+"'>"+(q.task?"<div class='qfor' title='"+escQ(q.task)+"'>for: "+esc(q.task)+"</div>":"")+"<div class='qt'>"+esc(q.shown||q.q)+"</div>"+(q.context?"<div class='qc'>"+esc(q.context)+"</div>":"")+(rl?relHtml(rl):"");
+qs.forEach(function(q,i){var rl=q.release;h+="<div class='q' data-i='"+i+"'>"+(q.task?"<div class='qfor' title='"+escQ(q.task)+"'>for: "+esc(q.task)+"</div>":"")+"<div class='qt'>"+esc(q.shown||q.q)+"</div>"+(q.context?"<div class='qc'>"+codeText(q.context)+"</div>":"")+(rl?relHtml(rl):"");
 (q.options||[]).forEach(function(o,j){var off=rl&&rl.waiting&&DONEOPT.test(o);h+="<label class='opt"+(off?" off":"")+"'><input type='radio' name='q_"+esc(a.id)+"_"+i+"' value='"+j+"'"+(off?" disabled":"")+"><span>"+whoHtml((q.labels&&q.labels[j])||o)+(off?" <i>(once "+esc(rl.name+" "+rl.needs)+" is installed)</i>":"")+"</span></label>";});
 h+="<input class='qother' placeholder='"+((q.options&&q.options.length)?"or answer in your own words":"your answer")+"'></div>";});
 h+="<div class='row'><button class='act qsend' title='save the answers and hand the repo back to your agent'>Send answers &amp; continue</button><button class='ghost qsave' title='save the answers for the next run'>Save only</button></div>";}
-if(ss.length){var shown=IDEASOPEN[a.path]?ss.length:(k.ideasShown||ss.length);h+="<h4><i class=ic-idea></i> Ideas from the agent</h4>";ss.forEach(function(s,i){if(i>=shown)return;h+="<div class='idea'><span style='flex:1'>"+esc(s.text)+(s.other?" <span class='tag' title='this idea is for another project, so + task adds it to that one'>for "+esc(s.repo)+"</span>":"")+"</span>"+(s.added?"<span class='tag'>in Tasks</span>":"<button class='ghost qidea' data-i='"+i+"' style='padding:3px 9px;font-size:12px'>+ task</button><button class='ghost qskip' data-i='"+i+"' title='turn this idea down: the next one moves up, and the agent is told not to suggest it again' style='padding:3px 9px;font-size:12px'>Skip</button>")+"</div>";});
+if(ss.length){var shown=IDEASOPEN[a.path]?ss.length:(k.ideasShown||ss.length),nf=ss.filter(function(s){return s.from;}).length;h+="<h4><i class=ic-idea></i> "+(!nf?"Ideas from the agent":nf===ss.length?"Ideas for "+esc(a.name)+" from other agents":"Ideas for "+esc(a.name))+"</h4>";ss.forEach(function(s,i){if(i>=shown)return;h+=ideaHtml(s,i,'');});
 if(ss.length>shown)h+="<div class='row'><button class='ghost qmore' title='the agent ranks its ideas best first: weigh these two before adding more'>"+(ss.length-shown)+" more idea"+(ss.length-shown>1?"s":"")+", ranked lower</button></div>";}
+// ideas it had for another lane are on that lane's card (agents.mjs routeIdeas): here, one line saying where they went
+if(aw.length)h+="<details class='ideasent'><summary title='they show on that project&#39;s card, where + task adds them to its tasks'><i class=ic-idea></i> "+(k.sent||[]).map(function(x){return x.n+" idea"+(x.n>1?"s":"")+" sent to "+esc(x.repo);}).join(", ")+"</summary>"+aw.map(function(s,i){return ideaHtml(s,i,'1');}).join('')+"</details>";
 return h+"</div>";}
+function ideaHtml(s,i,w){var dw=w?" data-w='1'":"";return "<div class='idea'><span style='flex:1'>"+esc(s.text)+(s.from?" <span class='tag' title='the "+escQ(s.from)+" agent had this idea for this project'>from "+esc(s.from)+"</span>":s.other?" <span class='tag' title='this idea is for another project, so + task adds it to that one'>for "+esc(s.repo)+"</span>":"")+"</span>"+(s.added?"<span class='tag'>in Tasks</span>":"<button class='ghost qidea' data-i='"+i+"'"+dw+" style='padding:3px 9px;font-size:12px'>+ task</button><button class='ghost qskip' data-i='"+i+"'"+dw+" title='turn this idea down: the next one moves up, and the agent is told not to suggest it again' style='padding:3px 9px;font-size:12px'>Skip</button>")+"</div>";}
+function ideaOf(a,btn){return (btn.getAttribute('data-w')?a.ask.away||[]:a.ask.suggestions||[])[+btn.getAttribute('data-i')];}
 var IDEASOPEN={};
 function qKeyOf(qe){var box=qe.closest('.aq');var a=box&&agentById(box.getAttribute('data-id'));var q=a&&a.ask.questions[+qe.getAttribute('data-i')];return q?a.path+'|'+q.q:'';}
 // the typed answer is kept in localStorage too (bdSet, the same key as its blob on Home): a reload or a restart keeps it
@@ -1974,11 +1997,11 @@ msg.innerHTML="<div class='note ok'>&#10003; Saved "+r.saved+" answer"+(r.saved>
 var s1=box.querySelector('.qsend'),s2=box.querySelector('.qsave');
 if(s1)s1.addEventListener('click',function(){send(true);});if(s2)s2.addEventListener('click',function(){send(false);});
 var more=box.querySelector('.qmore');if(more)more.addEventListener('click',function(){IDEASOPEN[a.path]=true;loadAgents();});
-box.querySelectorAll('.qidea').forEach(function(btn){btn.addEventListener('click',function(){var s=a.ask.suggestions[+btn.getAttribute('data-i')];if(!s)return;btn.disabled=true;
+box.querySelectorAll('.qidea').forEach(function(btn){btn.addEventListener('click',function(){var s=ideaOf(a,btn);if(!s)return;btn.disabled=true;
 var sk=btn.parentNode.querySelector('.qskip');if(sk)sk.remove();
 api('/api/tasks/add',{text:s.text,repo:s.repo||a.name}).then(function(){s.added=true;btn.outerHTML="<span class='tag'>in Tasks</span>";});});});
-box.querySelectorAll('.qskip').forEach(function(btn){btn.addEventListener('click',function(){var s=a.ask.suggestions[+btn.getAttribute('data-i')];if(!s)return;btn.disabled=true;
-api('/api/agents/skip',{path:a.path,text:s.text}).then(function(r){if(!r||r.error){btn.disabled=false;document.getElementById('agentsmsg').innerHTML="<div class='note err'>"+esc((r&&r.error)||'failed')+"</div>";return;}loadAgents();});});});});}
+box.querySelectorAll('.qskip').forEach(function(btn){btn.addEventListener('click',function(){var s=ideaOf(a,btn);if(!s)return;btn.disabled=true;
+api('/api/agents/skip',{path:s.path||a.path,text:s.text}).then(function(r){if(!r||r.error){btn.disabled=false;document.getElementById('agentsmsg').innerHTML="<div class='note err'>"+esc((r&&r.error)||'failed')+"</div>";return;}loadAgents();});});});});}
 // A step of yours an answer picked (👤 You): the next run waits for it (agents.mjs waitingFor)
 function waitHtml(a){var w=a.waiting;if(!w)return '';var fs=(w.files||[]).map(function(f){return "<code>"+esc(f)+"</code>";}).join(" or ");if(w.cmd)fs=(fs?fs+" or ":"")+"the agent command in Settings &rarr; Handoff";
 return "<div class='aq'><h4><i class=ic-pause></i> Waiting on your step</h4><div class='qt'><i class=ic-person></i> "+esc(w.step)+"</div><div class='qc'>"+(fs?"Your agent "+(w.rerun?"starts by itself":"can start")+" once "+fs+" changes"+(w.rerun?", while Symbiot runs":"")+". Done it some other way?":"Your agent waits for it, so it doesn't stop on the same questions again.")+" Start it now once it's done.</div><div class='row'><button class='act wstart' data-id='"+esc(a.id)+"'>Start it now</button></div></div>";}
@@ -2036,7 +2059,7 @@ var first=(w.final||'').split(String.fromCharCode(10))[0];if(!run&&first)h+="<di
 var boxes=[];
 if(w.todos&&w.todos.length||pg){var td="<div class='wkbox'><div class='wkh'>"+(pg?wkRing(pg.done,pg.total):'')+"<span>its to-do list</span></div>";
 (w.todos||[]).forEach(function(t){td+="<div class='wktodo "+esc(t.status)+"'><i></i><span>"+esc(t.status==='in_progress'?t.active:t.text)+"</span></div>";});
-if(!(w.todos||[]).length)td+="<div class='muted' style='font-size:12px'>No list of its own: "+pg.done+" of "+pg.total+" tasks ticked in TASKS.md.</div>";boxes.push(td+"</div>");}
+if(!(w.todos||[]).length)td+="<div class='muted' style='font-size:12px'>"+pg.done+" of "+pg.total+" task"+(pg.total===1?"":"s")+" done.</div>";boxes.push(td+"</div>");}
 if(w.steps&&w.steps.length){var sp="<div class='wkbox'><div class='wkh'><span>what it did</span><span style='margin-left:auto'>"+wkSpark(w.pace)+"</span></div>";
 w.steps.slice(-10).forEach(function(x){sp+="<div class='wkstep "+esc(x.status)+"'>"+wkIcon(x.kind)+"<span class='wt'><b>"+esc(x.verb)+"</b> "+esc(x.target||'')+"</span>"+(x.tests?"<span class='wktest"+(x.tests.failed?' bad':'')+"'>"+x.tests.passed+"&#10003; "+x.tests.failed+"&#10007;</span>":"")+"<span class='wm'>"+(x.status==='running'?'&hellip;':wkMs(x.ms))+"</span></div>";});
 if(w.count>10)sp+="<div class='muted' style='font-size:11px;margin-top:4px'>and "+(w.count-10)+" earlier step"+(w.count-10>1?'s':'')+"</div>";boxes.push(sp+"</div>");}
@@ -2049,7 +2072,7 @@ return h;}
 // The Questions page (next to Reports): every agent's open questions and suggestions, the same cards as on
 // the Workdesk, answered the same way. Not redrawn under someone typing an answer.
 function loadAsks(){api('/api/agents').then(function(list){var el=$('askslist');if(!el||!list)return;if(answering()||selIn(el))return;saveDrafts(el);AGENTLIST=list;
-var xs=list.filter(function(a){return a.ask&&((a.ask.questions||[]).length||(a.ask.suggestions||[]).length);});
+var xs=list.filter(function(a){return a.ask&&((a.ask.questions||[]).length||(a.ask.suggestions||[]).length||(a.ask.away||[]).length);});
 el.innerHTML=xs.length?xs.map(function(a){return "<div class='tgroup agg'>"+esc(a.name)+"</div>"+askHtml(a);}).join(''):"<div class='muted' style='margin-top:12px'>Nothing to answer right now. When an agent has a question or an idea for you, it shows here.</div>";
 wireAsks(el);restoreDrafts(el);});}
 function loadAgents(){loadLanes();loadParked(agentsDraw);phoneApprovedNote();}
@@ -2073,23 +2096,25 @@ var anyRunning=list.some(function(a){return a.status==='running';});
 if(answering()||selIn(el)){stopAgentsPoll();if(anyRunning&&current==='tasks')agentsTimer=setTimeout(loadAgents,8000);else selWait('agents',loadAgents);return;} // don't re-render under someone typing an answer, or selecting text to copy
 saveDrafts(el);AGENTLIST=list;
 var agentBlock=function(a){var pz=agentPaused(a),cls=a.status==='running'?'run':pz?'paused':(a.status==='done'?'ok':'fail');
-var st=a.status==='running'?('working &middot; '+fmtE(a.elapsed)):pz?('paused &middot; '+a.progress.done+'/'+a.progress.total+' tasks done &middot; turn ended, will check again'+(a.work&&a.work.restOn?' &middot; '+esc(a.work.restOn):'')+' &middot; '+fmtE(a.elapsed)):(esc(a.status)+' &middot; '+fmtE(a.elapsed)+(a.exitCode!=null?' &middot; exit '+a.exitCode:''));
-if(a.phase==='stuck')st+=" &middot; <span style='color:var(--amber)'>may be stuck: "+(a.line&&a.line.looping?"going round in circles":"no move for "+((a.line&&a.line.quiet)||'?')+" min")+"</span>";
-else if(a.phase==='waiting')st+=" &middot; turn ended, waiting on something outside it";
-if(a.fromHeld)st+=" &middot; started on the tasks held for the last run";
-if(a.earlier)st+=" &middot; "+(a.status==='running'?"started outside this window":"ran before Symbiot last started");
-if(a.waiting)st+=" &middot; <span style='color:var(--amber)'>waiting on your step</span>";
-if(nQs(a))st+=" &middot; <span style='color:var(--amber)'>needs your answers</span>";
-if(a.needs&&!a.needs.waiting)st+=" &middot; <span style='color:var(--amber)'>"+(a.needs.kind==='approve'?"waits for your OK":"needs you")+"</span>";
-var hw=(a.handing||[]).filter(function(x){return !x.gone;}).length;if(hw)st+=" &middot; <span style='color:var(--amber)'>"+(hw>1?hw+" handovers":"a handover")+" not sent yet</span>";
-if(a.remember&&a.remember.length)st+=" &middot; <span style='color:var(--amber)'>found "+a.remember.length+" thing"+(a.remember.length>1?"s":"")+" to remember</span>";
+// One status in plain words on the block, the rest behind "details" (review of 20 Oct 2026, Q5: "done ·
+// 60m 0s · turn ended, waiting on something outside it · ran before Symbiot last started · waits for your OK")
+var more=[],hw=(a.handing||[]).filter(function(x){return !x.gone;}).length,amber=true;
+var st=nQs(a)?'Waiting for your answer':a.needs&&!a.needs.waiting?(a.needs.kind==='approve'?'Waiting for your OK':'Needs you'):a.waiting?'Waiting on your step':hw?(hw>1?hw+' handovers':'A handover')+' not sent yet':a.phase==='stuck'?'May be stuck: '+(a.line&&a.line.looping?'going round in circles':'no move for '+((a.line&&a.line.quiet)||'?')+' min'):(amber=false,a.status==='running'?'Working':pz?'Paused: '+a.progress.done+' of '+a.progress.total+' done, it carries on next turn':a.status==='done'?'Finished':'Stopped');
+st=amber?"<span style='color:var(--amber)'>"+st+"</span>":st;
+more.push((a.status==='running'?'working for ':'ran for ')+fmtE(a.elapsed));if(a.status!=='running'&&a.exitCode!=null&&a.exitCode!==0)more.push('exit code '+a.exitCode);
+if(pz&&a.work&&a.work.restOn)more.push(esc(a.work.restOn));if(a.phase==='waiting')more.push('its turn ended, waiting on something outside it');
+if(a.fromHeld)more.push("started on the tasks held for the last run");
+if(a.earlier)more.push(a.status==='running'?"started outside this window":"ran before Symbiot last started");
+if(a.remember&&a.remember.length)more.push("found "+a.remember.length+" thing"+(a.remember.length>1?"s":"")+" to remember");
 if(a.held!=null){var hn=a.held.length,ht=a.held.map(function(t){return "&bull; "+esc(t).replace(/'/g,'&#39;');}).join('&#10;');
 ht+=(hn?'&#10;&#10;':'')+(a.status==='running'?"Sent while this agent was running. They wait in .symbiot/TASKS.next.md, replace TASKS.md when it finishes (keeping its ticks), and an agent starts on them then.":"They wait in .symbiot/TASKS.next.md for the agent running in this folder to finish. After that, an agent starts on them the next time the Tasks tab checks this repo, or send again.");
 st+=" &middot; <span style='color:var(--amber);cursor:help' title='"+ht+"'><i class=ic-pause></i> "+(hn?hn+" task"+(hn>1?"s":"")+" held":"tasks held")+"</span>";}
 // a repo's run can be parked from here in one click: its tasks start no runs until it's unparked
 var pk=!/\\/drafts\\/act-[^/]*$/.test(String(a.path||''))&&a.path,parked=pk&&PARKED.paths.indexOf(a.path)>=0;
 if(parked)st+=" &middot; <span style='color:var(--amber)'>parked: no new runs</span>";
+if(!pk)st=projChip({project:a.project})+st; // an ops run: which project it's for, from the record
 var b="<div class='dh'><span class='orb "+cls+"'></span><span class='dn'>"+esc(String(a.name||'').split('**').join('').replace(/^(Agent:\s*)What['’]s needed:\s*/i,'$1'))+"</span><span class='dd'>"+st+"</span>"+(pk?"<button type='button' class='ghost apark' data-on='"+(parked?'0':'1')+"' title='"+(parked?"let its tasks start agent runs again":"stop its tasks starting agent runs, until you unpark it")+"'>"+(parked?'Unpark':'Park')+"</button>":"")+"</div>";
+if(more.length)b+="<details class='adet'><summary>details</summary><div class='muted'>"+more.join(' &middot; ')+"</div></details>";
 b+=workHtml(a);
 var ch=a.changed;
 if(ch&&(ch.dirty||ch.stat||(ch.commits&&ch.commits.length))){
@@ -2099,7 +2124,7 @@ if(ch&&(ch.dirty||ch.stat||(ch.commits&&ch.commits.length))){
   if(parts.length)b+="<div class='changed'>What it did &middot; "+parts.join(' &middot; ')+"</div>";
   if(ch.commits&&ch.commits.length)b+="<div class='commits'>"+ch.commits.map(function(c){return "<div><code>"+esc(c.hash)+"</code> "+esc(c.msg)+"</div>";}).join("")+"</div>";
 }else if(a.status==='done'){
-  b+="<div class='changed muted'>No file changes detected (the agent may have only planned or asked).</div>";
+  b+="<div class='changed muted'>No files changed.</div>";
 }
 b+=waitHtml(a)+needsHtml(a)+askHtml(a)+handHtml(a)+factsHtml(a);
 b+=a.work?("<details class='wkraw'><summary>what it said, in full</summary><pre class='alogout'>"+esc((a.tail&&a.tail.trim())||'(nothing yet)')+"</pre></details>"):("<pre class='alogout'>"+esc((a.tail&&a.tail.trim())||'(waiting for output…)')+"</pre>");
@@ -2245,10 +2270,13 @@ ln.innerHTML=d.away?"<b>"+esc(d.name)+" is out of reach.</b> Showing what it sen
 if(!c){el.innerHTML="<div class='row'><button class='ghost' id='pcnow'>Ask it now</button></div>";var n0=$('pcnow');if(n0)n0.addEventListener('click',function(){n0.disabled=true;api('/api/phone/check',{}).then(loadComputer);});return;}
 var h='',W="<span class='pcwait'> waiting to send</span>";
 (c.notes||[]).forEach(function(n){h+="<div class='task' data-note='"+escQ(n.id)+"'><span class='t err'>"+esc(n.error)+(n.what?" <span class='muted'>("+esc(n.what)+")</span>":"")+"</span><button class='ghost pcnote'>OK</button></div>";});
-var asks=c.asks||[],aps=c.approves||[],needs=c.needs||[];
-if(asks.length||aps.length||needs.length){h+="<div class='mkneeds lit'><div class='pshead'><span>Needs you &middot; "+(asks.length+aps.length+needs.length)+"</span><small>on "+esc(d.name)+"</small></div>";
-asks.forEach(function(a,i){var q=(a.questions||[])[0]||{};h+="<div class='pcq' data-ask='"+i+"'><div class='qn'>"+esc(a.name)+" asks"+((a.questions||[]).length>1?" &middot; 1 of "+a.questions.length:"")+"</div>"+(q.task?"<div class='qfor' title='"+escQ(q.task)+"'>for: "+esc(q.task)+"</div>":"")+"<div class='qq'>"+esc(q.shown||q.q||'')+"</div>"+
-(a.waiting?"<div class='note' style='margin:0'>You answered: "+esc((a.answered||[])[0]||'')+W+"</div>":"<div class='opts'>"+(q.options||[]).map(function(o,j){return "<button class='"+(j?'ghost':'act')+" pcopt' data-j='"+j+"'>"+esc((q.labels&&q.labels[j])||o)+"</button>";}).join('')+"</div><form class='pcown'><input placeholder='Or say it in your own words' maxlength='2000'><button class='ghost' type='submit'>Send</button></form>")+"</div>";});
+var asks=c.asks||[],aps=c.approves||[],needs=c.needs||[],prs=c.proofs||[],codesOn=c.codesOn||[],AND=window.SymbiotAndroid&&SymbiotAndroid.codes?SymbiotAndroid:null;
+if(asks.length||aps.length||needs.length||prs.length){h+="<div class='mkneeds lit'><div class='pshead'><span>Needs you &middot; "+(asks.length+aps.length+needs.length+prs.length)+"</span><small>on "+esc(d.name)+"</small></div>";
+prs.forEach(function(p,i){h+="<div class='pcq pcproof' data-proof='"+i+"'><div class='qn'>"+esc(p.name)+" &middot; check it before it goes out</div><div class='qq'>"+esc(p.title)+"</div>"+(p.to||p.kind!=='text'?"<div class='qfor pcto'>"+esc({sms:'SMS',whatsapp:'WhatsApp',pdf:'PDF',email:'Email',text:'Message'}[p.kind]||'Message')+(p.to?" to "+esc(p.to):"")+"</div>":"")+
+(p.body?"<div class='pcbubble'>"+esc(p.body)+"</div>":"")+((p.buttons||[]).length?"<div class='pcchips'>"+p.buttons.map(function(b){return "<span>"+esc(b)+"</span>";}).join('')+"</div>":"")+(p.file?"<div class='muted' style='font-size:12px'>"+esc(p.file)+"</div>":"")+
+(p.waiting?"<div class='note' style='margin:0'>You said: "+esc(p.answered||'')+W+"</div>":"<div class='opts'><button class='act pcsend'>Send</button><button class='ghost pcchange'>Change</button></div><form class='pcown' hidden><input placeholder='What should change?' maxlength='2000'><button class='ghost' type='submit'>Send back</button></form>")+"</div>";});
+asks.forEach(function(a,i){var q=(a.questions||[])[0]||{};h+="<div class='pcq' data-ask='"+i+"'><div class='qn'>"+(a.project!==undefined&&a.project!==a.name?projChip({project:a.project}):"")+esc(a.name)+" asks"+((a.questions||[]).length>1?" &middot; 1 of "+a.questions.length:"")+"</div>"+(q.task?"<div class='qfor' title='"+escQ(q.task)+"'>for: "+esc(q.task)+"</div>":"")+"<div class='qq'>"+esc(q.shown||q.q||'')+"</div>"+
+(a.waiting?"<div class='note' style='margin:0'>You answered: "+esc((a.answered||[])[0]||'')+W+"</div>":"<div class='opts'>"+(q.options||[]).map(function(o,j){return "<button class='"+(j?'ghost':'act')+" pcopt' data-j='"+j+"'>"+esc((q.labels&&q.labels[j])||o)+"</button>";}).join('')+"</div><form class='pcown'><input placeholder='Or say it in your own words' maxlength='2000'><button class='ghost' type='submit'>Send</button></form>"+(q.code&&AND?"<div class='pccode'>"+(codesOn.indexOf(q.code.key)>=0?"This phone passes on the code "+esc(q.code.site)+" texts you, and only that. <button class='ghost pccodes' data-on='0'>Stop</button>":"<button class='ghost pccodes' data-on='1'>Let this phone pass on "+esc(q.code.site)+"&rsquo;s code</button> <span class='muted'>the code only, once, then it&rsquo;s gone</span>")+"</div>":""))+"</div>";});
 aps.forEach(function(a,i){h+="<div class='pcq' data-ap='"+i+"'><div class='qn'>"+esc(a.repo)+" &middot; waiting for your Approve</div><div class='qq'>"+(a.tasks.length?a.tasks.length+" task"+(a.tasks.length>1?"s":"")+" done":"Changes without a task")+" &middot; <span class='muted'>"+esc(a.stat||(a.files+" file"+(a.files===1?"":"s")+" changed"))+"</span></div>"+(a.tasks.length?"<ul>"+a.tasks.map(function(t){return "<li>"+esc(t.text)+"</li>";}).join('')+"</ul>":"")+
 (a.waiting?"<div class='note' style='margin:0'>Approved here"+W+"</div>":"<div class='row' style='margin:0'><button class='act pcapprove'>Approve</button><span class='muted' style='font-size:12px'>exactly this: if the work changes before your computer gets it, it isn&rsquo;t approved</span></div>")+"</div>";});
 needs.forEach(function(n){h+="<div class='task'><span class='t'>"+esc(n.title)+" <span class='muted' style='font-size:12px'>"+esc(n.sub)+" &middot; on your computer</span></span></div>";});
@@ -2268,6 +2296,13 @@ el.querySelectorAll('.pcq[data-ask]').forEach(function(box){var a=asks[+box.getA
 var send=function(t){if(!t)return;pcDo('agent.answer',{path:a.path,answers:[{q:q.q,a:t}]});};
 box.querySelectorAll('.pcopt').forEach(function(b){b.addEventListener('click',function(){send((q.options||[])[+b.getAttribute('data-j')]);});});
 var f=box.querySelector('form');if(f)f.addEventListener('submit',function(ev){ev.preventDefault();send(f.querySelector('input').value.trim());});});
+el.querySelectorAll('.pccodes').forEach(function(b){b.addEventListener('click',function(){var a=asks[+b.closest('.pcq').getAttribute('data-ask')],q=(a.questions||[])[0]||{},on=b.getAttribute('data-on')==='1';
+if(on&&AND){var st={};try{st=JSON.parse(AND.codes())||{};}catch(e){}if(!st.allowed)AND.allowCodes();} // Android's own switch first: Notification access
+b.disabled=true;api('/api/phone/codes',{key:q.code.key,on:on}).then(function(x){if(x&&x.role){PCV=x;renderComputer();}});});});
+el.querySelectorAll('.pcq[data-proof]').forEach(function(box){var p=prs[+box.getAttribute('data-proof')];if(p.waiting)return;var f=box.querySelector('form');
+box.querySelector('.pcsend').addEventListener('click',function(){pcDo('proof.answer',{path:p.path,id:p.id,send:true});});
+box.querySelector('.pcchange').addEventListener('click',function(){f.hidden=false;f.querySelector('input').focus();});
+f.addEventListener('submit',function(ev){ev.preventDefault();var t=f.querySelector('input').value.trim();if(t)pcDo('proof.answer',{path:p.path,id:p.id,change:t});});});
 el.querySelectorAll('.pcq[data-ap]').forEach(function(box){var a=aps[+box.getAttribute('data-ap')],b=box.querySelector('.pcapprove');if(!b)return;b.addEventListener('click',function(){if(typeof confirm==='function'&&!confirm('Approve '+a.repo+'? It goes out as Approve on your computer does: committed, a PR opened, and a release if the version changed.'))return;b.disabled=true;pcDo('pending.approve',{repo:a.repo,sum:a.sum});});});
 el.querySelectorAll('.pctick').forEach(function(cb){cb.addEventListener('change',function(){pcDo('task.setDone',{id:cb.closest('.task').getAttribute('data-id'),done:cb.checked});});});
 var fm=el.querySelector('.pcadd');if(fm)fm.addEventListener('submit',function(ev){ev.preventDefault();var t=$('pctask');if(!t.value.trim()){t.focus();return;}pcDo('task.add',{text:t.value,repo:$('pcrepo').value},function(x){if(x&&!x.refused){var i=$('pctask');if(i)i.value='';}});});}
@@ -2302,7 +2337,7 @@ if(d.error)h+="<div class='note err'>"+esc(d.error)+"</div>";
 h+="<div class='cxg'>"+d.groups.map(function(g){return "<div class='cxc'><div class='cxl'>"+esc(g)+"</div>"+d.items.filter(function(x){return x.group===g;}).map(function(it){var on=it.state!=='off';
 var rc=reachOf(d,it.id),rt=rc?(rc.ready?" Your agent's runs can use it too, through Claude's "+rc.connector.replace(/^claude\.ai\s+/i,'')+" connector.":" Your agent's runs can use it too once you connect "+rc.name+" in claude.ai → Settings → Connectors (only you can sign in there)."):'';
 return "<div class='lnk cx "+escQ(it.state)+"' data-id='"+escQ(it.id)+"'><button type='button' class='lbtn' title='"+escQ(String(it.note||(on?'open '+it.url+' to sign in again':'sign in at '+it.url+' and link it')).replace(/\.?\s*$/,rt?'.':'')+rt)+"'><span class='cxb' aria-hidden='true'></span><span class='cxn'>"+esc(it.name)+"</span>"+(rc?"<i class='ic-plug cxa"+(rc.ready?" ready":"")+"' role='img' aria-label='"+escQ(rc.ready?"agent runs can use it too":"agent runs can use it once connected in claude.ai")+"'></i>":"")+"<span class='cxs'>"+(on?esc(LINKWORD[it.state]||''):'Link')+"</span></button>"+
-(on?"<button type='button' class='lmore' title='check it now' aria-label='Check "+escQ(it.name)+" now'>&#8635;</button><button type='button' class='lrm' title='unlink: stop watching it and stop trusting it'>Unlink</button>":"")+"</div>";}).join('')+"</div>";}).join('')+"</div>";
+(on?"<button type='button' class='lmore' title='check it now' aria-label='Check "+escQ(it.name)+" now'>&#8635;</button>"+(d.chrome?"<button type='button' class='lact"+(it.act?" on":"")+"' aria-pressed='"+(it.act?"true":"false")+"' title='"+escQ(it.act?"Agents may click, type and fill here in your own Chrome. Anything that sends, posts, pays or deletes still waits for your Go on a card. Click to make it read-only again.":"Agents only read this site in your own Chrome. Click to let them click, type and fill here too: anything that sends, posts, pays or deletes waits for your Go on a card.")+"'>"+(it.act?"Acts":"Reads")+"</button>":"")+"<button type='button' class='lrm' title='unlink: stop watching it and stop trusting it'>Unlink</button>":"")+"</div>";}).join('')+"</div>";}).join('')+"</div>";
 // what a check that couldn't confirm a sign-in found (links.mjs foundNote), in plain sight
 var nn=d.items.filter(function(it){return it.state==='signin'&&it.note;});
 if(nn.length)h+="<div class='note muted'>"+nn.map(function(it){return "<div><b>"+esc(it.name)+"</b>: "+esc(it.note)+"</div>";}).join('')+"</div>";return h;}
@@ -2317,6 +2352,7 @@ linksOut("<div class='note ok'>Opened the Symbiot Browser with "+esc(name)+". Si
 [20000,60000,120000].forEach(function(ms){setTimeout(loadLinks,ms);});});});
 var m=sp.querySelector('.lmore');if(m)m.addEventListener('click',function(){m.disabled=true;api('/api/links/check',{id:lid}).then(function(r){m.disabled=false;
 if(r&&r.busy)linksOut("<div class='note muted'>The Symbiot Browser is open. Click Done in it when you’ve signed in, then check again.</div>");else if(r&&r.error)linksOut("<div class='note err'>"+esc(r.error)+"</div>");loadLinks();loadBoard();});});
+var ac=sp.querySelector('.lact');if(ac)ac.addEventListener('click',function(){ac.disabled=true;api('/api/links/act',{id:lid,on:!ac.classList.contains('on')}).then(function(r){if(r&&r.error)linksOut("<div class='note err'>"+esc(r.error)+"</div>");else if(r&&r.items){LINKS=r;renderLinks();}});});
 var x=sp.querySelector('.lrm');if(x)x.addEventListener('click',function(){api('/api/links/unlink',{id:lid}).then(function(){linksOut('');loadLinks();loadTrusted();loadBoard();});});});});}
 // What Symbiot remembers (mind.mjs): a row per thing, with what it knows; × forgets one.
 function loadMind(){api('/api/mind').then(function(d){var el=document.getElementById('mindlist');if(!el||!d)return;var ns=d.nodes||[];
@@ -2593,6 +2629,12 @@ var MKPV='';
 function mkTags(t){return String(t||'').split(/(#[A-Za-z0-9_]+)/g).map(function(x,i){return i%2?"<span class='lihash'>"+esc(x)+"</span>":esc(x);}).join('');}
 function mkMediaSrc(rel){return '/api/marketing/media?rel='+encodeURIComponent(rel)+'&t='+encodeURIComponent(T);}
 // Reddit's markdown, as far as a preview needs it: its text as written, a span in backticks as code.
+// A card's words with code shown as code: a fenced block as a box of its own (its language word
+// dropped), inline code as code (review of 20 Oct 2026, Q5: a sudo line showed as backticks in prose).
+function codeText(t){var f=String.fromCharCode(96,96,96);return String(t||'').split(f).map(function(x,i,all){if(i%2&&i<all.length-1){var nl=x.indexOf(String.fromCharCode(10)),c=nl>=0&&/^[a-z0-9+-]*$/i.test(x.slice(0,nl).trim())?x.slice(nl+1):x;return "<code class='bcode'>"+esc(c.trim())+"</code>";}return mkRdText((i%2?f:'')+x);}).join('');}
+// The project a card is about (home.mjs projectFor), before its name: shown when the name doesn't
+// say it already (an ops run's card), or "no project" when the record names none.
+function projChip(y){if(!y||y.project===undefined||(y.repo&&y.project===y.repo))return '';return "<span class='bproj"+(y.project?'':' none')+"' title='"+escQ(y.project?'which project this is about':'this run was started for no project')+"'>"+esc(y.project||'no project')+"</span>";}
 function mkRdText(t){var bt=String.fromCharCode(96);return String(t||'').split(bt).map(function(x,i,all){return i%2&&i<all.length-1?"<code>"+esc(x)+"</code>":esc((i%2?bt:'')+x);}).join('');}
 function mkRedditHtml(p){var a=p.author||{},who=p.handle||(a.name?'you ('+a.name+')':'you');
 return "<div class='rdpost' aria-label='Reddit preview'><div class='rdhead'><span class='rdic' aria-hidden='true'>r/</span><b>"+esc(p.where||'Reddit')+"</b><span>&middot; "+(p.when?"scheduled for "+esc(p.when):"now")+" &middot; posted by "+esc(who)+"</span></div>"
@@ -3275,7 +3317,7 @@ function lqRelayOn(){var S=lqSize();return LQ.scene==='work'&&S.w>=900&&lqRelayL
 // draws (Sign in to <site>) is never wired without what it opens (2026-10-14: it did nothing).
 function rlAsk(p,nm,q){return {kind:'ask',name:nm,repo:p.repo,q:q.q,raw:q.raw,task:q.task,labels:q.labels,options:q.options,path:q.path,fix:q.fix,id:q.id,sub:q.sub,draft:q.draft,signInTo:q.signInTo,more:Math.max(0,(p.asks||p.qs.length)-1)};}
 function lqRelay(){var el=$('lqrelay'),ln=$('lqline'),w=LQ.workData||{};if(ln)ln.innerHTML=LQ.scene==='work'?lqLineText(w):'';if(!el)return;
-var ps=lqRelayList(w),sig=JSON.stringify(ps.map(function(p){return [p.repo,p.summary,p.state,p.ready,p.shipping,(p.qs||[]).map(function(q){return q.q;}),(p.ideas||[]).map(function(i){return i.full;}),p.parked,(p.handing||[]).map(function(x){return x.why+handProg(x);})];}));
+var ps=lqRelayList(w),sig=JSON.stringify(ps.map(function(p){return [p.repo,p.summary,p.state,p.ready,p.shipping,(p.qs||[]).map(function(q){return q.q;}),(p.ideas||[]).map(function(i){return i.full;}),p.sent,p.parked,(p.handing||[]).map(function(x){return x.why+handProg(x);})];}));
 if(el.contains&&document.activeElement&&el.contains(document.activeElement)&&el.innerHTML)return;if(sig===LQ.relaySig&&el.innerHTML)return;LQ.relaySig=sig;
 if(!ps.length){el.innerHTML='';return;}
 el.innerHTML=ps.map(function(p,i){var nm=p.name||p.repo,q=(p.qs||[])[0],st=p.parked?'parked':(p.qs&&p.qs.length)?'asks you':p.shipping?'approving: '+p.shipping:p.ready?'ready for your OK':p.state||'';
@@ -3284,7 +3326,8 @@ if(p.summary)h+="<p class='rlsum' title='"+escQ(p.summary)+"'>"+esc(p.summary)+"
 if(q)h+="<div class='lqblob rlask'>"+blobBody(rlAsk(p,nm,q),false)+"</div>";
 if(p.ready)h+="<button type='button' class='act rlok'>Review and approve</button>";
 if(p.handing&&p.handing.length)h+="<div class='rlk'>Handed over</div>"+p.handing.map(function(x){var pg=handProg(x);return "<p class='rlsum rlhand' title='"+escQ(x.text)+"'><b>"+esc(x.lane)+"</b>: "+esc(x.why)+(pg?" \u00b7 "+esc(pg):"")+"</p>";}).join('');
-if(p.ideas&&p.ideas.length)h+="<div class='rlk'>Extra tasks it suggests</div>"+p.ideas.map(function(d,j){return "<div class='rli' data-j='"+j+"'><span title='"+escQ(d.full)+"'>"+esc(d.text)+"</span><span class='rlia'><button type='button' class='rladd'>+ task</button><button type='button' class='rlskip'>Skip</button></span></div>";}).join('');
+if(p.ideas&&p.ideas.length)h+="<div class='rlk'>"+(p.ideas.every(function(d){return d.from;})?"Extra tasks other agents suggest":"Extra tasks it suggests")+"</div>"+p.ideas.map(function(d,j){return "<div class='rli' data-j='"+j+"'><span title='"+escQ(d.full)+"'>"+esc(d.text)+(d.from?" <small class='rlfrom'>from "+esc(d.from)+"</small>":"")+"</span><span class='rlia'><button type='button' class='rladd'>+ task</button><button type='button' class='rlskip'>Skip</button></span></div>";}).join('');
+if(p.sent&&p.sent.length)h+="<p class='rlsum rlsent' title='they show on that project&#39;s card'>"+p.sent.map(function(x){return x.n+" idea"+(x.n>1?"s":"")+" sent to "+esc(x.repo);}).join(", ")+"</p>";
 return h+"<div class='rlf'><button type='button' class='rlopen'>Its tasks &rsaquo;</button><button type='button' class='rlag'>Its agents &rsaquo;</button></div></section>";}).join('');
 el.querySelectorAll('.rly').forEach(function(box){var p=ps[+box.getAttribute('data-i')],q=(p.qs||[])[0],nm=p.name||p.repo;
 var ab=box.querySelector('.rlask');if(ab&&q)wireBlob(ab,rlAsk(p,nm,q),{done:function(){LQ.relaySig='';lqLoadWork();}});
@@ -3468,7 +3511,9 @@ function lqHomeLine(h){var el=$('lqline'),b=document.body,t='',pc=h.computer,ap=
 if(pc&&pc.away)t="<b>"+esc(pc.name)+" is out of reach.</b> Showing what it sent "+(pc.heard?"at "+esc(pcTime(pc.heard)):"last")+(pc.queued?" · "+pc.queued+" change"+(pc.queued>1?"s":"")+" waiting to send":"")+".";
 else if(pc&&pc.old)t="<b>Pair this phone with "+esc(pc.name)+" again:</b> the link between them is sealed now.";
 else if(ap)t=ap.status==='failed'?"<b>Approving "+esc(ap.repo)+" from "+esc(ap.phone)+" failed:</b> "+esc(ap.error||''):(ap.status==='approving'?"Approving ":"Approved ")+esc(ap.repo)+" from "+esc(ap.phone)+" at "+esc(pcTime(ap.at))+".";
-if(!t&&qPaused())t='<b>'+esc(qPaused())+'</b>';if(b&&b.classList)b.classList.toggle('lq-hline',!!t);if(el&&LQ.scene!=='work'&&el.innerHTML!==t)el.innerHTML=t;}
+if(!t&&qPaused())t='<b>'+esc(qPaused())+'</b>';
+if(!t&&h.browserSince)t="<b>The Symbiot Browser is open</b>, since "+esc(pcTime(h.browserSince))+" ("+esc(agoTxt(h.browserSince))+"). Agents read from a copy of its sign-ins meanwhile, and it closes by itself after "+(h.browserIdle||20)+" minutes unused.";
+if(b&&b.classList)b.classList.toggle('lq-hline',!!t);if(el&&LQ.scene!=='work'&&el.innerHTML!==t)el.innerHTML=t;}
 // Home on a phone paired with your computer: what you act on there, read at a glance.
 // Not the liquid (its groups, orbs and the computer's work behind a droplet: "the UI on
 // the phone is bloated", 2026-10-12), but a plain list: how fresh the computer's copy
@@ -3675,9 +3720,10 @@ for(var k in a){var d=a[k];if(keys[k]||d.told||!d.text||d.src==='desk')continue;
 if(ch)try{localStorage.setItem(BDKEY,JSON.stringify(a));}catch(e){}}
 function blobBody(y,home){var h='',nm=y.name||y.repo||(y.kind==='setup'?y.title:'')||'';
 if(!y.local)h+="<button type='button' class='bx' title='Dismiss: it won&#39;t show here again (Undo brings it back)' aria-label='Dismiss this card'>&times;</button>";
-h+=home?"<button type='button' class='lt' title='open "+escQ(nm)+", with this lit up'><span>"+esc(lqShort(nm,30))+"</span><i>open &rsaquo;</i></button>":"<div class='nhead'><b>"+esc(nm)+(y.kind==='ask'?" asks":"")+"</b>"+(y.more?"<span class='muted'>+"+y.more+" more on its block in Agents</span>":"")+"</div>";
+var pc=projChip(y);
+h+=home?"<button type='button' class='lt' title='open "+escQ(nm)+", with this lit up'>"+pc+"<span>"+esc(lqShort(nm,pc?22:30))+"</span><i>open &rsaquo;</i></button>":"<div class='nhead'>"+pc+"<b>"+esc(nm)+(y.kind==='ask'?" asks":"")+"</b>"+(y.more?"<span class='muted'>+"+y.more+" more on its block in Agents</span>":"")+"</div>";
 if(y.kind!=='ask')return h+"<div class='bq'>"+esc(y.kind==='approve'?String(y.sub||'').replace(/ · only you decide$/,''):String(y.sub||'').charAt(0).toUpperCase()+String(y.sub||'').slice(1)+'.')+"</div><div class='bo'><button type='button' class='nopt rec ngo'><span class='bt'>"+(y.kind==='approve'?'Review and approve':y.id==='setup:inbox'?(y.signin?'Sign in again':'Show me your inbox'):y.id==='setup:ai'?'Connect an AI':y.pick?'Use '+y.pick.name:y.urgent?'Reconnect':'Open Settings')+"</span></button></div>";
-var os=y.options||[];if(y.draft)h+=draftHtml(y.draft);if(y.status)h+="<div class='bwait'><i class=ic-pause></i> "+esc(y.status)+"</div>";if(y.task)h+="<div class='bfor' title='"+escQ(y.task)+"'>for: "+esc(y.task)+"</div>";h+="<div class='bq' title='"+escQ((y.q||'')+(y.why?' ('+y.why+')':''))+"'>"+esc(y.q||y.sub||'')+"</div>"+((y.covered&&y.covered.length)?"<div class='muted bcov'>Already covered? "+y.covered.map(esc).join(' · ')+"</div>":"");
+var os=y.options||[];if(y.draft)h+=draftHtml(y.draft);if(y.status)h+="<div class='bwait'><i class=ic-pause></i> "+esc(y.status)+"</div>";var tk=String(y.task||'').replace(/^Agent:\\s*/,'');if(tk&&tk.slice(0,24)!==String(nm).slice(0,24))h+="<div class='bfor' title='"+escQ(tk)+"'>for: "+esc(tk)+"</div>";h+="<div class='bq' title='"+escQ((y.q||'')+(y.why?' ('+y.why+')':''))+"'>"+codeText(y.q||y.sub||'')+"</div>"+((y.covered&&y.covered.length)?"<div class='muted bcov'>Already covered? "+y.covered.map(esc).join(' · ')+"</div>":"");
 if(y.fix==='handover'&&y.sub)h+="<div class='bfor' title='"+escQ(y.sub)+"'>for: "+esc(y.sub)+"</div>";
 if(y.done)h+="<div class='bdone' title='"+escQ(y.done.text)+"'>"+esc(y.done.lane)+" has done this already: "+esc(y.done.text)+"</div>";
 if(y.shared)h+="<div class='bdone' title='"+escQ("Your answer to "+y.shared.lane+": "+y.shared.a+" (its agent has it too, and checks whether it settles this)")+"'>Got your answer to "+esc(lqShort(y.shared.lane,40))+": &ldquo;"+esc(lqShort(y.shared.a,80))+"&rdquo;</div>";
@@ -3723,6 +3769,7 @@ box.querySelectorAll('.nopt[data-j]').forEach(function(b){b.addEventListener('cl
 var bs=box.querySelector('.bsign');if(bs)bs.addEventListener('click',function(){if(bs._busy)return;bs._busy=true;var sn=y.signInTo.name||y.signInTo.site||'the site';
 st('Opening '+sn+' in the Symbiot Browser… a few seconds, longer if an agent is using it.');try{bs.focus();}catch(e){}
 openSignIn(y.signInTo,function(t,ok){bs._busy=false;st(t,!ok);say(t,!ok);});});
+var bqx=box.querySelector('.bq');if(bqx)bqx.addEventListener('click',function(ev){if(ev&&ev.target&&ev.target.closest&&ev.target.closest('a,button'))return;bqx.classList.toggle('open');}); // two lines; a tap shows it all
 var fr=box.querySelector('.bfree'),fx=box.querySelector('.bfx'),fi=fx&&fx.querySelector('input');
 if(fi){var dr=bdGet(y);if(dr&&!fi.value){fi.value=dr.text;if(fx.classList)fx.classList.remove('hidden');if(fr)fr.setAttribute('aria-expanded','true');try{if(dr.s!=null)fi.setSelectionRange(dr.s,dr.e!=null?dr.e:dr.s);}catch(e){}}
 // keep: a box drawn again while its answer went fires late events, which mustn't bring back the draft Send cleared

@@ -23,7 +23,7 @@ import { homedir } from "node:os";
 import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, statSync, utimesSync } from "node:fs";
 import { createHash, randomBytes } from "node:crypto";
 import { execFile } from "node:child_process";
-import { CONFIG_DIR, loadTasks, clipWords, loadConfig, readState, writeJsonAtomic } from "./core.mjs";
+import { CONFIG_DIR, loadTasks, clipWords, loadConfig, readState, writeJsonAtomic, sameTask } from "./core.mjs";
 import { runHandoff, runningHandoff, waitingFor, agentQuestions, findOrcaCli, installAllowlist, writeTasks, workOf, loadRuns, allAnswers } from "./agents.mjs";
 import { addTask, removeTask, pushTasks, pendingReview, approveChanges, workingDiff, setHandedLookup } from "./tasks.mjs";
 import { actNow, actBrief } from "./mind.mjs";
@@ -47,6 +47,24 @@ function laneOf(path, map) {
   if (path.startsWith(ACT_DIR)) return OPS;
   const hit = Object.entries(map).find(([, p]) => p === path);
   return hit ? hit[0] : basename(path);
+}
+// The project an agent folder's work is for, from the record, never from its words (review of 20
+// Oct 2026, Q4: "why are these under dailify?", "for what project is it?"): a lane's own folder is
+// that lane; an ops run, the lane chat started it for (handoff.json "for", mind.mjs actNow) or the
+// lane that handed it over (lanes.json), back through ops runs that handed it on. "" when nothing
+// says: the card says "no project".
+function projectOf(path, { map = laneMap(), ledger = loadLedger() } = {}) {
+  let p = String(path || "");
+  for (let hop = 0; p && hop < 4; hop++) {
+    if (!p.startsWith(ACT_DIR)) { const hit = Object.entries(map || {}).find(([, q]) => q === p); return hit ? hit[0] : ""; }
+    let f = ""; try { f = String(JSON.parse(readFileSync(join(p, ".symbiot", "handoff.json"), "utf8")).for || ""); } catch {}
+    if (f) return f;
+    const row = (ledger.handoffs || []).slice().reverse().find((x) => x.to && x.to.path === p && x.from);
+    if (!row) return "";
+    if (row.from.lane !== OPS && !String(row.from.path || "").startsWith(ACT_DIR)) return row.from.lane || "";
+    p = String(row.from.path || "");
+  }
+  return "";
 }
 // The lane a handover names, as a folder: a repo (any case), or ops. A name that's nearly a
 // lane's (a typo, a word more or less: "symbio", "steve lane", "Daaymn-app") is that lane
@@ -658,11 +676,15 @@ const topicsOf = (t, own = ownHosts()) => new Set((String(t || "").match(TOPIC) 
 function loadShared() { try { const l = readState(SHARED); return Array.isArray(l) ? l : []; } catch { return []; } }
 const whoAnswers = (cfg = loadConfig()) => String(((cfg && cfg.profile) || {}).name || "").trim().split(/\s+/)[0] || "the user";
 // The folders a handover links to path, either way, and one step on (the run evra_platform
-// handed sts-prod's checks to, and anything that run handed on), within LINK_DAYS.
-function linkedPaths(path, { ledger = loadLedger(), now = Date.now() } = {}) {
-  const edges = ledger.handoffs.filter((x) => x.from && x.to && x.from.path && x.to.path && now - (x.at || 0) < LINK_DAYS * 86400000);
+// handed sts-prod's checks to, and anything that run handed on), within LINK_DAYS: what a
+// new run's brief is told (sharedFor). open: only a handover still open (its job hasn't
+// reported back), and only one step, for whom an answer goes to (answerReaches): over 14 days
+// and two steps every lane linked every other, and one answer reached them all (20 Oct 2026).
+const isOpen = (x) => !x.reportedAt && !["done", "error", "failed"].includes(x.status);
+function linkedPaths(path, { ledger = loadLedger(), now = Date.now(), open = false } = {}) {
+  const edges = ledger.handoffs.filter((x) => x.from && x.to && x.from.path && x.to.path && now - (x.at || 0) < LINK_DAYS * 86400000 && (!open || isOpen(x)));
   const seen = new Set([path]); let edge = [path];
-  for (let step = 0; step < 2; step++) {
+  for (let step = 0; step < (open ? 1 : 2); step++) {
     const next = [];
     for (const p of edge) for (const x of edges) for (const [a, b] of [[x.from.path, x.to.path], [x.to.path, x.from.path]]) if (a === p && !seen.has(b)) { seen.add(b); next.push(b); }
     edge = next;
@@ -678,23 +700,28 @@ function onIt(p, running) {
 // What an agent folder is about, for topics: its open questions and its open tasks.
 const asksOf = (qs) => qs.map((q) => `${q.q} ${q.context || ""}`).join("\n");
 const aboutOf = (p, qs) => [...qs.map((q) => `${q.q} ${q.context || ""}`), ...readSym(p, "TASKS.md").split("\n").filter((l) => /^\s*-\s*\[ \]/.test(l))].join("\n");
-// The other agents an answer at path concerns: [{ path, lane, why: "handover" | topic, qs, going }].
-function answerReaches(path, text, { ledger = loadLedger(), runs = () => loadRuns(), running = runningHandoff, map = laneMap(), now = Date.now() } = {}) {
+// The other agents an answer at path concerns: [{ path, lane, why: "handover" | topic, qs, going, asks }].
+// asks: the answer bears on a question of its own (names the same thing, or it's the same
+// question): only then is it started on it (shareAnswer), a handover or not. An open task or a
+// handover alone isn't enough: every lane had an old question open, so every answer started
+// them all, to say "nothing here needed doing" (183 of 365 runs under a minute, 16-20 Oct 2026).
+function answerReaches(path, text, { ledger = loadLedger(), runs = () => loadRuns(), running = runningHandoff, map = laneMap(), now = Date.now(), asked = [] } = {}) {
   const out = new Map(), topics = topicsOf(text);
-  for (const p of linkedPaths(path, { ledger, now })) { const o = onIt(p, running); if (o.live && existsSync(p)) out.set(p, { path: p, lane: laneOf(p, map), why: "handover", qs: o.qs, going: o.going }); }
+  const bears = (qs) => [...topicsOf(asksOf(qs))].some((t) => topics.has(t)) || qs.some((q) => asked.some((a) => sameTask(q.q, a)));
+  for (const p of linkedPaths(path, { ledger, now, open: true })) { const o = onIt(p, running); if (o.live && existsSync(p)) out.set(p, { path: p, lane: laneOf(p, map), why: "handover", qs: o.qs, going: o.going, asks: bears(o.qs) }); }
   if (topics.size) for (const p of [...new Set(runs().map((r) => r && r.path).filter(Boolean))]) {
     if (p === path || out.has(p) || !existsSync(p)) continue;
     const o = onIt(p, running); if (!o.live) continue;
     const hit = [...topicsOf(aboutOf(p, o.qs))].find((t) => topics.has(t));
-    if (hit) out.set(p, { path: p, lane: laneOf(p, map), why: hit, qs: o.qs, going: o.going, asks: [...topicsOf(asksOf(o.qs))].some((t) => topics.has(t)) });
+    if (hit) out.set(p, { path: p, lane: laneOf(p, map), why: hit, qs: o.qs, going: o.going, asks: bears(o.qs) });
   }
   return [...out.values()];
 }
 const shareKey = (path, q, a) => createHash("sha1").update(path + "\n" + q + "\n" + a).digest("hex").slice(0, 16);
 // The user answered rows ([{ q, a }]) of the agent at path: each other agent on that work gets
 // them in its ANSWERS.md, with what to do; one with a question open and no run going starts on
-// them, when the answer bears on that question: a handover links them, or a question of its own
-// names the same thing. One that matched only on a task's words gets it as background, starts
+// them, when the answer bears on that question: a question of its own names the same thing,
+// or is the same question. One that matched only on a task's words gets it as background, starts
 // nothing, and it doesn't count as an answer for it (agents.mjs userAnswers): Garth's Outlook
 // answers to ops reached the symbiot lane "about outlook.live.com too" (14 Oct 2026).
 // Gives [{ path, lane, why, started? }]. card: the question's words as Home showed them.
@@ -702,11 +729,11 @@ function shareAnswer(path, rows, { run = runHandoff, now = Date.now(), cfg = loa
   rows = (rows || []).filter((x) => x && x.q && String(x.a || "").trim()); if (!rows.length) return [];
   const map = o.map || laneMap(), from = laneOf(path, map), who = whoAnswers(cfg), list = loadShared();
   const fresh = rows.filter((x) => !list.some((y) => y.key === shareKey(path, x.q, x.a))); if (!fresh.length) return [];
-  const reach = answerReaches(path, fresh.map((x) => `${x.q}\n${x.a}`).join("\n"), { ...o, map, now });
+  const reach = answerReaches(path, fresh.map((x) => `${x.q}\n${x.a}`).join("\n"), { ...o, map, now, asked: fresh.map((x) => x.q) });
   const day = new Date(now).toISOString().slice(0, 10), out = [];
   for (const r of reach) {
     const file = join(r.path, ".symbiot", "ANSWERS.md"), had = existsSync(file) ? readFileSync(file, "utf8") : "# Answers from the user\n";
-    const why = r.why === "handover" ? `it's on the same work as you (one of you handed it to the other)` : `it's about ${r.why} too`, bears = r.why === "handover" || !!r.asks;
+    const why = r.why === "handover" ? `it's on the same work as you (one of you handed it to the other)` : `it's about ${r.why} too`, bears = !!r.asks;
     const md = fresh.map((x) => `\n### ${who}'s answer to ${from}, on the same work as you\n${who} answered another agent's question, and ${why}:\n> ${clipWords(x.q.replace(/\s+/g, " "), 300)}\n\n${who}'s answer: ${x.a.trim()}\n\nIf it settles a question of yours (one open in .symbiot/QUESTIONS.md, or one you were about to ask), use it and don't ask: take that question out of QUESTIONS.md and say "answered by ${who}'s reply to ${from}: \"${clipWords(x.q.replace(/\s+/g, " "), 80)}\"" in your last message. If it settles only part, ask only the part that's left. If it doesn't bear on yours, carry on as you were.\n_shared by Symbiot ${day}${bears ? "" : " (background)"}_\n`).join("");
     // background: the file's time stays, so the note isn't "an answer since the last run" to nothingToDo or resumeFor
     try { mkdirSync(join(r.path, ".symbiot"), { recursive: true }); let st = null; try { st = statSync(file); } catch {} writeFileSync(file, had.replace(/\s*$/, "\n") + md); if (!bears && st) utimesSync(file, st.atime, st.mtime); } catch { continue; }
@@ -783,4 +810,4 @@ async function shipHanded({ review = pendingReview, ship = approveChanges, diff 
   return done;
 }
 
-export { handedFor, handedLookup, secretIn, shipHanded, HELD_HANDED, nearLane, laneTarget, staleOutcome, STALE_AFTER, ancestry, loops, shareAnswer, sharedFor, sharedTo, answerReaches, linkedPaths, topicsOf, ownHosts, COMMON_HOSTS, parentOf, SHARED, LEDGER, MAX_CHAIN, loadLedger, laneOf, lastRunStart, dispatch, outcome, report, handingOf, lanesTick, lanesState, aboutIt, partlyDone, remoteKey, orcaMoves, orcaRelink, stuckHandovers, allowHandover, skipHandover, namedDirs, alike, doneSince };
+export { projectOf, handedFor, handedLookup, secretIn, shipHanded, HELD_HANDED, nearLane, laneTarget, staleOutcome, STALE_AFTER, ancestry, loops, shareAnswer, sharedFor, sharedTo, answerReaches, linkedPaths, topicsOf, ownHosts, COMMON_HOSTS, parentOf, SHARED, LEDGER, MAX_CHAIN, loadLedger, laneOf, lastRunStart, dispatch, outcome, report, handingOf, lanesTick, lanesState, aboutIt, partlyDone, remoteKey, orcaMoves, orcaRelink, stuckHandovers, allowHandover, skipHandover, namedDirs, alike, doneSince };

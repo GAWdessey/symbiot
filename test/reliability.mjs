@@ -125,6 +125,10 @@ try {
     const after = JSON.parse(readFileSync(join(CFG, "tasks.json"), "utf8"));
     ok("syncTasks puts one already on the list right, and leaves the archive alone", after.find((z) => z.id === "a1").repo === "ops" && after.find((z) => z.id === "a2").repo === "act-abcdef12", after);
   }
+  console.log("RELEASES — one at a time, never an older one over a newer");
+  { const wf = readFileSync(new URL("../.github/workflows/publish.yml", import.meta.url), "utf8");
+    ok("a push to main while a release runs waits for it, never cancels it", /^concurrency:\s*\n\s+group: publish\s*\n\s+cancel-in-progress: false/m.test(wf));
+    ok("…and a version older than npm's newest isn't released", /older than npm's newest/.test(wf) && /release=false/.test(wf.split("older than npm's newest")[1].split("else")[0])); }
 } finally {
   rmSync(HOME, { recursive: true, force: true });
 }

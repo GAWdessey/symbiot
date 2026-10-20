@@ -24,6 +24,7 @@ import { readFileSync, writeFileSync, mkdirSync, chmodSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { randomBytes } from "node:crypto";
 import { VERSION, CONFIG_DIR, clipWords, readState, writeJsonAtomic } from "./core.mjs";
+import { track } from "./jobs.mjs";
 import { write, textOf } from "./ai.mjs";
 import { handoffCmd, runHandoff, isUrgent, urgentStop, urgentFirst, urgentUndo } from "./agents.mjs";
 import { addTask, pushTasks } from "./tasks.mjs";
@@ -154,7 +155,9 @@ ${[...standingBrief(), ...doneBrief(OPS)].join("\n")}`;
 const voiceLine = () => { const v = userStyleLine(); return v ? "\n- Writing to the user (questions, your last message): " + v : ""; };
 // Run the coding agent on a request, in a folder of its own (it shows in the
 // Agents tab, with its questions). { ok, job, dir } or { error }.
-function actNow(request, { title, context, known, alongside, run = runHandoff, now = Date.now() } = {}) {
+// lane: the project it's for, when one is known (a job meant for that lane that only ops can do):
+// kept in handoff.json, so its cards say which project it's about (lanes.mjs projectOf).
+function actNow(request, { title, context, known, alongside, lane = "", run = runHandoff, now = Date.now() } = {}) {
   request = String(request || "").trim().slice(0, HANDOVER_MAX); // a handover to ops, an email in it quoted whole
   if (!request) return { error: "Say what you want your agent to do." };
   const tmpl = handoffCmd();
@@ -164,11 +167,12 @@ function actNow(request, { title, context, known, alongside, run = runHandoff, n
   try {
     mkdirSync(join(dir, ".symbiot"), { recursive: true, mode: 0o700 }); try { chmodSync(ACT_DIR, 0o700); } catch {}
     writeFileSync(join(dir, ".symbiot", "TASKS.md"), actBrief(request, { title, context, known, alongside, now }));
-    writeFileSync(join(dir, ".symbiot", "handoff.json"), JSON.stringify({ name: clipWords("Agent: " + request.replace(/\s+/g, " "), 60) }));
+    writeFileSync(join(dir, ".symbiot", "handoff.json"), JSON.stringify({ name: clipWords("Agent: " + request.replace(/\s+/g, " "), 60), ...(lane ? { for: String(lane) } : {}) }));
   } catch (e) { return { error: "Couldn't write the brief: " + ((e && e.message) || e) }; }
   const e = run(dir, { force: true });
   if (!e) return { error: "Your agent didn't start. Check its command in Settings → Handoff." };
   if (e.blocked || e.busy) return { error: `Your agent didn't start: ${e.note || "something held it back"}` }; // never "handed over" when nothing runs
+  track("run:" + (e.id || dir), { kind: "agent", lane: "agent", text: request, state: "running", waitingOn: "" }, { now });
   return { ok: true, job: e.id, dir };
 }
 
@@ -242,7 +246,8 @@ Lanes ("repo" is one of these, exactly; a bracket after a name says what the pro
 Only say work is started, sent or queued when your "do" starts or queues it in this same reply; otherwise say what you will do, not that you are doing it. When they point out you got something wrong, open the reply by naming the mistake in a plain sentence ("I got that wrong: …") and give the right answer, never change the subject or hedge.
 Before you say an agent will read a mailbox or a site, check Symbiot can read it: being able to send to an address is not being able to read it. If it can't, say so first in plain words ("I can send there but can't read it: open it on your laptop, or sign in at <exact address>") and don't start an agent that will only come back asking. When a provider matters, an agent looks it up (MX records), never guesses it.
 The people you talk to (Garth and his team) are Symbiot's makers, not outside users: act as they want, and when they ask for a change to Symbiot itself, make it.
-Don't wait to be asked to fix Symbiot. When you notice it got something wrong (you misread a page, a brief or a card misled them, a step made them do an agent's job), say so plainly and, in the same reply, start the fix: "agent"${self ? ` with "repo": "${self}"` : ""}, saying what went wrong, an example, and what it should do instead.
+Don't wait to be asked to note a flaw in Symbiot. When you notice it got something wrong (you misread a page, a brief or a card misled them, a step made them do an agent's job), say so plainly and, in the same reply, note the fix: "task"${self ? ` with "repo": "${self}"` : ""}, saying what went wrong, an example, and what it should do instead. It waits on the Workdesk for their Go, so say "noted as a Symbiot bug", never "started a fix"; use "agent" for it only when they ask for it done now.
+Urgency is theirs to give: never write "urgent", "first", "asap" or "before anything else" into a hand-over unless they said it.
 When they paste a secret (a password, a recovery or 2FA code, a token), Symbiot has already saved it in its vault and shows you "[saved: name]" in its place. Acknowledge it in a few words ("Saved as npm recovery codes."), never refuse it, lecture about pasting it or ask them to delete it, and use it from the vault when a step needs it; ask them for one only when none is saved.
 Never ask them to sign in to a site in the Symbiot Browser just so an agent can read or check something there: an agent uses the site's API, its CLI or a connector (Twilio, Cloudflare and Google sign-ins never hold in that browser), and asks only for a key it can't find anywhere. When only they can sign in to a site (their password, an SMS code), say where, with the site's address: "sign in to www.domains.co.za/client/dashboard in the Symbiot Browser (Settings → Connections → Add a site)", never just "in Symbiot's browser": your reply then carries a Sign in button that opens that window on it.
 A short answer (yes, yeah, ok, sure, go, do it, that one, 2) answers what you last said in "This chat so far", never something from elsewhere in the app. If you'd proposed a task or an agent and they agree, do it now in "do", in the lane you named.
@@ -268,28 +273,42 @@ const laneName = (repo, map) => Object.keys(map).find((n) => n.toLowerCase() ===
 // A job that's all on a server the lane can't reach (reach.mjs serverOnly: put it live on
 // sts-prod, a check there) goes to an agent outside a repo instead, which can; one with code
 // in it goes to the lane, told to hand the server part to ops (16 Oct 2026).
-function actIn(request, repo, { map = {}, known = "", title, context, run = runHandoff, add = addTask, push = pushTasks, ops = actNow, first = urgentFirst, undo = urgentUndo, reach, now = Date.now() } = {}) {
+// said: the user's own message, from a chat (converse). Urgency is read in it, never in the
+// request the chat model wrote: "before anything else" in its rewrite made a card-labelling
+// fix urgent and parked dailify twice (20 Oct 2026). A task in Symbiot's own lane (self)
+// parks no other lane; and from a chat it waits on the Workdesk for Go (addTask later)
+// unless they asked for it (asksNow): "why are these under dailify?" is a bug to note, not
+// a run to start. Without said (an API call, a test), the request is their words.
+function actIn(request, repo, { map = {}, known = "", title, context, said, self, run = runHandoff, add = addTask, push = pushTasks, ops = actNow, first = urgentFirst, undo = urgentUndo, reach, now = Date.now() } = {}) {
   const lane = laneName(repo, map);
   if (!lane) return { ...ops(request, { title, context, known, now }), lane: "" };
   if (reach === undefined) { try { reach = laneReach(map); } catch { reach = null; } }
   const far = serverOnly(request, lane, reach);
   if (far.length) {
     const why = `${lane} runs in a sandbox and can't reach ${far.join(" or ")}`;
-    return { ...ops(request, { title, context: [context, `This was meant for ${lane}'s agent, but ${why}, so it's yours: do it here, and if there's code to change in ${lane}, hand that part to ${lane}.`].filter(Boolean).join("\n\n"), known, now }), lane: "", rerouted: { from: lane, why } };
+    return { ...ops(request, { title, context: [context, `This was meant for ${lane}'s agent, but ${why}, so it's yours: do it here, and if there's code to change in ${lane}, hand that part to ${lane}.`].filter(Boolean).join("\n\n"), known, now, lane }), lane: "", rerouted: { from: lane, why } };
   }
-  const near = unreachable(request, lane, reach);
-  const t = add(request, lane, near.length ? { after: `Symbiot: ${lane} runs in a sandbox and can't reach ${near.join(" or ")}. Do the code part here, and hand what has to change on ${near.length > 1 ? "those servers" : "that server"} to ops, saying what.` } : undefined); if (t && t.error) return { error: t.error };
+  const near = unreachable(request, lane, reach), chat = said !== undefined, words = chat ? String(said || "") : request;
+  const own = lane === (self === undefined ? selfLane(map) : self), later = own && chat && !asksNow(words);
+  const opts = { ...(near.length ? { after: `Symbiot: ${lane} runs in a sandbox and can't reach ${near.join(" or ")}. Do the code part here, and hand what has to change on ${near.length > 1 ? "those servers" : "that server"} to ops, saying what.` } : {}), ...(chat ? { said: words, later } : {}) };
+  const t = add(request, lane, Object.keys(opts).length ? opts : undefined); if (t && t.error) return { error: t.error };
+  if (later) return { ok: true, lane, task: t.id, later: true };
   const p = push({ repo: lane }); if (!p || !p.written || !p.written.length) return { error: `Couldn't write ${lane}'s tasks for its agent.` };
-  const urgent = isUrgent(request) ? first(map[lane], { lanes: map, halt: urgentStop(request) }) : null; // "first" queues it; only "urgent" or a crash stops the run going there
+  const urgent = isUrgent(words) ? first(map[lane], { lanes: own ? {} : map, halt: urgentStop(words), others: !own }) : null; // "first" queues it; only "urgent" or a crash stops the run going there
   const e = run(map[lane]);
   if (!e || (e.blocked && !e.busy)) { if (urgent) { try { undo(map[lane], urgent); } catch {} urgent.parked = []; } }
   if (!e) return { error: "The agent didn't start. Check its command in Settings → Handoff.", ...(urgent ? { urgent } : {}) };
   const state = e.busy ? { queued: true, behind: (urgent && urgent.busy) || "routine" } : e.blocked ? { notStarted: e.note || "its agent didn't start." } : { job: e.id };
   return { ok: true, lane, task: t.id, ...state, ...(urgent ? { urgent } : {}) };
 }
+// They asked for it to be done, not just told Symbiot what's wrong: "fix it", "can you…",
+// "please", "now". A complaint or a question ("why are these under dailify?") isn't.
+const ASKS_NOW = /\b((?:it|this|that|them|on it) now|now,? please|right away|straight away|immediately|asap|please|pls|can you|could you|would you|will you|can i (?:please )?(?:have|get|see)|i (?:want|need|'?d like)|go ahead|do it|start (?:it|on it|that|this)|(?:fix|sort|change|make|build|add|do) (?:it|this|that|them)\b)/i;
+const asksNow = (text) => isUrgent(text) || ASKS_NOW.test(String(text || ""));
 // The line under a handover's reply, from what actIn did (see there).
 function handedLine(did) {
   const lane = did.lane, u = did.urgent, un = u && u.unparked ? ` ${lane} was parked; I unparked it for this.` : "";
+  if (did.later) return `Noted as a Symbiot bug, in ${lane}'s tasks on the Workdesk. It waits there for Go and starts nothing by itself, so your other work carries on. Say "fix it now" and it starts.`;
   if (did.notStarted) return `Added to ${lane}'s tasks on the Workdesk, not started: ${did.notStarted.replace(/\.?$/, ".")}${un}`;
   const parked = u && u.parked.length ? ` Parked till it's done: ${u.parked.join(", ")} (a run already going there finishes first, then they wait). They pick up again in that order once it's done.` : "";
   if (u) {
@@ -309,6 +328,7 @@ function spokenLine(did, reply = "") {
   if (!did) return "";
   if (did.error) return did.kind === "agent" ? "I couldn't hand it to an agent. Why is on screen." : "I couldn't add the task. Why is on screen.";
   if (did.kind === "task") return SAID_TASK.test(reply) ? "" : did.lane ? `I've added it to ${did.lane}'s tasks.` : "I've added it to your tasks, but not to a project yet.";
+  if (did.later) return `I've noted it as a Symbiot bug, in ${did.lane}'s tasks. It waits there till you say go.`;
   if (did.notStarted) return `I've added it to ${did.lane}'s tasks, but its agent didn't start. It's on the Workdesk.`;
   if (SAID_AGENT.test(reply)) return "";
   if (!did.lane) return "I've handed it to an agent.";
@@ -316,8 +336,9 @@ function spokenLine(did, reply = "") {
   return did.queued ? `I've handed it to the ${did.lane} agent. It starts beside the run there if they don't clash; the Workdesk says what it waits on if they do.` : `I've handed it to the ${did.lane} agent.`;
 }
 // For later: on the list, in a repo's lane if it names one Symbiot knows.
+// One in Symbiot's own lane waits for Go (addTask later): a free lane starts its tasks by itself.
 function taskIn(text, repo, { map = {}, add = addTask } = {}) {
-  const lane = laneName(repo, map), r = add(text, lane);
+  const lane = laneName(repo, map), r = lane && lane === selfLane(map) ? add(text, lane, { later: true }) : add(text, lane);
   return r && r.error ? { error: r.error } : { ok: true, id: r.id, lane };
 }
 
@@ -387,13 +408,13 @@ async function converse({ where, role = "", context = "", history = "", question
   // say where it actually went, from what happened, not from what the model meant
   const repo = want ? String(want.repo || "") : "";
   if (want && want.agent && act.agent) {
-    did = { kind: "agent", request: String(want.agent).slice(0, HANDOVER_MAX), ...(await act.agent(String(want.agent), known, repo)) };
+    did = { kind: "agent", request: String(want.agent).slice(0, HANDOVER_MAX), ...(await act.agent(String(want.agent), known, repo, question)) }; // question: their own words, which urgency is read in (actIn said)
     // the model wrote its reply before the hand-off ran: when no agent started, its "on it" is
     // false, so the reply is replaced by what happened (never "on it" / "making the changes")
     if (did.error) reply = `I couldn't hand it to an agent: ${did.error}`;
     // ...but only an "on it": the rest of what it said stays, with the line under it. A pasted key's
     // "Saved, thanks" was replaced by "your step comes first…" three times running (19 Oct 2026)
-    else if (did.lane && did.notStarted) reply = CLAIMS_ACTION.test(reply) || /^\W*(?:on it|doing it|will do|starting( now)?)\b/i.test(reply) ? handedLine(did) : `${reply}\n\n${handedLine(did)}`;
+    else if (did.lane && (did.notStarted || did.later)) reply = CLAIMS_ACTION.test(reply) || /^\W*(?:on it|doing it|will do|starting( now)?)\b/i.test(reply) ? handedLine(did) : `${reply}\n\n${handedLine(did)}`;
     else reply += did.lane ? handedLine(did)
       : `\n\nHanded to your agent${did.rerouted ? `, not ${did.rerouted.from}'s: ${did.rerouted.why}` : ""}. It's on the Workdesk, and it asks you there before anything hard to undo.`;
   } else if (want && want.task && act.task) {
@@ -416,7 +437,7 @@ async function converse({ where, role = "", context = "", history = "", question
   const rules = (Array.isArray(j.rule) ? j.rule : []).map((x) => String(x || "")).filter((x) => x.trim()).slice(0, 3).filter((x) => addRule(x));
   if (bindingClaim(reply, rules.length)) reply += NOT_BINDING;
   // what's read aloud: the reply, then the line under it as a short phrase (spokenLine)
-  const line = spokenLine(did, said), spoken = did && did.kind === "agent" && (did.error || did.notStarted) ? line : line ? `${said} ${line}` : said; // a claim that no agent started isn't read aloud
+  const line = spokenLine(did, said), spoken = did && did.kind === "agent" && (did.error || did.notStarted || did.later) ? line : line ? `${said} ${line}` : said; // a claim that no agent started isn't read aloud
   // read again: another chat may have written while the model answered
   const d2 = loadMind(), remembered = rememberIn(d2, j.remember, where, now);
   logTurn(where, "user", question, now, d2); logTurn(where, "ai", reply, now, d2);

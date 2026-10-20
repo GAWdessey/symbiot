@@ -7,7 +7,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { join } from "node:path";
 import { readFileSync, writeFileSync, existsSync, readdirSync, mkdirSync, statSync, unlinkSync } from "node:fs";
 import { randomBytes } from "node:crypto";
-import { VERSION, LATEST_VERSION, REGISTRY, semverGt, loadConfig, saveConfig, loadTasks, saveTasks, TASK_MAX, clipWords, taskWords, sameTask, isFinding, uniqueTasks, gitOut, hasCmd, repoState } from "./core.mjs";
+import { VERSION, LATEST_VERSION, REGISTRY, semverGt, loadConfig, saveConfig, loadTasks, saveTasks, CONFIG_DIR, readState, writeJsonAtomic, TASK_MAX, clipWords, taskWords, sameTask, isFinding, uniqueTasks, gitOut, hasCmd, repoState } from "./core.mjs";
 import { handoverRules, ONLY_YOU, HANDBACK } from "./handover.mjs";
 import { laneReach } from "./reach.mjs";
 import { doneBrief, standingBrief } from "./asksdone.mjs";
@@ -41,7 +41,10 @@ function leadOf(text) {
 // folder" (16 Oct 2026). syncTasks puts one already on the list right too.
 const OPS_FOLDER = /^act-[0-9a-f]{6,}$/i;
 const laneOfRepo = (repo) => (OPS_FOLDER.test(String(repo || "")) ? "ops" : repo || "");
-function addTask(text, repo, { after = "", finding = false } = {}) {
+// said: what the user said for it, when Symbiot's chat wrote the task (agents.mjs routedModel
+// measures that); later: it waits on the Workdesk for Go, started by nothing else (a fix to
+// Symbiot noted from chat, mind.mjs actIn). later: false starts one that was waiting.
+function addTask(text, repo, { after = "", finding = false, said = "", later } = {}) {
   repo = laneOfRepo(repo);
   const raw = String(text || "").trim(), tail = String(after || "").trim();
   text = raw.replace(/\s+/g, " ");
@@ -58,9 +61,11 @@ function addTask(text, repo, { after = "", finding = false } = {}) {
     dup.text = lineFor(dup.id); if (long) dup.full = full; else delete dup.full;
     saveTasks(t); return { ...dup, duplicate: true, reworded: true };
   }
+  if (dup && later === false && dup.later) { delete dup.later; saveTasks(t); }
   if (dup) return { ...dup, duplicate: true };
   // a finding (core.mjs isFinding) goes in ticked, saying why: on the record, but not a job
-  const item = { id, text: line, ...(long ? { full } : {}), repo: repo || "", done: !!finding, ...(finding ? { finding: FINDING_NOTE } : {}), ts: Date.now() };
+  const own = String(said || "").trim().replace(/\s+/g, " ").slice(0, TASK_MAX);
+  const item = { id, text: line, ...(long ? { full } : {}), repo: repo || "", done: !!finding, ...(finding ? { finding: FINDING_NOTE } : {}), ...(own ? { said: own } : {}), ...(later ? { later: true } : {}), ts: Date.now() };
   t.unshift(item); saveTasks(t); return item;
 }
 // The model picker on a task card: auto (nothing) or one of MODEL_PICKS. The brief's line for
@@ -84,7 +89,11 @@ function setTaskDone(id, done, { at = Date.now() } = {}) {
   it.done = !!done; it.changed = at; saveTasks(t);
   return it;
 }
-function removeTask(id) { saveTasks(loadTasks().filter((x) => x.id !== id)); return { ok: true }; }
+function removeTask(id) {
+  saveTasks(loadTasks().filter((x) => x.id !== id));
+  const f = join(CONFIG_DIR, "tasks-archive.json"), a = readState(f, Array.isArray); if (a && a.some((x) => x && x.id === id)) try { writeJsonAtomic(f, a.filter((x) => x && x.id !== id), { indent: 0 }); } catch {}
+  return { ok: true };
+}
 // Remove, on Home or the Workdesk: the task is cancelled, not deleted. It goes to the Archive
 // marked removed, so Undo (or Restore there) brings it back as it was (Garth, 2026-10-15:
 // "there is no way to remove an unwanted task"). Its repo's next TASKS.md leaves it out.
@@ -95,7 +104,13 @@ function cancelTask(id) {
   it.archived = true; it.cancelled = true; it.archivedAt = Date.now(); saveTasks(t);
   return { ok: true, id, text: it.text };
 }
-function restoreTask(id) { const t = loadTasks(); const it = t.find((x) => x.id === id); if (it) { it.archived = false; it.done = false; delete it.archivedAt; delete it.cancelled; if (it.finding) { it.kept = true; delete it.finding; } if (it.removedBy || it.dropped) { it.kept = true; delete it.removedBy; delete it.merged; delete it.dropped; } saveTasks(t); } return it || { error: "not found" }; }
+// One the daily sweep moved to tasks-archive.json (sweep.mjs sweepTasks) comes back into tasks.json first.
+function fromArchive(id, t) {
+  const f = join(CONFIG_DIR, "tasks-archive.json"), a = readState(f, Array.isArray) || [], it = a.find((x) => x && x.id === id); if (!it) return null;
+  try { writeJsonAtomic(f, a.filter((x) => x !== it), { indent: 0 }); } catch { return null; }
+  t.unshift(it); return it;
+}
+function restoreTask(id) { const t = loadTasks(); const it = t.find((x) => x.id === id) || fromArchive(id, t); if (it) { it.archived = false; it.done = false; delete it.archivedAt; delete it.cancelled; if (it.finding) { it.kept = true; delete it.finding; } if (it.removedBy || it.dropped) { it.kept = true; delete it.removedBy; delete it.merged; delete it.dropped; } saveTasks(t); } return it || { error: "not found" }; }
 // Which task texts the agent checked off in a repo's .symbiot/TASKS.md
 function completedInRepo(repoPath) {
   try { return readFileSync(join(repoPath, ".symbiot", "TASKS.md"), "utf8").split("\n").filter((l) => /^\s*-\s*\[x\]/i.test(l)).map((l) => l.replace(/^\s*-\s*\[x\]\s*/i, "").replace(MODEL_TAG, "").trim().toLowerCase()); }
@@ -465,8 +480,21 @@ function changelogLeaks(path, deny = []) {
   return d.out.split("\n").filter((l) => /^\+\s*[-*]\s+/.test(l)).map((l) => l.replace(/^\+\s*[-*]\s+/, ""))
     .map((line) => ({ line, why: leaksIn(line, deny) })).filter((x) => x.why.length);
 }
+// Those lines come out before the commit, each for the generic line, once a section (Q10 of
+// the 20 Oct 2026 review: 3 of 13 failed CI runs were an agent's own release line naming a
+// provider or a dated ask, which test/outward.mjs refuses; each cost a 45-minute round).
+// Gives back a function that puts the file back.
+function dropLeaks(path, leaks) {
+  if (!leaks.length) return () => {};
+  const file = join(path, "CHANGELOG.md"); let text = ""; try { text = readFileSync(file, "utf8"); } catch { return () => {}; }
+  const bad = new Set(leaks.map((x) => x.line));
+  const out = text.split("\n").map((l) => { const m = l.match(/^\s*[-*]\s+(.*)$/); return m && bad.has(m[1]) ? `- ${NOTHING_PUBLIC}` : l; })
+    .filter((l, i, a) => !(l === `- ${NOTHING_PUBLIC}` && a.slice(0, i).reverse().find((x) => /^## |^- /.test(x)) === l)); // once a section
+  try { writeFileSync(file, out.join("\n")); } catch { return () => {}; }
+  return () => { try { writeFileSync(file, text); } catch {} };
+}
+const leakOutNote = (leaks) => leaks.length ? `Taken out of the release notes before the commit, as everyone who installs it reads them: ${leaks.map((x) => `"${clipWords(x.line, 60)}" named ${x.why.map((w) => `"${w.term}" (${w.why})`).join(", ")}`).join("; ")}.` : "";
 const leftOutNote = (dropped) => dropped.length ? `Left out of the release notes, as private or not a change to the app: ${dropped.map((x) => `"${clipWords(x.text, 60)}" (${x.why})`).join("; ")}.` : "";
-const leakNote = (leaks) => leaks.length ? `Check the release notes before this merges, everyone who installs it reads them: ${leaks.map((x) => `"${clipWords(x.line, 60)}" names ${x.why.map((w) => `"${w.term}" (${w.why})`).join(", ")}`).join("; ")}.` : "";
 // Put the section in above the newest one (after the file's own heading and
 // intro), once per version. Gives back a function that restores the file.
 function noteChangelog(path, version, texts, files, notes, deny = []) {
@@ -519,6 +547,27 @@ const shipStep = (path, step) => { const h = SHIPPING.get(path); if (h) h.step =
 const shipping = (path) => { const h = SHIPPING.get(path); return h && Date.now() - h.at < SHIP_STALE ? { step: h.step || "starting", since: h.at } : null; };
 const shippingPaths = () => [...SHIPPING.keys()].filter((p) => shipping(p));
 onShipping(shipping); // a run never starts on a tree Approve is committing, rebasing or testing (agents.mjs runHandoff)
+// Approve as a job: the request held on for the whole ship (273 s on average, 709 s at most,
+// 19–20 Oct 2026), so a phone or a reloaded tab lost the result and the card looked stuck. The
+// answer comes back within SHIP_WAIT when it's quick (a refusal, a question, nothing to send);
+// otherwise { job, working } at once, and the card asks shipJobOf(repo) until it's done. A
+// finished one is kept SHIP_JOB_KEEP for the card to read, then forgotten.
+const SHIP_JOBS = new Map(), SHIP_WAIT = 4000, SHIP_JOB_KEEP = 30 * 60000;
+function shipJob(repo, run, { wait = SHIP_WAIT } = {}) {
+  repo = String(repo || "");
+  const had = SHIP_JOBS.get(repo); if (had && !had.done) return Promise.resolve({ job: repo, working: true, said: "Already approving here: it carries on by itself." });
+  const job = { at: Date.now(), done: false, r: null }; SHIP_JOBS.set(repo, job);
+  const p = Promise.resolve().then(run).then((r) => r || {}, (e) => ({ error: String((e && e.message) || e) })).then((r) => { Object.assign(job, { done: true, r, end: Date.now() }); return r; });
+  let t = null; const late = new Promise((res) => { t = setTimeout(() => res(null), wait); });
+  return Promise.race([p, late]).then((r) => { clearTimeout(t); if (r) { if (SHIP_JOBS.get(repo) === job) SHIP_JOBS.delete(repo); return r; } return { job: repo, working: true, said: "Approving: it carries on while you work, and this card says how it went." }; });
+}
+// { working, step } while it ships, { done, result } once it has (read once more within SHIP_JOB_KEEP), or { none }
+function shipJobOf(repo, now = Date.now()) {
+  for (const [k, j] of SHIP_JOBS) if (j.done && now - j.end > SHIP_JOB_KEEP) SHIP_JOBS.delete(k);
+  const j = SHIP_JOBS.get(String(repo || "")); if (!j) return { none: true };
+  if (!j.done) { const path = laneMap()[repo], s = path && shipping(path); return { working: true, ...(s ? { step: s.step, since: s.since } : { since: j.at }) }; }
+  return { done: true, result: j.r };
+}
 // A long task's line ends with a link to its full text in .symbiot/full/ (addTask),
 // which never ships: not in a commit or PR body.
 const noFullLinks = (texts) => texts.map((t) => String(t).replace(/ Full text: `\.symbiot\/full\/[0-9a-f]+\.md`/g, ""));
@@ -527,10 +576,12 @@ async function shipWithBump(path, texts, opts) {
   let undo = () => {}, undoLog = () => {}; const head = git(path, ["rev-parse", "HEAD"]).out;
   try {
     const offer = (opts.bump === "patch" || opts.bump === "minor") && bumpOffer(path), deny = opts.deny || [];
-    if (!offer) { const leaks = leakNote(changelogLeaks(path, deny)), r = await shipChanges(path, texts, opts); return r.error || !leaks ? r : { ...r, note: [r.note, leaks].filter(Boolean).join(" ") }; }
+    const found = changelogLeaks(path, deny), leaks = leakOutNote(found), undoLeaks = dropLeaks(path, found); undoLog = undoLeaks;
+    if (!offer) { const r = await shipChanges(path, texts, opts); if (r.error) undoLeaks(); return r.error || !leaks ? r : { ...r, note: [r.note, leaks].filter(Boolean).join(" ") }; }
     const to = offer[opts.bump], files = (await workingChangesAsync(path)).files.map((f) => f.file);
-    const { items, dropped } = changelogItems(noFullLinks(texts), files, opts.notes, deny), leaks = leakNote(changelogLeaks(path, deny));
-    undo = setVersion(path, to); undoLog = noteChangelog(path, to, noFullLinks(texts), files, items, deny);
+    const { items, dropped } = changelogItems(noFullLinks(texts), files, opts.notes, deny);
+    undo = setVersion(path, to); const undoNote = noteChangelog(path, to, noFullLinks(texts), files, items, deny);
+    undoLog = () => { undoNote(); undoLeaks(); };
     const r = await shipChanges(path, texts, { ...opts, bumped: to });
     if (r.error) { undo(); undoLog(); return r; }
     const note = [r.note, leftOutNote(dropped), leaks].filter(Boolean).join(" ");
@@ -753,18 +804,19 @@ async function mergedAlready(path, branch, base, { gh = null, net = {} } = {}) {
 // a fresh branch from main, one commit at a time. One whose changes main already has
 // (carried over by hand) comes out empty and is left out. A conflict puts everything
 // back as it was. { ok, earlier: how many of those before the newest moved, dropped } or { error }.
-function carryOver(path, from, after, next) {
+// What touches the tree (the switch, each pick) runs in the background, as the rest of the ship does.
+async function carryOver(path, from, after, next) {
   const back = git(path, ["rev-parse", "--abbrev-ref", "HEAD"]).out, list = git(path, ["rev-list", "--reverse", after + "..HEAD"]);
   if (!list.ok) return { error: list.err };
   // a merge of main among them: picked one by one, its conflict fixes would be lost
   if (git(path, ["rev-list", "--merges", "--count", after + "..HEAD"]).out !== "0") return { error: `a merge of ${from} is among them` };
-  const sw = git(path, ["switch", "-c", next, "--no-track", from]); if (!sw.ok) return { error: sw.err.split("\n")[0] };
+  const sw = await gitAsync(path, ["switch", "-c", next, "--no-track", from], 120000); if (!sw.ok) return { error: sw.err.split("\n")[0] };
   const all = list.out.split("\n").filter(Boolean); let earlier = 0, dropped = 0;
   for (const [i, c] of all.entries()) {
-    const cp = git(path, ["cherry-pick", "--keep-redundant-commits", c]); // one that comes out empty still commits, so it's seen and left out
+    const cp = await gitAsync(path, ["cherry-pick", "--keep-redundant-commits", c], 120000); // one that comes out empty still commits, so it's seen and left out
     if (cp.ok && git(path, ["diff", "--quiet", "HEAD~1", "HEAD"]).ok) { git(path, ["reset", "-q", "--soft", "HEAD~1"]); dropped++; continue; }
     if (cp.ok) { if (i < all.length - 1) earlier++; continue; }
-    git(path, ["cherry-pick", "--abort"]); git(path, ["switch", "-q", back]); git(path, ["branch", "-q", "-D", next]);
+    await gitAsync(path, ["cherry-pick", "--abort"], 120000); await gitAsync(path, ["switch", "-q", back], 120000); git(path, ["branch", "-q", "-D", next]);
     return { error: `${c.slice(0, 7)} doesn't apply to ${from}: ${(cp.err || cp.out).split("\n").find((l) => /conflict/i.test(l)) || (cp.err || cp.out).split("\n")[0]}` };
   }
   return { ok: true, earlier, dropped };
@@ -913,7 +965,7 @@ async function shipChanges(path, texts, opts = {}) {
     if (spent && spent.after) carry = spent;
     else if (from) {
       // The changes come along; if main changed a file they touch, git refuses and they stay put.
-      const next = newBranch(), sw = git(path, ["switch", "-c", next, "--no-track", from]);
+      const next = newBranch(), sw = await gitAsync(path, ["switch", "-c", next, "--no-track", from], 120000);
       fresh = sw.ok ? `${branch}'s earlier PR already merged, so this starts a fresh branch from ${from}.`
         : `${branch}'s earlier PR already merged, but these changes couldn't move to a fresh branch from ${from} (${sw.err.split("\n")[0]}), so they stay on ${branch} (it's checked against ${from} before it goes up).`;
       if (sw.ok) { branch = next; made.branch = next; }
@@ -938,7 +990,7 @@ async function shipChanges(path, texts, opts = {}) {
   forgetRunFiles(path, own.files);
   forgetUntracked(path); // committed: the next run notes what's there afresh
   if (carry) {
-    const next = newBranch(), mv = carryOver(path, carry.from, carry.after, next), was = branch;
+    const next = newBranch(), mv = await carryOver(path, carry.from, carry.after, next), was = branch;
     if (mv.ok) branch = next;
     const earlier = mv.ok ? mv.earlier : 0, gone = mv.ok ? mv.dropped : 0;
     fresh = mv.ok ? `${was}'s earlier PR already merged, so this starts a fresh branch from ${carry.from}${earlier > 0 ? `, with the ${earlier} commit${earlier === 1 ? "" : "s"} approved on ${was} since that hadn't reached ${base}` : ""}${gone ? ` (${gone} already on ${base} left out)` : ""}.`
@@ -1039,7 +1091,7 @@ async function syncBranch(path, branch, base) {
   if (!rb.ok) await gitAsync(wt, ["rebase", "--abort"]);
   await drop();
   if (!moved) return conflicts();
-  const keep = git(path, ["reset", "-q", "--keep", moved]); // the branch is checked out: this moves it, keeping the uncommitted files
+  const keep = await gitAsync(path, ["reset", "-q", "--keep", moved], 120000); // the branch is checked out: this moves it, keeping the uncommitted files
   if (!keep.ok) return conflicts(`${base} changed a file that's also changed, uncommitted, here (${keep.err.split("\n").find((l) => /not uptodate|would be overwritten/i.test(l)) || keep.err.split("\n")[0]})`);
   return { ok: true, rebased: tip };
 }
@@ -1096,13 +1148,14 @@ async function pushAndOpen(path, { base, subject, body, out, opts, newBranch, sa
 // PRs are opened by the repo owner's account, which GitHub won't let approve its own
 // PR, so a "1 approving review" rule would otherwise send the user to a second account
 // to click Approve. The owner may merge past that rule (--admin); never past a check.
-function mergeWhenGreen(path, ref, gh = (args) => spawnSync("gh", args, { cwd: path, encoding: "utf8", timeout: 60000 })) {
+// gh in the background (ghRun): two sync calls of up to a minute each held the app up meanwhile.
+async function mergeWhenGreen(path, ref, gh = ghRun(path)) {
   if (!hasCmd("gh")) return { error: "Install the GitHub CLI (gh) to merge from Symbiot." };
-  const ck = gh(["pr", "checks", String(ref), "--json", "bucket"]);
+  const ck = await gh(["pr", "checks", String(ref), "--json", "bucket"]);
   let buckets; try { buckets = JSON.parse(String(ck.stdout || "[]")).map((c) => c.bucket); } catch { return { error: "Couldn't read the checks: " + String(ck.stderr || "").trim().split("\n").pop() }; }
   if (buckets.some((b) => b === "fail" || b === "cancel")) return { error: "A check is failing, so it isn't merged. Fix that first." };
   if (buckets.some((b) => b === "pending")) return { pending: true, error: "Checks are still running. Merge it once they pass." };
-  const m = gh(["pr", "merge", String(ref), "--squash", "--admin", "--delete-branch"]);
+  const m = await gh(["pr", "merge", String(ref), "--squash", "--admin", "--delete-branch"]);
   if (m.status !== 0) return { error: "gh couldn't merge: " + (String(m.stderr || "").trim().split("\n").filter(Boolean).pop() || "unknown error") };
   return { ok: true, merged: String(ref) };
 }
@@ -1233,7 +1286,7 @@ function buildTasksMd(name, ctx, list) {
   L.push(...handoverRules(ctx.lanes || [], name, ctx.reach), ...HANDBACK, ...standingBrief(), ...doneBrief(name));
   L.push("## If you need a decision, or have ideas", "You may be running unattended, so you can't ask in chat. Write `.symbiot/QUESTIONS.md` instead: Symbiot shows it to the user on your block in its Workdesk, and their answers come back in `.symbiot/ANSWERS.md` (read that first if it exists).",
     "- Before you ask the user anything, read `.symbiot/ANSWERS.md` again, all of it (older answers are in `.symbiot/ANSWERS.archive.md`: search it when one may be older than those): they may have answered it already, for you or for another agent on the same work (Symbiot copies those in, under a heading naming that agent). If an answer there settles it, use it and don't ask; if it settles part, ask only the part left.",
-    `- At most ${QUESTIONS_MAX} questions, under a \`## Questions\` heading. Each is a \`### \` heading, then a line of context, then exactly ${OPTIONS_SHOWN} options as \`- \` bullets, the one you recommend first, marked \`(recommended)\`. Symbiot shows only the first ${OPTIONS_SHOWN}; the user can always answer in their own words. When the only thing left is the user's go-ahead (it's all ready and nothing goes out until they say so), give one option instead, starting with what it does (\`- 🤖 Agent: send it to … now\`): it shows as a single button named for it (Send), and tapping it starts your next run.`,
+    `- At most ${QUESTIONS_MAX} questions, under a \`## Questions\` heading. Each is a \`### \` heading ending in a short id of your own for what it asks (\`### Which plan should Pro be sold on? {#pro-plan}\`; ask about the same thing again, in any words, with the same id: its answer is kept by the id, and Symbiot gives it back rather than asking twice), then a line of context, then exactly ${OPTIONS_SHOWN} options as \`- \` bullets, the one you recommend first, marked \`(recommended)\`. Symbiot shows only the first ${OPTIONS_SHOWN}; the user can always answer in their own words. When the only thing left is the user's go-ahead (it's all ready and nothing goes out until they say so), give one option instead, starting with what it does (\`- 🤖 Agent: send it to … now\`): it shows as a single button named for it (Send), and tapping it starts your next run.`,
     "- Judge the options before you ask. Most people pick the recommended option without weighing the other, and Symbiot works for a whole company (developers, sales, everyone), not one person, so the choice is really yours. Both options must be good routes to the best solution, never filler or one you wouldn't take. A skip or no option is a plain \"skip this part\", never a request for the user's personal details (their addresses, accounts or numbers). Each says in plain words, with no jargon, what it does and what it changes from then on for the project, the people working on it and the company. Recommend the one that's best for, in this order, the company, the people doing the work, then the task's goal. Base that on evidence you can check here (git history, tests, logs, how it's used, the answers so far), not on what's quickest, and give that evidence in the context line in a sentence.",
     "- Write each question for someone who doesn't code: no file names, commands or config names (say what the thing is for), and say in plain words what is being decided, what each option means, and which you recommend and why. If the call is low-risk and easy to undo (a setting that can be re-tuned, a layout, a name, which of two fixes), don't ask: take your recommended option, say what you chose in your last message, and keep it easy to change later.",
     ONLY_YOU,
@@ -1263,6 +1316,9 @@ function pushTasks(filter) {
   let tasks = all.filter((t) => !t.done && !t.archived && !t.review);
   if (filter && filter.type) tasks = tasks.filter((t) => taskType(t.text) === filter.type);
   if (filter && filter.repo) tasks = tasks.filter((t) => t.repo === filter.repo);
+  // one waiting for Go (addTask later) stays out of every brief until Go sends it (filter.later)
+  if (filter && filter.later) { const go = tasks.filter((t) => t.later); for (const t of go) delete t.later; if (go.length) saveTasks(all); }
+  else tasks = tasks.filter((t) => !t.later);
   { const beside = inflightIds(), skip = new Set((filter && filter.exclude) || []); tasks = tasks.filter((t) => !beside.has(t.id) && !skip.has(t.id)); } // one running beside its lane's agent (parallel.mjs), or peeled off to start there now: not in the lane's own brief
   if (!tasks.length) return { empty: true, written: [], unresolved: [] };
   const groups = {}; for (const t of tasks) { const k = t.repo || ""; (groups[k] = groups[k] || []).push(t); }
@@ -1296,4 +1352,4 @@ function pushTasks(filter) {
   return { empty: false, written, unresolved, handoff: handoffCmd() };
 }
 
-export { setHandedLookup, setTaskModel, MODEL_PICKS, holdShip, SHIP_STALE, shipping, shippingPaths, workingChangesAsync, rebaseTask, sendAgain, forgetUnsent, unsentOf, readUnsent, unsentCard, repoTests, localRefused, forgetReview, gitFailed, taskPaths, addTask, toggleTask, setTaskDone, removeTask, cancelTask, restoreTask, FINDING_NOTE, completedInRepo, removalOf, applyRemovals, applyDrops, syncTasks, workingChanges, workingDiff, publishesOnMerge, unreleased, bumpOffer, learnNpm, releaseNeeded, releaseNotIn, withReleases, setVersion, changelogEntry, changelogSection, noteChangelog, releaseInput, shipWithBump, runSummary, saidFinished, pendingReview, commitSubject, shipChanges, autoMergeRepos, setAutoMerge, approveRepo, approveChanges, sendBack, TASK_ORDER, taskType, buildTasksMd, pushTasks, mergeWhenGreen, changelogItems, changelogLeaks, commitText };
+export { setHandedLookup, setTaskModel, MODEL_PICKS, holdShip, SHIP_STALE, shipping, shippingPaths, shipJob, shipJobOf, SHIP_WAIT, workingChangesAsync, rebaseTask, sendAgain, forgetUnsent, unsentOf, readUnsent, unsentCard, repoTests, localRefused, forgetReview, gitFailed, taskPaths, addTask, toggleTask, setTaskDone, removeTask, cancelTask, restoreTask, FINDING_NOTE, completedInRepo, removalOf, applyRemovals, applyDrops, syncTasks, workingChanges, workingDiff, publishesOnMerge, unreleased, bumpOffer, learnNpm, releaseNeeded, releaseNotIn, withReleases, setVersion, changelogEntry, changelogSection, noteChangelog, releaseInput, shipWithBump, runSummary, saidFinished, pendingReview, commitSubject, shipChanges, autoMergeRepos, setAutoMerge, approveRepo, approveChanges, sendBack, TASK_ORDER, taskType, buildTasksMd, pushTasks, mergeWhenGreen, changelogItems, changelogLeaks, commitText };

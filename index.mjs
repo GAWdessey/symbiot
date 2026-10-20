@@ -31,6 +31,7 @@ import { createInterface } from "node:readline";
 import { request as httpRequest } from "node:http";
 import { fileURLToPath } from "node:url";
 import { VERSION, CONFIG_PATH, CONFIG_DIR, loadConfig, saveConfig, repoState, semverGt } from "./core.mjs";
+import { jobsText } from "./jobs.mjs";
 import { HANDOFF_PROMPT, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, fillHandoff, runHandoff, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, parseQuestions, agentQuestions } from "./agents.mjs";
 import { AI_UI, PROVIDERS, resolveProvider, validate, detectHardware, recommendModels, hasOllama, ollamaInstall, ensureOllama, useOllamaModel, claudeState, connectProvider } from "./ai.mjs";
 import { setScanOptions, scanBase, authorship, readmeInfo, repoShape, houseRules, reportFooter, findAllRepos, buildMap } from "./scan.mjs";
@@ -305,6 +306,7 @@ function cmdWhoami() {
   const r = resolveProvider();
   if (r) console.log(c.g("✓ ") + `Connected: ${PROVIDERS[r.provider].label} · model ${r.model} · via ${r.source}.`);
   else { console.log(c.y("Not connected yet.\n")); console.log(AUTH_HELP); }
+  if (cmd === "status") console.log("\n" + jobsText());
 }
 
 // `symbiot mail [--on|--off] [--add <path>]`: what mail it can read, and a preview.
@@ -452,6 +454,24 @@ async function cmdUninstall() {
 // symbiot secret list | get <name> [--use] | used <name> <value> | delete <name> | scrub: what the user
 // handed over (vault.mjs). get prints the next unspent value and nothing else; --use marks a
 // one-use code spent. Through the app when it's running (a run can't read the vault's key).
+// symbiot deploy [show <lane>] | set <lane> --where <host> --how "<command>" --url <live> --check <address>
+// [--expect "<text>"] [--policy ask|always|never]: a lane's deploy runbook (deploy.mjs), written once,
+// by ops after a deploy it did by hand. "always" (a standing yes) is the user's to give, on the deploy
+// card: refused here, and a changed --how or --where puts a runbook on always back to ask.
+async function cmdDeploy() {
+  const [sub = "show", lane] = argv.slice(1).filter((x, i, all) => !x.startsWith("--") && !/^--/.test(all[i - 1] || ""));
+  const d = await import("./deploy.mjs"), { loadConfig } = await import("./core.mjs");
+  if (sub === "set") {
+    const f = {}; for (const k of ["where", "how", "url", "check", "expect", "policy"]) { const v = flag(k, undefined); if (v !== undefined) f[k] = v; }
+    const r = d.setRunbook(lane, f); if (r.error) { console.error(r.error); process.exitCode = 1; return; }
+    console.log(`${lane}'s runbook: on ${r.runbook.where}, \`${r.runbook.how}\`; live check ${r.runbook.check || "(none)"}; policy ${r.runbook.policy}.${r.dropped ? " The command or host changed, so it asks before the next deploy again: deploying after every merge is the user's yes to give." : ""}`); return;
+  }
+  const names = lane ? [lane] : Object.keys(loadConfig().deploy || {});
+  const rows = names.map((n) => ({ lane: n, runbook: d.runbookOf(n) })).filter((x) => x.runbook);
+  if (has("json")) { console.log(JSON.stringify(rows, null, 2)); return; }
+  if (!rows.length) { console.log(lane ? `${lane} has no deploy runbook yet: symbiot deploy set ${lane} --where <host> --how "<command>" --url <live address> --check <address>` : "No deploy runbooks yet."); return; }
+  for (const x of rows) console.log(`${x.lane}: on ${x.runbook.where}, \`${x.runbook.how}\` · live ${x.runbook.url || "(no address)"} · check ${x.runbook.check || "(none)"}${x.runbook.expect ? ` for "${x.runbook.expect}"` : ""} · ${x.runbook.policy === "always" ? "deploys after every merge" : x.runbook.policy === "never" ? "never deploys" : "asks before each deploy"}`);
+}
 async function cmdSecret() {
   const [sub = "list", name, value] = argv.slice(1).filter((x, i, all) => !x.startsWith("--") && all[i - 1] !== "--from");
   const v = await import("./vault.mjs"), via = async (p, b) => (await viaApp(p, b)) || null;
@@ -1136,6 +1156,7 @@ async function main() {
   if (cmd === "push") return cmdPush();
   if (cmd === "mail" || cmd === "email") return cmdMail();
   if (cmd === "secret" || cmd === "secrets") return cmdSecret();
+  if (cmd === "deploy") return cmdDeploy();
   if (cmd === "screens" || cmd === "screen") return cmdScreens();
   if (cmd === "watch") return cmdWatch();
   if (cmd === "phone") return cmdPhone();

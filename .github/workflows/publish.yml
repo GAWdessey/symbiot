@@ -20,6 +20,14 @@ on:
 permissions:
   contents: read
 
+# One release at a time: a push to main while a release runs waits for it, never
+# cancels it, so two releases a minute apart can't race and leave the older one
+# marked newest on npm (review of 20 Oct 2026). The gate below also never
+# releases a version older than npm's newest.
+concurrency:
+  group: publish
+  cancel-in-progress: false
+
 jobs:
   gate:
     runs-on: ubuntu-latest
@@ -32,8 +40,12 @@ jobs:
         run: |
           v=$(node -p "require('./package.json').version")
           echo "version=$v" >> "$GITHUB_OUTPUT"
+          latest=$(npm view symbiot version 2>/dev/null || echo 0.0.0)
           if npm view "symbiot@$v" version >/dev/null 2>&1; then
             echo "symbiot@$v is already on npm — nothing to publish."
+            echo "release=false" >> "$GITHUB_OUTPUT"
+          elif node -e 'const n=(s)=>s.split("-")[0].split(".").map(Number),a=n(process.argv[1]),b=n(process.argv[2]),i=[0,1,2].find((k)=>a[k]!==b[k]);process.exit(i!==undefined&&a[i]<b[i]?0:1)' "$v" "$latest"; then
+            echo "symbiot@$v is older than npm's newest ($latest) — not releasing it over that."
             echo "release=false" >> "$GITHUB_OUTPUT"
           else
             echo "symbiot@$v is a new version — releasing."
@@ -44,6 +56,7 @@ jobs:
     needs: gate
     if: needs.gate.outputs.release == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -57,6 +70,7 @@ jobs:
       - name: Test
         env:
           SYMBIOT_NO_OPEN: "1"
+          SYMBIOT_TEST_JOBS: "4"
           # names the release notes must never say (the maker's projects, people,
           # providers), kept out of the public repo: test/outward.mjs checks CHANGELOG.md
           SYMBIOT_PRIVATE_TERMS: ${{ secrets.SYMBIOT_PRIVATE_TERMS }}

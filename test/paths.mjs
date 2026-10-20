@@ -218,6 +218,24 @@ try {
   ok("approve commits the change on its own branch, then archives the task with that commit", tk.approve && tk.approve.ok && /^symbiot\/write-the-docs-for-beta/.test(tk.approve.branch) && tk.final.archived && tk.final.done && tk.final.commit === tk.approve.commit && tk.final.approvedAt > 0 && /^Write the docs for beta\n- Write the docs for beta/.test(subj), [tk.approve, subj]);
   ok("tasks.json ends with the right ones open and archived", (tk.open || []).join("|") === "A task for a repo that isn't here|Fix the login bug" && (tk.archived || []).join() === "Write the docs for beta", [tk.open, tk.archived]);
 
+  // 20 Oct 2026: a fix to Symbiot noted from chat (mind.mjs actIn) waits for Go: no brief carries it till then
+  console.log("TASKS — a task waiting for Go stays out of the brief until Go sends it");
+  const lt = inChild(`
+    import * as t from ${mod("tasks.mjs")};
+    import { readFileSync } from "node:fs";
+    const md = () => readFileSync(${JSON.stringify(join(WORK, "alpha", ".symbiot", "TASKS.md"))}, "utf8");
+    const by = (id) => JSON.parse(readFileSync(${T}, "utf8")).find((x) => x.id === id);
+    const out = {}, w = t.addTask("Say which lane a card is for", "alpha", { said: "why are these under dailify?", later: true });
+    out.kept = by(w.id); t.pushTasks({ repo: "alpha" }); out.before = md();
+    out.again = t.addTask("Say which lane a card is for", "alpha", { later: true }); out.still = by(w.id).later;
+    t.pushTasks({ repo: "alpha", later: true }); out.after = md(); out.sent = by(w.id);
+    t.removeTask(w.id);
+    console.log(JSON.stringify(out));`);
+  ok("it keeps what the user said, and waits", lt.kept && lt.kept.later === true && lt.kept.said === "why are these under dailify?", lt.kept);
+  ok("a free lane's brief leaves it out", !/Say which lane a card is for/.test(lt.before || "") && /Fix the login bug/.test(lt.before || ""), lt.before);
+  ok("noting it again doesn't start it", lt.again && lt.again.duplicate && lt.still === true, lt);
+  ok("Go sends it, and it no longer waits", /- \[ \] Say which lane a card is for/.test(lt.after || "") && lt.sent && !lt.sent.later, [lt.after, lt.sent]);
+
   console.log("TASKS — a task the agent deleted from TASKS.md is closed, not sent again");
   const dr = inChild(`
     import * as t from ${mod("tasks.mjs")};

@@ -19,11 +19,12 @@
 //
 // What's linked is config.linked: { <id>: { at, watch?, hosts: [trusted by the link] } }.
 import { can } from "./licence.mjs";
-import { blockedSignIn } from "./browserfails.mjs";
+import { blockedSignIn, realChrome } from "./browserfails.mjs";
+import { actSites, setActSite } from "./chromegate.mjs";
 import { join } from "node:path";
 import { readFileSync } from "node:fs";
 import { CONFIG_DIR, loadConfig, saveConfig } from "./core.mjs";
-import { siteUrl, signIn, readPage, trustedSites, trustSite, untrustSite, sessionCookie, historyPage } from "./headless.mjs";
+import { siteUrl, signIn, readPage, trustedSites, trustSite, untrustSite, sessionCookie, historyPage, windowOpen } from "./headless.mjs";
 import { watchState, addWatch, removeWatch, checkWatch, GITHUB_INBOX } from "./watch.mjs";
 import { loadRuns, agentQuestions, answerQuestions } from "./agents.mjs";
 
@@ -100,11 +101,19 @@ function stateOf(e, l, watches) {
 }
 function linksState() {
   const c = catalog(), l = linked(), watches = watchState().watches;
-  const items = c.list.map((e) => ({ id: e.id, name: e.name, group: e.group, url: e.url, ...(e.company ? { company: true } : {}), ...(e.own ? { own: true } : {}), ...stateOf(e, l[e.id], watches) }));
+  // act: agents may act on this site in the user's own Chrome, not just read it (chromegate.mjs; off by default)
+  const acts = (() => { try { return actSites(); } catch { return []; } })(), actOn = (e) => [e.url, ...[].concat(e.hosts || [])].some((u) => { const h = /:\/\//.test(String(u)) ? hostOf(u) : String(u || "").replace(/^www\./, "").toLowerCase(); return !!h && acts.some((a) => h === a || h.endsWith("." + a)); });
+  const items = c.list.map((e) => ({ id: e.id, name: e.name, group: e.group, url: e.url, ...(e.company ? { company: true } : {}), ...(e.own ? { own: true } : {}), ...(actOn(e) ? { act: true } : {}), ...stateOf(e, l[e.id], watches) }));
   const groups = [...new Set([...GROUPS, ...items.map((x) => x.group).filter((g) => g !== OWN), OWN])].filter((g) => items.some((x) => x.group === g));
-  return { items, groups, linked: items.filter((x) => x.state !== "off").length, ...(c.file ? { file: c.file } : {}), ...(c.error ? { error: c.error } : {}) };
+  let chrome = false; try { chrome = realChrome(); } catch {}
+  return { items, groups, linked: items.filter((x) => x.state !== "off").length, chrome, ...(c.file ? { file: c.file } : {}), ...(c.error ? { error: c.error } : {}) };
 }
 
+// Acting in the user's own Chrome on a linked site, on or off (chromegate.mjs): the site's own address.
+function setLinkAct(id, on) {
+  const e = catalog().list.find((x) => x.id === id); if (!e) return { error: "No such site." };
+  const r = setActSite(e.url, !!on, { load: loadConfig, save: saveConfig }); return r.error ? r : linksState();
+}
 // Link one: trust its hosts, watch its page, open it to sign in (in the Symbiot Browser). Clicking a link
 // that's already there just opens it again to sign in (signed out, or a second
 // account). Gives { ok, url, item } or { error }.
@@ -135,6 +144,9 @@ async function linkSite(id, { open = signIn } = {}) {
 async function checkLink(id, { check = checkWatch, read = readPage, cookie = sessionCookie, history = historyPage } = {}) {
   const e = catalog().list.find((x) => x.id === id), l = linked();
   if (!e || !l[id]) return { error: `${e ? e.name : id} isn't linked.` };
+  // the Symbiot Browser open: the user may be signing in there right now, and the hidden browser reads
+  // only a copy of the sign-ins from before (headless.mjs snapProfile), so the check waits for it to close
+  if (read === readPage && windowOpen()) return { busy: true, item: linksState().items.find((x) => x.id === id) };
   if (l[id].watch) { const r = await check(l[id].watch); if (r && r.busy) return { busy: true, item: linksState().items.find((x) => x.id === id) }; }
   else {
     // a site whose session cookie is known: signed in when it's in the profile, no page needed
@@ -285,4 +297,4 @@ function signInAsked(text) {
   return null;
 }
 
-export { foundNote, CATALOG, catalog, cleanEntry, linksState, linkSite, checkLink, checkSignIns, settleSignIns, sitesCheck, unlinkSite, addSite, ownSites, signInAsked, OWN };
+export { setLinkAct, foundNote, CATALOG, catalog, cleanEntry, linksState, linkSite, checkLink, checkSignIns, settleSignIns, sitesCheck, unlinkSite, addSite, ownSites, signInAsked, OWN };

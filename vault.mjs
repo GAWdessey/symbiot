@@ -59,12 +59,25 @@ function saveSecret(name, values) {
 }
 // Names and counts only, never a value.
 const listSecrets = () => Object.entries(readIndex().names).map(([name, m]) => ({ name, ...m, left: m.count - m.used }));
+// A code a site sent (an SMS or sign-in code your phone passed on, phone.mjs code.give): one
+// value, good for ttl, and gone once it's used or out of time. A newer code for the same name
+// replaces the old one. It's never kept past its one use.
+const CODE_TTL = 10 * 60000;
+function saveCode(name, code, { ttl = CODE_TTL, now = Date.now() } = {}) {
+  name = String(name || "").trim().slice(0, 80); const v = String(code || "").trim();
+  if (!name || !v) return { error: "A code needs a name and a value." };
+  if (load(name)) deleteSecret(name);
+  store(name, { name, ts: now, values: [{ v, used: false }], once: true, expires: now + ttl });
+  return { ok: true, name, expires: now + ttl };
+}
 // A value an agent can use: the next unspent one. use: true marks it spent (a one-use recovery code).
-function getSecret(name, { use = false } = {}) {
+function getSecret(name, { use = false, now = Date.now() } = {}) {
   const e = load(name); if (!e) return { error: `No secret called "${name}". symbiot secret list shows what's saved.` };
+  if (e.once && e.expires && now > e.expires) { deleteSecret(name); return { error: `The code in "${name}" ran out of time, so it's gone. Ask for a new one.` }; }
   const next = e.values.find((x) => !x.used); if (!next) return { error: `Every value in "${name}" has been used.` };
-  if (use) { next.used = true; store(name, e); }
-  return { ok: true, name, value: next.v, left: e.values.filter((x) => !x.used).length, spent: use };
+  if (use && e.once) deleteSecret(name);
+  else if (use) { next.used = true; store(name, e); }
+  return { ok: true, name, value: next.v, left: use && e.once ? 0 : e.values.filter((x) => !x.used).length, spent: use };
 }
 function markUsed(name, value) {
   const e = load(name); if (!e) return { error: `No secret called "${name}".` };
@@ -119,13 +132,15 @@ const pwShaped = (v, min = 3) => v.length >= 6 && v.length <= 64 && kinds(v) >= 
 const ACCOUNT = /\b(?:sign(?:ed|ing)?[ -]?(?:up|in)|log(?:ged|ging)?[ -]?in|login|account|registered|password|passwd|pw|creds|credentials)\b/i;
 const sentenceAt = (text, at) => { const a = Math.max(text.lastIndexOf("\n", at - 1), ...[". ", "! ", "? "].map((p) => text.lastIndexOf(p, at - 1))); const b = text.slice(at).search(/[.!?](?:\s|$)|\n/); return text.slice(a + 1, b < 0 ? text.length : at + b); };
 const trimPw = (v) => v.replace(/[.,;:'")\]]+$/, "");
-function loosePasswords(text) {
+// sentence: false leaves out the last rule (a password-shaped word anywhere in a sentence about
+// an account), which has no cue of its own: the after-the-fact scrub doesn't use it (scrubStored).
+function loosePasswords(text, { sentence = true } = {}) {
   const out = [];
   const add = (v, at, min) => { v = trimPw(v); if (pwShaped(v, min) && !out.some((h) => h.at === at)) out.push({ value: v, at }); };
   for (const m of text.matchAll(new RegExp(EMAIL.source + "[\\s,;:]+(?:(?:and|pw|pass(?:word)?)\\s*[:=-]?\\s*)?(\\S+)", "g"))) add(m[1], m.index + m[0].length - m[1].length, 2);
   for (const m of text.matchAll(/\b(?:password|passwd|pwd|pw|pass)(?:['’]s)?\s+(?!is\b|=)(\S+)/gi)) add(m[1], m.index + m[0].length - m[1].length, 2);
   for (const m of text.matchAll(/\bpw\s*(?:is|=|:)\s*(\S{4,})/gi)) { const v = trimPw(m[1]), at = m.index + m[0].length - m[1].length; if (v.length >= 4 && !out.some((h) => h.at === at)) out.push({ value: v, at }); }
-  for (const m of text.matchAll(/(?<=^|\s)(\S{8,64})(?=\s|$)/g)) { const s = sentenceAt(text, m.index); if (EMAIL.test(s) || ACCOUNT.test(s)) add(m[1], m.index, 3); }
+  if (sentence) for (const m of text.matchAll(/(?<=^|\s)(\S{8,64})(?=\s|$)/g)) { const s = sentenceAt(text, m.index); if (EMAIL.test(s) || ACCOUNT.test(s)) add(m[1], m.index, 3); }
   return out;
 }
 // The site a password is for, from its sentence: "signed up to <site> with …", a site's
@@ -182,7 +197,7 @@ function hostOf(text) {
 const COMMAND = /\bcurl\b|\bwget\b|\bhttps?:\/\/|\bAuthorization\b|\bBearer\b|(?:^|\s)-H\s/i;
 // Replace every secret in text with [secret hidden]; give what was found, grouped by name.
 // context: the chat before it, for a name when the text itself gives none (serviceOf).
-function findSecrets(text, mark = () => "[secret hidden]", { context = "" } = {}) {
+function findSecrets(text, mark = () => "[secret hidden]", { context = "", loose = true } = {}) {
   text = String(text || ""); const hits = [];
   for (const [kind, re, need] of PATTERNS) for (const m of text.matchAll(re)) {
     const value = m[1] || m[0];
@@ -192,7 +207,7 @@ function findSecrets(text, mark = () => "[secret hidden]", { context = "" } = {}
     if (hits.some((h) => at < h.end && at + value.length > h.at)) continue;
     hits.push({ kind, value, at, end: at + value.length, cmd: need === "cmd" });
   }
-  for (const { value, at } of loosePasswords(text)) {
+  for (const { value, at } of loosePasswords(text, { sentence: loose })) {
     if (inUrl(text, at) || hits.some((h) => at < h.end && at + value.length > h.at)) continue;
     hits.push({ kind: "password", value, at, end: at + value.length });
   }
@@ -245,19 +260,31 @@ function vaultSealed() {
 // ---- secrets stored before they were caught ------------------------------------------
 // A password whose shape the detector didn't know yet sits in plain text where the chat kept
 // it (19 Oct 2026: "i signed up to <a site> with <an email> <a password>"): the chat history
-// (mind.json), what chats answered (asks-done.json), the task list, and the briefs and logs
-// of runs a chat started (drafts/act-…). Once per change to the detector (SCRUB_V), the
-// user's own chat turns are read again: what's found goes to the vault, and every copy of it
-// in those files becomes "[saved: name]". { found: [name], files: [file] } or { skipped }.
-const SCRUB_V = 3, SCRUB_MARK = () => join(CONFIG_DIR, "scrubbed.json");
-// ...and each lane a run has worked in (runs.json): a task quoting the key went into its brief and its run's log.
+// (mind.json), what chats answered (asks-done.json, answers-shared.json) and the task list.
+// Once per change to the detector (SCRUB_V), the user's own chat turns are read again: what's
+// found goes to the vault, and each copy of it in those files becomes "[saved: name]".
+// Only a secret with a cue or a key's own shape counts here, never the loose rule for a word in
+// a sentence about an account (it took "Symbiot's" for a password), and only Symbiot's own
+// stores of chat, answers and tasks are rewritten: never a run's log, brief or answers, nor
+// lanes.json. Every swap is journalled (SCRUB_JOURNAL: the file, the mark, the words either
+// side and the value sealed with the vault's key), so one that was wrong is undone exactly
+// (repairFalseSaves). The vault scrub of 0.66.x rewrote all of those by text, and "Symbiot's"
+// became "[saved: password]" in 77 places (review of 20 Oct 2026, finding 3).
+// { found: [name], files: [file] } or { skipped }.
+const SCRUB_V = 4, SCRUB_MARK = () => join(CONFIG_DIR, "scrubbed.json"), SCRUB_JOURNAL = () => join(CONFIG_DIR, "scrub-journal.json"), JOURNAL_KEEP = 2000;
 function storedFiles() {
-  const top = ["mind.json", "mind.json.bak", "asks-done.json", "asks-done.json.bak", "answers-shared.json", "answers-shared.json.bak", "tasks.json", "tasks.json.bak", "lastwords.json", "home-handed.json", "lanes.json", "lanes.json.bak"].map((f) => join(CONFIG_DIR, f));
+  return ["mind.json", "mind.json.bak", "asks-done.json", "asks-done.json.bak", "answers-shared.json", "answers-shared.json.bak", "tasks.json", "tasks.json.bak", "lastwords.json", "home-handed.json"].map((f) => join(CONFIG_DIR, f)).filter((f) => existsSync(f));
+}
+// Where the 0.66.x scrub reached, for the repair: those, and each run's and lane's own files.
+function damagedFiles() {
   const RUN = ["TASKS.md", "ANSWERS.md", "ANSWERS.archive.md", "agent.log", "agent.log.old", "handed.json", "handoff.json"];
   let runs = []; try { runs = readdirSync(join(CONFIG_DIR, "drafts")).flatMap((d) => RUN.map((f) => join(CONFIG_DIR, "drafts", d, ".symbiot", f))); } catch {}
   let lanes = []; try { lanes = (readState(join(CONFIG_DIR, "runs.json"), Array.isArray) || []).map((r) => r && r.path).filter((p) => typeof p === "string" && p).flatMap((p) => RUN.map((f) => join(p, ".symbiot", f))); } catch {}
-  return [...new Set([...top, ...runs, ...lanes])].filter((f) => existsSync(f));
+  return [...new Set([...storedFiles(), ...["lanes.json", "lanes.json.bak"].map((f) => join(CONFIG_DIR, f)), ...runs, ...lanes])].filter((f) => existsSync(f));
 }
+const loadJournal = () => readState(SCRUB_JOURNAL(), Array.isArray) || [];
+const saveJournal = (j) => { try { writeJsonAtomic(SCRUB_JOURNAL(), j.slice(-JOURNAL_KEEP), { mode: 0o600 }); } catch {} };
+const SIDE = 24; // the words either side a swap is found again by
 // A piece of a saved secret quoted on its own ("a key beginning 'eyJ0…' and ending '…pu3l'", in a
 // task written about it) is blanked too: any run of 32 or more key characters found inside one.
 const PIECE = /[A-Za-z0-9_.+/=-]{32,}/g;
@@ -271,29 +298,38 @@ function scrubStored({ force = false } = {}) {
   const said = [...log.map((l, i) => (l && l.role === "user" ? { t: String(l.text || ""), context: log.slice(Math.max(0, i - 6), i).map((x) => String((x && x.text) || "")).join("\n") } : null)).filter(Boolean),
     ...[...done, ...shared].filter((x) => x && x.a).map((x) => ({ t: String(x.a), context: String(x.q || "") }))];
   const byName = new Map();
-  for (const { t, context } of said) for (const f of findSecrets(t, undefined, { context }).found) byName.set(f.name, [...new Set([...(byName.get(f.name) || []), ...f.values])]);
+  for (const { t, context } of said) for (const f of findSecrets(t, undefined, { context, loose: false }).found) byName.set(f.name, [...new Set([...(byName.get(f.name) || []), ...f.values])]);
   const swap = [];
-  for (const [name, values] of byName) { const kept = keep(name, values); if (kept) for (const v of values) swap.push([v, `[saved: ${kept.replace(/["\\]/g, "")}]`]); }
+  for (const [name, values] of byName) { const kept = keep(name, values); if (kept) for (const v of values) swap.push([v, `[saved: ${kept.replace(/["\\]/g, "")}]`, kept]); }
   swap.sort((a, b) => b[0].length - a[0].length);
-  const files = [];
+  const files = [], journal = loadJournal();
   for (const f of swap.length ? storedFiles() : []) {
     let raw; try { raw = readFileSync(f, "utf8"); } catch { continue; }
     let out = raw;
-    for (const [v, mark] of swap) for (const form of new Set([v, JSON.stringify(v).slice(1, -1), v.toLowerCase()])) out = out.split(form).join(mark); // lowercased: a copy among an answer's topics
+    const put = (form, mark, name, v) => { const parts = out.split(form); if (parts.length < 2) return; for (let i = 1; i < parts.length; i++) journal.push({ file: f, name, mark, before: parts[i - 1].slice(-SIDE), after: parts[i].slice(0, SIDE), form: form === v ? "" : form === v.toLowerCase() ? "lower" : "json", value: seal(v), at: Date.now() }); out = parts.join(mark); };
+    for (const [v, mark, name] of swap) for (const form of new Set([v, JSON.stringify(v).slice(1, -1), v.toLowerCase()])) put(form, mark, name, v); // lowercased: a copy among an answer's topics
     out = out.replace(PIECE, (run) => { const hit = swap.find(([v]) => v.length > run.length && v.includes(run)); return hit ? hit[1] : run; });
     if (out !== raw) { try { writeAtomic(f, out); files.push(f); } catch {} }
   }
+  if (swap.length) saveJournal(journal);
   try { writeJsonAtomic(SCRUB_MARK(), { v: SCRUB_V, at: Date.now(), found: byName.size }, { mode: 0o600 }); } catch {}
   return { found: [...byName.keys()], files };
 }
 
 // Words the detector took for secrets before it knew better (notPassword): each goes back where
 // "[saved: name]" stands for it, and leaves the vault. A name holding only one value, and that one
-// a word, is put back everywhere; one that also holds real values only loses the word (its marks
-// can't be told apart, so they stay). Once per REPAIR_V, at start. { restored: [name], files, dropped }.
-const REPAIR_V = 1, REPAIR_MARK = () => join(CONFIG_DIR, "repaired.json");
-function repairFalseSaves({ force = false } = {}) {
-  if (!force && ((readState(REPAIR_MARK()) || {}).v || 0) >= REPAIR_V) return { skipped: true };
+// a word, is put back everywhere; one that also holds real values only loses the word. A swap in
+// the journal (scrubStored) whose value is a word goes back exactly where it was made. And the
+// marks the 0.66.x scrub left with no journal: "[saved: … password …]" right before a word that
+// only ever follows "Symbiot's" in Symbiot's own words ("Blocked by [saved: password] membrane",
+// 77 times in agent logs) is "Symbiot's" again. Once per REPAIR_V, at start. { restored: [name], files, dropped }.
+const REPAIR_V = 2, REPAIR_MARK = () => join(CONFIG_DIR, "repaired.json");
+const AFTER_SYMBIOT = "own|browser|signed|app|screens|vault|settings|memory|hidden|config|android|membrane|chat|sandbox|profile|pages|address|window|voice|version|repo|folder|home|guard|brief|agents?|work|workdesk|dashboard|reports|lanes?|makers|marketing|icon|liquid|scratch|saves|picks|mark|tasks|answers?|questions?|cards?|run|runs|copy|update|key|token|relay|link|phone|server|api|cli|command|tool|tools|data|state|files?";
+const SYMBIOTS = new RegExp(`\\[saved: [^\\]\\n]*?password[^\\]\\n]*\\](?=\\s+(?:${AFTER_SYMBIOT})\\b)`, "gi");
+// soon: the files are read one at a time, letting the app answer between them (at start: 464 MB
+// of run logs on 20 Oct 2026, which read in one go would hold the app up for seconds). A promise then.
+function repairFalseSaves({ force = false, soon = false } = {}) {
+  if (!force && ((readState(REPAIR_MARK()) || {}).v || 0) >= REPAIR_V) return soon ? Promise.resolve({ skipped: true }) : { skipped: true };
   const back = [], dropped = [];
   for (const name of Object.keys(readIndex().names)) {
     const cur = load(name); if (!cur || !Array.isArray(cur.values)) continue;
@@ -301,14 +337,31 @@ function repairFalseSaves({ force = false } = {}) {
     if (bad.length === cur.values.length && bad.length === 1) { back.push([`[saved: ${name.replace(/["\\]/g, "")}]`, String(bad[0].v).trim(), name]); deleteSecret(name); }
     else { store(name, { ...cur, values: cur.values.filter((x) => !bad.includes(x)) }); dropped.push(name); }
   }
-  const files = [];
-  for (const f of back.length ? storedFiles() : []) {
-    let raw; try { raw = readFileSync(f, "utf8"); } catch { continue; }
-    let out = raw; for (const [mark, word] of back) { out = out.split(mark).join(word); out = out.split(JSON.stringify(mark).slice(1, -1)).join(JSON.stringify(word).slice(1, -1)); }
-    if (out !== raw) { try { writeAtomic(f, out); files.push(f); } catch {} }
+  // the journal: a swap whose value is a word goes back where it was, by the words either side
+  const journal = loadJournal(), keepJ = [], exact = new Map();
+  for (const e of journal) {
+    let v = ""; try { v = unseal(e.value); } catch { keepJ.push(e); continue; }
+    if (!notPassword(v.trim())) { keepJ.push(e); continue; }
+    const word = e.form === "lower" ? v.toLowerCase() : e.form === "json" ? JSON.stringify(v).slice(1, -1) : v;
+    if (!exact.has(e.file)) exact.set(e.file, []); exact.get(e.file).push([e.before + e.mark + e.after, e.before + word + e.after]);
   }
-  try { writeJsonAtomic(REPAIR_MARK(), { v: REPAIR_V, at: Date.now(), restored: back.length }, { mode: 0o600 }); } catch {}
-  return { restored: back.map((b) => b[2]), files, dropped };
+  const files = [], list = [...new Set([...exact.keys(), ...damagedFiles()])];
+  const fix = (f) => {
+    let raw; try { raw = readFileSync(f, "utf8"); } catch { return; }
+    if (!raw.includes("[saved: ")) return;
+    let out = raw;
+    for (const [from, to] of exact.get(f) || []) out = out.split(from).join(to);
+    for (const [mark, word] of back) { out = out.split(mark).join(word); out = out.split(JSON.stringify(mark).slice(1, -1)).join(JSON.stringify(word).slice(1, -1)); }
+    out = out.replace(SYMBIOTS, "Symbiot's");
+    if (out !== raw) { try { writeAtomic(f, out); files.push(f); } catch {} }
+  };
+  const end = () => {
+    if (keepJ.length !== journal.length) saveJournal(keepJ);
+    try { writeJsonAtomic(REPAIR_MARK(), { v: REPAIR_V, at: Date.now(), restored: back.length, files: files.length }, { mode: 0o600 }); } catch {}
+    return { restored: back.map((b) => b[2]), files, dropped };
+  };
+  if (!soon) { for (const f of list) fix(f); return end(); }
+  return (async () => { for (const f of list) { fix(f); await new Promise((r) => setImmediate(r)); } return end(); })();
 }
 
 // A step waiting on a key, token or password the user was to paste is met once a secret
@@ -346,4 +399,4 @@ function heldFor(text) {
   return "";
 }
 
-export { heldFor, heldName, vaultSealed, repairFalseSaves, meetsStep, serviceOf, saveSecret, listSecrets, getSecret, markUsed, deleteSecret, findSecrets, captureSecrets, scrubStored, SCRUB_V };
+export { heldFor, heldName, vaultSealed, repairFalseSaves, meetsStep, serviceOf, saveSecret, saveCode, CODE_TTL, listSecrets, getSecret, markUsed, deleteSecret, findSecrets, captureSecrets, scrubStored, SCRUB_V };

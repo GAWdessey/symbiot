@@ -19,6 +19,7 @@ import { homedir } from "node:os";
 import { execFileSync } from "node:child_process";
 import { readFileSync, realpathSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { judgeChrome, seen as seenChrome, PREFIX as CHROME } from "./chromegate.mjs";
 
 const SECRET = [".ssh", ".gnupg", ".aws", ".azure", ".kube", ".docker/config.json", ".config/gcloud", ".config/gh/hosts.yml", ".netrc", ".npmrc", ".pypirc", ".git-credentials", ".config/symbiot/secrets.json", ".config/symbiot/vault.json", ".config/symbiot/vault.key"];
 const under = (p, d) => p === d || p.startsWith(d.endsWith("/") ? d : d + "/");
@@ -40,7 +41,39 @@ function publicKey(p, home) {
 // reach a private key too (~/.ssh/*, ~/.ssh/$K)
 const PUB_READ = /^(cat|less|more|head|tail|grep|rg|base64|xxd|strings)$/;
 const PLAIN = /^(~|\$HOME|\$\{HOME\})?[\w.@+\/-]+$/;
-function symbiotConfig(p, home) { const d = join(home, ".config", "symbiot"); return p === join(d, "config.json") || p === join(d, "licence-revoked.json"); }
+// Symbiot's own settings, and what its Chrome gate (chromegate.mjs) keeps: the holds waiting on the
+// user's Go and which site each tab is on. An agent that wrote these could set Go on its own held send,
+// or say a tab is on a site it may act on (review of the 20 Oct 2026 run).
+const OWN = ["config.json", "licence-revoked.json", "secrets.json", "chrome-holds.json", "chrome-tabs.json"];
+const CHROME_FILES = /chrome-(holds|tabs)\.json/; // named so they're never another project's
+function symbiotConfig(p, home) { const d = join(home, ".config", "symbiot"); return OWN.some((f) => p === join(d, f)); }
+// A shell command that names one of those files changes it unless each step of it only reads:
+// a redirect into it, tee, cp, mv, ln, sed -i, an interpreter (node -e, python, a heredoc's lines),
+// a variable set to it (written through later), or a pipe into anything but a reader is stopped.
+// A bare config.json counts once the command, or the folder it runs in, is Symbiot's settings folder
+// itself (an ops run works in drafts/act-… under it, on files of its own).
+const OWN_READ = /^(cat|less|more|head|tail|grep|egrep|fgrep|rg|ls|wc|file|stat|diff|cmp|sha\d*sum|md5sum|readlink|realpath|du|jq|echo|printf|test|\[|sed|find)$/;
+function changesOwn(part, { home, cwd, whole }) {
+  const there = cwd === join(home, ".config", "symbiot") || /\.config\/symbiot\/?(?=$|[\s"';&|)])/.test(whole); // the folder itself, not a run's own under it (drafts/act-…)
+  const names = (x) => { const v = unquote(x); return CHROME_FILES.test(v) || OWN.some((f) => v.includes(".config/symbiot/" + f) || symbiotConfig(expand(v.replace(/^[A-Za-z_][A-Za-z0-9_]*=/, ""), home, cwd), home)) || (there && OWN.some((f) => new RegExp(`(^|[^\\w.-])${f.replace(".", "\\.")}\\b`).test(v))); };
+  if (!names(part)) return false;
+  const segs = part.split(/\|(?!\|)/);
+  for (const seg of segs) {
+    const t = seg.trim(); if (!t) continue;
+    for (const m of t.matchAll(/\d*>>?\s*(?!&)(\S+)/g)) if (names(m[1])) return true; // a redirect into it
+    const w = t.split(/\s+/); let i = 0;
+    if (w[i] === "export") i++;
+    for (; i < w.length && /^[A-Za-z_][A-Za-z0-9_]*=/.test(w[i]); i++) if (names(w[i])) return true; // a variable set to it, to write through later
+    if (i >= w.length) continue;
+    while (i < w.length && SELF_WRAP.test(w[i]) && w[i] !== "xargs") { i++; while (i < w.length && (w[i].startsWith("-") || /^\d+[smhd]?$/.test(w[i]))) i++; }
+    const cmd = (w[i] || "").split("/").pop(), args = w.slice(i + 1);
+    if (!OWN_READ.test(cmd)) return true;
+    if (cmd === "sed" && args.some((x) => /^(-i|--in-place)/.test(x) || /^-[a-zA-Z]*i/.test(x))) return true;
+    if (cmd === "find" && args.some((x) => /^-(delete|exec|execdir|ok|okdir|fprint\w*|fls)$/.test(x))) return true;
+  }
+  return false;
+}
+
 // Symbiot's own installed files (where this guard runs from): never edited by an agent, so
 // it can't be asked to take out its own limits or rules. Ghost AI's owner key lets its own
 // runs through (SYMBIOT_OWNER, set by Symbiot, not by the agent).
@@ -119,7 +152,7 @@ function judgeBash(cmd, { cwd, home, branch }) {
         if (secretPath(abs, home) && !(PUB_READ.test(w[0]) && PLAIN.test(unquote(p)) && publicKey(abs, home))) return { why: "your keys and cloud credentials stay yours" };
       }
     }
-    if (/(^|\s)(>|>>|tee|sed\s+-i)\s*\S*\.config\/symbiot\/(config|secrets)\.json/.test(s)) return { why: "Symbiot's own settings are yours to change" };
+    if (changesOwn(s, { home, cwd, whole: c })) return { why: "Symbiot's own settings are yours to change" };
   }
   if (/\b(curl|wget)\b[^|]*\|\s*(sudo\s+)?(ba|z|da)?sh\b/.test(c)) return { why: "running a script straight from the internet" };
   // a browser on the user's running Symbiot: each page it opened counted as a new window and
@@ -128,8 +161,9 @@ function judgeBash(cmd, { cwd, home, branch }) {
   return null;
 }
 
-function judge(tool, input = {}, { cwd = process.cwd(), home = homedir(), branch, writes = null } = {}) {
+function judge(tool, input = {}, { cwd = process.cwd(), home = homedir(), branch, writes = null, session = "" } = {}) {
   const t = String(tool || "");
+  if (t.startsWith(CHROME)) return judgeChrome(t, input, { session, home }); // the user's own Chrome: acting only where they allow it, sends and payments held for their Go (chromegate.mjs)
   if (t === "Bash") return judgeBash(input.command, { cwd, home, branch: branch != null ? branch : currentBranch(cwd) });
   const p = input.file_path || input.path || input.notebook_path;
   if (!p) return null;
@@ -147,8 +181,9 @@ const main = process.argv[1] && resolve(process.argv[1]) === fileURLToPath(impor
 if (main) {
   let raw = ""; try { raw = readFileSync(0, "utf8"); } catch {}
   let ev = {}; try { ev = JSON.parse(raw); } catch {}
+  if (ev.hook_event_name === "PostToolUse") { try { seenChrome(ev.tool_name, ev.tool_response, { session: String(ev.session_id || "") }); } catch {} process.exit(0); } // after a Chrome tool: the site each tab is on now
   let writes = null; try { writes = JSON.parse(process.env.SYMBIOT_WRITES || "null"); } catch {} // a sandboxed repo run's folders
-  const r = judge(ev.tool_name, ev.tool_input || {}, { cwd: ev.cwd || process.cwd(), writes });
+  const r = judge(ev.tool_name, ev.tool_input || {}, { cwd: ev.cwd || process.cwd(), writes, session: String(ev.session_id || "") });
   if (r) { process.stderr.write("Blocked by Symbiot's membrane: " + r.why + ". If it's needed, ask the user in .symbiot/QUESTIONS.md with options.\n"); process.exit(2); }
   process.exit(0);
 }

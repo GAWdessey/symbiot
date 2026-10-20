@@ -17,10 +17,12 @@ function doneList() { return readState(FILE(), Array.isArray) || []; }
 // q: the question, a: what the user answered. A "skip" or "no" isn't a done ask: it may come back.
 // lane: whose question it was, so a brief lists only its own lane's (doneBrief). back: the user
 // asked something back instead (asksBack): its subject is held until they've read the write-up (heldBy).
-function recordDone(q, a, lane = "", { back = false } = {}) {
+// id: the question's own id (agents.mjs parseQuestions), which a later ask of it in other words finds (heldBy).
+function recordDone(q, a, lane = "", { back = false, id = "" } = {}) {
   const k = key(q); if (!k || !String(a || "").trim() || SAYS_NO.test(a)) return false;
-  const l = doneList().filter((x) => x.k !== k);
-  l.push({ k, q: String(q).trim().slice(0, 200), a: String(a).trim().slice(0, 200), at: new Date().toISOString().slice(0, 10), ts: Date.now(), ...(lane ? { lane: String(lane) } : {}), ...(back ? { back: true } : {}) });
+  id = String(id || "").toLowerCase();
+  const l = doneList().filter((x) => x.k !== k && !(id && x.id === id));
+  l.push({ k, ...(id ? { id } : {}), q: String(q).trim().slice(0, 200), a: String(a).trim().slice(0, 200), at: new Date().toISOString().slice(0, 10), ts: Date.now(), ...(lane ? { lane: String(lane) } : {}), ...(back ? { back: true } : {}) });
   try { signInDone(`${q}\n${a}`); } catch {} // a sign-in asked again after this: the browser didn't hold it (browserfails.mjs)
   return save(FILE(), l.slice(-KEEP));
 }
@@ -32,7 +34,7 @@ const isDone = (q) => { const k = key(q); return !!k && doneList().some((x) => x
 const clip = (s, n) => { s = String(s || "").replace(/\s+/g, " ").trim(); return s.length > n ? s.slice(0, n - 1).replace(/\s+\S*$/, "") + "…" : s; };
 const doneBrief = (lane = "", n = 5) => {
   const l = doneList().filter((x) => lane && x.lane === lane).slice(-n); if (!l.length) return [];
-  return ["## Already answered: don't ask these again", ...l.map((x) => `- ${clip(x.q, 120)} → ${x.back ? `they asked back first: "${clip(x.a, 120)}". Do that first, written up for Reports, and don't ask about this again` : clip(x.a, 120)}`), ""];
+  return ["## Already answered: don't ask these again", ...l.map((x) => `- ${clip(x.q, 120)}${x.id ? ` {#${x.id}}` : ""} → ${x.back ? `they asked back first: "${clip(x.a, 120)}". Do that first, written up for Reports, and don't ask about this again` : clip(x.a, 120)}`), ""];
 };
 
 // ---- an answer that asks back: the question isn't answered, the user wants something first ----
@@ -74,10 +76,13 @@ function reportsSince(folder, ts) {
 // held until they've opened a report written after it (readSince(ts, lane)), or for HOLD_FOR: 3 shared
 // words in the same lane, 4 from another. Garth's 4 Paddle asks shared paddle/symbiot/pro or more.
 const HOLD_FOR = 14 * 86400000;
-function heldBy(q, { lane = "", now = Date.now(), readSince = () => false } = {}) {
+function heldBy(q, { lane = "", now = Date.now(), readSince = () => false, id = "" } = {}) {
+  // the same id is the same question, whatever its words: answered once, or asked back about until read
+  if (id) { const x = doneList().slice().reverse().find((y) => y.id === String(id).toLowerCase()); if (x && (!x.back || (x.ts && now - x.ts < HOLD_FOR && !readSince(x.ts, x.lane || lane)))) return x; }
   const w = words(q); if (w.size < 2) return null;
   let best = null, top = 0;
   for (const x of doneList()) {
+    if (id && x.id && x.id !== String(id).toLowerCase()) continue; // both have ids, and they differ: another question, however alike the words
     const xw = words(x.q), n = [...xw].filter((t) => w.has(t)).length; if (n < 3 || n <= top) continue;
     const hit = x.back ? x.ts && now - x.ts < HOLD_FOR && n >= (lane && x.lane === lane ? 3 : 4) && !readSince(x.ts, x.lane || lane)
       : n >= 4 && n / Math.max(w.size, xw.size) >= 0.75;

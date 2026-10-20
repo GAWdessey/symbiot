@@ -101,7 +101,22 @@ try {
   ok("…so the next trigger starts nothing, and the note says when it will", held && held.empty && /It starts again at .*8:51/.test(held.note), held);
   ok("…until that time comes", a.blockedAgain(ops, 'claude -p "x"', { now: b1.until + 1 }) === null);
   put(ops, "REPORT.md", "# What I found\n");
-  ok("a run that wrote a report isn't empty", a.noteBlocked(ops, 'claude -p "x"', Date.now() - 60000, 0, { dirtyBefore: before, ticksBefore: ticks }) === undefined && !existsSync(join(ops, ".symbiot", "blocked.json")));
+  // 20 Oct 2026 review, finding 5: the marketing 4-week test wrote its report each time, so it was never
+  // "empty", and its "the next reading is 22 Oct" was ignored: 17 runs on 19 Oct
+  a.noteBlocked(ops, 'claude -p "x"', Date.now() - 60000, 0, { dirtyBefore: before, ticksBefore: ticks });
+  const b2 = JSON.parse(read(ops, "blocked.json") || "null");
+  ok("a run that wrote a report isn't empty, but the time it named still holds the next one", b2 && !b2.empty && b2.dated && b2.until === b1.until, b2);
+  const held2 = a.blockedAgain(ops, 'claude -p "x"');
+  ok("…the next trigger starts nothing, and says when it will", held2 && held2.dated && /look again at .*8:51/.test(held2.note), held2);
+  ok("…until that time comes", a.blockedAgain(ops, 'claude -p "x"', { now: b2.until + 1 }) === null);
+  put(ops, "TASKS.md", read(ops, "TASKS.md") + "- [ ] A new task\n");
+  ok("…or it's given a new task", a.blockedAgain(ops, 'claude -p "x"') === null);
+  put(ops, "TASKS.md", "## Tasks\n- [ ] Once production Dailify's WhatsApp number switch is live, move the templates\n");
+  put(ops, "agent.log", logOf('claude -p "x"', "I'm waiting on the number switch, so I'll check again once it's live.", { ok: true, cost: 0.2 }));
+  ok("a run that wrote a report and named no time isn't held", a.noteBlocked(ops, 'claude -p "x"', Date.now() - 60000, 0, { dirtyBefore: before, ticksBefore: ticks }) === undefined && !existsSync(join(ops, ".symbiot", "blocked.json")));
+  put(ops, "agent.log", logOf('claude -p "x"', "Done one; the next reading is on 22 Oct.", { ok: true, cost: 0.2 }));
+  a.noteBlocked(ops, 'claude -p "x"', Date.now() - 60000, 0, { dirtyBefore: before, ticksBefore: -1 });
+  ok("nor one that ticked a task, whatever it said", !existsSync(join(ops, ".symbiot", "blocked.json")));
 
   // continueLanes: the agent reworded the open task; it's the same task, not a new one
   const lane2 = join(HOME, "work", "steve"); mkdirSync(join(lane2, ".symbiot"), { recursive: true });
@@ -180,6 +195,16 @@ try {
   const days = loadCostDays(df), k1 = Object.keys(days)[0];
   ok("each day: runs, spend, time, failures, by model, by lane (an ops folder is \"ops\") and by kind", Object.keys(days).length === 2 && days[k1].n === 2 && days[k1].cost === 2.9 && days[k1].failed === 1 && days[k1].byModel["claude-opus-5-5"].cost === 2.5 && days[k1].byLane.ops.n === 1 && days[k1].byLane.coral.n === 1 && days[Object.keys(days)[1]].byKind.answer.n === 1, days);
   ok("…written atomically and yours only (0600)", (statSync(cf).mode & 0o777) === 0o600 && (statSync(df).mode & 0o777) === 0o600 && existsSync(cf + ".bak"), (statSync(cf).mode & 0o777).toString(8));
+  // continued.json is kept by folder: a lane pushed out of runs.json (60 kept) came back with a free run (finding 5)
+  console.log("CONTINUE — a lane out of runs.json keeps its record");
+  { const cl = join(C, "projects", "contlane"); put(cl, "TASKS.md", "## Tasks\n- [ ] The 4-week test\n"); put(cl, "agent.log", "=== x ===\n");
+    const later = Date.now() + 10 * 60000, starts = [], go = () => { starts.push(1); return { id: "c" + starts.length }; };
+    a.continueLanes({ now: later, run: go, runs: () => [{ path: cl }] });
+    ok("the first time, it continues", starts.length === 1, starts);
+    a.continueLanes({ now: later, run: go, runs: () => [] });
+    ok("out of runs.json, its record stays", !!JSON.parse(readFileSync(a.CONTINUED_FILE, "utf8"))[cl], readFileSync(a.CONTINUED_FILE, "utf8"));
+    a.continueLanes({ now: later, run: go, runs: () => [{ path: cl }] });
+    ok("…so back in, with nothing ticked since, it isn't started again", starts.length === 1, starts); }
 } finally {
   rmSync(HOME, { recursive: true, force: true });
 }

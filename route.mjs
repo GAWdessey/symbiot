@@ -46,7 +46,10 @@ const JOBS = {
 const ONE_SHOT_TIER = Object.fromEntries(Object.entries(JOBS).map(([k, j]) => [k, j.tier]));
 const TIER_LABEL = { L: "local", H: "Haiku", S: "Sonnet", O: "Opus" };
 
-const HARD_WORDS = /\b(research|investigat\w*|refactor\w*|debugg?\w*|why|design\w*)\b/i;
+// "why" only as work to do ("find out why", "work out why the build fails"): a chat-written
+// task explains itself ("why this matters", "the user asked why…"), and every one went to
+// Opus on the word alone (review of 20 Oct 2026: $204 of $279 since 16 Oct was Opus).
+const HARD_WORDS = /\b(research|investigat\w*|refactor\w*|debugg?\w*|design\w*|(?:find|work|figure|dig|look|check|see|explain|understand|learn)\w*(?: out| into)? why)\b/i;
 // Doing something to a secret, not naming one: "rename the csrf token field" went to
 // Opus on the noun alone (15 Oct 2026). Paying, publishing and pushing to main are acts.
 const SECRET_ACT = /\b(rotat\w*|revok\w*|regenerat\w*|generat\w*|creat\w*|issu\w*|chang\w*|updat\w*|replac\w*|set|stor\w*|sav\w*|put|add|paste|mov\w*|copy\w*|delet\w*|remov\w*|leak\w*|expos\w*|commit\w*|print\w*|log\w*)\b[^.\n]{0,40}?\b(ssh keys?|api keys?|passwords?|secrets?|tokens?|credentials?)\b/i;
@@ -77,25 +80,29 @@ function repoCount(task) {
 }
 
 // Why an agent run should go to Opus instead of Sonnet, or "" if Sonnet is fine.
-function escalationReason(task, history) {
-  const text = String(task || "");
+// said: the part of the brief the user wrote (a chat-written task's own words, agents.mjs
+// routedModel), which the length and the words are measured on; keys, money and publishing
+// are read in the whole brief.
+function escalationReason(task, history, said = task) {
+  const text = String(task || ""), own = String(said ?? task ?? "");
   if (SENSITIVE.test(text)) return "touches keys, money or publishing";
-  if (text.length > LONG_BRIEF) return "long brief";
-  if (repoCount(text) > 1) return "names several repos";
-  if (HARD_WORDS.test(text)) return "research/refactor/debug-style work";
+  if (own.length > LONG_BRIEF) return "long brief";
+  if (repoCount(own) > 1) return "names several repos";
+  if (HARD_WORDS.test(own)) return "research/refactor/debug-style work";
   if (history.samples >= MIN_SAMPLES && history.failRate >= FAIL_FLOOR) return "lane fails often";
   if (history.samples >= MIN_SAMPLES && history.escalated >= FAIL_FLOOR) return "lane keeps escalating";
   return "";
 }
 
-// pickModel({kind, task, lane, path, override}) -> { tier: "L"|"H"|"S"|"O", model, why }
+// pickModel({kind, task, said, lane, path, override}) -> { tier: "L"|"H"|"S"|"O", model, why }
 //   kind:     a one-shot job's kind (read, summary, classify, triage, chat, writeup, post).
 //   task:     the brief an agent run is about (leave kind unset for agent runs).
+//   said:     the user-written part of it, when Symbiot's chat wrote the rest (default: task).
 //   lane, path: whose run this is; path is the lane history key in costs.json.
 //   override: "opus" | "sonnet" | "fable" | "local" | "haiku" | "auto"/"" — a task
 //             line's [model: …] or a lane's own setting. Always wins; Auto never
 //             goes below it.
-function pickModel({ kind = "", task = "", lane = "", path = "", override = "" } = {}) {
+function pickModel({ kind = "", task = "", said = task, lane = "", path = "", override = "" } = {}) {
   const ov = String(override || "").trim().toLowerCase();
   if (ov && ov !== "auto") {
     if (!OVERRIDE_TIER[ov]) throw new Error(`pickModel: unknown override "${override}"`);
@@ -112,7 +119,7 @@ function pickModel({ kind = "", task = "", lane = "", path = "", override = "" }
   if (kindOf(task) === "answer") return { tier: "S", model: MODEL.S, why: "Sonnet: answer-resume" };
 
   const history = laneHistory(path);
-  const reason = escalationReason(task, history);
+  const reason = escalationReason(task, history, said);
   if (reason) return { tier: "O", model: MODEL.O, why: `Opus: ${reason}` };
   const note = history.samples >= MIN_SAMPLES ? `, lane median $${history.median.toFixed(2)}` : "";
   return { tier: "S", model: MODEL.S, why: `Sonnet: short brief${note}` };

@@ -41,6 +41,15 @@ ok("a browser on the user's running Symbiot is stopped; a sandbox copy, or its A
   ok("…and writing or copying one is stopped, as copying a private key is", /keys/.test((hj("Write", { file_path: join(ssh, "x2.pub") }) || {}).why || "") && /keys/.test((hj("Edit", { file_path: join(ssh, "id_ed25519.pub") }) || {}).why || "") && hstop("scp ~/.ssh/id_ed25519 host:") && hstop("cp ~/.ssh/id_ed25519.pub /tmp/k"), "");
 }
 ok("Symbiot's settings can be read but not changed", judge("Read", { file_path: "/home/u/.config/symbiot/config.json" }, o) === null && (judge("Edit", { file_path: "/home/u/.config/symbiot/config.json" }, o) || {}).why, "");
+// the Chrome gate's holds and tabs too: an agent that wrote them could set Go on its own held send,
+// or say its tab is on a site it may act on (review of the 20 Oct 2026 run)
+const own = ["config.json", "chrome-holds.json", "chrome-tabs.json"].map((f) => "~/.config/symbiot/" + f);
+ok("…nor the Chrome gate's holds and tabs, by Edit or Write", own.every((f) => ["Edit", "Write", "MultiEdit"].every((t) => /settings/.test((judge(t, { file_path: f }, o) || {}).why || ""))) && judge("Write", { file_path: "/home/u/proj/chrome-notes.json" }, o) === null, "");
+const writes = (f) => [`echo '[]' > ${f}`, `echo x >> ${f}`, `printf x | tee ${f}`, `cp /tmp/x ${f}`, `mv /tmp/x ${f}`, `ln -sf /tmp/x ${f}`, `sed -i 's/a/b/' ${f}`, `node -e "require('fs').writeFileSync('${f}', '[]')"`, `python3 -c "open('${f}','w').write('[]')"`, `python3 - <<'EOF'\nopen('${f}'.replace('~', '/home/u'), 'w').write('[]')\nEOF`, `F=${f}; echo '[]' > $F`, `echo ${f} | xargs cp /tmp/x`, `cat /tmp/x | dd of=${f}`];
+ok("…nor by a shell: a redirect, tee, cp, mv, ln, sed -i, node or python, a heredoc, a variable or a pipe", own.every((f) => writes(f).every((c) => stop(c, /settings/))), own.flatMap((f) => writes(f).filter((c) => !stop(c, /settings/))));
+ok("…a bare config.json too, once the command is in Symbiot's folder", stop("cd ~/.config/symbiot && echo '{}' > config.json", /settings/) && (judge("Bash", { command: "echo '{}' > config.json" }, { ...o, cwd: "/home/u/.config/symbiot" }) || {}).why, "");
+ok("…while reading them goes ahead, and another project's config.json is its own", ["cat", "jq .", "grep go", "LC_ALL=C head -5", "sed -n 1p"].every((r) => own.every((f) => go(`${r} ${f}`))) && go("jq .chromeAct ~/.config/symbiot/config.json > /tmp/acts.json") && go("cat ~/.config/symbiot/chrome-holds.json | jq '.[0]'") && go("echo '{}' > config.json") && go("cp config.example.json config.json"), "");
+ok("…an ops run's own config.json, in its folder under Symbiot's, is its own too", judge("Bash", { command: "cp config.example.json config.json" }, { ...o, cwd: "/home/u/.config/symbiot/drafts/act-1" }) === null && go("cd ~/.config/symbiot/drafts/act-1 && echo '{}' > config.json"), "");
 
 const GUARD = fileURLToPath(new URL("../guard.mjs", import.meta.url));
 const hook = (ev) => spawnSync(process.execPath, [GUARD], { input: JSON.stringify(ev), encoding: "utf8" });

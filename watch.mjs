@@ -34,6 +34,9 @@ import { linksIn, peekLinks, peekLine } from "./peek.mjs";
 import { converse, actNow, actIn, taskIn } from "./mind.mjs";
 import { laneMap } from "./scan.mjs";
 import { maybeCustomer } from "./post.mjs";
+import { STATUS_URL, readStates, actOn } from "./probes.mjs";
+import { addTask } from "./tasks.mjs";
+import { onMerged } from "./deploy.mjs";
 
 const WATCH_FILE = join(CONFIG_DIR, "watch.json");
 const EVERY = [5, 15, 30, 60]; // minutes between reads
@@ -287,9 +290,21 @@ function setEvery(id, every) {
   if (!EVERY.includes(Number(every))) return { error: `Every ${EVERY.join(", ")} minutes.` };
   w.every = Number(every); saveWatch(d); return view(w);
 }
+// The Status watch (probes.mjs): there by itself, read every 15 minutes, until you stop watching it.
+function ensureStatusWatch() {
+  if (loadConfig().statusWatch === false) return null;
+  const d = loadWatch(), had = d.watches.find((w) => w.url === STATUS_URL); if (had) return had;
+  const w = { id: randomBytes(4).toString("hex"), name: "Status", url: STATUS_URL, every: 15, added: Date.now(), last: 0, seen: [] };
+  d.watches.push(w); return saveWatch(d) ? w : null;
+}
+function actOnStates(items) {
+  let map = {}; try { map = laneMap(); } catch {}
+  return actOn(items, { map, add: (text, lane) => addTask(text, lane), run: (p) => runHandoff(p), merged: (path, lane, pr) => onMerged(path, lane, pr) });
+}
 // Stop watching, and forget what it found.
 function removeWatch(id) {
   const d = loadWatch(); if (!d.watches.some((x) => x.id === id)) return { error: `No watch ${id}.` };
+  if (d.watches.some((x) => x.id === id && x.url === STATUS_URL)) { const cfg = loadConfig(); cfg.statusWatch = false; saveConfig(cfg); } // stays gone
   d.watches = d.watches.filter((x) => x.id !== id); d.news = d.news.filter((n) => n.watch !== id); d.briefs = d.briefs.filter((n) => n.watch !== id);
   saveWatch(d); return { ok: true };
 }
@@ -311,6 +326,7 @@ function newsAfter(ts) { const d = loadWatch(), t = Number(ts) || 0; return { ne
 // What a watch lists, as a noun: mail, GitHub notifications, else new things on it.
 function kindOf(url) {
   const h = hostOf(url);
+  if (url === STATUS_URL) return ["change", "changes"];
   if (isGitHubInbox(url)) return ["GitHub notification", "GitHub notifications"];
   if (/^(mail|webmail)\.|^outlook\.(live|office|office365)\.com$/.test(h)) return ["email", "emails"];
   if (h === "web.whatsapp.com") return ["WhatsApp message", "WhatsApp messages"];
@@ -338,7 +354,7 @@ function waitingOn(hours = 24, now = Date.now()) {
 // messages from them (needsYou), and lists the rest marked with who they're from. Read
 // from all of watch.json, so a busy GitHub can't push your mail off the board the
 // way it can off the 50 newest under Watching.
-const sourceOf = (url) => (isGitHubInbox(url) ? "github" : isMail(url) ? "mail" : isChat(url) ? "chat" : isSocial(url) ? "social" : "page");
+const sourceOf = (url) => (url === STATUS_URL ? "status" : isGitHubInbox(url) ? "github" : isMail(url) ? "mail" : isChat(url) ? "chat" : isSocial(url) ? "social" : "page");
 function watchBoard(hours = 24, now = Date.now()) {
   const d = loadWatch(), since = now - hours * 3600000;
   const cards = d.watches.map((w) => {
@@ -387,7 +403,7 @@ async function boardChat(id, question, { hours = 72, now = Date.now(), ask = wri
   const history = (w.chat || []).slice(-12).map((m) => `${m.role === "user" ? "User" : "You"}: ${m.text}`).join("\n\n");
   const r = await converse({ where: `${w.name} card`, role, context, history, question, ask, now,
     act: { // a repo named: its lane (its tasks, its agent); none: an agent of its own
-      agent: (req, known, repo) => (repo ? actIn(req, repo, { map: lanes(), known, title: w.name, context: `${w.name}, new lately:\n${listed}`, ops: run, now }) : run(req, { title: w.name, context: `${w.name}, new lately:\n${listed}`, known, now })),
+      agent: (req, known, repo, said) => (repo ? actIn(req, repo, { map: lanes(), known, title: w.name, context: `${w.name}, new lately:\n${listed}`, ops: run, now, said }) : run(req, { title: w.name, context: `${w.name}, new lately:\n${listed}`, known, now })),
       task: (text, repo) => taskIn(text, repo, { map: lanes() }) } });
   const answer = r.reply;
   // read again: a check may have saved the file while the model answered
@@ -718,9 +734,11 @@ async function openChat(id, { open = signIn } = {}) {
 // briefOf (the tests pass their own). Gives the watch, plus `new` (what was new)
 // and `brief`, or `learned` (the first read), or `busy` when the hidden browser
 // is in use (nothing changes: it's read later).
-async function checkWatch(id, { read = readPage, github = readGitHub, notify = desktopNotify, brief = briefOf, linkedin = readLinkedIn, now = null } = {}) {
+// states: the Status watch's read (probes.mjs readStates: through APIs, no page); act: what its
+// changes start (probes.mjs actOn).
+async function checkWatch(id, { read = readPage, github = readGitHub, notify = desktopNotify, brief = briefOf, linkedin = readLinkedIn, now = null, states = readStates, act = actOnStates } = {}) {
   const w0 = loadWatch().watches.find((x) => x.id === id); if (!w0) return { error: `No watch ${id}.` };
-  const page = (isGitHubInbox(w0.url) && await github()) || (await read(w0.url)) || { error: "Nothing came back from the page." };
+  const page = (w0.url === STATUS_URL && await states()) || (isGitHubInbox(w0.url) && await github()) || (await read(w0.url)) || { error: "Nothing came back from the page." };
   if (page.busy) return { ...view(w0), busy: true };
   // read again: the file may have changed while the page loaded
   const d = loadWatch(), w = d.watches.find((x) => x.id === id); if (!w) return { error: "That watch was removed." };
@@ -763,6 +781,7 @@ async function checkWatch(id, { read = readPage, github = readGitHub, notify = d
   d.news = [...news, ...d.news].slice(0, MAX_NEWS);
   saveWatch(d);
   if (first) return { ...view(w), learned: keys.length };
+  if (w.url === STATUS_URL && fresh.length) { try { act(fresh.slice(0, MAX_PER_READ)); } catch {} } // a state that changed: a run only when there's something to do
   // a chat moves up the list for what you sent too: only unread messages from them are news to you
   const needy = news.filter((n) => needsYou(n, w));
   let said = "";
@@ -783,6 +802,7 @@ function dueWatches(now = Date.now()) { return loadWatch().watches.filter((w) =>
 // While the app runs: once a minute, read the watches that are due, one at a
 // time. Returns a stop function.
 function startWatches(opts = {}) {
+  try { ensureStatusWatch(); } catch {}
   let busy = false;
   const tick = async () => {
     if (busy) return; busy = true;
@@ -794,4 +814,4 @@ function startWatches(opts = {}) {
   return () => { clearTimeout(first); clearInterval(every); };
 }
 
-export { linkedinDetail, liType, replyOf, draftCard, draftCards, draftAnswer, isDraftDir, sendBrief, LINK_ASK, WATCH_FILE, EVERY, GITHUB_INBOX, DRAFTS_DIR, itemsOf, fromOf, needsYou, automatedMail, chatName, recheckChats, itemKey, newItems, remember, isGitHubInbox, githubItems, readGitHub, setBrief, briefOf, newsNotice, markNews, watchState, addWatch, setEvery, removeWatch, clearNews, seenWatch, newsSince, newsAfter, waitingOn, watchBoard, boardLine, boardChat, boardTalk, clearBoardChat, talkOf, isSignedOut, isMail, isChat, isSocial, draftsUrl, draftBrief, chatBrief, socialBrief, draftReply, openChat, checkWatch, dueWatches, startWatches };
+export { ensureStatusWatch, actOnStates, linkedinDetail, liType, replyOf, draftCard, draftCards, draftAnswer, isDraftDir, sendBrief, LINK_ASK, WATCH_FILE, EVERY, GITHUB_INBOX, DRAFTS_DIR, itemsOf, fromOf, needsYou, automatedMail, chatName, recheckChats, itemKey, newItems, remember, isGitHubInbox, githubItems, readGitHub, setBrief, briefOf, newsNotice, markNews, watchState, addWatch, setEvery, removeWatch, clearNews, seenWatch, newsSince, newsAfter, waitingOn, watchBoard, boardLine, boardChat, boardTalk, clearBoardChat, talkOf, isSignedOut, isMail, isChat, isSocial, draftsUrl, draftBrief, chatBrief, socialBrief, draftReply, openChat, checkWatch, dueWatches, startWatches };

@@ -19,24 +19,26 @@ const S = await import("../sweep.mjs");
 const { writeJsonAtomic } = await import("../core.mjs");
 
 try {
-  console.log("RUN FOLDERS — finished, quiet for 14 days, nothing open");
+  console.log("RUN FOLDERS — finished, quiet for 3 days, nothing open");
   const drafts = join(CFG, "drafts");
   const act = (name, days, files = {}) => { const d = join(drafts, name, ".symbiot"); mkdirSync(d, { recursive: true }); writeFileSync(join(d, "TASKS.md"), "- [x] done\n"); for (const [f, t] of Object.entries(files)) writeFileSync(join(d, f), t); for (const f of ["TASKS.md", ...Object.keys(files)]) old(join(d, f), days); old(d, days); old(join(drafts, name), days); return join(drafts, name); };
-  const gone = act("act-aaaa0001", 20), fresh = act("act-aaaa0002", 3), running = act("act-aaaa0003", 20), asking = act("act-aaaa0004", 20), waited = act("act-aaaa0005", 20), unread = act("act-aaaa0006", 20, { "audit.md": "# Audit\n\nfindings\n" });
+  const gone = act("act-aaaa0001", 20), fresh = act("act-aaaa0002", 1), running = act("act-aaaa0003", 20), asking = act("act-aaaa0004", 20), waited = act("act-aaaa0005", 20), unread = act("act-aaaa0006", 20, { "audit.md": "# Audit\n\nfindings\n" });
   mkdirSync(join(drafts, "not-a-run"), { recursive: true }); old(join(drafts, "not-a-run"), 40);
-  const deps = { running: (p) => p === running, questions: (p) => (p === asking ? 1 : 0), waiting: (p) => p === waited, unread: (p) => p === unread, live: () => false };
+  const handed = act("act-aaaa0007", 5), quiet4 = act("act-aaaa0008", 4);
+  const deps = { running: (p) => p === running, questions: (p) => (p === asking ? 1 : 0), waiting: (p) => p === waited, unread: (p) => p === unread, handing: (p) => p === handed, live: () => false };
   let said = "";
   const r = await S.sweepState({ now, dir: CFG, deps, log: (s) => { said += s; } });
-  ok("the finished, quiet one goes", !existsSync(gone) && r.acts === 1, r);
+  ok("the finished ones quiet for 3 days or more go (they were kept 14: 3.5 GB by 20 Oct 2026)", !existsSync(gone) && !existsSync(quiet4) && r.acts === 2, r);
+  ok("one whose handover hasn't reported back yet stays", existsSync(handed));
   ok("a recent one stays", existsSync(fresh));
   ok("one still running stays", existsSync(running));
   ok("one with an open question stays", existsSync(asking));
   ok("one waiting on a reply stays", existsSync(waited));
   ok("one with an unread report stays", existsSync(unread));
   ok("other folders in drafts/ aren't touched", existsSync(join(drafts, "not-a-run")));
-  ok("it says what it removed", /Swept: 1 finished run folder/.test(said), said);
+  ok("it says what it removed", /Swept: 2 finished run folders/.test(said), said);
 
-  console.log("SCREENS — the newest 200 maps per page, screenshots nobody refers to");
+  console.log("SCREENS — the newest 30 maps per page, screenshots nobody refers to");
   const scr = join(CFG, "screens"); mkdirSync(scr, { recursive: true });
   const id = (i) => i.toString(16).padStart(12, "0");
   const maps = Array.from({ length: 230 }, (_, i) => ({ id: id(i), name: "Feed", w: 1, h: 1, ts: now - i * 1000, via: "headless", page: { url: "https://x/feed", title: "Feed" }, regions: [] }));
@@ -46,7 +48,7 @@ try {
   old(join(scr, id(229) + ".png"), 30); old(join(scr, id(500) + ".png"), 90); old(join(scr, id(700) + ".png"), 30);
   const s = S.sweepScreens({ now, dir: scr });
   const left = JSON.parse(readFileSync(join(scr, "screens.json"), "utf8"));
-  ok("the 30 oldest maps of the page go, the newest 200 stay", s.entries === 30 && left.filter((x) => x.page).length === 200 && left.some((x) => x.id === id(0)) && !left.some((x) => x.id === id(229)), s);
+  ok("all but the newest 30 maps of the page go", s.entries === 200 && left.filter((x) => x.page).length === 30 && left.some((x) => x.id === id(0)) && !left.some((x) => x.id === id(229)), s);
   ok("your own screen capture stays, however old", left.some((x) => x.id === id(500)));
   ok("a dropped map's old PNG goes, and an orphan older than a week; a referred-to one and a fresh orphan stay", !existsSync(join(scr, id(229) + ".png")) && !existsSync(join(scr, id(700) + ".png")) && existsSync(join(scr, id(500) + ".png")) && existsSync(join(scr, id(0) + ".png")) && existsSync(join(scr, id(701) + ".png")) && s.pngs === 2, s);
   ok("screens.json is written whole, with a .bak", existsSync(join(scr, "screens.json.bak")) && !readdirSync(scr).some((n) => n.endsWith(".tmp")));
@@ -67,6 +69,21 @@ try {
     const { statSync } = await import("node:fs");
     ok("the config folder and screens/ are yours only after a sweep (0700)", (statSync(CFG).mode & 0o777) === 0o700 && (statSync(scr).mode & 0o777) === 0o700, [(statSync(CFG).mode & 0o777).toString(8), (statSync(scr).mode & 0o777).toString(8)]);
   }
+
+  console.log("OLD COPIES, OLD TASKS, LOOSE FILES — .bak.bak, the archive, 0600");
+  writeFileSync(join(CFG, "lanes.json.bak.bak"), "[]"); old(join(CFG, "lanes.json.bak.bak"), 40); writeFileSync(join(CFG, "tasks.json.bak.bak"), "[]");
+  const D = 86400000, tl = [{ id: "a1", text: "old archived", archived: true, done: true, archivedAt: now - 45 * D }, { id: "a2", text: "new archived", archived: true, done: true, archivedAt: now - 2 * D }, { id: "o1", text: "open one", done: false, ts: now - 90 * D }];
+  writeJsonAtomic(join(CFG, "tasks.json"), tl);
+  writeFileSync(join(CFG, "continued.json"), "{}", { mode: 0o664 });
+  const { chmodSync, statSync: st2 } = await import("node:fs"); chmodSync(join(CFG, "continued.json"), 0o664);
+  const r3 = await S.sweepState({ now, dir: CFG, deps, log: () => {} });
+  ok("a .bak.bak older than 30 days goes, a newer one stays", !existsSync(join(CFG, "lanes.json.bak.bak")) && existsSync(join(CFG, "tasks.json.bak.bak")), readdirSync(CFG));
+  const tj = JSON.parse(readFileSync(join(CFG, "tasks.json"), "utf8")), ar = JSON.parse(readFileSync(join(CFG, "tasks-archive.json"), "utf8"));
+  ok("a task archived over 30 days ago moves to tasks-archive.json; a recent one and an open one stay", r3.tasks === 1 && tj.map((t) => t.id).join() === "a2,o1" && ar.map((t) => t.id).join() === "a1", { tj, ar });
+  ok("…and the Archive still lists it", S.archivedTasks(CFG).some((t) => t.id === "a1"));
+  const T = await import("../tasks.mjs"), back = T.restoreTask("a1");
+  ok("…and Restore brings it back into tasks.json", back && back.id === "a1" && !back.archived && JSON.parse(readFileSync(join(CFG, "tasks.json"), "utf8")).some((t) => t.id === "a1") && !S.archivedTasks(CFG).length, back);
+  if (process.platform !== "win32") ok("a state file left 0664 is yours only after a sweep (0600)", (st2(join(CFG, "continued.json")).mode & 0o777) === 0o600 && r3.modes >= 1, (st2(join(CFG, "continued.json")).mode & 0o777).toString(8));
 } finally {
   rmSync(HOME, { recursive: true, force: true });
 }

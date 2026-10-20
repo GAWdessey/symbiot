@@ -10,7 +10,7 @@
 //
 //   node test/browser.mjs
 //
-import { mkdtempSync, mkdirSync, rmSync, lstatSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, lstatSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawn, spawnSync } from "node:child_process";
@@ -23,7 +23,7 @@ const ok = (n, c, got) => { if (c) { pass++; console.log("  ✓ " + n); } else {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const PROFILE = join(HOME, ".config", "symbiot", "browser");
 const locked = () => { try { return lstatSync(join(PROFILE, "SingletonLock")).isSymbolicLink(); } catch { return false; } }; // a link to "host-pid", not a file
-const chromes = () => (spawnSync("ps", ["-ww", "-eo", "args="], { encoding: "utf8" }).stdout || "").split("\n").filter((a) => a.includes("--user-data-dir=" + PROFILE) && !/--type=/.test(a));
+const chromes = () => (spawnSync("ps", ["-ww", "-eo", "args="], { encoding: "utf8" }).stdout || "").split("\n").filter((a) => a.includes("--user-data-dir=" + PROFILE + " ") && !/--type=/.test(a)); // the profile itself, not its copy (browser-snapshot)
 
 let other = null;
 try {
@@ -43,8 +43,10 @@ try {
     const H = await import("../headless.mjs");
     mkdirSync(PROFILE, { recursive: true });
     const gone = (p) => new Promise((r) => { if (p.exitCode !== null || p.signalCode) r(); else p.once("exit", r); });
-    const window = () => spawn(chrome, ["--ozone-platform=headless", "--user-data-dir=" + PROFILE, "--no-first-run", "--password-store=basic", "about:blank"], { stdio: "ignore" });
-    const hidden = () => spawn(chrome, ["--headless=new", "--user-data-dir=" + PROFILE, "--no-first-run", "about:blank"], { stdio: "ignore" });
+    // SYMBIOT_TEST_NO_SANDBOX=1: Chrome without its own sandbox, where one can't start (a sandboxed shell)
+    const NS = process.env.SYMBIOT_TEST_NO_SANDBOX ? ["--no-sandbox"] : []; if (NS.length) process.env.SYMBIOT_HEADLESS_ARGS = "--no-sandbox";
+    const window = () => spawn(chrome, [...NS, "--ozone-platform=headless", "--user-data-dir=" + PROFILE, "--no-first-run", "--password-store=basic", "about:blank"], { stdio: "ignore" });
+    const hidden = () => spawn(chrome, [...NS, "--headless=new", "--user-data-dir=" + PROFILE, "--no-first-run", "about:blank"], { stdio: "ignore" });
     const up = async (p) => { for (let i = 0; i < 50 && !(locked() && H.lockHolder() && H.lockHolder().pid === p.pid); i++) await sleep(200); return locked(); };
     // a page of its own to read, so a read really starts the hidden browser
     const { createServer } = await import("node:http");
@@ -52,15 +54,19 @@ try {
     await new Promise((r) => site.listen(0, "127.0.0.1", r));
     const PAGE = `http://127.0.0.1:${site.address().port}/`;
 
-    console.log("A WINDOW HAS THE PROFILE — background reads wait");
+    // 20 Oct 2026 review, finding 4: "The Symbiot Browser is open" failed every agent's read (313 times since 16 Oct)
+    console.log("A WINDOW HAS THE PROFILE — background reads go to a copy of its sign-ins");
     other = window();
     ok("Chrome holds the profile", await up(other));
     ok("…and it's taken for a window", H.windowOpen() && H.lockHolder() && H.lockHolder().headless === false, H.lockHolder());
-    const before = chromes().length;
+    let before = chromes().length; for (let i = 0; i < 10; i++) { await sleep(300); const n = chromes().length; if (n === before) break; before = n; } // the window's own processes settled
     const r = await H.readPage("https://example.com");
-    ok("a background read says the Symbiot Browser is open, and waits", /Symbiot Browser is open/.test((r && r.error) || ""), r);
+    ok("a background read works meanwhile, from a copy of the profile's sign-ins", r && !r.error && existsSync(join(HOME, ".config", "symbiot", "browser-snapshot", "Default")), r);
     await sleep(500);
-    ok("…without starting a second Chrome", chromes().length === before, chromes().length - before);
+    ok("…without a second Chrome on the profile itself (it would hand over to the window)", chromes().length === before, chromes());
+    const { loadConfig, saveConfig } = await import("../core.mjs"), cf = loadConfig(); saveConfig({ ...cf, browserSnapshot: false }); await H.closeBrowser();
+    const r0 = await H.readPage("https://example.com"); saveConfig(cf);
+    ok("…and with the copy switched off, it says the window is open", /Symbiot Browser is open/.test((r0 && r0.error) || ""), r0);
 
     console.log("DONE — it closes, whatever ps's width");
     const cols = process.env.COLUMNS; process.env.COLUMNS = "80"; // an app started from a terminal: ps cut each line at 80, and Done found nothing
@@ -100,14 +106,22 @@ try {
     // A card's "Sign in to twilio.com" did nothing (16 Oct; the same since the 12th): it let go of
     // the one-at-a-time queue before its window had the profile, an agent's read waiting behind it
     // started the hidden browser in the gap, and Chrome handed the window to that, out of sight.
-    process.env.SYMBIOT_BROWSER_ARGS = "--ozone-platform=headless"; // a window, with no screen
+    process.env.SYMBIOT_BROWSER_ARGS = ["--ozone-platform=headless", ...NS].join(" "); // a window, with no screen
     const opening = H.openSymbiotBrowser(PAGE), waiting = H.readPage(PAGE);
     const o = await opening, w = await waiting;
     const shown = () => chromes().filter((a) => !/--headless/.test(a)).length;
     ok("Sign in opens a window that has the profile", o && o.ok && H.windowOpen() && shown() >= 1, [o, H.lockHolder(), chromes().length]);
-    ok("…and the read behind it waits for Done instead of taking the profile", /Symbiot Browser is open/.test((w && w.error) || ""), w);
+    ok("…and the read behind it doesn't take the profile from it: it reads from the copy", w && !w.error && H.windowOpen(), w);
+    ok("…and how long it has been open is known, for Home", H.windowSince() > Date.now() - 120000, H.windowSince());
     await H.closeSymbiotBrowser();
     ok("…and Done closes it", !H.windowOpen(), H.lockHolder());
+    console.log("LEFT OPEN AND UNUSED — the window closes itself, its sign-ins saved");
+    const pw = spawn(chrome, ["--remote-debugging-pipe", ...NS, "--ozone-platform=headless", "--user-data-dir=" + PROFILE, "--profile-directory=Default", "--no-first-run", "--password-store=basic", "about:blank"], { stdio: ["ignore", "ignore", "ignore", "pipe", "pipe"] });
+    H.pipeWindow(pw, { every: 400, idle: 2500 });
+    ok("a window over the pipe has the profile", await up(pw));
+    await sleep(1200); const still = H.windowOpen();
+    for (let i = 0; i < 60 && H.windowOpen(); i++) await sleep(250);
+    ok("…stays open while it's been in use lately, and closes by itself once it's sat unused", still && !H.windowOpen(), H.lockHolder());
     other = hidden(); await up(other); // a lane's own `symbiot screens` (another Symbiot) has the profile
     const o2 = await H.openSymbiotBrowser(PAGE);
     await Promise.race([gone(other), sleep(3000)]);

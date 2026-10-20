@@ -5,3 +5,4 @@ android/build
 desktop/node_modules/
 desktop/dist/
 relay/.wrangler/
+test/.test-times.json

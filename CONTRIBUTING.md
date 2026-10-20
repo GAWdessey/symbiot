@@ -56,11 +56,20 @@ A module never imports `index.mjs` or `server.mjs`, so each can be imported and
 tested on its own.
 
 ```bash
-npm test
+npm test                   # every test/*.mjs, several at once (test/run.mjs)
+node test/run.mjs urgent   # only the files whose names match
+node test/run.mjs -j 1     # one at a time
 ```
 
-Runs six suites, all against throwaway repos, an isolated `HOME` and (for the
-update check) a fake npm registry:
+In a shell that is sandboxed itself, Chrome can't start its own sandbox, and the
+browser suites fail on that alone; run them without it there:
+`SYMBIOT_HEADLESS_ARGS=--no-sandbox SYMBIOT_TEST_NO_SANDBOX=1 npm test`.
+
+`test/run.mjs` runs each file in a process of its own, with a time limit
+(`--timeout`, 600 s by default), and ends with a table naming every file that
+failed and its first failures: one failing file never stops the rest. A new
+`test/*.mjs` is picked up by itself. The suites run against throwaway repos, an
+isolated `HOME` and (for the update check) a fake npm registry; among them:
 
 - `test/load.mjs` — the shipped files parse and load: `node --check` on each
   module, `ui.mjs` imported on its own with its page's JavaScript parsed, every

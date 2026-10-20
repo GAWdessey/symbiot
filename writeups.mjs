@@ -155,9 +155,9 @@ async function taskChat(id, question) {
   // "do it" here works on the task's repo the way Send to repos does: the request
   // joins the repo's tasks and the agent starts there; with no repo, in a run of its own
   const lanes = laneMap(), mine = path ? it.repo : "";
-  const agent = async (req, known, repo) => {
+  const agent = async (req, known, repo, said) => {
     const lane = repo || mine;
-    return lane ? actIn(req, lane, { map: lanes, known, title: it.text.slice(0, 60), context: `Their task: ${it.text}` }) : actNow(req, { title: it.text.slice(0, 60), context: `Their task: ${it.text}`, known });
+    return lane ? actIn(req, lane, { map: lanes, known, title: it.text.slice(0, 60), context: `Their task: ${it.text}`, said }) : actNow(req, { title: it.text.slice(0, 60), context: `Their task: ${it.text}`, known });
   };
   const r = await converse({ where: `Task: ${it.text.slice(0, 60)}`, role, context, history, question, map: lanes, act: { agent, task: (text, repo) => taskIn(text, repo || mine, { map: lanes }) } });
   const answer = r.reply;

@@ -22,6 +22,7 @@ import { join } from "node:path";
 import { homedir } from "node:os";
 import { readFileSync } from "node:fs";
 import { loadConfig } from "./core.mjs";
+import { listSecrets } from "./vault.mjs";
 import { loadScreens } from "./screens.mjs";
 import { handoffCmd, sandboxNeeds, trustFull, isClaudeCmd } from "./agents.mjs";
 
@@ -83,12 +84,24 @@ function keyedSites(keys = {}, hosts = []) {
   }
   return out.slice(0, 12);
 }
-function laneReach(map = {}, { sandboxed = reposSandboxed(), ssh = readOr(join(homedir(), ".ssh", "config")), read = readOr, screens = () => loadScreens(), linked = () => linkedHosts() } = {}) {
+// The keys the user already handed over, by name only (vault.mjs listSecrets): a site's API key
+// in the vault opened nothing in the brief, so agents asked for it again ("i gave my api key to
+// symbiot but it keeps asking me for it", 20 Oct 2026). A one-use code, or one all used up, isn't
+// a key. Each with its provider word, the name's first ("cloudflare api token" -> CLOUDFLARE).
+const KEYISH = /\b(?:api|key|keys|token|tokens|secret|sid|credentials?)\b/i;
+function vaultKeys(list = listSecrets()) {
+  return (Array.isArray(list) ? list : []).filter((x) => x && x.name && x.left > 0 && KEYISH.test(x.name) && !/\bcode\b/i.test(x.name))
+    .map((x) => ({ name: x.name, provider: String(x.name).split(/[^A-Za-z0-9]+/).find(Boolean).toUpperCase() })).slice(0, 20);
+}
+function laneReach(map = {}, { sandboxed = reposSandboxed(), ssh = readOr(join(homedir(), ".ssh", "config")), read = readOr, screens = () => loadScreens(), linked = () => linkedHosts(), vault = () => vaultKeys() } = {}) {
   const keys = {};
   for (const [lane, path] of Object.entries(map || {})) { if (!path) continue; const k = laneKeys(path, read); if (k.length) keys[lane] = k; }
   let sites = []; try { sites = mappedSites(screens()); } catch {}
   let own = []; try { own = linked(); } catch {}
-  return { sandboxed: !!sandboxed, hosts: sshHosts(ssh), keys, sites, apis: keyedSites(keys, [...sites, ...own]) };
+  let held = []; try { held = vault(); } catch {}
+  // a site the vault's key opens: through ops, which reads the vault (a sandboxed lane can't)
+  const vaultApis = keyedSites({ vault: held.map((v) => v.provider) }, [...sites, ...own]).map((a) => ({ ...a, name: (held.find((v) => v.provider === a.provider) || {}).name }));
+  return { sandboxed: !!sandboxed, hosts: sshHosts(ssh), keys, sites, apis: keyedSites(keys, [...sites, ...own]), vault: held.map((v) => v.name), vaultApis };
 }
 // The servers a handover names that the lane it goes to can't reach: [] for ops, or
 // with the sandbox off.
@@ -108,4 +121,4 @@ function serverOnly(text, lane, reach) {
   return far.length && SERVER_WORK.test(t) && !CODE_WORK.test(t) ? far : [];
 }
 
-export { mappedSites, laneReach, keyedSites, linkedHosts, sshHosts, envProviders, laneKeys, reposSandboxed, unreachable, serverOnly };
+export { vaultKeys, mappedSites, laneReach, keyedSites, linkedHosts, sshHosts, envProviders, laneKeys, reposSandboxed, unreachable, serverOnly };
