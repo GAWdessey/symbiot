@@ -12,7 +12,7 @@ import { randomBytes, createHash } from "node:crypto";
 import { track as jobTrack } from "./jobs.mjs";
 import { CONFIG_DIR, loadConfig, saveConfig, loadTasks, TASK_MAX, clipWords, sameTask, taskWords, sh, runOut, hasCmd, readState, writeJsonAtomic } from "./core.mjs";
 import { meetsStep, captureSecrets, heldFor } from "./vault.mjs";
-import { recordDone, isDone, isApprovalAsk, approvalText, approvedBefore, recentTurns, recentTasks, asksBack, askBackNote, heldBy, reportsSince, runReport, reportAsked } from "./asksdone.mjs";
+import { recordDone, isDone, isApprovalAsk, approvalText, approvedBefore, recentTurns, recentTasks, asksBack, askBackNote, closesAsk, runSaysClosed, heldBy, reportsSince, runReport, reportAsked } from "./asksdone.mjs";
 import { sentAfter } from "./sentmail.mjs";
 import { parseRun, lastRunText, readRunLog, runStarted, briefPlan, stepOf, runLine, waitingOn, waitUntil, RECHECK } from "./work.mjs";
 import { noteDuration, noteCost, kindOf } from "./estimate.mjs";
@@ -913,6 +913,41 @@ function settleNeeds(path, key) {
   if (key) o[ALL_SETTLED] = [...new Set([String(key), ...(Array.isArray(o[ALL_SETTLED]) ? o[ALL_SETTLED] : [])])].slice(0, 300);
   try { writeJsonAtomic(SETTLED, o, { mode: 0o600 }); } catch {}
 }
+// An ask the user closed ("this case is closed, no further aspects…"): settled.json keeps its words
+// by folder for CLOSED_FOR, and a later run there that says the same thing again ("Carla reply: it
+// stays an unsent draft") raises no card (needsOf). Something new on it comes as a new ask, in other words.
+const CLOSED = "#closed", CLOSED_FOR = 14 * 86400000;
+const subjectOf = (t) => {
+  t = String(t || "").replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, " ");
+  const words = new Set(t.toLowerCase().replace(/['’]s\b/g, "").split(/[^a-z0-9]+/).filter((w) => w.length > 2 && !SUBJECT_STOP.has(w)));
+  const names = new Set([...t.matchAll(/\b([A-Z][a-z][\w-]*)/g)].map((m) => m[1].toLowerCase()).filter((w) => words.has(w)));
+  return { words, names };
+};
+// Words that say where an ask stands ("still an unsent draft, waiting for your OK"), not what it's about:
+// with them "Jono reply" and "Carla reply" read as the same ask.
+const SUBJECT_STOP = new Set(("the and you your yours for with this that these those are was were has have had not but its from into once then when what which who will " +
+  "would can could should may might our out all any some about after before there here they them their his her she him just also than very now yet been " +
+  "unsent sent send sending draft drafts drafted email emails mail mails still sits stays waiting waits unless say says okay nothing anything changed ready gone ahead check first haven hasn isn won didn").split(" "));
+// Whether two cards ask the same thing: when both name someone, a name they share and half their other
+// words ("Carla reply", not "Carla's invoice"); else most of their words.
+function sameSubject(a, b) {
+  const x = subjectOf(a), y = subjectOf(b); if (!x.words.size || !y.words.size) return false;
+  const both = [...x.words].filter((w) => y.words.has(w)).length, j = both / (x.words.size + y.words.size - both);
+  if (x.names.size && y.names.size) return [...x.names].some((n) => y.names.has(n)) && j >= 0.5;
+  return j >= 0.6;
+}
+function closeAsk(path, what, now = Date.now()) {
+  if (!path || !String(what || "").trim()) return;
+  const o = loadSettled(), c = o[CLOSED] && typeof o[CLOSED] === "object" && !Array.isArray(o[CLOSED]) ? o[CLOSED] : {};
+  for (const p of Object.keys(c)) { c[p] = (Array.isArray(c[p]) ? c[p] : []).filter((r) => now - (r.at || 0) < CLOSED_FOR); if (!c[p].length) delete c[p]; }
+  c[path] = [...(c[path] || []), { at: now, what: String(what).replace(/\s+/g, " ").trim().slice(0, 300) }].slice(-20);
+  o[CLOSED] = c;
+  try { writeJsonAtomic(SETTLED, o, { mode: 0o600 }); } catch {}
+}
+function closedAsk(path, what, now = Date.now(), o = loadSettled()) {
+  const c = o[CLOSED] && o[CLOSED][path];
+  return Array.isArray(c) && c.some((r) => now - (r.at || 0) < CLOSED_FOR && sameSubject(r.what, what));
+}
 // A streaming run's last words (its final answer), read once per change of its log.
 const FINALS = new Map();
 function lastFinal(path) {
@@ -932,6 +967,9 @@ function needsOf(path, { final = "", waiting = null, end = Date.now(), start = e
   if (now - end > NEEDS_FOR) return null;
   let n = waiting ? { kind: "step", what: clipWords(String(waiting.step || "").replace(/^\s*👤\s*(You\s*(\([^)]*\))?:)?\s*/, "").trim(), 240), check: "", label: "", waiting: true } : leftToYou(final) || readNeeds(path, final);
   if (!n || !n.what) return null;
+  // its run's outcome says the ask needs nothing ("That asks for nothing further"), or the user closed
+  // this ask here before: its last words restating it ("it stays an unsent draft") aren't a new ask
+  if (!n.waiting && (runSaysClosed(final) || closedAsk(path, n.what, now))) return null;
   // an ask for an approval: never when it was already given (chat, a task, an earlier answer), and
   // otherwise the card carries it (Go ahead), never "press Approve" on a page that has no such button
   if (n.kind !== "approve" && isApprovalAsk(`${n.label} ${n.what}`)) {
@@ -952,7 +990,9 @@ function needsOf(path, { final = "", waiting = null, end = Date.now(), start = e
   // the user said "send it" from their own mail meanwhile: never "it's unsent" once Sent shows it (sentmail.mjs sentTick)
   const sent = sentAfter(path, n.what);
   n = { ...n, claim: n.what }; // its words as its run said them: what sentTick looks for in Sent (sentmail.mjs unsentNeeds)
-  if (sent) n = { ...n, sent, check: `Your Sent folder has "${sent.subject}"${sent.to ? ` to ${sent.to}` : ""}${sent.when ? `, sent ${sent.when}` : ""}, after its run said this was unsent: it may have gone already, so go ahead only if that's a different email.` };
+  // …or another agent sent it (awaiting.json): the card says who, so the user hears it has gone
+  const by = sent && sent.by ? (sent.by === "its own run" ? "Its own run already sent" : `Another agent (${sent.by}) already sent`) : "";
+  if (sent) n = { ...n, sent, check: by ? `${by} "${sent.subject}"${sent.to ? ` to ${sent.to}` : ""}${sent.when ? ` at ${sent.when} UTC` : ""}: this may have gone already, so go ahead only if that's a different email.` : `Your Sent folder has "${sent.subject}"${sent.to ? ` to ${sent.to}` : ""}${sent.when ? `, sent ${sent.when}` : ""}, after its run said this was unsent: it may have gone already, so go ahead only if that's a different email.` };
   // the report the run wrote for you, linked from its card ("Read the report"); and when your newest
   // answer asked for a report first, the card only comes back once there's one, worded to point at it
   let rep = null; try { rep = runReport(path, { said: `${final}\n${n.what}\n${n.check}`, since: start - 60000, own: path.startsWith(ACT_DIR) }); } catch {}
@@ -2144,6 +2184,7 @@ function answerQuestions(path, answers, opts = {}) {
     writeFileSync(join(path, ".symbiot", "ANSWERS.md"), prev.replace(/\s*$/, "\n") + rows.map((x) => `\n### ${x.q}${x.id ? ` {#${x.id}}` : ""}\n${x.a}\n_answered ${day}_\n`).join(""));
   } catch (e) { return { error: "Couldn't write ANSWERS.md: " + ((e && e.message) || e) }; }
   { const lane = whereOf(path).lane; for (const x of rows) recordDone(x.q, x.back || x.a, lane, { back: !!x.back, id: x.id }); }
+  for (const x of rows) if (!x.back && closesAsk(x.a)) closeAsk(path, x.q); // "case closed": a later run restating it raises no card (needsOf)
   // Go on a held action in the user's own Chrome (a question with id chrome-go-<hold>): that one action may go through (chromegate.mjs)
   for (const x of rows) { const m = String(x.id || "").match(/^chrome-go-([0-9a-f]+)$/); if (m && !/^\W*(?:no|don'?t|do not|skip|stop|cancel|not now)\b/i.test(x.a)) goAhead(m[1]); }
   // "Deploy it?" for a lane with a runbook: Symbiot runs it itself (deploy.mjs onDeployAnswer), and the lane's agent is told so
@@ -2298,4 +2339,4 @@ function agentsNow({ now = Date.now() } = {}) {
 }
 const forgetAgents = () => { agentsKept = null; };
 
-export { chaseReport, CHASED, UNMET, heldAsk, onCardGone, withOwnTools, escalation, grantCard, cardRules, cardIsPermission, runPhase, onRunEnd, isClaudeCmd, GUARD, tidyRule, tidyRules, tidySettings, pruneRuns, claudePlugins, idlePlugins, runSettings, archiveAnswers, allAnswers, answersDigest, ANSWERS_ARCHIVE, ANSWERS_KEEP, runsTick, RUN_START, HANG_MIN, noteBlocked, userAnswers, CONTINUED_FILE, onAnswered, CHANGES, toKnownHost, continueLanes, autoPick, autoDecide, FACTS, factsOf, knownRun, withStream, workOf, HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, connectorsInfo, linkReach, fillHandoff, runHandoff, nothingToDo, whereOf, whereLine, whereAnswer, askTask, PARKED_NOTE, parkedPaths, isParked, parkLane, agentMissing, blockedAgain, runningHandoff, loadRuns, earlierRuns, namedFiles, unchangedStep, waitingFor, startWaiting, noteUntracked, untrackedBefore, forgetUntracked, writeTasks, droppedTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, pickAgent, findOrcaCli, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, skipIdea, routeIdeas, agentQuestions, answerQuestions, agentsList, agentsNow, forgetAgents, AGENTS_KEEP, needsOf, settleNeeds, NEEDS_FOR, readLastWords, readNeeds, parseRead, READ_FILE, autoAllow, autoAllowSweep, allowlistInWork, installAllowlist, inWork, withScope, withTrust, sandboxFor, sandboxLifts, sandboxEnv, sandboxNeeds, sandboxState, sandboxWrites, SANDBOX_DIR, resumeFor, noteSession, tooLong, carryOn, RESUME_CTX, CARRY_PROMPT, trustFull, GUARD_SETTINGS, runCmdOf, claimLock, wideRoot, sandboxDenies, questionFolders, folderState, dirtyState, ANSWERS_SEEN, newAnswers, claudeDownIn, claudePause, noteClaudeDown, resetTime, PAUSE_FILE, startGap, isUrgent, urgentStop, urgentFirst, urgentUndo, urgentDone, urgentSweep, urgentState, licenceGate, stopRun, loadRunFiles, saveRunFiles, forgetRunFiles, withModel, routedModel, userWords, onShipping };
+export { chaseReport, CHASED, UNMET, heldAsk, onCardGone, withOwnTools, escalation, grantCard, cardRules, cardIsPermission, runPhase, onRunEnd, isClaudeCmd, GUARD, tidyRule, tidyRules, tidySettings, pruneRuns, claudePlugins, idlePlugins, runSettings, archiveAnswers, allAnswers, answersDigest, ANSWERS_ARCHIVE, ANSWERS_KEEP, runsTick, RUN_START, HANG_MIN, noteBlocked, userAnswers, CONTINUED_FILE, onAnswered, CHANGES, toKnownHost, continueLanes, autoPick, autoDecide, FACTS, factsOf, knownRun, withStream, workOf, HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, connectorsInfo, linkReach, fillHandoff, runHandoff, nothingToDo, whereOf, whereLine, whereAnswer, askTask, PARKED_NOTE, parkedPaths, isParked, parkLane, agentMissing, blockedAgain, runningHandoff, loadRuns, earlierRuns, namedFiles, unchangedStep, waitingFor, startWaiting, noteUntracked, untrackedBefore, forgetUntracked, writeTasks, droppedTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, pickAgent, findOrcaCli, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, skipIdea, routeIdeas, agentQuestions, answerQuestions, agentsList, agentsNow, forgetAgents, AGENTS_KEEP, needsOf, settleNeeds, closeAsk, closedAsk, sameSubject, NEEDS_FOR, readLastWords, readNeeds, parseRead, READ_FILE, autoAllow, autoAllowSweep, allowlistInWork, installAllowlist, inWork, withScope, withTrust, sandboxFor, sandboxLifts, sandboxEnv, sandboxNeeds, sandboxState, sandboxWrites, SANDBOX_DIR, resumeFor, noteSession, tooLong, carryOn, RESUME_CTX, CARRY_PROMPT, trustFull, GUARD_SETTINGS, runCmdOf, claimLock, wideRoot, sandboxDenies, questionFolders, folderState, dirtyState, ANSWERS_SEEN, newAnswers, claudeDownIn, claudePause, noteClaudeDown, resetTime, PAUSE_FILE, startGap, isUrgent, urgentStop, urgentFirst, urgentUndo, urgentDone, urgentSweep, urgentState, licenceGate, stopRun, loadRunFiles, saveRunFiles, forgetRunFiles, withModel, routedModel, userWords, onShipping };

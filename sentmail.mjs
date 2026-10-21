@@ -138,18 +138,49 @@ function settleUnsent(needs, rows, { mine = [], file = SENT_NEEDS(), now = Date.
   for (const n of needs || []) {
     const k = needKey(n.path, n.what); if (d[k]) continue;
     const r = sentFor(unsentClaim(n.what, mine), rows, n.since || 0); if (!r) continue;
-    d[k] = { subject: String(r.subject || r.text || "").replace(/\s+/g, " ").trim().slice(0, 120), to: (r.to || []).slice(0, 2).join(", ") || r.who, ...(r.ts ? { when: new Date(r.ts).toISOString().slice(0, 16).replace("T", " ") } : {}), via: r.via || "mail", at: now };
+    d[k] = { subject: String(r.subject || r.text || "").replace(/\s+/g, " ").trim().slice(0, 120), to: (r.to || []).slice(0, 2).join(", ") || r.who, ...(r.ts ? { when: new Date(r.ts).toISOString().slice(0, 16).replace("T", " ") } : {}), via: r.via || "mail", ...(r.by ? { by: r.path && r.path === n.path ? "its own run" : r.by } : {}), at: now };
     found.push({ ...n, sent: d[k] });
   }
   if (found.length) { for (const [k, v] of Object.entries(d)) if (now - (v.at || 0) > 14 * 86400000) delete d[k]; try { writeJsonAtomic(file, d, { mode: 0o600 }); } catch {} }
   return found;
 }
+// ---- what other agents sent ------------------------------------------------------
+// The same morning another lane's agent sent "Re: WIN LOVE ONBOARDING" to the client from Garth's
+// mail at 08:33, while an ops run kept calling its own reply to her an unsent draft waiting on his
+// OK, and never mentioned it (21 Oct 2026). A run that sends an email says so in its AWAITING.json,
+// and Symbiot keeps every one in awaiting.json (handback.mjs): those are sent rows too, by that lane.
+const AWAIT_FILE = () => join(CONFIG_DIR, "awaiting.json");
+function agentSent({ file = AWAIT_FILE(), now = Date.now(), days = 7 } = {}) {
+  const d = readState(file, (v) => !!v && typeof v === "object" && Array.isArray(v.waits));
+  return ((d && d.waits) || []).filter((w) => w && w.subject && Number(w.sent || w.at) > now - days * 86400000)
+    .map((w) => ({ ts: Number(w.sent || w.at), to: (Array.isArray(w.to) ? w.to : [w.to]).map(String), subject: String(w.subject), via: "agent", by: String((w.from && w.from.lane) || w.lane || "another agent"), path: String((w.from && w.from.path) || "") }))
+    .sort((a, b) => b.ts - a.ts);
+}
+// For every brief: check before asking about an email, and what agents sent lately (to, subject, when, lane).
+function sentBrief({ now = Date.now(), file, max = 8 } = {}) {
+  const rows = agentSent({ now, days: 3, ...(file ? { file } : {}) }).slice(0, max);
+  const when = (t) => new Date(t).toISOString().slice(0, 16).replace("T", " ") + " UTC";
+  return ["## Emails already sent",
+    "- Before you ask the user about sending an email, or call one unsent or a draft: read their Sent mail (the mail connector, or `symbiot screens` on its Sent page) for that person and thread since it was drafted, and check the list below for one another agent sent. If it has gone, don't ask and don't send it again: tell the user who sent it, to whom and when.",
+    ...(rows.length ? ["- Sent by Symbiot's agents in the last 3 days:", ...rows.map((r) => `  - ${when(r.ts)}: ${r.by} sent "${r.subject.replace(/\s+/g, " ").slice(0, 120)}" to ${r.to.slice(0, 3).join(", ")}`)] : []),
+    ""];
+}
+// From when a card's email may have gone: the first run of its job. An ops folder is one job (all its
+// runs); a lane's folder, the run that said it. 08:33 was before the run that said "unsent" at 08:49.
+async function jobStart(a) {
+  const own = (a.startedAt || a.endedAt || Date.now()) - 60000;
+  try {
+    const { loadRunFiles } = await import("./agents.mjs");
+    if (!String(a.path || "").startsWith(join(CONFIG_DIR, "drafts") + "/")) return own;
+    return Math.min(own, ...loadRunFiles(a.path).map((r) => Number(r.startedAt) - 60000).filter((t) => t > 0));
+  } catch { return own; }
+}
 // The "needs you" cards that say an email is unsent, from the runs Symbiot knows of.
 async function unsentNeeds() {
   try {
-    const { agentsNow } = await import("./agents.mjs");
-    return agentsNow().map((a) => ({ a, what: a.needs && !a.needs.sent ? a.needs.claim || a.needs.what : "" })).filter((x) => x.what && unsentClaim(x.what))
-      .map(({ a, what }) => ({ path: a.path, what, since: (a.startedAt || a.endedAt || Date.now()) - 60000 }));
+    const { agentsNow } = await import("./agents.mjs"), out = [];
+    for (const a of agentsNow()) { const what = a.needs && !a.needs.sent ? a.needs.claim || a.needs.what : ""; if (what && unsentClaim(what)) out.push({ path: a.path, what, since: await jobStart(a) }); }
+    return out;
   } catch { return []; }
 }
 
@@ -163,8 +194,8 @@ async function sentTick({ load = loadTasks, rows = sentRows, now = Date.now(), n
   if (!r) { try { r = (await import("./headless.mjs")).readPage; } catch {} }
   if (!w) { try { w = (await import("./watch.mjs")).watchState().watches; } catch { w = []; } }
   const got = await rows({ read: r, watches: w, now });
-  if (cards.length) { const mine = (() => { try { return ((loadConfig() || {}).mail || {}).addresses || []; } catch { return []; } })(); settleUnsent(cards, got, { mine, now, ...(deps.sentFile ? { file: deps.sentFile } : {}) }); }
+  if (cards.length) { const mine = (() => { try { return ((loadConfig() || {}).mail || {}).addresses || []; } catch { return []; } })(); settleUnsent(cards, [...(got || []), ...(deps.agentSent || agentSent)({ now })], { mine, now, ...(deps.sentFile ? { file: deps.sentFile } : {}) }); }
   return open.length ? settleSent(got, { load, now, ...(deps.save ? { save: deps.save } : {}) }) : [];
 }
 
-export { emailJob, sentMatch, settleSent, sentLine, sentUrls, sentRows, sentTick, unsentClaim, sentFor, sentAfter, settleUnsent, SENT_NEEDS };
+export { emailJob, sentMatch, settleSent, sentLine, sentUrls, sentRows, sentTick, unsentClaim, sentFor, sentAfter, settleUnsent, SENT_NEEDS, agentSent, sentBrief, jobStart };

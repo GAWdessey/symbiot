@@ -18,9 +18,9 @@ import { readFileSync, writeFileSync, mkdirSync, statSync } from "node:fs";
 import { watchBoard, draftReply, draftCards, draftAnswer } from "./watch.mjs";
 import { pendingReview, pushTasks, addTask, taskType, releaseNotIn } from "./tasks.mjs";
 import { estimate, estimateWords } from "./estimate.mjs";
-import { heldAsk, grantCard, cardIsPermission, onCardGone, setHandoffCmd, agentsList, agentsNow, forgetAgents, runHandoff, runningHandoff, handoffCmd, loadRuns, connectorsInfo, parkedPaths, agentMissing, settleNeeds, pickAgent, detectHandoffs, linkReach, unchangedStep, whereOf, claudePause, parkLane } from "./agents.mjs";
+import { heldAsk, grantCard, cardIsPermission, onCardGone, setHandoffCmd, agentsList, agentsNow, forgetAgents, runHandoff, runningHandoff, handoffCmd, loadRuns, connectorsInfo, parkedPaths, agentMissing, settleNeeds, closeAsk, pickAgent, detectHandoffs, linkReach, unchangedStep, whereOf, claudePause, parkLane } from "./agents.mjs";
 import { stallCards, loadStall, saveStall } from "./stall.mjs";
-import { isDone, recordDone, coveredBy, doneList, asksBack, askBackNote, wantsReport, heldBy, reportsSince } from "./asksdone.mjs";
+import { isDone, recordDone, coveredBy, doneList, asksBack, askBackNote, wantsReport, closesAsk, heldBy, reportsSince } from "./asksdone.mjs";
 import { captureSecrets } from "./vault.mjs";
 import { linksState, signInAsked } from "./links.mjs";
 import { knowledgeState } from "./knowledge.mjs";
@@ -618,6 +618,13 @@ function homeAnswer(id, { pick, text = "" } = {}, deps = {}) {
     const a = (deps.agents || agentsList)().find((x) => x.id === ref), n = a && a.needs;
     if (!n) return { error: "That isn't waiting on you any more." };
     const settle = deps.settle || settleNeeds;
+    // "i read it. this case is closed, no further aspects need to be done on this…" (21 Oct 2026) went to its run
+    // as "Go ahead: …", and the card came back. It's closed: settled for good, its run told, and nothing runs.
+    if (text && closesAsk(text, { approve: n.kind === "approve" })) {
+      settle(a.path, n.key); dropped.add(id); (deps.close || closeAsk)(a.path, n.claim || n.what); recordDone(n.what, `Closed: ${text}`, whereOf(a.path).lane); // "no further action" starts with "no": recorded as closed, not as a skip
+      noteAnswer(a.path, n.what, `Closed by the user: "${text}". Nothing more is needed on this: don't do it, don't ask about it again, and don't list it as waiting on them in your last message, until something new comes in on it (a reply, a new ask).`);
+      return { ok: true, said: "Closed. It won't come back unless something new comes in on it." };
+    }
     if (!go) { settle(a.path, n.key); dropped.add(id); return { ok: true, said: "Skipped. It won't ask again." }; }
     if ((deps.running || runningHandoff)(a.path)) return { ok: true, said: "An agent is already at work there." };
     // a permission card is Symbiot's to do, never the user's: Done writes the rules into the lane's allow list
@@ -653,7 +660,7 @@ function homeAnswer(id, { pick, text = "" } = {}, deps = {}) {
     if (rel && !text) return { error: `This step needs ${rel.name} ${rel.needs}, and ${rel.installed} is installed here, so it isn't done yet. Update, do it again, then press Done it.` };
     const said = allowed ? `Allowed ${allowed.join(", ")}: Symbiot wrote it into this folder's allow list. Carry on.`
       : n.say ? `${n.say}${text ? ` The user adds: ${text}` : ""}` // a sign-in the browser can't hold: its agent takes the API route (browserfails.mjs)
-      : n.kind === "approve" ? `Go ahead: ${text || "do it as you had it, once you've checked what you flagged"}.${n.sent ? ` (Symbiot found "${n.sent.subject}" in Sent after your run said it was unsent: read Sent first, and never send the same email twice.)` : ""}`
+      : n.kind === "approve" ? `Go ahead: ${text || "do it as you had it, once you've checked what you flagged"}.${n.sent ? ` (${n.sent.by ? `${n.sent.by === "its own run" ? "An earlier run of yours" : `Another agent (${n.sent.by})`} already sent "${n.sent.subject}"${n.sent.to ? ` to ${n.sent.to}` : ""}` : `Symbiot found "${n.sent.subject}" in Sent`} after your run said it was unsent: read Sent first, and never send the same email twice.)` : ""}`
       : still.length ? `The user says it's done (${text}), but ${last}, before you asked. Check it yourself before relying on it, then carry on.`
       : `Done: the user did it${text ? ` (${text})` : ""}. Check it worked, then carry on.`;
     noteAnswer(a.path, n.what, said);
