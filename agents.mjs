@@ -12,7 +12,7 @@ import { randomBytes, createHash } from "node:crypto";
 import { track as jobTrack } from "./jobs.mjs";
 import { CONFIG_DIR, loadConfig, saveConfig, loadTasks, TASK_MAX, clipWords, sameTask, taskWords, sh, runOut, hasCmd, readState, writeJsonAtomic } from "./core.mjs";
 import { meetsStep, captureSecrets, heldFor } from "./vault.mjs";
-import { recordDone, isDone, isApprovalAsk, approvalText, approvedBefore, recentTurns, recentTasks, asksBack, askBackNote, closesAsk, runSaysClosed, heldBy, reportsSince, runReport, reportAsked } from "./asksdone.mjs";
+import { recordDone, isDone, isApprovalAsk, approvalText, approvedBefore, recentTurns, recentTasks, asksBack, askBackNote, closesAsk, runSaysClosed, heldBy, reportsSince, runReport, reportAsked, standingList } from "./asksdone.mjs";
 import { sentAfter } from "./sentmail.mjs";
 import { parseRun, lastRunText, readRunLog, runStarted, briefPlan, stepOf, runLine, waitingOn, waitUntil, RECHECK } from "./work.mjs";
 import { noteDuration, noteCost, kindOf } from "./estimate.mjs";
@@ -25,7 +25,8 @@ import { scanRoots, repoPathMap, laneMap } from "./scan.mjs";
 import { knowledgeFolders } from "./knowledge.mjs";
 import { pickModel, MODEL } from "./route.mjs";
 import { runbookOf, onDeployAnswer } from "./deploy.mjs";
-import { claudeState } from "./ai.mjs";
+import { claudeState, resolveProvider, write as aiWrite } from "./ai.mjs";
+import { judge as triageJudge, verdictOf, saveVerdict, shows as triageShows, answerFor as triageAnswer, recordFault } from "./triage.mjs";
 import { stalledFor, onStall, loadStall, saveStall, clearStall, STALL_MIN, STALL_PROMPT_TAIL } from "./stall.mjs";
 
 const HANDOFFS = []; // live registry of agents Symbiot has handed work to
@@ -1878,11 +1879,17 @@ function askReport(path, x) {
   let r = null; try { r = runReport(path, { said: `${x.q}\n${x.context || ""}`, since: Infinity }); } catch {}
   return r ? { report: { id: r.id, title: r.title } } : {};
 }
-function agentQuestions(path, repo) {
+// raw: every open question, judged or not (triageSweep). Otherwise only what's the user's
+// (triage.mjs): a question judged an agent's, Symbiot's, or already answered is answered here
+// instead (known, autoDecide), and a new one waits for its verdict before it can be a card.
+function agentQuestions(path, repo, { raw = false } = {}) {
   const p = parseQuestions(readSymbiot(path, "QUESTIONS.md"));
   const heads = [...allAnswers(path).matchAll(/^###\s+(.+)$/gm)].map((m) => m[1]), done = new Set(heads.map((h) => qKey(noId(h)))), doneIds = new Set(heads.map(qId).filter(Boolean));
   const unanswered = p.questions.filter((x) => !done.has(qKey(x.q)) && !(x.id && doneIds.has(x.id)));
-  const known = unanswered.map((x) => ({ q: x.q, ...(x.id ? { id: x.id } : {}), a: whereAnswer(path, x) || repeatAnswer(path, x) })).filter((x) => x.a), open = unanswered.filter((x) => !known.some((k) => k.q === x.q)); // Symbiot answers those itself (autoDecide)
+  const triaged = (x) => { if (raw) return ""; const v = verdictOf(path, x.q); return v && v.verdict !== "user" ? triageAnswer(v) : ""; };
+  const known = unanswered.map((x) => ({ q: x.q, ...(x.id ? { id: x.id } : {}), a: whereAnswer(path, x) || repeatAnswer(path, x) || triaged(x) })).filter((x) => x.a);
+  let judging = false; if (!raw) try { judging = !!resolveProvider(); } catch {}
+  const open = unanswered.filter((x) => !known.some((k) => k.q === x.q) && (raw || triageShows(path, x.q, { judging }))); // Symbiot answers those itself (autoDecide)
   const tasks = p.suggestions.length ? loadTasks() : [], skipped = p.suggestions.length ? skippedIdeas(path) : [];
   const ideas = p.suggestions.map(suggestionTarget).filter(({ text }) => !skipped.some((s) => sameTask(s, text)))
     .map(({ repo: to, text }) => ({ text, repo: to || repo, other: !!to && to !== repo, added: tasks.some((t) => t.repo === (to || repo) && sameTask(t.text, text)) })).filter((s) => !s.added);
@@ -2033,7 +2040,7 @@ function allowlistInWork(path) {
 function autoAllow(path) {
   if (!path || runningHandoff(path)) return null;
   const f = join(path, ".symbiot", "allowlist.proposed.json"); let raw = ""; try { raw = readFileSync(f, "utf8"); } catch { return null; }
-  const q = agentQuestions(path, "").questions.find((x) => (x.options || []).some((o) => /allowlist\.proposed\.json/i.test(o)) || /allowlist\.proposed\.json/i.test(x.context || ""));
+  const q = agentQuestions(path, "", { raw: true }).questions.find((x) => (x.options || []).some((o) => /allowlist\.proposed\.json/i.test(o)) || /allowlist\.proposed\.json/i.test(x.context || ""));
   if (!q) return null;
   const mark = join(path, ".symbiot", "autoallow.json"), d = digest(raw); let done = []; try { done = JSON.parse(readFileSync(mark, "utf8")); } catch {}
   if (done.includes(d)) return null;
@@ -2082,6 +2089,9 @@ function autoDecide(path) {
     try { writeFileSync(join(path, ".symbiot", "ANSWERS.md"), (had || "# Answers from the user\nAnswers to the questions in QUESTIONS.md, newest last. Follow them; ask again in QUESTIONS.md if one is unclear.\n").replace(/\s*$/, "\n") + ask.known.map((x) => `\n### ${x.q}${x.id ? ` {#${x.id}}` : ""}\n${x.a}\n_answered ${day}_\n`).join("")); } catch { return null; }
     // a run that keeps rewording the same question gets its answer, but no new run each time it does
     if (ask.known.every((x) => x.a.includes(REPEAT_TAG)) && had.split(REPEAT_TAG).length > REPEATS_RERUN) return { decided: ask.known.length, where: true, rerun: null };
+    // triage's answers start the run again only under the hourly cap (autoStart): a run that keeps
+    // asking the user for what isn't theirs gets its answer, not a new run every time it asks
+    if (ask.known.every((x) => /\(Symbiot's triage|Symbiot answered this from the user's earlier answers/.test(x.a)) && !autoStart(path)) return { decided: ask.known.length, where: true, rerun: null };
     const e = runHandoff(path, { force: true });
     return { decided: ask.known.length, where: true, rerun: e && e.id ? e.id : null };
   }
@@ -2138,6 +2148,29 @@ function continueLanes({ now = Date.now(), run = runHandoff, runs = loadRuns } =
   if (JSON.stringify(seen) !== was) saveContinued(seen);
   return out;
 }
+// Judges each open question once, before it can be a card (triage.mjs). One at a time across
+// all folders, and never two sweeps at once: each is an AI call.
+let triaging = false;
+async function triageSweep({ write = aiWrite, runs = loadRuns, rules = () => { try { return standingList().map((x) => x.rule); } catch { return []; } } } = {}) {
+  if (triaging) return []; triaging = true; const out = [];
+  try {
+    let judging = false; try { judging = !!resolveProvider(); } catch {}
+    if (!judging && write === aiWrite) return out;
+    const map = (() => { try { return laneMap(); } catch { return {}; } })();
+    for (const path of [...new Set(runs().map((r) => r.path).filter(Boolean))]) {
+      let qs = []; try { qs = agentQuestions(path, "", { raw: true }).questions; } catch { continue; }
+      for (const q of qs) {
+        if (verdictOf(path, q.q)) continue;
+        const lane = Object.keys(map).find((k) => map[k] === path) || (path.includes("/drafts/act-") ? "ops" : basename(path));
+        let v = null; try { v = await triageJudge(q, { answers: readSymbiot(path, "ANSWERS.md"), rules: rules(), lane }, { write }); } catch {}
+        if (!v) continue;
+        saveVerdict(path, q.q, v); out.push({ path, q: q.q, verdict: v.verdict });
+        if (v.verdict === "symbiot") recordFault({ path, q: q.q, why: v.why, lane });
+      }
+    }
+  } finally { triaging = false; }
+  return out;
+}
 function autoAllowSweep() { const out = []; for (const r of loadRuns()) { try { tidySettings(r.path); } catch {} try { const a = autoAllow(r.path); if (a && a.allowed) out.push(r.path); else if (autoDecide(r.path)) out.push(r.path); } catch {} } return out; }
 // Every agent reaches the owner's knowledge folders from the start; an ops run (no repo
 // of its own) their repos too, the way a person at their desk would.
@@ -2191,7 +2224,7 @@ const stepText = (a) => String(a).split("🤖")[0].replace(/^\s*👤\s*(You:)?\s
 function answerQuestions(path, answers, opts = {}) {
   path = String(path || "");
   if (!path || !knownRun(path)) return { error: "No agent has run in that folder." };
-  const openQs = agentQuestions(path, "").questions, open = new Map(openQs.map((x) => [qKey(x.q), x.q]));
+  const openQs = agentQuestions(path, "", { raw: true }).questions, open = new Map(openQs.map((x) => [qKey(x.q), x.q]));
   // A card can outlive its question (the agent asked again, worded differently): Allow on it is
   // still a yes to the permission question now open, not a click that finds nothing and says nothing.
   const permQ = (openQs.find((x) => (x.options || []).some((o) => /allowlist\.proposed\.json/i.test(o)) || /allowlist\.proposed\.json/i.test(x.context || "")) || {}).q;
@@ -2412,4 +2445,4 @@ function agentsNow({ now = Date.now() } = {}) {
 }
 const forgetAgents = () => { agentsKept = null; };
 
-export { runSection, autoStart, AUTO_MAX, oneNeedEach, NOTHING_FOR_YOU, chaseReport, CHASED, UNMET, heldAsk, onCardGone, withOwnTools, escalation, grantCard, cardRules, cardIsPermission, runPhase, onRunEnd, isClaudeCmd, GUARD, tidyRule, tidyRules, tidySettings, pruneRuns, claudePlugins, idlePlugins, runSettings, archiveAnswers, allAnswers, answersDigest, ANSWERS_ARCHIVE, ANSWERS_KEEP, runsTick, RUN_START, HANG_MIN, noteBlocked, userAnswers, CONTINUED_FILE, onAnswered, CHANGES, toKnownHost, continueLanes, autoPick, autoDecide, FACTS, factsOf, knownRun, withStream, workOf, HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, connectorsInfo, linkReach, fillHandoff, runHandoff, nothingToDo, whereOf, whereLine, whereAnswer, askTask, PARKED_NOTE, parkedPaths, isParked, parkLane, agentMissing, blockedAgain, runningHandoff, loadRuns, earlierRuns, namedFiles, unchangedStep, waitingFor, startWaiting, noteUntracked, untrackedBefore, forgetUntracked, writeTasks, droppedTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, pickAgent, findOrcaCli, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, skipIdea, routeIdeas, agentQuestions, answerQuestions, agentsList, agentsNow, forgetAgents, AGENTS_KEEP, needsOf, settleNeeds, closeAsk, closedAsk, sameSubject, NEEDS_FOR, readLastWords, readNeeds, parseRead, READ_FILE, autoAllow, autoAllowSweep, allowlistInWork, installAllowlist, inWork, withScope, withTrust, sandboxFor, sandboxLifts, sandboxEnv, sandboxNeeds, sandboxState, sandboxWrites, SANDBOX_DIR, resumeFor, noteSession, tooLong, carryOn, RESUME_CTX, CARRY_PROMPT, trustFull, GUARD_SETTINGS, runCmdOf, claimLock, wideRoot, sandboxDenies, questionFolders, folderState, dirtyState, ANSWERS_SEEN, newAnswers, claudeDownIn, claudePause, noteClaudeDown, resetTime, PAUSE_FILE, startGap, isUrgent, urgentStop, urgentFirst, urgentUndo, urgentDone, urgentSweep, urgentState, licenceGate, stopRun, loadRunFiles, saveRunFiles, forgetRunFiles, withModel, routedModel, userWords, onShipping };
+export { triageSweep, runSection, autoStart, AUTO_MAX, oneNeedEach, NOTHING_FOR_YOU, chaseReport, CHASED, UNMET, heldAsk, onCardGone, withOwnTools, escalation, grantCard, cardRules, cardIsPermission, runPhase, onRunEnd, isClaudeCmd, GUARD, tidyRule, tidyRules, tidySettings, pruneRuns, claudePlugins, idlePlugins, runSettings, archiveAnswers, allAnswers, answersDigest, ANSWERS_ARCHIVE, ANSWERS_KEEP, runsTick, RUN_START, HANG_MIN, noteBlocked, userAnswers, CONTINUED_FILE, onAnswered, CHANGES, toKnownHost, continueLanes, autoPick, autoDecide, FACTS, factsOf, knownRun, withStream, workOf, HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, connectorsInfo, linkReach, fillHandoff, runHandoff, nothingToDo, whereOf, whereLine, whereAnswer, askTask, PARKED_NOTE, parkedPaths, isParked, parkLane, agentMissing, blockedAgain, runningHandoff, loadRuns, earlierRuns, namedFiles, unchangedStep, waitingFor, startWaiting, noteUntracked, untrackedBefore, forgetUntracked, writeTasks, droppedTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, pickAgent, findOrcaCli, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, skipIdea, routeIdeas, agentQuestions, answerQuestions, agentsList, agentsNow, forgetAgents, AGENTS_KEEP, needsOf, settleNeeds, closeAsk, closedAsk, sameSubject, NEEDS_FOR, readLastWords, readNeeds, parseRead, READ_FILE, autoAllow, autoAllowSweep, allowlistInWork, installAllowlist, inWork, withScope, withTrust, sandboxFor, sandboxLifts, sandboxEnv, sandboxNeeds, sandboxState, sandboxWrites, SANDBOX_DIR, resumeFor, noteSession, tooLong, carryOn, RESUME_CTX, CARRY_PROMPT, trustFull, GUARD_SETTINGS, runCmdOf, claimLock, wideRoot, sandboxDenies, questionFolders, folderState, dirtyState, ANSWERS_SEEN, newAnswers, claudeDownIn, claudePause, noteClaudeDown, resetTime, PAUSE_FILE, startGap, isUrgent, urgentStop, urgentFirst, urgentUndo, urgentDone, urgentSweep, urgentState, licenceGate, stopRun, loadRunFiles, saveRunFiles, forgetRunFiles, withModel, routedModel, userWords, onShipping };
