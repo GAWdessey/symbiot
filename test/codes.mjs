@@ -56,7 +56,10 @@ try {
   const lane = join(HOME, "work", "mail"); mkdirSync(lane, { recursive: true });
   put(lane, "QUESTIONS.md", "## Questions\n### What's the 7-digit code zoho.com texted you?\nZoho wants it to finish signing in.\n- 👤 You (only you: the SMS code): type it here\n- Skip this part\n");
   put(lane, "PROOF.md", "# The invite SMS, before it goes to the broker\nKind: sms\nTo: the broker\n\nHi! You're invited to try the app: reply YES to start.\n");
-  writeFileSync(join(CFG, "runs.json"), JSON.stringify([{ id: "r1", name: "mail", path: lane, startedAt: Date.now() - 60000 }]));
+  // and a second card, for the code a card answered "Skip" on the phone (below)
+  const lane2 = join(HOME, "work", "bank"); mkdirSync(lane2, { recursive: true });
+  put(lane2, "QUESTIONS.md", "## Questions\n### Which 6-digit code did namecheap.com text you?\nNamecheap wants it for the transfer.\n- 👤 You (only you: the SMS code): let your phone pass it on\n- Skip this part\n");
+  writeFileSync(join(CFG, "runs.json"), JSON.stringify([{ id: "r1", name: "mail", path: lane, startedAt: Date.now() - 60000 }, { id: "r2", name: "bank", path: lane2, startedAt: Date.now() - 60000 }]));
   const snap = await P.snapshot({ fresh: true }), ask = snap.asks.find((a) => a.path === lane), q = ask && ask.questions[0];
   ok("the question carries the site its code is from", q && q.code && q.code.key === "zoho" && q.code.site === "zoho.com", ask);
   const pr = snap.proofs.find((x) => x.path === lane);
@@ -71,6 +74,13 @@ try {
   ok("the waiting one: into the vault for one use", give.results[0].ok && give.results[0].kept === "zoho.com code" && V.getSecret("zoho.com code").value === "4829163", give.results);
   const ans = read(lane, "ANSWERS.md");
   ok("…and the agent is told its name and how to read it, never the code", /zoho\.com code/.test(ans) && /symbiot secret get "zoho\.com code" --use/.test(ans) && !ans.includes("4829163"), ans);
+  {
+    // 21 Oct 2026, the real phone: "Skip" pressed on the card while its code was on the way, and the code still went into the vault
+    const q2 = snap.asks.find((a) => a.path === lane2).questions[0];
+    const both = await P.applyOps([{ id: "op-skip-0001", op: "agent.answer", args: { path: lane2, answers: [{ q: q2.q, a: "Skip this part" }] } }, { id: "op-late-0001", op: "code.give", args: { path: lane2, key: q2.code.key, q: q2.q, code: "551234" } }], { name: "Galaxy" });
+    const ans2 = read(lane2, "ANSWERS.md");
+    ok("a code for a card already answered Skip isn't kept, and Skip stays its one answer", both.results[0].ok && /answered already|wasn't kept/.test(both.results[1].error || "") && !V.listSecrets().some((x) => /namecheap/.test(x.name)) && (ans2.match(/^### /gm) || []).length === 1 && !ans2.includes("vault"), [both.results, ans2]);
+  }
 
   console.log("ON THE COMPUTER — Send or Change on a proof");
   const stale = await P.applyOps([{ id: "op-proof-old", op: "proof.answer", args: { path: lane, id: "proof:000000000000", send: true } }], { name: "Galaxy" });
@@ -95,6 +105,9 @@ try {
   ok("Zoho's code passes, to the card waiting for it", heard.passed === "zoho.com" && sent.length === 1 && sent[0].op === "code.give" && sent[0].args.path === lane && sent[0].args.key === "zoho", [heard, sent]);
   ok("…and only the code goes, none of the message", sent[0].args.code === "4829163" && !JSON.stringify(sent[0]).includes("Don't share"), sent[0]);
   ok("the card says it's on its way", (P.computerView().copy.asks[0] || {}).waiting === true);
+  writeFileSync(join(CFG, "phone-queue.json"), JSON.stringify([{ id: "op-skip-0002", at: Date.now(), op: "agent.answer", args: { path: lane, answers: [{ q: q.q, a: "Skip this part" }] } }]));
+  ok("a card answered here, not yet taken by the computer, gets no code", P.heardCode({ app: "com.google.android.apps.messaging", title: "Zoho", text: "Your Zoho verification code is 4829163" }).ignored && queue().length === 1 && queue()[0].op === "agent.answer", queue());
+  writeFileSync(join(CFG, "phone-queue.json"), "[]");
   ok("switched off again: none of it is kept", !P.setCodeRelay("zoho", false).copy.codesOn.length);
 
   console.log("THE REAL-PHONE CHECK (scripts/phone-codes-check.mjs) — its question and notifications read as meant");
@@ -115,6 +128,50 @@ try {
   ok("…and the card says it's a test, nothing to type, its switch the one thing to press", /\btest\b/i.test(sq[0].context) && /not a real site/i.test(sq[0].context) && /don't type/i.test(sq[0].context) && /switch/i.test(sq[0].context), sq[0].context);
   const src = readFileSync(new URL("../scripts/phone-codes-check.mjs", import.meta.url), "utf8").split("\n").filter((l) => !l.trim().startsWith("//")).join("\n");
   ok("the check never launches the app or pairs the phone, and posts the test code once", !/\bam\b[^\n]*\bstart\b|symbiot:\/\/pair/.test(src) && (src.match(/post\(`codecheck-\$\{RUN\}`, NOTE\(A\)\)/g) || []).length === 1 && !/while \([^)]*got !== A/.test(src));
+
+  console.log("ON THE PHONE — a code card's switch is its main button, and its own 👤 code answer doesn't close it (21 Oct 2026: pressed for the switch, it answered the card)");
+  {
+    // the page's own renderComputer (ui.mjs), with a stand-in DOM: each button of the card, pressed, says what it did
+    const { EMBEDDED_UI } = await import("../ui.mjs");
+    const uiJs = [...EMBEDDED_UI.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]).join("\n");
+    const grab = (name) => { const i = uiJs.indexOf("function " + name + "("); let depth = 0, j = uiJs.indexOf("{", i); for (; j < uiJs.length; j++) { if (uiJs[j] === "{") depth++; else if (uiJs[j] === "}" && --depth === 0) break; } return uiJs.slice(i, j + 1); };
+    const card = (options, { android = true, on = [] } = {}) => {
+      const did = [], btn = (html, box) => { const cls = (html.match(/class='([^']*)'/) || [])[1] || "", at = (k) => (html.match(new RegExp(k + "='([^']*)'")) || [])[1] ?? null, ev = {};
+        return { cls, text: html.replace(/<[^>]+>/g, "").trim(), disabled: false, getAttribute: at, closest: () => box, addEventListener: (k, f) => { ev[k] = f; }, click: () => ev.click && ev.click() }; };
+      // one stand-in per button of the card's own (not its form's Send), kept, so a handler wired to it is there when it's pressed
+      let parsed = null;
+      const el = { innerHTML: "", contains: () => false, querySelector: () => null, querySelectorAll: (sel) => {
+        const boxes = parsed || (parsed = [...el.innerHTML.matchAll(/<div class='pcq' data-ask='(\d+)'>([\s\S]*?)(?=<div class='pcq|<div class='pshead|$)/g)].map((m) => { const box = { getAttribute: () => m[1], html: m[2] };
+          box.buttons = [...m[2].matchAll(/<button[^>]*>[\s\S]*?<\/button>/g)].map((b) => btn(b[0], box)).filter((b) => /\bpc(?:opt|codes)\b/.test(b.cls)); box.querySelectorAll = (s) => box.buttons.filter((b) => s === ".pcopt" ? /\bpcopt\b/.test(b.cls) : false); box.querySelector = () => null; return box; }));
+        if (sel === ".pcq[data-ask]") return boxes; if (sel === ".pccodes") return boxes.flatMap((b) => b.buttons.filter((x) => /\bpccodes\b/.test(x.cls))); return []; } };
+      const ln = { innerHTML: "" }, $ = (id) => (id === "pcbody" ? el : id === "pcline" ? ln : null);
+      const PCV = { role: "phone", paired: true, name: "pop-os", heard: Date.now(), copy: { asks: [{ id: "ask:1", path: "/x/ops", name: "ops", questions: [{ q: "Phone check abc: which 6-digit code did codecheck.dev text you?", options, code: { site: "codecheck.dev", key: "codecheck" } }] }], codesOn: on, tasks: [] } };
+      const window = android ? { SymbiotAndroid: { codes: () => '{"allowed":true}', allowCodes: () => did.push("allowCodes") } } : {};
+      const esc = (s) => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/'/g, "&#39;");
+      const run = new Function("window", "SymbiotAndroid", "document", "$", "LQ", "LQNAMES", "lqTitle", "esc", "escQ", "projChip", "agoTxt", "pcTime", "okUrl", "api", "pcDo", "PCV",
+        `${grab("pcSwitchOpt")}\n${grab("pcOpts")}\n${grab("renderComputer")}\nrenderComputer();`);
+      run(window, window.SymbiotAndroid, { activeElement: null }, $, {}, {}, () => {}, esc, esc, () => "", () => "just now", () => "", (u) => u,
+        (path, body) => { did.push(["api", path, body]); return { then: () => {} }; }, (op, body) => did.push([op, body]), PCV);
+      const box = el.querySelectorAll(".pcq[data-ask]")[0], buttons = box ? box.buttons : [];
+      return { html: box ? box.html : el.innerHTML, buttons, press: (b) => { did.length = 0; b.click(); return did.slice(); } };
+    };
+    const OPTS = ["👤 You (only you: the SMS code): let your phone pass it on", "Skip this part"];
+    const c = card(OPTS), [first] = c.buttons;
+    ok("on Android, the card's first button is the switch, and it's the big one", first && /\bpccodes\b/.test(first.cls) && /\bact\b/.test(first.cls) && /pass on codecheck\.dev/.test(first.text), c.buttons.map((b) => [b.cls, b.text]));
+    ok("…its own 👤 code answer isn't on the card: it only restated the switch", !c.buttons.some((b) => /only you: the SMS code/.test(b.text)), c.buttons.map((b) => b.text));
+    const pressed = first ? c.press(first) : [];
+    ok("pressing the main button turns the relay on and doesn't answer the card", pressed.some((x) => x[0] === "api" && x[1] === "/api/phone/codes" && x[2].on === true && x[2].key === "codecheck") && !pressed.some((x) => x[0] === "agent.answer"), pressed);
+    const skip = c.buttons.find((b) => b.text === "Skip this part"), skipped = skip ? c.press(skip) : [];
+    ok("…the other answer is still there, small, and answers with its own words", skip && /\bghost\b/.test(skip.cls) && skipped.some((x) => x[0] === "agent.answer" && x[1].answers[0].a === "Skip this part"), [skip && skip.cls, skipped]);
+    const typed = card(["👤 You (only you: the 6-digit code): type it here", "Skip this part"]);
+    ok("a 👤 code answer worded another way isn't on it either", !typed.buttons.some((b) => /type it here/.test(b.text)) && /\bpccodes\b/.test((typed.buttons[0] || {}).cls), typed.buttons.map((b) => b.text));
+    const plain = card(["Yes, it came", "Skip this part"]);
+    ok("answers that aren't the switch stay, after it", plain.buttons.length === 3 && /\bpccodes\b/.test(plain.buttons[0].cls) && plain.buttons[1].text === "Yes, it came" && /\bghost\b/.test(plain.buttons[1].cls), plain.buttons.map((b) => b.text));
+    const onNow = card(OPTS, { on: ["codecheck"] });
+    ok("switched on: the card says so first, with Stop, and still no 👤 code answer", /^This phone passes on the code codecheck\.dev texts you/.test(onNow.html.replace(/^[\s\S]*?<div class='pccode'>/, "")) && /\bpccodes\b/.test((onNow.buttons[0] || {}).cls) && onNow.buttons[0].text === "Stop" && !onNow.buttons.some((b) => /SMS code/.test(b.text)), onNow.buttons.map((b) => b.text));
+    const desk = card(OPTS, { android: false });
+    ok("off Android (no switch to press), the card keeps its answers as written, the first one big", desk.buttons.length === 2 && /\bact\b/.test(desk.buttons[0].cls) && /SMS code/.test(desk.buttons[0].text) && !/pccodes/.test(desk.html), desk.buttons.map((b) => [b.cls, b.text]));
+  }
 
   console.log("A CODE TYPED ON A CODE CARD ISN'T KEPT IN THE SHARED RECORD (21 Oct 2026: it was, for other agents' briefs)");
   const D = await import("../asksdone.mjs"), DONE = join(CFG, "asks-done.json");
