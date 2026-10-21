@@ -18,7 +18,7 @@ import { createServer } from "node:http";
 import { randomBytes, createHash } from "node:crypto";
 import { EMBEDDED_UI } from "./ui.mjs";
 import { VERSION, LATEST_VERSION, REGISTRY, semverGt, checkLatest, CONFIG_PATH, loadConfig, saveConfig, moveSecrets, loadTasks, hasCmd, chromeBinary, CONFIG_DIR, takeAppLock, releaseAppLock, writeJsonAtomic } from "./core.mjs";
-import { onRunEnd, onAnswered, shSingle, handoffCmd, setHandoffCmd, grantAgent, runHandoff, track, detectHandoffs, connectorsInfo, linkReach, answerQuestions, skipIdea, agentsNow, startWaiting, parkLane, parkedPaths, autoAllowSweep, continueLanes, trustFull, readLastWords, sandboxState, HANDOFFS, runningHandoff, runsTick } from "./agents.mjs";
+import { triageSweep, onRunEnd, onAnswered, shSingle, handoffCmd, setHandoffCmd, grantAgent, runHandoff, track, detectHandoffs, connectorsInfo, linkReach, answerQuestions, skipIdea, agentsNow, startWaiting, parkLane, parkedPaths, autoAllowSweep, continueLanes, trustFull, readLastWords, sandboxState, HANDOFFS, runningHandoff, runsTick } from "./agents.mjs";
 import { PROVIDERS, resolveProvider, connectProvider, detectHardware, recommendModels, hasOllama, ollamaInstall, ensureOllama, useOllamaModel } from "./ai.mjs";
 import { SCAN, SCAN_TIMEOUT_MS, scanRoots, scanHome, addScanRoot, removeScanRoot, mapNow, nodeDetail, repoPathMap, laneMap, setScanOptions, refreshRepos, REPO_STATE, reposState } from "./scan.mjs";
 import { computeDrift } from "./drift.mjs";
@@ -907,6 +907,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
   // an agent's allow list that stays inside your work is turned on by itself, and the agent carries on
   setTimeout(() => { try { autoAllowSweep(); } catch {} }, 4000).unref();
   setInterval(() => { try { autoAllowSweep(); } catch {} }, 20000).unref();
+  setInterval(() => { triageSweep().catch(() => {}); }, 15000).unref(); // every question an agent writes is judged before it can be a card (triage.mjs)
   setInterval(() => { try { continueLanes(); } catch {} }, 60000).unref(); // a lane with open tasks and no run going starts again, while it gets somewhere
   // a finished run's last words, read by your AI for anything left to you that the patterns missed (agents.mjs readLastWords)
   setInterval(() => { readLastWords().catch(() => {}); }, 60000).unref();
