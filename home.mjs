@@ -1005,7 +1005,7 @@ function workSceneNow({ deps = {}, full = false } = {}) {
   // The relay (the Tasks screen, so you needn't open Agents): per project, what its
   // latest run did or is doing in a line, its open questions with their answers,
   // and the extra tasks its agents suggested, each with the folder that asked.
-  const DAY = 86400000, now = Date.now(), seenR = new Set();
+  const DAY = 86400000, now = Date.now(), seenR = new Set(), lineOf = {};
   for (const a of AG) {
     if (seenR.has(a.path)) continue; seenR.add(a.path);
     const l = laneOf(a), qs = (a.ask && a.ask.questions) || [], ideas = ((a.ask && a.ask.suggestions) || []).filter((s) => s && s.text && !s.added);
@@ -1013,12 +1013,15 @@ function workSceneNow({ deps = {}, full = false } = {}) {
     const away = ((a.ask && a.ask.away) || []).filter((s) => s && s.text && !s.added), sent = {};
     if (!by[l] && !qs.length && !ideas.length && !away.length && !recent) continue;
     const p = at(l);
-    if (!p.summary && (recent || qs.length)) {
+    if (recent || qs.length) {
       const w = a.work || {}, todo = (w.todos || []).find((x) => x.status === "in_progress"), t = a.status === "running" ? ((todo && todo.active) || w.doing || "Working on it") : (w.final || a.tail || "");
       const line = plain(String(t).split(/\n\s*\n/)[0], 220);
-      if (line) { p.summary = line; p.state = a.status === "running" ? "at work" : qs.length ? "asks you" : "done"; p.path = a.path; }
+      if (line) lineOf[a.path] = { line, state: a.status === "running" ? "at work" : qs.length ? "asks you" : "done" };
+      if (line && !p.summary) { p.summary = line; p.state = lineOf[a.path].state; p.path = a.path; }
     }
-    for (const q of qs) { p.qs = p.qs || []; const c = { q: q.shown || q.q, ...(q.shown ? { raw: q.q } : {}), ...(q.task ? { task: q.task } : {}), options: (q.options || []).slice(0, 3), ...(q.labels ? { labels: q.labels } : {}), path: a.path, ...signInCard([q.q, ...(q.options || []).slice(0, 3)]), ...reportLink(q.report) }; if (gone[cardKey(c)]) { p.asks = Math.max(0, p.asks - 1); continue; } if (p.qs.length < 3) p.qs.push(c); } // one dismissed (dismissCard) stays off the relay too
+    // Agent runs are one card for many unrelated jobs: each question says which job it's for
+    const job = l === RUNS_LANE ? plain(String(a.name || "").replace(/^Agent:\s*/, "").replace(/^New job:\s*/i, ""), 90) : "";
+    for (const q of qs) { p.qs = p.qs || []; const c = { q: q.shown || q.q, ...(q.shown ? { raw: q.q } : {}), ...(q.task || job ? { task: q.task || job } : {}), options: (q.options || []).slice(0, 3), ...(q.labels ? { labels: q.labels } : {}), path: a.path, ...signInCard([q.q, ...(q.options || []).slice(0, 3)]), ...reportLink(q.report) }; if (gone[cardKey(c)]) { p.asks = Math.max(0, p.asks - 1); continue; } if (p.qs.length < 3) p.qs.push(c); } // one dismissed (dismissCard) stays off the relay too
     // an idea for another lane is on that lane's sheet, and here just "2 ideas sent to symbiot" (agents.mjs routeIdeas)
     for (const s of ideas.concat(away.filter((s) => !s.delivered))) {
       const there = s.other || s.delivered === false ? at(s.repo) : p;
@@ -1028,6 +1031,10 @@ function workSceneNow({ deps = {}, full = false } = {}) {
     for (const s of away) if (s.delivered) sent[s.repo] = (sent[s.repo] || 0) + 1;
     if (Object.keys(sent).length) p.sent = Object.entries(sent).map(([repo, n]) => ({ repo, n }));
   }
+  // Agent runs' card: its line is from the run whose question it shows, not the newest run. It read
+  // "The phone code check is still not done" over the Dailify broker test's question, and the user
+  // had to ask what the card was (21 Oct 2026).
+  { const p = by[RUNS_LANE], q = p && p.qs && p.qs[0], own = q && lineOf[q.path]; if (own && p.path !== q.path) { p.summary = own.line; p.state = own.state; p.path = q.path; } }
   // what each lane handed over and hasn't heard back on, with where it stands and how far the run on it has got
   let led; const handing = deps.handing || ((path) => { try { return handingOf(path, { map, ledger: (led = led || loadLedger()) }); } catch { return []; } });
   for (const [repo, path] of Object.entries(map)) { const h = handing(path); if (h.length) at(repo).handing = h.slice(0, 3); }
