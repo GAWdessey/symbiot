@@ -18,6 +18,7 @@
 // What it changes, and puts back unless --keep: a scratch question in drafts/ (a card on Home and
 // on the phone while it runs), Notification access for Symbiot (only if it was off), and one test
 // code in the vault. The test notifications come from Android's shell, so no SMS is sent.
+// The notifications go out under a tag of their own per run (codecheck-RUN): a cleanup that snoozes a fixed tag keeps every later re-post under that key from the listener for a week.
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
@@ -25,8 +26,10 @@ import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 
 // The scratch question and the notifications: test/codes.mjs checks phone.mjs reads them as meant
-const SITE = "codecheck.dev", NAME = `${SITE} code`, QUESTION = `What's the 6-digit code ${SITE} texted you?`;
-const QUESTIONS_MD = (day) => `## Questions\n### ${QUESTION}\nA check of your phone passing codes on, started ${day}: nothing waits for this code and nothing signs in with it. It goes by itself once the check ends.\n- 👤 You (only you: the SMS code): let your phone pass it on\n- Skip this part\n`;
+const RUN = Date.now().toString(36);
+// one question per run: a question once answered is answered again from asks-done.json (asksdone.mjs heldBy), so a reused wording never shows
+const SITE = "codecheck.dev", NAME = `${SITE} code`, QUESTION = `Phone check ${RUN}: which 6-digit code did ${SITE} text you?`;
+const QUESTIONS_MD = (day) => `## Questions\n### ${QUESTION} {#codecheck-${RUN}}\nA test of your phone passing codes on, started ${day}, not a real site: don't type anything here. Press this card's switch to let your phone pass it on, and the phone does the rest. Nothing waits for this code and nothing signs in with it. It goes by itself once the check ends.\n- 👤 You (only you: the SMS code): let your phone pass it on\n- Skip this part\n`;
 const TASKS_MD = (day) => `# A check of the phone passing codes on (${day})\n- [x] Nothing to do here: scripts/phone-codes-check.mjs reads the vault itself. Don't read or use the code, and stop.\n`;
 const NOTE = (code) => ({ title: "Codecheck", text: `Your Codecheck verification code is ${code}. Do not share it.` });
 const DECOY = { title: "PayPal", text: "PayPal: your code is 902211" };
@@ -104,12 +107,14 @@ async function main() {
   writeFileSync(join(scratch, ".symbiot", "QUESTIONS.md"), QUESTIONS_MD(day)); writeFileSync(join(scratch, ".symbiot", "TASKS.md"), TASKS_MD(day));
   ok(`no "${NAME}" in the vault before`, vault("get", NAME) === null);
   const before = new Set((vault("list") || "").split("\n").map((l) => l.split("  ")[0]).filter(Boolean));
+  let card = false; for (let i = 0; i < 30 && !card; i++) { const h = await api("/api/home?fresh=1"); card = !!h && (h.you || []).some((y) => y.path === scratch); if (!card) await sleep(3000); }
+  if (!ok("the card is on Home (so the phone gets it)", card)) return stop("Home never listed the scratch question");
   console.log(`  ${scratch}\n\n  On the phone: open Symbiot, find the card "${QUESTION}"\n  and press "Let this phone pass on ${SITE}'s code". Waiting up to ${WAIT / 1000} s.`);
 
   step("a code notification reaches the vault, and only the code");
   let got = null; const until = Date.now() + WAIT;
   for (let last = 0; Date.now() < until && got !== A;) {
-    if (Date.now() - last > 20000) { post("codecheck", NOTE(A)); last = Date.now(); } // again until the switch is on: same tag, so one notification
+    if (Date.now() - last > 20000) { post(`codecheck-${RUN}`, NOTE(A)); last = Date.now(); } // again until the switch is on: same tag, so one notification
     await sleep(2000); got = vault("get", NAME);
   }
   if (!ok(`"${NAME}" is in the vault, and it's the code the notification had`, got === A, got)) return stop("the code never came: was the switch pressed? (check the card on the phone)");
@@ -120,7 +125,7 @@ async function main() {
   ok("the vault gained that one entry and nothing else", added.length === 1 && added[0] === NAME, added);
 
   step("once: a second code for the same site, and another site's, go nowhere");
-  post("codecheck", NOTE(B)); await sleep(5000); post("codecheck", NOTE(B)); post("codecheck-decoy", DECOY);
+  post(`codecheck-${RUN}`, NOTE(B)); await sleep(5000); post(`codecheck-${RUN}`, NOTE(B)); post(`codecheck-decoy-${RUN}`, DECOY);
   await sleep(45000); // a few of the phone's polls
   const now = vault("get", NAME), ans2 = answers();
   ok("the vault still has the first code (or none, if it was used): not the second", now === A || now === null, now);
