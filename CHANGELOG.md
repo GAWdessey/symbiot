@@ -4,6 +4,7 @@ What each Symbiot release brought, newest first. When Approve bumps the version,
 
 ## 0.66.16 — 2026-10-21
 
+- Capturing Symbiot's own screens works again: the made-up copy it starts for the capture was never found, so every capture gave up after 30 seconds.
 - Small fixes and improvements.
 
 ## 0.66.15 — 2026-10-21

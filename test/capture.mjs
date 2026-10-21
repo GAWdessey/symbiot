@@ -158,6 +158,15 @@ console.log("WHERE IT RUNS — given, or found running here; never your own Symb
     const yours = JSON.stringify({ ...dcfg, agentCmd: dcfg.agentCmd.replace(process.execPath, "node") }).includes(process.env.USER || "\u0000");
     ok("…set up already, its key a fake, its agent a stand-in that does nothing, nothing of yours in it", /not-a-real-key/.test(dcfg.apiKey) && /-e ""/.test(dcfg.agentCmd) && dcfg.scanRoots[0] === join(dh, "code") && !yours, dcfg);
   } finally { rmSync(dh, { recursive: true, force: true }); }
+  // the real app, started the way a capture starts it: its address had lost its token from what it prints, and
+  // startDemo waited for one there, so every capture of Symbiot gave up after 30 s (0.66.15, 21 Oct 2026)
+  const demo = await D.startDemo({ wait: 60000 });
+  try {
+    const u = new URL(demo.url || "http://x.invalid/"), t = u.searchParams.get("t") || "";
+    const ping = demo.url ? await fetch(new URL("/api/ping", u), { headers: { "x-symbiot-token": t } }).then((r) => (r.ok ? r.json() : { status: r.status })).catch((e) => ({ error: String(e) })) : null;
+    ok("the made-up Symbiot, started for real: its address with its token, and the app answers it", !demo.error && u.hostname === "127.0.0.1" && /^[\w-]{16,}$/.test(t) && ping && ping.version, [demo.error, demo.url && demo.url.replace(/t=.*/, "t=…"), ping]);
+  } finally { if (demo.stop) await demo.stop(); }
+  ok("…stopped: its throwaway home is gone", !demo.home || !existsSync(demo.home), demo.home);
   let got = ""; const found = await C.captureProduct({ product: repo, dir: lane, map: {}, apps: async () => [{ repo: "acme", url: "http://localhost:3000/" }], web: async (o) => { got = o.url; return { items: [] }; }, render: async () => ({ ok: true }), ffmpeg: () => true });
   ok("an app of it running here: captured there", found.ok && got === "http://localhost:3000/", [found, got]);
   ok("not a product here and no address: says so", /isn't one of your projects/.test((await C.captureProduct({ product: "Nope", dir: lane, map: {} })).error), "");
