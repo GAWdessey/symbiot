@@ -113,6 +113,8 @@ try {
   P.setCodeRelay(S.SITE, false);
   ok("its question is this run's own: its words and its id name the run", /^Phone check \w+:/.test(S.QUESTION) && /^codecheck-\w+$/.test(sq[0].id || "") && S.QUESTION.includes(sq[0].id.slice(10)), [S.QUESTION, sq[0].id]);
   ok("…and the card says it's a test, nothing to type, its switch the one thing to press", /\btest\b/i.test(sq[0].context) && /not a real site/i.test(sq[0].context) && /don't type/i.test(sq[0].context) && /switch/i.test(sq[0].context), sq[0].context);
+  const src = readFileSync(new URL("../scripts/phone-codes-check.mjs", import.meta.url), "utf8").split("\n").filter((l) => !l.trim().startsWith("//")).join("\n");
+  ok("the check never launches the app or pairs the phone, and posts the test code once", !/\bam\b[^\n]*\bstart\b|symbiot:\/\/pair/.test(src) && (src.match(/post\(`codecheck-\$\{RUN\}`, NOTE\(A\)\)/g) || []).length === 1 && !/while \([^)]*got !== A/.test(src));
 
   console.log("A CODE TYPED ON A CODE CARD ISN'T KEPT IN THE SHARED RECORD (21 Oct 2026: it was, for other agents' briefs)");
   const D = await import("../asksdone.mjs"), DONE = join(CFG, "asks-done.json");

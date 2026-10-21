@@ -18,6 +18,7 @@
 // What it changes, and puts back unless --keep: a scratch question in drafts/ (a card on Home and
 // on the phone while it runs), Notification access for Symbiot (only if it was off), and one test
 // code in the vault. The test notifications come from Android's shell, so no SMS is sent.
+// This script never opens the app or pairs the phone: it uses the pairing there, checks the phone app is installed (--install is the only thing that installs), and posts the one test notification only after word that the switch is pressed.
 // The notifications go out under a tag of their own per run (codecheck-RUN): a cleanup that snoozes a fixed tag keeps every later re-post under that key from the listener for a week.
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
@@ -96,7 +97,7 @@ async function main() {
     try { const r = await fetch(url); if (!r.ok) throw new Error(String(r.status)); writeFileSync(apk, Buffer.from(await r.arrayBuffer())); } catch (e) { return stop(`couldn't download the ${version} phone app (${url}): ${e.message}`); }
     console.log("  " + (adb("install", "-r", apk) || "install said nothing")); app = appVersion();
   }
-  if (!ok(`the phone app is ${version} or newer`, !!app && !older(app, version), app)) return stop(app ? `the phone has ${app}: run again with --install` : "Symbiot isn't on the phone: run again with --install");
+  if (!ok(`the phone app is ${version} or newer`, !!app && !older(app, version), app)) return stop(app ? `the phone has ${app}: run again with --install` : "Symbiot isn't on the phone: put it back yourself (or run again with --install)");
   if (!ok("it has CodeListener", /\.CodeListener\b/.test(dump()))) return stop("that phone app has no code relay");
   const listeners = () => adb("shell", "settings", "get", "secure", "enabled_notification_listeners") || "";
   if (!listeners().includes(LISTENER)) { adb("shell", "cmd", "notification", "allow_listener", LISTENER); granted = true; }
@@ -109,14 +110,18 @@ async function main() {
   const before = new Set((vault("list") || "").split("\n").map((l) => l.split("  ")[0]).filter(Boolean));
   let card = false; for (let i = 0; i < 30 && !card; i++) { const h = await api("/api/home?fresh=1"); card = !!h && (h.you || []).some((y) => y.path === scratch); if (!card) await sleep(3000); }
   if (!ok("the card is on Home (so the phone gets it)", card)) return stop("Home never listed the scratch question");
-  console.log(`  ${scratch}\n\n  On the phone: open Symbiot, find the card "${QUESTION}"\n  and press "Let this phone pass on ${SITE}'s code". Waiting up to ${WAIT / 1000} s.`);
+  console.log(`  ${scratch}\n\n  On the phone: open Symbiot, find the card "${QUESTION}"\n  and press "Let this phone pass on ${SITE}'s code". Then press Enter here. Waiting up to ${WAIT / 1000} s.`);
 
   step("a code notification reaches the vault, and only the code");
-  let got = null; const until = Date.now() + WAIT;
-  for (let last = 0; Date.now() < until && got !== A;) {
-    if (Date.now() - last > 20000) { post(`codecheck-${RUN}`, NOTE(A)); last = Date.now(); } // again until the switch is on: same tag, so one notification
-    await sleep(2000); got = vault("get", NAME);
-  }
+  // the switch can't be seen from here, so the one notification waits for word that it's pressed: Enter at a terminal, or a file named `pressed` in the scratch .symbiot/ when nobody is at one
+  const pressed = join(scratch, ".symbiot", "pressed"), until = Date.now() + WAIT;
+  let said = false; if (process.stdin.isTTY) process.stdin.once("data", () => { said = true; }).resume();
+  while (Date.now() < until && !said && !existsSync(pressed)) await sleep(1000);
+  if (process.stdin.isTTY) process.stdin.pause();
+  if (!said && !existsSync(pressed)) return stop(process.stdin.isTTY ? "the switch wasn't pressed in time (press Enter here once it is)" : `no word that the switch is pressed: create ${pressed} once it is`);
+  post(`codecheck-${RUN}`, NOTE(A)); // once: a re-post under a tag keeps the phone app on top and risks a snooze
+  let got = null;
+  for (let i = 0; i < 30 && got !== A; i++) { await sleep(2000); got = vault("get", NAME); }
   if (!ok(`"${NAME}" is in the vault, and it's the code the notification had`, got === A, got)) return stop("the code never came: was the switch pressed? (check the card on the phone)");
   const ans = answers(), blocks = ans.split(`### ${QUESTION}`).length - 1;
   ok("the card got one answer, naming the vault entry", blocks === 1 && ans.includes(`"${NAME}"`), ans.slice(-400));

@@ -159,13 +159,18 @@ async function startDemo({ bin = join(HERE, "index.mjs"), wait = 30000, now = Da
     if (!gone) { app.kill("SIGTERM"); for (let i = 0; i < 40 && !gone; i++) await new Promise((r) => setTimeout(r, 100)); if (!gone) app.kill("SIGKILL"); }
     rmSync(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
   };
-  const url = await new Promise((done) => {
-    const look = (d) => { out = (out + d).slice(-20000); const m = out.replace(/\x1b\[[0-9;]*m/g, "").match(/http:\/\/127\.0\.0\.1:\d+\/\?t=[\w-]+/); if (m) done(m[0]); };
+  // The app prints its address without its token (server.mjs: that line goes to app.log), so the token
+  // comes from the sandbox's own config (its secrets.json, core.mjs saveConfig), saved before it listens:
+  // waiting for "?t=" in its output found none, and every `symbiot capture symbiot` gave up after 30 s on 0.66.15 (21 Oct 2026).
+  const at = await new Promise((done) => {
+    const look = (d) => { out = (out + d).slice(-20000); const m = out.replace(/\x1b\[[0-9;]*m/g, "").match(/is running at (http:\/\/127\.0\.0\.1:\d+)\//); if (m) done(m[1]); };
     app.stdout.on("data", look); app.stderr.on("data", (d) => { out = (out + d).slice(-20000); });
     app.on("exit", () => done("")); setTimeout(() => done(""), wait);
   });
-  if (!url) { await stop(); return { error: `The made-up Symbiot didn't start: ${out.trim().split("\n").pop() || "no address within " + wait / 1000 + " s"}` }; }
-  return { url, home, stop };
+  const tokenIn = (f) => { try { return JSON.parse(readFileSync(join(home, ".config", "symbiot", f), "utf8")).appToken || ""; } catch { return ""; } };
+  const token = tokenIn("config.json") || tokenIn("secrets.json");
+  if (!at || !token) { await stop(); return { error: `The made-up Symbiot didn't start: ${!at ? out.trim().split("\n").pop() || "no address within " + wait / 1000 + " s" : "it saved no token"}` }; }
+  return { url: `${at}/?t=${token}`, home, stop };
 }
 
 export { seedDemo, startDemo, DEMO_NAMES, REPOS as DEMO_REPOS };
