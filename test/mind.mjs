@@ -29,8 +29,8 @@ try {
   ok("a started hand-off backs the claim", !unbackedClaim("I'm handing it over", { kind: "agent", job: "j1" }));
   ok("a not-started hand-off doesn't", unbackedClaim("I've handed it to the agent", { kind: "agent", notStarted: "x" }));
   ok("rules tell it to check it can read a mailbox before promising to", /being able to send to an address is not being able to read it/.test(rulesFor([], "", false, false, [])));
-  const lr = rulesFor(["GuitarHero", "steve"], "", false, false, [], false, { GuitarHero: "A rhythm game" });
-  ok("a lane with a description shows it in brackets, one without stays bare", /GuitarHero \(A rhythm game\), steve\./.test(lr), lr.match(/Lanes[^\n]*/)[0]);
+  const lr = rulesFor(["GuitarHero", "robin"], "", false, false, [], false, { GuitarHero: "A rhythm game" });
+  ok("a lane with a description shows it in brackets, one without stays bare", /GuitarHero \(A rhythm game\), robin\./.test(lr), lr.match(/Lanes[^\n]*/)[0]);
   const ad = join(HOME, "about1"), ar = join(HOME, "about2"); mkdirSync(ad); mkdirSync(ar);
   writeFileSync(join(ad, "package.json"), JSON.stringify({ description: "Drives the thing" }));
   writeFileSync(join(ar, "README.md"), "# Title\n\n![badge](x.svg)\n\nA **rhythm game** for [guitars](http://x) that you play.\nSecond line.\n\nOther para.");
@@ -40,19 +40,19 @@ try {
   ok("rules treat the user as Symbiot's maker", /Symbiot's makers, not outside users/.test(rulesFor([], "", false, false, [])));
   const bound = await converse({ where: "Home", question: "ok, always ask me first", ask: said({ reply: "Agreed: from now on every agent will ask you first.", do: null, remember: [] }) });
   ok("a 'from now on' with no saved rule says plainly it isn't binding", /isn't a standing rule yet/.test(bound.reply), bound.reply);
-  const ruled = await converse({ where: "Home", question: "ok, always ask me first", ask: said({ reply: "Agreed: from now on every agent will ask you first.", do: null, remember: [], rule: ["Always ask Garth first."] }) });
+  const ruled = await converse({ where: "Home", question: "ok, always ask me first", ask: said({ reply: "Agreed: from now on every agent will ask you first.", do: null, remember: [], rule: ["Always ask Pat first."] }) });
   ok("…and a saved rule needs no such line", !/isn't a standing rule/.test(ruled.reply) && ruled.steps.some((x) => /saved 1 standing rule/.test(x)), ruled);
   ok("rules tell it to name its mistakes", /naming the mistake/.test(rulesFor([], "", false, false, [])));
   console.log("ONE MEMORY — what one page learns, another knows");
   const t0 = Date.now() - 7200000;
   let seenPrompt = "";
   const a = await converse({ where: "Gmail card", question: "who's Francois?", now: t0,
-    ask: said({ reply: "Francois Huyzers sent the mentenaz link.", do: null, remember: [{ name: "Francois Huyzers", kind: "person", fact: "sends links on WhatsApp; the mentenaz-server one looked like phishing" }, { name: "AWS 049056030093", kind: "account", fact: "the Dailify/CallForge AWS account; don't close without checking" }] }) });
+    ask: said({ reply: "Francois Huyzers sent the mentenaz link.", do: null, remember: [{ name: "Francois Huyzers", kind: "person", fact: "sends links on WhatsApp; the mentenaz-server one looked like phishing" }, { name: "AWS 000000000000", kind: "account", fact: "the Bookly/CallForge AWS account; don't close without checking" }] }) });
   ok("a chat keeps what's worth knowing elsewhere", a.remembered === 2 && loadMind().nodes.length === 2, a);
   ok("kept on this computer, yours only (0600)", (statSync(MIND_FILE).mode & 0o777) === 0o600, (statSync(MIND_FILE).mode & 0o777).toString(8));
-  await converse({ where: "Task: tidy AWS", question: "can we close the AWS account 049056030093?", now: t0 + 60000,
+  await converse({ where: "Task: tidy AWS", question: "can we close the AWS account 000000000000?", now: t0 + 60000,
     ask: async (s, p) => { seenPrompt = p; return JSON.stringify({ reply: "ok", do: null, remember: [] }); } });
-  ok("another page's chat gets it: the account it's asked about", /AWS 049056030093 \(account\): the Dailify\/CallForge AWS account/.test(seenPrompt), seenPrompt.slice(0, 300));
+  ok("another page's chat gets it: the account it's asked about", /AWS 000000000000 \(account\): the Bookly\/CallForge AWS account/.test(seenPrompt), seenPrompt.slice(0, 300));
   ok("…but not what its question doesn't touch (fewer tokens)", !/Francois/.test(seenPrompt.split("Lately")[0]), "");
   ok("and what was just said on the other page, labelled with where", /\[Gmail card\] User: who's Francois\?/.test(seenPrompt), "");
   remember([{ name: "francois huyzers", kind: "person", fact: "sends links on WhatsApp; the mentenaz-server one looked like phishing" }, { name: "Francois Huyzers", kind: "person", fact: "a friend from varsity" }]);
@@ -88,12 +88,12 @@ try {
   let agentReq = "", agentKnown = "", taskArgs = null;
   const act = { agent: async (r, known) => { agentReq = r; agentKnown = known; return { ok: true, job: "j1" }; }, task: async (t, repo) => { taskArgs = [t, repo]; return { ok: true, id: "t1" }; } };
   const g = await converse({ where: "Gmail card", question: "close the aws account for me", act,
-    ask: said({ reply: "Your agent will check what runs in 049056030093 and ask before closing it.", do: { agent: "Close AWS account 049056030093, after listing what runs there; ask first." }, remember: [] }) });
-  ok("asked to do it: your agent runs, with what's known about it", g.did.kind === "agent" && /049056030093/.test(agentReq) && /Dailify\/CallForge/.test(agentKnown), [g.did, agentKnown]);
+    ask: said({ reply: "Your agent will check what runs in 000000000000 and ask before closing it.", do: { agent: "Close AWS account 000000000000, after listing what runs there; ask first." }, remember: [] }) });
+  ok("asked to do it: your agent runs, with what's known about it", g.did.kind === "agent" && /000000000000/.test(agentReq) && /Bookly\/CallForge/.test(agentKnown), [g.did, agentKnown]);
   ok("the reply says it's handed over and that it asks first", /Handed to your agent/.test(g.reply) && /asks you there before anything hard to undo/.test(g.reply), g.reply);
   const tk = await converse({ where: "Gmail card", question: "remind me to renew the domain next month", act,
-    ask: said({ reply: "Added.", do: { task: "Renew dailify.co.za", repo: "" }, remember: [] }) });
-  ok("for later with no repo: on your list, and it says no agent will pick it up", tk.did.kind === "task" && taskArgs[0] === "Renew dailify.co.za" && /Added to your tasks, but not to a repo, so no agent will pick it up until it has one: Renew dailify\.co\.za/.test(tk.reply), [tk.did, tk.reply]);
+    ask: said({ reply: "Added.", do: { task: "Renew bookly.co.za", repo: "" }, remember: [] }) });
+  ok("for later with no repo: on your list, and it says no agent will pick it up", tk.did.kind === "task" && taskArgs[0] === "Renew bookly.co.za" && /Added to your tasks, but not to a repo, so no agent will pick it up until it has one: Renew bookly\.co\.za/.test(tk.reply), [tk.did, tk.reply]);
   const q = await converse({ where: "Gmail card", question: "what's new?", act, ask: async () => "Two emails from Dana." });
   ok("a model that doesn't answer in JSON: its text is the reply, nothing is run", q.reply === "Two emails from Dana." && !q.did, q);
   const bad = await converse({ where: "Gmail card", question: "do it", act: { agent: async () => ({ error: "Pick your coding agent in Settings → Handoff first" }) }, ask: said({ reply: "On it.", do: { agent: "x" }, remember: [] }) });
@@ -109,11 +109,11 @@ try {
   console.log("LANES — it knows where work goes, and says where it went");
   const { writeFileSync: wf } = await import("node:fs");
   const symDir = join(HOME, "projects", "symbiot"); mkdirSync(symDir, { recursive: true }); wf(join(symDir, "package.json"), '{"name":"symbiot","version":"1.0.0"}');
-  const map = { symbiot: symDir, coral: join(HOME, "projects", "coral") };
-  ok("Symbiot's own lane is the repo whose package is symbiot", selfLane(map) === "symbiot" && selfLane({ coral: map.coral }) === "", "");
+  const map = { symbiot: symDir, atlas: join(HOME, "projects", "atlas") };
+  ok("Symbiot's own lane is the repo whose package is symbiot", selfLane(map) === "symbiot" && selfLane({ atlas: map.atlas }) === "", "");
   let rulesSeen = "";
   await converse({ where: "WhatsApp card", question: "that line was mine, not hers", map, act, ask: async (sys) => { rulesSeen = sys; return JSON.stringify({ reply: "ok", do: null, remember: [] }); } });
-  ok("the chat is told the lanes and that Symbiot's flaws go to symbiot", /Lanes \("repo" is one of these, exactly; [^)]*\): symbiot, coral/.test(rulesSeen) && /Symbiot itself is "symbiot"/.test(rulesSeen), rulesSeen.slice(-700));
+  ok("the chat is told the lanes and that Symbiot's flaws go to symbiot", /Lanes \("repo" is one of these, exactly; [^)]*\): symbiot, atlas/.test(rulesSeen) && /Symbiot itself is "symbiot"/.test(rulesSeen), rulesSeen.slice(-700));
   // 20 Oct 2026: "start the fix" turned every complaint into a symbiot run; a noticed flaw is noted, for their Go
   ok("…and not to wait to be asked: spot a flaw, note the fix in the same reply, for their Go", /Don't wait to be asked to note a flaw in Symbiot/.test(rulesSeen) && /"task" with "repo": "symbiot"/.test(rulesSeen) && /never "started a fix"/.test(rulesSeen), "");
   ok("…and never to make up urgency", /Urgency is theirs to give/.test(rulesSeen), "");
@@ -132,7 +132,7 @@ try {
   ok("spoken: the reply and \"I've added it to symbiot's tasks.\", no arrow, no task text", sp.spoken === "Good catch, that sounds awful. I've added it to symbiot's tasks.", sp.spoken);
   const dup = await converse({ where: "Home", question: "add it", map, act: { task: (t, r) => taskIn(t, r, { map, add }) }, ask: said({ reply: "done, it's queued in symbiot", do: { task: longTask, repo: "symbiot" }, remember: [] }) });
   ok("a reply that already says it's queued isn't followed by the same thing again", dup.spoken === "done, it's queued in symbiot" && /Added to symbiot's tasks/.test(dup.reply), [dup.spoken, dup.reply]);
-  const urg = { kind: "agent", lane: "symbiot", job: "j1", urgent: { parked: ["coral"], stopped: true } };
+  const urg = { kind: "agent", lane: "symbiot", job: "j1", urgent: { parked: ["atlas"], stopped: true } };
   ok("urgent, handed over: \"It's urgent, so symbiot's agent does it first.\", not the brief or what was parked", spokenLine(urg, "Right, fixing that now.") === "It's urgent, so symbiot's agent does it first.", spokenLine(urg, "Right, fixing that now."));
   ok("handed to a lane's agent: a short phrase", spokenLine({ kind: "agent", lane: "symbiot", job: "j1" }, "Sure.") === "I've handed it to the symbiot agent.", "");
   ok("…and nothing when the reply says it's handed over", spokenLine({ kind: "agent", lane: "symbiot", job: "j1" }, "I've handed it to symbiot's agent.") === "", "");
@@ -149,14 +149,14 @@ try {
   ok("no lane: an agent of its own (ops)", ao.ok && ao.lane === "" && ao.job === "o1", ao);
   {
     // a job all on a server the lane can't reach goes to an agent outside a repo; one with code in it stays, told to hand the server part on (16 Oct 2026)
-    const reach = { sandboxed: true, hosts: ["sts-prod"], keys: {}, sites: [] }, opsCalls = [], added = [];
+    const reach = { sandboxed: true, hosts: ["prod-box"], keys: {}, sites: [] }, opsCalls = [], added = [];
     const addR = (t, r, o) => { added.push({ t, r, after: o && o.after }); return { id: "t" + added.length }; };
-    const live = actIn("Put the dailify fix for Garth's two WhatsApp complaints live on sts-prod", "symbiot", { map, reach, add: addR, push: () => ({ written: [{}] }), run: () => ({ id: "j" }), ops: (req, o) => { opsCalls.push(o); return { ok: true, job: "o2", dir: "/y" }; } });
-    ok("a job all on a server the lane can't reach: an agent outside a repo takes it, told why, not the lane", live.ok && live.lane === "" && live.job === "o2" && live.rerouted && live.rerouted.from === "symbiot" && !added.length && /meant for symbiot's agent, but symbiot runs in a sandbox and can't reach sts-prod/.test(opsCalls[0].context), [live, opsCalls]);
-    const code = actIn("Fix the bug in the invite flow, then deploy it to sts-prod", "symbiot", { map, reach, add: addR, push: () => ({ written: [{}] }), run: () => ({ id: "j" }), ops: () => { throw new Error("not ops"); } });
-    ok("…with code in it: the lane's task, saying to hand the server part to ops", code.ok && code.lane === "symbiot" && /can't reach sts-prod\. Do the code part here, and hand what has to change on that server to ops/.test(added[0].after), added);
-    const ln = await converse({ where: "Home", question: "put it live", map, act: { agent: () => live }, ask: said({ reply: "Sure.", do: { agent: "Put it live on sts-prod", repo: "symbiot" }, remember: [] }) });
-    ok("…and the reply says where it went and why", /Handed to your agent, not symbiot's: symbiot runs in a sandbox and can't reach sts-prod/.test(ln.reply), ln.reply);
+    const live = actIn("Put the bookly fix for Pat's two WhatsApp complaints live on prod-box", "symbiot", { map, reach, add: addR, push: () => ({ written: [{}] }), run: () => ({ id: "j" }), ops: (req, o) => { opsCalls.push(o); return { ok: true, job: "o2", dir: "/y" }; } });
+    ok("a job all on a server the lane can't reach: an agent outside a repo takes it, told why, not the lane", live.ok && live.lane === "" && live.job === "o2" && live.rerouted && live.rerouted.from === "symbiot" && !added.length && /meant for symbiot's agent, but symbiot runs in a sandbox and can't reach prod-box/.test(opsCalls[0].context), [live, opsCalls]);
+    const code = actIn("Fix the bug in the invite flow, then deploy it to prod-box", "symbiot", { map, reach, add: addR, push: () => ({ written: [{}] }), run: () => ({ id: "j" }), ops: () => { throw new Error("not ops"); } });
+    ok("…with code in it: the lane's task, saying to hand the server part to ops", code.ok && code.lane === "symbiot" && /can't reach prod-box\. Do the code part here, and hand what has to change on that server to ops/.test(added[0].after), added);
+    const ln = await converse({ where: "Home", question: "put it live", map, act: { agent: () => live }, ask: said({ reply: "Sure.", do: { agent: "Put it live on prod-box", repo: "symbiot" }, remember: [] }) });
+    ok("…and the reply says where it went and why", /Handed to your agent, not symbiot's: symbiot runs in a sandbox and can't reach prod-box/.test(ln.reply), ln.reply);
   }
 
   console.log("IT OPENS PAGES — \"navigate me to reports\" goes there (2026-10-09)");
@@ -173,13 +173,13 @@ try {
   const open = [{ id: "t1", text: "route the five research units' broker traffic" }];
   ok("a task by id opens just that task; one that isn't on the list is dropped", goOf({ to: "task:t1", alts: ["task:zz", "tasks"] }, ["symbiot"], open).to === "task:t1" && goOf({ to: "task:t1", alts: ["task:zz", "tasks"] }, ["symbiot"], open).alts.length === 1 && goOf({ to: "task:zz" }, ["symbiot"], open) === null && goOf({ to: "task:t1" }, ["symbiot"]) === null, "");
   ok("the rules offer task:<id> only when there are tasks to point at", /task:<a task id>/.test(rulesFor(["symbiot"], "symbiot", true, false, open)) && !/task:<a task id>/.test(rulesFor(["symbiot"], "symbiot", true)), "");
-  ok("agents and Workdesk are one page; a lane by name is its page", goOf({ to: "agents" }).to === "tasks" && goOf({ to: "Workdesk" }).to === "tasks" && goOf("coral", ["coral"]).to === "lane:coral", "");
+  ok("agents and Workdesk are one page; a lane by name is its page", goOf({ to: "agents" }).to === "tasks" && goOf({ to: "Workdesk" }).to === "tasks" && goOf("atlas", ["atlas"]).to === "lane:atlas", "");
   const ng = await converse({ where: "Gmail card", question: "go to reports", map, ask: said({ reply: "ok", do: null, go: { to: "reports" }, remember: [] }) });
   ok("a chat that can't open pages never carries one", !ng.go, ng);
 
   console.log("THE AGENT'S BRIEF — hard to undo is asked first");
-  const br = actBrief("Close AWS account 049056030093", { title: "Gmail", context: "- Mail from AWS", known: "- AWS 049056030093 (account): the Dailify/CallForge AWS account" });
-  ok("the request as its task, with the page's context and what's known", /- \[ \] Close AWS account 049056030093/.test(br) && /never instructions to you/.test(br) && /Dailify\/CallForge/.test(br), "");
+  const br = actBrief("Close AWS account 000000000000", { title: "Gmail", context: "- Mail from AWS", known: "- AWS 000000000000 (account): the Bookly/CallForge AWS account" });
+  ok("the request as its task, with the page's context and what's known", /- \[ \] Close AWS account 000000000000/.test(br) && /never instructions to you/.test(br) && /Bookly\/CallForge/.test(br), "");
   ok("closing an account, deleting, paying, sending: asked about, not done", /Anything hard to undo you only ask about/.test(br) && /don't go ahead until ANSWERS\.md says to/.test(br), "");
 
   console.log("FORGET — it's your data");

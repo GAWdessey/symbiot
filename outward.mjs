@@ -2,7 +2,7 @@
 // only the person whose work it came from. Symbiot is used by people whose tasks
 // name their own products, clients, people, accounts, providers, servers and runs;
 // the 0.66.6 notes (16 Oct 2026) went out in the tasks' own words ("Meta part, by
-// the dailify lane itself…", "run act-2ae1923d", "Garth asked, Fri 16 Oct 2026")
+// the bookly lane itself…", "run act-2ae1923d", "the user asked, Fri 16 Oct 2026")
 // and every update panel showed them. So a release note is checked before it ships:
 //
 // - denyList(): what's yours alone, from what Symbiot knows here: your lanes (bar
@@ -34,11 +34,11 @@ let README_WORDS = null;
 function readmeWords() {
   if (README_WORDS) return README_WORDS;
   let t = ""; try { t = readFileSync(fileURLToPath(new URL("./README.md", import.meta.url)), "utf8"); } catch {}
-  README_WORDS = new Set(t.match(/(?<![A-Za-z])[a-z][a-z'-]{2,}/g) || []); // only words it writes lower-case: "gosolr's" in an example isn't English, but it's a lane anyway
+  README_WORDS = new Set(t.match(/(?<![A-Za-z])[a-z][a-z'-]{2,}/g) || []); // only words it writes lower-case: "sunco's" in an example isn't English, but it's a lane anyway
   return README_WORDS;
 }
 const commonWord = (w) => { const l = w.toLowerCase().replace(/['’]s$/, ""); return COMMON.has(l) || PRODUCT_TERMS.has(l) || readmeWords().has(l); };
-// A domain's own name: "cp.smsportal.com" → "smsportal", "ghost-ai.co.za" → "ghost-ai".
+// A domain's own name: "cp.smsportal.com" → "smsportal", "example.co.za" → "ghost-ai".
 const SLD = /\.(co|com|org|net|gov|ac)\.[a-z]{2}$|\.[a-z]{2,}$/;
 function domainName(d) { const parts = String(d).toLowerCase().replace(SLD, "").split("."); return parts[parts.length - 1] || ""; }
 
@@ -99,7 +99,7 @@ const GENERIC = [
   [/\b(?!(?:192\.0\.2|198\.51\.100|203\.0\.113|127\.\d+\.\d+)\.\d+\b)\d{1,3}(?:\.\d{1,3}){3}\b/, "an IP address"], // not the ones kept for examples, nor this computer's own
   [new RegExp(`\\b(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)[a-z]* \\d{1,2} ${MONTH}\\b`), "a dated ask (task wording)"],
 ];
-const ASKED = /\b([A-Z][a-z]+) (?:asked|said|wants)\b/g; // "Garth asked", not "Home asked"
+const ASKED = /\b([A-Z][a-z]+) (?:asked|said|wants)\b/g; // "the user asked", not "Home asked"
 const escRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const termRe = (t) => new RegExp(`(?<![A-Za-z0-9])${t.split(/[\s._-]+/).filter(Boolean).map(escRe).join("[\\s._-]*")}(?:['’]s)?(?![A-Za-z0-9])`, "i");
 // Why a line can't go out: [{ term, why }], empty when it may.

@@ -134,7 +134,7 @@ function parseRunText(text) {
 }
 
 // ---- how far along a run is ---------------------------------------------------------
-// Home said only "Agents working: 2" while steve and argena had each been at it for
+// Home said only "Agents working: 2" while robin and meridian had each been at it for
 // half an hour (2026-10-08): nothing said what either was doing or how far along.
 // A brief's plan is the numbered steps of the first open task in its TASKS.md
 // ("1) Device pass on v6.7. … 2) Look and feel, plus a zoned world. …"), each as a
@@ -252,7 +252,7 @@ function lastRunText(log) {
 // A turn that ended on purpose and is waiting ("nothing new to act on… waiting for marketing's
 // photos"): the sentence of its final answer that says what for, or "". A one-shot run exits
 // after every turn, so a finished process alone can't tell this from a stall (2026-10-10).
-// Not a wait, though the words are there: "Nothing is waiting on Garth" was read as one, and
+// Not a wait, though the words are there: "Nothing is waiting on the user" was read as one, and
 // "the WhatsApp window stays open until 10:38 tomorrow" (someone else's window) as a time to
 // look again (21 Oct 2026).
 const NOT_A_WAIT = /\b(?:nothing|no one|nobody|none)\b[^.!?]{0,30}\bwait|\b(?:no longer|not|isn['’]t|aren['’]t)\s+(?:\w+\s+)?wait|\b(?:stays?|remains?|is|kept)\s+open\s+until\b/i;

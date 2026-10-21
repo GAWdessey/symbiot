@@ -35,7 +35,7 @@ console.log("SYMBIOT APP --FRESH — a brand-new Symbiot, gone when it quits");
   // yours: connected, with memory
   const mine = join(HOME, ".config", "symbiot"); mkdirSync(mine, { recursive: true });
   writeFileSync(join(mine, "config.json"), JSON.stringify({ provider: "anthropic", anthropic: { apiKey: "sk-mine" } }));
-  writeFileSync(join(mine, "mind.json"), JSON.stringify({ nodes: [{ name: "Jono", facts: ["a friend"] }] }));
+  writeFileSync(join(mine, "mind.json"), JSON.stringify({ nodes: [{ name: "Remy", facts: ["a friend"] }] }));
   const before = readdirSync(mine).sort().join();
   const tmpBefore = new Set(readdirSync(tmpdir()).filter((d) => d.startsWith("symbiot-fresh-")));
   const app = spawn(process.execPath, [join(ROOT, "index.mjs"), "app", "--fresh", "--plain"], { env: { ...process.env, HOME, USERPROFILE: HOME, SYMBIOT_NO_OPEN: "1", ANTHROPIC_API_KEY: "sk-env" }, stdio: ["ignore", "pipe", "pipe"] });
@@ -62,7 +62,7 @@ console.log("SYMBIOT APP --FRESH — a brand-new Symbiot, gone when it quits");
   const ids = (hs.you || []).map((y) => y.id), pick = (hs.you || []).find((y) => y.id === "setup:pick");
   ok("first run: Home asks for what only a new user can do (connect an AI; a folder, as its empty home has no repos), not for an agent that's on this computer", ids.slice(0, 2).join() === "setup:ai,setup:folders" && (!pick || /^no coding agent/.test(pick.sub)), hs.you);
   const mind = await get("/api/mind");
-  ok("no memory", !JSON.stringify(mind).includes("Jono"), mind);
+  ok("no memory", !JSON.stringify(mind).includes("Remy"), mind);
   const links = await get("/api/links");
   ok("no linked accounts", !(links.items || links.links || []).some((x) => x.state === "ok" || x.linked), links);
   await fetch(base + "/api/quit", { headers: h }).catch(() => {});

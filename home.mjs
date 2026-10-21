@@ -358,7 +358,7 @@ const UNSENT_SUB = { conflicts: "it clashes with main", tests: "its tests failed
 //   lanes: [{ from, to, text, status, times }], working: n, at }
 // An ask carries what its blob on home needs: the lane (repo, or "" for an ops
 // run), its name as people say it, the question and its first two options.
-// Dismissed, on Home or the Workdesk: a card you don't want there (Garth, 2026-10-15: no way
+// Dismissed, on Home or the Workdesk: a card you don't want there (the user, 2026-10-15: no way
 // to clear an unwanted one). Kept by what the card says (cardKey, the app's bdKey: the same
 // question on Home, the Workdesk and a project), so a new question from the same agent, or
 // a changed Approve, still shows. Undo takes it back. A month on, it's forgotten.
@@ -482,7 +482,7 @@ function homeState({ now = Date.now(), fresh = false, deps = {}, tick = false } 
       : { kind: "setup", id: "setup:inbox", title: "Let me see your inbox", sub: "so I notice their reply", shape: "settings", focus: "links" });
   }
   // Linked sites that have signed out get no card of their own: a standing "Sign in again to
-  // 10 sites" asked for sites nothing was using (Garth, 2026-10-14). A run whose job needs one
+  // 10 sites" asked for sites nothing was using (the user, 2026-10-14). A run whose job needs one
   // asks for that site itself, with its Sign in button (signInCard), and Settings → Connections
   // shows the rest as signed out, quietly.
   const bd = board() || {}, feeds = (bd.cards || []).filter((c) => c.count > 0).map((c) => ({ id: "feed:" + c.id, title: c.name, sub: c.label, count: c.count, shape: "board" }));
@@ -758,7 +758,7 @@ function finishedState({ now = Date.now(), list = agentsList(), max = 6 } = {}) 
 
 // What each agent (running, or finished in the last day) has done, asked and been told, in a few
 // lines apiece, so "why is npm asking again?" is answered from the agent's own record: its last
-// steps and how they ended, the questions it put to Garth, his answers, and its outcome. The
+// steps and how they ended, the questions it put to the user, his answers, and its outcome. The
 // full log stays on the Workdesk; this is the digest.
 const answersOf = (path, max = 3) => {
   let md = ""; try { md = readFileSync(join(path, ".symbiot", "ANSWERS.md"), "utf8"); } catch { return []; }
@@ -780,7 +780,7 @@ function agentDigest({ now = Date.now(), list = agentsList(), map = {}, tasks = 
   }
   return out.sort((a, b) => (b.running - a.running) || b.at - a.at).slice(0, max);
 }
-// The answers Garth gave anywhere, newest last: what he's already done, so nobody asks it twice.
+// The answers the user gave anywhere, newest last: what he's already done, so nobody asks it twice.
 const garthLedger = (n = 8) => { try { return doneList().slice(-n); } catch { return []; } };
 
 // One line per thing home shows, for the talk's context.
@@ -802,8 +802,8 @@ function homeContext(h, { cards } = {}) {
     ...jobsLines({ now: h.at }),
     "Agents finished in the last 24h (their own last words; answer 'did it work?' from these):", ...((h.finished || []).length ? h.finished.map((f) => `- ${dayMark(f.at, h.at)}${f.name}: ${f.end}${f.changed ? `, ${f.changed} file${f.changed > 1 ? "s" : ""} changed` : ""}${f.asks.length ? `; asked: ${f.asks.join(" / ")}` : ""}${f.said ? `; said: ${f.said}` : ""}`) : ["- none"]),
     "What each agent has done, asked and been told (running, or finished in the last 24h; answer 'why is it asking again?' and 'did it work?' from this):", ...((h.digest || []).length ? h.digest.flatMap((d) => [`- ${dayMark(d.at, h.at)}${d.name}${d.lane ? ` [${d.lane}${d.queued ? `, ${d.queued} queued` : ""}]` : ""} (${d.running ? "running" : "finished"})`,
-      ...(d.steps.length ? [`    last steps: ${d.steps.join("; ")}`] : []), ...(d.asks.length ? [`    asked Garth: ${d.asks.join(" / ")}`] : []), ...d.answers.map((a) => `    Garth answered "${a.q}": ${a.a}`), ...(d.outcome ? [`    outcome: ${d.outcome}`] : [])]) : ["- none"]),
-    "Already answered by Garth, anywhere (never ask or tell him to do these again):", ...((h.ledger || []).length ? h.ledger.map((x) => `- ${x.at} ${x.q} → ${x.a}`) : ["- none"]),
+      ...(d.steps.length ? [`    last steps: ${d.steps.join("; ")}`] : []), ...(d.asks.length ? [`    asked the user: ${d.asks.join(" / ")}`] : []), ...d.answers.map((a) => `    the user answered "${a.q}": ${a.a}`), ...(d.outcome ? [`    outcome: ${d.outcome}`] : [])]) : ["- none"]),
+    "Already answered by the user, anywhere (never ask or tell him to do these again):", ...((h.ledger || []).length ? h.ledger.map((x) => `- ${x.at} ${x.q} → ${x.a}`) : ["- none"]),
     "Handed off from this chat (last 7 days; say how each stands from this list, never guess):", ...((h.handed || []).length ? h.handed.map((x) => `- ${dayMark(x.at, h.at)}${x.lane}: ${x.text} (${x.status})`) : ["- none"]),
     "Recent handovers:", ...(h.lanes.length ? h.lanes.map((l) => `- ${dayMark(l.at, h.at)}${l.from} → ${l.to}: ${l.text} (${l.status}${l.times ? `, handed over ${l.times} times` : ""})`) : ["- none"]),
     ...(h.marketing ? [`Marketing (a lane of its own, for marketing across all their products; "repo": "${MARKETING}"): ${h.marketing.needs ? `${h.marketing.needs} thing${h.marketing.needs > 1 ? "s" : ""} there need${h.marketing.needs > 1 ? "" : "s"} them` : "nothing needs them"}${h.marketing.working ? ", its agent is at work" : ""}.`] : []),
@@ -875,7 +875,7 @@ function reportIdeasDismiss(id, ideas, deps = {}, done = false) {
 }
 // What happened after the report was written, from its folder: whether a proof went out, and
 // the lane's newest answers and handover reports. With only the report's text, the chat on
-// the Carla proof (21 Oct 2026) said the mail "didn't hold up" and started a second trace,
+// the Dana proof (21 Oct 2026) said the mail "didn't hold up" and started a second trace,
 // when ops had already found her failed test was the site-side change the mail said was pending.
 function sinceReport(r, { read = (f) => readFileSync(f, "utf8"), stat = (f) => statSync(f) } = {}) {
   const dir = r && r.folder ? join(r.folder, ".symbiot") : ""; if (!dir) return "";
@@ -1035,7 +1035,7 @@ function workSceneNow({ deps = {}, full = false } = {}) {
     if (Object.keys(sent).length) p.sent = Object.entries(sent).map(([repo, n]) => ({ repo, n }));
   }
   // Agent runs' card: its line is from the run whose question it shows, not the newest run. It read
-  // "The phone code check is still not done" over the Dailify broker test's question, and the user
+  // "The phone code check is still not done" over the Bookly broker test's question, and the user
   // had to ask what the card was (21 Oct 2026).
   { const p = by[RUNS_LANE], q = p && p.qs && p.qs[0], own = q && lineOf[q.path]; if (own && p.path !== q.path) { p.summary = own.line; p.state = own.state; p.path = q.path; } }
   // what each lane handed over and hasn't heard back on, with where it stands and how far the run on it has got
@@ -1218,7 +1218,7 @@ const ONB_STEPS = ["welcome", "ai", "work", "agent", "apps", "docs", "phone", "d
 // (the phone only pairs with the computer: Claude Code and the agents run there, so no AI, work, agent, apps or docs step here)
 const ONB_STEPS_PHONE = ["computer", "welcome", "done"];
 const onbSteps = (app = ANDROID_APP, phone = PHONE) => (app ? ONB_STEPS_PHONE : phone ? ONB_STEPS.filter((s) => s !== "phone") : ONB_STEPS); // (Symbiot in Termux is on the phone already)
-// A new install (`symbiot app` the first time): setup, from its first step, "Your computer"
+// A new install (`symbiot app` the first time): setup, from its north star, "Your computer"
 // in the Android app (it started at "welcome" there, so a phone paired by its QR showed nothing).
 function startOnboarding() { const cf = loadConfig(); if (!cf.onboarding) { cf.onboarding = { pending: true, step: onbSteps()[0], skipped: [], ...(onbSteps()[0] === "computer" ? { computer: true } : {}) }; saveConfig(cf); } return cf.onboarding; }
 // The phone app over an older one (a phone that had Symbiot before "Your computer"

@@ -101,9 +101,9 @@ function collectWaits(d, { map, running = runningHandoff, now = Date.now() }) {
 // since it was sent: Gmail lists a thread in the inbox once someone answers.
 // Never the user's own mail: not from one of `mine` (their addresses), and not a
 // row whose newest message is theirs. Gmail starts a row with who's on the thread,
-// the newest last ("Cale, Jono, me 5, Fwd: winlove setup, …"), so a thread the user
-// just wrote on lists "me" last. That row started an ops agent on a reply Jono
-// hadn't sent: it was Garth's own email to him (2026-10-12).
+// the newest last ("Alex, Remy, me 5, Fwd: lovelink setup, …"), so a thread the user
+// just wrote on lists "me" last. That row started an ops agent on a reply Remy
+// hadn't sent: it was the user's own email to him (2026-10-12).
 function answers(w, m, mine = []) {
   if (!(m.ts > w.sent)) return false;
   const want = subjectCore(w.subject); if (want.length < 4) return false;
@@ -116,7 +116,7 @@ function answers(w, m, mine = []) {
   const text = String(m.text || "").toLowerCase().replace(/\s+/g, " "), at = text.indexOf(want.slice(0, 80));
   return at >= 0 && lastSender(text.slice(0, at)) !== "me";
 }
-// The newest sender in what a row says before its subject ("cale, jono, me 5, fwd: "
+// The newest sender in what a row says before its subject ("alex, remy, me 5, fwd: "
 // → "me"): the last name, past the message count and any Re:/Fwd:.
 const lastSender = (lead) => (lead.replace(/(?:\b(?:re|fwd?|aw|sv|antw|wg)\s*(?:\[\d+\])?\s*:\s*)+$/i, "").replace(/[\s,·:;|-]*(?:\(?\d+\)?)?[\s,·:;|-]*$/, "").split(/[\s,·]+/).pop() || "");
 // The user's own addresses: those under Email, and git's.

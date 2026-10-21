@@ -1,6 +1,6 @@
 // Home's hands on the agents (mind.mjs "control"): stop one, cancel or move a task, answer or
 // redirect an agent, fold a duplicate into the one that has the job. Until now Home could only
-// start work, so it told Garth to click a card to stop an agent (2026-10-10, two agents on the
+// start work, so it told the user to click a card to stop an agent (2026-10-10, two agents on the
 // same npm job). Stopping, cancelling and redirecting can all be undone, so none asks for a yes:
 // what is hard to undo stays the agent's own question on the Workdesk.
 // Every op gives { op, ok, said } or { op, error }, said in words for someone who doesn't code.

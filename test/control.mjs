@@ -67,11 +67,11 @@ try {
   live.clear();
   const res2 = await converse({ where: "Home", nav: true, control: true, question: "stop it", ask: async () => reply, map, act: { control: (ops) => control(ops, deps) } });
   ok("a failed op is owned first, plainly", /^I couldn't stop:/.test(res2.reply), res2.reply);
-  const claim = JSON.stringify({ reply: "Sorted, I've told Steve's agent it can run python.", do: null, control: [{ op: "answer", id: "ask:" + a, text: "yes, allow it" }] });
-  const res3 = await converse({ where: "Home", nav: true, control: true, question: "tell steve yes", ask: async () => claim, map, act: { control: (ops) => control(ops, deps) } });
+  const claim = JSON.stringify({ reply: "Sorted, I've told Robin's agent it can run python.", do: null, control: [{ op: "answer", id: "ask:" + a, text: "yes, allow it" }] });
+  const res3 = await converse({ where: "Home", nav: true, control: true, question: "tell robin yes", ask: async () => claim, map, act: { control: (ops) => control(ops, deps) } });
   ok("a failed answer is never reported as done: the model's \"Sorted\" is dropped", /^I couldn't answer:/.test(res3.reply) && !/Sorted/.test(res3.reply) && /don't count it as done/.test(res3.reply), res3.reply);
   ok("…and the words aren't lost: they're left as a note for its next run", /yes, allow it/.test(readFileSync(join(a, ".symbiot", "ANSWERS.md"), "utf8")), "");
-  ok("homeContext lists the ids it can act on", /\[run:\/x\] .*Steve/.test(homeContext({ you: [{ id: "ask:/y", title: "T", sub: "s" }], feeds: [], lanes: [], runs: [{ id: "run:/x", name: "Steve", line: "working", started: 0 }], working: 1, at: 1 })) && /Agents asking[^\n]*ask:\/y \(T\)/.test(homeContext({ you: [{ id: "ask:/y", title: "T", sub: "s" }], feeds: [], lanes: [], runs: [], working: 0, at: 1 })));
+  ok("homeContext lists the ids it can act on", /\[run:\/x\] .*Robin/.test(homeContext({ you: [{ id: "ask:/y", title: "T", sub: "s" }], feeds: [], lanes: [], runs: [{ id: "run:/x", name: "Robin", line: "working", started: 0 }], working: 1, at: 1 })) && /Agents asking[^\n]*ask:\/y \(T\)/.test(homeContext({ you: [{ id: "ask:/y", title: "T", sub: "s" }], feeds: [], lanes: [], runs: [], working: 0, at: 1 })));
 } finally {
   rmSync(HOME, { recursive: true, force: true });
 }

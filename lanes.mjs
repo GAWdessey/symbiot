@@ -50,7 +50,7 @@ function laneOf(path, map) {
   return hit ? hit[0] : basename(path);
 }
 // The project an agent folder's work is for, from the record, never from its words (review of 20
-// Oct 2026, Q4: "why are these under dailify?", "for what project is it?"): a lane's own folder is
+// Oct 2026, Q4: "why are these under bookly?", "for what project is it?"): a lane's own folder is
 // that lane; an ops run, the lane chat started it for (handoff.json "for", mind.mjs actNow) or the
 // lane that handed it over (lanes.json), back through ops runs that handed it on. "" when nothing
 // says: the card says "no project".
@@ -68,7 +68,7 @@ function projectOf(path, { map = laneMap(), ledger = loadLedger() } = {}) {
   return "";
 }
 // The lane a handover names, as a folder: a repo (any case), or ops. A name that's nearly a
-// lane's (a typo, a word more or less: "symbio", "steve lane", "Daaymn-app") is that lane
+// lane's (a typo, a word more or less: "symbio", "robin lane", "Quartz-app") is that lane
 // (nearLane), when only one fits. null when none does: dispatch sends it to ops, told the name,
 // rather than erroring (one errored and sat for 8 days, 16 Oct 2026).
 const slug = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
@@ -108,7 +108,7 @@ const startedAs = (r) => r.id && !r.busy && !r.blocked ? { status: "started", jo
 // gives way to the new one. The earlier row: same asker, same lane, not reported
 // back, about the same thing (alike), and its run still going (ops) or its task
 // still open (a repo). null when there's none, or when the handover says it's a
-// new job: dailify's "New job, not a replacement: restart Kea…" (12 Oct 2026) was
+// new job: bookly's "New job, not a replacement: restart Wren…" (12 Oct 2026) was
 // alike enough to queue behind a 40-minute run on the earlier one.
 const NOT_A_REWRITE = /\b(new|separate|another|different) (job|task|handover)\b|\bnot an? (replacement|rewrite|new version)\b|\bdoesn't replace\b/i;
 function supersedes(h, from, ledger, { running, tasks }) {
@@ -126,7 +126,7 @@ function resupply(e, text, { now, title, context }) {
   } catch (err) { return { error: "Couldn't hand the new version to the run already going: " + ((err && err.message) || err) }; }
 }
 
-// Two ops runs worked dailify.co.za's move at once (12 Oct 2026): a brief, then
+// Two ops runs worked bookly.co.za's move at once (12 Oct 2026): a brief, then
 // "resume the blocked jobs", then "an addition to the 12:51 brief", then job 6,
 // each a run of its own, since their words were too different to count as one
 // handover rewritten (alike). They took turns texting the user sign-in PINs,
@@ -184,7 +184,7 @@ ${going.map((g) => `- \`${g.run}\` (${tilde(g.path)})${g.by ? `, handed over by 
 
 // What a repo lane's task says after a handover: who sent it, and the servers it names
 // that the lane can't reach from its sandbox, so it does the code and sends the server
-// part to ops rather than back (ops gave dailify a live .env change, 13 Oct 2026).
+// part to ops rather than back (ops gave bookly a live .env change, 13 Oct 2026).
 function handedBy(from, lane, text, reach) {
   const far = unreachable(text, lane, reach);
   return `(handed over by ${from.lane})${far.length ? ` Symbiot: ${lane} runs in a sandbox and can't reach ${far.join(" or ")}. Do the code part here, and hand what has to change on ${far.length > 1 ? "those servers" : "that server"} to ${OPS}, saying what.` : ""}`;
@@ -194,12 +194,12 @@ function handedBy(from, lane, text, reach) {
 // Before, the last row ever into the folder was the parent, so a lane that had once taken a
 // handover had every later one counted as the same chain, and ordinary requests were
 // refused as loops or parked for the next run (46 of 155 rows at 4 or more, 15 Oct 2026). A loose
-// word match counted too: dailify's own Meta-template task looked like a handover about a Meta
+// word match counted too: bookly's own Meta-template task looked like a handover about a Meta
 // template, took its chain (7) and every handover after it to ops errored (16 Oct 2026): it has to
 // be nearly the same words.
 function parentOf(path, ledger, md) {
   md = String(md || "");
-  const tasks = /^## Tasks\s*$/m.test(md) ? md.split(/^## Tasks\s*$/m)[1].split(/^## /m)[0].split("\n").filter((l) => /^\s*-\s*\[ \]/.test(l)).join("\n") : md; // a lane's open tasks only: its brief's other lines (recent commits, "dailify: 2 uncommitted") matched a handover by chance
+  const tasks = /^## Tasks\s*$/m.test(md) ? md.split(/^## Tasks\s*$/m)[1].split(/^## /m)[0].split("\n").filter((l) => /^\s*-\s*\[ \]/.test(l)).join("\n") : md; // a lane's open tasks only: its brief's other lines (recent commits, "bookly: 2 uncommitted") matched a handover by chance
   const lines = tasks.split("\n").map((l) => l.replace(/^\s*(?:>\s?|-\s*\[[ xX]\]\s*)/, "").trim()).filter(Boolean);
   for (const h of ledger.handoffs.slice().reverse()) {
     if (h.to.path !== path || h.status === "error") continue;
@@ -217,8 +217,8 @@ function ancestry(parent, ledger, most = 20) {
 }
 // Past MAX_CHAIN a handover is a loop only when it's the same job coming round again (most
 // of its words in one the chain came through), or past three times that. A long job two lanes
-// work on together is new work at each step (dailify does the code, ops puts it live, ops finds
-// the next thing, dailify fixes it): counting every step stalled it (16 Oct 2026).
+// work on together is new work at each step (bookly does the code, ops puts it live, ops finds
+// the next thing, bookly fixes it): counting every step stalled it (16 Oct 2026).
 function loops(text, chain, line) {
   if (chain <= MAX_CHAIN) return false;
   if (chain > MAX_CHAIN * 3) return true;
@@ -427,7 +427,7 @@ function noteSent(path, asked, ledger) {
 // only if its last run wasn't waiting on the same things (agents.mjs blockedAgain).
 // Only a lane with an open task is started at all (with none, its next run reads the report),
 // and it counts towards the lane's automatic starts in an hour (agents.mjs autoStart): every ops
-// report restarted Dailify, which handed ops the next read, and the two lanes ping-ponged
+// report restarted Bookly, which handed ops the next read, and the two lanes ping-ponged
 // through 18 runs on one open item (21 Oct 2026). Past the cap, the start is kept as due.
 // The asking lane's newest run record (agents.mjs runOutcome) decides first: one waiting on this
 // handover is moved on and started, even with only that waiting item left; one waiting on the user,
@@ -476,7 +476,7 @@ function lanesTick({ map = laneMap(), act = actNow, run = runHandoff, running = 
     // a superseded ops run that ended where nothing started its new brief (another process ran it): start it here
     if ((e.superseded || e.added) && !e.reportedAt && e.status !== "error" && e.to.lane === OPS && e.to.path && !running(e.to.path) && lastRunStart(e.to.path) < e.at) { const r = run(e.to.path, { force: true }) || {}; if (r.id && !r.busy) e.job = r.id; }
     // ...and once a run there starts on it, the asker's Sent line says so, naming it: "gets it when
-    // that run ends" stayed put, and dailify's agent, checking another ops run that had ended, thought
+    // that run ends" stayed put, and bookly's agent, checking another ops run that had ended, thought
     // nothing had started and sent it again (12 Oct 2026)
     if (e.superseded && !e.pickedAt && !e.reportedAt && e.status !== "error" && e.to.lane === OPS && e.to.path) { const b = lastRunStart(e.to.path); if (b >= e.at) { e.pickedAt = b; resent(e, (l) => /: replaces the version sent earlier: ops's run /.test(l)); picked++; } }
     if (e.reportedAt || running(e.from.path)) continue; // the one that asked reads it when it's started again, so not mid-run
@@ -508,9 +508,9 @@ function alike(a, b, share = 0.5, least = 3) {
   return n / s.size >= share;
 }
 // A lane's question about work it handed over, once that work is done: whatsapp_module
-// asked "Can I reach sts-prod myself to put the WhatsApp module back?" after its two
+// asked "Can I reach prod-box myself to put the WhatsApp module back?" after its two
 // handovers to ops stopped, and kept asking on Home after ops had put it back and ticked
-// it (2026-10-12). It's out of date when three quarters of its words (sts-prod counts
+// it (2026-10-12). It's out of date when three quarters of its words (prod-box counts
 // whole) are in one of this lane's handovers from the last week, the one it's most about,
 // and the lane that took it has ticked it in its TASKS.md. { lane, text } for the card, or null.
 const DONE_WITHIN = 7 * 86400000, ASK_SKIP = new Set(["can", "the", "and", "for", "you", "now", "how", "its", "it's", "myself", "yourself", ...COMMON]);
@@ -525,8 +525,8 @@ function doneSince(path, q, { ledger = loadLedger(), now = Date.now(), read = re
   }
   if (!best) return null;
   // an ask to reply, send or tell someone is done only by a handover that did that: "Should I
-  // reply to Carla that her Vodacom test reached us?" was closed as done by ops's trace of that
-  // same test, which sent nothing, and Carla had no answer for hours (21 Oct 2026)
+  // reply to Dana that her Vodacom test reached us?" was closed as done by ops's trace of that
+  // same test, which sent nothing, and Dana had no answer for hours (21 Oct 2026)
   const SENDS = /\b(?:repl(?:y|ied|ies)|send|sent|email|mail|messag|tell|told|post|invite|notif|let \w+ know)/i;
   if (SENDS.test(q) && !SENDS.test(best.text)) return null;
   const head = firstLine(best.text), ticked = read(best.to.path, "TASKS.md").split("\n").filter((l) => /^\s*(?:[-*+]|\d+[.)])\s*\[[xX]\]/.test(l));
@@ -616,7 +616,7 @@ function skipHandover(id, { now = Date.now() } = {}) {
 }
 
 // ---- Orca, kept pointing at the lanes ---------------------------------------------
-// A handover can rename a lane's folder (CallForge AI → dailify), and the run that
+// A handover can rename a lane's folder (CallForge AI → bookly), and the run that
 // did it can't tell Orca (its CLI is outside what a run may do), so Orca keeps a
 // path that's gone. After a handover comes back, and when the app starts, each repo
 // Orca has at a path that's gone is added again where it is now: the scanned repo
@@ -667,18 +667,18 @@ function lanesState() {
 }
 
 // ---- one answer, every agent on that work ------------------------------------------
-// Garth gave the same answer to the same project three times (13 Oct 2026): evra_platform's
-// read-only investigation asked "Send the Supabase ticket about evra_avm now?", the ops run it
-// had handed the sts-prod checks to asked about two shell histories for the same evra_avm dump,
-// and one reply ("first check if evra_avm is saved somewhere else") settled both. So what the
+// the user gave the same answer to the same project three times (13 Oct 2026): orbit_platform's
+// read-only investigation asked "Send the Supabase ticket about orbit_avm now?", the ops run it
+// had handed the prod-box checks to asked about two shell histories for the same orbit_avm dump,
+// and one reply ("first check if orbit_avm is saved somewhere else") settled both. So what the
 // user answers one agent (on Home, the Workdesk or a phone: agents.mjs answerQuestions, through
 // onAnswered) is saved for the others on the same work as well: the folders a handover links to
 // it, either way and one more step, and any agent whose open question or task names the same
-// thing (an id such as evra_avm, an address, a domain). Each gets it in its ANSWERS.md and
+// thing (an id such as orbit_avm, an address, a domain). Each gets it in its ANSWERS.md and
 // decides whether it settles its own question; one with a question open and no run going starts
 // on it. Kept in SHARED too, so a run that starts on that work later is told (sharedFor).
 const SHARED = join(CONFIG_DIR, "answers-shared.json"), SHARED_KEEP = 200, LINK_DAYS = 14;
-// What names the work: an id with an underscore (evra_avm), an IPv4 address, a domain.
+// What names the work: an id with an underscore (orbit_avm), an IPv4 address, a domain.
 // Not the domain of an email address, nor a host every agent names (gmail.com, claude.ai,
 // github.com) or the user's own: on those one answer reached six lanes (15 Oct 2026).
 const TOPIC = /(?<![@\w.-])(?:[a-z][a-z0-9]*(?:_[a-z0-9]+)+|\d{1,3}(?:\.\d{1,3}){3}|[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:com|co\.za|io|dev|net|org|app|ai))\b/gi;
@@ -692,8 +692,8 @@ function ownHosts(cfg = loadConfig()) {
 const topicsOf = (t, own = ownHosts()) => new Set((String(t || "").match(TOPIC) || []).map((x) => x.toLowerCase()).filter((x) => x.length >= 5 && !COMMON_HOSTS.has(x) && !own.has(x) && !own.has(x.replace(/^www\./, ""))));
 function loadShared() { try { const l = readState(SHARED); return Array.isArray(l) ? l : []; } catch { return []; } }
 const whoAnswers = (cfg = loadConfig()) => String(((cfg && cfg.profile) || {}).name || "").trim().split(/\s+/)[0] || "the user";
-// The folders a handover links to path, either way, and one step on (the run evra_platform
-// handed sts-prod's checks to, and anything that run handed on), within LINK_DAYS: what a
+// The folders a handover links to path, either way, and one step on (the run orbit_platform
+// handed prod-box's checks to, and anything that run handed on), within LINK_DAYS: what a
 // new run's brief is told (sharedFor). open: only a handover still open (its job hasn't
 // reported back), and only one step, for whom an answer goes to (answerReaches): over 14 days
 // and two steps every lane linked every other, and one answer reached them all (20 Oct 2026).
@@ -739,7 +739,7 @@ const shareKey = (path, q, a) => createHash("sha1").update(path + "\n" + q + "\n
 // them in its ANSWERS.md, with what to do; one with a question open and no run going starts on
 // them, when the answer bears on that question: a question of its own names the same thing,
 // or is the same question. One that matched only on a task's words gets it as background, starts
-// nothing, and it doesn't count as an answer for it (agents.mjs userAnswers): Garth's Outlook
+// nothing, and it doesn't count as an answer for it (agents.mjs userAnswers): the user's Outlook
 // answers to ops reached the symbiot lane "about outlook.live.com too" (14 Oct 2026).
 // Gives [{ path, lane, why, started? }]. card: the question's words as Home showed them.
 function shareAnswer(path, rows, { run = runHandoff, now = Date.now(), cfg = loadConfig(), ...o } = {}) {
@@ -785,8 +785,8 @@ function sharedFor(path, text, { ledger = loadLedger(), now = Date.now(), cfg = 
   return `## What ${who} has already answered on this work\nBefore you ask ${who} anything, check these: if one settles it, use it and don't ask.\n${l.map((x) => `- ${x.lane} asked "${clipWords(x.q.replace(/\s+/g, " "), 160)}": ${clipWords(x.a.replace(/\s+/g, " "), 300)} (${String(x.at).slice(0, 10)})`).join("\n")}`;
 }
 
-// Changes made in a lane's folder for a job that lane handed over (daaymn's handoff to ops, which
-// edits daaymn's folder) are tied to that handoff, not shown as "changes without a task" for the
+// Changes made in a lane's folder for a job that lane handed over (quartz's handoff to ops, which
+// edits quartz's folder) are tied to that handoff, not shown as "changes without a task" for the
 // user to approve. Once the receiving runs are over they go up as a PR on their own, with
 // auto-merge on green CI, unless they look like they hold a secret: those wait for the user.
 const HANDED_FOR = 7 * 86400000, HELD_AGAIN = 30 * 60000;

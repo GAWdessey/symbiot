@@ -35,25 +35,25 @@ const digest = (s) => createHash("sha1").update(String(s)).digest("hex").slice(0
 
 try {
   console.log("ONE COPY OF EACH RULE");
-  const md = buildTasksMd("coral", { lanes: ["coral", "symbiot"] }, [{ text: "Build the Android app" }]);
+  const md = buildTasksMd("atlas", { lanes: ["atlas", "symbiot"] }, [{ text: "Build the Android app" }]);
   ok("the clerk rule once", count(md, /capable clerk/g) === 1, count(md, /capable clerk/g));
   ok("the Symbiot Browser's close-it rule once", count(md, /close or click Done in the Symbiot Browser|Never ask them to close the Symbiot Browser/g) === 1);
   ok("ask-only-for-passwords-money-or-undo once", count(md, /Ask only for (\(1\) )?passwords/g) === 1);
   ok("the plain-words rule once", count(md, /in plain words for someone who doesn't code/g) === 1);
   ok("the user-only rules stay short (a third shorter than before, plus the CLI-login, no-clicking, card-title and no-made-up-setting rules)", ONLY_YOU.length < 7800, ONLY_YOU.length);
-  const ab = actBrief("Find a JDK 17", { lanes: ["coral"], reach: null });
+  const ab = actBrief("Find a JDK 17", { lanes: ["atlas"], reach: null });
   ok("an ops brief still has the clerk rules (they were only in the user-only block there)", /capable clerk/.test(ab) && /Never name a provider you haven't confirmed/.test(ab));
 
   console.log("ONLY THIS LANE'S ANSWERS");
-  for (let i = 0; i < 8; i++) recordDone(`Coral question ${i}: ${"which way should the build go ".repeat(8)}`, `answer ${i} ${"long words ".repeat(30)}`, "coral");
-  recordDone("Dailify: send the WhatsApp test?", "yes", "dailify");
+  for (let i = 0; i < 8; i++) recordDone(`Atlas question ${i}: ${"which way should the build go ".repeat(8)}`, `answer ${i} ${"long words ".repeat(30)}`, "atlas");
+  recordDone("Bookly: send the WhatsApp test?", "yes", "bookly");
   recordDone("Something asked on Home", "done it");
-  const b = doneBrief("coral");
+  const b = doneBrief("atlas");
   ok("the last 5 of this lane's", b.length === 7 && /question 7/.test(b[5]) && /question 3/.test(b[1]), b);
-  ok("never another lane's, or one with no lane", !b.join("\n").includes("Dailify") && !b.join("\n").includes("Home"));
+  ok("never another lane's, or one with no lane", !b.join("\n").includes("Bookly") && !b.join("\n").includes("Home"));
   ok("each clipped to about 120 characters a side", b.slice(1, 6).every((l) => l.length < 260), b.slice(1, 6).map((l) => l.length));
-  ok("a lane with none gets no heading", doneBrief("wolfeel").length === 0 && doneBrief("").length === 0);
-  ok("the brief has its own lane's", /question 7/.test(buildTasksMd("coral", {}, [{ text: "x" }])) && !/question 7/.test(buildTasksMd("symbiot", {}, [{ text: "x" }])));
+  ok("a lane with none gets no heading", doneBrief("minnow").length === 0 && doneBrief("").length === 0);
+  ok("the brief has its own lane's", /question 7/.test(buildTasksMd("atlas", {}, [{ text: "x" }])) && !/question 7/.test(buildTasksMd("symbiot", {}, [{ text: "x" }])));
 
   console.log("OLD ANSWERS ARCHIVED, NONE LOST");
   const repo = mkdtempSync(join(tmpdir(), "symbiot-brief-repo-")), sym = join(repo, ".symbiot"); mkdirSync(sym);

@@ -108,7 +108,7 @@ try {
     ok("Add a site: under Your sites, linked, waiting for you to sign in, at the page you gave", r.ok && it && it.group === "Your sites" && it.own && it.state === "signin" && it.url === "https://www.domains.co.za/client/dashboard" && opened[opened.length - 1] === it.url, [r, it]);
     ok("…and trusted (Press and Type go ahead there), www. or not", trustedSites().includes("domains.co.za"), trustedSites());
     const s1 = (await checkLink("site-domains-co-za", { read: async (u, o) => ({ url: "https://www.domains.co.za/login/dashboard", login: !!(o && o.password) }) })).item;
-    const s2 = (await checkLink("site-domains-co-za", { read: async () => ({ url: "https://www.domains.co.za/client/dashboard", title: "Welcome Garth" }) })).item;
+    const s2 = (await checkLink("site-domains-co-za", { read: async () => ({ url: "https://www.domains.co.za/client/dashboard", title: "Welcome Pat" }) })).item;
     ok("checked: still 'sign in' on its login page (or one asking for a password), 'linked' once it shows the dashboard", s1.state === "signin" && s2.state === "ok", [s1.state, s2.state]);
     // a bot check's page in its place (Cloudflare's, platform.openai.com: 2026-10-14) isn't a sign-in, nor a sign-out
     const wallRead = async () => ({ url: "https://www.domains.co.za/client/dashboard", title: "Just a moment...", items: [] });
@@ -116,7 +116,7 @@ try {
     await checkLink("site-domains-co-za", { read: async () => ({ url: "https://www.domains.co.za/login/dashboard", login: true }) });
     const w2 = await checkLink("site-domains-co-za", { read: wallRead });
     ok("a bot check's page leaves the link as it was: signed in stays signed in, not signed in isn't made signed in", w1.wall && w1.item.state === "ok" && w2.wall && w2.item.state === "signin", [w1, w2]);
-    await checkLink("site-domains-co-za", { read: async () => ({ url: "https://www.domains.co.za/client/dashboard", title: "Welcome Garth" }) });
+    await checkLink("site-domains-co-za", { read: async () => ({ url: "https://www.domains.co.za/client/dashboard", title: "Welcome Pat" }) });
     await addSite("domains.co.za", { open: openC });
     ok("added again by its bare name: still one, keeping the page you gave first", ownSites().length === 1 && item("site-domains-co-za").url === "https://www.domains.co.za/client/dashboard", ownSites());
     // a bare name (twilio.com) is checked at the page the browser's history shows once signed in (console.twilio.com)
@@ -210,9 +210,9 @@ try {
     const F = new Function("api", "lqSaid", "localStorage", ["var BLOBBUSY={},BLOBSENT={},BLOBFAIL={},BLOBFAIL_FOR=60000;", "function loadLinks(){}function loadTrusted(){}", ...["bdKey", "blobFailed", "bdAll", "bdGet", "signInSaid", "openSignIn", "wireBlob", "rlAsk"].map(grab)].join("\n") + "\nreturn { wireBlob, rlAsk, openSignIn };")(
       (path, body) => { calls.push({ path, body }); return Promise.resolve({ ok: true, item: { name: "outlook.live.com" } }); },
       (t, bad) => said.push({ t, bad }), { getItem: () => null, setItem() {} });
-    const q = "Outlook is signed out, can you sign back in so I can add Jono to the 11:00 meeting?";
+    const q = "Outlook is signed out, can you sign back in so I can add Remy to the 11:00 meeting?";
     const s = signInAsked("👤 You (only you: your Microsoft sign-in): sign in to outlook.live.com in the Symbiot Browser (Settings → Connections → Add a site), then tell me it's done");
-    const p = { repo: "agents", qs: [{ q, options: ["Skip Jono (Jurgen only)"], path: "/x/.symbiot/QUESTIONS.md", signInTo: s }] };
+    const p = { repo: "agents", qs: [{ q, options: ["Skip Remy (Chris only)"], path: "/x/.symbiot/QUESTIONS.md", signInTo: s }] };
     const y = F.rlAsk(p, "Agent runs", p.qs[0]), b = box();
     ok("the lane block's ask card carries the site it asks you to sign in to", y.signInTo && y.signInTo.site === "outlook.live.com", y);
     F.wireBlob(b, y, {});

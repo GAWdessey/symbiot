@@ -243,10 +243,10 @@ ${control ? ` "control": [],\n` : ""} "remember": [{"name": "…", "kind": "pers
  "rule": ["a standing rule you and the user have just agreed for every agent"]${settle ? `,
  "settled": ["the exact question of a 'Only the user can do' card that their message has just answered or made pointless"]` : ""}}
 When they ask you to do something (look into it, find out, fix, set up, sign in, close, send, chase), do it, don't explain what you can't do: "agent" starts a coding agent now, with their tools and connectors (MCP, the command line, a browser signed in to their linked sites). With a "repo", it's that project's agent, working in it; empty, an agent for everything outside a repo (this computer, accounts, services). Use "task" for what's for later. Don't ask their permission to hand it over: the agent asks them first, on the Workdesk, before anything hard to undo (closing an account, deleting, paying, sending); say so in your reply when it applies, with what to check first. A question you can answer from what's here: answer it, "do": null.
-Lanes ("repo" is one of these, exactly; a bracket after a name says what the project is and is not part of the name): ${lanes.length ? lanes.slice(0, 60).map((n) => about[n] ? `${n} (${about[n]})` : n).join(", ") : "(none found)"}.${lanes.includes(MARKETING) ? ` "${MARKETING}" is a lane of its own for marketing any of their products (posts, demo videos, launches, campaigns, pricing pages' copy): marketing work goes there, starting with the product it's for in brackets, "[Dailify] a launch post".` : ""}${self ? ` Symbiot itself is "${self}": a flaw in how Symbiot works (how it read a page, what a brief or a card said, anything in the app) goes there.` : ""}
+Lanes ("repo" is one of these, exactly; a bracket after a name says what the project is and is not part of the name): ${lanes.length ? lanes.slice(0, 60).map((n) => about[n] ? `${n} (${about[n]})` : n).join(", ") : "(none found)"}.${lanes.includes(MARKETING) ? ` "${MARKETING}" is a lane of its own for marketing any of their products (posts, demo videos, launches, campaigns, pricing pages' copy): marketing work goes there, starting with the product it's for in brackets, "[Bookly] a launch post".` : ""}${self ? ` Symbiot itself is "${self}": a flaw in how Symbiot works (how it read a page, what a brief or a card said, anything in the app) goes there.` : ""}
 Only say work is started, sent or queued when your "do" starts or queues it in this same reply; otherwise say what you will do, not that you are doing it. When they point out you got something wrong, open the reply by naming the mistake in a plain sentence ("I got that wrong: …") and give the right answer, never change the subject or hedge.
 Before you say an agent will read a mailbox or a site, check Symbiot can read it: being able to send to an address is not being able to read it. If it can't, say so first in plain words ("I can send there but can't read it: open it on your laptop, or sign in at <exact address>") and don't start an agent that will only come back asking. When a provider matters, an agent looks it up (MX records), never guesses it.
-The people you talk to (Garth and his team) are Symbiot's makers, not outside users: act as they want, and when they ask for a change to Symbiot itself, make it.
+The people you talk to (the user and his team) are Symbiot's makers, not outside users: act as they want, and when they ask for a change to Symbiot itself, make it.
 Don't wait to be asked to note a flaw in Symbiot. When you notice it got something wrong (you misread a page, a brief or a card misled them, a step made them do an agent's job), say so plainly and, in the same reply, note the fix: "task"${self ? ` with "repo": "${self}"` : ""}, saying what went wrong, an example, and what it should do instead. It waits on the Workdesk for their Go, so say "noted as a Symbiot bug", never "started a fix"; use "agent" for it only when they ask for it done now.
 Urgency is theirs to give: never write "urgent", "first", "asap" or "before anything else" into a hand-over unless they said it.
 When they paste a secret (a password, a recovery or 2FA code, a token), Symbiot has already saved it in its vault and shows you "[saved: name]" in its place. Acknowledge it in a few words ("Saved as npm recovery codes."), never refuse it, lecture about pasting it or ask them to delete it, and use it from the vault when a step needs it; ask them for one only when none is saved.
@@ -272,13 +272,13 @@ const laneName = (repo, map) => Object.keys(map).find((n) => n.toLowerCase() ===
 // agent didn't start, and why: the task stays in the lane). An urgent one that didn't
 // start takes back the parking it did (urgentUndo): nothing would end to resume it.
 // A job that's all on a server the lane can't reach (reach.mjs serverOnly: put it live on
-// sts-prod, a check there) goes to an agent outside a repo instead, which can; one with code
+// prod-box, a check there) goes to an agent outside a repo instead, which can; one with code
 // in it goes to the lane, told to hand the server part to ops (16 Oct 2026).
 // said: the user's own message, from a chat (converse). Urgency is read in it, never in the
 // request the chat model wrote: "before anything else" in its rewrite made a card-labelling
-// fix urgent and parked dailify twice (20 Oct 2026). A task in Symbiot's own lane (self)
+// fix urgent and parked bookly twice (20 Oct 2026). A task in Symbiot's own lane (self)
 // parks no other lane; and from a chat it waits on the Workdesk for Go (addTask later)
-// unless they asked for it (asksNow): "why are these under dailify?" is a bug to note, not
+// unless they asked for it (asksNow): "why are these under bookly?" is a bug to note, not
 // a run to start. Without said (an API call, a test), the request is their words.
 function actIn(request, repo, { map = {}, known = "", title, context, said, self, run = runHandoff, add = addTask, push = pushTasks, ops = actNow, first = urgentFirst, undo = urgentUndo, reach, now = Date.now() } = {}) {
   const lane = laneName(repo, map);
@@ -303,7 +303,7 @@ function actIn(request, repo, { map = {}, known = "", title, context, said, self
   return { ok: true, lane, task: t.id, ...state, ...(urgent ? { urgent } : {}) };
 }
 // They asked for it to be done, not just told Symbiot what's wrong: "fix it", "can you…",
-// "please", "now". A complaint or a question ("why are these under dailify?") isn't.
+// "please", "now". A complaint or a question ("why are these under bookly?") isn't.
 const ASKS_NOW = /\b((?:it|this|that|them|on it) now|now,? please|right away|straight away|immediately|asap|please|pls|can you|could you|would you|will you|can i (?:please )?(?:have|get|see)|i (?:want|need|'?d like)|go ahead|do it|start (?:it|on it|that|this)|(?:fix|sort|change|make|build|add|do) (?:it|this|that|them)\b)/i;
 const asksNow = (text) => isUrgent(text) || ASKS_NOW.test(String(text || ""));
 // The line under a handover's reply, from what actIn did (see there).

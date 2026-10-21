@@ -81,7 +81,7 @@ try {
   // not a key to paste: the vault holds that one by now, so Home rightly shows no card for it
   const PHONE_STEP = "👤 You (only you: your phone): tap Yes on the sign-in prompt your phone shows for app.lemonsqueezy.com";
   wait(Date.now() - 30000);
-  const asks = { id: "r2", name: "coral", path: join(HOME, "coral"), status: "done", startedAt: Date.now() - 600000, endedAt: Date.now() - 1000, ask: { questions: [{ q: "Which number should the test call go to?", options: ["Yours (recommended)", "Skip"] }] } };
+  const asks = { id: "r2", name: "atlas", path: join(HOME, "atlas"), status: "done", startedAt: Date.now() - 600000, endedAt: Date.now() - 1000, ask: { questions: [{ q: "Which number should the test call go to?", options: ["Yours (recommended)", "Skip"] }] } };
   e = embers([asks]);
   ok("a lane waiting on no card (wait file left, step already met) lights nothing", e.lit.length === 0, e.w.waiting.map((x) => x.why));
   ok("…while a lane with a question lights its tasks, each opening that question's card", embers([asks, { ...asks, id: "r3", name: "symbiot", path: LANE, ask: { questions: [{ q: "Monthly or yearly first?" }] } }]).lit.every((x) => x.why.path === LANE));
@@ -91,8 +91,8 @@ try {
   }
 
   console.log("THE ORBS READ HOME'S CARDS FROM THE JOB RECORD");
-  const shut = { id: "r9", name: "coral", path: join(HOME, "coral"), status: "done", startedAt: Date.now() - 600000, endedAt: Date.now() - 1000, ask: { questions: [{ q: "Can you close the Symbiot Browser so I can carry on?", options: ["Done (recommended)", "Skip"] }] } };
-  const CT = [{ id: "c1", text: "Call flow", repo: "coral", ts: Date.now() - 3600000 }], cd = { ...deps([shut]), repos: () => ({ symbiot: LANE, coral: shut.path }), tasks: () => CT };
+  const shut = { id: "r9", name: "atlas", path: join(HOME, "atlas"), status: "done", startedAt: Date.now() - 600000, endedAt: Date.now() - 1000, ask: { questions: [{ q: "Can you close the Symbiot Browser so I can carry on?", options: ["Done (recommended)", "Skip"] }] } };
+  const CT = [{ id: "c1", text: "Call flow", repo: "atlas", ts: Date.now() - 3600000 }], cd = { ...deps([shut]), repos: () => ({ symbiot: LANE, atlas: shut.path }), tasks: () => CT };
   homeState({ fresh: true, deps: cd });
   const lit = (w) => w.waiting.filter((x) => x.why.path);
   ok("a question Home drops (close the Symbiot Browser is an agent's wait) is no card", !homeState({ fresh: true, deps: cd }).you.some((y) => y.path === shut.path));

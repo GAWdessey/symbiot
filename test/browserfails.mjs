@@ -34,7 +34,7 @@ try {
   ok("…on the Workdesk and Home too (the questions as Symbiot reads them)", /^🤖 Agent: reach Twilio/.test(pq.questions[0].options[0]), pq.questions[0].options);
 
   console.log("A RUN'S LAST WORDS — the card that came back twice");
-  const dir = join(HOME, ".config", "symbiot", "drafts", "act-dailify-checks"); mkdirSync(join(dir, ".symbiot"), { recursive: true });
+  const dir = join(HOME, ".config", "symbiot", "drafts", "act-bookly-checks"); mkdirSync(join(dir, ".symbiot"), { recursive: true });
   const n = needsOf(dir, { final: `The checks are done but one. Twilio needs your sign-in: ${twilio.replace(/^S/, "s")}.`, end: Date.now() });
   ok("a run asking for the Twilio sign-in leaves no step for you: its agent goes ahead on the API", n && n.kind === "approve" && n.api === "twilio.com" && /can't hold this sign-in/.test(n.what) && /Balance\.json/.test(n.say), n);
   let reran = null; const g = homeAnswer("needs:r1", { pick: 0 }, { agents: () => [{ id: "r1", path: dir, status: "done", endedAt: Date.now(), needs: n }], running: () => false, run: (p) => { reran = p; return { id: "j1" }; }, settle: () => {} });

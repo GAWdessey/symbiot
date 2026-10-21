@@ -123,7 +123,7 @@ function markAllRead({ list, seenFile = SEEN_FILE } = {}) {
 // links (http, https and mailto only), and images. Everything is escaped before any
 // tag is made, so a report can't put its own HTML or script on the page.
 //
-// Images: the Steve LinkedIn previews put their card and composer shots in as
+// Images: the Robin LinkedIn previews put their card and composer shots in as
 // ![alt](/home/…/x.png), and they showed as raw text (2026-10-08). A local image
 // (absolute, ~/, or relative to the report) now shows in place, fetched by the
 // report's id and that src (reportImage), never by a bare path, and only from
@@ -225,7 +225,7 @@ function list(lines, i, out, o) {
 }
 
 // ---- what to do with it --------------------------------------------------------------
-// Garth read the "Argena catch-up" report, then copied its "Top 3 next" into Home's chat
+// the user read the "Meridian catch-up" report, then copied its "Top 3 next" into Home's chat
 // by hand to act on it (2026-10-08): the report gave him nothing to act on. Its end now
 // offers 2-4 ideas drawn from it, each one tick from the Workdesk in its lane, and a
 // box to ask about it in place (home.mjs reportIdeasAdd, reportAsk). A draft for the
@@ -348,7 +348,7 @@ function markIdeas(r, ideas, status, file = SEEN_FILE) {
   for (const t of ideas) h.done[String(t)] = status;
   d.handed[r.id] = h; return saveSeen(d, file);
 }
-// The Marketing drafts a report is about, as their own cards (Garth, 2026-10-16: a report said
+// The Marketing drafts a report is about, as their own cards (the user, 2026-10-16: a report said
 // "approve both drafts under Marketing" and there was nothing to press). A report that names a
 // draft's file (drafts/<product>/<file>.md), or a marketing-lane report that asks for approval and
 // names a waiting draft's date, carries that draft's card (ui.mjs mkPreview: the post as it will

@@ -385,7 +385,7 @@ function meetsStep(step, since) {
 // A step or a question asking the user to paste, save or hand over a secret the vault already holds:
 // the name it's held under, "" when none is (or the step wants a new one: revoked, expired, rotated).
 // Home raised "Only the user can do: re-save the Cloudflare token" for a token Symbiot had all along,
-// and Garth took it that he'd have to make a new one (20 Oct 2026).
+// and the user took it that he'd have to make a new one (20 Oct 2026).
 const ASKS_SECRET = /\b(?:re-?)?(?:paste|save|put|add|store|enter|give|send|share|hand)\b[^.?\n]{0,80}\b(?:token|key|password|secret|credential)s?\b|\b(?:token|key|password|secret)s?\b[^.?\n]{0,60}\b(?:into|in|to)\s+(?:the\s+|symbiot['’]?s\s+)?vault\b/i;
 const WANTS_NEW = /\b(?:new|fresh|another|second|rotat\w*|regenerat\w*|re-?issu\w*|revoked|expired|different)\b|\b(?:create|make|generate)\b[^.?\n]{0,40}\b(?:token|key)s?\b/i;
 function heldFor(text) {

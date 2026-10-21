@@ -74,6 +74,8 @@ jobs:
           # names the release notes must never say (the maker's projects, people,
           # providers), kept out of the public repo: test/outward.mjs checks CHANGELOG.md
           SYMBIOT_PRIVATE_TERMS: ${{ secrets.SYMBIOT_PRIVATE_TERMS }}
+          # people, clients, servers and addresses no tracked file may name (test/outward.mjs)
+          SYMBIOT_PRIVATE_NAMES: ${{ secrets.SYMBIOT_PRIVATE_NAMES }}
         run: npm test
 
   publish:

@@ -1,6 +1,6 @@
 // An approval card carries its own approval, and isn't raised again once it was given.
 // The case: marketing asked "open the two Symbiot drafts under Marketing and press Approve on each"
-// for documents that have no Approve button, after Garth had said "do these two" in Home chat.
+// for documents that have no Approve button, after Pat had said "do these two" in Home chat.
 //
 //   node test/approval.mjs
 //
@@ -38,7 +38,7 @@ try {
 
   // 3. already approved in a task brief
   writeFileSync(join(CFG, "mind.json"), JSON.stringify({ nodes: [], log: [] }));
-  writeFileSync(join(CFG, "tasks.json"), JSON.stringify([{ id: "e2b90489af3d", text: "[Symbiot] Garth approved the two Symbiot launch drafts: the blog post and the Show HN post, dated 2026-10-20 under Marketing. Schedule them." }]));
+  writeFileSync(join(CFG, "tasks.json"), JSON.stringify([{ id: "e2b90489af3d", text: "[Symbiot] The user approved the two Symbiot launch drafts: the blog post and the Show HN post, dated 2026-10-20 under Marketing. Schedule them." }]));
   ok("approved in a task brief: not asked again", needsOf(folder("marketing3"), { waiting: { step }, end: Date.now() }) === null);
 
   // 4. already answered in the folder's ANSWERS.md

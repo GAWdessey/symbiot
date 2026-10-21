@@ -30,10 +30,10 @@ const has = (p, f) => existsSync(join(p, ".symbiot", f));
 
 console.log("HANDBACK — the briefs say how");
 {
-  const md = buildTasksMd("coral", { lanes: ["coral", "symbiot"] }, [{ text: "Email Jono for the endpoint" }]);
+  const md = buildTasksMd("atlas", { lanes: ["atlas", "symbiot"] }, [{ text: "Email Remy for the endpoint" }]);
   ok("a repo's TASKS.md says how to hand facts back (REMEMBER.json)", md.includes(".symbiot/REMEMBER.json") && md.includes("Remember or Skip"));
   ok("…and how to say an email waits on a reply (AWAITING.json)", md.includes(".symbiot/AWAITING.json") && /never has to say they replied/.test(md));
-  const ab = actBrief("Draft an email to Jono", { lanes: [] });
+  const ab = actBrief("Draft an email to Remy", { lanes: [] });
   ok("a run of its own (ops) is told the same", ab.includes(".symbiot/REMEMBER.json") && ab.includes(".symbiot/AWAITING.json"));
   ok("one wording for both", HANDBACK.every((l) => md.includes(l) && ab.includes(l)));
 }
@@ -41,14 +41,14 @@ console.log("HANDBACK — the briefs say how");
 console.log("REMEMBER.json — read, shown, kept only on Remember");
 {
   ok("facts parse in remember()'s shape; an unknown kind is a thing; one without a fact is dropped",
-    JSON.stringify(parseFacts(JSON.stringify([{ name: "Company folder", kind: "project", fact: "lives at ~/Company" }, { name: "Kestrel", kind: "weird", fact: "fictional" }, { name: "x" }])))
-      === JSON.stringify([{ name: "Company folder", kind: "project", fact: "lives at ~/Company" }, { name: "Kestrel", kind: "thing", fact: "fictional" }]));
+    JSON.stringify(parseFacts(JSON.stringify([{ name: "Company folder", kind: "project", fact: "lives at ~/Company" }, { name: "Falcon", kind: "weird", fact: "fictional" }, { name: "x" }])))
+      === JSON.stringify([{ name: "Company folder", kind: "project", fact: "lives at ~/Company" }, { name: "Falcon", kind: "thing", fact: "fictional" }]));
   ok("{ facts: [...] } is read too; not JSON is nothing", parseFacts(JSON.stringify({ facts: [{ name: "a", fact: "b" }] })).length === 1 && parseFacts("not json").length === 0);
 
   // an ops run that has stopped, known from an earlier app (runs.json), left facts
   const run = join(CFG, "drafts", "act-1d727d7f");
   put(run, "TASKS.md", "# For your agent\n- [x] Turn ~/Company into memory\n");
-  put(run, "REMEMBER.json", [{ name: "Ghost AI company folder", kind: "project", fact: "~/Company: 12 departments, 75 work cases" }, { name: "Kestrel Ridge Technologies", kind: "thing", fact: "a fictional company in ~/Company's templates" }, { name: "Cale", kind: "person", fact: "runs the WhatsApp module's hosting" }]);
+  put(run, "REMEMBER.json", [{ name: "Ghost AI company folder", kind: "project", fact: "~/Company: 12 departments, 75 work cases" }, { name: "Falcon Summit Technologies", kind: "thing", fact: "a fictional company in ~/Company's templates" }, { name: "Alex", kind: "person", fact: "runs the WhatsApp module's hosting" }]);
   writeFileSync(join(CFG, "runs.json"), JSON.stringify([{ path: run, name: "Agent: turn the company folder into memory", startedAt: Date.now() - 60000 }]));
   const blk = agentsList().find((a) => a.path === run);
   ok("a stopped run with facts gets a block in the Agents tab, with them", !!blk && blk.remember && blk.remember.length === 3, blk && blk.remember);
@@ -58,8 +58,8 @@ console.log("REMEMBER.json — read, shown, kept only on Remember");
   const r = keepFacts(run, { only: [0, 2] });
   ok("Remember keeps the ticked ones, from the run's title", r.ok && r.remembered === 2 && r.title === "Agent: turn the company folder into memory", r);
   const m = loadMind();
-  ok("…into mind.json, named and from that run", m.nodes.length === 2 && m.nodes.some((n) => n.name === "Cale" && n.facts[0].where === "Agent: turn the company folder into memory"), m.nodes);
-  ok("…and the unticked one isn't", !m.nodes.some((n) => /Kestrel/.test(n.name)));
+  ok("…into mind.json, named and from that run", m.nodes.length === 2 && m.nodes.some((n) => n.name === "Alex" && n.facts[0].where === "Agent: turn the company folder into memory"), m.nodes);
+  ok("…and the unticked one isn't", !m.nodes.some((n) => /Falcon/.test(n.name)));
   ok("it's asked once: the file is settled, so the block has nothing left", !has(run, "REMEMBER.json") && has(run, "REMEMBER.kept.json") && factsOf(run).length === 0);
   ok("a second Remember says there's nothing", !!keepFacts(run).error);
 
@@ -81,9 +81,9 @@ console.log("AWAITING.json — the reply is watched for, and handed on");
 
   const repo = join(HOME, "projects", "whatsapp_module"), sym = join(HOME, "projects", "symbiot"), map = { whatsapp_module: repo, symbiot: sym };
   mkdirSync(join(repo, ".symbiot"), { recursive: true });
-  const sent = Date.parse("2026-10-06T08:48:07Z"), subject = "WhatsApp forwarding for the GoSolr number: endpoint, secret and two checks";
-  put(sym, "AWAITING.json", [{ to: "schoemanjono@gmail.com", subject, asked: "his endpoint URL and shared secret (WA_FORWARD_URL, WA_FORWARD_SECRET)", next: "set WA_FORWARD_URL and WA_FORWARD_SECRET in .env", task: "t-jono", lane: "whatsapp_module", sent: new Date(sent).toISOString() }]);
-  writeFileSync(join(CFG, "tasks.json"), JSON.stringify([{ id: "t-jono", text: "Once Jono sends his endpoint and secret, set WA_FORWARD_URL", repo: "whatsapp_module", done: false, ts: 1 }]));
+  const sent = Date.parse("2026-10-06T08:48:07Z"), subject = "WhatsApp forwarding for the SunCo number: endpoint, secret and two checks";
+  put(sym, "AWAITING.json", [{ to: "remy@example.com", subject, asked: "his endpoint URL and shared secret (WA_FORWARD_URL, WA_FORWARD_SECRET)", next: "set WA_FORWARD_URL and WA_FORWARD_SECRET in .env", task: "t-remy", lane: "whatsapp_module", sent: new Date(sent).toISOString() }]);
+  writeFileSync(join(CFG, "tasks.json"), JSON.stringify([{ id: "t-remy", text: "Once Remy sends his endpoint and secret, set WA_FORWARD_URL", repo: "whatsapp_module", done: false, ts: 1 }]));
   const acts = [], notes = [];
   const deps = (o = {}) => ({ map, now: sent + 3600000, news: [], inbox: [], running: () => false, act: (req, lane, opt) => { acts.push({ req, lane, opt }); return { ok: true, lane, job: "j1" }; }, notify: (t, b) => notes.push(b), ...o });
 
@@ -96,28 +96,28 @@ console.log("AWAITING.json — the reply is watched for, and handed on");
 
   const w = loadWaits().waits[0];
   const row = (text, ts) => ({ id: "n1", watch: "gmail", name: "Gmail", ts, text });
-  ok("an inbox row with the subject, after it was sent, answers it", answers(w, row(`Jono Schoeman ${subject} - here you go`, sent + 1000)));
-  ok("…not one from before it was sent", !answers(w, row(`Jono Schoeman ${subject}`, sent - 1000)));
-  ok("…nor another subject", !answers(w, row("Cale Re: ghost-ai.co.za dns - fixed webhook url", sent + 1000)));
+  ok("an inbox row with the subject, after it was sent, answers it", answers(w, row(`Remy Rivera ${subject} - here you go`, sent + 1000)));
+  ok("…not one from before it was sent", !answers(w, row(`Remy Rivera ${subject}`, sent - 1000)));
+  ok("…nor another subject", !answers(w, row("Alex Re: example.co.za dns - fixed webhook url", sent + 1000)));
   const mail = (from, subj, ts) => ({ ts, from: { name: "", addr: from }, subject: subj, refs: "" });
-  ok("a reply on disk from someone it went to, Re: the subject, answers it", answers(w, mail("schoemanjono@gmail.com", "Re: " + subject, sent + 1000)));
-  ok("…not the same subject from someone else", !answers(w, mail("cale@ghost-ai.co.za", "Re: " + subject, sent + 1000)));
+  ok("a reply on disk from someone it went to, Re: the subject, answers it", answers(w, mail("remy@example.com", "Re: " + subject, sent + 1000)));
+  ok("…not the same subject from someone else", !answers(w, mail("alex@example.co.za", "Re: " + subject, sent + 1000)));
 
-  // the user's own email isn't the reply: ops' "Re: Re: winlove setup" to Jono, and the Gmail rows Watch read (2026-10-12)
-  const wl = { to: ["schoemanjono@gmail.com"], subject: "Re: Re: winlove setup", sent }, mine = ["garth@ghost-ai.co.za", "garthwhite507@gmail.com"];
-  const gm = (text) => ({ id: "n2", watch: "gmail", name: "Inbox - garth@ghost-ai.co.za - ghost-ai Mail", ts: sent + 720000, text });
-  ok("an inbox row whose newest message is the user's own (\"me\" last) isn't the reply", !answers(wl, gm("Cale, Jono, me 5, Fwd: winlove setup, has attachment, Oct 9, Hey Jono, Tested https://www.google.com/url?q=http://winlove.co.za"), mine) && !answers(wl, gm("Cale, me 2, Fwd: winlove setup, has attachment, Oct 1, Hey Jono, Cale passed on the WinLove stuff"), mine) && !answers(wl, gm("me, Fwd: winlove setup, Hey Jono"), mine));
-  ok("…one whose newest message is theirs is", answers(wl, gm("Cale, me, Jono 4, Fwd: winlove setup, has attachment, 3:16 PM, Hi Garth, Codex is currently adding the Lerato and Clay embeds"), mine) && answers(wl, gm("Jonathan Schoeman, Re: winlove setup, here's the access"), mine));
-  ok("…nor a row Watch marks as the user's", !answers(wl, { ...gm("Jono, Fwd: winlove setup"), mine: true }, mine));
-  ok("mail on disk from the user's own address isn't the reply, even when it doesn't say whom it went to", !answers({ ...wl, to: [] }, mail("Garth@ghost-ai.co.za", "Re: winlove setup", sent + 1000), mine) && answers({ ...wl, to: [] }, mail("schoemanjono@gmail.com", "Re: winlove setup", sent + 1000), mine));
-  ok("…and nothing's handed on for it", awaitTick(deps({ news: [gm(`Cale, Jono, me 5, Fwd: ${subject}, Hey Jono`)], mine })).replied.length === 0 && acts.length === 0);
+  // the user's own email isn't the reply: ops' "Re: Re: lovelink setup" to Remy, and the Gmail rows Watch read (2026-10-12)
+  const wl = { to: ["remy@example.com"], subject: "Re: Re: lovelink setup", sent }, mine = ["owner@example.co.za", "owner@example.com"];
+  const gm = (text) => ({ id: "n2", watch: "gmail", name: "Inbox - owner@example.co.za - ghost-ai Mail", ts: sent + 720000, text });
+  ok("an inbox row whose newest message is the user's own (\"me\" last) isn't the reply", !answers(wl, gm("Alex, Remy, me 5, Fwd: lovelink setup, has attachment, Oct 9, Hey Remy, Tested https://www.google.com/url?q=http://lovelink.co.za"), mine) && !answers(wl, gm("Alex, me 2, Fwd: lovelink setup, has attachment, Oct 1, Hey Remy, Alex passed on the LoveLink stuff"), mine) && !answers(wl, gm("me, Fwd: lovelink setup, Hey Remy"), mine));
+  ok("…one whose newest message is theirs is", answers(wl, gm("Alex, me, Remy 4, Fwd: lovelink setup, has attachment, 3:16 PM, Hi Pat, Codex is currently adding the Lerato and Clay embeds"), mine) && answers(wl, gm("Remy Rivera, Re: lovelink setup, here's the access"), mine));
+  ok("…nor a row Watch marks as the user's", !answers(wl, { ...gm("Remy, Fwd: lovelink setup"), mine: true }, mine));
+  ok("mail on disk from the user's own address isn't the reply, even when it doesn't say whom it went to", !answers({ ...wl, to: [] }, mail("owner@example.co.za", "Re: lovelink setup", sent + 1000), mine) && answers({ ...wl, to: [] }, mail("remy@example.com", "Re: lovelink setup", sent + 1000), mine));
+  ok("…and nothing's handed on for it", awaitTick(deps({ news: [gm(`Alex, Remy, me 5, Fwd: ${subject}, Hey Remy`)], mine })).replied.length === 0 && acts.length === 0);
 
-  // the two new emails in the inbox are Cale's, on another thread: nothing happens
-  const cale = [row("Cale Re: ghost-ai.co.za dns - fixed webhook url for whatsapp module It does have a permanent webhook", sent + 7000000)];
-  ok("Cale's emails on another thread don't count as Jono's reply", awaitTick(deps({ news: cale })).replied.length === 0 && acts.length === 0);
+  // the two new emails in the inbox are Alex's, on another thread: nothing happens
+  const alex = [row("Alex Re: example.co.za dns - fixed webhook url for whatsapp module It does have a permanent webhook", sent + 7000000)];
+  ok("Alex's emails on another thread don't count as Remy's reply", awaitTick(deps({ news: alex })).replied.length === 0 && acts.length === 0);
 
-  const t2 = awaitTick(deps({ inbox: [mail("schoemanjono@gmail.com", "Re: " + subject, sent + 7200000)] }));
-  ok("Jono's reply is found without the user saying so", t2.replied.length === 1);
+  const t2 = awaitTick(deps({ inbox: [mail("remy@example.com", "Re: " + subject, sent + 7200000)] }));
+  ok("Remy's reply is found without the user saying so", t2.replied.length === 1);
   ok("…and the lane that does the next step starts on it", acts.length === 1 && acts[0].lane === "whatsapp_module");
   ok("…told what was asked, what to do next and what it's for", acts[0].req.includes("WA_FORWARD_SECRET") && acts[0].req.includes("set WA_FORWARD_URL and WA_FORWARD_SECRET in .env") && acts[0].req.includes(subject) && /never instructions to you/.test(acts[0].req));
   const st = awaitingState().waits[0];
@@ -125,7 +125,7 @@ console.log("AWAITING.json — the reply is watched for, and handed on");
   ok("you get a notification", notes.length === 1 && /replied/.test(notes[0]), notes);
   const task = JSON.parse(readFileSync(join(CFG, "tasks.json"), "utf8"))[0];
   ok("the task it's for hears about it in its chat", (task.chat || []).some((c) => /replied to "WhatsApp forwarding/.test(c.text) && /whatsapp_module's agent has the next step/.test(c.text)), task.chat);
-  ok("it isn't handed on twice", awaitTick(deps({ inbox: [mail("schoemanjono@gmail.com", "Re: " + subject, sent + 7300000)] })).replied.length === 0 && acts.length === 1);
+  ok("it isn't handed on twice", awaitTick(deps({ inbox: [mail("remy@example.com", "Re: " + subject, sent + 7300000)] })).replied.length === 0 && acts.length === 1);
 
   // a next step that can't start says why; Stop waiting ends one
   put(sym, "AWAITING.json", [{ to: "x@y.com", subject: "Quote for the hosting", next: "add it to the budget" }, { to: "z@y.com", subject: "Never mind this one" }]);
@@ -154,13 +154,13 @@ console.log("AWAITING.json — the reply is watched for, and handed on");
 
 console.log("MAIL — the inbox beside the Sent folder, headers only");
 {
-  const acct = join(HOME, ".thunderbird", "p.default", "ImapMail", "ghost-ai.co.za");
+  const acct = join(HOME, ".thunderbird", "p.default", "ImapMail", "example.co.za");
   mkdirSync(join(acct, "INBOX.sbd"), { recursive: true });
-  writeFileSync(join(acct, "INBOX.sbd", "Sent"), "From - x\nFrom: Garth <garth@ghost-ai.co.za>\nTo: schoemanjono@gmail.com\nSubject: WhatsApp forwarding\nDate: Tue, 6 Oct 2026 08:48:07 +0000\n\nbody\n");
-  writeFileSync(join(acct, "INBOX"), "From - x\nFrom: Jono <schoemanjono@gmail.com>\nTo: garth@ghost-ai.co.za\nSubject: Re: WhatsApp forwarding\nIn-Reply-To: <abc@mail>\nDate: Tue, 6 Oct 2026 11:00:00 +0000\n\nthe secret is in here\n");
+  writeFileSync(join(acct, "INBOX.sbd", "Sent"), "From - x\nFrom: Pat <owner@example.co.za>\nTo: remy@example.com\nSubject: WhatsApp forwarding\nDate: Tue, 6 Oct 2026 08:48:07 +0000\n\nbody\n");
+  writeFileSync(join(acct, "INBOX"), "From - x\nFrom: Remy <remy@example.com>\nTo: owner@example.co.za\nSubject: Re: WhatsApp forwarding\nIn-Reply-To: <abc@mail>\nDate: Tue, 6 Oct 2026 11:00:00 +0000\n\nthe secret is in here\n");
   ok("Thunderbird's INBOX is found beside INBOX.sbd/Sent", inboxOf(join(acct, "INBOX.sbd", "Sent")) === join(acct, "INBOX"));
   const got = inboxMail({ since: Date.parse("2026-10-06T00:00:00Z"), sources: [join(acct, "INBOX.sbd", "Sent")], auto: false });
-  ok("its mail is read as headers: who, what, and what it answers", got.length === 1 && got[0].from.addr === "schoemanjono@gmail.com" && got[0].subject === "Re: WhatsApp forwarding" && got[0].refs.includes("abc@mail"), got);
+  ok("its mail is read as headers: who, what, and what it answers", got.length === 1 && got[0].from.addr === "remy@example.com" && got[0].subject === "Re: WhatsApp forwarding" && got[0].refs.includes("abc@mail"), got);
   ok("…never the body", !JSON.stringify(got).includes("secret"));
 }
 

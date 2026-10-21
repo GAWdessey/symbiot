@@ -39,7 +39,7 @@ try {
     const c = voiceClean("Sure.\n\n→ Added to symbiot's tasks: x");
     ok("an arrow isn't read out as \"right arrow\" (2026-10-09)", !/→/.test(c) && /^Sure\. Added to Simbeeot's tasks/.test(c), c);
     const say = (t) => voiceClean(t);
-    ok("our names are respelt so the voice says them right", say("Symbiot and GAWdessey, Argena, PediPigeon, Workdesk") === "Simbeeot and Gaw dessy, Arjena, Peddy Pigeon, work desk", say("Symbiot and GAWdessey, Argena, PediPigeon, Workdesk"));
+    ok("our names are respelt so the voice says them right", say("Symbiot and GAWdessey, Meridian, Pigeonly, Workdesk") === "Simbeeot and Gaw dessy, Meridian, Pigeonly, work desk", say("Symbiot and GAWdessey, Meridian, Pigeonly, Workdesk"));
     ok("file paths, ids and file names aren't spelt out", say("See ~/.config/symbiot/browser and act-6407ab9b in voice.mjs") === "See a file path and an id in voice file", say("See ~/.config/symbiot/browser and act-6407ab9b in voice.mjs"));
     ok("a version is said with points; short-forms letter by letter", say("0.63.1 on npm via PR") === "0 point 63 point 1 on N P M via P R", say("0.63.1 on npm via PR"));
     ok("a plain word that is only a-f letters isn't taken for an id", say("a defaced effaced decade") === "a defaced effaced decade", say("a defaced effaced decade"));
@@ -49,7 +49,7 @@ try {
     ok("a spoken reply hands over to the mic when it ends", /voiceSpeak\(r\.spoken\|\|[^;]*,voiceResume\)/.test(uiJs));
     const bye = new Function("return " + uiJs.match(/var VOICE_BYE=(\/.*\/i);/)[1] + ";")();
     ok("\"end conversation\", \"stop\", \"that's all\" end it", ["End conversation", "stop", "that's all.", "okay, stop listening", "Goodbye"].every((p) => bye.test(p)));
-    ok("…but a sentence that merely contains stop doesn't", !bye.test("stop the agent on argena") && !bye.test("that's all the tasks I have"));
+    ok("…but a sentence that merely contains stop doesn't", !bye.test("stop the agent on meridian") && !bye.test("that's all the tasks I have"));
     ok("quiet twice in a row ends it with a note on screen", /\+\+VOICE\.quiet>=2\)voiceEnd\('I stopped listening/.test(uiJs));
     ok("the mic shows it's listening, and that a conversation is open", /VOICE\.convo\?'Listening…[^']*end conversation/.test(uiJs) && /#lqmic\.conv\{/.test(EMBEDDED_UI));
     ok("every lit (ember) droplet on Home says what it's for: a label of its own, a fallback when it has no sub", /d\.kind==='run'\|\|d\.ask\)&&\(d\.sub\|\|d\.ask\)\?"<span class='lm'>"\+esc\(lqShort\(d\.sub\|\|'needs a look'/.test(uiJs));
@@ -91,8 +91,8 @@ n=0; while IFS= read -r line; do n=$((n+1)); f="$D/$n-$$.wav"; printf 'RIFF%s' "
     const before = hits; prepareVoice("en-ZA");
     ok("prepare again: nothing fetched twice", hits === before, hits - before);
 
-    const said = await Promise.all(["Hi Garth.", "Three things need you today.", "First, the mail."].map((t) => speak(t, "en-ZA")));
-    ok("three sentences at once: each its own audio, in order", said.map(String).join("|") === "RIFFHi Garth.|RIFFThree things need you today.|RIFFFirst, the mail.", said.map(String));
+    const said = await Promise.all(["Hi Pat.", "Three things need you today.", "First, the mail."].map((t) => speak(t, "en-ZA")));
+    ok("three sentences at once: each its own audio, in order", said.map(String).join("|") === "RIFFHi Pat.|RIFFThree things need you today.|RIFFFirst, the mail.", said.map(String));
     ok("one engine kept warm, not one per sentence", /RIFF/.test(String(await speak("Again.", "en-ZA"))));
     ok("its audio files don't pile up", await until(() => !require_dir_has_wav(join(HOME, ".config", "symbiot", "voice", "out"))));
     ok("a line break in the text can't split it in two", String(await speak("one\ntwo", "en-ZA")) === "RIFFone two");

@@ -1,5 +1,5 @@
 // Merged is not live. A lane's change is only live once it is deployed, so after Approve or a
-// merge the task and the chat say which it is (dailify, 14 Oct 2026: Kea's fix was merged and
+// merge the task and the chat say which it is (bookly, 14 Oct 2026: Wren's fix was merged and
 // showed as done, and the live site still failed, with nothing saying it was never deployed).
 // deployTarget finds how a lane ships (the user's own config first, then the repo's deploy
 // scripts and CI), liveNote says plainly what state a change is in, and deployAsk puts the

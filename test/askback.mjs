@@ -1,5 +1,5 @@
 // An answer that asks back, and a question asked again in new words (asksdone.mjs asksBack,
-// heldBy; agents.mjs repeatAnswer; home.mjs). On 20 Oct 2026 Garth answered the Paddle question
+// heldBy; agents.mjs repeatAnswer; home.mjs). On 20 Oct 2026 Pat answered the Paddle question
 // four times with "explain to me what paddle is for", "must i ask again?" and "put it in reports
 // so i can read it": every run asked for the price ids again, worded differently, and the reply he
 // typed on its "👤 You" card was passed on as "The user says it's done". Isolated HOME.
@@ -72,7 +72,7 @@ try {
   ask("Which email address should the Symbiot Paddle account use?", "It's for the sign-up.");
   const again = a.agentQuestions(lane, "symbiot");
   ok("...never reaching the user", again.questions.length === 0 && /the user answered: "garth@symbiot\.co\.za"/.test(again.known[0].a), again);
-  ask("Which email should the Symbiot Paddle account send receipts from: sales@ or garth@?", "Paddle sends them.");
+  ask("Which email should the Symbiot Paddle account send receipts from: sales@ or pat@?", "Paddle sends them.");
   ok("...but a question on a different point is still asked", a.agentQuestions(lane, "symbiot").questions.length === 1, a.agentQuestions(lane, "symbiot"));
 
   console.log("6) ON HOME: YOUR OWN WORDS ON A \"👤 YOU\" CARD");

@@ -1,5 +1,5 @@
 // symbiot — Estimate: how long a running agent has left, as a range ("5–15 min").
-// Garth asked for it with the step line on Home (2026-10-08): steve and argena had
+// the user asked for it with the step line on Home (2026-10-08): robin and meridian had
 // run for half an hour and nothing said whether that was nearly done or barely
 // started. A run's length comes from its lane's own past runs, read from that lane's
 // agent.log (each "=== name time ===" header, its "$ command" line and the run's

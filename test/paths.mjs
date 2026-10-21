@@ -225,13 +225,13 @@ try {
     import { readFileSync } from "node:fs";
     const md = () => readFileSync(${JSON.stringify(join(WORK, "alpha", ".symbiot", "TASKS.md"))}, "utf8");
     const by = (id) => JSON.parse(readFileSync(${T}, "utf8")).find((x) => x.id === id);
-    const out = {}, w = t.addTask("Say which lane a card is for", "alpha", { said: "why are these under dailify?", later: true });
+    const out = {}, w = t.addTask("Say which lane a card is for", "alpha", { said: "why are these under bookly?", later: true });
     out.kept = by(w.id); t.pushTasks({ repo: "alpha" }); out.before = md();
     out.again = t.addTask("Say which lane a card is for", "alpha", { later: true }); out.still = by(w.id).later;
     t.pushTasks({ repo: "alpha", later: true }); out.after = md(); out.sent = by(w.id);
     t.removeTask(w.id);
     console.log(JSON.stringify(out));`);
-  ok("it keeps what the user said, and waits", lt.kept && lt.kept.later === true && lt.kept.said === "why are these under dailify?", lt.kept);
+  ok("it keeps what the user said, and waits", lt.kept && lt.kept.later === true && lt.kept.said === "why are these under bookly?", lt.kept);
   ok("a free lane's brief leaves it out", !/Say which lane a card is for/.test(lt.before || "") && /Fix the login bug/.test(lt.before || ""), lt.before);
   ok("noting it again doesn't start it", lt.again && lt.again.duplicate && lt.still === true, lt);
   ok("Go sends it, and it no longer waits", /- \[ \] Say which lane a card is for/.test(lt.after || "") && lt.sent && !lt.sent.later, [lt.after, lt.sent]);
@@ -264,9 +264,9 @@ try {
   const long = commitSubject(["## Next steps  1. **Add the `v*` tag-protection rule from #71.** #77 and #78 made publishing hands-off", "b"]);
   ok("pasted markdown is dropped and it fits 72 characters, cut at a word", long === "Next steps 1. Add the `v*` tag-protection rule from #71. #77… (+1 more)" && long.length <= 72, long);
   ok("no task: says so", commitSubject([]) === "symbiot: changes approved without a task", commitSubject([]));
-  const priv = commitText(["Deploy it on /home/garth/app and check sts-prod, run act-2ae1923d", "Fix the login bug that signs people out early. More detail here."], [{ term: "sts-prod", why: "a server you connect to" }]);
-  ok("commit text: a task naming private things stays out, the rest goes", priv.subject === "Fix the login bug that signs people out early." && !/act-|sts-prod|garth/.test(priv.subject + priv.body) && /kept in Symbiot/.test(priv.body), JSON.stringify(priv));
-  ok("commit text: nothing public gives a generic subject", commitText(["Check sts-prod"], [{ term: "sts-prod", why: "x" }]).subject === "Small fixes and improvements");
+  const priv = commitText(["Deploy it on /home/pat/app and check prod-box, run act-2ae1923d", "Fix the login bug that signs people out early. More detail here."], [{ term: "prod-box", why: "a server you connect to" }]);
+  ok("commit text: a task naming private things stays out, the rest goes", priv.subject === "Fix the login bug that signs people out early." && !/act-|prod-box|pat/.test(priv.subject + priv.body) && /kept in Symbiot/.test(priv.body), JSON.stringify(priv));
+  ok("commit text: nothing public gives a generic subject", commitText(["Check prod-box"], [{ term: "prod-box", why: "x" }]).subject === "Small fixes and improvements");
 } finally {
   ollama.close();
   rmSync(ROOT, { recursive: true, force: true });

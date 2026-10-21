@@ -42,7 +42,7 @@ try {
   ok("two runs refreshing one token is read", (a.claudeDownIn("Failed to refresh OAuth token: another Claude Code process is refreshing") || {}).kind === "refresh");
   ok("a run that worked isn't Claude down", a.claudeDownIn("Done: I added the session limit regex and ticked the task.") === null);
 
-  const lane = join(HOME, "work", "coral"); mkdirSync(lane, { recursive: true }); git(lane, "init", "-q");
+  const lane = join(HOME, "work", "atlas"); mkdirSync(lane, { recursive: true }); git(lane, "init", "-q");
   put(lane, "TASKS.md", "## Tasks\n- [ ] Fix the reader\n");
   put(lane, "agent.log", logOf('claude -p "x"', "You've hit your session limit · resets 8:50am (Africa/Johannesburg)", { ok: false }));
   ok("a run that ended on the limit pauses every start", a.noteClaudeDown(lane, now) === "limit" && existsSync(a.PAUSE_FILE), read(C, "paused.json"));
@@ -80,17 +80,17 @@ try {
   put(lane, "TASKS.md", "## Tasks\n- [x] Fix the reader\n");
   put(lane, "ANSWERS.md", "# Answers\n");
   writeFileSync(join(lane, ".symbiot", a.ANSWERS_SEEN), JSON.stringify({ at: Date.now(), answers: a.answersDigest(lane) }));
-  ok("every task ticked, nothing answered: nothing to do", /every task in coral's .symbiot\/TASKS.md is ticked and no answer has come in/.test(a.nothingToDo(lane)), a.nothingToDo(lane));
+  ok("every task ticked, nothing answered: nothing to do", /every task in atlas's .symbiot\/TASKS.md is ticked and no answer has come in/.test(a.nothingToDo(lane)), a.nothingToDo(lane));
   put(lane, "ANSWERS.md", read(lane, "ANSWERS.md") + "\n### Handed over to ops: restart the relay\nDone (the ops agent).\n_answered by symbiot (handover) 2026-10-15_\n");
   ok("a handover's report back isn't an answer: still nothing to do", !!a.nothingToDo(lane) && !a.newAnswers(lane));
-  put(lane, "ANSWERS.md", read(lane, "ANSWERS.md") + "\n### Garth's answer to ops, on the same work as you\nbackground\n_shared by Symbiot 2026-10-15 (background)_\n");
+  put(lane, "ANSWERS.md", read(lane, "ANSWERS.md") + "\n### Pat's answer to ops, on the same work as you\nbackground\n_shared by Symbiot 2026-10-15 (background)_\n");
   ok("nor a shared answer in the background", !!a.nothingToDo(lane));
   put(lane, "ANSWERS.md", read(lane, "ANSWERS.md") + "\n### Which relay?\nThe SMTP one.\n_answered 2026-10-15_\n");
   ok("the user's own answer is", a.nothingToDo(lane) === "" && a.newAnswers(lane));
 
   // an ops folder (no git): a run that changed nothing is held, until the time it named
   const ops = join(C, "drafts", "act-abc123"); mkdirSync(ops, { recursive: true });
-  put(ops, "TASKS.md", "## Tasks\n- [ ] Once production Dailify's WhatsApp number switch is live, move the templates\n");
+  put(ops, "TASKS.md", "## Tasks\n- [ ] Once production Bookly's WhatsApp number switch is live, move the templates\n");
   put(ops, "agent.log", logOf('claude -p "x"', "Nothing to do yet: the number switch isn't live. I'll check again at 08:50.", { ok: true, cost: 0.2 }));
   const before = a.dirtyState(ops), ticks = 0;
   ok("a folder with no git still has a state to compare (its files, Symbiot's bookkeeping aside)", before && Object.keys(before).join() === ".symbiot/TASKS.md", before);
@@ -111,7 +111,7 @@ try {
   ok("…until that time comes", a.blockedAgain(ops, 'claude -p "x"', { now: b2.until + 1 }) === null);
   put(ops, "TASKS.md", read(ops, "TASKS.md") + "- [ ] A new task\n");
   ok("…or it's given a new task", a.blockedAgain(ops, 'claude -p "x"') === null);
-  put(ops, "TASKS.md", "## Tasks\n- [ ] Once production Dailify's WhatsApp number switch is live, move the templates\n");
+  put(ops, "TASKS.md", "## Tasks\n- [ ] Once production Bookly's WhatsApp number switch is live, move the templates\n");
   put(ops, "agent.log", logOf('claude -p "x"', "I'm waiting on the number switch, so I'll check again once it's live.", { ok: true, cost: 0.2 }));
   ok("a run that wrote a report and named no time isn't held", a.noteBlocked(ops, 'claude -p "x"', Date.now() - 60000, 0, { dirtyBefore: before, ticksBefore: ticks }) === undefined && !existsSync(join(ops, ".symbiot", "blocked.json")));
   put(ops, "agent.log", logOf('claude -p "x"', "Done one; the next reading is on 22 Oct.", { ok: true, cost: 0.2 }));
@@ -119,10 +119,10 @@ try {
   ok("nor one that ticked a task, whatever it said", !existsSync(join(ops, ".symbiot", "blocked.json")));
 
   // continueLanes: the agent reworded the open task; it's the same task, not a new one
-  const lane2 = join(HOME, "work", "steve"); mkdirSync(join(lane2, ".symbiot"), { recursive: true });
+  const lane2 = join(HOME, "work", "robin"); mkdirSync(join(lane2, ".symbiot"), { recursive: true });
   put(lane2, "TASKS.md", "## Tasks\n- [ ] Add the weekly digest email, with a test\n");
-  put(lane2, "agent.log", "=== steve 2026-10-15T05:00:00.000Z ===\n$ x\n");
-  const runs = () => [{ path: lane2, name: "steve", startedAt: 1 }], started = [];
+  put(lane2, "agent.log", "=== robin 2026-10-15T05:00:00.000Z ===\n$ x\n");
+  const runs = () => [{ path: lane2, name: "robin", startedAt: 1 }], started = [];
   const go = (p) => { started.push(p); return { id: "j" + started.length }; };
   const later = Date.now() + 10 * 60000;
   ok("a lane with an open task starts again", a.continueLanes({ now: later, run: go, runs }).length === 1, started);
@@ -131,7 +131,7 @@ try {
   put(lane2, "TASKS.md", "## Tasks\n- [ ] Add the weekly digest email, with a test\n- [ ] Fix the sign-in page on phones\n");
   ok("…nor on a task it added itself: more open tasks isn't getting somewhere (21 Oct 2026)", a.continueLanes({ now: later + 2, run: go, runs }).length === 0, started);
 
-  // at most AUTO_MAX automatic starts an hour, however it gets somewhere: Dailify started 12 times in 45 minutes
+  // at most AUTO_MAX automatic starts an hour, however it gets somewhere: Bookly started 12 times in 45 minutes
   const lane3 = join(HOME, "work", "busy"); mkdirSync(join(lane3, ".symbiot"), { recursive: true });
   put(lane3, "agent.log", "=== busy 2026-10-21T09:00:00.000Z ===\n$ x\n");
   const runs3 = () => [{ path: lane3, name: "busy", startedAt: 1 }], n0 = started.length;
@@ -143,15 +143,15 @@ try {
 
   console.log("3) ANSWER FAN-OUT — mail domains and everyone's hosts aren't topics; a background share doesn't look like an answer");
   const { topicsOf, ownHosts, shareAnswer } = await import("../lanes.mjs");
-  const tp = topicsOf("mail garth@gmail.com about claude.ai, github.com and evra_avm on dailify.co.za and 10.0.0.12", ownHosts({ profile: { email: "garth@ghost-ai.co.za" } }));
-  ok("an id, a domain and an address are topics; an email's domain, claude.ai and github.com aren't", [...tp].sort().join(" ") === "10.0.0.12 dailify.co.za evra_avm", [...tp]);
-  ok("the user's own domain isn't one either", !topicsOf("the ghost-ai.co.za mailbox", ownHosts({ profile: { email: "garth@ghost-ai.co.za" } })).size && ownHosts({ profile: { email: "garth@ghost-ai.co.za" } }).has("ghost-ai.co.za"));
-  const asker = join(HOME, "work", "evra"), bystander = join(HOME, "work", "voxi");
+  const tp = topicsOf("mail pat@gmail.com about claude.ai, github.com and orbit_avm on bookly.co.za and 10.0.0.12", ownHosts({ profile: { email: "owner@example.co.za" } }));
+  ok("an id, a domain and an address are topics; an email's domain, claude.ai and github.com aren't", [...tp].sort().join(" ") === "10.0.0.12 bookly.co.za orbit_avm", [...tp]);
+  ok("the user's own domain isn't one either", !topicsOf("the example.co.za mailbox", ownHosts({ profile: { email: "owner@example.co.za" } })).size && ownHosts({ profile: { email: "owner@example.co.za" } }).has("example.co.za"));
+  const asker = join(HOME, "work", "orbit"), bystander = join(HOME, "work", "vocal");
   for (const d of [asker, bystander]) mkdirSync(join(d, ".symbiot"), { recursive: true });
-  put(asker, "QUESTIONS.md", "## Questions\n### Send the Supabase ticket about evra_avm now?\n- yes\n- no\n");
-  put(bystander, "TASKS.md", "## Tasks\n- [ ] Tidy the evra_avm export script\n"); put(bystander, "ANSWERS.md", "# Answers\n");
+  put(asker, "QUESTIONS.md", "## Questions\n### Send the Supabase ticket about orbit_avm now?\n- yes\n- no\n");
+  put(bystander, "TASKS.md", "## Tasks\n- [ ] Tidy the orbit_avm export script\n"); put(bystander, "ANSWERS.md", "# Answers\n");
   const old = Date.now() - 3600000; utimesSync(join(bystander, ".symbiot", "ANSWERS.md"), new Date(old), new Date(old));
-  const sh = shareAnswer(asker, [{ q: "Send the Supabase ticket about evra_avm now?", a: "first check if evra_avm is saved somewhere else" }], { run: () => ({ id: "no" }), map: { evra: asker, voxi: bystander }, runs: () => [{ path: asker }, { path: bystander }], running: () => null, ledger: { handoffs: [] }, cfg: {} });
+  const sh = shareAnswer(asker, [{ q: "Send the Supabase ticket about orbit_avm now?", a: "first check if orbit_avm is saved somewhere else" }], { run: () => ({ id: "no" }), map: { orbit: asker, vocal: bystander }, runs: () => [{ path: asker }, { path: bystander }], running: () => null, ledger: { handoffs: [] }, cfg: {} });
   ok("a lane matched only on a task's words gets the answer as background, and starts nothing", sh.length === 1 && sh[0].path === bystander && !sh[0].started && /\(background\)/.test(read(bystander, "ANSWERS.md")), sh);
   ok("…and its ANSWERS.md keeps its time, so it isn't an answer since the last run", Math.abs(statSync(join(bystander, ".symbiot", "ANSWERS.md")).mtimeMs - old) < 1000, statSync(join(bystander, ".symbiot", "ANSWERS.md")).mtimeMs - old);
 
@@ -194,7 +194,7 @@ try {
   put(lane, "TASKS.md", "## Tasks\n- [ ] Fix the reader\n"); put(lane, "QUESTIONS.md", "## Questions\n### Which reader?\n- a\n- b\n");
   writeFileSync(join(lane, ".symbiot", "QUESTIONS.md"), read(lane, "QUESTIONS.md"));
   a.noteBlocked(lane, a.runCmdOf(lane), Date.now() - 60000, 0, { dirtyBefore: {}, ticksBefore: 0 });
-  ok("a run held on its questions is held by continueLanes too: both hash the same command (the guard was dead before)", !!a.blockedAgain(lane, a.runCmdOf(lane)) && a.continueLanes({ now: Date.now() + 10 * 60000, run: () => { throw new Error("started"); }, runs: () => [{ path: lane, name: "coral", startedAt: 1 }] }).length === 0);
+  ok("a run held on its questions is held by continueLanes too: both hash the same command (the guard was dead before)", !!a.blockedAgain(lane, a.runCmdOf(lane)) && a.continueLanes({ now: Date.now() + 10 * 60000, run: () => { throw new Error("started"); }, runs: () => [{ path: lane, name: "atlas", startedAt: 1 }] }).length === 0);
 
   console.log("7) SPEND — costs are saved safely, and rolled up per day so a week's spend is visible");
   const { noteCost, loadCostDays } = await import("../estimate.mjs");
@@ -203,7 +203,7 @@ try {
   noteCost({ path: join(C, "drafts", "act-0a1b2c"), cmd: "claude -p x", task: "Ops", model: "claude-opus-5-5", cost: 2.5, turns: 9, ms: 120000, ok: false, now: day1 }, cf, df);
   noteCost({ path: lane, cmd: "The user has answered: x", task: "Fix it", model: "claude-sonnet-5-5", cost: 0.3, turns: 2, ms: 30000, ok: true, now: day2 }, cf, df);
   const days = loadCostDays(df), k1 = Object.keys(days)[0];
-  ok("each day: runs, spend, time, failures, by model, by lane (an ops folder is \"ops\") and by kind", Object.keys(days).length === 2 && days[k1].n === 2 && days[k1].cost === 2.9 && days[k1].failed === 1 && days[k1].byModel["claude-opus-5-5"].cost === 2.5 && days[k1].byLane.ops.n === 1 && days[k1].byLane.coral.n === 1 && days[Object.keys(days)[1]].byKind.answer.n === 1, days);
+  ok("each day: runs, spend, time, failures, by model, by lane (an ops folder is \"ops\") and by kind", Object.keys(days).length === 2 && days[k1].n === 2 && days[k1].cost === 2.9 && days[k1].failed === 1 && days[k1].byModel["claude-opus-5-5"].cost === 2.5 && days[k1].byLane.ops.n === 1 && days[k1].byLane.atlas.n === 1 && days[Object.keys(days)[1]].byKind.answer.n === 1, days);
   ok("…written atomically and yours only (0600)", (statSync(cf).mode & 0o777) === 0o600 && (statSync(df).mode & 0o777) === 0o600 && existsSync(cf + ".bak"), (statSync(cf).mode & 0o777).toString(8));
   // continued.json is kept by folder: a lane pushed out of runs.json (60 kept) came back with a free run (finding 5)
   console.log("CONTINUE — a lane out of runs.json keeps its record");

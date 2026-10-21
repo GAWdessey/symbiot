@@ -17,12 +17,12 @@ const ok = (n, c, got) => { if (c) { pass++; console.log("  ✓ " + n); } else {
 const T = await import("../triage.mjs");
 const A = await import("../agents.mjs");
 
-const lane = join(HOME, "work", "sts-platform"); mkdirSync(join(lane, ".symbiot"), { recursive: true });
+const lane = join(HOME, "work", "telco-platform"); mkdirSync(join(lane, ".symbiot"), { recursive: true });
 const Q = {
-  restart: "The Carla reply is waiting on Symbiot's browser, which still won't start from my sandbox",
-  route: "How should the Carla reply get out, now that Gmail is blocked in your Chrome?",
-  send: "Should I send Carla the short reply about her Vodacom test now?",
-  fresh: "Which of the two WIN LOVE plans should the page show first?",
+  restart: "The Dana reply is waiting on Symbiot's browser, which still won't start from my sandbox",
+  route: "How should the Dana reply get out, now that Gmail is blocked in your Chrome?",
+  send: "Should I send Dana the short reply about her Vodacom test now?",
+  fresh: "Which of the two LOVE LINK plans should the page show first?",
 };
 writeFileSync(join(lane, ".symbiot", "QUESTIONS.md"), `## Questions\n\n### ${Q.restart}\n- 🧑 You: restart the Symbiot app\n- 🧑 You: allow this lane's shell to write to the browser folder\n\n### ${Q.route}\n- 🤖 Agent: send it through Symbiot's own browser\n- 🧑 You: switch on mail.google.com in Settings\n\n### ${Q.send}\n- Send it as drafted (recommended)\n- Hold it\n\n### ${Q.fresh}\n- R7 a day\n- R35 a week\n`);
 try {
@@ -33,20 +33,20 @@ try {
   ok("…one it can't read is no verdict (the question shows as before)", (await T.judge({ q: "x" }, {}, said("no idea"))) === null && (await T.judge({ q: "x" }, {}, said({ verdict: "maybe" }))) === null);
   ok("…\"answered\" with no answer to give is the user's", (await T.judge({ q: "x" }, {}, said({ verdict: "answered", why: "w" }))).verdict === "user");
   let sawPrompt = "";
-  await T.judge({ q: Q.send, options: ["Send it"] }, { answers: "### Old\nGo ahead: do it as you had it.", rules: ["Never send anything to Jono first"], lane: "sts-platform" }, { write: async (sys, p) => { sawPrompt = sys + p; return { text: '{"verdict":"answered","why":"w","answer":"Go ahead"}' }; } });
-  ok("the judge sees the question, the lane, the user's rules and newest answers", /Should I send Carla/.test(sawPrompt) && /sts-platform/.test(sawPrompt) && /Never send anything to Jono/.test(sawPrompt) && /do it as you had it/.test(sawPrompt), sawPrompt.slice(-400));
+  await T.judge({ q: Q.send, options: ["Send it"] }, { answers: "### Old\nGo ahead: do it as you had it.", rules: ["Never send anything to Remy first"], lane: "telco-platform" }, { write: async (sys, p) => { sawPrompt = sys + p; return { text: '{"verdict":"answered","why":"w","answer":"Go ahead"}' }; } });
+  ok("the judge sees the question, the lane, the user's rules and newest answers", /Should I send Dana/.test(sawPrompt) && /telco-platform/.test(sawPrompt) && /Never send anything to Remy/.test(sawPrompt) && /do it as you had it/.test(sawPrompt), sawPrompt.slice(-400));
 
   console.log("TRIAGE — only the user's questions become cards");
   T.saveVerdict(lane, Q.restart, { verdict: "symbiot", why: "its browser socket is gone" });
   T.saveVerdict(lane, Q.route, { verdict: "agent", why: "the text is approved; ops can send it from Symbiot's browser" });
   T.saveVerdict(lane, Q.send, { verdict: "answered", why: "he said go ahead", answer: "Go ahead: do it as you had it." });
-  const aq = A.agentQuestions(lane, "sts-platform");
+  const aq = A.agentQuestions(lane, "telco-platform");
   const shown = aq.questions.map((q) => q.q), known = Object.fromEntries((aq.known || []).map((k) => [k.q, k.a]));
   ok("a Symbiot fault, an agent's job and an answered one never show", !shown.includes(Q.restart) && !shown.includes(Q.route) && !shown.includes(Q.send), shown);
   ok("…each is answered for the run instead: Symbiot's fault, do it or hand it to ops, and the user's own answer", /Symbiot's fault, not the user's/.test(known[Q.restart]) && /hand it to ops/.test(known[Q.route]) && /^Go ahead: do it as you had it\./.test(known[Q.send]), known);
   ok("a fresh one not judged yet waits for its verdict (no card that flashes up and goes)", !T.shows(lane, Q.fresh, { judging: true, asked: Date.now() }) && T.shows(lane, Q.fresh, { judging: true, asked: Date.now() - T.HOLD_MS - 1000 }) && T.shows(lane, Q.fresh, { judging: false, asked: Date.now() }));
   T.saveVerdict(lane, Q.fresh, { verdict: "user", why: "a pricing choice of his" });
-  ok("…and once it's judged the user's, it's a card", A.agentQuestions(lane, "sts-platform").questions.map((q) => q.q).includes(Q.fresh));
+  ok("…and once it's judged the user's, it's a card", A.agentQuestions(lane, "telco-platform").questions.map((q) => q.q).includes(Q.fresh));
   ok("raw: every open question, judged or not (for the sweep)", A.agentQuestions(lane, "", { raw: true }).questions.length === 4);
 
   console.log("TRIAGE — the sweep judges each new question once, and records Symbiot's faults");

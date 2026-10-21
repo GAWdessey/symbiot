@@ -1,10 +1,10 @@
 // symbiot — Marketing: a lane of its own, for marketing work across every product the
-// user makes (Symbiot, Dailify, the agent products…), not one repo's. Tasks go to it as
+// user makes (Symbiot, Bookly, the agent products…), not one repo's. Tasks go to it as
 // "marketing" (a lane, the way ops is one), from the Marketing page, any chat, or
 // another lane's handover; its agent works in ~/.config/symbiot/marketing, a git repo
 // of its own (local only, no remote), so what it drafts is reviewed and approved like
 // any repo's work (Approve commits it there). Each item is tagged with the product it
-// markets: "[Dailify] …" as written, else the product its words name. Home shows the
+// markets: "[Bookly] …" as written, else the product its words name. Home shows the
 // lane as an orb among the projects, lit when something there needs you (home.mjs
 // marketingState). Low level on purpose: scan.mjs (laneMap) imports it.
 import { join, relative, basename, dirname } from "node:path";
@@ -47,7 +47,7 @@ function ensureMarketing(dir = MARKETING_DIR) {
 }
 
 // A project's name as people say it (Home's droplets, and the products to tag by): the
-// folder can lag behind (CallForge AI is Dailify). The README's title when it's a short name, else package.json's name
+// folder can lag behind (CallForge AI is Bookly). The README's title when it's a short name, else package.json's name
 // when it's a word, else the folder's. Read once per folder.
 const NAMES = new Map();
 function displayName(path, folder) {
@@ -69,8 +69,8 @@ function productNames(map = {}) {
 }
 
 // ---- product tags -------------------------------------------------------------------
-// "[Dailify] Write the launch post": the tag as written. Without one, the first product
-// its words name as it's written (capitalised: "Dailify" in a sentence, not "server").
+// "[Bookly] Write the launch post": the tag as written. Without one, the first product
+// its words name as it's written (capitalised: "Bookly" in a sentence, not "server").
 const TAG = /^\s*\[([^\]\n]{2,40})\]\s*/;
 const reEsc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 function productOf(text, names = []) {
@@ -123,7 +123,7 @@ function draftFiles(dir = MARKETING_DIR, names = [], { max = 30 } = {}) {
 
 // ---- a draft as the post it will be ---------------------------------------------------
 // Opening a draft showed the raw file, its agent's working notes mixed into the post
-// (the [Steve] LinkedIn series, 2026-10-08). A draft is now read into the post itself
+// (the [Robin] LinkedIn series, 2026-10-08). A draft is now read into the post itself
 // and the notes beside it, so the preview, the approval and what gets posted are the
 // same text: the head's `key: value` lines, the text under `## Post`, and every other
 // `## ` section as notes. One written before that: the post is what's between its first
@@ -395,7 +395,7 @@ function setDraftMedia(rel, files, { dir = MARKETING_DIR } = {}) {
 // its tasks name and where each one's code and docs are, and its rules.
 function marketingBrief(list = [], { map = {}, names = productNames(map), dir = MARKETING_DIR } = {}) {
   const named = [...new Set(list.map((t) => productOf(t.text, names)).filter(Boolean))];
-  // its repo: by folder, or by its name as people say it (Dailify is in CallForge AI)
+  // its repo: by folder, or by its name as people say it (Bookly is in CallForge AI)
   const pathOf = (p) => { const k = Object.keys(map).find((n) => n !== MARKETING && map[n] && [n, basename(map[n]), displayName(map[n], n)].some((x) => x.toLowerCase() === p.toLowerCase())); return k ? map[k] : ""; };
   const where = named.map((p) => ({ p, path: pathOf(p) }));
   // a product with no pick tray yet: its first run starts by capturing it (capture.mjs)
@@ -405,7 +405,7 @@ function marketingBrief(list = [], { map = {}, names = productNames(map), dir = 
     ...(where.length ? ["- **Products in these tasks** (read each one's README and docs for what it is and its end goal):", ...where.map((w) => `  - ${w.p}${w.path ? `: \`${w.path}\`` : " (not one of the user's repos here: ask in QUESTIONS.md where it lives, or hand it over)"}`)] : []),
     ...trayless.map((w) => `- **${w.p} has no pick tray yet: start by capturing it.** Run \`node "${CLI}" capture "${w.p}"\` (add \`--url <its address>\` if it isn't running here; start it first with its demo data if it has some; \`--window "<title>"\` for a desktop app). Symbiot opens it in a browser of its own, takes its key screens from its routes and README as pictures and short clips, and blurs anything private before they reach \`${DRAFTS}/<product>/tray/\`. Then build its posts around those.`),
     `- Pictures and clips of a product come from Symbiot's capture (\`node "${CLI}" capture <product>\`; a video it already has, sound and all: \`--file <its address or path>\`), never a capture script of your own: Symbiot won't run one with the app's access. A post's picture or video is one from its pick tray (\`${DRAFTS}/<product>/tray/\`), blurred, that the user has looked over there; never an unblurred original (\`.symbiot/tray-originals/\`), and never a screenshot you took yourself. Say in the draft's notes which capture you'd use; the user picks it on the Marketing page.`,
-    `- Write each piece as a \`.md\` under \`${DRAFTS}/<product>/\` (\`${DRAFTS}/dailify/launch-post.md\`), a \`# \` title first, then \`product: <Product>\`, so the Marketing page tags it. Its screenshots and clips go next to it.`,
+    `- Write each piece as a \`.md\` under \`${DRAFTS}/<product>/\` (\`${DRAFTS}/bookly/launch-post.md\`), a \`# \` title first, then \`product: <Product>\`, so the Marketing page tags it. Its screenshots and clips go next to it.`,
     "- Every post opens with a strong hook (its first line written for reach), says plainly what the product is, and states its end goal. Where the end goal isn't written down, draft one and flag it in QUESTIONS.md for the user to confirm.",
     "- Say what each file is on a `type:` line right under its title: `type: post` (with `platform:` linkedin, x, instagram, facebook, reddit, blog or hackernews) only for the exact text of one social post that goes out; anything else is `type: listing` (store copy), `schedule`, `plan`, `brief`, `script` or `doc`. Those show as documents with a Copy button, never with Approve, post it, and the user marks a listing done once used. Write them as plain markdown (tables are fine).",
     `- Each draft holds the post apart from your notes: a \`# \` title, then \`product:\`, \`platform:\` (linkedin), \`when:\` (YYYY-MM-DD HH:MM, if it's scheduled) and \`media:\` (its picture or video, next to it) lines, then \`## Post\` with exactly the text that goes out (its line breaks, its hashtags) and nothing else, then \`## Notes\` for your reasoning, sources and anything for the user. Symbiot shows \`## Post\` as the platform's own preview, and what you post is that text, unchanged.`,

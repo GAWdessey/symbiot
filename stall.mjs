@@ -1,7 +1,7 @@
 // A run that stops making progress, handled by Symbiot itself. On 19 Oct 2026 the symbiot
 // lane's run sat for 30+ minutes on one check ("the rest of the path … with a one-option
 // question") with 7 tasks queued behind it, and Home only labelled it "(no progress in
-// 30 min)" until Garth shouted. The hang rule (agents.mjs runsTick) didn't see it: a run
+// 30 min)" until the user shouted. The hang rule (agents.mjs runsTick) didn't see it: a run
 // that thinks, or a long call's heartbeat, keeps its log growing.
 // So, every minute (runsTick): a live run with no new step for STALL_MIN minutes, and
 // nothing of its own still going (a call, a command it left running in the background),

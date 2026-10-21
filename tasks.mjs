@@ -29,7 +29,7 @@ import { MARKETING_DIR, ensureMarketing, marketingBrief } from "./marketing.mjs"
 // than a task holds (TASK_MAX), nothing is cut: the task keeps its whole text as
 // written (full), and its line is how it starts plus a link to the rest, which
 // goes out with its brief as .symbiot/full/<id>.md (pushTasks). after: what ends
-// its line either way, "(handed over by coral)".
+// its line either way, "(handed over by atlas)".
 const LEAD_MAX = 600, FULL_DIR = "full";
 const fullLink = (id) => ` Full text: \`.symbiot/${FULL_DIR}/${id}.md\``;
 // A long task's start: its whole sentences up to LEAD_MAX, or its words.
@@ -96,7 +96,7 @@ function removeTask(id) {
   return { ok: true };
 }
 // Remove, on Home or the Workdesk: the task is cancelled, not deleted. It goes to the Archive
-// marked removed, so Undo (or Restore there) brings it back as it was (Garth, 2026-10-15:
+// marked removed, so Undo (or Restore there) brings it back as it was (the user, 2026-10-15:
 // "there is no way to remove an unwanted task"). Its repo's next TASKS.md leaves it out.
 function cancelTask(id) {
   const t = loadTasks(), it = t.find((x) => x.id === id);
@@ -118,7 +118,7 @@ function completedInRepo(repoPath) {
   catch { return []; }
 }
 
-// A task that removes others: `Drop the "gosolr's own WhatsApp number" task`,
+// A task that removes others: `Drop the "sunco's own WhatsApp number" task`,
 // "Merge the two `WA_WABA_ID` tasks into one". An agent can't edit your task
 // list, so approving one was all that happened: the tasks it named stayed open,
 // and every regenerated TASKS.md brought them back. Once it's approved, they go
@@ -527,7 +527,7 @@ function releaseInput(repo, opts = {}) {
 // runs, so a second click could start another on the same tree. Each step of a ship
 // ends by itself (git, the tests and gh all have a limit), and the hold is let go
 // however it ends; one older than SHIP_STALE is past any ship, so it's taken over
-// rather than refusing every Approve there until the app restarts (dailify, 14 Oct
+// rather than refusing every Approve there until the app restarts (bookly, 14 Oct
 // 2026: its tests never ended). SHIP_STALE is past the sum of the steps' limits
 // (status 10 + add 10 + tests 15 + rebase 4 + push 4 + gh 2 min): at 30 a slow ship
 // was taken over and two ran on one checkout. shipStep notes what it's on, for the
@@ -677,8 +677,8 @@ function refreshReview(path, had) {
   workingChangesAsync(path).then((wc) => { if (REVIEW_GIT.get(path) === had) REVIEW_GIT.set(path, { at: Date.now(), v: reviewOf(path, wc) }); }).catch(() => {}).finally(() => { had.busy = false; }); // forgotten meanwhile (an Approve): dropped
 }
 const forgetReview = () => REVIEW_GIT.clear();
-// Changes an agent made in a lane's folder for a job that lane handed over (daaymn's handoff to
-// ops, which edits daaymn's folder) aren't "changes without a task": lanes.mjs sets this to name
+// Changes an agent made in a lane's folder for a job that lane handed over (quartz's handoff to
+// ops, which edits quartz's folder) aren't "changes without a task": lanes.mjs sets this to name
 // the handoff behind them ({ text, to, held? } or null), so they go up by themselves (shipHanded).
 let HANDED_LOOKUP = () => null;
 const setHandedLookup = (f) => { HANDED_LOOKUP = typeof f === "function" ? f : () => null; };
@@ -724,7 +724,7 @@ function pendingReview() {
   return out;
 }
 // Repos with tasks approved in the last two weeks that have a commit but no PR: from
-// before Approve kept what didn't go up (readUnsent), so dailify's four show up too.
+// before Approve kept what didn't go up (readUnsent), so bookly's four show up too.
 const UNSENT_DAYS = 14;
 const lateUnsent = (t, now = Date.now()) => new Set(t.filter((x) => x.repo && x.archived && x.commit && x.branch && !x.pr && !x.unsentLeft && now - (Number(x.approvedAt) || 0) < UNSENT_DAYS * 86400000).map((x) => x.repo));
 // The review card's word on approved work that didn't go up: { at, branch, commit, ahead,
@@ -849,14 +849,14 @@ function commitText(texts, deny = [], notes = null) {
 // The repo's own tests, run before a PR opens (what CI would run). A repo with no test
 // script, or with its dependencies not installed here, can't be checked: that doesn't block.
 // Nor do tests that only failed reaching a service on this computer that isn't running
-// (dailify's API tests and Postgres on 127.0.0.1:5432, 13 Oct 2026): that's "couldn't
+// (bookly's API tests and Postgres on 127.0.0.1:5432, 13 Oct 2026): that's "couldn't
 // test here" (untested), and CI runs them on the PR. opts.cmd/args stand in for npm test.
 // They run as a process group of their own, and end when npm does: a server a test started
-// (dailify's pnpm -r test, 14 Oct 2026) kept their output open after npm exited, so this
+// (bookly's pnpm -r test, 14 Oct 2026) kept their output open after npm exited, so this
 // waited for ever, holding that folder's Approve with it ("Already approving here"). Past
 // the limit, or 2 s after npm exits with the output still held, the whole group is stopped.
 // Not npm test --silent: npm hands its loglevel down, and pnpm -r test under "silent"
-// prints nothing at all (dailify, 14 Oct 2026), so a database that wasn't running read
+// prints nothing at all (bookly, 14 Oct 2026), so a database that wasn't running read
 // as a plain failure with no reason, and every Approve there stopped before the push.
 async function repoTests(path, { cmd = "npm", args = ["test"], limit = 15 * 60000 } = {}) {
   let test = ""; try { test = String(JSON.parse(readFileSync(join(path, "package.json"), "utf8")).scripts?.test || ""); } catch {}
@@ -896,7 +896,7 @@ function localRefused(s) {
   return m ? (m[2] ? `${m[1]}:${m[2]}` : m[1]) : "";
 }
 // Approved work committed here that never reached GitHub: commits on this branch that
-// no origin ref has, with something main doesn't. dailify, 13 Oct 2026: four Approves
+// no origin ref has, with something main doesn't. bookly, 13 Oct 2026: four Approves
 // committed on symbiot/4-tasks-2026-10-13 and stopped before the push (its tests needed
 // a database that wasn't running here); the tree was clean after, so each next Approve
 // found "nothing to merge" and the work sat there until ops pushed it by hand (#508).

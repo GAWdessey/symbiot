@@ -44,7 +44,7 @@ try {
   ok("switched on for a site (its subdomains too)", G.setActSite("https://namecheap.com", true, { load: loadConfig, save: saveConfig }).sites.join() === "namecheap.com");
   ok("…a click there goes ahead", click(1, "Clicks Next") === null);
   ok("…but not one that doesn't say what it does", /action_summary/.test((click(1) || {}).why || ""));
-  ok("…and a fill goes ahead too", act("form_input", { tabId: 1, ref: "ref_3", value: "garth", action_summary: "Fills in the account name" }) === null);
+  ok("…and a fill goes ahead too", act("form_input", { tabId: 1, ref: "ref_3", value: "pat", action_summary: "Fills in the account name" }) === null);
 
   console.log("A SEND, A PAYMENT, A DELETE — held for the user's Go, then through once");
   const held = click(1, "Places the order for 3 domains");
@@ -71,7 +71,7 @@ try {
   ok("…tabs_context_mcp's list says it's still there: acting carries on", click(1, "Clicks Next") === null && click(1, "Clicks Next") === null);
   ok("a click that followed a link to another site: the result says so, and acting there is refused", click(1, "Clicks the partner link", {}, "https://evil.example/pay") === null && /acting on evil\.example in the user's own Chrome is off/.test((click(1, "Clicks Next") || {}).why || ""), click(1, "Clicks Next"));
   ok("…and back is somewhere unknown until a result says where", judge(C + "navigate", { tabId: 1, url: "back" }, o) === null && /may have left/.test((judge(C + "form_input", { tabId: 1, ref: "r", value: "x", action_summary: "Fills in the name" }, o) || {}).why || ""));
-  ok("a fill or a typed word doesn't leave the page: the next act goes ahead without a result", judge(C + "navigate", { tabId: 2, url: NC }, o) === null && judge(C + "form_input", { tabId: 2, ref: "r", value: "x", action_summary: "Fills in the name" }, o) === null && judge(C + "computer", { action: "type", text: "garth", tabId: 2, action_summary: "Types the name" }, o) === null);
+  ok("a fill or a typed word doesn't leave the page: the next act goes ahead without a result", judge(C + "navigate", { tabId: 2, url: NC }, o) === null && judge(C + "form_input", { tabId: 2, ref: "r", value: "x", action_summary: "Fills in the name" }, o) === null && judge(C + "computer", { action: "type", text: "pat", tabId: 2, action_summary: "Types the name" }, o) === null);
   ok("a result that isn't Chrome's, or names no tab, notes nothing", G.seen("Bash", result(2, "https://evil.example"), o) === 0 && G.seen(C + "find", "Found 1 matching element", o) === 0);
 
   console.log("THE RUN — its tools, and the hook on them");

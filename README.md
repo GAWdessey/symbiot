@@ -453,7 +453,7 @@ is still running, Approve waits ("agent still working"), so half-done work isn't
 committed.
 
 **Tasks about tasks.** An agent can't edit your task list, so a task like
-`Drop the "gosolr's own WhatsApp number" task` or ``Merge the two `WA_WABA_ID`
+`Drop the "sunco's own WhatsApp number" task` or ``Merge the two `WA_WABA_ID`
 tasks into one`` is done once you approve it. The tasks it names then leave your
 list, so a later **Send to repos** doesn't bring them back: a dropped one is
 archived, and of merged ones the newest stays and the rest are archived. Symbiot
@@ -725,9 +725,9 @@ every look; on Pearl's mirror they sit on a soft pearl sheen, so they read over 
 bright top and its dark underside alike.
 
 At the top, in a band of its own, is **what only you can do**: an agent's question
-to you, an Approve waiting, a first step. Each is a lit lane orb with a liquid line
+to you, an Approve waiting, a north star. Each is a lit lane orb with a liquid line
 to its blob: the project (by the name you use for it: the `CallForge AI` folder
-shows as **Dailify**, from its README), the question in a line and its two answers
+shows as **Bookly**, from its README), the question in a line and its two answers
 as buttons, or **answer in your own words**. Answering there is the same as on the
 agent's block in Agents (it's saved to its ANSWERS.md and the agent carries on),
 and the blob dissolves. More than fit across go on a second page. Clicking the orb
@@ -740,7 +740,7 @@ five things that can be done now, from what Symbiot already knows, each with wha
 it gains and how long it takes, and one button. **Triage the 8 unread reports**
 starts an agent that reads them and leaves one page, with their next steps as ideas
 you add in a click. **Retry** runs a handover that errored and was left. **Send
-coral's 2 waiting tasks to its agent** is for a project whose tasks have waited
+atlas's 2 waiting tasks to its agent** is for a project whose tasks have waited
 days with nothing at work there. **Give whatsapp_module "…"** puts a task with no
 project into the project its words name and starts that project's agent. **Draft
 replies** drafts replies to the newest new mail or chats and leaves them unsent.
@@ -988,13 +988,13 @@ agent so, and such a question says which: `👤 You (only you: your Meta token):
 
 Marketing is a lane of its own, not one repo's: posts, demo videos and screenshots,
 launches, landing-page copy and campaigns for every product you make (Symbiot,
-Dailify, the agent products…). Give it work on the Marketing page (**Add**, with the
+Bookly, the agent products…). Give it work on the Marketing page (**Add**, with the
 product it's for), by telling Symbiot ("a marketing task: a launch post for
-Dailify"), or by **Move to Marketing** on another project's task about posting,
+Bookly"), or by **Move to Marketing** on another project's task about posting,
 launches or pricing; any agent can hand work to it too, as `marketing`.
 
-- **Each item is tagged with its product**: `[Dailify] Write the launch post` as you
-  wrote it, else the product its words name (as you write it: "Dailify", from your
+- **Each item is tagged with its product**: `[Bookly] Write the launch post` as you
+  wrote it, else the product its words name (as you write it: "Bookly", from your
   repos' names as you say them, the way Home names them).
 - **Its agent works in its own folder**, `~/.config/symbiot/marketing`, a git repo of
   its own on this computer (no remote). It drafts each piece under

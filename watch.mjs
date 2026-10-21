@@ -618,7 +618,7 @@ function draftReply(id, { run = runHandoff } = {}) {
 // ---- A drafted reply, on its card ------------------------------------------------
 // The card used to say "The reply to Frikkie is ready for you to send" and never
 // showed the reply, with Go ahead next to "I can't send it myself" (2026-10-08): to
-// check it, Garth had to open LinkedIn. Now the card shows the reply itself, as it
+// check it, the user had to open LinkedIn. Now the card shows the reply itself, as it
 // will look there, and Go ahead sends it: a run of its own, without SYMBIOT_DRAFT,
 // through the same signed-in browser. Change it sends his words back to the drafting
 // agent, which redrafts, and the new version shows on the same card. Skip drops it.

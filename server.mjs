@@ -362,7 +362,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
   if (/[\\/]node_modules[\\/]symbiot[\\/]/.test(bin || "") && !SANDBOX && !process.env.SYMBIOT_NO_LAUNCHER) { try { installLauncher({ script: bin }); } catch {} }
   // Away's Super+` on COSMIC, which was only ever set by `symbiot away --shortcut`
   if (/[\\/]node_modules[\\/]symbiot[\\/]/.test(bin || "") && !SANDBOX && !process.env.SYMBIOT_NO_LAUNCHER) { import("./away.mjs").then((a) => a.ensureShortcut({ cmd: `${process.execPath} ${bin} away` })).catch(() => {}); }
-  // setup's first step: "Your computer" in the Android app, so a phone paired by its QR shows it
+  // setup's north star: "Your computer" in the Android app, so a phone paired by its QR shows it
   if (FRESH) { try { startOnboarding(); } catch {} }
   try { phoneSetupFirst(); } catch {} // the phone app, over an older one: setup goes to "Your computer" first
   // your projects: kept, and found again off the main thread, so nothing waits on a search
@@ -556,7 +556,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
         return jsonTag(req, res, await withReleases(list));
       }
       // the answer, saved in the folder that asked; it says which lane that is, so "Sent to …"
-      // names where it went (a Marketing answer said "Sent to Paperclip Steve")
+      // names where it went (a Marketing answer said "Sent to Paperclip Robin")
       if (u.pathname === "/api/agents/answer" && req.method === "POST") { const b = await readBody(req), path = String(b.path || ""), r = answerQuestions(path, b.answers, { rerun: !!b.rerun, share: true }); return json(res, r && r.ok ? { ...r, lane: laneOfFolder(path) } : r); }
       if (u.pathname === "/api/agents/skip" && req.method === "POST") { const b = await readBody(req); return json(res, skipIdea(String(b.path || ""), b.text)); }
       // What a run handed back (handback.mjs): facts for memory, kept only on Remember; replies it waits on.
@@ -868,7 +868,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
   // (the taskbar icon, `symbiot open`) used to remove the running app's socket and open its own
   // here, before finding the port busy and bowing out, and its exit removed that one too. The
   // running app kept listening on a file that was gone, so every sandboxed run's browser failed
-  // to start ("the app's socket isn't there", 12 Dailify runs on 21 Oct 2026).
+  // to start ("the app's socket isn't there", 12 Bookly runs on 21 Oct 2026).
   let gateOpen = false;
   function openGate() {
     if (gateOpen || (SANDBOX && !process.env.SYMBIOT_SCREENS_SOCK)) return; gateOpen = true;

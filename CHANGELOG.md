@@ -2,6 +2,10 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one), for anyone who installs the app: what changed in it, never whose work it was (no projects, people, accounts, services, run ids or task wording of the person who made it). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.69.0 — 2026-10-21
+
+- **Privacy:** the code, tests and docs no longer name the people, companies, servers or addresses Symbiot was built around. Its comments and examples use made-up names, and every release is now checked for private names in every file, not only in these notes.
+
 ## 0.68.1 — 2026-10-21
 
 - **Every screen tells the same story about a run.** How a run ended is worked out once, when it ends: waiting (on you, another lane, a reply or a time, and what), paused with work left, ready for review, done or failed. Home, the Workdesk, the Agents tab and the chat all read that one record, so a run waiting on something no longer shows as Finished somewhere else.
@@ -58,7 +62,7 @@ What each Symbiot release brought, newest first. When Approve bumps the version,
 - **A stalled agent is dealt with for you.** When a run makes no progress for much longer than it usually takes, Symbiot stops it and starts it once more from a note saying where it got stuck, keeping its changes. If it stalls again, Home shows one urgent card naming the agent and the step it stuck on, instead of a quiet "no progress" label.
 - **Changes with no ticked task say where they came from.** While an agent is still editing a checkout, the Workdesk shows it at work instead of offering its half-done changes for approval. Changes left behind say which run left them and when, and they no longer count as waiting on you on Home.
 - **A step that's already settled no longer holds its project back.** One whose card you skipped or dismissed, or that asked for a key you've since pasted, stops counting as waiting on you, and its agent is told where the key is.
-- **Someone new gets a first step on Home.** With projects found but no tasks yet, Home offers to have their agent look over the project they worked on last and suggest what to do first, changing nothing.
+- **Someone new gets a north star on Home.** With projects found but no tasks yet, Home offers to have their agent look over the project they worked on last and suggest what to do first, changing nothing.
 - **Ordinary words are no longer taken for passwords.** A word with an apostrophe or an id shaped like a UUID stays in your chat and tasks instead of being moved into the vault, and ones moved that way before are put back where they were. Keys made of dot-separated parts are caught as keys.
 - **A card can have a single button**, such as Send, when all it waits on is your go-ahead.
 - **Approving a content plan in Marketing marks it agreed**, instead of asking an agent to post it somewhere.
@@ -458,7 +462,7 @@ Fixes from a full audit of Symbiot: freezes, wasted runs, Approve, runs beside t
 
 ## 0.57.8
 
-- **An approved deploy with your server key goes through.** The membrane read `scp -i ~/.ssh/oracle_key …` as copying your key, when the key is only what scp signs in with (`ssh -i` already passed). So argena's deploy to the game server stayed blocked even after you approved it twice. Now scp's sign-in options don't count as files it copies. Copying a key or credentials themselves (`scp ~/.ssh/id_rsa host:`) is still stopped.
+- **An approved deploy with your server key goes through.** The membrane read `scp -i ~/.ssh/oracle_key …` as copying your key, when the key is only what scp signs in with (`ssh -i` already passed). So meridian's deploy to the game server stayed blocked even after you approved it twice. Now scp's sign-in options don't count as files it copies. Copying a key or credentials themselves (`scp ~/.ssh/id_rsa host:`) is still stopped.
 - **Agents check Symbiot in a copy of their own.** Every brief now says to see Symbiot working in a sandbox (`symbiot app --fresh`), and the membrane stops a browser or screenshot pointed at your running app. That's what closed your window five times on 2026-10-08. Reading its API with curl is still fine.
 
 ## 0.57.7

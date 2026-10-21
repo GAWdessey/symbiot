@@ -87,9 +87,9 @@ try {
   ok("it reads the save before", cfg.agentCmd === "claude -p" && cfg.parked[0] === "/a" && cfg.appToken === "tok", cfg);
   saveConfig({ ...cfg, appPort: 7391 });
   ok("and a save after it keeps every setting", loadConfig().agentCmd === "claude -p" && loadConfig().appPort === 7391);
-  writeJsonAtomic(MIND_FILE, { nodes: [{ name: "Jono", kind: "person", facts: [] }], log: [] }); writeJsonAtomic(MIND_FILE, { nodes: [{ name: "Jono", kind: "person", facts: [] }, { name: "Garth", kind: "person", facts: [] }], log: [] });
+  writeJsonAtomic(MIND_FILE, { nodes: [{ name: "Remy", kind: "person", facts: [] }], log: [] }); writeJsonAtomic(MIND_FILE, { nodes: [{ name: "Remy", kind: "person", facts: [] }, { name: "Pat", kind: "person", facts: [] }], log: [] });
   writeFileSync(MIND_FILE, "{\"nodes\":[");
-  ok("memory (mind.json) too", loadMind().nodes.length === 1 && loadMind().nodes[0].name === "Jono", loadMind());
+  ok("memory (mind.json) too", loadMind().nodes.length === 1 && loadMind().nodes[0].name === "Remy", loadMind());
   writeJsonAtomic(join(CFG, "x", "deep.json"), { a: 1 }, { mode: 0o600 });
   ok("writeJsonAtomic makes the folder it needs", readState(join(CFG, "x", "deep.json")).a === 1);
 

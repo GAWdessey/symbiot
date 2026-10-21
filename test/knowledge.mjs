@@ -43,11 +43,11 @@ put("sales/renewals/active/2026-10-bluegum-renewal/STATUS.md", `---
 item: Bluegum Logistics renewal, notice by 30 November
 case: sales/renewals
 owner: Thandi Mokoena
-people: [Garth White, Sipho Dube]
+people: [Pat Lee, Sipho Dube]
 status: Waiting
 due: 2026-11-30
-next_step: Garth signs off the discount
-waiting_on: Garth White (discount sign-off)
+next_step: Pat signs off the discount
+waiting_on: Pat Lee (discount sign-off)
 ---
 
 # Bluegum Logistics renewal
@@ -55,14 +55,14 @@ waiting_on: Garth White (discount sign-off)
 ## Where it stands
 Bluegum wants a 12% discount for a two-year term.
 `);
-put("sales/renewals/active/2026-09-acacia-renewal/STATUS.md", "---\nitem: Acacia Mining renewal\nowner: Garth White\nstatus: In progress\ndue: 2026-10-20\nwaiting_on: Sipho Dube (usage numbers)\n---\n\n# Acacia\n");
-put("sales/renewals/active/2026-08-old-renewal/STATUS.md", "---\nitem: Marula renewal\nowner: Garth White\nstatus: Done\nwaiting_on: Garth White\n---\n");
+put("sales/renewals/active/2026-09-acacia-renewal/STATUS.md", "---\nitem: Acacia Mining renewal\nowner: Pat Lee\nstatus: In progress\ndue: 2026-10-20\nwaiting_on: Sipho Dube (usage numbers)\n---\n\n# Acacia\n");
+put("sales/renewals/active/2026-08-old-renewal/STATUS.md", "---\nitem: Marula renewal\nowner: Pat Lee\nstatus: Done\nwaiting_on: Pat Lee\n---\n");
 put("sales/prices.csv", 'plan,price_excl_vat,notes\nStarter,"R1,200",for up to 5 users\nOrbital Plus,"R4,800","priority support, ""gold"" tier"\n');
 put("notes.txt", "Office wifi password rotates every quarter. Ask Lerato in IT for the new one.\n");
 put("sales/old-demo.md", "---\nexample: true\n---\n# Demo deal\n\nQuokka Industries signed for 400 seats.\n");
 put("contracts/msa.pdf", "%PDF-1.4 not really");
 put("contracts/terms.docx", "PK not really");
-writeFileSync(join(HOME, ".config", "symbiot", "config.json"), JSON.stringify({ myName: "Garth White" }));
+writeFileSync(join(HOME, ".config", "symbiot", "config.json"), JSON.stringify({ myName: "Pat Lee" }));
 
 try {
   console.log("FOLDERS — a setting next to scanRoots");
@@ -78,7 +78,7 @@ try {
   ok("kept on this computer, yours only (0600)", (statSync(K.KNOW_FILE).mode & 0o777) === 0o600, (statSync(K.KNOW_FILE).mode & 0o777).toString(8));
   const st = K.knowledgeState();
   ok("PDF and Word counted as not read yet", st.folders[0].notRead.pdf === 1 && st.folders[0].notRead.docx === 1, st.folders[0].notRead);
-  ok("the state counts examples, cases and open items", st.folders[0].exampleFiles === 2 && st.folders[0].cases === 1 && st.folders[0].items === 2 && st.me === "Garth White", st.folders[0]);
+  ok("the state counts examples, cases and open items", st.folders[0].exampleFiles === 2 && st.folders[0].cases === 1 && st.folders[0].items === 2 && st.me === "Pat Lee", st.folders[0]);
   const r2 = K.indexKnowledge();
   ok("nothing changed: nothing read again", r2.read === 0 && r2.kept === 9, r2);
   const np = put("notes.txt", "Office wifi password rotates every month now. Ask Lerato in IT for the new one, or the front desk.\n");
@@ -103,9 +103,9 @@ try {
 
   console.log("CASES — what's waiting on you, who owns it");
   const w = K.waitingOn();
-  ok("waiting on you: the open item whose waiting_on names you", w.me === "Garth White" && w.waiting.length === 1 && /Bluegum/.test(w.waiting[0].title) && w.waiting[0].cite.endsWith("2026-10-bluegum-renewal/STATUS.md"), w.waiting);
+  ok("waiting on you: the open item whose waiting_on names you", w.me === "Pat Lee" && w.waiting.length === 1 && /Bluegum/.test(w.waiting[0].title) && w.waiting[0].cite.endsWith("2026-10-bluegum-renewal/STATUS.md"), w.waiting);
   ok("yours: the open items you own (a done one isn't)", w.mine.length === 1 && /Acacia/.test(w.mine[0].title), w.mine);
-  ok("a first name counts, and a git name like GarthGhostai", K.namesYou("Garth (sign-off)", "Garth White") && K.namesYou("Garth (sign-off)", "GarthGhostai") && !K.namesYou("Gartha", "Garth White"), "");
+  ok("a first name counts, and a git name like PatGhostai", K.namesYou("Pat (sign-off)", "Pat Lee") && K.namesYou("Pat (sign-off)", "PatGhostai") && !K.namesYou("Gartha", "Pat Lee"), "");
   const o = K.ownerOf("who owns the Bluegum renewal?");
   ok("who owns it: the item's owner, with its file", o[0] && o[0].kind === "item" && o[0].owner === "Thandi Mokoena" && /STATUS\.md$/.test(o[0].cite), o);
   const oc = K.ownerOf("who handles renewals");
@@ -121,7 +121,7 @@ try {
   await converse({ where: "Home", question: "what's the Zephyrcorp price in the renewal letter?", ask, map: {} });
   ok("example content never reaches a chat", !/Zephyrcorp subscription renews|R9,999/.test(seen), seen.slice(0, 600));
   await converse({ where: "Home", question: "what's waiting on me?", ask, map: {} });
-  ok("what's waiting on me: the case items, from their front matter", /waiting on Garth White, [^\n]*\(cite the file[^\n]*:\n- Bluegum Logistics renewal, notice by 30 November · Waiting · due 2026-11-30 · owner Thandi Mokoena · waiting on Garth White \(discount sign-off\)/.test(seen) && /Open items Garth White owns:\n- Acacia Mining renewal/.test(seen) && !/Marula/.test(seen), seen.slice(0, 900));
+  ok("what's waiting on me: the case items, from their front matter", /waiting on Pat Lee, [^\n]*\(cite the file[^\n]*:\n- Bluegum Logistics renewal, notice by 30 November · Waiting · due 2026-11-30 · owner Thandi Mokoena · waiting on Pat Lee \(discount sign-off\)/.test(seen) && /Open items Pat Lee owns:\n- Acacia Mining renewal/.test(seen) && !/Marula/.test(seen), seen.slice(0, 900));
   await converse({ where: "Home", question: "who owns the Bluegum renewal?", ask, map: {} });
   ok("who owns X: the owner, from the case files", /Who owns it, from their case files[^\n]*:\n- item: Bluegum Logistics renewal.*owner Thandi Mokoena/.test(seen), seen.slice(0, 900));
 
@@ -132,7 +132,7 @@ try {
   ok("…unless asked for, and then marked", K.waitingOn("", { examples: true }).waiting.some((i) => i.example), K.waitingOn("", { examples: true }).waiting);
   await converse({ where: "Home", question: "what's waiting on me?", ask, map: {} });
   const kpart = seen.split("This chat so far:")[0]; // Home's own thread (its earlier answers) comes after
-  ok("…and a chat says none rather than an example", /waiting on Garth White, [^\n]*:\n- none/.test(kpart) && !/Bluegum/.test(kpart), kpart.slice(0, 600));
+  ok("…and a chat says none rather than an example", /waiting on Pat Lee, [^\n]*:\n- none/.test(kpart) && !/Bluegum/.test(kpart), kpart.slice(0, 600));
 
   console.log("NOT DOCUMENTS — a repo inside the folder, build output, the home folder itself (15 Oct 2026)");
   mkdirSync(join(CO, "tools", "app", ".git"), { recursive: true }); put("tools/app/README.md", "# An app\n\nIts own docs, the lane's.\n");

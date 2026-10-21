@@ -94,13 +94,13 @@ try {
   ok("a [~] item waits: counted, neither done nor open, and what it waits on is kept", ww.progress.done === 1 && ww.progress.total === 2 && ww.progress.waiting === 1 && /waits on: ops/.test(ww.progress.on), ww.progress);
   writeFileSync(join(repo, ".symbiot", "TASKS.md"), "## Tasks\n- [x] one\n- [ ] two\n- [ ] three\n");
   const { waitingOn } = await import("../work.mjs");
-  ok("a sentence saying nothing waits isn't a wait (21 Oct 2026)", waitingOn("Done. Nothing is waiting on Garth, and nothing was sent.") === "" && waitingOn("No one is waiting for this now.") === "");
+  ok("a sentence saying nothing waits isn't a wait (21 Oct 2026)", waitingOn("Done. Nothing is waiting on Pat, and nothing was sent.") === "" && waitingOn("No one is waiting for this now.") === "");
   ok("someone else's window that stays open until a time isn't a wait", waitingOn("Sent. The WhatsApp window stays open until 10:38 tomorrow.") === "");
   ok("…a real wait still is", waitingOn("Nothing is left here. I'm waiting on ops to read the report.") === "I'm waiting on ops to read the report");
   ok("a turn that ended to wait says what for; a plain summary says nothing", waitingOn("Nothing new to act on. Marketing's photos haven't landed, so I'm waiting for them and will check again.") === "Marketing's photos haven't landed, so I'm waiting for them and will check again" && waitingOn("Done. Fixed the login bug.") === "", waitingOn("Nothing new. Waiting on marketing's photos."));
-  console.log("HOW FAR ALONG — a run's step in its brief's plan, on Home (steve and argena, 2026-10-08: only 'Agents working: 2')");
+  console.log("HOW FAR ALONG — a run's step in its brief's plan, on Home (robin and meridian, 2026-10-08: only 'Agents working: 2')");
   const { briefPlan, stepOf, runLine, STALL_MS } = await import("../work.mjs");
-  const brief = "## Tasks\n- [x] old\n- [ ] Argena (v6.7). Do these in order. 1) Device pass on v6.7. Earlier today it got three hotfixes. 2) Look and feel, plus a zoned world. This is Garth's priority, with monsters. 3) Wire the class bible into the game, starting with core class apprenticeships. 4) Symbiot slow loop v0. Monsters use behaviour cards.\n";
+  const brief = "## Tasks\n- [x] old\n- [ ] Meridian (v6.7). Do these in order. 1) Device pass on v6.7. Earlier today it got three hotfixes. 2) Look and feel, plus a zoned world. This is Pat's priority, with monsters. 3) Wire the class bible into the game, starting with core class apprenticeships. 4) Symbiot slow loop v0. Monsters use behaviour cards.\n";
   const plan = briefPlan(brief);
   ok("a brief's numbered steps, each a short label (v6.7 isn't a sentence's end)", plan.map((p) => p.label).join(" | ") === "Device pass on v6.7 | Look and feel, plus a zoned world | Wire the class bible into the game | Symbiot slow loop v0", plan.map((p) => p.label));
   ok("…none without numbered steps, or with only one", briefPlan("- [ ] Fix the login bug.").length === 0 && briefPlan("- [ ] 1) Just this.").length === 0, "");

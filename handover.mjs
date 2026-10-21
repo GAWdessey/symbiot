@@ -27,8 +27,8 @@ function handoverRules(lanes = [], here = "", reach = null) {
     ""];
 }
 // What each lane can and can't reach (reach.mjs laneReach: { sandboxed, hosts, keys, sites }),
-// so a job goes to a lane that can do it. Ops handed dailify a change to the live
-// server's .env as "your lane", and dailify can't reach the server: it went back and
+// so a job goes to a lane that can do it. Ops handed bookly a change to the live
+// server's .env as "your lane", and bookly can't reach the server: it went back and
 // forth until the handover guard stopped it (13 Oct 2026).
 function reachLines(reach, here = "", lanes = []) {
   if (!reach) return [];
@@ -94,7 +94,7 @@ function parseAwaiting(text) {
 // A CI run failed, and the run that looked into it asked the user to paste `git add -A
 // && git commit … && git push origin main` into a terminal ("👤 You: review the diff,
 // commit and push"), and the card sat on Home under what only the user can do
-// (paperclip-steve, 2026-10-08). Staging, committing, pulling and pushing in a local
+// (paperclip-robin, 2026-10-08). Staging, committing, pulling and pushing in a local
 // repo is an agent's job: it does the work, and asks only for an OK on the Workdesk
 // before a push. A step that needs who the user is (a password, a token, signing in)
 // is still theirs.
@@ -102,7 +102,7 @@ const GIT_WORK = /\bgit\s+(?:add|commit|push|pull|fetch|merge|rebase|stash|resto
 const IDENTITY = /\bpassword\b|\b2fa\b|\btwo-factor\b|\b(?:api )?token\b|\bsign(?:ing)? in\b|\blog ?in\b|\bssh key\b|\bpassphrase\b|\bsudo\b/i;
 // A permission is never git work, whatever its words: "allow the list … to check the
 // deployed commit, git status and served files" was taken for a commit, and handed back to
-// an agent that can't give itself permission, which asked again (WinLove, 2026-10-12).
+// an agent that can't give itself permission, which asked again (LoveLink, 2026-10-12).
 const PERMISSION = /allowlist\.proposed|only you: a permission/i;
 const gitWork = (text) => { const t = String(text || ""); return GIT_WORK.test(t) && !IDENTITY.test(t) && !PERMISSION.test(t); };
 const PUSH_OK = "asking for your OK on the Workdesk, with the files, before it pushes";
@@ -142,7 +142,7 @@ function agentsClicking(options) {
 
 // ---- code changes, patches, edits and uploads are an agent's job ------------------
 // A card offered "👤 You (only you: a Symbiot code change)" for the WhatsApp photo-upload
-// patch (2026-10-11); Garth: "i dont know how to do this". Changing code, applying a patch,
+// patch (2026-10-11); the user: "i dont know how to do this". Changing code, applying a patch,
 // editing a file or uploading one is an agent's work; the user only approves. A step that
 // needs who they are (a password, a code, signing in) or the body (a cable, a phone) stays theirs.
 const CODE_WORK = /\bcode change|\b(?:apply|run|install)\b[^.;:]{0,40}\bpatch\b|\bpatch(?:es)?\b|\b(?:edit|change|modify|update|fix|rewrite)\b[^.;:]{0,40}\b(?:code|files?|config|source|repo|script)\b|\b(?:upload|attach)\b[^.;:]{0,30}\b(?:files?|images?|photos?)\b|\bpull request\b/i;
@@ -159,7 +159,7 @@ function agentsCodeWork(options) {
 
 // ---- one agent owns a site at a time ----------------------------------------------
 // Two agents ran the same npm step in the one Symbiot Browser window (2026-10-10) and each
-// asked Garth something different (a password, and to close the window). The first agent to
+// asked the user something different (a password, and to close the window). The first agent to
 // ask about a site owns it; a later agent's question about the same site is held, and the
 // owner's stays the one he sees. `asks`: [{ path, startedAt, text }], text = the question and
 // its options. Gives the paths whose ask is held, with who holds it: { path: ownerPath }.
@@ -178,7 +178,7 @@ function heldAsks(asks) {
 // ---- posting on a linked platform is an agent's job -------------------------------
 // A Marketing card offered two options, both "👤 You (only you: your linkedin): schedule
 // all three now in linkedin's scheduler… paste each post's text and attach its card"
-// (the [Steve] series, 2026-10-08), with LinkedIn linked in Symbiot's signed-in browser.
+// (the [Robin] series, 2026-10-08), with LinkedIn linked in Symbiot's signed-in browser.
 // Posting, scheduling, pasting or attaching there is the agent's work; the user's only
 // step is approving the post's preview. Signing in (a platform not linked, or signed
 // out) is still theirs. linked: the platforms linked in Symbiot, by id or name.
@@ -202,7 +202,7 @@ function agentsPosting(options, linked = []) {
 }
 
 // ---- acting on an email is an agent's job when the mailbox is linked ---------------
-// During the GitHub move a card told Garth to accept GitHub's transfer email himself
+// During the GitHub move a card told the user to accept GitHub's transfer email himself
 // (2026-10-10), with his Gmail linked. Opening, reading, replying to or following a link in
 // a mail is the agent's work through the mail connector or Symbiot's signed-in browser; the
 // user only gives the yes before anything hard to undo. linked: the linked site ids (gmail,
@@ -221,7 +221,7 @@ function agentsMail(options, linked = []) {
 }
 
 // ---- what's linked is never asked for again ----------------------------------------
-// A Marketing card asked "let a poster on this computer put the steve posts up for
+// A Marketing card asked "let a poster on this computer put the robin posts up for
 // you?" with two options, both "👤 You (only you: your linkedin sign-in)": "ok it…" and
 // "keep doing it by hand. schedule…" (2026-10-08), with LinkedIn already signed in in
 // Symbiot's browser. On a platform that's linked, a 👤 sign-in, link, consent or
@@ -257,12 +257,12 @@ const linkedChore = (text, linked = []) => { const t = String(text || ""), p = p
 // ---- what a run's last words leave to the user ----------------------------------
 // A run that ends saying something waits on the user ("the draft isn't sent",
 // "only you can do that", "needs sudo") without asking it in QUESTIONS.md left it
-// where nothing showed it: the email to Jono sat in Drafts and nothing asked for
+// where nothing showed it: the email to Remy sat in Drafts and nothing asked for
 // the OK. leftToYou finds it: { kind, what, check, label } or null.
 // kind "approve": what an agent does once the user says go (send, post, delete, pay,
 // close); "step": what only the user can do (sudo, a password, signing in). what:
 // the sentence that says so; check: what to check first (the catch it named, else
-// the point's next sentence); label: the point's bold name ("Reply to Cale").
+// the point's next sentence); label: the point's bold name ("Reply to Alex").
 const HELD = /\b(?:isn['’]t|wasn['’]t|not|never|hasn['’]t been|haven['’]t|didn['’]t) (?:yet )?(?:been )?(?:sent|send it|posted|post it)\b|\bunsent\b|\bbefore you (?:send|post)\b|\bfor you to (?:send|post)\b|\b(?:send|sending|post|posting) it yourself\b|\byou(?:['’]ll| will) (?:send|post) it\b|\bwaits? (?:on|for) your (?:ok|okay|go-ahead|approval|say-so)\b/i;
 const YOURS = /\bonly you (?:can|could|do)\b|\b(?:needs?|waits? (?:on|for)|waiting (?:on|for)) (?:your (?!review)\w+|you to)\b|\btype your password\b|\bneeds sudo\b/i;
 const DID = /\b(?:I|we)(?:['’]ve| have)? (?:sent|posted|deleted|paid|closed)\b|\balready (?:went out|sent|posted)\b|\bnothing (?:was |is )?(?:sent|posted)\b/i;
@@ -270,7 +270,7 @@ const ACTS = /\b(?:send|sent|sending|post|posted|publish|delete|remove|pay|close
 const CATCH = /\b(?:catch|before you|check|make sure|careful|fix (?:that|it)|first)\b/i;
 const NOT_THEIRS = /\bconnectors?\b|\bclaude\.ai\b/i; // a connector to sign in again shows on Home already
 // Work another lane does: ops on a server, marketing posting, or a job handed over. The run
-// handed it on (HANDOFF.md), so it's on its way and never the user's to do: dailify's "Ops has
+// handed it on (HANDOFF.md), so it's on its way and never the user's to do: bookly's "Ops has
 // to load it on prod, which this lane can't reach." showed as a card with "I've done this"
 // though ops had it, and had done it (14 Oct 2026). Unless it says only the user can.
 const LANE_JOB = /\b(?:ops|marketing)(?:['’]s?)?(?: (?:lane|agent|run))? (?:has to|have to|must|needs? to|will|would|is (?:to|going to|doing|on)|does|do(?:es)? it|can|then|loads?|runs?|deploys?|applies|sets?|restarts?|ships?)\b|\b(?:hand(?:ed|ing)?|passed|sent|gave|given|went) (?:it |this |that |the [\w-]+ )?(?:over |back )?to (?:the )?(?:ops|marketing|[\w-]+(?:['’]s)? (?:lane|agent))\b|\b(?:this|my|our|the [\w-]+) lane can(?:['’]t|not) (?:reach|do|get to|touch)\b|\b(?:another|other|ops['’]?s?) lane\b|\bops['’]s? (?:job|work|side)\b/i;

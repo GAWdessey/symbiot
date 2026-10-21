@@ -25,7 +25,7 @@ try {
   ok("merged, closed, conflicts, a failed check, checks running, ready", P.prState({ state: "MERGED" }) === "merged" && P.prState({ state: "CLOSED" }) === "closed" && P.prState({ state: "OPEN", mergeable: "CONFLICTING" }) === "has conflicts"
     && P.prState({ state: "OPEN", mergeable: "MERGEABLE", statusCheckRollup: [{ conclusion: "FAILURE" }] }) === "a check failed" && P.prState({ state: "OPEN", statusCheckRollup: [{ status: "IN_PROGRESS" }] }) === "checks running"
     && P.prState({ state: "OPEN", mergeable: "MERGEABLE", statusCheckRollup: [{ status: "COMPLETED", conclusion: "SUCCESS" }] }) === "ready to merge");
-  const now = Date.now(), tasks = [{ id: "a", repo: "symbiot", pr: "https://github.com/me/symbiot/pull/216", approvedAt: now - 3600000 }, { id: "b", repo: "symbiot", pr: "https://github.com/me/symbiot/pull/216", approvedAt: now }, { id: "c", repo: "dailify", pr: "https://github.com/me/dailify/pull/9", approvedAt: now - 40 * 86400000 }, { id: "d", repo: "x" }];
+  const now = Date.now(), tasks = [{ id: "a", repo: "symbiot", pr: "https://github.com/me/symbiot/pull/216", approvedAt: now - 3600000 }, { id: "b", repo: "symbiot", pr: "https://github.com/me/symbiot/pull/216", approvedAt: now }, { id: "c", repo: "bookly", pr: "https://github.com/me/bookly/pull/9", approvedAt: now - 40 * 86400000 }, { id: "d", repo: "x" }];
   ok("the PRs it opened lately, each once, with their lane", JSON.stringify(P.openedPrs(tasks, now)) === JSON.stringify([{ url: "https://github.com/me/symbiot/pull/216", lane: "symbiot" }]));
   const asked = [];
   const pi = await P.prItems({ prs: P.openedPrs(tasks, now), gh: async (args) => { asked.push(args.join(" ")); return JSON.stringify({ state: "OPEN", mergeable: "CONFLICTING" }); } });
@@ -33,47 +33,47 @@ try {
   ok("gh signed out or missing: nothing listed, no error", (await P.prItems({ prs: P.openedPrs(tasks, now), gh: async () => null })).length === 0);
 
   console.log("NPM — a published package's version on the registry");
-  const sym = lane("symbiot", { "package.json": JSON.stringify({ name: "symbiot", version: "0.66.13" }) }), app = lane("dailify", { "package.json": JSON.stringify({ name: "dailify", version: "1.0.0" }) }), lib = lane("kit", { "package.json": JSON.stringify({ name: "@me/kit", version: "2.0.0", publishConfig: { access: "public" } }) });
-  ok("Symbiot's and one with publishConfig; never an app's (someone else may own its name on npm)", P.packagesOf({ symbiot: sym, dailify: app, kit: lib }).map((p) => p.name).join() === "symbiot,@me/kit");
+  const sym = lane("symbiot", { "package.json": JSON.stringify({ name: "symbiot", version: "0.66.13" }) }), app = lane("bookly", { "package.json": JSON.stringify({ name: "bookly", version: "1.0.0" }) }), lib = lane("kit", { "package.json": JSON.stringify({ name: "@me/kit", version: "2.0.0", publishConfig: { access: "public" } }) });
+  ok("Symbiot's and one with publishConfig; never an app's (someone else may own its name on npm)", P.packagesOf({ symbiot: sym, bookly: app, kit: lib }).map((p) => p.name).join() === "symbiot,@me/kit");
   const urls = [];
-  const ni = await P.npmItems({ map: { symbiot: sym, dailify: app }, fetchFn: async (u) => { urls.push(u); return json({ version: "0.66.14" }); } });
+  const ni = await P.npmItems({ map: { symbiot: sym, bookly: app }, fetchFn: async (u) => { urls.push(u); return json({ version: "0.66.14" }); } });
   ok("its latest version, from the registry", ni.length === 1 && ni[0].text === "npm symbiot: 0.66.14 is the latest" && urls[0] === "https://registry.npmjs.org/symbiot/latest", [ni, urls]);
 
   console.log("META — WhatsApp templates in review, with the key in a lane's own .env");
   const wa = lane("whatsapp_module", { ".env": "WHATSAPP_ACCESS_TOKEN=EAAsecret123\nWABA_ID=1234567890\nOTHER=1\n" });
   ok("the account and its token, from the lane's .env", JSON.stringify(P.metaOf("whatsapp_module", wa)) === JSON.stringify({ lane: "whatsapp_module", waba: "1234567890", token: "EAAsecret123" }));
-  ok("a lane with no such keys: none", P.metaOf("dailify", app) === null);
+  ok("a lane with no such keys: none", P.metaOf("bookly", app) === null);
   const mu = [];
-  const mi = await P.metaItems({ map: { whatsapp_module: wa, dailify: app }, fetchFn: async (u) => { mu.push(u); return json({ data: [{ name: "dailify_invite_v3", status: "PENDING", language: "en" }, { name: "dailify_invite_v1", status: "APPROVED", language: "en" }] }); } });
-  ok("each template and where its review stands", mi.map((x) => x.text).join(" | ") === "WhatsApp template dailify_invite_v3 (en): in review | WhatsApp template dailify_invite_v1 (en): approved" && /graph\.facebook\.com\/v21\.0\/1234567890\/message_templates/.test(mu[0]), mi);
+  const mi = await P.metaItems({ map: { whatsapp_module: wa, bookly: app }, fetchFn: async (u) => { mu.push(u); return json({ data: [{ name: "bookly_invite_v3", status: "PENDING", language: "en" }, { name: "bookly_invite_v1", status: "APPROVED", language: "en" }] }); } });
+  ok("each template and where its review stands", mi.map((x) => x.text).join(" | ") === "WhatsApp template bookly_invite_v3 (en): in review | WhatsApp template bookly_invite_v1 (en): approved" && /graph\.facebook\.com\/v21\.0\/1234567890\/message_templates/.test(mu[0]), mi);
   ok("…and the token is only in the request, never in what's kept or shown", !JSON.stringify(mi).includes("EAAsecret123"));
 
   console.log("THE STATUS WATCH — the first read learns, a change is news, never a run of its own");
   const st = W.ensureStatusWatch();
   ok("it's there by itself, every 15 minutes", st && st.url === P.STATUS_URL && st.every === 15 && W.ensureStatusWatch().id === st.id);
-  let list = [{ text: "WhatsApp template dailify_invite_v3 (en): in review", kind: "meta", lane: "whatsapp_module", subject: "dailify_invite_v3", state: "in review" }], acted = [];
+  let list = [{ text: "WhatsApp template bookly_invite_v3 (en): in review", kind: "meta", lane: "whatsapp_module", subject: "bookly_invite_v3", state: "in review" }], acted = [];
   const deps = { states: async () => ({ url: P.STATUS_URL, list, via: "api" }), act: (items) => { acted.push(...items); }, notify: () => {}, brief: async () => "" };
   const r1 = await W.checkWatch(st.id, deps);
   ok("first read: learns what's there, no news, nothing started", r1.learned === 1 && !acted.length && !JSON.parse(readFileSync(W.WATCH_FILE, "utf8")).news.length, r1);
   const r2 = await W.checkWatch(st.id, deps);
   ok("the same states again: nothing new", !(r2.new || []).length && !acted.length, r2);
-  list = [{ text: "WhatsApp template dailify_invite_v3 (en): approved", kind: "meta", lane: "whatsapp_module", subject: "dailify_invite_v3", state: "approved" }];
+  list = [{ text: "WhatsApp template bookly_invite_v3 (en): approved", kind: "meta", lane: "whatsapp_module", subject: "bookly_invite_v3", state: "approved" }];
   const r3 = await W.checkWatch(st.id, deps);
-  ok("it's approved: that's news", (r3.new || []).length === 1 && r3.new[0].text === "WhatsApp template dailify_invite_v3 (en): approved", r3);
-  ok("…and what changed goes to what it may start", acted.length === 1 && acted[0].subject === "dailify_invite_v3", acted);
+  ok("it's approved: that's news", (r3.new || []).length === 1 && r3.new[0].text === "WhatsApp template bookly_invite_v3 (en): approved", r3);
+  ok("…and what changed goes to what it may start", acted.length === 1 && acted[0].subject === "bookly_invite_v3", acted);
   const board = W.watchBoard(24).cards.find((c) => c.url === P.STATUS_URL);
   ok("the Dashboard's Status card counts it as a change", board && board.label === "1 change" && board.source === "status", board);
 
   console.log("SOMETHING TO DO — a run only then");
-  const dl = lane("dailify2"); writeFileSync(join(dl, ".symbiot", "TASKS.md"), "## Tasks\n- [ ] Once Meta approves dailify_invite_v3, switch the server to it\n- [x] done one\n");
-  const quiet = lane("coral"); writeFileSync(join(quiet, ".symbiot", "TASKS.md"), "## Tasks\n- [ ] Fix the header\n");
+  const dl = lane("dailify2"); writeFileSync(join(dl, ".symbiot", "TASKS.md"), "## Tasks\n- [ ] Once Meta approves bookly_invite_v3, switch the server to it\n- [x] done one\n");
+  const quiet = lane("atlas"); writeFileSync(join(quiet, ".symbiot", "TASKS.md"), "## Tasks\n- [ ] Fix the header\n");
   const added = [], ran = [];
-  const did = P.actOn([{ text: "WhatsApp template dailify_invite_v3 (en): approved", kind: "meta", subject: "dailify_invite_v3", state: "approved" }, { text: "PR symbiot#216 (symbiot): has conflicts", href: "https://github.com/me/symbiot/pull/216", kind: "pr", lane: "symbiot", subject: "symbiot#216", state: "has conflicts", open: true }, { text: "PR coral#3 (coral): closed", kind: "pr", lane: "coral", subject: "coral#3", state: "closed", open: false }],
-    { map: { dailify2: dl, coral: quiet }, add: (t, l) => { added.push([t, l]); return { id: "t" + added.length }; }, run: (p) => ran.push(p) });
-  ok("the lane whose open task names it is told, and started", ran.join() === dl && /### Symbiot: WhatsApp template dailify_invite_v3 \(en\): approved/.test(readFileSync(join(dl, ".symbiot", "ANSWERS.md"), "utf8")), [ran, did]);
+  const did = P.actOn([{ text: "WhatsApp template bookly_invite_v3 (en): approved", kind: "meta", subject: "bookly_invite_v3", state: "approved" }, { text: "PR symbiot#216 (symbiot): has conflicts", href: "https://github.com/me/symbiot/pull/216", kind: "pr", lane: "symbiot", subject: "symbiot#216", state: "has conflicts", open: true }, { text: "PR atlas#3 (atlas): closed", kind: "pr", lane: "atlas", subject: "atlas#3", state: "closed", open: false }],
+    { map: { dailify2: dl, atlas: quiet }, add: (t, l) => { added.push([t, l]); return { id: "t" + added.length }; }, run: (p) => ran.push(p) });
+  ok("the lane whose open task names it is told, and started", ran.join() === dl && /### Symbiot: WhatsApp template bookly_invite_v3 \(en\): approved/.test(readFileSync(join(dl, ".symbiot", "ANSWERS.md"), "utf8")), [ran, did]);
   ok("…a lane whose tasks don't name it isn't", !ran.includes(quiet));
   ok("an open PR of Symbiot's with conflicts becomes its lane's task, on the same branch", added.length === 1 && added[0][1] === "symbiot" && /has conflicts with main: rebase its branch on main/.test(added[0][0]) && /Don't open a new PR/.test(added[0][0]), added);
-  ok("…a PR you closed is left alone", !added.some((a) => /coral#3/.test(a[0])));
+  ok("…a PR you closed is left alone", !added.some((a) => /atlas#3/.test(a[0])));
 
   console.log("STOPPED BY YOU — stays stopped");
   W.removeWatch(st.id);

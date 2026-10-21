@@ -31,7 +31,7 @@ function secretPath(p, home) { return SECRET.some((s) => under(p, join(home, s))
 // A public key is made to be handed out, so reading one goes ahead (the Read tool, or a plain
 // cat or head): a file directly in ~/.ssh named <name>.pub, that's still a .pub there once
 // links are followed (a x.pub pointing at a private key isn't). Writing or copying one, and
-// everything else in ~/.ssh, stays stopped. Ops made a key for the WinLove server and
+// everything else in ~/.ssh, stays stopped. Ops made a key for the LoveLink server and
 // couldn't read its .pub to send to the server's admin (2026-10-12).
 function publicKey(p, home) {
   const dir = join(home, ".ssh");
@@ -147,7 +147,7 @@ function judgeBash(cmd, { cwd, home, branch, session = "" }) {
     if (/^(cat|less|more|head|tail|cp|scp|base64|xxd|strings|grep|rg|sed|awk)$/.test(w[0])) {
       // scp's sign-in options take a value (`-i ~/.ssh/key` is the key it signs in with, as
       // ssh's is, never a file it copies): those aren't what it reads. Only what it copies
-      // counts: `scp ~/.ssh/id_rsa host:` stays blocked. The argena lane's approved deploy
+      // counts: `scp ~/.ssh/id_rsa host:` stays blocked. The meridian lane's approved deploy
       // (`scp -i ~/.ssh/oracle_key server/x.py ubuntu@host:…`) was blocked (2026-10-08).
       const own = w[0] === "scp" ? SCP_VALUE : null;
       for (const p of w.slice(1).filter((a, i, all) => !a.startsWith("-") && !(own && own.test(all[i - 1] || "")))) {

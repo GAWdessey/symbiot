@@ -244,7 +244,7 @@ function withTrust(tmpl, box = null, repoPath = "") {
   return c;
 }
 // The --model for an agent run: pickModel's tier as the CLI alias (sonnet, opus), or its id.
-// A lane that should always run on one tier: { "lanes": { "steve": { "model": "opus" } } } in lanes.json.
+// A lane that should always run on one tier: { "lanes": { "robin": { "model": "opus" } } } in lanes.json.
 function laneModel(lane) {
   try { const m = JSON.parse(readFileSync(join(CONFIG_DIR, "lanes.json"), "utf8")).lanes?.[lane]?.model; return typeof m === "string" ? m : ""; } catch { return ""; }
 }
@@ -265,7 +265,7 @@ function routedModel(repoPath, opts = {}, resumed = false) {
   } catch { return ""; }
 }
 // Symbiot's own commands on its shared browser are never a question for the user: every
-// Claude run may use them, in any lane, without a card on Home (2026-10-16: daaymn's agent
+// Claude run may use them, in any lane, without a card on Home (2026-10-16: quartz's agent
 // asked for `symbiot screens` and `symbiot press`). A wrapper counts as Claude too (isClaudeCmd).
 const OWN_TOOLS = ["Bash(symbiot screens:*)", "Bash(symbiot press:*)"];
 // --add-dir takes a folder: one pointing at a file (a key, ~/.ssh/oracle_key) made runs fail on it.
@@ -390,7 +390,7 @@ function sandboxFor(repoPath, tmpl = "", { needs = sandboxNeeds } = {}) {
 function sandboxEnv(box, { token = () => (hasCmd("gh") ? sh("gh auth token").trim() : "") } = {}) {
   if (!box) return null;
   // NODE_USE_ENV_PROXY: the sandbox reaches the network only through its proxy, which curl
-  // honours and Node's fetch ignores without it; every Dailify run of 21 Oct 2026 hit
+  // honours and Node's fetch ignores without it; every Bookly run of 21 Oct 2026 hit
   // "fetch failed" probing SMS Portal before it found this out for itself.
   const env = { SYMBIOT_WRITES: JSON.stringify(box.writes), NODE_USE_ENV_PROXY: "1" };
   if (!process.env.GH_TOKEN) { let t = ""; try { t = token(); } catch {} if (/^[\w-]{20,}$/.test(t)) env.GH_TOKEN = t; }
@@ -784,7 +784,7 @@ function parkLane(path, on) {
 }
 // ---- urgent work goes first -------------------------------------------------
 // "symbiot keeps crashing" waited behind a routine run in its own lane (the Home
-// layout, step 5 of 6) and 5 more tasks, and Garth parked argena and steve by hand
+// layout, step 5 of 6) and 5 more tasks, and the user parked meridian and robin by hand
 // (2026-10-08). Urgent is a crash, "urgent", "comes first" or a word in capitals.
 // Then urgentFirst parks every other lane with work going or waiting (a run already
 // going there finishes, as parking does: the end of a run is the safe point, and a
@@ -819,7 +819,7 @@ function stopRun(path) {
 // there now: one already on urgent work, which this waits for, or one it couldn't stop) }.
 // halt: false leaves a routine run there to finish (the ask said "first", not "urgent").
 // others: false parks no other lane (a fix to Symbiot itself: on 20 Oct a card-labelling
-// fix parked the user's dailify lane twice); it still goes first in its own lane.
+// fix parked the user's bookly lane twice); it still goes first in its own lane.
 function urgentFirst(path, { lanes = null, stop = stopRun, running = runningHandoff, halt = true, others = true } = {}) {
   if (!path) return { parked: [], parkedPaths: [], stopped: false, unparked: false, busy: "" };
   const u = urgentState() || { at: Date.now(), paths: [], parked: [], runs: [] };
@@ -963,7 +963,7 @@ function earlierRuns() {
 // draft isn't sent", "needs sudo, and only you can do that"), or waiting on a step
 // an answer of yours picked (waitingFor), needs you, and says so: on its block in
 // Agents and on Home, with what to check first. It did end, so before this nothing
-// showed it: Home said nothing needed you while a reply to Cale sat in Drafts. It
+// showed it: Home said nothing needed you while a reply to Alex sat in Drafts. It
 // stays for NEEDS_FOR, until you go ahead or skip it (settled.json keeps which, per
 // folder), a newer run there says something else, or a newer ops run took up the
 // same task. { kind: "approve"|"step", what, check, label, key, waiting? } or null.
@@ -977,7 +977,7 @@ function settleNeeds(path, key) {
   try { writeJsonAtomic(SETTLED, o, { mode: 0o600 }); } catch {}
 }
 // An ask the user closed ("this case is closed, no further aspects…"): settled.json keeps its words
-// by folder for CLOSED_FOR, and a later run there that says the same thing again ("Carla reply: it
+// by folder for CLOSED_FOR, and a later run there that says the same thing again ("Dana reply: it
 // stays an unsent draft") raises no card (needsOf). Something new on it comes as a new ask, in other words.
 const CLOSED = "#closed", CLOSED_FOR = 14 * 86400000;
 const subjectOf = (t) => {
@@ -987,12 +987,12 @@ const subjectOf = (t) => {
   return { words, names };
 };
 // Words that say where an ask stands ("still an unsent draft, waiting for your OK"), not what it's about:
-// with them "Jono reply" and "Carla reply" read as the same ask.
+// with them "Remy reply" and "Dana reply" read as the same ask.
 const SUBJECT_STOP = new Set(("the and you your yours for with this that these those are was were has have had not but its from into once then when what which who will " +
   "would can could should may might our out all any some about after before there here they them their his her she him just also than very now yet been " +
   "unsent sent send sending draft drafts drafted email emails mail mails still sits stays waiting waits unless say says okay nothing anything changed ready gone ahead check first haven hasn isn won didn").split(" "));
 // Whether two cards ask the same thing: when both name someone, a name they share and half their other
-// words ("Carla reply", not "Carla's invoice"); else most of their words.
+// words ("Dana reply", not "Dana's invoice"); else most of their words.
 function sameSubject(a, b) {
   const x = subjectOf(a), y = subjectOf(b); if (!x.words.size || !y.words.size) return false;
   const both = [...x.words].filter((w) => y.words.has(w)).length, j = both / (x.words.size + y.words.size - both);
@@ -1032,7 +1032,7 @@ function needsOf(path, { final = "", waiting = null, end = Date.now(), start = e
   let n = waiting ? { kind: "step", what: clipWords(String(waiting.step || "").replace(/^\s*👤\s*(You\s*(\([^)]*\))?:)?\s*/, "").trim(), 240), check: "", label: "", waiting: true } : leftToYou(final) || readNeeds(path, final);
   if (!n || !n.what) return null;
   // its own words say nothing waits on the user: an ops run's "waits for your OK" card said
-  // "Nothing is waiting on Garth", and its Go ahead only started a run that repeated its report (21 Oct 2026)
+  // "Nothing is waiting on the user", and its Go ahead only started a run that repeated its report (21 Oct 2026)
   if (!n.waiting && (NOTHING_FOR_YOU.test(`${n.label || ""} ${n.what} ${n.check || ""}`) || (NOTHING_FOR_YOU.test(final) && !/👤|only you/i.test(final)))) return null;
   // its run's outcome says the ask needs nothing ("That asks for nothing further"), or the user closed
   // this ask here before: its last words restating it ("it stays an unsent draft") aren't a new ask
@@ -1281,7 +1281,7 @@ function startWaiting() {
 // a waiting lane again (the 14 Oct 2026 audit). A handover that settled something
 // starts the asker itself (lanes.mjs report).
 // A run that asked nothing but came up empty (it ticked nothing and changed no
-// file: "it waits on the dailify lane / the number switch / your approval") is
+// file: "it waits on the bookly lane / the number switch / your approval") is
 // held the same way: before, only a question made a record, so every later
 // trigger started it again to say the same (most of the audit's 143 repeats).
 const BLOCKED = "blocked.json";
@@ -1290,7 +1290,7 @@ const openTasks = (path) => readSymbiot(path, "TASKS.md").split("\n").filter((l)
 const SYMBIOT_NOTE = /^_(?:answered by symbiot \(handover\)|symbiot \(handover\)|shared by Symbiot [^\n]*\(background\))/m;
 const userAnswers = (md) => String(md || "").split(/\n(?=### )/).filter((sec) => /^### /.test(sec) && !SYMBIOT_NOTE.test(sec)).join("\n"); // its title line differs by who made the file
 // ---- old answers, archived -------------------------------------------------
-// ANSWERS.md only ever grew (62k characters in this repo, 81k in dailify), and every run
+// ANSWERS.md only ever grew (62k characters in this repo, 81k in bookly), and every run
 // was told to read all of it before asking anything (the audit, 2026-10-14). Before a run
 // starts, all but the last ANSWERS_KEEP answers, and any from the last day, move to
 // ANSWERS.archive.md, word for word, which the brief says to search when an older answer
@@ -1593,7 +1593,7 @@ function writeTasks(path, md) {
 // ---- a task the agent deleted from TASKS.md --------------------------------
 // TASKS.md is rebuilt from tasks.json on every send, so an agent deleting a
 // line (the user said to drop that task) changed nothing, and the next brief
-// brought it back (GhostAIChat's `pod install`). handed.json keeps what the
+// brought it back (ChatApp's `pod install`). handed.json keeps what the
 // brief in TASKS.md handed out; a task it handed out that's no longer in the
 // file (ticked or not) was deleted: droppedTasks lists them, and tasks.mjs
 // closes them (applyDrops). The task lines are the `## Tasks` section's, or the
@@ -1889,7 +1889,7 @@ function parseQuestions(md, { linked = linkedIds() } = {}) {
 }
 // An idea for another project names it first: "[repo: symbiot] Watch GitHub
 // too" is for the symbiot repo's tasks, whichever repo's agent had it (an agent
-// working on coral may have ideas for Symbiot, the app that sent it). Gives
+// working on atlas may have ideas for Symbiot, the app that sent it). Gives
 // { repo, text }, repo "" when the idea doesn't name one.
 function suggestionTarget(s) {
   const m = String(s || "").match(/^\[repo:\s*([^\]]*?)\s*\]\s*(.+)$/i);
@@ -1921,7 +1921,7 @@ function plainly(path, x) {
   let p = {}; try { p = plainAsk(path, x, { max: x.options.length }); } catch {}
   return { ...x, ...(p.raw ? { shown: p.q } : {}), ...(p.labels ? { labels: p.labels } : {}) };
 }
-// A question that names a report of its run ("the full report is on Reports as WINLOVE-FULL-EMAIL-REPORT"):
+// A question that names a report of its run ("the full report is on Reports as LOVELINK-FULL-EMAIL-REPORT"):
 // its card links it (Read the report), so it isn't a file name to go and find.
 function askReport(path, x) {
   let r = null; try { r = runReport(path, { said: `${x.q}\n${x.context || ""}`, since: Infinity }); } catch {}
@@ -2164,7 +2164,7 @@ function loadContinued() { try { const o = JSON.parse(readFileSync(CONTINUED_FIL
 function saveContinued(o) { try { writeJsonAtomic(CONTINUED_FILE, o, { indent: 0 }); } catch {} } // whole or not at all, yours only (0600)
 // Getting somewhere is fewer open tasks than at the last continue, not more ticks, and at most
 // AUTO_MAX automatic starts in an hour (these and handover reports, lanes.mjs report): runs tick
-// their findings and add their own follow-ups, so the Dailify lane always looked busy and was
+// their findings and add their own follow-ups, so the Bookly lane always looked busy and was
 // started 12 times in 45 minutes on the same open item, plus 6 ops runs it handed over (21 Oct 2026).
 // A start held back by the cap is kept as `due` and taken when the hour allows.
 const CONTINUE_AFTER = 2 * 60000, AUTO_MAX = 3, AUTO_HOUR = 3600000;
@@ -2248,7 +2248,7 @@ function grantFromStep(step, path = "", notes = {}) {
 // The question an answer is for, from qKey -> question: the same words, or the start of
 // one (a phone shows a long question cut short, ending in "…"), when only one starts so,
 // or a card's plain words that start with it (Home's permission card adds "It wants to
-// …" after the question: a page from before 0.63.7 sent those back, and the WinLove
+// …" after the question: a page from before 0.63.7 sent those back, and the LoveLink
 // Allow and Skip both came back "Pick or type at least one answer", 2026-10-12).
 function findQuestion(qs, q) {
   const k = qKey(q); if (!k) return "";
@@ -2425,7 +2425,7 @@ function runPhase(a) {
   return "finished";
 }
 // An idea an agent tagged for another lane ("[repo: symbiot] …") is that lane's, not
-// the card of the agent that had it (20 Oct: two ideas for symbiot sat on dailify's
+// the card of the agent that had it (20 Oct: two ideas for symbiot sat on bookly's
 // card, and the user asked why they were there). It moves to that lane's newest card,
 // marked `from` the agent that had it, and keeps that agent's folder (`path`) so Skip
 // still notes it where it was raised (SKIPPED.md), and it isn't suggested again. The

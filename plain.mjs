@@ -43,7 +43,7 @@ function plainAsk(path, q, { max = 2 } = {}) {
     ask = `${text.replace(PATHISH, "a file")}${rules.length ? ` It wants to ${rules.slice(0, 6).join(", ")}${rules.length > 6 ? `, and ${rules.length - 6} more things` : ""}.` : ""} If you say no, it skips that part and tells you what it left out.`;
     labels = opts.map((o) => (/allowlist\.proposed/i.test(o) ? "Allow" + (/recommended/i.test(o) ? " (recommended)" : "") : o.replace(PATHISH, "a file")));
   }
-  // One option is one button, named for what it does: "🤖 Agent: send it to Jono now" is Send, so a
+  // One option is one button, named for what it does: "🤖 Agent: send it to Remy now" is Send, so a
   // card that waits only on the go-ahead ("nothing goes out until you tap Send") reads as that (19 Oct 2026).
   if (opts.length === 1 && !(q.options || [])[1]) labels = [oneButton(opts[0])];
   // raw: the question as the agent wrote it, the key its answer is saved under (agents.mjs
