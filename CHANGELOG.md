@@ -2,6 +2,16 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one), for anyone who installs the app: what changed in it, never whose work it was (no projects, people, accounts, services, run ids or task wording of the person who made it). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.67.0 — 2026-10-21
+
+- **Lanes stop going round in circles.** A lane starts again by itself at most 3 times an hour, and only when it has fewer open items than last time. A finished handover restarts the lane that asked only if it has open work, and a run that stopped on purpose (to ask, hand over or wait) isn't rerun on a stronger model.
+- **Done means done.** Runs mark an item they can't finish yet as waiting, with what it waits on, instead of ticking it. Its card says what it's waiting on, not Finished, and runs are no longer told to tick something every time.
+- **Fewer cards.** One card per subject across runs; nothing is raised from a run whose own words say nothing waits on you; "Already covered?" only shows a rule that really matches.
+- **Each run shows its own report.** Several runs in one folder no longer all show the newest one's report and cost.
+- **Sandboxed runs reach the browser and the network.** Opening Symbiot a second time no longer cuts runs off from the Symbiot Browser, and Node in a run goes through the sandbox's proxy.
+- **A flaky test no longer stops an Approve.** A test file that fails alongside the others runs once more on its own; one that passes is named as flaky, and a real failure names its file on the card.
+- **Blocked steps say why**, in full.
+
 ## 0.66.16 — 2026-10-21
 
 - Small fixes and improvements.
