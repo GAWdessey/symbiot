@@ -19,6 +19,7 @@ import { noteDuration, noteCost, kindOf } from "./estimate.mjs";
 import { plainAsk } from "./plain.mjs";
 import { apiOptions, blockedSignIn, apiRoute, realChrome, CHROME_READ, CHROME_ACT } from "./browserfails.mjs";
 import { actSites, goAhead } from "./chromegate.mjs";
+import { pushGo } from "./pushgate.mjs";
 import { lanesJob, parseFacts, leftToYou, gitWork, agentsGitWork, agentsClicking, agentsCodeWork, agentsMail, agentsPosting, linkedAsks, linkedChore, PUSH_OK } from "./handover.mjs";
 import { scanRoots, repoPathMap, laneMap } from "./scan.mjs";
 import { knowledgeFolders } from "./knowledge.mjs";
@@ -2187,6 +2188,10 @@ function answerQuestions(path, answers, opts = {}) {
   for (const x of rows) if (!x.back && closesAsk(x.a)) closeAsk(path, x.q); // "case closed": a later run restating it raises no card (needsOf)
   // Go on a held action in the user's own Chrome (a question with id chrome-go-<hold>): that one action may go through (chromegate.mjs)
   for (const x of rows) { const m = String(x.id || "").match(/^chrome-go-([0-9a-f]+)$/); if (m && !/^\W*(?:no|don'?t|do not|skip|stop|cancel|not now)\b/i.test(x.a)) goAhead(m[1]); }
+  // Go on a force-push the membrane held (push-go-<hold>): Symbiot pushes it itself (pushgate.mjs), the outcome goes into
+  // ANSWERS.md, and the run carries on once it's in (below), so it never offers the user a setting that doesn't exist
+  const pushes = rows.map((x) => { const m = String(x.id || "").match(/^push-go-([0-9a-f]+)$/); return m && !/^\W*(?:no|don'?t|do not|skip|stop|cancel|not now)\b/i.test(x.a) ? pushGo(m[1]).then((r) => { try { writeFileSync(join(path, ".symbiot", "ANSWERS.md"), readSymbiot(path, "ANSWERS.md").replace(/\s*$/, "\n") + `\n### Symbiot: the push you asked for {#${x.id}}\n${r.text}\n_${day}_\n`); } catch {} }) : null; }).filter(Boolean);
+  const pushed = pushes.length ? Promise.all(pushes) : null;
   // "Deploy it?" for a lane with a runbook: Symbiot runs it itself (deploy.mjs onDeployAnswer), and the lane's agent is told so
   { const lane = whereOf(path).lane; for (const x of rows) if (/^Deploy /.test(x.q) && runbookOf(lane) && /^\W*(?:🤖\s*)?(?:Agent:\s*)?deploy\b/iu.test(x.a)) { onDeployAnswer(lane, x.q, x.a).catch(() => {}); try { writeFileSync(join(path, ".symbiot", "ANSWERS.md"), readSymbiot(path, "ANSWERS.md").replace(/\s*$/, "\n") + `\n### Symbiot: ${lane}'s deploy\nSymbiot started it itself, from ${lane}'s runbook, and checks it live: don't hand it to ops or deploy it another way.\n_${day}_\n`); } catch {} } }
   const out = { ok: true, saved: rows.length, ...(vaulted.length ? { vaulted } : {}) };
@@ -2227,7 +2232,8 @@ function answerQuestions(path, answers, opts = {}) {
     out.note = "Answers saved. That step is still yours to do. " + (on ? `Your agent ${opts.rerun ? "starts by itself" : "can start"} once ${on} changes${opts.rerun ? " (while Symbiot runs)" : ""}.` : "Once it's done, click Start it now on this folder.");
     return out;
   }
-  if (opts.rerun) { const e = runHandoff(path); if (e && e.busy) out.note = "Answers saved. An agent is still running in that folder, so another wasn't started. Send them again once it finishes."; else if (e && e.blocked) out.note = "Answers saved. " + e.note; else if (e) out.rerun = e.id; else out.note = "Answers saved. Set an agent command in Settings to have the agent pick them up automatically."; }
+  if (opts.rerun && pushed) { pushed.then(() => { try { runHandoff(path); } catch {} }); out.note = "Answers saved. Symbiot is pushing it now, and your agent carries on once it's pushed."; }
+  else if (opts.rerun) { const e = runHandoff(path); if (e && e.busy) out.note = "Answers saved. An agent is still running in that folder, so another wasn't started. Send them again once it finishes."; else if (e && e.blocked) out.note = "Answers saved. " + e.note; else if (e) out.rerun = e.id; else out.note = "Answers saved. Set an agent command in Settings to have the agent pick them up automatically."; }
   if (out.granted) out.note = "Allowed " + out.granted.join(", ") + " for your agents" + (opts.rerun ? ", and carried on. " : ". ") + (out.note || "");
   return out;
 }

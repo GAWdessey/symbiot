@@ -30,6 +30,10 @@ try {
   ok("an address with a sign-in part: the site's own name", P.siteKey("accounts.zoho.com") === "zoho" && P.siteKey("cp.smsportal.com") === "smsportal" && P.siteKey("www.domains.co.za") === "domains");
   ok("a code with no site named isn't offered (the phone passes on only the code it was asked for)", P.codeAsk({ q: "Type the code you got" }) === null);
   ok("a question that isn't for a code isn't either", P.codeAsk({ q: "Should I push the fix to zoho.com's DNS?" }) === null && P.codeAsk({ q: "Review the code in zoho.com's repo?" }) === null);
+  // 21 Oct 2026: ops's own card quoted the real-phone check's card, and the phone offered it the button too
+  const quoting = { q: "Can you press one button in Symbiot on your phone so the phone code check can finish?", context: "In Symbiot on your phone, find the card \"What's the 6-digit code codecheck.dev texted you?\" and press \"Let this phone pass on codecheck.dev's code\".", options: ["👤 You (only you: your phone): I pressed it, carry on", "Skip this part (leave the real-phone code check unfinished)"] };
+  ok("a card that only quotes another card's code ask isn't waiting for that code", P.codeAsk(quoting) === null && P.codeAsk({ ...quoting, context: "Find the card “What's the 6-digit code codecheck.dev texted you?” on your phone." }) === null, P.codeAsk(quoting));
+  ok("…while one that asks in its own words still is, with its site quoted or not", (P.codeAsk({ q: "What's the 6-digit code \"zoho.com\" texted you?" }) || {}).key === "zoho" && (P.codeAsk({ q: "What's the 6-digit code zoho.com texted you?", context: "It's for \"Zoho Mail\" on codecheck.dev." }) || {}).key === "zoho");
 
   console.log("THE CODE IN A NOTIFICATION, AND NOTHING ELSE");
   ok("\"Your Zoho verification code is 4829163\"", P.codeIn("Your Zoho verification code is 4829163. Don't share it.") === "4829163");

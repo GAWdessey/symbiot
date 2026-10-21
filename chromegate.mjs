@@ -55,7 +55,7 @@ function judgeChrome(tool, input = {}, { session = "", home = homedir(), now = D
   // through: a click or an Enter may take the tab elsewhere, so its site is unknown until the result says where it is (seen)
   const go = () => { if ((name === "computer" && MOVES.has(String(input.action || ""))) || (name === "computer" && enterIn(input))) { tabs[k] = { ...at, moved: now }; writeJson(TABS(home), tabs); } return null; };
   const sites = actSites(home);
-  if (!covered(host, sites)) return { why: `acting on ${host} in the user's own Chrome is off (reading is fine): the user switches it on for a site in Settings → Connections. Ask them in .symbiot/QUESTIONS.md if this site needs it, or do it through Symbiot's own browser (symbiot screens)` };
+  if (!covered(host, sites)) return { why: `acting on ${host} in the user's own Chrome is off (reading is fine): the user switches it on for a site in Settings → Connections. Ask them in .symbiot/QUESTIONS.md if this site needs it, or do it through Symbiot's own browser (symbiot screens)`, setting: true };
   const summary = String(input.action_summary || "").trim();
   if (!summary) return { why: "say what this action does (action_summary) on every click, key, type and fill in the user's own Chrome: the membrane holds sends, payments and deletes for the user's Go" };
   const kind = name === "computer" && enterIn(input) ? "send" : heldFor(summary, host); if (!kind) return go();
@@ -65,7 +65,7 @@ function judgeChrome(tool, input = {}, { session = "", home = homedir(), now = D
   let h = holds.find((x) => x.host === host && key(x.summary) === key(summary) && !x.go && now - x.at < 86400000);
   if (!h) { h = { id: randomBytes(4).toString("hex"), host, summary: summary.slice(0, 200), kind, at: now, session }; holds.push(h); writeJson(HOLDS(home), holds.slice(-200)); }
   const word = { send: "sends", pay: "pays", delete: "deletes" }[kind];
-  return { why: `this ${word} as the user, on ${host} ("${h.summary}"), so it waits for their Go. Ask in .symbiot/QUESTIONS.md: a ### heading saying plainly what it ${word}, ending {#chrome-go-${h.id}}, and one option, "🤖 Agent: go ahead: ${h.summary}". Stop there; once they say Go, the same action goes through, once` };
+  return { why: `this ${word} as the user, on ${host} ("${h.summary}"), so it waits for their Go. Ask in .symbiot/QUESTIONS.md: a ### heading saying plainly what it ${word}, ending {#chrome-go-${h.id}}, and one option, "🤖 Agent: go ahead: ${h.summary}". Stop there; once they say Go, the same action goes through, once`, held: h.id };
 }
 // After a Chrome tool ran (the hook's PostToolUse): its result ends with "Tab Context", each tab of the
 // run's group with its address now (`• tabId 7: "Title" ("https://…")`), or tabs_context_mcp's list as

@@ -40,6 +40,12 @@ writeFileSync(join(ROOT, "computer.mjs"), `
     adb: () => { const calls = []; const run = (a) => { calls.push(a.join(" ")); return a[0] === "devices" ? "List of devices attached\\nABC123\\tdevice\\nXYZ\\tunauthorized\\n" : ""; };
       const first = p.adbLink({ run, has: () => true }), again = p.adbLink({ run, has: () => true }); return { first, again, calls }; },
     snapshot: () => p.snapshot({ fresh: true }), loaded: () => typeof w.newsAfter,
+    // a port another program holds when the link starts: it listens by itself once that one lets go
+    taken: async () => { const net = await import("node:net"), back = p.linkState().port;
+      const hold = await new Promise((r) => { const s = net.createServer().listen(0, "0.0.0.0", () => r(s)); }), port = hold.address().port;
+      const held = await p.usePhonePort(port); await new Promise((r) => hold.close(r));
+      for (let i = 0; i < 40 && !p.linkState().listening; i++) await new Promise((r) => setTimeout(r, 50));
+      const later = p.linkState(); await p.usePhonePort(back); return { port, held, later: { listening: later.listening, port: later.port, error: later.error } }; },
     // two agents ask; Home drops one (closing the Symbiot Browser is an agent's wait, not the user's)
     asking: async () => { const { mkdirSync, writeFileSync, rmSync } = await import("node:fs"), lanes = ["coral", "reef"].map((n) => ${JSON.stringify(PC)} + "/" + n);
       lanes.forEach((l, i) => { mkdirSync(l + "/.symbiot", { recursive: true }); writeFileSync(l + "/.symbiot/QUESTIONS.md", i ? "## Questions\\n### Can you close the Symbiot Browser so I can carry on?\\n- Done (recommended)\\n- Skip\\n" : "## Questions\\n### Which number should the test call go to?\\n- Yours (recommended)\\n- Skip\\n"); });
@@ -53,7 +59,7 @@ writeFileSync(join(ROOT, "computer.mjs"), `
   process.stdout.write(JSON.stringify({ ready: true }) + "\\n");
 `);
 function startComputer(env = {}) {
-  const child = spawn(process.execPath, [join(ROOT, "computer.mjs")], { env: { ...process.env, HOME: PC, USERPROFILE: PC, SYMBIOT_NO_MDNS: "1", SYMBIOT_NO_RELAY: "1", SYMBIOT_NO_POLL: "1", ...env }, stdio: ["pipe", "pipe", "pipe"] });
+  const child = spawn(process.execPath, [join(ROOT, "computer.mjs")], { env: { ...process.env, HOME: PC, USERPROFILE: PC, SYMBIOT_NO_MDNS: "1", SYMBIOT_NO_RELAY: "1", SYMBIOT_NO_POLL: "1", SYMBIOT_PHONE_RETRY_MS: "100", ...env }, stdio: ["pipe", "pipe", "pipe"] });
   const waiting = new Map(); let n = 0, err = "";
   const ready = new Promise((res) => {
     createInterface({ input: child.stdout }).on("line", (l) => { let m; try { m = JSON.parse(l); } catch { return; } if (m.ready) return res(); const w = waiting.get(m.id); if (w) { waiting.delete(m.id); w(m.error ? { error: m.error } : m.r); } });
@@ -497,6 +503,8 @@ try {
   busy.close();
   const bad = await P.usePhonePort(80);
   ok("a different port: below 1024 is refused", /between 1024 and 65535/.test(bad.error || ""), bad);
+  const tk = await pc.cmd("taken");
+  ok("a port that's taken when the link starts: it says so, then listens by itself once the holder lets go", !tk.held.listening && /^Port \d+ is (held|in use)/.test(tk.held.error || "") && tk.later.listening && !tk.later.error && tk.later.port === tk.port, tk);
   // the site vouches for the app, so a scanned link opens it at once (Android App Links)
   const links = readJ(join(SRC, "site", ".well-known", "assetlinks.json"), []), man = readFileSync(join(SRC, "android", "AndroidManifest.xml"), "utf8");
   const vouch = (links || []).find((x) => x.target && x.target.package_name === (man.match(/package="([^"]+)"/) || [])[1]);

@@ -67,7 +67,7 @@ async function main() {
   if (!ok("symbiot is installed", !!pkg)) return stop("no symbiot on this computer's PATH");
   const version = JSON.parse(readFileSync(join(pkg, "package.json"), "utf8")).version;
   if (!ok(`${version} passes codes from a phone`, readFileSync(join(pkg, "phone.mjs"), "utf8").includes("code.give"), version)) return stop(`${version} came out before the code relay: install the release that has it, then run this again`);
-  const cfg = JSON.parse(readFileSync(join(CFG, "config.json"), "utf8")), base = `http://127.0.0.1:${Number(cfg.appPort) || 7391}`, headers = { "x-symbiot-token": cfg.appToken || "" };
+  const { loadConfig } = await import(pathToFileURL(join(pkg, "core.mjs")).href), cfg = loadConfig(), base = `http://127.0.0.1:${Number(cfg.appPort) || 7391}`, headers = { "x-symbiot-token": cfg.appToken || "" };
   const api = async (path) => { try { const r = await fetch(base + path, { headers, signal: AbortSignal.timeout(5000) }); return r.ok ? await r.json() : null; } catch { return null; } };
   const ping = await api("/api/ping");
   if (!ok("the app is running", !!ping)) return stop("Symbiot's app isn't running here: start it, then run this again");
@@ -94,7 +94,7 @@ async function main() {
     console.log("  " + (adb("install", "-r", apk) || "install said nothing")); app = appVersion();
   }
   if (!ok(`the phone app is ${version} or newer`, !!app && !older(app, version), app)) return stop(app ? `the phone has ${app}: run again with --install` : "Symbiot isn't on the phone: run again with --install");
-  if (!ok("it has CodeListener", dump().includes(`${PKG}.CodeListener`))) return stop("that phone app has no code relay");
+  if (!ok("it has CodeListener", /\.CodeListener\b/.test(dump()))) return stop("that phone app has no code relay");
   const listeners = () => adb("shell", "settings", "get", "secure", "enabled_notification_listeners") || "";
   if (!listeners().includes(LISTENER)) { adb("shell", "cmd", "notification", "allow_listener", LISTENER); granted = true; }
   if (!ok(`Notification access is on${granted ? " (turned on for this check)" : ""}`, listeners().includes(LISTENER), listeners())) return stop("Android didn't take Notification access for Symbiot");

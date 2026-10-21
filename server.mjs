@@ -46,7 +46,7 @@ import { MARKETING_DIR, MARKETING, draftPreview, laneMedia, displayName, setDraf
 import { trays, trayMedia, setBlur, addBlur, removeBlur, setReviewed, renderCapture } from "./tray.mjs";
 import { captureProduct, captureProducts } from "./capture.mjs";
 import { listReports, readReport, reportImage, markAllRead, phoneReports, phoneReport, withNeeds } from "./reports.mjs";
-import { heardCode, setCodeRelay, computerCopy, relaunchEnv, phoneState, setPhoneLink, freePhonePort, usePhonePort, newCode, unpairPhone, setRelay, findComputers, pairComputer, forgetComputer, pollComputer, queueChange, dismissNote, setPhoneApprove, startPhone } from "./phone.mjs";
+import { heardCode, setCodeRelay, computerCopy, relaunchEnv, phoneState, setPhoneLink, startPhoneLink, freePhonePort, usePhonePort, newCode, unpairPhone, setRelay, findComputers, pairComputer, forgetComputer, pollComputer, queueChange, dismissNote, setPhoneApprove, startPhone } from "./phone.mjs";
 import { knowledgeState, addKnowledgeFolder, removeKnowledgeFolder, indexKnowledge, knowledgeTick, searchKnowledge } from "./knowledge.mjs";
 import { runChecks, checksState, markClashesSeen } from "./checks.mjs";
 
@@ -744,7 +744,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       if (u.pathname === "/api/phone/link" && req.method === "POST") { const b = await readBody(req); return json(res, await setPhoneLink(b.on === true)); }
       if (u.pathname === "/api/phone/free" && req.method === "POST") return json(res, await freePhonePort());
       if (u.pathname === "/api/phone/port" && req.method === "POST") { const b = await readBody(req); return json(res, await usePhonePort(b.port)); }
-      if (u.pathname === "/api/phone/code" && req.method === "POST") return json(res, newCode());
+      if (u.pathname === "/api/phone/code" && req.method === "POST") { await startPhoneLink(); return json(res, newCode()); } // a port that was taken may be free now
       if (u.pathname === "/api/phone/unpair" && req.method === "POST") { const b = await readBody(req); return json(res, unpairPhone(String(b.id || ""))); }
       if (u.pathname === "/api/phone/relay" && req.method === "POST") { const b = await readBody(req); return json(res, setRelay(b.on === true)); }
       if (u.pathname === "/api/phone/pair" && req.method === "POST") { const b = await readBody(req); return json(res, await pairComputer(b.address, b.code, { link: String(b.link || "") })); }
