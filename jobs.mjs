@@ -10,9 +10,11 @@ const FILE = join(CONFIG_DIR, "jobs.json");
 const MAX_KEEP = 300, DAY = 86400e3;
 // asked → queued (its turn is coming) → running → done, or review (done, waits on Approve) → approved
 // (merge queued) → merged → live; email jobs end at sent. failed is a run or step that stopped.
-const STATES = ["asked", "queued", "running", "done", "review", "approved", "merged", "live", "sent", "failed"];
+// An agent run ends (agents.mjs runOutcome) as one of: waiting (on the user, a lane, a third party
+// or a time, with what), paused (open work left, nothing waiting), review, done or failed.
+const STATES = ["asked", "queued", "running", "done", "review", "approved", "merged", "live", "sent", "failed", "waiting", "paused"];
 const WAITING = ["user", "lane", "third party", "time", ""];
-const SAYS = { asked: "asked, not started", queued: "queued, not started yet", running: "running now", done: "finished, nothing to approve", review: "done, waiting for Approve", approved: "approved, merge queued (not merged yet)", merged: "merged, not live", live: "live and checked", sent: "sent", failed: "failed" };
+const SAYS = { asked: "asked, not started", queued: "queued, not started yet", running: "running now", done: "finished, nothing to approve", review: "done, waiting for Approve", approved: "approved, merge queued (not merged yet)", merged: "merged, not live", live: "live and checked", sent: "sent", failed: "failed", waiting: "stopped, waiting", paused: "stopped with work left, nothing waiting"};
 const ENDED = new Set(["done", "live", "sent", "failed"]);
 
 const clip = (s, n) => String(s || "").replace(/\s+/g, " ").trim().slice(0, n);
@@ -38,6 +40,9 @@ function track(key, patch = {}, { now = Date.now() } = {}) {
     if (patch.pr) j.pr = String(patch.pr);
     if (patch.path) j.path = String(patch.path);
     if (patch.note !== undefined) j.note = clip(patch.note, 200);
+    if (patch.what !== undefined) j.what = clip(patch.what, 200);
+    if (patch.summary !== undefined) j.summary = clip(patch.summary, 400);
+    if (patch.outcome) j.outcome = true; // written by a run's end (agents.mjs runOutcome): the screens read this, not their own guess
     if (state) shift(j, state, now);
     if (patch.waitingOn !== undefined) j.waitingOn = WAITING.includes(patch.waitingOn) ? patch.waitingOn : "";
     if (ENDED.has(j.state) && patch.waitingOn === undefined && j.state !== "sent") j.waitingOn = "";
@@ -57,7 +62,7 @@ function jobsNow({ now = Date.now(), jobs = loadJobs() } = {}) {
 }
 const whenOf = (t, now) => { const m = Math.max(0, Math.round((now - t) / 60e3)); return m < 2 ? "just now" : m < 90 ? `${m} min ago` : m < 2880 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} days ago`; };
 function jobLine(j, now = Date.now()) {
-  return `${j.lane ? `[${j.lane}] ` : ""}${j.text || j.key}: ${SAYS[j.state] || j.state}${j.waitingOn ? `, waiting on ${j.waitingOn === "user" ? "the user" : j.waitingOn}` : ""} (since ${whenOf(j.changed, now)})${j.note ? ` — ${j.note}` : ""}`;
+  return `${j.lane ? `[${j.lane}] ` : ""}${j.text || j.key}: ${SAYS[j.state] || j.state}${j.waitingOn ? `, waiting on ${j.waitingOn === "user" ? "the user" : j.waitingOn}` : ""}${j.what ? ` (${j.what})` : ""} (since ${whenOf(j.changed, now)})${j.note ? ` — ${j.note}` : ""}`;
 }
 // For the chat's context: the one record to answer "where are we?" from.
 function jobsLines({ now = Date.now(), jobs } = {}) {
@@ -101,6 +106,7 @@ function syncOnUser(cards = [], { now = Date.now() } = {}) {
     for (const j of jobs) {
       if (isCard(j)) { if (!on.has(j.key) && !ENDED.has(j.state)) move(j, "done", "", "off Home: answered, done or dismissed"); continue; }
       if (j.kind === "task" || j.waitingOn !== "user" || ENDED.has(j.state) || now - j.changed < GRACE) continue; // a task's wait is syncTasks', read off these same cards
+      if (j.outcome && j.state === "waiting") continue; // a run's own record of what it waits on moves when that comes (agents.mjs settleRecord), not when a card goes
       if ((j.lane && lanes.has(j.lane)) || (j.path && paths.has(j.path))) continue;
       if (j.state === "review") move(j, "done", "", "no Approve for it on Home any more"); else move(j, j.state, "");
     }
@@ -143,4 +149,11 @@ function landed(lane, pr, { now = Date.now() } = {}) {
   } catch { return 0; }
 }
 
-export { track, loadJobs, jobsNow, jobsLines, jobsText, jobLine, waitingOnUser, syncOnUser, syncTasks, onUser, landed, prKey, isCard, STATES, FILE };
+// The newest record of an agent run in this folder that its end wrote (runOutcome): what every
+// screen and every restart reads, or null for a folder with none yet (a run before 0.68.1).
+function runRecord(path, { jobs = loadJobs() } = {}) {
+  let best = null; for (const j of jobs) if (j.outcome && String(j.key).startsWith("run:") && j.path === path && (!best || (j.at || 0) >= (best.at || 0))) best = j;
+  return best;
+}
+const recordOf = (id, { jobs = loadJobs() } = {}) => { const j = jobs.find((x) => x.key === "run:" + id); return j && j.outcome ? j : null; };
+export { runRecord, recordOf, track, loadJobs, jobsNow, jobsLines, jobsText, jobLine, waitingOnUser, syncOnUser, syncTasks, onUser, landed, prKey, isCard, STATES, FILE };

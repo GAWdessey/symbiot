@@ -6,6 +6,11 @@ What each Symbiot release brought, newest first. When Approve bumps the version,
 
 - **Privacy:** the code, tests and docs no longer name the people, companies, servers or addresses Symbiot was built around. Its comments and examples use made-up names, and every release is now checked for private names in every file, not only in these notes.
 
+## 0.68.1 — 2026-10-21
+
+- **Every screen tells the same story about a run.** How a run ended is worked out once, when it ends: waiting (on you, another lane, a reply or a time, and what), paused with work left, ready for review, done or failed. Home, the Workdesk, the Agents tab and the chat all read that one record, so a run waiting on something no longer shows as Finished somewhere else.
+- **Restarts follow it.** A lane waiting on you, a reply or a time isn't started again; one waiting on a handover starts when that handover reports back; an answer moves a waiting run on.
+
 ## 0.68.0 — 2026-10-21
 
 - **Only questions that are really yours reach you.** Every question an agent writes is judged before it can become a card. One that an agent could do itself, or that's only there because Symbiot is broken or lacks something, never becomes your chore: the run is told to do it or hand it over, and Symbiot's own faults are recorded for fixing. One your earlier answers already settle is answered from them. Decisions about your business, money, sign-ins and anything sent in your name still come to you.

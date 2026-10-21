@@ -9,7 +9,7 @@ import { join, dirname, resolve, relative, basename } from "node:path";
 import { fileURLToPath } from "node:url";
 import { readFileSync, writeFileSync, mkdirSync, existsSync, openSync, closeSync, writeSync, unlinkSync, readdirSync, statSync, renameSync, utimesSync, appendFileSync } from "node:fs";
 import { randomBytes, createHash } from "node:crypto";
-import { track as jobTrack } from "./jobs.mjs";
+import { track as jobTrack, runRecord, recordOf, loadJobs } from "./jobs.mjs";
 import { CONFIG_DIR, loadConfig, saveConfig, loadTasks, TASK_MAX, clipWords, sameTask, taskWords, sh, runOut, hasCmd, readState, writeJsonAtomic } from "./core.mjs";
 import { meetsStep, captureSecrets, heldFor } from "./vault.mjs";
 import { recordDone, isDone, isApprovalAsk, approvalText, approvedBefore, recentTurns, recentTasks, asksBack, askBackNote, closesAsk, runSaysClosed, heldBy, reportsSince, runReport, reportAsked, standingList } from "./asksdone.mjs";
@@ -451,6 +451,54 @@ function noteSession(path, code, resumed) {
 // A folder with nothing to work from gets none either, forced or not (nothingToDo).
 // What's shipping in a folder, as tasks.mjs shipping says (set through onShipping, so this module needn't import tasks.mjs).
 let shipHold = () => null; const onShipping = (fn) => { shipHold = fn; };
+// How a run ended, worked out once, when it ends, and kept as its job record: Home, the Workdesk,
+// the Agents tab, the chat and the restarts all read this. Each used to guess for itself from the
+// TASKS.md ticks, the last words and the questions file, and they disagreed: a run waiting on ops
+// read "Finished", one card showed two jobs, a lane waiting on the user was started again (21 Oct
+// 2026). { state, waitingOn, what, summary, note }:
+// - failed: it exited with an error (not stopped on purpose);
+// - waiting: something it can't go on without: a question or step of the user's (user), work it
+//   handed to another lane (lane), a reply from outside (third party) or a time (time); `what` says it;
+// - review: it changed files and finished its items; paused: open items left that it can still do; done.
+const STOP_CODES = new Set([null, 130, 143, 137]); // SIGINT, SIGTERM, SIGKILL: stopped (a stall, Stop, an update), not failed
+const WAIT_TIME = /\b(until|tomorrow|tonight|after \d|at \d{1,2}(?::\d\d|h|am|pm)|on (?:mon|tues|wednes|thurs|fri|satur|sun)day|next (?:week|month)|in \d+ (?:min|hour|day))/i;
+const WAIT_USER = /\b(you|your|the user|garth)\b/i;
+function runOutcome(path, e = {}, code = 0, { files = null, final = null, questions = null, waiting = undefined, needs = undefined } = {}) {
+  const md = readSymbiot(path, "TASKS.md"), lines = md.split("\n");
+  const waitLine = lines.find((l) => /^\s*-\s*\[~\]/.test(l)), open = lines.filter((l) => /^\s*-\s*\[ \]/.test(l)).length;
+  let said = final; if (said === null) { try { const w = workOf(path, runSection(readRunLog(e.log), e.startedAt, true)); said = (w.work && w.work.final) || w.tail || ""; } catch { said = ""; } }
+  const summary = clipWords(String(said || "").split(/\n\s*\n/)[0].replace(/[*_`#>]/g, "").replace(/\s+/g, " ").trim(), 400);
+  const ch = files !== null ? files : (() => { try { return (loadRunFiles(path).find((r) => r.id === e.id) || { files: [] }).files.length; } catch { return 0; } })();
+  const out = (state, waitingOn = "", what = "", note = "") => ({ state, waitingOn, what: clipWords(what, 200), summary, note });
+  if (code !== 0 && !STOP_CODES.has(code)) return out("failed", "", "", `exit ${code}`);
+  const qs = questions !== null ? questions : (() => { try { return agentQuestions(path, "", { raw: true }).questions; } catch { return []; } })();
+  const w = waiting !== undefined ? waiting : (() => { try { return waitingFor(path); } catch { return null; } })();
+  const nd = needs !== undefined ? needs : (() => { try { return needsOf(path, { final: said, waiting: w, end: Date.now(), start: e.startedAt }); } catch { return null; } })();
+  if (qs.length) return out("waiting", "user", qs[0].q);
+  if (w || (nd && nd.what)) return out("waiting", "user", (nd && nd.what) || (w && w.step) || "a step of yours");
+  if (waitLine) {
+    const what = waitLine.replace(/^\s*-\s*\[~\]\s*/, ""), note = (what.match(/^\(([^)]*)\)/) || [])[1] || what;
+    if (open) return out("paused", "", note, `${open} item${open > 1 ? "s" : ""} left; one waits`); // work it can still do: it carries on with that
+    const handed = [...new Set([...String(readSymbiot(path, "HANDOFF.md") || "").matchAll(/^###\s+([\w.-]+)|→ \*\*([\w.-]+)\*\*/gm)].map((m) => m[1] || m[2]))]; // the lanes it has handed work to
+    const lane = handed.find((l) => note.toLowerCase().includes(l.toLowerCase())) || (/\b(handed|hand(?:ed)? (?:it )?(?:over|to)|ops)\b/i.test(note) ? (handed.includes("ops") ? "ops" : handed[0] || "ops") : "");
+    if (lane) return out("waiting", "lane", `${lane}: ${note}`);
+    if (WAIT_TIME.test(note)) return out("waiting", "time", note);
+    if (WAIT_USER.test(note)) return out("waiting", "user", note);
+    return out("waiting", "third party", note);
+  }
+  if (STOP_CODES.has(code) && code !== 0) return out(open ? "paused" : ch ? "review" : "done", "", "", "stopped");
+  if (open) return out("paused", "", "", `${open} item${open > 1 ? "s" : ""} left`);
+  if (ch) return out("review", "user", "", `${ch} file${ch > 1 ? "s" : ""} changed`);
+  return out("done");
+}
+// A run's record that waited moves on when what it waited for comes: the user's answer, a
+// handover's report. It's paused (it carries on from there) until its next run's own end.
+function settleRecord(path, note) {
+  try { const r = runRecord(path); if (r && r.state === "waiting") jobTrack(r.key, { state: "paused", waitingOn: "", note }); } catch {}
+}
+// A lane its newest run left waiting on the user, someone outside or a time isn't started again
+// for it: nothing new would come of it until that does. Only with a record (0.68.1 on).
+const waitsOutside = (path) => { try { const r = runRecord(path); return !!r && r.state === "waiting" && r.waitingOn !== "lane" ? r : null; } catch { return null; } };
 function runHandoff(repoPath, { force = false, lost = false, model = "", onExit = null, escalatedFrom = "", note = "", stalled = false } = {}) {
   let tmpl = handoffCmd(); if (!tmpl || !repoPath) return null;
   if (isParked(repoPath)) return { blocked: true, parked: true, questions: 0, note: PARKED_NOTE }; // even forced: that's what parking is for
@@ -494,7 +542,7 @@ function runHandoff(repoPath, { force = false, lost = false, model = "", onExit 
     noteBlocked(repoPath, scoped, e.startedAt, code, { dirtyBefore, ticksBefore, after });
     try { noteRunFiles(repoPath, e, dirtyBefore, ticksBefore, after); } catch {} // which files this run touched, for Approve
     forgetRunStart(repoPath, e.id);
-    try { const ch = (loadRunFiles(repoPath).find((r) => r.id === e.id) || { files: [] }).files.length; jobTrack("run:" + e.id, code === 0 ? ch ? { state: "review", waitingOn: "user", note: `${ch} file${ch > 1 ? "s" : ""} changed` } : { state: "done", waitingOn: "" } : { state: "failed", waitingOn: "" }); } catch {} // the job record (jobs.mjs): how the run ended
+    try { jobTrack("run:" + e.id, { ...runOutcome(repoPath, e, code), outcome: true }); } catch {} // the job record (jobs.mjs): how the run ended, once, for every screen and restart
     if (code === 0) { const st = loadStall(repoPath); if (st && !st.card && !st.restart) clearStall(repoPath); } // it got past it: a stall after this is a first again
     setTimeout(() => { try { autoAllow(repoPath); } catch {} }, 300); // a list it proposed inside your work: turned on, and on it goes
     startHeldTasks(repoPath); // tasks sent while it ran land now; start on them as that Send would have
@@ -2087,6 +2135,7 @@ function autoDecide(path) {
     const day = new Date().toISOString().slice(0, 10);
     const had = readSymbiot(path, "ANSWERS.md");
     try { writeFileSync(join(path, ".symbiot", "ANSWERS.md"), (had || "# Answers from the user\nAnswers to the questions in QUESTIONS.md, newest last. Follow them; ask again in QUESTIONS.md if one is unclear.\n").replace(/\s*$/, "\n") + ask.known.map((x) => `\n### ${x.q}${x.id ? ` {#${x.id}}` : ""}\n${x.a}\n_answered ${day}_\n`).join("")); } catch { return null; }
+    settleRecord(path, "answered by Symbiot");
     // a run that keeps rewording the same question gets its answer, but no new run each time it does
     if (ask.known.every((x) => x.a.includes(REPEAT_TAG)) && had.split(REPEAT_TAG).length > REPEATS_RERUN) return { decided: ask.known.length, where: true, rerun: null };
     // triage's answers start the run again only under the hourly cap (autoStart): a run that keeps
@@ -2140,6 +2189,9 @@ function continueLanes({ now = Date.now(), run = runHandoff, runs = loadRuns } =
       const ticked = (md.match(/^\s*(?:[-*+]|\d+[.)])\s*\[[xX]\]/gm) || []).length;
       const tasks = openTasks(path), last = seen[path], starts = autoStarts(last, now);
       if (starts.length >= AUTO_MAX) continue;
+      // its newest run's record says why it stopped: only one that stopped with work it can still do
+      // (paused) is started again; one waiting on the user, a lane, a reply or a time isn't (0.68.1)
+      const rec = runRecord(path); if (rec && rec.state !== "paused") continue;
       if (last && last.open && !last.due && tasks.length >= last.open.length) continue;
       if (blockedAgain(path, runCmdOf(path))) continue;
       const e = run(path); if (e && e.id && !e.busy && !e.blocked) { seen[path] = { ticked, open: tasks, at: now, starts: [...starts, now] }; out.push(path); }
@@ -2256,6 +2308,7 @@ function answerQuestions(path, answers, opts = {}) {
     for (const x of rows) x.id = (openQs.find((o) => qKey(o.q) === qKey(x.q)) || {}).id || ""; // answered by its id, too
     writeFileSync(join(path, ".symbiot", "ANSWERS.md"), prev.replace(/\s*$/, "\n") + rows.map((x) => `\n### ${x.q}${x.id ? ` {#${x.id}}` : ""}\n${x.a}\n_answered ${day}_\n`).join(""));
   } catch (e) { return { error: "Couldn't write ANSWERS.md: " + ((e && e.message) || e) }; }
+  settleRecord(path, "answered"); // what its run waited for came: its record moves on (runOutcome)
   { const lane = whereOf(path).lane; for (const x of rows) recordDone(x.q, x.back || x.a, lane, { back: !!x.back, id: x.id }); }
   for (const x of rows) if (!x.back && closesAsk(x.a)) closeAsk(path, x.q); // "case closed": a later run restating it raises no card (needsOf)
   // Go on a held action in the user's own Chrome (a question with id chrome-go-<hold>): that one action may go through (chromegate.mjs)
@@ -2364,6 +2417,7 @@ function workOf(path, log) {
 // tasks left: it is checked again), finished, failed.
 function runPhase(a) {
   if (a.status === "running") return a.line && (a.line.quiet || a.line.looping) ? "stuck" : "working";
+  const r = a.outcome; if (r) return r.state === "failed" ? "failed" : r.state === "waiting" ? "waiting" : r.state === "paused" ? "paused" : "finished"; // its record (runOutcome): one answer for every screen
   if (a.status !== "done") return "failed";
   const asks = Array.isArray(a.ask) ? a.ask.length : a.ask && a.ask.questions ? a.ask.questions.length : 0;
   if (a.waiting || a.needs || asks || (a.progress && a.progress.waiting)) return "waiting";
@@ -2411,14 +2465,16 @@ function runSection(log, startedAt, newest = true) {
   return "\n" + s.slice(best.i, next ? next.i : s.length);
 }
 function agentsList() {
-  const seen = new Set();
+  const seen = new Set(), jobs = (() => { try { return loadJobs(); } catch { return []; } })();
   return routeIdeas(HANDOFFS.map((e) => {
     const first = !seen.has(e.path); seen.add(e.path);
+    const rec = e.status !== "running" ? recordOf(e.id, { jobs }) : null, outcome = rec ? { state: rec.state, waitingOn: rec.waitingOn || "", what: rec.what || "", summary: rec.summary || "" } : null;
     const own = workOf(e.path, runSection(readRunLog(e.log), e.startedAt, first)), { tail, work, line } = own, progress = first ? own.progress : null; // an older run's ticks weren't kept: today's TASKS.md isn't its
     const facts = first && e.status !== "running" ? factsOf(e.path) : [];
     const waiting = first && e.status !== "running" ? waitingFor(e.path) : null;
-    const needs = first && e.status !== "running" ? needsOf(e.path, { final: work ? tail : "", waiting, end: e.endedAt || Date.now(), start: e.startedAt }) : null;
-    return { id: e.id, name: e.name, path: e.path, status: e.status, startedAt: e.startedAt, endedAt: e.endedAt, elapsed: (e.endedAt || Date.now()) - e.startedAt, exitCode: e.exitCode, ...(e.down ? { down: e.down } : {}), tail, work, progress, ...(e.status === "running" && line ? { line } : {}), changed: agentChanges(e.path, e.startedAt, e.endedAt || 0), ask: first ? agentQuestions(e.path, e.name) : null, held: first ? heldTasks(e.path) : null, waiting, needs, remember: facts.length ? facts : null, fromHeld: !!e.fromHeld };
+    // a need is a card only while the run's record says it waits on the user: its last words alone made cards the record contradicted
+    const needs = first && e.status !== "running" && (!outcome || (outcome.state === "waiting" && outcome.waitingOn === "user")) ? needsOf(e.path, { final: work ? tail : "", waiting, end: e.endedAt || Date.now(), start: e.startedAt }) : null;
+    return { id: e.id, ...(outcome ? { outcome } : {}), name: e.name, path: e.path, status: e.status, startedAt: e.startedAt, endedAt: e.endedAt, elapsed: (e.endedAt || Date.now()) - e.startedAt, exitCode: e.exitCode, ...(e.down ? { down: e.down } : {}), tail, work, progress, ...(e.status === "running" && line ? { line } : {}), changed: agentChanges(e.path, e.startedAt, e.endedAt || 0), ask: first ? agentQuestions(e.path, e.name) : null, held: first ? heldTasks(e.path) : null, waiting, needs, remember: facts.length ? facts : null, fromHeld: !!e.fromHeld };
   }).concat(earlierRuns())).map((a) => ({ ...a, phase: runPhase(a) })).map(oneNeedEach());
 }
 // One subject is one card: the GitHub billing need came back from five runs, each worded its own
@@ -2445,4 +2501,4 @@ function agentsNow({ now = Date.now() } = {}) {
 }
 const forgetAgents = () => { agentsKept = null; };
 
-export { triageSweep, runSection, autoStart, AUTO_MAX, oneNeedEach, NOTHING_FOR_YOU, chaseReport, CHASED, UNMET, heldAsk, onCardGone, withOwnTools, escalation, grantCard, cardRules, cardIsPermission, runPhase, onRunEnd, isClaudeCmd, GUARD, tidyRule, tidyRules, tidySettings, pruneRuns, claudePlugins, idlePlugins, runSettings, archiveAnswers, allAnswers, answersDigest, ANSWERS_ARCHIVE, ANSWERS_KEEP, runsTick, RUN_START, HANG_MIN, noteBlocked, userAnswers, CONTINUED_FILE, onAnswered, CHANGES, toKnownHost, continueLanes, autoPick, autoDecide, FACTS, factsOf, knownRun, withStream, workOf, HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, connectorsInfo, linkReach, fillHandoff, runHandoff, nothingToDo, whereOf, whereLine, whereAnswer, askTask, PARKED_NOTE, parkedPaths, isParked, parkLane, agentMissing, blockedAgain, runningHandoff, loadRuns, earlierRuns, namedFiles, unchangedStep, waitingFor, startWaiting, noteUntracked, untrackedBefore, forgetUntracked, writeTasks, droppedTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, pickAgent, findOrcaCli, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, skipIdea, routeIdeas, agentQuestions, answerQuestions, agentsList, agentsNow, forgetAgents, AGENTS_KEEP, needsOf, settleNeeds, closeAsk, closedAsk, sameSubject, NEEDS_FOR, readLastWords, readNeeds, parseRead, READ_FILE, autoAllow, autoAllowSweep, allowlistInWork, installAllowlist, inWork, withScope, withTrust, sandboxFor, sandboxLifts, sandboxEnv, sandboxNeeds, sandboxState, sandboxWrites, SANDBOX_DIR, resumeFor, noteSession, tooLong, carryOn, RESUME_CTX, CARRY_PROMPT, trustFull, GUARD_SETTINGS, runCmdOf, claimLock, wideRoot, sandboxDenies, questionFolders, folderState, dirtyState, ANSWERS_SEEN, newAnswers, claudeDownIn, claudePause, noteClaudeDown, resetTime, PAUSE_FILE, startGap, isUrgent, urgentStop, urgentFirst, urgentUndo, urgentDone, urgentSweep, urgentState, licenceGate, stopRun, loadRunFiles, saveRunFiles, forgetRunFiles, withModel, routedModel, userWords, onShipping };
+export { runOutcome, settleRecord, waitsOutside, triageSweep, runSection, autoStart, AUTO_MAX, oneNeedEach, NOTHING_FOR_YOU, chaseReport, CHASED, UNMET, heldAsk, onCardGone, withOwnTools, escalation, grantCard, cardRules, cardIsPermission, runPhase, onRunEnd, isClaudeCmd, GUARD, tidyRule, tidyRules, tidySettings, pruneRuns, claudePlugins, idlePlugins, runSettings, archiveAnswers, allAnswers, answersDigest, ANSWERS_ARCHIVE, ANSWERS_KEEP, runsTick, RUN_START, HANG_MIN, noteBlocked, userAnswers, CONTINUED_FILE, onAnswered, CHANGES, toKnownHost, continueLanes, autoPick, autoDecide, FACTS, factsOf, knownRun, withStream, workOf, HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, connectorsInfo, linkReach, fillHandoff, runHandoff, nothingToDo, whereOf, whereLine, whereAnswer, askTask, PARKED_NOTE, parkedPaths, isParked, parkLane, agentMissing, blockedAgain, runningHandoff, loadRuns, earlierRuns, namedFiles, unchangedStep, waitingFor, startWaiting, noteUntracked, untrackedBefore, forgetUntracked, writeTasks, droppedTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, pickAgent, findOrcaCli, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, skipIdea, routeIdeas, agentQuestions, answerQuestions, agentsList, agentsNow, forgetAgents, AGENTS_KEEP, needsOf, settleNeeds, closeAsk, closedAsk, sameSubject, NEEDS_FOR, readLastWords, readNeeds, parseRead, READ_FILE, autoAllow, autoAllowSweep, allowlistInWork, installAllowlist, inWork, withScope, withTrust, sandboxFor, sandboxLifts, sandboxEnv, sandboxNeeds, sandboxState, sandboxWrites, SANDBOX_DIR, resumeFor, noteSession, tooLong, carryOn, RESUME_CTX, CARRY_PROMPT, trustFull, GUARD_SETTINGS, runCmdOf, claimLock, wideRoot, sandboxDenies, questionFolders, folderState, dirtyState, ANSWERS_SEEN, newAnswers, claudeDownIn, claudePause, noteClaudeDown, resetTime, PAUSE_FILE, startGap, isUrgent, urgentStop, urgentFirst, urgentUndo, urgentDone, urgentSweep, urgentState, licenceGate, stopRun, loadRunFiles, saveRunFiles, forgetRunFiles, withModel, routedModel, userWords, onShipping };
