@@ -252,9 +252,13 @@ function lastRunText(log) {
 // A turn that ended on purpose and is waiting ("nothing new to act on… waiting for marketing's
 // photos"): the sentence of its final answer that says what for, or "". A one-shot run exits
 // after every turn, so a finished process alone can't tell this from a stall (2026-10-10).
+// Not a wait, though the words are there: "Nothing is waiting on Garth" was read as one, and
+// "the WhatsApp window stays open until 10:38 tomorrow" (someone else's window) as a time to
+// look again (21 Oct 2026).
+const NOT_A_WAIT = /\b(?:nothing|no one|nobody|none)\b[^.!?]{0,30}\bwait|\b(?:no longer|not|isn['’]t|aren['’]t)\s+(?:\w+\s+)?wait|\b(?:stays?|remains?|is|kept)\s+open\s+until\b/i;
 function waitingOn(final) {
   const ss = String(final || "").replace(/[`*_#>]/g, "").replace(/\s+/g, " ").trim().split(/(?<=[.!?])\s+/);
-  const s = ss.reverse().find((x) => /\b(wait(?:ing)?\s+(?:on|for)|until|will check again|check again|once (?:it|they|the|that)\b|nothing (?:to do|due) (?:yet|until|before)|not (?:yet )?due|next (?:check|run|post)\b|due (?:on|at|in)\b|(?:look|try) again (?:at|on|in|after|tomorrow)\b)/i.test(x));
+  const s = ss.reverse().find((x) => !NOT_A_WAIT.test(x) && /\b(wait(?:ing)?\s+(?:on|for)|until|will check again|check again|once (?:it|they|the|that)\b|nothing (?:to do|due) (?:yet|until|before)|not (?:yet )?due|next (?:check|run|post)\b|due (?:on|at|in)\b|(?:look|try) again (?:at|on|in|after|tomorrow)\b)/i.test(x));
   return s ? short(s.replace(/[.:]$/, ""), 160) : "";
 }
 // What the agent said last: its final answer, from either kind of log.

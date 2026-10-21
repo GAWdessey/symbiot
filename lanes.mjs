@@ -539,7 +539,7 @@ function namedDirs(text, own = "", { exists = (p) => { try { return statSync(p);
 function pastIt(e, hs) {
   if (hs.some((x) => x !== e && x.status !== "error" && Math.max(x.at || 0, x.reportedAt || 0) > e.at && alike(x.text, e.text))) return true;
   const md = readSym(e.from.path, "TASKS.md");
-  return lastRunStart(e.from.path) > e.at && /^- \[x\]/im.test(md) && !/^\s*- \[ \]/m.test(md);
+  return lastRunStart(e.from.path) > e.at && /^- \[x\]/im.test(md) && !/^\s*- \[[ ~]\]/m.test(md); // a [~] item still waits, maybe on this very handover
 }
 // The errored handovers that still wait on you, newest first:
 // [{ id, from, text, error, at, dirs, q, options }].
