@@ -44,7 +44,7 @@ const shSingle = (s) => "'" + String(s).replace(/'/g, "'\\''") + "'";
 const escDq = (s) => String(s).replace(/[\\"$`]/g, "\\$&");
 // Plain words only: in the Orca preset this passes through two shells, so no
 // backticks or $ (escDq covers one level).
-const HANDOFF_PROMPT = "Read .symbiot/TASKS.md and implement its unchecked items in this repo, one at a time, urgent ones first: finish the first one completely (built, tested, ticked) before you look at the next, then carry on with the next while you can. An item that is already done in the code, or no longer applies, you tick with a one-line note saying why. Never end a run without finishing or ticking at least one item, and never stop because the list is long: another run picks up where you left off. Tick each item [x] in that file as you finish it and leave your changes uncommitted, so they can be reviewed and approved. If you need a decision, or have ideas or options for the user, write them to .symbiot/QUESTIONS.md as TASKS.md explains, then skip that item and carry on with the next: a question never ends the run while other items can be done. Read .symbiot/ANSWERS.md first if it exists. Confirm before anything destructive.";
+const HANDOFF_PROMPT = "Read .symbiot/TASKS.md and implement its unchecked items in this repo, one at a time, urgent ones first: finish the first one completely (built, tested, ticked) before you look at the next, then carry on with the next while you can. An item that is already done in the code, or no longer applies, you tick with a one-line note saying why. Tick an item [x] only when it is done and checked: one that is blocked, handed to another lane, or waiting on a person, a reply or a later event you mark [~] with a note of what it waits on, never [x], and a finding is not a done item. Look at the [~] items first: once what one waits on has come in, carry on with it. Never stop because the list is long: another run picks up where you left off. Tick each item [x] in that file as you finish it and leave your changes uncommitted, so they can be reviewed and approved. If you need a decision, or have ideas or options for the user, write them to .symbiot/QUESTIONS.md as TASKS.md explains, then skip that item and carry on with the next: a question never ends the run while other items can be done. Read .symbiot/ANSWERS.md first if it exists. Confirm before anything destructive.";
 function handoffCmd() { const cfg = loadConfig(); return migrateOrcaCmd(migrateClaudeCmd(cfg.agentCmd)) || (cfg.ide ? `${cfg.ide} {dir}` : ""); } // ide = legacy
 // Save the template ("" clears it). Either way the legacy `ide` key goes.
 function setHandoffCmd(cmd) {
@@ -1512,9 +1512,17 @@ function forgetUntracked(path) { try { unlinkSync(join(path, ".symbiot", UNTRACK
 // the TASKS.md it's working from: the new brief waits in TASKS.next.md and
 // replaces TASKS.md once that agent exits. Returns true if it was held.
 const HELD = "TASKS.next.md";
+// A new brief keeps the [~] marks of the one it replaces: a task waiting on ops or a reply
+// came back open in the next brief, and the lane started again on a wait it couldn't end.
+function carryWaiting(was, md) {
+  const waits = String(was || "").split("\n").filter((l) => WAITING_TASK.test(l)).map((l) => ({ k: l.replace(WAITING_TASK, "").trim().toLowerCase(), line: l.trimStart() }));
+  if (!waits.length) return md;
+  return String(md).split("\n").map((l) => { if (!/^\s*-\s*\[ \]/.test(l)) return l; const k = l.replace(/^\s*-\s*\[ \]\s*/, "").trim().toLowerCase(), w = waits.find((x) => x.k.startsWith(k) || sameTask(x.k, k)); return w ? l.match(/^\s*/)[0] + w.line : l; }).join("\n");
+}
 function writeTasks(path, md) {
   const dir = join(path, ".symbiot"); mkdirSync(dir, { recursive: true });
   if (runningHandoff(path)) { writeFileSync(join(dir, HELD), md); return true; }
+  md = carryWaiting(readSymbiot(path, "TASKS.md"), md);
   writeFileSync(join(dir, "TASKS.md"), md); noteHanded(path, md);
   try { unlinkSync(join(dir, HELD)); } catch {} // superseded by this brief
   return false;
@@ -1527,11 +1535,11 @@ function writeTasks(path, md) {
 // file (ticked or not) was deleted: droppedTasks lists them, and tasks.mjs
 // closes them (applyDrops). The task lines are the `## Tasks` section's, or the
 // whole file's when it has none; a file emptied or gone deleted nothing.
-const HANDED = "handed.json", BOX = /^\s*-\s*\[[ x]\]\s*/i;
+const HANDED = "handed.json", BOX = /^\s*-\s*\[[ x~]\]\s*/i; // [~] too: a waiting task isn't a deleted one
 function briefTasks(md) {
   const lines = String(md || "").split("\n"), at = lines.findIndex((l) => /^##\s+Tasks\s*$/.test(l));
   const end = at < 0 ? lines.length : lines.findIndex((l, i) => i > at && /^##\s/.test(l));
-  return lines.slice(at + 1, end < 0 ? lines.length : end).filter((l) => BOX.test(l)).map((l) => l.replace(BOX, "").replace(/\s*\[model:\s*\w+\s*\]/gi, "").trim()).filter(Boolean);
+  return lines.slice(at + 1, end < 0 ? lines.length : end).filter((l) => BOX.test(l)).map((l) => l.replace(BOX, "").replace(/\s*\[model:\s*\w+\s*\]/gi, "").replace(/\s*\((?:waits|waiting) (?:on|for)\b[^)]*\)\s*$/i, "").trim()).filter(Boolean);
 }
 function noteHanded(path, md, also = []) {
   try { writeFileSync(join(path, ".symbiot", HANDED), JSON.stringify({ at: Date.now(), tasks: [...briefTasks(md), ...also] })); } catch {}
@@ -1539,7 +1547,7 @@ function noteHanded(path, md, also = []) {
 function droppedTasks(path) {
   let h = null; try { h = JSON.parse(readSymbiot(path, HANDED)); } catch {}
   const md = readSymbiot(path, "TASKS.md");
-  if (!h || !Array.isArray(h.tasks) || !md.trim() || !/^##\s+Tasks\s*$|^\s*-\s*\[[ x]\]/im.test(md)) return [];
+  if (!h || !Array.isArray(h.tasks) || !md.trim() || !/^##\s+Tasks\s*$|^\s*-\s*\[[ x~]\]/im.test(md)) return [];
   const now = briefTasks(md);
   return h.tasks.filter((t) => !now.some((n) => sameTask(n, t))).map((text) => ({ text, at: h.at || 0 }));
 }
@@ -1552,7 +1560,7 @@ function droppedTasks(path) {
 // The agent's own line, note and all, is what lands.
 function releaseHeldTasks(path) {
   const held = readSymbiot(path, HELD); if (!held || runningHandoff(path)) return false;
-  const isTick = /^\s*-\s*\[x\]\s*/i, key = (l) => l.replace(/^\s*-\s*\[[ x]\]\s*/i, "").trim().toLowerCase();
+  const isTick = /^\s*-\s*\[[x~]\]\s*/i, key = (l) => l.replace(/^\s*-\s*\[[ x~]\]\s*/i, "").trim().toLowerCase(); // a [~] the agent made meanwhile lands too
   const ticked = readSymbiot(path, "TASKS.md").split("\n").filter((l) => isTick.test(l)).map((l) => ({ k: key(l), line: l }));
   const noted = (t, k) => t.startsWith(k) && /^\s*(?:—|–|-{1,2}|:|\(|\.\s)/.test(t.slice(k.length));
   const tickOf = (k) => ticked.find((t) => t.k === k) || ticked.find((t) => noted(t.k, k) || sameTask(t.k, k));
@@ -2275,15 +2283,20 @@ function withStream(cmd) {
   return c + " --output-format stream-json --verbose";
 }
 const firstOpen = (md) => { const l = String(md || "").split("\n").find((x) => /^\s*-\s*\[ \]/.test(x)); return l ? l.replace(/^\s*-\s*\[ \]\s*/, "").trim() : ""; };
+// A [~] item waits on something outside the run (handed to ops, a reply, the user's sign-in): it's
+// neither open nor done. Runs ticked those [x] to end with something ticked, and every card said
+// finished while the run's own last words said the 16 Oct delivered count was still unread (21 Oct 2026).
+const WAITING_TASK = /^\s*-\s*\[~\]\s*/;
+const firstWaiting = (md) => { const l = String(md || "").split("\n").find((x) => WAITING_TASK.test(x)); return l ? l.replace(WAITING_TASK, "").trim() : ""; };
 function workOf(path, log) {
   const w = parseRun(lastRunText(log)), md = readSymbiot(path, "TASKS.md");
-  const done = (md.match(/^\s*-\s*\[x\]/gim) || []).length, total = done + (md.match(/^\s*-\s*\[ \]/gm) || []).length;
+  const done = (md.match(/^\s*-\s*\[x\]/gim) || []).length, waiting = (md.match(/^\s*-\s*\[~\]/gm) || []).length, total = done + waiting + (md.match(/^\s*-\s*\[ \]/gm) || []).length;
   const tail = w.stream ? (w.final || w.said.join("\n\n") || (w.doing ? w.doing + "…" : "")) : String(log).slice(-1200);
   const plan = w.stream ? briefPlan(md) : [], line = w.stream && !w.final ? runLine({ plan, step: stepOf(plan, w.talk), work: w }) : null;
   const work = w.stream ? { model: w.model, doing: w.doing, moved: w.moved, looping: w.looping, steps: w.steps.slice(-16), todos: w.todos, cost: w.cost, turns: w.turns, tokens: w.tokens, ctx: w.ctx, tests: w.tests, files: w.files, pace: w.pace, errors: w.errors, final: w.final.slice(0, 1200), restOn: waitingOn(w.final), count: w.steps.length } : null;
   // its kind (a brief, or answers) from its command line, and the task it's on: what estimate.mjs compares it with
   if (line) { const c = String(log || "").slice(String(log || "").lastIndexOf("\n=== ")).split("\n")[2] || ""; line.kind = kindOf(c); line.task = firstOpen(md).slice(0, 200); }
-  return { tail, work, progress: total ? { done, total } : null, ...(line ? { line } : {}) };
+  return { tail, work, progress: total ? { done, total, ...(waiting ? { waiting, on: firstWaiting(md).slice(0, 200) } : {}) } : null, ...(line ? { line } : {}) };
 }
 // One state per run for the Agents view, from what the run shows: working (alive, moving), stuck (alive but
 // quiet or going round), waiting (turn ended cleanly, and something outside it is awaited), paused (turn ended with
@@ -2292,7 +2305,7 @@ function runPhase(a) {
   if (a.status === "running") return a.line && (a.line.quiet || a.line.looping) ? "stuck" : "working";
   if (a.status !== "done") return "failed";
   const asks = Array.isArray(a.ask) ? a.ask.length : a.ask && a.ask.questions ? a.ask.questions.length : 0;
-  if (a.waiting || a.needs || asks) return "waiting";
+  if (a.waiting || a.needs || asks || (a.progress && a.progress.waiting)) return "waiting";
   if (a.progress && a.progress.total > 0 && a.progress.done < a.progress.total) return "paused";
   return "finished";
 }

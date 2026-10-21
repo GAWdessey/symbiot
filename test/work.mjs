@@ -89,7 +89,14 @@ try {
   const wo = workOf(repo, "\n=== r " + ts(0) + " ===\n$ claude -p …\n" + running);
   ok("its work, how far through TASKS.md it is, and readable text instead of JSON", wo.work && wo.work.doing === "Adding a test" && wo.progress.done === 1 && wo.progress.total === 3 && !/\{"type"/.test(wo.tail), [wo.progress, wo.tail.slice(0, 80)]);
   ok("another agent: no work view, the log's end as before", workOf(repo, "\n=== r x ===\n$ codex\nhello").work === null && /hello/.test(workOf(repo, "\n=== r x ===\n$ codex\nhello").tail), "");
+  writeFileSync(join(repo, ".symbiot", "TASKS.md"), "## Tasks\n- [x] one\n- [~] read the delivered count (waits on: ops reading the report)\n");
+  const ww = workOf(repo, "\n=== r " + ts(0) + " ===\n$ claude -p …\n" + running);
+  ok("a [~] item waits: counted, neither done nor open, and what it waits on is kept", ww.progress.done === 1 && ww.progress.total === 2 && ww.progress.waiting === 1 && /waits on: ops/.test(ww.progress.on), ww.progress);
+  writeFileSync(join(repo, ".symbiot", "TASKS.md"), "## Tasks\n- [x] one\n- [ ] two\n- [ ] three\n");
   const { waitingOn } = await import("../work.mjs");
+  ok("a sentence saying nothing waits isn't a wait (21 Oct 2026)", waitingOn("Done. Nothing is waiting on Garth, and nothing was sent.") === "" && waitingOn("No one is waiting for this now.") === "");
+  ok("someone else's window that stays open until a time isn't a wait", waitingOn("Sent. The WhatsApp window stays open until 10:38 tomorrow.") === "");
+  ok("…a real wait still is", waitingOn("Nothing is left here. I'm waiting on ops to read the report.") === "I'm waiting on ops to read the report");
   ok("a turn that ended to wait says what for; a plain summary says nothing", waitingOn("Nothing new to act on. Marketing's photos haven't landed, so I'm waiting for them and will check again.") === "Marketing's photos haven't landed, so I'm waiting for them and will check again" && waitingOn("Done. Fixed the login bug.") === "", waitingOn("Nothing new. Waiting on marketing's photos."));
   console.log("HOW FAR ALONG — a run's step in its brief's plan, on Home (steve and argena, 2026-10-08: only 'Agents working: 2')");
   const { briefPlan, stepOf, runLine, STALL_MS } = await import("../work.mjs");
@@ -230,6 +237,21 @@ try {
 } finally {
   rmSync(HOME, { recursive: true, force: true });
 }
+// a task marked [~] waits: it isn't deleted, and a new brief keeps the mark (21 Oct 2026)
+{
+  const { writeTasks, droppedTasks } = await import("../agents.mjs");
+  const H2 = mkdtempSync(join(tmpdir(), "symbiot-wait-")), repo = join(H2, "lane"); mkdirSync(repo, { recursive: true });
+  try {
+    const brief = "## Tasks\n- [ ] alpha the first thing\n- [ ] beta the delivered count\n\n## When you finish an item\n";
+    writeTasks(repo, brief);
+    const f = join(repo, ".symbiot", "TASKS.md");
+    writeFileSync(f, readFileSync(f, "utf8").replace("- [ ] beta the delivered count", "- [~] beta the delivered count (waits on: ops reading the report)"));
+    ok("a [~] item isn't taken for one the agent deleted", droppedTasks(repo).length === 0, droppedTasks(repo));
+    writeTasks(repo, brief);
+    const md = readFileSync(f, "utf8");
+    ok("the next brief keeps it waiting, note and all, and the open one open", /^- \[~\] beta the delivered count \(waits on: ops reading the report\)$/m.test(md) && /^- \[ \] alpha the first thing$/m.test(md), md);
+  } finally { rmSync(H2, { recursive: true, force: true }); }
+}
 // one state per run in the Agents view
 {
   const p = (a) => runPhase(a);
@@ -239,6 +261,7 @@ try {
   ok("phase: exited clean with questions is waiting", p({ status: "done", ask: { questions: [{ q: "a" }] } }) === "waiting");
   ok("phase: exited clean with a wait is waiting", p({ status: "done", waiting: { step: "x" } }) === "waiting");
   ok("phase: exited clean with tasks left is paused", p({ status: "done", progress: { done: 1, total: 3 } }) === "paused");
+  ok("phase: exited clean with a [~] item is waiting, not finished, though nothing is open", p({ status: "done", progress: { done: 3, total: 4, waiting: 1, on: "x" } }) === "waiting");
   ok("phase: exited clean with all done is finished", p({ status: "done", progress: { done: 3, total: 3 } }) === "finished");
   ok("phase: non-zero exit is failed", p({ status: "failed" }) === "failed");
 }
