@@ -71,15 +71,29 @@ function judgeChrome(tool, input = {}, { session = "", home = homedir(), now = D
 // run's group with its address now (`• tabId 7: "Title" ("https://…")`), or tabs_context_mcp's list as
 // JSON. That's the site each is on, whatever a click or a redirect did. Gives how many it noted.
 function textOf(v) { return typeof v === "string" ? v : Array.isArray(v) ? v.map(textOf).join("\n") : v && typeof v === "object" ? Object.values(v).map(textOf).join("\n") : ""; }
-function seen(tool, response, { session = "", home = homedir(), now = Date.now() } = {}) {
+// A tab the run closed (tabs_close_mcp) is gone from its list, and tabs_context_mcp's answer is the
+// whole group: a tab of this run's not in it was closed some other way. What's left is what the run
+// still has open when it ends (openTabs).
+function seen(tool, response, { session = "", home = homedir(), now = Date.now(), input = {} } = {}) {
   if (!String(tool || "").startsWith(PREFIX)) return 0;
+  const name = String(tool).slice(PREFIX.length);
+  if (name === "tabs_close_mcp" && input && input.tabId != null) { const all = readJson(TABS(home), {}); delete all[`${session}:${input.tabId}`]; writeJson(TABS(home), all); }
   const text = textOf(response), found = {};
   for (const m of text.matchAll(/tabId\s+(\d+):.*\("([^"\s]+)"\)\s*$/gm)) found[m[1]] = m[2];
   for (const m of text.matchAll(/"tabId"\s*:\s*(\d+)[^{}]*?"url"\s*:\s*"([^"]+)"/g)) found[m[1]] ??= m[2];
-  const ids = Object.keys(found); if (!ids.length) return 0;
+  const ids = Object.keys(found), whole = name === "tabs_context_mcp" && /availableTabs|Available tabs/i.test(text);
+  if (!ids.length && !whole) return 0;
   const all = readJson(TABS(home), {});
-  for (const id of ids) { const u = found[id]; all[`${session}:${id}`] = { host: /^https?:\/\//i.test(u) ? hostOf(u) : "", at: now }; }
+  if (whole) for (const k of Object.keys(all)) if (k.startsWith(session + ":") && !ids.includes(k.slice(session.length + 1))) delete all[k];
+  for (const id of ids) { const u = found[id]; if (name === "tabs_close_mcp" && String(id) === String(input && input.tabId)) continue; all[`${session}:${id}`] = { host: /^https?:\/\//i.test(u) ? hostOf(u) : "", at: now }; }
   writeJson(TABS(home), all); return ids.length;
+}
+// The tabs a run opened in the user's Chrome and hasn't closed: [{ tab, host }]. Runs left theirs
+// open, and the user's Chrome filled with "Claude" groups (an expired SMS Portal login, two LinkedIn
+// feeds, 21 Oct 2026); the membrane's Stop hook sends a run back to close them before it ends.
+function openTabs(session, { home = homedir() } = {}) {
+  if (!session) return [];
+  return Object.entries(readJson(TABS(home), {})).filter(([k]) => k.startsWith(session + ":")).map(([k, v]) => ({ tab: k.slice(session.length + 1), host: (v && v.host) || "" }));
 }
 // The user's Go on a held action's card (a question whose id is chrome-go-<id>): it may go through once.
 function goAhead(id, { home = homedir(), now = Date.now() } = {}) {
@@ -93,4 +107,4 @@ function setActSite(host, on, { load, save }) {
   cfg.chromeAct = [...list]; save(cfg); return { ok: true, sites: cfg.chromeAct };
 }
 
-export { judgeChrome, seen, goAhead, setActSite, actSites, hostOf, PREFIX, READS, ACTS };
+export { judgeChrome, seen, openTabs, goAhead, setActSite, actSites, hostOf, PREFIX, READS, ACTS };

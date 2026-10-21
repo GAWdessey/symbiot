@@ -194,7 +194,8 @@ function guardSettings() {
   // holds in every mode, bypassPermissions included, and a run gets it whether or not its folder
   // has a settings.local.json
   const s = { permissions: { deny: GUARD() }, hooks: { PreToolUse: [{ matcher: "Bash|Read|Edit|Write|MultiEdit|NotebookEdit|Grep|Glob|mcp__claude-in-chrome__.*", hooks: [{ type: "command", command: `node ${JSON.stringify(GUARD_HOOK)}` }] }],
-    PostToolUse: [{ matcher: "mcp__claude-in-chrome__.*", hooks: [{ type: "command", command: `node ${JSON.stringify(GUARD_HOOK)}` }] }] } }; // after a Chrome tool: which site each tab is on now (chromegate.mjs seen)
+    PostToolUse: [{ matcher: "mcp__claude-in-chrome__.*", hooks: [{ type: "command", command: `node ${JSON.stringify(GUARD_HOOK)}` }] }], // after a Chrome tool: which site each tab is on now (chromegate.mjs seen)
+    Stop: [{ hooks: [{ type: "command", command: `node ${JSON.stringify(GUARD_HOOK)}` }] }] } }; // before a run ends: the tabs it left open in the user's Chrome are closed (chromegate.mjs openTabs)
   try { mkdirSync(CONFIG_DIR, { recursive: true }); writeFileSync(GUARD_SETTINGS, JSON.stringify(s, null, 2) + "\n", { mode: 0o600 }); } catch {}
   return GUARD_SETTINGS;
 }

@@ -93,9 +93,26 @@ try {
   ok("…and after one ran, the hook notes the site each tab is on now, from its result", post.status === 0 && JSON.parse(readFileSync(join(CFG, "chrome-tabs.json"), "utf8"))["s9:4"].host === "evil.example", [post.status, post.stderr]);
   const gs = JSON.parse(readFileSync(A.runSettings(HOME), "utf8")); // the settings file a run gets
   ok("…a run's settings call it after every Chrome tool, not only before", gs.hooks.PostToolUse.some((h) => /claude-in-chrome/.test(h.matcher) && /guard\.mjs/.test(h.hooks[0].command)), gs.hooks);
+  ok("…and before the run ends, to close its tabs", (gs.hooks.Stop || []).some((h) => /guard\.mjs/.test(h.hooks[0].command)), gs.hooks);
   const BF = await import("../browserfails.mjs");
   const brief = BF.browserBrief(true, ["namecheap.com"]).join("\n");
   ok("the brief says where it may act, and that sends wait for the user's Go", /On `namecheap\.com` the user also lets you ACT in their Chrome/.test(brief) && /holds whatever sends, posts, pays or deletes until the user says Go/.test(brief) && !/ACT in their Chrome/.test(BF.browserBrief(true, []).join("\n")), brief.slice(0, 300));
+  console.log("CHROMEGATE — a run closes the tabs it opened before it ends");
+  {
+    const t = { session: "tabs1", home: HOME }, ctx = (ids) => ids.map((id) => `  • tabId ${id}: "Feed | LinkedIn" ("https://www.linkedin.com/feed/")`).join("\n");
+    G.seen(C + "tabs_create_mcp", `Created tab\n\nTab Context:\n- Available tabs:\n${ctx([41, 42])}`, t);
+    ok("the tabs it opened are its open tabs", G.openTabs("tabs1", t).map((x) => x.tab).sort().join() === "41,42" && G.openTabs("tabs1", t)[0].host === "linkedin.com", G.openTabs("tabs1", t));
+    ok("…another run's aren't", G.openTabs("other", t).length === 0 && G.openTabs("", t).length === 0);
+    G.seen(C + "tabs_close_mcp", `Closed tab 41\n\nTab Context:\n- Available tabs:\n${ctx([42])}`, { ...t, input: { tabId: 41 } });
+    ok("a tab it closed is gone", G.openTabs("tabs1", t).map((x) => x.tab).join() === "42", G.openTabs("tabs1", t));
+    const hook = (ev) => spawnSync(process.execPath, [new URL("../guard.mjs", import.meta.url).pathname], { input: JSON.stringify(ev), encoding: "utf8", env: { ...process.env, HOME } });
+    const stop = hook({ hook_event_name: "Stop", session_id: "tabs1", stop_hook_active: false });
+    ok("ending with one open: the Stop hook sends it back to close it, naming the tab", stop.status === 2 && /tabs_close_mcp on tab 42 \(linkedin\.com\)/.test(stop.stderr), [stop.status, stop.stderr]);
+    ok("…only once: a tab it can't close never keeps it from ending", hook({ hook_event_name: "Stop", session_id: "tabs1", stop_hook_active: true }).status === 0);
+    G.seen(C + "tabs_context_mcp", '{"availableTabs":[]}', t);
+    ok("the group's list without it (closed some other way): not open any more", G.openTabs("tabs1", t).length === 0, G.openTabs("tabs1", t));
+    ok("…and nothing open: it ends", hook({ hook_event_name: "Stop", session_id: "tabs1" }).status === 0);
+  }
 } catch (e) { ok("ran", false, String((e && e.stack) || e)); }
 finally { rmSync(HOME, { recursive: true, force: true }); }
 console.log(`\n${fail ? "✗" : "✓"} chromegate: ${pass} passed, ${fail} failed`);
