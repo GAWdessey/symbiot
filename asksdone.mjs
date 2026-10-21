@@ -1,7 +1,7 @@
 // One shared record of the questions the user has answered, for every agent and Home:
 // an ask that's in it isn't raised again (Home drops it) and each agent's brief lists it.
 import { readFileSync, readdirSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { join, basename } from "node:path";
 import { createHash } from "node:crypto";
 import { CONFIG_DIR, readState, writeJsonAtomic } from "./core.mjs";
 import { signInDone, browserBrief } from "./browserfails.mjs";
@@ -43,11 +43,17 @@ const doneBrief = (lane = "", n = 5) => {
 // reports so i can read it". Each run read the reply as an answer and asked for the price ids again
 // in new words, and the reply he typed on its "👤 You" card was passed on as "The user says it's done".
 const WANTS_READ = /\b(?:put|write|leave|add|make|save)\b[^.?!\n]{0,40}\breports?\b|\bin (?:the )?reports\b|\bso i can read\b|\b(?:something|anything) (?:to read|i can read|telling me)\b|\buntil i (?:read|see|understand|know)\b|\bexplain\b|\btell me (?:what|why|how)\b|\bwrite (?:it |this |that |me )?(?:up|out|down)\b|\b(?:a )?write-?up\b|\bsummar(?:ise|ize)\b/i;
-const wantsToRead = (a) => WANTS_READ.test(String(a || ""));
+const wantsToRead = (a) => WANTS_READ.test(String(a || "")) || wantsReport(a);
+// "give me a thorough report first", "i need the report first then we can send it": a report before
+// anything goes ahead. On 21 Oct 2026 Garth said so twice on a Go ahead card about a reply to a client,
+// and both went to its run as "Go ahead: …": it found nothing to do, and the card came back unchanged.
+const REPORT_FIRST = /\b(?:report|write-?up|summary)\b[^.?!\n]{0,40}\b(?:first|before)\b|\b(?:first|before)\b[^.?!\n]{0,30}\b(?:a|the|your)\b[^.?!\n]{0,20}\breport\b|\b(?:give|show|send|get) me\b[^.?!\n]{0,30}\breport\b|\b(?:need|want|waiting (?:on|for)) (?:a|the|that|your)\b[^.?!\n]{0,30}\breport\b/i;
+const wantsReport = (a) => REPORT_FIRST.test(String(a || ""));
 // A reply in the user's own words that asks for something to read or puts a question back, not
 // an option picked (options: the question's own, which a click sends word for word).
 function asksBack(a, options = []) {
   const t = String(a || "").trim(), k = key(t);
+  if (t && wantsReport(t.replace(/^[\s*_]*(?:go ahead|done)\b\W*/i, ""))) return true; // "Go ahead: i need the report first" isn't a go-ahead
   if (!t || SAYS_NO.test(t) || /^[\s*_]*(?:🤖|👤|done\b|go ahead\b)/iu.test(t) || options.some((o) => key(String(o).replace(/\s*\(recommended[^)]*\)\s*$/i, "")) === k || key(o) === k)) return false;
   return wantsToRead(t) || /\?/.test(t);
 }
@@ -67,9 +73,27 @@ function reportsSince(folder, ts) {
     const mtime = Math.round(st.mtimeMs); if (!st.isFile() || mtime <= ts) continue;
     let head = ""; try { head = readFileSync(file, "utf8").slice(0, 2000); } catch {}
     const h = head.match(/^#\s+(.+)$/m);
-    out.push({ file, title: (h ? h[1].replace(/[*_`]/g, "").trim() : "") || name.replace(/\.md$/i, ""), mtime, read: seen[createHash("sha1").update(file).digest("hex").slice(0, 12)] === mtime });
+    const id = createHash("sha1").update(file).digest("hex").slice(0, 12);
+    out.push({ id, file, title: (h ? h[1].replace(/[*_`]/g, "").trim() : "") || name.replace(/\.md$/i, ""), mtime, read: seen[id] === mtime });
   }
   return out.sort((a, b) => b.mtime - a.mtime);
+}
+// The report a run's card points at ("Read the report"): the one `said` names (its last words, a
+// question: "on Reports as WINLOVE-FULL-EMAIL-REPORT"), else, in an ops run's own folder (`own`: one
+// job each), its newest, else the newest written since `since`. null when there's none.
+function runReport(folder, { said = "", since = 0, own = false } = {}) {
+  const all = reportsSince(folder, 0); if (!all.length) return null;
+  const t = String(said || "");
+  const named = all.find((r) => { const n = basename(r.file), stem = n.replace(/\.md$/i, ""); return t.includes(n) || (stem.length >= 6 && new RegExp(`(?:^|[^\\w-])${stem.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\w-])`).test(t)); });
+  return named || (own ? all[0] : all.find((r) => r.mtime > since)) || null;
+}
+// The newest answer in a folder's ANSWERS.md, when it asks for a report before anything goes ahead:
+// { heading, text } or null. Only the newest: an answer after it ("go ahead, send it") settles it.
+// Symbiot's own reminder of it (agents.mjs chaseReport, "From Symbiot: …") isn't a new answer.
+function reportAsked(answers) {
+  const last = String(answers || "").split(/^### /m).slice(1).filter((x) => !/^From Symbiot\b/i.test(x)).pop(); if (!last) return null;
+  const [heading, ...rest] = last.split("\n"), text = rest.filter((l) => !/^_(?:answered|shared)\b/.test(l.trim())).join(" ").trim();
+  return wantsReport(text) ? { heading: heading.trim(), text } : null;
 }
 // The answered ask a new question repeats, or null: (1) the same question worded again (4+ content
 // words shared, 75% of the longer's: a longer one that only starts the same asks something else), from any lane; (2) a subject the user asked back about (back),
@@ -156,4 +180,4 @@ function recentTurns(now = Date.now(), maxAge = 3 * 86400000) {
 }
 function recentTasks() { try { const l = JSON.parse(readFileSync(join(CONFIG_DIR, "tasks.json"), "utf8")); return Array.isArray(l) ? l.map((t) => ({ text: String(t.text || "") })) : []; } catch { return []; } }
 
-export { recordDone, isDone, doneList, doneBrief, asksBack, askBackNote, wantsToRead, heldBy, reportsSince, addRule, standingList, standingBrief, coveredBy, isApprovalAsk, approvalText, approvedBefore, recentTurns, recentTasks };
+export { recordDone, isDone, doneList, doneBrief, asksBack, askBackNote, wantsToRead, wantsReport, heldBy, reportsSince, runReport, reportAsked, addRule, standingList, standingBrief, coveredBy, isApprovalAsk, approvalText, approvedBefore, recentTurns, recentTasks };

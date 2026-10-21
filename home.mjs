@@ -12,7 +12,7 @@
 import { claudeSetup } from "./claudesetup.mjs";
 import { heldAsks } from "./handover.mjs";
 import { plainAsk } from "./plain.mjs";
-import { join } from "node:path";
+import { join, basename } from "node:path";
 import { homedir } from "node:os";
 import { readFileSync, writeFileSync, mkdirSync, statSync } from "node:fs";
 import { watchBoard, draftReply, draftCards, draftAnswer } from "./watch.mjs";
@@ -20,7 +20,7 @@ import { pendingReview, pushTasks, addTask, taskType, releaseNotIn } from "./tas
 import { estimate, estimateWords } from "./estimate.mjs";
 import { heldAsk, grantCard, cardIsPermission, onCardGone, setHandoffCmd, agentsList, agentsNow, forgetAgents, runHandoff, runningHandoff, handoffCmd, loadRuns, connectorsInfo, parkedPaths, agentMissing, settleNeeds, pickAgent, detectHandoffs, linkReach, unchangedStep, whereOf, claudePause, parkLane } from "./agents.mjs";
 import { stallCards, loadStall, saveStall } from "./stall.mjs";
-import { isDone, recordDone, coveredBy, doneList, asksBack, askBackNote, heldBy, reportsSince } from "./asksdone.mjs";
+import { isDone, recordDone, coveredBy, doneList, asksBack, askBackNote, wantsReport, heldBy, reportsSince } from "./asksdone.mjs";
 import { captureSecrets } from "./vault.mjs";
 import { linksState, signInAsked } from "./links.mjs";
 import { knowledgeState } from "./knowledge.mjs";
@@ -58,6 +58,8 @@ const FAILED_FOR = 86400000, dropped = new Set();
 // status (Symbiot already did it); it means "press this once you have", so it says that and isn't recommended.
 const I_DID_IT = "I've done this";
 const firstLine = (t) => String(t || "").split("\n").find((l) => l.trim()) || "";
+// A card's "Read the report" (agents.mjs needsOf, agentQuestions): what Reports opens it by.
+const reportLink = (r) => (r && r.id ? { report: { id: r.id, title: plain(r.title, 90) } } : {});
 // What stopped and can't go on without you, as questions: a handover that couldn't
 // start (lanes.mjs stuckHandovers: "Allow this run access to ~/Company?"), a run
 // that ended waiting on you (agents.mjs needsOf: a draft for your OK, a sudo step,
@@ -94,10 +96,10 @@ function troubles({ stuck = [], list = [], map = {}, named = displayName, now = 
     if (a.status === "running" || (a.ask && a.ask.questions && a.ask.questions.length)) continue; // at work, or it asked: that's its question
     const lane = laneOfPath(a.path, map), repo = lane || "", nm = repo ? named(map[lane], repo) : plain(String(a.name || "an agent").replace(/^Agent:\s*/, "").replace(/^\W*What['’]s needed:\W*/i, "").replace(/^./, (c) => c.toUpperCase()), 60);
     const n = a.needs;
-    if (n && !dropped.has("needs:" + a.id) && !isDone(n.what) && !heldNeeds(n.what, a.path, lane)) {
+    if (n && !dropped.has("needs:" + a.id) && !isDone(n.what) && (n.reportFirst || !heldNeeds(n.what, a.path, lane))) { // asked back, and now pointing at its report: that's the card they're waiting for
       const ok = n.kind === "approve";
       out.push({ kind: "ask", fix: "needs", id: "needs:" + a.id, path: a.path, repo, ...(ok ? { ok } : {}), name: nm, title: ok ? `${nm} waits for your OK` : `${nm} needs you`, sub: plain(n.label || n.what, 90),
-        q: n.what + (n.check ? ` Check first: ${n.check}` : ""), options: ok ? ["Go ahead (recommended)", "Skip"] : [I_DID_IT, "Skip"], status: "Waiting on you", ...(n.api ? { api: n.api } : signInCard([n.label, n.what, n.check])), shape: "agents" });
+        q: n.what + (n.check ? ` Check first: ${n.check}` : ""), options: ok ? ["Go ahead (recommended)", "Skip"] : [I_DID_IT, "Skip"], status: "Waiting on you", ...(n.api ? { api: n.api } : signInCard([n.label, n.what, n.check])), ...reportLink(n.report), shape: "agents" });
       continue;
     }
     if (a.status !== "failed" || dropped.has(a.id) || stoppedFor.has(a.id) || a.down || (a.endedAt && now - a.endedAt > FAILED_FOR)) continue; // down: Claude itself was out, and Home has one card for that
@@ -463,7 +465,7 @@ function homeState({ now = Date.now(), fresh = false, deps = {}, tick = false } 
     // the user answered another agent on this work: it has that answer, and is checking whether it settles this (lanes.mjs shareAnswer)
     const sh = sharedTo(a.path), shared = sh && (a.status === "running" || Date.parse(sh.at) > (a.startedAt || 0)) ? { shared: sh } : {}; // and not once it has asked again since
     you.push({ kind: "ask", id: "ask:" + a.path, path: a.path, repo, ...shared, name: repo ? named(lane ? map[lane] : a.path, repo) : plain(String(a.name || "an agent").replace(/^Agent:\s*/, "").replace(/^New job:\s*/i, ""), 60), // the card's header is narrow: no "New job:" in it
-      title: `${a.name} asks`, sub: String(q.q || "").slice(0, 90), ...(q.task ? { task: q.task } : {}), ...pa, options: opts, ...closed, ...(qs.length > 1 ? { more: qs.length - 1 } : {}), ...signInCard([q.q, ...opts]), shape: "agents" });
+      title: `${a.name} asks`, sub: String(q.q || "").slice(0, 90), ...(q.task ? { task: q.task } : {}), ...pa, options: opts, ...closed, ...(qs.length > 1 ? { more: qs.length - 1 } : {}), ...signInCard([q.q, ...opts]), ...reportLink(q.report), shape: "agents" });
   }
   // What stopped and can't go on without you, as a question too: a handover that
   // couldn't start (lanes.mjs stuckHandovers: "Allow this run access to ~/Company?"),
@@ -625,10 +627,17 @@ function homeAnswer(id, { pick, text = "" } = {}, deps = {}) {
       if (g.error) return { error: g.error };
       allowed = g.rules;
     }
+    // "i need the report first then we can send it", typed on a Go ahead card, isn't a go-ahead (21 Oct 2026: twice,
+    // and each went to its run as "Go ahead: …"). Written already: the card now points at it, and nothing runs.
+    if (text && !allowed && wantsReport(text) && n.report) {
+      noteAnswer(a.path, n.what, `The user hasn't said go ahead: they asked for a report first ("${text}"). It's written: .symbiot/${basename(n.report.file || "")}, on Reports, and their card now links to it. Don't do this until they say go ahead after reading it, and don't ask again without pointing at the report.`);
+      if (!n.reportFirst) settle(a.path, n.key); // its words change to point at the report (needsOf); already pointing, it stays
+      return { ok: true, said: `It's on Reports already: "${n.report.title}". Its card now points at it: read it, then say go ahead there.`, report: n.report.title, reportId: n.report.id };
+    }
     // your own words that ask back ("put it in reports so i can read it") aren't "done": its agent does what you asked first
-    if (text && n.kind !== "approve" && !allowed && asksBack(text)) {
+    if (text && (n.kind !== "approve" || wantsReport(text)) && !allowed && asksBack(text)) {
       const r = reportsSince(a.path, (a.startedAt || a.endedAt || Date.now()) - 60000).find((x) => !x.read);
-      noteAnswer(a.path, n.what, `The user hasn't done this step. ${askBackNote(text)}`);
+      noteAnswer(a.path, n.what, `${n.kind === "approve" ? "The user hasn't said go ahead: don't do it yet." : "The user hasn't done this step."} ${askBackNote(text)}`);
       const e = (deps.run || runHandoff)(a.path, { force: true }), later = afterShip(e);
       settle(a.path, n.key); dropped.add(id); recordDone(n.what, text, whereOf(a.path).lane, { back: true });
       if (later) (deps.later || runAfterShip)(a.path, deps.run || runHandoff);
@@ -644,7 +653,7 @@ function homeAnswer(id, { pick, text = "" } = {}, deps = {}) {
     if (rel && !text) return { error: `This step needs ${rel.name} ${rel.needs}, and ${rel.installed} is installed here, so it isn't done yet. Update, do it again, then press Done it.` };
     const said = allowed ? `Allowed ${allowed.join(", ")}: Symbiot wrote it into this folder's allow list. Carry on.`
       : n.say ? `${n.say}${text ? ` The user adds: ${text}` : ""}` // a sign-in the browser can't hold: its agent takes the API route (browserfails.mjs)
-      : n.kind === "approve" ? `Go ahead: ${text || "do it as you had it, once you've checked what you flagged"}.`
+      : n.kind === "approve" ? `Go ahead: ${text || "do it as you had it, once you've checked what you flagged"}.${n.sent ? ` (Symbiot found "${n.sent.subject}" in Sent after your run said it was unsent: read Sent first, and never send the same email twice.)` : ""}`
       : still.length ? `The user says it's done (${text}), but ${last}, before you asked. Check it yourself before relying on it, then carry on.`
       : `Done: the user did it${text ? ` (${text})` : ""}. Check it worked, then carry on.`;
     noteAnswer(a.path, n.what, said);
@@ -990,7 +999,7 @@ function workSceneNow({ deps = {}, full = false } = {}) {
       const line = plain(String(t).split(/\n\s*\n/)[0], 220);
       if (line) { p.summary = line; p.state = a.status === "running" ? "at work" : qs.length ? "asks you" : "done"; p.path = a.path; }
     }
-    for (const q of qs) { p.qs = p.qs || []; const c = { q: q.shown || q.q, ...(q.shown ? { raw: q.q } : {}), ...(q.task ? { task: q.task } : {}), options: (q.options || []).slice(0, 3), ...(q.labels ? { labels: q.labels } : {}), path: a.path, ...signInCard([q.q, ...(q.options || []).slice(0, 3)]) }; if (gone[cardKey(c)]) { p.asks = Math.max(0, p.asks - 1); continue; } if (p.qs.length < 3) p.qs.push(c); } // one dismissed (dismissCard) stays off the relay too
+    for (const q of qs) { p.qs = p.qs || []; const c = { q: q.shown || q.q, ...(q.shown ? { raw: q.q } : {}), ...(q.task ? { task: q.task } : {}), options: (q.options || []).slice(0, 3), ...(q.labels ? { labels: q.labels } : {}), path: a.path, ...signInCard([q.q, ...(q.options || []).slice(0, 3)]), ...reportLink(q.report) }; if (gone[cardKey(c)]) { p.asks = Math.max(0, p.asks - 1); continue; } if (p.qs.length < 3) p.qs.push(c); } // one dismissed (dismissCard) stays off the relay too
     // an idea for another lane is on that lane's sheet, and here just "2 ideas sent to symbiot" (agents.mjs routeIdeas)
     for (const s of ideas.concat(away.filter((s) => !s.delivered))) {
       const there = s.other || s.delivered === false ? at(s.repo) : p;

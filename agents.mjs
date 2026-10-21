@@ -12,7 +12,8 @@ import { randomBytes, createHash } from "node:crypto";
 import { track as jobTrack } from "./jobs.mjs";
 import { CONFIG_DIR, loadConfig, saveConfig, loadTasks, TASK_MAX, clipWords, sameTask, taskWords, sh, runOut, hasCmd, readState, writeJsonAtomic } from "./core.mjs";
 import { meetsStep, captureSecrets, heldFor } from "./vault.mjs";
-import { recordDone, isDone, isApprovalAsk, approvalText, approvedBefore, recentTurns, recentTasks, asksBack, askBackNote, heldBy, reportsSince } from "./asksdone.mjs";
+import { recordDone, isDone, isApprovalAsk, approvalText, approvedBefore, recentTurns, recentTasks, asksBack, askBackNote, heldBy, reportsSince, runReport, reportAsked } from "./asksdone.mjs";
+import { sentAfter } from "./sentmail.mjs";
 import { parseRun, lastRunText, readRunLog, runStarted, briefPlan, stepOf, runLine, waitingOn, waitUntil, RECHECK } from "./work.mjs";
 import { noteDuration, noteCost, kindOf } from "./estimate.mjs";
 import { plainAsk } from "./plain.mjs";
@@ -398,14 +399,17 @@ const SESSION = "session.json", RESUME_MAX = 8, RESUME_AGE = 2 * 86400000;
 // it fresh instead (about 22k to start), with its own last words in CARRYON.md.
 const RESUME_CTX = 60000, CARRYON = "CARRYON.md";
 const tooLong = (s) => !!s && (s.ctx || 0) > RESUME_CTX;
-const CARRY_PROMPT = HANDOFF_PROMPT + " The user has just answered your questions: the newest entries in .symbiot/ANSWERS.md. This is a fresh start because the conversation of the last run had grown too long to carry on, so read .symbiot/CARRYON.md first: where that run got to, in its own words. Do not redo what it says is done."; // no quotes, $ or backticks: like HANDOFF_PROMPT it may pass through two shells
+// Every item ticked isn't nothing to do while the answer asks for something: two runs ended
+// "nothing for me to do" on "i need the report first" (21 Oct 2026). No quotes, $ or backticks.
+const UNMET = " If every item is ticked already, the newest answer is your work: do what it asks, and check it reached the user (a report they asked for is under Reports, and your question names it) before you end. Never end saying there was nothing to do while it is unmet.";
+const CARRY_PROMPT = HANDOFF_PROMPT + " The user has just answered your questions: the newest entries in .symbiot/ANSWERS.md. This is a fresh start because the conversation of the last run had grown too long to carry on, so read .symbiot/CARRYON.md first: where that run got to, in its own words. Do not redo what it says is done." + UNMET; // no quotes, $ or backticks: like HANDOFF_PROMPT it may pass through two shells
 // The last run's own account of where it got to, for the fresh run that carries on.
 function carryOn(path) {
   let said = ""; try { const w = parseRun(lastRunText(readSymbiot(path, "agent.log"))); said = w.final || (w.talk || []).slice(-3).join("\n\n"); } catch {} // stopped before it summed up: the last things it said
   try { writeFileSync(join(path, ".symbiot", CARRYON), `# Where the last run got to\n\nIts conversation had grown too long to resume, so this run starts fresh. What it said at the end:\n\n${said.slice(0, 6000) || "(it didn't say)"}\n`); } catch {}
   return CARRY_PROMPT;
 }
-const RESUME_PROMPT = "The user has answered: read the newest entries in .symbiot/ANSWERS.md and carry on with .symbiot/TASKS.md from where you were: finish the item you were on, then the next. Same rules as before.";
+const RESUME_PROMPT = "The user has answered: read the newest entries in .symbiot/ANSWERS.md and carry on with .symbiot/TASKS.md from where you were: finish the item you were on, then the next. Same rules as before." + UNMET;
 function sessionOf(path) { try { return JSON.parse(readSymbiot(path, SESSION)) || null; } catch { return null; } }
 // Resume when an answer has come in since its last run, and the conversation is fresh enough
 function resumeFor(path) {
@@ -883,7 +887,7 @@ function earlierRuns() {
     const busy = runningHandoff(r.path), ask = agentQuestions(r.path, r.name), wait = waitingFor(r.path), facts = busy ? [] : factsOf(r.path);
     const log = join(r.path, ".symbiot", "agent.log"), startedAt = (busy && busy.startedAt) || Number(r.startedAt) || Date.now();
     let end = Date.now(); if (!busy) try { end = statSync(log).mtimeMs; } catch {}
-    const needs = busy ? null : needsOf(r.path, { final: lastFinal(r.path), waiting: wait, end });
+    const needs = busy ? null : needsOf(r.path, { final: lastFinal(r.path), waiting: wait, end, start: startedAt });
     if (!busy && !ask.questions.length && !wait && !facts.length && !needs) continue;
     let tail = "", work = null, progress = null, line = null; try { ({ tail, work, progress, line } = workOf(r.path, readRunLog(log))); } catch {}
     out.push({ id: "earlier-" + digest(r.path).slice(0, 8), name: String(r.name || r.path.split("/").pop()), path: r.path, status: busy ? "running" : "done", earlier: true, startedAt, endedAt: busy ? null : end, elapsed: Math.max(0, end - startedAt), exitCode: null, tail, work, progress, ...(busy && line ? { line } : {}), changed: agentChanges(r.path, startedAt, busy ? 0 : end), ask, held: heldTasks(r.path), waiting: wait, needs, remember: facts.length ? facts : null, fromHeld: false });
@@ -924,7 +928,7 @@ function takenUp(path, end) {
   const t = firstTask(path); return !!t && loadRuns().some((r) => r.path !== path && r.path.startsWith(ACT_DIR) && Number(r.startedAt) > end && sameTask(firstTask(r.path), t));
 }
 const draftRun = (path) => { try { const h = JSON.parse(readSymbiot(path, "handoff.json")) || {}; return !!(h.draft || (h.env && h.env.SYMBIOT_DRAFT)); } catch { return false; } };
-function needsOf(path, { final = "", waiting = null, end = Date.now(), now = Date.now() } = {}) {
+function needsOf(path, { final = "", waiting = null, end = Date.now(), start = end - REPORT_WINDOW, now = Date.now() } = {}) {
   if (now - end > NEEDS_FOR) return null;
   let n = waiting ? { kind: "step", what: clipWords(String(waiting.step || "").replace(/^\s*👤\s*(You\s*(\([^)]*\))?:)?\s*/, "").trim(), 240), check: "", label: "", waiting: true } : leftToYou(final) || readNeeds(path, final);
   if (!n || !n.what) return null;
@@ -945,11 +949,24 @@ function needsOf(path, { final = "", waiting = null, end = Date.now(), now = Dat
   if (!n.waiting && lanesJob(`${n.label} ${n.what}`)) return null;
   // pasting or saving a secret the vault already holds: never the user's (its agent is told where it is)
   if (n.kind !== "approve") { const h = heldFor(`${n.label} ${n.what} ${n.check}`); if (h) { pastedStep(path, n.what, h, { held: true }); return null; } }
+  // the user said "send it" from their own mail meanwhile: never "it's unsent" once Sent shows it (sentmail.mjs sentTick)
+  const sent = sentAfter(path, n.what);
+  n = { ...n, claim: n.what }; // its words as its run said them: what sentTick looks for in Sent (sentmail.mjs unsentNeeds)
+  if (sent) n = { ...n, sent, check: `Your Sent folder has "${sent.subject}"${sent.to ? ` to ${sent.to}` : ""}${sent.when ? `, sent ${sent.when}` : ""}, after its run said this was unsent: it may have gone already, so go ahead only if that's a different email.` };
+  // the report the run wrote for you, linked from its card ("Read the report"); and when your newest
+  // answer asked for a report first, the card only comes back once there's one, worded to point at it
+  let rep = null; try { rep = runReport(path, { said: `${final}\n${n.what}\n${n.check}`, since: start - 60000, own: path.startsWith(ACT_DIR) }); } catch {}
+  if (rep) n = { ...n, report: { id: rep.id, title: rep.title, file: rep.file } };
+  if (!n.waiting && reportAsked(readSymbiot(path, "ANSWERS.md"))) {
+    if (!rep) return null; // its run is writing it (homeAnswer told it to): asking again without it is the loop this ends
+    if (!/^You asked for a report first/.test(n.what)) n = { ...n, what: `You asked for a report first: it's on Reports, "${clipWords(rep.title, 90)}". Once you've read it: ${n.what}`, reportFirst: true };
+  }
   const key = digest(n.what);
   const settled = loadSettled();
   if (settled[path] === key || (Array.isArray(settled[ALL_SETTLED]) && settled[ALL_SETTLED].includes(key)) || takenUp(path, end)) return null;
   return { ...n, key };
 }
+const REPORT_WINDOW = 2 * 3600000; // a lane's run with no start known: a report from the 2 hours before it ended is its own
 
 // ---- your AI reads the last words too ------------------------------------------
 // leftToYou catches the ways runs have said it so far ("isn't sent", "only you can").
@@ -1625,6 +1642,23 @@ function _findOrcaCli() {
 const LOG_KEEP = 8 * 1024 * 1024;
 const END_HOOKS = []; // called when any run ends, so the next waiting task starts now, not at the next timer tick
 const onRunEnd = (f) => { END_HOOKS.push(f); };
+// A run that ended with the user's newest answer unmet: they asked for a report first, and it wrote
+// none and named none. On 21 Oct 2026 two runs found their one task ticked and ended "nothing for me
+// to do" while the answer said "i need the report first". Once per answer, its agent is told and
+// started again; one that wrote or named a report is done (its card points at it: needsOf).
+const CHASED = new Set();
+function chaseReport(e, { run = runHandoff } = {}) {
+  if (!e || e.status !== "done" || !e.path) return null;
+  const asked = reportAsked(readSymbiot(e.path, "ANSWERS.md")); if (!asked) return null;
+  const k = digest(`${e.path}\n${asked.heading}\n${asked.text}`); if (CHASED.has(k)) return null;
+  if (OPEN_TASK.test(readSymbiot(e.path, "TASKS.md"))) return null; // work left: its next run gets there
+  if (runReport(e.path, { said: lastFinal(e.path), since: (e.startedAt || Date.now()) - 60000 })) return null;
+  CHASED.add(k);
+  const f = join(e.path, ".symbiot", "ANSWERS.md");
+  try { writeFileSync(f, `${readSymbiot(e.path, "ANSWERS.md").replace(/\s*$/, "")}\n\n### From Symbiot: the report the user asked for\nThe user asked for a report first ("${clipWords(asked.text, 200)}"), and your last run ended without writing one or naming one. Every task being ticked doesn't make this done: write it now, a .md in .symbiot/ named for what it is and starting with a # title (it shows under Reports), name it in your last message, and do nothing else they haven't said yes to.\n_answered ${new Date().toISOString().slice(0, 10)}_\n`); } catch { return null; }
+  return run(e.path, { force: true });
+}
+END_HOOKS.push((e) => { const t = setTimeout(() => { try { chaseReport(e); } catch {} }, 2000); if (t.unref) t.unref(); });
 function track(name, cmd, cwd, onExit, env) {
   try {
     const dir = join(cwd, ".symbiot"); mkdirSync(dir, { recursive: true });
@@ -1772,6 +1806,12 @@ function plainly(path, x) {
   let p = {}; try { p = plainAsk(path, x, { max: x.options.length }); } catch {}
   return { ...x, ...(p.raw ? { shown: p.q } : {}), ...(p.labels ? { labels: p.labels } : {}) };
 }
+// A question that names a report of its run ("the full report is on Reports as WINLOVE-FULL-EMAIL-REPORT"):
+// its card links it (Read the report), so it isn't a file name to go and find.
+function askReport(path, x) {
+  let r = null; try { r = runReport(path, { said: `${x.q}\n${x.context || ""}`, since: Infinity }); } catch {}
+  return r ? { report: { id: r.id, title: r.title } } : {};
+}
 function agentQuestions(path, repo) {
   const p = parseQuestions(readSymbiot(path, "QUESTIONS.md"));
   const heads = [...allAnswers(path).matchAll(/^###\s+(.+)$/gm)].map((m) => m[1]), done = new Set(heads.map((h) => qKey(noId(h)))), doneIds = new Set(heads.map(qId).filter(Boolean));
@@ -1781,7 +1821,7 @@ function agentQuestions(path, repo) {
   const ideas = p.suggestions.map(suggestionTarget).filter(({ text }) => !skipped.some((s) => sameTask(s, text)))
     .map(({ repo: to, text }) => ({ text, repo: to || repo, other: !!to && to !== repo, added: tasks.some((t) => t.repo === (to || repo) && sameTask(t.text, text)) })).filter((s) => !s.added);
   return {
-    questions: open.slice(0, QUESTIONS_MAX).map((x) => plainly(path, { ...x, options: x.options.slice(0, OPTIONS_SHOWN), task: askTask(path, x) })), answered: p.questions.length - unanswered.length, ...(known.length ? { known } : {}),
+    questions: open.slice(0, QUESTIONS_MAX).map((x) => plainly(path, { ...x, options: x.options.slice(0, OPTIONS_SHOWN), task: askTask(path, x), ...askReport(path, x) })), answered: p.questions.length - unanswered.length, ...(known.length ? { known } : {}),
     suggestions: ideas, ideasShown: IDEAS_SHOWN,
   };
 }
@@ -2241,7 +2281,7 @@ function agentsList() {
     const first = !seen.has(e.path); seen.add(e.path);
     const facts = first && e.status !== "running" ? factsOf(e.path) : [];
     const waiting = first && e.status !== "running" ? waitingFor(e.path) : null;
-    const needs = first && e.status !== "running" ? needsOf(e.path, { final: work ? tail : "", waiting, end: e.endedAt || Date.now() }) : null;
+    const needs = first && e.status !== "running" ? needsOf(e.path, { final: work ? tail : "", waiting, end: e.endedAt || Date.now(), start: e.startedAt }) : null;
     return { id: e.id, name: e.name, path: e.path, status: e.status, startedAt: e.startedAt, endedAt: e.endedAt, elapsed: (e.endedAt || Date.now()) - e.startedAt, exitCode: e.exitCode, ...(e.down ? { down: e.down } : {}), tail, work, progress, ...(e.status === "running" && line ? { line } : {}), changed: agentChanges(e.path, e.startedAt, e.endedAt || 0), ask: first ? agentQuestions(e.path, e.name) : null, held: first ? heldTasks(e.path) : null, waiting, needs, remember: facts.length ? facts : null, fromHeld: !!e.fromHeld };
   }).concat(earlierRuns())).map((a) => ({ ...a, phase: runPhase(a) }));
 }
@@ -2258,4 +2298,4 @@ function agentsNow({ now = Date.now() } = {}) {
 }
 const forgetAgents = () => { agentsKept = null; };
 
-export { heldAsk, onCardGone, withOwnTools, escalation, grantCard, cardRules, cardIsPermission, runPhase, onRunEnd, isClaudeCmd, GUARD, tidyRule, tidyRules, tidySettings, pruneRuns, claudePlugins, idlePlugins, runSettings, archiveAnswers, allAnswers, answersDigest, ANSWERS_ARCHIVE, ANSWERS_KEEP, runsTick, RUN_START, HANG_MIN, noteBlocked, userAnswers, CONTINUED_FILE, onAnswered, CHANGES, toKnownHost, continueLanes, autoPick, autoDecide, FACTS, factsOf, knownRun, withStream, workOf, HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, connectorsInfo, linkReach, fillHandoff, runHandoff, nothingToDo, whereOf, whereLine, whereAnswer, askTask, PARKED_NOTE, parkedPaths, isParked, parkLane, agentMissing, blockedAgain, runningHandoff, loadRuns, earlierRuns, namedFiles, unchangedStep, waitingFor, startWaiting, noteUntracked, untrackedBefore, forgetUntracked, writeTasks, droppedTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, pickAgent, findOrcaCli, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, skipIdea, routeIdeas, agentQuestions, answerQuestions, agentsList, agentsNow, forgetAgents, AGENTS_KEEP, needsOf, settleNeeds, NEEDS_FOR, readLastWords, readNeeds, parseRead, READ_FILE, autoAllow, autoAllowSweep, allowlistInWork, installAllowlist, inWork, withScope, withTrust, sandboxFor, sandboxLifts, sandboxEnv, sandboxNeeds, sandboxState, sandboxWrites, SANDBOX_DIR, resumeFor, noteSession, tooLong, carryOn, RESUME_CTX, CARRY_PROMPT, trustFull, GUARD_SETTINGS, runCmdOf, claimLock, wideRoot, sandboxDenies, questionFolders, folderState, dirtyState, ANSWERS_SEEN, newAnswers, claudeDownIn, claudePause, noteClaudeDown, resetTime, PAUSE_FILE, startGap, isUrgent, urgentStop, urgentFirst, urgentUndo, urgentDone, urgentSweep, urgentState, licenceGate, stopRun, loadRunFiles, saveRunFiles, forgetRunFiles, withModel, routedModel, userWords, onShipping };
+export { chaseReport, CHASED, UNMET, heldAsk, onCardGone, withOwnTools, escalation, grantCard, cardRules, cardIsPermission, runPhase, onRunEnd, isClaudeCmd, GUARD, tidyRule, tidyRules, tidySettings, pruneRuns, claudePlugins, idlePlugins, runSettings, archiveAnswers, allAnswers, answersDigest, ANSWERS_ARCHIVE, ANSWERS_KEEP, runsTick, RUN_START, HANG_MIN, noteBlocked, userAnswers, CONTINUED_FILE, onAnswered, CHANGES, toKnownHost, continueLanes, autoPick, autoDecide, FACTS, factsOf, knownRun, withStream, workOf, HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, connectorsInfo, linkReach, fillHandoff, runHandoff, nothingToDo, whereOf, whereLine, whereAnswer, askTask, PARKED_NOTE, parkedPaths, isParked, parkLane, agentMissing, blockedAgain, runningHandoff, loadRuns, earlierRuns, namedFiles, unchangedStep, waitingFor, startWaiting, noteUntracked, untrackedBefore, forgetUntracked, writeTasks, droppedTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, pickAgent, findOrcaCli, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, skipIdea, routeIdeas, agentQuestions, answerQuestions, agentsList, agentsNow, forgetAgents, AGENTS_KEEP, needsOf, settleNeeds, NEEDS_FOR, readLastWords, readNeeds, parseRead, READ_FILE, autoAllow, autoAllowSweep, allowlistInWork, installAllowlist, inWork, withScope, withTrust, sandboxFor, sandboxLifts, sandboxEnv, sandboxNeeds, sandboxState, sandboxWrites, SANDBOX_DIR, resumeFor, noteSession, tooLong, carryOn, RESUME_CTX, CARRY_PROMPT, trustFull, GUARD_SETTINGS, runCmdOf, claimLock, wideRoot, sandboxDenies, questionFolders, folderState, dirtyState, ANSWERS_SEEN, newAnswers, claudeDownIn, claudePause, noteClaudeDown, resetTime, PAUSE_FILE, startGap, isUrgent, urgentStop, urgentFirst, urgentUndo, urgentDone, urgentSweep, urgentState, licenceGate, stopRun, loadRunFiles, saveRunFiles, forgetRunFiles, withModel, routedModel, userWords, onShipping };

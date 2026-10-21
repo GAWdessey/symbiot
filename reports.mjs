@@ -6,7 +6,7 @@
 // - Where: the .symbiot/ of every folder runs work in (your repos, and the runs
 //   of their own under ~/.config/symbiot/drafts: handback.mjs runFolders).
 // - What counts: any .md there except the files Symbiot and the run talk through
-//   (TASKS, QUESTIONS, ANSWERS, HANDOFF, SKIPPED) and the briefs handed in
+//   (TASKS, QUESTIONS, ANSWERS, HANDOFF, SKIPPED, CARRYON) and the briefs handed in
 //   (BRIEF*.md). Its title is its first `# ` heading, else the file name.
 // - New: a report you haven't opened since it last changed. Home shows how many
 //   (home.mjs); opening one marks it read.
@@ -26,7 +26,7 @@ import { laneMap } from "./scan.mjs";
 import { MARKETING_DIR, draftFiles, draftStatuses, draftPreview, parseDraft, inLane } from "./marketing.mjs";
 
 const SEEN_FILE = join(CONFIG_DIR, "reports.json");
-const NOT_REPORTS = /^(?:TASKS(?:\.[\w-]+)?|QUESTIONS|ANSWERS(?:\.archive)?|HANDOFF|SKIPPED|CLAUDE|AGENTS)\.md$|^BRIEF/i; // TASKS.next.md too: the tasks held for after a run
+const NOT_REPORTS = /^(?:TASKS(?:\.[\w-]+)?|QUESTIONS|ANSWERS(?:\.archive)?|HANDOFF|SKIPPED|CLAUDE|AGENTS|CARRYON)\.md$|^BRIEF/i; // TASKS.next.md too: the tasks held for after a run; CARRYON.md is a run's note to the next (agents.mjs carryOn), and crowded out the reports (21 Oct 2026)
 const MAX_READ = 512 * 1024, MAX_LIST = 200;
 const WRITING_FOR = 15 * 60 * 1000; // a run is "still writing" a report only if the file changed in the last 15 minutes
 const idOf = (file) => createHash("sha1").update(file).digest("hex").slice(0, 12);

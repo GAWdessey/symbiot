@@ -92,6 +92,21 @@ try {
   ok("…and only the code goes, none of the message", sent[0].args.code === "4829163" && !JSON.stringify(sent[0]).includes("Don't share"), sent[0]);
   ok("the card says it's on its way", (P.computerView().copy.asks[0] || {}).waiting === true);
   ok("switched off again: none of it is kept", !P.setCodeRelay("zoho", false).copy.codesOn.length);
+
+  console.log("THE REAL-PHONE CHECK (scripts/phone-codes-check.mjs) — its question and notifications read as meant");
+  const S = await import("../scripts/phone-codes-check.mjs"), { parseQuestions } = await import("../agents.mjs");
+  const sq = parseQuestions(S.QUESTIONS_MD("2026-10-21")).questions;
+  ok("its scratch question is one card with two options", sq.length === 1 && sq[0].q === S.QUESTION && sq[0].options.length === 2, sq);
+  const sc = P.codeAsk(sq[0]);
+  ok(`…waiting for ${S.SITE}'s code`, sc && sc.site === S.SITE && sc.key === "codecheck", sc);
+  ok("its notification's code is read, and only that", P.codeIn(S.NOTE("482913").text) === "482913");
+  writeFileSync(join(CFG, "phone-queue.json"), "[]");
+  writeFileSync(join(CFG, "computer.json"), JSON.stringify({ v: "2", name: "pop-os", tasks: [], needs: [], approves: [], proofs: [], asks: [{ id: "ask:2", path: lane, name: "codecheck", questions: [{ q: sq[0].q, options: [], code: sc }] }] }));
+  P.setCodeRelay(S.SITE, true);
+  ok("its decoy from another site goes nowhere", P.heardCode({ app: "com.android.shell", ...S.DECOY }).ignored && !queue().length, queue());
+  const sh = P.heardCode({ app: "com.android.shell", ...S.NOTE("482913") });
+  ok("its notification, posted from Android's shell, passes the code to the card", sh.passed === S.SITE && queue().length === 1 && queue()[0].args.code === "482913" && queue()[0].args.key === "codecheck", [sh, queue()]);
+  P.setCodeRelay(S.SITE, false);
 } catch (e) { ok("ran", false, String((e && e.stack) || e)); }
 finally { rmSync(HOME, { recursive: true, force: true }); }
 console.log(`\n${fail ? "✗" : "✓"} codes: ${pass} passed, ${fail} failed`);

@@ -2,6 +2,12 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one), for anyone who installs the app: what changed in it, never whose work it was (no projects, people, accounts, services, run ids or task wording of the person who made it). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.66.15 — 2026-10-21
+
+- Check that a Google sign-in in the Symbiot Browser lands in its Default profile.
+- Pain point (the user, 20 Oct): they expect a lane to be able to film a screen demo itself.
+- Chrome inside a lane's sandbox hangs on Google's sites (accounts, console, calendar) over HTTP/2 through the network proxy, while curl and other sites work.
+
 ## 0.66.14 — 2026-10-20
 
 - **Agents can read sites in your own Chrome.** With the Claude extension in your Chrome, each agent run can open, read and close tabs of its own there, signed in as you. Sites see a person's browser there, so sites that block Symbiot's browser read fine there. Agents try the site's API first, then your Chrome, then Symbiot's browser.

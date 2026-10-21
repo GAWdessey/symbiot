@@ -73,7 +73,9 @@ function browserArgs(headless, url = "about:blank", ua = "", profile = PROFILE) 
   return [
     ...(headless ? ["--headless=new", "--hide-scrollbars", "--mute-audio", "--remote-debugging-pipe", `--window-size=${VIEW.w},${VIEW.h}`, "--restore-last-session",
       "--disable-blink-features=AutomationControlled", ...(ua ? ["--user-agent=" + ua] : []),
-      ...(proxy ? ["--proxy-server=" + proxy.server, ...(proxy.bypass ? ["--proxy-bypass-list=" + proxy.bypass] : [])] : []),
+      // HTTP/2 through a sandbox's proxy hung on Google's sites (accounts, console, calendar) while curl and
+      // other sites worked: HTTP/1.1 doesn't (20 Oct 2026)
+      ...(proxy ? ["--proxy-server=" + proxy.server, "--disable-http2", ...(proxy.bypass ? ["--proxy-bypass-list=" + proxy.bypass] : [])] : []),
       ...String(process.env.SYMBIOT_HEADLESS_ARGS || "").split(/\s+/).filter(Boolean)] : ["--new-window"]), // tests: as SYMBIOT_BROWSER_ARGS is the window's
     "--user-data-dir=" + profile, "--profile-directory=" + PROFILE_DIR, "--no-first-run", "--no-default-browser-check",
     ...(process.platform === "linux" ? ["--password-store=basic"] : process.platform === "darwin" ? ["--use-mock-keychain"] : []),
@@ -447,15 +449,20 @@ async function launch(who = MAIN) {
     if (loadConfig().browserSnapshot === false) throw new Error(`The Symbiot Browser is open${when}: Symbiot reads your sites once you click Done in it.`);
     try { profile = snapProfile(); } catch (e) { throw new Error(`The Symbiot Browser is open${when}, and a copy of its sign-ins couldn't be made to read with meanwhile: ${String((e && e.message) || e)}`); }
   }
+  // In a sandbox the saved profile also replayed stale proxy credentials (20 Oct 2026): start from a fresh
+  // copy of its sign-ins (cookies, storage), not the profile's own network state. Its own folder, per process.
+  let fresh = "";
+  if (profile === PROFILE && sandboxProxy()) try { fresh = profile = snapProfile(PROFILE, SNAP + "-lane-" + process.pid); } catch {}
   if (profile === PROFILE) await strayGone();
   const locked = profileReadOnly();
   if (locked) throw new Error(locked);
   const ua = windowUa(chrome);
   const proc = spawn(chrome, browserArgs(true, "about:blank", ua, profile), { stdio: ["ignore", "ignore", "pipe", "pipe", "pipe"] });
   if (proc.pid) OWN.add(proc.pid);
+  if (fresh) proc.on("exit", () => { try { rmSync(fresh, { recursive: true, force: true }); } catch {} });
   let err = ""; proc.stderr.on("data", (d) => { err = (err + d).slice(-2000); });
   const failed = new Promise((resolve, reject) => { proc.on("error", reject); }); failed.catch(() => {});
-  const c = connect(proc), b = { proc, c, tabs: new Map(), timer: null, ...(profile !== PROFILE ? { snap: true } : {}) };
+  const c = connect(proc), b = { proc, c, tabs: new Map(), timer: null, ...(profile !== PROFILE && !fresh ? { snap: true } : {}) };
   const kill = setTimeout(() => { try { proc.kill("SIGKILL"); } catch {} }, START);
   try {
     const run = (async () => {
