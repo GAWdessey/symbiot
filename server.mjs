@@ -834,6 +834,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
     if (announced) return; announced = true;
     resumeUpdate();
     const url = `http://127.0.0.1:${server.address().port}/?t=${TOKEN}`;
+    openGate();
     setBrowserHub(`http://127.0.0.1:${server.address().port}/browser?t=${TOKEN}`); // the Symbiot Browser opens on its own page, served from here
     const how = opened || RELAUNCH || process.env.SYMBIOT_NO_OPEN === "1" ? "" : openApp(url); opened = true; // only pop a window the first time (never in tests, never after an update)
     console.log(`\n${c.g("●")} ${c.b("Symbiot")} is running at ${c.b(url.split("?")[0])}`);
@@ -862,18 +863,28 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       try { server.listen(0, "127.0.0.1"); } catch {}
     });
   });
-  server.listen(PORT, "127.0.0.1");
   // the sandboxed lanes' way to `symbiot screens` (screens.mjs SCREENS_SOCK): the same handler, with the token added, for the screens routes, the ping, and adding to the vault (sockGate)
-  if (!SANDBOX || process.env.SYMBIOT_SCREENS_SOCK) {
+  // Only the app that serves opens it, once it's listening (openGate): a second start
+  // (the taskbar icon, `symbiot open`) used to remove the running app's socket and open its own
+  // here, before finding the port busy and bowing out, and its exit removed that one too. The
+  // running app kept listening on a file that was gone, so every sandboxed run's browser failed
+  // to start ("the app's socket isn't there", 12 Dailify runs on 21 Oct 2026).
+  let gateOpen = false;
+  function openGate() {
+    if (gateOpen || (SANDBOX && !process.env.SYMBIOT_SCREENS_SOCK)) return; gateOpen = true;
     const gate = createServer((req, res) => {
       let p = ""; try { p = new URL(req.url, "http://x").pathname; } catch {}
       if (!sockGate(p)) { res.writeHead(403); res.end("forbidden"); return; }
       req.headers["x-symbiot-token"] = TOKEN; server.emit("request", req, res);
     });
     gate.on("error", () => {});
-    try { mkdirSync(dirname(SCREENS_SOCK), { recursive: true, mode: 0o700 }); rmSync(SCREENS_SOCK, { force: true }); gate.listen(SCREENS_SOCK, () => { try { chmodSync(SCREENS_SOCK, 0o600); } catch {} }); } catch {}
+    const bind = () => { try { mkdirSync(dirname(SCREENS_SOCK), { recursive: true, mode: 0o700 }); rmSync(SCREENS_SOCK, { force: true }); if (gate.listening) gate.close(); gate.listen(SCREENS_SOCK, () => { try { chmodSync(SCREENS_SOCK, 0o600); } catch {} }); } catch {} };
+    bind();
+    // something removed the file (an older Symbiot's exit, a cleanup): open it again
+    setInterval(() => { if (!existsSync(SCREENS_SOCK)) bind(); }, 30000).unref();
     process.on("exit", () => { try { rmSync(SCREENS_SOCK, { force: true }); } catch {} });
   }
+  server.listen(PORT, "127.0.0.1");
   checkLatest(); setInterval(checkLatest, 2 * 60 * 1000).unref(); // background update check (every 2 min)
   setInterval(() => { autoUpdateTick().catch(() => {}); }, Number(process.env.SYMBIOT_AUTO_EVERY) || 60000).unref(); // and it updates itself once nothing's working (autoUpdateDue)
   startWeekly(writeup); // the weekly write-up + notification, when switched on in Settings

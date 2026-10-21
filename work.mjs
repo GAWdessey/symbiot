@@ -12,6 +12,9 @@ import { statSync, openSync, readSync, closeSync } from "node:fs";
 
 const MAX_STEPS = 60;
 const short = (s, n = 80) => { s = String(s ?? "").replace(/\s+/g, " ").trim(); return s.length > n ? s.slice(0, n - 1) + "…" : s; };
+// A hook's refusal starts "PreToolUse:Bash hook error: [node "/…/guard.mjs"]: ", which took
+// 100 of a note's 120 characters: every guard block read "Blocked by Symbi…" (21 Oct 2026).
+const stripHook = (s) => String(s ?? "").replace(/^\s*(?:<tool_use_error>)?\s*\w+:\w+ hook error:\s*\[[^\]]*\]:\s*/, "").replace(/<\/?tool_use_error>/g, "");
 const base = (p) => String(p || "").split("/").filter(Boolean).slice(-2).join("/");
 
 // One tool call, as a person would say it: { kind, verb, target }.
@@ -99,7 +102,7 @@ function parseRunText(text) {
         const s = byId.get(b.tool_use_id), txt = resultText(b.content);
         if (s && s.create) { const m = txt.match(/Task #(\w+)/); tasks.set(m ? m[1] : String(tasks.size + 1), { text: s.create.text, status: "pending", active: s.create.active }); continue; }
         if (!s) continue;
-        s.status = b.is_error ? "error" : "done"; if (b.is_error) { out.errors++; s.note = short(txt, 120); }
+        s.status = b.is_error ? "error" : "done"; if (b.is_error) { out.errors++; s.note = short(stripHook(txt), 160); }
         if (at && s.at) s.ms = at - s.at;
         if (s.kind === "run") { const tt = testsIn(txt); if (tt) { s.tests = tt; out.tests = tt; } }
       }

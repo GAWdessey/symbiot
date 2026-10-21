@@ -387,7 +387,10 @@ function sandboxFor(repoPath, tmpl = "", { needs = sandboxNeeds } = {}) {
 // keyring gh keeps it in (gh then says "Requires authentication").
 function sandboxEnv(box, { token = () => (hasCmd("gh") ? sh("gh auth token").trim() : "") } = {}) {
   if (!box) return null;
-  const env = { SYMBIOT_WRITES: JSON.stringify(box.writes) };
+  // NODE_USE_ENV_PROXY: the sandbox reaches the network only through its proxy, which curl
+  // honours and Node's fetch ignores without it; every Dailify run of 21 Oct 2026 hit
+  // "fetch failed" probing SMS Portal before it found this out for itself.
+  const env = { SYMBIOT_WRITES: JSON.stringify(box.writes), NODE_USE_ENV_PROXY: "1" };
   if (!process.env.GH_TOKEN) { let t = ""; try { t = token(); } catch {} if (/^[\w-]{20,}$/.test(t)) env.GH_TOKEN = t; }
   return env;
 }

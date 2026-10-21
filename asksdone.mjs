@@ -157,9 +157,15 @@ function addRule(rule) {
 // listed on the card as "already covered?" for the user to confirm, never closed on a fuzzy match.
 const STOP = new Set("the a an and or to of in on for is are be it this that you your i my with from at by do does not no can should what which how when use".split(" "));
 const words = (s) => new Set(key(s).split(" ").filter((w) => w.length > 2 && !STOP.has(w)));
+// Two shared words was any card naming the user and "send": the Carla card showed two
+// unrelated rules as "Already covered?" (21 Oct 2026). A word in a third or more of the rules
+// (the user's name, "send", "ask") says nothing, and it takes NEED words to be the same subject.
 function coveredBy(q) {
   const w = words(q); if (!w.size) return [];
-  return standingList().map((x) => ({ r: x.rule, n: [...words(x.rule)].filter((t) => w.has(t)).length })).filter((x) => x.n >= 2).sort((a, b) => b.n - a.n).slice(0, 2).map((x) => x.r);
+  const rules = standingList().map((x) => ({ r: x.rule, w: words(x.rule) })), seen = new Map();
+  for (const x of rules) for (const t of x.w) seen.set(t, (seen.get(t) || 0) + 1);
+  const telling = (t) => rules.length < 3 || seen.get(t) < rules.length / 3;
+  return rules.map((x) => ({ r: x.r, n: [...x.w].filter((t) => w.has(t) && telling(t)).length })).filter((x) => x.n >= NEED).sort((a, b) => b.n - a.n).slice(0, 2).map((x) => x.r);
 }
 const standingBrief = () => ["## Standing rules: they apply to every run", ...BASE.map((x) => `- ${x}`), ...browserBrief(), ...standingList().map((x) => `- ${x.rule}`), ""];
 
