@@ -480,6 +480,11 @@ try {
   const ops = wr.projects.find((p) => p.repo === "ops");
   ok("ops runs (act-…) are one lane, Agent runs, not a sphere each named by an id", wr.projects.length === 2 && ops && ops.name === "Agent runs" && ops.runs === 1 && ops.asks === 1 && ops.lit && wr.projects[0] === ops, wr.projects);
   ok("…and a repo is shown by the name people use for it", wr.projects.find((p) => p.repo === "symbiot").name === "Symbiot", wr.projects);
+  const wm = workScene({ deps: { repos: () => ({}), pending: () => [], tasks: () => [],
+    agents: () => [{ name: "Agent: Adds to run act-49963706 (the phone code check)", path: join(RUNDIR, "act-ab2bbaf1"), status: "done", startedAt: Date.now() - 60000, work: { final: "The phone code check is still not done." } },
+      { name: "Agent: New job: the Dailify broker test on Garth's own phone", path: join(RUNDIR, "act-83eb4b9c"), status: "done", startedAt: Date.now() - 600000, work: { final: "Waiting on your press of Set up a meeting." }, ask: { questions: [{ q: "Press Set up a meeting on WhatsApp?" }] } }] } });
+  const om = wm.projects.find((p) => p.repo === "ops");
+  ok("Agent runs' card: its line is from the run whose question it shows, and the question says which job (not the newest run's line over another's question)", om && om.summary === "Waiting on your press of Set up a meeting." && om.qs[0].task === "the Dailify broker test on Garth's own phone" && om.path === join(RUNDIR, "act-83eb4b9c"), om);
   const wh = workScene({ deps: { repos: () => ({ whatsapp_module: "/w", coral: "/c" }), pending: () => [], tasks: () => [], agents: () => [],
     handing: (p) => (p === "/w" ? [{ lane: "ops", text: "set up a WhatsApp test number", gone: false, why: "Not sent yet: ops is still on the earlier version (its run started 5 min ago), and gets this one when that run ends" }] : []) } });
   const whp = wh.projects.find((p) => p.repo === "whatsapp_module");
