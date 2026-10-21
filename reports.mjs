@@ -215,7 +215,7 @@ function list(lines, i, out, o) {
     const l = lines[i];
     if (!l.trim()) { if (i + 1 < lines.length && /^\s*(?:[-*+]|\d+[.)])\s+/.test(lines[i + 1]) && ind(lines[i + 1]) >= base) { i++; continue; } break; }
     const m = l.match(/^\s*(?:[-*+]|\d+[.)])\s+(.*)$/), d = ind(l);
-    if (m && d === base) { items.push({ text: m[1].replace(/^\[([ xX])\]\s+/, (_, x) => (x === " " ? "☐ " : "☑ ")), sub: [] }); i++; continue; }
+    if (m && d === base) { items.push({ text: m[1].replace(/^\[([ xX~])\]\s+/, (_, x) => (x === " " ? "☐ " : x === "~" ? "⏳ " : "☑ ")), sub: [] }); i++; continue; }
     if (d > base && items.length) { if (m) { const sub = []; i = list(lines, i, sub, o); items[items.length - 1].sub.push(...sub); } else { items[items.length - 1].text += " " + l.trim(); i++; } continue; }
     break;
   }
@@ -248,7 +248,7 @@ function isFragment(t) {
   const open = (c, d) => t.split(c).length - t.split(d).length; // brackets
   return open("(", ")") > 0 || open("[", "]") > 0 || (t.split("`").length - 1) % 2 === 1;
 }
-const cleanIdea = (s) => String(s).replace(/^\[[ xX]\]\s+/, "").replace(/\[([^\]]+)\]\([^)]*\)/g, "$1").replace(/\*\*|__|`/g, "").replace(/\s+/g, " ").trim().slice(0, 300);
+const cleanIdea = (s) => String(s).replace(/^\[[ xX~]\]\s+/, "").replace(/\[([^\]]+)\]\([^)]*\)/g, "$1").replace(/\*\*|__|`/g, "").replace(/\s+/g, " ").trim().slice(0, 300);
 // The top-level items of its "next" sections ("## Top 3 next", "## Recommendations"…),
 // first sections first, at most IDEAS_MAX, but not the findings among them. None when it has no such section.
 function reportIdeas(text, max = IDEAS_MAX) {

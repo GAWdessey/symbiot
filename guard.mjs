@@ -20,6 +20,7 @@ import { execFileSync } from "node:child_process";
 import { readFileSync, realpathSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { judgeChrome, seen as seenChrome, PREFIX as CHROME } from "./chromegate.mjs";
+import { judgePush } from "./pushgate.mjs";
 
 const SECRET = [".ssh", ".gnupg", ".aws", ".azure", ".kube", ".docker/config.json", ".config/gcloud", ".config/gh/hosts.yml", ".netrc", ".npmrc", ".pypirc", ".git-credentials", ".config/symbiot/secrets.json", ".config/symbiot/vault.json", ".config/symbiot/vault.key"];
 const under = (p, d) => p === d || p.startsWith(d.endsWith("/") ? d : d + "/");
@@ -41,11 +42,12 @@ function publicKey(p, home) {
 // reach a private key too (~/.ssh/*, ~/.ssh/$K)
 const PUB_READ = /^(cat|less|more|head|tail|grep|rg|base64|xxd|strings)$/;
 const PLAIN = /^(~|\$HOME|\$\{HOME\})?[\w.@+\/-]+$/;
-// Symbiot's own settings, and what its Chrome gate (chromegate.mjs) keeps: the holds waiting on the
-// user's Go and which site each tab is on. An agent that wrote these could set Go on its own held send,
-// or say a tab is on a site it may act on (review of the 20 Oct 2026 run).
-const OWN = ["config.json", "licence-revoked.json", "secrets.json", "chrome-holds.json", "chrome-tabs.json"];
-const CHROME_FILES = /chrome-(holds|tabs)\.json/; // named so they're never another project's
+// Symbiot's own settings, and what its gates keep: the holds waiting on the user's Go (a send in their
+// Chrome, chromegate.mjs; a force-push, pushgate.mjs) and which site each tab is on. An agent that wrote
+// these could set Go on its own held send or push, or say a tab is on a site it may act on (review of the
+// 20 Oct 2026 run).
+const OWN = ["config.json", "licence-revoked.json", "secrets.json", "chrome-holds.json", "chrome-tabs.json", "push-holds.json"];
+const GATE_FILES = /(chrome-(holds|tabs)|push-holds)\.json/; // named so they're never another project's
 function symbiotConfig(p, home) { const d = join(home, ".config", "symbiot"); return OWN.some((f) => p === join(d, f)); }
 // A shell command that names one of those files changes it unless each step of it only reads:
 // a redirect into it, tee, cp, mv, ln, sed -i, an interpreter (node -e, python, a heredoc's lines),
@@ -55,7 +57,7 @@ function symbiotConfig(p, home) { const d = join(home, ".config", "symbiot"); re
 const OWN_READ = /^(cat|less|more|head|tail|grep|egrep|fgrep|rg|ls|wc|file|stat|diff|cmp|sha\d*sum|md5sum|readlink|realpath|du|jq|echo|printf|test|\[|sed|find)$/;
 function changesOwn(part, { home, cwd, whole }) {
   const there = cwd === join(home, ".config", "symbiot") || /\.config\/symbiot\/?(?=$|[\s"';&|)])/.test(whole); // the folder itself, not a run's own under it (drafts/act-…)
-  const names = (x) => { const v = unquote(x); return CHROME_FILES.test(v) || OWN.some((f) => v.includes(".config/symbiot/" + f) || symbiotConfig(expand(v.replace(/^[A-Za-z_][A-Za-z0-9_]*=/, ""), home, cwd), home)) || (there && OWN.some((f) => new RegExp(`(^|[^\\w.-])${f.replace(".", "\\.")}\\b`).test(v))); };
+  const names = (x) => { const v = unquote(x); return GATE_FILES.test(v) || OWN.some((f) => v.includes(".config/symbiot/" + f) || symbiotConfig(expand(v.replace(/^[A-Za-z_][A-Za-z0-9_]*=/, ""), home, cwd), home)) || (there && OWN.some((f) => new RegExp(`(^|[^\\w.-])${f.replace(".", "\\.")}\\b`).test(v))); };
   if (!names(part)) return false;
   const segs = part.split(/\|(?!\|)/);
   for (const seg of segs) {
@@ -112,7 +114,7 @@ function changesSelf(part, { home, cwd }) {
 // the branch a bare `git push` pushes: the one checked out in cwd
 function currentBranch(cwd) { try { return execFileSync("git", ["-C", cwd, "rev-parse", "--abbrev-ref", "HEAD"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim(); } catch { return ""; } }
 
-function judgeBash(cmd, { cwd, home, branch }) {
+function judgeBash(cmd, { cwd, home, branch, session = "" }) {
   const c = String(cmd || "");
   // each simple command on its own (a; b && c | d)
   for (const part of c.split(/&&|\|\||;|\n/)) {
@@ -123,12 +125,13 @@ function judgeBash(cmd, { cwd, home, branch }) {
     if (/^(shutdown|reboot|poweroff|halt)$/.test(w[0])) return { why: "shutting the computer down is yours to do" };
     if (/^(mkfs(\.\w+)?|fdisk|parted|wipefs)$/.test(w[0]) || (/^dd$/.test(w[0]) && /\bof=\/dev\//.test(s))) return { why: "that writes a disk directly" };
     if (/^git$/.test(w[0]) || /^git\s/.test(s)) {
-      const args = w.slice(1).filter((x, i, a) => !(a[i - 1] === "-C" || x === "-C"));
+      const args = w.slice(1).filter((x, i, a) => !(a[i - 1] === "-C" || x === "-C")), at = w.includes("-C") ? unquote(w[w.indexOf("-C") + 1] || "") : "";
       if (args[0] === "push") {
-        if (args.some((a) => /^(-f|--force|--force-with-lease)(=|$)/.test(a) || /^\+/.test(a))) return { why: "force-pushing rewrites history others may have" };
         const refs = args.slice(1).filter((a) => !a.startsWith("-"));
         const target = refs.length >= 2 ? refs[refs.length - 1].split(":").pop() : branch;
         if (/^(main|master)$/.test(target || "")) return { why: "pushing to " + target + ": changes go on a branch and a PR (Approve), never straight to " + target };
+        // forcing a branch: held for the user's Go on a card, and Symbiot pushes it itself (pushgate.mjs)
+        if (args.some((a) => /^(-f|--force|--force-with-lease)(=|$)/.test(a) || /^\+/.test(a))) return judgePush(args.slice(1), at ? expand(at, home, cwd) : cwd, { home, session });
       }
     }
     if (/^(npm|yarn|pnpm|bun)$/.test(w[0]) && w[1] === "publish") return { why: "publishing a package is yours to do (Approve ships it)" };
@@ -161,17 +164,26 @@ function judgeBash(cmd, { cwd, home, branch }) {
   return null;
 }
 
-function judge(tool, input = {}, { cwd = process.cwd(), home = homedir(), branch, writes = null, session = "" } = {}) {
+// Each refusal says when no setting can lift it: a run that was told "blocked" offered the user a
+// setting that doesn't exist ("I've allowed force-push in Symbiot's settings"), they picked it, and
+// the same card came back (21 Oct 2026). Only those a setting does lift (setting: the sandbox's
+// folders, acting in their Chrome) and held ones, which the user's Go lifts, go without it.
+const NO_SETTING = "no setting allows this";
+function judge(tool, input = {}, opts = {}) {
+  const r = refusal(tool, input, opts);
+  return r && !r.setting && !r.held && !r.why.includes(NO_SETTING) ? { ...r, why: `${r.why} (${NO_SETTING})` } : r;
+}
+function refusal(tool, input = {}, { cwd = process.cwd(), home = homedir(), branch, writes = null, session = "" } = {}) {
   const t = String(tool || "");
   if (t.startsWith(CHROME)) return judgeChrome(t, input, { session, home }); // the user's own Chrome: acting only where they allow it, sends and payments held for their Go (chromegate.mjs)
-  if (t === "Bash") return judgeBash(input.command, { cwd, home, branch: branch != null ? branch : currentBranch(cwd) });
+  if (t === "Bash") return judgeBash(input.command, { cwd, home, session, branch: branch != null ? branch : currentBranch(cwd) });
   const p = input.file_path || input.path || input.notebook_path;
   if (!p) return null;
   const abs = expand(p, home, cwd);
   if (secretPath(abs, home) && !(t === "Read" && publicKey(abs, home))) return { why: "your keys and cloud credentials stay yours" };
   if (/^(Edit|Write|MultiEdit|NotebookEdit)$/.test(t) && symbiotConfig(abs, home)) return { why: "Symbiot's own settings are yours to change" };
   if (/^(Edit|Write|MultiEdit|NotebookEdit)$/.test(t) && selfFile(abs)) return { why: "Symbiot doesn't edit its own code" };
-  if (/^(Edit|Write|MultiEdit|NotebookEdit)$/.test(t) && Array.isArray(writes) && writes.length && !writes.some((d) => under(abs, d))) return { why: "this run writes only in its repo and your folders (its sandbox), not " + p };
+  if (/^(Edit|Write|MultiEdit|NotebookEdit)$/.test(t) && Array.isArray(writes) && writes.length && !writes.some((d) => under(abs, d))) return { why: "this run writes only in its repo and your folders (its sandbox), not " + p, setting: true };
   return null;
 }
 

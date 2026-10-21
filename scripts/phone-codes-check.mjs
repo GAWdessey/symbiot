@@ -18,6 +18,7 @@
 // What it changes, and puts back unless --keep: a scratch question in drafts/ (a card on Home and
 // on the phone while it runs), Notification access for Symbiot (only if it was off), and one test
 // code in the vault. The test notifications come from Android's shell, so no SMS is sent.
+// The notifications go out under a tag of their own per run (codecheck-RUN): a cleanup that snoozes a fixed tag keeps every later re-post under that key from the listener for a week.
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
@@ -25,8 +26,10 @@ import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 
 // The scratch question and the notifications: test/codes.mjs checks phone.mjs reads them as meant
-const SITE = "codecheck.dev", NAME = `${SITE} code`, QUESTION = `What's the 6-digit code ${SITE} texted you?`;
-const QUESTIONS_MD = (day) => `## Questions\n### ${QUESTION}\nA check of your phone passing codes on, started ${day}: nothing waits for this code and nothing signs in with it. It goes by itself once the check ends.\n- 👤 You (only you: the SMS code): let your phone pass it on\n- Skip this part\n`;
+const RUN = Date.now().toString(36);
+// one question per run: a question once answered is answered again from asks-done.json (asksdone.mjs heldBy), so a reused wording never shows
+const SITE = "codecheck.dev", NAME = `${SITE} code`, QUESTION = `Phone check ${RUN}: which 6-digit code did ${SITE} text you?`;
+const QUESTIONS_MD = (day) => `## Questions\n### ${QUESTION} {#codecheck-${RUN}}\nA test of your phone passing codes on, started ${day}, not a real site: don't type anything here. Press this card's switch to let your phone pass it on, and the phone does the rest. Nothing waits for this code and nothing signs in with it. It goes by itself once the check ends.\n- 👤 You (only you: the SMS code): let your phone pass it on\n- Skip this part\n`;
 const TASKS_MD = (day) => `# A check of the phone passing codes on (${day})\n- [x] Nothing to do here: scripts/phone-codes-check.mjs reads the vault itself. Don't read or use the code, and stop.\n`;
 const NOTE = (code) => ({ title: "Codecheck", text: `Your Codecheck verification code is ${code}. Do not share it.` });
 const DECOY = { title: "PayPal", text: "PayPal: your code is 902211" };
@@ -67,7 +70,7 @@ async function main() {
   if (!ok("symbiot is installed", !!pkg)) return stop("no symbiot on this computer's PATH");
   const version = JSON.parse(readFileSync(join(pkg, "package.json"), "utf8")).version;
   if (!ok(`${version} passes codes from a phone`, readFileSync(join(pkg, "phone.mjs"), "utf8").includes("code.give"), version)) return stop(`${version} came out before the code relay: install the release that has it, then run this again`);
-  const cfg = JSON.parse(readFileSync(join(CFG, "config.json"), "utf8")), base = `http://127.0.0.1:${Number(cfg.appPort) || 7391}`, headers = { "x-symbiot-token": cfg.appToken || "" };
+  const { loadConfig } = await import(pathToFileURL(join(pkg, "core.mjs")).href), cfg = loadConfig(), base = `http://127.0.0.1:${Number(cfg.appPort) || 7391}`, headers = { "x-symbiot-token": cfg.appToken || "" };
   const api = async (path) => { try { const r = await fetch(base + path, { headers, signal: AbortSignal.timeout(5000) }); return r.ok ? await r.json() : null; } catch { return null; } };
   const ping = await api("/api/ping");
   if (!ok("the app is running", !!ping)) return stop("Symbiot's app isn't running here: start it, then run this again");
@@ -94,7 +97,7 @@ async function main() {
     console.log("  " + (adb("install", "-r", apk) || "install said nothing")); app = appVersion();
   }
   if (!ok(`the phone app is ${version} or newer`, !!app && !older(app, version), app)) return stop(app ? `the phone has ${app}: run again with --install` : "Symbiot isn't on the phone: run again with --install");
-  if (!ok("it has CodeListener", dump().includes(`${PKG}.CodeListener`))) return stop("that phone app has no code relay");
+  if (!ok("it has CodeListener", /\.CodeListener\b/.test(dump()))) return stop("that phone app has no code relay");
   const listeners = () => adb("shell", "settings", "get", "secure", "enabled_notification_listeners") || "";
   if (!listeners().includes(LISTENER)) { adb("shell", "cmd", "notification", "allow_listener", LISTENER); granted = true; }
   if (!ok(`Notification access is on${granted ? " (turned on for this check)" : ""}`, listeners().includes(LISTENER), listeners())) return stop("Android didn't take Notification access for Symbiot");
@@ -104,12 +107,14 @@ async function main() {
   writeFileSync(join(scratch, ".symbiot", "QUESTIONS.md"), QUESTIONS_MD(day)); writeFileSync(join(scratch, ".symbiot", "TASKS.md"), TASKS_MD(day));
   ok(`no "${NAME}" in the vault before`, vault("get", NAME) === null);
   const before = new Set((vault("list") || "").split("\n").map((l) => l.split("  ")[0]).filter(Boolean));
+  let card = false; for (let i = 0; i < 30 && !card; i++) { const h = await api("/api/home?fresh=1"); card = !!h && (h.you || []).some((y) => y.path === scratch); if (!card) await sleep(3000); }
+  if (!ok("the card is on Home (so the phone gets it)", card)) return stop("Home never listed the scratch question");
   console.log(`  ${scratch}\n\n  On the phone: open Symbiot, find the card "${QUESTION}"\n  and press "Let this phone pass on ${SITE}'s code". Waiting up to ${WAIT / 1000} s.`);
 
   step("a code notification reaches the vault, and only the code");
   let got = null; const until = Date.now() + WAIT;
   for (let last = 0; Date.now() < until && got !== A;) {
-    if (Date.now() - last > 20000) { post("codecheck", NOTE(A)); last = Date.now(); } // again until the switch is on: same tag, so one notification
+    if (Date.now() - last > 20000) { post(`codecheck-${RUN}`, NOTE(A)); last = Date.now(); } // again until the switch is on: same tag, so one notification
     await sleep(2000); got = vault("get", NAME);
   }
   if (!ok(`"${NAME}" is in the vault, and it's the code the notification had`, got === A, got)) return stop("the code never came: was the switch pressed? (check the card on the phone)");
@@ -120,7 +125,7 @@ async function main() {
   ok("the vault gained that one entry and nothing else", added.length === 1 && added[0] === NAME, added);
 
   step("once: a second code for the same site, and another site's, go nowhere");
-  post("codecheck", NOTE(B)); await sleep(5000); post("codecheck", NOTE(B)); post("codecheck-decoy", DECOY);
+  post(`codecheck-${RUN}`, NOTE(B)); await sleep(5000); post(`codecheck-${RUN}`, NOTE(B)); post(`codecheck-decoy-${RUN}`, DECOY);
   await sleep(45000); // a few of the phone's polls
   const now = vault("get", NAME), ans2 = answers();
   ok("the vault still has the first code (or none, if it was used): not the second", now === A || now === null, now);

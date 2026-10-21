@@ -5,6 +5,7 @@ import { join, basename } from "node:path";
 import { createHash } from "node:crypto";
 import { CONFIG_DIR, readState, writeJsonAtomic } from "./core.mjs";
 import { signInDone, browserBrief } from "./browserfails.mjs";
+import { codeAsk, codeIn } from "./codeask.mjs";
 
 const FILE = () => join(CONFIG_DIR, "asks-done.json");
 const KEEP = 200;
@@ -13,7 +14,14 @@ const SAYS_NO = /^\s*(skip|no|nope|don'?t|do not|cancel|leave it|never ?mind|sto
 // Both files are written whole or not at all, yours only (writeJsonAtomic): a plain
 // write cut short read as "nothing answered", and every agent asked again (15 Oct 2026).
 const save = (file, list) => { try { writeJsonAtomic(file, list, { indent: 1, mode: 0o600 }); return true; } catch { return false; } };
-function doneList() { return readState(FILE(), Array.isArray) || []; }
+// A code a site sent is one use: the record says the ask was answered, never the code. On 21 Oct
+// 2026 a code typed on a code card was kept here whole, for repeatAnswer to write into another
+// agent's brief. And a code ask asked again wants a new code, so nothing answers it from here
+// (heldBy, isDone). Records kept before this are cleaned as they're read, and saved clean.
+const CODE_KEPT = "answered with a code (one use, so it isn't kept)";
+const codeRecord = (q, a) => !!codeAsk({ q }) || !!codeIn(a);
+const unCoded = (x) => (x && (x.code || codeRecord(x.q, x.a)) ? { ...x, code: true, ...(/\d{3}/.test(x.a) ? { a: CODE_KEPT } : {}) } : x);
+function doneList() { return (readState(FILE(), Array.isArray) || []).map(unCoded); }
 // q: the question, a: what the user answered. A "skip" or "no" isn't a done ask: it may come back.
 // lane: whose question it was, so a brief lists only its own lane's (doneBrief). back: the user
 // asked something back instead (asksBack): its subject is held until they've read the write-up (heldBy).
@@ -22,11 +30,11 @@ function recordDone(q, a, lane = "", { back = false, id = "" } = {}) {
   const k = key(q); if (!k || !String(a || "").trim() || SAYS_NO.test(a)) return false;
   id = String(id || "").toLowerCase();
   const l = doneList().filter((x) => x.k !== k && !(id && x.id === id));
-  l.push({ k, ...(id ? { id } : {}), q: String(q).trim().slice(0, 200), a: String(a).trim().slice(0, 200), at: new Date().toISOString().slice(0, 10), ts: Date.now(), ...(lane ? { lane: String(lane) } : {}), ...(back ? { back: true } : {}) });
-  try { signInDone(`${q}\n${a}`); } catch {} // a sign-in asked again after this: the browser didn't hold it (browserfails.mjs)
+  l.push(unCoded({ k, ...(id ? { id } : {}), q: String(q).trim().slice(0, 200), a: String(a).trim().slice(0, 200), at: new Date().toISOString().slice(0, 10), ts: Date.now(), ...(lane ? { lane: String(lane) } : {}), ...(back ? { back: true } : {}) }));
+  try { signInDone(`${q}\n${l[l.length - 1].a}`); } catch {} // a sign-in asked again after this: the browser didn't hold it (browserfails.mjs)
   return save(FILE(), l.slice(-KEEP));
 }
-const isDone = (q) => { const k = key(q); return !!k && doneList().some((x) => x.k === k); };
+const isDone = (q) => { const k = key(q); return !!k && doneList().some((x) => x.k === k && !x.code); };
 // For a brief: what's already answered in this lane, so its agent doesn't ask it again. It
 // was the last 20 from every lane, whole: 4,500 characters of other lanes' answers in every
 // run's brief (the audit, 2026-10-14). Its own answers are in its ANSWERS.md too, so a few,
@@ -118,10 +126,11 @@ function reportAsked(answers) {
 const HOLD_FOR = 14 * 86400000;
 function heldBy(q, { lane = "", now = Date.now(), readSince = () => false, id = "" } = {}) {
   // the same id is the same question, whatever its words: answered once, or asked back about until read
-  if (id) { const x = doneList().slice().reverse().find((y) => y.id === String(id).toLowerCase()); if (x && (!x.back || (x.ts && now - x.ts < HOLD_FOR && !readSince(x.ts, x.lane || lane)))) return x; }
+  if (id) { const x = doneList().slice().reverse().find((y) => y.id === String(id).toLowerCase() && !y.code); if (x && (!x.back || (x.ts && now - x.ts < HOLD_FOR && !readSince(x.ts, x.lane || lane)))) return x; }
   const w = words(q); if (w.size < 2) return null;
   let best = null, top = 0;
   for (const x of doneList()) {
+    if (x.code) continue; // a code ask again: a new code
     if (id && x.id && x.id !== String(id).toLowerCase()) continue; // both have ids, and they differ: another question, however alike the words
     const xw = words(x.q), n = [...xw].filter((t) => w.has(t)).length; if (n < 3 || n <= top) continue;
     const hit = x.back ? x.ts && now - x.ts < HOLD_FOR && n >= (lane && x.lane === lane ? 3 : 4) && !readSince(x.ts, x.lane || lane)
@@ -157,9 +166,17 @@ function addRule(rule) {
 // listed on the card as "already covered?" for the user to confirm, never closed on a fuzzy match.
 const STOP = new Set("the a an and or to of in on for is are be it this that you your i my with from at by do does not no can should what which how when use".split(" "));
 const words = (s) => new Set(key(s).split(" ").filter((w) => w.length > 2 && !STOP.has(w)));
+// Two shared words was any card naming the user and "send": the Carla card showed two
+// unrelated rules as "Already covered?" (21 Oct 2026). A word in three or more of the rules,
+// or a third of them (the user's name, "send", "sign"), says nothing about which one it is.
+const FILLER = new Set("has have had was were will would about her his him she they them their then than now first again also any anything all only just into out its our before after until never always yet still here there whether wait asks ask asked said says run agent".split(" "));
+const covWords = (s) => new Set([...words(s)].filter((t) => !FILLER.has(t)));
 function coveredBy(q) {
-  const w = words(q); if (!w.size) return [];
-  return standingList().map((x) => ({ r: x.rule, n: [...words(x.rule)].filter((t) => w.has(t)).length })).filter((x) => x.n >= 2).sort((a, b) => b.n - a.n).slice(0, 2).map((x) => x.r);
+  const w = covWords(q); if (!w.size) return [];
+  const rules = standingList().map((x) => ({ r: x.rule, w: covWords(x.rule) })), seen = new Map();
+  for (const x of rules) for (const t of x.w) seen.set(t, (seen.get(t) || 0) + 1);
+  const telling = (t) => rules.length < 3 || (seen.get(t) < 3 && seen.get(t) < rules.length / 3);
+  return rules.map((x) => ({ r: x.r, n: [...x.w].filter((t) => w.has(t) && telling(t)).length })).filter((x) => x.n >= 2).sort((a, b) => b.n - a.n).slice(0, 2).map((x) => x.r);
 }
 const standingBrief = () => ["## Standing rules: they apply to every run", ...BASE.map((x) => `- ${x}`), ...browserBrief(), ...standingList().map((x) => `- ${x.rule}`), ""];
 

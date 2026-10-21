@@ -1,6 +1,6 @@
 {
   "name": "symbiot",
-  "version": "0.66.16",
+  "version": "0.67.0",
   "description": "Your week, written from your real work. Reads your local git and writes it up with the AI of your choice — Claude, OpenAI, Gemini, or a local model.",
   "type": "module",
   "bin": {
@@ -56,6 +56,8 @@
     "mapknn.mjs",
     "guard.mjs",
     "chromegate.mjs",
+    "pushgate.mjs",
+    "codeask.mjs",
     "sends.mjs",
     "away.mjs",
     "marketing.mjs",

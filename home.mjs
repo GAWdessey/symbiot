@@ -873,6 +873,18 @@ function reportIdeasDismiss(id, ideas, deps = {}, done = false) {
   (deps.mark || markIdeas)(r, list, done ? "done" : "dismissed");
   return { ok: true, said: done ? "Marked done." : list.length === 1 ? "Dismissed." : `${list.length} dismissed.` };
 }
+// What happened after the report was written, from its folder: whether a proof went out, and
+// the lane's newest answers and handover reports. With only the report's text, the chat on
+// the Carla proof (21 Oct 2026) said the mail "didn't hold up" and started a second trace,
+// when ops had already found her failed test was the site-side change the mail said was pending.
+function sinceReport(r, { read = (f) => readFileSync(f, "utf8"), stat = (f) => statSync(f) } = {}) {
+  const dir = r && r.folder ? join(r.folder, ".symbiot") : ""; if (!dir) return "";
+  const out = [];
+  try { const t = stat(join(dir, "PROOF.sent.md")).mtime; out.push(`It was sent: .symbiot/PROOF.sent.md is the text that went out, approved by the user, at ${new Date(t).toLocaleString("en-ZA", { hour12: false })}. Never say it can still be held.`); } catch {}
+  let ans = ""; try { ans = read(join(dir, "ANSWERS.md")); } catch {}
+  if (ans.trim()) out.push(`The lane's newest answers and handover reports (.symbiot/ANSWERS.md, newest last). Read them before saying what's true now, and before starting any work: what's already found or done there isn't redone.\n${ans.slice(-6000)}`);
+  return out.length ? `\n\nSince the report:\n${out.join("\n\n")}` : "";
+}
 // Ask about the report in place: the same mind as Home's chat, the report in front of it.
 async function reportAsk(id, question, { ask, deps = {} } = {}) {
   question = String(question || "").trim().slice(0, 2000); if (!question) return { error: "empty" };
@@ -881,7 +893,7 @@ async function reportAsk(id, question, { ask, deps = {} } = {}) {
   let map = {}; try { map = laneMap(); } catch {}
   const lane = r.lane && r.lane !== RUNS_LANE && map[r.lane] ? r.lane : "";
   const role = `Here they're reading a report an agent wrote, "${r.title}"${lane ? ` (${lane})` : ""}, under Reports. Answer about it from its text; a task or agent work it leads to goes to ${lane || "the lane it belongs to"} unless they say otherwise.`;
-  const res = await converse({ where: `Reports: ${r.title}`, role, context: `The report (${r.file}):\n${String(r.text || "").slice(0, 12000)}`, question, map, ...(ask ? { ask } : {}),
+  const res = await converse({ where: `Reports: ${r.title}`, role, context: `The report (${r.file}):\n${String(r.text || "").slice(0, 12000)}${sinceReport(r)}`, question, map, ...(ask ? { ask } : {}),
     act: {
       agent: (req, known, repo, said) => ((repo || lane) ? actIn(req, repo || lane, { map, known, title: "Reports", said }) : actNow(req, { title: "Reports", known })),
       task: (text, repo) => taskIn(text, repo || lane, { map }),

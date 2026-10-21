@@ -12,6 +12,9 @@ import { statSync, openSync, readSync, closeSync } from "node:fs";
 
 const MAX_STEPS = 60;
 const short = (s, n = 80) => { s = String(s ?? "").replace(/\s+/g, " ").trim(); return s.length > n ? s.slice(0, n - 1) + "…" : s; };
+// A hook's refusal starts "PreToolUse:Bash hook error: [node "/…/guard.mjs"]: ", which took
+// 100 of a note's 120 characters: every guard block read "Blocked by Symbi…" (21 Oct 2026).
+const stripHook = (s) => String(s ?? "").replace(/^\s*(?:<tool_use_error>)?\s*\w+:\w+ hook error:\s*\[[^\]]*\]:\s*/, "").replace(/<\/?tool_use_error>/g, "");
 const base = (p) => String(p || "").split("/").filter(Boolean).slice(-2).join("/");
 
 // One tool call, as a person would say it: { kind, verb, target }.
@@ -99,7 +102,7 @@ function parseRunText(text) {
         const s = byId.get(b.tool_use_id), txt = resultText(b.content);
         if (s && s.create) { const m = txt.match(/Task #(\w+)/); tasks.set(m ? m[1] : String(tasks.size + 1), { text: s.create.text, status: "pending", active: s.create.active }); continue; }
         if (!s) continue;
-        s.status = b.is_error ? "error" : "done"; if (b.is_error) { out.errors++; s.note = short(txt, 120); }
+        s.status = b.is_error ? "error" : "done"; if (b.is_error) { out.errors++; s.note = short(stripHook(txt), 160); }
         if (at && s.at) s.ms = at - s.at;
         if (s.kind === "run") { const tt = testsIn(txt); if (tt) { s.tests = tt; out.tests = tt; } }
       }
@@ -249,9 +252,13 @@ function lastRunText(log) {
 // A turn that ended on purpose and is waiting ("nothing new to act on… waiting for marketing's
 // photos"): the sentence of its final answer that says what for, or "". A one-shot run exits
 // after every turn, so a finished process alone can't tell this from a stall (2026-10-10).
+// Not a wait, though the words are there: "Nothing is waiting on Garth" was read as one, and
+// "the WhatsApp window stays open until 10:38 tomorrow" (someone else's window) as a time to
+// look again (21 Oct 2026).
+const NOT_A_WAIT = /\b(?:nothing|no one|nobody|none)\b[^.!?]{0,30}\bwait|\b(?:no longer|not|isn['’]t|aren['’]t)\s+(?:\w+\s+)?wait|\b(?:stays?|remains?|is|kept)\s+open\s+until\b/i;
 function waitingOn(final) {
   const ss = String(final || "").replace(/[`*_#>]/g, "").replace(/\s+/g, " ").trim().split(/(?<=[.!?])\s+/);
-  const s = ss.reverse().find((x) => /\b(wait(?:ing)?\s+(?:on|for)|until|will check again|check again|once (?:it|they|the|that)\b|nothing (?:to do|due) (?:yet|until|before)|not (?:yet )?due|next (?:check|run|post)\b|due (?:on|at|in)\b|(?:look|try) again (?:at|on|in|after|tomorrow)\b)/i.test(x));
+  const s = ss.reverse().find((x) => !NOT_A_WAIT.test(x) && /\b(wait(?:ing)?\s+(?:on|for)|until|will check again|check again|once (?:it|they|the|that)\b|nothing (?:to do|due) (?:yet|until|before)|not (?:yet )?due|next (?:check|run|post)\b|due (?:on|at|in)\b|(?:look|try) again (?:at|on|in|after|tomorrow)\b)/i.test(x));
   return s ? short(s.replace(/[.:]$/, ""), 160) : "";
 }
 // What the agent said last: its final answer, from either kind of log.

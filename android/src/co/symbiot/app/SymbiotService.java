@@ -43,7 +43,9 @@ public class SymbiotService extends Service {
     static volatile String state = "stopped"; // starting | running | stopped | failed
     static volatile boolean keptStopping;  // failed because it started but kept stopping, not because it couldn't start
     private static final ArrayDeque<String> LOG = new ArrayDeque<>();
-    private static final Pattern URL_RE = Pattern.compile("(http://127\\.0\\.0\\.1:\\d+/\\?t=[0-9a-f]+)");
+    // the start line ("Symbiot is running at http://127.0.0.1:7391/"): since 0.66.0 it has no ?t=<token>,
+    // which would land in app.log, so the token comes from this app's own secrets.json (tokenIn)
+    private static final Pattern URL_RE = Pattern.compile("is (?:already )?running\\b.*?(http://127\\.0\\.0\\.1:\\d+/)(?:\\?t=([0-9a-f]+))?");
     private static final int ONGOING = 1;
     private volatile Process proc;
     private volatile boolean stopping;
@@ -132,7 +134,7 @@ public class SymbiotService extends Service {
         String link = LinkKey.open(b);
         if (link != null) pb.environment().put("SYMBIOT_COMPUTER_SECRET", link);
         proc = pb.start();
-        Thread out = new Thread(() -> read(proc), "symbiot-out"); out.start();
+        Thread out = new Thread(() -> read(proc, b.home), "symbiot-out"); out.start();
         // every second: a look for your computer (phone.mjs findComputers) waits on this
         while (!proc.waitFor(1, TimeUnit.SECONDS)) poll(b);
         int code = proc.exitValue();
@@ -150,14 +152,25 @@ public class SymbiotService extends Service {
         return code;
     }
 
-    private void read(Process p) {
+    private void read(Process p, File home) {
         try (BufferedReader r = new BufferedReader(new InputStreamReader(p.getInputStream(), StandardCharsets.UTF_8))) {
             for (String l; (l = r.readLine()) != null; ) {
                 log(l);
                 Matcher m = URL_RE.matcher(l);
-                if (m.find()) { url = m.group(1); state = "running"; }
+                if (!m.find()) continue;
+                String t = m.group(2) != null ? m.group(2) : tokenIn(home);
+                if (t.isEmpty()) { log("Symbiot started, but its token isn't in its settings, so the page can't open."); continue; }
+                url = m.group(1) + "?t=" + t; state = "running";
             }
         } catch (Exception ignored) {}
+    }
+
+    // the app's token, as server.mjs saved it before printing its address (secrets.json, or config.json from before)
+    static String tokenIn(File home) {
+        for (String f : new String[] { "secrets.json", "config.json" }) {
+            try { String t = new JSONObject(Bootstrap.read(new File(home, ".config/symbiot/" + f))).optString("appToken", ""); if (t.matches("[0-9a-f]+")) return t; } catch (Exception ignored) {}
+        }
+        return "";
     }
 
     // notifications (the weekly write-up, Watch's news, what needs you), as desktop.mjs writes them in this app;

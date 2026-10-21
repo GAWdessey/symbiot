@@ -24,7 +24,7 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, statSy
 import { createHash, randomBytes } from "node:crypto";
 import { execFile } from "node:child_process";
 import { CONFIG_DIR, loadTasks, clipWords, loadConfig, readState, writeJsonAtomic, sameTask } from "./core.mjs";
-import { runHandoff, runningHandoff, waitingFor, agentQuestions, findOrcaCli, installAllowlist, writeTasks, workOf, loadRuns, allAnswers } from "./agents.mjs";
+import { runHandoff, runningHandoff, waitingFor, autoStart, agentQuestions, findOrcaCli, installAllowlist, writeTasks, workOf, loadRuns, allAnswers } from "./agents.mjs";
 import { addTask, removeTask, pushTasks, pendingReview, approveChanges, workingDiff, setHandedLookup } from "./tasks.mjs";
 import { actNow, actBrief } from "./mind.mjs";
 import { laneMap } from "./scan.mjs";
@@ -424,14 +424,18 @@ function noteSent(path, asked, ledger) {
 // without finishing" gives a lane waiting on it nothing new, and forcing it started
 // that lane again on every such report (the 14 Oct 2026 audit). Unforced, it starts
 // only if its last run wasn't waiting on the same things (agents.mjs blockedAgain).
-function report(e, o, { run = runHandoff, running = runningHandoff, waiting = waitingFor, now = Date.now() } = {}) {
+// Only a lane with an open task is started at all (with none, its next run reads the report),
+// and it counts towards the lane's automatic starts in an hour (agents.mjs autoStart): every ops
+// report restarted Dailify, which handed ops the next read, and the two lanes ping-ponged
+// through 18 runs on one open item (21 Oct 2026). Past the cap, the start is kept as due.
+function report(e, o, { run = runHandoff, running = runningHandoff, waiting = waitingFor, auto = autoStart, now = Date.now() } = {}) {
   const p = e.from.path, file = join(p, ".symbiot", "ANSWERS.md");
   try {
     mkdirSync(join(p, ".symbiot"), { recursive: true });
     const had = existsSync(file) ? readFileSync(file, "utf8") : "# Answers\nAnswers to your questions, and what other lanes did with what you handed over, newest last.\n";
     writeFileSync(file, `${had.replace(/\s*$/, "")}\n\n### Handed over to ${e.to.lane}: ${clipWords(firstLine(e.text), 120)}\n${o.text}\n_answered by symbiot (handover) ${new Date(now).toISOString().slice(0, 10)}_\n`);
   } catch { return false; }
-  if (!running(p)) run(p, { force: !!o.settled && !waiting(p) });
+  if (!running(p) && /^\s*(?:[-*+]|\d+[.)])\s*\[ \]/m.test(readSym(p, "TASKS.md")) && auto(p, { now })) run(p, { force: !!o.settled && !waiting(p) });
   return true;
 }
 
@@ -512,6 +516,11 @@ function doneSince(path, q, { ledger = loadLedger(), now = Date.now(), read = re
     if (n / want.size > top || (!best && n / want.size === top)) { best = h; top = n / want.size; }
   }
   if (!best) return null;
+  // an ask to reply, send or tell someone is done only by a handover that did that: "Should I
+  // reply to Carla that her Vodacom test reached us?" was closed as done by ops's trace of that
+  // same test, which sent nothing, and Carla had no answer for hours (21 Oct 2026)
+  const SENDS = /\b(?:repl(?:y|ied|ies)|send|sent|email|mail|messag|tell|told|post|invite|notif|let \w+ know)/i;
+  if (SENDS.test(q) && !SENDS.test(best.text)) return null;
   const head = firstLine(best.text), ticked = read(best.to.path, "TASKS.md").split("\n").filter((l) => /^\s*(?:[-*+]|\d+[.)])\s*\[[xX]\]/.test(l));
   return ticked.some((l) => alike(l, head)) ? { lane: best.to.lane, text: clipWords(head.replace(/\*\*/g, "").replace(/^What['’]s needed:\s*/i, ""), 120) } : null;
 }
@@ -535,7 +544,7 @@ function namedDirs(text, own = "", { exists = (p) => { try { return statSync(p);
 function pastIt(e, hs) {
   if (hs.some((x) => x !== e && x.status !== "error" && Math.max(x.at || 0, x.reportedAt || 0) > e.at && alike(x.text, e.text))) return true;
   const md = readSym(e.from.path, "TASKS.md");
-  return lastRunStart(e.from.path) > e.at && /^- \[x\]/im.test(md) && !/^\s*- \[ \]/m.test(md);
+  return lastRunStart(e.from.path) > e.at && /^- \[x\]/im.test(md) && !/^\s*- \[[ ~]\]/m.test(md); // a [~] item still waits, maybe on this very handover
 }
 // The errored handovers that still wait on you, newest first:
 // [{ id, from, text, error, at, dirs, q, options }].

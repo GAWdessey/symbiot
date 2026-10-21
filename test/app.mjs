@@ -84,6 +84,23 @@ try {
   const after = await ping(baseA, token);
   ok("the first app is still the one serving (same start time)", !!before.started && after.started === before.started, { before, after });
 
+  // The Android app finds its page from this start line (SymbiotService.java URL_RE, then tokenIn for the token).
+  // When the line lost its ?t= (0.66.0), the old pattern never matched: the phone sat on "Starting Symbiot…" (21 Oct 2026).
+  console.log("ANDROID APP — the phone's service still gets its address from the start line as it is now");
+  {
+    const java = readFileSync(join(dirname(INDEX), "android", "src", "co", "symbiot", "app", "SymbiotService.java"), "utf8");
+    const src = (java.match(/URL_RE = Pattern\.compile\("((?:[^"\\]|\\.)*)"\)/) || [])[1];
+    const re = src && new RegExp(src.replace(/\\\\/g, "\\"));
+    const urlOf = (out) => { for (const l of out.split("\n")) { const m = re && l.match(re); if (m) return m[1] + "?t=" + (m[2] || tokenOf()); } return ""; };
+    ok("its pattern is there to check", !!re, src);
+    ok("…it finds the address on the line `symbiot app` prints, and with the token from secrets.json it's the app's page", urlOf(a.out()) === urlA, { line: a.out().split("\n").find((l) => /running at/.test(l)), urlA });
+    ok("…and on the line a second start prints (already running)", urlOf(b.stdout) === urlA, b.stdout);
+    ok("…and that page opens with it", (await ping(baseA, (urlOf(a.out()).match(URL_RE) || [])[2] || "")).version === before.version, urlOf(a.out()));
+    ok("…an older start line that still carried ?t= reads as before", urlOf(`● Symbiot is running at http://127.0.0.1:7391/?t=abc123`) === "http://127.0.0.1:7391/?t=abc123");
+    ok("…and some other address in the log isn't taken for it", urlOf("fetch http://127.0.0.1:9/ failed") === "");
+    ok("the service reads the token from its own settings, never from the log", /tokenIn\(home\)/.test(java) && /secrets\.json/.test(java));
+  }
+
   console.log("SCREENS DOOR — a sandboxed lane has no port, token or browser profile: the app's socket takes /api/screens and nothing else");
   {
     const { request } = await import("node:http");

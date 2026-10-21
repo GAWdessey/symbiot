@@ -30,6 +30,10 @@ try {
   ok("an address with a sign-in part: the site's own name", P.siteKey("accounts.zoho.com") === "zoho" && P.siteKey("cp.smsportal.com") === "smsportal" && P.siteKey("www.domains.co.za") === "domains");
   ok("a code with no site named isn't offered (the phone passes on only the code it was asked for)", P.codeAsk({ q: "Type the code you got" }) === null);
   ok("a question that isn't for a code isn't either", P.codeAsk({ q: "Should I push the fix to zoho.com's DNS?" }) === null && P.codeAsk({ q: "Review the code in zoho.com's repo?" }) === null);
+  // 21 Oct 2026: ops's own card quoted the real-phone check's card, and the phone offered it the button too
+  const quoting = { q: "Can you press one button in Symbiot on your phone so the phone code check can finish?", context: "In Symbiot on your phone, find the card \"What's the 6-digit code codecheck.dev texted you?\" and press \"Let this phone pass on codecheck.dev's code\".", options: ["👤 You (only you: your phone): I pressed it, carry on", "Skip this part (leave the real-phone code check unfinished)"] };
+  ok("a card that only quotes another card's code ask isn't waiting for that code", P.codeAsk(quoting) === null && P.codeAsk({ ...quoting, context: "Find the card “What's the 6-digit code codecheck.dev texted you?” on your phone." }) === null, P.codeAsk(quoting));
+  ok("…while one that asks in its own words still is, with its site quoted or not", (P.codeAsk({ q: "What's the 6-digit code \"zoho.com\" texted you?" }) || {}).key === "zoho" && (P.codeAsk({ q: "What's the 6-digit code zoho.com texted you?", context: "It's for \"Zoho Mail\" on codecheck.dev." }) || {}).key === "zoho");
 
   console.log("THE CODE IN A NOTIFICATION, AND NOTHING ELSE");
   ok("\"Your Zoho verification code is 4829163\"", P.codeIn("Your Zoho verification code is 4829163. Don't share it.") === "4829163");
@@ -107,6 +111,25 @@ try {
   const sh = P.heardCode({ app: "com.android.shell", ...S.NOTE("482913") });
   ok("its notification, posted from Android's shell, passes the code to the card", sh.passed === S.SITE && queue().length === 1 && queue()[0].args.code === "482913" && queue()[0].args.key === "codecheck", [sh, queue()]);
   P.setCodeRelay(S.SITE, false);
+  ok("its question is this run's own: its words and its id name the run", /^Phone check \w+:/.test(S.QUESTION) && /^codecheck-\w+$/.test(sq[0].id || "") && S.QUESTION.includes(sq[0].id.slice(10)), [S.QUESTION, sq[0].id]);
+  ok("…and the card says it's a test, nothing to type, its switch the one thing to press", /\btest\b/i.test(sq[0].context) && /not a real site/i.test(sq[0].context) && /don't type/i.test(sq[0].context) && /switch/i.test(sq[0].context), sq[0].context);
+
+  console.log("A CODE TYPED ON A CODE CARD ISN'T KEPT IN THE SHARED RECORD (21 Oct 2026: it was, for other agents' briefs)");
+  const D = await import("../asksdone.mjs"), DONE = join(CFG, "asks-done.json");
+  const cq = "What's the 6-digit code codecheck.dev texted you?";
+  D.recordDone(cq, "820119", "ops");
+  const rec = D.doneList().find((x) => x.q === cq);
+  ok("it's recorded as answered, without the code", rec && rec.code && !rec.a.includes("820119") && !readFileSync(DONE, "utf8").includes("820119"), rec);
+  ok("…so no brief carries it", !D.doneBrief("ops").join("\n").includes("820119"), D.doneBrief("ops"));
+  ok("the same code ask again isn't answered from it: a code is one use", !D.heldBy(cq, { lane: "ops" }) && !D.isDone(cq));
+  D.recordDone("Which plan should Pro be sold on?", "the yearly one, 1200 a year", "ops");
+  ok("an answer with a number in it, to a question that isn't a code ask, is kept as it was", D.doneList().some((x) => x.a === "the yearly one, 1200 a year" && !x.code) && D.isDone("Which plan should Pro be sold on?"));
+  D.recordDone("Should I merge it?", "yes, the code is 482913 if it asks", "ops");
+  ok("a code in an answer to any question isn't kept either", !readFileSync(DONE, "utf8").includes("482913"));
+  writeFileSync(DONE, JSON.stringify([{ k: "whats the 6 digit code codecheck dev texted you", q: cq, a: "820119", lane: "ops", ts: Date.now() }]));
+  ok("a code kept before this isn't read back…", !JSON.stringify(D.doneList()).includes("820119") && !D.heldBy(cq, { lane: "ops" }), D.doneList());
+  D.recordDone("Which plan should Pro be sold on?", "monthly", "ops");
+  ok("…and is cleaned from the file with the next answer", !readFileSync(DONE, "utf8").includes("820119"));
 } catch (e) { ok("ran", false, String((e && e.stack) || e)); }
 finally { rmSync(HOME, { recursive: true, force: true }); }
 console.log(`\n${fail ? "✗" : "✓"} codes: ${pass} passed, ${fail} failed`);

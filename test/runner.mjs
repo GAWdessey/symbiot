@@ -27,7 +27,16 @@ try {
   ok("every file ran, the ones after the failures too", /✓ a-pass\.mjs/.test(r.out) && /✓ e-pass\.mjs/.test(r.out), r.out);
   ok("the table names every one that failed, crashed or hung", /Failed: b-fail\.mjs, c-crash\.mjs, d-hang\.mjs/.test(r.out), r.out);
   ok("…with its first failures, a crash's last lines, a hang's time limit", /✗ b-fail\.mjs {2}1 passed, 1 failed\n {3}✗ the thing that broke/.test(r.out) && /\| .*boom at load/.test(r.out) && /d-hang\.mjs {2}timed out after 3s/.test(r.out), r.out);
-  ok("and how many passed", /✗ 2 of 5 test files pass/.test(r.out), r.out);
+  ok("and how many passed, naming the failed ones on the last line", /✗ b-fail\.mjs, c-crash\.mjs, d-hang\.mjs failed: 2 of 5 test files pass/.test(r.out), r.out);
+  ok("a failed file got its second try, and failed it again", /✗ b-fail\.mjs {8,}on its own/.test(r.out), r.out);
+  console.log("RUNNER — a file that fails once and passes on its own is flaky, not failed");
+  put("f-flaky.mjs", `import { existsSync, writeFileSync } from "node:fs"; const m = ${JSON.stringify(join(DIR, "f-ran"))}; if (!existsSync(m)) { writeFileSync(m, "1"); console.log("  ✗ lost a race"); process.exit(1); } console.log("✓ f: 1 passed, 0 failed");\n`);
+  const f = run("f-flaky");
+  ok("it passes, and says it was flaky", f.code === 0 && /Flaky: f-flaky\.mjs/.test(f.out) && /✓ 1 of 1 test files pass/.test(f.out), f.out);
+  rmSync(join(DIR, "f-ran"), { force: true });
+  const n = spawnSync(process.execPath, [RUN, "f-flaky"], { encoding: "utf8", env: { ...process.env, SYMBIOT_TEST_DIR: DIR, SYMBIOT_TEST_JOBS: "", SYMBIOT_TEST_RETRY: "0" }, timeout: 60000 });
+  ok("SYMBIOT_TEST_RETRY=0 gives no second try", n.status === 1, n.stdout);
+  rmSync(join(DIR, "f-flaky.mjs"), { force: true });
   console.log("RUNNER — only the files named");
   const o = run("a-pass", "e-pass");
   ok("a name or part of one picks them, and all passing passes", o.code === 0 && /2 test files/.test(o.out) && /✓ 2 of 2 test files pass/.test(o.out) && !/b-fail/.test(o.out), o.out);

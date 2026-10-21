@@ -39,6 +39,7 @@ import { onUser } from "./jobs.mjs";
 import { desktopNotify } from "./desktop.mjs";
 import { announce, browse } from "./mdns.mjs";
 import { qrSvg } from "./qr.mjs";
+import { codeAsk, codeIn, siteKey } from "./codeask.mjs";
 
 const PORT = 7392;
 const CODE_MS = 10 * 60 * 1000, CODE_TRIES = 5;
@@ -349,28 +350,7 @@ async function snapshot({ now = Date.now(), fresh = false } = {}) {
 }
 
 // ---- the phone as the hand for codes and proofs (review of 20 Oct 2026, proposal 3) -------------
-// A question that waits for a code a site sends ("type the 6-digit code Zoho texted you"):
-// { site, key } with the site it's from, or null. One with no site named isn't offered: the
-// phone passes a code on only for the site it was asked for, and only one you switched on.
-const CODE_ASK = /\b(?:sms|text(?:ed)?|verification|verify|one[- ]time|otp|2fa|two[- ]factor|security|log[- ]?in|sign[- ]in|confirmation|\d[- ]digit)\b[^.\n]{0,50}\bcodes?\b|\bcodes?\b[^.\n]{0,40}\b(?:sms|texted|text message|sent (?:to )?your phone|on your phone)\b/i;
-const SITE_IN = /\b((?:[a-z0-9-]+\.)+(?:com|co\.za|io|dev|net|org|app|ai|me|co))\b/i, SITE_NAMED = /\b(?:from|by|that|the|your)\s+([A-Z][\w&-]{1,30})\s+(?:sent|texted|sends|texts|code|sms)\b/;
-const siteKey = (s) => { const h = String(s || "").toLowerCase().replace(/^www\./, ""); return h.includes(".") ? h.split(".").filter((x) => !["com", "co", "za", "io", "dev", "net", "org", "app", "ai", "me", "accounts", "login", "auth", "mail", "my", "cp"].includes(x)).pop() || h.split(".")[0] : h; };
-function codeAsk(q) {
-  const t = [q && q.q, ...((q && q.options) || []), q && q.shown, q && q.context].filter(Boolean).join("\n");
-  if (!CODE_ASK.test(t)) return null;
-  const d = (t.match(SITE_IN) || [])[1], n = (t.match(SITE_NAMED) || [])[1], site = d ? d.toLowerCase().replace(/^www\./, "") : n || "";
-  const key = siteKey(site); return key && key.length >= 3 ? { site, key } : null;
-}
-// The code in a notification's words, or "": only with a word that says it's a code, and only
-// the code (the rest of the message never leaves the phone).
-function codeIn(text) {
-  const t = String(text || "").slice(0, 600); if (!/\b(?:code|otp|pin|passcode|verification|verify|one[- ]time)\b/i.test(t)) return "";
-  const year = (x) => /^(19|20)\d\d$/.test(x); // "expires in 2026" isn't the code
-  const m = [...t.matchAll(/\b(?:code|otp|pin|passcode)\b[^0-9A-Z\n]{0,24}?\b(\d{3}[ -]\d{3}|\d{4,8}|[A-Z0-9]{3,5}-[A-Z0-9]{3,5})\b/gi), ...t.matchAll(/\b(\d{3}[ -]\d{3}|\d{4,8})\b(?=[^\d\n]{0,30}\b(?:is your|is the|code)\b)/gi)].map((x) => x[1]).find((x) => !year(x));
-  if (m) return m.replace(/[ ]/g, "");
-  const nums = [...new Set(t.match(/\b\d{4,8}\b/g) || [])].filter((x) => !year(x));
-  return nums.length === 1 ? nums[0] : "";
-}
+// What a code ask is, and the code in a notification, are codeask.mjs's (asksdone.mjs uses them too).
 // A proof an agent wants seen before it sends (.symbiot/PROOF.md: a heading, then "Kind:",
 // "To:", "File:" and "Buttons:" lines, then the message exactly as it goes out), or null.
 const PROOF = "PROOF.md";
@@ -587,7 +567,11 @@ function holderText(port, h) {
   if (!h) return `Port ${port} is in use by something else on this computer.`;
   return `Port ${port} is held by ${(h.cmd || "another program").slice(0, 80)} (pid ${h.pid}${h.started ? ", started " + h.started : ""}).`;
 }
-let holder = null, starting = null;
+let holder = null, starting = null, retryTimer = null;
+// A taken port (an older Symbiot still letting go of it) is tried again until it's free, so the
+// link doesn't stay down after the holder has gone.
+const RETRY_MS = Number(process.env.SYMBIOT_PHONE_RETRY_MS) || 15000;
+function retryBind() { if (retryTimer) return; retryTimer = setTimeout(() => { retryTimer = null; if (linkCfg().on && !listener) startPhoneLink(); }, RETRY_MS); retryTimer.unref(); }
 
 // Listen on the network while it's switched on. Gives the state. (A second call while the
 // first is still binding waits for it, so startPhone and setPhoneLink never bind twice.)
@@ -600,7 +584,7 @@ function startPhoneLink() {
     const done = () => { starting = null; resolve(linkState()); };
     const srv = createServer((req, res) => { handle(req, res).catch(() => { try { reply(res, 500, { error: "failed" }); } catch {} }); });
     srv.on("error", (e) => {
-      if (e && e.code === "EADDRINUSE") { holder = portHolder(l.port); listenErr = holderText(l.port, holder); }
+      if (e && e.code === "EADDRINUSE") { holder = portHolder(l.port); listenErr = holderText(l.port, holder); retryBind(); }
       else { holder = null; listenErr = `Couldn't listen on port ${l.port}: ${(e && e.message) || e}`; }
       listener = null; done();
     });
@@ -627,7 +611,7 @@ async function usePhonePort(port) {
   await startPhoneLink();
   return listener && !pairing ? newCode() : linkState();
 }
-function stopPhoneLink() { if (listener) { listener.close(); if (listener.closeAllConnections) listener.closeAllConnections(); } listener = null; pairing = null; stopMdns(); stopRelay(); clearInterval(adbTimer); adbTimer = null; adbPushed.clear(); }
+function stopPhoneLink() { clearTimeout(retryTimer); retryTimer = null; if (listener) { listener.close(); if (listener.closeAllConnections) listener.closeAllConnections(); } listener = null; pairing = null; stopMdns(); stopRelay(); clearInterval(adbTimer); adbTimer = null; adbPushed.clear(); }
 async function setPhoneLink(on) {
   saveLink({ on: !!on });
   if (!on) { stopPhoneLink(); listenErr = ""; return linkState(); }

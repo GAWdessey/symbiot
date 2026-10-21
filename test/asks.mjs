@@ -129,6 +129,45 @@ ok("another run asking it in other words, same id: never a card, answered from t
 writeFileSync(join(ops2, ".symbiot", "QUESTIONS.md"), "## Questions\n### Which payment company should sell Symbiot Teams? {#teams-payments}\nfor Teams\n- Paddle\n- Polar\n");
 ok("a different id is a different question, however alike the words", a.agentQuestions(ops2, "").questions.length === 1);
 
+// 21 Oct 2026: a run asked twice whether the user had "allowed force-push in Symbiot settings for this lane".
+// No such setting exists. A refused force-push is a Push it card now, and Symbiot pushes it itself on Go.
+console.log("PUSH IT — a held force-push, pushed by Symbiot on the user's Go");
+{ const P = await import("../pushgate.mjs"), { judge } = await import("../guard.mjs");
+  const bare = join(HOME, "remote.git"), run = join(C, "drafts", "act-push0001"), other = join(HOME, "other");
+  spawnSync("git", ["init", "-q", "--bare", "-b", "main", bare]); spawnSync("git", ["clone", "-q", bare, run]);
+  mkdirSync(join(run, ".symbiot"), { recursive: true });
+  sh(run, "commit", "-q", "--allow-empty", "-m", "base"); sh(run, "push", "-q", "origin", "main");
+  sh(run, "checkout", "-q", "-b", "fix/x"); writeFileSync(join(run, "f.txt"), "1\n"); sh(run, "add", "-A"); sh(run, "commit", "-qm", "one"); sh(run, "push", "-q", "-u", "origin", "fix/x");
+  const was = sh(run, "rev-parse", "HEAD").stdout.trim();
+  writeFileSync(join(run, "f.txt"), "2\n"); sh(run, "commit", "-q", "-a", "--amend", "-m", "one, rewritten"); const now = sh(run, "rev-parse", "HEAD").stdout.trim();
+  const held = judge("Bash", { command: "git push --force-with-lease origin fix/x" }, { cwd: run, home: HOME, branch: "fix/x" });
+  const id = ((held && held.why) || "").match(/\{#push-go-([0-9a-f]+)\}/);
+  ok("the guard holds it and says how to ask: no setting, one Push it option", id && /no setting allows this/.test(held.why) && /"🤖 Agent: push it"/.test(held.why), held);
+  writeFileSync(join(run, ".symbiot", "QUESTIONS.md"), `## Questions\n### Should Symbiot put the rewritten fix/x branch on GitHub in place of the old one? {#push-go-${id && id[1]}}\nIt replaces one commit.\n- 🤖 Agent: push it\n`);
+  const r = a.answerQuestions(run, [{ q: "Should Symbiot put the rewritten fix/x branch on GitHub in place of the old one?", a: "🤖 Agent: push it" }]);
+  let ans = ""; for (let i = 0; i < 100 && !/Symbiot: the push you asked for/.test(ans); i++) { await new Promise((ok) => setTimeout(ok, 50)); ans = readFileSync(join(run, ".symbiot", "ANSWERS.md"), "utf8"); }
+  const there = spawnSync("git", ["-C", bare, "rev-parse", "fix/x"], { encoding: "utf8" }).stdout.trim();
+  ok("Go: Symbiot pushes it itself, and the outcome is in the run's answers", r.ok && there === now && there !== was && /Symbiot pushed fix\/x to origin itself/.test(ans), [r, there, now, ans.slice(-400)]);
+  const used = JSON.parse(readFileSync(P.HOLDS(HOME), "utf8")).find((h) => h.id === id[1]);
+  ok("…once: the hold is spent, and a second Go says it's done rather than pushing again", used.used && used.outcome === "pushed" && /done already/.test((await P.pushGo(id[1], { home: HOME })).text), used);
+  // someone pushed to the branch after it was held: the lease fails, and nothing of theirs is lost
+  writeFileSync(join(run, "f.txt"), "3\n"); sh(run, "commit", "-q", "-a", "--amend", "-m", "again"); sh(run, "fetch", "-q");
+  const h2 = judge("Bash", { command: "git push -f" }, { cwd: run, home: HOME, branch: "fix/x" }).why.match(/push-go-([0-9a-f]+)/)[1];
+  spawnSync("git", ["clone", "-q", "-b", "fix/x", bare, other]); sh(other, "commit", "-q", "--allow-empty", "-m", "theirs"); sh(other, "push", "-q", "origin", "fix/x");
+  const theirs = sh(other, "rev-parse", "HEAD").stdout.trim(), stale = await P.pushGo(h2, { home: HOME });
+  ok("…a branch someone pushed to since it was held isn't replaced: the run is told to fetch and merge", stale.error === "stale" && spawnSync("git", ["-C", bare, "rev-parse", "fix/x"], { encoding: "utf8" }).stdout.trim() === theirs && /fetch/.test(stale.text), stale);
+  // a No on the card pushes nothing
+  sh(run, "fetch", "-q"); const h3 = judge("Bash", { command: "git push --force origin fix/x" }, { cwd: run, home: HOME, branch: "fix/x" }).why.match(/push-go-([0-9a-f]+)/)[1];
+  writeFileSync(join(run, ".symbiot", "QUESTIONS.md"), `## Questions\n### Should Symbiot replace fix/x on GitHub again? {#push-go-${h3}}\nctx\n- 🤖 Agent: push it\n`);
+  a.answerQuestions(run, [{ q: "Should Symbiot replace fix/x on GitHub again?", a: "no, leave it" }]); await new Promise((ok) => setTimeout(ok, 300));
+  ok("…and No pushes nothing", spawnSync("git", ["-C", bare, "rev-parse", "fix/x"], { encoding: "utf8" }).stdout.trim() === theirs && !JSON.parse(readFileSync(P.HOLDS(HOME), "utf8")).find((h) => h.id === h3).go);
+  // never main, and never a hold written by hand for it
+  const hp = JSON.parse(readFileSync(P.HOLDS(HOME), "utf8")); hp.push({ id: "0000beef", folder: run, remote: "origin", branch: "main", ref: "", at: Date.now() }); writeFileSync(P.HOLDS(HOME), JSON.stringify(hp));
+  const mainGo = await P.pushGo("0000beef", { home: HOME });
+  ok("…never the main branch, even from a hold it didn't make", mainGo.error === "refused" && /main/.test(judge("Bash", { command: "git push -f origin main" }, { cwd: run, home: HOME, branch: "fix/x" }).why), mainGo);
+  const { ONLY_YOU } = await import("../handover.mjs");
+  ok("the run's brief says never to offer a setting Settings doesn't have", /Never offer an option saying the user changed a Symbiot setting unless Settings has it by name/.test(ONLY_YOU)); }
+
 sh(lane, "worktree", "remove", "--force", copy);
 rmSync(HOME, { recursive: true, force: true });
 console.log((fail ? "✗" : "✓") + " asks: " + pass + " passed, " + fail + " failed");

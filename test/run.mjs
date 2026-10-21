@@ -8,6 +8,7 @@
 //   node test/run.mjs urgent route    only these (a name, or part of one)
 //   node test/run.mjs -j 1            one at a time (CI's Windows table)
 //   node test/run.mjs --timeout 300   seconds each file may take (default 600)
+//   SYMBIOT_TEST_RETRY=0              no second try for a failed file
 //
 // Workers: SYMBIOT_TEST_JOBS, else -j, else half the CPUs (at most 8: 245 s at 8 workers
 // against 665 s one by one, recon of 15 Oct). The slowest files start first, from the
@@ -83,6 +84,17 @@ async function worker() {
 }
 await Promise.all(Array.from({ length: jobs }, worker));
 
+// A file that failed is run once more, on its own: under 8 workers a timing test can lose
+// a race it never loses alone, and one such file (86 of 87, 21 Oct 2026) held back an
+// approved change with "the tests fail" while the same commit passed 87 of 87 on a rerun.
+// One that passes alone is named as flaky, not hidden; one that fails again stays failed.
+const flaky = [];
+if (process.env.SYMBIOT_TEST_RETRY !== "0") for (const r of results.filter((x) => !x.ok && !x.timedOut)) {
+  const again = await runOne(r.file);
+  console.log(`${again.ok ? "↻" : "✗"} ${r.file.padEnd(20)} on its own: ${again.tally || (again.ok ? "passed" : `exit ${again.code}`)}  (${again.secs.toFixed(0)}s)`);
+  if (again.ok) { flaky.push(r.file); results[results.indexOf(r)] = { ...again, flaky: true }; }
+}
+
 // the next run starts the slow ones first; a partial run (only some files) keeps the others' times
 if (timesOn) try { writeFileSync(TIMES, JSON.stringify({ ...times, ...Object.fromEntries(results.map((r) => [r.file, Math.round(r.secs)])) }, null, 1) + "\n"); } catch {}
 
@@ -97,5 +109,6 @@ if (bad.length) {
     if (!r.failed.length && r.tail) for (const l of r.tail.split("\n")) console.log("   | " + l.slice(0, 240));
   }
 }
-console.log(`\n${bad.length ? "✗" : "✓"} ${results.length - bad.length} of ${results.length} test files pass on ${process.platform} (${wall}s)`);
+if (flaky.length) console.log(`\nFlaky: ${flaky.join(", ")} failed alongside the others and passed on its own.`);
+console.log(`\n${bad.length ? `✗ ${bad.map((r) => r.file).join(", ")} failed: ` : "✓ "}${results.length - bad.length} of ${results.length} test files pass on ${process.platform} (${wall}s)`);
 process.exit(bad.length ? 1 : 0);
