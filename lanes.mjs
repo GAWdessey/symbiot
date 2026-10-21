@@ -24,7 +24,8 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, statSy
 import { createHash, randomBytes } from "node:crypto";
 import { execFile } from "node:child_process";
 import { CONFIG_DIR, loadTasks, clipWords, loadConfig, readState, writeJsonAtomic, sameTask } from "./core.mjs";
-import { runHandoff, runningHandoff, waitingFor, autoStart, agentQuestions, findOrcaCli, installAllowlist, writeTasks, workOf, loadRuns, allAnswers } from "./agents.mjs";
+import { runRecord } from "./jobs.mjs";
+import { runHandoff, runningHandoff, waitingFor, autoStart, settleRecord, agentQuestions, findOrcaCli, installAllowlist, writeTasks, workOf, loadRuns, allAnswers } from "./agents.mjs";
 import { addTask, removeTask, pushTasks, pendingReview, approveChanges, workingDiff, setHandedLookup } from "./tasks.mjs";
 import { actNow, actBrief } from "./mind.mjs";
 import { laneMap } from "./scan.mjs";
@@ -428,14 +429,21 @@ function noteSent(path, asked, ledger) {
 // and it counts towards the lane's automatic starts in an hour (agents.mjs autoStart): every ops
 // report restarted Dailify, which handed ops the next read, and the two lanes ping-ponged
 // through 18 runs on one open item (21 Oct 2026). Past the cap, the start is kept as due.
-function report(e, o, { run = runHandoff, running = runningHandoff, waiting = waitingFor, auto = autoStart, now = Date.now() } = {}) {
+// The asking lane's newest run record (agents.mjs runOutcome) decides first: one waiting on this
+// handover is moved on and started, even with only that waiting item left; one waiting on the user,
+// a reply or a time isn't started for a report that doesn't change that (0.68.1).
+function report(e, o, { run = runHandoff, running = runningHandoff, waiting = waitingFor, auto = autoStart, record = runRecord, settle = settleRecord, now = Date.now() } = {}) {
   const p = e.from.path, file = join(p, ".symbiot", "ANSWERS.md");
   try {
     mkdirSync(join(p, ".symbiot"), { recursive: true });
     const had = existsSync(file) ? readFileSync(file, "utf8") : "# Answers\nAnswers to your questions, and what other lanes did with what you handed over, newest last.\n";
     writeFileSync(file, `${had.replace(/\s*$/, "")}\n\n### Handed over to ${e.to.lane}: ${clipWords(firstLine(e.text), 120)}\n${o.text}\n_answered by symbiot (handover) ${new Date(now).toISOString().slice(0, 10)}_\n`);
   } catch { return false; }
-  if (!running(p) && /^\s*(?:[-*+]|\d+[.)])\s*\[ \]/m.test(readSym(p, "TASKS.md")) && auto(p, { now })) run(p, { force: !!o.settled && !waiting(p) });
+  const rec = (() => { try { return record(p); } catch { return null; } })();
+  if (rec && rec.state === "waiting" && rec.waitingOn !== "lane") return true;
+  const waitsHere = !!rec && rec.state === "waiting" && rec.waitingOn === "lane";
+  if (waitsHere) settle(p, `${e.to.lane} reported back`);
+  if (!running(p) && (waitsHere || /^\s*(?:[-*+]|\d+[.)])\s*\[ \]/m.test(readSym(p, "TASKS.md"))) && auto(p, { now })) run(p, { force: waitsHere || (!!o.settled && !waiting(p)) });
   return true;
 }
 

@@ -2,6 +2,11 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one), for anyone who installs the app: what changed in it, never whose work it was (no projects, people, accounts, services, run ids or task wording of the person who made it). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.68.1 — 2026-10-21
+
+- **Every screen tells the same story about a run.** How a run ended is worked out once, when it ends: waiting (on you, another lane, a reply or a time, and what), paused with work left, ready for review, done or failed. Home, the Workdesk, the Agents tab and the chat all read that one record, so a run waiting on something no longer shows as Finished somewhere else.
+- **Restarts follow it.** A lane waiting on you, a reply or a time isn't started again; one waiting on a handover starts when that handover reports back; an answer moves a waiting run on.
+
 ## 0.68.0 — 2026-10-21
 
 - **Only questions that are really yours reach you.** Every question an agent writes is judged before it can become a card. One that an agent could do itself, or that's only there because Symbiot is broken or lacks something, never becomes your chore: the run is told to do it or hand it over, and Symbiot's own faults are recorded for fixing. One your earlier answers already settle is answered from them. Decisions about your business, money, sign-ins and anything sent in your name still come to you.
