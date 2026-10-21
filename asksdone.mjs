@@ -49,6 +49,22 @@ const wantsToRead = (a) => WANTS_READ.test(String(a || "")) || wantsReport(a);
 // and both went to its run as "Go ahead: …": it found nothing to do, and the card came back unchanged.
 const REPORT_FIRST = /\b(?:report|write-?up|summary)\b[^.?!\n]{0,40}\b(?:first|before)\b|\b(?:first|before)\b[^.?!\n]{0,30}\b(?:a|the|your)\b[^.?!\n]{0,20}\breport\b|\b(?:give|show|send|get) me\b[^.?!\n]{0,30}\breport\b|\b(?:need|want|waiting (?:on|for)) (?:a|the|that|your)\b[^.?!\n]{0,30}\breport\b/i;
 const wantsReport = (a) => REPORT_FIRST.test(String(a || ""));
+// "i read it. this case is closed, no further aspects need to be done on this until we hear further from
+// them" (21 Oct 2026): typed on a Go ahead card about a reply to a client, after two report-first answers.
+// It went to its run as "Go ahead: …", the run did nothing, and its last words ("it stays an unsent
+// draft") put the card back a fourth time. An answer that closes the ask settles it for good (home.mjs
+// homeAnswer); a bare "done" closes only an OK it waited on: on a step of theirs it means they did it.
+const CLOSES = /\b(?:case|matter|thread|issue|ticket|job|task|it|this|that)(?:['’]s|\s+is|\s+has been|\s+can be|\s+is now)\s+(?:closed|settled|resolved|sorted)\b|\bcase closed\b|\bno further (?:action|aspects?|steps?|work|follow[- ]?ups?)\b|\bnothing (?:more|further|else) (?:to (?:do|be done)|(?:is )?needed|needs (?:to be done|doing))\b|\bclose (?:it|this|the case)\b/i;
+const BARE_DONE = /^\s*(?:(?:it['’]?s|that['’]?s|all|already)\s+)?(?:done|closed|sorted|handled)\s*[.!]*\s*$/i;
+const closesAsk = (a, { approve = false } = {}) => { const t = String(a || "").trim(); return !!t && !/\?/.test(t) && (CLOSES.test(t) || (approve && BARE_DONE.test(t))); };
+// A run's outcome that says the ask needs nothing (agents.mjs needsOf): its lead paragraph, the
+// first that isn't a heading or a bullet, closes it ("That asks for nothing further, so I did nothing
+// this run"). "There was nothing for me to do" is about the run, not the ask: it isn't one.
+const RUN_CLOSED = /\b(?:asks?|calls?) for nothing (?:further|more|else)\b|\b(?:needs?|requires?) nothing (?:further|more|else)\b|\bnothing (?:further|more|else) (?:is )?(?:needed|required)\b/i;
+function runSaysClosed(final) {
+  const lead = String(final || "").split(/\n\s*\n/).map((p) => p.trim()).find((p) => p && !/^(?:#|[-*•]\s|\d+[.)]\s)/.test(p)) || "";
+  return RUN_CLOSED.test(lead) || CLOSES.test(lead);
+}
 // A reply in the user's own words that asks for something to read or puts a question back, not
 // an option picked (options: the question's own, which a click sends word for word).
 function asksBack(a, options = []) {
@@ -180,4 +196,4 @@ function recentTurns(now = Date.now(), maxAge = 3 * 86400000) {
 }
 function recentTasks() { try { const l = JSON.parse(readFileSync(join(CONFIG_DIR, "tasks.json"), "utf8")); return Array.isArray(l) ? l.map((t) => ({ text: String(t.text || "") })) : []; } catch { return []; } }
 
-export { recordDone, isDone, doneList, doneBrief, asksBack, askBackNote, wantsToRead, wantsReport, heldBy, reportsSince, runReport, reportAsked, addRule, standingList, standingBrief, coveredBy, isApprovalAsk, approvalText, approvedBefore, recentTurns, recentTasks };
+export { recordDone, isDone, doneList, doneBrief, closesAsk, runSaysClosed, asksBack, askBackNote, wantsToRead, wantsReport, heldBy, reportsSince, runReport, reportAsked, addRule, standingList, standingBrief, coveredBy, isApprovalAsk, approvalText, approvedBefore, recentTurns, recentTasks };

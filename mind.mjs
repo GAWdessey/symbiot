@@ -17,6 +17,7 @@
 //   repo. Anything hard to undo (closing an account, deleting, paying, sending) the
 //   agent asks you about first, in the Agents tab: the brief says so.
 import { addRule, standingBrief, doneBrief } from "./asksdone.mjs";
+import { sentBrief } from "./sentmail.mjs";
 import { captureSecrets } from "./vault.mjs";
 import { languageLine } from "./lang.mjs";
 import { join } from "node:path";
@@ -149,7 +150,7 @@ ${ONLY_YOU}
 
 ${handoverRules(names, OPS, reach).join("\n")}
 ${HANDBACK.join("\n")}
-${[...standingBrief(), ...doneBrief(OPS)].join("\n")}`;
+${[...sentBrief(), ...standingBrief(), ...doneBrief(OPS)].join("\n")}`;
 }
 // How to write to the user, for a brief: their talking style, if it's known.
 const voiceLine = () => { const v = userStyleLine(); return v ? "\n- Writing to the user (questions, your last message): " + v : ""; };
