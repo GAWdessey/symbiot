@@ -1015,8 +1015,11 @@ function workSceneNow({ deps = {}, full = false } = {}) {
     const p = at(l);
     if (recent || qs.length) {
       const w = a.work || {}, todo = (w.todos || []).find((x) => x.status === "in_progress"), t = a.status === "running" ? ((todo && todo.active) || w.doing || "Working on it") : (w.final || a.tail || "");
-      const line = plain(String(t).split(/\n\s*\n/)[0], 220);
-      if (line) lineOf[a.path] = { line, state: a.status === "running" ? "at work" : qs.length ? "asks you" : "done" };
+      // an ended run's record (agents.mjs runOutcome) is its line and state, as on every other screen
+      const o = a.status !== "running" ? a.outcome : null, who = o && (o.waitingOn === "user" ? "you" : o.waitingOn === "lane" ? String(o.what || "").split(":")[0] || "another lane" : o.waitingOn);
+      const line = plain(String(o && o.summary ? o.summary : t).split(/\n\s*\n/)[0], 220);
+      const st = a.status === "running" ? "at work" : o ? (o.state === "waiting" ? (o.waitingOn === "user" && qs.length ? "asks you" : `waiting on ${who || "something"}`) : o.state === "failed" ? "failed" : o.state === "paused" ? "paused" : "done") : qs.length ? "asks you" : "done";
+      if (line) lineOf[a.path] = { line, state: st };
       if (line && !p.summary) { p.summary = line; p.state = lineOf[a.path].state; p.path = a.path; }
     }
     // Agent runs are one card for many unrelated jobs: each question says which job it's for
