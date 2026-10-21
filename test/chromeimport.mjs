@@ -100,6 +100,18 @@ ok("...once in ten minutes, not on every page", !w.calls.includes("Network.setCo
 CHROME_TRIED.clear(); w = wall(); await openSite(w.page, "https://other.example.org/");
 ok("a site that isn't linked never gets one", !w.calls.includes("Network.setCookies") && w.calls.filter((m) => m === "Page.navigate").length === 1, w.calls);
 
+{
+  const { profileAccounts, accountNote } = await import("../chromeimport.mjs");
+  const d = join(HOME, "acct"); mkdirSync(join(d, "Default"), { recursive: true }); mkdirSync(join(d, "Profile 1"), { recursive: true });
+  writeFileSync(join(d, "Local State"), JSON.stringify({ profile: { info_cache: { Default: { name: "Person" }, "Profile 1": { user_name: "Vasinc.ZA@gmail.com" } } } }));
+  writeFileSync(join(d, "Default", "Preferences"), JSON.stringify({ account_info: [{ email: "me@gmail.com" }] }));
+  const a = profileAccounts(d);
+  ok("accounts are read per profile, from Local State and Preferences", a.Default[0] === "me@gmail.com" && a["Profile 1"][0] === "vasinc.za@gmail.com", a);
+  const n = accountNote(a);
+  ok("an account only in another profile is named, with Default's accounts", /vasinc\.za@gmail\.com is signed in only in Chrome's "Profile 1"/.test(n) && /me@gmail\.com/.test(n), n);
+  ok("nothing to say when Default has every account", accountNote({ Default: ["a@x.com"], "Profile 1": ["a@x.com"] }) === "" && accountNote({}) === "");
+}
+
 rmSync(HOME, { recursive: true, force: true });
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

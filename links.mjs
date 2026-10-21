@@ -24,8 +24,9 @@ import { actSites, setActSite } from "./chromegate.mjs";
 import { join } from "node:path";
 import { readFileSync } from "node:fs";
 import { CONFIG_DIR, loadConfig, saveConfig } from "./core.mjs";
-import { siteUrl, signIn, readPage, trustedSites, trustSite, untrustSite, sessionCookie, historyPage, windowOpen } from "./headless.mjs";
+import { PROFILE, PROFILE_DIR, siteUrl, signIn, readPage, trustedSites, trustSite, untrustSite, sessionCookie, historyPage, windowOpen } from "./headless.mjs";
 import { watchState, addWatch, removeWatch, checkWatch, GITHUB_INBOX } from "./watch.mjs";
+import { profileAccounts, accountNote } from "./chromeimport.mjs";
 import { loadRuns, agentQuestions, answerQuestions } from "./agents.mjs";
 
 // The standard sites. url is where you sign in and, with watch, the page that's
@@ -99,11 +100,18 @@ function stateOf(e, l, watches) {
   if (w.checked) return { state: "ok", checked: w.checked, ...(w.error ? { note: w.error } : {}) };
   return { state: "signin", ...(w.error && !/in use|busy|already running|Symbiot Browser is open/i.test(w.error) ? { note: w.error + shownLine(w.shown) } : {}) };
 }
+// A Google sign-in counts once it lands in the profile the browser opens: say so when an
+// account sits in another profile only (chromeimport.mjs accountNote).
+let GW = { at: 0, text: "" };
+function googleWarn(now = Date.now()) {
+  if (now - GW.at > 30000) { let text = ""; try { text = accountNote(profileAccounts(PROFILE), PROFILE_DIR); } catch {} GW = { at: now, text }; }
+  return GW.text;
+}
 function linksState() {
   const c = catalog(), l = linked(), watches = watchState().watches;
   // act: agents may act on this site in the user's own Chrome, not just read it (chromegate.mjs; off by default)
   const acts = (() => { try { return actSites(); } catch { return []; } })(), actOn = (e) => [e.url, ...[].concat(e.hosts || [])].some((u) => { const h = /:\/\//.test(String(u)) ? hostOf(u) : String(u || "").replace(/^www\./, "").toLowerCase(); return !!h && acts.some((a) => h === a || h.endsWith("." + a)); });
-  const items = c.list.map((e) => ({ id: e.id, name: e.name, group: e.group, url: e.url, ...(e.company ? { company: true } : {}), ...(e.own ? { own: true } : {}), ...(actOn(e) ? { act: true } : {}), ...stateOf(e, l[e.id], watches) }));
+  const items = c.list.map((e) => ({ id: e.id, name: e.name, group: e.group, url: e.url, ...(e.company ? { company: true } : {}), ...(e.own ? { own: true } : {}), ...(actOn(e) ? { act: true } : {}), ...stateOf(e, l[e.id], watches), ...(l[e.id] && e.hosts.some((h) => /(^|\.)google\.com$/.test(h)) && googleWarn() ? { warn: googleWarn() } : {}) }));
   const groups = [...new Set([...GROUPS, ...items.map((x) => x.group).filter((g) => g !== OWN), OWN])].filter((g) => items.some((x) => x.group === g));
   let chrome = false; try { chrome = realChrome(); } catch {}
   return { items, groups, linked: items.filter((x) => x.state !== "off").length, chrome, ...(c.file ? { file: c.file } : {}), ...(c.error ? { error: c.error } : {}) };

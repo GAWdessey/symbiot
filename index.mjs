@@ -1052,6 +1052,24 @@ async function cmdCapture() {
   if (r.seed) console.log(c.d(`  It has demo data (${r.seed}): capture with that loaded, not real data.`));
 }
 
+// ---- `symbiot walkthrough`: a screen demo filmed in your own Chrome (walkthrough.mjs) ----
+// Prints the plan before anything is filmed: which steps need your password, phone or key.
+async function cmdWalkthrough() {
+  const { planWalkthrough, walkthroughText } = await import("./walkthrough.mjs");
+  const [title = ""] = argv.slice(1).filter((x, i, all) => !x.startsWith("--") && !["--site", "--step"].includes(all[i - 1]));
+  const steps = argv.slice(1).flatMap((x, i, all) => (all[i - 1] === "--step" ? [x] : []));
+  if (!title || has("help") || title === "help" || !steps.length) {
+    console.log(`${c.b("symbiot walkthrough")} ${c.d("— a screen demo filmed in your own Chrome, signed in as you")}
+  symbiot walkthrough "<title>" --site <host> --step "<step>" [--step "<step>" …]
+  Says first which steps need your password, your phone or your security key, and which the
+  agent does. Then the agent films the rest with Claude in Chrome's recorder (the extension, in
+  your everyday Chrome). It stops at your steps and never types a password or a code for you.`);
+    if (title && title !== "help" && !has("help")) process.exitCode = 1;
+    return;
+  }
+  console.log(walkthroughText(planWalkthrough(steps, { title, site: flag("site", "") })));
+}
+
 // ---- `symbiot reports`: what agents wrote up for you (reports.mjs) ---------------
 function cmdReports() {
   const id = argv.slice(1).find((x) => !x.startsWith("--"));
@@ -1107,6 +1125,9 @@ ${c.b("Experimental")}
   symbiot capture <product>         pictures and clips of a product for Marketing's
                                     pick tray, blurred where they show anything private
                                     (symbiot capture help for more)
+  symbiot walkthrough "<title>" --step "<step>"
+                                    plan a screen demo filmed in your own Chrome:
+                                    says up front which steps need your password or phone
   symbiot screens map <site>        map a web page's buttons in a hidden browser
                                     (symbiot screens help for more)
   symbiot watch add <screen id>     keep track of a mapped page: what's new on it
@@ -1163,6 +1184,7 @@ async function main() {
   if (cmd === "post" || cmd === "posts") return cmdPost();
   if (cmd === "marketing") return cmdMarketing();
   if (cmd === "capture") return cmdCapture();
+  if (cmd === "walkthrough") return cmdWalkthrough();
   if (cmd === "knowledge" || cmd === "know") return cmdKnowledge();
   if (cmd === "reports" || cmd === "report") return cmdReports();
   if (cmd === "week")return cmdRun("week");

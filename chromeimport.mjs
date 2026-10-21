@@ -142,4 +142,29 @@ function chromeSession(host, opts = {}) {
   return { cookies: [], reason: found ? "Chrome has no sign-in for this site" : "no Chrome profile found on this computer" };
 }
 
-export { chromeSession, hostsOf, decrypt, keyFor, toCookie, sources, profilesOf };
+// The Google accounts each Chrome profile in dir is signed in to (Local State's info_cache
+// user_name, and the account_info in the profile's Preferences): { "Default": ["a@gmail.com"], … }.
+// The Symbiot Browser only opens Default, so an account that sits in another profile alone
+// (a "Profile 1" Chrome made on 2026-10-13) never reaches an agent's reads.
+function profileAccounts(dir) {
+  let info = {}; try { info = JSON.parse(readFileSync(join(dir, "Local State"), "utf8")).profile.info_cache || {}; } catch {}
+  const names = [...new Set([...Object.keys(info), ...(() => { try { return readdirSync(dir).filter((n) => /^(Default|Profile \d+)$/.test(n)); } catch { return []; } })()])];
+  const out = {};
+  for (const n of names) {
+    const mails = new Set(), add = (m) => { if (/^[^@\s]+@[^@\s]+$/.test(String(m || ""))) mails.add(String(m).toLowerCase()); };
+    add(info[n] && info[n].user_name);
+    try { for (const a of JSON.parse(readFileSync(join(dir, n, "Preferences"), "utf8")).account_info || []) add(a.email); } catch {}
+    out[n] = [...mails];
+  }
+  return out;
+}
+// A line for a Google site's card when an account is signed in to a profile other than the
+// one the browser opens, or "" when Default has them all.
+function accountNote(accts, opened = "Default") {
+  const have = new Set(accts[opened] || []), stray = [];
+  for (const [n, list] of Object.entries(accts)) if (n !== opened) for (const m of list) if (!have.has(m) && !stray.some((x) => x.m === m)) stray.push({ m, n });
+  if (!stray.length) return "";
+  const here = [...have];
+  return `${stray.map((x) => `${x.m} is signed in only in Chrome's "${x.n}"`).join("; ")}, and the Symbiot Browser opens "${opened}" (${here.length ? "its accounts: " + here.join(", ") : "no Google account in it"}). If a page says you need additional access, sign in as that account in the Symbiot Browser.`;
+}
+export { profileAccounts, accountNote, chromeSession, hostsOf, decrypt, keyFor, toCookie, sources, profilesOf };

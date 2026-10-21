@@ -19,7 +19,7 @@ ok(done.length === 1 && tasks[0].done && tasks[0].sent.subject === "First Step" 
 ok(/^sent on 1970-01-01, waiting on reply$/.test(sentLine(tasks[0])) || /^sent on 19/.test(sentLine(tasks[0])), "says sent, waiting on reply: " + sentLine(tasks[0]));
 ok(settleSent([row], { load: () => tasks, save() { fail++; } }).length === 0, "closed once, not again");
 tasks = mk(); saved = null;
-const got = await sentTick({ load: () => tasks, save: (t) => { saved = t; }, read: async () => ({}), watches: [], rows: async () => [{ text: "To: Cale Morris First Step - hi", subject: "To: Cale Morris First Step - hi", to: [], via: "Gmail Sent" }] });
+const got = await sentTick({ load: () => tasks, save: (t) => { saved = t; }, read: async () => ({}), watches: [], needs: async () => [], rows: async () => [{ text: "To: Cale Morris First Step - hi", subject: "To: Cale Morris First Step - hi", to: [], via: "Gmail Sent" }] });
 ok(got.length === 1 && tasks[0].sent.via === "Gmail Sent", "a Gmail Sent row closes it");
 console.log(`sentmail: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
