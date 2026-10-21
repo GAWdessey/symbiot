@@ -476,7 +476,7 @@ function runHandoff(repoPath, { force = false, lost = false, model = "", onExit 
   noteUntracked(repoPath);
   try { archiveAnswers(repoPath); } catch {} // all but the newest answers: in ANSWERS.archive.md, so the run doesn't read them all first
   noteAnswersSeen(repoPath); // what this run starts with: only an answer newer than this is news (nothingToDo)
-  const dirtyBefore = dirtyState(repoPath), ticksBefore = ticksIn(readSymbiot(repoPath, "TASKS.md")), askedBefore = readSymbiot(repoPath, "QUESTIONS.md");
+  const dirtyBefore = dirtyState(repoPath), ticksBefore = ticksIn(readSymbiot(repoPath, "TASKS.md")), askedBefore = readSymbiot(repoPath, "QUESTIONS.md"), handedBefore = readSymbiot(repoPath, "HANDOFF.md");
   const own = opts.env && typeof opts.env === "object" ? Object.fromEntries(Object.entries(opts.env).map(([k, v]) => [k, String(v)])) : null, boxEnv = sandboxEnv(box);
   const owner = licenceState().plan === "owner" ? { SYMBIOT_OWNER: "1" } : null; // the guard lets only the owner's runs touch Symbiot's own files
   // SYMBIOT_AGENT: which run a `symbiot screens` command comes from, so it gets its own tab in the app's hidden browser
@@ -497,7 +497,7 @@ function runHandoff(repoPath, { force = false, lost = false, model = "", onExit 
     setTimeout(() => { try { autoAllow(repoPath); } catch {} }, 300); // a list it proposed inside your work: turned on, and on it goes
     startHeldTasks(repoPath); // tasks sent while it ran land now; start on them as that Send would have
     try { urgentDone(repoPath, e.id); } catch {} // the urgent run's done: the lanes it parked carry on
-    const up = !isClaudeCmd(scoped) ? null : (() => { try { return escalation(repoPath, model, code, { dirtyBefore, ticksBefore, askedBefore, after }, escalatedFrom); } catch { return null; } })(); // another agent's run has no Sonnet to go up from
+    const up = !isClaudeCmd(scoped) ? null : (() => { try { return escalation(repoPath, model, code, { dirtyBefore, ticksBefore, askedBefore, handedBefore, after }, escalatedFrom); } catch { return null; } })(); // another agent's run has no Sonnet to go up from
     if (up) { setTimeout(() => { try { runHandoff(repoPath, { force: true, model: up.model, escalatedFrom: up.from, note: up.note, onExit }); } catch {} }, 300); return; } // it failed or did nothing: the same task, one tier up
     if (onExit) try { onExit(code); } catch {} // a run beside the lane's own (parallel.mjs) merges back
   }, env);
@@ -575,12 +575,21 @@ function startGap(now = Date.now()) { const at = Math.min(Math.max(now, LAST_STA
 // A Sonnet run that ended in an error (or its turn cap), or produced nothing (no
 // change, no tick, no question), is run again once on Opus, told what the first
 // attempt did. { model, from, note } or null: Opus (or an explicit pick) goes no higher.
+// Not a run that stopped for a reason (21 Oct 2026): a Sonnet run that found its work already
+// done went up as "produced nothing", and an ops run that stopped to wait for the user's sign-in
+// went up as "ended in an error" because a command along the way had failed. A failed command
+// inside a run that exited cleanly isn't the run failing; and a run that asked, handed work to
+// another lane, said it's waiting, blocked or already done, or left no open task, did its part.
+const STOPPED_FOR = /\b(?:waiting (?:on|for)|waits (?:on|for)|blocked (?:on|by)|already (?:done|there|in place|fixed|live|merged|ticked)|nothing (?:left )?to do|nothing (?:else )?(?:needed|changed)|no (?:change|work) (?:is |was )?needed|handed (?:it |this |that )?(?:over|on|to)|until (?:you|the user|garth|ops)\b)/i;
 function escalation(repoPath, model, code, before, already = "") {
   if (already || model !== "sonnet") return null; // only a Sonnet pick goes up: Opus, an explicit pick or another agent's own model stays
   let run = {}; try { run = parseRun(lastRunText(readSymbiot(repoPath, "agent.log"))); } catch {}
-  const failed = code !== 0 || run.errors > 0;
+  const failed = code !== 0;
+  if (!failed && !OPEN_TASK.test(readSymbiot(repoPath, "TASKS.md"))) return null;
+  if (readSymbiot(repoPath, "QUESTIONS.md") !== (before.askedBefore || "") || (before.handedBefore !== undefined && readSymbiot(repoPath, "HANDOFF.md") !== before.handedBefore)) return null;
+  if (STOPPED_FOR.test(String(run.final || ""))) return null;
   const dirty = failed ? null : (before.after || (() => dirtyState(repoPath)))();
-  const nothing = !failed && before.dirtyBefore && dirty && JSON.stringify(dirty) === JSON.stringify(before.dirtyBefore) && ticksIn(readSymbiot(repoPath, "TASKS.md")) === before.ticksBefore && readSymbiot(repoPath, "QUESTIONS.md") === before.askedBefore;
+  const nothing = !failed && before.dirtyBefore && dirty && JSON.stringify(dirty) === JSON.stringify(before.dirtyBefore) && ticksIn(readSymbiot(repoPath, "TASKS.md")) === before.ticksBefore;
   if (!failed && !nothing) return null;
   const said = String(run.final || "").trim().replace(/\s+/g, " ").slice(-300);
   const note = `The last attempt, on a smaller model, ${failed ? "ended in an error" : "produced nothing"}${said ? `: ${said}` : ""}. Start from the same task and take a different approach.`;
@@ -967,10 +976,14 @@ function takenUp(path, end) {
   const t = firstTask(path); return !!t && loadRuns().some((r) => r.path !== path && r.path.startsWith(ACT_DIR) && Number(r.startedAt) > end && sameTask(firstTask(r.path), t));
 }
 const draftRun = (path) => { try { const h = JSON.parse(readSymbiot(path, "handoff.json")) || {}; return !!(h.draft || (h.env && h.env.SYMBIOT_DRAFT)); } catch { return false; } };
+const NOTHING_FOR_YOU = /\bnothing (?:is |else is )?(?:waiting|waits) (?:on|for)\b|\bnothing (?:here )?(?:is )?for you\b|\bnothing (?:needs|for) (?:you|the user|garth)\b/i;
 function needsOf(path, { final = "", waiting = null, end = Date.now(), start = end - REPORT_WINDOW, now = Date.now() } = {}) {
   if (now - end > NEEDS_FOR) return null;
   let n = waiting ? { kind: "step", what: clipWords(String(waiting.step || "").replace(/^\s*👤\s*(You\s*(\([^)]*\))?:)?\s*/, "").trim(), 240), check: "", label: "", waiting: true } : leftToYou(final) || readNeeds(path, final);
   if (!n || !n.what) return null;
+  // its own words say nothing waits on the user: an ops run's "waits for your OK" card said
+  // "Nothing is waiting on Garth", and its Go ahead only started a run that repeated its report (21 Oct 2026)
+  if (!n.waiting && (NOTHING_FOR_YOU.test(`${n.label || ""} ${n.what} ${n.check || ""}`) || (NOTHING_FOR_YOU.test(final) && !/👤|only you/i.test(final)))) return null;
   // its run's outcome says the ask needs nothing ("That asks for nothing further"), or the user closed
   // this ask here before: its last words restating it ("it stays an unsent draft") aren't a new ask
   if (!n.waiting && (runSaysClosed(final) || closedAsk(path, n.what, now))) return null;
@@ -2081,7 +2094,20 @@ const CONTINUED_KEEP = 30 * 86400000;
 const CONTINUED_FILE = join(CONFIG_DIR, "continued.json");
 function loadContinued() { try { const o = JSON.parse(readFileSync(CONTINUED_FILE, "utf8")); return o && typeof o === "object" && !Array.isArray(o) ? o : {}; } catch { return {}; } }
 function saveContinued(o) { try { writeJsonAtomic(CONTINUED_FILE, o, { indent: 0 }); } catch {} } // whole or not at all, yours only (0600)
-const CONTINUE_AFTER = 2 * 60000;
+// Getting somewhere is fewer open tasks than at the last continue, not more ticks, and at most
+// AUTO_MAX automatic starts in an hour (these and handover reports, lanes.mjs report): runs tick
+// their findings and add their own follow-ups, so the Dailify lane always looked busy and was
+// started 12 times in 45 minutes on the same open item, plus 6 ops runs it handed over (21 Oct 2026).
+// A start held back by the cap is kept as `due` and taken when the hour allows.
+const CONTINUE_AFTER = 2 * 60000, AUTO_MAX = 3, AUTO_HOUR = 3600000;
+const autoStarts = (rec, now) => ((rec && rec.starts) || []).filter((t) => now - t < AUTO_HOUR);
+// Room for another automatic start in this folder this hour? Records it when `take`.
+function autoStart(path, { now = Date.now(), take = true } = {}) {
+  const all = loadContinued(), rec = all[path] || {}, starts = autoStarts(rec, now);
+  if (starts.length >= AUTO_MAX) { if (take && !rec.due) { all[path] = { ...rec, starts, due: true }; saveContinued(all); } return false; }
+  if (take) { all[path] = { ...rec, starts: [...starts, now] }; delete all[path].due; saveContinued(all); }
+  return true;
+}
 function continueLanes({ now = Date.now(), run = runHandoff, runs = loadRuns } = {}) {
   const out = [], seen = loadContinued(), was = JSON.stringify(seen), paths = [...new Set(runs().map((r) => r.path).filter(Boolean))];
   for (const p of Object.keys(seen)) if (!paths.includes(p) && (!existsSync(p) || now - ((seen[p] && seen[p].at) || 0) > CONTINUED_KEEP)) delete seen[p];
@@ -2093,10 +2119,11 @@ function continueLanes({ now = Date.now(), run = runHandoff, runs = loadRuns } =
       let ended = 0; try { ended = statSync(join(path, ".symbiot", "agent.log")).mtimeMs; } catch { continue; }
       if (now - ended < CONTINUE_AFTER) continue;
       const ticked = (md.match(/^\s*(?:[-*+]|\d+[.)])\s*\[[xX]\]/gm) || []).length;
-      const tasks = openTasks(path), last = seen[path], had = (t) => (last.open || []).some((o) => o === t || sameTask(o, t)); // an agent rewords a task; it's the same task (15 Oct 2026)
-      if (last && ticked <= last.ticked && tasks.every(had)) continue;
+      const tasks = openTasks(path), last = seen[path], starts = autoStarts(last, now);
+      if (starts.length >= AUTO_MAX) continue;
+      if (last && last.open && !last.due && tasks.length >= last.open.length) continue;
       if (blockedAgain(path, runCmdOf(path))) continue;
-      const e = run(path); if (e && e.id && !e.busy && !e.blocked) { seen[path] = { ticked, open: tasks, at: now }; out.push(path); }
+      const e = run(path); if (e && e.id && !e.busy && !e.blocked) { seen[path] = { ticked, open: tasks, at: now, starts: [...starts, now] }; out.push(path); }
     } catch {}
   }
   if (JSON.stringify(seen) !== was) saveContinued(seen);
@@ -2324,16 +2351,39 @@ function routeIdeas(list) {
   }
   return out;
 }
+// One run's own part of its folder's shared agent.log: from the "=== name <start> ===" line
+// track() wrote when it started, to the next such line. Read whole, six ops runs in one folder
+// all showed the newest one's report, steps and cost, and an older one looked like a repeat of
+// it (21 Oct 2026). An older run whose part the log no longer holds shows nothing, not the newest's.
+const RUN_HEAD = /^=== .* (\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z) ===$/gm;
+function runSection(log, startedAt, newest = true) {
+  const s = String(log || ""), heads = [...s.matchAll(RUN_HEAD)].map((m) => ({ at: Date.parse(m[1]), i: m.index }));
+  let best = null; for (const h of heads) if (Math.abs(h.at - startedAt) < 60000 && (!best || Math.abs(h.at - startedAt) < Math.abs(best.at - startedAt))) best = h;
+  if (!best) return newest ? s : "";
+  const next = heads.find((h) => h.i > best.i);
+  return "\n" + s.slice(best.i, next ? next.i : s.length);
+}
 function agentsList() {
   const seen = new Set();
   return routeIdeas(HANDOFFS.map((e) => {
-    const { tail, work, progress, line } = workOf(e.path, readRunLog(e.log));
     const first = !seen.has(e.path); seen.add(e.path);
+    const own = workOf(e.path, runSection(readRunLog(e.log), e.startedAt, first)), { tail, work, line } = own, progress = first ? own.progress : null; // an older run's ticks weren't kept: today's TASKS.md isn't its
     const facts = first && e.status !== "running" ? factsOf(e.path) : [];
     const waiting = first && e.status !== "running" ? waitingFor(e.path) : null;
     const needs = first && e.status !== "running" ? needsOf(e.path, { final: work ? tail : "", waiting, end: e.endedAt || Date.now(), start: e.startedAt }) : null;
     return { id: e.id, name: e.name, path: e.path, status: e.status, startedAt: e.startedAt, endedAt: e.endedAt, elapsed: (e.endedAt || Date.now()) - e.startedAt, exitCode: e.exitCode, ...(e.down ? { down: e.down } : {}), tail, work, progress, ...(e.status === "running" && line ? { line } : {}), changed: agentChanges(e.path, e.startedAt, e.endedAt || 0), ask: first ? agentQuestions(e.path, e.name) : null, held: first ? heldTasks(e.path) : null, waiting, needs, remember: facts.length ? facts : null, fromHeld: !!e.fromHeld };
-  }).concat(earlierRuns())).map((a) => ({ ...a, phase: runPhase(a) }));
+  }).concat(earlierRuns())).map((a) => ({ ...a, phase: runPhase(a) })).map(oneNeedEach());
+}
+// One subject is one card: the GitHub billing need came back from five runs, each worded its own
+// way (21 Oct 2026). The newest run's need on a subject stays; an older one on the same subject,
+// from any folder, is dropped.
+function oneNeedEach() {
+  const kept = [];
+  return (a, i, all) => {
+    if (!a.needs || !a.needs.what) return a;
+    if (!kept.length) for (const b of [...all].filter((x) => x.needs && x.needs.what).sort((x, y) => (y.endedAt || y.startedAt || 0) - (x.endedAt || x.startedAt || 0))) if (!kept.some((k) => sameSubject(k.needs.what, b.needs.what))) kept.push(b);
+    return kept.includes(a) ? a : { ...a, needs: null, phase: runPhase({ ...a, needs: null }) };
+  };
 }
 // The same, kept AGENTS_KEEP for the screens that ask every few seconds (Home, the work scene,
 // the Agents tab, the phone): each built it again, reading every run's log and questions, so one
@@ -2348,4 +2398,4 @@ function agentsNow({ now = Date.now() } = {}) {
 }
 const forgetAgents = () => { agentsKept = null; };
 
-export { chaseReport, CHASED, UNMET, heldAsk, onCardGone, withOwnTools, escalation, grantCard, cardRules, cardIsPermission, runPhase, onRunEnd, isClaudeCmd, GUARD, tidyRule, tidyRules, tidySettings, pruneRuns, claudePlugins, idlePlugins, runSettings, archiveAnswers, allAnswers, answersDigest, ANSWERS_ARCHIVE, ANSWERS_KEEP, runsTick, RUN_START, HANG_MIN, noteBlocked, userAnswers, CONTINUED_FILE, onAnswered, CHANGES, toKnownHost, continueLanes, autoPick, autoDecide, FACTS, factsOf, knownRun, withStream, workOf, HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, connectorsInfo, linkReach, fillHandoff, runHandoff, nothingToDo, whereOf, whereLine, whereAnswer, askTask, PARKED_NOTE, parkedPaths, isParked, parkLane, agentMissing, blockedAgain, runningHandoff, loadRuns, earlierRuns, namedFiles, unchangedStep, waitingFor, startWaiting, noteUntracked, untrackedBefore, forgetUntracked, writeTasks, droppedTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, pickAgent, findOrcaCli, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, skipIdea, routeIdeas, agentQuestions, answerQuestions, agentsList, agentsNow, forgetAgents, AGENTS_KEEP, needsOf, settleNeeds, closeAsk, closedAsk, sameSubject, NEEDS_FOR, readLastWords, readNeeds, parseRead, READ_FILE, autoAllow, autoAllowSweep, allowlistInWork, installAllowlist, inWork, withScope, withTrust, sandboxFor, sandboxLifts, sandboxEnv, sandboxNeeds, sandboxState, sandboxWrites, SANDBOX_DIR, resumeFor, noteSession, tooLong, carryOn, RESUME_CTX, CARRY_PROMPT, trustFull, GUARD_SETTINGS, runCmdOf, claimLock, wideRoot, sandboxDenies, questionFolders, folderState, dirtyState, ANSWERS_SEEN, newAnswers, claudeDownIn, claudePause, noteClaudeDown, resetTime, PAUSE_FILE, startGap, isUrgent, urgentStop, urgentFirst, urgentUndo, urgentDone, urgentSweep, urgentState, licenceGate, stopRun, loadRunFiles, saveRunFiles, forgetRunFiles, withModel, routedModel, userWords, onShipping };
+export { runSection, autoStart, AUTO_MAX, oneNeedEach, NOTHING_FOR_YOU, chaseReport, CHASED, UNMET, heldAsk, onCardGone, withOwnTools, escalation, grantCard, cardRules, cardIsPermission, runPhase, onRunEnd, isClaudeCmd, GUARD, tidyRule, tidyRules, tidySettings, pruneRuns, claudePlugins, idlePlugins, runSettings, archiveAnswers, allAnswers, answersDigest, ANSWERS_ARCHIVE, ANSWERS_KEEP, runsTick, RUN_START, HANG_MIN, noteBlocked, userAnswers, CONTINUED_FILE, onAnswered, CHANGES, toKnownHost, continueLanes, autoPick, autoDecide, FACTS, factsOf, knownRun, withStream, workOf, HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, connectorsInfo, linkReach, fillHandoff, runHandoff, nothingToDo, whereOf, whereLine, whereAnswer, askTask, PARKED_NOTE, parkedPaths, isParked, parkLane, agentMissing, blockedAgain, runningHandoff, loadRuns, earlierRuns, namedFiles, unchangedStep, waitingFor, startWaiting, noteUntracked, untrackedBefore, forgetUntracked, writeTasks, droppedTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, pickAgent, findOrcaCli, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, skipIdea, routeIdeas, agentQuestions, answerQuestions, agentsList, agentsNow, forgetAgents, AGENTS_KEEP, needsOf, settleNeeds, closeAsk, closedAsk, sameSubject, NEEDS_FOR, readLastWords, readNeeds, parseRead, READ_FILE, autoAllow, autoAllowSweep, allowlistInWork, installAllowlist, inWork, withScope, withTrust, sandboxFor, sandboxLifts, sandboxEnv, sandboxNeeds, sandboxState, sandboxWrites, SANDBOX_DIR, resumeFor, noteSession, tooLong, carryOn, RESUME_CTX, CARRY_PROMPT, trustFull, GUARD_SETTINGS, runCmdOf, claimLock, wideRoot, sandboxDenies, questionFolders, folderState, dirtyState, ANSWERS_SEEN, newAnswers, claudeDownIn, claudePause, noteClaudeDown, resetTime, PAUSE_FILE, startGap, isUrgent, urgentStop, urgentFirst, urgentUndo, urgentDone, urgentSweep, urgentState, licenceGate, stopRun, loadRunFiles, saveRunFiles, forgetRunFiles, withModel, routedModel, userWords, onShipping };

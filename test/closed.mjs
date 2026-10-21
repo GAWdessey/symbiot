@@ -48,6 +48,9 @@ try {
   ok("a closing word in a bullet further down isn't its outcome", !S.runSaysClosed(`${OPEN}\n- **Old thread:** no further action on the March one.`));
   ok("an open ask raises its card", !!a.needsOf(run, { final: OPEN, end, start, now }));
   ok("the closing run's last words raise none, \"unsent draft\" or not", a.needsOf(run, { final: CLOSED, end, start, now }) === null);
+  ok("nor one whose own words say nothing waits on the user (21 Oct 2026)", a.needsOf(run, { final: `${OPEN}\n- **Notes:** Nothing is waiting on Garth, nothing is committed.`, end, start, now }) === null);
+  { const f = a.oneNeedEach(), list = [{ id: "o", endedAt: 1, status: "done", needs: { what: "GitHub Actions billing failed: update the payment method on GitHub so CI runs" } }, { id: "n", endedAt: 9, status: "done", needs: { what: "GitHub Actions billing has failed, so update the payment method on GitHub for CI to run" } }, { id: "x", endedAt: 5, status: "done", needs: { what: "Sign in to cp.smsportal.com in your Chrome" } }].map(f);
+    ok("one subject is one card: the newest run's need stays, an older one worded its own way goes", list.map((x) => !!x.needs).join() === "false,true,true", list); }
 
   console.log("3) \"CASE CLOSED\" TYPED ON THE CARD");
   writeFileSync(join(sym, "ANSWERS.md"), "# Answers\n");

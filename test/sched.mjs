@@ -129,7 +129,17 @@ try {
   put(lane2, "TASKS.md", "## Tasks\n- [ ] Add the weekly digest email, with a test — in progress: the template is done, the send is next\n");
   ok("…not again when its agent only reworded the task", a.continueLanes({ now: later + 1, run: go, runs }).length === 0, started);
   put(lane2, "TASKS.md", "## Tasks\n- [ ] Add the weekly digest email, with a test\n- [ ] Fix the sign-in page on phones\n");
-  ok("…but again on a task it didn't have", a.continueLanes({ now: later + 2, run: go, runs }).length === 1, started);
+  ok("…nor on a task it added itself: more open tasks isn't getting somewhere (21 Oct 2026)", a.continueLanes({ now: later + 2, run: go, runs }).length === 0, started);
+
+  // at most AUTO_MAX automatic starts an hour, however it gets somewhere: Dailify started 12 times in 45 minutes
+  const lane3 = join(HOME, "work", "busy"); mkdirSync(join(lane3, ".symbiot"), { recursive: true });
+  put(lane3, "agent.log", "=== busy 2026-10-21T09:00:00.000Z ===\n$ x\n");
+  const runs3 = () => [{ path: lane3, name: "busy", startedAt: 1 }], n0 = started.length;
+  for (let i = 0; i < 6; i++) { put(lane3, "TASKS.md", "## Tasks\n" + Array.from({ length: 10 - i }, (_, k) => `- [ ] step ${k}\n`).join("")); a.continueLanes({ now: later + 10 + i, run: go, runs: runs3 }); }
+  ok(`…again each time there are fewer open tasks than at the last continue, but never more than ${a.AUTO_MAX} in an hour`, started.length - n0 === a.AUTO_MAX, started.length - n0);
+  put(lane3, "TASKS.md", "## Tasks\n- [ ] step 0\n");
+  ok("…till the hour has passed", a.continueLanes({ now: later + 3600000 + 20, run: go, runs: runs3 }).length === 1, started.length - n0);
+  ok("a handover report gets no start past the cap either (autoStart)", (() => { const p = join(HOME, "work", "cap"); return a.autoStart(p, { now: 1e6 }) && a.autoStart(p, { now: 1e6 + 1 }) && a.autoStart(p, { now: 1e6 + 2 }) && !a.autoStart(p, { now: 1e6 + 3 }) && a.autoStart(p, { now: 1e6 + 3600001 }); })());
 
   console.log("3) ANSWER FAN-OUT — mail domains and everyone's hosts aren't topics; a background share doesn't look like an answer");
   const { topicsOf, ownHosts, shareAnswer } = await import("../lanes.mjs");
@@ -205,6 +215,13 @@ try {
     ok("out of runs.json, its record stays", !!JSON.parse(readFileSync(a.CONTINUED_FILE, "utf8"))[cl], readFileSync(a.CONTINUED_FILE, "utf8"));
     a.continueLanes({ now: later, run: go, runs: () => [{ path: cl }] });
     ok("…so back in, with nothing ticked since, it isn't started again", starts.length === 1, starts); }
+  // each run in a folder shows its own part of the shared agent.log, not the newest run's (21 Oct 2026)
+  console.log("RUN LOG — each run reads its own part");
+  { const t1 = Date.parse("2026-10-21T09:28:23.000Z"), t2 = Date.parse("2026-10-21T09:59:36.000Z");
+    const log = `\n=== ops ${new Date(t1).toISOString()} ===\n$ claude\nFIRST RUN\n\n=== ops ${new Date(t2).toISOString()} ===\n$ claude\nSECOND RUN\n`;
+    ok("the older run gets its own part only", /FIRST RUN/.test(a.runSection(log, t1 + 4, false)) && !/SECOND RUN/.test(a.runSection(log, t1 + 4, false)));
+    ok("the newest gets its own", /SECOND RUN/.test(a.runSection(log, t2 + 4)) && !/FIRST RUN/.test(a.runSection(log, t2 + 4)));
+    ok("an older run whose part is gone shows nothing, the newest falls back to the whole log", a.runSection(log, t1 - 3600000, false) === "" && a.runSection(log, t1 - 3600000) === log); }
 } finally {
   rmSync(HOME, { recursive: true, force: true });
 }

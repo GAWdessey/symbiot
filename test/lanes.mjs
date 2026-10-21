@@ -125,6 +125,7 @@ try {
   busy = new Set([coral]);
   ok("…nor while coral's own agent is still running (it would miss it)", lanesTick(deps()).reported.length === 0, "");
   busy = new Set(); const runsBefore = calls.run.length;
+  put(coral, "TASKS.md", "- [ ] Build the APK once ops finds a JDK 17\n"); // what it waits on: a lane with no open task isn't started for a report (21 Oct 2026)
   const t2 = lanesTick(deps());
   const ans = read(coral, "ANSWERS.md");
   ok("the result goes back into coral's ANSWERS.md, with what ops said", t2.reported.length === 1 && /### Handed over to ops: Find a JDK 17/.test(ans) && /Done \(the ops agent\)/.test(ans) && /eclipse_adoptium-17/.test(ans), ans);
@@ -171,10 +172,14 @@ try {
     const opsRun = join(CFG, "drafts", "act-nofin"); put(opsRun, "TASKS.md", "- [ ] Check the number switch\n"); ran(opsRun, Date.now() - 1000, "The switch isn't live yet.");
     const e = { from: { lane: "coral", path: coral }, to: { lane: "ops", path: opsRun }, text: "Check the number switch", at: Date.now() - 60000 };
     const o = outcome(e, { running: () => false, tasks: [] }), runs = [], r = (p, opt) => { runs.push(opt); return { id: "x" }; };
-    ok("ops stopped without finishing: reported, but coral's run isn't forced (blockedAgain decides)", /It stopped without finishing/.test(o.text) && !o.settled && report(e, o, { run: r, running: () => false, waiting: () => null }) && runs[0].force === false, [o, runs]);
+    ok("ops stopped without finishing: reported, but coral's run isn't forced (blockedAgain decides)", /It stopped without finishing/.test(o.text) && !o.settled && report(e, o, { run: r, running: () => false, waiting: () => null, auto: () => true }) && runs[0].force === false, [o, runs]);
     put(opsRun, "TASKS.md", "- [x] Check the number switch\n");
     const done = outcome(e, { running: () => false, tasks: [] });
-    ok("…once it's done, it is forced, as before", done.settled && report(e, done, { run: r, running: () => false, waiting: () => null }) && runs[1].force === true, runs);
+    ok("…once it's done, it is forced, as before", done.settled && report(e, done, { run: r, running: () => false, waiting: () => null, auto: () => true }) && runs[1].force === true, runs);
+    put(coral, "TASKS.md", "- [x] Build the APK\n");
+    ok("…but a lane with no open task isn't started for a report: its next run reads it (21 Oct 2026)", report(e, done, { run: r, running: () => false, waiting: () => null, auto: () => true }) && runs.length === 2, runs);
+    put(coral, "TASKS.md", "- [ ] Build the APK once ops finds a JDK 17\n");
+    ok("…nor past the lane's automatic starts for the hour", report(e, done, { run: r, running: () => false, waiting: () => null, auto: () => false }) && runs.length === 2, runs);
     ok("…and a handover that couldn't be made is news too", outcome({ ...e, status: "error", error: "no lane" }, {}).settled, "");
     const md = "# Answers\n\n### Which port?\n3000\n_answered 2026-10-14_\n";
     const plusNotes = md + "\n### Handed over to ops: x\nIt stopped without finishing (the ops agent).\n_answered by symbiot (handover) 2026-10-14_\n\n### Garth's answer to ops, on the same work as you\nabout outlook.live.com too\n_shared by Symbiot 2026-10-14 (background)_\n\n### More from coral while you ran\nx\n_symbiot (handover) 2026-10-14_\n";
