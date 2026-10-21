@@ -33,7 +33,7 @@ function web(pages) {
 
 try {
   console.log("LINKS IN TEXT — the way chats write them");
-  const ls = linksIn("Hey check die uit mentenaz-server.com/about/x. Also (https://store.godotengine.org/asset/godotvmf) and Argena.apk");
+  const ls = linksIn("Hey check die uit mentenaz-server.com/about/x. Also (https://store.godotengine.org/asset/godotvmf) and Meridian.apk");
   ok("a bare host with a path, and a full link; trailing punctuation off; a file name isn't a link", ls.join() === "https://mentenaz-server.com/about/x,https://store.godotengine.org/asset/godotvmf", ls);
 
   console.log("YOUR NETWORK — refused, so a message can't make Symbiot poke it");
@@ -48,19 +48,19 @@ try {
   const w1 = web({
     "https://mentenaz-server.com/about/x": { status: 301, headers: { location: "https://login-verify.mentenaz-server.com/" } },
     "https://login-verify.mentenaz-server.com/": { body: '<html><head><title>Sign in &amp; verify</title><meta property="og:description" content="Confirm your WhatsApp account"></head></html>' },
-    "https://store.example/app": { headers: { "content-type": "application/vnd.android.package-archive", "content-disposition": 'attachment; filename="Argena.apk"', "content-length": "5242880" }, body: "x".repeat(10) },
+    "https://store.example/app": { headers: { "content-type": "application/vnd.android.package-archive", "content-disposition": 'attachment; filename="Meridian.apk"', "content-length": "5242880" }, body: "x".repeat(10) },
   });
   const pg = await peek("https://mentenaz-server.com/about/x", { get: w1.get, resolve: PUBLIC });
   ok("a page: where it ends up, its title and description", pg.final === "https://login-verify.mentenaz-server.com/" && pg.title === "Sign in & verify" && pg.description === "Confirm your WhatsApp account", pg);
   ok("…said in one line for the chat, redirect included", /goes to https:\/\/login-verify/.test(peekLine(pg)) && /"Sign in & verify"/.test(peekLine(pg)), peekLine(pg));
   const apk = await peek("https://store.example/app", { get: w1.get, resolve: PUBLIC });
-  ok("a file: its type, name and size from the headers, not downloaded", apk.file && apk.name === "Argena.apk" && apk.size === 5242880 && /file download.*not downloaded/.test(peekLine(apk)), [apk, peekLine(apk)]);
+  ok("a file: its type, name and size from the headers, not downloaded", apk.file && apk.name === "Meridian.apk" && apk.size === 5242880 && /file download.*not downloaded/.test(peekLine(apk)), [apk, peekLine(apk)]);
 
   console.log("CARD CHAT — looks at the links when asked, and doesn't refuse");
   const now = Date.now();
   writeFileSync(join(CFG, "watch.json"), JSON.stringify({ watches: [{ id: "wa", name: "WhatsApp", url: "https://web.whatsapp.com/", every: 15, added: now, last: now, seen: [] }], briefs: [], news: [
     { id: "n1", watch: "wa", name: "WhatsApp", ts: now - 60000, text: "Francois Huyzers: Hey check die uit mentenaz-server.com/about/x" },
-    { id: "n2", watch: "wa", name: "WhatsApp", ts: now - 120000, text: "Jaden white: Argena.apk" },
+    { id: "n2", watch: "wa", name: "WhatsApp", ts: now - 120000, text: "Jaden white: Meridian.apk" },
   ] }));
   let sys = "", prm = "", looked = [];
   const ask = async (s, p) => { sys = s; prm = p; return "The mentenaz link redirects to a sign-in page asking to verify WhatsApp: phishing-shaped."; };
@@ -74,9 +74,9 @@ try {
 
   console.log("IT ACTS — asked to do something, the card chat hands it to your agent itself");
   let ran = null;
-  const act = async () => JSON.stringify({ reply: "That's account 049056030093. Closing it can't be undone, so your agent will check what runs there and ask you first.", do: { agent: "Close AWS account 049056030093: first list what's running and what it costs, and ask before closing." }, remember: [{ name: "AWS 049056030093", kind: "account", fact: "the Dailify/CallForge AWS account" }] });
+  const act = async () => JSON.stringify({ reply: "That's account 000000000000. Closing it can't be undone, so your agent will check what runs there and ask you first.", do: { agent: "Close AWS account 000000000000: first list what's running and what it costs, and ask before closing." }, remember: [{ name: "AWS 000000000000", kind: "account", fact: "the Bookly/CallForge AWS account" }] });
   const r2 = await boardChat("wa", "close it for me, the mcp is set up", { ask: act, look, now, run: (req, o) => { ran = { req, o }; return { ok: true, job: "j1", dir: "/tmp/x" }; } });
-  ok("no button, no pasting: the request goes to your agent", ran && /Close AWS account 049056030093/.test(ran.req) && r2.did && r2.did.kind === "agent" && r2.did.ok, r2.did);
+  ok("no button, no pasting: the request goes to your agent", ran && /Close AWS account 000000000000/.test(ran.req) && r2.did && r2.did.kind === "agent" && r2.did.ok, r2.did);
   ok("with what the card showed, as context", ran && /Francois Huyzers/.test(ran.o.context), ran && ran.o);
   ok("the reply says it's handed over, and that the agent asks before anything hard to undo", /Handed to your agent/.test(r2.answer) && /asks you there before anything hard to undo/.test(r2.answer), r2.answer);
 } finally {

@@ -309,7 +309,7 @@ const joined = (v) => [].concat(v || []).join(", ");
 function myName(cfg = loadConfig()) { return String(cfg.myName || "").trim() || (me().name || "").trim(); }
 function setMyName(name) { const cfg = loadConfig(), n = String(name || "").trim().slice(0, 80); if (n) cfg.myName = n; else delete cfg.myName; saveConfig(cfg); return { ok: true, me: myName(cfg) }; }
 // Does this field name you? Your whole name, or your first name as a word of its
-// own ("Garth (sign-off)"; "GarthGhostai" counts as Garth).
+// own ("the user (sign-off)"; "GarthGhostai" counts as the user).
 function namesYou(field, name) {
   const f = joined(field).toLowerCase(); name = String(name || "").trim(); if (!f || !name) return false;
   if (f.includes(name.toLowerCase())) return true;

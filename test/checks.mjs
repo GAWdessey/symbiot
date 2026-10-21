@@ -28,8 +28,8 @@ put("ops/active/tracker.csv", "Action,Owner,Due date\nQuarterly stock count,Siph
 put("policies/hybrid-work.md", "# Hybrid work\n\nAnchor days are Tuesday and Thursday. All-hands and team planning are scheduled on anchor days.\n");
 put("admin/all-hands/STATUS.md", "# November all-hands\n\nThe all-hands is pencilled for Friday 27 November, 15:00.\n");
 // a customer whose renewal date and account owner two files disagree on
-put("sales/accounts.csv", "Customer,Plan,Users,ARR excl VAT,Contract end,Health,Account owner\nAcacia Mining,Business,20,107760,2027-03-31,Green,Garth White\nBluegum Logistics,Starter,5,17340,2027-01-31,Green,Garth White\n");
-put("cs/renewals.csv", "Customer,Plan,Users,Renewal date,Health,Account owner\nAcacia Mining (Pty) Ltd,Business,20,2027-06-30,Green,Lerato Khoza\nBluegum Logistics,Starter,5,2027-02-01,Green,Garth White\n");
+put("sales/accounts.csv", "Customer,Plan,Users,ARR excl VAT,Contract end,Health,Account owner\nAcacia Mining,Business,20,107760,2027-03-31,Green,Pat Lee\nBluegum Logistics,Starter,5,17340,2027-01-31,Green,Pat Lee\n");
+put("cs/renewals.csv", "Customer,Plan,Users,Renewal date,Health,Account owner\nAcacia Mining (Pty) Ltd,Business,20,2027-06-30,Green,Lerato Khoza\nBluegum Logistics,Starter,5,2027-02-01,Green,Pat Lee\n");
 // examples: a templates/ folder and a file marked example: true, never facts
 put("sales/templates/accounts.csv", "Customer,Plan,Users,ARR excl VAT,Contract end,Health,Account owner\nAcacia Mining,Enterprise,999,1,2029-01-01,Red,Zed Example\n");
 put("hr/old-demo.md", "---\nexample: true\n---\n# Demo\n\nThandi Mokoena was on sick leave on 12 Nov. The all-hands is pencilled for Monday 30 November, 15:00.\n");
@@ -68,7 +68,7 @@ try {
   ok("renewal date: two files, two dates, one plain sentence", ren && /^Acacia Mining's renewal date disagrees: .* vs .*\.$/.test(ren.text) && /Wed 31 Mar 2027 \(sales\/accounts\.csv\)/.test(ren.text) && /Wed 30 Jun 2027 \(cs\/renewals\.csv\)/.test(ren.text) && ren.files.length === 2 && ren.severity === "high", ren);
   ok("…an end date and a renewal the day after are the same date", !k("customer").some((c) => /Bluegum/.test(c.text) && c.field === "renewal"), k("customer"));
   const own = k("customer").find((c) => c.field === "owner");
-  ok("owner: Garth White in one, Lerato Khoza in the other", own && /^Acacia Mining's account owner disagrees: /.test(own.text) && /Garth White \(sales\/accounts\.csv\)/.test(own.text) && /Lerato Khoza \(cs\/renewals\.csv\)/.test(own.text), own);
+  ok("owner: Pat Lee in one, Lerato Khoza in the other", own && /^Acacia Mining's account owner disagrees: /.test(own.text) && /Pat Lee \(sales\/accounts\.csv\)/.test(own.text) && /Lerato Khoza \(cs\/renewals\.csv\)/.test(own.text), own);
   ok("examples never clash: nothing cites a template or the demo file", !r.clashes.some((c) => c.files.some((f) => /templates|old-demo/.test(f)) || /2029|Zed|Monday 30 Nov|Mon 30 Nov/.test(c.text)), r.clashes);
   ok("files are cited like chats cite them (~/…)", r.clashes.every((c) => c.files.every((f) => f.startsWith("~/Co/"))), r.clashes.map((c) => c.files));
   ok("counts for the app", r.counts.files === 11 && r.counts.examples === 3 && r.counts.leave === 1 && r.counts.customers === 2, r.counts);
@@ -85,15 +85,15 @@ try {
   ok("before the first run: nothing, at 0", C.checksState().at === 0 && C.checksState().clashes.length === 0);
 
   console.log("MORE — double bookings, working days, the same leave told twice");
-  put("sales/active/discovery/STATUS.md", "---\nitem: Discovery call\nowner: Garth White\nstatus: In progress\nnext_step: Discovery call with Riaan Smit, Wed 4 Nov 10:00 (video call)\n---\n# Discovery\n");
-  put("cs/active/kickoff/agenda.md", "# Kick-off agenda\n\n**Date:** Wednesday 4 November 2026, 10:00 to 11:00\n\n| Time | Item | Who |\n|---|---|---|\n| 10:05 | What you bought and why | Garth White |\n");
+  put("sales/active/discovery/STATUS.md", "---\nitem: Discovery call\nowner: Pat Lee\nstatus: In progress\nnext_step: Discovery call with Riaan Smit, Wed 4 Nov 10:00 (video call)\n---\n# Discovery\n");
+  put("cs/active/kickoff/agenda.md", "# Kick-off agenda\n\n**Date:** Wednesday 4 November 2026, 10:00 to 11:00\n\n| Time | Item | Who |\n|---|---|---|\n| 10:05 | What you bought and why | Pat Lee |\n");
   put("finance/active/reforecast/STATUS.md", "# Reforecast\n\nStart the model after the close (WD7, 9 Dec).\n\nTreat 16 Dec as a public holiday: the close (WD12, 16 Dec) moves.\n");
-  put("it/active/queue/STATUS.md", "# Queue\n\nLwazi Ndlela was on study leave on 1–2 October, so Mohammed covered.\n");
-  put("hr/leave/active/study.csv", "Employee,Leave type,From,To,Status\nLwazi Ndlela,Study,2026-10-12,2026-10-13,Approved\n");
+  put("it/active/queue/STATUS.md", "# Queue\n\nJordan Blake was on study leave on 1–2 October, so Taylor covered.\n");
+  put("hr/leave/active/study.csv", "Employee,Leave type,From,To,Status\nJordan Blake,Study,2026-10-12,2026-10-13,Approved\n");
   const r2 = C.runChecks({ folders, now, save: false }), k2 = (kind) => r2.clashes.filter((c) => c.kind === kind);
-  ok("double-booked: a call at 10:00 and a kick-off slot at 10:05, in two files", k2("double-booked").some((c) => /Garth White is double-booked on Wed 4 Nov 2026/.test(c.text)), r2.clashes.map((c) => c.text));
+  ok("double-booked: a call at 10:00 and a kick-off slot at 10:05, in two files", k2("double-booked").some((c) => /Pat Lee is double-booked on Wed 4 Nov 2026/.test(c.text)), r2.clashes.map((c) => c.text));
   ok("working day: WD12 isn't 16 Dec in a December with a holiday on the 16th; WD7 9 Dec is right", k2("working-day").length === 1 && /WD12, 16 Dec/.test(k2("working-day")[0].text) && /Thu 17 Dec 2026/.test(k2("working-day")[0].text), k2("working-day"));
-  ok("the same study leave on two sets of dates", k2("leave-dates").some((c) => /Lwazi Ndlela's study leave is/.test(c.text)), k2("leave-dates"));
+  ok("the same study leave on two sets of dates", k2("leave-dates").some((c) => /Jordan Blake's study leave is/.test(c.text)), k2("leave-dates"));
 } finally {
   rmSync(HOME, { recursive: true, force: true });
 }

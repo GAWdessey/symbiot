@@ -41,7 +41,7 @@ a.autoAllow(run);
 const l2 = JSON.parse(readFileSync(join(run, ".claude", "settings.local.json"), "utf8"));
 ok("a list that only denies is turned on too (it takes access away)", l2.permissions.deny.includes(`Edit(/${HOME}/work/Company/**)`) && a.agentQuestions(run, "").questions.length === 0, l2.permissions.deny);
 
-// Daaymn, 2026-10-11: a script run by its path in the project, and a check of a public URL,
+// Quartz, 2026-10-11: a script run by its path in the project, and a check of a public URL,
 // were read as folders outside the work (/scripts/…, /dev/null, //host).
 propose(["Bash(python3 supabase/scripts/test_account.py)", "Bash(curl -s -o /dev/null -w * https://example.supabase.co/storage/v1/object/public/x/*)"]);
 ok("a script in the project and a URL check stay inside your work", a.allowlistInWork(run).ok === true, a.allowlistInWork(run));
@@ -57,9 +57,9 @@ propose(["Bash(git push:*)"]);
 ok("...as does one that publishes or reaches another machine", /publishes/.test(a.allowlistInWork(run).why || ""), a.allowlistInWork(run));
 propose(["Bash(bash:*)"]);
 ok("...and one that could run anything", /wide/.test(a.allowlistInWork(run).why || ""), a.allowlistInWork(run));
-// The Daaymn screen-recording list of 2026-10-11: tools in ~/.local/bin and the marketing
+// The Quartz screen-recording list of 2026-10-11: tools in ~/.local/bin and the marketing
 // lane's own folder are not "outside your work", so it goes on without a card.
-propose(["Bash(flutter build apk --debug --dart-define=ALLOW_SCREEN_RECORDING=true)", `Bash(${HOME}/.local/bin/adb:*)`, `Bash(${HOME}/.local/bin/ffmpeg:*)`], [join(HOME, "work", "daaymn"), join(C, "marketing", "automation")]);
+propose(["Bash(flutter build apk --debug --dart-define=ALLOW_SCREEN_RECORDING=true)", `Bash(${HOME}/.local/bin/adb:*)`, `Bash(${HOME}/.local/bin/ffmpeg:*)`], [join(HOME, "work", "quartz"), join(C, "marketing", "automation")]);
 ok("a program run from ~/.local/bin, and the marketing lane's folder, are your work", a.allowlistInWork(run).ok === true, a.allowlistInWork(run));
 propose([`Bash(${HOME}/.local/bin/adb push ${HOME}/.ssh/id_ed25519:*)`]);
 ok("...but a path it hands that program still counts (~/.ssh asks you)", /outside your work: .*\.ssh/.test(a.allowlistInWork(run).why || ""), a.allowlistInWork(run));
@@ -108,8 +108,8 @@ const { plainAsk } = await import("../home.mjs");
 propose(["Bash(symbiot screens:*)", "Bash(git status)"]);
 const card = plainAsk(run, { q: "Can I run Symbiot's Screens command?", options: ["👤 You (only you: a permission): allow the list in .symbiot/allowlist.proposed.json (recommended)", "Not now"] });
 ok("a permission card lists the commands in plain words with Allow, and shows no file path", /run symbiot/.test(card.q) && /run git/.test(card.q) && card.labels[0] === "Allow (recommended)" && !/\.json|\.symbiot/.test(card.q + card.labels.join()), card);
-// one option: one button, named for what it does (19 Oct 2026: "nothing goes out until Garth taps Send")
-const one = plainAsk(run, { q: "Send the test message to Jono now?", options: ["🤖 Agent: send it to Jono now (recommended)"] });
+// one option: one button, named for what it does (19 Oct 2026: "nothing goes out until Pat taps Send")
+const one = plainAsk(run, { q: "Send the test message to Remy now?", options: ["🤖 Agent: send it to Remy now (recommended)"] });
 ok("a card with one option is one button, named for what it does", one.labels && one.labels.join() === "Send", one);
 ok("…\"Go ahead\" when its first word isn't an action, and two options keep their own words", plainAsk(run, { q: "x?", options: ["🤖 Agent: the next run carries on with it"] }).labels.join() === "Go ahead" && !plainAsk(run, { q: "x?", options: ["🤖 Agent: send it", "Skip"] }).labels);
 const cmd = a.withScope('claude -p "{prompt}"', run);
@@ -120,15 +120,15 @@ ok("an agent reaches your knowledge folders from the start", cmd.includes(`--add
 // answer is saved under the agent's own words, from a button or typed in.
 console.log("ANSWERING ON HOME — what a card sends is saved, once");
 writeFileSync(join(C, "runs.json"), JSON.stringify([{ path: run, name: "Agent: ops", startedAt: Date.now() }]));
-const permQ = "Can I reach sts-prod myself to put the WhatsApp module back?";
+const permQ = "Can I reach prod-box myself to put the WhatsApp module back?";
 writeFileSync(join(s, "ANSWERS.md"), "# Answers\n");
 writeFileSync(join(s, "QUESTIONS.md"), `## Questions\n\n### ${permQ}\nBoth handovers died.\n- 👤 You (only you: a permission): allow the list in .symbiot/allowlist.proposed.json (recommended)\n- 👤 You (only you: starting another lane): ask ops directly\n`);
-propose(["Bash(ssh sts-prod:*)", "Bash(scp:*)"]);
+propose(["Bash(ssh prod-box:*)", "Bash(scp:*)"]);
 const permCard = plainAsk(run, a.agentQuestions(run, "").questions[0]);
 ok("1) a permission card shows plain words, and keeps the agent's own question to answer it by", permCard.q !== permQ && permCard.raw === permQ, permCard);
 const allow = a.answerQuestions(run, [{ q: permCard.raw || permCard.q, a: "👤 You (only you: a permission): allow the list in .symbiot/allowlist.proposed.json (recommended)" }]);
 const local2 = existsSync(join(run, ".claude", "settings.local.json")) ? JSON.parse(readFileSync(join(run, ".claude", "settings.local.json"), "utf8")) : {};
-ok("...and Allow, sent the way the card sends it, is saved and turns the list on", allow.ok && allow.saved === 1 && (local2.permissions.allow || []).includes("Bash(ssh sts-prod:*)") && a.agentQuestions(run, "").questions.length === 0, [allow, local2]);
+ok("...and Allow, sent the way the card sends it, is saved and turns the list on", allow.ok && allow.saved === 1 && (local2.permissions.allow || []).includes("Bash(ssh prod-box:*)") && a.agentQuestions(run, "").questions.length === 0, [allow, local2]);
 const again = a.answerQuestions(run, [{ q: permCard.raw, a: "👤 You (only you: a permission): allow the list in .symbiot/allowlist.proposed.json (recommended)" }]);
 const count = (t) => (readFileSync(join(s, "ANSWERS.md"), "utf8").match(new RegExp("### " + t.replace(/[?.]/g, "\\$&"), "g")) || []).length;
 ok("2) pressed again, it says it's answered already and adds no second answer", again.ok && again.already && count(permQ) === 1, again);
@@ -140,39 +140,39 @@ ok("4) your own words, under a question with a file path in it, are saved too", 
 const longQ = "Should I " + "keep the old relay running alongside the new one ".repeat(8) + "until Friday?";
 writeFileSync(join(s, "QUESTIONS.md"), `## Questions\n\n### ${longQ}\n- yes (recommended)\n- no\n`);
 ok("...and a long question a phone shows cut short (…) is still found", a.answerQuestions(run, [{ q: longQ.slice(0, 299) + "…", a: "yes" }]).saved === 1, "");
-// The WinLove card (2026-10-12), word for word: a permission question with no answer
+// The LoveLink card (2026-10-12), word for word: a permission question with no answer
 // typed, only an option picked. 0.63.6's Home sent the card's plain words back, which
 // matched nothing, and the user was told "Pick or type at least one answer."
-const winQ = "Can I log in to the WinLove server read-only to check what's actually deployed?";
+const winQ = "Can I log in to the LoveLink server read-only to check what's actually deployed?";
 const winOpts = ["👤 You (only you: a permission): allow the list in .symbiot/allowlist.proposed.json (recommended)", "skip it, the reply already asks the developer for the commit hash and git status"];
 const winMd = `## Questions\n\n### ${winQ}\nThe live site checks are done. What's left is confirming the commit on 13.51.104.186.\n- ${winOpts.join("\n- ")}\n\n### OK to send the drafted reply to the developer?\nIt's at the end of the report.\n- 🤖 Agent: send it (recommended)\n- hold it for now\n`;
 writeFileSync(join(s, "QUESTIONS.md"), winMd);
 propose(["Bash(ssh ubuntu@13.51.104.186 git log:*)"]);
 const winCard = plainAsk(run, a.agentQuestions(run, "").questions[0]);
-ok("5) the WinLove card shows plain words, and keeps the agent's question to answer it by", winCard.q !== winQ && winCard.raw === winQ && winCard.labels[0] === "Allow (recommended)", winCard);
+ok("5) the LoveLink card shows plain words, and keeps the agent's question to answer it by", winCard.q !== winQ && winCard.raw === winQ && winCard.labels[0] === "Allow (recommended)", winCard);
 const skip = a.answerQuestions(run, [{ q: winCard.raw || winCard.q, a: winOpts[1] }]);
 ok("...its second option alone, as the card sends it, is saved", skip.ok && skip.saved === 1 && readFileSync(join(s, "ANSWERS.md"), "utf8").includes(`### ${winQ}\n${winOpts[1]}\n`), skip);
 writeFileSync(join(s, "QUESTIONS.md"), winMd);
 const old = a.answerQuestions(run, [{ q: winCard.q, a: winOpts[1] }]);
 ok("...and the card's plain words, as a page from before the fix sends them, find it too", old.ok && (old.saved === 1 || old.already) && !/Pick or type/.test(old.error || ""), old);
-writeFileSync(join(s, "QUESTIONS.md"), winMd.replace(winQ, "Can I log in to the WinLove server?"));
-ok("...but plain words don't match a shorter question they merely start like", !!a.answerQuestions(run, [{ q: "Can I log in to the WinLove server and also the other one?", a: "yes" }]).error, "");
+writeFileSync(join(s, "QUESTIONS.md"), winMd.replace(winQ, "Can I log in to the LoveLink server?"));
+ok("...but plain words don't match a shorter question they merely start like", !!a.answerQuestions(run, [{ q: "Can I log in to the LoveLink server and also the other one?", a: "yes" }]).error, "");
 ok("an answer with nothing picked or typed still says so", /Pick or type/.test(a.answerQuestions(run, [{ q: winQ, a: " " }]).error || ""), "");
 // 3) a question about work handed over that's done since: the card says so, Close it first
 const { doneSince } = await import("../lanes.mjs");
 const lane2 = join(HOME, "work", "whatsapp_module"), ops2 = join(C, "drafts", "act-ops2");
 mkdirSync(join(ops2, ".symbiot"), { recursive: true });
-const putBack = "**What's needed:** put the WhatsApp module back on **sts-prod**, with Dailify's number routed to Dailify, then run two checks.\nMore detail.";
+const putBack = "**What's needed:** put the WhatsApp module back on **prod-box**, with Bookly's number routed to Bookly, then run two checks.\nMore detail.";
 const ledger = { handoffs: [
   { from: { lane: "whatsapp_module", path: lane2 }, to: { lane: "ops", path: join(C, "drafts", "act-test-number") }, text: "**What's needed:** set up a WhatsApp test number for the WhatsApp module in a new Meta Business", at: Date.now() - 3600000, status: "started" },
   { from: { lane: "whatsapp_module", path: lane2 }, to: { lane: "ops", path: ops2 }, text: putBack, at: Date.now() - 1800000, status: "done" }] };
-writeFileSync(join(ops2, ".symbiot", "TASKS.md"), "## Tasks\n- [ ] **What's needed:** put the WhatsApp module back on **sts-prod**, with Dailify's number routed to Dailify, then run…\n");
+writeFileSync(join(ops2, ".symbiot", "TASKS.md"), "## Tasks\n- [ ] **What's needed:** put the WhatsApp module back on **prod-box**, with Bookly's number routed to Bookly, then run…\n");
 ok("3) a question about a handover still being worked on stays as it is", doneSince(lane2, permQ, { ledger }) === null, "");
-writeFileSync(join(ops2, ".symbiot", "TASKS.md"), "## Tasks\n- [x] **What's needed:** put the WhatsApp module back on **sts-prod**, with Dailify's number routed to Dailify, then run…\n");
+writeFileSync(join(ops2, ".symbiot", "TASKS.md"), "## Tasks\n- [x] **What's needed:** put the WhatsApp module back on **prod-box**, with Bookly's number routed to Bookly, then run…\n");
 const dn = doneSince(lane2, permQ, { ledger });
-ok("...once the lane that took it has ticked it, the question is out of date, and says by whom", dn && dn.lane === "ops" && /^put the WhatsApp module back on sts-prod/.test(dn.text), dn);
+ok("...once the lane that took it has ticked it, the question is out of date, and says by whom", dn && dn.lane === "ops" && /^put the WhatsApp module back on prod-box/.test(dn.text), dn);
 ok("...but not a question about other work of that lane's", doneSince(lane2, "Set up a WhatsApp test number for the module?", { ledger }) === null && doneSince(lane2, "Can I restart the WhatsApp module's systemd unit?", { ledger }) === null, "");
-ok("...nor one asking to reply or send, when that handover sent nothing (the Carla reply, 21 Oct 2026)", doneSince(lane2, "Should I email Jono that the WhatsApp module is back on sts-prod with Dailify's number routed to Dailify?", { ledger }) === null, "");
+ok("...nor one asking to reply or send, when that handover sent nothing (the Dana reply, 21 Oct 2026)", doneSince(lane2, "Should I email Remy that the WhatsApp module is back on prod-box with Bookly's number routed to Bookly?", { ledger }) === null, "");
 ok("...nor one about a handover from over a week ago", doneSince(lane2, permQ, { ledger, now: Date.now() + 8 * 86400000 }) === null, "");
 const { homeState } = await import("../home.mjs");
 const hsDeps = { repos: () => ({ whatsapp_module: lane2 }), board: () => ({ cards: [] }), pending: () => [], lanes: () => ({ handoffs: [] }), reports: () => ({ count: 0 }), connected: () => true, waits: () => [], clashes: () => [], agentGone: () => "", signedOut: () => [], stuck: () => [], drafts: () => [], agentCmd: () => "claude", marketing: () => false,
@@ -182,10 +182,10 @@ ok("...and its card on Home says it's done, with Close it first and the agent's 
 const live = homeState({ fresh: true, deps: { ...hsDeps, doneSince: () => null } }).you.find((y) => y.kind === "ask");
 ok("...while one still open asks as before", live && !live.done && live.labels[0] === "Allow (recommended)" && live.raw === permQ, live);
 
-// Allow, with words of your own that sound like git (WinLove, 2026-10-12): it's still a
+// Allow, with words of your own that sound like git (LoveLink, 2026-10-12): it's still a
 // permission, turned on, never handed back to the agent as "git work is yours".
 {
-  const srvQ = "Can I log in to the WinLove server read-only to check what's actually deployed?";
+  const srvQ = "Can I log in to the LoveLink server read-only to check what's actually deployed?";
   writeFileSync(join(s, "ANSWERS.md"), "# Answers\n");
   writeFileSync(join(s, "QUESTIONS.md"), `## Questions\n\n### ${srvQ}\nThe guard blocked the key.\n- 👤 You (only you: a permission): allow the list in .symbiot/allowlist.proposed.json (recommended)\n- skip it\n`);
   propose(["Bash(ssh -o BatchMode=yes *@13.51.104.186 git -C * log *)", "Bash(ssh -o BatchMode=yes *@13.51.104.186 git -C * status *)"]);

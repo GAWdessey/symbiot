@@ -325,7 +325,7 @@ function tsvBoxes(tsv, names = [], scale = 1) {
 }
 
 // People's names to blur: the people Symbiot remembers, the product's git authors and
-// yours, and any listed in the lane's .symbiot/names.json (["Jono", "Sam Rivera"]). A whole
+// yours, and any listed in the lane's .symbiot/names.json (["Remy", "Sam Rivera"]). A whole
 // name, and its parts from four letters (not the product's own name).
 const NOT_NAMES = new Set(["admin", "user", "users", "team", "home", "support", "info", "hello", "root", "github", "symbiot", "bot", "dependabot", "renovate"]);
 function namesToBlur(root, { dir = MARKETING_DIR, product = "", mind } = {}) {

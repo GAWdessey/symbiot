@@ -1,5 +1,5 @@
-// Changes made in a lane's folder for a job it handed over (daaymn → ops) aren't "changes without
-// a task" for Garth to approve: lanes.mjs ties them to the handoff and ships them by itself,
+// Changes made in a lane's folder for a job it handed over (quartz → ops) aren't "changes without
+// a task" for Pat to approve: lanes.mjs ties them to the handoff and ships them by itself,
 // unless they look like they hold a secret. Isolated HOME (set before the modules load).
 //
 //   node test/shiphanded.mjs
@@ -14,9 +14,9 @@ let pass = 0, fail = 0;
 const ok = (n, c, got) => { if (c) { pass++; console.log("  ✓ " + n); } else { fail++; console.log("  ✗ " + n + (got !== undefined ? "  got: " + JSON.stringify(got) : "")); } };
 
 const { secretIn, shipHanded, handedLookup, HELD_HANDED } = await import("../lanes.mjs");
-const now = Date.now(), P = "/p/daaymn";
-const row = (o = {}) => ({ id: "h1", from: { lane: "daaymn", path: P }, to: { lane: "ops", path: "/o/act-1" }, text: "New job: install a JDK so keytool works\nmore", at: now - 3600000, status: "started", ...o });
-const entry = (files, o = {}) => ({ repo: "daaymn", path: P, untasked: true, tasks: [], files: files.map((f) => ({ st: "M", file: f })), ...o });
+const now = Date.now(), P = "/p/quartz";
+const row = (o = {}) => ({ id: "h1", from: { lane: "quartz", path: P }, to: { lane: "ops", path: "/o/act-1" }, text: "New job: install a JDK so keytool works\nmore", at: now - 3600000, status: "started", ...o });
+const entry = (files, o = {}) => ({ repo: "quartz", path: P, untasked: true, tasks: [], files: files.map((f) => ({ st: "M", file: f })), ...o });
 const never = () => false;
 
 try {

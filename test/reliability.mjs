@@ -65,20 +65,20 @@ try {
 
   console.log("A HANDOVER TO A LANE THAT DOESN'T QUITE EXIST — nearest lane, else ops, told the name");
   {
-    const names = ["symbiot", "steve", "marketing", "daaymn", "GhostAIChat"];
-    ok("a typo, a case, a word more: the one lane that fits", l.nearLane("symbio", names) === "symbiot" && l.nearLane("Steve lane", names) === "steve" && l.nearLane("marketng", names) === "marketing" && l.nearLane("ghostaichat", names) === "GhostAIChat" && l.nearLane("the daaymn app", names) === "daaymn", "");
+    const names = ["symbiot", "robin", "marketing", "quartz", "ChatApp"];
+    ok("a typo, a case, a word more: the one lane that fits", l.nearLane("symbio", names) === "symbiot" && l.nearLane("Robin lane", names) === "robin" && l.nearLane("marketng", names) === "marketing" && l.nearLane("chatapp", names) === "ChatApp" && l.nearLane("the quartz app", names) === "quartz", "");
     ok("no lane, or more than one that fits: none (dra-global-toolkit isn't marketing; 'symbiot marketing' is two)", l.nearLane("dra-global-toolkit", names) === "" && l.nearLane("symbiot marketing", names) === "" && l.nearLane("", names) === "" && l.nearLane("ops", names) === "", "");
-    const map = { symbiot: lane("symbiot"), steve: lane("steve") };
-    ok("laneTarget: ops, an exact lane, a near one; null for none", l.laneTarget("ops", map).lane === "ops" && l.laneTarget("Steve", map).lane === "steve" && l.laneTarget("symbio", map).lane === "symbiot" && l.laneTarget("dra-global-toolkit", map) === null, "");
+    const map = { symbiot: lane("symbiot"), robin: lane("robin") };
+    ok("laneTarget: ops, an exact lane, a near one; null for none", l.laneTarget("ops", map).lane === "ops" && l.laneTarget("Robin", map).lane === "robin" && l.laneTarget("symbio", map).lane === "symbiot" && l.laneTarget("dra-global-toolkit", map) === null, "");
     const acts = [], opsDir = join(CFG, "drafts", "act-0001");
     const deps = (ledger) => ({ map, ledger, now: Date.now(), tasks: () => [], act: (text, o) => { acts.push({ text, o }); mkdirSync(join(opsDir, ".symbiot"), { recursive: true }); return { ok: true, job: "ops1", dir: opsDir }; }, run: () => ({ id: "j1" }), running: () => false, add: () => ({ id: "t1" }), push: () => ({ written: [{}] }), drop: () => {} });
-    put(map.steve, "HANDOFF.md", "# Handoffs\n### dra-global-toolkit\nDelete the folder /tmp/dra-global-toolkit, it's a leftover.\n");
-    const led = { handoffs: [] }, [e] = l.dispatch(map.steve, deps(led));
+    put(map.robin, "HANDOFF.md", "# Handoffs\n### dra-global-toolkit\nDelete the folder /tmp/dra-global-toolkit, it's a leftover.\n");
+    const led = { handoffs: [] }, [e] = l.dispatch(map.robin, deps(led));
     ok("from a repo lane, it goes to ops, marked rerouted with the name it had, and ops's brief says the lane doesn't exist", e.status === "started" && e.to.lane === "ops" && e.rerouted && e.rerouted.noLane && e.rerouted.from === "dra-global-toolkit" && acts.length === 1 && /doesn't exist \(dra-global-toolkit\)/.test(acts[0].o.context), [e, acts[0] && acts[0].o.context]);
-    ok("…and the Sent line in its HANDOFF.md says so", /sent to ops instead of dra-global-toolkit \(there's no lane called dra-global-toolkit\)/.test(readFileSync(join(map.steve, ".symbiot", "HANDOFF.md"), "utf8")), readFileSync(join(map.steve, ".symbiot", "HANDOFF.md"), "utf8"));
+    ok("…and the Sent line in its HANDOFF.md says so", /sent to ops instead of dra-global-toolkit \(there's no lane called dra-global-toolkit\)/.test(readFileSync(join(map.robin, ".symbiot", "HANDOFF.md"), "utf8")), readFileSync(join(map.robin, ".symbiot", "HANDOFF.md"), "utf8"));
     mkdirSync(join(opsDir, ".symbiot"), { recursive: true }); put(opsDir, "HANDOFF.md", "# Handoffs\n### nowhere-lane\nDo a thing.\n");
     const [e2] = l.dispatch(opsDir, deps({ handoffs: [] }));
-    ok("from ops itself, there's nowhere to send it: a plain error saying ops is the lane for it, with the lanes listed", e2.status === "error" && /no lane called nowhere-lane\. You are ops/.test(e2.error) && /symbiot, steve/.test(e2.error) && acts.length === 1, e2);
+    ok("from ops itself, there's nowhere to send it: a plain error saying ops is the lane for it, with the lanes listed", e2.status === "error" && /no lane called nowhere-lane\. You are ops/.test(e2.error) && /symbiot, robin/.test(e2.error) && acts.length === 1, e2);
   }
 
   console.log("A HANDOVER THAT HAS WAITED FOR DAYS — the asker is told where it stands, once");

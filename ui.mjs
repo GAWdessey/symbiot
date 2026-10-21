@@ -1389,7 +1389,7 @@ body.lq-light .btip .bta button:not(.quiet){background:#151A21;color:#FFFFFF}
 <div id="grantbox" style="margin-top:10px">
 <label style="font-size:12px;color:var(--faint)">When an agent asks to run something or read a folder, grant it here instead of editing the command:</label>
 <div class="row" style="margin-top:6px"><input id="granttool" placeholder="allow a command, e.g. python3 or pytest" style="flex:1"><button class="ghost" id="granttoolbtn">Allow command</button></div>
-<div class="row" style="margin-top:6px"><input id="grantdir" placeholder="allow a folder, e.g. /home/you/GoSolr" style="flex:1"><button class="ghost" id="grantdirbtn">Allow folder</button></div>
+<div class="row" style="margin-top:6px"><input id="grantdir" placeholder="allow a folder, e.g. /home/you/SunCo" style="flex:1"><button class="ghost" id="grantdirbtn">Allow folder</button></div>
 <div class="note" id="grantnote"></div>
 </div>
 </div>
@@ -1853,7 +1853,7 @@ pendTimer=setTimeout(function(){pendTimer=null;if(current!=='tasks')return;api('
 // card, every task in full, 3600px before the button (2026-10-12).
 var PENDALL=false,RTASKS=3;
 // Approved work that didn't get as far as a PR (the server's unsent): why, in words, and
-// a retry, kept on the card until it's sent. dailify's four Approves were committed and
+// a retry, kept on the card until it's sent. bookly's four Approves were committed and
 // never pushed, and the page said "nothing to merge" (2026-10-13).
 var UNSENT_WHY={conflicts:"It clashes with main as GitHub has it now, so it wasn't pushed.",tests:"Its tests failed here, so it wasn't pushed.",push:"It wasn't pushed to GitHub.",pr:"It went up to GitHub, but no PR was opened."};
 function unsentBox(un){var n=un.ahead||0,when=un.at?new Date(un.at).toLocaleString([], {day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}):'';
@@ -2657,7 +2657,7 @@ return "<div class='hnpost' aria-label='Hacker News preview'><div class='hnbar'>
 +"<div class='hnrow'><span class='hnk'>first comment</span><div class='hnc'>"+mkProse(first)+"</div></div></div>";}
 // Each draft as its own platform shows it (its platform: line): LinkedIn's post, X's card,
 // Instagram's picture and caption, Facebook's post, Reddit's post with its subreddit and
-// title. A Reddit draft shown as a LinkedIn post can't be judged (Garth, 2026-10-10).
+// title. A Reddit draft shown as a LinkedIn post can't be judged (the user, 2026-10-10).
 var MKLIMIT={linkedin:3000,x:280,twitter:280,instagram:2200,facebook:63206,reddit:40000,hackernews:40000,blog:100000};
 function mkMediaHtml(p,cls){return (p.media||[]).map(function(m){return m.kind==='video'?"<video class='limedia' src='"+escQ(mkMediaSrc(m.rel))+"' controls muted playsinline preload='metadata'></video>":"<img class='limedia' src='"+escQ(mkMediaSrc(m.rel))+"' alt='"+escQ(m.name)+"'>";}).join('');}
 function mkAv(p,a,cls){var who=p.account||p.product||a.name||'';return a.avatar&&!p.account&&!p.product?"<img class='"+cls+"' src='"+escQ(mkMediaSrc('avatar'))+"' alt=''>":"<span class='"+cls+"'>"+esc(String(who).replace(/^@/,'').slice(0,2).toUpperCase())+"</span>";}
@@ -2797,7 +2797,7 @@ lqFocus({kind:'proj',repo:'marketing'});});});
 nd.querySelectorAll('.mkneed[data-rel]').forEach(function(r){r.addEventListener('click',function(ev){if(ev.target.closest('button,a,input,select,textarea'))return;mkBig({rel:r.getAttribute('data-rel')},r);});});
 var prods=L.products||[],ln=L.lane||[],els=L.elsewhere||[],fs=L.files||[],st={waiting:'waiting',working:'its agent is at work',review:'done, waits for your OK'};
 var h="<div class='pshead'><span>Marketing lane</span><small>"+(ln.length?ln.length+" task"+(ln.length>1?"s":"")+(L.working?" &middot; its agent is at work":L.waiting?" &middot; "+L.waiting+" waiting for its agent":""):"Its own agent, for every product: tell it what to make, and say which product it&#39;s for.")+"</small></div>"
-+"<form class='row mkadd'><label class='mkl' for='mkprod'>Product</label><input id='mkprod' class='mkprod' list='mkprodlist' autocomplete='off' placeholder='Symbiot, Dailify&hellip;' maxlength='40'><datalist id='mkprodlist'>"+prods.map(function(p){return "<option value='"+escQ(p)+"'>";}).join('')+"</datalist><label class='mkl' for='mktext' style='position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)'>Task</label><input id='mktext' class='mktext' autocomplete='off' placeholder='A launch post, a demo video, a campaign&hellip;' maxlength='4000'><button type='submit' class='act'>Add</button></form>"
++"<form class='row mkadd'><label class='mkl' for='mkprod'>Product</label><input id='mkprod' class='mkprod' list='mkprodlist' autocomplete='off' placeholder='Symbiot, Bookly&hellip;' maxlength='40'><datalist id='mkprodlist'>"+prods.map(function(p){return "<option value='"+escQ(p)+"'>";}).join('')+"</datalist><label class='mkl' for='mktext' style='position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)'>Task</label><input id='mktext' class='mktext' autocomplete='off' placeholder='A launch post, a demo video, a campaign&hellip;' maxlength='4000'><button type='submit' class='act'>Add</button></form>"
 +ln.map(function(t){return "<div class='task' data-id='"+escQ(t.id)+"'><span class='t'>"+mkProd(t.product)+esc(t.text)+" <span class='muted' style='font-size:11px'>"+st[t.status]+"</span></span><button class='ghost mkopen' data-repo='marketing' title='open it on the Workdesk'>Open</button></div>";}).join('')
 +(L.waiting&&!L.working?"<div class='row'><button class='act mkgo'>Start its agent</button><span class='muted' style='font-size:12px'>it drafts; nothing is posted until you approve its preview</span></div>":"")
 +(fs.length?"<div class='pshead' style='margin-top:14px'><span>What its agent drafted</span><small>in the lane&#39;s folder, newest first</small></div>"+fs.slice(0,10).map(function(f){return "<div class='task' data-rel='"+escQ(f.rel)+"'><span class='t'>"+mkProd(f.product)+esc(f.name)+" <span class='muted' style='font-size:11px'>"+agoTxt(f.at)+"</span>"+(f.status?" <span class='mkst "+f.status+"'>"+esc(f.status)+"</span>":"")+"</span><button class='"+(MKPV===f.rel?'act':'ghost')+" mkprev' aria-expanded='"+(MKPV===f.rel)+"' title='see it as the post will look'>"+(MKPV===f.rel?'Hide':'Preview')+"</button></div><div class='mkpv"+(MKPV===f.rel?'':' hidden')+"' data-rel='"+escQ(f.rel)+"'></div>";}).join(''):"")
@@ -3360,7 +3360,7 @@ LQ.coreText=(nr?nr+' at work':'Nobody at work')+(nw?' · '+nw+' waiting':'')+(nk
 var go=$('lqgo');if(go){var n=w.canGo||0;go.textContent=n?'Go \u00b7 start '+n+' task'+(n>1?'s':''):'';if(go.classList)go.classList.toggle('on',n>0);}
 lqLabels();}
 // Projects: a sphere per lane with work on it, sized by how much is going on, its
-// state under its name (the name people use: CallForge AI is Dailify); spheres orbit
+// state under its name (the name people use: CallForge AI is Bookly); spheres orbit
 // while an agent works, amber (lit) when something there needs you. In order
 // (lqSort: what needs you first, the most recent, or A to Z), clockwise from the
 // left (the screen is wider than it's tall), so where one sits says where it ranks
@@ -3694,7 +3694,7 @@ el.querySelectorAll('.lqm').forEach(function(b){b.addEventListener('click',funct
 function lqGo(shape){if(shape==='tasks'||shape==='agents'){lqWorkBy('task');return;}lqPool(shape);}
 // A blob: what only you can do, in a few words. A question: the project (its name
 // as people say it), the question in a line, its two answers as buttons (the one
-// it recommends first), or your own words; an Approve or a first step: the one
+// it recommends first), or your own words; an Approve or a north star: the one
 // button that opens it. On home (home=true) its name opens the project lit up.
 // A drafted reply as it will look: a LinkedIn message, a WhatsApp bubble or an email, the reply only.
 function draftHtml(d){var where=d.kind==='social'?'LinkedIn':d.kind==='chat'?'WhatsApp':(d.platform||'email');return "<div class='dmsg dm-"+escQ(d.kind||'mail')+"' aria-label='the reply, as it will be sent'><div class='dmto'>"+(d.to?'To '+esc(d.to)+' · ':'')+esc(d.platform||where)+"</div><div class='dmb'>"+esc(d.text||'')+"</div></div>";}
@@ -3790,7 +3790,7 @@ function lqSaid(t){LQ.talk.push({me:false,text:t});LQ.talk=LQ.talk.slice(-8);lqT
 // A lit orb opens its project with what lit it lit up and in view (lqLight): a
 // repo's questions and its Approve, under "Needs you here" at the top of its
 // tasks, with its held handovers; an ops run's question on its block in Agents;
-// a first step on its part of Settings.
+// a north star on its part of Settings.
 function lqFocus(y){lqAct();y=y||{};PENDALL=false;LQ.focus={kind:y.kind||'',repo:y.repo||'',path:y.path||'',focus:y.focus||'',shown:false};
 document.querySelectorAll('main .lit').forEach(function(x){x.classList.remove('lit');}); // only what this orb lit stays lit
 if(y.kind==='setup'){lqPool('settings');setTimeout(lqLight,300);return;}
@@ -3912,7 +3912,7 @@ return {best:good[0]||null,any:good[0]||vs[0]||null};}
 function voiceStop(){SPEAK.n++;try{if(window.speechSynthesis)window.speechSynthesis.cancel();}catch(e){}if(SPEAK.audio){try{SPEAK.audio.pause();}catch(e){}SPEAK.audio=null;}}
 // How the voices say our names (Piper and the system's own both mangle them), and the things that
 // read badly letter by letter: paths, ids, file names, versions, short-forms.
-var VOICE_SAY=[[/symbiot/gi,'Simbeeot'],[/gawdessey/gi,'Gaw dessy'],[/argena/gi,'Arjena'],[/pedipigeon/gi,'Peddy Pigeon'],[/workdesk/gi,'work desk'],[/daaymn/gi,'Dayman'],[/\\bnpm\\b/gi,'N P M'],[/\\badb\\b/gi,'A D B'],[/\\bPRs?\\b/g,'P R'],[/\\bAPI\\b/g,'A P I'],[/\\bURLs?\\b/g,'U R L'],[/\\bPWA\\b/g,'P W A'],[/\\bCLI\\b/g,'C L I'],[/\\bCI\\b/g,'C I'],[/\\bSSH\\b/g,'S S H'],[/\\bTTS\\b/g,'T T S']];
+var VOICE_SAY=[[/symbiot/gi,'Simbeeot'],[/gawdessey/gi,'Gaw dessy'],[/meridian/gi,'Meridian'],[/pigeonly/gi,'Pigeonly'],[/workdesk/gi,'work desk'],[/quartz/gi,'Dayman'],[/\\bnpm\\b/gi,'N P M'],[/\\badb\\b/gi,'A D B'],[/\\bPRs?\\b/g,'P R'],[/\\bAPI\\b/g,'A P I'],[/\\bURLs?\\b/g,'U R L'],[/\\bPWA\\b/g,'P W A'],[/\\bCLI\\b/g,'C L I'],[/\\bCI\\b/g,'C I'],[/\\bSSH\\b/g,'S S H'],[/\\bTTS\\b/g,'T T S']];
 function voiceSayable(t){var s=String(t||'');
 s=s.replace(/(^|[\\s(])(?:~|\\.{1,2})?\\/[\\w.~\\-]+(?:\\/[\\w.~\\-]*)+/g,'$1a file path');
 s=s.replace(/\\b[a-z]+-(?=[a-f]*\\d)[0-9a-f]{6,}\\b/g,'an id').replace(/\\b(?=[a-f]*\\d)[0-9a-f]{8,}\\b/g,'an id');

@@ -56,13 +56,13 @@ ok("a short plain brief stays on Sonnet", pickModel({ task: "Fix the off-by-one 
 
 // Escalation signals, each enough on its own.
 ok("a long brief escalates", pickModel({ task: "x".repeat(1501) }).why === "Opus: long brief");
-ok("a brief naming several repos escalates", pickModel({ task: "Port the fix from /home/odessey/projects/argena/bot.mjs into /home/odessey/projects/steve/bot.mjs" }).why === "Opus: names several repos");
+ok("a brief naming several repos escalates", pickModel({ task: "Port the fix from /home/odessey/projects/meridian/bot.mjs into /home/odessey/projects/robin/bot.mjs" }).why === "Opus: names several repos");
 ok("two files in the same repo don't count as several", pickModel({ task: "Move a helper from /home/odessey/projects/symbiot/ai.mjs to /home/odessey/projects/symbiot/route.mjs" }).tier === "S");
 ok("research/refactor/debug-style words escalate", pickModel({ task: "Investigate why the lane keeps failing" }).why === "Opus: research/refactor/debug-style work");
 // 20 Oct 2026: a chat-written task is long and says why; it's measured by what the user said for it
 ok("\"why\" alone doesn't escalate: a brief explains itself", pickModel({ task: "Label each card with its lane, which is why the user asked" }).tier === "S", pickModel({ task: "Label each card with its lane, which is why the user asked" }));
 ok("\"find out why\" does", pickModel({ task: "Find out why the build fails" }).why === "Opus: research/refactor/debug-style work" && pickModel({ task: "work out why the cards move" }).tier === "O");
-ok("a long chat-written brief is measured by the user's words", pickModel({ task: "x ".repeat(900), said: "why are these under dailify?" }).tier === "S", pickModel({ task: "x ".repeat(900), said: "why are these under dailify?" }));
+ok("a long chat-written brief is measured by the user's words", pickModel({ task: "x ".repeat(900), said: "why are these under bookly?" }).tier === "S", pickModel({ task: "x ".repeat(900), said: "why are these under bookly?" }));
 ok("…but keys in the brief still escalate", pickModel({ task: "Rotate the API key in .env", said: "the key's wrong" }).why === "Opus: touches keys, money or publishing");
 ok("touching keys escalates", pickModel({ task: "Rotate the API key in .env" }).why === "Opus: touches keys, money or publishing");
 ok("a push to main escalates", pickModel({ task: "push to main once CI is green" }).why === "Opus: touches keys, money or publishing");
@@ -108,8 +108,8 @@ ok("pure: calling twice gives the same result", JSON.stringify(pickModel({ path:
   const { routedModel } = await import("../agents.mjs");
   ok("routedModel: a [model: opus] task line picks opus", routedModel("/tmp/nonexistent-repo", { model: "opus" }) === "opus");
   ok("routedModel: haiku and sonnet go by their CLI alias too, fable by its id", routedModel("/tmp/nonexistent-repo", { model: "haiku" }) === "haiku" && routedModel("/tmp/nonexistent-repo", { model: "sonnet" }) === "sonnet" && routedModel("/tmp/nonexistent-repo", { model: "fable" }) === "claude-fable-5-1");
-  writeFileSync(join(CFG, "lanes.json"), JSON.stringify({ lanes: { steve: { model: "opus" } } }));
-  ok("routedModel: a lane's own model in lanes.json always wins over Auto", routedModel("/tmp/steve") === "opus");
+  writeFileSync(join(CFG, "lanes.json"), JSON.stringify({ lanes: { robin: { model: "opus" } } }));
+  ok("routedModel: a lane's own model in lanes.json always wins over Auto", routedModel("/tmp/robin") === "opus");
   ok("routedModel: another lane stays on Auto", routedModel("/tmp/other-lane") !== "opus");
   const ai0 = await import("../ai.mjs");
   ok("one model table: route, the fast model and the API-key default agree, and the default is Sonnet", ai0.MODELS.haiku.id === "claude-haiku-5-5" && ai0.PROVIDERS.anthropic.model === ai0.MODELS.sonnet.id && ai0.recommendModels({ ramGB: 8 }).paid.every((p) => p.provider !== "anthropic" || Object.values(ai0.MODELS).some((m) => m.id === p.model)));

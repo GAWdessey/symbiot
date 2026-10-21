@@ -1,15 +1,15 @@
 # Friction, 2026-10-08: Marketing and LinkedIn
 
-What Garth hit using Symbiot on 2026-10-08, mostly its Marketing lane, one case at a time: what it
+What Pat hit using Symbiot on 2026-10-08, mostly its Marketing lane, one case at a time: what it
 showed, why it was wrong, and what it should do instead, with where it's fixed.
 Tracked on GitHub as [#136](https://github.com/GAWdessey/symbiot/issues/136).
 
-**Principle (Garth's): never turn an agent's job into a step for the user. The user
+**Principle (Pat's): never turn an agent's job into a step for the user. The user
 approves, the agent does.**
 
 ## 1. A post opened as a `.txt` file, notes mixed in
 
-- **What happened:** opening a draft of the weekly [Steve] LinkedIn series under Marketing
+- **What happened:** opening a draft of the weekly [Robin] LinkedIn series under Marketing
   opened the raw file, with the agent's working notes mixed into the post text.
 - **Why it was wrong:** he couldn't see what the post would look like, and the notes
   could have gone out as part of it.
@@ -25,13 +25,13 @@ approves, the agent does.**
 
 ## 2. A card told him to schedule weeks 2–4 in LinkedIn himself
 
-- **What happened:** "Marketing asks: schedule weeks 2–4 of the steve linkedin series"
+- **What happened:** "Marketing asks: schedule weeks 2–4 of the robin linkedin series"
   offered two options, both "👤 You (only you: your linkedin)": schedule all three in
   LinkedIn's scheduler and paste each post's text and card, or schedule week 2 and approve
-  3 and 4 one at a time. After he answered, it said "Sent to Paperclip Steve".
+  3 and 4 one at a time. After he answered, it said "Sent to Paperclip Robin".
 - **Why it was wrong:** LinkedIn is linked in Symbiot's signed-in browser; posting and
   scheduling there is the agent's work. His only step is approving each preview. And the
-  answer belonged to the marketing lane, not paperclip-steve.
+  answer belonged to the marketing lane, not paperclip-robin.
 - **What it should do instead:** offer it as the agent's ("🤖 Agent: schedule …, once you
   approve its preview on the Workdesk"), post or schedule through the signed-in browser
   once approved, and say **Sent to Marketing**.
@@ -56,7 +56,7 @@ approves, the agent does.**
   (`handover.mjs` `ONLY_YOU`). Tests: `test/lanes.mjs` and `test/marketing.mjs`,
   "LinkedIn linked: no card asks you to sign in or do it by hand".
 
-## 4. "Let a poster on this computer put the steve posts up for you?"
+## 4. "Let a poster on this computer put the robin posts up for you?"
 
 - **What happened:** an item under Home's "Only the user can do" offered "👤 You (only
   you: your linkedin sign-in): ok it, and i'll have the ops…" and "👤 You (only you: your
@@ -103,14 +103,14 @@ approves, the agent does.**
 
 ## 6. A report gave him nothing to act on
 
-- **What happened:** he read the "Argena catch-up" report under Reports, then had to copy
+- **What happened:** he read the "Meridian catch-up" report under Reports, then had to copy
   its "Top 3 next" section into Home's chat by hand to act on it.
 - **Why it was wrong:** the report knew its own next steps; copying them across is a
   step Symbiot made for him.
 - **What it should do instead:** end every write-up with 2-4 ideas drawn from it (its own
   "Top 3 next"), ticked straight onto the Workdesk in that report's lane (here
-  `argena`), plus a box to ask Symbiot about the report in place. A draft report (a
-  LinkedIn post preview for the Steve series, say) gets Approve / Reject instead.
+  `meridian`), plus a box to ask Symbiot about the report in place. A draft report (a
+  LinkedIn post preview for the Robin series, say) gets Approve / Reject instead.
 - **Fixed in:** `reports.mjs` `reportIdeas` / `isDraftReport`, `home.mjs`
   `reportIdeasAdd`, `reportAsk`, `reportDraftAnswer`, the Reports reader (`ui.mjs`
   `repActsHtml`). Tests: `test/reports.mjs`, "each ends with what to do about it".
@@ -136,8 +136,8 @@ approves, the agent does.**
 
 ## 8. Two agents at work, and no way to tell what they were doing
 
-- **What happened:** the steve lane (aptitude tests on Steve against the last good
-  baseline) and the argena lane (a v6.7 device pass, then the art style and Toram-style
+- **What happened:** the robin lane (aptitude tests on Robin against the last good
+  baseline) and the meridian lane (a v6.7 device pass, then the art style and Toram-style
   zones, then apprenticeships, then the slow loop) had both been running for 30+
   minutes. All Home showed was "Agents working: 2".
 - **Why it was wrong:** he couldn't tell what either one was doing, how far through its
@@ -163,8 +163,8 @@ approves, the agent does.**
 
 ## 9. Agents at work broke Home's layout
 
-- **What happened:** with three agents at work (argena "step 3 of 4: wire the class
-  bible…", Steve "pulling the diffs", an ops run "Garth just restarted his…"), Home at
+- **What happened:** with three agents at work (meridian "step 3 of 4: wire the class
+  bible…", Robin "pulling the diffs", an ops run "Pat just restarted his…"), Home at
   about 1840×873 put their orbs among the section orbs. That pushed the headings off
   their own orbs ("Projects" over Todo, "Resources" over Workdesk) and drew "Watching"
   on top of "Areas". The watched sites scattered, and the names were cut letter by
@@ -213,7 +213,7 @@ approves, the agent does.**
 
 - **What happened:** the crash fix (case 10) was handed to the symbiot lane three times.
   Each time it waited behind the lane's run on Home's layout (step 5 of 6) and 5 other
-  queued tasks, and it went into the brief under "Docs". He parked argena and steve by
+  queued tasks, and it went into the brief under "Docs". He parked meridian and robin by
   hand so the crash could be fixed, and said: "that is what SHOULD happen, everything
   gets parked and if something becomes urgent thats handled first".
 - **Why it was wrong:** a broken app is the most urgent thing there is. It had to wait for
@@ -292,10 +292,10 @@ approves, the agent does.**
 
 ## 15. An approved deploy, blocked by the membrane
 
-- **What happened:** Garth approved argena's deploy of the Symbiot server code to the
+- **What happened:** Pat approved meridian's deploy of the Symbiot server code to the
   game server, twice, and its exact commands were in the lane's
   `allowlist.proposed.json`. `ssh -i ~/.ssh/oracle_key …` passed, but `scp -i
-  ~/.ssh/oracle_key server/argena_net.py server/symbiot.py ubuntu@…:…` was blocked
+  ~/.ssh/oracle_key server/meridian_net.py server/symbiot.py ubuntu@…:…` was blocked
   with "your keys and cloud credentials stay yours".
 - **Why it was wrong:** `-i` names the key scp signs in with. scp doesn't copy it. The
   rule meant to stop a key leaving the machine stopped an ordinary, approved deploy,
@@ -303,13 +303,13 @@ approves, the agent does.**
 - **What it should do instead:** judge what scp copies, not what it signs in with.
   Copying a key itself stays blocked.
 - **Fixed in:** `guard.mjs` (`SCP_VALUE`: scp's options that take a value are skipped).
-  Tests: `test/guard.mjs`, including argena's two commands word for word. Shipped in
+  Tests: `test/guard.mjs`, including meridian's two commands word for word. Shipped in
   0.57.8.
 
 ## 16. Checks on the live app closed his window
 
 - **What happened:** checking Home's layout, the symbiot lane's agent took headless
-  screenshots of Garth's running app. Each page counted as a new window and closed his
+  screenshots of Pat's running app. Each page counted as a new window and closed his
   (case 10).
 - **Why it was wrong:** an agent's check acted on the user's own window and data.
 - **What it should do instead:** check in a sandbox copy (`symbiot app --fresh`, its

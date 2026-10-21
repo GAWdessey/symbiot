@@ -65,18 +65,18 @@ console.log("ITS KEY SCREENS — from its routes and README");
 console.log("WHAT'S PRIVATE, IN TEXT");
 {
   const kinds = (t, n) => C.textHits(t, n).map((h) => h.kind);
-  ok("emails, phone numbers, and a date isn't a phone number", kinds("mail jono@example.com or call +27 61 548 4462") .join() === "email,phone" && !kinds("on 2026-10-12").includes("phone"), [kinds("mail jono@example.com or call +27 61 548 4462"), kinds("on 2026-10-12")]);
+  ok("emails, phone numbers, and a date isn't a phone number", kinds("mail remy@example.com or call +27 61 548 4462") .join() === "email,phone" && !kinds("on 2026-10-12").includes("phone"), [kinds("mail remy@example.com or call +27 61 548 4462"), kinds("on 2026-10-12")]);
   ok("a card number only when its digits pass the Luhn check", kinds("card 4111 1111 1111 1111").includes("card") && !kinds("ref 4111 1111 1111 1112").includes("card"), [kinds("card 4111 1111 1111 1111"), kinds("ref 4111 1111 1111 1112")]);
   ok("keys, tokens and secrets", ["sk_live_abcdefghijklmnop1234", "ghp_" + "a".repeat(30), "AKIAABCDEFGHIJKLMNOP", "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0In0.abcdefghijkl", "api_key: hunter2hunter2"].every((t) => kinds(t).some((k) => k === "secret" || k === "key")), "");
-  ok("an IBAN, an account id, a home folder's path, a token in an address, an IP address, a street address", kinds("GB82 WEST 1234 5698 7654 32").includes("iban") && kinds("cus_ABCDEF123").includes("account") && kinds("at /home/garth/acme/.env").includes("path") && kinds("open /x?token=abcdefgh1234").includes("url token") && kinds("host 10.0.0.12").includes("ip address") && kinds("we're at 12 Main Street").includes("address"), "");
+  ok("an IBAN, an account id, a home folder's path, a token in an address, an IP address, a street address", kinds("GB82 WEST 1234 5698 7654 32").includes("iban") && kinds("cus_ABCDEF123").includes("account") && kinds("at /home/pat/acme/.env").includes("path") && kinds("open /x?token=abcdefgh1234").includes("url token") && kinds("host 10.0.0.12").includes("ip address") && kinds("we're at 12 Main Street").includes("address"), "");
   ok("people's names, from the list, whole or in part", kinds("ask Sam Rivera", ["Sam Rivera", "Rivera"]).includes("name") && !kinds("ask Sam", ["Sam Rivera"]).includes("name"), "");
   // tesseract's TSV: a row a word; a match's words as one box, back at the picture's own scale
   const tsv = "level\tpage_num\tblock_num\tpar_num\tline_num\tword_num\tleft\ttop\twidth\theight\tconf\ttext\n" +
     "5\t1\t1\t1\t1\t1\t20\t40\t100\t20\t95\tcontact:\n5\t1\t1\t1\t1\t2\t130\t40\t300\t20\t91\talex@corp.example\n5\t1\t1\t1\t2\t1\t20\t80\t60\t20\t20\tjunk@low.conf\n";
   const b = C.tsvBoxes(tsv, [], 2);
   ok("text read off a picture: the match's own words, at the picture's scale, not a word read too poorly to trust", b.length === 1 && b[0].kind === "email" && b[0].x === 65 && b[0].y === 20 && b[0].w === 150, b);
-  const n = C.namesToBlur("", { dir: join(HOME, "lane"), product: "Acme", mind: { nodes: [{ kind: "person", name: "Jono Smith" }, { kind: "account", name: "AWS" }, { kind: "person", name: "Al" }] } });
-  ok("names to blur: the people Symbiot remembers, whole and by part (four letters up), not an account", n.includes("Jono Smith") && n.includes("Smith") && n.includes("Jono") && !n.includes("AWS") && !n.includes("Al"), n);
+  const n = C.namesToBlur("", { dir: join(HOME, "lane"), product: "Acme", mind: { nodes: [{ kind: "person", name: "Remy Smith" }, { kind: "account", name: "AWS" }, { kind: "person", name: "Al" }] } });
+  ok("names to blur: the people Symbiot remembers, whole and by part (four letters up), not an account", n.includes("Remy Smith") && n.includes("Smith") && n.includes("Remy") && !n.includes("AWS") && !n.includes("Al"), n);
 }
 
 console.log("A CLIP'S BOXES — over each moment, and a little either side");
@@ -101,7 +101,7 @@ else {
   const srv = createServer((q, res) => {
     if (q.url === "/a.png") { res.writeHead(200, { "content-type": "image/png" }); res.end(Buffer.from(PNG, "base64")); return; }
     res.writeHead(200, { "content-type": "text/html" });
-    if (q.url === "/dashboard") res.end(page(`<p>Order for jono@example.com, card 4111 1111 1111 1111, key sk_live_abcdefghijklmnop1234</p><div role="alert">New message from Garth</div><img src="/a.png" alt="photo of the team" style="width:200px;height:120px">`));
+    if (q.url === "/dashboard") res.end(page(`<p>Order for remy@example.com, card 4111 1111 1111 1111, key sk_live_abcdefghijklmnop1234</p><div role="alert">New message from Pat</div><img src="/a.png" alt="photo of the team" style="width:200px;height:120px">`));
     else if (q.url === "/customers") res.end(page(`<table><tr><th>Customer</th><th>Status</th></tr><tr><td>Thandi Mokoena</td><td>Paid</td></tr><tr><td>Pieter van Wyk</td><td>Pending</td></tr></table>`));
     else if (q.url === "/settings") res.end(page(`<label>Email <input value="me@shop.example"></label><label>Password <input type="password" value="hunter22"></label><button>Save</button>`));
     else if (q.url === "/billing") res.end(`<!doctype html><title>Sign in</title><input name=u><input type=password><button>Log in</button>`);
@@ -222,7 +222,7 @@ console.log("A DESKTOP APP — its window recorded, read for what's private, to 
 
 console.log("A PRODUCT'S OWN VIDEO — taken as it is, sound and all, its moments read for what's private");
 {
-  ok("its name in the tray is its own: trial.mp4 stays trial.mp4, from an address or a path", C.videoName("https://dailify.co.za/trial.mp4?v=2").file === "trial.mp4" && C.videoName("/x/My Demo.MOV").file === "my-demo.mov" && C.videoName("https://x.co/page") === null, "");
+  ok("its name in the tray is its own: trial.mp4 stays trial.mp4, from an address or a path", C.videoName("https://bookly.co.za/trial.mp4?v=2").file === "trial.mp4" && C.videoName("/x/My Demo.MOV").file === "my-demo.mov" && C.videoName("https://x.co/page") === null, "");
   const t0 = C.trayPaths("Vid", lane);
   ok("not a video file: says what to give", /ending \.mp4, \.mov or \.webm/.test((await C.captureFile({ product: "Vid", file: "https://x.co/page.html", t: t0 })).error || ""), "");
   ok("no file there: says so", /no file at/.test((await C.captureFile({ product: "Vid", file: join(HOME, "nope.mp4"), t: t0 })).error || ""), "");

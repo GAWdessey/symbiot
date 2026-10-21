@@ -162,7 +162,7 @@ function loadTasks() {
 }
 function saveTasks(t) { try { writeJsonAtomic(TASKS_PATH, t, { newline: false }); TASKS_MEMO = { key: tasksKey(), tasks: copyOf(t) }; return true; } catch { return false; } }
 // How much a task holds: one line in TASKS.md, long enough for a handover or a
-// pasted list of steps (1000 cut the Jono email task off mid-sentence). Longer,
+// pasted list of steps (1000 cut the Remy email task off mid-sentence). Longer,
 // it keeps its whole text (full) and its line links to that (tasks.mjs addTask).
 const TASK_MAX = 4000;
 // A heading or a one-line summary: cut at a word and marked "…", never mid-word.
@@ -189,17 +189,17 @@ function sameTask(a, b) {
   return (s.split(" ").length >= 8 && l.startsWith(s + " ")) || nearTask(a, b) || sameAsk(a, b) || spelledOut(a, b);
 }
 // A finding, not a job: what a report found, said as a fact. Three ticked from an audit's
-// "Four things that change the plan" ("Google is already fully on dailify.co.za",
-// "API_EXTERNAL_URL is https://dailify.fshub.dev, not supabase.seekerai.dev", "The 14
+// "Four things that change the plan" ("Google is already fully on bookly.co.za",
+// "API_EXTERNAL_URL is https://bookly.devhost.dev, not supabase.finderai.dev", "The 14
 // WhatsApp templates are already approved, not pending") sat on the Workdesk as tasks
-// with nothing to do (Garth, 2026-10-15). Its first sentence settles it: one that says
-// what to do (it starts with a verb, or says should, needs to, for dailify to check) or
+// with nothing to do (the user, 2026-10-15). Its first sentence settles it: one that says
+// what to do (it starts with a verb, or says should, needs to, for bookly to check) or
 // asks is a job; one that says something is so already, or is this and not that, a finding.
 const JOB_VERB = /^(?:when|if|once|only|never|always|don['’]?t|do not|avoid|pick|choose|allow|prefer|limit|cap|raise|lower|mark|tick|close|open|clear|save|store|read|watch|notify|warn|say|offer|add|fix|check|ask|make|move|set|update|remove|delete|drop|send|run|write|test|verify|confirm|reconnect|sign|deploy|rename|hand|create|build|ship|approve|change|replace|switch|migrate|investigate|look|find|review|decide|get|put|call|email|reply|follow|schedule|book|pay|renew|rotate|reword|bump|merge|split|turn|enable|disable|stop|start|restart|keep|use|let|try|clean|document|draft|post|publish|install|upgrade|connect|link|map|wire|show|hide|give|tell|retry|re-?[a-z]+)\b/i;
 const JOB_SAYS = /\b(?:should|must|needs? to|needed to|has to|have to|ought to|todo|to do|next step|worth|consider|recommend\w*|for (?:the )?[\w-]+(?: lane)? to)\b|👤|🤖|\?\s*$/iu;
 const FACT_SAYS = /\balready\b|\b(?:is|are|was|were)\b[^;]*?,\s*not\b|\b(?:nothing|no change|no action) (?:to do|needed|is needed)\b/i;
 // A progress record is one too: a report's "Still to do" keeps the log of a job as it
-// went ("Meta part, by the dailify lane itself: done (16 Oct, about 15:00).", "…(update,
+// went ("Meta part, by the bookly lane itself: done (16 Oct, about 15:00).", "…(update,
 // 14:50): the work is out, in 0.66.5…", "Earlier note, kept for the record: …"), and two
 // such lines sat on the Workdesk as jobs (2026-10-19). A label, then done (fixed,
 // shipped…) or an "(update…)" on it, says how it went; it's still a job when any of its
@@ -254,9 +254,9 @@ function nearTask(a, b) {
   for (; j < n; j++) if (y[j].name) ny = true;
   return !(nx && ny);
 }
-// The same ask in other words: "Send Jono the two asks yourself: verify
-// `X-Wa-Signature-256`…" and "Ask Jono to verify `X-Wa-Signature-256`… Also ask
-// him…". Both name exactly the same things (Jono, X-Wa-Signature-256), and most
+// The same ask in other words: "Send Remy the two asks yourself: verify
+// `X-Wa-Signature-256`…" and "Ask Remy to verify `X-Wa-Signature-256`… Also ask
+// him…". Both name exactly the same things (Remy, X-Wa-Signature-256), and most
 // of the shorter one's own words (not "the", "his", "once"; "asks" is "ask") are
 // in the other. Checked against 263 real tasks (11,770 pairs): at 0.6 it found 7
 // rewordings and nothing else; at 0.45 it took "Whole page for Gmail too" for

@@ -291,7 +291,7 @@ public class MainActivity extends Activity {
             + "<p class=m>The app's own Symbiot sees your shared storage, but not Termux's home folder.</p>");
     }
 
-    // dot: "" green (starting or running), "off" grey (stopped), "bad" coral (failed)
+    // dot: "" green (starting or running), "off" grey (stopped), "bad" atlas (failed)
     private static String page(String title, String dot, String body) {
         return "<!doctype html><meta name=viewport content='width=device-width,initial-scale=1'>"
             + "<style>body{background:#0E1A1F;color:#B7C9C4;font:15px -apple-system,Roboto,sans-serif;margin:0;padding:28px 20px}"

@@ -1,6 +1,6 @@
 // symbiot — an email task the user already sent.
 //
-// "Draft an email from Garth to Cale Morris, cc Jono (…), about First Step" stays
+// "Draft an email from the user to Alex Reed, cc Remy (…), about North Star" stays
 // open until someone ticks it, but the user often sends the mail themselves. So an
 // open email task is looked for in what they sent since it was made: the mail on
 // this computer (mail.mjs) and Gmail's Sent page, read in the app's hidden browser.
@@ -25,7 +25,7 @@ function emailJob(text) {
   const addrs = [...new Set((t.match(ADDR) || []).map(lc))];
   const clean = t.replace(ADDR, " ").replace(/\(\s*\)/g, " ");
   const names = [];
-  // "… to Cale Morris, cc Jono (…)": the capitalised words after to / cc / bcc
+  // "… to Alex Reed, cc Remy (…)": the capitalised words after to / cc / bcc
   for (const m of clean.matchAll(/\b(?:to|cc|bcc)\s+((?:[A-Z][\w'’-]+)(?:\s+[A-Z][\w'’-]+){0,2})/g)) names.push(lc(m[1]));
   const about = clean.match(/\babout\s+(.+?)(?:[.;:]|\s+\(|\s+(?:and|so|then|because)\s|$)/i);
   const topic = about ? lc(about[1].replace(/^(?:the|a|an|our|my)\s+/i, "")) : "";
@@ -93,8 +93,8 @@ async function sentRows({ days = 21, local = mailActivity, read, watches, now = 
 }
 
 // ---- a card that says an email is unsent, checked against what was sent ----------
-// A run ended saying "the Jono catch-up email is unsent", and Home kept asking to send it after
-// Garth had sent it himself from Gmail at 06:40 (21 Oct 2026). So a "needs you" card that says an
+// A run ended saying "the Remy catch-up email is unsent", and Home kept asking to send it after
+// the user had sent it himself from Gmail at 06:40 (21 Oct 2026). So a "needs you" card that says an
 // email isn't sent is looked for in the same sent mail: one to the person it names, sent since its
 // run started, and the card says so instead of "unsent" (agents.mjs needsOf). Found ones are kept
 // in sent-needs.json, by folder and the card's words.
@@ -145,7 +145,7 @@ function settleUnsent(needs, rows, { mine = [], file = SENT_NEEDS(), now = Date.
   return found;
 }
 // ---- what other agents sent ------------------------------------------------------
-// The same morning another lane's agent sent "Re: WIN LOVE ONBOARDING" to the client from Garth's
+// The same morning another lane's agent sent "Re: LOVE LINK ONBOARDING" to the client from the user's
 // mail at 08:33, while an ops run kept calling its own reply to her an unsent draft waiting on his
 // OK, and never mentioned it (21 Oct 2026). A run that sends an email says so in its AWAITING.json,
 // and Symbiot keeps every one in awaiting.json (handback.mjs): those are sent rows too, by that lane.

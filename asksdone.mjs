@@ -46,14 +46,14 @@ const doneBrief = (lane = "", n = 5) => {
 };
 
 // ---- an answer that asks back: the question isn't answered, the user wants something first ----
-// On 20 Oct 2026 Garth answered the Paddle question four times: "can you explain to me what paddle
+// On 20 Oct 2026 the user answered the Paddle question four times: "can you explain to me what paddle
 // is for?", "must i ask again?", "until i read something telling me what paddle is…", "put it in
 // reports so i can read it". Each run read the reply as an answer and asked for the price ids again
 // in new words, and the reply he typed on its "👤 You" card was passed on as "The user says it's done".
 const WANTS_READ = /\b(?:put|write|leave|add|make|save)\b[^.?!\n]{0,40}\breports?\b|\bin (?:the )?reports\b|\bso i can read\b|\b(?:something|anything) (?:to read|i can read|telling me)\b|\buntil i (?:read|see|understand|know)\b|\bexplain\b|\btell me (?:what|why|how)\b|\bwrite (?:it |this |that |me )?(?:up|out|down)\b|\b(?:a )?write-?up\b|\bsummar(?:ise|ize)\b/i;
 const wantsToRead = (a) => WANTS_READ.test(String(a || "")) || wantsReport(a);
 // "give me a thorough report first", "i need the report first then we can send it": a report before
-// anything goes ahead. On 21 Oct 2026 Garth said so twice on a Go ahead card about a reply to a client,
+// anything goes ahead. On 21 Oct 2026 the user said so twice on a Go ahead card about a reply to a client,
 // and both went to its run as "Go ahead: …": it found nothing to do, and the card came back unchanged.
 const REPORT_FIRST = /\b(?:report|write-?up|summary)\b[^.?!\n]{0,40}\b(?:first|before)\b|\b(?:first|before)\b[^.?!\n]{0,30}\b(?:a|the|your)\b[^.?!\n]{0,20}\breport\b|\b(?:give|show|send|get) me\b[^.?!\n]{0,30}\breport\b|\b(?:need|want|waiting (?:on|for)) (?:a|the|that|your)\b[^.?!\n]{0,30}\breport\b/i;
 const wantsReport = (a) => REPORT_FIRST.test(String(a || ""));
@@ -103,7 +103,7 @@ function reportsSince(folder, ts) {
   return out.sort((a, b) => b.mtime - a.mtime);
 }
 // The report a run's card points at ("Read the report"): the one `said` names (its last words, a
-// question: "on Reports as WINLOVE-FULL-EMAIL-REPORT"), else, in an ops run's own folder (`own`: one
+// question: "on Reports as LOVELINK-FULL-EMAIL-REPORT"), else, in an ops run's own folder (`own`: one
 // job each), its newest, else the newest written since `since`. null when there's none.
 function runReport(folder, { said = "", since = 0, own = false } = {}) {
   const all = reportsSince(folder, 0); if (!all.length) return null;
@@ -122,7 +122,7 @@ function reportAsked(answers) {
 // The answered ask a new question repeats, or null: (1) the same question worded again (4+ content
 // words shared, 75% of the longer's: a longer one that only starts the same asks something else), from any lane; (2) a subject the user asked back about (back),
 // held until they've opened a report written after it (readSince(ts, lane)), or for HOLD_FOR: 3 shared
-// words in the same lane, 4 from another. Garth's 4 Paddle asks shared paddle/symbiot/pro or more.
+// words in the same lane, 4 from another. the user's 4 Paddle asks shared paddle/symbiot/pro or more.
 const HOLD_FOR = 14 * 86400000;
 function heldBy(q, { lane = "", now = Date.now(), readSince = () => false, id = "" } = {}) {
   // the same id is the same question, whatever its words: answered once, or asked back about until read
@@ -166,7 +166,7 @@ function addRule(rule) {
 // listed on the card as "already covered?" for the user to confirm, never closed on a fuzzy match.
 const STOP = new Set("the a an and or to of in on for is are be it this that you your i my with from at by do does not no can should what which how when use".split(" "));
 const words = (s) => new Set(key(s).split(" ").filter((w) => w.length > 2 && !STOP.has(w)));
-// Two shared words was any card naming the user and "send": the Carla card showed two
+// Two shared words was any card naming the user and "send": the Dana card showed two
 // unrelated rules as "Already covered?" (21 Oct 2026). A word in three or more of the rules,
 // or a third of them (the user's name, "send", "sign"), says nothing about which one it is.
 const FILLER = new Set("has have had was were will would about her his him she they them their then than now first again also any anything all only just into out its our before after until never always yet still here there whether wait asks ask asked said says run agent".split(" "));

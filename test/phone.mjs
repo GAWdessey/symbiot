@@ -47,7 +47,7 @@ writeFileSync(join(ROOT, "computer.mjs"), `
       for (let i = 0; i < 40 && !p.linkState().listening; i++) await new Promise((r) => setTimeout(r, 50));
       const later = p.linkState(); await p.usePhonePort(back); return { port, held, later: { listening: later.listening, port: later.port, error: later.error } }; },
     // two agents ask; Home drops one (closing the Symbiot Browser is an agent's wait, not the user's)
-    asking: async () => { const { mkdirSync, writeFileSync, rmSync } = await import("node:fs"), lanes = ["coral", "reef"].map((n) => ${JSON.stringify(PC)} + "/" + n);
+    asking: async () => { const { mkdirSync, writeFileSync, rmSync } = await import("node:fs"), lanes = ["atlas", "reef"].map((n) => ${JSON.stringify(PC)} + "/" + n);
       lanes.forEach((l, i) => { mkdirSync(l + "/.symbiot", { recursive: true }); writeFileSync(l + "/.symbiot/QUESTIONS.md", i ? "## Questions\\n### Can you close the Symbiot Browser so I can carry on?\\n- Done (recommended)\\n- Skip\\n" : "## Questions\\n### Which number should the test call go to?\\n- Yours (recommended)\\n- Skip\\n"); });
       writeFileSync(${JSON.stringify(join(PCFG, "runs.json"))}, JSON.stringify(lanes.map((path) => ({ path, name: path.split("/").pop(), startedAt: Date.now() - 60000 }))));
       const s = await p.snapshot({ fresh: true }); rmSync(${JSON.stringify(join(PCFG, "runs.json"))}, { force: true }); return s.asks.map((a) => a.name); } };
@@ -513,7 +513,7 @@ try {
   ok("…and the app asks Android to check it, for the host and path the QR's link uses", new RegExp(`<intent-filter android:autoVerify="true">(?:(?!</intent-filter>)[\\s\\S])*android:scheme="https" android:host="${pairHost.replace(/\./g, "\\.")}" android:pathPrefix="${pairSite.pathname}"`).test(man), pairSite.href);
   console.log("WHAT WAITS ON YOU — the same cards as Home, from the job record");
   const askedNow = await pc.cmd("asking");
-  ok("the phone lists the agent whose question is a card on Home, and not one Home dropped", Array.isArray(askedNow) && askedNow.length === 1 && askedNow[0] === "coral", askedNow);
+  ok("the phone lists the agent whose question is a card on Home, and not one Home dropped", Array.isArray(askedNow) && askedNow.length === 1 && askedNow[0] === "atlas", askedNow);
 } finally {
   try { await pc.stop(); } catch {}
   rmSync(ROOT, { recursive: true, force: true });

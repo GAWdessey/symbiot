@@ -79,18 +79,18 @@ ok("...and with neither, no key (nothing is taken)", keyFor({ app: "chrome" }, "
 // config.chromeProfile says otherwise, and never a sign-in from the personal profile when Work has none
 const CH = join(HOME, ".config/google-chrome");
 mkdirSync(join(CH, "Profile 6", "Network"), { recursive: true });
-writeFileSync(join(CH, "Local State"), JSON.stringify({ profile: { last_used: "Profile 6", info_cache: { Default: { name: "Work" }, "Profile 6": { name: "Garth" } } } }));
+writeFileSync(join(CH, "Local State"), JSON.stringify({ profile: { last_used: "Profile 6", info_cache: { Default: { name: "Work" }, "Profile 6": { name: "Pat" } } } }));
 ok("Default (Work) is the profile, even when the personal one was used last", JSON.stringify(profilesOf(CH)) === '[{"dir":"Default","name":"Work"}]', profilesOf(CH));
-ok("a profile is chosen by the name Chrome shows, past Profile 3", profilesOf(CH, "Garth")[0].dir === "Profile 6", profilesOf(CH, "Garth"));
+ok("a profile is chosen by the name Chrome shows, past Profile 3", profilesOf(CH, "Pat")[0].dir === "Profile 6", profilesOf(CH, "Pat"));
 copyFileSync(join(prof, "Cookies"), join(CH, "Profile 6", "Network", "Cookies"));
 const madeP = spawnSync("python3", ["-I", "-c", "import sqlite3,sys;c=sqlite3.connect(sys.argv[1]);c.execute(\"delete from cookies where host_key='.example.com'\");c.commit()", join(prof, "Cookies")], { encoding: "utf8" });
 ok("(Work's sign-in for example.com taken away)", madeP.status === 0, madeP.stderr);
 ok("only the personal profile signed in: nothing is taken", chromeSession("example.com").cookies.length === 0, chromeSession("example.com"));
-const g = chromeSession("example.com", { profile: "Garth" });
-ok("...unless it's the one chosen, and it says which", g.cookies.length === 2 && g.profile === "Garth" && /Profile 6/.test(g.from), g);
+const g = chromeSession("example.com", { profile: "Pat" });
+ok("...unless it's the one chosen, and it says which", g.cookies.length === 2 && g.profile === "Pat" && /Profile 6/.test(g.from), g);
 
 // a page that lands on a login wall on a linked site takes the Chrome sign-in and opens again, once
-writeFileSync(join(HOME, ".config", "symbiot", "config.json"), JSON.stringify({ sites: [{ hosts: ["example.com"] }], chromeProfile: "Garth" }));
+writeFileSync(join(HOME, ".config", "symbiot", "config.json"), JSON.stringify({ sites: [{ hosts: ["example.com"] }], chromeProfile: "Pat" }));
 const wall = () => { const calls = []; let signed = false; return { calls, page: { until: async () => ({}), idle: async () => {},
   send: async (m, p) => { calls.push(m); if (m === "Network.setCookies") signed = p.cookies.length > 0; return m === "Runtime.evaluate" ? { result: { value: signed ? "https://www.example.com/home" : "https://www.example.com/login" } } : {}; } } }; };
 let w = wall(); await openSite(w.page, "https://www.example.com/");
@@ -103,12 +103,12 @@ ok("a site that isn't linked never gets one", !w.calls.includes("Network.setCook
 {
   const { profileAccounts, accountNote } = await import("../chromeimport.mjs");
   const d = join(HOME, "acct"); mkdirSync(join(d, "Default"), { recursive: true }); mkdirSync(join(d, "Profile 1"), { recursive: true });
-  writeFileSync(join(d, "Local State"), JSON.stringify({ profile: { info_cache: { Default: { name: "Person" }, "Profile 1": { user_name: "Vasinc.ZA@gmail.com" } } } }));
+  writeFileSync(join(d, "Local State"), JSON.stringify({ profile: { info_cache: { Default: { name: "Person" }, "Profile 1": { user_name: "Team.ZA@example.com" } } } }));
   writeFileSync(join(d, "Default", "Preferences"), JSON.stringify({ account_info: [{ email: "me@gmail.com" }] }));
   const a = profileAccounts(d);
-  ok("accounts are read per profile, from Local State and Preferences", a.Default[0] === "me@gmail.com" && a["Profile 1"][0] === "vasinc.za@gmail.com", a);
+  ok("accounts are read per profile, from Local State and Preferences", a.Default[0] === "me@gmail.com" && a["Profile 1"][0] === "team.za@example.com", a);
   const n = accountNote(a);
-  ok("an account only in another profile is named, with Default's accounts", /vasinc\.za@gmail\.com is signed in only in Chrome's "Profile 1"/.test(n) && /me@gmail\.com/.test(n), n);
+  ok("an account only in another profile is named, with Default's accounts", /team\.za@example\.com is signed in only in Chrome's "Profile 1"/.test(n) && /me@gmail\.com/.test(n), n);
   ok("nothing to say when Default has every account", accountNote({ Default: ["a@x.com"], "Profile 1": ["a@x.com"] }) === "" && accountNote({}) === "");
 }
 

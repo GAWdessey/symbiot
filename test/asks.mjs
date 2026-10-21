@@ -26,7 +26,7 @@ const { homeState } = await import("../home.mjs");
 const lane = join(HOME, "work", "symbiot");
 mkdirSync(join(lane, ".symbiot"), { recursive: true });
 sh(lane, "init", "-q"); writeFileSync(join(lane, "a.txt"), "a\n"); sh(lane, "add", "-A"); sh(lane, "commit", "-qm", "one");
-sh(lane, "remote", "add", "origin", "https://github.com/GarthGhostai/symbiot.git");
+sh(lane, "remote", "add", "origin", "https://github.com/PatGhostai/symbiot.git");
 const copy = join(C, "worktrees", "symbiot-25fada");
 sh(lane, "worktree", "add", "-q", "-b", "symbiot/par-25fada", copy, "HEAD");
 mkdirSync(join(copy, ".symbiot"), { recursive: true });
@@ -35,7 +35,7 @@ writeFileSync(join(copy, ".symbiot", "par.json"), JSON.stringify({ id: "25fada",
 
 console.log("1) WHERE IT IS — every run is told, and never asks the user");
 const wl = a.whereLine(lane), wc = a.whereLine(copy);
-ok("a lane's run is told its folder, lane, git remote and Symbiot's pages", /this folder is symbiot, the repo of the symbiot lane, git remote https:\/\/github\.com\/GarthGhostai\/symbiot\.git/.test(wl) && /Workdesk \(the tasks page/.test(wl) && /Dashboard/.test(wl) && /Archive/.test(wl), wl);
+ok("a lane's run is told its folder, lane, git remote and Symbiot's pages", /this folder is symbiot, the repo of the symbiot lane, git remote https:\/\/github\.com\/PatGhostai\/symbiot\.git/.test(wl) && /Workdesk \(the tasks page/.test(wl) && /Dashboard/.test(wl) && /Archive/.test(wl), wl);
 ok("...and not to ask which repo or project it is, or what a page is", /never ask which repo or project this is, or what a Symbiot page is/.test(wl), wl);
 ok("a copy's run is told it's a copy of its lane's repo, made for one task", new RegExp(`this folder is symbiot-25fada, a copy of the repo of the symbiot lane \\(${lane.replace(/[/.]/g, "\\$&")}\\), made for one task, git remote https://github`).test(wc), wc);
 ok("...in words that pass through two shells (no quotes, $ or backticks)", !/["'`$\\]/.test(wl + wc), wl + wc);
@@ -48,17 +48,17 @@ const asked = [
 ];
 for (const q of asked) {
   const ans = a.whereAnswer(copy, { q, context: "" });
-  ok(`answered from the folder, not asked: ${q}`, /symbiot-25fada, is a copy of the symbiot repo/.test(ans) && /GarthGhostai\/symbiot\.git/.test(ans) && /Workdesk \(the tasks page/.test(ans) && /don't ask this again/.test(ans), ans);
+  ok(`answered from the folder, not asked: ${q}`, /symbiot-25fada, is a copy of the symbiot repo/.test(ans) && /PatGhostai\/symbiot\.git/.test(ans) && /Workdesk \(the tasks page/.test(ans) && /don't ask this again/.test(ans), ans);
 }
 const real = [
-  "Which project should the landing page link to: dailify or symbiot?",
+  "Which project should the landing page link to: bookly or symbiot?",
   "Should I mark the tasks done, which means Approve shows them?",
-  "Which repo has the WinLove invite code, sts-platform or dailify?",
+  "Which repo has the LoveLink invite code, telco-platform or bookly?",
 ];
 for (const q of real) ok(`a real question still goes to the user: ${q}`, a.whereAnswer(copy, { q, context: "" }) === "", a.whereAnswer(copy, { q, context: "" }));
 
 // the folder's question file, as the agent wrote it on 2026-10-13, beside a real one
-writeFileSync(join(copy, ".symbiot", "QUESTIONS.md"), `# Questions\n\n### ${asked[0]}\n.symbiot/TASKS.md still doesn't exist here and the worktree has no source files.\n\n### Which project should the landing page link to: dailify or symbiot?\nThe task doesn't say.\n- dailify (recommended)\n- symbiot\n`);
+writeFileSync(join(copy, ".symbiot", "QUESTIONS.md"), `# Questions\n\n### ${asked[0]}\n.symbiot/TASKS.md still doesn't exist here and the worktree has no source files.\n\n### Which project should the landing page link to: bookly or symbiot?\nThe task doesn't say.\n- bookly (recommended)\n- symbiot\n`);
 const aq = a.agentQuestions(copy, "symbiot");
 ok("its card never shows: only the real question is left for the user", aq.questions.length === 1 && /landing page/.test(aq.questions[0].q) && aq.known && aq.known.length === 1, aq);
 const r = a.autoDecide(copy), ans = readFileSync(join(copy, ".symbiot", "ANSWERS.md"), "utf8");
@@ -73,15 +73,15 @@ ok("a copy removed after its merge gets no run, and says why", /was a copy of th
 
 // the run's prompt carries it (a stand-in agent that writes down what it was told), in a
 // lane that isn't Symbiot's own code (licence.mjs never lets a run edit that)
-const coral = join(HOME, "work", "coral");
-mkdirSync(join(coral, ".symbiot"), { recursive: true }); sh(coral, "init", "-q");
+const atlas = join(HOME, "work", "atlas");
+mkdirSync(join(atlas, ".symbiot"), { recursive: true }); sh(atlas, "init", "-q");
 a.setHandoffCmd(`printf %s "{prompt}" > {dir}/.symbiot/prompt.txt`);
-writeFileSync(join(coral, ".symbiot", "TASKS.md"), "## Tasks\n- [ ] Fix the board's empty state.\n");
-const e = a.runHandoff(coral, { force: true });
-const pf = join(coral, ".symbiot", "prompt.txt");
+writeFileSync(join(atlas, ".symbiot", "TASKS.md"), "## Tasks\n- [ ] Fix the board's empty state.\n");
+const e = a.runHandoff(atlas, { force: true });
+const pf = join(atlas, ".symbiot", "prompt.txt");
 for (let i = 0; i < 100 && !(existsSync(pf) && readFileSync(pf, "utf8")); i++) await new Promise((res) => setTimeout(res, 50));
 const told = existsSync(pf) ? readFileSync(pf, "utf8") : "";
-ok("the run's prompt starts with the brief and says where it is", e && e.id && told.startsWith("Read .symbiot/TASKS.md") && told.includes(a.whereLine(coral)) && /this folder is coral, the repo of the coral lane/.test(told), [e && e.note, told]);
+ok("the run's prompt starts with the brief and says where it is", e && e.id && told.startsWith("Read .symbiot/TASKS.md") && told.includes(a.whereLine(atlas)) && /this folder is atlas, the repo of the atlas lane/.test(told), [e && e.note, told]);
 a.setHandoffCmd("");
 
 console.log("2) WHICH TASK — every question card says it in one line");
@@ -103,7 +103,7 @@ ok("Home's card for it carries the task's line", card && card.task === "Make the
 { const opsA = join(C, "drafts", "act-card0001"), opsB = join(C, "drafts", "act-card0002"); for (const p of [opsA, opsB]) mkdirSync(join(p, ".symbiot"), { recursive: true });
   const q0 = { q: "Can I give my user the rights to change Tailscale settings?", options: ["👤 You (only you: your password): run that one line"] };
   const ph = homeState({ fresh: true, deps: { ...hsDeps, ledger: () => ({ handoffs: [{ from: { lane: "symbiot", path: lane }, to: { lane: "ops", path: opsA }, at: 1 }] }),
-    agents: () => [{ path: opsA, name: "Agent: New job: a fixed public URL for the webhook", status: "done", ask: { questions: [q0] } }, { path: opsB, name: "Agent: Draft an email to Jono about the invoices", status: "done", ask: { questions: [{ ...q0, q: "Send the draft now?" }] } }] } }).you.filter((y) => y.kind === "ask");
+    agents: () => [{ path: opsA, name: "Agent: New job: a fixed public URL for the webhook", status: "done", ask: { questions: [q0] } }, { path: opsB, name: "Agent: Draft an email to Remy about the invoices", status: "done", ask: { questions: [{ ...q0, q: "Send the draft now?" }] } }] } }).you.filter((y) => y.kind === "ask");
   ok("an ops run's card says the project that handed it over", (ph.find((y) => y.path === opsA) || {}).project === "symbiot", ph);
   ok("…and one nothing names says none, rather than a guess", (ph.find((y) => y.path === opsB) || {}).project === "", ph); }
 // 20 Oct 2026 review, finding 4: how long the Symbiot Browser has been open, on Home

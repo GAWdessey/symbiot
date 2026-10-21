@@ -1,6 +1,6 @@
 // A secret handed over in an answer to an agent's question goes to the vault, not into saved
 // answers; agents can add to the vault themselves; and no card asks for a secret Symbiot holds.
-// 20 Oct 2026: Garth answered "Can you paste the Cloudflare token into the vault…?" with a curl
+// 20 Oct 2026: Pat answered "Can you paste the Cloudflare token into the vault…?" with a curl
 // carrying "Authorization: Bearer cfat_…". It stayed whole in the saved answers, the agent found
 // no way to vault it, and Home asked him to re-save it himself.
 //
@@ -51,7 +51,7 @@ try {
   ok("…nor does the shared record of answers, or any file on disk", !everywhere().includes(TOKEN) && !readFileSync(join(CFG, "asks-done.json"), "utf8").includes(TOKEN));
 
   console.log("SAVED ALREADY — a second copy keeps the first name");
-  v.saveSecret("cloudflare-garth-ghost-ai (garths domains)", ["cfat_OtherValue1234567890abcdefghijklmnopqrstu"]);
+  v.saveSecret("cloudflare-pat-ghost-ai (garths domains)", ["cfat_OtherValue1234567890abcdefghijklmnopqrstu"]);
   const T2 = "cfat_" + "Kp3LmN8qRsT2uVwX5yZaB9cDeF4gHiJ7kLmN0pQr";
   v.saveSecret("cloudflare-ops (named by ops)", [T2]);
   const again = v.captureSecrets(`curl -H "Authorization: Bearer ${T2}" https://api.cloudflare.com/client/v4/user/tokens/verify`);
@@ -61,11 +61,11 @@ try {
   const T3 = "cfat_" + "Zz1Yy2Xx3Ww4Vv5Uu6Tt7Ss8Rr9Qq0Pp1Oo2Nn3Mm4";
   writeFileSync(join(CFG, "asks-done.json"), JSON.stringify([{ k: "x", q: Q, a: CURL.replace(TOKEN, T3), at: "2026-10-20", lane: "ops" }]));
   writeFileSync(join(CFG, "answers-shared.json"), JSON.stringify([{ q: Q, a: CURL.replace(TOKEN, T3), topics: ["api.cloudflare.com", T3.toLowerCase()] }]));
-  v.saveSecret("cloudflare-garth-ghost-ai (garths domains)", [T3]);
+  v.saveSecret("cloudflare-pat-ghost-ai (garths domains)", [T3]);
   const sc = v.scrubStored({ force: true }), shared = readFileSync(join(CFG, "answers-shared.json"), "utf8");
   ok("the start-up scrub reads answers to agents' questions, not only chat", !readFileSync(join(CFG, "asks-done.json"), "utf8").includes(T3) && !shared.includes(T3), sc);
   ok("…blanks the lowercased copy among an answer's topics too", !shared.includes(T3.toLowerCase()), shared);
-  ok("…under the name it was already saved by (ops named it with care)", shared.includes("[saved: cloudflare-garth-ghost-ai (garths domains)]") && sc.found.length >= 1, [sc, shared]);
+  ok("…under the name it was already saved by (ops named it with care)", shared.includes("[saved: cloudflare-pat-ghost-ai (garths domains)]") && sc.found.length >= 1, [sc, shared]);
 
   console.log("NO CARD — for a secret Symbiot holds");
   ok("a step asking to paste or re-save a held token names it", v.heldFor("👤 You (only you: your Cloudflare token): re-save the Cloudflare token into the vault yourself").startsWith("cloudflare"), v.heldFor("re-save the Cloudflare token into the vault yourself"));

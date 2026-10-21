@@ -113,7 +113,7 @@ try {
     ok("…and anything else (tasks, settings) is refused", other.status === 403 && cfg.status === 403, { other, cfg });
   }
 
-  console.log("ONE WINDOW — a headless browser never becomes the newest window (2026-10-08: agents' screenshots of Home closed Garth's window, 'symbiot keeps crashing')");
+  console.log("ONE WINDOW — a headless browser never becomes the newest window (2026-10-08: agents' screenshots of Home closed Pat's window, 'symbiot keeps crashing')");
   const pingUa = async (q, ua) => (await fetch(`${baseA}/api/ping${q}`, { headers: { "x-symbiot-token": token, ...(ua ? { "user-agent": ua } : {}) } })).json();
   const mine = await pingUa("?w=realwin01&new=1", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/141.0.0.0 Safari/537.36");
   ok("a real window that opens is the newest", mine.window === "realwin01", mine);
@@ -313,7 +313,7 @@ try {
   // $PREFIX/var/lib/proot-distro/installed-rootfs/debian/root, outside Termux's home.
   const prefix = mkdtempSync(join(tmpdir(), "symbiot-prefix-")), thome = mkdtempSync(join(tmpdir(), "symbiot-thome-"));
   const proj = join(prefix, "var", "lib", "proot-distro", "installed-rootfs", "debian", "root", "work", "proj");
-  mkdirSync(join(prefix, "var", "lib", "proot-distro", "installed-rootfs", "debian", "home", "garth"), { recursive: true });
+  mkdirSync(join(prefix, "var", "lib", "proot-distro", "installed-rootfs", "debian", "home", "pat"), { recursive: true });
   mkdirSync(proj, { recursive: true });
   writeFileSync(join(proj, "a.js"), "1\n");
   spawnSync("git", ["init", "-q", proj]);
@@ -325,7 +325,7 @@ try {
   const hist = (home, enc, line) => { mkdirSync(join(debian, home, ".claude", "projects", enc), { recursive: true }); writeFileSync(join(debian, home, ".claude", "projects", enc, "s.jsonl"), line + "\n"); };
   hist("root", "-root-work-proj", JSON.stringify({ type: "user", cwd: "/root/work/proj" }));
   mkdirSync(join(debian, "srv", "app"), { recursive: true }); spawnSync("git", ["init", "-q", join(debian, "srv", "app")]);
-  hist(join("home", "garth"), "-srv-app", JSON.stringify({ type: "user" }));
+  hist(join("home", "pat"), "-srv-app", JSON.stringify({ type: "user" }));
   const t = startApp({ SYMBIOT_FORCE_NEW: "1", SYMBIOT_PORT: String(port()), SYMBIOT_SCAN_HOME: thome, PREFIX: prefix }, 20000);
   const urlT = await t.ready;
   ok("the app starts with a proot-distro under $PREFIX", !!urlT, t.out());
@@ -333,7 +333,7 @@ try {
     const [, portT, tokenT] = urlT.match(URL_RE);
     const get = async (p) => (await fetch(`http://127.0.0.1:${portT}${p}`, { headers: { "x-symbiot-token": tokenT } })).json();
     const sr = await get("/api/scanroots"), rootfs = join(prefix, "var", "lib", "proot-distro", "installed-rootfs", "debian");
-    ok("its /root and /home/<user> are default scan folders, after your home", sr.effective.join() === [thome, join(rootfs, "root"), join(rootfs, "home", "garth")].join(), sr);
+    ok("its /root and /home/<user> are default scan folders, after your home", sr.effective.join() === [thome, join(rootfs, "root"), join(rootfs, "home", "pat")].join(), sr);
     const g = await get("/api/map");
     ok("a repo in the distro's /root is on the map, which lists every folder it scanned", g.stats.repos === 1 && g.nodes.some((n) => n.type === "repo" && n.label === "proj") && g.stats.roots.length === 3, g.stats);
     const pn = g.nodes.find((n) => n.id === "repo:" + proj), an = g.nodes.find((n) => n.id === "repo:" + join(debian, "srv", "app"));

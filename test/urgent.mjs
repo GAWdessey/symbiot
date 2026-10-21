@@ -1,6 +1,6 @@
 // Urgent work goes first (agents.mjs urgentFirst, tasks.mjs, mind.mjs): "symbiot
 // keeps crashing" waited behind a routine run in its own lane and 5 more tasks, and
-// Garth parked argena and steve by hand (2026-10-08). Isolated HOME (set before the
+// Pat parked meridian and robin by hand (2026-10-08). Isolated HOME (set before the
 // modules load); runs are stand-ins.
 //
 //   node test/urgent.mjs
@@ -21,8 +21,8 @@ const { buildTasksMd } = await import("../tasks.mjs");
 const { actIn, converse } = await import("../mind.mjs");
 const cfg = () => JSON.parse(readFileSync(join(CFG, "config.json"), "utf8"));
 const lane = (name) => { const p = join(HOME, "projects", name); mkdirSync(join(p, ".symbiot"), { recursive: true }); return p; };
-const symbiot = lane("symbiot"), steve = lane("steve"), argena = lane("argena"), quiet = lane("quiet"), mine = lane("mine");
-const map = { symbiot, steve, argena, quiet, mine };
+const symbiot = lane("symbiot"), robin = lane("robin"), meridian = lane("meridian"), quiet = lane("quiet"), mine = lane("mine");
+const map = { symbiot, robin, meridian, quiet, mine };
 
 try {
   console.log("URGENT — what counts");
@@ -43,14 +43,14 @@ try {
 
   console.log("URGENT — the other lanes park, the lane's routine run stops");
   writeFileSync(join(CFG, "config.json"), JSON.stringify({ parked: [mine] }));
-  writeFileSync(join(argena, ".symbiot", "TASKS.next.md"), "## Tasks\n- [ ] the class bible\n"); // waiting behind its run
-  const going = new Set([symbiot, steve, mine]), stopped = [];
+  writeFileSync(join(meridian, ".symbiot", "TASKS.next.md"), "## Tasks\n- [ ] the class bible\n"); // waiting behind its run
+  const going = new Set([symbiot, robin, mine]), stopped = [];
   const running = (p) => (going.has(p) ? { id: "run-" + p.split("/").pop(), pid: 1 } : null);
   writeFileSync(join(symbiot, ".symbiot", "TASKS.md"), "## Tasks\n- [ ] Fix the Home page layout\n"); // the routine run's brief
   const u1 = urgentFirst(symbiot, { lanes: map, running, stop: (p) => { stopped.push(p); return true; } });
-  ok("steve (running) and argena (work waiting) park; a quiet lane doesn't", u1.parked.join() === "steve,argena", u1);
+  ok("robin (running) and meridian (work waiting) park; a quiet lane doesn't", u1.parked.join() === "robin,meridian", u1);
   ok("a lane you parked yourself isn't counted as Symbiot's", !cfg().urgent.parked.includes(mine) && cfg().parked.includes(mine), cfg());
-  ok("they're parked in config, in that order", cfg().parked.join() === [mine, steve, argena].join(), cfg().parked);
+  ok("they're parked in config, in that order", cfg().parked.join() === [mine, robin, meridian].join(), cfg().parked);
   ok("symbiot's routine run is stopped so the urgent one starts now", u1.stopped && stopped.join() === symbiot, { u1, stopped });
 
   console.log("URGENT — a second urgent message doesn't stop the urgent run");
@@ -59,34 +59,34 @@ try {
   stopped.length = 0;
   const u2 = urgentFirst(symbiot, { lanes: map, running, stop: (p) => { stopped.push(p); return true; } });
   ok("'still crashing' leaves the run that's on it alone", !u2.stopped && !stopped.length, { u2, stopped });
-  ok("nothing parks twice", !u2.parked.length && cfg().parked.join() === [mine, steve, argena].join(), [u2, cfg().parked]);
+  ok("nothing parks twice", !u2.parked.length && cfg().parked.join() === [mine, robin, meridian].join(), [u2, cfg().parked]);
 
   console.log("URGENT — when it's done, the parked work resumes in its old order");
   going.delete(symbiot);
   const started = [];
   const d = urgentDone(symbiot, "run-symbiot", { running, start: (p) => { started.push(p); return { id: "n-" + p }; } });
-  ok("steve and argena are unparked, in that order; yours stays parked", d && d.unparked.join() === [steve, argena].join() && cfg().parked.join() === mine, [d, cfg().parked]);
-  ok("argena's waiting work starts", started.includes(argena) || (d && d.resumed.includes(argena)), [started, d]);
+  ok("robin and meridian are unparked, in that order; yours stays parked", d && d.unparked.join() === [robin, meridian].join() && cfg().parked.join() === mine, [d, cfg().parked]);
+  ok("meridian's waiting work starts", started.includes(meridian) || (d && d.resumed.includes(meridian)), [started, d]);
   ok("the urgent state is cleared", !urgentState(), cfg());
   ok("a run that wasn't the urgent one ending changes nothing", urgentDone(symbiot, "run-other", { running }) === null, "");
 
   console.log("URGENT — the sweep lets go if the app restarted under it");
-  writeFileSync(join(CFG, "config.json"), JSON.stringify({ parked: [steve], urgent: { at: Date.now(), paths: [symbiot], parked: [steve], runs: ["gone"] } }));
-  ok("its run isn't going any more: steve is unparked", !!urgentSweep({ running: () => null, start: () => null }) && !(cfg().parked || []).length && !urgentState(), cfg());
-  writeFileSync(join(CFG, "config.json"), JSON.stringify({ parked: [steve], urgent: { at: Date.now(), paths: [symbiot], parked: [steve], runs: [] } }));
-  ok("one that hasn't started yet holds", urgentSweep({ running: () => null }) === null && cfg().parked.join() === steve, cfg());
-  writeFileSync(join(CFG, "config.json"), JSON.stringify({ parked: [steve], urgent: { at: Date.now() - 3 * 60e3, paths: [symbiot], parked: [steve], runs: [] } }));
+  writeFileSync(join(CFG, "config.json"), JSON.stringify({ parked: [robin], urgent: { at: Date.now(), paths: [symbiot], parked: [robin], runs: ["gone"] } }));
+  ok("its run isn't going any more: robin is unparked", !!urgentSweep({ running: () => null, start: () => null }) && !(cfg().parked || []).length && !urgentState(), cfg());
+  writeFileSync(join(CFG, "config.json"), JSON.stringify({ parked: [robin], urgent: { at: Date.now(), paths: [symbiot], parked: [robin], runs: [] } }));
+  ok("one that hasn't started yet holds", urgentSweep({ running: () => null }) === null && cfg().parked.join() === robin, cfg());
+  writeFileSync(join(CFG, "config.json"), JSON.stringify({ parked: [robin], urgent: { at: Date.now() - 3 * 60e3, paths: [symbiot], parked: [robin], runs: [] } }));
   ok("one whose run never started lets go after a couple of minutes, not 6 hours", !!urgentSweep({ running: () => null, start: () => null }) && !(cfg().parked || []).length && !urgentState(), cfg());
-  writeFileSync(join(CFG, "config.json"), JSON.stringify({ parked: [steve], urgent: { at: Date.now() - 3 * 60e3, paths: [symbiot], parked: [steve], runs: [] } }));
-  ok("…but holds while a run is going in the urgent lane", urgentSweep({ running: (p) => (p === symbiot ? { id: "r" } : null) }) === null && cfg().parked.join() === steve, cfg());
+  writeFileSync(join(CFG, "config.json"), JSON.stringify({ parked: [robin], urgent: { at: Date.now() - 3 * 60e3, paths: [symbiot], parked: [robin], runs: [] } }));
+  ok("…but holds while a run is going in the urgent lane", urgentSweep({ running: (p) => (p === symbiot ? { id: "r" } : null) }) === null && cfg().parked.join() === robin, cfg());
   ok("…but not past 6 hours", !!urgentSweep({ running: () => null, now: Date.now() + 7 * 3600e3, start: () => null }) && !(cfg().parked || []).length, cfg());
 
   console.log("URGENT — Home's hand-over says what got parked");
   writeFileSync(join(CFG, "config.json"), JSON.stringify({}));
   const add = (text, l) => ({ id: "t1", text, repo: l }), push = () => ({ written: [{}] });
   const firstCalls = [];
-  const a1 = actIn("symbiot keeps crashing", "symbiot", { map, add, push, run: () => ({ busy: true }), first: (p, o) => { firstCalls.push(p); return { parked: ["steve", "argena"], stopped: true, o }; } });
-  ok("an urgent ask parks the rest and says so", firstCalls.join() === symbiot && a1.urgent && a1.urgent.parked.join() === "steve,argena", a1);
+  const a1 = actIn("symbiot keeps crashing", "symbiot", { map, add, push, run: () => ({ busy: true }), first: (p, o) => { firstCalls.push(p); return { parked: ["robin", "meridian"], stopped: true, o }; } });
+  ok("an urgent ask parks the rest and says so", firstCalls.join() === symbiot && a1.urgent && a1.urgent.parked.join() === "robin,meridian", a1);
   const a2 = actIn("Fix the Home page layout", "symbiot", { map, add, push, run: () => ({ busy: true }), first: () => { throw new Error("called"); } });
   ok("a routine one doesn't", !a2.urgent && a2.queued, a2);
 
@@ -94,11 +94,11 @@ try {
   // nothing, and Home said "it's already on urgent work, and takes this next" with 0 running.
   console.log("URGENT — a parked lane: unparked for it, and it starts");
   writeFileSync(join(CFG, "config.json"), JSON.stringify({ parked: [symbiot] }));
-  going.clear(); going.add(steve);
+  going.clear(); going.add(robin);
   const realRun = (p) => (isParked(p) ? { blocked: true, parked: true, note: "Parked: its tasks start no agent runs until you unpark it." } : { id: "job-1" });
   const b1 = actIn("URGENT: the answer box on Home wipes what I type", "symbiot", { map, add, push, run: realRun, first: (p, o) => urgentFirst(p, { ...o, running }) });
   ok("it's unparked and its run starts", b1.job === "job-1" && !b1.queued && !b1.notStarted && b1.urgent.unparked && !(cfg().parked || []).includes(symbiot), [b1, cfg()]);
-  ok("the lane with a run going parks", b1.urgent.parked.join() === "steve" && cfg().urgent.parked.join() === steve, cfg());
+  ok("the lane with a run going parks", b1.urgent.parked.join() === "robin" && cfg().urgent.parked.join() === robin, cfg());
 
   console.log("URGENT — one that can't start takes its parking back");
   writeFileSync(join(CFG, "config.json"), JSON.stringify({ parked: [mine] }));
@@ -128,53 +128,53 @@ try {
   const keep = (await converse({ where: "Home", question: "here's the key", map: { symbiot }, ask: async () => JSON.stringify({ reply: "Saved it to the vault as \"lemon squeezy api key\".", do: { agent: "wire checkout", repo: "symbiot" } }), act: { agent: async () => ({ lane: "symbiot", ok: true, notStarted: "Not started: your step comes first." }) } })).reply;
   ok("…keeping what the reply said when it claimed nothing (19 Oct 2026: a saved key's reply became the canned not-started line)", /^Saved it to the vault/.test(keep) && /not started/.test(keep), keep);
 
-  // 20 Oct 2026: "can i please have the paddle report?" and "why are these under dailify?" became
-  // "Urgent, so it goes first … Parked till it's done: dailify": the chat model wrote "before
+  // 20 Oct 2026: "can i please have the paddle report?" and "why are these under bookly?" became
+  // "Urgent, so it goes first … Parked till it's done: bookly": the chat model wrote "before
   // anything else" into its hand-over, and that was what isUrgent read.
   console.log("URGENT — only the user's own words make it urgent");
   writeFileSync(join(CFG, "config.json"), JSON.stringify({}));
   const calls = [], rec = (p, o) => { calls.push([p, o]); return { parked: [], stopped: false }; };
-  const c1 = actIn("Label each card with its lane. Do this before anything else.", "steve", { map, add, push, run: () => ({ id: "j1" }), first: rec, said: "why are these under dailify?", self: "symbiot" });
+  const c1 = actIn("Label each card with its lane. Do this before anything else.", "robin", { map, add, push, run: () => ({ id: "j1" }), first: rec, said: "why are these under bookly?", self: "symbiot" });
   ok("the chat's rewrite saying \"before anything else\" isn't urgent", !calls.length && !c1.urgent && c1.job === "j1", c1);
-  const c2 = actIn("Look at the bot", "steve", { map, add, push, run: () => ({ id: "j2" }), first: rec, said: "URGENT steve's bot is down", self: "symbiot" });
-  ok("their own \"urgent\" is", calls.length === 1 && calls[0][0] === steve && calls[0][1].others && c2.urgent, calls);
+  const c2 = actIn("Look at the bot", "robin", { map, add, push, run: () => ({ id: "j2" }), first: rec, said: "URGENT robin's bot is down", self: "symbiot" });
+  ok("their own \"urgent\" is", calls.length === 1 && calls[0][0] === robin && calls[0][1].others && c2.urgent, calls);
 
   console.log("URGENT — a fix to Symbiot parks no other lane");
   calls.length = 0;
   writeFileSync(join(CFG, "config.json"), JSON.stringify({}));
-  going.clear(); going.add(steve);
+  going.clear(); going.add(robin);
   const c3 = actIn("Fix the crash on open", "symbiot", { map, add, push, run: () => ({ id: "j3" }), first: (p, o) => { calls.push([p, o]); return urgentFirst(p, { ...o, running }); }, said: "symbiot keeps crashing", self: "symbiot" });
   ok("it's urgent in its own lane and starts", c3.job === "j3" && c3.urgent && calls.length === 1 && calls[0][1].others === false, c3);
-  ok("steve, at work, isn't parked", !c3.urgent.parked.length && !isParked(steve) && !(cfg().urgent || { parked: [] }).parked.length, [c3.urgent, cfg()]);
+  ok("robin, at work, isn't parked", !c3.urgent.parked.length && !isParked(robin) && !(cfg().urgent || { parked: [] }).parked.length, [c3.urgent, cfg()]);
   writeFileSync(join(CFG, "config.json"), JSON.stringify({}));
   const c3b = urgentFirst(symbiot, { lanes: map, running, others: false, stop: () => true });
-  ok("urgentFirst with others: false parks nothing, whatever runs", !c3b.parked.length && !isParked(steve), c3b);
+  ok("urgentFirst with others: false parks nothing, whatever runs", !c3b.parked.length && !isParked(robin), c3b);
   going.clear();
   writeFileSync(join(CFG, "config.json"), JSON.stringify({}));
 
   console.log("URGENT — a Symbiot flaw raised in chat waits for Go unless they ask for it");
   const got = [], addR = (text, l, o) => { got.push([text, l, o]); return { id: "t" + got.length, text, repo: l }; }, never = () => { throw new Error("started"); };
-  const c4 = actIn("Say which lane each idea is for on its card", "symbiot", { map, add: addR, push: never, run: never, first: never, said: "why are these under dailify?", self: "symbiot" });
+  const c4 = actIn("Say which lane each idea is for on its card", "symbiot", { map, add: addR, push: never, run: never, first: never, said: "why are these under bookly?", self: "symbiot" });
   ok("a question about it: noted, not started, nothing parked", c4.ok && c4.later && !c4.job && !c4.urgent, c4);
-  ok("…with what they said, waiting for Go", got[0][1] === "symbiot" && got[0][2].later === true && got[0][2].said === "why are these under dailify?", got[0]);
+  ok("…with what they said, waiting for Go", got[0][1] === "symbiot" && got[0][2].later === true && got[0][2].said === "why are these under bookly?", got[0]);
   for (const t of ["can i please have the paddle report?", "fix it", "fix that now", "go ahead", "symbiot keeps crashing", "can you make the cards say the lane"]) {
     got.length = 0;
     const c = actIn("The task", "symbiot", { map, add: addR, push, run: () => ({ id: "j" }), first: rec, said: t, self: "symbiot" });
     ok(`asked for: "${t}" starts it`, c.job === "j" && !c.later && got[0][2].later === false, [c, got[0]]);
   }
-  for (const t of ["and now we are doing nothing? why?", "why are these under dailify?", "the card today said the wrong lane", "that's wrong"]) {
+  for (const t of ["and now we are doing nothing? why?", "why are these under bookly?", "the card today said the wrong lane", "that's wrong"]) {
     const c = actIn("The task", "symbiot", { map, add: addR, push: never, run: never, first: never, said: t, self: "symbiot" });
     ok(`not asked for: "${t}" waits`, c.later, c);
   }
-  const c5 = actIn("Fix the steve login", "steve", { map, add: addR, push, run: () => ({ id: "j5" }), first: never, said: "that's wrong", self: "symbiot" });
+  const c5 = actIn("Fix the robin login", "robin", { map, add: addR, push, run: () => ({ id: "j5" }), first: never, said: "that's wrong", self: "symbiot" });
   ok("another lane's work isn't held back", c5.job === "j5" && !c5.later, c5);
   const fromChat = [];
-  const r5 = (await converse({ where: "Home", question: "why are these under dailify?", map: { symbiot }, ask: async () => JSON.stringify({ reply: "I got that wrong. I've started a fix in the symbiot lane.", do: { agent: "label cards", repo: "symbiot" } }), act: { agent: async (req, known, repo, said) => { fromChat.push(said); return { lane: "symbiot", ok: true, later: true, task: "t1" }; } } }));
-  ok("the chat hands the user's own words to the hand-over", fromChat[0] === "why are these under dailify?", fromChat);
+  const r5 = (await converse({ where: "Home", question: "why are these under bookly?", map: { symbiot }, ask: async () => JSON.stringify({ reply: "I got that wrong. I've started a fix in the symbiot lane.", do: { agent: "label cards", repo: "symbiot" } }), act: { agent: async (req, known, repo, said) => { fromChat.push(said); return { lane: "symbiot", ok: true, later: true, task: "t1" }; } } }));
+  ok("the chat hands the user's own words to the hand-over", fromChat[0] === "why are these under bookly?", fromChat);
   ok("its reply says it's noted for Go, never that a fix started", /Noted as a Symbiot bug/.test(r5.reply) && !/started a fix/.test(r5.reply) && /waits/.test(r5.spoken || ""), r5);
   const { userWords } = await import("../agents.mjs");
-  const uw = userWords(["- [ ] Label each card with its lane. Why: the user asked twice.", "- [ ] Fix the login"], [{ id: "a", text: "Label each card with its lane. Why: the user asked twice.", said: "why are these under dailify?" }]);
-  ok("a model is picked by what the user said for a chat-written task, and a line of theirs as it is", uw === "why are these under dailify?\n- [ ] Fix the login", uw);
+  const uw = userWords(["- [ ] Label each card with its lane. Why: the user asked twice.", "- [ ] Fix the login"], [{ id: "a", text: "Label each card with its lane. Why: the user asked twice.", said: "why are these under bookly?" }]);
+  ok("a model is picked by what the user said for a chat-written task, and a line of theirs as it is", uw === "why are these under bookly?\n- [ ] Fix the login", uw);
 } finally {
   rmSync(HOME, { recursive: true, force: true });
 }

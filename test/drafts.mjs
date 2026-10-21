@@ -40,7 +40,7 @@ const RUNS = [asker("act-post1", "Agent: Marketing: Post 1, Symbiot: a first loo
 writeFileSync(join(CFG, "runs.json"), JSON.stringify(RUNS));
 
 // the user answered another agent on the audit's work: its card says so (lanes.mjs shareAnswer)
-writeFileSync(join(CFG, "answers-shared.json"), JSON.stringify([{ key: "k1", at: new Date(now).toISOString(), from: join(CFG, "drafts", "act-post1"), lane: "evra_platform", q: "Send the Supabase ticket about evra_avm now?", a: "first check if evra_avm is saved somewhere else", topics: ["evra_avm"], to: [RUNS[1].path] }]));
+writeFileSync(join(CFG, "answers-shared.json"), JSON.stringify([{ key: "k1", at: new Date(now).toISOString(), from: join(CFG, "drafts", "act-post1"), lane: "orbit_platform", q: "Send the Supabase ticket about orbit_avm now?", a: "first check if orbit_avm is saved somewhere else", topics: ["orbit_avm"], to: [RUNS[1].path] }]));
 const app = spawn(process.execPath, [join(ROOT, "index.mjs"), "app"], { env: { ...sandboxEnv(HOME, process.env, 21000 + (process.pid % 3000)), SYMBIOT_NO_OPEN: "1" }, stdio: ["ignore", "pipe", "pipe"] });
 let chrome = null;
 const finish = async () => { try { if (chrome) chrome.kill("SIGKILL"); } catch {} try { app.kill("SIGTERM"); } catch {} await sleep(300); try { rmSync(HOME, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }); } catch {} done(); }; // chrome's helpers can still be writing its profile
@@ -64,7 +64,7 @@ try {
   const find = `(function(){if(${BLOB})return true;if(LQ.need&&LQ.need.pages>1)lqNeedPage();return false;})()`; // page through the band to it: setup cards (no Claude Code on CI) come first
   console.log("DRAFTS — typing survives Home refreshing under it");
   const audit = "[...document.querySelectorAll('#lqdrops .lqblob')].find(function(b){return /39 small problems/.test(b.textContent)})";
-  ok("a card whose agent got the user's answer to another agent says so, and what", await until(`(function(){var b=${audit};if(!b){if(LQ.need&&LQ.need.pages>1)lqNeedPage();return false;}return /Got your answer to evra_platform/.test(b.textContent)&&/saved somewhere else/.test(b.textContent);})()`), await js(`(function(){var b=${audit};return b?b.textContent:JSON.stringify((LQ.home.you||[]).map(function(y){return y.shared}))})()`));
+  ok("a card whose agent got the user's answer to another agent says so, and what", await until(`(function(){var b=${audit};if(!b){if(LQ.need&&LQ.need.pages>1)lqNeedPage();return false;}return /Got your answer to orbit_platform/.test(b.textContent)&&/saved somewhere else/.test(b.textContent);})()`), await js(`(function(){var b=${audit};return b?b.textContent:JSON.stringify((LQ.home.you||[]).map(function(y){return y.shared}))})()`));
   ok("Home shows the question as a blob", await until(find), await js("JSON.stringify((LQ.home&&LQ.home.you||[]).map(function(y){return y.q}))"));
   await js(`(function(){var b=${BLOB};b.querySelector('.bfree').click();})()`);
   await js(`(function(){var i=(${BLOB}).querySelector('.bfx input');i.focus();})()`);
@@ -72,9 +72,9 @@ try {
   await js(`(function(){var i=(${BLOB}).querySelector('.bfx input');i.setSelectionRange(9,9);i.dispatchEvent(new Event('select'));})()`); // the cursor back mid-text, as a click would put it
   const node = await js(`(function(){window.__typed=(${BLOB}).querySelector('.bfx input');return !!window.__typed;})()`);
   // a refresh that changes what Home shows: another agent asks something, and Home's own poll redraws the cards
-  writeFileSync(join(CFG, "runs.json"), JSON.stringify([asker("act-mail", "Agent: Go through the Ghost AI mailbox", "Reply to Cale about the quote?"), ...RUNS]));
+  writeFileSync(join(CFG, "runs.json"), JSON.stringify([asker("act-mail", "Agent: Go through the Ghost AI mailbox", "Reply to Alex about the quote?"), ...RUNS]));
   await js("LQ.fresh=true;lqLoad(false)");
-  const redrew = await until("(LQ.home.you||[]).some(function(y){return /Cale/.test(y.q||'')})&&LQ.need&&LQ.need.count===LQ.home.you.length", 15000) || await js("JSON.stringify({you:(LQ.home.you||[]).map(function(y){return y.q}),need:LQ.need&&LQ.need.count})"); // the new card is in the band (on its next page: the one you're typing in stays in view)
+  const redrew = await until("(LQ.home.you||[]).some(function(y){return /Alex/.test(y.q||'')})&&LQ.need&&LQ.need.count===LQ.home.you.length", 15000) || await js("JSON.stringify({you:(LQ.home.you||[]).map(function(y){return y.q}),need:LQ.need&&LQ.need.count})"); // the new card is in the band (on its next page: the one you're typing in stays in view)
   const after = JSON.parse(await js(`JSON.stringify((function(){var b=${BLOB},i=b&&b.querySelector('.bfx input');return {value:i&&i.value,focused:document.activeElement===i,same:i===window.__typed,start:i&&i.selectionStart,cards:document.querySelectorAll('#lqdrops .lqblob').length};})())`) || "{}");
   ok("the redraw really happened (the new card is up)", node && redrew === true, redrew);
   ok("what you typed is still there", after.value === "redo it, but keep the first line and", after);
@@ -105,13 +105,13 @@ try {
   // 2026-10-12): the card showed the question in plain words and sent those back, which
   // matched no question, and the error went only to Home's talk.
   console.log("CLICKS — a card answers at once, once, or says on itself why not");
-  const permQ = "Can I reach sts-prod myself to put the WhatsApp module back?", pathQ = "Which copy of `site/index.md` should I keep?", goneQ = "Should I restart the relay at ~/relay/run.sh now?";
+  const permQ = "Can I reach prod-box myself to put the WhatsApp module back?", pathQ = "Which copy of `site/index.md` should I keep?", goneQ = "Should I restart the relay at ~/relay/run.sh now?";
   const card = (id, q, opts) => { const p = join(CFG, "drafts", id); mkdirSync(join(p, ".symbiot"), { recursive: true }); writeFileSync(join(p, ".symbiot", "QUESTIONS.md"), `## Questions\n### ${q}\nSome context.\n${opts.map((o) => "- " + o).join("\n")}\n`); writeFileSync(join(p, ".symbiot", "agent.log"), "\n=== x " + new Date(now - 600000).toISOString() + " ===\n$ claude -p\n"); return { path: p, name: "Agent: " + id, startedAt: now - 600000 }; };
   const perm = card("act-perm", permQ, ["👤 You (only you: a permission): allow the list in .symbiot/allowlist.proposed.json (recommended)", "👤 You (only you: starting another lane): ask ops directly"]);
-  writeFileSync(join(perm.path, ".symbiot", "allowlist.proposed.json"), JSON.stringify({ permissions: { allow: ["Bash(ssh sts-prod:*)"] } }));
+  writeFileSync(join(perm.path, ".symbiot", "allowlist.proposed.json"), JSON.stringify({ permissions: { allow: ["Bash(ssh prod-box:*)"] } }));
   const own = card("act-own", pathQ, ["the old one (recommended)", "the new one"]), gone = card("act-gone", goneQ, ["yes (recommended)", "no"]);
-  // the WinLove card (2026-10-12), word for word: an option picked, nothing typed, and it came back "Pick or type at least one answer."
-  const winQ = "Can I log in to the WinLove server read-only to check what's actually deployed?", winSkip = "skip it, the reply already asks the developer for the commit hash and git status";
+  // the LoveLink card (2026-10-12), word for word: an option picked, nothing typed, and it came back "Pick or type at least one answer."
+  const winQ = "Can I log in to the LoveLink server read-only to check what's actually deployed?", winSkip = "skip it, the reply already asks the developer for the commit hash and git status";
   const win = card("act-win", winQ, ["👤 You (only you: a permission): allow the list in .symbiot/allowlist.proposed.json (recommended)", winSkip]);
   // a host no computer knows (TEST-NET-3): ssh-keygen -F reads the real ~/.ssh, not the sandbox's, and on a PC that
   // knows the server autoAllow answered the card by itself before it was pressed (2026-10-19)
@@ -122,22 +122,22 @@ try {
   const show = (re) => `(function(){if(${blobOf(re)})return true;if(LQ.need&&LQ.need.pages>1)lqNeedPage();return false;})()`;
   const answers = (p) => { try { return readFileSync(join(p, ".symbiot", "ANSWERS.md"), "utf8"); } catch { return ""; } };
   const until2 = async (f, ms = 10000) => { const t = Date.now(); while (Date.now() - t < ms) { if (f()) return true; await sleep(250); } return false; };
-  ok("the permission card is up, in plain words with Allow", await until(show("/reach sts-prod/")) && /Allow/.test(await js(`(${blobOf("/reach sts-prod/")}).querySelector('.nopt').textContent`)), await js("JSON.stringify((LQ.home.you||[]).map(function(y){return y.q}))"));
-  const pressed = JSON.parse(await js(`JSON.stringify((function(){var b=${blobOf("/reach sts-prod/")},o=b.querySelector('.nopt');o.click();o.click();var st=b.querySelector('.bst');return {sending:b.classList.contains('sending'),pressed:o.classList.contains('pressed'),status:st&&st.textContent,disabled:o.disabled};})())`));
+  ok("the permission card is up, in plain words with Allow", await until(show("/reach prod-box/")) && /Allow/.test(await js(`(${blobOf("/reach prod-box/")}).querySelector('.nopt').textContent`)), await js("JSON.stringify((LQ.home.you||[]).map(function(y){return y.q}))"));
+  const pressed = JSON.parse(await js(`JSON.stringify((function(){var b=${blobOf("/reach prod-box/")},o=b.querySelector('.nopt');o.click();o.click();var st=b.querySelector('.bst');return {sending:b.classList.contains('sending'),pressed:o.classList.contains('pressed'),status:st&&st.textContent,disabled:o.disabled};})())`));
   ok("2) a click shows at once: the button pressed, Sending… on the card, the buttons held", pressed.sending && pressed.pressed && pressed.status === "Sending…" && pressed.disabled, pressed);
   ok("1) Allow is saved in that agent's ANSWERS.md", await until2(() => answers(perm.path).includes("### " + permQ)), answers(perm.path));
   await sleep(1200);
-  ok("...once, pressed twice", (answers(perm.path).match(/### Can I reach sts-prod/g) || []).length === 1, answers(perm.path));
+  ok("...once, pressed twice", (answers(perm.path).match(/### Can I reach prod-box/g) || []).length === 1, answers(perm.path));
   await js("LQ.fresh=true;lqLoad(false)"); await sleep(1500);
-  ok("...and the card has gone, and stays gone through a redraw", !(await js(`!!(${blobOf("/reach sts-prod/")})`)) && !(await js("(LQ.home.you||[]).some(function(y){return /reach sts-prod/.test(y.raw||y.q||'')})")), await js("JSON.stringify((LQ.home.you||[]).map(function(y){return y.raw||y.q}))"));
+  ok("...and the card has gone, and stays gone through a redraw", !(await js(`!!(${blobOf("/reach prod-box/")})`)) && !(await js("(LQ.home.you||[]).some(function(y){return /reach prod-box/.test(y.raw||y.q||'')})")), await js("JSON.stringify((LQ.home.you||[]).map(function(y){return y.raw||y.q}))"));
   ok("4) the own-words box's Send works on a card with a file path in it", await until(show("/Which copy/")), await js("JSON.stringify((LQ.home.you||[]).map(function(y){return y.q}))"));
   await js(`(function(){var b=${blobOf("/Which copy/")};b.querySelector('.bfree').click();var f=b.querySelector('.bfx');f.dispatchEvent(new Event('submit',{cancelable:true}));})()`);
   ok("...an empty Send says to type first, on the card", (await js(`(${blobOf("/Which copy/")}).querySelector('.bst').textContent`)) === "Type your answer first.", await js(`(${blobOf("/Which copy/")}).querySelector('.bst').textContent`));
   await js(`(function(){var b=${blobOf("/Which copy/")},i=b.querySelector('.bfx input');i.value='keep the new one';b.querySelector('.bfx').dispatchEvent(new Event('submit',{cancelable:true}));})()`);
   ok("...and what you typed is saved", await until2(() => /### Which copy of `site\/index\.md` should I keep\?\nkeep the new one/.test(answers(own.path))), answers(own.path));
-  ok("5) the WinLove card is up, in plain words", await until(show("/WinLove server/")), await js("JSON.stringify((LQ.home.you||[]).map(function(y){return y.q}))"));
-  await js(`(function(){var b=${blobOf("/WinLove server/")};b.querySelectorAll('.nopt')[1].click();})()`);
-  ok("...its second option alone, nothing typed, is saved in that agent's ANSWERS.md", await until2(() => answers(win.path).includes(`### ${winQ}\n${winSkip}\n`)), [answers(win.path), await js(`(function(){var b=${blobOf("/WinLove server/")};return b?b.querySelector('.bst').textContent:'gone';})()`)]);
+  ok("5) the LoveLink card is up, in plain words", await until(show("/LoveLink server/")), await js("JSON.stringify((LQ.home.you||[]).map(function(y){return y.q}))"));
+  await js(`(function(){var b=${blobOf("/LoveLink server/")};b.querySelectorAll('.nopt')[1].click();})()`);
+  ok("...its second option alone, nothing typed, is saved in that agent's ANSWERS.md", await until2(() => answers(win.path).includes(`### ${winQ}\n${winSkip}\n`)), [answers(win.path), await js(`(function(){var b=${blobOf("/LoveLink server/")};return b?b.querySelector('.bst').textContent:'gone';})()`)]);
   ok("...with no error on the card or in Home's talk", !(await js("(LQ.talk||[]).some(function(t){return /Pick or type|isn.t open any more/.test(t.text)})")), await js("JSON.stringify(LQ.talk)"));
   // the answer refused (here: the page's request answers with the server's error), with the card left up: emptying
   // its QUESTIONS.md raced Home's own refresh, which took the card away first on a slow machine (CI, 2026-10-12)

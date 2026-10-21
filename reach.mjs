@@ -1,6 +1,6 @@
 // symbiot — Reach: what each lane can and can't get to, for the brief another lane
 // reads before it hands work over (handover.mjs handoverRules). On 13 Oct 2026 ops
-// handed the dailify lane a change to the live server's .env as "your lane", but a
+// handed the bookly lane a change to the live server's .env as "your lane", but a
 // repo run is sandboxed and reaches no server, so the job went back and forth
 // until the handover guard (lanes.mjs MAX_CHAIN) stopped it, an hour lost.
 // - Servers: the hosts this computer connects to (~/.ssh/config). Ops runs on this
@@ -11,7 +11,7 @@
 //   The live server's .env is on the server: only a lane that reaches it can change it.
 // - Sites: the web pages Symbiot's signed-in browser has mapped (Meta's WhatsApp Manager,
 //   Twilio, SMS Portal…). `symbiot screens` reaches them from a sandboxed run too (it asks
-//   the app, or runs through the sandbox's proxy), so EVERY lane reads them: the dailify
+//   the app, or runs through the sandbox's proxy), so EVERY lane reads them: the bookly
 //   lane said "this lane can't reach Meta or Twilio" without trying it (16 Oct 2026).
 // - APIs: a linked site whose own API a lane's key opens (SMSPORTAL for cp.smsportal.com).
 //   Some sites end a browser sign-in by themselves: SMS Portal logs out after about an hour
@@ -111,8 +111,8 @@ function unreachable(text, lane, reach) {
   return (reach.hosts || []).filter((h) => new RegExp(`(?<![\\w.-])${h.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\w-])`, "i").test(t));
 }
 // A job that's all on a server the lane can't reach, with no code in it for the lane to
-// write (put it live on sts-prod, a restart, a status check there): the servers, so Symbiot
-// sends it to ops itself, or []. "Put the dailify fix live on sts-prod" went to the dailify
+// write (put it live on prod-box, a restart, a status check there): the servers, so Symbiot
+// sends it to ops itself, or []. "Put the bookly fix live on prod-box" went to the bookly
 // lane, which could only hand it on, and that handover errored: the job stalled (16 Oct 2026).
 const SERVER_WORK = /\b(deploy\w*|restart\w*|reload\w*|live|status|logs?|check\w*|read[- ]only|ssh|server|pm2|systemctl|docker|nginx|migrat\w*)\b|\.env\b/i;
 const CODE_WORK = /\b(code|commit\w*|branch\w*|pull request|PR|refactor\w*|implement\w*|tests?|bug\w*|patch\w*|repo|function|component|endpoint)\b/i;

@@ -68,14 +68,14 @@ console.log("READING ONE — by its id, as safe HTML; it's read after");
   ok("Mark all read", R.listReports({ map, folders, running: none }).every((r) => !r.new));
 }
 
-console.log("IMAGES AND DRAFT TEXT — the Steve LinkedIn week 5 preview showed its pictures as raw text and cut its post off (2026-10-08)");
+console.log("IMAGES AND DRAFT TEXT — the Robin LinkedIn week 5 preview showed its pictures as raw text and cut its post off (2026-10-08)");
 {
-  const prev = join(CFG, "drafts", "act-dfac7fff"), card = join(CFG, "marketing", "drafts", "steve", "linkedin-week-05-card.png");
+  const prev = join(CFG, "drafts", "act-dfac7fff"), card = join(CFG, "marketing", "drafts", "robin", "linkedin-week-05-card.png");
   mkdirSync(dirname(card), { recursive: true }); writeFileSync(card, Buffer.from("89504e470d0a1a0a", "hex"));
   put(prev, "shot.png", "x"); // relative to the report: .symbiot/shot.png
   const outside = join(HOME, "elsewhere", "secret.png"); mkdirSync(dirname(outside), { recursive: true }); writeFileSync(outside, "x");
   const long = "My AI spent half an hour one morning thinking about capacitors. Nobody asked him to. Here's every step, unedited, including the one he got wrong.";
-  const md = `# Steve LinkedIn previews\n\n## Week 5: Tue 3 Nov 2026, 08:00 SAST (scheduled)\n\n![week 5 card](${card})\n\n\`\`\`text\n${long}\n\n- novel — look at capacitor\n\`\`\`\n\nIn LinkedIn, ready to schedule: ![week 5 in LinkedIn's composer]\n(${join(CFG, "poster", "shots", "linkedin-week-05-capacitor-3-ready.png")})\n\n![tilde](~/.config/symbiot/marketing/drafts/steve/linkedin-week-05-card.png) ![rel](shot.png) ![nope](${outside}) ![web](https://example.com/a.png)\n`;
+  const md = `# Robin LinkedIn previews\n\n## Week 5: Tue 3 Nov 2026, 08:00 SAST (scheduled)\n\n![week 5 card](${card})\n\n\`\`\`text\n${long}\n\n- novel — look at capacitor\n\`\`\`\n\nIn LinkedIn, ready to schedule: ![week 5 in LinkedIn's composer]\n(${join(CFG, "poster", "shots", "linkedin-week-05-capacitor-3-ready.png")})\n\n![tilde](~/.config/symbiot/marketing/drafts/robin/linkedin-week-05-card.png) ![rel](shot.png) ![nope](${outside}) ![web](https://example.com/a.png)\n`;
   put(prev, "STEVE-LINKEDIN-PREVIEWS.md", md);
   const l = R.listReports({ map: {}, folders: [prev], running: none, seen: { seen: {} } }), r = R.readReport(l[0].id, { list: l, mark: false });
   const imgs = [...r.html.matchAll(/<img class="rimg" data-src="([^"]+)"/g)].map((m) => m[1].replace(/&amp;/g, "&"));
@@ -136,28 +136,28 @@ console.log("SYMBIOT REPORTS — the CLI lists them and prints one");
 console.log("REPORTS — each ends with what to do about it");
 {
   const { reportIdeasAdd, reportAsk, reportDraftAnswer } = await import("../home.mjs");
-  const arg = join(HOME, "code", "argena");
-  const CATCH = "# Argena catch-up\n\nWhere it stands.\n\n## What changed\n\n- the API moved to v2\n\n## Top 3 next\n\n1. **Fix the login redirect** on staging (`auth.ts`)\n2. Add a test for [the export](https://x.y/z)\n   - with a big file\n3. Ship 0.9 to the beta group\n\n## Notes\n\n- not an idea\n";
-  put(arg, "ARGENA-CATCHUP.md", CATCH);
-  const list = R.listReports({ map: { argena: arg }, folders: [arg], running: () => false, seen: { seen: {} } });
+  const arg = join(HOME, "code", "meridian");
+  const CATCH = "# Meridian catch-up\n\nWhere it stands.\n\n## What changed\n\n- the API moved to v2\n\n## Top 3 next\n\n1. **Fix the login redirect** on staging (`auth.ts`)\n2. Add a test for [the export](https://x.y/z)\n   - with a big file\n3. Ship 0.9 to the beta group\n\n## Notes\n\n- not an idea\n";
+  put(arg, "MERIDIAN-CATCHUP.md", CATCH);
+  const list = R.listReports({ map: { meridian: arg }, folders: [arg], running: () => false, seen: { seen: {} } });
   const seenFile = join(HOME, "seen-ideas.json");
   const r = R.readReport(list[0].id, { list, seenFile });
   ok("a write-up's end: its own \"Top 3 next\", as ideas, in plain words, nothing from other sections", r.ideas.join("|") === "Fix the login redirect on staging (auth.ts)|Add a test for the export|Ship 0.9 to the beta group" && !r.draft, r.ideas);
   ok("…at most 4, from \"Recommendations\" or \"Next steps\" too; none when it has no such section", R.reportIdeas("## Next steps\n- fix a\n- fix b\n- fix c\n- fix d\n- fix e\n").length === 4 && R.reportIdeas("## Recommendations\n* ship x\n").join() === "ship x" && R.reportIdeas("# Plain\n\n- a list\n").length === 0);
   const added = [];
   const ia = reportIdeasAdd(list[0].id, [r.ideas[0], r.ideas[2]], { list: () => list, add: (t, lane, o) => (added.push({ t, lane, o }), { id: "x" }) });
-  ok("ticked ideas go onto the Workdesk in the report's lane, saying which report they came from", ia.ok && ia.added === 2 && ia.lane === "argena" && added.every((a) => a.lane === "argena" && /from the report "Argena catch-up"/.test(a.o.after)) && added[0].t === "Fix the login redirect on staging (auth.ts)", [ia, added]);
+  ok("ticked ideas go onto the Workdesk in the report's lane, saying which report they came from", ia.ok && ia.added === 2 && ia.lane === "meridian" && added.every((a) => a.lane === "meridian" && /from the report "Meridian catch-up"/.test(a.o.after)) && added[0].t === "Fix the login redirect on staging (auth.ts)", [ia, added]);
   ok("…none ticked: says so", !!reportIdeasAdd(list[0].id, [], { list: () => list }).error);
   let saw = "";
   const asked = await reportAsk(list[0].id, "which of these first?", { ask: async (sys, prompt) => { saw = prompt; return JSON.stringify({ reply: "The login redirect: it blocks the beta." }); }, deps: { read: (id) => R.readReport(id, { list, mark: false, seenFile }) } });
   ok("ask about it in place: the report is in front of the model, the answer comes back here", asked.answer === "The login redirect: it blocks the beta." && /Top 3 next/.test(saw) && /which of these first\?/.test(saw), [asked, saw.slice(0, 200)]);
-  put(arg, "PROOF.sent.md", "# Reply to Carla\n\nThe text.\n");
+  put(arg, "PROOF.sent.md", "# Reply to Dana\n\nThe text.\n");
   put(arg, "ANSWERS.md", "### Handed over to ops: her Vodacom test\nDone (the ops agent). The remaining change is on the site.\n");
   let saw2 = "";
   await reportAsk(list[0].id, "is it true?", { ask: async (sys, prompt) => { saw2 = prompt; return JSON.stringify({ reply: "ok" }); }, deps: { read: (id) => R.readReport(id, { list, mark: false, seenFile }) } });
   ok("…with what happened since: that the proof went out, and the lane's newest answers and handover reports", /It was sent/.test(saw2) && /remaining change is on the site/.test(saw2), saw2.slice(-600));
-  put(arg, "LINKEDIN-POST-PREVIEW.md", "# Draft: Steve week 2 LinkedIn post\n\nThe post.\n\n## Next\n- post it\n");
-  const l2 = R.listReports({ map: { argena: arg }, folders: [arg], running: () => false, seen: { seen: {} } }), dr = l2.find((x) => /PREVIEW/.test(x.name));
+  put(arg, "LINKEDIN-POST-PREVIEW.md", "# Draft: Robin week 2 LinkedIn post\n\nThe post.\n\n## Next\n- post it\n");
+  const l2 = R.listReports({ map: { meridian: arg }, folders: [arg], running: () => false, seen: { seen: {} } }), dr = l2.find((x) => /PREVIEW/.test(x.name));
   const d2 = R.readReport(dr.id, { list: l2, seenFile });
   ok("a draft report gets Approve / Reject, not ideas", d2.draft === true && !d2.ideas && d2.decided === "", d2);
   const ran = [];
@@ -234,11 +234,11 @@ console.log("REPORTS — what is not an action never sits in 'Read, open actions
   ok("an archive of answers is not a report", /^(?:ANSWERS(?:\.archive)?)\.md$/.test("ANSWERS.archive.md") && R.NOT_REPORTS.test("ANSWERS.archive.md") && !R.NOT_REPORTS.test("ANSWERS-REVIEW.md"));
   ok("a report's title never opens an actions section", R.reportIdeas("# Recommended local models refresh\n\n- qwen3.5:4b is 3.3 GB\n- qwen3.5:9b is 6.6 GB\n").length === 0);
   ok("the record of what was fixed is not a to-do list, 'Next 3 fixes' is", R.reportIdeas("## The fix\n\n- Changed the scorer to match whole words\n\n## Battery scorer fix\n\n- Plurals now match\n\n## The date-boundary flaw (top priority)\n\n- The prompt carried no date at all\n").length === 0 && R.reportIdeas("## Next 3 fixes, in order\n\n- Stop the pruner retiring learned skills\n").length === 1);
-  ok("a bullet that says to leave things be, or what is already so, is not an action", R.reportIdeas("## Recommendation\n\n- Do not add Colibri to the model list\n- Keep the routing as is\n- Revisit only if Garth gets 64 GB of RAM\n- Ticked: the two sign-in items\n- Media hashing is now cached by path\n- Add the Colibri note to the docs\n").join("|") === "Add the Colibri note to the docs");
+  ok("a bullet that says to leave things be, or what is already so, is not an action", R.reportIdeas("## Recommendation\n\n- Do not add Colibri to the model list\n- Keep the routing as is\n- Revisit only if Pat gets 64 GB of RAM\n- Ticked: the two sign-in items\n- Media hashing is now cached by path\n- Add the Colibri note to the docs\n").join("|") === "Add the Colibri note to the docs");
   ok("a plan that is to be done still counts", R.reportIdeas("## 6. Implementation plan (a task for the symbiot lane)\n\n- Escalate a failed run to the next tier up\n").length === 1);
   // the real case: the launch-posts report's action, worded differently from the task that covers it
   const idea = "Give the two Symbiot launch drafts an Approve button under Marketing, then approve both";
-  const task = { id: "87af67989d55", text: "Fix in Symbiot: the marketing report 'Symbiot launch posts: last link and claim check' tells Garth to 'approve both drafts under Marketing', but no approval card or button exists for them. The two drafts are the blog post and the Show HN launch drafts", repo: "symbiot", done: false, ts: Date.now() };
+  const task = { id: "87af67989d55", text: "Fix in Symbiot: the marketing report 'Symbiot launch posts: last link and claim check' tells Pat to 'approve both drafts under Marketing', but no approval card or button exists for them. The two drafts are the blog post and the Show HN launch drafts", repo: "symbiot", done: false, ts: Date.now() };
   const rep = { id: "lc", title: "Symbiot launch posts: last link and claim check", name: "LINK-CHECK.md", file: "/x/LINK-CHECK.md", lane: "marketing", mtime: Date.now() - 1000 };
   const w = R.supersededIdeas(rep, [idea, "Rotate the signing key"], R.supersedeContext({ list: [rep], tasks: [task], file: join(CFG, "seen-wide.json") }));
   ok("a task worded differently still covers an action about the same thing", /another task/.test(w.get(idea)) && !w.has("Rotate the signing key"), [...w]);
@@ -252,11 +252,11 @@ console.log("REPORTS — what is not an action never sits in 'Read, open actions
   const ask = (path, q) => ({ kind: "ask", id: "ask:" + path, q, options: [] });
   const left = settleAsks([ask("a", "Close the Symbiot Browser so I can carry on?"), ask("b", "Click Done in the browser window"), ask("c", "Which plan are you on?"), ask("d", "Which plan are you on?!"), { kind: "setup", id: "s" }]);
   const { addRule: ar } = await import("../asksdone.mjs");
-  ar("Main inbox is garthwhite507@gmail.com, never ask which mailbox to clean");
+  ar("Main inbox is owner@example.com, never ask which mailbox to clean");
   const cv = settleAsks([ask("m", "Which mailbox should I clean?")]);
   ok("a standing rule that looks like it answers an ask is listed on the card, which stays open", cv.length === 1 && cv[0].covered && cv[0].covered.length === 1, JSON.stringify(cv));
   const npm = settleAsks([ask("n1", "Tap your security key to save the npm Trusted Publisher for GAWdessey symbiot publish.yml"), ask("n2", "On npm, save the Trusted Publisher (GAWdessey / symbiot / publish.yml) with your security key tap"), ask("n3", "Which plan are you on today?")]);
-  const clicks = settleAsks([ask("c1", "Click Edit on the trusted publisher, set owner GAWdessey, and Save"), ask("c2", "Press Delete next to GarthGhostai/symbiot, then click Done"), ask("c3", "Tap your security key, then click Save on npm"), ask("c4", "Which plan are you on?")]);
+  const clicks = settleAsks([ask("c1", "Click Edit on the trusted publisher, set owner GAWdessey, and Save"), ask("c2", "Press Delete next to PatGhostai/symbiot, then click Done"), ask("c3", "Tap your security key, then click Save on npm"), ask("c4", "Which plan are you on?")]);
   ok("a card that hands the agent's clicks to the user never reaches Home; a key tap or a real question does", clicks.length === 2 && clicks[0].id === "ask:c3" && clicks[1].id === "ask:c4", JSON.stringify(clicks.map((y) => y.id)));
   ok("the same human step worded two ways is one card", npm.length === 2 && npm[0].id === "ask:n1" && npm[1].id === "ask:n3", JSON.stringify(npm.map((y) => y.id)));
   ok("asks to close the Symbiot Browser never reach Home, and the same question from two agents is one card", left.length === 2 && left[0].path === undefined && left[0].id === "ask:c" && left[1].id === "s", JSON.stringify(left.map((y) => y.id)));
@@ -268,8 +268,8 @@ console.log("REPORTS — what is not an action never sits in 'Read, open actions
   const c = plainAsk(dir, { q: "Can I run Symbiot's Screens command?", options: ["👤 You (only you: a permission): allow the list in .symbiot/allowlist.proposed.json (recommended)", "Not now"] });
   ok("a permission card lists the commands in plain words with Allow, and shows no file path", /run symbiot/.test(c.q) && /run git/.test(c.q) && c.labels[0] === "Allow (recommended)" && !/\.json|\.symbiot/.test(c.q + c.labels.join()), JSON.stringify(c));
   ok("a permission card keeps the agent's own question to answer with, since the shown one is reworded", c.raw === "Can I run Symbiot's Screens command?" && c.q !== c.raw, JSON.stringify(c));
-  recordDone("Sign in to X as Daaymn?", "Done: signed in");
-  ok("an ask the user already answered is not raised again, by any agent", settleAsks([{ kind: "ask", id: "ask:z", q: "Sign in to X as Daaymn" }]).length === 0, "");
+  recordDone("Sign in to X as Quartz?", "Done: signed in");
+  ok("an ask the user already answered is not raised again, by any agent", settleAsks([{ kind: "ask", id: "ask:z", q: "Sign in to X as Quartz" }]).length === 0, "");
 }
 {
   const { converse } = await import("../mind.mjs");
@@ -284,26 +284,26 @@ console.log("REPORTS — what is not an action never sits in 'Read, open actions
 console.log("FINDINGS AND REMOVING — a fact a report found isn't filed as a job; any card or task goes in one click, with Undo");
 {
   const { isFinding } = await import("../core.mjs");
-  const facts = ["Google is already fully on dailify.co.za. The only OAuth client lists only https://dailify.co.za.",
-    "API_EXTERNAL_URL is https://dailify.fshub.dev, not supabase.seekerai.dev. That's the value in the running container.",
-    "The 14 WhatsApp templates are already approved, not pending. All 14 show Approved in Twilio. (from the report \"Dailify domain move: ops audit (read only)\", /x/AUDIT.md)"];
-  ok("the three dailify findings of 15 Oct read as findings", facts.every(isFinding), facts.filter((f) => !isFinding(f)));
-  const jobs = ["Fix the sign-in page on Safari.", "Login is not working on mobile.", "Sign-in is still broken on Safari.", "Paystack's live webhook is empty, not set: that's for the dailify lane to check.",
-    "Reconnect Garth's calendar: it is already expiring.", "Is the live key from another Paystack business?", "Don't start a handoff where an agent is already running.", "When the reply is already in, hand it on."];
+  const facts = ["Google is already fully on bookly.co.za. The only OAuth client lists only https://bookly.co.za.",
+    "API_EXTERNAL_URL is https://bookly.devhost.dev, not supabase.finderai.dev. That's the value in the running container.",
+    "The 14 WhatsApp templates are already approved, not pending. All 14 show Approved in Twilio. (from the report \"Bookly domain move: ops audit (read only)\", /x/AUDIT.md)"];
+  ok("the three bookly findings of 15 Oct read as findings", facts.every(isFinding), facts.filter((f) => !isFinding(f)));
+  const jobs = ["Fix the sign-in page on Safari.", "Login is not working on mobile.", "Sign-in is still broken on Safari.", "Paystack's live webhook is empty, not set: that's for the bookly lane to check.",
+    "Reconnect Pat's calendar: it is already expiring.", "Is the live key from another Paystack business?", "Don't start a handoff where an agent is already running.", "When the reply is already in, hand it on."];
   ok("…and jobs, bug reports and questions don't", !jobs.some(isFinding), jobs.filter(isFinding));
   // the two lines of a report's progress log that sat on the Workdesk as jobs (19 Oct), as filed (clipped) and whole
   const lane = "(from the report \"What each lane can reach, and why lanes stalled (16 Oct 2026)\", /x/LANE-REACH.md)";
-  const logged = ["Meta part, by the dailify lane itself: done (16 Oct, about 15:00). The dailify lane read it from its own sandbox, with no errors and no help from ops. It ran symbiot screens map on WhatsApp Manager's message templates, pressed only the account picker to switch from GoSolr to Dailify, and read the li " + lane,
-    "Meta part, by the dailify lane itself (update, 14:50): the lane-reach work is out, in 0.66.5 (it includes 0.66.4, which never reached npm because 0.66.5 landed first). The app updated itself at 14:45, and its screens socket is up. From the symbiot lane's own sandbox, symbiot screens map https://busi " + lane,
-    "**Meta part, by the dailify lane itself: done (16 Oct, about 15:00).** The dailify lane read it from its own sandbox. `dailify_broker_trial_invite_v3` is **In review**, Marketing, English, no rejection reason.",
+  const logged = ["Meta part, by the bookly lane itself: done (16 Oct, about 15:00). The bookly lane read it from its own sandbox, with no errors and no help from ops. It ran symbiot screens map on WhatsApp Manager's message templates, pressed only the account picker to switch from SunCo to Bookly, and read the li " + lane,
+    "Meta part, by the bookly lane itself (update, 14:50): the lane-reach work is out, in 0.66.5 (it includes 0.66.4, which never reached npm because 0.66.5 landed first). The app updated itself at 14:45, and its screens socket is up. From the symbiot lane's own sandbox, symbiot screens map https://busi " + lane,
+    "**Meta part, by the bookly lane itself: done (16 Oct, about 15:00).** The bookly lane read it from its own sandbox. `bookly_broker_trial_invite_v3` is **In review**, Marketing, English, no rejection reason.",
     "Twilio part of the test (d): done by ops, by the API (run act-2ae1923d, read only, 12:41 on 16 Oct).",
     "Earlier note, kept for the record: still waits on 0.66.4. npm and the installed app are on 0.66.3."];
   ok("a report's progress log (done, an update, a note kept for the record) reads as findings", logged.every(isFinding), logged.filter((f) => !isFinding(f)));
-  const stillJobs = ["Step 1: done. Add the rest of the templates.", "Login: done button doesn't respond on mobile.", "Meta part (update, 14:50): it's out, but the dailify lane still needs to read the template.",
+  const stillJobs = ["Step 1: done. Add the rest of the templates.", "Login: done button doesn't respond on mobile.", "Meta part (update, 14:50): it's out, but the bookly lane still needs to read the template.",
     "Fix the invite: done for Twilio. Check Meta next.", "Deploy: done (16 Oct). Should ops restart the worker?"];
   ok("…but one that still gives an order, needs something or asks stays a job", !stillJobs.some(isFinding), stillJobs.filter(isFinding));
-  const ideas = R.reportIdeas("# Audit\n\n## Next steps\n\n- Google is already fully on dailify.co.za.\n- API_EXTERNAL_URL is https://dailify.fshub.dev, not supabase.seekerai.dev.\n- Reconnect Garth's own calendar once.\n");
-  ok("a report's next steps leave its findings out", ideas.join("|") === "Reconnect Garth's own calendar once.", ideas);
+  const ideas = R.reportIdeas("# Audit\n\n## Next steps\n\n- Google is already fully on bookly.co.za.\n- API_EXTERNAL_URL is https://bookly.devhost.dev, not supabase.finderai.dev.\n- Reconnect Pat's own calendar once.\n");
+  ok("a report's next steps leave its findings out", ideas.join("|") === "Reconnect Pat's own calendar once.", ideas);
   const { reportIdeasAdd } = await import("../home.mjs");
   const d = join(CFG, "drafts", "act-finding01"); put(d, "AUDIT.md", "# Audit\n\n## Next\n\n- Reconnect the calendar\n");
   const l = R.listReports({ map: {}, folders: [d], running: () => false }), got = [];
@@ -312,8 +312,8 @@ console.log("FINDINGS AND REMOVING — a fact a report found isn't filed as a jo
 
   const T = await import("../tasks.mjs"), { loadTasks } = await import("../core.mjs");
   const by = (id) => loadTasks().find((x) => x.id === id);
-  const f = T.addTask(facts[1], "dailify", { after: '(from the report "Dailify domain move: ops audit (read only)", /x/AUDIT.md)' });
-  const job = T.addTask("Reconnect Garth's calendar (from the report \"Audit\", /x/A.md)", "dailify");
+  const f = T.addTask(facts[1], "bookly", { after: '(from the report "Bookly domain move: ops audit (read only)", /x/AUDIT.md)' });
+  const job = T.addTask("Reconnect Pat's calendar (from the report \"Audit\", /x/A.md)", "bookly");
   T.syncTasks();
   ok("sync ticks a finding filed from a report as done, saying why, into the Archive", by(f.id).done && by(f.id).archived && /a finding, not a job/.test(by(f.id).finding), by(f.id));
   ok("…and leaves a job from the same report open", !by(job.id).done && !by(job.id).archived);
@@ -327,15 +327,15 @@ console.log("FINDINGS AND REMOVING — a fact a report found isn't filed as a jo
 
   const H = await import("../home.mjs");
   const stub = { board: () => ({ cards: [] }), agents: () => [], lanes: () => ({ handoffs: [] }), reports: () => ({ count: 0 }), connected: () => true, agentCmd: () => "claude", repos: () => ({}), confirmed: () => true, rootsSet: () => true, signedOut: () => [], agentGone: () => "", waits: () => [], clashes: () => [], stuck: () => [], drafts: () => [],
-    pending: () => [{ path: "/code/dailify", repo: "dailify", tasks: [{ text: "a" }], files: ["x"] }] };
-  const card = () => H.homeState({ fresh: true, deps: stub }).you.find((y) => y.id === "approve:dailify");
+    pending: () => [{ path: "/code/bookly", repo: "bookly", tasks: [{ text: "a" }], files: ["x"] }] };
+  const card = () => H.homeState({ fresh: true, deps: stub }).you.find((y) => y.id === "approve:bookly");
   ok("an Approve card is on Home", !!card());
   const key = H.cardKey(card());
   ok("Dismiss takes it off Home", H.dismissCard(key).ok && !card());
   ok("…Undo brings it back", H.dismissCard(key, { undo: true }).ok && !!card());
   H.dismissCard(key);
-  const more = { ...stub, pending: () => [{ path: "/code/dailify", repo: "dailify", tasks: [{ text: "a" }, { text: "b" }], files: ["x"] }] };
-  ok("a changed card (another task done) shows again", !!H.homeState({ fresh: true, deps: more }).you.find((y) => y.id === "approve:dailify"));
+  const more = { ...stub, pending: () => [{ path: "/code/bookly", repo: "bookly", tasks: [{ text: "a" }, { text: "b" }], files: ["x"] }] };
+  ok("a changed card (another task done) shows again", !!H.homeState({ fresh: true, deps: more }).you.find((y) => y.id === "approve:bookly"));
   ok("…and the card's key is the app's (bdKey): path and question for a question, else id and what it says", H.cardKey({ path: "/p", q: "Q?", raw: "Raw?" }) === "/p|Raw?" && H.cardKey({ id: "setup:x", sub: "s" }) === "setup:x|s");
   ok("dismissing nothing says so", !!H.dismissCard("").error);
   const ui = readFileSync(join(ROOT, "ui.mjs"), "utf8");
@@ -354,10 +354,10 @@ console.log("REPORTS — usable rows (2026-10-16): honest 'still writing', reada
 {
   const old = join(run, ".symbiot", "COMPANY.md"), days = (Date.now() - 4 * 864e5) / 1000;
   utimesSync(old, days, days);
-  writeFileSync(join(run, ".symbiot", "TASKS.md"), "# For your agent: Home\n\nThe user asked Symbiot for this:\n\n> Research for Garth: can Symbiot run its cheaper agent work on local models, combined with picking a model per task by cost? Don't edit code.\n");
+  writeFileSync(join(run, ".symbiot", "TASKS.md"), "# For your agent: Home\n\nThe user asked Symbiot for this:\n\n> Research for Pat: can Symbiot run its cheaper agent work on local models, combined with picking a model per task by cost? Don't edit code.\n");
   const l = R.listReports({ map, folders, running: (p) => p === run });
   ok("a 4-day-old report is not 'still writing' even while its folder has a run going", l.find((r) => r.name === "COMPANY.md").running === false && l.find((r) => r.name === "COMPANY-AUDIT.md").running === true, l.map((r) => [r.name, r.running]));
-  ok("an ops report shows what the run was for, not its act id", /^Research for Garth: can Symbiot run/.test(l[0].source) && l[0].source.length <= 80 && l.find((r) => r.lane === "symbiot").source === "", l.map((r) => r.source));
+  ok("an ops report shows what the run was for, not its act id", /^Research for Pat: can Symbiot run/.test(l[0].source) && l[0].source.length <= 80 && l.find((r) => r.lane === "symbiot").source === "", l.map((r) => r.source));
   const w = R.withNeeds(R.listReports({ map, folders, running: none }), { seenFile: join(CFG, "seen-rows.json"), tasks: [] });
   ok("a report with next steps carries them on its row", w.every((r) => Array.isArray(r.steps) && r.steps.length === r.ideas), w.map((r) => [r.name, r.ideas, r.steps]));
   const ui = readFileSync(join(ROOT, "ui.mjs"), "utf8");

@@ -312,7 +312,7 @@ try {
   ok("a changed .env, a new answer or a new task starts one", bq.envChanged && bq.again2 && bq.answered && bq.newTask, bq);
   ok("fewer of the same tasks is still blocked; force starts it anyway", bq.fewer && bq.forced, bq);
   ok("a changed agent command starts one, and a run that didn't ask clears its question note", bq.otherCmd && bq.cleared, bq);
-  // the 14 Oct 2026 audit: a run that ends "it waits on the dailify lane" asks nothing, so nothing held it, and each trigger started it again
+  // the 14 Oct 2026 audit: a run that ends "it waits on the bookly lane" asks nothing, so nothing held it, and each trigger started it again
   const emDir = join(ROOT, "blocked-empty"); mkdirSync(join(emDir, ".symbiot"), { recursive: true });
   execSync("git init -q && git -c user.email=t@t -c user.name=t commit -q --allow-empty -m init && echo .symbiot > .gitignore && echo a > a.txt", { cwd: emDir });
   const em = spawnSync(process.execPath, ["--input-type=module", "-e", `
@@ -417,9 +417,9 @@ try {
   ok("\"don't start another run until it's in\" is the user's step: it waits on the `.env` the 👤 option named", er3.answer && JSON.stringify(er3.answer.yours) === '["put WA_WABA_ID in `.env`"]' && JSON.stringify(er3.answer.waitFiles) === '[".env"]' && er3.wait && er3.wait.files[0] === ".env", [er3.answer, er3.wait]);
   ok("...a send meanwhile starts nothing but is remembered, and the run starts by itself once .env changes", er3.held && er3.held.blocked && er3.held.waiting && er3.rerun === true && er3.none === 0 && er3.started === 1, [er3.held, er3.rerun, er3.none, er3.started]);
   ok("...while \"that can wait\" is just an answer, not a hold", er3.notHold && er3.notHold.ok && !er3.notHold.yours && er3.notHoldWait === null, [er3.notHold, er3.notHoldWait]);
-  // a CI run failed, and the run that looked into it asked the user to paste git commands into a terminal (paperclip-steve, 2026-10-08)
+  // a CI run failed, and the run that looked into it asked the user to paste git commands into a terminal (paperclip-robin, 2026-10-08)
   const er4 = erRun(`a.setHandoffCmd("true {dir}");
-    const git = "👤 You: In \x60~/scratch/paperclip-steve\x60: \x60git add -A && git commit -m \\"ci: skip claude test when absent\\"\x60, then \x60git push origin main\x60.";
+    const git = "👤 You: In \x60~/scratch/paperclip-robin\x60: \x60git add -A && git commit -m \\"ci: skip claude test when absent\\"\x60, then \x60git push origin main\x60.";
     writeFileSync(s + "QUESTIONS.md", "## Questions\\n### The commit and push didn't happen. Do it again, or shall I?\\n- " + git + "\\n- 🤖 Agent: Commit the three changes and \x60git push origin main\x60 for you, then check the CI run.\\n### Commit and push?\\n- 👤 You: Review the diff, commit, and \x60git push origin main\x60 (recommended)\\n- 👤 You (only you: your GitHub password): type it when git asks\\n");
     out.qs = a.parseQuestions(readFileSync(s + "QUESTIONS.md", "utf8")).questions.map((q) => q.options);
     out.answer = a.answerQuestions(dir, [{ q: "The commit and push didn't happen. Do it again, or shall I?", a: git }], { rerun: true });
@@ -432,13 +432,13 @@ try {
   const ap = Date.now(), tk = (id, text, extra = {}) => ({ id, text, repo: "wa", done: false, ts: ap - 1000, ...extra });
   const tl = [
     tk("m", "Merge the two `WA_WABA_ID` tasks into one. Both are the same edit to `.env`.", { done: true, archived: true, approvedAt: ap }),
-    tk("d", "Drop the \"gosolr's own WhatsApp number\" task until launch.", { done: true, archived: true, approvedAt: ap }),
+    tk("d", "Drop the \"sunco's own WhatsApp number\" task until launch.", { done: true, archived: true, approvedAt: ap }),
     tk("w1", "Set `WA_WABA_ID` in `.env`. It's needed to create Flows.", { ts: ap - 3000 }),
     tk("w2", "Set `WA_WABA_ID` in `.env`. It's needed to list templates.", { ts: ap - 2000 }),
-    tk("g", "Get gosolr its own WhatsApp number before launch."),
+    tk("g", "Get sunco its own WhatsApp number before launch."),
     tk("e", "Add `.env.example` with every key."),
-    tk("later", "Get gosolr its own WhatsApp number, again.", { ts: ap + 1000 }),
-    tk("other", "Get gosolr its own WhatsApp number.", { repo: "elsewhere" }),
+    tk("later", "Get sunco its own WhatsApp number, again.", { ts: ap + 1000 }),
+    tk("other", "Get sunco its own WhatsApp number.", { repo: "elsewhere" }),
     tk("kept", "Set `WA_WABA_ID` for staging too.", { kept: true }),
     tk("pending", "Drop the `foo` task", { review: true }),
   ];
@@ -669,7 +669,7 @@ try {
   const rob = await shipChanges(ownRepo, ["On feat"], { pr: false });
   ok("a branch of your own isn't renamed when its push is refused: it stays feat, committed, and says origin/feat moved on", rob.ok && !rob.pushed && rob.branch === "feat" && gob("rev-parse --abbrev-ref HEAD") === "feat" && gob("branch").split("\n").every((b) => !/symbiot\//.test(b)) && /origin\/feat has moved on/.test(rob.note || ""), [rob, gob("branch")]);
 
-  // dailify, 13 Oct 2026: Approve committed on symbiot/4-tasks-2026-10-13, its tests failed for
+  // bookly, 13 Oct 2026: Approve committed on symbiot/4-tasks-2026-10-13, its tests failed for
   // want of a database here, nothing went up, and with the tree clean every next Approve said
   // "nothing to merge". Now what didn't go up is kept, and the next Approve (or Send again) sends it.
   const prGh = ({ create = true } = {}) => { const calls = []; const f = (args) => { calls.push(args); const s = args.join(" ");
@@ -714,7 +714,7 @@ try {
   const rRef = await repoTests(tdir, { cmd: process.execPath, args: ["-e", "console.error('FAIL api/users.test.ts\\nError: connect ECONNREFUSED 127.0.0.1:5432'); process.exit(1)"] });
   const rRed = await repoTests(tdir, { cmd: process.execPath, args: ["-e", "console.error('AssertionError: expected 2 to equal 3'); process.exit(1)"] });
   ok("repoTests: failing only for want of a local database is 'untested', not failed; a real failure still fails", rRef.ok && /127\.0\.0\.1:5432/.test(rRef.untested || "") && rRed.ok === false && /AssertionError/.test(rRed.note), [rRef, rRed]);
-  // dailify, 14 Oct 2026: under npm --silent, pnpm -r test printed nothing, so the database it couldn't
+  // bookly, 14 Oct 2026: under npm --silent, pnpm -r test printed nothing, so the database it couldn't
   // reach read as a plain failure; the address can also arrive split across two pieces of output
   const was = process.env.npm_config_loglevel; process.env.npm_config_loglevel = "silent";
   const rLoud = await repoTests(tdir, { cmd: process.execPath, args: ["-e", "if (process.env.npm_config_loglevel !== 'silent') console.error('Error: connect ECONNREFUSED 127.0.0.1:5432'); process.exit(1)"] });
@@ -722,7 +722,7 @@ try {
   const rSplit = await repoTests(tdir, { cmd: process.execPath, args: ["-e", "process.stderr.write('Error: connect ECONNRE'); setTimeout(() => { process.stderr.write('FUSED 127.0.0.1:5432\\n'); process.exit(1); }, 300)"] });
   const rWhy = await repoTests(tdir, { cmd: process.execPath, args: ["-e", "console.log('\\x1b[31m Tests  2 failed | 40 passed (42)\\x1b[39m\\napps/api test: Failed\\n/repo/apps/api:\\n ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL  @x/api test: `vitest run`\\nExit status 1\\nnpm error code 1'); process.exit(1)"] });
   ok("repoTests: an inherited --silent can't hide the refused database, nor a split in the output; a real failure gives its own line, not npm's sign-off", rLoud.ok && rLoud.untested && rSplit.ok && rSplit.untested && rWhy.ok === false && rWhy.note === "Tests  2 failed | 40 passed (42)", [rLoud, rSplit, rWhy]);
-  // dailify, 14 Oct 2026: a server its tests started kept their output open after npm exited, so the
+  // bookly, 14 Oct 2026: a server its tests started kept their output open after npm exited, so the
   // tests never "ended" and Approve there was refused ("Already approving here") until a restart
   const heldAt = Date.now(), rHeld = await repoTests(tdir, { cmd: process.execPath, args: ["-e", "require('child_process').spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'inherit' }); console.log('ok'); process.exit(0)"] });
   const rOver = await repoTests(tdir, { limit: 1500, cmd: process.execPath, args: ["-e", "setInterval(() => {}, 1000)"] });
@@ -850,7 +850,7 @@ try {
     writeFileSync(f, "- [x] " + del + "\\n"); m.syncTasks();
     out.eAfter = tasks().find((x) => x.id === out.e1.id);
     // a task longer than a task holds (a handed-over email): nothing cut, its line links to the whole of it
-    const longText = "Draft an email to Jono about forwarding for the Voxi number.\\n\\n" + Array.from({ length: 120 }, (_, i) => "Point " + (i + 1) + ": say what the endpoint needs and why it matters here.").join("\\n") + "\\nGarth";
+    const longText = "Draft an email to Remy about forwarding for the Vocal number.\\n\\n" + Array.from({ length: 120 }, (_, i) => "Point " + (i + 1) + ": say what the endpoint needs and why it matters here.").join("\\n") + "\\nPat";
     out.longText = longText; out.long = m.addTask(longText, "revapp", { after: "(handed over by ops)" }); m.pushTasks();
     try { out.longBrief = readFileSync(f.replace("TASKS.md", "TASKS.next.md"), "utf8"); } catch { out.longBrief = readFileSync(f, "utf8"); } // held: the stand-in agent started above may still run
     try { out.longFull = readFileSync(f.replace("TASKS.md", "full/" + out.long.id + ".md"), "utf8"); } catch {}
@@ -902,21 +902,21 @@ try {
   ok("a short task with more words on the end is still its own task", o.short2 && !o.short2.duplicate && o.short2.id !== o.short1.id, [o.short1, o.short2]);
   ok("an agent's tick on the old wording still sends the reworded task to review", o.eAfter && o.eAfter.review === true, o.eAfter);
   const lg = o.long || {};
-  ok("a task too long for one line keeps all of it; its line is whole sentences and a link to the rest", lg.full === o.longText + "\n\n(handed over by ops)" && lg.text.length < 1000 && /^Draft an email to Jono.*\. … Full text: `\.symbiot\/full\/[0-9a-f]+\.md` \(handed over by ops\)$/.test(lg.text) && lg.text.includes("`.symbiot/full/" + lg.id + ".md`"), lg.text);
-  ok("...the brief lists that line, and its full text goes out with it, sign-off and all", (o.longBrief || "").includes("- [ ] " + lg.text) && o.longFull === lg.full + "\n" && /Point 120: .*\nGarth\n\n\(handed over by ops\)\n$/.test(o.longFull || ""), (o.longBrief || "").split("## Tasks")[1]);
+  ok("a task too long for one line keeps all of it; its line is whole sentences and a link to the rest", lg.full === o.longText + "\n\n(handed over by ops)" && lg.text.length < 1000 && /^Draft an email to Remy.*\. … Full text: `\.symbiot\/full\/[0-9a-f]+\.md` \(handed over by ops\)$/.test(lg.text) && lg.text.includes("`.symbiot/full/" + lg.id + ".md`"), lg.text);
+  ok("...the brief lists that line, and its full text goes out with it, sign-off and all", (o.longBrief || "").includes("- [ ] " + lg.text) && o.longFull === lg.full + "\n" && /Point 120: .*\nPat\n\n\(handed over by ops\)\n$/.test(o.longFull || ""), (o.longBrief || "").split("## Tasks")[1]);
   ok("...and handed over again, it's the same task", o.longAgain && o.longAgain.duplicate && o.longAgain.id === lg.id, o.longAgain);
   ok("sameTask: case, spacing and punctuation aside; a clause more only after 8+ words", sameTask("Fix it: `now`", "fix it (now)") && !sameTask("Fix the bug", "Fix the bug in the login form") && sameTask("one two three four five six seven eight", "One two three four five six seven eight, nine.") && !sameTask("one two three four five six seven eight", "one two three four five six seven eighty") && !sameTask("", ""), "");
   ok("uniqueTasks keeps one of each, in the words that say the most", JSON.stringify(uniqueTasks(["a b c d e f g h", "Other", "A b c d e f g h, i j.", "other!"])) === JSON.stringify(["A b c d e f g h, i j.", "Other"]), uniqueTasks(["a b c d e f g h", "Other", "A b c d e f g h, i j.", "other!"]));
-  // the two Jono asks, as two runs worded them: the same names, mostly the same words
-  const jono1 = "Send Jono the two asks yourself: verify `X-Wa-Signature-256` on his endpoint, and have his agent mark each applicant once the e-sign service reports the consent as signed. I can't message him from here.";
-  const jono2 = "Ask Jono to verify `X-Wa-Signature-256` on his endpoint before go-live. Also ask him to have his agent mark the applicant once the e-sign service reports the consent as signed, so unsigned applications can be chased.";
+  // the two Remy asks, as two runs worded them: the same names, mostly the same words
+  const jono1 = "Send Remy the two asks yourself: verify `X-Wa-Signature-256` on his endpoint, and have his agent mark each applicant once the e-sign service reports the consent as signed. I can't message him from here.";
+  const jono2 = "Ask Remy to verify `X-Wa-Signature-256` on his endpoint before go-live. Also ask him to have his agent mark the applicant once the e-sign service reports the consent as signed, so unsigned applications can be chased.";
   const gmailWhole = ["Whole page for Gmail too: scroll the list of mail inside the page and put the pieces together, so a whole inbox is one screen", "Map the whole page at once: one tall screenshot with every button, link and field on it, for a page that scrolls as a whole (not for Gmail, whose list scrolls inside the page)"];
-  ok("sameTask: the same ask in other words is one task (the two Jono asks), and TASKS.md lists it once", sameTask(jono1, jono2) && uniqueTasks([jono1, jono2]).length === 1, uniqueTasks([jono1, jono2]));
-  ok("...but not two tasks that share a topic, or name different things", !sameTask(...gmailWhole) && !sameTask(jono2, jono2.replace(/Jono/g, "Thandi")) && !sameTask("Ask Jono to verify the signature header on his endpoint before go-live", "Ask Jono to sign the contract on his side before go-live"), "");
+  ok("sameTask: the same ask in other words is one task (the two Remy asks), and TASKS.md lists it once", sameTask(jono1, jono2) && uniqueTasks([jono1, jono2]).length === 1, uniqueTasks([jono1, jono2]));
+  ok("...but not two tasks that share a topic, or name different things", !sameTask(...gmailWhole) && !sameTask(jono2, jono2.replace(/Remy/g, "Thandi")) && !sameTask("Ask Remy to verify the signature header on his endpoint before go-live", "Ask Remy to sign the contract on his side before go-live"), "");
   const mailShort = "A mail connector linked in Symbiot still doesn't reach agent runs (Drive does now). Pass its `mcp__…` tools through, or tell the user it isn't wired up.";
   const mailSteps = "In the symbiot repo: a mail connector linked in Symbiot still doesn't reach agent runs, but the Drive connector now does. 1) Find where Drive's `mcp__…` tools get passed into agent runs. Search for the Drive connector and the `mcp__` allow-list the agent command (`agentCmd` in ~/.config/symbiot/config.json) is launched with. 2) Apply the same pass-through for the linked mail connector's `mcp__…` tools. 3) If it can't be passed through, surface a clear message to the user. 4) Follow CONTRIBUTING.md (plain ES modules, no build step) and run the lint/tests.";
   ok("sameTask: a task spelled out in steps is the task it spells out (its first sentence, without \"In the … repo:\"), and TASKS.md lists the steps once", sameTask(mailShort, mailSteps) && sameTask(mailSteps, mailShort) && JSON.stringify(uniqueTasks([mailShort, mailSteps])) === JSON.stringify([mailSteps]), uniqueTasks([mailShort, mailSteps]));
-  ok("...but not when its first sentence is another task, or both are in steps", !sameTask(mailSteps, "A calendar connector linked in Symbiot still doesn't reach agent runs (Drive does now). Pass its tools through.") && !sameTask(mailSteps, mailSteps.replace(/Drive/g, "Notion")) && !sameTask("Draft the email to Jono. Ask him for: 1) the endpoint URL 2) the shared secret, sent through a secure channel", jono2), "");
+  ok("...but not when its first sentence is another task, or both are in steps", !sameTask(mailSteps, "A calendar connector linked in Symbiot still doesn't reach agent runs (Drive does now). Pass its tools through.") && !sameTask(mailSteps, mailSteps.replace(/Drive/g, "Notion")) && !sameTask("Draft the email to Remy. Ask him for: 1) the endpoint URL 2) the shared secret, sent through a secure channel", jono2), "");
 
   console.log("RELEASE — warn when the default branch is past its last v* tag");
   const rel = build("release", `git init -q -b main && git config user.email t@x.co && git config user.name T
@@ -1048,19 +1048,19 @@ try {
   const pl = parseQuestions(`## Questions\n### Long?\n- ${longOpt}\n\n## Suggestions\n- ${longIdea}\n- ${"z".repeat(1200)}\n`);
   const pl2 = parseQuestions(`## Suggestions\n- ${"word ".repeat(1000)}\n`);
   ok("a long idea or option arrives whole, up to the 4000 a task holds, and past that ends at a word", pl.suggestions[0] === longIdea && pl.questions[0].options[0] === longOpt && pl.suggestions[1] === "z".repeat(1200) && pl2.suggestions[0].length <= 4000 && /word…$/.test(pl2.suggestions[0]), [pl.suggestions.map((s) => s.length), pl2.suggestions[0].slice(-20)]);
-  // an idea for another project names it: an agent on coral with an idea for Symbiot
+  // an idea for another project names it: an agent on atlas with an idea for Symbiot
   const aqDir = join(ROOT, "aq"), aqHome = join(ROOT, "aqhome");
   mkdirSync(join(aqDir, ".symbiot"), { recursive: true }); mkdirSync(join(aqHome, ".config", "symbiot"), { recursive: true });
-  writeFileSync(join(aqDir, ".symbiot", "QUESTIONS.md"), "## Questions\n### Which way?\n- 🤖 Agent: A (recommended)\n- 🤖 Agent: B\n- 🤖 Agent: C\n\n## Suggestions\n- [repo: symbiot] Watch GitHub too\n- [repo: symbiot] Watch Jira too\n- Cache the map scan\n- [Repo:coral]  Same repo, named\n- [WIP] Not a repo tag\n");
+  writeFileSync(join(aqDir, ".symbiot", "QUESTIONS.md"), "## Questions\n### Which way?\n- 🤖 Agent: A (recommended)\n- 🤖 Agent: B\n- 🤖 Agent: C\n\n## Suggestions\n- [repo: symbiot] Watch GitHub too\n- [repo: symbiot] Watch Jira too\n- Cache the map scan\n- [Repo:atlas]  Same repo, named\n- [WIP] Not a repo tag\n");
   writeFileSync(join(aqHome, ".config", "symbiot", "tasks.json"), JSON.stringify([{ id: "a", text: "Watch GitHub too", repo: "symbiot", done: false }]));
-  const aq = spawnSync(process.execPath, ["--input-type=module", "-e", `import { agentQuestions } from ${JSON.stringify(join(dirname(INDEX), "agents.mjs"))}; console.log(JSON.stringify(agentQuestions(${JSON.stringify(aqDir)}, "coral")));`], { encoding: "utf8", env: { ...process.env, HOME: aqHome, USERPROFILE: aqHome } });
+  const aq = spawnSync(process.execPath, ["--input-type=module", "-e", `import { agentQuestions } from ${JSON.stringify(join(dirname(INDEX), "agents.mjs"))}; console.log(JSON.stringify(agentQuestions(${JSON.stringify(aqDir)}, "atlas")));`], { encoding: "utf8", env: { ...process.env, HOME: aqHome, USERPROFILE: aqHome } });
   let aqr = {}, ideas = []; try { aqr = JSON.parse(aq.stdout); ideas = aqr.suggestions; } catch { console.log(aq.stdout, aq.stderr); }
   ok("an idea starting [repo: symbiot] goes to symbiot's tasks, not the agent's repo's", ideas[0] && ideas[0].text === "Watch Jira too" && ideas[0].repo === "symbiot" && ideas[0].other && !ideas[0].added, ideas[0]);
   ok("...one already in that repo's Tasks leaves the list, so the next moves up; the tab shows 2 at a time", !ideas.some((x) => x.text === "Watch GitHub too") && aqr.ideasShown === 2, [ideas.map((x) => x.text), aqr.ideasShown]);
   ok("a question shows its first 2 options, whatever the agent wrote", ((aqr.questions || [])[0] || {}).options && aqr.questions[0].options.join("|") === "🤖 Agent: A (recommended)|🤖 Agent: B", aqr.questions);
   // Skip: a folder no agent ran in is refused; one that ran keeps the idea in SKIPPED.md, once, and it leaves the list
-  writeFileSync(join(aqHome, ".config", "symbiot", "runs.json"), JSON.stringify([{ path: aqDir, name: "coral", startedAt: 1 }]));
-  const sk = spawnSync(process.execPath, ["--input-type=module", "-e", `import { skipIdea, agentQuestions } from ${JSON.stringify(join(dirname(INDEX), "agents.mjs"))}; const no = skipIdea(${JSON.stringify(join(ROOT, "nowhere"))}, "x"); const a = skipIdea(${JSON.stringify(aqDir)}, "Watch Jira too"), b = skipIdea(${JSON.stringify(aqDir)}, "watch jira too!"); console.log(JSON.stringify({ no, a, b, ideas: agentQuestions(${JSON.stringify(aqDir)}, "coral").suggestions.map((x) => x.text) }));`], { encoding: "utf8", env: { ...process.env, HOME: aqHome, USERPROFILE: aqHome } });
+  writeFileSync(join(aqHome, ".config", "symbiot", "runs.json"), JSON.stringify([{ path: aqDir, name: "atlas", startedAt: 1 }]));
+  const sk = spawnSync(process.execPath, ["--input-type=module", "-e", `import { skipIdea, agentQuestions } from ${JSON.stringify(join(dirname(INDEX), "agents.mjs"))}; const no = skipIdea(${JSON.stringify(join(ROOT, "nowhere"))}, "x"); const a = skipIdea(${JSON.stringify(aqDir)}, "Watch Jira too"), b = skipIdea(${JSON.stringify(aqDir)}, "watch jira too!"); console.log(JSON.stringify({ no, a, b, ideas: agentQuestions(${JSON.stringify(aqDir)}, "atlas").suggestions.map((x) => x.text) }));`], { encoding: "utf8", env: { ...process.env, HOME: aqHome, USERPROFILE: aqHome } });
   let skr = {}; try { skr = JSON.parse(sk.stdout); } catch { console.log(sk.stdout, sk.stderr); }
   const skMd = existsSync(join(aqDir, ".symbiot", "SKIPPED.md")) ? readFileSync(join(aqDir, ".symbiot", "SKIPPED.md"), "utf8") : "";
   ok("Skip turns an idea down: kept once in .symbiot/SKIPPED.md, and the next idea moves up", skr.a && skr.a.ok && skr.b && skr.b.ok && (skMd.match(/^- /gm) || []).length === 1 && /^- Watch Jira too$/m.test(skMd) && skr.ideas && skr.ideas[0] === "Cache the map scan" && !skr.ideas.includes("Watch Jira too"), [skr, skMd]);
@@ -1068,7 +1068,7 @@ try {
   const brief = buildTasksMd("x", {}, [{ text: "t" }]);
   ok("the brief tells agents not to suggest a skipped idea again", /`\.symbiot\/SKIPPED\.md`: don't suggest them again/.test(brief), "");
   ok("the brief asks for exactly 2 options, judged for the company, the people, then the goal, on evidence", /exactly 2 options/.test(brief) && /Judge the options/.test(brief) && /the company, the people doing the work, then the task's goal/.test(brief) && /evidence/.test(brief) && /2 at a time/.test(brief), brief.slice(brief.indexOf("## If you need")));
-  ok("...ideas naming no repo, or their own, stay with the agent's repo; other brackets are just text", ideas.slice(1).map((x) => `${x.repo}:${x.other}:${x.text}`).join("|") === "coral:false:Cache the map scan|coral:false:Same repo, named|coral:false:[WIP] Not a repo tag", ideas.slice(1));
+  ok("...ideas naming no repo, or their own, stay with the agent's repo; other brackets are just text", ideas.slice(1).map((x) => `${x.repo}:${x.other}:${x.text}`).join("|") === "atlas:false:Cache the map scan|atlas:false:Same repo, named|atlas:false:[WIP] Not a repo tag", ideas.slice(1));
   ok("the brief tells agents how to name another project", /`- \[repo: symbiot\] …`/.test(buildTasksMd("x", {}, [{ text: "t" }])), "");
   const loose = parseQuestions("- Should I delete the legacy folder?\n- Rename it instead?");
   ok("bare bullets with no headings are still questions", loose.questions.length === 2 && loose.questions[0].options.length === 0, loose);
@@ -1368,7 +1368,7 @@ try {
     out.f2map = await h.mapPage("127.0.0.1:" + srv.address().port + "/form2", "");
     const f2 = (out.f2map.regions || []).filter((r) => r.kind === "field"), f2go = (out.f2map.regions || []).find((r) => r.label === "Save");
     out.fillBad = await h.fillForm(out.f2map.id, [{ region: f2go.id, text: "x" }], { confirmed: true });
-    out.fill = f2.length === 2 && f2go ? await h.fillForm(out.f2map.id, [{ region: f2[0].id, text: "GAWdessey" }, { region: f2[1].id, text: "GarthGhostai/symbiot" }], { press: f2go.id, confirmed: true }) : { error: "no form" };
+    out.fill = f2.length === 2 && f2go ? await h.fillForm(out.f2map.id, [{ region: f2[0].id, text: "GAWdessey" }, { region: f2[1].id, text: "PatGhostai/symbiot" }], { press: f2go.id, confirmed: true }) : { error: "no form" };
     // a field that isn't on the page now (the form was lost): refused, nothing typed or pressed
     s.setRegions(out.f2map.id, out.f2map.regions.map((r) => (r.id === f2[0].id ? { ...r, selector: "#not-on-the-page" } : r)));
     out.fillGone = await h.fillForm(out.f2map.id, [{ region: f2[0].id, text: "x" }], { press: f2go.id, confirmed: true });
@@ -1449,7 +1449,7 @@ try {
     ok("the hidden browser closes after each action unless it's kept open", ho.closedAfter === true, ho.closedAfter);
     ok("kept open: typed without Enter, it's still there for a separate button on the screen that mapped", ho.ftype && ho.ftype.found && !ho.ftype.entered && ho.fopen === true && ho.fpress && ho.fpress.kept === true && ho.fpress.name === "Results for kept", [ho.ftype && ho.ftype.error, ho.fopen, ho.fpress && (ho.fpress.error || ho.fpress.name)]);
     ok("kept open: a press on an older screen opens its page again (what was typed there is gone)", ho.fold && !ho.fold.kept && ho.fold.name === "Results for", ho.fold && (ho.fold.error || ho.fold.name));
-    ok("fillForm: only fills fields, and fills several then presses a button in one session, so none is lost", /isn't a field/.test((ho.fillBad || {}).error || "") && ho.fill && ho.fill.typed && ho.fill.typed.length === 2 && ho.fill.pressed === "Save" && ho.fill.name === "Results for GAWdessey+GarthGhostai/symbiot", ho.fill);
+    ok("fillForm: only fills fields, and fills several then presses a button in one session, so none is lost", /isn't a field/.test((ho.fillBad || {}).error || "") && ho.fill && ho.fill.typed && ho.fill.typed.length === 2 && ho.fill.pressed === "Save" && ho.fill.name === "Results for GAWdessey+PatGhostai/symbiot", ho.fill);
     ok("fillForm: a field that isn't on the page now is refused before anything is typed or pressed", /isn't on the page now/.test((ho.fillGone || {}).error || "") && !ho.fillGone.typed && !ho.fillGone.pressed, ho.fillGone);
     ok("verifyPage: says which texts are on a freshly loaded page, and ok only if all are", ho.verifyYes && ho.verifyYes.ok === true && ho.verifyNo && ho.verifyNo.ok === false && ho.verifyNo.found.map((x) => x.found).join() === "true,false" && /give what/i.test((ho.verifyNone || {}).error || ""), JSON.stringify([ho.verifyYes, ho.verifyNo, ho.verifyNone]));
     ok("closeBrowser closes it", ho.fclosed === true, ho.fclosed);
@@ -1600,11 +1600,11 @@ try {
 
   console.log("WATCH MAIL — automated mail isn't asking you anything (watch.mjs needsYou)");
   const mailW = { url: "https://mail.google.com/mail/u/1/#inbox" };
-  ok("a GitHub Actions CI failure doesn't need a reply", !needsYou({ text: "GitHub [GarthGhostai/symbiot] Run failed: CI - symbiot/5-tasks (dbf6eff) Oct 19", unread: 1 }, mailW) && automatedMail("noreply@vercel.com Your receipt") && automatedMail("Daily newsletter - unsubscribe"), "");
-  ok("a real person's question still does", needsYou({ text: "Cale Morris Can you send the First Step quote by Friday? Oct 19", unread: 1 }, mailW) && !automatedMail("Cale Morris Can you send the First Step quote by Friday?"), "");
+  ok("a GitHub Actions CI failure doesn't need a reply", !needsYou({ text: "GitHub [PatGhostai/symbiot] Run failed: CI - symbiot/5-tasks (dbf6eff) Oct 19", unread: 1 }, mailW) && automatedMail("noreply@vercel.com Your receipt") && automatedMail("Daily newsletter - unsubscribe"), "");
+  ok("a real person's question still does", needsYou({ text: "Alex Reed Can you send the North Star quote by Friday? Oct 19", unread: 1 }, mailW) && !automatedMail("Alex Reed Can you send the North Star quote by Friday?"), "");
 
   console.log("WATCH WHATSAPP — a chat preview doesn't say who wrote it: only unread messages are from them (watch.mjs fromOf)");
-  ok("fromOf: unread is theirs; ticks, \"You:\" or \"(You)\" are yours; a preview with none of these is unknown, never theirs", fromOf({ text: "Ann 08:10 See you then", unread: 2 }) === "them" && fromOf({ text: "Ann 08:10 See you then", mine: true }) === "you" && fromOf({ text: "Team 08:00 You: on my way" }) === "you" && fromOf({ text: "Garth (You) 07:55 note to self" }) === "you" && fromOf({ text: "Tee Gee 08:15 I was thinking about you and your value" }) === "unknown", "");
+  ok("fromOf: unread is theirs; ticks, \"You:\" or \"(You)\" are yours; a preview with none of these is unknown, never theirs", fromOf({ text: "Ann 08:10 See you then", unread: 2 }) === "them" && fromOf({ text: "Ann 08:10 See you then", mine: true }) === "you" && fromOf({ text: "Team 08:00 You: on my way" }) === "you" && fromOf({ text: "Pat (You) 07:55 note to self" }) === "you" && fromOf({ text: "Tee Gee 08:15 I was thinking about you and your value" }) === "unknown", "");
   const cits = itemsOf({ items: [{ kind: "row", label: "Ann 08:10 See you then 2", unread: 2 }, { kind: "row", label: "Bob 08:00 Done", mine: true }] });
   ok("itemsOf: a row keeps its unread count and its ticks (what only its icons say)", cits[0].unread === 2 && !cits[0].mine && cits[1].mine === true && !cits[1].unread, cits);
   const whahome = join(ROOT, "whahome"); mkdirSync(whahome, { recursive: true });

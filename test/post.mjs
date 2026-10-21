@@ -280,7 +280,7 @@ try {
   const dgo = homeAnswer("draft:n1", { pick: 0 }, { draftAnswer: (id, o) => W.draftAnswer(id, { ...o, run: (d, oo) => { ran3.push([d, oo]); return { id: "j3" }; } }) });
   ok("Go ahead: a run that sends it, without SYMBIOT_DRAFT, with the approved text", dgo.ok && ran3.length === 1 && ran3[0][1].force && !meta().env.SYMBIOT_DRAFT && /# Send the approved reply: LinkedIn/.test(brief()) && /## The reply\nTo: Sam\nHi Sam, it's free for teams of up to 5\.\n/.test(brief()), [dgo, meta(), brief().slice(0, 200)]);
   ok("…and the card is gone while it sends", W.draftCard(dir) === null && meta().draft.state === "sending", meta());
-  { // Frikkie's reply went out at 14:10 (Garth pasted it in himself), and the card still asked for his OK
+  { // Frikkie's reply went out at 14:10 (Pat pasted it in himself), and the card still asked for his OK
     const fr = join(CFG, "drafts", "fr"); mkdirSync(join(fr, ".symbiot"), { recursive: true });
     writeFileSync(join(fr, ".symbiot", "handoff.json"), JSON.stringify({ draft: { kind: "social", platform: "LinkedIn" } }));
     const md = "# Draft a reply: LinkedIn\n## Tasks\n- [x] Draft a reply to: Frikkie\n\n## The reply\nHi Frikkie, 09:30 works well for me!\n";
@@ -297,7 +297,7 @@ try {
   ok("a draft folder's 'ready for you to send' is its card's, never a 'waits for your OK' rerun (that run can't send)", needsOf(dir, { final: said }) === null, needsOf(dir, { final: said }));
   const other = join(HOME, "elsewhere"); mkdirSync(join(other, ".symbiot"), { recursive: true });
   ok("…while any other run's still is", !!needsOf(other, { final: said }), "");
-  { // dailify, 14 Oct 2026: "Ops has to load it on prod, which this lane can't reach." showed as "I've done this", though ops had it
+  { // bookly, 14 Oct 2026: "Ops has to load it on prod, which this lane can't reach." showed as "I've done this", though ops had it
     const { READ_FILE } = await import("../agents.mjs"), { createHash } = await import("node:crypto");
     const opsSaid = "The lead list is ready.\n- Ops has to load it on prod, which this lane can't reach.";
     ok("another lane's job in a run's last words is never a step of yours", needsOf(other, { final: opsSaid }) === null, needsOf(other, { final: opsSaid }));

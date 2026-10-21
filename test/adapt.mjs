@@ -162,7 +162,7 @@ try {
     const cases = { "navigate me to reports": "reports", "take me to reports": "reports", "Take me to Reports.": "reports", "can you open settings please": "settings", "go to the workdesk": "tasks", "show me my tasks": "tasks", "open the dashboard": "board", "dashboard": "board", "reports": "reports", "open my week": "week", "take me home": "home", "go back home": "home", "Symbiot, navigate to marketing": "marketing", "open archive": "archive" };
     const got = Object.fromEntries(Object.keys(cases).map((q) => [q, lqNavHit(q)]));
     ok("clear asks go straight to their page", Object.keys(cases).every((q) => got[q] === cases[q]), got);
-    const not = ["show me that thing from earlier", "where are my updates", "go for it", "go", "home", "open settings and change my voice", "show me the bug in dailify"];
+    const not = ["show me that thing from earlier", "where are my updates", "go for it", "go", "home", "open settings and change my voice", "show me the bug in bookly"];
     ok("…a vague ask, or more than a page, goes to the model (it picks and says why)", not.every((q) => lqNavHit(q) === ""), not.map((q) => [q, lqNavHit(q)]));
     ok("the model's pick opens, with its reason and the others on the page it opened", /if\(r\.go&&r\.go\.to\)\{lqNav\(r\.go\.to,r\.go\)/.test(uiJs) && /id="lqwhy"/.test(EMBEDDED_UI), "");
   }
@@ -172,8 +172,8 @@ try {
     const line = (re) => uiJs.match(re)[0];
     const pre = ["var LQ={};", line(/var PARA_OF=\{[^}]*\};/), line(/var ZONE_ORDER=\[[^\]]*\],ZONE_KIND=\{[^}]*\};/), line(/var LQ_RUNW=\d+;/)].join("\n");
     const F = new Function(pre + grab("lqPara") + grab("runWarn") + grab("lqRunBand") + grab("lqZones") + "\nreturn { lqZones, lqRunBand, LQ };")();
-    const shapes = [["tasks", 58.7], ["settings", 48.5], ["reports", 41.5], ["marketing", 35], ["board", 34.8], ["todo", 34.5], ["map", 34.5]]; // the layout Garth's Home had
-    const names = ["argena", "steve", "Garth just restarted his Symbiot app", "symbiot"];
+    const shapes = [["tasks", 58.7], ["settings", 48.5], ["reports", 41.5], ["marketing", 35], ["board", 34.8], ["todo", 34.5], ["map", 34.5]]; // the layout Pat's Home had
+    const names = ["meridian", "robin", "Pat just restarted his Symbiot app", "symbiot"];
     const runs = names.map((n) => ({ id: "run:" + n, name: n, repo: n, line: "step 3 of 4: wire the class bible into the game · trials in a sealed circle", eta: "5–15 min left" }));
     const over = (a, b) => a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3];
     const tag = (d) => Math.min(170, String(d.title).length * 6.6 + 18);
@@ -205,15 +205,15 @@ try {
   const deps = {
     board: () => ({ cards: [{ id: "w1", name: "WhatsApp", label: "2 WhatsApp messages", count: 2 }, { id: "g1", name: "Gmail", label: "0 new", count: 0 }] }),
     pending: () => [{ repo: "symbiot", path: "/x", tasks: [{}, {}], files: [{}, {}, {}] }, { repo: "busy", path: "/y", running: true, tasks: [{}], files: [{}] }],
-    agents: () => [{ name: "whatsapp_module", path: "/w", status: "done", ask: { questions: [{ q: "Paste the new Meta token?" }] } }, { name: "coral", path: "/c", status: "running", ask: { questions: [] } }],
-    lanes: () => ({ handoffs: [{ from: "coral", to: "ops", text: "Find a JDK 17", status: "done" }] }),
+    agents: () => [{ name: "whatsapp_module", path: "/w", status: "done", ask: { questions: [{ q: "Paste the new Meta token?" }] } }, { name: "atlas", path: "/c", status: "running", ask: { questions: [] } }],
+    lanes: () => ({ handoffs: [{ from: "atlas", to: "ops", text: "Find a JDK 17", status: "done" }] }),
     connected: () => true, repos: () => ({ symbiot: "/x" }), reports: () => ({ count: 0 }), agentCmd: () => 'claude -p "{prompt}"',
     search: () => ({ searching: false, at: 1 }), confirmed: () => true, rootsSet: () => false,
   };
   const h = homeState({ deps });
   const first = homeState({ deps: { ...deps, pending: () => [], agents: () => [], connected: () => false, repos: () => ({}) } });
-  // dailify, 13 Oct 2026: approved, committed, never pushed, and the card went with the tasks
-  const stuckHome = homeState({ fresh: true, deps: { ...deps, pending: () => [{ repo: "dailify", path: "/d", tasks: [], files: [], unsent: { why: "tests", branch: "symbiot/4-tasks" } }] } }).you.find((y) => y.id === "approve:dailify");
+  // bookly, 13 Oct 2026: approved, committed, never pushed, and the card went with the tasks
+  const stuckHome = homeState({ fresh: true, deps: { ...deps, pending: () => [{ repo: "bookly", path: "/d", tasks: [], files: [], unsent: { why: "tests", branch: "symbiot/4-tasks" } }] } }).you.find((y) => y.id === "approve:bookly");
   ok("approved work not on GitHub keeps a card on Home, saying why, that opens its review", stuckHome && stuckHome.kind === "approve" && /not on GitHub yet: its tests failed here/.test(stuckHome.sub), stuckHome);
   ok("first run, a finished search found nothing: connect an AI, then the folder your repos are in, both out front and opening Settings", first.you.map((y) => y.id).join() === "setup:ai,setup:folders" && first.you.every((y) => y.shape === "settings"), first.you);
   const looking = homeState({ fresh: true, deps: { ...deps, pending: () => [], agents: () => [], repos: () => ({}), search: () => ({ searching: true, at: 0 }) } });
@@ -222,10 +222,10 @@ try {
   ok("…nor before the first search has run", !unsearched.you.some((y) => y.id === "setup:folders"), unsearched.you);
   const given = (search) => homeState({ fresh: true, deps: { ...deps, pending: () => [], agents: () => [], repos: () => ({}), rootsSet: () => true, search: () => search } }).you;
   ok("…nor once you've set your work folders, when a search finds none or is cut short: that's Symbiot's to retry", [{ searching: false, at: 1 }, { searching: false, at: 1, partial: true }].every((s) => !given(s).some((y) => y.id === "setup:folders" || y.kind === "setup" && /folder|projects/i.test(y.title))), given({ searching: false, at: 1 }));
-  const givenFound = homeState({ fresh: true, deps: { ...deps, repos: () => ({ symbiot: "/x", argena: "/a" }), confirmed: () => false, rootsSet: () => true } }).you;
+  const givenFound = homeState({ fresh: true, deps: { ...deps, repos: () => ({ symbiot: "/x", meridian: "/a" }), confirmed: () => false, rootsSet: () => true } }).you;
   ok("…and the folders you set count as confirmed: no \"is that all?\"", !givenFound.some((y) => y.id === "repos:confirm"), givenFound);
-  const found2 = homeState({ fresh: true, deps: { ...deps, pending: () => [], agents: () => [], repos: () => ({ symbiot: "/x", argena: "/a" }), confirmed: () => false } }).you.find((y) => y.id === "repos:confirm");
-  ok("found: asked once to confirm the list, not where it is", found2 && found2.fix === "repos" && found2.title === "I found 2 projects" && found2.sub === "symbiot, argena" && found2.options[0] === "Looks right (recommended)", found2);
+  const found2 = homeState({ fresh: true, deps: { ...deps, pending: () => [], agents: () => [], repos: () => ({ symbiot: "/x", meridian: "/a" }), confirmed: () => false } }).you.find((y) => y.id === "repos:confirm");
+  ok("found: asked once to confirm the list, not where it is", found2 && found2.fix === "repos" && found2.title === "I found 2 projects" && found2.sub === "symbiot, meridian" && found2.options[0] === "Looks right (recommended)", found2);
   ok("…and neither once that's done", !h.you.some((y) => y.kind === "setup"), h.you);
   const claude = { name: "Claude Code", tmpl: 'claude -p "{prompt}"' };
   let picked = null;
@@ -244,19 +244,19 @@ try {
   ok("…not an Approve that's already being put in: nothing there for you to press", !shipHome.you.some((y) => y.kind === "approve"), shipHome.you);
   const shipFail = homeState({ fresh: true, deps: { ...deps, pending: () => [{ ...shipping, tasks: [], shipping: undefined, unsent: { why: "tests", branch: "symbiot/5-tasks" } }] } }).you.find((y) => y.id === "approve:symbiot");
   ok("…and once it ends without getting up, its card is back, saying why", shipFail && /not on GitHub yet/.test(shipFail.sub), shipFail);
-  const asks = homeState({ fresh: true, deps: { ...deps, pending: () => [], agents: () => [{ name: "ops", path: "/o", status: "done", ask: { questions: [{ q: "Where should the garth@symbiot.co.za mailbox live?", options: ["👤 You (only you: a new account): sign up for Zoho Mail's free plan as Symbiot and sign in to domains.co.za in Symbiot's browser (recommended)", "🤖 Agent: wait"] }] } }, { name: "coral", path: "/c", status: "done", ask: { questions: [{ q: "Paste the new Meta token?" }] } }] } }).you;
-  const zc = asks.find((y) => y.title === "ops asks"), other = asks.find((y) => y.title === "coral asks");
+  const asks = homeState({ fresh: true, deps: { ...deps, pending: () => [], agents: () => [{ name: "ops", path: "/o", status: "done", ask: { questions: [{ q: "Where should the garth@symbiot.co.za mailbox live?", options: ["👤 You (only you: a new account): sign up for Zoho Mail's free plan as Symbiot and sign in to domains.co.za in Symbiot's browser (recommended)", "🤖 Agent: wait"] }] } }, { name: "atlas", path: "/c", status: "done", ask: { questions: [{ q: "Paste the new Meta token?" }] } }] } }).you;
+  const zc = asks.find((y) => y.title === "ops asks"), other = asks.find((y) => y.title === "atlas asks");
   ok("a card that asks you to sign in to a site carries it, for its Sign in button (the 'mythical browser', 2026-10-09); one that doesn't, doesn't", zc && zc.signInTo && zc.signInTo.site === "domains.co.za" && other && !other.signInTo, [zc && zc.signInTo, other && other.signInTo]);
   ok("feeds: only what has something new", h.feeds.length === 1 && h.feeds[0].title === "WhatsApp" && h.feeds[0].shape === "board", h.feeds);
   const clashed = homeState({ fresh: true, deps: { ...deps, clashes: () => [{ kind: "leave", severity: "high", text: "Lerato Khoza's annual leave Mon 12 Oct to Fri 16 Oct 2026 (~/Co/hr/leave.csv) covers the **VAT return** due Wed 14 Oct (~/Co/finance/STATUS.md)." }, { kind: "customer", severity: "high", text: "Acacia Mining's renewal date disagrees." }] } }).feeds[0];
   ok("a clash in your files that matters: first under Watching, opening the checks", clashed && clashed.id === "feed:clash" && clashed.title === "Where your files disagree" && clashed.sub === "2 clashes to look at" && clashed.count === 2 && clashed.shape === "settings" && /^Lerato Khoza's annual leave .*VAT return/.test(clashed.latest) && !/\*\*/.test(clashed.latest), clashed);
   ok("…and none without one", !homeState({ fresh: true, deps: { ...deps, clashes: () => [] } }).feeds.some((f) => f.id === "feed:clash"), "");
   ok("lanes and who's working", h.lanes[0].to === "ops" && h.working === 1, [h.lanes, h.working]);
-  const blob = homeState({ fresh: true, deps: { ...deps, board: () => ({ cards: [] }), pending: () => [], repos: () => ({ "CallForge AI": "/cf" }), name: (p, n) => (p === "/cf" ? "Dailify" : n),
-    agents: () => [{ name: "CallForge AI", path: "/cf", status: "done", ask: { questions: [{ q: "Rename the folder `CallForge AI` to `dailify`?", options: ["🤖 Agent: rename it (recommended)", "Keep the folder's name", "a third, never shown"] }, { q: "And the other?" }] } },
+  const blob = homeState({ fresh: true, deps: { ...deps, board: () => ({ cards: [] }), pending: () => [], repos: () => ({ "CallForge AI": "/cf" }), name: (p, n) => (p === "/cf" ? "Bookly" : n),
+    agents: () => [{ name: "CallForge AI", path: "/cf", status: "done", ask: { questions: [{ q: "Rename the folder `CallForge AI` to `bookly`?", options: ["🤖 Agent: rename it (recommended)", "Keep the folder's name", "a third, never shown"] }, { q: "And the other?" }] } },
       { name: "Agent: Find the newest Kooha clip", path: join(HOME, ".config", "symbiot", "drafts", "act-c165d613"), status: "done", ask: { questions: [{ q: "which way?", options: [] }] } }] } });
   const cf = blob.you.find((y) => y.path === "/cf"), run = blob.you.find((y) => /act-c165d613/.test(y.id));
-  ok("an ask carries its blob: the lane, its name as people say it, the question and its two options", cf && cf.repo === "CallForge AI" && cf.name === "Dailify" && /^Rename the folder/.test(cf.q) && cf.options.length === 2 && cf.more === 1 && cf.title === "CallForge AI asks", cf);
+  ok("an ask carries its blob: the lane, its name as people say it, the question and its two options", cf && cf.repo === "CallForge AI" && cf.name === "Bookly" && /^Rename the folder/.test(cf.q) && cf.options.length === 2 && cf.more === 1 && cf.title === "CallForge AI asks", cf);
   ok("…an ops run's ask has no repo, and is named by what it's doing", run && run.repo === "" && run.name === "Find the newest Kooha clip" && !run.options.length, run);
   const wait = [{ status: "waiting", subject: "endpoint and secret" }];
   const blind = homeState({ fresh: true, deps: { ...deps, waits: () => wait, seesInbox: () => false } });
@@ -264,7 +264,7 @@ try {
   ok("…not once an inbox is watched or Email is on, and not with nothing waited on", !homeState({ fresh: true, deps: { ...deps, waits: () => wait, seesInbox: () => true } }).you.some((y) => y.id === "setup:inbox") && !homeState({ fresh: true, deps: { ...deps, waits: () => [{ status: "replied" }], seesInbox: () => false } }).you.some((y) => y.id === "setup:inbox"), "");
   const out = homeState({ fresh: true, deps: { ...deps, waits: () => wait, seesInbox: () => ({ sees: false, signedOut: ["Gmail"] }) } }).you.find((y) => y.id === "setup:inbox");
   ok("…the inbox watched but signed out: it says so, and asks you to sign in again", out && out.signin && out.title === "Sign in to Gmail again" && /signed out, so I won't notice their reply/.test(out.sub) && out.focus === "links", out);
-  { // linked sites that signed out: no standing card (Garth, 2026-10-14); a run that needs one asks for it, with its Sign in button
+  { // linked sites that signed out: no standing card (Pat, 2026-10-14); a run that needs one asks for it, with its Sign in button
     const L = () => ({ items: [{ id: "a", name: "Twilio", state: "signedout" }, { id: "b", name: "Azure", state: "signedout" }, { id: "c", name: "AWS", state: "signedout" }, { id: "d", name: "Brevo", state: "signedout" }, { id: "e", name: "GitHub", state: "ok" }] });
     const quiet = homeState({ fresh: true, deps: { ...deps, links: L } });
     ok("sites signed out that nothing is using: no card asking you to sign in to them", !quiet.you.some((y) => y.signin || /^Sign in/.test(y.title || "") || /signed out/.test(y.sub || "")), quiet.you);
@@ -282,10 +282,10 @@ try {
   const sb = sth.you.find((y) => y.id === "stuck:2d8f4ec8");
   ok("a handover that couldn't start (ops handed itself ~/Company): a question blob on Home, Allow or Skip", sb && sb.kind === "ask" && sb.fix === "handover" && sb.q === "Allow this run access to ~/Company?" && sb.options.join() === "Allow (recommended),Skip" && sb.repo === "" && sb.name === "Agent runs" && /^Needs a run that can read, edit and git mv/.test(sb.sub) && /own lane/.test(sb.why), sb);
   ok("…and Home's talk counts it: not \"Only the user can do (0)\"", /^Only the user can do \(2\):[\s\S]*- An agent run is stuck: Needs a run.*\(asks: Allow this run access to ~\/Company\? Allow \(recommended\) \/ Skip\)$/m.test(homeContext(sth)), homeContext(sth).split("\n").slice(0, 3));
-  const failedRun = (o = {}) => ({ id: "r1", name: "coral", path: "/c", status: "failed", exitCode: 1, startedAt: Date.now() - 60000, endedAt: Date.now() - 1000, tail: "Working on it\nAPI Error: 529 overloaded", ask: { questions: [] }, ...o });
-  const fr = homeState({ fresh: true, deps: { ...deps, pending: () => [], repos: () => ({ coral: "/c" }), agents: () => [failedRun()] } }).you.find((y) => y.fix === "failed");
-  ok("a run that ended in an error: a question on its lane, Run it again or Skip", fr && fr.id === "failed:r1" && fr.repo === "coral" && /Its run stopped with an error: API Error: 529 overloaded\. Run it again\?/.test(fr.q) && fr.options[0] === "Run it again (recommended)", fr);
-  const noFail = (agents) => !homeState({ fresh: true, deps: { ...deps, pending: () => [], repos: () => ({ coral: "/c" }), agents } }).you.some((y) => y.fix === "failed");
+  const failedRun = (o = {}) => ({ id: "r1", name: "atlas", path: "/c", status: "failed", exitCode: 1, startedAt: Date.now() - 60000, endedAt: Date.now() - 1000, tail: "Working on it\nAPI Error: 529 overloaded", ask: { questions: [] }, ...o });
+  const fr = homeState({ fresh: true, deps: { ...deps, pending: () => [], repos: () => ({ atlas: "/c" }), agents: () => [failedRun()] } }).you.find((y) => y.fix === "failed");
+  ok("a run that ended in an error: a question on its lane, Run it again or Skip", fr && fr.id === "failed:r1" && fr.repo === "atlas" && /Its run stopped with an error: API Error: 529 overloaded\. Run it again\?/.test(fr.q) && fr.options[0] === "Run it again (recommended)", fr);
+  const noFail = (agents) => !homeState({ fresh: true, deps: { ...deps, pending: () => [], repos: () => ({ atlas: "/c" }), agents } }).you.some((y) => y.fix === "failed");
   ok("…not a day later, not once another run started there, not when it asked a question instead", noFail(() => [failedRun({ endedAt: Date.now() - 2 * 86400000 })]) && noFail(() => [{ id: "r2", path: "/c", status: "running", ask: { questions: [] } }, failedRun()]) && noFail(() => [failedRun({ ask: { questions: [{ q: "Which key?" }] } })]), "");
   const calls = [];
   const ad = { allow: (id, o) => { calls.push(["allow", id, o.note]); return { ok: true, job: "j", dirs: [join(HOME, "Company")] }; }, skip: (id) => { calls.push(["skip", id]); return { ok: true }; } };
@@ -298,7 +298,7 @@ try {
   ok("…Skip: it stops asking", noFail(() => [failedRun()]), "");
   ok("…and an agent's own question is answered on its block, as before", !!homeAnswer("ask:/w", { pick: 0 }).error, "");
   // a permission card: Done writes the rules into the lane's allow list, a glob is never a file to look for
-  const lane = join(HOME, "steve-lane"); mkdirSync(lane, { recursive: true });
+  const lane = join(HOME, "robin-lane"); mkdirSync(lane, { recursive: true });
   const permCard = { id: "pc1", path: lane, needs: { kind: "step", key: "k1", what: "👤 You (only you: a permission): allow `python3 -I -c` / `py_compile` on `v2/*.py`", check: "" } };
   const pran = [], settled = [], pd = { agents: () => [permCard], running: () => false, run: (p, o) => { pran.push(p); return { id: "j3" }; }, settle: (p, k) => settled.push(k) };
   const pa = homeAnswer("needs:pc1", { pick: 0 }, pd);
@@ -313,26 +313,26 @@ try {
   const { homeNext, nextUp, laneNamed, NEXT_FILE } = await import("../home.mjs");
   const NOW0 = Date.now(), DAYS = (n) => NOW0 - n * 86400000 - 60000; // a minute past the day: a slow run never reads 5 days as 4
   const nx = (o = {}) => ({ taken: () => ({}), parked: () => [], mind: () => [], stuck: () => [], board: () => ({ cards: [] }), reports: () => ({ count: 0 }), tasks: () => [], ...o });
-  const calm = { ...deps, pending: () => [], agents: () => [], repos: () => ({ whatsapp_module: "/wa", coral: "/c" }), board: () => ({ cards: [] }) };
+  const calm = { ...deps, pending: () => [], agents: () => [], repos: () => ({ whatsapp_module: "/wa", atlas: "/c" }), board: () => ({ cards: [] }) };
   const busyNext = nx({
     reports: () => ({ count: 8 }),
     stuck: (o) => (o && o.within > 3 * 86400000 ? [{ id: "h1", from: { lane: "symbiot", path: "/s" }, text: "Move ~/Company's registers\nmore", error: "ops is your own lane: do it yourself.", at: DAYS(5) }] : []),
-    tasks: () => [{ id: "t1", text: "Wire the webhook", repo: "coral", ts: DAYS(9) }, { id: "t2", text: "And its test", repo: "coral", ts: DAYS(1) }, { id: "t3", text: "Read the WhatsApp module's group and summarise it", repo: "", ts: DAYS(2) }, { id: "t4", text: "Fresh one", repo: "whatsapp_module", ts: DAYS(0.5) }],
+    tasks: () => [{ id: "t1", text: "Wire the webhook", repo: "atlas", ts: DAYS(9) }, { id: "t2", text: "And its test", repo: "atlas", ts: DAYS(1) }, { id: "t3", text: "Read the WhatsApp module's group and summarise it", repo: "", ts: DAYS(2) }, { id: "t4", text: "Fresh one", repo: "whatsapp_module", ts: DAYS(0.5) }],
     board: () => ({ cards: [{ id: "w9", name: "Inbox - me@x.co - Mail", source: "mail", label: "4 emails", count: 4, items: [{ id: "n1", need: true }, { id: "n2", need: true }, { id: "n3", need: false }, { id: "n4", need: true }, { id: "n5", need: true }] }, { id: "p1", name: "A page", source: "page", label: "2 new", count: 2 }] }),
   });
   const hx = homeState({ fresh: true, deps: { ...calm, next: busyNext } });
   const ids = hx.next.map((s) => s.id);
-  ok("nothing needs you: Home suggests what can be done next, best first, at most 5", hx.you.length === 0 && ids.join() === "next:reports,next:retry:h1,next:go:coral,next:float:t3,next:drafts:w9", ids);
+  ok("nothing needs you: Home suggests what can be done next, best first, at most 5", hx.you.length === 0 && ids.join() === "next:reports,next:retry:h1,next:go:atlas,next:float:t3,next:drafts:w9", ids);
   const byId = Object.fromEntries(hx.next.map((s) => [s.id, s]));
   ok("…each with its gain and time spelled out, and one tap (a label)", hx.next.every((s) => s.title && s.gain && s.time && s.label && s.act), hx.next);
   ok("…unread reports: triage them, ~10 min for 8, by an agent", byId["next:reports"].title === "Triage the 8 unread reports" && /clears the backlog/.test(byId["next:reports"].gain) && byId["next:reports"].time === "~10 min, by an agent" && byId["next:reports"].act === "agent", byId["next:reports"]);
   ok("…a handover that errored days ago and was left: retry it (Home's own asks only look back 3 days)", byId["next:retry:h1"].act === "retry" && /^Retry symbiot's handover: Move ~\/Company's registers$/.test(byId["next:retry:h1"].title) && /errored 5 days ago \(ops is your own lane/.test(byId["next:retry:h1"].gain), byId["next:retry:h1"]);
-  ok("…a project's tasks waiting days with nothing at work there (not one added today)", byId["next:go:coral"].title === "Send coral's 2 waiting tasks to its agent" && /oldest has waited 9 days/.test(byId["next:go:coral"].gain) && !ids.includes("next:go:whatsapp_module"), byId["next:go:coral"]);
+  ok("…a project's tasks waiting days with nothing at work there (not one added today)", byId["next:go:atlas"].title === "Send atlas's 2 waiting tasks to its agent" && /oldest has waited 9 days/.test(byId["next:go:atlas"].gain) && !ids.includes("next:go:whatsapp_module"), byId["next:go:atlas"]);
   ok("…a task with no project goes to the project its words name", byId["next:float:t3"].act === "assign" && byId["next:float:t3"].repo === "whatsapp_module" && /^Give whatsapp_module "Read the WhatsApp/.test(byId["next:float:t3"].title), byId["next:float:t3"]);
   ok("…new mail with no reply: drafts of the newest 3, unsent (not a plain page)", /^Draft replies to the newest 3 of the 4 emails on Inbox$/.test(byId["next:drafts:w9"].title) && /unsent/.test(byId["next:drafts:w9"].gain), byId["next:drafts:w9"]);
-  ok("a task's words name its lane, the longest name that fits, whole words only", laneNamed("fix the whatsapp module webhook", ["whatsapp_module", "whatsapp"]) === "whatsapp_module" && laneNamed("read whatsapp", ["whatsapp_module", "whatsapp"]) === "whatsapp" && laneNamed("coralreef", ["coral"]) === "", "");
-  const busyRun = nextUp({ map: { coral: "/c" }, list: [{ path: "/c", status: "running" }], deps: nx({ tasks: () => [{ id: "t1", text: "x", repo: "coral", ts: DAYS(9) }] }) });
-  const parkedNx = nextUp({ map: { coral: "/c" }, deps: nx({ parked: () => ["/c"], tasks: () => [{ id: "t1", text: "x", repo: "coral", ts: DAYS(9) }] }) });
+  ok("a task's words name its lane, the longest name that fits, whole words only", laneNamed("fix the whatsapp module webhook", ["whatsapp_module", "whatsapp"]) === "whatsapp_module" && laneNamed("read whatsapp", ["whatsapp_module", "whatsapp"]) === "whatsapp" && laneNamed("coralreef", ["atlas"]) === "", "");
+  const busyRun = nextUp({ map: { atlas: "/c" }, list: [{ path: "/c", status: "running" }], deps: nx({ tasks: () => [{ id: "t1", text: "x", repo: "atlas", ts: DAYS(9) }] }) });
+  const parkedNx = nextUp({ map: { atlas: "/c" }, deps: nx({ parked: () => ["/c"], tasks: () => [{ id: "t1", text: "x", repo: "atlas", ts: DAYS(9) }] }) });
   ok("…not a project whose agent is at work, nor a parked one", !busyRun.length && !parkedNx.length, [busyRun, parkedNx]);
   const dec = (text, ts = DAYS(1)) => [{ id: "dn1", name: "Symbiot", kind: "decision", facts: [{ text, ts }] }];
   const dn1 = nextUp({ map: { symbiot: "/s" }, deps: nx({ mind: () => dec("The user wants Symbiot's weekly report emailed every Friday") }) });
@@ -342,52 +342,52 @@ try {
   const dn4 = nextUp({ map: {}, deps: nx({ mind: () => dec("The user wants the weekly report emailed", DAYS(30)) }) });
   ok("…not once a task took it on (even a done one), not a fact about how things are, not an old one", !dn2.length && !dn3.length && !dn4.length, [dn2, dn3, dn4]);
   ok("…and no suggestions at all while anything waits on you", homeState({ fresh: true, deps: { ...deps, next: busyNext } }).next.length === 0, "");
-  ok("…nor with nothing to suggest", homeState({ fresh: true, deps: { ...calm, next: nx({ tasks: () => [{ id: "x", text: "Done one", repo: "coral", done: true }] }) } }).next.length === 0, "");
+  ok("…nor with nothing to suggest", homeState({ fresh: true, deps: { ...calm, next: nx({ tasks: () => [{ id: "x", text: "Done one", repo: "atlas", done: true }] }) } }).next.length === 0, "");
   // someone new: projects found, no task yet anywhere (first-run review, 19 Oct 2026: Home said "Nothing needs you" and showed none of them)
   const firstNx = homeState({ fresh: true, deps: { ...calm, next: nx({ touched: (d) => (d === "/c" ? 2 : 1) }) } }).next;
-  ok("someone new, projects but not one task: their agent looks over the one worked on last, and suggests what to do first", firstNx.length === 1 && firstNx[0].id === "next:first:coral" && firstNx[0].act === "first" && /^Have your agent look over coral and suggest what to do first$/.test(firstNx[0].title) && /changes nothing/.test(firstNx[0].gain) && firstNx[0].label, firstNx);
-  const firstOff = [nextUp({ map: { marketing: "/m", ops: "/o" }, deps: nx() }), nextUp({ map: { coral: "/c" }, deps: nx({ taken: () => ({ "next:first:coral": Date.now() }) }) }), nextUp({ map: { coral: "/c" }, deps: nx({ reports: () => ({ count: 2 }) }) }).filter((x) => x.act === "first")];
+  ok("someone new, projects but not one task: their agent looks over the one worked on last, and suggests what to do first", firstNx.length === 1 && firstNx[0].id === "next:first:atlas" && firstNx[0].act === "first" && /^Have your agent look over atlas and suggest what to do first$/.test(firstNx[0].title) && /changes nothing/.test(firstNx[0].gain) && firstNx[0].label, firstNx);
+  const firstOff = [nextUp({ map: { marketing: "/m", ops: "/o" }, deps: nx() }), nextUp({ map: { atlas: "/c" }, deps: nx({ taken: () => ({ "next:first:atlas": Date.now() }) }) }), nextUp({ map: { atlas: "/c" }, deps: nx({ reports: () => ({ count: 2 }) }) }).filter((x) => x.act === "first")];
   ok("…not for the marketing or ops lanes, not again once taken, and not beside anything else to do", firstOff.every((x) => !x.length), firstOff);
   ok("Home's talk knows them", /^Could be done next \(Home suggests these, one tap each\):\n- Triage the 8 unread reports: clears the backlog/m.test(homeContext(hx)), "");
   // one tap: it starts the agent, or makes the task, and stays away a week
   const did = [], nfile = join(HOME, "next-test.json");
-  const tap = (id, o = {}) => homeNext(id, { state: hx, file: nfile, repos: () => ({ coral: "/c", whatsapp_module: "/wa" }), act: (req, o2) => { did.push(["act", req.split("\n")[0], o2.title]); return { ok: true, job: "j", dir: "/d" }; }, run: (p) => { did.push(["run", p]); return { id: "j" }; }, push: (f) => { did.push(["push", f.repo]); return { written: [{ path: "/c" }] }; }, allow: (id2) => { did.push(["allow", id2]); return { ok: true }; }, draft: (nid) => { did.push(["draft", nid]); return { ok: true }; }, board: busyNext.board, ...o });
+  const tap = (id, o = {}) => homeNext(id, { state: hx, file: nfile, repos: () => ({ atlas: "/c", whatsapp_module: "/wa" }), act: (req, o2) => { did.push(["act", req.split("\n")[0], o2.title]); return { ok: true, job: "j", dir: "/d" }; }, run: (p) => { did.push(["run", p]); return { id: "j" }; }, push: (f) => { did.push(["push", f.repo]); return { written: [{ path: "/c" }] }; }, allow: (id2) => { did.push(["allow", id2]); return { ok: true }; }, draft: (nid) => { did.push(["draft", nid]); return { ok: true }; }, board: busyNext.board, ...o });
   const tr = tap("next:reports", { reportsList: () => [{ title: "symbiot post: the 4-week test", lane: "symbiot", file: "/s/.symbiot/POST-TEST.md", new: true }, { title: "Old", file: "/o.md", new: false }] });
   ok("Triage: an agent of its own, told which reports (the unread ones) and to leave one page", tr.ok && did[0][0] === "act" && did[0][1] === "Triage the user's 1 unread Symbiot reports, so they read one page instead of 1. Read each:" && did[0][2] === "Home: what's next", [tr, did]);
-  did.length = 0; const tg = tap("next:go:coral");
-  ok("Send to its agent: the project's tasks written for it, and its agent started", tg.ok && JSON.stringify(did) === JSON.stringify([["push", "coral"], ["run", "/c"]]), did);
+  did.length = 0; const tg = tap("next:go:atlas");
+  ok("Send to its agent: the project's tasks written for it, and its agent started", tg.ok && JSON.stringify(did) === JSON.stringify([["push", "atlas"], ["run", "/c"]]), did);
   did.length = 0; const saved = []; const ta = tap("next:float:t3", { tasks: () => [{ id: "t3", text: "Read the WhatsApp module's group", repo: "" }], save: (all) => saved.push(all[0].repo) });
   ok("Give it a project: the task joins it, and that project's agent starts", ta.ok && saved.join() === "whatsapp_module" && JSON.stringify(did) === JSON.stringify([["push", "whatsapp_module"], ["run", "/wa"]]), [ta, did, saved]);
   did.length = 0; const tt = tap("next:retry:h1");
   ok("Retry: the handover runs on its own, and goes back to the agent that asked", tt.ok && JSON.stringify(did) === JSON.stringify([["allow", "h1"]]) && /goes back to the agent that asked/.test(tt.said), [tt, did]);
   did.length = 0; const td = tap("next:drafts:w9");
   ok("Draft replies: the newest 3 that need one, each drafted and left unsent", td.ok && JSON.stringify(did) === JSON.stringify([["draft", "n1"], ["draft", "n2"], ["draft", "n4"]]) && /drafting 3 replies.*unsent/.test(td.said), [td, did]);
-  did.length = 0; const tf = homeNext("next:first:coral", { state: { next: firstNx, nextAll: firstNx }, file: nfile, repos: () => ({ coral: "/c" }), task: (text, repo) => { did.push(["task", repo, text]); return { ok: true }; }, run: (p) => { did.push(["run", p]); return { id: "j" }; }, push: (f) => { did.push(["push", f.repo]); return { written: [{ path: "/c" }] }; } });
-  ok("Look it over: a task in that project saying change nothing and leave ideas as Suggestions, then its agent starts", tf.ok && did[0][0] === "task" && did[0][1] === "coral" && /Change no files/.test(did[0][2]) && /## Suggestions/.test(did[0][2]) && JSON.stringify(did.slice(1)) === JSON.stringify([["push", "coral"], ["run", "/c"]]) && /looking over coral\. Its ideas show on the Workdesk/.test(tf.said), [tf, did]);
+  did.length = 0; const tf = homeNext("next:first:atlas", { state: { next: firstNx, nextAll: firstNx }, file: nfile, repos: () => ({ atlas: "/c" }), task: (text, repo) => { did.push(["task", repo, text]); return { ok: true }; }, run: (p) => { did.push(["run", p]); return { id: "j" }; }, push: (f) => { did.push(["push", f.repo]); return { written: [{ path: "/c" }] }; } });
+  ok("Look it over: a task in that project saying change nothing and leave ideas as Suggestions, then its agent starts", tf.ok && did[0][0] === "task" && did[0][1] === "atlas" && /Change no files/.test(did[0][2]) && /## Suggestions/.test(did[0][2]) && JSON.stringify(did.slice(1)) === JSON.stringify([["push", "atlas"], ["run", "/c"]]) && /looking over atlas\. Its ideas show on the Workdesk/.test(tf.said), [tf, did]);
   const taken = JSON.parse(readFileSync(nfile, "utf8")).taken;
-  ok("…each one taken stays away a week", ["next:reports", "next:go:coral", "next:float:t3", "next:retry:h1", "next:drafts:w9"].every((k) => taken[k] > 0) && nextUp({ map: { coral: "/c" }, deps: nx({ taken: () => taken, reports: () => ({ count: 8 }), tasks: () => [{ id: "t1", text: "x", repo: "coral", ts: DAYS(9) }] }) }).length === 0, taken);
-  const te = tap("next:go:coral", { push: () => ({ written: [] }) }), tn = tap("next:nope");
-  ok("…and when it can't start, it says why; one that isn't there any more says so", /Nothing of coral's is waiting/.test(te.error) && /isn't here any more/.test(tn.error), [te, tn]);
+  ok("…each one taken stays away a week", ["next:reports", "next:go:atlas", "next:float:t3", "next:retry:h1", "next:drafts:w9"].every((k) => taken[k] > 0) && nextUp({ map: { atlas: "/c" }, deps: nx({ taken: () => taken, reports: () => ({ count: 8 }), tasks: () => [{ id: "t1", text: "x", repo: "atlas", ts: DAYS(9) }] }) }).length === 0, taken);
+  const te = tap("next:go:atlas", { push: () => ({ written: [] }) }), tn = tap("next:nope");
+  ok("…and when it can't start, it says why; one that isn't there any more says so", /Nothing of atlas's is waiting/.test(te.error) && /isn't here any more/.test(tn.error), [te, tn]);
   ok("the taken ones are kept in the config folder", NEXT_FILE.endsWith(join(".config", "symbiot", "home-next.json")), NEXT_FILE);
   // a run that ended waiting on you (agents.mjs needsOf): before, Home said "Only the user can do (0)"
-  const jonoDir = join(HOME, ".config", "symbiot", "drafts", "act-jono"); mkdirSync(join(jonoDir, ".symbiot"), { recursive: true });
-  const waitsRun = (o = {}) => ({ id: "r5", name: "Agent: **What's needed:** draft the email to Jono", path: jonoDir, status: "done", ask: { questions: [] }, needs: { kind: "approve", what: "The draft isn't sent. Draft: it's in Gmail, to jono@example.com.", check: "Cc: You'll add Alex yourself.", label: "Draft", key: "k1" }, ...o });
+  const jonoDir = join(HOME, ".config", "symbiot", "drafts", "act-remy"); mkdirSync(join(jonoDir, ".symbiot"), { recursive: true });
+  const waitsRun = (o = {}) => ({ id: "r5", name: "Agent: **What's needed:** draft the email to Remy", path: jonoDir, status: "done", ask: { questions: [] }, needs: { kind: "approve", what: "The draft isn't sent. Draft: it's in Gmail, to remy@example.com.", check: "Cc: You'll add Alex yourself.", label: "Draft", key: "k1" }, ...o });
   const hn = homeState({ fresh: true, deps: { ...deps, pending: () => [], agents: () => [waitsRun()] } }), nb = hn.you.find((y) => y.fix === "needs");
-  ok("a run that ended with a draft for your OK: on Home, with what to check first, Go ahead or Skip", nb && nb.id === "needs:r5" && nb.kind === "ask" && nb.repo === "" && nb.title === "Draft the email to Jono waits for your OK" && nb.q === "The draft isn't sent. Draft: it's in Gmail, to jono@example.com. Check first: Cc: You'll add Alex yourself." && nb.options.join() === "Go ahead (recommended),Skip", nb);
-  ok("…and Home's talk counts it", /^Only the user can do \([1-9]\):[\s\S]*- Draft the email to Jono waits for your OK: Draft \(asks: The draft isn't sent/m.test(homeContext(hn)), homeContext(hn).split("\n").slice(0, 3));
+  ok("a run that ended with a draft for your OK: on Home, with what to check first, Go ahead or Skip", nb && nb.id === "needs:r5" && nb.kind === "ask" && nb.repo === "" && nb.title === "Draft the email to Remy waits for your OK" && nb.q === "The draft isn't sent. Draft: it's in Gmail, to remy@example.com. Check first: Cc: You'll add Alex yourself." && nb.options.join() === "Go ahead (recommended),Skip", nb);
+  ok("…and Home's talk counts it", /^Only the user can do \([1-9]\):[\s\S]*- Draft the email to Remy waits for your OK: Draft \(asks: The draft isn't sent/m.test(homeContext(hn)), homeContext(hn).split("\n").slice(0, 3));
   const st5 = homeState({ fresh: true, deps: { ...deps, pending: () => [], agents: () => [waitsRun({ needs: { kind: "step", what: "Running tailscale needs sudo, and only you can do that.", check: "", label: "", key: "k2" } })] } }).you.find((y) => y.fix === "needs");
-  ok("…a step only you can take: says it waits on you, and offers I-have-done-this (not marked recommended, which read as already done) or Skip", st5 && st5.title === "Draft the email to Jono needs you" && st5.q === "Running tailscale needs sudo, and only you can do that." && st5.options.join() === "I've done this,Skip" && st5.status === "Waiting on you" && !st5.options.some((o) => /recommended/i.test(o)), st5);
+  ok("…a step only you can take: says it waits on you, and offers I-have-done-this (not marked recommended, which read as already done) or Skip", st5 && st5.title === "Draft the email to Remy needs you" && st5.q === "Running tailscale needs sudo, and only you can do that." && st5.options.join() === "I've done this,Skip" && st5.status === "Waiting on you" && !st5.options.some((o) => /recommended/i.test(o)), st5);
   const noNeeds = (agents) => !homeState({ fresh: true, deps: { ...deps, pending: () => [], agents } }).you.some((y) => y.fix === "needs");
-  ok("…not while an agent works there, nor when it asked in QUESTIONS.md (that's its question)", noNeeds(() => [{ id: "r6", path: jonoDir, status: "running", ask: { questions: [] } }, waitsRun()]) && noNeeds(() => [waitsRun({ ask: { questions: [{ q: "Send the draft to Jono?" }] } })]), "");
+  ok("…not while an agent works there, nor when it asked in QUESTIONS.md (that's its question)", noNeeds(() => [{ id: "r6", path: jonoDir, status: "running", ask: { questions: [] } }, waitsRun()]) && noNeeds(() => [waitsRun({ ask: { questions: [{ q: "Send the draft to Remy?" }] } })]), "");
   const reran5 = [], settled5 = [], nd = { agents: () => [waitsRun()], running: () => false, run: (p, o) => { reran5.push([p, o.force]); return { id: "j5" }; }, settle: (p, k) => settled5.push([p, k]) };
   const g5 = homeAnswer("needs:r5", { pick: 0 }, nd), ans5 = readFileSync(join(jonoDir, ".symbiot", "ANSWERS.md"), "utf8");
-  ok("…Go ahead: its agent goes ahead, told so in its ANSWERS.md, and it stops asking", g5.ok && g5.rerun === "j5" && JSON.stringify(reran5) === JSON.stringify([[jonoDir, true]]) && /### The draft isn't sent\. Draft: it's in Gmail, to jono@example\.com\.\nGo ahead: do it as you had it/.test(ans5) && JSON.stringify(settled5) === JSON.stringify([[jonoDir, "k1"]]), [g5, reran5, ans5, settled5]);
-  const stepRun = () => waitsRun({ id: "r10", needs: { kind: "step", what: "Sign in to npmjs.com as garth in the Symbiot Browser.", check: "", label: "", key: "k10" } });
+  ok("…Go ahead: its agent goes ahead, told so in its ANSWERS.md, and it stops asking", g5.ok && g5.rerun === "j5" && JSON.stringify(reran5) === JSON.stringify([[jonoDir, true]]) && /### The draft isn't sent\. Draft: it's in Gmail, to remy@example\.com\.\nGo ahead: do it as you had it/.test(ans5) && JSON.stringify(settled5) === JSON.stringify([[jonoDir, "k1"]]), [g5, reran5, ans5, settled5]);
+  const stepRun = () => waitsRun({ id: "r10", needs: { kind: "step", what: "Sign in to npmjs.com as pat in the Symbiot Browser.", check: "", label: "", key: "k10" } });
   homeAnswer("needs:r10", { pick: 0 }, { agents: () => [stepRun()], running: () => false, run: () => ({ id: "j10" }), settle: () => {} });
   ok("…I've done this on a step is on the shared record: no agent's card asks it again", noNeeds(() => [stepRun()]), "");
   const s5 = homeAnswer("needs:r5", { text: "skip, I sent it" }, nd);
   ok("…Skip (or your words saying no): it stops asking, and no agent starts", s5.ok && /won't ask again/.test(s5.said) && reran5.length === 1 && settled5.length === 2, [s5, reran5, settled5]);
-  // answered while Approve was committing and testing that lane: "It didn't start. Check your agent in Settings." (dailify, 16 Oct 2026)
+  // answered while Approve was committing and testing that lane: "It didn't start. Check your agent in Settings." (bookly, 16 Oct 2026)
   const later11 = [], settled11 = [], shipRun = waitsRun({ id: "r11", needs: { kind: "approve", what: "Send the test invite.", check: "", label: "", key: "k11" } });
   const sh11 = homeAnswer("needs:r11", { pick: 0 }, { agents: () => [shipRun], running: () => false, run: () => ({ busy: true, shipping: true, step: "running its tests", id: "" }), settle: (p, k) => settled11.push(k), later: (p) => later11.push(p) });
   ok("…answered while Approve puts that lane's changes in: saved, it says so (not \"check your agent\"), stops asking, and its agent starts once Approve is done", sh11.ok && /Approve is still putting this lane's changes in \(running its tests\)/.test(sh11.said) && !/Settings/.test(sh11.said) && settled11.join() === "k11" && later11.join() === jonoDir, [sh11, settled11, later11]);
@@ -413,8 +413,8 @@ try {
   ok("…once it's installed, Done goes ahead", homeAnswer("needs:r10", { pick: 0 }, { ...ed, agents: () => [relRun], releaseNotIn: () => null }).ok && reran10.length === 4, reran10);
   const pj = ws3({ deps: { repos: () => ({}), pending: () => [], tasks: () => [], parked: () => [], agents: () => [waitsRun({ id: "r8" })], stuck: () => [] } }).projects.find((p) => p.repo === "ops");
   ok("…and on its lane in Tasks: lit, the OK first, answerable there", pj && pj.lit && pj.qs[0].fix === "needs" && pj.qs[0].id === "needs:r8", pj);
-  const wsS = ws3({ deps: { repos: () => ({ coral: "/c" }), pending: () => [], tasks: () => [], parked: () => [], agents: () => [failedRun({ id: "r9" })], stuck: () => stuckT } });
-  const pc = wsS.projects.find((p) => p.repo === "coral"), po = wsS.projects.find((p) => p.repo === "ops");
+  const wsS = ws3({ deps: { repos: () => ({ atlas: "/c" }), pending: () => [], tasks: () => [], parked: () => [], agents: () => [failedRun({ id: "r9" })], stuck: () => stuckT } });
+  const pc = wsS.projects.find((p) => p.repo === "atlas"), po = wsS.projects.find((p) => p.repo === "ops");
   ok("on its lane in Tasks too: the project lit, the question first, answerable there", pc && pc.lit && pc.asks === 1 && pc.qs[0].fix === "failed" && pc.qs[0].id === "failed:r9" && po && po.lit && po.qs[0].q === "Allow this run access to ~/Company?" && po.qs[0].id === "stuck:2d8f4ec8", [pc, po]);
   const { agentMissing } = await import("../agents.mjs");
   ok("the agent's program: found on PATH, or named when it isn't", agentMissing('node -e "{prompt}"') === "" && agentMissing('no-such-agent-xyz -p "{prompt}"') === "no-such-agent-xyz" && agentMissing('FOO=1 no-such-agent-xyz "{prompt}"') === "no-such-agent-xyz" && agentMissing("/nowhere/agent {dir}") === "/nowhere/agent" && agentMissing("") === "", "");
@@ -447,14 +447,14 @@ try {
     const now = Date.now();
     const r = ws2({ deps: {
       agents: () => [
-        { name: "dailify", path: "/d", status: "done", startedAt: now - 3600e3, work: { final: "I read the **lead** code.\n\nMore detail here." }, ask: { questions: [{ q: "Who gets each yes?", options: ["one brokerage (recommended)", "book on the first call", "a third", "a fourth"] }], suggestions: [{ text: "Fix the exhausted-campaign dead end" }, { text: "Already added", added: true }] } },
+        { name: "bookly", path: "/d", status: "done", startedAt: now - 3600e3, work: { final: "I read the **lead** code.\n\nMore detail here." }, ask: { questions: [{ q: "Who gets each yes?", options: ["one brokerage (recommended)", "book on the first call", "a third", "a fourth"] }], suggestions: [{ text: "Fix the exhausted-campaign dead end" }, { text: "Already added", added: true }] } },
         { name: "symbiot", path: "/s", status: "running", elapsed: 60e3, work: { doing: "Ran npm test", todos: [{ status: "in_progress", active: "Editing ui.mjs" }] }, ask: { questions: [] } },
         { name: "ancient", path: "/a", status: "done", elapsed: 9 * 86400e3, work: { final: "old news" }, ask: { questions: [] } }],
-      pending: () => [], tasks: () => [], repos: () => ({ dailify: "/d", symbiot: "/s", ancient: "/a" }), name: (p, n) => n, parked: () => [] } });
-    const d = r.projects.find((p) => p.repo === "dailify") || {}, sy = r.projects.find((p) => p.repo === "symbiot") || {};
+      pending: () => [], tasks: () => [], repos: () => ({ bookly: "/d", symbiot: "/s", ancient: "/a" }), name: (p, n) => n, parked: () => [] } });
+    const d = r.projects.find((p) => p.repo === "bookly") || {}, sy = r.projects.find((p) => p.repo === "symbiot") || {};
     ok("a project's summary is its agent's last word, first paragraph, plain (no markdown)", d.summary === "I read the lead code." && d.state === "asks you", d);
     ok("its open question comes with up to 3 answers and the folder to send the answer to", d.qs && d.qs[0].q === "Who gets each yes?" && d.qs[0].options.length === 3 && d.qs[0].path === "/d", d.qs);
-    ok("the extra tasks it suggests, not the ones already added", d.ideas && d.ideas.length === 1 && d.ideas[0].full === "Fix the exhausted-campaign dead end" && d.ideas[0].repo === "dailify" && d.ideas[0].path === "/d", d.ideas);
+    ok("the extra tasks it suggests, not the ones already added", d.ideas && d.ideas.length === 1 && d.ideas[0].full === "Fix the exhausted-campaign dead end" && d.ideas[0].repo === "bookly" && d.ideas[0].path === "/d", d.ideas);
     ok("a running agent's summary is the to-do it's on now (from elapsed, as the agent list gives it)", sy.summary === "Editing ui.mjs" && sy.state === "at work", sy);
     ok("a project with nothing new in a day, and nothing asked or suggested, isn't relayed", !r.projects.some((p) => p.repo === "ancient"), r.projects.map((p) => p.repo));
   }
@@ -462,18 +462,18 @@ try {
   const { workScene, workGo } = await import("../home.mjs");
   const ws = workScene({ deps: {
     agents: () => [{ name: "symbiot", path: "/s", status: "running", progress: { done: 1, total: 3 }, work: { todos: [{ status: "completed", text: "a", active: "A" }, { status: "in_progress", text: "Fix the reader", active: "Fixing the **WhatsApp** reader" }] }, ask: { questions: [] } },
-      { name: "coral", path: "/c", status: "running", work: { doing: "Ran npm test", todos: [] }, ask: { questions: [{ q: "?" }] } }, { name: "old", path: "/o", status: "done" }],
-    pending: () => [{ repo: "GhostAIChat", path: "/g", tasks: [{}, {}], files: [{}] }, { repo: "busy", path: "/b", running: true, tasks: [{}] }],
+      { name: "atlas", path: "/c", status: "running", work: { doing: "Ran npm test", todos: [] }, ask: { questions: [{ q: "?" }] } }, { name: "old", path: "/o", status: "done" }],
+    pending: () => [{ repo: "ChatApp", path: "/g", tasks: [{}, {}], files: [{}] }, { repo: "busy", path: "/b", running: true, tasks: [{}] }],
     tasks: () => [{ id: "1", text: "Add a Skip button to each idea in the Agents tab, so you can turn down an idea you don't want", repo: "symbiot" }, { id: "2", text: "Merge near-duplicates", repo: "whatsapp_module" }, { id: "3", text: "done one", repo: "x", done: true }, { id: "4", text: "no repo", repo: "" }],
   } });
   ok("at work: what each agent is doing, in its own plain words (no markdown), with progress", ws.running.length === 2 && ws.running[0].doing === "Fixing the WhatsApp reader" && ws.running[0].progress.done === 1 && ws.running[1].doing === "Ran npm test" && ws.running[1].waiting, ws.running);
-  ok("ready for your OK: only what's waiting on an Approve, not what's still being worked on", ws.ready.length === 1 && ws.ready[0].repo === "GhostAIChat" && ws.ready[0].count === 2, ws.ready);
+  ok("ready for your OK: only what's waiting on an Approve, not what's still being worked on", ws.ready.length === 1 && ws.ready[0].repo === "ChatApp" && ws.ready[0].count === 2, ws.ready);
   ok("waiting: open tasks with a repo, short, and marked when their repo's agent is busy", ws.waiting.length === 2 && ws.waiting[0].text.length <= 160 && ws.waiting[0].text.startsWith("Add a Skip button") && ws.waiting[0].busy && !ws.waiting[1].busy && ws.canGo === 1, ws.waiting);
   const started = [];
   const g = workGo({ push: () => ({ written: [{ name: "a", path: "/a" }, { name: "b", path: "/b" }] }), run: (p) => (started.push(p), p === "/a" ? { id: "j1" } : { busy: true }) });
   ok("Go: every repo's brief written and its agent started, or queued behind one already there", g.started === 1 && g.queued === 1 && started.join() === "/a,/b" && g.repos.join() === "a,b", g);
-  ok("projects: each repo with work on it, with what's waiting and what's ready", ws.projects.length === 4 && ws.projects.some((p) => p.repo === "symbiot" && p.running && p.waiting === 1) && ws.projects.some((p) => p.repo === "GhostAIChat" && p.ready === 2) && ws.projects.some((p) => p.repo === "whatsapp_module" && p.waiting === 1 && !p.running), ws.projects);
-  ok("…what needs you first (a question, an Approve: lit), then the one an agent is in, then what waits", ws.projects.map((p) => p.repo).join() === "coral,GhostAIChat,symbiot,whatsapp_module" && ws.projects[0].lit && ws.projects[0].asks === 1 && ws.projects[1].lit && !ws.projects[2].lit, ws.projects.map((p) => [p.repo, p.lit]));
+  ok("projects: each repo with work on it, with what's waiting and what's ready", ws.projects.length === 4 && ws.projects.some((p) => p.repo === "symbiot" && p.running && p.waiting === 1) && ws.projects.some((p) => p.repo === "ChatApp" && p.ready === 2) && ws.projects.some((p) => p.repo === "whatsapp_module" && p.waiting === 1 && !p.running), ws.projects);
+  ok("…what needs you first (a question, an Approve: lit), then the one an agent is in, then what waits", ws.projects.map((p) => p.repo).join() === "atlas,ChatApp,symbiot,whatsapp_module" && ws.projects[0].lit && ws.projects[0].asks === 1 && ws.projects[1].lit && !ws.projects[2].lit, ws.projects.map((p) => [p.repo, p.lit]));
   const RUNDIR = join(HOME, ".config", "symbiot", "drafts");
   const wr = workScene({ deps: { repos: () => ({ symbiot: "/s" }), name: (p, n) => (n === "symbiot" ? "Symbiot" : n), pending: () => [], tasks: () => [],
     agents: () => [{ name: "Agent: Find the newest Kooha clip", path: join(RUNDIR, "act-c165d613"), status: "done", ask: { questions: [{ q: "which way?" }] } }, { name: "Agent: tidy ~/Company", path: join(RUNDIR, "act-1d727d7f"), status: "running", work: {} }, { name: "symbiot", path: "/s", status: "running", work: {} }] } });
@@ -482,27 +482,27 @@ try {
   ok("…and a repo is shown by the name people use for it", wr.projects.find((p) => p.repo === "symbiot").name === "Symbiot", wr.projects);
   const wm = workScene({ deps: { repos: () => ({}), pending: () => [], tasks: () => [],
     agents: () => [{ name: "Agent: Adds to run act-49963706 (the phone code check)", path: join(RUNDIR, "act-ab2bbaf1"), status: "done", startedAt: Date.now() - 60000, work: { final: "The phone code check is still not done." } },
-      { name: "Agent: New job: the Dailify broker test on Garth's own phone", path: join(RUNDIR, "act-83eb4b9c"), status: "done", startedAt: Date.now() - 600000, work: { final: "Waiting on your press of Set up a meeting." }, ask: { questions: [{ q: "Press Set up a meeting on WhatsApp?" }] } }] } });
+      { name: "Agent: New job: the Bookly broker test on Pat's own phone", path: join(RUNDIR, "act-83eb4b9c"), status: "done", startedAt: Date.now() - 600000, work: { final: "Waiting on your press of Set up a meeting." }, ask: { questions: [{ q: "Press Set up a meeting on WhatsApp?" }] } }] } });
   const om = wm.projects.find((p) => p.repo === "ops");
-  ok("Agent runs' card: its line is from the run whose question it shows, and the question says which job (not the newest run's line over another's question)", om && om.summary === "Waiting on your press of Set up a meeting." && om.qs[0].task === "the Dailify broker test on Garth's own phone" && om.path === join(RUNDIR, "act-83eb4b9c"), om);
-  const wh = workScene({ deps: { repos: () => ({ whatsapp_module: "/w", coral: "/c" }), pending: () => [], tasks: () => [], agents: () => [],
+  ok("Agent runs' card: its line is from the run whose question it shows, and the question says which job (not the newest run's line over another's question)", om && om.summary === "Waiting on your press of Set up a meeting." && om.qs[0].task === "the Bookly broker test on Pat's own phone" && om.path === join(RUNDIR, "act-83eb4b9c"), om);
+  const wh = workScene({ deps: { repos: () => ({ whatsapp_module: "/w", atlas: "/c" }), pending: () => [], tasks: () => [], agents: () => [],
     handing: (p) => (p === "/w" ? [{ lane: "ops", text: "set up a WhatsApp test number", gone: false, why: "Not sent yet: ops is still on the earlier version (its run started 5 min ago), and gets this one when that run ends" }] : []) } });
   const whp = wh.projects.find((p) => p.repo === "whatsapp_module");
-  ok("a lane's handover not sent yet shows on its block, with why (whatsapp_module, 2026-10-12)", whp && whp.handing.length === 1 && /still on the earlier version/.test(whp.handing[0].why) && !wh.projects.some((p) => p.repo === "coral"), wh.projects);
+  ok("a lane's handover not sent yet shows on its block, with why (whatsapp_module, 2026-10-12)", whp && whp.handing.length === 1 && /still on the earlier version/.test(whp.handing[0].why) && !wh.projects.some((p) => p.repo === "atlas"), wh.projects);
   ok("Go with nothing waiting says so", /Nothing waiting/.test(workGo({ push: () => ({ empty: true }) }).note), "");
 
   console.log("WAITING — each waiting task says why, and starts by itself once its lane is free");
   {
     const { workTick, STUCK_AFTER } = await import("../home.mjs");
     const NOW = 1e13, old = NOW - STUCK_AFTER - 1000, fresh = NOW - 40000;
-    const map = { symbiot: "/s", coral: "/c", g: "/g", f: "/f" };
+    const map = { symbiot: "/s", atlas: "/c", g: "/g", f: "/f" };
     const T = () => [{ id: "1", text: "Fix the reader", repo: "symbiot", ts: fresh }, { id: "2", text: "Add a Skip button", repo: "symbiot", ts: fresh },
-      { id: "3", text: "Tidy the docs", repo: "coral", ts: fresh }, { id: "4", text: "🤖 Agent: free space on /mnt/storage", repo: "ops", ts: fresh },
+      { id: "3", text: "Tidy the docs", repo: "atlas", ts: fresh }, { id: "4", text: "🤖 Agent: free space on /mnt/storage", repo: "ops", ts: fresh },
       { id: "5", text: "👤 You (only you: deleting outside the agent's folder): run the delete", repo: "ops", ts: fresh }, { id: "6", text: "Old one", repo: "g", ts: old },
       { id: "7", text: "Write the README", repo: "f", ts: old }, { id: "8", text: "Somewhere", repo: "nowhere", ts: fresh }, { id: "9", text: "Just added", repo: "f", ts: NOW - 5000 }];
     let tasks = T();
     const base = { repos: () => map, name: (p, n) => n, pending: () => [], parked: () => [], cmd: () => "claude -p {prompt}", now: NOW, tasks: () => tasks, save: () => {}, config: () => ({}),
-      agents: () => [{ name: "symbiot", path: "/s", status: "running", work: { doing: "Fixing the reader", todos: [] }, ask: { questions: [] } }, { name: "coral", path: "/c", status: "done", ask: { questions: [{ q: "Which docs?" }] } }],
+      agents: () => [{ name: "symbiot", path: "/s", status: "running", work: { doing: "Fixing the reader", todos: [] }, ask: { questions: [] } }, { name: "atlas", path: "/c", status: "done", ask: { questions: [{ q: "Which docs?" }] } }],
       brief: (p) => (p === "/s" ? { at: 1, tasks: ["Fix the reader"] } : p === "/g" ? { at: 5, tasks: ["Old one"] } : { at: 0, tasks: [] }), lastRun: (p) => (p === "/g" ? 10 : 0) };
     const sc = workScene({ deps: { ...base, fails: {} } }), why = (id) => (sc.waiting.find((w) => w.id === "task:" + id) || {}).why || {};
     ok("in the brief of the run at work in its lane: its agent is on it now", why(1).kind === "working" && /symbiot's agent is on it now/.test(why(1).text), why(1));
@@ -520,8 +520,8 @@ try {
     // peak hours: weekdays 5–11am Pacific = 2–8pm SAST (northern summer)
     {
       const WED = Date.parse("2026-10-14T13:00:00Z"), SAT = Date.parse("2026-10-17T13:00:00Z"), WED_NIGHT = Date.parse("2026-10-14T19:00:00Z");
-      const batch = (at) => [{ id: "a", text: "One", repo: "symbiot", ts: at - 40000 }, { id: "b", text: "Two", repo: "coral", ts: at - 40000 }, { id: "c", text: "Three", repo: "g", ts: at - 40000 }];
-      const mk = (at, list, cfg = {}) => { const ran = [], b = { repos: () => ({ symbiot: "/s", coral: "/c", g: "/g" }), name: (p, n) => n, pending: () => [], parked: () => [], cmd: () => "claude -p {prompt}", now: at, tasks: () => list, save: () => {}, config: () => cfg, agents: () => [], brief: () => ({ at: 0, tasks: [] }), lastRun: () => 0 };
+      const batch = (at) => [{ id: "a", text: "One", repo: "symbiot", ts: at - 40000 }, { id: "b", text: "Two", repo: "atlas", ts: at - 40000 }, { id: "c", text: "Three", repo: "g", ts: at - 40000 }];
+      const mk = (at, list, cfg = {}) => { const ran = [], b = { repos: () => ({ symbiot: "/s", atlas: "/c", g: "/g" }), name: (p, n) => n, pending: () => [], parked: () => [], cmd: () => "claude -p {prompt}", now: at, tasks: () => list, save: () => {}, config: () => cfg, agents: () => [], brief: () => ({ at: 0, tasks: [] }), lastRun: () => 0 };
         const t = workTick({ deps: { ...b, fails: {}, push: ({ repo }) => ({ written: [{ name: repo, path: "/" + repo }] }), run: (p) => (ran.push(p), { id: "j" }) } });
         return { t, ran, kind: (id) => (workScene({ deps: { ...b, fails: {} } }).waiting.find((w) => w.id === "task:" + id) || {}).why || {} }; };
       const w1 = mk(WED, batch(WED)), s1 = mk(SAT, batch(SAT)), n1 = mk(WED_NIGHT, batch(WED_NIGHT)), l1 = mk(WED, batch(WED).slice(0, 1)), o1 = mk(WED, batch(WED), { peakGuard: false });

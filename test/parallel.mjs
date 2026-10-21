@@ -161,17 +161,17 @@ console.log("WHAT A COPY LEAVES — handovers, questions, waits, facts and repor
   let hook; const run = (wt, o) => { hook = o.onExit; return { id: "r" }; };
   P.startParallel("repo4", repo, { id: "p1", text: "Remove the trial account on production" }, { run });
   const wt = P.inflight()[0].wt, sd = join(wt, ".symbiot");
-  writeFileSync(join(sd, "HANDOFF.md"), "# Handovers\n\n### ops\nNew job: remove the trial account on sts-prod (ssh root@prod, `rm -rf /srv/trial`).\n");
+  writeFileSync(join(sd, "HANDOFF.md"), "# Handovers\n\n### ops\nNew job: remove the trial account on prod-box (ssh root@prod, `rm -rf /srv/trial`).\n");
   writeFileSync(join(sd, "QUESTIONS.md"), "# Questions\n\n## Questions\n### Which account?\nanswered in the copy\n- a\n### Delete its backups too?\nThey hold 2 GB.\n- Yes\n- Keep them\n\n## Suggestions\n### Add a trial flag\n");
   writeFileSync(join(sd, "ANSWERS.md"), readFileSync(join(sd, "ANSWERS.md"), "utf8") + "\n### Which account?\nthe trial one\n_answered 2026-10-15_\n"); // the copy's answers started as the lane's
   writeFileSync(join(sd, "AWAITING.json"), JSON.stringify([{ to: "host@prod.example", subject: "Trial removal", asked: "confirm", next: "tick" }]));
-  writeFileSync(join(sd, "REMEMBER.json"), JSON.stringify([{ name: "sts-prod", kind: "thing", fact: "production Dailify runs on sts-prod" }]));
+  writeFileSync(join(sd, "REMEMBER.json"), JSON.stringify([{ name: "prod-box", kind: "thing", fact: "production Bookly runs on prod-box" }]));
   writeFileSync(join(sd, "REPORT.md"), "# Trial removal\nWhat I found.\n"); writeFileSync(join(sd, "PLAN.md"), "# Plan\nSteps.\n");
   hook(0); // nothing changed in the code, nothing ticked: it handed over and asked instead
   const L = (f) => { try { return readFileSync(join(repo, ".symbiot", f), "utf8"); } catch { return ""; } };
-  ok("the handover is in the lane's HANDOFF.md as a section to send, marked with the task", /### ops\nNew job: remove the trial account on sts-prod/.test(L("HANDOFF.md")) && /from a run beside repo4 on "Remove the trial account/.test(L("HANDOFF.md")), L("HANDOFF.md"));
+  ok("the handover is in the lane's HANDOFF.md as a section to send, marked with the task", /### ops\nNew job: remove the trial account on prod-box/.test(L("HANDOFF.md")) && /from a run beside repo4 on "Remove the trial account/.test(L("HANDOFF.md")), L("HANDOFF.md"));
   ok("its open question is in the lane's QUESTIONS.md with its context and options; the answered one isn't; the idea comes too", /### Delete its backups too\?\nThey hold 2 GB\.\n- Yes\n- Keep them/.test(L("QUESTIONS.md")) && !/### Which account\?/.test(L("QUESTIONS.md")) && /## Suggestions\n### Add a trial flag/.test(L("QUESTIONS.md")), L("QUESTIONS.md"));
-  ok("the email it waits on and the fact it found join the lane's lists, the wait marked with the task", JSON.parse(L("AWAITING.json"))[0].task === "Remove the trial account on production" && JSON.parse(L("REMEMBER.json"))[0].name === "sts-prod", [L("AWAITING.json"), L("REMEMBER.json")]);
+  ok("the email it waits on and the fact it found join the lane's lists, the wait marked with the task", JSON.parse(L("AWAITING.json"))[0].task === "Remove the trial account on production" && JSON.parse(L("REMEMBER.json"))[0].name === "prod-box", [L("AWAITING.json"), L("REMEMBER.json")]);
   ok("its reports are kept, a clashing name set apart, each saying which run wrote it", /^# Plan\n_\(from a run beside repo4/.test(L("PLAN.md")) && L("REPORT.md") === "# Older\n" && readdirSync(join(repo, ".symbiot")).some((f) => /^REPORT-[0-9a-f]{6}\.md$/.test(f)), readdirSync(join(repo, ".symbiot")));
   const again = P.besideAgain(repo, "p1");
   ok("an empty patch that handed over counts as handed over, not unfinished: no retry on the same inputs or any others", again && again.kind === "handed" && /handed this to another lane/.test(again.note) && !existsSync(wt), again);

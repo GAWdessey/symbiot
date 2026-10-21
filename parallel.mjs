@@ -241,7 +241,7 @@ function besideAgain(repo, taskId) {
 // ---- what a copy leaves behind, kept -------------------------------------------------
 // A copy's agent that handed work to another lane, asked the user, wrote AWAITING.json,
 // REMEMBER.json or a report did the right thing, and the worktree was deleted with all
-// of it: dailify's ops handover never happened, and the task ran three more times (the
+// of it: bookly's ops handover never happened, and the task ran three more times (the
 // 15 Oct 2026 audit). Before the copy goes, each lands in the lane's .symbiot/, marked
 // with the task. Returns { handed, asked, waits, facts, reports, answers }.
 const NOT_REPORTS = /^(?:TASKS(?:\.[\w-]+)?|QUESTIONS|ANSWERS(?:\.archive)?|HANDOFF|SKIPPED|CLAUDE|AGENTS)\.md$|^BRIEF/i; // as reports.mjs lists them
