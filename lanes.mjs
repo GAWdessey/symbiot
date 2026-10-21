@@ -516,6 +516,11 @@ function doneSince(path, q, { ledger = loadLedger(), now = Date.now(), read = re
     if (n / want.size > top || (!best && n / want.size === top)) { best = h; top = n / want.size; }
   }
   if (!best) return null;
+  // an ask to reply, send or tell someone is done only by a handover that did that: "Should I
+  // reply to Carla that her Vodacom test reached us?" was closed as done by ops's trace of that
+  // same test, which sent nothing, and Carla had no answer for hours (21 Oct 2026)
+  const SENDS = /\b(?:repl(?:y|ied|ies)|send|sent|email|mail|messag|tell|told|post|invite|notif|let \w+ know)/i;
+  if (SENDS.test(q) && !SENDS.test(best.text)) return null;
   const head = firstLine(best.text), ticked = read(best.to.path, "TASKS.md").split("\n").filter((l) => /^\s*(?:[-*+]|\d+[.)])\s*\[[xX]\]/.test(l));
   return ticked.some((l) => alike(l, head)) ? { lane: best.to.lane, text: clipWords(head.replace(/\*\*/g, "").replace(/^What['’]s needed:\s*/i, ""), 120) } : null;
 }

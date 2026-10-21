@@ -172,6 +172,7 @@ writeFileSync(join(ops2, ".symbiot", "TASKS.md"), "## Tasks\n- [x] **What's need
 const dn = doneSince(lane2, permQ, { ledger });
 ok("...once the lane that took it has ticked it, the question is out of date, and says by whom", dn && dn.lane === "ops" && /^put the WhatsApp module back on sts-prod/.test(dn.text), dn);
 ok("...but not a question about other work of that lane's", doneSince(lane2, "Set up a WhatsApp test number for the module?", { ledger }) === null && doneSince(lane2, "Can I restart the WhatsApp module's systemd unit?", { ledger }) === null, "");
+ok("...nor one asking to reply or send, when that handover sent nothing (the Carla reply, 21 Oct 2026)", doneSince(lane2, "Should I email Jono that the WhatsApp module is back on sts-prod with Dailify's number routed to Dailify?", { ledger }) === null, "");
 ok("...nor one about a handover from over a week ago", doneSince(lane2, permQ, { ledger, now: Date.now() + 8 * 86400000 }) === null, "");
 const { homeState } = await import("../home.mjs");
 const hsDeps = { repos: () => ({ whatsapp_module: lane2 }), board: () => ({ cards: [] }), pending: () => [], lanes: () => ({ handoffs: [] }), reports: () => ({ count: 0 }), connected: () => true, waits: () => [], clashes: () => [], agentGone: () => "", signedOut: () => [], stuck: () => [], drafts: () => [], agentCmd: () => "claude", marketing: () => false,

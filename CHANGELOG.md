@@ -11,6 +11,8 @@ What each Symbiot release brought, newest first. When Approve bumps the version,
 - **Sandboxed runs reach the browser and the network.** Opening Symbiot a second time no longer cuts runs off from the Symbiot Browser, and Node in a run goes through the sandbox's proxy.
 - **A flaky test no longer stops an Approve.** A test file that fails alongside the others runs once more on its own; one that passes is named as flaky, and a real failure names its file on the card.
 - **Blocked steps say why**, in full.
+- **Asking about a report sees what happened since.** It knows when a draft has already gone out and reads the lane's newest findings before answering or starting work, so it doesn't contradict them or redo them.
+- **"Should I reply?" isn't closed by work that sent nothing.** An ask to reply, send or tell someone is only marked done by a handover that did that.
 
 ## 0.66.16 — 2026-10-21
 
