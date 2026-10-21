@@ -111,6 +111,25 @@ try {
   const sh = P.heardCode({ app: "com.android.shell", ...S.NOTE("482913") });
   ok("its notification, posted from Android's shell, passes the code to the card", sh.passed === S.SITE && queue().length === 1 && queue()[0].args.code === "482913" && queue()[0].args.key === "codecheck", [sh, queue()]);
   P.setCodeRelay(S.SITE, false);
+  ok("its question is this run's own: its words and its id name the run", /^Phone check \w+:/.test(S.QUESTION) && /^codecheck-\w+$/.test(sq[0].id || "") && S.QUESTION.includes(sq[0].id.slice(10)), [S.QUESTION, sq[0].id]);
+  ok("…and the card says it's a test, nothing to type, its switch the one thing to press", /\btest\b/i.test(sq[0].context) && /not a real site/i.test(sq[0].context) && /don't type/i.test(sq[0].context) && /switch/i.test(sq[0].context), sq[0].context);
+
+  console.log("A CODE TYPED ON A CODE CARD ISN'T KEPT IN THE SHARED RECORD (21 Oct 2026: it was, for other agents' briefs)");
+  const D = await import("../asksdone.mjs"), DONE = join(CFG, "asks-done.json");
+  const cq = "What's the 6-digit code codecheck.dev texted you?";
+  D.recordDone(cq, "820119", "ops");
+  const rec = D.doneList().find((x) => x.q === cq);
+  ok("it's recorded as answered, without the code", rec && rec.code && !rec.a.includes("820119") && !readFileSync(DONE, "utf8").includes("820119"), rec);
+  ok("…so no brief carries it", !D.doneBrief("ops").join("\n").includes("820119"), D.doneBrief("ops"));
+  ok("the same code ask again isn't answered from it: a code is one use", !D.heldBy(cq, { lane: "ops" }) && !D.isDone(cq));
+  D.recordDone("Which plan should Pro be sold on?", "the yearly one, 1200 a year", "ops");
+  ok("an answer with a number in it, to a question that isn't a code ask, is kept as it was", D.doneList().some((x) => x.a === "the yearly one, 1200 a year" && !x.code) && D.isDone("Which plan should Pro be sold on?"));
+  D.recordDone("Should I merge it?", "yes, the code is 482913 if it asks", "ops");
+  ok("a code in an answer to any question isn't kept either", !readFileSync(DONE, "utf8").includes("482913"));
+  writeFileSync(DONE, JSON.stringify([{ k: "whats the 6 digit code codecheck dev texted you", q: cq, a: "820119", lane: "ops", ts: Date.now() }]));
+  ok("a code kept before this isn't read back…", !JSON.stringify(D.doneList()).includes("820119") && !D.heldBy(cq, { lane: "ops" }), D.doneList());
+  D.recordDone("Which plan should Pro be sold on?", "monthly", "ops");
+  ok("…and is cleaned from the file with the next answer", !readFileSync(DONE, "utf8").includes("820119"));
 } catch (e) { ok("ran", false, String((e && e.stack) || e)); }
 finally { rmSync(HOME, { recursive: true, force: true }); }
 console.log(`\n${fail ? "✗" : "✓"} codes: ${pass} passed, ${fail} failed`);
