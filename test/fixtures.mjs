@@ -1093,7 +1093,9 @@ try {
   const notIn = releaseNotIn(selfRepo, `Once ${nextVer} is installed, sign in at cp.smsportal.com`);
   ok("releaseNotIn: a step naming a release newer than the one running isn't possible yet, with both versions", notIn && notIn.name === "symbiot" && notIn.needs === nextVer && notIn.installed === ver, notIn);
   ok("...one naming the running release, or none, or in a folder with no package, is", releaseNotIn(selfRepo, `Once ${ver} is installed, sign in`) === null && releaseNotIn(selfRepo, "Sign in at cp.smsportal.com") === null && releaseNotIn(join(ROOT, "nowhere"), `Once ${nextVer} is installed`) === null, "");
-  ok("Home card: the question and each choice show in full (no line clamp), wrapping instead", !/\.lqblob \.bq\{[^}]*line-clamp/.test(EMBEDDED_UI) && !/\.lqblob \.nopt span\.bt\{[^}]*line-clamp/.test(EMBEDDED_UI) && !/\.lqblob\.rlask \.bq\{[^}]*line-clamp/.test(EMBEDDED_UI));
+  // each choice in full (10 Oct 2026: "never cut off a choice"); the question two lines, all of it a tap away (review of 20 Oct 2026, Q5)
+  ok("Home card: each choice shows in full (no line clamp), wrapping instead", !/\.lqblob \.nopt span\.bt\{[^}]*line-clamp/.test(EMBEDDED_UI));
+  ok("…and its question shows two lines, with all of it a tap away", /\.lqblob \.bq\{[^}]*-webkit-line-clamp:2/.test(EMBEDDED_UI) && /\.lqblob \.bq\.open\{[^}]*line-clamp:unset/.test(EMBEDDED_UI) && /bqx\.classList\.toggle\('open'\)/.test(EMBEDDED_UI));
   const DONEOPT =new Function("return " + (EMBEDDED_UI.match(/var DONEOPT=(\/.*?\/i);/) || [])[1])();
   ok("the page holds back answers saying it's done or tried, not the others", ["Done both: map my inbox", "Done", "It clicked the right spot on both displays", "It looks right: my projects are on the Map", "Tried it, it missed"].every((s) => DONEOPT.test(s)) && !["Not done yet", "Not tried yet", "Yes: approve it now", "Doner kebab", "Trusted sites still isn't in Settings"].some((s) => DONEOPT.test(s)), DONEOPT);
   ok("TASKS.md tells the agent how to ask", /\.symbiot\/QUESTIONS\.md/.test(md) && /## Suggestions/.test(md) && /\.symbiot\/ANSWERS\.md/.test(md), md.slice(-600));

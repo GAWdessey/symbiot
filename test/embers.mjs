@@ -19,6 +19,7 @@ const ok = (n, c, got) => { if (c) { pass++; console.log("  ✓ " + n); } else {
 const { homeState, workScene, homeAnswer, dismissCard, cardKey } = await import("../home.mjs");
 const { waitingFor, needsOf } = await import("../agents.mjs");
 const { saveSecret } = await import("../vault.mjs");
+const { onUser, loadJobs, syncTasks } = await import("../jobs.mjs");
 
 const LANE = join(HOME, "symbiot"), STEP = "👤 You (only you: your Lemon Squeezy sign-in): at app.lemonsqueezy.com in your own Chrome, in test mode, make a store called Symbiot, then under Settings → API make a key and paste it on Home, where it's saved to the vault by itself";
 mkdirSync(join(LANE, ".symbiot"), { recursive: true });
@@ -29,8 +30,9 @@ const run = (id = "w" + ++runs) => { const w = waitingFor(LANE); return { id, na
 const TASKS = ["Lemon Squeezy checkout", "Renewal keys", "One-button cards", "Plan drafts", "Deploy only site changes", "Next free day"].map((t, i) => ({ id: "t" + i, text: t, repo: "symbiot", ts: Date.now() - 3600000 }));
 const deps = (agents) => ({ agents: () => agents, pending: () => [], tasks: () => TASKS, repos: () => ({ symbiot: LANE }), stuck: () => [], drafts: () => [], parked: () => [], cmd: () => "claude -p", brief: () => ({ at: 0, tasks: [] }), lastRun: () => 0, beside: () => new Set(), config: () => ({ peakGuard: false }), board: () => ({ cards: [] }), reports: () => ({ count: 0 }), lanes: () => ({ handoffs: [] }), marketing: () => false, phone: () => ({}), next: {} });
 // What Home lights: a needs-you orb per card, and on the work view an orb per waiting task (5 at most) that has a card to open.
-function embers(agents) {
-  const d = deps(agents), h = homeState({ fresh: true, deps: d }), w = workScene({ deps: d });
+// Home writes its cards to the job record and the work view reads them back from it (jobs.mjs onUser), as the app does.
+function embers(agents, { record = true } = {}) {
+  const d = deps(agents), h = homeState({ fresh: true, deps: d }), w = workScene({ deps: record ? { ...d, onUser: () => onUser() } : d });
   const lit = w.waiting.slice(0, 5).filter((x) => x.why.path), cards = h.you.filter((y) => y.fix === "needs");
   return { h, w, lit, cards, behind: lit.filter((x) => cards.some((y) => y.path === x.why.path)) };
 }
@@ -76,14 +78,32 @@ try {
   ok("…while \"allow gh in Settings\" still does", /agent command \(Settings → Handoff\)/.test(answerQuestions(gh, [{ q: "Allow gh again?", a: "👤 You: allow gh in Settings" }]).note || ""));
 
   console.log("EVERY ORB IS SOMETHING TO ACT ON");
+  // not a key to paste: the vault holds that one by now, so Home rightly shows no card for it
+  const PHONE_STEP = "👤 You (only you: your phone): tap Yes on the sign-in prompt your phone shows for app.lemonsqueezy.com";
   wait(Date.now() - 30000);
   const asks = { id: "r2", name: "coral", path: join(HOME, "coral"), status: "done", startedAt: Date.now() - 600000, endedAt: Date.now() - 1000, ask: { questions: [{ q: "Which number should the test call go to?", options: ["Yours (recommended)", "Skip"] }] } };
   e = embers([asks]);
   ok("a lane waiting on no card (wait file left, step already met) lights nothing", e.lit.length === 0, e.w.waiting.map((x) => x.why));
   ok("…while a lane with a question lights its tasks, each opening that question's card", embers([asks, { ...asks, id: "r3", name: "symbiot", path: LANE, ask: { questions: [{ q: "Monthly or yearly first?" }] } }]).lit.every((x) => x.why.path === LANE));
-  for (const [what, ag] of [["a step with its card", () => (wait(Date.now() + 1000, STEP.replace("make a store", "open a store")), [run()])], ["that card dismissed", () => { const c = embers([run()]).cards[0]; if (c) dismissCard(cardKey(c)); return [run()]; }], ["nothing at all", () => []]]) {
+  for (const [what, ag] of [["a step with its card", () => (wait(Date.now() + 1000, PHONE_STEP), [run()])], ["that card dismissed", () => { const c = embers([run()]).cards[0]; if (c) dismissCard(cardKey(c)); return [run()]; }], ["nothing at all", () => []]]) {
     const x = embers(ag());
     ok(`the count of embers equals the count of things the user can act on (${what}: ${x.lit.length})`, x.lit.length === x.behind.length && (x.lit.length > 0) === (x.cards.length > 0) && (what !== "a step with its card" || x.lit.length === 5), { lit: x.lit.length, behind: x.behind.length, cards: x.cards.length });
   }
+
+  console.log("THE ORBS READ HOME'S CARDS FROM THE JOB RECORD");
+  const shut = { id: "r9", name: "coral", path: join(HOME, "coral"), status: "done", startedAt: Date.now() - 600000, endedAt: Date.now() - 1000, ask: { questions: [{ q: "Can you close the Symbiot Browser so I can carry on?", options: ["Done (recommended)", "Skip"] }] } };
+  const CT = [{ id: "c1", text: "Call flow", repo: "coral", ts: Date.now() - 3600000 }], cd = { ...deps([shut]), repos: () => ({ symbiot: LANE, coral: shut.path }), tasks: () => CT };
+  homeState({ fresh: true, deps: cd });
+  const lit = (w) => w.waiting.filter((x) => x.why.path);
+  ok("a question Home drops (close the Symbiot Browser is an agent's wait) is no card", !homeState({ fresh: true, deps: cd }).you.some((y) => y.path === shut.path));
+  ok("…and lights no orb, read from the record", lit(workScene({ deps: { ...cd, onUser: () => onUser() } })).length === 0, workScene({ deps: { ...cd, onUser: () => onUser() } }).waiting.map((x) => x.why));
+  ok("…where counting the agent's own questions lit one (the old way)", lit(workScene({ deps: cd })).length === 1);
+  wait(Date.now() + 2000, PHONE_STEP.replace("tap Yes", "press Yes"));
+  const h9 = homeState({ fresh: true, deps: deps([run("r10")]) }), rec = onUser();
+  ok("every card on Home is a job waiting on the user, and nothing else is", rec.length === h9.youCount && h9.you.every((y) => rec.some((r) => r.id === y.id)), { rec, you: h9.you.map((y) => y.id) });
+  const w9 = workScene({ deps: { ...deps([run("r10")]), onUser: () => onUser(), syncTasks } }), held9 = loadJobs().filter((j) => j.kind === "task" && j.state === "queued" && j.waitingOn === "user");
+  ok("the tasks behind lit orbs are on the record as queued, waiting on the user", held9.length === TASKS.length && lit(w9).length === TASKS.length, loadJobs().filter((j) => j.kind === "task").map((j) => [j.key, j.state, j.waitingOn]));
+  homeState({ fresh: true, deps: deps([]) });
+  ok("a card that left Home is done on the record", !onUser().some((y) => y.id === "needs:r10") && loadJobs().some((j) => j.key === "you:needs:r10" && j.state === "done"), loadJobs().map((j) => [j.key, j.state]));
 } finally { rmSync(HOME, { recursive: true, force: true }); }
 console.log(`\n${pass} passed, ${fail} failed`); process.exit(fail ? 1 : 0);

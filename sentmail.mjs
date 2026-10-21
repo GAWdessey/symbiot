@@ -7,6 +7,7 @@
 // A match closes the task and keeps where it went (task.sent), so Home and the chat
 // say "sent on <date>, waiting on reply" instead of listing it as work.
 import { loadTasks, saveTasks, loadConfig } from "./core.mjs";
+import { track } from "./jobs.mjs";
 import { mailActivity } from "./mail.mjs";
 
 const ACTION = /^\s*(?:(?:new job|urgent)\s*:\s*)?(?:please\s+)?(?:draft|write|compose|send|email|e-mail|mail|reply|respond|follow[\s-]?up)\b/i;
@@ -55,7 +56,7 @@ function settleSent(rows, { load = loadTasks, save = saveTasks, now = Date.now()
     x.sent = { at: row.ts || now, subject: String(row.subject || row.text || "").slice(0, 120), to: (row.to || []).slice(0, 3), via: row.via || "mail", ...(row.href ? { href: row.href } : {}) };
     done.push(x);
   }
-  if (done.length) save(t);
+  if (done.length) { save(t); for (const x of done) track("task:" + x.id, { kind: "email", text: x.text, state: "sent", waitingOn: "third party" }, { now }); }
   return done;
 }
 const sentLine = (x, now = Date.now()) => { const d = x && x.sent && new Date(x.sent.at || now); return d ? `sent on ${d.toISOString().slice(0, 10)}, waiting on reply` : ""; };

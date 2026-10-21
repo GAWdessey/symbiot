@@ -31,10 +31,11 @@ import { createServer } from "node:http";
 import { hostname, networkInterfaces } from "node:os";
 import { execFileSync } from "node:child_process";
 import { join } from "node:path";
-import { readFileSync, unlinkSync, statSync } from "node:fs";
+import { readFileSync, writeFileSync, renameSync, unlinkSync, statSync } from "node:fs";
 import { randomBytes, randomInt, randomUUID, timingSafeEqual, createHash, generateKeyPairSync, createPublicKey, createPrivateKey, diffieHellman, hkdfSync, createCipheriv, createDecipheriv } from "node:crypto";
 import { CONFIG_DIR, loadConfig, saveConfig, hasCmd, loadTasks, readState, writeJsonAtomic } from "./core.mjs";
 import { newsAfter, newsNotice } from "./watch.mjs";
+import { onUser } from "./jobs.mjs";
 import { desktopNotify } from "./desktop.mjs";
 import { announce, browse } from "./mdns.mjs";
 import { qrSvg } from "./qr.mjs";
@@ -318,15 +319,22 @@ async function snapshot({ now = Date.now(), fresh = false } = {}) {
   if (!fresh && snapCache && now - snapCache.at < 5000) return snapCache.snap;
   const tryOr = async (f, d) => { try { return await f(); } catch { return d; } };
   const home = await tryOr(() => import("./home.mjs"), null), tasksMod = await tryOr(() => import("./tasks.mjs"), null), agents = await tryOr(() => import("./agents.mjs"), null), watch = await tryOr(() => import("./watch.mjs"), null);
-  const h = home ? await tryOr(() => home.homeState({ now }), { you: [] }) : { you: [] };
+  const h = home ? await tryOr(() => home.homeState({ now, fresh }), { you: [] }) : { you: [] }; // fresh: after a change from the phone, Home's cards as they are now
   const tasks = loadTasks().filter((t) => !t.archived).slice(0, 200).map((t) => ({ id: t.id, text: plainText(t.text), repo: t.repo || "", done: !!t.done, ...(t.review ? { review: true } : {}) }));
-  const you = h.you || [];
+  // what waits on you is the job record Home just wrote (jobs.mjs onUser): all of it, not Home's first 6,
+  // and only the agents whose question is a card there (none Home dropped as answered or held)
+  const cards = h.at ? await tryOr(() => onUser(), null) : null, you = cards || h.you || [];
   const needs = you.filter((y) => y.kind !== "ask" && y.kind !== "approve").map((y) => ({ id: y.id, title: plainText(y.title, 90), sub: plainText(y.sub, 160) }));
-  const asks = [];
-  for (const y of (await tryOr(() => agents.agentsList(), [])).filter((a, i, all) => all.findIndex((b) => b.path === a.path) === i)) {
+  const asked = cards && new Set(cards.filter((y) => y.kind === "ask" && !y.fix && y.path).map((y) => y.path)), asks = [], lanesMod = await tryOr(() => import("./lanes.mjs"), null), ledger = lanesMod ? await tryOr(() => lanesMod.loadLedger(), { handoffs: [] }) : { handoffs: [] };
+  for (const y of (await tryOr(() => (fresh ? agents.agentsList() : agents.agentsNow()), [])).filter((a, i, all) => all.findIndex((b) => b.path === a.path) === i)) {
+    if (asked && !asked.has(y.path)) continue;
     const qs = await tryOr(() => agents.agentQuestions(y.path, "").questions, []);
-    if (qs.length) asks.push({ id: askId(y.path), path: y.path, name: plainText(String(y.name || "an agent").replace(/^Agent:\s*/, ""), 60), questions: qs.slice(0, 5).map((q) => ({ q: plainText(q.q, 300), ...(q.task ? { task: plainText(q.task, 120) } : {}), ...(q.shown ? { shown: plainText(q.shown, 400) } : {}), options: (q.options || []).slice(0, 2).map((o) => plainText(o, 200)), ...(q.labels ? { labels: q.labels.slice(0, 2).map((o) => plainText(o, 200)) } : {}) })) });
+    const project = lanesMod ? await tryOr(() => lanesMod.projectOf(y.path, { ledger }), "") : ""; // which project it's for, from the record (home.mjs projectFor)
+    if (qs.length) asks.push({ id: askId(y.path), path: y.path, name: plainText(String(y.name || "an agent").replace(/^Agent:\s*/, ""), 60), project, questions: qs.slice(0, 5).map((q) => { const c = codeAsk(q); return { q: plainText(q.q, 300), ...(q.task ? { task: plainText(q.task, 120) } : {}), ...(q.shown ? { shown: plainText(q.shown, 400) } : {}), options: (q.options || []).slice(0, 2).map((o) => plainText(o, 200)), ...(q.labels ? { labels: q.labels.slice(0, 2).map((o) => plainText(o, 200)) } : {}), ...(c ? { code: c } : {}) }; }) });
   }
+  const proofs = [];
+  // every folder an agent ran in, not just those with a question (a run that wrote a proof and stopped has none)
+  for (const y of (await tryOr(() => agents.loadRuns(), [])).filter((a, i, all) => all.findIndex((b) => b.path === a.path) === i)) { const pr = proofOf(y.path); if (pr) proofs.push({ ...pr, name: plainText(String(y.name || "an agent").replace(/^Agent:\s*/, ""), 60) }); }
   // leftover changes (no ticked task, nothing said finished) aren't waiting on you: home.mjs
   const approves = (await tryOr(() => tasksMod.pendingReview(), [])).filter((r) => r.path && !r.running && !r.shipping && !r.leftover && ((r.tasks || []).length || (r.files || []).length))
     .map((r) => ({ repo: r.repo, tasks: (r.tasks || []).map((t) => ({ id: t.id, text: plainText(t.text, 200) })), files: (r.files || []).length, stat: plainText(r.stat, 120), ...(r.untasked ? { untasked: true } : {}), sum: approveSum(r) }));
@@ -334,17 +342,63 @@ async function snapshot({ now = Date.now(), fresh = false } = {}) {
   const seen = (board.cards || []).filter((c) => c.count > 0).slice(0, 8).map((c) => ({ name: plainText(c.name, 60), label: plainText(c.label, 60), count: c.count, items: (c.items || []).filter((i) => i.need !== false).slice(0, 3).map((i) => ({ text: plainText(i.text, 140), ts: i.ts })) }));
   const recent = (readJson(PATHS.applied, {}).approvals || []).filter((a) => now - a.at < 24 * 3600000).slice(-10);
   const reports = await tryOr(() => reportsForPhone(), []);
-  const body = { tasks, needs, asks, approves, watch: seen, recent, reports, relay: linkCfg().relay && relayAllowed() };
+  const body = { tasks, needs, asks, approves, proofs, watch: seen, recent, reports, relay: linkCfg().relay && relayAllowed() };
   const snap = { v: sha(JSON.stringify(body)).slice(0, 16), name: hostname(), at: now, ...body };
   snapCache = { at: now, snap };
   return snap;
+}
+
+// ---- the phone as the hand for codes and proofs (review of 20 Oct 2026, proposal 3) -------------
+// A question that waits for a code a site sends ("type the 6-digit code Zoho texted you"):
+// { site, key } with the site it's from, or null. One with no site named isn't offered: the
+// phone passes a code on only for the site it was asked for, and only one you switched on.
+const CODE_ASK = /\b(?:sms|text(?:ed)?|verification|verify|one[- ]time|otp|2fa|two[- ]factor|security|log[- ]?in|sign[- ]in|confirmation|\d[- ]digit)\b[^.\n]{0,50}\bcodes?\b|\bcodes?\b[^.\n]{0,40}\b(?:sms|texted|text message|sent (?:to )?your phone|on your phone)\b/i;
+const SITE_IN = /\b((?:[a-z0-9-]+\.)+(?:com|co\.za|io|dev|net|org|app|ai|me|co))\b/i, SITE_NAMED = /\b(?:from|by|that|the|your)\s+([A-Z][\w&-]{1,30})\s+(?:sent|texted|sends|texts|code|sms)\b/;
+const siteKey = (s) => { const h = String(s || "").toLowerCase().replace(/^www\./, ""); return h.includes(".") ? h.split(".").filter((x) => !["com", "co", "za", "io", "dev", "net", "org", "app", "ai", "me", "accounts", "login", "auth", "mail", "my", "cp"].includes(x)).pop() || h.split(".")[0] : h; };
+function codeAsk(q) {
+  const t = [q && q.q, ...((q && q.options) || []), q && q.shown, q && q.context].filter(Boolean).join("\n");
+  if (!CODE_ASK.test(t)) return null;
+  const d = (t.match(SITE_IN) || [])[1], n = (t.match(SITE_NAMED) || [])[1], site = d ? d.toLowerCase().replace(/^www\./, "") : n || "";
+  const key = siteKey(site); return key && key.length >= 3 ? { site, key } : null;
+}
+// The code in a notification's words, or "": only with a word that says it's a code, and only
+// the code (the rest of the message never leaves the phone).
+function codeIn(text) {
+  const t = String(text || "").slice(0, 600); if (!/\b(?:code|otp|pin|passcode|verification|verify|one[- ]time)\b/i.test(t)) return "";
+  const year = (x) => /^(19|20)\d\d$/.test(x); // "expires in 2026" isn't the code
+  const m = [...t.matchAll(/\b(?:code|otp|pin|passcode)\b[^0-9A-Z\n]{0,24}?\b(\d{3}[ -]\d{3}|\d{4,8}|[A-Z0-9]{3,5}-[A-Z0-9]{3,5})\b/gi), ...t.matchAll(/\b(\d{3}[ -]\d{3}|\d{4,8})\b(?=[^\d\n]{0,30}\b(?:is your|is the|code)\b)/gi)].map((x) => x[1]).find((x) => !year(x));
+  if (m) return m.replace(/[ ]/g, "");
+  const nums = [...new Set(t.match(/\b\d{4,8}\b/g) || [])].filter((x) => !year(x));
+  return nums.length === 1 ? nums[0] : "";
+}
+// A proof an agent wants seen before it sends (.symbiot/PROOF.md: a heading, then "Kind:",
+// "To:", "File:" and "Buttons:" lines, then the message exactly as it goes out), or null.
+const PROOF = "PROOF.md";
+function parseProof(md) {
+  const lines = String(md || "").replace(/\r/g, "").split("\n"), out = { title: "", kind: "text", to: "", file: "", buttons: [], body: "" };
+  let i = 0; while (i < lines.length && !lines[i].trim()) i++;
+  if (/^#\s+/.test(lines[i] || "")) out.title = lines[i++].replace(/^#\s+/, "").trim();
+  for (; i < lines.length; i++) {
+    const m = lines[i].match(/^(kind|to|file|buttons):\s*(.*)$/i); if (!m) break;
+    const k = m[1].toLowerCase(), v = m[2].trim();
+    if (k === "kind") out.kind = /whats/i.test(v) ? "whatsapp" : /sms|text/i.test(v) ? "sms" : /pdf/i.test(v) ? "pdf" : /mail/i.test(v) ? "email" : "text";
+    else if (k === "buttons") out.buttons = v.split(/\s*[,|]\s*/).filter(Boolean).slice(0, 4).map((b) => plainText(b, 40));
+    else out[k] = v;
+  }
+  out.body = lines.slice(i).join("\n").trim();
+  return out.title || out.body ? out : null;
+}
+function proofOf(path) {
+  let md = ""; try { md = readFileSync(join(path, ".symbiot", PROOF), "utf8"); } catch { return null; }
+  const p = parseProof(md); if (!p) return null;
+  return { id: "proof:" + sha(path + "\n" + md).slice(0, 12), path, title: plainText(p.title || "Check this before it goes out", 120), kind: p.kind, to: plainText(p.to, 120), ...(p.file ? { file: plainText(p.file, 200) } : {}), buttons: p.buttons, body: String(p.body).slice(0, 4000) };
 }
 
 // ---- changes from a phone --------------------------------------------------------------------
 // Only these, each absolute ("mark it done", never "flip it"), so one sent twice or
 // late lands the same. Each has an id, and an id applied once is never applied
 // again (phone-applied.json). Anything else is refused and reaches nothing.
-const PHONE_OPS = ["task.add", "task.setDone", "agent.answer", "pending.approve"];
+const PHONE_OPS = ["task.add", "task.setDone", "agent.answer", "pending.approve", "code.give", "proof.answer"];
 let approveHook = null; // server.mjs: the same Approve as the button (release notes and all)
 function setPhoneApprove(fn) { approveHook = typeof fn === "function" ? fn : null; }
 async function defaultApprove(repo, untasked) { const t = await import("./tasks.mjs"); return untasked ? t.approveChanges(repo, { tick: [] }) : t.approveRepo(repo, {}); }
@@ -385,6 +439,32 @@ async function applyOne(o, phone) {
       snapCache = null;
     });
     return { ok: true, started: true };
+  }
+  if (o.op === "code.give") {
+    // a code a site texted you, passed on by the phone for the question waiting on it: into the vault,
+    // one use and 10 minutes at most, and the agent told its name, never the code itself
+    const path = String(a.path || ""), code = String(a.code || "").replace(/\s+/g, ""), snap = await snapshot({ fresh: true });
+    if (!/^[A-Za-z0-9-]{3,12}$/.test(code)) return { error: "That didn't look like a code, so it wasn't passed on." };
+    const ask = snap.asks.find((x) => x.path === path), q = ask && ask.questions.find((x) => x.code && x.code.key === String(a.key || "") && (!a.q || x.q === a.q));
+    if (!q) return { error: "No agent is waiting for that code any more, so it wasn't kept." };
+    const { saveCode, CODE_TTL } = await import("./vault.mjs"), name = `${q.code.site || q.code.key} code`, v = saveCode(name, code);
+    if (v.error) return { error: "It couldn't be kept in the vault." };
+    const { answerQuestions } = await import("./agents.mjs");
+    const r = answerQuestions(path, [{ q: q.q, a: `Your phone passed on the code ${q.code.site || q.code.key} sent. It's in Symbiot's vault as "${name}", for one use in the next ${Math.round(CODE_TTL / 60000)} minutes: \`symbiot secret get "${name}" --use\`. Type it where it's asked, and don't write it anywhere else.` }], { rerun: true });
+    return r && r.ok ? { ok: true, kept: name } : { error: (r && r.error) || "It couldn't be passed to the agent." };
+  }
+  if (o.op === "proof.answer") {
+    // Send (as shown) or Change (with what to change) on a proof an agent wrote: its answer, and it carries on
+    const path = String(a.path || ""), pr = proofOf(path);
+    if (!pr || pr.id !== String(a.id || "")) return { error: "That proof changed or went since your phone showed it, so nothing was sent. Look at it again." };
+    const change = String(a.change || "").trim().slice(0, 2000), send = !change && a.send === true;
+    if (!send && !change) return { error: "Say Send, or what to change." };
+    const day = new Date().toISOString().slice(0, 10), file = join(path, ".symbiot", "ANSWERS.md");
+    let had = ""; try { had = readFileSync(file, "utf8"); } catch { had = "# Answers from the user\n"; }
+    const said = send ? `Send it, exactly as shown in .symbiot/PROOF.md${pr.to ? ` (to ${pr.to})` : ""}.` : `Don't send it yet. Change it: ${change}\nThen write the new version to .symbiot/PROOF.md for another look.`;
+    try { writeFileSync(file, had.replace(/\s*$/, "\n") + `\n### Proof: ${pr.title}\n${said}\n_answered ${day} on ${plainText(phone && phone.name, 40) || "the phone"}_\n`); renameSync(join(path, ".symbiot", PROOF), join(path, ".symbiot", send ? "PROOF.sent.md" : "PROOF.changed.md")); } catch { return { error: "It couldn't be saved for the agent." }; }
+    const { runHandoff } = await import("./agents.mjs"); try { runHandoff(path); } catch {}
+    return { ok: true, sent: send };
   }
   return { refused: true, status: 403, error: `"${String(o.op || "").slice(0, 40)}" can't be done from a phone.` };
 }
@@ -783,14 +863,17 @@ function computerView() {
   const st = computerState(), copy = loadCopy(), q = loadQueue();
   if (!copy) return { ...st, copy: null };
   const v = JSON.parse(JSON.stringify(copy));
-  for (const k of ["tasks", "needs", "asks", "approves", "watch", "recent", "notes", "reports"]) if (!Array.isArray(v[k])) v[k] = [];
+  for (const k of ["tasks", "needs", "asks", "approves", "proofs", "watch", "recent", "notes", "reports"]) if (!Array.isArray(v[k])) v[k] = [];
   for (const o of q) {
     const a = o.args || {};
     if (o.op === "task.add") v.tasks.unshift({ id: "q:" + o.id, text: plainText(a.text), repo: a.repo || "", done: false, waiting: true });
     if (o.op === "task.setDone") { const t = v.tasks.find((x) => x.id === a.id); if (t) { t.done = !!a.done; t.waiting = true; } }
     if (o.op === "agent.answer") { const x = v.asks.find((y) => y.path === a.path); if (x) { x.waiting = true; x.answered = (a.answers || []).map((y) => y.a); } }
     if (o.op === "pending.approve") { const x = v.approves.find((y) => y.repo === a.repo); if (x) x.waiting = true; }
+    if (o.op === "code.give") { const x = v.asks.find((y) => y.path === a.path); if (x) { x.waiting = true; x.answered = [`the code ${a.key} sent, passed on by this phone`]; } }
+    if (o.op === "proof.answer") { const x = v.proofs.find((y) => y.id === a.id); if (x) { x.waiting = true; x.answered = a.change ? `Change: ${a.change}` : "Send"; } }
   }
+  v.codesOn = codeSites(); // which sites' codes this phone passes on (setCodeRelay)
   return { ...st, copy: v };
 }
 // A change made here: kept in order, shown at once, sent as soon as the computer answers.
@@ -803,11 +886,37 @@ function queueChange(op, args = {}) {
   if (op === "task.setDone") { a.id = String(args.id || ""); a.done = !!args.done; }
   if (op === "agent.answer") { a.path = String(args.path || ""); a.answers = (Array.isArray(args.answers) ? args.answers : []).slice(0, 5).map((x) => ({ q: String((x && x.q) || ""), a: String((x && x.a) || "").slice(0, 2000) })).filter((x) => x.q && x.a); if (!a.answers.length) return { ...computerView(), refused: "Pick or type an answer first." }; }
   if (op === "pending.approve") { a.repo = String(args.repo || ""); a.sum = String(args.sum || ""); }
+  if (op === "code.give") { a.path = String(args.path || ""); a.key = String(args.key || ""); a.q = String(args.q || "").slice(0, 400); a.code = String(args.code || "").slice(0, 12); if (!a.code) return { ...computerView(), refused: "No code to pass on." }; }
+  if (op === "proof.answer") { a.path = String(args.path || ""); a.id = String(args.id || ""); a.change = String(args.change || "").trim().slice(0, 2000); a.send = !a.change && args.send === true; if (!a.send && !a.change) return { ...computerView(), refused: "Say what to change first." }; }
   const q = loadQueue();
   if (op === "task.setDone") for (let i = q.length - 1; i >= 0; i--) if (q[i].op === "task.setDone" && q[i].args.id === a.id) q.splice(i, 1); // the last tick wins
   q.push({ id: randomUUID(), at: Date.now() + (Number(c.offset) || 0), op, args: a }); saveQueue(q);
   if (process.env.SYMBIOT_NO_POLL !== "1") setTimeout(() => { pollComputer().catch(() => {}); }, 30).unref();
   return computerView();
+}
+// The sites whose codes this phone passes on: none until you switch one on, on the card that
+// asks for its code (setCodeRelay). Kept on the phone, in its config.
+const codeSites = (cfg = loadConfig()) => (((cfg && cfg.codeRelay) || {}).sites || []).filter((x) => typeof x === "string");
+function setCodeRelay(key, on) {
+  key = siteKey(String(key || "")); if (!key || key.length < 3) return { error: "Which site?" };
+  const cfg = loadConfig(), sites = new Set(codeSites(cfg)); if (on) sites.add(key); else sites.delete(key);
+  cfg.codeRelay = { sites: [...sites].slice(0, 40) }; saveConfig(cfg);
+  return computerView();
+}
+// A notification on the phone (Android: CodeListener hands over what it says, from this phone to
+// this phone's own Symbiot): when a card on the computer waits for a code from a site you switched
+// on, and the notification is from that site and has a code in it, only the code goes to the
+// computer (code.give). Anything else is dropped here, and nothing of it is kept.
+function heardCode({ app = "", title = "", text = "" } = {}) {
+  const c = loadConfig().computer, copy = c ? loadCopy() : null; if (!copy) return { ignored: "not paired" };
+  const on = new Set(codeSites()), said = `${title}\n${text}`, from = `${app}\n${said}`.toLowerCase();
+  const code = codeIn(said); if (!code) return { ignored: "no code" };
+  for (const ask of copy.asks || []) for (const q of ask.questions || []) {
+    if (!q.code || !on.has(q.code.key) || !from.includes(q.code.key)) continue;
+    const r = queueChange("code.give", { path: ask.path, key: q.code.key, q: q.q, code });
+    return r.refused ? { ignored: r.refused } : { passed: q.code.site || q.code.key, to: ask.name };
+  }
+  return { ignored: "no card waits for this site's code" };
 }
 // What waits on you there, each by a key that holds while it waits: an agent's
 // questions (by what they ask, so a new question tells you again), work waiting for
@@ -819,6 +928,7 @@ function waitingOn(s) {
   for (const r of (s && s.approves) || []) { const ids = (r.tasks || []).map((t) => t.id).sort(), n = ids.length;
     out.set("approve:" + r.repo + ":" + sha(JSON.stringify(ids)).slice(0, 8), `${r.repo}: ${n ? `${n} task${n > 1 ? "s" : ""} done` : "changes without a task"}, waiting for your Approve`); }
   for (const n of (s && s.needs) || []) out.set("need:" + n.id, n.sub ? `${n.title}: ${n.sub}` : n.title);
+  for (const p of (s && s.proofs) || []) out.set(p.id, `${p.name} wants you to see this before it goes out: ${p.title}`);
   return out;
 }
 // What's newly waiting since the copy before, as one notification (a poll that finds
@@ -902,4 +1012,4 @@ const phoneState = () => (PHONE ? computerView() : linkState());
 // While the app runs: the computer listens if it's switched on; the phone asks if it's paired.
 function startPhone() { if (PHONE) startComputerPoll(); else startPhoneLink(); }
 
-export { computerCopy, reportsForPhone, cutReport, PHONE_REPORTS, REPORT_CAP, PORT, PHONE, ANDROID_APP, PHONE_OPS, lanAddresses, mdnsAddresses, linkState, newCode, unpairPhone, setRelay, startPhoneLink, stopPhoneLink, setPhoneLink, setPhoneApprove, phoneApprovals, snapshot, computerUrl, parsePairLink, pairLink, computerState, computerView, waitingNotice, findComputers, pairComputer, forgetComputer, pollComputer, queueChange, dismissNote, startComputerPoll, phoneState, startPhone, newKeys, linkKey, fingerprint, seal, unseal, relayOf, answer, fitRelay, RELAY_MAX, relaunchEnv, adbLink, freePhonePort, usePhonePort, portHolder, ask };
+export { applyOps, codeAsk, codeIn, siteKey, parseProof, proofOf, PROOF, codeSites, setCodeRelay, heardCode, computerCopy, reportsForPhone, cutReport, PHONE_REPORTS, REPORT_CAP, PORT, PHONE, ANDROID_APP, PHONE_OPS, lanAddresses, mdnsAddresses, linkState, newCode, unpairPhone, setRelay, startPhoneLink, stopPhoneLink, setPhoneLink, setPhoneApprove, phoneApprovals, snapshot, computerUrl, parsePairLink, pairLink, computerState, computerView, waitingNotice, findComputers, pairComputer, forgetComputer, pollComputer, queueChange, dismissNote, startComputerPoll, phoneState, startPhone, newKeys, linkKey, fingerprint, seal, unseal, relayOf, answer, fitRelay, RELAY_MAX, relaunchEnv, adbLink, freePhonePort, usePhonePort, portHolder, ask };

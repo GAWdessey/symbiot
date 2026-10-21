@@ -7,8 +7,9 @@
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { readFileSync, readdirSync, existsSync, writeFileSync, mkdirSync } from "node:fs";
-import { loadConfig, loadTasks, saveTasks } from "./core.mjs";
+import { loadConfig, saveConfig, loadTasks, saveTasks, CONFIG_DIR, readState, writeJsonAtomic } from "./core.mjs";
 import { isDone } from "./asksdone.mjs";
+import { track, prKey, landed } from "./jobs.mjs";
 
 const read = (f) => { try { return readFileSync(f, "utf8"); } catch { return ""; } };
 const json = (f) => { try { return JSON.parse(read(f)) || {}; } catch { return {}; } };
@@ -20,6 +21,7 @@ const PUSH_MAIN = /\bpush\b[\s\S]{0,120}?branches:\s*(?:\[[^\]]*\b(?:main|master
 // The user's config (config.json "deploy": { "<repo>": { "where", "url", "auto" } }) wins over
 // what the repo's files suggest; a repo file is only ever read here, never run.
 function deployTarget(path, repo = "") {
+  const rb = runbookOf(repo); if (rb) return { how: rb.where, url: rb.url, auto: false, source: "its runbook", runbook: rb };
   const mine = (loadConfig().deploy || {})[repo];
   if (mine && typeof mine === "object") return { how: String(mine.where || "production"), url: String(mine.url || ""), auto: !!mine.auto, source: "your config" };
   if (!path) return null;
@@ -70,6 +72,95 @@ const askOf = (repo, pr, target) => `Deploy ${repo}${pr ? ` (${prName(pr)})` : "
 const prName = (pr) => { const n = String(pr || "").match(/(\d+)\/?$/); return n ? "PR #" + n[1] : String(pr); };
 const same = (a, b) => { const x = String(a || "").match(/(\d+)\/?$/), y = String(b || "").match(/(\d+)\/?$/); return !!x && !!y && x[1] === y[1]; };
 
+// ---- a lane's deploy runbook (review of 20 Oct 2026, proposal 4) ---------------------------
+// 98 tasks in 11 days were about putting something live, and ops improvised the same ssh deploy each
+// time. config.deploy[repo] = { where, how, url, check, expect?, policy }: the exact command (how)
+// on where, the live address, an address (check) whose answer says it's up (2xx, with expect in
+// it when given), and policy: "ask" (a "Deploy it?" each merge), "always" (a standing yes: after
+// a merge it's deployed with no question) or "never". Written once, by ops after a deploy it did
+// by hand (`symbiot deploy set`), or by the user's standing yes on the deploy question. "always" is
+// only ever the user's (user: their Yes on the deploy card): from anyone else, the CLI
+// an ops agent runs included, it's refused, and a standing yes given for one command on one host
+// goes back to "ask" once either changes (review of the 20 Oct 2026 run). A change
+// is live only once that check answered after the deploy run ended (deployTick), never because a
+// command ran.
+const POLICIES = ["ask", "always", "never"];
+function runbookOf(repo, cfg = loadConfig()) {
+  const r = (cfg.deploy || {})[repo]; if (!r || typeof r !== "object" || !r.how) return null;
+  return { where: String(r.where || "production"), how: String(r.how), url: String(r.url || ""), check: String(r.check || r.url || ""), ...(r.expect ? { expect: String(r.expect) } : {}), policy: POLICIES.includes(r.policy) ? r.policy : "ask" };
+}
+function setRunbook(repo, f = {}, { user = false } = {}) {
+  repo = String(repo || "").trim(); if (!repo) return { error: "Which lane?" };
+  const cfg = loadConfig(), deploy = { ...(cfg.deploy || {}) }, was = deploy[repo] && typeof deploy[repo] === "object" ? deploy[repo] : {};
+  const next = { ...was }; for (const k of ["where", "how", "url", "check", "expect", "policy"]) if (f[k] !== undefined) next[k] = String(f[k]).trim();
+  if (!next.how) return { error: "The runbook needs the exact deploy command (--how)." };
+  if (next.policy && !POLICIES.includes(next.policy)) return { error: `The policy is one of ${POLICIES.join(", ")}.` };
+  if (f.policy !== undefined && next.policy === "always" && !user) return { error: "Deploying after every merge is the user's to switch on: they say so on the deploy card (\"after every merge from now on\"). Set the runbook with --policy ask, and the next merge asks them." };
+  let dropped = false;
+  if (next.policy === "always" && was.policy === "always" && !(user && f.policy === "always") && ["how", "where"].some((k) => String(next[k] || "") !== String(was[k] || ""))) { next.policy = "ask"; dropped = true; } // their yes was for that command there
+  if (next.policy === "always" && !/^https?:\/\//.test(next.check || next.url || "")) return { error: "A standing yes needs a live check: give the address to check (--check) first." };
+  deploy[repo] = next; cfg.deploy = deploy; saveConfig(cfg);
+  return { ok: true, repo, runbook: runbookOf(repo, cfg), ...(dropped ? { dropped: true } : {}) };
+}
+// Deploys started from a runbook, waiting for their live check: [{ repo, pr, dir, at, state, note? }].
+const DEPLOYS = () => join(CONFIG_DIR, "deploying.json"); // not deploys.json: that one is yours (drift.mjs loadDeploys: the production check)
+const loadDeploys = () => readState(DEPLOYS(), Array.isArray) || [];
+const saveDeploys = (l) => { try { writeJsonAtomic(DEPLOYS(), l.slice(-100), { indent: 1 }); } catch {} };
+// Hand the runbook's command to ops (a repo lane reaches no server), told to run it as written.
+async function startDeploy(repo, pr = "", { act } = {}) {
+  const rb = runbookOf(repo); if (!rb) return { error: `${repo} has no deploy runbook.` };
+  if (loadDeploys().some((d) => d.repo === repo && d.state === "running" && (!pr || same(d.pr, pr)))) return { ok: true, already: true };
+  if (!act) act = (await import("./mind.mjs")).actNow;
+  const brief = `Deploy ${repo}${pr ? ` (${prName(pr)}, merged)` : ""} with its runbook, exactly as written: on ${rb.where}, run \`${rb.how}\`. Don't improvise another way; if it fails, stop and say why in your last message, with the last lines of its output. Don't check the live site yourself: Symbiot checks ${rb.check || rb.url} once your run ends, and only that marks it live.`;
+  const r = act(brief, { title: `Deploy ${repo}`, lane: repo });
+  if (!r || r.error) return { error: (r && r.error) || "The deploy didn't start." };
+  saveDeploys([...loadDeploys(), { repo, pr: String(pr || ""), dir: r.dir || "", at: Date.now(), state: "running" }]);
+  if (pr) markTasks(repo, pr, { state: "pending", text: `Deploying to ${where({ how: rb.where, url: rb.url })} now, from its runbook. It's live once the check on ${rb.check || rb.url} answers.` });
+  return { ok: true, dir: r.dir };
+}
+// The live check, once a deploy's run has ended: live only when it answers (2xx, with expect).
+async function checkLive(rb, fetchFn = fetch) {
+  const url = rb.check || rb.url; if (!/^https?:\/\//.test(url)) return { ok: false, why: "no address to check" };
+  try {
+    const ctrl = new AbortController(), t = setTimeout(() => ctrl.abort(), 20000), r = await fetchFn(url, { signal: ctrl.signal, redirect: "follow" }); clearTimeout(t);
+    if (!r.ok) return { ok: false, why: `${url} answered ${r.status}` };
+    if (rb.expect) { const body = await r.text(); if (!body.includes(rb.expect)) return { ok: false, why: `${url} answered, but without "${rb.expect}"` }; }
+    return { ok: true };
+  } catch (e) { return { ok: false, why: `${url} didn't answer (${String((e && e.message) || e).slice(0, 80)})` }; }
+}
+const DEPLOY_MAX = 2 * 3600000, clock = (t) => new Date(t).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+async function deployTick({ running = () => false, fetchFn = fetch, notify = () => {}, now = Date.now() } = {}) {
+  const l = loadDeploys(); let changed = false;
+  for (const d of l.filter((x) => x.state === "running")) {
+    if (d.dir && running(d.dir) && now - d.at < DEPLOY_MAX) continue;
+    const rb = runbookOf(d.repo); if (!rb) { d.state = "failed"; d.note = "its runbook was removed"; changed = true; continue; }
+    const c = now - d.at >= DEPLOY_MAX && d.dir && running(d.dir) ? { ok: false, why: "the deploy run didn't finish in 2 hours" } : await checkLive(rb, fetchFn);
+    d.state = c.ok ? "live" : "failed"; d.checked = now; if (!c.ok) d.note = c.why; changed = true;
+    const text = c.ok ? `Live: deployed from its runbook and checked on ${rb.check || rb.url} at ${clock(now)}.` : `Deploy not live: ${c.why}. The deploy run's last words are on the Workdesk${d.dir ? ` (${d.dir.split("/").pop()})` : ""}.`;
+    if (d.pr) markTasks(d.repo, d.pr, { state: c.ok ? "live" : "failed", text });
+    try { notify("Symbiot", `${d.repo}: ${text}`); } catch {}
+  }
+  if (changed) saveDeploys(l);
+  return l;
+}
+// A merge the Status watch saw (probes.mjs): "Deploy it?" as before, or with a standing yes, deployed.
+async function onMerged(path, repo, pr, { act } = {}) {
+  const rb = runbookOf(repo);
+  if (rb && rb.policy === "never") return { skipped: "never" };
+  if (rb && rb.policy === "always") return startDeploy(repo, pr, { act });
+  return afterShip(path, repo, pr, "merged");
+}
+// The user's answer to "Deploy it?" for a lane with a runbook: Symbiot starts it itself (so the
+// lane's agent doesn't improvise one through ops), and "from now on" is the standing yes.
+const STANDING = /\bafter every merge\b|\bfrom now on\b/i;
+async function onDeployAnswer(repo, q, a, { act } = {}) {
+  const m = String(q || "").match(/^Deploy (.+?)(?: \((PR #\d+)\))? to /); const rb = runbookOf(repo);
+  if (!m || !rb || !/^\W*(?:🤖\s*)?(?:Agent:\s*)?deploy\b/i.test(String(a || "").replace(/^\W+/u, ""))) return null;
+  if (STANDING.test(a)) setRunbook(repo, { policy: "always" }, { user: true }); // the user's own Yes: the one way to a standing yes
+  const prs = loadTasks().filter((t) => t.repo === repo && t.pr && m[2] && same(t.pr, m[2])).map((t) => t.pr);
+  return startDeploy(repo, prs[0] || "", { act });
+}
+
 // Put the question on the Workdesk: appended to the lane's QUESTIONS.md, so the user's answer
 // goes back to that lane's agent, who hands the deploy to ops (a repo lane reaches no server).
 // Raised once per PR, and not again once it was answered. Gives true when it wrote one.
@@ -80,8 +171,13 @@ function deployAsk(path, repo, pr, target, stage = "merged") {
   const body = [
     `### ${q}`,
     `${stage === "merged" ? "The change is merged but" : "The PR isn't merged yet (it merges by itself once its checks pass, if it can), and the change is"} not live until it is deployed${target.auto ? "; CI does that itself, so this is the check that it reached the site" : ""}. Deploying to production is your yes. Check first that the PR's tests passed${target.url ? ` and that ${target.url} still works` : ""}.`,
-    `- 🤖 Agent: hand the deploy to ops, then have it check the change on ${target.url || "the live site"} and report back (recommended)`,
-    `- Skip this part: leave it merged and not live for now`,
+    ...(target.runbook ? [
+      `- 🤖 Agent: deploy it now with its runbook, and after every merge from now on, each checked on ${target.runbook.check || target.url || "the live site"} (recommended)`,
+      `- 🤖 Agent: deploy it now with its runbook, and ask again next time`,
+    ] : [
+      `- 🤖 Agent: hand the deploy to ops, then have it check the change on ${target.url || "the live site"} and report back (recommended)`,
+      `- Skip this part: leave it merged and not live for now`,
+    ]),
     "",
   ].join("\n");
   try {
@@ -103,17 +199,21 @@ function markTasks(repo, pr, live) {
 // After a merge, or an Approve that queued one: the note, the tasks marked, the question raised.
 function afterShip(path, repo, pr, stage, { ask = true, files } = {}) {
   let target = deployTarget(path, repo);
+  if (target && target.runbook && target.runbook.policy !== "ask") ask = false; // a standing yes deploys after the merge (onMerged); never, never asks
   if (target && target.paths && pr) { if (files === undefined) files = prFiles(path, pr); if (!reaches(target, files)) target = null; } // none of its files are ones the deploy runs for
   const live = target || !files ? liveNote(target, stage) : { state: "none", text: `${stage === "merged" ? "Merged." : "Nothing to deploy once the PR merges:"} None of its files are ones the site's deploy runs for, so nothing goes to the site.` };
   if (pr) markTasks(repo, pr, live);
   const asked = ask && target && pr ? deployAsk(path, repo, pr, target, stage) : false; // stage: an Approve that queued the merge isn't merged yet (PR #209 was asked about as merged, 19 Oct 2026)
+  if (pr) landed(repo, pr); // the lane's runs that waited for this Approve are done, in this PR
+  if (pr) track(prKey(repo, pr), { kind: "pr", lane: repo, text: `PR ${pr}`, pr, state: stage === "merged" ? "merged" : "approved", waitingOn: asked ? "user" : "", note: live.text });
   return { ...live, ...(target ? { target: where(target) } : {}), ...(asked ? { asked: true } : {}) };
 }
 // Checked on the live site: the tasks of a PR (or the one task) are live now.
 function markLive(id) {
   const t = loadTasks(), x = t.find((y) => y.id === id); if (!x) return { error: "not found" };
   x.liveState = "live"; x.liveNote = "Deployed and checked on the live site."; saveTasks(t);
+  if (x.repo && x.pr) track(prKey(x.repo, x.pr), { kind: "pr", lane: x.repo, state: "live", note: x.liveNote });
   return { ok: true };
 }
 
-export { deployTarget, liveNote, deployAsk, markTasks, afterShip, markLive, askOf, pushPaths, prFiles };
+export { deployTarget, liveNote, deployAsk, markTasks, afterShip, markLive, askOf, pushPaths, prFiles, runbookOf, setRunbook, startDeploy, checkLive, deployTick, onMerged, onDeployAnswer, loadDeploys, POLICIES };

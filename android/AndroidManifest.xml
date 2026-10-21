@@ -77,6 +77,18 @@
             android:name=".SymbiotService"
             android:exported="false" />
 
+        <!-- codes a site texts you, passed on only for a card that waits for that site's
+             code, and only once you switch it on (CodeListener, phone.mjs heardCode) -->
+        <service
+            android:name=".CodeListener"
+            android:label="Symbiot: pass on sign-in codes"
+            android:exported="true"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+
         <receiver
             android:name=".BootReceiver"
             android:exported="true">

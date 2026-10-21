@@ -99,8 +99,35 @@ const hsDeps = { repos: () => ({ symbiot: lane }), board: () => ({ cards: [] }),
   agents: () => [{ path: copy, name: "symbiot (beside): Make the Workdesk's question cards…", status: "done", ask: { questions: [{ ...aq.questions[0] }] } }] };
 const card = homeState({ fresh: true, deps: hsDeps }).you.find((y) => y.kind === "ask");
 ok("Home's card for it carries the task's line", card && card.task === "Make the Workdesk's question cards say which task they're about.", card);
+// 20 Oct 2026 review, Q4: an ops run's card said only its first sentence; it says the project it's for, from the record
+{ const opsA = join(C, "drafts", "act-card0001"), opsB = join(C, "drafts", "act-card0002"); for (const p of [opsA, opsB]) mkdirSync(join(p, ".symbiot"), { recursive: true });
+  const q0 = { q: "Can I give my user the rights to change Tailscale settings?", options: ["👤 You (only you: your password): run that one line"] };
+  const ph = homeState({ fresh: true, deps: { ...hsDeps, ledger: () => ({ handoffs: [{ from: { lane: "symbiot", path: lane }, to: { lane: "ops", path: opsA }, at: 1 }] }),
+    agents: () => [{ path: opsA, name: "Agent: New job: a fixed public URL for the webhook", status: "done", ask: { questions: [q0] } }, { path: opsB, name: "Agent: Draft an email to Jono about the invoices", status: "done", ask: { questions: [{ ...q0, q: "Send the draft now?" }] } }] } }).you.filter((y) => y.kind === "ask");
+  ok("an ops run's card says the project that handed it over", (ph.find((y) => y.path === opsA) || {}).project === "symbiot", ph);
+  ok("…and one nothing names says none, rather than a guess", (ph.find((y) => y.path === opsB) || {}).project === "", ph); }
+// 20 Oct 2026 review, finding 4: how long the Symbiot Browser has been open, on Home
+{ const since = Date.now() - 25 * 60000, hb = homeState({ fresh: true, deps: { ...hsDeps, browserSince: () => since } }), hn = homeState({ fresh: true, deps: { ...hsDeps, browserSince: () => 0 } });
+  ok("Home knows how long the Symbiot Browser has been open, and when it closes itself", hb.browserSince === since && hb.browserIdle === 20 && !("browserSince" in hn), [hb.browserSince, hb.browserIdle]); }
 const ui = readFileSync(new URL("../ui.mjs", import.meta.url), "utf8");
-ok("...and every card shows it: Home's, the Workdesk's and the phone's", /if\(y\.task\)h\+="<div class='bfor' title='"\+escQ\(y\.task\)\+"'>for: "\+esc\(y\.task\)/.test(ui) && /\(q\.task\?"<div class='qfor'[^"]*"\+escQ\(q\.task\)\+"'>for: "\+esc\(q\.task\)/.test(ui) && (ui.match(/<div class='qfor'/g) || []).length === 2 && /task:q\.task/.test(ui), "");
+ok("...and every card shows it: Home's, the Workdesk's and the phone's", /var tk=String\(y\.task\|\|''\)[^;]*;if\(tk&&[^\n]*?\)h\+="<div class='bfor' title='"\+escQ\(tk\)\+"'>for: "\+esc\(tk\)/.test(ui) && /\(q\.task\?"<div class='qfor'[^"]*"\+escQ\(q\.task\)\+"'>for: "\+esc\(q\.task\)/.test(ui) && (ui.match(/<div class='qfor'/g) || []).length === 2 && /task:q\.task/.test(ui), "");
+
+// 20 Oct 2026 review, S2: Paddle was asked four times in new words. A question with an id is asked once.
+console.log("ASKED ONCE — a question's id keeps its answer");
+const ops1 = join(C, "drafts", "act-ids0001"), ops2 = join(C, "drafts", "act-ids0002");
+mkdirSync(join(ops1, ".symbiot"), { recursive: true }); mkdirSync(join(ops2, ".symbiot"), { recursive: true });
+writeFileSync(join(ops1, ".symbiot", "QUESTIONS.md"), "## Questions\n### Which payment company should sell Symbiot Pro? {#pro-payments}\nLemon Squeezy is dropped.\n- 🤖 Agent: Paddle (recommended)\n- 🤖 Agent: Polar\n");
+const pq = a.parseQuestions(readFileSync(join(ops1, ".symbiot", "QUESTIONS.md"), "utf8")).questions[0];
+ok("the id comes off the heading, so no screen shows it", pq.q === "Which payment company should sell Symbiot Pro?" && pq.id === "pro-payments", pq);
+const idAns = a.answerQuestions(ops1, [{ q: "Which payment company should sell Symbiot Pro?", a: "🤖 Agent: Paddle (recommended)" }]);
+ok("answered: ANSWERS.md keeps it under its words and its id", idAns.ok && /### Which payment company should sell Symbiot Pro\? \{#pro-payments\}\n🤖 Agent: Paddle/.test(readFileSync(join(ops1, ".symbiot", "ANSWERS.md"), "utf8")), idAns);
+ok("…and the shared record keeps the id", JSON.parse(readFileSync(join(C, "asks-done.json"), "utf8")).some((x) => x.id === "pro-payments" && /Paddle/.test(x.a)));
+ok("the same run asking it again in other words, same id: answered already", (writeFileSync(join(ops1, ".symbiot", "QUESTIONS.md"), "## Questions\n### Paddle or Polar for the Pro checkout? {#pro-payments}\nstill deciding\n- Paddle\n- Polar\n"), !a.agentQuestions(ops1, "").questions.length));
+writeFileSync(join(ops2, ".symbiot", "QUESTIONS.md"), "## Questions\n### Do you still want a payment company to take the money for Pro? {#pro-payments}\nfor the checkout\n- 🤖 Agent: yes, Paddle (recommended)\n- skip it\n");
+const q2 = a.agentQuestions(ops2, "");
+ok("another run asking it in other words, same id: never a card, answered from the record", !q2.questions.length && q2.known && q2.known[0].id === "pro-payments" && /Paddle/.test(q2.known[0].a) && /don't ask it again/.test(q2.known[0].a), q2);
+writeFileSync(join(ops2, ".symbiot", "QUESTIONS.md"), "## Questions\n### Which payment company should sell Symbiot Teams? {#teams-payments}\nfor Teams\n- Paddle\n- Polar\n");
+ok("a different id is a different question, however alike the words", a.agentQuestions(ops2, "").questions.length === 1);
 
 sh(lane, "worktree", "remove", "--force", copy);
 rmSync(HOME, { recursive: true, force: true });

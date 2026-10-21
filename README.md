@@ -320,8 +320,9 @@ notification too when it's new. Experimental.
   token, and its own private key in `secrets.json`, which agent runs can't read. The
   Android app keeps its token and key sealed by a key in Android's Keystore; in Termux
   they're in `secrets.json` (readable only by you, 0600).
-- **What a phone can do.** Only this: what's new, a copy of your work, and four
-  changes (add a task, mark one done or not, answer an agent, approve). The computer
+- **What a phone can do.** Only this: what's new, a copy of your work, and six
+  changes (add a task, mark one done or not, answer an agent, approve, pass on a
+  site's code, and Send or Change a proof). The computer
   listens on port 7392 of your network for that alone; the rest of Symbiot stays on
   `127.0.0.1`, and nothing else is reachable from the phone. An approve goes through
   only if the work is still exactly what the phone showed, runs the same Approve as
@@ -330,6 +331,18 @@ notification too when it's new. Experimental.
   each one as not sent. A change that fails on the computer comes back as failed,
   with why, and never holds up the rest. A firewall on the computer may need to allow
   the port.
+- **Codes a site texts you** (the Android app). When an agent waits for a sign-in or
+  verification code from a site, its card on the phone offers **Let this phone pass on
+  <site>'s code**. Switch it on (Android asks you to give Symbiot Notification access
+  the first time) and the next notification from that site with a code in it is
+  passed on: only the code, never the rest of the message, and only while a card waits
+  for that site's code. On the computer it goes into the vault for one use and 10
+  minutes, and the agent is told its name, never the code. Off for every site until
+  you switch it on; **Stop** switches it off again.
+- **Proofs before anything goes out.** An agent that wants you to see a message first
+  (an SMS, a WhatsApp template with its buttons, a PDF, an email) writes it to
+  `.symbiot/PROOF.md`, and the phone shows it as it will go out, with **Send** and
+  **Change** (say what to change, and it comes back for another look).
 - **With the computer off.** The phone keeps the last copy (`computer.json`) and shows
   it, with one line saying the computer is out of reach and when it last heard from
   it. What you change meanwhile shows at once, marked "waiting to send", and goes in
@@ -684,6 +697,16 @@ when they're all there), and — if you configure it — **production running co
 that isn't on your default branch**. Works on local-only repos too: without a
 remote it compares against your local default branch. (CI checks with `--ci` are
 [experimental](#ci-status-symbiot-drift---ci).)
+
+**A deploy runbook per project.** `symbiot deploy set <project> --where <host> --how
+"<the exact command>" --url <live address> --check <an address that answers when it's
+up>` (and `--expect "<text>"` when a page always answers) records how a project goes
+live; ops writes it the first time it deploys one by hand. After a merge, Symbiot asks
+"Deploy it?" once, offering to deploy after every merge from then on (a standing yes);
+with that, the next merge is deployed by itself. Either way ops runs the runbook's
+command as written, and the change shows as live only once Symbiot has checked the
+live address itself after that run ended; a check that fails says why. `symbiot
+deploy` lists the runbooks.
 
 For the production check, add a per-repo deploy command to
 `~/.config/symbiot/deploys.json` (read only from your own config, never from a
@@ -1440,6 +1463,26 @@ like any page (click **Sign in** with `github.com` once). Each notification is n
 when its thread changes, so a CI run that fails again on the same branch, or a new
 comment on a pull request, notifies you again. Failed CI runs reach you only if
 GitHub notifies you about them (GitHub → Settings → Notifications → Actions).
+
+**Agents in your own Chrome.** With Claude's Chrome extension set up, agent runs read
+sites in your everyday Chrome, signed in as you (their own tabs; nothing is clicked
+there). Under Connections, a linked site's **Reads** switch turns to **Acts**: agents
+may then click, type and fill on that site too, one step at a time, each saying what it
+does. Whatever sends, posts, pays or deletes is held by Symbiot's guard until you say Go
+on its card, and then that one action goes through, once. Off for every site until you
+switch it on.
+
+**Status, through the APIs.** A watch called **Status** is there by itself: every
+15 minutes it reads, through each one's own API, where the pull requests Symbiot
+opened stand (merged, conflicts, a failed check, checks running, ready), the latest
+version of a package you publish on npm, and your WhatsApp templates in Meta's review
+(with the token and account id in a project's own `.env`). Its first read learns
+them, and after that a change is news like any other: a notification, a line on its
+card, and `symbiot watch new` for agents, so no agent run is spent checking. A change
+starts an agent only when there's something to do: a conflict or a failed check on a
+pull request Symbiot opened becomes that project's task, and a project whose open
+task names the thing that changed ("once Meta approves the template…") is told and
+started. Remove it like any watch, and it stays removed.
 
 **The brief.** Tick **Brief me** under Watching (or `symbiot watch brief on`) and
 the AI you connected reads each batch of what's new and says, in a line or three,

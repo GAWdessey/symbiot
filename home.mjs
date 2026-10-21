@@ -18,15 +18,17 @@ import { readFileSync, writeFileSync, mkdirSync, statSync } from "node:fs";
 import { watchBoard, draftReply, draftCards, draftAnswer } from "./watch.mjs";
 import { pendingReview, pushTasks, addTask, taskType, releaseNotIn } from "./tasks.mjs";
 import { estimate, estimateWords } from "./estimate.mjs";
-import { heldAsk, grantCard, cardIsPermission, onCardGone, setHandoffCmd, agentsList, runHandoff, runningHandoff, handoffCmd, loadRuns, connectorsInfo, parkedPaths, agentMissing, settleNeeds, pickAgent, detectHandoffs, linkReach, unchangedStep, whereOf, claudePause, parkLane } from "./agents.mjs";
+import { heldAsk, grantCard, cardIsPermission, onCardGone, setHandoffCmd, agentsList, agentsNow, forgetAgents, runHandoff, runningHandoff, handoffCmd, loadRuns, connectorsInfo, parkedPaths, agentMissing, settleNeeds, pickAgent, detectHandoffs, linkReach, unchangedStep, whereOf, claudePause, parkLane } from "./agents.mjs";
 import { stallCards, loadStall, saveStall } from "./stall.mjs";
 import { isDone, recordDone, coveredBy, doneList, asksBack, askBackNote, heldBy, reportsSince } from "./asksdone.mjs";
 import { captureSecrets } from "./vault.mjs";
 import { linksState, signInAsked } from "./links.mjs";
 import { knowledgeState } from "./knowledge.mjs";
-import { CONFIG_DIR, loadTasks, saveTasks, loadConfig, saveConfig, sameTask, isFinding } from "./core.mjs";
-import { lanesState, stuckHandovers, allowHandover, skipHandover, handingOf, loadLedger, doneSince, sharedTo } from "./lanes.mjs";
+import { CONFIG_DIR, loadTasks, saveTasks, loadConfig, saveConfig, sameTask, isFinding, writeJsonAtomic } from "./core.mjs";
+import { lanesState, stuckHandovers, allowHandover, skipHandover, handingOf, loadLedger, doneSince, sharedTo, projectOf } from "./lanes.mjs";
+import { windowSince, BROWSER_IDLE_MIN } from "./headless.mjs";
 import { control } from "./control.mjs";
+import { jobsLines, syncOnUser, syncTasks, onUser } from "./jobs.mjs";
 import { converse, actIn, actNow, taskIn, loadMind, dayMark } from "./mind.mjs";
 import { repoPathMap, laneMap, reposState, scanRoots } from "./scan.mjs";
 import { resolveProvider, PROVIDERS, claudeState } from "./ai.mjs";
@@ -46,6 +48,7 @@ const RUNS = join(CONFIG_DIR, "drafts"); // an ops run's folder (mind.mjs actNow
 const RUNS_LANE = "ops"; // what the work scene calls them all, together
 
 // The lane a folder is: the repo it is (by the scan's map), or an ops run.
+const projectFor = (path, map, ledger) => { const l = laneOfPath(path, map); if (l) return l; if (!String(path || "").startsWith(RUNS)) return ""; try { return projectOf(path, { map, ledger }); } catch { return ""; } };
 const laneOfPath = (path, map) => Object.keys(map || {}).find((n) => map[n] === path) || parallelLane(path) || (String(path || "").startsWith(RUNS) ? "" : null);
 
 // A run that failed shows for a day, until you run it again or skip it; one
@@ -93,7 +96,7 @@ function troubles({ stuck = [], list = [], map = {}, named = displayName, now = 
     const n = a.needs;
     if (n && !dropped.has("needs:" + a.id) && !isDone(n.what) && !heldNeeds(n.what, a.path, lane)) {
       const ok = n.kind === "approve";
-      out.push({ kind: "ask", fix: "needs", id: "needs:" + a.id, path: a.path, repo, name: nm, title: ok ? `${nm} waits for your OK` : `${nm} needs you`, sub: plain(n.label || n.what, 90),
+      out.push({ kind: "ask", fix: "needs", id: "needs:" + a.id, path: a.path, repo, ...(ok ? { ok } : {}), name: nm, title: ok ? `${nm} waits for your OK` : `${nm} needs you`, sub: plain(n.label || n.what, 90),
         q: n.what + (n.check ? ` Check first: ${n.check}` : ""), options: ok ? ["Go ahead (recommended)", "Skip"] : [I_DID_IT, "Skip"], status: "Waiting on you", ...(n.api ? { api: n.api } : signInCard([n.label, n.what, n.check])), shape: "agents" });
       continue;
     }
@@ -257,7 +260,7 @@ function homeNext(id, deps = {}) {
 // A lane's waiting tasks to its agent, the way Go does for one project.
 function goLane(repo, map, { push = pushTasks, run = runHandoff } = {}) {
   if (!map[repo]) return { error: `${repo} isn't one of your projects any more.` };
-  const p = (push || pushTasks)({ repo }); if (!p || !p.written || !p.written.length) return { error: `Nothing of ${repo}'s is waiting to start.` };
+  const p = (push || pushTasks)({ repo, later: true }); if (!p || !p.written || !p.written.length) return { error: `Nothing of ${repo}'s is waiting to start.` };
   const e = (run || runHandoff)(map[repo]); if (!e) return { error: "The agent didn't start. Check its command in Settings → Handoff." };
   if (e.parked) return { error: `${repo} is parked: unpark it to start its agent.` };
   if (e.blocked && !e.busy) return { error: `${repo}'s agent didn't start: ${e.note || "it's waiting on something"}` }; // queued only behind a run that's really going
@@ -279,7 +282,7 @@ function marketingState({ deps = {}, list, pend, map, named = displayName } = {}
   const known = [...new Set([...productNames(map), ...tasks.map((t) => productOf(t.text)).filter(Boolean)])];
   const files = tryOr(() => (deps.files || draftFiles)(dir, known), []) || [];
   const names = [...new Set([...known, ...files.map((f) => f.product).filter(Boolean)])];
-  list = list || tryOr(deps.agents || agentsList, []) || [];
+  list = list || tryOr(deps.agents || agentsNow, []) || [];
   const run = list.find((a) => a.path === dir), qs = (run && run.ask && run.ask.questions) || [], working = !!(run && run.status === "running");
   const needs = qs.map((q, i) => ({ kind: "ask", id: "ask:" + i, text: plain(q.q, 160), options: (q.options || []).slice(0, 2), product: productOf(q.q, names) }));
   const ready = (pend || tryOr(deps.pending || pendingReview, []) || []).find((r) => r.repo === MARKETING && r.path && !r.running && !r.shipping && !r.leftover && ((r.tasks || []).length || (r.files || []).length));
@@ -372,11 +375,17 @@ function dismissCard(key, { undo = false, file = DISMISSED_FILE, now = Date.now(
 const undismissed = (list, gone) => list.filter((y) => !gone[cardKey(y)]);
 onCardGone((path, q) => !!loadDismissed()[`${path}|${q}`]); // a step's card you dismissed holds its lane back no more (agents.mjs stepGone)
 
-function homeState({ now = Date.now(), fresh = false, deps = {} } = {}) {
+// Built on the tick too (homeTick), while someone is looking: the window or the phone asked
+// within HOME_LOOKED. Then a look reads what the tick built and never waits on the build
+// (/api/home took 3.2 s, 20 Oct 2026); nobody looking, nothing is built.
+const HOME_LOOKED = 60000; let looked = 0;
+function homeTick({ now = Date.now() } = {}) { if (now - looked < HOME_LOOKED) try { homeState({ now, fresh: true, tick: true }); } catch {} }
+function homeState({ now = Date.now(), fresh = false, deps = {}, tick = false } = {}) {
+  if (!tick && !Object.keys(deps).length) looked = now;
   if (!fresh && !deps.board && cached && now - cached.at < KEEP) return cached;
   const board = deps.board || (() => { try { return watchBoard(24, now); } catch { return { cards: [] }; } });
   const pending = deps.pending || (() => { try { return pendingReview({ kept: true }); } catch { return []; } });
-  const agents = deps.agents || (() => { try { return agentsList(); } catch { return []; } });
+  const agents = deps.agents || (() => { try { return agentsNow(); } catch { return []; } });
   const lanes = deps.lanes || (() => { try { return lanesState(); } catch { return { handoffs: [] }; } });
   const reports = deps.reports || (() => { try { return reportsNews(); } catch { return { count: 0 }; } });
   const connected = deps.connected || (() => !!resolveProvider());
@@ -453,7 +462,7 @@ function homeState({ now = Date.now(), fresh = false, deps = {} } = {}) {
       labels: ["Close it: it's done", ...(opts[0] ? [blobLabel(pa.labels ? pa.labels[0] : opts[0])] : [])] } : {};
     // the user answered another agent on this work: it has that answer, and is checking whether it settles this (lanes.mjs shareAnswer)
     const sh = sharedTo(a.path), shared = sh && (a.status === "running" || Date.parse(sh.at) > (a.startedAt || 0)) ? { shared: sh } : {}; // and not once it has asked again since
-    you.push({ kind: "ask", id: "ask:" + a.path, path: a.path, repo, ...shared, name: repo ? named(lane ? map[lane] : a.path, repo) : plain(String(a.name || "an agent").replace(/^Agent:\s*/, ""), 60),
+    you.push({ kind: "ask", id: "ask:" + a.path, path: a.path, repo, ...shared, name: repo ? named(lane ? map[lane] : a.path, repo) : plain(String(a.name || "an agent").replace(/^Agent:\s*/, "").replace(/^New job:\s*/i, ""), 60), // the card's header is narrow: no "New job:" in it
       title: `${a.name} asks`, sub: String(q.q || "").slice(0, 90), ...(q.task ? { task: q.task } : {}), ...pa, options: opts, ...closed, ...(qs.length > 1 ? { more: qs.length - 1 } : {}), ...signInCard([q.q, ...opts]), shape: "agents" });
   }
   // What stopped and can't go on without you, as a question too: a handover that
@@ -489,11 +498,16 @@ function homeState({ now = Date.now(), fresh = false, deps = {} } = {}) {
     const lane = laneOfPath(a.path, map);
     runs.push({ id: "run:" + a.path, path: a.path, repo: lane || "", name: lane ? named(map[lane], lane) : plain(String(a.name || "an agent").replace(/^Agent:\s*/, ""), 40), ...runNow(a), started: a.startedAt || 0 });
   }
+  // which project each agent's card is about, from the record (lanes.mjs projectOf): "" says "no project"
+  { let ledger = null; for (const y of you) if (y.path && (y.kind === "ask" || y.kind === "approve") && y.fix !== "draft" && y.project === undefined) { if (!ledger) { try { ledger = (deps.ledger || loadLedger)(); } catch { ledger = { handoffs: [] }; } } y.project = y.repo || projectFor(y.path, map, ledger); } }
   // nothing waits on you: a few things that can be done next (none while anything does)
   you = undismissed(settleAsks(you), (deps.dismissed || loadDismissed)());
+  (deps.syncJobs || syncOnUser)(you, { now }); // the job record's "waiting on you": these cards, all of them (jobs.mjs)
   const nextAll = nextUp({ now, map, list, named, deps: { board: () => bd, reports: () => rep, ...(deps.next || {}) } });
   const next = you.length ? [] : nextAll; // not shown while something needs you, but a tap on one already on screen still works (homeNext)
-  const out = { you: you.slice(0, 6), youCount: you.length, feeds: feeds.slice(0, 6), lanes: hs, working, runs: runs.slice(0, 4), next, nextAll, marketing: marketing({ list, map, named, pend }), ...(deps.phone || phoneBits)(now), at: now };
+  // how long the Symbiot Browser has been open, said on Home (headless.mjs windowSince)
+  let browserSince = 0; try { browserSince = (deps.browserSince || windowSince)(); } catch {}
+  const out = { ...(browserSince ? { browserSince, browserIdle: Number(loadConfig().browserIdleMin) || BROWSER_IDLE_MIN } : {}), you: you.slice(0, 6), youCount: you.length, feeds: feeds.slice(0, 6), lanes: hs, working, runs: runs.slice(0, 4), next, nextAll, marketing: marketing({ list, map, named, pend }), ...(deps.phone || phoneBits)(now), at: now };
   if (!deps.board) cached = out;
   return out;
 }
@@ -698,10 +712,11 @@ function phoneBits(now = Date.now()) {
 // Home itself: each entry is the task's id, its lane, what was asked, and what happened at once.
 const HANDED_PATH = join(CONFIG_DIR, "home-handed.json"), HANDED_DAYS = 7, HANDED_MAX = 60;
 function loadHanded(path = HANDED_PATH) { try { const a = JSON.parse(readFileSync(path, "utf8")); return Array.isArray(a) ? a : []; } catch { return []; } }
+// Written whole and yours only (0600), as every state file is (core.mjs writeAtomic).
 function noteHanded(did, text, { path = HANDED_PATH, now = Date.now() } = {}) {
   if (!did || did.error || !(did.task || did.id) || !did.lane) return false;
   const e = { id: did.task || did.id, lane: did.lane, text: String(text || "").replace(/\s+/g, " ").trim().slice(0, 200), at: now, ...(did.notStarted ? { notStarted: String(did.notStarted).slice(0, 160) } : {}) };
-  try { mkdirSync(join(path, ".."), { recursive: true }); writeFileSync(path, JSON.stringify([e, ...loadHanded(path).filter((x) => x.id !== e.id)].filter((x) => now - x.at < HANDED_DAYS * 864e5).slice(0, HANDED_MAX), null, 2)); return true; } catch { return false; }
+  try { writeJsonAtomic(path, [e, ...loadHanded(path).filter((x) => x.id !== e.id)].filter((x) => now - x.at < HANDED_DAYS * 864e5).slice(0, HANDED_MAX)); return true; } catch { return false; }
 }
 // Each of those, with where it stands now: running, queued, waiting on their answer, never started, done, or in review.
 function handedState({ now = Date.now(), ledger = loadHanded(), tasks = [], list = [], map = {} } = {}) {
@@ -759,13 +774,16 @@ function sentMailLines(now = Date.now()) {
   const sent = t.filter((x) => x && x.sent && now - (x.sent.at || 0) < 7 * DAY);
   return sent.length ? ["Emails the user already sent (not work to do; say they are waiting on a reply):", ...sent.map((x) => `- ${plain(x.text, 90)}: ${sentLine(x, now)}`)] : [];
 }
-function homeContext(h) {
+function homeContext(h, { cards } = {}) {
+  const shown = new Set(h.you.map((y) => y.id)), rest = h.youCount > h.you.length ? (cards || (() => { try { return onUser(); } catch { return []; } })()).filter((y) => !shown.has(y.id)) : [];
   return [
-    `Only the user can do (${h.you.length}):`, ...h.you.map((y) => `- ${y.title}: ${y.sub}${y.q && y.q !== y.sub ? ` (asks: ${y.q}${(y.options || []).length ? ` ${y.options.join(" / ")}` : ""})` : ""}`),
+    `Only the user can do (${h.youCount ?? h.you.length}):`, ...h.you.map((y) => `- ${y.title}: ${y.sub}${y.q && y.q !== y.sub ? ` (asks: ${y.q}${(y.options || []).length ? ` ${y.options.join(" / ")}` : ""})` : ""}`),
+    ...rest.slice(0, 12).map((y) => `- ${y.text}`), // past the 6 Home shows: from the job record, the same list
     ...(h.you.some((y) => /^ask:/.test(y.id || "")) ? [`Agents asking (to answer for them, "answer" with these ids): ${h.you.filter((y) => /^ask:/.test(y.id || "")).map((y) => `${y.id} (${String(y.title).slice(0, 40)})`).join("; ")}`] : []),
     `New on what they watch:`, ...(h.feeds.length ? h.feeds.map((f) => `- ${f.title}: ${f.sub}${f.latest ? ` (latest: ${f.latest})` : ""}`) : ["- nothing new"]),
     `Agents working: ${h.working}.`, ...(h.runs || []).map((r) => `- [${r.id}] ${dayMark(r.started, h.at)}${r.name}: ${r.line}${r.eta ? ` (${r.eta})` : ""}${r.quiet ? ` (no progress in ${r.quiet} min)` : ""}${r.looping ? " (repeating the same step)" : ""}`),
     ...sentMailLines(),
+    ...jobsLines({ now: h.at }),
     "Agents finished in the last 24h (their own last words; answer 'did it work?' from these):", ...((h.finished || []).length ? h.finished.map((f) => `- ${dayMark(f.at, h.at)}${f.name}: ${f.end}${f.changed ? `, ${f.changed} file${f.changed > 1 ? "s" : ""} changed` : ""}${f.asks.length ? `; asked: ${f.asks.join(" / ")}` : ""}${f.said ? `; said: ${f.said}` : ""}`) : ["- none"]),
     "What each agent has done, asked and been told (running, or finished in the last 24h; answer 'why is it asking again?' and 'did it work?' from this):", ...((h.digest || []).length ? h.digest.flatMap((d) => [`- ${dayMark(d.at, h.at)}${d.name}${d.lane ? ` [${d.lane}${d.queued ? `, ${d.queued} queued` : ""}]` : ""} (${d.running ? "running" : "finished"})`,
       ...(d.steps.length ? [`    last steps: ${d.steps.join("; ")}`] : []), ...(d.asks.length ? [`    asked Garth: ${d.asks.join(" / ")}`] : []), ...d.answers.map((a) => `    Garth answered "${a.q}": ${a.a}`), ...(d.outcome ? [`    outcome: ${d.outcome}`] : [])]) : ["- none"]),
@@ -802,7 +820,7 @@ async function homeAsk(question, { ask, now = Date.now(), state, images = [], ac
   let open = []; try { open = loadTasks().filter((t) => t && !t.done && !t.archived && !t.review).map((t) => ({ id: t.id, text: t.text, repo: t.repo })); } catch {}
   const r = await converse({ where: "Home", role, nav: true, settle: true, control: true, tasks: open, context: homeContext(h), question: question + (pics.length ? `\n(The user attached ${pics.length} screenshot${pics.length > 1 ? "s" : ""}: you can see ${pics.length > 1 ? "them" : "it"}.)` : ""), map, now, images: pics.map(({ mime, data, path }) => ({ mime, data, path })), ...(ask ? { ask } : {}),
     act: {
-      agent: (req, known, repo) => { const d = repo ? actIn(req + shotNote, repo, { map, known, title: "Home" }) : actNow(req + shotNote, { title: "Home", known }); noteHanded(d, req); return d; },
+      agent: (req, known, repo, said) => { const d = repo ? actIn(req + shotNote, repo, { map, known, title: "Home", said }) : actNow(req + shotNote, { title: "Home", known }); noteHanded(d, req); return d; },
       task: (text, repo) => { const d = taskIn(text + shotNote, repo, { map }); noteHanded(d, text); return d; },
       control: (ops) => control(ops, { map }),
       ...acts, // a phone's chat (phone.mjs OPS.chat) overrides these: it answers and adds tasks, but starts and steers nothing (15 Oct 2026)
@@ -849,7 +867,7 @@ async function reportAsk(id, question, { ask, deps = {} } = {}) {
   const role = `Here they're reading a report an agent wrote, "${r.title}"${lane ? ` (${lane})` : ""}, under Reports. Answer about it from its text; a task or agent work it leads to goes to ${lane || "the lane it belongs to"} unless they say otherwise.`;
   const res = await converse({ where: `Reports: ${r.title}`, role, context: `The report (${r.file}):\n${String(r.text || "").slice(0, 12000)}`, question, map, ...(ask ? { ask } : {}),
     act: {
-      agent: (req, known, repo) => ((repo || lane) ? actIn(req, repo || lane, { map, known, title: "Reports" }) : actNow(req, { title: "Reports", known })),
+      agent: (req, known, repo, said) => ((repo || lane) ? actIn(req, repo || lane, { map, known, title: "Reports", said }) : actNow(req, { title: "Reports", known })),
       task: (text, repo) => taskIn(text, repo || lane, { map }),
     } });
   return { answer: res.reply, spoken: res.spoken, ...(res.did ? { did: res.did } : {}), steps: res.steps || [] };
@@ -890,18 +908,20 @@ function runNow(a, { now = Date.now(), est = estimate } = {}) {
 // not a sphere each with an id for a name.
 // Kept WORK_KEEP (like homeState's KEEP): the Workdesk and the phone ask for it every
 // few seconds, and each build read every run's log and git for every lane (15 Oct 2026).
-// Only the plain call is kept; one with deps (a tick's fails and now, a test's stubs) is built.
-const WORK_KEEP = 8000; let workKept = null;
-const forgetWork = () => { workKept = null; }; // after anything you do (a POST): the next look is built afresh
-function workScene({ deps = {}, full = false } = {}) {
+// Only the plain call is kept; one with deps (a test's stubs) is built. The 10 s tick
+// (workTick) builds the plain one (fresh) and the routes read it: kept 8 s, less than the
+// tick, the tick never found its own and every route after it built it again (20 Oct 2026).
+const WORK_KEEP = 15000; let workKept = null;
+const forgetWork = () => { workKept = null; forgetAgents(); }; // after anything you do (a POST): the next look is built afresh
+function workScene({ deps = {}, full = false, fresh = false } = {}) {
   const plain = !Object.keys(deps).length;
-  if (plain && workKept && Date.now() - workKept.at < WORK_KEEP) return full ? workKept.v : workKept.lean;
+  if (plain && !fresh && workKept && Date.now() - workKept.at < WORK_KEEP) return full ? workKept.v : workKept.lean;
   const v = workSceneNow({ deps, full: true }), { all: _all, ...lean } = v;
   if (plain) workKept = { at: Date.now(), v, lean };
   return full ? v : lean;
 }
 function workSceneNow({ deps = {}, full = false } = {}) {
-  const agents = deps.agents || (() => { try { return agentsList(); } catch { return []; } });
+  const agents = deps.agents || (() => { try { return agentsNow(); } catch { return []; } });
   const pending = deps.pending || (() => { try { return pendingReview({ kept: true }); } catch { return []; } });
   const tasks = deps.tasks || (() => { try { return loadTasks(); } catch { return []; } });
   const map = (deps.repos || (() => { try { return laneMap(); } catch { return {}; } }))() || {};
@@ -928,12 +948,25 @@ function workSceneNow({ deps = {}, full = false } = {}) {
   // with nothing behind it: 5 of them on 19 Oct 2026, under an empty "Only the user can do".
   const stuck = deps.stuck || (() => { try { return stuckHandovers(); } catch { return []; } });
   const drafts = deps.drafts || (() => { try { return draftCards(); } catch { return []; } });
+  // The cards are read from the job record Home writes (jobs.mjs onUser), so an orb never stands
+  // for a question Home dropped (answered already, held in the vault, asked twice by one agent).
+  // With the agents stubbed (tests) and no record given, they're worked out from those agents here.
   const gone = (deps.dismissed || loadDismissed)(), trouble = troubles({ stuck: stuck(), list: AG, map, named, drafts: drafts() });
-  const carded = new Set(trouble.filter((t) => t.fix === "needs" && !gone[cardKey(t)] && !isDone(t.q)).map((t) => t.path));
-  const held = {}; for (const a of AG) { if (a.status === "running") continue; const l = laneOf(a), nq = (a.ask && a.ask.questions && a.ask.questions.length) || 0, card = !nq && a.needs && carded.has(a.path); if (!held[l] && (nq || card)) held[l] = { path: a.path, approve: !!card && a.needs.kind === "approve", step: !!card && a.needs.kind !== "approve" }; }
+  const cards = deps.onUser ? deps.onUser() : deps.agents ? null : (homeState({ tick: true }), onUser()); // tick: the scene reading Home is nobody looking (homeTick)
+  const held = {};
+  if (cards) for (const c of cards) {
+    if (c.kind !== "ask" || (c.fix && c.fix !== "needs") || !c.path) continue; // a question, or a run's OK or step; not a draft, a stuck handover or a failed run
+    const a = AG.find((x) => x.path === c.path); if (a && a.status === "running") continue;
+    const l = a ? laneOf(a) : c.lane || RUNS_LANE;
+    if (!held[l]) held[l] = { path: c.path, approve: c.fix === "needs" && !!c.ok, step: c.fix === "needs" && !c.ok };
+  } else {
+    const carded = new Set(trouble.filter((t) => t.fix === "needs" && !gone[cardKey(t)] && !isDone(t.q)).map((t) => t.path));
+    for (const a of AG) { if (a.status === "running") continue; const l = laneOf(a), nq = (a.ask && a.ask.questions && a.ask.questions.length) || 0, card = !nq && a.needs && carded.has(a.path); if (!held[l] && (nq || card)) held[l] = { path: a.path, approve: !!card && a.needs.kind === "approve", step: !!card && a.needs.kind !== "approve" }; }
+  }
   const why = waitWhy({ map, named, running, held, ready: new Set(ready.map((r) => r.repo)), isParked, deps });
   const waiting = open.map((t) => ({ id: "task:" + t.id, text: plain(t.text, 160), repo: t.repo, busy: busy.has(t.repo), ...(isParked(t.repo) ? { parked: true } : {}), ts: Number(t.ts) || 0, why: why(t) })); // the app shortens it for a tag
   { const nowT = deps.now || Date.now(), st = startable(waiting, nowT); if (peakHeld((deps.config || loadConfig)(), nowT, st.lanes.size + st.ops.length)) for (const x of st.items) if (x.why.kind === "next") x.why = { kind: "peak", peak: true, text: PEAK_TEXT }; }
+  try { const sync = deps.syncTasks || (deps.agents ? null : syncTasks); if (sync) sync(waiting, { now: deps.now || Date.now() }); } catch {} // the job record: running or queued is this list's word, not the chat's guess
   // Projects: each lane with work on it, what's going on there in one line's worth
   const by = {}, at = (name) => (by[name] = by[name] || { repo: name, name: name === RUNS_LANE ? "Agent runs" : named(map[name], name), waiting: 0, ready: 0, asks: 0, running: null, last: 0, ...(name === RUNS_LANE ? { runs: 0 } : {}) });
   running.forEach((r) => { const p = at(r.lane); if (r.lane === RUNS_LANE) p.runs++; if (!p.running) p.running = { doing: r.doing, progress: r.progress, ask: r.waiting, ...(r.line ? { line: r.line } : {}), ...(r.eta ? { eta: r.eta } : {}), ...(r.quiet ? { quiet: r.quiet } : {}), ...(r.looping ? { looping: true } : {}) }; p.last = Math.max(p.last, r.started || 0); });
@@ -949,7 +982,8 @@ function workSceneNow({ deps = {}, full = false } = {}) {
     if (seenR.has(a.path)) continue; seenR.add(a.path);
     const l = laneOf(a), qs = (a.ask && a.ask.questions) || [], ideas = ((a.ask && a.ask.suggestions) || []).filter((s) => s && s.text && !s.added);
     const age = a.startedAt ? now - a.startedAt : a.elapsed != null ? a.elapsed : Infinity, recent = a.status === "running" || age < DAY;
-    if (!by[l] && !qs.length && !ideas.length && !recent) continue;
+    const away = ((a.ask && a.ask.away) || []).filter((s) => s && s.text && !s.added), sent = {};
+    if (!by[l] && !qs.length && !ideas.length && !away.length && !recent) continue;
     const p = at(l);
     if (!p.summary && (recent || qs.length)) {
       const w = a.work || {}, todo = (w.todos || []).find((x) => x.status === "in_progress"), t = a.status === "running" ? ((todo && todo.active) || w.doing || "Working on it") : (w.final || a.tail || "");
@@ -957,7 +991,14 @@ function workSceneNow({ deps = {}, full = false } = {}) {
       if (line) { p.summary = line; p.state = a.status === "running" ? "at work" : qs.length ? "asks you" : "done"; p.path = a.path; }
     }
     for (const q of qs) { p.qs = p.qs || []; const c = { q: q.shown || q.q, ...(q.shown ? { raw: q.q } : {}), ...(q.task ? { task: q.task } : {}), options: (q.options || []).slice(0, 3), ...(q.labels ? { labels: q.labels } : {}), path: a.path, ...signInCard([q.q, ...(q.options || []).slice(0, 3)]) }; if (gone[cardKey(c)]) { p.asks = Math.max(0, p.asks - 1); continue; } if (p.qs.length < 3) p.qs.push(c); } // one dismissed (dismissCard) stays off the relay too
-    for (const s of ideas) { p.ideas = p.ideas || []; if (p.ideas.length < 4) p.ideas.push({ text: plain(s.text, 200), full: String(s.text), repo: s.repo || l, path: a.path }); }
+    // an idea for another lane is on that lane's sheet, and here just "2 ideas sent to symbiot" (agents.mjs routeIdeas)
+    for (const s of ideas.concat(away.filter((s) => !s.delivered))) {
+      const there = s.other || s.delivered === false ? at(s.repo) : p;
+      there.ideas = there.ideas || []; if (there.ideas.length < 4 && !there.ideas.some((x) => sameTask(x.full, s.text))) there.ideas.push({ text: plain(s.text, 200), full: String(s.text), repo: s.repo || l, path: s.path || a.path, ...(there !== p || s.from ? { from: s.from || a.name } : {}) });
+      if (there !== p) sent[s.repo] = (sent[s.repo] || 0) + 1;
+    }
+    for (const s of away) if (s.delivered) sent[s.repo] = (sent[s.repo] || 0) + 1;
+    if (Object.keys(sent).length) p.sent = Object.entries(sent).map(([repo, n]) => ({ repo, n }));
   }
   // what each lane handed over and hasn't heard back on, with where it stands and how far the run on it has got
   let led; const handing = deps.handing || ((path) => { try { return handingOf(path, { map, ledger: (led = led || loadLedger()) }); } catch { return []; } });
@@ -1019,6 +1060,7 @@ function waitWhy({ map, named, running, held, ready, isParked, deps = {} }) {
     const flag = (text) => ({ kind: "stuck", stuck: true, text });
     if (yours(t.text)) return { kind: "you", noGo: true, text: "Yours to do: no agent can, so nothing starts it" };
     if (isParked(lane)) return { kind: "parked", text: `Blocked: ${name} is parked, so nothing starts there until you unpark it` };
+    if (t.later) return { kind: "later", text: "Waiting for Go: a fix to Symbiot noted from chat, so it starts no run and parks nothing until you say" };
     if (!agentSet) return { kind: "blocked", text: "Blocked: no coding agent is set (Settings → Handoff)" };
     const fail = fails[lane];
     if (lane === RUNS_LANE) { // each gets an agent run of its own: never queued behind another
@@ -1060,7 +1102,8 @@ function workTick({ deps = {} } = {}) {
   try { (deps.sweep || sweepSuperseded)(); } catch { /* reports still list */ } // actions a finished task or a newer report has settled leave Reports
   if ((deps.config || loadConfig)().autoStart === false || !(deps.cmd || handoffCmd)()) return out;
   const now = deps.now || Date.now(), fails = deps.fails || AUTO_FAIL, push = deps.push || pushTasks, run = deps.run || runHandoff;
-  const w = workScene({ deps: { ...deps, fails, now }, full: true }), { lanes, ops, beside } = startable(w.all, now);
+  // the real tick's scene is the plain one (its fails and now are the defaults): built afresh and kept, for the routes to read
+  const w = Object.keys(deps).length ? workScene({ deps: { ...deps, fails, now }, full: true }) : workScene({ full: true, fresh: true }), { lanes, ops, beside } = startable(w.all, now);
   if (peakHeld((deps.config || loadConfig)(), now, lanes.size + ops.length + beside.length)) return out; // a batch waits for off-peak; the next tick tries again
   Object.assign(out, startOps(ops, { ...deps, fails, now }));
   const map = (deps.repos || (() => { try { return laneMap(); } catch { return {}; } }))() || {}, tasks = (deps.tasks || loadTasks)(), textOf = (x) => { const t = tasks.find((k) => "task:" + k.id === x.id); return t ? { id: t.id, text: t.text } : null; };
@@ -1094,6 +1137,7 @@ function workTick({ deps = {} } = {}) {
     for (const it of sp.peeled) go(lane, it);
     if (sp.peeled.length) { const r = push({ repo: lane }); if (r && r.empty) dropHeld(map[lane]); }
   }
+  if (out.started.length || out.ops.length || out.beside.length) forgetWork(); // what it started shows on the next look, not 15 s on
   return out;
 }
 // Ops tasks (by id) each to an agent run of its own; one that started leaves the list
@@ -1113,7 +1157,7 @@ function startOps(ids, { tasks = loadTasks, save = saveTasks, act = actNow, fail
 // behind one already there); a parked project's wait for it to be unparked.
 // { started, queued, repos, parked? } or { error }.
 function workGo({ push = pushTasks, run = runHandoff, ops = goOps, now = Date.now(), config = loadConfig } = {}) {
-  const o = ops(), r = push({});
+  const o = ops(), r = push({ later: true }); // Go is the user's say-so: a task waiting for it goes too
   if (r.empty && !o.ops.length && !o.failed.length) return { started: 0, queued: 0, repos: [], note: "Nothing waiting to start." };
   let started = o.ops.length, queued = 0; const repos = o.ops.length ? ["ops"] : [], parked = [];
   for (const w of r.written || []) { const e = run(w.path); if (e && e.parked) { parked.push(w.name); continue; } if (e && e.id && !e.busy && !e.blocked) started++; else queued++; repos.push(w.name); }
@@ -1229,4 +1273,4 @@ function setOnboarding({ step, skip, unskip, skipRest, done, restart } = {}) {
   return onboarding();
 }
 
-export { FIRST_RUN, troubles, agentDigest, garthLedger, plainAsk, dismissCard, cardKey, loadDismissed, DISMISSED_FILE, reportIdeasAdd, reportAsk, reportDraftAnswer, workTick, waitWhy, AUTO_GRACE, STUCK_AFTER, marketingState, marketingGo, marketingDraftAnswer, marketingTask, moveToMarketing, goLane, homeState, homeContext, homeAsk, homeAnswer, homeNext, nextUp, laneNamed, NEXT_FILE, workScene, forgetWork, workGo, displayName, firstSteps, onboarding, setOnboarding, startOnboarding, ONB_STEPS, ONB_STEPS_PHONE, onbSteps, phoneBits, phoneSetupFirst, finishedState, handedState, noteHanded, phoneChat, isPeak, reportIdeasDismiss, settleAsks, settleFromChat };
+export { homeTick, HOME_LOOKED, WORK_KEEP, FIRST_RUN, troubles, agentDigest, garthLedger, plainAsk, dismissCard, cardKey, loadDismissed, DISMISSED_FILE, reportIdeasAdd, reportAsk, reportDraftAnswer, workTick, waitWhy, AUTO_GRACE, STUCK_AFTER, marketingState, marketingGo, marketingDraftAnswer, marketingTask, moveToMarketing, goLane, homeState, homeContext, homeAsk, homeAnswer, homeNext, nextUp, laneNamed, NEXT_FILE, workScene, forgetWork, workGo, displayName, firstSteps, onboarding, setOnboarding, startOnboarding, ONB_STEPS, ONB_STEPS_PHONE, onbSteps, phoneBits, phoneSetupFirst, finishedState, handedState, noteHanded, phoneChat, isPeak, reportIdeasDismiss, settleAsks, settleFromChat };

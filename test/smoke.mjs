@@ -183,6 +183,7 @@ const calls = [
   ["/api/pending", "GET"],       // tasks the agent ticked, awaiting approval
   ["/api/pending/diff?repo=x", "GET"],
   ["/api/pending/approve", "POST"], // no repo -> "nothing awaiting review", no git runs
+  ["/api/pending/job?repo=x", "GET"], // no Approve going there -> { none }
   ["/api/pending/sendback", "POST"],
   ["/api/pending/send", "POST"],    // no repo -> "repo not found", nothing pushed
   ["/api/pending/leave", "POST"],   // no repo -> "repo not found", nothing forgotten
@@ -268,6 +269,7 @@ const calls = [
   ["/api/links/site", "POST"],      // no site -> "Give the site", no browser opened
   ["/api/links/check", "POST"],     // no id -> "isn't linked"
   ["/api/links/unlink", "POST"],
+  ["/api/links/act", "POST"],       // no id -> "No such site.", nothing switched on
   ["/api/posts", "GET"],            // the week's drafts waiting on you (isolated HOME -> none)
   ["/api/posts/draft", "POST"],     // no AI connected -> says so, nothing written
   ["/api/posts/approve", "POST"],   // no id -> "No draft", nothing handed over
@@ -322,6 +324,8 @@ const calls = [
   ["/api/phone/check", "POST"],     // not paired -> nothing asked
   ["/api/phone/find", "GET"],       // computers saying they're here on this network (asked over mDNS; a sandbox has none)
   ["/api/phone/do", "POST"],        // not paired -> refused, nothing queued
+  ["/api/phone/heard", "POST"],     // a notification, not paired -> ignored, nothing kept or sent
+  ["/api/phone/codes", "POST"],     // no site -> refused, nothing switched on
   ["/api/phone/note", "POST"],      // no copy -> nothing changes
   ["/api/phone/forget", "POST"],
   ["/api/secrets", "GET"],          // saved secret names for Settings (isolated HOME -> none; never values)

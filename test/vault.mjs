@@ -64,8 +64,12 @@ try {
   const run = join(CFG, "drafts", "act-1", ".symbiot"); mkdirSync(run, { recursive: true }); writeFileSync(join(run, "agent.log"), JSON.stringify({ text: `password ${old} "quoted"` }) + "\n");
   const sc = scrubStored({ force: true });
   const left = ["mind.json", "asks-done.json", join("drafts", "act-1", ".symbiot", "agent.log")].filter((f) => readFileSync(join(CFG, f), "utf8").includes(old));
-  ok("the old password goes to the vault, and every stored copy (the chat, its reply, the answered record, a run's log) becomes [saved: …]", !left.length && sc.found.includes("lemon squeezy password (jane@example.com)") && getSecret("lemon squeezy password (jane@example.com)").ok && sc.files.filter((f) => !f.endsWith(".bak")).length === 3 && readFileSync(mf, "utf8").includes("[saved: lemon squeezy password (jane@example.com)]"), { sc, left });
-  ok("…the files it rewrote still read", !!JSON.parse(readFileSync(mf, "utf8")).log && JSON.parse(readFileSync(join(run, "agent.log"), "utf8").trim()).text.includes("[saved:"));
+  // 20 Oct 2026 review, finding 3: the scrub rewrote run logs and briefs by text, and "Symbiot's" became "[saved: password]" in 77 places
+  ok("the old password goes to the vault, and the chat, its reply and the answered record become [saved: …]", left.join() === join("drafts", "act-1", ".symbiot", "agent.log") && sc.found.includes("lemon squeezy password (jane@example.com)") && getSecret("lemon squeezy password (jane@example.com)").ok && sc.files.filter((f) => !f.endsWith(".bak")).length === 2 && readFileSync(mf, "utf8").includes("[saved: lemon squeezy password (jane@example.com)]"), { sc, left });
+  ok("…a run's log is never rewritten", readFileSync(join(run, "agent.log"), "utf8").includes(old));
+  const jn = readFileSync(join(CFG, "scrub-journal.json"), "utf8");
+  ok("…and each swap is journalled, its value sealed, so a wrong one can be undone exactly", JSON.parse(jn).length >= 3 && !jn.includes(old) && JSON.parse(jn).every((e) => e.mark && e.value && typeof e.before === "string"), jn.slice(0, 300));
+  ok("…the files it rewrote still read", !!JSON.parse(readFileSync(mf, "utf8")).log && JSON.parse(readFileSync(join(CFG, "asks-done.json"), "utf8"))[0].a.includes("[saved:"));
   ok("…and once done, it doesn't run again at start", scrubStored().skipped === true);
   console.log("A WORD TAKEN FOR A PASSWORD — never again, and put back");
   ok("\"Symbiot's\", \"don't\" or an Azure subscription id in a sentence about an account isn't a password", !findSecrets("i signed up to lemon squeezy, it's in Symbiot's vault").found.length && !findSecrets("Account information Subscription ID: 3f2504e0-4f89-41d3-9a0c-0305e82c3301 Subscription name: x").found.length && !findSecrets("my login: don't share it").found.length, [findSecrets("i signed up to lemon squeezy, it's in Symbiot's vault").found.map((f) => f.name)]);
@@ -77,6 +81,11 @@ try {
   ok("a word wrongly vaulted goes back where it was blanked, and out of the vault", t9 === "review Symbiot's startup, and Symbiot's website; id 3f2504e0-4f89-41d3-9a0c-0305e82c3301; keep [saved: mixed password]" && !getSecret("password").ok && !getSecret("twitter password").ok && rp.restored.sort().join() === "password,twitter password", [rp, t9]);
   ok("…one that also holds a real value only loses the word", getSecret("mixed password").ok && getSecret("mixed password").value === "Real9#pass" && rp.dropped.join() === "mixed password", getSecret("mixed password"));
   ok("…and it runs once", repairFalseSaves().skipped === true);
+  // the 0.66.x scrub left "[saved: password]" for "Symbiot's" with no journal: put back from the word after it
+  writeFileSync(join(run, "agent.log"), "Blocked by [saved: password] membrane: npm publish.\nUse [saved: lemon password (a@b.co)] to sign in.\nIn [saved: x password] browser\n");
+  const rp2 = repairFalseSaves({ force: true }), lg = readFileSync(join(run, "agent.log"), "utf8");
+  ok("\"Blocked by [saved: password] membrane\" in a run's log reads \"Symbiot's membrane\" again", /Blocked by Symbiot's membrane: npm publish/.test(lg) && /In Symbiot's browser/.test(lg) && rp2.files.some((f) => f.endsWith("agent.log")), [lg, rp2]);
+  ok("…a real password's mark stays", lg.includes("Use [saved: lemon password (a@b.co)] to sign in."), lg);
 
   console.log("A PASTED KEY, LATER QUOTED IN PIECES");
   const KEY = "eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiJ9.eyJhdWQiOiI5NGQ1OWNlZi1kYmI4LTRlYTUifQ." + "pu3l95JISSAlj-yNPyHtdA9l1gnmuIkp-vTqNJVzslGQY3JiTOPrt43-lKecwAGcbAV9VcmODwVyRoe5QnfHtONnbhsCnmutzSg9GD2Hex";
@@ -89,7 +98,8 @@ try {
   writeFileSync(join(CFG, "tasks.json"), JSON.stringify([{ id: "t1", text: `a JWT beginning '${KEY.slice(0, 64)}' and ending '${KEY.slice(-60)}'` }]));
   const sc2 = scrubStored({ force: true }), lt = readFileSync(join(lane, ".symbiot", "TASKS.md"), "utf8"), tj = readFileSync(join(CFG, "tasks.json"), "utf8");
   ok("the key goes to the vault under the name the chat gave it", sc2.found.includes("lemon squeezy api key (test mode)") && getSecret("lemon squeezy api key (test mode)").ok, sc2.found);
-  ok("…and the pieces of it quoted in a task and in a lane's brief are blanked too", !lt.includes(KEY.slice(-60)) && !lt.includes(KEY.slice(40, 64)) && !tj.includes(KEY.slice(-60)) && /\[saved: lemon squeezy api key \(test mode\)\]/.test(lt), [lt, tj]);
+  ok("…and the pieces of it quoted in a task are blanked too", !tj.includes(KEY.slice(-60)) && /\[saved: lemon squeezy api key \(test mode\)\]/.test(tj), tj);
+  ok("…a lane's brief is a run's, and isn't rewritten", lt.includes(KEY.slice(-60)), lt);
   ok("…while what's around them stays", /^- \[ \] Save the key: it begins '/.test(lt) && JSON.parse(tj)[0].id === "t1");
 
   console.log("A JWT API KEY, AND A WAIT IT SATISFIES");

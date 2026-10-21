@@ -114,7 +114,9 @@ try {
   let rulesSeen = "";
   await converse({ where: "WhatsApp card", question: "that line was mine, not hers", map, act, ask: async (sys) => { rulesSeen = sys; return JSON.stringify({ reply: "ok", do: null, remember: [] }); } });
   ok("the chat is told the lanes and that Symbiot's flaws go to symbiot", /Lanes \("repo" is one of these, exactly; [^)]*\): symbiot, coral/.test(rulesSeen) && /Symbiot itself is "symbiot"/.test(rulesSeen), rulesSeen.slice(-700));
-  ok("…and not to wait to be asked: spot a flaw, start the fix in the same reply", /Don't wait to be asked to fix Symbiot/.test(rulesSeen) && /"agent" with "repo": "symbiot"/.test(rulesSeen), "");
+  // 20 Oct 2026: "start the fix" turned every complaint into a symbiot run; a noticed flaw is noted, for their Go
+  ok("…and not to wait to be asked: spot a flaw, note the fix in the same reply, for their Go", /Don't wait to be asked to note a flaw in Symbiot/.test(rulesSeen) && /"task" with "repo": "symbiot"/.test(rulesSeen) && /never "started a fix"/.test(rulesSeen), "");
+  ok("…and never to make up urgency", /Urgency is theirs to give/.test(rulesSeen), "");
   const added = [];
   const add = (t, r) => { added.push([t, r]); return { id: "t" + added.length }; };
   ok("a task goes to the lane it names, whatever its case", taskIn("Fix sender attribution", "Symbiot", { map, add }).lane === "symbiot" && added.slice(-1)[0][1] === "symbiot", added.slice(-1));

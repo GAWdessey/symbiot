@@ -59,6 +59,11 @@ ok("a long brief escalates", pickModel({ task: "x".repeat(1501) }).why === "Opus
 ok("a brief naming several repos escalates", pickModel({ task: "Port the fix from /home/odessey/projects/argena/bot.mjs into /home/odessey/projects/steve/bot.mjs" }).why === "Opus: names several repos");
 ok("two files in the same repo don't count as several", pickModel({ task: "Move a helper from /home/odessey/projects/symbiot/ai.mjs to /home/odessey/projects/symbiot/route.mjs" }).tier === "S");
 ok("research/refactor/debug-style words escalate", pickModel({ task: "Investigate why the lane keeps failing" }).why === "Opus: research/refactor/debug-style work");
+// 20 Oct 2026: a chat-written task is long and says why; it's measured by what the user said for it
+ok("\"why\" alone doesn't escalate: a brief explains itself", pickModel({ task: "Label each card with its lane, which is why the user asked" }).tier === "S", pickModel({ task: "Label each card with its lane, which is why the user asked" }));
+ok("\"find out why\" does", pickModel({ task: "Find out why the build fails" }).why === "Opus: research/refactor/debug-style work" && pickModel({ task: "work out why the cards move" }).tier === "O");
+ok("a long chat-written brief is measured by the user's words", pickModel({ task: "x ".repeat(900), said: "why are these under dailify?" }).tier === "S", pickModel({ task: "x ".repeat(900), said: "why are these under dailify?" }));
+ok("…but keys in the brief still escalate", pickModel({ task: "Rotate the API key in .env", said: "the key's wrong" }).why === "Opus: touches keys, money or publishing");
 ok("touching keys escalates", pickModel({ task: "Rotate the API key in .env" }).why === "Opus: touches keys, money or publishing");
 ok("a push to main escalates", pickModel({ task: "push to main once CI is green" }).why === "Opus: touches keys, money or publishing");
 // A secret named, not acted on, is no reason for Opus (the noun alone sent "rename the csrf token field" there, 15 Oct 2026).

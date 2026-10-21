@@ -3,20 +3,24 @@
 // same pages (258 MB), settled.json a key per run folder for ever, and prompt files
 // and .corrupt-* copies from crashes stayed (15 Oct 2026). Once at start and every
 // day after, it removes:
-// - drafts/act-* run folders whose run ended more than 14 days ago, with no open
-//   question, no reply being waited on, and no report still unread;
-// - agent-made page maps past the newest 200 per page title (screens.json, written
+// - drafts/act-* run folders quiet for 3 days, with no run going, no open question, no reply
+//   being waited on, no report still unread and no handover still to report back (they were
+//   kept 14 days, and about 16 new ops runs a day outgrew that: 3.5 GB on 20 Oct 2026);
+// - agent-made page maps past the newest 30 per page title (screens.json, written
 //   whole), and PNGs in screens/ older than 7 days that no map refers to;
 // - .system-*.txt prompt files and .tmp halves of saves left by a process that's gone;
-// - .corrupt-* copies older than 30 days (the save before was read in their place);
-// - settled.json keys whose folder is gone.
+// - .corrupt-* copies and .bak.bak copies older than 30 days;
+// - settled.json keys whose folder is gone;
+// - tasks archived more than 30 days ago, moved to tasks-archive.json (the Archive still
+//   lists them, and Restore brings one back): tasks.json held 781 done tasks of 797;
+// and it makes every state file in the folder yours only (0600), as writeAtomic writes them.
 // It logs what it removed, one line. Never the real folder from a test: pass dirs.
 import { join } from "node:path";
-import { readdirSync, statSync, rmSync, unlinkSync, existsSync } from "node:fs";
-import { CONFIG_DIR, readState, writeJsonAtomic, alive, privateDir } from "./core.mjs";
+import { readdirSync, statSync, rmSync, unlinkSync, existsSync, chmodSync } from "node:fs";
+import { CONFIG_DIR, readState, writeJsonAtomic, alive, privateDir, loadTasks, saveTasks } from "./core.mjs";
 
 const DAY = 86400000;
-const KEEP = { acts: 14 * DAY, screens: 7 * DAY, corrupt: 30 * DAY, perTitle: 200 };
+const KEEP = { acts: 3 * DAY, screens: 7 * DAY, corrupt: 30 * DAY, perTitle: 30, archived: 30 * DAY };
 const SCREENS_DIR = join(CONFIG_DIR, "screens");
 const isObj = (v) => !!v && typeof v === "object" && !Array.isArray(v);
 const mtimeOf = (f) => { try { return statSync(f).mtimeMs; } catch { return 0; } };
@@ -28,17 +32,20 @@ function lastTouched(dir) {
 }
 // What the sweep asks about a run folder, from the app (the defaults) or a test.
 async function runDeps() {
-  const a = await import("./agents.mjs"), h = await import("./handback.mjs"), r = await import("./reports.mjs");
+  const a = await import("./agents.mjs"), h = await import("./handback.mjs"), r = await import("./reports.mjs"), l = await import("./lanes.mjs");
   const waits = h.loadWaits().waits.filter((w) => w.status === "waiting").map((w) => (w.from && w.from.path) || "");
+  let ledger = { handoffs: [] }; try { ledger = l.loadLedger(); } catch {}
+  const handing = new Set(ledger.handoffs.filter((x) => !x.reportedAt && !["done", "error", "failed"].includes(x.status)).flatMap((x) => [x.to && x.to.path, x.from && x.from.path]).filter(Boolean));
   return { running: (p) => !!a.runningHandoff(p), questions: (p) => { try { return a.agentQuestions(p, "").questions.length; } catch { return 0; } },
-    waiting: (p) => waits.includes(p), unread: (p) => { try { return r.listReports({ folders: [p], map: {}, running: () => false }).some((x) => x.new); } catch { return false; } } };
+    waiting: (p) => waits.includes(p), unread: (p) => { try { return r.listReports({ folders: [p], map: {}, running: () => false }).some((x) => x.new); } catch { return false; } },
+    handing: (p) => handing.has(p) };
 }
-function sweepActs({ now = Date.now(), dir = join(CONFIG_DIR, "drafts"), keep = KEEP.acts, running, questions, waiting, unread }) {
+function sweepActs({ now = Date.now(), dir = join(CONFIG_DIR, "drafts"), keep = KEEP.acts, running, questions, waiting, unread, handing = () => false }) {
   const gone = [];
   let names = []; try { names = readdirSync(dir).filter((n) => /^act-[0-9a-f]{8}$/.test(n)); } catch { return gone; }
   for (const n of names) {
     const p = join(dir, n);
-    if (now - lastTouched(p) < keep || running(p) || questions(p) > 0 || waiting(p) || unread(p)) continue;
+    if (now - lastTouched(p) < keep || running(p) || questions(p) > 0 || waiting(p) || unread(p) || handing(p)) continue;
     try { rmSync(p, { recursive: true, force: true }); gone.push(p); } catch {}
   }
   return gone;
@@ -74,7 +81,28 @@ function sweepLeft({ dir = CONFIG_DIR, live = alive } = {}) {
 function sweepCorrupt({ now = Date.now(), dir = CONFIG_DIR, keep = KEEP.corrupt } = {}) {
   const gone = [];
   try { for (const n of readdirSync(dir)) { const m = n.match(/\.corrupt-(\d+)$/); if (!m || now - Number(m[1]) < keep) continue; try { unlinkSync(join(dir, n)); gone.push(n); } catch {} } } catch {}
+  // a .bak of a .bak: no writer makes them now, and the save before is in the .bak itself
+  try { for (const n of readdirSync(dir)) { if (!/\.bak\.bak$/.test(n) || now - mtimeOf(join(dir, n)) < keep) continue; try { unlinkSync(join(dir, n)); gone.push(n); } catch {} } } catch {}
   return gone;
+}
+// Tasks archived more than keep ago leave tasks.json for tasks-archive.json, newest kept last.
+const ARCHIVE_FILE = (dir = CONFIG_DIR) => join(dir, "tasks-archive.json"), ARCHIVE_MAX = 20000;
+const archivedAt = (t) => Number(t.archivedAt || t.approvedAt || t.doneAt || t.ts) || 0;
+function sweepTasks({ now = Date.now(), dir = CONFIG_DIR, keep = KEEP.archived, load = loadTasks, save = saveTasks } = {}) {
+  const all = load(), out = all.filter((t) => t && t.archived && now - archivedAt(t) > keep); if (!out.length) return 0;
+  const file = ARCHIVE_FILE(dir), had = readState(file, Array.isArray) || [], ids = new Set(out.map((t) => t.id));
+  try { writeJsonAtomic(file, [...had.filter((t) => !ids.has(t.id)), ...out].slice(-ARCHIVE_MAX), { indent: 0 }); } catch { return 0; }
+  if (!save(all.filter((t) => !ids.has(t.id)))) return 0;
+  return out.length;
+}
+// What the archive file holds, for the Archive page and Restore (tasks.mjs restoreTask).
+const archivedTasks = (dir = CONFIG_DIR) => readState(ARCHIVE_FILE(dir), Array.isArray) || [];
+// Every state file in the folder, yours only: one an older Symbiot (or a plain write) left 0664.
+function sweepModes({ dir = CONFIG_DIR } = {}) {
+  if (process.platform === "win32") return 0;
+  let n = 0;
+  try { for (const name of readdirSync(dir)) { const f = join(dir, name); try { const st = statSync(f); if (st.isFile() && (st.mode & 0o077)) { chmodSync(f, 0o600); n++; } } catch {} } } catch {}
+  return n;
 }
 function sweepSettled({ file = join(CONFIG_DIR, "settled.json") } = {}) {
   const o = readState(file, isObj); if (!o) return 0;
@@ -86,9 +114,10 @@ async function sweepState({ now = Date.now(), dir = CONFIG_DIR, deps, log = cons
   privateDir(dir); privateDir(join(dir, "screens"));
   const d = deps || await runDeps();
   const acts = sweepActs({ now, dir: join(dir, "drafts"), ...d }), screens = sweepScreens({ now, dir: join(dir, "screens") }), left = sweepLeft({ dir, live: d.live }), corrupt = sweepCorrupt({ now, dir }), settled = sweepSettled({ file: join(dir, "settled.json") });
-  const r = { acts: acts.length, screens: screens.entries, pngs: screens.pngs, left: left.length, corrupt: corrupt.length, settled };
+  const tasks = sweepTasks({ now, dir, ...(d.tasks || {}) }), modes = sweepModes({ dir });
+  const r = { acts: acts.length, screens: screens.entries, pngs: screens.pngs, left: left.length, corrupt: corrupt.length, settled, tasks, modes };
   const said = [r.acts && `${r.acts} finished run folder${r.acts > 1 ? "s" : ""}`, r.screens && `${r.screens} old page map${r.screens > 1 ? "s" : ""}`, r.pngs && `${r.pngs} unused screenshot${r.pngs > 1 ? "s" : ""}`,
-    r.left && `${r.left} file${r.left > 1 ? "s" : ""} a gone process left`, r.corrupt && `${r.corrupt} corrupt cop${r.corrupt > 1 ? "ies" : "y"}`, r.settled && `${r.settled} settled key${r.settled > 1 ? "s" : ""} with no folder`].filter(Boolean);
+    r.left && `${r.left} file${r.left > 1 ? "s" : ""} a gone process left`, r.corrupt && `${r.corrupt} corrupt cop${r.corrupt > 1 ? "ies" : "y"}`, r.settled && `${r.settled} settled key${r.settled > 1 ? "s" : ""} with no folder`, r.tasks && `${r.tasks} archived task${r.tasks > 1 ? "s" : ""} moved to tasks-archive.json`, r.modes && `${r.modes} file${r.modes > 1 ? "s" : ""} made yours only`].filter(Boolean);
   if (said.length) try { log(`  Swept: ${said.join(", ")}.`); } catch {}
   return r;
 }
@@ -102,4 +131,4 @@ function startSweep({ delay = 60000, every = DAY } = {}) {
   TIMER = setTimeout(() => { run(); TIMER = setInterval(run, every); TIMER.unref(); }, delay); TIMER.unref();
 }
 
-export { sweepState, sweepActs, sweepScreens, sweepLeft, sweepCorrupt, sweepSettled, startSweep, KEEP };
+export { sweepState, sweepActs, sweepScreens, sweepLeft, sweepCorrupt, sweepSettled, sweepTasks, sweepModes, archivedTasks, ARCHIVE_FILE, startSweep, KEEP };

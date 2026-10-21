@@ -22,7 +22,7 @@ const { buildTasksMd, mergeWhenGreen } = await import("../tasks.mjs");
 {
   const fake = (buckets, mergeStatus = 0) => { const calls = []; const gh = (a) => { calls.push(a.slice(0, 2).join(" ")); return a[1] === "checks" ? { status: 0, stdout: JSON.stringify(buckets.map((bucket) => ({ bucket }))) } : { status: mergeStatus, stderr: "" }; }; return { gh, calls }; };
   const g = fake(["pass", "pass"]), f = fake(["pass", "fail"]), p = fake(["pass", "pending"]);
-  const rg = mergeWhenGreen("/tmp", "7", g.gh), rf = mergeWhenGreen("/tmp", "7", f.gh), rp = mergeWhenGreen("/tmp", "7", p.gh);
+  const rg = await mergeWhenGreen("/tmp", "7", g.gh), rf = await mergeWhenGreen("/tmp", "7", f.gh), rp = await mergeWhenGreen("/tmp", "7", p.gh);
   ok("merging from Symbiot: green checks merge past the self-review rule, so no second GitHub account is needed", rg.ok && g.calls.join() === "pr checks,pr merge", [rg, g.calls]);
   ok("…but a failing or running check never merges", rf.error && !f.calls.includes("pr merge") && rp.pending && !p.calls.includes("pr merge"), [rf, rp]);
 }
@@ -85,6 +85,12 @@ try {
     ok("…and the brief sends a check there through that API, not another sign-in for the user", /cp\.smsportal\.com \(`sms_module`'s SMSPORTAL\)[^\n]*goes through that API[^\n]*don't ask the user to sign in again/.test(apiRules), apiRules);
     ok("…none when no key opens a linked site", !/own API one of those keys opens/.test(rules), "");
     ok("…and no blank line inside the reach list", !/\n\n/.test(apiRules.split("What each lane can reach")[1] || "\n\n"), apiRules);
+    // 20 Oct 2026: "i gave my api key to symbiot but it keeps asking me for it": a key in the vault opened nothing in the brief
+    const rv = laneReach({}, { sandboxed: true, ssh: "", screens: () => [], linked: () => ["dash.cloudflare.com"], vault: () => [{ name: "cloudflare api token", provider: "CLOUDFLARE" }] });
+    const vRules = handoverRules(["dailify"], "dailify", rv).join("\n");
+    ok("a key already in the vault is named in every brief (never its value), with not to ask for it again", rv.vault.join() === "cloudflare api token" && /Keys the user already gave, in Symbiot's vault[^\n]*"cloudflare api token"[^\n]*Never ask the user for one of these again/.test(vRules), vRules);
+    ok("…and the linked site its API opens, through ops", /dash\.cloudflare\.com \(the vault's "cloudflare api token", through `ops`\)/.test(vRules), rv.vaultApis);
+    ok("…none of that when the vault holds no key", !/already gave, in Symbiot's vault/.test(apiRules), "");
     const ops = actBrief("Change WHATSAPP_PROVIDER in the prod .env on sts-prod", { lanes: ["dailify"], reach: r });
     ok("the ops brief says it too, so ops doesn't hand a server job to a repo lane", /reaches no server/.test(ops) && /`sts-prod`/.test(ops) && !/Your lane,/.test(ops), "");
     const open = handoverRules(["dailify"], "dailify", { ...r, sandboxed: false }).join("\n");
@@ -668,6 +674,55 @@ try {
     ok("…a handover on it to ops carries it in its brief", calls.act.length === 1 && String(calls.act[0].o.alongside || "").includes(said), calls.act[0] && calls.act[0].o.alongside);
     ok("and every brief says to read ANSWERS.md again before asking, for answers given to another agent", /Before you ask the user anything, read .\.symbiot\/ANSWERS\.md. again/.test(brief("coral", {}, [{ id: "1", text: "x", repo: "coral" }])) && /what this brief says the user has already answered/.test(actBrief("x", { lanes: [] })), "");
     writeFileSync(join(CFG, "lanes.json"), JSON.stringify({ handoffs: [] }));
+  }
+  // 20 Oct 2026 review, finding 1: over 14 days and two hops every lane linked every other, and each
+  // had an old question open, so one answer started them all ("nothing here needed doing")
+  // 20 Oct 2026 review, Q4: "why are these under dailify?", "for what project is it?": a card says its project from the record
+  console.log("WHICH PROJECT A RUN IS FOR — from the record, never its words");
+  {
+    const { projectOf } = await import("../lanes.mjs");
+    const dl = lane("dlfy_proj"), o1 = join(CFG, "drafts", "act-proj0001"), o2 = join(CFG, "drafts", "act-proj0002"), o3 = join(CFG, "drafts", "act-proj0003"), o4 = join(CFG, "drafts", "act-proj0004");
+    for (const p of [o1, o2, o3, o4]) mkdirSync(join(p, ".symbiot"), { recursive: true });
+    put(o3, "handoff.json", JSON.stringify({ name: "Agent: the webhook URL", for: "coral" }));
+    put(o4, "handoff.json", JSON.stringify({ name: "Agent: Draft an email to Jono about the dailify invoices" }));
+    const led = { handoffs: [
+      { id: "p1", from: { lane: "dlfy_proj", path: dl }, to: { lane: "ops", path: o1 }, text: "deploy", at: 1, status: "started" },
+      { id: "p2", from: { lane: "ops", path: o1 }, to: { lane: "ops", path: o2 }, text: "a check", at: 2, status: "started" },
+    ] }, pm = { dlfy_proj: dl };
+    ok("a lane's own folder: that lane", projectOf(dl, { map: pm, ledger: led }) === "dlfy_proj");
+    ok("an ops run a lane handed over: that lane", projectOf(o1, { map: pm, ledger: led }) === "dlfy_proj");
+    ok("…and one that ops run handed on: still that lane", projectOf(o2, { map: pm, ledger: led }) === "dlfy_proj");
+    ok("an ops run chat started for a lane: that lane (handoff.json)", projectOf(o3, { map: pm, ledger: led }) === "coral");
+    ok("one nothing names: no project, though its words say dailify", projectOf(o4, { map: pm, ledger: led }) === "");
+  }
+  console.log("ONE ANSWER, ONE LANE — old handovers and stale questions start nothing");
+  {
+    const { shareAnswer, answerReaches, linkedPaths } = await import("../lanes.mjs");
+    const ask = (p, q, why) => put(p, "QUESTIONS.md", "## Questions\n### " + q + "\n" + why + "\n- 🤖 Agent: do it (recommended)\n- skip it\n");
+    const dl = lane("dlfy_fan"), mk = lane("mkt_fan"), op = join(CFG, "drafts", "act-fan001");
+    ask(dl, "Record the consent-screen video now?", "For the review."); put(dl, "TASKS.md", "- [ ] New video with the consent screen\n");
+    ask(mk, "Post the week-2 reading on Thursday?", "The 4-week test."); put(mk, "TASKS.md", "- [ ] 4-week test, once a week\n");
+    ask(op, "Restart the relay on the box?", "It's slow."); put(op, "TASKS.md", "- [ ] Relay check\n");
+    const day = 86400000, at = Date.now();
+    const old = { handoffs: [
+      { id: "f1", from: { lane: "dlfy_fan", path: dl }, to: { lane: "ops", path: op }, text: "Deploy dailify", at: at - 3 * day, status: "done", reportedAt: at - 2 * day },
+      { id: "f2", from: { lane: "mkt_fan", path: mk }, to: { lane: "dlfy_fan", path: dl }, text: "Screenshots for the post", at: at - 4 * day, status: "done", reportedAt: at - 3 * day },
+      { id: "f3", from: { lane: "ops", path: op }, to: { lane: "mkt_fan", path: mk }, text: "Copy for the status page", at: at - 5 * day, status: "error" },
+    ] };
+    const started = [], o = { ledger: old, runs: () => [dl, mk, op].map((p) => ({ path: p })), running: () => false, map: { dlfy_fan: dl, mkt_fan: mk }, run: (p) => { started.push(p); return { id: "j" + started.length }; }, cfg: { profile: { name: "Garth White" } } };
+    ok("finished handovers link nobody for an answer, though a new run's brief still hears of them", !linkedPaths(dl, { ledger: old, open: true }).length && linkedPaths(dl, { ledger: old }).length === 2, linkedPaths(dl, { ledger: old }));
+    const sh = shareAnswer(dl, [{ q: "Record the consent-screen video now?", a: "yes, record it today" }], o);
+    ok("one answer to one lane: zero starts anywhere else", !started.length && !sh.some((r) => r.started), [started, sh]);
+    ok("…and no other lane's ANSWERS.md is touched", !read(mk, "ANSWERS.md") && !read(op, "ANSWERS.md"), [read(mk, "ANSWERS.md"), read(op, "ANSWERS.md")]);
+    // an open handover still links them, but starts the other lane only for a question the answer bears on
+    old.handoffs.push({ id: "f4", from: { lane: "dlfy_fan", path: dl }, to: { lane: "ops", path: op }, text: "Upload the video", at: at - 3600000, status: "started" });
+    const r2 = answerReaches(dl, "Record the consent-screen video now?\nyes", o);
+    ok("an open handover links the lane it went to, one step only", r2.map((r) => r.path).join() === op && r2[0].why === "handover" && !r2[0].asks, r2);
+    const s2 = shareAnswer(dl, [{ q: "Record the consent-screen video now?", a: "yes, and keep it under 2 minutes" }], o);
+    ok("…it gets the answer as background, and isn't started for a question the answer doesn't touch", s2.length === 1 && !started.length && /\(background\)_/.test(read(op, "ANSWERS.md")), [s2, started]);
+    ask(op, "Record the consent-screen video now?", "Ops records the screen too.");
+    const s3 = shareAnswer(dl, [{ q: "Record the consent-screen video now?", a: "yes, from the staging site" }], o);
+    ok("…and started when its own open question is the one answered", started.join() === op && s3[0].started, [s3, started]);
   }
 } finally {
   rmSync(HOME, { recursive: true, force: true });

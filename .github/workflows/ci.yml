@@ -1,22 +1,30 @@
 name: ci
 
-# Runs the test suite on every PR and feature-branch push, so pull requests get
-# a status check. This is what the per-repo "auto-merge on green CI" toggle waits
-# for: enable branch protection on main requiring the "test" check, and an
-# approved PR merges itself only once this passes.
+# Runs the test suite once per pull request (and on main once it lands), so pull
+# requests get a status check. This is what the per-repo "auto-merge on green CI"
+# toggle waits for: enable branch protection on main requiring the "test" check, and
+# an approved PR merges itself only once this passes. A newer push to the same PR
+# cancels the run still going on the old one. Before (20 Oct 2026) every PR push ran
+# twice, as a pull_request and as a branch push, 112 runner-minutes each time.
 on:
   pull_request:
   push:
-    branches-ignore: [main]
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
+          cache: npm
       - run: npm ci
       - name: Lint
         # no-undef / no-unused-vars only (eslint.config.js): catches a name
@@ -29,9 +37,11 @@ jobs:
       - name: Test
         # the whole suite, the same as publish.yml runs before a release —
         # including the npm pack + global install layer, so a PR that breaks the
-        # installed `symbiot` bin fails here, not after it's on npm
+        # installed `symbiot` bin fails here, not after it's on npm. test/run.mjs runs
+        # the files side by side, each with a time limit, and names every one that fails
         env:
           SYMBIOT_NO_OPEN: "1"
+          SYMBIOT_TEST_JOBS: "4"
           # names the release notes must never say (the maker's projects, people,
           # providers), kept out of the public repo: test/outward.mjs checks CHANGELOG.md
           SYMBIOT_PRIVATE_TERMS: ${{ secrets.SYMBIOT_PRIVATE_TERMS }}
@@ -40,15 +50,16 @@ jobs:
   windows:
     # Symbiot on a Windows PC. test/windows.mjs is what has to work there (it starts,
     # opens into setup, finds your Claude subscription through claude.cmd, long
-    # instructions get through, uninstall works): it must pass. The whole suite runs
-    # too, each file on its own with a table at the end: Windows isn't green there yet,
-    # so that step reports without blocking.
+    # instructions get through, uninstall works): it must pass. The whole suite on
+    # Windows, which isn't green there yet and only reports, runs nightly (nightly.yml).
     runs-on: windows-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
+          cache: npm
       - run: npm ci
       - run: npm run lint
       - name: Git identity for tests
@@ -59,8 +70,3 @@ jobs:
         env:
           SYMBIOT_NO_OPEN: "1"
         run: node test/windows.mjs
-      - name: The whole suite on Windows (reports, doesn't block yet)
-        continue-on-error: true
-        env:
-          SYMBIOT_NO_OPEN: "1"
-        run: node test/each.mjs
