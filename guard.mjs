@@ -19,7 +19,7 @@ import { homedir } from "node:os";
 import { execFileSync } from "node:child_process";
 import { readFileSync, realpathSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { judgeChrome, seen as seenChrome, PREFIX as CHROME } from "./chromegate.mjs";
+import { judgeChrome, seen as seenChrome, openTabs, PREFIX as CHROME } from "./chromegate.mjs";
 import { judgePush } from "./pushgate.mjs";
 
 const SECRET = [".ssh", ".gnupg", ".aws", ".azure", ".kube", ".docker/config.json", ".config/gcloud", ".config/gh/hosts.yml", ".netrc", ".npmrc", ".pypirc", ".git-credentials", ".config/symbiot/secrets.json", ".config/symbiot/vault.json", ".config/symbiot/vault.key"];
@@ -193,7 +193,14 @@ const main = process.argv[1] && resolve(process.argv[1]) === fileURLToPath(impor
 if (main) {
   let raw = ""; try { raw = readFileSync(0, "utf8"); } catch {}
   let ev = {}; try { ev = JSON.parse(raw); } catch {}
-  if (ev.hook_event_name === "PostToolUse") { try { seenChrome(ev.tool_name, ev.tool_response, { session: String(ev.session_id || "") }); } catch {} process.exit(0); } // after a Chrome tool: the site each tab is on now
+  if (ev.hook_event_name === "PostToolUse") { try { seenChrome(ev.tool_name, ev.tool_response, { session: String(ev.session_id || ""), input: ev.tool_input || {} }); } catch {} process.exit(0); } // after a Chrome tool: the site each tab is on now
+  // Stop: a run that still has tabs open in the user's Chrome closes them first. Once only
+  // (stop_hook_active): a tab it can't close never keeps it from ending.
+  if (ev.hook_event_name === "Stop") {
+    let open = []; try { open = ev.stop_hook_active ? [] : openTabs(String(ev.session_id || "")); } catch {}
+    if (open.length) { process.stderr.write(`Before you finish, close the tabs you opened in the user's Chrome: tabs_close_mcp on ${open.map((t) => `tab ${t.tab}${t.host ? ` (${t.host})` : ""}`).join(", ")}. Then end as you were going to.\n`); process.exit(2); }
+    process.exit(0);
+  }
   let writes = null; try { writes = JSON.parse(process.env.SYMBIOT_WRITES || "null"); } catch {} // a sandboxed repo run's folders
   const r = judge(ev.tool_name, ev.tool_input || {}, { cwd: ev.cwd || process.cwd(), writes, session: String(ev.session_id || "") });
   if (r) { process.stderr.write("Blocked by Symbiot's membrane: " + r.why + ". If it's needed, ask the user in .symbiot/QUESTIONS.md with options.\n"); process.exit(2); }

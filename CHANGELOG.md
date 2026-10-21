@@ -2,6 +2,10 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one), for anyone who installs the app: what changed in it, never whose work it was (no projects, people, accounts, services, run ids or task wording of the person who made it). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.67.1 — 2026-10-21
+
+- **Runs close their tabs in your Chrome.** A run that still has tabs open in your Chrome when it finishes is sent back once to close them, so its tab group doesn't stay behind.
+
 ## 0.67.0 — 2026-10-21
 
 - **Lanes stop going round in circles.** A lane starts again by itself at most 3 times an hour, and only when it has fewer open items than last time. A finished handover restarts the lane that asked only if it has open work, and a run that stopped on purpose (to ask, hand over or wait) isn't rerun on a stronger model.
