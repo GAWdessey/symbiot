@@ -127,6 +127,24 @@ try {
   const many = Array.from({ length: 320 }, (_, i) => ({ key: "run:n" + i, kind: "agent", state: "done", at: i, changed: i, history: [] }));
   J.saveJobs([...J.loadJobs(), ...many]);
   ok("open goals are never pushed out of the record by newer rows", J.loadJobs().some((j) => j.key === g5.key));
+
+  console.log("GOALS — only a request for work opens one; a follow-up joins its goal");
+  const replies = ["yes", "1", "proceeed", "who makes these cards? is it not you?", "how should i know you are the one thats manning it not me", "give me a list of whats open so i can be disappointed in you please", "everytime i say approve it fails so wtf? (The user attached 1 screenshot)", "did you launch it so i can?"];
+  const kinds = await Promise.all(replies.map((w) => G.goalKind(w)));
+  ok("questions, replies, complaints and status asks never open a goal", kinds.every((k) => k === "none"), replies.map((w, i) => [w, kinds[i]]));
+  ok("…a request for work does, and a short line pointing at work going is a follow-up", (await G.goalKind("Move the client's domain into its own account and send the ticket")) === "new" && (await G.goalKind("do it yourself")) === "follow");
+  ok("…with an AI, its call stands, and a reply it can't read falls back to the rules", (await G.goalKind("email from the registrar just landed", { write: ai('{"kind":"follow"}') })) === "follow" && (await G.goalKind("Set up the new mailbox", { write: ai("hmm") })) === "new" && (await G.goalKind("yes", { write: ai('{"kind":"new"}') })) === "none");
+  const before = J.goalRows().length, lanePath = join(HOME, "work", "atlas");
+  const ga = await G.goalFor("Move the client's domain into its own account", { child: "run:ra", lane: "atlas", path: lanePath });
+  const none = await G.goalFor("yes", { child: "run:rb", lane: "atlas", path: lanePath });
+  const fol = await G.goalFor("do it yourself", { child: "run:rc", lane: "atlas", path: join(CFG, "drafts", "act-99990000") });
+  ok("a request opens a goal; \"yes\" opens none; \"do it yourself\" joins the lane's goal with its run", ga && none === null && fol && fol.key === ga.key && G.goalById(ga.key).children.includes("run:rc") && J.goalRows().length === before + 1, [ga && ga.key, none, fol && fol.key]);
+  ok("…a follow-up with nothing open to join opens nothing", (await G.goalFor("do it again", { lane: "nowhere", path: "" })) === null);
+  console.log("GOALS — rows opened before from questions and replies are closed as not goals");
+  const junk = G.openGoal("who makes these cards? is it not you?", { lane: "ops" }), real = G.openGoal("Ship the redesigned demo console", { lane: "ops" });
+  const n = G.tidyGoals();
+  ok("closed as not a goal, off every list, kept in the record", n >= 1 && !J.goalRows().some((x) => x.key === junk.key) && J.goalRows().some((x) => x.key === real.key) && J.loadJobs().find((x) => x.key === junk.key).notGoal === true, n);
+  ok("…once each", G.tidyGoals() === 0);
 } catch (e) { ok("ran", false, String((e && e.stack) || e)); }
 finally { rmSync(HOME, { recursive: true, force: true }); }
 console.log(`\n${fail ? "✗" : "✓"} goals: ${pass} passed, ${fail} failed`);

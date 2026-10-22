@@ -62,16 +62,19 @@ function judgeChrome(tool, input = {}, { session = "", home = homedir(), now = D
   const go = () => { if ((name === "computer" && MOVES.has(String(input.action || ""))) || (name === "computer" && enterIn(input))) { tabs[k] = { ...at, moved: now }; writeJson(TABS(home), tabs); } return null; };
   const sites = actSites(home);
   if (!covered(host, sites)) return { why: `acting on ${host} in the user's own Chrome is off (reading is fine): the user switches it on for a site in Settings → Connections. Ask them in .symbiot/QUESTIONS.md if this site needs it, or do it through Symbiot's own browser (symbiot screens)`, setting: true };
-  const summary = String(input.action_summary || "").trim();
+  // a retry after the user's Go names the hold it was given for ("[go:1a2b3c4d] …"), so it goes through
+  // even when its wording moved a little; the tag isn't part of what the action says it does
+  const tagged = (String(input.action_summary || "").match(/\[go:([0-9a-f]{6,})\]/i) || [])[1] || "", summary = String(input.action_summary || "").replace(/\s*\[go:[0-9a-f]+\]\s*/gi, " ").trim();
   if (!summary) return { why: "say what this action does (action_summary) on every click, key, type and fill in the user's own Chrome: the membrane holds sends, payments and deletes for the user's Go" };
   const kind = name === "computer" && enterIn(input) ? "send" : heldFor(summary, host); if (!kind) return go();
   // held: let it through once if the user said Go to this very action; else hold it and say how to ask
-  const holds = readJson(HOLDS(home), []), mine = holds.find((h) => h.host === host && key(h.summary) === key(summary) && h.go && !h.used && now - h.go < GO_FOR);
+  const holds = readJson(HOLDS(home), []), live = (h) => h.go && !h.used && now - h.go < GO_FOR;
+  const mine = (tagged && holds.find((h) => h.id === tagged && h.host === host && live(h))) || holds.find((h) => h.host === host && key(h.summary) === key(summary) && live(h));
   if (mine) { mine.used = now; writeJson(HOLDS(home), holds); return go(); }
   let h = holds.find((x) => x.host === host && key(x.summary) === key(summary) && !x.go && now - x.at < 86400000);
   if (!h) { h = { id: randomBytes(4).toString("hex"), host, summary: summary.slice(0, 200), kind, at: now, session }; holds.push(h); writeJson(HOLDS(home), holds.slice(-200)); }
   const word = { send: "sends", pay: "pays", delete: "deletes" }[kind];
-  return { why: `this ${word} as the user, on ${host} ("${h.summary}"), so it waits for their Go. Ask in .symbiot/QUESTIONS.md: a ### heading saying plainly what it ${word}, ending {#chrome-go-${h.id}}, and one option, "🤖 Agent: go ahead: ${h.summary}". Stop there; once they say Go, the same action goes through, once`, held: h.id };
+  return { why: `this ${word} as the user, on ${host} ("${h.summary}"), so it waits for their Go. Ask in .symbiot/QUESTIONS.md: a ### heading saying plainly what it ${word}, ending {#chrome-go-${h.id}}, and one option, "🤖 Agent: go ahead: ${h.summary}". Stop there; once they say Go, the same action goes through, once: when you retry it, start its action_summary with [go:${h.id}]`, held: h.id };
 }
 // After a Chrome tool ran (the hook's PostToolUse): its result ends with "Tab Context", each tab of the
 // run's group with its address now (`• tabId 7: "Title" ("https://…")`), or tabs_context_mcp's list as

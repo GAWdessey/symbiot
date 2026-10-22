@@ -7,7 +7,15 @@
 const MAIL_HOSTS = /^(mail\.google\.com|outlook\.(live|office|office365)\.com)$/;
 const POSTS = /\b(post|reply|comment|submit|publish|share|repost|tweet)\b/i;
 // A button that sends: r is a region { kind, label } (headless.mjs mapPage), host the page's.
-const isSend = (r, host = "") => /^(button|menu item)$/.test(r.kind || "button") && (/\bsend\b/i.test(r.label || "") || (!MAIL_HOSTS.test(host) && POSTS.test(r.label || "")));
+// A label that opens, edits or saves something only names a post, it doesn't post it: "Edit post",
+// "View post", "Save draft". On 22 Oct 2026 "Chooses Edit post for the 29 Oct post" was held as a
+// send. "Schedule" stays a send: a scheduled post goes out by itself.
+const NOT_SENDING = /^\s*(?:edit|open|view|see|show|preview|save|draft|copy|manage|change|reschedule|rename|select|expand|close|cancel editing|more|options)\b/i;
+const isSend = (r, host = "") => /^(button|menu item)$/.test(r.kind || "button") && !NOT_SENDING.test(r.label || "") && (/\bsend\b/i.test(r.label || "") || (!MAIL_HOSTS.test(host) && POSTS.test(r.label || "")));
+// A message typed to the user's own AI coach or agent in a test they asked for reaches no person:
+// "Sends the greeting to Lerato in the test call" was held (22 Oct 2026). Only when it says it's a
+// test with an AI (call, chat, session) and names no address, number, inbox or channel a person reads.
+const TEST_WITH_AI = /\b(?:test|demo|trial)\s+(?:call|chat|session|conversation|run)\b/i, REACHES_PEOPLE = /@|\+?\d[\d\s-]{6,}|\b(?:email|e-mail|sms|text message|whatsapp|inbox|dm|direct message|channel|group|customer|client|team|broker|everyone|all)\b/i;
 // What an action that says what it does (`summary`: "Sends the drafted reply to pat@example.com",
 // "Opens the Posts tab") needs the user's Go for: "send", "pay", "delete" or "". Its leading verb
 // says it ("Opens the payment settings" pays nothing); a summary of a word or three ("Send",
@@ -34,7 +42,7 @@ function heldFor(summary, host = "") {
   if (/^closes?$/i.test(verb) || /^cancels?$/i.test(verb)) return /\b(?:account|subscription|plan|order|booking)\b/i.test(s) ? "delete" : "";
   if (/^archives?$/i.test(verb)) return "";
   if (DELETE_VERBS.test(verb)) return "delete";
-  if (SEND_VERBS.test(verb)) return "send";
+  if (SEND_VERBS.test(verb)) return TEST_WITH_AI.test(s) && !REACHES_PEOPLE.test(s) ? "" : "send";
   if (/\band (?:sends?|posts?|submits?|publish(?:es)?)\b/i.test(s)) return "send";
   return "";
 }

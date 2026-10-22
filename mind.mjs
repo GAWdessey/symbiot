@@ -27,7 +27,7 @@ import { fileURLToPath } from "node:url";
 import { randomBytes } from "node:crypto";
 import { VERSION, CONFIG_DIR, clipWords, readState, writeJsonAtomic } from "./core.mjs";
 import { track } from "./jobs.mjs";
-import { openGoal } from "./goals.mjs";
+import { goalFor } from "./goals.mjs";
 import { write, textOf } from "./ai.mjs";
 import { handoffCmd, runHandoff, isUrgent, urgentStop, urgentFirst, urgentUndo } from "./agents.mjs";
 import { addTask, pushTasks } from "./tasks.mjs";
@@ -367,7 +367,8 @@ const BAD_FORM = "(the model didn't answer in the right form, so nothing was don
 // what this page is for; context: what the page shows; history: this chat's
 // own last turns. act: { agent(request) -> result, task(text, repo) -> result },
 // what "do" runs here. Gives { reply, did?, remembered }.
-async function converse({ where, role = "", context = "", history = "", question, act = {}, ask = (sys, p, o) => write(sys, p, { ...o, floor: "sonnet" }), map = null, now = Date.now(), images = [], nav = false, settle = false, tasks = [], control = false }) {
+const DEFAULT_ASK = (sys, p, o) => write(sys, p, { ...o, floor: "sonnet" });
+async function converse({ where, role = "", context = "", history = "", question, act = {}, ask = DEFAULT_ASK, map = null, now = Date.now(), images = [], nav = false, settle = false, tasks = [], control = false }) {
   // a secret they pasted goes to the vault before anything is stored or sent; the model sees a placeholder
   let kept = []; try { ({ text: question, saved: kept } = captureSecrets(question, { context: () => [history, ...(loadMind().log || []).slice(-6).map((l) => String((l && l.text) || ""))].join("\n") })); } catch {}
   kept = [...new Set([...kept, ...[...String(question).matchAll(/\[saved: ([^\]]+)\]/g)].map((m) => m[1])])]; // or saved already, by the page it came from (home.mjs homeAsk)
@@ -428,7 +429,8 @@ async function converse({ where, role = "", context = "", history = "", question
   }
   // what they asked for becomes a goal, owned until it's done and closed with a breakdown (goals.mjs):
   // the run or task it went to is its first part, and what follows in those folders joins it
-  if (did && !did.error) { try { const g = openGoal(question, { child: did.job ? "run:" + did.job : did.task || did.id ? "task:" + (did.task || did.id) : "", lane: did.lane || (did.kind === "agent" ? "ops" : ""), path: did.dir || (did.lane && lanes[did.lane]) || "", now }); if (g) did.goal = g.key; } catch {} }
+  // only a request for work opens one; a follow-up joins the goal it's about, a question or a reply opens none (goals.mjs goalFor)
+  if (did && !did.error) { try { const g = await goalFor(question, { child: did.job ? "run:" + did.job : did.task || did.id ? "task:" + (did.task || did.id) : "", lane: did.lane || (did.kind === "agent" ? "ops" : ""), path: did.dir || (did.lane && lanes[did.lane]) || "", now, write: ask === DEFAULT_ASK ? write : null }); if (g) did.goal = g.key; } catch {} }
   // what Home did to agents and tasks (control.mjs): said from what happened, the failures first and plainly
   let steered = [];
   if (control && act.control && Array.isArray(j.control) && j.control.length) {

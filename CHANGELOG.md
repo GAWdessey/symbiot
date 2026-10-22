@@ -2,6 +2,12 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one), for anyone who installs the app: what changed in it, never whose work it was (no projects, people, accounts, services, run ids or task wording of the person who made it). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.76.0 — 2026-10-22
+
+- **Only real requests become goals.** A question, a reply, a "yes" or a complaint no longer opens a goal of its own; an instruction about work already going joins the goal it's about. Rows opened earlier from such messages are closed as not goals, so the list shows what you actually asked for.
+- **Editing isn't sending.** Opening, editing or saving a post in your Chrome no longer waits for your Go; posting and scheduling still do. A test chat with your own AI coach isn't held either, unless it names an address or channel a person reads.
+- **Your Go releases what it was given for.** Only your own yes releases a held action (Symbiot never answers those for you), even when its card was already marked answered, and the retry is matched by the hold itself, not only its exact words.
+
 ## 0.75.0 — 2026-10-22
 
 - **Every run shows what it did.** Earlier runs of the same job listed as "0 steps, $0.00" because only the newest run's part of the log was read; each now shows its own steps, cost and words.

@@ -170,7 +170,7 @@ function runRecord(path, { jobs = loadJobs() } = {}) {
 }
 const recordOf = (id, { jobs = loadJobs() } = {}) => { const j = jobs.find((x) => x.key === "run:" + id); return j && j.outcome ? j : null; };
 // ---- goals (goals.mjs): rows "goal:<id>", kind "goal", in this same record ----------------
-const goalRows = ({ jobs = loadJobs() } = {}) => jobs.filter((j) => j.kind === "goal");
+const goalRows = ({ jobs = loadJobs() } = {}) => jobs.filter((j) => j.kind === "goal" && !j.notGoal); // a row closed as not a goal (goals.mjs tidyGoals) is history only
 function putGoal(g, { now = Date.now() } = {}) {
   try { const jobs = loadJobs(), i = jobs.findIndex((j) => j.key === g.key); if (i < 0) jobs.push(g); else jobs[i] = g; return saveJobs(jobs, now); } catch { return false; }
 }

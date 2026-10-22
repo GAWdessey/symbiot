@@ -1954,14 +1954,16 @@ function askReport(path, x) {
 // raw: every open question, judged or not (triageSweep). Otherwise only what's the user's
 // (triage.mjs): a question judged an agent's, Symbiot's, or already answered is answered here
 // instead (known, autoDecide), and a new one waits for its verdict before it can be a card.
+const GO_ID = /^(?:chrome|phone|push)-go-/;
 function agentQuestions(path, repo, { raw = false } = {}) {
   const p = parseQuestions(readSymbiot(path, "QUESTIONS.md"));
   const heads = [...allAnswers(path).matchAll(/^###\s+(.+)$/gm)].map((m) => m[1]), done = new Set(heads.map((h) => qKey(noId(h)))), doneIds = new Set(heads.map(qId).filter(Boolean));
   const unanswered = p.questions.filter((x) => !done.has(qKey(x.q)) && !(x.id && doneIds.has(x.id)));
   const triaged = (x) => { if (raw) return ""; const v = verdictOf(path, x.q); return v && v.verdict !== "user" ? triageAnswer(v) : ""; };
-  const known = unanswered.map((x) => ({ q: x.q, ...(x.id ? { id: x.id } : {}), a: whereAnswer(path, x) || repeatAnswer(path, x) || triaged(x) })).filter((x) => x.a);
+  // a Go on a held action (chrome-go-, phone-go-, push-go-) is only ever the user's: nothing answers it for them
+  const known = unanswered.map((x) => ({ q: x.q, ...(x.id ? { id: x.id } : {}), a: GO_ID.test(x.id || "") ? "" : whereAnswer(path, x) || repeatAnswer(path, x) || triaged(x) })).filter((x) => x.a);
   let judging = false; if (!raw) try { judging = !!resolveProvider(); } catch {}
-  const open = unanswered.filter((x) => !known.some((k) => k.q === x.q) && (raw || triageShows(path, x.q, { judging }))); // Symbiot answers those itself (autoDecide)
+  const open = unanswered.filter((x) => !known.some((k) => k.q === x.q) && (raw || GO_ID.test(x.id || "") || triageShows(path, x.q, { judging }))); // Symbiot answers those itself (autoDecide)
   const tasks = p.suggestions.length ? loadTasks() : [], skipped = p.suggestions.length ? skippedIdeas(path) : [];
   const ideas = p.suggestions.map(suggestionTarget).filter(({ text }) => !skipped.some((s) => sameTask(s, text)))
     .map(({ repo: to, text }) => ({ text, repo: to || repo, other: !!to && to !== repo, added: tasks.some((t) => t.repo === (to || repo) && sameTask(t.text, text)) })).filter((s) => !s.added);
@@ -2145,6 +2147,7 @@ function autoAllow(path) {
 const pureAction = (o) => /^[\s*_]*🤖/u.test(String(o || ""));
 const OUTWARD = /\b(approv\w*|publish\w*|releas\w*|push\w*|merg\w*|send\w*|sent|post\w*|repl\w*|e-?mail\w*|pay\w*|spend\w*|buy\w*|money|bill\w*|cost\w*|delet\w*|remov\w*|uninstall\w*|wip\w*|drop\w*|password\w*|2fa|token\w*|keys?|sign(?:ed|s)?[- ]?in|log(?:ged)?[- ]?in|accounts?|subscription|plan|tunnel\w*|prox\w*|ssh|vm|servers?|restart\w*|stop\w*|kill\w*|broker\w*|trad\w*|bank\w*|npm|deploy\w*|install\w*|phone|whatsapp|linkedin|github\.com|live|production|prod)\b|\byour (?:default|settings?|profile)\b/i;
 function autoPick(q) {
+  if (GO_ID.test(q.id || "")) return ""; // a Go on a held action is the user's
   const rec = (q.options || []).filter((o) => /\(recommended\b/i.test(o));
   if (rec.length !== 1 || yourStep(rec[0]) || !pureAction(rec[0])) return "";
   // a file name ("costs.json") is not the thing being decided: only the words around it count
@@ -2236,7 +2239,7 @@ async function triageSweep({ write = aiWrite, runs = loadRuns, rules = () => { t
     for (const path of [...new Set(runs().map((r) => r.path).filter(Boolean))]) {
       let qs = []; try { qs = agentQuestions(path, "", { raw: true }).questions; } catch { continue; }
       for (const q of qs) {
-        if (verdictOf(path, q.q)) continue;
+        if (verdictOf(path, q.q) || GO_ID.test(q.id || "")) continue; // a Go on a held action needs no judging: it's the user's
         const lane = Object.keys(map).find((k) => map[k] === path) || (path.includes("/drafts/act-") ? "ops" : basename(path));
         let known = ""; try { const M = await import("./mind.mjs"); known = M.recallText(M.recall(`${q.q} ${q.context || ""}`)); } catch {} // what Symbiot remembers: the user's email, number, accounts…
         let v = null; try { v = await triageJudge(q, { answers: readSymbiot(path, "ANSWERS.md"), rules: rules(), lane, known }, { write }); } catch {}
@@ -2319,6 +2322,10 @@ function answerQuestions(path, answers, opts = {}) {
   for (const x of strays) rows.splice(rows.indexOf(x), 1);
   if (strays.length && !rows.length) return { error: "That answer belongs to a different question, not the one it was sent under. Look at the question again and pick one of its own options." };
   // pressed twice, or answered on another screen first: it's in ANSWERS.md already, so nothing is added again
+  // the user's yes on a held action's Go releases it, even when that question was already answered (on
+  // another screen, or for them before this rule): on 22 Oct 2026 the LinkedIn hold's card said
+  // "answered already" and the hold stayed shut, so the action could never go through
+  for (const x of given) { const m = (String(x.q || "").match(/\{#((?:chrome|phone)-go-[0-9a-f]+)\}/) || [])[1] || ((parseQuestions(readSymbiot(path, "QUESTIONS.md")).questions.find((q) => qKey(q.q) === qKey(noId(x.q))) || {}).id || ""); const g = m.match(/^chrome-go-([0-9a-f]+)$/), p = m.match(/^phone-go-([0-9a-f]+)$/); if ((g || p) && x.a && !/^\W*(?:no|don'?t|do not|skip|stop|cancel|not now)\b/i.test(x.a)) { if (g) goAhead(g[1]); else phoneGo(p[1]); } }
   if (!rows.length && given.length) {
     const had = new Map([...allAnswers(path).matchAll(/^###\s+(.+)$/gm)].map((m) => [qKey(noId(m[1])), noId(m[1])]));
     if (given.every((x) => findQuestion(had, x.q))) return { ok: true, saved: 0, already: true, note: "That was answered already: its agent has it." };
