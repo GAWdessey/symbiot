@@ -57,6 +57,66 @@ function linkChild(id, key, { path = "", now = Date.now() } = {}) {
   if (path && !g.paths.includes(path)) g.paths.push(path);
   g.changed = now; putGoal(g, { now }); return g;
 }
+// ---- what is a goal --------------------------------------------------------------
+// Only a request for work with an outcome is one. On 22 Oct 2026, 26 "goals" were open, one per
+// message: "yes", "1", "proceeed", "do it yourself", "who makes these cards?", "give me a list of
+// whats open so i can be disappointed in you". The list said almost nothing was finished because
+// almost nothing in it was a goal. A question, an answer, a one-word reply, a complaint or a status
+// ask never opens one; an instruction about work already going joins its goal instead.
+const NOT_WORK = [
+  /^\W*(?:yes|yeah|yep|yup|no|nope|ok|okay|sure|thanks|thank you|cheers|proce+d|go ahead|go for it|do it|done|skip|stop|fine|great|cool|perfect|\d+)\W*$/i, // a bare reply
+  /\?\s*(?:\(the user attached[^)]*\))?\s*$/i, // a question
+  /^\s*(?:did|do (?:you|we|i|they)|does|is|are|was|were|why|what|whats|what's|how|when|where|who|which|have (?:you|we)|has|can i|should i)\b/i, // a question without its mark ("do it yourself" isn't one)
+  /\b(?:wtf|what the f|where are we|what'?s open|list of what|status of|patience|disappoint|annoy|frustrat|is (?:it|this) broken|it'?s broken)\b/i, // a complaint or a status ask
+];
+const FOLLOW_UP = /^\W*(?:\S+\s+){0,5}\S*\W*$/; // six words or fewer
+const REFERS = /\b(?:it|this|that|these|those|them|again|yourself|instead|too|now)\b/i;
+const plainlyNotWork = (w) => { const t = String(w || "").replace(/\(The user attached[^)]*\)/gi, "").trim(); return !t || NOT_WORK.some((r) => r.test(t)); };
+// "new" (opens a goal), "follow" (joins the goal it's about) or "none". With an AI (write), the
+// words are judged; without one, only the plain rules: anything they don't rule out is new, unless
+// it's a short line pointing at something already going ("do it yourself", "check it again").
+async function goalKind(words, { write } = {}) {
+  const t = String(words || "").trim();
+  if (plainlyNotWork(t)) return "none";
+  const short = FOLLOW_UP.test(t) && REFERS.test(t);
+  if (typeof write !== "function") return short ? "follow" : "new";
+  try {
+    const r = await write("You sort one message a person sent to their AI assistant. Answer JSON only: {\"kind\":\"new\"|\"follow\"|\"none\"}. new: a fresh request for work with an outcome (build, fix, send, find out and report, set up). follow: an instruction or new information about work already going (\"do it yourself\", \"email from domains just landed\", \"he already sent the prompts, use them\"). none: a question, an answer to a question, a reply, a complaint, a thank-you, or asking for status.", `The message:\n${t.slice(0, 1500)}`, { fast: true, kind: "triage" });
+    const k = ((r && typeof r.text === "string" ? r.text : "").match(/"kind"\s*:\s*"(new|follow|none)"/) || [])[1];
+    if (k) return k;
+  } catch {}
+  return short ? "follow" : "new";
+}
+const WORDS = (s) => new Set(String(s || "").toLowerCase().replace(/[^a-z0-9 ]+/g, " ").split(" ").filter((w) => w.length > 3));
+// The open goal a follow-up is about: the one already in that folder, else the busiest one in its
+// lane that shares words with it, else the lane's newest. null when the lane has none open.
+function goalToJoin(words, { lane = "", path = "", jobs = loadJobs(), now = Date.now() } = {}) {
+  const open = goalRows({ jobs }).filter((g) => !ENDED.has(g.state) && !g.dropped && now - (g.changed || g.at || 0) < 3 * DAY);
+  if (path) { const here = open.filter((g) => (g.paths || []).includes(path)).sort((a, b) => (b.changed || 0) - (a.changed || 0))[0]; if (here) return here; }
+  if (!lane) return null;
+  const mine = open.filter((g) => g.lane === lane); if (!mine.length) return null;
+  const w = WORDS(words), score = (g) => [...WORDS(g.asked || g.text)].filter((x) => w.has(x)).length;
+  return mine.sort((a, b) => score(b) - score(a) || (b.changed || 0) - (a.changed || 0))[0];
+}
+// Where the user's words go: a new goal, the goal they follow up, or none at all.
+async function goalFor(words, { child = "", lane = "", path = "", now = Date.now(), write } = {}) {
+  const kind = await goalKind(words, { write });
+  if (kind === "none") return null;
+  if (kind === "new") return openGoal(words, { child, lane, path, now }); // new work in a lane with a goal open is a goal of its own
+  const join = goalToJoin(words, { lane, path, now });
+  return join ? (child ? linkChild(join.key, child, { path, now }) : join) : null;
+}
+// The rows opened before this rule from a question, a reply or a remark: closed as not a goal, kept
+// in the record's history and off every surface (jobs.mjs goalRows). Once each.
+function tidyGoals({ jobs = loadJobs(), now = Date.now() } = {}) {
+  let n = 0;
+  for (const g of jobs.filter((j) => j.kind === "goal" && !j.notGoal && !j.sorted)) {
+    if (plainlyNotWork(g.asked || g.text)) { putGoal({ ...g, notGoal: true, sorted: true, state: "done", waitingOn: "", note: "not a goal: a question, a reply or a remark", history: [...(g.history || []), { state: g.state, at: g.changed }].slice(-8), changed: now }, { now }); n++; }
+    else putGoal({ ...g, sorted: true }, { now });
+  }
+  return n;
+}
+
 // One line of what "done" means for it, from the user's words; the words themselves without an AI.
 async function doneWhenFor(g, { write } = {}) {
   let line = "";
@@ -174,6 +234,7 @@ function close(g, kind, v, ctx, deps, now) {
 async function goalsTick(deps = {}, { now = Date.now() } = {}) {
   const ctx = { tasks: deps.tasks || loadTasks(), ledger: deps.ledger || { handoffs: [] }, waits: deps.waits || [], jobs: deps.jobs || loadJobs(), map: deps.map || {}, running: deps.running || (() => false) };
   const did = [];
+  if (!deps.jobs) { try { tidyGoals({ now }); ctx.jobs = loadJobs(); } catch {} }
   for (const g0 of goalRows({ jobs: ctx.jobs })) {
     if (ENDED.has(g0.state) || g0.dropped) continue;
     const g = { ...g0, children: [...(g0.children || [])], paths: [...(g0.paths || [])] };
@@ -275,4 +336,4 @@ function goalAnswer(path, answers = [], deps = {}, { now = Date.now() } = {}) {
   return { ok: true, saved: 1, said };
 }
 
-export { openGoal, linkChild, goalById, goalOf, doneWhenFor, childState, adopt, rollUp, judgeDone, writeBreakdown, goalsTick, goalCards, goalAnswer, folderOf, STALL_AFTER, NUDGE_AFTER, SURFACE_AFTER, WAIT_OLD };
+export { goalKind, goalFor, goalToJoin, tidyGoals, plainlyNotWork, openGoal, linkChild, goalById, goalOf, doneWhenFor, childState, adopt, rollUp, judgeDone, writeBreakdown, goalsTick, goalCards, goalAnswer, folderOf, STALL_AFTER, NUDGE_AFTER, SURFACE_AFTER, WAIT_OLD };

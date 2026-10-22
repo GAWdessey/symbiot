@@ -113,6 +113,22 @@ try {
     G.setActAll(false, { load: loadConfig, save: saveConfig });
     ok("switched off again, what was on per site stays", !G.actSites(HOME).includes("*"));
   }
+  console.log("CHROMEGATE — what isn't a send isn't held; a Go is matched by its hold's id");
+  {
+    ok("opening, editing or saving a post isn't posting; Post and Schedule still are", !heldFor("Chooses Edit post for the 29 Oct post", "linkedin.com") && !heldFor("Edit post", "linkedin.com") && !heldFor("Save draft", "linkedin.com") && heldFor("Clicks Post", "linkedin.com") === "send" && heldFor("Clicks the Schedule post button", "linkedin.com") === "send");
+    ok("a greeting to the user's own AI coach in a test call isn't a message to a person; one that names a channel or address is", !heldFor("Sends the greeting to the coach in the test call", "example.org") && heldFor("Sends the greeting to the client in the test call by email", "example.org") === "send" && heldFor("Sends the message to the team channel", "example.org") === "send");
+    G.setActAll(true, { load: loadConfig, save: saveConfig });
+    G.seen(C + "navigate", `Navigated\n\nTab Context:\n- Available tabs:\n  • tabId 902: "Composer" ("https://www.example.org/post")`, o);
+    const held = judge(C + "computer", { action: "left_click", coordinate: [1, 1], tabId: 902, action_summary: "Publishes the post to the page" }, o);
+    ok("held, and the refusal says to name the hold on the retry", held && held.held && new RegExp(`\\[go:${held.held}\\]`).test(held.why), held);
+    G.goAhead(held.held);
+    G.seen(C + "navigate", `Navigated\n\nTab Context:\n- Available tabs:\n  • tabId 902: "Composer" ("https://www.example.org/post")`, o);
+    const retried = judge(C + "computer", { action: "left_click", coordinate: [1, 1], tabId: 902, action_summary: `[go:${held.held}] Publishes the post to the page now` }, o);
+    ok("…after the Go, the retry naming it goes through though its words moved, once", retried === null, retried);
+    G.seen(C + "navigate", `Navigated\n\nTab Context:\n- Available tabs:\n  • tabId 902: "Composer" ("https://www.example.org/post")`, o);
+    ok("…and not twice", !!judge(C + "computer", { action: "left_click", coordinate: [1, 1], tabId: 902, action_summary: `[go:${held.held}] Publishes the post to the page now` }, o));
+    G.setActAll(false, { load: loadConfig, save: saveConfig });
+  }
   console.log("CHROMEGATE — a run closes the tabs it opened before it ends");
   {
     const t = { session: "tabs1", home: HOME }, ctx = (ids) => ids.map((id) => `  • tabId ${id}: "Feed | LinkedIn" ("https://www.linkedin.com/feed/")`).join("\n");

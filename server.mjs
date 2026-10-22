@@ -36,7 +36,7 @@ import { markNews, newsSince, watchState, addWatch, setEvery, removeWatch, clear
 import { setLinkAct, setLinksActAll, linksState, linkSite, checkLink, unlinkSite, addSite, signInAsked, sitesCheck } from "./links.mjs";
 import { testWeeks, testInstalls, postsState, draftPosts, approvePost, editPost, skipPost, voiceFromLinkedIn, addMedia, removeMedia, mediaFile, mediaDir, pictureOfPage, clipOfPage, openUrl } from "./post.mjs";
 import { mindState, forget, actNow } from "./mind.mjs";
-import { goalsTick, goalAnswer, openGoal } from "./goals.mjs";
+import { goalsTick, goalAnswer, goalFor } from "./goals.mjs";
 import { onUser } from "./jobs.mjs";
 import { lanesTick, shipHanded, lanesState, partlyDone, handingOf, loadLedger, orcaRelink, shareAnswer, projectOf } from "./lanes.mjs";
 import { archivedTasks } from "./sweep.mjs";
@@ -492,7 +492,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       if (u.pathname === "/api/suggest" && req.method === "POST") { const b = await readBody(req); const p = String(b.path || ""); const isRepo = p && existsSync(join(p, ".git")); return json(res, await (isRepo ? repoSuggest(p) : folderSuggest(p))); }
       if (u.pathname === "/api/review" && req.method === "POST") { const b = await readBody(req); return json(res, await repoReview(String(b.path || ""))); }
       if (u.pathname === "/api/tasks" && req.method !== "POST") { const arch = u.searchParams.get("archived") === "1"; return json(res, [...loadTasks().filter((x) => !!x.archived === arch), ...(arch ? archivedTasks() : [])].map((t) => ({ ...t, type: taskType(t.text) }))); } // the Archive: tasks.json's archived, then what the sweep moved out (sweep.mjs)
-      if (u.pathname === "/api/tasks/add" && req.method === "POST") { const b = await readBody(req), t = addTask(b.text, b.repo); if (t && t.id && !t.error) { try { openGoal(b.text, { child: "task:" + t.id, lane: b.repo || "", path: (laneMap() || {})[b.repo] || "" }); } catch {} } return json(res, t); } // a task the user adds is a goal, followed to its end (goals.mjs)
+      if (u.pathname === "/api/tasks/add" && req.method === "POST") { const b = await readBody(req), t = addTask(b.text, b.repo); if (t && t.id && !t.error) { try { await goalFor(b.text, { child: "task:" + t.id, lane: b.repo || "", path: (laneMap() || {})[b.repo] || "" }); } catch {} } return json(res, t); } // a task the user adds is a goal (or part of the one it follows up), followed to its end (goals.mjs goalFor)
       if (u.pathname === "/api/tasks/toggle" && req.method === "POST") { const b = await readBody(req); return json(res, toggleTask(String(b.id || ""))); }
       if (u.pathname === "/api/tasks/model" && req.method === "POST") { const b = await readBody(req); return json(res, setTaskModel(String(b.id || ""), b.model)); }
       if (u.pathname === "/api/tasks/remove" && req.method === "POST") { const b = await readBody(req); return json(res, removeTask(String(b.id || ""))); }
