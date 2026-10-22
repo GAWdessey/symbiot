@@ -222,6 +222,11 @@ try {
     ok("the older run gets its own part only", /FIRST RUN/.test(a.runSection(log, t1 + 4, false)) && !/SECOND RUN/.test(a.runSection(log, t1 + 4, false)));
     ok("the newest gets its own", /SECOND RUN/.test(a.runSection(log, t2 + 4)) && !/FIRST RUN/.test(a.runSection(log, t2 + 4)));
     ok("an older run whose part is gone shows nothing, the newest falls back to the whole log", a.runSection(log, t1 - 3600000, false) === "" && a.runSection(log, t1 - 3600000) === log); }
+  // …read from the file as the listing reads it: readRunLog keeps the newest run's part only, so
+  // older runs listed as "0 steps, $0.00" (22 Oct 2026); wholeLog has every run's
+  { const t1 = Date.parse("2026-10-22T09:03:13.000Z"), t2 = Date.parse("2026-10-22T09:05:11.000Z"), f = join(C, "two-runs.log");
+    writeFileSync(f, `=== ops ${new Date(t1).toISOString()} ===\n$ claude\nFIRST RUN\n\n=== ops ${new Date(t2).toISOString()} ===\n$ claude\nSECOND RUN\n`);
+    ok("an older run's part is read from the whole file, not the newest run's", /FIRST RUN/.test(a.runSection(a.wholeLog(f), t1 + 4, false)) && !/SECOND RUN/.test(a.runSection(a.wholeLog(f), t1 + 4, false))); }
 } finally {
   rmSync(HOME, { recursive: true, force: true });
 }
