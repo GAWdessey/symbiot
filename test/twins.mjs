@@ -25,6 +25,10 @@ try {
   const st = G.childState("wait:w1", { waits: [{ id: "w1", status: "waiting", to: "a@example.com", subject: "the move", sent: week, at: Date.now() }], tasks: [], jobs: [], ledger: { handoffs: [] }, running: () => false, map: {} });
   ok("a goal waiting on that reply waits since the send, not since Symbiot noted it", st && st.state === "waiting" && st.at === week, st);
 
+  const I = await import("../intuition.mjs");
+  const dg = I.digest({ jobs: [], waits: [{ id: "w2", status: "waiting", to: "b@example.com", subject: "the move", sent: week, at: Date.now() }], rules: [], chat: [] });
+  ok("…and the intuition digest says it's waited 7 days, not 0 min", /waiting since 7 days ago/.test(dg.text) && !/waiting since 0 min ago/.test(dg.text), dg.text.slice(0, 400));
+
   console.log("TWIN RUNS — one live ops run per piece of work");
   const ops = (n) => join(CFG, "drafts", n), a = ops("act-aaaa1111"), b = ops("act-bbbb2222"), c = ops("act-cccc3333"), lane = join(HOME, "work", "atlas");
   const goals = () => [{ key: "goal:g1", state: "waiting", paths: [a, b, lane] }, { key: "goal:g2", state: "done", paths: [c, a] }];

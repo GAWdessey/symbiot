@@ -30,6 +30,7 @@ import { join } from "node:path";
 import { createHash, randomBytes } from "node:crypto";
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { CONFIG_DIR, readState, writeJsonAtomic, sameTask } from "./core.mjs";
+import { sentAt } from "./handback.mjs";
 
 const FILE = () => join(CONFIG_DIR, "intuition.json"), FOCUS = () => join(CONFIG_DIR, "focus.md");
 const DIGEST_DIR = () => join(CONFIG_DIR, "drafts", "act-intuition", ".symbiot"); // a run folder Reports reads
@@ -102,7 +103,7 @@ function digest(deps = {}, now = Date.now()) {
   for (const [lane, n] of Object.entries(failed)) if (n >= 3) L.push(`Pattern: ${n} runs failed in ${lane} in the last day.`);
   const merged = jobs.filter((j) => j.state === "merged");
   L.push("Merged but not live:", ...(merged.length ? merged.slice(0, 8).map((j) => `- ${clip(j.text, 100)}${j.lane ? ` (${j.lane})` : ""}, merged ${ago(j.changed || now, now)}`) : ["- none"]));
-  L.push("Email waits:", ...(waits.length ? waits.slice(0, 10).map((w) => `- to ${w.to}: "${clip(w.subject, 80)}" ${w.status === "waiting" ? `waiting since ${ago(Date.parse(w.sent || "") || now, now)}` : w.status}${w.reply ? `; reply: ${clip(typeof w.reply === "string" ? w.reply : w.reply.subject || "", 80)}` : ""}`) : ["- none"]));
+  L.push("Email waits:", ...(waits.length ? waits.slice(0, 10).map((w) => `- to ${w.to}: "${clip(w.subject, 80)}" ${w.status === "waiting" ? `waiting since ${ago(sentAt(w) || now, now)}` : w.status}${w.reply ? `; reply: ${clip(typeof w.reply === "string" ? w.reply : w.reply.subject || "", 80)}` : ""}`) : ["- none"]));
   L.push("The user's standing rules:", ...(rules.length ? rules.slice(0, 15).map((r) => `- ${clip(r, 200)}`) : ["- none"]));
   L.push("What they asked in chat lately (newest last):", ...(chat.length ? chat.slice(-8).map((c) => `- ${ago(c.ts || now, now)}: ${clip(c.text, 160)}`) : ["- nothing lately"]));
   const body = L.join("\n"), d = new Date(now);
