@@ -948,6 +948,17 @@ async function cardTalk(path, answers, { ask, deps = {}, extra = "", force = fal
   const talk = addTalk(path, q.q, { from: "agent", text: reply });
   return { ok: true, talk, reply, ...(res.did ? { did: res.did } : {}), lane: lane || "ops" };
 }
+// Ask about an update (needs.mjs Updates, intuition's notes): the same mind as Home's chat, the update's
+// moves in front of it, and it can act on what's asked ("do the second one", "why did you think that?").
+async function updateAsk(id, text, { context = "", ask } = {}) {
+  text = String(text || "").trim().slice(0, 2000); if (!text) return { error: "empty" };
+  if (!ask && !resolveProvider()) return phoneNoAi() || { error: "not-connected" };
+  let map = {}; try { map = laneMap(); } catch {}
+  const role = "They're asking about an update on their Updates list: things Symbiot noticed or did, or would have done, on its own. Answer about it plainly; if they ask for one of its moves (or anything) to be done, do it.";
+  const res = await converse({ where: `Updates: ${id}`, role, context: `The update's moves:\n${context || "(none kept)"}`, question: text, map, ...(ask ? { ask } : {}),
+    act: { agent: (req, known, repo, said) => (repo ? actIn(req, repo, { map, known, title: "Updates", said }) : actNow(req, { title: "Updates", known })), task: (t, repo) => taskIn(t, repo, { map }) } });
+  return { answer: res.reply, ...(res.did ? { did: res.did } : {}) };
+}
 // Ask about the report in place: the same mind as Home's chat, the report in front of it.
 async function reportAsk(id, question, { ask, deps = {} } = {}) {
   question = String(question || "").trim().slice(0, 2000); if (!question) return { error: "empty" };
@@ -1391,4 +1402,4 @@ function setOnboarding({ step, skip, unskip, skipRest, done, restart } = {}) {
   return onboarding();
 }
 
-export { cardTalk, homeTick, HOME_LOOKED, WORK_KEEP, FIRST_RUN, troubles, agentDigest, garthLedger, plainAsk, dismissCard, cardKey, loadDismissed, DISMISSED_FILE, reportIdeasAdd, reportAsk, reportDraftAnswer, workTick, waitWhy, AUTO_GRACE, STUCK_AFTER, marketingState, marketingGo, marketingDraftAnswer, marketingTask, moveToMarketing, goLane, homeState, homeContext, homeAsk, homeAnswer, homeNext, nextUp, laneNamed, NEXT_FILE, workScene, forgetWork, workGo, displayName, firstSteps, onboarding, setOnboarding, startOnboarding, ONB_STEPS, ONB_STEPS_PHONE, onbSteps, phoneBits, phoneSetupFirst, finishedState, handedState, noteHanded, phoneChat, isPeak, reportIdeasDismiss, settleAsks, settleFromChat };
+export { updateAsk, cardTalk, homeTick, HOME_LOOKED, WORK_KEEP, FIRST_RUN, troubles, agentDigest, garthLedger, plainAsk, dismissCard, cardKey, loadDismissed, DISMISSED_FILE, reportIdeasAdd, reportAsk, reportDraftAnswer, workTick, waitWhy, AUTO_GRACE, STUCK_AFTER, marketingState, marketingGo, marketingDraftAnswer, marketingTask, moveToMarketing, goLane, homeState, homeContext, homeAsk, homeAnswer, homeNext, nextUp, laneNamed, NEXT_FILE, workScene, forgetWork, workGo, displayName, firstSteps, onboarding, setOnboarding, startOnboarding, ONB_STEPS, ONB_STEPS_PHONE, onbSteps, phoneBits, phoneSetupFirst, finishedState, handedState, noteHanded, phoneChat, isPeak, reportIdeasDismiss, settleAsks, settleFromChat };

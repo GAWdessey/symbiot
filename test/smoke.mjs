@@ -275,6 +275,9 @@ const calls = [
   ["/api/intuition", "POST"],       // no mode -> "Pick off, watch or act.", nothing changed
   ["/api/intuition/focus", "POST"], // no text -> "Nothing to save."
   ["/api/intuition/accept", "POST"],// no id -> "That suggestion isn't there any more."
+  ["/api/intuition/do", "POST"],     // no id -> "That move isn't there any more.", nothing started
+  ["/api/intuition/not", "POST"],    // no id -> "That move isn't there any more."
+  ["/api/updates/ask", "POST"],      // no text -> "empty", no AI call
   ["/api/intuition/revoke", "POST"],// no kind -> "Nothing to revoke there."
   ["/api/overrides/apply", "POST"], // no id -> "That proposal isn't waiting any more."
   ["/api/overrides/dismiss", "POST"],// no id -> "That proposal isn't there any more."

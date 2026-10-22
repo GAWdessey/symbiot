@@ -290,10 +290,19 @@ body.lq-light .lqblob .btm b{color:#141A22}
 body.lq-light .lqblob .bwhy{color:#5A6470}
 #lqupd{position:relative;margin-left:10px}
 #lqupd .lqupb{border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.06);color:#ECE9E4;border-radius:999px;padding:5px 12px;font:500 12.5px var(--sans);cursor:pointer;min-height:30px}
-#lqupd .lqupl{display:none;position:absolute;left:0;top:calc(100% + 6px);z-index:60;width:min(380px,calc(100vw - 32px));max-height:60vh;overflow-y:auto;background:#15191F;border:1px solid rgba(255,255,255,.12);border-radius:12px;padding:6px;box-shadow:0 12px 40px rgba(0,0,0,.45)}
+#lqupd .lqupl{display:none;position:absolute;left:0;top:calc(100% + 6px);z-index:60;width:min(460px,calc(100vw - 32px));max-height:60vh;overflow-y:auto;background:#15191F;border:1px solid rgba(255,255,255,.12);border-radius:12px;padding:6px;box-shadow:0 12px 40px rgba(0,0,0,.45)}
 #lqupd.open .lqupl{display:block}
-@media (max-width:640px){#lqupd{position:fixed;top:54px;right:16px;margin:0;z-index:61}#lqupd .lqupb{padding:4px 10px;font-size:12px;min-height:28px}#lqupd .lqupl{position:fixed;left:16px;right:16px;top:90px;width:auto}}
+@media (max-width:640px){#lqupd{position:fixed;top:54px;left:16px;right:auto;margin:0;z-index:61}#lqupd .lqupb{padding:4px 10px;font-size:12px;min-height:28px}#lqupd .lqupl{position:fixed;left:16px;right:16px;top:90px;width:auto}}
 #lqupd .lqupi{display:flex;align-items:center;gap:8px;padding:8px;border-radius:8px;font-size:12.5px;line-height:1.35;color:#C9CDD3}
+#lqupd .lqupm{flex-direction:column;align-items:stretch;gap:6px}#lqupd .lqupmh{display:flex;align-items:center;justify-content:space-between}
+#lqupd .lqmv{display:flex;flex-direction:column;gap:4px;padding:6px 0}#lqupd .lqmv+.lqmv{border-top:1px dashed rgba(255,255,255,.07)}
+#lqupd .lqmt{font-size:12.5px;line-height:1.4;overflow-wrap:anywhere}#lqupd .lqmrow{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+#lqupd .lqmrow button{font-size:11.5px;padding:3px 10px;border-radius:999px;border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.06);color:inherit;cursor:pointer}
+#lqupd .lqmrow .lqdo{background:#ECE9E4;color:#151A21;border-color:transparent;font-weight:600}
+#lqupd .lqms{font-size:11px;opacity:.65}
+#lqupd .lqask{display:flex;gap:6px}#lqupd .lqask input{flex:1;min-width:0;width:auto;padding:6px 10px;font-size:12px;border-radius:10px;min-height:0}#lqupd .lqask button{font-size:12px;padding:5px 12px;border-radius:10px;width:auto}
+#lqupd .lqans{font-size:12px;line-height:1.4;white-space:pre-wrap;opacity:.9}#lqupd .lqans.err{color:#E88}
+body.lq-light #lqupd .lqmrow button{border-color:rgba(20,30,45,.14);background:rgba(20,30,45,.04)}body.lq-light #lqupd .lqmrow .lqdo{background:#151A21;color:#FFFFFF}body.lq-light #lqupd .lqmv+.lqmv{border-top-color:rgba(20,30,45,.08)}
 #lqupd .lqupi+.lqupi{border-top:1px solid rgba(255,255,255,.06)}
 #lqupd .lqupt{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2}
 #lqupd .lqupt b{color:#ECE9E4;font-weight:600}
@@ -3407,11 +3416,22 @@ function lqLoadWork(){api('/api/work').then(function(w){LQ.workData=w||{};lqRedr
 // New data, drawn: unless you're selecting text on the surface, then once you let go
 // Updates: what Symbiot tells you (a goal done, a report written), kept off Needs you (needs.mjs), in
 // the header: a count, and the list on a tap. Each can be read or put away.
+// An update from intuition: each of its moves on a line with what you can do about it (Do it: carried out
+// now, every gate still applies; Not useful: fewer like it; Open: its project), and an Ask box (22 Oct 2026:
+// the list was lines with only a put-away).
+function updMoves(u,i){return "<div class='lqupi lqupm' role='listitem' data-i='"+i+"'><div class='lqupmh'><b>"+esc(u.lane||'Symbiot')+"</b><button type='button' class='lqupx' aria-label='Put it away'>&times;</button></div>"+u.moves.map(function(m){return "<div class='lqmv' data-m='"+m.i+"'><span class='lqmt'>"+esc(m.line)+"</span><span class='lqmrow'>"+(m.state?"<small class='lqms'>"+esc(m.state)+"</small>":"")+(m.do?"<button type='button' class='lqdo'>"+esc(m.do)+"</button>":"")+(!m.state&&m.kind!=='focus'?"<button type='button' class='lqnot' title='Fewer like this'>Not useful</button>":"")+(m.lane?"<button type='button' class='lqop' title='Open "+escQ(m.lane)+"'>Open</button>":"")+"</span></div>";}).join('')+"<form class='lqask'><input placeholder='Ask about this, or tell it what to do' maxlength='2000'><button type='submit'>Ask</button></form><div class='lqans'></div>"+(u.report&&u.report.id?"<button type='button' class='lqupr'>Read</button>":"")+"</div>";}
+function wireUpdMoves(r,u){var ans=r.querySelector('.lqans'),say=function(t,bad){if(ans){ans.textContent=t||'';ans.classList.toggle('err',!!bad);}};
+r.querySelectorAll('.lqmv').forEach(function(mv){var i=+mv.getAttribute('data-m'),m=(u.moves||[]).filter(function(x){return x.i===i;})[0]||{};
+var d=mv.querySelector('.lqdo');if(d)d.addEventListener('click',function(){d.disabled=true;api('/api/intuition/do',{id:u.id,i:i}).then(function(x){if(!x||x.error){d.disabled=false;say((x&&x.error)||'It didn’t start.',true);return;}say(x.said||'Started.');d.outerHTML="<small class='lqms'>"+(m.do==='Prepare it'?'asked':'done')+"</small>";var n=mv.querySelector('.lqnot');if(n)n.remove();});});
+var n=mv.querySelector('.lqnot');if(n)n.addEventListener('click',function(){n.disabled=true;api('/api/intuition/not',{id:u.id,i:i}).then(function(x){say((x&&(x.said||x.error))||'');mv.style.opacity='.45';var b=mv.querySelector('.lqdo');if(b)b.remove();n.remove();});});
+var o=mv.querySelector('.lqop');if(o)o.addEventListener('click',function(){var el=$('lqupd');if(el)el.classList.remove('open');lqFocus({repo:m.lane==='ops'?'':m.lane});});});
+var f=r.querySelector('.lqask');if(f)f.addEventListener('submit',function(ev){ev.preventDefault();var q=f.querySelector('input'),t=String(q.value||'').trim();if(!t)return;var b=f.querySelector('button');b.disabled=true;say('Asking…');
+api('/api/updates/ask',{id:u.id,text:t}).then(function(x){b.disabled=false;if(!x||x.error){say(x&&x.error==='not-connected'?'Connect an AI in Settings to ask about it.':((x&&x.error)||'failed'),true);return;}q.value='';say(x.answer||'');}).catch(function(e){b.disabled=false;say(String((e&&e.message)||e),true);});});}
 function renderUpdates(){var el=$('lqupd');if(!el)return;var us=(LQ.home&&LQ.home.updates)||[];
 if(!us.length){el.innerHTML='';return;}var open=el.classList&&el.classList.contains('open');
-var html="<button type='button' class='lqupb' aria-expanded='"+(open?'true':'false')+"'>Updates &middot; "+us.length+"</button><div class='lqupl' role='list'>"+us.map(function(u,i){return "<div class='lqupi' role='listitem' data-i='"+i+"'><span class='lqupt' title='"+escQ(u.title)+"'>"+(u.lane?"<b>"+esc(u.lane)+"</b> ":"")+esc(u.title)+"</span>"+(u.report&&u.report.id?"<button type='button' class='lqupr'>Read</button>":"")+(u.accept?"<button type='button' class='lqupr lqupa'>"+esc(u.accept.label||'OK')+"</button>":"")+"<button type='button' class='lqupx' aria-label='Put it away'>&times;</button></div>";}).join('')+"</div>";
+var html="<button type='button' class='lqupb' aria-expanded='"+(open?'true':'false')+"'>Updates &middot; "+us.length+"</button><div class='lqupl' role='list'>"+us.map(function(u,i){if(u.moves&&u.moves.length)return updMoves(u,i);return "<div class='lqupi' role='listitem' data-i='"+i+"'><span class='lqupt' title='"+escQ(u.title)+"'>"+(u.lane?"<b>"+esc(u.lane)+"</b> ":"")+esc(u.title)+"</span>"+(u.report&&u.report.id?"<button type='button' class='lqupr'>Read</button>":"")+(u.accept?"<button type='button' class='lqupr lqupa'>"+esc(u.accept.label||'OK')+"</button>":"")+"<button type='button' class='lqupx' aria-label='Put it away'>&times;</button></div>";}).join('')+"</div>";
 if(sameHtml(el,html))return;el.querySelector('.lqupb').addEventListener('click',function(){el.classList.toggle('open');this.setAttribute('aria-expanded',el.classList.contains('open')?'true':'false');});
-el.querySelectorAll('.lqupi').forEach(function(r){var u=us[+r.getAttribute('data-i')];var rd=r.querySelector('.lqupr');if(rd)rd.addEventListener('click',function(){el.classList.remove('open');showReport(u.report.id);});
+el.querySelectorAll('.lqupi').forEach(function(r){var u=us[+r.getAttribute('data-i')];if(u.moves&&u.moves.length)wireUpdMoves(r,u);var rd=r.querySelector('.lqupr');if(rd)rd.addEventListener('click',function(){el.classList.remove('open');showReport(u.report.id);});
 var ac=r.querySelector('.lqupa');if(ac)ac.addEventListener('click',function(){r.style.opacity='.4';api(u.overrides?'/api/overrides/apply':'/api/intuition/accept',{id:u.accept.id}).then(function(d){if(u.overrides&&d&&d.error){r.style.opacity='';r.querySelector('.lqupt').textContent=d.error;return Promise.reject(0);}return api('/api/home/dismiss',{key:u.key});}).then(function(){LQ.home.updates=(LQ.home.updates||[]).filter(function(x){return x!==u;});renderUpdates();}).catch(function(){});});
 r.querySelector('.lqupx').addEventListener('click',function(){r.style.opacity='.4';(u.goal?api('/api/agents/answer',{path:u.path,answers:[{q:u.q,a:u.answer}]}):u.overrides&&u.accept?api('/api/overrides/dismiss',{id:u.accept.id}):Promise.resolve()).then(function(){return api('/api/home/dismiss',{key:u.key});}).then(function(){LQ.home.updates=(LQ.home.updates||[]).filter(function(x){return x!==u;});renderUpdates();});});});}
 function lqRedraw(){renderUpdates();whenFree($('liquid'),'liquid',function(){if(LQ.scene==='work')lqBuildWork();else lqBuild();});}
@@ -4045,9 +4065,9 @@ else if(to.indexOf('task:')===0){TFILTER.id=to.slice(5);TFILTER.repo='';TFILTER.
 else if(LQNAMES[to]){lqUse(to,null,'talk');lqGo(to);}
 else return;
 lqWhy(g&&g.to===to?g:null);}
-function lqAltsHtml(g){return g&&g.alts&&g.alts.length?"<span class='lqalts'>Or: "+g.alts.map(function(a){return "<button type='button' class='lqmb' data-go='"+escQ(a.to)+"'>"+esc(a.label||a.to)+"</button>";}).join('')+"</span>":'';}
+function lqAltsHtml(g){return g&&g.alts&&g.alts.length?"<span class='lqalts'>Or: "+g.alts.map(function(a){return "<button type='button' class='lqmrow' data-go='"+escQ(a.to)+"'>"+esc(a.label||a.to)+"</button>";}).join('')+"</span>":'';}
 function lqWhy(g){var el=$('lqwhy');if(!el)return;var on=!!(g&&(g.why||(g.alts&&g.alts.length)));if(el.classList)el.classList.toggle('on',on);
-el.innerHTML=on?(g.why?"<span>"+esc(g.why)+"</span>":'')+(g.alts&&g.alts.length?"<span>Or:</span>"+g.alts.map(function(a){return "<button type='button' class='lqmb' data-go='"+escQ(a.to)+"'>"+esc(a.label||a.to)+"</button>";}).join(''):''):'';
+el.innerHTML=on?(g.why?"<span>"+esc(g.why)+"</span>":'')+(g.alts&&g.alts.length?"<span>Or:</span>"+g.alts.map(function(a){return "<button type='button' class='lqmrow' data-go='"+escQ(a.to)+"'>"+esc(a.label||a.to)+"</button>";}).join(''):''):'';
 if(on)el.querySelectorAll('[data-go]').forEach(function(b){b.addEventListener('click',function(){lqNav(b.getAttribute('data-go'));});});}
 function lqSay(){var spoke=VOICE.spoke;VOICE.spoke=false;var i=$('lqask');var q=((i&&i.value)||'').trim(),shots=LQ.atts.slice();if(!q&&!shots.length)return;if(!q)q='Take a look at this screenshot.';i.value='';lqGrowAsk();LQ.atts=[];lqAttsShow();lqAct();
 var low=q.toLowerCase().replace(/^(please |can you |could you )/,''),hit=lqNavHit(q);

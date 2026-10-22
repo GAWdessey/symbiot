@@ -132,6 +132,20 @@ try {
   console.log("INTUITION — the timer's rhythm");
   reset(); I.nudge();
   ok("a nudge (a run ended, a reply came) is kept for the next tick", JSON.parse(readFileSync(join(CFG, "intuition.json"), "utf8")).nudged > 0);
+
+  console.log("INTUITION — updates carry their moves, and each can be done or marked not useful");
+  { const I2 = await import("../intuition.mjs"), F = join(CFG, "intuition.json");
+    const st = JSON.parse(readFileSync(F, "utf8")); st.passes.push({ id: "pu1", at: Date.now(), mode: "watch", title: "t", moves: [
+      { kind: "act", what: "Pick up the stalled recheck", why: "4 hours idle", lane: "atlas", tier: 1, action: "internal", does: "start", would: true },
+      { kind: "notice", what: "A ticket has had no reply", lane: "", tier: 0, does: "notice" }] }); writeFileSync(F, JSON.stringify(st));
+    const u = I2.intuitionUpdates().find((x) => x.id === "intu:pu1");
+    ok("an update lists its moves: the would-have one can be done, a notice can't", u && u.moves.length === 2 && u.moves[0].do === "Do it" && !u.moves[1].do, u && u.moves);
+    const asked = [];
+    const r = I2.doMove("pu1", 0, { map: { atlas: "/w/atlas" }, actIn: (req, lane) => (asked.push([lane, req]), { job: "j1" }), autoStart: () => true });
+    ok("Do it carries it out now, in its lane, saying it's Symbiot's own", r.ok && asked.length === 1 && asked[0][0] === "atlas" && /Pick up the stalled recheck/.test(asked[0][1]), [r, asked]);
+    ok("…and it shows as done, and isn't done twice", I2.intuitionUpdates().find((x) => x.id === "intu:pu1").moves[0].state === "done" && /already under way/.test(I2.doMove("pu1", 0, {}).said));
+    ok("Not useful marks it and counts that kind down", I2.markMove("pu1", 1).ok && I2.intuitionUpdates().find((x) => x.id === "intu:pu1").moves[1].state === "not useful" && JSON.parse(readFileSync(F, "utf8")).weights["notice|"] < 0);
+    ok("the Ask box gets the moves as context", /Pick up the stalled recheck/.test(I2.moveContext("pu1")) && /\[done\]/.test(I2.moveContext("pu1"))); }
 } catch (e) { ok("ran", false, String((e && e.stack) || e)); }
 finally { rmSync(HOME, { recursive: true, force: true }); }
 console.log(`\n${fail ? "✗" : "✓"} intuition: ${pass} passed, ${fail} failed`);

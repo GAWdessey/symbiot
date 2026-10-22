@@ -2,11 +2,15 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one), for anyone who installs the app: what changed in it, never whose work it was (no projects, people, accounts, services, run ids or task wording of the person who made it). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
-## 0.79.2 — 2026-10-22
+## 0.80.1 — 2026-10-22
 
 - **Approve works on a project an agent left mid-merge.** When an agent had merged the main branch in and left it uncommitted, every Approve failed at its commit. Approve now finishes that merge first and then ships the work as usual; a merge that still has clashes goes back to the agent to finish, said in one plain line.
 - **What you type on a card is your answer, saved against its question.** On a step that's yours ("Did you allow the microphone?"), your own words count as done only when they say so ("i did", "allowed it"). Anything else ("nothing loads there", "start it so I can press it") goes to its agent as your answer, not as "done", and the card settles instead of coming back.
 - **The answer box empties when you send.** Words sent from "or answer in your own words" no longer come back into the box on the next refresh, whether they answered the card or were a question to its agent.
+
+## 0.80.0 — 2026-10-22
+
+- **Updates you can act on.** Each thing Symbiot noticed or would have done on its own has its own line: **Do it** (it starts now, and anything outward still asks you first), **Not useful** (fewer like it from now on) and **Open** (its project). An Ask box under each update answers questions about it, or does what you tell it.
 
 ## 0.79.1 — 2026-10-22
 
