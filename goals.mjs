@@ -31,6 +31,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { CONFIG_DIR, loadTasks, clipWords, readState, writeJsonAtomic } from "./core.mjs";
 import { goalRows, putGoal, loadJobs, ENDED } from "./jobs.mjs";
+import { sentAt } from "./handback.mjs";
 
 const DAY = 86400e3, H = 3600e3;
 const GOALS_DIR = join(CONFIG_DIR, "drafts"); // a goal's breakdown is a report in a folder of its own there (act-<id>)
@@ -158,7 +159,7 @@ function childState(key, ctx) {
   }
   if (kind === "wait") {
     const w = ctx.waits.find((x) => x.id === id); if (!w) return { state: "ended", ok: false };
-    if (w.status === "waiting") return { state: "waiting", waitingOn: "third party", what: `a reply from ${w.to} about "${clip(w.subject, 80)}"`, at: Date.parse(w.sent || "") || w.at || 0, wait: w };
+    if (w.status === "waiting") return { state: "waiting", waitingOn: "third party", what: `a reply from ${w.to} about "${clip(w.subject, 80)}"`, at: sentAt(w), wait: w };
     return { state: "ended", ok: w.status === "replied", summary: w.reply ? clip(w.reply, 300) : "" };
   }
   return { state: "ended", ok: true };
@@ -300,7 +301,7 @@ function goalCards({ jobs = loadJobs(), waits = [], now = Date.now() } = {}) {
   }
   const kept = loadCardsFile().kept || {};
   for (const w of waits) {
-    const sent = Date.parse(w.sent || "") || w.at || 0;
+    const sent = sentAt(w);
     if (w.status !== "waiting" || !sent || now - sent < WAIT_OLD || (kept[w.id] && kept[w.id] > now)) continue;
     out.push({ kind: "ask", id: `goal:wait:${w.id}`, path: `goal:wait:${w.id}`, repo: (w.from && w.from.lane) || "", title: "Still no reply", sub: clip(`${w.to}: ${w.subject}`, 90), q: `No reply in ${Math.round((now - sent) / DAY)} days from ${w.to} about "${clip(w.subject, 100)}". Keep waiting for it?`, options: ["Keep waiting", "Stop waiting"] });
   }

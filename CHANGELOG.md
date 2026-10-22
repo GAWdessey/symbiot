@@ -2,6 +2,11 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one), for anyone who installs the app: what changed in it, never whose work it was (no projects, people, accounts, services, run ids or task wording of the person who made it). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.78.1 — 2026-10-22
+
+- **Email waits show how long they've really waited**, counted from when the email was sent; they all read "0 min ago" before.
+- **One run per piece of work.** A second run on work another run is already doing waits for it and starts when it ends, instead of both working it side by side; and a hand-over that names an earlier run continues in that run's folder rather than opening a new one.
+
 ## 0.78.0 — 2026-10-22
 
 - **Symbiot moves work forward on its own.** It reads where everything stands and your focus (a file you write: goals, projects, people, what to ignore), and looks at each new event once: a run ending, a merge, a reply, a watched site, a CI failure. Then it does what a sharp assistant would do unasked: the next step on stalled work, a check after a merge, a draft you'll need, a line about anything worth knowing.
