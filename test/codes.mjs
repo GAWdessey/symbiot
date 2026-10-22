@@ -128,6 +128,14 @@ try {
   ok("…and the card says it's a test, nothing to type, its switch the one thing to press", /\btest\b/i.test(sq[0].context) && /not a real site/i.test(sq[0].context) && /don't type/i.test(sq[0].context) && /switch/i.test(sq[0].context), sq[0].context);
   const src = readFileSync(new URL("../scripts/phone-codes-check.mjs", import.meta.url), "utf8").split("\n").filter((l) => !l.trim().startsWith("//")).join("\n");
   ok("the check never launches the app or pairs the phone, and posts the test code once", !/\bam\b[^\n]*\bstart\b|symbiot:\/\/pair/.test(src) && (src.match(/post\(`codecheck-\$\{RUN\}`, NOTE\(A\)\)/g) || []).length === 1 && !/while \([^)]*got !== A/.test(src));
+  {
+    // 21 Oct 2026: two or three copies of the check at once, each putting up a card and keeping the phone's Symbiot in front
+    const { execFileSync } = await import("node:child_process"), lock = join(CFG, "phone-check.lock");
+    writeFileSync(lock, JSON.stringify({ pid: process.pid, at: Date.now() }));
+    let said = ""; try { said = execFileSync(process.execPath, [new URL("../scripts/phone-codes-check.mjs", import.meta.url).pathname], { env: { ...process.env, HOME, PATH: "" }, encoding: "utf8", timeout: 30000 }); } catch (e) { said = String(e.stdout || ""); }
+    ok("a second check while one runs stops before anything, and leaves the running one's lock", /another phone check is running/.test(said) && !/Step 1/.test(said) && JSON.parse(readFileSync(lock, "utf8")).pid === process.pid, said.slice(0, 300));
+    rmSync(lock, { force: true });
+  }
 
   console.log("ON THE PHONE — a code card's switch is its main button, and its own 👤 code answer doesn't close it (21 Oct 2026: pressed for the switch, it answered the card)");
   {

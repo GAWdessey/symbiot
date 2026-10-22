@@ -31,6 +31,9 @@ const RUN = Date.now().toString(36);
 // one question per run: a question once answered is answered again from asks-done.json (asksdone.mjs heldBy), so a reused wording never shows
 const SITE = "codecheck.dev", NAME = `${SITE} code`, QUESTION = `Phone check ${RUN}: which 6-digit code did ${SITE} text you?`;
 const QUESTIONS_MD = (day) => `## Questions\n### ${QUESTION} {#codecheck-${RUN}}\nA test of your phone passing codes on, started ${day}, not a real site: don't type anything here. Press this card's switch to let your phone pass it on, and the phone does the rest. Nothing waits for this code and nothing signs in with it. It goes by itself once the check ends.\n- 👤 You (only you: the SMS code): let your phone pass it on\n- Skip this part\n`;
+// the question's verdict, written with it: it's the user's (only they can press the phone's switch), so the AI's check of
+// every question (triage.mjs) doesn't hold it back for up to 3 minutes, and Home lists it at once (from 0.68.0 it never did)
+const TRIAGE = (now = Date.now()) => ({ [QUESTION.trim().toLowerCase().replace(/\s+/g, " ")]: { verdict: "user", why: "a test of the user's phone: only they can press its switch", at: now } });
 const TASKS_MD = (day) => `# A check of the phone passing codes on (${day})\n- [x] Nothing to do here: scripts/phone-codes-check.mjs reads the vault itself. Don't read or use the code, and stop.\n`;
 const NOTE = (code) => ({ title: "Codecheck", text: `Your Codecheck verification code is ${code}. Do not share it.` });
 const DECOY = { title: "PayPal", text: "PayPal: your code is 902211" };
@@ -64,9 +67,17 @@ async function main() {
       if (granted) adb("shell", "cmd", "notification", "disallow_listener", LISTENER);
       if (stayWas !== null) adb("shell", "settings", "put", "global", "stay_on_while_plugged_in", stayWas);
     } else console.log(`\nKept: ${scratch}, "${NAME}" in the vault${granted ? ", Notification access" : ""}.`);
+    try { if (JSON.parse(readFileSync(LOCK, "utf8")).pid === process.pid) rmSync(LOCK, { force: true }); } catch {}
     console.log(`\n${fail ? "✗" : "✓"} phone codes: ${pass} passed, ${fail} failed`);
     return fail ? 1 : 0;
   }
+
+  // one check at a time touches the phone: on 21 Oct 2026 two or three ran at once, each putting a card up and keeping the
+  // phone's Symbiot in front of what the user was doing. A second one stops before it changes anything (not finish(): the
+  // vault entry and the phone's settings are the running one's)
+  const LOCK = join(CFG, "phone-check.lock"), live = (pid) => { try { process.kill(pid, 0); return true; } catch (e) { return !!e && e.code === "EPERM"; } };
+  try { const o = JSON.parse(readFileSync(LOCK, "utf8")); if (o && o.pid !== process.pid && live(o.pid)) { console.log(`\n✗ stopped: another phone check is running (pid ${o.pid}, since ${new Date(o.at).toLocaleTimeString()}). Only one touches the phone at a time: let it finish.`); return 1; } } catch {}
+  writeFileSync(LOCK, JSON.stringify({ pid: process.pid, at: Date.now() }));
 
   step("Symbiot here has the code relay, and is the one running");
   const bin = sh("sh", ["-c", "command -v symbiot"]), pkg = bin && dirname(realpathSync(bin));
@@ -83,10 +94,10 @@ async function main() {
 
   step(`a scratch question waits for ${SITE}'s code`);
   mkdirSync(join(scratch, ".symbiot"), { recursive: true });
-  writeFileSync(join(scratch, ".symbiot", "QUESTIONS.md"), QUESTIONS_MD(day)); writeFileSync(join(scratch, ".symbiot", "TASKS.md"), TASKS_MD(day));
+  writeFileSync(join(scratch, ".symbiot", "triage.json"), JSON.stringify(TRIAGE())); writeFileSync(join(scratch, ".symbiot", "QUESTIONS.md"), QUESTIONS_MD(day)); writeFileSync(join(scratch, ".symbiot", "TASKS.md"), TASKS_MD(day));
   ok(`no "${NAME}" in the vault before`, vault("get", NAME) === null);
   const before = new Set((vault("list") || "").split("\n").map((l) => l.split("  ")[0]).filter(Boolean));
-  let card = false; for (let i = 0; i < 30 && !card; i++) { const h = await api("/api/home?fresh=1"); card = !!h && (h.you || []).some((y) => y.path === scratch); if (!card) await sleep(3000); }
+  let card = false; for (let i = 0; i < 80 && !card; i++) { const h = await api("/api/home?fresh=1"); card = !!h && (h.you || []).some((y) => y.path === scratch); if (!card) await sleep(3000); }
   if (!ok("the card is on Home (so the phone gets it)", card)) return stop("Home never listed the scratch question");
   console.log(`  ${scratch}\n\n  On the phone: open Symbiot, find the card "${QUESTION}"\n  and press "Let this phone pass on ${SITE}'s code". Then press Enter here. Waiting up to ${WAIT / 1000} s.`);
 
@@ -149,5 +160,5 @@ async function main() {
   return finish();
 }
 
-export { SITE, NAME, QUESTION, QUESTIONS_MD, NOTE, DECOY };
+export { SITE, NAME, QUESTION, QUESTIONS_MD, TRIAGE, NOTE, DECOY };
 if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href) process.exit(await main());
