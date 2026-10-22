@@ -7,6 +7,11 @@ What each Symbiot release brought, newest first. When Approve bumps the version,
 - **Make Symbiot yours, safely.** Your own rules for its agents, adjustments to how it words cards and judges questions, and your own triggers live in a customisations folder that survives updates. Each change is checked (Symbiot must still run with it), the previous version is kept, it's logged in plain words, and it can be undone in one step. Settings → Customisations lists them, with an Off switch back to base behaviour.
 - **It notices when you keep pushing back on the same thing** and proposes a rule, with your own words as the reason, on Updates: Apply or Not now. Nothing goes in without your OK, and no customisation can loosen a safety rule.
 
+## 0.78.1 — 2026-10-22
+
+- **Email waits show how long they've really waited**, counted from when the email was sent; they all read "0 min ago" before.
+- **One run per piece of work.** A second run on work another run is already doing waits for it and starts when it ends, instead of both working it side by side; and a hand-over that names an earlier run continues in that run's folder rather than opening a new one.
+
 ## 0.78.0 — 2026-10-22
 
 - **Symbiot moves work forward on its own.** It reads where everything stands and your focus (a file you write: goals, projects, people, what to ignore), and looks at each new event once: a run ending, a merge, a reply, a watched site, a CI failure. Then it does what a sharp assistant would do unasked: the next step on stalled work, a check after a merge, a draft you'll need, a line about anything worth knowing.

@@ -79,6 +79,10 @@ function runFolders(map) {
   return [...new Set([...Object.values(map), ...own])];
 }
 const laneOf = (path, map) => (path.startsWith(RUNS_DIR) ? OPS : (Object.entries(map).find(([, p]) => p === path) || [basename(path)])[0]);
+// When an email that waits was sent, as a time: kept as a number (parseAwaiting turns the run's
+// ISO date into one), and read back with Date.parse, which gives NaN on a number, so every wait read
+// "waiting since 0 min ago" (22 Oct 2026). Either form here; the time it was noted if neither.
+const sentAt = (w) => { const s = w && w.sent; const t = typeof s === "number" ? s : Date.parse(s || ""); return Number.isFinite(t) && t > 0 ? t : (w && w.at) || 0; };
 // Take in what runs said they wait on, once each (its key: where, to whom, about
 // what). Only once the run there has stopped: it may still be writing the file.
 function collectWaits(d, { map, running = runningHandoff, now = Date.now() }) {
@@ -199,4 +203,4 @@ function stopWaiting(id) {
   w.status = "stopped"; return saveWaits(d) ? { ok: true, ...awaitingState() } : { error: "Couldn't write " + AWAIT_FILE + "." };
 }
 
-export { AWAIT_FILE, RUNS_DIR, runFolders, laneOf, runTitle, subjectCore, keepFacts, skipFacts, loadWaits, collectWaits, answers, replyTo, nextRequest, awaitTick, inboxSight, awaitingState, stopWaiting };
+export { sentAt, AWAIT_FILE, RUNS_DIR, runFolders, laneOf, runTitle, subjectCore, keepFacts, skipFacts, loadWaits, collectWaits, answers, replyTo, nextRequest, awaitTick, inboxSight, awaitingState, stopWaiting };
