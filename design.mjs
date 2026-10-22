@@ -20,8 +20,8 @@ import { fileURLToPath } from "node:url";
 const CLI = join(fileURLToPath(new URL(".", import.meta.url)), "index.mjs");
 // Asked for in words: building or changing something people look at. "app" and "site" only with a
 // verb that makes them one ("build the app", "redesign the site"): "send it to the app" isn't UI work.
-const UI_NOUN = /\b(ui|ux|user interface|front ?-?end|landing page|dashboard|mock-?up|wireframe|design system|stylesheet|look and feel)\b/i;
-const UI_ACT = /\b(build|make|create|design|redesign|restyle|style|polish|improve|rework|lay ?out|mock|prototype|tidy|fix|update)\w*\b[^.\n]{0,60}?\b(app|website|web app|ui|page|screen|dashboard|console|demo|view|form|panel|look)s?\b/i;
+const UI_NOUN = /\b(ui|ux|user interface|front ?-?end|landing page|dashboard|mock-?up|wireframe|design system|stylesheet|look and feel|(?<!symbiot )screens?|screenshots?|css|styling|layouts?|components?|responsive|dark mode|light mode|tap targets?|(?:mobile|android|ios|desktop|phone|apk|electron) (?:app )?(?:ui|screens?|layouts?|design)|app ui|web ?pages?|home ?pages?|sign-?in page|login page|modal|navbar|nav bar|sidebar|widget|empty state|buttons?)\b/i;
+const UI_ACT = /\b(build|make|create|design|redesign|restyle|style|polish|improve|rework|lay ?out|mock|prototype|tidy|fix|update)\w*\b[^.\n]{0,60}?\b(app|website|web app|ui|page|screen|dashboard|console|demo|view|form|panel|look|card|menu|header|footer|theme|button|modal|screenshot|component|layout|mobile app|android app|phone app|desktop app)s?\b/i;
 const UI_FILE = /\.(html?|css|scss|sass|less|jsx|tsx|vue|svelte|astro|hbs|handlebars|ejs|njk|liquid|erb)$|(^|\/)(templates?|views|components|pages|public|styles)\//i;
 function isUiWork(text = "", files = []) {
   const t = String(text || "");

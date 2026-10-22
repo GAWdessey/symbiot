@@ -2,6 +2,10 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one), for anyone who installs the app: what changed in it, never whose work it was (no projects, people, accounts, services, run ids or task wording of the person who made it). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.80.3 — 2026-10-22
+
+- **More work counts as UI work.** Any task that is about screens, pages, layout, styling, components, buttons, mobile or desktop app screens or demo screenshots now gets the UI specialist: the design standard in its brief, the strongest model, screenshots it must look at before it ticks, and the design critic's review. Before, only tasks that named a "UI", a dashboard or a demo did.
+
 ## 0.80.2 — 2026-10-22
 
 - **A card says who is doing the work.** Each card opens with its agent's own line: what it's on and what it has done so far, then the one thing it needs from you. A card that showed only a task's words read like a to-do list for you.
