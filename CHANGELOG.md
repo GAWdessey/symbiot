@@ -2,6 +2,10 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one), for anyone who installs the app: what changed in it, never whose work it was (no projects, people, accounts, services, run ids or task wording of the person who made it). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.80.3 — 2026-10-22
+
+- **More work counts as UI work.** Any task that is about screens, pages, layout, styling, components, buttons, mobile or desktop app screens or demo screenshots now gets the UI specialist: the design standard in its brief, the strongest model, screenshots it must look at before it ticks, and the design critic's review. Before, only tasks that named a "UI", a dashboard or a demo did.
+
 ## 0.80.1 — 2026-10-22
 
 - **Approve works on a project an agent left mid-merge.** When an agent had merged the main branch in and left it uncommitted, every Approve failed at its commit. Approve now finishes that merge first and then ships the work as usual; a merge that still has clashes goes back to the agent to finish, said in one plain line.
