@@ -34,6 +34,9 @@ try {
   ok("…\"answered\" with no answer to give is the user's", (await T.judge({ q: "x" }, {}, said({ verdict: "answered", why: "w" }))).verdict === "user");
   let sawPrompt = "";
   await T.judge({ q: Q.send, options: ["Send it"] }, { answers: "### Old\nGo ahead: do it as you had it.", rules: ["Never send anything to Remy first"], lane: "telco-platform" }, { write: async (sys, p) => { sawPrompt = sys + p; return { text: '{"verdict":"answered","why":"w","answer":"Go ahead"}' }; } });
+  let sawKnown = "";
+  await T.judge({ q: "Which mobile number should go on the new account?", options: ["Use mine"] }, { known: "- Pat (person): mobile +27 82 000 0000" }, { write: async (sys, p) => { sawKnown = sys + p; return { text: '{"verdict":"answered","why":"w","answer":"+27 82 000 0000"}' }; } });
+  ok("…and what Symbiot remembers (a detail it already holds is answered, not asked)", /What Symbiot remembers/.test(sawKnown) && /\+27 82 000 0000/.test(sawKnown) && /whether something has happened or what state it is in/.test(sawKnown), sawKnown.slice(-300));
   ok("the judge sees the question, the lane, the user's rules and newest answers", /Should I send Dana/.test(sawPrompt) && /telco-platform/.test(sawPrompt) && /Never send anything to Remy/.test(sawPrompt) && /do it as you had it/.test(sawPrompt), sawPrompt.slice(-400));
 
   console.log("TRIAGE — only the user's questions become cards");

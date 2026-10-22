@@ -2,6 +2,12 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one), for anyone who installs the app: what changed in it, never whose work it was (no projects, people, accounts, services, run ids or task wording of the person who made it). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.75.0 — 2026-10-22
+
+- **Every run shows what it did.** Earlier runs of the same job listed as "0 steps, $0.00" because only the newest run's part of the log was read; each now shows its own steps, cost and words.
+- **A go-ahead means go.** Agents are told to act when you say go ahead and, if something truly stops them, to name the one thing only you can do (and where) instead of asking the same question again. They ask once per job, everything they'll need, never one small thing per run, and never ask you whether something has happened: they check.
+- **Questions about things Symbiot already knows are answered from its memory** (your email, your number, an earlier choice), not asked again.
+
 ## 0.74.1 — 2026-10-22
 
 - **Symbiot stops opening itself on your phone.** The computer app no longer pushes its "link to this computer" prompt to a phone connected over Wi-Fi, or to any phone once one is paired, and never again after a phone sleeps and reconnects: it only does so once for a phone on a cable.
