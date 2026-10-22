@@ -21,6 +21,7 @@ import { readFileSync, realpathSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { judgeChrome, seen as seenChrome, openTabs, PREFIX as CHROME } from "./chromegate.mjs";
 import { judgePush } from "./pushgate.mjs";
+import { judgePhone, letGo as phoneLetGo, phoneAsked } from "./phonegate.mjs";
 
 const SECRET = [".ssh", ".gnupg", ".aws", ".azure", ".kube", ".docker/config.json", ".config/gcloud", ".config/gh/hosts.yml", ".netrc", ".npmrc", ".pypirc", ".git-credentials", ".config/symbiot/secrets.json", ".config/symbiot/vault.json", ".config/symbiot/vault.key"];
 const under = (p, d) => p === d || p.startsWith(d.endsWith("/") ? d : d + "/");
@@ -45,9 +46,9 @@ const PLAIN = /^(~|\$HOME|\$\{HOME\})?[\w.@+\/-]+$/;
 // Symbiot's own settings, and what its gates keep: the holds waiting on the user's Go (a send in their
 // Chrome, chromegate.mjs; a force-push, pushgate.mjs) and which site each tab is on. An agent that wrote
 // these could set Go on its own held send or push, or say a tab is on a site it may act on (review of the
-// 20 Oct 2026 run).
-const OWN = ["config.json", "licence-revoked.json", "secrets.json", "chrome-holds.json", "chrome-tabs.json", "push-holds.json"];
-const GATE_FILES = /(chrome-(holds|tabs)|push-holds)\.json/; // named so they're never another project's
+// 20 Oct 2026 run). And the phone's: its held launches and which run has it (phonegate.mjs).
+const OWN = ["config.json", "licence-revoked.json", "secrets.json", "chrome-holds.json", "chrome-tabs.json", "push-holds.json", "phone-holds.json", "phone-lock.json"];
+const GATE_FILES = /(chrome-(holds|tabs)|push-holds|phone-(holds|lock))\.json/; // named so they're never another project's
 function symbiotConfig(p, home) { const d = join(home, ".config", "symbiot"); return OWN.some((f) => p === join(d, f)); }
 // A shell command that names one of those files changes it unless each step of it only reads:
 // a redirect into it, tee, cp, mv, ln, sed -i, an interpreter (node -e, python, a heredoc's lines),
@@ -116,6 +117,8 @@ function currentBranch(cwd) { try { return execFileSync("git", ["-C", cwd, "rev-
 
 function judgeBash(cmd, { cwd, home, branch, session = "" }) {
   const c = String(cmd || "");
+  // the user's phone over adb: an app opened on it waits for their yes, and one run uses it at a time (phonegate.mjs)
+  const ph = judgePhone(c, { session, cwd, home }); if (ph) return { ...ph, setting: true };
   // each simple command on its own (a; b && c | d)
   for (const part of c.split(/&&|\|\||;|\n/)) {
     const s = part.trim(); if (!s) continue;
@@ -176,6 +179,11 @@ function judge(tool, input = {}, opts = {}) {
 function refusal(tool, input = {}, { cwd = process.cwd(), home = homedir(), branch, writes = null, session = "" } = {}) {
   const t = String(tool || "");
   if (t.startsWith(CHROME)) return judgeChrome(t, input, { session, home }); // the user's own Chrome: acting only where they allow it, sends and payments held for their Go (chromegate.mjs)
+  if (/^(Write|Edit|MultiEdit)$/.test(t) && basename(String(input.file_path || "")) === "QUESTIONS.md") {
+    const text = [input.content, input.new_string, ...[].concat(input.edits || []).map((e) => e && e.new_string)].filter(Boolean).join("\n");
+    try { phoneAsked(dirname(dirname(resolve(cwd, String(input.file_path)))), text, { home }); } catch {} // a phone-go card: the user's, shown at once (phonegate.mjs)
+  }
+  if (t === "Bash" && /QUESTIONS\.md/.test(String(input.command || "")) && /(>|\btee\b|\bwrite|\bopen\(|<<|\bsed\s+-i|\breplace\()/.test(String(input.command || ""))) { try { phoneAsked(cwd, input.command, { home }); } catch {} }
   if (t === "Bash") return judgeBash(input.command, { cwd, home, session, branch: branch != null ? branch : currentBranch(cwd) });
   const p = input.file_path || input.path || input.notebook_path;
   if (!p) return null;
@@ -197,6 +205,7 @@ if (main) {
   // Stop: a run that still has tabs open in the user's Chrome closes them first. Once only
   // (stop_hook_active): a tab it can't close never keeps it from ending.
   if (ev.hook_event_name === "Stop") {
+    try { phoneLetGo(String(ev.session_id || "")); } catch {} // the phone is free for the next run
     let open = []; try { open = ev.stop_hook_active ? [] : openTabs(String(ev.session_id || "")); } catch {}
     if (open.length) { process.stderr.write(`Before you finish, close the tabs you opened in the user's Chrome: tabs_close_mcp on ${open.map((t) => `tab ${t.tab}${t.host ? ` (${t.host})` : ""}`).join(", ")}. Then end as you were going to.\n`); process.exit(2); }
     process.exit(0);

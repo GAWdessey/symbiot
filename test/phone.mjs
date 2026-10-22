@@ -37,8 +37,9 @@ writeFileSync(join(ROOT, "computer.mjs"), `
   p.setPhoneApprove(async (repo, untasked) => { approved.push({ repo, untasked }); return { ok: true, pr: "https://github.com/me/demo/pull/7" }; });
   const cmds = { on: () => p.setPhoneLink(true), off: () => p.setPhoneLink(false), code: () => p.newCode(), state: () => p.linkState(), unpair: (a) => p.unpairPhone(a.id),
     approved: () => approved, add: (a) => t.addTask(a.text, a.repo || ""), toggle: (a) => t.toggleTask(a.id), tasks: () => JSON.parse(readFileSync(${JSON.stringify(join(PCFG, "tasks.json"))}, "utf8")),
-    adb: () => { const calls = []; const run = (a) => { calls.push(a.join(" ")); return a[0] === "devices" ? "List of devices attached\\nABC123\\tdevice\\nXYZ\\tunauthorized\\n" : ""; };
-      const first = p.adbLink({ run, has: () => true }), again = p.adbLink({ run, has: () => true }); return { first, again, calls }; },
+    // adb's device list, round by round (each a 30 s tick): what each round pushed, and every adb call
+    adb: (a) => { const calls = []; let now = ""; const run = (x) => { calls.push(x.join(" ")); return x[0] === "devices" ? "List of devices attached\\n" + now.split(",").filter(Boolean).map((d) => d.includes("=") ? d.replace("=", "\\t") : d + "\\tdevice").join("\\n") + "\\n" : ""; };
+      const did = a.rounds.map((r) => { now = r; return p.adbLink({ run, has: () => true }); }); return { did, calls }; },
     snapshot: () => p.snapshot({ fresh: true }), loaded: () => typeof w.newsAfter,
     // a port another program holds when the link starts: it listens by itself once that one lets go
     taken: async () => { const net = await import("node:net"), back = p.linkState().port;
@@ -96,6 +97,15 @@ try {
   console.log("1. SEALED — paired with a key both sides agree, everything after sealed");
   const on = await pc.cmd("on");
   ok("switched on: it listens, with a code, a key fingerprint, and the QR's link", on.listening && /^\d{6}$/.test(on.code) && on.fp && /^https:\/\/symbiot\.co\.za\/pair#a=.*&p=\d+&c=\d{6}&k=/.test(on.link) && /^<svg/.test(on.qr || ""), { ...on, qr: (on.qr || "").slice(0, 30) });
+  // a phone on adb, before any is paired: the pair link goes to a cable's phone once, never over Wi-Fi adb
+  const WIFI = "192.168.1.64:37365,adb-R5GL349LL7K-a1b2c3._adb-tls-connect._tcp";
+  const ab = await pc.cmd("adb", { rounds: ["ABC123,XYZ=unauthorized," + WIFI, "ABC123," + WIFI, WIFI, "", "ABC123," + WIFI] });
+  const pushes = (re) => ab.calls.filter((c) => / shell am start /.test(c) && re.test(c)).length;
+  ok("adbLink: a cable's phone gets adb reverse and one am start with the pair link (not the unauthorised one)",
+    ab.did[0].join() === "ABC123" && ab.calls.filter((c) => /^-s ABC123 reverse tcp:\d+ tcp:\d+$/.test(c)).length === 1 &&
+    ab.calls.filter((c) => /^-s ABC123 shell am start -a android.intent.action.VIEW -d 'symbiot:\/\/pair\?a=127\.0\.0\.1&p=\d+&c=\d{6}&k=[\w-]+&n=[^']+' co.symbiot.app$/.test(c)).length === 1 && !ab.calls.some((c) => /XYZ/.test(c)), ab);
+  ok("adbLink: a phone on Wi-Fi adb (host:port or an mDNS name) is never opened, round after round", !ab.calls.some((c) => /^-s (192\.168|adb-)/.test(c)), ab.calls);
+  ok("adbLink: a cable's phone that drops out and comes back isn't opened again", pushes(/ABC123/) === 1 && ab.did.slice(1).every((d) => !d.length), ab.did);
   const hello = await (await fetch(BASE + "/phone/hello")).json();
   ok("/phone/hello gives the computer's public key and its fingerprint (the QR's k)", hello.pub && hello.fp === on.fp, hello);
   const oldPair = await fetch(BASE + "/phone/pair", { method: "POST", body: JSON.stringify({ code: on.code, name: "Old" }) });
@@ -486,10 +496,8 @@ try {
   const code5 = (await pc.cmd("code"));
   const fake5 = await P.pairComputer("", "", { link: code5.link.replace(/a=[^&]*/, "a=127.0.0.1").replace(/k=[\w-]+/, "k=AAAAAAAAAAAAAAAAAAAAAA"), name: "Pixel" });
   ok("a link whose key isn't the computer's: refused, nothing sent", /isn't the one whose code you scanned/.test(fake5.error || ""), fake5.error);
-  const ab = await pc.cmd("adb");
-  ok("adbLink: adb reverse, then one am start with the pair link, for each authorised device once (not the unauthorised, not again)",
-    ab.first.join() === "ABC123" && ab.again.length === 0 && ab.calls.filter((c) => /^-s ABC123 reverse tcp:\d+ tcp:\d+$/.test(c)).length === 1 &&
-    ab.calls.filter((c) => /^-s ABC123 shell am start -a android.intent.action.VIEW -d 'symbiot:\/\/pair\?a=127\.0\.0\.1&p=\d+&c=\d{6}&k=[\w-]+&n=[^']+' co.symbiot.app$/.test(c)).length === 1 && !ab.calls.some((c) => /XYZ/.test(c)), ab);
+  const ab2 = await pc.cmd("adb", { rounds: ["NEW456"] });
+  ok("adbLink: with a phone paired, a new phone on a cable isn't opened either (pair it from Settings)", !ab2.did[0].length && !ab2.calls.some((c) => / am start /.test(c)), ab2);
   // a taken port: who holds it, and the way out
   const fakeRun = (out) => (cmd, args) => { if (!(cmd in out)) throw new Error("no " + cmd); return out[cmd]; };
   const h1 = P.portHolder(7392, fakeRun({ ss: 'LISTEN 0 511 0.0.0.0:7392 0.0.0.0:* users:(("node",pid=4242,fd=19))\n', ps: "Sun Oct 11 07:00:01 2026 node /home/x/symbiot/index.mjs app\n" }));
