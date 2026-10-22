@@ -262,6 +262,12 @@ async function goalsTick(deps = {}, { now = Date.now() } = {}) {
         // own request echoed back: "no as discussed we have created the …company…" was all one showed
         // (22 Oct 2026). No step on record, no card: there's nothing to decide.
         if (!(c.path && carded.has(c.path)) && (!g.card || g.card.kind !== "user") && r.what) g.card = { kind: "user", q: clip(r.what, 300), options: ["I've done it", "Drop it"], at: now };
+        // a card the card writer found isn't theirs (needs.mjs notTheirs: "Is it moved yet?") goes back to
+        // the run: it checks for itself and carries on, under the hourly cap, never a card again for it
+        if (g.card && g.card.kind === "user" && deps.notTheirs && deps.notTheirs(g.card) && c.path && !ctx.running(c.path)) {
+          if (deps.settle) { try { deps.settle(c.path, "not the user's: check it yourself and carry on"); } catch {} }
+          if (start(c.path, "the card for this was a status you can check yourself: check it and carry on, and don't ask the user for it") !== false) { g.card = null; did.push({ goal: g.key, checking: c.path }); }
+        }
       } else if (r.waitingOn === "lane" && c.handoff && c.path && now - (c.at || now) > H) {
         start(c.path, `${c.handoff.to.lane} hadn't started on it`);
       } else if (r.waitingOn === "third party") {

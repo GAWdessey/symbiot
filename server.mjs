@@ -43,7 +43,7 @@ import { archivedTasks } from "./sweep.mjs";
 import { sentTick } from "./sentmail.mjs";
 import { keepFacts, skipFacts, awaitTick, awaitingState, stopWaiting } from "./handback.mjs";
 import { adaptState, noteUse } from "./adapt.mjs";
-import { writeCards } from "./needs.mjs";
+import { writeCards, loadCardText, keyOf as cardKeyOf } from "./needs.mjs";
 import { shoot } from "./design.mjs";
 import { cardTalk, dismissCard, reportIdeasAdd, reportIdeasDismiss, reportAsk, reportDraftAnswer, homeState, homeTick, homeAsk, homeAnswer, homeNext, workScene, forgetWork, workGo, workTick, firstSteps, marketingState, marketingGo, marketingDraftAnswer, marketingTask, moveToMarketing, onboarding, setOnboarding, startOnboarding, phoneSetupFirst } from "./home.mjs";
 import { MARKETING_DIR, MARKETING, draftPreview, laneMedia, displayName, setDraftMedia } from "./marketing.mjs";
@@ -932,7 +932,8 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
     let cardPaths = new Set(); try { cardPaths = new Set(onUser().map((c) => c.path).filter(Boolean)); } catch {}
     let ai = null; try { ai = resolveProvider() ? aiWrite : null; } catch {}
     return { write: ai, running: (p) => !!goalRunning(p), start: (p) => runHandoff(p, { force: true }), autoStart, ops: (req, o) => actNow(req, o), notify: (t, b) => desktopNotify(t, b), settle: settleRecord, stop: stopWaiting,
-      ledger: (() => { try { return loadLedger(); } catch { return { handoffs: [] }; } })(), waits: (() => { try { return awaitingState().waits; } catch { return []; } })(), map: (() => { try { return laneMap(); } catch { return {}; } })(), until: (what, now) => waitUntil(what, now), cardPaths };
+      ledger: (() => { try { return loadLedger(); } catch { return { handoffs: [] }; } })(), waits: (() => { try { return awaitingState().waits; } catch { return []; } })(), map: (() => { try { return laneMap(); } catch { return {}; } })(), until: (what, now) => waitUntil(what, now), cardPaths,
+      notTheirs: (card) => { try { return !!(loadCardText()[cardKeyOf({ q: card.q, options: card.options })] || {}).notTheirs; } catch { return false; } } };
   };
   onGoalAnswer((path, answers) => goalAnswer(path, answers, goalDeps()));
   // each card on Needs you gets its short question and labelled options written once (needs.mjs)
