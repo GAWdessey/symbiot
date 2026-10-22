@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 import { readFileSync, writeFileSync, mkdirSync, existsSync, openSync, closeSync, writeSync, unlinkSync, readdirSync, statSync, renameSync, utimesSync, appendFileSync } from "node:fs";
 import { randomBytes, createHash } from "node:crypto";
 import { track as jobTrack, runRecord, recordOf, loadJobs, goalRows } from "./jobs.mjs";
-import { CONFIG_DIR, loadConfig, saveConfig, loadTasks, TASK_MAX, clipWords, sameTask, taskWords, sh, runOut, hasCmd, readState, writeJsonAtomic } from "./core.mjs";
+import { CONFIG_DIR, loadConfig, saveConfig, loadTasks, TASK_MAX, clipWords, jobWords, sameTask, taskWords, sh, runOut, hasCmd, readState, writeJsonAtomic } from "./core.mjs";
 import { meetsStep, captureSecrets, heldFor } from "./vault.mjs";
 import { recordDone, isDone, isApprovalAsk, approvalText, approvedBefore, recentTurns, recentTasks, asksBack, askBackNote, closesAsk, runSaysClosed, heldBy, reportsSince, runReport, reportAsked, standingList, talkOf, endTalk, talkText } from "./asksdone.mjs";
 import { sentAfter } from "./sentmail.mjs";
@@ -471,7 +471,7 @@ function runOutcome(path, e = {}, code = 0, { files = null, final = null, questi
   let said = final; if (said === null) { try { const w = workOf(path, runSection(readRunLog(e.log), e.startedAt, true)); said = (w.work && w.work.final) || w.tail || ""; } catch { said = ""; } }
   const summary = clipWords(String(said || "").split(/\n\s*\n/)[0].replace(/[*_`#>]/g, "").replace(/\s+/g, " ").trim(), 400);
   const ch = files !== null ? files : (() => { try { return (loadRunFiles(path).find((r) => r.id === e.id) || { files: [] }).files.length; } catch { return 0; } })();
-  const out = (state, waitingOn = "", what = "", note = "") => ({ state, waitingOn, what: clipWords(what, 200), summary, note });
+  const outBase = (state, waitingOn = "", what = "", note = "") => ({ state, waitingOn, what: clipWords(what, 200), summary, note }), out = outBase;
   if (code !== 0 && !STOP_CODES.has(code)) return out("failed", "", "", `exit ${code}`);
   const qs = questions !== null ? questions : (() => { try { return agentQuestions(path, "", { raw: true }).questions; } catch { return []; } })();
   const w = waiting !== undefined ? waiting : (() => { try { return waitingFor(path); } catch { return null; } })();
@@ -479,11 +479,18 @@ function runOutcome(path, e = {}, code = 0, { files = null, final = null, questi
   if (qs.length) return out("waiting", "user", qs[0].q);
   if (w || (nd && nd.what)) return out("waiting", "user", (nd && nd.what) || (w && w.step) || "a step of yours");
   if (waitLine) {
-    const what = waitLine.replace(/^\s*-\s*\[~\]\s*/, ""), note = (what.match(/^\(([^)]*)\)/) || [])[1] || what;
+    // "(what it waits on) the task" or "the task (waits on: …)". A line with no note is only the task,
+    // and a task's words aren't the user's step: the goal card that showed "Move bookly.co.za into a
+    // … Copy them into a…" with "I've done it" read as the user's job (22 Oct 2026). bare says so, and
+    // the card asks from the run's own last words (goals.mjs); task is the job, for "I'm on it: …".
+    const line = waitLine.replace(/^\s*-\s*\[~\]\s*/, ""), lead = line.match(/^\(([^)]*)\)\s*/), tail = [...line.matchAll(/\((?:waits|waiting) (?:on|for)\b:?\s*/gi)].pop();
+    const note = lead ? lead[1].replace(/^(?:waits|waiting) (?:on|for)\b:?\s*/i, "") : tail ? line.slice(tail.index + tail[0].length).replace(/\)\s*$/, "") : line;
+    const task = clipWords(jobWords(lead ? line.slice(lead[0].length) : tail ? line.slice(0, tail.index) : line), 120), bare = !lead && !tail;
+    const out = (state, waitingOn = "", what = "", n = "") => ({ ...outBase(state, waitingOn, what, n), ...(task ? { task } : {}), ...(bare ? { bare } : {}) });
     if (open) return out("paused", "", note, `${open} item${open > 1 ? "s" : ""} left; one waits`); // work it can still do: it carries on with that
     const handed = [...new Set([...String(readSymbiot(path, "HANDOFF.md") || "").matchAll(/^###\s+([\w.-]+)|→ \*\*([\w.-]+)\*\*/gm)].map((m) => m[1] || m[2]))]; // the lanes it has handed work to
     const lane = handed.find((l) => note.toLowerCase().includes(l.toLowerCase())) || (/\b(handed|hand(?:ed)? (?:it )?(?:over|to)|ops)\b/i.test(note) ? (handed.includes("ops") ? "ops" : handed[0] || "ops") : "");
-    if (lane) return out("waiting", "lane", `${lane}: ${note}`);
+    if (lane) return out("waiting", "lane", note.toLowerCase().startsWith(lane.toLowerCase()) ? note : `${lane}: ${note}`);
     if (WAIT_TIME.test(note)) return out("waiting", "time", note);
     if (WAIT_USER.test(note)) return out("waiting", "user", note);
     return out("waiting", "third party", note);
