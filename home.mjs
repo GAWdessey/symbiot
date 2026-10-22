@@ -18,9 +18,9 @@ import { readFileSync, writeFileSync, mkdirSync, statSync } from "node:fs";
 import { watchBoard, draftReply, draftCards, draftAnswer } from "./watch.mjs";
 import { pendingReview, pushTasks, addTask, taskType, releaseNotIn } from "./tasks.mjs";
 import { estimate, estimateWords } from "./estimate.mjs";
-import { heldAsk, grantCard, cardIsPermission, onCardGone, setHandoffCmd, agentsList, agentsNow, forgetAgents, runHandoff, runningHandoff, handoffCmd, loadRuns, connectorsInfo, parkedPaths, agentMissing, settleNeeds, closeAsk, pickAgent, detectHandoffs, linkReach, unchangedStep, whereOf, claudePause, parkLane } from "./agents.mjs";
+import { agentQuestions, answerQuestions, heldAsk, grantCard, cardIsPermission, onCardGone, setHandoffCmd, agentsList, agentsNow, forgetAgents, runHandoff, runningHandoff, handoffCmd, loadRuns, connectorsInfo, parkedPaths, agentMissing, settleNeeds, closeAsk, pickAgent, detectHandoffs, linkReach, unchangedStep, whereOf, claudePause, parkLane } from "./agents.mjs";
 import { stallCards, loadStall, saveStall } from "./stall.mjs";
-import { isDone, recordDone, coveredBy, doneList, asksBack, askBackNote, wantsReport, closesAsk, heldBy, reportsSince } from "./asksdone.mjs";
+import { isDone, recordDone, coveredBy, doneList, asksBack, askBackNote, wantsReport, closesAsk, heldBy, reportsSince, talkOf, addTalk, talkText } from "./asksdone.mjs";
 import { captureSecrets } from "./vault.mjs";
 import { linksState, signInAsked } from "./links.mjs";
 import { knowledgeState } from "./knowledge.mjs";
@@ -28,7 +28,7 @@ import { CONFIG_DIR, loadTasks, saveTasks, loadConfig, saveConfig, sameTask, isF
 import { lanesState, stuckHandovers, allowHandover, skipHandover, handingOf, loadLedger, doneSince, sharedTo, projectOf } from "./lanes.mjs";
 import { windowSince, BROWSER_IDLE_MIN } from "./headless.mjs";
 import { control } from "./control.mjs";
-import { jobsLines, syncOnUser, syncTasks, onUser } from "./jobs.mjs";
+import { jobsLines, syncOnUser, syncTasks, onUser, runRecord } from "./jobs.mjs";
 import { goalCards } from "./goals.mjs";
 import { converse, actIn, actNow, taskIn, loadMind, dayMark } from "./mind.mjs";
 import { repoPathMap, laneMap, reposState, scanRoots } from "./scan.mjs";
@@ -468,7 +468,7 @@ function homeState({ now = Date.now(), fresh = false, deps = {}, tick = false } 
     // the user answered another agent on this work: it has that answer, and is checking whether it settles this (lanes.mjs shareAnswer)
     const sh = sharedTo(a.path), shared = sh && (a.status === "running" || Date.parse(sh.at) > (a.startedAt || 0)) ? { shared: sh } : {}; // and not once it has asked again since
     you.push({ kind: "ask", id: "ask:" + a.path, path: a.path, repo, ...shared, name: repo ? named(lane ? map[lane] : a.path, repo) : plain(String(a.name || "an agent").replace(/^Agent:\s*/, "").replace(/^New job:\s*/i, ""), 60), // the card's header is narrow: no "New job:" in it
-      title: `${a.name} asks`, sub: String(q.q || "").slice(0, 90), ...(q.task ? { task: q.task } : {}), ...pa, options: opts, ...closed, ...(qs.length > 1 ? { more: qs.length - 1 } : {}), ...signInCard([q.q, ...opts]), ...reportLink(q.report), shape: "agents" });
+      title: `${a.name} asks`, sub: String(q.q || "").slice(0, 90), ...(q.task ? { task: q.task } : {}), ...(q.talk ? { talk: q.talk } : {}), ...pa, options: opts, ...closed, ...(qs.length > 1 ? { more: qs.length - 1 } : {}), ...signInCard([q.q, ...opts]), ...reportLink(q.report), shape: "agents" });
   }
   // What stopped and can't go on without you, as a question too: a handover that
   // couldn't start (lanes.mjs stuckHandovers: "Allow this run access to ~/Company?"),
@@ -892,10 +892,54 @@ function sinceReport(r, { read = (f) => readFileSync(f, "utf8"), stat = (f) => s
   if (ans.trim()) out.push(`The lane's newest answers and handover reports (.symbiot/ANSWERS.md, newest last). Read them before saying what's true now, and before starting any work: what's already found or done there isn't redone.\n${ans.slice(-6000)}`);
   return out.length ? `\n\nSince the report:\n${out.join("\n\n")}` : "";
 }
+// A card is a conversation with its agent, like an agent's pane: what the user types on it that
+// is a question or a remark, not an answer ("did you fix the force app", 22 Oct 2026), is answered
+// on the card from that run's own records, and the card's question stays open. Asked for work
+// ("check it again", "fix it"), it acts: the run's lane takes it, as from Home's chat. null when
+// the text is an answer (answerQuestions takes it as before).
+async function cardTalk(path, answers, { ask, deps = {}, extra = "" } = {}) {
+  const rows = Array.isArray(answers) ? answers : [], one = rows.length === 1 ? rows[0] : null;
+  if (!path || !one || !String(one.a || "").trim()) return null;
+  const read = deps.read || ((f) => { try { return readFileSync(join(path, ".symbiot", f), "utf8"); } catch { return ""; } });
+  const qs = (deps.questions || ((p) => { try { return agentQuestions(p, "", { raw: true }).questions; } catch { return []; } }))(path);
+  const q = qs.find((x) => String(x.q).trim().toLowerCase() === String(one.q || "").trim().toLowerCase()) || { q: one.q, options: [] };
+  if (!asksBack(one.a, q.options || [])) return null;
+  if (!ask && !resolveProvider()) return null; // no AI here: it's taken as before (asked back, its run writes it up)
+  let map = {}; try { map = laneMap(); } catch {}
+  const lane = laneOfPath(path, map), name = lane || "this run", said = String(one.a).trim();
+  const before = talkOf(path, q.q); addTalk(path, q.q, { from: "you", text: said });
+  let rec = null; try { rec = runRecord(path); } catch {}
+  const open = read("TASKS.md").split("\n").filter((l) => /^\s*-\s*\[[ ~]\]/.test(l)).slice(0, 12).join("\n");
+  const role = `You are the agent behind a card on the user's screen, for ${name}. The card asks them: "${q.q}". What they just typed on it is a question or a remark to you, not their answer: the card's question stays open. Reply on the card, in a few plain sentences, from what this run knows below: say what's true now, and what happens next. If they asked you to do or check something, do it (start the work) rather than say you will. Never tell them to answer the card first.`;
+  const context = [`The card's question: ${q.q}${(q.options || []).length ? `\nIts options: ${q.options.join(" | ")}` : ""}${q.context ? `\nIts context: ${q.context}` : ""}`,
+    rec ? `How this run ended: ${rec.state}${rec.waitingOn ? `, waiting on ${rec.waitingOn}` : ""}${rec.what ? ` (${rec.what})` : ""}${rec.summary ? `\nIts last words: ${rec.summary}` : ""}` : "",
+    open ? `Its open and waiting items:\n${open}` : "", `The newest answers it has (newest last):\n${read("ANSWERS.md").slice(-4000)}`,
+    before.length ? `Said on this card already:\n${talkText(before)}` : "", extra].filter(Boolean).join("\n\n");
+  const res = await converse({ where: `Card: ${name}: ${String(q.q).slice(0, 60)}`, role, context, question: said, map, ...(ask ? { ask } : {}),
+    act: { agent: (req, known, repo, s2) => (repo || lane ? actIn(req, repo || lane, { map, known, title: "Card", said: s2 }) : actNow(req, { title: "Card", known })), task: (text, repo) => taskIn(text, repo || lane, { map }) } });
+  const reply = String(res.reply || "").trim() || "I couldn't answer that just now.";
+  const talk = addTalk(path, q.q, { from: "agent", text: reply });
+  return { ok: true, talk, reply, ...(res.did ? { did: res.did } : {}), lane: lane || "ops" };
+}
 // Ask about the report in place: the same mind as Home's chat, the report in front of it.
 async function reportAsk(id, question, { ask, deps = {} } = {}) {
   question = String(question || "").trim().slice(0, 2000); if (!question) return { error: "empty" };
   const r = (deps.read || readReport)(id, { mark: false }); if (!r || r.error) return { error: (r && r.error) || "That report isn't there any more." };
+  // The report a card links to ("Read the report: …") is that card's agent's: what the user writes
+  // here goes to it. An answer answers the card (and closes it); a question is talk on the card. On
+  // 22 Oct 2026 the user answered a card in its report, the chat here took it as a general remark,
+  // and the card kept asking.
+  let linked = []; try { linked = (deps.questions || ((p) => agentQuestions(p, "", { raw: true }).questions))(r.folder).filter((q) => q.report && q.report.id === r.id); } catch {}
+  if (linked.length === 1 && r.folder) {
+    const q = linked[0];
+    if (!asksBack(question, q.options || [])) {
+      const a = (deps.answer || answerQuestions)(r.folder, [{ q: q.q, a: question }], { rerun: true, share: true });
+      if (a && a.ok) return { answer: `Sent to its agent as your answer to "${q.q}"${a.rerun ? ": it's picking it up now" : ""}. That card is closed.`, answered: q.q, ...(a.rerun ? { rerun: a.rerun } : {}) };
+    } else {
+      const t = await cardTalk(r.folder, [{ q: q.q, a: question }], { ask, deps: deps.questions ? { questions: deps.questions } : {}, extra: `The report the user is reading (${r.file}):\n${String(r.text || "").slice(0, 6000)}` });
+      if (t) return { answer: t.reply, talk: t.talk, card: q.q };
+    }
+  }
   if (!ask && !resolveProvider()) return phoneNoAi() || { error: "not-connected" };
   let map = {}; try { map = laneMap(); } catch {}
   const lane = r.lane && r.lane !== RUNS_LANE && map[r.lane] ? r.lane : "";
@@ -1031,7 +1075,7 @@ function workSceneNow({ deps = {}, full = false } = {}) {
     }
     // Agent runs are one card for many unrelated jobs: each question says which job it's for
     const job = l === RUNS_LANE ? plain(String(a.name || "").replace(/^Agent:\s*/, "").replace(/^New job:\s*/i, ""), 90) : "";
-    for (const q of qs) { p.qs = p.qs || []; const c = { q: q.shown || q.q, ...(q.shown ? { raw: q.q } : {}), ...(q.task || job ? { task: q.task || job } : {}), options: (q.options || []).slice(0, 3), ...(q.labels ? { labels: q.labels } : {}), path: a.path, ...signInCard([q.q, ...(q.options || []).slice(0, 3)]), ...reportLink(q.report) }; if (gone[cardKey(c)]) { p.asks = Math.max(0, p.asks - 1); continue; } if (p.qs.length < 3) p.qs.push(c); } // one dismissed (dismissCard) stays off the relay too
+    for (const q of qs) { p.qs = p.qs || []; const c = { q: q.shown || q.q, ...(q.shown ? { raw: q.q } : {}), ...(q.task || job ? { task: q.task || job } : {}), ...(q.talk ? { talk: q.talk } : {}), options: (q.options || []).slice(0, 3), ...(q.labels ? { labels: q.labels } : {}), path: a.path, ...signInCard([q.q, ...(q.options || []).slice(0, 3)]), ...reportLink(q.report) }; if (gone[cardKey(c)]) { p.asks = Math.max(0, p.asks - 1); continue; } if (p.qs.length < 3) p.qs.push(c); } // one dismissed (dismissCard) stays off the relay too
     // an idea for another lane is on that lane's sheet, and here just "2 ideas sent to symbiot" (agents.mjs routeIdeas)
     for (const s of ideas.concat(away.filter((s) => !s.delivered))) {
       const there = s.other || s.delivered === false ? at(s.repo) : p;
@@ -1318,4 +1362,4 @@ function setOnboarding({ step, skip, unskip, skipRest, done, restart } = {}) {
   return onboarding();
 }
 
-export { homeTick, HOME_LOOKED, WORK_KEEP, FIRST_RUN, troubles, agentDigest, garthLedger, plainAsk, dismissCard, cardKey, loadDismissed, DISMISSED_FILE, reportIdeasAdd, reportAsk, reportDraftAnswer, workTick, waitWhy, AUTO_GRACE, STUCK_AFTER, marketingState, marketingGo, marketingDraftAnswer, marketingTask, moveToMarketing, goLane, homeState, homeContext, homeAsk, homeAnswer, homeNext, nextUp, laneNamed, NEXT_FILE, workScene, forgetWork, workGo, displayName, firstSteps, onboarding, setOnboarding, startOnboarding, ONB_STEPS, ONB_STEPS_PHONE, onbSteps, phoneBits, phoneSetupFirst, finishedState, handedState, noteHanded, phoneChat, isPeak, reportIdeasDismiss, settleAsks, settleFromChat };
+export { cardTalk, homeTick, HOME_LOOKED, WORK_KEEP, FIRST_RUN, troubles, agentDigest, garthLedger, plainAsk, dismissCard, cardKey, loadDismissed, DISMISSED_FILE, reportIdeasAdd, reportAsk, reportDraftAnswer, workTick, waitWhy, AUTO_GRACE, STUCK_AFTER, marketingState, marketingGo, marketingDraftAnswer, marketingTask, moveToMarketing, goLane, homeState, homeContext, homeAsk, homeAnswer, homeNext, nextUp, laneNamed, NEXT_FILE, workScene, forgetWork, workGo, displayName, firstSteps, onboarding, setOnboarding, startOnboarding, ONB_STEPS, ONB_STEPS_PHONE, onbSteps, phoneBits, phoneSetupFirst, finishedState, handedState, noteHanded, phoneChat, isPeak, reportIdeasDismiss, settleAsks, settleFromChat };

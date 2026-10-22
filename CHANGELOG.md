@@ -2,6 +2,11 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one), for anyone who installs the app: what changed in it, never whose work it was (no projects, people, accounts, services, run ids or task wording of the person who made it). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.71.0 — 2026-10-22
+
+- **Talk to a card's agent on the card.** Ask something on a card ("did you fix it?", with or without a question mark) and its agent answers right there, from what that run knows, and does the work if you asked for it. The card's question stays open, the conversation shows on it, and it goes to the agent with your answer when you give one.
+- **A card's report belongs to the same agent.** What you type under the report a card links to goes to that card: an answer answers it and closes the card, a question is answered by its agent.
+
 ## 0.70.1 — 2026-10-22
 
 - **Plain words when approved work isn't on GitHub.** The card says what's wrong and what happens next in one line; branches, commits and git's own words are under Details. A clash an agent is already sorting out no longer asks for you.
