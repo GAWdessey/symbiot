@@ -326,11 +326,11 @@ function outcome(e, { tasks = loadTasks(), running = runningHandoff } = {}) {
   const words = lastWords(p);
   if (e.to.lane === OPS) {
     const ticked = /^- \[x\]/im.test(readSym(p, "TASKS.md"));
-    return { text: `${ticked ? "Done" : "It stopped without finishing"} (the ops agent).${words ? `\n\nWhat it said:\n${words}` : ""}`, settled: ticked };
+    return { text: `${ticked ? "Done" : "It stopped without finishing"} (the ops agent).${words ? `\n\nWhat it said:\n${words}` : ""}`, settled: ticked, ...(ticked ? {} : { stopped: true }) };
   }
   const t = tasks.find((x) => x.id === e.task);
   const done = t && (t.review || t.done || t.archived), about = aboutIt(words, e.text);
-  return { text: `${done ? `Done in ${e.to.lane}: the task is ticked, and its changes wait for the user's review in Symbiot` : `${e.to.lane}'s agent stopped without ticking it`}.${about ? `\n\nWhat it said about this:\n${about}` : words ? `\n\nIts last message was about other work in ${e.to.lane}, not this.` : ""}`, settled: !!done };
+  return { ...(done ? {} : { stopped: true }), text: `${done ? `Done in ${e.to.lane}: the task is ticked, and its changes wait for the user's review in Symbiot` : `${e.to.lane}'s agent stopped without ticking it`}.${about ? `\n\nWhat it said about this:\n${about}` : words ? `\n\nIts last message was about other work in ${e.to.lane}, not this.` : ""}`, settled: !!done };
 }
 // A run that stopped partway: questions to the user still open, or work it
 // handed to another lane that hasn't come back (the ledger, or HANDOFF.md not
@@ -483,7 +483,9 @@ function lanesTick({ map = laneMap(), act = actNow, run = runHandoff, running = 
     const o = outcome(e, { tasks: t, running });
     // nothing to report yet, for days: the asker is told where it stands, once (staleOutcome), and the row stays open for the real outcome
     if (!o) { const s = !e.stale && staleOutcome(e, { now, running }); if (s && report(e, s, { run, running, now })) { e.stale = now; e.result = s.text; reported.push(e); } continue; }
-    if (report(e, o, { run, running, now })) { e.reportedAt = now; if (e.status !== "error") e.status = "done"; e.result = o.text; reported.push(e); }
+    // one that came back without finishing is "stopped", not "done": 93 of 108 handovers read done by
+    // 21 Oct 2026, finished or not, and the work they were for was taken as done (goals.mjs reads this)
+    if (report(e, o, { run, running, now })) { e.reportedAt = now; if (e.status !== "error") e.status = o.stopped ? "stopped" : "done"; e.result = o.text; reported.push(e); }
   }
   if (started.length || reported.length || picked) saveLedger(ledger);
   if (reported.length) relink({ map }).catch(() => {}); // a handover may have renamed a lane's folder
@@ -697,7 +699,7 @@ const whoAnswers = (cfg = loadConfig()) => String(((cfg && cfg.profile) || {}).n
 // new run's brief is told (sharedFor). open: only a handover still open (its job hasn't
 // reported back), and only one step, for whom an answer goes to (answerReaches): over 14 days
 // and two steps every lane linked every other, and one answer reached them all (20 Oct 2026).
-const isOpen = (x) => !x.reportedAt && !["done", "error", "failed"].includes(x.status);
+const isOpen = (x) => !x.reportedAt && !["done", "stopped", "error", "failed"].includes(x.status);
 function linkedPaths(path, { ledger = loadLedger(), now = Date.now(), open = false } = {}) {
   const edges = ledger.handoffs.filter((x) => x.from && x.to && x.from.path && x.to.path && now - (x.at || 0) < LINK_DAYS * 86400000 && (!open || isOpen(x)));
   const seen = new Set([path]); let edge = [path];

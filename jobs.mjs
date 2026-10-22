@@ -21,7 +21,12 @@ const clip = (s, n) => String(s || "").replace(/\s+/g, " ").trim().slice(0, n);
 function loadJobs() { const d = readState(FILE, (v) => v && typeof v === "object" && Array.isArray(v.jobs)); return d ? d.jobs.filter((j) => j && j.key) : []; }
 // a card that left Home, or a task that left the Workdesk, a day ago is dropped, so neither pushes PRs and runs out of the record
 const passing = (j, now) => (String(j.key).startsWith("you:") || j.kind === "task") && ENDED.has(j.state) && now - j.changed > DAY;
-function saveJobs(jobs, now = Date.now()) { try { writeJsonAtomic(FILE, { jobs: jobs.filter((j) => !passing(j, now)).slice(-MAX_KEEP) }, { indent: 1, mode: 0o600 }); return true; } catch { return false; } }
+// An open goal (goals.mjs) is always kept: 300 newer rows of runs and cards mustn't push out what
+// the user asked for while it's still owed.
+const owed = (j) => j.kind === "goal" && !ENDED.has(j.state);
+function saveJobs(jobs, now = Date.now()) {
+  try { const keep = jobs.filter((j) => !passing(j, now)), goals = keep.filter(owed); writeJsonAtomic(FILE, { jobs: [...keep.filter((j) => !owed(j)).slice(-Math.max(50, MAX_KEEP - goals.length)), ...goals] }, { indent: 1, mode: 0o600 }); return true; } catch { return false; }
+}
 // A new state, the old one kept in its history with when it began.
 function shift(j, state, now) { if (state === j.state) return; j.history = [...(j.history || []), { state: j.state, at: j.changed }].slice(-8); j.state = state; j.changed = now; }
 
@@ -64,11 +69,19 @@ const whenOf = (t, now) => { const m = Math.max(0, Math.round((now - t) / 60e3))
 function jobLine(j, now = Date.now()) {
   return `${j.lane ? `[${j.lane}] ` : ""}${j.text || j.key}: ${SAYS[j.state] || j.state}${j.waitingOn ? `, waiting on ${j.waitingOn === "user" ? "the user" : j.waitingOn}` : ""}${j.what ? ` (${j.what})` : ""} (since ${whenOf(j.changed, now)})${j.note ? ` — ${j.note}` : ""}`;
 }
-// For the chat's context: the one record to answer "where are we?" from.
+// For the chat's context: the one record to answer "where are we?" from. The goals the user asked
+// for come first (goals.mjs): what they wanted, where it stands, what it waits on; the runs, tasks and
+// cards under them after. "Where are we" was asked seven times on 21 Oct 2026 and answered from runs.
+function goalLine(g, now = Date.now()) {
+  const st = g.state === "done" ? (g.closed && g.closed.kind === "not" ? `not finished: ${g.closed.missing || "see its report"}` : g.closed && g.closed.kind === "dropped" ? "dropped" : "done") : g.waitingOn ? `waiting on ${g.waitingOn === "user" ? "the user" : g.waitingOn}${g.what ? ` (${g.what})` : ""}` : SAYS[g.state] || g.state;
+  return `${g.lane ? `[${g.lane}] ` : ""}${g.text}: ${st} (asked ${whenOf(g.at, now)}, last moved ${whenOf(g.moved || g.changed, now)})${g.doneWhen ? `; done when: ${g.doneWhen}` : ""}`;
+}
 function jobsLines({ now = Date.now(), jobs } = {}) {
-  const { open, ended } = jobsNow({ now, jobs });
+  const all = jobs || loadJobs(), gs = all.filter((j) => j.kind === "goal" && (!ENDED.has(j.state) || now - j.changed < 3 * DAY)).sort((a, b) => b.at - a.at);
+  const goalHead = gs.length ? ["Goals the user asked for (each owned until it's done; answer 'where are we' from these first):", ...gs.slice(0, 12).map((g) => `- ${goalLine(g, now)}`)] : [];
+  const { open, ended } = jobsNow({ now, jobs: all.filter((j) => j.kind !== "goal") });
   const head = "Job record (one row per job, written when its state changed; answer 'where are we / is it merged / is it live / is it running' from this ONLY, and say you have no record of a job that isn't here, never infer one. 'merged' is not 'live'; 'asked' and 'queued' are not 'running'):";
-  return [head, ...(open.length ? open.slice(0, 15).map((j) => `- ${jobLine(j, now)}`) : ["- nothing open"]), ...(ended.length ? ["Ended in the last 24h:", ...ended.slice(0, 8).map((j) => `- ${jobLine(j, now)}`)] : [])];
+  return [...goalHead, head, ...(open.length ? open.slice(0, 15).map((j) => `- ${jobLine(j, now)}`) : ["- nothing open"]), ...(ended.length ? ["Ended in the last 24h:", ...ended.slice(0, 8).map((j) => `- ${jobLine(j, now)}`)] : [])];
 }
 // `symbiot status`: the same record, for a terminal.
 function jobsText({ now = Date.now(), jobs = loadJobs() } = {}) {
@@ -156,4 +169,9 @@ function runRecord(path, { jobs = loadJobs() } = {}) {
   return best;
 }
 const recordOf = (id, { jobs = loadJobs() } = {}) => { const j = jobs.find((x) => x.key === "run:" + id); return j && j.outcome ? j : null; };
-export { runRecord, recordOf, track, loadJobs, jobsNow, jobsLines, jobsText, jobLine, waitingOnUser, syncOnUser, syncTasks, onUser, landed, prKey, isCard, STATES, FILE };
+// ---- goals (goals.mjs): rows "goal:<id>", kind "goal", in this same record ----------------
+const goalRows = ({ jobs = loadJobs() } = {}) => jobs.filter((j) => j.kind === "goal");
+function putGoal(g, { now = Date.now() } = {}) {
+  try { const jobs = loadJobs(), i = jobs.findIndex((j) => j.key === g.key); if (i < 0) jobs.push(g); else jobs[i] = g; return saveJobs(jobs, now); } catch { return false; }
+}
+export { goalRows, putGoal, goalLine, saveJobs, shift, ENDED, runRecord, recordOf, track, loadJobs, jobsNow, jobsLines, jobsText, jobLine, waitingOnUser, syncOnUser, syncTasks, onUser, landed, prKey, isCard, STATES, FILE };

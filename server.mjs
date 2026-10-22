@@ -12,14 +12,14 @@ import { homedir } from "node:os";
 import { join, resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { gunzipSync, gzipSync } from "node:zlib";
-import { readRunLog } from "./work.mjs";
+import { readRunLog, waitUntil } from "./work.mjs";
 import { readFileSync, existsSync, mkdirSync, writeFileSync, readdirSync, statSync, unlinkSync, realpathSync, appendFileSync, rmSync, chmodSync } from "node:fs";
 import { createServer } from "node:http";
 import { randomBytes, createHash } from "node:crypto";
 import { EMBEDDED_UI } from "./ui.mjs";
 import { VERSION, LATEST_VERSION, REGISTRY, semverGt, checkLatest, CONFIG_PATH, loadConfig, saveConfig, moveSecrets, loadTasks, hasCmd, chromeBinary, CONFIG_DIR, takeAppLock, releaseAppLock, writeJsonAtomic } from "./core.mjs";
-import { triageSweep, onRunEnd, onAnswered, shSingle, handoffCmd, setHandoffCmd, grantAgent, runHandoff, track, detectHandoffs, connectorsInfo, linkReach, answerQuestions, skipIdea, agentsNow, startWaiting, parkLane, parkedPaths, autoAllowSweep, continueLanes, trustFull, readLastWords, sandboxState, HANDOFFS, runningHandoff, runsTick } from "./agents.mjs";
-import { PROVIDERS, resolveProvider, connectProvider, detectHardware, recommendModels, hasOllama, ollamaInstall, ensureOllama, useOllamaModel } from "./ai.mjs";
+import { onGoalAnswer, settleRecord, autoStart, runningHandoff as goalRunning, triageSweep, onRunEnd, onAnswered, shSingle, handoffCmd, setHandoffCmd, grantAgent, runHandoff, track, detectHandoffs, connectorsInfo, linkReach, answerQuestions, skipIdea, agentsNow, startWaiting, parkLane, parkedPaths, autoAllowSweep, continueLanes, trustFull, readLastWords, sandboxState, HANDOFFS, runningHandoff, runsTick } from "./agents.mjs";
+import { write as aiWrite, PROVIDERS, resolveProvider, connectProvider, detectHardware, recommendModels, hasOllama, ollamaInstall, ensureOllama, useOllamaModel } from "./ai.mjs";
 import { SCAN, SCAN_TIMEOUT_MS, scanRoots, scanHome, addScanRoot, removeScanRoot, mapNow, nodeDetail, repoPathMap, laneMap, setScanOptions, refreshRepos, REPO_STATE, reposState } from "./scan.mjs";
 import { computeDrift } from "./drift.mjs";
 import { afterShip, markLive, deployTick } from "./deploy.mjs";
@@ -35,7 +35,9 @@ import { weeklyState, setWeekly, runWeekly, startWeekly, autostartState, setAuto
 import { markNews, newsSince, watchState, addWatch, setEvery, removeWatch, clearNews, seenWatch, checkWatch, startWatches, setBrief, draftReply, openChat, watchBoard, boardChat, clearBoardChat } from "./watch.mjs";
 import { setLinkAct, linksState, linkSite, checkLink, unlinkSite, addSite, signInAsked, sitesCheck } from "./links.mjs";
 import { testWeeks, testInstalls, postsState, draftPosts, approvePost, editPost, skipPost, voiceFromLinkedIn, addMedia, removeMedia, mediaFile, mediaDir, pictureOfPage, clipOfPage, openUrl } from "./post.mjs";
-import { mindState, forget } from "./mind.mjs";
+import { mindState, forget, actNow } from "./mind.mjs";
+import { goalsTick, goalAnswer, openGoal } from "./goals.mjs";
+import { onUser } from "./jobs.mjs";
 import { lanesTick, shipHanded, lanesState, partlyDone, handingOf, loadLedger, orcaRelink, shareAnswer, projectOf } from "./lanes.mjs";
 import { archivedTasks } from "./sweep.mjs";
 import { sentTick } from "./sentmail.mjs";
@@ -488,7 +490,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       if (u.pathname === "/api/suggest" && req.method === "POST") { const b = await readBody(req); const p = String(b.path || ""); const isRepo = p && existsSync(join(p, ".git")); return json(res, await (isRepo ? repoSuggest(p) : folderSuggest(p))); }
       if (u.pathname === "/api/review" && req.method === "POST") { const b = await readBody(req); return json(res, await repoReview(String(b.path || ""))); }
       if (u.pathname === "/api/tasks" && req.method !== "POST") { const arch = u.searchParams.get("archived") === "1"; return json(res, [...loadTasks().filter((x) => !!x.archived === arch), ...(arch ? archivedTasks() : [])].map((t) => ({ ...t, type: taskType(t.text) }))); } // the Archive: tasks.json's archived, then what the sweep moved out (sweep.mjs)
-      if (u.pathname === "/api/tasks/add" && req.method === "POST") { const b = await readBody(req); return json(res, addTask(b.text, b.repo)); }
+      if (u.pathname === "/api/tasks/add" && req.method === "POST") { const b = await readBody(req), t = addTask(b.text, b.repo); if (t && t.id && !t.error) { try { openGoal(b.text, { child: "task:" + t.id, lane: b.repo || "", path: (laneMap() || {})[b.repo] || "" }); } catch {} } return json(res, t); } // a task the user adds is a goal, followed to its end (goals.mjs)
       if (u.pathname === "/api/tasks/toggle" && req.method === "POST") { const b = await readBody(req); return json(res, toggleTask(String(b.id || ""))); }
       if (u.pathname === "/api/tasks/model" && req.method === "POST") { const b = await readBody(req); return json(res, setTaskModel(String(b.id || ""), b.model)); }
       if (u.pathname === "/api/tasks/remove" && req.method === "POST") { const b = await readBody(req); return json(res, removeTask(String(b.id || ""))); }
@@ -908,6 +910,16 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
   setTimeout(() => { try { autoAllowSweep(); } catch {} }, 4000).unref();
   setInterval(() => { try { autoAllowSweep(); } catch {} }, 20000).unref();
   setInterval(() => { triageSweep().catch(() => {}); }, 15000).unref(); // every question an agent writes is judged before it can be a card (triage.mjs)
+  // what the user asked for, followed through to done or "not finished", never dropped (goals.mjs)
+  const goalDeps = () => {
+    let cardPaths = new Set(); try { cardPaths = new Set(onUser().map((c) => c.path).filter(Boolean)); } catch {}
+    let ai = null; try { ai = resolveProvider() ? aiWrite : null; } catch {}
+    return { write: ai, running: (p) => !!goalRunning(p), start: (p) => runHandoff(p, { force: true }), autoStart, ops: (req, o) => actNow(req, o), notify: (t, b) => desktopNotify(t, b), settle: settleRecord, stop: stopWaiting,
+      ledger: (() => { try { return loadLedger(); } catch { return { handoffs: [] }; } })(), waits: (() => { try { return awaitingState().waits; } catch { return []; } })(), map: (() => { try { return laneMap(); } catch { return {}; } })(), until: (what, now) => waitUntil(what, now), cardPaths };
+  };
+  onGoalAnswer((path, answers) => goalAnswer(path, answers, goalDeps()));
+  setTimeout(() => { goalsTick(goalDeps()).catch(() => {}); }, 60000).unref();
+  setInterval(() => { goalsTick(goalDeps()).catch(() => {}); }, 10 * 60000).unref();
   setInterval(() => { try { continueLanes(); } catch {} }, 60000).unref(); // a lane with open tasks and no run going starts again, while it gets somewhere
   // a finished run's last words, read by your AI for anything left to you that the patterns missed (agents.mjs readLastWords)
   setInterval(() => { readLastWords().catch(() => {}); }, 60000).unref();
