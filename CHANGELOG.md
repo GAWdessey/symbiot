@@ -2,6 +2,13 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one), for anyone who installs the app: what changed in it, never whose work it was (no projects, people, accounts, services, run ids or task wording of the person who made it). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.81.2 — 2026-10-23
+
+- **Your app's key stays out of the list of running programs.** Symbiot's window opens with a one-use pass that's good for a minute, rather than the key itself, which any program on the computer could read.
+- **A post editor in Symbiot's browser keeps what you typed.** Typing, choosing, uploading and pressing from a lane all happen on the same open page while the app runs. If the app can't be reached, the command waits a minute and then says so, with nothing done, rather than opening the page again and losing the text.
+- **Fewer pointless sign-in asks.** When signing in isn't what's in the way on a site, the card asks for what is: letting agents act there, or saying it's already signed in.
+- **A request for a run that's still going joins that run**, rather than starting a second one beside it.
+
 ## 0.81.1 — 2026-10-23
 
 - **A new page is on Home, not hidden under "more".** Home shows the parts you use most, so a page that has just come in a release, never used yet, used to start out under "more" where nobody would find it. It now has its own place on Home for three weeks or until you open it, whichever comes first, and is ranked like the rest after that. The Vault is the first.
