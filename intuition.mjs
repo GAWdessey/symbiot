@@ -30,6 +30,7 @@ import { join } from "node:path";
 import { createHash, randomBytes } from "node:crypto";
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { CONFIG_DIR, readState, writeJsonAtomic, sameTask } from "./core.mjs";
+import { promptFor, triageExtra } from "./overrides.mjs";
 
 const FILE = () => join(CONFIG_DIR, "intuition.json"), FOCUS = () => join(CONFIG_DIR, "focus.md");
 const DIGEST_DIR = () => join(CONFIG_DIR, "drafts", "act-intuition", ".symbiot"); // a run folder Reports reads
@@ -157,7 +158,8 @@ async function intuitionPass(deps = {}, { now = Date.now(), force = false, event
   if (mode === "off") { save(st); return { skipped: "off" }; }
   if (typeof deps.write !== "function") { save(st); return { skipped: "no AI" }; }
   learn(st, deps, now);
-  const focus = readFocus(), d = digest(deps, now);
+  const tx = (() => { try { return triageExtra(); } catch { return { relevance: [], ignore: [], channels: {} }; } })();
+  const focus = readFocus() + (tx.relevance.length ? `\n\nAlso relevant (their customisations): ${tx.relevance.join(", ")}` : "") + (tx.ignore.length ? `\n\nIgnore (their customisations): ${tx.ignore.join(", ")}` : ""), d = digest(deps, now);
   let system = SYSTEM, ask = "";
   const evs = events ? newEvents(deps, st, now) : [];
   if (events) {
@@ -170,7 +172,7 @@ async function intuitionPass(deps = {}, { now = Date.now(), force = false, event
   const recent = st.passes.filter((p) => now - p.at < DAY).flatMap((p) => p.moves || []);
   const shunned = Object.entries(st.weights).filter(([, w]) => w <= SHUN).map(([k]) => k);
   const prompt = `Their focus (focus.md, theirs to edit):\n${focus.trim() || "(empty: they haven't written one)"}\n\n${ask}\n\nAlready done on its own in the last day (don't repeat):\n${recent.length ? recent.map((m) => `- ${m.kind}: ${m.what}`).join("\n") : "- nothing"}\n\nTurned down by the user before (kind|lane):\n${shunned.length ? shunned.map((k) => `- ${k}`).join("\n") : "- nothing"}`;
-  const raw = await askMoves(deps.write, system, prompt);
+  const raw = await askMoves(deps.write, system + (() => { try { return promptFor("intuition"); } catch { return ""; } })(), prompt);
   const { moves, rejected } = choose(Array.isArray(raw) ? raw : [], { st, recent, cfg, now, mode });
   const map = val(deps.map, {}) || {};
   for (const mv of moves) carry(mv, { deps, map, st, cfg, mode, now });
@@ -225,7 +227,8 @@ function choose(raw, { st, recent, cfg = {}, now, mode = "act" }) {
 // A kind the user keeps ignoring drops a channel: now → digest → never.
 function channelOf(mv, st) {
   const n = st.noise[`${mv.kind}|${mv.lane || ""}`] || 0, order = CHANNELS;
-  let i = Math.max(0, order.indexOf(mv.interrupt)); if (n <= -1) i++; if (n <= -2) i++;
+  const own = (() => { try { return (triageExtra().channels || {})[mv.kind]; } catch { return ""; } })(); // the user's customisation: a channel per kind of move
+  let i = Math.max(0, order.indexOf(own || mv.interrupt)); if (n <= -1) i++; if (n <= -2) i++;
   if (mv.tier >= 2 && mv.does === "ask" && i === 2) i = 1; // an approval it needs is never only a log line
   return order[Math.min(i, 2)];
 }
@@ -338,6 +341,8 @@ function intuitionLines({ now = Date.now(), cfg } = {}) {
   const st = load(), moves = st.passes.filter((p) => now - p.at < DAY).flatMap((p) => (p.moves || []).map((m) => ({ ...m, at: p.at })));
   return [`What Symbiot did on its own in the last day (its intuition, mode: ${modeOf(cfg || {}, st, now)}; answer "what are you doing on your own?" from this):`, ...(moves.length ? moves.map((m) => `- ${ago(m.at, now)}: ${line(m)}${m.error ? ` (didn't start: ${m.error})` : ""}`) : ["- nothing"])];
 }
+// Something for the next digest that didn't come from a pass (a customisation applied or undone).
+function noteChange(text, now = Date.now()) { const st = load(); st.digest.push({ at: now, line: clip(text, 240) }); save(st); return true; }
 // A run ended, a reply came in: look again soon, not at the next half hour.
 function nudge() { const st = load(); if (!st.nudged) { st.nudged = Date.now(); save(st); } }
 // The timer (server.mjs, every 2 minutes): new events each time, the whole situation every 30
@@ -349,4 +354,4 @@ async function intuitionTick(deps = {}, { now = Date.now() } = {}) {
   return { events: ev, pass: await intuitionPass(deps, { now }) };
 }
 
-export { askMoves, SYSTEM as INTUITION_SYSTEM, EVENT_SYSTEM, digest, newEvents, intuitionPass, intuitionTick, choose, carry, learn, tierOf, modeOf, channelOf, digestDue, intuitionUpdates, intuitionState, intuitionLines, acceptFocus, revoke, readFocus, writeFocus, nudge, line, SOURCES, TIERS, FILE as INTUITION_FILE, FOCUS as FOCUS_FILE, EVERY, NUDGE_GAP, BUDGET, PROMOTE_AFTER, WATCH_FIRST, FOCUS_START };
+export { noteChange, askMoves, SYSTEM as INTUITION_SYSTEM, EVENT_SYSTEM, digest, newEvents, intuitionPass, intuitionTick, choose, carry, learn, tierOf, modeOf, channelOf, digestDue, intuitionUpdates, intuitionState, intuitionLines, acceptFocus, revoke, readFocus, writeFocus, nudge, line, SOURCES, TIERS, FILE as INTUITION_FILE, FOCUS as FOCUS_FILE, EVERY, NUDGE_GAP, BUDGET, PROMOTE_AFTER, WATCH_FIRST, FOCUS_START };

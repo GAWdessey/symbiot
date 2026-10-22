@@ -13,6 +13,7 @@
     "triage.mjs",
     "needs.mjs",
     "intuition.mjs",
+    "overrides.mjs",
     "design.mjs",
     "goals.mjs",
     "scan.mjs",

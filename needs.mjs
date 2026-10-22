@@ -19,6 +19,7 @@
 import { join } from "node:path";
 import { createHash } from "node:crypto";
 import { CONFIG_DIR, readState, writeJsonAtomic } from "./core.mjs";
+import { promptFor } from "./overrides.mjs";
 
 const CARDTEXT = () => join(CONFIG_DIR, "cardtext.json");
 const MAX_KEEP = 300;
@@ -89,7 +90,7 @@ async function writeCards(cards, { write, now = Date.now() } = {}) {
     if (!y || y.kind !== "ask" || isUpdate(y) || all[keyOf(y)]) continue;
     const opts = y.options || [];
     const prompt = `The card, from ${y.name || y.repo || "an agent"}${y.title ? ` (${y.title})` : ""}:\n${y.raw || y.q || y.sub}\n${y.why ? `Its context: ${y.why}\n` : ""}${y.report && y.report.title ? `It links a report: "${y.report.title}"\n` : ""}Its options, in order:\n${opts.map((o, i) => `${i}. ${o}`).join("\n") || "(none: they answer in their own words)"}`;
-    let r = null; try { r = await write(SYSTEM, prompt, { fast: true, kind: "triage" }); } catch {}
+    let r = null; try { r = await write(SYSTEM + promptFor("card"), prompt, { fast: true, kind: "triage" }); } catch {}
     const m = r && typeof r.text === "string" ? r.text.match(/\{[\s\S]*\}/) : null; let o = null; try { o = m ? JSON.parse(m[0]) : null; } catch {}
     const t = check(o, opts.length); if (!t) continue;
     all[keyOf(y)] = { ...t, at: now }; n++;
