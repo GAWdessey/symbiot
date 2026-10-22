@@ -20,7 +20,7 @@ import { pendingReview, pushTasks, addTask, taskType, releaseNotIn } from "./tas
 import { estimate, estimateWords } from "./estimate.mjs";
 import { agentQuestions, answerQuestions, heldAsk, grantCard, cardIsPermission, onCardGone, setHandoffCmd, agentsList, agentsNow, forgetAgents, runHandoff, runningHandoff, handoffCmd, loadRuns, connectorsInfo, parkedPaths, agentMissing, settleNeeds, closeAsk, pickAgent, detectHandoffs, linkReach, unchangedStep, whereOf, claudePause, parkLane } from "./agents.mjs";
 import { stallCards, loadStall, saveStall } from "./stall.mjs";
-import { isDone, recordDone, coveredBy, doneList, asksBack, askBackNote, wantsReport, closesAsk, heldBy, reportsSince, talkOf, addTalk, talkText } from "./asksdone.mjs";
+import { isDone, recordDone, coveredBy, doneList, asksBack, askBackNote, wantsReport, closesAsk, heldBy, reportsSince, talkOf, addTalk, talkText, YES, ASKS, wantsToRead } from "./asksdone.mjs";
 import { captureSecrets } from "./vault.mjs";
 import { linksState, signInAsked } from "./links.mjs";
 import { knowledgeState } from "./knowledge.mjs";
@@ -586,9 +586,15 @@ function runAfterShip(path, run = runHandoff) {
   let n = 0; const t = setInterval(() => { let e = null; try { e = run(path, { force: true }); } catch {} if (!(e && e.shipping) || ++n >= 60) clearInterval(t); }, 10000);
   if (t.unref) t.unref();
 }
+const SAID_SO = /\b(?:already|i(?:'?ve| have)? (?:answered|replied|said|told|did|done|sent)|i did)\b/i; // a remark about what's done, not an instruction
 function homeAnswer(id, { pick, text = "" } = {}, deps = {}) {
   id = String(id || ""); text = String(text || "").trim().slice(0, 2000);
   try { text = captureSecrets(text).text; } catch {} // a secret typed on a card goes to the vault; ANSWERS.md and the record get "[saved: …]"
+  // Typed words are a Go only when they say yes, a Skip only when they say no. Anything else ("ive
+  // already answered", a question) is said to the card's agent, not a Go: "ive already answered" on
+  // a Go ahead / Skip card approved sending a note the user had just said not to send (22 Oct 2026).
+  const asking = text && (/\?/.test(text) || ASKS.test(text)) && !wantsReport(text) && !wantsToRead(text); // "did you send it already" is a question, "send it" or not
+  if (text && !SAYS_NO.test(text) && (asking || (SAID_SO.test(text) && !YES.test(text)))) return { talk: true, text };
   const go = text ? !SAYS_NO.test(text) : Number(pick) === 0, ref = id.replace(/^\w+:/, "");
   cached = null;
   if (id.startsWith("stuck:")) {
@@ -897,13 +903,13 @@ function sinceReport(r, { read = (f) => readFileSync(f, "utf8"), stat = (f) => s
 // on the card from that run's own records, and the card's question stays open. Asked for work
 // ("check it again", "fix it"), it acts: the run's lane takes it, as from Home's chat. null when
 // the text is an answer (answerQuestions takes it as before).
-async function cardTalk(path, answers, { ask, deps = {}, extra = "" } = {}) {
+async function cardTalk(path, answers, { ask, deps = {}, extra = "", force = false } = {}) {
   const rows = Array.isArray(answers) ? answers : [], one = rows.length === 1 ? rows[0] : null;
   if (!path || !one || !String(one.a || "").trim()) return null;
   const read = deps.read || ((f) => { try { return readFileSync(join(path, ".symbiot", f), "utf8"); } catch { return ""; } });
   const qs = (deps.questions || ((p) => { try { return agentQuestions(p, "", { raw: true }).questions; } catch { return []; } }))(path);
   const q = qs.find((x) => String(x.q).trim().toLowerCase() === String(one.q || "").trim().toLowerCase()) || { q: one.q, options: [] };
-  if (!asksBack(one.a, q.options || [])) return null;
+  if (!force && !asksBack(one.a, q.options || [])) return null;
   if (!ask && !resolveProvider()) return null; // no AI here: it's taken as before (asked back, its run writes it up)
   let map = {}; try { map = laneMap(); } catch {}
   const lane = laneOfPath(path, map), name = lane || "this run", said = String(one.a).trim();
