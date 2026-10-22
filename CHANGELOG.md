@@ -2,6 +2,11 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one), for anyone who installs the app: what changed in it, never whose work it was (no projects, people, accounts, services, run ids or task wording of the person who made it). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.74.1 — 2026-10-22
+
+- **Symbiot stops opening itself on your phone.** The computer app no longer pushes its "link to this computer" prompt to a phone connected over Wi-Fi, or to any phone once one is paired, and never again after a phone sleeps and reconnects: it only does so once for a phone on a cable.
+- **Agents ask before they open an app on your phone.** An agent's attempt to launch an app or tap its screen over adb waits for your yes on a card, goes through once, and only one run uses the phone at a time.
+
 ## 0.74.0 — 2026-10-22
 
 - **Needs you holds only what you decide or do.** Each card there is a short question you can answer at a glance: one line on why, buttons that say what they do (hover to see what happens), the recommended one first. When your step is to try or listen to something, the card lets you tell the agent what you found.

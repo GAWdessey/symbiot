@@ -525,18 +525,21 @@ function stopRelay() {
 
 // USB: a phone on adb needs nothing scanned. `adb reverse` lets it reach this computer at
 // 127.0.0.1:7392 over the cable, and the pairing link is pushed to the Android app, which
-// asks "Link to <this computer>?": Approve is the only step. Once per plug-in per phone.
+// asks "Link to <this computer>?": Approve is the only step. Once per phone while the app
+// runs, over a cable only, and only while no phone is paired: the push opens Symbiot on the
+// phone, and a Wi-Fi adb link (`host:port`, `…._adb-tls-connect._tcp`) drops each time the
+// phone sleeps, so pushing again on each reconnect kept popping it open (22 Oct 2026).
 const adbPushed = new Set();
+const adbWifi = (s) => /:\d+$/.test(s) || /\._adb-tls-connect\._tcp$/.test(s);
 const adbRun = (args) => execFileSync("adb", args, { encoding: "utf8", timeout: 8000, stdio: ["ignore", "pipe", "ignore"] });
 function adbLink({ run = adbRun, has = () => hasCmd("adb") } = {}) {
   const l = linkCfg();
-  if (!l.on || !listener || !has()) return [];
+  if (!l.on || !listener || l.phones.length || !has()) return [];
   let serials = [];
   try { serials = run(["devices"]).split("\n").slice(1).map((x) => x.trim().split(/\s+/)).filter((x) => x[1] === "device").map((x) => x[0]); } catch { return []; }
-  for (const s of [...adbPushed]) if (!serials.includes(s)) adbPushed.delete(s); // unplugged: pushed again next time
   const did = [];
   for (const s of serials) {
-    if (adbPushed.has(s)) continue;
+    if (adbPushed.has(s) || adbWifi(s)) continue;
     try {
       run(["-s", s, "reverse", `tcp:${l.port}`, `tcp:${l.port}`]);
       if (!pairing || Date.now() > pairing.until) newCode();
@@ -616,7 +619,7 @@ async function usePhonePort(port) {
   await startPhoneLink();
   return listener && !pairing ? newCode() : linkState();
 }
-function stopPhoneLink() { clearTimeout(retryTimer); retryTimer = null; if (listener) { listener.close(); if (listener.closeAllConnections) listener.closeAllConnections(); } listener = null; pairing = null; stopMdns(); stopRelay(); clearInterval(adbTimer); adbTimer = null; adbPushed.clear(); }
+function stopPhoneLink() { clearTimeout(retryTimer); retryTimer = null; if (listener) { listener.close(); if (listener.closeAllConnections) listener.closeAllConnections(); } listener = null; pairing = null; stopMdns(); stopRelay(); clearInterval(adbTimer); adbTimer = null; }
 async function setPhoneLink(on) {
   saveLink({ on: !!on });
   if (!on) { stopPhoneLink(); listenErr = ""; return linkState(); }

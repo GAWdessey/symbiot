@@ -20,6 +20,7 @@ import { plainAsk } from "./plain.mjs";
 import { apiOptions, blockedSignIn, apiRoute, realChrome, CHROME_READ, CHROME_ACT } from "./browserfails.mjs";
 import { actSites, goAhead } from "./chromegate.mjs";
 import { pushGo } from "./pushgate.mjs";
+import { goAhead as phoneGo } from "./phonegate.mjs";
 import { lanesJob, parseFacts, leftToYou, gitWork, agentsGitWork, agentsClicking, agentsCodeWork, agentsMail, agentsPosting, linkedAsks, linkedChore, PUSH_OK } from "./handover.mjs";
 import { scanRoots, repoPathMap, laneMap } from "./scan.mjs";
 import { knowledgeFolders } from "./knowledge.mjs";
@@ -2342,6 +2343,8 @@ function answerQuestions(path, answers, opts = {}) {
   for (const x of rows) if (!x.back && closesAsk(x.a)) closeAsk(path, x.q); // "case closed": a later run restating it raises no card (needsOf)
   // Go on a held action in the user's own Chrome (a question with id chrome-go-<hold>): that one action may go through (chromegate.mjs)
   for (const x of rows) { const m = String(x.id || "").match(/^chrome-go-([0-9a-f]+)$/); if (m && !/^\W*(?:no|don'?t|do not|skip|stop|cancel|not now)\b/i.test(x.a)) goAhead(m[1]); }
+  // Go on an adb command the membrane held, one that opens an app or acts on the screen of the user's phone (phone-go-<hold>): it may go through once (phonegate.mjs)
+  for (const x of rows) { const m = String(x.id || "").match(/^phone-go-([0-9a-f]+)$/); if (m && !/^\W*(?:no|don'?t|do not|skip|stop|cancel|not now)\b/i.test(x.a)) phoneGo(m[1]); }
   // Go on a force-push the membrane held (push-go-<hold>): Symbiot pushes it itself (pushgate.mjs), the outcome goes into
   // ANSWERS.md, and the run carries on once it's in (below), so it never offers the user a setting that doesn't exist
   const pushes = rows.map((x) => { const m = String(x.id || "").match(/^push-go-([0-9a-f]+)$/); return m && !/^\W*(?:no|don'?t|do not|skip|stop|cancel|not now)\b/i.test(x.a) ? pushGo(m[1]).then((r) => { try { writeFileSync(join(path, ".symbiot", "ANSWERS.md"), readSymbiot(path, "ANSWERS.md").replace(/\s*$/, "\n") + `\n### Symbiot: the push you asked for {#${x.id}}\n${r.text}\n_${day}_\n`); } catch {} }) : null; }).filter(Boolean);
