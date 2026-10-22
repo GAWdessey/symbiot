@@ -28,7 +28,7 @@ try {
   ok("a step of theirs (a need from its words): waiting on the user", end("- [x] a\n", { needs: { what: "press Set up a meeting" } }).waitingOn === "user");
   put("HANDOFF.md", "### ops\nRead the delivered count.\n");
   const l = end("## Tasks\n- [x] a\n- [~] (waits on ops: the delivered count read) Find the 16 Oct count\n");
-  ok("a [~] item handed to a lane: waiting on that lane, saying what", l.state === "waiting" && l.waitingOn === "lane" && /^ops: waits on ops/.test(l.what), l);
+  ok("a [~] item handed to a lane: waiting on that lane, saying what", l.state === "waiting" && l.waitingOn === "lane" && /^ops: the delivered count read$/.test(l.what) && l.task === "Find the 16 Oct count", l); // the note without its "waits on", and the job beside it
   put("HANDOFF.md", "");
   ok("…on a reply from outside: waiting on a third party", end("- [~] (waits on Dana's reply to the redirect email) QA\n").waitingOn === "third party");
   ok("…on a time: waiting on the time", end("- [~] (stays waiting until 10:38 tomorrow) the window\n").waitingOn === "time");
@@ -45,8 +45,8 @@ try {
   console.log("OUTCOME — the record, and what reads it");
   J.track("run:r1", { kind: "agent", lane: "bookly", path: lane, text: "bookly", state: "running" }, { now: 1000 });
   J.track("run:r1", { ...l, outcome: true }, { now: 2000 });
-  ok("kept on the job record, with what it waits on", J.recordOf("r1").state === "waiting" && J.runRecord(lane).waitingOn === "lane" && /ops: waits on ops/.test(J.runRecord(lane).what));
-  ok("…and the chat reads it there", /bookly: stopped, waiting, waiting on lane \(ops: waits on ops/.test(J.jobsLines({ now: 3000 }).join("\n")), J.jobsLines({ now: 3000 }));
+  ok("kept on the job record, with what it waits on", J.recordOf("r1").state === "waiting" && J.runRecord(lane).waitingOn === "lane" && /^ops: the delivered count read$/.test(J.runRecord(lane).what) && J.runRecord(lane).task === "Find the 16 Oct count");
+  ok("…and the chat reads it there", /bookly: stopped, waiting, waiting on lane \(ops: the delivered count read/.test(J.jobsLines({ now: 3000 }).join("\n")), J.jobsLines({ now: 3000 }));
   J.track("run:old", { kind: "agent", lane: "x", path: join(HOME, "work", "x"), text: "x", state: "done" });
   ok("a run before this release has no record to read (null): the screens fall back", J.recordOf("old") === null && J.runRecord(join(HOME, "work", "x")) === null);
   ok("runPhase reads it: waiting, paused, failed, finished", A.runPhase({ status: "done", outcome: { state: "waiting" } }) === "waiting" && A.runPhase({ status: "done", outcome: { state: "paused" } }) === "paused" && A.runPhase({ status: "done", outcome: { state: "review" } }) === "finished" && A.runPhase({ status: "done", outcome: { state: "failed" } }) === "failed");

@@ -59,6 +59,45 @@ try {
   await G.goalsTick({ notTheirs: (c) => c.q === status.q, running: () => false, start: (p) => { started.push(p); return { id: "x" }; }, autoStart: () => true, settle: () => {}, cardPaths: new Set(), waits: [], ledger: { handoffs: [] }, map: {} });
   ok("…and its run is started to check it itself, not the user asked", started.includes(run), started);
 
+  console.log("NEEDS YOU — a card says the agent is doing the work, what it has done, and the one thing it needs (22 Oct 2026)");
+  const dom = { kind: "ask", id: "ask:/runs/act-dm", path: "/runs/act-dm", repo: "bookly", q: "Create the company's account at the registrar and send the transfer ticket?", task: "New job: move the domain to the company's own account", done: "I drafted the ticket and the account form; nothing is sent.", options: ["Go ahead", "Skip"] };
+  let seen = "";
+  await N.writeCards([dom], { write: async (sys, prompt) => { seen = sys + "\n" + prompt; return { text: JSON.stringify({ doing: "I'm moving the domain to the company's own account. I've drafted the ticket and the form.", question: "Can I create the account and send the ticket?", labels: ["Go ahead", "Skip it"], tips: ["", ""], recommended: 0 }) }; }, known: { keys: ["registrar-login"], sites: ["gmail", "www.domains.co.za"] } });
+  const d = N.applyText(dom);
+  ok("the card opens with the agent's own line, then its one ask", d.doing === "I'm moving the domain to the company's own account. I've drafted the ticket and the form." && d.q === "Can I create the account and send the ticket?", d);
+  ok("…the writer saw the job, what's done, the saved keys and the linked sites, and is told to send back what they hold", /The agent's job: New job: move the domain/.test(seen) && /I drafted the ticket/.test(seen) && /registrar-login/.test(seen) && /www\.domains\.co\.za/.test(seen) && /saved keys or the linked sites and mailboxes/.test(seen) && /in the agent's own voice/.test(seen), seen.slice(-700));
+  const old1 = { kind: "ask", id: "ask:/w/b", path: "/w/b", q: "Which plan should Pro be sold on?", options: ["Monthly", "Yearly"] };
+  const all0 = N.loadCardText(); all0[N.keyOf(old1)] = { question: "Which plan for Pro?", at: 1 }; writeFileSync(N.CARDTEXT(), JSON.stringify(all0));
+  let again = 0; await N.writeCards([old1], { write: async () => (again++, { text: JSON.stringify({ doing: "I'm setting up Pro's pricing.", question: "Which plan should Pro be sold on?", labels: ["Monthly", "Yearly"] }) }) });
+  ok("a card written before the agent's line is written again, once", again === 1 && N.applyText(old1).doing === "I'm setting up Pro's pricing.", N.textFor(old1));
+  const { jobWords } = await import("../core.mjs");
+  ok("a job reads without Agent: or a handover's New job:", jobWords("Agent: New job: finish the coach avatars") === "finish the coach avatars" && jobWords("New job, not a replacement: restart Wren") === "restart Wren" && jobWords("Lerato done. New job: finish Clay") === "Lerato done. finish Clay");
+
+  console.log("NEEDS YOU — a goal's card never shows the task's words as the user's step");
+  const A = await import("../agents.mjs");
+  const lane = join(HOME, "lane-d"); mkdirSync(join(lane, ".symbiot"), { recursive: true });
+  writeFileSync(join(lane, ".symbiot", "TASKS.md"), "## Tasks\n- [~] New job: Move the domain into the company's own account. The owner registered the company; copy its documents into a folder.\n");
+  const bare = A.runOutcome(lane, {}, 0, { files: 0, final: "The move isn't done. I drafted the ticket; creating the account and sending it need your yes.", questions: [], waiting: null, needs: null });
+  ok("a [~] item with no note: marked bare, its job kept without New job:", bare.state === "waiting" && bare.bare === true && bare.task === "Move the domain into the company's own account. The owner registered the company; copy its documents into a folder.", bare);
+  writeFileSync(join(lane, ".symbiot", "TASKS.md"), "## Tasks\n- [~] (waits on: ops, run act-c1, which holds the key) Finish the coach avatars\n");
+  const noted = A.runOutcome(lane, {}, 0, { files: 0, final: "Lerato is done.", questions: [], waiting: null, needs: null });
+  ok("…with a note: what it waits on is the note, and the job is the rest", noted.what === "ops, run act-c1, which holds the key" && noted.task === "Finish the coach avatars" && !noted.bare, noted);
+  const run2 = join(CFG, "drafts", "act-dom2"); mkdirSync(join(run2, ".symbiot"), { recursive: true });
+  J.putGoal({ key: "goal:ef56", kind: "goal", text: "no as discussed we have created the company", asked: "no as discussed we have created the company", state: "running", at: Date.now() - 3600e3, changed: Date.now() - 3600e3, children: ["run:r10"], paths: [run2] });
+  J.track("run:r10", { kind: "agent", lane: "bookly", text: "bookly", path: run2, state: "waiting", waitingOn: "user", what: bare.task, task: bare.task, bare: true, summary: bare.summary, outcome: true });
+  await G.goalsTick({ running: () => false, start: () => null, autoStart: () => false, settle: () => {}, cardPaths: new Set(), waits: [], ledger: { handoffs: [] }, map: {} });
+  const gc = G.goalCards().find((c) => c.goal === "ef56");
+  ok("its card asks in the run's own words, the sentence that needs them, says the job is the agent's, and isn't the task's words", gc && gc.q === "I drafted the ticket; creating the account and sending it need your yes." && !/copy its documents/.test(gc.q) && gc.task === bare.task && !gc.done, gc);
+  ok("…a yes it asks for is a Go ahead, not \"I've done it\"", gc && gc.options.join() === "Go ahead,Drop it", gc && gc.options);
+  const settled = [], began = [];
+  const ga = G.goalAnswer("goal:ef56", [{ q: gc.q, a: "Go ahead" }], { settle: (p, why) => settled.push([p, why]), start: (p) => began.push(p), jobs: J.loadJobs(), map: {} });
+  ok("…and Go ahead carries the run on with the user's yes", ga.ok && settled.length === 1 && settled[0][0] === run2 && /go ahead/.test(settled[0][1]) && began.includes(run2), [ga, settled, began]);
+  J.putGoal({ key: "goal:ef57", kind: "goal", text: "the avatars", asked: "the avatars", state: "running", at: Date.now() - 3600e3, changed: Date.now() - 3600e3, children: ["run:r11"], paths: [join(CFG, "drafts", "act-av1")] });
+  J.track("run:r11", { kind: "agent", lane: "agent", text: "New job: finish the coach avatars", path: join(CFG, "drafts", "act-av1"), state: "waiting", waitingOn: "user", what: "allow the microphone for Lerato's test call", summary: "Lerato is set up; I couldn't hear her voice.", outcome: true });
+  await G.goalsTick({ running: () => false, start: () => null, autoStart: () => false, settle: () => {}, cardPaths: new Set(), waits: [], ledger: { handoffs: [] }, map: {} });
+  const gv = G.goalCards().find((c) => c.goal === "ef57");
+  ok("…an ops run's card: its step, its job without New job:, and what it has done", gv && gv.q === "allow the microphone for Lerato's test call" && gv.task === "finish the coach avatars" && gv.done === "Lerato is set up; I couldn't hear her voice.", gv);
+
   console.log("NEEDS YOU — the Updates button takes clicks");
   { const ui = (await import("node:fs")).readFileSync(new URL("../ui.mjs", import.meta.url), "utf8"), rule = (ui.match(/body\.lq-liquid header \.status[^{]*\{pointer-events:auto\}/) || [""])[0];
     ok("the header lets clicks through to the liquid, except its controls: Updates is one of them (it couldn't be clicked, 22 Oct 2026)", /#lqupd/.test(rule) && /#lqlook/.test(rule), rule); }

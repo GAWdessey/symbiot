@@ -285,6 +285,8 @@ body.lq-pooled #lqneedt,body.lq-work #lqneedt{display:none}
 body.lq-light .lqblob .btm{color:#2B3644;background:rgba(0,0,0,.05)}
 body.lq-light .lqblob .btm.me{background:rgba(176,120,20,.12)}
 body.lq-light .lqblob .btm b{color:#141A22}
+.lqblob .bdoing{font-size:11.5px;line-height:1.3;color:#8A919B;margin-bottom:3px;overflow:hidden;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2}.lqblob .bdoing i{margin-right:4px;vertical-align:-1px}
+body.lq-light .lqblob .bdoing{color:#5A6470}body.lq-contrast .lqblob .bdoing{color:inherit}
 .lqblob .bwhy{font-size:11.5px;line-height:1.3;color:#8A919B;margin-top:3px;overflow:hidden;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2}
 .lqblob .nopt .brec{display:block;font-style:normal;font-size:10.5px;opacity:.7;margin-top:1px}
 body.lq-light .lqblob .bwhy{color:#5A6470}
@@ -3817,12 +3819,15 @@ if(ch)try{localStorage.setItem(BDKEY,JSON.stringify(a));}catch(e){}}
 // the agent said back, under its question, which stays open until it's answered.
 var BLOBTALK={};
 function blobTalk(t,nm){if(!t||!t.length)return '';return "<div class='btalk'>"+t.slice(-6).map(function(m){return "<div class='btm "+(m.from==='you'?'me':'ag')+"'><b>"+(m.from==='you'?'You':'Agent')+"</b> "+esc(m.text)+"</div>";}).join('')+"</div>";}
+// A card opens with its agent saying what it's on and what it has done (y.doing from the card writer, else
+// "I'm on it: <its job>. So far: …"), then the one thing it needs: a card that was only the task's words read
+// as the user's job ("how should i know you are the one thats manning it not me", 22 Oct 2026).
 function blobBody(y,home){var h='',nm=y.name||y.repo||(y.kind==='setup'?y.title:'')||'';
 if(!y.local)h+="<button type='button' class='bx' title='Dismiss: it won&#39;t show here again (Undo brings it back)' aria-label='Dismiss this card'>&times;</button>";
 var pc=projChip(y);
 h+=home?"<button type='button' class='lt' title='open "+escQ(nm)+", with this lit up'>"+pc+"<span>"+esc(lqShort(nm,pc?22:30))+"</span><i>open &rsaquo;</i></button>":"<div class='nhead'>"+pc+"<b>"+esc(nm)+(y.kind==='ask'?" asks":"")+"</b>"+(y.more?"<span class='muted'>+"+y.more+" more on its block in Agents</span>":"")+"</div>";
 if(y.kind!=='ask')return h+"<div class='bq'>"+esc(y.kind==='approve'?String(y.sub||'').replace(/ · only you decide$/,''):String(y.sub||'').charAt(0).toUpperCase()+String(y.sub||'').slice(1)+'.')+"</div><div class='bo'><button type='button' class='nopt rec ngo'><span class='bt'>"+(y.kind==='approve'?'Review and approve':y.id==='setup:inbox'?(y.signin?'Sign in again':'Show me your inbox'):y.id==='setup:ai'?'Connect an AI':y.pick?'Use '+y.pick.name:y.urgent?'Reconnect':'Open Settings')+"</span></button></div>";
-var os=y.options||[];if(y.draft)h+=draftHtml(y.draft);if(y.status)h+="<div class='bwait'><i class=ic-pause></i> "+esc(y.status)+"</div>";var tk=String(y.task||'').replace(/^Agent:\\s*/,'');if(tk&&tk.slice(0,24)!==String(nm).slice(0,24))h+="<div class='bfor' title='"+escQ(tk)+"'>for: "+esc(tk)+"</div>";h+="<div class='bq' title='"+escQ((y.q||'')+(y.why?' ('+y.why+')':''))+"'>"+codeText(y.q||y.sub||'')+"</div>"+(y.why?"<div class='bwhy' title='"+escQ(y.why)+"'>"+esc(y.why)+"</div>":"")+blobTalk(y.talk||BLOBTALK[bdKey(y)],nm);
+var os=y.options||[];if(y.draft)h+=draftHtml(y.draft);if(y.status)h+="<div class='bwait'><i class=ic-pause></i> "+esc(y.status)+"</div>";var tk=String(y.task||'').replace(/^Agent:\\s*/,'').replace(/^New job[^:.]{0,40}:\\s*/i,''),dn=y.doing||((tk&&tk.slice(0,24)!==String(nm).slice(0,24)?"I'm on it: "+tk+(/[.!?…]$/.test(tk)?'':'.'):'')+(y.done?' So far: '+y.done:'')).trim();if(dn)h+="<div class='bdoing' title='"+escQ(dn)+"'><i class=ic-bot></i>"+esc(dn)+"</div>";h+="<div class='bq' title='"+escQ((y.q||'')+(y.why?' ('+y.why+')':''))+"'>"+codeText(y.q||y.sub||'')+"</div>"+(y.why?"<div class='bwhy' title='"+escQ(y.why)+"'>"+esc(y.why)+"</div>":"")+blobTalk(y.talk||BLOBTALK[bdKey(y)],nm);
 if(y.report&&y.report.id)h+="<div class='bo'><button type='button' class='nopt brep' title='opens it on Reports'><span class='bt'>Read the report: "+esc(lqShort(y.report.title,60))+" &rsaquo;</span></button></div>";
 if(y.fix==='handover'&&y.sub)h+="<div class='bfor' title='"+escQ(y.sub)+"'>for: "+esc(y.sub)+"</div>";
 if(y.done)h+="<div class='bdone' title='"+escQ(y.done.text)+"'>"+esc(y.done.lane)+" has done this already: "+esc(y.done.text)+"</div>";
