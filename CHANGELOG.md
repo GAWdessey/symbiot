@@ -2,11 +2,32 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one), for anyone who installs the app: what changed in it, never whose work it was (no projects, people, accounts, services, run ids or task wording of the person who made it). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
-## 0.77.1 — 2026-10-22
+## 0.79.2 — 2026-10-22
 
 - **Approve works on a project an agent left mid-merge.** When an agent had merged the main branch in and left it uncommitted, every Approve failed at its commit. Approve now finishes that merge first and then ships the work as usual; a merge that still has clashes goes back to the agent to finish, said in one plain line.
 - **What you type on a card is your answer, saved against its question.** On a step that's yours ("Did you allow the microphone?"), your own words count as done only when they say so ("i did", "allowed it"). Anything else ("nothing loads there", "start it so I can press it") goes to its agent as your answer, not as "done", and the card settles instead of coming back.
 - **The answer box empties when you send.** Words sent from "or answer in your own words" no longer come back into the box on the next refresh, whether they answered the card or were a question to its agent.
+
+## 0.79.1 — 2026-10-22
+
+- **Updates opens when you click it.** The button sat under the moving background, so clicks never reached it.
+
+## 0.79.0 — 2026-10-22
+
+- **Make Symbiot yours, safely.** Your own rules for its agents, adjustments to how it words cards and judges questions, and your own triggers live in a customisations folder that survives updates. Each change is checked (Symbiot must still run with it), the previous version is kept, it's logged in plain words, and it can be undone in one step. Settings → Customisations lists them, with an Off switch back to base behaviour.
+- **It notices when you keep pushing back on the same thing** and proposes a rule, with your own words as the reason, on Updates: Apply or Not now. Nothing goes in without your OK, and no customisation can loosen a safety rule.
+
+## 0.78.1 — 2026-10-22
+
+- **Email waits show how long they've really waited**, counted from when the email was sent; they all read "0 min ago" before.
+- **One run per piece of work.** A second run on work another run is already doing waits for it and starts when it ends, instead of both working it side by side; and a hand-over that names an earlier run continues in that run's folder rather than opening a new one.
+
+## 0.78.0 — 2026-10-22
+
+- **Symbiot moves work forward on its own.** It reads where everything stands and your focus (a file you write: goals, projects, people, what to ignore), and looks at each new event once: a run ending, a merge, a reply, a watched site, a CI failure. Then it does what a sharp assistant would do unasked: the next step on stalled work, a check after a merge, a draft you'll need, a line about anything worth knowing.
+- **It knows its limits.** Reading and drafting it just does; internal, reversible work it does and logs; anything that goes out (an email, a message, a push, a deploy) it prepares and asks you first, until you've said yes to that kind three times (a no takes that back, and Settings lists and revokes it); deleting and paying always ask. Every existing check still applies.
+- **It tells you the right amount.** Urgent things right away, the rest in a digest twice a day (a report and one Update), the rest not at all; kinds you keep ignoring get quieter, and what you put away it does less of. It can suggest additions to your focus, which go in only with your OK.
+- **It watches before it acts.** For its first day it only says what it would have done; then it acts, unless you choose. Off, watch or act, and your focus, under Settings → On its own.
 
 ## 0.77.0 — 2026-10-22
 
