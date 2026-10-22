@@ -277,6 +277,14 @@ body.lq-pooled #lqneedt,body.lq-work #lqneedt{display:none}
 .dm-social{background:#FFFFFF;color:#191919;border:1px solid #E0DFDC}.dm-social .dmto{color:#0A66C2}
 .dm-chat{background:#D9FDD3;color:#111B21;margin-left:16px;border-top-right-radius:4px}.dm-chat .dmto{color:#1F7A4C}
 .dm-mail{background:#FFFFFF;color:#202124;border:1px solid #DADCE0}.dm-mail .dmto{color:#5F6368}
+.lqblob .btalk{margin:6px 0 2px;display:flex;flex-direction:column;gap:4px;max-height:180px;overflow-y:auto}
+.lqblob .btm{font-size:12px;line-height:1.35;padding:5px 8px;border-radius:9px;overflow-wrap:anywhere;color:#C9CDD3;background:rgba(255,255,255,.05)}
+.lqblob .btm.me{align-self:flex-end;max-width:85%;background:rgba(232,176,75,.12)}
+.lqblob .btm.ag{align-self:flex-start;max-width:95%}
+.lqblob .btm b{font-weight:600;margin-right:4px;color:#E8EAED}
+body.lq-light .lqblob .btm{color:#2B3644;background:rgba(0,0,0,.05)}
+body.lq-light .lqblob .btm.me{background:rgba(176,120,20,.12)}
+body.lq-light .lqblob .btm b{color:#141A22}
 .lqblob .bfor{font-size:11.5px;line-height:1.3;color:#8A919B;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
 .lqblob .bwait{font-size:11.5px;line-height:1.3;color:#E0B25A;display:flex;align-items:center;gap:5px}
 body.lq-light .lqblob .bwait{color:#8A5A00}
@@ -1993,6 +2001,7 @@ box.querySelectorAll('button').forEach(function(b){b.disabled=true;});
 api('/api/agents/answer',{path:a.path,answers:ans,rerun:rerun}).then(function(r){
 if(!r||r.error){box.querySelectorAll('button').forEach(function(b){b.disabled=false;});msg.innerHTML="<div class='note err'>"+esc((r&&r.error)||'failed')+"</div>";return;}
 ans.forEach(function(x){var k=a.path+'|'+x.q;delete QDRAFT[k];bdSet(k,'');}); // sent: its drafts go
+if(r.talk){box.querySelectorAll('button').forEach(function(b){b.disabled=false;});box.querySelectorAll('input.qother').forEach(function(i){i.value='';});msg.innerHTML="<div class='lqblob'>"+blobTalk(r.talk,a.name)+"</div><div class='muted'>The question stays open: answer it when you're ready.</div>";return;}
 msg.innerHTML="<div class='note ok'>&#10003; Saved "+r.saved+" answer"+(r.saved>1?"s":"")+" for <b>"+esc(a.name)+"</b> in .symbiot/ANSWERS.md"+(r.rerun?" &middot; your agent is picking them up now.":".")+(r.yours&&r.yours.length?"<div class='err'><i class=ic-person></i> Still yours to do: "+esc(r.yours.join(' '))+"</div>":"")+(r.note?"<div class='muted'>"+esc(r.note)+"</div>":"")+"</div>";loadAgents();if(current==='asks')loadAsks();});}
 var s1=box.querySelector('.qsend'),s2=box.querySelector('.qsave');
 if(s1)s1.addEventListener('click',function(){send(true);});if(s2)s2.addEventListener('click',function(){send(false);});
@@ -3726,12 +3735,16 @@ for(var x in a)if(now-(a[x].at||0)>BDKEEP)delete a[x];try{localStorage.setItem(B
 function bdOrphans(you){var a=bdAll(),keys={},ch=false;(you||[]).forEach(function(y){if(y.kind==='ask')keys[bdKey(y)]=1;});
 for(var k in a){var d=a[k];if(keys[k]||d.told||!d.text||d.src==='desk')continue;d.told=1;ch=true;lqSaid('Your answer to '+(d.name||'an agent')+' wasn’t sent: '+(d.q?'“'+lqShort(d.q,70)+'” ':'its question ')+'was answered or closed elsewhere. What you wrote: “'+d.text+'”');}
 if(ch)try{localStorage.setItem(BDKEY,JSON.stringify(a));}catch(e){}}
+// A card is a conversation with its agent (home.mjs cardTalk): what the user asked on it and what
+// the agent said back, under its question, which stays open until it's answered.
+var BLOBTALK={};
+function blobTalk(t,nm){if(!t||!t.length)return '';return "<div class='btalk'>"+t.slice(-6).map(function(m){return "<div class='btm "+(m.from==='you'?'me':'ag')+"'><b>"+(m.from==='you'?'You':'Agent')+"</b> "+esc(m.text)+"</div>";}).join('')+"</div>";}
 function blobBody(y,home){var h='',nm=y.name||y.repo||(y.kind==='setup'?y.title:'')||'';
 if(!y.local)h+="<button type='button' class='bx' title='Dismiss: it won&#39;t show here again (Undo brings it back)' aria-label='Dismiss this card'>&times;</button>";
 var pc=projChip(y);
 h+=home?"<button type='button' class='lt' title='open "+escQ(nm)+", with this lit up'>"+pc+"<span>"+esc(lqShort(nm,pc?22:30))+"</span><i>open &rsaquo;</i></button>":"<div class='nhead'>"+pc+"<b>"+esc(nm)+(y.kind==='ask'?" asks":"")+"</b>"+(y.more?"<span class='muted'>+"+y.more+" more on its block in Agents</span>":"")+"</div>";
 if(y.kind!=='ask')return h+"<div class='bq'>"+esc(y.kind==='approve'?String(y.sub||'').replace(/ · only you decide$/,''):String(y.sub||'').charAt(0).toUpperCase()+String(y.sub||'').slice(1)+'.')+"</div><div class='bo'><button type='button' class='nopt rec ngo'><span class='bt'>"+(y.kind==='approve'?'Review and approve':y.id==='setup:inbox'?(y.signin?'Sign in again':'Show me your inbox'):y.id==='setup:ai'?'Connect an AI':y.pick?'Use '+y.pick.name:y.urgent?'Reconnect':'Open Settings')+"</span></button></div>";
-var os=y.options||[];if(y.draft)h+=draftHtml(y.draft);if(y.status)h+="<div class='bwait'><i class=ic-pause></i> "+esc(y.status)+"</div>";var tk=String(y.task||'').replace(/^Agent:\\s*/,'');if(tk&&tk.slice(0,24)!==String(nm).slice(0,24))h+="<div class='bfor' title='"+escQ(tk)+"'>for: "+esc(tk)+"</div>";h+="<div class='bq' title='"+escQ((y.q||'')+(y.why?' ('+y.why+')':''))+"'>"+codeText(y.q||y.sub||'')+"</div>"+((y.covered&&y.covered.length)?"<div class='muted bcov'>Already covered? "+y.covered.map(esc).join(' · ')+"</div>":"");
+var os=y.options||[];if(y.draft)h+=draftHtml(y.draft);if(y.status)h+="<div class='bwait'><i class=ic-pause></i> "+esc(y.status)+"</div>";var tk=String(y.task||'').replace(/^Agent:\\s*/,'');if(tk&&tk.slice(0,24)!==String(nm).slice(0,24))h+="<div class='bfor' title='"+escQ(tk)+"'>for: "+esc(tk)+"</div>";h+="<div class='bq' title='"+escQ((y.q||'')+(y.why?' ('+y.why+')':''))+"'>"+codeText(y.q||y.sub||'')+"</div>"+((y.covered&&y.covered.length)?"<div class='muted bcov'>Already covered? "+y.covered.map(esc).join(' · ')+"</div>":"")+blobTalk(y.talk||BLOBTALK[bdKey(y)],nm);
 if(y.report&&y.report.id)h+="<div class='bo'><button type='button' class='nopt brep' title='opens it on Reports'><span class='bt'>Read the report: "+esc(lqShort(y.report.title,60))+" &rsaquo;</span></button></div>";
 if(y.fix==='handover'&&y.sub)h+="<div class='bfor' title='"+escQ(y.sub)+"'>for: "+esc(y.sub)+"</div>";
 if(y.done)h+="<div class='bdone' title='"+escQ(y.done.text)+"'>"+esc(y.done.lane)+" has done this already: "+esc(y.done.text)+"</div>";
@@ -3762,6 +3775,8 @@ var send=function(ans,j,b){ans=String(ans||'').trim();if(!ans||(!y.path&&!y.fix)
 var fail=function(t){delete BLOBBUSY[key];BLOBFAIL[key]={t:t,at:Date.now()};busy(false);st(t,true);say(nm+': '+t,true);};
 (y.fix?api('/api/home/answer',j!=null?{id:y.id,pick:j}:{id:y.id,text:ans}):api('/api/agents/answer',{path:y.path,answers:[{q:y.raw||y.q,a:ans}],rerun:true})).then(function(r){
 if(!r||r.error){fail((r&&r.error)||'the answer didn’t save. Try again on its block on the Workdesk.');return;}
+// a question on the card, not its answer: the agent's reply goes under it, and the card stays
+if(r.talk){delete BLOBBUSY[key];BLOBTALK[key]=r.talk;y.talk=r.talk;busy(false);st('');var tk=box.querySelector('.btalk'),html=blobTalk(r.talk,nm);if(tk)tk.outerHTML=html;else{var bq=box.querySelector('.bq');if(bq&&bq.insertAdjacentHTML)bq.insertAdjacentHTML('afterend',html);}box.querySelectorAll('.bfx input,input.qother').forEach(function(i){i.value='';});if(o.grew)o.grew();return;}
 delete BLOBBUSY[key];BLOBSENT[key]=Date.now();st(r.already?'Answered already.':'Sent.');
 say(y.fix?nm+': '+(r.said||'Done.'):r.already?nm+': '+r.note:'Sent to '+(r.lane||nm)+'. '+(r.report?'It is written already: Reports, \u201c'+r.report+'\u201d. ':'')+((r.also||[]).length?'Also given to '+r.also.join(', ')+', on the same work. ':'')+(r.yours&&r.yours.length?'Still yours to do: '+r.yours.join(' '):r.rerun?'Its agent is picking it up now.':(r.note||'Saved in its ANSWERS.md.')));
 bdSet(y,'');if(o.sent)o.sent();if(box.classList)box.classList.add('gone');setTimeout(function(){if(o.done)o.done();},650);}).catch(function(e){fail(String((e&&e.message)||e));});};

@@ -1,6 +1,6 @@
 // One shared record of the questions the user has answered, for every agent and Home:
 // an ask that's in it isn't raised again (Home drops it) and each agent's brief lists it.
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { readFileSync, readdirSync, statSync, writeFileSync, mkdirSync } from "node:fs";
 import { join, basename } from "node:path";
 import { createHash } from "node:crypto";
 import { CONFIG_DIR, readState, writeJsonAtomic } from "./core.mjs";
@@ -79,8 +79,26 @@ function asksBack(a, options = []) {
   const t = String(a || "").trim(), k = key(t);
   if (t && wantsReport(t.replace(/^[\s*_]*(?:go ahead|done)\b\W*/i, ""))) return true; // "Go ahead: i need the report first" isn't a go-ahead
   if (!t || SAYS_NO.test(t) || /^[\s*_]*(?:🤖|👤|done\b|go ahead\b)/iu.test(t) || options.some((o) => key(String(o).replace(/\s*\(recommended[^)]*\)\s*$/i, "")) === k || key(o) === k)) return false;
-  return wantsToRead(t) || /\?/.test(t);
+  return wantsToRead(t) || /\?/.test(t) || ASKS.test(t);
 }
+// A question with no question mark: "did you fix the force app" was saved as the card's answer and
+// its agent sent off to write a report, and the user got nothing back on the card (22 Oct 2026).
+const ASKS = /^\s*(?:did|do|does|is|are|was|were|can|could|will|would|should|have|has|why|what|how|when|where|who|which|whats|what's|hows|how's|any news|so did|but did|and did)\b/i;
+
+// ---- a card is a conversation with its agent -------------------------------------------
+// What was said on a card before it was answered: the user's questions and the agent's replies,
+// per question, in the folder's .symbiot/talk.json. Shown on the card, and given to the run with
+// the answer when it comes (agents.mjs answerQuestions).
+const TALK = (path) => join(String(path || ""), ".symbiot", "talk.json");
+function talkAll(path) { try { const o = JSON.parse(readFileSync(TALK(path), "utf8")); return o && typeof o === "object" ? o : {}; } catch { return {}; } }
+const talkOf = (path, q) => talkAll(path)[key(q)] || [];
+function addTalk(path, q, msg, now = Date.now()) {
+  const all = talkAll(path), k = key(q); all[k] = [...(all[k] || []), { from: msg.from, text: String(msg.text || "").slice(0, 4000), at: now }].slice(-20);
+  try { mkdirSync(join(String(path), ".symbiot"), { recursive: true }); writeFileSync(TALK(path), JSON.stringify(all, null, 1)); } catch {}
+  return all[k];
+}
+function endTalk(path, q) { const all = talkAll(path), k = key(q); if (!all[k]) return; delete all[k]; try { writeFileSync(TALK(path), JSON.stringify(all, null, 1)); } catch {} }
+const talkText = (t) => t.map((m) => `${m.from === "you" ? "The user" : "You"}: ${m.text}`).join("\n");
 // What the run is told, in place of a bare answer, when the user asked back.
 const askBackNote = (a) => `The user didn't answer this: they asked you for something first ("${clip(a, 300)}"). Do what they asked before anything else, in writing: ` +
   `${wantsToRead(a) ? "write it up now" : "if it takes more than a line, write it up"} as a report, a .md in .symbiot/ named for what it is and starting with a # title (it shows under Reports), and name it in your last message. ` +
@@ -213,4 +231,4 @@ function recentTurns(now = Date.now(), maxAge = 3 * 86400000) {
 }
 function recentTasks() { try { const l = JSON.parse(readFileSync(join(CONFIG_DIR, "tasks.json"), "utf8")); return Array.isArray(l) ? l.map((t) => ({ text: String(t.text || "") })) : []; } catch { return []; } }
 
-export { recordDone, isDone, doneList, doneBrief, closesAsk, runSaysClosed, asksBack, askBackNote, wantsToRead, wantsReport, heldBy, reportsSince, runReport, reportAsked, addRule, standingList, standingBrief, coveredBy, isApprovalAsk, approvalText, approvedBefore, recentTurns, recentTasks };
+export { talkOf, addTalk, endTalk, talkText, ASKS, recordDone, isDone, doneList, doneBrief, closesAsk, runSaysClosed, asksBack, askBackNote, wantsToRead, wantsReport, heldBy, reportsSince, runReport, reportAsked, addRule, standingList, standingBrief, coveredBy, isApprovalAsk, approvalText, approvedBefore, recentTurns, recentTasks };

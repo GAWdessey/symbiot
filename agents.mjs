@@ -12,7 +12,7 @@ import { randomBytes, createHash } from "node:crypto";
 import { track as jobTrack, runRecord, recordOf, loadJobs } from "./jobs.mjs";
 import { CONFIG_DIR, loadConfig, saveConfig, loadTasks, TASK_MAX, clipWords, sameTask, taskWords, sh, runOut, hasCmd, readState, writeJsonAtomic } from "./core.mjs";
 import { meetsStep, captureSecrets, heldFor } from "./vault.mjs";
-import { recordDone, isDone, isApprovalAsk, approvalText, approvedBefore, recentTurns, recentTasks, asksBack, askBackNote, closesAsk, runSaysClosed, heldBy, reportsSince, runReport, reportAsked, standingList } from "./asksdone.mjs";
+import { recordDone, isDone, isApprovalAsk, approvalText, approvedBefore, recentTurns, recentTasks, asksBack, askBackNote, closesAsk, runSaysClosed, heldBy, reportsSince, runReport, reportAsked, standingList, talkOf, endTalk, talkText } from "./asksdone.mjs";
 import { sentAfter } from "./sentmail.mjs";
 import { parseRun, lastRunText, readRunLog, runStarted, briefPlan, stepOf, runLine, waitingOn, waitUntil, RECHECK } from "./work.mjs";
 import { noteDuration, noteCost, kindOf } from "./estimate.mjs";
@@ -1944,7 +1944,7 @@ function agentQuestions(path, repo, { raw = false } = {}) {
   const ideas = p.suggestions.map(suggestionTarget).filter(({ text }) => !skipped.some((s) => sameTask(s, text)))
     .map(({ repo: to, text }) => ({ text, repo: to || repo, other: !!to && to !== repo, added: tasks.some((t) => t.repo === (to || repo) && sameTask(t.text, text)) })).filter((s) => !s.added);
   return {
-    questions: open.slice(0, QUESTIONS_MAX).map((x) => plainly(path, { ...x, options: x.options.slice(0, OPTIONS_SHOWN), task: askTask(path, x), ...askReport(path, x) })), answered: p.questions.length - unanswered.length, ...(known.length ? { known } : {}),
+    questions: open.slice(0, QUESTIONS_MAX).map((x) => { const talk = talkOf(path, x.q); return plainly(path, { ...x, options: x.options.slice(0, OPTIONS_SHOWN), task: askTask(path, x), ...askReport(path, x), ...(talk.length ? { talk } : {}) }); }), answered: p.questions.length - unanswered.length, ...(known.length ? { known } : {}),
     suggestions: ideas, ideasShown: IDEAS_SHOWN,
   };
 }
@@ -2307,6 +2307,8 @@ function answerQuestions(path, answers, opts = {}) {
   for (const x of rows) { try { const c = captureSecrets(x.a, { context: x.q }); if (c.saved.length) { x.a = `${c.text}\n(${c.saved.map((n) => `"${n}"`).join(", ")} ${c.saved.length > 1 ? "are" : "is"} in Symbiot's vault: ${VAULT_READ})`; vaulted.push(...c.saved); } } catch {} }
   // a reply that asks back (explain it, put it in Reports, a question of their own) isn't an answer: the run does what they asked first
   for (const x of rows) { const opts = (openQs.find((o) => qKey(o.q) === qKey(x.q)) || {}).options || []; if (asksBack(x.a, opts)) { x.back = x.a; x.a = `${x.a}\n\n${askBackNote(x.a)}`; } }
+  // what was said on the card before this answer goes with it, and the card's talk is done
+  for (const x of rows) { const t = talkOf(path, x.q); if (t.length) { x.a = `${x.a}\n\nOn this card, before this answer:\n${talkText(t)}`; endTalk(path, x.q); } }
   const prev = readSymbiot(path, "ANSWERS.md") || "# Answers from the user\nAnswers to the questions in QUESTIONS.md, newest last. Follow them; ask again in QUESTIONS.md if one is unclear.\n";
   const day = new Date().toISOString().slice(0, 10);
   try {
