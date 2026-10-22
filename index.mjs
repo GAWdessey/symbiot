@@ -30,7 +30,8 @@ import { realpathSync, readFileSync, mkdirSync, openSync, rmSync, existsSync, st
 import { createInterface } from "node:readline";
 import { request as httpRequest } from "node:http";
 import { fileURLToPath } from "node:url";
-import { VERSION, CONFIG_PATH, CONFIG_DIR, loadConfig, saveConfig, repoState, semverGt } from "./core.mjs";
+import { VERSION, CONFIG_PATH, CONFIG_DIR, loadConfig, saveConfig, repoState, semverGt, chromeBinary } from "./core.mjs";
+import { shoot } from "./design.mjs";
 import { jobsText } from "./jobs.mjs";
 import { HANDOFF_PROMPT, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, fillHandoff, runHandoff, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, parseQuestions, agentQuestions } from "./agents.mjs";
 import { AI_UI, PROVIDERS, resolveProvider, validate, detectHardware, recommendModels, hasOllama, ollamaInstall, ensureOllama, useOllamaModel, claudeState, connectProvider } from "./ai.mjs";
@@ -504,6 +505,17 @@ async function cmdSecret() {
   if (r.error) { console.error(r.error); process.exitCode = 1; return; }
   console.log(sub === "get" ? r.value : "ok");
 }
+// symbiot shoot <url> [--out dir] [--sizes 1440x900,390x844] [--full]: screenshots of a page, for a
+// UI run to look at its own work (design.mjs). Here first; a sandboxed run whose Chrome won't start
+// asks the app to take them (its screens door), as `symbiot screens` does.
+async function cmdShoot() {
+  const url = argv.slice(1).find((x, i, all) => !x.startsWith("--") && !["--out", "--sizes"].includes(all[i - 1]));
+  const out = resolve(flag("out", join(process.cwd(), ".symbiot", "shots"))), sizes = flag("sizes", "1440x900,390x844"), full = has("full");
+  if (!url || has("help")) { console.log("symbiot shoot <url> [--out dir] [--sizes 1440x900,390x844] [--full]  screenshots of a page at each size; prints the PNG paths"); if (!url) process.exitCode = 1; return; }
+  let r = shoot(url, { out, sizes, full, bin: chromeBinary() });
+  if (r.error || r.failed) { const app = await viaApp("/api/screens/shoot", { url, out, sizes, full }); if (app && !app.error) r = app; }
+  console.log(JSON.stringify(r, null, 2)); if (r.error) process.exitCode = 1;
+}
 async function cmdScreens() {
   const [sub = "list", a1, a2, a3, ...more] = argv.slice(1).filter((x, i, all) => !x.startsWith("--") && all[i - 1] !== "--name" && all[i - 1] !== "--press" && all[i - 1] !== "--expect");
   H = await import("./headless.mjs");
@@ -573,6 +585,7 @@ async function cmdScreens() {
     return out(screenJson(done));
   }
   console.log(`${c.b("symbiot screens")} ${c.d("— experimental")}
+  symbiot shoot <url> [--out dir] [--full]       screenshots of a page at 1440×900 and 390×844 (for UI work)
   symbiot screens                              list your screens
   symbiot screens map <site> [--name N] [--whole]
                                                open a site in a hidden browser and map
@@ -1179,6 +1192,7 @@ async function main() {
   if (cmd === "secret" || cmd === "secrets") return cmdSecret();
   if (cmd === "deploy") return cmdDeploy();
   if (cmd === "screens" || cmd === "screen") return cmdScreens();
+  if (cmd === "shoot") return cmdShoot();
   if (cmd === "watch") return cmdWatch();
   if (cmd === "phone") return cmdPhone();
   if (cmd === "post" || cmd === "posts") return cmdPost();

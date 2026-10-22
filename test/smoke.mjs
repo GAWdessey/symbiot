@@ -198,6 +198,7 @@ const calls = [
   ["/api/mail/set", "POST"],        // empty body -> nothing changes
   ["/api/mail/preview?days=7", "GET"],
   ["/api/screens", "GET"],          // saved screens (isolated HOME -> none)
+  ["/api/screens/shoot", "POST"],   // no out -> "the run's own folder", no Chrome started
   ["/api/screens/import", "POST"],  // no image -> "isn't a PNG", nothing saved
   ["/api/screens/regions", "POST"], // no id -> "not found"
   ["/api/screens/rename", "POST"],

@@ -8,6 +8,11 @@ What each Symbiot release brought, newest first. When Approve bumps the version,
 - **Updates live apart.** A job finished, a report written: they're under Updates in the header, to read or put away, not mixed in with your decisions.
 - A goal waiting on you shows the step it's waiting for, never your own request back, and "Already covered?" is gone from cards.
 
+## 0.73.0 — 2026-10-22
+
+- **A UI specialist for UI work.** A task that builds something people look at (a page, a dashboard, a demo) gets a concrete design standard in its brief and the strongest model, and must screenshot every screen at desktop and phone size with the new `symbiot shoot`, look at them and check them against that standard before it ticks.
+- **A separate design critic.** When UI work is ticked, a fresh agent looks at it and passes it, or sends it back with specific fixes. After two rounds it tells you honestly that it still doesn't pass, instead of calling it done.
+
 ## 0.72.0 — 2026-10-22
 
 - **Agents can click and type on any site in your Chrome**, without a card asking you to switch each site on: one switch in Settings → Connections. Sending, posting, paying and deleting still wait for your Go on a card, one action at a time.
