@@ -31,6 +31,7 @@ import { control } from "./control.mjs";
 import { jobsLines, syncOnUser, syncTasks, onUser, runRecord } from "./jobs.mjs";
 import { goalCards } from "./goals.mjs";
 import { intuitionUpdates, intuitionLines } from "./intuition.mjs";
+import { overridesUpdates } from "./overrides.mjs";
 import { splitNeeds, applyText, loadCardText } from "./needs.mjs";
 import { converse, actIn, actNow, taskIn, loadMind, dayMark } from "./mind.mjs";
 import { repoPathMap, laneMap, reposState, scanRoots } from "./scan.mjs";
@@ -518,6 +519,8 @@ function homeState({ now = Date.now(), fresh = false, deps = {}, tick = false } 
   const split = splitNeeds(you), updates = split.updates;
   // what Symbiot did on its own (intuition.mjs): on Updates, never on Needs you
   try { const gone = new Set(Object.keys((deps.dismissed || loadDismissed)())); updates.unshift(...(deps.intuition || intuitionUpdates)({ now, dismissed: gone })); } catch {}
+  // a change to how Symbiot works, proposed from what the user kept pushing back on (overrides.mjs): Apply / Not now
+  try { const gone = new Set(Object.keys((deps.dismissed || loadDismissed)())); updates.unshift(...(deps.overrides || overridesUpdates)({ dismissed: gone })); } catch {}
   { let ct = {}; try { ct = (deps.cardText || loadCardText)(); } catch {} you = split.you.map((y) => { try { return applyText(y, ct); } catch { return y; } }); }
   (deps.syncJobs || syncOnUser)(you, { now }); // the job record's "waiting on you": these cards, all of them (jobs.mjs)
   const nextAll = nextUp({ now, map, list, named, deps: { board: () => bd, reports: () => rep, ...(deps.next || {}) } });
@@ -1349,6 +1352,7 @@ function onboarding({ fresh = false } = {}) {
 // is folded into first run (or said to wait) as it ships, not found missing later (19 Oct 2026).
 const FIRST_RUN = {
   "Language": "later: it follows the computer's own language, so there's nothing to choose",
+  "Customisations": "later: your own rules and adjustments, and the changes Symbiot proposes when you keep pushing back on something; nothing goes in without your OK, and Off returns to base behaviour",
   "On its own": "later: it watches for its first day and says on Updates what it would have done, then acts within its limits; the focus file and the mode are here when you want them",
   "Symbiot Pro": "done",
   "Setup": "welcome",

@@ -49,7 +49,10 @@ const PLAIN = /^(~|\$HOME|\$\{HOME\})?[\w.@+\/-]+$/;
 // 20 Oct 2026 run). And the phone's: its held launches and which run has it (phonegate.mjs).
 const OWN = ["config.json", "licence-revoked.json", "secrets.json", "chrome-holds.json", "chrome-tabs.json", "push-holds.json", "phone-holds.json", "phone-lock.json"];
 const GATE_FILES = /(chrome-(holds|tabs)|push-holds|phone-(holds|lock))\.json/; // named so they're never another project's
-function symbiotConfig(p, home) { const d = join(home, ".config", "symbiot"); return OWN.some((f) => p === join(d, f)); }
+// The user's customisations (overrides.mjs): only the app's change pipeline writes them, after its
+// checks, never an agent directly (it could write itself out of a rule there).
+const OVERRIDES_DIR = (home) => join(home, ".config", "symbiot", "overrides");
+function symbiotConfig(p, home) { const d = join(home, ".config", "symbiot"); return OWN.some((f) => p === join(d, f)) || under(p, OVERRIDES_DIR(home)); }
 // A shell command that names one of those files changes it unless each step of it only reads:
 // a redirect into it, tee, cp, mv, ln, sed -i, an interpreter (node -e, python, a heredoc's lines),
 // a variable set to it (written through later), or a pipe into anything but a reader is stopped.
@@ -58,7 +61,7 @@ function symbiotConfig(p, home) { const d = join(home, ".config", "symbiot"); re
 const OWN_READ = /^(cat|less|more|head|tail|grep|egrep|fgrep|rg|ls|wc|file|stat|diff|cmp|sha\d*sum|md5sum|readlink|realpath|du|jq|echo|printf|test|\[|sed|find)$/;
 function changesOwn(part, { home, cwd, whole }) {
   const there = cwd === join(home, ".config", "symbiot") || /\.config\/symbiot\/?(?=$|[\s"';&|)])/.test(whole); // the folder itself, not a run's own under it (drafts/act-…)
-  const names = (x) => { const v = unquote(x); return GATE_FILES.test(v) || OWN.some((f) => v.includes(".config/symbiot/" + f) || symbiotConfig(expand(v.replace(/^[A-Za-z_][A-Za-z0-9_]*=/, ""), home, cwd), home)) || (there && OWN.some((f) => new RegExp(`(^|[^\\w.-])${f.replace(".", "\\.")}\\b`).test(v))); };
+  const names = (x) => { const v = unquote(x); return GATE_FILES.test(v) || /\.config\/symbiot\/overrides(?:\/|$)/.test(v) || under(expand(v.replace(/^[A-Za-z_][A-Za-z0-9_]*=/, ""), home, cwd), OVERRIDES_DIR(home)) || OWN.some((f) => v.includes(".config/symbiot/" + f) || symbiotConfig(expand(v.replace(/^[A-Za-z_][A-Za-z0-9_]*=/, ""), home, cwd), home)) || (there && OWN.some((f) => new RegExp(`(^|[^\\w.-])${f.replace(".", "\\.")}\\b`).test(v))); };
   if (!names(part)) return false;
   const segs = part.split(/\|(?!\|)/);
   for (const seg of segs) {

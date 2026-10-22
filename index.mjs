@@ -516,6 +516,20 @@ async function cmdShoot() {
   if (r.error || r.failed) { const app = await viaApp("/api/screens/shoot", { url, out, sizes, full }); if (app && !app.error) r = app; }
   console.log(JSON.stringify(r, null, 2)); if (r.error) process.exitCode = 1;
 }
+// symbiot overrides [on|off|revert <id>|apply <proposal>|not <proposal>]: your customisations
+// (overrides.mjs): what's active, the kill switch, one-step undo, a proposal applied or declined.
+async function cmdOverrides() {
+  const O = await import("./overrides.mjs"), [sub = "list", id] = argv.slice(1).filter((x) => !x.startsWith("--"));
+  let r = null;
+  if (sub === "off" || sub === "on") r = O.setOverrides(sub === "on", { load: loadConfig, save: saveConfig });
+  else if (sub === "revert") r = O.revertOverride(id);
+  else if (sub === "apply") r = await O.applyProposal(id);
+  else if (sub === "not") r = O.dismissProposal(id);
+  else if (sub !== "list") { console.log("symbiot overrides [on|off|revert <id>|apply <proposal id>|not <proposal id>]"); process.exitCode = 1; return; }
+  if (r && r.error) { console.error(r.error); process.exitCode = 1; return; }
+  if (r && r.said) console.log(r.said);
+  console.log(O.overridesText());
+}
 async function cmdScreens() {
   const [sub = "list", a1, a2, a3, ...more] = argv.slice(1).filter((x, i, all) => !x.startsWith("--") && all[i - 1] !== "--name" && all[i - 1] !== "--press" && all[i - 1] !== "--expect");
   H = await import("./headless.mjs");
@@ -586,6 +600,7 @@ async function cmdScreens() {
   }
   console.log(`${c.b("symbiot screens")} ${c.d("— experimental")}
   symbiot shoot <url> [--out dir] [--full]       screenshots of a page at 1440×900 and 390×844 (for UI work)
+  symbiot overrides [on|off|revert <id>]         your customisations: what's active, the kill switch, one-step undo
   symbiot screens                              list your screens
   symbiot screens map <site> [--name N] [--whole]
                                                open a site in a hidden browser and map
@@ -1193,6 +1208,7 @@ async function main() {
   if (cmd === "deploy") return cmdDeploy();
   if (cmd === "screens" || cmd === "screen") return cmdScreens();
   if (cmd === "shoot") return cmdShoot();
+  if (cmd === "overrides") return cmdOverrides();
   if (cmd === "watch") return cmdWatch();
   if (cmd === "phone") return cmdPhone();
   if (cmd === "post" || cmd === "posts") return cmdPost();

@@ -234,6 +234,7 @@ const calls = [
   ["/api/browser/done", "POST"],    // closes it and checks the sites (not in tests)
   ["/api/browser/closed", "POST"],  // its page's X: the same, a moment later (not in tests)
   ["/api/intuition/state", "GET"],  // Symbiot's own moves on or off (Settings → On its own)
+  ["/api/overrides/state", "GET"],  // your customisations (Settings → Customisations)
   ["/api/language", "GET"],         // the language: the computer's, or one named in Settings
   ["/api/language/set", "POST"],    // the computer's, or one named (no body: nothing changes)
   ["/api/i18n/all", "GET"],         // every translation kept for the language
@@ -275,6 +276,12 @@ const calls = [
   ["/api/intuition/focus", "POST"], // no text -> "Nothing to save."
   ["/api/intuition/accept", "POST"],// no id -> "That suggestion isn't there any more."
   ["/api/intuition/revoke", "POST"],// no kind -> "Nothing to revoke there."
+  ["/api/overrides/apply", "POST"], // no id -> "That proposal isn't waiting any more."
+  ["/api/overrides/dismiss", "POST"],// no id -> "That proposal isn't there any more."
+  ["/api/overrides/revert", "POST"],// no id -> "There's no active change with that id."
+  ["/api/overrides/selfchange", "POST"],// no mode -> "ask or auto"
+  ["/api/overrides/add", "POST"],   // no file -> refused, nothing installed
+  ["/api/overrides/switch", "POST"],// no on -> customisations off in the sandbox (base behaviour)
   ["/api/links/actall", "POST"],    // no on -> every site switched off (the default), nothing else changes
   ["/api/links/act", "POST"],       // no id -> "No such site.", nothing switched on
   ["/api/posts", "GET"],            // the week's drafts waiting on you (isolated HOME -> none)
