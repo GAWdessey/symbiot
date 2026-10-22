@@ -35,9 +35,11 @@ import { weeklyState, setWeekly, runWeekly, startWeekly, autostartState, setAuto
 import { markNews, newsSince, watchState, addWatch, setEvery, removeWatch, clearNews, seenWatch, checkWatch, startWatches, setBrief, draftReply, openChat, watchBoard, boardChat, clearBoardChat } from "./watch.mjs";
 import { setLinkAct, setLinksActAll, linksState, linkSite, checkLink, unlinkSite, addSite, signInAsked, sitesCheck } from "./links.mjs";
 import { testWeeks, testInstalls, postsState, draftPosts, approvePost, editPost, skipPost, voiceFromLinkedIn, addMedia, removeMedia, mediaFile, mediaDir, pictureOfPage, clipOfPage, openUrl } from "./post.mjs";
-import { mindState, forget, actNow } from "./mind.mjs";
+import { mindState, forget, actNow, actIn, loadMind } from "./mind.mjs";
 import { goalsTick, goalAnswer, goalFor } from "./goals.mjs";
-import { onUser } from "./jobs.mjs";
+import { onUser, loadJobs } from "./jobs.mjs";
+import { standingList } from "./asksdone.mjs";
+import { intuitionTick, nudge as intuitionNudge } from "./intuition.mjs";
 import { lanesTick, shipHanded, lanesState, partlyDone, handingOf, loadLedger, orcaRelink, shareAnswer, projectOf } from "./lanes.mjs";
 import { archivedTasks } from "./sweep.mjs";
 import { sentTick } from "./sentmail.mjs";
@@ -45,7 +47,7 @@ import { keepFacts, skipFacts, awaitTick, awaitingState, stopWaiting } from "./h
 import { adaptState, noteUse } from "./adapt.mjs";
 import { writeCards, loadCardText, keyOf as cardKeyOf } from "./needs.mjs";
 import { shoot } from "./design.mjs";
-import { cardTalk, dismissCard, reportIdeasAdd, reportIdeasDismiss, reportAsk, reportDraftAnswer, homeState, homeTick, homeAsk, homeAnswer, homeNext, workScene, forgetWork, workGo, workTick, firstSteps, marketingState, marketingGo, marketingDraftAnswer, marketingTask, moveToMarketing, onboarding, setOnboarding, startOnboarding, phoneSetupFirst } from "./home.mjs";
+import { cardTalk, dismissCard, reportIdeasAdd, reportIdeasDismiss, reportAsk, reportDraftAnswer, homeState, homeTick, homeAsk, homeAnswer, homeNext, workScene, forgetWork, workGo, workTick, firstSteps, marketingState, marketingGo, marketingDraftAnswer, marketingTask, moveToMarketing, onboarding, setOnboarding, startOnboarding, phoneSetupFirst, loadDismissed } from "./home.mjs";
 import { MARKETING_DIR, MARKETING, draftPreview, laneMedia, displayName, setDraftMedia } from "./marketing.mjs";
 import { trays, trayMedia, setBlur, addBlur, removeBlur, setReviewed, renderCapture } from "./tray.mjs";
 import { captureProduct, captureProducts } from "./capture.mjs";
@@ -775,6 +777,8 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       if (u.pathname === "/api/phone/note" && req.method === "POST") { const b = await readBody(req); return json(res, dismissNote(String(b.id || ""))); }
       if (u.pathname === "/api/phone/forget" && req.method === "POST") return json(res, forgetComputer());
       // What symbiot-desktop added (desktop.mjs): the weekly write-up, start at login.
+      if (u.pathname === "/api/intuition" && req.method === "POST") { const b = await readBody(req), cfg = loadConfig(); cfg.intuition = b.on !== false; saveConfig(cfg); return json(res, { ok: true, on: cfg.intuition }); } // Symbiot's own moves (intuition.mjs), on or off
+      if (u.pathname === "/api/intuition/state") return json(res, { on: loadConfig().intuition !== false });
       if (u.pathname === "/api/desktop") return json(res, { weekly: weeklyState(), autostart: autostartState() });
       if (u.pathname === "/api/desktop/weekly" && req.method === "POST") { const b = await readBody(req); return json(res, setWeekly(b)); }
       if (u.pathname === "/api/desktop/weekly/run" && req.method === "POST") { const b = await readBody(req); return json(res, await runWeekly(writeup, { notify: b.notify !== false })); }
@@ -949,7 +953,18 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
   const knowTick = () => { try { const r = knowledgeTick(); if (r && (r.read || r.removed || !checksState().at)) runChecks(); } catch {} };
   setTimeout(knowTick, 5000).unref(); setInterval(knowTick, 3 * 60 * 1000).unref();
   import("./sweep.mjs").then((s) => s.startSweep()).catch(() => {}); // the daily sweep of finished run folders, old page maps, leftovers (sweep.mjs)
-  setInterval(() => { try { awaitTick(); } catch {} }, 60000).unref();
+  setInterval(() => { try { const r = awaitTick(); if (r && r.replied && r.replied.length) intuitionNudge(); } catch {} }, 60000).unref(); // a reply in: intuition looks again soon
+  // Intuition (intuition.mjs): what a sharp assistant would do next, unasked, every 30 minutes and
+  // 5 minutes after a run ends or a reply arrives; internal work only, capped, switchable off.
+  const intuitionDeps = () => {
+    let ai = null; try { ai = resolveProvider() ? aiWrite : null; } catch {}
+    return { config: loadConfig, write: ai, jobs: () => loadJobs(), waits: () => { try { return awaitingState().waits; } catch { return []; } },
+      rules: () => { try { return standingList().map((x) => x.rule); } catch { return []; } },
+      chat: () => { try { return (loadMind().log || []).filter((l) => l && l.role === "user" && Date.now() - (l.ts || 0) < 86400000).map((l) => ({ ts: l.ts, text: l.text })); } catch { return []; } },
+      map: () => laneMap(), actIn: (req, lane, o) => actIn(req, lane, o), actNow: (req, o) => actNow(req, o), autoStart, dismissed: () => Object.keys(loadDismissed()) };
+  };
+  onRunEnd(() => { try { intuitionNudge(); } catch {} });
+  setInterval(() => { intuitionTick(intuitionDeps()).catch(() => {}); }, 120000).unref();
   setInterval(() => { sentTick().catch(() => {}); }, 120000).unref(); // an email task the user already sent: closed, with where it went (sentmail.mjs) // a reply an agent's email waits on: found, and handed on
 }
 

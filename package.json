@@ -12,6 +12,7 @@
     "ai.mjs",
     "triage.mjs",
     "needs.mjs",
+    "intuition.mjs",
     "design.mjs",
     "goals.mjs",
     "scan.mjs",

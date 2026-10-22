@@ -233,6 +233,7 @@ const calls = [
   ["/api/browser/open", "POST"],    // the Symbiot Browser (not in tests: SYMBIOT_NO_OPEN)
   ["/api/browser/done", "POST"],    // closes it and checks the sites (not in tests)
   ["/api/browser/closed", "POST"],  // its page's X: the same, a moment later (not in tests)
+  ["/api/intuition/state", "GET"],  // Symbiot's own moves on or off (Settings → On its own)
   ["/api/language", "GET"],         // the language: the computer's, or one named in Settings
   ["/api/language/set", "POST"],    // the computer's, or one named (no body: nothing changes)
   ["/api/i18n/all", "GET"],         // every translation kept for the language
@@ -270,6 +271,7 @@ const calls = [
   ["/api/links/site", "POST"],      // no site -> "Give the site", no browser opened
   ["/api/links/check", "POST"],     // no id -> "isn't linked"
   ["/api/links/unlink", "POST"],
+  ["/api/intuition", "POST"],       // no on -> stays on (on unless false)
   ["/api/links/actall", "POST"],    // no on -> every site switched off (the default), nothing else changes
   ["/api/links/act", "POST"],       // no id -> "No such site.", nothing switched on
   ["/api/posts", "GET"],            // the week's drafts waiting on you (isolated HOME -> none)

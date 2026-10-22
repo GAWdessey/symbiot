@@ -1388,6 +1388,7 @@ body.lq-light .btip .bta button:not(.quiet){background:#151A21;color:#FFFFFF}
 <div class="row" style="margin-top:16px"><button class="act" id="save">Save &amp; connect</button>
 <span class="note" id="saveMsg"></span></div>
 </div>
+<div class="sset" id="intuset"><h3 class="ssh">On its own</h3><label class="check"><input type="checkbox" id="intuon" checked> Let Symbiot move work forward without being asked <small class="muted">it picks up stalled work, prepares what you'll need next and tells you what it notices, on Updates; it never sends, posts, pays, deletes, merges or deploys by itself</small></label></div>
 <div class="sset">
 <h3 class="ssh">Folders to scan for repos</h3>
 <div id="scanroots"></div>
@@ -1523,7 +1524,7 @@ var isMap=tab==='map',isSet=tab==='settings',isTasks=tab==='tasks',isDrift=tab==
 $('panel-map').classList.toggle('hidden',!isMap);
 $('panel-board').classList.toggle('hidden',!isBoard);if(isBoard){loadBoard();loadLinks();}
 $('panel-run').classList.toggle('hidden',!isRun);
-$('panel-settings').classList.toggle('hidden',!isSet);if(isSet){loadFirstSteps();licLoad();langLoad();loadAgentCfg();loadScanRoots();loadKnowledge();loadLinks();loadMind();loadSecrets();loadTrusted();loadMail();loadDesktop();loadPhoneLink();}
+$('panel-settings').classList.toggle('hidden',!isSet);if(isSet){loadFirstSteps();licLoad();langLoad();intuLoad();loadAgentCfg();loadScanRoots();loadKnowledge();loadLinks();loadMind();loadSecrets();loadTrusted();loadMail();loadDesktop();loadPhoneLink();}
 $('panel-tasks').classList.toggle('hidden',!isTasks);
 $('panel-drift').classList.toggle('hidden',!isDrift);
 $('panel-reports').classList.toggle('hidden',tab!=='reports');if(tab==='reports')loadReports();
@@ -1583,6 +1584,8 @@ api('/api/i18n/all?lang='+encodeURIComponent(st.lang)).then(function(r){I18N.map
 // Settings: the language, your computer's or any you name
 var LANG=null;
 function langLoad(){api('/api/language').then(langRender).catch(function(){});}
+// Settings → On its own (intuition.mjs): the switch, saved as you tick it
+function intuLoad(){var c=$('intuon');if(!c)return;api('/api/intuition/state').then(function(d){c.checked=!(d&&d.on===false);}).catch(function(){});if(!c._wired){c._wired=true;c.addEventListener('change',function(){api('/api/intuition',{on:c.checked});});}}
 function langRender(st){var el=$('langbox');if(!el||!st)return;LANG=st;
 el.innerHTML="<p>Symbiot is in <b data-nt>"+esc(st.own||st.name)+"</b>"+(st.chosen?'.':', the language your computer uses.')+"</p>"+
 "<div class='row' style='margin-top:8px'><input id='langin' placeholder='Any language: Afrikaans, isiZulu, Português, 日本語…' style='flex:1'><button class='act' id='languse'>Use it</button>"+(st.chosen?"<button class='ghost' id='langauto'>Use my computer’s language</button>":"")+"</div>"+
