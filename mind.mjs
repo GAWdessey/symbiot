@@ -26,6 +26,7 @@ import { fileURLToPath } from "node:url";
 import { randomBytes } from "node:crypto";
 import { VERSION, CONFIG_DIR, clipWords, readState, writeJsonAtomic } from "./core.mjs";
 import { track } from "./jobs.mjs";
+import { openGoal } from "./goals.mjs";
 import { write, textOf } from "./ai.mjs";
 import { handoffCmd, runHandoff, isUrgent, urgentStop, urgentFirst, urgentUndo } from "./agents.mjs";
 import { addTask, pushTasks } from "./tasks.mjs";
@@ -424,6 +425,9 @@ async function converse({ where, role = "", context = "", history = "", question
       : did.lane ? `\n\nAdded to ${did.lane}'s tasks: ${did.text}`
       : `\n\nAdded to your tasks, but not to a repo${repo ? ` (there's no lane called ${repo})` : ""}, so no agent will pick it up until it has one: ${did.text}`;
   }
+  // what they asked for becomes a goal, owned until it's done and closed with a breakdown (goals.mjs):
+  // the run or task it went to is its first part, and what follows in those folders joins it
+  if (did && !did.error) { try { const g = openGoal(question, { child: did.job ? "run:" + did.job : did.task || did.id ? "task:" + (did.task || did.id) : "", lane: did.lane || (did.kind === "agent" ? "ops" : ""), path: did.dir || (did.lane && lanes[did.lane]) || "", now }); if (g) did.goal = g.key; } catch {} }
   // what Home did to agents and tasks (control.mjs): said from what happened, the failures first and plainly
   let steered = [];
   if (control && act.control && Array.isArray(j.control) && j.control.length) {

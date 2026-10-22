@@ -29,6 +29,7 @@ import { lanesState, stuckHandovers, allowHandover, skipHandover, handingOf, loa
 import { windowSince, BROWSER_IDLE_MIN } from "./headless.mjs";
 import { control } from "./control.mjs";
 import { jobsLines, syncOnUser, syncTasks, onUser } from "./jobs.mjs";
+import { goalCards } from "./goals.mjs";
 import { converse, actIn, actNow, taskIn, loadMind, dayMark } from "./mind.mjs";
 import { repoPathMap, laneMap, reposState, scanRoots } from "./scan.mjs";
 import { resolveProvider, PROVIDERS, claudeState } from "./ai.mjs";
@@ -473,6 +474,10 @@ function homeState({ now = Date.now(), fresh = false, deps = {}, tick = false } 
   const drafts = deps.drafts || (() => { try { return draftCards(); } catch { return []; } });
   const stalls = deps.stalls || (() => { try { return stallCards(loadRuns().map((r) => r.path)); } catch { return []; } });
   you.push(...troubles({ stuck: stuck(), list, map, named, now, drafts: drafts(), stalls: stalls() }));
+  // what the user asked for, followed through (goals.mjs): one waiting on them with no card of its own,
+  // stalled, a follow-up to send, done or not finished; and an email that's waited a week for its reply
+  { let gc = []; try { gc = (deps.goalCards || ((o) => goalCards(o)))({ waits: waits(), now }); } catch {}
+    for (const c of gc) { const { goalReport, ...y } = c; let rl = {}; if (goalReport) { try { rl = reportLink(listReports({ folders: [goalReport.folder], map: {}, running: () => false }).find((r) => r.name === goalReport.name)); } catch {} } you.push({ ...y, ...rl, shape: "agents" }); } }
   // A run is waiting on an emailed reply that nothing will see: say so, once,
   // until an inbox is watched (and signed in) or Email is on (handback.mjs looks in either).
   if (waits().some((w) => w.status === "waiting")) {
