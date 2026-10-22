@@ -1,6 +1,6 @@
 // Parked jobs on Home (jobs.mjs parkedJobs, home.mjs workScene, ui.mjs): a job waiting on a lane,
 // a third party or a time isn't running and isn't a card for the user, so it used to be invisible.
-// 22 Oct 2026: 100 Dailify texts staged and held for a yes; Home said only "symbiot working on it".
+// 22 Oct 2026: 100 texts staged and held for a yes; Home said only "symbiot working on it".
 // Isolated HOME.
 //
 //   node test/parked.mjs
@@ -19,10 +19,10 @@ const { homeContext } = await import("../home.mjs");
 
 const now = Date.now(), J = (o) => ({ key: "run:" + Math.random().toString(36).slice(2, 8), kind: "agent", lane: "", text: "", state: "waiting", waitingOn: "", at: now - 5e3, changed: now - 5e3, history: [], what: "", ...o });
 const jobs = [
-  J({ lane: "dailify", text: "Agent: Dailify 100 broker texts", waitingOn: "third party", what: "staged, nothing sent, waiting on Jono's yes" }),
-  J({ lane: "dailify", text: "Agent: older run, same lane", waitingOn: "third party", what: "old", changed: now - 9e6 }),
-  J({ lane: "sts", text: "sts", waitingOn: "lane", what: "ops: install the build" }),
-  J({ lane: "winlove", text: "WinLove", waitingOn: "time", what: "Simli finishing the face" }),
+  J({ lane: "shop", text: "Agent: Shop 100 customer texts", waitingOn: "third party", what: "staged, nothing sent, waiting on Sam's yes" }),
+  J({ lane: "shop", text: "Agent: older run, same lane", waitingOn: "third party", what: "old", changed: now - 9e6 }),
+  J({ lane: "site", text: "site", waitingOn: "lane", what: "ops: install the build" }),
+  J({ lane: "film", text: "Film", waitingOn: "time", what: "the renderer finishing the face" }),
   J({ lane: "mine", text: "needs the user", waitingOn: "user", what: "Approve" }),
   J({ lane: "busy", text: "also running", waitingOn: "lane", what: "x" }), J({ lane: "busy", text: "busy", state: "running" }),
   J({ lane: "gone", text: "finished", state: "done" }),
@@ -30,9 +30,9 @@ const jobs = [
 ];
 console.log("PARKED — which jobs");
 const p = parkedJobs({ now, jobs });
-ok("a job on a third party, a lane or a time, one per lane", p.map((x) => x.lane).sort().join() === "dailify,sts,winlove", p);
-ok("…the newest of a lane's, in plain words with who and what it waits on", p.find((x) => x.lane === "dailify").text === "Dailify 100 broker texts" && p.find((x) => x.lane === "dailify").why.includes("Jono's yes") && p.find((x) => x.lane === "dailify").who === "someone outside", p);
-ok("…a lane's wait names the lane; a time says a set time", p.find((x) => x.lane === "sts").who === "ops" && p.find((x) => x.lane === "winlove").who === "a set time", p);
+ok("a job on a third party, a lane or a time, one per lane", p.map((x) => x.lane).sort().join() === "film,shop,site", p);
+ok("…the newest of a lane's, in plain words with who and what it waits on", p.find((x) => x.lane === "shop").text === "Shop 100 customer texts" && p.find((x) => x.lane === "shop").why.includes("Sam's yes") && p.find((x) => x.lane === "shop").who === "someone outside", p);
+ok("…a lane's wait names the lane; a time says a set time", p.find((x) => x.lane === "site").who === "ops" && p.find((x) => x.lane === "film").who === "a set time", p);
 ok("not the user's waits, a lane that is running, an ended job or a card", !p.some((x) => ["mine", "busy", "gone", "c"].includes(x.lane)));
 
 console.log("PARKED — Home and the chat");

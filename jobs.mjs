@@ -72,7 +72,7 @@ function jobsNow({ now = Date.now(), jobs = loadJobs() } = {}) {
 // Jobs parked on someone or something else (a lane, a third party, a time): not running, so
 // Home's agents don't show them, and not the user's, so no card. Newest per lane; none for a
 // lane whose job is running. Home draws them with who and what they wait on (22 Oct 2026: 100
-// Dailify texts staged and held for a yes, and Home said only "symbiot working on it").
+// texts staged and held for a yes, and Home said only "symbiot working on it").
 function parkedJobs({ now = Date.now(), jobs = loadJobs() } = {}) {
   const live = new Set(jobs.filter((j) => j.state === "running" && j.lane).map((j) => j.lane)), seen = new Set(), out = [];
   for (const j of jobs.filter((x) => x.state === "waiting" && ["lane", "third party", "time"].includes(x.waitingOn) && !isCard(x) && x.kind !== "task" && x.kind !== "goal").sort((a, b) => b.changed - a.changed)) {
