@@ -2,6 +2,11 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one), for anyone who installs the app: what changed in it, never whose work it was (no projects, people, accounts, services, run ids or task wording of the person who made it). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.79.0 — 2026-10-22
+
+- **Make Symbiot yours, safely.** Your own rules for its agents, adjustments to how it words cards and judges questions, and your own triggers live in a customisations folder that survives updates. Each change is checked (Symbiot must still run with it), the previous version is kept, it's logged in plain words, and it can be undone in one step. Settings → Customisations lists them, with an Off switch back to base behaviour.
+- **It notices when you keep pushing back on the same thing** and proposes a rule, with your own words as the reason, on Updates: Apply or Not now. Nothing goes in without your OK, and no customisation can loosen a safety rule.
+
 ## 0.78.1 — 2026-10-22
 
 - **Email waits show how long they've really waited**, counted from when the email was sent; they all read "0 min ago" before.

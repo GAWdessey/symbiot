@@ -39,7 +39,9 @@ import { mindState, forget, actNow, actIn, loadMind } from "./mind.mjs";
 import { goalsTick, goalAnswer, goalFor } from "./goals.mjs";
 import { onUser, loadJobs } from "./jobs.mjs";
 import { standingList } from "./asksdone.mjs";
-import { intuitionTick, nudge as intuitionNudge, intuitionState, acceptFocus, revoke as revokeIntuition, writeFocus } from "./intuition.mjs";
+import { SOURCES as INTUITION_SOURCES, noteChange as intuitionNote, digest as intuitionDigest, intuitionTick, nudge as intuitionNudge, intuitionState, acceptFocus, revoke as revokeIntuition, writeFocus } from "./intuition.mjs";
+import { triggersTick, registerTriggers, frictionTick, applyOverride, revertOverride, applyProposal, dismissProposal, setOverrides, setSelfChange, overridesState } from "./overrides.mjs";
+import { doneList } from "./asksdone.mjs";
 import { lanesTick, shipHanded, lanesState, partlyDone, handingOf, loadLedger, orcaRelink, shareAnswer, projectOf } from "./lanes.mjs";
 import { archivedTasks } from "./sweep.mjs";
 import { sentTick } from "./sentmail.mjs";
@@ -783,6 +785,14 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       if (u.pathname === "/api/intuition/accept" && req.method === "POST") { const b = await readBody(req); return json(res, acceptFocus(b.id)); }
       if (u.pathname === "/api/intuition/revoke" && req.method === "POST") { const b = await readBody(req); const r = revokeIntuition(b.kind); return json(res, r.error ? r : intuitionState({ cfg: loadConfig() })); }
       if (u.pathname === "/api/intuition/state") return json(res, intuitionState({ cfg: loadConfig() }));
+      // the user's customisations (overrides.mjs): what's active, proposals, the kill switch, one-step undo
+      if (u.pathname === "/api/overrides/state") return json(res, overridesState({ cfg: loadConfig() }));
+      if (u.pathname === "/api/overrides/apply" && req.method === "POST") { const b = await readBody(req); return json(res, await applyProposal(String(b.id || ""), { note: (l) => intuitionNote(l) })); }
+      if (u.pathname === "/api/overrides/dismiss" && req.method === "POST") { const b = await readBody(req); return json(res, dismissProposal(String(b.id || ""))); }
+      if (u.pathname === "/api/overrides/revert" && req.method === "POST") { const b = await readBody(req); const r = revertOverride(String(b.id || ""), { note: (l) => intuitionNote(l) }); return json(res, r.error ? r : overridesState({ cfg: loadConfig() })); }
+      if (u.pathname === "/api/overrides/switch" && req.method === "POST") { const b = await readBody(req); setOverrides(b.on === true, { load: loadConfig, save: saveConfig }); return json(res, overridesState({ cfg: loadConfig() })); }
+      if (u.pathname === "/api/overrides/selfchange" && req.method === "POST") { const b = await readBody(req); const r = setSelfChange(String(b.mode || ""), { load: loadConfig, save: saveConfig }); return json(res, r.error ? r : overridesState({ cfg: loadConfig() })); }
+      if (u.pathname === "/api/overrides/add" && req.method === "POST") { const b = await readBody(req); return json(res, await applyOverride({ file: String(b.file || ""), content: String(b.content || ""), why: String(b.why || ""), by: "user" }, { note: (l) => intuitionNote(l) })); }
       if (u.pathname === "/api/desktop") return json(res, { weekly: weeklyState(), autostart: autostartState() });
       if (u.pathname === "/api/desktop/weekly" && req.method === "POST") { const b = await readBody(req); return json(res, setWeekly(b)); }
       if (u.pathname === "/api/desktop/weekly/run" && req.method === "POST") { const b = await readBody(req); return json(res, await runWeekly(writeup, { notify: b.notify !== false })); }
@@ -969,6 +979,15 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       notify: (t, b) => desktopNotify(t, b), map: () => laneMap(), actIn: (req, lane, o) => actIn(req, lane, o), actNow: (req, o) => actNow(req, o), autoStart, dismissed: () => Object.keys(loadDismissed()) };
   };
   onRunEnd(() => { try { intuitionNudge(); } catch {} });
+  // the user's customisations (overrides.mjs): their triggers feed intuition's events (each minute,
+  // and "run" ones when a run ends), and friction becomes proposed rules (every half hour)
+  const triggerState = () => { try { const d = intuitionDigest({ jobs: () => loadJobs(), waits: () => { try { return awaitingState().waits; } catch { return []; } } }); return { digest: d.text }; } catch { return {}; } };
+  const triggersNow = (on = "") => triggersTick({ state: triggerState(), on }).then(() => registerTriggers(INTUITION_SOURCES)).catch(() => {});
+  onRunEnd(() => { triggersNow("run"); });
+  setInterval(() => { triggersNow(); }, 60000).unref();
+  setInterval(() => { let ai = null; try { ai = resolveProvider() ? aiWrite : null; } catch {} frictionTick({ write: ai, note: (l) => intuitionNote(l),
+    log: () => { try { return loadMind().log || []; } catch { return []; } },
+    answers: () => { try { return doneList().filter((x) => x && !/Symbiot|triage|Not the user's/i.test(String(x.a || ""))).map((x) => ({ at: Number(x.ts) || Date.parse(x.at) || 0, a: x.a })); } catch { return []; } } }).catch(() => {}); }, 30 * 60000).unref();
   setInterval(() => { intuitionTick(intuitionDeps()).catch(() => {}); }, 120000).unref();
   setInterval(() => { sentTick().catch(() => {}); }, 120000).unref(); // an email task the user already sent: closed, with where it went (sentmail.mjs) // a reply an agent's email waits on: found, and handed on
 }
