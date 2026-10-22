@@ -18,7 +18,7 @@ import { parseRun, lastRunText, readRunLog, runStarted, briefPlan, stepOf, runLi
 import { noteDuration, noteCost, kindOf } from "./estimate.mjs";
 import { plainAsk } from "./plain.mjs";
 import { apiOptions, blockedSignIn, apiRoute, realChrome, CHROME_READ, CHROME_ACT } from "./browserfails.mjs";
-import { actSites, goAhead } from "./chromegate.mjs";
+import { actSites, goAhead, signInNotNeeded, switchOnAct } from "./chromegate.mjs";
 import { pushGo } from "./pushgate.mjs";
 import { goAhead as phoneGo } from "./phonegate.mjs";
 import { lanesJob, parseFacts, leftToYou, gitWork, agentsGitWork, agentsClicking, agentsCodeWork, agentsMail, agentsPosting, linkedAsks, linkedChore, PUSH_OK } from "./handover.mjs";
@@ -1269,6 +1269,24 @@ function waitingFor(path) {
   if (files.some((f) => f && fileSig(f.path) !== f.sig) || (w.cmd && runCmd(path) !== w.cmd) || met || held || stepGone(path, w)) { if (!w.rerun) try { unlinkSync(join(path, ".symbiot", WAITING)); } catch {} return null; }
   return { step: w.step, files: files.map((f) => f.name), cmd: !!w.cmd && settingsStep(w.step), at: w.at || 0, rerun: !!w.rerun };
 }
+// A run is still on its job while it runs, and while it waits: on the user's answer (an open
+// question), a step of theirs (waiting.json) or an item it marked [~]. A run that waits isn't
+// running, so "Adds to run act-ab2bbaf1" started a run of its own beside it, and both put
+// test cards on the user's phone (21 Oct 2026).
+function runOpen(path, { running = runningHandoff, waiting = waitingFor } = {}) {
+  path = String(path || ""); if (!path || !existsSync(join(path, ".symbiot"))) return false;
+  if (running(path)) return true;
+  try { if (waiting(path)) return true; } catch {}
+  if (WAITING_TASK_LINE.test(readSymbiot(path, "TASKS.md"))) return true;
+  try { return agentQuestions(path, "").questions.length > 0; } catch { return false; }
+}
+const WAITING_TASK_LINE = /^\s*(?:[-*+]|\d+[.)])\s*\[~\]/m;
+// The ops run a request names by its folder (act-…, as a HANDOFF.md's Sent list or a report's path gives it),
+// while it's still on its job (runOpen): "" when it names none, or only runs that have finished.
+function namedRun(text, opts = {}) {
+  for (const n of new Set(String(text || "").match(/\bact-[0-9a-f]{8}\b/g) || [])) { const p = join(ACT_DIR, n); if (runOpen(p, opts)) return p; }
+  return "";
+}
 // "`.env` or the agent command in Settings → Handoff", what a wait ends on ("" if neither).
 function waitOn(files, cmd) {
   const names = files.map((f) => "`" + f + "`").join(" or ");
@@ -1963,7 +1981,7 @@ function skipIdea(path, text) {
 // options stay as the agent wrote them: an answer is saved under the agent's own words.
 function plainly(path, x) {
   let p = {}; try { p = plainAsk(path, x, { max: x.options.length }); } catch {}
-  return { ...x, ...(p.raw ? { shown: p.q } : {}), ...(p.labels ? { labels: p.labels } : {}) };
+  return { ...x, ...(p.raw ? { shown: p.q } : {}), ...(p.labels ? { labels: p.labels } : {}), ...(p.context != null ? { context: p.context } : {}) };
 }
 // A question that names a report of its run ("the full report is on Reports as LOVELINK-FULL-EMAIL-REPORT"):
 // its card links it (Read the report), so it isn't a file name to go and find.
@@ -2373,6 +2391,14 @@ function answerQuestions(path, answers, opts = {}) {
   for (const x of rows) { const m = String(x.id || "").match(/^chrome-go-([0-9a-f]+)$/); if (m && !/^\W*(?:no|don'?t|do not|skip|stop|cancel|not now)\b/i.test(x.a)) goAhead(m[1]); }
   // Go on an adb command the membrane held, one that opens an app or acts on the screen of the user's phone (phone-go-<hold>): it may go through once (phonegate.mjs)
   for (const x of rows) { const m = String(x.id || "").match(/^phone-go-([0-9a-f]+)$/); if (m && !/^\W*(?:no|don'?t|do not|skip|stop|cancel|not now)\b/i.test(x.a)) phoneGo(m[1]); }
+  // A yes to letting agents act on a site in the user's Chrome (chrome-act-<host>), or the first choice of a sign-in ask
+  // that was really that switch (its card says so, plain.mjs): Symbiot switches it on itself, and the run is told so
+  for (const x of rows) {
+    const q = openQs.find((o) => qKey(o.q) === qKey(x.q)) || {}, picked = (q.options || []).findIndex((o) => optKey(o) === optKey(x.a));
+    const m = String(x.id || "").match(/^chrome-act-(.+)$/), n = !m && picked === 0 ? signInNotNeeded([x.q, q.context].join("\n")) : null, host = m ? m[1] : n && n.off ? n.host : "";
+    if (!host || picked < 0 || x.back || /^\W*(?:no|don'?t|do not|skip|stop|cancel|not now)\b/i.test(x.a)) continue;
+    if (switchOnAct(host, { load: loadConfig, save: saveConfig })) try { writeFileSync(join(path, ".symbiot", "ANSWERS.md"), readSymbiot(path, "ANSWERS.md").replace(/\s*$/, "\n") + `\n### Symbiot: acting on ${host} in the user's Chrome {#chrome-act-${host}}\nSymbiot switched it on, as the user said (Settings → Connections): do the action again now, in your own tab. Nothing needed signing in.\n_${day}_\n`); } catch {}
+  }
   // Go on a force-push the membrane held (push-go-<hold>): Symbiot pushes it itself (pushgate.mjs), the outcome goes into
   // ANSWERS.md, and the run carries on once it's in (below), so it never offers the user a setting that doesn't exist
   const pushes = rows.map((x) => { const m = String(x.id || "").match(/^push-go-([0-9a-f]+)$/); return m && !/^\W*(?:no|don'?t|do not|skip|stop|cancel|not now)\b/i.test(x.a) ? pushGo(m[1]).then((r) => { try { writeFileSync(join(path, ".symbiot", "ANSWERS.md"), readSymbiot(path, "ANSWERS.md").replace(/\s*$/, "\n") + `\n### Symbiot: the push you asked for {#${x.id}}\n${r.text}\n_${day}_\n`); } catch {} }) : null; }).filter(Boolean);
@@ -2572,4 +2598,4 @@ function agentsNow({ now = Date.now() } = {}) {
 }
 const forgetAgents = () => { agentsKept = null; };
 
-export { twinRunning, TWIN_WAIT, wholeLog, uiReview, onGoalAnswer, runOutcome, settleRecord, waitsOutside, triageSweep, runSection, autoStart, AUTO_MAX, oneNeedEach, NOTHING_FOR_YOU, chaseReport, CHASED, UNMET, heldAsk, onCardGone, withOwnTools, escalation, grantCard, cardRules, cardIsPermission, runPhase, onRunEnd, isClaudeCmd, GUARD, tidyRule, tidyRules, tidySettings, pruneRuns, claudePlugins, idlePlugins, runSettings, archiveAnswers, allAnswers, answersDigest, ANSWERS_ARCHIVE, ANSWERS_KEEP, runsTick, RUN_START, HANG_MIN, noteBlocked, userAnswers, CONTINUED_FILE, onAnswered, CHANGES, toKnownHost, continueLanes, autoPick, autoDecide, FACTS, factsOf, knownRun, withStream, workOf, HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, connectorsInfo, linkReach, fillHandoff, runHandoff, nothingToDo, whereOf, whereLine, whereAnswer, askTask, PARKED_NOTE, parkedPaths, isParked, parkLane, agentMissing, blockedAgain, runningHandoff, loadRuns, earlierRuns, namedFiles, unchangedStep, waitingFor, startWaiting, noteUntracked, untrackedBefore, forgetUntracked, writeTasks, droppedTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, pickAgent, findOrcaCli, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, skipIdea, routeIdeas, agentQuestions, answerQuestions, agentsList, agentsNow, forgetAgents, AGENTS_KEEP, needsOf, settleNeeds, closeAsk, closedAsk, sameSubject, NEEDS_FOR, readLastWords, readNeeds, parseRead, READ_FILE, autoAllow, autoAllowSweep, allowlistInWork, installAllowlist, inWork, withScope, withTrust, sandboxFor, sandboxLifts, sandboxEnv, sandboxNeeds, sandboxState, sandboxWrites, SANDBOX_DIR, resumeFor, noteSession, tooLong, carryOn, RESUME_CTX, CARRY_PROMPT, trustFull, GUARD_SETTINGS, runCmdOf, claimLock, wideRoot, sandboxDenies, questionFolders, folderState, dirtyState, ANSWERS_SEEN, newAnswers, claudeDownIn, claudePause, noteClaudeDown, resetTime, PAUSE_FILE, startGap, isUrgent, urgentStop, urgentFirst, urgentUndo, urgentDone, urgentSweep, urgentState, licenceGate, stopRun, loadRunFiles, saveRunFiles, forgetRunFiles, withModel, routedModel, userWords, onShipping };
+export { runOpen, namedRun, twinRunning, TWIN_WAIT, wholeLog, uiReview, onGoalAnswer, runOutcome, settleRecord, waitsOutside, triageSweep, runSection, autoStart, AUTO_MAX, oneNeedEach, NOTHING_FOR_YOU, chaseReport, CHASED, UNMET, heldAsk, onCardGone, withOwnTools, escalation, grantCard, cardRules, cardIsPermission, runPhase, onRunEnd, isClaudeCmd, GUARD, tidyRule, tidyRules, tidySettings, pruneRuns, claudePlugins, idlePlugins, runSettings, archiveAnswers, allAnswers, answersDigest, ANSWERS_ARCHIVE, ANSWERS_KEEP, runsTick, RUN_START, HANG_MIN, noteBlocked, userAnswers, CONTINUED_FILE, onAnswered, CHANGES, toKnownHost, continueLanes, autoPick, autoDecide, FACTS, factsOf, knownRun, withStream, workOf, HANDOFFS, HANDOFF_PROMPT, QUESTIONS_MAX, OPTIONS_SHOWN, IDEAS_SHOWN, shSingle, CLAUDE_CMD, ORCA_CLAUDE_CMD, handoffCmd, setHandoffCmd, grantAgent, grantRule, allowTool, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, connectorsInfo, linkReach, fillHandoff, runHandoff, nothingToDo, whereOf, whereLine, whereAnswer, askTask, PARKED_NOTE, parkedPaths, isParked, parkLane, agentMissing, blockedAgain, runningHandoff, loadRuns, earlierRuns, namedFiles, unchangedStep, waitingFor, startWaiting, noteUntracked, untrackedBefore, forgetUntracked, writeTasks, droppedTasks, releaseHeldTasks, startHeldTasks, detectHandoffs, pickAgent, findOrcaCli, orcaHandoffCmd, migrateOrcaCmd, migrateClaudeCmd, track, agentChanges, parseQuestions, suggestionTarget, skipIdea, routeIdeas, agentQuestions, answerQuestions, agentsList, agentsNow, forgetAgents, AGENTS_KEEP, needsOf, settleNeeds, closeAsk, closedAsk, sameSubject, NEEDS_FOR, readLastWords, readNeeds, parseRead, READ_FILE, autoAllow, autoAllowSweep, allowlistInWork, installAllowlist, inWork, withScope, withTrust, sandboxFor, sandboxLifts, sandboxEnv, sandboxNeeds, sandboxState, sandboxWrites, SANDBOX_DIR, resumeFor, noteSession, tooLong, carryOn, RESUME_CTX, CARRY_PROMPT, trustFull, GUARD_SETTINGS, runCmdOf, claimLock, wideRoot, sandboxDenies, questionFolders, folderState, dirtyState, ANSWERS_SEEN, newAnswers, claudeDownIn, claudePause, noteClaudeDown, resetTime, PAUSE_FILE, startGap, isUrgent, urgentStop, urgentFirst, urgentUndo, urgentDone, urgentSweep, urgentState, licenceGate, stopRun, loadRunFiles, saveRunFiles, forgetRunFiles, withModel, routedModel, userWords, onShipping };

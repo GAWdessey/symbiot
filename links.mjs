@@ -20,7 +20,7 @@
 // What's linked is config.linked: { <id>: { at, watch?, hosts: [trusted by the link] } }.
 import { can } from "./licence.mjs";
 import { blockedSignIn, realChrome } from "./browserfails.mjs";
-import { actSites, setActSite, setActAll } from "./chromegate.mjs";
+import { actSites, setActSite, setActAll, signInNotNeeded } from "./chromegate.mjs";
 import { join } from "node:path";
 import { readFileSync } from "node:fs";
 import { CONFIG_DIR, loadConfig, saveConfig } from "./core.mjs";
@@ -297,6 +297,7 @@ const ASKS_SIGNIN = /\b(?:sign(?:ed)?[ -]?in|log[ -]?in)(?:\s+again)?(?:\s+(?:to
 function signInAsked(text) {
   const t = String(text || "");
   if (blockedSignIn(t)) return null; // a site the Symbiot Browser can't hold a sign-in for gets no Sign in button (browserfails.mjs)
+  try { if (signInNotNeeded(t)) return null; } catch {} // nor one where signing in isn't what's in the way: acting there is switched off, or it's signed in (chromegate.mjs)
   for (const m of t.matchAll(ASKS_SIGNIN)) {
     const rest = t.slice(m.index + m[0].length, m.index + m[0].length + 80);
     const d = rest.match(/^(?:https?:\/\/)?((?:[a-z0-9-]+\.)+[a-z]{2,})(\/[^\s"'`)]*)?/i);

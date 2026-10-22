@@ -19,7 +19,7 @@ import { homedir } from "node:os";
 import { execFileSync } from "node:child_process";
 import { readFileSync, realpathSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { judgeChrome, seen as seenChrome, openTabs, PREFIX as CHROME } from "./chromegate.mjs";
+import { judgeChrome, seen as seenChrome, openTabs, signInNotNeeded, actAsk, SETTING, PREFIX as CHROME } from "./chromegate.mjs";
 import { judgePush } from "./pushgate.mjs";
 import { judgePhone, letGo as phoneLetGo, phoneAsked } from "./phonegate.mjs";
 
@@ -46,9 +46,10 @@ const PLAIN = /^(~|\$HOME|\$\{HOME\})?[\w.@+\/-]+$/;
 // Symbiot's own settings, and what its gates keep: the holds waiting on the user's Go (a send in their
 // Chrome, chromegate.mjs; a force-push, pushgate.mjs) and which site each tab is on. An agent that wrote
 // these could set Go on its own held send or push, or say a tab is on a site it may act on (review of the
-// 20 Oct 2026 run). And the phone's: its held launches and which run has it (phonegate.mjs).
-const OWN = ["config.json", "licence-revoked.json", "secrets.json", "chrome-holds.json", "chrome-tabs.json", "push-holds.json", "phone-holds.json", "phone-lock.json"];
-const GATE_FILES = /(chrome-(holds|tabs)|push-holds|phone-(holds|lock))\.json/; // named so they're never another project's
+// 20 Oct 2026 run). And which sites it refused acting on: a yes to switching one on turns it on. And the
+// phone's: its held launches and which run has it (phonegate.mjs).
+const OWN = ["config.json", "licence-revoked.json", "secrets.json", "chrome-holds.json", "chrome-tabs.json", "chrome-sites.json", "push-holds.json", "phone-holds.json", "phone-lock.json"];
+const GATE_FILES = /(chrome-(holds|tabs|sites)|push-holds|phone-(holds|lock))\.json/; // named so they're never another project's
 // The user's customisations (overrides.mjs): only the app's change pipeline writes them, after its
 // checks, never an agent directly (it could write itself out of a rule there).
 const OVERRIDES_DIR = (home) => join(home, ".config", "symbiot", "overrides");
@@ -179,14 +180,23 @@ function judge(tool, input = {}, opts = {}) {
   const r = refusal(tool, input, opts);
   return r && !r.setting && !r.held && !r.why.includes(NO_SETTING) ? { ...r, why: `${r.why} (${NO_SETTING})` } : r;
 }
+// A question that asks the user to sign in where signing in isn't what's in the way (chromegate.mjs
+// signInNotNeeded): acting there in their Chrome is switched off, or a run's tab was on the site
+// signed in lately. Asked anyway, the user signed LinkedIn in twice and still got asked (21 Oct 2026).
+function needlessSignIn(text, home) {
+  let n = null; try { n = signInNotNeeded(text, { home }); } catch {} if (!n) return null;
+  if (n.off) { const a = actAsk(n.host); return { why: `this asks the user to sign in to ${n.host}, but signing in isn't what's in the way: acting on ${n.host} in their Chrome is switched off (${SETTING(n.host)}). Ask for that instead: the heading "### ${a.q}", a line saying what for, and one option, "${a.option}"`, setting: true }; }
+  return { why: `this asks the user to sign in to ${n.host}, but it's signed in: a run's tab was on it signed in ${Math.max(1, Math.round((Date.now() - n.at) / 60000))} min ago and hasn't been on its sign-in page since. Don't ask them to sign in: open it in your own tab in their Chrome (navigate) and carry on, and if something else stops you, ask for what that names. If it lands on its sign-in page there, that's noted, and then the ask can go` };
+}
+const WRITES_TEXT = /(>|\btee\b|\bwrite|\bopen\(|<<|\bsed\s+-i|\breplace\()/; // a shell command that writes, not one that reads QUESTIONS.md
 function refusal(tool, input = {}, { cwd = process.cwd(), home = homedir(), branch, writes = null, session = "" } = {}) {
   const t = String(tool || "");
   if (t.startsWith(CHROME)) return judgeChrome(t, input, { session, home }); // the user's own Chrome: acting only where they allow it, sends and payments held for their Go (chromegate.mjs)
   if (/^(Write|Edit|MultiEdit)$/.test(t) && basename(String(input.file_path || "")) === "QUESTIONS.md") {
-    const text = [input.content, input.new_string, ...[].concat(input.edits || []).map((e) => e && e.new_string)].filter(Boolean).join("\n");
+    const text = [input.content, input.new_string, ...[].concat(input.edits || []).map((e) => e && e.new_string)].filter(Boolean).join("\n"), r = needlessSignIn(text, home); if (r) return r;
     try { phoneAsked(dirname(dirname(resolve(cwd, String(input.file_path)))), text, { home }); } catch {} // a phone-go card: the user's, shown at once (phonegate.mjs)
   }
-  if (t === "Bash" && /QUESTIONS\.md/.test(String(input.command || "")) && /(>|\btee\b|\bwrite|\bopen\(|<<|\bsed\s+-i|\breplace\()/.test(String(input.command || ""))) { try { phoneAsked(cwd, input.command, { home }); } catch {} }
+  if (t === "Bash" && /QUESTIONS\.md/.test(String(input.command || "")) && WRITES_TEXT.test(String(input.command || ""))) { const r = needlessSignIn(input.command, home); if (r) return r; try { phoneAsked(cwd, input.command, { home }); } catch {} }
   if (t === "Bash") return judgeBash(input.command, { cwd, home, session, branch: branch != null ? branch : currentBranch(cwd) });
   const p = input.file_path || input.path || input.notebook_path;
   if (!p) return null;

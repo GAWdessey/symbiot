@@ -245,6 +245,16 @@ const DESKTOP = process.env.SYMBIOT_DESKTOP === "1"; // symbiot app --fresh (san
 // the licence as Settings shows it: the plan, and Free's 3 projects
 function licenceView() { const st = licenceState(); const L = loadConfig().licence || {}; return { ...st, projects: (L.projects || []).map((p) => ({ path: p, name: p.split(/[\\/]/).pop() })), free: FREE }; } // symbiot app --fresh (sandbox.mjs)
 const FIRST_RUN = !existsSync(CONFIG_PATH); // no config yet when Symbiot started: a brand-new install
+// A window's address is on its browser's command line, which any program on this computer can read (ps), so a
+// window opens with a one-use pass (?p=), good for a minute, rather than the app's key: the page it opens is handed
+// the key itself, and keeps it as before (21 Oct 2026). Android hides other apps' processes, and its app reads ?t=.
+const PASSES = new Map(), PASS_MS = 60000;
+function newPass(now = Date.now()) {
+  for (const [k, at] of PASSES) if (now - at > PASS_MS || PASSES.size > 50) PASSES.delete(k);
+  const p = randomBytes(16).toString("hex"); PASSES.set(p, now); return p;
+}
+function takePass(p, now = Date.now()) { const at = PASSES.get(String(p || "")); if (at === undefined) return false; PASSES.delete(String(p)); return now - at <= PASS_MS; }
+const withKey = (html, token) => String(html).replace(/<head>/i, () => `<head><script>window.SYMBIOT_T=${JSON.stringify(String(token))};</script>`);
 function openApp(url) {
   try {
     // Android (Termux): Symbiot's Android app shows this Symbiot full screen (it
@@ -306,6 +316,9 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
   const cfg0 = loadConfig();
   let TOKEN = cfg0.appToken;
   if (!TOKEN) { TOKEN = randomBytes(16).toString("hex"); try { saveConfig({ ...loadConfig(), appToken: TOKEN }); } catch {} }
+  // a window's address carries a one-use pass, not the key (newPass); a window onto a Symbiot already running asks it for one
+  const winUrl = (port, path = "/") => `http://127.0.0.1:${port}${path}?${process.platform === "android" ? "t=" + TOKEN : "p=" + newPass()}`;
+  const runningUrl = async (port) => { const r = process.platform === "android" ? null : await askRunningApp("pass", { port, token: TOKEN, ms: 2500 }); return `http://127.0.0.1:${port}/?${r && r.pass ? "p=" + r.pass : "t=" + TOKEN}`; }; // one from before passes (or too busy to answer): its key, as before
   const PORT = Number(process.env.SYMBIOT_PORT || cfg0.appPort) || 7391;
   // Single instance: if a Symbiot app is already serving this port, don't start
   // a second one (multiple instances race the config and split the open tabs) —
@@ -321,7 +334,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
     const h = takeAppLock(PORT, { takeOver: RELAUNCH });
     if (h) {
       const p = await askRunningApp("ping", { port: PORT, token: TOKEN, ms: 10000 });
-      const url = `http://127.0.0.1:${PORT}/?t=${TOKEN}`, how = process.env.SYMBIOT_NO_OPEN === "1" ? "" : openApp(url);
+      const url = `http://127.0.0.1:${PORT}/`, how = process.env.SYMBIOT_NO_OPEN === "1" ? "" : openApp(await runningUrl(PORT));
       console.log(`\n${c.g("●")} ${c.b("Symbiot")} is already running (${p && p.version ? "v" + p.version : "pid " + h.pid + ", busy right now"}) at ${c.b(url.split("?")[0])}`); // never the token: this goes to app.log and the journal (15 Oct 2026)
       console.log(how ? c.d(`  Opened the existing window (${/^[aeiou]/.test(how) ? "an" : "a"} ${how}).`) : c.d("  Open it with:  symbiot open"));
       console.log(c.d("  (Not starting a second copy. Set SYMBIOT_FORCE_NEW=1 to force one.)"));
@@ -347,8 +360,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
     const p = await askRunningApp("ping", { port: PORT, token: TOKEN });
     if (p && p.version) {
       releaseAppLock(); // a Symbiot from before the lock
-      setBrowserHub(`http://127.0.0.1:${PORT}/browser?t=${TOKEN}`);
-      const url = `http://127.0.0.1:${PORT}/?t=${TOKEN}`; const how = process.env.SYMBIOT_NO_OPEN === "1" ? "" : openApp(url);
+      const url = `http://127.0.0.1:${PORT}/`; const how = process.env.SYMBIOT_NO_OPEN === "1" ? "" : openApp(await runningUrl(PORT));
       console.log(`\n${c.g("●")} ${c.b("Symbiot")} is already running (v${p.version}) at ${c.b(url.split("?")[0])}`);
       console.log(how ? c.d(`  Opened the existing window (${/^[aeiou]/.test(how) ? "an" : "a"} ${how}).`) : c.d("  Open it with:  symbiot open"));
       console.log(c.d("  (Not starting a second copy. Set SYMBIOT_FORCE_NEW=1 to force one.)"));
@@ -463,13 +475,16 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
   const server = createServer(async (req, res) => {
     const t0 = Date.now(); res.on("finish", () => { const ms = Date.now() - t0; if (ms > 1500) console.log(`slow: ${String(req.url || "").split("?")[0]} took ${(ms / 1000).toFixed(1)}s`); if (req.method === "POST" && !/^\/api\/screens\//.test(String(req.url || ""))) { try { forgetWork(); } catch {} } }); // something you did: the next work scene is built afresh, not the kept one (an agent reading or pressing a page through Screens changes no work: a POST every few seconds kept the scene from ever being kept)
     const u = new URL(req.url, "http://127.0.0.1");
+    // opened with a pass (winUrl): the page comes with the key in it, once, and is never kept
+    const passed = req.method === "GET" && u.searchParams.has("p") && takePass(u.searchParams.get("p"));
+    if (passed && u.pathname === "/") { res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" }); res.end(withKey(EMBEDDED_UI, TOKEN)); return; }
     if (req.method === "GET" && u.pathname === "/") {
       if (req.headers["if-none-match"] === PAGE_TAG) { res.writeHead(304, { etag: PAGE_TAG }); res.end(); return; }
       const gz = /\bgzip\b/.test(String(req.headers["accept-encoding"] || ""));
       res.writeHead(200, { "content-type": "text/html; charset=utf-8", etag: PAGE_TAG, "cache-control": "no-cache", vary: "accept-encoding", ...(gz ? { "content-encoding": "gzip" } : {}) }); res.end(gz ? PAGE_GZ : PAGE); return;
     }
-    // the Symbiot Browser's own page (headless.mjs openSymbiotBrowser): like /, it gets its token in ?t=
-    if (req.method === "GET" && u.pathname === "/browser") { try { res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" }); res.end(readFileSync(new URL("./browser.html", import.meta.url))); } catch { res.writeHead(404); res.end(); } return; }
+    // the Symbiot Browser's own page (headless.mjs openSymbiotBrowser): like /, it gets its key from a pass (or ?t=)
+    if (req.method === "GET" && u.pathname === "/browser") { try { const html = readFileSync(new URL("./browser.html", import.meta.url), "utf8"); res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" }); res.end(passed ? withKey(html, TOKEN) : html); } catch { res.writeHead(404); res.end(); } return; }
     // the app's typeface ships in the package (fonts/), so it's there offline
     // the window's own icon (its taskbar entry), the same orb as the app menu's
     if (req.method === "GET" && (u.pathname === "/favicon.svg" || u.pathname === "/favicon.ico")) {
@@ -730,7 +745,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
         const t = await cardTalk(path, [{ q: card.q || card.sub || card.title || "this card", a: r.text }], { force: true }).catch(() => null);
         return json(res, t || { ok: true, keep: true, said: "Noted on the card for its agent. A question doesn't settle it: press one of its buttons, or say in your own words what you did, when you're ready." });
       }
-      if (u.pathname === "/api/away" && req.method === "POST") { const b = await readBody(req); return json(res, toggleAway(`http://127.0.0.1:${server.address().port}/?t=${TOKEN}`, b.open)); }
+      if (u.pathname === "/api/away" && req.method === "POST") { const b = await readBody(req); return json(res, toggleAway(() => winUrl(server.address().port), b.open)); } // a pass per window
       if (u.pathname === "/api/home/next" && req.method === "POST") { const b = await readBody(req); return json(res, homeNext(b.id)); }
       // Symbiot's own voice (voice.mjs), for computers without a natural one: the page asks
       if (u.pathname === "/api/voice") return json(res, voiceState(u.searchParams.get("lang") || ""));
@@ -813,6 +828,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       // a sandbox (symbiot app --fresh) never offers an update: it would replace your real install.
       // A headless browser (an agent's screenshot of Home) never becomes the newest window:
       // that closed the user's real one, again and again (2026-10-08, "symbiot keeps crashing").
+      if (u.pathname === "/api/pass") return json(res, { pass: newPass() }); // a window onto this app, opened by another process (symbiot open)
       if (u.pathname === "/api/ping") { if (u.searchParams.get("fresh") === "1" && !SANDBOX) await checkLatest(); const w = u.searchParams.get("w") || ""; if (/^[a-z0-9]{6,20}$/.test(w) && u.searchParams.get("new") === "1" && !headlessAgent(req.headers["user-agent"])) NEWEST_WIN = w; return json(res, { ...(NEWEST_WIN ? { window: NEWEST_WIN } : {}), version: VERSION, started: SERVER_STARTED, latest: LATEST_VERSION, newer: !SANDBOX && !DESKTOP && semverGt(LATEST_VERSION, VERSION), ...(DESKTOP ? { desktop: true } : {}), ...(UPDATING ? { updating: { ...UPDATING, every: UPDATE_EVERY, wait: UPDATE_WAIT } } : {}), ...(AUTO.why === "busy" || AUTO.why === "settling" || AUTO.why === "download" ? { autoUpdate: { why: AUTO.why, ...(AUTO.busy ? { busy: AUTO.busy } : {}) } } : {}), ...(UPDATE_FAILED ? { updateFailed: UPDATE_FAILED } : {}), ...(RELAUNCH ? { relaunched: true } : {}), ...(IN_TERMUX ? { termux: true } : {}), ...(SANDBOX ? { sandbox: true } : {}) }); }
       // What's new: after an update, since the version you last saw (until you click Got it);
       // ?latest=1, what the update on offer brings, from its package on npm
@@ -880,10 +896,10 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
   server.on("listening", () => {
     if (announced) return; announced = true;
     resumeUpdate();
-    const url = `http://127.0.0.1:${server.address().port}/?t=${TOKEN}`;
+    const port = server.address().port, url = `http://127.0.0.1:${port}/`;
     openGate();
-    setBrowserHub(`http://127.0.0.1:${server.address().port}/browser?t=${TOKEN}`); // the Symbiot Browser opens on its own page, served from here
-    const how = opened || RELAUNCH || process.env.SYMBIOT_NO_OPEN === "1" ? "" : openApp(url); opened = true; // only pop a window the first time (never in tests, never after an update)
+    setBrowserHub(`http://127.0.0.1:${port}/browser`, () => winUrl(port, "/browser")); // the Symbiot Browser opens on its own page, served from here
+    const how = opened || RELAUNCH || process.env.SYMBIOT_NO_OPEN === "1" ? "" : openApp(winUrl(port)); opened = true; // only pop a window the first time (never in tests, never after an update)
     console.log(`\n${c.g("●")} ${c.b("Symbiot")} is running at ${c.b(url.split("?")[0])}`);
     console.log(RELAUNCH ? c.d("  Restarted after an update; the open window reloads itself.") : how ? c.d(`  Opened in ${/^[aeiou]/.test(how) ? "an" : "a"} ${how}.`) : c.d("  Open it with:  symbiot open"));
     console.log(c.d("  Leave this running; press Ctrl+C to stop (or click the X in the window's top corner)."));
@@ -898,9 +914,9 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
     // still busy: if it's a Symbiot (one restarting after an update answers late), open its
     // window and bow out. A copy on another port runs every timer a second time: one started
     // just as 0.57.6 relaunched itself, and two apps ran side by side (2026-10-08).
-    else (process.env.SYMBIOT_FORCE_NEW ? Promise.resolve(null) : askRunningApp("ping", { port: PORT, token: TOKEN, ms: 2500 })).then((p) => {
+    else (process.env.SYMBIOT_FORCE_NEW ? Promise.resolve(null) : askRunningApp("ping", { port: PORT, token: TOKEN, ms: 2500 })).then(async (p) => {
       if (p && p.version) {
-        const url = `http://127.0.0.1:${PORT}/?t=${TOKEN}`, how = process.env.SYMBIOT_NO_OPEN === "1" ? "" : openApp(url);
+        const url = `http://127.0.0.1:${PORT}/`, how = process.env.SYMBIOT_NO_OPEN === "1" ? "" : openApp(await runningUrl(PORT));
         console.log(`\n${c.g("●")} ${c.b("Symbiot")} is already running (v${p.version}) at ${c.b(url.split("?")[0])}`);
         console.log(how ? c.d(`  Opened the existing window (${/^[aeiou]/.test(how) ? "an" : "a"} ${how}).`) : c.d("  Open it with:  symbiot open"));
         process.exit(0);
@@ -1002,4 +1018,4 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
   setInterval(() => { sentTick().catch(() => {}); }, 120000).unref(); // an email task the user already sent: closed, with where it went (sentmail.mjs) // a reply an agent's email waits on: found, and handed on
 }
 
-export { headlessAgent, updateCmd, installedVersion, restartOnto, autoUpdateDue, restartWouldStop, downloadReady, updateOutcome, changesSince, whatsNew, tarFile, registryChangelog, BROWSER_KEEP, startApp, askRunningApp, isAppRunningWeekly, openApp };
+export { newPass, takePass, withKey, headlessAgent, updateCmd, installedVersion, restartOnto, autoUpdateDue, restartWouldStop, downloadReady, updateOutcome, changesSince, whatsNew, tarFile, registryChangelog, BROWSER_KEEP, startApp, askRunningApp, isAppRunningWeekly, openApp };

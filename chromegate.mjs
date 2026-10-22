@@ -16,6 +16,11 @@
 // the tabs' addresses). An action on a tab whose site isn't known yet is refused until it's navigated,
 // so nothing acts on a site no one named; and after a click or an Enter (either can take the tab to
 // another site) the tab's site is unknown again until a result says where it is.
+// What stands in the way on a site isn't always a sign-in: a run that was refused here (acting off)
+// had the user sign LinkedIn in again while LinkedIn's feed was open signed in in two of its tab
+// groups (21 Oct 2026). So the gate notes, per site, when it refused acting there (off) and when a
+// run's tab was last on it signed in (in) or on its sign-in page (out) (SITES): a question asking
+// to sign in there becomes the switch it really needs, or isn't asked (signInNotNeeded).
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { readFileSync, writeFileSync, mkdirSync, renameSync } from "node:fs";
@@ -41,7 +46,13 @@ function setActAll(on, { load, save }) {
   const cfg = load(), list = new Set(Array.isArray(cfg.chromeAct) ? cfg.chromeAct.filter(Boolean) : []); if (on) list.add("*"); else list.delete("*");
   cfg.chromeAct = [...list]; save(cfg); return { ok: true, all: !!on, sites: cfg.chromeAct };
 }
-const TABS = (home) => join(dir(home), "chrome-tabs.json"), HOLDS = (home) => join(dir(home), "chrome-holds.json");
+const TABS = (home) => join(dir(home), "chrome-tabs.json"), HOLDS = (home) => join(dir(home), "chrome-holds.json"), SITES = (home) => join(dir(home), "chrome-sites.json");
+const DAY = 86400000, SIGNED_FOR = 12 * 3600000;
+const LOGIN_PATH = /\/(?:login|log-in|signin|sign-in|uas\/login|authwall|checkpoint|session[-_]?expired)(?:[/?#._-]|$)/i, LOGIN_TITLE = /\b(?:log ?in|sign ?in|session expired)\b/i;
+// The setting that lets agents act on a site in the user's Chrome, as the user finds it, and the card that asks for it.
+const SETTING = (host) => `Settings → Connections, the Reads button on ${host}'s row (pressed, it says Acts)`;
+const actAsk = (host) => ({ q: `Should agents click and type on ${host} in your Chrome? {#chrome-act-${host}}`, option: `🤖 Agent: switch it on for ${host}` });
+function noteSite(host, field, now, home) { if (!host) return; const all = readJson(SITES(home), {}); all[host] = { ...(all[host] || {}), [field]: now }; writeJson(SITES(home), all); }
 const key = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9@.]+/g, " ").trim();
 
 // judge(tool, input, { session, home, now }) → null (go ahead) or { why } (refused, and why).
@@ -61,7 +72,10 @@ function judgeChrome(tool, input = {}, { session = "", home = homedir(), now = D
   // through: a click or an Enter may take the tab elsewhere, so its site is unknown until the result says where it is (seen)
   const go = () => { if ((name === "computer" && MOVES.has(String(input.action || ""))) || (name === "computer" && enterIn(input))) { tabs[k] = { ...at, moved: now }; writeJson(TABS(home), tabs); } return null; };
   const sites = actSites(home);
-  if (!covered(host, sites)) return { why: `acting on ${host} in the user's own Chrome is off (reading is fine): the user switches it on for a site in Settings → Connections. Ask them in .symbiot/QUESTIONS.md if this site needs it, or do it through Symbiot's own browser (symbiot screens)`, setting: true };
+  if (!covered(host, sites)) {
+    noteSite(host, "off", now, home); const a = actAsk(host);
+    return { why: `acting on ${host} in the user's own Chrome is switched off (reading is fine). That's Symbiot's setting, not a sign-in: don't ask the user to sign in for it, or say the site is signed out. The setting is ${SETTING(host)}. Ask in .symbiot/QUESTIONS.md: the heading "### ${a.q}", a line saying what for, and one option, "${a.option}". Their yes switches it on, and the same action then goes through. Or do it through Symbiot's own browser (symbiot screens); if that one is signed out there, ask for this switch, not a sign-in`, setting: true };
+  }
   // a retry after the user's Go names the hold it was given for ("[go:1a2b3c4d] …"), so it goes through
   // even when its wording moved a little; the tag isn't part of what the action says it does
   const tagged = (String(input.action_summary || "").match(/\[go:([0-9a-f]{6,})\]/i) || [])[1] || "", summary = String(input.action_summary || "").replace(/\s*\[go:[0-9a-f]+\]\s*/gi, " ").trim();
@@ -88,14 +102,21 @@ function seen(tool, response, { session = "", home = homedir(), now = Date.now()
   const name = String(tool).slice(PREFIX.length);
   if (name === "tabs_close_mcp" && input && input.tabId != null) { const all = readJson(TABS(home), {}); delete all[`${session}:${input.tabId}`]; writeJson(TABS(home), all); }
   const text = textOf(response), found = {};
-  for (const m of text.matchAll(/tabId\s+(\d+):.*\("([^"\s]+)"\)\s*$/gm)) found[m[1]] = m[2];
-  for (const m of text.matchAll(/"tabId"\s*:\s*(\d+)[^{}]*?"url"\s*:\s*"([^"]+)"/g)) found[m[1]] ??= m[2];
+  for (const m of text.matchAll(/tabId\s+(\d+):\s*(.*?)\s*\("([^"\s]+)"\)\s*$/gm)) found[m[1]] = { url: m[3], title: m[2].replace(/^"|"$/g, "") };
+  for (const m of text.matchAll(/\{[^{}]*"tabId"\s*:\s*(\d+)[^{}]*\}/g)) { let t = {}; try { t = JSON.parse(m[0]); } catch {} if (t.url && !found[m[1]]) found[m[1]] = { url: String(t.url), title: String(t.title || "") }; }
   const ids = Object.keys(found), whole = name === "tabs_context_mcp" && /availableTabs|Available tabs/i.test(text);
   if (!ids.length && !whole) return 0;
-  const all = readJson(TABS(home), {});
+  const all = readJson(TABS(home), {}), sites = readJson(SITES(home), {});
   if (whole) for (const k of Object.keys(all)) if (k.startsWith(session + ":") && !ids.includes(k.slice(session.length + 1))) delete all[k];
-  for (const id of ids) { const u = found[id]; if (name === "tabs_close_mcp" && String(id) === String(input && input.tabId)) continue; all[`${session}:${id}`] = { host: /^https?:\/\//i.test(u) ? hostOf(u) : "", at: now }; }
-  writeJson(TABS(home), all); return ids.length;
+  for (const id of ids) {
+    if (name === "tabs_close_mcp" && String(id) === String(input && input.tabId)) continue;
+    const { url, title } = found[id], host = /^https?:\/\//i.test(url) ? hostOf(url) : ""; all[`${session}:${id}`] = { host, at: now };
+    // signed in there or not: its sign-in page (by address or title) is out; any page past the front one, its title loaded, is in
+    let path = "/"; try { path = new URL(url).pathname; } catch {}
+    const state = !host ? "" : LOGIN_PATH.test(path) || LOGIN_TITLE.test(title) ? "out" : title && !/^https?:/i.test(title) && path.replace(/\/+$/, "") ? "in" : "";
+    if (state) sites[host] = { ...(sites[host] || {}), [state]: now };
+  }
+  writeJson(TABS(home), all); writeJson(SITES(home), sites); return ids.length;
 }
 // The tabs a run opened in the user's Chrome and hasn't closed: [{ tab, host }]. Runs left theirs
 // open, and the user's Chrome filled with "Claude" groups (an expired SMS Portal login, two LinkedIn
@@ -109,6 +130,31 @@ function goAhead(id, { home = homedir(), now = Date.now() } = {}) {
   const holds = readJson(HOLDS(home), []), h = holds.find((x) => x.id === String(id || "")); if (!h) return false;
   h.go = now; writeJson(HOLDS(home), holds); return true;
 }
+// A question asking the user to sign in to a site (sign in to linkedin.com, sign LinkedIn back in) when signing in isn't
+// what stands in the way there: { host, off: true } when the gate refused acting on it in the last day and it's still
+// switched off (unless a tab hit its sign-in page since it was last seen signed in); { host, off: false, at } when a
+// run's tab was on it signed in within SIGNED_FOR and not on its sign-in page since; else null.
+function signInNotNeeded(text, { home = homedir(), now = Date.now() } = {}) {
+  const t = String(text || ""); if (!/\b(?:sign|log)/i.test(t)) return null;
+  const sites = readJson(SITES(home), {}), on = actSites(home), esc = (x) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  for (const [host, s] of Object.entries(sites)) {
+    const p = host.split("."), name = p.length > 2 && p[p.length - 2].length <= 3 ? p[p.length - 3] : p[p.length - 2] || ""; // linkedin.com: LinkedIn; domains.co.za: domains
+    const site = `(?:https?:\\/\\/)?(?:www\\.)?(?:${esc(host)}${name.length >= 3 ? "|" + esc(name) : ""})\\b`;
+    const asks = new RegExp(`\\b(?:sign|log)(?:ged)?[ -]?(?:back[ -])?in(?:\\s+again)?(?:\\s+(?:to|at|on|into))?\\s+(?:your\\s+|the\\s+)?${site}|\\b(?:sign|log)\\s+${site}\\s+(?:back\\s+)?in\\b`, "i");
+    if (!asks.test(t)) continue;
+    const seenIn = s.in || 0, seenOut = s.out || 0;
+    if (s.off && now - s.off < DAY && !covered(host, on) && seenOut <= seenIn) return { host, off: true };
+    if (seenIn && now - seenIn < SIGNED_FOR && seenIn > seenOut) return { host, off: false, at: seenIn };
+  }
+  return null;
+}
+// The user's yes to switching acting on for a site the gate refused it on lately (a chrome-act-<host> card, or a
+// sign-in ask that was really that): turns it on. Only a site refused in the last week. Gives whether it did.
+function switchOnAct(host, { load, save, home = homedir(), now = Date.now() }) {
+  const h = hostOf(host), all = readJson(SITES(home), {}), s = all[h]; if (!s || !s.off || now - s.off > 7 * DAY) return false;
+  const r = setActSite(h, true, { load, save }); if (r.error) return false;
+  delete s.off; writeJson(SITES(home), all); return true;
+}
 // Turn acting on for a site (on) or off: config.chromeAct. Gives the list.
 function setActSite(host, on, { load, save }) {
   const h = hostOf(host); if (!h) return { error: "Which site?" };
@@ -116,4 +162,4 @@ function setActSite(host, on, { load, save }) {
   cfg.chromeAct = [...list]; save(cfg); return { ok: true, sites: cfg.chromeAct };
 }
 
-export { judgeChrome, seen, openTabs, goAhead, setActSite, setActAll, actSites, hostOf, PREFIX, READS, ACTS };
+export { judgeChrome, seen, openTabs, goAhead, setActSite, setActAll, actSites, hostOf, signInNotNeeded, switchOnAct, actAsk, SETTING, PREFIX, READS, ACTS };

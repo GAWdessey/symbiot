@@ -1646,8 +1646,8 @@ async function takeChromeSignIn(url, session = chromeSession, run = null) {
 // site asked for in a window beside it. Chrome lets one copy use a profile at a time,
 // and a window asked of a hidden copy opens hidden: so any hidden copy on this profile
 // is closed first, Symbiot's or a stray one (Linux, Mac).
-let HUB = ""; // the app's address for that page: http://127.0.0.1:<port>/browser?t=<token>
-function setBrowserHub(url) { HUB = String(url || ""); }
+let HUB = "", HUB_OPEN = null; // the app's address for that page (http://127.0.0.1:<port>/browser), and the address it opens on: with a one-use pass, never the key (server.mjs winUrl)
+function setBrowserHub(url, open) { HUB = String(url || ""); HUB_OPEN = typeof open === "function" ? open : null; }
 const browserHub = () => HUB.replace(/t=[0-9a-f]+/, "t=…"); // where it opens (the token left out)
 function profilePids({ headless } = {}) {
   if (process.platform === "win32") return [];
@@ -1695,7 +1695,7 @@ async function openSymbiotBrowser(url = "") {
     const base = ["--user-data-dir=" + PROFILE, "--profile-directory=" + PROFILE_DIR, "--no-first-run", "--no-default-browser-check",
       ...(process.platform === "linux" ? ["--password-store=basic", "--class=SymbiotBrowser"] : process.platform === "darwin" ? ["--use-mock-keychain"] : []),
       ...String(process.env.SYMBIOT_BROWSER_ARGS || "").split(/\s+/).filter(Boolean)]; // tests: a window with no screen
-    const page = HUB ? ["--app=" + HUB, "--window-size=1040,820"] : [];
+    const page = HUB ? ["--app=" + (HUB_OPEN ? HUB_OPEN() : HUB), "--window-size=1040,820"] : [];
     // the first to start is the window's browser (the rest hand over to it): the app's, with its
     // tabs read over a pipe (pipeWindow) unless one's open already
     const start = (args) => {

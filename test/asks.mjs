@@ -168,6 +168,20 @@ console.log("PUSH IT — a held force-push, pushed by Symbiot on the user's Go")
   const { ONLY_YOU } = await import("../handover.mjs");
   ok("the run's brief says never to offer a setting Settings doesn't have", /Never offer an option saying the user changed a Symbiot setting unless Settings has it by name/.test(ONLY_YOU)); }
 
+// 21 Oct 2026: refused acting on linkedin.com in the user's Chrome, a run asked them to sign LinkedIn back in, and they
+// did, twice. The switch it needed is one tap on its card now, and a sign-in ask that was really the switch is that tap.
+console.log("ACTING IN THEIR CHROME — a yes on the card switches it on");
+{ const G = await import("../chromegate.mjs"), { judge } = await import("../guard.mjs");
+  const run = join(C, "drafts", "act-chrome001"), o = { session: "sc", home: HOME }, CC = "mcp__claude-in-chrome__";
+  mkdirSync(join(run, ".symbiot"), { recursive: true });
+  for (const [tab, url] of [[1, "https://www.linkedin.com/feed/"], [2, "https://www.facebook.com/me/"], [3, "https://github.com/notifications"]]) { judge(CC + "navigate", { tabId: tab, url }, o); judge(CC + "computer", { tabId: tab, action: "left_click", coordinate: [1, 1], action_summary: "Opens the composer" }, o); }
+  writeFileSync(join(run, ".symbiot", "QUESTIONS.md"), `## Questions\n### Should agents click and type on linkedin.com in your Chrome? {#chrome-act-linkedin.com}\nTwo posts wait.\n- 🤖 Agent: switch it on for linkedin.com\n\n### Can you sign Facebook back in so I can post the update? {#fb-signin}\nIt's signed out.\n- 🤖 Agent: once you've signed in, post it (recommended)\n- Skip this part\n\n### Can you log in to GitHub so I can close the stale issues? {#gh-signin}\nIt's signed out.\n- 🤖 Agent: once you've logged in, close them (recommended)\n- Skip this part\n`);
+  const r = a.answerQuestions(run, [{ q: "Should agents click and type on linkedin.com in your Chrome?", a: "🤖 Agent: switch it on for linkedin.com" }, { q: "Can you sign Facebook back in so I can post the update?", a: "Skip this part" }, { q: "Can you log in to GitHub so I can close the stale issues?", a: "🤖 Agent: once you've logged in, close them (recommended)" }]);
+  const ans = readFileSync(join(run, ".symbiot", "ANSWERS.md"), "utf8"), on = G.actSites(HOME);
+  ok("Yes on the switch's card turns it on, and the run is told it's on, with nothing to sign in", r.ok && on.includes("linkedin.com") && /### Symbiot: acting on linkedin\.com in the user's Chrome \{#chrome-act-linkedin\.com\}\nSymbiot switched it on/.test(ans) && /Nothing needed signing in/.test(ans), [r, on, ans.slice(-600)]);
+  ok("…a sign-in ask that was really the switch: its first choice turns it on too", on.includes("github.com") && /### Symbiot: acting on github\.com/.test(ans), on);
+  ok("…while Skip turns nothing on", !on.includes("facebook.com") && !/acting on facebook\.com/.test(ans), on); }
+
 sh(lane, "worktree", "remove", "--force", copy);
 rmSync(HOME, { recursive: true, force: true });
 console.log((fail ? "✗" : "✓") + " asks: " + pass + " passed, " + fail + " failed");

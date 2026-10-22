@@ -29,7 +29,7 @@ import { VERSION, CONFIG_DIR, clipWords, jobWords, readState, writeJsonAtomic } 
 import { track } from "./jobs.mjs";
 import { goalFor } from "./goals.mjs";
 import { write, textOf } from "./ai.mjs";
-import { handoffCmd, runHandoff, isUrgent, urgentStop, urgentFirst, urgentUndo } from "./agents.mjs";
+import { handoffCmd, runHandoff, runningHandoff, namedRun, writeTasks, isUrgent, urgentStop, urgentFirst, urgentUndo } from "./agents.mjs";
 import { addTask, pushTasks } from "./tasks.mjs";
 import { laneMap, laneAbouts } from "./scan.mjs";
 import { OPS, MARKETING, HANDOVER_MAX, handoverRules, ONLY_YOU, HANDBACK } from "./handover.mjs";
@@ -167,6 +167,20 @@ function actNow(request, { title, context, known, alongside, lane = "", run = ru
   const tmpl = handoffCmd();
   if (!tmpl) return { error: "Pick your coding agent in Settings → Handoff first: it does the work." };
   if (!/\{prompt\}/.test(tmpl) || /orca-ide/.test(tmpl)) return { error: "This runs your agent in the background, so it needs one that works by itself (Settings → Handoff: Claude Code, Codex, Gemini or Aider), not an editor or an Orca tab." };
+  // a request that names an ops run still on its job ("Finish ops's phone code check (report: …/act-ab2bbaf1/…)", from
+  // Reports) is that run's, not a second one beside it (21 Oct 2026): it gets the brief, now or when it ends (writeTasks)
+  const into = namedRun(request);
+  if (into) {
+    try {
+      writeTasks(into, actBrief(request, { title, context, known, alongside, now }));
+      const file = join(into, ".symbiot", "ANSWERS.md"); let had = "# Answers\n"; try { had = readFileSync(file, "utf8"); } catch {}
+      writeFileSync(file, `${had.replace(/\s*$/, "")}\n\n### More for you, from ${title || "Symbiot"}\nTASKS.md has more for the job you're on. It adds to that job, it doesn't replace it, so carry on from what you've done and do this as well.\n_symbiot ${new Date(now).toISOString().slice(0, 10)}_\n`);
+    } catch (e) { return { error: "Couldn't add it to the run already on it: " + ((e && e.message) || e) }; }
+    if (runningHandoff(into)) return { ok: true, dir: into, added: true }; // it lands when that run ends (startHeldTasks)
+    const e = run(into, { force: true });
+    if (!e || e.blocked || e.busy) return { error: `Your agent didn't start: ${(e && e.note) || "something held it back"}` };
+    return { ok: true, job: e.id, dir: into, added: true };
+  }
   const dir = join(ACT_DIR, "act-" + randomBytes(4).toString("hex"));
   try {
     mkdirSync(join(dir, ".symbiot"), { recursive: true, mode: 0o700 }); try { chmodSync(ACT_DIR, 0o700); } catch {}

@@ -578,6 +578,42 @@ try {
     ok("with no other ops run going, the brief says nothing about others", !acts[0].o.alongside, acts[0].o.alongside);
   }
 
+  console.log("AN OPS RUN THAT WAITS IS STILL ON ITS JOB — what adds to it goes to it, not to a second run beside it");
+  {
+    // 21 Oct 2026: the phone code check's run waited on the user's answer, and "Adds to run act-ab2bbaf1…", "Re-run the phone
+    // code check…" and "Finish ops's phone code check…" (from Reports) each started a run of its own: test cards on the phone from three at once
+    const sy = lane("symbiot"), smap = { ...map, symbiot: sy }, check = join(CFG, "drafts", "act-ab2bbaf1"), done = join(CFG, "drafts", "act-0d0e0f10"), theirs = join(CFG, "drafts", "act-7e7e7e7e");
+    for (const p of [check, done, theirs]) mkdirSync(join(p, ".symbiot"), { recursive: true });
+    const led = { handoffs: [] }, acts = []; let going = new Set();
+    const sd = () => ({ map: smap, ledger: led, now: Date.now(), running: (p) => going.has(p), tasks: () => [], dirs: [check, done, theirs],
+      act: (text, o) => { acts.push({ text, o }); return { ok: true, job: "s" + acts.length, dir: acts.length === 1 ? check : join(CFG, "drafts", "act-5" + acts.length + "5" + acts.length + "5" + acts.length + "5" + acts.length) }; } });
+    const job = "New job: run the phone code check on the user's phone (Wed 21 Oct 2026, for the symbiot lane): scripts/phone-codes-check.mjs on the Galaxy A26, a fake code from a made-up site only.";
+    put(sy, "HANDOFF.md", "### ops\n" + job + "\n"); dispatch(sy, sd());
+    put(check, "TASKS.md", "# For your agent\n## Tasks\n- [ ] " + job + "\n"); put(check, "QUESTIONS.md", "## Questions\n### Can you wake your phone and keep its screen on, so I can put the check card up?\nThe phone answers adb only while it's awake.\n- 👤 You (only you: your phone): it's awake, go ahead\n- Skip this part\n");
+    led.handoffs[0].at = Date.now() - 60000; ran(check, Date.now() - 50000, "Waiting for the user to wake the phone.");
+    const adds = "Adds to run act-ab2bbaf1 (the phone code check, for the symbiot lane): both findings from your re-run are fixed in the checkout, so re-run the check.";
+    put(sy, "HANDOFF.md", read(sy, "HANDOFF.md") + "\n### ops\n" + adds + "\n"); const a1 = dispatch(sy, sd());
+    ok("an addition naming a run that waits on the user, not running: no second run, it's that run's", acts.length === 1 && a1.length === 1 && led.handoffs.length === 1 && led.handoffs[0].added === 1, { acts: acts.length, led: led.handoffs });
+    ok("…its brief has it now (the run isn't going, so nothing holds it back), and its ANSWERS.md says it adds to the job", /both findings from your re-run are fixed/.test(read(check, "TASKS.md")) && !read(check, "TASKS.next.md") && /### More from symbiot while you ran/.test(read(check, "ANSWERS.md")), [read(check, "TASKS.md").slice(-300), read(check, "ANSWERS.md")]);
+    const rerun = "Re-run the phone code check on the user's Galaxy A26 (already paired over Wi-Fi with adb wireless debugging; no cable), with the fixed check script.";
+    put(sy, "HANDOFF.md", read(sy, "HANDOFF.md") + "\n### ops\n" + rerun + "\n"); dispatch(sy, sd());
+    ok("one that names no run but is about the job that run is on: an addition to it too", acts.length === 1 && led.handoffs.length === 1 && led.handoffs[0].added === 2 && /Galaxy A26/.test(read(check, "TASKS.md")), { acts: acts.length, led: led.handoffs.length });
+    put(sy, "HANDOFF.md", read(sy, "HANDOFF.md") + "\n### ops\nNew job: re-run the phone code check on the user's tablet, a separate check of its own.\n"); dispatch(sy, sd());
+    ok("…but one that says it's a new job starts a run of its own", acts.length === 2 && led.handoffs.length === 2, acts.length);
+    put(theirs, "TASKS.md", "# For your agent\n## Tasks\n- [~] Find the phone over adb (waits on: the user waking the phone)\n");
+    put(sy, "HANDOFF.md", read(sy, "HANDOFF.md") + "\n### ops\nAdds to run act-7e7e7e7e: the phone is awake now.\n"); const a3 = dispatch(sy, sd());
+    ok("a run someone else started, waiting on an item marked [~]: named, it takes the addition, on a row of the asker's own", acts.length === 2 && a3.length === 1 && a3[0].to.path === theirs && a3[0].from.path === sy && led.handoffs.length === 3 && /the phone is awake now/.test(read(theirs, "TASKS.md")), a3);
+    put(done, "TASKS.md", "# For your agent\n## Tasks\n- [x] Check the phone's battery\n");
+    put(sy, "HANDOFF.md", read(sy, "HANDOFF.md") + "\n### ops\nAdds to run act-0d0e0f10: check its storage too.\n"); dispatch(sy, sd());
+    ok("a run that has finished (nothing open, nothing waiting) takes none: that starts a run of its own", acts.length === 3, acts.length);
+    const { actNow } = await import("../mind.mjs"), started = [], cfgFile = join(CFG, "config.json");
+    let cfg0 = null; try { cfg0 = readFileSync(cfgFile, "utf8"); } catch {}
+    writeFileSync(cfgFile, JSON.stringify({ ...(cfg0 ? JSON.parse(cfg0) : {}), agentCmd: "claude -p {prompt}" }));
+    const r = actNow("Finish ops's phone code check (report: " + join(check, ".symbiot", "PHONE-CODE-CHECK-PROGRESS.md") + ", read it first).", { title: "Reports", run: (p, o) => { started.push([p, o]); return { id: "job-r" }; } });
+    ok("a request from a chat naming that run's folder goes to that run, started there, not a new folder", r.ok && r.added && r.dir === check && started.length === 1 && started[0][0] === check && /Finish ops's phone code check/.test(read(check, "TASKS.md")) && /### More for you, from Reports/.test(read(check, "ANSWERS.md")), [r, started]);
+    if (cfg0 === null) rmSync(cfgFile, { force: true }); else writeFileSync(cfgFile, cfg0);
+  }
+
   console.log("A HANDOVER WAITING — the lane's block says whether its lane has it, and if not, why");
   {
     // whatsapp_module, 2026-10-12: its rewritten test-number handover sat behind ops's run on the earlier version
