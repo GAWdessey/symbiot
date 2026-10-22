@@ -2,12 +2,15 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one), for anyone who installs the app: what changed in it, never whose work it was (no projects, people, accounts, services, run ids or task wording of the person who made it). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.70.1 — 2026-10-22
+
+- **Plain words when approved work isn't on GitHub.** The card says what's wrong and what happens next in one line; branches, commits and git's own words are under Details. A clash an agent is already sorting out no longer asks for you.
+
 ## 0.70.0 — 2026-10-22
 
 - **What you ask for is followed through to the end.** Each request becomes a goal that Symbiot owns until it's done, across every lane and handover it touches. While it waits, Symbiot chases it: a card when it needs you, a drafted follow-up after a day without a reply (sent only if you say so), a restart when the time it waited for comes, and "Stalled" on Home after a day with nothing moving.
 - **Every goal ends with a breakdown.** When it's done you get "Done: …" under Reports: what you asked, what was done, how that's known, what's left, and the time it took. If it can't be finished, one more run looks at what's left, and then you get "Not finished: …" with what's missing. Nothing is closed silently.
 - **A handover that comes back unfinished says so**, and an email that has waited a week for a reply comes up on Home.
-- **Plain words when approved work isn't on GitHub.** The card says what's wrong and what happens next in one line; branches, commits and git's own words are under Details. A clash an agent is already sorting out no longer asks for you.
 
 ## 0.69.1 — 2026-10-22
 
