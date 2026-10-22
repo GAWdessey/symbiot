@@ -61,6 +61,26 @@ try {
   ok("\"ive already answered\" isn't a Go ahead: it's said to the card's agent", said && said.talk === true && said.text === "ive already answered", said);
   ok("…nor is a question", H.homeAnswer("needs:/nowhere", { text: "did you send it already" }).talk === true);
   ok("…a yes and a no still decide it", !H.homeAnswer("needs:/nowhere", { text: "yes, send it" }).talk && !H.homeAnswer("needs:/nowhere", { text: "skip" }).talk);
+
+  console.log("CARD TALK — typed words on a step card (👤: \"Did you allow the mic?\") are its answer, done only when they say so");
+  // 22 Oct 2026: "start it so i can press the allow mic button" and "nothing at that local host" each went to the run
+  // as "Done: the user did it (…)"; it checked, found the mic wasn't allowed, and the card came back.
+  ok("\"did it\" is a statement, \"did it work\" a question", !S.asksBack("did it") && !S.asksBack("did it, she spoke") && S.asksBack("did it work"));
+  ok("done only when the words say so", S.saysDone("i did") && S.saysDone("allowed the mic") && S.saysDone("already allowed it") && S.saysDone("did it") && S.saysDone("yes"));
+  ok("…not a request, a problem, a question or a no", !S.saysDone("start it so i can press the allow mic button") && !S.saysDone("nothing at that local host") && !S.saysDone("i allowed it but she isnt speaking") && !S.saysDone("cant approve, there is no approve button") && !S.saysDone("did it work") && !S.saysDone("is it on?"));
+  const mic = join(CFG, "drafts", "act-0mic01"), msym = join(mic, ".symbiot"); mkdirSync(msym, { recursive: true });
+  const STEP = { what: "Open the coach page in Chrome and allow microphone access so the coach's voice can be heard", kind: "step", key: "mic1" };
+  const answersOf = () => readFileSync(join(msym, "ANSWERS.md"), "utf8").split("### ").pop();
+  const stepDeps = (log) => ({ agents: () => [{ id: "m1", path: mic, startedAt: Date.now() - 600000, endedAt: Date.now() - 60000, needs: STEP }], settle: () => { log.settled++; }, run: () => { log.ran++; return { id: "m2" }; }, unchanged: () => [], releaseNotIn: () => null, running: () => false });
+  for (const [words, done] of [["start it so i can press the allow mic button", false], ["nothing at that local host", false], ["i did", true], ["already allowed it", true]]) {
+    const log = { settled: 0, ran: 0 }, r = H.homeAnswer("needs:m1", { text: words }, stepDeps(log)), a = answersOf();
+    ok(`"${words}": saved against the step, the card settled, its agent started${done ? ", as done" : ", not as done"}`, r.ok && !r.talk && log.settled === 1 && log.ran === 1 && a.startsWith(STEP.what) && a.includes(words) && (done ? /^Done: the user did it/m.test(a.split("\n")[1]) : /didn't say this step is done/.test(a) && !/Done: the user did it/.test(a)), [r, log, a.slice(0, 300)]);
+    S.endTalk(mic, STEP.what);
+  }
+  { const log = { settled: 0, ran: 0 }, d = { ...stepDeps(log), run: () => { log.ran++; return { blocked: true, note: "The lane is paused." }; } };
+    const r = H.homeAnswer("needs:m1", { text: "allowed it" }, d);
+    ok("its agent can't start this second: the answer is still saved, the card settles, and it says so (no \"didn't start\" error, no resend)", r.ok && !r.error && log.settled === 1 && /Saved as your answer/.test(r.said) && /lane is paused/.test(r.said) && /allowed it/.test(answersOf()), [r, log]); }
+  ok("a question on a step card is still talk with its agent", H.homeAnswer("needs:m1", { text: "is it running yet" }, stepDeps({ settled: 0, ran: 0 })).talk === true);
 } catch (e) { ok("ran", false, String((e && e.stack) || e)); }
 finally { rmSync(HOME, { recursive: true, force: true }); }
 console.log(`\n${fail ? "✗" : "✓"} cardtalk: ${pass} passed, ${fail} failed`);
