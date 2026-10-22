@@ -502,7 +502,7 @@ function settleRecord(path, note) {
 // for it: nothing new would come of it until that does. Only with a record (0.68.1 on).
 const waitsOutside = (path) => { try { const r = runRecord(path); return !!r && r.state === "waiting" && r.waitingOn !== "lane" ? r : null; } catch { return null; } };
 // One live run per piece of work: an ops run whose goal (goals.mjs) already has another ops run going
-// waits for it. At 06:28 on 22 Oct 2026 four runs started on the same WinLove Simli rebuild within 32
+// waits for it. At 06:28 on 22 Oct 2026 four runs started on the same avatar rebuild within 32
 // seconds, in four folders, and their reports disagreed. The waiting one starts when the other ends.
 const TWIN_WAIT = new Map(); // running path → paths waiting on it
 const isOps = (p) => /\/drafts\/act-[^/]+$/.test(String(p || ""));
