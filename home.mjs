@@ -28,7 +28,7 @@ import { CONFIG_DIR, loadTasks, saveTasks, loadConfig, saveConfig, sameTask, isF
 import { lanesState, stuckHandovers, allowHandover, skipHandover, handingOf, loadLedger, doneSince, sharedTo, projectOf } from "./lanes.mjs";
 import { windowSince, BROWSER_IDLE_MIN } from "./headless.mjs";
 import { control } from "./control.mjs";
-import { jobsLines, syncOnUser, syncTasks, onUser, runRecord } from "./jobs.mjs";
+import { jobsLines, parkedJobs, syncOnUser, syncTasks, onUser, runRecord } from "./jobs.mjs";
 import { goalCards } from "./goals.mjs";
 import { intuitionUpdates, intuitionLines } from "./intuition.mjs";
 import { overridesUpdates } from "./overrides.mjs";
@@ -826,7 +826,7 @@ function sentMailLines(now = Date.now()) {
 function homeContext(h, { cards } = {}) {
   const shown = new Set(h.you.map((y) => y.id)), rest = h.youCount > h.you.length ? (cards || (() => { try { return onUser(); } catch { return []; } })()).filter((y) => !shown.has(y.id)) : [];
   return [
-    `Only the user can do (${h.youCount ?? h.you.length}):`, ...h.you.map((y) => `- ${y.title}: ${y.sub}${y.q && y.q !== y.sub ? ` (asks: ${y.q}${(y.options || []).length ? ` ${y.options.join(" / ")}` : ""})` : ""}`),
+    `Only the user can do (${h.youCount ?? h.you.length}${(h.youCount ?? h.you.length) ? "" : ": no card is waiting for them, so never say one is"}):`, ...h.you.map((y) => `- ${y.title}: ${y.sub}${y.q && y.q !== y.sub ? ` (asks: ${y.q}${(y.options || []).length ? ` ${y.options.join(" / ")}` : ""})` : ""}`),
     ...rest.slice(0, 12).map((y) => `- ${y.text}`), // past the 6 Home shows: from the job record, the same list
     ...(h.you.some((y) => /^ask:/.test(y.id || "")) ? [`Agents asking (to answer for them, "answer" with these ids): ${h.you.filter((y) => /^ask:/.test(y.id || "")).map((y) => `${y.id} (${String(y.title).slice(0, 40)})`).join("; ")}`] : []),
     `New on what they watch:`, ...(h.feeds.length ? h.feeds.map((f) => `- ${f.title}: ${f.sub}${f.latest ? ` (latest: ${f.latest})` : ""}`) : ["- nothing new"]),
@@ -1136,8 +1136,8 @@ function workSceneNow({ deps = {}, full = false } = {}) {
   }
   for (const p of Object.values(by)) { p.lit = !!(p.asks || p.ready); if (isParked(p.repo)) p.parked = true; }
   const projects = Object.values(by).sort((a, b) => (b.lit ? 1 : 0) - (a.lit ? 1 : 0) || (a.parked ? 1 : 0) - (b.parked ? 1 : 0) || (b.running ? 1 : 0) - (a.running ? 1 : 0) || b.ready - a.ready || b.waiting - a.waiting || b.last - a.last || (a.repo < b.repo ? -1 : 1));
-  const stuckN = waiting.filter((w) => w.why.stuck).length;
-  return { running, ready, waiting: waiting.slice(0, 12), ...(full ? { all: waiting } : {}), waitingCount: waiting.length, canGo: waiting.filter((w) => !w.busy && !w.parked && !w.why.noGo).length, ...(stuckN ? { stuckCount: stuckN } : {}), projects: projects.slice(0, 24), projectCount: projects.length };
+  const stuckN = waiting.filter((w) => w.why.stuck).length, parkedList = (deps.parkedJobs || (() => { try { return parkedJobs({ now: deps.now || Date.now() }); } catch { return []; } }))();
+  return { running, ready, waiting: waiting.slice(0, 12), ...(full ? { all: waiting } : {}), waitingCount: waiting.length, parked: parkedList.slice(0, 4), parkedCount: parkedList.length, canGo: waiting.filter((w) => !w.busy && !w.parked && !w.why.noGo).length, ...(stuckN ? { stuckCount: stuckN } : {}), projects: projects.slice(0, 24), projectCount: projects.length };
 }
 // ---- why a task waits ---------------------------------------------------------------
 // Home showed "7 waiting" and nothing said why or moved them (2026-10-08): an ops task

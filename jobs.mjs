@@ -65,6 +65,19 @@ function jobsNow({ now = Date.now(), jobs = loadJobs() } = {}) {
   const ended = jobs.filter((j) => ENDED.has(j.state) && j.state !== "sent" && now - j.changed < DAY).sort((a, b) => b.changed - a.changed);
   return { open, ended };
 }
+// Jobs parked on someone or something else (a lane, a third party, a time): not running, so
+// Home's agents don't show them, and not the user's, so no card. Newest per lane; none for a
+// lane whose job is running. Home draws them with who and what they wait on (22 Oct 2026: 100
+// Dailify texts staged and held for a yes, and Home said only "symbiot working on it").
+function parkedJobs({ now = Date.now(), jobs = loadJobs() } = {}) {
+  const live = new Set(jobs.filter((j) => j.state === "running" && j.lane).map((j) => j.lane)), seen = new Set(), out = [];
+  for (const j of jobs.filter((x) => x.state === "waiting" && ["lane", "third party", "time"].includes(x.waitingOn) && !isCard(x) && x.kind !== "task" && x.kind !== "goal").sort((a, b) => b.changed - a.changed)) {
+    const l = j.lane || j.key; if (live.has(j.lane) || seen.has(l)) continue; seen.add(l);
+    const what = clip(j.what || j.note, 110), who = j.waitingOn === "lane" ? (clip(String(j.what || "").split(":")[0], 30) || "another lane") : j.waitingOn === "time" ? "a set time" : "someone outside";
+    out.push({ id: "job:" + j.key, lane: j.lane || "", text: clip(String(j.text || j.key).replace(/^(Agent:\s*)?(New job:\s*)?/i, ""), 90), who, on: j.waitingOn, why: what, at: j.changed, since: Math.max(0, now - j.changed) });
+  }
+  return out;
+}
 const whenOf = (t, now) => { const m = Math.max(0, Math.round((now - t) / 60e3)); return m < 2 ? "just now" : m < 90 ? `${m} min ago` : m < 2880 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} days ago`; };
 function jobLine(j, now = Date.now()) {
   return `${j.lane ? `[${j.lane}] ` : ""}${j.text || j.key}: ${SAYS[j.state] || j.state}${j.waitingOn ? `, waiting on ${j.waitingOn === "user" ? "the user" : j.waitingOn}` : ""}${j.what ? ` (${j.what})` : ""} (since ${whenOf(j.changed, now)})${j.note ? ` — ${j.note}` : ""}`;
@@ -174,4 +187,4 @@ const goalRows = ({ jobs = loadJobs() } = {}) => jobs.filter((j) => j.kind === "
 function putGoal(g, { now = Date.now() } = {}) {
   try { const jobs = loadJobs(), i = jobs.findIndex((j) => j.key === g.key); if (i < 0) jobs.push(g); else jobs[i] = g; return saveJobs(jobs, now); } catch { return false; }
 }
-export { goalRows, putGoal, goalLine, saveJobs, shift, ENDED, runRecord, recordOf, track, loadJobs, jobsNow, jobsLines, jobsText, jobLine, waitingOnUser, syncOnUser, syncTasks, onUser, landed, prKey, isCard, STATES, FILE };
+export { parkedJobs, goalRows, putGoal, goalLine, saveJobs, shift, ENDED, runRecord, recordOf, track, loadJobs, jobsNow, jobsLines, jobsText, jobLine, waitingOnUser, syncOnUser, syncTasks, onUser, landed, prKey, isCard, STATES, FILE };
