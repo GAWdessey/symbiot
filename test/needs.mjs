@@ -58,6 +58,10 @@ try {
   const started = [];
   await G.goalsTick({ notTheirs: (c) => c.q === status.q, running: () => false, start: (p) => { started.push(p); return { id: "x" }; }, autoStart: () => true, settle: () => {}, cardPaths: new Set(), waits: [], ledger: { handoffs: [] }, map: {} });
   ok("…and its run is started to check it itself, not the user asked", started.includes(run), started);
+
+  console.log("NEEDS YOU — the Updates button takes clicks");
+  { const ui = (await import("node:fs")).readFileSync(new URL("../ui.mjs", import.meta.url), "utf8"), rule = (ui.match(/body\.lq-liquid header \.status[^{]*\{pointer-events:auto\}/) || [""])[0];
+    ok("the header lets clicks through to the liquid, except its controls: Updates is one of them (it couldn't be clicked, 22 Oct 2026)", /#lqupd/.test(rule) && /#lqlook/.test(rule), rule); }
 } catch (e) { ok("ran", false, String((e && e.stack) || e)); }
 finally { rmSync(HOME, { recursive: true, force: true }); }
 console.log(`\n${fail ? "✗" : "✓"} needs: ${pass} passed, ${fail} failed`);

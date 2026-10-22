@@ -107,7 +107,7 @@ body.lq-light .lqmsg.me{background:rgba(21,26,33,.07);color:#151A21;text-shadow:
 body.lq-look-pearl .lqmsg.me{background:#1B1E23;color:#F4F4F2}
 #lqmore{position:absolute;right:16px;bottom:92px;display:flex;flex-direction:column;align-items:flex-end;gap:6px;z-index:3}
 body.lq-liquid header{position:fixed;top:0;left:0;right:0;z-index:4;background:transparent;pointer-events:none}
-body.lq-liquid header .status,body.lq-liquid header .ver,body.lq-liquid #lqlook{pointer-events:auto}
+body.lq-liquid header .status,body.lq-liquid header .ver,body.lq-liquid #lqlook,body.lq-liquid #lqupd{pointer-events:auto} /* the header lets clicks through to the liquid; Updates wasn't on this list, so it couldn't be clicked (22 Oct 2026) */
 #lqlook{display:none}
 #lqlow{display:none}
 body.lq-liquid #lqlow{display:inline-flex;align-items:center;pointer-events:auto;margin-left:8px;min-height:34px;padding:0 12px;border-radius:999px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);color:#8A919B;font:500 12.5px var(--sans);cursor:pointer}
