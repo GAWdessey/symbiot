@@ -43,6 +43,7 @@ import { archivedTasks } from "./sweep.mjs";
 import { sentTick } from "./sentmail.mjs";
 import { keepFacts, skipFacts, awaitTick, awaitingState, stopWaiting } from "./handback.mjs";
 import { adaptState, noteUse } from "./adapt.mjs";
+import { shoot } from "./design.mjs";
 import { cardTalk, dismissCard, reportIdeasAdd, reportIdeasDismiss, reportAsk, reportDraftAnswer, homeState, homeTick, homeAsk, homeAnswer, homeNext, workScene, forgetWork, workGo, workTick, firstSteps, marketingState, marketingGo, marketingDraftAnswer, marketingTask, moveToMarketing, onboarding, setOnboarding, startOnboarding, phoneSetupFirst } from "./home.mjs";
 import { MARKETING_DIR, MARKETING, draftPreview, laneMedia, displayName, setDraftMedia } from "./marketing.mjs";
 import { trays, trayMedia, setBlur, addBlur, removeBlur, setReviewed, renderCapture } from "./tray.mjs";
@@ -589,6 +590,13 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       // A web page in the hidden browser (headless.mjs): mapped by itself, no
       // screen needed. Press acts on the real site, signed in as you, so it's
       // confirmed like a click; Sign in opens a window the user signs in with.
+      // symbiot shoot from a sandboxed run whose own Chrome won't start (design.mjs shoot): the PNGs go in
+      // a folder under your home, never Symbiot's own settings (only its run folders, under drafts/)
+      if (u.pathname === "/api/screens/shoot" && req.method === "POST") {
+        const b = await readBody(req), out = resolve(String(b.out || "")), home = homedir();
+        if (!b.out || !out.startsWith(home + "/") || (out.startsWith(CONFIG_DIR + "/") && !out.startsWith(join(CONFIG_DIR, "drafts") + "/"))) return json(res, { error: "Screenshots go in the run's own folder." });
+        return json(res, shoot(String(b.url || ""), { out, sizes: String(b.sizes || "1440x900,390x844"), full: b.full === true, bin: chromeBinary() }));
+      }
       if (u.pathname === "/api/screens/map" && req.method === "POST") { const b = await readBody(req); return json(res, screenOut(await mapPage(b.site, b.name, { whole: b.whole === true, who: String(b.who || "") }))); }
       // press / type: refused unless confirmed, or the page's site is one you trust
       if (u.pathname === "/api/screens/press" && req.method === "POST") { const b = await readBody(req); return json(res, screenOut(await pressRegion(String(b.id || ""), String(b.region || ""), { confirmed: b.confirmed === true, noSend: b.noSend === true, who: String(b.who || "") }))); }

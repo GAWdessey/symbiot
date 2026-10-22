@@ -11,6 +11,7 @@
     "core.mjs",
     "ai.mjs",
     "triage.mjs",
+    "design.mjs",
     "goals.mjs",
     "scan.mjs",
     "tasks.mjs",

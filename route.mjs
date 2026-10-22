@@ -19,6 +19,7 @@ import { readFileSync } from "node:fs";
 import { CONFIG_DIR } from "./core.mjs";
 import { kindOf } from "./estimate.mjs";
 import { MODELS } from "./ai.mjs";
+import { isUiWork } from "./design.mjs";
 
 const COSTS_FILE = join(CONFIG_DIR, "costs.json");
 const MIN_SAMPLES = 3, FAIL_FLOOR = 0.5, LONG_BRIEF = 1500;
@@ -86,6 +87,7 @@ function repoCount(task) {
 function escalationReason(task, history, said = task) {
   const text = String(task || ""), own = String(said ?? task ?? "");
   if (SENSITIVE.test(text)) return "touches keys, money or publishing";
+  if (isUiWork(own)) return "UI work: the design specialist"; // a demo ticked on its tests alone, a bare developer console (22 Oct 2026)
   if (own.length > LONG_BRIEF) return "long brief";
   if (repoCount(own) > 1) return "names several repos";
   if (HARD_WORDS.test(own)) return "research/refactor/debug-style work";

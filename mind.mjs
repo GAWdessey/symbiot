@@ -16,6 +16,7 @@
 //   signed in to your linked sites); "task" adds it to your list for later or for a
 //   repo. Anything hard to undo (closing an account, deleting, paying, sending) the
 //   agent asks you about first, in the Agents tab: the brief says so.
+import { isUiWork, designBrief } from "./design.mjs";
 import { addRule, standingBrief, doneBrief } from "./asksdone.mjs";
 import { sentBrief } from "./sentmail.mjs";
 import { captureSecrets } from "./vault.mjs";
@@ -149,7 +150,7 @@ This folder isn't a repo; there's nothing to change in it but this file. Use you
 ${ONLY_YOU}
 - When it's done, tick the task (\`- [x]\`) and say what you did in your last message: it's what goes back to whoever asked.
 
-${handoverRules(names, OPS, reach).join("\n")}
+${isUiWork(request) ? designBrief().join("\n") + "\n" : ""}${handoverRules(names, OPS, reach).join("\n")}
 ${HANDBACK.join("\n")}
 ${[...sentBrief(), ...standingBrief(), ...doneBrief(OPS)].join("\n")}`;
 }
