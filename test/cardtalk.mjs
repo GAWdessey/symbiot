@@ -44,6 +44,17 @@ try {
   const ans = readFileSync(join(run, ".symbiot", "ANSWERS.md"), "utf8");
   ok("the answer carries what was said on the card", r && r.ok && /Skip this part/.test(ans) && /On this card, before this answer/.test(ans) && /The user: did you fix the force app/.test(ans) && /You: Not yet: the phone dropped off/.test(ans), ans.slice(-500));
   ok("…and the card's talk is cleared", S.talkOf(run, Q).length === 0);
+
+  console.log("CARD TALK — the report a card links to belongs to that card's agent");
+  const rep = { id: "rep1", title: "DRAFT, NOT SENT: note to Remy", file: "act-0phone1 · DRAFT-NOTE.md", name: "DRAFT-NOTE.md", folder: run, text: "# DRAFT, NOT SENT: note to Remy\n\nHi Remy, …" };
+  const QR = "The note to Remy: it is not sent. Send it?";
+  const linkedQs = () => [{ q: QR, options: ["Go ahead", "Skip"], report: { id: "rep1", title: rep.title } }];
+  let answered = null;
+  const ra = await H.reportAsk("rep1", "send it, but drop the last line", { ask: async () => JSON.stringify({ reply: "general chat" }), deps: { read: () => rep, questions: linkedQs, answer: (p, rows, o) => { answered = { p, rows, o }; return { ok: true, rerun: "r1" }; } } });
+  ok("an answer typed in the report answers its card, to that card's agent, and says so", answered && answered.p === run && answered.rows[0].q === QR && answered.rows[0].a === "send it, but drop the last line" && answered.o.rerun && /Sent to its agent as your answer/.test(ra.answer), [ra, answered]);
+  let saw2 = "";
+  const rq = await H.reportAsk("rep1", "did you already send this one", { ask: async (sys, p) => { saw2 = sys + p; return JSON.stringify({ reply: "No, it's a draft: nothing went out." }); }, deps: { read: () => rep, questions: linkedQs, answer: () => { throw new Error("not an answer"); } } });
+  ok("…a question there is talk on that card, answered by its agent with the report in front of it", rq.answer === "No, it's a draft: nothing went out." && rq.card === QR && /Hi Remy/.test(saw2) && S.talkOf(run, QR).length === 2, [rq, saw2.slice(-300)]);
 } catch (e) { ok("ran", false, String((e && e.stack) || e)); }
 finally { rmSync(HOME, { recursive: true, force: true }); }
 console.log(`\n${fail ? "✗" : "✓"} cardtalk: ${pass} passed, ${fail} failed`);

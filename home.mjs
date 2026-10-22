@@ -18,7 +18,7 @@ import { readFileSync, writeFileSync, mkdirSync, statSync } from "node:fs";
 import { watchBoard, draftReply, draftCards, draftAnswer } from "./watch.mjs";
 import { pendingReview, pushTasks, addTask, taskType, releaseNotIn } from "./tasks.mjs";
 import { estimate, estimateWords } from "./estimate.mjs";
-import { agentQuestions, heldAsk, grantCard, cardIsPermission, onCardGone, setHandoffCmd, agentsList, agentsNow, forgetAgents, runHandoff, runningHandoff, handoffCmd, loadRuns, connectorsInfo, parkedPaths, agentMissing, settleNeeds, closeAsk, pickAgent, detectHandoffs, linkReach, unchangedStep, whereOf, claudePause, parkLane } from "./agents.mjs";
+import { agentQuestions, answerQuestions, heldAsk, grantCard, cardIsPermission, onCardGone, setHandoffCmd, agentsList, agentsNow, forgetAgents, runHandoff, runningHandoff, handoffCmd, loadRuns, connectorsInfo, parkedPaths, agentMissing, settleNeeds, closeAsk, pickAgent, detectHandoffs, linkReach, unchangedStep, whereOf, claudePause, parkLane } from "./agents.mjs";
 import { stallCards, loadStall, saveStall } from "./stall.mjs";
 import { isDone, recordDone, coveredBy, doneList, asksBack, askBackNote, wantsReport, closesAsk, heldBy, reportsSince, talkOf, addTalk, talkText } from "./asksdone.mjs";
 import { captureSecrets } from "./vault.mjs";
@@ -897,7 +897,7 @@ function sinceReport(r, { read = (f) => readFileSync(f, "utf8"), stat = (f) => s
 // on the card from that run's own records, and the card's question stays open. Asked for work
 // ("check it again", "fix it"), it acts: the run's lane takes it, as from Home's chat. null when
 // the text is an answer (answerQuestions takes it as before).
-async function cardTalk(path, answers, { ask, deps = {} } = {}) {
+async function cardTalk(path, answers, { ask, deps = {}, extra = "" } = {}) {
   const rows = Array.isArray(answers) ? answers : [], one = rows.length === 1 ? rows[0] : null;
   if (!path || !one || !String(one.a || "").trim()) return null;
   const read = deps.read || ((f) => { try { return readFileSync(join(path, ".symbiot", f), "utf8"); } catch { return ""; } });
@@ -914,7 +914,7 @@ async function cardTalk(path, answers, { ask, deps = {} } = {}) {
   const context = [`The card's question: ${q.q}${(q.options || []).length ? `\nIts options: ${q.options.join(" | ")}` : ""}${q.context ? `\nIts context: ${q.context}` : ""}`,
     rec ? `How this run ended: ${rec.state}${rec.waitingOn ? `, waiting on ${rec.waitingOn}` : ""}${rec.what ? ` (${rec.what})` : ""}${rec.summary ? `\nIts last words: ${rec.summary}` : ""}` : "",
     open ? `Its open and waiting items:\n${open}` : "", `The newest answers it has (newest last):\n${read("ANSWERS.md").slice(-4000)}`,
-    before.length ? `Said on this card already:\n${talkText(before)}` : ""].filter(Boolean).join("\n\n");
+    before.length ? `Said on this card already:\n${talkText(before)}` : "", extra].filter(Boolean).join("\n\n");
   const res = await converse({ where: `Card: ${name}: ${String(q.q).slice(0, 60)}`, role, context, question: said, map, ...(ask ? { ask } : {}),
     act: { agent: (req, known, repo, s2) => (repo || lane ? actIn(req, repo || lane, { map, known, title: "Card", said: s2 }) : actNow(req, { title: "Card", known })), task: (text, repo) => taskIn(text, repo || lane, { map }) } });
   const reply = String(res.reply || "").trim() || "I couldn't answer that just now.";
@@ -925,6 +925,21 @@ async function cardTalk(path, answers, { ask, deps = {} } = {}) {
 async function reportAsk(id, question, { ask, deps = {} } = {}) {
   question = String(question || "").trim().slice(0, 2000); if (!question) return { error: "empty" };
   const r = (deps.read || readReport)(id, { mark: false }); if (!r || r.error) return { error: (r && r.error) || "That report isn't there any more." };
+  // The report a card links to ("Read the report: …") is that card's agent's: what the user writes
+  // here goes to it. An answer answers the card (and closes it); a question is talk on the card. On
+  // 22 Oct 2026 the user answered a card in its report, the chat here took it as a general remark,
+  // and the card kept asking.
+  let linked = []; try { linked = (deps.questions || ((p) => agentQuestions(p, "", { raw: true }).questions))(r.folder).filter((q) => q.report && q.report.id === r.id); } catch {}
+  if (linked.length === 1 && r.folder) {
+    const q = linked[0];
+    if (!asksBack(question, q.options || [])) {
+      const a = (deps.answer || answerQuestions)(r.folder, [{ q: q.q, a: question }], { rerun: true, share: true });
+      if (a && a.ok) return { answer: `Sent to its agent as your answer to "${q.q}"${a.rerun ? ": it's picking it up now" : ""}. That card is closed.`, answered: q.q, ...(a.rerun ? { rerun: a.rerun } : {}) };
+    } else {
+      const t = await cardTalk(r.folder, [{ q: q.q, a: question }], { ask, deps: deps.questions ? { questions: deps.questions } : {}, extra: `The report the user is reading (${r.file}):\n${String(r.text || "").slice(0, 6000)}` });
+      if (t) return { answer: t.reply, talk: t.talk, card: q.q };
+    }
+  }
   if (!ask && !resolveProvider()) return phoneNoAi() || { error: "not-connected" };
   let map = {}; try { map = laneMap(); } catch {}
   const lane = r.lane && r.lane !== RUNS_LANE && map[r.lane] ? r.lane : "";
