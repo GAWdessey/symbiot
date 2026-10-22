@@ -20,7 +20,7 @@
 // What's linked is config.linked: { <id>: { at, watch?, hosts: [trusted by the link] } }.
 import { can } from "./licence.mjs";
 import { blockedSignIn, realChrome } from "./browserfails.mjs";
-import { actSites, setActSite } from "./chromegate.mjs";
+import { actSites, setActSite, setActAll } from "./chromegate.mjs";
 import { join } from "node:path";
 import { readFileSync } from "node:fs";
 import { CONFIG_DIR, loadConfig, saveConfig } from "./core.mjs";
@@ -110,11 +110,11 @@ function googleWarn(now = Date.now()) {
 function linksState() {
   const c = catalog(), l = linked(), watches = watchState().watches;
   // act: agents may act on this site in the user's own Chrome, not just read it (chromegate.mjs; off by default)
-  const acts = (() => { try { return actSites(); } catch { return []; } })(), actOn = (e) => [e.url, ...[].concat(e.hosts || [])].some((u) => { const h = /:\/\//.test(String(u)) ? hostOf(u) : String(u || "").replace(/^www\./, "").toLowerCase(); return !!h && acts.some((a) => h === a || h.endsWith("." + a)); });
+  const acts = (() => { try { return actSites(); } catch { return []; } })(), actOn = (e) => [e.url, ...[].concat(e.hosts || [])].some((u) => { const h = /:\/\//.test(String(u)) ? hostOf(u) : String(u || "").replace(/^www\./, "").toLowerCase(); return !!h && acts.some((a) => a === "*" || h === a || h.endsWith("." + a)); });
   const items = c.list.map((e) => ({ id: e.id, name: e.name, group: e.group, url: e.url, ...(e.company ? { company: true } : {}), ...(e.own ? { own: true } : {}), ...(actOn(e) ? { act: true } : {}), ...stateOf(e, l[e.id], watches), ...(l[e.id] && e.hosts.some((h) => /(^|\.)google\.com$/.test(h)) && googleWarn() ? { warn: googleWarn() } : {}) }));
   const groups = [...new Set([...GROUPS, ...items.map((x) => x.group).filter((g) => g !== OWN), OWN])].filter((g) => items.some((x) => x.group === g));
   let chrome = false; try { chrome = realChrome(); } catch {}
-  return { items, groups, linked: items.filter((x) => x.state !== "off").length, chrome, ...(c.file ? { file: c.file } : {}), ...(c.error ? { error: c.error } : {}) };
+  return { items, groups, linked: items.filter((x) => x.state !== "off").length, chrome, ...(acts.includes("*") ? { actAll: true } : {}), ...(c.file ? { file: c.file } : {}), ...(c.error ? { error: c.error } : {}) };
 }
 
 // Acting in the user's own Chrome on a linked site, on or off (chromegate.mjs): the site's own address.
@@ -122,6 +122,8 @@ function setLinkAct(id, on) {
   const e = catalog().list.find((x) => x.id === id); if (!e) return { error: "No such site." };
   const r = setActSite(e.url, !!on, { load: loadConfig, save: saveConfig }); return r.error ? r : linksState();
 }
+// Agents may act on every site in the user's own Chrome, or only those switched on one by one.
+function setLinksActAll(on) { const r = setActAll(!!on, { load: loadConfig, save: saveConfig }); return r.error ? r : linksState(); }
 // Link one: trust its hosts, watch its page, open it to sign in (in the Symbiot Browser). Clicking a link
 // that's already there just opens it again to sign in (signed out, or a second
 // account). Gives { ok, url, item } or { error }.
@@ -305,4 +307,4 @@ function signInAsked(text) {
   return null;
 }
 
-export { setLinkAct, foundNote, CATALOG, catalog, cleanEntry, linksState, linkSite, checkLink, checkSignIns, settleSignIns, sitesCheck, unlinkSite, addSite, ownSites, signInAsked, OWN };
+export { setLinksActAll, setLinkAct, foundNote, CATALOG, catalog, cleanEntry, linksState, linkSite, checkLink, checkSignIns, settleSignIns, sitesCheck, unlinkSite, addSite, ownSites, signInAsked, OWN };

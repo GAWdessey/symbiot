@@ -2,6 +2,10 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one), for anyone who installs the app: what changed in it, never whose work it was (no projects, people, accounts, services, run ids or task wording of the person who made it). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.72.0 — 2026-10-22
+
+- **Agents can click and type on any site in your Chrome**, without a card asking you to switch each site on: one switch in Settings → Connections. Sending, posting, paying and deleting still wait for your Go on a card, one action at a time.
+
 ## 0.71.1 — 2026-10-22
 
 - **Typing on a Go ahead / Skip card decides it only when you say yes or no.** A question or a remark ("I've already answered") goes to the card's agent and the card stays; before, anything that wasn't a "no" counted as Go ahead.

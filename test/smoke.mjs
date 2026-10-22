@@ -270,6 +270,7 @@ const calls = [
   ["/api/links/site", "POST"],      // no site -> "Give the site", no browser opened
   ["/api/links/check", "POST"],     // no id -> "isn't linked"
   ["/api/links/unlink", "POST"],
+  ["/api/links/actall", "POST"],    // no on -> every site switched off (the default), nothing else changes
   ["/api/links/act", "POST"],       // no id -> "No such site.", nothing switched on
   ["/api/posts", "GET"],            // the week's drafts waiting on you (isolated HOME -> none)
   ["/api/posts/draft", "POST"],     // no AI connected -> says so, nothing written

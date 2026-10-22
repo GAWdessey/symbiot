@@ -33,7 +33,7 @@ import { SCREENS_SOCK, sockGate, loadScreens, screenImage, captureScreen, splitS
 import { sessionCookie, mapPage, wholePage, pressRegion, typeRegion, chooseRegion, fillForm, verifyPage, uploadRegion, scrollPage, signIn, keepBrowserOpen, isTrusted, trustedSites, trustSite, untrustSite, openSymbiotBrowser, closeSymbiotBrowser, onBrowserClosed, setBrowserHub, siteUrl, browserHub, windowOpen } from "./headless.mjs";
 import { weeklyState, setWeekly, runWeekly, startWeekly, autostartState, setAutostart, installLauncher, iconSvg, setLauncherLook, desktopNotify } from "./desktop.mjs";
 import { markNews, newsSince, watchState, addWatch, setEvery, removeWatch, clearNews, seenWatch, checkWatch, startWatches, setBrief, draftReply, openChat, watchBoard, boardChat, clearBoardChat } from "./watch.mjs";
-import { setLinkAct, linksState, linkSite, checkLink, unlinkSite, addSite, signInAsked, sitesCheck } from "./links.mjs";
+import { setLinkAct, setLinksActAll, linksState, linkSite, checkLink, unlinkSite, addSite, signInAsked, sitesCheck } from "./links.mjs";
 import { testWeeks, testInstalls, postsState, draftPosts, approvePost, editPost, skipPost, voiceFromLinkedIn, addMedia, removeMedia, mediaFile, mediaDir, pictureOfPage, clipOfPage, openUrl } from "./post.mjs";
 import { mindState, forget, actNow } from "./mind.mjs";
 import { goalsTick, goalAnswer, openGoal } from "./goals.mjs";
@@ -637,6 +637,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       // any site, added in Settings → Connections or the Symbiot Browser's address bar, or a card's / reply's "Sign in to <site>": linked and opened to sign in
       if (u.pathname === "/api/links/site" && req.method === "POST") { const b = await readBody(req), here = b.here ? { open: async (url) => ({ ok: true, url }) } : undefined; return json(res, b.id ? await linkSite(String(b.id), here) : await addSite(String(b.site || ""), here)); }
       if (u.pathname === "/api/links/check" && req.method === "POST") { const b = await readBody(req); return json(res, await checkLink(String(b.id || ""))); }
+      if (u.pathname === "/api/links/actall" && req.method === "POST") { const b = await readBody(req); return json(res, setLinksActAll(b.on === true)); } // agents may act on every site in your own Chrome (chromegate.mjs "*")
       if (u.pathname === "/api/links/act" && req.method === "POST") { const b = await readBody(req); return json(res, setLinkAct(String(b.id || ""), b.on === true)); } // agents may act on it in your own Chrome (chromegate.mjs)
       if (u.pathname === "/api/links/unlink" && req.method === "POST") { const b = await readBody(req); return json(res, unlinkSite(String(b.id || ""))); }
       // Posts (post.mjs): the week's drafts, waiting on you. Approve is your yes: Marketing's
