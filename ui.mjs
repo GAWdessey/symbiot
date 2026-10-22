@@ -747,6 +747,7 @@ body.lq-light .cx.ok .cxb{box-shadow:0 1px 2px rgba(0,0,0,.25);background:radial
 .cx .lmore,.cx .lrm{display:none;border:0;background:transparent;color:var(--faint);font:500 12px var(--sans);padding:4px 6px;border-radius:8px;cursor:pointer}
 .cx .lmore:hover{color:var(--bone)}.cx .lrm:hover{color:var(--amber)}
 .cx:hover .lmore,.cx:hover .lrm,.cx:focus-within .lmore,.cx:focus-within .lrm,body.lq-touch .cx .lmore,body.lq-touch .cx .lrm{display:inline-flex}
+.cxall{display:flex;align-items:baseline;gap:8px;margin:6px 0 10px;font-size:13px;cursor:pointer}.cxall small{color:var(--muted,#8A919B)}
 .cx .lact{display:none;border:1px solid var(--line);background:transparent;color:var(--faint);font:500 11px var(--sans);padding:2px 8px;border-radius:999px;cursor:pointer}
 .cx:hover .lact,.cx:focus-within .lact,body.lq-touch .cx .lact,.cx .lact.on{display:inline-flex}.cx .lact.on{color:var(--amber);border-color:var(--amber)}.cx .lact:hover{color:var(--bone)}
 /* the card list, quiet */
@@ -2348,6 +2349,7 @@ function reachOf(d,id){var r=d.reach,s=r&&r.claude&&r.sites&&r.sites[id];return 
 function linksHtml(d,board){var anyR=d.items.some(function(it){return reachOf(d,it.id);});
 var h="<div class='cxh'><span>Connections</span><small>"+(d.linked?"What Symbiot watches for you. Link more to see what arrives there, here and in Week and Standup.":"Link your work to see what arrives there, here and in Week and Standup.")+"</small>"
 +(anyR?"<small class='cxlg'><i class='ic-plug cxa ready' aria-hidden='true'></i> your agent&#39;s runs can use it too, through Claude&#39;s connector for it <span class='cxlgf'><i class='ic-plug cxa' aria-hidden='true'></i> faint: once you connect it in claude.ai (Settings &rarr; Connectors)</span></small>":"")+"</div>";
+if(d.chrome)h+="<label class='cxall'><input type='checkbox' class='lactall'"+(d.actAll?" checked":"")+"> Agents may click and type on any site in your Chrome <small>sending, posting, paying and deleting still wait for your Go</small></label>";
 if(d.error)h+="<div class='note err'>"+esc(d.error)+"</div>";
 h+="<div class='cxg'>"+d.groups.map(function(g){return "<div class='cxc'><div class='cxl'>"+esc(g)+"</div>"+d.items.filter(function(x){return x.group===g;}).map(function(it){var on=it.state!=='off';
 var rc=reachOf(d,it.id),rt=rc?(rc.ready?" Your agent's runs can use it too, through Claude's "+rc.connector.replace(/^claude\.ai\s+/i,'')+" connector.":" Your agent's runs can use it too once you connect "+rc.name+" in claude.ai → Settings → Connectors (only you can sign in there)."):'';
@@ -2360,6 +2362,7 @@ function linksOut(html){var o=document.getElementById('linksmsg');if(o)o.innerHT
 function sbOpen(url){api('/api/browser/open',url?{url:url}:{}).then(function(r){if(r&&r.error)linksOut("<div class='note err'>"+esc(r.error)+"</div>");}).catch(function(){});}
 function renderLinks(){if(!LINKS)return;['links','boardlinks'].forEach(function(id){var el=document.getElementById(id);if(!el)return;
 el.innerHTML=linksHtml(LINKS,id==='boardlinks');
+var all=el.querySelector('.lactall');if(all)all.addEventListener('change',function(){all.disabled=true;api('/api/links/actall',{on:all.checked}).then(function(r){if(r&&r.error)linksOut("<div class='note err'>"+esc(r.error)+"</div>");else if(r&&r.items){LINKS=r;renderLinks();}});});
 el.querySelectorAll('.lnk').forEach(function(sp){var lid=sp.getAttribute('data-id'),nm=sp.querySelector('.cxn'),name=nm?nm.textContent:sp.querySelector('.lbtn').textContent;
 sp.querySelector('.lbtn').addEventListener('click',function(){linksOut("<div class='note muted'>Opening "+esc(name)+"&hellip;</div>");
 api('/api/links/link',{id:lid}).then(function(r){if(!r||r.error){linksOut("<div class='note err'>"+esc(name)+": "+esc((r&&r.error)||'failed')+"</div>");loadLinks();return;}

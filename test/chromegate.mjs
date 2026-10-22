@@ -97,6 +97,22 @@ try {
   const BF = await import("../browserfails.mjs");
   const brief = BF.browserBrief(true, ["namecheap.com"]).join("\n");
   ok("the brief says where it may act, and that sends wait for the user's Go", /On `namecheap\.com` the user also lets you ACT in their Chrome/.test(brief) && /holds whatever sends, posts, pays or deletes until the user says Go/.test(brief) && !/ACT in their Chrome/.test(BF.browserBrief(true, []).join("\n")), brief.slice(0, 300));
+  console.log("CHROMEGATE — every site at once, sends still held");
+  {
+    G.setActSite("https://namecheap.com", false, { load: loadConfig, save: saveConfig });
+    const before = judge(C + "computer", { action: "left_click", coordinate: [1, 1], tabId: 901, action_summary: "Open the settings tab" }, o);
+    G.seen(C + "navigate", `Navigated\n\nTab Context:\n- Available tabs:\n  • tabId 901: "Example" ("https://www.example.org/x")`, o);
+    const off = judge(C + "computer", { action: "left_click", coordinate: [1, 1], tabId: 901, action_summary: "Open the settings tab" }, o);
+    G.setActAll(true, { load: loadConfig, save: saveConfig });
+    const on = judge(C + "computer", { action: "left_click", coordinate: [1, 1], tabId: 901, action_summary: "Open the settings tab" }, o);
+    G.seen(C + "navigate", `Navigated\n\nTab Context:\n- Available tabs:\n  • tabId 901: "Example" ("https://www.example.org/x")`, o);
+    const send = judge(C + "computer", { action: "left_click", coordinate: [1, 1], tabId: 901, action_summary: "Send the message to the team" }, o);
+    ok("off for a site it's never been switched on for; with every site on, a click goes through", before && off && /is off/.test(off.why) && on === null, [before, off, on]);
+    ok("…and a send there still waits for the user's Go", send && /waits for their Go/.test(send.why), send);
+    ok("…the brief says any site", /On any site the user also lets you ACT/.test((await import("../browserfails.mjs")).browserBrief(true, ["*"]).join("\n")));
+    G.setActAll(false, { load: loadConfig, save: saveConfig });
+    ok("switched off again, what was on per site stays", !G.actSites(HOME).includes("*"));
+  }
   console.log("CHROMEGATE — a run closes the tabs it opened before it ends");
   {
     const t = { session: "tabs1", home: HOME }, ctx = (ids) => ids.map((id) => `  • tabId ${id}: "Feed | LinkedIn" ("https://www.linkedin.com/feed/")`).join("\n");

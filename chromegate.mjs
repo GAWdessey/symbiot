@@ -3,7 +3,8 @@
 // before every Chrome tool call:
 // - reading (tabs, navigate, read_page, find, get_page_text, a screenshot) goes ahead anywhere;
 // - acting (computer clicks, typing, keys, form_input, file_upload) only on a site the user switched
-//   "act" on for (config.chromeAct, a list of hosts; none by default: Settings → Connections);
+//   "act" on for (config.chromeAct, a list of hosts; none by default: Settings → Connections), or
+//   every site ("*" in that list: the user asked not to be asked per site, 22 Oct 2026);
 // - and there, an action that says it sends, posts, pays or deletes (its action_summary, sends.mjs
 //   heldFor, the same rule as Symbiot's own browser) is held until the user's Go on a card: the agent
 //   is told to ask, with the hold's id; Go (agents.mjs answerQuestions) lets that one action through,
@@ -33,8 +34,13 @@ const readJson = (f, d) => { try { return JSON.parse(readFileSync(f, "utf8")); }
 const writeJson = (f, v) => { try { mkdirSync(join(f, ".."), { recursive: true, mode: 0o700 }); const t = `${f}.${process.pid}.tmp`; writeFileSync(t, JSON.stringify(v), { mode: 0o600 }); renameSync(t, f); } catch {} };
 const hostOf = (u) => { try { return new URL(/^[a-z]+:\/\//i.test(u) ? u : "https://" + u).hostname.replace(/^www\./, "").toLowerCase(); } catch { return ""; } };
 // The sites the user lets agents act on in their Chrome (a host covers its subdomains).
-function actSites(home = homedir()) { const a = readJson(join(dir(home), "config.json"), {}).chromeAct; return Array.isArray(a) ? a.map((h) => hostOf(h)).filter(Boolean) : []; }
-const covered = (host, sites) => !!host && sites.some((s) => host === s || host.endsWith("." + s));
+function actSites(home = homedir()) { const a = readJson(join(dir(home), "config.json"), {}).chromeAct; return Array.isArray(a) ? a.map((h) => (h === "*" ? "*" : hostOf(h))).filter(Boolean) : []; }
+const covered = (host, sites) => !!host && sites.some((s) => s === "*" || host === s || host.endsWith("." + s));
+// Every site at once ("*"), on or off: what the user switched on for one site stays as it was.
+function setActAll(on, { load, save }) {
+  const cfg = load(), list = new Set(Array.isArray(cfg.chromeAct) ? cfg.chromeAct.filter(Boolean) : []); if (on) list.add("*"); else list.delete("*");
+  cfg.chromeAct = [...list]; save(cfg); return { ok: true, all: !!on, sites: cfg.chromeAct };
+}
 const TABS = (home) => join(dir(home), "chrome-tabs.json"), HOLDS = (home) => join(dir(home), "chrome-holds.json");
 const key = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9@.]+/g, " ").trim();
 
@@ -107,4 +113,4 @@ function setActSite(host, on, { load, save }) {
   cfg.chromeAct = [...list]; save(cfg); return { ok: true, sites: cfg.chromeAct };
 }
 
-export { judgeChrome, seen, openTabs, goAhead, setActSite, actSites, hostOf, PREFIX, READS, ACTS };
+export { judgeChrome, seen, openTabs, goAhead, setActSite, setActAll, actSites, hostOf, PREFIX, READS, ACTS };
