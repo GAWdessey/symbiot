@@ -5,6 +5,7 @@ What each Symbiot release brought, newest first. When Approve bumps the version,
 ## 0.71.0 — 2026-10-22
 
 - **Talk to a card's agent on the card.** Ask something on a card ("did you fix it?", with or without a question mark) and its agent answers right there, from what that run knows, and does the work if you asked for it. The card's question stays open, the conversation shows on it, and it goes to the agent with your answer when you give one.
+- **Typing on a Go ahead / Skip card decides it only when you say yes or no.** A question or a remark ("I've already answered") goes to the card's agent and the card stays; before, anything that wasn't a "no" counted as Go ahead.
 - **A card's report belongs to the same agent.** What you type under the report a card links to goes to that card: an answer answers it and closes the card, a question is answered by its agent.
 
 ## 0.70.1 — 2026-10-22

@@ -701,7 +701,14 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       if (u.pathname === "/api/look" && req.method === "POST") { const b = await readBody(req), look = ["ferro", "glass", "pearl"].includes(b.look) ? b.look : "ferro"; const cf = loadConfig(); if (cf.look !== look) { cf.look = look; saveConfig(cf); } return json(res, { look, launcher: setLauncherLook(look) }); }
       if (u.pathname === "/api/firststeps") return json(res, firstSteps()); // Settings' first steps: what's set up, in order
       if (u.pathname === "/api/home/dismiss" && req.method === "POST") { const b = await readBody(req); return json(res, dismissCard(b.key, { undo: !!b.undo })); }
-      if (u.pathname === "/api/home/answer" && req.method === "POST") { const b = await readBody(req); return json(res, homeAnswer(b.id, { pick: b.pick, text: b.text })); }
+      if (u.pathname === "/api/home/answer" && req.method === "POST") {
+        const b = await readBody(req), r = homeAnswer(b.id, { pick: b.pick, text: b.text });
+        if (!r || !r.talk) return json(res, r);
+        // neither yes nor no: it's said to the card's agent, and the card stays (home.mjs cardTalk)
+        const card = ((homeState() || {}).you || []).find((y) => y.id === b.id) || {}, path = card.path || String(b.id || "").replace(/^\w+:/, "");
+        const t = await cardTalk(path, [{ q: card.q || card.sub || card.title || "this card", a: r.text }], { force: true }).catch(() => null);
+        return json(res, t || { ok: true, keep: true, said: "Noted on the card. Press Go ahead or Skip when you've decided: words that aren't a yes or a no don't decide it." });
+      }
       if (u.pathname === "/api/away" && req.method === "POST") { const b = await readBody(req); return json(res, toggleAway(`http://127.0.0.1:${server.address().port}/?t=${TOKEN}`, b.open)); }
       if (u.pathname === "/api/home/next" && req.method === "POST") { const b = await readBody(req); return json(res, homeNext(b.id)); }
       // Symbiot's own voice (voice.mjs), for computers without a natural one: the page asks

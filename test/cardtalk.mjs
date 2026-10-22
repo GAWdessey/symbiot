@@ -55,6 +55,12 @@ try {
   let saw2 = "";
   const rq = await H.reportAsk("rep1", "did you already send this one", { ask: async (sys, p) => { saw2 = sys + p; return JSON.stringify({ reply: "No, it's a draft: nothing went out." }); }, deps: { read: () => rep, questions: linkedQs, answer: () => { throw new Error("not an answer"); } } });
   ok("…a question there is talk on that card, answered by its agent with the report in front of it", rq.answer === "No, it's a draft: nothing went out." && rq.card === QR && /Hi Remy/.test(saw2) && S.talkOf(run, QR).length === 2, [rq, saw2.slice(-300)]);
+
+  console.log("CARD TALK — typed words on a Go ahead / Skip card decide it only when they say yes or no");
+  const said = H.homeAnswer("needs:/nowhere", { text: "ive already answered" });
+  ok("\"ive already answered\" isn't a Go ahead: it's said to the card's agent", said && said.talk === true && said.text === "ive already answered", said);
+  ok("…nor is a question", H.homeAnswer("needs:/nowhere", { text: "did you send it already" }).talk === true);
+  ok("…a yes and a no still decide it", !H.homeAnswer("needs:/nowhere", { text: "yes, send it" }).talk && !H.homeAnswer("needs:/nowhere", { text: "skip" }).talk);
 } catch (e) { ok("ran", false, String((e && e.stack) || e)); }
 finally { rmSync(HOME, { recursive: true, force: true }); }
 console.log(`\n${fail ? "✗" : "✓"} cardtalk: ${pass} passed, ${fail} failed`);
