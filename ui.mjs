@@ -107,7 +107,7 @@ body.lq-light .lqmsg.me{background:rgba(21,26,33,.07);color:#151A21;text-shadow:
 body.lq-look-pearl .lqmsg.me{background:#1B1E23;color:#F4F4F2}
 #lqmore{position:absolute;right:16px;bottom:92px;display:flex;flex-direction:column;align-items:flex-end;gap:6px;z-index:3}
 body.lq-liquid header{position:fixed;top:0;left:0;right:0;z-index:4;background:transparent;pointer-events:none}
-body.lq-liquid header .status,body.lq-liquid header .ver,body.lq-liquid #lqlook{pointer-events:auto}
+body.lq-liquid header .status,body.lq-liquid header .ver,body.lq-liquid #lqlook,body.lq-liquid #lqupd{pointer-events:auto} /* the header lets clicks through to the liquid; Updates wasn't on this list, so it couldn't be clicked (22 Oct 2026) */
 #lqlook{display:none}
 #lqlow{display:none}
 body.lq-liquid #lqlow{display:inline-flex;align-items:center;pointer-events:auto;margin-left:8px;min-height:34px;padding:0 12px;border-radius:999px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);color:#8A919B;font:500 12.5px var(--sans);cursor:pointer}
@@ -292,10 +292,19 @@ body.lq-light .lqblob .bdoing{color:#5A6470}body.lq-contrast .lqblob .bdoing{col
 body.lq-light .lqblob .bwhy{color:#5A6470}
 #lqupd{position:relative;margin-left:10px}
 #lqupd .lqupb{border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.06);color:#ECE9E4;border-radius:999px;padding:5px 12px;font:500 12.5px var(--sans);cursor:pointer;min-height:30px}
-#lqupd .lqupl{display:none;position:absolute;left:0;top:calc(100% + 6px);z-index:60;width:min(380px,calc(100vw - 32px));max-height:60vh;overflow-y:auto;background:#15191F;border:1px solid rgba(255,255,255,.12);border-radius:12px;padding:6px;box-shadow:0 12px 40px rgba(0,0,0,.45)}
+#lqupd .lqupl{display:none;position:absolute;left:0;top:calc(100% + 6px);z-index:60;width:min(460px,calc(100vw - 32px));max-height:60vh;overflow-y:auto;background:#15191F;border:1px solid rgba(255,255,255,.12);border-radius:12px;padding:6px;box-shadow:0 12px 40px rgba(0,0,0,.45)}
 #lqupd.open .lqupl{display:block}
-@media (max-width:640px){#lqupd{position:fixed;top:54px;right:16px;margin:0;z-index:61}#lqupd .lqupb{padding:4px 10px;font-size:12px;min-height:28px}#lqupd .lqupl{position:fixed;left:16px;right:16px;top:90px;width:auto}}
+@media (max-width:640px){#lqupd{position:fixed;top:54px;left:16px;right:auto;margin:0;z-index:61}#lqupd .lqupb{padding:4px 10px;font-size:12px;min-height:28px}#lqupd .lqupl{position:fixed;left:16px;right:16px;top:90px;width:auto}}
 #lqupd .lqupi{display:flex;align-items:center;gap:8px;padding:8px;border-radius:8px;font-size:12.5px;line-height:1.35;color:#C9CDD3}
+#lqupd .lqupm{flex-direction:column;align-items:stretch;gap:6px}#lqupd .lqupmh{display:flex;align-items:center;justify-content:space-between}
+#lqupd .lqmv{display:flex;flex-direction:column;gap:4px;padding:6px 0}#lqupd .lqmv+.lqmv{border-top:1px dashed rgba(255,255,255,.07)}
+#lqupd .lqmt{font-size:12.5px;line-height:1.4;overflow-wrap:anywhere}#lqupd .lqmrow{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+#lqupd .lqmrow button{font-size:11.5px;padding:3px 10px;border-radius:999px;border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.06);color:inherit;cursor:pointer}
+#lqupd .lqmrow .lqdo{background:#ECE9E4;color:#151A21;border-color:transparent;font-weight:600}
+#lqupd .lqms{font-size:11px;opacity:.65}
+#lqupd .lqask{display:flex;gap:6px}#lqupd .lqask input{flex:1;min-width:0;width:auto;padding:6px 10px;font-size:12px;border-radius:10px;min-height:0}#lqupd .lqask button{font-size:12px;padding:5px 12px;border-radius:10px;width:auto}
+#lqupd .lqans{font-size:12px;line-height:1.4;white-space:pre-wrap;opacity:.9}#lqupd .lqans.err{color:#E88}
+body.lq-light #lqupd .lqmrow button{border-color:rgba(20,30,45,.14);background:rgba(20,30,45,.04)}body.lq-light #lqupd .lqmrow .lqdo{background:#151A21;color:#FFFFFF}body.lq-light #lqupd .lqmv+.lqmv{border-top-color:rgba(20,30,45,.08)}
 #lqupd .lqupi+.lqupi{border-top:1px solid rgba(255,255,255,.06)}
 #lqupd .lqupt{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2}
 #lqupd .lqupt b{color:#ECE9E4;font-weight:600}
@@ -1390,6 +1399,8 @@ body.lq-light .btip .bta button:not(.quiet){background:#151A21;color:#FFFFFF}
 <div class="row" style="margin-top:16px"><button class="act" id="save">Save &amp; connect</button>
 <span class="note" id="saveMsg"></span></div>
 </div>
+<div class="sset" id="intuset"><h3 class="ssh">On its own</h3><div class="note muted">Symbiot moves work forward without being asked: it picks up stalled work, prepares what you'll need next and tells you what it notices. Reading and internal work it just does; anything that goes out (an email, a message, a push) it asks you first, until you've said yes to that kind 3 times; deleting and paying it always asks.</div><div class="row" style="margin-top:6px" id="intumode"><button type="button" class="ghost" data-m="off">Off</button><button type="button" class="ghost" data-m="watch">Watch: tell me what you'd do</button><button type="button" class="ghost" data-m="act">Act</button></div><div class="muted" id="intunote" style="font-size:12px;margin-top:4px"></div><div style="margin-top:10px"><b style="font-size:13px">Your focus</b> <small class="muted">what it reads before it does anything: goals, projects, people who matter, what to ignore</small><textarea id="intufocus" rows="9" style="width:100%;margin-top:6px;font:13px/1.45 ui-monospace,monospace"></textarea><div class="row" style="margin-top:6px"><button type="button" class="ghost" id="intusave">Save focus</button><span class="muted" id="intusaved" style="font-size:12px"></span></div></div><div id="intutiers" style="margin-top:8px"></div></div>
+<div class="sset" id="ovrset"><h3 class="ssh">Customisations</h3><div class="note muted">Your own changes to how Symbiot works: extra rules for its agents, adjustments to how it words cards and judges questions, your own triggers. They live in your folder, survive updates, and can never loosen a safety rule. Symbiot may propose one when you keep pushing back on the same thing; it goes in only with your OK, after a check that Symbiot still runs with it, and every change can be undone.</div><div class="row" style="margin-top:6px" id="ovrswitch"><button type="button" class="ghost" data-on="1">On</button><button type="button" class="ghost" data-on="0">Off: base behaviour</button></div><div class="row" style="margin-top:6px;align-items:center" id="ovrself"><span class="muted" style="font-size:12px">Symbiot's own proposals:</span><button type="button" class="ghost" data-m="ask">Ask me first</button><button type="button" class="ghost" data-m="auto">Apply rules by themselves</button></div><div id="ovrlist" style="margin-top:8px"></div></div>
 <div class="sset">
 <h3 class="ssh">Folders to scan for repos</h3>
 <div id="scanroots"></div>
@@ -1525,7 +1536,7 @@ var isMap=tab==='map',isSet=tab==='settings',isTasks=tab==='tasks',isDrift=tab==
 $('panel-map').classList.toggle('hidden',!isMap);
 $('panel-board').classList.toggle('hidden',!isBoard);if(isBoard){loadBoard();loadLinks();}
 $('panel-run').classList.toggle('hidden',!isRun);
-$('panel-settings').classList.toggle('hidden',!isSet);if(isSet){loadFirstSteps();licLoad();langLoad();loadAgentCfg();loadScanRoots();loadKnowledge();loadLinks();loadMind();loadSecrets();loadTrusted();loadMail();loadDesktop();loadPhoneLink();}
+$('panel-settings').classList.toggle('hidden',!isSet);if(isSet){loadFirstSteps();licLoad();langLoad();intuLoad();ovrLoad();loadAgentCfg();loadScanRoots();loadKnowledge();loadLinks();loadMind();loadSecrets();loadTrusted();loadMail();loadDesktop();loadPhoneLink();}
 $('panel-tasks').classList.toggle('hidden',!isTasks);
 $('panel-drift').classList.toggle('hidden',!isDrift);
 $('panel-reports').classList.toggle('hidden',tab!=='reports');if(tab==='reports')loadReports();
@@ -1585,6 +1596,29 @@ api('/api/i18n/all?lang='+encodeURIComponent(st.lang)).then(function(r){I18N.map
 // Settings: the language, your computer's or any you name
 var LANG=null;
 function langLoad(){api('/api/language').then(langRender).catch(function(){});}
+// Settings → On its own (intuition.mjs): the switch, saved as you tick it
+function intuRender(d){if(!d||d.error)return;var box=$('intumode');if(!box)return;box.querySelectorAll('button').forEach(function(b){b.classList.toggle('act',b.getAttribute('data-m')===d.mode);b.classList.toggle('ghost',b.getAttribute('data-m')!==d.mode);});
+$('intunote').textContent=d.mode==='watch'&&!d.chosen&&d.watchUntil?'Watching until '+new Date(d.watchUntil).toLocaleString([], {weekday:'short',hour:'2-digit',minute:'2-digit'})+', then it acts, unless you choose here.':d.mode==='watch'?'It tells you what it would have done, on Updates and in the digest, and does nothing.':d.mode==='off'?'Off: it does nothing on its own.':'';
+var f=$('intufocus');if(f&&document.activeElement!==f)f.value=d.focus||'';
+var t=(d.promoted||[]);$('intutiers').innerHTML=t.length?"<b style='font-size:13px'>Allowed without asking</b>"+t.map(function(x){return "<div class='row' style='margin-top:4px;align-items:center'><span style='flex:1;font-size:13px'>"+esc(x.kind)+" <small class='muted'>"+(x.promoted?'allowed: you said yes '+x.approvals+' times':x.approvals+' of '+d.after+' yeses')+"</small></span>"+(x.promoted||x.approvals?"<button type='button' class='ghost intrev' data-k='"+escQ(x.kind)+"'>Revoke</button>":"")+"</div>";}).join(''):'';
+$('intutiers').querySelectorAll('.intrev').forEach(function(b){b.addEventListener('click',function(){api('/api/intuition/revoke',{kind:b.getAttribute('data-k')}).then(intuRender);});});}
+// Settings → Customisations (overrides.mjs): what's active (each with Revert), proposals (Apply / Not now), the kill switch
+function ovrRender(d){if(!d||d.error)return;var sw=$('ovrswitch');if(!sw)return;
+sw.querySelectorAll('button').forEach(function(b){var on=b.getAttribute('data-on')==='1';b.classList.toggle('act',on===!!d.on);b.classList.toggle('ghost',on!==!!d.on);});
+$('ovrself').querySelectorAll('button').forEach(function(b){b.classList.toggle('act',b.getAttribute('data-m')===d.selfChange);b.classList.toggle('ghost',b.getAttribute('data-m')!==d.selfChange);});
+var h='';if((d.proposals||[]).length)h+="<b style='font-size:13px'>Proposed</b>"+d.proposals.map(function(p){return "<div class='ovri' style='margin-top:6px'><div style='font-size:13px'>"+esc(p.rule)+"</div><small class='muted'>"+esc(p.why)+(p.evidence&&p.evidence.length?": &ldquo;"+p.evidence.slice(0,2).map(esc).join('&rdquo;, &ldquo;')+"&rdquo;":"")+"</small><div class='row' style='margin-top:4px'><button type='button' class='act ovrapply' data-id='"+escQ(p.id)+"'>Apply</button><button type='button' class='ghost ovrno' data-id='"+escQ(p.id)+"'>Not now</button></div></div>";}).join('');
+h+="<b style='font-size:13px;display:block;margin-top:8px'>Active</b>"+((d.active||[]).length?d.active.map(function(a){return "<div class='row' style='margin-top:4px;align-items:center'><span style='flex:1;font-size:13px'>"+esc(a.what)+" <small class='muted'>"+(a.by==='symbiot'?'proposed by Symbiot, applied with your OK':'yours')+" &middot; "+esc(new Date(a.at).toLocaleDateString())+(a.why?" &middot; "+esc(a.why):"")+"</small></span><button type='button' class='ghost ovrrev' data-id='"+escQ(a.id)+"'>Revert</button></div>";}).join(''):"<div class='muted' style='font-size:12px'>None yet.</div>");
+if((d.errors||[]).length)h+="<div class='note err' style='margin-top:6px'>Not loaded: "+d.errors.map(function(e){return esc(e.file)+" ("+esc(e.why)+")";}).join('; ')+"</div>";
+var el=$('ovrlist');el.innerHTML=h;
+el.querySelectorAll('.ovrapply').forEach(function(b){b.addEventListener('click',function(){b.disabled=true;b.textContent='Checking…';api('/api/overrides/apply',{id:b.getAttribute('data-id')}).then(function(r){if(r&&r.error){b.disabled=false;b.textContent='Apply';el.insertAdjacentHTML('afterbegin',"<div class='note err'>"+esc(r.error)+"</div>");return;}ovrLoad();});});});
+el.querySelectorAll('.ovrno').forEach(function(b){b.addEventListener('click',function(){api('/api/overrides/dismiss',{id:b.getAttribute('data-id')}).then(ovrLoad);});});
+el.querySelectorAll('.ovrrev').forEach(function(b){b.addEventListener('click',function(){b.disabled=true;api('/api/overrides/revert',{id:b.getAttribute('data-id')}).then(ovrRender);});});}
+function ovrLoad(){var sw=$('ovrswitch');if(!sw)return;api('/api/overrides/state').then(ovrRender).catch(function(){});if(sw._wired)return;sw._wired=true;
+sw.querySelectorAll('button').forEach(function(b){b.addEventListener('click',function(){api('/api/overrides/switch',{on:b.getAttribute('data-on')==='1'}).then(ovrRender);});});
+$('ovrself').querySelectorAll('button').forEach(function(b){b.addEventListener('click',function(){api('/api/overrides/selfchange',{mode:b.getAttribute('data-m')}).then(ovrRender);});});}
+function intuLoad(){var box=$('intumode');if(!box)return;api('/api/intuition/state').then(intuRender).catch(function(){});if(box._wired)return;box._wired=true;
+box.querySelectorAll('button').forEach(function(b){b.addEventListener('click',function(){api('/api/intuition',{mode:b.getAttribute('data-m')}).then(intuRender);});});
+$('intusave').addEventListener('click',function(){api('/api/intuition/focus',{text:$('intufocus').value}).then(function(d){$('intusaved').textContent=d&&!d.error?'Saved.':((d&&d.error)||'');intuRender(d);});});}
 function langRender(st){var el=$('langbox');if(!el||!st)return;LANG=st;
 el.innerHTML="<p>Symbiot is in <b data-nt>"+esc(st.own||st.name)+"</b>"+(st.chosen?'.':', the language your computer uses.')+"</p>"+
 "<div class='row' style='margin-top:8px'><input id='langin' placeholder='Any language: Afrikaans, isiZulu, Português, 日本語…' style='flex:1'><button class='act' id='languse'>Use it</button>"+(st.chosen?"<button class='ghost' id='langauto'>Use my computer’s language</button>":"")+"</div>"+
@@ -3384,12 +3418,24 @@ function lqLoadWork(){api('/api/work').then(function(w){LQ.workData=w||{};lqRedr
 // New data, drawn: unless you're selecting text on the surface, then once you let go
 // Updates: what Symbiot tells you (a goal done, a report written), kept off Needs you (needs.mjs), in
 // the header: a count, and the list on a tap. Each can be read or put away.
+// An update from intuition: each of its moves on a line with what you can do about it (Do it: carried out
+// now, every gate still applies; Not useful: fewer like it; Open: its project), and an Ask box (22 Oct 2026:
+// the list was lines with only a put-away).
+function updMoves(u,i){return "<div class='lqupi lqupm' role='listitem' data-i='"+i+"'><div class='lqupmh'><b>"+esc(u.lane||'Symbiot')+"</b><button type='button' class='lqupx' aria-label='Put it away'>&times;</button></div>"+u.moves.map(function(m){return "<div class='lqmv' data-m='"+m.i+"'><span class='lqmt'>"+esc(m.line)+"</span><span class='lqmrow'>"+(m.state?"<small class='lqms'>"+esc(m.state)+"</small>":"")+(m.do?"<button type='button' class='lqdo'>"+esc(m.do)+"</button>":"")+(!m.state&&m.kind!=='focus'?"<button type='button' class='lqnot' title='Fewer like this'>Not useful</button>":"")+(m.lane?"<button type='button' class='lqop' title='Open "+escQ(m.lane)+"'>Open</button>":"")+"</span></div>";}).join('')+"<form class='lqask'><input placeholder='Ask about this, or tell it what to do' maxlength='2000'><button type='submit'>Ask</button></form><div class='lqans'></div>"+(u.report&&u.report.id?"<button type='button' class='lqupr'>Read</button>":"")+"</div>";}
+function wireUpdMoves(r,u){var ans=r.querySelector('.lqans'),say=function(t,bad){if(ans){ans.textContent=t||'';ans.classList.toggle('err',!!bad);}};
+r.querySelectorAll('.lqmv').forEach(function(mv){var i=+mv.getAttribute('data-m'),m=(u.moves||[]).filter(function(x){return x.i===i;})[0]||{};
+var d=mv.querySelector('.lqdo');if(d)d.addEventListener('click',function(){d.disabled=true;api('/api/intuition/do',{id:u.id,i:i}).then(function(x){if(!x||x.error){d.disabled=false;say((x&&x.error)||'It didn’t start.',true);return;}say(x.said||'Started.');d.outerHTML="<small class='lqms'>"+(m.do==='Prepare it'?'asked':'done')+"</small>";var n=mv.querySelector('.lqnot');if(n)n.remove();});});
+var n=mv.querySelector('.lqnot');if(n)n.addEventListener('click',function(){n.disabled=true;api('/api/intuition/not',{id:u.id,i:i}).then(function(x){say((x&&(x.said||x.error))||'');mv.style.opacity='.45';var b=mv.querySelector('.lqdo');if(b)b.remove();n.remove();});});
+var o=mv.querySelector('.lqop');if(o)o.addEventListener('click',function(){var el=$('lqupd');if(el)el.classList.remove('open');lqFocus({repo:m.lane==='ops'?'':m.lane});});});
+var f=r.querySelector('.lqask');if(f)f.addEventListener('submit',function(ev){ev.preventDefault();var q=f.querySelector('input'),t=String(q.value||'').trim();if(!t)return;var b=f.querySelector('button');b.disabled=true;say('Asking…');
+api('/api/updates/ask',{id:u.id,text:t}).then(function(x){b.disabled=false;if(!x||x.error){say(x&&x.error==='not-connected'?'Connect an AI in Settings to ask about it.':((x&&x.error)||'failed'),true);return;}q.value='';say(x.answer||'');}).catch(function(e){b.disabled=false;say(String((e&&e.message)||e),true);});});}
 function renderUpdates(){var el=$('lqupd');if(!el)return;var us=(LQ.home&&LQ.home.updates)||[];
 if(!us.length){el.innerHTML='';return;}var open=el.classList&&el.classList.contains('open');
-var html="<button type='button' class='lqupb' aria-expanded='"+(open?'true':'false')+"'>Updates &middot; "+us.length+"</button><div class='lqupl' role='list'>"+us.map(function(u,i){return "<div class='lqupi' role='listitem' data-i='"+i+"'><span class='lqupt' title='"+escQ(u.title)+"'>"+(u.lane?"<b>"+esc(u.lane)+"</b> ":"")+esc(u.title)+"</span>"+(u.report&&u.report.id?"<button type='button' class='lqupr'>Read</button>":"")+"<button type='button' class='lqupx' aria-label='Put it away'>&times;</button></div>";}).join('')+"</div>";
+var html="<button type='button' class='lqupb' aria-expanded='"+(open?'true':'false')+"'>Updates &middot; "+us.length+"</button><div class='lqupl' role='list'>"+us.map(function(u,i){if(u.moves&&u.moves.length)return updMoves(u,i);return "<div class='lqupi' role='listitem' data-i='"+i+"'><span class='lqupt' title='"+escQ(u.title)+"'>"+(u.lane?"<b>"+esc(u.lane)+"</b> ":"")+esc(u.title)+"</span>"+(u.report&&u.report.id?"<button type='button' class='lqupr'>Read</button>":"")+(u.accept?"<button type='button' class='lqupr lqupa'>"+esc(u.accept.label||'OK')+"</button>":"")+"<button type='button' class='lqupx' aria-label='Put it away'>&times;</button></div>";}).join('')+"</div>";
 if(sameHtml(el,html))return;el.querySelector('.lqupb').addEventListener('click',function(){el.classList.toggle('open');this.setAttribute('aria-expanded',el.classList.contains('open')?'true':'false');});
-el.querySelectorAll('.lqupi').forEach(function(r){var u=us[+r.getAttribute('data-i')];var rd=r.querySelector('.lqupr');if(rd)rd.addEventListener('click',function(){el.classList.remove('open');showReport(u.report.id);});
-r.querySelector('.lqupx').addEventListener('click',function(){r.style.opacity='.4';(u.goal?api('/api/agents/answer',{path:u.path,answers:[{q:u.q,a:u.answer}]}):Promise.resolve()).then(function(){return api('/api/home/dismiss',{key:u.key});}).then(function(){LQ.home.updates=(LQ.home.updates||[]).filter(function(x){return x!==u;});renderUpdates();});});});}
+el.querySelectorAll('.lqupi').forEach(function(r){var u=us[+r.getAttribute('data-i')];if(u.moves&&u.moves.length)wireUpdMoves(r,u);var rd=r.querySelector('.lqupr');if(rd)rd.addEventListener('click',function(){el.classList.remove('open');showReport(u.report.id);});
+var ac=r.querySelector('.lqupa');if(ac)ac.addEventListener('click',function(){r.style.opacity='.4';api(u.overrides?'/api/overrides/apply':'/api/intuition/accept',{id:u.accept.id}).then(function(d){if(u.overrides&&d&&d.error){r.style.opacity='';r.querySelector('.lqupt').textContent=d.error;return Promise.reject(0);}return api('/api/home/dismiss',{key:u.key});}).then(function(){LQ.home.updates=(LQ.home.updates||[]).filter(function(x){return x!==u;});renderUpdates();}).catch(function(){});});
+r.querySelector('.lqupx').addEventListener('click',function(){r.style.opacity='.4';(u.goal?api('/api/agents/answer',{path:u.path,answers:[{q:u.q,a:u.answer}]}):u.overrides&&u.accept?api('/api/overrides/dismiss',{id:u.accept.id}):Promise.resolve()).then(function(){return api('/api/home/dismiss',{key:u.key});}).then(function(){LQ.home.updates=(LQ.home.updates||[]).filter(function(x){return x!==u;});renderUpdates();});});});}
 function lqRedraw(){renderUpdates();whenFree($('liquid'),'liquid',function(){if(LQ.scene==='work')lqBuildWork();else lqBuild();});}
 function lqBuildWork(){lqRelay();if(LQ.workBy==='project'){lqBuildProjects();return;}var w=LQ.workData||{},S=lqSize(),cx=S.w/2,cy=S.h*0.5,list=[];LQ.bw=S.w;LQ.bh=S.h;if(lqRelayOn()){var RW=Math.min(420,S.w*0.32)+28;S={w:S.w-RW,h:S.h,s:S.s};cx=S.w/2;}
 var vx=Math.max(0.5,Math.min(S.s*1.3,(S.w/2-90)/400)),vy=Math.max(0.35,Math.min(S.s*0.8,(S.h-cy-230)/400,(cy-160)/400)),rs=Math.min(S.s,(vx+vy)/1.5);
@@ -4022,9 +4068,9 @@ else if(to.indexOf('task:')===0){TFILTER.id=to.slice(5);TFILTER.repo='';TFILTER.
 else if(LQNAMES[to]){lqUse(to,null,'talk');lqGo(to);}
 else return;
 lqWhy(g&&g.to===to?g:null);}
-function lqAltsHtml(g){return g&&g.alts&&g.alts.length?"<span class='lqalts'>Or: "+g.alts.map(function(a){return "<button type='button' class='lqmb' data-go='"+escQ(a.to)+"'>"+esc(a.label||a.to)+"</button>";}).join('')+"</span>":'';}
+function lqAltsHtml(g){return g&&g.alts&&g.alts.length?"<span class='lqalts'>Or: "+g.alts.map(function(a){return "<button type='button' class='lqmrow' data-go='"+escQ(a.to)+"'>"+esc(a.label||a.to)+"</button>";}).join('')+"</span>":'';}
 function lqWhy(g){var el=$('lqwhy');if(!el)return;var on=!!(g&&(g.why||(g.alts&&g.alts.length)));if(el.classList)el.classList.toggle('on',on);
-el.innerHTML=on?(g.why?"<span>"+esc(g.why)+"</span>":'')+(g.alts&&g.alts.length?"<span>Or:</span>"+g.alts.map(function(a){return "<button type='button' class='lqmb' data-go='"+escQ(a.to)+"'>"+esc(a.label||a.to)+"</button>";}).join(''):''):'';
+el.innerHTML=on?(g.why?"<span>"+esc(g.why)+"</span>":'')+(g.alts&&g.alts.length?"<span>Or:</span>"+g.alts.map(function(a){return "<button type='button' class='lqmrow' data-go='"+escQ(a.to)+"'>"+esc(a.label||a.to)+"</button>";}).join(''):''):'';
 if(on)el.querySelectorAll('[data-go]').forEach(function(b){b.addEventListener('click',function(){lqNav(b.getAttribute('data-go'));});});}
 function lqSay(){var spoke=VOICE.spoke;VOICE.spoke=false;var i=$('lqask');var q=((i&&i.value)||'').trim(),shots=LQ.atts.slice();if(!q&&!shots.length)return;if(!q)q='Take a look at this screenshot.';i.value='';lqGrowAsk();LQ.atts=[];lqAttsShow();lqAct();
 var low=q.toLowerCase().replace(/^(please |can you |could you )/,''),hit=lqNavHit(q);

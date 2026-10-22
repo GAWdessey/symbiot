@@ -30,6 +30,8 @@ import { windowSince, BROWSER_IDLE_MIN } from "./headless.mjs";
 import { control } from "./control.mjs";
 import { jobsLines, syncOnUser, syncTasks, onUser, runRecord } from "./jobs.mjs";
 import { goalCards } from "./goals.mjs";
+import { intuitionUpdates, intuitionLines } from "./intuition.mjs";
+import { overridesUpdates } from "./overrides.mjs";
 import { splitNeeds, applyText, loadCardText } from "./needs.mjs";
 import { converse, actIn, actNow, taskIn, loadMind, dayMark } from "./mind.mjs";
 import { repoPathMap, laneMap, reposState, scanRoots } from "./scan.mjs";
@@ -515,6 +517,10 @@ function homeState({ now = Date.now(), fresh = false, deps = {}, tick = false } 
   // Needs you holds decisions and the user's own steps only; what just tells them something is an
   // update (needs.mjs). Each card reads as its writer put it: a short question, why, labelled options.
   const split = splitNeeds(you), updates = split.updates;
+  // what Symbiot did on its own (intuition.mjs): on Updates, never on Needs you
+  try { const gone = new Set(Object.keys((deps.dismissed || loadDismissed)())); updates.unshift(...(deps.intuition || intuitionUpdates)({ now, dismissed: gone })); } catch {}
+  // a change to how Symbiot works, proposed from what the user kept pushing back on (overrides.mjs): Apply / Not now
+  try { const gone = new Set(Object.keys((deps.dismissed || loadDismissed)())); updates.unshift(...(deps.overrides || overridesUpdates)({ dismissed: gone })); } catch {}
   { let ct = {}; try { ct = (deps.cardText || loadCardText)(); } catch {} you = split.you.map((y) => { try { return applyText(y, ct); } catch { return y; } }); }
   (deps.syncJobs || syncOnUser)(you, { now }); // the job record's "waiting on you": these cards, all of them (jobs.mjs)
   const nextAll = nextUp({ now, map, list, named, deps: { board: () => bd, reports: () => rep, ...(deps.next || {}) } });
@@ -820,6 +826,7 @@ function homeContext(h, { cards } = {}) {
     `Agents working: ${h.working}.`, ...(h.runs || []).map((r) => `- [${r.id}] ${dayMark(r.started, h.at)}${r.name}: ${r.line}${r.eta ? ` (${r.eta})` : ""}${r.quiet ? ` (no progress in ${r.quiet} min)` : ""}${r.looping ? " (repeating the same step)" : ""}`),
     ...sentMailLines(),
     ...jobsLines({ now: h.at }),
+    ...(() => { try { return intuitionLines({ now: h.at }); } catch { return []; } })(),
     "Agents finished in the last 24h (their own last words; answer 'did it work?' from these):", ...((h.finished || []).length ? h.finished.map((f) => `- ${dayMark(f.at, h.at)}${f.name}: ${f.end}${f.changed ? `, ${f.changed} file${f.changed > 1 ? "s" : ""} changed` : ""}${f.asks.length ? `; asked: ${f.asks.join(" / ")}` : ""}${f.said ? `; said: ${f.said}` : ""}`) : ["- none"]),
     "What each agent has done, asked and been told (running, or finished in the last 24h; answer 'why is it asking again?' and 'did it work?' from this):", ...((h.digest || []).length ? h.digest.flatMap((d) => [`- ${dayMark(d.at, h.at)}${d.name}${d.lane ? ` [${d.lane}${d.queued ? `, ${d.queued} queued` : ""}]` : ""} (${d.running ? "running" : "finished"})`,
       ...(d.steps.length ? [`    last steps: ${d.steps.join("; ")}`] : []), ...(d.asks.length ? [`    asked the user: ${d.asks.join(" / ")}`] : []), ...d.answers.map((a) => `    the user answered "${a.q}": ${a.a}`), ...(d.outcome ? [`    outcome: ${d.outcome}`] : [])]) : ["- none"]),
@@ -933,6 +940,17 @@ async function cardTalk(path, answers, { ask, deps = {}, extra = "", force = fal
   const reply = String(res.reply || "").trim() || "I couldn't answer that just now.";
   const talk = addTalk(path, q.q, { from: "agent", text: reply });
   return { ok: true, talk, reply, ...(res.did ? { did: res.did } : {}), lane: lane || "ops" };
+}
+// Ask about an update (needs.mjs Updates, intuition's notes): the same mind as Home's chat, the update's
+// moves in front of it, and it can act on what's asked ("do the second one", "why did you think that?").
+async function updateAsk(id, text, { context = "", ask } = {}) {
+  text = String(text || "").trim().slice(0, 2000); if (!text) return { error: "empty" };
+  if (!ask && !resolveProvider()) return phoneNoAi() || { error: "not-connected" };
+  let map = {}; try { map = laneMap(); } catch {}
+  const role = "They're asking about an update on their Updates list: things Symbiot noticed or did, or would have done, on its own. Answer about it plainly; if they ask for one of its moves (or anything) to be done, do it.";
+  const res = await converse({ where: `Updates: ${id}`, role, context: `The update's moves:\n${context || "(none kept)"}`, question: text, map, ...(ask ? { ask } : {}),
+    act: { agent: (req, known, repo, said) => (repo ? actIn(req, repo, { map, known, title: "Updates", said }) : actNow(req, { title: "Updates", known })), task: (t, repo) => taskIn(t, repo, { map }) } });
+  return { answer: res.reply, ...(res.did ? { did: res.did } : {}) };
 }
 // Ask about the report in place: the same mind as Home's chat, the report in front of it.
 async function reportAsk(id, question, { ask, deps = {} } = {}) {
@@ -1345,6 +1363,8 @@ function onboarding({ fresh = false } = {}) {
 // is folded into first run (or said to wait) as it ships, not found missing later (19 Oct 2026).
 const FIRST_RUN = {
   "Language": "later: it follows the computer's own language, so there's nothing to choose",
+  "Customisations": "later: your own rules and adjustments, and the changes Symbiot proposes when you keep pushing back on something; nothing goes in without your OK, and Off returns to base behaviour",
+  "On its own": "later: it watches for its first day and says on Updates what it would have done, then acts within its limits; the focus file and the mode are here when you want them",
   "Symbiot Pro": "done",
   "Setup": "welcome",
   "Your AI": "ai",
@@ -1375,4 +1395,4 @@ function setOnboarding({ step, skip, unskip, skipRest, done, restart } = {}) {
   return onboarding();
 }
 
-export { cardTalk, homeTick, HOME_LOOKED, WORK_KEEP, FIRST_RUN, troubles, agentDigest, garthLedger, plainAsk, dismissCard, cardKey, loadDismissed, DISMISSED_FILE, reportIdeasAdd, reportAsk, reportDraftAnswer, workTick, waitWhy, AUTO_GRACE, STUCK_AFTER, marketingState, marketingGo, marketingDraftAnswer, marketingTask, moveToMarketing, goLane, homeState, homeContext, homeAsk, homeAnswer, homeNext, nextUp, laneNamed, NEXT_FILE, workScene, forgetWork, workGo, displayName, firstSteps, onboarding, setOnboarding, startOnboarding, ONB_STEPS, ONB_STEPS_PHONE, onbSteps, phoneBits, phoneSetupFirst, finishedState, handedState, noteHanded, phoneChat, isPeak, reportIdeasDismiss, settleAsks, settleFromChat };
+export { updateAsk, cardTalk, homeTick, HOME_LOOKED, WORK_KEEP, FIRST_RUN, troubles, agentDigest, garthLedger, plainAsk, dismissCard, cardKey, loadDismissed, DISMISSED_FILE, reportIdeasAdd, reportAsk, reportDraftAnswer, workTick, waitWhy, AUTO_GRACE, STUCK_AFTER, marketingState, marketingGo, marketingDraftAnswer, marketingTask, moveToMarketing, goLane, homeState, homeContext, homeAsk, homeAnswer, homeNext, nextUp, laneNamed, NEXT_FILE, workScene, forgetWork, workGo, displayName, firstSteps, onboarding, setOnboarding, startOnboarding, ONB_STEPS, ONB_STEPS_PHONE, onbSteps, phoneBits, phoneSetupFirst, finishedState, handedState, noteHanded, phoneChat, isPeak, reportIdeasDismiss, settleAsks, settleFromChat };

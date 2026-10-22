@@ -568,7 +568,11 @@ try {
     const tailEnd = "### ops\nAdd to act-0a1b2c3d: also check www.";
     put(dl, "HANDOFF.md", tailEnd + "\n"); led.handoffs[0].reportedAt = Date.now();
     dispatch(dl, dd());
-    ok("a run that already came back takes no additions: the handover starts a run of its own", acts.length === 2, acts.length);
+    ok("a run that already came back still takes the addition, in its own folder: no second run beside it (22 Oct 2026)", acts.length === 1 && /also check www/.test(read(first, "TASKS.next.md")), acts.length);
+    going = new Set(); const runs0 = calls.run.length;
+    put(dl, "HANDOFF.md", "### ops\nAdd to run act-0a1b2c3d (do not start a second copy): and the apex too.\n");
+    const s3 = dispatch(dl, dd({ run: (p) => { calls.run.push(p); return { id: "r" + calls.run.length }; } }));
+    ok("…and once its run has ended, the addition lands in that folder and its run starts there again, no new folder", acts.length === 1 && s3.length === 1 && calls.run.slice(runs0).includes(first) && /and the apex too/.test(read(first, "TASKS.md")), { acts: acts.length, runs: calls.run.slice(runs0), s3 });
     led.handoffs.length = 0; acts.length = 0; going = new Set();
     put(dl, "HANDOFF.md", "### ops\n" + resume + "\n"); dispatch(dl, dd());
     ok("with no other ops run going, the brief says nothing about others", !acts[0].o.alongside, acts[0].o.alongside);

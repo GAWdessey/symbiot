@@ -22,6 +22,7 @@
 import { join } from "node:path";
 import { readFileSync, statSync } from "node:fs";
 import { CONFIG_DIR, readState, writeJsonAtomic } from "./core.mjs";
+import { promptFor } from "./overrides.mjs";
 
 const FILE = "triage.json", FAULTS = join(CONFIG_DIR, "faults.json");
 const VERDICTS = ["user", "answered", "agent", "symbiot"];
@@ -78,7 +79,7 @@ Hiding a real decision from the user is worse than asking them one question too 
 async function judge(q, { answers = "", rules = [], lane = "", known = "" } = {}, { write }) {
   const opts = (q.options || []).map((o) => `- ${o}`).join("\n");
   const prompt = `Agent's lane: ${lane || "unknown"}\n\nThe question:\n### ${q.q}\n${q.context ? q.context + "\n" : ""}${opts}\n\nThe user's standing rules:\n${rules.map((r) => `- ${r}`).join("\n") || "(none)"}${known ? `\n\nWhat Symbiot remembers that may bear on it:\n${known.slice(0, 3000)}` : ""}\n\nThe user's newest answers in this lane (newest last):\n${String(answers || "").slice(-5000) || "(none)"}`;
-  const r = await write(SYSTEM, prompt, { fast: true, kind: "triage" });
+  const r = await write(SYSTEM + promptFor("triage"), prompt, { fast: true, kind: "triage" });
   const text = r && typeof r.text === "string" ? r.text : "";
   const m = text.match(/\{[\s\S]*\}/); if (!m) return null;
   let o; try { o = JSON.parse(m[0]); } catch { return null; }

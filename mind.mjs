@@ -36,6 +36,7 @@ import { OPS, MARKETING, HANDOVER_MAX, handoverRules, ONLY_YOU, HANDBACK } from 
 import { laneReach, unreachable, serverOnly } from "./reach.mjs";
 import { styleOf, styleLine, userStyleLine } from "./adapt.mjs";
 import { knowledgeFor } from "./knowledge.mjs";
+import { ruleLines } from "./overrides.mjs";
 
 const MIND_FILE = join(CONFIG_DIR, "mind.json");
 const ACT_DIR = join(CONFIG_DIR, "drafts"); // runs of their own, next to drafted replies
@@ -150,7 +151,7 @@ This folder isn't a repo; there's nothing to change in it but this file. Use you
 ${ONLY_YOU}
 - When it's done, tick the task (\`- [x]\`) and say what you did in your last message: it's what goes back to whoever asked.
 
-${isUiWork(request) ? designBrief().join("\n") + "\n" : ""}${handoverRules(names, OPS, reach).join("\n")}
+${isUiWork(request) ? designBrief().join("\n") + "\n" : ""}${(() => { try { const r = ruleLines(OPS); return r.length ? r.join("\n") + "\n" : ""; } catch { return ""; } })()}${handoverRules(names, OPS, reach).join("\n")}
 ${HANDBACK.join("\n")}
 ${[...sentBrief(), ...standingBrief(), ...doneBrief(OPS)].join("\n")}`;
 }

@@ -138,9 +138,17 @@ function resupply(e, text, { now, title, context }) {
 // way a rewritten one does), with a note in its ANSWERS.md. One that names none
 // starts a run of its own, whose brief lists the ops runs already going (opsGoing).
 const runName = (p) => basename(p || ""), HELD = "TASKS.next.md"; // agents.mjs writeTasks's held brief
-function addsTo(h, from, ledger, { running }) {
-  return ledger.handoffs.slice().reverse().find((x) => x.to.lane === OPS && x.from.path === from.path && h.lane.toLowerCase() === OPS && !x.reportedAt && (x.status === "started" || x.status === "held")
-    && /^act-[0-9a-f]+$/.test(runName(x.to.path)) && new RegExp(`\\b${runName(x.to.path)}\\b`).test(h.text) && !!running(x.to.path)) || null;
+// …and a handover that names a run of the same asker that has ended goes back into that run's folder
+// too, not a new one: "Add to run act-c10094d4 (do not start a second copy)" opened act-0f535f70, and
+// "Add to run act-0f535f70" opened act-f3aa65f5, a chain of three folders on one job (22 Oct 2026).
+// ended: true on such a row; the caller starts its run there.
+function addsTo(h, from, ledger, { running, exists = existsSync }) {
+  if (h.lane.toLowerCase() !== OPS) return null;
+  const named = (x) => x.to.lane === OPS && x.from.path === from.path && /^act-[0-9a-f]+$/.test(runName(x.to.path)) && new RegExp(`\\b${runName(x.to.path)}\\b`).test(h.text);
+  const live = ledger.handoffs.slice().reverse().find((x) => named(x) && !x.reportedAt && (x.status === "started" || x.status === "held") && !!running(x.to.path));
+  if (live) return live;
+  const back = ledger.handoffs.slice().reverse().find((x) => named(x) && x.to.path && exists(x.to.path)); // already reported back: still its folder, never a second one beside it
+  return back ? Object.assign(back, { ended: !running(back.to.path) }) : null;
 }
 // What a brief already waiting in that folder asks (actBrief quotes it), so a second
 // addition before the run ends joins the first rather than replacing it.
@@ -238,8 +246,13 @@ function dispatch(path, { map = laneMap(), act = actNow, run = runHandoff, add =
     if (ledger.handoffs.some((x) => x.key === key || (x.was || []).includes(key) || (x.adds || []).includes(key))) continue;
     const into = addsTo(h, from, ledger, { running });
     if (into) {
+      const ended = !!into.ended; delete into.ended;
       const r = more(into, h.text, { now, running, title: `handed over by ${from.lane}`, context: `${from.lane}'s agent (in ${path}) handed this over, and carries on once it's done.` });
-      if (!r.error) { Object.assign(into, { adds: [...(into.adds || []), key], at: now, added: (into.added || 0) + 1 }); started.push(into); continue; }
+      if (!r.error) {
+        Object.assign(into, { adds: [...(into.adds || []), key], at: now, added: (into.added || 0) + 1 });
+        if (ended) { delete into.reportedAt; into.status = "started"; const s = run(into.to.path) || {}; Object.assign(into, startedAs(s)); } // its run had ended: it carries on in its own folder
+        started.push(into); continue;
+      }
     }
     const prior = supersedes(h, from, ledger, { running, tasks });
     if (prior) {
