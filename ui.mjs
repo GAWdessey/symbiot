@@ -1857,7 +1857,7 @@ var PENDALL=false,RTASKS=3;
 // never pushed, and the page said "nothing to merge" (2026-10-13).
 var UNSENT_WHY={conflicts:"It clashes with main as GitHub has it now, so it wasn't pushed.",tests:"Its tests failed here, so it wasn't pushed.",push:"It wasn't pushed to GitHub.",pr:"It went up to GitHub, but no PR was opened."};
 function unsentBox(un){var n=un.ahead||0,when=un.at?new Date(un.at).toLocaleString([], {day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}):'';
-return "<div class='note err runsent'><b>Approved"+(when?" "+esc(when):"")+", but not on GitHub yet.</b> "+esc(un.note||UNSENT_WHY[un.why]||UNSENT_WHY.push)+"<div class='muted'>Committed <code>"+esc(un.commit||'')+"</code> on <code>"+esc(un.branch||'')+"</code>"+(n?" &middot; "+n+" commit"+(n>1?"s":"")+" GitHub doesn&rsquo;t have":"")+"</div>"+
+return "<div class='note err runsent'><b>Approved"+(when?" "+esc(when):"")+", not on GitHub yet.</b> "+esc(un.headline||UNSENT_WHY[un.why]||UNSENT_WHY.push)+"<details class='muted'><summary>Details</summary>"+(un.note?esc(un.note)+"<br>":"")+"Committed <code>"+esc(un.commit||'')+"</code> on <code>"+esc(un.branch||'')+"</code>"+(n?" &middot; "+n+" commit"+(n>1?"s":"")+" GitHub doesn&rsquo;t have":"")+"</details>"+
 "<div class='row' style='margin-top:6px'><button class='act sendagain' title='rebase on main, test, push and open the PR'>Send again</button>"+(un.why==='tests'?"<button class='ghost sendanyway' title='push and open the PR without running the tests on this computer: CI runs them on the PR'>Send without the tests here</button>":"")+"<button class='ghost leaveunsent' title='stop showing this: it was sent by hand, or isn&rsquo;t wanted'>Leave it</button></div></div>";}
 function loadPending(){var el0=document.getElementById('reviewlist'),fr=TFILTER.repo;
 if(el0&&!el0.innerHTML&&fr&&LQ.focus&&LQ.focus.kind==='approve'&&LQ.focus.repo===fr)el0.innerHTML="<div class='tgroup' style='color:var(--amber)'>Waiting for your OK</div><div class='muted rwait'>Getting "+esc(fr)+"'s changes ready&hellip;</div>";
@@ -1936,16 +1936,16 @@ if(r&&r.ask){var ob=document.getElementById('reviewout');ap.disabled=false;apLab
 ob.querySelector('.askyes').addEventListener('click',function(){ap.disabled=true;ap.textContent='Committing & pushing...';ob.innerHTML='';if(r.untasked)yes.confirm=true;else yes.allowShared=true;go();});
 ob.querySelector('.askno').addEventListener('click',function(){ob.innerHTML='';});return;}
 if(!r||r.error){ap.disabled=false;ap.textContent='Approve - retry';o.innerHTML="<div class='note err'>"+esc(repo)+": "+esc((r&&r.error)||'failed')+"</div>";return;}
-var m=(r.unsent?"<b>Not on GitHub yet.</b> ":"&#10003; ")+"<b>"+esc(repo)+"</b>: approved "+(r.round?"a round of its task, which stays open"+(r.approved?", and "+r.approved+" finished task"+(r.approved>1?"s":""):""):r.approved?r.approved+" task"+(r.approved>1?"s":""):"changes without a task");
-if(r.commit)m+=" &middot; committed <code>"+esc(r.commit)+"</code> on <code>"+esc(r.branch)+"</code>";
+var m=(r.unsent?"<b>Not on GitHub yet.</b> "+(r.headline?esc(r.headline)+" ":""):"&#10003; ")+"<b>"+esc(repo)+"</b>: approved "+(r.round?"a round of its task, which stays open"+(r.approved?", and "+r.approved+" finished task"+(r.approved>1?"s":""):""):r.approved?r.approved+" task"+(r.approved>1?"s":""):"changes without a task");
+if(r.commit&&!r.unsent)m+=" &middot; committed <code>"+esc(r.commit)+"</code> on <code>"+esc(r.branch)+"</code>";
 if(r.pr)m+=" &middot; <a href='"+esc(okUrl(r.pr))+"' target='_blank' rel='noopener'>open PR</a>";
 if(r.bumped&&card.getAttribute('data-pom'))m+="<div class='muted'>Bumps the version to <b>"+esc(r.bumped)+"</b>. It publishes to npm when the PR merges.</div>";
 else if(r.bumped)m+="<div class='muted'>Bumps the version to <b>"+esc(r.bumped)+"</b>. After the PR merges, run <code>git pull &amp;&amp; git tag v"+esc(r.bumped)+" &amp;&amp; git push origin --tags</code> on <code>"+esc(r.base||'main')+"</code> to release it.</div>";
 if(r.autoMerge==='queued')m+=" &middot; will auto-merge when CI passes";
 else if(r.autoMerge==='unavailable')m+="<div class='muted'>auto-merge not enabled for this repo on GitHub (Settings &rarr; General &rarr; Allow auto-merge)"+(r.autoMergeErr?": "+esc(r.autoMergeErr):"")+"</div>";
 if(r.live&&r.live.text)m+="<div class='muted'><b>"+(r.live.state==='pending'?"Not live yet.":"Live.")+"</b> "+esc(r.live.text)+(r.live.asked?" The question to deploy it is waiting on the Workdesk.":"")+"</div>";
-if(r.note)m+="<div class='muted'>"+esc(r.note)+"</div>";
-o.innerHTML="<div class='note "+(r.unsent?"err":"ok")+"'>"+m+(r.unsent?"<div class='muted'>The card below keeps it, with Send again.</div>":"")+"</div>";loadTasks();}go();});});lqLight();});}
+if(r.note)m+=r.unsent?"<details class='muted'><summary>Details</summary>"+esc(r.note)+"</details>":"<div class='muted'>"+esc(r.note)+"</div>";
+o.innerHTML="<div class='note "+(r.unsent?"err":"ok")+"'>"+m+"</div>";loadTasks();}go();});});lqLight();});}
 function loadArchived(){TARCH=true;lqTitle();var nb=$('needsbox');if(nb)nb.innerHTML='';api('/api/tasks?archived=1').then(function(list){ALLTASKS=list;renderFilter();var el=document.getElementById('tasklist');
 if(!list.length){el.innerHTML="<div class='muted' style='margin-top:12px'>Nothing archived yet. Completed tasks land here.</div>";return;}
 var h="<div class='tgroup'>Archived <span class='tcount'>"+list.length+"</span></div>";list.forEach(function(t){h+=taskRow(t,true);});el.innerHTML=h;wireTaskRows(el);});}
