@@ -2,6 +2,11 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one), for anyone who installs the app: what changed in it, never whose work it was (no projects, people, accounts, services, run ids or task wording of the person who made it). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.73.0 — 2026-10-22
+
+- **A UI specialist for UI work.** A task that builds something people look at (a page, a dashboard, a demo) gets a concrete design standard in its brief and the strongest model, and must screenshot every screen at desktop and phone size with the new `symbiot shoot`, look at them and check them against that standard before it ticks.
+- **A separate design critic.** When UI work is ticked, a fresh agent looks at it and passes it, or sends it back with specific fixes. After two rounds it tells you honestly that it still doesn't pass, instead of calling it done.
+
 ## 0.72.0 — 2026-10-22
 
 - **Agents can click and type on any site in your Chrome**, without a card asking you to switch each site on: one switch in Settings → Connections. Sending, posting, paying and deleting still wait for your Go on a card, one action at a time.
