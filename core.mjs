@@ -167,6 +167,9 @@ function saveTasks(t) { try { writeJsonAtomic(TASKS_PATH, t, { newline: false })
 const TASK_MAX = 4000;
 // A heading or a one-line summary: cut at a word and marked "…", never mid-word.
 const clipWords = (s, max) => { s = String(s || ""); return s.length > max ? s.slice(0, max - 1).replace(/\s+\S*$/, "") + "…" : s; };
+// A job in plain words: without "Agent:" or a handover's routing words ("New job:"), which put
+// "New job: …" on cards when nothing had been launched (the LoveLink card, 22 Oct 2026).
+const jobWords = (s) => String(s || "").replace(/^\s*Agent:\s*/i, "").replace(/\bNew job\b[^:.]{0,40}:\s*/gi, "").trim();
 // Two wordings of one task: the same words once case, spacing and punctuation
 // are set aside (a colon for a bracket, `code` for code), or one is the other
 // with a clause more on the end. An extension only counts when the shorter one
@@ -364,4 +367,4 @@ function repoState(repoPath) {
   return { branch, dirty, del, mod, add, stale, staleBy, behind };
 }
 
-export { own, writeAtomic, writeJsonAtomic, readState, privateDir, alive, takeAppLock, releaseAppLock, lockPath, VERSION, LATEST_VERSION, semverGt, REGISTRY, checkLatest, CONFIG_DIR, CONFIG_PATH, SECRETS_PATH, loadConfig, saveConfig, moveSecrets, splitSecrets, loadTasks, saveTasks, TASK_MAX, clipWords, taskWords, sameTask, isFinding, uniqueTasks, sh, runOut, runOk, gitOut, gitOk, hasCmd, chromeBinary, repoState };
+export { jobWords, own, writeAtomic, writeJsonAtomic, readState, privateDir, alive, takeAppLock, releaseAppLock, lockPath, VERSION, LATEST_VERSION, semverGt, REGISTRY, checkLatest, CONFIG_DIR, CONFIG_PATH, SECRETS_PATH, loadConfig, saveConfig, moveSecrets, splitSecrets, loadTasks, saveTasks, TASK_MAX, clipWords, taskWords, sameTask, isFinding, uniqueTasks, sh, runOut, runOk, gitOut, gitOk, hasCmd, chromeBinary, repoState };

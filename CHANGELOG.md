@@ -7,6 +7,13 @@ What each Symbiot release brought, newest first. When Approve bumps the version,
 - **Home shows jobs that are parked on someone else.** A job that is staged and waiting on a person outside, another project or a set time used to be invisible: Home listed only what was running. It now shows each one with what it waits on ("parked · waiting on someone outside: staged, nothing sent, waiting on a yes"), and counts them in its top line.
 - **Home's chat no longer says a card is waiting when none is.** It is told outright when nothing is waiting for you.
 
+## 0.80.2 — 2026-10-22
+
+- **A card says who is doing the work.** Each card opens with its agent's own line: what it's on and what it has done so far, then the one thing it needs from you. A card that showed only a task's words read like a to-do list for you.
+- **A card asks what the agent needs, in its own words.** When an agent's waiting item didn't say what it waits on, its card no longer shows the task as your step. It asks with the sentence from the agent's report that names what it needs. When that's a yes, the button says Go ahead, and pressing it carries the work on.
+- **Cards don't ask for what an agent can find.** Before a card reaches you, it's checked against the keys you've saved and the sites and mailboxes you've linked. If what it asks for is there, its agent is sent to find it and carry on. A card that mentions a login names the account it means.
+- **No "New job" on a card when nothing was launched.** The routing words a handover carries stay out of the agent's task, its name and its cards.
+
 ## 0.80.1 — 2026-10-22
 
 - **Approve works on a project an agent left mid-merge.** When an agent had merged the main branch in and left it uncommitted, every Approve failed at its commit. Approve now finishes that merge first and then ships the work as usual; a merge that still has clashes goes back to the agent to finish, said in one plain line.
