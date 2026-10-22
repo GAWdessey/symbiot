@@ -7,6 +7,10 @@ What each Symbiot release brought, newest first. When Approve bumps the version,
 - **Home shows jobs that are parked on someone else.** A job that is staged and waiting on a person outside, another project or a set time used to be invisible: Home listed only what was running. It now shows each one with what it waits on ("parked · waiting on someone outside: staged, nothing sent, waiting on a yes"), and counts them in its top line.
 - **Home's chat no longer says a card is waiting when none is.** It is told outright when nothing is waiting for you.
 
+## 0.80.3 — 2026-10-22
+
+- **More work counts as UI work.** Any task that is about screens, pages, layout, styling, components, buttons, mobile or desktop app screens or demo screenshots now gets the UI specialist: the design standard in its brief, the strongest model, screenshots it must look at before it ticks, and the design critic's review. Before, only tasks that named a "UI", a dashboard or a demo did.
+
 ## 0.80.2 — 2026-10-22
 
 - **A card says who is doing the work.** Each card opens with its agent's own line: what it's on and what it has done so far, then the one thing it needs from you. A card that showed only a task's words read like a to-do list for you.

@@ -24,9 +24,9 @@ const A = await import("../agents.mjs");
 
 try {
   console.log("DESIGN — what counts as UI work");
-  const ui = ["Build the call-centre demo for the pilot", "Fix the login page layout on mobile", "Redesign the landing page", "Make the admin dashboard easier to read", "Polish the onboarding screens"];
-  const not = ["Draft the post for the Marketing page", "use symbiot screens to read the report", "deploy the api to prod", "Rebase the branch onto main", "Send Pat the proof", "Add a test for the export"];
-  ok("asked for in words: a demo, a page, a dashboard, screens", ui.every((t) => D.isUiWork(t)), ui.filter((t) => !D.isUiWork(t)));
+  const ui = ["Build the call-centre demo for the pilot", "Fix the login page layout on mobile", "Redesign the landing page", "Make the admin dashboard easier to read", "Polish the onboarding screens", "Fix the Settings page layout on mobile", "Restyle the sign-in page", "Update the Android app screens", "Take new demo screenshots", "Add a button to Home", "Style the card component with CSS"];
+  const not = ["Draft the post for the Marketing page", "use symbiot screens to read the report", "deploy the api to prod", "Rebase the branch onto main", "Send Pat the proof", "Add a test for the export", "Move the domain into a new account", "Write the report to the Reports page"];
+  ok("asked for in words: a demo, a page, a dashboard, screens, layout, styling, a component, mobile app screens, demo screenshots", ui.every((t) => D.isUiWork(t)), ui.filter((t) => !D.isUiWork(t)));
   ok("…not a post, a Symbiot command, a deploy, a rebase, a message or a test", not.every((t) => !D.isUiWork(t)), not.filter((t) => D.isUiWork(t)));
   ok("or by the files it touches: a page, a stylesheet, a component", D.isUiWork("tidy it", ["public/index.html"]) && D.isUiWork("x", [{ file: "src/components/Card.tsx" }]) && !D.isUiWork("x", ["src/server.js"]));
 

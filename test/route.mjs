@@ -68,7 +68,7 @@ ok("touching keys escalates", pickModel({ task: "Rotate the API key in .env" }).
 ok("a push to main escalates", pickModel({ task: "push to main once CI is green" }).why === "Opus: touches keys, money or publishing");
 // A secret named, not acted on, is no reason for Opus (the noun alone sent "rename the csrf token field" there, 15 Oct 2026).
 ok("naming a token field stays on Sonnet", pickModel({ task: "rename the csrf token field in the form" }).tier === "S");
-ok("a secret in a sentence stays on Sonnet", pickModel({ task: "the password page layout is off on phones" }).tier === "S");
+ok("a secret in a sentence stays on Sonnet", pickModel({ task: "the password reset email wording is off for new users" }).tier === "S");
 ok("storing a token escalates", pickModel({ task: "store the Meta token in .env" }).why === "Opus: touches keys, money or publishing");
 ok("release notes don't escalate; publishing does", pickModel({ task: "tidy the release notes" }).tier === "S" && pickModel({ task: "publish 0.66 to npm" }).tier === "O");
 
