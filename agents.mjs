@@ -26,7 +26,7 @@ import { knowledgeFolders } from "./knowledge.mjs";
 import { pickModel, MODEL } from "./route.mjs";
 import { runbookOf, onDeployAnswer } from "./deploy.mjs";
 import { claudeState, resolveProvider, write as aiWrite } from "./ai.mjs";
-import { judge as triageJudge, verdictOf, saveVerdict, shows as triageShows, answerFor as triageAnswer, recordFault } from "./triage.mjs";
+import { judge as triageJudge, verdictOf, saveVerdict, shows as triageShows, answerFor as triageAnswer, recordFault, HOLD_MS as TRIAGE_HOLD } from "./triage.mjs";
 import { stalledFor, onStall, loadStall, saveStall, clearStall, STALL_MIN, STALL_PROMPT_TAIL } from "./stall.mjs";
 
 const HANDOFFS = []; // live registry of agents Symbiot has handed work to
@@ -930,9 +930,11 @@ function questionFolders(now = Date.now()) {
     const path = join(ACT_DIR, d); let st; try { st = statSync(join(path, ".symbiot", "QUESTIONS.md")); } catch { continue; }
     if (now - st.mtimeMs > QF_MAX_AGE) continue;
     live.add(path);
-    let am = 0; try { am = statSync(join(path, ".symbiot", "ANSWERS.md")).mtimeMs; } catch {}
-    const key = `${st.mtimeMs}:${st.size}:${am}`, had = QF.seen.get(path);
-    const row = had && had.key === key ? had : { key, open: (() => { try { return agentQuestions(path, "").questions.length > 0; } catch { return false; } })(), name: runNameOf(path), startedAt: runStarted(readSymbiot(path, "agent.log")) || st.mtimeMs };
+    let am = 0, tm = 0; try { am = statSync(join(path, ".symbiot", "ANSWERS.md")).mtimeMs; } catch {} try { tm = statSync(join(path, ".symbiot", "triage.json")).mtimeMs; } catch {}
+    // a fresh question is held while it's judged (triage.mjs), so "nothing open" then isn't kept: it was kept as long as the
+    // folder's files stayed the same, and a question that showed once its wait was over, or its verdict came, never did (21 Oct 2026)
+    const held = now - st.mtimeMs <= TRIAGE_HOLD + QF_EVERY, key = `${st.mtimeMs}:${st.size}:${am}:${tm}`, had = QF.seen.get(path);
+    const row = had && had.key === key && !had.held ? had : { key, held, open: (() => { try { return agentQuestions(path, "").questions.length > 0; } catch { return false; } })(), name: runNameOf(path), startedAt: runStarted(readSymbiot(path, "agent.log")) || st.mtimeMs };
     QF.seen.set(path, row);
     if (row.open) out.push({ path, name: row.name, startedAt: row.startedAt });
   }

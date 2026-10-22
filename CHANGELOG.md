@@ -2,6 +2,13 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one), for anyone who installs the app: what changed in it, never whose work it was (no projects, people, accounts, services, run ids or task wording of the person who made it). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.69.1 — 2026-10-22
+
+- **A code card on your phone has one main button: let the phone pass the code on.** On Android, a card waiting for a code a site texts you now leads with that switch, as a big button. An answer that only said the same thing is no longer shown, so pressing the obvious button can't close the card before the code arrives. Its other answers, like skipping it, stay underneath.
+- **A code goes only to a card that's still waiting for it.** Once you've answered a code card another way (skipped it, say), a code that arrives after isn't passed on and isn't kept. A code is kept only when the card it answers records that it's in the vault.
+- **A question from an agent working outside a project reaches Home once it's been checked.** Every new question is checked before it becomes a card. One asked by an agent working outside a project could miss Home for good: Home looked while it was being checked, and kept that answer. Now it shows as soon as it's cleared, or once the check's wait is over.
+- **The phone check is steadier.** Its card goes up before it looks for the phone, and shows on Home at once. It keeps the phone's screen on while it runs, checks the phone app's own version rather than the computer's, and only one check touches the phone at a time.
+
 ## 0.69.0 — 2026-10-21
 
 - **Privacy:** the code, tests and docs no longer name the people, companies, servers or addresses Symbiot was built around. Its comments and examples use made-up names, and every release is now checked for private names in every file, not only in these notes.

@@ -31,10 +31,14 @@ const RUN = Date.now().toString(36);
 // one question per run: a question once answered is answered again from asks-done.json (asksdone.mjs heldBy), so a reused wording never shows
 const SITE = "codecheck.dev", NAME = `${SITE} code`, QUESTION = `Phone check ${RUN}: which 6-digit code did ${SITE} text you?`;
 const QUESTIONS_MD = (day) => `## Questions\n### ${QUESTION} {#codecheck-${RUN}}\nA test of your phone passing codes on, started ${day}, not a real site: don't type anything here. Press this card's switch to let your phone pass it on, and the phone does the rest. Nothing waits for this code and nothing signs in with it. It goes by itself once the check ends.\n- 👤 You (only you: the SMS code): let your phone pass it on\n- Skip this part\n`;
+// the question's verdict, written with it: it's the user's (only they can press the phone's switch), so the AI's check of
+// every question (triage.mjs) doesn't hold it back for up to 3 minutes, and Home lists it at once (from 0.68.0 it never did)
+const TRIAGE = (now = Date.now()) => ({ [QUESTION.trim().toLowerCase().replace(/\s+/g, " ")]: { verdict: "user", why: "a test of the user's phone: only they can press its switch", at: now } });
 const TASKS_MD = (day) => `# A check of the phone passing codes on (${day})\n- [x] Nothing to do here: scripts/phone-codes-check.mjs reads the vault itself. Don't read or use the code, and stop.\n`;
 const NOTE = (code) => ({ title: "Codecheck", text: `Your Codecheck verification code is ${code}. Do not share it.` });
 const DECOY = { title: "PayPal", text: "PayPal: your code is 902211" };
-const PKG = "co.symbiot.app", LISTENER = `${PKG}/${PKG}.CodeListener`, REPO = "GAWdessey/symbiot";
+// the phone app's own floor, not the computer's version: the phone's build trails the computer's releases (0.66.16 has the start-line fix)
+const PHONE_MIN = "0.66.16", PKG = "co.symbiot.app", LISTENER = `${PKG}/${PKG}.CodeListener`, REPO = "GAWdessey/symbiot";
 
 async function main() {
   const argv = process.argv.slice(2), flag = (k, d) => { const i = argv.indexOf("--" + k); return i >= 0 ? argv[i + 1] : d; }, has = (k) => argv.includes("--" + k);
@@ -47,7 +51,7 @@ async function main() {
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const code = () => String(100000 + Math.floor(Math.random() * 900000)), A = code(); let B = code(); while (B === A) B = code();
   const day = new Date().toISOString().slice(0, 10), scratch = join(CFG, "drafts", "act-codecheck-" + Date.now().toString(36));
-  let serial = flag("serial", ""), granted = false;
+  let serial = flag("serial", ""), granted = false, stayWas = null;
   const adb = (...a) => sh("adb", [...(serial ? ["-s", serial] : []), ...a]);
   const vault = (...a) => sh("symbiot", ["secret", ...a]);
   const answers = () => { try { return readFileSync(join(scratch, ".symbiot", "ANSWERS.md"), "utf8"); } catch { return ""; } };
@@ -61,10 +65,19 @@ async function main() {
       for (let i = 0; i < 60 && pid(); i++) await sleep(2000);
       if (/act-codecheck-/.test(scratch) && existsSync(scratch)) rmSync(scratch, { recursive: true, force: true });
       if (granted) adb("shell", "cmd", "notification", "disallow_listener", LISTENER);
+      if (stayWas !== null) adb("shell", "settings", "put", "global", "stay_on_while_plugged_in", stayWas);
     } else console.log(`\nKept: ${scratch}, "${NAME}" in the vault${granted ? ", Notification access" : ""}.`);
+    try { if (JSON.parse(readFileSync(LOCK, "utf8")).pid === process.pid) rmSync(LOCK, { force: true }); } catch {}
     console.log(`\n${fail ? "✗" : "✓"} phone codes: ${pass} passed, ${fail} failed`);
     return fail ? 1 : 0;
   }
+
+  // one check at a time touches the phone: on 21 Oct 2026 two or three ran at once, each putting a card up and keeping the
+  // phone's Symbiot in front of what the user was doing. A second one stops before it changes anything (not finish(): the
+  // vault entry and the phone's settings are the running one's)
+  const LOCK = join(CFG, "phone-check.lock"), live = (pid) => { try { process.kill(pid, 0); return true; } catch (e) { return !!e && e.code === "EPERM"; } };
+  try { const o = JSON.parse(readFileSync(LOCK, "utf8")); if (o && o.pid !== process.pid && live(o.pid)) { console.log(`\n✗ stopped: another phone check is running (pid ${o.pid}, since ${new Date(o.at).toLocaleTimeString()}). Only one touches the phone at a time: let it finish.`); return 1; } } catch {}
+  writeFileSync(LOCK, JSON.stringify({ pid: process.pid, at: Date.now() }));
 
   step("Symbiot here has the code relay, and is the one running");
   const bin = sh("sh", ["-c", "command -v symbiot"]), pkg = bin && dirname(realpathSync(bin));
@@ -79,38 +92,45 @@ async function main() {
   const link = await api("/api/phone"), seen = Math.max(0, ...((link && link.phones) || []).map((p) => Number(p.seen) || 0));
   if (!ok("a phone is paired and heard from in the last 15 minutes", Date.now() - seen < 15 * 60000, link && link.phones)) return stop("no paired phone has been in touch: open Symbiot on the phone (or pair it under Settings → Phone), then run this again");
 
+  step(`a scratch question waits for ${SITE}'s code`);
+  mkdirSync(join(scratch, ".symbiot"), { recursive: true });
+  writeFileSync(join(scratch, ".symbiot", "triage.json"), JSON.stringify(TRIAGE())); writeFileSync(join(scratch, ".symbiot", "QUESTIONS.md"), QUESTIONS_MD(day)); writeFileSync(join(scratch, ".symbiot", "TASKS.md"), TASKS_MD(day));
+  ok(`no "${NAME}" in the vault before`, vault("get", NAME) === null);
+  const before = new Set((vault("list") || "").split("\n").map((l) => l.split("  ")[0]).filter(Boolean));
+  let card = false; for (let i = 0; i < 80 && !card; i++) { const h = await api("/api/home?fresh=1"); card = !!h && (h.you || []).some((y) => y.path === scratch); if (!card) await sleep(3000); }
+  if (!ok("the card is on Home (so the phone gets it)", card)) return stop("Home never listed the scratch question");
+  console.log(`  ${scratch}\n\n  On the phone: open Symbiot, find the card "${QUESTION}"\n  and press "Let this phone pass on ${SITE}'s code". Then press Enter here. Waiting up to ${WAIT / 1000} s.`);
+
   step("the phone is reachable over adb");
-  if (!serial) {
-    const listed = () => (sh("adb", ["devices"]) || "").split("\n").slice(1).map((l) => l.split(/\s+/)).filter((x) => x[1] === "device").map((x) => x[0]);
-    if (!listed().length) for (const l of (sh("avahi-browse", ["-rpt", "_adb-tls-connect._tcp"]) || "").split("\n")) { const f = l.split(";"); if (f[0] === "=" && f[2] === "IPv4") sh("adb", ["connect", `${f[7]}:${f[8]}`]); }
-    serial = listed()[0] || "";
+  // a sleeping phone drops its Wireless debugging port while its Wi-Fi still answers for it, so `adb connect` hangs rather than fails:
+  // try again every 5 s, each try under a short timeout, for as long as --wait (pressing the card wakes the phone)
+  const listed = () => (sh("adb", ["devices"]) || "").split("\n").slice(1).map((l) => l.split(/\s+/)).filter((x) => x[1] === "device").map((x) => x[0]);
+  const reach = () => { if (listed().length) return; for (const l of (sh("timeout", ["8", "avahi-browse", "-rpt", "_adb-tls-connect._tcp"]) || "").split("\n")) { const f = l.split(";"); if (f[0] === "=" && f[2] === "IPv4") sh("timeout", ["10", "adb", "connect", `${f[7]}:${f[8]}`]); } };
+  for (const until = Date.now() + WAIT; Date.now() < until; await sleep(5000)) {
+    if (!serial) { reach(); serial = listed()[0] || ""; }
+    if (serial && adb("get-state") === "device") break;
+    if (serial && !listed().includes(serial)) sh("timeout", ["10", "adb", "connect", serial]);
   }
   if (!ok("a phone answers adb", !!serial && adb("get-state") === "device", serial)) return stop("no phone on adb: turn on Wireless debugging on the phone (Developer options), or pass --serial");
   console.log(`  ${adb("shell", "getprop", "ro.product.model")} (${serial})`);
+  // asleep again, the phone drops adb before the notification goes: its screen stays on while the check runs, and finish() puts the setting back
+  const stay = adb("shell", "settings", "get", "global", "stay_on_while_plugged_in");
+  if (/^\d+$/.test(stay || "")) { stayWas = stay; adb("shell", "svc", "power", "stayon", "true"); adb("shell", "input", "keyevent", "KEYCODE_WAKEUP"); }
 
   step("the phone app has CodeListener, and Notification access");
   const dump = () => adb("shell", "dumpsys", "package", PKG) || "", appVersion = () => (dump().match(/versionName=(\S+)/) || [])[1] || "";
   const older = (a, b) => { const x = a.split(".").map(Number), y = b.split(".").map(Number); for (let i = 0; i < 3; i++) if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) < (y[i] || 0); return false; };
   let app = appVersion();
-  if ((!app || older(app, version)) && has("install")) {
+  if ((!app || older(app, PHONE_MIN)) && has("install")) {
     const apk = join(tmpdir(), `symbiot-${version}-aarch64.apk`), url = `https://github.com/${REPO}/releases/download/apk-${version}/symbiot-${version}-aarch64.apk`;
     try { const r = await fetch(url); if (!r.ok) throw new Error(String(r.status)); writeFileSync(apk, Buffer.from(await r.arrayBuffer())); } catch (e) { return stop(`couldn't download the ${version} phone app (${url}): ${e.message}`); }
     console.log("  " + (adb("install", "-r", apk) || "install said nothing")); app = appVersion();
   }
-  if (!ok(`the phone app is ${version} or newer`, !!app && !older(app, version), app)) return stop(app ? `the phone has ${app}: run again with --install` : "Symbiot isn't on the phone: put it back yourself (or run again with --install)");
+  if (!ok(`the phone app is ${PHONE_MIN} or newer`, !!app && !older(app, PHONE_MIN), app)) return stop(app ? `the phone has ${app}: run again with --install` : "Symbiot isn't on the phone: put it back yourself (or run again with --install)");
   if (!ok("it has CodeListener", /\.CodeListener\b/.test(dump()))) return stop("that phone app has no code relay");
   const listeners = () => adb("shell", "settings", "get", "secure", "enabled_notification_listeners") || "";
   if (!listeners().includes(LISTENER)) { adb("shell", "cmd", "notification", "allow_listener", LISTENER); granted = true; }
   if (!ok(`Notification access is on${granted ? " (turned on for this check)" : ""}`, listeners().includes(LISTENER), listeners())) return stop("Android didn't take Notification access for Symbiot");
-
-  step(`a scratch question waits for ${SITE}'s code`);
-  mkdirSync(join(scratch, ".symbiot"), { recursive: true });
-  writeFileSync(join(scratch, ".symbiot", "QUESTIONS.md"), QUESTIONS_MD(day)); writeFileSync(join(scratch, ".symbiot", "TASKS.md"), TASKS_MD(day));
-  ok(`no "${NAME}" in the vault before`, vault("get", NAME) === null);
-  const before = new Set((vault("list") || "").split("\n").map((l) => l.split("  ")[0]).filter(Boolean));
-  let card = false; for (let i = 0; i < 30 && !card; i++) { const h = await api("/api/home?fresh=1"); card = !!h && (h.you || []).some((y) => y.path === scratch); if (!card) await sleep(3000); }
-  if (!ok("the card is on Home (so the phone gets it)", card)) return stop("Home never listed the scratch question");
-  console.log(`  ${scratch}\n\n  On the phone: open Symbiot, find the card "${QUESTION}"\n  and press "Let this phone pass on ${SITE}'s code". Then press Enter here. Waiting up to ${WAIT / 1000} s.`);
 
   step("a code notification reaches the vault, and only the code");
   // the switch can't be seen from here, so the one notification waits for word that it's pressed: Enter at a terminal, or a file named `pressed` in the scratch .symbiot/ when nobody is at one
@@ -140,5 +160,5 @@ async function main() {
   return finish();
 }
 
-export { SITE, NAME, QUESTION, QUESTIONS_MD, NOTE, DECOY };
+export { SITE, NAME, QUESTION, QUESTIONS_MD, TRIAGE, NOTE, DECOY };
 if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href) process.exit(await main());

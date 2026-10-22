@@ -4,7 +4,7 @@
 //
 //   node test/triage.mjs
 //
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, utimesSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -60,6 +60,27 @@ try {
   await A.triageSweep({ write, runs: () => [{ path: lane }], rules: () => [] });
   ok("…and not judged again", calls === 4, calls);
   ok("a fault isn't recorded twice", !T.recordFault({ path: lane, q: Q.restart, why: "again" }) && T.faults().length === 1);
+
+  console.log("TRIAGE — an ops folder's question held while it's judged still reaches Home after (questionFolders)");
+  {
+    // 21 Oct 2026: the phone check's scratch question was found while it was held, "nothing open" was kept as long as the
+    // folder's files stayed the same, and Home never listed it, even 4.5 minutes later
+    const ops = (n, q, age = 0) => { const p = join(CFG, "drafts", n), f = join(p, ".symbiot", "QUESTIONS.md"); mkdirSync(join(p, ".symbiot"), { recursive: true }); writeFileSync(f, `## Questions\n### ${q}\nIt matters.\n- 👤 You (only you: your phone): done\n- Skip this part\n`); if (age) utimesSync(f, new Date(Date.now() - age), new Date(Date.now() - age)); return p; };
+    writeFileSync(join(CFG, "config.json"), JSON.stringify({ provider: "ollama" })); // an AI that judges: a fresh question is held
+    const judged = ops("act-0f0f0f01", "Can you wake your phone so I can put the check card up?"), waited = ops("act-0f0f0f02", "Can you plug your phone into this computer?", T.HOLD_MS - 2000);
+    let t = Date.now(); const listed = () => A.questionFolders(t += 31000).map((x) => x.path); // each look past the 30 s it keeps a list
+    const first = listed();
+    ok("fresh and not judged yet: held, not listed", !first.includes(judged) && !first.includes(waited), first);
+    T.saveVerdict(judged, "Can you wake your phone so I can put the check card up?", { verdict: "user", why: "only they can" });
+    await new Promise((r) => setTimeout(r, 2500));
+    const next = listed();
+    ok("…its verdict comes (the user's): listed at the next look", next.includes(judged), next);
+    ok("…one never judged: listed once its wait is over, though its files are the same", next.includes(waited), next);
+    writeFileSync(join(CFG, "config.json"), JSON.stringify({}));
+    const S = await import("../scripts/phone-codes-check.mjs"), check = ops("act-codecheck-test01", S.QUESTION);
+    writeFileSync(join(check, ".symbiot", "triage.json"), JSON.stringify(S.TRIAGE()));
+    ok("the phone check's own question comes judged the user's, so it's a card at once", T.verdictOf(check, S.QUESTION).verdict === "user" && A.agentQuestions(check, "").questions.some((q) => q.q === S.QUESTION) && listed().includes(check), T.verdictOf(check, S.QUESTION));
+  }
 } catch (e) { ok("ran", false, String((e && e.stack) || e)); }
 finally { rmSync(HOME, { recursive: true, force: true }); }
 console.log(`\n${fail ? "✗" : "✓"} triage: ${pass} passed, ${fail} failed`);
