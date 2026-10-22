@@ -271,7 +271,10 @@ const calls = [
   ["/api/links/site", "POST"],      // no site -> "Give the site", no browser opened
   ["/api/links/check", "POST"],     // no id -> "isn't linked"
   ["/api/links/unlink", "POST"],
-  ["/api/intuition", "POST"],       // no on -> stays on (on unless false)
+  ["/api/intuition", "POST"],       // no mode -> "Pick off, watch or act.", nothing changed
+  ["/api/intuition/focus", "POST"], // no text -> "Nothing to save."
+  ["/api/intuition/accept", "POST"],// no id -> "That suggestion isn't there any more."
+  ["/api/intuition/revoke", "POST"],// no kind -> "Nothing to revoke there."
   ["/api/links/actall", "POST"],    // no on -> every site switched off (the default), nothing else changes
   ["/api/links/act", "POST"],       // no id -> "No such site.", nothing switched on
   ["/api/posts", "GET"],            // the week's drafts waiting on you (isolated HOME -> none)

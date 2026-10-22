@@ -39,7 +39,7 @@ import { mindState, forget, actNow, actIn, loadMind } from "./mind.mjs";
 import { goalsTick, goalAnswer, goalFor } from "./goals.mjs";
 import { onUser, loadJobs } from "./jobs.mjs";
 import { standingList } from "./asksdone.mjs";
-import { intuitionTick, nudge as intuitionNudge } from "./intuition.mjs";
+import { intuitionTick, nudge as intuitionNudge, intuitionState, acceptFocus, revoke as revokeIntuition, writeFocus } from "./intuition.mjs";
 import { lanesTick, shipHanded, lanesState, partlyDone, handingOf, loadLedger, orcaRelink, shareAnswer, projectOf } from "./lanes.mjs";
 import { archivedTasks } from "./sweep.mjs";
 import { sentTick } from "./sentmail.mjs";
@@ -777,8 +777,12 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       if (u.pathname === "/api/phone/note" && req.method === "POST") { const b = await readBody(req); return json(res, dismissNote(String(b.id || ""))); }
       if (u.pathname === "/api/phone/forget" && req.method === "POST") return json(res, forgetComputer());
       // What symbiot-desktop added (desktop.mjs): the weekly write-up, start at login.
-      if (u.pathname === "/api/intuition" && req.method === "POST") { const b = await readBody(req), cfg = loadConfig(); cfg.intuition = b.on !== false; saveConfig(cfg); return json(res, { ok: true, on: cfg.intuition }); } // Symbiot's own moves (intuition.mjs), on or off
-      if (u.pathname === "/api/intuition/state") return json(res, { on: loadConfig().intuition !== false });
+      // Symbiot on its own (intuition.mjs): its mode (off / watch / act), focus.md, a focus suggestion's OK, a promotion revoked
+      if (u.pathname === "/api/intuition" && req.method === "POST") { const b = await readBody(req), cfg = loadConfig(), m = ["off", "watch", "act"].includes(b.mode) ? b.mode : null; if (!m) return json(res, { error: "Pick off, watch or act." }); cfg.intuition = m; saveConfig(cfg); return json(res, intuitionState({ cfg })); }
+      if (u.pathname === "/api/intuition/focus" && req.method === "POST") { const b = await readBody(req); if (typeof b.text !== "string") return json(res, { error: "Nothing to save." }); const r = writeFocus(b.text); return json(res, r.error ? r : intuitionState({ cfg: loadConfig() })); }
+      if (u.pathname === "/api/intuition/accept" && req.method === "POST") { const b = await readBody(req); return json(res, acceptFocus(b.id)); }
+      if (u.pathname === "/api/intuition/revoke" && req.method === "POST") { const b = await readBody(req); const r = revokeIntuition(b.kind); return json(res, r.error ? r : intuitionState({ cfg: loadConfig() })); }
+      if (u.pathname === "/api/intuition/state") return json(res, intuitionState({ cfg: loadConfig() }));
       if (u.pathname === "/api/desktop") return json(res, { weekly: weeklyState(), autostart: autostartState() });
       if (u.pathname === "/api/desktop/weekly" && req.method === "POST") { const b = await readBody(req); return json(res, setWeekly(b)); }
       if (u.pathname === "/api/desktop/weekly/run" && req.method === "POST") { const b = await readBody(req); return json(res, await runWeekly(writeup, { notify: b.notify !== false })); }
@@ -961,7 +965,8 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
     return { config: loadConfig, write: ai, jobs: () => loadJobs(), waits: () => { try { return awaitingState().waits; } catch { return []; } },
       rules: () => { try { return standingList().map((x) => x.rule); } catch { return []; } },
       chat: () => { try { return (loadMind().log || []).filter((l) => l && l.role === "user" && Date.now() - (l.ts || 0) < 86400000).map((l) => ({ ts: l.ts, text: l.text })); } catch { return []; } },
-      map: () => laneMap(), actIn: (req, lane, o) => actIn(req, lane, o), actNow: (req, o) => actNow(req, o), autoStart, dismissed: () => Object.keys(loadDismissed()) };
+      news: () => { try { return newsSince(24); } catch { return []; } }, answersOf: (dir) => { try { return readFileSync(join(dir, ".symbiot", "ANSWERS.md"), "utf8"); } catch { return ""; } },
+      notify: (t, b) => desktopNotify(t, b), map: () => laneMap(), actIn: (req, lane, o) => actIn(req, lane, o), actNow: (req, o) => actNow(req, o), autoStart, dismissed: () => Object.keys(loadDismissed()) };
   };
   onRunEnd(() => { try { intuitionNudge(); } catch {} });
   setInterval(() => { intuitionTick(intuitionDeps()).catch(() => {}); }, 120000).unref();
