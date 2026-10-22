@@ -444,6 +444,8 @@ function homeState({ now = Date.now(), fresh = false, deps = {}, tick = false } 
     const n = (r.tasks || []).length, files = (r.files || []).length;
     // approved and committed, but not on GitHub: it waits on a retry (tasks.mjs sendAgain), not an Approve
     const un = r.unsent && UNSENT_SUB[r.unsent.why];
+    // a clash an agent is already sorting out (tasks.mjs rebaseTask) isn't the user's: no card on "Needs you"
+    if (!n && !files && un && r.unsent.why === "conflicts" && r.unsent.fix) continue;
     if (!n && !files && un) { you.push({ kind: "approve", id: "approve:" + r.repo, repo: r.repo, name: named(r.path, r.repo), title: `Send ${r.repo}'s approved work`, sub: `approved, but not on GitHub yet: ${un}`, shape: "tasks" }); continue; }
     if (!n && !files) continue;
     if (!n && r.handed && !r.handed.held) continue; // made for a job this lane handed over: it goes up by itself (lanes.mjs shipHanded)

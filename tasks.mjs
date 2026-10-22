@@ -735,8 +735,8 @@ function unsentCard(path, repo, t, now = Date.now()) {
   if (!rec && !old) return null;
   const branch = rec ? rec.branch : old.branch, u = unsentOf(path, branch);
   if (!u && !(rec && rec.pushed)) return null;
-  if (rec) return { at: rec.at, branch, commit: rec.commit, ahead: u ? u.ahead : 0, why: rec.why || "push", note: rec.note || "", ...(rec.fix ? { fix: rec.fix } : {}) };
-  return { at: old.approvedAt, branch, commit: old.commit, ahead: u.ahead, why: "push", note: `Approved ${new Date(old.approvedAt).toISOString().slice(0, 10)} and committed on ${branch}, but it never went up to GitHub, so no PR was opened.` };
+  if (rec) return { at: rec.at, branch, commit: rec.commit, ahead: u ? u.ahead : 0, why: rec.why || "push", note: rec.note || "", headline: rec.headline || unsentHeadline(rec.why || "push", { fix: rec.fix, note: rec.note }), ...(rec.fix ? { fix: rec.fix } : {}) };
+  return { at: old.approvedAt, branch, commit: old.commit, ahead: u.ahead, why: "push", headline: unsentHeadline("push"), note: `Approved ${new Date(old.approvedAt).toISOString().slice(0, 10)} and committed on ${branch}, but it never went up to GitHub, so no PR was opened.` };
 }
 // Kept like reviewGit; its git is a few quick reads, so it's asked again on the spot once stale.
 function keptUnsent(path, repo, t) {
@@ -1028,6 +1028,17 @@ async function sendUnsent(path, texts, opts, net = {}) {
 // lane (rebaseTask), and the caller starts the run once this ship lets go of the folder
 // (startFix). "Rebase it by hand, then approve again" was a dead end against Symbiot's
 // own rule that local git work is never a 👤 step (15 Oct 2026).
+// What's wrong, in one line for someone who doesn't read git, and what happens next: the card
+// led with "symbiot/2-tasks…'s earlier PR already merged, but this couldn't move to a fresh branch
+// from origin/main (a merge of origin/main is among them)…", and the user had to ask what it meant
+// (22 Oct 2026). The branch, commits and git's own words stay in the note, folded away.
+function unsentHeadline(why, { fix = null, note = "" } = {}) {
+  const file = (String(note).match(/✗ ([\w./-]+\.mjs)(?:, [\w./-]+\.mjs)* failed/) || [])[1];
+  if (why === "conflicts") return fix ? "It clashes with a change already on main. An agent is sorting that out now; there's nothing for you to do." : "It clashes with a change already on main. Send again sorts it out.";
+  if (why === "tests") return `A test failed${file ? ` (${file})` : ""}, so it wasn't sent. Send again retries; if it fails again, its agent needs to fix it.`;
+  if (why === "pr") return "It's on GitHub, but the pull request didn't open. Send again opens it.";
+  return "It didn't upload to GitHub. Send again retries.";
+}
 async function sendBranch(path, s) {
   const r = await pushAndOpen(path, s);
   if (!r.ok || s.opts.push === false || s.opts.pr === false || r.local) return r;
@@ -1038,8 +1049,9 @@ async function sendBranch(path, s) {
     const t = addTask(rebaseTask(r.branch, s.base), s.opts.repo);
     if (!t.error) { fix = { id: t.id, text: t.text }; fresh = true; r.note = (r.note || "") + (t.duplicate ? " The agent's task to rebase it is still open, so it starts on it again." : " Symbiot added a task for the agent to rebase it, and starts it now."); }
   }
-  noteUnsent(path, { at: Date.now(), branch: r.branch, commit: r.commit, subject: s.subject, body: s.body, note: r.note || "", why, ...(r.pushed ? { pushed: true } : {}), ...(fix ? { fix } : {}) });
-  return { ...r, unsent: why, ...(fix ? { fix: fresh ? { ...fix, fresh: true } : fix } : {}) };
+  const headline = unsentHeadline(why, { fix, note: r.note });
+  noteUnsent(path, { at: Date.now(), branch: r.branch, commit: r.commit, subject: s.subject, body: s.body, note: r.note || "", headline, why, ...(r.pushed ? { pushed: true } : {}), ...(fix ? { fix } : {}) });
+  return { ...r, unsent: why, headline, ...(fix ? { fix: fresh ? { ...fix, fresh: true } : fix } : {}) };
 }
 const rebaseTask = (branch, base) => `Rebase ${branch} onto origin/${base} (git fetch origin ${base}, then git rebase origin/${base} ${branch}). Resolve each conflict so this branch's change and ${base}'s both land, git rebase --continue until it's done, run the tests, then tick this item. Don't push and don't commit anything else: Symbiot pushes it and opens the PR when you tick.`;
 // The lane's run on that task, once the ship has let go of the folder (runHandoff
@@ -1353,4 +1365,4 @@ function pushTasks(filter) {
   return { empty: false, written, unresolved, handoff: handoffCmd() };
 }
 
-export { setHandedLookup, setTaskModel, MODEL_PICKS, holdShip, SHIP_STALE, shipping, shippingPaths, shipJob, shipJobOf, SHIP_WAIT, workingChangesAsync, rebaseTask, sendAgain, forgetUnsent, unsentOf, readUnsent, unsentCard, repoTests, localRefused, forgetReview, gitFailed, taskPaths, addTask, toggleTask, setTaskDone, removeTask, cancelTask, restoreTask, FINDING_NOTE, completedInRepo, removalOf, applyRemovals, applyDrops, syncTasks, workingChanges, workingDiff, publishesOnMerge, unreleased, bumpOffer, learnNpm, releaseNeeded, releaseNotIn, withReleases, setVersion, changelogEntry, changelogSection, noteChangelog, releaseInput, shipWithBump, runSummary, saidFinished, pendingReview, commitSubject, shipChanges, autoMergeRepos, setAutoMerge, approveRepo, approveChanges, sendBack, TASK_ORDER, taskType, buildTasksMd, pushTasks, mergeWhenGreen, changelogItems, changelogLeaks, commitText };
+export { unsentHeadline, setHandedLookup, setTaskModel, MODEL_PICKS, holdShip, SHIP_STALE, shipping, shippingPaths, shipJob, shipJobOf, SHIP_WAIT, workingChangesAsync, rebaseTask, sendAgain, forgetUnsent, unsentOf, readUnsent, unsentCard, repoTests, localRefused, forgetReview, gitFailed, taskPaths, addTask, toggleTask, setTaskDone, removeTask, cancelTask, restoreTask, FINDING_NOTE, completedInRepo, removalOf, applyRemovals, applyDrops, syncTasks, workingChanges, workingDiff, publishesOnMerge, unreleased, bumpOffer, learnNpm, releaseNeeded, releaseNotIn, withReleases, setVersion, changelogEntry, changelogSection, noteChangelog, releaseInput, shipWithBump, runSummary, saidFinished, pendingReview, commitSubject, shipChanges, autoMergeRepos, setAutoMerge, approveRepo, approveChanges, sendBack, TASK_ORDER, taskType, buildTasksMd, pushTasks, mergeWhenGreen, changelogItems, changelogLeaks, commitText };
