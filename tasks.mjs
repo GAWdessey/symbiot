@@ -938,6 +938,7 @@ async function shipChanges(path, texts, opts = {}) {
   texts = noFullLinks(texts); const net = { fetched: false };
   if (opts.sendOnly) return (await sendUnsent(path, texts, opts, net)) || { error: "Nothing here is waiting to go up: GitHub has all of it.", none: true };
   shipStep(path, "reading what changed");
+  const mid = await finishMerge(path, opts); if (mid.error) return mid;
   const st = await gitAsync(path, ["status", "--porcelain", "-z", "-uall", ...NOT_SYMBIOT], gitTimeout());
   if (!st.ok) return { error: gitFailed("git status", st) };
   const ch = { files: parseStatusZ(st.out), branch: git(path, ["rev-parse", "--abbrev-ref", "HEAD"]).out };
@@ -998,10 +999,34 @@ async function shipChanges(path, texts, opts = {}) {
     fresh = mv.ok ? `${was}'s earlier PR already merged, so this starts a fresh branch from ${carry.from}${earlier > 0 ? `, with the ${earlier} commit${earlier === 1 ? "" : "s"} approved on ${was} since that hadn't reached ${base}` : ""}${gone ? ` (${gone} already on ${base} left out)` : ""}.`
       : `${was}'s earlier PR already merged, but this couldn't move to a fresh branch from ${carry.from} (${mv.error}), so it stays on ${was} (it's checked against ${carry.from} before it goes up).`;
   }
-  const said = [fresh, leftNote].filter(Boolean).join(" ");
+  const said = [mid.note, fresh, leftNote].filter(Boolean).join(" ");
   const out = { ok: true, branch, base, commit: git(path, ["rev-parse", "--short", "HEAD"]).out, subject, ...(said ? { note: said } : {}) };
   return await sendBranch(path, { branch, base, subject, body: body + (carry && fresh ? "\n\n" + fresh : ""), out, said, opts, newBranch, net });
 }
+// A merge a run left uncommitted: a clash task's run merged main in instead of rebasing,
+// and runs leave their work uncommitted, so the checkout sat "still merging" and every
+// Approve's commit met "cannot do a partial commit during a merge" (symbiot, 22 Oct 2026).
+// Its clashes resolved, it's concluded first, as the merge it is, and the rest ships as
+// usual. Still clashing: that's the agent's to finish (finishMergeTask), not a dead end.
+// {} when no merge is going on, { note } once one is concluded, or { error }.
+async function finishMerge(path, opts = {}) {
+  if (!git(path, ["rev-parse", "-q", "--verify", "MERGE_HEAD"]).ok) return {};
+  const branch = git(path, ["rev-parse", "--abbrev-ref", "HEAD"]).out, base = gitDefaultBranch(path);
+  const clash = git(path, ["diff", "--name-only", "--diff-filter=U"]).out.split("\n").filter(Boolean);
+  if (clash.length) {
+    const headline = "An agent's merge of main here still has clashes, so nothing could be committed.";
+    if (!opts.repo) return { error: `${headline} (${clash.slice(0, 4).join(", ")}${clash.length > 4 ? ", …" : ""})`, midMerge: true, headline };
+    const t = addTask(finishMergeTask(branch, base), opts.repo);
+    if (t.error) return { error: headline, midMerge: true, headline };
+    return { error: `${headline} ${t.duplicate ? "The agent's task to finish it is still open, so it starts on it again." : "Symbiot added a task for the agent to finish it, and starts it now."} Approve again once it's done.`, midMerge: true, headline, fix: { id: t.id, text: t.text, fresh: true } };
+  }
+  git(path, ["reset", "-q", "--", ".symbiot"]); // never ship Symbiot's own scratch
+  const cm = await gitAsync(path, ["commit", "-q", "--no-edit"], gitTimeout());
+  if (!cm.ok) return { error: "Finishing the merge an agent left here failed: " + (cm.err || cm.out).split("\n").filter(Boolean).pop(), midMerge: true };
+  const what = git(path, ["log", "-1", "--format=%s"]).out;
+  return { note: `An agent had merged ${base} in here without finishing it, so that merge was committed first (${what}).` };
+}
+const finishMergeTask = (branch, base) => `Finish the merge of ${base} into ${branch}: resolve each conflicted file so this branch's change and ${base}'s both land (git diff --name-only --diff-filter=U lists them), git add them, run the tests, then tick this item. Don't push: Symbiot commits the merge, pushes it and opens the PR when you approve.`;
 // Send what earlier Approves committed on this branch and never got up (unsentOf), or
 // open the PR for one that went up without one: rebased, tested, pushed, PR'd as an
 // Approve would. The PR is named as it was (readUnsent), else for texts, else for the

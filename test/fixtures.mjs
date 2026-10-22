@@ -659,6 +659,21 @@ try {
   mkdirSync(join(dcRepo, ".symbiot")); writeFileSync(join(dcRepo, ".symbiot", "runfiles.json"), JSON.stringify([{ id: "R", ticked: 1, files: ["new.txt"] }])); writeFileSync(join(dcRepo, "a.txt"), "held edit\n");
   const rdc = await shipChanges(dcRepo, ["Mine"], { pr: false });
   ok("...and when main changed a held file too, nothing moves: a conflict, said in words, the tree as it was, no markers", rdc.ok && rdc.conflicts && !rdc.pushed && /main changed a file that's also changed, uncommitted, here/.test(rdc.note || "") && readFileSync(join(dcRepo, "a.txt"), "utf8") === "held edit\n" && gdc("stash list") === "" && !existsSync(join(dcRepo, ".symbiot", "ship-wt")) && gdc("rev-parse --abbrev-ref HEAD") === rdc.branch && gdc("diff --name-only --diff-filter=U") === "", [rdc, gdc("status --porcelain")]);
+  // a run that merged main in and, as runs do, left it uncommitted: every Approve's commit met "cannot do a
+  // partial commit during a merge" (symbiot, 22 Oct 2026). The merge is concluded first, then the rest ships.
+  const mgSetup = (name, theirs) => build(name, `git init -q -b main && git config user.email ci@symbiot.test && git config user.name "Symbiot CI" && echo a > a.txt && echo z > z.txt && git add . && git commit -qm init
+    git clone -q --bare . ../${name}-remote.git && git remote add origin ../${name}-remote.git && git fetch -q origin && git remote set-head origin main
+    git switch -q -c symbiot/work && echo mine > a.txt && git commit -qam mine && git push -q -u origin symbiot/work
+    git clone -q ../${name}-remote.git ../${name}-other && git -C ../${name}-other config user.email o@o && git -C ../${name}-other config user.name o && echo ${theirs} > ../${name}-other/${theirs === "clash" ? "a" : "m"}.txt && git -C ../${name}-other add . && git -C ../${name}-other commit -qm moved && git -C ../${name}-other push -q origin main
+    git fetch -q origin && (git merge --no-commit -q origin/main || true) && echo fix > fix.txt`);
+  const mgRepo = mgSetup("ship-midmerge", "theirs");
+  const gmg = (a) => execSync("git " + a, { cwd: mgRepo, encoding: "utf8", env: gitEnv }).trim();
+  const rmg = await shipChanges(mgRepo, ["Fix it"], { pr: false });
+  ok("a merge a run left uncommitted: concluded first, then the run's change committed and pushed", rmg.ok && rmg.pushed && !existsSync(join(mgRepo, ".git", "MERGE_HEAD")) && gmg("rev-list --parents -n 1 HEAD~1").split(" ").length === 3 && gmg("show --name-only --format= HEAD") === "fix.txt" && gmg("merge-base --is-ancestor origin/main HEAD && echo y") === "y" && /merged main in here without finishing it/.test(rmg.note || ""), [rmg, gmg("log --oneline -4"), gmg("status --porcelain")]);
+  const mcRepo = mgSetup("ship-midmerge-clash", "clash");
+  const gmc = (a) => execSync("git " + a, { cwd: mcRepo, encoding: "utf8", env: gitEnv }).trim();
+  const mcHead = gmc("rev-parse HEAD"), rmc = await shipChanges(mcRepo, ["Fix it"], { pr: false });
+  ok("…one still clashing: nothing committed, said in plain words, the merge left as it was for the agent", rmc.error && rmc.midMerge && /still has clashes/.test(rmc.error) && gmc("rev-parse HEAD") === mcHead && existsSync(join(mcRepo, ".git", "MERGE_HEAD")), [rmc, gmc("status --porcelain")]);
   // your own branch whose origin copy moved on (a colleague pushed): the push is refused, and it was renamed away from under you
   const ownRepo = build("ship-ownbranch", `git init -q -b main && git config user.email ci@symbiot.test && git config user.name "Symbiot CI" && echo a > a.txt && git add . && git commit -qm init
     git clone -q --bare . ../ship-ownbranch-remote.git && git remote add origin ../ship-ownbranch-remote.git && git fetch -q origin && git remote set-head origin main

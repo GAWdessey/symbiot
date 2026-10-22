@@ -717,7 +717,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
         // neither yes nor no: it's said to the card's agent, and the card stays (home.mjs cardTalk)
         const card = ((homeState() || {}).you || []).find((y) => y.id === b.id) || {}, path = card.path || String(b.id || "").replace(/^\w+:/, "");
         const t = await cardTalk(path, [{ q: card.q || card.sub || card.title || "this card", a: r.text }], { force: true }).catch(() => null);
-        return json(res, t || { ok: true, keep: true, said: "Noted on the card. Press Go ahead or Skip when you've decided: words that aren't a yes or a no don't decide it." });
+        return json(res, t || { ok: true, keep: true, said: "Noted on the card for its agent. A question doesn't settle it: press one of its buttons, or say in your own words what you did, when you're ready." });
       }
       if (u.pathname === "/api/away" && req.method === "POST") { const b = await readBody(req); return json(res, toggleAway(`http://127.0.0.1:${server.address().port}/?t=${TOKEN}`, b.open)); }
       if (u.pathname === "/api/home/next" && req.method === "POST") { const b = await readBody(req); return json(res, homeNext(b.id)); }
