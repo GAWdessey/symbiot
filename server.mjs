@@ -39,7 +39,7 @@ import { mindState, forget, actNow, actIn, loadMind } from "./mind.mjs";
 import { goalsTick, goalAnswer, goalFor } from "./goals.mjs";
 import { onUser, loadJobs } from "./jobs.mjs";
 import { standingList } from "./asksdone.mjs";
-import { SOURCES as INTUITION_SOURCES, noteChange as intuitionNote, digest as intuitionDigest, intuitionTick, nudge as intuitionNudge, intuitionState, acceptFocus, revoke as revokeIntuition, writeFocus } from "./intuition.mjs";
+import { SOURCES as INTUITION_SOURCES, noteChange as intuitionNote, digest as intuitionDigest, intuitionTick, nudge as intuitionNudge, intuitionState, acceptFocus, revoke as revokeIntuition, writeFocus, doMove, markMove, moveContext } from "./intuition.mjs";
 import { triggersTick, registerTriggers, frictionTick, applyOverride, revertOverride, applyProposal, dismissProposal, setOverrides, setSelfChange, overridesState } from "./overrides.mjs";
 import { doneList } from "./asksdone.mjs";
 import { lanesTick, shipHanded, lanesState, partlyDone, handingOf, loadLedger, orcaRelink, shareAnswer, projectOf } from "./lanes.mjs";
@@ -49,7 +49,7 @@ import { keepFacts, skipFacts, awaitTick, awaitingState, stopWaiting } from "./h
 import { adaptState, noteUse } from "./adapt.mjs";
 import { writeCards, loadCardText, keyOf as cardKeyOf } from "./needs.mjs";
 import { shoot } from "./design.mjs";
-import { cardTalk, dismissCard, reportIdeasAdd, reportIdeasDismiss, reportAsk, reportDraftAnswer, homeState, homeTick, homeAsk, homeAnswer, homeNext, workScene, forgetWork, workGo, workTick, firstSteps, marketingState, marketingGo, marketingDraftAnswer, marketingTask, moveToMarketing, onboarding, setOnboarding, startOnboarding, phoneSetupFirst, loadDismissed } from "./home.mjs";
+import { updateAsk, cardTalk, dismissCard, reportIdeasAdd, reportIdeasDismiss, reportAsk, reportDraftAnswer, homeState, homeTick, homeAsk, homeAnswer, homeNext, workScene, forgetWork, workGo, workTick, firstSteps, marketingState, marketingGo, marketingDraftAnswer, marketingTask, moveToMarketing, onboarding, setOnboarding, startOnboarding, phoneSetupFirst, loadDismissed } from "./home.mjs";
 import { MARKETING_DIR, MARKETING, draftPreview, laneMedia, displayName, setDraftMedia } from "./marketing.mjs";
 import { trays, trayMedia, setBlur, addBlur, removeBlur, setReviewed, renderCapture } from "./tray.mjs";
 import { captureProduct, captureProducts } from "./capture.mjs";
@@ -782,6 +782,9 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       // Symbiot on its own (intuition.mjs): its mode (off / watch / act), focus.md, a focus suggestion's OK, a promotion revoked
       if (u.pathname === "/api/intuition" && req.method === "POST") { const b = await readBody(req), cfg = loadConfig(), m = ["off", "watch", "act"].includes(b.mode) ? b.mode : null; if (!m) return json(res, { error: "Pick off, watch or act." }); cfg.intuition = m; saveConfig(cfg); return json(res, intuitionState({ cfg })); }
       if (u.pathname === "/api/intuition/focus" && req.method === "POST") { const b = await readBody(req); if (typeof b.text !== "string") return json(res, { error: "Nothing to save." }); const r = writeFocus(b.text); return json(res, r.error ? r : intuitionState({ cfg: loadConfig() })); }
+      if (u.pathname === "/api/intuition/do" && req.method === "POST") { const b = await readBody(req); return json(res, doMove(String(b.id || "").replace(/^intu:/, ""), b.i, intuitionDeps())); } // "Do it" on an update's move
+      if (u.pathname === "/api/intuition/not" && req.method === "POST") { const b = await readBody(req); return json(res, markMove(String(b.id || "").replace(/^intu:/, ""), b.i)); } // "Not useful"
+      if (u.pathname === "/api/updates/ask" && req.method === "POST") { const b = await readBody(req); return json(res, await updateAsk(String(b.id || ""), b.text, { context: moveContext(String(b.id || "").replace(/^intu:/, "")) })); } // Ask about an update
       if (u.pathname === "/api/intuition/accept" && req.method === "POST") { const b = await readBody(req); return json(res, acceptFocus(b.id)); }
       if (u.pathname === "/api/intuition/revoke" && req.method === "POST") { const b = await readBody(req); const r = revokeIntuition(b.kind); return json(res, r.error ? r : intuitionState({ cfg: loadConfig() })); }
       if (u.pathname === "/api/intuition/state") return json(res, intuitionState({ cfg: loadConfig() }));
