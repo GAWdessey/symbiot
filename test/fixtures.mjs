@@ -14,7 +14,7 @@ import { authorship, repoState, readmeInfo, houseRules, findAllRepos, driftRepo,
 import { EMBEDDED_UI } from "../ui.mjs";
 import { updateCmd } from "../server.mjs";
 import { grantRule, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, linkReach, noteUntracked, untrackedBefore } from "../agents.mjs";
-import { releaseNotIn, applyRemovals, removalOf, saidFinished, gitFailed, unsentOf, readUnsent, unsentCard, repoTests, localRefused, holdShip, SHIP_STALE, shipping, shippingPaths, rebaseTask } from "../tasks.mjs";
+import { unsentHeadline, releaseNotIn, applyRemovals, removalOf, saidFinished, gitFailed, unsentOf, readUnsent, unsentCard, repoTests, localRefused, holdShip, SHIP_STALE, shipping, shippingPaths, rebaseTask } from "../tasks.mjs";
 import { releaseNotes, parseNotes } from "../writeups.mjs";
 import { VERSION, sameTask, uniqueTasks } from "../core.mjs";
 import { mailActivity } from "../mail.mjs";
@@ -679,6 +679,9 @@ try {
   const gst = (a) => execSync("git " + a, { cwd: stRepo, encoding: "utf8", env: gitEnv }).trim();
   const st1 = await shipChanges(stRepo, ["Stuck thing"], { gh: prGh(), verify: async () => ({ ok: false, note: "4 failed: connect ECONNREFUSED" }) });
   ok("stuck: tests failing here, committed and not pushed, marked unsent and kept with why", st1.ok && !st1.pushed && st1.unsent === "tests" && st1.branch === "symbiot/stuck-thing" && readUnsent(stRepo)?.why === "tests" && readUnsent(stRepo)?.subject === "Stuck thing", [st1, readUnsent(stRepo)]);
+  ok("what's wrong in one plain line, no git: a clash an agent is on needs nothing from you", /^It clashes with a change already on main\. An agent is sorting that out now; there's nothing for you to do\.$/.test(unsentHeadline("conflicts", { fix: { id: "t" } })) && !/origin|branch|merge|rebase/i.test(unsentHeadline("conflicts", { fix: { id: "t" } })));
+  ok("…a failed test names its file, from the runner's last line", /A test failed \(drafts\.mjs\)/.test(unsentHeadline("tests", { note: "Committed, but not pushed: the tests fail on top of origin/main (✗ drafts.mjs failed: 86 of 87 test files pass on linux (212s)), so no PR was opened." })));
+  ok("…and the push and the PR each say what Send again does", /Send again retries/.test(unsentHeadline("push")) && /Send again opens it/.test(unsentHeadline("pr")));
   ok("…the branch's commit is seen as not on GitHub, and its card says so", unsentOf(stRepo)?.branch === "symbiot/stuck-thing" && unsentOf(stRepo)?.ahead === 1 && unsentCard(stRepo, "r", [])?.why === "tests", [unsentOf(stRepo), unsentCard(stRepo, "r", [])]);
   const ghS = prGh(), st2 = await shipChanges(stRepo, ["Stuck thing"], { gh: ghS, verify: async () => ({ ok: true }) });
   ok("…the next Approve, with nothing uncommitted, sends it instead of 'nothing to merge'", st2.ok && !st2.nothing && st2.resent && st2.pushed && st2.pr === "https://github.com/o/r/pull/508" && gst("rev-parse origin/symbiot/stuck-thing") === gst("rev-parse HEAD"), st2);
