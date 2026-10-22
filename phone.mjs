@@ -427,11 +427,16 @@ async function applyOne(o, phone) {
     if (!/^[A-Za-z0-9-]{3,12}$/.test(code)) return { error: "That didn't look like a code, so it wasn't passed on." };
     const ask = snap.asks.find((x) => x.path === path), q = ask && ask.questions.find((x) => x.code && x.code.key === String(a.key || "") && (!a.q || x.q === a.q));
     if (!q) return { error: "No agent is waiting for that code any more, so it wasn't kept." };
-    const { saveCode, CODE_TTL } = await import("./vault.mjs"), name = `${q.code.site || q.code.key} code`, v = saveCode(name, code);
+    // the code is kept only for a card it answers: on 21 Oct 2026 a card answered "Skip" on the phone while its
+    // code was on the way still got the code into the vault, with "Skip" as the card's only answer
+    const { saveCode, deleteSecret, CODE_TTL } = await import("./vault.mjs"), { agentQuestions, answerQuestions } = await import("./agents.mjs"), name = `${q.code.site || q.code.key} code`;
+    if (!agentQuestions(path, "").questions.some((x) => plainText(x.q, 300) === q.q)) return { error: "That card was answered already, so the code wasn't kept." };
+    const v = saveCode(name, code);
     if (v.error) return { error: "It couldn't be kept in the vault." };
-    const { answerQuestions } = await import("./agents.mjs");
     const r = answerQuestions(path, [{ q: q.q, a: `Your phone passed on the code ${q.code.site || q.code.key} sent. It's in Symbiot's vault as "${name}", for one use in the next ${Math.round(CODE_TTL / 60000)} minutes: \`symbiot secret get "${name}" --use\`. Type it where it's asked, and don't write it anywhere else.` }], { rerun: true });
-    return r && r.ok ? { ok: true, kept: name } : { error: (r && r.error) || "It couldn't be passed to the agent." };
+    if (r && r.ok && !r.already) return { ok: true, kept: name };
+    try { deleteSecret(name); } catch {}
+    return { error: (r && r.already ? "That card was answered already, so the code wasn't kept." : r && r.error) || "It couldn't be passed to the agent, so the code wasn't kept." };
   }
   if (o.op === "proof.answer") {
     // Send (as shown) or Change (with what to change) on a proof an agent wrote: its answer, and it carries on
@@ -895,8 +900,10 @@ function heardCode({ app = "", title = "", text = "" } = {}) {
   const c = loadConfig().computer, copy = c ? loadCopy() : null; if (!copy) return { ignored: "not paired" };
   const on = new Set(codeSites()), said = `${title}\n${text}`, from = `${app}\n${said}`.toLowerCase();
   const code = codeIn(said); if (!code) return { ignored: "no code" };
+  // a card answered here ("Skip", or a code already on its way) that the computer hasn't taken yet waits for no code
+  const answered = new Set(loadQueue().filter((o) => o.op === "agent.answer" || o.op === "code.give").map((o) => String((o.args || {}).path || "")));
   for (const ask of copy.asks || []) for (const q of ask.questions || []) {
-    if (!q.code || !on.has(q.code.key) || !from.includes(q.code.key)) continue;
+    if (!q.code || !on.has(q.code.key) || !from.includes(q.code.key) || answered.has(ask.path)) continue;
     const r = queueChange("code.give", { path: ask.path, key: q.code.key, q: q.q, code });
     return r.refused ? { ignored: r.refused } : { passed: q.code.site || q.code.key, to: ask.name };
   }
