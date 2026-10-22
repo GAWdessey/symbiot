@@ -285,6 +285,25 @@ body.lq-pooled #lqneedt,body.lq-work #lqneedt{display:none}
 body.lq-light .lqblob .btm{color:#2B3644;background:rgba(0,0,0,.05)}
 body.lq-light .lqblob .btm.me{background:rgba(176,120,20,.12)}
 body.lq-light .lqblob .btm b{color:#141A22}
+.lqblob .bwhy{font-size:11.5px;line-height:1.3;color:#8A919B;margin-top:3px;overflow:hidden;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2}
+.lqblob .nopt .brec{display:block;font-style:normal;font-size:10.5px;opacity:.7;margin-top:1px}
+body.lq-light .lqblob .bwhy{color:#5A6470}
+#lqupd{position:relative;margin-left:10px}
+#lqupd .lqupb{border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.06);color:#ECE9E4;border-radius:999px;padding:5px 12px;font:500 12.5px var(--sans);cursor:pointer;min-height:30px}
+#lqupd .lqupl{display:none;position:absolute;left:0;top:calc(100% + 6px);z-index:60;width:min(380px,calc(100vw - 32px));max-height:60vh;overflow-y:auto;background:#15191F;border:1px solid rgba(255,255,255,.12);border-radius:12px;padding:6px;box-shadow:0 12px 40px rgba(0,0,0,.45)}
+#lqupd.open .lqupl{display:block}
+@media (max-width:640px){#lqupd{position:fixed;top:54px;right:16px;margin:0;z-index:61}#lqupd .lqupb{padding:4px 10px;font-size:12px;min-height:28px}#lqupd .lqupl{position:fixed;left:16px;right:16px;top:90px;width:auto}}
+#lqupd .lqupi{display:flex;align-items:center;gap:8px;padding:8px;border-radius:8px;font-size:12.5px;line-height:1.35;color:#C9CDD3}
+#lqupd .lqupi+.lqupi{border-top:1px solid rgba(255,255,255,.06)}
+#lqupd .lqupt{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2}
+#lqupd .lqupt b{color:#ECE9E4;font-weight:600}
+#lqupd .lqupr,#lqupd .lqupx{border:1px solid rgba(255,255,255,.14);background:transparent;color:#ECE9E4;border-radius:8px;padding:4px 9px;font:500 12px var(--sans);cursor:pointer;min-height:28px}
+body.lq-light #lqupd .lqupb{border-color:rgba(20,30,45,.16);background:#FFFFFF;color:#151A21}
+body.lq-light #lqupd .lqupl{background:#FFFFFF;border-color:rgba(20,30,45,.12);box-shadow:0 12px 40px rgba(20,30,45,.18)}
+body.lq-light #lqupd .lqupi{color:#2B3644}
+body.lq-light #lqupd .lqupi+.lqupi{border-top-color:rgba(20,30,45,.08)}
+body.lq-light #lqupd .lqupt b{color:#151A21}
+body.lq-light #lqupd .lqupr,body.lq-light #lqupd .lqupx{border-color:rgba(20,30,45,.16);color:#151A21}
 .lqblob .bfor{font-size:11.5px;line-height:1.3;color:#8A919B;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
 .lqblob .bwait{font-size:11.5px;line-height:1.3;color:#E0B25A;display:flex;align-items:center;gap:5px}
 body.lq-light .lqblob .bwait{color:#8A5A00}
@@ -1256,7 +1275,7 @@ body.lq-light .btip .bta button:not(.quiet){background:#151A21;color:#FFFFFF}
 <div id="updatebar" class="updatebar"></div>
 <div id="appbar" class="updatebar"></div>
 <div id="whatsnew" class="whatsnew"></div>
-<header><span class="dot" role="img" aria-label="Symbiot"></span><span class="brand">Symbiot</span><span class="ver" id="ver"></span><span id="lqlook" role="radiogroup" aria-label="Look"><button type="button" role="radio" data-look="glass" aria-checked="false">Glass</button><button type="button" role="radio" data-look="ferro" aria-checked="true">Ferrofluid</button><button type="button" role="radio" data-look="pearl" aria-checked="false">Pearl</button></span><button type="button" id="lqlow" aria-pressed="false" title="Low GPU: Home's liquid drawn at half the resolution and only when something changes, with no blur behind the glass. Easier on your graphics card and battery.">Low GPU</button><span class="status" id="status">...</span></header>
+<header><span class="dot" role="img" aria-label="Symbiot"></span><span class="brand">Symbiot</span><span class="ver" id="ver"></span><span id="lqlook" role="radiogroup" aria-label="Look"><button type="button" role="radio" data-look="glass" aria-checked="false">Glass</button><button type="button" role="radio" data-look="ferro" aria-checked="true">Ferrofluid</button><button type="button" role="radio" data-look="pearl" aria-checked="false">Pearl</button></span><button type="button" id="lqlow" aria-pressed="false" title="Low GPU: Home's liquid drawn at half the resolution and only when something changes, with no blur behind the glass. Easier on your graphics card and battery.">Low GPU</button><span id="lqupd"></span><span class="status" id="status">...</span></header>
 <main>
 <div id="lqsinkrow"><div class="lqwhere"><span id="lqcrumb" class="lqcrumb">Home</span><h2 id="lqtitle" aria-live="polite"></h2><button type="button" class="ghost hidden" id="lqpark"></button></div><div class="lqacts"><span id="lqtools"><button class="ghost hidden" type="button" id="pushtasks" title="Write .symbiot/TASKS.md into each repo for your coding agent">Send to repos</button></span><button class="iconbtn wide" type="button" id="lqsink" title="close it: it sinks back into the liquid (Esc, or right-click)"><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M2 2l8 8M10 2l-8 8" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>Close</button></div></div><div id="lqwhy" aria-live="polite"></div>
 <section id="panel-map">
@@ -3359,7 +3378,15 @@ a.addEventListener('click',function(){a.disabled=k.disabled=true;api('/api/tasks
 k.addEventListener('click',function(){a.disabled=k.disabled=true;api('/api/agents/skip',{path:d.path,text:d.full}).then(function(r){if(!r||r.error){a.disabled=k.disabled=false;lqSaid(nm+': '+((r&&r.error)||'couldn’t skip it'),true);return;}if(row.classList)row.classList.add('gone');setTimeout(function(){row.remove();},300);});});});});}
 function lqLoadWork(){api('/api/work').then(function(w){LQ.workData=w||{};lqRedraw();}).catch(function(){});}
 // New data, drawn: unless you're selecting text on the surface, then once you let go
-function lqRedraw(){whenFree($('liquid'),'liquid',function(){if(LQ.scene==='work')lqBuildWork();else lqBuild();});}
+// Updates: what Symbiot tells you (a goal done, a report written), kept off Needs you (needs.mjs), in
+// the header: a count, and the list on a tap. Each can be read or put away.
+function renderUpdates(){var el=$('lqupd');if(!el)return;var us=(LQ.home&&LQ.home.updates)||[];
+if(!us.length){el.innerHTML='';return;}var open=el.classList&&el.classList.contains('open');
+var html="<button type='button' class='lqupb' aria-expanded='"+(open?'true':'false')+"'>Updates &middot; "+us.length+"</button><div class='lqupl' role='list'>"+us.map(function(u,i){return "<div class='lqupi' role='listitem' data-i='"+i+"'><span class='lqupt' title='"+escQ(u.title)+"'>"+(u.lane?"<b>"+esc(u.lane)+"</b> ":"")+esc(u.title)+"</span>"+(u.report&&u.report.id?"<button type='button' class='lqupr'>Read</button>":"")+"<button type='button' class='lqupx' aria-label='Put it away'>&times;</button></div>";}).join('')+"</div>";
+if(sameHtml(el,html))return;el.querySelector('.lqupb').addEventListener('click',function(){el.classList.toggle('open');this.setAttribute('aria-expanded',el.classList.contains('open')?'true':'false');});
+el.querySelectorAll('.lqupi').forEach(function(r){var u=us[+r.getAttribute('data-i')];var rd=r.querySelector('.lqupr');if(rd)rd.addEventListener('click',function(){el.classList.remove('open');showReport(u.report.id);});
+r.querySelector('.lqupx').addEventListener('click',function(){r.style.opacity='.4';(u.goal?api('/api/agents/answer',{path:u.path,answers:[{q:u.q,a:u.answer}]}):Promise.resolve()).then(function(){return api('/api/home/dismiss',{key:u.key});}).then(function(){LQ.home.updates=(LQ.home.updates||[]).filter(function(x){return x!==u;});renderUpdates();});});});}
+function lqRedraw(){renderUpdates();whenFree($('liquid'),'liquid',function(){if(LQ.scene==='work')lqBuildWork();else lqBuild();});}
 function lqBuildWork(){lqRelay();if(LQ.workBy==='project'){lqBuildProjects();return;}var w=LQ.workData||{},S=lqSize(),cx=S.w/2,cy=S.h*0.5,list=[];LQ.bw=S.w;LQ.bh=S.h;if(lqRelayOn()){var RW=Math.min(420,S.w*0.32)+28;S={w:S.w-RW,h:S.h,s:S.s};cx=S.w/2;}
 var vx=Math.max(0.5,Math.min(S.s*1.3,(S.w/2-90)/400)),vy=Math.max(0.35,Math.min(S.s*0.8,(S.h-cy-230)/400,(cy-160)/400)),rs=Math.min(S.s,(vx+vy)/1.5);
 var run=(w.running||[]).slice(0,3),ready=(w.ready||[]).slice(0,2),wait=(w.waiting||[]).slice(0,5),extra=(w.waitingCount||0)-wait.length;
@@ -3747,13 +3774,16 @@ if(!y.local)h+="<button type='button' class='bx' title='Dismiss: it won&#39;t sh
 var pc=projChip(y);
 h+=home?"<button type='button' class='lt' title='open "+escQ(nm)+", with this lit up'>"+pc+"<span>"+esc(lqShort(nm,pc?22:30))+"</span><i>open &rsaquo;</i></button>":"<div class='nhead'>"+pc+"<b>"+esc(nm)+(y.kind==='ask'?" asks":"")+"</b>"+(y.more?"<span class='muted'>+"+y.more+" more on its block in Agents</span>":"")+"</div>";
 if(y.kind!=='ask')return h+"<div class='bq'>"+esc(y.kind==='approve'?String(y.sub||'').replace(/ · only you decide$/,''):String(y.sub||'').charAt(0).toUpperCase()+String(y.sub||'').slice(1)+'.')+"</div><div class='bo'><button type='button' class='nopt rec ngo'><span class='bt'>"+(y.kind==='approve'?'Review and approve':y.id==='setup:inbox'?(y.signin?'Sign in again':'Show me your inbox'):y.id==='setup:ai'?'Connect an AI':y.pick?'Use '+y.pick.name:y.urgent?'Reconnect':'Open Settings')+"</span></button></div>";
-var os=y.options||[];if(y.draft)h+=draftHtml(y.draft);if(y.status)h+="<div class='bwait'><i class=ic-pause></i> "+esc(y.status)+"</div>";var tk=String(y.task||'').replace(/^Agent:\\s*/,'');if(tk&&tk.slice(0,24)!==String(nm).slice(0,24))h+="<div class='bfor' title='"+escQ(tk)+"'>for: "+esc(tk)+"</div>";h+="<div class='bq' title='"+escQ((y.q||'')+(y.why?' ('+y.why+')':''))+"'>"+codeText(y.q||y.sub||'')+"</div>"+((y.covered&&y.covered.length)?"<div class='muted bcov'>Already covered? "+y.covered.map(esc).join(' · ')+"</div>":"")+blobTalk(y.talk||BLOBTALK[bdKey(y)],nm);
+var os=y.options||[];if(y.draft)h+=draftHtml(y.draft);if(y.status)h+="<div class='bwait'><i class=ic-pause></i> "+esc(y.status)+"</div>";var tk=String(y.task||'').replace(/^Agent:\\s*/,'');if(tk&&tk.slice(0,24)!==String(nm).slice(0,24))h+="<div class='bfor' title='"+escQ(tk)+"'>for: "+esc(tk)+"</div>";h+="<div class='bq' title='"+escQ((y.q||'')+(y.why?' ('+y.why+')':''))+"'>"+codeText(y.q||y.sub||'')+"</div>"+(y.why?"<div class='bwhy' title='"+escQ(y.why)+"'>"+esc(y.why)+"</div>":"")+blobTalk(y.talk||BLOBTALK[bdKey(y)],nm);
 if(y.report&&y.report.id)h+="<div class='bo'><button type='button' class='nopt brep' title='opens it on Reports'><span class='bt'>Read the report: "+esc(lqShort(y.report.title,60))+" &rsaquo;</span></button></div>";
 if(y.fix==='handover'&&y.sub)h+="<div class='bfor' title='"+escQ(y.sub)+"'>for: "+esc(y.sub)+"</div>";
 if(y.done)h+="<div class='bdone' title='"+escQ(y.done.text)+"'>"+esc(y.done.lane)+" has done this already: "+esc(y.done.text)+"</div>";
 if(y.shared)h+="<div class='bdone' title='"+escQ("Your answer to "+y.shared.lane+": "+y.shared.a+" (its agent has it too, and checks whether it settles this)")+"'>Got your answer to "+esc(lqShort(y.shared.lane,40))+": &ldquo;"+esc(lqShort(y.shared.a,80))+"&rdquo;</div>";
 if(y.signInTo)h+="<div class='bo'><button type='button' class='nopt bsign' title='opens "+escQ(y.signInTo.name)+" in the Symbiot Browser: sign in there, then click Done'><span class='bt'>Sign in to "+esc(y.signInTo.name)+" &rsaquo;</span></button></div>";
-if(os.length)h+="<div class='bo'>"+os.map(function(o,j){return "<button type='button' class='nopt"+(j===0&&(os.length===1||/[(]recommended[)]/i.test(o))?' rec':'')+"' data-j='"+j+"' title='"+escQ(os.length===1?o:(y.labels&&y.labels[j])||o)+"'><span class='bt'>"+whoHtml(blobOpt((y.labels&&y.labels[j])||o))+"</span></button>";}).join('')+"</div><button type='button' class='bfree' aria-expanded='false'>"+(y.draft?'Change it':'or answer in your own words')+"</button>";
+// the recommended answer first and marked (the card writer's pick, else the agent's "(recommended)"), each
+// button saying what pressing it does on hover; the order is only how they're shown, data-j is the answer
+var rec=(y.rec!=null&&y.rec>=0&&y.rec<os.length)?y.rec:os.reduce(function(a,o,j){return a<0&&(os.length===1||/[(]recommended[)]/i.test(o))?j:a;},-1),ord=os.map(function(o,j){return j;});if(rec>0){ord.splice(rec,1);ord.unshift(rec);}
+if(os.length)h+="<div class='bo'>"+ord.map(function(j){var o=os[j];return "<button type='button' class='nopt"+(j===rec?' rec':'')+"' data-j='"+j+"' title='"+escQ((y.tips&&y.tips[j])||(os.length===1?o:(y.labels&&y.labels[j])||o))+"'><span class='bt'>"+whoHtml(blobOpt((y.labels&&y.labels[j])||o))+"</span>"+(j===rec&&os.length>1?"<i class='brec'>recommended</i>":"")+"</button>";}).join('')+(y.tellAgent?"<button type='button' class='nopt btell'><span class='bt'>Tell the agent what you found</span></button>":"")+"</div><button type='button' class='bfree' aria-expanded='false'>"+(y.draft?'Change it':'or answer in your own words')+"</button>";
 h+="<form class='bfx"+(os.length?' hidden':'')+"'><input placeholder='"+(y.draft?'what to change':'your answer')+"' aria-label='"+(y.draft?'what to change in the reply':'your answer to '+escQ(nm))+"'><button type='submit'>"+(y.draft?'Redraft':'Send')+"</button></form>";
 if(home&&y.more)h+="<span class='bmore'>+"+y.more+" more question"+(y.more>1?'s':'')+" after this one</span>";
 return h+"<div class='bst' role='status' aria-live='polite'></div>";}
@@ -3797,7 +3827,8 @@ box.querySelectorAll('.nopt[data-j]').forEach(function(b){b.addEventListener('cl
 var bs=box.querySelector('.bsign');if(bs)bs.addEventListener('click',function(){if(bs._busy)return;bs._busy=true;var sn=y.signInTo.name||y.signInTo.site||'the site';
 st('Opening '+sn+' in the Symbiot Browser… a few seconds, longer if an agent is using it.');try{bs.focus();}catch(e){}
 openSignIn(y.signInTo,function(t,ok){bs._busy=false;st(t,!ok);say(t,!ok);});});
-var brp=box.querySelector('.brep');if(brp)brp.addEventListener('click',function(){showReport(y.report.id);}); // the report its agent wrote, open on Reports
+var brp=box.querySelector('.brep');if(brp)brp.addEventListener('click',function(){showReport(y.report.id);});
+var btl=box.querySelector('.btell');if(btl)btl.addEventListener('click',function(){var fr=box.querySelector('.bfree');if(fr&&fr.getAttribute('aria-expanded')!=='true')fr.click();var inp=box.querySelector('.bfx input');if(inp){inp.placeholder='what you found';inp.focus();}}); // the report its agent wrote, open on Reports
 var bqx=box.querySelector('.bq');if(bqx)bqx.addEventListener('click',function(ev){if(ev&&ev.target&&ev.target.closest&&ev.target.closest('a,button'))return;bqx.classList.toggle('open');}); // two lines; a tap shows it all
 var fr=box.querySelector('.bfree'),fx=box.querySelector('.bfx'),fi=fx&&fx.querySelector('input');
 if(fi){var dr=bdGet(y);if(dr&&!fi.value){fi.value=dr.text;if(fx.classList)fx.classList.remove('hidden');if(fr)fr.setAttribute('aria-expanded','true');try{if(dr.s!=null)fi.setSelectionRange(dr.s,dr.e!=null?dr.e:dr.s);}catch(e){}}
