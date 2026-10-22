@@ -20,7 +20,7 @@ import { pendingReview, pushTasks, addTask, taskType, releaseNotIn } from "./tas
 import { estimate, estimateWords } from "./estimate.mjs";
 import { agentQuestions, answerQuestions, heldAsk, grantCard, cardIsPermission, onCardGone, setHandoffCmd, agentsList, agentsNow, forgetAgents, runHandoff, runningHandoff, handoffCmd, loadRuns, connectorsInfo, parkedPaths, agentMissing, settleNeeds, closeAsk, pickAgent, detectHandoffs, linkReach, unchangedStep, whereOf, claudePause, parkLane } from "./agents.mjs";
 import { stallCards, loadStall, saveStall } from "./stall.mjs";
-import { isDone, recordDone, doneList, asksBack, askBackNote, wantsReport, closesAsk, heldBy, reportsSince, talkOf, addTalk, talkText, YES, ASKS, wantsToRead } from "./asksdone.mjs";
+import { isDone, recordDone, doneList, asksBack, askBackNote, wantsReport, closesAsk, heldBy, reportsSince, talkOf, addTalk, talkText, YES, asksQ, saysDone, wantsToRead } from "./asksdone.mjs";
 import { captureSecrets } from "./vault.mjs";
 import { linksState, signInAsked } from "./links.mjs";
 import { knowledgeState } from "./knowledge.mjs";
@@ -600,14 +600,17 @@ function runAfterShip(path, run = runHandoff) {
   if (t.unref) t.unref();
 }
 const SAID_SO = /\b(?:already|i(?:'?ve| have)? (?:answered|replied|said|told|did|done|sent)|i did)\b/i; // a remark about what's done, not an instruction
+const stepCard = (ref, deps = {}) => { try { const a = (deps.agents || agentsList)().find((x) => x.id === ref); return !!(a && a.needs && a.needs.kind !== "approve"); } catch { return false; } };
 function homeAnswer(id, { pick, text = "" } = {}, deps = {}) {
   id = String(id || ""); text = String(text || "").trim().slice(0, 2000);
   try { text = captureSecrets(text).text; } catch {} // a secret typed on a card goes to the vault; ANSWERS.md and the record get "[saved: …]"
   // Typed words are a Go only when they say yes, a Skip only when they say no. Anything else ("ive
   // already answered", a question) is said to the card's agent, not a Go: "ive already answered" on
   // a Go ahead / Skip card approved sending a note the user had just said not to send (22 Oct 2026).
-  const asking = text && (/\?/.test(text) || ASKS.test(text)) && !wantsReport(text) && !wantsToRead(text); // "did you send it already" is a question, "send it" or not
-  if (text && !SAYS_NO.test(text) && (asking || (SAID_SO.test(text) && !YES.test(text)))) return { talk: true, text };
+  const asking = text && (/\?/.test(text) || asksQ(text)) && !wantsReport(text) && !wantsToRead(text); // "did you send it already" is a question, "send it" or not
+  // "i did" / "already allowed it" on a step card of theirs ("Did you allow the mic?") is its answer, not a remark
+  const remark = text && SAID_SO.test(text) && !YES.test(text) && !(id.startsWith("needs:") && stepCard(id.replace(/^\w+:/, ""), deps));
+  if (text && !SAYS_NO.test(text) && (asking || remark)) return { talk: true, text };
   const go = text ? !SAYS_NO.test(text) : Number(pick) === 0, ref = id.replace(/^\w+:/, "");
   cached = null;
   if (id.startsWith("stuck:")) {
@@ -688,13 +691,17 @@ function homeAnswer(id, { pick, text = "" } = {}, deps = {}) {
       : n.say ? `${n.say}${text ? ` The user adds: ${text}` : ""}` // a sign-in the browser can't hold: its agent takes the API route (browserfails.mjs)
       : n.kind === "approve" ? `Go ahead: ${text || "do it as you had it, once you've checked what you flagged"}.${n.sent ? ` (${n.sent.by ? `${n.sent.by === "its own run" ? "An earlier run of yours" : `Another agent (${n.sent.by})`} already sent "${n.sent.subject}"${n.sent.to ? ` to ${n.sent.to}` : ""}` : `Symbiot found "${n.sent.subject}" in Sent`} after your run said it was unsent: read Sent first, and never send the same email twice.)` : ""}`
       : still.length ? `The user says it's done (${text}), but ${last}, before you asked. Check it yourself before relying on it, then carry on.`
+      : text && !saysDone(text) ? `The user answered in their own words, and didn't say this step is done: "${text}". Take that as their answer to it: do what it asks, or sort out what it reports, before anything else, and don't treat the step as done. If it still needs them after that, ask once, saying what you did.`
       : `Done: the user did it${text ? ` (${text})` : ""}. Check it worked, then carry on.`;
     noteAnswer(a.path, n.what, said);
-    const e = (deps.run || runHandoff)(a.path, { force: true }), later = afterShip(e);
-    if ((e && e.id && !e.blocked) || later || allowed) { settle(a.path, n.key); dropped.add(id); if (n.kind !== "approve" || n.asked) recordDone(n.what, said, whereOf(a.path).lane); } // "Done it" is on the shared record: no agent raises it again
+    const e = (deps.run || runHandoff)(a.path, { force: true }), later = afterShip(e), started = !!(e && e.id && !e.blocked);
+    // saved is answered: a run that couldn't start this second (a paused lane, a quota pause) left the card up saying
+    // "It didn't start", the words still in its box, and the answer, saved already, was sent again (22 Oct 2026)
+    if (started || later || allowed || text) { settle(a.path, n.key); dropped.add(id); if (n.kind !== "approve" || n.asked) recordDone(n.what, said, whereOf(a.path).lane); } // "Done it" is on the shared record: no agent raises it again
     if (allowed) return e && e.id && !e.blocked ? { ok: true, said: `Allowed ${allowed.join(", ")} and started its agent.`, rerun: e.id } : { ok: true, said: `Allowed ${allowed.join(", ")}. Its agent didn't start: ${(e && e.note) || "check your agent in Settings"}.` }; // "Done it" is on the shared record: no agent raises it again
     if (later) { (deps.later || runAfterShip)(a.path, deps.run || runHandoff); return { ok: true, said: later }; }
-    return e && e.id && !e.blocked ? { ok: true, said: n.api ? `The browser can't hold the ${n.api} sign-in, so I won't ask you again: its agent is switching to its API.` : n.kind === "approve" ? "Its agent is going ahead." : "Its agent is checking and carrying on.", rerun: e.id } : { error: (e && e.note) || "It didn't start. Check your agent in Settings." };
+    if (!started && text) return { ok: true, said: `Saved as your answer. Its agent didn't start just now (${String((e && e.note) || "check your agent in Settings").replace(/[.\s]+$/, "")}), so it picks this up when it next runs.` };
+    return started ? { ok: true, said: n.api ? `The browser can't hold the ${n.api} sign-in, so I won't ask you again: its agent is switching to its API.` : n.kind === "approve" ? "Its agent is going ahead." : "Its agent is checking and carrying on.", rerun: e.id } : { error: (e && e.note) || "It didn't start. Check your agent in Settings." };
   }
   return { error: "Answer that one on its block on the Workdesk." };
 }

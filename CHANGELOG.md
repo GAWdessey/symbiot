@@ -9,6 +9,12 @@ What each Symbiot release brought, newest first. When Approve bumps the version,
 - **Cards don't ask for what an agent can find.** Before a card reaches you, it's checked against the keys you've saved and the sites and mailboxes you've linked. If what it asks for is there, its agent is sent to find it and carry on. A card that mentions a login names the account it means.
 - **No "New job" on a card when nothing was launched.** The routing words a handover carries stay out of the agent's task, its name and its cards.
 
+## 0.80.1 — 2026-10-22
+
+- **Approve works on a project an agent left mid-merge.** When an agent had merged the main branch in and left it uncommitted, every Approve failed at its commit. Approve now finishes that merge first and then ships the work as usual; a merge that still has clashes goes back to the agent to finish, said in one plain line.
+- **What you type on a card is your answer, saved against its question.** On a step that's yours ("Did you allow the microphone?"), your own words count as done only when they say so ("i did", "allowed it"). Anything else ("nothing loads there", "start it so I can press it") goes to its agent as your answer, not as "done", and the card settles instead of coming back.
+- **The answer box empties when you send.** Words sent from "or answer in your own words" no longer come back into the box on the next refresh, whether they answered the card or were a question to its agent.
+
 ## 0.80.0 — 2026-10-22
 
 - **Updates you can act on.** Each thing Symbiot noticed or would have done on its own has its own line: **Do it** (it starts now, and anything outward still asks you first), **Not useful** (fewer like it from now on) and **Open** (its project). An Ask box under each update answers questions about it, or does what you tell it.

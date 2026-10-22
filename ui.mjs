@@ -3862,9 +3862,11 @@ var fail=function(t){delete BLOBBUSY[key];BLOBFAIL[key]={t:t,at:Date.now()};busy
 (y.fix?api('/api/home/answer',j!=null?{id:y.id,pick:j}:{id:y.id,text:ans}):api('/api/agents/answer',{path:y.path,answers:[{q:y.raw||y.q,a:ans}],rerun:true})).then(function(r){
 if(!r||r.error){fail((r&&r.error)||'the answer didn’t save. Try again on its block on the Workdesk.');return;}
 // a question on the card, not its answer: the agent's reply goes under it, and the card stays
-if(r.keep){delete BLOBBUSY[key];busy(false);st(r.said||'');return;}
-if(r.talk){delete BLOBBUSY[key];BLOBTALK[key]=r.talk;y.talk=r.talk;busy(false);st('');var tk=box.querySelector('.btalk'),html=blobTalk(r.talk,nm);if(tk)tk.outerHTML=html;else{var bq=box.querySelector('.bq');if(bq&&bq.insertAdjacentHTML)bq.insertAdjacentHTML('afterend',html);}box.querySelectorAll('.bfx input,input.qother').forEach(function(i){i.value='';});if(o.grew)o.grew();return;}
-delete BLOBBUSY[key];BLOBSENT[key]=Date.now();st(r.already?'Answered already.':'Sent.');
+// sent either way: the box empties and its kept draft goes, else the next redraw put the words back in it (22 Oct 2026)
+var clear=function(){bdSet(y,'');box.querySelectorAll('.bfx input,input.qother').forEach(function(i){i.value='';});};
+if(r.keep){delete BLOBBUSY[key];clear();busy(false);st(r.said||'');return;}
+if(r.talk){delete BLOBBUSY[key];clear();BLOBTALK[key]=r.talk;y.talk=r.talk;busy(false);st('');var tk=box.querySelector('.btalk'),html=blobTalk(r.talk,nm);if(tk)tk.outerHTML=html;else{var bq=box.querySelector('.bq');if(bq&&bq.insertAdjacentHTML)bq.insertAdjacentHTML('afterend',html);}if(o.grew)o.grew();return;}
+delete BLOBBUSY[key];BLOBSENT[key]=Date.now();clear();st(r.already?'Answered already.':'Sent.');
 say(y.fix?nm+': '+(r.said||'Done.'):r.already?nm+': '+r.note:'Sent to '+(r.lane||nm)+'. '+(r.report?'It is written already: Reports, \u201c'+r.report+'\u201d. ':'')+((r.also||[]).length?'Also given to '+r.also.join(', ')+', on the same work. ':'')+(r.yours&&r.yours.length?'Still yours to do: '+r.yours.join(' '):r.rerun?'Its agent is picking it up now.':(r.note||'Saved in its ANSWERS.md.')));
 bdSet(y,'');if(o.sent)o.sent();if(box.classList)box.classList.add('gone');setTimeout(function(){if(o.done)o.done();},650);}).catch(function(e){fail(String((e&&e.message)||e));});};
 if(BLOBBUSY[key]){busy(true);st('Sending…');} // drawn again while its answer is on its way

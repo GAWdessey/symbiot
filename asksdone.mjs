@@ -79,11 +79,22 @@ function asksBack(a, options = []) {
   const t = String(a || "").trim(), k = key(t);
   if (t && wantsReport(t.replace(/^[\s*_]*(?:go ahead|done)\b\W*/i, ""))) return true; // "Go ahead: i need the report first" isn't a go-ahead
   if (!t || SAYS_NO.test(t) || /^[\s*_]*(?:🤖|👤|done\b|go ahead\b)/iu.test(t) || options.some((o) => key(String(o).replace(/\s*\(recommended[^)]*\)\s*$/i, "")) === k || key(o) === k)) return false;
-  return wantsToRead(t) || /\?/.test(t) || ASKS.test(t);
+  return wantsToRead(t) || /\?/.test(t) || asksQ(t);
 }
 // A question with no question mark: "did you fix the force app" was saved as the card's answer and
 // its agent sent off to write a report, and the user got nothing back on the card (22 Oct 2026).
 const ASKS = /^\s*(?:did|do|does|is|are|was|were|can|could|will|would|should|have|has|why|what|how|when|where|who|which|whats|what's|hows|how's|any news|so did|but did|and did)\b/i;
+// …but "did it" on its own is a statement: "did it, she spoke" answers "Did you allow the mic?", "did it work" asks
+const DID_IT = /^\s*did (?:it|that|this|so)(?:\s+(?:already|just now|now|earlier|yesterday|today))?\s*(?:[.!,;:-]|$)/i;
+const asksQ = (t) => ASKS.test(t) && !DID_IT.test(t);
+// Typed on a step card (a 👤 step of theirs: "Did you allow the mic?"), words say it's done only when
+// they say so ("done", "i did", "allowed it", "yes"). "nothing at that local host" and "start it so i
+// can press the allow mic button" both went to the run as "Done: the user did it (…)": it checked,
+// found the step wasn't done, and asked again, so the card kept coming back (22 Oct 2026).
+const NOT_DONE = /\b(?:not|nothing|never|none|nowhere|can['’]?t|cannot|couldn['’]?t|won['’]?t|isn['’]?t|aren['’]?t|doesn['’]?t|don['’]?t|didn['’]?t|wasn['’]?t|haven['’]?t|hasn['’]?t|fail(?:s|ed|ing)?|error|broken|stuck|blank|empty|still|(?:is|was|does|did|do|has|have|are|were|could|would|should|wo|ca)n['’]?t)\b/i;
+const ASKS_FOR = /^\s*(?:(?:ok(?:ay)?|so|and|then|first)[,\s]+)?(?:please\s+|pls\s+)?(?:start|open|run|try|check|send|show|give|tell|launch|restart|reload|redo|retry|fix|make|turn|switch|put|let|wait|use|go|get|find|look|help|you)\b/i;
+const DONE_SAID = /\b(?:done|did(?: it| that| this| so)?|finished|completed?|allowed|granted|pressed|clicked|signed (?:in|up)|logged in|installed|enabled|turned (?:it |that )?on|switched (?:it |that )?on|set (?:it |that )?up|sorted|fixed|works|working|went through|yes|yep|yeah|yup|ok|okay|sure|i have|i've|ive)\b/i;
+const saysDone = (a) => { const t = String(a || "").trim(); return !!t && !/\?/.test(t) && !asksQ(t) && !NOT_DONE.test(t) && !ASKS_FOR.test(t) && DONE_SAID.test(t); };
 
 // ---- a card is a conversation with its agent -------------------------------------------
 // What was said on a card before it was answered: the user's questions and the agent's replies,
@@ -231,4 +242,4 @@ function recentTurns(now = Date.now(), maxAge = 3 * 86400000) {
 }
 function recentTasks() { try { const l = JSON.parse(readFileSync(join(CONFIG_DIR, "tasks.json"), "utf8")); return Array.isArray(l) ? l.map((t) => ({ text: String(t.text || "") })) : []; } catch { return []; } }
 
-export { talkOf, addTalk, endTalk, talkText, ASKS, YES, recordDone, isDone, doneList, doneBrief, closesAsk, runSaysClosed, asksBack, askBackNote, wantsToRead, wantsReport, heldBy, reportsSince, runReport, reportAsked, addRule, standingList, standingBrief, coveredBy, isApprovalAsk, approvalText, approvedBefore, recentTurns, recentTasks };
+export { talkOf, addTalk, endTalk, talkText, ASKS, asksQ, saysDone, YES, recordDone, isDone, doneList, doneBrief, closesAsk, runSaysClosed, asksBack, askBackNote, wantsToRead, wantsReport, heldBy, reportsSince, runReport, reportAsked, addRule, standingList, standingBrief, coveredBy, isApprovalAsk, approvalText, approvedBefore, recentTurns, recentTasks };
