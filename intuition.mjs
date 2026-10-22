@@ -319,10 +319,46 @@ async function digestDue(st, deps, now) {
 function intuitionUpdates({ now = Date.now(), dismissed = new Set() } = {}) {
   const st = load(), out = [];
   for (const p of st.passes.filter((x) => now - x.at < 2 * DAY && x.title && !dismissed.has(`intu:${x.id}`)).slice(-4).reverse())
-    out.push({ id: `intu:${p.id}`, key: `intu:${p.id}`, title: p.title, lane: p.mode === "watch" ? "Watching" : "On its own", intuition: true, ...(p.report ? { report: p.report } : {}) });
+    out.push({ id: `intu:${p.id}`, key: `intu:${p.id}`, title: p.title, lane: p.mode === "watch" ? "Watching" : "On its own", intuition: true, ...(p.report ? { report: p.report } : {}), moves: (p.moves || []).map((m, i) => moveView(m, i)) });
   for (const f of st.proposals.filter((x) => !x.done && !dismissed.has(`intu:focus:${x.id}`)).slice(-3))
     out.push({ id: `intu:focus:${f.id}`, key: `intu:focus:${f.id}`, title: `Add to your focus? ${f.line}`, lane: "On its own", intuition: true, accept: { id: f.id, label: "Add it" } });
   return out;
+}
+// Each move on Updates with what the user can do about it (22 Oct 2026: the list was only lines and a
+// put-away). do: it can still be carried out ("Do it": a would-have move from watch mode, or one that
+// didn't start); lane: where Open goes; state: done / asked / not useful, once something happened.
+function moveView(m, i) {
+  const state = m.userDid ? (m.does === "ask" ? "asked" : "done") : m.notUseful ? "not useful" : m.started ? "done" : m.asked ? "asked" : m.proposal ? "suggested" : "";
+  const can = !state && m.does !== "notice" && (m.would || m.error);
+  return { i, line: line(m), kind: m.kind, ...(m.lane ? { lane: m.lane } : {}), ...(can ? { do: m.kind === "focus" ? "Add it" : m.does === "ask" ? "Prepare it" : m.kind === "prepare" ? "Draft it" : "Do it" } : {}), ...(state ? { state } : {}) };
+}
+// "Do it" on a move: carried out now as in act mode (its tier and every gate still apply: an outward
+// one is prepared and asked first), whatever the mode, and that kind of move is wanted (+1).
+function doMove(passId, i, deps = {}) {
+  const st = load(), p = st.passes.find((x) => x.id === String(passId || "")), m = p && p.moves && p.moves[Number(i)];
+  if (!m) return { error: "That move isn't there any more." };
+  if (m.userDid || m.started || m.asked) return { ok: true, said: "That's already under way." };
+  if (m.kind === "focus") { const id = randomBytes(4).toString("hex"); st.proposals.push({ id, line: m.what, why: m.why, at: Date.now() }); m.userDid = Date.now(); save(st); return acceptFocus(id); }
+  let map = {}; try { map = val(deps.map, {}) || {}; } catch {}
+  const mv = { ...m, would: false }; delete mv.error;
+  carry(mv, { deps, map, st, mode: "act" });
+  if (mv.error) { m.error = mv.error; save(st); return { error: `It didn't start: ${mv.error}.` }; }
+  Object.assign(m, { userDid: Date.now(), ...(mv.job ? { job: mv.job } : {}), ...(mv.dir ? { dir: mv.dir } : {}), ...(mv.asked ? { asked: true } : {}) });
+  const k = `${m.kind}|${m.lane || ""}`; st.weights[k] = Math.min(5, (st.weights[k] || 0) + 1);
+  save(st);
+  return { ok: true, said: mv.asked ? "Started: it prepares this and asks you before anything goes out." : m.kind === "prepare" ? "Started: the draft lands under Reports." : "Started: an agent is on it now." };
+}
+// "Not useful": that kind of move in that lane counts down (fewer of them), and this one is marked.
+function markMove(passId, i) {
+  const st = load(), p = st.passes.find((x) => x.id === String(passId || "")), m = p && p.moves && p.moves[Number(i)];
+  if (!m) return { error: "That move isn't there any more." };
+  m.notUseful = Date.now(); const k = `${m.kind}|${m.lane || ""}`; st.weights[k] = Math.max(-5, (st.weights[k] || 0) - 1);
+  save(st); return { ok: true, said: "Noted: fewer like that." };
+}
+// One move's words, for the update's Ask box (home.mjs updateAsk): what it was, why, and what became of it.
+function moveContext(passId) {
+  const p = load().passes.find((x) => x.id === String(passId || "")); if (!p) return "";
+  return (p.moves || []).map((m, i) => `${i + 1}. ${line(m)}${m.why ? ` (why: ${m.why})` : ""}${m.lane ? ` [lane: ${m.lane}]` : ""}${moveView(m, i).state ? ` [${moveView(m, i).state}]` : ""}`).join("\n");
 }
 // The user's OK on a focus proposal: the line goes into focus.md, under its last heading's end.
 function acceptFocus(id) {
@@ -355,4 +391,4 @@ async function intuitionTick(deps = {}, { now = Date.now() } = {}) {
   return { events: ev, pass: await intuitionPass(deps, { now }) };
 }
 
-export { noteChange, askMoves, SYSTEM as INTUITION_SYSTEM, EVENT_SYSTEM, digest, newEvents, intuitionPass, intuitionTick, choose, carry, learn, tierOf, modeOf, channelOf, digestDue, intuitionUpdates, intuitionState, intuitionLines, acceptFocus, revoke, readFocus, writeFocus, nudge, line, SOURCES, TIERS, FILE as INTUITION_FILE, FOCUS as FOCUS_FILE, EVERY, NUDGE_GAP, BUDGET, PROMOTE_AFTER, WATCH_FIRST, FOCUS_START };
+export { moveView, doMove, markMove, moveContext, noteChange, askMoves, SYSTEM as INTUITION_SYSTEM, EVENT_SYSTEM, digest, newEvents, intuitionPass, intuitionTick, choose, carry, learn, tierOf, modeOf, channelOf, digestDue, intuitionUpdates, intuitionState, intuitionLines, acceptFocus, revoke, readFocus, writeFocus, nudge, line, SOURCES, TIERS, FILE as INTUITION_FILE, FOCUS as FOCUS_FILE, EVERY, NUDGE_GAP, BUDGET, PROMOTE_AFTER, WATCH_FIRST, FOCUS_START };
