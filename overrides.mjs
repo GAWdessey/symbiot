@@ -51,7 +51,13 @@ const LOOSENS = [
   /\b(tier|tiers|promot\w*|chromegate|guard\.mjs|sends\.mjs|selfFile|SYMBIOT_OWNER|validat\w* (?:code|pipeline))\b/i,
   /\b(credential\w*|password\w*|secret\w*|api[- ]?key\w*|token\w*|2fa|otp|one-time code)\b/i,
 ];
-function loosens(text) { const t = String(text || ""); for (const re of LOOSENS) { const m = t.match(re); if (m) return `it would loosen a safety rule ("${clip(m[0], 60)}")`; } return ""; }
+// "never skip an approval" makes a rule stricter: a match right after never / not / don't / no is let be.
+function loosens(text) {
+  const t = String(text || "");
+  for (const re of LOOSENS) { const g = new RegExp(re.source, re.flags.includes("g") ? re.flags : re.flags + "g"); for (const m of t.matchAll(g)) { if (/\b(never|not|don'?t|do not|no|nor)\s+(?:\w+\s+)?$/i.test(t.slice(Math.max(0, m.index - 24), m.index))) continue;
+      if (/^(?:never|not|don'?t|do not|no)\s+(?:\w+\s+){0,2}?(?:skip|bypass|ignore|break|loosen|get around)\b/i.test(m[0])) continue; /* "never skip an approval": a double no, stricter */ return `it would loosen a safety rule ("${clip(m[0], 60)}")`; } }
+  return "";
+}
 // A trigger's code: it gets ctx and nothing else.
 const UNSAFE = /\bimport\b|\brequire\s*\(|\bprocess\b|\bglobalThis\b|\beval\s*\(|\bnew\s+Function\b|\bFunction\s*\(|\bfetch\s*\(|\bXMLHttpRequest\b|\bWebSocket\b|\bchild_process\b|\bnode:|\bDeno\b|\bBun\b|\bsetInterval\s*\(|\bwhile\s*\(\s*true\s*\)/;
 function codeTrouble(src) {
@@ -274,18 +280,19 @@ const THEMES = [
     rule: "Say what's wrong or done in one plain line first, then the details. No git or file jargon in what the user reads first." },
 ];
 const SWEAR = /\b(fuck\w*|wtf|shit\w*|bullshit|damn)\b/i;
+const SYMBIOTS = /^\s*(?:the user\b|symbiot\b|\(symbiot|not the user'?s|🤖|done\b|go ahead\b|skip\b|close it\b|keep waiting\b)|\bthe user\b/i, LOOK = /^\s*(?:please\s+)?(?:take a )?(?:look|see|check)\s+(?:at\s+)?(?:this|that|these|the)\b/i;
 // log: [{ ts, role, text }] (mind.mjs), answers: [{ at, q, a }] (card answers), now. Returns
 // [{ theme, count, evidence: [quotes], rule }] for themes over the threshold, and repeats.
 function detectFriction({ log = [], answers = [], now = Date.now(), min = 3 } = {}) {
-  const said = log.filter((l) => l && l.role === "user" && now - (l.ts || 0) < WEEK && String(l.text || "").trim()).map((l) => ({ ts: l.ts, text: String(l.text) }))
-    .concat(answers.filter((a) => a && now - (a.at || 0) < WEEK && String(a.a || "").trim()).map((a) => ({ ts: a.at, text: String(a.a) })));
+  const said = log.filter((l) => l && l.role === "user" && now - (l.ts || 0) < WEEK && String(l.text || "").trim()).map((l) => ({ ts: l.ts, text: String(l.text), typed: true }))
+    .concat(answers.filter((a) => a && now - (a.at || 0) < WEEK && String(a.a || "").trim() && !SYMBIOTS.test(String(a.a))).map((a) => ({ ts: a.at, text: String(a.a) }))); // an answer Symbiot wrote for the user isn't theirs
   const out = [];
   for (const th of THEMES) {
     const hits = said.filter((s) => th.re.test(s.text) || (SWEAR.test(s.text) && th.re.test(s.text.replace(SWEAR, ""))));
     if (hits.length >= min) out.push({ theme: th.theme, count: hits.length, evidence: hits.slice(-4).map((h) => clip(h.text, 160)), rule: th.rule });
   }
-  // the same instruction, given again (not a one-word reply)
-  const asks = said.filter((s) => s.text.split(/\s+/).length >= 5 && !/\?\s*$/.test(s.text));
+  // the same instruction, given again: an instruction, not "look at this screenshot", a question or a complaint
+  const asks = said.filter((s) => s.typed).map((s) => ({ ...s, text: s.text.replace(/\(The user attached[^)]*\)/gi, "").trim() })).filter((s) => s.text.split(/\s+/).length >= 6 && !/\?/.test(s.text) && !SWEAR.test(s.text) && !LOOK.test(s.text) && !/\b(why|keeps?|again|still)\b/i.test(s.text));
   const rep = [];
   for (let i = 0; i < asks.length; i++) {
     const same = asks.filter((b, j) => j !== i && sameTask(b.text, asks[i].text));

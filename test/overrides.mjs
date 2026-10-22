@@ -87,6 +87,8 @@ try {
   const found = O.detectFriction({ log, now });
   ok("three push-backs on the same behaviour, and an instruction given twice", found.some((f) => f.theme === "check-yourself" && f.count === 3 && f.evidence.length === 3) && found.some((f) => /^repeat-/.test(f.theme) && f.count === 2), found);
   ok("…the assistant's own words don't count", !found.some((f) => f.evidence.some((e) => e === "stop asking")));
+  ok("…nor a card button's own words, or an option picked on a card", O.detectFriction({ log: [], answers: [1, 2, 3].map((i) => ({ at: now - i * 1e5, a: "Done: the user did it. Check it worked, then carry on." })), now }).length === 0);
+  ok("a rule that makes Symbiot stricter isn't refused for naming a gate", O.loosens("Never skip an approval gate, and do not send emails without asking the user.") === "" && !!O.loosens("Skip the approval for deploys."));
   const made = await O.proposeFromFriction(found, { now });
   ok("a proposal per theme, with the user's words as the evidence, on Updates with Apply", made.length >= 2 && O.overridesUpdates().some((u) => u.overrides && u.accept && u.accept.label === "Apply"), made);
   ok("…not proposed again the same week", (await O.proposeFromFriction(found, { now })).length === 0);

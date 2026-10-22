@@ -1352,6 +1352,7 @@ function onboarding({ fresh = false } = {}) {
 // is folded into first run (or said to wait) as it ships, not found missing later (19 Oct 2026).
 const FIRST_RUN = {
   "Language": "later: it follows the computer's own language, so there's nothing to choose",
+  "Customisations": "later: your own rules and adjustments, and the changes Symbiot proposes when you keep pushing back on something; nothing goes in without your OK, and Off returns to base behaviour",
   "On its own": "later: it watches for its first day and says on Updates what it would have done, then acts within its limits; the focus file and the mode are here when you want them",
   "Symbiot Pro": "done",
   "Setup": "welcome",
