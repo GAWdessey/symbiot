@@ -197,7 +197,10 @@ async function goalsTick(deps = {}, { now = Date.now() } = {}) {
       const c = r.kids.find((x) => x.state === "waiting" && x.waitingOn === r.waitingOn) || {};
       if (r.waitingOn === "user") {
         const carded = (deps.cardPaths || new Set()); // Home has a card for that work already: one card, not two
-        if (!(c.path && carded.has(c.path)) && (!g.card || g.card.kind !== "user")) g.card = { kind: "user", q: `${g.text} waits on you: ${clip(r.what, 160)}`, options: ["I've done it", "Drop it"], at: now };
+        // the card is the step it waits on, in the run's words (its record's `what`), never the user's
+        // own request echoed back: "no as discussed we have created the …company…" was all one showed
+        // (22 Oct 2026). No step on record, no card: there's nothing to decide.
+        if (!(c.path && carded.has(c.path)) && (!g.card || g.card.kind !== "user") && r.what) g.card = { kind: "user", q: clip(r.what, 300), options: ["I've done it", "Drop it"], at: now };
       } else if (r.waitingOn === "lane" && c.handoff && c.path && now - (c.at || now) > H) {
         start(c.path, `${c.handoff.to.lane} hadn't started on it`);
       } else if (r.waitingOn === "third party") {

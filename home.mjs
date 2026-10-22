@@ -20,7 +20,7 @@ import { pendingReview, pushTasks, addTask, taskType, releaseNotIn } from "./tas
 import { estimate, estimateWords } from "./estimate.mjs";
 import { agentQuestions, answerQuestions, heldAsk, grantCard, cardIsPermission, onCardGone, setHandoffCmd, agentsList, agentsNow, forgetAgents, runHandoff, runningHandoff, handoffCmd, loadRuns, connectorsInfo, parkedPaths, agentMissing, settleNeeds, closeAsk, pickAgent, detectHandoffs, linkReach, unchangedStep, whereOf, claudePause, parkLane } from "./agents.mjs";
 import { stallCards, loadStall, saveStall } from "./stall.mjs";
-import { isDone, recordDone, coveredBy, doneList, asksBack, askBackNote, wantsReport, closesAsk, heldBy, reportsSince, talkOf, addTalk, talkText, YES, ASKS, wantsToRead } from "./asksdone.mjs";
+import { isDone, recordDone, doneList, asksBack, askBackNote, wantsReport, closesAsk, heldBy, reportsSince, talkOf, addTalk, talkText, YES, ASKS, wantsToRead } from "./asksdone.mjs";
 import { captureSecrets } from "./vault.mjs";
 import { linksState, signInAsked } from "./links.mjs";
 import { knowledgeState } from "./knowledge.mjs";
@@ -30,6 +30,7 @@ import { windowSince, BROWSER_IDLE_MIN } from "./headless.mjs";
 import { control } from "./control.mjs";
 import { jobsLines, syncOnUser, syncTasks, onUser, runRecord } from "./jobs.mjs";
 import { goalCards } from "./goals.mjs";
+import { splitNeeds, applyText, loadCardText } from "./needs.mjs";
 import { converse, actIn, actNow, taskIn, loadMind, dayMark } from "./mind.mjs";
 import { repoPathMap, laneMap, reposState, scanRoots } from "./scan.mjs";
 import { resolveProvider, PROVIDERS, claudeState } from "./ai.mjs";
@@ -511,12 +512,16 @@ function homeState({ now = Date.now(), fresh = false, deps = {}, tick = false } 
   { let ledger = null; for (const y of you) if (y.path && (y.kind === "ask" || y.kind === "approve") && y.fix !== "draft" && y.project === undefined) { if (!ledger) { try { ledger = (deps.ledger || loadLedger)(); } catch { ledger = { handoffs: [] }; } } y.project = y.repo || projectFor(y.path, map, ledger); } }
   // nothing waits on you: a few things that can be done next (none while anything does)
   you = undismissed(settleAsks(you), (deps.dismissed || loadDismissed)());
+  // Needs you holds decisions and the user's own steps only; what just tells them something is an
+  // update (needs.mjs). Each card reads as its writer put it: a short question, why, labelled options.
+  const split = splitNeeds(you), updates = split.updates;
+  { let ct = {}; try { ct = (deps.cardText || loadCardText)(); } catch {} you = split.you.map((y) => { try { return applyText(y, ct); } catch { return y; } }); }
   (deps.syncJobs || syncOnUser)(you, { now }); // the job record's "waiting on you": these cards, all of them (jobs.mjs)
   const nextAll = nextUp({ now, map, list, named, deps: { board: () => bd, reports: () => rep, ...(deps.next || {}) } });
   const next = you.length ? [] : nextAll; // not shown while something needs you, but a tap on one already on screen still works (homeNext)
   // how long the Symbiot Browser has been open, said on Home (headless.mjs windowSince)
   let browserSince = 0; try { browserSince = (deps.browserSince || windowSince)(); } catch {}
-  const out = { ...(browserSince ? { browserSince, browserIdle: Number(loadConfig().browserIdleMin) || BROWSER_IDLE_MIN } : {}), you: you.slice(0, 6), youCount: you.length, feeds: feeds.slice(0, 6), lanes: hs, working, runs: runs.slice(0, 4), next, nextAll, marketing: marketing({ list, map, named, pend }), ...(deps.phone || phoneBits)(now), at: now };
+  const out = { ...(browserSince ? { browserSince, browserIdle: Number(loadConfig().browserIdleMin) || BROWSER_IDLE_MIN } : {}), you: you.slice(0, 6), youCount: you.length, ...(updates.length ? { updates: updates.slice(0, 8) } : {}), feeds: feeds.slice(0, 6), lanes: hs, working, runs: runs.slice(0, 4), next, nextAll, marketing: marketing({ list, map, named, pend }), ...(deps.phone || phoneBits)(now), at: now };
   if (!deps.board) cached = out;
   return out;
 }
@@ -539,7 +544,9 @@ const HAND_CLICKS = /\b(?:click|press|tap|hit)\b[^.?]{0,60}\b(?:Edit|Delete|Remo
 const NEEDS_THEM = /\b(?:security key|passkey|hardware key|2fa|sms|one-time|verification code|recovery code|authenticator)\b/i;
 function settleAsks(you) {
   const seen = new Map();
-  return you.map((y) => { if (y.kind !== "ask") return y; const c = coveredBy(y.q); return c.length ? { ...y, covered: c } : y; }).filter((y) => {
+  // "Already covered?" (a standing rule that shared words with the card) is gone from cards: it
+  // matched on words, not meaning, and put unrelated rules under the user's questions (22 Oct 2026).
+  return you.filter((y) => {
     if (y.kind !== "ask") return true;
     if (isDone(y.q)) return false; // already answered, for any agent
     const said = `${y.q || ""} ${(y.options || []).join(" ")}`;

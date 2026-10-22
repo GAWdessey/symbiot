@@ -77,7 +77,7 @@ try {
   await G.goalsTick(deps({ cardPaths: new Set([p4]) }), { now: t0 + 2 * H });
   ok("on the user, with a card already on Home for that work: no second card", !G.goalById(g4.key).card, G.goalById(g4.key).card);
   await G.goalsTick(deps(), { now: t0 + 2 * H });
-  ok("…without one: one card, saying what", G.goalById(g4.key).card && G.goalById(g4.key).card.kind === "user" && /waits on you: the wording/.test(G.goalById(g4.key).card.q), G.goalById(g4.key).card);
+  ok("…without one: one card, saying what", G.goalById(g4.key).card && G.goalById(g4.key).card.kind === "user" && /^the wording/.test(G.goalById(g4.key).card.q) && !G.goalById(g4.key).card.q.includes(g4.text), G.goalById(g4.key).card);
   const r = G.goalAnswer(g4.key, [{ q: "x", a: "I've done it" }], deps());
   ok("\"I've done it\": its run's record moves on and it starts again", r.ok && settled.includes(p4) && started.includes(p4) && !G.goalById(g4.key).card, r);
 

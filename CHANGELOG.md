@@ -2,6 +2,12 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one), for anyone who installs the app: what changed in it, never whose work it was (no projects, people, accounts, services, run ids or task wording of the person who made it). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.74.0 — 2026-10-22
+
+- **Needs you holds only what you decide or do.** Each card there is a short question you can answer at a glance: one line on why, buttons that say what they do (hover to see what happens), the recommended one first. When your step is to try or listen to something, the card lets you tell the agent what you found.
+- **Updates live apart.** A job finished, a report written: they're under Updates in the header, to read or put away, not mixed in with your decisions.
+- A goal waiting on you shows the step it's waiting for, never your own request back, and "Already covered?" is gone from cards.
+
 ## 0.72.0 — 2026-10-22
 
 - **Agents can click and type on any site in your Chrome**, without a card asking you to switch each site on: one switch in Settings → Connections. Sending, posting, paying and deleting still wait for your Go on a card, one action at a time.

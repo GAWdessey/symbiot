@@ -43,6 +43,7 @@ import { archivedTasks } from "./sweep.mjs";
 import { sentTick } from "./sentmail.mjs";
 import { keepFacts, skipFacts, awaitTick, awaitingState, stopWaiting } from "./handback.mjs";
 import { adaptState, noteUse } from "./adapt.mjs";
+import { writeCards } from "./needs.mjs";
 import { cardTalk, dismissCard, reportIdeasAdd, reportIdeasDismiss, reportAsk, reportDraftAnswer, homeState, homeTick, homeAsk, homeAnswer, homeNext, workScene, forgetWork, workGo, workTick, firstSteps, marketingState, marketingGo, marketingDraftAnswer, marketingTask, moveToMarketing, onboarding, setOnboarding, startOnboarding, phoneSetupFirst } from "./home.mjs";
 import { MARKETING_DIR, MARKETING, draftPreview, laneMedia, displayName, setDraftMedia } from "./marketing.mjs";
 import { trays, trayMedia, setBlur, addBlur, removeBlur, setReviewed, renderCapture } from "./tray.mjs";
@@ -926,6 +927,10 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       ledger: (() => { try { return loadLedger(); } catch { return { handoffs: [] }; } })(), waits: (() => { try { return awaitingState().waits; } catch { return []; } })(), map: (() => { try { return laneMap(); } catch { return {}; } })(), until: (what, now) => waitUntil(what, now), cardPaths };
   };
   onGoalAnswer((path, answers) => goalAnswer(path, answers, goalDeps()));
+  // each card on Needs you gets its short question and labelled options written once (needs.mjs)
+  let carding = false;
+  const cardSweep = async () => { if (carding) return; carding = true; try { let ai = null; try { ai = resolveProvider() ? aiWrite : null; } catch {} if (!ai) return; const n = await writeCards((homeState() || {}).you || [], { write: ai }); if (n) homeState({ fresh: true }); } catch {} finally { carding = false; } };
+  setTimeout(() => { cardSweep(); }, 8000).unref(); setInterval(() => { cardSweep(); }, 20000).unref();
   setTimeout(() => { goalsTick(goalDeps()).catch(() => {}); }, 60000).unref();
   setInterval(() => { goalsTick(goalDeps()).catch(() => {}); }, 10 * 60000).unref();
   setInterval(() => { try { continueLanes(); } catch {} }, 60000).unref(); // a lane with open tasks and no run going starts again, while it gets somewhere

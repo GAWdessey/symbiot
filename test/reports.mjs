@@ -254,7 +254,7 @@ console.log("REPORTS — what is not an action never sits in 'Read, open actions
   const { addRule: ar } = await import("../asksdone.mjs");
   ar("Main inbox is owner@example.com, never ask which mailbox to clean");
   const cv = settleAsks([ask("m", "Which mailbox should I clean?")]);
-  ok("a standing rule that looks like it answers an ask is listed on the card, which stays open", cv.length === 1 && cv[0].covered && cv[0].covered.length === 1, JSON.stringify(cv));
+  ok("a standing rule that shares words with an ask isn't put on the card (\"Already covered?\" is gone: it matched words, not meaning), and the card stays open", cv.length === 1 && !cv[0].covered, JSON.stringify(cv));
   const npm = settleAsks([ask("n1", "Tap your security key to save the npm Trusted Publisher for GAWdessey symbiot publish.yml"), ask("n2", "On npm, save the Trusted Publisher (GAWdessey / symbiot / publish.yml) with your security key tap"), ask("n3", "Which plan are you on today?")]);
   const clicks = settleAsks([ask("c1", "Click Edit on the trusted publisher, set owner GAWdessey, and Save"), ask("c2", "Press Delete next to PatGhostai/symbiot, then click Done"), ask("c3", "Tap your security key, then click Save on npm"), ask("c4", "Which plan are you on?")]);
   ok("a card that hands the agent's clicks to the user never reaches Home; a key tap or a real question does", clicks.length === 2 && clicks[0].id === "ask:c3" && clicks[1].id === "ask:c4", JSON.stringify(clicks.map((y) => y.id)));
