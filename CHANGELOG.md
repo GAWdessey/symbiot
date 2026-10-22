@@ -2,6 +2,11 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one), for anyone who installs the app: what changed in it, never whose work it was (no projects, people, accounts, services, run ids or task wording of the person who made it). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.77.0 — 2026-10-22
+
+- **The task list shows its tasks again.** The model picker beside each task took the whole row and hid the task's words; it now sits small at the end.
+- **No more status questions.** A card asking you whether something has happened or what state it's in ("Is it moved yet?") never reaches Needs you: its agent is sent back to check for itself and carry on.
+
 ## 0.76.0 — 2026-10-22
 
 - **Only real requests become goals.** A question, a reply, a "yes" or a complaint no longer opens a goal of its own; an instruction about work already going joins the goal it's about. Rows opened earlier from such messages are closed as not goals, so the list shows what you actually asked for.

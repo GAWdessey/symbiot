@@ -46,6 +46,18 @@ try {
   console.log("NEEDS YOU — on Home");
   const hs = homeState({ fresh: true, deps: { repos: () => ({}), board: () => ({ cards: [] }), pending: () => [], lanes: () => ({ handoffs: [] }), reports: () => ({ count: 0 }), connected: () => true, waits: () => [], clashes: () => [], agentGone: () => "", signedOut: () => [], stuck: () => [], drafts: () => [], agentCmd: () => "claude", marketing: () => false, agents: () => [], goalCards: () => [done], troubles: () => [] } });
   ok("the close-out is under Updates, not Needs you", !(hs.you || []).some((y) => y.id === done.id) && (hs.updates || []).some((u) => u.goal === "ab12"), hs);
+
+  console.log("NEEDS YOU — a status the agent can check is never a card");
+  const status = { kind: "ask", id: "goal:cd34:user", path: "goal:cd34", goal: "cd34", q: "Move the domain into the company's own account at the registrar", options: ["I've done it", "Drop it"] };
+  await N.writeCards([status], { write: async () => ({ text: JSON.stringify({ notTheirs: true, question: "Is the domain moved yet?" }) }) });
+  ok("the writer says it isn't theirs, and it's off Needs you", N.textFor(status).notTheirs === true && !N.splitNeeds([status, choose]).you.some((y) => y.id === status.id) && N.splitNeeds([status, choose]).you.some((y) => y.id === choose.id));
+  const G = await import("../goals.mjs"), J = await import("../jobs.mjs");
+  const run = join(CFG, "drafts", "act-dom1"); mkdirSync(join(run, ".symbiot"), { recursive: true });
+  J.putGoal && J.putGoal({ key: "goal:cd34", kind: "goal", text: "move the domain", asked: "move the domain", state: "waiting", waitingOn: "user", at: Date.now() - 3600e3, changed: Date.now() - 3600e3, children: ["run:r9"], paths: [run], card: { kind: "user", q: status.q, options: status.options, at: Date.now() - 600e3 } });
+  J.track && J.track("run:r9", { kind: "agent", path: run, state: "waiting", waitingOn: "user", what: status.q });
+  const started = [];
+  await G.goalsTick({ notTheirs: (c) => c.q === status.q, running: () => false, start: (p) => { started.push(p); return { id: "x" }; }, autoStart: () => true, settle: () => {}, cardPaths: new Set(), waits: [], ledger: { handoffs: [] }, map: {} });
+  ok("…and its run is started to check it itself, not the user asked", started.includes(run), started);
 } catch (e) { ok("ran", false, String((e && e.stack) || e)); }
 finally { rmSync(HOME, { recursive: true, force: true }); }
 console.log(`\n${fail ? "✗" : "✓"} needs: ${pass} passed, ${fail} failed`);

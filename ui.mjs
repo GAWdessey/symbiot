@@ -515,7 +515,9 @@ footer{padding:10px 18px;border-top:1px solid var(--line);display:flex}
 .ideasent summary{cursor:pointer;font-size:12px;color:var(--faint);margin-top:8px}
 .task{display:flex;align-items:center;gap:10px;padding:9px 11px;border:1px solid var(--line);border-radius:9px;margin-top:8px;background:var(--ink2)}
 .task input[type=checkbox]{width:16px;height:16px;flex:none;cursor:pointer}
-.task .t{flex:1;min-width:0;overflow-wrap:anywhere}.task.done .t{color:var(--faint);text-decoration:line-through}
+.task .t{flex:1;min-width:0;overflow-wrap:anywhere}
+.task .tmodel{width:auto;flex:0 0 auto;max-width:110px;min-height:0;padding:5px 26px 5px 10px;font-size:12px} /* the model pick sits beside the task; the global select{width:100%} took the row and hid every task's text (22 Oct 2026) */
+body.lq-liquid .task .tmodel{padding:5px 28px 5px 10px;border-radius:10px}.task.done .t{color:var(--faint);text-decoration:line-through}
 .task:has(.tfull[open]){align-items:flex-start}.tfull summary{cursor:pointer;font-size:12px;color:var(--faint);margin-top:4px}.tfull div{white-space:pre-wrap;overflow-wrap:anywhere;margin-top:6px;font-size:13px;line-height:1.5}.tfull div+.tres{border-top:1px solid var(--line);padding-top:6px}
 .task .rp{font-size:11px;color:var(--faint);background:var(--ink3);border:1px solid var(--line);border-radius:999px;padding:2px 8px}
 .task .rm{background:none;border:0;color:var(--faint);cursor:pointer;font-size:18px;line-height:1}

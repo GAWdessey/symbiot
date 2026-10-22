@@ -36,9 +36,14 @@ function isUpdate(y) {
   return /^\s*done:/i.test(String(y.raw || y.q || ""));
 }
 // { you, updates }: updates as the list shows them, newest first.
-function splitNeeds(you) {
+// A card the writer found isn't theirs ("Is the domain moved yet?", "Have you scheduled the 29 Oct
+// post?": status the agent can check) never reaches Needs you. Symbiot built those from what a goal or
+// a run waited on, so they skipped the question checkpoint (triage.mjs), and the user was asked the same
+// status three times in a row (22 Oct 2026). Its run carries on (goals.mjs follow-through).
+function splitNeeds(you, all = loadText()) {
   const keep = [], updates = [];
   for (const y of you || []) {
+    if (y && y.kind === "ask" && (all[keyOf(y)] || {}).notTheirs) continue;
     if (!isUpdate(y)) { keep.push(y); continue; }
     updates.push({ id: y.id, key: y.path && (y.raw || y.q) ? `${y.path}|${y.raw || y.q}` : `${y.id || ""}|${y.raw || y.q || y.sub || ""}`, title: clip(String(y.raw || y.q || y.sub || "").replace(/^\s*done:\s*/i, ""), 120), lane: y.repo || y.project || "", ...(y.report ? { report: y.report } : {}), ...(y.goal ? { goal: y.goal, answer: (y.options || [])[0] || "Got it", path: y.path, q: y.raw || y.q } : {}) });
   }
@@ -53,22 +58,24 @@ function textFor(y, all = loadText()) { return all[keyOf(y)] || null; }
 // key (raw) and options unchanged.
 function applyText(y, all = loadText()) {
   if (!y || y.kind !== "ask") return y;
-  const t = textFor(y, all); if (!t) return y;
+  const t = textFor(y, all); if (!t || t.notTheirs) return y;
   const n = (y.options || []).length;
   return { ...y, raw: y.raw || y.q, q: t.question, ...(t.why ? { why: t.why } : {}), ...(t.labels && t.labels.length === n ? { labels: t.labels } : {}), ...(t.tips && t.tips.length === n ? { tips: t.tips } : {}), ...(Number.isInteger(t.rec) && t.rec >= 0 && t.rec < n ? { rec: t.rec } : {}), ...(t.tell ? { tellAgent: true } : {}) };
 }
 
 const SYSTEM = `You rewrite one card on a person's "Needs you" list so they can decide at a glance. An AI agent wrote the card; it is often long, cut off, or echoes back what the person said. Answer with JSON only:
-{"question":"...","why":"...","labels":["..."],"tips":["..."],"recommended":0,"judgement":false}
+{"question":"...","why":"...","labels":["..."],"tips":["..."],"recommended":0,"judgement":false,"notTheirs":false}
 - question: at most 15 words. A real question they answer, or one clear step for them, saying exactly what to do and where (open what, press what, listen to what). Never their own words repeated back. Never cut off.
 - why: one short line of context: what it's for, or what happens next. No jargon, no file names.
 - labels: one per option, in the same order, at most 5 words each, saying what pressing it does ("Send it", "Keep waiting", "Skip this step").
 - tips: one per option, same order: one sentence on what happens if they press it.
 - recommended: the index of the option to press first, or -1 if none stands out.
-- judgement: true when their step is to look, listen or try something and report what they found (which voice sounds better, whether it works), so they need to tell the agent the result, not just "done".`;
+- judgement: true when their step is to look, listen or try something and report what they found (which voice sounds better, whether it works), so they need to tell the agent the result, not just "done".
+- notTheirs: true when the card asks them whether something has happened or what state something is in (is it moved, have you scheduled it, did it arrive), or asks for something an agent could check or do itself. Those are the agent's to find out, never a card for them. Then the other fields don't matter.`;
 
 function check(o, n) {
   if (!o || typeof o !== "object") return null;
+  if (o.notTheirs === true) return { notTheirs: true, question: "" }; // "Is it moved yet?": the agent checks, it's no card
   const question = clip(o.question, 140), why = clip(o.why, 140);
   if (!question || words(question) > 18 || /…$/.test(question)) return null;
   const labels = Array.isArray(o.labels) ? o.labels.map((l) => clip(l, 40)) : [], tips = Array.isArray(o.tips) ? o.tips.map((t) => clip(t, 160)) : [];
