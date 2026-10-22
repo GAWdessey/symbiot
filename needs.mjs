@@ -21,7 +21,7 @@ import { createHash } from "node:crypto";
 import { CONFIG_DIR, readState, writeJsonAtomic } from "./core.mjs";
 
 const CARDTEXT = () => join(CONFIG_DIR, "cardtext.json");
-const MAX_KEEP = 300;
+const MAX_KEEP = 300, CARD_V = 2; // CARD_V: a card written before its agent's own line (doing) is written again
 const clip = (s, n) => { s = String(s || "").replace(/\s+/g, " ").trim(); return s.length > n ? s.slice(0, n - 1).replace(/\s+\S*$/, "") + "…" : s; };
 const words = (s) => String(s || "").trim().split(/\s+/).filter(Boolean).length;
 
@@ -60,35 +60,42 @@ function applyText(y, all = loadText()) {
   if (!y || y.kind !== "ask") return y;
   const t = textFor(y, all); if (!t || t.notTheirs) return y;
   const n = (y.options || []).length;
-  return { ...y, raw: y.raw || y.q, q: t.question, ...(t.why ? { why: t.why } : {}), ...(t.labels && t.labels.length === n ? { labels: t.labels } : {}), ...(t.tips && t.tips.length === n ? { tips: t.tips } : {}), ...(Number.isInteger(t.rec) && t.rec >= 0 && t.rec < n ? { rec: t.rec } : {}), ...(t.tell ? { tellAgent: true } : {}) };
+  return { ...y, raw: y.raw || y.q, q: t.question, ...(t.doing ? { doing: t.doing } : {}), ...(t.why ? { why: t.why } : {}), ...(t.labels && t.labels.length === n ? { labels: t.labels } : {}), ...(t.tips && t.tips.length === n ? { tips: t.tips } : {}), ...(Number.isInteger(t.rec) && t.rec >= 0 && t.rec < n ? { rec: t.rec } : {}), ...(t.tell ? { tellAgent: true } : {}) };
 }
 
 const SYSTEM = `You rewrite one card on a person's "Needs you" list so they can decide at a glance. An AI agent wrote the card; it is often long, cut off, or echoes back what the person said. Answer with JSON only:
-{"question":"...","why":"...","labels":["..."],"tips":["..."],"recommended":0,"judgement":false,"notTheirs":false}
-- question: at most 15 words. A real question they answer, or one clear step for them, saying exactly what to do and where (open what, press what, listen to what). Never their own words repeated back. Never cut off.
+{"doing":"...","question":"...","why":"...","labels":["..."],"tips":["..."],"recommended":0,"judgement":false,"notTheirs":false}
+- doing: at most 25 words, in the agent's own voice (I, me), saying that it is the one doing the work, what the work is and what it has done so far ("I'm moving bookly.co.za to the company's own account. I've drafted the transfer ticket."). Never written as steps for the person. Say a job is new or started only if the card shows it is running.
+- question: at most 15 words. The one thing the agent needs from them, from the agent ("Can I pay the R95 transfer fee?", "I need your OK to send the ticket."), or one clear step only they can take, saying exactly what to do and where. Never their own words repeated back. Never cut off. If it refers to a login, an account or a detail, name it (the address or account it means), never "the login".
 - why: one short line of context: what it's for, or what happens next. No jargon, no file names.
 - labels: one per option, in the same order, at most 5 words each, saying what pressing it does ("Send it", "Keep waiting", "Skip this step").
 - tips: one per option, same order: one sentence on what happens if they press it.
 - recommended: the index of the option to press first, or -1 if none stands out.
 - judgement: true when their step is to look, listen or try something and report what they found (which voice sounds better, whether it works), so they need to tell the agent the result, not just "done".
-- notTheirs: true when the card asks them whether something has happened or what state something is in (is it moved, have you scheduled it, did it arrive), or asks for something an agent could check or do itself. Those are the agent's to find out, never a card for them. Then the other fields don't matter.`;
+- notTheirs: true when the card asks them whether something has happened or what state something is in (is it moved, have you scheduled it, did it arrive), or asks for something an agent could check or do itself: a login, key, document or detail the saved keys or the linked sites and mailboxes listed hold, or a file on their computer. Those are the agent's to find out, never a card for them. Only a password nobody saved, a code sent to them, a payment, or a yes to something hard to undo is theirs. Then the other fields don't matter.`;
 
 function check(o, n) {
   if (!o || typeof o !== "object") return null;
-  if (o.notTheirs === true) return { notTheirs: true, question: "" }; // "Is it moved yet?": the agent checks, it's no card
-  const question = clip(o.question, 140), why = clip(o.why, 140);
+  if (o.notTheirs === true) return { v: CARD_V, notTheirs: true, question: "" }; // "Is it moved yet?": the agent checks, it's no card
+  const question = clip(o.question, 140), why = clip(o.why, 140), doing = words(o.doing) <= 30 && !/…$/.test(String(o.doing || "").trim()) ? clip(o.doing, 200) : "";
   if (!question || words(question) > 18 || /…$/.test(question)) return null;
   const labels = Array.isArray(o.labels) ? o.labels.map((l) => clip(l, 40)) : [], tips = Array.isArray(o.tips) ? o.tips.map((t) => clip(t, 160)) : [];
-  return { question, ...(why ? { why } : {}), ...(labels.length === n && labels.every(Boolean) ? { labels } : {}), ...(tips.length === n ? { tips } : {}), rec: Number.isInteger(o.recommended) ? o.recommended : -1, ...(o.judgement === true ? { tell: true } : {}) };
+  return { v: CARD_V, question, ...(doing ? { doing } : {}), ...(why ? { why } : {}), ...(labels.length === n && labels.every(Boolean) ? { labels } : {}), ...(tips.length === n ? { tips } : {}), rec: Number.isInteger(o.recommended) ? o.recommended : -1, ...(o.judgement === true ? { tell: true } : {}) };
 }
 // Writes the cards not written yet, one AI call each. write: ai.mjs write. Returns how many.
-async function writeCards(cards, { write, now = Date.now() } = {}) {
+// known: { keys: the vault's names, sites: the sites and mailboxes linked under Connections }, so a
+// card asking for what they hold goes back to its agent: the bookly card asked about a login no one
+// had saved, with the mailbox it'd come to linked and never read (22 Oct 2026). A card written before
+// the agent's own line (v) is written again, once.
+async function writeCards(cards, { write, now = Date.now(), known = {} } = {}) {
   if (typeof write !== "function") return 0;
   const all = loadText(); let n = 0;
+  const keys = (known.keys || []).slice(0, 40), sites = (known.sites || []).slice(0, 40);
+  const holds = `${keys.length ? `Saved keys the agents can use (names only): ${keys.join(", ")}.\n` : ""}${sites.length ? `Sites and mailboxes linked for the agents: ${sites.join(", ")}.\n` : ""}`;
   for (const y of cards || []) {
-    if (!y || y.kind !== "ask" || isUpdate(y) || all[keyOf(y)]) continue;
+    if (!y || y.kind !== "ask" || isUpdate(y) || (all[keyOf(y)] && all[keyOf(y)].v === CARD_V)) continue;
     const opts = y.options || [];
-    const prompt = `The card, from ${y.name || y.repo || "an agent"}${y.title ? ` (${y.title})` : ""}:\n${y.raw || y.q || y.sub}\n${y.why ? `Its context: ${y.why}\n` : ""}${y.report && y.report.title ? `It links a report: "${y.report.title}"\n` : ""}Its options, in order:\n${opts.map((o, i) => `${i}. ${o}`).join("\n") || "(none: they answer in their own words)"}`;
+    const prompt = `The card, from ${y.name || y.repo || "an agent"}${y.title ? ` (${y.title})` : ""}:\n${y.raw || y.q || y.sub}\n${y.task ? `The agent's job: ${y.task}\n` : ""}${y.done ? `What the agent says it has done: ${y.done}\n` : ""}${y.why ? `Its context: ${y.why}\n` : ""}${y.report && y.report.title ? `It links a report: "${y.report.title}"\n` : ""}${holds}Its options, in order:\n${opts.map((o, i) => `${i}. ${o}`).join("\n") || "(none: they answer in their own words)"}`;
     let r = null; try { r = await write(SYSTEM, prompt, { fast: true, kind: "triage" }); } catch {}
     const m = r && typeof r.text === "string" ? r.text.match(/\{[\s\S]*\}/) : null; let o = null; try { o = m ? JSON.parse(m[0]) : null; } catch {}
     const t = check(o, opts.length); if (!t) continue;

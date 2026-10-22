@@ -25,7 +25,7 @@ import { join } from "node:path";
 import { readFileSync, writeFileSync, mkdirSync, chmodSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { randomBytes } from "node:crypto";
-import { VERSION, CONFIG_DIR, clipWords, readState, writeJsonAtomic } from "./core.mjs";
+import { VERSION, CONFIG_DIR, clipWords, jobWords, readState, writeJsonAtomic } from "./core.mjs";
 import { track } from "./jobs.mjs";
 import { goalFor } from "./goals.mjs";
 import { write, textOf } from "./ai.mjs";
@@ -169,13 +169,15 @@ function actNow(request, { title, context, known, alongside, lane = "", run = ru
   const dir = join(ACT_DIR, "act-" + randomBytes(4).toString("hex"));
   try {
     mkdirSync(join(dir, ".symbiot"), { recursive: true, mode: 0o700 }); try { chmodSync(ACT_DIR, 0o700); } catch {}
-    writeFileSync(join(dir, ".symbiot", "TASKS.md"), actBrief(request, { title, context, known, alongside, now }));
-    writeFileSync(join(dir, ".symbiot", "handoff.json"), JSON.stringify({ name: clipWords("Agent: " + request.replace(/\s+/g, " "), 60), ...(lane ? { for: String(lane) } : {}) }));
+    // the handover's routing words ("New job:") stay out of the run's brief and name: its cards said "New job: …" with nothing launched
+    const job = jobWords(request) || request;
+    writeFileSync(join(dir, ".symbiot", "TASKS.md"), actBrief(job, { title, context, known, alongside, now }));
+    writeFileSync(join(dir, ".symbiot", "handoff.json"), JSON.stringify({ name: clipWords("Agent: " + job.replace(/\s+/g, " "), 60), ...(lane ? { for: String(lane) } : {}) }));
   } catch (e) { return { error: "Couldn't write the brief: " + ((e && e.message) || e) }; }
   const e = run(dir, { force: true });
   if (!e) return { error: "Your agent didn't start. Check its command in Settings → Handoff." };
   if (e.blocked || e.busy) return { error: `Your agent didn't start: ${e.note || "something held it back"}` }; // never "handed over" when nothing runs
-  track("run:" + (e.id || dir), { kind: "agent", lane: "agent", text: request, state: "running", waitingOn: "" }, { now });
+  track("run:" + (e.id || dir), { kind: "agent", lane: "agent", text: jobWords(request) || request, state: "running", waitingOn: "" }, { now });
   return { ok: true, job: e.id, dir };
 }
 

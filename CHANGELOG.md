@@ -2,6 +2,13 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one), for anyone who installs the app: what changed in it, never whose work it was (no projects, people, accounts, services, run ids or task wording of the person who made it). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.77.1 — 2026-10-22
+
+- **A card says who is doing the work.** Each card opens with its agent's own line: what it's on and what it has done so far, then the one thing it needs from you. A card that showed only a task's words read like a to-do list for you.
+- **A card asks what the agent needs, in its own words.** When an agent's waiting item didn't say what it waits on, its card no longer shows the task as your step. It asks with the sentence from the agent's report that names what it needs. When that's a yes, the button says Go ahead, and pressing it carries the work on.
+- **Cards don't ask for what an agent can find.** Before a card reaches you, it's checked against the keys you've saved and the sites and mailboxes you've linked. If what it asks for is there, its agent is sent to find it and carry on. A card that mentions a login names the account it means.
+- **No "New job" on a card when nothing was launched.** The routing words a handover carries stay out of the agent's task, its name and its cards.
+
 ## 0.77.0 — 2026-10-22
 
 - **The task list shows its tasks again.** The model picker beside each task took the whole row and hid the task's words; it now sits small at the end.

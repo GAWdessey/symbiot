@@ -938,7 +938,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
   onGoalAnswer((path, answers) => goalAnswer(path, answers, goalDeps()));
   // each card on Needs you gets its short question and labelled options written once (needs.mjs)
   let carding = false;
-  const cardSweep = async () => { if (carding) return; carding = true; try { let ai = null; try { ai = resolveProvider() ? aiWrite : null; } catch {} if (!ai) return; const n = await writeCards((homeState() || {}).you || [], { write: ai }); if (n) homeState({ fresh: true }); } catch {} finally { carding = false; } };
+  const cardSweep = async () => { if (carding) return; carding = true; try { let ai = null; try { ai = resolveProvider() ? aiWrite : null; } catch {} if (!ai) return; let keys = [], sites = []; try { keys = listSecrets().map((x) => x.name); } catch {} try { sites = [...new Set(Object.entries(loadConfig().linked || {}).flatMap(([id, v]) => [id, ...((v && v.hosts) || [])]))]; } catch {} const n = await writeCards((homeState() || {}).you || [], { write: ai, known: { keys, sites } }); if (n) homeState({ fresh: true }); } catch {} finally { carding = false; } };
   setTimeout(() => { cardSweep(); }, 8000).unref(); setInterval(() => { cardSweep(); }, 20000).unref();
   setTimeout(() => { goalsTick(goalDeps()).catch(() => {}); }, 60000).unref();
   setInterval(() => { goalsTick(goalDeps()).catch(() => {}); }, 10 * 60000).unref();

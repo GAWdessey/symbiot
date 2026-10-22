@@ -47,6 +47,10 @@ function track(key, patch = {}, { now = Date.now() } = {}) {
     if (patch.note !== undefined) j.note = clip(patch.note, 200);
     if (patch.what !== undefined) j.what = clip(patch.what, 200);
     if (patch.summary !== undefined) j.summary = clip(patch.summary, 400);
+    // a waiting run's job, and whether its [~] item said what it waits on (bare: it didn't): goals.mjs
+    // words the card from them. Each run's end sets them afresh, so an older run's don't linger.
+    if (patch.outcome || patch.task !== undefined) { if (patch.task) j.task = clip(patch.task, 140); else delete j.task; }
+    if (patch.outcome || patch.bare !== undefined) { if (patch.bare) j.bare = true; else delete j.bare; }
     if (patch.outcome) j.outcome = true; // written by a run's end (agents.mjs runOutcome): the screens read this, not their own guess
     if (state) shift(j, state, now);
     if (patch.waitingOn !== undefined) j.waitingOn = WAITING.includes(patch.waitingOn) ? patch.waitingOn : "";

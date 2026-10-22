@@ -29,7 +29,7 @@
 import { join } from "node:path";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
-import { CONFIG_DIR, loadTasks, clipWords, readState, writeJsonAtomic } from "./core.mjs";
+import { CONFIG_DIR, loadTasks, clipWords, jobWords, readState, writeJsonAtomic } from "./core.mjs";
 import { goalRows, putGoal, loadJobs, ENDED } from "./jobs.mjs";
 
 const DAY = 86400e3, H = 3600e3;
@@ -144,7 +144,10 @@ function childState(key, ctx) {
   if (kind === "run") {
     const j = ctx.jobs.find((x) => x.key === key); if (!j) return { state: "active" };
     if (ctx.running(j.path)) return { state: "active", path: j.path };
-    if (j.state === "waiting") return { state: "waiting", waitingOn: j.waitingOn, what: j.what, path: j.path, at: j.changed, summary: j.summary };
+    if (j.state === "waiting") { // the job it's on (its [~] item, or an ops run's own request), for the card's "I'm on it: …"
+      const job = jobWords(j.task || (j.lane === "agent" || /^act-/.test(String(j.lane || "")) ? j.text : ""));
+      return { state: "waiting", waitingOn: j.waitingOn, what: j.what, path: j.path, at: j.changed, summary: j.summary, ...(job ? { task: job } : {}), ...(j.bare ? { bare: true } : {}) };
+    }
     if (j.state === "review") return { state: "waiting", waitingOn: "user", what: "its changes wait for Approve", path: j.path, at: j.changed, summary: j.summary };
     if (j.state === "paused") return { state: "active", path: j.path, summary: j.summary };
     if (ENDED.has(j.state) || j.state === "approved" || j.state === "merged") return { state: "ended", ok: j.state !== "failed", path: j.path, at: j.changed, summary: j.summary || j.note || "" };
@@ -227,6 +230,13 @@ function close(g, kind, v, ctx, deps, now) {
   try { (deps.notify || (() => {}))(kind === "done" ? "Done" : "Not finished", clip(g.text, 120)); } catch {}
 }
 
+// The sentence of a run's last words that says what it needs from the user ("…creating the account
+// and sending the ticket need your yes."), so a card's one ask isn't lost after "The move isn't done.".
+const NEEDS_USER = /\b(?:you|your|the user|garth(?:'s)?)\b|\byes\b|\bok\b|approv|go-?ahead|sign[- ]?in|password|\bcode\b/i, YES_ASK = /\byes\b|\bok\b|approv|go-?ahead/i;
+function askIn(said) {
+  const s = String(said || "").replace(/\s+/g, " ").trim().match(/[^.!?]+(?:[.!?]+|$)/g) || [];
+  return (s.find((x) => NEEDS_USER.test(x)) || s.join(" ")).trim();
+}
 // ---- the tick ----------------------------------------------------------------------
 // deps: { write (ai.mjs), running(path), start(path) → run entry, autoStart(path) → bool,
 //   ops(request, opts) → { job, dir } (mind.mjs actNow), notify(title, body), settle(path, note),
@@ -261,12 +271,18 @@ async function goalsTick(deps = {}, { now = Date.now() } = {}) {
         // the card is the step it waits on, in the run's words (its record's `what`), never the user's
         // own request echoed back: "no as discussed we have created the …company…" was all one showed
         // (22 Oct 2026). No step on record, no card: there's nothing to decide.
-        if (!(c.path && carded.has(c.path)) && (!g.card || g.card.kind !== "user") && r.what) g.card = { kind: "user", q: clip(r.what, 300), options: ["I've done it", "Drop it"], at: now };
+        // It says who's doing the work: the agent, on its job (task), with what it has done so far (done),
+        // then the one thing it needs. A [~] item with no note (bare) was only the task: its words aren't
+        // the user's step, so the run's own last words ask instead ("Move bookly.co.za into a … Copy them
+        // into a…" read as the user's job, and they asked "how should i know you are the one thats
+        // manning it not me", 22 Oct 2026).
+        const ask = c.bare && c.summary ? askIn(c.summary) : r.what, yes = c.bare && YES_ASK.test(ask);
+        if (!(c.path && carded.has(c.path)) && (!g.card || g.card.kind !== "user") && ask) g.card = { kind: "user", q: clip(ask, 300), options: [yes ? "Go ahead" : "I've done it", "Drop it"], ...(c.task ? { task: clip(c.task, 120) } : {}), ...(c.summary && !c.bare ? { done: clip(c.summary, 240) } : {}), at: now };
         // a card the card writer found isn't theirs (needs.mjs notTheirs: "Is it moved yet?") goes back to
         // the run: it checks for itself and carries on, under the hourly cap, never a card again for it
         if (g.card && g.card.kind === "user" && deps.notTheirs && deps.notTheirs(g.card) && c.path && !ctx.running(c.path)) {
-          if (deps.settle) { try { deps.settle(c.path, "not the user's: check it yourself and carry on"); } catch {} }
-          if (start(c.path, "the card for this was a status you can check yourself: check it and carry on, and don't ask the user for it") !== false) { g.card = null; did.push({ goal: g.key, checking: c.path }); }
+          if (deps.settle) { try { deps.settle(c.path, "not the user's: find it yourself (Symbiot's vault, the linked mailboxes and connectors, the user's files) and carry on"); } catch {} }
+          if (start(c.path, "the card for this asked for something you can find or check yourself: look in Symbiot's vault, the linked mailboxes and connectors and the user's files first, carry on, and ask the user only for what none of them has") !== false) { g.card = null; did.push({ goal: g.key, checking: c.path }); }
         }
       } else if (r.waitingOn === "lane" && c.handoff && c.path && now - (c.at || now) > H) {
         start(c.path, `${c.handoff.to.lane} hadn't started on it`);
@@ -296,7 +312,7 @@ function goalCards({ jobs = loadJobs(), waits = [], now = Date.now() } = {}) {
   const out = [];
   for (const g of goalRows({ jobs })) {
     if (!g.card || g.card.seen) continue;
-    out.push({ kind: "ask", id: `goal:${g.key.slice(5)}:${g.card.kind}`, path: g.key, repo: g.lane || "", title: g.card.kind === "done" ? "Done" : g.card.kind === "notdone" ? "Not finished" : "Your goal", sub: clip(g.card.q, 90), q: g.card.q, options: g.card.options, goal: g.key.slice(5), ...(g.closed && g.closed.report ? { goalReport: { folder: g.closed.folder, name: g.closed.report } } : {}) });
+    out.push({ kind: "ask", id: `goal:${g.key.slice(5)}:${g.card.kind}`, path: g.key, repo: g.lane || "", title: g.card.kind === "done" ? "Done" : g.card.kind === "notdone" ? "Not finished" : "Your goal", sub: clip(g.card.q, 90), q: g.card.q, options: g.card.options, goal: g.key.slice(5), ...(g.card.task ? { task: g.card.task } : {}), ...(g.card.done ? { done: g.card.done } : {}), ...(g.closed && g.closed.report ? { goalReport: { folder: g.closed.folder, name: g.closed.report } } : {}) });
   }
   const kept = loadCardsFile().kept || {};
   for (const w of waits) {
@@ -328,8 +344,9 @@ function goalAnswer(path, answers = [], deps = {}, { now = Date.now() } = {}) {
     const e = deps.ops(`Send this follow-up exactly as written, as a reply on the same thread${w ? ` ("${w.wait.subject}", to ${w.wait.to})` : ""}. The user approved this text word for word on Home just now:\n\n${g.nudge.text}`, { title: `Follow-up: ${clip(g.text, 60)}` });
     if (e && e.job) g.children.push("run:" + e.job); if (e && e.dir) g.paths.push(e.dir);
     g.card = null; g.moved = now; said = e && (e.job || e.dir) ? "The follow-up is going out as drafted." : `It didn't start: ${(e && e.error) || "no agent"}`;
-  } else if (is("I've done it")) {
-    for (const c of rollUp(g, ctx).kids.filter((x) => x.state === "waiting" && x.waitingOn === "user" && x.path)) { try { deps.settle && deps.settle(c.path, "the user did their step"); } catch {} try { deps.start && deps.start(c.path); } catch {} }
+  } else if (is("I've done it") || is("Go ahead")) { // Go ahead: the yes a run's own words asked for (goalsTick askIn)
+    const why = is("Go ahead") ? "the user said go ahead" : "the user did their step";
+    for (const c of rollUp(g, ctx).kids.filter((x) => x.state === "waiting" && x.waitingOn === "user" && x.path)) { try { deps.settle && deps.settle(c.path, why); } catch {} try { deps.start && deps.start(c.path); } catch {} }
     g.card = null; g.moved = now; said = "Thanks: its work carries on.";
   } else if (is("Try again") || is("Look into it now")) {
     g.leftTries = 0; g.card = null; g.moved = now;
