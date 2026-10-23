@@ -2,6 +2,12 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one), for anyone who installs the app: what changed in it, never whose work it was (no projects, people, accounts, services, run ids or task wording of the person who made it). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.84.0 — 2026-10-23
+
+- **Approve no longer holds the project folder while it sends.** Approve used to keep agents out of a project's folder for the whole send, often 3 to 12 minutes. That covered bringing the change up to date with main, running the tests and pushing, all done in the folder an agent works in. Now the folder is held only for the few seconds it takes to commit. The rest happens in a separate copy, and agents can start again meanwhile.
+- **Tests check exactly what goes out.** Approve's tests now run on the commit being sent, brought up to date with main. Before, they ran on the folder, which could include half-finished edits from a run still going.
+- **Nothing changes under a running agent.** Once the change is up, the folder follows: right away, or, if an agent is at work there, as soon as its run ends. If you approve again before that, the new work goes up as the next commit on the same branch, not as a second copy of the first.
+
 ## 0.83.0 — 2026-10-23
 
 - **New screens are designed before they're built.** When an agent is about to build a new page, screen, dashboard or flow, or rework one, Symbiot first starts a designer on its strongest model. The designer writes no code. It looks at what's there and writes a spec:
