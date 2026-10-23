@@ -2,9 +2,18 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one), for anyone who installs the app: what changed in it, never whose work it was (no projects, people, accounts, services, run ids or task wording of the person who made it). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.86.0 — 2026-10-23
+
+- **"Done" is checked, not just said.** When an agent ticks an item, Symbiot now checks it against what the run actually did before the tick counts:
+  - a code change must have changed files, and the project's tests must have run after the last edit and passed;
+  - a message, email or post needs a check that it landed;
+  - a deploy needs a check of the live address after it.
+
+  An item without that evidence is reopened, with what's missing, and its agent starts again. After two tries it comes to you, saying what couldn't be confirmed. Investigations, reports and drafts aren't checked this way, and UI work keeps its design critic.
+
 ## 0.85.1 — 2026-10-23
 
-- Read-only: change no code, commit nothing, push nothing, send nothing.
+- **Clearer asks from agents.** A question about spending money now has to say what it's for and why it beats a cheaper route already on the table. A step only you can do says exactly what to do and where, and why it's yours. And agents no longer hand you a report to read as your step: they check it's current, sum it up in a few lines, and ask the one question that's left.
 
 ## 0.85.0 — 2026-10-23
 

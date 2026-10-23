@@ -62,6 +62,8 @@ try {
   ok(`no release in CHANGELOG.md names a run, a run's copy, an email, an address, a dated ask or a lane${priv.length ? `, nor any of the ${priv.length} private names` : ""}`, !own.length, own);
   ok("...and the check finds one when it's there", o.checkChangelog("# Changelog\n\n## 1.0.1 — 2026-10-16\n\n- Twilio part of the test: done by ops (run act-2ae1923d).\n\n## 1.0.0\n\n- Fine.\n").length === 1, "");
 
+  ok("an agent's own instructions aren't a release note (0.85.1's was \"Read-only: change no code, commit nothing…\")", o.internalOnly("Read-only: change no code, commit nothing, push nothing, send nothing.") && o.internalOnly("Don't send anything yet") && !o.internalOnly("Agents can type into rich-text boxes on web pages."));
+
   console.log("EVERY FILE IN THE REPO — the code, tests and docs are public too (GitHub and npm), not only the notes");
   // 21 Oct 2026: the notes were checked and the code wasn't. Comments and test fixtures named the
   // maker's people, clients, servers and personal addresses in every published version. Each tracked
