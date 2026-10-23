@@ -2,6 +2,10 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one), for anyone who installs the app: what changed in it, never whose work it was (no projects, people, accounts, services, run ids or task wording of the person who made it). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.85.1 — 2026-10-23
+
+- Read-only: change no code, commit nothing, push nothing, send nothing.
+
 ## 0.85.0 — 2026-10-23
 
 - **Your secrets move into the computer's keyring.** On Linux, Symbiot used the keyring only when one small command-line tool was installed, and most desktops don't ship it. So every secret sat encrypted on disk, right next to its key. Symbiot now talks to the keyring directly, moves the secrets it kept on disk into it when it starts, checks each one reads back, and then deletes the key file.
