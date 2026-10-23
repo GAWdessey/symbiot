@@ -2,9 +2,22 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one), for anyone who installs the app: what changed in it, never whose work it was (no projects, people, accounts, services, run ids or task wording of the person who made it). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
-## 0.82.2 — 2026-10-23
+## 0.83.1 — 2026-10-23
 
 - Read-only: change no code, commit nothing, push nothing, send nothing.
+
+## 0.83.0 — 2026-10-23
+
+- **New screens are designed before they're built.** When an agent is about to build a new page, screen, dashboard or flow, or rework one, Symbiot first starts a designer on its strongest model. The designer writes no code. It looks at what's there and writes a spec:
+  - what the screen is for, and the best product of its kind to measure it against;
+  - every flow people expect;
+  - each screen at desktop and phone size;
+  - its states and its actual words;
+  - what's left out of this round;
+  - an acceptance checklist.
+
+  The builder then builds to that spec, and the design critic judges the result against it as well as the usual standard. Small fixes (a colour, spacing, one button) go straight to the builder.
+- **The critic's review stays out of the builder's conversation.** A run started after a review now carries on from the builder's own conversation, not the critic's.
 
 ## 0.82.1 — 2026-10-23
 
@@ -14,7 +27,7 @@ What each Symbiot release brought, newest first. When Approve bumps the version,
 
 ## 0.82.0 — 2026-10-23
 
-- **The Vault, rebuilt as a proper password manager.** Everything saved is grouped by the service it belongs to, with readable names ("Twilio · Auth token", not "twilio-auth-token"), and the one you pick opens in a panel beside the list, or as its own page on a phone. Search finds names, services and emails, and filters narrow it to passwords, keys or codes. Press / to search, and use the arrow keys to move through the list.
+- **The Vault, rebuilt as a proper password manager.** Everything saved is grouped by the service it belongs to, with readable names ("Example Pay · Auth token", not "example-pay-auth-token"), and the one you pick opens in a panel beside the list, or as its own page on a phone. Search finds names, services and emails, and filters narrow it to passwords, keys or codes. Press / to search, and use the arrow keys to move through the list.
 - **Unlock where you are.** Pressing Show, Copy or any change while it's locked brings up the unlock box over the page, then does what you pressed. It stays unlocked while you use it and locks 5 minutes after you stop. The first time, the same box sets your vault PIN.
 - **Keep it tidy.** Add a login, key or set of codes yourself; rename one (agents then ask for it by its new name); delete one, with a few seconds to undo. "Needs a look" lists what's worth fixing: a name that says nothing ("token"), the same value saved twice (compared on this computer, never shown), a file's name saved as a password, and code sets that are all used. Each comes with its fix.
 - **Values read clearly.** A shown value has its digits and symbols coloured, so 0 and O and 1 and l can't be confused. A set of codes lists the unused ones first, and copying shows "Copied" right on the button.

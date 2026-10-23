@@ -100,6 +100,47 @@ try {
   const rv = join(HOME, "work", "app2"); mkdirSync(join(rv, ".symbiot"), { recursive: true });
   D.saveReview(rv, { "A page": { rounds: 1, at: Date.now() } });
   ok("saving a review is what records it (no remote here: nothing to hold)", existsSync(join(CFG, "ui-open.json")) && D.holdsMerge("").length === 0);
+
+  {
+  console.log("DESIGN FIRST — a new screen or a rework gets a spec from Symbiot's designer before it's built (23 Oct 2026)");
+  const worthy = ["Build a vault viewer in Symbiot that lists the saved secrets by name", "Redesign the settings page", "Make the demo dashboard for the call centre", "Add a new screen for invoices"];
+  const notWorthy = ["Fix the spacing on the vault button", "Tweak the colour of the header", "Add a delete button to each row", "Make the app faster on startup", "Add a webhook endpoint for SMS", "Rename the Save button to Keep"];
+  ok("a new screen, page, dashboard or a rework is designed first", worthy.every((t) => D.designWorthy(t)), worthy.filter((t) => !D.designWorthy(t)));
+  ok("…a small fix, one control, or work nobody looks at isn't", notWorthy.every((t) => !D.designWorthy(t)), notWorthy.filter((t) => D.designWorthy(t)));
+  const dl = join(HOME, "work", "atlas"); mkdirSync(join(dl, ".symbiot"), { recursive: true });
+  const md = "## Tasks\n- [ ] Build the booking page for the salon\n- [ ] Fix the spacing on the footer\n- [x] Redesign the old report page\n";
+  const st = D.startDesign(dl, md);
+  ok("only the open one worth it: marked pending, with a spec path under .symbiot/design/", st.length === 1 && st[0].item === "Build the booking page for the salon" && /^\.symbiot\/design\/build-the-booking-page-for-the-salon\.md$/.test(st[0].spec) && D.designOf(dl)[st[0].item].pending, st);
+  const brief = readFileSync(join(dl, ".symbiot", "UI-DESIGNER.md"), "utf8");
+  ok("the designer's brief: write no code, look at what's there, and every section of a spec (the bar, flows, both sizes, states, words, out of scope, acceptance)", /Write no code/.test(brief) && /shoot/.test(brief) && ["The job", "The bar", "Flows", "Screens", "States", "Words", "Out of scope", "Acceptance"].every((h) => brief.includes(`**${h}`)) && brief.includes(st[0].spec), brief.slice(0, 300));
+  ok("…and a pending one is offered again (its designer never started or never finished), but not twice at once", D.toDesign(md, D.designOf(dl)).length === 1);
+  ok("settled with no spec written: missing, the builder goes on without, and it isn't designed again", (() => { const r = D.settleDesign(dl); return r.missing.length === 1 && D.toDesign(md, D.designOf(dl)).length === 0 && D.specsFor(dl).length === 0; })());
+  writeFileSync(join(dl, ".symbiot", "ui-design.json"), "{}"); D.startDesign(dl, md); mkdirSync(join(dl, ".symbiot", "design"), { recursive: true });
+  writeFileSync(join(dl, st[0].spec), "# Booking page\n\n" + "**The job:** a client books a cut in under a minute. ".repeat(20));
+  const sd = D.settleDesign(dl);
+  ok("settled with its spec written: recorded, and it's the spec for that item", sd.written.length === 1 && D.specsFor(dl)[0].spec === st[0].spec, [sd, D.specsFor(dl)]);
+  ok("the builder's brief says to build to the spec, its acceptance list part of done", D.designBrief().join("\n").includes(".symbiot/design/") && /acceptance list is part of done/.test(D.designBrief().join("\n")));
+  const cb = D.criticBrief([{ item: st[0].item, rounds: 0 }], { specs: D.specsFor(dl) });
+  ok("the critic judges against the spec as well as the standard", cb.includes("The spec it was built to") && cb.includes(st[0].spec) && /missing or wrong fails it/.test(cb));
+  D.startDesign(dl, md.replace("booking page for the salon", "staff rota screen")); ok("a designer that didn't start leaves nothing pending", D.dropDesign(dl) === 1 && Object.values(D.designOf(dl)).every((v) => !v.pending));
+
+  console.log("DESIGN FIRST — the run: the designer goes first, on the strongest model, then the builder, told of the spec");
+  const { execSync } = await import("node:child_process");
+  const rl = join(HOME, "work", "salon"); mkdirSync(join(rl, ".symbiot"), { recursive: true }); execSync("git init -q", { cwd: rl });
+  writeFileSync(join(rl, ".symbiot", "TASKS.md"), "## Tasks\n- [ ] Build the booking page for the salon\n");
+  const stub = join(HOME, "stub.mjs");
+  writeFileSync(stub, `import { appendFileSync, writeFileSync, mkdirSync, readFileSync } from "node:fs"; import { join } from "node:path";
+const [prompt, dir] = process.argv.slice(2); appendFileSync(join(dir, ".symbiot", "prompts.txt"), prompt + "\\n---\\n");
+if (/product designer/.test(prompt)) { const b = readFileSync(join(dir, ".symbiot", "UI-DESIGNER.md"), "utf8"); const p = b.match(/write the spec to \x60([^\x60]+)\x60/)[1]; mkdirSync(join(dir, ".symbiot", "design"), { recursive: true }); writeFileSync(join(dir, p), "# Spec\\n" + "x".repeat(800)); }`);
+  A.setHandoffCmd(`"${process.execPath}" ${stub} "{prompt}" {dir}`);
+  const run = A.runHandoff(rl, { force: true });
+  const pf = join(rl, ".symbiot", "prompts.txt"), two = () => (existsSync(pf) ? readFileSync(pf, "utf8").split("---").filter((x) => x.trim()).length : 0);
+  for (let i = 0; i < 200 && two() < 2; i++) await new Promise((r) => setTimeout(r, 50));
+  const told = existsSync(pf) ? readFileSync(pf, "utf8").split("---").map((x) => x.trim()).filter(Boolean) : [];
+  ok("the first run is the designer, and it's named so", run && run.designer && /product designer/.test(told[0] || ""), [run && run.designer, told[0]]);
+  ok("…its spec is recorded when it ends, and the builder starts next, told to build to it", told.length >= 2 && !/product designer/.test(told[1]) && /designer has written the spec/.test(told[1]) && D.specsFor(rl).length === 1, told);
+  A.setHandoffCmd("");
+  }
 } catch (e) { ok("ran", false, String((e && e.stack) || e)); }
 finally { rmSync(HOME, { recursive: true, force: true }); }
 console.log(`\n${fail ? "✗" : "✓"} design: ${pass} passed, ${fail} failed`);

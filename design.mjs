@@ -12,6 +12,12 @@
 //   itself, looks at the screenshots and passes the item or reopens it with what to fix. Two rounds
 //   at most; then it says honestly that it still doesn't pass.
 // Verdicts and rounds are kept in the folder's .symbiot/ui-review.json.
+// - the designer (agents.mjs runHandoff, designer: true): before a new screen or a rework is built,
+//   a run on the strongest model decides what it should be and writes a spec (the job, the best
+//   product of its kind, every flow, each screen at both sizes, states, words, an acceptance list),
+//   changing no code. The builder builds to it and the critic judges against it. The Vault (23 Oct
+//   2026) was built straight from a one-line task: tidy, and nothing like a password manager, and
+//   design only came in afterwards, as a list of corrections. Kept in .symbiot/ui-design.json.
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync } from "node:fs";
@@ -54,7 +60,8 @@ function designBrief({ cli = CLI } = {}) {
     "2. Open each screenshot (Read the image) and critique it in writing against the list above, point by point: what fails and why.",
     "3. Fix what fails, screenshot again, and repeat until every point passes.",
     "4. In your last message, and in a short report `.symbiot/UI-<what it is>.md` (a `# ` title first), list the final screenshots' paths and the checklist with each point's result.",
-    "A UI item ticked without that evidence goes back. After you tick it, Symbiot's design critic, a separate agent, looks at your screenshots and either passes it or reopens it with what to fix.", ""];
+    "A UI item ticked without that evidence goes back. After you tick it, Symbiot's design critic, a separate agent, looks at your screenshots and either passes it or reopens it with what to fix.", "",
+    "**A design spec comes first** for a new screen or a rework: Symbiot's designer writes it before you start, in `.symbiot/design/` (`.symbiot/ui-design.json` says which spec is for which item). Read the item's spec before you build and build to it: its flows, layout, states and words. Its acceptance list is part of done; tick the item only when every point is met and your screenshots show it. Where you have to depart from it, say where and why in your UI report. The critic judges your work against it.", ""];
 }
 
 // ---- the critic ---------------------------------------------------------------------
@@ -97,7 +104,8 @@ function toReview(md, files = [], review = {}) {
 // The critic's instructions, written to .symbiot/UI-CRITIC.md: the run's own prompt passes through
 // two shells (agents.mjs HANDOFF_PROMPT), so it only says to read this file.
 const CRITIC_PROMPT = "You are the design critic of Symbiot, a UI specialist: read .symbiot/UI-CRITIC.md and do exactly what it says. You review the finished UI work of another agent; you did not build it."; // no quotes, $ or backticks: like HANDOFF_PROMPT it may pass through two shells
-function criticBrief(items, { cli = CLI } = {}) {
+function criticBrief(items, { cli = CLI, specs = [] } = {}) {
+  const sp = specs.filter((x) => items.some((i) => i.item === x.item));
   return ["# Design critic: review the finished UI work", "",
     "You are Symbiot's design critic. Another agent built this and ticked it; you judge it, you don't polish it: change no code and tick nothing.", "",
     "## What to judge", ...items.map((x) => `- ${x.item}`), "",
@@ -106,6 +114,7 @@ function criticBrief(items, { cli = CLI } = {}) {
     `2. Screenshot every screen and state at both sizes: \`node "${cli}" shoot <url> --out .symbiot/shots/review\` (\`--full\` for a long page).`,
     "3. Open each screenshot (Read the image) and judge it point by point against the standard below. Pass only what a picky product designer would ship to a customer.", "",
     "## The standard", ...CHECKLIST.map((c) => `- ${c}`), "",
+    ...(sp.length ? ["## The spec it was built to", "Symbiot's designer wrote what this should be before it was built. Judge each item against its spec as well as the standard: a flow, a screen, a state or an acceptance point in the spec that's missing or wrong fails it.", ...sp.map((x) => `- ${x.item}: \`${x.spec}\``), ""] : []),
     "## Your verdict",
     `Write \`.symbiot/${VERDICT}\`:`, "```json", '{"items":[{"item":"<the item, exactly as listed above>","pass":false,"fixes":["which screen, what is wrong, what it should be"],"shots":[".symbiot/shots/review/…png"]}]}', "```",
     "and a short report `.symbiot/UI-REVIEW.md` (a `# ` title first: passed, or what must change), listing the screenshots. Symbiot sends failed items back to their builder with your fixes.", ""].join("\n");
@@ -138,6 +147,72 @@ function settleVerdict(path, { md = null, now = Date.now() } = {}) {
   return { ...out, md: text };
 }
 
+// ---- design first --------------------------------------------------------------------------
+const DESIGN = "ui-design.json", MIN_SPEC = 600;
+const DESIGNER_PROMPT = "You are the product designer of Symbiot, a UI specialist: read .symbiot/UI-DESIGNER.md and do exactly what it says. You decide what is built; you write no code."; // no quotes, $ or backticks: like HANDOFF_PROMPT it may pass through two shells
+// Worth a spec: a new screen, page, app, dashboard, demo or flow, or a rework of one. A small fix
+// (spacing, a colour, a typo, moving a button) isn't, unless it says it's a redesign.
+const BIG = /\b(build|make|create|add|design|redesign|rework|rebuild|overhaul|revamp|reimagine|new)\b/i;
+const THING = /\b(viewers?|pages?|screens?|dashboards?|demos?|portals?|apps?|sites?|website|forms?|panels?|views?|editors?|wizards?|flows?|onboarding|ui|ux|interface|landing)\b/i;
+const NOT_LOOK = /\b(faster|performance|speed|memory|tests?|bug|crash|refactor|deploy|migrat\w*|endpoint|api|backend|server|database|schema|cron|webhook)\b/i;
+const SMALL = /\b(fix|tweak|nudge|align|typo|colou?r|spacing|padding|margin|rename|bump|move|wording|label)\b/i;
+const WHOLE = /\b(redesign|rework|rebuild|overhaul|revamp|new (?:page|screen|app|view|flow|dashboard|site))\b/i;
+function designWorthy(text = "") { const t = String(text || ""); if (WHOLE.test(t)) return true; return THING.test(t) && BIG.test(t) && !SMALL.test(t) && !NOT_LOOK.test(t); }
+const designOf = (path) => readJson(join(path, ".symbiot", DESIGN), {}) || {};
+function saveDesign(path, d) { try { mkdirSync(join(path, ".symbiot"), { recursive: true }); writeFileSync(join(path, ".symbiot", DESIGN), JSON.stringify(d, null, 1)); } catch {} }
+const specSlug = (item) => String(item).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60) || "ui";
+// Open UI items that need a spec and have none, nor a failed try: [{ item, spec }] (spec: its path in the folder).
+function toDesign(md, design = {}) {
+  const open = String(md || "").split("\n").filter((l) => /^\s*[-*+]\s*\[ \]/.test(l)).map(itemKey).filter(Boolean);
+  return [...new Set(open)].filter((t) => designWorthy(t) && (!design[t] || design[t].pending)).map((item) => ({ item, spec: `.symbiot/design/${specSlug(item)}.md` }));
+}
+// The designer's instructions, written to .symbiot/UI-DESIGNER.md.
+function designerBrief(items, { cli = CLI } = {}) {
+  return ["# Design first: what this should be, before anyone builds it", "",
+    "You are Symbiot's product designer. A builder will build this after you, to your spec, and a critic will judge it against your spec. You decide what it should be. Write no code and tick nothing: your work is the spec.", "",
+    "## What to design", ...items.map((x) => `- ${x.item}\n  → write the spec to \`${x.spec}\``), "",
+    "## How",
+    "1. Read the task, the code it touches and what exists now. If there's a screen already, run it and look at it: " + `\`node "${cli}" shoot <url> --out .symbiot/shots/design\`` + ", then open the screenshots. Read the product's own UI code for its looks, components and words, so what you design fits it.",
+    "2. Work out who it's for and what they're trying to do, from the task and the repo. Don't ask unless it truly can't be told; then say what you assumed.",
+    "3. Write the spec, a `# ` title first, with these sections:",
+    "   - **The job:** what it's for and for whom, and what done looks like to them, in a short paragraph.",
+    "   - **The bar:** the best product of its kind (a password vault: 1Password or Bitwarden; a dashboard: Linear or Stripe's; a booking flow: Calendly) and what it does that people now expect.",
+    "   - **Flows:** every flow people expect, step by step, with what's on screen at each step: first use, the empty state, finding, adding, changing, removing and undoing, errors, keyboard, phone. Say which flows are in this round.",
+    "   - **Screens:** each screen as a plain-text wireframe at desktop (1440 wide) and phone (390 wide): what's where, what's grouped, the one main action, what sticks when it scrolls.",
+    "   - **States:** loading, empty, error, success, and locked or no permission where it applies, each with its words.",
+    "   - **Words:** the real headings, button labels, empty states and messages, in plain language, as they'll appear.",
+    "   - **Out of scope:** what this round deliberately leaves out, so the critic doesn't count it.",
+    "   - **Acceptance:** a short checklist anyone can check on a screenshot: concrete and visible, not \"looks good\".",
+    "4. Keep it to what this product is: its looks, its components, its tone. Design the best version of it, not a different app.",
+    "",
+    "Symbiot records each spec when you finish and starts the builder on it. A spec that isn't written leaves the builder without one.", ""].join("\n");
+}
+// At the designer's end: each item's spec, if it was written (enough of one), else recorded as missing
+// so the builder carries on without and no designer is started for it again.
+function settleDesign(path, { now = Date.now() } = {}) {
+  const d = designOf(path), out = { written: [], missing: [] };
+  for (const [item, v] of Object.entries(d)) {
+    if (!v || !v.pending) continue;
+    let ok = false; try { ok = readFileSync(join(path, v.spec), "utf8").trim().length >= MIN_SPEC; } catch {}
+    d[item] = ok ? { spec: v.spec, at: now } : { spec: v.spec, missing: true, at: now };
+    (ok ? out.written : out.missing).push(item);
+  }
+  saveDesign(path, d);
+  return out;
+}
+// A designer that didn't start: its items are no longer pending, so the next run designs them.
+function dropDesign(path) { const d = designOf(path); let n = 0; for (const [k, v] of Object.entries(d)) if (v && v.pending) { delete d[k]; n++; } if (n) saveDesign(path, d); return n; }
+// The specs written for this folder's items: [{ item, spec }].
+const specsFor = (path) => Object.entries(designOf(path)).filter(([, v]) => v && v.spec && !v.pending && !v.missing && existsSync(join(path, v.spec))).map(([item, v]) => ({ item, spec: v.spec }));
+// Before a run: what needs designing first. Marks them pending and writes the designer's brief.
+function startDesign(path, md, { now = Date.now() } = {}) {
+  const items = toDesign(md, designOf(path)); if (!items.length) return [];
+  const d = designOf(path); for (const x of items) d[x.item] = { pending: true, spec: x.spec, at: now };
+  try { mkdirSync(join(path, ".symbiot", "design"), { recursive: true }); writeFileSync(join(path, ".symbiot", "UI-DESIGNER.md"), designerBrief(items)); } catch { return []; }
+  saveDesign(path, d);
+  return items;
+}
+
 // ---- symbiot shoot ---------------------------------------------------------------------
 // Screenshots of a page at the given sizes with headless Chrome, as PNG files in `out`.
 // sizes: "1440x900,390x844". full: a tall window, so a long page is captured whole.
@@ -158,4 +233,4 @@ function shoot(url, { out, sizes = "1440x900,390x844", full = false, bin, now = 
   return failed.length && !shots.length ? { error: "Chrome didn't take the screenshots here.", failed } : { shots, ...(failed.length ? { failed } : {}) };
 }
 
-export { slugOf, folderSlug, noteOpen, holdsMerge, OPEN_MS, isUiWork, designBrief, CHECKLIST, toReview, criticBrief, CRITIC_PROMPT, settleVerdict, reviewOf, saveReview, itemKey, shoot, REVIEW, VERDICT, MAX_ROUNDS };
+export { dropDesign, designWorthy, toDesign, designerBrief, settleDesign, specsFor, startDesign, designOf, DESIGNER_PROMPT, DESIGN, MIN_SPEC, slugOf, folderSlug, noteOpen, holdsMerge, OPEN_MS, isUiWork, designBrief, CHECKLIST, toReview, criticBrief, CRITIC_PROMPT, settleVerdict, reviewOf, saveReview, itemKey, shoot, REVIEW, VERDICT, MAX_ROUNDS };
