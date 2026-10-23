@@ -306,7 +306,7 @@ function withModel(tmpl, model) {
 // config.agentSandbox: false turns it off.
 const SANDBOX_DIR = join(CONFIG_DIR, "sandbox");
 const SANDBOX_CACHES = [".npm", ".cache"]; // npm's cache and logs; pip, uv, node-gyp, Chrome for Testing
-const SANDBOX_SECRETS = [".ssh", ".gnupg", ".aws", ".azure", ".kube", ".docker", ".config/gcloud", ".config/gh", ".netrc", ".npmrc", ".pypirc", ".git-credentials", ".config/symbiot/config.json", ".config/symbiot/secrets.json", ".config/symbiot/vault.json", ".config/symbiot/vault.key"]; // your AI's key and the app's token too
+const SANDBOX_SECRETS = [".ssh", ".gnupg", ".aws", ".azure", ".kube", ".docker", ".config/gcloud", ".config/gh", ".netrc", ".npmrc", ".pypirc", ".git-credentials", ".config/symbiot/config.json", ".config/symbiot/secrets.json", ".config/symbiot/vault.json", ".config/symbiot/vault.key", ".config/symbiot/vault-pin.json"]; // your AI's key and the app's token too
 // Local sockets are allowed (headless Chrome needs one to start, so the browser tests
 // ran in no sandboxed run), but the ones that would be a way out are hidden: Docker's,
 // and your session's (its bus starts commands outside, through systemd-run; X11 and
@@ -707,7 +707,7 @@ function nothingToDo(path) {
 // reaching the user (whereAnswer, autoDecide). A copy is parallel.mjs's worktree for
 // one task (its par.json says whose); one with no par.json and no .git was removed
 // after its merge and only an answer recreated its .symbiot (gone).
-const PAGES = "Home, Dashboard (the board), Workdesk (the tasks page: the tasks, agents and questions of every lane), Reports, Marketing, Week, Standup, Todo, Drift, Map, Settings and Archive"; // no apostrophes: whereLine drops them
+const PAGES = "Home, Dashboard (the board), Workdesk (the tasks page: the tasks, agents and questions of every lane), Reports, Marketing, Week, Standup, Todo, Drift, Map, Settings, Vault and Archive"; // no apostrophes: whereLine drops them
 const WT_ROOT = join(CONFIG_DIR, "worktrees") + "/";
 const WHERE = new Map();
 function whereOf(path, now = Date.now()) {

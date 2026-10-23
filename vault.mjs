@@ -79,6 +79,11 @@ function getSecret(name, { use = false, now = Date.now() } = {}) {
   else if (use) { next.used = true; store(name, e); }
   return { ok: true, name, value: next.v, left: use && e.once ? 0 : e.values.filter((x) => !x.used).length, spent: use };
 }
+// Every value of one, as it is, for the Vault page (vaultview.mjs): nothing is spent or changed.
+function peekSecret(name) {
+  const e = load(name); if (!e || !Array.isArray(e.values)) return { error: `No secret called "${name}".` };
+  return { ok: true, name, values: e.values.map((x) => ({ v: String(x.v), used: !!x.used })), once: !!e.once, expires: e.expires || 0 };
+}
 function markUsed(name, value) {
   const e = load(name); if (!e) return { error: `No secret called "${name}".` };
   const x = e.values.find((y) => y.v === value || y.v.startsWith(value)); if (!x) return { error: "No such value in that secret." };
@@ -399,4 +404,4 @@ function heldFor(text) {
   return "";
 }
 
-export { heldFor, heldName, vaultSealed, repairFalseSaves, meetsStep, serviceOf, saveSecret, saveCode, CODE_TTL, listSecrets, getSecret, markUsed, deleteSecret, findSecrets, captureSecrets, scrubStored, SCRUB_V };
+export { heldFor, heldName, vaultSealed, repairFalseSaves, meetsStep, serviceOf, saveSecret, saveCode, CODE_TTL, listSecrets, getSecret, peekSecret, markUsed, deleteSecret, findSecrets, captureSecrets, scrubStored, SCRUB_V };

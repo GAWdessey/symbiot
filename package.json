@@ -1,6 +1,6 @@
 {
   "name": "symbiot",
-  "version": "0.80.4",
+  "version": "0.81.0",
   "description": "Your week, written from your real work. Reads your local git and writes it up with the AI of your choice — Claude, OpenAI, Gemini, or a local model.",
   "type": "module",
   "bin": {
@@ -87,6 +87,7 @@
     "claudesetup.mjs",
     "voice.mjs",
     "vault.mjs",
+    "vaultview.mjs",
     "licence.mjs",
     "lang.mjs",
     "browser.html",

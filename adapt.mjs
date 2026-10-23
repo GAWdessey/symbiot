@@ -48,7 +48,7 @@ const MIN_EVENTS = 12;                   // under this many uses, adaptation fad
 const HICK_COVER = 0.9, HICK_MIN = 3, HICK_MAX = 7;
 const HYSTERESIS = 0.15;
 const FITTS = { a: 0.1, b: 0.15 };       // seconds; only ratios matter here
-const SHAPES = ["board", "map", "tasks", "agents", "week", "standup", "todo", "drift", "settings", "reports", "marketing"];
+const SHAPES = ["board", "map", "tasks", "agents", "week", "standup", "todo", "drift", "settings", "reports", "marketing", "vault"];
 
 function loadAdapt(file = ADAPT_FILE) {
   const d = readState(file, (v) => !!v && typeof v === "object" && !Array.isArray(v)) || {};
@@ -207,11 +207,11 @@ function userStyleLine(file = MIND_FILE) {
 // affinity is the symmetric next-step probability, Dirichlet-smoothed as in predict,
 // plus a small prior (KIN) for parts that belong together before you've used them,
 // by P.A.R.A.: Projects (tasks, agents, todo: work with an end), Areas (dashboard,
-// week, standup: what you keep up with) and Resources (map, drift, settings: what
+// week, standup: what you keep up with) and Resources (map, drift, settings, vault: what
 // you look things up in). The Archive is its own droplet in the liquid. Each part keeps its k nearest (k-NN), counting only links above
 // chance (1/K), and the liquid sets it beside them, so the layout has clusters
 // and gaps, structure without looking ruled.
-const KIN_GROUPS = [["tasks", "agents", "todo"], ["board", "week", "standup"], ["map", "drift", "settings"]];
+const KIN_GROUPS = [["tasks", "agents", "todo"], ["board", "week", "standup"], ["map", "drift", "settings", "vault"]];
 const KIN = KIN_GROUPS.flatMap((g) => g.flatMap((a, i) => g.slice(i + 1).map((b) => [a, b])));
 const KIN_W = 0.08;
 function affinity(d, a, b, ids = SHAPES) {

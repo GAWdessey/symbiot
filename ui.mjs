@@ -970,6 +970,36 @@ body.lq-light #quota .qpill,body.lq-light #quota .qpop{background:rgba(255,255,2
 .licproj{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px}.licproj .chip{display:inline-flex;align-items:center;gap:8px;padding:4px 6px 4px 12px;border:1px solid var(--line);border-radius:999px;font-size:13px}.licproj .chip button{padding:2px 8px;font-size:12px}
 .ssh{margin:0 0 10px;font:600 16px var(--sans);letter-spacing:-.01em;color:var(--bone);display:flex;align-items:baseline;gap:8px}
 .ssh .muted{font-weight:400;font-size:12.5px}
+/* the Vault page (vaultview.mjs): names and what's known about each; a value only after a fresh unlock */
+#panel-vault{max-width:760px;margin:0 auto}
+.vhead{margin:4px 0 16px;font-size:14px;line-height:1.5;color:var(--faint);max-width:60ch}
+.vlock{display:flex;flex-wrap:wrap;align-items:center;gap:10px 12px;padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:var(--ink2);margin-bottom:8px}
+.vlock.setp .vls{flex-basis:100%}
+.vlock.open{border-color:var(--green)}
+.vlock .vls{flex:1 1 240px;font-size:14px;line-height:1.45;color:var(--text)}.vlock .vls b{color:var(--bone);font-weight:600}
+.vlock input{flex:0 1 200px;width:200px}
+.vlock button{min-height:40px}
+.vsl{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+.vmsg{font-size:13px;line-height:1.45;margin:0 0 12px;color:var(--faint)}.vmsg:empty{margin:0}.vmsg.err{color:var(--amber)}.vmsg.ok{color:var(--green)}
+.vrow{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 12px;align-items:center;padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:var(--ink2);margin-top:8px}
+.vrow .vn{font:600 15px var(--sans);color:var(--bone);overflow-wrap:anywhere}
+.vrow .vm{grid-column:1;display:flex;flex-wrap:wrap;gap:2px 12px;font-size:12.5px;color:var(--faint)}
+.vrow .vm .vk{color:var(--text)}
+.vrow .va{grid-column:2;grid-row:1 / span 2;display:flex;gap:6px}
+.vrow .va button{min-height:40px;min-width:64px;padding:8px 12px}
+.vrow .vv{grid-column:1 / -1;display:flex;align-items:center;gap:10px;margin-top:6px;padding:8px 10px;border-radius:8px;background:var(--ink);font:500 14px/1.4 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--bone)}
+.vrow .vv code{flex:1;min-width:0;overflow-wrap:anywhere;font:inherit;user-select:all}
+.vrow .vv.vhid{color:var(--faint);letter-spacing:.2em}
+.vrow .vv .vused{font:500 11.5px var(--sans);color:var(--faint)}
+.vrow .vv button{min-height:40px;padding:6px 12px}
+.vempty{padding:28px 16px;text-align:center;font-size:14px;line-height:1.5;color:var(--faint);border:1px dashed var(--line);border-radius:12px;margin-top:8px}
+.vlog{margin-top:20px;font-size:13px;color:var(--faint)}.vlog summary{cursor:pointer;min-height:32px}
+.vlog .vlr{display:flex;gap:10px;padding:4px 0;border-top:1px solid var(--line)}.vlog .vlr b{color:var(--text);font-weight:500;flex:1;min-width:0;overflow-wrap:anywhere}
+body.lq-liquid .vlock,body.lq-liquid .vrow{border-color:rgba(255,255,255,.08);background:rgba(255,255,255,.03)}
+body.lq-liquid .vlock.open{border-color:var(--green)}
+body.lq-liquid.lq-light .vlock,body.lq-liquid.lq-light .vrow{border-color:rgba(21,26,33,.09);background:rgba(255,255,255,.6)}
+body.lq-liquid.lq-light .vlock.open{border-color:var(--green)}
+@media (max-width:560px){.vrow{grid-template-columns:minmax(0,1fr)}.vrow .va{grid-column:1;grid-row:auto;margin-top:6px}.vrow .va button{flex:1}.vlock input{flex:1 1 100%;width:100%}.vlock button{flex:1}}
 body.lq-liquid .sset > label:not(.check):not(.swl){display:block;font:500 12.5px var(--sans);color:var(--faint);margin:12px 0 6px}
 body.lq-liquid .sset label.check{display:flex;align-items:center;gap:10px;margin:8px 0;color:var(--text);font-size:13.5px}
 body.lq-liquid .sset .note{font-size:12.5px;max-width:70ch}
@@ -1376,6 +1406,15 @@ body.lq-light .btip .bta button:not(.quiet){background:#151A21;color:#FFFFFF}
 <button class="ghost" id="driftrun">Rescan</button></div>
 <div id="driftout"></div>
 </section>
+<section id="panel-vault" class="hidden">
+<p class="vhead">Logins, keys and codes that you or your agents saved in Symbiot. Values stay hidden: unlock with your vault PIN to show or copy one.</p>
+<div id="vaultlock" class="vlock" aria-live="polite"></div>
+<div id="vaultmsg" class="vmsg" role="status" aria-live="polite"></div>
+<label for="vaultsearch" class="vsl">Search</label>
+<input id="vaultsearch" type="search" autocomplete="off" placeholder="Search by name, kind or email">
+<div id="vaultlist"></div>
+<details id="vaultlogbox" class="vlog"><summary>Recently shown or copied</summary><div id="vaultlog"></div></details>
+</section>
 <section id="panel-settings" class="hidden">
 <div id="firststeps" class="sset hidden" aria-live="polite"></div>
 <div class="sset" id="langset"><h3 class="ssh">Language</h3><div id="langbox"><span class="muted">…</span></div></div>
@@ -1453,6 +1492,7 @@ body.lq-light .btip .bta button:not(.quiet){background:#151A21;color:#FFFFFF}
 <h3 class="ssh">Secrets</h3>
 <div id="secretslist"></div>
 <div class="note muted">Passwords, recovery codes and tokens you hand over are kept here, not in chat. Only names and counts show: an agent reads one by name when it needs it, and you can delete any of them.</div>
+<div class="row" style="margin-top:10px"><span class="muted" style="flex:1">To look one up, or show or copy its value with your vault PIN:</span><button class="ghost" type="button" id="openvault">Open the Vault</button></div>
 </div>
 <div class="sset">
 <h3 class="ssh">Trusted sites for Screens <span class="muted">(experimental)</span></h3>
@@ -1544,6 +1584,7 @@ $('panel-reports').classList.toggle('hidden',tab!=='reports');if(tab==='reports'
 $('panel-asks').classList.toggle('hidden',tab!=='asks');if(tab==='asks')loadAsks();
 $('panel-marketing').classList.toggle('hidden',tab!=='marketing');if(tab==='marketing')loadMarketing();
 $('panel-computer').classList.toggle('hidden',tab!=='computer');if(tab==='computer')loadComputer();
+$('panel-vault').classList.toggle('hidden',tab!=='vault');if(tab==='vault'){vaultSay('');loadVault();}else if(VLT.token||Object.keys(VLT.shown).length)vaultLockNow(); // leaving it locks it
 if(isRun){$('what').textContent=tab;wuHead();WUTEXT='';$('out').textContent=WUEMPTY;$('out').classList.add('muted');$('copy').classList.add('hidden');$('outfoot').style.display='none';if(tab==='week')showLatestWeek();}
 if(isMap&&!mapLoaded)loadMap();
 if(isTasks)loadTasks();
@@ -2448,6 +2489,72 @@ function loadTrusted(){api('/api/screens/trusted').then(function(d){var box=docu
 box.innerHTML=sites.length?sites.map(function(h){return "<div class='task' data-h='"+esc(h)+"'><span class='t' style='font-family:ui-monospace,monospace;font-size:12px'>"+esc(h)+"</span><button class='ghost tsign' title='open "+esc(h)+" in the Symbiot Browser, to sign in for agents'>Sign in</button><button class='rm rmtrusted' title='stop trusting it: press and type ask first again'>&times;</button></div>";}).join(""):"<div class='muted' style='font-size:12px'>None yet: Press and Type ask first on every site.</div>";
 box.querySelectorAll('.tsign').forEach(function(btn){btn.addEventListener('click',function(){var h=btn.closest('.task').getAttribute('data-h');openSignIn({site:h},function(t,ok){var n=document.getElementById('trustednote');if(n)n.innerHTML="<span class='"+(ok?'ok':'err')+"'>"+esc(t)+"</span>";});});});
 box.querySelectorAll('.rmtrusted').forEach(function(btn){btn.addEventListener('click',function(){api('/api/screens/trusted/remove',{site:btn.closest('.task').getAttribute('data-h')}).then(function(){loadTrusted();loadScreensUI();});});});});}
+// The Vault page (vaultview.mjs): what's saved, by name, kind, account and date, and never a
+// value until you unlock it with your vault PIN. An unlock holds for a couple of minutes
+// (VLT.until), and the values it showed live only here (VLT.shown): they go when it runs
+// out, when you lock it, leave the page or the window is hidden. Show or Copy while locked
+// asks for the PIN, then does what you pressed. A copied value leaves the clipboard after
+// VCLIP_MS (vaultClip). Nothing here is sent to the AI or kept anywhere else.
+var VLT={list:[],token:'',until:0,shown:{},q:'',pin:true,wait:0,log:[],then:null,busy:false},VLT_T=null,VCLIP_MS=30000,VCLIP={t:null,v:'',pend:false};
+function vaultOpen(){return !!VLT.token&&VLT.until>Date.now();}
+function vaultLeft(ms){var s=Math.max(0,Math.ceil(ms/1000));return Math.floor(s/60)+':'+('0'+(s%60)).slice(-2);}
+function vaultDate(t){try{return new Date(t).toLocaleDateString(undefined,{day:'numeric',month:'short',year:'numeric'});}catch(e){return '';}}
+function vaultSay(t,cls){var m=$('vaultmsg');if(!m)return;m.textContent=t||'';m.className='vmsg'+(cls?' '+cls:'');}
+function vaultDrop(){VLT.token='';VLT.until=0;VLT.shown={};if(VLT_T){clearInterval(VLT_T);VLT_T=null;}}
+function vaultLockNow(){if(VLT.token)api('/api/vault/lock',{token:VLT.token}).catch(function(){});vaultDrop();VLT.then=null;if(current==='vault')vaultDraw();}
+function vaultTick(){if(!vaultOpen()){vaultDrop();vaultSay('Locked again: values are hidden.');vaultDraw();return;}var s=$('vaultleft');if(s)s.textContent=vaultLeft(VLT.until-Date.now());}
+function loadVault(){var box=$('vaultlist');if(box&&!VLT.list.length)box.innerHTML="<div class='vempty'>Opening the vault&hellip;</div>";
+api('/api/vault',{token:VLT.token}).then(function(d){if(!d||d.error){vaultFail((d&&d.error)||'');return;}VLT.list=d.entries||[];VLT.pin=!!d.pin;VLT.wait=d.wait||0;VLT.log=d.log||[];if(!d.unlocked)vaultDrop();else VLT.until=d.unlocked;vaultDraw();}).catch(function(){vaultFail('');});}
+function vaultFail(why){var box=$('vaultlist');if(!box)return;box.innerHTML="<div class='vempty'>Couldn't open the vault"+(why?': '+esc(why):'. Symbiot may have stopped.')+"<div style='margin-top:10px'><button class='ghost' type='button' id='vaultretry'>Try again</button></div></div>";var r=$('vaultretry');if(r)r.addEventListener('click',loadVault);}
+function vaultLockBar(){var el=$('vaultlock');if(!el)return;var h,open=vaultOpen();
+if(open)h="<span class='vls'><b>Unlocked</b> for <span id='vaultleft'>"+vaultLeft(VLT.until-Date.now())+"</span>. Values hide again after that.</span><button class='ghost' type='button' id='vaultlockbtn'>Lock now</button>";
+else if(!VLT.pin)h="<span class='vls'><b>Set a vault PIN</b> to show or copy what's saved. At least 6 characters; you type it each time you look.</span><input id='vaultpin' type='password' autocomplete='new-password' aria-label='New vault PIN' placeholder='New vault PIN'><input id='vaultpin2' type='password' autocomplete='new-password' aria-label='The same PIN again' placeholder='The same PIN again'><button class='act' type='button' id='vaultgo'>Set PIN</button>";
+else if(VLT.wait>0)h="<span class='vls'><b>Locked.</b> Too many wrong tries: try again in "+Math.ceil(VLT.wait/60000)+" min.</span>";
+else h="<span class='vls'><b>Locked.</b> Type your vault PIN to show or copy a value for the next 2 minutes.</span><input id='vaultpin' type='password' autocomplete='current-password' aria-label='Vault PIN' placeholder='Vault PIN'><button class='act' type='button' id='vaultgo'>Unlock</button>";
+el.innerHTML=h;el.classList.toggle('open',open);el.classList.toggle('setp',!open&&!VLT.pin);
+var lb=$('vaultlockbtn');if(lb)lb.addEventListener('click',function(){vaultLockNow();vaultSay('Locked: values are hidden.');});
+var go=$('vaultgo'),p1=$('vaultpin'),p2=$('vaultpin2');if(go)go.addEventListener('click',vaultUnlock);
+[p1,p2].forEach(function(x){if(x)x.addEventListener('keydown',function(ev){if(ev.key==='Enter')vaultUnlock();});});}
+function vaultUnlock(){if(VLT.busy)return;var p1=$('vaultpin'),p2=$('vaultpin2'),pin=p1?p1.value:'';if(!pin){vaultSay('Type your vault PIN first.','err');if(p1&&p1.focus)p1.focus();return;}
+if(!VLT.pin&&p2&&p2.value!==pin){vaultSay("The two PINs don't match.",'err');return;}
+VLT.busy=true;vaultSay(VLT.pin?'Unlocking…':'Setting your PIN…');
+api(VLT.pin?'/api/vault/unlock':'/api/vault/pin',{pin:pin}).then(function(r){VLT.busy=false;if(p1)p1.value='';if(p2)p2.value='';
+if(!r||!r.ok){if(r&&r.wait)VLT.wait=r.wait;vaultSay((r&&r.error)||"Couldn't unlock it.",'err');vaultLockBar();var f=$('vaultpin');if(f&&f.focus)f.focus();return;}
+VLT.pin=true;VLT.wait=0;VLT.token=r.token;VLT.until=Date.now()+(r.unlockMs||120000);if(VLT_T)clearInterval(VLT_T);VLT_T=setInterval(vaultTick,1000);vaultSay('');
+var then=VLT.then;VLT.then=null;vaultDraw();if(then)vaultGet(then.name,then.act);}).catch(function(){VLT.busy=false;vaultSay("Couldn't reach Symbiot to unlock it.",'err');});}
+function vaultMatch(e,q){if(!q)return true;return (e.name+' '+e.kind+' '+(e.account||'')).toLowerCase().indexOf(q)>=0;}
+function vaultRow(e){var sh=VLT.shown[e.name],n=escQ(e.name);
+var meta="<span class='vk'>"+esc(e.kind)+"</span>"+(e.account?"<span>"+esc(e.account)+"</span>":"")+(e.saved?"<span>saved "+esc(vaultDate(e.saved))+"</span>":"")+(e.count>1?"<span>"+e.left+" of "+e.count+" unused</span>":"");
+var vals=sh?sh.map(function(x,i){return "<div class='vv'><code>"+esc(x.v)+"</code>"+(x.used?"<span class='vused'>used</span>":"")+(sh.length>1?"<button class='ghost vone' type='button' data-v='"+i+"' aria-label='Copy value "+(i+1)+" of "+n+"'>Copy</button>":"")+"</div>";}).join(''):"<div class='vv vhid' aria-label='Value hidden'>&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;</div>";
+var shown=e.account?e.name.replace(' ('+e.account+')','').replace('('+e.account+')',''):e.name;
+return "<div class='vrow' data-n='"+n+"'><div class='vn' title='"+n+"'>"+esc(shown||e.name)+"</div><div class='vm'>"+meta+"</div><div class='va'><button class='ghost vshow' type='button' aria-label='"+(sh?'Hide':'Show')+" "+n+"'>"+(sh?'Hide':'Show')+"</button><button class='ghost vcopy' type='button' aria-label='Copy "+n+"'>Copy</button></div>"+vals+"</div>";}
+function vaultDraw(){if(current!=='vault')return;vaultLockBar();var box=$('vaultlist');if(!box)return;var q=VLT.q,list=VLT.list.filter(function(e){return vaultMatch(e,q);});
+if(!VLT.list.length)box.innerHTML="<div class='vempty'>Nothing saved yet. When you paste a password, key or code into a chat, or an agent saves one for you, it shows here.</div>";
+else if(!list.length)box.innerHTML="<div class='vempty'>Nothing matches &ldquo;"+esc(q)+"&rdquo;. Try part of a name, a kind such as password, or an email address.</div>";
+else box.innerHTML="<div class='tgroup'>Saved <span class='tcount'>"+(q?list.length+' of ':'')+VLT.list.length+"</span></div>"+list.map(vaultRow).join('');
+box.querySelectorAll('.vrow').forEach(function(r){var name=r.getAttribute('data-n'),e=VLT.list.filter(function(x){return x.name===name;})[0];if(!e)return;name=e.name;
+var s=r.querySelector('.vshow');if(s)s.addEventListener('click',function(){if(VLT.shown[name]){delete VLT.shown[name];vaultDraw();return;}vaultGet(name,'reveal');});
+var c=r.querySelector('.vcopy');if(c)c.addEventListener('click',function(){vaultGet(name,'copy');});
+r.querySelectorAll('.vone').forEach(function(b){b.addEventListener('click',function(){var v=(VLT.shown[name]||[])[+b.getAttribute('data-v')];if(v)vaultCopied(name,v.v);});});});
+var lg=$('vaultlog');if(lg)lg.innerHTML=VLT.log.length?VLT.log.map(function(x){return "<div class='vlr'><b>"+esc(x.name)+"</b><span>"+(x.act==='copy'?'copied':'shown')+" "+esc(agoTxt(x.at))+"</span></div>";}).join(''):"<div class='vlr'>Nothing shown or copied yet.</div>";}
+// Show or Copy: locked, it asks for the PIN first and then does it
+function vaultGet(name,act){if(!vaultOpen()){vaultDrop();VLT.then={name:name,act:act};vaultDraw();vaultSay(VLT.pin?'Type your vault PIN to '+(act==='copy'?'copy':'show')+' “'+name+'”.':'Set a vault PIN first, then it '+(act==='copy'?'copies':'shows')+' “'+name+'”.');var f=$('vaultpin');if(f&&f.focus)f.focus();return;}
+api('/api/vault/value',{name:name,token:VLT.token,act:act}).then(function(r){if(r&&r.locked){vaultDrop();VLT.then={name:name,act:act};vaultDraw();vaultSay('Locked again: type your vault PIN.');return;}
+if(!r||!r.ok){vaultSay((r&&r.error)||"Couldn't read it.",'err');return;}
+VLT.log.unshift({at:Date.now(),name:name,act:act==='copy'?'copy':'reveal'});
+if(act==='copy'){var v=r.values.filter(function(x){return !x.used;})[0]||r.values[0];if(v)vaultCopied(name,v.v,true);vaultDraw();return;}
+VLT.shown[name]=r.values;vaultDraw();}).catch(function(){vaultSay("Couldn't reach Symbiot.",'err');});}
+function vaultCopied(name,v,logged){if(!logged){api('/api/vault/value',{name:name,token:VLT.token,act:'copy'}).catch(function(){});VLT.log.unshift({at:Date.now(),name:name,act:'copy'});}vaultClip(v).then(function(ok){vaultSay(ok?'Copied “'+name+'”. The clipboard is cleared in '+Math.round(VCLIP_MS/1000)+' seconds.':"Couldn't copy it: this window can't use the clipboard. Use Show and select it instead.",ok?'ok':'err');});}
+// A copied value is wiped from the clipboard VCLIP_MS later. Where that can't happen yet (the
+// window isn't focused, so the browser refuses), it's wiped as soon as the window has focus again.
+function vaultClip(text,env){env=env||{};var clip=env.clip||(typeof navigator!=='undefined'&&navigator.clipboard)||null,later=env.later||setTimeout,stop=env.stop||clearTimeout;
+if(!clip||!clip.writeText)return Promise.resolve(false);
+return clip.writeText(String(text)).then(function(){if(VCLIP.t)stop(VCLIP.t);VCLIP.v=String(text);VCLIP.pend=false;VCLIP.t=later(function(){VCLIP.t=null;vaultUnclip(clip);},VCLIP_MS);return true;},function(){return false;});}
+function vaultUnclip(clip){if(!VCLIP.v)return Promise.resolve(false);return clip.writeText('').then(function(){VCLIP.v='';VCLIP.pend=false;return true;},function(){VCLIP.pend=true;return false;});}
+if(typeof window!=='undefined'&&window.addEventListener)window.addEventListener('focus',function(){if(VCLIP.pend&&typeof navigator!=='undefined'&&navigator.clipboard)vaultUnclip(navigator.clipboard);});
+if(typeof document!=='undefined'&&document.addEventListener)document.addEventListener('visibilitychange',function(){if(document.hidden&&VLT.token)vaultLockNow();});
+(function(){var s=$('vaultsearch');if(s&&s.addEventListener)s.addEventListener('input',function(){VLT.q=String(s.value||'').trim().toLowerCase();vaultDraw();});
+var o=$('openvault');if(o&&o.addEventListener)o.addEventListener('click',function(){if(typeof lqPool==='function'&&document.body.classList.contains('lq-liquid'))lqPool('vault');else setTab('vault');});})();
 function loadSecrets(){api('/api/secrets').then(function(d){var box=document.getElementById('secretslist');if(!box)return;var s=(d&&d.secrets)||[];
 box.innerHTML=s.length?s.map(function(x){return "<div class='task' data-n='"+esc(x.name)+"'><span class='t'>"+esc(x.name)+"</span><span class='muted' style='font-size:12px'>"+x.left+" of "+x.count+" unused</span><button class='rm rmsecret' title='delete it from this computer'>&times;</button></div>";}).join(""):"<div class='muted' style='font-size:12px'>None saved yet.</div>";
 box.querySelectorAll('.rmsecret').forEach(function(btn){btn.addEventListener('click',function(){var n=btn.closest('.task').getAttribute('data-n');if(typeof confirm==='function'&&!confirm("Delete the secret “"+n+"”? It can't be brought back."))return;api('/api/secrets/delete',{name:n}).then(loadSecrets);});});});}
@@ -3495,7 +3602,7 @@ LQ.talk.push({me:false,text:t});LQ.talk=LQ.talk.slice(-8);lqTalkShow(false);LQ.r
 // comes out of the core (mass is conserved). Your colours come from the system,
 // live: light or dark, contrast, transparency, forced colours, your accent, night.
 var LQ={drops:[],btns:[],core:{x:0,y:0,cr:0},mode:'aware',last:'',lastAct:Date.now(),talk:[],talking:false,theme:{},ripple:[0.5,0.5,-10],t:0,pointer:null,touch:false,frame:0};
-var LQNAMES={board:'Dashboard',map:'Map',tasks:'Workdesk',agents:'Workdesk',week:'Week',standup:'Standup',todo:'Todo',drift:'Drift',settings:'Settings',reports:'Reports',asks:'Questions',marketing:'Marketing',computer:'Your computer'};
+var LQNAMES={board:'Dashboard',map:'Map',tasks:'Workdesk',agents:'Workdesk',week:'Week',standup:'Standup',todo:'Todo',drift:'Drift',settings:'Settings',reports:'Reports',asks:'Questions',marketing:'Marketing',computer:'Your computer',vault:'Vault'};
 var LQ_REST=60000,LQ_MAX=11;
 function lqMM(q){try{return !!(window.matchMedia&&window.matchMedia(q).matches);}catch(e){return false;}}
 function lqLookGet(){var l='';try{l=window.localStorage&&window.localStorage.getItem('symbiot-look')||'';}catch(e){}return l==='glass'||l==='pearl'?l:'ferro';}
@@ -3517,7 +3624,7 @@ function lqLoad(commit){if(LQ.scene==='work'){lqLoadWork();return;}var fresh=LQ.
 // (work with an end) up left, Areas (what you keep up with) up right, Resources (to
 // look things up in) down left, the Archive (what's done) sunk low; and what's new on
 // what you watch (Watching) as a zone of its own on the right.
-var PARA_OF={tasks:'p',agents:'p',todo:'p',marketing:'p',board:'a',week:'a',standup:'a',map:'r',drift:'r',settings:'r',reports:'r'};
+var PARA_OF={tasks:'p',agents:'p',todo:'p',marketing:'p',board:'a',week:'a',standup:'a',map:'r',drift:'r',settings:'r',reports:'r',vault:'r'};
 var PARA_NAME={p:'Projects',a:'Areas',w:'Watching',r:'Resources',x:'Archive'},PARA_SUB={p:'work with an end',a:'what you keep up with',w:'new on what you watch',r:'to look things up in',x:'what’s done'};
 var PARA_ANG={p:-2.55,a:-0.6,w:0.3,r:2.6,x:1.25},PARA_LIVE={p:0.45,a:0.3,w:0.3,r:0.12,x:0};
 function lqPara(d){return d.kind==='you'?'n':d.band?'b':d.kind==='archive'?'x':d.kind==='feed'&&d.shape!=='reports'?'w':PARA_OF[d.shape]||'p';}
@@ -3697,7 +3804,7 @@ lqLabels();}
 // and each part is where it was last time. Sizes still come from how you use them (adapt.mjs), all scaled
 // by one factor when the screen is short, so they stay comparable. null when they
 // can't fit (a narrow or very short screen): the liquid's own layout then.
-var ZONE_ORDER=['tasks','agents','todo','marketing','board','week','standup','map','drift','settings','reports'],ZONE_KIND={shape:0,feed:1,archive:2,more:3};
+var ZONE_ORDER=['tasks','agents','todo','marketing','board','week','standup','map','drift','settings','vault','reports'],ZONE_KIND={shape:0,feed:1,archive:2,more:3};
 function lqZones(list,S,top,coreR){LQ.zoneT=null;if(S.w<1000||S.h<540)return null;
 var y0=top?top+10:96,y1=S.h-180,mid=(y0+y1)/2,cx=S.w/2,gapC=coreR+36,colW=S.w/2-gapC-20,titleW=150;if(colW-titleW<250||mid-y0<70)return null;
 var cells={p:[cx-gapC-colW,y0,mid],a:[cx+gapC,y0,mid],r:[cx-gapC-colW,mid,y1],w:[cx+gapC,mid,y1]},by={},plan={},k=1;

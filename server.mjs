@@ -29,6 +29,7 @@ import { addTask, setTaskModel, toggleTask, removeTask, cancelTask, restoreTask,
 import { repoReview, repoSuggest, folderSuggest, taskChat, clearTaskChat, mailState, setMail, sentMail, produce, releaseNotes } from "./writeups.mjs";
 import { denyList } from "./outward.mjs";
 import { listSecrets, getSecret, saveSecret, markUsed, deleteSecret, scrubStored, repairFalseSaves } from "./vault.mjs";
+import { vaultList, vaultValue, vaultLog, setPin, unlock as vaultUnlock, lock as vaultLock } from "./vaultview.mjs";
 import { SCREENS_SOCK, sockGate, loadScreens, screenImage, captureScreen, splitScreen, listMonitors, allowScreenshots, importScreen, setRegions, renameScreen, removeScreen, blueprint, clickRegion } from "./screens.mjs";
 import { sessionCookie, mapPage, wholePage, pressRegion, typeRegion, chooseRegion, fillForm, verifyPage, uploadRegion, scrollPage, signIn, keepBrowserOpen, isTrusted, trustedSites, trustSite, untrustSite, openSymbiotBrowser, closeSymbiotBrowser, onBrowserClosed, setBrowserHub, siteUrl, browserHub, windowOpen } from "./headless.mjs";
 import { weeklyState, setWeekly, runWeekly, startWeekly, autostartState, setAutostart, installLauncher, iconSvg, setLauncherLook, desktopNotify } from "./desktop.mjs";
@@ -627,6 +628,12 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       if (u.pathname === "/api/secrets/used" && req.method === "POST") { const b = await readBody(req); return json(res, markUsed(String(b.name || ""), String(b.value || ""))); }
       if (u.pathname === "/api/secrets/delete" && req.method === "POST") { const b = await readBody(req); return json(res, deleteSecret(String(b.name || ""))); }
       if (u.pathname === "/api/secrets/scrub" && req.method === "POST") { const r = scrubStored({ force: true }); return json(res, { found: r.found || [], files: (r.files || []).map((f) => f.replace(CONFIG_DIR + "/", "")) }); }
+      // The Vault page (vaultview.mjs): the list never holds a value; one is given only to a page unlocked with the vault PIN, for a short while.
+      if (u.pathname === "/api/vault" && req.method === "POST") { const b = await readBody(req); return json(res, { ...vaultList({ token: String(b.token || "") }), log: vaultLog() }); }
+      if (u.pathname === "/api/vault/pin" && req.method === "POST") { const b = await readBody(req); return json(res, setPin(String(b.pin || ""), { old: String(b.old || ""), token: String(b.token || "") })); }
+      if (u.pathname === "/api/vault/unlock" && req.method === "POST") { const b = await readBody(req); return json(res, vaultUnlock(String(b.pin || ""))); }
+      if (u.pathname === "/api/vault/lock" && req.method === "POST") { const b = await readBody(req); return json(res, vaultLock(b.token)); }
+      if (u.pathname === "/api/vault/value" && req.method === "POST") { const b = await readBody(req); return json(res, vaultValue(String(b.name || ""), { token: String(b.token || ""), act: b.act === "copy" ? "copy" : "reveal" })); }
       if (u.pathname === "/api/screens/signin" && req.method === "POST") { const b = await readBody(req); return json(res, await signIn(b.site)); }
       // What Symbiot remembers across the app (mind.mjs), and forgetting it.
       if (u.pathname === "/api/mind") return json(res, mindState());
