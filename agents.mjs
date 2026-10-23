@@ -27,7 +27,7 @@ import { knowledgeFolders } from "./knowledge.mjs";
 import { pickModel, MODEL } from "./route.mjs";
 import { runbookOf, onDeployAnswer } from "./deploy.mjs";
 import { claudeState, resolveProvider, write as aiWrite } from "./ai.mjs";
-import { toReview, criticBrief, CRITIC_PROMPT, settleVerdict, reviewOf, saveReview } from "./design.mjs";
+import { toReview, criticBrief, CRITIC_PROMPT, settleVerdict, reviewOf, saveReview, startDesign, settleDesign, dropDesign, specsFor, DESIGNER_PROMPT } from "./design.mjs";
 import { judge as triageJudge, verdictOf, saveVerdict, shows as triageShows, answerFor as triageAnswer, recordFault, HOLD_MS as TRIAGE_HOLD } from "./triage.mjs";
 import { stalledFor, onStall, loadStall, saveStall, clearStall, STALL_MIN, STALL_PROMPT_TAIL } from "./stall.mjs";
 
@@ -518,7 +518,7 @@ function twinRunning(path, { goals = () => { try { return goalRows(); } catch { 
   for (const g of goals()) { if (!g || ["done", "failed"].includes(g.state) || !(g.paths || []).includes(path)) continue; const other = (g.paths || []).find((p) => p !== path && isOps(p) && running(p)); if (other) return other; }
   return null;
 }
-function runHandoff(repoPath, { force = false, lost = false, model = "", onExit = null, escalatedFrom = "", note = "", stalled = false, critic = false } = {}) {
+function runHandoff(repoPath, { force = false, lost = false, model = "", onExit = null, escalatedFrom = "", note = "", stalled = false, critic = false, designer = false } = {}) {
   let tmpl = handoffCmd(); if (!tmpl || !repoPath) return null;
   if (isParked(repoPath)) return { blocked: true, parked: true, questions: 0, note: PARKED_NOTE }; // even forced: that's what parking is for
   const lic = licenceGate(repoPath); if (lic) return lic; // Free's limits, and never Symbiot's own code (licence.mjs); even forced
@@ -529,10 +529,12 @@ function runHandoff(repoPath, { force = false, lost = false, model = "", onExit 
   const down = claudePause(); if (down) return { blocked: true, down: down.kind, questions: 0, note: down.note }; // Claude itself is down: even forced, the run would end at once
   releaseHeldTasks(repoPath); // held for an agent another process started, which has since exited
   const idle = !lost && !critic && nothingToDo(repoPath); if (idle) return { blocked: true, idle: true, questions: 0, note: idle }; // the design critic reviews ticked work: nothing open is what it expects
+  // a new screen or a rework is designed before it's built: this run is Symbiot's designer, on the strongest model, and the builder starts when it ends (design.mjs)
+  if (!critic && !designer && !lost) { try { if (startDesign(repoPath, readSymbiot(repoPath, "TASKS.md")).length) { designer = true; model = MODEL.O; } } catch {} }
   try { tidySettings(repoPath); } catch {} // its allow list as Claude Code reads one (Write → Edit, //absolute), before the sandbox reads it
   const scoped = runCmdOf(repoPath, tmpl), box = isClaudeCmd(scoped) && trustFull() ? sandboxFor(repoPath, scoped) : null; // a repo run's sandbox, on top of the membrane
   tmpl = withStream(withTrust(withOwnTools(scoped), box, repoPath));
-  const resume = isClaudeCmd(tmpl) && !stalled && !critic ? resumeFor(repoPath) : null, fresh = tooLong(resume); // too long to resume: a fresh run carries on; one that stalled starts fresh, from its note (stall.mjs)
+  const resume = isClaudeCmd(tmpl) && !stalled && !critic && !designer ? resumeFor(repoPath) : null, fresh = tooLong(resume); // too long to resume: a fresh run carries on; one that stalled starts fresh, from its note (stall.mjs)
   if (!model) model = routedModel(repoPath, opts, !!resume && !fresh); // routine runs on Sonnet, hard ones on Opus (route.mjs); the --model already in your command is only the Auto default, so the pick replaces it
   if (model) tmpl = withModel(tmpl, model);
   const runCmd = resume && !fresh ? tmpl + ` --resume ${resume.id}` : tmpl;
@@ -552,9 +554,9 @@ function runHandoff(repoPath, { force = false, lost = false, model = "", onExit 
   // SYMBIOT_AGENT: which run a `symbiot screens` command comes from, so it gets its own tab in the app's hidden browser
   const env = { ...(own || {}), ...(boxEnv || {}), ...(owner || {}), SYMBIOT_AGENT: repoPath };
   const gap = isClaudeCmd(runCmd) && process.platform !== "win32" ? startGap() : 0; // a few seconds between starts (the shell sleeps; the lock is held meanwhile)
-  const full = fillHandoff(runCmd, repoPath, `${critic ? CRITIC_PROMPT : stalled ? HANDOFF_PROMPT + STALL_PROMPT_TAIL : fresh ? carryOn(repoPath) : resume ? RESUME_PROMPT : HANDOFF_PROMPT} ${whereLine(repoPath)}${note ? " " + note : ""}`);
-  const e = track(critic ? `Design critic: ${repoPath.split("/").pop()}` : typeof opts.name === "string" && opts.name ? opts.name.slice(0, 80) : repoPath.split("/").pop(), gap ? `sleep ${Math.ceil(gap / 1000)}; ${full}` : full, repoPath, (code) => {
-    if (noteSession(repoPath, code, !!resume && !fresh) === "lost") { setTimeout(() => { try { runHandoff(repoPath, { force: true, lost: true, onExit }); } catch {} }, 300); return; } // its conversation is gone: start afresh
+  const full = fillHandoff(runCmd, repoPath, `${critic ? CRITIC_PROMPT : designer ? DESIGNER_PROMPT : stalled ? HANDOFF_PROMPT + STALL_PROMPT_TAIL : fresh ? carryOn(repoPath) : resume ? RESUME_PROMPT : HANDOFF_PROMPT} ${whereLine(repoPath)}${note ? " " + note : ""}`);
+  const e = track(critic ? `Design critic: ${repoPath.split("/").pop()}` : designer ? `Designer: ${repoPath.split("/").pop()}` : typeof opts.name === "string" && opts.name ? opts.name.slice(0, 80) : repoPath.split("/").pop(), gap ? `sleep ${Math.ceil(gap / 1000)}; ${full}` : full, repoPath, (code) => {
+    if (!critic && !designer && noteSession(repoPath, code, !!resume && !fresh) === "lost") { setTimeout(() => { try { runHandoff(repoPath, { force: true, lost: true, onExit }); } catch {} }, 300); return; } // its conversation is gone: start afresh
     try { if (JSON.parse(readFileSync(lock, "utf8")).pid === e.pid) unlinkSync(lock); } catch {}
     try { const d = noteClaudeDown(repoPath); if (d) e.down = d; } catch {} // Claude itself was the reason: no start anywhere until it's back
     // the tree as the run left it, asked of git once: the three checks below each ran a whole `git status -uall`
@@ -562,18 +564,20 @@ function runHandoff(repoPath, { force = false, lost = false, model = "", onExit 
     noteBlocked(repoPath, scoped, e.startedAt, code, { dirtyBefore, ticksBefore, after });
     try { noteRunFiles(repoPath, e, dirtyBefore, ticksBefore, after); } catch {} // which files this run touched, for Approve
     forgetRunStart(repoPath, e.id);
-    try { jobTrack("run:" + e.id, { ...runOutcome(repoPath, e, code), outcome: true }); } catch {} // the job record (jobs.mjs): how the run ended, once, for every screen and restart
+    try { jobTrack("run:" + e.id, designer ? { state: "done", waitingOn: "", what: "", summary: "Wrote the design spec the builder works to", note: "", outcome: true } : { ...runOutcome(repoPath, e, code), outcome: true }); } catch {} // the designer leaves its items open on purpose: the builder's run is the one that does them // the job record (jobs.mjs): how the run ended, once, for every screen and restart
     if (code === 0) { const st = loadStall(repoPath); if (st && !st.card && !st.restart) clearStall(repoPath); } // it got past it: a stall after this is a first again
     setTimeout(() => { try { autoAllow(repoPath); } catch {} }, 300); // a list it proposed inside your work: turned on, and on it goes
     startHeldTasks(repoPath); // tasks sent while it ran land now; start on them as that Send would have
     try { urgentDone(repoPath, e.id); } catch {} // the urgent run's done: the lanes it parked carry on
-    const up = !isClaudeCmd(scoped) ? null : (() => { try { return escalation(repoPath, model, code, { dirtyBefore, ticksBefore, askedBefore, handedBefore, after }, escalatedFrom); } catch { return null; } })(); // another agent's run has no Sonnet to go up from
+    // the designer's spec: recorded, and the builder starts on it (a fresh run, not the designer's conversation)
+    if (designer) { let d = null; try { d = settleDesign(repoPath); } catch {} setTimeout(() => { try { runHandoff(repoPath, { force: true, onExit, note: d && d.written.length ? "Symbiot's designer has written the spec for this work in .symbiot/design/ (.symbiot/ui-design.json maps item to spec): read it first and build to it." : "" }); } catch {} }, 300); return; }
+    const up = !isClaudeCmd(scoped) || critic ? null : (() => { try { return escalation(repoPath, model, code, { dirtyBefore, ticksBefore, askedBefore, handedBefore, after }, escalatedFrom); } catch { return null; } })(); // another agent's run has no Sonnet to go up from
     if (up) { setTimeout(() => { try { runHandoff(repoPath, { force: true, model: up.model, escalatedFrom: up.from, note: up.note, onExit }); } catch {} }, 300); return; } // it failed or did nothing: the same task, one tier up
     try { uiReview(repoPath, e, { critic }); } catch {} // UI work: Symbiot's design critic judges it, or its verdict is settled (design.mjs)
     if (onExit) try { onExit(code); } catch {} // a run beside the lane's own (parallel.mjs) merges back
   }, env);
-  if (!e) { try { if (JSON.parse(readFileSync(lock, "utf8")).claim) unlinkSync(lock); } catch {} return null; } // it didn't start: the claim goes
-  e.handoff = true; if (critic) e.critic = true;
+  if (!e) { try { if (JSON.parse(readFileSync(lock, "utf8")).claim) unlinkSync(lock); } catch {} if (designer) try { dropDesign(repoPath); } catch {} return null; } // it didn't start: the claim goes (and a designer that didn't, leaves nothing pending)
+  e.handoff = true; if (critic) e.critic = true; if (designer) e.designer = true;
   jobTrack("run:" + e.id, { kind: "agent", lane: repoPath.split("/").pop(), path: repoPath, text: typeof opts.name === "string" && opts.name ? opts.name : repoPath.split("/").pop(), state: "running", waitingOn: "" });
   if (escalatedFrom) e.escalatedFrom = escalatedFrom; // costs.json logs it, so a lane that keeps escalating starts on Opus (route.mjs)
   try { if (urgentState()) noteUrgentRun(repoPath, e.id); } catch {}
@@ -1830,7 +1834,7 @@ function uiReview(path, e, { critic = false, start = (p) => runHandoff(p, { forc
   if (!items.length || !cap(path)) return null;
   for (const x of items) review[x.item] = { ...(review[x.item] || {}), rounds: x.rounds + 1, at: now };
   saveReview(path, review);
-  try { writeFileSync(join(path, ".symbiot", "UI-CRITIC.md"), criticBrief(items)); } catch { return null; }
+  try { writeFileSync(join(path, ".symbiot", "UI-CRITIC.md"), criticBrief(items, { specs: specsFor(path) })); } catch { return null; }
   later(() => { try { start(path); } catch {} });
   return { critic: items.map((x) => x.item) };
 }
