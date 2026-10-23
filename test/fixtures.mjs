@@ -14,7 +14,7 @@ import { authorship, repoState, readmeInfo, houseRules, findAllRepos, driftRepo,
 import { EMBEDDED_UI } from "../ui.mjs";
 import { updateCmd } from "../server.mjs";
 import { grantRule, claudeConnectors, withConnectors, linkedConnectors, connectorsLine, linkReach, noteUntracked, untrackedBefore } from "../agents.mjs";
-import { unsentHeadline, releaseNotIn, applyRemovals, removalOf, saidFinished, gitFailed, unsentOf, readUnsent, unsentCard, repoTests, localRefused, holdShip, SHIP_STALE, shipping, shippingPaths, rebaseTask } from "../tasks.mjs";
+import { unsentHeadline, releaseNotIn, applyRemovals, removalOf, saidFinished, gitFailed, unsentOf, readUnsent, unsentCard, repoTests, localRefused, holdShip, SHIP_STALE, shipping, shippingPaths, rebaseTask, applyMove, readMove } from "../tasks.mjs";
 import { releaseNotes, parseNotes } from "../writeups.mjs";
 import { VERSION, sameTask, uniqueTasks } from "../core.mjs";
 import { mailActivity } from "../mail.mjs";
@@ -663,6 +663,32 @@ try {
   mkdirSync(join(dtRepo, ".symbiot")); writeFileSync(join(dtRepo, ".symbiot", "runfiles.json"), JSON.stringify([{ id: "R", ticked: 1, files: ["new.txt"] }])); writeFileSync(join(dtRepo, "a.txt"), "held edit\n");
   const rdt = await shipChanges(dtRepo, ["Mine"], { pr: false });
   ok("a dirty checkout: the branch is rebased beside it (a worktree), the checkout moved to the result, the held edit kept, no stash", rdt.ok && rdt.pushed && rdt.rebased === "origin/main" && gdt("rev-parse HEAD~1") === gdt("rev-parse origin/main") && readFileSync(join(dtRepo, "a.txt"), "utf8") === "held edit\n" && gdt("stash list") === "" && !existsSync(join(dtRepo, ".symbiot", "ship-wt")) && !existsSync(join(dtRepo, ".git", "rebase-merge")) && gdt("show --name-only --format= HEAD") === "new.txt", [rdt, gdt("status --porcelain"), gdt("log --oneline -3")]);
+  // Approve holds the folder only for its commit: the rest happens in a copy, and the tests run on what
+  // goes up, not on the folder's uncommitted work (23 Oct 2026: runs waited out 3 to 12 minutes of tests)
+  {
+    const cpRepo = bhSetup("ship-copy", "echo other > ../ship-copy-other/other.txt && git -C ../ship-copy-other add .");
+    const gcp = (a) => execSync("git " + a, { cwd: cpRepo, encoding: "utf8", env: gitEnv }).trim();
+    mkdirSync(join(cpRepo, ".symbiot")); writeFileSync(join(cpRepo, ".symbiot", "runfiles.json"), JSON.stringify([{ id: "R", ticked: 1, files: ["new.txt"] }])); writeFileSync(join(cpRepo, "z.txt"), "half-done edit\n");
+    let seen = null;
+    const rcp = await shipChanges(cpRepo, ["Mine"], { pr: false, verify: async (dir) => { seen = { dir, held: shipping(cpRepo), z: readFileSync(join(dir, "z.txt"), "utf8"), mine: readFileSync(join(dir, "new.txt"), "utf8"), other: existsSync(join(dir, "other.txt")) }; return { ok: true }; } });
+    ok("while it's tested and sent, the folder isn't held: a run may start there", rcp.ok && rcp.pushed && seen && seen.held === null, [rcp, seen && seen.held]);
+    ok("…the tests ran in a copy of what goes up: up to date with main, the change in, the folder's half-done edit not", seen && seen.dir !== cpRepo && seen.mine === "mine\n" && seen.other && seen.z === "z\n" && !existsSync(seen.dir), seen);
+    ok("…and the folder followed, its edit kept", gcp("rev-parse HEAD") === gcp(`rev-parse origin/${rcp.branch}`) && readFileSync(join(cpRepo, "z.txt"), "utf8") === "half-done edit\n", gcp("log --oneline -3"));
+
+    // a run going in the folder: its checkout isn't moved under it; that waits for the run's end
+    const lrRepo = bhSetup("ship-later", "echo other > ../ship-later-other/other.txt && git -C ../ship-later-other add .");
+    const glr = (a) => execSync("git " + a, { cwd: lrRepo, encoding: "utf8", env: gitEnv }).trim();
+    const before = glr("rev-parse HEAD");
+    const rl1 = await shipChanges(lrRepo, ["First"], { pr: false, running: () => true });
+    const m1 = readMove(lrRepo);
+    ok("a run going there: it goes up, rebased, but the folder's checkout stays put and says it moves when the run ends", rl1.ok && rl1.pushed && rl1.moveLater && /moves to what went up once that run ends/.test(rl1.note) && glr("rev-parse HEAD~1") === before && m1 && m1.branch === rl1.branch && glr(`rev-parse origin/${rl1.branch}`) === m1.to, [rl1, m1]);
+    ok("…it isn't counted as work that never went up", unsentOf(lrRepo) === null);
+    writeFileSync(join(lrRepo, "second.txt"), "2\n");
+    const rl2 = await shipChanges(lrRepo, ["Second"], { pr: false, running: () => true });
+    ok("Approve again before then: it goes up as the next commit of the same branch, on top of what went up, not as new work again", rl2.ok && rl2.pushed && rl2.branch === rl1.branch && glr(`rev-parse origin/${rl2.branch}~1`) === m1.to && glr(`show origin/${rl2.branch}:second.txt`) === "2", [rl2, glr(`log --oneline -4 origin/${rl2.branch}`)]);
+    const am = applyMove(lrRepo, { running: () => false });
+    ok("the run ends: the checkout moves to what went up, and nothing waits any more", am && am.moved && glr("rev-parse HEAD") === glr(`rev-parse origin/${rl2.branch}`) && readMove(lrRepo) === null && glr("status --porcelain").replace(/\?\? .*\n?/g, "") === "", [am, glr("status --porcelain")]);
+  }
   const dcRepo = bhSetup("ship-dirty-clash", "echo theirs > ../ship-dirty-clash-other/a.txt");
   const gdc = (a) => execSync("git " + a, { cwd: dcRepo, encoding: "utf8", env: gitEnv }).trim();
   mkdirSync(join(dcRepo, ".symbiot")); writeFileSync(join(dcRepo, ".symbiot", "runfiles.json"), JSON.stringify([{ id: "R", ticked: 1, files: ["new.txt"] }])); writeFileSync(join(dcRepo, "a.txt"), "held edit\n");
