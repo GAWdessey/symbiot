@@ -1,7 +1,7 @@
 # Contributing to symbiot
 
 How to configure, test and release Symbiot. For what it does and how to use it,
-see the [README](README.md).
+see the [README](README.md) and [the full guide](docs/GUIDE.md).
 
 ## Config
 

@@ -50,7 +50,8 @@ try {
     const up = async (p) => { for (let i = 0; i < 50 && !(locked() && H.lockHolder() && H.lockHolder().pid === p.pid); i++) await sleep(200); return locked(); };
     // a page of its own to read, so a read really starts the hidden browser
     const { createServer } = await import("node:http");
-    const site = createServer((q, res) => { res.writeHead(200, { "content-type": "text/html" }); res.end(q.url === "/signup" ? "<title>Create an account</title><h1>Create an account</h1><p>Already have an account? <a href='/'>Log in here</a></p><button>Google</button><button>GitHub</button><input type=email placeholder='you@email.com'>" : q.url === "/team" ? "<title>Deepgram</title><h1>Projects</h1><h2>Create an account for a teammate</h2><button>Invite</button>" : q.url === "/out" ? "<title>Reddit</title><header><a href='/'>reddit</a><button>Log In</button></header><p>Hot posts</p>" : q.url === "/in" ? "<title>Reddit</title><header><a href='/'>reddit</a><button>Create</button><a href='/u/me'>u/pat</a></header><p>Log in to see more? Not here.</p>" : "<title>here</title><p>here</p>"); });
+    let driven = null; // what the window's page said of navigator.webdriver (/probe)
+    const site = createServer((q, res) => { if (q.url.startsWith("/seen?")) driven = new URL(q.url, "http://x").searchParams.get("wd"); res.writeHead(200, { "content-type": "text/html" }); res.end(q.url === "/probe" ? "<title>probe</title><script>fetch('/seen?wd=' + navigator.webdriver)</script>" : q.url === "/signup" ? "<title>Create an account</title><h1>Create an account</h1><p>Already have an account? <a href='/'>Log in here</a></p><button>Google</button><button>GitHub</button><input type=email placeholder='you@email.com'>" : q.url === "/team" ? "<title>Deepgram</title><h1>Projects</h1><h2>Create an account for a teammate</h2><button>Invite</button>" : q.url === "/out" ? "<title>Reddit</title><header><a href='/'>reddit</a><button>Log In</button></header><p>Hot posts</p>" : q.url === "/in" ? "<title>Reddit</title><header><a href='/'>reddit</a><button>Create</button><a href='/u/me'>u/pat</a></header><p>Log in to see more? Not here.</p>" : "<title>here</title><p>here</p>"); });
     await new Promise((r) => site.listen(0, "127.0.0.1", r));
     const PAGE = `http://127.0.0.1:${site.address().port}/`;
 
@@ -107,18 +108,27 @@ try {
     // the one-at-a-time queue before its window had the profile, an agent's read waiting behind it
     // started the hidden browser in the gap, and Chrome handed the window to that, out of sight.
     process.env.SYMBIOT_BROWSER_ARGS = ["--ozone-platform=headless", ...NS].join(" "); // a window, with no screen
-    const opening = H.openSymbiotBrowser(PAGE), waiting = H.readPage(PAGE);
+    H.setBrowserHub(PAGE + "hub"); // its own page, as in the app, with the site in a window beside it
+    const opening = H.openSymbiotBrowser(PAGE + "probe"), waiting = H.readPage(PAGE);
     const o = await opening, w = await waiting;
     const shown = () => chromes().filter((a) => !/--headless/.test(a)).length;
     ok("Sign in opens a window that has the profile", o && o.ok && H.windowOpen() && shown() >= 1, [o, H.lockHolder(), chromes().length]);
+    // Cloudflare's "Verify you are human" wouldn't pass in it, clicked by hand (twilio.com/login,
+    // 16 Oct 2026): it was opened over a DevTools pipe, and a pipe alone tells every page
+    // navigator.webdriver. It's plain Chrome now: nothing attached, nothing put in its pages.
+    for (let i = 0; i < 50 && driven === null; i++) await sleep(200);
+    const flags = chromes().filter((a) => !/--headless/.test(a)).join(" ");
+    ok("…plain Chrome: no DevTools pipe or port, no automation flag", flags && !/remote-debugging|enable-automation|AutomationControlled|--user-agent|--headless/.test(flags), flags);
+    ok("…so its pages aren't told it's driven (navigator.webdriver is false)", driven === "false", driven);
+    H.setBrowserHub("");
     ok("…and the read behind it doesn't take the profile from it: it reads from the copy", w && !w.error && H.windowOpen(), w);
     ok("…and how long it has been open is known, for Home", H.windowSince() > Date.now() - 120000, H.windowSince());
     await H.closeSymbiotBrowser();
     ok("…and Done closes it", !H.windowOpen(), H.lockHolder());
     console.log("LEFT OPEN AND UNUSED — the window closes itself, its sign-ins saved");
-    const pw = spawn(chrome, ["--remote-debugging-pipe", ...NS, "--ozone-platform=headless", "--user-data-dir=" + PROFILE, "--profile-directory=Default", "--no-first-run", "--password-store=basic", "about:blank"], { stdio: ["ignore", "ignore", "ignore", "pipe", "pipe"] });
-    H.pipeWindow(pw, { every: 400, idle: 2500 });
-    ok("a window over the pipe has the profile", await up(pw));
+    const o1 = await H.openSymbiotBrowser(PAGE);
+    H.watchWindow({ every: 400, idle: 2500 }); // no pipe to see its tabs: their pages change its session files (windowMoved)
+    ok("a window has the profile", o1 && o1.ok && H.windowOpen(), [o1, H.lockHolder()]);
     await sleep(1200); const still = H.windowOpen();
     for (let i = 0; i < 60 && H.windowOpen(); i++) await sleep(250);
     ok("…stays open while it's been in use lately, and closes by itself once it's sat unused", still && !H.windowOpen(), H.lockHolder());

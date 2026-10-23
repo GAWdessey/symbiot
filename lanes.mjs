@@ -28,7 +28,7 @@ import { runRecord } from "./jobs.mjs";
 import { runHandoff, runningHandoff, waitingFor, runOpen, autoStart, settleRecord, agentQuestions, findOrcaCli, installAllowlist, writeTasks, workOf, loadRuns, allAnswers } from "./agents.mjs";
 import { addTask, removeTask, pushTasks, pendingReview, approveChanges, workingDiff, setHandedLookup } from "./tasks.mjs";
 import { actNow, actBrief } from "./mind.mjs";
-import { laneMap } from "./scan.mjs";
+import { laneMap, nearLane } from "./scan.mjs";
 import { parseRun, lastRunText, readRunLog, runStarted } from "./work.mjs";
 import { OPS, parseHandoffs } from "./handover.mjs";
 import { laneReach, unreachable, serverOnly } from "./reach.mjs";
@@ -71,22 +71,6 @@ function projectOf(path, { map = laneMap(), ledger = loadLedger() } = {}) {
 // lane's (a typo, a word more or less: "symbio", "robin lane", "Quartz-app") is that lane
 // (nearLane), when only one fits. null when none does: dispatch sends it to ops, told the name,
 // rather than erroring (one errored and sat for 8 days, 16 Oct 2026).
-const slug = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
-function editDistance(a, b) {
-  const m = a.length, n = b.length; if (!m || !n) return m + n;
-  let prev = Array.from({ length: n + 1 }, (_, j) => j);
-  for (let i = 1; i <= m; i++) { const cur = [i]; for (let j = 1; j <= n; j++) cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)); prev = cur; }
-  return prev[n];
-}
-function nearLane(lane, names) {
-  const k = slug(lane); if (!k) return "";
-  const exact = names.find((n) => slug(n) === k); if (exact) return exact;
-  const within = names.filter((n) => { const s = slug(n); return s.length >= 4 && (k.includes(s) || (k.length >= 4 && s.includes(k))); });
-  if (within.length === 1) return within[0];
-  if (within.length > 1) return "";
-  const close = names.filter((n) => { const s = slug(n); return s.length >= 5 && k.length >= 5 && editDistance(k, s) <= Math.max(1, Math.floor(Math.min(k.length, s.length) / 5)); });
-  return close.length === 1 ? close[0] : "";
-}
 function laneTarget(lane, map) {
   if (lane.toLowerCase() === OPS) return { lane: OPS, path: "" };
   const name = Object.keys(map).find((n) => n.toLowerCase() === lane.toLowerCase()) || nearLane(lane, Object.keys(map));

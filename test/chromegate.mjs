@@ -107,7 +107,7 @@ try {
     const on = judge(C + "computer", { action: "left_click", coordinate: [1, 1], tabId: 901, action_summary: "Open the settings tab" }, o);
     G.seen(C + "navigate", `Navigated\n\nTab Context:\n- Available tabs:\n  • tabId 901: "Example" ("https://www.example.org/x")`, o);
     const send = judge(C + "computer", { action: "left_click", coordinate: [1, 1], tabId: 901, action_summary: "Send the message to the team" }, o);
-    ok("off for a site it's never been switched on for; with every site on, a click goes through", before && off && /is off/.test(off.why) && on === null, [before, off, on]);
+    ok("off for a site it's never been switched on for; with every site on, a click goes through", before && off && /is (switched )?off/.test(off.why) && /any site in your Chrome/.test(off.why) && on === null, [before, off, on]);
     ok("…and a send there still waits for the user's Go", send && /waits for their Go/.test(send.why), send);
     ok("…the brief says any site", /On any site the user also lets you ACT/.test((await import("../browserfails.mjs")).browserBrief(true, ["*"]).join("\n")));
     G.setActAll(false, { load: loadConfig, save: saveConfig });
@@ -169,7 +169,7 @@ try {
   const card = P.plainAsk(lane, { q: ask, context: "LinkedIn is signed out in the browser I can reach.", options: ["🤖 Agent: once you've signed LinkedIn in, schedule both and move the displaced posts (recommended)", "Skip this part"] }, { max: 2 });
   ok("an ask written before reads, on its card, as the switch, with the setting named and Switch it on first", /^Should agents click and type on linkedin\.com in your Chrome\?/.test(card.q) && /Settings → Connections, the Reads button/.test(card.q) && card.labels[0] === "Switch it on for linkedin.com (recommended)" && card.labels[1] === "Skip this part" && card.raw === ask && card.context === "", card);
   ok("…with no Sign in button, while a real sign-in ask keeps one", L.signInAsked(`${ask}\n🤖 Agent: once you've signed LinkedIn in, schedule both`) === null && (L.signInAsked("Can you sign in to domains.co.za?") || {}).name === "domains.co.za");
-  ok("the user's yes switches it on, only for a site the gate refused lately", G.switchOnAct("linkedin.com", { load: loadConfig, save: saveConfig, home: HOME }) && G.actSites(HOME).includes("linkedin.com") && !G.switchOnAct("example.org", { load: loadConfig, save: saveConfig, home: HOME }));
+  ok("the user's yes switches it on, only for a site the gate refused lately", G.switchOnAct("linkedin.com", { load: loadConfig, save: saveConfig, home: HOME }) && G.actSites(HOME).includes("linkedin.com") && !G.switchOnAct("never-refused.example", { load: loadConfig, save: saveConfig, home: HOME }));
   ok("…and the click goes ahead", judge(C + "computer", { tabId: 7, action: "left_click", coordinate: [1, 1], action_summary: "Opens the LinkedIn post composer" }, lo) === null);
   const inCard = P.plainAsk(lane, { q: ask, options: ["🤖 Agent: once you've signed in, schedule both"] });
   ok("switched on and open signed in: a sign-in ask there is still not needed, and its card says it was signed in", (G.signInNotNeeded(ask, { home: HOME }) || {}).off === false && /No sign-in needed: linkedin\.com was open signed in in your Chrome/.test(inCard.q) && /it's signed in/.test((judge("Write", { file_path: join(lane, ".symbiot", "QUESTIONS.md"), content: `### ${ask}\n` }, lq) || {}).why || ""), inCard);

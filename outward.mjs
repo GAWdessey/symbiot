@@ -28,12 +28,14 @@ const PRODUCT_TERMS = new Set(("symbiot claude anthropic openai chatgpt gemini g
   "linkedin whatsapp meta facebook instagram youtube reddit x twitter chrome chromium electron android ios iphone windows mac macos linux " +
   "termux ubuntu cosmic debian appimage apk mcp ops marketing home dashboard workdesk reports week standup todo drift map settings archive").split(" "));
 // Capitalised words a memory's name starts with that name nothing (a "Sandboxed
-// repo runs" node): the README's own lower-case words stand for English, plus these.
+// repo runs" node): the README's and the full guide's own lower-case words stand for
+// English, plus these (the README became a short newcomer's page, 23 Oct 2026).
 const COMMON = new Set("the and for with from into about after before over under not no new old own one two all any each every this that these those its it's is are was were be on in at to of by or as up out off via per prod dev test live main first last next team company user users phone laptop server account accounts login logins mailbox email emails token tokens key keys site sites page pages project projects app apps mobile desktop web domain domains dns registration registrant registrar program startup startups application calendar template templates content legal buttons button checkout list lists move migration number numbers rates call calls sms env host webhook console cloud oauth client project's idea mode logo usage admin access profile profiles browser relay demo channel verification forwarding issuer attribution capture media posts post drafts draft reply replies voice orbs blobs chat suggestion box tasks rails back side approach tools video sandboxed always-on technologies inc ltd pty vids resend".split(" "));
 let README_WORDS = null;
 function readmeWords() {
   if (README_WORDS) return README_WORDS;
-  let t = ""; try { t = readFileSync(fileURLToPath(new URL("./README.md", import.meta.url)), "utf8"); } catch {}
+  let t = "";
+  for (const f of ["./README.md", "./docs/GUIDE.md"]) { try { t += "\n" + readFileSync(fileURLToPath(new URL(f, import.meta.url)), "utf8"); } catch {} }
   README_WORDS = new Set(t.match(/(?<![A-Za-z])[a-z][a-z'-]{2,}/g) || []); // only words it writes lower-case: "sunco's" in an example isn't English, but it's a lane anyway
   return README_WORDS;
 }

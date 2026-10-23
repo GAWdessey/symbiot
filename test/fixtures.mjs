@@ -637,6 +637,15 @@ try {
   const gbh = (a) => execSync("git " + a, { cwd: bhRepo, encoding: "utf8", env: gitEnv }).trim();
   const rb = await shipChanges(bhRepo, ["Mine"], { pr: false });
   ok("a stale local main: the commit lands on top of GitHub's main and goes up", rb.ok && rb.pushed && !!rb.rebased && gbh("rev-parse HEAD~1") === gbh("rev-parse origin/main") && gbh(`rev-parse origin/${rb.branch}`) === gbh("rev-parse HEAD") && rb.commit === gbh("rev-parse --short HEAD"), rb);
+  // a branch with a merge commit of its own is merged up to date, not rebased: the rebase replayed
+  // only plain commits, and the work committed with the merge was gone (23 Oct 2026)
+  const kmRepo = bhSetup("ship-merges", "echo other > ../ship-merges-other/other.txt && git -C ../ship-merges-other add .");
+  const gkm = (a) => execSync("git " + a, { cwd: kmRepo, encoding: "utf8", env: gitEnv }).trim();
+  gkm("switch -q -c side"); writeFileSync(join(kmRepo, "s.txt"), "s\n"); gkm("add s.txt"); gkm("commit -qm side"); gkm("switch -q main");
+  gkm("merge -q --no-ff --no-commit side"); writeFileSync(join(kmRepo, "carried.txt"), "only in the merge\n"); gkm("add carried.txt"); gkm("commit -qm merged-with-work");
+  const rkm = await shipChanges(kmRepo, ["Mine"], { pr: false });
+  ok("a branch with a merge commit of its own: origin/main is merged in, what the merge carried is kept, and it goes up", rkm.ok && rkm.pushed && rkm.merged && gkm("show HEAD:carried.txt") === "only in the merge" && gkm("show HEAD:other.txt") === "other" && gkm("show HEAD:new.txt") === "mine" && gkm("merge-base --is-ancestor origin/main HEAD && echo y") === "y" && gkm(`rev-parse origin/${rkm.branch}`) === gkm("rev-parse HEAD") && rkm.commit === gkm("rev-parse --short HEAD"), [rkm, gkm("log --oneline --graph -6")]);
+  ok("...and its clash task says merge, not rebase", /^Bring symbiot\/x up to date with origin\/main by merging it in, not by rebasing/.test(rebaseTask("symbiot/x", "main", { merges: true })) && !/git rebase/.test(rebaseTask("symbiot/x", "main", { merges: true })) && /merge origin\/main in instead/.test(rebaseTask("symbiot/x", "main")), rebaseTask("symbiot/x", "main", { merges: true }));
   const cfRepo = bhSetup("ship-conflict", "echo theirs > ../ship-conflict-other/a.txt");
   writeFileSync(join(cfRepo, "a.txt"), "mine\n");
   const gcf = (a) => execSync("git " + a, { cwd: cfRepo, encoding: "utf8", env: gitEnv }).trim();
@@ -915,7 +924,7 @@ try {
   ok("the same task with different punctuation is a duplicate, kept in its first words", o.n2 && o.n2.duplicate && o.n2.id === o.n1.id && !o.n2.reworded && o.n2.text === o.n1.text, [o.n1, o.n2]);
   ok("the same task with a clause more is a duplicate that takes the longer words, and not back", o.e2 && o.e2.duplicate && o.e2.reworded && o.e2.id === o.e1.id && /Also/.test(o.e2.text) && o.e3 && o.e3.duplicate && /Also/.test(o.e3.text) && o.nCount === 2, [o.e2, o.e3, o.nCount]);
   const clsh = o.clash || {}, clTask = (o.clashTasks || [])[0];
-  ok("a clash with main on Approve: committed, not pushed, and the rebase becomes the agent's task on that lane, in its brief, started at once", clsh.ok && clsh.unsent === "conflicts" && clsh.fix && clsh.fix.started === true && clTask && !clTask.done && clTask.id === clsh.fix.id && clsh.branch && clTask.text.startsWith("Rebase " + clsh.branch + " onto origin/main") && (o.clashMd || "").includes("- [ ] Rebase " + clsh.branch + " onto origin/main") && /added a task for the agent to rebase it, and starts it now/.test(clsh.note || ""), [clsh.fix, clsh.unsent, clsh.branch, clsh.note, clTask && clTask.text.slice(0, 60), (o.clashMd || "").split("\n").filter((l) => /^- \[/.test(l))]);
+  ok("a clash with main on Approve: committed, not pushed, and the rebase becomes the agent's task on that lane, in its brief, started at once", clsh.ok && clsh.unsent === "conflicts" && clsh.fix && clsh.fix.started === true && clTask && !clTask.done && clTask.id === clsh.fix.id && clsh.branch && clTask.text.startsWith("Rebase " + clsh.branch + " onto origin/main") && (o.clashMd || "").includes("- [ ] Rebase " + clsh.branch + " onto origin/main") && /added a task for the agent to bring it up to date, and starts it now/.test(clsh.note || ""), [clsh.fix, clsh.unsent, clsh.branch, clsh.note, clTask && clTask.text.slice(0, 60), (o.clashMd || "").split("\n").filter((l) => /^- \[/.test(l))]);
   ok("...and the review card keeps that task on its unsent note", o.clashCard && o.clashCard.unsent && o.clashCard.unsent.why === "conflicts" && o.clashCard.unsent.fix && o.clashCard.unsent.fix.id === clsh.fix.id, o.clashCard);
   ok("a short task with more words on the end is still its own task", o.short2 && !o.short2.duplicate && o.short2.id !== o.short1.id, [o.short1, o.short2]);
   ok("an agent's tick on the old wording still sends the reworded task to review", o.eAfter && o.eAfter.review === true, o.eAfter);

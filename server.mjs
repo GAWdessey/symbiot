@@ -18,14 +18,14 @@ import { createServer } from "node:http";
 import { randomBytes, createHash } from "node:crypto";
 import { EMBEDDED_UI } from "./ui.mjs";
 import { VERSION, LATEST_VERSION, REGISTRY, semverGt, checkLatest, CONFIG_PATH, loadConfig, saveConfig, moveSecrets, loadTasks, hasCmd, chromeBinary, CONFIG_DIR, takeAppLock, releaseAppLock, writeJsonAtomic } from "./core.mjs";
-import { onGoalAnswer, settleRecord, autoStart, runningHandoff as goalRunning, triageSweep, onRunEnd, onAnswered, shSingle, handoffCmd, setHandoffCmd, grantAgent, runHandoff, track, detectHandoffs, connectorsInfo, linkReach, answerQuestions, skipIdea, agentsNow, startWaiting, parkLane, parkedPaths, autoAllowSweep, continueLanes, trustFull, readLastWords, sandboxState, HANDOFFS, runningHandoff, runsTick } from "./agents.mjs";
+import { whereOf, onGoalAnswer, settleRecord, autoStart, runningHandoff as goalRunning, triageSweep, onRunEnd, onAnswered, shSingle, handoffCmd, setHandoffCmd, grantAgent, runHandoff, track, detectHandoffs, connectorsInfo, linkReach, answerQuestions, skipIdea, agentsNow, startWaiting, parkLane, parkedPaths, autoAllowSweep, continueLanes, trustFull, readLastWords, sandboxState, HANDOFFS, runningHandoff, runsTick } from "./agents.mjs";
 import { write as aiWrite, PROVIDERS, resolveProvider, connectProvider, detectHardware, recommendModels, hasOllama, ollamaInstall, ensureOllama, useOllamaModel } from "./ai.mjs";
 import { SCAN, SCAN_TIMEOUT_MS, scanRoots, scanHome, addScanRoot, removeScanRoot, mapNow, nodeDetail, repoPathMap, laneMap, setScanOptions, refreshRepos, REPO_STATE, reposState } from "./scan.mjs";
 import { computeDrift } from "./drift.mjs";
 import { afterShip, markLive, deployTick } from "./deploy.mjs";
 import { quotaState } from "./quota.mjs";
 import { laneCap, mergeEnded, DEFAULT_CAP } from "./parallel.mjs";
-import { addTask, setTaskModel, toggleTask, removeTask, cancelTask, restoreTask, syncTasks, taskType, pushTasks, pendingReview, workingDiff, learnNpm, withReleases, releaseInput, approveRepo, approveChanges, sendBack, setAutoMerge, mergeWhenGreen, shipJob, shipJobOf, sendAgain, forgetUnsent, shippingPaths } from "./tasks.mjs";
+import { addTask, setTaskModel, refileTask, laneNames, toggleTask, removeTask, cancelTask, restoreTask, syncTasks, taskType, pushTasks, pendingReview, workingDiff, learnNpm, withReleases, releaseInput, approveRepo, approveChanges, sendBack, setAutoMerge, mergeWhenGreen, shipJob, shipJobOf, sendAgain, forgetUnsent, shippingPaths } from "./tasks.mjs";
 import { repoReview, repoSuggest, folderSuggest, taskChat, clearTaskChat, mailState, setMail, sentMail, produce, releaseNotes } from "./writeups.mjs";
 import { denyList } from "./outward.mjs";
 import { listSecrets, getSecret, saveSecret, markUsed, deleteSecret, scrubStored, repairFalseSaves } from "./vault.mjs";
@@ -51,7 +51,8 @@ import { adaptState, noteUse } from "./adapt.mjs";
 import { writeCards, loadCardText, keyOf as cardKeyOf } from "./needs.mjs";
 import { shoot } from "./design.mjs";
 import { updateAsk, cardTalk, dismissCard, reportIdeasAdd, reportIdeasDismiss, reportAsk, reportDraftAnswer, homeState, homeTick, homeAsk, homeAnswer, homeNext, workScene, forgetWork, workGo, workTick, firstSteps, marketingState, marketingGo, marketingDraftAnswer, marketingTask, moveToMarketing, onboarding, setOnboarding, startOnboarding, phoneSetupFirst, loadDismissed } from "./home.mjs";
-import { MARKETING_DIR, MARKETING, draftPreview, laneMedia, displayName, setDraftMedia } from "./marketing.mjs";
+import { marketingOverview } from "./mkoverview.mjs";
+import { MARKETING_DIR, MARKETING, productNames, draftPreview, laneMedia, displayName, setDraftMedia } from "./marketing.mjs";
 import { trays, trayMedia, setBlur, addBlur, removeBlur, setReviewed, renderCapture } from "./tray.mjs";
 import { captureProduct, captureProducts } from "./capture.mjs";
 import { listReports, readReport, reportImage, markAllRead, phoneReports, phoneReport, withNeeds } from "./reports.mjs";
@@ -511,7 +512,10 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       if (u.pathname === "/api/node") return json(res, await nodeDetail(u.searchParams.get("id") || "")); // local
       if (u.pathname === "/api/suggest" && req.method === "POST") { const b = await readBody(req); const p = String(b.path || ""); const isRepo = p && existsSync(join(p, ".git")); return json(res, await (isRepo ? repoSuggest(p) : folderSuggest(p))); }
       if (u.pathname === "/api/review" && req.method === "POST") { const b = await readBody(req); return json(res, await repoReview(String(b.path || ""))); }
-      if (u.pathname === "/api/tasks" && req.method !== "POST") { const arch = u.searchParams.get("archived") === "1"; return json(res, [...loadTasks().filter((x) => !!x.archived === arch), ...(arch ? archivedTasks() : [])].map((t) => ({ ...t, type: taskType(t.text) }))); } // the Archive: tasks.json's archived, then what the sweep moved out (sweep.mjs)
+      if (u.pathname === "/api/tasks" && req.method !== "POST") { const arch = u.searchParams.get("archived") === "1"; const lanes = arch ? [] : laneNames(); return json(res, [...loadTasks().filter((x) => !!x.archived === arch), ...(arch ? archivedTasks() : [])].map((t) => ({ ...t, type: taskType(t.text), ...(lanes.length > 1 && t.repo && !t.done && !lanes.includes(t.repo) ? { unplaced: true } : {}) }))); } // the Archive: tasks.json's archived, then what the sweep moved out (sweep.mjs)
+      // the lanes a task can be re-filed in (its lane picker on the Workdesk), and the re-filing
+      if (u.pathname === "/api/tasks/lanes" && req.method !== "POST") return json(res, { lanes: laneNames() });
+      if (u.pathname === "/api/tasks/lane" && req.method === "POST") { const b = await readBody(req); return json(res, refileTask(String(b.id || ""), String(b.repo || ""))); }
       if (u.pathname === "/api/tasks/add" && req.method === "POST") { const b = await readBody(req), t = addTask(b.text, b.repo); if (t && t.id && !t.error) { try { await goalFor(b.text, { child: "task:" + t.id, lane: b.repo || "", path: (laneMap() || {})[b.repo] || "" }); } catch {} } return json(res, t); } // a task the user adds is a goal (or part of the one it follows up), followed to its end (goals.mjs goalFor)
       if (u.pathname === "/api/tasks/toggle" && req.method === "POST") { const b = await readBody(req); return json(res, toggleTask(String(b.id || ""))); }
       if (u.pathname === "/api/tasks/model" && req.method === "POST") { const b = await readBody(req); return json(res, setTaskModel(String(b.id || ""), b.model)); }
@@ -576,7 +580,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
         return json(res, { started: true, model, id: e ? e.id : "" });
       }
       if (u.pathname === "/api/agents") { // handing: what it handed to other lanes, on the newest block per folder: where each stands, and how far the run on it has got
-        const seen = new Set(), map = laneMap(), ledger = loadLedger(), list = agentsNow().map((a) => { let pj = ""; try { pj = projectOf(a.path, { map, ledger }); } catch {} a = { ...a, project: pj }; if (!a.path || seen.has(a.path)) return a; seen.add(a.path); let h = []; try { h = handingOf(a.path, { map, ledger }); } catch {} return h.length ? { ...a, handing: h } : a; });
+        const seen = new Set(), map = laneMap(), ledger = loadLedger(), list = agentsNow().map((a) => { let pj = "", ln = ""; try { pj = projectOf(a.path, { map, ledger }); } catch {} try { ln = a.path ? whereOf(a.path).lane : ""; } catch {} a = { ...a, project: pj, ...(ln ? { lane: ln } : {}) }; if (!a.path || seen.has(a.path)) return a; seen.add(a.path); let h = []; try { h = handingOf(a.path, { map, ledger }); } catch {} return h.length ? { ...a, handing: h } : a; });
         return jsonTag(req, res, await withReleases(list));
       }
       // the answer, saved in the folder that asked; it says which lane that is, so "Sent to …"
@@ -677,7 +681,8 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
         let n = null; try { n = await testInstalls(t, { get: (url) => fetch(url, { signal: AbortSignal.timeout(8000) }).then((r) => (r.ok ? r.json() : null)) }); } catch {}
         if (t && n) t.rows.forEach((r, i) => { r.installs = n[i]; });
         let lane = null; try { lane = marketingState(); } catch {}
-        return json(res, { linkedin: p.linkedin, replies: news.filter((x) => x.social && x.ts >= Date.now() - 30 * 86400000).slice(0, 30), test: t, lane });
+        let overview = null; try { overview = marketingOverview({ names: productNames(repoPathMap()) }); const r = overview.report && listReports({ folders: [MARKETING_DIR] }).find((x) => x.file === overview.report.file); if (r) overview.report.id = r.id; if (overview.report) delete overview.report.file; } catch {}
+        return json(res, { linkedin: p.linkedin, replies: news.filter((x) => x.social && x.ts >= Date.now() - 30 * 86400000).slice(0, 30), test: t, lane, overview });
       }
       // Marketing's own lane (marketing.mjs): a task for it, tagged with its product; another
       // lane's marketing task moved to it; its agent started; a draft its agent wrote, opened

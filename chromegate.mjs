@@ -50,7 +50,7 @@ const TABS = (home) => join(dir(home), "chrome-tabs.json"), HOLDS = (home) => jo
 const DAY = 86400000, SIGNED_FOR = 12 * 3600000;
 const LOGIN_PATH = /\/(?:login|log-in|signin|sign-in|uas\/login|authwall|checkpoint|session[-_]?expired)(?:[/?#._-]|$)/i, LOGIN_TITLE = /\b(?:log ?in|sign ?in|session expired)\b/i;
 // The setting that lets agents act on a site in the user's Chrome, as the user finds it, and the card that asks for it.
-const SETTING = (host) => `Settings → Connections, the Reads button on ${host}'s row (pressed, it says Acts)`;
+const SETTING = (host) => `Settings → Connections, the Reads button on ${host}'s row (pressed, it says Acts), or for every site at once the switch at the top, "Agents may click and type on any site in your Chrome"`;
 const actAsk = (host) => ({ q: `Should agents click and type on ${host} in your Chrome? {#chrome-act-${host}}`, option: `🤖 Agent: switch it on for ${host}` });
 function noteSite(host, field, now, home) { if (!host) return; const all = readJson(SITES(home), {}); all[host] = { ...(all[host] || {}), [field]: now }; writeJson(SITES(home), all); }
 const key = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9@.]+/g, " ").trim();

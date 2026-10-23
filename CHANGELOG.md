@@ -7,8 +7,15 @@ What each Symbiot release brought, newest first. When Approve bumps the version,
 - **An agent can't restart the Symbiot app it is running under.** Stopping or restarting the app from a run ended that run halfway with nobody told. Now the command is held, and the run asks you to reopen Symbiot instead, then carries on with the rest.
 - **Your app's key stays out of the list of running programs.** Symbiot's window opens with a one-use pass that's good for a minute, rather than the key itself, which any program on the computer could read.
 - **A post editor in Symbiot's browser keeps what you typed.** Typing, choosing, uploading and pressing from a lane all happen on the same open page while the app runs. If the app can't be reached, the command waits a minute and then says so, with nothing done, rather than opening the page again and losing the text.
+- **A scheduled post can be moved.** Telling Symbiot the new time of a post already marked scheduled now updates it, instead of keeping the old time.
 - **Fewer pointless sign-in asks.** When signing in isn't what's in the way on a site, the card asks for what is: letting agents act there, or saying it's already signed in.
 - **A request for a run that's still going joins that run**, rather than starting a second one beside it.
+- **Sites' "Verify you are human" checks pass in the Symbiot Browser.** Its window was opened with a connection that told every page it was driven by software, so those checks failed however often you clicked them. Now it's plain Chrome: nothing attached to it and nothing added to its pages. A window left open and unused still closes by itself, and agents get your sign-ins once it closes.
+- **No task gets lost under a lane that doesn't exist.** A task filed under a copy of a project's folder, or a near miss of a lane's name, goes to that lane. One filed under something that's no lane at all shows on Home, and every task on the Workdesk has a lane picker to move it to another lane.
+- **A new task always starts its lane's agent.** A task you queue goes in as new work, even when that lane's agent has marked a similar one as waiting. A task the agent marked waiting now says on the Workdesk what it waits on, rather than "didn't start". Symbiot also stops retrying it every few minutes, and starting that one lane's agent opens it again.
+- **The Workdesk shows each task's words again.** The model picker had taken the whole row. On a phone, the pickers now sit under the task.
+- **Agents can type into rich-text boxes on web pages.** A message box drawn as an editor (one that isn't a plain text field, or sits in its own frame inside the page) now shows up as a field named by its label, so an agent can fill it.
+- **Approve no longer loses work that sits in a merge.** Bringing approved work up to date with main used to replay only its plain commits, so whatever a merge commit carried was dropped without a word. Work that has merges of its own now has main merged in instead, and an agent asked to sort out a clash is told to do the same.
 
 ## 0.81.1 — 2026-10-23
 

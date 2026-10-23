@@ -80,7 +80,7 @@ try {
   put(lane, "TASKS.md", "## Tasks\n- [x] Fix the reader\n");
   put(lane, "ANSWERS.md", "# Answers\n");
   writeFileSync(join(lane, ".symbiot", a.ANSWERS_SEEN), JSON.stringify({ at: Date.now(), answers: a.answersDigest(lane) }));
-  ok("every task ticked, nothing answered: nothing to do", /every task in atlas's .symbiot\/TASKS.md is ticked and no answer has come in/.test(a.nothingToDo(lane)), a.nothingToDo(lane));
+  ok("every task ticked, nothing answered: nothing to do", /every task on atlas's list is done or waiting on something, and no answer has come in/.test(a.nothingToDo(lane)), a.nothingToDo(lane));
   put(lane, "ANSWERS.md", read(lane, "ANSWERS.md") + "\n### Handed over to ops: restart the relay\nDone (the ops agent).\n_answered by symbiot (handover) 2026-10-15_\n");
   ok("a handover's report back isn't an answer: still nothing to do", !!a.nothingToDo(lane) && !a.newAnswers(lane));
   put(lane, "ANSWERS.md", read(lane, "ANSWERS.md") + "\n### Pat's answer to ops, on the same work as you\nbackground\n_shared by Symbiot 2026-10-15 (background)_\n");

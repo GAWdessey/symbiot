@@ -533,6 +533,11 @@ body.lq-liquid .task .tmodel{padding:5px 28px 5px 10px;border-radius:10px}.task.
 .task:has(.tfull[open]){align-items:flex-start}.tfull summary{cursor:pointer;font-size:12px;color:var(--faint);margin-top:4px}.tfull div{white-space:pre-wrap;overflow-wrap:anywhere;margin-top:6px;font-size:13px;line-height:1.5}.tfull div+.tres{border-top:1px solid var(--line);padding-top:6px}
 .task .rp{font-size:11px;color:var(--faint);background:var(--ink3);border:1px solid var(--line);border-radius:999px;padding:2px 8px}
 .task .rm{background:none;border:0;color:var(--faint);cursor:pointer;font-size:18px;line-height:1}
+/* its pickers (lane, model) as wide as what they say: at width:100% the model picker took the row, and the task's words had none left */
+.task select.tmodel{width:auto;flex:none;max-width:14em;padding:4px 30px 4px 10px;font-size:12px;border-radius:9px}
+.task select.tlane{color:var(--faint)}
+@media (max-width:640px){.task{flex-wrap:wrap}.task .t{flex:1 1 calc(100% - 50px)}.task select.tlane{max-width:9.5em}} /* a phone: the words keep their line, the pickers go under them */
+.task select.tlane.bad{color:var(--amber);border-color:var(--amber)}
 .task .rm:hover{color:var(--amber)}
 .tgroup{margin:14px 0 4px;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--green);font-weight:700}
 .tcount{color:var(--faint);font-weight:400}
@@ -572,6 +577,19 @@ body.lq-liquid .rcard.pcard,body.lq-liquid.lq-light .rcard.pcard{border-left:3px
 .mkp{display:inline-block;margin-right:8px;padding-right:8px;border-right:1px solid var(--line);font:600 10.5px/1.4 var(--sans);letter-spacing:.09em;text-transform:uppercase;color:var(--green);vertical-align:1px}
 .mkdoc{border:1px solid #8884;border-radius:8px;padding:10px 14px;font-size:13px;overflow-x:auto}.mkdoc table{border-collapse:collapse}.mkdoc th,.mkdoc td{border:1px solid #8886;padding:3px 8px;text-align:left}.mkdoc h3,.mkdoc h4,.mkdoc h5{margin:10px 0 4px}
 .mkst{font-size:11px;padding:1px 7px;border-radius:999px;border:1px solid var(--line);color:var(--faint)}.mkst.approved{color:var(--green);border-color:var(--green)}.mkst.posted{color:var(--green);border-color:var(--green);background:var(--green-dim)}.mkst.superseded{text-decoration:line-through}
+/* Marketing overview: a card a product, its numbers big and their labels small; the week's report pinned under */
+#mkover{margin-top:8px}.mkov{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr));gap:16px;align-items:start}
+.mkoc{display:flex;flex-direction:column;gap:12px;min-width:0;padding:16px;border:1px solid var(--line);border-radius:12px;background:var(--ink2)}
+body.lq-liquid .mkoc,body.lq-liquid .mkrep{border-radius:18px;border-color:rgba(255,255,255,.08);background:rgba(255,255,255,.035)}body.lq-liquid.lq-light .mkoc,body.lq-liquid.lq-light .mkrep{border-color:rgba(21,26,33,.08);background:rgba(255,255,255,.75)}
+.mkoc h3{margin:0;font:600 15px var(--sans);color:var(--bone)}.mkoc h4{margin:0 0 4px;font:600 12px var(--sans);letter-spacing:.06em;text-transform:uppercase;color:var(--faint)}
+.mkoc ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}.mkoc li{font-size:14px;line-height:1.4;color:var(--text);overflow-wrap:anywhere}
+.mkoc li b{font-weight:600;color:var(--bone)}.mkoc .mkwhen{display:block;font-size:12.5px;color:var(--faint)}
+.mkstats{display:flex;gap:24px;flex-wrap:wrap}.mkstats div{display:flex;flex-direction:column}.mkstats strong{font:600 24px/1.1 var(--sans);color:var(--bone)}.mkstats .mkno{line-height:24px}.mkstats small{font-size:12px;color:var(--faint)}
+.mkoc .mkno,.mkopen .mkno{font-size:13px;color:var(--faint)}.mkoc .mkwait li{border-left:3px solid var(--amber);padding-left:10px}
+.mkopen{margin:16px 0 0;font-size:14px;color:var(--text)}.mkopen b{font-weight:600;color:var(--amber)}
+.mkrep{display:flex;gap:16px;align-items:center;justify-content:space-between;flex-wrap:wrap;margin-top:16px;padding:16px;border:1px solid var(--line);border-left:3px solid var(--green);border-radius:12px;background:var(--ink2)}
+.mkrep div{flex:1 1 320px;min-width:0}.mkrep h3{margin:0 0 4px;font:600 15px var(--sans);color:var(--bone)}.mkrep p{margin:0;font-size:14px;line-height:1.45;color:var(--text)}.mkrep small{display:block;margin-bottom:4px;font:600 11.5px var(--sans);letter-spacing:.06em;text-transform:uppercase;color:var(--green)}
+.mkrep button{min-height:40px}
 /* the pick tray: a card a capture, its blur boxes on it (solid: blurred; dashed: shown), each a click to switch; Use puts it on a post */
 .mktray{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,380px),1fr));gap:14px;align-items:start}
 .mkcap{display:flex;flex-direction:column;gap:8px;min-width:0;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--ink2)}
@@ -1386,6 +1404,7 @@ body.lq-light .btip .bta button:not(.quiet){background:#151A21;color:#FFFFFF}
 </section>
 <section id="panel-marketing" class="hidden">
 <div class="row"><span class="muted" style="flex:1">Marketing for every product you make, in a lane of its own: its agent drafts posts, demo videos, launches and campaigns, each tagged with the product it&#39;s for. You approve each post&#39;s preview; then its agent posts it, through Symbiot&#39;s signed-in browser, with exactly that text.</span></div>
+<div id="mkover"></div>
 <div id="mkmsg"></div>
 <div id="mkneeds"></div>
 <div id="mktasks"></div>
@@ -1895,13 +1914,18 @@ var body=r.text||'(no output)';reviewCache[path]={text:body,verdict:r.verdict||"
 var ALLTASKS=[];var PENDTASKS=[];var TFILTER={type:'',repo:'',id:''};var TARCH=false;
 var TORDER=['Fixes','Tests & CI','Security','Performance','Refactor','UI/UX','Docs','Features & other'];
 function liveBadge(t){return t.liveState==='pending'?"<span class='rp' title='"+esc(t.liveNote||'')+"'>merged, not live</span><button class='ghost markLive' title='Deployed and checked on the live site: mark it live'>live</button>":t.liveState==='live'?"<span class='rp' title='"+esc(t.liveNote||'')+"'>live</span>":t.liveState==='failed'?"<span class='rp' style='color:var(--amber)' title='"+esc(t.liveNote||'')+"'>deploy not live</span><button class='ghost markLive' title='Deployed and checked on the live site: mark it live'>live</button>":"";}
-function taskRow(t,arch){return "<div class='task"+(t.done?" done":"")+"' data-id='"+esc(t.id)+"'>"+(arch?"":"<input type='checkbox' class='taskchk' title='mark done (auto-archives on sync)'"+(t.done?" checked":"")+">")+"<span class='t'>"+esc(t.full?t.text.replace(/ Full text: \\x60[^\\x60]*\\x60/,''):t.text)+(t.full?"<details class='tfull'><summary>full text</summary><div>"+esc(t.full)+"</div></details>":"")+"</span>"+(t.repo?"<span class='rp'>"+esc(t.repo)+"</span>":"")+(arch&&t.removedBy?"<span class='rp' title='An approved task "+(t.merged?"merged it into another":"dropped it")+". Restore it to keep it.'>"+(t.merged?"merged":"dropped")+"</span>":"")+(arch&&t.dropped?"<span class='rp' title='An agent deleted it from TASKS.md, as you said to drop it. Restore it to keep it.'>dropped</span>":"")+(arch&&t.cancelled?"<span class='rp' title='You removed it. Restore it to bring it back.'>removed</span>":"")+(arch&&t.finding?"<span class='rp' title='"+escQ('Ticked by itself: '+t.finding+'. Restore it if there is something to do.')+"'>finding</span>":"")+liveBadge(t)+(arch||t.done?"":modelPick(t))+askBtn(t)+(arch?"<button class='rm restore' title='restore to active'>&#8630;</button>":"<button class='rm' title='Remove: it goes to the Archive (Undo brings it back)' aria-label='Remove this task'>&times;</button>")+"</div>";}
+function taskRow(t,arch){return "<div class='task"+(t.done?" done":"")+"' data-id='"+esc(t.id)+"'>"+(arch?"":"<input type='checkbox' class='taskchk' title='mark done (auto-archives on sync)'"+(t.done?" checked":"")+">")+"<span class='t'>"+esc(t.full?t.text.replace(/ Full text: \\x60[^\\x60]*\\x60/,''):t.text)+(t.full?"<details class='tfull'><summary>full text</summary><div>"+esc(t.full)+"</div></details>":"")+"</span>"+(!arch&&!t.done&&!t.review&&TLANES.length?lanePick(t):t.repo?"<span class='rp'>"+esc(t.repo)+"</span>":"")+(arch&&t.removedBy?"<span class='rp' title='An approved task "+(t.merged?"merged it into another":"dropped it")+". Restore it to keep it.'>"+(t.merged?"merged":"dropped")+"</span>":"")+(arch&&t.dropped?"<span class='rp' title='An agent deleted it from TASKS.md, as you said to drop it. Restore it to keep it.'>dropped</span>":"")+(arch&&t.cancelled?"<span class='rp' title='You removed it. Restore it to bring it back.'>removed</span>":"")+(arch&&t.finding?"<span class='rp' title='"+escQ('Ticked by itself: '+t.finding+'. Restore it if there is something to do.')+"'>finding</span>":"")+liveBadge(t)+(arch||t.done?"":modelPick(t))+askBtn(t)+(arch?"<button class='rm restore' title='restore to active'>&#8630;</button>":"<button class='rm' title='Remove: it goes to the Archive (Undo brings it back)' aria-label='Remove this task'>&times;</button>")+"</div>";}
+// Its lane, and the others it can be re-filed in: one under a name that's no lane (an ops run's title)
+// is picked up by nothing, so it says so until it's given one (tasks.mjs refileTask)
+var TLANES=[];
+function lanePick(t){var o=TLANES.slice();if(t.repo&&o.indexOf(t.repo)<0)o.unshift(t.repo);if(!t.repo)o.unshift('');return "<select class='tmodel tlane"+(t.unplaced?" bad":"")+"' title='"+escQ(t.unplaced?'Filed under '+t.repo+', which is no lane, so nothing picks it up: pick its lane':'Its lane: pick another to re-file it there')+"' aria-label='Lane'>"+o.map(function(x){return "<option value='"+esc(x)+"'"+((t.repo||'')===x?" selected":"")+">"+esc(x?(x===t.repo&&t.unplaced?lqShort(String(x).replace(/^Agent:\\s*/,'').replace(/\\*+/g,''),28)+' (no lane)':x):'no lane')+"</option>";}).join('')+"</select>";}
 function modelPick(t){var o=[['','Auto'],['local','Local'],['haiku','Haiku'],['sonnet','Sonnet'],['opus','Opus'],['fable','Fable']];return "<select class='tmodel' title='Which model runs this task. Auto picks one by the task and its lane.' aria-label='Model'>"+o.map(function(x){return "<option value='"+x[0]+"'"+((t.model||'')===x[0]?" selected":"")+">"+x[1]+"</option>";}).join('')+"</select>";}
 function wireTaskRows(el){el.querySelectorAll('.task').forEach(function(row){var id=row.getAttribute('data-id');
 var cb=row.querySelector('.taskchk');if(cb)cb.addEventListener('change',function(){api('/api/tasks/toggle',{id:id}).then(function(){row.classList.toggle('done');});});
 wireAsk(row,id);
 var ml=row.querySelector('.markLive');if(ml)ml.addEventListener('click',function(){api('/api/tasks/live',{id:id}).then(function(){(ALLTASKS.find(function(x){return x.id===id;})||{}).liveState='live';loadArchived();});});
-var mp=row.querySelector('.tmodel');if(mp)mp.addEventListener('change',function(){api('/api/tasks/model',{id:id,model:mp.value});var t=taskById(id);if(t){if(mp.value)t.model=mp.value;else delete t.model;}});
+var lp=row.querySelector('.tlane');if(lp)lp.addEventListener('change',function(){if(!lp.value)return;lp.disabled=true;api('/api/tasks/lane',{id:id,repo:lp.value}).then(function(r){if(!r||r.error){lp.disabled=false;var t0=taskById(id);lp.value=(t0&&t0.repo)||'';lp.title=(r&&r.error)||'It didn’t move.';return;}loadTasks();});});
+var mp=row.querySelector('.tmodel:not(.tlane)');if(mp)mp.addEventListener('change',function(){api('/api/tasks/model',{id:id,model:mp.value});var t=taskById(id);if(t){if(mp.value)t.model=mp.value;else delete t.model;}});
 var rm=row.querySelector('.rm');if(rm&&rm.classList.contains('restore'))rm.addEventListener('click',function(){api('/api/tasks/restore',{id:id}).then(loadArchived);});
 else if(rm)rm.addEventListener('click',function(){rm.disabled=true;api('/api/tasks/cancel',{id:id}).then(function(r){if(!r||r.error){rm.disabled=false;lqSaid((r&&r.error)||'It didn’t go. Try again.',true);return;}var nx=row.nextElementSibling;if(nx&&nx.classList.contains('tchat'))nx.remove();row.remove();ALLTASKS=ALLTASKS.filter(function(x){return x.id!==id;});LQ.fresh=true;
 var tx=row.querySelector('.t');lqUndo('Removed: '+lqShort(tx?tx.textContent:'the task',70),function(){return api('/api/tasks/restore',{id:id});});}).catch(function(e){rm.disabled=false;lqSaid(String((e&&e.message)||e),true);});});});}
@@ -1946,7 +1970,7 @@ var groups={};list.forEach(function(t){var ty=t.type||'Features & other';(groups
 var keys=Object.keys(groups).sort(function(a,b){var ia=TORDER.indexOf(a),ib=TORDER.indexOf(b);return (ia<0?99:ia)-(ib<0?99:ib);});
 var h="";keys.forEach(function(ty){h+="<div class='tgroup'>"+esc(ty)+" <span class='tcount'>"+groups[ty].length+"</span></div>";groups[ty].forEach(function(t){h+=taskRow(t,false);});});
 el.innerHTML=h;wireTaskRows(el);}
-function loadTasks(){TARCH=false;api('/api/tasks/sync',{}).then(function(){api('/api/tasks').then(function(list){ALLTASKS=list;renderTasks();wdJump();});loadPending();});}
+function loadTasks(){TARCH=false;api('/api/tasks/sync',{}).then(function(){api('/api/tasks/lanes').then(function(d){TLANES=(d&&d.lanes)||[];},function(){}).then(function(){api('/api/tasks').then(function(list){ALLTASKS=list;renderTasks();wdJump();});});loadPending();});}
 // While an agent is still working in a repo on the review list, its Approve is
 // greyed out; check again every few seconds, and when it finishes, sync (its last
 // ticks land in review) so Approve unlocks without reopening the tab. The poll
@@ -2108,7 +2132,7 @@ if(s1)s1.addEventListener('click',function(){send(true);});if(s2)s2.addEventList
 var more=box.querySelector('.qmore');if(more)more.addEventListener('click',function(){IDEASOPEN[a.path]=true;loadAgents();});
 box.querySelectorAll('.qidea').forEach(function(btn){btn.addEventListener('click',function(){var s=ideaOf(a,btn);if(!s)return;btn.disabled=true;
 var sk=btn.parentNode.querySelector('.qskip');if(sk)sk.remove();
-api('/api/tasks/add',{text:s.text,repo:s.repo||a.name}).then(function(){s.added=true;btn.outerHTML="<span class='tag'>in Tasks</span>";});});});
+api('/api/tasks/add',{text:s.text,repo:s.repo||a.lane||a.name}).then(function(){s.added=true;btn.outerHTML="<span class='tag'>in Tasks</span>";});});});
 box.querySelectorAll('.qskip').forEach(function(btn){btn.addEventListener('click',function(){var s=ideaOf(a,btn);if(!s)return;btn.disabled=true;
 api('/api/agents/skip',{path:s.path||a.path,text:s.text}).then(function(r){if(!r||r.error){btn.disabled=false;document.getElementById('agentsmsg').innerHTML="<div class='note err'>"+esc((r&&r.error)||'failed')+"</div>";return;}loadAgents();});});});});}
 // A step of yours an answer picked (👤 You): the next run waits for it (agents.mjs waitingFor)
@@ -3068,7 +3092,22 @@ api('/api/marketing/capture',{product:p.name,url:($('mkcapurl').value||'').trim(
 if(!r||r.error){say('err',(r&&r.error)||'It didn’t capture.');return;}
 say('ok',r.note+(r.skipped||[]).map(function(x){return x.clip?' No clip of '+x.path+': '+x.why+'.':' Skipped '+x.path+': '+x.why+'.';}).join('')+(r.seed?' It has demo data ('+r.seed+'): capture with that loaded, not real data.':''));loadMkTray();}).catch(function(x){MKCAPBUSY=false;var g=$('mkcapgo');if(g){g.disabled=false;g.textContent='Capture';}say('err',String((x&&x.message)||x));});});}
 var MKDAY=function(s){var d=new Date(s+'T00:00:00');return isNaN(d)?s:d.toLocaleDateString(undefined,{day:'numeric',month:'short'});};
-function renderMarketing(){var d=MKT,r=$('mkreplies'),t=$('mktest');if(!d||!r||!t)return;var rs=d.replies||[];
+// The overview at the top (mkoverview.mjs): a card a product, then the newest weekly report pinned.
+function mkDate(ms){var d=new Date(ms);return d.toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'}).replace(',','')+', '+d.toLocaleTimeString('en-ZA',{hour:'2-digit',minute:'2-digit',hour12:false});}
+function renderMkOver(){var el=$('mkover');if(!el)return;var o=MKT&&MKT.overview;if(!o){el.innerHTML='';return;}
+var nn=function(n){return n==null?"<span class='mkno'>no numbers yet</span>":'<strong>'+n.toLocaleString('en-ZA')+'</strong>';};
+var h="<div class='pshead' style='margin-top:16px'><span>Marketing overview</span><small>By product: what is scheduled, what waits on you, and the week&#39;s numbers.</small></div>";
+if(!o.products.length)h+="<div class='note'>Nothing scheduled or waiting yet. When Marketing&#39;s agent schedules a post or drafts one for you, it shows here under its product.</div>";
+else h+="<div class='mkov'>"+o.products.map(function(p){var t=p.total;
+return "<section class='mkoc' aria-label='"+escQ(p.name)+"'><h3>"+esc(p.name)+"</h3>"
++"<div><h4>Scheduled</h4>"+(p.scheduled.length?"<ul>"+p.scheduled.map(function(x){return "<li><b>"+esc(x.title)+"</b><span class='mkwhen'>"+esc(mkDate(x.when))+" &middot; "+esc(x.platform)+"</span></li>";}).join('')+"</ul>":"<span class='mkno'>Nothing scheduled.</span>")+"</div>"
++"<div class='mkwait'><h4>Waiting on your approval</h4>"+(p.waiting.length?"<ul>"+p.waiting.map(function(x){return "<li>"+esc(x.title)+"</li>";}).join('')+"</ul>":"<span class='mkno'>Nothing waiting.</span>")+"</div>"
++"<div><h4>This week</h4>"+(t?"<div class='mkstats'><div>"+nn(t.reach)+"<small>reach</small></div><div>"+nn(t.reactions)+"<small>reactions</small></div><div>"+nn(t.clicks)+"<small>clicks</small></div></div><ul style='margin-top:8px'>"+p.numbers.map(function(x){return "<li>"+esc(x.title)+"<span class='mkwhen'>"+(x.reach!=null?x.reach.toLocaleString('en-ZA')+' reach':'no reach numbers yet')+' &middot; '+(x.reactions!=null?x.reactions+' reactions':'no reaction numbers yet')+(x.clicks!=null?' &middot; '+x.clicks+' clicks':'')+"</span></li>";}).join('')+"</ul>":"<span class='mkno'>no numbers yet</span>")+"</div></section>";}).join('')+"</div>";
+if(o.open&&o.open.length)h+="<p class='mkopen'><b>Open:</b> "+o.open.map(function(x){return (x.tag?esc(x.tag)+': ':'')+esc(x.text);}).join(' &middot; ')+"</p>";
+var r=o.report;
+h+=r?"<div class='mkrep'><div><small>Latest weekly report</small><h3>"+esc(r.title)+"</h3>"+(r.result?"<p>"+esc(r.result.charAt(0).toUpperCase()+r.result.slice(1))+"</p>":'')+"</div>"+(r.id?"<button class='ghost mkrepgo'>Open the full report</button>":'')+"</div>":"<div class='mkrep'><div><small>Latest weekly report</small><p class='mkno'>No weekly report yet. When Marketing&#39;s agent writes one, the newest is pinned here.</p></div></div>";
+el.innerHTML=h;var g=el.querySelector('.mkrepgo');if(g)g.addEventListener('click',function(){showReport(r.id);});}
+function renderMarketing(){var d=MKT,r=$('mkreplies'),t=$('mktest');renderMkOver();if(!d||!r||!t)return;var rs=d.replies||[];
 r.innerHTML="<div class='pshead'><span>Replies</span><small>"+(!d.linkedin?"Link LinkedIn, and comments on and mentions of your posts show here, marked when they may be a customer.":rs.length?"On LinkedIn in the last 30 days. Draft a reply leaves one in the comment box for you to post.":"None on LinkedIn in the last 30 days. Comments on and mentions of your posts show here, marked when they may be a customer.")+"</small></div>"
 +rs.map(function(n){return "<div class='task' data-id='"+escQ(n.id)+"'><span class='t'>"+esc(n.text)+custTag(n)+" <span class='muted' style='font-size:11px'>"+agoTxt(n.ts)+"</span></span><button class='ghost mkdraft' title='your agent drafts a reply in your voice and leaves it in the comment box, never posted'>Draft a reply</button></div>";}).join('');
 r.querySelectorAll('.mkdraft').forEach(function(b){b.addEventListener('click',function(){var id=b.closest('.task').getAttribute('data-id');b.disabled=true;
@@ -3935,7 +3974,7 @@ function blobBody(y,home){var h='',nm=y.name||y.repo||(y.kind==='setup'?y.title:
 if(!y.local)h+="<button type='button' class='bx' title='Dismiss: it won&#39;t show here again (Undo brings it back)' aria-label='Dismiss this card'>&times;</button>";
 var pc=projChip(y);
 h+=home?"<button type='button' class='lt' title='open "+escQ(nm)+", with this lit up'>"+pc+"<span>"+esc(lqShort(nm,pc?22:30))+"</span><i>open &rsaquo;</i></button>":"<div class='nhead'>"+pc+"<b>"+esc(nm)+(y.kind==='ask'?" asks":"")+"</b>"+(y.more?"<span class='muted'>+"+y.more+" more on its block in Agents</span>":"")+"</div>";
-if(y.kind!=='ask')return h+"<div class='bq'>"+esc(y.kind==='approve'?String(y.sub||'').replace(/ · only you decide$/,''):String(y.sub||'').charAt(0).toUpperCase()+String(y.sub||'').slice(1)+'.')+"</div><div class='bo'><button type='button' class='nopt rec ngo'><span class='bt'>"+(y.kind==='approve'?'Review and approve':y.id==='setup:inbox'?(y.signin?'Sign in again':'Show me your inbox'):y.id==='setup:ai'?'Connect an AI':y.pick?'Use '+y.pick.name:y.urgent?'Reconnect':'Open Settings')+"</span></button></div>";
+if(y.kind!=='ask')return h+"<div class='bq'>"+esc(y.kind==='approve'?String(y.sub||'').replace(/ · only you decide$/,''):String(y.sub||'').charAt(0).toUpperCase()+String(y.sub||'').slice(1)+'.')+"</div><div class='bo'><button type='button' class='nopt rec ngo'><span class='bt'>"+(y.kind==='approve'?'Review and approve':y.kind==='lane'?'Pick its lane':y.id==='setup:inbox'?(y.signin?'Sign in again':'Show me your inbox'):y.id==='setup:ai'?'Connect an AI':y.pick?'Use '+y.pick.name:y.urgent?'Reconnect':'Open Settings')+"</span></button></div>";
 var os=y.options||[];if(y.draft)h+=draftHtml(y.draft);if(y.status)h+="<div class='bwait'><i class=ic-pause></i> "+esc(y.status)+"</div>";var tk=String(y.task||'').replace(/^Agent:\\s*/,'').replace(/^New job[^:.]{0,40}:\\s*/i,''),dn=y.doing||((tk&&tk.slice(0,24)!==String(nm).slice(0,24)?"I'm on it: "+tk+(/[.!?…]$/.test(tk)?'':'.'):'')+(y.done?' So far: '+y.done:'')).trim();if(dn)h+="<div class='bdoing' title='"+escQ(dn)+"'><i class=ic-bot></i>"+esc(dn)+"</div>";h+="<div class='bq' title='"+escQ((y.q||'')+(y.why?' ('+y.why+')':''))+"'>"+codeText(y.q||y.sub||'')+"</div>"+(y.why?"<div class='bwhy' title='"+escQ(y.why)+"'>"+esc(y.why)+"</div>":"")+blobTalk(y.talk||BLOBTALK[bdKey(y)],nm);
 if(y.report&&y.report.id)h+="<div class='bo'><button type='button' class='nopt brep' title='opens it on Reports'><span class='bt'>Read the report: "+esc(lqShort(y.report.title,60))+" &rsaquo;</span></button></div>";
 if(y.fix==='handover'&&y.sub)h+="<div class='bfor' title='"+escQ(y.sub)+"'>for: "+esc(y.sub)+"</div>";

@@ -248,48 +248,23 @@ async function closeOthers(c, keep) {
     if (got.some(Boolean)) saveSessions(got.filter(Boolean), Date.now(), SESSIONS, { merge: true });
   } catch {}
 }
-// The Symbiot Browser's own tabs, read while it's open: a site that keeps its sign-in only in
-// sessionStorage lost it with its tab. SMS Portal keeps its __auth-token there, the tab or its
-// window was closed before Done, and every check read its login page even right after a good
-// sign-in (2026-10-14). So the app opens the window over a pipe of its own (pipeWindow: a pipe,
-// not a port, so nothing else on the computer can drive it), reads each tab's every WIN_EVERY,
-// keeps the last read of each site in each tab, and saves them (saveSessions) at Done, or when
-// it closes by itself. Chrome closes when its pipe does: the app holds updates while the
-// window's open, and a one-off `symbiot screens signin` opens it plain, as before.
+// The Symbiot Browser is plain Chrome: no DevTools pipe or port, no flag, nothing put in a
+// page, so every site sees the browser you'd use yourself. It was opened over a pipe of its
+// own, to read each tab's sessionStorage while it was open (SMS Portal keeps its sign-in there,
+// 2026-10-14), and a pipe alone makes Chrome tell every page navigator.webdriver: Cloudflare's
+// "Verify you are human" took the window for a bot and wouldn't pass however often it was
+// clicked (twilio.com/login and dash.cloudflare.com, 16 Oct 2026). Agents get the sign-ins
+// once it has closed (the hidden browser, on the profile), or from a copy of them while it's
+// open (snapProfile); a sessionStorage sign-in is read from its tab when the hidden browser
+// restores the window's last session (closeOthers), so its tab has to be open at Done.
 const BROWSER_IDLE_MIN = 20; // config.browserIdleMin changes it
-let WIN = null; // { proc, c, reads: Map("targetId origin" → { origin, items, at, had, emptied }), read, save }
-const WIN_EVERY = 2000;
-function pipeWindow(proc, { every = WIN_EVERY, idle = 0 } = {}) {
-  const c = connect(proc), attached = new Map(), reads = new Map(), hub = (() => { try { return new URL(HUB).origin; } catch { return ""; } })();
-  let busy = null, dirty = false;
-  const read = () => busy || (busy = (async () => {
-    try {
-      const { targetInfos = [] } = await c.send("Target.getTargets");
-      for (const t of targetInfos) {
-        if (t.type !== "page" || !/^https?:/.test(t.url || "") || (hub && t.url.startsWith(hub + "/"))) continue; // not its own page (browser.html)
-        try {
-          if (!attached.has(t.targetId)) attached.set(t.targetId, (await c.send("Target.attachToTarget", { targetId: t.targetId, flatten: true })).sessionId);
-          const s = await readSession((m, p) => c.send(m, p, attached.get(t.targetId)));
-          if (s && s.origin !== hub) {
-            const key = t.targetId + " " + s.origin, had = new Set((reads.get(key) || {}).had || []);
-            for (const [k, v] of Object.entries(s.items)) if (v !== "") had.add(k);
-            reads.set(key, { ...s, at: Date.now(), had: [...had], emptied: [...had].filter((k) => !s.items[k]) }); dirty = true;
-          }
-        } catch { attached.delete(t.targetId); }
-      }
-    } catch {} finally { busy = null; }
-  })());
-  const save = () => { if (dirty) saveSessions([...reads.values()].sort((a, b) => a.at - b.at), Date.now(), SESSIONS, { merge: true }); dirty = false; };
-  // idle: no tab has changed page (address or title) for idleMs, so it's left open, not in use: it
-  // closes as Done does (its sign-ins saved first), and the agents read with the profile again
-  let sig = "", moved = Date.now();
-  const look = async () => { try { const { targetInfos = [] } = await c.send("Target.getTargets"); const now = targetInfos.filter((t) => t.type === "page").map((t) => t.url + " " + t.title).sort().join("\n"); if (now !== sig) { sig = now; moved = Date.now(); } } catch {} };
-  const idleMs = idle || Math.max(60000, (Number(loadConfig().browserIdleMin) || BROWSER_IDLE_MIN) * 60000);
-  const timer = setInterval(() => { read(); look().then(() => { if (Date.now() - moved > idleMs && WIN === w) closeSymbiotBrowser().catch(() => {}); }); }, every); if (timer.unref) timer.unref();
-  const w = { proc, c, reads, read, save };
-  proc.once("exit", () => { clearInterval(timer); save(); if (WIN === w) WIN = null; });
-  for (const s of [proc.stdio[3], proc.stdio[4]]) if (s && s.unref) s.unref();
-  return (WIN = w);
+// When a tab of the window last changed page: Chrome writes its session (Sessions/) and its
+// History as one does. The newest of those, or 0. watchWindow closes a window idle that long.
+function windowMoved(profile = PROFILE) {
+  const d = join(profile, PROFILE_DIR); let t = 0, sessions = [];
+  try { sessions = readdirSync(join(d, "Sessions")).map((x) => join("Sessions", x)); } catch {}
+  for (const f of ["History", ...sessions]) try { t = Math.max(t, statSync(join(d, f)).mtimeMs); } catch {}
+  return t;
 }
 
 // Signed in, read from the profile's cookie store: the cookie a site keeps its session in,
@@ -648,7 +623,7 @@ const DEEP = `
 
 // What can be clicked or typed in, as a CSS selector, and (runs in the page, after DEEP)
 // labelOf(e): what a region's label is, as a person would read it.
-const CLICKABLE = 'a[href],button,input:not([type=hidden]),select,textarea,summary,[contenteditable=""],[contenteditable=true],[onclick],' +
+const CLICKABLE = 'a[href],button,input:not([type=hidden]),select,textarea,summary,[contenteditable]:not([contenteditable=false i]),[onclick],' +
   ['button', 'link', 'tab', 'menuitem', 'menuitemcheckbox', 'menuitemradio', 'option', 'checkbox', 'radio', 'switch', 'combobox', 'textbox', 'searchbox', 'row', 'treeitem'].map((r) => '[role=' + r + ']').join(',');
 const LABEL_OF = `
   const clean = (s) => String(s || '').replace(/\\s+/g, ' ').trim();
@@ -690,7 +665,7 @@ const collectJs = (whole, list = null) => `(() => { ${SCROLLER} ${DEEP} ${LABEL_
   const kindOf = (e) => {
     const t = e.tagName.toLowerCase(), r = (e.getAttribute('role') || '').toLowerCase(), ty = (e.getAttribute('type') || 'text').toLowerCase();
     if (t === 'input') return /^(button|submit|reset|image)$/.test(ty) ? 'button' : /^(checkbox|radio)$/.test(ty) ? ty : 'field';
-    if (t === 'textarea' || e.isContentEditable || /^(textbox|searchbox)$/.test(r)) return 'field';
+    if (t === 'textarea' || t === 'iframe' || e.isContentEditable || /^(textbox|searchbox)$/.test(r)) return 'field';
     if (t === 'select' || r === 'combobox') return 'menu';
     if (r === 'checkbox' || r === 'switch' || r === 'menuitemcheckbox') return 'checkbox';
     if (r === 'radio' || r === 'menuitemradio') return 'radio';
@@ -733,7 +708,21 @@ const collectJs = (whole, list = null) => `(() => { ${SCROLLER} ${DEEP} ${LABEL_
     if (inside || !labelOf(e)) continue;
     took.add(e);
   }
-  for (const e of [...deepAll(SEL), ...took]) {
+  // A rich-text editor drawn in a same-origin frame (TinyMCE, CKEditor 4: domains.co.za's ticket
+  // Message box) is a field too: the frame's document is editable. Aimed at by its frame; typing
+  // is by click and keys. Named by a label in the box around it when the frame's own title is
+  // generic ("Rich Text Area").
+  const editorFrames = [];
+  for (const f of deepAll('iframe')) {
+    let ok = false; try { const d = f.contentDocument; ok = !!d && (d.designMode === 'on' || !!(d.body && d.body.isContentEditable)); } catch (x) {}
+    if (ok) editorFrames.push(f);
+  }
+  const frameLabel = (f) => {
+    const own = labelOf(f); if (own && !/rich text|editor|^iframe$/i.test(own)) return own;
+    for (let n = f.parentElement, i = 0; n && i < 4; n = n.parentElement, i++) { const l = n.querySelector('label'); if (l && clean(l.textContent)) return clean(l.textContent).replace(/[*:]+$/, ''); }
+    return own;
+  };
+  for (const e of [...deepAll(SEL), ...took, ...editorFrames]) {
     if (out.length >= 200) break;
     const inList = !!LIST && deepContains(LIST, e);
     if (IN && inList !== (IN.part === 'list')) continue;
@@ -760,7 +749,7 @@ const collectJs = (whole, list = null) => `(() => { ${SCROLLER} ${DEEP} ${LABEL_
     const host = bare && deepClosest(e, 'mat-radio-button,mat-checkbox,label,[role=radio],[role=checkbox]');
     if (!top || !(top === e || deepContains(e, top) || deepContains(top, e) || (host && deepContains(host, top)))) continue;
     ${whole ? "if (y >= H - 200 && stuck(e)) continue; // stuck to the window's bottom: left out of the whole page's picture" : ""}
-    const full = labelOf(e), at = inList ? Math.round(b.top + LIST.scrollTop) + '|' + kind + '|' + full : '';
+    const full = e.tagName === 'IFRAME' ? frameLabel(e) : labelOf(e), at = inList ? Math.round(b.top + LIST.scrollTop) + '|' + kind + '|' + full : '';
     if (at && kept.at.has(at)) { kinds.set(e, kind); continue; }
     // an element marked before, showing something else now: its selector would find it, not this
     const reused = inList && kinds.has(e);
@@ -1696,13 +1685,8 @@ async function openSymbiotBrowser(url = "") {
       ...(process.platform === "linux" ? ["--password-store=basic", "--class=SymbiotBrowser"] : process.platform === "darwin" ? ["--use-mock-keychain"] : []),
       ...String(process.env.SYMBIOT_BROWSER_ARGS || "").split(/\s+/).filter(Boolean)]; // tests: a window with no screen
     const page = HUB ? ["--app=" + (HUB_OPEN ? HUB_OPEN() : HUB), "--window-size=1040,820"] : [];
-    // the first to start is the window's browser (the rest hand over to it): the app's, with its
-    // tabs read over a pipe (pipeWindow) unless one's open already
-    const start = (args) => {
-      const piped = !!HUB && !windowOpen() && process.platform !== "win32";
-      const p = spawn(chrome, piped ? ["--remote-debugging-pipe", ...args] : args, { detached: true, stdio: piped ? ["ignore", "ignore", "ignore", "pipe", "pipe"] : "ignore" });
-      p.on("error", () => {}); if (piped) pipeWindow(p); p.unref(); return p;
-    };
+    // the first to start is the window's browser (the rest hand over to it), plain (windowMoved)
+    const start = (args) => { const p = spawn(chrome, args, { detached: true, stdio: "ignore" }); p.on("error", () => {}); p.unref(); return p; };
     // Windows has no lock to read: started, and taken as open
     if (process.platform === "win32") {
       try { if (page.length) start([...base, ...page]); if (url || !page.length) start([...base, "--new-window", url || "about:blank"]); }
@@ -1732,7 +1716,6 @@ async function openSymbiotBrowser(url = "") {
 // holding it up) is closed outright: Done always closes it.
 const windows = () => { const h = lockHolder(); return [...new Set([...profilePids({ headless: false }), ...(h && !h.headless && !OWN.has(h.pid) ? [h.pid] : [])])]; };
 async function closeSymbiotBrowser({ wait = 8000 } = {}) {
-  if (WIN) { const w = WIN; await Promise.race([w.read(), sleep(3000)]); w.save(); } // its tabs' last sessionStorage, before they go
   const open = windows();
   kill(open);
   for (const end = Date.now() + wait; Date.now() < end && windows().length;) await sleep(250);
@@ -1742,14 +1725,21 @@ async function closeSymbiotBrowser({ wait = 8000 } = {}) {
 }
 // Closed by its X (the last of its windows), or by Done: once no window has the profile any
 // more, the app is told (onBrowserClosed), so it checks your sites just as Done does. Watched
-// from when it opens; a window that never came up (in `start`) tells nothing.
+// from when it opens; a window that never came up (in `start`) tells nothing. Left open with
+// no tab changing page for idle (config.browserIdleMin), it closes as Done does, its sign-ins
+// saved, and the agents read with the profile again.
 let CLOSED = null, WATCH = null;
 function onBrowserClosed(f) { CLOSED = typeof f === "function" ? f : null; }
-function watchWindow({ every = 2000, start = 30000 } = {}) {
-  clearInterval(WATCH); if (!CLOSED) return;
-  let seen = false; const t0 = Date.now();
+function watchWindow({ every = 2000, start = 30000, idle = 0 } = {}) {
+  clearInterval(WATCH);
+  const idleMs = idle || Math.max(60000, (Number(loadConfig().browserIdleMin) || BROWSER_IDLE_MIN) * 60000);
+  let seen = false, closing = false; const t0 = Date.now();
   WATCH = setInterval(() => {
-    if (windowOpen()) { seen = true; return; }
+    if (windowOpen()) {
+      seen = true;
+      if (!closing && Date.now() - Math.max(t0, windowMoved()) > idleMs) { closing = true; closeSymbiotBrowser().catch(() => {}).finally(() => { closing = false; }); }
+      return;
+    }
     if (!seen && Date.now() - t0 < start) return;
     clearInterval(WATCH); WATCH = null; noteOpen(false);
     if (seen && CLOSED) try { CLOSED(); } catch {}
@@ -1757,4 +1747,4 @@ function watchWindow({ every = 2000, start = 30000 } = {}) {
   if (WATCH.unref) WATCH.unref();
 }
 
-export { windowSince, snapProfile, SNAP, BROWSER_IDLE_MIN, takeChromeSignIn, open as openSite, linkedSite, CHROME_TRIED, typeInto, watcherBusy, WATCH_GRACE, noteAgentUse, pipeWindow, saveSessions, showScreen, fillForm, verifyPage, sessionCookie, historyPage, SESSION_COOKIE, tabKey, siteUrl, browserArgs, sandboxProxy, reducedUa, windowUa, mapPage, wholePage, readPage, readTexts, readLinkedIn, LI_READ, pagePicture, pageClip, CLIP, isSend, pressRegion, typeRegion, chooseRegion, uploadRegion, uploadFiles, attachFiles, FILE_BOX, scrollPage, SCROLLS, signIn, keepBrowserOpen, closeBrowser, browserOpen, keepSessions, SESSION_KEEP, SESSIONS, loadSessions, trustedSites, isTrusted, trustSite, untrustSite, PROFILE , openSymbiotBrowser, closeSymbiotBrowser, onBrowserClosed, scratchPage, open as openPage, evaluate, SCROLLER, watchWindow, windowOpen, lockHolder, setBrowserHub , browserHub };
+export { windowSince, snapProfile, SNAP, BROWSER_IDLE_MIN, takeChromeSignIn, open as openSite, linkedSite, CHROME_TRIED, typeInto, watcherBusy, WATCH_GRACE, noteAgentUse, windowMoved, saveSessions, showScreen, fillForm, verifyPage, sessionCookie, historyPage, SESSION_COOKIE, tabKey, siteUrl, browserArgs, sandboxProxy, reducedUa, windowUa, mapPage, wholePage, readPage, readTexts, readLinkedIn, LI_READ, pagePicture, pageClip, CLIP, isSend, pressRegion, typeRegion, chooseRegion, uploadRegion, uploadFiles, attachFiles, FILE_BOX, scrollPage, SCROLLS, signIn, keepBrowserOpen, closeBrowser, browserOpen, keepSessions, SESSION_KEEP, SESSIONS, loadSessions, trustedSites, isTrusted, trustSite, untrustSite, PROFILE , openSymbiotBrowser, closeSymbiotBrowser, onBrowserClosed, scratchPage, open as openPage, evaluate, SCROLLER, watchWindow, windowOpen, lockHolder, setBrowserHub , browserHub };

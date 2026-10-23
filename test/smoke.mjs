@@ -151,6 +151,8 @@ const calls = [
   ["/api/tasks/model", "POST"],
   ["/api/tasks/remove", "POST"],
   ["/api/tasks/cancel", "POST"],   // no id -> "isn't there any more", nothing changes
+  ["/api/tasks/lanes", "GET"],   // the lanes a task can be re-filed in (its lane picker)
+  ["/api/tasks/lane", "POST"],    // no id -> "isn't open any more", nothing moves
   ["/api/tasks/restore", "POST"],
   ["/api/tasks/live", "POST"],
   ["/api/drift?ci=0&fetch=0", "GET"],
