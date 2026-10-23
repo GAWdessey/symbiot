@@ -2,6 +2,11 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one), for anyone who installs the app: what changed in it, never whose work it was (no projects, people, accounts, services, run ids or task wording of the person who made it). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.88.0 — 2026-10-23
+
+- **Your inbox can be read without its web page.** Put an app password for your Google account in the Vault (name it "Gmail app password", with your email address as its account). Symbiot then reads your inbox over IMAP, mail's standard way in, instead of scraping the page in its own browser, where Google's sign-ins don't last. It only reads who wrote, what about, when, and whether you've read it. Nothing is ever marked as read.
+- **Trello comes in.** Put a Trello API key and token in the Vault ("Trello API key", "Trello token"). Symbiot then adds a Trello watch by itself and brings in your unread notifications, plus the cards on you that are due within three days.
+
 ## 0.87.0 — 2026-10-23
 
 - **An Approve from your phone waits instead of failing.** If an agent is still at work on that project, or another Approve is already running, a phone Approve now waits. It goes ahead by itself as soon as the way is clear, as long as the work is still what your phone showed. Before, it was marked failed and Home kept saying so for a day.

@@ -37,6 +37,7 @@ import { maybeCustomer } from "./post.mjs";
 import { STATUS_URL, readStates, actOn } from "./probes.mjs";
 import { addTask } from "./tasks.mjs";
 import { onMerged } from "./deploy.mjs";
+import { apiReaderFor } from "./apiwatch.mjs";
 
 const WATCH_FILE = join(CONFIG_DIR, "watch.json");
 const EVERY = [5, 15, 30, 60]; // minutes between reads
@@ -295,6 +296,15 @@ function ensureStatusWatch() {
   if (loadConfig().statusWatch === false) return null;
   const d = loadWatch(), had = d.watches.find((w) => w.url === STATUS_URL); if (had) return had;
   const w = { id: randomBytes(4).toString("hex"), name: "Status", url: STATUS_URL, every: 15, added: Date.now(), last: 0, seen: [] };
+  d.watches.push(w); return saveWatch(d) ? w : null;
+}
+// Trello once its key and token are in the vault (apiwatch.mjs reads it): a watch of it, made once. Removed by
+// you, it stays removed (trelloWatch: false).
+function ensureTrelloWatch({ names = null } = {}) {
+  if (loadConfig().trelloWatch === false) return null;
+  const d = loadWatch(), had = d.watches.find((w) => /(^|\/\/)(www\.)?trello\.com/.test(w.url)); if (had) return had;
+  if (!apiReaderFor({ url: "https://trello.com/" }, names ? { names } : {})) return null;
+  const w = { id: randomBytes(4).toString("hex"), name: "Trello", url: "https://trello.com/", every: 15, added: Date.now(), last: 0, seen: [] };
   d.watches.push(w); return saveWatch(d) ? w : null;
 }
 function actOnStates(items) {
@@ -736,9 +746,10 @@ async function openChat(id, { open = signIn } = {}) {
 // is in use (nothing changes: it's read later).
 // states: the Status watch's read (probes.mjs readStates: through APIs, no page); act: what its
 // changes start (probes.mjs actOn).
-async function checkWatch(id, { read = readPage, github = readGitHub, notify = desktopNotify, brief = briefOf, linkedin = readLinkedIn, now = null, states = readStates, act = actOnStates } = {}) {
+async function checkWatch(id, { read = readPage, github = readGitHub, notify = desktopNotify, brief = briefOf, linkedin = readLinkedIn, now = null, states = readStates, act = actOnStates, api = apiReaderFor } = {}) {
   const w0 = loadWatch().watches.find((x) => x.id === id); if (!w0) return { error: `No watch ${id}.` };
-  const page = (w0.url === STATUS_URL && await states()) || (isGitHubInbox(w0.url) && await github()) || (await read(w0.url)) || { error: "Nothing came back from the page." };
+  const viaApi = (() => { try { return api(w0); } catch { return null; } })(); // its service's own way in, when its key is in the vault (apiwatch.mjs)
+  const page = (w0.url === STATUS_URL && await states()) || (isGitHubInbox(w0.url) && await github()) || (viaApi && await viaApi()) || (await read(w0.url)) || { error: "Nothing came back from the page." };
   if (page.busy) return { ...view(w0), busy: true };
   // read again: the file may have changed while the page loaded
   const d = loadWatch(), w = d.watches.find((x) => x.id === id); if (!w) return { error: "That watch was removed." };
@@ -803,9 +814,11 @@ function dueWatches(now = Date.now()) { return loadWatch().watches.filter((w) =>
 // time. Returns a stop function.
 function startWatches(opts = {}) {
   try { ensureStatusWatch(); } catch {}
+  try { ensureTrelloWatch(); } catch {}
   let busy = false;
   const tick = async () => {
     if (busy) return; busy = true;
+    try { ensureTrelloWatch(); } catch {} // its keys may have just gone into the vault
     try { for (const w of dueWatches()) { const r = await checkWatch(w.id, opts); if (r && r.busy) break; } }
     catch {} finally { busy = false; }
   };
@@ -814,4 +827,4 @@ function startWatches(opts = {}) {
   return () => { clearTimeout(first); clearInterval(every); };
 }
 
-export { ensureStatusWatch, actOnStates, linkedinDetail, liType, replyOf, draftCard, draftCards, draftAnswer, isDraftDir, sendBrief, LINK_ASK, WATCH_FILE, EVERY, GITHUB_INBOX, DRAFTS_DIR, itemsOf, fromOf, needsYou, automatedMail, chatName, recheckChats, itemKey, newItems, remember, isGitHubInbox, githubItems, readGitHub, setBrief, briefOf, newsNotice, markNews, watchState, addWatch, setEvery, removeWatch, clearNews, seenWatch, newsSince, newsAfter, waitingOn, watchBoard, boardLine, boardChat, boardTalk, clearBoardChat, talkOf, isSignedOut, isMail, isChat, isSocial, draftsUrl, draftBrief, chatBrief, socialBrief, draftReply, openChat, checkWatch, dueWatches, startWatches };
+export { ensureTrelloWatch, ensureStatusWatch, actOnStates, linkedinDetail, liType, replyOf, draftCard, draftCards, draftAnswer, isDraftDir, sendBrief, LINK_ASK, WATCH_FILE, EVERY, GITHUB_INBOX, DRAFTS_DIR, itemsOf, fromOf, needsYou, automatedMail, chatName, recheckChats, itemKey, newItems, remember, isGitHubInbox, githubItems, readGitHub, setBrief, briefOf, newsNotice, markNews, watchState, addWatch, setEvery, removeWatch, clearNews, seenWatch, newsSince, newsAfter, waitingOn, watchBoard, boardLine, boardChat, boardTalk, clearBoardChat, talkOf, isSignedOut, isMail, isChat, isSocial, draftsUrl, draftBrief, chatBrief, socialBrief, draftReply, openChat, checkWatch, dueWatches, startWatches };
