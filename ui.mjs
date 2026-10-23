@@ -414,6 +414,7 @@ body.lq-work #lqback{display:inline-flex;position:absolute;left:16px;top:52px;z-
 body.lq-light.lq-work #lqback{background:rgba(255,255,255,.8);color:#10151C;border-color:rgba(20,30,45,.2)}
 body.lq-pooled #lqgo,body.lq-pooled #lqback,body.lq-pooled #lqorbits,body.lq-work #lqgroups{display:none}
 .lqd.lq-ready{border-color:#F2A541}
+.lqd.lq-park{border-style:dashed}
 /* the live work of an agent: what it's doing, its to-dos, its steps, its files, its pace */
 .wk{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(260px,100%),1fr));gap:12px;margin-top:10px}
 .wkbox{border-radius:14px;padding:10px 12px;background:rgba(255,255,255,.035);border:1px solid rgba(220,228,240,.12)}
@@ -3386,7 +3387,7 @@ try{if(LQ.scene==='work')lqRelay();else lqHomeLine(LQ.home||{});}catch(e){}}
 function qLoad(){api('/api/quota').then(function(q){QUOTA=q&&!q.error?q:null;qDraw();}).catch(function(){});}
 function qInit(){var p=$('qpill');if(!p)return;p.addEventListener('click',function(ev){if(ev&&ev.stopPropagation)ev.stopPropagation();$('quota').classList.toggle('open');});if(document.addEventListener)document.addEventListener('click',function(ev){var b=$('quota');if(b&&ev&&ev.target&&b.contains&&!b.contains(ev.target))b.classList.remove('open');});qLoad();setInterval(qLoad,30000);}
 function lqLineText(w){var nr=(w.running||[]).length,nq=0,ni=0,nk=(w.ready||[]).length,nw=w.waitingCount||0;(w.projects||[]).forEach(function(p){nq+=p.asks||0;ni+=(p.ideas||[]).length;});
-var bits=[];if(nq)bits.push('<b>'+nq+' question'+(nq>1?'s':'')+' for you</b>');if(nk)bits.push('<b>'+nk+' ready for your OK</b>');if(nr)bits.push(nr+' at work');if(nw)bits.push(nw+' waiting');if(ni)bits.push(ni+' suggested task'+(ni>1?'s':''));
+var bits=[];if(nq)bits.push('<b>'+nq+' question'+(nq>1?'s':'')+' for you</b>');if(nk)bits.push('<b>'+nk+' ready for your OK</b>');if(nr)bits.push(nr+' at work');if(w.parkedCount)bits.push(w.parkedCount+' parked on others');if(nw)bits.push(nw+' waiting');if(ni)bits.push(ni+' suggested task'+(ni>1?'s':''));
 var qp=qPaused();if(qp)bits.unshift('<b>'+esc(qp)+'</b>');return bits.length?bits.join(' &middot; '):'All quiet: nothing at work, nothing asking you.';}
 function lqRelayList(w){return lqSortLanes((w.projects||[]).filter(function(p){return p.summary||(p.qs&&p.qs.length)||p.ready||p.shipping||(p.ideas&&p.ideas.length)||(p.handing&&p.handing.length);}).slice());}
 function lqRelayOn(){var S=lqSize();return LQ.scene==='work'&&S.w>=900&&lqRelayList(LQ.workData||{}).length>0;}
@@ -3439,18 +3440,19 @@ r.querySelector('.lqupx').addEventListener('click',function(){r.style.opacity='.
 function lqRedraw(){renderUpdates();whenFree($('liquid'),'liquid',function(){if(LQ.scene==='work')lqBuildWork();else lqBuild();});}
 function lqBuildWork(){lqRelay();if(LQ.workBy==='project'){lqBuildProjects();return;}var w=LQ.workData||{},S=lqSize(),cx=S.w/2,cy=S.h*0.5,list=[];LQ.bw=S.w;LQ.bh=S.h;if(lqRelayOn()){var RW=Math.min(420,S.w*0.32)+28;S={w:S.w-RW,h:S.h,s:S.s};cx=S.w/2;}
 var vx=Math.max(0.5,Math.min(S.s*1.3,(S.w/2-90)/400)),vy=Math.max(0.35,Math.min(S.s*0.8,(S.h-cy-230)/400,(cy-160)/400)),rs=Math.min(S.s,(vx+vy)/1.5);
-var run=(w.running||[]).slice(0,3),ready=(w.ready||[]).slice(0,2),wait=(w.waiting||[]).slice(0,5),extra=(w.waitingCount||0)-wait.length;
+var park=(w.parked||[]).slice(0,3),run=(w.running||[]).slice(0,3),ready=(w.ready||[]).slice(0,2),wait=(w.waiting||[]).slice(0,5),extra=(w.waitingCount||0)-wait.length;
 run.forEach(function(r,i){var ang=Math.PI+(i+1)*Math.PI/(run.length+1);var pg=r.step?' · step '+r.step+' of '+r.of:r.progress?' · '+r.progress.done+' of '+r.progress.total+' done':'';
 list.push({id:r.id,kind:'run',repo:r.name,shape:'agents',ask:r.waiting||!!(r.quiet||r.looping),title:r.doing,sub:r.name+pg+(r.eta?' · '+r.eta:'')+(r.waiting?' · has a question for you':'')+(r.quiet||r.looping?' · '+runWarn(r).replace(/ · $/,''):''),r:58*rs,tx:cx+Math.cos(ang)*190*vx,ty:cy+Math.sin(ang)*130*vy});});
 ready.forEach(function(r,i){var ang=-Math.PI/2+(i-(ready.length-1)/2)*0.9;list.push({id:r.id,kind:'ready',repo:r.repo,shape:'tasks',title:'Ready for your OK',sub:r.repo+(r.count?' · '+r.count+' task'+(r.count>1?'s':'')+' done':''),r:48*rs,tx:cx+Math.cos(ang)*300*vx,ty:cy+Math.sin(ang)*300*vy});});
 wait.forEach(function(t,i){var ang=Math.PI/2+(i-(wait.length-1)/2)*0.55;var y=t.why||{};list.push({id:t.id,kind:'wait',repo:t.repo,shape:'tasks',title:t.text,sub:y.text||(t.repo+(t.busy?' · after the current one':' · waiting')),ask:!!y.path,focus:y.path||'',r:30*rs,tx:cx+Math.cos(ang)*300*vx,ty:cy+Math.sin(ang)*260*vy});});
+park.forEach(function(p,i){var ang=Math.PI*0.5+(i-(park.length-1)/2)*0.5;list.push({id:p.id,kind:'park',repo:p.lane,shape:'agents',title:p.text,sub:'parked \u00b7 waiting on '+p.who+(p.why?': '+p.why:''),r:34*rs,tx:cx+Math.cos(ang)*190*vx,ty:cy+Math.sin(ang)*190*vy});});
 if(extra>0)list.push({id:'morewait',kind:'more',shape:'tasks',title:'+'+extra+' more waiting',sub:'see them all',r:24*rs,tx:S.w-Math.max(80,S.w*0.1),ty:S.h-230});
 lqGrow(list,cx,cy,vx,vy);list.forEach(function(d){d.ax=d.tx;d.ay=d.ty;});
 var wl=[];list.forEach(function(d,i){if(d.kind!=='wait'&&d.kind!=='ready')return;list.forEach(function(e,j){if(e.kind==='run'&&e.repo===d.repo)wl.push([j,i,0.5]);});});lqSeed(list,wl,cx,cy,vx,vy);lqNear(list,wl,cx,cy,92*rs,S);lqRelax(list,S,cx,cy,92*S.s);
 var old={};LQ.drops.forEach(function(d){old[d.id]=d;});
 LQ.drops=list.map(function(d){var o=old[d.id];d.x=o?o.x:cx;d.y=o?o.y:cy;d.vx=o?o.vx:0;d.vy=o?o.vy:0;d.cr=o?o.cr:0;return d;});
 var nr=(w.running||[]).length,nw=w.waitingCount||0,nk=(w.ready||[]).length;
-LQ.coreText=(nr?nr+' at work':'Nobody at work')+(nw?' · '+nw+' waiting':'')+(nk?' · '+nk+' ready for your OK':'');
+LQ.coreText=(nr?nr+' at work':'Nobody at work')+((w.parkedCount||0)?' · '+w.parkedCount+' parked on others':'')+(nw?' · '+nw+' waiting':'')+(nk?' · '+nk+' ready for your OK':'');
 var go=$('lqgo');if(go){var n=w.canGo||0;go.textContent=n?'Go \u00b7 start '+n+' task'+(n>1?'s':''):'';if(go.classList)go.classList.toggle('on',n>0);}
 lqLabels();}
 // Projects: a sphere per lane with work on it, sized by how much is going on, its
