@@ -2,6 +2,11 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one), for anyone who installs the app: what changed in it, never whose work it was (no projects, people, accounts, services, run ids or task wording of the person who made it). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.90.0 — 2026-10-23
+
+- **Background work, all in one place.** Symbiot's background jobs used to be about 25 separate timers, each quietly swallowing its own errors: checking the agents, judging questions, following goals, reading your watches and the rest. They're now named jobs in one list. A job never runs twice at once. When one fails, what it said is kept rather than lost. And the state of every job (when it last ran, how long it took, what failed) can be read at `/api/timers`.
+- **A project keeps its tasks when its folder is renamed or moved.** A project used to be just its folder's name, so renaming the folder stranded its tasks under a name nothing picked up. Each project now has an identity that survives that: its git history's first commit, or its path for a folder without git. Tasks follow their project to its new name by themselves. Two copies of the same repository are still told apart.
+
 ## 0.89.0 — 2026-10-23
 
 - **No change to what you see.** The app's page was one 4,700-line file. It's now kept in parts: the stylesheet, the markup, and the code for each area of the app (Home, the Workdesk, the Vault, Marketing, Settings and the rest). They're joined back into exactly the same page, checked to the byte. Future changes to one area no longer mean working in a file that holds all of them.

@@ -141,6 +141,7 @@ const calls = [
   ["/", "GET"],
   ["/api/status", "GET"],
   ["/api/quota", "GET"],        // the AI usage meter in the corner
+  ["/api/timers", "GET"],        // the app's background jobs and their state
   ["/api/triage/stats", "GET"],  // how often a question reached the user that was not theirs
   ["/api/map", "GET"],
   ["/api/scan", "GET"],          // scan progress the Map polls while loading
