@@ -2,6 +2,18 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one), for anyone who installs the app: what changed in it, never whose work it was (no projects, people, accounts, services, run ids or task wording of the person who made it). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.85.0 — 2026-10-23
+
+- **Your secrets move into the computer's keyring.** On Linux, Symbiot used the keyring only when one small command-line tool was installed, and most desktops don't ship it. So every secret sat encrypted on disk, right next to its key. Symbiot now talks to the keyring directly, moves the secrets it kept on disk into it when it starts, checks each one reads back, and then deletes the key file.
+- **Ops runs work inside walls of their own.** An agent working outside your projects (servers, accounts, the browser) keeps its full network, so ssh and APIs work as before. But it can no longer change:
+  - Claude Code's settings;
+  - your shell's start-up files, autostart or systemd entries;
+  - your SSH keys (it can still use them);
+  - the installed Symbiot or Claude;
+  - Symbiot's guard settings, standing rules, memory, customisations, or its record of what you've settled.
+
+  It also can't read the vault's key or PIN file. Before, the only protection was a check on the commands it typed. You can turn the walls off with `opsWalls: false` in the settings file.
+
 ## 0.84.0 — 2026-10-23
 
 - **Approve no longer holds the project folder while it sends.** Approve used to keep agents out of a project's folder for the whole send, often 3 to 12 minutes. That covered bringing the change up to date with main, running the tests and pushing, all done in the folder an agent works in. Now the folder is held only for the few seconds it takes to commit. The rest happens in a separate copy, and agents can start again meanwhile.
