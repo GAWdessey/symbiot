@@ -1,6 +1,6 @@
 {
   "name": "symbiot",
-  "version": "0.88.0",
+  "version": "0.89.0",
   "description": "Your week, written from your real work. Reads your local git and writes it up with the AI of your choice — Claude, OpenAI, Gemini, or a local model.",
   "type": "module",
   "bin": {
@@ -30,6 +30,7 @@
     "agents.mjs",
     "drift.mjs",
     "ui.mjs",
+    "ui",
     "mail.mjs",
     "sentmail.mjs",
     "screens.mjs",

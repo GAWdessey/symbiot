@@ -117,7 +117,7 @@ try {
 
   console.log("FIRST RUN COVERS SETTINGS — each section is set up in a step, or says why it waits");
   const { FIRST_RUN, ONB_STEPS: STEPS } = await import("../home.mjs");
-  const ui = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "ui.mjs"), "utf8");
+  const ui = (await import("./uisource.mjs")).uiSource();
   const sections = [...ui.matchAll(/<h3 class="ssh"[^>]*>([^<]+)</g)].map((m) => m[1].replace(/&mdash;/g, "—").replace(/&amp;/g, "&").trim());
   const missing = sections.filter((h) => !(h in FIRST_RUN)), wrong = Object.entries(FIRST_RUN).filter(([, v]) => !STEPS.includes(v) && !/^later: \S/.test(v));
   ok(`every section of Settings (${sections.length}) is in FIRST_RUN: a setup step, or "later: why" (add a new one there)`, sections.length >= 10 && !missing.length, missing);

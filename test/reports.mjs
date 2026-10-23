@@ -338,13 +338,13 @@ console.log("FINDINGS AND REMOVING — a fact a report found isn't filed as a jo
   ok("a changed card (another task done) shows again", !!H.homeState({ fresh: true, deps: more }).you.find((y) => y.id === "approve:bookly"));
   ok("…and the card's key is the app's (bdKey): path and question for a question, else id and what it says", H.cardKey({ path: "/p", q: "Q?", raw: "Raw?" }) === "/p|Raw?" && H.cardKey({ id: "setup:x", sub: "s" }) === "setup:x|s");
   ok("dismissing nothing says so", !!H.dismissCard("").error);
-  const ui = readFileSync(join(ROOT, "ui.mjs"), "utf8");
+  const ui = (await import("./uisource.mjs")).uiSource();
   ok("every card has its × (blobBody), wired to dismiss with Undo", /class='bx'/.test(ui) && /api\('\/api\/home\/dismiss',\{key:key\}\)/.test(ui) && /lqUndo\('Dismissed: '/.test(ui) && /undo:true/.test(ui));
   ok("a task's × on the Workdesk cancels it with Undo, never deletes it", /api\('\/api\/tasks\/cancel',\{id:id\}\)/.test(ui) && /lqUndo\('Removed: '/.test(ui) && !/rm\.addEventListener\('click',function\(\)\{api\('\/api\/tasks\/remove'/.test(ui));
   ok("a waiting task on Home's work scene has Remove too", /class='lrm'/.test(ui) && /api\('\/api\/tasks\/cancel',\{id:tid\}\)/.test(ui));
 }
 {
-  const ui = readFileSync(join(ROOT, "ui.mjs"), "utf8");
+  const ui = (await import("./uisource.mjs")).uiSource();
   ok("Reports is split into Unread / Read, open actions / Read and done tabs with counts, Unread first, grouped by lane", /REPTAB='unread'/.test(ui) && /Read, open actions/.test(ui) && /Read and done/.test(ui) && /id='reptabs'/.test(ui) && /by\[r\.lane\]/.test(ui), "");
   ok("Approve's overlap question is an in-app note, never window.confirm", !/if\(confirm\(r\.error\)\)/.test(ui) && /askyes/.test(ui), "");
   ok("an open report's back row sticks to the top while the report scrolls", /#reportslist:has\(#reportback\)\{[^}]*position:sticky;top:0/.test(ui), "");
@@ -360,7 +360,7 @@ console.log("REPORTS — usable rows (2026-10-16): honest 'still writing', reada
   ok("an ops report shows what the run was for, not its act id", /^Research for Pat: can Symbiot run/.test(l[0].source) && l[0].source.length <= 80 && l.find((r) => r.lane === "symbiot").source === "", l.map((r) => r.source));
   const w = R.withNeeds(R.listReports({ map, folders, running: none }), { seenFile: join(CFG, "seen-rows.json"), tasks: [] });
   ok("a report with next steps carries them on its row", w.every((r) => Array.isArray(r.steps) && r.steps.length === r.ideas), w.map((r) => [r.name, r.ideas, r.steps]));
-  const ui = readFileSync(join(ROOT, "ui.mjs"), "utf8");
+  const ui = (await import("./uisource.mjs")).uiSource();
   ok("each row offers Hand to agent, Done and Drop per step, Hand all per report, and Approve on a draft", /rsgo/.test(ui) && /rsdone/.test(ui) && /rsdrop/.test(ui) && /Hand all to agents/.test(ui) && /rsapprove/.test(ui) && /r\.source\?/.test(ui));
   const r0 = w.find((r) => r.steps.length) || w[0];
   R.markIdeas(r0, r0.steps.length ? r0.steps : ["x"], "done", join(CFG, "seen-rows.json"));

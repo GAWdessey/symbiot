@@ -99,7 +99,7 @@ try {
   ok("…an ops run's card: its step, its job without New job:, and what it has done", gv && gv.q === "allow the microphone for Lerato's test call" && gv.task === "finish the coach avatars" && gv.done === "Lerato is set up; I couldn't hear her voice.", gv);
 
   console.log("NEEDS YOU — the Updates button takes clicks");
-  { const ui = (await import("node:fs")).readFileSync(new URL("../ui.mjs", import.meta.url), "utf8"), rule = (ui.match(/body\.lq-liquid header \.status[^{]*\{pointer-events:auto\}/) || [""])[0];
+  { const ui = (await import("./uisource.mjs")).uiSource(), rule = (ui.match(/body\.lq-liquid header \.status[^{]*\{pointer-events:auto\}/) || [""])[0];
     ok("the header lets clicks through to the liquid, except its controls: Updates is one of them (it couldn't be clicked, 22 Oct 2026)", /#lqupd/.test(rule) && /#lqlook/.test(rule), rule); }
 } catch (e) { ok("ran", false, String((e && e.stack) || e)); }
 finally { rmSync(HOME, { recursive: true, force: true }); }

@@ -109,7 +109,7 @@ ok("Home's card for it carries the task's line", card && card.task === "Make the
 // 20 Oct 2026 review, finding 4: how long the Symbiot Browser has been open, on Home
 { const since = Date.now() - 25 * 60000, hb = homeState({ fresh: true, deps: { ...hsDeps, browserSince: () => since } }), hn = homeState({ fresh: true, deps: { ...hsDeps, browserSince: () => 0 } });
   ok("Home knows how long the Symbiot Browser has been open, and when it closes itself", hb.browserSince === since && hb.browserIdle === 20 && !("browserSince" in hn), [hb.browserSince, hb.browserIdle]); }
-const ui = readFileSync(new URL("../ui.mjs", import.meta.url), "utf8");
+const ui = (await import("./uisource.mjs")).uiSource();
 ok("...and every card shows it: Home's, the Workdesk's and the phone's", /var tk=String\(y\.task\|\|''\)[^;]*,dn=y\.doing\|\|\(\(tk&&[^\n]*?"I'm on it: "\+tk[^\n]*?h\+="<div class='bdoing' title='"\+escQ\(dn\)\+"'><i class=ic-bot><\/i>"\+esc\(dn\)/.test(ui) && /\(q\.task\?"<div class='qfor'[^"]*"\+escQ\(q\.task\)\+"'>for: "\+esc\(q\.task\)/.test(ui) && (ui.match(/<div class='qfor'/g) || []).length === 2 && /task:q\.task/.test(ui), "");
 
 // 20 Oct 2026 review, S2: Paddle was asked four times in new words. A question with an id is asked once.

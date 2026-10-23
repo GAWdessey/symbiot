@@ -2,6 +2,10 @@
 
 What each Symbiot release brought, newest first. When Approve bumps the version, it writes that release here from the tasks it approved, worded as release notes by your connected AI (or in the tasks' own words without one), for anyone who installs the app: what changed in it, never whose work it was (no projects, people, accounts, services, run ids or task wording of the person who made it). The app shows the releases newer than yours under "What's new" when it offers an update, and once more after you update.
 
+## 0.89.0 — 2026-10-23
+
+- **No change to what you see.** The app's page was one 4,700-line file. It's now kept in parts: the stylesheet, the markup, and the code for each area of the app (Home, the Workdesk, the Vault, Marketing, Settings and the rest). They're joined back into exactly the same page, checked to the byte. Future changes to one area no longer mean working in a file that holds all of them.
+
 ## 0.88.0 — 2026-10-23
 
 - **Your inbox can be read without its web page.** Put an app password for your Google account in the Vault (name it "Gmail app password", with your email address as its account). Symbiot then reads your inbox over IMAP, mail's standard way in, instead of scraping the page in its own browser, where Google's sign-ins don't last. It only reads who wrote, what about, when, and whether you've read it. Nothing is ever marked as read.
