@@ -25,7 +25,7 @@ import { computeDrift } from "./drift.mjs";
 import { afterShip, markLive, deployTick } from "./deploy.mjs";
 import { quotaState } from "./quota.mjs";
 import { laneCap, mergeEnded, DEFAULT_CAP } from "./parallel.mjs";
-import { addTask, setTaskModel, refileTask, laneNames, toggleTask, removeTask, cancelTask, restoreTask, syncTasks, taskType, pushTasks, pendingReview, workingDiff, learnNpm, withReleases, releaseInput, approveRepo, approveChanges, sendBack, setAutoMerge, mergeWhenGreen, shipJob, shipJobOf, sendAgain, forgetUnsent, shippingPaths } from "./tasks.mjs";
+import { noteLaneIds, addTask, setTaskModel, refileTask, laneNames, toggleTask, removeTask, cancelTask, restoreTask, syncTasks, taskType, pushTasks, pendingReview, workingDiff, learnNpm, withReleases, releaseInput, approveRepo, approveChanges, sendBack, setAutoMerge, mergeWhenGreen, shipJob, shipJobOf, sendAgain, forgetUnsent, shippingPaths } from "./tasks.mjs";
 import { repoReview, repoSuggest, folderSuggest, taskChat, clearTaskChat, mailState, setMail, sentMail, produce, releaseNotes } from "./writeups.mjs";
 import { denyList } from "./outward.mjs";
 import { listSecrets, getSecret, saveSecret, markUsed, deleteSecret, scrubStored, repairFalseSaves } from "./vault.mjs";
@@ -60,6 +60,7 @@ import { heardCode, setCodeRelay, computerCopy, relaunchEnv, phoneState, setPhon
 import { knowledgeState, addKnowledgeFolder, removeKnowledgeFolder, indexKnowledge, knowledgeTick, searchKnowledge } from "./knowledge.mjs";
 import { runChecks, checksState, markClashesSeen } from "./checks.mjs";
 import { triageStats } from "./triage.mjs";
+import { every, runNow, timersState } from "./timers.mjs";
 
 // The in-app update installs the EXACT newest version (not the `latest` tag, which
 // npm's cache/propagation can resolve stale — that caused an update loop where the
@@ -390,7 +391,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
   try { phoneSetupFirst(); } catch {} // the phone app, over an older one: setup goes to "Your computer" first
   // your projects: kept, and found again off the main thread, so nothing waits on a search
   setScanOptions({ cache: true }); REPO_STATE.onChange = () => { try { homeState({ fresh: true }); } catch {} };
-  if (!SANDBOX) { refreshRevoked().catch(() => {}); setInterval(() => refreshRevoked().catch(() => {}), 6 * 3600 * 1000).unref(); } // cancelled Pro keys, about daily
+  if (!SANDBOX) { refreshRevoked().catch(() => {}); every("licence keys", 6 * 3600 * 1000, () => refreshRevoked()); } // cancelled Pro keys, about daily
   { const t0 = Date.now(); refreshRepos().then((l) => console.log(`Found ${l.length} project${l.length === 1 ? "" : "s"} in ${((Date.now() - t0) / 1000).toFixed(1)}s.`)); }
   let UPDATING = null; // an update in flight: { target, attempt, since, retrying? }
   let UPDATE_FAILED = null; // the last one that didn't go through: { target, error, at }
@@ -649,6 +650,7 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
       if (u.pathname === "/api/secrets/delete" && req.method === "POST") { const b = await readBody(req); return json(res, deleteSecret(String(b.name || ""))); }
       if (u.pathname === "/api/secrets/scrub" && req.method === "POST") { const r = scrubStored({ force: true }); return json(res, { found: r.found || [], files: (r.files || []).map((f) => f.replace(CONFIG_DIR + "/", "")) }); }
       // The Vault page (vaultview.mjs): the list never holds a value; one is given only to a page unlocked with the vault PIN, for a short while.
+      if (u.pathname === "/api/timers") return json(res, { timers: timersState() }); // the app's background jobs: when each ran, how long, what failed (timers.mjs)
       if (u.pathname === "/api/triage/stats") return json(res, triageStats()); // how often a question reached the user that wasn't theirs (triage.mjs)
       if (u.pathname === "/api/vault" && req.method === "POST") { const b = await readBody(req); return json(res, { ...vaultList({ token: String(b.token || "") }), log: vaultLog() }); }
       if (u.pathname === "/api/vault/pin" && req.method === "POST") { const b = await readBody(req); return json(res, setPin(String(b.pin || ""), { old: String(b.old || ""), token: String(b.token || "") })); }
@@ -898,11 +900,11 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
   // something restarted it, with the new files on disk under the old code (2026-10-12).
   // Seen the same on two looks a minute apart (npm done writing), it restarts onto it.
   let installedSeen = "";
-  if (!SANDBOX && !DESKTOP && /[\\/]node_modules[\\/]symbiot[\\/]/.test(OWN_PKG)) setInterval(() => {
+  if (!SANDBOX && !DESKTOP && /[\\/]node_modules[\\/]symbiot[\\/]/.test(OWN_PKG)) every("installed version", Number(process.env.SYMBIOT_INSTALLED_EVERY) || 60000, () => {
     if (UPDATING || relaunching) return; // the app's own update restarts it
     const v = installedVersion(), go = restartOnto(installedSeen, v); installedSeen = v;
     if (go) { console.log(c.d(`  Symbiot ${v} was installed: restarting onto it.`)); relaunch(); }
-  }, Number(process.env.SYMBIOT_INSTALLED_EVERY) || 60000).unref();
+  });
   let announced = false, tries = 0, opened = false;
   server.on("listening", () => {
     if (announced) return; announced = true;
@@ -955,14 +957,15 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
     const bind = () => { try { mkdirSync(dirname(SCREENS_SOCK), { recursive: true, mode: 0o700 }); rmSync(SCREENS_SOCK, { force: true }); if (gate.listening) gate.close(); gate.listen(SCREENS_SOCK, () => { try { chmodSync(SCREENS_SOCK, 0o600); } catch {} }); } catch {} };
     bind();
     // something removed the file (an older Symbiot's exit, a cleanup): open it again
-    setInterval(() => { if (!existsSync(SCREENS_SOCK)) bind(); }, 30000).unref();
+    every("screens socket", 30000, () => { if (!existsSync(SCREENS_SOCK)) bind(); });
     process.on("exit", () => { try { rmSync(SCREENS_SOCK, { force: true }); } catch {} });
   }
   server.listen(PORT, "127.0.0.1");
   // secrets kept on disk beside their key go into the keyring once there is one, and the key file with them (vault.mjs)
   setTimeout(() => { import("./vault.mjs").then((v) => { const r = v.toKeyring(); if (r && r.moved) console.log(`Vault: ${r.moved} secret${r.moved === 1 ? "" : "s"} moved into the keyring${r.keyGone ? "; the key file on disk is gone" : ""}.`); }).catch(() => {}); }, 15000).unref();
-  checkLatest(); setInterval(checkLatest, 2 * 60 * 1000).unref(); // background update check (every 2 min)
-  setInterval(() => { autoUpdateTick().catch(() => {}); }, Number(process.env.SYMBIOT_AUTO_EVERY) || 60000).unref(); // and it updates itself once nothing's working (autoUpdateDue)
+  // the app's background work: each a named job of timers.mjs, its state at /api/timers (single-flight, failures kept)
+  checkLatest(); every("update check", 2 * 60 * 1000, checkLatest); // background update check (every 2 min)
+  every("self-update", Number(process.env.SYMBIOT_AUTO_EVERY) || 60000, () => autoUpdateTick()); // and it updates itself once nothing's working (autoUpdateDue)
   startWeekly(writeup); // the weekly write-up + notification, when switched on in Settings
   startWatches(); // pages you watch (Screens → Watch), read every few minutes
   // Your phone: the computer listens if it's switched on, the phone asks if it's paired.
@@ -970,20 +973,18 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
   setPhoneApprove(async (repo, untasked) => { const { notes, deny } = await notesFor(repo, {}); return untasked ? approveChanges(repo, { tick: [], notes, deny }) : approveRepo(repo, { notes, deny }); });
   startPhone();
   onAnswered((path, rows) => shareAnswer(path, rows)); // an answer to one agent reaches the others on the same work
-  setInterval(() => { try { startWaiting(); } catch {} }, 20000).unref(); // a run that waits for your step starts once the file it names changes
-  setInterval(() => { try { runsTick(); } catch {} }, 60000).unref(); // a run silent too long is stopped; one that ended while Symbiot was down gets its exit's bookkeeping (agents.mjs)
-  setTimeout(() => { try { runsTick(); } catch {} }, 5000).unref();
-  setInterval(() => { try { mergeEnded({ addTask }); } catch {} }, 20000).unref(); // runs beside a lane's own that ended (also while Symbiot was down): merged back into the lane
+  every("waiting runs", 20000, () => startWaiting()); // a run that waits for your step starts once the file it names changes
+  every("runs", 60000, () => runsTick(), { first: 5000 }); // a run silent too long is stopped; one that ended while Symbiot was down gets its exit's bookkeeping (agents.mjs)
+  every("merge back", 20000, () => mergeEnded({ addTask })); // runs beside a lane's own that ended (also while Symbiot was down): merged back into the lane
   { let soon = null; onRunEnd(() => { if (soon) return; soon = setTimeout(() => { soon = null; for (const f of [startWaiting, () => mergeEnded({ addTask }), workTick, lanesTick]) try { f(); } catch {} }, 1500); soon.unref(); }); } // a run ended: what waited on it starts within seconds
-  setInterval(() => { homeTick(); try { workTick(); } catch {} }, 10000).unref(); // a waiting task starts once its lane is free (config.autoStart: false leaves it to Go); Home, then the work scene that reads its cards: what the routes read
-  { let busy = false; setInterval(() => { if (busy) return; busy = true; shipHanded().catch(() => {}).finally(() => { busy = false; }); }, 20000).unref(); } // changes made for a handed-over job go up by themselves
-  setInterval(() => { try { lanesTick(); } catch {} }, 20000).unref(); // agents hand work to other lanes, and hear back when it's done
-  { let busy = false; setInterval(() => { if (busy) return; busy = true; deployTick({ running: (p) => !!runningHandoff(p), notify: desktopNotify }).catch(() => {}).finally(() => { busy = false; }); }, 60000).unref(); } // a runbook's deploy is live once its check answers (deploy.mjs)
+  every("home + work", 10000, () => { homeTick(); workTick(); }); // a waiting task starts once its lane is free (config.autoStart: false leaves it to Go); Home, then the work scene that reads its cards: what the routes read
+  every("handed-over changes", 20000, () => shipHanded()); // changes made for a handed-over job go up by themselves
+  every("handovers", 20000, () => lanesTick()); // agents hand work to other lanes, and hear back when it's done
+  every("deploys", 60000, () => deployTick({ running: (p) => !!runningHandoff(p), notify: desktopNotify })); // a runbook's deploy is live once its check answers (deploy.mjs)
   setTimeout(() => { orcaRelink().catch(() => {}); }, 15000).unref(); // a lane folder a handover renamed, added again in Orca where it is now
   // an agent's allow list that stays inside your work is turned on by itself, and the agent carries on
-  setTimeout(() => { try { autoAllowSweep(); } catch {} }, 4000).unref();
-  setInterval(() => { try { autoAllowSweep(); } catch {} }, 20000).unref();
-  setInterval(() => { triageSweep().catch(() => {}); }, 15000).unref(); // every question an agent writes is judged before it can be a card (triage.mjs)
+  every("allow lists", 20000, () => autoAllowSweep(), { first: 4000 });
+  every("triage", 15000, () => triageSweep()); // every question an agent writes is judged before it can be a card (triage.mjs)
   // what the user asked for, followed through to done or "not finished", never dropped (goals.mjs)
   const goalDeps = () => {
     let cardPaths = new Set(); try { cardPaths = new Set(onUser().map((c) => c.path).filter(Boolean)); } catch {}
@@ -996,17 +997,17 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
   // each card on Needs you gets its short question and labelled options written once (needs.mjs)
   let carding = false;
   const cardSweep = async () => { if (carding) return; carding = true; try { let ai = null; try { ai = resolveProvider() ? aiWrite : null; } catch {} if (!ai) return; let keys = [], sites = []; try { keys = listSecrets().map((x) => x.name); } catch {} try { sites = [...new Set(Object.entries(loadConfig().linked || {}).flatMap(([id, v]) => [id, ...((v && v.hosts) || [])]))]; } catch {} const n = await writeCards((homeState() || {}).you || [], { write: ai, known: { keys, sites } }); if (n) homeState({ fresh: true }); } catch {} finally { carding = false; } };
-  setTimeout(() => { cardSweep(); }, 8000).unref(); setInterval(() => { cardSweep(); }, 20000).unref();
-  setTimeout(() => { goalsTick(goalDeps()).catch(() => {}); }, 60000).unref();
-  setInterval(() => { goalsTick(goalDeps()).catch(() => {}); }, 10 * 60000).unref();
-  setInterval(() => { try { continueLanes(); } catch {} }, 60000).unref(); // a lane with open tasks and no run going starts again, while it gets somewhere
+  every("cards", 20000, () => cardSweep(), { first: 8000 });
+  every("goals", 10 * 60000, () => goalsTick(goalDeps()), { first: 60000 });
+  every("continue lanes", 60000, () => continueLanes());
+  every("lane ids", 10 * 60000, () => noteLaneIds(), { first: 20000 }); // each lane by what it is, so a renamed folder keeps its tasks (laneids.mjs) // a lane with open tasks and no run going starts again, while it gets somewhere
   // a finished run's last words, read by your AI for anything left to you that the patterns missed (agents.mjs readLastWords)
-  setInterval(() => { readLastWords().catch(() => {}); }, 60000).unref();
+  every("last words", 60000, () => readLastWords());
   // knowledge folders: changed files re-read (a stat per file when nothing changed), then checked again for where two files disagree (checks.mjs)
   const knowTick = () => { try { const r = knowledgeTick(); if (r && (r.read || r.removed || !checksState().at)) runChecks(); } catch {} };
-  setTimeout(knowTick, 5000).unref(); setInterval(knowTick, 3 * 60 * 1000).unref();
+  every("knowledge", 3 * 60 * 1000, knowTick, { first: 5000 });
   import("./sweep.mjs").then((s) => s.startSweep()).catch(() => {}); // the daily sweep of finished run folders, old page maps, leftovers (sweep.mjs)
-  setInterval(() => { try { const r = awaitTick(); if (r && r.replied && r.replied.length) intuitionNudge(); } catch {} }, 60000).unref(); // a reply in: intuition looks again soon
+  every("awaited replies", 60000, () => { const r = awaitTick(); if (r && r.replied && r.replied.length) intuitionNudge(); }); // a reply in: intuition looks again soon
   // Intuition (intuition.mjs): what a sharp assistant would do next, unasked, every 30 minutes and
   // 5 minutes after a run ends or a reply arrives; internal work only, capped, switchable off.
   const intuitionDeps = () => {
@@ -1019,19 +1020,19 @@ async function startApp({ bin, since = 7, all = false, c = PLAIN_COLOURS } = {})
   };
   onRunEnd(() => { try { intuitionNudge(); } catch {} });
   // an Approve from the phone that met an agent still at work (or an Approve already going): it goes once that's done (phone.mjs)
-  { let busy = false; const retry = () => { if (busy) return; busy = true; import("./phone.mjs").then((p) => p.retryApprovals()).catch(() => {}).finally(() => { busy = false; }); };
-    setInterval(retry, 60000).unref(); onRunEnd(() => { const t = setTimeout(retry, 3000); if (t.unref) t.unref(); }); }
+  every("phone approvals", 60000, () => import("./phone.mjs").then((p) => p.retryApprovals()));
+  onRunEnd(() => { const t = setTimeout(() => runNow("phone approvals"), 3000); if (t.unref) t.unref(); });
   // the user's customisations (overrides.mjs): their triggers feed intuition's events (each minute,
   // and "run" ones when a run ends), and friction becomes proposed rules (every half hour)
   const triggerState = () => { try { const d = intuitionDigest({ jobs: () => loadJobs(), waits: () => { try { return awaitingState().waits; } catch { return []; } } }); return { digest: d.text }; } catch { return {}; } };
   const triggersNow = (on = "") => triggersTick({ state: triggerState(), on }).then(() => registerTriggers(INTUITION_SOURCES)).catch(() => {});
   onRunEnd(() => { triggersNow("run"); });
-  setInterval(() => { triggersNow(); }, 60000).unref();
-  setInterval(() => { let ai = null; try { ai = resolveProvider() ? aiWrite : null; } catch {} frictionTick({ write: ai, note: (l) => intuitionNote(l),
+  every("triggers", 60000, () => triggersNow());
+  every("friction", 30 * 60000, () => { let ai = null; try { ai = resolveProvider() ? aiWrite : null; } catch {} return frictionTick({ write: ai, note: (l) => intuitionNote(l),
     log: () => { try { return loadMind().log || []; } catch { return []; } },
-    answers: () => { try { return doneList().filter((x) => x && !/Symbiot|triage|Not the user's/i.test(String(x.a || ""))).map((x) => ({ at: Number(x.ts) || Date.parse(x.at) || 0, a: x.a })); } catch { return []; } } }).catch(() => {}); }, 30 * 60000).unref();
-  setInterval(() => { intuitionTick(intuitionDeps()).catch(() => {}); }, 120000).unref();
-  setInterval(() => { sentTick().catch(() => {}); }, 120000).unref(); // an email task the user already sent: closed, with where it went (sentmail.mjs) // a reply an agent's email waits on: found, and handed on
+    answers: () => { try { return doneList().filter((x) => x && !/Symbiot|triage|Not the user's/i.test(String(x.a || ""))).map((x) => ({ at: Number(x.ts) || Date.parse(x.at) || 0, a: x.a })); } catch { return []; } } }); });
+  every("intuition", 120000, () => intuitionTick(intuitionDeps()));
+  every("sent mail", 120000, () => sentTick()); // an email task the user already sent: closed, with where it went (sentmail.mjs) // a reply an agent's email waits on: found, and handed on
 }
 
 export { newPass, takePass, withKey, headlessAgent, updateCmd, installedVersion, restartOnto, autoUpdateDue, restartWouldStop, downloadReady, updateOutcome, changesSince, whatsNew, tarFile, registryChangelog, BROWSER_KEEP, startApp, askRunningApp, isAppRunningWeekly, openApp };

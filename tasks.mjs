@@ -25,6 +25,7 @@ import { repoPathMap, laneMap, nearLane, openWork, detectRepo } from "./scan.mjs
 import { afterShip } from "./deploy.mjs";
 import { ruleLines } from "./overrides.mjs";
 import { MARKETING_DIR, ensureMarketing, marketingBrief } from "./marketing.mjs";
+import { laneIdOf, nameOfId, noteLanes } from "./laneids.mjs";
 
 // ---- tasks: a persistent checklist (stored by core.mjs) -------------------
 // One line (TASKS.md has a task per line, and a tick only matches a whole one),
@@ -97,7 +98,8 @@ function addTask(text, repo, { after = "", finding = false, said = "", later } =
   if (dup) return { ...dup, duplicate: true };
   // a finding (core.mjs isFinding) goes in ticked, saying why: on the record, but not a job
   const own = String(said || "").trim().replace(/\s+/g, " ").slice(0, TASK_MAX);
-  const item = { id, text: line, ...(long ? { full } : {}), repo: repo || "", done: !!finding, ...(finding ? { finding: FINDING_NOTE } : {}), ...(own ? { said: own } : {}), ...(later ? { later: true } : {}), ts: Date.now() };
+  const lid = repo ? (() => { try { return laneIdOf(repo); } catch { return ""; } })() : ""; // the lane by what it is, so a renamed folder keeps its tasks (laneids.mjs)
+  const item = { id, text: line, ...(long ? { full } : {}), repo: repo || "", ...(lid ? { laneId: lid } : {}), done: !!finding, ...(finding ? { finding: FINDING_NOTE } : {}), ...(own ? { said: own } : {}), ...(later ? { later: true } : {}), ts: Date.now() };
   t.unshift(item); saveTasks(t); return item;
 }
 // The model picker on a task card: auto (nothing) or one of MODEL_PICKS. The brief's line for
@@ -220,13 +222,22 @@ function syncTasks() {
 // same) is merged into that one, as an approved Merge does (applyRemovals): its job is done there.
 // A name that stands for none: merged into a lane's task that hands it on (names its id, carries its words),
 // open or done since.
+// The lanes noted by what they are (laneids.mjs), and each open task given its lane's id once: what lets
+// a task follow its lane when the folder's renamed. { renamed, given }.
+function noteLaneIds(map = laneMap(), { note = noteLanes } = {}) {
+  const r = note(map), t = loadTasks(); let given = 0;
+  for (const x of t) if (x && !x.done && !x.archived && x.repo && !x.laneId && r.ids[x.repo]) { x.laneId = r.ids[x.repo]; given++; }
+  if (given) saveTasks(t);
+  return { renamed: r.renamed, given };
+}
 function placeTasks(t, names, now = Date.now()) {
   let n = 0;
   for (const x of t) {
     if (!x || x.done || x.archived || x.review || !x.repo || names.includes(x.repo)) continue;
     // a handover of it names its id and carries its words; a task that only mentions the id (as an example) doesn't
     const words = (s) => String(s || "").replace(/\s+/g, " ").toLowerCase(), head = words(x.full || x.text).slice(0, 50);
-    const to = laneOfRepo(x.repo, names), namesIt = (y) => { const w = words(y.full || y.text); return w.includes(x.id) && w.includes(head); };
+    const byId = x.laneId ? (() => { try { return nameOfId(x.laneId); } catch { return ""; } })() : ""; // its lane's folder renamed or moved: the lane's name now (laneids.mjs)
+    const to = byId && names.includes(byId) ? byId : laneOfRepo(x.repo, names), namesIt = (y) => { const w = words(y.full || y.text); return w.includes(x.id) && w.includes(head); };
     const has = t.find((y) => y !== x && !y.archived && (to ? y.repo === to && (namesIt(y) || sameTask(y.text, x.text)) : names.includes(y.repo) && namesIt(y)))
       || t.find((y) => y !== x && y.archived && !y.cancelled && !y.dropped && !y.removedBy && names.includes(y.repo) && namesIt(y)); // handed on and done there since
     if (!to && !has) continue;
@@ -1552,4 +1563,4 @@ function pushTasks(filter) {
   return { empty: false, written, unresolved, handoff: handoffCmd() };
 }
 
-export { applyMove, readMove, moveCheckout, laneOfRepo, laneNames, refileTask, unplacedTasks, placeTasks, unsentHeadline, setHandedLookup, setTaskModel, MODEL_PICKS, holdShip, SHIP_STALE, shipping, shippingPaths, shipJob, shipJobOf, SHIP_WAIT, workingChangesAsync, rebaseTask, sendAgain, forgetUnsent, unsentOf, readUnsent, unsentCard, repoTests, localRefused, forgetReview, gitFailed, taskPaths, addTask, toggleTask, setTaskDone, removeTask, cancelTask, restoreTask, FINDING_NOTE, completedInRepo, removalOf, applyRemovals, applyDrops, syncTasks, workingChanges, workingDiff, publishesOnMerge, unreleased, bumpOffer, learnNpm, releaseNeeded, releaseNotIn, withReleases, setVersion, changelogEntry, changelogSection, noteChangelog, releaseInput, shipWithBump, runSummary, saidFinished, pendingReview, commitSubject, shipChanges, autoMergeRepos, setAutoMerge, approveRepo, approveChanges, sendBack, TASK_ORDER, taskType, buildTasksMd, pushTasks, mergeWhenGreen, changelogItems, changelogLeaks, commitText };
+export { noteLaneIds, applyMove, readMove, moveCheckout, laneOfRepo, laneNames, refileTask, unplacedTasks, placeTasks, unsentHeadline, setHandedLookup, setTaskModel, MODEL_PICKS, holdShip, SHIP_STALE, shipping, shippingPaths, shipJob, shipJobOf, SHIP_WAIT, workingChangesAsync, rebaseTask, sendAgain, forgetUnsent, unsentOf, readUnsent, unsentCard, repoTests, localRefused, forgetReview, gitFailed, taskPaths, addTask, toggleTask, setTaskDone, removeTask, cancelTask, restoreTask, FINDING_NOTE, completedInRepo, removalOf, applyRemovals, applyDrops, syncTasks, workingChanges, workingDiff, publishesOnMerge, unreleased, bumpOffer, learnNpm, releaseNeeded, releaseNotIn, withReleases, setVersion, changelogEntry, changelogSection, noteChangelog, releaseInput, shipWithBump, runSummary, saidFinished, pendingReview, commitSubject, shipChanges, autoMergeRepos, setAutoMerge, approveRepo, approveChanges, sendBack, TASK_ORDER, taskType, buildTasksMd, pushTasks, mergeWhenGreen, changelogItems, changelogLeaks, commitText };
